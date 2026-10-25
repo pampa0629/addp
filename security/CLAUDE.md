@@ -2,6 +2,8 @@ Graph 保护消费者（2026-10-17）：固定 `addp-graph` 仅消费 `graph` �
 
 # Security 模块说明
 
+2026-10-25，隔离 suite 领域报告 v28 独立追加 `service_role_membership_expiry`：沿既有 IAM API 为专用普通用户新建 90 秒资格 Assignment，保护同步后才开始期限，不改旧撤销记录或系统时钟。到期前两页五行 JSON/CSV 正常；真实到期后，要求同一 Access Token 仍可认证、主体/租户/成员/授权版本/功能权限不变，仅资格角色消失，Assignment 为持久 active、动态 expired 且无撤销事实。有效 Policy/投影/服务选择不变时，旧游标与无游标请求均严格为 `403/query_protection_roles_unavailable`、无结果；显式移除后同一会话恢复默认五行保护。成功路径不撤销或续期，失败/中断仅清理本轮仍有效资格，已到期事实保留随隔离 Infra 销毁。标准入口仍为 `make test-security-online-runner`，本轮 38/50/28/265 项 Python 回归、相关 Go 夹具与登记检查通过（T0/T1），日志 `/tmp/p145-role-natural-expiry-runner-20261025.log`；[期限与证据边界](../scripts/docs/Online数据保护.md#角色资格自然到期)区分已有自然到期协议 T2、本轮 Runner 与尚未运行的 v28 Hosted，不把它们合并为 T4 通过。CI 仍归专门会话，本会话不派发、跟踪或设置定时。
+
 2026-10-25，既有隔离 suite 领域报告 v27 另加 `service_role_membership_revocation`，与方式撤销的 409 独立：精确撤销普通测试用户的额外资格角色分配，旧会话 401 单列；正式重登同一用户、功能 Permission 集合不变后，旧游标 JSON/CSV 与无游标对照必须为 `403/query_protection_roles_unavailable` 且无结果，Policy/投影/服务选择不变，显式移除后五行默认保护恢复。额外角色只重复已有服务定义读取权限；复用隔离初始化已有的 Tenant 管理员仅控制精确 IAM 分配，不用于数据消费，不新增角色管理 Permission 或个人授权。凭据不传浏览器及生命周期子进程；失败/中断精确清理。标准入口仍为 `make test-security-online-runner`，本轮 38/49/28/261 项 Python 回归、相关 Go 夹具与登记检查通过（T0/T1），日志 `/tmp/p145-service-membership-runner-verified-20261025.log`；[细节及未验范围](../scripts/docs/Online数据保护.md#用户角色资格撤销)明确新增 Hosted 未运行，CI 继续归专门会话，不设置定时。
 
 2026-10-25，既有 `security-mysql-owner-protection` 隔离套件的领域报告 v26 新增 Service 角色方式撤销后的旧游标 JSON/CSV 精确拒绝、保留失效选择直接停用、显式移除后的五行默认恢复及精确清理。复用当轮 MySQL 合成表和普通 User，不撤销用户角色、不改变原值或源授权；[场景与证据边界](../scripts/docs/Online数据保护.md#service-角色方式撤销后的旧游标)区分已通过的本地限定验收与尚未运行的新增 Hosted T4。`make test-security-online-runner` 的 38/49/28/254 项 Python 回归、相关 Go 夹具及登记检查通过；最后清理计数修改由新增六项 Runner 回归复核通过。既有浏览器 v9 范围保持，CI 由专门会话跟进，本会话不派发、轮询或设置定时。

@@ -2482,7 +2482,7 @@ def assert_service_role_refusal(response: SUPPORT.Response) -> dict[str, object]
     return {"http_status": response.status, "error_code": payload["error_code"], "result_absent": True}
 
 
-def service_subject_roles(client: GatewayClient, identity: Mapping[str, object]) -> dict[str, object]:
+def service_subject_role_observation(client: GatewayClient, identity: Mapping[str, object]) -> dict[str, object]:
     roles = _object(client.request("GET", "/api/v1/system/auth/subject-roles", (200,)).payload, "own roles")
     keys = roles.get("role_keys")
     now = datetime.now(timezone.utc)
@@ -2492,6 +2492,11 @@ def service_subject_roles(client: GatewayClient, identity: Mapping[str, object])
             or utc_timestamp(roles.get("expires_at"), "own roles expiry") <= now
             or utc_timestamp(roles.get("observed_at"), "own roles observation") > now + timedelta(minutes=1)):
         raise SuiteError("role cursor requires the same ordinary current Tenant User")
+    return roles
+
+
+def service_subject_roles(client: GatewayClient, identity: Mapping[str, object]) -> dict[str, object]:
+    roles = service_subject_role_observation(client, identity)
     return {key: roles.get(key) for key in ("tenant_id", "actor_principal_id", "role_keys")}
 
 
@@ -2673,6 +2678,8 @@ SERVICE_ELIGIBILITY_ROLE = "online.security_masking_eligible"
 SERVICE_ROLE_READER_PERMISSIONS = {"service.definition.read", "service.definition.create", "service.definition.update",
                                    "service.definition.delete", "service.data_read.execute", "meta.catalog.read"}
 SERVICE_ROLE_CONTROLLER_PERMISSIONS = {"iam.tenant_role_assignment.read", "iam.tenant_role_assignment.revoke"}
+SERVICE_ROLE_EXPIRY_CONTROLLER_PERMISSIONS = SERVICE_ROLE_CONTROLLER_PERMISSIONS | {"iam.tenant_role_assignment.create"}
+SERVICE_ROLE_EXPIRY_SECONDS = 90
 SERVICE_ROLE_ENVIRONMENT = ("ADDP_ONLINE_SECURITY_ROLE_USER_ACCESS_TOKEN", "ADDP_ONLINE_SECURITY_ROLE_USER_USERNAME",
                            "ADDP_ONLINE_SECURITY_ROLE_USER_PASSWORD", "ADDP_ONLINE_SECURITY_ROLE_ASSIGNMENT_ID",
                            "ADDP_ONLINE_SECURITY_ROLE_CONTROLLER_ACCESS_TOKEN")
@@ -2714,6 +2721,32 @@ def assert_service_eligibility_assignment(payload: object, identity: Mapping[str
             or assignment.get("username") != "external-online-security-role-reader" or assignment.get("status") != status):
         raise SuiteError("role revocation target differs from the dedicated eligibility Assignment")
     return {key: assignment[key] for key in ("id", "principal_id", "membership_id", "role_key", "status")}
+
+
+def formal_service_role_login(public: GatewayClient, environment: Mapping[str, str]) -> GatewayClient:
+    issued = _object(public.request("POST", "/api/v1/system/login", (200,), {
+        "username": environment["ADDP_ONLINE_SECURITY_ROLE_USER_USERNAME"],
+        "password": environment["ADDP_ONLINE_SECURITY_ROLE_USER_PASSWORD"]}).payload, "formal role User login")
+    token = _object(issued.get("session"), "role User new session").get("access_token")
+    if issued.get("next_action") != "session_issued" or not isinstance(token, str) or not token:
+        raise SuiteError("role scenario must formally issue a User session")
+    return GatewayClient(public.base_url, token, public.timeout)
+
+
+def assert_service_eligibility_denials(reader: GatewayClient, query_path: str, cursor: str) -> dict[str, object]:
+    denials = {}
+    for format_name in ("json", "csv", "no_cursor"):
+        request = {"select": BANK_FIELDS, "order_by": [{"field": "id", "direction": "asc"}],
+                   "page": {"limit": 4, **({"cursor": cursor} if format_name != "no_cursor" else {})},
+                   "format": "json" if format_name == "no_cursor" else format_name}
+        refusal = reader.request("POST", query_path, (403,), request)
+        payload = _object(refusal.payload, "role eligibility refusal")
+        if (refusal.status != 403 or set(payload) != {"error", "error_code"}
+                or payload.get("error_code") != "query_protection_roles_unavailable"
+                or not isinstance(payload.get("error"), str) or not payload["error"].strip()):
+            raise SuiteError("membership refusal must be exact 403 roles-unavailable with no result")
+        denials[format_name] = {"http_status": refusal.status, "error_code": payload["error_code"], "result_absent": True}
+    return denials
 
 
 def exercise_service_role_membership_revocation(client: GatewayClient, engine_id: int, database: str,
@@ -2774,13 +2807,9 @@ def exercise_service_role_membership_revocation(client: GatewayClient, engine_id
         old_session = reader.request("GET", "/api/v1/system/auth/context", (401,))
         if old_session.status != 401 or not set(_object(old_session.payload, "old session refusal")) <= {"error", "error_code"}:
             raise SuiteError("revoked eligibility must invalidate the old session without returning identity")
-        issued = _object(public.request("POST", "/api/v1/system/login", (200,), {
-            "username": env["ADDP_ONLINE_SECURITY_ROLE_USER_USERNAME"],
-            "password": env["ADDP_ONLINE_SECURITY_ROLE_USER_PASSWORD"]}).payload, "formal role User login")
-        new_token = _object(issued.get("session"), "role User new session").get("access_token")
-        if issued.get("next_action") != "session_issued" or not isinstance(new_token, str) or not new_token or new_token == reader.token:
+        fresh = formal_service_role_login(public, env)
+        if fresh.token == reader.token:
             raise SuiteError("role revocation must formally issue a fresh User session")
-        fresh = GatewayClient(reader.base_url, new_token, reader.timeout)
         current = service_role_user_identity(fresh, identity["tenant_id"], SERVICE_ROLE_READER_PERMISSIONS)
         if ({k: v for k, v in current.items() if k != "authorization_version"} !=
                 {k: v for k, v in identity.items() if k != "authorization_version"}
@@ -2797,18 +2826,7 @@ def exercise_service_role_membership_revocation(client: GatewayClient, engine_id
             urllib.parse.urlencode({"target_locator": locator}), (200,)).payload, "revoked role options")
         if any(_object(field, "revoked role field").get("options") for field in _array(options.get("fields"), "revoked role fields")):
             raise SuiteError("revoked User still observes eligible masking options")
-        denials = {}
-        for format_name in ("json", "csv", "no_cursor"):
-            request = {"select": BANK_FIELDS, "order_by": [{"field": "id", "direction": "asc"}],
-                       "page": {"limit": 4, **({"cursor": cursor} if format_name != "no_cursor" else {})},
-                       "format": "json" if format_name == "no_cursor" else format_name}
-            refusal = fresh.request("POST", query_path, (403,), request)
-            payload = _object(refusal.payload, "role eligibility refusal")
-            if (refusal.status != 403 or set(payload) != {"error", "error_code"}
-                    or payload.get("error_code") != "query_protection_roles_unavailable"
-                    or not isinstance(payload.get("error"), str) or not payload["error"].strip()):
-                raise SuiteError("membership refusal must be exact 403 roles-unavailable with no result")
-            denials[format_name] = {"http_status": refusal.status, "error_code": payload["error_code"], "result_absent": True}
+        denials = assert_service_eligibility_denials(fresh, query_path, cursor)
         recovery, recovered_version = restore_service_default(fresh, service_path, query_path, choice, selected)
         if (recovered_version == version or client.request("GET", policy_path, (200,)).payload != published_policy
                 or service_projection(client, enrollment_id) != installed
@@ -2846,6 +2864,183 @@ def exercise_service_role_membership_revocation(client: GatewayClient, engine_id
         raise failure
     return dict(result, created_resources=1, deleted_resources=1, residual_resources=0,
                 eligibility_assignment_revoked=True, policy_revoked=True, service_deleted=True)
+
+
+def assert_timed_service_assignment(payload: object, identity: Mapping[str, object], assignment_id: str,
+        role_id: str, expires_at: datetime, effective_state: str) -> dict[str, object]:
+    assignment = _object(payload, "timed Service eligibility Assignment")
+    binding = assert_service_eligibility_assignment(assignment, identity, assignment_id, "active")
+    if (assignment.get("role_id") != role_id or assignment.get("effective_state") != effective_state
+            or utc_timestamp(assignment.get("valid_until"), "eligibility valid_until") != expires_at
+            or any(assignment.get(key) is not None for key in ("revoked_at", "revoked_by", "revoked_reason"))):
+        raise SuiteError("timed eligibility must preserve its deadline and natural effective state without revocation")
+    return dict(binding, role_id=role_id, valid_until=assignment["valid_until"], effective_state=effective_state)
+
+
+def cleanup_timed_service_assignment(controller: GatewayClient, identity: Mapping[str, object], assignment_id: str,
+        role_id: str, expires_at: datetime) -> str:
+    path = "/api/v1/system/tenant/role_assignments/" + assignment_id
+    assignment = _object(controller.request("GET", path, (200,)).payload, "timed eligibility cleanup")
+    if assignment.get("status") == "revoked":
+        assert_service_eligibility_assignment(assignment, identity, assignment_id, "revoked")
+        return "revoked"
+    state = assignment.get("effective_state")
+    if state not in {"effective", "expired"}:
+        raise SuiteError("timed eligibility cleanup cannot identify its effective state")
+    assert_timed_service_assignment(assignment, identity, assignment_id, role_id, expires_at, state)
+    if state == "expired":
+        return "expired"
+    # A cleanup command may cross the real deadline. Never retry the mutation;
+    # a typed expired conflict is resolved by one authoritative read.
+    response = controller.request("POST", path + "/revoke", (200, 409), {"reason": "Disposable timed masking eligibility cleanup"})
+    if response.status == 200:
+        assert_service_eligibility_assignment(response.payload, identity, assignment_id, "revoked")
+        return "revoked"
+    if _object(response.payload, "timed cleanup conflict").get("error_code") != "role_assignment_expired":
+        raise SuiteError("timed eligibility cleanup returned an unrelated conflict")
+    assert_timed_service_assignment(controller.request("GET", path, (200,)).payload,
+                                    identity, assignment_id, role_id, expires_at, "expired")
+    return "expired"
+
+
+def exercise_service_role_membership_expiry(client: GatewayClient, engine_id: int, database: str,
+        bank: Mapping[str, object], owner_identity: Mapping[str, object], run_id: str, deadline: float,
+        environment: Mapping[str, str] | None = None) -> dict[str, object]:
+    env = os.environ if environment is None else environment
+    if any(not isinstance(env.get(key), str) or not env[key] for key in SERVICE_ROLE_ENVIRONMENT):
+        raise SuiteError("role expiry requires the dedicated owner-only fixture credentials")
+    if env["ADDP_ONLINE_SECURITY_ROLE_USER_USERNAME"] != "external-online-security-role-reader":
+        raise SuiteError("role expiry must not use a personal username")
+    public = GatewayClient(client.base_url, "", client.timeout)
+    controller = GatewayClient(client.base_url, env["ADDP_ONLINE_SECURITY_ROLE_CONTROLLER_ACCESS_TOKEN"], client.timeout)
+    reader = formal_service_role_login(public, env)
+    identity = service_role_user_identity(reader, str(owner_identity["tenant_id"]), SERVICE_ROLE_READER_PERMISSIONS)
+    operator = service_role_user_identity(controller, identity["tenant_id"], SERVICE_ROLE_EXPIRY_CONTROLLER_PERMISSIONS, iam_controller=True)
+    if len({identity["principal_id"], operator["principal_id"], owner_identity["principal_id"]}) != 3:
+        raise SuiteError("timed role consumer, IAM controller and governor must be distinct")
+    initial_roles = service_subject_role_observation(reader, identity)
+    if SERVICE_ELIGIBILITY_ROLE in initial_roles["role_keys"]:
+        raise SuiteError("role expiry requires the previous eligibility to be revoked")
+    previous_id = str(positive_int(env["ADDP_ONLINE_SECURITY_ROLE_ASSIGNMENT_ID"], "previous eligibility ID"))
+    previous_path = "/api/v1/system/tenant/role_assignments/" + previous_id
+    previous_assignment = _object(controller.request("GET", previous_path, (200,)).payload, "previous eligibility Assignment")
+    assert_service_eligibility_assignment(previous_assignment, identity, previous_id, "revoked")
+    role_id = str(positive_int(previous_assignment.get("role_id"), "masking eligibility role ID"))
+    policy_id = service_id = assignment_id = None
+    expires_at = None
+    failure = None
+    result = {}
+    try:
+        source = find_item(client, engine_id, database + "." + BANK_SOURCE, "table")
+        locator = build_item_locator(engine_id, source)
+        enrollment_id = str(bank["enrollment_id"])
+        baseline = definition_array(client, "/api/v1/security/protection-baselines")
+        previous_projection = service_projection(client, enrollment_id)
+        policy = create_service_role_policy(client, str(bank["assessment_id"]), [SERVICE_ELIGIBILITY_ROLE])
+        policy_id = str(policy["id"])
+        installed = wait_service_role_projection(client, enrollment_id, previous_projection, deadline)
+        policy_path = "/api/v1/security/protection-policies/" + policy_id
+        published_policy = client.request("GET", policy_path, (200,)).payload
+        if deadline - time.monotonic() < SERVICE_ROLE_EXPIRY_SECONDS + 15:
+            raise SuiteError("role natural expiry has insufficient remaining suite budget")
+        observed = service_subject_role_observation(reader, identity)
+        expires_at = utc_timestamp(observed.get("observed_at"), "System database observation") + timedelta(seconds=SERVICE_ROLE_EXPIRY_SECONDS)
+        created = _array(controller.request("POST", "/api/v1/system/tenant/role_assignments", (201,), {
+            "membership_id": identity["membership_id"], "role_ids": [role_id], "valid_until": expires_at.isoformat(),
+            "reason": "Disposable natural masking eligibility expiry; preserve main functional role"}).payload, "timed eligibility creation")
+        if len(created) != 1:
+            raise SuiteError("role expiry must create exactly one timed Assignment")
+        new_id = str(positive_int(_object(created[0], "timed Assignment").get("id"), "timed Assignment ID"))
+        if new_id == previous_id:
+            raise SuiteError("role expiry must not overwrite the previous revoked Assignment")
+        assignment_id = new_id
+        before_assignment = assert_timed_service_assignment(created[0], identity, assignment_id, role_id, expires_at, "effective")
+        # Granting the new timed assignment advances authorization_version.
+        # Log in once after that mutation, then retain this exact session.
+        active_reader = formal_service_role_login(public, env)
+        active = service_role_user_identity(active_reader, identity["tenant_id"], SERVICE_ROLE_READER_PERMISSIONS)
+        if ({k: v for k, v in active.items() if k != "authorization_version"} !=
+                {k: v for k, v in identity.items() if k != "authorization_version"}
+                or int(active["authorization_version"]) <= int(identity["authorization_version"])):
+            raise SuiteError("timed assignment changed identity or functional permissions")
+        roles_before = service_subject_role_observation(active_reader, active)
+        if (roles_before["role_keys"] != sorted(initial_roles["role_keys"] + [SERVICE_ELIGIBILITY_ROLE])
+                or utc_timestamp(roles_before.get("expires_at"), "current role observation deadline") != expires_at):
+            raise SuiteError("current role observation must include only the timed eligibility and its exact deadline")
+        context = _object(active_reader.request("GET", "/api/v1/system/auth/context", (200,)).payload, "timed User session")
+        if utc_timestamp(_object(context.get("token"), "timed User credential").get("expires_at"), "Access Token expiry") <= expires_at + timedelta(seconds=15):
+            raise SuiteError("User credential must outlive the role deadline and refusal probes")
+        choice = service_role_choice(active_reader, locator, source, policy)
+        name = ("online-security-role-expiry-" + run_suffix(run_id, "-"))[:120].rstrip("-")
+        body = service_payload(name, engine_id, locator, BANK_FIELDS)
+        body["protocols"]["rest_api"]["formats"] = ["json", "csv"]
+        body["data_config"]["protection_choices"] = [choice]
+        service = _object(active_reader.request("POST", "/api/v1/service/query", (201,), body).payload, "timed Service")
+        service_id = positive_int(service.get("id"), "timed Service ID")
+        service_path = f"/api/v1/service/query/{service_id}"
+        selected = active_reader.request("GET", service_path, (200,)).payload
+        if (_object(selected, "timed Service definition").get("public_access") is not False or selected.get("status") != "active"
+                or _object(selected.get("data_config"), "timed Service config").get("protection_choices") != [choice]):
+            raise SuiteError("timed Service must persist the private role choice")
+        query_path = "/api/query/" + urllib.parse.quote(name, safe="") + "/query"
+        first, cursor, version = assert_service_role_page(active_reader, query_path, ["1", "2", "3", "4"], True)
+        continuation, _, last_version = assert_service_role_page(active_reader, query_path, ["5"], True, cursor)
+        before_wait = service_subject_role_observation(active_reader, active)
+        if (last_version != version or SERVICE_ELIGIBILITY_ROLE not in before_wait["role_keys"]
+                or utc_timestamp(before_wait.get("observed_at"), "baseline database observation") >= expires_at):
+            raise SuiteError("timed role positive control did not finish before natural expiry")
+        wait_protection_deadline(expires_at, deadline)
+        after = service_role_user_identity(active_reader, identity["tenant_id"], SERVICE_ROLE_READER_PERMISSIONS)
+        roles_after = service_subject_role_observation(active_reader, after)
+        if (after != active or roles_after["role_keys"] != initial_roles["role_keys"]
+                or utc_timestamp(roles_after.get("observed_at"), "expired database observation") < expires_at):
+            raise SuiteError("natural expiry must retain the same session and functional permissions, removing only eligibility")
+        assignment_path = "/api/v1/system/tenant/role_assignments/" + assignment_id
+        expired_assignment = assert_timed_service_assignment(controller.request("GET", assignment_path, (200,)).payload,
+                                                            active, assignment_id, role_id, expires_at, "expired")
+        if (client.request("GET", policy_path, (200,)).payload != published_policy
+                or service_projection(client, enrollment_id) != installed
+                or active_reader.request("GET", service_path, (200,)).payload != selected):
+            raise SuiteError("natural role expiry changed Policy, protection projection or saved Service choice")
+        denials = assert_service_eligibility_denials(active_reader, query_path, cursor)
+        recovery, recovered_version = restore_service_default(active_reader, service_path, query_path, choice, selected)
+        if (recovered_version == version or service_role_user_identity(active_reader, identity["tenant_id"], SERVICE_ROLE_READER_PERMISSIONS) != active
+                or client.request("GET", policy_path, (200,)).payload != published_policy
+                or service_projection(client, enrollment_id) != installed
+                or definition_array(client, "/api/v1/security/protection-baselines") != baseline
+                or controller.request("GET", previous_path, (200,)).payload != previous_assignment):
+            raise SuiteError("natural expiry recovery changed protection or previous revocation facts")
+        result = {"identity_before": active, "identity_after": after, "same_access_session_valid": True,
+            "functional_permissions_and_authorization_version_unchanged": True,
+            "role_keys_before": roles_before["role_keys"], "role_keys_after": roles_after["role_keys"],
+            "assignment_before": before_assignment, "assignment_after": expired_assignment,
+            "database_observed_before": before_wait["observed_at"], "database_observed_after": roles_after["observed_at"],
+            "natural_expiry_verified": True, "policy_projection_and_saved_choice_unchanged_at_refusal": True,
+            "choice": choice, "service_id": service_id, "installed_projection": installed,
+            "first_page": first, "valid_cursor_continuation": continuation,
+            "old_cursor": {"length": len(cursor), "sha256": hashlib.sha256(cursor.encode()).hexdigest()},
+            "same_session_refusals": denials, "explicit_default_recovery": recovery}
+    except BaseException as error:
+        failure = error
+    errors = []
+    assignment_cleanup = None
+    if assignment_id is not None:
+        try:
+            assignment_cleanup = cleanup_timed_service_assignment(controller, identity, assignment_id, role_id, expires_at)
+        except BaseException as error:
+            errors.append(str(error))
+    try:
+        cleanup_service_role_resources(client, policy_id, service_id, failure)
+    except BaseException as error:
+        errors.append(str(error))
+    if errors:
+        raise SuiteError("natural role expiry cleanup failed: " + "; ".join(errors)) from failure
+    if failure:
+        raise failure
+    if assignment_cleanup != "expired":
+        raise SuiteError("natural role expiry cannot pass by revoking eligibility")
+    return dict(result, created_resources=1, deleted_resources=1, residual_resources=0,
+                timed_assignment_cleanup="expired", policy_revoked=True, service_deleted=True)
 
 
 def validity_snapshot(enrollment: Mapping[str, object], mode: str,
@@ -3031,6 +3226,8 @@ def run_scenario(
         client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline)
     service_role_membership_revocation = exercise_service_role_membership_revocation(
         client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, role_environment)
+    service_role_membership_expiry = exercise_service_role_membership_expiry(
+        client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, role_environment)
     source_full_name = f"{source_database}.{SOURCE_TABLE}"
     source_item = find_item(client, source_engine_id, source_full_name, "table")
     target_item = find_item(
@@ -3114,7 +3311,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v27",
+            "schema_version": "addp.security-mysql-owner-protection-online/v28",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -3123,6 +3320,7 @@ def run_scenario(
             "bank_card_metadata": bank_card_metadata,
             "service_role_cursor_revocation": service_role_cursor_revocation,
             "service_role_membership_revocation": service_role_membership_revocation,
+            "service_role_membership_expiry": service_role_membership_expiry,
             "fixture": {
                 "source_engine_id": str(source_engine_id),
                 "target_engine_id": str(target_engine_id),
@@ -3148,8 +3346,8 @@ def run_scenario(
                     "records_written": transfer_execution.get("records_written"),
                 },
             },
-            "created_resources": 7 + len(task_ids),
-            "deleted_resources": 7 + len(task_ids),
+            "created_resources": 8 + len(task_ids),
+            "deleted_resources": 8 + len(task_ids),
             "residual_resources": 0,
         }
     except BaseException as error:

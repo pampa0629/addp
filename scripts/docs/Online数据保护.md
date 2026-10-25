@@ -43,6 +43,14 @@
 
 普通测试用户与隔离 IAM 控制身份的凭据只进入当轮 owner-only Secret 环境文件，不写入报告或传给浏览器；报告只记录身份、Assignment、当前角色与 Permission 边界、令牌失效状态、查询游标摘要和精确拒绝/恢复事实。复用 `make test-security-online-runner` 与既有 Hosted suite，不增加新部署、产品接口或 CI 路线。新增确定性通过不等于真实 Hosted T4 通过；CI 继续由专门会话跟进，角色自然到期和其他出口仍单列未验范围。
 
+## 角色资格自然到期
+
+领域报告 v28 的 `service_role_membership_expiry` 独立于方式撤销和资格主动撤销，沿用 v27 的普通测试用户、主功能角色、资格角色定义及隔离 IAM 控制身份。通过正式 IAM API 新建该用户的单条有期限资格 Assignment，期限基于 System 当前角色观察的数据库时间，仅用于本轮合成来源；不修改旧撤销记录、个人账号、产品期限配置或系统时钟。先配置有效 Policy 并等 Service 同步，再建立 90 秒资格、正式登录并验证两页五行 JSON/CSV 与旧游标可用，确保正常对照在到期前完成。
+
+等待真实时间跨过期限后，同一 Access Token 必须仍能取得有效 AuthContext，主体/Tenant/Membership/授权版本/功能 Permission 不变，本人角色观察只减少该资格角色且数据库观察时间已跨过 `valid_until`。Assignment 的持久状态仍为 active、动态 `effective_state=expired`，期限不变、没有撤销事实；Policy/投影/服务定义与选择保持有效。旧游标 JSON/CSV 及无游标对照必须精确 403／`query_protection_roles_unavailable` 且无结果，不接受 401、方式失效409或通用保护错误替代。明确移除选择后，同一会话恢复五行默认脱敏。
+
+自然到期路径不调用 revoke，不重新登录或续期。失败/中断时仅处理本轮捕获的精确 Assignment：仍有效时撤销，已自然到期时核对 expired 后保留审计事实；清理跨越到期点产生的冲突须重读核实，不重试角色写命令。Policy/Service 仍沿现有精确清理；报告只保留身份、期限、数据库观察、查询游标摘要与拒绝/恢复事实，凭据隔离沿 v27。确定性回归沿 `make test-security-online-runner`，实际 Hosted 尚待专门 CI 会话运行，不新增部署或 CI 路线。
+
 ## 四出口逐原因矩阵
 
 领域报告 v25 起在既有 suite 内给出 `protection_reason_matrix`，固定七种原因 × Manager preview、Develop query、Service execute、Transfer export。每个单元格必须明确 `runtime` 或 `protocol_only`，不能把共享协议测试当作对应 HTTP 出口已运行；矩阵的 runtime 单元格只有该次请求及对应强断言通过后才能生成。Manager／Service 保留原有仅含本地化 error 与 error_code 的保护 403，原因由受控的纳管状态、固定 SQL、原规则和结构变化事实证明，不增加公开子原因或解析错误正文。Develop／Transfer 校验同一执行 UUID 的历史、精确诊断、拒绝无结果；Transfer 另校验零写入及目标逐值不变。

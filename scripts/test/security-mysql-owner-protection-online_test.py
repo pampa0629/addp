@@ -2681,6 +2681,161 @@ class ServiceRoleMembershipRevocationTest(unittest.TestCase):
         self.assertNotIn("id", body["role_options"][0])
 
 
+class RoleExpiryBackend(ServiceRoleCursorClient):
+    def __init__(self, fault=None):
+        super().__init__()
+        self.now = ONLINE.datetime.now(ONLINE.timezone.utc)
+        self.expiry_fault = fault
+        self.expired = False
+        self.timed = None
+        self.events = []
+        self.previous = {"id": "42", "principal_id": "7", "membership_id": "8", "principal_type": "user", "role_id": "20",
+            "role_key": ONLINE.SERVICE_ELIGIBILITY_ROLE, "scope_type": "tenant", "username": "external-online-security-role-reader", "status": "revoked"}
+
+    def wait(self, expires, deadline):
+        self.events.append(("wait", expires, deadline, None))
+        if self.expiry_fault == "interrupt_wait":
+            raise KeyboardInterrupt("controlled timed-role interruption")
+        if self.expiry_fault == "premature_wait":
+            return
+        self.now = expires + ONLINE.timedelta(seconds=2)
+        self.expired = True
+        if self.expiry_fault == "revoked_instead":
+            self.timed["status"] = "revoked"
+            self.timed["revoked_at"] = self.now.isoformat()
+
+    def for_user(self, token, method, path, expected, body=None, **kwargs):
+        self.events.append((token, method, path, copy.deepcopy(body)))
+        response = ONLINE.SUPPORT.Response
+        fault = self.expiry_fault
+        if path == "/api/v1/system/login":
+            assert token == "" and body["username"] == "external-online-security-role-reader"
+            return response(200, {"next_action": "session_issued", "session": {"access_token": "reader-active" if self.timed else "reader-initial"}})
+        if path == "/api/v1/system/auth/context":
+            if self.expired and fault == "session401":
+                return response(401, {"error": "not a role refusal", "error_code": "unauthorized"})
+            controller = token == "controller"
+            permissions = set(ONLINE.SERVICE_ROLE_EXPIRY_CONTROLLER_PERMISSIONS if controller else ONLINE.SERVICE_ROLE_READER_PERMISSIONS)
+            if self.expired and fault == "permission_lost" and not controller:
+                permissions.remove("service.data_read.execute")
+            version = "1" if token == "reader-initial" else ("3" if self.expired and fault == "version_changed" else "2")
+            return response(200, {"principal": {"type": "user", "id": "8" if controller else "7"},
+                "context": {"type": "tenant", "tenant_id": "2", "tenant_membership_id": "9" if controller else "8"},
+                "token": {"type": "first_party_access_token", "expires_at": (self.now + ONLINE.timedelta(seconds=30 if fault == "short_session" else 3600)).isoformat()},
+                "authorization": {"authorization_version": version, "role_assignments": [{
+                    "role_key": "tenant.administrator" if controller else "online.functional", "permissions": sorted(permissions)}]}})
+        if path == "/api/v1/system/auth/subject-roles":
+            keys = ["online.functional"]
+            if self.timed and (not self.expired or fault == "role_survived"):
+                keys.append(ONLINE.SERVICE_ELIGIBILITY_ROLE)
+            until = ONLINE.utc_timestamp(self.timed["valid_until"], "controlled deadline") if len(keys) == 2 else self.now + ONLINE.timedelta(hours=1)
+            return response(200, {"tenant_id": "2", "actor_principal_id": "7", "role_keys": keys,
+                "observed_at": self.now.isoformat(), "expires_at": until.isoformat()})
+        if path == "/api/v1/system/tenant/role_assignments/42":
+            return response(200, copy.deepcopy(self.previous))
+        if path == "/api/v1/system/tenant/role_assignments":
+            assert token == "controller" and method == "POST" and body["role_ids"] == ["20"] and body["membership_id"] == "8"
+            self.timed = dict(self.previous, id="43", status="active", effective_state="effective", valid_until=body["valid_until"], revoked_at=None)
+            return response(201, [copy.deepcopy(self.timed)])
+        if path == "/api/v1/system/tenant/role_assignments/43":
+            value = copy.deepcopy(self.timed)
+            value["effective_state"] = "expired" if self.expired else "effective"
+            if self.expired and fault == "extended_deadline":
+                value["valid_until"] = (self.now + ONLINE.timedelta(minutes=1)).isoformat()
+            return response(200, value)
+        if path == "/api/v1/system/tenant/role_assignments/43/revoke":
+            self.timed["status"] = "revoked"
+            return response(200, copy.deepcopy(self.timed))
+        if path.startswith("/api/query/"):
+            assert token == "reader-active", "only the same ordinary Access Token may consume results"
+            if self.expired and self.service["data_config"].get("protection_choices"):
+                status = 409 if fault == "denial409" else 403
+                value = {"error": "Current User lacks role eligibility", "error_code": "query_protection_roles_unavailable"}
+                if fault == "wrong_code": value["error_code"] = "data_protection_required"
+                if fault == "denial_data": value["data"] = []
+                return response(status, value)
+        value = super().request(method, path, expected, body, **kwargs)
+        if self.expired and fault == "policy_changed" and path == "/api/v1/security/protection-policies/owned-policy" and method == "GET":
+            value.payload["current_revision"] += 1
+        if self.expired and fault == "projection_changed" and path.startswith("/api/v1/security/protection-enrollments/"):
+            value.payload["owner_progress"][0]["revision"] = "00000000000000000003"
+        if self.expired and fault == "choice_cleared" and path == "/api/v1/service/query/701" and method == "GET":
+            value.payload["data_config"]["protection_choices"] = []
+        return value
+
+
+class ServiceRoleNaturalExpiryTest(unittest.TestCase):
+    def run_case(self, backend):
+        class Clock(ONLINE.datetime):
+            @classmethod
+            def now(cls, tz=None): return backend.now
+        source = {"id": 1, "full_name": "fixture.bank_card_accounts", "item_type": "table", "fingerprint": "sha256:bank-fixture"}
+        environment = dict(zip(ONLINE.SERVICE_ROLE_ENVIRONMENT,
+            ("unused-old-reader", "external-online-security-role-reader", "private-password", "42", "controller")))
+        factory = lambda base, token, timeout: MembershipClient(backend, token)
+        with (patch.object(ONLINE, "GatewayClient", side_effect=factory), patch.object(ONLINE, "datetime", Clock),
+              patch.object(ONLINE, "wait_protection_deadline", side_effect=backend.wait),
+              patch.object(ONLINE, "find_item", return_value=source), patch.object(ONLINE, "list_pages", return_value=[])):
+            return ONLINE.exercise_service_role_membership_expiry(MembershipClient(backend, "governor"), 23, "fixture",
+                {"enrollment_id": "enrollment", "assessment_id": "assessment"}, {"principal_id": "9", "tenant_id": "2"},
+                "run-42", time.monotonic() + 300, environment)
+
+    def test_same_session_survives_role_deadline_but_old_cursor_and_new_query_refuse(self):
+        backend = RoleExpiryBackend()
+        report = self.run_case(backend)
+        self.assertEqual(report["identity_before"], report["identity_after"])
+        self.assertTrue(report["same_access_session_valid"] and report["natural_expiry_verified"])
+        self.assertEqual(report["assignment_after"]["status"], "active")
+        self.assertEqual(report["assignment_after"]["effective_state"], "expired")
+        self.assertEqual(report["assignment_before"]["valid_until"], report["assignment_after"]["valid_until"])
+        self.assertEqual(report["timed_assignment_cleanup"], "expired")
+        self.assertEqual(report["explicit_default_recovery"]["total_rows"], 5)
+        for refusal in report["same_session_refusals"].values():
+            self.assertEqual(refusal, {"http_status": 403, "error_code": "query_protection_roles_unavailable", "result_absent": True})
+        self.assertFalse(any(str(path).endswith("/revoke") for _, _, path, _ in backend.events))
+        wait_index = next(i for i, item in enumerate(backend.events) if item[0] == "wait")
+        self.assertEqual(sum(path == "/api/v1/system/login" for _, _, path, _ in backend.events), 2)
+        self.assertFalse(any(path == "/api/v1/system/login" for _, _, path, _ in backend.events[wait_index+1:]))
+        queries = [(token, body["page"].get("cursor")) for token, _, path, body in backend.events if str(path).startswith("/api/query/")]
+        self.assertEqual([cursor for _, cursor in queries[2:6]], [backend.cursor] * 4)
+        self.assertEqual({token for token, _ in queries}, {"reader-active"})
+        self.assertTrue(backend.deleted)
+        for secret in (backend.cursor, "private-password", "reader-active", "reader-initial"):
+            self.assertNotIn('"'+secret+'"', json.dumps(report))
+
+    def test_session_failure_revocation_permission_or_protection_change_cannot_mimic_expiry(self):
+        for fault in ("session401", "version_changed", "permission_lost", "role_survived", "premature_wait", "revoked_instead",
+                      "extended_deadline", "short_session", "policy_changed", "projection_changed", "choice_cleared",
+                      "denial409", "wrong_code", "denial_data"):
+            backend = RoleExpiryBackend(fault)
+            with self.subTest(fault=fault), self.assertRaises(ONLINE.SuiteError):
+                self.run_case(backend)
+            self.assertEqual(backend.policy["state"], "revoked")
+            if backend.service: self.assertTrue(backend.deleted)
+
+    def test_interruption_revokes_live_timed_assignment_without_touching_previous_revocation(self):
+        backend = RoleExpiryBackend("interrupt_wait")
+        with self.assertRaises(KeyboardInterrupt): self.run_case(backend)
+        self.assertEqual(backend.timed["status"], "revoked")
+        self.assertTrue(backend.deleted)
+        revocations = [path for _, _, path, _ in backend.events if str(path).endswith("/revoke")]
+        self.assertEqual(revocations, ["/api/v1/system/tenant/role_assignments/43/revoke"])
+
+    def test_cleanup_crosses_deadline_only_accepts_typed_expired_conflict_and_never_retries(self):
+        identity = {"principal_id": "7", "membership_id": "8"}
+        expiry = ONLINE.datetime.now(ONLINE.timezone.utc)
+        payload = dict(RoleExpiryBackend().previous, id="43", status="active", valid_until=expiry.isoformat(), effective_state="effective")
+        for code in ("role_assignment_expired", "unrelated_conflict"):
+            client = Mock()
+            client.request.side_effect = [ONLINE.SUPPORT.Response(200, payload), ONLINE.SUPPORT.Response(409, {"error_code": code}),
+                                         ONLINE.SUPPORT.Response(200, dict(payload, effective_state="expired"))]
+            if code == "role_assignment_expired":
+                self.assertEqual(ONLINE.cleanup_timed_service_assignment(client, identity, "43", "20", expiry), "expired")
+            else:
+                with self.assertRaises(ONLINE.SuiteError): ONLINE.cleanup_timed_service_assignment(client, identity, "43", "20", expiry)
+            self.assertEqual(sum(call.args[0] == "POST" for call in client.request.call_args_list), 1)
+
+
 class ResourceValiditySnapshotTest(unittest.TestCase):
     def snapshot(self, until=None, expired=False):
         return {"validity_mode": "permanent" if until is None else "until", "expires_at": until,
