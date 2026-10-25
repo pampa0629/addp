@@ -195,14 +195,26 @@ class GraphProtectionOnlineTest(unittest.TestCase):
 
     def test_endpoint_case_prepares_only_owned_control_and_cleans_after_failure(self):
         for fail in (False,True):
-            calls=[]
+            calls=[]; indexed=False; deleted=False
             class Client:
+                def __init__(self,role): self.role=role
                 def request(self,method,path,status,body=None):
-                    calls.append((method,path,body))
+                    nonlocal indexed,deleted
+                    calls.append((self.role,method,path,body))
+                    if path=='/api/v1/graph/kg/2/search?q=Fixture&page_size=100':
+                        self_outer.assertEqual(self.role,'reader');self_outer.assertFalse(deleted)
+                        indexed=True
+                        return SUITE.SUPPORT.Response(200,dict(total=3,data=[dict(properties=dict(id='p'+str(i),name='Fixture '+name)) for i,name in enumerate(('one','two','three'),1)]))
+                    if method=='DELETE' and path=='/api/v1/graph/graphs/2': deleted=True
                     return SUITE.SUPPORT.Response(status[0],dict(id=2,is_public=False) if method=='POST' else {})
-            report={}
-            with self.subTest(failure=fail),patch.object(SUITE,'identity',side_effect=[dict(principal_id='4'),dict(principal_id='5')]),patch.object(SUITE,'create_ontology',return_value=9),patch.object(SUITE,'create_schema'),patch.object(SUITE,'run_dense',side_effect=SUITE.SuiteError('geometry failed') if fail else None) as dense,patch.object(SUITE,'run_review') as review,patch.object(SUITE,'run_develop_browser') as develop:
-                preparer=Client();reader=Client()
+            def dense_phase(*args,**kwargs):
+                # The independent native fixture tests reject a missing Neo4j index.
+                if not indexed: raise SUITE.SuiteError('missing previous control index')
+                self.assertTrue(deleted)
+                if fail: raise SUITE.SuiteError('geometry failed')
+            self_outer=self;report={}
+            with self.subTest(failure=fail),patch.object(SUITE,'identity',side_effect=[dict(principal_id='4'),dict(principal_id='5')]),patch.object(SUITE,'create_ontology',return_value=9),patch.object(SUITE,'create_schema'),patch.object(SUITE,'run_dense',side_effect=dense_phase) as dense,patch.object(SUITE,'run_review') as review,patch.object(SUITE,'run_develop_browser') as develop:
+                preparer=Client('preparer');reader=Client('reader')
                 if fail:
                     with self.assertRaisesRegex(SUITE.SuiteError,'geometry failed'):SUITE.run_endpoint_case(preparer,reader,13,2,report)
                 else:SUITE.run_endpoint_case(preparer,reader,13,2,report)
@@ -210,7 +222,23 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 self.assertEqual(dense.call_args.args[-1],2)
                 review.assert_not_called();develop.assert_not_called()
                 self.assertEqual(report['cleanup'],dict(errors=[],domain_resources_remaining=0))
-                self.assertEqual([path for method,path,_ in calls if method=='DELETE'],['/api/v1/graph/graphs/2','/api/v1/graph/ontologies/9'])
+                self.assertEqual([path for _,method,path,_ in calls if method=='DELETE'],['/api/v1/graph/graphs/2','/api/v1/graph/ontologies/9'])
+
+    def test_endpoint_control_search_failure_cleans_and_stops_before_native_reset(self):
+        valid=[dict(properties=dict(id='p'+str(i),name='Fixture '+name)) for i,name in enumerate(('one','two','three'),1)]
+        for payload in (dict(total=2,data=valid),dict(total=3,data=valid[:2]),dict(total=3,data=[valid[0],valid[1],valid[1]]),dict(total=3,data=[dict(properties=dict(id='foreign',name='Fixture one')), *valid[1:]])):
+            calls=[]
+            class Client:
+                def request(self,method,path,status,body=None):
+                    calls.append((method,path))
+                    if '/search?' in path:return SUITE.SUPPORT.Response(200,payload)
+                    return SUITE.SUPPORT.Response(status[0],dict(id=2,is_public=False) if method=='POST' else {})
+            report={}
+            with self.subTest(payload=payload),patch.object(SUITE,'identity',side_effect=[dict(principal_id='4'),dict(principal_id='5')]),patch.object(SUITE,'create_ontology',return_value=9),patch.object(SUITE,'create_schema'),patch.object(SUITE,'run_dense') as dense:
+                with self.assertRaisesRegex(SUITE.SuiteError,'control search differs'):SUITE.run_endpoint_case(Client(),Client(),13,2,report)
+                dense.assert_not_called()
+                self.assertEqual(report['cleanup'],dict(errors=[],domain_resources_remaining=0))
+                self.assertEqual([path for method,path in calls if method=='DELETE'],['/api/v1/graph/graphs/2','/api/v1/graph/ontologies/9'])
 
     def test_graph_case_dispatch_is_bounded_and_keeps_full_as_the_default(self):
         self.assertEqual(SUITE.graph_case({}),'full')

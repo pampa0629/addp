@@ -1006,6 +1006,12 @@ def run_endpoint_case(preparer, reader, engine_id, tenant_id, report):
             "engine_id": target["engine_id"], "index_management": "managed", "catalog_path": target["catalog_path"]}).payload
         control_id = SUPPORT.positive_int(control.get("id"), "endpoint control graph")
         require(control.get("is_public") is False, "Endpoint control must remain private")
+        # Managed indexes are created by the first non-empty search, not by graph creation.
+        # The native reset must still find exactly this deleted control's owned index.
+        found = reader.request("GET", f"/api/v1/graph/kg/{control_id}/search?q=Fixture&page_size=100", (200,)).payload
+        require(type(found.get("total")) is int and found["total"] == 3 and len(found.get("data", [])) == 3 and
+                {(item.get("properties", {}).get("id"), item.get("properties", {}).get("name")) for item in found["data"]} ==
+                {("p1", "Fixture one"), ("p2", "Fixture two"), ("p3", "Fixture three")}, "Endpoint managed control search differs")
         previous = control_id
         preparer.request("DELETE", f"/api/v1/graph/graphs/{control_id}", (200,))
         preparer.request("GET", f"/api/v1/graph/graphs/{control_id}", (404,))
