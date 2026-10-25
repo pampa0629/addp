@@ -1,4 +1,9 @@
-export function referenceCandidateLabel(option, unavailableLabel) {
+export function referenceCandidateLabel(option, unavailableLabel, { compact = false } = {}) {
   const name = option?.name || unavailableLabel
-  return option?.code ? `${name} · ${option.code}` : name
+  if (!option?.code) return name
+  const characters = Array.from(option.code)
+  const code = compact && characters.length > 24
+    ? `${characters.slice(0, 12).join('')}…${characters.slice(-8).join('')}`
+    : option.code
+  return `${name} · ${code}`
 }

@@ -112,8 +112,14 @@
             :placeholder="t('catalog.edit.glossaryPlaceholder')"
             @visible-change="visible => visible && searchCandidates('glossary', '')"
           >
-            <template #label="{ value }">{{ candidateLabel(candidateState.glossary.options.find(option => option.id === value)) }}</template>
-            <el-option v-for="option in candidateState.glossary.options" :key="option.id" :label="candidateLabel(option)" :value="option.id" />
+            <template #label="{ value }">
+              <span :title="candidateLabel(candidateState.glossary.options.find(option => option.id === value))">
+                {{ candidateLabel(candidateState.glossary.options.find(option => option.id === value), true) }}
+              </span>
+            </template>
+            <el-option v-for="option in candidateState.glossary.options" :key="option.id" :label="candidateLabel(option)" :value="option.id">
+              <span :title="candidateLabel(option)">{{ candidateLabel(option, true) }}</span>
+            </el-option>
           </el-select>
           <el-button type="danger" text @click="form.glossaryIDs.splice(index, 1)">{{ t('catalog.edit.remove') }}</el-button>
         </div>
@@ -144,11 +150,17 @@
             :placeholder="responsibilitySubjectType(item.role) === 'department' ? t('catalog.edit.departmentPlaceholder') : t('catalog.edit.userPlaceholder')"
             @visible-change="visible => visible && searchCandidates(responsibilitySubjectType(item.role), '')"
           >
-            <template #label="{ value }">{{ candidateLabel(candidateState[responsibilitySubjectType(item.role)].options.find(option => option.id === value)) }}</template>
+            <template #label="{ value }">
+              <span :title="candidateLabel(candidateState[responsibilitySubjectType(item.role)].options.find(option => option.id === value))">
+                {{ candidateLabel(candidateState[responsibilitySubjectType(item.role)].options.find(option => option.id === value), true) }}
+              </span>
+            </template>
             <el-option
               v-for="option in candidateState[responsibilitySubjectType(item.role)].options"
               :key="option.id" :label="candidateLabel(option)" :value="option.id"
-            />
+            >
+              <span :title="candidateLabel(option)">{{ candidateLabel(option, true) }}</span>
+            </el-option>
           </el-select>
           <el-button type="danger" text @click="form.responsibilities.splice(index, 1)">{{ t('catalog.edit.remove') }}</el-button>
         </div>
@@ -300,8 +312,8 @@ function selectedCandidateIDs(type) {
     .map(item => String(item.subjectId || '')).filter(Boolean)
 }
 
-function candidateLabel(option) {
-  return referenceCandidateLabel(option, t('catalog.edit.referenceUnavailable'))
+function candidateLabel(option, compact = false) {
+  return referenceCandidateLabel(option, t('catalog.edit.referenceUnavailable'), { compact })
 }
 
 function addDomain() {

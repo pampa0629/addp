@@ -50,8 +50,14 @@
         </el-form-item>
         <el-form-item :label="t('catalog.mapping.element')" required>
           <el-select v-model="form.elementId" filterable remote reserve-keyword :remote-method="searchElements" :loading="elementsLoading" :placeholder="t('catalog.mapping.elementPlaceholder')" @visible-change="visible => visible && searchElements('')" @change="() => loadRevisions()">
-            <template #label="{ value }">{{ elementOptionLabel(elements.find(option => String(option.id) === value)) }}</template>
-            <el-option v-for="option in elements" :key="option.id" :value="String(option.id)" :label="elementOptionLabel(option)" />
+            <template #label="{ value }">
+              <span :title="elementOptionLabel(elements.find(option => String(option.id) === value))">
+                {{ elementOptionLabel(elements.find(option => String(option.id) === value), true) }}
+              </span>
+            </template>
+            <el-option v-for="option in elements" :key="option.id" :value="String(option.id)" :label="elementOptionLabel(option)">
+              <span :title="elementOptionLabel(option)">{{ elementOptionLabel(option, true) }}</span>
+            </el-option>
           </el-select>
         </el-form-item>
         <el-form-item :label="t('catalog.mapping.revision')" required>
@@ -124,7 +130,7 @@ function statusType(status) {
 
 const elementLabel = row => standardMappingElementLabel(row, t)
 const revisionLabel = row => standardMappingRevisionLabel(row, t)
-const elementOptionLabel = option => referenceCandidateLabel(option, t('catalog.mapping.elementUnavailable'))
+const elementOptionLabel = (option, compact = false) => referenceCandidateLabel(option, t('catalog.mapping.elementUnavailable'), { compact })
 
 async function openCandidate(row = null) {
   invalidateCandidateQueries()
