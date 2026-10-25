@@ -1,9 +1,6 @@
 package format
 
 import (
-	"encoding/json"
-	"fmt"
-	"io"
 	"net/url"
 	"strings"
 
@@ -14,25 +11,27 @@ const MaxGLTFManifestBytes int64 = 16 * 1024 * 1024
 
 // GLTFDocument is the glTF JSON manifest subset needed by ADDP metadata.
 type GLTFDocument struct {
-	Asset              GLTFAsset      `json:"asset"`
-	Scene              *int           `json:"scene"`
-	Scenes             []any          `json:"scenes"`
-	Nodes              []any          `json:"nodes"`
-	Meshes             []GLTFMesh     `json:"meshes"`
-	Materials          []any          `json:"materials"`
-	Textures           []any          `json:"textures"`
-	Images             []GLTFImage    `json:"images"`
-	Buffers            []GLTFBuffer   `json:"buffers"`
-	Animations         []any          `json:"animations"`
-	Accessors          []GLTFAccessor `json:"accessors"`
-	ExtensionsUsed     []string       `json:"extensionsUsed"`
-	ExtensionsRequired []string       `json:"extensionsRequired"`
+	Asset              GLTFAsset        `json:"asset"`
+	Scene              *int             `json:"scene"`
+	Scenes             []any            `json:"scenes"`
+	Nodes              []any            `json:"nodes"`
+	Meshes             []GLTFMesh       `json:"meshes"`
+	Materials          []any            `json:"materials"`
+	Textures           []any            `json:"textures"`
+	Images             []GLTFImage      `json:"images"`
+	Buffers            []GLTFBuffer     `json:"buffers"`
+	BufferViews        []GLTFBufferView `json:"bufferViews"`
+	Animations         []any            `json:"animations"`
+	Accessors          []GLTFAccessor   `json:"accessors"`
+	ExtensionsUsed     []string         `json:"extensionsUsed"`
+	ExtensionsRequired []string         `json:"extensionsRequired"`
 }
 
 type GLTFAsset struct {
-	Version   string `json:"version"`
-	Generator string `json:"generator"`
-	Copyright string `json:"copyright"`
+	Version    string `json:"version"`
+	MinVersion string `json:"minVersion"`
+	Generator  string `json:"generator"`
+	Copyright  string `json:"copyright"`
 }
 
 type GLTFMesh struct {
@@ -49,6 +48,13 @@ type GLTFBuffer struct {
 	ByteLength int64  `json:"byteLength"`
 }
 
+type GLTFBufferView struct {
+	Buffer     int   `json:"buffer"`
+	ByteOffset int64 `json:"byteOffset"`
+	ByteLength int64 `json:"byteLength"`
+	ByteStride int64 `json:"byteStride"`
+}
+
 type GLTFImage struct {
 	URI        string `json:"uri"`
 	BufferView *int   `json:"bufferView"`
@@ -63,34 +69,12 @@ type GLTFAccessor struct {
 }
 
 type GLTFResourceRef struct {
-	Role string
-	URI  string
-}
-
-func DecodeGLTFManifest(input io.Reader, maxBytes int64) (*GLTFDocument, error) {
-	if maxBytes <= 0 {
-		maxBytes = MaxGLTFManifestBytes
-	}
-	limited := &io.LimitedReader{R: input, N: maxBytes + 1}
-	data, err := io.ReadAll(limited)
-	if err != nil {
-		return nil, fmt.Errorf("read glTF manifest: %w", err)
-	}
-	if int64(len(data)) > maxBytes {
-		return nil, fmt.Errorf("glTF manifest too large: %d", len(data))
-	}
-	var doc GLTFDocument
-	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("parse glTF manifest: %w", err)
-	}
-	version := strings.TrimSpace(doc.Asset.Version)
-	if version == "" {
-		return nil, fmt.Errorf("glTF asset.version is required")
-	}
-	if !strings.HasPrefix(version, "2.") {
-		return nil, fmt.Errorf("unsupported glTF asset.version: %s", version)
-	}
-	return &doc, nil
+	Role       string
+	Index      int
+	URI        string
+	Path       string
+	ByteLength int64
+	MimeType   string
 }
 
 func BuildGLTFModel3DInfo(doc *GLTFDocument) *datatype.Model3DInfo {
@@ -143,7 +127,7 @@ func BuildGLTFFormatInfo(doc *GLTFDocument) map[string]interface{} {
 	info["buffer_count"] = len(doc.Buffers)
 	info["image_count"] = len(doc.Images)
 	info["accessor_count"] = len(doc.Accessors)
-	info["external_resource_count"] = len(LocalGLTFResourceRefs(doc))
+	info["external_resource_count"] = gltfDeclaredLocalResourceCount(doc)
 	return info
 }
 
@@ -187,42 +171,33 @@ func GLTFBounds(doc *GLTFDocument) *datatype.Bounds3D {
 	return bounds
 }
 
-func LocalGLTFResourceRefs(doc *GLTFDocument) []GLTFResourceRef {
+// gltfDeclaredLocalResourceCount is metadata only, including for GLB. It never
+// produces paths or proves resource completeness; consumers use ParseGLTFComposition.
+func gltfDeclaredLocalResourceCount(doc *GLTFDocument) int {
 	if doc == nil {
-		return nil
+		return 0
 	}
-	refs := []GLTFResourceRef{}
+	count := 0
 	for _, buffer := range doc.Buffers {
-		if uri := NormalizeLocalGLTFURI(buffer.URI); uri != "" {
-			refs = append(refs, GLTFResourceRef{Role: "buffer", URI: uri})
+		if gltfDeclaredLocalURI(buffer.URI) {
+			count++
 		}
 	}
 	for _, image := range doc.Images {
-		if uri := NormalizeLocalGLTFURI(image.URI); uri != "" {
-			refs = append(refs, GLTFResourceRef{Role: "image", URI: uri})
+		if gltfDeclaredLocalURI(image.URI) {
+			count++
 		}
 	}
-	return refs
+	return count
 }
 
-func NormalizeLocalGLTFURI(rawURI string) string {
+func gltfDeclaredLocalURI(rawURI string) bool {
 	rawURI = strings.TrimSpace(rawURI)
 	if rawURI == "" || strings.HasPrefix(strings.ToLower(rawURI), "data:") {
-		return ""
+		return false
 	}
 	parsed, err := url.Parse(rawURI)
-	if err != nil || parsed.IsAbs() || parsed.Host != "" {
-		return ""
-	}
-	decoded, err := url.PathUnescape(parsed.Path)
-	if err != nil {
-		return ""
-	}
-	decoded = strings.TrimSpace(decoded)
-	if decoded == "" || strings.HasPrefix(decoded, "/") {
-		return ""
-	}
-	return decoded
+	return err == nil && !parsed.IsAbs() && parsed.Host == "" && strings.TrimSpace(parsed.Path) != "" && !strings.HasPrefix(parsed.Path, "/")
 }
 
 func validGLTFAccessorIndex(accessors []GLTFAccessor, index int) bool {

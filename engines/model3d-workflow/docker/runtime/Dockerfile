@@ -53,7 +53,7 @@ RUN npm ci --omit=dev
 
 COPY engines/model3d-workflow/blender_setup.py engines/model3d-workflow/blender-assets.json engines/model3d-workflow/native_setup.py /app/
 RUN python blender_setup.py install-addon /opt/addp/model3d-workflow/max-importer
-COPY engines/model3d-workflow/api_server.py engines/model3d-workflow/operators.py engines/model3d-workflow/glb_validation.py engines/model3d-workflow/exchange_model.py engines/model3d-workflow/obj_model.py engines/model3d-workflow/skp_converter.py engines/model3d-workflow/max_converter.py engines/model3d-workflow/create_ksplat.mjs /app/
+COPY engines/model3d-workflow/api_server.py engines/model3d-workflow/operators.py engines/model3d-workflow/glb_validation.py engines/model3d-workflow/gltf_model.py engines/model3d-workflow/exchange_model.py engines/model3d-workflow/obj_model.py engines/model3d-workflow/skp_converter.py engines/model3d-workflow/max_converter.py engines/model3d-workflow/create_ksplat.mjs /app/
 COPY engines/model3d-workflow/tests/fixtures/max/ /app/max-fixture/
 COPY --from=converter /opt/addp/model3d-workflow/bin/ /opt/addp/model3d-workflow/bin/
 

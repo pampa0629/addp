@@ -3,6 +3,11 @@ package gltf
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"image"
+	"image/color"
+	"image/png"
+	"strings"
 	"testing"
 
 	"github.com/addp/common/datatype"
@@ -30,16 +35,21 @@ func TestDescribeModel3DReadsGLTFManifest(t *testing.T) {
 		"nodes":[{"mesh":0}],
 		"meshes":[{"primitives":[{"attributes":{"POSITION":0},"indices":1}]}],
 		"materials":[{}],
-		"textures":[{},{}],
-		"images":[{"uri":"textures/baseColor.png"},{"uri":"data:image/png;base64,AAAA"}],
+		"textures":[{"source":0},{"source":1}],
+		"images":[{"uri":"textures/baseColor.png"},{"uri":"data:image/png;base64,INLINE_PNG"}],
 		"buffers":[{"uri":"buffers/geometry.bin","byteLength":256}],
-		"animations":[{}],
 		"accessors":[
-			{"count":8,"type":"VEC3","min":[0,1,2],"max":[3,4,5]},
-			{"count":12,"type":"SCALAR"}
-		],
-		"extensionsUsed":["KHR_texture_basisu"]
+			{"count":8,"componentType":5126,"type":"VEC3","min":[0,1,2],"max":[3,4,5]},
+			{"count":12,"componentType":5123,"type":"SCALAR"}
+		]
 	}`)
+	var picture bytes.Buffer
+	pixel := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	pixel.Set(0, 0, color.RGBA{255, 0, 0, 255})
+	if err := png.Encode(&picture, pixel); err != nil {
+		t.Fatal(err)
+	}
+	content = []byte(strings.ReplaceAll(string(content), "INLINE_PNG", base64.StdEncoding.EncodeToString(picture.Bytes())))
 	result, err := NewPlugin().DescribeModel3D(context.Background(), bytes.NewReader(content), nil)
 	if err != nil {
 		t.Fatalf("DescribeModel3D() error = %v", err)

@@ -176,6 +176,13 @@ def test_mesh_converters_publish_glb(tmp_path, operator_name, suffix, source_for
     source_dir.mkdir()
     source = source_dir / f"model{suffix}"
     source.write_text("v 0 0 0\n" if source_format == "obj" else "mesh", encoding="utf-8")
+    if source_format == "gltf":
+        import json
+        from .glb_fixture import triangle_doc
+        doc, binary = triangle_doc()
+        doc["buffers"][0]["uri"] = "geometry.mesh"
+        source.write_text(json.dumps(doc), encoding="utf-8")
+        (source_dir / "geometry.mesh").write_bytes(binary)
     target = tmp_path / "out" / f"{source_format}.glb"
 
     def fake_runner(command, timeout_seconds):

@@ -6,6 +6,10 @@
 
 - `osgb_to_glb`：单个 `.osgb` 文件转换为持久化 GLB。
 - `gltf_to_glb`：`.gltf` manifest 声明的多资源模型打包为持久化 GLB。
+
+glTF 首期只接受静态 glTF 2.0 core：主清单至多 16 MiB，单次 URI 解码，精确本地 buffer（不限定后缀）、PNG/JPEG、合法 data URI 与 bufferView 图片。跨语言正反例位于 `common/format/plugins/gltf/testdata/composition-cases.json`，与 Common 的唯一 `ParseGLTFComposition` 入口一致；动画、蒙皮、morph、非空未支持扩展、越界/歧义 URI、缺失/短 buffer、非法图片及非有限浮点数据在调用转换器前拒绝。组成证明与实际内容验证不同，外部图片字节由 Runtime 实际解码。
+
+固定 Assimp 5.2.5 对百分号外部 URI 和非 base64 data URI 的处理不完整。Runtime 只使用已核验的同一份 buffer/图片缓冲，在既有私有临时目录中生成全部资源为标准 base64 data URI 的转换副本，再调用唯一 Assimp 路线；不重新枚举源目录、不额外重开源、不修改原始 manifest、依赖文件、名称或原文件 ZIP。合法 buffer 尾随数据不交给要求长度相等的 Assimp，副本只使用声明的 byteLength 字节。转换副本从不发布，随现有临时目录销毁；输出仍通过统一 GLB 验证后才发布。根 `make test-model3d-workflow MODEL3D_WORKFLOW_PYTHON=engines/model3d-workflow/venv/bin/python` 验证 profile、源失败保留旧产物及私有适配；显式绑定现有 `MODEL3D_MESH_CONVERTER_BIN` 时，同一入口另跑真实转换与两三角/UV/红蓝贴图字节 oracle。没有绑定时的原生用例跳过不得计为原生通过；三引擎授权、ZIP、缓存及删除/清理由消费 Owner 的 Hosted 独立验收。
 - `fbx_to_glb`：FBX 单体网格模型转换为持久化 GLB。
 - `obj_to_glb`：OBJ 单体网格模型转换为持久化 GLB。
 - `stl_to_glb`：STL 单体网格模型转换为持久化 GLB。

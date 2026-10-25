@@ -15,6 +15,7 @@ from typing import Any, Callable
 from urllib.parse import urlparse
 
 from exchange_model import validate_source
+from gltf_model import validate_source as validate_gltf_source, has_used_textures, prepare_converter_source
 from glb_validation import read_glb as _read_glb, validate_glb
 from max_converter import conversion_options
 
@@ -739,8 +740,16 @@ def _mesh_model_to_glb(
     target_file = temp_dir / file_name
 
     try:
-        source_path = str(_stage_model_source(access_plan, temp_dir))
+        source_path = str(_stage_model_source(access_plan, temp_dir, reject_symlinks=source_label.lower() == "gltf"))
         source_texture_refs = []
+        if source_label.lower() == "gltf":
+            try:
+                gltf_source = validate_gltf_source(Path(source_path))
+                if has_used_textures(gltf_source):
+                    source_texture_refs = ["gltf core material"]
+                source_path = str(prepare_converter_source(gltf_source, temp_dir))
+            except (ValueError, OSError) as error:
+                raise ConverterError("UNSUPPORTED_MODEL_SOURCE", "Source model is outside supported conversion scope", details=str(error)) from error
         if source_label.lower() in {"dae", "3ds", "obj"}:
             try:
                 source_texture_refs = validate_source(Path(source_path), source_label.lower())
@@ -770,7 +779,7 @@ def _mesh_model_to_glb(
                 "material" in primitive and doc["materials"][primitive["material"]].get("pbrMetallicRoughness", {}).get("baseColorTexture")
                 for mesh in doc["meshes"] for primitive in mesh["primitives"]
             )
-            if not doc.get("images") or not uses_color_texture:
+            if not doc.get("images") or (source_label.lower() != "gltf" and not uses_color_texture):
                 raise ConverterError("INVALID_GLB", "Converter dropped declared model textures", http_status=500)
         postprocess = {}
         if source_label.lower() == "obj":
@@ -960,7 +969,7 @@ def osgb_scene_to_3dtiles(
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
-def _stage_model_source(access_plan: dict[str, Any], work_dir: Path) -> Path:
+def _stage_model_source(access_plan: dict[str, Any], work_dir: Path, *, reject_symlinks: bool = False) -> Path:
     source = _required_object(access_plan, "source")
     if source.get("kind") == "file":
         return stage_source_file(access_plan, work_dir)
@@ -968,6 +977,16 @@ def _stage_model_source(access_plan: dict[str, Any], work_dir: Path) -> Path:
     entrypoint = source.get("entrypoint")
     if not isinstance(entrypoint, str) or not entrypoint:
         raise ConverterError("INVALID_PARAMS", "directory source requires access_plan.source.entrypoint")
+    if reject_symlinks:
+        if Path(entrypoint).is_absolute() or any(part in ('', '.', '..') for part in entrypoint.split('/')) or '\\' in entrypoint or '\x00' in entrypoint:
+            raise ConverterError("SOURCE_OUTSIDE_INPUT", "Model source entrypoint is not a safe relative path")
+        member = root
+        if root.is_symlink():
+            raise ConverterError("UNSUPPORTED_MODEL_SOURCE", "Source model cannot be a symlink")
+        for part in Path(entrypoint).parts:
+            member = member / part
+            if member.is_symlink():
+                raise ConverterError("UNSUPPORTED_MODEL_SOURCE", "Source model cannot contain symlink components")
     path = (root / entrypoint).resolve()
     if Path(entrypoint).is_absolute() or not path.is_relative_to(root.resolve()):
         raise ConverterError("SOURCE_OUTSIDE_INPUT", "model source entrypoint escapes the input directory")

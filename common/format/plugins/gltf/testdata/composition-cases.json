@@ -1,0 +1,493 @@
+[
+  {
+    "name": "empty-external-set",
+    "raw": "{\"asset\":{\"version\":\"2.0\"}}",
+    "valid": true,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "literal-percent-and-leading-space",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"buffers/%20geometry%2520.mesh\",\"byteLength\":4}]}",
+    "valid": true,
+    "paths": [
+      "buffers/ geometry%20.mesh"
+    ],
+    "resources": [
+      {
+        "role": "buffer",
+        "index": 0,
+        "uri": "buffers/%20geometry%2520.mesh",
+        "path": "buffers/ geometry%20.mesh",
+        "byteLength": 4,
+        "mimeType": ""
+      }
+    ]
+  },
+  {
+    "name": "unicode-space-plus-percent",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"images\":[{\"uri\":\"textures/汉字%20%2B%25.png\"}]}",
+    "valid": true,
+    "paths": [
+      "textures/汉字 +%.png"
+    ],
+    "resources": [
+      {
+        "role": "image",
+        "index": 0,
+        "uri": "textures/汉字%20%2B%25.png",
+        "path": "textures/汉字 +%.png",
+        "byteLength": 0,
+        "mimeType": ""
+      }
+    ]
+  },
+  {
+    "name": "filename-boundary-space",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"images\":[{\"uri\":\"textures/%20name.png%20\"}]}",
+    "valid": true,
+    "paths": [
+      "textures/ name.png "
+    ],
+    "resources": [
+      {
+        "role": "image",
+        "index": 0,
+        "uri": "textures/%20name.png%20",
+        "path": "textures/ name.png ",
+        "byteLength": 0,
+        "mimeType": ""
+      }
+    ]
+  },
+  {
+    "name": "literal-encoded-dots-not-traversal",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"%252e%252e/part.mesh\",\"byteLength\":4}]}",
+    "valid": true,
+    "paths": [
+      "%2e%2e/part.mesh"
+    ],
+    "resources": [
+      {
+        "role": "buffer",
+        "index": 0,
+        "uri": "%252e%252e/part.mesh",
+        "path": "%2e%2e/part.mesh",
+        "byteLength": 4,
+        "mimeType": ""
+      }
+    ]
+  },
+  {
+    "name": "duplicate-buffer-constraints",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"geometry.mesh\",\"byteLength\":4},{\"uri\":\"geometry.mesh\",\"byteLength\":8}]}",
+    "valid": true,
+    "paths": [
+      "geometry.mesh"
+    ],
+    "resources": [
+      {
+        "role": "buffer",
+        "index": 0,
+        "uri": "geometry.mesh",
+        "path": "geometry.mesh",
+        "byteLength": 4,
+        "mimeType": ""
+      },
+      {
+        "role": "buffer",
+        "index": 1,
+        "uri": "geometry.mesh",
+        "path": "geometry.mesh",
+        "byteLength": 8,
+        "mimeType": ""
+      }
+    ]
+  },
+  {
+    "name": "base64-buffer",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"data:application/gltf-buffer;base64,AAAAAA==\",\"byteLength\":4}]}",
+    "valid": true,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "percent-buffer",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"data:application/octet-stream,%00%01%2B%FF\",\"byteLength\":4}]}",
+    "valid": true,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "inline-png",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"images\":[{\"uri\":\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==\"}]}",
+    "valid": true,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "bufferView-inline-png",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"data:application/octet-stream;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==\",\"byteLength\":70}],\"bufferViews\":[{\"buffer\":0,\"byteLength\":70}],\"images\":[{\"bufferView\":0,\"mimeType\":\"image/png\"}]}",
+    "valid": true,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "integer-exponent",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"x\", \"byteLength\":4.0e0}]}",
+    "valid": true,
+    "paths": [
+      "x"
+    ],
+    "resources": [
+      {
+        "role": "buffer",
+        "index": 0,
+        "uri": "x",
+        "path": "x",
+        "byteLength": 4,
+        "mimeType": ""
+      }
+    ]
+  },
+  {
+    "name": "sparse-structure",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"sparse.mesh\",\"byteLength\":40}],\"bufferViews\":[{\"buffer\":0,\"byteLength\":3},{\"buffer\":0,\"byteOffset\":4,\"byteLength\":36}],\"accessors\":[{\"componentType\":5126,\"type\":\"VEC3\",\"count\":3,\"sparse\":{\"count\":3,\"indices\":{\"bufferView\":0,\"componentType\":5121},\"values\":{\"bufferView\":1}}}]}",
+    "valid": true,
+    "paths": [
+      "sparse.mesh"
+    ],
+    "resources": [
+      {
+        "role": "buffer",
+        "index": 0,
+        "uri": "sparse.mesh",
+        "path": "sparse.mesh",
+        "byteLength": 40,
+        "mimeType": ""
+      }
+    ]
+  },
+  {
+    "name": "uri-remote",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"https://example.com/mesh\",\"byteLength\":4}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "uri-absolute",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"/mesh\",\"byteLength\":4}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "uri-parent",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"../mesh\",\"byteLength\":4}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "uri-encoded-parent",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"%2e%2e/mesh\",\"byteLength\":4}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "uri-encoded-separator",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"a%2fmesh\",\"byteLength\":4}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "uri-backslash",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"a\\\\mesh\",\"byteLength\":4}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "uri-bad-percent",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"a%XX\",\"byteLength\":4}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "uri-query",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"mesh?x=1\",\"byteLength\":4}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "uri-empty-query",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"mesh?\",\"byteLength\":4}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "uri-fragment",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"mesh#x\",\"byteLength\":4}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "uri-empty-segment",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"a//mesh\",\"byteLength\":4}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "uri-dot-segment",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"a/./mesh\",\"byteLength\":4}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "uri-raw-space",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\" a.mesh\",\"byteLength\":4}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "uri-control",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"a%00.mesh\",\"byteLength\":4}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "uri-invalid-utf8",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"a%FF.mesh\",\"byteLength\":4}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "version",
+    "raw": "{\"asset\":{\"version\":\"2.1\"}}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "minVersion",
+    "raw": "{\"asset\":{\"version\":\"2.0\",\"minVersion\":\"2.1\"}}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "animation",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"animations\":[{}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "skins",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"skins\":[{}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "morph",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"meshes\":[{\"primitives\":[{\"targets\":[{}]}]}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "required-extension",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"extensionsUsed\":[\"KHR_texture_basisu\"],\"extensionsRequired\":[\"KHR_texture_basisu\"]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "nested-extension",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"nodes\":[{\"extensions\":{\"EXT_meshopt_compression\":{}}}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "buffer-missing-uri",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"byteLength\":4}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "buffer-data-truncated",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"data:application/octet-stream;base64,AA==\",\"byteLength\":4}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "buffer-mime",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"data:text/plain;base64,AAAAAA==\",\"byteLength\":4}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "image-dual",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"images\":[{\"uri\":\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==\",\"bufferView\":0}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "image-no-mime",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"images\":[{\"bufferView\":0}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "image-mime",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"images\":[{\"uri\":\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==\",\"mimeType\":\"image/jpeg\"}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "bad-image-bytes",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"images\":[{\"uri\":\"data:image/png;base64,AAAAAA==\"}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "role-conflict",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"same.png\",\"byteLength\":4}],\"images\":[{\"uri\":\"same.png\"}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "view-overrun",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"x\",\"byteLength\":4}],\"bufferViews\":[{\"buffer\":0,\"byteOffset\":2,\"byteLength\":4}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "bool-integer",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"x\",\"byteLength\":true}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "unknown-uri",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"x\",\"byteLength\":4,\"extras\":{\"uri\":\"../hidden\"}}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "duplicate-key",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[],\"buffers\":[]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "escaped-duplicate-key",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[],\"\\u0062uffers\":[]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "surrogate-alias",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"images\":[{\"uri\":\"a\\ud800.png\"}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "huge-exponent",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"x\",\"byteLength\":1e999999999}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "huge-negative-exponent",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers\":[{\"uri\":\"x\",\"byteLength\":1e-999999999}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "trailing-json",
+    "raw": "{\"asset\":{\"version\":\"2.0\"}} {}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "inline-jpeg",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"images\":[{\"uri\":\"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAACAAIDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDtaKKK/Lj6k//Z\"}]}",
+    "valid": true,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "escaped-location-uri-spoof",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"buffers/0\":{\"uri\":\"../hidden\"}}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "implicit-accessor-cost",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"accessors\":[{\"componentType\":5126,\"type\":\"VEC3\",\"count\":1000000000000}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "reverse-ordered-scene-depth-64",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"nodes\":[{},{\"children\":[0]},{\"children\":[1]},{\"children\":[2]},{\"children\":[3]},{\"children\":[4]},{\"children\":[5]},{\"children\":[6]},{\"children\":[7]},{\"children\":[8]},{\"children\":[9]},{\"children\":[10]},{\"children\":[11]},{\"children\":[12]},{\"children\":[13]},{\"children\":[14]},{\"children\":[15]},{\"children\":[16]},{\"children\":[17]},{\"children\":[18]},{\"children\":[19]},{\"children\":[20]},{\"children\":[21]},{\"children\":[22]},{\"children\":[23]},{\"children\":[24]},{\"children\":[25]},{\"children\":[26]},{\"children\":[27]},{\"children\":[28]},{\"children\":[29]},{\"children\":[30]},{\"children\":[31]},{\"children\":[32]},{\"children\":[33]},{\"children\":[34]},{\"children\":[35]},{\"children\":[36]},{\"children\":[37]},{\"children\":[38]},{\"children\":[39]},{\"children\":[40]},{\"children\":[41]},{\"children\":[42]},{\"children\":[43]},{\"children\":[44]},{\"children\":[45]},{\"children\":[46]},{\"children\":[47]},{\"children\":[48]},{\"children\":[49]},{\"children\":[50]},{\"children\":[51]},{\"children\":[52]},{\"children\":[53]},{\"children\":[54]},{\"children\":[55]},{\"children\":[56]},{\"children\":[57]},{\"children\":[58]},{\"children\":[59]},{\"children\":[60]},{\"children\":[61]},{\"children\":[62]},{\"children\":[63]}],\"scenes\":[{\"nodes\":[64]}]}",
+    "valid": true,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "reverse-ordered-scene-depth-65",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"nodes\":[{},{\"children\":[0]},{\"children\":[1]},{\"children\":[2]},{\"children\":[3]},{\"children\":[4]},{\"children\":[5]},{\"children\":[6]},{\"children\":[7]},{\"children\":[8]},{\"children\":[9]},{\"children\":[10]},{\"children\":[11]},{\"children\":[12]},{\"children\":[13]},{\"children\":[14]},{\"children\":[15]},{\"children\":[16]},{\"children\":[17]},{\"children\":[18]},{\"children\":[19]},{\"children\":[20]},{\"children\":[21]},{\"children\":[22]},{\"children\":[23]},{\"children\":[24]},{\"children\":[25]},{\"children\":[26]},{\"children\":[27]},{\"children\":[28]},{\"children\":[29]},{\"children\":[30]},{\"children\":[31]},{\"children\":[32]},{\"children\":[33]},{\"children\":[34]},{\"children\":[35]},{\"children\":[36]},{\"children\":[37]},{\"children\":[38]},{\"children\":[39]},{\"children\":[40]},{\"children\":[41]},{\"children\":[42]},{\"children\":[43]},{\"children\":[44]},{\"children\":[45]},{\"children\":[46]},{\"children\":[47]},{\"children\":[48]},{\"children\":[49]},{\"children\":[50]},{\"children\":[51]},{\"children\":[52]},{\"children\":[53]},{\"children\":[54]},{\"children\":[55]},{\"children\":[56]},{\"children\":[57]},{\"children\":[58]},{\"children\":[59]},{\"children\":[60]},{\"children\":[61]},{\"children\":[62]},{\"children\":[63]},{\"children\":[64]}],\"scenes\":[{\"nodes\":[65]}]}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "JSON-value-depth-64",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"extras\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}",
+    "valid": true,
+    "paths": [],
+    "resources": []
+  },
+  {
+    "name": "JSON-value-depth-65",
+    "raw": "{\"asset\":{\"version\":\"2.0\"},\"extras\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{\"layer\":{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}",
+    "valid": false,
+    "paths": [],
+    "resources": []
+  }
+]
