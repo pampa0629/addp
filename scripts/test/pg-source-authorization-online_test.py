@@ -2130,7 +2130,7 @@ class MetaCollectionOnlineTest(unittest.TestCase):
         clock = self.collection_expiry_fixture(fault)
         self.report['meta_collection'] = {'qualification_commands': [], 'scheduled': {
             'executions': {'approved_repeat': {'items_scanned': 3}}}}
-        barrier = SimpleNamespace(baseline={'reset_at': 'stable', 'calls': {}}, closed=False, released=False)
+        barrier = SimpleNamespace(baseline={'reset_at': 'stable', 'calls': {}, 'other_statement_count': 0, 'other_statements': []}, closed=False, released=False)
         selected = []
         def open_source():
             if fault == 'source_open': raise ONLINE.SuiteError('source preparation failed')
@@ -2170,7 +2170,7 @@ class MetaCollectionOnlineTest(unittest.TestCase):
         calls = []
         def counts():
             calls.append(True)
-            result = deepcopy(values)
+            result = dict(deepcopy(values), other_statement_count=0, other_statements=[])
             if fault == 'repeat_source_io' and len(calls) > 1: result['calls']['tables'] += 1
             return result
         def close():
@@ -2250,9 +2250,82 @@ class MetaCollectionOnlineTest(unittest.TestCase):
                 if fault != 'counter_transport':
                     self.assertEqual(set(evidence['source_call_delta']),
                                      {'namespaces', 'tables', 'workspace_detection', 'other'})
-                    self.assertEqual(set(evidence['source_counter_observed']), {'calls', 'reset_at'})
+                    self.assertEqual(set(evidence['source_counter_observed']), {'calls', 'reset_at', 'other_statement_count', 'other_statements'})
                 self.scenario.cleanup()
                 self.assertFalse(self.tasks)
+
+    def test_repeat_source_failure_keeps_last_snapshot_and_each_statement_change(self):
+        for natural_expiry in (False, True):
+            for fault in ('probe', 'reset', 'balanced_changes', 'removed', 'classification'):
+                with self.subTest(natural_expiry=natural_expiry, fault=fault):
+                    self.setUp()
+                    barrier = self.inflight_fixture(natural_expiry=natural_expiry)
+                    counts = barrier.counts
+                    before = dict(counts(), other_statement_count=2, other_statements=[
+                        {'query_id': '-123', 'top_level': True, 'kind': 'version_probe', 'calls': 8},
+                        {'query_id': '456', 'top_level': True, 'kind': 'unclassified', 'calls': 1}])
+                    before['calls']['other'] = 9
+                    barrier.baseline.update(other_statement_count=0, other_statements=[])
+                    barrier.baseline['calls']['other'] = 9
+                    after = deepcopy(before)
+                    if fault == 'reset': after['reset_at'] = 'new-reset'
+                    elif fault == 'removed':
+                        after['other_statements'].pop()
+                        after['other_statement_count'] = 1
+                        after['calls']['other'] -= 1
+                    elif fault == 'classification': after['other_statements'][0]['kind'] = 'unclassified'
+                    else:
+                        after['other_statements'][0]['calls'] += 1
+                        if fault == 'probe': after['calls']['other'] += 1
+                        else: after['other_statements'][1]['calls'] -= 1
+                    barrier.counts = Mock(side_effect=[before, after])
+                    run = self.scenario.run_inflight_expiry if natural_expiry else self.scenario.run_inflight
+                    with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier), self.assertRaisesRegex(
+                            ONLINE.SuiteError, 'denied repeat touched source'):
+                        run(self.report)
+                    evidence = self.report['meta_collection']['inflight_expiry' if natural_expiry else 'inflight']
+                    self.assertEqual(evidence['repeat_source_counter_stage'], 'equality_check')
+                    self.assertTrue(evidence['repeat_source_counter_available'])
+                    self.assertEqual(evidence['source_counter_observed'], before)
+                    self.assertEqual(evidence['repeat_source_counter_observed'], after)
+                    self.assertEqual(evidence['repeat_source_call_delta']['other'], {'probe': 1, 'removed': -1}.get(fault, 0))
+                    changed = evidence['repeat_other_statement_delta']
+                    self.assertEqual(len(changed), {'probe': 1, 'reset': 0, 'balanced_changes': 2, 'removed': 1, 'classification': 1}[fault])
+                    if fault in ('probe', 'balanced_changes'):
+                        self.assertEqual(changed[0], {'query_id': '-123', 'top_level': True,
+                            'before': before['other_statements'][0], 'after': after['other_statements'][0], 'calls_delta': 1})
+                    if fault == 'removed':
+                        self.assertEqual(changed[0], {'query_id': '456', 'top_level': True,
+                            'before': before['other_statements'][1], 'after': None, 'calls_delta': -1})
+                    if fault == 'classification':
+                        self.assertEqual(changed[0]['calls_delta'], 0)
+                        self.assertEqual(changed[0]['before']['kind'], 'version_probe')
+                        self.assertEqual(changed[0]['after']['kind'], 'unclassified')
+                    self.assertEqual(len(self.report['checks']), 1)
+                    self.scenario.cleanup()
+                    self.assertTrue(barrier.closed)
+                    self.assertFalse(self.tasks)
+
+    def test_repeat_counter_transport_failure_is_distinct_from_zero_or_changed_counts(self):
+        for natural_expiry in (False, True):
+            with self.subTest(natural_expiry=natural_expiry):
+                self.setUp()
+                barrier = self.inflight_fixture(natural_expiry=natural_expiry)
+                first = dict(barrier.counts(), other_statement_count=0, other_statements=[])
+                barrier.counts = Mock(side_effect=[first, ONLINE.SuiteError('private SQL and credential text')])
+                run = self.scenario.run_inflight_expiry if natural_expiry else self.scenario.run_inflight
+                with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier), self.assertRaises(ONLINE.SuiteError):
+                    run(self.report)
+                evidence = self.report['meta_collection']['inflight_expiry' if natural_expiry else 'inflight']
+                self.assertEqual(evidence['repeat_source_counter_stage'], 'query')
+                self.assertFalse(evidence['repeat_source_counter_available'])
+                self.assertNotIn('repeat_source_counter_observed', evidence)
+                self.assertNotIn('repeat_source_call_delta', evidence)
+                self.assertNotIn('private SQL', json.dumps(evidence))
+                self.assertEqual(len(self.report['checks']), 1)
+                self.scenario.cleanup()
+                self.assertFalse(self.tasks)
+                self.assertTrue(barrier.closed)
 
     def test_version_probe_diagnostic_never_exempts_an_extra_other_call(self):
         for natural_expiry in (False, True):

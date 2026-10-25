@@ -1568,7 +1568,23 @@ class MetaCollectionScenario:
                     'in-flight expired replay renewed or changed qualification')
             evidence.update(stored_status=original['status'], version=original['version'], no_revocation=True)
         evidence['executions']['expired_repeat' if natural_expiry else 'revoked_repeat'] = self.trigger(task['id'], False)
-        require(barrier.counts() == counts, 'denied repeat touched source or altered statistics')
+        evidence.update(repeat_source_counter_stage='query', repeat_source_counter_available=False)
+        repeated = barrier.counts()
+        evidence.update(repeat_source_counter_observed=repeated, repeat_source_counter_available=True,
+                        repeat_source_counter_stage='equality_check')
+        evidence['repeat_source_call_delta'] = {
+            key: repeated['calls'].get(key, 0) - counts['calls'].get(key, 0)
+            for key in ('namespaces', 'tables', 'workspace_detection', 'other')}
+        prior_rows = {(row['query_id'], row['top_level']): row for row in counts['other_statements']}
+        repeated_rows = {(row['query_id'], row['top_level']): row for row in repeated['other_statements']}
+        evidence['repeat_other_statement_delta'] = [
+            {'query_id': key[0], 'top_level': key[1], 'before': prior_rows.get(key), 'after': repeated_rows.get(key),
+             'calls_delta': (repeated_rows[key]['calls'] if key in repeated_rows else 0)
+                           - (prior_rows[key]['calls'] if key in prior_rows else 0)}
+            for key in sorted(prior_rows.keys() | repeated_rows.keys())
+            if prior_rows.get(key) != repeated_rows.get(key)]
+        require(repeated == counts, 'denied repeat touched source or altered statistics')
+        evidence['repeat_source_counter_stage'] = 'verified'
         report['checks'].append(checks[1])
         barrier.close()
         require(barrier.closed and barrier.released and self.facts(task['id']) == facts
