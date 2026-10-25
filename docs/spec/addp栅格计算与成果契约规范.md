@@ -312,3 +312,8 @@ D8增量子汇水区独立手工Hosted `raster-subcatchments-d8-persistence` 已
 非法方向码（含原始UInt64 NoData邻接大整数）、内部伪终点、越界指向、无效下游、循环、非法波段、旋转网格与非法measure八类各中英文提交，共16条准确失败；反向查询不改提交语言。独立逐源路径核完整像元／mask、area包含自身、平方米m2、count不计自身且清空单位、两count对照一致与出口面积守恒；严格核原网格／CRS、Float64／NaN、COG及最近邻金字塔、artifact／物理／Meta相等正整数大小、精确扫描的父执行／用户／租户／引擎、当前执行实际注册输入血缘／Monitor、源与先前成果不变。失败零发布／零新增扫描和派生血缘，全部退出清理和零残留为必需断言。面积溢出／下溢、累计溢出与精确计数上限继续单列Native数值极限证据，不记Hosted已验。
 
 标准业务入口`make test-online ONLINE_SUITE=raster-flow-accumulation-area-d8-persistence`；本地准备门禁`make test-raster-flow-accumulation-area-d8-online-runner`；仅手工Hosted，不参加夜间自动运行，不改原套件、产品逻辑、权限或跨模块实现，不计UI或容量。夹具、标准入口和独立手工CI登记已实现；最终本地Native专项184项（含新增夹具52项、5217项筛除）／18.65秒，独立脚本门禁63项／17.992秒与完整Online登记通过；Node24.11.1下共享栅格脚本总入口实跑通过，具体候选版本与证据见后续专题。实际Hosted未运行，由专门CI会话协调；Linux全量和其余Hosted继续等回传，不计平台扫描／血缘／Monitor、UI或容量通过。数值极限继续单列Native。
+
+
+### D8 到河网沿流距离首期
+
+用户已确认：显式同网格／同有效覆盖D8方向和二值河网，河网自身0，沿既有路线到首次河网中心，未到达河网为NoData；非法完整路线及河网断流明确失败，不补线。仅已知线性单位二维投影北向无旋转，允许矩形像元，横纵及对角中心间步长统一米制；输出同网格／CRS Float64／NaN，复用现有COG。完整输入、数值及清理规则见[算子契约](workflow/栅格算子契约.md)。本轮仅产品实现和现有Native入口回归，不新增权限、依赖、跨模块逻辑或独立Hosted脚本；Linux全量及Hosted继续等CI会话回传，不触发、轮询或设置定时。已实现并通过本地标准Native全量5605项／21 warnings／1187.13秒，0失败／跳过／筛除，输入无漂移；独立逐源路径oracle、首次命中／未到达、完整像元／mask、米与两种英尺、十万像元长路径、完整COG／金字塔、双语失败和异步组合保存／清理均已覆盖。既有Native recipe、自动算子发现及Platform GeoPython Job覆盖本轮产品变更，无新增测试入口；完整固定候选与日志证据见[后续专题](../next/栅格算子体系后续专题.md#d8-到河网沿流距离首期)。Linux／Hosted未取得本轮新证据，不计平台扫描／血缘、UI或容量。

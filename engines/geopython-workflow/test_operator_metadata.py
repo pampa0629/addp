@@ -1078,7 +1078,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("栅格处理", "网格处理"), "raster_reproject raster_resample raster_align"),
         (("栅格处理", "范围处理"), "raster_clip raster_mosaic raster_update raster_tile raster_footprint raster_polygonize vector_rasterize raster_contour raster_stream_to_vector_d8"),
         (("栅格处理", "波段处理"), "raster_stack raster_select_bands"),
-        (("栅格处理", "像元计算"), "raster_band_math raster_reclassify raster_proximity raster_nibble raster_boundary_clean raster_thin raster_aggregate raster_fill_depressions raster_flow_direction_d8 raster_flow_accumulation_d8 raster_flow_accumulation_weighted_d8 raster_flow_length_d8 raster_flow_length_upstream_d8 raster_drainage_basins_d8 raster_watershed_d8 raster_subcatchments_d8 raster_snap_pour_points raster_stream_order_d8 raster_stream_link_d8 raster_slope raster_aspect raster_hillshade"),
+        (("栅格处理", "像元计算"), "raster_band_math raster_reclassify raster_proximity raster_nibble raster_boundary_clean raster_thin raster_aggregate raster_fill_depressions raster_flow_direction_d8 raster_flow_accumulation_d8 raster_flow_accumulation_weighted_d8 raster_flow_length_d8 raster_flow_length_upstream_d8 raster_distance_to_stream_d8 raster_drainage_basins_d8 raster_watershed_d8 raster_subcatchments_d8 raster_snap_pour_points raster_stream_order_d8 raster_stream_link_d8 raster_slope raster_aspect raster_hillshade"),
         (("栅格处理", "栅格统计"), "raster_statistics raster_zonal_statistics raster_focal_statistics raster_vector_zonal_statistics raster_recommend_band_combination raster_histogram"),
         (("栅格处理", "栅格检查"), "raster_info validate_cog"),
         (("栅格处理", "成果生成"), "raster_to_cog raster_build_overviews build_raster_mosaic"),
@@ -1135,3 +1135,17 @@ def test_d8_accumulation_exposes_one_measure_selector_and_keeps_count_default():
     assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
     assert not {'raster_flow_area_d8', 'raster_flow_accumulation_area_d8'} & operators.keys()
     assert 'measure' not in {p['name'] for p in operators['raster_flow_accumulation_weighted_d8']['parameters']}
+
+
+def test_d8_distance_to_stream_explicit_two_inputs_and_metre_output_metadata():
+    spec = next(item for item in list_operators() if item['id'] == 'raster_distance_to_stream_d8')
+    assert spec['description'] == 'D8 到河网沿流距离'
+    assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
+    assert spec['attributes']['resource_groups'] == ['raster'] and spec['category_path'] == ['栅格处理', '像元计算']
+    params = {p['name']: p for p in spec['parameters']}
+    assert set(params) == {'input_raster', 'stream_raster', 'band', 'stream_band'}
+    assert all(p['required'] for p in params.values())
+    assert all(params[n]['type'] == 'raster' and params[n]['param_type'] == 'input' for n in ('input_raster', 'stream_raster'))
+    assert all(params[n]['type'] == 'integer' and params[n]['param_type'] == 'param' for n in ('band', 'stream_band'))
+    assert len(spec['output_ports']) == 1 and spec['output_ports'][0]['name'] == 'default' and spec['output_ports'][0]['type'] == 'raster'
+    assert spec['detailed_description']['workflow_example']['params'] == {'input_raster': {'$ref': 'source'}, 'stream_raster': {'$ref': 'streams'}, 'band': 1, 'stream_band': 1}

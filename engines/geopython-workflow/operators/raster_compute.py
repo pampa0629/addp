@@ -3287,6 +3287,59 @@ def raster_stream_order_d8(input_raster, stream_raster, band, stream_band, metho
     return _d8_output(source, _d8_stream_order(directions, streams, method))
 
 
+_D8_STREAM_DISTANCE_MESSAGES = {
+    key: (zh.replace('D8 Strahler 河流分级', 'D8 到河网沿流距离'),
+          en.replace('D8 Strahler stream order', 'D8 distance to stream'))
+    for key, (zh, en) in _D8_STREAM_ORDER_MESSAGES.items()
+    if key not in ('overflow', 'method', 'measure', 'area', 'area_overflow')
+}
+_D8_STREAM_DISTANCE_MESSAGES.update({
+    'step': ('D8 到河网沿流距离的米制横纵及对角步长必须有限且严格为正',
+             'D8 distance to stream requires finite, strictly positive horizontal, vertical and diagonal steps in metres'),
+    'overflow': ('D8 到河网沿流距离累计距离超过Float64有限范围',
+                 'D8 distance to stream accumulated distance exceeds the finite Float64 range'),
+})
+
+
+def _d8_stream_distance_error(code):
+    return ValueError(_D8_STREAM_DISTANCE_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _d8_distance_to_stream(directions, streams, width_metres, height_metres):
+    """Stop at the first stream cell; a valid route with no hit stays NoData."""
+    error = _d8_stream_distance_error
+    _, downstream, order = _d8_stream_graph(directions, streams, error)
+    steps = _d8_length_steps(width_metres, height_metres, error)
+    river, codes = streams.ravel(), directions.ravel()
+    values = np.full(directions.size, np.nan)
+    corrections = np.zeros(directions.size)
+    for cell in order[::-1]:
+        if river[cell]:
+            values[cell] = 0.0
+            continue
+        target = int(downstream[cell])
+        if target < 0 or not math.isfinite(values[target]):
+            continue
+        # Copy the downstream path's compensation before extending this branch.
+        corrected = steps[codes[cell]] - float(corrections[target])
+        distance = float(values[target]) + corrected
+        if not math.isfinite(distance):
+            raise error('overflow')
+        corrections[cell] = (distance - float(values[target])) - corrected
+        values[cell] = distance
+    return values.reshape(directions.shape)
+
+
+def raster_distance_to_stream_d8(input_raster, stream_raster, band, stream_band):
+    """Measure metres along supplied D8 routes to the first explicit stream cell."""
+    source, directions, streams = _d8_stream_sources(
+        input_raster, stream_raster, band, stream_band, _d8_stream_distance_error)
+    factor = _projected_north_up_grid(source)
+    transform = source.GetGeoTransform()
+    values = _d8_distance_to_stream(directions, streams, transform[1] * factor, -transform[5] * factor)
+    return _d8_output(source, values, 'metre')
+
+
 _D8_STREAM_LINK_MESSAGES = {
     key: (zh.replace('D8 Strahler 河流分级', 'D8 河段编号'),
           en.replace('D8 Strahler stream order', 'D8 stream link'))
@@ -3560,6 +3613,7 @@ _SPECS = [
     (raster_watershed_d8, OperatorCategory.RASTER_CELL, 'D8 指定汇水点汇水区', [_INPUT(), _param('points_raster', 'raster', '同网格、同有效覆盖的汇水点标记，零为未选、正安全整数编号全图唯一，不自动吸附', role='input'), _param('band', 'int', '显式方向数据波段'), _param('points_band', 'int', '显式标记数据波段；保留编号并包含点自身，嵌套汇水点失败')], 'raster', ['read']),
     (raster_subcatchments_d8, OperatorCategory.RASTER_CELL, 'D8 增量子汇水区', [_INPUT(), _param('points_raster', 'raster', '同网格、同有效覆盖的汇水点标记，零为未选、正安全整数编号全图唯一，不自动吸附', role='input'), _param('band', 'int', '显式方向数据波段'), _param('points_band', 'int', '显式标记数据波段；保留编号并包含点自身；允许嵌套，按下游第一个指定点划分互斥增量范围')], 'raster', ['read']),
     (raster_stream_order_d8, OperatorCategory.RASTER_CELL, 'D8 河流分级', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜输入，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式0／1河网掩膜数据波段'), _param('method', 'str', 'strahler：同最高级汇合升级；shreve：全部实际河网入流量级求和', 'strahler', False, enum=['strahler', 'shreve'])], 'raster', ['read']),
+    (raster_distance_to_stream_d8, OperatorCategory.RASTER_CELL, 'D8 到河网沿流距离', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网；河网自身0、未到达NoData、断流失败', role='input'), _param('band', 'int', '显式方向数据波段；完整非法路线或循环失败'), _param('stream_band', 'int', '显式河网数据波段；到首次河网中心的米制沿流距离')], 'raster', ['read']),
     (raster_stream_link_d8, OperatorCategory.RASTER_CELL, 'D8 河段编号', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；汇合点归下游段，按河段起点行列顺序从1编号')], 'raster', ['read']),
     (raster_stream_to_vector_d8, OperatorCategory.RASTER_EXTENT, 'D8 河网转矢量线', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜；孤立单像元失败，不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；连接像元中心，保留河段ID及米制长度')], 'GeoDataFrame', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
@@ -3592,7 +3646,7 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'band': 1})
     if name == 'raster_flow_accumulation_d8':
         examples.update({'measure': 'count'})
-    if name in ('raster_stream_order_d8', 'raster_stream_link_d8', 'raster_stream_to_vector_d8'):
+    if name in ('raster_stream_order_d8', 'raster_stream_link_d8', 'raster_stream_to_vector_d8', 'raster_distance_to_stream_d8'):
         examples.update({'stream_raster': {'$ref': 'streams'}, 'band': 1, 'stream_band': 1})
     if name == 'raster_stream_order_d8':
         examples.update({'method': 'strahler'})
