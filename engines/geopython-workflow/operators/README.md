@@ -40,6 +40,8 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 
 ## 算子分类
 
+`load` 对空间文件、Parquet 与 Feather 按源 Schema 保留可空整型与布尔型，避免空值导致整型提升为浮点并损失精度；统一使用 Arrow→pandas 的选择性类型映射，其他字段不按取值重新推断。边界与验证见[文件字段类型契约](../../../docs/spec/workflow/矢量算子契约.md#load-文件字段类型契约)。
+
 分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的算子，实际数量以当前注册表为准。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
 
 | 一级分组 | 二级分组 | 数量 | 算子 |

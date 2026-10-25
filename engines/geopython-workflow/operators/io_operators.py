@@ -9,6 +9,9 @@ import logging
 import os
 import pandas as pd
 import geopandas as gpd
+import pyarrow as pa
+import pyarrow.feather as feather
+import pyarrow.parquet as parquet
 from typing import Dict, Any
 from bson import Binary, Decimal128, ObjectId
 from pymongo import MongoClient
@@ -30,6 +33,14 @@ logger = logging.getLogger(__name__)
 
 _SPATIAL_FORMATS = {'shp', 'geojson', 'gpkg', 'kml', 'gml', 'fgb'}
 
+_NULLABLE_ARROW_TYPES = {
+    pa.int8(): pd.Int8Dtype(), pa.int16(): pd.Int16Dtype(),
+    pa.int32(): pd.Int32Dtype(), pa.int64(): pd.Int64Dtype(),
+    pa.uint8(): pd.UInt8Dtype(), pa.uint16(): pd.UInt16Dtype(),
+    pa.uint32(): pd.UInt32Dtype(), pa.uint64(): pd.UInt64Dtype(),
+    pa.bool_(): pd.BooleanDtype(),
+}
+
 
 def _map_loopback_host(host: str) -> str:
     shared_host = os.getenv('GEOPYTHON_WORKFLOW_LOOPBACK_HOST', '').strip()
@@ -40,20 +51,26 @@ def _map_loopback_host(host: str) -> str:
 def _read_file(full_path: str, fmt: str, geom_column: str = None):
     """根据格式读取文件，返回 DataFrame 或 GeoDataFrame"""
     if fmt in _SPATIAL_FORMATS:
-        kwargs = {}
+        kwargs = {
+            'engine': 'pyogrio', 'use_arrow': True,
+            'arrow_to_pandas_kwargs': {'types_mapper': _NULLABLE_ARROW_TYPES.get},
+        }
         if geom_column:
             kwargs['geometry'] = geom_column
         return gpd.read_file(full_path, **kwargs)
     elif fmt in ('csv',):
         return gpd.GeoDataFrame(pd.read_csv(full_path))
-    elif fmt in ('parquet',):
-        return gpd.GeoDataFrame(pd.read_parquet(full_path))
+    elif fmt in ('parquet', 'feather'):
+        # load already resolves a local file. Preserve its Arrow schema before
+        # pandas can promote nullable integers to float and lose exact values.
+        reader = parquet.read_table if fmt == 'parquet' else feather.read_table
+        with open(full_path, 'rb') as source:
+            table = reader(source)
+        return gpd.GeoDataFrame(table.to_pandas(types_mapper=_NULLABLE_ARROW_TYPES.get))
     elif fmt in ('xlsx', 'xls'):
         return gpd.GeoDataFrame(pd.read_excel(full_path))
     elif fmt in ('json',):
         return gpd.GeoDataFrame(pd.read_json(full_path))
-    elif fmt in ('feather',):
-        return gpd.GeoDataFrame(pd.read_feather(full_path))
     else:
         raise ValueError(f"不支持的文件格式: {fmt}，支持: csv, parquet, xlsx, json, feather, shp, geojson, gpkg, kml, gml, fgb")
 
