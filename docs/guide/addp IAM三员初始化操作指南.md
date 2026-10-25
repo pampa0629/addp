@@ -235,7 +235,11 @@ dist/release-$(go env GOOS)-$(go env GOARCH)/addp-iam-recovery apply
 3. 输入认证器当前显示的 6 位验证码；
 4. 等验证码变化后输入紧邻的下一个 6 位验证码。
 
-全部当前管理员身份验证成功后，才会在一个事务中替换凭据、撤销旧会话并完成恢复。CLI 按明确的 Principal ID、岗位和账号逐一收集材料，允许同岗位有多名持有人，不按岗位名覆盖身份。任一步失败都不会留下部分恢复结果。恢复完成后，使用认证器新生成的验证码分别验证可用管理员的 Browser `platform + AAL2` 登录；凭据恢复本身不要求重启模块，处于暂停状态的身份须另行批准恢复。仓库已由 `common-python` wheel 发布正式 `addp` 命令入口；版本发布前还必须运行 `make test-release RELEASE_SUITE=common-python-cli`，验证 OAuth 登录、Context 绑定、Keychain、刷新轮换和撤销。三员 Platform Context 的在线人工验收仍要求 AAL2，不能用 CLI 的通用 Tenant E2E 替代。
+全部当前管理员身份验证成功后，才会在一个事务中替换凭据、撤销旧会话并完成恢复。CLI 按明确的 Principal ID、岗位和账号逐一收集材料，允许同岗位有多名持有人，不按岗位名覆盖身份。任一步失败都不会留下部分恢复结果。
+
+恢复完成后，使用认证器新生成的验证码分别验证可用管理员的 Browser `platform + AAL2` 登录；凭据恢复本身不要求重启模块，处于暂停状态的身份须另行批准恢复。
+
+正式 `addp` CLI 的 wheel 分发与发布验收统一见 [CLI 安装](../../common-python/README.md#cli-安装)和[认证与发布验收](../../common-python/README.md#认证方式)。三员 Platform Context 的在线人工验收仍要求 AAL2，不能用 CLI 的通用 Tenant E2E 替代。
 
 离线恢复允许当前持有人处于暂停状态，但恢复后仍保持暂停；角色分配不变。若 `prepare` 报告岗位缺失、同一主体兼任互斥岗位、身份已停用或本地账号已禁用，不得使用 SQL 临时修补后继续；该状态超出凭据恢复边界，需先按身份与授权治理流程处理。
 
