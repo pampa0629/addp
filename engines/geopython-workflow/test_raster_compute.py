@@ -10137,9 +10137,11 @@ def test_d8_hand_all_roles_encoding_and_grid_admission(tmp_path,role,case,langua
 
 
 @pytest.mark.parametrize('role',[1,2])
-@pytest.mark.parametrize('case',['dimensions','origin','resolution','crs','mask','nonfinite','nodata'])
+@pytest.mark.parametrize('case,mask_default',[
+    ('dimensions',None),('origin',None),('resolution',None),('crs',None),
+    ('mask','NO'),('mask','YES'),('nonfinite',None),('nodata',None)])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-def test_d8_hand_alignment_and_effective_coverage_are_exact(tmp_path,role,case,language):
+def test_d8_hand_alignment_and_effective_coverage_are_exact(tmp_path,role,case,mask_default,language):
     import operators.raster_compute as compute
     paths=_hand_files(tmp_path);ds=gdal.Open(str(paths[role]),gdal.GA_Update)
     if case=='dimensions':
@@ -10148,11 +10150,24 @@ def test_d8_hand_alignment_and_effective_coverage_are_exact(tmp_path,role,case,l
         grid=list(ds.GetGeoTransform());grid[0 if case=='origin' else 1]+=1;ds.SetGeoTransform(grid)
     elif case=='crs':crs=osr.SpatialReference();crs.ImportFromEPSG(32650);ds.SetSpatialRef(crs)
     elif case=='mask':
-        ds.GetRasterBand(1).CreateMaskBand(gdal.GMF_PER_DATASET);ds.GetRasterBand(1).GetMaskBand().WriteArray(np.array([[255,0,255]],np.uint8))
+        previous=gdal.GetConfigOption('GDAL_TIFF_INTERNAL_MASK')
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK',mask_default):
+            # A single-file fixture must not depend on the GDAL version's default.
+            with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):
+                assert ds.GetRasterBand(1).CreateMaskBand(gdal.GMF_PER_DATASET)==gdal.CE_None
+            assert gdal.GetConfigOption('GDAL_TIFF_INTERNAL_MASK')==mask_default
+            ds.GetRasterBand(1).GetMaskBand().WriteArray(np.array([[255,0,255]],np.uint8))
+        assert gdal.GetConfigOption('GDAL_TIFF_INTERNAL_MASK')==previous
     else:
         values=np.array([[0,1,1.]]) if role==1 else np.array([[3,2,1.]])
         values[0,1]=np.inf if case=='nonfinite' else -9999;ds.GetRasterBand(1).WriteArray(values)
     ds=None
+    if case=='mask':
+        ds=gdal.Open(str(paths[role]));assert ds.GetFileList()==[str(paths[role])]
+        assert not Path(str(paths[role])+'.msk').exists()
+        assert ds.GetRasterBand(1).GetMaskFlags()==gdal.GMF_PER_DATASET
+        np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray(),[[255,0,255]])
+        ds=None
     key=('alignment' if role==1 else 'dem_alignment') if case in ('dimensions','origin','resolution','crs') else ('coverage' if role==1 else 'dem_coverage')
     with raster_workspace(),raster_error_language(language):
         with pytest.raises(ValueError) as error:compute.raster_hand_d8(*[raster_load(source_plan(p)) for p in paths],1,1,1,'metre')
@@ -10238,7 +10253,8 @@ def test_d8_hand_long_path_no_recursion_and_first_hit_not_final_outlet():
     np.testing.assert_allclose(actual,expected,rtol=1e-12,atol=1e-9)
 
 
-def test_d8_hand_cross_block_three_roles_masks_alpha_nodata_full_cog_and_prior_unchanged(tmp_path,monkeypatch):
+@pytest.mark.parametrize('mask_default',['NO','YES'])
+def test_d8_hand_cross_block_three_roles_masks_alpha_nodata_full_cog_and_prior_unchanged(tmp_path,monkeypatch,mask_default):
     import operators.raster_compute as compute
     from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
     h,w=519,515;rows,cols=np.indices((h,w));directions=np.ones((h,w));directions[:,-1]=0
@@ -10252,8 +10268,19 @@ def test_d8_hand_cross_block_three_roles_masks_alpha_nodata_full_cog_and_prior_u
         cube[2,20,:]=0;cube[2,21,:]=.5
         create_raster(path,cube,(500000,2,0,3000000,0,-3),'EPSG:3857')
         ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
-        ds.GetRasterBand(1).CreateMaskBand(gdal.GMF_PER_DATASET);mask=np.full((h,w),255,np.uint8);mask[22,:]=0;ds.GetRasterBand(1).GetMaskBand().WriteArray(mask)
+        previous=gdal.GetConfigOption('GDAL_TIFF_INTERNAL_MASK')
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK',mask_default):
+            with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):
+                assert ds.GetRasterBand(1).CreateMaskBand(gdal.GMF_PER_DATASET)==gdal.CE_None
+            assert gdal.GetConfigOption('GDAL_TIFF_INTERNAL_MASK')==mask_default
+            mask=np.full((h,w),255,np.uint8);mask[22,:]=0;ds.GetRasterBand(1).GetMaskBand().WriteArray(mask)
+        assert gdal.GetConfigOption('GDAL_TIFF_INTERNAL_MASK')==previous
         if path==paths[2]:ds.GetRasterBand(2).SetUnitType('foot')
+        ds=None
+        ds=gdal.Open(str(path));assert ds.GetFileList()==[str(path)]
+        assert not Path(str(path)+'.msk').exists()
+        assert ds.GetRasterBand(2).GetMaskFlags()==gdal.GMF_PER_DATASET
+        np.testing.assert_array_equal(ds.GetRasterBand(2).GetMaskBand().ReadAsArray(),mask)
         ds=None
     directions[20,:]=directions[22,:]=np.nan;streams[20,:]=streams[22,:]=np.nan
     before=[p.read_bytes() for p in paths];target=tmp_path/'hand.cog.tif';previous=tmp_path/'prior.bin';previous.write_bytes(b'prior output')
