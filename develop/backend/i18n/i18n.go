@@ -11,6 +11,8 @@ var localeFS embed.FS
 
 // Develop 模块消息 key 常量
 const (
+	MsgQueryExportChoiceInvalid        = "develop.query.export_choice_invalid"
+	MsgQueryExportRolesUnavailable     = "develop.query.export_roles_unavailable"
 	MsgQueryProtectionChoiceInvalid    = "develop.query.protection_choice_invalid"
 	MsgQueryProtectionRolesUnavailable = "develop.query.protection_roles_unavailable"
 	MsgQueryProtectionUnavailable      = "develop.query.protection_unavailable"

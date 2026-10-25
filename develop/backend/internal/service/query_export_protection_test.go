@@ -44,7 +44,7 @@ func TestQueryExportUsesIndependentFrozenChoiceAuthorityAndCurrentDeliveryQualif
 	if err := repo.Create(t.Context(), record); err != nil {
 		t.Fatal(err)
 	}
-	denied := false
+	denied := ""
 	checks, issues := 0, 0
 	issuedID := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -59,8 +59,9 @@ func TestQueryExportUsesIndependentFrozenChoiceAuthorityAndCurrentDeliveryQualif
 			if request.SourceLocator != "addp://engine/11/path/public/persons?type=table" || len(request.Choices) != 1 || request.Choices[0] != choice {
 				t.Error("export reused query choice or changed frozen source")
 			}
-			if denied {
+			if denied != "" {
 				w.WriteHeader(409)
+				json.NewEncoder(w).Encode(map[string]string{"error": "PRIVATE_RESPONSE", "error_code": denied})
 				return
 			}
 			w.Write([]byte(`{"valid":true}`))
@@ -91,12 +92,26 @@ func TestQueryExportUsesIndependentFrozenChoiceAuthorityAndCurrentDeliveryQualif
 	if !response.RequiresCurrentUser || response.TransferExecutionID != issuedID || transfer.request.ExecutionAuthorization == nil || transfer.request.Config.Source.ProtectionChoices[0] != choice || issues != 1 || checks != 1 {
 		t.Fatal("missing exact frozen export choice and identity")
 	}
-	denied = true
-	if _, err := exporter.Get(ctx, response.ID, 7, 9); !errors.Is(err, dataprotection.ErrRoleOptionUnavailable) {
-		t.Fatal("revoked choice could read export session", err)
-	}
-	if _, err := exporter.Open(ctx, response.ID, 7, 9); !errors.Is(err, dataprotection.ErrRoleOptionUnavailable) {
-		t.Fatal("revoked choice could download artifact", err)
+	for _, refusal := range []struct {
+		code  string
+		cause error
+	}{
+		{"transfer_protection_roles_unavailable", dataprotection.ErrRoleOptionIneligible},
+		{"transfer_protection_choice_invalid", dataprotection.ErrRoleOptionUnavailable},
+	} {
+		denied = refusal.code
+		if _, err := exporter.Create(ctx, record.ExecutionID, models.CreateQueryExportRequest{FileName: "must-not-create"}, 7, 9); !errors.Is(err, refusal.cause) {
+			t.Fatal("create lost exact export refusal", refusal.code, err)
+		}
+		if _, err := exporter.Get(ctx, response.ID, 7, 9); !errors.Is(err, refusal.cause) {
+			t.Fatal("status lost exact export refusal", refusal.code, err)
+		}
+		if _, err := exporter.Open(ctx, response.ID, 7, 9); !errors.Is(err, refusal.cause) {
+			t.Fatal("file lost exact export refusal", refusal.code, err)
+		}
+		if issues != 1 {
+			t.Fatal("rejection issued new execution authority")
+		}
 	}
 	// Choosing a query method alone never imposes it on the independent export outlet.
 	content := record.ExecutionConfig["content"].(map[string]any)
@@ -128,6 +143,7 @@ func TestExportOnlySavedChoiceRecheckedOnNameOnlyUpdate(t *testing.T) {
 			}
 			if denied {
 				w.WriteHeader(409)
+				w.Write([]byte(`{"error":"choice changed","error_code":"transfer_protection_choice_invalid"}`))
 				return
 			}
 			w.Write([]byte(`{"valid":true}`))

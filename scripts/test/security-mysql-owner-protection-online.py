@@ -3458,9 +3458,9 @@ def exercise_transfer_role_membership_expiry(client: GatewayClient, engine_id: i
             ("task_start", "POST", task_path + "/start", None, "transfer_protection_roles_unavailable"),
             ("task_name_update", "PUT", task_path, {"name": body["name"] + "-refused"}, "transfer_protection_roles_unavailable"),
             ("direct_selection_check", "POST", "/api/v1/transfer/source-protection-checks", selection, "transfer_protection_roles_unavailable"),
-            ("old_export_status", "GET", session_path, None, "query_protection_choice_invalid"),
-            ("old_file_download", "GET", session_path + "/file", None, "query_protection_choice_invalid"),
-            ("new_export_same_snapshot", "POST", "/api/v1/develop/executions/" + source_query["execution_id"] + "/exports", {"format": "csv", "file_name": "must-not-create.csv"}, "query_protection_choice_invalid")):
+            ("old_export_status", "GET", session_path, None, "query_protection_roles_unavailable"),
+            ("old_file_download", "GET", session_path + "/file", None, "query_protection_roles_unavailable"),
+            ("new_export_same_snapshot", "POST", "/api/v1/develop/executions/" + source_query["execution_id"] + "/exports", {"format": "csv", "file_name": "must-not-create.csv"}, "query_protection_roles_unavailable")):
             denials[name] = exact_role_conflict(active_reader.request(method, path, (409,), payload), code)
         retained = _object(active_reader.request("GET", task_path, (200,)).payload, "retained expired task")
         _, target_after_rows = transfer_role_target(client, target_locator, True)
@@ -3483,7 +3483,7 @@ def exercise_transfer_role_membership_expiry(client: GatewayClient, engine_id: i
         if _object(recovered_query.get("execution_config"), "default query").get("content", {}).get("export_protection_choices") != []:
             raise SuiteError("default CSV recovery must explicitly clear the export selection")
         csv_default, new_session_path = transfer_role_csv(active_reader, recovered_query, False, deadline, "p145-role-expiry-default.csv")
-        still_denied = exact_role_conflict(active_reader.request("GET", session_path + "/file", (409,)), "query_protection_choice_invalid")
+        still_denied = exact_role_conflict(active_reader.request("GET", session_path + "/file", (409,)), "query_protection_roles_unavailable")
         execution_ids = [first_execution["execution_id"], recovered_execution["execution_id"], source_query["execution_id"], recovered_query["execution_id"],
                          csv_before["transfer_execution_id"], csv_default["transfer_execution_id"]]
         if (len(set(execution_ids)) != 6 or new_session_path == session_path
@@ -3501,7 +3501,7 @@ def exercise_transfer_role_membership_expiry(client: GatewayClient, engine_id: i
             "choice": choice, "installed_projection": installed, "task_id": task_id, "first_execution": first_execution,
             "selected_target": target_before, "default_query_preview": query_default, "selected_csv": csv_before,
             "same_session_refusals": denials, "no_execution_or_target_write_after_refusal": True,
-            "task_query_policy_and_projection_unchanged": True, "default_execution": recovered_execution,
+            "task_query_policy_and_projection_unchanged": True, "export_bff_role_reason_preserved": True, "default_execution": recovered_execution,
             "default_target": target_default, "default_csv": csv_default, "old_file_still_refused_after_default_recovery": still_denied}
     except BaseException as error:
         failure = error
@@ -3800,7 +3800,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v30",
+            "schema_version": "addp.security-mysql-owner-protection-online/v31",
             "result": "passed",
             "identity": identity,
             "governance": governance,

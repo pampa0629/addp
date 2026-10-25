@@ -2988,7 +2988,7 @@ class TransferRoleExpiryBackend(DevelopRoleExpiryBackend):
         value={"error":"qualification expired","error_code":code}
         if self.expiry_fault=="denial_data":value["data"]=[]
         if self.expiry_fault=="wrong_transfer_code" and code.startswith("transfer_"):value["error_code"]="transfer_protection_choice_invalid"
-        if self.expiry_fault=="wrong_bff_code" and code.startswith("query_"):value["error_code"]="query_protection_roles_unavailable"
+        if self.expiry_fault=="wrong_bff_code" and code.startswith("query_"):value["error_code"]="query_protection_choice_invalid"
         return ONLINE.SUPPORT.Response(401 if self.expiry_fault=="denial401" else 409,value)
 
     def for_user(self, token, method, path, expected, body=None, **kwargs):
@@ -3042,7 +3042,7 @@ class TransferRoleExpiryBackend(DevelopRoleExpiryBackend):
             if export_create:
                 source_id=path.split("/")[5]
                 selected=bool(self.executions[source_id]["execution_config"]["content"]["export_protection_choices"])
-                if selected and self.expired:return self.refusal("query_protection_choice_invalid")
+                if selected and self.expired:return self.refusal("query_protection_roles_unavailable")
                 identifier=len(self.sessions)+1
                 path="/api/v1/develop/exports/"+str(identifier)
                 value={"id":identifier,"transfer_execution_id":str(ONLINE.uuid.UUID(int=300+identifier)),"format":"csv","status":"success",
@@ -3054,7 +3054,7 @@ class TransferRoleExpiryBackend(DevelopRoleExpiryBackend):
             if selected and self.expired:
                 if self.expiry_fault=="old_file_unlocked" and path.endswith("/file"):
                     return response(200,b"not a refusal")
-                return self.refusal("query_protection_choice_invalid")
+                return self.refusal("query_protection_roles_unavailable")
             if not path.endswith("/file"):return response(200,value)
             rows=self.rows(selected)
             if self.expiry_fault=="csv_raw":rows[0][ONLINE.BANK_FIELD]=ONLINE.BANK_SOURCE_VALUES["1"]
@@ -3099,8 +3099,9 @@ class TransferRoleNaturalExpiryTest(unittest.TestCase):
         self.assertTrue(report["selected_csv"]["selected_full_mask"] and report["selected_csv"]["csv_empty_cells_verified"])
         self.assertTrue(report["default_csv"]["default_mask"] and report["default_target"]["default_mask"])
         self.assertEqual(len(report["same_session_refusals"]),6)
+        self.assertTrue(report["export_bff_role_reason_preserved"])
         for name,refusal in report["same_session_refusals"].items():
-            expected="transfer_protection_roles_unavailable" if name in ("task_start","task_name_update","direct_selection_check") else "query_protection_choice_invalid"
+            expected="transfer_protection_roles_unavailable" if name in ("task_start","task_name_update","direct_selection_check") else "query_protection_roles_unavailable"
             self.assertEqual(refusal,{"http_status":409,"error_code":expected,"result_absent":True})
         self.assertTrue(report["no_execution_or_target_write_after_refusal"])
         self.assertEqual(report["assignment_after"]["effective_state"],"expired")

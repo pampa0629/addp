@@ -716,6 +716,12 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "409": {
+                        "description": "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效 | Role eligibility unavailable or masking method invalid",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
+                    },
                     "422": {
                         "description": "当前引擎不支持完整查询结果导出 | Engine does not support full query result export",
                         "schema": {
@@ -937,6 +943,12 @@ const docTemplate = `{
                                 "type": "string"
                             }
                         }
+                    },
+                    "409": {
+                        "description": "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效 | Role eligibility unavailable or masking method invalid",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -982,12 +994,9 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "Conflict",
+                        "description": "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效；query_export_not_ready：尚未完成 | Role eligibility unavailable, masking method invalid, or export not ready",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
                         }
                     }
                 },

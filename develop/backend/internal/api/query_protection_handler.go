@@ -52,6 +52,14 @@ func (h *QueryHandler) QueryProtectionOptions(c *gin.Context) {
 }
 
 func writeQueryProtectionError(c *gin.Context, err error) bool {
+	return writeProtectionError(c, err, developi18n.MsgQueryProtectionChoiceInvalid, developi18n.MsgQueryProtectionRolesUnavailable)
+}
+
+func writeQueryExportProtectionError(c *gin.Context, err error) bool {
+	return writeProtectionError(c, err, developi18n.MsgQueryExportChoiceInvalid, developi18n.MsgQueryExportRolesUnavailable)
+}
+
+func writeProtectionError(c *gin.Context, err error, choiceMessage, rolesMessage string) bool {
 	if errors.Is(err, commonAPI.ErrForbidden) {
 		commonAPI.ForbiddenError(c, commoni18n.T(c, commoni18n.MsgForbidden))
 		return true
@@ -63,9 +71,9 @@ func writeQueryProtectionError(c *gin.Context, err error) bool {
 	key, code := "", ""
 	switch {
 	case errors.Is(err, dataprotection.ErrRoleOptionIneligible):
-		key, code = developi18n.MsgQueryProtectionRolesUnavailable, "query_protection_roles_unavailable"
+		key, code = rolesMessage, "query_protection_roles_unavailable"
 	case errors.Is(err, dataprotection.ErrRoleOptionUnavailable):
-		key, code = developi18n.MsgQueryProtectionChoiceInvalid, "query_protection_choice_invalid"
+		key, code = choiceMessage, "query_protection_choice_invalid"
 	default:
 		return false
 	}

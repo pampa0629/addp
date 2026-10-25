@@ -9,12 +9,15 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	commonAPI "github.com/addp/common/api"
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/jsonmap"
 )
+
+var errTransferProtectionUnavailable = errors.New("Transfer protection verification unavailable")
 
 // TransferSourceProtectionSelection contains references only, never role facts.
 type TransferSourceProtectionSelection struct {
@@ -47,7 +50,7 @@ func (c *TransferClient) SourceProtectionOptions(ctx context.Context, bearer, lo
 		return nil, err
 	}
 	if result.Fields == nil {
-		return nil, dataprotection.ErrRoleOptionUnavailable
+		return nil, errTransferProtectionUnavailable
 	}
 	return &result, nil
 }
@@ -62,17 +65,17 @@ func (c *TransferClient) ValidateSourceProtection(ctx context.Context, bearer st
 		return err
 	}
 	if !result.Valid {
-		return dataprotection.ErrRoleOptionUnavailable
+		return errTransferProtectionUnavailable
 	}
 	return nil
 }
 func (c *TransferClient) userProtectionJSON(ctx context.Context, method, path, bearer string, body, result any) error {
 	if c == nil || c.baseURL == "" {
-		return dataprotection.ErrRoleOptionUnavailable
+		return errTransferProtectionUnavailable
 	}
 	encoded, err := json.Marshal(body)
 	if err != nil {
-		return dataprotection.ErrRoleOptionUnavailable
+		return errTransferProtectionUnavailable
 	}
 	var reader io.Reader
 	if body != nil {
@@ -96,23 +99,48 @@ func (c *TransferClient) userProtectionJSON(ctx context.Context, method, path, b
 			return commonAPI.ErrUnauthorized
 		case 403:
 			return commonAPI.ErrForbidden
-		case 400, 409:
-			return dataprotection.ErrRoleOptionUnavailable
+		case http.StatusConflict:
+			// The stable code is authoritative. Localized text is neither parsed
+			// nor forwarded, and malformed responses cannot invent a specific cause.
+			raw, err := io.ReadAll(io.LimitReader(resp.Body, (256<<10)+1))
+			if err != nil {
+				return errTransferProtectionUnavailable
+			}
+			if _, err := jsonmap.DecodeObjectStrict(raw, 256<<10, 32); err != nil {
+				return errTransferProtectionUnavailable
+			}
+			var conflict struct {
+				Error string `json:"error"`
+				Code  string `json:"error_code"`
+			}
+			decoder := json.NewDecoder(bytes.NewReader(raw))
+			decoder.DisallowUnknownFields()
+			if decoder.Decode(&conflict) != nil || decoder.Decode(new(any)) != io.EOF || strings.TrimSpace(conflict.Error) == "" {
+				return errTransferProtectionUnavailable
+			}
+			switch conflict.Code {
+			case "transfer_protection_roles_unavailable":
+				return dataprotection.ErrRoleOptionIneligible
+			case "transfer_protection_choice_invalid":
+				return dataprotection.ErrRoleOptionUnavailable
+			default:
+				return errTransferProtectionUnavailable
+			}
 		default:
-			return errors.New("Transfer protection verification unavailable")
+			return errTransferProtectionUnavailable
 		}
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, (256<<10)+1))
 	if err != nil {
-		return dataprotection.ErrRoleOptionUnavailable
+		return errTransferProtectionUnavailable
 	}
 	if _, err := jsonmap.DecodeObjectStrict(raw, 256<<10, 32); err != nil {
-		return dataprotection.ErrRoleOptionUnavailable
+		return errTransferProtectionUnavailable
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(result) != nil || decoder.Decode(new(any)) != io.EOF {
-		return dataprotection.ErrRoleOptionUnavailable
+		return errTransferProtectionUnavailable
 	}
 	return nil
 }

@@ -360,3 +360,9 @@ other = "无法确认当前账号仍具备所选脱敏方式的角色资格。�
 
 [develop.query.protection_unavailable]
 other = "数据脱敏保护暂不可用，请稍后重试或联系安全管理员检查规则同步状态。"
+
+[develop.query.export_choice_invalid]
+other = "所选导出脱敏方式已变更或失效。请刷新脱敏方式、重新选择并执行查询后再次导出。"
+
+[develop.query.export_roles_unavailable]
+other = "当前账号的角色资格已失效或无法确认，不能使用所选导出脱敏方式。请联系管理员核对角色，或重新选择当前可用的方式并执行查询后再次导出。"

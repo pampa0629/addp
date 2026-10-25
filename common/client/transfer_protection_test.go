@@ -2,6 +2,8 @@ package client
 
 import (
 	"encoding/json"
+	"errors"
+	commonAPI "github.com/addp/common/api"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -105,5 +107,74 @@ func TestTransferAuthorizationBindingAndDigestIncludesAuthority(t *testing.T) {
 	after, _ := ExportRequestDigest(req)
 	if before == after {
 		t.Fatal("authority excluded from request digest")
+	}
+}
+
+func TestTransferProtectionConflictRetainsOnlyStrictDeclaredReasons(t *testing.T) {
+	cases := []struct {
+		name, body string
+		status     int
+		want       error
+	}{
+		{"role", `{"error":"PRIVATE_RESPONSE","error_code":"transfer_protection_roles_unavailable"}`, 409, dataprotection.ErrRoleOptionIneligible},
+		{"choice", `{"error":"PRIVATE_RESPONSE","error_code":"transfer_protection_choice_invalid"}`, 409, dataprotection.ErrRoleOptionUnavailable},
+		{"unknown", `{"error":"role expired PRIVATE_RESPONSE","error_code":"unknown"}`, 409, nil},
+		{"missing", `{"error":"role expired PRIVATE_RESPONSE"}`, 409, nil},
+		{"duplicate", `{"error":"PRIVATE_RESPONSE","error_code":"transfer_protection_roles_unavailable","error_code":"transfer_protection_choice_invalid"}`, 409, nil},
+		{"extra", `{"error":"PRIVATE_RESPONSE","error_code":"transfer_protection_roles_unavailable","data":[]}`, 409, nil},
+		{"empty", `{"error":"","error_code":"transfer_protection_roles_unavailable"}`, 409, nil},
+		{"null", `{"error":"PRIVATE_RESPONSE","error_code":null}`, 409, nil},
+		{"invalid", `PRIVATE_RESPONSE`, 409, nil},
+		{"trailing", `{"error":"PRIVATE_RESPONSE","error_code":"transfer_protection_roles_unavailable"}{}`, 409, nil},
+		{"oversize", `{"error":"` + strings.Repeat("x", 257<<10) + `","error_code":"transfer_protection_roles_unavailable"}`, 409, nil},
+		{"success_missing_contract", `{}`, 200, nil},
+		{"success_false_contract", `{"valid":false}`, 200, nil},
+		{"success_malformed", `PRIVATE_RESPONSE`, 200, nil},
+		{"success_unknown_fields", `{"valid":true,"PRIVATE_RESPONSE":true}`, 200, nil},
+		{"wrong_status", `{"error":"PRIVATE_RESPONSE","error_code":"transfer_protection_roles_unavailable"}`, 400, nil},
+		{"unauthorized", `PRIVATE_RESPONSE`, 401, commonAPI.ErrUnauthorized},
+		{"forbidden", `PRIVATE_RESPONSE`, 403, commonAPI.ErrForbidden},
+		{"outage", `{"error":"PRIVATE_RESPONSE","error_code":"transfer_protection_roles_unavailable"}`, 503, nil},
+	}
+	for _, item := range cases {
+		t.Run(item.name, func(t *testing.T) {
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.Header.Get("Authorization") != "Bearer addp_at_current" {
+					t.Error("borrowed credential")
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(item.status)
+				w.Write([]byte(item.body))
+			}))
+			defer server.Close()
+			client := NewTransferClient(server.URL, nil)
+			for _, method := range []string{"options", "check"} {
+				var err error
+				if method == "options" {
+					_, err = client.SourceProtectionOptions(t.Context(), "addp_at_current", "source")
+				} else {
+					err = client.ValidateSourceProtection(t.Context(), "addp_at_current", &TransferSourceProtectionSelection{SourceLocator: "source", Choices: []dataprotection.FieldRoleChoice{{Target: dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "item"}, ComponentKey: "phone", Selection: dataprotection.RoleOptionSelection{PolicyID: "policy", PolicyRevision: 1, AssessmentRevision: 1, OptionID: "option"}}}})
+				}
+				if err == nil || strings.Contains(err.Error(), "PRIVATE_RESPONSE") {
+					t.Fatal("missing or private rejection", method, err)
+				}
+				if item.want != nil {
+					if !errors.Is(err, item.want) {
+						t.Fatal("lost typed reason", method, err)
+					}
+				} else {
+					for _, specific := range []error{dataprotection.ErrRoleOptionIneligible, dataprotection.ErrRoleOptionUnavailable, commonAPI.ErrUnauthorized, commonAPI.ErrForbidden} {
+						if errors.Is(err, specific) {
+							t.Fatal("unproven specific cause", method, err)
+						}
+					}
+				}
+			}
+			if calls != 2 {
+				t.Fatal("retried or cached qualification", calls)
+			}
+		})
 	}
 }

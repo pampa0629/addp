@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { developAuthContext } from './developAuthContext.js'
+import { readFileSync } from 'node:fs'
 
 const ENGINE = {
   id: 11,
@@ -1055,3 +1056,48 @@ test('query editor uses shared protection for route updates and leaving the page
   await dialog.getByRole('button', { name: '放弃修改并离开' }).click()
   await expect(page).toHaveURL(/\/tasks$/)
 })
+
+for (const locale of ['zh-cn', 'en']) for (const cause of ['roles', 'choice']) for (const boundary of ['create', 'status', 'download']) {
+  test(`full export displays precise ${cause} refusal at ${boundary} (${locale})`, async ({ page }, testInfo) => {
+    const engine = { ...ENGINE, capabilities: { compute: { query: { ...ENGINE.capabilities.compute.query, read_session: true } } } }
+    await installMockBackend(page, { resultKind: 'table', engines: [engine], locale })
+    const chinese = locale === 'zh-cn'
+    const catalogText = readFileSync(new URL(`../../backend/i18n/locales/${locale}.toml`, import.meta.url), 'utf8')
+    const section = cause === 'roles' ? /\[develop\.query\.export_roles_unavailable\]\s*other = ("[^\n]*")/ : /\[develop\.query\.export_choice_invalid\]\s*other = ("[^\n]*")/
+    const message = JSON.parse(catalogText.match(section)[1])
+    const payload = { error: message, error_code: cause === 'roles' ? 'query_protection_roles_unavailable' : 'query_protection_choice_invalid' }
+    const calls = [], downloads = [], errors = []
+    page.on('download', item => downloads.push(item))
+    page.on('pageerror', error => errors.push(error.message))
+    const refusal = route => route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify(payload) })
+    await page.route(`**/api/v1/develop/executions/${EXECUTION_ID}/exports`, route => {
+      calls.push('create')
+      if (boundary === 'create') return refusal(route)
+      return fulfillJSON(route, { id: 91, status: 'pending', requires_current_user: true })
+    })
+    await page.route('**/api/v1/develop/exports/**', route => {
+      const file = new URL(route.request().url()).pathname.endsWith('/file')
+      calls.push(file ? 'download' : 'status')
+      if (boundary === 'status' || file) return refusal(route)
+      return fulfillJSON(route, { id: 91, status: 'success', requires_current_user: true, file_name: 'protected.csv', download_url: '/api/v1/develop/exports/91/file' })
+    })
+    await page.goto('/sql', { waitUntil: 'networkidle' })
+    const catalog = page.locator('.catalog-panel')
+    await catalog.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
+    await catalog.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').click()
+    await catalog.getByRole('treeitem', { name: 'customers', exact: true }).click()
+    await catalog.getByRole('button', { name: chinese ? '生成查询模板' : 'Generate Query Template', exact: true }).click()
+    await page.getByRole('button', { name: chinese ? '执行' : 'Execute', exact: true }).click()
+    await expect(page.getByText('Ada', { exact: true })).toBeVisible()
+    const exportLabel = chinese ? '导出全部结果' : 'Export All Results'
+    await page.getByRole('button', { name: exportLabel, exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: exportLabel, exact: true })
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole('button', { name: chinese ? '开始导出' : 'Start Export', exact: true }).click()
+    await expect(page.locator('.el-message--error')).toHaveText(message)
+    expect(calls).toEqual(boundary === 'create' ? ['create'] : boundary === 'status' ? ['create', 'status'] : ['create', 'status', 'download'])
+    expect(downloads).toEqual([])
+    expect(errors).toEqual([])
+    if (chinese && boundary === 'download') await page.screenshot({ path: testInfo.outputPath(`export-${cause}-refusal.png`) })
+  })
+}

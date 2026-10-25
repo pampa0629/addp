@@ -360,3 +360,9 @@ other = "Your current role eligibility for the selected masking method could not
 
 [develop.query.protection_unavailable]
 other = "Data masking protection is unavailable. Retry later or ask a security administrator to check rule synchronization."
+
+[develop.query.export_choice_invalid]
+other = "The selected export masking method has changed or is no longer valid. Refresh the masking methods, select an available method, and rerun the query before exporting again."
+
+[develop.query.export_roles_unavailable]
+other = "Your role eligibility has expired or could not be verified, so the selected export masking method cannot be used. Ask an administrator to check your roles, or select an available method and rerun the query before exporting again."

@@ -78,6 +78,7 @@ func (h *ExecutionHandler) ResolveExportExecutionSource(c *gin.Context) {
 // @Param execution_id path string true "查询执行 ID | Query execution ID"
 // @Param body body models.CreateQueryExportRequest true "导出格式与文件名 | Export format and file name"
 // @Success 202 {object} models.CreateQueryExportResponse
+// @Failure 409 {object} models.ErrorResponse "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效 | Role eligibility unavailable or masking method invalid"
 // @Failure 403 {object} models.ErrorResponse "缺少角色专用导出执行权限 | Missing role-specific export execution permissions"
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
@@ -110,7 +111,7 @@ func (h *ExecutionHandler) CreateQueryExport(c *gin.Context) {
 }
 
 func queryExportCreateError(c *gin.Context, err error) {
-	if writeQueryProtectionError(c, err) {
+	if writeQueryExportProtectionError(c, err) {
 		return
 	}
 	switch {
@@ -138,6 +139,7 @@ func queryExportCreateError(c *gin.Context, err error) {
 // @Produce json
 // @Param id path int true "导出会话 ID | Export session ID"
 // @Success 200 {object} models.CreateQueryExportResponse
+// @Failure 409 {object} models.ErrorResponse "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效 | Role eligibility unavailable or masking method invalid"
 // @Failure 404 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.read"]
@@ -164,7 +166,7 @@ func (h *ExecutionHandler) GetQueryExport(c *gin.Context) {
 // @Param id path int true "导出会话 ID | Export session ID"
 // @Success 200 "下载内容流 | Download content stream"
 // @Failure 404 {object} map[string]string
-// @Failure 409 {object} map[string]string
+// @Failure 409 {object} models.ErrorResponse "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效；query_export_not_ready：尚未完成 | Role eligibility unavailable, masking method invalid, or export not ready"
 // @x-addp-auth-mode "resource_ticket"
 // @x-addp-required-permissions ["develop.task.read","develop.data_read.execute"]
 // @Description 角色专用文件必须使用当前 User Bearer 并复核 Transfer 导出选项；Resource Ticket 不替代完整角色资格。| Role-specific files require the current User Bearer and a fresh Transfer export-choice check; Resource Tickets do not replace complete role eligibility.
@@ -198,7 +200,7 @@ func queryExportSessionID(c *gin.Context) (uint, bool) {
 }
 
 func queryExportError(c *gin.Context, err error) {
-	if writeQueryProtectionError(c, err) {
+	if writeQueryExportProtectionError(c, err) {
 		return
 	}
 	switch {
