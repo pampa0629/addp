@@ -46,6 +46,7 @@ def bare_lifecycle(directory):
     life.sampler_started = False
     life.sample_thread_id = None
     life.sample_deadline = None
+    life.command_evidence = m.CommandEvidence()
     life.minio_image = 'sha256:synthetic-pinned-minio'
     life.owned_bind_bytes = lambda **kwargs: 0
     return life
@@ -871,7 +872,162 @@ class ResourceDiagnosticContractTests(unittest.TestCase):
             built.assert_called_once();setup.assert_not_called();self.assertIs(life.sample,original_sample)
 
 
+class CommandBoundaryEvidenceTests(unittest.TestCase):
+    def test_formal_report_exports_cleanup_records_even_on_admission_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work=Path(directory)/'owned';work.mkdir()
+            life=bare_lifecycle(work);target=Path(directory)/'report.json'
+            def cleanup():
+                record=life.command_evidence.begin(['docker','volume','ls','-q','--filter',
+                    f'label={m.LABEL}={life.run_id}'],life.run_id,'cleanup')
+                life.command_evidence.finish(record)
+                return []
+            life.cleanup=mock.Mock(side_effect=cleanup)
+            with mock.patch.object(m,'Lifecycle',return_value=life), \
+                 mock.patch.object(m.sys,'argv',['runner']), \
+                 mock.patch.dict(m.os.environ,{'MONITOR_TRACE_LOCAL_REPORT':str(target)},clear=True), \
+                 mock.patch.object(m,'effective_docker_endpoint',return_value='unix:///synthetic'), \
+                 mock.patch.object(m,'private_docker_client',side_effect=m.GateError('synthetic_admission_failure')), \
+                 mock.patch('builtins.print'):
+                self.assertEqual(m.main(),1)
+            report=json.loads(target.read_text())
+            self.assertEqual(report['owned_list_commands'][0]['phase'],'cleanup')
+            self.assertTrue(report['owned_list_commands'][0]['record_complete'])
+            self.assertEqual(report['result'],'failed')
+
+    def test_standalone_nginx_cleanup_does_not_require_a_formal_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory);life.cleanup=mock.Mock(return_value=[])
+            life.nginx_route_assertions={'synthetic':True}
+            with mock.patch.object(m,'Lifecycle',return_value=life), \
+                 mock.patch.object(m,'effective_docker_endpoint',return_value='unix:///synthetic'), \
+                 mock.patch.object(m,'private_docker_client'),mock.patch.object(m,'verify_nginx_routes'), \
+                 mock.patch('builtins.print'):
+                m.nginx_route_contract()
+            life.cleanup.assert_called_once()
+
+    def test_owned_lists_are_registered_outside_sampling_and_contain_no_arguments(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory)
+            process=mock.Mock(pid=1234,returncode=0);process.poll.return_value=0
+            with mock.patch.object(m.subprocess,'Popen',return_value=process):
+                life.owned('container',timeout=4)
+                life.phase='cleanup';life.owned('volume',timeout=4)
+            records=life.command_evidence.snapshot()
+            self.assertEqual([r['phase'] for r in records],['synthetic','cleanup'])
+            self.assertEqual(len({r['command_id'] for r in records}),2)
+            self.assertEqual([r['operation'] for r in records],['list_owned_containers','list_owned_volumes'])
+            for r in records:
+                self.assertEqual(r['pid'],1234)
+                self.assertRegex(r['request_signature_sha256'],r'^[a-f0-9]{64}$')
+                points=[r[k] for k in ('entered_monotonic_ns','spawn_started_monotonic_ns',
+                    'spawn_finished_monotonic_ns','exit_observed_monotonic_ns','output_finished_monotonic_ns',
+                    'decision_monotonic_ns','finished_monotonic_ns')]
+                self.assertTrue(all(isinstance(v,int) for v in points))
+                self.assertEqual(points,sorted(points))
+                self.assertEqual(r['duration_seconds'],round((points[-1]-points[0])/1e9,6))
+                self.assertNotIn('args',r);self.assertNotIn('env',r)
+
+    def test_spawn_failure_retains_boundary_and_releases_signature(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=bare_lifecycle(directory)
+            with mock.patch.object(m.subprocess,'Popen',side_effect=OSError('PRIVATE-TOKEN')):
+                with self.assertRaises(OSError):life.owned('container',timeout=4)
+                with self.assertRaises(OSError):life.owned('container',timeout=4)
+            rows=life.command_evidence.snapshot()
+            self.assertEqual(len(rows),2)
+            self.assertTrue(all(r['result']=='failed' and r['pid'] is None for r in rows))
+            self.assertTrue(all(r['spawn_finished_monotonic_ns'] is not None and r['exit_observed_monotonic_ns'] is None for r in rows))
+            self.assertNotIn('PRIVATE',json.dumps(rows))
+
+    def test_ledger_rejects_overlap_and_reserves_bounded_cleanup_space(self):
+        ledger=m.CommandEvidence(limit=1)
+        args=['docker','container','ls','-a','-q','--filter',f'label={m.LABEL}=owned']
+        first=ledger.begin(args,'owned','preparation')
+        with self.assertRaisesRegex(m.GateError,'owned_list_command_overlap'):
+            ledger.begin(args,'owned','sampling')
+        ledger.finish(first)
+        with self.assertRaisesRegex(m.GateError,'command_evidence_limit'):
+            ledger.begin(args,'owned','sampling')
+        cleanup=ledger.begin(args,'owned','cleanup');ledger.finish(cleanup)
+        self.assertEqual(len(ledger.snapshot()),2)
+        for _ in range(7):
+            cleanup=ledger.begin(args,'owned','cleanup');ledger.finish(cleanup)
+        with self.assertRaisesRegex(m.GateError,'command_evidence_limit'):
+            ledger.begin(args,'owned','cleanup')
+
+    def test_unfinished_worker_does_not_hide_failure_report(self):
+        ledger=m.CommandEvidence()
+        args=['docker','volume','ls','-q','--filter',f'label={m.LABEL}=owned']
+        pending=ledger.begin(args,'owned','preparation')
+        self.assertFalse(ledger.snapshot()[0]['record_complete'])
+        ledger.finish(pending)
+        self.assertTrue(ledger.snapshot()[0]['record_complete'])
+
+    def test_signature_separates_runs_and_does_not_accept_broader_queries(self):
+        def args(run):return ['docker','volume','ls','-q','--filter',f'label={m.LABEL}={run}']
+        a=m.owned_list_identity(args('one'),'one')
+        b=m.owned_list_identity(args('two'),'two')
+        self.assertNotEqual(a['request_signature_sha256'],b['request_signature_sha256'])
+        self.assertIsNone(m.owned_list_identity(args('other'),'owned'))
+        self.assertIsNone(m.owned_list_identity(args('owned')+['--filter','name=PRIVATE'],'owned'))
+
+    def test_raw_secrets_and_unowned_queries_never_enter_ledger(self):
+        ledger=m.CommandEvidence()
+        record=ledger.begin(['docker','inspect','PRIVATE-ID'],'owned','preparation')
+        ledger.finish(record)
+        record=ledger.begin(['docker','container','ls','-a','-q','--filter','label=PRIVATE-TOKEN'],
+                            'owned','preparation')
+        ledger.finish(record)
+        self.assertEqual(ledger.snapshot(),[])
+
+    def test_clock_interval_uses_bounds_not_symmetric_midpoint(self):
+        self.assertEqual(m.apiproxy_clock_interval(100,200,1000,1050),(-900,-850))
+        with self.assertRaisesRegex(m.GateError,'clock_event_order_invalid'):
+            m.apiproxy_clock_interval(200,100,1000,1050)
+        with self.assertRaisesRegex(m.GateError,'clock_interval_empty'):
+            m.apiproxy_clock_interval(100,120,1000,1050)
+
+    def test_clock_envelope_rejects_excess_uncertainty_and_wall_jump(self):
+        self.assertEqual(m.apiproxy_clock_envelope((10,20),(15,25)),(10,25))
+        with self.assertRaisesRegex(m.GateError,'clock_uncertainty_exceeded'):
+            m.apiproxy_clock_envelope((0,100),(0,50000001))
+        with self.assertRaisesRegex(m.GateError,'clock_wall_jump'):
+            m.validate_clock_anchors([(100,1000,101),(200,1000000000,201)])
+        with self.assertRaisesRegex(m.GateError,'clock_intervals_inconsistent'):
+            m.apiproxy_clock_envelope((0,10),(11,20))
+
+    def test_pairing_refuses_overlap_or_missing_without_request_ids(self):
+        def event(direction,t):return {'direction':direction,'timestamp_ns':t,'request_signature_sha256':'a'*64}
+        self.assertEqual(len(m.pair_apiproxy_events([event('>>',1),event('<<',2)])),1)
+        for events in ([event('>>',1)],[event('<<',1)],
+                       [event('>>',1),event('>>',2),event('<<',3),event('<<',4)],
+                       [event('>>',1),event('<<',2),event('<<',2)]):
+            with self.subTest(events=events),self.assertRaises(m.GateError):m.pair_apiproxy_events(events)
+
+    def test_request_attribution_rejects_ambiguity_missing_and_reuse(self):
+        command={'command_id':1,'request_signature_sha256':'a'*64,'entered_monotonic_ns':100,
+                 'decision_monotonic_ns':200,'result':'passed'}
+        pair={'request_signature_sha256':'a'*64,'started_ns':1000,'finished_ns':1010}
+        self.assertEqual(m.attribute_apiproxy_requests([command],[pair],(-900,-850)),{1:0})
+        for commands,pairs in (([command],[]),([command],[pair,pair]),([command,{**command,'command_id':2}],[pair]),
+                               ([command],[{**pair,'started_ns':5000,'finished_ns':5010}])):
+            with self.subTest(commands=commands,pairs=pairs),self.assertRaises(m.GateError):
+                m.attribute_apiproxy_requests(commands,pairs,(-900,-850))
+
+    def test_clock_proof_requires_version_bound_event_time_evidence(self):
+        with self.assertRaisesRegex(m.GateError,'apiproxy_clock_semantics_unconfirmed'):
+            m.require_apiproxy_clock_semantics(None,'4.49.0')
+        with self.assertRaisesRegex(m.GateError,'apiproxy_clock_semantics_unconfirmed'):
+            m.require_apiproxy_clock_semantics({'version':'4.49.0','source':'log_path_only'},'4.49.0')
+
+
 class LocalTraceCommandBudgetTests(unittest.TestCase):
+    def setUp(self):
+        clock = mock.patch.object(m.time, 'monotonic_ns', side_effect=lambda: round(m.time.monotonic()*1e9))
+        clock.start()
+        self.addCleanup(clock.stop)
+
     def test_other_threads_do_not_inherit_observer_deadline_or_diagnostics(self):
         with tempfile.TemporaryDirectory() as directory:
             life = bare_lifecycle(directory)
@@ -998,6 +1154,12 @@ class LocalTraceCommandBudgetTests(unittest.TestCase):
             self.assertEqual(command['spawn_seconds'], .01)
             self.assertEqual(command['wait_seconds'], 3.99)
             self.assertEqual(command['cancel_cleanup_seconds'], .2)
+            self.assertEqual(command['entered_monotonic_ns'],0)
+            self.assertEqual(command['cancel_started_monotonic_ns'],4_000_000_000)
+            self.assertEqual(command['cancel_finished_monotonic_ns'],4_200_000_000)
+            self.assertEqual(command['exit_observed_monotonic_ns'],4_200_000_000)
+            self.assertEqual(command['decision_monotonic_ns'],4_200_000_000)
+            self.assertEqual(command['finished_monotonic_ns'],4_200_000_000)
             self.assertEqual(failure['sample_duration_seconds'], 4.2)
             self.assertEqual(failure['steps'][-1]['processing_seconds'], 0)
             self.assertNotIn('PRIVATE', json.dumps(failure))
@@ -1006,6 +1168,11 @@ class LocalTraceCommandBudgetTests(unittest.TestCase):
 
 
 class LocalTraceCleanupTests(unittest.TestCase):
+    def setUp(self):
+        clock = mock.patch.object(m.time, 'monotonic_ns', side_effect=lambda: round(m.time.monotonic()*1e9))
+        clock.start()
+        self.addCleanup(clock.stop)
+
     def test_sampler_mount_is_released_before_builder_state_volume_cleanup(self):
         with tempfile.TemporaryDirectory() as directory:
             work=Path(directory)/'owned';work.mkdir()

@@ -67,6 +67,137 @@ def require(condition, code):
         raise GateError(code)
 
 
+def owned_list_identity(args, run_id):
+    """Semantic API signature for the only owned list route, never raw argv."""
+    for kind, path in (('container', '/containers/json'), ('volume', '/volumes')):
+        expected = ['docker', kind, 'ls', *(['-a'] if kind == 'container' else []),
+                    '-q', '--filter', f'label={LABEL}={run_id}']
+        if list(args) == expected:
+            query = {'filters': {'label': [f'{LABEL}={run_id}']}}
+            if kind == 'container':
+                query['all'] = True
+            canonical = json.dumps({'method': 'GET', 'path': path, 'query': query}, sort_keys=True, separators=(',', ':'))
+            return {'operation': 'list_owned_containers' if kind == 'container' else 'list_owned_volumes',
+                    'method': 'GET', 'api_family': path,
+                    'request_signature_sha256': hashlib.sha256(canonical.encode()).hexdigest()}
+    return None
+
+
+class CommandEvidence:
+    """Bounded owned-list journal; sample commands share these same records."""
+    def __init__(self, limit=4096):
+        self.limit = limit
+        self.records = []
+        self.active = set()
+        self.sequence = 0
+        self.lock = threading.Lock()
+
+    def begin(self, args, run_id, phase):
+        identity = owned_list_identity(args, run_id)
+        with self.lock:
+            if identity:
+                signature = identity['request_signature_sha256']
+                require(signature not in self.active, 'owned_list_command_overlap')
+                # Cleanup has four normal list calls; reserve eight, not an
+                # unbounded bypass of the failure that stopped the workload.
+                require(len(self.records) < self.limit + (8 if phase == 'cleanup' else 0), 'command_evidence_limit')
+                self.active.add(signature)
+            self.sequence += 1
+            record = {'command_id': self.sequence, 'run_id': run_id,
+                      'phase': phase if re.fullmatch('[a-z0-9_]{1,80}', phase) else 'unclassified',
+                      'pid': None, 'record_complete': False}
+            if identity:
+                record.update(identity)
+                self.records.append(record)
+            return record
+
+    def finish(self, record):
+        with self.lock:
+            record['record_complete'] = True
+            if 'request_signature_sha256' in record:
+                self.active.remove(record['request_signature_sha256'])
+
+    def snapshot(self):
+        with self.lock:
+            # Even a worker that failed to stop must not erase the error report.
+            # An unfinished record stays explicitly incomplete, never successful.
+            return copy.deepcopy(self.records)
+
+
+def require_apiproxy_clock_semantics(proof, desktop_version):
+    # This validates a source-audited proof, not the existence of log lines.
+    # There is deliberately no environment flag or "timestamps look close" path.
+    require(isinstance(proof, dict) and proof.get('desktop_version') == desktop_version and
+            proof.get('component') == 'apiproxy' and proof.get('timestamp_origin') == 'request_event' and
+            proof.get('events_within_request_lifetime') is True and
+            isinstance(proof.get('source_url'), str) and proof['source_url'].startswith('https://') and
+            isinstance(proof.get('source_sha256'), str) and re.fullmatch('[a-f0-9]{64}', proof['source_sha256']),
+            'apiproxy_clock_semantics_unconfirmed')
+
+
+def apiproxy_clock_interval(host_started, host_finished, proxy_started, proxy_finished):
+    require(all(type(v) is int for v in (host_started, host_finished, proxy_started, proxy_finished)) and
+            host_started <= host_finished and proxy_started <= proxy_finished, 'clock_event_order_invalid')
+    interval = (host_started-proxy_started, host_finished-proxy_finished)
+    require(interval[0] <= interval[1], 'clock_interval_empty')
+    return interval
+
+
+def apiproxy_clock_envelope(before, after):
+    require(all(len(v) == 2 and all(type(n) is int for n in v) and v[0] <= v[1] for v in (before, after)),
+            'clock_interval_invalid')
+    require(max(before[0], after[0]) <= min(before[1], after[1]), 'clock_intervals_inconsistent')
+    envelope = min(before[0], after[0]), max(before[1], after[1])
+    require(envelope[1]-envelope[0] <= 50_000_000, 'clock_uncertainty_exceeded')
+    return envelope
+
+
+def validate_clock_anchors(anchors):
+    previous = None
+    for began, wall, finished in anchors:
+        require(all(type(n) is int for n in (began, wall, finished)) and began <= finished, 'clock_anchor_invalid')
+        current = wall-finished, wall-began
+        if previous:
+            require(max(previous[0], current[0])-min(previous[1], current[1]) <= 50_000_000, 'clock_wall_jump')
+        previous = current
+
+
+def pair_apiproxy_events(events):
+    pending, pairs = {}, []
+    seen = set()
+    for event in sorted(events, key=lambda row: row['timestamp_ns']):
+        signature, stamp = event['request_signature_sha256'], event['timestamp_ns']
+        require(type(stamp) is int and re.fullmatch('[a-f0-9]{64}', signature), 'api_event_invalid')
+        key = signature, stamp, event['direction']
+        require(key not in seen, 'duplicate_api_event')
+        seen.add(key)
+        if event['direction'] == '>>':
+            require(signature not in pending, 'overlapping_api_events_without_request_id')
+            pending[signature] = stamp
+        else:
+            require(event['direction'] == '<<' and signature in pending, 'api_event_without_begin')
+            pairs.append({'request_signature_sha256': signature, 'started_ns': pending.pop(signature), 'finished_ns': stamp})
+    require(not pending, 'api_event_without_end')
+    return pairs
+
+
+def attribute_apiproxy_requests(commands, pairs, offset):
+    require(offset[0] <= offset[1] and offset[1]-offset[0] <= 50_000_000, 'clock_uncertainty_exceeded')
+    result, used = {}, set()
+    for command in sorted(commands, key=lambda row: row['entered_monotonic_ns']):
+        require(command['result'] == 'passed' and command['command_id'] not in result, 'command_not_correlatable')
+        candidates = [i for i, pair in enumerate(pairs)
+            if pair['request_signature_sha256'] == command['request_signature_sha256'] and
+            max(offset[0], command['entered_monotonic_ns']-pair['started_ns']) <=
+            min(offset[1], command['decision_monotonic_ns']-pair['finished_ns'])]
+        require(len(candidates) == 1, 'api_request_missing_or_ambiguous')
+        require(candidates[0] not in used, 'api_request_reused')
+        result[command['command_id']] = candidates[0]
+        used.add(candidates[0])
+    require(len(used) == len(pairs), 'unassigned_owned_api_request')
+    return result
+
+
 def diagnostic_markers(raw):
     return [marker for marker in ('permission denied','operation not permitted','chown','setgid','setuid','cannot load certificate',
         'is a directory','failed parsing config','unknown flag','read-only file system','no such file or directory',
@@ -293,6 +424,7 @@ class Lifecycle:
         self.sampler_started = False
         self.sample_deadline = None
         self.sample_thread_id = None
+        self.command_evidence = CommandEvidence()
         self.checkout = self.work / 'source'
 
     def check(self):
@@ -310,14 +442,21 @@ class Lifecycle:
             time.sleep(min(.1, max(0, deadline-time.monotonic())))
 
     def command(self, args, *, env=None, cwd=None, data=None, timeout=600, guarded=True):
-        began = time.monotonic()
+        entered_ns = time.monotonic_ns()
+        began = entered_ns / 1e9
         deadline = began + timeout
         # The product command thread must not inherit the observer's deadline or
         # write into its diagnostics while both threads run concurrently.
         sampling = self.sample_thread_id == threading.get_ident()
         if sampling:
             deadline = min(deadline, self.sample_deadline)
-        timing = dict.fromkeys(('spawn_seconds', 'wait_seconds', 'output_seconds', 'cancel_cleanup_seconds'), 0.0)
+        timing = self.command_evidence.begin(args, self.run_id, self.sample_phase if sampling else self.phase)
+        timing.update(dict.fromkeys(('spawn_seconds', 'wait_seconds', 'output_seconds', 'cancel_cleanup_seconds'), 0.0))
+        timing.update(dict.fromkeys(('spawn_started_monotonic_ns', 'spawn_finished_monotonic_ns',
+            'wait_started_monotonic_ns', 'wait_finished_monotonic_ns', 'exit_observed_monotonic_ns',
+            'output_started_monotonic_ns', 'output_finished_monotonic_ns', 'decision_monotonic_ns',
+            'cancel_started_monotonic_ns', 'cancel_finished_monotonic_ns'), None))
+        timing['entered_monotonic_ns'] = entered_ns
         timing['result'] = 'failed'
         if sampling:
             self.sample_step['commands'].append(timing)
@@ -332,16 +471,18 @@ class Lifecycle:
         try:
             check_deadline()
             with tempfile.TemporaryFile() as output:
-                spawn = time.monotonic()
+                timing['spawn_started_monotonic_ns'] = time.monotonic_ns()
                 try:
                     p = subprocess.Popen(args, cwd=cwd or self.checkout if self.checkout.exists() else ROOT,
                                          env=env or self.env, stdin=subprocess.PIPE if data is not None else subprocess.DEVNULL,
                                          stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+                    timing['pid'] = p.pid
                 finally:
-                    timing['spawn_seconds'] = round(time.monotonic()-spawn, 6)
+                    timing['spawn_finished_monotonic_ns'] = time.monotonic_ns()
+                    timing['spawn_seconds'] = round((timing['spawn_finished_monotonic_ns']-timing['spawn_started_monotonic_ns'])/1e9, 6)
                 try:
                     check_deadline()
-                    waiting = time.monotonic()
+                    timing['wait_started_monotonic_ns'] = time.monotonic_ns()
                     try:
                         if data is not None:
                             p.stdin.write(data.encode() if isinstance(data, str) else data)
@@ -350,15 +491,17 @@ class Lifecycle:
                             check_deadline()
                             try:
                                 p.wait(timeout=min(.05, deadline-time.monotonic()))
+                                timing['exit_observed_monotonic_ns'] = time.monotonic_ns()
                                 break
                             except subprocess.TimeoutExpired:
                                 continue
                     finally:
-                        timing['wait_seconds'] = round(time.monotonic()-waiting, 6)
+                        timing['wait_finished_monotonic_ns'] = time.monotonic_ns()
+                        timing['wait_seconds'] = round((timing['wait_finished_monotonic_ns']-timing['wait_started_monotonic_ns'])/1e9, 6)
                     check_deadline()
                 finally:
                     if p.poll() is None:
-                        cleanup = time.monotonic()
+                        timing['cancel_started_monotonic_ns'] = time.monotonic_ns()
                         try:
                             os.killpg(p.pid, signal.SIGTERM)
                             try:
@@ -366,15 +509,20 @@ class Lifecycle:
                             except subprocess.TimeoutExpired:
                                 os.killpg(p.pid, signal.SIGKILL)
                                 p.wait(timeout=1)
+                            timing['exit_observed_monotonic_ns'] = time.monotonic_ns()
                         finally:
-                            timing['cancel_cleanup_seconds'] = round(time.monotonic()-cleanup, 6)
-                reading = time.monotonic()
+                            timing['cancel_finished_monotonic_ns'] = time.monotonic_ns()
+                            timing['cancel_cleanup_seconds'] = round((timing['cancel_finished_monotonic_ns']-timing['cancel_started_monotonic_ns'])/1e9, 6)
+                    elif timing['exit_observed_monotonic_ns'] is None:
+                        timing['exit_observed_monotonic_ns'] = time.monotonic_ns()
+                timing['output_started_monotonic_ns'] = time.monotonic_ns()
                 try:
                     output.seek(0)
                     raw = output.read()
                     text = raw.decode(errors='replace')
                 finally:
-                    timing['output_seconds'] = round(time.monotonic()-reading, 6)
+                    timing['output_finished_monotonic_ns'] = time.monotonic_ns()
+                    timing['output_seconds'] = round((timing['output_finished_monotonic_ns']-timing['output_started_monotonic_ns'])/1e9, 6)
                 check_deadline()
             if p.returncode:
                 # Raw output may carry login/SQL details. Export closed fields only.
@@ -387,10 +535,15 @@ class Lifecycle:
                     self.last_failure['du_missing_file'] = bool(diagnostics) and all(line.startswith('du:') and line.endswith('No such file or directory') for line in diagnostics)
                 raise GateError('command_failed_' + str(p.returncode))
             check_deadline()
+            timing['decision_monotonic_ns'] = time.monotonic_ns()
             timing['result'] = 'passed'
             return text
         finally:
-            timing['duration_seconds'] = round(time.monotonic()-began, 6)
+            if timing['decision_monotonic_ns'] is None:
+                timing['decision_monotonic_ns'] = time.monotonic_ns()
+            timing['finished_monotonic_ns'] = time.monotonic_ns()
+            timing['duration_seconds'] = round((timing['finished_monotonic_ns']-entered_ns)/1e9, 6)
+            self.command_evidence.finish(timing)
 
     def docker(self, *args, **kw):
         if args and args[0]=='run' and LABEL+'.role=oneshot' in args:
@@ -601,6 +754,7 @@ class Lifecycle:
             self.thread.join(timeout=6)
             if self.thread.is_alive():
                 errors.append('resource_guard_not_stopped')
+        self.phase = 'cleanup'
         # Release read-only mounts before Buildx removes its state volume,
         # including a helper created just before its client timed out.
         try:
@@ -1209,6 +1363,7 @@ def main():
         report['dependencies_ready']=getattr(life,'dependencies_ready',False)
         if hasattr(life,'nginx_route_assertions'):report['nginx_routes']=life.nginx_route_assertions
         errors=life.cleanup()
+        report['owned_list_commands']=life.command_evidence.snapshot()
         report['cleanup']={'zero_owned_resources':not errors,'failures':errors}
         if errors:report['result']='failed'
         target.parent.mkdir(parents=True,exist_ok=True)
