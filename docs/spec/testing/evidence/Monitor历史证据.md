@@ -1596,3 +1596,22 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 本地先以 `make test-deployment-discovery` 复现同一错误，再仅修正测试：显式Monitor SDK只输出Monitor，配置但不存在的发现目录不被适配器创建；新增交叉归属用例验证标准生命周期的System环境和发现挂载、`read_only=true`及显式`create_host_path=false`、不复制渲染密码；无SDK及显式System SDK两种输入都不让适配器重新拥有发现挂载或改写生命周期覆盖文件。原cgroup opt-in、TLS路径、只读与非特权断言保留。产品、权限、个人服务、Make和workflow不变，新用例沿原标准入口自动执行。
 
 修复后 `make test-deployment-discovery` 退出0（38项发现＋6项证明及脚本语法）；`python3 -m unittest scripts/test/metrics-deployment-config_test.py` 87项退出0，覆盖原生产生命周期单一发现挂载、关闭指标仍声明及启动／停止屏障。日志 `/tmp/addp-container-proof-owner-{red,green,lifecycle}.log`。此处仅为本批本地T0修复，不将原失败改写为通过，不外推整轮Platform、Linux CI或Hosted；修复后的自然CI结果等专门会话回传，未自行查询、重跑CI或设置定时任务。
+
+
+## 2026-10-26 部署观察器单次停止信号在析构边界丢失
+
+专门CI会话回传固定source `effd9f800e05516d1809a8e63d202e3f3516b19f` 的Platform run `40208335725` / job `121213997615`：`test_disabled_logs_never_stop_foreign_containers`清理观察器失败，原诊断为`owned/S/hrtimer_nanosleep`、零子进程、SIGTERM未屏蔽／未挂起且已注册处理器。本批不把`term_caught`当作处理器实际执行证据。
+
+新增受控回归用例把真实控制器发出的一次SIGTERM精确落在一个已完成的真实Popen对象析构期间，并用接收标记及`sys.unraisablehook`分别证明信号实际接收、SystemExit成为被忽略异常。修改产品前，标准 `make test-deployment-discovery` 在新用例失败，收据为`signal_received=True; unraisable=True`，且当次自有测试进程最终回收。本机隔离Linux/arm64、Python 3.12.14对旧源码复现同一失败与原Linux诊断全部字段；这是已确认的失效路径，原CI缺少当次Python栈，不能据此指定其准确析构位置。
+
+修复为单一路径的合作式取消：信号处理器只锁存请求，`set_wakeup_fd`打断原30秒空闲select等待；主循环、锁等待与Docker读取在显式检查点退出。Docker命令只创建一个子进程，分段等待不重发命令、不重置原10／30秒预算，取消时先kill/reap该自有未回收子进程。原控制器PID／命令／token归属、只发一次TERM、退出失败保留记录、有界脱敏诊断及非阻塞快照失效不变；没有自动停止个人进程或改变权限／租户范围。
+
+实际验证：
+
+- `make test-deployment-discovery`：40项发现／观察器测试＋6项证明及脚本语法退出0。新增析构边界从红转绿，保留外来PID拒绝、来源锁竞争、运行记录发布失败回收、在途Docker中止及子进程回收；新增同一Docker进程等待不重置时限测试。
+- `make test-infra-runtime-log-lifecycle`：标准入口退出0；包含现有Trace本地runner前置（123项及既有Go夹具）及61项Infra／Trace／PostgreSQL来源生命周期聚合，不将受控夹具计为真实部署验收。
+- `python3 -m unittest scripts/test/metrics-deployment-config_test.py`：87项退出0，覆盖生产／开发声明及停止屏障。
+- 本机隔离Linux/arm64、Python 3.12.14：运行标准scripts/test的观察器类及本次／上次复发两个Infra单例，18项退出0，含真实信号、在途读取子进程回收及不停止外来容器。一次性容器无Docker Socket、无个人配置或数据库挂载，源码为临时脱敏拷贝只读挂载，容器退出销毁，不代替Ubuntu x64自然CI；测试tmpfs需exec以运行既有临时CLI夹具。首轮绿套因tmpfs默认noexec使在途Docker夹具无法启动，已用PermissionError与挂载选项独立确认；修正仅当次测试tmpfs后取得上述18项有效证据，不把首轮失败当通过。
+- 已尝试更广 `make test-dev-lifecycle`，164项聚合出现两项超时：标准停止声明夹具10秒超时、Bounded Worker夹具就绪等待超时。该聚合退出1，不计通过、不放宽时限；前者在上述独立87项重新验证通过，后者运行既有Worker脚本片段，不调用本批修改的部署观察器。本批不扩展修理其他夹具，保留原失败供专门会话核对。
+
+日志：`/tmp/addp-discovery-{finalizer-red,finalizer-green,stop-current,stop-lifecycle-green,stop-metrics-green,stop-infra-green,stop-linux,stop-linux-green}.log`。新用例沿原部署发现标准入口自动发现，相关Python脚本已在原Metrics T2输入清单，Platform沿原标准聚合；不新增Make／workflow或并行技术路线。未自行查询／触发／重跑CI或Hosted、未设置定时任务、未执行个人服务或keepalive生命周期；自然Linux CI等专门会话回传。Safari实际可见性及真实服务失联验收仍保持原缺口。

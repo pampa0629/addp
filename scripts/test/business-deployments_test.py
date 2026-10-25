@@ -85,14 +85,30 @@ class DockerReaderTests(unittest.TestCase):
     def test_docker_failures_timeout_and_size_are_bounded_and_redacted(self):
         for failure in (subprocess.CalledProcessError(1, 'docker', output=b'password-secret'),
                         subprocess.TimeoutExpired('docker', 10), FileNotFoundError()):
-            with patch.object(inventory.subprocess, 'run', side_effect=failure):
+            with patch.object(inventory.subprocess, 'Popen', side_effect=failure):
                 with self.assertRaises(ValueError) as error:
                     inventory.DockerReader()('info')
                 self.assertNotIn('password-secret', str(error.exception))
-        with patch.object(inventory.subprocess, 'run', return_value=subprocess.CompletedProcess(
-                ['docker'], 0, b'x' * (64 * 1024 + 1))):
+        with patch.object(inventory.subprocess, 'Popen') as popen:
+            process=popen.return_value.__enter__.return_value
+            process.returncode=0
+            process.communicate.return_value=(b'x'*(64*1024+1),None)
             with self.assertRaises(ValueError):
                 inventory.DockerReader()('info')
+
+    def test_docker_communication_keeps_original_deadline_and_reaps_on_timeout(self):
+        with patch.object(inventory.subprocess, 'Popen') as popen, \
+                patch.object(inventory.time,'monotonic',side_effect=range(0,40,4)):
+            process=popen.return_value.__enter__.return_value
+            process.communicate.side_effect=subprocess.TimeoutExpired('docker',.05)
+            process.poll.return_value=None
+            with self.assertRaises(ValueError):
+                inventory.DockerReader()('info')
+        popen.assert_called_once()
+        process.kill.assert_called_once()
+        process.wait.assert_called_once()
+        self.assertLessEqual(process.communicate.call_count,3)
+        self.assertTrue(all(call.kwargs['timeout']<=.05 for call in process.communicate.call_args_list))
 
 
 
@@ -497,6 +513,73 @@ class ObserverLifecycleTests(unittest.TestCase):
         finally:
             release.touch()
             inventory.stop_observer(self.directory)
+
+    def test_stop_signal_during_popen_finalizer_is_not_lost(self):
+        # Signal exceptions raised in a real __del__ are unraisable. Hold the
+        # completed Popen finalizer so the controller's one TERM hits that edge.
+        marker, received, lost = (self.root/name for name in ('in-finalizer','term-received','unraisable'))
+        runner = r"""
+import importlib.util, os, signal, subprocess, sys, time
+from pathlib import Path
+spec=importlib.util.spec_from_file_location('observer',sys.argv[1])
+observer=importlib.util.module_from_spec(spec);spec.loader.exec_module(observer)
+directory=Path(sys.argv[2]);marker,received,lost=map(Path,sys.argv[3:6])
+original=subprocess.Popen.__del__
+armed=True
+sys.unraisablehook=lambda event: lost.write_text('SystemExit') if event.exc_type is SystemExit else None
+def finalizer(process):
+    global armed
+    if armed:
+        armed=False
+        handler=signal.getsignal(signal.SIGTERM)
+        def receive(signum,frame):
+            received.write_text('received')
+            handler(signum,frame)
+        signal.signal(signal.SIGTERM,receive)
+        marker.write_text('ready')
+        deadline=time.monotonic()+10
+        while not received.exists() and time.monotonic()<deadline:
+            time.sleep(.005)
+    original(process)
+subprocess.Popen.__del__=finalizer
+def publish(*_):
+    subprocess.run([sys.executable,'-c','pass'],check=True)
+observer.publish=publish
+observer.publish_container_proofs=lambda *_:None
+observer.watch(directory,sys.argv[-1])
+"""
+        inventory.private_directory(self.directory)
+        with patch.dict(os.environ,self.environment,clear=True):
+            env=inventory.observer_environment()
+            token='f'*32
+            process=subprocess.Popen([sys.executable,'-c',runner,str(Path(inventory.__file__).resolve()),
+                str(self.directory.resolve()),str(marker),str(received),str(lost),'--observer-token',token],
+                env=env,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            record={'pid':process.pid,'token':token,'script':str(Path(inventory.__file__).resolve()),
+                    'directory':str(self.directory.resolve()),'configuration':inventory.observer_configuration(env)}
+            inventory.write_document(self.directory,'observer.json',record)
+            try:
+                deadline=time.monotonic()+10
+                while not marker.exists() and process.poll() is None and time.monotonic()<deadline:
+                    time.sleep(.02)
+                self.assertTrue(marker.exists(),'observer did not reach the finalizer boundary')
+                try:
+                    inventory.stop_observer(self.directory)
+                except inventory.InventoryError as error:
+                    self.fail(str(error)+'; signal_received='+str(received.exists())+'; unraisable='+str(lost.exists()))
+                self.assertTrue(received.exists(),'TERM delivery was not observed')
+                self.assertFalse(lost.exists(),'TERM became an ignored SystemExit in a finalizer')
+                self.assertEqual(process.wait(timeout=3),0)
+                self.assertFalse((self.directory/'observer.json').exists())
+                self.assertFalse((self.directory/'observer-ready.json').exists())
+            finally:
+                # This Popen remains unreaped and cannot have its PID reused.
+                # On a red result kill only this test child, then verify absence
+                # through the real controller before allowing temporary cleanup.
+                if process.poll() is None:
+                    process.kill()
+                process.wait(timeout=3)
+                inventory.stop_observer(self.directory)
 
     def test_observer_exit_does_not_wait_for_snapshot_writers(self):
         inventory.private_directory(self.directory)

@@ -6,7 +6,7 @@
 
 | 范围 | 排查入口 |
 | --- | --- |
-| 开发服务 | [托管命令退出后服务立刻不可用](troubleshooting/开发服务与构建.md#codex-等托管命令环境中-restartsh-退出后服务立刻不可用)、[端口被浏览器占用的误报](troubleshooting/开发服务与构建.md#restartsh-误报端口被浏览器占用)、[旧进程被反复拉起](troubleshooting/开发服务与构建.md#restartsh-报告-addp-旧进程未清理) |
+| 开发服务 | [托管命令退出后服务立刻不可用](troubleshooting/开发服务与构建.md#codex-等托管命令环境中-restartsh-退出后服务立刻不可用)、[端口被浏览器占用的误报](troubleshooting/开发服务与构建.md#restartsh-误报端口被浏览器占用)、[旧进程被反复拉起](troubleshooting/开发服务与构建.md#restartsh-报告-addp-旧进程未清理)、[部署发现停止未退出](troubleshooting/开发服务与构建.md#部署发现停止提示进程尚未退出不删除运行记录) |
 | 依赖与镜像 | [GeoPython 依赖安装失败](troubleshooting/开发服务与构建.md#geopython-workflow-依赖安装失败)、[Document 下载 Debian 依赖失败](troubleshooting/开发服务与构建.md#document-镜像下载-debian-依赖失败阻断全量启动)、[Python 镜像冷构建过慢](troubleshooting/开发服务与构建.md#python-镜像首次构建耗时过长) |
 | 前端显示 | [Manager 预览没有数据](troubleshooting/前端与数据预览.md#manager-数据预览显示暂无数据)、[Vite 依赖分块缺失与首次导航中断](troubleshooting/前端与数据预览.md#前端页面重启后白屏vite-提示依赖分块不存在)、[血缘图自动适配异常](troubleshooting/前端与数据预览.md#血缘图自动适配后节点过小或偏离中心) |
 | 条目与目录 | [条目刷新未更新属性](troubleshooting/元数据扫描与检索.md#manager-刷新-item-成功但属性未更新item-刷新误走-catalog-scan)、[上传后目录不可见或数量不一致](troubleshooting/元数据扫描与检索.md#manager-上传成功但文件只有扫描目录后才显示)、[目录扫描状态与时间异常](troubleshooting/元数据扫描与检索.md#目录仍显示扫描失败或失败子目录反而显示已扫描) |

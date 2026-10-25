@@ -15,6 +15,7 @@ import stat
 import fcntl
 from contextlib import contextmanager
 import signal
+import select
 import uuid
 import hashlib
 import importlib.util
@@ -41,6 +42,14 @@ METRICS_CONTAINER = CONTAINER[:-1] + (
 SCOPES = {'infra': ('addp-infra', REPOSITORY), 'business': ('business', ROOT)}
 DISCOVERY_LIMIT = 256 * 1024
 _observer_children = {}  # Reap observers started by this interpreter when stopped.
+_observer_stop = None  # Dedicated watcher cancellation; never inherited by Docker.
+
+
+def observer_checkpoint():
+    # Raise only at an explicit main-loop/reader boundary, never asynchronously
+    # inside an object finalizer where SystemExit can be ignored by Python.
+    if _observer_stop is not None and _observer_stop['requested']:
+        raise SystemExit(0)
 # Explicit product services; unknown services remain visible as unclassified.
 ENGINE_TYPES = {
     'postgres': 'postgresql', 'redis': 'redis', 'falkordb': 'falkordb', 'minio': 'minio',
@@ -83,14 +92,34 @@ class DockerReader:
         if remaining <= 0:
             raise InventoryError('部署来源读取超过 30 秒期限')
         try:
-            result = subprocess.run(['docker', *args], stdout=subprocess.PIPE,
-                                    stderr=subprocess.DEVNULL, check=True,
-                                    timeout=min(10, remaining))
+            observer_checkpoint()
+            deadline = time.monotonic() + min(10, remaining)
+            with subprocess.Popen(['docker', *args], stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL) as process:
+                try:
+                    while True:
+                        observer_checkpoint()
+                        left = deadline - time.monotonic()
+                        if left <= 0:
+                            raise subprocess.TimeoutExpired('docker', min(10, remaining))
+                        try:
+                            output, _ = process.communicate(timeout=min(0.05, left))
+                            break
+                        except subprocess.TimeoutExpired:
+                            continue  # Recheck cancellation and the same deadline.
+                    if process.returncode != 0:
+                        raise subprocess.CalledProcessError(process.returncode, 'docker')
+                except BaseException:
+                    # Own unreaped child: cancellation cannot leave it behind.
+                    if process.poll() is None:
+                        process.kill()
+                    process.wait()
+                    raise
         except (OSError, subprocess.SubprocessError):
             raise InventoryError('无法读取 Docker 部署来源；请检查本地 Context 及服务状态') from None
-        if len(result.stdout) > 64 * 1024:
+        if len(output) > 64 * 1024:
             raise InventoryError('Docker 来源响应超过大小限制')
-        return result.stdout.decode('utf-8').strip()
+        return output.decode('utf-8').strip()
 
 
 def local_docker(*, env=None, reader=None, system=None):
@@ -278,6 +307,7 @@ def private_directory(directory):
 
 @contextmanager
 def private_lock(directory, name, *, timeout=5):
+    observer_checkpoint()
     lock = directory / name
     fd = os.open(lock, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
     try:
@@ -286,6 +316,7 @@ def private_lock(directory, name, *, timeout=5):
             raise InventoryError('部署发现锁文件权限无效')
         deadline = time.monotonic()+timeout
         while True:
+            observer_checkpoint()
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
@@ -774,51 +805,79 @@ def stop_observer(directory):
 
 
 def watch(directory, token):
+    global _observer_stop
     directory = Path(directory)
     private_directory(directory)
     directory = directory.resolve()
     if not re.fullmatch(r'[0-9a-f]{32}', token):
         raise InventoryError('部署发现运行标识无效')
+    stop = {'requested': False}
+    previous_stop = _observer_stop
+    old_handlers = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT)}
+    read_fd, write_fd = os.pipe()
+    os.set_blocking(read_fd, False)
+    os.set_blocking(write_fd, False)
+    previous_wakeup = signal.set_wakeup_fd(write_fd, warn_on_full_buffer=False)
     def terminate(_signum, _frame):
-        raise SystemExit(0)
-    signal.signal(signal.SIGTERM, terminate)
-    signal.signal(signal.SIGINT, terminate)
-    with private_lock(directory, 'observer-runtime.lock'):
-        for _ in range(100):
-            record = observer_record(directory)
-            if record is not None and record['pid'] == os.getpid() and record['token'] == token:
-                if record['configuration'] != observer_configuration(observer_environment()):
-                    raise InventoryError('部署发现源码或运行环境已改变')
-                break
-            time.sleep(0.05)
-        else:
-            raise InventoryError('部署发现运行记录缺失')
-        write_document(directory, 'observer-ready.json', {'token': token})
-        try:
-            while True:
-                if observer_record(directory) != record:
-                    raise InventoryError('部署发现运行记录已改变')
-                for scope in SCOPES:
-                    try:
-                        publish(scope, directory)
-                    except (InventoryError, OSError):
-                        pass  # The failure snapshot or freshness deadline clears candidates.
-                publish_container_proofs(directory)
-                time.sleep(30)
-        finally:
+        # Latch only. set_wakeup_fd interrupts idle select without throwing an
+        # exception in the arbitrary Python frame that received the signal.
+        stop['requested'] = True
+    _observer_stop = stop
+    try:
+        signal.signal(signal.SIGTERM, terminate)
+        signal.signal(signal.SIGINT, terminate)
+        with private_lock(directory, 'observer-runtime.lock'):
+            for _ in range(100):
+                observer_checkpoint()
+                record = observer_record(directory)
+                if record is not None and record['pid'] == os.getpid() and record['token'] == token:
+                    if record['configuration'] != observer_configuration(observer_environment()):
+                        raise InventoryError('部署发现源码或运行环境已改变')
+                    break
+                time.sleep(0.05)
+            else:
+                raise InventoryError('部署发现运行记录缺失')
+            write_document(directory, 'observer-ready.json', {'token': token})
             try:
-                with private_lock(directory, 'container-proofs.lock', timeout=0):
-                    write_document(directory, 'container-proofs.json', {'schema':'addp.container-proofs/v1','observed_at':observed_at(),'proofs':[]})
-            except (InventoryError, OSError):
-                pass
-            for scope in SCOPES:
+                while True:
+                    observer_checkpoint()
+                    if observer_record(directory) != record:
+                        raise InventoryError('部署发现运行记录已改变')
+                    for scope in SCOPES:
+                        observer_checkpoint()
+                        try:
+                            publish(scope, directory)
+                        except (InventoryError, OSError):
+                            pass  # The failure snapshot or freshness deadline clears candidates.
+                    observer_checkpoint()
+                    publish_container_proofs(directory)
+                    observer_checkpoint()
+                    readable, _, _ = select.select([read_fd], [], [], 30)
+                    observer_checkpoint()
+                    if readable:
+                        os.read(read_fd, 4096)
+            finally:
+                # Stop is already latched. Allow the original nonblocking
+                # invalidation before releasing the runtime lock and exiting.
+                _observer_stop = None
                 try:
-                    # The controller invalidates both scopes after verifying
-                    # exit. Never delay that verification behind another writer.
-                    with private_lock(directory, scope+'.lock', timeout=0):
-                        write_document(directory, scope+'.json', unavailable_snapshot(scope))
+                    with private_lock(directory, 'container-proofs.lock', timeout=0):
+                        write_document(directory, 'container-proofs.json', {'schema':'addp.container-proofs/v1','observed_at':observed_at(),'proofs':[]})
                 except (InventoryError, OSError):
                     pass
+                for scope in SCOPES:
+                    try:
+                        with private_lock(directory, scope+'.lock', timeout=0):
+                            write_document(directory, scope+'.json', unavailable_snapshot(scope))
+                    except (InventoryError, OSError):
+                        pass
+    finally:
+        _observer_stop = previous_stop
+        signal.set_wakeup_fd(previous_wakeup)
+        for sig, handler in old_handlers.items():
+            signal.signal(sig, handler)
+        os.close(read_fd)
+        os.close(write_fd)
 
 
 def main():
