@@ -1,7 +1,7 @@
 import { installGraphRelationshipPaint, stableRelationshipPaths } from './graph-relationship.fixture.js'
 import { expect, test } from '@playwright/test'
 import { mockGraph } from './graph.fixture'
-import { stableGraphPixels, graphNodeHits, graphObservationColor, exploreGraphLayouts, denseGraphStages, stableRelationshipPixels } from './graph-visual.fixture.js'
+import { stableGraphPixels, graphNodeHits, graphObservationColor, exploreGraphLayouts, denseGraphStages, stableGraphColorPixels } from './graph-visual.fixture.js'
 
 test('Graph pixel observer excludes disconnected same-color relationship strokes from node bounds', async ({ page }) => {
   await page.setContent('<div id="graph"><canvas width="280" height="150"></canvas></div>')
@@ -27,18 +27,22 @@ test('Graph pixel observer excludes disconnected same-color relationship strokes
   }
 })
 
-test('Graph relationship absence observer rejects residual strokes and hidden Canvas', async ({ page }) => {
+test('Graph node/relationship absence observer rejects residual fill, strokes and hidden Canvas', async ({ page }) => {
   await page.setContent('<div id="graph"><canvas width="200" height="100"></canvas></div>')
   const canvas = page.locator('#graph'), colors = [{ type: 'Link', color: 'rgb(15,118,110)' }]
-  await canvas.locator('canvas').evaluate(element => {
-    const context = element.getContext('2d'); context.strokeStyle = 'rgb(15,118,110)'; context.lineWidth = 3
-    context.beginPath();context.moveTo(20,50);context.lineTo(180,50);context.stroke()
-  })
-  await expect(canvas.evaluate(stableRelationshipPixels, { colors, boxes: [], absent: true, timeout: 300 })).rejects.toThrow('did not settle')
+  for (const filled of [false, true]) {
+    await canvas.locator('canvas').evaluate((element, filled) => {
+      const context = element.getContext('2d');context.clearRect(0,0,200,100)
+      context.fillStyle = context.strokeStyle = 'rgb(15,118,110)';context.lineWidth = 3;context.beginPath()
+      if (filled) { context.arc(100,50,18,0,Math.PI*2);context.fill() }
+      else { context.moveTo(20,50);context.lineTo(180,50);context.stroke() }
+    }, filled)
+    await expect(canvas.evaluate(stableGraphColorPixels, { colors, boxes: [], absent: true, timeout: 300 })).rejects.toThrow('did not settle')
+  }
   await canvas.locator('canvas').evaluate(element => { element.getContext('2d').clearRect(0,0,200,100);element.style.opacity = '0' })
-  await expect(canvas.evaluate(stableRelationshipPixels, { colors, boxes: [], absent: true, timeout: 300 })).rejects.toThrow('did not settle')
+  await expect(canvas.evaluate(stableGraphColorPixels, { colors, boxes: [], absent: true, timeout: 300 })).rejects.toThrow('did not settle')
   await canvas.locator('canvas').evaluate(element => { element.style.opacity = '' })
-  const [empty] = await canvas.evaluate(stableRelationshipPixels, { colors, boxes: [], absent: true })
+  const [empty] = await canvas.evaluate(stableGraphColorPixels, { colors, boxes: [], absent: true })
   expect(empty.pixelCount).toBe(0);expect(empty.stableFrames).toBeGreaterThanOrEqual(10)
 })
 

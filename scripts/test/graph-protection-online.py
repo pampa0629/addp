@@ -485,9 +485,9 @@ def verify_dense_frame(stage, members, edges, shapes, search=False):
 
 
 def verify_dense(visual, expected):
-    require(type(visual) is dict and set(visual) == set(expected) | {"schema_version", "stages", "requests", "relationships", "relation_filters"} and
+    require(type(visual) is dict and set(visual) == set(expected) | {"schema_version", "stages", "requests", "relationships", "relation_filters", "node_filters"} and
             all(visual.get(key) == value for key, value in expected.items()) and
-            visual["schema_version"] == "addp.graph-dense-stable-frame/v3", "Dense evidence identity differs")
+            visual["schema_version"] == "addp.graph-dense-stable-frame/v4", "Dense evidence identity differs")
     ids = verify_dense_reference(expected["nodes"], expected["edges"])
     shapes = expected["shapes"]
     label_sets = {tuple(sorted(labels)) for labels in dense_fixture_contract()[0].values()}
@@ -518,6 +518,7 @@ def verify_dense(visual, expected):
         previous_positions = sorted(positions)
     verify_relationships(visual["relationships"], expected, stages[-4:])
     verify_dense_filters(visual["relation_filters"], expected, stages[4])
+    verify_node_filters(visual["node_filters"], expected, visual["relation_filters"]["stages"][3])
     root = f"/api/v1/graph/graphs/{expected['graph_id']}"
     require(visual["requests"] == [{"method": "POST", "path": root + "/search", "body": stages[0]["request"]},
         {"method": "POST", "path": root + "/expand", "body": stages[2]["request"]}], "Dense filter/layout made unexpected requests")
@@ -593,6 +594,36 @@ def verify_dense_filters(filters, expected, baseline_stage):
         else: require(stage["probes"] == [], "Unexpected hidden relationship probes")
 
 
+
+def verify_node_filters(filters, expected, before):
+    require(type(filters) is dict and set(filters) == {"baseline", "empty", "restored"}, "Node filter evidence missing")
+    baseline = filters["baseline"]
+    require(type(baseline) is dict and baseline.get("layout") == "force", "Node filter baseline differs")
+    verify_relationship_frame(baseline, expected["edges"], before)
+    empty = filters["empty"]
+    require(type(empty) is dict and set(empty) == {"phase", "selected_shapes", "selected_types", "width", "height", "nodes", "edges", "canvas_visible", "hint_visible", "loading_absent", "absent_pixels", "node_probes", "relationship_probes"} and
+            empty["phase"] == "node-filter-empty" and empty["selected_shapes"] == [] and empty["selected_types"] == before["selected_types"] and
+            empty["nodes"] == [] and empty["edges"] == [] and all(empty[key] is True for key in ("canvas_visible", "hint_visible", "loading_absent")), "Node empty selection/state differs")
+    require(all(type(empty[key]) in (int,float) and math.isfinite(empty[key]) and empty[key] > 0 and empty[key] == baseline[key] for key in ("width", "height")), "Node empty viewport differs")
+    palette = [{"type": "node:"+group["name"], "color": group["frame"]["fillColor"]} for group in before["groups"]] + [
+        {"type": "relationship:"+sample["type"], "color": sample["color"]} for sample in before["relationship_pixels"]]
+    samples = empty["absent_pixels"]
+    require(type(samples) is list and len(samples) == len(palette), "Node empty color evidence missing")
+    for sample,wanted in zip(samples,palette):
+        require(type(sample) is dict and set(sample) == {"type", "color", "pixelCount", "stableFrames"} and all(sample[key] == value for key,value in wanted.items()) and
+                type(sample["pixelCount"]) is int and sample["pixelCount"] == 0 and type(sample["stableFrames"]) is int and sample["stableFrames"] >= 10, "Hidden node/relationship pixels remain")
+    require(len({sample["stableFrames"] for sample in samples}) == 1, "Empty colors did not settle together")
+    for key,points in (("node_probes",[hit for group in before["groups"] for hit in group["hits"]]),("relationship_probes",baseline["hits"])):
+        probes = empty[key]
+        wanted = [{field:hit[field] for field in ("native_id", "x", "y")} | {"selection_absent":True} for hit in points]
+        require(type(probes) is list and probes == wanted and all(probe["selection_absent"] is True for probe in probes), "Hidden node/relationship selection or missing probes")
+    restored = filters["restored"]
+    require(type(restored) is dict and set(restored) == {"phase", "layout", "selected_shapes", "nodes", "edges", "groups", "relationship_pixels"} and
+            restored["phase"] == "node-filter-restored" and restored["layout"] == "force" and restored["selected_shapes"] == sorted(shape["name"] for shape in expected["shapes"]), "Node restored selection differs")
+    verify_dense_frame(restored, expected["nodes"], expected["edges"], expected["shapes"])
+    require(all(group["frame"][key] == empty[key] for group in restored["groups"] for key in ("width", "height")), "Node restored viewport differs")
+
+
 def run_dense(preparer, reader, tenant_id, target_path, report, previous_control_graph_id):
     ontology_id = graph_id = None
     failed = False
@@ -629,7 +660,8 @@ def run_dense(preparer, reader, tenant_id, target_path, report, previous_control
         raw.unlink(missing_ok=True)
         (artifact / "graph-relationship-hit-frame.json").unlink(missing_ok=True)
         (artifact / "graph-relationship-filter-frame.json").unlink(missing_ok=True)
-        for pattern in ("relationship-*-console.png", "relation-filter-*-console.png"):
+        (artifact / "graph-node-filter-frame.json").unlink(missing_ok=True)
+        for pattern in ("relationship-*-console.png", "relation-filter-*-console.png", "node-filter-*-console.png"):
             for path in artifact.glob(pattern): path.unlink()
         diagnostics = artifact / "graph-dense-browser-diagnostics.json"
         diagnostics.unlink(missing_ok=True)
@@ -651,11 +683,16 @@ def run_dense(preparer, reader, tenant_id, target_path, report, previous_control
         require(json.loads(filter_file.read_text()) == {**expected, "schema_version": "addp.graph-relationship-filter-frame/v1", **visual["relation_filters"]}, "Independent relationship filter evidence differs")
         for stage in visual["relation_filters"]["stages"]:
             require((artifact / (stage["phase"] + "-console.png")).is_file(), "Relationship filter screenshot missing")
+        node_filter_file = artifact / "graph-node-filter-frame.json"
+        require(node_filter_file.is_file(), "Independent node filter evidence missing")
+        require(json.loads(node_filter_file.read_text()) == {**expected, "schema_version": "addp.graph-node-filter-frame/v1", **visual["node_filters"]}, "Independent node filter evidence differs")
+        for phase in ("node-filter-empty", "node-filter-restored"):
+            require((artifact / (phase + "-console.png")).is_file(), "Node filter screenshot missing")
         for layout in ("dagre", "circular", "radial", "force"):
             require((artifact / ("relationship-" + layout + "-console.png")).is_file(), "Relationship screenshot missing")
         for stage in visual["stages"]:
             require((artifact / (stage["phase"] + "-console.png")).is_file(), "Dense screenshot missing")
-        report["dense"] = {"schema_version": "addp.graph-dense-online/v3", "passed": True, **expected, "stages": [stage["phase"] for stage in visual["stages"]], "relationships": visual["relationships"], "relation_filters": visual["relation_filters"]}
+        report["dense"] = {"schema_version": "addp.graph-dense-online/v4", "passed": True, **expected, "stages": [stage["phase"] for stage in visual["stages"]], "relationships": visual["relationships"], "relation_filters": visual["relation_filters"], "node_filters": visual["node_filters"]}
     except Exception:
         failed = True
         raise
@@ -846,7 +883,7 @@ def run_review(preparer, reader, engine_id, tenant_id, ontology_id, control_id, 
 
 
 def main():
-    report = {"schema_version": "addp.graph-protection-online/v14", "passed": False}
+    report = {"schema_version": "addp.graph-protection-online/v15", "passed": False}
     output = Path(SUPPORT.required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "graph-protection.json"
     try:
         require(os.environ.get("ADDP_ONLINE_HOSTED") == "1" and os.environ.get("GITHUB_ACTIONS") == "true", "This suite only runs in disposable Hosted deployments")

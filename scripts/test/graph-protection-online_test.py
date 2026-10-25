@@ -68,7 +68,7 @@ def dense_evidence():
         if index >= 5:
             stage.update(layout=['dagre','circular','radial','force'][index-5], selected_label=['分层','环形','辐射','力导向'][index-5])
         stages.append(stage)
-    visual = dict(expected, schema_version='addp.graph-dense-stable-frame/v3', stages=stages,
+    visual = dict(expected, schema_version='addp.graph-dense-stable-frame/v4', stages=stages,
         requests=[dict(method='POST',path='/api/v1/graph/graphs/8/'+operation,body=stages[index]['request']) for operation,index in [('search',0),('expand',2)]])
     visual['relationships'] = []
     for stage in [stages[4], *stages[-4:]]:
@@ -98,6 +98,16 @@ def dense_evidence():
         stage['probes'] = [{key:hit[key] for key in ('native_id','x','y')} | dict(relation_selected=False) for hit in baseline['hits']] if index==1 else []
         filter_stages.append(stage)
     visual['relation_filters'] = dict(baseline=baseline,stages=filter_stages)
+    before = filter_stages[3]
+    palette = [dict(type='node:'+g['name'],color=g['frame']['fillColor'],pixelCount=0,stableFrames=10) for g in before['groups']] + [
+        dict(sample,type='relationship:'+sample['type'],pixelCount=0) for sample in before['relationship_pixels']]
+    probes = lambda points: [{key:hit[key] for key in ('native_id','x','y')} | dict(selection_absent=True) for hit in points]
+    empty = dict(phase='node-filter-empty',selected_shapes=[],selected_types=['Link','Parallel'],width=800,height=600,nodes=[],edges=[],
+        canvas_visible=True,hint_visible=True,loading_absent=True,absent_pixels=palette,
+        node_probes=probes([hit for g in before['groups'] for hit in g['hits']]),relationship_probes=probes(baseline['hits']))
+    restored = {key:copy.deepcopy(before[key]) for key in ('nodes','edges','groups','relationship_pixels','layout')}
+    restored.update(phase='node-filter-restored',selected_shapes=sorted(s['name'] for s in shapes))
+    visual['node_filters'] = dict(baseline=copy.deepcopy(baseline),empty=empty,restored=restored)
     return expected, visual
 
 
@@ -106,6 +116,41 @@ class GraphProtectionOnlineTest(unittest.TestCase):
         environment = patch.dict(SUITE.os.environ, {'ADDP_ONLINE_GRAPH_ENGINE': 'falkordb'})
         environment.start()
         self.addCleanup(environment.stop)
+
+    def test_dense_refuses_missing_node_filter_roundtrip(self):
+        expected, visual = dense_evidence()
+        del visual['node_filters']
+        with self.assertRaises(SUITE.SuiteError): SUITE.verify_dense(visual, expected)
+
+    def test_node_filter_evidence_rejects_residual_pixels_state_missing_probes_and_identity(self):
+        expected, visual = dense_evidence()
+        SUITE.verify_dense(visual,expected)
+        changes = {
+            'selected':lambda f:f['empty'].update(selected_shapes=['Person']),
+            'types':lambda f:f['empty'].update(selected_types=[]),
+            'ghost-node':lambda f:f['empty']['nodes'].append(expected['nodes'][0]),
+            'ghost-edge':lambda f:f['empty']['edges'].append(expected['edges'][0]),
+            'invisible':lambda f:f['empty'].update(canvas_visible=False),
+            'loading':lambda f:f['empty'].update(loading_absent=False),
+            'pixel':lambda f:f['empty']['absent_pixels'][0].update(pixelCount=1),
+            'pixel-type':lambda f:f['empty']['absent_pixels'][0].update(pixelCount=False),
+            'pixel-missing':lambda f:f['empty']['absent_pixels'].pop(),
+            'color':lambda f:f['empty']['absent_pixels'][0].update(color=[1,2,3]),
+            'frame':lambda f:f['empty']['absent_pixels'][0].update(stableFrames=9),
+            'different-frame':lambda f:f['empty']['absent_pixels'][0].update(stableFrames=11),
+            'node-probe':lambda f:f['empty']['node_probes'].pop(),
+            'edge-probe':lambda f:f['empty']['relationship_probes'].pop(),
+            'selected-probe':lambda f:f['empty']['node_probes'][0].update(selection_absent=False),
+            'probe-type':lambda f:f['empty']['node_probes'][0].update(selection_absent=1),
+            'probe-coordinate':lambda f:f['empty']['node_probes'][0].update(x=1),
+            'wrong-node':lambda f:f['empty']['node_probes'][0].update(native_id='foreign'),
+            'restored-node':lambda f:f['restored']['nodes'].pop(),
+            'restored-selection':lambda f:f['restored']['selected_shapes'].pop(),
+            'restored-viewport':lambda f:f['empty'].update(width=801),
+        }
+        for name,change in changes.items():
+            raw=copy.deepcopy(visual);change(raw['node_filters'])
+            with self.subTest(name=name),self.assertRaises(SUITE.SuiteError):SUITE.verify_dense(raw,expected)
 
     def test_dense_refuses_missing_relationship_filter_roundtrip(self):
         expected, visual = dense_evidence()
@@ -349,7 +394,7 @@ class GraphProtectionOnlineTest(unittest.TestCase):
 
     def test_dense_phase_uses_reader_browser_and_cleans_after_success_or_failure(self):
         expected, visual = dense_evidence()
-        for failure in ("none", "browser", "identity", "relationship-missing", "relationship-identity", "relationship-png", "filter-missing", "filter-identity", "filter-png"):
+        for failure in ("none", "browser", "identity", "relationship-missing", "relationship-identity", "relationship-png", "filter-missing", "filter-identity", "filter-png", "node-filter-missing", "node-filter-identity", "node-filter-png"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as folder:
                 deleted = []
                 class Client:
@@ -384,6 +429,12 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                         Path(folder,'graph-relationship-filter-frame.json').write_text(json.dumps(filters))
                     for stage in visual['relation_filters']['stages']:
                         if failure != 'filter-png' or stage['phase'] != 'relation-filter-3': Path(folder,stage['phase']+'-console.png').write_bytes(b'unit-test')
+                    if failure != 'node-filter-missing':
+                        node_filters = dict(expected,schema_version='addp.graph-node-filter-frame/v1',**visual['node_filters'])
+                        if failure == 'node-filter-identity': node_filters['principal_id'] = 'foreign'
+                        Path(folder,'graph-node-filter-frame.json').write_text(json.dumps(node_filters))
+                    for phase in ('node-filter-empty','node-filter-restored'):
+                        if failure != 'node-filter-png' or phase != 'node-filter-restored': Path(folder,phase+'-console.png').write_bytes(b'unit-test')
                     Path(folder, 'graph-dense-browser-diagnostics.json').write_text(json.dumps(dict(schema_version='addp.graph-browser-diagnostics/v1',entries=[])))
                     for stage in visual['stages']: Path(folder, stage['phase']+'-console.png').write_bytes(b'unit-test')
                     return type('Result', (), {'returncode': 1 if failure == "browser" else 0})()
@@ -396,7 +447,7 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                         with self.assertRaisesRegex(SUITE.SuiteError, "original reader"): SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report, 2)
                     elif failure == "browser":
                         with self.assertRaisesRegex(SUITE.SuiteError, 'Dense Console'): SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report, 2)
-                    elif failure.startswith(("relationship-", "filter-")):
+                    elif failure.startswith(("relationship-", "filter-", "node-filter-")):
                         with self.assertRaises(SUITE.SuiteError): SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report, 2)
                     else:
                         SUITE.run_dense(Client(), Client(), 2, dict(engine_id=14,catalog_path={}), report, 2)

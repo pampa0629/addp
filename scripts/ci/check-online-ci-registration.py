@@ -3618,11 +3618,11 @@ def validate_graph_protection_profile(repository: Path, registered: set[str]) ->
         "scripts/test/graph-review-extractor.py": ("ADDP_ONLINE_HOSTED", "MATERIAL", "bad-native"),
         "console/frontend/e2e/online/graph-review.spec.js": ("addp.graph-review-browser/v2", "browserAPIFromResponse", "login(", "batch_status: 500", "selection_cleared: true", "selection_stable_visible: true", "stableEmptyReviewSelection)", "graph-review-stable-selection.json"),
         "console/frontend/e2e/graph-relationship.fixture.js": ("installGraphRelationshipPaint", "stableRelationshipPaths", "graphRelationshipHits", "page.mouse.click", "fixture_id", "prop-row", "getImageData"),
-        "console/frontend/e2e/graph-visual.fixture.js": ("stableGraphPixels", "denseGraphStages", "stableRelationshipPixels", "fillPixelCount", "getImageData", "stableFrames", "graphNodeHits", "exploreGraphLayouts", "clickGraphNode", "graphObservationColor", "stableEmptyReviewSelection", "getAnimations", "emptyBackground", "emptyTick"),
+        "console/frontend/e2e/graph-visual.fixture.js": ("stableGraphPixels", "denseGraphStages", "stableGraphColorPixels", "fillPixelCount", "getImageData", "stableFrames", "graphNodeHits", "exploreGraphLayouts", "clickGraphNode", "graphObservationColor", "stableEmptyReviewSelection", "getAnimations", "emptyBackground", "emptyTick"),
         "graph/frontend/Dockerfile": ("COPY graph/frontend/nginx.conf /etc/nginx/conf.d/default.conf",),
         "graph/frontend/nginx.conf": ("try_files $uri $uri/ /index.html;", "try_files $uri =404;"),
         "scripts/test/graph-protection-online.py": (
-            "addp.graph-protection-online/v14", "verify_dense", "verify_relationships", "verify_dense_filters", "graph-relationship-filter-frame.json", "graph-relationship-hit-frame.json", "relationship_pixels", "run_dense", "graph-dense-stable-frame.json", "verify_search_frame", "verify_exploration", "verify_native_edges", "native_path_edges(reader, target, ids)", "verify_pixel_frame", "graph-exploration-stable-frame.json", "graph-search-stable-frame.json", "run_review", "public_unmanaged", "public_protected",
+            "addp.graph-protection-online/v15", "verify_dense", "verify_relationships", "verify_dense_filters", "verify_node_filters", "graph-node-filter-frame.json", "graph-relationship-filter-frame.json", "graph-relationship-hit-frame.json", "relationship_pixels", "run_dense", "graph-dense-stable-frame.json", "verify_search_frame", "verify_exploration", "verify_native_edges", "native_path_edges(reader, target, ids)", "verify_pixel_frame", "graph-exploration-stable-frame.json", "graph-search-stable-frame.json", "run_review", "public_unmanaged", "public_protected",
             "same_engine_control", "separate_engine_control", "target_paths", "private_protected_anonymous", "domain_resources_remaining", "wait_owners(",
             'report["browser"] = run_browser(', 'e2e/online/graph-protection.spec.js',
             'report["develop_unmanaged"] = run_develop_browser(', 'report["develop_protected"] = run_develop_browser(',
@@ -3634,7 +3634,7 @@ def validate_graph_protection_profile(repository: Path, registered: set[str]) ->
             '"cross_tenant_runtime_verified": True', 'ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_TENANT_ID',
         ),
         "console/frontend/e2e/online/graph-protection.spec.js": (
-            "addp.graph-protection-browser/v7", "graph-relationship-hit-frame.json", "graph-relationship-filter-frame.json", "installGraphRelationshipPaint", "browserAPIFromResponse", "login(",
+            "addp.graph-protection-browser/v7", "graph-relationship-hit-frame.json", "graph-relationship-filter-frame.json", "graph-node-filter-frame.json", "installGraphRelationshipPaint", "browserAPIFromResponse", "login(",
             'addp.service-graph-browser/v1', 'api.post(definition.endpoints.execute',
             'dto_address_unchanged: true', 'public_https_verified: false',
             "browse_snapshot: true", "knowledge_search: true", "public_switch_disabled: true", "graph_writes: 0",

@@ -329,9 +329,9 @@ const selectedNodeShapeFilters = computed(() => {
 
 // 过滤后的节点/边
 const filteredNodes = computed(() => {
-  if (visibleNodeShapes.value.length === 0) return visuallyEncodedNodes.value
+  if (nodeShapes.value.length === 0) return visuallyEncodedNodes.value
   const filters = selectedNodeShapeFilters.value
-  if (filters.length === 0) return visuallyEncodedNodes.value
+  if (filters.length === 0) return []
   return visuallyEncodedNodes.value.filter(n => {
     if (!n.labels || n.labels.length === 0) return true
     return filters.some(labels => labels.every(label => n.labels.includes(label)))
