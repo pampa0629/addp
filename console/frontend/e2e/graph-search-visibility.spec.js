@@ -48,6 +48,7 @@ test('Graph relationship endpoint observer binds circle boundary beside a nearer
   expect(observed.stable_frames).toBeGreaterThanOrEqual(10)
   expect(observed.candidates.length).toBeGreaterThan(0)
   expect([...new Set(observed.candidates.map(item => item.source + '->' + item.target))]).toEqual(['source->target'])
+  expect(observed.candidates.every(candidate => candidate.clearance === 100)).toBe(true)
 })
 
 test('Graph endpoint observer uses path direction when two circle borders are equally close', async ({ page }) => {
@@ -64,6 +65,32 @@ test('Graph endpoint observer uses path direction when two circle borders are eq
   const observed=await canvas.evaluate(stableRelationshipPaths,{nodes})
   expect(observed.candidates.length).toBeGreaterThan(0)
   expect([...new Set(observed.candidates.map(p=>p.source+'->'+p.target))]).toEqual(['source->target'])
+})
+
+test('Graph relationship candidate ranking preserves exact cross-path clearances at intersections', async ({ page }) => {
+  await page.setContent('<div class="graph-canvas"><canvas width="500" height="320"></canvas></div>')
+  await page.evaluate(installGraphRelationshipPaint)
+  const canvas = page.locator('.graph-canvas')
+  const points = [[60,60],[440,60],[60,260],[440,260],[250,60],[250,260]]
+  await canvas.locator('canvas').evaluate((element, points) => {
+    const c = element.getContext('2d')
+    c.clearRect(0,0,500,320);c.strokeStyle='#0f766e';c.lineWidth=3
+    for (const y of [60,260]) { c.beginPath();c.moveTo(80,y);c.lineTo(420,y);c.stroke() }
+    c.beginPath();c.moveTo(250,80);c.lineTo(250,240);c.stroke()
+    for (const [y,control] of [[60,180],[260,140]]) { c.beginPath();c.moveTo(80,y);c.quadraticCurveTo(250,control,420,y);c.stroke() }
+    c.fillStyle='#ff0000'
+    for (const [x,y] of points) { c.beginPath();c.arc(x,y,20,0,Math.PI*2);c.fill() }
+  }, points)
+  const nodes = [{ hits: points.map(([x,y], index) => ({ native_id: String(index), x, y })),
+    frame: { fillColor: [255,0,0], nodes: points.map(([x,y]) => ({ box: [x-20,y-20,x+20,y+20] })) } }]
+  const observed = await canvas.evaluate(stableRelationshipPaths, { nodes })
+  expect(observed.stable_frames).toBeGreaterThanOrEqual(10)
+  expect(new Set(observed.candidates.map(candidate => candidate.index)).size).toBe(5)
+  const exact = observed.candidates.map(candidate => Math.min(100, ...observed.candidates
+    .filter(other => other.index !== candidate.index).map(other => Math.hypot(other.x-candidate.x,other.y-candidate.y))))
+  expect(observed.candidates.map(candidate => candidate.clearance)).toEqual(exact)
+  expect(exact).toContain(0)
+  expect(exact).toEqual([...exact].sort((a,b) => b-a))
 })
 
 test('Graph circle paint cache preserves untouched nodes through dirty rectangle redraws', async ({page})=>{

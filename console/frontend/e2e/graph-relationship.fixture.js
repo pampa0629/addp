@@ -182,9 +182,24 @@ export async function stableRelationshipPaths(element, { nodes, timeout = 10000 
       all.push({ ...stroke, index, t: sample/100, x, y, pixel, source: start.native_id, target: end.native_id })
     }
   }
-  for (const candidate of all) {
-    candidate.clearance = Math.min(100, ...all.filter(other => other.index !== candidate.index).map(other => Math.hypot(other.x-candidate.x, other.y-candidate.y)))
+  // Exact nearest point on another painted path, capped at the same 100px.
+  // Spatial pruning avoids comparing every pair in a dense graph.
+  const tree = (points, axis = 'x') => {
+    if (!points.length) return null
+    points.sort((a, b) => a[axis] - b[axis])
+    const middle = Math.floor(points.length / 2), next = axis === 'x' ? 'y' : 'x'
+    return { point: points[middle], axis, left: tree(points.slice(0, middle), next), right: tree(points.slice(middle + 1), next) }
   }
+  const nearest = (node, candidate, distance = 100) => {
+    if (!node) return distance
+    if (node.point.index !== candidate.index) distance = Math.min(distance, Math.hypot(node.point.x-candidate.x, node.point.y-candidate.y))
+    const delta = candidate[node.axis] - node.point[node.axis]
+    distance = nearest(delta <= 0 ? node.left : node.right, candidate, distance)
+    if (Math.abs(delta) < distance) distance = nearest(delta <= 0 ? node.right : node.left, candidate, distance)
+    return distance
+  }
+  const spatial = tree([...all])
+  for (const candidate of all) candidate.clearance = nearest(spatial, candidate)
   all.sort((a, b) => b.clearance-a.clearance)
   return { width: rect.width, height: rect.height, stable_frames: stable, candidates: all, paths: strokes, paintedNodes, node_geometry: visible.map(({ native_id, x, y, rx, ry, color, alpha }) => ({ native_id, x, y, rx, ry, color, alpha })) }
 }
@@ -195,7 +210,14 @@ export async function graphRelationshipHits(page, frame, canvas, edges, stage) {
   const hits = new Map(), panel = frame.locator('.node-panel'), box = await canvas.locator('canvas').boundingBox()
   let attempts = 0
   const unsuccessful = []
+  // Try each painted curve's clearest point before retrying other points on
+  // that curve. Keep every candidate for intersections and parallel edges.
+  const first = [], remaining = [], seen = new Set()
   for (const candidate of observed.candidates) {
+    if (seen.has(candidate.index)) remaining.push(candidate)
+    else { seen.add(candidate.index); first.push(candidate) }
+  }
+  for (const candidate of [...first, ...remaining]) {
     if (hits.size === edges.length) break
     const matching = edges.filter(edge => !hits.has(edge.id) && ((edge.source === candidate.source && edge.target === candidate.target) || (edge.source === candidate.target && edge.target === candidate.source)))
     if (!matching.length) continue
