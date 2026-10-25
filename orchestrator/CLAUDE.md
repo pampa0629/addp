@@ -115,6 +115,8 @@ Model 可在页内通过共享关联流程对话框消费现有 list/get/execute
 
 编排编辑器通过共享 `useUnsavedChangesGuard` 保护未保存的定义和节点位置；缩放和平移不触发离页提醒。保存成功更新基线，失败保留保护；切换编排身份时重新加载编辑器。
 
+初始任务契约的离页回归由 `frontend/e2e/editor-initialization.spec.js` 覆盖：在同一 iframe 文档内通过取消返回列表，再编辑另一编排，分别让旧成功／失败响应落在新画布挂载后、新契约仍等待或已经就绪时。断言旧响应不提前解除新画布加载状态、不更换画布、不污染定义／参数／布局或提示旧错误；夹具仅授予 read/update，禁止保存和执行请求。此确定性 T3 沿既有 `make test-orchestrator-frontend`、`make test-module MODULE=orchestrator` 和 Platform CI 前端矩阵自动发现，不替代真实后端验收。
+
 创建或保存编排失败时优先展示 owner 返回的 `error` 文本，让用户能定位参数、输出绑定或权限错误；没有有效错误文本时使用本地化的通用失败提示。失败不清空草稿、不解除离页保护。该行为由 `make test-orchestrator-frontend` 的浏览器回归覆盖。
 
 保存和执行前的参数校验共用同一路径，使用具体任务的 `input_defaults` 补齐未覆盖的顶层参数，再执行严格 Schema 校验；不把默认值写入 Step 或 owner 请求。缺少默认值的必填项、显式错误值以及不完整的显式资源对象仍拒绝。验证入口为 `make test-module MODULE=orchestrator`，覆盖平台 T0、后端 Go T1 与前端 T1/T3；现有 Platform CI 的 Go 自动发现和 Orchestrator 前端矩阵直接覆盖，无新增门禁或服务依赖。
