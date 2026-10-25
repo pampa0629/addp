@@ -1545,3 +1545,10 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 - `bash scripts/swagger/gen-swagger.sh monitor` 与 `bash scripts/swagger/check-route-coverage.sh monitor`：通过，96个公开路由方法。`python3 scripts/ci/check-t2-ci-registration.py --repository "$PWD"`：22／12／9／2登记通过。沿原Monitor PostgreSQL、System IAM PostgreSQL、Go及前端自动发现，无第二条测试或部署路线。
 
 日志：`/tmp/addp-service-availability-{common-final,monitor-final,system-go,system-pg,monitor-pg,authorization-final,common-frontend,system-frontend,browser,monitor-frontend-final,swagger,route-coverage,registration}.log`。真实数据库T2使用受控组投影与时钟，不等于真实部署停机／租约超时或真实渠道送达；页面为受控HTTP T3，不等于Safari个人会话、Console正式身份或Hosted。没有执行个人重启／数据库迁移、创建个人规则／通知、查询／触发CI或Hosted，也未设置定时任务。个人真实链路和正式身份验收仍待应用代码后复验及专门会话安排；清单第15／49／52行保持部分实现。
+
+
+### 重启后的个人环境只读核对（2026-10-25）
+
+用户完成全量重启后，System 8180、Monitor 8100、Gateway 8000的`/health/ready`均200/ready；构建报告commit为`871bc854795105b364b154f1802697969655b6f0`，祖先检查确认包含本批`062301037`。沿Safari当前平台系统管理员会话进入Console的服务失联规则页，规则列表为空且无读取错误；创建入口及System授权候选可读取，候选25组与标准入口受管声明的25组一致。当前声明为Meta scan、Quality quality-bounded、Transfer sync／continuous_sync各一个预期副本；不据此认定双Worker运行验收。无障碍接口完成Meta扫描组筛选／选择，默认60／30秒、启用开关关闭且不可在创建时开启，缺名称时本地校验阻止写入。
+
+截图仍显示原列表，与无障碍树中的弹窗及校验提示不一致；Raise窗口后仍未得到一致视觉证据，已请求用户核对实际是否可见，未把无障碍读取外推为弹窗视觉通过。未保存／启用个人规则或通知，未停止服务、直接读写个人数据库、触发CI／Hosted或创建定时任务。真实规则保存、重新启用后的运行确认、租约失联／恢复和正式身份全闭环仍未验收。安全收据：`/tmp/addp-service-availability-personal-restart-20261025.json`。
