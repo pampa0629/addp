@@ -470,6 +470,7 @@ def seed_chains(case, path):
 def chain_frame_digest(frame):
     checksum = hashlib.sha256()
     checksum.update(str((frame.columns.tolist(), frame.dtypes.astype(str).tolist(), str(frame.crs))).encode())
+    checksum.update(str((type(frame.index).__name__, str(frame.index.dtype), frame.index.names)).encode())
     geometry_index = frame.columns.get_loc(frame.geometry.name)
     for record in frame.itertuples(index=True, name=None):
         checksum.update(repr(record[:geometry_index + 1] + record[geometry_index + 2:]).encode())
@@ -478,9 +479,14 @@ def chain_frame_digest(frame):
 
 
 def verify_chain_source(frame, case):
+    import pandas as pd
     assert len(frame) == case.size and frame.crs.to_epsg() == 3857
     assert list(frame.columns) == ['route_key','note','grade','road',frame.geometry.name]
-    assert str(frame['grade'].dtype) == 'int64'
+    # The physical fixture declares Integer64; load preserves that schema as
+    # nullable Int64 even when this particular batch has no missing values.
+    assert str(frame['grade'].dtype) == 'Int64'
+    assert isinstance(frame.index, pd.RangeIndex) and frame.index.equals(pd.RangeIndex(case.size))
+    assert frame.index.name is None
     for i, record in enumerate(frame.itertuples(index=False, name=None)):
         properties, points = chain_part(case, i)
         assert dict(zip(frame.columns[:-1], record[:-1])) == properties
@@ -540,6 +546,8 @@ def run_chain_worker(case, root, observer, measurement_id):
     assert set(result) == {'result','members'}
     for port in ('result','members'):
         assert len(result[port]) == chain_counts(case)[port]
+        inherited = ['road', 'grade'] if port == 'result' else frame.columns
+        assert all(result[port][name].dtype == frame[name].dtype for name in inherited)
         phase('save_' + port, lambda port=port: save(result[port], connection_info=connection, path=port + '.gpkg', mode='fail'))
     physical = phase('reload_oracle', lambda: {port: verify_chain_output(case, root / (port + '.gpkg'), port) for port in ('result','members')})
     def unchanged():

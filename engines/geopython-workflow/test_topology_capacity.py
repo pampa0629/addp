@@ -175,3 +175,106 @@ def test_chain_capacity_native_source_all_columns_are_immutable_and_verified(tmp
         changed=frame.copy();changed.at[0,field]=value
         assert m.chain_frame_digest(changed)!=original
         with pytest.raises(AssertionError):m.verify_chain_source(changed,case)
+
+
+@pytest.mark.parametrize('dtype', ['int64', 'float64', 'object', 'Int32'])
+def test_chain_capacity_native_source_requires_the_single_nullable_schema(tmp_path, dtype):
+    from osgeo import ogr
+    from operators.io_operators import load
+    case = m.Case('chain-open', 12, 'chains')
+    path = tmp_path/'source.gpkg'; m.seed_chains(case, path)
+    source = ogr.Open(str(path), 0); layer = source.GetLayer(0)
+    field = layer.GetLayerDefn().GetFieldDefn(layer.GetLayerDefn().GetFieldIndex('grade'))
+    assert field.GetType() == ogr.OFTInteger64 and field.GetSubType() == ogr.OFSTNone
+    source = layer = None
+    frame = load(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)}, path=path.name)
+    assert str(frame.grade.dtype) == 'Int64'
+    m.verify_chain_source(frame, case)
+    changed = frame.copy(); changed['grade'] = changed.grade.astype(dtype)
+    assert changed.grade.tolist() == frame.grade.tolist()
+    assert m.chain_frame_digest(changed) != m.chain_frame_digest(frame)
+    with pytest.raises(AssertionError): m.verify_chain_source(changed, case)
+
+
+@pytest.mark.parametrize('change', ['values', 'name', 'dtype'])
+def test_chain_capacity_native_source_digest_and_oracle_include_index_metadata(tmp_path, change):
+    import pandas as pd
+    from operators.io_operators import load
+    case = m.Case('chain-open', 12, 'chains'); m.seed_chains(case, tmp_path/'source.gpkg')
+    frame = load(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)}, path='source.gpkg')
+    m.verify_chain_source(frame, case); changed = frame.copy()
+    if change == 'values': changed.index = pd.RangeIndex(1, len(frame)+1)
+    elif change == 'name': changed.index = changed.index.rename('foreign')
+    else: changed.index = changed.index.astype('Int64')
+    assert m.chain_frame_digest(changed) != m.chain_frame_digest(frame)
+    with pytest.raises(AssertionError): m.verify_chain_source(changed, case)
+
+
+def test_chain_capacity_native_nullable_schema_exact_dual_save_and_source_invariance(tmp_path):
+    import pandas as pd
+    from geopandas.testing import assert_geodataframe_equal
+    from osgeo import ogr, osr
+    from operators.geometric_operators import merge_line_chains
+    from operators.io_operators import load, save
+
+    # This bounded companion is not a new capacity scene. Native construction
+    # makes Integer64/Boolean and nulls independent of pandas writer inference.
+    ogr.UseExceptions(); path = tmp_path/'nullable.gpkg'
+    crs = osr.SpatialReference(); crs.ImportFromEPSG(3857)
+    ds = ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
+    layer = ds.CreateLayer('nullable', crs, ogr.wkbLineString)
+    for name, kind in [('route_key',ogr.OFTString),('note',ogr.OFTString),
+                       ('grade',ogr.OFTInteger64),('road',ogr.OFTString),('enabled',ogr.OFTInteger)]:
+        field = ogr.FieldDefn(name, kind)
+        if name == 'enabled': field.SetSubType(ogr.OFSTBoolean)
+        layer.CreateField(field)
+    grades = [2**53+1, 2**53+1, None, -(2**63)]
+    flags = [True, True, None, False]
+    notes = [None, 'reverse', 'null', 'minimum']
+    points = [[(0,0),(1,0)],[(2,0),(1,0)],[(2,0),(3,0)],[(3,0),(4,0)]]
+    for row in range(4):
+        feature = ogr.Feature(layer.GetLayerDefn())
+        for name, value in [('route_key',f'row-{row}'),('note',notes[row]),
+                            ('grade',grades[row]),('road','main'),('enabled',flags[row])]:
+            if value is not None: feature.SetField(name, value)
+        shape = ogr.Geometry(ogr.wkbLineString)
+        for x,y in points[row]: shape.AddPoint_2D(x,y)
+        feature.SetGeometry(shape); assert layer.CreateFeature(feature) == 0
+    ds = layer = None; physical_before = m.digest(path)
+    connection = {'engine_type':'nfs','mount_path':str(tmp_path)}
+    frame = load(connection_info=connection, path=path.name); before = frame.copy(deep=True)
+    assert str(frame.grade.dtype) == 'Int64' and str(frame.enabled.dtype) == 'boolean'
+    pd.testing.assert_series_equal(frame.grade, pd.Series(grades, name='grade', dtype='Int64'))
+    pd.testing.assert_series_equal(frame.enabled, pd.Series(flags, name='enabled', dtype='boolean'))
+    assert frame.index.equals(pd.RangeIndex(4)) and frame.index.name is None
+    outputs = merge_line_chains(frame, 'route_key', ['road','grade','enabled'])
+    pd.testing.assert_series_equal(outputs['result'].grade,
+        pd.Series([2**53+1,None,-(2**63)], name='grade', dtype='Int64'))
+    pd.testing.assert_series_equal(outputs['result'].enabled,
+        pd.Series([True,None,False], name='enabled', dtype='boolean'))
+    assert outputs['members'].route_key.tolist() == [f'row-{i}' for i in range(4)]
+    assert outputs['members'].is_reversed.tolist() == [False,True,False,False]
+    assert_geodataframe_equal(outputs['members'][frame.columns], frame)
+    for port in ['result','members']:
+        saved = tmp_path/(port+'.gpkg'); save(outputs[port], connection_info=connection, path=saved.name, mode='fail')
+        ds = ogr.Open(str(saved), 0); layer = ds.GetLayer(0); schema = layer.GetLayerDefn()
+        assert layer.GetSpatialRef().GetAuthorityCode(None) == '3857'
+        assert schema.GetFieldDefn(schema.GetFieldIndex('grade')).GetType() == ogr.OFTInteger64
+        assert schema.GetFieldDefn(schema.GetFieldIndex('enabled')).GetSubType() == ogr.OFSTBoolean
+        features = list(layer)
+        expected_grades = [2**53+1,None,-(2**63)] if port == 'result' else grades
+        expected_flags = [True,None,False] if port == 'result' else flags
+        expected_points = [[(0,0),(1,0),(2,0)],points[2],points[3]] if port == 'result' else points
+        assert [f.GetField('grade') for f in features] == expected_grades
+        assert [f.GetField('enabled') for f in features] == expected_flags
+        assert [list(f.GetGeometryRef().GetPoints()) for f in features] == expected_points
+        assert all(f.GetGeometryRef().GetCoordinateDimension() == 2 and not f.GetGeometryRef().IsMeasured()
+                   and f.GetGeometryRef().IsValid() for f in features)
+        if port == 'members': assert [f.GetField('note') for f in features] == notes
+        ds = layer = None
+        reloaded = load(connection_info=connection, path=saved.name)
+        assert str(reloaded.grade.dtype) == 'Int64' and str(reloaded.enabled.dtype) == 'boolean'
+        pd.testing.assert_series_equal(reloaded.grade, outputs[port].grade)
+        pd.testing.assert_series_equal(reloaded.enabled, outputs[port].enabled)
+    assert_geodataframe_equal(frame, before)
+    assert m.digest(path) == physical_before
