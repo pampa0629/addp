@@ -2966,6 +2966,169 @@ class DevelopRoleNaturalExpiryTest(unittest.TestCase):
                          ["/api/v1/system/tenant/role_assignments/43/revoke"])
 
 
+class TransferRoleExpiryBackend(DevelopRoleExpiryBackend):
+    def __init__(self, fault=None):
+        super().__init__(fault)
+        self.task = None
+        self.task_history = []
+        self.sessions = {}
+        self.target_rows = self.rows(False)
+        self.task_deleted = False
+
+    def rows(self, selected):
+        result = []
+        for key in ("1","2","3","4","5"):
+            source = ONLINE.BANK_SOURCE_VALUES[key]
+            value = ("*"*len(source) if source else None) if selected else ONLINE.BANK_MASKED[key]
+            result.append({"id":key,"customer_code":"CUST-1000"+key,ONLINE.BANK_FIELD:value,"bank_account_no":"account-"+key,
+                "card_id":"card-"+key,"bank_card_verified":"verified-"+key,"credit_card_number":str(100+int(key))})
+        return result
+
+    def refusal(self, code):
+        value={"error":"qualification expired","error_code":code}
+        if self.expiry_fault=="denial_data":value["data"]=[]
+        if self.expiry_fault=="wrong_transfer_code" and code.startswith("transfer_"):value["error_code"]="transfer_protection_choice_invalid"
+        if self.expiry_fault=="wrong_bff_code" and code.startswith("query_"):value["error_code"]="query_protection_roles_unavailable"
+        return ONLINE.SUPPORT.Response(401 if self.expiry_fault=="denial401" else 409,value)
+
+    def for_user(self, token, method, path, expected, body=None, **kwargs):
+        response=ONLINE.SUPPORT.Response
+        task_path="/api/v1/transfer/task-definitions/501"
+        if path.startswith("/api/v1/transfer/"):
+            self.events.append((token,method,path,copy.deepcopy(body)))
+            assert token=="reader-active", "Transfer task must retain the exact ordinary session"
+            if path.startswith("/api/v1/transfer/source-protection-options?"):
+                values=ONLINE.urllib.parse.parse_qs(ONLINE.urllib.parse.urlsplit(path).query)
+                assert set(values)=={"source_locator"}
+                return ServiceRoleCursorClient.request(self,method,"/api/v1/service/query-protection-options?source",expected,body,**kwargs)
+            if path=="/api/v1/transfer/source-protection-checks":
+                return self.refusal("transfer_protection_roles_unavailable") if self.expired else response(200,{"valid":True})
+            if path=="/api/v1/transfer/task-definitions":
+                self.task={**copy.deepcopy(body),"id":501}
+                assert self.task["config"]["source"]["protection_choices"]
+                return response(201,copy.deepcopy(self.task))
+            if path==task_path:
+                if method=="DELETE":
+                    self.task_deleted=True
+                    return response(200,{"message":"deleted"})
+                if method=="PUT":
+                    if "name" in body and self.expired:
+                        return self.refusal("transfer_protection_roles_unavailable")
+                    self.task.update(copy.deepcopy(body))
+                value=copy.deepcopy(self.task)
+                if self.expired and self.expiry_fault=="task_choice_cleared":value["config"]["source"]["protection_choices"]=[]
+                return response(404 if self.task_deleted else 200,value)
+            if path==task_path+"/start":
+                selected=bool(self.task["config"]["source"]["protection_choices"])
+                if self.expired and selected:
+                    if self.expiry_fault=="hidden_execution":self.task_history.append({"execution_id":str(ONLINE.uuid.UUID(int=999))})
+                    if self.expiry_fault=="hidden_target_write":self.target_rows[0]["customer_code"]="modified"
+                    return self.refusal("transfer_protection_roles_unavailable")
+                execution_id=str(ONLINE.uuid.UUID(int=100+len(self.task_history)))
+                value={"execution_id":execution_id,"task_id":501,"status":"success","trigger_type":"manual","trigger_by":7,"records_read":5,"records_written":5}
+                if self.expiry_fault=="wrong_counts":value["records_written"]=4
+                self.task_history.append(value)
+                self.target_rows=self.rows(selected)
+                return response(200,copy.deepcopy(value))
+            if path.startswith(task_path+"/executions?"):
+                return response(200,{"data":copy.deepcopy(self.task_history),"total":len(self.task_history)})
+            if path.startswith("/api/v1/transfer/executions/"):
+                return response(200,copy.deepcopy(next(row for row in self.task_history if row["execution_id"]==path.rsplit("/",1)[-1])))
+            raise AssertionError("unexpected Transfer route "+path)
+        export_create=path.startswith("/api/v1/develop/executions/") and path.endswith("/exports")
+        if export_create or path.startswith("/api/v1/develop/exports/"):
+            self.events.append((token,method,path,copy.deepcopy(body)))
+            assert token=="reader-active", "CSV must retain the same ordinary session"
+            if export_create:
+                source_id=path.split("/")[5]
+                selected=bool(self.executions[source_id]["execution_config"]["content"]["export_protection_choices"])
+                if selected and self.expired:return self.refusal("query_protection_choice_invalid")
+                identifier=len(self.sessions)+1
+                path="/api/v1/develop/exports/"+str(identifier)
+                value={"id":identifier,"transfer_execution_id":str(ONLINE.uuid.UUID(int=300+identifier)),"format":"csv","status":"success",
+                    "requires_current_user":selected,"download_url":path+"/file"}
+                self.sessions[identifier]=value
+                return response(202,copy.deepcopy(value))
+            identifier=int(path.split("/")[5]);value=copy.deepcopy(self.sessions[identifier])
+            selected=value["requires_current_user"]
+            if selected and self.expired:
+                if self.expiry_fault=="old_file_unlocked" and path.endswith("/file"):
+                    return response(200,b"not a refusal")
+                return self.refusal("query_protection_choice_invalid")
+            if not path.endswith("/file"):return response(200,value)
+            rows=self.rows(selected)
+            if self.expiry_fault=="csv_raw":rows[0][ONLINE.BANK_FIELD]=ONLINE.BANK_SOURCE_VALUES["1"]
+            if self.expiry_fault=="csv_default_instead" and selected:rows=self.rows(False)
+            if self.expiry_fault=="csv_default_leaked" and not selected:rows[0][ONLINE.BANK_FIELD]=ONLINE.BANK_SOURCE_VALUES["1"]
+            stream=ONLINE.io.StringIO();writer=ONLINE.csv.DictWriter(stream,fieldnames=ONLINE.BANK_FIELDS);writer.writeheader();writer.writerows(rows)
+            return response(200,stream.getvalue().encode())
+        if path=="/api/v1/system/login":
+            assert body["username"]==ONLINE.TRANSFER_ROLE_USERNAME
+            body=dict(body,username=ONLINE.DEVELOP_ROLE_USERNAME)
+        value=super().for_user(token,method,path,expected,body,**kwargs)
+        if path=="/api/v1/system/auth/context" and token!="controller" and value.status==200:
+            permissions=set(ONLINE.TRANSFER_ROLE_READER_PERMISSIONS)
+            if self.expired and self.expiry_fault=="permission_lost":permissions.remove("transfer.task.execute")
+            value.payload["authorization"]["role_assignments"][0]["permissions"]=sorted(permissions)
+        if path=="/api/v1/system/tenant/role_assignments":
+            self.timed["username"]=ONLINE.TRANSFER_ROLE_USERNAME;value.payload=[copy.deepcopy(self.timed)]
+        if path.startswith("/api/v1/security/protection-enrollments/"):value.payload["owner_progress"][0]["consumer_owner"]="transfer"
+        return value
+
+
+class TransferRoleNaturalExpiryTest(unittest.TestCase):
+    def run_case(self, backend):
+        class Clock(ONLINE.datetime):
+            @classmethod
+            def now(cls,tz=None):return backend.now
+        source={"id":1,"full_name":"fixture.bank_card_accounts","item_type":"table","fingerprint":"sha256:bank-fixture"}
+        target={"id":2,"node_id":3,"full_name":ONLINE.TARGET_SCHEMA+"."+ONLINE.BANK_TARGET,"item_type":"table"}
+        env=dict(zip(ONLINE.SERVICE_ROLE_ENVIRONMENT,("unused","external-online-security-role-reader","private-password","42","controller")))
+        env.update(ADDP_ONLINE_SECURITY_TRANSFER_ROLE_USERNAME=ONLINE.TRANSFER_ROLE_USERNAME,ADDP_ONLINE_SECURITY_TRANSFER_ROLE_PASSWORD="private-transfer-password")
+        with (patch.object(ONLINE,"GatewayClient",side_effect=lambda base,token,timeout:MembershipClient(backend,token)),
+              patch.object(ONLINE,"datetime",Clock),patch.object(ONLINE,"wait_protection_deadline",side_effect=backend.wait),
+              patch.object(ONLINE,"find_item",side_effect=lambda client,engine,*args:source if engine==23 else target),
+              patch.object(ONLINE,"list_pages",return_value=[]),
+              patch.object(ONLINE,"preview_rows",side_effect=lambda *args:(ONLINE.BANK_FIELDS,copy.deepcopy(backend.target_rows)))):
+            return ONLINE.exercise_transfer_role_membership_expiry(MembershipClient(backend,"governor"),23,31,"fixture",
+                {"enrollment_id":"enrollment","assessment_id":"assessment"},{"principal_id":"9","tenant_id":"2"},"run-42",time.monotonic()+300,env)
+
+    def test_same_session_blocks_start_and_old_actual_csv_then_explicit_default_recovers(self):
+        backend=TransferRoleExpiryBackend();report=self.run_case(backend)
+        self.assertEqual(report["identity_before"],report["identity_after"])
+        self.assertTrue(report["selected_csv"]["selected_full_mask"] and report["selected_csv"]["csv_empty_cells_verified"])
+        self.assertTrue(report["default_csv"]["default_mask"] and report["default_target"]["default_mask"])
+        self.assertEqual(len(report["same_session_refusals"]),6)
+        for name,refusal in report["same_session_refusals"].items():
+            expected="transfer_protection_roles_unavailable" if name in ("task_start","task_name_update","direct_selection_check") else "query_protection_choice_invalid"
+            self.assertEqual(refusal,{"http_status":409,"error_code":expected,"result_absent":True})
+        self.assertTrue(report["no_execution_or_target_write_after_refusal"])
+        self.assertEqual(report["assignment_after"]["effective_state"],"expired")
+        self.assertEqual(len(backend.task_history),2);self.assertEqual(len(backend.sessions),2)
+        self.assertTrue(backend.task_deleted);self.assertEqual(backend.policy["state"],"revoked")
+        self.assertFalse(any(str(path).endswith("/revoke") for _,_,path,_ in backend.events))
+        self.assertEqual(sum(path=="/api/v1/system/login" for _,_,path,_ in backend.events),2)
+        wait=next(i for i,row in enumerate(backend.events) if row[0]=="wait")
+        self.assertFalse(any(path=="/api/v1/system/login" for _,_,path,_ in backend.events[wait+1:]))
+        for secret in ("private-transfer-password","reader-active",*filter(None,ONLINE.BANK_SOURCE_VALUES.values())):
+            self.assertNotIn('"'+secret+'"',json.dumps(report,ensure_ascii=False))
+
+    def test_auth_protection_wrong_codes_hidden_writes_csv_leaks_and_silent_clear_cannot_pass(self):
+        for fault in ("session401","version_changed","permission_lost","role_survived","premature_wait","revoked_instead","extended_deadline",
+                      "short_session","policy_changed","projection_changed","wrong_counts","wrong_transfer_code","wrong_bff_code","denial_data",
+                      "denial401","hidden_execution","hidden_target_write","task_choice_cleared","csv_raw","csv_default_instead","csv_default_leaked","old_file_unlocked"):
+            with self.subTest(fault=fault),self.assertRaises(ONLINE.SuiteError):self.run_case(TransferRoleExpiryBackend(fault))
+
+    def test_interruption_deletes_own_task_before_qualifier_revocation_invalidates_its_session(self):
+        backend=TransferRoleExpiryBackend("interrupt_wait")
+        with self.assertRaises(KeyboardInterrupt):self.run_case(backend)
+        self.assertTrue(backend.task_deleted);self.assertEqual(backend.timed["status"],"revoked")
+        delete=next(i for i,row in enumerate(backend.events) if row[1:3]==("DELETE","/api/v1/transfer/task-definitions/501"))
+        revoke=next(i for i,row in enumerate(backend.events) if str(row[2]).endswith("/revoke"))
+        self.assertLess(delete,revoke)
+        self.assertEqual(backend.previous["status"],"revoked")
+
+
 class ResourceValiditySnapshotTest(unittest.TestCase):
     def snapshot(self, until=None, expired=False):
         return {"validity_mode": "permanent" if until is None else "until", "expires_at": until,

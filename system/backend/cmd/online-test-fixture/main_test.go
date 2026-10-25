@@ -939,7 +939,7 @@ func TestSecurityMaskingEligibilityKeepsFunctionalPermissionsAndReissuesSession(
 		}
 	}
 	values := map[string]string{}
-	for _, key := range []string{"ADDP_ONLINE_SECURITY_DEVELOP_ROLE_USERNAME", "ADDP_ONLINE_SECURITY_DEVELOP_ROLE_PASSWORD", "ADDP_ONLINE_SECURITY_ROLE_USER_ACCESS_TOKEN", "ADDP_ONLINE_SECURITY_ROLE_USER_USERNAME", "ADDP_ONLINE_SECURITY_ROLE_USER_PASSWORD", "ADDP_ONLINE_SECURITY_ROLE_ASSIGNMENT_ID", "ADDP_ONLINE_SECURITY_ROLE_CONTROLLER_ACCESS_TOKEN"} {
+	for _, key := range []string{"ADDP_ONLINE_SECURITY_TRANSFER_ROLE_USERNAME", "ADDP_ONLINE_SECURITY_TRANSFER_ROLE_PASSWORD", "ADDP_ONLINE_SECURITY_DEVELOP_ROLE_USERNAME", "ADDP_ONLINE_SECURITY_DEVELOP_ROLE_PASSWORD", "ADDP_ONLINE_SECURITY_ROLE_USER_ACCESS_TOKEN", "ADDP_ONLINE_SECURITY_ROLE_USER_USERNAME", "ADDP_ONLINE_SECURITY_ROLE_USER_PASSWORD", "ADDP_ONLINE_SECURITY_ROLE_ASSIGNMENT_ID", "ADDP_ONLINE_SECURITY_ROLE_CONTROLLER_ACCESS_TOKEN"} {
 		values[key] = "private-fixture-value"
 	}
 	path := filepath.Join(t.TempDir(), "security-role.env")
@@ -1529,5 +1529,12 @@ func TestSecurityMaskingDevelopReaderHasOnlyStableFunctionalPermissions(t *testi
 	want := []string{"develop.task.execute", "develop.task.read", "develop.data_read.execute", "system.execution_authorization.create", "meta.catalog.read", "service.definition.read"}
 	if !slices.Equal(securityDevelopRoleReaderPermissions, want) {
 		t.Fatal("Develop expiry must preserve the minimal functional role and duplicate eligibility read", securityDevelopRoleReaderPermissions)
+	}
+}
+
+func TestSecurityMaskingTransferReaderKeepsFunctionalAuthoritySeparate(t *testing.T) {
+	want := []string{"transfer.task.create", "transfer.task.read", "transfer.task.update", "transfer.task.delete", "transfer.task.execute", "develop.task.execute", "develop.task.read", "develop.data_read.execute", "develop.data_write.execute", "system.execution_authorization.create", "meta.catalog.read", "service.definition.read"}
+	if !slices.Equal(securityTransferRoleReaderPermissions, want) {
+		t.Fatal("Transfer eligibility expiry must retain only its task/query authority and duplicate read", securityTransferRoleReaderPermissions)
 	}
 }

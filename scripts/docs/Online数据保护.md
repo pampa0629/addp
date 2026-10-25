@@ -59,6 +59,16 @@
 
 仅失败或中断时清理尚有效的本轮 Assignment；成功不撤销、不重新登录、不续期。沿用精确 Policy 撤销、凭据隔离和 existing suite/Makefile 门禁，新增查询执行与审计事实随隔离 Infra 销毁，不新增产品接口或浏览器专项。确定性 T0/T1 与实际 HTTP T4 分别记录，CI 由专门会话跟进。
 
+## Transfer 资格自然到期与旧文件
+
+领域报告 v30 的 `transfer_role_membership_expiry` 独立使用普通 Transfer/Develop 导出用户。主角色固定持有手动任务 CRUD/执行、Develop 查询/读写效果、执行授权创建、Meta 读取及重复资格只读 Permission；额外资格角色沿用已有定义，只通过正式 IAM API 新建本用户的 90 秒 Assignment。先发布 transfer/export Policy 并等待回执，再开始期限，不改变 Service/Develop 先前用户、资格审计、源授权或原值授权。
+
+到期前保存带选择的独立 bounded/snapshot/native-table 任务，真实执行将既有合成 MySQL 银行卡表五行写入套件既有 PostgreSQL 目标，逐值核对全遮盖及相邻字段。另用同一用户的成功 Develop 查询快照冻结独立 export 选择，经唯一全量导出路径生成实际 CSV 并下载核对五行、Unicode、null/空单元格；不将预览或成功状态代替文件字节。查询本身仍默认脱敏，与 export 选择分开。
+
+等待真实时间后，要求同一会话、主体、成员、授权版本和主功能 Permission 不变，仅资格角色自然消失，Assignment active/expired 且无撤销。保留任务及选择时，启动和仅改名称的更新须精确 409/transfer_protection_roles_unavailable；本人直接 selection check 同样拒绝，任务执行列表保持原一条且目标逐值不变。旧成功导出会话状态、文件再次下载及从原查询再次创建导出均拒绝且无结果；当前 Common Transfer BFF 将409合并为方式不可用，因此 Develop 三处精确为409/query_protection_choice_invalid，不能伪称其已细分角色原因。System观察与Transfer直接拒绝独立证明资格归因，不解析错误正文，不改变现有错误契约。
+
+随后显式清空任务选择再启动，同一用户恢复默认五行；新查询显式空 export 选择后生成新 CSV 并逐值核对默认保护。原有特殊方式文件仍拒绝，不因其他任务恢复默认而解锁。成功不 revoke/重登/续期；失败/中断仅清理本轮仍有效 Assignment，删除本轮任务并核对404、撤销本轮 Policy。复用已有合成目标及 Infra，任务执行、导出会话和文件事实由隔离 Infra 最终销毁；不新增永久清理接口或把保留审计计为残留失控。门禁沿 make test-security-online-runner 和既有 Hosted suite；确定性 T0/T1不代替实际 HTTP T4，CI仍由专门会话跟进。
+
 ## 四出口逐原因矩阵
 
 领域报告 v25 起在既有 suite 内给出 `protection_reason_matrix`，固定七种原因 × Manager preview、Develop query、Service execute、Transfer export。每个单元格必须明确 `runtime` 或 `protocol_only`，不能把共享协议测试当作对应 HTTP 出口已运行；矩阵的 runtime 单元格只有该次请求及对应强断言通过后才能生成。Manager／Service 保留原有仅含本地化 error 与 error_code 的保护 403，原因由受控的纳管状态、固定 SQL、原规则和结构变化事实证明，不增加公开子原因或解析错误正文。Develop／Transfer 校验同一执行 UUID 的历史、精确诊断、拒绝无结果；Transfer 另校验零写入及目标逐值不变。

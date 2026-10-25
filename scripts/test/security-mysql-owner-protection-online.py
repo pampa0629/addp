@@ -716,6 +716,7 @@ def assert_mysql_customer_rows(rows: Iterable[Mapping[str, object]], owner: str,
 def develop_execution(
     client: GatewayClient, engine_id: int, source_locator: str, deadline: float,
     query: str, query_type: str, *, choices: list[dict[str, object]] | None = None,
+    export_choices: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     started = _object(
         client.request(
@@ -731,6 +732,7 @@ def develop_execution(
                     "target_locator": source_locator,
                     "query_parameters": [],
                     **({"protection_choices": choices} if choices is not None else {}),
+                    **({"export_protection_choices": export_choices} if export_choices is not None else {}),
                 },
                 "execution_config": {"engine_id": engine_id},
                 "parameters": {},
@@ -2502,7 +2504,7 @@ def service_subject_roles(client: GatewayClient, identity: Mapping[str, object])
 
 
 def create_role_policy(client: GatewayClient, assessment_id: str, role_keys: list[str], owner: str = "service") -> dict[str, object]:
-    action = {"service": "service_execute", "develop": "query"}[owner]
+    action = OWNER_ACTIONS[owner]
     previous = [policy for policy in list_pages(client, "/api/v1/security/protection-policies")
                 if policy.get("assessment_id") == assessment_id and policy.get("consumer_owner") == owner
                 and policy.get("action") == action]
@@ -2534,8 +2536,10 @@ def owner_role_choice(client: GatewayClient, locator: str, source: Mapping[str, 
             raise ValueError
     except (ValueError, TypeError, AttributeError) as error:
         raise SuiteError("role cursor Policy did not return a canonical option UUID") from error
-    options = _object(client.request("GET", "/api/v1/" + owner + "/query-protection-options?" +
-        urllib.parse.urlencode({"target_locator": locator, **({"engine_id": engine_id} if owner == "develop" else {})}), (200,)).payload, "Owner role options")
+    option_path = "/source-protection-options?" if owner == "transfer" else "/query-protection-options?"
+    options = _object(client.request("GET", "/api/v1/" + owner + option_path +
+        urllib.parse.urlencode({("source_locator" if owner == "transfer" else "target_locator"): locator,
+                               **({"engine_id": engine_id} if owner == "develop" else {})}), (200,)).payload, "Owner role options")
     matches = [field for field in _array(options.get("fields"), "Owner role fields")
                if isinstance(field, dict) and field.get("component_key") == BANK_FIELD]
     if len(matches) != 1:
@@ -2687,7 +2691,8 @@ SERVICE_ROLE_ENVIRONMENT = ("ADDP_ONLINE_SECURITY_ROLE_USER_ACCESS_TOKEN", "ADDP
                            "ADDP_ONLINE_SECURITY_ROLE_CONTROLLER_ACCESS_TOKEN")
 
 DEVELOP_ROLE_ENVIRONMENT = ("ADDP_ONLINE_SECURITY_DEVELOP_ROLE_USERNAME", "ADDP_ONLINE_SECURITY_DEVELOP_ROLE_PASSWORD")
-ROLE_ENVIRONMENT = SERVICE_ROLE_ENVIRONMENT + DEVELOP_ROLE_ENVIRONMENT
+TRANSFER_ROLE_ENVIRONMENT = ("ADDP_ONLINE_SECURITY_TRANSFER_ROLE_USERNAME", "ADDP_ONLINE_SECURITY_TRANSFER_ROLE_PASSWORD")
+ROLE_ENVIRONMENT = SERVICE_ROLE_ENVIRONMENT + DEVELOP_ROLE_ENVIRONMENT + TRANSFER_ROLE_ENVIRONMENT
 
 
 def service_role_user_identity(client: GatewayClient, tenant_id: str, required: set[str], *, iam_controller: bool = False) -> dict[str, object]:
@@ -3058,8 +3063,12 @@ def assert_develop_role_result(execution: Mapping[str, object], selected: bool) 
         raise SuiteError("Develop role positive control must succeed")
     result = _object(_object(execution.get("metadata"), "Develop role metadata").get("result"), "Develop role result")
     columns = _array(result.get("columns"), "Develop role columns")
-    rows = [_object(row, "Develop role row") for row in _array(
-        _object(result.get("summary"), "Develop role summary").get("preview_rows"), "Develop role preview")]
+    rows = _array(_object(result.get("summary"), "Develop role summary").get("preview_rows"), "Develop role preview")
+    return assert_role_masked_rows(rows, columns, selected)
+
+
+def assert_role_masked_rows(rows: list[object], columns: list[object], selected: bool) -> dict[str, object]:
+    rows = [_object(row, "Owner role row") for row in rows]
     if [normalize_id(row.get("id")) for row in rows] != ["1", "2", "3", "4", "5"]:
         raise SuiteError("Develop role control lost, duplicated or reordered five rows")
     if selected:
@@ -3244,6 +3253,279 @@ def exercise_develop_role_membership_expiry(client: GatewayClient, engine_id: in
         raise SuiteError("Develop natural eligibility cannot pass by revoking its Assignment")
     return dict(result, timed_assignment_cleanup="expired", policy_revoked=True,
                 temporary_definitions_created=0, residual_resources=0)
+
+
+TRANSFER_ROLE_USERNAME = "external-online-security-transfer-reader"
+TRANSFER_ROLE_READER_PERMISSIONS = DEVELOP_ROLE_READER_PERMISSIONS | {"develop.data_write.execute", "transfer.task.create",
+    "transfer.task.read", "transfer.task.update", "transfer.task.delete", "transfer.task.execute"}
+
+
+def exact_role_conflict(response: SUPPORT.Response, code: str) -> dict[str, object]:
+    error = _object(response.payload, "role qualification refusal")
+    if (response.status != 409 or set(error) != {"error", "error_code"} or error.get("error_code") != code
+            or not isinstance(error.get("error"), str) or not error["error"].strip()):
+        raise SuiteError("role qualification refusal must preserve its exact HTTP code and contain no result")
+    return {"http_status": 409, "error_code": code, "result_absent": True}
+
+
+def transfer_role_execution(client: GatewayClient, path: str, task_id: int, actor_id: str, deadline: float) -> dict[str, object]:
+    started = _object(client.request("POST", path + "/start", (200,)).payload, "role Transfer started execution")
+    execution_id = started.get("execution_id")
+    if not isinstance(execution_id, str) or str(uuid.UUID(execution_id)) != execution_id or uuid.UUID(execution_id).int == 0:
+        raise SuiteError("role Transfer must return a real execution UUID")
+    while time.monotonic() < deadline:
+        execution = _object(client.request("GET", "/api/v1/transfer/executions/" + execution_id, (200,)).payload, "role Transfer execution")
+        if execution.get("status") == "success":
+            if (execution.get("execution_id") != execution_id or positive_int(execution.get("task_id"), "role Transfer task") != task_id
+                    or str(positive_int(execution.get("trigger_by"), "role Transfer actor")) != actor_id
+                    or execution.get("trigger_type") != "manual"
+                    or nonnegative_int(execution.get("records_read"), "role rows read") != 5
+                    or nonnegative_int(execution.get("records_written"), "role rows written") != 5):
+                raise SuiteError("role Transfer execution identity or actual counts differ")
+            return {"execution_id": execution_id, "task_id": task_id, "same_user_verified": True, "records_read": 5, "records_written": 5}
+        if execution.get("status") in TERMINAL_STATUSES:
+            raise SuiteError("role Transfer positive control failed")
+        time.sleep(1)
+    raise SuiteError("role Transfer did not finish before the deadline")
+
+
+def transfer_role_execution_ids(client: GatewayClient, path: str) -> list[str]:
+    page = _object(client.request("GET", path + "/executions?page=1&page_size=100", (200,)).payload, "role task executions")
+    rows = [_object(row, "role execution history") for row in _array(page.get("data"), "role task history")]
+    ids = [row.get("execution_id") for row in rows]
+    if (page.get("total") != len(ids) or len(ids) != len(set(ids)) or not all(
+            isinstance(value, str) and str(uuid.UUID(value)) == value and uuid.UUID(value).int != 0 for value in ids)):
+        raise SuiteError("role task execution list must be complete and use distinct UUIDs")
+    return sorted(ids)
+
+
+def transfer_role_target(client: GatewayClient, locator: str, selected: bool) -> tuple[dict[str, object], list[dict[str, object]]]:
+    columns, rows = preview_rows(client, locator)
+    rows = sorted(rows, key=lambda row: normalize_id(row.get("id")))
+    return assert_role_masked_rows(rows, columns, selected), rows
+
+
+def transfer_role_csv(client: GatewayClient, execution: Mapping[str, object], selected: bool,
+                      deadline: float, filename: str) -> tuple[dict[str, object], str]:
+    execution_id = execution["execution_id"]
+    created = _object(client.request("POST", "/api/v1/develop/executions/" + execution_id + "/exports", (202,),
+        {"format": "csv", "file_name": filename}).payload, "role CSV session")
+    session_id = positive_int(created.get("id"), "role CSV session ID")
+    transfer_id = created.get("transfer_execution_id")
+    if not isinstance(transfer_id, str) or str(uuid.UUID(transfer_id)) != transfer_id or uuid.UUID(transfer_id).int == 0 or transfer_id == execution_id:
+        raise SuiteError("CSV must use its own actual Transfer execution UUID")
+    session_path = "/api/v1/develop/exports/" + str(session_id)
+    while time.monotonic() < deadline:
+        session = _object(client.request("GET", session_path, (200,)).payload, "role CSV status")
+        if (session.get("id") != session_id or session.get("transfer_execution_id") != transfer_id
+                or session.get("format") != "csv" or session.get("requires_current_user", False) is not selected):
+            raise SuiteError("CSV session identity, format or current-user delivery binding differs")
+        if session.get("status") == "success":
+            break
+        if session.get("status") in TERMINAL_STATUSES:
+            raise SuiteError("role CSV generation failed")
+        time.sleep(1)
+    else:
+        raise SuiteError("role CSV generation timed out")
+    if urllib.parse.urlsplit(str(session.get("download_url"))).path != session_path + "/file":
+        raise SuiteError("role CSV download must stay on its exact session route")
+    raw = client.request("GET", session_path + "/file", (200,), raw_response=True).payload
+    if not isinstance(raw, bytes) or not raw:
+        raise SuiteError("CSV control needs actual nonempty file bytes")
+    try:
+        reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
+        rows = list(reader)
+    except (UnicodeError, csv.Error) as error:
+        raise SuiteError("role CSV must be valid UTF-8") from error
+    if reader.fieldnames != BANK_FIELDS:
+        raise SuiteError("role CSV changed its columns")
+    for row in rows:
+        if row.get(BANK_FIELD) == "":
+            row[BANK_FIELD] = None
+    evidence = assert_role_masked_rows(rows, BANK_FIELDS, selected)
+    return ({**evidence, "session_id": session_id, "transfer_execution_id": transfer_id,
+             "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest(), "csv_empty_cells_verified": True}, session_path)
+
+
+def exercise_transfer_role_membership_expiry(client: GatewayClient, engine_id: int, target_engine_id: int, database: str,
+        bank: Mapping[str, object], owner_identity: Mapping[str, object], run_id: str, deadline: float,
+        environment: Mapping[str, str] | None = None) -> dict[str, object]:
+    env = os.environ if environment is None else environment
+    username, password = (env.get(key) for key in TRANSFER_ROLE_ENVIRONMENT)
+    if username != TRANSFER_ROLE_USERNAME or not isinstance(password, str) or not password:
+        raise SuiteError("Transfer expiry requires its own disposable reader credentials")
+    login = {"ADDP_ONLINE_SECURITY_ROLE_USER_USERNAME": username, "ADDP_ONLINE_SECURITY_ROLE_USER_PASSWORD": password}
+    public = GatewayClient(client.base_url, "", client.timeout)
+    controller = GatewayClient(client.base_url, env["ADDP_ONLINE_SECURITY_ROLE_CONTROLLER_ACCESS_TOKEN"], client.timeout)
+    reader = formal_service_role_login(public, login)
+    identity = service_role_user_identity(reader, str(owner_identity["tenant_id"]), TRANSFER_ROLE_READER_PERMISSIONS)
+    operator = service_role_user_identity(controller, identity["tenant_id"], SERVICE_ROLE_EXPIRY_CONTROLLER_PERMISSIONS, iam_controller=True)
+    if len({identity["principal_id"], operator["principal_id"], owner_identity["principal_id"]}) != 3:
+        raise SuiteError("Transfer reader, governor and controller must be distinct")
+    initial = service_subject_role_observation(reader, identity)
+    if SERVICE_ELIGIBILITY_ROLE in initial["role_keys"]:
+        raise SuiteError("Transfer reader must start without masking eligibility")
+    previous_path = "/api/v1/system/tenant/role_assignments/" + str(positive_int(env["ADDP_ONLINE_SECURITY_ROLE_ASSIGNMENT_ID"], "Service audit ID"))
+    previous = _object(controller.request("GET", previous_path, (200,)).payload, "Service qualification audit")
+    if (previous.get("role_key") != SERVICE_ELIGIBILITY_ROLE or previous.get("status") != "revoked"
+            or previous.get("username") != "external-online-security-role-reader" or previous.get("principal_id") == identity["principal_id"]):
+        raise SuiteError("Transfer must preserve the other reader's revoked eligibility audit")
+    role_id = str(positive_int(previous.get("role_id"), "eligibility Role ID"))
+    cleanup_reader = reader
+    assignment_id = policy_id = None
+    expires_at = None
+    tasks = []
+    failure = None
+    result = {}
+    try:
+        source = find_item(client, engine_id, database + "." + BANK_SOURCE, "table")
+        target = find_item(client, target_engine_id, TARGET_SCHEMA + "." + BANK_TARGET, "table")
+        locator, target_locator = build_item_locator(engine_id, source), build_item_locator(target_engine_id, target)
+        parent = build_schema_locator(target_engine_id, target)
+        enrollment_id = str(bank["enrollment_id"])
+        baselines = definition_array(client, "/api/v1/security/protection-baselines")
+        before_projection = role_projection(client, enrollment_id, "transfer")
+        policy = create_role_policy(client, str(bank["assessment_id"]), [SERVICE_ELIGIBILITY_ROLE], "transfer")
+        policy_id = str(policy["id"])
+        installed = wait_role_projection(client, enrollment_id, before_projection, deadline, "transfer")
+        policy_path = "/api/v1/security/protection-policies/" + policy_id
+        published = client.request("GET", policy_path, (200,)).payload
+        expires_at = utc_timestamp(service_subject_role_observation(reader, identity).get("observed_at"), "Transfer database time") + timedelta(seconds=SERVICE_ROLE_EXPIRY_SECONDS)
+        if deadline - time.monotonic() < SERVICE_ROLE_EXPIRY_SECONDS + 15:
+            raise SuiteError("Transfer expiry has insufficient remaining suite budget")
+        created = _array(controller.request("POST", "/api/v1/system/tenant/role_assignments", (201,), {
+            "membership_id": identity["membership_id"], "role_ids": [role_id], "valid_until": expires_at.isoformat(),
+            "reason": "Disposable Transfer role eligibility natural expiry"}).payload, "Transfer timed Assignment")
+        if len(created) != 1:
+            raise SuiteError("Transfer must create exactly one timed qualification")
+        assignment_id = str(positive_int(_object(created[0], "Transfer Assignment").get("id"), "Transfer Assignment ID"))
+        if assignment_id == previous["id"]:
+            raise SuiteError("Transfer cannot replace an older audit Assignment")
+        before_assignment = assert_timed_service_assignment(created[0], identity, assignment_id, role_id, expires_at, "effective", username)
+        active_reader = formal_service_role_login(public, login)
+        cleanup_reader = active_reader
+        active = service_role_user_identity(active_reader, identity["tenant_id"], TRANSFER_ROLE_READER_PERMISSIONS)
+        if ({k:v for k,v in active.items() if k != "authorization_version"} != {k:v for k,v in identity.items() if k != "authorization_version"}
+                or int(active["authorization_version"]) <= int(identity["authorization_version"])):
+            raise SuiteError("Transfer timed grant changed functional identity or permissions")
+        roles_before = service_subject_role_observation(active_reader, active)
+        context = _object(active_reader.request("GET", "/api/v1/system/auth/context", (200,)).payload, "Transfer same session")
+        if (roles_before["role_keys"] != sorted(initial["role_keys"] + [SERVICE_ELIGIBILITY_ROLE])
+                or utc_timestamp(roles_before.get("expires_at"), "Transfer observation deadline") != expires_at
+                or utc_timestamp(_object(context.get("token"), "Transfer credential").get("expires_at"), "Transfer token expiry") <= expires_at + timedelta(seconds=15)):
+            raise SuiteError("Transfer requires the exact role deadline and a longer-lived session")
+        choice = owner_role_choice(active_reader, locator, source, policy, "transfer")
+        selection = {"source_locator": locator, "protection_choices": [choice]}
+        checked = active_reader.request("POST", "/api/v1/transfer/source-protection-checks", (200,), selection).payload
+        if checked != {"valid": True}:
+            raise SuiteError("Transfer selected method was not valid before expiry")
+        body = transfer_payload("p145_role_expiry_" + run_suffix(run_id, "_"), locator, parent, BANK_TARGET)
+        body["config"]["source"]["protection_choices"] = [choice]
+        created_task = _object(active_reader.request("POST", "/api/v1/transfer/task-definitions", (201,), body).payload, "role task")
+        task_id = positive_int(created_task.get("id"), "role task ID")
+        tasks.append(task_id)
+        task_path = "/api/v1/transfer/task-definitions/" + str(task_id)
+        first_execution = transfer_role_execution(active_reader, task_path, task_id, active["principal_id"], deadline)
+        target_before, target_rows = transfer_role_target(client, target_locator, True)
+        saved = _object(active_reader.request("GET", task_path, (200,)).payload, "saved role task")
+        saved_config = _object(saved.get("config"), "saved Transfer config")
+        if _object(saved_config.get("source"), "saved source").get("protection_choices") != [choice]:
+            raise SuiteError("Transfer did not persist the exact role choice")
+        history_ids = transfer_role_execution_ids(active_reader, task_path)
+        if history_ids != [first_execution["execution_id"]]:
+            raise SuiteError("role task must start with exactly one successful execution")
+        query = "SELECT " + ",".join(BANK_FIELDS) + " FROM " + BANK_SOURCE + " ORDER BY id"
+        source_query = develop_execution(active_reader, engine_id, locator, deadline, query, "sql", export_choices=[choice])
+        query_default = assert_develop_role_result(source_query, False)
+        query_config = _object(source_query.get("execution_config"), "export query snapshot")
+        if _object(query_config.get("content"), "export content").get("export_protection_choices") != [choice]:
+            raise SuiteError("query snapshot must freeze the separate export selection")
+        csv_before, session_path = transfer_role_csv(active_reader, source_query, True, deadline, "p145-role-expiry-selected.csv")
+        before_wait = service_subject_role_observation(active_reader, active)
+        if (SERVICE_ELIGIBILITY_ROLE not in before_wait["role_keys"]
+                or utc_timestamp(before_wait.get("observed_at"), "Transfer positive database time") >= expires_at):
+            raise SuiteError("task and actual CSV controls must complete before natural expiry")
+        wait_protection_deadline(expires_at, deadline)
+        after = service_role_user_identity(active_reader, identity["tenant_id"], TRANSFER_ROLE_READER_PERMISSIONS)
+        roles_after = service_subject_role_observation(active_reader, after)
+        if (after != active or roles_after["role_keys"] != initial["role_keys"]
+                or utc_timestamp(roles_after.get("observed_at"), "Transfer expired database time") < expires_at):
+            raise SuiteError("Transfer expiry must preserve the same session and all functional authority")
+        assignment_after = assert_timed_service_assignment(controller.request("GET", "/api/v1/system/tenant/role_assignments/" + assignment_id, (200,)).payload,
+            active, assignment_id, role_id, expires_at, "expired", username)
+        denials = {}
+        for name, method, path, payload, code in (
+            ("task_start", "POST", task_path + "/start", None, "transfer_protection_roles_unavailable"),
+            ("task_name_update", "PUT", task_path, {"name": body["name"] + "-refused"}, "transfer_protection_roles_unavailable"),
+            ("direct_selection_check", "POST", "/api/v1/transfer/source-protection-checks", selection, "transfer_protection_roles_unavailable"),
+            ("old_export_status", "GET", session_path, None, "query_protection_choice_invalid"),
+            ("old_file_download", "GET", session_path + "/file", None, "query_protection_choice_invalid"),
+            ("new_export_same_snapshot", "POST", "/api/v1/develop/executions/" + source_query["execution_id"] + "/exports", {"format": "csv", "file_name": "must-not-create.csv"}, "query_protection_choice_invalid")):
+            denials[name] = exact_role_conflict(active_reader.request(method, path, (409,), payload), code)
+        retained = _object(active_reader.request("GET", task_path, (200,)).payload, "retained expired task")
+        _, target_after_rows = transfer_role_target(client, target_locator, True)
+        old_query = _object(active_reader.request("GET", "/api/v1/develop/executions/" + source_query["execution_id"], (200,)).payload, "retained export query")
+        if (retained.get("config") != saved_config or retained.get("name") != saved.get("name")
+                or transfer_role_execution_ids(active_reader, task_path) != history_ids or target_after_rows != target_rows
+                or old_query.get("execution_config") != query_config or client.request("GET", policy_path, (200,)).payload != published
+                or role_projection(client, enrollment_id, "transfer") != installed):
+            raise SuiteError("expired qualification changed task/query/Policy/projection or wrote a new target execution")
+        assert_develop_role_result(old_query, False)
+        cleared_config = json.loads(json.dumps(saved_config))
+        cleared_config["source"]["protection_choices"] = []
+        cleared = _object(active_reader.request("PUT", task_path, (200,), {"config": cleared_config}).payload, "explicit default task")
+        if _object(cleared.get("config"), "cleared task config").get("source", {}).get("protection_choices") != []:
+            raise SuiteError("default recovery requires explicit saved empty choices")
+        recovered_execution = transfer_role_execution(active_reader, task_path, task_id, active["principal_id"], deadline)
+        target_default, _ = transfer_role_target(client, target_locator, False)
+        recovered_query = develop_execution(active_reader, engine_id, locator, deadline, query, "sql", export_choices=[])
+        assert_develop_role_result(recovered_query, False)
+        if _object(recovered_query.get("execution_config"), "default query").get("content", {}).get("export_protection_choices") != []:
+            raise SuiteError("default CSV recovery must explicitly clear the export selection")
+        csv_default, new_session_path = transfer_role_csv(active_reader, recovered_query, False, deadline, "p145-role-expiry-default.csv")
+        still_denied = exact_role_conflict(active_reader.request("GET", session_path + "/file", (409,)), "query_protection_choice_invalid")
+        execution_ids = [first_execution["execution_id"], recovered_execution["execution_id"], source_query["execution_id"], recovered_query["execution_id"],
+                         csv_before["transfer_execution_id"], csv_default["transfer_execution_id"]]
+        if (len(set(execution_ids)) != 6 or new_session_path == session_path
+                or transfer_role_execution_ids(active_reader, task_path) != sorted([first_execution["execution_id"], recovered_execution["execution_id"]])
+                or service_role_user_identity(active_reader, identity["tenant_id"], TRANSFER_ROLE_READER_PERMISSIONS) != active
+                or client.request("GET", policy_path, (200,)).payload != published or role_projection(client, enrollment_id, "transfer") != installed
+                or definition_array(client, "/api/v1/security/protection-baselines") != baselines
+                or controller.request("GET", previous_path, (200,)).payload != previous):
+            raise SuiteError("Transfer default recovery changed qualification or protection facts")
+        result = {"identity_before": active, "identity_after": after, "same_access_session_valid": True,
+            "functional_permissions_and_authorization_version_unchanged": True, "natural_expiry_verified": True,
+            "assignment_before": before_assignment, "assignment_after": assignment_after,
+            "role_keys_before": roles_before["role_keys"], "role_keys_after": roles_after["role_keys"],
+            "database_observed_before": before_wait["observed_at"], "database_observed_after": roles_after["observed_at"],
+            "choice": choice, "installed_projection": installed, "task_id": task_id, "first_execution": first_execution,
+            "selected_target": target_before, "default_query_preview": query_default, "selected_csv": csv_before,
+            "same_session_refusals": denials, "no_execution_or_target_write_after_refusal": True,
+            "task_query_policy_and_projection_unchanged": True, "default_execution": recovered_execution,
+            "default_target": target_default, "default_csv": csv_default, "old_file_still_refused_after_default_recovery": still_denied}
+    except BaseException as error:
+        failure = error
+    errors = []
+    assignment_cleanup = None
+    for cleanup in (
+        lambda: cleanup_tasks(cleanup_reader, tasks),
+        lambda: cleanup_service_role_resources(client, policy_id, None, failure),
+        lambda: cleanup_timed_service_assignment(controller, identity, assignment_id, role_id, expires_at, username) if assignment_id is not None else None):
+        try:
+            value = cleanup()
+            if value in ("expired", "revoked"):
+                assignment_cleanup = value
+        except BaseException as error:
+            errors.append(str(error))
+    if errors:
+        raise SuiteError("Transfer expiry cleanup failed: " + "; ".join(errors)) from failure
+    if failure:
+        raise failure
+    if assignment_cleanup != "expired":
+        raise SuiteError("Transfer expiry cannot pass by revoking qualification")
+    return dict(result, timed_assignment_cleanup="expired", policy_revoked=True, task_deleted=True,
+                created_resources=1, deleted_resources=1, residual_resources=0,
+                retained_export_sessions=2, retained_export_cleanup_boundary="disposable_infra")
 
 
 def validity_snapshot(enrollment: Mapping[str, object], mode: str,
@@ -3433,6 +3715,8 @@ def run_scenario(
         client, source_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, role_environment)
     develop_role_membership_expiry = exercise_develop_role_membership_expiry(
         client, source_engine_id, source_database, bank_card_metadata, identity, deadline, role_environment)
+    transfer_role_membership_expiry = exercise_transfer_role_membership_expiry(
+        client, source_engine_id, target_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, role_environment)
     source_full_name = f"{source_database}.{SOURCE_TABLE}"
     source_item = find_item(client, source_engine_id, source_full_name, "table")
     target_item = find_item(
@@ -3516,7 +3800,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v29",
+            "schema_version": "addp.security-mysql-owner-protection-online/v30",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -3527,6 +3811,7 @@ def run_scenario(
             "service_role_membership_revocation": service_role_membership_revocation,
             "service_role_membership_expiry": service_role_membership_expiry,
             "develop_role_membership_expiry": develop_role_membership_expiry,
+            "transfer_role_membership_expiry": transfer_role_membership_expiry,
             "fixture": {
                 "source_engine_id": str(source_engine_id),
                 "target_engine_id": str(target_engine_id),
@@ -3552,8 +3837,8 @@ def run_scenario(
                     "records_written": transfer_execution.get("records_written"),
                 },
             },
-            "created_resources": 8 + len(task_ids),
-            "deleted_resources": 8 + len(task_ids),
+            "created_resources": 9 + len(task_ids),
+            "deleted_resources": 9 + len(task_ids),
             "residual_resources": 0,
         }
     except BaseException as error:

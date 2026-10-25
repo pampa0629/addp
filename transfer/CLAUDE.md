@@ -87,6 +87,8 @@ Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provi
 
 Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角色，以该用户 EA 获取源和目标引擎访问，在字段映射与 Writer 前应用 export 保护。选项、资格或来源失效明确拒绝，不回落默认。Develop 全量导出使用独立 export 选择与共享会话精确摘要核验来源，再绑定签发的真实用户执行授权；默认导出仅保留已有观察来源，不自动提升为执行权限。原值授权、应用凭据和角色变更不在本轮范围。T1、真实 PostgreSQL 和前端门禁见 Security 同日记录；真实账号全链路 T4 需单独验收，不能由上述门禁推定。
 
+2026-10-25，既有隔离 suite 领域 v30 增加角色资格自然到期专项：期限内独立任务输出和经 Develop/Transfer 生成的实际 CSV 均全遮盖；同一登录会话自然到期后任务启动、名称更新及直接选择核验409/transfer_protection_roles_unavailable，任务不新增执行且目标保持；旧文件/会话与再次导出经现有 Develop BFF 为409/query_protection_choice_invalid，不把合并提示声称为已细分。显式清除选择后默认任务/新CSV恢复，旧特殊文件仍拒绝。主功能权限、Policy与投影保持，成功不撤销/重登/续期；失败/中断先删任务再清理仍有效资格，精确保留其他用户审计。新增场景及凭据隔离沿[Online规范](../scripts/docs/Online数据保护.md#transfer-资格自然到期与旧文件)；`make test-security-online-runner` 的38/55/30/274项Python、相关Go及登记通过（T0/T1），真实HTTP/Hosted未运行，不新增浏览器通过声明。本轮未变更产品API、授权规则或服务生命周期。
+
 ## 执行规则
 
 - 服务代发导出必须按已认证 Client ID 推导 Manager／Develop owner，再从 System 活动模块注册信息解析 Backend 地址，使用 Transfer tenant Service Token 核验导出会话、预绑定 execution UUID、完整请求摘要和待执行状态。核验得到的用户只写入 `triggered_by`，不能写入执行授权 actor 字段。请求不接受自报用户或回调地址；无来源的机器执行不声明人类发起用户，不能为旧记录猜测归属。
