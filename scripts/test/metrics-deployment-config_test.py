@@ -1302,6 +1302,115 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
         self.assertIn('--collector.filesystem.mount-points-exclude=^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+|var/lib/containers/storage/.+)($$|/)', source['command'])
         self.assertIn('--collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|erofs|sysfs|tracefs)$$', source['command'])
 
+class ServiceExpectationPublicationTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix='addp-expectations-test-')
+        self.addCleanup(self.temporary.cleanup)
+        self.directory = Path(self.temporary.name)
+        self.path = self.directory / 'service-expectations.json'
+
+    def group(self, module='meta', purpose='scan', count=2):
+        return {'module_name': module, 'role': 'worker' if purpose else 'backend',
+                'runtime_name': purpose, 'expected_replicas': count}
+
+    def test_same_purpose_replicas_are_one_group_and_distinct_purposes_stay_separate(self):
+        rows = [self.group(), self.group('transfer', 'sync', 1), self.group('transfer', 'continuous_sync')]
+        result = inventory.service_expectations(self.directory, rows)
+        self.assertEqual([(x['module_name'], x['runtime_name'], x['expected_replicas']) for x in result['groups']],
+                         [('meta', 'scan', 2), ('transfer', 'continuous_sync', 2), ('transfer', 'sync', 1)])
+        self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
+
+    def test_repeating_a_start_preserves_the_revision_and_intent_time(self):
+        first = inventory.service_expectations(self.directory, [self.group()])
+        self.assertEqual(inventory.service_expectations(self.directory, [self.group()]), first)
+        second = inventory.service_expectations(self.directory, [self.group(count=1)])
+        self.assertEqual(second['revision'], 2)
+        self.assertEqual(second['groups'][0]['expected_replicas'], 1)
+
+    def test_partial_stop_preserves_other_groups_and_restart_only_changes_selected_groups(self):
+        original = inventory.service_expectations(self.directory, [self.group(), self.group('transfer', 'sync')])
+        stopped = inventory.service_expectations(self.directory, [], stop_modules=['meta'])
+        self.assertEqual([x['desired_state'] for x in stopped['groups']], ['planned_stopped', 'running'])
+        self.assertEqual(stopped['groups'][1], original['groups'][1])
+        self.assertEqual(inventory.service_expectations(self.directory, [], stop_modules=['meta']), stopped)
+        restarted = inventory.service_expectations(self.directory, [self.group()])
+        self.assertEqual(restarted['revision'], 3)
+        self.assertEqual([x['desired_state'] for x in restarted['groups']], ['running', 'running'])
+        self.assertTrue(all(x['desired_state'] == 'planned_stopped' for x in
+                            inventory.service_expectations(self.directory, [], stop_all=True)['groups']))
+
+    def test_invalid_batch_never_partially_publishes_or_replaces_prior_intent(self):
+        inventory.service_expectations(self.directory, [self.group()])
+        before = self.path.read_bytes()
+        for bad in [self.group(purpose=''), dict(self.group(), expected_replicas=True),
+                    dict(self.group(), expected_replicas=0), dict(self.group(), role='scheduler'),
+                    dict(self.group(), runtime_name='private\nvalue'), dict(self.group(), extra='unknown')]:
+            # A Backend with an empty purpose is valid; this failure is a Worker without a purpose.
+            if bad['runtime_name'] == '': bad['role'] = 'worker'
+            with self.subTest(bad=bad), self.assertRaises(inventory.InventoryError):
+                inventory.service_expectations(self.directory, [self.group('quality', 'quality-bounded'), bad])
+            self.assertEqual(self.path.read_bytes(), before)
+        with self.assertRaises(inventory.InventoryError):
+            inventory.service_expectations(self.directory, [self.group(), self.group()])
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_foreign_invalid_duplicate_and_oversized_documents_are_not_repaired(self):
+        document = inventory.service_expectations(self.directory, [self.group()])
+        damaged = [json.dumps(dict(document, deployment_id='f'*64)), json.dumps(dict(document, revision=True)),
+                   '{"schema":"a","schema":"b"}', 'x'*(inventory.DISCOVERY_LIMIT+1)]
+        for stamp in ['2026-01-01 01:02:03Z', 'not-a-time', None]:
+            invalid = dict(document, groups=[dict(document['groups'][0], changed_at=stamp)])
+            damaged.append(json.dumps(invalid))
+        for raw in damaged:
+            self.path.write_text(raw)
+            with self.subTest(size=len(raw)), self.assertRaises((inventory.InventoryError, ValueError)):
+                inventory.service_expectations(self.directory, [self.group()])
+            self.assertEqual(self.path.read_text(), raw)
+
+    def test_symlinks_and_public_files_cannot_authorize_writes(self):
+        outside = self.directory / 'outside'
+        outside.write_text('unchanged')
+        self.path.symlink_to(outside)
+        with self.assertRaises(OSError):
+            inventory.service_expectations(self.directory, [self.group()])
+        self.assertEqual(outside.read_text(), 'unchanged')
+        self.path.unlink()
+        inventory.service_expectations(self.directory, [self.group()])
+        self.path.chmod(0o644)
+        with self.assertRaises(inventory.InventoryError):
+            inventory.service_expectations(self.directory, [self.group()])
+
+    def test_failed_atomic_replace_preserves_prior_document_and_removes_temporary_output(self):
+        inventory.service_expectations(self.directory, [self.group()])
+        before = self.path.read_bytes()
+        with mock.patch.object(inventory.os, 'replace', side_effect=OSError('fixture')), self.assertRaises(OSError):
+            inventory.service_expectations(self.directory, [], stop_all=True)
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertFalse(list(self.directory.glob('.service-expectations.json-*')))
+
+    def test_concurrent_updates_do_not_lose_other_selected_groups(self):
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(lambda i: inventory.service_expectations(self.directory,
+                      [self.group('module'+str(i), 'scan')]), range(12)))
+        self.assertEqual(len(json.loads(self.path.read_text())['groups']), 12)
+
+    def test_standard_publisher_cli_uses_explicit_input_and_never_echoes_invalid_body(self):
+        command = [sys.executable, str(ROOT/'scripts/utils/deployment-inventory.py'), 'service-expectations',
+                   '--directory', str(self.directory)]
+        started = subprocess.run(command+['--state', 'running'], input=json.dumps([self.group()]),
+                                 text=True, capture_output=True, timeout=5)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        stopped = subprocess.run(command+['--state', 'planned_stopped', '--modules', 'meta'],
+                                 text=True, capture_output=True, timeout=5)
+        self.assertEqual(stopped.returncode, 0, stopped.stderr)
+        self.assertEqual(json.loads(self.path.read_text())['groups'][0]['desired_state'], 'planned_stopped')
+        invalid = subprocess.run(command+['--state', 'running'], input='private-invalid-body',
+                                 text=True, capture_output=True, timeout=5)
+        self.assertNotEqual(invalid.returncode, 0)
+        self.assertNotIn('private-invalid-body', invalid.stdout+invalid.stderr)
+
+
 class ComposeConfigDiagnosticTest(unittest.TestCase):
     def process(self, code=0):
         process = mock.Mock(pid=12345, returncode=code)

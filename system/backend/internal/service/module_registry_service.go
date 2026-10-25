@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,8 +40,21 @@ func NewModuleRegistryService(repo *repository.ModuleRegistryRepository) *Module
 func (s *ModuleRegistryService) ObservabilityIdentities(ctx context.Context) (*commonmodels.ObservabilityIdentitySnapshot, error) {
 	ctx, cancel := context.WithTimeout(ctx, commonmodels.ObservabilityIdentityTimeout)
 	defer cancel()
-	result, err := s.repo.ObservabilityIdentities(ctx)
+	expectations, expectationDigest, expectationState := s.readServiceExpectations(ctx)
+	result, err := s.repo.ObservabilityIdentities(ctx, expectations)
 	if err == nil {
+		if expectations == nil {
+			state := "unavailable"
+			if expectationState == "unconfigured" {
+				state = "unconfigured"
+			}
+			result.ServiceGroups = &commonmodels.ServiceGroupSnapshot{State: state, Reason: expectationState, ObservedAt: result.ObservedAt, Groups: []commonmodels.ServiceGroupObservation{}}
+		} else {
+			raw, state := s.deploymentDiscovery.readDocument(ctx, "service-expectations.json")
+			if state != "" || sha256.Sum256(raw) != expectationDigest {
+				result.ServiceGroups = &commonmodels.ServiceGroupSnapshot{State: "unavailable", Reason: "source_changed", ObservedAt: result.ObservedAt, Groups: []commonmodels.ServiceGroupObservation{}}
+			}
+		}
 		s.enrichEngineMetrics(ctx, result)
 		s.enrichContainerProofs(ctx, result)
 		encoded, encodeErr := json.Marshal(result)

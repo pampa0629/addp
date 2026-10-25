@@ -5058,6 +5058,8 @@ definitions:
         type: array
       observed_at:
         type: string
+      service_groups:
+        $ref: '#/definitions/models.ServiceGroupSnapshot'
     type: object
   models.ObservabilityModuleIdentity:
     properties:
@@ -5103,6 +5105,46 @@ definitions:
       endpoint:
         type: string
       schema_version:
+        type: string
+    type: object
+  models.ServiceGroupObservation:
+    properties:
+      changed_at:
+        type: string
+      desired_state:
+        type: string
+      expected_replicas:
+        type: integer
+      module_name:
+        type: string
+      online_replicas:
+        type: integer
+      reason:
+        type: string
+      registered_count:
+        type: integer
+      role:
+        type: string
+      runtime_name:
+        type: string
+      state:
+        type: string
+    type: object
+  models.ServiceGroupSnapshot:
+    properties:
+      deployment_id:
+        type: string
+      groups:
+        items:
+          $ref: '#/definitions/models.ServiceGroupObservation'
+        type: array
+      observed_at:
+        type: string
+      reason:
+        type: string
+      revision:
+        type: integer
+      state:
         type: string
     type: object
   models.TaskProvider:

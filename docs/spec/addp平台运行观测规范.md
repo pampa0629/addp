@@ -155,6 +155,14 @@ SQL Exporter 只监听其网络命名空间的回环 HTTP `127.0.0.1:9399`，同
 
 该契约包含可选部署生命周期及独占传输验证，不代表个人实例已经启用或专业页面已通过正式身份 T4。已实现的自动关联、引擎指标读取及页面仍须沿明确身份投影与当前 User 授权，不将来源模板直接登记成节点或租户 Engine。上游行为参照 [SQL Exporter 固定版本](https://github.com/burningalchemist/sql_exporter/tree/0.24.11)；不引入 PostgreSQL exporter 已弃用的自定义查询作为并行路线。
 
+### 4.8 服务部署预期与分组租约观测
+
+服务失联的预期来源唯一属于标准部署入口。受管目录中的 `service-expectations.json` 使用 `addp.service-expectations/v1`，包含工作区摘要 `deployment_id`、单调递增的 `revision` 和按模块／角色／用途排序且唯一的 `groups`。每组仅含 `module_name`、`role=backend|worker`、`runtime_name`、`expected_replicas`（1—1000）、`desired_state=running|planned_stopped` 与 UTC `changed_at`；Backend 用途为空，Worker 必须与正式登记的用途相同。最多1000组、256 KiB，重复键、未知字段、非法或未来时间拒绝。发布器沿既有私有目录、所有权检查、互斥锁与原子替换；相同声明重发不推进版本或时间，局部启停保留其他组，失败保留旧文件。没有存活进程扫描、手工管理第二路线或个人服务自动启停。
+
+System 在唯一 `/runtime/observability-identities` 中只读提供 `service_groups`：声明身份／版本、同一控制面 `observed_at` 及每组预期、正式登记总数与当前在线副本数。在线仅表示登记状态UP且租约晚于同一观测时间，不要求绑定主机或已接指标；不同Worker用途不互代。读取声明前后内容变化时清除该子域。全域状态为 `available/unconfigured/unavailable`；可读组为 `observed`，计划停用或模块停用为 `paused`，模块未登记或活跃Worker用途不明为 `unknown`。零在线只是租约事实，不在System产生失联／恢复结论。组候选最多10000个登记，共用原五秒／四MiB预算；仅组文件异常或组预算耗尽使子域不可用，数据库事务失败仍拒绝整份投影。Common客户端核验可解码子域的形状和时间，非法子域清为空的不可用状态，保留合法的独立资源身份；响应JSON无法解码或原控制面身份异常仍拒绝整份响应。
+
+读取范围沿现有固定Monitor后台身份，不增加角色、权限、凭据或浏览器DTO。标准启停Hook、发布失败时是否阻止停止，以及首次接入预热／持续窗口／告警规则权限，按运行监控设计中确认的实施状态逐步接通；基础发布和组计数不代表自动失联告警已经可用。
+
 ## 五、技术路线与故障隔离
 
 ### 5.1 唯一数据路径

@@ -378,6 +378,7 @@
 | module definition | 模块定义 | System 中按稳定 `module_name` 保存的持久模块身份、路由前缀、管理员启用状态和模块级能力入口声明。 | 模块进程离线不删除定义；业务模块的 `enabled` 表示管理员意图，不由心跳覆盖。System 与 Gateway 是引导控制面，`enabled` 固定为 true；Gateway 不声明业务路由前缀。 |
 | module runtime instance | 模块运行实例 | 某模块 Backend、Worker、Scheduler 或 Gateway Ingress 进程的一次具体运行登记。 | 使用进程级唯一 `instance_id`，保存 role、端点、进程启动时间、元数据和租约状态；只有 `enabled + backend + up + lease valid` 的实例可进入 Gateway 路由。Ingress 只供平台观测，不参与路由。平台模块列表只返回当前运行投影，全部实例历史通过模块下的只读分页集合查询；实例历史不是追加式审计事件。 |
 | module runtime lease | 模块运行租约 | System 根据运行实例注册和周期心跳维护的短期存活事实。 | 心跳只续租，不修改模块定义或管理员启用状态；超时标记实例 `down`，不删除模块定义和实例历史。 |
+| service group expectation | 服务组运行预期 | 标准部署入口对同一模块、Backend／Worker 角色及用途声明的预期副本数与运行意图。 | 部署入口是唯一发布者；Backend 用途为空，Worker 采用正式登记的 runtime_name，不同用途不能互相替代。预期运行和计划停用不从存活进程、指标或模块启用状态反推。System 只读核验并汇总正式租约，未知不等于零在线，也不自动恢复告警。 |
 | process liveness | 进程存活状态 | 进程的 HTTP 服务是否已监听并能响应最小本地检查。 | 只表达 Alive，不读取 System、其他业务模块或可选 Engine Instance，也不表示已注册、可路由或可处理业务请求。 |
 | module readiness | 模块就绪状态 | 某个模块运行实例是否已满足自身必需 Infra，并成功在 System 建立当前进程租约。 | System 是业务模块 Ready 的唯一控制面强依赖；其他业务模块和可选 Engine Instance 不得进入 readiness 条件。只有 `registered` 注册生命周期状态可使实例 Ready。 |
 | module registration lifecycle state | 模块注册生命周期状态 | 进程内公共注册客户端对当前 `instance_id` 注册与恢复阶段的瞬时观测。 | 唯一取值集是 `starting`、`registered`、`recovering`、`failed`、`stopped`；它不落库，不替代 System 中的模块定义、运行实例和租约事实。 |

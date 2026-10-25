@@ -26,6 +26,9 @@ func (c *SystemServiceClient) GetObservabilityIdentities(ctx context.Context) (*
 	if err := validateObservabilityIdentities(result, started, time.Now().UTC()); err != nil {
 		return nil, err
 	}
+	if result.ServiceGroups == nil || result.ServiceGroups.Validate(result.ObservedAt) != nil {
+		result.ServiceGroups = &models.ServiceGroupSnapshot{State: "unavailable", Reason: "invalid_intent", ObservedAt: result.ObservedAt, Groups: []models.ServiceGroupObservation{}}
+	}
 	return &result, nil
 }
 

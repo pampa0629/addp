@@ -315,6 +315,111 @@ def write_document(directory, name, value):
             temporary.unlink(missing_ok=True)
 
 
+def service_expectations(directory, groups, *, stop_modules=None, stop_all=False):
+    """Persist deployment intent, never infer it from surviving processes."""
+    directory = Path(directory)
+    private_directory(directory)
+    with private_lock(directory, 'service-expectations.lock'):
+        target = directory / 'service-expectations.json'
+        previous = None
+        if target.exists() or target.is_symlink():
+            fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, 'rb') as source:
+                info = os.fstat(source.fileno())
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_nlink != 1:
+                    raise InventoryError('服务部署意图文件权限无效')
+                raw = source.read(DISCOVERY_LIMIT + 1)
+            if len(raw) > DISCOVERY_LIMIT:
+                raise InventoryError('服务部署意图超过预算')
+            previous = json.loads(raw, object_pairs_hook=unique_service_intent_object)
+            validate_service_expectations(previous)
+        owner = hashlib.sha256(str(REPOSITORY).encode()).hexdigest()
+        if previous and previous['deployment_id'] != owner:
+            raise InventoryError('服务部署意图不属于当前工作区')
+        current = {tuple(row[k] for k in ('module_name', 'role', 'runtime_name')): dict(row)
+                   for row in previous['groups']} if previous else {}
+        now = observed_at()
+        if stop_all or stop_modules is not None:
+            if groups or not isinstance(stop_all, bool) or (stop_modules is not None and
+                    (not isinstance(stop_modules, list) or not all(service_intent_name(x) for x in stop_modules))):
+                raise InventoryError('服务停止范围无效')
+            for row in current.values():
+                if (stop_all or row['module_name'] in stop_modules) and row['desired_state'] != 'planned_stopped':
+                    row.update(desired_state='planned_stopped', changed_at=now)
+        else:
+            if not isinstance(groups, list) or not groups or len(groups) > 1000:
+                raise InventoryError('服务启动范围无效')
+            seen = set()
+            for group in groups:
+                if not isinstance(group, dict) or set(group) != {'module_name', 'role', 'runtime_name', 'expected_replicas'}:
+                    raise InventoryError('服务启动声明无效')
+                row = dict(group, desired_state='running', changed_at=now)
+                validate_service_intent_group(row)
+                key = tuple(row[k] for k in ('module_name', 'role', 'runtime_name'))
+                if key in seen:
+                    raise InventoryError('服务启动声明重复')
+                seen.add(key)
+                old = current.get(key)
+                if old and all(old[k] == row[k] for k in group) and old['desired_state'] == 'running':
+                    row = old
+                current[key] = row
+        rows = [current[k] for k in sorted(current)]
+        if previous and rows == previous['groups']:
+            return previous
+        document = {'schema': 'addp.service-expectations/v1', 'deployment_id': owner,
+                    'revision': previous['revision'] + 1 if previous else 1, 'groups': rows}
+        validate_service_expectations(document)
+        if len(json.dumps(document).encode()) > DISCOVERY_LIMIT:
+            raise InventoryError('服务部署意图超过预算')
+        write_document(directory, 'service-expectations.json', document)
+        return document
+
+
+def unique_service_intent_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise InventoryError('服务部署意图字段重复')
+        result[key] = value
+    return result
+
+
+def service_intent_name(value):
+    return isinstance(value, str) and re.fullmatch(r'[a-z][a-z0-9_-]{0,49}', value) is not None
+
+
+def validate_service_intent_group(row):
+    if (not isinstance(row, dict) or set(row) != {'module_name', 'role', 'runtime_name', 'expected_replicas', 'desired_state', 'changed_at'}
+            or not service_intent_name(row['module_name']) or row['role'] not in ('backend', 'worker')
+            or (row['role'] == 'backend' and row['runtime_name'] != '')
+            or (row['role'] == 'worker' and not service_intent_name(row['runtime_name']))
+            or type(row['expected_replicas']) is not int or not 1 <= row['expected_replicas'] <= 1000
+            or row['desired_state'] not in ('running', 'planned_stopped')):
+        raise InventoryError('服务部署意图分组无效')
+    try:
+        if not isinstance(row['changed_at'], str) or not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z', row['changed_at']):
+            raise ValueError()
+        stamp = datetime.fromisoformat(row['changed_at'].replace('Z', '+00:00'))
+        if not row['changed_at'].endswith('Z') or stamp.tzinfo is None or stamp > datetime.now(timezone.utc):
+            raise ValueError()
+    except (ValueError, TypeError, AttributeError):
+        raise InventoryError('服务部署意图时间无效') from None
+
+
+def validate_service_expectations(document):
+    if (not isinstance(document, dict) or set(document) != {'schema', 'deployment_id', 'revision', 'groups'}
+            or document['schema'] != 'addp.service-expectations/v1' or not identifier(document['deployment_id'])
+            or type(document['revision']) is not int or not 1 <= document['revision'] <= 9007199254740991
+            or not isinstance(document['groups'], list) or len(document['groups']) > 1000):
+        raise InventoryError('服务部署意图文档无效')
+    keys = []
+    for row in document['groups']:
+        validate_service_intent_group(row)
+        keys.append(tuple(row[k] for k in ('module_name', 'role', 'runtime_name')))
+    if keys != sorted(set(keys)):
+        raise InventoryError('服务部署意图分组顺序或唯一性无效')
+
+
 def unavailable_snapshot(scope):
     return {'schema': 'addp.deployment-discovery/v2', 'scope': scope, 'state': 'unavailable',
             'observed_at': observed_at(), 'reason': 'source_unavailable', 'services': []}
@@ -607,6 +712,11 @@ def main():
     refresh = commands.add_parser('refresh', help='部署生命周期自动发布无凭据发现快照')
     refresh.add_argument('--scope', required=True, choices=sorted(SCOPES))
     refresh.add_argument('--directory', default=os.environ.get('ADDP_DEPLOYMENT_DISCOVERY_DIR') or str(REPOSITORY / '.dev-state/deployment-discovery'))
+    intents = commands.add_parser('service-expectations', help='标准部署入口发布服务预期；不操作进程')
+    intents.add_argument('--state', required=True, choices=('running', 'planned_stopped'))
+    intents.add_argument('--modules', nargs='+')
+    intents.add_argument('--all', action='store_true')
+    intents.add_argument('--directory', default=os.environ.get('ADDP_DEPLOYMENT_DISCOVERY_DIR') or str(REPOSITORY / '.dev-state/deployment-discovery'))
     for name in ('start', 'stop', 'watch'):
         command = commands.add_parser(name, help='部署发现观测进程的标准生命周期')
         command.add_argument('--directory', default=os.environ.get('ADDP_DEPLOYMENT_DISCOVERY_DIR') or str(REPOSITORY / '.dev-state/deployment-discovery'))
@@ -614,6 +724,19 @@ def main():
             command.add_argument('--observer-token', required=True)
     args = parser.parse_args()
     try:
+        if args.command == 'service-expectations':
+            if args.state == 'running':
+                if args.modules or args.all:
+                    raise InventoryError('服务启动声明不接受停止范围')
+                raw = sys.stdin.buffer.read(DISCOVERY_LIMIT + 1)
+                if len(raw) > DISCOVERY_LIMIT:
+                    raise InventoryError('服务启动声明超过预算')
+                service_expectations(args.directory, json.loads(raw, object_pairs_hook=unique_service_intent_object))
+            else:
+                if bool(args.modules) == args.all:
+                    raise InventoryError('服务停止声明必须选择唯一范围')
+                service_expectations(args.directory, [], stop_modules=args.modules, stop_all=args.all)
+            return 0
         if args.command == 'refresh':
             publish(args.scope, args.directory)
             return 0

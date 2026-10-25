@@ -16,7 +16,7 @@ var ErrObservabilityIdentityBudget = errors.New("observability identity snapshot
 
 // ObservabilityIdentities reads node, module and engine intent with binding evidence
 // from one database snapshot. A failed/oversized snapshot is never a partial success.
-func (r *ModuleRegistryRepository) ObservabilityIdentities(ctx context.Context) (*commonmodels.ObservabilityIdentitySnapshot, error) {
+func (r *ModuleRegistryRepository) ObservabilityIdentities(ctx context.Context, expectations *commonmodels.ServiceExpectationDocument) (*commonmodels.ObservabilityIdentitySnapshot, error) {
 	result := &commonmodels.ObservabilityIdentitySnapshot{
 		Nodes:             []commonmodels.ObservabilityNodeIdentity{},
 		ModuleInstances:   []commonmodels.ObservabilityModuleIdentity{},
@@ -24,6 +24,13 @@ func (r *ModuleRegistryRepository) ObservabilityIdentities(ctx context.Context) 
 	}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result.ObservedAt = time.Now().UTC()
+		if expectations != nil {
+			groups, err := observeServiceGroups(tx, expectations, result.ObservedAt)
+			if err != nil {
+				return err
+			}
+			result.ServiceGroups = groups
+		}
 		if err := tx.Model(&models.HostNode{}).Select("node_id", "version").Where("enabled = ?", true).
 			Order("node_id ASC").Limit(commonmodels.ObservabilityIdentityNodeLimit + 1).Scan(&result.Nodes).Error; err != nil {
 			return err

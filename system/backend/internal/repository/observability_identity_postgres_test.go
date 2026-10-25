@@ -161,8 +161,9 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 		})
 	}
 	wantJSON, err := json.Marshal(map[string]any{
-		"observed_at": snapshot.ObservedAt,
-		"nodes":       []map[string]any{{"node_id": node.NodeID, "version": 1}},
+		"service_groups": map[string]any{"state": "unconfigured", "reason": "unconfigured", "deployment_id": "", "revision": 0, "observed_at": snapshot.ObservedAt, "groups": []any{}},
+		"observed_at":    snapshot.ObservedAt,
+		"nodes":          []map[string]any{{"node_id": node.NodeID, "version": 1}},
 		"module_instances": []map[string]any{{
 			"module_name": "manager", "instance_id": "worker-one", "role": "worker", "node_id": node.NodeID,
 			"process_started_at": before.ProcessStartedAt, "lease_expires_at": before.LeaseExpiresAt.UTC(),
@@ -326,6 +327,92 @@ func TestObservabilityIdentityProjectionAgainstPostgres(t *testing.T) {
 	if err != nil || len(current.EngineDeployments) != 1 || current.EngineDeployments[0].DeploymentID == engine.DeploymentID {
 		t.Fatalf("disabled engine projected: %+v %v", current, err)
 	}
+	t.Run("service groups use all formal leases and purpose", func(t *testing.T) {
+		at := time.Now().Add(-time.Minute).UTC()
+		plan := &commonmodels.ServiceExpectationDocument{Schema: "addp.service-expectations/v1", DeploymentID: strings.Repeat("b", 64), Revision: 1,
+			Groups: []commonmodels.ServiceGroupExpectation{
+				{ModuleName: "meta", Role: "worker", RuntimeName: "scan", ExpectedReplicas: 2, DesiredState: "running", ChangedAt: at},
+				{ModuleName: "transfer", Role: "worker", RuntimeName: "continuous_sync", ExpectedReplicas: 1, DesiredState: "running", ChangedAt: at},
+				{ModuleName: "transfer", Role: "worker", RuntimeName: "sync", ExpectedReplicas: 1, DesiredState: "running", ChangedAt: at},
+			}}
+		for _, row := range []struct{ module, id, purpose string }{{"meta", "group-scan-one", "scan"}, {"meta", "group-scan-two", "scan"}, {"transfer", "group-sync", "sync"}, {"transfer", "group-continuous", "continuous_sync"}} {
+			if err := registry.Register(&models.ModuleRegistrationRequest{ModuleName: row.module, InstanceID: row.id, Role: "worker", RoutePrefix: "/" + row.module, ProcessStartedAt: at, Metadata: map[string]any{"runtime_name": row.purpose}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		repo := repository.NewModuleRegistryRepository(db)
+		readGroups := func() *commonmodels.ServiceGroupSnapshot {
+			t.Helper()
+			value, err := repo.ObservabilityIdentities(ctx, plan)
+			if err != nil || value.ServiceGroups == nil {
+				t.Fatalf("group projection: %+v %v", value, err)
+			}
+			if err := value.ServiceGroups.Validate(value.ObservedAt); err != nil {
+				t.Fatal(err)
+			}
+			for _, row := range value.ModuleInstances {
+				if row.ModuleName == "meta" || row.ModuleName == "transfer" {
+					t.Fatal("undeclared metrics/host instance entered resource projection")
+				}
+			}
+			return value.ServiceGroups
+		}
+		groups := readGroups()
+		for i, want := range []int{2, 1, 1} {
+			if row := groups.Groups[i]; row.State != "observed" || row.OnlineReplicas != want || row.RegisteredCount != want {
+				t.Fatalf("purpose %d: %+v", i, row)
+			}
+		}
+		var groupMutated atomic.Bool
+		var groupMutationError error
+		const groupCallback = "test:service-group-repeatable-read"
+		if err := db.Callback().Query().After("gorm:query").Register(groupCallback, func(tx *gorm.DB) {
+			if tx.Statement.Table == "module_definitions" && groupMutated.CompareAndSwap(false, true) {
+				groupMutationError = db.Model(&models.ModuleRuntimeInstance{}).Where("instance_id = ?", "group-scan-one").Update("lease_expires_at", time.Now().Add(-time.Second)).Error
+			}
+		}); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { db.Callback().Query().Remove(groupCallback) })
+		consistent := readGroups()
+		if err := db.Callback().Query().Remove(groupCallback); err != nil {
+			t.Fatal(err)
+		}
+		if !groupMutated.Load() || groupMutationError != nil || consistent.Groups[0].OnlineReplicas != 2 {
+			t.Fatalf("mixed group snapshot: %+v mutation=%v %v", consistent, groupMutated.Load(), groupMutationError)
+		}
+		if row := readGroups().Groups[0]; row.OnlineReplicas != 1 || row.RegisteredCount != 2 {
+			t.Fatalf("expired replica: %+v", row)
+		}
+		if err := registry.Deregister("meta", "group-scan-two"); err != nil {
+			t.Fatal(err)
+		}
+		if row := readGroups().Groups[0]; row.OnlineReplicas != 0 || row.State != "observed" {
+			t.Fatalf("zero was not a lease fact: %+v", row)
+		}
+		plan.Groups[0].DesiredState = "planned_stopped"
+		if row := readGroups().Groups[0]; row.State != "paused" || row.Reason != "planned_stopped" {
+			t.Fatalf("planned stop: %+v", row)
+		}
+		plan.Groups[0].DesiredState = "running"
+		if err := registry.Register(&models.ModuleRegistrationRequest{ModuleName: "meta", InstanceID: "group-unknown-purpose", Role: "worker", RoutePrefix: "/meta", ProcessStartedAt: at}); err != nil {
+			t.Fatal(err)
+		}
+		if row := readGroups().Groups[0]; row.State != "unknown" || row.Reason != "runtime_name_unavailable" {
+			t.Fatalf("unknown purpose was guessed: %+v", row)
+		}
+		if err := db.Model(&models.ModuleDefinition{}).Where("module_name = ?", "meta").Update("enabled", false).Error; err != nil {
+			t.Fatal(err)
+		}
+		if row := readGroups().Groups[0]; row.State != "paused" || row.Reason != "module_disabled" {
+			t.Fatalf("disabled module: %+v", row)
+		}
+		plan.Revision = 0
+		value, err := repo.ObservabilityIdentities(ctx, plan)
+		if err != nil || value.ServiceGroups.State != "unavailable" || len(value.ServiceGroups.Groups) != 0 {
+			t.Fatalf("invalid intent leaked: %+v %v", value, err)
+		}
+	})
 	// A failed engine read cannot return the nodes/modules already read.
 	if err := db.Exec("ALTER TABLE system.engine_deployments RENAME TO unavailable_engines").Error; err != nil {
 		t.Fatal(err)

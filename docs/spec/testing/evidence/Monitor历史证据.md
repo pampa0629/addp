@@ -1451,3 +1451,22 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 个人Safari实际Console iframe已热加载本批工作区源码，中文三个框分别显示“全部类别／全部状态／全部级别”，整页重载后同一`status=all`地址与登录、标签均保持；未操作英文个人偏好，英文显示及两种语言下的筛选项切换由上述独立受控T3覆盖。真实截图为`/tmp/addp-alert-filter-labels-safari.jpg`（工具返回JPEG，3024×1898），前后AX状态同前缀`-safari-state.txt`／`-safari-reloaded.txt`，均已独立读取核对。本轮没有修改真实告警或规则、发送通知、重启个人服务、操作个人数据库／IAM、查询或调度CI／Hosted，也未设置定时任务；不扩大前节严重未恢复置顶、确认抑制、同时间ID与正式隔离身份的证据范围。
 
 最终日志同前缀`-{green,frontend,registration,selection}.log`；输入、日志和Safari产物摘要收据`/tmp/addp-alert-filter-labels-receipt.json` SHA-256 `e78a28c32d56c98269fef8845f6d1c79cd7ccaec9f67d4da537d5df694d3507f`。清单第51行仍部分实现，本次只补筛选可读性；拓扑／影响范围、根因、严重未恢复真实页面、容量与正式身份／Hosted缺口不变。后续服务失联自动告警的判定粒度及预期运行事实已向用户提问，未实现或默认采用任何新口径。
+
+
+## 2026-10-25 服务组部署预期协议与只读租约汇总（自动接入未完成）
+
+用户已确认标准部署入口是唯一预期事实来源，按模块＋Backend／Worker角色＋用途判断全部副本失联。本批只实现底层发布协议及System观测基座：既有 `deployment-inventory.py service-expectations` 在受管目录按用途原子发布预期，幂等重发、局部启停、并发合并、预算／所有权／非法输入拒绝沿单一路线；不是用户手工导入流程。System沿原私有接口只读消费，正式租约计数不依赖指标或主机关联；用途不明、文件异常／变化及子域预算耗尽不可判定，计划停用／模块停用暂停。Common校验可解码子域并隔离非法事实，原JSON／控制面拒绝规则不变。没有新增身份、权限、浏览器DTO或个人环境操作。
+
+实际验证：
+
+- `python3 -m unittest scripts/test/metrics-deployment-config_test.py`：74项通过，包含9项新发布测试及UTC格式拒绝；并发写入、版本幂等、原子替换失败保留旧文件、无临时文件残留、非法正文不回显。
+- `make test-module MODULE=common GO_ONLY=1`、`MODULE=system GO_ONLY=1`、`MODULE=monitor GO_ONLY=1`：各自Go T1退出0；不计默认跳过的实库用例为T2通过。
+- `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package repository --test observability-identity"`：标准入口核验本机实际容器映射，只在 `addp_iam_test` 重置并清理；真实PG T2退出0，无跳过。新分组子场景覆盖Meta同用途双副本、Transfer用途隔离、租约过期、正常注销、计划停用、模块停用、用途未知，以及并发变更后仍保持可重复读快照。既有完整私有字段白名单、原身份／引擎观测及DB错误拒绝继续通过。
+- `make test-dev-lifecycle`：退出0，151／99／61项聚合、Shell生命周期／隔离、共享Schema与相关Worker命令编译通过；后续仅增加UTC坏时间拒绝用例，已由上述最终74项配置测试复验。
+- `bash scripts/swagger/gen-swagger.sh system` 与 `bash scripts/swagger/check-route-coverage.sh system`：退出0，247个公开路由方法覆盖一致，私有响应新增类型同步；没有增加路由。
+- T2登记检查通过：22个Hosted-service、12个门禁自有Compose、9个Hosted-only、2个owner-managed入口；Metrics显式输入增加新Common契约，System与Go标准自动发现覆盖本批。`changed-gate.py --dry-run`只计发现，不把选中其他Owner全量门禁计通过。
+- `make test-platform`：退出2，失败于既有Online聚合内 `security-mysql-owner-protection` 的 `addp.security-mysql-owner-protection-online/v27` 版本登记一致性，经 `test-raster-boundary-clean-online-runner` 向上返回；本批未改Security／Raster suite、导出浏览器或该版本声明，不接管修复，不计全量T0通过。之前已取得上述独立相关门禁终态。该完整本地聚合日志为 `/tmp/addp-service-expectations-platform.log`，不代表实际Hosted验收。
+
+日志位于 `/tmp/addp-service-expectations-{publication-final,common-go,system-go-final,monitor-go,postgres-final,lifecycle,swagger,registration,selection}.log`。CI／Hosted未查询、派发或运行，继续由专门会话回传；没有设置定时任务、重启个人服务或修改个人数据库／IAM。
+
+剩余：标准启停Hook尚未接通；停止时计划停用发布失败的处理待用户选择。首次登记预热／触发及恢复窗口、失联规则权限、Monitor评估／事件／通知与真实页面均未实现或未验收，不把基础声明或零在线计数记为服务失联自动告警已完成。原清单第15、49行仍部分实现。

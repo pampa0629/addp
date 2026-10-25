@@ -162,3 +162,27 @@ func TestSystemObservabilityClientValidatesPlatformEngineProjection(t *testing.T
 		})
 	}
 }
+
+func TestServiceGroupFailuresDoNotRemoveIndependentResourceIdentities(t *testing.T) {
+	at := time.Now().UTC()
+	fixture := models.ObservabilityIdentitySnapshot{ObservedAt: at, Nodes: []models.ObservabilityNodeIdentity{{NodeID: "10000000-0000-4000-8000-000000000001", Version: 1}}, ModuleInstances: []models.ObservabilityModuleIdentity{}, EngineDeployments: []models.ObservabilityEngineIdentity{}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewEncoder(w).Encode(fixture); err != nil {
+			t.Error(err)
+		}
+	}))
+	defer server.Close()
+	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
+	for _, groups := range []*models.ServiceGroupSnapshot{nil, {State: "available", ObservedAt: at, Groups: []models.ServiceGroupObservation{}}, {State: "healthy", ObservedAt: at, Groups: []models.ServiceGroupObservation{}}} {
+		fixture.ServiceGroups = groups
+		result, err := client.GetObservabilityIdentities(context.Background())
+		if err != nil || len(result.Nodes) != 1 || result.ServiceGroups.State != "unavailable" || len(result.ServiceGroups.Groups) != 0 {
+			t.Fatalf("independent identities lost: %+v %v", result, err)
+		}
+	}
+	fixture.ServiceGroups = &models.ServiceGroupSnapshot{State: "available", ObservedAt: at, DeploymentID: strings.Repeat("a", 64), Revision: 1, Groups: []models.ServiceGroupObservation{}}
+	result, err := client.GetObservabilityIdentities(context.Background())
+	if err != nil || result.ServiceGroups.State != "available" {
+		t.Fatalf("valid empty deployment: %+v %v", result, err)
+	}
+}

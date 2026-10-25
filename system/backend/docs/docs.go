@@ -23204,6 +23204,9 @@ const docTemplate = `{
                 },
                 "observed_at": {
                     "type": "string"
+                },
+                "service_groups": {
+                    "$ref": "#/definitions/models.ServiceGroupSnapshot"
                 }
             }
         },
@@ -23274,6 +23277,67 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "schema_version": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ServiceGroupObservation": {
+            "type": "object",
+            "properties": {
+                "changed_at": {
+                    "type": "string"
+                },
+                "desired_state": {
+                    "type": "string"
+                },
+                "expected_replicas": {
+                    "type": "integer"
+                },
+                "module_name": {
+                    "type": "string"
+                },
+                "online_replicas": {
+                    "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "registered_count": {
+                    "type": "integer"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "runtime_name": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ServiceGroupSnapshot": {
+            "type": "object",
+            "properties": {
+                "deployment_id": {
+                    "type": "string"
+                },
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ServiceGroupObservation"
+                    }
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "state": {
                     "type": "string"
                 }
             }
