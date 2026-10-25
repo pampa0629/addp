@@ -267,7 +267,12 @@ func scalarText(t datatype.FieldType, value interface{}) (string, error) {
 		}
 	case datatype.FieldTypeBool:
 		if b, ok := value.(bool); ok {
-			return strconv.FormatBool(b), nil
+			// Both numeric literals are XML Schema booleans. Older LIBKML
+			// readers parse bool SimpleData through an integer field.
+			if b {
+				return "1", nil
+			}
+			return "0", nil
 		}
 	case datatype.FieldTypeInt:
 		var n int64

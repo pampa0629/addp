@@ -224,3 +224,20 @@ func TestKMLFloatAndCRS84WriterLifecycle(t *testing.T) {
 		t.Fatal("aborted document completed")
 	}
 }
+
+func TestKMLBooleanUsesNumericXMLLiterals(t *testing.T) {
+	for _, tc := range []struct {
+		value interface{}
+		want  string
+	}{{true, "1"}, {false, "0"}} {
+		got, err := scalarText(datatype.FieldTypeBool, tc.value)
+		if err != nil || got != tc.want {
+			t.Fatalf("bool %v encoded as %q: %v", tc.value, got, err)
+		}
+	}
+	for _, value := range []interface{}{"true", "false", "1", "0", 0, 1, 2} {
+		if _, err := scalarText(datatype.FieldTypeBool, value); err == nil {
+			t.Fatalf("non-boolean input accepted: %T(%v)", value, value)
+		}
+	}
+}

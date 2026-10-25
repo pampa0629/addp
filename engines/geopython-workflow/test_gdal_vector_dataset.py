@@ -647,6 +647,15 @@ def test_gml_schema_annotation_does_not_fetch_external_schema(tmp_path, monkeypa
 def test_kml_common_writer_golden_is_readable_by_native_driver():
     """Go T1 checks exact writer bytes against this same independently read file."""
     fixture = Path(__file__).resolve().parents[2] / "common/format/plugins/kml/testdata/simple-features.kml"
+    # Assert the writer's sole XML representation before independent native read.
+    # GDAL 3.8 LIBKML parses bool SchemaData through an integer field; the XML
+    # boolean literals 1/0 work without changing the declared bool type.
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(fixture.read_bytes())
+    ns = {"k": "http://www.opengis.net/kml/2.2"}
+    flag_field = root.find(".//k:SimpleField[@name='flag']", ns)
+    assert flag_field is not None and flag_field.attrib["type"] == "bool"
+    assert [value.text for value in root.findall(".//k:SimpleData[@name='flag']", ns)] == ["1", "0"] * 4
     dataset = gdal.OpenEx(str(fixture), gdal.OF_VECTOR, allowed_drivers=["LIBKML"])
     assert dataset is not None
     assert dataset.GetLayerCount() == 1
