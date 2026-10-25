@@ -57,6 +57,47 @@ def source_download_proof(source, artifacts, entries=None):
     return proof
 
 
+class GLTFSourceMutationTests(unittest.TestCase):
+    def test_owned_files_restore_manifest_and_remove_only_new_texture_after_failure(self):
+        source=next(row for row in M.prepare_models(FakeClient().items,17,model_samples()) if row['format']=='gltf')
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);M.SEED.write_model_samples(root/'data')
+            main=root/'data'/source['full_name'];original=main.read_bytes()
+            buffer=root/'data/models/gltf/buffers/ geometry%20.mesh';binary=buffer.read_bytes()
+            with patch.object(M,'owned_ftp_fixture',return_value=root):
+                with self.assertRaisesRegex(RuntimeError,'simulated denial'):
+                    with M.changed_texture_fixture(source) as changed:
+                        self.assertIn(b'red/changed.png',main.read_bytes())
+                        self.assertEqual(changed['sha256'],hashlib.sha256(main.read_bytes()).hexdigest())
+                        self.assertIn('models/gltf/red/changed.png',[ref['path'] for ref in changed['composition']])
+                        self.assertEqual(buffer.read_bytes(),binary)
+                        raise RuntimeError('simulated denial')
+            self.assertEqual(main.read_bytes(),original)
+            self.assertFalse((main.parent/'red/changed.png').exists())
+            self.assertEqual(buffer.read_bytes(),binary)
+
+    def test_owned_minio_objects_restore_exact_members_after_failure(self):
+        fixture=import_module('scripts.test.online-file-model-minio-fixture')
+        original=(Path(__file__).resolve().parents[2]/'business/fixtures/manager/addp_online_model_fixture.gltf').read_bytes()
+        png=(Path(__file__).resolve().parents[2]/'business/fixtures/manager/addp_online_obj_red.png').read_bytes()
+        source=next(row for row in M.prepare_models(FakeClient().items,17,model_samples()) if row['format']=='gltf')
+        source=copy.deepcopy(source);source['full_name']='model-source/'+source['full_name']
+        for ref in source['composition']:ref['path']='model-source/'+ref['path']
+        store={'models/gltf/model.gltf':original,'models/gltf/red/color.png':png}
+        before=dict(store)
+        def mc(*args):
+            if args[0]=='ls':return b''
+            self.assertEqual(args[:1],('rm',));self.assertEqual(args[1],'fixture/model-source/models/gltf/red/changed.png')
+            del store['models/gltf/red/changed.png'];return b''
+        with patch.object(fixture,'guard',return_value=(Path('/tmp'),'owned')),patch.object(fixture,'read',side_effect=lambda key:store[key]),patch.object(fixture,'put',side_effect=lambda key,data:store.update({key:data})),patch.object(fixture,'mc',side_effect=mc):
+            with self.assertRaisesRegex(RuntimeError,'simulated denial'):
+                with fixture.changed_texture(source) as changed:
+                    self.assertIn(b'red/changed.png',store['models/gltf/model.gltf'])
+                    self.assertIn('model-source/models/gltf/red/changed.png',[ref['path'] for ref in changed['composition']])
+                    raise RuntimeError('simulated denial')
+        self.assertEqual(store,before)
+
+
 class DirectGLBSourceTests(unittest.TestCase):
     def test_changed_glb_is_valid_container_with_unapproved_uri_not_corrupt_magic(self):
         original=(Path(__file__).resolve().parents[2]/'business/fixtures/manager/addp_online_model_fixture.glb').read_bytes()
@@ -222,7 +263,7 @@ class FakeClient:
         self.samples = [{'format': kind, 'full_name': 'examples/中文 %样例.' + kind, 'size': len(kind), 'sha256': hashlib.sha256(kind.encode()).hexdigest()} for kind in ('csv', 'json', 'parquet')]
         self.items = [{'id': i + 1, 'node_id': i + 10, 'item_type': 'file', 'full_name': sample['full_name'], 'fingerprint': 'fp-' + str(i), 'attributes': {'schema_version': 1, 'item': {'data_type': 'table'}, 'type_info': {'table': {'fields': [{'name': name} for name in ('id', 'amount', 'name')]}}}} for i, sample in enumerate(self.samples)]
         self.model_samples = model_samples()
-        for i, sample in enumerate(row for row in self.model_samples if row['format'] in {'ifc','3ds','dae','obj','stl','glb'}):
+        for i, sample in enumerate(row for row in self.model_samples if row['format'] in {'ifc','3ds','dae','obj','stl','glb','gltf'}):
             kind, path = sample['format'], sample['full_name']
             refs = [{'path': path, 'role': 'model', 'required': True, 'primary': True}]
             attributes = {'schema_version': 1,
@@ -243,6 +284,13 @@ class FakeClient:
                 attributes['format_info']={'obj':{'composition_complete':True,'material_libraries':[
                     {'reference':'paint blue.mtl','texture_refs':['blue/color.png']},
                     {'reference':'paint red.mtl','texture_refs':['red/color.png']}]}}
+            if kind == 'gltf':
+                refs[0]['role']='manifest'
+                attributes['item']['layout']='multi'
+                attributes['item']['refs']=refs
+                attributes['format_info']={'gltf':{'composition_complete':True}}
+                for key,role in [('gltf_png_blue','image'),('gltf_buffer','buffer'),('gltf_png_red','image_1')]:
+                    refs.append({'path':next(row['full_name'] for row in self.model_samples if row['format']==key),'role':role,'required':True,'primary':False})
             self.items.append({'id': 4 + i, 'engine_id': 17, 'item_type': 'file', 'full_name': path,
                                'fingerprint': hashlib.sha256(f'17:{path}'.encode()).hexdigest(),
                                'attributes': attributes})
@@ -309,7 +357,7 @@ class FakeSourceIssuer:
             result = {'schema_version': 'meta.data_item_authorization_facts/v1', 'engine_id': '17',
                       'item_fingerprint': model['fingerprint'], 'full_name': model['full_name'], 'item_type': 'file',
                       'basis_state': 'complete', 'boundary_hash': 'a' * 64, 'observed_at': '2026-10-20T12:00:00Z',
-                      'boundary': {'layout': 'single', 'file_composition': composition}}
+                      'boundary': {'layout': 'multi' if model['format']=='gltf' else 'single', 'file_composition': composition}}
             if self.mutate_facts:
                 self.mutate_facts(result)
             return SimpleNamespace(payload=result)
@@ -892,7 +940,7 @@ class FTPConsumerTest(unittest.TestCase):
             report = M.run(client, 2, 17, client.samples, client.model_samples, 30)
         self.assertEqual(len(report['samples']), 3)
         self.assertEqual(report['principal_id'], '8')
-        self.assertEqual([model['format'] for model in report['models']], ['ifc', '3ds', 'dae', 'obj', 'stl'])
+        self.assertEqual([model['format'] for model in report['models']], ['ifc', '3ds', 'dae', 'obj', 'stl', 'gltf'])
         self.assertEqual(len([call for call in client.calls if '/downloads/file?' in call[1]]), 3)
         self.assertTrue(all('%25' in sample['locator'] and '&item_id=' in sample['locator'] for sample in report['samples']))
         self.assertEqual(scan.call_args_list[0].args, (client, 17, ['models'], 'basic', 30))
@@ -967,7 +1015,7 @@ class FTPConsumerTest(unittest.TestCase):
                 'range':{'status':206,'size':4,'sha256':hashlib.sha256(raw[4:8]).hexdigest(),'content_range':f'bytes 4-7/{len(raw)}'},
                 'source_download':source_download_proof(source,artifacts)}
             for source in expected['models']:
-                raw = multi_material_obj_glb() if source['format']=='obj' else stl_glb() if source['format']=='stl' else GLB.fixture_glb(source['format'])
+                raw = multi_material_obj_glb() if source['format'] in {'obj','gltf'} else stl_glb() if source['format']=='stl' else GLB.fixture_glb(source['format'])
                 (artifacts / f"ftp-{source['format']}.glb").write_bytes(raw)
                 proof['models'].append({'format': source['format'], 'item_id': source['item_id'],
                                         'task_id': 10, 'execution_id': 'owned-execution', 'result_id': 20,
@@ -1039,7 +1087,7 @@ class FTPConsumerTest(unittest.TestCase):
                 return SimpleNamespace(payload=(fixture/pinned[path]).read_bytes())
             result = M.verify_raw_model_reads(SimpleNamespace(request=request), report, status)
             self.assertEqual(len(result),sum(len(model['composition'])*2+1 for model in report['models']))
-            self.assertEqual({row['format'] for row in result},{'ifc','3ds','dae','obj','stl'})
+            self.assertEqual({row['format'] for row in result},{'ifc','3ds','dae','obj','stl','gltf'})
             self.assertEqual({row['exit'] for row in result},{'stream','asset','download'})
             self.assertTrue(all(row['status']==status for row in result))
             self.assertNotIn('addp_at_',json.dumps(result))
@@ -1195,7 +1243,7 @@ class FTPConsumerTest(unittest.TestCase):
         issuer = FakeSourceIssuer(report)
         authorization = M.ModelSourceAuthorization(issuer, consumer, report)
         receipts = [authorization.grant(model) for model in report['models']]
-        self.assertEqual(len(receipts), 5)
+        self.assertEqual(len(receipts), 6)
         commands = [body for method, path, body in issuer.calls if path.endswith('/access_grants')]
         self.assertEqual([body['recipient_id'] for body in commands], ['8'] * len(report['models']))
         for body in commands:
@@ -1533,7 +1581,7 @@ class FTPConsumerTest(unittest.TestCase):
             result = M.verify_composition_rules(client, Authorization(), report, source, 'deny-A', 30)
         self.assertEqual(events, ['scan', 'revoke-grant-A', 'grant-B', 'check-403', 'release-deny-A',
                                   'check-200', 'restore-physical', 'scan', 'revoke-grant-B', 'grant-A-new'])
-        cache.assert_called_once_with(client, report, {'ifc': 200, '3ds': 403, 'dae': 200, 'obj': 200, 'stl': 200})
+        cache.assert_called_once_with(client, report, {'ifc': 200, '3ds': 403, 'dae': 200, 'obj': 200, 'stl': 200, 'gltf': 200})
         self.assertNotEqual(result['original_boundary_hash'], result['changed_boundary_hash'])
 
     def test_withdrawn_browser_report_requires_both_original_models_and_no_new_execution(self):

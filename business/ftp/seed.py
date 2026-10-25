@@ -64,6 +64,10 @@ def write_samples(directory):
 
 
 MODEL_SAMPLE_FILES = (
+    ('gltf', 'models/gltf/model.gltf', 'addp_online_model_fixture.gltf'),
+    ('gltf_buffer', 'models/gltf/buffers/ geometry%20.mesh', 'addp_online_gltf_geometry.mesh'),
+    ('gltf_png_red', 'models/gltf/red/color.png', 'addp_online_obj_red.png'),
+    ('gltf_png_blue', 'models/gltf/blue/color.png', 'addp_online_obj_blue.png'),
     ('glb', 'models/glb/ 原名 %.GLB', 'addp_online_model_fixture.glb'),
     ('stl', 'models/stl/model.stl', 'addp_online_model_fixture.stl'),
     ('ifc', 'models/ifc/model.ifc', 'addp_online_model_fixture.ifc'),

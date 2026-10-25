@@ -192,13 +192,13 @@ async function generateModel(page, expectedIdentity, model) {
       await expect(viewer.locator('canvas')).toBeVisible({ timeout: 60_000 })
       await expect(viewer.locator('.three-status')).toHaveCount(0, { timeout: 60_000 })
       let pixels
-      if (['3ds', 'dae', 'obj'].includes(model.format)) {
+      if (['3ds', 'dae', 'obj', 'gltf'].includes(model.format)) {
         await expect.poll(async () => {
           pixels = await modelPixels(page, viewer.locator('canvas'))
           return pixels.red / pixels.total
         }).toBeGreaterThan(0.001)
         expect(pixels.red / pixels.total).toBeLessThan(0.85)
-        if (model.format === 'obj') {
+        if (['obj','gltf'].includes(model.format)) {
           await expect.poll(async () => (await modelPixels(page, viewer.locator('canvas'))).blue / pixels.total).toBeGreaterThan(0.001)
         }
       } else {
@@ -420,7 +420,7 @@ test('FTP account root, scoped rescan, shared previews and byte-exact downloads 
     }
     const direct = await directGLB(page, expectedIdentity, expected.direct_glb)
     const models = []
-    expect(expected.models.map(model => model.format)).toEqual(['ifc', '3ds', 'dae', 'obj', 'stl'])
+    expect(expected.models.map(model => model.format)).toEqual(['ifc', '3ds', 'dae', 'obj', 'stl', 'gltf'])
     for (const model of expected.models) models.push(await generateModel(page, expectedIdentity, model))
     writeFileSync(required('ADDP_ONLINE_FTP_BROWSER_REPORT'), JSON.stringify({
       run_id: expected.run_id, engine_id: expected.engine_id, tenant_id: expected.tenant_id,

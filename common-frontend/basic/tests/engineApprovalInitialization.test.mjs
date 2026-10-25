@@ -229,3 +229,26 @@ test('GLB approval binds one exact required primary for FTP, NFS and MinIO and r
       boundary: null, boundary_hash: null })), /invalidDataItemBoundary/, source)
   }
 })
+
+
+test('glTF multi approval retains manifest, buffer and image; rejects false layouts and partial roles', async () => {
+  for (const target of [filePath(' 原名 %.gltf'), objectPath(' 原名 %.gltf')]) {
+    const fullName = target.segments.slice(1).map(part => part.name).join('/')
+    const fingerprint = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${target.engine_id}:${fullName}`))).toString('hex')
+    const facts = () => {
+      const image=structuredClone(target);image.segments.at(-1).name='literal%20.png'
+      return {schema_version:'meta.data_item_authorization_facts/v1',engine_id:target.engine_id,item_type:target.segments.at(-1).term,item_fingerprint:fingerprint,basis_state:'complete',boundary_hash:'d'.repeat(64),boundary:{layout:'multi',file_composition:{format:'gltf',refs:[
+        {target:structuredClone(target),role:'manifest',primary:true,required:true},
+        {target:image,role:'image',primary:false,required:true}
+      ]}}}
+    }
+    const binding=await observeNativeApprovalBinding(target,async()=>facts())
+    assert.equal(binding.file_composition.refs[0].role,'manifest')
+    assert.equal(binding.file_composition.refs[1].target.segments.at(-1).name,'literal%20.png')
+    for(const mutate of [f=>{f.boundary.layout='single'},f=>{f.boundary.layout='whole'},f=>{f.boundary.file_composition.refs[0].role='model'},f=>{f.boundary.file_composition.refs[1].role='texture'},f=>{f.boundary.file_composition.refs[1].required=false}]) {
+      await assert.rejects(observeNativeApprovalBinding(target,async()=>{const f=facts();mutate(f);return f}),/invalidDataItemBoundary/)
+    }
+    const embedded=facts();embedded.boundary.file_composition.refs.length=1
+    assert.equal((await observeNativeApprovalBinding(target,async()=>embedded)).file_composition.refs.length,1)
+  }
+})

@@ -26,7 +26,7 @@ func ManagerModel3DSourceFormat(engineType, format string) bool {
 // ManagerModel3DFileFormat is the shared exact-composition format admission.
 // Identity, basic completeness and the native file/object shape remain mandatory.
 func ManagerModel3DFileFormat(format string) bool {
-	return format == "ifc" || format == "3ds" || format == "dae" || format == "obj" || format == "stl" || format == "glb"
+	return format == "ifc" || format == "3ds" || format == "dae" || format == "obj" || format == "stl" || format == "glb" || format == "gltf"
 }
 
 // ManagerModel3DConversionFormat excludes directly previewed GLB from execution authorization.

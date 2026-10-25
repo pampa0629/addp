@@ -8,6 +8,7 @@ import (
 	"math"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -29,6 +30,23 @@ type FileCompositionRef struct {
 type FileCompositionBoundary struct {
 	Format string               `json:"format"`
 	Refs   []FileCompositionRef `json:"refs"`
+}
+
+// Layout is fixed by the admitted format identity, never by reference count.
+// glTF keeps its manifest-led multi identity; existing file models stay single.
+func (b *FileCompositionBoundary) Layout() string {
+	if b != nil && b.Format == "gltf" {
+		return "multi"
+	}
+	return "single"
+}
+
+// PrimaryRole accompanies the same fixed model identity in owner projections.
+func (b *FileCompositionBoundary) PrimaryRole() string {
+	if b != nil && b.Format == "gltf" {
+		return "manifest"
+	}
+	return "model"
 }
 
 const MaxFileCompositionRefs = 200
@@ -70,10 +88,16 @@ func (b *FileCompositionBoundary) Validate(engineID uint) error {
 	}
 	primaryIndex := -1
 	previous := ""
+	gltfRoles := map[string]bool{}
 	for i, ref := range b.Refs {
 		if ref.Target.EngineID != engineID || !fileCompositionToken(ref.Role) || validateFileCompositionTarget(ref.Target) != nil {
 			return errFileComposition
 		}
+		if b.Format == "gltf" && (!ref.Required || (ref.Primary && ref.Role != b.PrimaryRole()) ||
+			(!ref.Primary && !gltfResourceRole(ref.Role)) || gltfRoles[ref.Role]) {
+			return errFileComposition
+		}
+		gltfRoles[ref.Role] = true
 		key := fileRefKey(ref)
 		if i > 0 && previous >= key {
 			return errFileComposition
@@ -104,6 +128,20 @@ func (b *FileCompositionBoundary) Validate(engineID uint) error {
 		}
 	}
 	return nil
+}
+
+func gltfResourceRole(role string) bool {
+	for _, base := range []string{"buffer", "image"} {
+		if role == base {
+			return true
+		}
+		if strings.HasPrefix(role, base+"_") {
+			suffix := strings.TrimPrefix(role, base+"_")
+			n, err := strconv.Atoi(suffix)
+			return err == nil && n > 0 && strconv.Itoa(n) == suffix
+		}
+	}
+	return false
 }
 
 func (b *FileCompositionBoundary) Clone() *FileCompositionBoundary {
@@ -248,7 +286,7 @@ func (b *FileCompositionBoundary) UnmarshalJSON(encoded []byte) error {
 	return nil
 }
 
-// MarshalJSON expresses the two single boundary variants without a zero-value
+// MarshalJSON expresses exact native or file boundaries without a zero-value
 // native path beside file refs. Native canonical bytes remain unchanged.
 func (b AuthorizationBoundary) MarshalJSON() ([]byte, error) {
 	if b.FileComposition != nil {
@@ -280,14 +318,16 @@ func (b *AuthorizationBoundary) UnmarshalJSON(encoded []byte) error {
 	var result wire
 	decoder = json.NewDecoder(bytes.NewReader(encoded))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&result) != nil || result.Layout != "single" ||
+	if decoder.Decode(&result) != nil ||
 		(keys["file_composition"] && result.FileComposition == nil) {
 		return errFileComposition
 	}
 	if keys["native_target"] {
-		if _, _, err := nativeSingleIdentity(result.NativeTarget); err != nil {
+		if _, _, err := nativeSingleIdentity(result.NativeTarget); err != nil || result.Layout != "single" {
 			return errFileComposition
 		}
+	} else if result.Layout != result.FileComposition.Layout() {
+		return errFileComposition
 	}
 	*b = AuthorizationBoundary(result)
 	return nil

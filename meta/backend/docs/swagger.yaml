@@ -19,6 +19,7 @@ definitions:
       layout:
         enum:
         - single
+        - multi
         type: string
       native_target:
         $ref: '#/definitions/plugin.EngineCatalogPath'

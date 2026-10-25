@@ -382,9 +382,9 @@ func TestCommonDataItemResolverAdaptsGLTFManifestMultiItem(t *testing.T) {
 	d := &commonDataItemResolver{}
 	files := []StorageFileRef{
 		{Name: "scene.gltf", Path: "models/building/scene.gltf", Size: 10},
-		{Name: "geometry.bin", Path: "models/building/buffers/geometry.bin", Size: 20},
+		{Name: "geometry.bin", Path: "models/building/buffers/geometry.bin", Size: 256},
 		{Name: "baseColor.png", Path: "models/building/textures/baseColor.png", Size: 30},
-		{Name: "normal.ktx2", Path: "models/building/textures/normal.ktx2", Size: 40},
+		{Name: "normal.png", Path: "models/building/textures/normal.png", Size: 40},
 		{Name: "readme.txt", Path: "models/building/readme.txt", Size: 50},
 	}
 
@@ -393,7 +393,7 @@ func TestCommonDataItemResolverAdaptsGLTFManifestMultiItem(t *testing.T) {
 			"models/building/scene.gltf": []byte(`{
 				"asset":{"version":"2.0","generator":"ADDP test"},
 				"buffers":[{"uri":"buffers/geometry.bin","byteLength":256}],
-				"images":[{"uri":"textures/baseColor.png"},{"uri":"textures/normal.ktx2"},{"uri":"data:image/png;base64,AAAA"}]
+				"images":[{"uri":"textures/baseColor.png"},{"uri":"textures/normal.png"}]
 			}`),
 		}},
 		DirPath: "models/building",
@@ -431,7 +431,7 @@ func TestCommonDataItemResolverAdaptsGLTFManifestMultiItem(t *testing.T) {
 	if !result.Claims["models/building/scene.gltf"] ||
 		!result.Claims["models/building/buffers/geometry.bin"] ||
 		!result.Claims["models/building/textures/baseColor.png"] ||
-		!result.Claims["models/building/textures/normal.ktx2"] {
+		!result.Claims["models/building/textures/normal.png"] {
 		t.Fatalf("claims = %#v, want glTF local resources claimed", result.Claims)
 	}
 	if result.Claims["models/building/readme.txt"] {
@@ -459,8 +459,11 @@ func TestCommonDataItemResolverRejectsIncompleteGLTFRefs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveItems() error = %v", err)
 	}
-	if len(result.Items) != 0 || len(result.Claims) != 0 {
-		t.Fatalf("ResolveItems() = %#v, want no glTF item with missing local refs", result)
+	if len(result.Items) != 1 || len(result.Items[0].RefList) != 1 || len(result.Claims) != 1 {
+		t.Fatalf("incomplete observation claimed dependencies: %#v", result)
+	}
+	if result.Items[0].Attributes["format_info"].(map[string]interface{})["gltf"].(map[string]interface{})["composition_complete"] != false {
+		t.Fatal("missing resource retained complete boundary")
 	}
 }
 

@@ -129,6 +129,35 @@ func (r *storageRead) stream(ctx context.Context, storageRef, rangeHeader string
 		return nil, 0, "", "", err
 	}
 	check := func() error { return r.check(ctx, storageRef) }
+	if r.expected != nil && r.expected.FileComposition.Format == "gltf" {
+		primary, err := r.expected.FileComposition.PrimaryTarget()
+		if err != nil {
+			return nil, 0, "", "", commonClient.ErrManagerPreviewReadDenied
+		}
+		primaryName := primary.StringPath()
+		// Every raw member request first re-proves the exact manifest. No new
+		// declaration may cause a dependent file to be opened at an old boundary.
+		reader, size, _, contentType, err := r.service.streamStorageContent(ctx, resource, primaryName, "", format.MaxGLTFManifestBytes, func() error { return r.check(ctx, primaryName) })
+		if err != nil {
+			return nil, 0, "", "", err
+		}
+		raw, readErr := io.ReadAll(io.LimitReader(reader, format.MaxGLTFManifestBytes+1))
+		closeErr := reader.Close()
+		if readErr != nil || closeErr != nil || int64(len(raw)) != size || int64(len(raw)) > format.MaxGLTFManifestBytes || validateGLTFCompositionBytes(ctx, raw, &r.expected.FileComposition) != nil {
+			return nil, 0, "", "", commonClient.ErrManagerPreviewReadDenied
+		}
+		if err := check(); err != nil {
+			return nil, 0, "", "", err
+		}
+		if storageRef != primaryName {
+			return r.service.streamStorageContent(ctx, resource, storageRef, rangeHeader, 0, check)
+		}
+		options, length, contentRange, err := parseStorageRange(rangeHeader, int64(len(raw)))
+		if err != nil {
+			return nil, 0, "", "", err
+		}
+		return io.NopCloser(bytes.NewReader(raw[options.Offset : options.Offset+length])), length, contentRange, contentType, nil
+	}
 	if r.expected == nil || r.expected.FileComposition.Format != "glb" {
 		return r.service.streamStorageContent(ctx, resource, storageRef, rangeHeader, 0, check)
 	}

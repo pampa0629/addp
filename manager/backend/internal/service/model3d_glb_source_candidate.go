@@ -26,6 +26,7 @@ type model3DGLBSourceCandidate struct {
 
 func model3DGLBCandidateFromMeta(tenantID uint, source Model3DGLBSourceConfig, item *commonModels.MetaItem) (*model3DGLBSourceCandidate, error) {
 	reject := ErrModel3DGLBSourceAuthorizationRequired
+	identity := authorizationfacts.FileCompositionBoundary{Format: source.Format}
 	if tenantID == 0 || source.ItemID == 0 || item == nil || item.ID != source.ItemID || item.TenantID != tenantID ||
 		item.EngineID != source.SourceEngineID || (item.ItemType != "file" && item.ItemType != "object") || item.Fingerprint == "" || item.Fingerprint != source.ItemFingerprint ||
 		!commonExecution.ManagerModel3DFileFormat(source.Format) {
@@ -44,7 +45,7 @@ func model3DGLBCandidateFromMeta(tenantID uint, source Model3DGLBSourceConfig, i
 	}
 	primary := targetFor(item.FullName)
 	if primary.StringPath() != item.FullName || path.Base(item.FullName) != item.Name ||
-		commonJSON.String(item.Attributes, "item", "layout") != "single" ||
+		commonJSON.String(item.Attributes, "item", "layout") != identity.Layout() ||
 		commonJSON.String(item.Attributes, "item", "data_type") != "model_3d" ||
 		commonJSON.String(item.Attributes, "item", "format") != source.Format ||
 		commonJSON.String(item.Attributes, "storage", "physical_path") != item.FullName {
@@ -85,7 +86,7 @@ func model3DGLBCandidateFromMeta(tenantID uint, source Model3DGLBSourceConfig, i
 			return nil, reject
 		}
 		seen[ref.Path] = true
-		if ref.Primary && (ref.Path != item.FullName || ref.Role != "model") {
+		if ref.Primary && (ref.Path != item.FullName || ref.Role != identity.PrimaryRole()) {
 			return nil, reject
 		}
 		compositionRefs = append(compositionRefs, authorizationfacts.FileCompositionRef{Target: target, Role: ref.Role, Required: *ref.Required, Primary: ref.Primary})
@@ -97,7 +98,7 @@ func model3DGLBCandidateFromMeta(tenantID uint, source Model3DGLBSourceConfig, i
 	if (source.Format == "ifc" || source.Format == "stl" || source.Format == "glb") && len(composition.Refs) != 1 {
 		return nil, reject
 	}
-	if (source.Format == "stl" || source.Format == "glb") && commonJSON.Section(item.Attributes, "format_info."+source.Format)["composition_complete"] != true {
+	if (source.Format == "stl" || source.Format == "glb" || source.Format == "gltf") && commonJSON.Section(item.Attributes, "format_info."+source.Format)["composition_complete"] != true {
 		return nil, reject
 	}
 	candidate := &model3DGLBSourceCandidate{composition: composition}

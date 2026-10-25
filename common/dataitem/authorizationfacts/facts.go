@@ -32,10 +32,10 @@ const (
 	AuthorizationBasisUnsupported  AuthorizationBasisState = "unsupported"
 )
 
-// AuthorizationBoundary is one exact single-item representation. NativeTarget
+// AuthorizationBoundary is one exact DataItem representation. NativeTarget
 // and FileComposition are mutually exclusive; neither is a permission decision.
 type AuthorizationBoundary struct {
-	Layout          string                   `json:"layout" enums:"single"`
+	Layout          string                   `json:"layout" enums:"single,multi"`
 	NativeTarget    plugin.EngineCatalogPath `json:"native_target"`
 	FileComposition *FileCompositionBoundary `json:"file_composition,omitempty"`
 }
@@ -181,11 +181,11 @@ func (f AuthorizationFacts) ComputeBoundaryHash() (string, error) {
 	if err := f.validateIdentity(); err != nil {
 		return "", err
 	}
-	if f.Boundary == nil || f.Boundary.Layout != "single" {
+	if f.Boundary == nil {
 		return "", errors.New("unsupported authorization boundary")
 	}
 	if f.Boundary.FileComposition != nil {
-		if !reflect.DeepEqual(f.Boundary.NativeTarget, plugin.EngineCatalogPath{}) || f.Boundary.FileComposition.Validate(f.EngineID) != nil {
+		if f.Boundary.Layout != f.Boundary.FileComposition.Layout() || !reflect.DeepEqual(f.Boundary.NativeTarget, plugin.EngineCatalogPath{}) || f.Boundary.FileComposition.Validate(f.EngineID) != nil {
 			return "", errFileComposition
 		}
 		primary, err := f.Boundary.FileComposition.PrimaryTarget()
@@ -195,7 +195,7 @@ func (f AuthorizationFacts) ComputeBoundaryHash() (string, error) {
 	} else {
 		p := f.Boundary.NativeTarget
 		itemType, fullName, err := nativeSingleIdentity(p)
-		if err != nil || p.EngineID != f.EngineID || f.ItemType != itemType || f.FullName != fullName {
+		if err != nil || f.Boundary.Layout != "single" || p.EngineID != f.EngineID || f.ItemType != itemType || f.FullName != fullName {
 			return "", errors.New("native boundary does not match data item")
 		}
 	}

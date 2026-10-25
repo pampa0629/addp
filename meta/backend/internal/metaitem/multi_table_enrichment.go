@@ -61,7 +61,7 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 		appendDetectedItem(result, item)
 	}
 	for _, item := range resolveGLTFManifestItems(ctx, input, files) {
-		appendResolvedDetection(input, result, item)
+		appendDetectedItem(result, item)
 	}
 
 	resolved, err := resolveCommonItems(input.DirPath, filterManifestAndClaimedStorageFiles(input.Files, result.Claims), !input.Options.ExcludeWholeScope && !initialResolved.Exclusive)
@@ -246,88 +246,6 @@ func uniqueNonEmptyStrings(values []string) []string {
 		seen[value] = true
 	}
 	return result
-}
-
-func resolveGLTFManifestItems(ctx context.Context, input DirectoryResolveInput, files []StorageFileRef) []dataitem.ResolvedItem {
-	if input.ContentReader == nil || len(files) == 0 {
-		return nil
-	}
-	byPath := map[string]StorageFileRef{}
-	for _, file := range files {
-		if file.Path != "" {
-			byPath[file.Path] = file
-		}
-	}
-	items := []dataitem.ResolvedItem{}
-	for _, file := range files {
-		if strings.ToLower(path.Ext(file.Path)) != ".gltf" {
-			continue
-		}
-		item, ok := resolveSingleGLTFManifestItem(ctx, input, file, byPath)
-		if ok {
-			items = append(items, item)
-		}
-	}
-	return items
-}
-
-func resolveSingleGLTFManifestItem(ctx context.Context, input DirectoryResolveInput, manifest StorageFileRef, byPath map[string]StorageFileRef) (dataitem.ResolvedItem, bool) {
-	reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, resolveCatalogPath(input.EngineID, manifest.Path, input.EngineCatalogPathFor), plugin.ReadOptions{Length: format.MaxGLTFManifestBytes + 1})
-	if err != nil {
-		return dataitem.ResolvedItem{}, false
-	}
-	defer reader.Close()
-
-	doc, err := format.DecodeGLTFManifest(reader, format.MaxGLTFManifestBytes)
-	if err != nil {
-		return dataitem.ResolvedItem{}, false
-	}
-	refList := []dataitem.ItemRef{{
-		Role:      "manifest",
-		Path:      manifest.Path,
-		Required:  true,
-		Primary:   true,
-		Extension: ".gltf",
-	}}
-	claimPaths := []string{manifest.Path}
-	totalSize := manifest.Size
-	seen := map[string]bool{manifest.Path: true}
-	roleCounts := map[string]int{}
-	manifestDir := path.Dir(manifest.Path)
-	if manifestDir == "." {
-		manifestDir = ""
-	}
-	for _, resource := range format.LocalGLTFResourceRefs(doc) {
-		resourcePath := path.Clean(path.Join(manifestDir, resource.URI))
-		file, ok := byPath[resourcePath]
-		if !ok {
-			return dataitem.ResolvedItem{}, false
-		}
-		if seen[resourcePath] {
-			continue
-		}
-		refList = append(refList, dataitem.ItemRef{
-			Role:      uniqueRefRole(resource.Role, roleCounts),
-			Path:      resourcePath,
-			Required:  true,
-			Extension: strings.ToLower(path.Ext(resourcePath)),
-		})
-		claimPaths = append(claimPaths, resourcePath)
-		totalSize += file.Size
-		seen[resourcePath] = true
-	}
-	return dataitem.ResolvedItem{
-		Name:               manifest.Name,
-		FullName:           manifest.Path,
-		Layout:             format.LayoutMulti,
-		DataType:           datatype.Model3D,
-		Format:             string(format.FormatGLTF),
-		PrimaryContentPath: manifest.Path,
-		RefList:            refList,
-		ClaimPaths:         claimPaths,
-		SizeBytes:          &totalSize,
-		DetectionReason:    "gltf_manifest",
-	}, true
 }
 
 func uniqueRefRole(base string, counts map[string]int) string {

@@ -37,7 +37,7 @@ class MinIOModelFixtureTest(unittest.TestCase):
                  patch.object(M,'put',side_effect=lambda key,data:store.update({key:data})),patch.object(M,'read',side_effect=lambda key:store[key]), \
                  patch.object(M.urllib.request,'urlopen',return_value=Response()):
                 M.start()
-            self.assertEqual(len(store),15)
+            self.assertEqual(len(store),len(M.SEED.MODEL_SAMPLE_FILES)+3)
             self.assertEqual(store["models/glb/ 原名 %.GLB"], (Path(__file__).resolve().parents[2]/"business/fixtures/manager/addp_online_model_fixture.glb").read_bytes())
             self.assertIn('models/dae/model.dae',store)
             self.assertIn('models/dae/texture.png',store)
@@ -50,7 +50,7 @@ class MinIOModelFixtureTest(unittest.TestCase):
             items=[]
             for index,sample in enumerate(manifests):
                 kind=sample['format']
-                if kind not in {'ifc','3ds','dae','obj','stl'}: continue
+                if kind not in {'ifc','3ds','dae','obj','stl','gltf'}: continue
                 name=sample['full_name']
                 refs=[{'path':name,'role':'model','required':True,'primary':True}]
                 if kind in {'3ds','dae'}: refs.append({'path':name.rsplit('/',1)[0]+'/texture.png','role':'texture','required':True,'primary':False})
@@ -65,9 +65,15 @@ class MinIOModelFixtureTest(unittest.TestCase):
                     items[-1]['attributes']['format_info']={'stl':{'composition_complete':True}}
                 if kind=='obj':
                     items[-1]['attributes']['format_info']={'obj':{'composition_complete':True,'material_libraries':[{'reference':'paint blue.mtl','texture_refs':['blue/color.png']},{'reference':'paint red.mtl','texture_refs':['red/color.png']}]}}
+                if kind=='gltf':
+                    refs[0]['role']='manifest'
+                    for leaf,role in [('blue/color.png','image'),('buffers/ geometry%20.mesh','buffer'),('red/color.png','image_1')]:
+                        refs.append({'path':name.rsplit('/',1)[0]+'/'+leaf,'role':role,'required':True,'primary':False})
+                    items[-1]['attributes']['item']['layout']='multi'
+                    items[-1]['attributes']['format_info']={'gltf':{'composition_complete':True}}
             with patch.dict(os.environ,{'ADDP_ONLINE_MODEL_FILE_ENGINE_TYPE':'minio'}):
                 models=FLOW.prepare_models(items,17,manifests)
-                self.assertEqual([model['format'] for model in models],['ifc','3ds','dae','obj','stl'])
+                self.assertEqual([model['format'] for model in models],['ifc','3ds','dae','obj','stl','gltf'])
                 dae=next(row for row in models if row['format']=='dae')
                 self.assertEqual([ref['path'] for ref in dae['composition']],
                     ['model-source/models/dae/model.dae','model-source/models/dae/texture.png'])

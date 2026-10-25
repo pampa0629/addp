@@ -10,6 +10,8 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/addp/common/dataitem"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/workflowaccess"
 	commonExecution "github.com/addp/common/execution"
@@ -121,6 +123,27 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 	}
 	var primaryBytes []byte
 	buffered := map[string][]byte{}
+	if composition.Format == "gltf" {
+		if primarySize > format.MaxGLTFManifestBytes {
+			return ErrModel3DGLBSourceAuthorizationRequired
+		}
+		stream, err := open(ctx, primary)
+		if err != nil {
+			return err
+		}
+		raw, readErr := io.ReadAll(io.LimitReader(&model3DStagingContextReader{ctx: ctx, reader: stream}, primarySize+1))
+		closeErr := stream.Close()
+		if readErr != nil || closeErr != nil {
+			return errors.Join(readErr, closeErr)
+		}
+		if int64(len(raw)) != primarySize {
+			return ErrModel3DGLBSourceAuthorizationRequired
+		}
+		if err := validateGLTFCompositionBytes(ctx, raw, composition); err != nil {
+			return err
+		}
+		primaryBytes = raw
+	}
 	if composition.Format == "obj" {
 		libraries, err := auth.OBJMaterialLibraries()
 		if err != nil || primarySize > obj.MaxCompositionBytes {
@@ -277,7 +300,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 		files = append(files, model3DStagingFile{RelativePath: name, SizeBytes: size, Open: func(ctx context.Context) (io.ReadCloser, error) { return open(ctx, target) }})
 	}
 	kind := workflowaccess.KindFile
-	if composition.Format == "3ds" || composition.Format == "dae" || composition.Format == "obj" {
+	if composition.Format == "3ds" || composition.Format == "dae" || composition.Format == "obj" || composition.Format == "gltf" {
 		kind = workflowaccess.KindDirectory
 	}
 	if err := auth.Checkpoint(ctx); err != nil {
@@ -289,4 +312,37 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 		}
 		return consume(ctx, source, commonModels.JSONMap{"engine_id": engine.ID, "engine_type": engine.EngineType, "access_method": workflowaccess.MethodObjectStore, "item_locator": req.Config.Source.ItemLocator, "file_count": len(files)})
 	})
+}
+
+// Validate the already-authorized manifest before opening dependencies. The
+// same bytes are then staged, so no second primary read can change the input.
+func validateGLTFCompositionBytes(ctx context.Context, raw []byte, composition *authorizationfacts.FileCompositionBoundary) error {
+	if composition == nil || composition.Format != "gltf" {
+		return ErrModel3DGLBSourceAuthorizationRequired
+	}
+	primary, err := composition.PrimaryTarget()
+	if err != nil {
+		return err
+	}
+	parsed, err := format.ParseGLTFComposition(ctx, raw)
+	if err != nil {
+		return ErrModel3DGLBSourceAuthorizationRequired
+	}
+	expected, err := dataitem.GLTFCompositionRefs(primary.StringPath(), parsed.Resources)
+	if err != nil || len(expected) != len(composition.Refs) {
+		return ErrModel3DGLBSourceAuthorizationRequired
+	}
+	for _, ref := range expected {
+		found := false
+		for _, actual := range composition.Refs {
+			if ref.Path == actual.Target.StringPath() && ref.Role == actual.Role && ref.Primary == actual.Primary && ref.Required == actual.Required {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return ErrModel3DGLBSourceAuthorizationRequired
+		}
+	}
+	return nil
 }

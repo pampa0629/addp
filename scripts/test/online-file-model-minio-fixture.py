@@ -127,6 +127,10 @@ def stop():
 
 @contextmanager
 def changed_texture(model):
+    if model['format'] == 'gltf':
+        with changed_gltf(model) as changed:
+            yield changed
+        return
     if model['format'] == 'obj':
         with changed_obj_material(model) as changed:
             yield changed
@@ -164,6 +168,31 @@ def changed_texture(model):
         mc('rm', f'fixture/{BUCKET}/{replacement}')
         if read(key)!=original:
             raise RuntimeError('MinIO restore bytes differ')
+
+
+@contextmanager
+def changed_gltf(model):
+    guard()
+    fixture=Path(__file__).resolve().parents[2]/'business/fixtures/manager'
+    key,texture,replacement='models/gltf/model.gltf','models/gltf/red/color.png','models/gltf/red/changed.png'
+    original=(fixture/'addp_online_model_fixture.gltf').read_bytes()
+    png=(fixture/'addp_online_obj_red.png').read_bytes()
+    if model['full_name']!=BUCKET+'/'+key or read(key)!=original or read(texture)!=png:
+        raise RuntimeError('glTF mutation requires exact owned objects')
+    listing=mc('ls','--json',f'fixture/{BUCKET}/models/gltf/red/').decode().splitlines()
+    if any(json.loads(line).get('key')=='changed.png' for line in listing):raise RuntimeError('glTF replacement already exists')
+    changed=original.replace(b'red/color.png',b'red/changed.png')
+    try:
+        put(replacement,png);put(key,changed)
+        projected=copy.deepcopy(model);projected.update(size=len(changed),sha256=hashlib.sha256(changed).hexdigest())
+        refs=[ref for ref in projected['composition'] if ref['path']==BUCKET+'/'+texture]
+        if len(refs)!=1:raise RuntimeError('glTF requires one red texture member')
+        refs[0]['path']=BUCKET+'/'+replacement
+        yield projected
+    finally:
+        if read(key) not in (original,changed) or read(replacement)!=png:raise RuntimeError('glTF cleanup refused foreign objects')
+        put(key,original);mc('rm',f'fixture/{BUCKET}/{replacement}')
+        if read(key)!=original:raise RuntimeError('glTF original bytes differ after restoration')
 
 
 @contextmanager

@@ -320,7 +320,7 @@ whole scope 的 `refs` 与 `claims` 必须分工明确：
   scene.gltf
   buffers/geometry.bin
   textures/baseColor.png
-  textures/normal.ktx2
+  textures/normal.png
   readme.txt
 ```
 
@@ -338,18 +338,19 @@ whole scope 的 `refs` 与 `claims` 必须分工明确：
       "indices": 1
     }]
   }],
+  "bufferViews": [{"buffer": 0, "byteLength": 96}, {"buffer": 0, "byteOffset": 96, "byteLength": 24}],
   "accessors": [
-    {"count": 8, "type": "VEC3", "min": [0, 0, 0], "max": [1, 2, 3]},
-    {"count": 12, "type": "SCALAR"}
+    {"bufferView": 0, "componentType": 5126, "count": 8, "type": "VEC3", "min": [0, 0, 0], "max": [1, 2, 3]},
+    {"bufferView": 1, "componentType": 5123, "count": 12, "type": "SCALAR"}
   ],
   "buffers": [{"uri": "buffers/geometry.bin", "byteLength": 256}],
   "images": [
     {"uri": "textures/baseColor.png"},
-    {"uri": "textures/normal.ktx2"}
+    {"uri": "textures/normal.png"}
   ],
   "materials": [{}],
-  "textures": [{}, {}],
-  "extensionsUsed": ["KHR_texture_basisu"]
+  "textures": [{"source": 0}, {"source": 1}],
+  "extensionsUsed": []
 }
 ```
 
@@ -361,8 +362,8 @@ whole scope 的 `refs` 与 `claims` 必须分工明确：
 4. 四个 glTF 相关资源进入 claims，`readme.txt` 仍按普通 single resource 识别。
 5. `type_info.model_3d.model_kind=mesh_scene`，顶点、三角面和三维包围盒来自 glTF accessors。
 6. `format_info.gltf` 记录 glTF 版本、generator、scene / buffer / image / accessor 数量和 extensions 摘要；资源路径不写入 `format_info.gltf`。
-7. 如果 manifest 中任一本地相对 URI 缺失，或 `scene.gltf` 不是合法 glTF manifest，则不得生成 glTF item，也不得用同 basename 文件猜测补全。
-8. `data:` URI 和外部 URL 不生成本地 ref；是否允许直接预览由 Manager 内容代理或后续快显任务决定，不改变 Meta item 边界。
+7. 如果 manifest 中任一本地相对 URI 缺失，或 `scene.gltf` 不是合法 glTF manifest，则不得生成完整组成；仅保留带 `composition_complete=false` 和主 manifest 的不可授权候选，不得沿用旧完整状态或用同 basename 文件猜测补全。
+8. 组成读取复用 Common 唯一严格解析入口，URI 按原生规则只解码一次并保留物理名称；受校验的 `data:` URI 和 bufferView 图片不生成本地 ref，外部 URL、未知扩展、动画／蒙皮／morph 及不完整或越界声明不准入首期完整组成。深度摘要不提升基础 `composition_complete`。
 
 ## OBJ / STL / FBX 单体网格与 IFC BIM 校准用例
 

@@ -30,6 +30,13 @@ func model3DGLBCandidateFixture(format string) (Model3DGLBSourceConfig, *commonM
 	if format == "obj" {
 		item.Attributes["format_info"] = map[string]any{"obj": map[string]any{"composition_complete": true, "material_libraries": []map[string]any{{"reference": "model.mtl", "texture_refs": []string{"TEST.PNG"}}}}}
 	}
+	if format == "gltf" {
+		refs[0]["role"] = "manifest"
+		refs = append(refs, map[string]any{"path": "models/buffers/literal%20.bin", "role": "buffer", "required": true}, map[string]any{"path": "models/textures/ TEST.PNG", "role": "image", "required": true})
+		item.Attributes["item"].(map[string]any)["layout"] = "multi"
+		item.Attributes["item"].(map[string]any)["refs"] = refs
+		item.Attributes["format_info"] = map[string]any{"gltf": map[string]any{"composition_complete": true}}
+	}
 	locator := resourcetree.LocatorFromFullName(item.EngineID, "ftp", item.ItemType, item.FullName, &item.ID)
 	return Model3DGLBSourceConfig{ItemLocator: locator.ToURI(), ItemID: item.ID, SourceEngineID: item.EngineID, ItemFingerprint: item.Fingerprint, Format: format}, item
 }

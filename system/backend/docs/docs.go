@@ -16185,7 +16185,8 @@ const docTemplate = `{
                 "layout": {
                     "type": "string",
                     "enum": [
-                        "single"
+                        "single",
+                        "multi"
                     ]
                 },
                 "native_target": {

@@ -54,10 +54,10 @@ function modelPath(path) {
 // independently rereads Meta and computes the approved boundary on submission.
 function fileCompositionPrimary(composition) {
   if (!composition || Object.keys(composition).sort().join(',') !== 'format,refs' ||
-      !['ifc', '3ds', 'dae', 'obj', 'stl', 'glb'].includes(composition.format) || !Array.isArray(composition.refs) ||
+      !['ifc', '3ds', 'dae', 'obj', 'stl', 'glb', 'gltf'].includes(composition.format) || !Array.isArray(composition.refs) ||
       !composition.refs.length || composition.refs.length > 200 || new TextEncoder().encode(JSON.stringify(composition)).length > 65536) return boundaryError()
-  const seen = new Set(), primary = composition.refs.filter(ref => ref.primary === true)
-  if (primary.length !== 1 || primary[0].required !== true || primary[0].role !== 'model') return boundaryError()
+  const seen = new Set(), gltfRoles = new Set(), primary = composition.refs.filter(ref => ref.primary === true)
+  if (primary.length !== 1 || primary[0].required !== true || primary[0].role !== (composition.format === 'gltf' ? 'manifest' : 'model')) return boundaryError()
   const target = primary[0].target
   if (!modelPath(target) || !target.segments.at(-1).name.toLowerCase().endsWith(`.${composition.format}`)) return boundaryError()
   if (['ifc', 'stl', 'glb'].includes(composition.format) && composition.refs.length !== 1) return boundaryError()
@@ -67,6 +67,8 @@ function fileCompositionPrimary(composition) {
         typeof ref.primary !== 'boolean' || !/^[a-z0-9_]{1,64}$/.test(ref.role) || !modelPath(ref.target) ||
         ref.target.segments.at(-1).term !== target.segments.at(-1).term || String(ref.target.engine_id) !== String(target.engine_id) || ref.target.segments.length <= parent.length ||
         !parent.every((part, index) => ['term', 'kind', 'name'].every(key => part[key] === ref.target.segments[index]?.[key]))) return boundaryError()
+    if (composition.format === 'gltf' && (!ref.required || gltfRoles.has(ref.role) || (!ref.primary && !/^(buffer|image)(_[1-9][0-9]*)?$/.test(ref.role)))) return boundaryError()
+    gltfRoles.add(ref.role)
     const key = JSON.stringify(ref.target.segments.map(({ term, kind, name }) => [term, kind, name]))
     if (seen.has(key)) return boundaryError()
     seen.add(key)
@@ -99,7 +101,7 @@ export async function readNativeApprovalFacts(target, readFacts) {
     if (facts.boundary !== null || facts.boundary_hash !== null) throw new Error('invalidDataItemBoundary')
     return Object.freeze({ state: facts.basis_state, binding: null })
   }
-  if (file && (String(facts.engine_id) !== target.engine_id || facts.item_type !== target.segments.at(-1).term || facts.boundary?.layout !== 'single' ||
+  if (file && (String(facts.engine_id) !== target.engine_id || facts.item_type !== target.segments.at(-1).term || facts.boundary?.layout !== (facts.boundary?.file_composition?.format === 'gltf' ? 'multi' : 'single') ||
       facts.boundary?.native_target !== undefined)) throw new Error('invalidDataItemBoundary')
   const binding = { item_fingerprint: facts.item_fingerprint, boundary_hash: facts.boundary_hash,
     ...(file ? { file_composition: structuredClone(facts.boundary?.file_composition) } : { native_target: structuredClone(facts.boundary?.native_target) }) }

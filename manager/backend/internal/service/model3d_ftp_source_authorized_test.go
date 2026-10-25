@@ -143,6 +143,11 @@ func fileModelAuthorizedFixture(t *testing.T, engineType, format string, denied 
 		spy.files["models/model.mtl"] = []byte("newmtl paint\nmap_Kd TEST.PNG\n")
 		spy.files["models/TEST.PNG"] = []byte("actual texture")
 	}
+	if format == "gltf" {
+		spy.files[item.FullName] = []byte(`{"asset":{"version":"2.0"},"buffers":[{"uri":"buffers/literal%2520.bin","byteLength":4}],"images":[{"uri":"textures/%20TEST.PNG"}]}`)
+		spy.files["models/buffers/literal%20.bin"] = []byte("mesh")
+		spy.files["models/textures/ TEST.PNG"] = []byte("actual texture")
+	}
 	original, err := plugin.Get(engineType)
 	if err != nil {
 		t.Fatal(err)
@@ -212,13 +217,15 @@ func ftpModelAuthorizedFixture(t *testing.T, format string, denied func(*ftpMode
 func TestNFSModelSourceUsesExactAuthorizedFiles(t *testing.T)     { testExactModelSource(t, "nfs") }
 func TestMinIOModelSourceUsesExactAuthorizedObjects(t *testing.T) { testExactModelSource(t, "minio") }
 func testExactModelSource(t *testing.T, engineType string) {
-	for _, format := range []string{"ifc", "3ds", "dae", "obj", "stl"} {
+	for _, format := range []string{"ifc", "3ds", "dae", "obj", "stl", "gltf"} {
 		for _, fault := range []string{"none", "revoked", "changed-declaration"} {
 			t.Run(format+"/"+fault, func(t *testing.T) {
 				ctx, request, engine, spy, _ := fileModelAuthorizedFixture(t, engineType, format, func(*ftpModelReadSpy) bool { return fault == "revoked" })
 				if fault == "changed-declaration" && format != "ifc" {
 					if format == "stl" {
 						spy.files["models/model.stl"] = []byte("solid triangle\nfacet normal 0 0 1\n")
+					} else if format == "gltf" {
+						spy.files["models/model.gltf"] = []byte(`{"asset":{"version":"2.0"},"buffers":[{"uri":"new.bin","byteLength":4}]}`)
 					} else if format == "obj" {
 						spy.files["models/model.mtl"] = []byte("newmtl paint\nmap_Kd OTHER.PNG\n")
 					} else if format == "dae" {
@@ -268,7 +275,7 @@ func testExactModelSource(t *testing.T, engineType string) {
 }
 
 func TestAuthorizedFTPModelSourceStagesOnlyFrozenFilesAndCleansThem(t *testing.T) {
-	for _, format := range []string{"ifc", "3ds", "dae", "obj", "stl"} {
+	for _, format := range []string{"ifc", "3ds", "dae", "obj", "stl", "gltf"} {
 		t.Run(format, func(t *testing.T) {
 			ctx, request, engine, spy, calls := ftpModelAuthorizedFixture(t, format, nil)
 			store := &stagingModelStore{}
@@ -304,6 +311,9 @@ func TestAuthorizedFTPModelSourceStagesOnlyFrozenFilesAndCleansThem(t *testing.T
 			}
 			if format == "obj" {
 				expected = append(expected, "models/model.mtl", "models/TEST.PNG")
+			}
+			if format == "gltf" {
+				expected = append(expected, "models/buffers/literal%20.bin", "models/textures/ TEST.PNG")
 			}
 			if !reflect.DeepEqual(spy.opens, expected) || !reflect.DeepEqual(spy.facts, expected) {
 				t.Fatalf("unexpected exact inputs: facts=%v opens=%v", spy.facts, spy.opens)
@@ -376,10 +386,16 @@ func TestAuthorizedFTPModelConversionFailureCleansAllPreparedInputs(t *testing.T
 }
 
 func TestFTPModelBuildUsesFrozenNumbersCreateTargetAndCurrentPublicationAuthorization(t *testing.T) {
+	for _, format := range []string{"ifc", "gltf"} {
+		t.Run(format, func(t *testing.T) { testAuthorizedFileModelBuild(t, format) })
+	}
+}
+
+func testAuthorizedFileModelBuild(t *testing.T, format string) {
 	for _, scenario := range []string{"success", "empty-runtime-response", "empty-object", "revoked-before-publish"} {
 		t.Run(scenario, func(t *testing.T) {
 			invoked := &atomic.Bool{}
-			ctx, request, sourceEngine, _, _ := ftpModelAuthorizedFixture(t, "ifc", func(*ftpModelReadSpy) bool { return scenario == "revoked-before-publish" && invoked.Load() })
+			ctx, request, sourceEngine, _, _ := ftpModelAuthorizedFixture(t, format, func(*ftpModelReadSpy) bool { return scenario == "revoked-before-publish" && invoked.Load() })
 			bucket, object, err := rastercogref.ObjectLocation(request.Config.Result.StorageRef, "manager")
 			if err != nil {
 				t.Fatal(err)
@@ -401,7 +417,7 @@ func TestFTPModelBuildUsesFrozenNumbersCreateTargetAndCurrentPublicationAuthoriz
 					writeModel3DOperatorList(w, testModel3DWorkflowEngineType, []string{"direct"})
 					return
 				}
-				if r.Method != http.MethodPost || r.URL.Path != "/api/operators/ifc_to_glb/invoke" {
+				if r.Method != http.MethodPost || r.URL.Path != "/api/operators/"+format+"_to_glb/invoke" {
 					t.Error("unexpected conversion route")
 					w.WriteHeader(404)
 					return

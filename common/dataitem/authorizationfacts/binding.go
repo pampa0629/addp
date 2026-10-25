@@ -36,7 +36,7 @@ func (b Binding) Validate() error {
 		p, err = b.FileComposition.PrimaryTarget()
 		if err == nil {
 			itemType, fullName = p.Segments[len(p.Segments)-1].Term, p.StringPath()
-			boundary = &AuthorizationBoundary{Layout: "single", FileComposition: b.FileComposition}
+			boundary = &AuthorizationBoundary{Layout: b.FileComposition.Layout(), FileComposition: b.FileComposition}
 		}
 	}
 	if err != nil {

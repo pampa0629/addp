@@ -307,7 +307,7 @@ func (s *MetadataService) resolveStorageDownloadPlan(ctx context.Context, resour
 	kind := models.DownloadKindStream
 	fileName := path.Base(displayPath)
 	contentType := objectcontent.InferContentType(displayPath, "")
-	if len(refs) > 1 {
+	if len(refs) > 1 || descriptor.Layout == format.LayoutMulti {
 		names, err := downloadBundleNames(refs)
 		if err != nil {
 			return nil, err

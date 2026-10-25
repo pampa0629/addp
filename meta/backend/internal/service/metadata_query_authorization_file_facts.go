@@ -40,7 +40,8 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 	if layout == "" || dataType == "" || format == "" {
 		return finish(authorizationfacts.AuthorizationBasisIncomplete)
 	}
-	if layout != "single" || dataType != "model_3d" || !commonExecution.ManagerModel3DFileFormat(format) {
+	identity := authorizationfacts.FileCompositionBoundary{Format: format}
+	if layout != identity.Layout() || dataType != "model_3d" || !commonExecution.ManagerModel3DFileFormat(format) {
 		return finish(authorizationfacts.AuthorizationBasisUnsupported)
 	}
 	targetFor := func(name string) plugin.EngineCatalogPath {
@@ -99,10 +100,10 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 		}
 		if ref.Primary {
 			primaryCount++
-			if ref.Path != item.FullName || ref.Role != "model" {
+			if ref.Path != item.FullName || ref.Role != identity.PrimaryRole() {
 				return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 			}
-		} else if ref.Role != "texture" && format != "obj" {
+		} else if ref.Role != "texture" && format != "obj" && format != "gltf" {
 			suffix := strings.TrimPrefix(ref.Role, "texture_")
 			n, err := strconv.Atoi(suffix)
 			if !strings.HasPrefix(ref.Role, "texture_") || err != nil || n < 2 || strconv.Itoa(n) != suffix {
@@ -118,7 +119,7 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 	if (format == "ifc" || format == "stl" || format == "glb") && len(refs) != 1 {
 		return finish(authorizationfacts.AuthorizationBasisUnsupported)
 	}
-	if (format == "stl" || format == "glb") && commonjson.Section(item.Attributes, "format_info."+format)["composition_complete"] != true {
+	if (format == "stl" || format == "glb" || format == "gltf") && commonjson.Section(item.Attributes, "format_info."+format)["composition_complete"] != true {
 		return finish(authorizationfacts.AuthorizationBasisIncomplete)
 	}
 	if format == "obj" {
@@ -189,7 +190,7 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 	if err != nil {
 		return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 	}
-	facts.Boundary = &authorizationfacts.AuthorizationBoundary{Layout: "single", FileComposition: composition}
+	facts.Boundary = &authorizationfacts.AuthorizationBoundary{Layout: composition.Layout(), FileComposition: composition}
 	hash, err := facts.ComputeBoundaryHash()
 	if err != nil {
 		return err

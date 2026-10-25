@@ -583,7 +583,7 @@ class ModelSourceAuthorization:
         # The fixed fixture's typed targets use the shared boundary's canonical
         # JSON byte order. Primary is a semantic flag, never an ordering rule.
         expected_refs.sort(key=lambda ref: json.dumps(ref['target'], ensure_ascii=False, separators=(',', ':')))
-        boundary = {'layout': 'single', 'file_composition': {'format': model['format'], 'refs': expected_refs}}
+        boundary = {'layout': 'multi' if model['format']=='gltf' else 'single', 'file_composition': {'format': model['format'], 'refs': expected_refs}}
         require(isinstance(facts, dict) and all(facts.get(key) == value for key, value in {
             'schema_version': 'meta.data_item_authorization_facts/v1', 'engine_id': str(self.engine_id),
             'item_fingerprint': model['fingerprint'], 'full_name': model['full_name'],
@@ -696,7 +696,7 @@ def latest_owner_execution(report, kind):
 
 
 def verify_denied_generation(client, report, kind, reason):
-    require(kind in {'ifc', '3ds', 'dae', 'obj', 'stl'} and reason in {'composition_changed', 'source_withdrawn'},
+    require(kind in {'ifc', '3ds', 'dae', 'obj', 'stl', 'gltf'} and reason in {'composition_changed', 'source_withdrawn'},
             'FTP denied generation requires its explicit observed source rule phase')
     model, = [row for row in report['models'] if row['format'] == kind]
     published, = [row for row in report['browser']['models'] if row['format'] == kind]
@@ -781,6 +781,10 @@ def changed_texture_fixture(model):
         with import_module('scripts.test.online-file-model-minio-fixture').changed_texture(model) as changed:
             yield changed
         return
+    if model['format'] == 'gltf':
+        with changed_gltf_fixture(model) as changed:
+            yield changed
+        return
     if model['format'] == 'obj':
         with changed_obj_material_fixture(model) as changed:
             yield changed
@@ -835,6 +839,37 @@ def changed_texture_fixture(model):
                 require(content == png if published else png.startswith(content),
                         'FTP composition cleanup refuses to remove unexpected texture changes')
                 replacement.unlink()
+
+
+@contextmanager
+def changed_gltf_fixture(model):
+    root=owned_ftp_fixture()/'data/models/gltf'
+    main,texture,replacement=root/'model.gltf',root/'red/color.png',root/'red/changed.png'
+    fixture=Path(__file__).resolve().parents[2]/'business/fixtures/manager'
+    original=(fixture/'addp_online_model_fixture.gltf').read_bytes()
+    png=(fixture/'addp_online_obj_red.png').read_bytes()
+    require(model['full_name']=='models/gltf/model.gltf' and all(not leaf.is_symlink() for leaf in [root,root.parent,root.parent.parent,root/'red',main,texture]) and main.read_bytes()==original and texture.read_bytes()==png, 'glTF mutation requires the exact owned source')
+    changed=original.replace(b'red/color.png',b'red/changed.png')
+    created=None
+    published=False
+    try:
+        descriptor=os.open(replacement,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o644)
+        identity=os.fstat(descriptor);created=(identity.st_dev,identity.st_ino)
+        with os.fdopen(descriptor,'wb') as stream:stream.write(png);os.fchmod(stream.fileno(),0o644)
+        published=True
+        replace_fixture_file(main,changed)
+        projected=copy.deepcopy(model);projected.update(size=len(changed),sha256=hashlib.sha256(changed).hexdigest())
+        refs=[ref for ref in projected['composition'] if ref['path']=='models/gltf/red/color.png']
+        require(len(refs)==1,'glTF mutation requires one exact texture')
+        refs[0]['path']='models/gltf/red/changed.png'
+        yield projected
+    finally:
+        require(not main.is_symlink() and main.read_bytes() in (original,changed),'glTF restoration refuses foreign manifest bytes')
+        if main.read_bytes()==changed:replace_fixture_file(main,original)
+        if created is not None:
+            identity=replacement.lstat()
+            require(not replacement.is_symlink() and replacement.is_file() and (identity.st_dev,identity.st_ino)==created and (replacement.read_bytes()==png if published else png.startswith(replacement.read_bytes())),'glTF cleanup refuses foreign dependency')
+            replacement.unlink()
 
 
 @contextmanager
@@ -1122,7 +1157,7 @@ def verify_composition_rules(client, authorization, report, source, deny, timeou
     return result
 
 
-def prepare_models(items, engine_id, samples, kinds=('ifc', '3ds', 'dae', 'obj', 'stl')):
+def prepare_models(items, engine_id, samples, kinds=('ifc', '3ds', 'dae', 'obj', 'stl', 'gltf')):
     expected = {key:(model_scope(relative), source) for key,relative,source in SEED.MODEL_SAMPLE_FILES}
     require(isinstance(samples, list) and len(samples) == len(expected) and
             {sample.get('format') for sample in samples} == set(expected),
@@ -1150,7 +1185,7 @@ def prepare_models(items, engine_id, samples, kinds=('ifc', '3ds', 'dae', 'obj',
                 item.get('fingerprint') == hashlib.sha256(f"{engine_id}:{sample['full_name']}".encode()).hexdigest() and
                 item.get('item_type') == model_item_type() and attributes.get('schema_version') == 1 and
                 all(facts.get(key) == value for key, value in
-                    {'data_type': 'model_3d', 'layout': 'single', 'format': kind}.items()) and
+                    {'data_type': 'model_3d', 'layout': 'multi' if kind=='gltf' else 'single', 'format': kind}.items()) and
                 attributes.get('storage', {}).get('physical_path') == sample['full_name'],
                 f'FTP {kind} model identity or single-file facts are missing')
         refs = facts.get('refs')
@@ -1158,7 +1193,7 @@ def prepare_models(items, engine_id, samples, kinds=('ifc', '3ds', 'dae', 'obj',
         # its sole primary from the committed single-file identity.
         if kind == 'ifc' and refs is None:
             refs = [{'path': sample['full_name'], 'role': 'model', 'required': True, 'primary': True}]
-        expected_refs = [{'path': sample['full_name'], 'role': 'model', 'required': True, 'primary': True}]
+        expected_refs = [{'path': sample['full_name'], 'role': 'manifest' if kind=='gltf' else 'model', 'required': True, 'primary': True}]
         if kind in {'3ds', 'dae'}:
             require(native.get('scan_complete') is True,
                     'FTP texture model requires complete structural native facts')
@@ -1168,6 +1203,10 @@ def prepare_models(items, engine_id, samples, kinds=('ifc', '3ds', 'dae', 'obj',
         if kind in {'stl', 'glb'}:
             require(native.get('composition_complete') is True and not native.get('texture_refs'),
                     'STL requires basic complete single-primary composition without external references')
+        if kind == 'gltf':
+            require(native.get('composition_complete') is True, 'glTF requires complete basic composition')
+            for key,role in [('gltf_png_blue','image'),('gltf_buffer','buffer'),('gltf_png_red','image_1')]:
+                expected_refs.append({'path':by_format[key]['full_name'],'role':role,'required':True,'primary':False})
         if kind == 'obj':
             require(native.get('composition_complete') is True and native.get('material_libraries') == [
                 {'reference':'paint blue.mtl','texture_refs':['blue/color.png']},
@@ -1508,7 +1547,7 @@ def validate_browser_report(actual, expected, artifact_dir):
         require(len(raw) == observed['size'] and hashlib.sha256(raw).hexdigest() == observed.get('sha256'),
                 'FTP model report differs from actual downloaded GLB')
         try:
-            if source['format'] == 'obj':
+            if source['format'] in {'obj','gltf'}:
                 validate_obj_multi_material_glb(raw)
             elif source['format'] == 'stl':
                 validate_stl_glb(raw)

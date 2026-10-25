@@ -87,13 +87,9 @@ func modelStructureReaderAt(ctx context.Context, input DirectoryResolveInput, fi
 	if _, ok := input.StructureReader.(plugin.RangeReadableProvider); !ok {
 		return nil, fmt.Errorf("model structure requires native range access")
 	}
-	target := resolveCatalogPath(input.EngineID, file.Path, input.EngineCatalogPathFor)
-	exact := reflect.DeepEqual(target, plugin.FileItemPath(input.EngineID, file.Path))
-	if len(target.Segments) >= 3 && target.Segments[1].Term == plugin.EngineCatalogTermBucket {
-		exact = reflect.DeepEqual(target, plugin.ObjectItemPath(input.EngineID, target.Segments[1].Name, file.Path))
-	}
-	if !exact {
-		return nil, fmt.Errorf("model structure requires the exact typed primary file")
+	target, err := modelPrimaryCatalogPath(input, file)
+	if err != nil {
+		return nil, err
 	}
 	reader := contentadapter.NewMappedReader(input.StructureReader, input.ConnInfo,
 		func(ref contentio.Ref) (plugin.EngineCatalogPath, error) {
@@ -103,4 +99,16 @@ func modelStructureReaderAt(ctx context.Context, input DirectoryResolveInput, fi
 			return target, nil
 		}, plugin.ReadOptions{})
 	return contentio.NewReaderAt(ctx, reader.(contentio.RangeReader), contentio.NewRef(file.Path, "model")), nil
+}
+
+func modelPrimaryCatalogPath(input DirectoryResolveInput, file StorageFileRef) (plugin.EngineCatalogPath, error) {
+	target := resolveCatalogPath(input.EngineID, file.Path, input.EngineCatalogPathFor)
+	exact := reflect.DeepEqual(target, plugin.FileItemPath(input.EngineID, file.Path))
+	if len(target.Segments) >= 3 && target.Segments[1].Term == plugin.EngineCatalogTermBucket {
+		exact = reflect.DeepEqual(target, plugin.ObjectItemPath(input.EngineID, target.Segments[1].Name, file.Path))
+	}
+	if !exact {
+		return plugin.EngineCatalogPath{}, fmt.Errorf("model structure requires the exact typed primary file")
+	}
+	return target, nil
 }

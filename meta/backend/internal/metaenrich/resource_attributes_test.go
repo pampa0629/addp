@@ -1131,14 +1131,14 @@ func TestResolveAndEnrichMultiGLTFUsesPrimaryManifest(t *testing.T) {
 		"nodes":[{"mesh":0}],
 		"meshes":[{"primitives":[{"attributes":{"POSITION":0},"indices":1}]}],
 		"materials":[{}],
-		"textures":[{},{}],
-		"images":[{"uri":"textures/baseColor.png"},{"uri":"textures/normal.ktx2"}],
+		"textures":[{"source":0},{"source":1}],
+		"images":[{"uri":"textures/baseColor.png"},{"uri":"textures/normal.png"}],
 		"buffers":[{"uri":"buffers/geometry.bin","byteLength":256}],
-		"accessors":[
-			{"count":8,"type":"VEC3","min":[0,0,0],"max":[1,2,3]},
-			{"count":12,"type":"SCALAR"}
-		],
-		"extensionsUsed":["KHR_texture_basisu"]
+		"bufferViews":[{"buffer":0,"byteLength":96},{"buffer":0,"byteOffset":96,"byteLength":24}],
+ "accessors":[
+			{"bufferView":0,"componentType":5126,"count":8,"type":"VEC3","min":[0,0,0],"max":[1,2,3]},
+			{"bufferView":1,"componentType":5123,"count":12,"type":"SCALAR"}
+		]
 	}`)
 	result, err := metaitem.ResolveItems(context.Background(), metaitem.DirectoryResolveInput{
 		ContentReader: pathContentReader{content: map[string][]byte{
@@ -1149,7 +1149,7 @@ func TestResolveAndEnrichMultiGLTFUsesPrimaryManifest(t *testing.T) {
 			{Name: "scene.gltf", Path: "models/building/scene.gltf", Size: int64(len(content))},
 			{Name: "geometry.bin", Path: "models/building/buffers/geometry.bin", Size: 256},
 			{Name: "baseColor.png", Path: "models/building/textures/baseColor.png", Size: 32},
-			{Name: "normal.ktx2", Path: "models/building/textures/normal.ktx2", Size: 64},
+			{Name: "normal.png", Path: "models/building/textures/normal.png", Size: 64},
 		},
 	})
 	if err != nil {
@@ -1183,7 +1183,7 @@ func TestResolveAndEnrichMultiGLTFUsesPrimaryManifest(t *testing.T) {
 		t.Fatalf("type_info.model_3d = %#v, want mesh_scene counts", modelInfo)
 	}
 	formatInfo := commonJSON.Section(attrs, "format_info.gltf")
-	if formatInfo["gltf_version"] != "2.0" || formatInfo["generator"] != "ADDP test" || commonJSON.InterfaceInt64(formatInfo["external_resource_count"]) != 3 {
+	if formatInfo["composition_complete"] != true || formatInfo["gltf_version"] != "2.0" || formatInfo["generator"] != "ADDP test" || commonJSON.InterfaceInt64(formatInfo["external_resource_count"]) != 3 {
 		t.Fatalf("format_info.gltf = %#v, want glTF manifest facts", formatInfo)
 	}
 	if refs := commonJSON.InterfaceSlice(commonJSON.Section(attrs, "item")["refs"]); len(refs) != 4 {

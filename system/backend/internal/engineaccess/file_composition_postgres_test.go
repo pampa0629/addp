@@ -26,7 +26,8 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 	roles *iam.TenantRoleService, newUser func(*testing.T, time.Duration) (userProvenance, time.Time)) {
 	t.Run("file composition source grants", func(t *testing.T) {
 		t.Run("STL single-primary SQL contract", func(t *testing.T) { exerciseSTLCompositionSQL(t, db) })
-		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}, {"ftp", "stl"}, {"nfs", "stl"}, {"minio", "stl"}, {"ftp", "glb"}, {"nfs", "glb"}, {"minio", "glb"}} {
+		t.Run("glTF multi SQL contract", func(t *testing.T) { exerciseGLTFCompositionSQL(t, db) })
+		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}, {"ftp", "stl"}, {"nfs", "stl"}, {"minio", "stl"}, {"ftp", "glb"}, {"nfs", "glb"}, {"minio", "glb"}, {"ftp", "gltf"}, {"nfs", "gltf"}, {"minio", "gltf"}} {
 			kind, format := fixture.kind, fixture.format
 			t.Run(kind+"/"+format, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
@@ -59,13 +60,18 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					if format == "obj" {
 						refs = append(refs, authorizationfacts.FileCompositionRef{Target: targetFor("model.mtl"), Role: "material_library", Required: true})
 					}
+					if format == "gltf" {
+						refs[0].Role = "manifest"
+						refs[1].Role = "image"
+						refs = append(refs, authorizationfacts.FileCompositionRef{Target: targetFor("buffers/mesh.bin"), Role: "buffer", Required: true})
+					}
 					composition, err := authorizationfacts.NewFileCompositionBoundary(format, refs)
 					if err != nil {
 						t.Fatal(err)
 					}
 					facts := authorizationfacts.AuthorizationFacts{SchemaVersion: authorizationfacts.AuthorizationFactsSchemaV1,
 						EngineID: engine.ID, ItemType: itemType, FullName: primary.StringPath(), ItemFingerprint: commonmodels.GenerateItemFingerprint(engine.ID, primary.StringPath()),
-						BasisState: authorizationfacts.AuthorizationBasisComplete, ObservedAt: time.Now(), Boundary: &authorizationfacts.AuthorizationBoundary{Layout: "single", FileComposition: composition}}
+						BasisState: authorizationfacts.AuthorizationBasisComplete, ObservedAt: time.Now(), Boundary: &authorizationfacts.AuthorizationBoundary{Layout: composition.Layout(), FileComposition: composition}}
 					hash, err := facts.ComputeBoundaryHash()
 					if err != nil {
 						t.Fatal(err)
@@ -164,6 +170,9 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				}
 				var stored authorizationfacts.FileCompositionBoundary
 				expectedRefs := 2
+				if format == "gltf" {
+					expectedRefs = 3
+				}
 				if format == "stl" || format == "glb" {
 					expectedRefs = 1
 				}
