@@ -103,3 +103,75 @@ def test_topology_capacity_native_comparison_variants_keep_exact_oracle(tmp_path
             results.append(m.verify_output(case, folder / 'result.gpkg'))
             assert m.frame_digest(frame) == original and m.digest(folder / 'source.gpkg') == before
     assert results[0] == results[1]
+
+
+@pytest.mark.parametrize('kind,size', [('chain-open',12),('chain-branch',20),('chain-ring',12),('chain-rings',12),('chain-hub',6)])
+def test_chain_capacity_native_dual_outputs_and_unwrapped_production(tmp_path, monkeypatch, kind, size):
+    def forbidden(*args, **kwargs): raise AssertionError('chain capacity must not wrap geometry functions')
+    monkeypatch.setattr(m, 'observe_compute', forbidden)
+    case = m.Case(kind, size, 'chains'); report = m.run_worker(case, tmp_path, 'A')
+    m.validate_worker(report, case, 'A')
+    assert report['physical']['result']['rows'] == m.chain_counts(case)['result']
+    assert report['physical']['members']['rows'] == size
+    assert report['implementation_identity']['loaded_merge_matches_source'] is True
+    assert not (tmp_path/'compute-resources.jsonl').exists()
+    if kind == 'chain-branch':
+        expected = list(m.chain_expected(case, 'result'))
+        assert [v[0]['member_count'] for v in expected[:5]] == [2,1,2,4,1]
+        assert expected[0][1] == [[0,0],[2,0],[30,0]]
+        assert expected[3][1] == [[10,6],[12,6],[12,8],[10,8],[10,6]]
+
+
+@pytest.mark.parametrize('port,corruption', [
+    ('result','chain_id'),('result','member_count'),('result','grade'),('result','road'),
+    ('result','coordinate'),('result','direction'),('result','measured'),('result','missing'),('result','extra'),('result','crs'),('result','int64'),
+    ('members','chain_id'),('members','member_no'),('members','source_part_no'),('members','is_reversed'),
+    ('members','route_key'),('members','note'),('members','road'),('members','coordinate'),('members','direction'),
+    ('members','measured'),('members','missing'),('members','extra'),('members','crs'),('members','boolean'),('members','int64')])
+def test_chain_capacity_native_rejects_real_dual_output_corruption(tmp_path, port, corruption):
+    from osgeo import ogr
+    case = m.Case('chain-branch',10,'chains'); m.run_worker(case,tmp_path,'A');path = tmp_path/(port+'.gpkg')
+    if corruption in ('int64','boolean'):
+        source = ogr.Open(str(path),0); layer = source.GetLayer(0)
+        changed = tmp_path/'changed.gpkg'; destination = ogr.GetDriverByName('GPKG').CreateDataSource(str(changed))
+        target = destination.CreateLayer('changed',layer.GetSpatialRef(),ogr.wkbLineString)
+        for definition in layer.schema:
+            field = ogr.FieldDefn(definition.GetName(),definition.GetType());field.SetSubType(definition.GetSubType())
+            if corruption == 'int64' and field.GetName() == 'grade': field.SetType(ogr.OFTInteger)
+            if corruption == 'boolean' and field.GetName() == 'is_reversed': field.SetSubType(ogr.OFSTNone)
+            target.CreateField(field)
+        for feature in layer:
+            clone = ogr.Feature(target.GetLayerDefn()); clone.SetFrom(feature); target.CreateFeature(clone)
+        source = destination = target = layer = None;changed.replace(path)
+    else:
+        ds = ogr.Open(str(path),1); layer = ds.GetLayer(0)
+        if corruption == 'crs': ds.ExecuteSQL('UPDATE gpkg_geometry_columns SET srs_id=4326')
+        elif corruption == 'missing': layer.DeleteFeature(1)
+        elif corruption == 'extra':
+            feature = layer.GetFeature(1);feature.SetFID(-1);assert layer.CreateFeature(feature)==0
+        else:
+            feature = layer.GetFeature(1)
+            if corruption in ('coordinate','direction','measured'):
+                points = feature.GetGeometryRef().GetPoints()
+                shape = ogr.Geometry(ogr.wkbLineStringM if corruption == 'measured' else ogr.wkbLineString)
+                for x,y,*_ in (points[::-1] if corruption == 'direction' else points):
+                    if corruption == 'measured': shape.AddPointM(x,y,1)
+                    else: shape.AddPoint_2D(x+.25 if corruption == 'coordinate' else x,y)
+                feature.SetGeometry(shape)
+            elif corruption == 'is_reversed': feature.SetField(corruption,1-feature.GetField(corruption))
+            elif corruption in ('route_key','note','road'): feature.SetField(corruption,'foreign')
+            else: feature.SetField(corruption,feature.GetField(corruption)+1)
+            assert layer.SetFeature(feature)==0
+        ds = layer = None
+    with pytest.raises(AssertionError): m.verify_chain_output(case,path,port)
+
+
+def test_chain_capacity_native_source_all_columns_are_immutable_and_verified(tmp_path):
+    from operators.io_operators import load
+    case = m.Case('chain-open',12,'chains');m.seed_chains(case,tmp_path/'source.gpkg')
+    frame = load(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)},path='source.gpkg')
+    m.verify_chain_source(frame,case); original = m.chain_frame_digest(frame)
+    for field,value in [('route_key','foreign'),('note','foreign'),('grade',8),('road','foreign')]:
+        changed=frame.copy();changed.at[0,field]=value
+        assert m.chain_frame_digest(changed)!=original
+        with pytest.raises(AssertionError):m.verify_chain_source(changed,case)

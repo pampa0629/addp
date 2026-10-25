@@ -25,7 +25,7 @@ import uuid
 CPUS = 4
 MEMORY = 2 << 30
 SECONDS = 180
-SCHEMA = 'addp.vector-topology-capacity/v2'
+SCHEMA = 'addp.vector-topology-capacity/v3'
 LEGACY_COMMIT = '8a3006670e7f6cfaddf018253515ccb37ab5bc78'
 BATCHED_COMMIT = 'adb605b67676bc4396307bc9ea7449c63de183bc'
 GEOMETRY_MODULE = 'engines/geopython-workflow/operators/geometric_operators.py'
@@ -52,7 +52,16 @@ def matrix():
             if kind != 'long' or operator == 'self']
 
 
+def chain_matrix():
+    return [Case(kind, size, 'chains')
+            for kind in ('chain-open', 'chain-branch', 'chain-ring', 'chain-rings', 'chain-hub')
+            for size in ((128, 512, 2048) if kind == 'chain-hub' else (1000, 10000, 100000))]
+
+
 def measurement_plan(profile):
+    if profile == 'chains':
+        return [{'id': case.key, 'case': asdict(case), 'observer': 'A', 'repetition': None}
+                for case in chain_matrix()]
     if profile == 'matrix':
         return [{'id': case.key, 'case': asdict(case), 'observer': 'C', 'repetition': None} for case in matrix()]
     if profile == 'comparison':
@@ -77,19 +86,23 @@ def definition_name(node):
     return None
 
 
-def implementation_identity(source):
-    collector = next(n for n in ast.parse(source).body if definition_name(n) == '_self_overlap_intersections')
+def implementation_identity(source, operator='self'):
+    name = 'merge_line_chains' if operator == 'chains' else '_self_overlap_intersections'
+    collector = next(n for n in ast.parse(source).body if definition_name(n) == name)
     return {'module_sha256': hashlib.sha256(source.encode()).hexdigest(),
-            'collector_sha256': hashlib.sha256(ast.get_source_segment(source, collector).encode()).hexdigest()}
+            ('merge_line_chains_sha256' if operator == 'chains' else 'collector_sha256'):
+                hashlib.sha256(ast.get_source_segment(source, collector).encode()).hexdigest()}
 
 
-def loaded_implementation_identity(module):
+def loaded_implementation_identity(module, operator='self'):
     source = Path(module.__file__).read_text()
     code = compile(source, module.__file__, 'exec', dont_inherit=True, optimize=sys.flags.optimize)
-    expected = next(c for c in code.co_consts if isinstance(c, types.CodeType) and c.co_name == '_self_overlap_intersections')
+    name = 'merge_line_chains' if operator == 'chains' else '_self_overlap_intersections'
+    expected = next(c for c in code.co_consts if isinstance(c, types.CodeType) and c.co_name == name)
     # Reject a stale pyc or a monkeypatched function even if the source file is correct.
-    assert module._self_overlap_intersections.__code__ == expected, 'loaded collector differs from source'
-    return {**implementation_identity(source), 'loaded_collector_matches_source': True}
+    assert getattr(module, name).__code__ == expected, ('loaded merge differs from source' if operator == 'chains' else 'loaded collector differs from source')
+    return {**implementation_identity(source, operator),
+            ('loaded_merge_matches_source' if operator == 'chains' else 'loaded_collector_matches_source'): True}
 
 
 def comparison_variant(current, legacy, batched):
@@ -340,6 +353,230 @@ def verify_output(case, path):
 
 
 
+def chain_counts(case):
+    assert case.operator == 'chains' and type(case.size) is int and case.size > 0
+    if case.kind in ('chain-open', 'chain-ring'):
+        assert case.size >= 4 and (case.kind != 'chain-ring' or case.size % 4 == 0)
+        chains = 1
+    elif case.kind == 'chain-rings':
+        assert case.size % 4 == 0
+        chains = case.size // 4
+    elif case.kind == 'chain-branch':
+        assert case.size % 10 == 0
+        chains = case.size // 2
+    else:
+        assert case.kind == 'chain-hub' and case.size >= 3
+        chains = case.size
+    return {'sources': case.size, 'result': chains, 'members': case.size}
+
+
+def chain_part(case, row):
+    """Closed-form source record, independent of production graph operations."""
+    properties = {'route_key': f'chain-{row:09d}', 'note': None if row % 7 == 0 else f'original-{row:09d}', 'grade': 7, 'road': 'main'}
+    if case.kind in ('chain-open', 'chain-ring'):
+        middle = case.size // 2
+        edge = middle if row == 0 else 0 if row == middle else row
+        if case.kind == 'chain-open':
+            points = [[edge, 0], [edge + 1, 0]]
+        else:
+            length = case.size // 4
+            def vertex(i):
+                if i <= length: return [i, 0]
+                if i <= 2 * length: return [length, i - length]
+                if i <= 3 * length: return [3 * length - i, length]
+                return [0, 4 * length - i]
+            points = [vertex(edge), vertex(edge + 1)]
+        if row % 2: points.reverse()
+    elif case.kind == 'chain-rings':
+        ring, local = divmod(row, 4); edge = (1, 0, 3, 2)[local]
+        vertices = [[0,0],[2,0],[2,2],[0,2],[0,0]]
+        points = [[x + ring * 4, y] for x, y in vertices[edge:edge + 2]]
+        if local % 2: points.reverse()
+        properties['road'] = None if ring % 3 == 0 else 'ring'
+    elif case.kind == 'chain-branch':
+        cell, local = divmod(row, 10)
+        shapes = [[[2,0],[30,0]],[[-2,0],[0,0]],[[2,0],[0,0]],[[0,0],[0,2]],[[0,4],[0,2]],
+                  [[12,6],[12,8]],[[0,4],[10,6]],[[10,6],[12,6]],[[10,8],[10,6]],[[12,8],[10,8]]]
+        points = [[x + cell * 32, y] for x, y in shapes[local]]
+        properties['road'] = 'main' if local < 3 else 'branch' if local < 5 else 'tail' if local == 6 else None
+        properties['grade'] = 7 + cell
+    else:
+        assert case.kind == 'chain-hub'
+        points = [[0,0],[1,row + 1]]
+        if row % 2: points.reverse()
+        properties['road'] = (None, 'one', 'two')[row % 3]
+    return properties, points
+
+
+def chain_walks(case):
+    """Handwritten membership formulas, never production graph traversal."""
+    chain_counts(case)
+    if case.kind in ('chain-open', 'chain-ring'):
+        middle = case.size // 2
+        def members():
+            for i in range(case.size):
+                edge = i if case.kind == 'chain-open' else (middle + i) % case.size
+                row = middle if edge == 0 else 0 if edge == middle else edge
+                yield row, bool(row % 2)
+        yield members()
+    elif case.kind == 'chain-rings':
+        for ring in range(case.size // 4):
+            yield tuple((ring * 4 + local, reverse) for local, reverse in ((0,False),(3,True),(2,False),(1,True)))
+    elif case.kind == 'chain-branch':
+        for cell in range(case.size // 10):
+            for walk in (((2,True),(0,False)),((1,False),),((3,False),(4,True)),
+                         ((7,False),(5,False),(9,False),(8,False)),((6,False),)):
+                yield tuple((cell * 10 + local, reverse) for local, reverse in walk)
+    else:
+        for row in range(case.size): yield ((row, False),)
+
+
+def chain_expected(case, port):
+    assert port in ('result', 'members')
+    for chain_id, walk in enumerate(chain_walks(case), 1):
+        points, count, common = [], 0, None
+        for ordinal, (row, reverse) in enumerate(walk, 1):
+            properties, original = chain_part(case, row)
+            if port == 'members':
+                yield {**properties, 'chain_id': chain_id, 'member_no': ordinal, 'source_part_no': 1, 'is_reversed': reverse}, original
+                continue
+            if common is None: common = {k: properties[k] for k in ('road','grade')}
+            assert common == {k: properties[k] for k in ('road','grade')}
+            oriented = original[::-1] if reverse else original
+            if points: assert points[-1] == oriented[0]
+            points.extend(oriented if not points else oriented[1:]); count += 1
+        if port == 'result': yield {**common, 'chain_id': chain_id, 'member_count': count}, points
+
+
+def seed_chains(case, path):
+    from osgeo import ogr, osr
+    chain_counts(case); ogr.UseExceptions()
+    crs = osr.SpatialReference(); crs.ImportFromEPSG(3857)
+    ds = ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
+    layer = ds.CreateLayer('chain_inputs', crs, ogr.wkbLineString, options=['GEOMETRY_NAME=chain_shape'])
+    for name, kind in (('route_key',ogr.OFTString),('note',ogr.OFTString),('grade',ogr.OFTInteger64),('road',ogr.OFTString)):
+        layer.CreateField(ogr.FieldDefn(name, kind))
+    layer.StartTransaction()
+    for i in range(case.size):
+        properties, points = chain_part(case, i); feature = ogr.Feature(layer.GetLayerDefn())
+        for name, value in properties.items():
+            if value is not None: feature.SetField(name, value)
+        shape = ogr.Geometry(ogr.wkbLineString)
+        for x, y in points: shape.AddPoint_2D(x, y)
+        feature.SetGeometry(shape); assert layer.CreateFeature(feature) == 0
+    layer.CommitTransaction(); ds = None
+
+
+def chain_frame_digest(frame):
+    checksum = hashlib.sha256()
+    checksum.update(str((frame.columns.tolist(), frame.dtypes.astype(str).tolist(), str(frame.crs))).encode())
+    geometry_index = frame.columns.get_loc(frame.geometry.name)
+    for record in frame.itertuples(index=True, name=None):
+        checksum.update(repr(record[:geometry_index + 1] + record[geometry_index + 2:]).encode())
+        checksum.update(record[geometry_index + 1].wkb)
+    return checksum.hexdigest()
+
+
+def verify_chain_source(frame, case):
+    assert len(frame) == case.size and frame.crs.to_epsg() == 3857
+    assert list(frame.columns) == ['route_key','note','grade','road',frame.geometry.name]
+    assert str(frame['grade'].dtype) == 'int64'
+    for i, record in enumerate(frame.itertuples(index=False, name=None)):
+        properties, points = chain_part(case, i)
+        assert dict(zip(frame.columns[:-1], record[:-1])) == properties
+        shape = record[-1]
+        assert shape.geom_type == 'LineString' and shape.is_valid and shape.has_z is False
+        assert [list(p) for p in shape.coords] == points
+
+
+def verify_chain_output(case, path, port):
+    from osgeo import ogr
+    ds = ogr.Open(str(path), 0); assert ds and ds.GetLayerCount() == 1
+    layer = ds.GetLayer(0); assert layer.GetSpatialRef().GetAuthorityCode(None) == '3857'
+    fields = (['road','grade','chain_id','member_count'] if port == 'result' else
+              ['route_key','note','grade','road','chain_id','member_no','source_part_no','is_reversed'])
+    assert [field.GetName() for field in layer.schema] == fields
+    integers = {'grade','chain_id','member_count','member_no','source_part_no'}
+    for field in layer.schema:
+        assert field.GetType() == (ogr.OFTInteger64 if field.GetName() in integers else ogr.OFTInteger if field.GetName() == 'is_reversed' else ogr.OFTString)
+        if field.GetName() == 'is_reversed': assert field.GetSubType() == ogr.OFSTBoolean
+    rows = chain_counts(case)[port]; assert layer.GetFeatureCount() == rows
+    iterator = iter(layer); checksum = hashlib.sha256()
+    for i, (properties, points) in enumerate(chain_expected(case, port), 1):
+        feature = next(iterator); shape = feature.GetGeometryRef()
+        assert feature.GetFID() == i and shape.GetGeometryName() == 'LINESTRING'
+        assert shape.GetCoordinateDimension() == 2 and not shape.IsMeasured() and shape.IsValid()
+        actual = {name: feature.GetField(name) for name in fields}
+        if port == 'members':
+            assert actual['is_reversed'] in (0, 1)
+            actual['is_reversed'] = bool(actual['is_reversed'])
+        coordinates = [list(p[:2]) for p in shape.GetPoints()]
+        assert actual == properties and coordinates == points
+        checksum.update(json.dumps([actual, coordinates], sort_keys=True).encode())
+    assert next(iterator, None) is None
+    return {'rows': rows, 'crs': 'EPSG:3857', 'full_result_sha256': checksum.hexdigest(), 'all_coordinates_attributes_membership_verified': True}
+
+
+def run_chain_worker(case, root, observer, measurement_id):
+    import resource
+    sys.path.insert(0, '/app')
+    from operators.io_operators import load, save
+    from operators import geometric_operators
+    assert observer == 'A'; chain_counts(case)
+    started = time.monotonic()
+    report = {'implementation_identity': loaded_implementation_identity(geometric_operators, 'chains'), 'case': asdict(case),
+              'observer': observer, 'measurement_id': measurement_id or case.key, 'result': 'incomplete', 'timings': {}}
+    progress = root / 'progress.json'
+    def phase(name, operation):
+        report['stage'] = name; write_json(progress, report); before = time.monotonic()
+        value = operation(); report['timings'][name] = time.monotonic() - before
+        write_json(progress, report); return value
+    source = root / 'source.gpkg'
+    phase('generate', lambda: seed_chains(case, source)); original = digest(source)
+    connection = {'engine_type':'nfs', 'mount_path':str(root)}
+    frame = phase('read', lambda: load(connection_info=connection, path='source.gpkg'))
+    phase('source_oracle', lambda: verify_chain_source(frame, case)); before = chain_frame_digest(frame)
+    result = phase('compute', lambda: geometric_operators.merge_line_chains(frame, 'route_key', ['road','grade']))
+    assert set(result) == {'result','members'}
+    for port in ('result','members'):
+        assert len(result[port]) == chain_counts(case)[port]
+        phase('save_' + port, lambda port=port: save(result[port], connection_info=connection, path=port + '.gpkg', mode='fail'))
+    physical = phase('reload_oracle', lambda: {port: verify_chain_output(case, root / (port + '.gpkg'), port) for port in ('result','members')})
+    def unchanged():
+        assert chain_frame_digest(frame) == before and digest(source) == original
+    phase('source_unchanged', unchanged)
+    import platform, geopandas, shapely
+    from osgeo import gdal
+    report.update(result='passed', stage='complete', source_frame_sha256=before, source=original,
+        outputs={port:digest(root / (port + '.gpkg')) for port in ('result','members')}, physical=physical,
+        duration_seconds=time.monotonic() - started,
+        worker_peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * (1 if sys.platform == 'darwin' else 1024),
+        versions={'python':platform.python_version(),'machine':platform.machine(),'geopandas':geopandas.__version__,
+                  'shapely':shapely.__version__,'geos':shapely.geos_version_string,'gdal':gdal.VersionInfo('RELEASE_NAME')})
+    write_json(progress, report); return report
+
+
+def validate_chain_worker(report, case, observer, measurement_id):
+    assert observer == report['observer'] == 'A' and report['measurement_id'] == (measurement_id or case.key)
+    assert report['result'] == 'passed' and report['stage'] == 'complete' and report['case'] == asdict(case)
+    assert math.isfinite(report['duration_seconds']) and 0 < report['duration_seconds'] <= SECONDS
+    assert report['worker_peak_rss_bytes'] > 0 and len(report['source_frame_sha256']) == 64
+    assert set(report['timings']) == {'generate','read','source_oracle','compute','save_result','save_members','reload_oracle','source_unchanged'}
+    assert all(math.isfinite(v) and v >= 0 for v in report['timings'].values())
+    assert sum(report['timings'].values()) <= report['duration_seconds']
+    assert 'compute_observation' not in report
+    identity = report['implementation_identity']; assert identity['loaded_merge_matches_source'] is True
+    for key in ('module_sha256','merge_line_chains_sha256'): assert len(identity[key]) == 64
+    assert set(report['physical']) == set(report['outputs']) == {'result','members'}
+    for port in ('result','members'):
+        physical = report['physical'][port]
+        assert physical['rows'] == chain_counts(case)[port] and physical['crs'] == 'EPSG:3857'
+        assert physical['all_coordinates_attributes_membership_verified'] is True and len(physical['full_result_sha256']) == 64
+    for fact in (report['source'], *report['outputs'].values()):
+        assert type(fact['size_bytes']) is int and fact['size_bytes'] > 0
+        assert len(fact['sha256']) == 64 and all(c in '0123456789abcdef' for c in fact['sha256'])
+
+
 @contextmanager
 def observe_compute(root, report, progress, observer='C'):
     """Observe the unchanged production calls; never replace their geometry work."""
@@ -434,6 +671,8 @@ def observe_compute(root, report, progress, observer='C'):
 
 def run_worker(case, root, observer='C', measurement_id=None):
     """One process, one full measurement including generation and independent checks."""
+    if case.operator == 'chains':
+        return run_chain_worker(case, root, observer, measurement_id)
     import resource
     sys.path.insert(0, '/app')
     from operators.io_operators import load, save
@@ -511,6 +750,8 @@ def classify(returncode, timed_out, state, metrics):
 
 
 def validate_worker(report, case, observer='C', measurement_id=None):
+    if case.operator == 'chains':
+        return validate_chain_worker(report, case, observer, measurement_id)
     assert observer in ('A', 'B', 'C')
     assert report['observer'] == observer and report['measurement_id'] == (measurement_id or case.key)
     assert len(report['source_frame_sha256']) == 64
@@ -542,7 +783,7 @@ def validate_worker(report, case, observer='C', measurement_id=None):
         checksum = report[field]['sha256']; assert len(checksum) == 64 and all(c in '0123456789abcdef' for c in checksum)
 
 
-def run_case(case, image, run_id, artifact, observer='C', measurement_id=None, repetition=None, implementation=None):
+def run_case(case, image, run_id, artifact, observer='C', measurement_id=None, repetition=None, implementation=None, expected_identity=None):
     from scripts.utils.capacity_resources import cgroup_directory, read_metrics
     if observer not in ('A', 'B', 'C'):
         raise ValueError('unknown observer')
@@ -567,6 +808,7 @@ def run_case(case, image, run_id, artifact, observer='C', measurement_id=None, r
         config = inspect(name)
         assert config['Config']['Cmd'] == ['sh', 'container_entrypoint.sh']
         assert config['HostConfig']['NanoCpus'] == CPUS * 1_000_000_000 and config['HostConfig']['Memory'] == config['HostConfig']['MemorySwap'] == MEMORY
+        readiness_started = time.perf_counter()
         command(['docker', 'start', name])
         ready = False
         for _ in range(60):
@@ -576,6 +818,7 @@ def run_case(case, image, run_id, artifact, observer='C', measurement_id=None, r
             time.sleep(1)
         if not ready:
             raise RuntimeError('product Runtime readiness failed')
+        outcome['readiness_seconds'] = time.perf_counter() - readiness_started
         directory = cgroup_directory(inspect(name)['State']['Pid']); before = read_metrics(directory)
         timed_out = False; started = time.monotonic(); returncode = None
         metrics = before; peak_rss = before['process_peak_rss_bytes']; samples = 0
@@ -613,6 +856,8 @@ def run_case(case, image, run_id, artifact, observer='C', measurement_id=None, r
             shutil.copyfile(workspace / 'compute-resources.jsonl', root / 'compute-resources.jsonl')
         if outcome['result'] == 'passed':
             validate_worker(outcome['worker'], case, observer, measurement_id)
+            if expected_identity is not None:
+                assert outcome['worker']['implementation_identity'] == {**expected_identity, 'loaded_merge_matches_source': True}
             assert elapsed <= SECONDS
             assert metrics['swap_current_bytes'] == 0
     except Exception as error:
@@ -674,6 +919,8 @@ def run_gate(profile='matrix'):
                        'cpuinfo_sha256': hashlib.sha256(Path('/proc/cpuinfo').read_bytes()).hexdigest()},
               'profile': {'cpu': CPUS, 'memory_bytes': MEMORY, 'swap_bytes': 0, 'seconds_per_case': SECONDS},
               'planned_measurements': plan, 'planned_cases': [item['case'] for item in plan], 'groups': [], 'result': 'incomplete'}
+    if profile == 'chains':
+        report['chain_implementation'] = implementation_identity((repository / GEOMETRY_MODULE).read_text(), 'chains')
     registry_created = False; image_attempted = False
     old_image = f'{image}-old'
     old_image_attempted = False
@@ -694,7 +941,9 @@ def run_gate(profile='matrix'):
         command(['docker', 'tag', 'python:3.11-slim', 'localhost:5001/python:3.11-slim'])
         command(['docker', 'push', 'localhost:5001/python:3.11-slim'], timeout=180)
         image_attempted = True
+        build_started = time.monotonic()
         build = subprocess.run(['make', 'build-images', f'IMAGE_BUILD_ARGS=--services geopython-workflow-engine --tag topology-capacity-{run_id} --verify --jobs 1'], cwd=repository)
+        report['image_build_seconds'] = time.monotonic() - build_started
         if build.returncode:
             raise RuntimeError('product image build failed')
         images = {'new': image}
@@ -715,7 +964,8 @@ def run_gate(profile='matrix'):
             images = report['comparison_image_proof']['images']
         for index, item in enumerate(plan):
             report['groups'].append(run_case(Case(**item['case']), images[item.get('implementation', 'new')], run_id, artifact,
-                observer=item['observer'], measurement_id=item['id'], repetition=item['repetition'], implementation=item.get('implementation')))
+                observer=item['observer'], measurement_id=item['id'], repetition=item['repetition'], implementation=item.get('implementation'),
+                expected_identity=report.get('chain_implementation')))
             write_json(artifact / 'report.json', report)
             if report['groups'][-1].get('cleanup') != 'passed':
                 report['not_run'] = {'reason': 'prior_case_cleanup_failed', 'measurements': plan[index + 1:]}
@@ -744,13 +994,13 @@ if __name__ == '__main__':
         raise KeyboardInterrupt('capacity interrupted')
     signal.signal(signal.SIGTERM, terminate)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--worker', choices=[case.key for case in matrix()])
-    parser.add_argument('--profile', choices=('matrix', 'observation', 'comparison'), default=os.getenv('TOPOLOGY_CAPACITY_PROFILE', 'matrix'))
+    parser.add_argument('--worker', choices=[case.key for case in matrix() + chain_matrix()])
+    parser.add_argument('--profile', choices=('matrix', 'observation', 'comparison', 'chains'), default=os.getenv('TOPOLOGY_CAPACITY_PROFILE', 'matrix'))
     parser.add_argument('--observer', choices=('A', 'B', 'C'), default='C')
     parser.add_argument('--measurement')
     args = parser.parse_args()
     measurement_plan(args.profile)  # Validate environment defaults before any mutation.
     if args.worker:
-        run_worker(next(case for case in matrix() if case.key == args.worker), Path('/capacity-data'), args.observer, args.measurement)
+        run_worker(next(case for case in matrix() + chain_matrix() if case.key == args.worker), Path('/capacity-data'), args.observer, args.measurement)
     else:
         raise SystemExit(run_gate(args.profile))

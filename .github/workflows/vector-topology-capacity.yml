@@ -4,13 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: Matrix, observation overhead or old/new collector comparison
+        description: Line overlap matrix, chain merging, observation or collector comparison
         type: choice
         default: matrix
         options:
           - matrix
           - observation
           - comparison
+          - chains
 
 permissions:
   contents: read

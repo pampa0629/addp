@@ -11,6 +11,73 @@ resources = importlib.import_module('scripts.utils.capacity_resources')
 
 
 class CapacityTest(unittest.TestCase):
+    def test_chain_plan_is_only_five_new_families_fifteen_unwrapped_measurements(self):
+        self.assertEqual(m.SCHEMA,'addp.vector-topology-capacity/v3')
+        cases=m.chain_matrix();plan=m.measurement_plan('chains')
+        self.assertEqual(len(cases),15);self.assertEqual(len({c.key for c in cases}),15)
+        self.assertEqual({c.kind for c in cases},{'chain-open','chain-branch','chain-ring','chain-rings','chain-hub'})
+        for kind in {c.kind for c in cases}:
+            self.assertEqual([c.size for c in cases if c.kind==kind],[128,512,2048] if kind=='chain-hub' else [1000,10000,100000])
+        self.assertEqual([p['case'] for p in plan],[m.asdict(c) for c in cases])
+        self.assertTrue(all(p['observer']=='A' and p['repetition'] is None for p in plan))
+        self.assertFalse({c.key for c in cases}&{c.key for c in m.matrix()})
+        self.assertEqual({m.Case(**p['case']).operator for p in plan},{'chains'})
+
+    def test_chain_closed_form_membership_is_total_exact_and_stable(self):
+        for kind,size in [('chain-open',12),('chain-branch',20),('chain-ring',12),('chain-rings',12),('chain-hub',6)]:
+            case=m.Case(kind,size,'chains');walks=[list(w) for w in m.chain_walks(case)]
+            self.assertEqual(sorted(row for w in walks for row,reverse in w),list(range(size)))
+            self.assertEqual(len(walks),m.chain_counts(case)['result'])
+            outputs=list(m.chain_expected(case,'result'));members=list(m.chain_expected(case,'members'))
+            self.assertEqual(len(members),size);self.assertEqual(sum(p['member_count'] for p,g in outputs),size)
+            self.assertEqual([min(row for row,reverse in w) for w in walks],sorted(min(row for row,reverse in w) for w in walks))
+            for attrs,points in members:
+                row=int(attrs['route_key'].split('-')[1]);self.assertEqual(points,m.chain_part(case,row)[1])
+                self.assertIs(type(attrs['is_reversed']),bool)
+        branch=list(m.chain_expected(m.Case('chain-branch',10,'chains'),'result'))
+        self.assertEqual([p['member_count'] for p,g in branch],[2,1,2,4,1])
+        self.assertEqual(branch[3][1],[[10,6],[12,6],[12,8],[10,8],[10,6]])
+        case=m.Case('chain-branch',20,'chains')
+        self.assertEqual(m.chain_part(case,0)[1][-1],m.chain_part(case,11)[1][0])
+        self.assertNotEqual(m.chain_part(case,0)[0]['grade'],m.chain_part(case,11)[0]['grade'])
+        for case in [m.Case('chain-ring',5,'chains'),m.Case('chain-branch',11,'chains'),m.Case('chain-hub',2,'chains')]:
+            with self.assertRaises(AssertionError):m.chain_counts(case)
+
+    def test_chain_worker_requires_both_full_oracles_identity_and_original_budget(self):
+        import copy
+        case=m.Case('chain-branch',10,'chains');report={
+            'case':m.asdict(case),'observer':'A','measurement_id':case.key,'result':'passed','stage':'complete',
+            'duration_seconds':1.,'worker_peak_rss_bytes':1,'source_frame_sha256':'f'*64,
+            'timings':{k:0. for k in ['generate','read','source_oracle','compute','save_result','save_members','reload_oracle','source_unchanged']},
+            'implementation_identity':{'loaded_merge_matches_source':True,'module_sha256':'b'*64,'merge_line_chains_sha256':'c'*64},
+            'physical':{port:{'rows':m.chain_counts(case)[port],'crs':'EPSG:3857','full_result_sha256':'d'*64,'all_coordinates_attributes_membership_verified':True} for port in ['result','members']},
+            'source':{'size_bytes':1,'sha256':'e'*64},'outputs':{port:{'size_bytes':1,'sha256':'e'*64} for port in ['result','members']}}
+        m.validate_worker(report,case,'A')
+        for path,value in [(('duration_seconds',),181),(('duration_seconds',),float('nan')),(('stage',),'save_result'),
+                (('physical','members','rows'),9),(('physical','result','crs'),'EPSG:4326'),
+                (('physical','result','all_coordinates_attributes_membership_verified'),False),
+                (('implementation_identity','loaded_merge_matches_source'),False),
+                (('outputs','members','size_bytes'),0),(('outputs','result','sha256'),'bad'),
+                (('observer',),'C'),(('measurement_id',),'foreign')]:
+            changed=copy.deepcopy(report);target=changed
+            for key in path[:-1]:target=target[key]
+            target[path[-1]]=value
+            with self.subTest(path=path),self.assertRaises(AssertionError):m.validate_worker(changed,case,'A')
+        for key in ['members','result']:
+            changed=copy.deepcopy(report);del changed['physical'][key]
+            with self.assertRaises(AssertionError):m.validate_worker(changed,case,'A')
+        changed=copy.deepcopy(report);changed['compute_observation']={}
+        with self.assertRaises(AssertionError):m.validate_worker(changed,case,'A')
+
+    def test_chain_actual_loaded_function_is_bound_to_compiled_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'geometry.py';source='def merge_line_chains(frame, field, fields):\n    return frame\n'
+            path.write_text(source);namespace={};exec(compile(source,str(path),'exec'),namespace)
+            module=SimpleNamespace(__file__=str(path),merge_line_chains=namespace['merge_line_chains'])
+            self.assertEqual(m.loaded_implementation_identity(module,'chains'),{**m.implementation_identity(source,'chains'),'loaded_merge_matches_source':True})
+            module.merge_line_chains=lambda *args:None
+            with self.assertRaisesRegex(AssertionError,'loaded merge'):m.loaded_implementation_identity(module,'chains')
+
     def test_exact_matrix_and_resource_contract(self):
         cases = m.matrix()
         self.assertEqual(len(cases), 15)
@@ -336,9 +403,17 @@ class CapacityTest(unittest.TestCase):
                 (files[2],"'--memory-swap'","'--removed-swap'"),
                 (files[1],'default: matrix','default: observation'),
                 (files[1],'          - comparison','          - removed'),
+                (files[1],'          - chains','          - removed'),
+                (files[1],'timeout-minutes: 90','timeout-minutes: 91'),
+                (files[2],"SCHEMA = 'addp.vector-topology-capacity/v3'","SCHEMA = 'removed'"),
+                (files[2],"if profile == 'chains':","if profile == 'removed':"),
+                (files[2],'def verify_chain_output(case, path, port):','def removed_chain_output(case, path, port):'),
+                (files[2],"'loaded_merge_matches_source'","'removed_merge_binding'"),
+                (files[3],'test_chain_capacity_native_dual_outputs_and_unwrapped_production','removed_chain_native'),
+                (files[3],'test_chain_capacity_native_rejects_real_dual_output_corruption','removed_chain_corruption'),
                 (files[1],'fetch-depth: 0','fetch-depth: 1'),
                 (files[2],'def comparison_sources(repository):','def removed_sources(repository):'),
-                (files[2],'def loaded_implementation_identity(module):','def removed_identity(module):'),
+                (files[2],"def loaded_implementation_identity(module, operator='self'):",'def removed_identity(module):'),
                 (files[3],'test_topology_capacity_native_comparison_variants_keep_exact_oracle','removed_comparison_native'),
                 (files[1],'TOPOLOGY_CAPACITY_PROFILE: ${{ inputs.profile }}','REMOVED: observation'),
                 (files[3],'test_topology_capacity_native_observer_modes_preserve_exact_result','removed_observer_test'),
