@@ -1685,6 +1685,77 @@ test('element iframe publishes only dirty state and clears it after saving', asy
   await expect(page.locator('#state')).toContainText('"dirty":false')
 })
 
+for (const [language, suffix, name, hint] of [
+  ['zh-cn', '', '计量单位', '无权查看计量单位'],
+  ['en', '?revision_id=411', 'Unit', 'You do not have permission to view measurement units']
+]) {
+  test(`element unit options are not requested without read permission: ${language}`, async ({ page }) => {
+    const unitReads = []
+    await installMockBackend(page, {
+      language, permissions: ['standard.element.read', 'standard.domain.read'],
+      elements: [{ id: 41, code: 'distance', name: 'Distance', data_type: 'decimal', unit_id: 902, status: 'approved' }]
+    })
+    await page.route('**/standard/units?**', route => {
+      unitReads.push(route.request().url())
+      return fulfillJSON(route, { error: 'Unexpected unit permission request' }, 403)
+    })
+    await page.goto(`/elements/41${suffix}`)
+    await expect(page.getByRole('heading', { name: 'Distance', exact: true })).toBeVisible()
+    const field = page.locator('.el-form-item').filter({ has: page.getByText(name, { exact: true }) })
+    await expect(field).toContainText(hint)
+    await expect(field.getByRole('combobox')).toHaveCount(0)
+    await expect(page.locator('.el-message--error')).toHaveCount(0)
+    expect(unitReads).toEqual([])
+  })
+}
+
+test('element unit binding survives saving other draft fields without unit permission', async ({ page }) => {
+  await installMockBackend(page, {
+    permissions: ['standard.element.read', 'standard.element.update', 'standard.domain.read'],
+    elements: [{ id: 41, code: 'distance', name: 'Distance', data_type: 'decimal', unit_id: 902, status: 'draft' }]
+  })
+  await page.goto('/elements/41')
+  await expect(page.getByText('无权查看计量单位', { exact: true })).toBeVisible()
+  await page.getByRole('textbox', { name: /中文名称/ }).fill('Updated distance')
+  const saved = page.waitForRequest(request => request.method() === 'PUT' && request.url().endsWith('/elements/41/revisions/411'))
+  await page.locator('.page-header').getByRole('button', { name: '保存', exact: true }).click()
+  expect((await saved).postDataJSON().unit_id).toBe(902)
+  await expect(page.getByRole('heading', { name: 'Updated distance', exact: true })).toBeVisible()
+})
+
+test('element unit options discard a late response after permission removal and reload on grant', async ({ page }) => {
+  const minimal = ['standard.element.read', 'standard.domain.read']
+  const fixture = measurementDirectoryFixture()
+  await installMockBackend(page, {
+    ...fixture, permissions: [...minimal, 'standard.unit.read'],
+    authContextPermissionsByToken: { 'standard-e2e-minimal-token': minimal },
+    elements: [{ id: 41, code: 'distance', name: 'Distance', data_type: 'decimal', unit_id: 902, status: 'approved' }]
+  })
+  let release, reads = 0
+  const pending = new Promise(resolve => { release = resolve })
+  await page.route('**/standard/units?**', async route => {
+    reads += 1
+    if (reads === 1) await pending
+    await fulfillJSON(route, fixture.unitDirectory.map(unit => ({ ...unit, category: fixture.unitCategories[0] })))
+  })
+  const firstRead = page.waitForRequest(request => new URL(request.url()).pathname.endsWith('/units'))
+  await page.goto('/elements/41'); await firstRead
+  const changeToken = token => page.evaluate(token => {
+    const channel = new BroadcastChannel('addp-auth-session')
+    channel.postMessage({ type: 'token', token, expiresAt: Date.now() + 900_000 })
+    channel.close()
+  }, token)
+  await changeToken('standard-e2e-minimal-token')
+  await expect(page.getByText('无权查看计量单位', { exact: true })).toBeVisible()
+  const completed = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/units'))
+  release(); await completed
+  await expect(page.locator('.unit-select')).toHaveCount(0)
+  expect(reads).toBe(1)
+  await changeToken('standard-e2e-token')
+  await expect(page.locator('.el-select.unit-select')).toContainText('米 (m)')
+  expect(reads).toBe(2)
+})
+
 for (const suffix of ['', '?revision_id=411']) {
   test(`enum binding displays its withdrawn snapshot without code set permission: ${suffix || 'default'}`, async ({ page }) => {
     const codeSetRequests = []

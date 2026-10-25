@@ -125,7 +125,8 @@
               </el-col>
               <el-col :xs="24" :sm="12">
                 <el-form-item :label="$t('standard.element.unitLabel')">
-                  <UnitSelect v-model="revision.unit_id" :units="units" />
+                  <UnitSelect v-if="canReadUnits" v-model="revision.unit_id" :units="units" />
+                  <span v-else>{{ revision.unit_id ? $t('standard.element.unitReadForbidden') : '-' }}</span>
                 </el-form-item>
               </el-col>
             </el-row>
@@ -308,6 +309,7 @@ import { codeSetAPI, domainAPI, elementAPI, unitAPI } from '../api/standard'
 import DocumentPanel from '../components/DocumentPanel.vue'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { useStandardPermissions } from '../composables/useStandardPermissions'
+import { useAuthStore } from '../store/auth'
 import { useUnsavedChanges } from '../composables/useUnsavedChanges'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 import { formatStandardDateTime } from '../utils/dateTime'
@@ -325,6 +327,8 @@ const route = useRoute()
 const router = useRouter()
 const { t, locale } = useI18n()
 const { canUpdate, canPublish } = useStandardPermissions('element')
+const authStore = useAuthStore()
+const canReadUnits = computed(() => authStore.hasPermission('standard.unit.read'))
 
 const loading = ref(false)
 const loadError = ref('')
@@ -337,6 +341,7 @@ const element = ref({})
 const revisions = ref([])
 const domains = ref([])
 const units = ref([])
+const optionRequests = createLatestRequestCoordinator()
 const publishedCodeSets = ref([])
 const codeSetRequests = createLatestRequestCoordinator()
 const revision = reactive({})
@@ -430,10 +435,14 @@ async function load() {
 }
 
 async function loadOptions() {
+  const request = optionRequests.begin()
+  domains.value = []
+  units.value = []
   const [domainResult, unitResult] = await Promise.allSettled([
-    domainAPI.list(),
-    unitAPI.list({ page_size: 500 })
+    authStore.hasPermission('standard.domain.read') ? domainAPI.list() : Promise.resolve([]),
+    canReadUnits.value ? unitAPI.list({ page_size: 500 }) : Promise.resolve([])
   ])
+  if (!optionRequests.isCurrent(request)) return
   domains.value = domainResult.status === 'fulfilled' ? buildBusinessDomainOptions(domainResult.value || []) : []
   units.value = unitResult.status === 'fulfilled' ? unitResult.value || [] : []
 }
@@ -597,9 +606,11 @@ watch(() => [route.params.id, route.query.revision_id], () => {
 }, { immediate: true })
 
 watch(() => [editable.value, revision.effective_from], () => loadCodeSetOptions())
+watch([() => authStore.authContext, canReadUnits], loadOptions, { flush: 'sync' })
 onBeforeUnmount(() => {
   detailRequests.invalidate()
   codeSetRequests.invalidate()
+  optionRequests.invalidate()
 })
 </script>
 

@@ -248,6 +248,7 @@
       "scaleLabel": "Scale",
       "nullableLabel": "Nullable",
       "unitLabel": "Unit",
+      "unitReadForbidden": "You do not have permission to view measurement units",
       "definitionLabel": "Definition",
       "codeSetLabel": "Code Set",
       "codeSetSnapshotUnavailable": "The code set version bound to this revision could not be loaded",

@@ -10,6 +10,8 @@ Catalog 的已审核字段标准映射按确定 `element_revision_id` 冻结。S
 
 数据元详情无论默认打开还是通过 `revision_id` 定位，均读取选中修订的精确详情。关联码值集的名称、编码、版次和状态来自该修订快照，不以可选候选反推历史引用；绑定快照缺失或身份不匹配时明确报错。只读状态不请求码值集候选，查看历史不额外要求 `standard.code_set.read`；可编辑草稿仍按类型与生效时间提供已发布候选，已绑定但不再可选的修订仅保留显示，不允许重新选入。选择其他候选后不显示旧快照的状态。
 
+数据元详情的单位选项仅在当前用户具有 `standard.unit.read` 时读取，不把单位读取权限加入数据元页面准入条件。缺少权限时不请求单位列表、不展示缓存的单位名称或裸 ID，不提供单位选择或清除操作；已有绑定显示权限提示，未绑定显示空值。查看修订和保存其他字段仍保留原 `unit_id`。辅助选项加载跟随当前授权上下文，权限变化立即清空旧选项，迟到响应和离页后的响应不得恢复旧数据；服务器实际返回的权限错误继续沿用统一错误处理，不以静默吞掉 403 代替请求前判权。
+
 Standard 定义 Domain、Glossary、Element、MetricDefinition、CodeSet、Unit 和标准来源文档等可复用业务语义，但不拥有这些语义与具体 DataItem、CatalogEntry 或 CatalogComponent 的应用关系。具体字段/组件到标准修订的映射只由 Catalog 保存；检查方案、规则来源快照、执行结果和问题只由 Quality 保存。Standard 不依赖 Meta 或 Catalog，不保存 `catalog_entry_id`、反向资源列表或质量执行事实。安全分类、安全等级、敏感类型和保护基线统一属于 Security，Standard 不保存第二份安全事实。
 
 Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /metrics/:id/relations` 一跳图；它要求 `standard.metric.read`，只读 Standard 本地事实，不调用 Catalog 或 Model，也不使用 `standard.catalog.read` 机器权限替代用户权限。数据元、Domain、指标分类和单位继续留在 Metric 专业详情中，本阶段不伪造为企业目录节点。

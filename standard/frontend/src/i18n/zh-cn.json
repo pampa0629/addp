@@ -245,6 +245,7 @@
       "scaleLabel": "标度",
       "nullableLabel": "允许为空",
       "unitLabel": "计量单位",
+      "unitReadForbidden": "无权查看计量单位",
       "definitionLabel": "业务含义",
       "definitionRequired": "请输入业务含义",
       "formatLabel": "格式约束",
