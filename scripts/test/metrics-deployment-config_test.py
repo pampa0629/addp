@@ -3,6 +3,8 @@ import importlib.util
 import io
 import json
 import os
+import signal
+import time
 import re
 import sys
 from pathlib import Path
@@ -27,6 +29,112 @@ auth_spec.loader.exec_module(postgres_auth)
 probe_spec = importlib.util.spec_from_file_location('postgres_observation_probe', ROOT / 'scripts/test/postgres-observation-probe.py')
 postgres_probe = importlib.util.module_from_spec(probe_spec)
 probe_spec.loader.exec_module(postgres_probe)
+
+inventory_spec = importlib.util.spec_from_file_location('metrics_config_inventory', ROOT / 'scripts/utils/deployment-inventory.py')
+inventory = importlib.util.module_from_spec(inventory_spec)
+inventory_spec.loader.exec_module(inventory)
+
+
+def compose_process_snapshot(process):
+    """Inspect only this test's unreaped process and bounded same-session children."""
+    if inventory.platform.system() != 'Linux':
+        return {'available': False}
+    # Do not reap the session leader while its private group still needs cleanup.
+    if process.returncode is not None:
+        return {'available': True, 'root_exited': True, 'children_view': 'unavailable'}
+    pending, nodes, truncated = [(process.pid, os.getpid(), 0)], [], False
+    root_exited = False
+    while pending and len(nodes) < 8:
+        pid, parent, depth = pending.pop(0)
+        def identity():
+            fields = (inventory.observer_proc_text(pid, 'state') or '').rpartition(')')[2].split()
+            if len(fields) < 20 or not all(re.fullmatch(r'[0-9]+', fields[n]) for n in (1, 2, 3, 19)):
+                return None
+            return tuple(int(fields[n]) for n in (1, 2, 3, 19))
+        before = identity()
+        if before is None or before[:3] != (parent, process.pid, process.pid):
+            nodes.append({'depth': depth, 'identity': 'unavailable'})
+            continue
+        facts = inventory.observer_exit_diagnostic({'pid': pid}, 'owned')
+        try:
+            executable = Path(os.readlink(f'/proc/{pid}/exe')).name
+        except OSError:
+            executable = ''
+        children = inventory.observer_proc_text(pid, 'children')
+        if identity() != before:
+            nodes.append({'depth': depth, 'identity': 'changed'})
+            continue
+        nodes.append({'depth': depth, 'executable': executable if executable in ('docker', 'docker-compose') else 'other',
+                      'state': facts['proc_state'], 'wait': facts['wait'], 'children': facts['children']})
+        if depth == 0:
+            root_exited = facts['proc_state'] in ('Z', 'X')
+        if children and re.fullmatch(r'[0-9]+(?:\s+[0-9]+)*', children.strip()):
+            ids = children.split()
+            truncated |= len(ids) > 8 or depth >= 2
+            if depth < 2:
+                pending.extend((int(child), pid, depth+1) for child in ids[:8])
+    return {'available': True, 'root_exited': root_exited, 'nodes': nodes, 'truncated': truncated or bool(pending)}
+
+
+def run_business_postgres_compose(environment, case):
+    """Keep the original config deadline; emit closed diagnostic facts on failure only."""
+    if case not in ('prepared', 'missing_auth_directory'):
+        raise ValueError('Unknown Compose fixture case')
+    command = ['docker', 'compose', '--env-file', '/dev/null', '-f', str(ROOT / 'business/docker-compose.yml'),
+               'config', '--format', 'json', 'postgres']
+    report = {'case': case, 'outcome': 'spawn_error', 'spawn_seconds': 0, 'wait_seconds': 0,
+              'cleanup_seconds': 0, 'reaped': False}
+    started = time.monotonic()
+    try:
+        process = subprocess.Popen(command, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   text=True, start_new_session=True)
+    except OSError:
+        report['spawn_seconds'] = round(time.monotonic()-started, 6)
+        print('Compose config diagnostic '+json.dumps(report, sort_keys=True), file=sys.stderr, flush=True)
+        raise RuntimeError('Compose config could not start') from None
+    report['spawn_seconds'] = round(time.monotonic()-started, 6)
+    waiting = time.monotonic()
+    try:
+        stdout, stderr = process.communicate(timeout=15)
+        report.update(wait_seconds=round(time.monotonic()-waiting, 6), reaped=True,
+                      return_code=process.returncode, stdout_characters=len(stdout), stderr_characters=len(stderr))
+        if process.returncode:
+            report['outcome'] = 'exit_error'
+            print('Compose config diagnostic '+json.dumps(report, sort_keys=True), file=sys.stderr, flush=True)
+        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+    except BaseException as error:
+        report.update(outcome='timeout' if isinstance(error, subprocess.TimeoutExpired) else 'cancelled',
+                      wait_seconds=round(time.monotonic()-waiting, 6))
+        try:
+            report['processes'] = compose_process_snapshot(process)
+        except (OSError, ValueError, TypeError, KeyError):
+            report['processes'] = {'available': False}
+        cleanup = time.monotonic()
+        try:
+            # Popen created this private session/group before exec; never signal the caller's group.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+                report['group_stop'] = 'sent'
+            except ProcessLookupError:
+                report['group_stop'] = 'absent'
+            except OSError:
+                report['group_stop'] = 'failed'
+            try:
+                process.wait(timeout=1)
+                report['reaped'] = True
+            except (subprocess.TimeoutExpired, OSError):
+                pass
+        finally:
+            report['cleanup_seconds'] = round(time.monotonic()-cleanup, 6)
+            print('Compose config diagnostic '+json.dumps(report, sort_keys=True), file=sys.stderr, flush=True)
+        if isinstance(error, subprocess.TimeoutExpired):
+            # Do not retain or print partial config/stderr through the exception.
+            raise subprocess.TimeoutExpired('Business PostgreSQL Compose config', 15) from None
+        raise
+    finally:
+        for stream in (process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
 
 
 class MetricsDeploymentConfigTest(unittest.TestCase):
@@ -503,10 +611,8 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
     def test_business_postgres_compose_mount_is_readonly_and_requires_preparation(self):
         environment = {name: os.environ[name] for name in ('PATH', 'HOME') if name in os.environ}
         environment['ADDP_BUSINESS_POSTGRES_AUTH_DIR'] = str(self.directory.resolve() / 'prepared')
-        command = ['docker', 'compose', '--env-file', '/dev/null', '-f', str(ROOT / 'business/docker-compose.yml'),
-                   'config', '--format', 'json', 'postgres']
-        rendered = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=15)
-        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        rendered = run_business_postgres_compose(environment, 'prepared')
+        self.assertEqual(rendered.returncode, 0, 'Compose config failed; see safe diagnostic')
         service = json.loads(rendered.stdout)['services']['postgres']
         mounts = [value for value in service['volumes'] if value['target'] == '/etc/addp-postgres-auth']
         self.assertEqual(len(mounts), 1)
@@ -516,8 +622,8 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertFalse(mounts[0].get('bind', {}).get('create_host_path', False))
         self.assertIn('hba_file=/etc/addp-postgres-auth/pg_hba.conf', service['command'])
         environment.pop('ADDP_BUSINESS_POSTGRES_AUTH_DIR')
-        rendered = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=15)
-        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        rendered = run_business_postgres_compose(environment, 'missing_auth_directory')
+        self.assertEqual(rendered.returncode, 0, 'Compose config failed; see safe diagnostic')
         mount = next(value for value in json.loads(rendered.stdout)['services']['postgres']['volumes']
                      if value['target'] == '/etc/addp-postgres-auth')
         self.assertEqual(mount['source'], '/nonexistent/addp-business-postgres-auth')
@@ -1195,6 +1301,201 @@ class NodeMetricsDeploymentTest(unittest.TestCase):
             'netstat', 'stat', 'uname', 'time')})
         self.assertIn('--collector.filesystem.mount-points-exclude=^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+|var/lib/containers/storage/.+)($$|/)', source['command'])
         self.assertIn('--collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|erofs|sysfs|tracefs)$$', source['command'])
+
+class ComposeConfigDiagnosticTest(unittest.TestCase):
+    def process(self, code=0):
+        process = mock.Mock(pid=12345, returncode=code)
+        process.communicate.return_value = ('{"services":{}}', '')
+        process.poll.return_value = code
+        process.wait.return_value = code
+        return process
+
+    def test_proc_reader_is_loaded_from_this_checkout_not_a_cached_namespace(self):
+        foreign = mock.Mock(__file__='/foreign/reader.py')
+        with mock.patch.dict(sys.modules, {'scripts.utils.deployment-inventory': foreign}):
+            spec = importlib.util.spec_from_file_location('metrics_config_copy_reader_test', __file__)
+            loaded = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(loaded)
+        self.assertIsNot(loaded.inventory, foreign)
+        self.assertEqual(Path(loaded.inventory.__file__).resolve(), ROOT / 'scripts/utils/deployment-inventory.py')
+
+    def test_success_keeps_the_15_second_command_and_is_silent(self):
+        process = self.process()
+        output = io.StringIO()
+        with mock.patch.object(subprocess, 'Popen', return_value=process) as opened, \
+                mock.patch('sys.stderr', output):
+            value = run_business_postgres_compose({'PATH': '/fixture'}, 'prepared')
+        self.assertEqual(value.stdout, '{"services":{}}')
+        self.assertEqual(value.returncode, 0)
+        process.communicate.assert_called_once_with(timeout=15)
+        self.assertTrue(opened.call_args.kwargs['start_new_session'])
+        self.assertEqual(opened.call_args.args[0], ['docker', 'compose', '--env-file', '/dev/null', '-f',
+                         str(ROOT / 'business/docker-compose.yml'), 'config', '--format', 'json', 'postgres'])
+        self.assertEqual(output.getvalue(), '')
+
+    def test_timeout_preserves_failure_and_never_prints_partial_streams(self):
+        process = self.process(None)
+        sentinel = 'private-url-and-password-do-not-print'
+        process.communicate.side_effect = subprocess.TimeoutExpired(['docker'], 15, sentinel, sentinel)
+        output = io.StringIO()
+        with mock.patch.object(subprocess, 'Popen', return_value=process) as opened, \
+                mock.patch.object(os, 'killpg') as killed, mock.patch('sys.stderr', output), \
+                mock.patch.dict(globals(), compose_process_snapshot=mock.Mock(return_value={'available': False})), \
+                self.assertRaises(subprocess.TimeoutExpired) as error:
+            run_business_postgres_compose({'PRIVATE': sentinel}, 'prepared')
+        self.assertEqual(error.exception.timeout, 15)
+        self.assertIsNone(error.exception.output)
+        self.assertIsNone(error.exception.stderr)
+        self.assertNotIn(sentinel, output.getvalue())
+        self.assertNotIn('PRIVATE', output.getvalue())
+        self.assertIn('"outcome": "timeout"', output.getvalue())
+        self.assertEqual(opened.call_count, 1)
+        killed.assert_called_once_with(12345, signal.SIGKILL)
+        process.wait.assert_called_once_with(timeout=1)
+        process.stdout.close.assert_called_once()
+        process.stderr.close.assert_called_once()
+
+    def test_exit_error_and_spawn_error_only_report_closed_facts(self):
+        sentinel = 'private-compose-config-content'
+        process = self.process(7)
+        process.communicate.return_value = (sentinel, sentinel)
+        for phase, effect in [('missing_auth_directory', None), ('prepared', OSError(sentinel))]:
+            output = io.StringIO()
+            with self.subTest(phase=phase), mock.patch('sys.stderr', output), \
+                    mock.patch.object(subprocess, 'Popen', return_value=process, side_effect=effect):
+                if effect:
+                    with self.assertRaisesRegex(RuntimeError, '^Compose config could not start$'):
+                        run_business_postgres_compose({}, phase)
+                else:
+                    result = run_business_postgres_compose({}, phase)
+                    self.assertEqual(result.returncode, 7)
+                    self.assertEqual(result.stdout, sentinel)
+            self.assertNotIn(sentinel, output.getvalue())
+            self.assertIn('"case": "'+phase+'"', output.getvalue())
+
+    def test_cancellation_and_unconfirmed_cleanup_cannot_succeed(self):
+        for problem in [KeyboardInterrupt(), subprocess.TimeoutExpired(['docker'], 15)]:
+            process = self.process(None)
+            process.communicate.side_effect = problem
+            process.wait.side_effect = subprocess.TimeoutExpired(['docker'], 1)
+            output = io.StringIO()
+            with self.subTest(kind=type(problem).__name__), mock.patch.object(subprocess, 'Popen', return_value=process), \
+                    mock.patch.object(os, 'killpg') as killed, mock.patch('sys.stderr', output), \
+                    mock.patch.dict(globals(), compose_process_snapshot=mock.Mock(return_value={'available': False})), \
+                    self.assertRaises(type(problem)):
+                run_business_postgres_compose({}, 'prepared')
+            killed.assert_called_once_with(12345, signal.SIGKILL)
+            self.assertIn('"reaped": false', output.getvalue())
+
+    def test_unknown_case_is_rejected_before_starting_a_command(self):
+        with mock.patch.object(subprocess, 'Popen') as opened, self.assertRaises(ValueError):
+            run_business_postgres_compose({}, 'private-input')
+        opened.assert_not_called()
+
+    def test_snapshot_projects_only_bounded_same_session_process_facts(self):
+        process = self.process(None)
+        sentinel = 'private-path-command-or-environment'
+        def state(pid, parent, group, start=10):
+            return f'{pid} ({sentinel}) '+' '.join(['S', str(parent), str(group), str(group)]+['0']*15+[str(start)])
+        def read(pid, name):
+            if name == 'state': return state(pid, os.getpid() if pid == 12345 else 12345, 12345)
+            if name == 'children': return '12346 12347' if pid == 12345 else ''
+            if name == 'wait': return 'do_wait' if pid == 12345 else sentinel
+            return ''
+        def link(path):
+            return '/'+sentinel+('/docker' if '/12345/' in path else '/docker-compose' if '/12346/' in path else '/'+sentinel)
+        with mock.patch.object(inventory.platform, 'system', return_value='Linux'), \
+                mock.patch.object(inventory, 'observer_proc_text', side_effect=read), \
+                mock.patch.object(os, 'readlink', side_effect=link):
+            facts = compose_process_snapshot(process)
+        self.assertEqual([row['executable'] for row in facts['nodes']], ['docker', 'docker-compose', 'other'])
+        self.assertEqual([row['wait'] for row in facts['nodes']], ['do_wait', 'other', 'other'])
+        self.assertFalse(facts['truncated'])
+        for value in (sentinel, '/proc/', '12345', '12346', 'term_pending'):
+            self.assertNotIn(value, json.dumps(facts))
+        with mock.patch.object(inventory.platform, 'system', return_value='Linux'), \
+                mock.patch.object(inventory, 'observer_proc_text', side_effect=read), \
+                mock.patch.object(inventory, 'observer_exit_diagnostic', return_value={'proc_state':'Z', 'wait':'0', 'children':0}), \
+                mock.patch.object(os, 'readlink', side_effect=link):
+            self.assertTrue(compose_process_snapshot(process)['root_exited'])
+        process.poll.assert_not_called()
+
+    def test_snapshot_refuses_foreign_group_and_changed_process_identity(self):
+        process = self.process(None)
+        def text(parent, group, start):
+            return '12345 (discard)'+' '+' '.join(['S', str(parent), str(group), str(group)]+['0']*15+[str(start)])
+        for mode in ('foreign', 'changed', 'malformed'):
+            calls = 0
+            def read(pid, name):
+                nonlocal calls
+                if name != 'state': return ''
+                calls += 1
+                if mode == 'malformed': return 'invalid private process text'
+                return text(os.getpid(), 999 if mode == 'foreign' else 12345, calls)
+            with self.subTest(mode=mode), mock.patch.object(inventory.platform, 'system', return_value='Linux'), \
+                    mock.patch.object(inventory, 'observer_proc_text', side_effect=read), \
+                    mock.patch.object(inventory, 'observer_exit_diagnostic', return_value={'proc_state':'S', 'wait':'0', 'children':0}), \
+                    mock.patch.object(os, 'readlink', return_value='/private/docker'):
+                facts = compose_process_snapshot(process)
+            self.assertEqual(facts['nodes'], [{'depth':0, 'identity':'changed' if mode == 'changed' else 'unavailable'}])
+            self.assertNotIn('private', json.dumps(facts))
+
+    def test_snapshot_is_capped_and_distinguishes_exited_root_from_missing_linux_view(self):
+        process = self.process(None)
+        def read(pid, name):
+            if name == 'state':
+                return f'{pid} (discard) '+' '.join(['S', str(os.getpid() if pid == 12345 else 12345), '12345', '12345']+['0']*15+['10'])
+            if name == 'children': return ' '.join(str(pid) for pid in range(12346, 13346)) if pid == 12345 else ''
+            return ''
+        with mock.patch.object(inventory.platform, 'system', return_value='Linux'), \
+                mock.patch.object(inventory, 'observer_proc_text', side_effect=read), \
+                mock.patch.object(os, 'readlink', return_value='/fixture/docker'):
+            facts = compose_process_snapshot(process)
+        self.assertEqual(len(facts['nodes']), 8)
+        self.assertTrue(facts['truncated'])
+        with mock.patch.object(inventory.platform, 'system', return_value='Darwin'):
+            self.assertEqual(compose_process_snapshot(process), {'available':False})
+        process.returncode = 0
+        with mock.patch.object(inventory.platform, 'system', return_value='Linux'), \
+                mock.patch.object(inventory, 'observer_proc_text') as read:
+            self.assertEqual(compose_process_snapshot(process), {'available':True, 'root_exited':True, 'children_view':'unavailable'})
+        read.assert_not_called()
+        process.poll.assert_not_called()
+
+    def test_timeout_terminates_a_real_private_parent_and_its_child(self):
+        real_popen = subprocess.Popen
+        created = []
+        child_pid = None
+        def launch(command, **options):
+            nonlocal child_pid
+            script = 'import subprocess,sys,time; child=subprocess.Popen([sys.executable,"-c","import time;time.sleep(60)"]);print(child.pid,flush=True);time.sleep(60)'
+            process = real_popen([sys.executable, '-c', script], **options)
+            created.append(process)
+            import selectors
+            with selectors.DefaultSelector() as selector:
+                selector.register(process.stdout, selectors.EVENT_READ)
+                self.assertTrue(selector.select(2), 'Owned process did not become ready')
+                child_pid = int(process.stdout.readline(32))
+            process.communicate = mock.Mock(side_effect=subprocess.TimeoutExpired(['docker'], 15))
+            return process
+        try:
+            with mock.patch.object(subprocess, 'Popen', side_effect=launch), \
+                    mock.patch('sys.stderr', io.StringIO()), self.assertRaises(subprocess.TimeoutExpired):
+                run_business_postgres_compose({}, 'prepared')
+            self.assertEqual(created[0].returncode, -signal.SIGKILL)
+            # A killed adopted child can briefly be a zombie; it must not remain running.
+            state = subprocess.run(['ps', '-p', str(child_pid), '-o', 'stat='],
+                                   capture_output=True, text=True, timeout=1).stdout.strip()
+            self.assertTrue(not state or state[0] in ('Z', 'X'), 'Owned child is still running')
+            created[0].communicate.assert_called_once_with(timeout=15)
+        finally:
+            for process in created:
+                try:
+                    if process.poll() is None or (child_pid is not None and os.getpgid(child_pid) == process.pid and os.getsid(child_pid) == process.pid):
+                        os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait(timeout=1)
 
 
 if __name__ == '__main__':

@@ -1385,3 +1385,16 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 `changed-gate.py --dry-run`已命中Monitor Go与原PostgreSQL入口，新 `TestIntegrationPostgres*` 沿既有标准入口实际自动发现，无新Make／workflow。干跑包含其他会话WIP，只计选择检查，不计执行通过；指标来源、Trace和前端产品代码未变，不重复其既有门禁。新排序个人Safari、正式身份／Hosted及容量／生产T5未验，CI／Hosted继续等专门会话回传；没有轮询、派发、重跑CI／Hosted、重启个人服务、修改个人开发库或设置定时任务。
 
 原始最终日志 `/tmp/addp-alert-priority-{pg-final,go,swagger,swagger-coverage,selection}.log`；十项输入与日志摘要收据 `/tmp/addp-alert-priority-receipt.json` SHA-256 `3b22232e15112b2c14eb30ec21d79d18f7d142ab73d868fcfea935e79e2a3eca`。证据仅为本地共享工作区T0／T1／真实SQL T2，非固定提交CI全绿。清单实际第49行／B48与第51行／B50仍部分实现；本次仅补唯一事件列表的优先顺序，不计大屏滚动、拓扑／影响范围或根因分析完成。
+
+
+### Business PostgreSQL Compose 配置超时：安全诊断与自有进程回收（2026-10-25）
+
+专门 CI 会话回传 [Release 40156170007／job 121063186791](https://github.com/pampa0629/addp/actions/runs/40156170007/job/121063186791)，固定源码 `50f85debd27948c7b093b3fcd4a1cb5cb379e852`。独立核对提供的原始日志 `/tmp/addp-ci-20261025-043011/job-121063186791.log`：55项准备测试中54项通过，Business PostgreSQL 的首次 `docker compose … config --format json postgres` 在15秒期限超时，真实 http-quality 隔离采样未执行。失败源码至本轮基线的该用例、Business Compose及部署发现源均无已提交差异；日志不足以区分Docker CLI、Compose插件或管道等待，根因未定。前述5d91的唯一一次重试成功仍仅属于当次证据，不覆盖本轮失败，也不据此重复重试。
+
+先在T0–T3规范明确诊断／清理边界，再将原两次配置调用收敛到一个测试helper，命令、环境、15秒执行期限及只读挂载／禁止自动创建认证目录断言不变。仅失败时输出固定阶段、耗时、返回码和有限进程状态；复用现有同UID、每文件最多8192字节的proc读取及等待白名单，仅沿当次私有组检查最多8个节点、深度2，前后核验父子、组、会话与启动身份。不打印原配置、stderr、命令行、环境、端点、凭据、路径或PID。超时／取消只终止本次新建进程组，直接子进程最多1秒回收并关闭管道；不延长配置执行期限、不重试、不接管daemon，回收未知仍失败。诊断不提前reap会话主进程，保留清理身份；读取器按当前仓库绝对源码加载，不使用其他工作区的模块缓存。
+
+最终 `python3 -m unittest scripts/test/metrics-deployment-config_test.py` 的65项通过，含原55项和新增10项：原期限／静默成功、安全错误与取消、身份改变／外组拒绝、数量截断、退出／不可用视图、工作区源码隔离及真实POSIX父子进程超时清理。源码缓存负例先红后绿，日志保留。Linux proc树为确定性模拟；真实故障注入只创建当次Python父子进程，确认父进程已回收、子进程不再运行，不计原生Linux或容器采集验证。完整 `make test-dev-lifecycle` 退出0，含142／99／61项Python聚合、生命周期脚本、共享Go包及模块命令编译；尾部无测试包只计编译。完整入口运行于最后“不提前reap”的快照细化之前，该最终细化由随后完整65项配置入口覆盖。`git diff --check`通过。
+
+现有Make和Metrics标准入口均自动发现新增测试，原T2输入登记已覆盖该测试文件及部署发现源，无需新增入口、依赖或workflow。`changed-gate.py --dry-run`退出0只计选择，含其他会话WIP，不计对应门禁执行。本轮未运行原生Metrics T2／Hosted或重跑、调度、轮询CI，没有重启个人服务、修改个人数据库／Docker配置或设置定时；原Linux15秒失败仍未修复，等待专门会话回传新证据。清单实际第40行／B39“监控／总述”维持部分实现，本次只补测试诊断，不计产品采集自诊断或业务功能新增。
+
+最终日志 `/tmp/addp-compose-config-{reader-final,dev-lifecycle-final,selection-final}.log`；输入及分层验证收据 `/tmp/addp-compose-config-receipt.json` SHA-256 `c1bee48f6de49ce3c9a5b0535c05cdbdeeb2635d63c8be0796d335aaf92d4ae7`。尚未证明原超时根因，后续优先核对同一失败命令的新阶段／私有进程树证据，不能将本机未复现或测试回收通过写成原CI故障闭环。
