@@ -747,6 +747,130 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
             self.assertLessEqual(stop.wait.call_args.args[0], 3)
 
 
+class ResourceDiagnosticContractTests(unittest.TestCase):
+    @staticmethod
+    def scan(phase, started, duration=.1):
+        return {'phase':phase, 'sample_started_monotonic':started, 'sample_finished_monotonic':started+duration,
+            'lock_wait_seconds':0, 'container_count':20, 'volume_count':8,
+            'complete_scan_retries':{'volume':0,'private':0},
+            'steps':[{'operation':'inspect_owned_containers','duration_seconds':duration,'processing_seconds':.01,
+                'commands':[{'spawn_seconds':.02,'wait_seconds':.03,'output_seconds':.01,'cancel_cleanup_seconds':0}]}]}
+
+    def test_phase_counts_and_step_distributions(self):
+        rows=[]
+        for phase,count in [('product_compile',12),('product_image_gateway',12),('diagnostic_idle',25),('diagnostic_steady',65)]:
+            for _ in range(count): rows.append(self.scan(phase,len(rows)*4))
+        rows.append(self.scan('diagnostic_startup_1',len(rows)*4))
+        summary=m.summarize_resource_diagnostic(rows)
+        m.validate_resource_diagnostic(summary,('compile','images','idle','steady'))
+        self.assertEqual(summary['phases']['compile']['sample_count'],12)
+        self.assertEqual(summary['phases']['startup']['sample_count'],1)
+        costs=summary['phases']['compile']['operations']['inspect_owned_containers']
+        self.assertEqual(costs['wait_seconds']['p99'],.03)
+        self.assertEqual(summary['max_start_interval_seconds'],4)
+
+    def test_missing_phase_and_insufficient_samples_are_rejected(self):
+        summary=m.summarize_resource_diagnostic([self.scan('product_compile',0)])
+        for phases in [('compile',),('images',),('idle',),('steady',)]:
+            with self.subTest(phases=phases),self.assertRaisesRegex(m.GateError,'diagnostic_phase_samples_insufficient'):
+                m.validate_resource_diagnostic(summary,phases)
+
+    def test_four_second_and_five_second_boundaries(self):
+        for duration,gap,allowed in [(3.999,5,True),(4,4,False),(.1,5.001,False)]:
+            summary=m.summarize_resource_diagnostic([self.scan('product_compile',0,duration),self.scan('product_compile',gap)])
+            with self.subTest(duration=duration,gap=gap):
+                if allowed:m.validate_resource_diagnostic(summary,())
+                else:
+                    with self.assertRaises(m.GateError):m.validate_resource_diagnostic(summary,())
+
+    def fixture(self,directory):
+        life=bare_lifecycle(directory);clock=[0.0];life.command=mock.Mock(return_value='')
+        life.compose=mock.Mock(side_effect=lambda *args,**kwargs:life.command(['docker','compose'],timeout=300))
+        life.input_hashes={'owned':'hash'};life.module_commits={'system':'source'}
+        def sample():
+            life.samples.append(self.scan(life.phase,clock[0]));clock[0]+=.1
+        def wait(seconds):
+            end=clock[0]+seconds
+            while clock[0]+4<end:
+                clock[0]+=4;sample()
+            clock[0]=end
+        def build(life):
+            life.command(['make','build'],timeout=2200)
+            for phase in ('product_compile','product_image_gateway'):
+                life.phase=phase
+                for _ in range(12):clock[0]+=4;sample()
+            return 'source',{},{}
+        def setup(life,env,images):
+            m.start_deployment(life.compose)
+        life.sample=sample;life.wait=wait
+        return life,clock,build,setup
+
+    def test_one_round_uses_shared_build_deploy_and_six_checks_without_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,clock,build,setup=self.fixture(directory);command=life.command;compose=life.compose;report={}
+            with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]), \
+                 mock.patch.object(m,'build',side_effect=build) as built, mock.patch.object(m,'setup',side_effect=setup), \
+                 mock.patch.object(m,'identity',side_effect=AssertionError('identity forbidden')):
+                m.run_resource_guard_diagnostic(life,report,0)
+            built.assert_called_once()
+            self.assertEqual(len(report['startup_checks']),6)
+            self.assertEqual(compose.call_count,3)
+            self.assertIs(life.command,command);self.assertIs(life.compose,compose)
+            self.assertEqual(command.call_args_list[0].kwargs['timeout'],1800)
+            self.assertTrue(all(0 < call.kwargs['timeout'] <= 180 for call in command.call_args_list[1:]))
+            self.assertGreaterEqual(report['summary']['phases']['idle']['sample_count'],25)
+            self.assertGreaterEqual(report['summary']['phases']['steady']['sample_count'],65)
+
+    def test_first_failure_propagates_without_retry_and_restores_wrapper(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,clock,_,_=self.fixture(directory);command=life.command
+            with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]), \
+                 mock.patch.object(m,'build',side_effect=m.GateError('resource_sample_deadline_exceeded')) as build, \
+                 mock.patch.object(m,'setup') as setup:
+                with self.assertRaisesRegex(m.GateError,'resource_sample_deadline_exceeded'):
+                    m.run_resource_guard_diagnostic(life,{},0)
+            build.assert_called_once();setup.assert_not_called();self.assertIs(life.command,command)
+
+    def test_build_startup_and_whole_window_deadlines_are_absolute(self):
+        for stage in ('build','startup','whole'):
+            with self.subTest(stage=stage),tempfile.TemporaryDirectory() as directory:
+                life,clock,build,setup=self.fixture(directory);command=life.command;compose=life.compose
+                def bounded_build(life):
+                    result=build(life)
+                    if stage=='build':clock[0]=1800
+                    return result
+                def bounded_setup(life,env,images):
+                    setup(life,env,images)
+                    if stage=='startup':clock[0]+=180
+                    if stage=='whole':clock[0]=2399
+                with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]), \
+                     mock.patch.object(m,'build',side_effect=bounded_build),mock.patch.object(m,'setup',side_effect=bounded_setup):
+                    with self.assertRaises(m.GateError):m.run_resource_guard_diagnostic(life,{},0)
+                self.assertIs(life.command,command);self.assertIs(life.compose,compose)
+
+    def test_changed_startup_groups_are_rejected_and_not_retried(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,clock,build,_=self.fixture(directory);compose=life.compose
+            def setup(life,env,images):life.compose('up','-d','--wait','--no-build','monitor-backend')
+            with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]), \
+                 mock.patch.object(m,'build',side_effect=build),mock.patch.object(m,'setup',side_effect=setup):
+                with self.assertRaisesRegex(m.GateError,'diagnostic_startup_group_mismatch'):
+                    m.run_resource_guard_diagnostic(life,{},0)
+            compose.assert_not_called();self.assertIs(life.compose,compose)
+
+    def test_cadence_failure_stops_during_build_without_waiting_for_summary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,clock,_,_=self.fixture(directory);original_sample=life.sample
+            def build(life):
+                life.phase='product_compile';life.sample();clock[0]+=6;life.sample()
+                raise AssertionError('must stop at cadence violation')
+            with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]), \
+                 mock.patch.object(m,'build',side_effect=build) as built,mock.patch.object(m,'setup') as setup:
+                with self.assertRaisesRegex(m.GateError,'diagnostic_sample_cadence_exceeded'):
+                    m.run_resource_guard_diagnostic(life,{},0)
+            built.assert_called_once();setup.assert_not_called();self.assertIs(life.sample,original_sample)
+
+
 class LocalTraceCommandBudgetTests(unittest.TestCase):
     def test_other_threads_do_not_inherit_observer_deadline_or_diagnostics(self):
         with tempfile.TemporaryDirectory() as directory:

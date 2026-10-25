@@ -461,8 +461,10 @@ class Lifecycle:
                 self.sample_deadline = None
 
     def sample_diagnostics(self):
+        finished = time.monotonic()
         return {'phase': self.sample_phase, 'budget_seconds': 4,
-                'sample_duration_seconds': round(time.monotonic()-self.sample_began, 6),
+                'sample_duration_seconds': round(finished-self.sample_began, 6),
+                'sample_started_monotonic': self.sample_began, 'sample_finished_monotonic': finished,
                 'lock_wait_seconds': round(self.sample_lock_wait, 6),
                 **self.sample_counts, 'steps': self.sample_steps}
 
@@ -974,6 +976,121 @@ def setup(life, env, images):
             'module_live_build_commit_mismatch')
     life.module_commits={row['module']:row['git_commit'] for row in facts}
     return config
+
+
+def summarize_resource_diagnostic(samples):
+    """Summarize completed scans only; failed-tick details stay in resource_failure."""
+    def distribution(values):
+        values = sorted(values)
+        return {**{f'p{q}': values[(len(values)*q+99)//100-1] if values else None for q in (50,95,99)},
+                'max': max(values, default=None)}
+    phases = {}
+    for sample in samples:
+        phase = sample['phase']
+        name = ('compile' if phase=='product_compile' else 'images' if phase.startswith('product_image_') else
+                'startup' if phase.startswith('diagnostic_startup_') else
+                'idle' if phase=='diagnostic_idle' else 'steady' if phase=='diagnostic_steady' else 'preparation')
+        phases.setdefault(name, []).append(sample)
+    summary = {'sample_count': len(samples), 'phases': {}}
+    starts = sorted(sample['sample_started_monotonic'] for sample in samples)
+    summary['max_start_interval_seconds'] = max((b-a for a,b in zip(starts,starts[1:])), default=0)
+    summary['max_complete_interval_seconds'] = max((b-a for a,b in zip(sorted(s['sample_finished_monotonic'] for s in samples),
+        sorted(s['sample_finished_monotonic'] for s in samples)[1:])), default=0)
+    summary['max_sample_seconds'] = max((s['sample_finished_monotonic']-s['sample_started_monotonic'] for s in samples), default=0)
+    for name, rows in phases.items():
+        operations = {}
+        for row in rows:
+            for step in row['steps']:
+                operations.setdefault(step['operation'], []).append(step)
+        summary['phases'][name] = {
+            'sample_count':len(rows),
+            'sample_seconds':distribution([s['sample_finished_monotonic']-s['sample_started_monotonic'] for s in rows]),
+            'lock_wait_seconds':distribution([s['lock_wait_seconds'] for s in rows]),
+            'container_count':{'min':min(s['container_count'] for s in rows),'max':max(s['container_count'] for s in rows)},
+            'volume_count':{'min':min(s['volume_count'] for s in rows),'max':max(s['volume_count'] for s in rows)},
+            'complete_scan_retries':{key:sum(s['complete_scan_retries'][key] for s in rows) for key in ('volume','private')},
+            'operations':{operation:{
+                'count':len(steps), 'duration_seconds':distribution([s['duration_seconds'] for s in steps]),
+                'processing_seconds':distribution([s['processing_seconds'] for s in steps]),
+                **{key:distribution([c[key] for s in steps for c in s['commands']])
+                   for key in ('spawn_seconds','wait_seconds','output_seconds','cancel_cleanup_seconds')}}
+                for operation,steps in operations.items()}}
+    return summary
+
+
+def validate_resource_diagnostic(summary, required_phases):
+    require(summary['max_sample_seconds'] < 4, 'diagnostic_sample_deadline_exceeded')
+    require(summary['max_start_interval_seconds'] <= 5, 'diagnostic_sample_cadence_exceeded')
+    minimums = {'compile':12,'images':12,'idle':25,'steady':65}
+    for phase in required_phases:
+        require(summary['phases'].get(phase,{}).get('sample_count',0) >= minimums[phase],
+                'diagnostic_phase_samples_insufficient')
+
+
+def run_resource_guard_diagnostic(life, report, window_started):
+    """One approved busy-stage round; disposable external driver owns cleanup."""
+    command = life.command
+    sample = life.sample
+    stage_deadline = window_started + 1800
+    compose = None
+    def bounded_command(args, **kwargs):
+        if kwargs.get('guarded',True):
+            remaining = min(window_started+2400, stage_deadline)-time.monotonic()
+            require(remaining > 0, 'diagnostic_phase_deadline_exceeded')
+            kwargs['timeout'] = min(kwargs.get('timeout',600), remaining)
+        return command(args, **kwargs)
+    life.command = bounded_command
+    def checked_sample():
+        result = sample()
+        starts = sorted(row['sample_started_monotonic'] for row in life.samples)
+        require(all(b-a <= 5 for a,b in zip(starts,starts[1:])), 'diagnostic_sample_cadence_exceeded')
+        return result
+    life.sample = checked_sample
+    try:
+        commit, env, images = build(life)
+        require(time.monotonic() < stage_deadline, 'diagnostic_build_deadline_exceeded')
+        report.update(source_commit=commit, input_sha256=life.input_hashes, images=images)
+        report['summary'] = summarize_resource_diagnostic(life.samples)
+        validate_resource_diagnostic(report['summary'], ('compile','images'))
+        stage_deadline = window_started + 2400
+        life.phase = 'diagnostic_idle'
+        life.wait(120)
+        life.sample()
+        report['summary'] = summarize_resource_diagnostic(life.samples)
+        validate_resource_diagnostic(report['summary'], ('compile','images','idle'))
+        compose = life.compose
+        groups = [('system-backend',), ('gateway','security-backend','develop-backend','orchestrator-backend','monitor-backend'), FRONTENDS]
+        report['startup_checks'] = []
+        def checked_compose(*args, **kwargs):
+            index = len(report['startup_checks'])//2
+            require(index < len(groups) and args == ('up','-d','--wait','--no-build',*groups[index]),
+                    'diagnostic_startup_group_mismatch')
+            life.phase = 'diagnostic_startup_'+str(index+1)
+            life.sample()
+            report['startup_checks'].append({'group':index+1,'boundary':'before'})
+            result = compose(*args, **kwargs)
+            life.sample()
+            report['startup_checks'].append({'group':index+1,'boundary':'after'})
+            return result
+        life.compose = checked_compose
+        stage_deadline = min(window_started+2400, time.monotonic()+180)
+        setup(life,env,images)
+        require(time.monotonic() < stage_deadline, 'diagnostic_startup_deadline_exceeded')
+        require(len(report['startup_checks']) == 6, 'diagnostic_startup_checks_incomplete')
+        report['module_commits'] = life.module_commits
+        stage_deadline = window_started+2400
+        life.phase = 'diagnostic_steady'
+        life.wait(300)
+        life.sample()
+        life.check()
+        require(time.monotonic() < stage_deadline, 'diagnostic_window_deadline_exceeded')
+        report['summary'] = summarize_resource_diagnostic(life.samples)
+        validate_resource_diagnostic(report['summary'], ('compile','images','idle','steady'))
+    finally:
+        life.command = command
+        life.sample = sample
+        if compose is not None:
+            life.compose = compose
 
 
 def identity(life, env):
