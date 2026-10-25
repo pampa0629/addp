@@ -34,7 +34,7 @@ const expectedOutputGeometry = {
   snapped: ['LineString', 5], overlaps: ['MultiPolygon', 7], gaps: ['Polygon', 8],
   dangling: ['Point', 17], line_overlaps: ['MultiLineString', 9], line_self_overlaps: ['MultiLineString', 8],
   line_intersections: ['Point', 10], line_self_intersections: ['Point', 15],
-  split_lines: ['LineString', 20], line_components: ['LineString', 15],
+  split_lines: ['LineString', 43], line_components: ['LineString', 15],
   line_chains: ['LineString', 12], line_chain_members: ['LineString', 18],
 }
 
@@ -60,7 +60,8 @@ test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点�
   expect(evidence.line_self_overlap_expected).toHaveLength(8)
   expect(evidence.line_intersection_expected).toHaveLength(10)
   expect(evidence.line_self_intersection_expected).toHaveLength(15)
-  expect(evidence.split_line_expected).toHaveLength(20)
+  expect(evidence.split_line_scope).toBe('all')
+  expect(evidence.split_line_expected).toHaveLength(43)
   expect(evidence.line_component_expected).toHaveLength(15)
   expect(evidence.line_chain_expected).toHaveLength(12)
   expect(evidence.line_chain_members_expected).toHaveLength(18)
@@ -77,7 +78,7 @@ test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点�
   await expect(frame.getByText('成功', { exact: true })).toBeVisible()
   for (const output of evidence.outputs) await expect(frame.locator('.workflow-result')).toContainText(output.name)
   await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'topology-execution.png') })
-  const sourceLineage = { schema_version: 'addp.topology-source-lineage/v12', run_id: evidence.run_id, execution_id: evidence.execution_id, observations: [] }
+  const sourceLineage = { schema_version: 'addp.topology-source-lineage/v13', split_line_scope: evidence.split_line_scope, run_id: evidence.run_id, execution_id: evidence.execution_id, observations: [] }
   expect(evidence.sources).toHaveLength(15)
   for (const output of evidence.outputs) {
     const expectedTypes = expectedGeometryTypes(output.port)
@@ -87,7 +88,19 @@ test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点�
       new URL(response.url()).searchParams.get('locator') === locator &&
       (!output.layer_name || new URL(response.url()).searchParams.get('child_name') === output.layer_name))
     await page.goto(`${process.env.CONSOLE_URL}/manager/data-explorer?locator=${encodeURIComponent(locator)}`)
-    const previewResponse = await previewRead
+    let previewResponse = await previewRead
+    if (output.port === 'split_lines') {
+      // Use the real shared pagination control so every new internal fragment is rendered.
+      const fullPageRead = page.waitForResponse(response => response.request().method() === 'GET' &&
+        new URL(response.url()).pathname === '/api/v1/manager/preview' &&
+        new URL(response.url()).searchParams.get('locator') === locator &&
+        new URL(response.url()).searchParams.get('child_name') === output.layer_name &&
+        new URL(response.url()).searchParams.get('page') === '1' &&
+        new URL(response.url()).searchParams.get('page_size') === '50')
+      await frame.locator('.table-preview .el-pagination__sizes .el-select').click()
+      await frame.getByRole('option', { name: /^50(?:\D|$)/ }).click()
+      previewResponse = await fullPageRead
+    }
     const preview = await json(previewResponse, 'topology saved preview')
     const previewAPI = await browserAPIFromResponse(previewResponse, process.env.GATEWAY_URL, expectedIdentity)
     try {
@@ -116,6 +129,7 @@ test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点�
       await previewAPI.dispose()
     }
     const data = preview.data
+    if (output.port === 'split_lines') expect([data.page, data.page_size, data.rows.length]).toEqual([1,50,43])
     expect(preview.preview_type).toBe('table')
     if (output.layer_name) {
       expect([data.total, data.source_srid, data.source_crs, data.transform_status, data.preview_hint])
@@ -355,6 +369,6 @@ test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点�
   await expect(frame.getByText('失败', { exact:true })).toBeVisible()
   await page.screenshot({ path:resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'topology-snap-failed.png') })
   writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'topology-browser.json'), JSON.stringify({
-    ...evidence, schema_version: 'addp.topology-browser/v13', result: 'passed'
+    ...evidence, schema_version: 'addp.topology-browser/v14', result: 'passed'
   }, null, 2))
 })

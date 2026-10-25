@@ -1517,7 +1517,7 @@ def test_hosted_topology_physical_oracle_accepts_real_fifteen_saves_and_rejects_
     ])
     tasks.extend([
         {'id':'split_line_input','operator':'load','params':{'connection_info':connection,'path':'split-line-input.gpkg'},'depends_on':[]},
-        {'id':'split_line','operator':'split_line_intersections','params':{'input_gdf':{'$ref':'split_line_input'},'id_field':'route_key'},'depends_on':['split_line_input']},
+        {'id':'split_line','operator':'split_line_intersections','params':{'input_gdf':{'$ref':'split_line_input'},'id_field':'route_key','scope':'all'},'depends_on':['split_line_input']},
         {'id':'save_split_lines','operator':'save','params':{'input_df':{'$ref':'split_line'},'connection_info':connection,'path':'outputs/split-lines.gpkg','mode':'fail'},'depends_on':['split_line']},
     ])
     tasks.extend([
@@ -1535,7 +1535,7 @@ def test_hosted_topology_physical_oracle_accepts_real_fifteen_saves_and_rejects_
     assert execution['status'] == 'success', execution.get('error')
     actual = fixture.worker('verify', tmp_path)
     assert actual['sources'] == seeded['sources']
-    assert [actual['targets'][name]['feature_count'] for name in fixture.TARGETS] == [4,4,2,5,7,8,17,9,8,10,15,20,15,12,18]
+    assert [actual['targets'][name]['feature_count'] for name in fixture.TARGETS] == [4,4,2,5,7,8,17,9,8,10,15,43,15,12,18]
     for name in fixture.TARGETS[:3]:
         path = tmp_path / 'outputs' / name
         original = path.read_bytes()
@@ -1776,7 +1776,23 @@ def test_hosted_topology_physical_oracle_accepts_real_fifteen_saves_and_rejects_
     assert fixture.worker('verify', tmp_path) == baseline
 
 
-@pytest.mark.parametrize("problem", ["source_id", "route_key", "null", "grade", "part_no", "segment_no", "direction", "tiny", "count", "crs", "field_type"])
+def test_hosted_split_all_fixture_has_internal_and_cross_meetings_and_rejects_default_scope(tmp_path):
+    import importlib
+    fixture=importlib.import_module('business.scripts.online-vector-topology-fixture')
+    fixture.seed_split_line(tmp_path/'source.gpkg')
+    original=(tmp_path/'source.gpkg').read_bytes()
+    source=gpd.read_file(tmp_path/'source.gpkg')
+    with pytest.raises(ValueError,match='internal'):split_at_intersections(source)
+    result=split_all_intersections(source)
+    expected=fixture.split_line_expected_features()
+    assert len(result)==43 and len(source)==17
+    assert [list(map(list,shape.coords)) for shape in result.geometry]==[row['geometry']['coordinates'] for row in expected]
+    assert result.drop(columns=source.geometry.name).to_dict('records')==[row['properties'] for row in expected]
+    assert fixture.verify_split_line(tmp_path/'source.gpkg',source=True)['feature_count']==17
+    assert (tmp_path/'source.gpkg').read_bytes()==original
+
+
+@pytest.mark.parametrize("problem", ["source_id", "route_key", "null", "grade", "part_no", "segment_no", "direction", "tiny", "count", "crs", "field_type", "internal_cut", "repeat_visit", "same_source_part", "closed_seam", "duplicate_vertices"])
 def test_hosted_split_line_fixture_rejects_real_physical_corruption(tmp_path, problem):
     import importlib
     from osgeo import ogr
@@ -1786,28 +1802,32 @@ def test_hosted_split_line_fixture_rejects_real_physical_corruption(tmp_path, pr
     connection = {'engine_type':'nfs','mount_path':str(tmp_path)}
     tasks = [
         {'id':'load','operator':'load','params':{'connection_info':connection,'path':'source.gpkg'},'depends_on':[]},
-        {'id':'split','operator':'split_line_intersections','params':{'input_gdf':{'$ref':'load'},'id_field':'route_key'},'depends_on':['load']},
+        {'id':'split','operator':'split_line_intersections','params':{'input_gdf':{'$ref':'load'},'id_field':'route_key','scope':'all'},'depends_on':['load']},
         {'id':'save','operator':'save','params':{'input_df':{'$ref':'split'},'connection_info':connection,'path':'pieces.gpkg','mode':'fail'},'depends_on':['split']},
     ]
     execution = execute_workflow({'tasks':tasks})
     assert execution['status']=='success', execution
-    assert fixture.verify_split_line(tmp_path/'pieces.gpkg')['feature_count']==20
-    assert fixture.verify_split_line(tmp_path/'source.gpkg',source=True)['feature_count']==11
+    assert fixture.verify_split_line(tmp_path/'pieces.gpkg')['feature_count']==43
+    assert fixture.verify_split_line(tmp_path/'source.gpkg',source=True)['feature_count']==17
     assert (tmp_path/'source.gpkg').read_bytes()==before
     dataset = ogr.Open(str(tmp_path/'pieces.gpkg'),1); layer=dataset.GetLayer(0)
-    if problem=='count': layer.DeleteFeature(20)
+    if problem=='count': layer.DeleteFeature(43)
+    elif problem=='repeat_visit':layer.DeleteFeature(35)
     elif problem=='crs': dataset.ExecuteSQL('UPDATE gpkg_geometry_columns SET srs_id=4326')
     elif problem=='field_type':
         assert layer.AlterFieldDefn(layer.GetLayerDefn().GetFieldIndex('grade'),ogr.FieldDefn('grade',ogr.OFTReal),ogr.ALTER_TYPE_FLAG)==0
     else:
-        feature=layer.GetFeature(4 if problem=='null' else 16 if problem=='tiny' else 1)
+        feature=layer.GetFeature({'null':4,'tiny':16,'internal_cut':21,'same_source_part':39,'closed_seam':31,'duplicate_vertices':42}.get(problem,1))
         if problem in ('source_id','route_key'): feature.SetField(problem,'1')
         elif problem=='null': feature.SetField('note','')
+        elif problem=='same_source_part':feature.SetField('part_no',1)
         elif problem in ('grade','part_no','segment_no'): feature.SetField(problem,999)
         else:
             geometry=feature.GetGeometryRef()
             points=[list(point[:2]) for point in geometry.GetPoints()]
-            if problem=='direction': points.reverse()
+            if problem in ('direction','closed_seam'): points.reverse()
+            elif problem=='internal_cut':points[-1]=[102,202]
+            elif problem=='duplicate_vertices':points.pop(1)
             else: points[-1][0]=1e-12
             feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps({'type':'LineString','coordinates':points})))
         assert layer.SetFeature(feature)==0

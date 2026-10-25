@@ -105,7 +105,7 @@ class TopologyOnlineTest(unittest.TestCase):
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         for key in ['line_chain_expected','line_chain_members_expected']:
             def run(*args,**kwargs):
-                report={**evidence,'schema_version':'addp.topology-browser/v13','result':'passed'};report.pop(key)
+                report={**evidence,'schema_version':'addp.topology-browser/v14','result':'passed'};report.pop(key)
                 path.write_text(json.dumps(report));return SimpleNamespace(returncode=0)
             with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
 
@@ -134,7 +134,7 @@ class TopologyOnlineTest(unittest.TestCase):
         evidence={'execution_id':'current','outputs':[{'port':'line_components'}],'line_component_expected':m.fixture.line_component_expected_features()}
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
-            path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],'schema_version':'addp.topology-browser/v13','result':'passed'}))
+            path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],'schema_version':'addp.topology-browser/v14','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
 
@@ -142,13 +142,20 @@ class TopologyOnlineTest(unittest.TestCase):
         tasks=m.definition('s0','parent',*[f's{i}' for i in range(1,len(m.fixture.SOURCES))])['tasks'][:-7]
         self.assertEqual(tasks[-3]['params'],{'locator':'s12'})
         self.assertEqual(tasks[-2]['operator'],'split_line_intersections')
-        self.assertEqual(tasks[-2]['params'],{'input_gdf':{'$ref':'split_line_input'},'id_field':'route_key'})
+        self.assertEqual(tasks[-2]['params'],{'input_gdf':{'$ref':'split_line_input'},'id_field':'route_key','scope':'all'})
         self.assertEqual(tasks[-1]['params']['target_name'],'split-lines.gpkg')
         self.assertEqual(m.output_sources('split_lines'),(12,))
         report=m.run_scenario(Path('.'),self.env,Client(),physical,lambda repo,env,evidence:evidence,diagnostic_runner=lambda *args:{})
         self.assertEqual(report['browser']['split_line_expected'],m.fixture.split_line_expected_features())
+        self.assertEqual(report['browser']['split_line_scope'],'all')
+        self.assertEqual(report['split_line_scope'],'all')
+        self.assertEqual(len(report['browser']['split_line_expected']),43)
         self.assertEqual(report['outputs'][-4]['port'],'split_lines')
-        self.assertEqual(len(report['outputs'][-4]['lineage']),1)
+        self.assertEqual(report['outputs'][-4]['lineage'],[{'source_item_id':22,'target_item_id':41,'execution_id':'execution'}])
+        checkpoint=json.loads((Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-before-lineage.json').read_text())
+        self.assertEqual(checkpoint['split_line_scope'],'all')
+        self.assertEqual(checkpoint['schema_version'],'addp.topology-checkpoint/v14')
+        self.assertEqual(checkpoint['result'],'incomplete')
         class WrongScan(Client):
             def request(self,method,path,expected,body=None):
                 response=super().request(method,path,expected,body)
@@ -164,9 +171,55 @@ class TopologyOnlineTest(unittest.TestCase):
         evidence={'execution_id':'current','outputs':[{'port':'split_lines'}],'split_line_expected':m.fixture.split_line_expected_features()}
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
-            path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],'schema_version':'addp.topology-browser/v13','result':'passed'}))
+            path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],'schema_version':'addp.topology-browser/v14','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
+
+    def test_split_all_browser_binding_rejects_missing_or_wrong_scope(self):
+        evidence={'execution_id':'current','split_line_scope':'all','split_line_expected':m.fixture.split_line_expected_features()}
+        path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
+        for scope in (None,'between'):
+            def run(*args,**kwargs):
+                report={**evidence,'schema_version':'addp.topology-browser/v14','result':'passed'}
+                if scope is None:report.pop('split_line_scope')
+                else:report['split_line_scope']=scope
+                path.write_text(json.dumps(report));return SimpleNamespace(returncode=0)
+            with self.subTest(scope=scope),patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):
+                m.browser(Path('.'),self.env,evidence)
+
+    def test_split_all_map_reads_full_real_pagination_response(self):
+        import subprocess
+        repository=Path(__file__).resolve().parents[2]
+        script=r"""
+import assert from 'node:assert/strict'
+import {readFileSync} from 'node:fs'
+const source=readFileSync(process.argv[1],'utf8')
+const start=source.indexOf("    if (output.port === 'split_lines') {",source.indexOf('let previewResponse = await previewRead'))
+const end=source.indexOf('    const preview = await json(previewResponse',start)
+assert.ok(start>0 && end>start)
+const check=new (Object.getPrototypeOf(async function(){}).constructor)('page','frame','output','locator','previewResponse',source.slice(start,end)+';return previewResponse')
+const locator='addp://engine/7/path/outputs/split-lines.gpkg?type=file&item_id=8'
+const url=new URL('http://localhost/api/v1/manager/preview');url.search=new URLSearchParams({locator,child_name:'pieces',page:'1',page_size:'50'})
+let clicks=[]
+const response=(url,method='GET')=>({url:()=>url,request:()=>({method:()=>method})})
+const full=response(url.href)
+const page={waitForResponse(predicate){
+ assert.ok(predicate(full))
+ assert.ok(!predicate(response(url.href,'POST')))
+ for(const [key,value] of [['locator','foreign'],['child_name','other'],['page','2'],['page_size','20']]){
+  const wrong=new URL(url);wrong.searchParams.set(key,value);assert.ok(!predicate(response(wrong.href)))
+ }
+ return Promise.resolve(full)
+}}
+const frame={locator(selector){assert.equal(selector,'.table-preview .el-pagination__sizes .el-select');return {click:async()=>{clicks.push('sizes')}}},
+ getByRole(role,{name}){assert.equal(role,'option');assert.ok(name.test('50条/页'));assert.ok(!name.test('500条/页'));return {click:async()=>{clicks.push('50')}}}}
+assert.equal(await check(page,frame,{port:'split_lines',layer_name:'pieces'},locator,'first'),full)
+assert.deepEqual(clicks,['sizes','50'])
+clicks=[];assert.equal(await check(page,frame,{port:'line_components'},locator,'first'),'first');assert.deepEqual(clicks,[])
+assert.ok(source.includes("if (output.port === 'split_lines') expect([data.page, data.page_size, data.rows.length]).toEqual([1,50,43])"))
+"""
+        result=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js')],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
 
     def test_all_output_map_type_counts_require_exact_port_registration(self):
         import subprocess
@@ -178,7 +231,7 @@ const source=readFileSync(process.argv[1],'utf8')
 const golden={faces:['Polygon',4],diagnostics:['LineString',4],repaired:['MultiPolygon',2],snapped:['LineString',5],
  overlaps:['MultiPolygon',7],gaps:['Polygon',8],dangling:['Point',17],line_overlaps:['MultiLineString',9],
  line_self_overlaps:['MultiLineString',8],line_intersections:['Point',10],line_self_intersections:['Point',15],
- split_lines:['LineString',20],line_components:['LineString',15],line_chains:['LineString',12],line_chain_members:['LineString',18]}
+ split_lines:['LineString',43],line_components:['LineString',15],line_chains:['LineString',12],line_chain_members:['LineString',18]}
 const helperStart=source.indexOf('const expectedOutputGeometry =')
 const helperEnd=source.indexOf("test('同一普通User核对",helperStart)
 assert.ok(helperStart>0 && helperEnd>helperStart)
@@ -241,6 +294,9 @@ await run(expected)
 await run([...expected].reverse()) // OL feature order need not equal saved row order.
 const mutations=[rows=>rows.pop(),rows=>rows[0].properties[fields[0]]='wrong',rows=>rows[0].properties.grade++,
  rows=>rows[0].geometry.coordinates.reverse()]
+if(port==='split_lines') mutations.push(rows=>rows.splice(34,1),rows=>rows[38].properties.part_no=1,
+ rows=>rows[20].geometry.coordinates[1]=[102,202],rows=>rows[30].geometry.coordinates.reverse(),
+ rows=>rows[41].geometry.coordinates.splice(1,1))
 if(port==='split_lines'||port==='line_components') mutations.push(rows=>rows[0].properties.part_no++,
  rows=>rows[0].properties[port==='split_lines'?'segment_no':'component_id']++,rows=>rows[3].properties.note='',
  rows=>port==='split_lines' ? rows[15].geometry.coordinates[1][0]=1e-12 : rows[10].geometry.coordinates[0][0]=1)
@@ -321,17 +377,17 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
         self.assertEqual(report['result'], 'passed'); self.assertEqual(len(report['outputs']), 15)
         self.assertEqual(len(report['identity']['permissions_verified']), 11)
         self.assertEqual(len([call for call in client.calls if call[0] == 'POST' and '/scan/' in call[1]]), 15)
-        self.assertEqual(report['schema_version'],'addp.vector-topology-persistence/v13')
+        self.assertEqual(report['schema_version'],'addp.vector-topology-persistence/v14')
         self.assertEqual(report['physical'],report['post_browser_physical'])
         self.assertEqual(report['stable_outputs'],execution()['outputs'])
         self.assertEqual(report['browser']['overlap_expected'],m.fixture.overlap_expected_features())
         self.assertEqual(report['browser']['gap_expected'],m.fixture.gap_expected_features())
         self.assertEqual(report['browser']['dangling_expected'],m.fixture.dangling_expected_features())
 
-    def test_browser_requires_current_v13_and_exact_fifteenth_output_evidence(self):
+    def test_browser_requires_current_v14_and_exact_fifteenth_output_evidence(self):
         evidence={'execution_id':'current','outputs':[{'port':'gaps'}],'overlap_expected':m.fixture.overlap_expected_features(),'gap_expected':m.fixture.gap_expected_features()}
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
-        for schema,changed,valid in [('addp.topology-browser/v12',False,False),('addp.topology-browser/v13',True,False),('addp.topology-browser/v13',False,True)]:
+        for schema,changed,valid in [('addp.topology-browser/v13',False,False),('addp.topology-browser/v14',True,False),('addp.topology-browser/v14',False,True)]:
             def run(*args,**kwargs):
                 report={**evidence,'schema_version':schema,'result':'passed'}
                 if changed:report['outputs']=[]
@@ -347,7 +403,7 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
             path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],
-                'schema_version':'addp.topology-browser/v13','result':'passed'}))
+                'schema_version':'addp.topology-browser/v14','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):
             m.browser(Path('.'),self.env,evidence)
@@ -535,7 +591,7 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
             path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],
-                'schema_version':'addp.topology-browser/v13','result':'passed'}))
+                'schema_version':'addp.topology-browser/v14','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
 
@@ -655,7 +711,7 @@ console.log('Point foreground pixels and preserved polygon assertions verified')
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
             path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],
-                'schema_version':'addp.topology-browser/v13','result':'passed'}))
+                'schema_version':'addp.topology-browser/v14','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
 
@@ -722,7 +778,7 @@ console.log('MultiLineString pair identity, length and coordinates: nine corrupt
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
             path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],
-                'schema_version':'addp.topology-browser/v13','result':'passed'}))
+                'schema_version':'addp.topology-browser/v14','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
 
@@ -753,7 +809,7 @@ console.log('MultiLineString pair identity, length and coordinates: nine corrupt
         evidence={'execution_id':'current','outputs':[{'port':'line_intersections'}],'line_intersection_expected':m.fixture.line_intersection_expected_features()}
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
-            path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],'schema_version':'addp.topology-browser/v13','result':'passed'}))
+            path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],'schema_version':'addp.topology-browser/v14','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
 
@@ -783,6 +839,6 @@ console.log('MultiLineString pair identity, length and coordinates: nine corrupt
         evidence={'execution_id':'current','outputs':[{'port':'line_self_intersections'}],'line_self_intersection_expected':m.fixture.line_self_intersection_expected_features()}
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
-            path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],'schema_version':'addp.topology-browser/v13','result':'passed'}))
+            path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],'schema_version':'addp.topology-browser/v14','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)

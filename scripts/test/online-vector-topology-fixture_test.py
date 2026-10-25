@@ -92,8 +92,8 @@ class TopologyFixtureTest(unittest.TestCase):
 
     def test_split_line_oracle_requires_all_attributes_direction_vertices_and_ordinals(self):
         original = m.split_line_expected_features()
-        self.assertEqual(len(m.split_line_source_features()),11)
-        self.assertEqual(len(original),20)
+        self.assertEqual(len(m.split_line_source_features()),17)
+        self.assertEqual(len(original),43)
         m.validate_split_line_features(original)
         m.validate_split_line_features(m.split_line_source_features(),source=True)
         self.assertIsNone(original[3]['properties']['note'])
@@ -110,6 +110,11 @@ class TopologyFixtureTest(unittest.TestCase):
             lambda rows: rows[0]['geometry']['coordinates'].reverse(),
             lambda rows: rows[15]['geometry']['coordinates'][1].__setitem__(0,1e-12),
             lambda rows: rows[-1]['geometry']['coordinates'].pop(),
+            lambda rows: rows[20]['geometry']['coordinates'].__setitem__(-1,[102,202]),
+            lambda rows: rows.pop(34),
+            lambda rows: rows[38]['properties'].update(part_no=1),
+            lambda rows: rows[30]['geometry']['coordinates'].reverse(),
+            lambda rows: rows[41]['geometry']['coordinates'].pop(1),
         ):
             value=copy.deepcopy(original); mutate(value)
             with self.subTest(mutate=mutate),self.assertRaises(m.FixtureError):

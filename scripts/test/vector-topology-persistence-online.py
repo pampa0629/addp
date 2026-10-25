@@ -55,7 +55,7 @@ def definition(source, parent, invalid_source, snap_source, snap_reference, over
         {'id': 'line_self_intersection', 'operator': 'check_line_self_intersection', 'params': {'input_gdf': {'$ref': 'line_self_intersection_input'}, 'id_field': 'route_key'}, 'depends_on': ['line_self_intersection_input']},
         {'id': 'save_line_self_intersections', 'operator': 'save', 'params': {'input_df': {'$ref': 'line_self_intersection'}, 'target_parent_locator': parent, 'target_name': 'line-self-intersections.gpkg', 'mode': 'fail'}, 'depends_on': ['line_self_intersection']},
         {'id': 'split_line_input', 'operator': 'load', 'params': {'locator': split_line_source}, 'depends_on': []},
-        {'id': 'split_line', 'operator': 'split_line_intersections', 'params': {'input_gdf': {'$ref': 'split_line_input'}, 'id_field': 'route_key'}, 'depends_on': ['split_line_input']},
+        {'id': 'split_line', 'operator': 'split_line_intersections', 'params': {'input_gdf': {'$ref': 'split_line_input'}, 'id_field': 'route_key', 'scope': 'all'}, 'depends_on': ['split_line_input']},
         {'id': 'save_split_lines', 'operator': 'save', 'params': {'input_df': {'$ref': 'split_line'}, 'target_parent_locator': parent, 'target_name': 'split-lines.gpkg', 'mode': 'fail'}, 'depends_on': ['split_line']},
         {'id': 'line_component_input', 'operator': 'load', 'params': {'locator': line_component_source}, 'depends_on': []},
         {'id': 'line_component', 'operator': 'group_line_components', 'params': {'input_gdf': {'$ref': 'line_component_input'}, 'id_field': 'route_key'}, 'depends_on': ['line_component_input']},
@@ -167,7 +167,7 @@ def browser(repository, env, evidence):
     if result.returncode or not path.is_file():
         raise SuiteError('topology Console evidence missing or failed')
     report = obj(json.loads(path.read_text()), 'browser evidence')
-    if report != {**evidence, 'schema_version': 'addp.topology-browser/v13', 'result': 'passed'}:
+    if report != {**evidence, 'schema_version': 'addp.topology-browser/v14', 'result': 'passed'}:
         raise SuiteError('browser report does not bind the exact run, User and outputs')
     return report
 
@@ -221,8 +221,8 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                         **({'layer_name': native['targets'][name]['layer_name'], 'geometry_column': native['targets'][name]['geometry_column']} if name.endswith('.gpkg') else {})})
     # Persist the verified physical facts before any potentially long convergence
     # wait. This checkpoint cannot stand in for the final successful suite report.
-    checkpoint = {'schema_version': 'addp.topology-checkpoint/v13', 'suite': SUITE, 'result': 'incomplete',
-        'stage': 'before_lineage', 'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity,
+    checkpoint = {'schema_version': 'addp.topology-checkpoint/v14', 'suite': SUITE, 'result': 'incomplete',
+        'stage': 'before_lineage', 'split_line_scope': 'all', 'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity,
         'execution_id': identifier, 'sources': [{key: source[key] for key in ('name', 'id', 'locator', 'scan_execution_id')} for source in sources], 'lineage_facts': facts,
         'automatic_scans': scan_observations, 'outputs': outputs, 'stable_outputs': execution['outputs'], 'physical': native, 'monitor_lineage_verified': True, 'monitor': monitor}
     (Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-before-lineage.json').write_text(json.dumps(checkpoint, indent=2)+'\n')
@@ -260,7 +260,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         'identity': identity, 'failed_snap': failure, 'scan_inventory': before_scans,
         'physical_unchanged': True}, indent=2)+'\n')
     # Browser evidence deliberately contains only stable identities and expected content.
-    evidence = {'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], **identity, 'execution_id': identifier,
+    evidence = {'split_line_scope': 'all', 'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], **identity, 'execution_id': identifier,
                 'outputs': [{key: value for key, value in output.items() if key not in ('lineage', 'size_evidence')} for output in outputs],
                 'failed_execution_id': failed_id,
                 'overlap_expected': fixture.overlap_expected_features(),
@@ -279,7 +279,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     final_native = physical_runner(repository, env)
     if final_native != native:
         raise SuiteError('browser reads changed source or saved outputs')
-    return {'schema_version': 'addp.vector-topology-persistence/v13', 'suite': SUITE, 'result': 'passed',
+    return {'schema_version': 'addp.vector-topology-persistence/v14', 'split_line_scope': 'all', 'suite': SUITE, 'result': 'passed',
         'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'execution_id': identifier,
         'sources': [{key: source[key] for key in ('name', 'id', 'locator', 'scan_execution_id')} for source in sources], 'source_unchanged': True, 'automatic_scans': scans, 'automatic_scan_observations': scan_observations, 'monitor': monitor,
         'outputs': outputs, 'stable_outputs': execution['outputs'], 'physical': native, 'post_browser_physical': final_native, 'browser': report, 'failed_snap': failure,
