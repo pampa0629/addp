@@ -44,6 +44,8 @@ def bare_lifecycle(directory):
     life.sample_lock = threading.Lock()
     life.sampler_volumes = ()
     life.sampler_started = False
+    life.sample_thread_id = None
+    life.sample_deadline = None
     life.minio_image = 'sha256:synthetic-pinned-minio'
     life.owned_bind_bytes = lambda **kwargs: 0
     return life
@@ -507,13 +509,105 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
         life.docker = docker
         return life, calls
 
+    def test_last_read_cannot_turn_an_expired_scan_into_success(self):
+        for finished in (4, 4.01):
+            with self.subTest(finished=finished), tempfile.TemporaryDirectory() as directory:
+                life, _ = self.sample_lifecycle(directory, 1024)
+                clock = [0.0]
+                def read(**kwargs):
+                    clock[0] = finished
+                    return 0
+                life.owned_bind_bytes = read
+                with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
+                    with self.assertRaisesRegex(m.GateError, 'resource_sample_deadline_exceeded'):
+                        life.sample()
+                self.assertEqual(life.samples, [])
+
+    def test_success_preserves_step_costs_counts_and_shared_remaining_budget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life, calls = self.sample_lifecycle(directory, 1024)
+            life.sampler_volumes = ('owned-volume',)
+            underlying = life.docker
+            clock = [0.0]
+            def docker(*args, **kwargs):
+                clock[0] += .5
+                return underlying(*args, **kwargs)
+            life.docker = docker
+            with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
+                life.sample()
+            sample = life.samples[-1]
+            self.assertEqual(sample['container_count'], 1)
+            self.assertEqual(sample['volume_count'], 1)
+            self.assertEqual(sample['sample_duration_seconds'], 2)
+            self.assertEqual([step['operation'] for step in sample['steps']], [
+                'list_owned_containers', 'inspect_owned_containers', 'validate_container_states',
+                'list_owned_volumes', 'measure_owned_volumes', 'measure_private_bindings', 'final_validation'])
+            self.assertTrue(all(step['result'] == 'passed' for step in sample['steps']))
+            self.assertEqual([kwargs['timeout'] for _, kwargs in calls], [4, 3.5, 3, 2.5])
+
+    def test_failed_tick_keeps_completed_and_failed_steps_through_monitor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life, _ = self.sample_lifecycle(directory, 1024)
+            life.sampler_volumes = ('owned-volume',)
+            underlying = life.docker
+            clock = [0.0]
+            def docker(*args, **kwargs):
+                if args[0] == 'exec':
+                    clock[0] = 4.05
+                    raise m.GateError('command_deadline_exceeded')
+                clock[0] += .1
+                return underlying(*args, **kwargs)
+            life.docker = docker
+            life.owned_bind_bytes = mock.Mock(side_effect=AssertionError('must stop'))
+            with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
+                life.monitor()
+            failure = life.resource_failure
+            self.assertEqual(failure['error_code'], 'resource_sample_deadline_exceeded')
+            self.assertEqual(failure['operation'], 'measure_owned_volumes')
+            self.assertEqual(failure['container_count'], 1)
+            self.assertEqual(failure['volume_count'], 1)
+            self.assertEqual(failure['steps'][-1]['result'], 'failed')
+            self.assertAlmostEqual(failure['steps'][-1]['duration_seconds'], 3.75)
+            self.assertTrue(all(step['result'] == 'passed' for step in failure['steps'][:-1]))
+            life.owned_bind_bytes.assert_not_called()
+            self.assertEqual(life.samples, [])
+
+    def test_lock_wait_is_separate_from_scan_duration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life, _ = self.sample_lifecycle(directory, 1024)
+            clock = [0.0]
+            def entered(): clock[0] = 2
+            def read(**kwargs): clock[0] = 3; return 0
+            life.sample_lock = mock.MagicMock()
+            life.sample_lock.__enter__.side_effect = entered
+            life.owned_bind_bytes = read
+            with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
+                life.sample()
+            self.assertEqual(life.samples[-1]['lock_wait_seconds'], 2)
+            self.assertEqual(life.samples[-1]['sample_duration_seconds'], 1)
+
+    def test_inspect_json_parsing_must_finish_within_original_deadline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life, _ = self.sample_lifecycle(directory, 1024)
+            clock = [0.0]
+            loads = m.json.loads
+            def parse(raw): clock[0] = 4.01; return loads(raw)
+            with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+                 mock.patch.object(m.json, 'loads', side_effect=parse):
+                with self.assertRaisesRegex(m.GateError, 'resource_sample_deadline_exceeded'):
+                    life.sample()
+            self.assertEqual(life.samples, [])
+            self.assertEqual(life.resource_failure['operation'], 'inspect_owned_containers')
+            self.assertEqual(life.resource_failure['steps'][-1]['result'], 'failed')
+
     def test_actual_volume_stop_line_rejects_equal_threshold(self):
         with tempfile.TemporaryDirectory() as directory:
             for allocated in (m.VOLUME_STOP, m.VOLUME_STOP + 4096):
                 life, _ = self.sample_lifecycle(directory, allocated)
                 with mock.patch.object(m.time, 'monotonic', return_value=1), self.assertRaises(m.GateError):
                     life.sample()
-                self.assertEqual(life.samples[-1]['volume_allocated_bytes'],allocated)
+                self.assertEqual(life.samples, [])
+                self.assertEqual(life.resource_failure['measured_resources']['volume_allocated_bytes'], allocated)
             life, calls = self.sample_lifecycle(directory, m.VOLUME_STOP - 4096)
             with mock.patch.object(m.time, 'monotonic', return_value=1):
                 life.sample()
@@ -651,6 +745,140 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
                 life.monitor()
             stop.wait.assert_called_once()
             self.assertLessEqual(stop.wait.call_args.args[0], 3)
+
+
+class LocalTraceCommandBudgetTests(unittest.TestCase):
+    def test_other_threads_do_not_inherit_observer_deadline_or_diagnostics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life = bare_lifecycle(directory)
+            life.sample_thread_id = -1
+            life.sample_deadline = 0
+            life.sample_step = {'commands': []}
+            process = mock.Mock(pid=654321, returncode=0)
+            process.poll.return_value = 0
+            with mock.patch.object(m.time, 'monotonic', return_value=1), \
+                 mock.patch.object(m.subprocess, 'Popen', return_value=process):
+                self.assertEqual(life.command(['synthetic-product-command']), '')
+            self.assertEqual(life.sample_step['commands'], [])
+
+    def test_process_creation_counts_towards_command_deadline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life = bare_lifecycle(directory)
+            clock = [0.0]
+            process = mock.Mock(pid=654321, returncode=0)
+            process.poll.return_value = 0
+            def start(*args, **kwargs): clock[0] = 4.01; return process
+            with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+                 mock.patch.object(m.subprocess, 'Popen', side_effect=start):
+                with self.assertRaisesRegex(m.GateError, 'command_deadline_exceeded'):
+                    life.command(['synthetic-owned-command'], timeout=4)
+
+    def test_output_processing_cannot_pass_after_deadline(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryFile() as output:
+            life = bare_lifecycle(directory)
+            clock = [0.0]
+            process = mock.Mock(pid=654321, returncode=0)
+            process.poll.return_value = 0
+            wrapped = mock.Mock(wraps=output)
+            def read(): clock[0] = 4.01; return output.read()
+            wrapped.read.side_effect = read
+            context = mock.MagicMock()
+            context.__enter__.return_value = wrapped
+            with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+                 mock.patch.object(m.subprocess, 'Popen', return_value=process), \
+                 mock.patch.object(m.tempfile, 'TemporaryFile', return_value=context):
+                with self.assertRaisesRegex(m.GateError, 'command_deadline_exceeded'):
+                    life.command(['synthetic-owned-command'], timeout=4)
+
+    def test_wait_returns_on_child_exit_without_fixed_sleep(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life = bare_lifecycle(directory)
+            clock = [0.0]
+            process = mock.Mock(pid=654321, returncode=0)
+            process.poll.return_value = None
+            def wait(**kwargs):
+                self.assertGreater(kwargs['timeout'], 0)
+                self.assertLessEqual(kwargs['timeout'], .05)
+                clock[0] += .004
+                process.poll.return_value = 0
+            process.wait.side_effect = wait
+            with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+                 mock.patch.object(m.subprocess, 'Popen', return_value=process), \
+                 mock.patch.object(m.time, 'sleep', side_effect=AssertionError('fixed sleep forbidden')):
+                self.assertEqual(life.command(['synthetic-owned-command']), '')
+            process.wait.assert_called_once()
+            self.assertEqual(clock[0], .004)
+
+    def test_guard_failure_interrupts_wait_and_reaps_child(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life = bare_lifecycle(directory)
+            process = mock.Mock(pid=654321, returncode=0)
+            process.poll.return_value = None
+            calls = []
+            def wait(**kwargs):
+                calls.append(kwargs['timeout'])
+                if len(calls) == 1:
+                    life.failure = 'owned_volume_stop_line_reached'
+                    raise m.subprocess.TimeoutExpired('private', kwargs['timeout'])
+                process.poll.return_value = 0
+            process.wait.side_effect = wait
+            with mock.patch.object(m.time, 'monotonic', return_value=1), \
+                 mock.patch.object(m.subprocess, 'Popen', return_value=process), \
+                 mock.patch.object(m.time, 'sleep', side_effect=AssertionError('fixed sleep forbidden')), \
+                 mock.patch.object(m.os, 'killpg') as kill:
+                with self.assertRaisesRegex(m.GateError, 'owned_volume_stop_line_reached'):
+                    life.command(['synthetic-owned-command'])
+            self.assertLessEqual(calls[0], .05)
+            kill.assert_called_once_with(process.pid, signal.SIGTERM)
+            self.assertEqual(calls[1], 1)
+
+    def test_sample_command_timings_never_expose_command_or_environment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life = bare_lifecycle(directory)
+            life.env = {'PRIVATE-ENV': 'PRIVATE-TOKEN'}
+            life.owned = lambda kind, **kw: life.command(['PRIVATE-COMMAND'], guarded=False, **kw).split()
+            clock = [0.0]
+            process = mock.Mock(pid=654321, returncode=0)
+            process.poll.return_value = 0
+            def start(*args, **kwargs): clock[0] += .01; return process
+            with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+                 mock.patch.object(m.subprocess, 'Popen', side_effect=start):
+                life.sample()
+            commands = [command for step in life.samples[-1]['steps'] for command in step['commands']]
+            self.assertEqual(len(commands), 2)
+            self.assertTrue(all(command['spawn_seconds'] == .01 for command in commands))
+            self.assertNotIn('PRIVATE', json.dumps(life.samples))
+
+    def test_timeout_keeps_spawn_wait_and_cleanup_costs_without_success_sample(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life = bare_lifecycle(directory)
+            clock = [0.0]
+            process = mock.Mock(pid=654321, returncode=0)
+            process.poll.return_value = None
+            def start(*args, **kwargs): clock[0] = .01; return process
+            def wait(**kwargs):
+                if kwargs['timeout'] <= .05:
+                    clock[0] = 4
+                    raise m.subprocess.TimeoutExpired('PRIVATE-COMMAND', kwargs['timeout'])
+                clock[0] += .2
+                process.poll.return_value = 0
+            process.wait.side_effect = wait
+            with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]), \
+                 mock.patch.object(m.subprocess, 'Popen', side_effect=start), \
+                 mock.patch.object(m.os, 'killpg') as kill:
+                life.monitor()
+            failure = life.resource_failure
+            self.assertEqual(failure['error_code'], 'resource_sample_deadline_exceeded')
+            command = failure['steps'][-1]['commands'][-1]
+            self.assertEqual(command['result'], 'failed')
+            self.assertEqual(command['spawn_seconds'], .01)
+            self.assertEqual(command['wait_seconds'], 3.99)
+            self.assertEqual(command['cancel_cleanup_seconds'], .2)
+            self.assertEqual(failure['sample_duration_seconds'], 4.2)
+            self.assertEqual(failure['steps'][-1]['processing_seconds'], 0)
+            self.assertNotIn('PRIVATE', json.dumps(failure))
+            self.assertEqual(life.samples, [])
+            kill.assert_called_once_with(process.pid, signal.SIGTERM)
 
 
 class LocalTraceCleanupTests(unittest.TestCase):
@@ -825,15 +1053,13 @@ class LocalTraceCleanupTests(unittest.TestCase):
             life = bare_lifecycle(directory)
             process = mock.Mock(pid=654321)
             process.poll.return_value = None
-            process.wait.return_value = 0
-            with mock.patch.object(m.time, 'monotonic', return_value=1), mock.patch.object(m.time, 'sleep', side_effect=KeyboardInterrupt), \
+            process.wait.side_effect = [KeyboardInterrupt, m.subprocess.TimeoutExpired('owned', 1), 0]
+            with mock.patch.object(m.time, 'monotonic', return_value=1), \
                  mock.patch.object(m.subprocess, 'Popen', return_value=process), mock.patch.object(m.os, 'killpg') as kill:
                 with self.assertRaises(KeyboardInterrupt):
                     life.command(['synthetic-owned-command'])
-            kill.assert_called()
-            self.assertEqual(kill.call_args.args[0], process.pid)
-            self.assertIn(kill.call_args.args[1], (signal.SIGTERM, signal.SIGKILL))
-            process.wait.assert_called()
+            self.assertEqual(kill.call_args_list, [mock.call(process.pid, signal.SIGTERM), mock.call(process.pid, signal.SIGKILL)])
+            self.assertEqual(process.wait.call_count, 3)
 
 
 if __name__ == '__main__':

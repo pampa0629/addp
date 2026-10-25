@@ -7,6 +7,7 @@ runs a capacity model. Product images and Compose contracts remain authoritative
 from __future__ import annotations
 
 import base64
+from contextlib import contextmanager
 import copy
 import hashlib
 import importlib
@@ -291,6 +292,7 @@ class Lifecycle:
         self.sampler_volumes = ()
         self.sampler_started = False
         self.sample_deadline = None
+        self.sample_thread_id = None
         self.checkout = self.work / 'source'
 
     def check(self):
@@ -308,43 +310,87 @@ class Lifecycle:
             time.sleep(min(.1, max(0, deadline-time.monotonic())))
 
     def command(self, args, *, env=None, cwd=None, data=None, timeout=600, guarded=True):
-        if guarded:
-            require(time.monotonic() - self.started < MAX_SECONDS, 'total_deadline_exceeded')
-            require(self.failure is None, self.failure or 'resource_guard_failed')
-        with tempfile.TemporaryFile() as output:
-            p = subprocess.Popen(args, cwd=cwd or self.checkout if self.checkout.exists() else ROOT,
-                                 env=env or self.env, stdin=subprocess.PIPE if data is not None else subprocess.DEVNULL,
-                                 stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
-            try:
-                if data is not None:
-                    p.stdin.write(data.encode() if isinstance(data, str) else data)
-                    p.stdin.close()
-                deadline = time.monotonic() + timeout
-                while p.poll() is None:
-                    if time.monotonic() > deadline or guarded and (self.failure or time.monotonic() - self.started > MAX_SECONDS):
-                        raise GateError(self.failure or 'command_deadline_exceeded')
-                    time.sleep(.05)
-            finally:
-                if p.poll() is None:
-                    os.killpg(p.pid, signal.SIGTERM)
+        began = time.monotonic()
+        deadline = began + timeout
+        # The product command thread must not inherit the observer's deadline or
+        # write into its diagnostics while both threads run concurrently.
+        sampling = self.sample_thread_id == threading.get_ident()
+        if sampling:
+            deadline = min(deadline, self.sample_deadline)
+        timing = dict.fromkeys(('spawn_seconds', 'wait_seconds', 'output_seconds', 'cancel_cleanup_seconds'), 0.0)
+        timing['result'] = 'failed'
+        if sampling:
+            self.sample_step['commands'].append(timing)
+
+        def check_deadline():
+            now = time.monotonic()
+            if guarded:
+                require(self.failure is None, self.failure or 'resource_guard_failed')
+                require(now - self.started < MAX_SECONDS, 'total_deadline_exceeded')
+            require(now < deadline, 'command_deadline_exceeded')
+
+        try:
+            check_deadline()
+            with tempfile.TemporaryFile() as output:
+                spawn = time.monotonic()
+                try:
+                    p = subprocess.Popen(args, cwd=cwd or self.checkout if self.checkout.exists() else ROOT,
+                                         env=env or self.env, stdin=subprocess.PIPE if data is not None else subprocess.DEVNULL,
+                                         stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+                finally:
+                    timing['spawn_seconds'] = round(time.monotonic()-spawn, 6)
+                try:
+                    check_deadline()
+                    waiting = time.monotonic()
                     try:
-                        p.wait(timeout=1)
-                    except subprocess.TimeoutExpired:
-                        os.killpg(p.pid, signal.SIGKILL)
-                        p.wait(timeout=1)
-            output.seek(0)
-            raw = output.read()
-        if p.returncode:
-            # Keep only an input hash and authored code. Raw output may carry login/SQL details.
-            self.last_failure = {'exit_code': p.returncode, 'output_sha256': hashlib.sha256(raw).hexdigest()}
-            self.last_failure['diagnostic_markers']=diagnostic_markers(raw)
-            if self.phase.startswith('product_image_'):
-                self.last_failure['public_build']=public_build_failure_diagnostic(raw)
-            if args[0] == 'du':
-                diagnostics=[line for line in raw.decode(errors='replace').splitlines() if not re.fullmatch(r'\d+\s+.+',line)]
-                self.last_failure['du_missing_file'] = bool(diagnostics) and all(line.startswith('du:') and line.endswith('No such file or directory') for line in diagnostics)
-            raise GateError('command_failed_' + str(p.returncode))
-        return raw.decode(errors='replace')
+                        if data is not None:
+                            p.stdin.write(data.encode() if isinstance(data, str) else data)
+                            p.stdin.close()
+                        while True:
+                            check_deadline()
+                            try:
+                                p.wait(timeout=min(.05, deadline-time.monotonic()))
+                                break
+                            except subprocess.TimeoutExpired:
+                                continue
+                    finally:
+                        timing['wait_seconds'] = round(time.monotonic()-waiting, 6)
+                    check_deadline()
+                finally:
+                    if p.poll() is None:
+                        cleanup = time.monotonic()
+                        try:
+                            os.killpg(p.pid, signal.SIGTERM)
+                            try:
+                                p.wait(timeout=1)
+                            except subprocess.TimeoutExpired:
+                                os.killpg(p.pid, signal.SIGKILL)
+                                p.wait(timeout=1)
+                        finally:
+                            timing['cancel_cleanup_seconds'] = round(time.monotonic()-cleanup, 6)
+                reading = time.monotonic()
+                try:
+                    output.seek(0)
+                    raw = output.read()
+                    text = raw.decode(errors='replace')
+                finally:
+                    timing['output_seconds'] = round(time.monotonic()-reading, 6)
+                check_deadline()
+            if p.returncode:
+                # Raw output may carry login/SQL details. Export closed fields only.
+                self.last_failure = {'exit_code': p.returncode, 'output_sha256': hashlib.sha256(raw).hexdigest(),
+                                     'diagnostic_markers': diagnostic_markers(raw)}
+                if self.phase.startswith('product_image_'):
+                    self.last_failure['public_build']=public_build_failure_diagnostic(raw)
+                if args[0] == 'du':
+                    diagnostics=[line for line in text.splitlines() if not re.fullmatch(r'\d+\s+.+',line)]
+                    self.last_failure['du_missing_file'] = bool(diagnostics) and all(line.startswith('du:') and line.endswith('No such file or directory') for line in diagnostics)
+                raise GateError('command_failed_' + str(p.returncode))
+            check_deadline()
+            timing['result'] = 'passed'
+            return text
+        finally:
+            timing['duration_seconds'] = round(time.monotonic()-began, 6)
 
     def docker(self, *args, **kw):
         if args and args[0]=='run' and LABEL+'.role=oneshot' in args:
@@ -389,16 +435,55 @@ class Lifecycle:
         self.sampler_volumes=volumes
 
     def sample(self):
+        waiting = time.monotonic()
         with self.sample_lock:
-            began=time.monotonic()
+            self.sample_began = time.monotonic()
+            self.sample_deadline = self.sample_began + 4
+            self.sample_thread_id = threading.get_ident()
+            self.sample_phase = self.phase
+            self.sample_steps = []
+            self.sample_counts = {'container_count': None, 'volume_count': None}
+            self.sample_measured = {}
+            self.sample_lock_wait = self.sample_began - waiting
             try:
                 return self._sample()
             except Exception as error:
                 self.resource_failure={'operation':getattr(self,'sample_operation','admission'),
                     'error_code':str(error) if isinstance(error,GateError) else 'resource_sample_failed',
                     'elapsed_seconds':round(time.monotonic()-self.started,2),
-                    'sample_duration_seconds':round(time.monotonic()-began,3),'exception_type':type(error).__name__}
+                    **self.sample_diagnostics(), 'measured_resources': self.sample_measured,
+                    'exception_type':type(error).__name__}
+                if hasattr(self,'measurement_failure'):
+                    self.resource_failure['measurement'] = self.measurement_failure
                 raise
+            finally:
+                self.sample_thread_id = None
+                self.sample_deadline = None
+
+    def sample_diagnostics(self):
+        return {'phase': self.sample_phase, 'budget_seconds': 4,
+                'sample_duration_seconds': round(time.monotonic()-self.sample_began, 6),
+                'lock_wait_seconds': round(self.sample_lock_wait, 6),
+                **self.sample_counts, 'steps': self.sample_steps}
+
+    @contextmanager
+    def measure_step(self, operation):
+        self.sample_operation = operation
+        began = time.monotonic()
+        self.sample_step = {'operation': operation, 'commands': [], 'result': 'failed'}
+        self.sample_steps.append(self.sample_step)
+        try:
+            yield
+            require(time.monotonic() < self.sample_deadline, 'resource_sample_deadline_exceeded')
+            if self.sample_step['result'] != 'retry':
+                self.sample_step['result'] = 'passed'
+        except BaseException:
+            self.sample_step['result'] = 'failed'
+            raise
+        finally:
+            self.sample_step['duration_seconds'] = round(time.monotonic()-began, 6)
+            self.sample_step['processing_seconds'] = round(max(0, self.sample_step['duration_seconds'] -
+                sum(command['duration_seconds'] for command in self.sample_step['commands'])), 6)
 
     def stop_builder(self):
         before=json.loads(self.docker('inspect',*sorted(self.builder_ids)))
@@ -411,71 +496,82 @@ class Lifecycle:
         validate_resources(rows,self.builder_ids)
 
     def _sample(self):
-        began = time.monotonic()
-        deadline = began+4
         retries={'volume':0,'private':0}
         if hasattr(self,'measurement_failure'):del self.measurement_failure
         def remaining():
-            value=deadline-time.monotonic()
+            value=self.sample_deadline-time.monotonic()
             require(value>0, 'resource_sample_deadline_exceeded')
             return value
-        self.sample_operation = 'list_owned_containers'
-        if self.builder_created and not self.builder_ids:
-            self.builder_ids.update(self.docker('ps','-aq','--filter','name=^buildx_buildkit_'+self.builder+'0$',guarded=False,timeout=remaining()).split())
-        ids = set(self.owned('container', timeout=remaining())) | self.builder_ids
-        self.sample_operation = 'inspect_owned_containers'
-        rows = json.loads(self.docker('inspect', *sorted(ids), guarded=False, timeout=remaining())) if ids else []
-        try:
-            cpu, memory = validate_resources(rows, self.builder_ids if self.builder_stopped else ())
-        except GateError:
-            self.failed_container_states=[{'id':r['Id'],'service':(r.get('Config',{}).get('Labels') or {}).get('com.docker.compose.service'),
-                'status':r['State'].get('Status'),'exit_code':r['State'].get('ExitCode'),'oom':r['State'].get('OOMKilled')} for r in rows]
-            raise
-        self.sample_operation = 'list_owned_volumes'
-        volumes = self.owned('volume', timeout=remaining())
-        if self.builder_ids:
-            for row in rows:
-                if row['Id'] in self.builder_ids:
-                    builder_volumes = [m['Name'] for m in row.get('Mounts', []) if m['Type'] == 'volume']
-                    self.builder_volumes.update(builder_volumes)
-                    volumes += builder_volumes
+        with self.measure_step('list_owned_containers'):
+            if self.builder_created and not self.builder_ids:
+                self.builder_ids.update(self.docker('ps','-aq','--filter','name=^buildx_buildkit_'+self.builder+'0$',guarded=False,timeout=remaining()).split())
+            ids = set(self.owned('container', timeout=remaining())) | self.builder_ids
+            self.sample_counts['container_count'] = len(ids)
+        with self.measure_step('inspect_owned_containers'):
+            rows = json.loads(self.docker('inspect', *sorted(ids), guarded=False, timeout=remaining())) if ids else []
+            remaining()
+        with self.measure_step('validate_container_states'):
+            try:
+                cpu, memory = validate_resources(rows, self.builder_ids if self.builder_stopped else ())
+            except GateError:
+                self.failed_container_states=[{'id':r['Id'],'service':(r.get('Config',{}).get('Labels') or {}).get('com.docker.compose.service'),
+                    'status':r['State'].get('Status'),'exit_code':r['State'].get('ExitCode'),'oom':r['State'].get('OOMKilled')} for r in rows]
+                raise
+            remaining()
+            self.sample_measured.update(cpu_hard_limit=cpu, memory_hard_limit_bytes=memory)
+        with self.measure_step('list_owned_volumes'):
+            volumes = self.owned('volume', timeout=remaining())
+            if self.builder_ids:
+                for row in rows:
+                    if row['Id'] in self.builder_ids:
+                        builder_volumes = [m['Name'] for m in row.get('Mounts', []) if m['Type'] == 'volume']
+                        self.builder_volumes.update(builder_volumes)
+                        volumes += builder_volumes
+            volumes = tuple(sorted(set(volumes)))
+            self.sample_counts['volume_count'] = len(volumes)
         total = 0
         if volumes:
             # Keep Docker create/start outside repeated du measurements. Rebuild
             # this owned read-only helper only when its exact mount set changes.
-            volumes = tuple(sorted(set(volumes)))
             if volumes != self.sampler_volumes:
-                self.sample_operation = 'prepare_volume_sampler'
-                if self.sampler_started:
-                    self.docker('rm','-fv',self.run_id+'-space',guarded=False,timeout=remaining())
-                    self.sampler_started = False
-                self.prepare_volume_sampler(volumes,timeout=remaining())
-            self.sample_operation = 'measure_owned_volumes'
+                with self.measure_step('prepare_volume_sampler'):
+                    if self.sampler_started:
+                        self.docker('rm','-fv',self.run_id+'-space',guarded=False,timeout=remaining())
+                        self.sampler_started = False
+                    self.prepare_volume_sampler(volumes,timeout=remaining())
             while True:
-                measured = self.docker('exec',self.run_id+'-space','/bin/sh','-ec',
-                    'du -sk /space/* | awk \'{s+=$1} END {print s*1024}\'',guarded=False,timeout=remaining()).strip()
-                lines=measured.splitlines()
-                if len(lines)==1 and re.fullmatch(r'\d+(?:\.\d+)?(?:[eE][+]?[0-9]+)?',measured):
-                    total=int(float(measured));break
-                self.measurement_failure = {'output_sha256':hashlib.sha256(measured.encode()).hexdigest(),
-                    'line_count':len(lines),'du_diagnostic':any(line.startswith('du:') for line in lines)}
-                diagnostics=[line for line in lines if not re.fullmatch(r'\d+(?:\.\d+)?(?:[eE][+]?[0-9]+)?',line)]
-                if diagnostics and all(line.startswith('du:') and line.endswith('No such file or directory') for line in diagnostics):
-                    retries['volume']+=1;remaining();continue
-                raise GateError('owned_volume_measurement_invalid') from None
-        self.sample_operation = 'measure_private_bindings'
+                with self.measure_step('measure_owned_volumes'):
+                    measured = self.docker('exec',self.run_id+'-space','/bin/sh','-ec',
+                        'du -sk /space/* | awk \'{s+=$1} END {print s*1024}\'',guarded=False,timeout=remaining()).strip()
+                    lines=measured.splitlines()
+                    if len(lines)==1 and re.fullmatch(r'\d+(?:\.\d+)?(?:[eE][+]?[0-9]+)?',measured):
+                        total=int(float(measured));remaining();break
+                    self.measurement_failure = {'output_sha256':hashlib.sha256(measured.encode()).hexdigest(),
+                        'line_count':len(lines),'du_diagnostic':any(line.startswith('du:') for line in lines)}
+                    diagnostics=[line for line in lines if not re.fullmatch(r'\d+(?:\.\d+)?(?:[eE][+]?[0-9]+)?',line)]
+                    if diagnostics and all(line.startswith('du:') and line.endswith('No such file or directory') for line in diagnostics):
+                        self.sample_step['result'] = 'retry'
+                        retries['volume']+=1;remaining();continue
+                    raise GateError('owned_volume_measurement_invalid') from None
         while True:
-            try:
-                total += self.owned_bind_bytes(timeout=remaining());break
-            except GateError:
-                if not getattr(self,'last_failure',{}).get('du_missing_file'):raise
-                retries['private']+=1;remaining()
+            with self.measure_step('measure_private_bindings'):
+                try:
+                    total += self.owned_bind_bytes(timeout=remaining());remaining();break
+                except GateError:
+                    if not getattr(self,'last_failure',{}).get('du_missing_file'):raise
+                    self.sample_step['result'] = 'retry'
+                    retries['private']+=1;remaining()
         if hasattr(self,'measurement_failure'):del self.measurement_failure
         if getattr(self,'last_failure',{}).get('du_missing_file'):del self.last_failure
-        now = time.monotonic()
-        self.samples.append({'elapsed_seconds': round(now-self.started, 2), 'sample_duration_seconds': round(now-began, 3), 'cpu_hard_limit': cpu,
-                             'memory_hard_limit_bytes': memory, 'volume_allocated_bytes': total,'complete_scan_retries':retries})
-        require(total < VOLUME_STOP, 'owned_volume_stop_line_reached')
+        self.sample_measured['volume_allocated_bytes'] = total
+        with self.measure_step('final_validation'):
+            require(total < VOLUME_STOP, 'owned_volume_stop_line_reached')
+            remaining()
+        sample = {'elapsed_seconds': round(time.monotonic()-self.started, 2), **self.sample_diagnostics(),
+                  'cpu_hard_limit': cpu, 'memory_hard_limit_bytes': memory,
+                  'volume_allocated_bytes': total, 'complete_scan_retries': retries}
+        remaining()
+        self.samples.append(sample)
 
     def monitor(self):
         while not self.stop.is_set():
@@ -487,11 +583,12 @@ class Lifecycle:
                 self.failure = str(error) if isinstance(error, GateError) else 'resource_sample_failed'
                 if self.failure == 'command_deadline_exceeded':
                     self.failure = 'resource_sample_deadline_exceeded'
-                self.resource_failure = {'operation':getattr(self,'sample_operation','admission'),
-                    'error_code':self.failure,'elapsed_seconds':round(time.monotonic()-self.started,2),
-                    'sample_duration_seconds':round(time.monotonic()-began,3), 'exception_type':type(error).__name__}
-                if hasattr(self,'measurement_failure'):
-                    self.resource_failure['measurement']=self.measurement_failure
+                if hasattr(self,'resource_failure'):
+                    self.resource_failure['error_code'] = self.failure
+                else:
+                    self.resource_failure = {'operation':getattr(self,'sample_operation','admission'),
+                        'error_code':self.failure,'elapsed_seconds':round(time.monotonic()-self.started,2),
+                        'sample_duration_seconds':round(time.monotonic()-began,3), 'exception_type':type(error).__name__}
                 return
             self.stop.wait(max(0, 4-time.monotonic()+began))
 
