@@ -3427,3 +3427,298 @@ def test_split_line_all_metadata_and_async_workflow_use_explicit_scope(tmp_path,
             time.sleep(.01)
         assert state['status']=='success',state
         assert len(json.loads(state['result'])['features'])==3
+
+def normalized_lines(frame, id_field='route_key'):
+    return get_operator('normalize_line_network')(frame,id_field)
+
+
+def test_normalize_line_network_exact_edges_and_lossless_occurrence_attributes():
+    frame=line_overlap_frame([LineString([(0,0),(4,0),(4,2)]),LineString([(3,0),(1,0)]),LineString([(2,-1),(2,1)])],
+        pd.Series([2**60+1,2**60+2,2**60+3],dtype='Int64'))
+    frame['note']=pd.Series(['主路',None,'cross'],dtype='string');frame['grade']=pd.Series([7,None,9],dtype='Int64')
+    frame['enabled']=pd.Series([True,None,False],dtype='boolean');frame['kind']=pd.Categorical(['a','b','a'])
+    frame.index=pd.Index([7,7,-2],name='original');before=frame.copy(deep=True)
+    result,members=normalized_lines(frame).values()
+    expected=[[(0,0),(1,0)],[(1,0),(2,0)],[(2,0),(3,0)],[(3,0),(4,0)],[(4,0),(4,2)],[(2,-1),(2,0)],[(2,0),(2,1)]]
+    assert list(result.columns)==['boundary','edge_id','occurrence_count']
+    assert [list(g.coords) for g in result.geometry]==expected
+    assert result.edge_id.tolist()==list(range(1,8)) and result.occurrence_count.tolist()==[1,2,2,1,1,1,1]
+    assert members.edge_id.tolist()==[1,2,3,4,5,3,2,6,7]
+    assert members.source_part_no.tolist()==[1]*9 and members.source_segment_no.tolist()==[1,1,1,1,2,1,1,1,1]
+    assert members.piece_no.tolist()==[1,2,3,4,1,1,2,1,2] and members.is_reversed.tolist()==[False]*5+[True]*2+[False]*2
+    sources=[0]*5+[1]*2+[2]*2
+    attributes=frame.iloc[sources].reset_index(drop=True).drop(columns='boundary')
+    pd.testing.assert_frame_equal(members[attributes.columns],attributes)
+    assert members.source_id.tolist()==frame.route_key.iloc[sources].tolist()
+    assert members.source_id.dtype==frame.route_key.dtype
+    assert list(members.columns)==list(frame.columns)+['edge_id','source_id','source_part_no','source_segment_no','piece_no','is_reversed']
+    for name in ('edge_id','source_part_no','source_segment_no','piece_no'):assert members[name].dtype=='int64'
+    assert members.is_reversed.dtype=='bool' and result.occurrence_count.dtype==result.edge_id.dtype=='int64'
+    for piece,edge_id,reverse in zip(members.geometry,members.edge_id,members.is_reversed):
+        points=list(result.geometry.iloc[edge_id-1].coords)
+        assert list(piece.coords)==(points[::-1] if reverse else points)
+    for value in (result,members):assert value.crs==frame.crs and value.index.equals(pd.RangeIndex(len(value)))
+    assert_geodataframe_equal(frame,before)
+
+
+def test_normalize_line_network_repeated_original_segments_and_sampling_are_not_lost():
+    frame=line_overlap_frame([MultiLineString([[(0,0),(2,0),(0,0)],[(2,0),(0,0)]]),LineString([(0,0),(1,0),(2,0)])],['重复','细分'])
+    result,members=normalized_lines(frame).values()
+    assert [list(g.coords) for g in result.geometry]==[[(0,0),(1,0)],[(1,0),(2,0)]]
+    assert result.occurrence_count.tolist()==[4,4]
+    assert members.edge_id.tolist()==[1,2,2,1,2,1,1,2]
+    assert members.source_id.tolist()==['重复']*6+['细分']*2
+    assert members.source_part_no.tolist()==[1]*4+[2]*2+[1]*2
+    assert members.source_segment_no.tolist()==[1,1,2,2,1,1,1,2]
+    assert members.piece_no.tolist()==[1,2,1,2,1,2,1,1]
+    assert members.is_reversed.tolist()==[False,False,True,True,True,True,False,False]
+
+
+@pytest.mark.parametrize('reverse',[False,True])
+def test_normalize_line_network_internal_and_cross_feature_points_with_retracing(reverse):
+    vertices=[(0,0),(4,4),(0,4),(4,0),(0,0)]
+    if reverse:vertices.reverse()
+    frame=line_overlap_frame([LineString(vertices),LineString([(1,-1),(1,5)]),LineString([(0,4),(4,4)])])
+    result,members=normalized_lines(frame).values()
+    assert len(result)==15 and len(members)==17
+    assert sum(result.occurrence_count)==len(members)
+    for source_no,part in [(0,vertices),(1,[(1,-1),(1,5)]),(2,[(0,4),(4,4)])]:
+        source_members=members[members.source_id==source_no]
+        for original_no,(start,end) in enumerate(zip(part,part[1:]),1):
+            pieces=source_members[source_members.source_segment_no==original_no]
+            assert list(pieces.geometry.iloc[0].coords)[0]==start
+            assert list(pieces.geometry.iloc[-1].coords)[-1]==end
+            assert pieces.piece_no.tolist()==list(range(1,len(pieces)+1))
+            assert all(a.coords[-1]==b.coords[0] for a,b in zip(pieces.geometry,pieces.geometry.iloc[1:]))
+    # No positive overlap or interior crossing survives among unique edges.
+    for a,shape in enumerate(result.geometry):
+        for other in result.geometry.iloc[a+1:]:
+            crossing=shapely.intersection(shape,other)
+            assert crossing.is_empty or crossing.geom_type=='Point'
+            if not crossing.is_empty:
+                point=(crossing.x,crossing.y)
+                assert point in shape.coords and point in other.coords
+
+
+@pytest.mark.parametrize('crs',['EPSG:3857','EPSG:2263'])
+def test_normalize_line_network_original_vertices_micro_overlap_and_nearby_lines(crs):
+    tiny=2**-40
+    frame=line_overlap_frame([LineString([(-2**50,0),(0,0),(1,0)]),LineString([(2*tiny,0),(tiny,0)]),
+        LineString([(0,tiny),(1,tiny)]),LineString([(1+tiny,0),(2,0)])],crs=crs)
+    result,members=normalized_lines(frame).values()
+    assert [list(g.coords) for g in result.geometry]==[[(-2**50,0),(0,0)],[(0,0),(tiny,0)],[(tiny,0),(2*tiny,0)],[(2*tiny,0),(1,0)],[(0,tiny),(1,tiny)],[(1+tiny,0),(2,0)]]
+    assert result.occurrence_count.tolist()==[1,1,2,1,1,1]
+    assert members.edge_id.tolist()==[1,2,3,4,3,5,6] and members.is_reversed.tolist()==[False]*4+[True,False,False]
+    assert result.crs==members.crs==frame.crs
+
+
+def test_normalize_line_network_zero_original_segments_keep_ordinal_gaps():
+    frame=line_overlap_frame([LineString([(0,0),(0,0),(1,0),(1,0),(2,0),(2,0)])])
+    before=frame.geometry.to_wkb().tolist();result,members=normalized_lines(frame).values()
+    assert members.source_segment_no.tolist()==[2,4] and members.piece_no.tolist()==[1,1]
+    assert [list(g.coords) for g in result.geometry]==[[(0,0),(1,0)],[(1,0),(2,0)]]
+    assert frame.geometry.to_wkb().tolist()==before
+
+
+def test_normalize_line_network_closed_paths_are_edges_without_implicit_chain_merging():
+    frame=line_overlap_frame([LineString([(0,0),(2,0),(2,2),(0,0)]),LineString([(0,0),(2,2),(2,0),(0,0)])])
+    result,members=normalized_lines(frame).values()
+    assert len(result)==3 and result.occurrence_count.tolist()==[2]*3
+    assert all(len(g.coords)==2 for g in result.geometry)
+    assert members.edge_id.tolist()==[1,2,3,3,2,1]
+    assert members.is_reversed.tolist()==[False,False,True,False,True,True]
+
+
+def test_normalize_line_network_candidate_order_does_not_change_identifiers(monkeypatch):
+    import operators.geometric_operators as module
+    frame=line_overlap_frame([LineString([(4,0),(0,0)]),LineString([(1,-1),(1,1)]),LineString([(3,0),(1,0)])])
+    expected=normalized_lines(frame);original=module.shapely.STRtree
+    class ReversedCandidates:
+        def __init__(self,shapes):self.tree=original(shapes)
+        def query(self,*args,**kwargs):return self.tree.query(*args,**kwargs)[::-1]
+    monkeypatch.setattr(module.shapely,'STRtree',ReversedCandidates)
+    for name,value in normalized_lines(frame).items():assert_geodataframe_equal(value,expected[name])
+
+
+@pytest.mark.parametrize('ids',[pd.Series(['甲'],dtype='string'),pd.Series([2**60+1],dtype='Int64'),pd.Series([True],dtype='boolean'),pd.Series(pd.Categorical(['a']))])
+@pytest.mark.parametrize('empty',[False,True])
+def test_normalize_line_network_empty_and_nonempty_full_source_schema(ids,empty):
+    frame=line_overlap_frame([LineString([(0,0),(1,0)])],ids);frame['tag']=pd.Series([None],dtype='string')
+    if empty:frame=frame.iloc[:0]
+    result,members=normalized_lines(frame).values()
+    assert len(result)==len(members)==len(frame) and members.source_id.dtype==frame.route_key.dtype
+    for name in frame.columns:assert members[name].dtype==frame[name].dtype
+    assert result.geometry.name==members.geometry.name=='boundary' and result.crs==members.crs==frame.crs
+    assert result.edge_id.dtype==result.occurrence_count.dtype==members.source_part_no.dtype==members.source_segment_no.dtype==members.piece_no.dtype=='int64'
+    assert members.is_reversed.dtype=='bool'
+
+
+@pytest.mark.parametrize('name',['edge_id','occurrence_count','source_id','source_part_no','source_segment_no','piece_no','is_reversed'])
+def test_normalize_line_network_output_fields_never_overwrite_source(name):
+    frame=line_overlap_frame([LineString([(0,0),(1,0)])]);frame[name]=1
+    before=frame.copy(deep=True)
+    with pytest.raises(ValueError,match='output'):normalized_lines(frame)
+    assert_geodataframe_equal(frame,before)
+
+
+@pytest.mark.parametrize('ids',[[None],[' '],[1,1],[[1]],[{'a':1}]])
+def test_normalize_line_network_requires_unique_explicit_source_id(ids):
+    frame=line_overlap_frame([LineString([(i,0),(i+1,0)]) for i in range(len(ids))],ids)
+    with pytest.raises(ValueError):normalized_lines(frame)
+
+
+@pytest.mark.parametrize('field',[None,'missing','boundary',True,[],{}])
+def test_normalize_line_network_rejects_implicit_or_geometry_source_id(field):
+    with pytest.raises(ValueError):normalized_lines(line_overlap_frame([LineString([(0,0),(1,0)])]),field)
+
+
+@pytest.mark.parametrize('shape',[None,LineString(),Point(0,0),Polygon([(0,0),(1,0),(0,1)]),LineString([(0,0),(0,0)]),
+    LineString([(0,0,1),(1,0,1)]),shapely.from_wkt('LINESTRING M (0 0 1,1 0 2)'),LineString([(0,0),(float('inf'),1)]),LineString([(0,0),(float('nan'),1)])])
+def test_normalize_line_network_rejects_invalid_nonfinite_nonxy_geometry(shape):
+    frame=line_overlap_frame([shape]);before=frame.geometry.to_wkb().tolist()
+    with pytest.raises(ValueError):normalized_lines(frame)
+    assert frame.geometry.to_wkb().tolist()==before
+
+
+@pytest.mark.parametrize('crs',[None,'EPSG:4326','EPSG:4978'])
+def test_normalize_line_network_requires_known_projected_horizontal_units(crs):
+    with pytest.raises(ValueError,match='projected'):normalized_lines(line_overlap_frame([LineString([(0,0),(1,0)])],crs=crs))
+
+
+def test_normalize_line_network_requires_real_frame_active_geometry_and_unique_columns():
+    with pytest.raises(ValueError):normalized_lines(pd.DataFrame({'route_key':[1]}))
+    frame=line_overlap_frame([LineString([(0,0),(1,0)])]);frame=pd.concat([frame,frame[['route_key']]],axis=1)
+    with pytest.raises(ValueError):normalized_lines(frame)
+    frame=gpd.GeoDataFrame({'route_key':[1],'shape':[LineString([(0,0),(1,0)])]})
+    with pytest.raises(ValueError):normalized_lines(frame)
+
+
+def test_normalize_line_network_metadata_two_ports_workflow_only(monkeypatch):
+    import api_server
+    with api_server.app.test_client() as client:
+        operators=client.get('/api/operators').get_json()['operators']
+        selected=[o for o in operators if o['id']=='normalize_line_network'];assert len(selected)==1
+        op=selected[0]
+        assert op['display_name']=='重合规整' and op['category_path']==['矢量处理','几何处理']
+        assert op['execution_modes']==['workflow'] and op['effects']==['read']
+        assert [(p['name'],p['required']) for p in op['parameters']]==[('input_gdf',True),('id_field',True)]
+        assert [(p['name'],p['type'],p['is_default']) for p in op['output_ports']]==[('result','geodataframe',True),('members','geodataframe',False)]
+        assert client.post('/api/operators/normalize_line_network/invoke',json={'params':{}}).status_code==403
+
+
+@pytest.mark.parametrize('empty',[False,True])
+def test_normalize_line_network_native_dual_save_and_independent_ogr_reload(tmp_path,empty):
+    from osgeo import ogr
+    ogr.UseExceptions()
+    frame=line_overlap_frame([LineString([(0,0),(2,0),(0,0)]),LineString([(1,0),(3,0)])],pd.Series([2**60+1,2**60+2],dtype='Int64'))
+    frame['note']=pd.Series([None,'乙'],dtype='string');frame['grade']=pd.Series([7,None],dtype='Int64');frame['enabled']=pd.Series([True,False],dtype='boolean')
+    if empty:frame=frame.iloc[:0]
+    source=tmp_path/'source.gpkg';frame.to_file(source,driver='GPKG',layer='source');original=source.read_bytes()
+    connection={'engine_type':'nfs','mount_path':str(tmp_path)}
+    # Bind dtype preservation to the actual in-memory operator input. Existing
+    # gpd.read_file promotes nullable GPKG integers to Float64; do not claim
+    # original file-schema preservation or guess it back in this operator.
+    loaded=get_operator('load')(connection_info=connection,path='source.gpkg')
+    incoming_grade_type=ogr.OFTInteger64 if loaded.grade.dtype.kind in 'iu' else ogr.OFTReal
+    tasks=[{'id':'load','operator':'load','params':{'connection_info':connection,'path':'source.gpkg'},'depends_on':[]},
+        {'id':'normal','operator':'normalize_line_network','params':{'input_gdf':{'$ref':'load'},'id_field':'route_key'},'depends_on':['load']}]
+    for port in ('result','members'):
+        ref={'$ref':'normal'} if port=='result' else {'$ref':'normal','port':port}
+        tasks.append({'id':'save_'+port,'operator':'save','params':{'input_df':ref,'connection_info':connection,'path':port+'.gpkg','mode':'fail'},'depends_on':['normal']})
+    execution=execute_workflow({'tasks':tasks});assert execution['status']=='success',execution.get('error')
+    assert set(json.loads(execution['all_results']['normal']))=={'result','members'}
+    coordinates={'result':[[(0,0),(1,0)],[(1,0),(2,0)],[(2,0),(3,0)]],
+        'members':[[(0,0),(1,0)],[(1,0),(2,0)],[(2,0),(1,0)],[(1,0),(0,0)],[(1,0),(2,0)],[(2,0),(3,0)]]}
+    for port in ('result','members'):
+        ds=ogr.Open(str(tmp_path/(port+'.gpkg')),0);layer=ds.GetLayer(0);schema=layer.GetLayerDefn();rows=list(layer)
+        assert layer.GetSpatialRef().GetAuthorityCode(None)=='3857'
+        assert [list(f.GetGeometryRef().GetPoints()) for f in rows]==([] if empty else coordinates[port])
+        fields=[f.GetName() for f in layer.schema]
+        assert fields==(['edge_id','occurrence_count'] if port=='result' else ['source_name','route_key','note','grade','enabled','edge_id','source_id','source_part_no','source_segment_no','piece_no','is_reversed'])
+        for name in (['edge_id','occurrence_count'] if port=='result' else ['route_key','grade','edge_id','source_id','source_part_no','source_segment_no','piece_no']):
+            assert schema.GetFieldDefn(schema.GetFieldIndex(name)).GetType()==(incoming_grade_type if name=='grade' else ogr.OFTInteger64)
+        if port=='members':
+            assert schema.GetFieldDefn(schema.GetFieldIndex('is_reversed')).GetSubType()==ogr.OFSTBoolean
+            if not empty:
+                assert [f.GetField('route_key') for f in rows]==[2**60+1]*4+[2**60+2]*2
+                assert [f.GetField('source_id') for f in rows]==[2**60+1]*4+[2**60+2]*2
+                assert [f.GetField('note') for f in rows]==[None]*4+['乙']*2
+                assert [f.GetField('grade') for f in rows]==[7]*4+[None]*2
+                assert [bool(f.GetField('is_reversed')) for f in rows]==[False,False,True,True,False,False]
+        elif not empty:assert [f.GetField('occurrence_count') for f in rows]==[2,3,1]
+        ds=None
+    assert source.read_bytes()==original
+
+
+def test_normalize_line_network_async_default_and_explicit_port_and_failure_no_publish(tmp_path,monkeypatch):
+    import api_server
+    frame=line_overlap_frame([LineString([(0,0),(2,0)]),LineString([(2,0),(0,0)])],['甲','乙'])
+    frame.to_file(tmp_path/'source.gpkg',driver='GPKG',layer='source');original=(tmp_path/'source.gpkg').read_bytes()
+    connection={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':'load','operator':'load','params':{'connection_info':connection,'path':'source.gpkg'},'depends_on':[]},
+        {'id':'normal','operator':'normalize_line_network','params':{'input_gdf':{'$ref':'load'},'id_field':'route_key'},'depends_on':['load']}]
+    for port in ('result','members'):
+        tasks.append({'id':port,'operator':'save','params':{'input_df':{'$ref':'normal',**({} if port=='result' else {'port':port})},'connection_info':connection,'path':port+'.gpkg','mode':'fail'},'depends_on':['normal']})
+    from addp_common.workflow_runtime import ExecutionRegistry
+    monkeypatch.setattr(api_server,'executions',ExecutionRegistry())
+    with api_server.app.test_client() as client:
+        response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}});assert response.status_code==202
+        task_id=response.get_json()['execution_id']
+        deadline=time.monotonic()+5
+        while time.monotonic()<deadline:
+            status=client.get('/api/executions/'+task_id).get_json()
+            if status['status'] in ('success','failed'):break
+            time.sleep(.02)
+        assert status['status']=='success',status
+    assert len(gpd.read_file(tmp_path/'result.gpkg'))==1 and len(gpd.read_file(tmp_path/'members.gpkg'))==2
+    assert (tmp_path/'source.gpkg').read_bytes()==original
+    tasks[1]['params']['id_field']='missing'
+    for port in ('result','members'):next(t for t in tasks if t['id']==port)['params']['path']='failed-'+port+'.gpkg'
+    failed=execute_workflow({'tasks':tasks});assert failed['status']=='failed'
+    assert not (tmp_path/'failed-result.gpkg').exists() and not (tmp_path/'failed-members.gpkg').exists()
+    assert (tmp_path/'source.gpkg').read_bytes()==original
+
+@pytest.mark.parametrize('reverse',[False,True])
+def test_normalize_line_network_nonbinary_crossing_on_exact_overlapping_segments_is_one_node(reverse):
+    parts=[[(0,0),(7,3)],[(1.75,.75),(5.25,2.25)],[(0,3),(8,-1)]]
+    if reverse:parts=[part[::-1] for part in parts]
+    frame=line_overlap_frame([LineString(part) for part in parts])
+    result,members=normalized_lines(frame).values()
+    assert len(result)==6 and len(members)==8
+    assert sorted(result.occurrence_count)==[1,1,1,1,2,2]
+    shared=[set(result.geometry.iloc[row.edge_id-1].coords) for row in members[members.source_id<2].itertuples()]
+    crosses=set(members[members.source_id==2].geometry.iloc[0].coords) & set(members[members.source_id==2].geometry.iloc[1].coords)
+    assert len(crosses)==1
+    point=next(iter(crosses))
+    assert sum(point in edge for edge in shared)==4
+
+
+def test_normalize_line_network_vertex_and_overlap_boundaries_propagate_to_every_original_occurrence():
+    frame=line_overlap_frame([LineString([(0,0),(10,0)]),LineString([(1,0),(9,0)]),LineString([(2,0),(8,0)]),
+        LineString([(3,0),(7,0)]),LineString([(4,-1),(4,1)]),LineString([(5,0),(6,0)])])
+    result,members=normalized_lines(frame).values()
+    horizontal=[list(g.coords) for g in result.geometry if g.coords[0][1]==g.coords[1][1]==0]
+    assert horizontal==[[(float(i),0),(float(i+1),0)] for i in range(10)]
+    assert result.occurrence_count.iloc[:10].tolist()==[1,2,3,4,4,5,4,3,2,1]
+    assert members.source_id.tolist().count(0)==10
+
+def test_normalize_line_network_nonbinary_overlapping_intersections_keep_one_exact_edge_identity():
+    # Different original endpoint spans may share one supporting line. All
+    # occurrences must receive the same node, without epsilon or grid snapping.
+    for x in range(1,8):
+        for y in range(1,8):
+            for multiplier in (1,3,4,5):
+                frame=line_overlap_frame([LineString([(0,0),(x,y)]),
+                    LineString([(x/4,y/4),(3*x/4,3*y/4)]),LineString([(0,y),(multiplier*x,-y)])])
+                result,members=normalized_lines(frame).values()
+                assert len(result)==6 and len(members)==8,(x,y,multiplier,[list(g.coords) for g in result.geometry])
+                assert sorted(result.occurrence_count.tolist())==[1,1,1,1,2,2]
+
+def test_normalize_line_network_result_can_be_explicitly_merged_without_attribute_or_counter_collision():
+    frame=line_overlap_frame([LineString([(0,0),(4,0)]),LineString([(1,0),(3,0)])],['甲','乙'])
+    normalized=normalized_lines(frame)
+    result=get_operator('merge_line_chains')(normalized['result'],'edge_id',[])
+    assert len(normalized['result'])==3 and len(normalized['members'])==4
+    assert [list(g.coords) for g in result['result'].geometry]==[[(0,0),(1,0),(3,0),(4,0)]]
+    assert result['members'].edge_id.tolist()==[1,2,3]
+    assert result['members'].occurrence_count.tolist()==[1,2,1]

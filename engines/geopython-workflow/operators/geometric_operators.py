@@ -594,6 +594,82 @@ def group_line_components(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.Geo
     return result
 
 
+def _ordered_segment_points(start, end, cuts):
+    """Order shared exact cuts on the original segment's dominant coordinate."""
+    axis = 0 if abs(end[0] - start[0]) >= abs(end[1] - start[1]) else 1
+    interior = sorted(cuts - {start, end}, key=lambda point: point[axis], reverse=start[axis] > end[axis])
+    return [start, *interior, end]
+
+
+def normalize_line_network(input_gdf: gpd.GeoDataFrame, id_field: str) -> dict:
+    """Node original segment occurrences and share exact edges without choosing attributes."""
+    geometry = _finite_xy_geometry(input_gdf)
+    _require_projected_xy_crs(geometry.crs)
+    ids = _source_identifiers(input_gdf, id_field)
+    _require_nonempty_valid_lines(geometry)
+    reserved = {"edge_id", "occurrence_count", "source_id", "source_part_no", "source_segment_no", "piece_no", "is_reversed"}
+    if reserved.intersection(input_gdf.columns):
+        raise ValueError("network output columns must not overwrite source fields")
+
+    segments, references, cuts = [], [], []
+    for row, shape in enumerate(geometry.array):
+        for part_no, part in enumerate(shapely.get_parts(shape), 1):
+            for segment_no, (start, end) in enumerate(pairwise(part.coords), 1):
+                if start != end:
+                    segments.append(shapely.LineString([start, end]))
+                    references.append((row, part_no, segment_no))
+                    cuts.append({start, end})
+    tree = shapely.STRtree(segments)
+    for a, segment in enumerate(segments):
+        candidates = tree.query(segment)
+        for b in np.sort(candidates[candidates > a]):
+            # Associate each shared cut directly with both original occurrences;
+            # post-union predicates cannot recover all repeated source visits.
+            for piece in _line_intersection_parts(shapely.intersection(segment, segments[b])):
+                points = {(piece.x, piece.y)} if piece.geom_type == "Point" else set(piece.coords)
+                cuts[a].update(points)
+                cuts[b].update(points)
+
+    edge_lookup, edges, counts = {}, [], []
+    source_rows, source_parts, source_segments, ordinals = [], [], [], []
+    edge_ids, directions, shapes = [], [], []
+    for segment, (row, part_no, segment_no), cut in zip(segments, references, cuts):
+        start, end = segment.coords
+        points = _ordered_segment_points(start, end, cut)
+        for piece_no, (left, right) in enumerate(pairwise(points), 1):
+            key = (left, right) if left < right else (right, left)
+            edge_id = edge_lookup.get(key)
+            if edge_id is None:
+                edge_id = len(edges) + 1
+                edge_lookup[key] = edge_id
+                edges.append(shapely.LineString(key))
+                counts.append(0)
+            counts[edge_id - 1] += 1
+            source_rows.append(row)
+            source_parts.append(part_no)
+            source_segments.append(segment_no)
+            ordinals.append(piece_no)
+            edge_ids.append(edge_id)
+            directions.append(left != key[0])
+            shapes.append(shapely.LineString([left, right]))
+
+    result = gpd.GeoDataFrame({geometry.name: gpd.GeoSeries(edges, crs=geometry.crs)},
+                              geometry=geometry.name, crs=geometry.crs)
+    result["edge_id"] = pd.Series(range(1, len(edges) + 1), dtype="int64")
+    result["occurrence_count"] = pd.Series(counts, dtype="int64")
+    members = input_gdf.iloc[source_rows].copy().reset_index(drop=True)
+    members[geometry.name] = gpd.GeoSeries(shapes, crs=geometry.crs)
+    members["edge_id"] = pd.Series(edge_ids, dtype="int64")
+    members["source_id"] = ids.iloc[source_rows].reset_index(drop=True)
+    members["source_part_no"] = pd.Series(source_parts, dtype="int64")
+    members["source_segment_no"] = pd.Series(source_segments, dtype="int64")
+    members["piece_no"] = pd.Series(ordinals, dtype="int64")
+    members["is_reversed"] = pd.Series(directions, dtype="bool")
+    _finite_xy_geometry(result, "result")
+    _require_nonempty_valid_lines(result.geometry)
+    return {"result": result, "members": members}
+
+
 def split_line_intersections(input_gdf: gpd.GeoDataFrame, id_field: str, scope: str = "between") -> gpd.GeoDataFrame:
     """Split exact point meetings at each original path occurrence, preserving provenance."""
     if not isinstance(scope, str) or scope not in {"between", "all"}:
@@ -658,9 +734,7 @@ def split_line_intersections(input_gdf: gpd.GeoDataFrame, id_field: str, scope: 
             # The dominant axis retains ordering even when the minor axis of
             # a steep segment rounds several distinct intersections equally.
             # No cumulative distance, division, or on-line lookup is required.
-            axis = 0 if abs(end[0] - start[0]) >= abs(end[1] - start[1]) else 1
-            interior = sorted(edge_cuts - {start, end}, key=lambda point: point[axis], reverse=start[axis] > end[axis])
-            for point in [*interior, end]:
+            for point in _ordered_segment_points(start, end, edge_cuts)[1:]:
                 current.append(point)
                 # Retain trailing repeated source coordinates in the last
                 # positive piece instead of flushing it at its first endpoint.
@@ -920,6 +994,26 @@ def polygonize(input_gdf: gpd.GeoDataFrame) -> dict[str, gpd.GeoDataFrame]:
 
 
 # ==================== 元数据定义 ====================
+
+NORMALIZE_LINE_NETWORK_METADATA = OperatorMetadata(
+    name="normalize_line_network", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    description="重合规整", brief_description="精确细分并去重线网，共享边与完整来源经过双输出",
+    execution_modes=["workflow"], effects=["read"],
+    overview="按全部原顶点、精确点交会和重合端点细分，将正反等价直线段归为唯一边。"
+             "唯一边不选择业务属性；明细保留各次经过、全部原属性、原段位置和方向关系。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="待规整的单个二维投影线图层", notes="有效有限XY LineString/MultiLineString，拒绝缺失和空几何，允许空批"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="来源要素标识字段", notes="现有非几何唯一非空标量列，不使用索引或存储FID替代"),
+    ],
+    output_ports=[
+        OutputPort(name="result", type="geodataframe", description="每唯一边一条LineString，仅几何及edge_id/occurrence_count，不含业务属性", is_default=True),
+        OutputPort(name="members", type="geodataframe", description="逐次片段及全部原列，追加edge_id/source_id/source_part_no/source_segment_no/piece_no/is_reversed", is_default=False),
+    ],
+    use_cases=["将内部及跨要素重合线规整为唯一边", "保留反向或多次经过的完整来源供业务决定属性归属", "为后续连通或链路处理建立精确线段"],
+    notes=["边方向按端点XY字典序；边号按原路径首次出现，只关联本次双成果", "occurrence_count统计经过次数，同源重复经过分别记录；业务属性只在members保留，不取首值", "原顶点均分段，不合并链路；零长度原段不生成明细，原段号保留其位置间隔", "固定输出字段与源列冲突即整批失败；保留属性类型、原CRS及原始经过方向，源不变", "无容差、精度网格、吸附、补缝或桥隧判断；保存分别接现有save", "索引、切点和双成果驻内存，高密度候选和明细可增长，不承诺固定容量"],
+    workflow_example={"id":"normalize_lines", "operator":"normalize_line_network", "params":{"input_gdf":{"$ref":"load"},"id_field":"line_id"},"depends_on":["load"]},
+)
+
 
 MERGE_LINE_CHAINS_METADATA = OperatorMetadata(
     name="merge_line_chains", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
@@ -1675,4 +1769,5 @@ OPERATORS = dict([
     register_operator(SPLIT_LINE_INTERSECTIONS_METADATA, split_line_intersections),
     register_operator(GROUP_LINE_COMPONENTS_METADATA, group_line_components),
     register_operator(MERGE_LINE_CHAINS_METADATA, merge_line_chains),
+    register_operator(NORMALIZE_LINE_NETWORK_METADATA, normalize_line_network),
 ])

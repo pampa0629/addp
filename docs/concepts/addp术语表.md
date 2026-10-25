@@ -450,7 +450,8 @@
 | isolated line self-intersection check | 线内自交 | 检查单个线要素内部非相邻线段或不同部件的孤立点交会，每源按 XY 去重。 | 排除正常相邻接点、闭环首尾接点以及位于正长度自叠线（含端点）上的点；只诊断，不打断或修复，不等同几何有效性或业务质量。 |
 | exact attribute-constrained line merging | 链路合并 | 按精确端点连接和显式一致字段，将非分支连续线部件串联为链路，并以独立明细保留全部来源与原属性。 | 全图节点度先于属性判断，度大于二处全部停止；不吸附、打断、去重或选择主路。默认链路与原部件明细双输出，链号仅关联本次计算。 |
 | line connected-component grouping | 连通分组 | 按单个线图层原始部件的精确 XY 相交关系划分连通组，逐原始部件保留来源和业务属性。 | 端点、T形、十字及重合均相连，传递归组；同源不同部件可分属不同组。组号仅为本次计算稳定编号，不判断桥隧或质量，不吸附、打断、合并或修复。 |
-| exact cross-feature line splitting | 交点打断 | 在同一线图层不同要素的精确 XY 点交会处切分原始路径，逐片段保留来源标识、业务属性及部件和片段编号。 | 内部自交、自叠及跨要素正长度重合明确拒绝；不吸附、延伸、去重或判断立交，不改写源。 |
+| exact point intersection splitting | 交点打断 | 按显式 between／all 范围切分单个线图层的跨要素或全部精确 XY 点交会，逐片段保留来源、业务属性及部件和片段编号。 | between 默认只跨要素并拒绝内部点交会；all 包含内部点交会和同XY的各次经过。两者均整批拒绝正长度重合，不吸附、延伸、去重或判断立交，不改写源。 |
+| exact line overlap normalization | 重合规整 | 按原顶点、精确点交会及重合端点细分单个线图层，将正反等价的直线段去重为唯一边，以独立明细保留每次原始经过及全部业务属性。 | 唯一边不选择主来源或继承业务属性；重复经过分别关联原部件／原段／片段及方向，只规整精确XY线网，不吸附、补缝或自动合并链路。 |
 | Public Operator Spec | 公开算子规范 | 面向用户、前端、AI 和 Develop 任务定义的算子公开契约，声明公开参数、资源选择方式和校验规则。 | 资源身份使用 `locator` 或 `target_parent_locator + target_name`；不得暴露 `connection_info` 等内部连接参数。 |
 | execution input contract | 执行输入契约 | 某个具体任务定义允许调用方在单次 execution 中覆盖的公开输入 Schema、默认值和 UI 语义。 | 保存的任务定义必须始终可直接执行；未提交的输入使用任务保存值，提交值只影响本次 execution。工作流中未被内部连线占用的可序列化 Public Operator 参数默认进入该契约。 |
 | execution output contract | 执行输出契约 | 某个具体任务定义对外承诺的、可被 Orchestrator 后续 Step 引用的稳定执行结果 Schema。 | 只允许声明可跨任务边界传递的持久结果或稳定引用，例如 ResourceLocator；不得暴露 DataFrame、GeoDataFrame 或运行时私有内存句柄。 |
