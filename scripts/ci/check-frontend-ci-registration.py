@@ -173,6 +173,34 @@ def validate_frontend_job_budgets(jobs: list[str]) -> list[str]:
     return errors
 
 
+def validate_console_browser_preparation(jobs: list[str]) -> list[str]:
+    """Keep Console's Ubuntu archive choice scoped to its disposable runner."""
+    errors = []
+    for job in jobs:
+        if not job.startswith("  frontend-deterministic:") or not re.search(r"- module:\s*console\s*$", job, re.M):
+            continue
+        steps = re.split(r"(?m)^      - ", job)
+        configured = [step for step in steps if step.startswith("name: Configure Console Ubuntu archive\n")]
+        if len(configured) != 1:
+            errors.append("console: exactly one scoped Ubuntu archive preparation step is required")
+            continue
+        step = configured[0]
+        if not re.search(r"(?m)^        if: steps\.selection\.outputs\.run == 'true' && matrix\.module == 'console'$", step):
+            errors.append("console: Ubuntu archive preparation must select only the Console gate")
+        required = (
+            "set -euo pipefail",
+            "test -f /etc/apt/apt-mirrors.txt",
+            "grep -Fxq 'URIs: mirror+file:/etc/apt/apt-mirrors.txt' /etc/apt/sources.list.d/ubuntu.sources",
+            "printf '%s\\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt",
+        )
+        if any(command not in step for command in required):
+            errors.append("console: verify the runner mirror contract and use the Canonical HTTPS archive")
+        installs = [item for item in steps if re.search(r"(?m)^        run: npx playwright install --with-deps chromium$", item)]
+        if len(installs) != 1 or steps.index(step) >= steps.index(installs[0]):
+            errors.append("console: archive preparation must precede the unchanged full Chromium dependency installation")
+    return errors
+
+
 def validate_registration(repository: Path) -> list[str]:
     repository = repository.resolve()
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
@@ -279,6 +307,7 @@ def validate_registration(repository: Path) -> list[str]:
                 f"{module}: root test target dependency {target} is missing"
             )
     errors.extend(validate_frontend_job_budgets(jobs))
+    errors.extend(validate_console_browser_preparation(jobs))
     errors.extend(validate_browser_isolation(repository))
     return errors
 

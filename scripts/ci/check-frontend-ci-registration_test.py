@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import re
 import subprocess
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -362,6 +365,72 @@ class FrontendJobBudgetTest(unittest.TestCase):
         ]:
             with self.subTest(after=after):
                 self.assertTrue(MODULE.validate_frontend_job_budgets([self.job().replace(before, after)]))
+
+
+class ConsoleBrowserPreparationTest(unittest.TestCase):
+    def job(self) -> str:
+        return next(job for job in MODULE.workflow_jobs(SCRIPT.parents[2])
+                    if job.startswith("  frontend-deterministic:"))
+
+    def script(self) -> str:
+        step = next(step for step in re.split(r"(?m)^      - ", self.job())
+                    if step.startswith("name: Configure Console Ubuntu archive\n"))
+        return textwrap.dedent(step.split("        run: |\n", 1)[1])
+
+    def test_preserves_full_installation_and_console_only_scope(self) -> None:
+        self.assertEqual([], MODULE.validate_console_browser_preparation([self.job()]))
+        for before, after in (
+            ("name: Configure Console Ubuntu archive", "name: Unregistered archive choice"),
+            ("matrix.module == 'console'", "matrix.playwright == true"),
+            ("https://archive.ubuntu.com/ubuntu/", "http://azure.archive.ubuntu.com/ubuntu/"),
+            ("test -f /etc/apt/apt-mirrors.txt", "true"),
+            ("grep -Fxq 'URIs: mirror+file:/etc/apt/apt-mirrors.txt'", "echo"),
+            ("playwright install --with-deps chromium", "playwright install chromium"),
+        ):
+            with self.subTest(after=after):
+                self.assertTrue(MODULE.validate_console_browser_preparation([self.job().replace(before, after)]))
+        self.assertEqual([], MODULE.validate_console_browser_preparation(["  unrelated:\n"]))
+
+    def run_preparation(self, directory: Path, *, mirror=True, expected_source=True, diagnostics_ok=True):
+        apt = directory / "apt"
+        (apt / "sources.list.d").mkdir(parents=True)
+        original = ("http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\n"
+                    "https://archive.ubuntu.com/ubuntu/\tpriority:2\n"
+                    "https://security.ubuntu.com/ubuntu/\tpriority:3\n")
+        if mirror:
+            (apt / "apt-mirrors.txt").write_text(original)
+        uri = f"mirror+file:{apt}/apt-mirrors.txt" if expected_source else "https://example.invalid/ubuntu/"
+        source = (f"Types: deb\nURIs: {uri}\nSuites: noble noble-updates noble-backports noble-security\n"
+                  "Components: main universe restricted multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n")
+        (apt / "sources.list.d/ubuntu.sources").write_text(source)
+        other = apt / "sources.list.d/other.list"
+        other.write_text("deb [signed-by=/other.gpg] https://example.invalid/other noble main\n")
+        binaries = directory / "bin"
+        binaries.mkdir()
+        for name, body in {"sudo": 'exec "$@"', "apt-config": "exit 0" if diagnostics_ok else "exit 9"}.items():
+            command = binaries / name
+            command.write_text("#!/bin/sh\n" + body + "\n")
+            command.chmod(0o755)
+        result = subprocess.run(["bash", "-c", self.script().replace("/etc/apt/", str(apt) + "/")],
+                                env={**os.environ, "PATH": str(binaries) + os.pathsep + os.environ["PATH"]},
+                                text=True, capture_output=True)
+        self.assertEqual(source, (apt / "sources.list.d/ubuntu.sources").read_text())
+        self.assertEqual("deb [signed-by=/other.gpg] https://example.invalid/other noble main\n", other.read_text())
+        return result, apt / "apt-mirrors.txt", original
+
+    def test_changes_only_mirror_list_preserving_suites_components_and_signature(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result, mirror, _ = self.run_preparation(Path(directory))
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("https://archive.ubuntu.com/ubuntu/\n", mirror.read_text())
+
+    def test_rejects_missing_or_unexpected_runner_sources_before_mutation(self) -> None:
+        for arguments in ({"mirror": False}, {"expected_source": False}, {"diagnostics_ok": False}):
+            with self.subTest(arguments=arguments), tempfile.TemporaryDirectory() as directory:
+                result, mirror, original = self.run_preparation(Path(directory), **arguments)
+                self.assertNotEqual(0, result.returncode)
+                self.assertEqual(original if arguments.get("mirror", True) else None,
+                                 mirror.read_text() if mirror.exists() else None)
 
 
 if __name__ == "__main__":

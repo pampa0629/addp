@@ -964,6 +964,15 @@ jobs:
         working-directory: security/frontend
         run: npm ci
 
+      - name: Configure Console Ubuntu archive
+        if: steps.selection.outputs.run == 'true' && matrix.module == 'console'
+        run: |
+          set -euo pipefail
+          test -f /etc/apt/apt-mirrors.txt
+          grep -Fxq 'URIs: mirror+file:/etc/apt/apt-mirrors.txt' /etc/apt/sources.list.d/ubuntu.sources
+          apt-config dump Acquire::Retries Acquire::http::Timeout Acquire::https::Timeout Acquire::http::Dl-Limit Acquire::https::Dl-Limit
+          printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+
       - name: Install Chromium for ${{ matrix.name }} Playwright tests
         if: steps.selection.outputs.run == 'true' && matrix.playwright == true
         working-directory: ${{ matrix.module }}/frontend
