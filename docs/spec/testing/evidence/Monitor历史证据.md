@@ -1222,6 +1222,14 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 
 证据 `/tmp/addp-alert-host-name-{go,go-final,postgres,frontend,alerts-final,build,console,console-full,swagger,swagger-coverage}.log`，授权覆盖及影响选择回执同前缀；`/tmp/addp-alert-host-name-inputs.json`记录22项实现／测试／契约摘要、唯一测试导入修正与全部日志SHA-256。真实Safari尚未加载本批后端，当前主机名称筛选的个人运行／正式隔离身份／Hosted未验，不沿用前一批“告警名称”Safari证据代替。Excel第51行仍为部分实现，高等级置顶、拓扑／影响范围及根因分析等缺口保留。
 
+### 当前主机名称筛选固定 994 前端 CI：完整门禁通过（2026-10-25）
+
+专门CI会话回传后，本会话独立核对已落地原始日志、Job及实际测试步骤终态与内容摘要，没有轮询、手工派发或重跑CI。[Platform Run40150409107／Monitor frontend Job121040604365](https://github.com/pampa0629/addp/actions/runs/40150409107/job/121040604365) 为push／attempt1、固定源码 `994db320ae7147cb0e566db4960eb256306cc9e1`；真实 `Run Monitor frontend gate` 和Job均completed／success，日志实际118项单测通过、fail／skip均0，428项浏览器以单Worker全部通过（18.7分钟），Vite构建成功（7.01秒）。包括主机名称规范URL及非法条件保留单测、当前主机名称筛选与分页／刷新／导航恢复的中英文真实页面用例。该固定版本已具备一次完整绿色的前端T1／受控Linux T3／build证据，不再只有上一节的本地组合结果；本地首轮两项测试导入失败仍保留为失败。
+
+同Run的Platform consistency Job121040604338仍因独立的部署发现observer退出核验失败；不能把此Monitor Job成功写成整轮CI全绿，也不能把通用清理失败当作主机筛选业务失败。该证据不代替个人Safari、正式身份／Hosted、真实运行环境或生产T5，不扩展为当前HEAD整套产品已验。后续 `05b232920` 仅补退出诊断，原清理故障根因未定，其实际结果继续等专门CI会话回传。
+
+证据目录 `/tmp/addp-ci-20261025-020029/`：`job-121040604365.log` SHA-256 `6af0ee1d76fb65d2713185e59c7c8657ccc9bc3af7855e2012090f92f65d874d`与协调审计一致；`jobs-40150409107.json`确认固定head_sha及实际步骤终态，协调审计 `Monitor994-actual-full-frontend-CI-audit.json`、本会话独立收据 `Monitor994-owner-independent-audit.json`。本轮仅补权威证据文档并执行 `git diff --check`，不重复有效产品门禁；清单业务CI结果由协调会话统一回报，本会话只补文档出版指针，不重复派发或重跑验收。
+
 ### 持续部署发现 Linux 退出失败调查：仅补诊断，根因未证实（2026-10-25）
 
 专门CI会话回传后，只读核对 [Platform Run40150409107／Job121040604338](https://github.com/pampa0629/addp/actions/runs/40150409107/job/121040604338) 原始日志的checkout与实际失败步骤，源码为 `994db320ae7147cb0e566db4960eb256306cc9e1`。`make test-platform → test-dev-lifecycle → test-infra-runtime-log-lifecycle` 的61项中，`test_logs_failure_does_not_prevent_selected_metrics_start` 在 `addCleanup/stop_discovery_observer` 收到“部署发现进程尚未退出，不删除运行记录”；Job实际失败，后续摘要写入成功不能覆盖。日志没有当时的进程状态／等待／信号／子进程证据，不能断言是僵尸、锁、Docker子进程或预算不足，更没有证据把它归因于新增告警 `host_name` 逻辑。
