@@ -1294,3 +1294,21 @@ Suite 内的 `cleanup=pending_deployment_destruction` 只是场景完成时尚�
 证据目录`/tmp/addp-p19-formal-local-20261025-window10/`：`window.json`、`attempt-{1,2}-source.json`／报告／日志、`attempt-2-browser-receipt.json`、`receipt.json`、`cleanup-audit.json`、`evidence-review.json`、`function-row-mapping.json`及初次审计读取未完成记录。第二次run_id为`addp-trace-local-4eb709c8ced44689a5dd7fdb2884ea58`，第一次为`addp-trace-local-54dc65c1ba754a9fb05ce5a1ec0ca2e4`。交叉复核原始脱敏报告、12＋6断言、六模块SHA、原截止时间与全部资源边界，`git diff --check`通过；本次仅更新已有证据，不重复未变代码的T0/T1门禁，不调查／触发其他专项CI或Hosted。
 
 清单已只读核对Excel实际第19行（B18，接口管理总述）与第45行（B44，实时耗时接口追踪）；两项仍为部分实现，但“正式身份本地有界执行→Trace→日志→页面闭环”可以记为已验，不能继续笼统写成本地闭环未验，也不能升级为全域追踪、正式Runner T4或生产完成。工作簿由维护会话统一回填，本会话未编辑。后续优先调查资源守卫Docker状态读取的偶发超时，在原4秒标准内补充分步骤证据后再讨论优化，不自动扩展本次运行范围。
+
+
+### 资源守卫四秒截止、分步计时与等待优化（2026-10-25）
+
+用户确认先调查、讨论后实施最小修正，仅确定性门禁及短时只读探针；不新开正式身份窗口，不运行Hosted、容量或定时。实现及规范提交为`569940d925f998e8273530bb0017c7ce685a7915`。资源守卫沿用唯一CLI全量检查，保留8 CPU／12 GiB、4 GiB停止线、一次性退出状态与OOM拒绝，不改身份、Trace采样或产品API。
+
+已修正两项可验证的实现问题：命令从进程创建前开始计时，并使用有界进程等待替代固定50毫秒睡眠；整轮沿同一单调时钟四秒绝对截止，输出读取／解析、状态校验及末步成功判定均计入，重扫不重置。进程组TERM／KILL与回收保持，超时后的取消清理另计，不把超时结果记为成功。成功与失败均保留当轮阶段、容器／卷数、每步骤及命令启动／等待／输出处理／取消清理耗时，锁等待单列；监测循环保留原失败明细。触及停止线的实测值保存在失败明细，超量结果不进入成功样本。
+
+调查确认历史报告中的操作名只表示累计预算耗尽位置，缺少失败当轮分解，不能断言该操作单独耗时四秒。旧实现内存模拟的末步4.01秒误放行已由回归拒绝。Docker CLI批量inspect逐对象串行读取，但繁忙阶段唯一根因仍未定；未将等待优化或空闲态成功宣称为偶发超时稳定性已验。
+
+验证输入为已提交`407e5d38ddf906652cc4c3e495b77b0daa57a2f9`的仓库外临时副本，仅叠加本专项四文件；`candidate-inputs.json`记录各文件SHA-256，提交前核验无漂移。共享工作区入口曾被其他会话未完成的拓扑登记阻断，本会话未修复或跟进该无关问题。
+
+- `make test-monitor-traces-local-runner`退出0：91项确定性检查、页面JS语法及CI登记通过。新增回归覆盖同一四秒预算递减、进程创建／输出处理／JSON解析／末步超时拒绝、即时结束有界等待、取消及TERM／KILL回收、线程诊断隔离、成功／失败计时、锁等待和脱敏；原问题已先在旧实现复现失败。该入口也在下述生命周期门禁中完整执行，System正式身份夹具的ExecutionTrace／ProtectionReadiness Go专项通过（2.026秒），不计真实身份部署或页面验收。
+- `make test-infra-runtime-log-lifecycle`退出0：除上述91项外，61项生命周期／部署／采样与容量契约单测通过（87.385秒）；只是确定性契约测试，没有执行容量模型或新部署。
+- `make test-changed`未完成：准入时缺少`ADDP_TEST_POSTGRES_PORT`、`ADDP_TEST_POSTGRES_PASSWORD`，未执行其计划的Monitor PostgreSQL等T0–T3整套门禁，不计通过。现有CI的Platform consistency及Monitor execution and notification integration (PostgreSQL 15)负责对应独立复验，当前没有新的CI通过结论。
+- 同轮10次、三种调用方式、五类只读操作，共150次均通过：容器列表中位耗时旧封装57.24毫秒／新封装39.18毫秒，卷列表57.07／38.75毫秒，小证据目录du 55.04／6.85毫秒；固定公共镜像元数据57.59／56.35毫秒，仅小幅变化。直接调用对照、每次耗时及零失败均见`readonly-profile-paired.json`。当次本专项容器和卷标签列表均为空；没有创建或更改Docker对象，不代表带负载完整采样的稳定性结论。
+
+脱敏证据目录为`/tmp/addp-p19-resource-guard-investigation-20261025/`，含调查前后探针、`deadline-simulation.json`、`docker-log-correlation.json`、`candidate-inputs.json`、`runner-red.log`、`candidate-runner.log`、`candidate-lifecycle.log`、`candidate-test-changed.log`及`verification-receipt.json`。生命周期日志SHA-256为`816bf3cda2244c910182b657c1e3c08a678b5dd1f5ce2dfc4ec882de1c002333`，同轮探针JSON为`f0f777c873985e5822798867c2407fc7adbc3a30e0f2edcb4230a2286e6badb3`。既有正式身份闭环证据不变；下一步需先讨论有界繁忙阶段验证方案，利用新计时定位尖峰，不自动申请或续开窗口。
