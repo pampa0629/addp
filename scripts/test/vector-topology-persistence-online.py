@@ -18,7 +18,7 @@ vector = importlib.import_module('scripts.utils.online_vector_persistence')
 scan_ids = importlib.import_module('scripts.test.vector-pmtiles-workflow-online').scan_ids
 
 
-def definition(source, parent, invalid_source, snap_source, snap_reference, overlap_source, gap_source, gap_coverage, dangling_source, line_overlap_source, line_self_overlap_source, line_intersection_source, line_self_intersection_source, split_line_source, line_component_source):
+def definition(source, parent, invalid_source, snap_source, snap_reference, overlap_source, gap_source, gap_coverage, dangling_source, line_overlap_source, line_self_overlap_source, line_intersection_source, line_self_intersection_source, split_line_source, line_component_source, line_chain_source):
     return {'tasks': [
         {'id': 'load', 'operator': 'load', 'params': {'locator': source}, 'depends_on': []},
         {'id': 'build', 'operator': 'polygonize', 'params': {'input_gdf': {'$ref': 'load'}}, 'depends_on': ['load']},
@@ -60,6 +60,10 @@ def definition(source, parent, invalid_source, snap_source, snap_reference, over
         {'id': 'line_component_input', 'operator': 'load', 'params': {'locator': line_component_source}, 'depends_on': []},
         {'id': 'line_component', 'operator': 'group_line_components', 'params': {'input_gdf': {'$ref': 'line_component_input'}, 'id_field': 'route_key'}, 'depends_on': ['line_component_input']},
         {'id': 'save_line_components', 'operator': 'save', 'params': {'input_df': {'$ref': 'line_component'}, 'target_parent_locator': parent, 'target_name': 'line-components.gpkg', 'mode': 'fail'}, 'depends_on': ['line_component']},
+        {'id':'line_chain_input','operator':'load','params':{'locator':line_chain_source},'depends_on':[]},
+        {'id':'line_chain','operator':'merge_line_chains','params':{'input_gdf':{'$ref':'line_chain_input'},'id_field':'route_key','match_fields':['road','grade']},'depends_on':['line_chain_input']},
+        {'id':'save_line_chains','operator':'save','params':{'input_df':{'$ref':'line_chain'},'target_parent_locator':parent,'target_name':'line-chains.gpkg','mode':'fail'},'depends_on':['line_chain']},
+        {'id':'save_line_chain_members','operator':'save','params':{'input_df':{'$ref':'line_chain','port':'members'},'target_parent_locator':parent,'target_name':'line-chain-members.gpkg','mode':'fail'},'depends_on':['line_chain']},
     ]}
 
 
@@ -77,7 +81,7 @@ def snap_definition(source, reference, parent, *, failed=False):
 
 
 def output_sources(port):
-    return {'faces':(0,), 'diagnostics':(0,), 'repaired':(1,), 'snapped':(2,3), 'overlaps':(4,), 'gaps':(5,6), 'dangling':(7,), 'line_overlaps':(8,), 'line_self_overlaps':(9,), 'line_intersections':(10,), 'line_self_intersections':(11,), 'split_lines':(12,), 'line_components':(13,)}[port]
+    return {'faces':(0,), 'diagnostics':(0,), 'repaired':(1,), 'snapped':(2,3), 'overlaps':(4,), 'gaps':(5,6), 'dangling':(7,), 'line_overlaps':(8,), 'line_self_overlaps':(9,), 'line_intersections':(10,), 'line_self_intersections':(11,), 'split_lines':(12,), 'line_components':(13,), 'line_chains':(14,), 'line_chain_members':(14,)}[port]
 
 
 def validate_failed_snap(execution):
@@ -116,10 +120,10 @@ def validate_success(execution, sources, targets):
     outputs = obj(execution.get('outputs'), 'stable outputs')
     expected = {'save_' + key: {'resource': {'locator': target, 'type': 'file', 'write_mode': 'create'}} for key, target in targets.items()}
     if outputs != expected:
-        raise SuiteError('expected thirteen exact named file outputs')
+        raise SuiteError('expected fifteen exact named file outputs')
     facts = obj(metadata.get('lineage_facts'), 'lineage facts')
     expected_inputs = [('input.'+node, source) for node, source in zip(
-        ('load', 'load_invalid', 'snap_input', 'snap_reference', 'overlap_input', 'gap_input', 'gap_coverage', 'dangling_input', 'line_overlap_input', 'line_self_overlap_input', 'line_intersection_input', 'line_self_intersection_input', 'split_line_input', 'line_component_input'), sources)]
+        ('load', 'load_invalid', 'snap_input', 'snap_reference', 'overlap_input', 'gap_input', 'gap_coverage', 'dangling_input', 'line_overlap_input', 'line_self_overlap_input', 'line_intersection_input', 'line_self_intersection_input', 'split_line_input', 'line_component_input', 'line_chain_input'), sources)]
     actual_inputs = [(entry.get('port'), entry.get('locator')) for entry in array(facts.get('inputs'), 'inputs')]
     if (facts.get('schema_version') != 'addp.lineage-facts/v1'
         or len(sources) != len(fixture.SOURCES) or len(actual_inputs) != len(expected_inputs)
@@ -131,7 +135,7 @@ def validate_success(execution, sources, targets):
     if (len(scans) != len(fixture.TARGETS) or {scan.get('target_locator') for scan in scans} != set(targets.values())
         or any(scan.get('status') != 'submitted' or not isinstance(scan.get('execution_id'), str) or not scan['execution_id'] for scan in scans)
         or len({scan['execution_id'] for scan in scans}) != len(fixture.TARGETS)):
-        raise SuiteError('expected exactly thirteen distinct automatic precise file scans')
+        raise SuiteError('expected exactly fifteen distinct automatic precise file scans')
     return facts, scans
 
 
@@ -163,7 +167,7 @@ def browser(repository, env, evidence):
     if result.returncode or not path.is_file():
         raise SuiteError('topology Console evidence missing or failed')
     report = obj(json.loads(path.read_text()), 'browser evidence')
-    if report != {**evidence, 'schema_version': 'addp.topology-browser/v12', 'result': 'passed'}:
+    if report != {**evidence, 'schema_version': 'addp.topology-browser/v13', 'result': 'passed'}:
         raise SuiteError('browser report does not bind the exact run, User and outputs')
     return report
 
@@ -213,11 +217,11 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         item = obj(client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload, 'output item')
         sizes = validate_item(item, native['targets'][name], name)
         outputs.append({'port': key, 'name': name, 'locator': targets[key], 'item_id': item['id'], 'size_evidence': sizes,
-                        **({'fid_column': native['targets'][name]['fid_column']} if key in ('overlaps','gaps','dangling','line_overlaps','line_self_overlaps','line_intersections','line_self_intersections','split_lines','line_components') else {}),
+                        **({'fid_column': native['targets'][name]['fid_column']} if key in ('overlaps','gaps','dangling','line_overlaps','line_self_overlaps','line_intersections','line_self_intersections','split_lines','line_components','line_chains','line_chain_members') else {}),
                         **({'layer_name': native['targets'][name]['layer_name'], 'geometry_column': native['targets'][name]['geometry_column']} if name.endswith('.gpkg') else {})})
     # Persist the verified physical facts before any potentially long convergence
     # wait. This checkpoint cannot stand in for the final successful suite report.
-    checkpoint = {'schema_version': 'addp.topology-checkpoint/v12', 'suite': SUITE, 'result': 'incomplete',
+    checkpoint = {'schema_version': 'addp.topology-checkpoint/v13', 'suite': SUITE, 'result': 'incomplete',
         'stage': 'before_lineage', 'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity,
         'execution_id': identifier, 'sources': [{key: source[key] for key in ('name', 'id', 'locator', 'scan_execution_id')} for source in sources], 'lineage_facts': facts,
         'automatic_scans': scan_observations, 'outputs': outputs, 'stable_outputs': execution['outputs'], 'physical': native, 'monitor_lineage_verified': True, 'monitor': monitor}
@@ -268,12 +272,14 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
                 'line_self_intersection_expected': fixture.line_self_intersection_expected_features(),
                 'split_line_expected': fixture.split_line_expected_features(),
                 'line_component_expected': fixture.line_component_expected_features(),
+                'line_chain_expected':fixture.line_chain_expected_features(),
+                'line_chain_members_expected':fixture.line_chain_expected_features(members=True),
                 'sources': [{'id': source['id'], 'before': source['before']} for source in sources]}
     report = browser_runner(repository, env, evidence)
     final_native = physical_runner(repository, env)
     if final_native != native:
         raise SuiteError('browser reads changed source or saved outputs')
-    return {'schema_version': 'addp.vector-topology-persistence/v12', 'suite': SUITE, 'result': 'passed',
+    return {'schema_version': 'addp.vector-topology-persistence/v13', 'suite': SUITE, 'result': 'passed',
         'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'execution_id': identifier,
         'sources': [{key: source[key] for key in ('name', 'id', 'locator', 'scan_execution_id')} for source in sources], 'source_unchanged': True, 'automatic_scans': scans, 'automatic_scan_observations': scan_observations, 'monitor': monitor,
         'outputs': outputs, 'stable_outputs': execution['outputs'], 'physical': native, 'post_browser_physical': final_native, 'browser': report, 'failed_snap': failure,

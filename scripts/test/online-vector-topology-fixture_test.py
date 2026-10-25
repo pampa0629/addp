@@ -11,6 +11,8 @@ m = importlib.import_module('business.scripts.online-vector-topology-fixture')
 
 
 def records(name):
+    if name in ('line-chains.gpkg','line-chain-members.gpkg'):
+        return m.line_chain_expected_features(members=name=='line-chain-members.gpkg')
     if name == 'line-components.gpkg':
         return m.line_component_expected_features()
     if name == 'split-lines.gpkg':
@@ -47,6 +49,22 @@ def records(name):
 
 
 class TopologyFixtureTest(unittest.TestCase):
+    def test_chain_oracles_preserve_all_members_and_reject_wrong_chain_direction_schema_and_microgap(self):
+        self.assertEqual(len(m.line_chain_source_features()),16)
+        self.assertEqual(len(records('line-chains.gpkg')),12)
+        self.assertEqual(len(records('line-chain-members.gpkg')),18)
+        for name in ['line-chains.gpkg','line-chain-members.gpkg']:
+            original=records(name);m.validate_features(name,original)
+            mutations=[lambda rows:rows.pop(),lambda rows:rows.reverse(),lambda rows:rows[0]['properties'].update(chain_id=999),
+                lambda rows:rows[0]['properties'].update(grade=True),lambda rows:rows[0]['geometry']['coordinates'].reverse()]
+            if name=='line-chains.gpkg':mutations += [lambda rows:rows[0]['properties'].update(member_count=1.0),lambda rows:rows[8]['geometry']['coordinates'][0].__setitem__(0,1)]
+            else:mutations += [lambda rows:rows[0]['properties'].update(route_key='lost'),lambda rows:rows[0]['properties'].update(note=''),
+                lambda rows:rows[0]['properties'].update(member_no=2),lambda rows:rows[0]['properties'].update(source_part_no=True),
+                lambda rows:rows[0]['properties'].update(is_reversed=0),lambda rows:rows[0]['properties'].update(is_reversed=True)]
+            for mutation in mutations:
+                rows=copy.deepcopy(original);mutation(rows)
+                with self.subTest(name=name,mutation=mutation),self.assertRaises(m.FixtureError):m.validate_features(name,rows)
+
     def test_line_component_oracle_requires_exact_membership_attributes_and_original_parts(self):
         original = m.line_component_expected_features()
         self.assertEqual(len(m.line_component_source_features()),11)

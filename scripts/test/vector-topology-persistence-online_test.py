@@ -14,7 +14,7 @@ base = importlib.import_module('scripts.test.raster-contour-persistence-online_t
 def execution():
     outputs = {key: f'addp://engine/3/path/outputs/{name}?type=file' for key, name in zip(m.fixture.PORTS, m.fixture.TARGETS)}
     inputs = [{'port': 'input.'+node, 'locator': f'addp://engine/3/path/{name}?type=file&item_id={identifier}'}
-              for identifier, (node, name) in enumerate(zip(('load', 'load_invalid', 'snap_input', 'snap_reference', 'overlap_input', 'gap_input', 'gap_coverage', 'dangling_input', 'line_overlap_input', 'line_self_overlap_input', 'line_intersection_input', 'line_self_intersection_input', 'split_line_input','line_component_input'), m.fixture.SOURCES), 10)]
+              for identifier, (node, name) in enumerate(zip(('load', 'load_invalid', 'snap_input', 'snap_reference', 'overlap_input', 'gap_input', 'gap_coverage', 'dangling_input', 'line_overlap_input', 'line_self_overlap_input', 'line_intersection_input', 'line_self_intersection_input', 'split_line_input','line_component_input','line_chain_input'), m.fixture.SOURCES), 10)]
     facts = {'schema_version': 'addp.lineage-facts/v1', 'inputs': sorted(inputs, key=lambda entry: entry['port']), 'outputs': [{'locator': uri, 'write_mode': 'create'} for uri in outputs.values()]}
     return {'status': 'success', 'outputs': {'save_'+key: {'resource': {'locator': uri, 'type': 'file', 'write_mode': 'create'}} for key, uri in outputs.items()},
         'metadata': {'lineage_facts': facts, 'result': {'meta_scan_runs': [{'status': 'submitted', 'target_locator': uri, 'execution_id': 'scan-'+key} for key, uri in outputs.items()]}}}
@@ -29,7 +29,7 @@ class Client(base.Client):
                 'size_bytes': 1000, 'scanned_at': '2026-10-18T00:00:00Z', 'attributes': {'item': {'format': 'geojson'}}}
         self.invalid_source = {**self.source, 'id': 11, 'full_name': 'invalid.geojson', 'fingerprint': 'invalid'}
         self.snap_sources = {identifier: {**self.source, 'id': identifier, 'full_name': name, 'fingerprint': name} for identifier, name in enumerate(m.fixture.SOURCES[2:],12)}
-        for identifier,name in ((33,'snapped.gpkg'),(34,'overlaps.gpkg'),(35,'gaps.gpkg'),(36,'dangling.gpkg'),(37,'line-overlaps.gpkg'),(38,'line-self-overlaps.gpkg'),(39,'line-intersections.gpkg'),(40,'line-self-intersections.gpkg'),(41,'split-lines.gpkg'),(42,'line-components.gpkg')):
+        for identifier,name in ((33,'snapped.gpkg'),(34,'overlaps.gpkg'),(35,'gaps.gpkg'),(36,'dangling.gpkg'),(37,'line-overlaps.gpkg'),(38,'line-self-overlaps.gpkg'),(39,'line-intersections.gpkg'),(40,'line-self-intersections.gpkg'),(41,'split-lines.gpkg'),(42,'line-components.gpkg'),(43,'line-chains.gpkg'),(44,'line-chain-members.gpkg')):
             self.targets[identifier] = base.item(name,identifier); self.targets[identifier]['size_bytes'] = 1000
         self.permissions = sorted(m.PERMISSIONS)
         self.executions['execution'] = execution()
@@ -61,7 +61,7 @@ class Client(base.Client):
             data = self.invalid_source
         elif '/meta/lineage/graph?' in path:
             identifier = int(path.split('item_id=')[1].split('&')[0])
-            data = {'truncated': False, 'edges': [{'source': {'item_id': source}, 'target': {'item_id': identifier}, 'status': 'active', 'relation_kind': 'derive', 'evidence': {'execution_id': 'execution'}} for source in ([23] if identifier == 42 else [22] if identifier == 41 else [21] if identifier == 40 else [20] if identifier == 39 else [19] if identifier == 38 else [18] if identifier == 37 else [17] if identifier == 36 else [15,16] if identifier == 35 else [14] if identifier == 34 else [12,13] if identifier == 33 else [11] if identifier == 32 else [10])]}
+            data = {'truncated': False, 'edges': [{'source': {'item_id': source}, 'target': {'item_id': identifier}, 'status': 'active', 'relation_kind': 'derive', 'evidence': {'execution_id': 'execution'}} for source in ([24] if identifier in (43,44) else [23] if identifier == 42 else [22] if identifier == 41 else [21] if identifier == 40 else [20] if identifier == 39 else [19] if identifier == 38 else [18] if identifier == 37 else [17] if identifier == 36 else [15,16] if identifier == 35 else [14] if identifier == 34 else [12,13] if identifier == 33 else [11] if identifier == 32 else [10])]}
         else:
             return super().request(method, path, expected, body)
         return SimpleNamespace(payload=copy.deepcopy(data))
@@ -76,8 +76,41 @@ ENV = {'ADDP_ONLINE_TEST_TENANT_ID': '2', 'ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID': 
 
 
 class TopologyOnlineTest(unittest.TestCase):
+    def test_chain_double_ports_bind_exact_source_identity_scans_and_complete_members(self):
+        tasks={t['id']:t for t in m.definition('s0','parent',*[f's{i}' for i in range(1,len(m.fixture.SOURCES))])['tasks']}
+        self.assertEqual(tasks['line_chain_input']['params'],{'locator':'s14'})
+        self.assertEqual(tasks['line_chain']['params'],{'input_gdf':{'$ref':'line_chain_input'},'id_field':'route_key','match_fields':['road','grade']})
+        self.assertEqual(tasks['save_line_chains']['params']['input_df'],{'$ref':'line_chain'})
+        self.assertEqual(tasks['save_line_chain_members']['params']['input_df'],{'$ref':'line_chain','port':'members'})
+        report=m.run_scenario(Path('.'),self.env,Client(),physical,lambda repo,env,evidence:evidence,diagnostic_runner=lambda *args:{})
+        self.assertEqual(report['browser']['line_chain_expected'],m.fixture.line_chain_expected_features())
+        self.assertEqual(report['browser']['line_chain_members_expected'],m.fixture.line_chain_expected_features(members=True))
+        for key,target in [('line_chains',43),('line_chain_members',44)]:
+            self.assertEqual(m.output_sources(key),(14,))
+            output=next(o for o in report['outputs'] if o['port']==key)
+            self.assertEqual(output['lineage'],[{'source_item_id':24,'target_item_id':target,'execution_id':'execution'}])
+            bad=Client();bad.targets[target]['size_bytes']=True
+            with self.assertRaises(m.SuiteError):m.run_scenario(Path('.'),self.env,bad,physical)
+        class WrongScan(Client):
+            def request(self,method,path,expected,body=None):
+                response=super().request(method,path,expected,body)
+                if '/meta/executions/scan-line_chain_members' in path:response.payload['triggered_by']=44
+                return response
+        with self.assertRaisesRegex(m.SuiteError,'User or Tenant'):
+            m.run_scenario(Path('.'),self.env,WrongScan(),lambda *args:self.fail('must reject wrong direction scan actor'))
+
+    def test_chain_report_must_include_both_complete_independent_oracles(self):
+        evidence={'execution_id':'current','line_chain_expected':m.fixture.line_chain_expected_features(),
+                  'line_chain_members_expected':m.fixture.line_chain_expected_features(members=True)}
+        path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
+        for key in ['line_chain_expected','line_chain_members_expected']:
+            def run(*args,**kwargs):
+                report={**evidence,'schema_version':'addp.topology-browser/v13','result':'passed'};report.pop(key)
+                path.write_text(json.dumps(report));return SimpleNamespace(returncode=0)
+            with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
+
     def test_line_component_branch_binds_source_membership_attributes_and_automatic_scan(self):
-        tasks=m.definition('s0','parent',*[f's{i}' for i in range(1,len(m.fixture.SOURCES))])['tasks']
+        tasks=m.definition('s0','parent',*[f's{i}' for i in range(1,len(m.fixture.SOURCES))])['tasks'][:-4]
         self.assertEqual(tasks[-3]['params'],{'locator':'s13'})
         self.assertEqual(tasks[-2]['operator'],'group_line_components')
         self.assertEqual(tasks[-2]['params'],{'input_gdf':{'$ref':'line_component_input'},'id_field':'route_key'})
@@ -85,8 +118,8 @@ class TopologyOnlineTest(unittest.TestCase):
         self.assertEqual(m.output_sources('line_components'),(13,))
         report=m.run_scenario(Path('.'),self.env,Client(),physical,lambda repo,env,evidence:evidence,diagnostic_runner=lambda *args:{})
         self.assertEqual(report['browser']['line_component_expected'],m.fixture.line_component_expected_features())
-        self.assertEqual(report['outputs'][-1]['port'],'line_components')
-        self.assertEqual(report['outputs'][-1]['lineage'],[{'source_item_id':23,'target_item_id':42,'execution_id':'execution'}])
+        self.assertEqual(report['outputs'][-3]['port'],'line_components')
+        self.assertEqual(report['outputs'][-3]['lineage'],[{'source_item_id':23,'target_item_id':42,'execution_id':'execution'}])
         class WrongScan(Client):
             def request(self,method,path,expected,body=None):
                 response=super().request(method,path,expected,body)
@@ -101,12 +134,12 @@ class TopologyOnlineTest(unittest.TestCase):
         evidence={'execution_id':'current','outputs':[{'port':'line_components'}],'line_component_expected':m.fixture.line_component_expected_features()}
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
-            path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],'schema_version':'addp.topology-browser/v12','result':'passed'}))
+            path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],'schema_version':'addp.topology-browser/v13','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
 
     def test_split_line_branch_binds_exact_source_scan_attributes_and_lineage(self):
-        tasks=m.definition('s0','parent',*[f's{i}' for i in range(1,len(m.fixture.SOURCES))])['tasks'][:-3]
+        tasks=m.definition('s0','parent',*[f's{i}' for i in range(1,len(m.fixture.SOURCES))])['tasks'][:-7]
         self.assertEqual(tasks[-3]['params'],{'locator':'s12'})
         self.assertEqual(tasks[-2]['operator'],'split_line_intersections')
         self.assertEqual(tasks[-2]['params'],{'input_gdf':{'$ref':'split_line_input'},'id_field':'route_key'})
@@ -114,8 +147,8 @@ class TopologyOnlineTest(unittest.TestCase):
         self.assertEqual(m.output_sources('split_lines'),(12,))
         report=m.run_scenario(Path('.'),self.env,Client(),physical,lambda repo,env,evidence:evidence,diagnostic_runner=lambda *args:{})
         self.assertEqual(report['browser']['split_line_expected'],m.fixture.split_line_expected_features())
-        self.assertEqual(report['outputs'][-2]['port'],'split_lines')
-        self.assertEqual(len(report['outputs'][-2]['lineage']),1)
+        self.assertEqual(report['outputs'][-4]['port'],'split_lines')
+        self.assertEqual(len(report['outputs'][-4]['lineage']),1)
         class WrongScan(Client):
             def request(self,method,path,expected,body=None):
                 response=super().request(method,path,expected,body)
@@ -131,7 +164,7 @@ class TopologyOnlineTest(unittest.TestCase):
         evidence={'execution_id':'current','outputs':[{'port':'split_lines'}],'split_line_expected':m.fixture.split_line_expected_features()}
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
-            path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],'schema_version':'addp.topology-browser/v12','result':'passed'}))
+            path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],'schema_version':'addp.topology-browser/v13','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
 
@@ -145,7 +178,7 @@ const source=readFileSync(process.argv[1],'utf8')
 const golden={faces:['Polygon',4],diagnostics:['LineString',4],repaired:['MultiPolygon',2],snapped:['LineString',5],
  overlaps:['MultiPolygon',7],gaps:['Polygon',8],dangling:['Point',17],line_overlaps:['MultiLineString',9],
  line_self_overlaps:['MultiLineString',8],line_intersections:['Point',10],line_self_intersections:['Point',15],
- split_lines:['LineString',20],line_components:['LineString',15]}
+ split_lines:['LineString',20],line_components:['LineString',15],line_chains:['LineString',12],line_chain_members:['LineString',18]}
 const helperStart=source.indexOf('const expectedOutputGeometry =')
 const helperEnd=source.indexOf("test('同一普通User核对",helperStart)
 assert.ok(helperStart>0 && helperEnd>helperStart)
@@ -188,31 +221,41 @@ import { readFileSync } from 'node:fs'
 const expected=JSON.parse(process.argv[1]); const port=process.argv[4]
 const source=readFileSync(process.argv[2],'utf8')
 const { webMercatorPreviewCoordinate }=await import(process.argv[3])
-const start=source.indexOf("    if (['split_lines','line_components'].includes(output.port)) {",source.indexOf('const table = frame.locator'))
+const start=source.indexOf("    if (['split_lines','line_components','line_chains','line_chain_members'].includes(output.port)) {",source.indexOf('const table = frame.locator'))
 const end=source.indexOf("    if (output.port === 'snapped') {",start)
 assert.ok(start>0 && end>start)
-const check=new (Object.getPrototypeOf(async function(){}).constructor)('evidence','renderer','expect','table','webMercatorPreviewCoordinate','output',source.slice(start,end))
+const check=new (Object.getPrototypeOf(async function(){}).constructor)('evidence','renderer','expect','table','webMercatorPreviewCoordinate','output','expectedOriginalLines',source.slice(start,end))
 function expect(actual) { return {toContainText(value){assert.ok(actual.includes(value))}} }
 expect.poll=fn=>({async toEqual(value){assert.deepEqual(await fn(),value)}})
+const helperStart=source.indexOf('function expectedOriginalLines(');const helperEnd=source.indexOf("test('同一普通User核对",helperStart)
+const expectedOriginalLines=new Function('evidence','port',source.slice(helperStart,helperEnd)+'\nreturn expectedOriginalLines(evidence,port)')
 const fields=Object.keys(expected[0].properties)
 const table={locator(){return fields.join(' ')}}
 async function run(rows,projection='EPSG:3857') {
  const features=rows.map(row=>({get:name=>row.properties[name],getGeometry:()=>({getCoordinates:()=>row.geometry.coordinates.map(webMercatorPreviewCoordinate)})}))
  const map={getView:()=>({getAnimating:()=>false,getProjection:()=>({getCode:()=>projection})}),getLayers:()=>({getArray:()=>[{getSource:()=>({getFeatures:()=>features})}]})}
  const renderer={evaluate:async(fn,args)=>fn({__vueParentComponent:{setupState:{mapInstance:map}}},args)}
- await check({split_line_expected:expected,line_component_expected:expected},renderer,expect,table,webMercatorPreviewCoordinate,{port})
+ await check({split_line_expected:expected,line_component_expected:expected,line_chain_expected:expected,line_chain_members_expected:expected},renderer,expect,table,webMercatorPreviewCoordinate,{port},expectedOriginalLines)
 }
 await run(expected)
 await run([...expected].reverse()) // OL feature order need not equal saved row order.
-for (const mutate of [rows=>rows.pop(),rows=>rows[0].properties.source_id='1',rows=>rows[0].properties.grade++,
- rows=>rows[3].properties.note='',rows=>rows[0].properties.part_no++,rows=>rows[0].properties[port==='split_lines'?'segment_no':'component_id']++,
- rows=>rows[0].geometry.coordinates.reverse(),rows=>port==='split_lines' ? rows[15].geometry.coordinates[1][0]=1e-12 : rows[10].geometry.coordinates[0][0]=1]) {
+const mutations=[rows=>rows.pop(),rows=>rows[0].properties[fields[0]]='wrong',rows=>rows[0].properties.grade++,
+ rows=>rows[0].geometry.coordinates.reverse()]
+if(port==='split_lines'||port==='line_components') mutations.push(rows=>rows[0].properties.part_no++,
+ rows=>rows[0].properties[port==='split_lines'?'segment_no':'component_id']++,rows=>rows[3].properties.note='',
+ rows=>port==='split_lines' ? rows[15].geometry.coordinates[1][0]=1e-12 : rows[10].geometry.coordinates[0][0]=1)
+else mutations.push(rows=>rows[0].properties.chain_id++,
+ rows=>rows[0].properties[port==='line_chains'?'member_count':'member_no']++,
+ rows=>rows[port==='line_chains'?8:11].geometry.coordinates[0][0]=1)
+if(port==='line_chain_members')mutations.push(rows=>rows[0].properties.source_part_no++,
+ rows=>rows[0].properties.is_reversed=true,rows=>rows[0].properties.is_reversed=0,rows=>rows[0].properties.note='')
+for(const mutate of mutations){
  const rows=structuredClone(expected);mutate(rows)
  await assert.rejects(run(rows),{code:'ERR_ASSERTION'})
 }
 await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
 '''
-        for port,expected in [('split_lines',m.fixture.split_line_expected_features()),('line_components',m.fixture.line_component_expected_features())]:
+        for port,expected in [('split_lines',m.fixture.split_line_expected_features()),('line_components',m.fixture.line_component_expected_features()),('line_chains',m.fixture.line_chain_expected_features()),('line_chain_members',m.fixture.line_chain_expected_features(members=True))]:
             result=subprocess.run(['node','--input-type=module','-e',script,json.dumps(expected),
                 str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),
                 (repository/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri(),port],capture_output=True,text=True)
@@ -225,18 +268,18 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
         self.env = {**ENV, "ADDP_ONLINE_ARTIFACT_DIR": directory.name}
 
     def test_public_dag_keeps_default_faces_diagnostics_and_checked_repair_branch(self):
-        tasks = m.definition('source','parent','invalid','snap-source','snap-ref','overlap-source','gap-source','coverage-source','dangling-source','line-overlap-source','self-source','intersection-source','self-intersection-source','split-source','component-source')['tasks']
-        self.assertEqual([node['operator'] for node in tasks], ['load','polygonize','save','save','load','check_geometry','repair_geometry','check_geometry','save','load','load','snap_geometry','save','load','check_polygon_overlap','save','load','load','check_polygon_gap','save','load','check_dangling_points','save','load','check_line_overlap','save','load','check_line_self_overlap','save','load','check_line_intersection','save','load','check_line_self_intersection','save','load','split_line_intersections','save','load','group_line_components','save'])
+        tasks = m.definition('source','parent','invalid','snap-source','snap-ref','overlap-source','gap-source','coverage-source','dangling-source','line-overlap-source','self-source','intersection-source','self-intersection-source','split-source','component-source','chain-source')['tasks']
+        self.assertEqual([node['operator'] for node in tasks], ['load','polygonize','save','save','load','check_geometry','repair_geometry','check_geometry','save','load','load','snap_geometry','save','load','check_polygon_overlap','save','load','load','check_polygon_gap','save','load','check_dangling_points','save','load','check_line_overlap','save','load','check_line_self_overlap','save','load','check_line_intersection','save','load','check_line_self_intersection','save','load','split_line_intersections','save','load','group_line_components','save','load','merge_line_chains','save','save'])
         self.assertEqual(tasks[2]['params']['input_df'], {'$ref': 'build'})
         self.assertEqual(tasks[3]['params']['input_df'], {'$ref': 'build', 'port': 'diagnostics'})
         self.assertTrue(all(node['params']['mode'] == 'fail' for node in tasks if node['operator'] == 'save'))
 
-    def test_exact_thirteen_outputs_and_scans_are_mandatory(self):
+    def test_exact_fifteen_outputs_and_scans_are_mandatory(self):
         value = execution()
         targets = {key: value['outputs']['save_'+key]['resource']['locator'] for key in m.fixture.PORTS}
         sources = [f'addp://engine/3/path/{name}?type=file&item_id={identifier}' for identifier, name in enumerate(m.fixture.SOURCES, 10)]
         m.validate_success(value, sources, targets)
-        for mutate in (lambda v: v['outputs'].pop('save_diagnostics'), lambda v: v['outputs'].pop('save_repaired'), lambda v: v['outputs'].pop('save_overlaps'), lambda v: v['outputs'].pop('save_gaps'), lambda v: v['outputs'].pop('save_dangling'), lambda v: v['outputs'].pop('save_line_overlaps'), lambda v: v['outputs'].pop('save_line_self_overlaps'), lambda v: v['outputs'].pop('save_line_intersections'), lambda v: v['outputs'].pop('save_line_self_intersections'), lambda v: v['outputs'].pop('save_split_lines'), lambda v: v['outputs'].pop('save_line_components'),
+        for mutate in (lambda v: v['outputs'].pop('save_diagnostics'), lambda v: v['outputs'].pop('save_repaired'), lambda v: v['outputs'].pop('save_overlaps'), lambda v: v['outputs'].pop('save_gaps'), lambda v: v['outputs'].pop('save_dangling'), lambda v: v['outputs'].pop('save_line_overlaps'), lambda v: v['outputs'].pop('save_line_self_overlaps'), lambda v: v['outputs'].pop('save_line_intersections'), lambda v: v['outputs'].pop('save_line_self_intersections'), lambda v: v['outputs'].pop('save_split_lines'), lambda v: v['outputs'].pop('save_line_components'), lambda v: v['outputs'].pop('save_line_chains'), lambda v: v['outputs'].pop('save_line_chain_members'),
             lambda v: v['metadata']['lineage_facts']['inputs'].pop(),
             lambda v: v['metadata']['lineage_facts']['inputs'][1].update(locator=v['metadata']['lineage_facts']['inputs'][0]['locator']), lambda v: v['metadata']['result']['meta_scan_runs'].pop(),
             lambda v: v['outputs']['save_faces']['resource'].pop('write_mode'),
@@ -253,7 +296,7 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
         sources = [f'addp://engine/3/path/{name}?type=file&item_id={identifier}' for identifier, name in enumerate(m.fixture.SOURCES, 10)]
         targets = {key: value['outputs']['save_'+key]['resource']['locator'] for key in m.fixture.PORTS}
         self.assertEqual([entry['port'] for entry in value['metadata']['lineage_facts']['inputs']],
-                         ['input.dangling_input', 'input.gap_coverage', 'input.gap_input', 'input.line_component_input', 'input.line_intersection_input', 'input.line_overlap_input', 'input.line_self_intersection_input', 'input.line_self_overlap_input', 'input.load', 'input.load_invalid', 'input.overlap_input', 'input.snap_input', 'input.snap_reference', 'input.split_line_input'])
+                         ['input.dangling_input', 'input.gap_coverage', 'input.gap_input', 'input.line_chain_input', 'input.line_component_input', 'input.line_intersection_input', 'input.line_overlap_input', 'input.line_self_intersection_input', 'input.line_self_overlap_input', 'input.load', 'input.load_invalid', 'input.overlap_input', 'input.snap_input', 'input.snap_reference', 'input.split_line_input'])
         m.validate_success(value, sources, targets)
         value['metadata']['lineage_facts']['inputs'].reverse()
         m.validate_success(value, sources, targets)
@@ -275,20 +318,20 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
     def test_complete_chain_preserves_same_user_and_does_not_manually_scan_outputs(self):
         client = Client()
         report = m.run_scenario(Path('.'), self.env, client, physical, lambda repo, env, evidence: evidence, diagnostic_runner=lambda *args: {'cause':'invalid_snapped_geometry'})
-        self.assertEqual(report['result'], 'passed'); self.assertEqual(len(report['outputs']), 13)
+        self.assertEqual(report['result'], 'passed'); self.assertEqual(len(report['outputs']), 15)
         self.assertEqual(len(report['identity']['permissions_verified']), 11)
-        self.assertEqual(len([call for call in client.calls if call[0] == 'POST' and '/scan/' in call[1]]), 14)
-        self.assertEqual(report['schema_version'],'addp.vector-topology-persistence/v12')
+        self.assertEqual(len([call for call in client.calls if call[0] == 'POST' and '/scan/' in call[1]]), 15)
+        self.assertEqual(report['schema_version'],'addp.vector-topology-persistence/v13')
         self.assertEqual(report['physical'],report['post_browser_physical'])
         self.assertEqual(report['stable_outputs'],execution()['outputs'])
         self.assertEqual(report['browser']['overlap_expected'],m.fixture.overlap_expected_features())
         self.assertEqual(report['browser']['gap_expected'],m.fixture.gap_expected_features())
         self.assertEqual(report['browser']['dangling_expected'],m.fixture.dangling_expected_features())
 
-    def test_browser_requires_current_v12_and_exact_thirteenth_output_evidence(self):
+    def test_browser_requires_current_v13_and_exact_fifteenth_output_evidence(self):
         evidence={'execution_id':'current','outputs':[{'port':'gaps'}],'overlap_expected':m.fixture.overlap_expected_features(),'gap_expected':m.fixture.gap_expected_features()}
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
-        for schema,changed,valid in [('addp.topology-browser/v11',False,False),('addp.topology-browser/v12',True,False),('addp.topology-browser/v12',False,True)]:
+        for schema,changed,valid in [('addp.topology-browser/v12',False,False),('addp.topology-browser/v13',True,False),('addp.topology-browser/v13',False,True)]:
             def run(*args,**kwargs):
                 report={**evidence,'schema_version':schema,'result':'passed'}
                 if changed:report['outputs']=[]
@@ -304,12 +347,12 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
             path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],
-                'schema_version':'addp.topology-browser/v12','result':'passed'}))
+                'schema_version':'addp.topology-browser/v13','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):
             m.browser(Path('.'),self.env,evidence)
 
-    def test_lineage_failure_retains_all_thirteen_strict_sizes_and_incomplete_physical_checkpoint(self):
+    def test_lineage_failure_retains_all_fifteen_strict_sizes_and_incomplete_physical_checkpoint(self):
         self.env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'] = 'must-not-archive'
         with patch.object(m.raster, 'wait_lineage', side_effect=m.SuiteError('lineage unavailable')):
             with self.assertRaisesRegex(m.SuiteError, 'lineage unavailable'):
@@ -319,7 +362,7 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
         self.assertEqual((checkpoint['stage'], checkpoint['result']), ('before_lineage', 'incomplete'))
         self.assertEqual(checkpoint['physical'], physical())
         self.assertEqual([entry['size_evidence'] for entry in checkpoint['outputs']],
-                         [{'physical_size_bytes': 1000, 'meta_size_bytes': 1000}]*3 + [{'physical_size_bytes': 1000, 'meta_size_bytes': 1000, 'layer_name': name} for name in ('snapped','overlaps','gaps','dangling','line-overlaps','line-self-overlaps','line-intersections','line-self-intersections','split-lines','line-components')])
+                         [{'physical_size_bytes': 1000, 'meta_size_bytes': 1000}]*3 + [{'physical_size_bytes': 1000, 'meta_size_bytes': 1000, 'layer_name': name} for name in ('snapped','overlaps','gaps','dangling','line-overlaps','line-self-overlaps','line-intersections','line-self-intersections','split-lines','line-components','line-chains','line-chain-members')])
         self.assertTrue(all(entry['triggered_by'] == 33 and entry['tenant_id'] == 2 for entry in checkpoint['automatic_scans']))
         self.assertEqual(checkpoint['lineage_facts'], execution()['metadata']['lineage_facts'])
         self.assertNotIn('must-not-archive', saved.read_text())
@@ -355,7 +398,7 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
         self.assertEqual((saved['result'],saved['stage']),('incomplete','collapsed_snap_validated'))
         self.assertEqual(saved['failed_snap']['execution_id'],'failed-snap')
         self.assertEqual(saved['failed_snap']['observation'],{'status':'failed','outputs':None,'lineage_facts':None,'meta_scan_runs':None})
-        self.assertEqual(len(saved['scan_inventory']),27)
+        self.assertEqual(len(saved['scan_inventory']),30)
         self.assertEqual(saved['identity']['principal_id'],'33')
         self.assertNotIn('must-not-archive',path.read_text())
         self.assertFalse((path.parent/'topology-persistence.json').exists())
@@ -378,10 +421,10 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
             m.run_scenario(Path('.'),self.env,Client(),physical,lambda repo,env,evidence:evidence,
                            diagnostic_runner=lambda *args:{})
         self.assertEqual(seen,[(10,30,'execution'),(10,31,'execution'),(11,32,'execution'),
-                           (12,33,'execution'),(13,33,'execution'),(14,34,'execution'),(15,35,'execution'),(16,35,'execution'),(17,36,'execution'),(18,37,'execution'),(19,38,'execution'),(20,39,'execution'),(21,40,'execution'),(22,41,'execution'),(23,42,'execution')])
+                           (12,33,'execution'),(13,33,'execution'),(14,34,'execution'),(15,35,'execution'),(16,35,'execution'),(17,36,'execution'),(18,37,'execution'),(19,38,'execution'),(20,39,'execution'),(21,40,'execution'),(22,41,'execution'),(23,42,'execution'),(24,43,'execution'),(24,44,'execution')])
 
     def test_gap_dag_binds_both_read_roles_and_rejects_missing_or_swapped_facts(self):
-        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap-source','coverage','dangling','line-overlap-source','self-source','intersection-source','self-intersection-source','split-source','component-source')['tasks'][:-21]
+        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap-source','coverage','dangling','line-overlap-source','self-source','intersection-source','self-intersection-source','split-source','component-source','chain-source')['tasks'][:-25]
         self.assertEqual(tasks[-4]['params'], {'locator':'gap-source'})
         self.assertEqual(tasks[-3]['params'], {'locator':'coverage'})
         self.assertEqual(tasks[-2]['params'], {'input_gdf':{'$ref':'gap_input'},'coverage_gdf':{'$ref':'gap_coverage'}})
@@ -483,7 +526,7 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
 
 
     def test_dangling_dag_and_current_report_require_original_source_evidence(self):
-        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap','coverage','dangle-source','line-overlap-source','self-source','intersection-source','self-intersection-source','split-source','component-source')['tasks'][:-18]
+        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap','coverage','dangle-source','line-overlap-source','self-source','intersection-source','self-intersection-source','split-source','component-source','chain-source')['tasks'][:-22]
         self.assertEqual(tasks[-3]['params'],{'locator':'dangle-source'})
         self.assertEqual(tasks[-2]['params'],{'input_gdf':{'$ref':'dangling_input'},'id_field':'route_key'})
         self.assertEqual(tasks[-1]['params']['target_name'],'dangling.gpkg')
@@ -492,7 +535,7 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
             path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],
-                'schema_version':'addp.topology-browser/v12','result':'passed'}))
+                'schema_version':'addp.topology-browser/v13','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
 
@@ -595,7 +638,7 @@ console.log('Point foreground pixels and preserved polygon assertions verified')
 
 
     def test_line_overlap_dag_and_lineage_bind_original_source(self):
-        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap','coverage','dangling','line-overlap-source','self-source','intersection-source','self-intersection-source','split-source','component-source')['tasks'][:-15]
+        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap','coverage','dangling','line-overlap-source','self-source','intersection-source','self-intersection-source','split-source','component-source','chain-source')['tasks'][:-19]
         self.assertEqual(tasks[-3]['params'],{'locator':'line-overlap-source'})
         self.assertEqual(tasks[-2]['operator'],'check_line_overlap')
         self.assertEqual(tasks[-2]['params'],{'input_gdf':{'$ref':'line_overlap_input'},'id_field':'route_key'})
@@ -612,7 +655,7 @@ console.log('Point foreground pixels and preserved polygon assertions verified')
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
             path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],
-                'schema_version':'addp.topology-browser/v12','result':'passed'}))
+                'schema_version':'addp.topology-browser/v13','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
 
@@ -662,7 +705,7 @@ console.log('MultiLineString pair identity, length and coordinates: nine corrupt
 
 
     def test_line_self_overlap_dag_and_lineage_bind_only_original_source(self):
-        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap','coverage','dangling','line-overlap-source','self-source','intersection-source','self-intersection-source','split-source','component-source')['tasks'][:-12]
+        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap','coverage','dangling','line-overlap-source','self-source','intersection-source','self-intersection-source','split-source','component-source','chain-source')['tasks'][:-16]
         self.assertEqual(tasks[-3]['params'],{'locator':'self-source'})
         self.assertEqual(tasks[-2]['operator'],'check_line_self_overlap')
         self.assertEqual(tasks[-2]['params'],{'input_gdf':{'$ref':'line_self_overlap_input'},'id_field':'route_key'})
@@ -679,13 +722,13 @@ console.log('MultiLineString pair identity, length and coordinates: nine corrupt
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
             path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],
-                'schema_version':'addp.topology-browser/v12','result':'passed'}))
+                'schema_version':'addp.topology-browser/v13','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
 
 
     def test_line_intersection_dag_scan_and_lineage_bind_the_original_file(self):
-        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap','coverage','dangling','line-overlap-source','self-source','intersection-source','self-intersection-source','split-source','component-source')['tasks'][:-9]
+        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap','coverage','dangling','line-overlap-source','self-source','intersection-source','self-intersection-source','split-source','component-source','chain-source')['tasks'][:-13]
         self.assertEqual(tasks[-3]['params'],{'locator':'intersection-source'})
         self.assertEqual(tasks[-2]['operator'],'check_line_intersection')
         self.assertEqual(tasks[-2]['params'],{'input_gdf':{'$ref':'line_intersection_input'},'id_field':'route_key'})
@@ -710,12 +753,12 @@ console.log('MultiLineString pair identity, length and coordinates: nine corrupt
         evidence={'execution_id':'current','outputs':[{'port':'line_intersections'}],'line_intersection_expected':m.fixture.line_intersection_expected_features()}
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
-            path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],'schema_version':'addp.topology-browser/v12','result':'passed'}))
+            path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],'schema_version':'addp.topology-browser/v13','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
 
     def test_line_self_intersection_dag_scan_and_lineage_bind_original_source(self):
-        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap','coverage','dangling','line-overlap-source','self-source','intersection-source','self-intersection-source','split-source','component-source')['tasks'][:-6]
+        tasks=m.definition('line','parent','invalid','snap','reference','overlap','gap','coverage','dangling','line-overlap-source','self-source','intersection-source','self-intersection-source','split-source','component-source','chain-source')['tasks'][:-10]
         self.assertEqual(tasks[-3]['params'],{'locator':'self-intersection-source'})
         self.assertEqual(tasks[-2]['operator'],'check_line_self_intersection')
         self.assertEqual(tasks[-2]['params'],{'input_gdf':{'$ref':'line_self_intersection_input'},'id_field':'route_key'})
@@ -740,6 +783,6 @@ console.log('MultiLineString pair identity, length and coordinates: nine corrupt
         evidence={'execution_id':'current','outputs':[{'port':'line_self_intersections'}],'line_self_intersection_expected':m.fixture.line_self_intersection_expected_features()}
         path=Path(self.env['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-browser.json'
         def run(*args,**kwargs):
-            path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],'schema_version':'addp.topology-browser/v12','result':'passed'}))
+            path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],'schema_version':'addp.topology-browser/v13','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)

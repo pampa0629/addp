@@ -1451,7 +1451,7 @@ def test_polygonize_workflow_saves_and_reloads_both_ports(tmp_path, has_closed_r
     assert "source_name" not in faces.columns and "source_name" not in diagnostics.columns
 
 
-def test_hosted_topology_physical_oracle_accepts_real_thirteen_saves_and_rejects_corruption(tmp_path):
+def test_hosted_topology_physical_oracle_accepts_real_fifteen_saves_and_rejects_corruption(tmp_path):
     import importlib
     fixture = importlib.import_module('business.scripts.online-vector-topology-fixture')
     (tmp_path / 'outputs').mkdir()
@@ -1525,11 +1525,17 @@ def test_hosted_topology_physical_oracle_accepts_real_thirteen_saves_and_rejects
         {'id':'line_component','operator':'group_line_components','params':{'input_gdf':{'$ref':'line_component_input'},'id_field':'route_key'},'depends_on':['line_component_input']},
         {'id':'save_line_components','operator':'save','params':{'input_df':{'$ref':'line_component'},'connection_info':connection,'path':'outputs/line-components.gpkg','mode':'fail'},'depends_on':['line_component']},
     ])
+    tasks.extend([
+        {'id':'line_chain_input','operator':'load','params':{'connection_info':connection,'path':'line-chain-input.gpkg'},'depends_on':[]},
+        {'id':'line_chain','operator':'merge_line_chains','params':{'input_gdf':{'$ref':'line_chain_input'},'id_field':'route_key','match_fields':['road','grade']},'depends_on':['line_chain_input']},
+        {'id':'save_line_chains','operator':'save','params':{'input_df':{'$ref':'line_chain'},'connection_info':connection,'path':'outputs/line-chains.gpkg','mode':'fail'},'depends_on':['line_chain']},
+        {'id':'save_line_chain_members','operator':'save','params':{'input_df':{'$ref':'line_chain','port':'members'},'connection_info':connection,'path':'outputs/line-chain-members.gpkg','mode':'fail'},'depends_on':['line_chain']},
+    ])
     execution = execute_workflow({'tasks': tasks})
     assert execution['status'] == 'success', execution.get('error')
     actual = fixture.worker('verify', tmp_path)
     assert actual['sources'] == seeded['sources']
-    assert [actual['targets'][name]['feature_count'] for name in fixture.TARGETS] == [4,4,2,5,7,8,17,9,8,10,15,20,15]
+    assert [actual['targets'][name]['feature_count'] for name in fixture.TARGETS] == [4,4,2,5,7,8,17,9,8,10,15,20,15,12,18]
     for name in fixture.TARGETS[:3]:
         path = tmp_path / 'outputs' / name
         original = path.read_bytes()
@@ -1852,6 +1858,51 @@ def test_hosted_line_component_fixture_rejects_real_physical_corruption(tmp_path
     dataset=None
     with pytest.raises(fixture.FixtureError): fixture.verify_line_component(tmp_path/'pieces.gpkg')
     assert (tmp_path/'source.gpkg').read_bytes()==before
+
+
+@pytest.mark.parametrize('port,problem',[
+    ('result','chain'),('result','count'),('result','attribute'),('result','tiny'),('result','direction'),('result','field_type'),
+    ('members','source'),('members','null'),('members','member'),('members','part'),('members','reverse'),('members','bool_type'),
+    ('members','direction'),('members','tiny'),('members','count'),('members','crs'),
+])
+def test_hosted_line_chain_fixture_rejects_real_physical_corruption(tmp_path,port,problem):
+    import importlib
+    from osgeo import ogr
+    fixture=importlib.import_module('business.scripts.online-vector-topology-fixture')
+    fixture.seed_line_chain(tmp_path/'source.gpkg');original=(tmp_path/'source.gpkg').read_bytes()
+    connection={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':'load','operator':'load','params':{'connection_info':connection,'path':'source.gpkg'},'depends_on':[]},
+        {'id':'chain','operator':'merge_line_chains','params':{'input_gdf':{'$ref':'load'},'id_field':'route_key','match_fields':['road','grade']},'depends_on':['load']}]
+    for name in ('result','members'):
+        tasks.append({'id':'save_'+name,'operator':'save','params':{'input_df':{'$ref':'chain','port':name},'connection_info':connection,'path':name+'.gpkg','mode':'fail'},'depends_on':['chain']})
+    execution=execute_workflow({'tasks':tasks});assert execution['status']=='success',execution.get('error')
+    assert fixture.verify_line_chain(tmp_path/'source.gpkg','source')['feature_count']==16
+    assert fixture.verify_line_chain(tmp_path/'result.gpkg')['feature_count']==12
+    assert fixture.verify_line_chain(tmp_path/'members.gpkg','members')['feature_count']==18
+    path=tmp_path/(port+'.gpkg');dataset=ogr.Open(str(path),1);layer=dataset.GetLayer(0)
+    if problem=='count':layer.DeleteFeature(1)
+    elif problem=='crs':dataset.ExecuteSQL('UPDATE gpkg_geometry_columns SET srs_id=4326')
+    elif problem in ('field_type','bool_type'):
+        field='grade' if problem=='field_type' else 'is_reversed'
+        assert layer.AlterFieldDefn(layer.GetLayerDefn().GetFieldIndex(field),ogr.FieldDefn(field,ogr.OFTReal if problem=='field_type' else ogr.OFTInteger64),ogr.ALTER_TYPE_FLAG)==0
+    else:
+        feature=layer.GetFeature((9 if port=='result' else 12) if problem=='tiny' else 1)
+        if problem=='chain':feature.SetField('member_count',1)
+        elif problem=='attribute':feature.SetField('road','wrong')
+        elif problem=='source':feature.SetField('route_key','lost')
+        elif problem=='null':feature.SetField('note','')
+        elif problem=='member':feature.SetField('member_no',2)
+        elif problem=='part':feature.SetField('source_part_no',2)
+        elif problem=='reverse':feature.SetField('is_reversed',1)
+        else:
+            points=[list(p[:2]) for p in feature.GetGeometryRef().GetPoints()]
+            if problem=='direction':points.reverse()
+            else:points[0][0]=1
+            feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps({'type':'LineString','coordinates':points})))
+        assert layer.SetFeature(feature)==0
+    dataset=None
+    with pytest.raises(fixture.FixtureError):fixture.verify_line_chain(path,port)
+    assert (tmp_path/'source.gpkg').read_bytes()==original
 
 
 # Single-feature validity is distinct from polygonize's whole-network face building.

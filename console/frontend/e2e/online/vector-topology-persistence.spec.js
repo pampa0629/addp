@@ -35,6 +35,7 @@ const expectedOutputGeometry = {
   dangling: ['Point', 17], line_overlaps: ['MultiLineString', 9], line_self_overlaps: ['MultiLineString', 8],
   line_intersections: ['Point', 10], line_self_intersections: ['Point', 15],
   split_lines: ['LineString', 20], line_components: ['LineString', 15],
+  line_chains: ['LineString', 12], line_chain_members: ['LineString', 18],
 }
 
 function expectedGeometryTypes(port) {
@@ -43,10 +44,15 @@ function expectedGeometryTypes(port) {
   return Array(count).fill(type)
 }
 
-test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点线叠自叠线交自交及打断连通分组地图及塌缩失败', async ({ page }) => {
+function expectedOriginalLines(evidence, port) {
+  return {split_lines:evidence.split_line_expected, line_components:evidence.line_component_expected,
+    line_chains:evidence.line_chain_expected, line_chain_members:evidence.line_chain_members_expected}[port]
+}
+
+test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点线叠自叠线交自交及打断连通分组链路合并地图及塌缩失败', async ({ page }) => {
   const evidence = JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE || '{}')
   for (const key of ['run_id', 'principal_id', 'tenant_id', 'execution_id']) expect(evidence[key]).toBeTruthy()
-  expect(evidence.outputs.map(output => output.port)).toEqual(['faces', 'diagnostics', 'repaired', 'snapped', 'overlaps', 'gaps', 'dangling', 'line_overlaps', 'line_self_overlaps', 'line_intersections', 'line_self_intersections', 'split_lines', 'line_components'])
+  expect(evidence.outputs.map(output => output.port)).toEqual(['faces', 'diagnostics', 'repaired', 'snapped', 'overlaps', 'gaps', 'dangling', 'line_overlaps', 'line_self_overlaps', 'line_intersections', 'line_self_intersections', 'split_lines', 'line_components', 'line_chains', 'line_chain_members'])
   expect(evidence.overlap_expected).toHaveLength(7)
   expect(evidence.gap_expected).toHaveLength(8)
   expect(evidence.dangling_expected).toHaveLength(17)
@@ -56,6 +62,8 @@ test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点�
   expect(evidence.line_self_intersection_expected).toHaveLength(15)
   expect(evidence.split_line_expected).toHaveLength(20)
   expect(evidence.line_component_expected).toHaveLength(15)
+  expect(evidence.line_chain_expected).toHaveLength(12)
+  expect(evidence.line_chain_members_expected).toHaveLength(18)
   const expectedIdentity = { principalID: evidence.principal_id, tenantID: evidence.tenant_id,
     permissions: evidence.permissions_verified }
   const executionRead = page.waitForResponse(response => response.request().method() === 'GET' &&
@@ -69,8 +77,8 @@ test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点�
   await expect(frame.getByText('成功', { exact: true })).toBeVisible()
   for (const output of evidence.outputs) await expect(frame.locator('.workflow-result')).toContainText(output.name)
   await page.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'topology-execution.png') })
-  const sourceLineage = { schema_version: 'addp.topology-source-lineage/v11', run_id: evidence.run_id, execution_id: evidence.execution_id, observations: [] }
-  expect(evidence.sources).toHaveLength(14)
+  const sourceLineage = { schema_version: 'addp.topology-source-lineage/v12', run_id: evidence.run_id, execution_id: evidence.execution_id, observations: [] }
+  expect(evidence.sources).toHaveLength(15)
   for (const output of evidence.outputs) {
     const expectedTypes = expectedGeometryTypes(output.port)
     const locator = `${output.locator}&item_id=${output.item_id}`
@@ -91,16 +99,16 @@ test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点�
       }
       const graph = await json(await previewAPI.get(`/api/v1/meta/lineage/graph?subject_kind=data_item&item_id=${output.item_id}&direction=upstream`), 'current output lineage')
       expect(graph.truncated).not.toBe(true)
-      for (const index of output.port === 'line_components' ? [13] : output.port === 'split_lines' ? [12] : output.port === 'line_self_intersections' ? [11] : output.port === 'line_intersections' ? [10] : output.port === 'line_self_overlaps' ? [9] : output.port === 'line_overlaps' ? [8] : output.port === 'dangling' ? [7] : output.port === 'gaps' ? [5,6] : output.port === 'overlaps' ? [4] : output.port === 'snapped' ? [2,3] : output.port === 'repaired' ? [1] : [0]) {
+      for (const index of ['line_chains','line_chain_members'].includes(output.port) ? [14] : output.port === 'line_components' ? [13] : output.port === 'split_lines' ? [12] : output.port === 'line_self_intersections' ? [11] : output.port === 'line_intersections' ? [10] : output.port === 'line_self_overlaps' ? [9] : output.port === 'line_overlaps' ? [8] : output.port === 'dangling' ? [7] : output.port === 'gaps' ? [5,6] : output.port === 'overlaps' ? [4] : output.port === 'snapped' ? [2,3] : output.port === 'repaired' ? [1] : [0]) {
         const sourceID = evidence.sources[index].id
         expect(graph.edges.some(edge => edge.source?.item_id === sourceID && edge.target?.item_id === output.item_id &&
           edge.evidence?.execution_id === evidence.execution_id && edge.status === 'active' && edge.relation_kind === 'derive')).toBe(true)
       }
-      if (['gaps','dangling','line_overlaps','line_self_overlaps','line_intersections','line_self_intersections','split_lines','line_components'].includes(output.port)) {
+      if (['gaps','dangling','line_overlaps','line_self_overlaps','line_intersections','line_self_intersections','split_lines','line_components','line_chains','line_chain_members'].includes(output.port)) {
         const currentSources = graph.edges.filter(edge => edge.target?.item_id === output.item_id &&
           edge.evidence?.execution_id === evidence.execution_id && edge.status === 'active' && edge.relation_kind === 'derive')
           .map(edge => edge.source?.item_id).sort((a,b) => a-b)
-        expect(currentSources).toEqual((output.port === 'line_components' ? [evidence.sources[13].id] : output.port === 'split_lines' ? [evidence.sources[12].id] : output.port === 'line_self_intersections' ? [evidence.sources[11].id] : output.port === 'line_intersections' ? [evidence.sources[10].id] : output.port === 'line_self_overlaps' ? [evidence.sources[9].id] : output.port === 'line_overlaps' ? [evidence.sources[8].id] : output.port === 'dangling' ? [evidence.sources[7].id] : [evidence.sources[5].id, evidence.sources[6].id]).sort((a,b) => a-b))
+        expect(currentSources).toEqual((['line_chains','line_chain_members'].includes(output.port) ? [evidence.sources[14].id] : output.port === 'line_components' ? [evidence.sources[13].id] : output.port === 'split_lines' ? [evidence.sources[12].id] : output.port === 'line_self_intersections' ? [evidence.sources[11].id] : output.port === 'line_intersections' ? [evidence.sources[10].id] : output.port === 'line_self_overlaps' ? [evidence.sources[9].id] : output.port === 'line_overlaps' ? [evidence.sources[8].id] : output.port === 'dangling' ? [evidence.sources[7].id] : [evidence.sources[5].id, evidence.sources[6].id]).sort((a,b) => a-b))
       }
       sourceLineage.observations.push({ output_item_id: output.item_id, sources, graph, preview })
       writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'topology-source-lineage-raw.json'), JSON.stringify(sourceLineage, null, 2))
@@ -113,8 +121,8 @@ test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点�
       expect([data.total, data.source_srid, data.source_crs, data.transform_status, data.preview_hint])
         .toEqual([expectedTypes.length, 3857, 'EPSG:3857', 'not_transformed', 'frontend_transform_required'])
       expect(data.geometry_columns).toEqual([output.geometry_column])
-      if (['split_lines','line_components'].includes(output.port)) {
-        const partExpected = output.port === 'split_lines' ? evidence.split_line_expected : evidence.line_component_expected
+      if (['split_lines','line_components','line_chains','line_chain_members'].includes(output.port)) {
+        const partExpected = expectedOriginalLines(evidence, output.port)
         const splitFields = Object.keys(partExpected[0].properties)
         expect(output.fid_column).toBeTruthy()
         expect([...data.columns].sort()).toEqual([output.fid_column, output.geometry_column, ...splitFields].sort())
@@ -274,8 +282,8 @@ test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点�
             overlap_length:feature.get('overlap_length'),coordinates:feature.getGeometry().getCoordinates()}))
       }, identities).then(rows => rows.map(record).sort())).toEqual(expected)
     }
-    if (['split_lines','line_components'].includes(output.port)) {
-      const partExpected = output.port === 'split_lines' ? evidence.split_line_expected : evidence.line_component_expected
+    if (['split_lines','line_components','line_chains','line_chain_members'].includes(output.port)) {
+      const partExpected = expectedOriginalLines(evidence, output.port)
       const splitFields = Object.keys(partExpected[0].properties)
       for (const name of splitFields) await expect(table.locator('thead')).toContainText(name)
       const expected = partExpected.map(row => JSON.stringify({ properties:row.properties,
@@ -316,16 +324,16 @@ test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点�
       }
       return count
     }, 0), pointMap)).toBeGreaterThan(30)
-    const rendered = await renderer.evaluate((element, port) => {
+    const rendered = await renderer.evaluate((element, {port, fields}) => {
       const value = element.__vueParentComponent.setupState.mapInstance
       const map = value?.value || value
       return { projection: map.getView().getProjection().getCode(), features: map.getLayers().getArray()
         .flatMap(layer => layer.getSource?.()?.getFeatures?.() || [])
         .map(feature => ({ type: feature.getGeometry().getType(), coordinates: feature.getGeometry().getCoordinates(),
           ...(feature.getGeometry().getType() === 'MultiLineString' ? {source_id:feature.get('source_id'),source_id_a:feature.get('source_id_a'),source_id_b:feature.get('source_id_b'),overlap_length:feature.get('overlap_length')} : {}),
-          ...(['split_lines','line_components'].includes(port) ? { properties:Object.fromEntries(['route_key','note','grade','source_id','part_no',port === 'split_lines' ? 'segment_no' : 'component_id'].map(name => [name,feature.get(name)])) } : {}),
+          ...(['split_lines','line_components','line_chains','line_chain_members'].includes(port) ? { properties:Object.fromEntries(fields.map(name => [name,feature.get(name)])) } : {}),
           ...(feature.getGeometry().getType() === 'Point' ? { source_id:feature.get('source_id'), source_id_a:feature.get('source_id_a'), source_id_b:feature.get('source_id_b') } : {}) })) }
-    }, output.port)
+    }, {port:output.port, fields:Object.keys(expectedOriginalLines(evidence, output.port)?.[0]?.properties || {})})
     sourceLineage.observations.at(-1).rendered = { ...rendered, ...(pointMap ? { point_pixels: featurePixels } : { green_pixels: featurePixels }) }
     writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'topology-source-lineage-raw.json'), JSON.stringify(sourceLineage, null, 2))
     if (output.port === 'diagnostics') expect((await table.getByRole('cell').allTextContents()).map(value => value.trim())).toEqual(Array(4).fill('dangle'))
@@ -347,6 +355,6 @@ test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点�
   await expect(frame.getByText('失败', { exact:true })).toBeVisible()
   await page.screenshot({ path:resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'topology-snap-failed.png') })
   writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'topology-browser.json'), JSON.stringify({
-    ...evidence, schema_version: 'addp.topology-browser/v12', result: 'passed'
+    ...evidence, schema_version: 'addp.topology-browser/v13', result: 'passed'
   }, null, 2))
 })

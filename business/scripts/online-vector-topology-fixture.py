@@ -10,9 +10,9 @@ import sys
 
 SUITE = 'vector-topology-persistence'
 RUNTIME = 'addp-topology-runtime'
-TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson', 'snapped.gpkg', 'overlaps.gpkg', 'gaps.gpkg', 'dangling.gpkg', 'line-overlaps.gpkg', 'line-self-overlaps.gpkg', 'line-intersections.gpkg', 'line-self-intersections.gpkg', 'split-lines.gpkg', 'line-components.gpkg')
-SOURCES = ('source.geojson', 'invalid.geojson', 'snap-input.gpkg', 'snap-reference.gpkg', 'overlap-input.gpkg', 'gap-input.gpkg', 'gap-coverage.gpkg', 'dangling-input.gpkg', 'line-overlap-input.gpkg', 'line-self-overlap-input.gpkg', 'line-intersection-input.gpkg', 'line-self-intersection-input.gpkg', 'split-line-input.gpkg', 'line-component-input.gpkg')
-PORTS = ('faces', 'diagnostics', 'repaired', 'snapped', 'overlaps', 'gaps', 'dangling', 'line_overlaps', 'line_self_overlaps', 'line_intersections', 'line_self_intersections', 'split_lines', 'line_components')
+TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson', 'snapped.gpkg', 'overlaps.gpkg', 'gaps.gpkg', 'dangling.gpkg', 'line-overlaps.gpkg', 'line-self-overlaps.gpkg', 'line-intersections.gpkg', 'line-self-intersections.gpkg', 'split-lines.gpkg', 'line-components.gpkg', 'line-chains.gpkg', 'line-chain-members.gpkg')
+SOURCES = ('source.geojson', 'invalid.geojson', 'snap-input.gpkg', 'snap-reference.gpkg', 'overlap-input.gpkg', 'gap-input.gpkg', 'gap-coverage.gpkg', 'dangling-input.gpkg', 'line-overlap-input.gpkg', 'line-self-overlap-input.gpkg', 'line-intersection-input.gpkg', 'line-self-intersection-input.gpkg', 'split-line-input.gpkg', 'line-component-input.gpkg', 'line-chain-input.gpkg')
+PORTS = ('faces', 'diagnostics', 'repaired', 'snapped', 'overlaps', 'gaps', 'dangling', 'line_overlaps', 'line_self_overlaps', 'line_intersections', 'line_self_intersections', 'split_lines', 'line_components', 'line_chains', 'line_chain_members')
 # Explicit coordinates are independent of the production matching algorithm.
 SNAP_INPUT = (((0,0),(10,0)), ((0,10),(10,10)), ((0,20),(10,20)), ((5,30),(5,35)), ((50,40),(52,40)))
 SNAP_REFERENCE = (((.5,0),(1,0)), ((10,0),(11,0)), ((.75,10),(10,10)), ((-.5,20),(.5,20)), ((0,30),(10,30)), ((51,40),(51,45)))
@@ -21,6 +21,72 @@ SNAP_EXPECTED = (((.5,0),(10,0)), ((0,10),(10,10)), ((-.5,20),(10,20)), ((5,30),
 
 def rectangle(x0, y0, x1, y1):
     return [[x0,y0],[x1,y0],[x1,y1],[x0,y1],[x0,y0]]
+
+
+def line_chain_source_features():
+    rows = [
+        ('中段', [[12,300],[14,300]], '主', 7), ('左段', [[10,300],[12,300]], '主', 7),
+        ('反右', [[16,300],[14,300]], '主', 7),
+        ('支左', [[28,300],[30,300]], '支', 8), ('支右', [[30,300],[32,300]], '支', 8),
+        ('异支', [[30,300],[30,302]], '另', 8),
+        ('变甲', [[40,300],[42,300]], '变', 9), ('变乙', [[42,300],[44,300]], '变', 10),
+        ('空甲', [[50,300],[52,300]], None, 10), ('空乙', [[54,300],[52,300]], None, 10),
+        ('微断', [[[0,320],[1,320]],[[1+2**-40,320],[2,320]]], '微', 11),
+        ('环首', [[72,300],[72,302]], '环', 12), ('环接', [[70,300],[72,300]], '环', 12),
+        ('环尾', [[72,302],[70,300]], '环', 12),
+        ('原重', [[90,300],[90,300],[92,300],[92,300]], '原', 13),
+        ('同源', [[[100,300],[102,300]],[[104,300],[102,300]]], '同源', 14),
+    ]
+    return [{'properties':{'route_key':key,'note':None if i in (1,8) else f'chain-original-{i}',
+                           'grade':grade,'road':road},
+             'geometry':{'type':'MultiLineString' if key in ('微断','同源') else 'LineString','coordinates':points}}
+            for i,(key,points,road,grade) in enumerate(rows)]
+
+
+def line_chain_expected_features(members=False):
+    # Explicit original membership and directions. No production traversal.
+    chains = [([(1,1,False),(0,1,False),(2,1,True)], [[10,300],[12,300],[14,300],[16,300]]),
+        ([(3,1,False)],[[28,300],[30,300]]), ([(4,1,False)],[[30,300],[32,300]]),
+        ([(5,1,False)],[[30,300],[30,302]]), ([(6,1,False)],[[40,300],[42,300]]),
+        ([(7,1,False)],[[42,300],[44,300]]), ([(8,1,False),(9,1,True)],[[50,300],[52,300],[54,300]]),
+        ([(10,1,False)],[[0,320],[1,320]]), ([(10,2,False)],[[1+2**-40,320],[2,320]]),
+        ([(11,1,False),(13,1,False),(12,1,False)],[[72,300],[72,302],[70,300],[72,300]]),
+        ([(14,1,False)],[[90,300],[90,300],[92,300],[92,300]]),
+        ([(15,1,False),(15,2,True)],[[100,300],[102,300],[104,300]])]
+    sources=line_chain_source_features();result=[]
+    for chain_id,(entries,coordinates) in enumerate(chains,1):
+        if not members:
+            attrs=sources[entries[0][0]]['properties']
+            result.append({'properties':{'road':attrs['road'],'grade':attrs['grade'],'chain_id':chain_id,'member_count':len(entries)},
+                           'geometry':{'type':'LineString','coordinates':coordinates}})
+            continue
+        for member_no,(source,part,reverse) in enumerate(entries,1):
+            original=sources[source];shape=original['geometry'];points=shape['coordinates'] if shape['type']=='LineString' else shape['coordinates'][part-1]
+            result.append({'properties':{**original['properties'],'chain_id':chain_id,'member_no':member_no,
+                                       'source_part_no':part,'is_reversed':reverse},
+                           'geometry':{'type':'LineString','coordinates':points}})
+    return result
+
+
+def validate_line_chain_features(features, kind='result'):
+    expected=line_chain_source_features() if kind=='source' else line_chain_expected_features(kind=='members')
+    _validate_point_features(features,expected)
+    for row in features:
+        for name in ('grade','chain_id','member_count','member_no','source_part_no'):
+            if name in row['properties'] and type(row['properties'][name]) is not int:
+                raise FixtureError('chain integer attribute or membership ordinal differs')
+        if kind=='members' and type(row['properties']['is_reversed']) is not bool:
+            raise FixtureError('chain direction must remain Boolean')
+
+
+def seed_line_chain(path):
+    from osgeo import ogr
+    _seed_attributed_line_source(path,line_chain_source_features(),extra_fields=[('road',ogr.OFTString)])
+
+
+def verify_line_chain(path, kind='result'):
+    source=kind=='source';expected=line_chain_source_features() if source else line_chain_expected_features(kind=='members')
+    return _verify_attributed_lines(path,expected,lambda rows,_:validate_line_chain_features(rows,kind),source)
 
 
 def line_component_source_features():
@@ -123,12 +189,12 @@ def verify_split_line(path, source=False):
                                     validate_split_line_features, source)
 
 
-def _seed_attributed_line_source(path, features):
+def _seed_attributed_line_source(path, features, extra_fields=()):
     from osgeo import ogr, osr
     crs = osr.SpatialReference(); crs.ImportFromEPSG(3857)
     dataset = ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
     layer = dataset.CreateLayer(path.stem, crs, ogr.wkbUnknown)
-    for name, kind in [('route_key',ogr.OFTString),('note',ogr.OFTString),('grade',ogr.OFTInteger64)]:
+    for name, kind in [('route_key',ogr.OFTString),('note',ogr.OFTString),('grade',ogr.OFTInteger64),*extra_fields]:
         layer.CreateField(ogr.FieldDefn(name,kind))
     for row in features:
         feature = ogr.Feature(layer.GetLayerDefn())
@@ -147,8 +213,10 @@ def _verify_attributed_lines(path, expected, validate, source):
     if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs): raise FixtureError('attributed line CRS differs')
     fields = list(expected[0]['properties']); schema = layer.GetLayerDefn()
     if ([schema.GetFieldDefn(i).GetName() for i in range(schema.GetFieldCount())] != fields or
-        any(schema.GetFieldDefn(i).GetType() != (ogr.OFTInteger64 if name in ('grade','part_no','segment_no','component_id') else ogr.OFTString) for i,name in enumerate(fields))):
+        any(schema.GetFieldDefn(i).GetType() != (ogr.OFTInteger64 if name in ('grade','part_no','segment_no','component_id','chain_id','member_count','member_no','source_part_no') else ogr.OFTInteger if name=='is_reversed' else ogr.OFTString) for i,name in enumerate(fields))):
         raise FixtureError('attributed line attribute/ordinal field types differ')
+    if 'is_reversed' in fields and schema.GetFieldDefn(schema.GetFieldIndex('is_reversed')).GetSubType()!=ogr.OFSTBoolean:
+        raise FixtureError('chain direction Boolean field subtype differs')
     features = []
     for feature in layer:
         geometry = feature.GetGeometryRef()
@@ -160,7 +228,11 @@ def _verify_attributed_lines(path, expected, validate, source):
         elif kind == 'MULTILINESTRING' and source:
             shape = {'type':'MultiLineString','coordinates':[[list(point[:2]) for point in geometry.GetGeometryRef(i).GetPoints()] for i in range(geometry.GetGeometryCount())]}
         else: raise FixtureError('attributed line geometry type differs')
-        features.append({'properties':{name:feature.GetField(name) for name in fields},'geometry':shape})
+        properties={name:feature.GetField(name) for name in fields}
+        if 'is_reversed' in fields:
+            if properties['is_reversed'] not in (0,1): raise FixtureError('invalid chain Boolean direction value')
+            properties['is_reversed']=bool(properties['is_reversed'])
+        features.append({'properties':properties,'geometry':shape})
     validate(features,source)
     result = {**digest(path),'feature_count':len(features),'crs':'EPSG:3857','layer_name':layer.GetName(),
               'geometry_column':schema.GetGeomFieldDefn(0).GetName(),'fid_column':layer.GetFIDColumn(),'fields':fields}
@@ -781,6 +853,8 @@ def expected_geometries(name):
 
 
 def validate_features(name, features):
+    if name in ('line-chains.gpkg','line-chain-members.gpkg'):
+        return validate_line_chain_features(features,'members' if name=='line-chain-members.gpkg' else 'result')
     if name == 'line-components.gpkg':
         return validate_line_component_features(features)
     if name == 'split-lines.gpkg':
@@ -836,6 +910,7 @@ def worker(action, root):
         _seed_linear(root / 'line-self-intersection-input.gpkg', line_self_intersection_source_features())
         seed_split_line(root / 'split-line-input.gpkg')
         seed_line_component(root / 'line-component-input.gpkg')
+        seed_line_chain(root / 'line-chain-input.gpkg')
         return {'sources': {name: digest(root / name) for name in SOURCES}}
     if action != 'verify':
         raise FixtureError('unknown worker action')
@@ -859,8 +934,12 @@ def worker(action, root):
     verify_line_self_intersection(root / 'line-self-intersection-input.gpkg', source=True)
     verify_split_line(root / 'split-line-input.gpkg', source=True)
     verify_line_component(root / 'line-component-input.gpkg', source=True)
+    verify_line_chain(root / 'line-chain-input.gpkg',kind='source')
     for name in TARGETS:
         path = root / 'outputs' / name
+        if name in ('line-chains.gpkg','line-chain-members.gpkg'):
+            results[name]=verify_line_chain(path,'members' if name=='line-chain-members.gpkg' else 'result')
+            continue
         if name == 'line-components.gpkg':
             results[name] = verify_line_component(path)
             continue
