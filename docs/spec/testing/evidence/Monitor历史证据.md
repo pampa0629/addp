@@ -1552,3 +1552,12 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 用户完成全量重启后，System 8180、Monitor 8100、Gateway 8000的`/health/ready`均200/ready；构建报告commit为`871bc854795105b364b154f1802697969655b6f0`，祖先检查确认包含本批`062301037`。沿Safari当前平台系统管理员会话进入Console的服务失联规则页，规则列表为空且无读取错误；创建入口及System授权候选可读取，候选25组与标准入口受管声明的25组一致。当前声明为Meta scan、Quality quality-bounded、Transfer sync／continuous_sync各一个预期副本；不据此认定双Worker运行验收。无障碍接口完成Meta扫描组筛选／选择，默认60／30秒、启用开关关闭且不可在创建时开启，缺名称时本地校验阻止写入。
 
 截图仍显示原列表，与无障碍树中的弹窗及校验提示不一致；Raise窗口后仍未得到一致视觉证据，已请求用户核对实际是否可见，未把无障碍读取外推为弹窗视觉通过。未保存／启用个人规则或通知，未停止服务、直接读写个人数据库、触发CI／Hosted或创建定时任务。真实规则保存、重新启用后的运行确认、租约失联／恢复和正式身份全闭环仍未验收。安全收据：`/tmp/addp-service-availability-personal-restart-20261025.json`。
+
+
+### 部署证明测试的单一挂载归属回归（2026-10-25）
+
+专门CI会话回传Platform T0失败：run `40207277037` / job `121210797431` 的 `make test-platform → test-business-config → test-deployment-discovery`，旧 `container-proofs_test.py` 仍向SDK指标适配器索要隐式`system-backend`发现挂载，报KeyError。当前生产发现目录已由标准生命周期唯一发布，不应恢复旧适配器双轨。
+
+本地先以 `make test-deployment-discovery` 复现同一错误，再仅修正测试：显式Monitor SDK只输出Monitor，配置但不存在的发现目录不被适配器创建；新增交叉归属用例验证标准生命周期的System环境和发现挂载、`read_only=true`及显式`create_host_path=false`、不复制渲染密码；无SDK及显式System SDK两种输入都不让适配器重新拥有发现挂载或改写生命周期覆盖文件。原cgroup opt-in、TLS路径、只读与非特权断言保留。产品、权限、个人服务、Make和workflow不变，新用例沿原标准入口自动执行。
+
+修复后 `make test-deployment-discovery` 退出0（38项发现＋6项证明及脚本语法）；`python3 -m unittest scripts/test/metrics-deployment-config_test.py` 87项退出0，覆盖原生产生命周期单一发现挂载、关闭指标仍声明及启动／停止屏障。日志 `/tmp/addp-container-proof-owner-{red,green,lifecycle}.log`。此处仅为本批本地T0修复，不将原失败改写为通过，不外推整轮Platform、Linux CI或Hosted；修复后的自然CI结果等专门会话回传，未自行查询、重跑CI或设置定时任务。

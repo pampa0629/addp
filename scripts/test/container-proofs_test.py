@@ -20,19 +20,66 @@ class ProofTests(unittest.TestCase):
         adapter=importlib.util.module_from_spec(spec);spec.loader.exec_module(adapter)
         with tempfile.TemporaryDirectory(prefix='addp-container-compose-') as folder:
             base=Path(folder);tls=base/'tls';directory=base/'metrics';discovery=base/'discovery'
-            for p in (tls,directory,discovery):p.mkdir(mode=0o700)
+            for p in (tls,directory):p.mkdir(mode=0o700)
             for name in ('ca.crt','server.crt','server.key'):(tls/name).write_text('deployment-owned fixture');(tls/name).chmod(0o600)
             item={'module_name':'monitor','role':'backend','listen':'0.0.0.0:9445','endpoint':'https://monitor-backend:9445/metrics','tls_dir':str(tls),'cgroup_v2':True}
             with patch.dict(os.environ,{'ADDP_METRICS_DEPLOYMENT_DIR':str(directory),'ADDP_DEPLOYMENT_DISCOVERY_DIR':str(discovery),'ADDP_PROCESS_METRICS_DEPLOYMENTS':json.dumps([item])}):adapter.render()
             result=json.loads((directory/'platform-process-metrics.json').read_text())['services']
             projected=json.loads(result['monitor-backend']['environment']['ADDP_PROCESS_METRICS_DEPLOYMENTS'])
             self.assertTrue(projected[0]['cgroup_v2']);self.assertEqual(projected[0]['tls_dir'],'/etc/addp/process-metrics/source')
-            self.assertEqual(result['system-backend']['environment']['ADDP_DEPLOYMENT_DISCOVERY_DIR'],'/etc/addp/deployment-discovery')
+            self.assertEqual(set(result), {'monitor-backend'})
+            self.assertFalse(discovery.exists())
+            # Discovery is owned by the standard lifecycle, not by SDK opt-in.
             for row in result.values():
+                self.assertNotIn('ADDP_DEPLOYMENT_DISCOVERY_DIR', row['environment'])
+                self.assertEqual({m['target'] for m in row['volumes']}, {'/etc/addp/process-metrics/source'})
                 self.assertNotIn('cgroup',row);self.assertNotIn('privileged',row)
                 for mount in row['volumes']:self.assertTrue(mount['read_only']);self.assertFalse(mount['bind']['create_host_path'])
             for invalid in ([dict(item,cgroup_v2='true')],[item,item],[dict(item,module_name='unknown')],[dict(item,password='sentinel')]):
                 with patch.dict(os.environ,{'ADDP_METRICS_DEPLOYMENT_DIR':str(directory),'ADDP_DEPLOYMENT_DISCOVERY_DIR':str(discovery),'ADDP_PROCESS_METRICS_DEPLOYMENTS':json.dumps(invalid)}),self.assertRaises(ValueError):adapter.render()
+
+    def test_standard_lifecycle_owns_system_discovery_with_and_without_sdk_opt_in(self):
+        spec=importlib.util.spec_from_file_location('proof_lifecycle_inventory',ROOT/'scripts/utils/deployment-inventory.py')
+        inventory=importlib.util.module_from_spec(spec);spec.loader.exec_module(inventory)
+        spec=importlib.util.spec_from_file_location('proof_lifecycle_sdk',ROOT/'scripts/prod/generate-process-metrics-platform.py')
+        adapter=importlib.util.module_from_spec(spec);spec.loader.exec_module(adapter)
+        with tempfile.TemporaryDirectory(prefix='addp-proof-lifecycle-') as folder:
+            base=Path(folder);directory=base/'metrics';tls=base/'tls';discovery=base/'discovery'
+            for path in (directory,tls,discovery):path.mkdir(mode=0o700)
+            for name in ('ca.crt','server.crt','server.key'):
+                (tls/name).write_text('deployment-owned fixture');(tls/name).chmod(0o600)
+            compose=base/'platform.yml';compose.write_text('services: {}')
+            rendered=json.dumps({'services':{'system-backend':{'environment':{'PASSWORD':'do-not-copy'}},
+                                            'meta-worker':{'deploy':{'replicas':2}}}}).encode()
+            # Only config rendering is mocked; no container or personal service is used.
+            with patch.object(inventory.subprocess,'run') as config:
+                config.return_value.stdout=rendered
+                inventory.publish_platform_service_expectations(discovery,[str(compose)])
+            self.assertEqual(config.call_args.args[0],['docker','compose','-f',str(compose),'config','--format','json'])
+            overlay=json.loads((discovery/'platform-service-expectations.json').read_text())
+            self.assertEqual(set(overlay['services']),{'system-backend'})
+            system=overlay['services']['system-backend']
+            self.assertEqual(system,{
+                'environment':{'ADDP_DEPLOYMENT_DISCOVERY_DIR':'/etc/addp/deployment-discovery'},
+                'volumes':[{'type':'bind','source':str(discovery),'target':'/etc/addp/deployment-discovery',
+                            'read_only':True,'bind':{'create_host_path':False}}]})
+            self.assertNotIn('do-not-copy',json.dumps(overlay))
+            original=(discovery/'platform-service-expectations.json').read_bytes()
+            sdk={'module_name':'system','role':'backend','listen':'0.0.0.0:9445',
+                 'endpoint':'https://system-backend:9445/metrics','tls_dir':str(tls),'cgroup_v2':True}
+            for items in ([],[sdk]):
+                with self.subTest(sdk_enabled=bool(items)),patch.dict(os.environ,{
+                    'ADDP_METRICS_DEPLOYMENT_DIR':str(directory),'ADDP_DEPLOYMENT_DISCOVERY_DIR':str(discovery),
+                    'ADDP_PROCESS_METRICS_DEPLOYMENTS':json.dumps(items)}):
+                    adapter.render()
+                    services=json.loads((directory/'platform-process-metrics.json').read_text())['services']
+                    self.assertEqual(set(services),{'system-backend'} if items else set())
+                    for row in services.values():
+                        self.assertNotIn('ADDP_DEPLOYMENT_DISCOVERY_DIR',row['environment'])
+                        self.assertNotIn('cgroup',row);self.assertNotIn('privileged',row)
+                        self.assertEqual(row['volumes'],[{'type':'bind','source':str(tls),
+                            'target':'/etc/addp/process-metrics/source','read_only':True,'bind':{'create_host_path':False}}])
+                    self.assertEqual((discovery/'platform-service-expectations.json').read_bytes(),original)
 
     def test_kernel_reader_requires_host_root_and_every_parent(self):
         with tempfile.TemporaryDirectory(prefix='addp-cgroup-proof-') as folder:
