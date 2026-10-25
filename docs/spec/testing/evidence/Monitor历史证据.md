@@ -1518,6 +1518,6 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 
 独立修复部署发布器：原changed_at仅到秒，同秒停用、重启后会复用先前标记，无法可靠隔离前后运行确认。改用真实UTC微秒，组内容或运行意图实质变化必须严格晚于该组原值；时间不前进或回退即拒绝发布、保留旧文件，不合成未来值。相同预期仍幂等，不相关组保持原标记。仍为同一文件、既有字段和发布路线，无API、私有投影字段、权限、IAM或数据库变更。
 
-验证：新增三项回归先在原实现中复现失败（五处断言，87项全体退出1）；修复后 `python3 -m unittest scripts/test/metrics-deployment-config_test.py` 87项退出0。同秒停用／重启／缩容逐次区分；时钟停滞／回退时启动修改、计划停用及完整计划退役均不写入，幂等重发仍成功，临时文件零残留；其他组标记不受影响。`make test-dev-lifecycle`最终退出0（164／99／61项聚合、局部生命周期、共享包及Worker命令编译）；T2登记22／12／9／2通过。新用例沿原配置聚合与Metrics输入自动发现，无需改Make或workflow。日志 `/tmp/addp-service-intent-confirmation-{red,green,lifecycle,registration}.log`，收据同前缀 `-receipt.json`。
+验证：新增三项回归先在原实现中复现失败（五处断言，87项全体退出1）；修复后 `python3 -m unittest scripts/test/metrics-deployment-config_test.py` 87项退出0。同秒停用／重启／缩容逐次区分；时钟停滞／回退时启动修改、计划停用及完整计划退役均不写入，幂等重发仍成功，临时文件零残留；其他组标记不受影响。`make test-dev-lifecycle`最终退出0（164／112／61项聚合、局部生命周期、共享包及Worker命令编译）；T2登记22／12／9／2通过。新用例沿原配置聚合与Metrics输入自动发现，无需改Make或workflow。日志 `/tmp/addp-service-intent-confirmation-{red,green,lifecycle,registration}.log`，收据同前缀 `-receipt.json`。
 
 本批不重跑既有无关全量T0失败，不计其通过；没有查询／触发CI或Hosted、重启个人服务、修改个人数据库或设置定时任务。仍未验收个人真实启停发布→System→Monitor链路，也未实现服务组确认运行的持久状态、规则管理或告警／通知闭环；原第15／49行保持部分实现，不能把前置标记修复计为失联告警完成。
