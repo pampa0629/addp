@@ -819,18 +819,40 @@ class PGCollectionReadBarrier:
         return json.loads(buffer)
 
     def counts(self):
-        result = self.query('''SELECT json_build_object('reset_at',i.stats_reset,'calls',
-          COALESCE((SELECT json_object_agg(category,calls) FROM (
-            SELECT CASE WHEN query LIKE '%FROM information_schema.tables t%' AND query LIKE '%pg_total_relation_size%'
+        result = self.query('''WITH source_statements AS MATERIALIZED (
+            SELECT queryid::text AS query_id, toplevel AS top_level, calls,
+              CASE WHEN btrim(query) = 'SELECT version()' THEN 'version_probe' ELSE 'unclassified' END AS kind,
+              CASE WHEN query LIKE '%FROM information_schema.tables t%' AND query LIKE '%pg_total_relation_size%'
               THEN 'tables' WHEN query LIKE '%pg_catalog.pg_namespace) s%' THEN 'namespaces'
               WHEN query LIKE '%SELECT COUNT(*)%' AND query LIKE '%lower(table_name) IN%' THEN 'workspace_detection'
-              ELSE 'other' END AS category, sum(calls) AS calls
+              ELSE 'other' END AS category
             FROM addp_observer.pg_stat_statements WHERE userid=(SELECT oid FROM pg_roles WHERE rolname='metric_reader')
-              AND dbid=(SELECT oid FROM pg_database WHERE datname=current_database()) GROUP BY 1) s),'{}'::json))
+              AND dbid=(SELECT oid FROM pg_database WHERE datname=current_database()))
+          SELECT json_build_object('reset_at',i.stats_reset,'calls',
+          COALESCE((SELECT json_object_agg(category,calls) FROM (
+            SELECT category,sum(calls) AS calls FROM source_statements GROUP BY 1) s),'{}'::json),
+          'other_statement_count',(SELECT count(*) FROM source_statements WHERE category='other'),
+          'other_statements',COALESCE((SELECT json_agg(json_build_object('query_id',query_id,'top_level',top_level,
+              'kind',kind,'calls',calls) ORDER BY query_id,top_level) FROM (
+            SELECT query_id,top_level,kind,calls FROM source_statements WHERE category='other'
+              ORDER BY query_id,top_level LIMIT 128) s),'[]'::json))
           FROM addp_observer.pg_stat_statements_info i;''')
-        require(isinstance(result.get('calls'), dict) and result.get('reset_at')
+        require(isinstance(result, dict)
+                and set(result) == {'calls', 'reset_at', 'other_statement_count', 'other_statements'}
+                and isinstance(result.get('calls'), dict) and result.get('reset_at')
                 and all(k in {'tables', 'namespaces', 'workspace_detection', 'other'} and type(v) is int and v >= 0
                         for k, v in result['calls'].items()), 'invalid source statement counters')
+        rows = result.get('other_statements')
+        require(isinstance(rows, list) and type(result.get('other_statement_count')) is int
+                and len(rows) == result['other_statement_count'] <= 128
+                and all(isinstance(row, dict) and set(row) == {'query_id', 'top_level', 'kind', 'calls'}
+                        and type(row['query_id']) is str and re.fullmatch(r'-?[0-9]{1,20}', row['query_id'])
+                        and type(row['top_level']) is bool and type(row['kind']) is str
+                        and row['kind'] in {'version_probe', 'unclassified'}
+                        and type(row['calls']) is int and row['calls'] >= 0 for row in rows)
+                and len({(row['query_id'], row['top_level']) for row in rows}) == len(rows)
+                and sum(row['calls'] for row in rows) == result['calls'].get('other', 0),
+                'invalid or truncated source other statement diagnostics')
         return result
 
     def wait_blocked(self):

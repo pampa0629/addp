@@ -2254,6 +2254,29 @@ class MetaCollectionOnlineTest(unittest.TestCase):
                 self.scenario.cleanup()
                 self.assertFalse(self.tasks)
 
+    def test_version_probe_diagnostic_never_exempts_an_extra_other_call(self):
+        for natural_expiry in (False, True):
+            with self.subTest(natural_expiry=natural_expiry):
+                self.setUp()
+                barrier = self.inflight_fixture('other_sql', natural_expiry=natural_expiry)
+                barrier.baseline.update(other_statement_count=0, other_statements=[])
+                counts = barrier.counts
+                row = {'query_id': '-123', 'top_level': True, 'kind': 'version_probe', 'calls': 1}
+                barrier.counts = lambda: dict(counts(), other_statement_count=1, other_statements=[row])
+                run = self.scenario.run_inflight_expiry if natural_expiry else self.scenario.run_inflight
+                with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier), self.assertRaisesRegex(
+                        ONLINE.SuiteError, 'source opened another Catalog read'):
+                    run(self.report)
+                evidence = self.report['meta_collection']['inflight_expiry' if natural_expiry else 'inflight']
+                self.assertEqual(evidence['source_counter_stage'], 'delta_check')
+                self.assertEqual(evidence['source_call_delta']['other'], 1)
+                self.assertEqual(evidence['source_counter_observed']['other_statements'], [row])
+                self.assertNotIn('next_catalog_denied', evidence)
+                self.assertFalse(self.report['checks'])
+                self.scenario.cleanup()
+                self.assertFalse(self.tasks)
+                self.assertTrue(barrier.closed)
+
     def test_inflight_expiry_unknown_responses_and_source_cleanup_fail_closed(self):
         for operation in ('approve', 'trigger', 'replay', 'source_residual'):
             with self.subTest(operation=operation):
@@ -2967,6 +2990,39 @@ class PGCollectionBarrierTest(unittest.TestCase):
         process.stdin.close.assert_called_once_with()
         process.stdout.close.assert_called_once_with()
         self.assertIsNone(self.barrier.process)
+
+    def test_source_statistics_preserve_each_other_statement_without_exposing_sql(self):
+        rows = [{'query_id': '-123', 'top_level': True, 'kind': 'version_probe', 'calls': 8},
+                {'query_id': '456', 'top_level': False, 'kind': 'unclassified', 'calls': 1}]
+        value = {'reset_at': 'same', 'calls': {'tables': 3, 'other': 9},
+                 'other_statement_count': 2, 'other_statements': rows}
+        with patch.object(self.barrier, 'query', return_value=value) as query:
+            self.assertEqual(self.barrier.counts(), value)
+        sql = query.call_args.args[0]
+        self.assertIn('AS MATERIALIZED', sql)
+        self.assertIn("btrim(query) = 'SELECT version()'", sql)
+        self.assertIn('queryid::text', sql)
+        self.assertIn('LIMIT 128', sql)
+        self.assertIn("rolname='metric_reader'", sql)
+        self.assertIn('datname=current_database()', sql)
+        self.assertNotIn('SELECT version()', json.dumps(value))
+
+    def test_source_other_statement_diagnostics_reject_truncation_duplicates_and_raw_fields(self):
+        row = {'query_id': '-123', 'top_level': True, 'kind': 'version_probe', 'calls': 1}
+        base = {'reset_at': 'same', 'calls': {'other': 1}, 'other_statement_count': 1, 'other_statements': [row]}
+        values = [dict(base, other_statement_count=2), dict(base, other_statements=[]),
+                  dict(base, query='private SQL'),
+                  dict(base, calls={'other': 2}), dict(base, other_statements=[row, row], other_statement_count=2, calls={'other': 2}),
+                  dict(base, other_statements=[dict(row, query='private SQL')]),
+                  dict(base, other_statements=[dict(row, query_id='private SQL')]),
+                  dict(base, other_statements=[dict(row, kind='private SQL')]),
+                  dict(base, other_statements=[dict(row, kind={})]),
+                  dict(base, other_statements=[dict(row, calls=True)]),
+                  dict(base, other_statements=[dict(row, top_level=1)]),
+                  dict(base, other_statement_count=129, other_statements=[row] * 129)]
+        for value in values:
+            with self.subTest(value=value), patch.object(self.barrier, 'query', return_value=value), self.assertRaises(ONLINE.SuiteError):
+                self.barrier.counts()
 
 
 if __name__ == '__main__':
