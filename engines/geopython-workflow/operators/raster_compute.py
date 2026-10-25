@@ -1620,17 +1620,23 @@ def _boundary_error(code):
     return ValueError(_BOUNDARY_MESSAGES[code][_DISK_LANGUAGE.get()])
 
 
-def _cell_neighbourhood_blocks(dataset, band):
-    """A 510-pixel core plus one-cell halo, never reading more than 512 squared."""
+def _neighbourhood_windows(dataset, band, *, native=False):
+    """One 510-pixel core plus one-cell halo; retain native dtype when required."""
     for y in range(0, dataset.RasterYSize, 510):
         for x in range(0, dataset.RasterXSize, 510):
             width, height = min(510, dataset.RasterXSize-x), min(510, dataset.RasterYSize-y)
             left, top = max(0, x-1), max(0, y-1)
             right, bottom = min(dataset.RasterXSize, x+width+1), min(dataset.RasterYSize, y+height+1)
-            _, _, arrays, masks = next(_blocks(dataset, [band], window=(left, top, right-left, bottom-top)))
+            _, _, arrays, masks = next(_blocks(dataset, [band], window=(left, top, right-left, bottom-top), native=native))
             padding = ((top-y+1, y+height+1-bottom), (left-x+1, x+width+1-right))
-            values = np.pad(np.where(masks[0], arrays[0], np.nan), padding, constant_values=np.nan)
-            yield x, y, values
+            yield x, y, arrays[0], masks[0], padding
+
+
+def _cell_neighbourhood_blocks(dataset, band):
+    """A 510-pixel core plus one-cell halo, never reading more than 512 squared."""
+    for x, y, array, mask, padding in _neighbourhood_windows(dataset, band):
+        values = np.pad(np.where(mask, array, np.nan), padding, constant_values=np.nan)
+        yield x, y, values
 
 
 def _boundary_neighbours(values):
@@ -3600,6 +3606,109 @@ def _terrain(input_raster, elevation_unit, band, processing, **options):
     return _raster(path)
 
 
+
+_CURVATURE_MESSAGES = {
+    key: (zh.replace('DEM 填洼', 'DEM 平均曲率'),
+          en.replace('DEM depression filling', 'DEM mean curvature'))
+    for key, (zh, en) in _FILL_MESSAGES.items()
+}
+_CURVATURE_MESSAGES.update({
+    'step': ('DEM 平均曲率的米制横纵像元间距必须能表示为严格正有限值',
+             'DEM mean curvature requires representable finite, strictly positive horizontal and vertical spacing in metres'),
+    'numeric': ('DEM 平均曲率的高程差、拟合导数及结果必须为有限值',
+                'DEM mean curvature requires finite elevation differences, fitted derivatives and results'),
+})
+
+
+def _curvature_error(code):
+    return ValueError(_CURVATURE_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _mean_curvature(p, q, r, s, t):
+    """Convex-positive geometric mean curvature; normalize before squaring slopes."""
+    scale = np.maximum(1., np.maximum(np.abs(p), np.abs(q)))
+    px, py, one = p/scale, q/scale, 1./scale
+    squared = one*one + px*px + py*py
+    normal = -(1./scale)/(2.*np.sqrt(squared))
+    rr, ss, tt = r*normal, s*normal, t*normal
+    # Multiply derivatives before tiny normalized factors; squaring 1/scale
+    # first can underflow even when the final curvature is representable.
+    return (((rr*one)*one)/squared + ((rr*py)*py)/squared
+            - (((ss*px)*py)*2.)/squared
+            + ((tt*one)*one)/squared + ((tt*px)*px)/squared)
+
+
+def _curvature_block(values, valid, dx, dy, elevation_factor):
+    """Closed-form equal-weight six-coefficient least squares on nine samples."""
+    height, width = values.shape[0]-2, values.shape[1]-2
+    complete = np.ones((height, width), dtype=bool)
+    for row in range(3):
+        for col in range(3):
+            complete &= valid[row:row+height, col:col+width]
+    result = np.full((height, width), np.nan)
+    if not np.any(complete):
+        return result
+    integer = np.issubdtype(values.dtype, np.integer)
+    center = values[1:1+height, 1:1+width][complete].astype(object if integer else np.float64)
+    neighbours = []
+    with np.errstate(over='ignore', invalid='ignore', divide='ignore', under='ignore'):
+        for row in range(3):
+            for col in range(3):
+                sample = values[row:row+height, col:col+width][complete].astype(object if integer else np.float64)
+                delta = sample - center
+                if not integer and not np.all(np.isfinite(delta)):
+                    raise _curvature_error('numeric')
+                neighbours.append(delta)
+        nw, north, ne, west, centre, east, sw, south, se = neighbours
+        # Center subtraction is a translation, not a constraint on fitted f.
+        numerators = ((ne-nw)+(east-west)+(se-sw),
+                      (nw-sw)+(north-south)+(ne-se),
+                      ((nw-north)+(ne-north))+((west-centre)+(east-centre))+((sw-south)+(se-south)),
+                      (ne-nw)-(se-sw),
+                      ((nw-west)+(sw-west))+((north-centre)+(south-centre))+((ne-east)+(se-east)))
+        converted = [np.asarray(n, dtype=np.float64)*elevation_factor for n in numerators]
+        p, q = converted[0]/6./dx, converted[1]/6./dy
+        r, s, t = converted[2]/3./dx/dx, converted[3]/4./dx/dy, converted[4]/3./dy/dy
+        if any(not np.all(np.isfinite(a)) for a in (*converted, p, q, r, s, t)):
+            raise _curvature_error('numeric')
+        curvature = _mean_curvature(p, q, r, s, t)
+    if not np.all(np.isfinite(curvature)):
+        raise _curvature_error('numeric')
+    result[complete] = curvature
+    return result
+
+
+def raster_curvature(input_raster, band, elevation_unit):
+    """Nine-point equal-weight quadratic mean curvature in inverse metres."""
+    source, horizontal_metres = _dem_admission(input_raster, elevation_unit, band, 1, diagnostic=_curvature_error)
+    transform = source.GetGeoTransform()
+    dx, dy = transform[1]*horizontal_metres, -transform[5]*horizontal_metres
+    if not all(math.isfinite(value) and value > 0 for value in (dx, dy)):
+        raise _curvature_error('step')
+    output = destination = None
+    path = None
+    completed = False
+    try:
+        output = _numeric_output(source, 1)
+        path = Path(output.GetDescription())
+        destination = output.GetRasterBand(1)
+        destination.SetUnitType('1/metre')
+        for x, y, array, mask, padding in _neighbourhood_windows(source, band, native=True):
+            values = np.pad(array, padding, constant_values=0)
+            valid = np.pad(mask, padding, constant_values=False)
+            result = _curvature_block(values, valid, dx, dy, _ELEVATION_METRES[elevation_unit])
+            destination.WriteArray(result, x, y)
+        destination = None
+        output.FlushCache()
+        output = None
+        result = _raster(path)
+        completed = True
+        return result
+    finally:
+        destination = output = source = None
+        if path is not None and not completed:
+            path.unlink(missing_ok=True)
+
 def raster_slope(input_raster, elevation_unit, band=1, slope_unit='degree'):
     if slope_unit not in ('degree', 'percent'):
         raise ValueError('slope_unit must be degree or percent')
@@ -3717,6 +3826,7 @@ _SPECS = [
     (raster_hand_d8, OperatorCategory.RASTER_CELL, 'D8 到河网相对高程（HAND）', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网；完整非法路线及断流失败', role='input'), _param('elevation_raster', 'raster', '同网格、同有效覆盖的DEM；全图下游不升高，允许平坦、逆坡失败', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式二值河网数据波段'), _param('elevation_band', 'int', '显式高程数据波段；相对首次河网高程差，河网0、未到达NoData'), _param('elevation_unit', 'str', '显式高程单位，结果统一米制', enum=['metre', 'foot', 'us_survey_foot'])], 'raster', ['read']),
     (raster_stream_link_d8, OperatorCategory.RASTER_CELL, 'D8 河段编号', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；汇合点归下游段，按河段起点行列顺序从1编号')], 'raster', ['read']),
     (raster_stream_to_vector_d8, OperatorCategory.RASTER_EXTENT, 'D8 河网转矢量线', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜；孤立单像元失败，不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；连接像元中心，保留河段ID及米制长度')], 'GeoDataFrame', ['read']),
+    (raster_curvature, OperatorCategory.RASTER_CELL, 'DEM 平均曲率', [_INPUT(), _param('band', 'int', '显式高程数据波段；完整有效3×3九点等权二次曲面拟合，凸正凹负'), _param('elevation_unit', 'str', '显式高程单位；输出每米（1/metre），边缘及无效邻域NoData', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_CELL, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
     (raster_hillshade, OperatorCategory.RASTER_CELL, 'DEM 地形晕渲', [*_DEM_PARAMS(), _param('azimuth', 'float', '光照方位角，北起顺时针 [0,360)', 315., False), _param('altitude', 'float', '光照高度角 (0,90]', 45., False)], 'raster', ['read']),
@@ -3782,7 +3892,7 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'factors': [2, 2], 'method': 'mean'})
     if name == 'raster_tile':
         examples.update({'tile_size': [1024, 1024]})
-    if name in ('raster_fill_depressions', 'raster_flow_direction_d8', 'raster_slope', 'raster_aspect', 'raster_hillshade', 'raster_contour'):
+    if name in ('raster_fill_depressions', 'raster_flow_direction_d8', 'raster_slope', 'raster_aspect', 'raster_hillshade', 'raster_contour', 'raster_curvature'):
         examples.update({'elevation_unit': 'metre', 'band': 1})
         if name == 'raster_contour':
             examples.update({'interval': 10.})
