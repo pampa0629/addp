@@ -21,7 +21,7 @@
 | `engine_origin` | VARCHAR(50) | NOT NULL, DEFAULT 'general' | 引擎来源：general（通用）/extension（扩展） |
 | `connection_info` | JSON | NOT NULL | 连接信息（敏感字段加密） |
 | `description` | TEXT | | 描述信息 |
-| `identity_key` | JSONB | NOT NULL | 由插件 `ConnectionSpec` 中 `identity=true` 的字段规范化生成的非敏感身份键；在 Tenant 与 `engine_type` 范围内永久唯一，不对调用方开放修改。 |
+| `identity_key` | JSONB | NOT NULL | 由插件 `ConnectionSpec` 中 `identity=true` 的非敏感字段规范化生成的当前连接地址去重键；在 Tenant 与 `engine_type` 范围内对非删除实例唯一，不决定永久 `engine_id`，也不接受调用方直接赋值。地址变更规则见[更新引擎](#更新引擎)。 |
 | `version` | BIGINT | NOT NULL, DEFAULT 1 | 并发更新版本，每次状态或配置写入后原子递增。 |
 | `lifecycle_state` | VARCHAR(20) | NOT NULL, DEFAULT 'active', INDEX | 生命周期：`active` / `disabled` / `deleting` / `deleted`。它表示平台管理意图，不表示外部端点当前可达。 |
 | `created_by` | INTEGER | | 创建者ID |
@@ -64,7 +64,7 @@
 
 `connection_status` 不改变 Engine Instance 生命周期，但参与业务选择项的可选性判定。System 引擎管理清单展示全部可见实例；业务选择器展示 `lifecycle_state=active` 且 capability 匹配的注册实例，其中仅 `connection_status=online` 的实例可选，其他状态必须保留展示并说明不可用原因。已有绑定继续保留原 `engine_id` 和不可用状态，不因离线而删除或自动替换。
 
-删除完成后记录转为 `deleted`，普通清单默认不返回；管理员显式选择已删除状态时可以查看墓碑并发起恢复。墓碑保留非敏感连接字段用于确认原身份，但删除插件声明的全部敏感字段。恢复必须提交完整连接配置并携带当前 `version`；身份键不一致返回 409，成功后沿用原 ID、递增版本、置为 `active + unknown` 并重新检测连接。
+删除完成后记录转为 `deleted`，普通清单默认不返回；管理员显式选择已删除状态时可以查看墓碑并发起恢复。墓碑保留非敏感连接字段用于确认原身份，但删除插件声明的全部敏感字段。恢复必须提交完整连接配置并携带当前 `version`；同一实际引擎的地址已变化时，须按[地址变更规则](#更新引擎)显式确认，并检查新地址未被其他非删除实例占用。成功后沿用原 ID、递增版本、置为 `active + unknown` 并重新检测连接。
 
 ### 2.4 数据库索引
 
@@ -447,16 +447,19 @@ PUT /api/v1/system/engines/:id
 Content-Type: application/json
 
 {
+  "version": 1,
   "name": "生产PostgreSQL（更新）",
   "description": "生产环境主数据库",
   "lifecycle_state": "active"
 }
 ```
 
-**注意**：
+**更新边界**：
+- 身份与搬迁契约统一见[Engine Instance 身份与生命周期](../../../docs/concepts/addp引擎体系图.md#engine-instance-身份与生命周期)，地址键字段与唯一性规则见[插件接口规范](../../../docs/spec/addp引擎插件接口规范.md#二基础接口)。同一实际引擎搬迁时，可更新 `connection_info`，保留原 `engine_id` 和已有引用；改接不同实际引擎必须新建实例，由各 owner 校验并显式重绑。
+- 请求须携带读取到的当前 `version`（上例 `1` 仅为示意）；地址键变化时另须提交 `confirm_same_engine=true`。未确认返回 400；新地址被同 Tenant、同 `engine_type` 的其他非删除实例占用时返回 409；版本过期返回 409 / `resource_version_conflict`。地址键按插件语义归一化后比较，不按 JSON 文本顺序判断；`deleted` 墓碑不占用地址。成功搬迁后递增版本，将连接观测重置为 `unknown` 并发布更新事件。
+- 更新入口要求 User 凭据、当前 Tenant Context 与 `system.engine.update`；资源层继续检查租户归属，内置引擎不允许修改核心配置（`name`、`connection_info`）。确认搬迁不授予数据读取或执行权限，连接成功也不证明仍是同一份数据。
 - 敏感字段的脱敏占位符按[占位符保护](#72-占位符保护)沿用原值，不作为新凭据保存。
-- `connection_info` 中由插件声明的物理身份字段不可修改；变化时返回 HTTP 409，必须新建 Engine Instance
-- 内置引擎不允许修改核心配置（`name`、`connection_info`）
+- **验收边界**：上述契约及源码核对不替代实际更新、未确认与地址冲突拒绝、版本并发、跨租户与权限拒绝的验证；保留 ID 也不证明 Meta、任务和服务等 owner 的引用仍可执行。按[标准测试入口](../../../docs/spec/addp测试与验收规范.md#三标准入口)分层核对，未运行、失败或跳过不计为通过。
 
 #### 删除引擎
 ```
