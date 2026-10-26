@@ -175,28 +175,10 @@ graph LR
 
 ### 配置环境变量
 
-#### Gateway 模块配置
+部署文件、地址与独立 Secret 的注入规则统一见[部署环境与密钥](../../spec/configuration/部署环境与密钥.md#根目录环境配置唯一路径)，Gateway 长轮询参数见[环境变量参考](../../spec/configuration/环境变量参考.md#gateway-模块发现部署参数)。本专题只保留注册与路由边界：
 
-```bash
-# 启用模块发现（推荐）
-MODULE_REGISTRY_ENABLED=true                 # 启用动态路由发现
-MODULE_WATCH_TIMEOUT=10s                     # revision 长轮询超时
-
-# System 模块配置（用于获取注册信息）
-SYSTEM_URL=http://system-backend:8180
-GATEWAY_SERVICE_CLIENT_SECRET=your_gateway_service_client_secret
-
-# System 自身地址是 Gateway 获取注册事实所需的部署 Bootstrap，不是业务模块路由 fallback
-```
-
-#### 各模块配置
-
-```bash
-# 启用与 System 集成
-ENABLE_INTEGRATION=true
-SYSTEM_URL=http://system-backend:8180
-MODULE_SERVICE_CLIENT_SECRET=your_module_service_client_secret
-```
+- `SYSTEM_URL` 是 Gateway 直连 System 获取注册事实的部署引导地址，不是业务模块路由 fallback。本地开发使用实际回环地址；容器与生产编排显式提供部署内可达地址。
+- Gateway 读取独立的 `GATEWAY_SERVICE_CLIENT_SECRET`；其他模块读取各自的 `*_SERVICE_CLIENT_SECRET`，不共用凭据。具体名称和占位模板以根 [.env.example](../../../.env.example) 为准。
 
 ### 关键文件位置
 
