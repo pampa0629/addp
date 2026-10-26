@@ -1746,3 +1746,20 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 `make build-images IMAGE_BUILD_ARGS="--services agent-backend --verify --jobs 1 --tag p19-crypto-fix-20261026"` 实际退出 0，Linux arm64 产品镜像完成第三方完整依赖解析安装、最终 `pip check` 和 app／OpenAPI／Skills 导入；镜像 `localhost:5001/addp-agent-backend:p19-crypto-fix-20261026`，ID `sha256:9333059e7c4f4eab53471ffe785a97c3850bc5b8fb038c0f632951fd46466747`。验证模式未推送产品镜像，未启动业务服务或挂载个人环境；该本地工作区构建的五项依赖／Dockerfile 摘要与验证开始时一致，不冒充固定 GitHub SHA 的 Linux amd64 构建。`make test-changed` 已尝试，但缺少 Monitor PostgreSQL T2 显式连接输入而前置退出 2，不计全量通过，未因此启动数据库。
 
 原始证据 `/tmp/addp-p19-crypto-fix-20261026-9oi78l3t/`：Agent/Copilot 完整安装 JSON 与日志、Common 锁安装／测试、Agent 评测 JSON、Copilot 测试、镜像日志／身份、分发元数据与输入／产物 SHA256。自然 Platform CI `40294294052` 绑定修复 SHA，回查时仍进行中，未认定整轮通过；未取消／重跑 Actions、触发 Hosted、重跑容量或设置定时。没有操作个人 venv、运行服务、权限或数据卷；用户可自行沿 `./scripts/dev/restart.sh -agent` 重新同步。本修复不代替公共 mTLS 前置的待讨论方案，也不使 Python HTTP 实链或真实 Trace T2 自动通过。
+
+
+### 修复 SHA 的 Linux 复核与 HTTP 守卫取证准备（2026-10-26）
+
+用户完成个人重启后继续专项。本会话仅只读核对已有自然 CI，不运行／重跑本地隔离环境、Hosted、容量或定时。固定 `db5289c7474a91966ab254efc0d61957c17d7479` 的 [Agent offline evaluation](https://github.com/pampa0629/addp/actions/runs/40294294052/job/121476467369)、[Common Python](https://github.com/pampa0629/addp/actions/runs/40294294052/job/121476467434)、[Copilot](https://github.com/pampa0629/addp/actions/runs/40294294052/job/121476467306) 原始日志均确认真实 checkout、selected=true 和 status=success；Agent 完整冷安装使用 Linux x86_64 的 cryptography 50.0.2 wheel，七场景及评测／持久化、Common 聚合通过；Common 421 项及 54 subtests 通过、1 项可选跳过；Copilot 185 项通过、3 项已有警告。至此依赖冲突修复具备该固定源码的 Linux 安装及标准测试证据，不只依赖个人重启或本地 venv。
+
+同一源码的 [Monitor HTTP trace infrastructure](https://github.com/pampa0629/addp/actions/runs/40294293942/job/121476731711) 原始日志中 `TestOwnedTracePipeline` 实际执行 328.23 秒并通过：真实 120 秒尾采样、失败／慢请求及普通 5/200 保留；policy v2 短阶段独立 root、持久 Link 与目标撤权；Go→Python→Go、共享 Alloy→Loki、Tempo 投影、历史参与者、当前 User 撤权和采集器故障／恢复。328 秒是本次测试实际耗时，不是容量证明；直接枚举的 OwnedTraceProcess 是父测试使用的受控子进程入口，其顶层 SKIP 不替代父测试断言。退出回执确认当次容器／网络／卷及临时文件为零。当前追踪相关产品／夹具源与该 SHA 无差异，原“共享 ASGI 调整后真实 Trace T2 未运行”的缺口已由这份自然 Linux T2 证据补齐，不外推 Hosted／正式身份或长留存。
+
+[同轮 HTTP quality](https://github.com/pampa0629/addp/actions/runs/40294293942/job/121476731996) 失败，与此前本地 mTLS 失败分开：日志在固定窗口的 Filesystem 测试刚开始时出现 `No such container` 与 Terminated，尚未进入 initial scrape 的 valid_sample 断言或 Go／Python 业务源。不能将它说成 Linux 复现了本地 TLS 根因。该 Job 只打印预算报告路径，既有 artifact 列表没有预算报告，故无法唯一确认是 inspect／卷读取时容器消失、资源超限还是其他守卫条件；清理日志显示执行了 down／移除，但缺少预算 JSON 的独立回执，不扩写为完整清零验收。
+
+源码已确认两个编排风险：固定窗口 `runPromtoolCases` 使用同项目 `compose run --rm` 临时 Prometheus 容器，守卫 ps→inspect／exec 之间该容器可被自动删除；其继承 2 GiB 配额，与基础栈 2.75 GiB 合计为 4.75 GiB，不能通过忽略临时容器来满足 4 GiB。上述风险与缺失的当次失败详情分开陈述，不由静态可能性反推唯一历史原因。较早其他 SHA 的 Release workflow success 中 Metrics 个案可为 skipped，未将其算作本专项通过。
+
+取证修正本地提交 `e65c8d7b1fde4e529238519b80a22eb8b1cc4681`：固定枚举／inspect／卷／私有目录失败步骤、超时／容器消失／命令失败子类与数值限额；抑制原始命令和 Docker 错误正文，stdout 输出封闭摘要；原 Linux HTTP case 的同一 Job 无论通过或失败均保存预算报告七天，缺失报告为失败。不重试、忽略容器、提高限额或延长完整四秒。`python3 -m unittest scripts/test/metrics-http-budget_test.py` 8 项通过，含守卫失败后清理也保持失败、报告与日志可见且不泄漏注入敏感内容；`make test-infra-runtime-log-lifecycle` 123 项本地 runner／既有 System Go fixture、69 项生命周期聚合退出 0。T2 登记 22／12／9／2、workflow YAML 与归档路径契约、`git diff --check` 通过。新增用例沿原标准聚合自动发现；本会话暂不推送这批取证修正，避免在用户确认运行方案前间接启动新 T2。
+
+进一步只读查到固定 Nginx 1.28 支持跨 reload 继承 SSL 对象；[官方规范](https://nginx.org/en/docs/ngx_core_module.html#ssl_object_cache_inheritable)说明文件修改时间和文件标识未变时可继承。旧夹具覆盖原证书文件后只确认 reload 信号成功，未核对实际呈送证书；这加强了换证生效判定的调查价值，但仍缺少当次 inode／mtime／叶子摘要，不能认定该缓存就是原本地失败根因。下一步待确认方案仍需保留严格 TLS、原 4 秒／资源边界，先收敛 promtool 额外容器和证书加载判定，再决定仅公共前置的新窗口；不得自动进入 Python 业务实链。
+
+原始复核、摘要和本地门禁日志位于 `/tmp/addp-p19-http-budget-diagnostics-20261026-zd251axo/`，`audit-summary.json` 区分固定源码通过、本次 HTTP 失败、未知触发原因与尚未运行范围，`artifact-sha256.json` 保存文件摘要。没有改个人 venv、服务、权限或数据库；用户重启结果是现场反馈，不冒充本会话正式身份运行验收。
