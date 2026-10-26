@@ -519,7 +519,13 @@ Native候选树`83c8384f0ae808f1d9947b9126ded49c72289797`，原始日志SHA-256�
 
 本轮最小充分本地验证：`make test-raster-profile-curvature-online-runner` **72项／17.397秒**、`make test-raster-tangential-curvature-online-runner` **73项／21.893秒**及各自完整Online登记通过；`make test-python-ci-registration`通过46项、10项及11模块登记，共享计数不累加。标准`make test-geopython-workflow`配合`PYTEST_ADDOPTS='-k curvature --durations=10'` **626 passed／6358 deselected／53.35秒**，0失败／跳过，输入无漂移、无新增Python原生崩溃报告；候选树`3c804c7b76fc1c8058c2879664dc227be724b160`，不计新全量。Native日志SHA-256：`31b6ec33af668aaebf06c37fadac8a631dd30b1eec89f79a82ed280677cb7d53`；剖面runner：`18533b2d7209f794f086102bf048f45b784b2f7b55de53e33827bdf5d0c5b9be`，切向runner：`da7da71bf78deca37784421542511fbd682e2ab0ab7285a3f5b0f2546946b84d`，登记：`f85c9e460a41ee518ee184b1fe6652ca13b25900e302df6619e32dcac91770db`。修前回归准确拒绝第一份成果后过早等待；修后仍拒绝缺失／错误执行／源／目标／状态／关系类型／截断血缘，保留双语负例和污染反例。
 
-修后真实平台13成功／26失败及全部清理仍待CI会话协调新固定源码复验与原始归档审计，本会话不触发／轮询／重跑／取消运行或设置定时。数值极限继续Native单列，不计T4、UI或容量；原本地Parquet失败、834并行镶嵌double-free根因未确认记录与各固定Linux成功分别保留。
+切向独立Hosted修后固定 **`909be4e7b1e1269c916bcf431c458f0e1db1dd17`** 的[run40272637832／job121408579032](https://github.com/pampa0629/addp/actions/runs/40272637832/job/121408579032) 已通过并独立审计，manual attempt1，官方Validate／Run／Upload实际步骤success。总门禁 **571812毫秒**、业务场景571653毫秒，小于原600秒预算；13条成功COG链（10条tangential与默认／显式mean、profile三对照）、13类26次中英文准确失败、80个封闭阶段全部passed。普通User33／Tenant2原12权限、17源不变，7服务与默认入口Runtime均绑定完整909源码。
+
+逐项核对在场完整像元／mask、九点最小二乘／基本形式oracle、COG完整布局与实际最近邻overviews、曲率方法、平地严格0／其他零梯度NaN、每米单位和原网格／CRS、三方相等正整数大小、自动扫描精确父执行／用户／租户／引擎、当前执行实际输入血缘／Monitor、源及先前成果不变。26条准确原因逐条匹配同execution的原始Develop日志，提交语言冻结／反向查询不改写、失败无发布／新增扫描／派生血缘均核实。保存成果的`profile+tangential=2×mean`交叉核验共同覆盖228530个非零梯度有效像元，默认／显式mean数据相同、小非零梯度及切向／平面区别核验通过；私有工作区移除、应用／夹具cleanup passed及Infra零残留完整。
+
+官方artifact **12630112467／2468741字节**，ZIP SHA-256：`1f6cc9d2bba3a774ba7a61838aa33508fca142e41d960631e7125ad0bda17792`；40个成员与解压内容逐一核对，suite／online-report与归档完整场景stdout一致。suite报告SHA-256：`28a98242ea96b52365c90ff2b3dd357e0e550875b43419dd8e13aa7024aa6145`，场景日志SHA-256：`9454c51fe3910e90650251113144c025ada97fc4806de9bc3caab79274e01f04`。本次审计使用Git中固定909场景源码及其未漂移的物理夹具，非法method准确匹配当时mean／profile／tangential三方法双语文案，不套用后来加入plan的四方法文案。已核官方Job完整元数据、所有实际业务步骤与归档场景原始日志；未补取完整Job日志。归档未保留COG原文件，独立审计核在场完整物理oracle报告、来源／回执、原始诊断及清理，不宣称下载后离线重算13个COG。
+
+仅闭合固定909原13／26／600秒范围的API T4，不增加909整树Native或Platform通过结论；其他已核全量按各自固定源码单列。切向旧2f首次Hosted超时仍作为固定失败保留；剖面及plan的后续独立通过分别见对应节，不互相替代。数值极限继续Native单列，不计UI、容量、任意影像、全量IAM、业务DELETE或新plan能力证明。原本地Parquet失败、834并行镶嵌double-free根因未确认记录与各固定Linux成功分别保留。本会话只读接收CI回传，不触发、轮询、重跑、取消运行或设置定时，不操作个人服务／Infra。
 
 ## DEM 平面曲率独立 Hosted 验收
 
