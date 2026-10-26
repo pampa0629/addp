@@ -38,7 +38,7 @@ test('native browsing preserves an unscanned prefix and leaf, without metadata I
   assert.throws(() => adapter.getNodeChildren(leaf), /invalidCatalogTarget/)
   assert.equal(calls.length, 4)
   leaf.metadata.catalog_entry.path.segments.at(-1).name = 'mutated'
-  assert.equal(object.name, ' model.gltf ')
+  assert.equal(object.path.segments.at(-1).name, ' model.gltf ')
 })
 
 test('searches native paths with caller-owned eligibility and rejects partial directory failures', async () => {
