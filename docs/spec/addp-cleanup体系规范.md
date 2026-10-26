@@ -558,52 +558,33 @@ cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。
 
 ## 十三、运行态验收
 
-资源回收体系完成代码改造后，至少执行一次租户级运行态验收。推荐使用 `scope=["meta"]` 做最小闭环，避免回归验证产生过多模块记录。
+本节定义租户级 `scope=["meta"]` 扫描闭环的验收要求；执行统一遵循[标准测试入口](addp测试与验收规范.md#三标准入口)和[T4 Online 隔离规范](testing/T4-Online验收规范.md)。当前 Online registry 尚未登记覆盖本节完整闭环的 Cleanup 专项 suite，须补齐正式场景、身份夹具、断言与清理后再验收；其他 suite 的退出清理不替代本节业务断言，也不据此补记通过。
 
-验收前提：
+**环境与权限前提**：
 
-- Gateway、System、Meta、Monitor、Redis、PostgreSQL 已启动。
-- 已准备具有 Cleanup Permission、绑定明确当前 Tenant 的 `tenant` 模式 User Access Token。
-- 已准备一个 `platform` 模式 User Access Token，用于验证平台权限不能绕过 Tenant 上下文。
+- 仅使用符合[T4 专用环境](testing/T4-Online验收规范.md#专用环境)的隔离测试部署，不复用个人开发服务、账号、浏览器会话或业务数据。Gateway、System、Meta、Monitor 及其必需 Infra 按场景准备，完成实际构建身份、`/health/live` 与 `/health/ready` 核对；服务已启动不等于拓扑和业务验收通过。
+- Tenant、Run ID、仓库外凭据与证据目录、数据库及运行锁按[拓扑预检](testing/T4-Online验收规范.md#开关身份与拓扑预检)和[数据与清理规则](testing/T4-Online验收规范.md#数据超时与清理)设置，由正式生命周期入口准入；不手工创建数据库、拼接启动命令或伪造 Hosted 标记。
+- 测试 User 通过 System AuthContext 证明当前 Tenant 与有效 Permission。创建 scan 需 `system.cleanup.execute`，查询任务需 `system.cleanup.read`，读取 Tenant 审计需 `audit.tenant_event.read`；Monitor 树查询另需 `monitor.execution.read` 及[Owner 执行读取裁决](tasks/执行监控.md#租户执行诊断)。这些权限互不替代，不为读取证据授予无关管理权。
+- 平台上下文拒绝用例须使用符合 T4 身份规则的隔离夹具；本节不新增平台管理员身份例外。缺少合法夹具、权限或依赖时记录未覆盖或环境失败，不改用个人 Token 或直接 SQL 代替 API 授权验收。
 
-验收项：
+**验收要求（待正式 suite 覆盖）**：
 
-1. `platform` 模式 Token 调用 `POST /api/v1/system/admin/cleanup/scan` 必须返回 HTTP 403，错误信息说明该入口要求明确 Tenant 上下文；`Accept-Language: zh-cn` 和 `Accept-Language: en` 都必须返回对应语言。
-2. 具有 Cleanup Permission 的 `tenant` 模式 Token 以 `{"scope":["meta"]}` 调用 `POST /api/v1/system/admin/cleanup/scan` 后，`GET /api/v1/system/admin/cleanup/tasks/{task_id}` 必须最终返回 `completed` 或 `completed_with_errors`。
-3. scan 结果必须包含 `task.execution_id`、`task.expected_modules=["meta"]` 和 `results.meta`。
-4. System Tenant 审计端点必须能通过 `entity_type=cleanup_task&entity_id={task_id}` 查到 `cleanup.scan.created`；完成后还应查到 `cleanup.completed` 或 `cleanup.failed`。Tenant 只能从当前 AuthContext 派生，查询不接受 `tenant_id`。
-5. Monitor 必须能通过 `GET /api/v1/monitor/executions/by-execution-id/{execution_id}/tree` 查到 `module=system, task_type=cleanup` 的父 execution，以及 `module=meta, task_type=cleanup_executor` 的子 execution。
+1. 平台上下文调用 `POST /api/v1/system/admin/cleanup/scan` 返回 HTTP 403；分别核对 `Accept-Language: zh-cn`、`en` 的拒绝提示。另验证缺失相应 Permission 与跨 Tenant 任务读取被拒绝，Tenant 只从 AuthContext 派生，不接受请求自报 `tenant_id`。
+2. 合法 Tenant User 以 `{"scope":["meta"]}` 创建 scan，取得有效 `task_id`，有界查询 `GET /api/v1/system/admin/cleanup/tasks/{task_id}`。正常场景须返回 `completed` 且 Meta 结果成功；`completed_with_errors` 保留为部分失败证据，不计全部通过。创建请求成功、HTTP 200 或取得 task ID 都不等于扫描完成。
+3. 完整结果包含 `task.execution_id`、`task.expected_modules=["meta"]` 与 `results.meta`，核对参与者、结果及失败摘要，不仅检查字段存在。
+4. 通过 `GET /api/v1/system/tenant/audit/events?entity_type=cleanup_task&entity_id={task_id}` 核对 `cleanup.scan.created`，并按真实终态核对 `cleanup.completed` 或 `cleanup.failed`。缺少审计读取权限或未取得证据须单列，不把任务查询成功视为审计通过。
+5. 通过 `GET /api/v1/monitor/executions/by-execution-id/{execution_id}/tree` 核对授权范围内 `module=system, task_type=cleanup` 的父 execution 及 `module=meta, task_type=cleanup_executor` 的子 execution；父执行可读不授予子执行读取权，须分别核对当前用户的 Owner 裁决。
+6. 全流程使用明确超时与有界异步等待，不自动重试权限失败或业务冲突。成功、失败、中断均按 owner 回收本轮测试资源并核验零残留；审计及执行历史按 profile 保留或随 disposable 部署销毁，不直接删历史凑零残留。报告按[T4 证据要求](testing/T4-Online验收规范.md#报告)绑定源码、Run ID、身份范围、断言、失败与清理结果，不记录 Token、Secret 或完整敏感响应。清理失败仍为失败。
+
+本节仅定义 scan 闭环，不覆盖 `logical_cleanup` / `physical_cleanup` 执行、全部 owner、引擎删除或租户删除的完整链路；这些场景须独立提供断言与证据。
 
 上述 `scope=["meta"]` 闭环不覆盖引擎重新登记、墓碑恢复及 owner 重绑。相关专项应按[标准测试入口](addp测试与验收规范.md#三标准入口)分别验证墓碑地址可用于新登记且分配新 ID、显式恢复保留旧 ID、地址被其他非删除实例占用时恢复拒绝，以及权限、版本和搬迁确认的拒绝条件；owner 重绑须核对原引用、原子更新、审计及实际执行。规范、源码、索引声明或单个模块测试不替代真实数据库约束和跨模块验收；恢复后在线也不证明授权与 owner 状态已恢复，未运行、失败或跳过不计为通过。
 
-示例命令骨架：
+标准命令形式（须先完成正式 suite 接入，并由其隔离生命周期入口准备与准入；当前不据此执行本节验收）：
 
 ```bash
-BASE=http://localhost:8000/api/v1
-
-: "${TENANT_ACCESS_TOKEN:?需要 tenant 模式且具有 Cleanup Permission 的 Access Token}"
-: "${PLATFORM_ACCESS_TOKEN:?需要 platform 模式 Access Token}"
-
-curl -sS -w '\n%{http_code}\n' -X POST "$BASE/system/admin/cleanup/scan" \
-  -H "Authorization: Bearer $PLATFORM_ACCESS_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -H 'Accept-Language: zh-cn' \
-  -d '{"scope":["meta"]}'
-
-TASK_ID=$(curl -sS -X POST "$BASE/system/admin/cleanup/scan" \
-  -H "Authorization: Bearer $TENANT_ACCESS_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"scope":["meta"]}' | jq -r .task_id)
-
-curl -sS "$BASE/system/admin/cleanup/tasks/$TASK_ID" \
-  -H "Authorization: Bearer $TENANT_ACCESS_TOKEN" | jq .
-
-curl -sS "$BASE/system/tenant/audit/events?entity_type=cleanup_task&entity_id=$TASK_ID&page=1&page_size=20" \
-  -H "Authorization: Bearer $TENANT_ACCESS_TOKEN" | jq .
-
-EXECUTION_ID=<task.execution_id>
-curl -sS "$BASE/monitor/executions/by-execution-id/$EXECUTION_ID/tree" \
-  -H "Authorization: Bearer $TENANT_ACCESS_TOKEN" | jq .
+: "${ONLINE_SUITE:?须选择已登记且实际覆盖上述断言的 suite}"
+make test-online ONLINE_SUITE="$ONLINE_SUITE"
 ```
 
 ## 十四、迁移状态
