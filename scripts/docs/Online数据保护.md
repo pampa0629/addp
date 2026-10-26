@@ -71,6 +71,8 @@
 
 领域 v31 修正上述 v30 的 BFF 原因合并：Transfer资格自然到期时，Develop旧会话、旧文件、原查询再次导出及默认恢复后旧文件复读都必须精确409/query_protection_roles_unavailable；方式失效仍为409/query_protection_choice_invalid。客户端、导出Service及三处HTTP错误写回分别回归角色/方式、401/403和异常协议；不改变保护裁决、权限或选择。已有v30记录只代表旧错误投影，不能当作新原因区分的T4证据。新版真实Hosted仍由专门CI会话跟进。
 
+同一 v31 的两次 CSV 正向对照（资格到期前的角色方式、显式移除选择后的默认方式）还须在下载前，以同一普通 User 通过 `GET /api/v1/transfer/executions/{execution_id}` 复核会话所指 Transfer UUID：状态成功、无任务定义（`task_id=0`）、手动执行、`trigger_by` 为已验证的当前用户、实际读写均为五行。只验证会话成功或文件字节不能替代这项执行来源证明；任一事实不符即中止该对照，不下载文件、不产生通过结论。普通默认导出的 User Actor／Execution Authorization 私有字段不在该公开 DTO 中，也不能以 `trigger_by` 推导或补造。领域报告结构保持不变，复核的是已有 `transfer_execution_id`，无新增权限、入口或部署路线。确定性回归分别对两种方式注入发起人不匹配／缺失、错误 UUID、绑定任务、失败状态、非手动触发和读写计数错误，并继续要求精确清理；这些 T0/T1 反例不替代新的真实角色到期 HTTP／Hosted 验收。
+
 ## 四出口逐原因矩阵
 
 领域报告 v25 起在既有 suite 内给出 `protection_reason_matrix`，固定七种原因 × Manager preview、Develop query、Service execute、Transfer export。每个单元格必须明确 `runtime` 或 `protocol_only`，不能把共享协议测试当作对应 HTTP 出口已运行；矩阵的 runtime 单元格只有该次请求及对应强断言通过后才能生成。Manager／Service 保留原有仅含本地化 error 与 error_code 的保护 403，原因由受控的纳管状态、固定 SQL、原规则和结构变化事实证明，不增加公开子原因或解析错误正文。Develop／Transfer 校验同一执行 UUID 的历史、精确诊断、拒绝无结果；Transfer 另校验零写入及目标逐值不变。

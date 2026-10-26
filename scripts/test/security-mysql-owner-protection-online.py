@@ -3306,7 +3306,7 @@ def transfer_role_target(client: GatewayClient, locator: str, selected: bool) ->
 
 
 def transfer_role_csv(client: GatewayClient, execution: Mapping[str, object], selected: bool,
-                      deadline: float, filename: str) -> tuple[dict[str, object], str]:
+                      deadline: float, filename: str, actor_id: str) -> tuple[dict[str, object], str]:
     execution_id = execution["execution_id"]
     created = _object(client.request("POST", "/api/v1/develop/executions/" + execution_id + "/exports", (202,),
         {"format": "csv", "file_name": filename}).payload, "role CSV session")
@@ -3329,6 +3329,18 @@ def transfer_role_csv(client: GatewayClient, execution: Mapping[str, object], se
         raise SuiteError("role CSV generation timed out")
     if urllib.parse.urlsplit(str(session.get("download_url"))).path != session_path + "/file":
         raise SuiteError("role CSV download must stay on its exact session route")
+    transfer = _object(client.request("GET", "/api/v1/transfer/executions/" + transfer_id, (200,)).payload,
+                       "CSV actual Transfer execution")
+    # Public trigger_by is owner-verified human provenance. Default exports do
+    # not acquire a User execution authority, and private Actor/EA fields are
+    # intentionally absent from this professional response.
+    if (transfer.get("execution_id") != transfer_id or transfer.get("status") != "success"
+            or nonnegative_int(transfer.get("task_id"), "CSV task definition") != 0
+            or transfer.get("trigger_type") != "manual"
+            or positive_int(transfer.get("trigger_by"), "CSV initiator") != positive_int(actor_id, "CSV current User")
+            or nonnegative_int(transfer.get("records_read"), "CSV actual rows read") != 5
+            or nonnegative_int(transfer.get("records_written"), "CSV actual rows written") != 5):
+        raise SuiteError("CSV actual Transfer execution provenance, status or counts differ")
     raw = client.request("GET", session_path + "/file", (200,), raw_response=True).payload
     if not isinstance(raw, bytes) or not raw:
         raise SuiteError("CSV control needs actual nonempty file bytes")
@@ -3440,7 +3452,7 @@ def exercise_transfer_role_membership_expiry(client: GatewayClient, engine_id: i
         query_config = _object(source_query.get("execution_config"), "export query snapshot")
         if _object(query_config.get("content"), "export content").get("export_protection_choices") != [choice]:
             raise SuiteError("query snapshot must freeze the separate export selection")
-        csv_before, session_path = transfer_role_csv(active_reader, source_query, True, deadline, "p145-role-expiry-selected.csv")
+        csv_before, session_path = transfer_role_csv(active_reader, source_query, True, deadline, "p145-role-expiry-selected.csv", active["principal_id"])
         before_wait = service_subject_role_observation(active_reader, active)
         if (SERVICE_ELIGIBILITY_ROLE not in before_wait["role_keys"]
                 or utc_timestamp(before_wait.get("observed_at"), "Transfer positive database time") >= expires_at):
@@ -3482,7 +3494,7 @@ def exercise_transfer_role_membership_expiry(client: GatewayClient, engine_id: i
         assert_develop_role_result(recovered_query, False)
         if _object(recovered_query.get("execution_config"), "default query").get("content", {}).get("export_protection_choices") != []:
             raise SuiteError("default CSV recovery must explicitly clear the export selection")
-        csv_default, new_session_path = transfer_role_csv(active_reader, recovered_query, False, deadline, "p145-role-expiry-default.csv")
+        csv_default, new_session_path = transfer_role_csv(active_reader, recovered_query, False, deadline, "p145-role-expiry-default.csv", active["principal_id"])
         still_denied = exact_role_conflict(active_reader.request("GET", session_path + "/file", (409,)), "query_protection_roles_unavailable")
         execution_ids = [first_execution["execution_id"], recovered_execution["execution_id"], source_query["execution_id"], recovered_query["execution_id"],
                          csv_before["transfer_execution_id"], csv_default["transfer_execution_id"]]

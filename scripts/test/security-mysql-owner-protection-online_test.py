@@ -2972,6 +2972,7 @@ class TransferRoleExpiryBackend(DevelopRoleExpiryBackend):
         self.task = None
         self.task_history = []
         self.sessions = {}
+        self.csv_executions = {}
         self.target_rows = self.rows(False)
         self.task_deleted = False
 
@@ -3033,7 +3034,22 @@ class TransferRoleExpiryBackend(DevelopRoleExpiryBackend):
             if path.startswith(task_path+"/executions?"):
                 return response(200,{"data":copy.deepcopy(self.task_history),"total":len(self.task_history)})
             if path.startswith("/api/v1/transfer/executions/"):
-                return response(200,copy.deepcopy(next(row for row in self.task_history if row["execution_id"]==path.rsplit("/",1)[-1])))
+                execution_id = path.rsplit("/",1)[-1]
+                if execution_id in self.csv_executions:
+                    value, selected = copy.deepcopy(self.csv_executions[execution_id])
+                    fault = self.expiry_fault or ""
+                    if fault.startswith("default_"):
+                        fault = fault[len("default_"):] if not selected else ""
+                    if fault == "csv_execution_foreign_actor": value["trigger_by"] = 99
+                    if fault == "csv_execution_missing_actor": value.pop("trigger_by")
+                    if fault == "csv_execution_task_bound": value["task_id"] = 501
+                    if fault == "csv_execution_failed": value["status"] = "failed"
+                    if fault == "csv_execution_wrong_uuid": value["execution_id"] = str(ONLINE.uuid.UUID(int=999))
+                    if fault == "csv_execution_read_count": value["records_read"] = 4
+                    if fault == "csv_execution_write_count": value["records_written"] = 4
+                    if fault == "csv_execution_auto": value["trigger_type"] = "scheduled"
+                    return response(200,value)
+                return response(200,copy.deepcopy(next(row for row in self.task_history if row["execution_id"]==execution_id)))
             raise AssertionError("unexpected Transfer route "+path)
         export_create=path.startswith("/api/v1/develop/executions/") and path.endswith("/exports")
         if export_create or path.startswith("/api/v1/develop/exports/"):
@@ -3048,6 +3064,8 @@ class TransferRoleExpiryBackend(DevelopRoleExpiryBackend):
                 value={"id":identifier,"transfer_execution_id":str(ONLINE.uuid.UUID(int=300+identifier)),"format":"csv","status":"success",
                     "requires_current_user":selected,"download_url":path+"/file"}
                 self.sessions[identifier]=value
+                self.csv_executions[value["transfer_execution_id"]] = ({"execution_id":value["transfer_execution_id"],
+                    "task_id":0,"status":"success","trigger_type":"manual","trigger_by":7,"records_read":5,"records_written":5}, selected)
                 return response(202,copy.deepcopy(value))
             identifier=int(path.split("/")[5]);value=copy.deepcopy(self.sessions[identifier])
             selected=value["requires_current_user"]
@@ -3108,11 +3126,27 @@ class TransferRoleNaturalExpiryTest(unittest.TestCase):
         self.assertEqual(len(backend.task_history),2);self.assertEqual(len(backend.sessions),2)
         self.assertTrue(backend.task_deleted);self.assertEqual(backend.policy["state"],"revoked")
         self.assertFalse(any(str(path).endswith("/revoke") for _,_,path,_ in backend.events))
+        for case in (report["selected_csv"], report["default_csv"]):
+            path = "/api/v1/transfer/executions/" + case["transfer_execution_id"]
+            self.assertEqual(sum(event[1:3] == ("GET", path) for event in backend.events), 1)
         self.assertEqual(sum(path=="/api/v1/system/login" for _,_,path,_ in backend.events),2)
         wait=next(i for i,row in enumerate(backend.events) if row[0]=="wait")
         self.assertFalse(any(path=="/api/v1/system/login" for _,_,path,_ in backend.events[wait+1:]))
         for secret in ("private-transfer-password","reader-active",*filter(None,ONLINE.BANK_SOURCE_VALUES.values())):
             self.assertNotIn('"'+secret+'"',json.dumps(report,ensure_ascii=False))
+
+    def test_selected_and_default_csv_require_the_actual_owned_transfer_execution(self):
+        for prefix in ("", "default_"):
+            for fault in ("foreign_actor", "missing_actor", "task_bound", "failed", "wrong_uuid", "read_count", "write_count", "auto"):
+                with self.subTest(prefix=prefix, fault=fault):
+                    backend = TransferRoleExpiryBackend(prefix + "csv_execution_" + fault)
+                    with self.assertRaises(ONLINE.SuiteError):
+                        self.run_case(backend)
+                    self.assertTrue(backend.task_deleted)
+                    self.assertEqual(backend.policy["state"], "revoked")
+                    self.assertEqual(backend.previous["status"], "revoked")
+                    refused = "/api/v1/develop/exports/" + ("2" if prefix else "1") + "/file"
+                    self.assertFalse(any(event[1:3] == ("GET", refused) for event in backend.events))
 
     def test_auth_protection_wrong_codes_hidden_writes_csv_leaks_and_silent_clear_cannot_pass(self):
         for fault in ("session401","version_changed","permission_lost","role_survived","premature_wait","revoked_instead","extended_deadline",
