@@ -23,8 +23,10 @@ async function openAsTenant(page, route, assignments = [], tenantID = '3') {
     businessRequests.push(requestRoute.request().url())
     return requestRoute.fulfill({ status: 403, json: { error: 'forbidden' } })
   })
-  await page.route('http://127.0.0.1:5176/**', requestRoute =>
+  await page.context().route(url => url.pathname.startsWith('/module-ui/transfer/'), requestRoute =>
     requestRoute.fulfill({ contentType: 'text/html', body: '<title>Transfer fixture</title>' }))
+  await page.context().route(url => url.pathname.startsWith('/portal/'), requestRoute =>
+    requestRoute.fulfill({ contentType: 'text/html', body: '<title>Portal fixture</title>' }))
   await page.goto(route)
   return businessRequests
 }
@@ -45,6 +47,7 @@ test('a create-only account enters the wizard but cannot enter the task list', a
     assignment(['transfer.task.create', 'meta.catalog.read'])
   ])
   await expect(page.locator('iframe.module-iframe')).toHaveAttribute('src', /\/tasks\/create$/)
+  await expect(page.frameLocator('iframe.module-iframe').locator('title')).toHaveJSProperty('textContent', 'Transfer fixture')
   await expect(page.locator('.sidebar .el-menu-item.is-active')).toContainText('创建传输任务')
   await page.goto('/transfer/tasks')
   await expect(page.locator('.el-result')).toBeVisible()
@@ -58,8 +61,10 @@ test('an account that can read and create uses the task list as its single sideb
   ])
   await expect(page.locator('.sidebar .el-menu-item')).toHaveCount(1)
   await expect(page.locator('.sidebar .el-menu-item.is-active')).toContainText('传输任务')
+  await expect(page.frameLocator('iframe.module-iframe').locator('title')).toHaveJSProperty('textContent', 'Transfer fixture')
   await page.goto('/transfer/tasks/create')
   await expect(page.locator('iframe.module-iframe')).toHaveAttribute('src', /\/tasks\/create$/)
+  await expect(page.frameLocator('iframe.module-iframe').locator('title')).toHaveJSProperty('textContent', 'Transfer fixture')
   await expect(page.locator('.sidebar .el-menu-item.is-active')).toContainText('传输任务')
 })
 
@@ -68,6 +73,7 @@ test('a read-only account enters the task list but cannot enter the wizard', asy
     assignment(['transfer.task.read'])
   ])
   await expect(page.locator('iframe.module-iframe')).toHaveAttribute('src', /\/tasks$/)
+  await expect(page.frameLocator('iframe.module-iframe').locator('title')).toHaveJSProperty('textContent', 'Transfer fixture')
   await page.goto('/transfer/tasks/create')
   await expect(page.locator('.el-result')).toBeVisible()
   await expect(page.locator('iframe.module-iframe')).toHaveCount(0)
@@ -107,5 +113,6 @@ test('an applications-only account opens its accessible Portal page', async ({ p
   await portalCard.click()
   const popup = await popupPromise
   await expect(popup).toHaveURL(/\/portal\/my\/applications$/)
+  await expect(popup).toHaveTitle('Portal fixture')
   await popup.close()
 })

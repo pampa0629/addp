@@ -138,7 +138,10 @@ def validate_browser_isolation(repository: Path) -> list[str]:
         if module not in owners:
             errors.append(f"{module}: browser fixtures must include their owner")
         for path in (repository / module / "frontend/e2e").rglob("*"):
-            if path.is_file() and "online" not in path.parts and path.suffix in {".js", ".mjs"} and re.search(r"(?:127\.0\.0\.1|localhost):41\d{2}\b", path.read_text()):
+            if not path.is_file() or "online" in path.parts or path.suffix not in {".js", ".mjs"}:
+                continue
+            source = path.read_text()
+            if re.search(r"(?:127\.0\.0\.1|localhost):41\d{2}\b", source) or re.search(r"\.route\(\s*['\"]https?://(?:127\.0\.0\.1|localhost):\d+", source):
                 errors.append(f"{path.relative_to(repository)}: fixed browser fixture origins are forbidden")
     for path in (repository / 'scripts/test').glob('*online.py'):
         if re.search(r'"npm",\s*"run",\s*"test:e2e"', path.read_text()):
@@ -147,7 +150,7 @@ def validate_browser_isolation(repository: Path) -> list[str]:
 
 
 def validate_frontend_job_budgets(jobs: list[str]) -> list[str]:
-    """Keep the measured Console/Monitor exceptions bounded to these owners."""
+    """Keep Monitor's exception and Console's explicit 20 minute requirement."""
     errors = []
     for job in jobs:
         if not job.startswith("  frontend-deterministic:"):
@@ -157,18 +160,19 @@ def validate_frontend_job_budgets(jobs: list[str]) -> list[str]:
             errors.append("frontend-deterministic: job budget must use matrix.timeout_minutes with a 20 minute default")
         matrix = job.split("\n    steps:", 1)[0]
         entries = list(re.finditer(r"(?m)^\s*- module:\s*([a-z][a-z0-9-]*)\s*$", matrix))
-        exceptions = {"monitor": 0, "console": 0}
+        required_owners = {"monitor": 0, "console": 0}
         for index, match in enumerate(entries):
             owner = match.group(1)
             entry = matrix[match.end():entries[index + 1].start() if index + 1 < len(entries) else len(matrix)]
             budgets = re.findall(r"(?m)^\s*timeout_minutes:\s*([^\n]*)", entry)
-            if owner in exceptions:
-                exceptions[owner] += 1
+            if owner in required_owners:
+                required_owners[owner] += 1
+            if owner == "monitor":
                 if budgets != ["30"]:
                     errors.append(f"{owner}: frontend Job must retain its bounded 30 minute budget")
             elif budgets and budgets != ["20"]:
                 errors.append(f"{owner}: frontend Job must retain the 20 minute default")
-        for owner, count in exceptions.items():
+        for owner, count in required_owners.items():
             if count != 1:
                 errors.append(f"frontend-deterministic: exactly one {owner} budget entry is required")
     return errors

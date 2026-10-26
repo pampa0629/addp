@@ -204,6 +204,19 @@ class FrontendCIRegistrationTest(unittest.TestCase):
         (tests / "fixed.spec.js").write_text("page.goto('http://127.0.0.1:4199/login')")
         self.assertTrue(any("fixed browser fixture origins" in error for error in MODULE.validate_registration(self.repository)))
 
+    def test_browser_routes_cannot_use_personal_development_ports(self) -> None:
+        self.enable_browser_suite()
+        tests = self.repository / "sample/frontend/e2e"
+        tests.mkdir()
+        path = tests / "route.spec.js"
+        for source in ["page.route('http://127.0.0.1:5176/**', handler)",
+                       'context.route("http://localhost:5185/**", handler)']:
+            path.write_text(source)
+            self.assertTrue(any("fixed browser fixture origins" in error
+                                for error in MODULE.validate_browser_isolation(self.repository)))
+        path.write_text("const endpoint = 'https://127.0.0.1:19091/metrics'; context.route('**/module-ui/sample/**', handler)")
+        self.assertEqual([], MODULE.validate_browser_isolation(self.repository))
+
     def test_rejects_invalid_or_duplicate_fixture_declarations(self) -> None:
         self.enable_browser_suite()
         package_path = self.repository / "sample/frontend/package.json"
@@ -342,18 +355,20 @@ class FrontendJobBudgetTest(unittest.TestCase):
             timeout_minutes: 30
           - module: console
             target: test-console-frontend
-            timeout_minutes: 30
           - module: sample
             target: test-sample-frontend
     steps:
       - run: make ${{ matrix.target }}
 """
 
-    def test_accepts_only_bounded_monitor_and_console_exceptions(self) -> None:
+    def test_accepts_only_bounded_monitor_exception_and_console_twenty_minutes(self) -> None:
         self.assertEqual([], MODULE.validate_frontend_job_budgets([self.job()]))
+        explicit_console = self.job().replace('target: test-console-frontend',
+                                             'target: test-console-frontend\n            timeout_minutes: 20')
+        self.assertEqual([], MODULE.validate_frontend_job_budgets([explicit_console]))
         self.assertEqual([], MODULE.validate_frontend_job_budgets(["  unrelated:\n    timeout-minutes: 60\n"]))
 
-    def test_rejects_lost_timeout_and_other_owner_expansion(self) -> None:
+    def test_rejects_lost_timeout_and_owner_expansion(self) -> None:
         for before, after in [
             ("${{ matrix.timeout_minutes || 20 }}", "30"),
             ("${{ matrix.timeout_minutes || 20 }}", "${{ matrix.timeout_minutes || 30 }}"),
@@ -363,14 +378,18 @@ class FrontendJobBudgetTest(unittest.TestCase):
             ("timeout_minutes: 30", "timeout_minutes: invalid"),
             ("timeout_minutes: 30", "timeout_minutes: 30\n            timeout_minutes: 60"),
             ("target: test-sample-frontend", "target: test-sample-frontend\n            timeout_minutes: 30"),
+            *[("target: test-console-frontend", f"target: test-console-frontend\n            timeout_minutes: {value}")
+              for value in ['30', '60', 'invalid', '20\n            timeout_minutes: 20']],
         ]:
             with self.subTest(after=after):
                 self.assertTrue(MODULE.validate_frontend_job_budgets([self.job().replace(before, after)]))
 
-    def test_each_exception_is_required_once_with_exact_budget(self) -> None:
+    def test_console_and_monitor_entries_are_required_once(self) -> None:
         for owner in ['monitor', 'console']:
-            entry = f"          - module: {owner}\n            target: test-{owner}-frontend\n            timeout_minutes: 30\n"
-            for replacement in ['', entry + entry, entry.replace('30', '20'), entry.replace('30', '60')]:
+            entry = f"          - module: {owner}\n            target: test-{owner}-frontend\n"
+            if owner == 'monitor':
+                entry += '            timeout_minutes: 30\n'
+            for replacement in ['', entry + entry]:
                 with self.subTest(owner=owner, replacement=replacement):
                     self.assertTrue(MODULE.validate_frontend_job_budgets([self.job().replace(entry, replacement)]))
 

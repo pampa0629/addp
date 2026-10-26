@@ -66,7 +66,9 @@ cd console/frontend && npm run build
 
 Console 通过共享 `useConsoleUnsavedChangesGuard` 拦截活动 iframe 有未保存修改时的菜单、跨模块及历史导航。模块内部已完成确认的同步导航不重复确认；桥接返回取消结果。`make test-console-frontend` 包含确定性测试、离页与认证浏览器回归及构建，Platform CI 同步安装 Chromium。
 
-Console 的一次性 Ubuntu CI Runner 在安装 Chromium 前核对既有 `mirror+file` APT 契约，将镜像列表固定为 Runner 原已提供的 Canonical 官方 HTTPS 归档。Ubuntu suites、components、签名 keyring 和其他软件源保持原值，随后仍完整执行锁定 Playwright 的 `install --with-deps chromium`。此设置只作用于已选中的 Console Job，不修改其他模块、浏览器版本、测试范围、worker 数量或 Job 预算；不缓存或跳过系统依赖。完整门禁的30分钟预算及其原始超时证据见[CI 与交付规范](../docs/spec/testing/CI与交付规范.md)。准备日志保留包下载量、速率和分段时间，不能把安装阶段变快替代完整门禁通过。
+Console 的一次性 Ubuntu CI Runner 在安装 Chromium 前核对既有 `mirror+file` APT 契约，将镜像列表固定为 Runner 原已提供的 Canonical 官方 HTTPS 归档。Ubuntu suites、components、签名 keyring 和其他软件源保持原值，随后仍完整执行锁定 Playwright 的 `install --with-deps chromium`。此准备设置只作用于已选中的 Console Job，不修改其他模块、浏览器版本或测试范围，不缓存或跳过系统依赖。完整门禁保留20分钟预算；浏览器使用两个Worker按文件并行，`fullyParallel: false` 保持同文件顺序。page/context级HTTP夹具与独立浏览器上下文隔离身份、存储和写入模拟；多标签页只在所属测试内部共享上下文。Vite仅服务源码，端口、缓存、输出及退出清理由共享标准入口拥有。单测、全部浏览器回归、构建与失败证据保持完整，历史超时和Linux验证边界见[CI 与交付规范](../docs/spec/testing/CI与交付规范.md)。准备日志保留包下载量、速率和分段时间，不能把安装阶段变快替代完整门禁通过。
+
+局部权限导航夹具按当前同源 `/module-ui/transfer/` 和 `/portal/` 路径在所属BrowserContext拦截文档，包括弹窗首次导航；允许进入的用例必须回读夹具文档标题，不能仅凭iframe src或弹窗URL通过。此类导航权限测试不启动或代理个人Transfer/Portal服务，也不计这两个模块真实页面验收。
 
 查询服务离页回归在现有 Console 宿主夹具中加载真实 `QueryServiceForm.vue` 和 Service API 客户端，HTTP 响应由 Playwright 拦截，不依赖或写入开发数据库。该入口需要 Console 与 Service 两个前端的锁定依赖；测试自动启动使用当轮独立回环端口的 Console/Service 两个 Vite 服务，通过仅 E2E 启用的代理加载 iframe，覆盖 SQL/参数保留、内部及宿主导航、历史、刷新和保存失败/成功，以及已有服务编辑的版本冲突、确认重载、同组件身份切换和旧响应隔离。Service 前端变更经共享改动矩阵触发 Console 门禁，CI 同步安装 Service 依赖。
 

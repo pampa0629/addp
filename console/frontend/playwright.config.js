@@ -5,7 +5,7 @@ export default defineConfig(withBrowserTestIsolation('console', {
   testDir: './e2e',
   testIgnore: '**/online/**',
   fullyParallel: false,
-  workers: 1,
+  workers: 2,
   reporter: 'line',
   use: {
     headless: true,
