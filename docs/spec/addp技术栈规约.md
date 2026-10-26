@@ -120,6 +120,8 @@
 
 `common-python` 同步 HTTP Trace 使用 `opentelemetry-api==1.45.1`、`opentelemetry-sdk==1.45.1` 和 `opentelemetry-proto==1.45.1`，版本由共享 pyproject／uv.lock 固定。显式 SDK 与有界 OTLP/HTTP protobuf 导出只服务正式规范 6.5，不启用全局自动 instrument，不把依赖存在当成 Agent/Copilot 以外的 Python 服务已接入。Agent 与 Copilot 保留各自原 FastAPI／HTTPX 版本，并由共享内核同时验证；遥测依赖准备沿现有 Python owner 门禁和 Trace T2，不在启动时临时安装。
 
+Python HTTP 指标来源使用 `prometheus-client==0.26.0`，证书检查统一使用 `cryptography==50.0.2`，由同一共享 pyproject／uv.lock 固定。该版本必须同时满足 Agent 固定 DeerFlow Harness 的 `cryptography>=50.0.0`；共享依赖变更须验证完整消费者声明在全新环境中的解析、安装与 `pip check`，不能用已有环境或单独覆盖依赖的测试代替。Python 及平台范围沿各 Runtime 原声明，不通过修改消费者依赖、跳过依赖解析或另建兼容约束绕过冲突。
+
 ### Python AI 执行依赖
 
 - Agent 运行环境为 Python 3.12（开发、测试 CI 和产品镜像一致）。DeerFlow Harness 与 Extension API 从官方源码提交 `130a9ab9f035a8f319502f8d5e044ed05962b2aa` 的两个 package 子目录安装，不使用浮动分支。
