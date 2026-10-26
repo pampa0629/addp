@@ -143,6 +143,83 @@ def run_business_postgres_compose(environment, case):
 
 
 class MetricsDeploymentConfigTest(unittest.TestCase):
+    def test_python_startup_diagnostics_are_closed_and_bounded(self):
+        ns=runpy.run_path(str(ROOT/'scripts/test/python-http-metrics-source.py'))
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'diagnostic'
+            for payload,error in ((b'ResolutionImpossible private-token','dependency_conflict'),(b'No matching distribution found private-token','distribution_missing'),(b'x'*65537,'log_over_budget')):
+                path.write_bytes(payload)
+                result,size=ns['install_diagnostic'](path)
+                self.assertEqual((result,size),(error,len(payload)))
+            value=ns['startup_record']('imports','failed','module_missing')
+            path.write_text(json.dumps(value));self.assertEqual(ns['read_startup'](path),value)
+            value['credential']='private-token';path.write_text(json.dumps(value))
+            result=ns['read_startup'](path)
+            self.assertEqual(result,{'stage':'unknown','status':'unavailable'})
+            self.assertNotIn('private-token',json.dumps(result))
+
+    def test_python_cleanup_checks_both_sources_and_preserves_first_failure(self):
+        ns=runpy.run_path(str(ROOT/'scripts/test/python-http-metrics-probe.py'))
+        with tempfile.TemporaryDirectory() as directory:
+            work=Path(directory);source=work/'source';source.mkdir();(source/'discovery.json').write_text('[]')
+            first=RuntimeError('first controlled startup failure')
+            def compose(*args):
+                if args[:3]==('--profile','python-http','up'):raise first
+                if args[:2]==('ps','-aq'):return args[-1]+'-owned'
+                raise AssertionError(args)
+            discovery=mock.Mock()
+            with mock.patch.object(ns['run'].__globals__['shutil'],'copy2'),mock.patch.object(ns['run'].__globals__['shutil'],'copytree'),mock.patch.object(ns['run'].__globals__['subprocess'],'check_output',side_effect=['1','0']) as wait:
+                with self.assertRaises(RuntimeError) as caught:ns['run']({'WORK':work,'compose':compose,'port':mock.Mock(),'query':mock.Mock(),'eventually':mock.Mock(),'discovery_text':discovery})
+            self.assertIs(caught.exception,first)
+            self.assertEqual(wait.call_count,2)
+            discovery.assert_called_once_with('[]')
+
+    def test_python_bootstrap_reports_failed_substage_without_install_or_private_text(self):
+        ns=runpy.run_path(str(ROOT/'scripts/test/python-http-metrics-source.py'))
+        for failing in ('copy','dependencies','imports','configuration','metrics','http_ready','identity'):
+            with self.subTest(stage=failing),tempfile.TemporaryDirectory() as directory:
+                root=Path(directory)
+                def path(value):return root/'install.log' if value=='/tmp/install.log' else root
+                def produce(index,source,stage):
+                    if failing!='imports':stage(failing)
+                    raise ModuleNotFoundError('private-token')
+                run=mock.Mock(return_value=subprocess.CompletedProcess([],1 if failing=='dependencies' else 0))
+                copy=mock.Mock(side_effect=PermissionError('private-token') if failing=='copy' else None)
+                globals_=ns['main'].__globals__
+                with mock.patch.dict(globals_,{'Path':path,'produce':produce}),mock.patch.object(globals_['shutil'],'copytree',copy),mock.patch.object(globals_['subprocess'],'run',run),mock.patch.dict(os.environ,HTTP_T2_INDEX='1'):
+                    self.assertEqual(ns['main'](),1)
+                facts=ns['read_startup'](root/'python-1.startup.json')
+                self.assertEqual(facts['stage'],failing)
+                self.assertEqual(facts['status'],'failed')
+                self.assertNotIn('private-token',json.dumps(facts))
+                self.assertEqual(run.call_count,0 if failing=='copy' else 1)
+
+    def test_python_cleanup_timeout_and_restore_failure_still_check_second_source(self):
+        ns=runpy.run_path(str(ROOT/'scripts/test/python-http-metrics-probe.py'))
+        with tempfile.TemporaryDirectory() as directory:
+            source=Path(directory)
+            compose=mock.Mock(side_effect=['owned-first','owned-second'])
+            discovery=mock.Mock(side_effect=RuntimeError('private-token'))
+            with mock.patch.object(ns['finish_sources'].__globals__['subprocess'],'check_output',side_effect=[subprocess.TimeoutExpired('private-token',10),'0']) as wait,redirect_stdout(io.StringIO()) as stdout:
+                failed=ns['finish_sources'](source,('python-http-agent','python-http-copilot'),compose,discovery,'[]','producer_start')
+            self.assertTrue(failed);self.assertEqual(wait.call_count,2)
+            self.assertTrue((source/'python-1.stop').exists() and (source/'python-2.stop').exists())
+            result=ns['python_evidence'](source)['cleanup']
+            self.assertTrue(result['sources']['python_1']['wait_error'])
+            self.assertEqual(result['sources']['python_2']['waited'],1)
+            self.assertFalse(result['discovery_restored'])
+            self.assertNotIn('private-token',stdout.getvalue()+json.dumps(result))
+
+    def test_python_runtime_shutdown_preserves_primary_and_closes_source_after_join_error(self):
+        stop=runpy.run_path(str(ROOT/'scripts/test/python-http-metrics-source.py'))['stop_runtime']
+        for primary in (True,False):
+            server=mock.Mock();thread=mock.Mock();source=mock.Mock()
+            thread.join.side_effect=RuntimeError('private-token')
+            if primary:stop(server,thread,source,True)
+            else:
+                with self.assertRaisesRegex(RuntimeError,'python_http_shutdown_failed'):stop(server,thread,source,False)
+            source.close.assert_called_once_with()
+
     def python_traffic(self, index):
         source = ast.parse((ROOT / 'scripts/test/python-http-metrics-source.py').read_text())
         node = next(item for item in source.body if isinstance(item, ast.ClassDef) and item.name == 'HTTPFixtureTraffic')

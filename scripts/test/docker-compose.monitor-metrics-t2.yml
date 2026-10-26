@@ -13,7 +13,7 @@ x-python-http: &python-http
     PYTHONPATH: /tmp/deps:/app/common-python
     PYTHONDONTWRITEBYTECODE: "1"
     PIP_DISABLE_PIP_VERSION_CHECK: "1"
-  command: [sh, -ec, "cp -R /app/common-python /tmp/common-python; python -m pip install --no-cache-dir --target /tmp/deps /tmp/common-python -r /source/python-requirements.txt >/tmp/install.log 2>&1 || { echo python_http_dependency_failed; exit 1; }; exec python /source/python-http-metrics-source.py"]
+  command: [python, /source/python-http-metrics-source.py]
   volumes:
     - ${METRICS_T2_WORK}/source:/source
     - ${METRICS_T2_WORK}/source/python-common:/app/common-python:ro

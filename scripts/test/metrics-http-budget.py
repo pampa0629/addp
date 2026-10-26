@@ -220,6 +220,7 @@ def main():
                 report['request_counts']=ownership.get('request_counts')
                 report['request_phases']=ownership.get('request_phases')
                 report['request_traffic_error']=ownership.get('request_traffic_error')
+                report['python_sources']=ownership.get('python_sources')
                 report['source_tls_proof']=ownership.get('source_tls_proof')
                 report['source_tls_publication']=ownership.get('source_tls_publication')
                 report['cleanup_verified']=ownership.get('cleanup_verified',False)
@@ -232,7 +233,7 @@ def main():
                 report['result']='passed'
             output.write_text(json.dumps(report,indent=2))
     summary={key:report.get(key) for key in ('case','result','error_code','failure_detail','exit_code','elapsed_seconds','source_tls_proof','source_tls_publication',
-             'cleanup_verified','private_directory_removed','inputs_unchanged','request_counts','request_phases','request_traffic_error')}
+             'cleanup_verified','private_directory_removed','inputs_unchanged','request_counts','request_phases','request_traffic_error','python_sources')}
     print('HTTP functional budget result: '+json.dumps(summary,sort_keys=True),flush=True)
     print('HTTP functional budget report: '+str(output),flush=True)
     return 0 if report['result']=='passed' else 1

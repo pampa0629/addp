@@ -1858,3 +1858,16 @@ Monitor T1 实际覆盖停流零分母的归一、零请求权重聚合及活动
 最终日志 `/tmp/addp-host-devices-final-gate-v2.log`，新增专项 `/tmp/addp-host-device-expansion-responsive.log` 九项通过。窄屏中英截图 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-device-list-te3HaS/zh-cn.png` 与 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-device-list-PZiaVK/en.png` 已目视检查。首轮 `/tmp/addp-host-devices-final-gate.log` 因目视发现展开区域继承外层宽表宽度、刷新按钮离开可视范围而主动中止，119 项通过／1 项中断／339 项未运行，未计为完整通过；修正宽度后从标准入口完整重跑。早期静态断言仍指向旧内联设备循环，已同步为唯一组件归属，不保留旧实现。
 
 个人 Safari 已从现有管理员会话读取到“设备明细／磁盘 IO／网卡吞吐”入口；工具展开操作被 `ScreenCaptureKit -3811`／`noWindowsAvailable` 阻断。用户随后手动激活并明确反馈“已展开磁盘 IO”，但工具仍返回未展开且报告隐藏的页面。窗口菜单只列一个控制台窗口，重新选中同一窗口后，AX 与截图仍未显示展开；这是用户反馈与工具观测不一致，不直接判为产品失败，也不计为实机通过。只读证据 `/tmp/addp-host-device-safari-jUB6Y1/current.ax.txt`、`after-user-expanded.ax.txt`、`after-user-expanded.png`。真实单 VM 磁盘读数、真实网卡缺样、收起／刷新／面板像素和前台自然刷新均尚未独立验收；本地受控浏览器通过不替代个人实机或正式 Hosted，其他验证仍等专门会话回传。
+
+
+### Linux Go HTTP 子链通过与 Python 来源启动诊断（2026-10-26）
+
+只读核验已有自然 CI 原始日志：[bdf 的 HTTP Job](https://github.com/pampa0629/addp/actions/runs/40334346467/job/121612153803) 精确 checkout `bdf8788266408209a1c3da6aab948a0c4321b248`，Go `TestIntegrationMetricsHTTPAlertLifecycle` 实跑 152.28 秒通过，覆盖同一事件恢复及签名通知；后续真实进程／来源停止断言也通过。[206 的 HTTP Job](https://github.com/pampa0629/addp/actions/runs/40339327143/job/121630064969) 精确源码 `206261e751090a7bfb4e816dd0a8fbd97273d3d3`，相同 Go 子链实跑 150.27 秒通过。两轮均在 Python 发布身份前退出，finally 的非零退出异常再次覆盖首失败；日志回执分别 539.709／547.187 秒、Go 148／Python 0，输入未变且私有目录删除，但 cleanup_verified=false。不能继续将旧 Go unknown/no_data 当作这两轮的实际失败，也不能将 Go 子项通过或目录删除写成整项 HTTP／完整清理通过。
+
+当前证据没有容器内安装日志或 Python 启动子阶段，未唯一确认包解析、导入、权限或 TLS 原因；没有改包版本、镜像或 UID／只读约束。先修规范，再将原来源脚本作为唯一 stdlib 启动入口，沿原参数复制／安装后再导入 SDK；删除 Compose 内单独 shell 安装路线。新增复制、依赖、导入、配置、指标监听、HTTP 就绪、身份及运行的固定阶段回执，失败只留枚举／退出码／字节数。仅解析最多 64 KiB 的既有临时安装日志，超预算标记而不保留前缀；不把该解析限额说成输出捕获硬限额。异常正文、依赖日志、路径和凭据不归档；原 120 秒来源启动等待、90／480 秒进程期限、10 秒退出检查、600／1200 等既有调用上限、四秒资源检查及全部硬限额保持。
+
+确定修复的控制流缺陷：Python finally 不再遇首个非零退出就跳过后续来源；两个 stop 文件、退出检查及发现范围恢复独立执行，错误另记，已有首失败保持原异常。进程内退出也在 join 出错后继续关闭来源，不能以清理错误覆盖请求首失败。回执沿原预算报告和原 CI Artifact 保存；即使请求阶段记录损坏，仍独立保留启动／清理事实。没有新增容错路线或把未知／不完整诊断改成业务通过。
+
+`python3 -m unittest scripts/test/metrics-deployment-config_test.py scripts/test/metrics-http-budget_test.py` 116 项通过；`make test-infra-runtime-log-lifecycle` 123 项 runner／既有 System Go fixture及 78 项聚合通过；T2 登记测试 38 项和登记 22／12／9／2、shell／专项 diff 检查通过。首失败被旧 finally 覆盖的回归先失败，修正后通过；覆盖启动子阶段模拟、安装诊断边界／脱敏、超时和恢复失败时仍检查第二来源、关闭全部进程内资源及保留首失败、预算归档回执。此为 T0／确定性证据，未运行本地安装、容器、Python 业务实链、Hosted、容量或定时；真实 Python 启动根因仍待带诊断的自然 Linux CI。
+
+原始日志和补丁／门禁／摘要保存在 `/tmp/addp-p19-python-startup-20261026-y1zoacsw/`。前一轮 66.598 秒本地目录失败和 `1ce3ddac7` 目录分类仅在各自已记范围有效，不是本次 Python 启动原因。本批只提交本会话 hunk，按既有 main 推送产生自然 CI；不手工触发、取消或重跑 Actions，不新开本地窗口。

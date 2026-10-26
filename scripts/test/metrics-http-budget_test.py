@@ -127,10 +127,17 @@ class HTTPBudget(unittest.TestCase):
             result=subprocess.run(['python3','-',str(receipt),str(Path(m.__file__))],input=body,capture_output=True,text=True,timeout=5)
             self.assertEqual(result.returncode,0,result.stderr)
             self.assertEqual(json.loads(receipt.read_text())['request_counts']['go'],90)
+            value={'stage':'imports','status':'failed','error':'module_missing','exit_code':None,'log_bytes':0,'log_over_budget':False}
+            (source/'python-1.startup.json').write_text(json.dumps(value))
+            result=subprocess.run(['python3','-',str(receipt),str(Path(m.__file__))],input=body,capture_output=True,text=True,timeout=5)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual(json.loads(receipt.read_text())['python_sources']['startup']['python_1'],value)
             (source/'process-1.json.http-load.json').write_text('{"credential":"never-log-this"}')
+            previous=json.loads(receipt.read_text());previous.pop('python_sources');receipt.write_text(json.dumps(previous))
             result=subprocess.run(['python3','-',str(receipt),str(Path(m.__file__))],input=body,capture_output=True,text=True,timeout=5)
             self.assertEqual(result.returncode,1)
             self.assertEqual(json.loads(receipt.read_text())['request_traffic_error'],'invalid_or_missing_phase_receipt')
+            self.assertEqual(json.loads(receipt.read_text())['python_sources']['startup']['python_1'],value)
             self.assertNotIn('never-log-this',result.stdout+result.stderr)
 
     def test_cpu_memory_write_reservations_and_stop_lines(self):

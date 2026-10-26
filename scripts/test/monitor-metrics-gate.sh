@@ -84,9 +84,16 @@ CLEANUP_RECEIPT
 import json,runpy,sys
 from pathlib import Path
 p=Path(sys.argv[1]);value=json.loads(p.read_text());failed=False
-try:value.update(runpy.run_path(sys.argv[2])['request_traffic'](Path(value['work'])/'source'))
+source=Path(value['work'])/'source'
+try:
+    value.update(runpy.run_path(sys.argv[2])['request_traffic'](source))
 except (OSError,ValueError,RuntimeError,UnicodeError):
     value['request_traffic_error']='invalid_or_missing_phase_receipt';failed=True
+try:
+    probe=Path(sys.argv[2]).with_name('python-http-metrics-probe.py')
+    value['python_sources']=runpy.run_path(str(probe))['python_evidence'](source)
+except (OSError,ValueError,RuntimeError,UnicodeError):
+    value['python_sources']={'status':'unavailable'};failed=True
 pending=p.with_suffix('.pending');pending.write_text(json.dumps(value));pending.replace(p)
 raise SystemExit(1 if failed else 0)
 REQUEST_TRAFFIC
