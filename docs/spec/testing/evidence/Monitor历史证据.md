@@ -1301,6 +1301,28 @@ Suite 内的 `cleanup=pending_deployment_destruction` 只是场景完成时尚�
 
 本次仅闭合固定版本、合成历史、真实 System 首轮的30天事件物理维护；精确等于截止点由既有固定时刻Common测试负责，不以31／29天T4样本冒充。未验证小时周期、并发持续Worker写入、Owner执行读取授权或专业结果生命周期、180天概览删除、容量／HA及生产T5；概览删除仍未启用。清单实际第327／328／329行继续部分实现，未操作个人服务、数据库或定时任务。证据归档仅执行 `git diff --check`，不重复仍有效的运行验收。
 
+### 小时周期与连续批次真实进程验收（2026-10-26）
+
+实现提交 `c2f53b007dfaf73960d24c223f4847009edb724a` 仅补人工 `execution-retention-hourly`、既有测试 helper／Hosted 生命周期适配、最小身份夹具及登记／规范，不修改产品的一小时ticker、100个概览种子／1000条事件单批上限、时钟、权限目录或业务功能。共用原维护Job，只有该人工选项为180分钟，其余两个短场景仍60分钟；Online预算8100秒仅传给观察器，驱动绝对观察期限7500秒，每次等待不超过30秒，不增加产品调试开关或夜间调度。120条合成独立执行跨两个非默认Tenant，终态及活动状态各60条；正式AuthContext和构建预检在观察开始时完成，不续期用户凭据、不外推两小时后的用户权限。
+
+[Hosted Run40259324336／Job121368052606](https://github.com/pampa0629/addp/actions/runs/40259324336/job/121368052606)，attempt1、workflow_dispatch、固定上述源码，Run／Job和实际 `Run Hosted execution retention maintenance Online gate` 均completed／success。实际门禁10:33:21–12:44:44（Asia/Shanghai），Job于12:44:48完成；不是仅摘要步骤成功。三轮均为同一个实际System进程来源，保留原自然周期：
+
+| 轮次及实际System时间 | 概览种子／完整树 | 自增ID游标／后页 | 时间候选／读取行／查询 | 本轮过期事件实际删除 |
+| --- | --- | --- | --- | --- |
+| 启动，10:44:22 | 100／100 | 100／有 | 50／101／102 | 1004 |
+| 第一小时，11:44:22 | 20／20 | 120／无 | 10／20／22 | 4 |
+| 第二小时，12:44:22 | 100／100 | 100／有 | 50／101／102 | 4 |
+
+System首末记录实际相差7199.984363秒，观察器单调时钟结合初次记录延迟独立核对为7214.018秒，不以本地等待心跳或Job运行时长代替真实周期。观察器自身实际运行7206秒。第二轮到达末尾后，第三轮自然从首批重新评估；100／20／100不能累加成220棵唯一树。初始1004条31天前事件及两组各4条将在约30／90分钟后自然超期的事件均命中对应轮次，不改写时间、不手动清理、不靠重启制造周期。每轮保留240条29天／新事件的完整摘要和120条execution完整行，包括配置、错误、步骤、合成专业小结果、待消费事实和lease；既有审计按固定ID上界保留完整行，允许合法新增审计，本轮原进程日志字节前缀同样逐轮保留。12项唯一断言通过，三个批次均未超预算且概览保持只读；Owner释放和消费者引用未核验计数分别100／20／100，未伪造可删除结论。
+
+正式预检确认System／Gateway同一固定源码、不同Build ID和有效源码指纹、干净checkout、仅回环；普通Tenant User的唯一角色为 `online.execution_retention_hourly`，核验Permission仅 `monitor.execution.read`。内部 `cleanup=pending_deployment_destruction` 是中间状态；最终Host result／cleanup为passed、Infra为zero_residuals，原始生命周期日志确认应用停止、PostgreSQL容器／卷及网络移除，私有凭据按既有退出路径销毁并核验。标准Infra随部署启动／销毁既有Alloy／Loki伴随组件，本场景不查询其数据，不把本地前缀检查或部署销毁计为平台集中日志生命周期验收，也不以销毁代替实际事件删除断言。
+
+标准 `make test-execution-retention-online-runner` 在共享工作区及排除他方WIP的隔离源码均通过：51项Python回归、System身份夹具Go包及Online CI登记成功，5项既有PG专项因无标准DSN跳过，不计T2。隔离基线 `e3d239cacdb8e202dcca241bea6d26a93531e57a` 加本批14文件，其输入摘要与最终提交逐一一致；提交前另一会话仅新增Catalog前端提交，已核对本批输入未变，复用有效门禁。采用仅含本批差异的索引补丁提交，核对工作区字节不变，未提交或覆盖他方Make／workflow／登记改动。最初新增测试在实现缺失时为ModuleNotFoundError红灯，日志保留 `/tmp/addp-hourly-runner-red.log`；最终隔离日志 `/tmp/addp-hourly-runner-isolated.log`，输入回执 `/tmp/addp-hourly-validation-source.json`，本批补丁 `/tmp/addp-hourly-owned.patch`，本地证据摘要 `/tmp/addp-hourly-local-evidence.json`。影响选择dry-run仅计登记覆盖，不把共享WIP涉及的所有模块计为通过；未跟进其他Owner CI。
+
+官方Artifact `12628720268` 仅含5个安全报告／生命周期文件，ZIP SHA-256 `432c4d7463814ebfabbd689626bdc7199d7c5e8d5502e6a0dbbfea39575f7bce` 已独立匹配GitHub声明。证据 `/tmp/addp-hourly-t4-40259324336.zip`、同名提取目录及 `.log`、`-metadata.json`、`-artifacts.json`、`-audit.json`；独立审查同时核对源码、实际门禁、自然时间间隔、单调时钟、分轮事实、构建指纹、身份及最终清理。
+
+本次只闭合固定版本、120条合成历史、同进程两个真实小时区间及连续种子批次／回绕。未验证持续Worker并发写入、重启／故障恢复、超大树或100000条事件维护预算耗尽、用户Owner读取授权及长时授权有效性、Owner释放与专业结果生命周期、180天概览删除、容量／HA或T5；概览删除仍未启用。清单实际327／328／329行维持部分实现，后续建议优先补大量事件分页／截断的真实入口验收，不扩大业务功能。归档仅运行 `git diff --check`，不重复仍有效的运行验收；未操作个人服务、数据库或定时任务。
+
 ### 正式身份本地第十窗口：执行、Trace、日志与真实页面闭环通过（2026-10-25）
 
 用户接受“当前源码准入和Gateway构建已通过、历史间歇失败唯一根因未定”的前提，另行授权2026-10-25 06:17:43–07:17:43（Asia/Shanghai）最多60分钟本地窗口；8 CPU／12 GiB、当次卷及私有可写目录4 GiB停止线、单次完整资源测量4秒预算保持。只运行根`make test-monitor-traces-local`，不运行Hosted、不重跑容量、不设置定时，不接管个人服务或以共享数据库承载测试。两次尝试共用同一绝对截止时间，未重置60分钟，所有产品均从各次准确已提交源码私有副本构建；仅固定MinIO／mc按原规则核验复用。本次未改产品代码、身份权限、采样或验收断言。
