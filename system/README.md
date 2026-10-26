@@ -15,7 +15,7 @@
 - **OAuth 2.0**: 受控 Fosite 唯一主路径，支持 Authorization Code + PKCE、RFC 8252 loopback 和 Device Flow
 - **权限治理**: 平台/租户上下文、Role Assignment、Permission Manifest 与 owner 资源策略
 - **引擎管理**: 管理已接入引擎的连接与实例能力；支持范围按[能力声明规范](../docs/spec/addp引擎能力声明规范.md#一基本原则)及实例 `capabilities` 逐项核对。插件登记、连接检测或能力声明不替代查询、预览、读写等模块消费与跨模块运行验收。
-- **审计日志**: 自动记录操作日志，支持租户隔离
+- **审计日志**: 领域安全事件遵循[同事务要求](docs/tables/audit_logs表.md#三写入与事务)，通用请求审计在请求后尝试记录；[实际覆盖范围](./CLAUDE.md#日志中间件)以中间件说明为准。
 - **资源回收**: 当前 Tenant User 按精确 Permission 发起本租户评估与显式确认执行；[权限与 API](./CLAUDE.md#资源回收tenant-user--精确-permission)
 
 ## 🚀 快速开始
@@ -65,6 +65,8 @@ OAuth 2.0:       /api/v1/system/oauth/*
 不存在公开 `/register`、旧 `/users` CRUD、物理删除 `/tenants` 或混合语义 `/logs` 路径。
 
 完整 API 文档请查看 [CLAUDE.md#API端点](./CLAUDE.md#api-端点)
+
+审计的[Context / Tenant 查询权限](docs/tables/audit_logs表.md#六查询授权)及[字段白名单](docs/tables/audit_logs表.md#四脱敏白名单)统一见审计表契约。HTTP 成功不证明审计已落库；[归档验收](#平台审计归档)也须与在线查询分开核对。
 
 资源回收的[确认约束](../docs/spec/addp-cleanup体系规范.md#六scan-与-execute)、[状态判定](../docs/spec/addp-cleanup体系规范.md#状态与通过判定)和[System / Monitor 返回边界](../docs/spec/addp-cleanup体系规范.md#system-页面与任务-api)以正式专题为准。[隔离验收与未覆盖项](../docs/spec/addp-cleanup体系规范.md#十三运行态验收)仍列有完整 Cleanup suite 接入缺口；接口存在、任务终态或页面可展示均不代表完整验收通过。
 
