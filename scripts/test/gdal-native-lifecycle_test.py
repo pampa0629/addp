@@ -398,7 +398,7 @@ elif command=='admit':
         launcher.chmod(0o755)
         wrapper.write_text(r'''import os, sys
 from pathlib import Path
-root=Path(os.environ['ROOT_DIR'])
+root=Path(__file__).resolve().parent
 if len(sys.argv)>2 and sys.argv[1]=='-c' and 'from osgeo import' in sys.argv[2]: sys.exit(0)
 if sys.argv[1:3]==['-m','pip']:
  with (root/'events').open('a') as f: f.write('pip '+' '.join(sys.argv[3:])+'\n')
@@ -460,7 +460,7 @@ addp_install_gdal_arrow_dependencies "$ROOT_DIR/engines/geopython-workflow" fixt
         for name in ('.addp-dependency-fingerprint', '.addp-arrow-native-fingerprint'):
             self.assertFalse((self.runtime / 'venv' / name).exists())
 
-    def test_concurrent_native_transactions_compile_once(self):
+    def locked_transaction_fixture(self):
         for name in ('gdal-env.sh', 'lifecycle-lock.sh'):
             shutil.copy2(ROOT / 'scripts/dev' / name, self.root / 'scripts/dev' / name)
         binary = self.root / 'bin'
@@ -472,6 +472,24 @@ addp_install_gdal_arrow_dependencies "$ROOT_DIR/engines/geopython-workflow" fixt
             'addp_install_gdal_arrow_dependencies "$ROOT_DIR/engines/geopython-workflow"',
             'addp_prepare_gdal_arrow_dependencies "$ROOT_DIR/engines/geopython-workflow"')
         environment = dict(self.environment, PATH=str(binary) + os.pathsep + os.environ['PATH'])
+        return script, environment
+
+    def test_unexported_workspace_is_bound_in_locked_parallel_child(self):
+        script, environment = self.locked_transaction_fixture()
+        # start.sh has a shell-local ROOT_DIR. The parallel worker inherits it,
+        # but the install-lock exec boundary must bind its own argv workspace.
+        script = script.replace('set -euo pipefail', 'set -euo pipefail\nexport -n ROOT_DIR')
+        call = 'addp_prepare_gdal_arrow_dependencies "$ROOT_DIR/engines/geopython-workflow" fixture "$ROOT_DIR/common-python"'
+        script = script.replace(call, '( ' + call + ' ) &\nwait "$!"')
+        result = subprocess.run(['bash', '-c', script], env=environment,
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.events().count('source-build'), 1)
+        self.assertEqual(sum(line.startswith('admit ') for line in self.events()), 2)
+        self.assertEqual((self.runtime / 'venv/.addp-arrow-native-fingerprint').read_text().strip(), 'native-a')
+
+    def test_concurrent_native_transactions_compile_once(self):
+        script, environment = self.locked_transaction_fixture()
         processes = [subprocess.Popen(['bash', '-c', script], env=environment,
                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                       start_new_session=True) for _ in range(3)]

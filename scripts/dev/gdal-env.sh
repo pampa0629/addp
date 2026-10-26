@@ -55,8 +55,9 @@ addp_prepare_gdal_binding() {
 addp_prepare_gdal_arrow_dependencies() {
   addp_with_python_dependency_lock "$ROOT_DIR" bash -c '
     set -e
-    source "$1/scripts/dev/lifecycle-lock.sh"
-    source "$1/scripts/dev/gdal-env.sh"
+    export ROOT_DIR="$1"
+    source "$ROOT_DIR/scripts/dev/lifecycle-lock.sh"
+    source "$ROOT_DIR/scripts/dev/gdal-env.sh"
     addp_install_gdal_arrow_dependencies "$2" "$3" "$4"
   ' _ "$ROOT_DIR" "$1" "$2" "$3"
 }
