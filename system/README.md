@@ -33,10 +33,9 @@ bash scripts/dev/start.sh -system
 
 ### 方式 2: Docker 部署
 
-```bash
-cd system
-docker-compose up -d
-```
+本地容器部署见[Local 快速启动](../scripts/local/README.md#快速启动)，服务器部署见[Prod 首次部署](../scripts/prod/README.md#首次部署)。从仓库根目录使用对应标准入口，并按指南准备匹配平台、Registry 和版本的镜像及部署配置。
+
+System 随根 `docker-compose.yml` 的 `addp-platform` 管理，平台仅发布 Nginx 统一入口；按启动输出中的公开访问地址进入 Console。容器内部端口、宿主机映射、公开 origin 与模块单独部署的区别见[端口规范](../docs/spec/addp端口分配.md#前端-docker-端口规则)。容器健康及 Nginx `/health` 就绪不替代 IAM 登录、授权与业务功能验收。
 
 ### IAM 首次初始化
 
