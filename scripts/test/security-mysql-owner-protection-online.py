@@ -3305,18 +3305,28 @@ def transfer_role_target(client: GatewayClient, locator: str, selected: bool) ->
     return assert_role_masked_rows(rows, columns, selected), rows
 
 
+def export_no_store(response: SUPPORT.Response) -> str:
+    if response.cache_control != ("no-store",):
+        raise SuiteError("export delivery must return exactly one Cache-Control: no-store")
+    return response.cache_control[0]
+
+
 def transfer_role_csv(client: GatewayClient, execution: Mapping[str, object], selected: bool,
                       deadline: float, filename: str, actor_id: str) -> tuple[dict[str, object], str]:
     execution_id = execution["execution_id"]
-    created = _object(client.request("POST", "/api/v1/develop/executions/" + execution_id + "/exports", (202,),
-        {"format": "csv", "file_name": filename}).payload, "role CSV session")
+    created_response = client.request("POST", "/api/v1/develop/executions/" + execution_id + "/exports", (202,),
+        {"format": "csv", "file_name": filename})
+    create_cache = export_no_store(created_response)
+    created = _object(created_response.payload, "role CSV session")
     session_id = positive_int(created.get("id"), "role CSV session ID")
     transfer_id = created.get("transfer_execution_id")
     if not isinstance(transfer_id, str) or str(uuid.UUID(transfer_id)) != transfer_id or uuid.UUID(transfer_id).int == 0 or transfer_id == execution_id:
         raise SuiteError("CSV must use its own actual Transfer execution UUID")
     session_path = "/api/v1/develop/exports/" + str(session_id)
     while time.monotonic() < deadline:
-        session = _object(client.request("GET", session_path, (200,)).payload, "role CSV status")
+        status_response = client.request("GET", session_path, (200,))
+        status_cache = export_no_store(status_response)
+        session = _object(status_response.payload, "role CSV status")
         if (session.get("id") != session_id or session.get("transfer_execution_id") != transfer_id
                 or session.get("format") != "csv" or session.get("requires_current_user", False) is not selected):
             raise SuiteError("CSV session identity, format or current-user delivery binding differs")
@@ -3341,7 +3351,9 @@ def transfer_role_csv(client: GatewayClient, execution: Mapping[str, object], se
             or nonnegative_int(transfer.get("records_read"), "CSV actual rows read") != 5
             or nonnegative_int(transfer.get("records_written"), "CSV actual rows written") != 5):
         raise SuiteError("CSV actual Transfer execution provenance, status or counts differ")
-    raw = client.request("GET", session_path + "/file", (200,), raw_response=True).payload
+    file_response = client.request("GET", session_path + "/file", (200,), raw_response=True)
+    file_cache = export_no_store(file_response)
+    raw = file_response.payload
     if not isinstance(raw, bytes) or not raw:
         raise SuiteError("CSV control needs actual nonempty file bytes")
     try:
@@ -3356,7 +3368,8 @@ def transfer_role_csv(client: GatewayClient, execution: Mapping[str, object], se
             row[BANK_FIELD] = None
     evidence = assert_role_masked_rows(rows, BANK_FIELDS, selected)
     return ({**evidence, "session_id": session_id, "transfer_execution_id": transfer_id,
-             "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest(), "csv_empty_cells_verified": True}, session_path)
+             "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest(), "csv_empty_cells_verified": True,
+             "cache_control": {"create": create_cache, "status": status_cache, "file": file_cache}}, session_path)
 
 
 def exercise_transfer_role_membership_expiry(client: GatewayClient, engine_id: int, target_engine_id: int, database: str,
@@ -3466,6 +3479,7 @@ def exercise_transfer_role_membership_expiry(client: GatewayClient, engine_id: i
         assignment_after = assert_timed_service_assignment(controller.request("GET", "/api/v1/system/tenant/role_assignments/" + assignment_id, (200,)).payload,
             active, assignment_id, role_id, expires_at, "expired", username)
         denials = {}
+        export_cache_refusals = {}
         for name, method, path, payload, code in (
             ("task_start", "POST", task_path + "/start", None, "transfer_protection_roles_unavailable"),
             ("task_name_update", "PUT", task_path, {"name": body["name"] + "-refused"}, "transfer_protection_roles_unavailable"),
@@ -3473,7 +3487,10 @@ def exercise_transfer_role_membership_expiry(client: GatewayClient, engine_id: i
             ("old_export_status", "GET", session_path, None, "query_protection_roles_unavailable"),
             ("old_file_download", "GET", session_path + "/file", None, "query_protection_roles_unavailable"),
             ("new_export_same_snapshot", "POST", "/api/v1/develop/executions/" + source_query["execution_id"] + "/exports", {"format": "csv", "file_name": "must-not-create.csv"}, "query_protection_roles_unavailable")):
-            denials[name] = exact_role_conflict(active_reader.request(method, path, (409,), payload), code)
+            refusal_response = active_reader.request(method, path, (409,), payload)
+            denials[name] = exact_role_conflict(refusal_response, code)
+            if path.startswith("/api/v1/develop/"):
+                export_cache_refusals[name] = export_no_store(refusal_response)
         retained = _object(active_reader.request("GET", task_path, (200,)).payload, "retained expired task")
         _, target_after_rows = transfer_role_target(client, target_locator, True)
         old_query = _object(active_reader.request("GET", "/api/v1/develop/executions/" + source_query["execution_id"], (200,)).payload, "retained export query")
@@ -3495,7 +3512,9 @@ def exercise_transfer_role_membership_expiry(client: GatewayClient, engine_id: i
         if _object(recovered_query.get("execution_config"), "default query").get("content", {}).get("export_protection_choices") != []:
             raise SuiteError("default CSV recovery must explicitly clear the export selection")
         csv_default, new_session_path = transfer_role_csv(active_reader, recovered_query, False, deadline, "p145-role-expiry-default.csv", active["principal_id"])
-        still_denied = exact_role_conflict(active_reader.request("GET", session_path + "/file", (409,)), "query_protection_roles_unavailable")
+        old_file_response = active_reader.request("GET", session_path + "/file", (409,))
+        still_denied = exact_role_conflict(old_file_response, "query_protection_roles_unavailable")
+        export_cache_refusals["old_file_after_default_recovery"] = export_no_store(old_file_response)
         execution_ids = [first_execution["execution_id"], recovered_execution["execution_id"], source_query["execution_id"], recovered_query["execution_id"],
                          csv_before["transfer_execution_id"], csv_default["transfer_execution_id"]]
         if (len(set(execution_ids)) != 6 or new_session_path == session_path
@@ -3512,7 +3531,8 @@ def exercise_transfer_role_membership_expiry(client: GatewayClient, engine_id: i
             "database_observed_before": before_wait["observed_at"], "database_observed_after": roles_after["observed_at"],
             "choice": choice, "installed_projection": installed, "task_id": task_id, "first_execution": first_execution,
             "selected_target": target_before, "default_query_preview": query_default, "selected_csv": csv_before,
-            "same_session_refusals": denials, "no_execution_or_target_write_after_refusal": True,
+            "same_session_refusals": denials, "export_refusal_cache_control": export_cache_refusals,
+            "no_execution_or_target_write_after_refusal": True,
             "task_query_policy_and_projection_unchanged": True, "export_bff_role_reason_preserved": True, "default_execution": recovered_execution,
             "default_target": target_default, "default_csv": csv_default, "old_file_still_refused_after_default_recovery": still_denied}
     except BaseException as error:
@@ -3812,7 +3832,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v31",
+            "schema_version": "addp.security-mysql-owner-protection-online/v32",
             "result": "passed",
             "identity": identity,
             "governance": governance,

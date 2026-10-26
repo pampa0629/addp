@@ -73,6 +73,8 @@
 
 同一 v31 的两次 CSV 正向对照（资格到期前的角色方式、显式移除选择后的默认方式）还须在下载前，以同一普通 User 通过 `GET /api/v1/transfer/executions/{execution_id}` 复核会话所指 Transfer UUID：状态成功、无任务定义（`task_id=0`）、手动执行、`trigger_by` 为已验证的当前用户、实际读写均为五行。只验证会话成功或文件字节不能替代这项执行来源证明；任一事实不符即中止该对照，不下载文件、不产生通过结论。普通默认导出的 User Actor／Execution Authorization 私有字段不在该公开 DTO 中，也不能以 `trigger_by` 推导或补造。领域报告结构保持不变，复核的是已有 `transfer_execution_id`，无新增权限、入口或部署路线。确定性回归分别对两种方式注入发起人不匹配／缺失、错误 UUID、绑定任务、失败状态、非手动触发和读写计数错误，并继续要求精确清理；这些 T0/T1 反例不替代新的真实角色到期 HTTP／Hosted 验收。
 
+领域 v32 在同一角色资格自然到期场景中增加导出响应缓存证据，取代 v31 作为当前运行契约，不新增部署、账号、角色、权限或验收入口。共享 HTTP 传输只额外保留实际 `Cache-Control` 头的全部值，不收集 Cookie 或其他凭据头；正常 JSON、CSV 字节流和 HTTP 错误响应均走同一读取路径。到期前角色 CSV 与主动清空选择后的默认 CSV，创建、每次状态读取、文件下载都必须精确返回单一 `no-store`，并在各自 CSV 证据中保留三阶段头值。到期后的旧会话状态、旧文件下载、原查询再次导出，以及默认恢复后的旧文件复读，继续要求精确 `409/query_protection_roles_unavailable`、无结果，并在 `export_refusal_cache_control` 中分别保留四个实际头值。缺失、空值、`no-cache`、允许保存／公开缓存或重复矛盾头均拒绝验收；不能以此前默认 CSV 的成功响应头替代这些资格失效证据。既有六个真实 UUID、同会话自然到期、投影与目标不变、默认恢复及精确清理边界全部保留。确定性反例和传输回归仍由 `make test-security-online-runner` 自动发现，真实隔离运行结果须由专门 CI 会话另行回传。
+
 ## 四出口逐原因矩阵
 
 领域报告 v25 起在既有 suite 内给出 `protection_reason_matrix`，固定七种原因 × Manager preview、Develop query、Service execute、Transfer export。每个单元格必须明确 `runtime` 或 `protocol_only`，不能把共享协议测试当作对应 HTTP 出口已运行；矩阵的 runtime 单元格只有该次请求及对应强断言通过后才能生成。Manager／Service 保留原有仅含本地化 error 与 error_code 的保护 403，原因由受控的纳管状态、固定 SQL、原规则和结构变化事实证明，不增加公开子原因或解析错误正文。Develop／Transfer 校验同一执行 UUID 的历史、精确诊断、拒绝无结果；Transfer 另校验零写入及目标逐值不变。

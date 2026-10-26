@@ -2985,6 +2985,13 @@ class TransferRoleExpiryBackend(DevelopRoleExpiryBackend):
                 "card_id":"card-"+key,"bank_card_verified":"verified-"+key,"credit_card_number":str(100+int(key))})
         return result
 
+    def export_response(self, stage, value):
+        value.cache_control = ("no-store",)
+        if self.expiry_fault == stage + "_cache_missing":value.cache_control = ()
+        if self.expiry_fault == stage + "_cache_public":value.cache_control = ("public, max-age=600",)
+        if self.expiry_fault == stage + "_cache_duplicate":value.cache_control = ("no-store", "public")
+        return value
+
     def refusal(self, code):
         value={"error":"qualification expired","error_code":code}
         if self.expiry_fault=="denial_data":value["data"]=[]
@@ -3058,7 +3065,7 @@ class TransferRoleExpiryBackend(DevelopRoleExpiryBackend):
             if export_create:
                 source_id=path.split("/")[5]
                 selected=bool(self.executions[source_id]["execution_config"]["content"]["export_protection_choices"])
-                if selected and self.expired:return self.refusal("query_protection_roles_unavailable")
+                if selected and self.expired:return self.export_response("expired_create", self.refusal("query_protection_roles_unavailable"))
                 identifier=len(self.sessions)+1
                 path="/api/v1/develop/exports/"+str(identifier)
                 value={"id":identifier,"transfer_execution_id":str(ONLINE.uuid.UUID(int=300+identifier)),"format":"csv","status":"success",
@@ -3066,20 +3073,21 @@ class TransferRoleExpiryBackend(DevelopRoleExpiryBackend):
                 self.sessions[identifier]=value
                 self.csv_executions[value["transfer_execution_id"]] = ({"execution_id":value["transfer_execution_id"],
                     "task_id":0,"status":"success","trigger_type":"manual","trigger_by":7,"records_read":5,"records_written":5}, selected)
-                return response(202,copy.deepcopy(value))
+                return self.export_response("selected_create" if selected else "default_create", response(202,copy.deepcopy(value)))
             identifier=int(path.split("/")[5]);value=copy.deepcopy(self.sessions[identifier])
             selected=value["requires_current_user"]
             if selected and self.expired:
                 if self.expiry_fault=="old_file_unlocked" and path.endswith("/file"):
                     return response(200,b"not a refusal")
-                return self.refusal("query_protection_roles_unavailable")
-            if not path.endswith("/file"):return response(200,value)
+                stage = "expired_status" if not path.endswith("/file") else ("old_file_after_default" if len(self.sessions) == 2 else "expired_file")
+                return self.export_response(stage, self.refusal("query_protection_roles_unavailable"))
+            if not path.endswith("/file"):return self.export_response("selected_status" if selected else "default_status", response(200,value))
             rows=self.rows(selected)
             if self.expiry_fault=="csv_raw":rows[0][ONLINE.BANK_FIELD]=ONLINE.BANK_SOURCE_VALUES["1"]
             if self.expiry_fault=="csv_default_instead" and selected:rows=self.rows(False)
             if self.expiry_fault=="csv_default_leaked" and not selected:rows[0][ONLINE.BANK_FIELD]=ONLINE.BANK_SOURCE_VALUES["1"]
             stream=ONLINE.io.StringIO();writer=ONLINE.csv.DictWriter(stream,fieldnames=ONLINE.BANK_FIELDS);writer.writeheader();writer.writerows(rows)
-            return response(200,stream.getvalue().encode())
+            return self.export_response("selected_file" if selected else "default_file", response(200,stream.getvalue().encode()))
         if path=="/api/v1/system/login":
             assert body["username"]==ONLINE.TRANSFER_ROLE_USERNAME
             body=dict(body,username=ONLINE.DEVELOP_ROLE_USERNAME)
@@ -3118,6 +3126,8 @@ class TransferRoleNaturalExpiryTest(unittest.TestCase):
         self.assertTrue(report["default_csv"]["default_mask"] and report["default_target"]["default_mask"])
         self.assertEqual(len(report["same_session_refusals"]),6)
         self.assertTrue(report["export_bff_role_reason_preserved"])
+        self.assertEqual(report["export_refusal_cache_control"], {name: "no-store" for name in (
+            "old_export_status", "old_file_download", "new_export_same_snapshot", "old_file_after_default_recovery")})
         for name,refusal in report["same_session_refusals"].items():
             expected="transfer_protection_roles_unavailable" if name in ("task_start","task_name_update","direct_selection_check") else "query_protection_roles_unavailable"
             self.assertEqual(refusal,{"http_status":409,"error_code":expected,"result_absent":True})
@@ -3127,6 +3137,7 @@ class TransferRoleNaturalExpiryTest(unittest.TestCase):
         self.assertTrue(backend.task_deleted);self.assertEqual(backend.policy["state"],"revoked")
         self.assertFalse(any(str(path).endswith("/revoke") for _,_,path,_ in backend.events))
         for case in (report["selected_csv"], report["default_csv"]):
+            self.assertEqual(case["cache_control"], {"create":"no-store", "status":"no-store", "file":"no-store"})
             path = "/api/v1/transfer/executions/" + case["transfer_execution_id"]
             self.assertEqual(sum(event[1:3] == ("GET", path) for event in backend.events), 1)
         self.assertEqual(sum(path=="/api/v1/system/login" for _,_,path,_ in backend.events),2)
@@ -3147,6 +3158,23 @@ class TransferRoleNaturalExpiryTest(unittest.TestCase):
                     self.assertEqual(backend.previous["status"], "revoked")
                     refused = "/api/v1/develop/exports/" + ("2" if prefix else "1") + "/file"
                     self.assertFalse(any(event[1:3] == ("GET", refused) for event in backend.events))
+
+    def test_all_ten_export_boundaries_reject_missing_public_or_conflicting_cache_headers(self):
+        stages = ("selected_create", "selected_status", "selected_file", "expired_status", "expired_file", "expired_create",
+                  "default_create", "default_status", "default_file", "old_file_after_default")
+        for stage in stages:
+            for fault in ("missing", "public", "duplicate"):
+                with self.subTest(stage=stage, fault=fault):
+                    backend = TransferRoleExpiryBackend(stage + "_cache_" + fault)
+                    with self.assertRaises(ONLINE.SuiteError):self.run_case(backend)
+                    self.assertTrue(backend.task_deleted)
+                    self.assertEqual(backend.policy["state"], "revoked")
+                    self.assertEqual(backend.previous["status"], "revoked")
+
+    def test_no_cache_private_empty_and_duplicate_no_store_cannot_replace_no_store(self):
+        for values in (("",), ("no-cache",), ("private",), ("no-store, public",), ("no-store", "no-store")):
+            with self.subTest(values=values), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.export_no_store(ONLINE.SUPPORT.Response(409, {"error_code":"query_protection_roles_unavailable"}, values))
 
     def test_auth_protection_wrong_codes_hidden_writes_csv_leaks_and_silent_clear_cannot_pass(self):
         for fault in ("session401","version_changed","permission_lost","role_survived","premature_wait","revoked_instead","extended_deadline",

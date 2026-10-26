@@ -53,6 +53,7 @@ class SuiteError(RuntimeError):
 class Response:
     status: int
     payload: Any
+    cache_control: tuple[str, ...] = ()
 
 
 class GatewayClient:
@@ -87,14 +88,16 @@ class GatewayClient:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 status = response.status
                 raw = response.read()
+                cache_control = tuple(response.headers.get_all("Cache-Control", []))
         except urllib.error.HTTPError as error:
             status = error.code
             raw = error.read()
+            cache_control = tuple(error.headers.get_all("Cache-Control", []))
         except (urllib.error.URLError, TimeoutError) as error:
             raise SuiteError(f"{method} {path} transport failed: {error}") from error
         expected_statuses = set(expected)
         if raw_response and status in expected_statuses:
-            return Response(status=status, payload=raw)
+            return Response(status=status, payload=raw, cache_control=cache_control)
         try:
             payload = json.loads(raw) if raw else {}
         except json.JSONDecodeError as error:
@@ -102,7 +105,7 @@ class GatewayClient:
         if status not in expected_statuses:
             code = payload.get("error_code", "unknown") if isinstance(payload, dict) else "unknown"
             raise SuiteError(f"{method} {path} returned HTTP {status} ({code})")
-        return Response(status=status, payload=payload)
+        return Response(status=status, payload=payload, cache_control=cache_control)
 
 
 def _object(payload: Any, resource: str) -> dict[str, object]:

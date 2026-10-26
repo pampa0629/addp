@@ -1,8 +1,10 @@
 import importlib.util
+import io
 import os
 import sys
 import unittest
 from pathlib import Path
+from email.message import Message
 from unittest.mock import Mock, patch
 
 
@@ -41,7 +43,7 @@ class GatewayDownloadTest(unittest.TestCase):
 
     def test_raw_download_reuses_authenticated_transport(self):
         raw = b'{"_id":"1"}\n{"_id":"2"}\n'
-        reply = Mock(status=200)
+        reply = Mock(status=200, headers=Message())
         reply.read.return_value = raw
         reply.__enter__ = Mock(return_value=reply)
         reply.__exit__ = Mock(return_value=False)
@@ -52,7 +54,7 @@ class GatewayDownloadTest(unittest.TestCase):
         self.assertEqual(opened.call_args.args[0].get_header("Authorization"), "Bearer fixture-token")
 
     def test_raw_download_does_not_accept_error_payload_as_file(self):
-        reply = Mock(status=403)
+        reply = Mock(status=403, headers=Message())
         reply.read.return_value = b'{"error_code":"access_denied","error":"sensitive details"}'
         reply.__enter__ = Mock(return_value=reply)
         reply.__exit__ = Mock(return_value=False)
@@ -61,6 +63,28 @@ class GatewayDownloadTest(unittest.TestCase):
             ONLINE.GatewayClient("http://localhost:8000", "fixture-token", 30).request(
                 "GET", "/api/v1/manager/exports/1/file", (200,), raw_response=True)
         self.assertNotIn("sensitive details", str(caught.exception))
+
+    def test_cache_header_evidence_survives_json_raw_and_http_errors_without_cookies(self):
+        for status, raw_response in ((200, False), (200, True), (409, False)):
+            for values in ((), ("no-store",), ("no-store", "public")):
+                with self.subTest(status=status, raw_response=raw_response, values=values):
+                    headers = Message()
+                    for value in values:headers.add_header("Cache-Control", value)
+                    headers.add_header("Set-Cookie", "private-session-cookie")
+                    raw = b"phone\n***\n" if raw_response else b'{"error_code":"query_protection_roles_unavailable"}'
+                    reply = Mock(status=status, headers=headers)
+                    reply.read.return_value = raw
+                    reply.__enter__ = Mock(return_value=reply)
+                    reply.__exit__ = Mock(return_value=False)
+                    with patch.object(ONLINE.urllib.request, "urlopen", return_value=reply) as opened:
+                        if status == 409:
+                            opened.side_effect = ONLINE.urllib.error.HTTPError("http://localhost/exports/1", status, "Conflict", headers, io.BytesIO(raw))
+                        result = ONLINE.GatewayClient("http://localhost:8000", "fixture-token", 30).request(
+                            "GET", "/api/v1/develop/exports/1", (status,), raw_response=raw_response)
+                    self.assertEqual(result.status, status)
+                    self.assertEqual(result.cache_control, values)
+                    self.assertEqual(result.payload, raw if raw_response else ONLINE.json.loads(raw))
+                    self.assertNotIn("private-session-cookie", repr(result))
 
 
 class SecurityTransferProtectionOnlineTest(unittest.TestCase):
