@@ -367,3 +367,34 @@ class TopologyFixtureTest(unittest.TestCase):
             elif kind=='seam':rows.append({'properties':{'source_id':'环缝'},'geometry':{'type':'Point','coordinates':[870,140]}})
             elif kind=='global-dedup':rows.pop(10)
             with self.subTest(kind=kind),self.assertRaises(m.FixtureError):m.validate_line_self_intersection_features(rows)
+
+
+class NormalizeFixtureTest(unittest.TestCase):
+    def test_case_selection_refuses_unknown_before_old_worker(self):
+        self.assertEqual(m.topology_case({}), 'full')
+        self.assertEqual(m.topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':m.NORMALIZE_CASE}),m.NORMALIZE_CASE)
+        for value in ('', 'normal', 'FULL'):
+            with self.assertRaises(m.FixtureError):m.topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':value})
+        with patch.object(m,'normalize_worker',return_value={'only':'normalize'}) as normalize,patch.object(m,'seed_snap',side_effect=AssertionError('old scenario must not run')):
+            self.assertEqual(m.worker('seed',Path('/unused'),m.NORMALIZE_CASE),{'only':'normalize'})
+            normalize.assert_called_once()
+
+    def test_exact_normalized_edges_and_every_original_occurrence_are_independent(self):
+        self.assertEqual(len(m.normalize_source_features()),5)
+        edges=m.normalize_expected_features();members=m.normalize_expected_features('members')
+        self.assertEqual(len(edges),9);self.assertEqual(len(members),17)
+        self.assertEqual([r['properties']['occurrence_count'] for r in edges],[1,2,2,1,1,1,1,4,4])
+        self.assertEqual(sum(r['properties']['occurrence_count'] for r in edges),len(members))
+        self.assertEqual(members[4]['properties']['source_segment_no'],3)
+        self.assertEqual([r['properties']['source_id'] for r in members].count('重复丁'),6)
+        for kind,original in [('source',m.normalize_source_features()),('result',edges),('members',members)]:
+            m.validate_normalize_features(original,kind)
+            changes=[lambda rows:rows.pop(),lambda rows:rows.reverse(),lambda rows:rows[0]['geometry']['coordinates'].reverse()]
+            for field in original[0]['properties']:
+                changes.append(lambda rows,field=field:rows[0]['properties'].__setitem__(field,'wrong'))
+            if kind=='members':
+                changes.extend([lambda rows:rows[0]['properties'].update(is_reversed=0),lambda rows:rows[5]['properties'].update(grade=0),
+                    lambda rows:rows[4]['properties'].update(source_segment_no=2),lambda rows:rows[0]['properties'].update(edge_id=True)])
+            for change in changes:
+                rows=copy.deepcopy(original);change(rows)
+                with self.subTest(kind=kind,change=change),self.assertRaises(m.FixtureError):m.validate_normalize_features(rows,kind)

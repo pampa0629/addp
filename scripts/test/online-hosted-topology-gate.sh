@@ -6,6 +6,11 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=vector-topology-persistence
+export ADDP_ONLINE_TOPOLOGY_CASE=${ADDP_ONLINE_TOPOLOGY_CASE-full}
+case "$ADDP_ONLINE_TOPOLOGY_CASE" in
+  full|line-network-normalize) ;;
+  *) echo 'ADDP_ONLINE_TOPOLOGY_CASE must be full or line-network-normalize' >&2; exit 1 ;;
+esac
 RUNTIME_CONTAINER=addp-topology-runtime
 RUNTIME_TAG=topology
 RUNTIME_IMAGE=localhost:5001/addp-geopython-workflow-engine:$RUNTIME_TAG
@@ -32,6 +37,11 @@ export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600
 export ADDP_ONLINE_TEST_RUN_ID="topology-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"
 export CONSOLE_URL=http://127.0.0.1:5170
 export MONITOR_URL=http://127.0.0.1:8100 SECURITY_URL=http://127.0.0.1:8194
+python3 - <<'PYCASE'
+import json,os
+from pathlib import Path
+(Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR'])/'topology-case.json').write_text(json.dumps({'suite':'vector-topology-persistence','case':os.environ['ADDP_ONLINE_TOPOLOGY_CASE']}))
+PYCASE
 fixture_owned=1
 registry_owned=1
 run_logged docker run -d --name addp-topology-registry --label "com.addp.online-runtime=$ONLINE_SUITE" -p 127.0.0.1:5001:5000 registry:2

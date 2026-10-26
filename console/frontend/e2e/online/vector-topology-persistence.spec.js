@@ -372,3 +372,95 @@ test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点�
     ...evidence, schema_version: 'addp.topology-browser/v14', result: 'passed'
   }, null, 2))
 })
+
+function normalizedMapExpectation(features) {
+  return features.map(row => JSON.stringify({ properties:row.properties,
+    coordinates:row.geometry.coordinates.map(webMercatorPreviewCoordinate) })).sort()
+}
+
+test('重合规整独立普通User双成果与字段拒绝', async ({ page }) => {
+  const evidence = JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE || '{}')
+  expect(evidence.case).toBe('line-network-normalize')
+  expect(evidence.outputs.map(o=>o.port)).toEqual(['result','members'])
+  expect(evidence.expected.result).toHaveLength(9)
+  expect(evidence.expected.members).toHaveLength(17)
+  expect(evidence.source.before.id).toBe(evidence.source.id)
+  const expectedIdentity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
+  const executionRead=page.waitForResponse(r=>r.request().method()==='GET' && new URL(r.url()).pathname===`/api/v1/develop/executions/${evidence.execution_id}`)
+  await login(page,process.env.ADDP_ONLINE_TEST_USER_USERNAME,process.env.ADDP_ONLINE_TEST_USER_PASSWORD,`/develop/executions/${evidence.execution_id}`)
+  const response=await executionRead
+  const executionAPI=await browserAPIFromResponse(response,process.env.GATEWAY_URL,expectedIdentity)
+  try {
+    const execution=await json(response,'normalized execution')
+    expect(execution.status).toBe('success')
+    expect(Object.keys(execution.outputs).sort()).toEqual(['save_members','save_result'])
+  } finally {await executionAPI.dispose()}
+  const frame=page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(frame.getByText('成功',{exact:true})).toBeVisible()
+  for(const output of evidence.outputs)await expect(frame.locator('.workflow-result')).toContainText(output.name)
+  await page.screenshot({path:resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,'normalize-execution.png')})
+  const raw={schema_version:'addp.topology-normalize-lineage/v1',case:evidence.case,run_id:evidence.run_id,execution_id:evidence.execution_id,observations:[]}
+  for(const output of evidence.outputs){
+    const expected=evidence.expected[output.port], fields=Object.keys(expected[0].properties)
+    const locator=`${output.locator}&item_id=${output.item_id}`
+    const previewRead=page.waitForResponse(r=>r.request().method()==='GET' &&
+      new URL(r.url()).pathname==='/api/v1/manager/preview' && new URL(r.url()).searchParams.get('locator')===locator &&
+      new URL(r.url()).searchParams.get('child_name')===output.layer_name)
+    await page.goto(`${process.env.CONSOLE_URL}/manager/data-explorer?locator=${encodeURIComponent(locator)}`)
+    const previewResponse=await previewRead,preview=await json(previewResponse,'normalized preview')
+    const api=await browserAPIFromResponse(previewResponse,process.env.GATEWAY_URL,expectedIdentity)
+    let graph,source
+    try {
+      source=await json(await api.get(`/api/v1/meta/items/${evidence.source.id}`),'unchanged normalization source')
+      expect(source).toEqual(evidence.source.before)
+      graph=await json(await api.get(`/api/v1/meta/lineage/graph?subject_kind=data_item&item_id=${output.item_id}&direction=upstream`),'normalization lineage')
+      expect(graph.truncated).not.toBe(true)
+      const edges=graph.edges.filter(edge=>edge.target?.item_id===output.item_id && edge.evidence?.execution_id===evidence.execution_id && edge.status==='active' && edge.relation_kind==='derive')
+      expect(edges).toHaveLength(1)
+      expect(edges[0].source.item_id).toBe(evidence.source.id)
+    } finally {await api.dispose()}
+    const data=preview.data
+    expect(preview.preview_type).toBe('table')
+    expect([data.total,data.source_srid,data.source_crs,data.transform_status,data.preview_hint])
+      .toEqual([expected.length,3857,'EPSG:3857','not_transformed','frontend_transform_required'])
+    expect(data.geometry_columns).toEqual([output.geometry_column])
+    expect(output.fid_column).toBeTruthy()
+    expect([...data.columns].sort()).toEqual([output.fid_column,output.geometry_column,...fields].sort())
+    expect(data.rows.map(row=>row[output.fid_column])).toEqual(Array.from({length:expected.length},(_,i)=>i+1))
+    expect(data.rows.map(row=>({properties:Object.fromEntries(fields.map(k=>[k,row[k]])),geometry:decodePreviewEWKB(row[output.geometry_column])}))).toEqual(expected)
+    const table=frame.locator('.table-preview'),renderer=table.locator('.openlayers-map-renderer')
+    await expect(table).toBeVisible()
+    await expect(table.locator('.map-placeholder')).toHaveCount(0)
+    let rendered
+    await expect.poll(async()=>{
+      rendered=await renderer.evaluate((element,fields)=>{
+        const value=element.__vueParentComponent?.setupState?.mapInstance,map=value?.value||value
+        if(!map||map.getView().getAnimating())return null
+        return {projection:map.getView().getProjection().getCode(),features:map.getLayers().getArray().flatMap(layer=>layer.getSource?.()?.getFeatures?.()||[])
+          .map(feature=>({type:feature.getGeometry().getType(),properties:Object.fromEntries(fields.map(k=>[k,feature.get(k)])),coordinates:feature.getGeometry().getCoordinates()}))}
+      },fields)
+      if(!rendered||rendered.projection!=='EPSG:3857'||rendered.features.some(f=>f.type!=='LineString'))return []
+      return rendered.features.map(({properties,coordinates})=>JSON.stringify({properties,coordinates})).sort()
+    }).toEqual(normalizedMapExpectation(expected))
+    let greenPixels=0
+    await expect.poll(async()=>greenPixels=await renderer.locator('canvas').evaluateAll(canvases=>canvases.reduce((n,c)=>{
+      const pixels=c.getContext('2d').getImageData(0,0,c.width,c.height).data
+      for(let i=0;i<pixels.length;i+=4)if(pixels[i+3]>0&&pixels[i+1]>pixels[i]*1.1&&pixels[i+1]>pixels[i+2]*1.1)n++
+      return n
+    },0))).toBeGreaterThan(30)
+    raw.observations.push({output_item_id:output.item_id,source,graph,preview,rendered:{...rendered,green_pixels:greenPixels}})
+    writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,'topology-source-lineage-raw.json'),JSON.stringify(raw,null,2))
+    await page.screenshot({path:resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,`normalize-${output.port}-map.png`)})
+  }
+  const failedRead=page.waitForResponse(r=>r.request().method()==='GET'&&new URL(r.url()).pathname===`/api/v1/develop/executions/${evidence.failed_execution_id}`)
+  await page.goto(`${process.env.CONSOLE_URL}/develop/executions/${evidence.failed_execution_id}`)
+  const failedResponse=await failedRead,api=await browserAPIFromResponse(failedResponse,process.env.GATEWAY_URL,expectedIdentity)
+  try {
+    const failed=await json(failedResponse,'failed normalization execution')
+    expect(failed.status).toBe('failed');expect(failed.outputs||{}).toEqual({})
+    expect(await json(await api.get(`/api/v1/meta/items/${evidence.source.id}`),'unchanged source')).toEqual(evidence.source.before)
+  } finally {await api.dispose()}
+  await expect(frame.getByText('失败',{exact:true})).toBeVisible()
+  await page.screenshot({path:resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,'normalize-failed.png')})
+  writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,'topology-browser.json'),JSON.stringify({...evidence,schema_version:'addp.topology-normalize-browser/v1',result:'passed'},null,2))
+})

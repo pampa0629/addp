@@ -879,7 +879,10 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[7], 'toEqual(snapCoordinates.map(line => line.map(webMercatorPreviewCoordinate))'),
             (paths[7], "getProjection().getCode() !== 'EPSG:3857'"), (paths[12], 'webMercatorPreviewCoordinate'),
             (paths[11], 'display projection round trip exactly'),
-            (paths[8], 'case "vector-topology-persistence":'), (paths[9], 'test_hosted_topology_physical_oracle'), (paths[9], 'test_hosted_line_component_fixture_rejects_real_physical_corruption')):
+            (paths[8], 'case "vector-topology-persistence":'), (paths[9], 'test_hosted_topology_physical_oracle'), (paths[9], 'test_hosted_line_component_fixture_rejects_real_physical_corruption'), (paths[0], 'ADDP_ONLINE_TOPOLOGY_CASE: ${{ inputs.topology_case }}'),
+            (paths[3], 'full|line-network-normalize'), (paths[4], 'run_normalize_scenario'),
+            (paths[5], 'normalize_worker'), (paths[7], 'normalizedMapExpectation')
+        ):
             target = self.repository / relative; original = target.read_text(); target.write_text(original.replace(fragment, 'omitted'))
             with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_vector_topology_profile(self.repository, registered)

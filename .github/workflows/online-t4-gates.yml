@@ -92,6 +92,14 @@ on:
         required: false
         type: string
         default: ''
+      topology_case:
+        description: Topology acceptance case (normalization runs only its new branch)
+        required: true
+        type: choice
+        default: full
+        options:
+          - full
+          - line-network-normalize
       manager_case:
         description: Manager acceptance case (full preserves all model assertions)
         required: true
@@ -1849,6 +1857,7 @@ jobs:
       ADDP_ONLINE_HOST: "1"
       ADDP_ONLINE_HOSTED: "1"
       ONLINE_SUITE_INPUT: vector-topology-persistence
+      ADDP_ONLINE_TOPOLOGY_CASE: ${{ inputs.topology_case }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

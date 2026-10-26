@@ -150,6 +150,16 @@ NFS export/owned root、Runtime/registry、部署与 Infra 全部清理并核零
 源生成的字节／大小／下载对象登记、两次生成一致、三格式等价、3000／48／24 点计数和报告拒绝归 `make test-manager-online-runner`／`make test-online-runner`。浏览器像素取证只读复制到独立离屏画布，不修改地图或过滤警告。真实运行沿用原手动 Hosted 入口；最终源码、报告与不覆盖范围见[静态轨迹历史证据](../验收证据索引.md#manager-静态轨迹历史证据)。
 
 
+### 重合规整独立场景
+
+用户已确认 P0＋P1：`vector-topology-persistence` 新增显式 `topology_case=line-network-normalize`，保留原 `full` 的原业务含义。新场景只生成一个 EPSG:3857 GPKG 源，执行 `load → normalize_line_network(id_field=route_key) → result/members 各自 save(mode=fail)`；不 seed 或执行旧十五源／十五成果场景，不调用旧塌缩负例或容量矩阵。未知 case 在副作用前拒绝；现有根入口、Hosted 生命周期、同源默认入口 Runtime、非默认 Tenant、普通 User 精确11权限与600秒预算不变。Case 由 workflow 输入贯穿 owner、物理夹具、浏览器和报告，不能把本场景成功记为旧整包已重验。
+
+源的五个业务 ID 为显式字符串，与存储 FID 区分；覆盖折线原顶点／连续重复坐标、反向部分重合、十字交会、同源多部件多次经过和不同采样顶点。固定手写预期为九条唯一 LineString、十七条经过明细。唯一边只含几何和 Integer64 edge_id／occurrence_count；明细保留全部业务列及 null、Integer64 grade、Boolean enabled，追加来源／部件／原段／片段序号及 Boolean is_reversed。按精确原坐标、方向、行序与关联逐项核验，不用生产算法生成预期、舍入或添加容差。旧 Native 保存断言必须收紧为原 Integer64 物理类型，不再按输入 dtype 接受浮点。
+
+双保存均使用既有授权与成果主线，稳定 outputs 和 facts 各两份 write_mode=create；各成果恰有同一普通 User／Tenant 的一次精确自动扫描、正整数 physical==Meta 大小以及源到该成果的一条当前 execution active derive。独立原生 OGR 读原始几何／字段类型／CRS，归档一个源与两成果原字节并核浏览器前后不变。两幅真实预览／OpenLayers 地图核全部九／十七行属性、标准 EWKB、FID 区分、EPSG:3857 原坐标的显示投影、要素数、绿色像素与截图。源 Meta 保持不变，Monitor 与执行 facts 一致；业务来源只由 members 表达，不塞入 Meta 技术血缘。
+
+同源另提交一次缺失 id_field 的计算失败 DAG，必须由指定 normalize 节点的确切字段校验原因失败，两个下游 save 都不发布、无新增扫描或输出 facts，原源／成功成果不变；不承诺保存阶段跨文件事务回滚。浏览器核同 User 的成功／失败执行页与两幅地图，共四截图。阶段证据 result=incomplete 不替代最终 `addp.topology-normalize/v1` 和 `addp.topology-normalize-browser/v1` 的 passed；两者显式绑定 case、Run ID、身份、当前执行、源和两端口预期。原始图／预览／OL 与完整物理证据须保留；领域、NFS export／owned root、Runtime／registry、部署／Infra 全部清理零残留，清理不认证业务 DELETE。新场景沿现有标准 runner、Native、Console 及 workflow 登记检查，不新增 suite、权限或容量运行。
+
 ## manager-hybrid-search
 
 Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 MinIO Engine Instance，Fixture owner 额外幂等写入仓库内确定性 JPG。专用 Tenant 必须通过正式 Inference 与 Manager 配置 API 预置支持文本和图片、维度为 2560 的 Model Profile 及 `semantic_search_embedding` 场景绑定；Provider Credential 只保存在 Inference 加密存储，Online 环境只声明预期 Model Profile ID。suite 不创建、更新或删除 Provider、Deployment、Model Profile、Credential 和场景绑定，而经 Gateway 触发真实 Meta scan 与 Manager ad-hoc embedding，验证 Inference、pgvector、Meilisearch 和 Manager 对称 RRF 融合的完整链路：同一 `document_id` 的关键词与向量候选只能返回一次，纯向量候选必须在融合后参与统一分页，响应不得包含旧 `vector_hits`。每轮 embedding 结果必须通过 Manager 正式 API 删除并确认零残留；新增 suite 只登记手工 `workflow_dispatch`，首次真实通过前不得加入夜间调度。

@@ -842,3 +842,138 @@ console.log('MultiLineString pair identity, length and coordinates: nine corrupt
             path.write_text(json.dumps({'execution_id':'current','outputs':evidence['outputs'],'schema_version':'addp.topology-browser/v14','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=run),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
+
+
+def normalize_execution():
+    source=f'addp://engine/3/path/{m.fixture.NORMALIZE_SOURCE}?type=file&item_id=10'
+    targets={p:f'addp://engine/3/path/outputs/{n}?type=file' for p,n in zip(m.fixture.NORMALIZE_PORTS,m.fixture.NORMALIZE_TARGETS)}
+    facts={'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.normal_input','locator':source}],
+           'outputs':[{'locator':t,'write_mode':'create'} for t in targets.values()]}
+    return {'status':'success','outputs':{'save_'+p:{'resource':{'locator':t,'type':'file','write_mode':'create'}} for p,t in targets.items()},
+        'metadata':{'lineage_facts':facts,'result':{'meta_scan_runs':[{'execution_id':'scan-'+p,'target_locator':t,'status':'submitted'} for p,t in targets.items()]}}}
+
+
+class NormalizeClient(base.Client):
+    def __init__(self):
+        super().__init__(m.fixture.NORMALIZE_SOURCE)
+        self.permissions=sorted(m.PERMISSIONS);self.scan_tenant=2
+        self.targets={20+i:base.item(name,20+i) for i,name in enumerate(m.fixture.NORMALIZE_TARGETS)}
+        self.executions={'normalize-execution':normalize_execution(),'normalize-failed':{'status':'failed','metadata':{}}}
+    def request(self,method,path,expected,body=None):
+        if path.endswith('/auth/context'):
+            data={'principal':{'id':33,'type':'user'},'context':{'type':'tenant','tenant_id':'2'},'token':{'type':'first_party_access_token'},
+                  'authorization':{'role_assignments':[{'role_key':'topology-consumer','permissions':self.permissions}]}}
+        elif path=='/api/v1/develop/executions' and method=='POST':
+            self.calls.append((method,path,body))
+            tasks=body['content']['workflow_definition']['tasks']
+            assert [t['operator'] for t in tasks]==['load','normalize_line_network','save','save']
+            data={'execution_id':'normalize-failed' if tasks[1]['params']['id_field']=='missing_id' else 'normalize-execution'}
+        elif '/meta/executions/' in path:data={'status':'success','tenant_id':self.scan_tenant,'triggered_by':self.actor}
+        elif path.startswith('/api/v1/meta/scan/runs?'):
+            ids=['source-scan','scan-result','scan-members'];data={'total':len(ids),'items':[{'execution_id':i} for i in ids]}
+        elif '/meta/lineage/graph?' in path:
+            identifier=int(path.split('item_id=')[1].split('&')[0]);data={'truncated':False,'edges':[{'source':{'item_id':10},'target':{'item_id':identifier},'evidence':{'execution_id':'normalize-execution'},'status':'active','relation_kind':'derive'}]}
+        else:return super().request(method,path,expected,body)
+        return SimpleNamespace(payload=copy.deepcopy(data))
+
+
+def normalize_physical(*args):
+    return {'exact_inventory_verified':True,'sources':{m.fixture.NORMALIZE_SOURCE:{'sha256':'source','size_bytes':500}},
+        'targets':{name:{'sha256':name,'size_bytes':98304,'layer_name':name[:-5],'geometry_column':'geom','fid_column':'fid','feature_count':count}
+                   for name,count in zip(m.fixture.NORMALIZE_TARGETS,(9,17))}}
+
+
+class NormalizeOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
+        self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.NORMALIZE_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
+    def run_case(self,client=None,physical=normalize_physical,browser=lambda r,e,v:v):
+        return m.run_scenario(Path('.'),self.env,client or NormalizeClient(),physical,browser,diagnostic_runner=lambda *a,**kw:{'cause':kw['cause']})
+    def test_case_uses_only_one_source_two_ports_exact_identity_and_no_old_branch(self):
+        client=NormalizeClient()
+        with patch.object(m,'definition',side_effect=AssertionError('old full scenario must not run')):
+            result=self.run_case(client)
+        self.assertEqual(result['schema_version'],'addp.topology-normalize/v1')
+        self.assertEqual(result['case'],m.fixture.NORMALIZE_CASE)
+        self.assertEqual([o['port'] for o in result['outputs']],['result','members'])
+        self.assertEqual([len(result['browser']['expected'][p]) for p in m.fixture.NORMALIZE_PORTS],[9,17])
+        manual=[call for call in client.calls if call[1].endswith('/scan/run/manual')]
+        self.assertEqual(len(manual),1);self.assertEqual(manual[0][2]['targets'],[f'addp://engine/3/path/{m.fixture.NORMALIZE_SOURCE}?type=file'])
+        self.assertTrue(result['failed_normalize']['no_publication_or_scan'])
+        tasks=m.normalize_definition('s','p')['tasks']
+        self.assertEqual(tasks[2]['params']['input_df'],{'$ref':'normal'})
+        self.assertEqual(tasks[3]['params']['input_df'],{'$ref':'normal','port':'members'})
+    def test_case_rejects_wrong_ports_types_scans_identity_permissions_and_size(self):
+        source=f'addp://engine/3/path/{m.fixture.NORMALIZE_SOURCE}?type=file&item_id=10'
+        targets={p:f'addp://engine/3/path/outputs/{n}?type=file' for p,n in zip(m.fixture.NORMALIZE_PORTS,m.fixture.NORMALIZE_TARGETS)}
+        for mutate in (lambda e:e['outputs'].pop('save_members'),lambda e:e['metadata']['lineage_facts']['inputs'][0].update(port='input.foreign'),
+            lambda e:e['metadata']['lineage_facts']['outputs'][0].update(write_mode='fail'),
+            lambda e:e['metadata']['result']['meta_scan_runs'][1].update(execution_id='scan-result')):
+            value=normalize_execution();mutate(value)
+            with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):m.validate_normalize_success(value,source,targets)
+        for field,value in [('actor',True),('actor',34),('scan_tenant','2'),('permissions',sorted(m.PERMISSIONS|{'extra.read'}))]:
+            client=NormalizeClient();setattr(client,field,value)
+            with self.subTest(field=field),self.assertRaises(m.SuiteError):self.run_case(client)
+        client=NormalizeClient();client.targets[20]['size_bytes']=0
+        with self.assertRaises(m.SuiteError):self.run_case(client)
+    def test_case_failure_and_browser_cannot_change_physical_inventory(self):
+        client=NormalizeClient();client.executions['normalize-failed']['outputs']={'unexpected':{}}
+        with self.assertRaises(m.SuiteError):self.run_case(client)
+        def browser(*args):raise m.SuiteError('map failed')
+        with self.assertRaises(m.SuiteError):self.run_case(browser=browser)
+        checkpoint=json.loads((Path(self.directory.name)/'topology-normalize-failure.json').read_text())
+        self.assertEqual(checkpoint['result'],'incomplete');self.assertEqual(checkpoint['stage'],'field_failure_validated')
+        count=0
+        def changed(*args):
+            nonlocal count
+            count+=1;value=normalize_physical()
+            if count==3:value['targets'][m.fixture.NORMALIZE_TARGETS[0]]['sha256']='changed'
+            return value
+        with self.assertRaises(m.SuiteError):self.run_case(physical=changed)
+    def test_browser_selects_only_normalize_and_binds_complete_report(self):
+        evidence={'case':m.fixture.NORMALIZE_CASE,'run_id':'r','expected':{'result':[],'members':[]}}
+        path=Path(self.directory.name)/'topology-browser.json'
+        def invoke(args,**kwargs):
+            self.assertEqual(args[-2:],['--grep','^重合规整独立普通User'])
+            path.write_text(json.dumps({**evidence,'schema_version':'addp.topology-normalize-browser/v1','result':'passed'}))
+            return SimpleNamespace(returncode=0)
+        with patch.object(m.subprocess,'run',side_effect=invoke):m.browser(Path('.'),self.env,evidence)
+        def wrong(*args,**kwargs):
+            path.write_text(json.dumps({**evidence,'schema_version':'addp.topology-browser/v14','result':'passed'}));return SimpleNamespace(returncode=0)
+        with patch.object(m.subprocess,'run',side_effect=wrong),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
+
+    def test_actual_normalize_map_assertion_rejects_missing_duplicate_wrong_provenance_and_direction(self):
+        import subprocess
+        repository=Path(__file__).resolve().parents[2]
+        script=r'''
+import assert from 'node:assert/strict'
+import {readFileSync} from 'node:fs'
+const source=readFileSync(process.argv[1],'utf8')
+const expected=JSON.parse(process.argv[2])
+const {webMercatorPreviewCoordinate}=await import(process.argv[3])
+const helperStart=source.indexOf('function normalizedMapExpectation('),helperEnd=source.indexOf("test('重合规整独立普通User",helperStart)
+const normalizedMapExpectation=new Function('webMercatorPreviewCoordinate',source.slice(helperStart,helperEnd)+';return normalizedMapExpectation')(webMercatorPreviewCoordinate)
+const start=source.indexOf('    await expect.poll(async()=>{',helperEnd),end=source.indexOf('    let greenPixels',start)
+assert.ok(start>0&&end>start)
+const check=new (Object.getPrototypeOf(async function(){}).constructor)('renderer','expect','fields','expected','normalizedMapExpectation','let rendered;'+source.slice(start,end))
+const expect={poll:fn=>({async toEqual(value){assert.deepEqual(await fn(),value)}})}
+async function run(rows,projection='EPSG:3857'){
+ const features=rows.map(row=>({get:k=>row.properties[k],getGeometry:()=>({getType:()=>row.geometry.type,getCoordinates:()=>row.geometry.coordinates.map(webMercatorPreviewCoordinate)})}))
+ const map={getView:()=>({getAnimating:()=>false,getProjection:()=>({getCode:()=>projection})}),getLayers:()=>({getArray:()=>[{getSource:()=>({getFeatures:()=>features})}]})}
+ const renderer={evaluate:async(fn,args)=>fn({__vueParentComponent:{setupState:{mapInstance:map}}},args)}
+ await check(renderer,expect,Object.keys(expected[0].properties),expected,normalizedMapExpectation)
+}
+await run(expected);await run([...expected].reverse())
+const changes=[rows=>rows.pop(),rows=>rows.push(structuredClone(rows[0])),rows=>rows[0].properties.edge_id++,
+ rows=>rows[0].geometry.coordinates.reverse(),rows=>rows[0].geometry.coordinates[0][0]+=1]
+if('source_id' in expected[0].properties)changes.push(rows=>rows[0].properties.source_id='wrong',
+ rows=>rows[0].properties.source_segment_no++,rows=>rows[0].properties.is_reversed=0,rows=>rows[5].properties.grade=0)
+else changes.push(rows=>rows[0].properties.occurrence_count++)
+for(const change of changes){const rows=structuredClone(expected);change(rows);await assert.rejects(run(rows),{code:'ERR_ASSERTION'})}
+await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
+'''
+        for port in m.fixture.NORMALIZE_PORTS:
+            result=subprocess.run(['node','--input-type=module','-e',script,
+                str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),json.dumps(m.fixture.normalize_expected_features(port)),
+                (repository/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri()],capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)

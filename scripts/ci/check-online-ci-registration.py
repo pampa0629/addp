@@ -2002,6 +2002,23 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         or "nfs-kernel-server nfs-common" not in job.group("body")
         or load_suite_registry(repository)["vector-topology-persistence"].nightly):
         raise RegistrationError("topology requires a manual isolated Hosted NFS job")
+    if ('      topology_case:' not in workflow or '          - line-network-normalize' not in workflow
+        or 'ADDP_ONLINE_TOPOLOGY_CASE: ${{ inputs.topology_case }}' not in job.group('body')):
+        raise RegistrationError('topology requires an explicit independently selected normalization case')
+    normalize_required = {
+        'scripts/test/online-hosted-topology-gate.sh': ('full|line-network-normalize', 'topology-case.json'),
+        'scripts/test/vector-topology-persistence-online.py': ('run_normalize_scenario', 'normalize_definition',
+            'validate_normalize_success', 'addp.topology-normalize/v1', 'normalization validation failure must publish neither',
+            '^重合规整独立普通User', 'addp.topology-normalize-browser/v1'),
+        'business/scripts/online-vector-topology-fixture.py': ('normalize_source_features', 'normalize_expected_features',
+            'normalize_worker', 'verify_normalize', 'occurrence_count', 'source_segment_no'),
+        'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('重合规整独立普通User双成果与字段拒绝',
+            'normalizedMapExpectation', 'addp.topology-normalize-browser/v1', 'normalization lineage'),
+        'engines/geopython-workflow/test_topology_operators.py': ('test_hosted_normalize_case_dual_save_independent_physical_oracle',),
+    }
+    for relative,fragments in normalize_required.items():
+        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+            raise RegistrationError('topology normalization case contract incomplete: '+relative)
     required = {
         "scripts/test/online-hosted-topology-gate.sh": ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
             'start_online_geopython_runtime', '--mount', '--suite vector-topology-persistence',

@@ -87,3 +87,17 @@ class HostedTopologyGateTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(self.host.secrets.exists())
             self.assertNotIn('topology:start', self.host.trace.read_text() if self.host.trace.exists() else '')
+
+    def test_normalize_case_is_bound_and_unknown_case_has_no_side_effect(self):
+        result=self.run_gate(ADDP_ONLINE_TOPOLOGY_CASE='line-network-normalize')
+        self.assertEqual(result.returncode,0,result.stderr+result.stdout)
+        import json
+        record=json.loads((self.host.artifacts/'topology-case.json').read_text())
+        self.assertEqual(record,{'suite':'vector-topology-persistence','case':'line-network-normalize'})
+        self.assertFalse(self.host.secrets.exists())
+        if self.host.artifacts.exists():shutil.rmtree(self.host.artifacts)
+        self.host.trace.unlink(missing_ok=True)
+        result=self.run_gate(ADDP_ONLINE_TOPOLOGY_CASE='unknown')
+        self.assertNotEqual(result.returncode,0)
+        self.assertFalse(self.host.secrets.exists())
+        self.assertFalse(self.host.trace.exists())

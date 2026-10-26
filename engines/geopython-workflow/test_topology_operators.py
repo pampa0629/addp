@@ -3615,11 +3615,9 @@ def test_normalize_line_network_native_dual_save_and_independent_ogr_reload(tmp_
     if empty:frame=frame.iloc[:0]
     source=tmp_path/'source.gpkg';frame.to_file(source,driver='GPKG',layer='source');original=source.read_bytes()
     connection={'engine_type':'nfs','mount_path':str(tmp_path)}
-    # Bind dtype preservation to the actual in-memory operator input. Existing
-    # gpd.read_file promotes nullable GPKG integers to Float64; do not claim
-    # original file-schema preservation or guess it back in this operator.
+    # load must preserve the declared nullable physical schema end to end.
     loaded=get_operator('load')(connection_info=connection,path='source.gpkg')
-    incoming_grade_type=ogr.OFTInteger64 if loaded.grade.dtype.kind in 'iu' else ogr.OFTReal
+    assert str(loaded.grade.dtype)=='Int64' and str(loaded.enabled.dtype)=='boolean'
     tasks=[{'id':'load','operator':'load','params':{'connection_info':connection,'path':'source.gpkg'},'depends_on':[]},
         {'id':'normal','operator':'normalize_line_network','params':{'input_gdf':{'$ref':'load'},'id_field':'route_key'},'depends_on':['load']}]
     for port in ('result','members'):
@@ -3636,7 +3634,7 @@ def test_normalize_line_network_native_dual_save_and_independent_ogr_reload(tmp_
         fields=[f.GetName() for f in layer.schema]
         assert fields==(['edge_id','occurrence_count'] if port=='result' else ['source_name','route_key','note','grade','enabled','edge_id','source_id','source_part_no','source_segment_no','piece_no','is_reversed'])
         for name in (['edge_id','occurrence_count'] if port=='result' else ['route_key','grade','edge_id','source_id','source_part_no','source_segment_no','piece_no']):
-            assert schema.GetFieldDefn(schema.GetFieldIndex(name)).GetType()==(incoming_grade_type if name=='grade' else ogr.OFTInteger64)
+            assert schema.GetFieldDefn(schema.GetFieldIndex(name)).GetType()==ogr.OFTInteger64
         if port=='members':
             assert schema.GetFieldDefn(schema.GetFieldIndex('is_reversed')).GetSubType()==ogr.OFSTBoolean
             if not empty:
@@ -3722,3 +3720,57 @@ def test_normalize_line_network_result_can_be_explicitly_merged_without_attribut
     assert [list(g.coords) for g in result['result'].geometry]==[[(0,0),(1,0),(3,0),(4,0)]]
     assert result['members'].edge_id.tolist()==[1,2,3]
     assert result['members'].occurrence_count.tolist()==[1,2,1]
+
+
+@pytest.mark.parametrize('port,problem',[(None,None),('result','count'),('result','occurrences'),('result','crs'),
+    ('members','source'),('members','null'),('members','segment'),('members','reverse'),('members','direction'),
+    ('members','int_type'),('members','bool_type')])
+def test_hosted_normalize_case_dual_save_independent_physical_oracle(tmp_path,port,problem):
+    import importlib
+    from osgeo import ogr
+    fixture=importlib.import_module('business.scripts.online-vector-topology-fixture')
+    (tmp_path/'outputs').mkdir();(tmp_path/'.addp-online-owner').touch()
+    fixture.worker('seed',tmp_path,fixture.NORMALIZE_CASE)
+    source=tmp_path/fixture.NORMALIZE_SOURCE;original=source.read_bytes()
+    conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    frame=get_operator('load')(connection_info=conn,path=source.name)
+    assert str(frame.grade.dtype)=='Int64' and str(frame.enabled.dtype)=='boolean'
+    tasks=[{'id':'load','operator':'load','params':{'connection_info':conn,'path':source.name},'depends_on':[]},
+        {'id':'normal','operator':'normalize_line_network','params':{'input_gdf':{'$ref':'load'},'id_field':'route_key'},'depends_on':['load']}]
+    for kind,name in zip(fixture.NORMALIZE_PORTS,fixture.NORMALIZE_TARGETS):
+        ref={'$ref':'normal'} if kind=='result' else {'$ref':'normal','port':'members'}
+        tasks.append({'id':'save_'+kind,'operator':'save','params':{'input_df':ref,'connection_info':conn,'path':'outputs/'+name,'mode':'fail'},'depends_on':['normal']})
+    execution=execute_workflow({'tasks':tasks});assert execution['status']=='success',execution.get('error')
+    verified=fixture.worker('verify',tmp_path,fixture.NORMALIZE_CASE)
+    assert [verified['targets'][n]['feature_count'] for n in fixture.NORMALIZE_TARGETS]==[9,17]
+    if port is None:
+        root=tmp_path.parent/(tmp_path.name+'-archive');root.mkdir()
+        fixture.archive_physical_evidence(tmp_path,root,verified,fixture.NORMALIZE_CASE)
+        assert (root/'topology-physical'/source.name).read_bytes()==original
+        tasks[1]['params']['id_field']='missing_id'
+        for task in tasks[2:]:task['params']['path']=task['params']['path'].replace('outputs/','outputs/failed-')
+        failed=execute_workflow({'tasks':tasks});assert failed['status']=='failed'
+        assert 'id_field must explicitly name' in failed['error']
+        assert fixture.worker('verify',tmp_path,fixture.NORMALIZE_CASE)==verified
+    else:
+        path=tmp_path/'outputs'/fixture.NORMALIZE_TARGETS[fixture.NORMALIZE_PORTS.index(port)]
+        ds=ogr.Open(str(path),1);layer=ds.GetLayer(0)
+        if problem=='count':layer.DeleteFeature(1)
+        elif problem=='crs':ds.ExecuteSQL('UPDATE gpkg_geometry_columns SET srs_id=4326')
+        elif problem in ('int_type','bool_type'):
+            name='grade' if problem=='int_type' else 'enabled'
+            assert layer.AlterFieldDefn(layer.GetLayerDefn().GetFieldIndex(name),ogr.FieldDefn(name,ogr.OFTReal),ogr.ALTER_TYPE_FLAG)==0
+        else:
+            feature=layer.GetFeature(1 if problem!='null' else 6)
+            if problem=='occurrences':feature.SetField('occurrence_count',2)
+            elif problem=='source':feature.SetField('source_id','foreign')
+            elif problem=='null':feature.SetField('grade',0)
+            elif problem=='segment':feature.SetField('source_segment_no',2)
+            elif problem=='reverse':feature.SetField('is_reversed',1)
+            elif problem=='direction':
+                points=list(feature.GetGeometryRef().GetPoints())[::-1]
+                feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps({'type':'LineString','coordinates':points})))
+            assert layer.SetFeature(feature)==0
+        ds=None
+        with pytest.raises(fixture.FixtureError):fixture.verify_normalize(path,port)
+    assert source.read_bytes()==original
