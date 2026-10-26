@@ -101,14 +101,12 @@ graph TB
 - Gateway 使用自身 Platform Service Access Token，通过 `GET /api/v1/system/runtime/modules/watch` 获取路由快照；启动时以 `revision=0` 获取已启用模块及其 `up` 的 Backend 完整快照。`GET /api/v1/system/runtime/modules` 是注册表列表入口，不替代发现长轮询。
 - 后续只通过 revision 长轮询等待拓扑变化；新增、恢复、下线、端点变化和管理员启停会立即唤醒请求，无需重启 Gateway。
 - 长轮询达到 `MODULE_WATCH_TIMEOUT`（默认 **10 秒**）时，即使 revision 未变化也返回一份新鲜完整快照，使 Gateway 持有的租约截止时间持续更新，不会因缓存租约老化形成路由空窗。
-- 只根据 `enabled + role=backend + status=up + lease valid` 的实例创建、更新和移除 HTTP 代理
-- Gateway 原子替换完整快照；System 短暂不可达时保留最近一次快照，但每次选路仍校验其中的租约截止时间。
-- 多个 Backend 实例的选择必须来自同一发现结果，不能回退到环境变量中的第二套路由事实源
+- Gateway 原子替换完整快照；watch 失败时保留最近一次已应用快照。当前实现不另设快照年龄失效窗口，实例是否仍可选由下述逐请求租约校验裁决。
 
 **5. 单一路由机制**:
 - 模块动态注册表是 Gateway 业务模块路由的唯一事实源；`/api/v1/system/*` 固定使用 `SYSTEM_URL` 引导代理，不依赖 System 自注册实例的租约，也不作为业务模块发现失败时的 fallback。两类请求仍由各 owner 执行认证与授权。
-- System 注册中心暂时不可达时，Gateway 可以继续使用最近一次成功且尚未超过本地失效窗口的发现快照；不得读取 `*_SERVICE_URL` 建立平行 fallback 路由。
-- 没有可用 Backend 实例或快照已失效时返回 503，不能把请求静默发往未受租约管理的地址。
+- 业务模块只从同一快照中满足 `enabled + role=backend + status=up + lease valid` 的 Backend 池按请求轮询，每次选路跳过已过期租约；不得读取 `*_SERVICE_URL` 建立第二套路由事实源。
+- 业务模块未注册或没有有效 Backend 租约时，选路返回 503；不得静默转发至未受租约管理的地址。选中 Backend 后的请求失败不在 Gateway 内隐式重放，具体实现与 Ready 边界见 [Gateway 模块发现](../../../gateway/docs/gateway架构说明.md#5-模块发现)。
 
 ### 存活、就绪、注册与可路由契约
 
