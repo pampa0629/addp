@@ -270,7 +270,8 @@ def browser(repository, env, evidence):
     path = Path(env['ADDP_ONLINE_ARTIFACT_DIR']) / 'topology-browser.json'
     path.unlink(missing_ok=True)
     case=fixture.topology_case(env)
-    pattern='^重合规整独立普通User' if case==fixture.NORMALIZE_CASE else '^同一普通User核对构面'
+    # Playwright prefixes file/project names in grep titles; match the exact test-name suffix.
+    pattern='重合规整独立普通User双成果与字段拒绝$' if case==fixture.NORMALIZE_CASE else '同一普通User核对构面、修复、严格吸附、面叠面缝悬点线叠自叠线交自交及打断连通分组链路合并地图及塌缩失败$'
     result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test', 'e2e/online/vector-topology-persistence.spec.js',
         '--config=playwright.online.config.js','--grep',pattern], cwd=repository/'console/frontend',
         env=dict(env, ADDP_ONLINE_TOPOLOGY_EVIDENCE=json.dumps(evidence)), stdout=sys.stderr, stderr=sys.stderr, timeout=240)

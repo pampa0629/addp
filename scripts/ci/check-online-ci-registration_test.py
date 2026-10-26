@@ -866,7 +866,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             'console/frontend/e2e/online/vector-topology-persistence.spec.js', 'system/backend/cmd/online-test-fixture/main.go',
             'engines/geopython-workflow/test_topology_operators.py',
             'manager/frontend/e2e/geometry-preview-support.js', 'manager/frontend/tests/previewGeometryWire.test.js',
-            'manager/frontend/e2e/geometry-preview-coordinate.js')
+            'manager/frontend/e2e/geometry-preview-coordinate.js',
+            'scripts/test/vector-topology-persistence-online_test.py', '.github/workflows/platform-ci.yml')
         for relative in paths:
             target = self.repository / relative; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, target)
@@ -881,7 +882,10 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[11], 'display projection round trip exactly'),
             (paths[8], 'case "vector-topology-persistence":'), (paths[9], 'test_hosted_topology_physical_oracle'), (paths[9], 'test_hosted_line_component_fixture_rejects_real_physical_corruption'), (paths[0], 'ADDP_ONLINE_TOPOLOGY_CASE: ${{ inputs.topology_case }}'),
             (paths[3], 'full|line-network-normalize'), (paths[4], 'run_normalize_scenario'),
-            (paths[5], 'normalize_worker'), (paths[7], 'normalizedMapExpectation')
+            (paths[5], 'normalize_worker'), (paths[7], 'normalizedMapExpectation'),
+            (paths[13], 'test_real_playwright_discovery_selects_exactly_one_case_without_running_business'),
+            (paths[13], "[*args,'--list','--reporter=json']"),
+            (paths[14], 'frontend-directory: console/frontend'), (paths[14], 'frontend-directory: manager/frontend')
         ):
             target = self.repository / relative; original = target.read_text(); target.write_text(original.replace(fragment, 'omitted'))
             with self.subTest(fragment=fragment), self.assertRaises(CHECK.RegistrationError):

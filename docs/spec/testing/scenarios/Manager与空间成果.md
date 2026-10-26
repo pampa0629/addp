@@ -152,7 +152,7 @@ NFS export/owned root、Runtime/registry、部署与 Infra 全部清理并核零
 
 ### 重合规整独立场景
 
-用户已确认 P0＋P1：`vector-topology-persistence` 新增显式 `topology_case=line-network-normalize`，保留原 `full` 的原业务含义。新场景只生成一个 EPSG:3857 GPKG 源，执行 `load → normalize_line_network(id_field=route_key) → result/members 各自 save(mode=fail)`；不 seed 或执行旧十五源／十五成果场景，不调用旧塌缩负例或容量矩阵。未知 case 在副作用前拒绝；现有根入口、Hosted 生命周期、同源默认入口 Runtime、非默认 Tenant、普通 User 精确11权限与600秒预算不变。Case 由 workflow 输入贯穿 owner、物理夹具、浏览器和报告，不能把本场景成功记为旧整包已重验。
+用户已确认 P0＋P1：`vector-topology-persistence` 新增显式 `topology_case=line-network-normalize`，保留原 `full` 的原业务含义。新场景只生成一个 EPSG:3857 GPKG 源，执行 `load → normalize_line_network(id_field=route_key) → result/members 各自 save(mode=fail)`；不 seed 或执行旧十五源／十五成果场景，不调用旧塌缩负例或容量矩阵。未知 case 在副作用前拒绝；现有根入口、Hosted 生命周期、同源默认入口 Runtime、非默认 Tenant、普通 User 精确11权限与600秒预算不变。Case 由 workflow 输入贯穿 owner、物理夹具、浏览器和报告，不能把本场景成功记为旧整包已重验。Playwright 筛选针对包含文件名前缀的完整标题，按完整用例名的末尾精确匹配；标准 runner 使用真实 `--list` 分别证明 normalize／full 各只选中目标一项，列表验证不执行业务；平台 CI 通过现有前端准备 action 安装 Console／Manager 的已锁定 npm 依赖，不需要安装浏览器或启动服务。
 
 源的五个业务 ID 为显式字符串，与存储 FID 区分；覆盖折线原顶点／连续重复坐标、反向部分重合、十字交会、同源多部件多次经过和不同采样顶点。固定手写预期为九条唯一 LineString、十七条经过明细。唯一边只含几何和 Integer64 edge_id／occurrence_count；明细保留全部业务列及 null、Integer64 grade、Boolean enabled，追加来源／部件／原段／片段序号及 Boolean is_reversed。按精确原坐标、方向、行序与关联逐项核验，不用生产算法生成预期、舍入或添加容差。旧 Native 保存断言必须收紧为原 Integer64 物理类型，不再按输入 dtype 接受浮点。
 

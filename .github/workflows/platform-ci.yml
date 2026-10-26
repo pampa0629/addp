@@ -85,6 +85,16 @@ jobs:
           requirements-file: copilot/backend/requirements.txt
           editable-install: ./common-python[dev,inference-langchain]
 
+      - name: Prepare Console topology discovery dependencies
+        uses: ./.github/actions/prepare-frontend-gate
+        with:
+          frontend-directory: console/frontend
+
+      - name: Prepare Manager geometry discovery dependencies
+        uses: ./.github/actions/prepare-frontend-gate
+        with:
+          frontend-directory: manager/frontend
+
       - name: Run platform consistency gate
         # Includes Backend-owned schema startup, Worker ordering, Swagger cache invalidation and lifecycle concurrency tests.
         run: make test-platform

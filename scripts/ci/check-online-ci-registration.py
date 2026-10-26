@@ -2005,16 +2005,26 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     if ('      topology_case:' not in workflow or '          - line-network-normalize' not in workflow
         or 'ADDP_ONLINE_TOPOLOGY_CASE: ${{ inputs.topology_case }}' not in job.group('body')):
         raise RegistrationError('topology requires an explicit independently selected normalization case')
+    platform = (repository/'.github/workflows/platform-ci.yml').read_text()
+    platform_job = re.search(r'^  platform-consistency:\n(?P<body>.*?)(?=^  \S|\Z)', platform, re.M|re.S)
+    body = platform_job.group('body') if platform_job else ''
+    gate = body.find('run: make test-platform')
+    for module in ('console','manager'):
+        preparation = f'uses: ./.github/actions/prepare-frontend-gate\n        with:\n          frontend-directory: {module}/frontend'
+        if gate < 0 or body.find(preparation) < 0 or body.find(preparation) > gate:
+            raise RegistrationError('topology real discovery requires locked '+module+' dependencies before platform gate')
     normalize_required = {
         'scripts/test/online-hosted-topology-gate.sh': ('full|line-network-normalize', 'topology-case.json'),
         'scripts/test/vector-topology-persistence-online.py': ('run_normalize_scenario', 'normalize_definition',
             'validate_normalize_success', 'addp.topology-normalize/v1', 'normalization validation failure must publish neither',
-            '^重合规整独立普通User', 'addp.topology-normalize-browser/v1'),
+            '重合规整独立普通User双成果与字段拒绝$', 'addp.topology-normalize-browser/v1'),
         'business/scripts/online-vector-topology-fixture.py': ('normalize_source_features', 'normalize_expected_features',
             'normalize_worker', 'verify_normalize', 'occurrence_count', 'source_segment_no'),
         'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('重合规整独立普通User双成果与字段拒绝',
             'normalizedMapExpectation', 'addp.topology-normalize-browser/v1', 'normalization lineage'),
         'engines/geopython-workflow/test_topology_operators.py': ('test_hosted_normalize_case_dual_save_independent_physical_oracle',),
+        'scripts/test/vector-topology-persistence-online_test.py': ('test_real_playwright_discovery_selects_exactly_one_case_without_running_business',
+            "[*args,'--list','--reporter=json']"),
     }
     for relative,fragments in normalize_required.items():
         if any(fragment not in (repository/relative).read_text() for fragment in fragments):

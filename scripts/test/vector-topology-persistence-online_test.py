@@ -934,7 +934,7 @@ class NormalizeOnlineTest(unittest.TestCase):
         evidence={'case':m.fixture.NORMALIZE_CASE,'run_id':'r','expected':{'result':[],'members':[]}}
         path=Path(self.directory.name)/'topology-browser.json'
         def invoke(args,**kwargs):
-            self.assertEqual(args[-2:],['--grep','^重合规整独立普通User'])
+            self.assertEqual(args[-2:],['--grep','重合规整独立普通User双成果与字段拒绝$'])
             path.write_text(json.dumps({**evidence,'schema_version':'addp.topology-normalize-browser/v1','result':'passed'}))
             return SimpleNamespace(returncode=0)
         with patch.object(m.subprocess,'run',side_effect=invoke):m.browser(Path('.'),self.env,evidence)
@@ -977,3 +977,30 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
                 str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),json.dumps(m.fixture.normalize_expected_features(port)),
                 (repository/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri()],capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr)
+
+
+    def test_real_playwright_discovery_selects_exactly_one_case_without_running_business(self):
+        import os
+        repository=Path(__file__).resolve().parents[2]
+        run=m.subprocess.run
+        titles={m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
+            'full':'同一普通User核对构面、修复、严格吸附、面叠面缝悬点线叠自叠线交自交及打断连通分组链路合并地图及塌缩失败'}
+        for case,title in titles.items():
+            with self.subTest(case=case):
+                environment={**os.environ,**self.env,'ADDP_ONLINE_TOPOLOGY_CASE':case}
+                def discover(args,**kwargs):
+                    # Keep the real owner invocation/config/file/filter; list only.
+                    result=run([*args,'--list','--reporter=json'],cwd=kwargs['cwd'],env=kwargs['env'],
+                        text=True,capture_output=True,timeout=30)
+                    self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+                    listing=json.loads(result.stdout)
+                    def specs(suites):
+                        return [spec for suite in suites for spec in [*suite.get('specs',[]),*specs(suite.get('suites',[]))]]
+                    selected=specs(listing['suites'])
+                    self.assertEqual([s['title'] for s in selected],[title])
+                    self.assertEqual(sum(len(s['tests']) for s in selected),1)
+                    self.assertEqual(listing['errors'],[])
+                    return result
+                with patch.object(m.subprocess,'run',side_effect=discover),self.assertRaisesRegex(m.SuiteError,'evidence missing'):
+                    m.browser(repository,environment,{'case':case})
+                self.assertFalse((Path(self.directory.name)/'topology-browser.json').exists())
