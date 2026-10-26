@@ -424,6 +424,25 @@ System 只能依赖 `summary` 中的标准摘要字段计算全局视图，不�
 
 `scanned_items` 是 scan 阶段的候选规模，`affected_records` 只表示 execute 阶段实际改变的记录。System UI 在 scan 结果中必须优先展示“发现项”，不得用值为 0 的 `affected_records` 暗示 scan 未发现候选。scan 结果不得把“候选任务定义数”写入 `disabled_task_definitions` 或 `deleted_task_definitions`；二者分别只记录 execute 实际禁用和实际物理删除的任务定义数。System UI 必须把两类任务处理结果明确展示，不能仅依赖 `affected_records` 让用户推断物理删除是否发生。
 
+### 状态与通过判定
+
+模块 `CleanupResultData.status`、协调任务 `status` 与共享 execution `status` 属于不同层，不能直接互换。当前模块终态映射如下：
+
+| 模块结果 | 子 execution 状态 | 通用任务汇总的处理 |
+| --- | --- | --- |
+| `success` | `success` | 计入已结束模块，不增加失败标记。 |
+| `skipped` | `success` | 同样计入已结束模块，不增加失败标记；任务可能为 completed，但跳过不证明实际执行或覆盖完成。 |
+| `failed` / `partial_success` | `failed` | 计入已结束模块；全部结束后总体为 completed_with_errors，部分成功不能记为全部通过。 |
+| `timeout` | `timeout` | 计入已结束模块；全部结束后总体为 completed_with_errors，不要求总体一定同名为 timeout。 |
+
+当前总体合成先判断全部模块是否已结束：全部结束且没有 failed、partial_success、timeout 时为 `completed`，否则为 `completed_with_errors`；尚未全部结束且超过截止时间时为 `timeout`，未超时则按是否已有模块结束返回 `running` 或 `pending`。未响应模块在截止时间后会被计为模块 timeout，可能使总体进入 completed_with_errors；这不等于取得了该模块的 `results`。
+
+System 父 execution 将 `completed` 映射为 `success`，`completed_with_errors` / `failed` 映射为 `failed`，`timeout` 映射为 `timeout`，`pending` / `running` 分别保留。父 execution 对已识别任务终态的进度会置为 100；这表示协调已结束，不表示全部动作成功。`error_count=0` 也不能代替逐模块结果核对。
+
+[System 页面](#system-页面与任务-api)将 completed 与 completed_with_errors 都纳入结果展示和历史结果选择；展示结果不代表验收通过，通用 execute 仍要求所引用 scan 为 completed 并通过[确认校验](#六scan-与-execute)。[严格 Engine 删除评估](#executor-参与范围)另须逐模块成功、结果完整、影响摘要有效且无运行任务；skipped、缺失结果及部分失败均不能放行。
+
+状态枚举、汇总结果、共享 execution 或页面标签均不是独立的通过证据；按[运行态验收](#十三运行态验收)分别验证混合结果、缺失响应、超时、状态映射和严格阻断，保留实际产出、失败及清理证据，未运行、失败或跳过不计为通过。
+
 ### System 页面与任务 API
 
 - `GET /api/v1/system/admin/cleanup/tasks/:task_id` 按[手动入口权限](#六scan-与-execute)核验 Tenant User、`system.cleanup.read` 与任务 Tenant，返回 `task_id`、`action`、`status`、`progress`、`results`、`summary`、`task`。其中 `task.context` 和各模块 `CleanupResultData` 中实际提供的 `statistics`、`details`、`errors` 随响应返回，未经过 Monitor 的 Observation 安全投影；不能以 Tenant 隔离或读取权限推断这些内容已统一脱敏。
@@ -587,7 +606,7 @@ cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。
 **验收要求（待正式 suite 覆盖）**：
 
 1. 平台上下文调用 `POST /api/v1/system/admin/cleanup/scan` 返回 HTTP 403；分别核对 `Accept-Language: zh-cn`、`en` 的拒绝提示。另验证缺失相应 Permission 与跨 Tenant 任务读取被拒绝，Tenant 只从 AuthContext 派生，不接受请求自报 `tenant_id`。
-2. 合法 Tenant User 以 `{"scope":["meta"]}` 创建 scan，取得有效 `task_id`，有界查询 `GET /api/v1/system/admin/cleanup/tasks/{task_id}`。正常场景须返回 `completed` 且 Meta 结果成功；`completed_with_errors` 保留为部分失败证据，不计全部通过。创建请求成功、HTTP 200 或取得 task ID 都不等于扫描完成。
+2. 合法 Tenant User 以 `{"scope":["meta"]}` 创建 scan，取得有效 `task_id`，有界查询 `GET /api/v1/system/admin/cleanup/tasks/{task_id}`。正常场景须返回 `completed` 且 Meta 结果成功，判定统一见[状态与通过判定](#状态与通过判定)；`completed_with_errors` 保留为部分失败证据，不计全部通过。创建请求成功、HTTP 200 或取得 task ID 都不等于扫描完成。
 3. 完整结果包含 `task.execution_id`、`task.expected_modules=["meta"]` 与 `results.meta`，核对参与者、结果及失败摘要，不仅检查字段存在。
 4. 通过 `GET /api/v1/system/tenant/audit/events?entity_type=cleanup_task&entity_id={task_id}` 核对 `cleanup.scan.created`，并按真实终态核对 `cleanup.completed` 或 `cleanup.failed`。缺少审计读取权限或未取得证据须单列，不把任务查询成功视为审计通过。
 5. 通过 `GET /api/v1/monitor/executions/by-execution-id/{execution_id}/tree` 核对授权范围内 `module=system, task_type=cleanup` 的父 execution 及 `module=meta, task_type=cleanup_executor` 的子 execution；父执行可读不授予子执行读取权，须分别核对当前用户的 Owner 裁决。
