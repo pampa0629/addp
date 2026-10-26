@@ -492,7 +492,8 @@ active / disabled
 6. 外部引擎不可达且存在 owner 已登记外部产物时，管理员可显式选择 `external_artifact_policy=abandon`。Owner 模块必须把记录终止为 `abandoned_external`，保存外部 schema/object、最后错误、放弃时间和操作者审计；该记录不再进入自动 cleanup 候选。
 7. `abandoned_external` 表示平台放弃后续物理删除责任，不表示外部对象已删除。外部对象由 DBA 或外部系统管理员处理。
 8. System 不读取或修改 owner 私有表；放弃语义仍通过 cleanup request 的中性 context 传递，由 owner executor 落库。
-9. cleanup 完成后必须保留原 Engine Instance 的永久 ID、Tenant、类型和身份键墓碑，不得物理删除或释放 ID。相同物理身份的普通注册必须返回“需要恢复”的冲突，只有用户显式恢复才能沿用原 ID 重新启用；不同物理身份才创建新的 Engine Instance。cleanup 不做 ID 映射，也不改写 owner 的既有绑定。
+9. cleanup 完成后必须保留原 Engine Instance 的永久 ID、Tenant、类型和地址键墓碑，不得物理删除、释放或复用 ID。登记与恢复统一遵循[Engine Instance 身份与生命周期](../concepts/addp引擎体系图.md#engine-instance-身份与生命周期)，地址键由[插件声明](addp引擎插件接口规范.md#二基础接口)规范化生成，不等于永久身份。`deleted` 墓碑不占用地址；同 Tenant、同 `engine_type` 下没有非删除实例占用该地址时，普通登记通过注册校验后获得新 ID，不会复活旧墓碑。显式恢复用于同一实际引擎，沿用原 ID，须满足权限、当前版本及完整连接配置要求；地址变化时另须显式确认，地址已被其他非删除实例占用则返回 409。
+10. cleanup 不做 ID 映射，也不按名称或相似连接信息改写 owner 的既有绑定。新实例不会接管旧 ID 的引用；改接不同实际引擎必须新建实例，由用户在 owner 模块显式选择、校验并原子重绑，保留审计。恢复原 ID 只保留引用身份，不自动恢复 owner 已禁用或归档的配置，也不授予数据权限；后续执行仍须核验当前生命周期、连通性、能力、授权和 owner 状态。
 
 ### Standard 被引用资源删除工作流
 
@@ -554,6 +555,8 @@ cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。
 3. scan 结果必须包含 `task.execution_id`、`task.expected_modules=["meta"]` 和 `results.meta`。
 4. System Tenant 审计端点必须能通过 `entity_type=cleanup_task&entity_id={task_id}` 查到 `cleanup.scan.created`；完成后还应查到 `cleanup.completed` 或 `cleanup.failed`。Tenant 只能从当前 AuthContext 派生，查询不接受 `tenant_id`。
 5. Monitor 必须能通过 `GET /api/v1/monitor/executions/by-execution-id/{execution_id}/tree` 查到 `module=system, task_type=cleanup` 的父 execution，以及 `module=meta, task_type=cleanup_executor` 的子 execution。
+
+上述 `scope=["meta"]` 闭环不覆盖引擎重新登记、墓碑恢复及 owner 重绑。相关专项应按[标准测试入口](addp测试与验收规范.md#三标准入口)分别验证墓碑地址可用于新登记且分配新 ID、显式恢复保留旧 ID、地址被其他非删除实例占用时恢复拒绝，以及权限、版本和搬迁确认的拒绝条件；owner 重绑须核对原引用、原子更新、审计及实际执行。规范、源码、索引声明或单个模块测试不替代真实数据库约束和跨模块验收；恢复后在线也不证明授权与 owner 状态已恢复，未运行、失败或跳过不计为通过。
 
 示例命令骨架：
 
@@ -621,7 +624,7 @@ curl -sS "$BASE/monitor/executions/by-execution-id/$EXECUTION_ID/tree" \
 | item 删除后 artifact state 如何处理 | 有审计和诊断价值的 artifact state 默认标记 `missing_source`，从活跃查询中隐藏；纯缓存可物理删除，但必须保留 execution / audit 摘要。 |
 | engine 删除前如何检查影响 | 先执行无副作用的只读影响评估；确认后进入 `deleting` 并权威复扫。参与模块缺失、运行任务、扫描失败或影响摘要变化时硬阻断删除。 |
 | engine 删除后任务定义如何处理 | 用户创建的任务、服务和治理配置统一保留；可重绑定的报告为 `rebindable`，强绑定配置禁用并以独立绑定状态记录 `missing_engine`，不得污染最近执行状态。只有 Meta 快照、缓存和明确登记的派生产物可以随 engine 生命周期物理清理。 |
-| 删除后重新注册能否自动重绑定 | 不能按名称或相似连接信息猜测、映射或改写绑定。相同物理身份的普通注册返回“需要恢复”的冲突；用户显式恢复墓碑时沿用原 Engine ID，仍引用该 ID 的既有绑定在实例重新在线后自然恢复可执行。不同物理身份必须创建新的 Engine Instance，并由用户在 owner 模块显式选择后原子重绑并保留审计。 |
+| 删除后重新注册能否自动重绑定 | 不能。新建实例与显式恢复按[现行身份契约](../concepts/addp引擎体系图.md#engine-instance-身份与生命周期)区分；墓碑、地址冲突与 owner 重绑规则统一见[Engine 删除工作流](#engine-删除工作流)，不得将恢复原 ID 等同于配置、授权或执行能力已恢复。 |
 | tenant 删除后如何处理 cleanup | 必须通过 system-owned cleanup execution 汇总各模块结果；业务资源可清理，System 审计日志保留或归档。 |
 | 源事实变化后如何处理派生产物 | 主路径是事件驱动标记 `outdated`；查询和执行时做惰性复查作为防线；不因 facts 变化直接物理删除派生产物。 |
 | 配置变化如何判断产物过期 | 按产物类型保存和比较 `source_version`、`config_version`；不使用一个粗粒度全局版本覆盖所有产物。 |
