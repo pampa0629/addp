@@ -963,7 +963,7 @@ test-gaussdb-certification-build: ## 验证 GaussDB 四平台构建及宿主驱�
 .PHONY: test-infra-runtime-log-lifecycle
 test-infra-runtime-log-lifecycle: ## 验证 Infra 日志及指标的启动选择、隔离和失败边界
 	@$(MAKE) test-monitor-traces-local-runner
-	@python3 -m unittest scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/trace-deployment-config_test.py scripts/test/trace-capacity_test.py scripts/test/postgres-metrics-lifecycle_test.py
+	@python3 -m unittest scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/metrics-http-budget_test.py scripts/test/trace-deployment-config_test.py scripts/test/trace-capacity_test.py scripts/test/postgres-metrics-lifecycle_test.py
 
 .PHONY: test-gdal-native-lifecycle
 test-gdal-native-lifecycle: ## 验证 GDAL/Arrow 原生来源、准备事务和两个 Runtime 消费者
@@ -1328,7 +1328,7 @@ test-common-redis: ## 独占 Redis 验证 Common、System、Meta、Manager 键�
 
 .PHONY: test-monitor-metrics
 test-monitor-metrics: ## 隔离验证 Prometheus mTLS、真实采样、限额、故障恢复和持久化
-	@bash scripts/test/monitor-metrics-gate.sh $(MONITOR_METRICS_TEST_ARGS)
+	@python3 scripts/test/metrics-http-budget.py bash scripts/test/monitor-metrics-gate.sh $(MONITOR_METRICS_TEST_ARGS)
 
 .PHONY: test-manager-online-runner
 test-manager-online-runner: ## 验证 Manager 私有成果 Online 场景、物理夹具与 Hosted 生命周期

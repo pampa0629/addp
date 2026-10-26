@@ -65,6 +65,9 @@ class AgentTraceHTTPTests(unittest.TestCase):
             raise RuntimeError("controlled failure")
 
         routes = [Route("/__trace_stream", stream), Route("/__trace_fail", fail)]
+        from addp_common.httpmetrics import process
+        metrics = process()
+        before = metrics.total[0], metrics.failures, metrics.client_errors
         old_stack = main.app.middleware_stack
         main.app.router.routes.extend(routes)
         main.app.middleware_stack = None
@@ -90,6 +93,8 @@ class AgentTraceHTTPTests(unittest.TestCase):
                 self.assertEqual(runtime.correlation(), {})
             spans = exporter.get_finished_spans()
             self.assertEqual(len(spans), 4)
+            self.assertEqual((metrics.total[0]-before[0],metrics.failures-before[1],metrics.client_errors-before[2]),(4,2,1))
+            self.assertEqual(sum(metrics.active.values()),0)
             self.assertEqual([span.attributes["http.response.status_code"] for span in spans], [503, 401, 200, 0])
             self.assertTrue(spans[-1].attributes["addp.http.server_failure"])
             self.assertEqual(spans[-1].attributes["error.type"], "_OTHER")
@@ -162,3 +167,22 @@ runpy.run_path(sys.argv[1], run_name='__main__')
                 if process.poll() is None:
                     process.kill()
                     process.communicate(timeout=3)
+
+
+class AgentHTTPMetricsLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_source_uses_registration_and_closes_when_startup_fails(self):
+        import main
+        from addp_common.client.module_registry import ProcessMetricsDeclaration
+        source=Mock(declaration=ProcessMetricsDeclaration(endpoint='https://localhost:19444/metrics'))
+        with patch.object(main,'start_http_metrics',return_value=source) as start, patch.object(main,'init_db',new=AsyncMock(side_effect=RuntimeError('controlled database failure'))), patch.object(main.trace_runtime,'start_optional',return_value=Mock()),patch.object(main._registration,'process_metrics',None):
+            with self.assertRaises(RuntimeError):await main.startup()
+            start.assert_called_once_with(main._registration)
+            self.assertIs(main._registration.process_metrics,source.declaration)
+        source.close.assert_called_once_with()
+
+    async def test_source_closes_even_when_trace_shutdown_fails(self):
+        import main
+        source=Mock()
+        with patch.object(main,'_http_metrics_source',source),patch.object(main,'_registry_client',None),patch.object(main,'_registry_task',None),patch.object(main,'_registry_monitor_task',None),patch.object(main,'_trace_close',Mock(side_effect=RuntimeError('trace close failed'))),patch.object(main.AgentInferenceService,'close',new=AsyncMock()):
+            with self.assertRaises(RuntimeError):await main.shutdown()
+        source.close.assert_called_once_with()

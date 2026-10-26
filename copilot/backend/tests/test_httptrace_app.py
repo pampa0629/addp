@@ -74,6 +74,9 @@ def test_real_stack_records_ready_rejection_auth_stream_and_failure():
         raise RuntimeError("controlled failure")
 
     routes = [Route("/__trace_stream", stream), Route("/__trace_fail", fail)]
+    from addp_common.httpmetrics import process
+    metrics = process()
+    before = metrics.total[0], metrics.failures, metrics.client_errors
     old_stack = main.app.middleware_stack
     main.app.router.routes.extend(routes)
     main.app.middleware_stack = None
@@ -97,6 +100,8 @@ def test_real_stack_records_ready_rejection_auth_stream_and_failure():
             assert runtime.correlation() == {}
         spans = exporter.get_finished_spans()
         assert len(spans) == 4
+        assert (metrics.total[0]-before[0],metrics.failures-before[1],metrics.client_errors-before[2]) == (4,2,1)
+        assert sum(metrics.active.values()) == 0
         assert [span.attributes["http.response.status_code"] for span in spans] == [503, 401, 200, 0]
         assert spans[-1].attributes["addp.http.server_failure"] is True
         assert spans[-1].attributes["error.type"] == "_OTHER"
@@ -109,3 +114,16 @@ def test_real_stack_records_ready_rejection_auth_stream_and_failure():
             main.app.router.routes.remove(route)
         main.app.middleware_stack = old_stack
         provider.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_http_source_publishes_private_declaration_and_closes_on_database_failure():
+    import main
+    from addp_common.client.module_registry import ProcessMetricsDeclaration
+    source=Mock(declaration=ProcessMetricsDeclaration(endpoint='https://localhost:19445/metrics'))
+    with patch.object(main,'start_http_metrics',return_value=source) as start,patch('database.init_db',new=AsyncMock(side_effect=RuntimeError('controlled database failure'))),patch.object(main.trace_runtime,'start_optional',return_value=Mock()),patch.object(main._registration,'process_metrics',None):
+        with pytest.raises(RuntimeError):
+            async with main.lifespan(main.app):pass
+        start.assert_called_once_with(main._registration)
+        assert main._registration.process_metrics is source.declaration
+    source.close.assert_called_once_with()

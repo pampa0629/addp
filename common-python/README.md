@@ -4,6 +4,12 @@ Python 共享模块，为 ADDP 平台的 Python 后端提供统一客户端、�
 
 `addp_common.workflow_runtime` 负责 `addp.workflow/v1` 的 workflow definition 校验、拓扑排序、`$ref` 解析、异步 execution 状态和标准错误。它不是独立工作流引擎，不包含 GeoPandas、Spark、PDAL 或三维转换器领域逻辑。
 
+## 服务端 HTTP 观测
+
+Agent/Copilot 的单进程 Backend 共用 `addp_common.httpmetrics.server.HTTPObservationMiddleware`，统一记录完整 HTTP 请求并结束可选 Trace；流式响应、认证／Ready 拒绝与异常均沿同一次生命周期处理。全量指标与 Trace 采样独立，原仅 Trace 的服务端入口已删除。指标使用私有 Registry，身份与启动时间沿正式 ModuleRegistration，不默认导出 Python CPU、RSS 或 GC。
+
+受保护来源由 `addp_common.httpmetrics.start_optional(registration)` 在服务生命周期内启用，仅成功监听后发布私有 `process_metrics` 声明；退出关闭来源。开发使用现有逐启动单元计划，产品部署使用同一 SDK 输入与仓库外只读证书。权限、512 组合／4 MiB 边界及本地验证标准见[平台运行观测规范 6.4](../docs/spec/addp平台运行观测规范.md#64-http-接口质量分阶段接入)，不能将本批记作其他 Runtime 或正式身份已验收。
+
 ## CLI 安装
 
 正式 CLI 交付物是 GitHub Release 中的 `addp-common` wheel，当前版本为 `0.1.14`。下载 wheel 和同名 SHA-256 文件，校验后安装到隔离环境：

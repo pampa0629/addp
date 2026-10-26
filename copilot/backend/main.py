@@ -13,7 +13,8 @@ from addp_common.client import (
     ModuleRegistryClient,
 )
 from addp_common.httptrace import runtime as trace_runtime
-from addp_common.httptrace.server import TraceMiddleware
+from addp_common.httpmetrics import start_optional as start_http_metrics
+from addp_common.httpmetrics.server import HTTPObservationMiddleware
 from addp_common import (
     ModuleReadyMiddleware,
     live_response,
@@ -64,6 +65,10 @@ async def lifespan(app: FastAPI):
     from services.inference_service import CopilotInferenceService
 
     trace_close = trace_runtime.start_optional(_registration)
+    _registration.process_metrics = None
+    metrics_source = start_http_metrics(_registration)
+    if metrics_source is not None:
+        _registration.process_metrics = metrics_source.declaration
     try:
         logger.info("Copilot Backend 启动中")
         await init_db()
@@ -99,7 +104,11 @@ async def lifespan(app: FastAPI):
             await CopilotInferenceService.close()
             logger.info("Copilot Backend 已关闭")
     finally:
-        await asyncio.to_thread(trace_close)
+        try:
+            await asyncio.to_thread(trace_close)
+        finally:
+            if metrics_source is not None:
+                await asyncio.to_thread(metrics_source.close)
 
 
 # 创建 FastAPI 应用
@@ -143,7 +152,7 @@ app.add_middleware(
 )
 
 # Last installed user middleware covers readiness, auth and streaming.
-app.add_middleware(TraceMiddleware, module="copilot")
+app.add_middleware(HTTPObservationMiddleware, module="copilot")
 
 # 注册路由
 from api import inference_scenario_binding_router, navigate_router, notebook_router, query_router, transfer_router, workflow_router  # noqa: E402

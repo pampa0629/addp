@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -59,6 +60,7 @@ func TestIntegrationMetricsSelfSource(t *testing.T) {
 	}
 	end := time.Now().Add(8 * time.Minute)
 	requestIndex := 0
+	nextRequest := time.Now()
 	controlled := os.Getenv("ADDP_PROCESS_T2_RESOURCE_CONTROL") == "1"
 	var extra []byte
 	var activeUntil time.Time
@@ -88,7 +90,8 @@ func TestIntegrationMetricsSelfSource(t *testing.T) {
 			}
 			runtime.KeepAlive(extra)
 		}
-		if business != nil {
+		if business != nil && requestIndex < 180 && !time.Now().Before(nextRequest) {
+			nextRequest = time.Now().Add(time.Second)
 			paths := []string{"/items/fixture-id", "/slow", "/failure", "/missing/fixture-id"}
 			response, err := business.Client().Get(business.URL + paths[requestIndex%len(paths)])
 			if err != nil {
@@ -97,6 +100,9 @@ func TestIntegrationMetricsSelfSource(t *testing.T) {
 			_, _ = io.Copy(io.Discard, response.Body)
 			_ = response.Body.Close()
 			requestIndex++
+			if err := os.WriteFile(path+".requests", []byte(strconv.Itoa(requestIndex)), 0666); err != nil {
+				t.Fatal(err)
+			}
 		}
 		// Bounded real CPU work; no fake counters and no memory growth.
 		finish := time.Now().Add(5 * time.Millisecond)

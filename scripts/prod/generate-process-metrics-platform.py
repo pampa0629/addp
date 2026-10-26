@@ -46,10 +46,12 @@ def render():
         if not re.fullmatch(r'[a-z][a-z0-9_-]{0,49}',module) or role not in ('backend','worker','scheduler','ingress'):
             raise ValueError('invalid SDK deployment identity')
         service = 'gateway' if (module,role)==('gateway','ingress') else module+'-'+role
-        if service not in known or service in seen or item['endpoint'] in endpoints or not (ROOT/module/('go.mod' if module=='gateway' else 'backend/go.mod')).is_file():
+        if service not in known or service in seen or item['endpoint'] in endpoints or not ((ROOT/module/('go.mod' if module=='gateway' else 'backend/go.mod')).is_file() or module in {'agent','copilot'} and role == 'backend'):
             raise ValueError('unknown or duplicate SDK container deployment')
         if 'cgroup_v2' in item and type(item['cgroup_v2']) is not bool:
             raise ValueError('invalid cgroup opt-in')
+        if module in {'agent','copilot'} and item.get('cgroup_v2'):
+            raise ValueError('Python cgroup metrics are not enabled')
         tls = private_directory(item['tls_dir'],outside=True)
         if {f.name for f in tls.iterdir()} != {'ca.crt','server.crt','server.key'}:
             raise ValueError('exact SDK TLS files required')

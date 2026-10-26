@@ -82,6 +82,11 @@ def _runtime_hostname() -> str:
         return ""
 
 
+class ProcessMetricsDeclaration(_ContractModel):
+    schema_version: Literal["addp.process-metrics/v1"] = "addp.process-metrics/v1"
+    endpoint: str
+
+
 class ModuleRegistration(_ContractModel):
     node_id: str = Field(default_factory=_runtime_host_node_id)
     module_name: str
@@ -112,6 +117,7 @@ class ModuleRegistration(_ContractModel):
     process_started_at: str = Field(default=PROCESS_STARTED_AT)
     metadata: dict[str, object] = Field(default_factory=dict)
     configuration_management: ConfigurationManagementDeclaration | None = None
+    process_metrics: ProcessMetricsDeclaration | None = None
 
 
 ModuleRegistrationState = Literal["starting", "registered", "recovering", "failed", "stopped"]

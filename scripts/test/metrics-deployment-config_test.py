@@ -435,17 +435,20 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         selector = next(index for index, node in enumerate(probe.body)
                         if isinstance(node, ast.If) and any(isinstance(item, ast.Name)
                         and item.id == 'check_native_process_sources' for item in ast.walk(node)))
-        selection = compile(ast.Module(body=probe.body[selector:selector+4], type_ignores=[]), '<metrics case selection>', 'exec')
+        selection = compile(ast.Module(body=probe.body[selector:selector+5], type_ignores=[]), '<metrics case selection>', 'exec')
         for case in ('all', 'http-quality', 'process-alerts', 'host-resources', 'cgroup-source'):
             native = mock.Mock()
             environment = mock.Mock(environ={'ADDP_METRICS_T2_CASE': case})
-            namespace = {'os': environment, 'check_native_process_sources': native, 'print': mock.Mock()}
+            python_http = mock.Mock()
+            namespace = {'os': environment, 'check_native_process_sources': native, 'check_python_http_sources': python_http, 'prepare_http_test_binaries': mock.Mock(), 'print': mock.Mock()}
             if case in ('http-quality', 'process-alerts', 'cgroup-source'):
                 with self.assertRaises(SystemExit) as stopped:
                     exec(selection, namespace)
                 self.assertEqual(stopped.exception.code, 0)
             else:
                 exec(selection, namespace)
+            self.assertEqual(python_http.call_count, 1 if case in ('all','http-quality') else 0)
+            self.assertEqual(namespace['prepare_http_test_binaries'].call_count, 1 if case in ('all','http-quality') else 0)
             self.assertEqual(native.call_args_list, {
                 'all': [mock.call(), mock.call(process_alerts=True)],
                 'http-quality': [mock.call()],

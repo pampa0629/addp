@@ -1,3 +1,23 @@
+
+# The HTTP case and default all opt into two bounded, disposable SDK producers.
+x-python-http: &python-http
+  profiles: [python-http]
+  user: "${ADDP_POSTGRES_METRICS_USER:-65534:65534}"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  cpus: 0.5
+  mem_limit: 512m
+  tmpfs: ["/tmp:size=256m,mode=1777"]
+  environment:
+    PYTHONPATH: /tmp/deps:/app/common-python
+    PYTHONDONTWRITEBYTECODE: "1"
+    PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  command: [sh, -ec, "cp -R /app/common-python /tmp/common-python; python -m pip install --no-cache-dir --target /tmp/deps /tmp/common-python -r /source/python-requirements.txt >/tmp/install.log 2>&1 || { echo python_http_dependency_failed; exit 1; }; exec python /source/python-http-metrics-source.py"]
+  volumes:
+    - ${METRICS_T2_WORK}/source:/source
+    - ${METRICS_T2_WORK}/source/python-common:/app/common-python:ro
+
 services:
   postgres-metrics:
     extends:
@@ -66,6 +86,23 @@ services:
       - ${METRICS_T2_WORK}/nginx.conf:/etc/nginx/nginx.conf:ro
       - ${METRICS_T2_WORK}/source:/source
       - ${ADDP_METRICS_TLS_DIR}:/tls:ro
+  python-http-agent:
+    <<: *python-http
+    image: python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254
+    environment:
+      PYTHONPATH: /tmp/deps:/app/common-python
+      PYTHONDONTWRITEBYTECODE: "1"
+      HTTP_T2_INDEX: "1"
+    ports: ["127.0.0.1::19444"]
+  python-http-copilot:
+    <<: *python-http
+    image: python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254
+    environment:
+      PYTHONPATH: /tmp/deps:/app/common-python
+      PYTHONDONTWRITEBYTECODE: "1"
+      HTTP_T2_INDEX: "2"
+    ports: ["127.0.0.1::19445"]
+
 volumes:
   prometheus_data:
 secrets:

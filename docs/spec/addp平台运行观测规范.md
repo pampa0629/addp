@@ -351,7 +351,7 @@ CPU/内存分别报告应覆盖、有效、缺失、过期及未接入数量；�
 
 2026-10-20 确认：平台共享 HTTP 接口的整体运行质量由平台运维负责；现有职责对应平台系统管理员。Tenant 发布的数据服务质量继续归 Service 按对象权限提供，不向 Tenant 开放平台总体指标，不用客户端自报租户进行遥测归属。统计读取与规则管理分别授权，功能权限不能代替 System 当前运行实例读取裁决；后台身份只取得既有最小身份投影，不读取租户正文或业务结果。
 
-唯一 Go/Gin 原始采集内核为 Common `httpmetrics`，使用 [OpenTelemetry HTTP 指标语义](https://opentelemetry.io/docs/specs/semconv/http/http-metrics/)的秒级耗时直方图及独立活动请求数，复用现有进程 mTLS 指标来源与 Prometheus，不新增公开 `/metrics` 或遥测 Ready 依赖。仅有间接 OTel 依赖不表示 Trace 已接入；HTTP 指标覆盖已接入实例的全部 HTTP 请求，包括认证拒绝、健康、就绪、未匹配路由及异常，不依赖抽样 Trace。Python 及尚未接入的实例明确未接入，不能展示为零流量。
+唯一 Go/Gin 原始采集内核为 Common `httpmetrics`，使用 [OpenTelemetry HTTP 指标语义](https://opentelemetry.io/docs/specs/semconv/http/http-metrics/)的秒级耗时直方图及独立活动请求数，复用现有进程 mTLS 指标来源与 Prometheus，不新增公开 `/metrics` 或遥测 Ready 依赖。仅有间接 OTel 依赖不表示 Trace 已接入；HTTP 指标覆盖已接入实例的全部 HTTP 请求，包括认证拒绝、健康、就绪、未匹配路由及异常，不依赖抽样 Trace。尚未接入的实例明确未接入，不能展示为零流量；Python 首接范围及验收边界沿本节专题。
 
 | 口径 | 契约 |
 | --- | --- |
@@ -371,6 +371,18 @@ HTTP 事件类别为 `http_quality`、主体为模块，触发/恢复沿同一�
 2026-10-20 用户限定本轮只做本地验证，暂不扩展或运行 Hosted HTTP 验收；不得借既有资源观测 Hosted 身份执行本专项规则操作或受控请求，也不得将本地受控身份 T2/T3 计为正式身份 T4。
 
 本地 HTTP 专项复用标准入口 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=http-quality`：使用当次专属 Prometheus、mTLS 来源和 `addp_test`，验证真实请求、历史趋势、规则评估与签名通知恢复；不执行 PostgreSQL 专业来源探针。默认完整入口继续运行原主机、进程与 PostgreSQL 来源回归；HTTP 专项通过不能替代完整入口或正式身份 T4。
+
+#### Python 全量 HTTP 质量：已确认接入边界
+
+2026-10-26 用户确认先修订规范和门禁，再接入 Common Python 与 Agent/Copilot 单进程 backend。Common Python 唯一 ASGI 观测入口同时向全量 HTTP 指标和可选 Trace 提供请求生命周期事实，替换原仅 Trace 中间件，不叠加第二条请求计量路径。指标不依赖 Trace 开关或采样；正常响应在最后 body 成功发送时结束，未完成取消、超时、写失败或异常只结束一次。Ready、认证拒绝、404 和健康请求均计量；正文与流式消息原样透传，已完成响应后的后台异常不改写 HTTP 结果。WebSocket 和其他 Runtime 本批不接入。
+
+复用 `addp.process-metrics/v1` 私有声明、进程实例／启动时间、`ADDP_PROCESS_METRICS_DEPLOYMENTS` 及开发启动单元计划。来源仅发布身份、启动时间及与 Go 同名／同桶／同维度的 HTTP 指标；声明不保证每项进程指标均已接入，Python CPU、RSS、cgroup 不在本批，不补零。服务器成功启动后才将声明交正式 ModuleRegistration；源故障、配置失败及关闭不改变业务 Ready，不在相同实例上改写不可变声明。每副本独立监听地址／证书／实例，不使用多进程共享 registry。
+
+来源使用私有 Registry 和独立 mTLS HTTPS `/metrics`，不挂到业务端口。仅 GET、无 query／正文；证书、显式地址、固定 IP 准入、采集身份及唯一 HTTP SD 沿原链路，新增来源占用原有预算，不自动扩额。开发与产品部署入口同批支持 Agent/Copilot；不新设配置路线、用户权限、角色或 Monitor 公开 API。统计与规则继续使用本节既有 Platform 权限及当前 User 实例裁决，Tenant 发布服务质量仍归 Service。
+
+每进程最多 512 组详细 HTTP 标签组合，方法／状态／错误为有限值，route 只来自框架模板；超过限制锁存采集失败并停止增加详细组合，直到进程退出。来源返回失败而非截断、合并模板或伪装完整成功；业务请求继续执行。单次输出最多 4 MiB，应用指标缓存／序列化预算 16 MiB（不作为整个进程 RSS 硬上限），采集处理单并发、等待与关闭均有界；保留中心 20000 样本／10 MiB／五秒及查询原预算。失败和缺样不得恢复告警。
+
+本批只运行一次本地 HTTP 功能实链：准备及清理合计最多 20 分钟，当次容器硬配额合计最多 4 CPU／4 GiB，卷及私有可写目录达到 2 GiB 即停，tmpfs 配置上界与实际卷／目录分列保守核算，不冒充实际占用；受控业务请求最多 5 QPS／4 并发／300 次，不发真实模型或工具调用。完成一分钟自然完整窗口，核验实际 SDK→mTLS→HTTP SD→Prometheus→Monitor 查询及 HTTP 规则／outbox；5／15 分钟公式沿确定性门禁，不以一分钟实链冒充长窗验收。失败即停并清理，不自动重试、补跑或续窗；清理不完整不得通过。本批不运行 Hosted、容量、72 小时长测或定时，不接管个人环境。真实身份及共享 ASGI 的 Trace 实链结果分别记录，不用 HTTP 功能通过代替它们。
 
 ### 6.5 分布式追踪与日志关联（二期第一批）
 

@@ -135,3 +135,19 @@ class ProofTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+
+class PythonHTTPDeploymentTests(unittest.TestCase):
+    def test_python_backend_reuses_sdk_overlay_without_cgroup_or_secrets(self):
+        spec=importlib.util.spec_from_file_location('python_http_platform',ROOT/'scripts/prod/generate-process-metrics-platform.py')
+        adapter=importlib.util.module_from_spec(spec);spec.loader.exec_module(adapter)
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);tls=root/'tls';private=root/'private'
+            tls.mkdir(mode=0o700);private.mkdir(mode=0o700)
+            for name in ('ca.crt','server.crt','server.key'):(tls/name).write_text('fixture');(tls/name).chmod(0o600)
+            for module in ('agent','copilot'):
+                entry={'module_name':module,'role':'backend','listen':'127.0.0.1:19444','endpoint':'https://localhost:19444/metrics','tls_dir':str(tls)}
+                with patch.dict(os.environ,{'ADDP_METRICS_DEPLOYMENT_DIR':str(private),'ADDP_PROCESS_METRICS_DEPLOYMENTS':json.dumps([entry])}):adapter.render()
+                row=json.loads((private/'platform-process-metrics.json').read_text())['services'][module+'-backend']
+                self.assertEqual(len(row['volumes']),1);self.assertTrue(row['volumes'][0]['read_only'])
+                self.assertNotIn('privileged',row)

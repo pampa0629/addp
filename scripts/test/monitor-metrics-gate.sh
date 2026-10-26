@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# ADDP_T2_OWNED_SERVICES=prometheus,metrics-source,node-exporter,metrics-control,postgres,postgres-metrics,postgres-metrics-web
+# ADDP_T2_OWNED_SERVICES=prometheus,metrics-source,node-exporter,metrics-control,postgres,postgres-metrics,postgres-metrics-web,python-http-agent,python-http-copilot
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.monitor-metrics-t2.yml
-# ADDP_T2_INPUT_FILES=scripts/test/postgres-metrics-lifecycle_test.py scripts/test/postgres-lifecycle-probe.py business/scripts/stop.sh business/docker-compose.yml business/scripts/start.sh business/.env.example scripts/infra/postgres-metrics.yml scripts/infra/postgres-observation/ scripts/test/postgres-observation-probe.py scripts/utils/deployment-inventory.py scripts/utils/container-proof.py scripts/infra/metrics-control.yml scripts/infra/metrics-control.conf scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/lifecycle-lock.sh scripts/dev/process-metrics-launch.py scripts/dev/worker-units.sh scripts/dev/ports.sh scripts/test/dev-process-metrics-plan_test.py scripts/prod/start.sh scripts/prod/stop.sh scripts/prod/generate-process-metrics-platform.py scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml common/processmetrics/ common/httpmetrics/ common/modulelifecycle/ common/config/process_metrics.go common/models/process_metrics.go common/models/container_observation.go common/client/system_service.go common/client/system_runtime_instances.go common/client/system_observability_identity.go common/models/module_runtime_query.go common/models/observability_identity.go common/models/service_expectations.go common/models/postgresql_metrics.go common/client/system_engine_deployments.go monitor/backend/internal/metricsdiscovery/ monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go common/client/system_host_node.go common/client/system_host_node_scope.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example monitor/backend/internal/service/ monitor/backend/internal/models/ monitor/backend/internal/repository/
+# ADDP_T2_INPUT_FILES=common-python/ agent/backend/main.py copilot/backend/main.py scripts/test/python-http-metrics-source.py scripts/test/python-http-metrics-probe.py scripts/test/metrics-http-budget.py scripts/test/postgres-metrics-lifecycle_test.py scripts/test/postgres-lifecycle-probe.py business/scripts/stop.sh business/docker-compose.yml business/scripts/start.sh business/.env.example scripts/infra/postgres-metrics.yml scripts/infra/postgres-observation/ scripts/test/postgres-observation-probe.py scripts/utils/deployment-inventory.py scripts/utils/container-proof.py scripts/infra/metrics-control.yml scripts/infra/metrics-control.conf scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/lifecycle-lock.sh scripts/dev/process-metrics-launch.py scripts/dev/worker-units.sh scripts/dev/ports.sh scripts/test/dev-process-metrics-plan_test.py scripts/prod/start.sh scripts/prod/stop.sh scripts/prod/generate-process-metrics-platform.py scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml common/processmetrics/ common/httpmetrics/ common/modulelifecycle/ common/config/process_metrics.go common/models/process_metrics.go common/models/container_observation.go common/client/system_service.go common/client/system_runtime_instances.go common/client/system_observability_identity.go common/models/module_runtime_query.go common/models/observability_identity.go common/models/service_expectations.go common/models/postgresql_metrics.go common/client/system_engine_deployments.go monitor/backend/internal/metricsdiscovery/ monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go common/client/system_host_node.go common/client/system_host_node_scope.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example monitor/backend/internal/service/ monitor/backend/internal/models/ monitor/backend/internal/repository/
 # Own disposable Compose startup, certificates, source files and zero-residue cleanup.
 set -euo pipefail
 [[ $# -le 1 ]] || { echo 'Metrics T2: unexpected arguments' >&2; exit 2; }
@@ -27,6 +27,18 @@ WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-metrics-t2.XXXXXX")
 COMPOSE_PROJECT="addp-metrics-t2-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
 COMPOSE_FILE="$ROOT_DIR/scripts/test/docker-compose.monitor-metrics-t2.yml"
 export METRICS_T2_WORK="$WORK_DIR" ADDP_METRICS_TLS_DIR="$WORK_DIR/tls"
+if [[ "$metrics_case" == http-quality ]]; then
+  mkdir -m 700 "$WORK_DIR/go-cache" "$WORK_DIR/go-tmp" "$WORK_DIR/tmp"
+  export GOCACHE="$WORK_DIR/go-cache" GOTMPDIR="$WORK_DIR/go-tmp" TMPDIR="$WORK_DIR/tmp"
+  export GOMAXPROCS=2 GOFLAGS=-p=2
+fi
+if [[ -n "${ADDP_HTTP_BUDGET_RECEIPT:-}" ]]; then
+  python3 - "$ADDP_HTTP_BUDGET_RECEIPT" "$COMPOSE_PROJECT" "$WORK_DIR" <<'RECEIPT'
+import json,sys
+from pathlib import Path
+p=Path(sys.argv[1]);tmp=p.with_suffix('.pending');tmp.write_text(json.dumps({'project':sys.argv[2],'work':sys.argv[3]}));tmp.replace(p)
+RECEIPT
+fi
 export ADDP_POSTGRES_METRICS_SOURCE_DIR="$WORK_DIR/postgres-source"
 export ADDP_POSTGRES_METRICS_WEB_DIR="$WORK_DIR/postgres-web"
 export ADDP_POSTGRES_METRICS_USER="$(id -u):$(id -g)"
@@ -45,24 +57,43 @@ export METRICS_T2_POSTGRES_PASSWORD="$(python3 -c 'import secrets; print(secrets
 compose(){ docker compose --env-file /dev/null -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" "$@"; }
 cleanup(){
   local result=$?
+  local cleanup_verified=true
   trap - EXIT INT TERM
   set +e
+  if [[ -n "${ADDP_HTTP_BUDGET_RECEIPT:-}" && -f "$ADDP_HTTP_BUDGET_RECEIPT" ]]; then
+    python3 - "$ADDP_HTTP_BUDGET_RECEIPT" <<'CLEANUP_RECEIPT'
+import json,sys
+from pathlib import Path
+p=Path(sys.argv[1]);value=json.loads(p.read_text());value['cleanup_started']=True
+counts=Path(value['work'])/'source/python-http-counts.json'
+if counts.exists():value['request_counts']=json.loads(counts.read_text())
+pending=p.with_suffix('.pending');pending.write_text(json.dumps(value));pending.replace(p)
+CLEANUP_RECEIPT
+  fi
   # The new SQL source's logs are checked for secret exposure in memory by its
   # probe. Never dump those raw logs on failure before that check succeeds.
   if [[ "$result" != 0 ]]; then compose logs --no-color --tail=60 prometheus metrics-source node-exporter metrics-control postgres >&2; fi
-  compose down --volumes --remove-orphans >"$WORK_DIR/cleanup.log" 2>&1 || result=1
+  compose down --volumes --remove-orphans >"$WORK_DIR/cleanup.log" 2>&1 || { result=1; cleanup_verified=false; }
   local resource remaining
   for resource in container network volume; do
     case "$resource" in
-      container) remaining=$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT") || result=1 ;;
-      network) remaining=$(docker network ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT") || result=1 ;;
-      volume) remaining=$(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT") || result=1 ;;
+      container) remaining=$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT") || { result=1; cleanup_verified=false; } ;;
+      network) remaining=$(docker network ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT") || { result=1; cleanup_verified=false; } ;;
+      volume) remaining=$(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT") || { result=1; cleanup_verified=false; } ;;
     esac
-    [[ -z "$remaining" ]] || result=1
+    [[ -z "$remaining" ]] || { result=1; cleanup_verified=false; }
   done
   if [[ "$result" != 0 ]]; then cat "$WORK_DIR/cleanup.log" >&2; fi
-  rm -rf "$WORK_DIR" || result=1
-  [[ ! -e "$WORK_DIR" ]] || result=1
+  rm -rf "$WORK_DIR" || { result=1; cleanup_verified=false; }
+  [[ ! -e "$WORK_DIR" ]] || { result=1; cleanup_verified=false; }
+  if [[ -n "${ADDP_HTTP_BUDGET_RECEIPT:-}" && -f "$ADDP_HTTP_BUDGET_RECEIPT" ]]; then
+    python3 - "$ADDP_HTTP_BUDGET_RECEIPT" "$cleanup_verified" <<'CLEANUP_VERIFIED'
+import json,sys
+from pathlib import Path
+p=Path(sys.argv[1]);value=json.loads(p.read_text());value['cleanup_verified']=sys.argv[2]=='true'
+pending=p.with_suffix('.pending');pending.write_text(json.dumps(value));pending.replace(p)
+CLEANUP_VERIFIED
+  fi
   if [[ "$result" == 0 ]]; then echo 'Metrics T2: zero owned containers/networks/volumes and temporary files'; fi
   exit "$result"
 }

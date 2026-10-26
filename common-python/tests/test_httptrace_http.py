@@ -16,7 +16,7 @@ from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 
 from addp_common.httptrace import runtime
 from addp_common.httptrace.client import trace_sync_transport, trace_transport
-from addp_common.httptrace.server import TraceMiddleware
+from addp_common.httpmetrics.server import HTTPObservationMiddleware
 
 
 @contextmanager
@@ -101,7 +101,7 @@ class HTTPTraceTests(unittest.IsolatedAsyncioTestCase):
             sent.append(message)
 
         with tracing() as exporter:
-            task = asyncio.create_task(TraceMiddleware(app, "agent")(
+            task = asyncio.create_task(HTTPObservationMiddleware(app, "agent")(
                 scope([(b"traceparent", b"00-" + b"1" * 32 + b"-" + b"2" * 16 + b"-00"),
                        (b"tracestate", b"private=secret"), (b"baggage", b"user=secret"),
                        (b"x-request-id", request_id.encode())]), receive, send))
@@ -148,9 +148,9 @@ class HTTPTraceTests(unittest.IsolatedAsyncioTestCase):
 
                 if error is not None or send_error is not None:
                     with self.assertRaises(type(error if error is not None else send_error)):
-                        await TraceMiddleware(app, "copilot")(scope(), receive, send)
+                        await HTTPObservationMiddleware(app, "copilot")(scope(), receive, send)
                 else:
-                    await TraceMiddleware(app, "copilot")(scope(), receive, send)
+                    await HTTPObservationMiddleware(app, "copilot")(scope(), receive, send)
                 span, = exporter.get_finished_spans()
                 self.assertEqual(span.attributes["addp.http.server_failure"], category is not None)
                 self.assertEqual(span.attributes.get("error.type"), category)
@@ -178,7 +178,7 @@ class HTTPTraceTests(unittest.IsolatedAsyncioTestCase):
 
         with tracing() as exporter:
             await asyncio.gather(*[
-                TraceMiddleware(app, "agent")(scope([(b"traceparent", b"00-" + b"0" * 32 + b"-" + b"2" * 16 + b"-01"),
+                HTTPObservationMiddleware(app, "agent")(scope([(b"traceparent", b"00-" + b"0" * 32 + b"-" + b"2" * 16 + b"-01"),
                                                      (b"x-request-id", b"private-injection\r\n")], method="PRIVATE"), receive, send)
                 for _ in range(2)
             ])
@@ -205,7 +205,7 @@ class HTTPTraceTests(unittest.IsolatedAsyncioTestCase):
 
         websocket = {"type": "websocket"}
         with tracing(False) as exporter:
-            wrapper = TraceMiddleware(app, "agent")
+            wrapper = HTTPObservationMiddleware(app, "agent")
             await wrapper(scope(), receive, send)
             await wrapper(websocket, receive, send)
             self.assertEqual(exporter.get_finished_spans(), ())
@@ -220,7 +220,7 @@ class HTTPTraceTests(unittest.IsolatedAsyncioTestCase):
         async def send(_message):
             self.fail("instrumentation must not manufacture a response")
         with tracing() as exporter:
-            task = asyncio.create_task(TraceMiddleware(app, "agent")(scope(), receive, send))
+            task = asyncio.create_task(HTTPObservationMiddleware(app, "agent")(scope(), receive, send))
             await started.wait()
             task.cancel()
             with self.assertRaises(asyncio.CancelledError):
@@ -333,7 +333,7 @@ class HTTPTraceTests(unittest.IsolatedAsyncioTestCase):
         async def send(_message):
             pass
         with tracing() as exporter:
-            await TraceMiddleware(app, "agent")(scope(), receive, send)
+            await HTTPObservationMiddleware(app, "agent")(scope(), receive, send)
             spans = exporter.get_finished_spans()
         self.assertEqual(len(spans), 1)
         self.assertEqual(spans[0].kind, trace.SpanKind.SERVER)

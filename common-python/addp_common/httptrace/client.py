@@ -8,7 +8,7 @@ from opentelemetry import trace
 from opentelemetry.context import Context
 
 from . import runtime
-from .server import _canonical_request_id, _failure_type, _method, _routine
+from ..http_observation import _canonical_request_id, _failure_type, _method, _routine
 
 
 _HEADERS = ("traceparent", "tracestate", "baggage", "x-request-id")

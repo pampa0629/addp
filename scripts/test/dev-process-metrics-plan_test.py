@@ -209,3 +209,12 @@ Path(os.environ['TEST_OUTPUT']).write_text(json.dumps({
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PythonSourcePlanTest(unittest.TestCase):
+    def test_python_backends_use_the_same_launch_adapter(self):
+        source=(ROOT/'scripts/dev/start.sh').read_text()
+        for module in ('agent','copilot'):
+            self.assertIn('process-metrics-launch.py" '+module+' '+module+' backend',source)
+            entry=deployment(module,'backend',19444 if module=='agent' else 19445)
+            self.assertEqual(json.loads(LAUNCH.select_deployment(json.dumps({module:entry}),module,module,'backend')),[entry])

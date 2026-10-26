@@ -383,6 +383,8 @@ def check_native_process_sources(*, process_alerts=False, cgroup_only=False):
                 Path(str(path) + suffix).unlink(missing_ok=True)
             path.write_text('')
             path.chmod(0o666)
+            requests_path=Path(str(path)+'.requests')
+            requests_path.write_text('0');requests_path.chmod(0o666)
             address = source_ip + ':' + str(19440 + index)
             envs = {'ADDP_PROCESS_METRICS_T2_SOURCE': '1', 'ADDP_PROCESS_T2_INSTANCE': f'native-{index}',
                     'ADDP_PROCESS_T2_LISTEN': address, 'ADDP_PROCESS_T2_ENDPOINT': f'https://{address}/metrics',
@@ -472,7 +474,7 @@ def check_native_process_sources(*, process_alerts=False, cgroup_only=False):
             assert '--- SKIP:' not in completed.stdout and '[no tests to run]' not in completed.stdout
             return
         try:
-            subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsProcessSources$', '-count=1', '-v'],
+            subprocess.run([str(WORK/'http-query.test'), '-test.run=^TestIntegrationMetricsProcessSources$', '-test.count=1', '-test.v'],
                            cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=120)
         except subprocess.SubprocessError:
             # Preserve closed signals before owned processes/center are destroyed.
@@ -500,9 +502,9 @@ def check_native_process_sources(*, process_alerts=False, cgroup_only=False):
             except Exception:
                 print('Metrics T2 process query diagnostics unavailable', flush=True)
             raise
-        subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsHTTPRealSource$', '-count=1', '-v'],
+        subprocess.run([str(WORK/'http-query.test'), '-test.run=^TestIntegrationMetricsHTTPRealSource$', '-test.count=1', '-test.v'],
                        cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=120)
-        subprocess.run(['go', 'test', './internal/service', '-run', '^TestIntegrationMetricsHTTPAlertLifecycle$', '-count=1', '-timeout=300s', '-v'],
+        subprocess.run([str(WORK/'http-alert.test'), '-test.run=^TestIntegrationMetricsHTTPAlertLifecycle$', '-test.count=1', '-test.timeout=300s', '-test.v'],
                        cwd=Path(__file__).resolve().parents[2] / 'monitor/backend',
                        env=dict(env, ADDP_HTTP_RULE_LIFECYCLE_INTEGRATION='1', ADDP_POSTGRES_INTEGRATION='1',
                                 ADDP_TEST_POSTGRES_HOST='127.0.0.1', ADDP_TEST_POSTGRES_PORT=port('postgres', 5432),
@@ -521,9 +523,9 @@ def check_native_process_sources(*, process_alerts=False, cgroup_only=False):
         records[0]['stopped'] = True
         process_metadata.write_text(json.dumps(records))
         env['ADDP_PROCESS_T2_STOPPED'] = '1'
-        subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsHTTPRealSource$', '-count=1', '-v'],
+        subprocess.run([str(WORK/'http-query.test'), '-test.run=^TestIntegrationMetricsHTTPRealSource$', '-test.count=1', '-test.v'],
                        cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=30)
-        subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsProcessSources$', '-count=1', '-v'],
+        subprocess.run([str(WORK/'http-query.test'), '-test.run=^TestIntegrationMetricsProcessSources$', '-test.count=1', '-test.v'],
                        cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=30)
         process, log, path = processes[1]
         Path(str(path) + '.stop').touch()
@@ -533,7 +535,7 @@ def check_native_process_sources(*, process_alerts=False, cgroup_only=False):
         assert bool(query('up{job="addp_nodes",addp_instance_id="native-3"} == 1'))
         records[1]['stopped'] = True
         process_metadata.write_text(json.dumps(records))
-        subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsProcessSources$', '-count=1', '-v'],
+        subprocess.run([str(WORK/'http-query.test'), '-test.run=^TestIntegrationMetricsProcessSources$', '-test.count=1', '-test.v'],
                        cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=env, check=True, timeout=30)
         print('Metrics T2: Backend and two same-module Workers isolated; stopping Backend then one Worker clears only those sources', flush=True)
     finally:
@@ -548,8 +550,22 @@ def check_native_process_sources(*, process_alerts=False, cgroup_only=False):
     eventually(valid_sample, 'fixture scope restored after native process checks')
 
 
+def prepare_http_test_binaries():
+    # Compilation cannot consume the finite producers' request budget/history.
+    for package,name in (('./internal/resourcequery','http-query.test'),('./internal/service','http-alert.test')):
+        subprocess.run(['go','test','-c',package,'-o',str(WORK/name)],cwd=Path(__file__).resolve().parents[2]/'monitor/backend',env=dict(os.environ,GOWORK='off'),check=True,timeout=180)
+
+
+def check_python_http_sources():
+    import runpy
+    runpy.run_path(str(Path(__file__).with_name('python-http-metrics-probe.py')))['run'](globals())
+
+
 if os.environ.get('ADDP_METRICS_T2_CASE') in ('all', 'http-quality'):
+    prepare_http_test_binaries()
     check_native_process_sources()
+if os.environ.get('ADDP_METRICS_T2_CASE') in ('all', 'http-quality'):
+    check_python_http_sources()
 if os.environ.get('ADDP_METRICS_T2_CASE') in ('all', 'process-alerts'):
     check_native_process_sources(process_alerts=True)
 if os.environ.get('ADDP_METRICS_T2_CASE') == 'cgroup-source':

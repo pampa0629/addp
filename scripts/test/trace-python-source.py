@@ -14,7 +14,7 @@ from starlette.responses import Response
 from addp_common.client.module_registry import ModuleRegistration
 from addp_common.httptrace.client import trace_transport
 from addp_common.httptrace.runtime import snapshot, start_optional
-from addp_common.httptrace.server import TraceMiddleware
+from addp_common.httpmetrics.server import HTTPObservationMiddleware
 from addp_common.runtime_logging import setup_runtime_logging
 
 
@@ -36,7 +36,7 @@ def main():
             await client.aclose()
 
     app = FastAPI(lifespan=lifespan)
-    app.add_middleware(TraceMiddleware, module="copilot")
+    app.add_middleware(HTTPObservationMiddleware, module="copilot")
 
     @app.get("/health/ready")
     async def ready():

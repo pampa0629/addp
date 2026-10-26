@@ -2056,7 +2056,7 @@ if check_service_running "copilot-backend" "$COPILOT_BACKEND_PORT"; then
   export DATABASE_URL=postgresql://addp:addp_password@localhost:${POSTGRES_PORT}/addp
 
   # 直接使用虚拟环境的 Python
-  "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module copilot --role backend -- ./venv/bin/python main.py &
+  python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" copilot copilot backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" ./venv/bin/python main.py &
   COPILOT_PID=$!
   echo $COPILOT_PID > ../../.dev-pids/copilot-backend.pid
   cd ../..
@@ -2097,7 +2097,7 @@ start_runtime_agent() (
     cd agent/backend
     export PORT=$AGENT_BACKEND_PORT
     # 使用 main.py 绝对路径启动，便于停止脚本核对进程身份。
-    "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module agent --role backend -- ./venv/bin/python "${PROJECT_ROOT}/agent/backend/main.py" &
+    python3 "${PROJECT_ROOT}/scripts/dev/process-metrics-launch.py" agent agent backend "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" ./venv/bin/python "${PROJECT_ROOT}/agent/backend/main.py" &
     AGENT_PID=$!
     echo $AGENT_PID > ../../.dev-pids/agent-backend.pid
     cd ../..

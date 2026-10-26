@@ -24,7 +24,8 @@ from addp_common.client import (
     ModuleRegistryClient,
 )
 from addp_common.httptrace import runtime as trace_runtime
-from addp_common.httptrace.server import TraceMiddleware
+from addp_common.httpmetrics import start_optional as start_http_metrics
+from addp_common.httpmetrics.server import HTTPObservationMiddleware
 from addp_common import (
     ModuleReadyMiddleware,
     live_response,
@@ -149,7 +150,7 @@ def _readiness():
 
 app.add_middleware(ModuleReadyMiddleware, readiness=_readiness)
 # Last installed user middleware runs outside readiness and authentication.
-app.add_middleware(TraceMiddleware, module="agent")
+app.add_middleware(HTTPObservationMiddleware, module="agent")
 
 
 @app.get(
@@ -163,10 +164,18 @@ async def health_ready():
     return JSONResponse(payload, status_code=200 if ready else 503)
 
 
+_http_metrics_source = None
+
+
 @app.on_event("startup")
 async def startup():
     global _registry_client, _registry_task, _registry_monitor_task, _trace_close
     _trace_close = trace_runtime.start_optional(_registration)
+    global _http_metrics_source
+    _registration.process_metrics = None
+    _http_metrics_source = start_http_metrics(_registration)
+    if _http_metrics_source is not None:
+        _registration.process_metrics = _http_metrics_source.declaration
     try:
         await init_db()
         AgentInferenceService.initialize()
@@ -176,8 +185,12 @@ async def startup():
         )
         _registry_monitor_task = asyncio.create_task(terminate_process_on_registration_failure(_registry_task))
     except BaseException:
-        await asyncio.to_thread(_trace_close)
-        _trace_close = None
+        try:
+            await asyncio.to_thread(_trace_close)
+        finally:
+            _trace_close = None
+            if _http_metrics_source is not None:
+                await asyncio.to_thread(_http_metrics_source.close)
         raise
 
 
@@ -204,9 +217,13 @@ async def shutdown():
         _registry_client = None
         await AgentInferenceService.close()
     finally:
-        if _trace_close is not None:
-            await asyncio.to_thread(_trace_close)
-            _trace_close = None
+        try:
+            if _trace_close is not None:
+                await asyncio.to_thread(_trace_close)
+                _trace_close = None
+        finally:
+            if _http_metrics_source is not None:
+                await asyncio.to_thread(_http_metrics_source.close)
 
 
 if __name__ == "__main__":

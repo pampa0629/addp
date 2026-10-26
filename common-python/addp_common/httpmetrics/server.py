@@ -1,43 +1,19 @@
-"""The shared, streaming-preserving ASGI HTTP trace boundary."""
+"""Sole ASGI HTTP observation boundary for full metrics and optional traces."""
 from __future__ import annotations
 
-import asyncio
+import time
 import uuid
 
 from opentelemetry import trace
 from opentelemetry.context import Context
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-from . import runtime
+from . import process as process_metrics
+from ..httptrace import runtime
+from ..http_observation import _method, _routine, _failure_type, _canonical_request_id
 
 
-_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "CONNECT", "TRACE", "QUERY"}
 _PROPAGATOR = TraceContextTextMapPropagator()
-_ROUTINE = {"/health/live", "/health/ready", "/api/v1/system/runtime/modules/heartbeat"}
-
-
-def _method(value: str) -> str:
-    return value if value in _METHODS else "_OTHER"
-
-
-def _routine(path: str) -> bool:
-    return path in _ROUTINE
-
-
-def _failure_type(error: BaseException) -> str:
-    if isinstance(error, (asyncio.CancelledError, GeneratorExit)):
-        return "canceled"
-    if isinstance(error, TimeoutError):
-        return "timeout"
-    return "_OTHER"
-
-
-def _canonical_request_id(value: str) -> bool:
-    try:
-        parsed = uuid.UUID(value)
-        return bool(parsed.int) and str(parsed) == value
-    except (ValueError, AttributeError, TypeError):
-        return False
 
 
 def _request_id(headers) -> str:
@@ -65,12 +41,14 @@ def _parent(headers) -> Context:
     return _PROPAGATOR.extract({"traceparent": value}, context=Context())
 
 
-class TraceMiddleware:
+class HTTPObservationMiddleware:
     """Observe one HTTP exchange without reading or buffering its body."""
 
     def __init__(self, app, module: str) -> None:
         self.app = app
         self.module = module
+        self.metrics = process_metrics()
+        self.metrics.activate()
 
     async def __call__(self, scope, receive, send) -> None:
         if scope.get("type") != "http":
@@ -97,6 +75,9 @@ class TraceMiddleware:
             if runtime.enabled() else trace.INVALID_SPAN
         )
         token = runtime.request_id_var.set(request_id)
+        scheme = "https" if scope.get("scheme") == "https" else "http"
+        self.metrics.enter(method, scheme)
+        began = time.monotonic()
         completed = False
         finished = False
         status = 0
@@ -111,6 +92,7 @@ class TraceMiddleware:
             if not isinstance(route, str) or len(route.encode("utf-8")) > 1024 or any(c in route for c in "\x00\r\n?#"):
                 route = ""
             error_type = failure or (str(status) if status >= 500 else "")
+            self.metrics.finish(method, scheme, route, status, error_type, time.monotonic()-began)
             span.update_name(method + " " + route)
             span.set_attributes({
                 "http.route": route,
