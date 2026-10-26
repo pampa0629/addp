@@ -1735,3 +1735,14 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 现有启动链先用不含当次容器 IP 的证书启动 Nginx，inspect IP 后重签来源证书并执行 `nginx -s reload`；当前就绪只看信号命令成功，没有核对实际呈送的证书已切换且覆盖该 IP。宿主机正向探针验证 localhost，初始／最终证书均含 localhost，不能辨认是否仍在呈送初始证书。因此“换证加载／IP SAN 校验差异”是优先核查假设，尚不是确认根因；也不能排除链校验、有效期或客户端证书等其他 TLS 子类。
 
 已确认的诊断缺口是 `fixture_scrape_diagnostic` 将所有 certificate／TLS 错误折叠为单一 tls；当次原始 lastError、实际呈送叶子证书及请求日志均未保留，清理后无法唯一还原。下一步待讨论：保持严格 TLS 与原资源／时间边界，在原标准入口补充封闭子类、预期／实际公开证书摘要及名称／链／有效期匹配结果、换证后真实 IP 就绪断言；任何未知仍明确未知。不得通过跳过校验、改 server_name、扩大信任或延长原采样等待绕过失败。本文仅记录调查和待确认方案，尚未实施或运行该修正。
+
+
+### 共享 Python 依赖与 Agent 冷安装冲突修复（2026-10-26）
+
+用户现场 Agent 同步失败后，确认本批 `0eca81f9b` 新增的 `cryptography==49.0.0` 与现有固定 DeerFlow Harness 2.1.0 的 `cryptography>=50.0.0` 互斥。此前使用已有依赖覆盖的 T1 通过没有覆盖完整冷安装，不能用于否认这项集成回归；原 pip 升级提示不构成根因。修复 `db5289c7474a91966ab254efc0d61957c17d7479` 已推 main，统一固定 `50.0.2`，同步技术栈及 uv.lock；锁文件仅该包版本变化。未删除消费者、变更其版本约束或新增跳过依赖解析路径。PyPI 发布元数据及实际下载确认 macOS arm64、Linux arm64 的 wheel 可用；Linux amd64 发布文件也存在，实际构建仍由自然 CI 单列验证。
+
+仓库外全新 Python 3.12 Agent/Copilot 环境分别按完整 requirements 安装，包含正式固定提交的 DeerFlow 两个 package 和共享模块，均退出 0、`pip check` 通过；安装报告实际为 cryptography 50.0.2／deerflow-harness 2.1.0。Agent 新环境 app／OpenAPI／Skills 导入通过，`make test-agent-eval` 通过 7 项场景契约、Agent 评测／持久化及 Common 聚合。`make test-copilot` 185 项通过，3 项已有警告。独立 Python 3.11 使用 `uv sync --locked --extra dev --extra inference-langchain` 后，`make test-common-python` 421 项及 54 subtests 通过、1 项可选 GeoPandas 跳过；`uv lock --check` 通过。`make test-python-ci-registration` 沿现有入口通过，依赖改动已由 Common Python／Agent／Copilot／共享消费者和产品镜像自动发现，无需新增 workflow 或测试路线。
+
+`make build-images IMAGE_BUILD_ARGS="--services agent-backend --verify --jobs 1 --tag p19-crypto-fix-20261026"` 实际退出 0，Linux arm64 产品镜像完成第三方完整依赖解析安装、最终 `pip check` 和 app／OpenAPI／Skills 导入；镜像 `localhost:5001/addp-agent-backend:p19-crypto-fix-20261026`，ID `sha256:9333059e7c4f4eab53471ffe785a97c3850bc5b8fb038c0f632951fd46466747`。验证模式未推送产品镜像，未启动业务服务或挂载个人环境；该本地工作区构建的五项依赖／Dockerfile 摘要与验证开始时一致，不冒充固定 GitHub SHA 的 Linux amd64 构建。`make test-changed` 已尝试，但缺少 Monitor PostgreSQL T2 显式连接输入而前置退出 2，不计全量通过，未因此启动数据库。
+
+原始证据 `/tmp/addp-p19-crypto-fix-20261026-9oi78l3t/`：Agent/Copilot 完整安装 JSON 与日志、Common 锁安装／测试、Agent 评测 JSON、Copilot 测试、镜像日志／身份、分发元数据与输入／产物 SHA256。自然 Platform CI `40294294052` 绑定修复 SHA，回查时仍进行中，未认定整轮通过；未取消／重跑 Actions、触发 Hosted、重跑容量或设置定时。没有操作个人 venv、运行服务、权限或数据卷；用户可自行沿 `./scripts/dev/restart.sh -agent` 重新同步。本修复不代替公共 mTLS 前置的待讨论方案，也不使 Python HTTP 实链或真实 Trace T2 自动通过。
