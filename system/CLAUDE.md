@@ -505,11 +505,20 @@ Engine Runtime Descriptor 不包含 `connection_info`。只有工作流或脚本
 
 API 消费方不是 Principal，不能分配 Role。首期只绑定 Service Consumer Catalog 中的 Query Service；Gateway 只在 `/api/query/:serviceName/query` 数据面路由接受 `X-API-Key`，`/api/v1/*` 控制面必须显式拒绝该 Header。Service owner 根据当前 Query Service 的 Tenant、ID、状态和发布状态执行最终授权。
 
-### 资源回收（仅租户管理员）
-- `POST /api/v1/system/admin/cleanup/scan` - 创建资源回收评估任务
-- `GET /api/v1/system/admin/cleanup/tasks/:task_id` - 获取资源回收任务状态
-- `POST /api/v1/system/admin/cleanup/execute` - 创建资源回收执行任务
-- `GET /api/v1/system/admin/cleanup/history` - 获取资源回收任务历史
+### 资源回收（Tenant User + 精确 Permission）
+
+入口要求 User 凭据与 AuthContext 中的当前 Tenant，权限和任务租户归属由后端校验，不按“管理员”称谓放行。
+
+- `POST /api/v1/system/admin/cleanup/scan` - 创建评估任务，需 `system.cleanup.execute`
+- `GET /api/v1/system/admin/cleanup/tasks/:task_id` - 查询本租户任务状态，需 `system.cleanup.read`
+- `POST /api/v1/system/admin/cleanup/execute` - 创建执行任务，需 `system.cleanup.execute`
+- `GET /api/v1/system/admin/cleanup/history` - 查询本租户临时任务历史，需 `system.cleanup.read`
+
+execute 必须引用本租户已 `completed` 的 scan 并提交 `confirmed=true`；高风险或物理回收另需确认文本 `CONFIRM`，物理回收须显式选择 `external_artifact_policy=delete|abandon`，逻辑回收不接受该策略。参数与确认规则统一见[scan 与 execute](../docs/spec/addp-cleanup体系规范.md#六scan-与-execute)；确认字段不授予权限。
+
+能力范围见[executor 参与范围](../docs/spec/addp-cleanup体系规范.md#executor-参与范围)、[结果与状态](../docs/spec/addp-cleanup体系规范.md#八结果模型)及[System 页面与 API](../docs/spec/addp-cleanup体系规范.md#system-页面与任务-api)。[Monitor](../docs/spec/addp-cleanup体系规范.md#1-monitor)独立执行 Owner 读取裁决与安全投影；引擎删除须走[专用工作流](../docs/spec/addp-cleanup体系规范.md#engine-删除工作流)，不能用通用 execute 替代。
+
+验证要求与未覆盖项统一见[运行态验收](../docs/spec/addp-cleanup体系规范.md#十三运行态验收)：完整 Cleanup suite 尚未接入，接口存在、任务终态或页面可展示均不代表完整验收通过；未运行、失败或跳过不计为通过。
 
 ### 前端公开路由
 
