@@ -449,7 +449,7 @@ Node24.11.1下 `make test-raster-stream-to-vector-d8-online-runner` **63项／20
 
 COG原生新建金字塔按GDAL自定义网格的整数减半规则核精确尺寸，519×515样本为259×257、129×128、64×64，小图为零层；每层再独立核完整最近邻像元及mask，依据GDAL `frmts/gtiff/cogdriver.cpp`及真实文件事实修正了首轮向上取整的错误期望，未降低像元误差阈值或删去布局断言。所有成功门禁跟踪输入无漂移、无新增Python原生崩溃报告。
 
-实际Linux全量及Hosted仍待专门CI会话协调；本轮未触发／轮询／重跑或设置定时，不计真实T4通过、UI、容量或Hosted数值极限。原固定全量与验收证据分别保留。
+固定`3fe8aa81cc738c2a9e67c1d28415f60f82a4cb87`的正式[Linux Native run40198410350／job121184162628](https://github.com/pampa0629/addp/actions/runs/40198410350/job/121184162628) 已核标准 `make test-geopython-workflow` 全量6394 passed／23warnings／1927.50秒、0失败／跳过／筛除；原始日志SHA-256：`a753f83043cdcd3af5bdbbcefc6b54aca944e285ebc309568742ca4412cb0a57`，只覆盖该固定源码，不等于当前HEAD或整个Platform通过。平均曲率独立Hosted尚缺本会话可独立审计的原始归档，实际执行状态待CI会话回传确认，不以本地归档缺失推断未运行、排队或失败；原8成功链／24次准确双语失败／600秒及全部严格断言保持，先核既有任务避免重复派发。本会话未触发、轮询、重跑或设置定时，不计本套T4、UI、容量或Hosted数值极限；剖面／切向／平面通过不替代本套范围。
 
 
 ### DEM 剖面曲率独立 Hosted 验收
