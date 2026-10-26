@@ -138,6 +138,8 @@ Transfer、Develop、Service、Asset、Portal 等模块按同一原则处理：
 - 可以消费 System 或 owner 模块发布的生命周期事件。
 - 不得让其他模块代替自己解释私有表、任务定义或物理路径。
 
+#### Transfer
+
 Transfer 已实现的资源回收执行方当前治理 Transfer-owned 任务定义和受管运行资源：
 
 - `engine.deleted` 时，扫描 source / target endpoint locator 引用该 engine 的 `transfer.transfer_tasks`。
@@ -154,6 +156,8 @@ PostgreSQL CDC v1 capture control plane 已实现，Transfer cleanup executor �
 - cleanup 不删除目标业务表、目标业务行、目标 `addp_transfer.apply_positions`、`common.task_executions` 或 System 审计日志。
 - slot/publication 只允许删除资源登记中标记为 ADDP-created 且 identity 完全匹配的对象，不得按同名规则删除用户已有资源。
 
+#### Service
+
 Service 第一阶段资源回收执行方只治理 Service-owned 服务发布定义和动态图层状态：
 
 - `engine.deleted` 时，扫描直接绑定该 engine 的 `service.query_services`、`service.graph_query_services`，以及 `service.tile_service_layers.layer_config.source.engine_id` 指向该 engine 的动态图层。
@@ -163,6 +167,8 @@ Service 第一阶段资源回收执行方只治理 Service-owned 服务发布定
 - tenant 生命周期 `physical_cleanup` 才允许删除 Service-owned 服务发布定义和动态图层状态记录。
 - 没有明确 lifecycle context 的普通 scan 不应把全部 Service 发布定义视作待回收对象。
 - Service cleanup 不删除外部 registered services，不删除外部服务端点，不推断或删除 MinIO 静态瓦片、缓存对象或业务引擎中的源数据。
+
+#### Quality
 
 Quality 第一阶段资源回收执行方只治理 Quality-owned 质量配置和问题状态：
 
@@ -176,6 +182,8 @@ Quality 第一阶段资源回收执行方只治理 Quality-owned 质量配置和
 - 没有明确 lifecycle context 的普通 scan 不应把全部 Quality 配置和问题工单视作待回收对象。
 - Quality cleanup 不删除源业务表、源数据、Standard 数据元或规则定义，也不删除 `common.task_executions` 历史执行记录。
 
+#### Develop
+
 Develop 资源回收执行方评估 engine 影响，并只在租户生命周期回收中治理 Develop-owned 开发任务定义：
 
 - `engine.deleting` 时扫描 `develop.dev_tasks` 中对目标 Engine 的运行时绑定和资源引用，统一报告为 `rebindable` 影响；不归档、不禁用、不删除任务定义。
@@ -187,6 +195,8 @@ Develop 资源回收执行方评估 engine 影响，并只在租户生命周期�
 - 没有明确 `tenant.deleted` lifecycle context 的普通 scan 不应把全部 Develop 任务定义视作待回收对象。
 - 用户任务定义、Notebook 文件、Jupyter 虚拟环境、工作流输出、中间文件或源业务数据，常规删除必须由用户显式发起，不得因 engine 生命周期自动清理。
 
+#### Graph
+
 Graph 第一阶段资源回收执行方只治理 Graph-owned 图谱建模和构建状态：
 
 - `engine.deleted` 时，扫描绑定该 engine 的 `graph.knowledge_graphs`，以及这些 graph 下的 `graph.build_tasks`、`graph.build_materials`、`graph.review_items`。
@@ -197,6 +207,8 @@ Graph 第一阶段资源回收执行方只治理 Graph-owned 图谱建模和构�
 - 没有明确 lifecycle context 的普通 scan 不应把全部 Graph 本体、图谱或构建状态视作待回收对象。
 - Graph cleanup 第一阶段不删除 Neo4j database 中的真实图数据，不删除 MinIO 中的构建材料文件，不删除 `common.task_executions` 历史执行记录；这些物理产物只有在后续被明确登记为 Graph-owned artifact state 后，才进入对应 owner executor。
 
+#### Asset
+
 Asset 第一阶段资源回收执行方只治理 Asset-owned 资产目录、资产状态和授权状态：
 
 - `tenant.deleted` 时，扫描该租户下 Asset-owned 类型定义、类型字段、目录、资产、资产组件、资产扩展字段、申请、授权和评价。
@@ -205,6 +217,8 @@ Asset 第一阶段资源回收执行方只治理 Asset-owned 资产目录、资�
 - 没有明确 `tenant.deleted` lifecycle context 的普通 scan 不应把全部 Asset 状态视作待回收对象。
 - `engine.deleted` 第一阶段不扫描 Asset 状态；Catalog 根据来源变化将对应 CatalogEntry 标记为不可选，Asset 在下一次编辑或发布时通过精确解析拒绝失效组件。
 - Asset cleanup 第一阶段不删除 Meta / Service / Standard / Develop 的源对象，不删除已发布服务端点，不删除 Meilisearch 索引文档；搜索索引删除只有在后续被明确登记为 Asset-owned artifact state 后，才进入对应 owner executor。
+
+#### Model
 
 Model 第一阶段资源回收执行方只治理 Model-owned 建模状态：
 
@@ -215,6 +229,8 @@ Model 第一阶段资源回收执行方只治理 Model-owned 建模状态：
 - `engine.deleted` 第一阶段不扫描 Model 状态；Model 不解析 `materialization` 中的物理目标或引擎私有引用。
 - Model cleanup 不删除 Standard 数据元、指标定义或业务域，不删除已物化的外部物理表；这些物理产物只有在后续被明确登记为 Model-owned artifact state 后，才进入对应 owner executor。
 
+#### Standard
+
 Standard 第一阶段资源回收执行方只治理 Standard-owned 标准治理状态和标准文档文件：
 
 - `tenant.deleted` 时，扫描该租户下 Standard-owned 业务域、术语、数据元、码值集、单位、指标定义、标准文档及其修订和关联状态；维度层级属于 Model，安全分类分级属于 Security。
@@ -223,6 +239,8 @@ Standard 第一阶段资源回收执行方只治理 Standard-owned 标准治理�
 - 单个标准文档由用户显式删除时，可以同步删除 PG 状态和 `file_key` 指向的 MinIO 文件。
 - `engine.deleted` 不扫描 Standard 状态；标准治理材料和文档不受 engine 生命周期影响。
 - Standard cleanup 不删除引用它的 Model、Quality、Asset 等模块状态；跨模块引用残留由引用方 owner executor 自己治理。
+
+#### Security
 
 Security 实施时必须同步接入资源回收执行方，只治理 Security-owned 控制面状态：
 
@@ -590,7 +608,7 @@ curl -sS "$BASE/monitor/executions/by-execution-id/$EXECUTION_ID/tree" \
 
 ## 十四、迁移状态
 
-当前迁移遵循单一路线，不保留兼容分支：
+当前迁移遵循单一路线，不保留兼容分支。下表保留既有迁移状态；各 owner 的资源范围、未完成项及后续产物登记要求以[职责正文](#三职责边界)为准，不能仅凭 `physical_cleanup` 推断用户定义可删除。“已完成主路径”不等于引擎删除、租户删除及所有模式均已运行验收，实际覆盖须按[运行态验收](#十三运行态验收)与[标准测试入口](addp测试与验收规范.md#三标准入口)核对；未运行、失败或跳过不计为通过。
 
 | 步骤 | 状态 |
 | --- | --- |
@@ -598,20 +616,20 @@ curl -sS "$BASE/monitor/executions/by-execution-id/$EXECUTION_ID/tree" \
 | 调整 `common/events` cleanup request / result 模型，使用 `cleanup_mode`、`trigger_type`、`cause_event` 和标准 `summary`，去除模块私有统计汇总耦合。 | 已完成 |
 | System cleanup 写入 `common.task_executions` 和 `system.audit_logs`，形成父 execution 和审计主链路。 | 已完成 |
 | Manager 接入资源回收执行方，按 Manager repository / service 回收 Manager-owned artifact。 | 已完成主路径 |
-| Standard 接入资源回收执行方，按 Standard repository / service 回收 Standard-owned 治理状态和标准文档文件。 | 已完成主路径 |
+| [Standard](#standard) 治理状态与标准文档回收：租户删除的逻辑清理保留文件，物理清理限本域状态与已登记文档对象；引擎删除不扫描本域状态。 | 已完成主路径 |
 | System cleanup UI 改为模块化展示，不硬编码 Meta 或 Manager 私有统计字段。 | 已完成 |
 | System cleanup UI 提供 Monitor 跳转。 | 已完成 |
 | 从 Meta 移除对 Manager 表、Manager bucket 和 System bucket 的直接 cleanup 逻辑。 | 已完成 |
 | 清理旧协议字段、旧 bucket prefix 假设、`soft_delete` / `hard_delete` 跨模块语义和双轨实现。 | 已完成主路径；保留文档中的禁止规则说明 |
-| Manager 任务定义残留治理，覆盖 Manager TaskProvider 声明的全部任务类型，并支持禁用或物理删除孤儿定义。 | 已完成主路径 |
-| Meta 扫描任务定义残留治理，覆盖仅存在于任务定义的无效 Engine 引用，不限于 System 自动任务。 | 已完成主路径 |
-| Transfer 任务定义残留治理，例如 engine 删除后引用该 engine 的传输任务定义禁用或删除。 | 已完成主路径 |
-| Service 服务发布定义残留治理，例如 engine 删除后引用该 engine 的查询服务、图查询服务和动态图层禁用或删除。 | 已完成主路径 |
-| Quality 质量配置和问题状态残留治理，例如 engine 删除后引用该 engine 的规则应用、检查任务和问题工单禁用、忽略或删除。 | 已完成主路径 |
-| Develop 开发任务定义残留治理，仅在 tenant 删除范围内归档或删除；engine 删除不清理用户创作型任务定义。 | 已完成主路径 |
-| Graph 图谱建模和构建状态残留治理，例如 engine 删除后绑定该 engine 的知识图谱实例归档、未完成构建任务取消，tenant 删除后 Graph-owned PG 状态删除。 | 已完成主路径 |
-| Asset 资产目录、资产和授权状态残留治理，例如 tenant 删除后资产下架、授权撤销或 Asset-owned PG 状态删除。 | 已完成主路径 |
-| Model 建模状态残留治理，例如 tenant 删除后实体和逻辑表降为 draft 或 Model-owned PG 状态删除。 | 已完成主路径 |
+| [Manager](#4-manager) 任务定义残留治理，覆盖本域 TaskProvider 任务类型：引擎删除只禁用并保留定义；无生命周期上下文的手动物理清理才可删除孤儿定义。 | 已完成主路径 |
+| [Meta](#3-meta) 扫描任务定义残留治理，覆盖仅存在于任务定义的无效 Engine 引用，不限于 System 自动任务。 | 已完成主路径 |
+| [Transfer](#transfer) 任务定义治理：引擎删除只禁用并保留定义；租户删除按逻辑／物理模式分别禁用或删除本域任务定义。 | 已完成主路径 |
+| [Service](#service) 发布定义治理：引擎删除将服务置为 inactive、动态图层置为 disabled，保留定义；租户删除的物理清理才可删除本域发布定义与图层状态。 | 已完成主路径 |
+| [Quality](#quality) 配置与问题治理：引擎删除禁用规则应用、保留检查任务定义并忽略 open 问题；租户删除的物理清理才可删除本域状态。 | 已完成主路径 |
+| [Develop](#develop) 任务定义治理：引擎删除仅评估重绑影响，不归档、禁用或删除定义；租户删除按逻辑／物理模式分别归档或删除本域任务定义。 | 已完成主路径 |
+| [Graph](#graph) 建模与构建状态治理：引擎删除归档图谱、取消未完成构建任务并保留定义与材料状态；租户删除的物理清理才可删除本域 PG 状态。 | 已完成主路径 |
+| [Asset](#asset) 资产与授权治理：第一阶段仅处理租户删除，逻辑清理下架资产、撤销有效授权，物理清理限本域 PG 状态；引擎删除不扫描本域状态。 | 已完成主路径 |
+| [Model](#model) 建模状态治理：第一阶段仅处理租户删除，逻辑清理将实体、逻辑表降为 draft，物理清理限本域 PG 状态；引擎删除不扫描本域状态。 | 已完成主路径 |
 | engine / tenant 生命周期事件触发自动资源回收 scan，并通过 `cause_event` / `context` 限定后续 executor 范围。 | 已完成主路径 |
 | `expected_modules` 从模块注册或 cleanup capability 生成，并由 executor 统一按公共协议 helper 判断是否响应。 | 已完成主路径 |
 
