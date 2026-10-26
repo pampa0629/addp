@@ -3712,14 +3712,254 @@ def test_normalize_line_network_nonbinary_overlapping_intersections_keep_one_exa
                 assert len(result)==6 and len(members)==8,(x,y,multiplier,[list(g.coords) for g in result.geometry])
                 assert sorted(result.occurrence_count.tolist())==[1,1,1,1,2,2]
 
-def test_normalize_line_network_result_can_be_explicitly_merged_without_attribute_or_counter_collision():
-    frame=line_overlap_frame([LineString([(0,0),(4,0)]),LineString([(1,0),(3,0)])],['甲','乙'])
-    normalized=normalized_lines(frame)
-    result=get_operator('merge_line_chains')(normalized['result'],'edge_id',[])
-    assert len(normalized['result'])==3 and len(normalized['members'])==4
-    assert [list(g.coords) for g in result['result'].geometry]==[[(0,0),(1,0),(3,0),(4,0)]]
-    assert result['members'].edge_id.tolist()==[1,2,3]
-    assert result['members'].occurrence_count.tolist()==[1,2,1]
+def _normalize_chain_fixture(name, id_kind):
+    if name=='overlap':
+        shapes=[LineString([(0,0),(4,0)]),LineString([(3,0),(1,0)])]
+        edges=[[(0,0),(1,0)],[(1,0),(3,0)],[(3,0),(4,0)]]
+        visits=[(0,1,1,1,1,False),(0,1,1,2,2,False),(0,1,1,3,3,False),(1,1,1,1,2,True)]
+        walks=[[(1,False),(2,False),(3,False)]];chains=[[(0,0),(1,0),(3,0),(4,0)]];grades=[1,2]
+    elif name=='directions':
+        shapes=[LineString([(10,0),(12,2),(10,4)]),MultiLineString([[(12,2),(10,0)],[(10,4),(12,2)]])]
+        edges=[[(10,0),(12,2)],[(10,4),(12,2)]]
+        visits=[(0,1,1,1,1,False),(0,1,2,1,2,True),(1,1,1,1,1,True),(1,2,1,1,2,False)]
+        walks=[[(1,False),(2,True)]];chains=[[(10,0),(12,2),(10,4)]];grades=[7,None]
+    elif name=='branch':
+        shapes=[LineString([(0,10),(4,10)]),LineString([(2,10),(2,12)])]
+        edges=[[(0,10),(2,10)],[(2,10),(4,10)],[(2,10),(2,12)]]
+        visits=[(0,1,1,1,1,False),(0,1,1,2,2,False),(1,1,1,1,3,False)]
+        walks=[[(1,False)],[(2,False)],[(3,False)]];chains=edges;grades=[1,1]
+    elif name=='ring':
+        shapes=[LineString([(20,0),(22,0),(22,2),(20,0)]),MultiLineString([[(20,0),(22,2),(22,0),(20,0)],[(20,0),(22,0)]])]
+        edges=[[(20,0),(22,0)],[(22,0),(22,2)],[(20,0),(22,2)]]
+        visits=[(0,1,1,1,1,False),(0,1,2,1,2,False),(0,1,3,1,3,True),
+                (1,1,1,1,3,False),(1,1,2,1,2,True),(1,1,3,1,1,True),(1,2,1,1,1,False)]
+        walks=[[(1,False),(2,False),(3,True)]];chains=[[(20,0),(22,0),(22,2),(20,0)]];grades=[2,None]
+    elif name=='precision':
+        gap=2**-40
+        shapes=[LineString([(31,0),(31,0),(30,0),(30,0)]),LineString([(31+gap,0),(32,0)]),LineString([(40,0),(41,0),(42,0)])]
+        edges=[[(30,0),(31,0)],[(31+gap,0),(32,0)],[(40,0),(41,0)],[(41,0),(42,0)]]
+        visits=[(0,1,2,1,1,True),(1,1,1,1,2,False),(2,1,1,1,3,False),(2,1,2,1,4,False)]
+        walks=[[(1,False)],[(2,False)],[(3,False),(4,False)]];chains=[edges[0],edges[1],[(40,0),(41,0),(42,0)]];grades=[None,3,4]
+    else:
+        assert name=='empty';shapes=[];edges=[];visits=[];walks=[];chains=[];grades=[]
+    ids=pd.Series([f'原路段-{i}' for i in range(len(shapes))],dtype='string') if id_kind=='string' else pd.Series([2**60+i+1 for i in range(len(shapes))],dtype='Int64')
+    frame=line_overlap_frame(shapes,ids)
+    frame['grade']=pd.Series(grades,dtype='Int64');frame['note']=pd.Series([None if i%2==0 else f'原属性-{i}' for i in range(len(frame))],dtype='string')
+    frame['enabled']=pd.Series([(True,None,False)[i%3] for i in range(len(frame))],dtype='boolean')
+    # These original business names must remain scoped to edge_sources.
+    frame['chain_id']=pd.Series([9000+i for i in range(len(frame))],dtype='Int64')
+    frame['member_no']=pd.Series([100+i for i in range(len(frame))],dtype='Int64')
+    return frame,edges,visits,walks,chains
+
+
+def _composition_scalar(value):
+    return None if value is pd.NA or value is None else value.item() if isinstance(value,np.generic) else value
+
+
+def _composition_expected(frame, edges, visits, walks, chains):
+    from collections import Counter
+    counts=Counter(edge for row,part,segment,piece,edge,reverse in visits)
+    chain_rows=[];edge_rows=[];source_rows=[]
+    for chain_id,(walk,points) in enumerate(zip(walks,chains),1):
+        chain_rows.append(({'chain_id':chain_id,'member_count':len(walk)},points))
+        for member_no,(edge,reverse) in enumerate(walk,1):
+            edge_rows.append(({'edge_id':edge,'occurrence_count':counts[edge],'chain_id':chain_id,
+                               'member_no':member_no,'source_part_no':1,'is_reversed':reverse},edges[edge-1]))
+    for row,part,segment,piece,edge,reverse in visits:
+        properties={k:_composition_scalar(frame.iloc[row][k]) for k in frame.columns if k!=frame.geometry.name}
+        source_rows.append(({**properties,'edge_id':edge,'source_id':properties['route_key'],'source_part_no':part,
+                             'source_segment_no':segment,'piece_no':piece,'is_reversed':reverse},
+                            edges[edge-1][::-1] if reverse else edges[edge-1]))
+    return {'chains':chain_rows,'chain_edges':edge_rows,'edge_sources':source_rows}
+
+
+def _verify_composition_trace(tables, fixture_name):
+    from collections import Counter
+    chains={p['chain_id']:(p,points) for p,points in tables['chains']}
+    edges={p['edge_id']:(p,points) for p,points in tables['chain_edges']}
+    assert len(edges)==len(tables['chain_edges']) and len(chains)==len(tables['chains'])
+    assert sum(p['member_count'] for p,points in tables['chains'])==len(edges)
+    counts=Counter(p['edge_id'] for p,points in tables['edge_sources'])
+    assert counts=={edge:p['occurrence_count'] for edge,(p,points) in edges.items()}
+    assert sum(counts.values())==len(tables['edge_sources'])
+    assert len({(p['source_id'],p['source_part_no'],p['source_segment_no'],p['piece_no']) for p,points in tables['edge_sources']})==len(tables['edge_sources'])
+    combinations=set()
+    for source,points in tables['edge_sources']:
+        edge,canonical=edges[source['edge_id']];chain,coordinates=chains[edge['chain_id']]
+        index=edge['member_no']-1;along_chain=coordinates[index:index+2]
+        assert along_chain==(canonical[::-1] if edge['is_reversed'] else canonical)
+        reversed_relative=bool(source['is_reversed']) ^ bool(edge['is_reversed'])
+        assert points==(along_chain[::-1] if reversed_relative else along_chain)
+        assert source['chain_id']>=9000 and source['member_no']>=100
+        assert edge['source_part_no']==1
+        combinations.add((source['is_reversed'],edge['is_reversed']))
+    if fixture_name=='directions':assert combinations=={(False,False),(False,True),(True,False),(True,True)}
+
+
+def _composition_tables_from_memory(frame, normalized, chained):
+    tables={}
+    for label,value in [('chains',chained['result']),('chain_edges',chained['members']),('edge_sources',normalized['members'])]:
+        assert value.crs==frame.crs and value.geometry.name==frame.geometry.name
+        assert value.index.equals(pd.RangeIndex(len(value)))
+        rows=[]
+        for _,row in value.iterrows():
+            attrs={name:_composition_scalar(row[name]) for name in value.columns if name!=value.geometry.name}
+            rows.append((attrs,[tuple(p) for p in row[value.geometry.name].coords]))
+        tables[label]=rows
+    return tables
+
+
+@pytest.mark.parametrize('fixture_name',['overlap','directions','branch','ring','precision','empty'])
+@pytest.mark.parametrize('id_kind',['string','int64'])
+def test_normalize_line_network_chains_composition_preserves_three_relations(fixture_name,id_kind):
+    frame,edges,visits,walks,chains=_normalize_chain_fixture(fixture_name,id_kind)
+    # Index is deliberately unrelated to the explicit source identifiers.
+    frame.index=pd.Index([7]*(len(frame)));before=frame.copy(deep=True)
+    normalized=normalized_lines(frame);normal_before={k:v.copy(deep=True) for k,v in normalized.items()}
+    chained=get_operator('merge_line_chains')(normalized['result'],'edge_id',[])
+    tables=_composition_tables_from_memory(frame,normalized,chained)
+    assert tables==_composition_expected(frame,edges,visits,walks,chains)
+    assert list(chained['result'].columns)==[frame.geometry.name,'chain_id','member_count']
+    for field in frame.columns:assert normalized['members'][field].dtype==frame[field].dtype
+    _verify_composition_trace(tables,fixture_name)
+    for key in normal_before:assert_geodataframe_equal(normalized[key],normal_before[key])
+    assert_geodataframe_equal(frame,before)
+
+
+def _seed_composition_source(frame,path):
+    from osgeo import ogr,osr
+    sr=osr.SpatialReference();sr.ImportFromEPSG(3857)
+    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
+    layer=ds.CreateLayer('original_routes',sr,ogr.wkbUnknown,options=['GEOMETRY_NAME='+frame.geometry.name])
+    for name in frame.columns:
+        if name==frame.geometry.name:continue
+        kind=(ogr.OFTInteger if pd.api.types.is_bool_dtype(frame[name].dtype) else
+              ogr.OFTInteger64 if pd.api.types.is_integer_dtype(frame[name].dtype) else ogr.OFTString)
+        definition=ogr.FieldDefn(name,kind)
+        if name=='enabled':definition.SetSubType(ogr.OFSTBoolean)
+        assert layer.CreateField(definition)==0
+    for _,row in frame.iterrows():
+        feature=ogr.Feature(layer.GetLayerDefn())
+        for name in frame.columns:
+            if name==frame.geometry.name:continue
+            value=_composition_scalar(row[name])
+            if value is not None:feature.SetField(name,value)
+        feature.SetGeometry(ogr.CreateGeometryFromWkb(row[frame.geometry.name].wkb))
+        assert layer.CreateFeature(feature)==0
+    ds=None
+
+
+def _read_composition_file(path,label,expected,id_kind):
+    from osgeo import ogr
+    ds=ogr.Open(str(path),0);assert ds and ds.GetLayerCount()==1
+    layer=ds.GetLayer(0);assert layer.GetSpatialRef().GetAuthorityCode(None)=='3857'
+    source_fields=['source_name','route_key','grade','note','enabled','chain_id','member_no']
+    fields={'chains':['chain_id','member_count'],
+        'chain_edges':['edge_id','occurrence_count','chain_id','member_no','source_part_no','is_reversed'],
+        'edge_sources':source_fields+['edge_id','source_id','source_part_no','source_segment_no','piece_no','is_reversed']}[label]
+    assert [field.GetName() for field in layer.schema]==fields
+    for field in layer.schema:
+        name=field.GetName()
+        native=(ogr.OFTString if name in ('source_name','note') or name in ('route_key','source_id') and id_kind=='string' else
+                ogr.OFTInteger if name in ('enabled','is_reversed') else ogr.OFTInteger64)
+        assert field.GetType()==native
+        if name in ('enabled','is_reversed'):assert field.GetSubType()==ogr.OFSTBoolean
+    assert layer.GetFeatureCount()==len(expected);rows=[]
+    for i,feature in enumerate(layer,1):
+        assert feature.GetFID()==i
+        shape=feature.GetGeometryRef();assert shape.GetGeometryName()=='LINESTRING' and shape.GetCoordinateDimension()==2 and not shape.IsMeasured() and shape.IsValid()
+        attrs={name:feature.GetField(name) for name in fields}
+        for name in ('enabled','is_reversed'):
+            if name in attrs and attrs[name] is not None:
+                assert type(attrs[name]) in (bool,int) and attrs[name] in (0,1);attrs[name]=bool(attrs[name])
+        rows.append((attrs,[tuple(p) for p in shape.GetPoints()]))
+    assert rows==expected
+    for (actual,_),(wanted,_) in zip(rows,expected):
+        for name,value in wanted.items():assert type(actual[name]) is type(value)
+    ds=None
+    return rows
+
+
+def _composition_workflow(connection):
+    tasks=[{'id':'source','operator':'load','params':{'connection_info':connection,'path':'source.gpkg'},'depends_on':[]},
+        {'id':'normalize','operator':'normalize_line_network','params':{'input_gdf':{'$ref':'source'},'id_field':'route_key'},'depends_on':['source']},
+        {'id':'chains','operator':'merge_line_chains','params':{'input_gdf':{'$ref':'normalize'},'id_field':'edge_id','match_fields':[]},'depends_on':['normalize']}]
+    for label,ref in [('chains',{'$ref':'chains'}),('chain_edges',{'$ref':'chains','port':'members'}),('edge_sources',{'$ref':'normalize','port':'members'})]:
+        tasks.append({'id':'save_'+label,'operator':'save','params':{'input_df':ref,'connection_info':connection,'path':label+'.gpkg','mode':'fail'},'depends_on':[ref['$ref']]})
+    return tasks
+
+
+def _composition_native_run(root,fixture_name,id_kind):
+    frame,edges,visits,walks,chains=_normalize_chain_fixture(fixture_name,id_kind)
+    source=root/'source.gpkg';_seed_composition_source(frame,source);original=source.read_bytes()
+    connection={'engine_type':'nfs','mount_path':str(root)}
+    loaded=get_operator('load')(connection_info=connection,path='source.gpkg')
+    assert str(loaded.grade.dtype)=='Int64' and str(loaded.enabled.dtype)=='boolean'
+    tasks=_composition_workflow(connection)
+    result=execute_workflow({'tasks':tasks});assert result['status']=='success',result.get('error')
+    assert set(json.loads(result['all_results']['normalize']))==set(json.loads(result['all_results']['chains']))=={'result','members'}
+    expected=_composition_expected(frame,edges,visits,walks,chains)
+    tables={label:_read_composition_file(root/(label+'.gpkg'),label,rows,id_kind) for label,rows in expected.items()}
+    _verify_composition_trace(tables,fixture_name)
+    assert source.read_bytes()==original
+    return expected
+
+
+@pytest.mark.parametrize('fixture_name',['overlap','directions','branch','ring','precision','empty'])
+@pytest.mark.parametrize('id_kind',['string','int64'])
+def test_normalize_line_network_chains_composition_native_three_saves(tmp_path,fixture_name,id_kind):
+    _composition_native_run(tmp_path,fixture_name,id_kind)
+
+
+@pytest.mark.parametrize('label,problem',[
+    ('chains','chain_id'),('chains','member_count'),('chains','direction'),('chains','coordinate'),('chains','missing'),('chains','crs'),('chains','int_type'),
+    ('chain_edges','edge_id'),('chain_edges','occurrence_count'),('chain_edges','member_no'),('chain_edges','source_part_no'),('chain_edges','is_reversed'),('chain_edges','bool_type'),
+    ('edge_sources','source_id'),('edge_sources','source_part_no'),('edge_sources','source_segment_no'),('edge_sources','piece_no'),('edge_sources','is_reversed'),
+    ('edge_sources','chain_id'),('edge_sources','member_no'),('edge_sources','grade'),('edge_sources','enabled'),('edge_sources','direction'),('edge_sources','int_type'),('edge_sources','bool_type')])
+def test_normalize_line_network_chains_composition_native_rejects_corruption(tmp_path,label,problem):
+    from osgeo import ogr
+    expected=_composition_native_run(tmp_path,'directions','int64');path=tmp_path/(label+'.gpkg')
+    if problem in ('int_type','bool_type'):
+        source=ogr.Open(str(path),0);layer=source.GetLayer(0)
+        changed=tmp_path/'changed.gpkg';destination=ogr.GetDriverByName('GPKG').CreateDataSource(str(changed))
+        target=destination.CreateLayer('changed',layer.GetSpatialRef(),ogr.wkbLineString)
+        selected='chain_id' if label=='chains' else 'is_reversed' if label=='chain_edges' else 'grade' if problem=='int_type' else 'enabled'
+        for definition in layer.schema:
+            field=ogr.FieldDefn(definition.GetName(),definition.GetType());field.SetSubType(definition.GetSubType())
+            if field.GetName()==selected:
+                if problem=='int_type':field.SetType(ogr.OFTReal)
+                else:field.SetSubType(ogr.OFSTNone)
+            assert target.CreateField(field)==0
+        for feature in layer:
+            clone=ogr.Feature(target.GetLayerDefn());clone.SetFrom(feature);assert target.CreateFeature(clone)==0
+        source=layer=target=destination=None;changed.replace(path)
+        with pytest.raises(AssertionError):_read_composition_file(path,label,expected[label],'int64')
+        return
+    ds=ogr.Open(str(path),1);layer=ds.GetLayer(0)
+    if problem=='crs':ds.ExecuteSQL('UPDATE gpkg_geometry_columns SET srs_id=4326')
+    elif problem=='missing':layer.DeleteFeature(1)
+    else:
+        feature=layer.GetFeature(3 if problem in ('grade','enabled') else 1)
+        if problem in ('direction','coordinate'):
+            points=feature.GetGeometryRef().GetPoints();shape=ogr.Geometry(ogr.wkbLineString)
+            for x,y in (points[::-1] if problem=='direction' else points):shape.AddPoint_2D(x+.25 if problem=='coordinate' else x,y)
+            feature.SetGeometry(shape)
+        elif problem in ('is_reversed','enabled'):feature.SetField(problem,0 if feature.GetField(problem) else 1)
+        elif problem in ('grade',):feature.SetField(problem,999)
+        else:feature.SetField(problem,feature.GetField(problem)+1)
+        assert layer.SetFeature(feature)==0
+    ds=layer=None
+    with pytest.raises(AssertionError):_read_composition_file(path,label,expected[label],'int64')
+
+
+@pytest.mark.parametrize('field',['edge_id','occurrence_count','source_id','source_part_no','source_segment_no','piece_no','is_reversed'])
+def test_normalize_line_network_chains_composition_invalid_source_publishes_none(tmp_path,field):
+    frame,*_= _normalize_chain_fixture('directions','int64');frame[field]=pd.Series([1,2],dtype='Int64')
+    source=tmp_path/'source.gpkg';_seed_composition_source(frame,source);original=source.read_bytes()
+    result=execute_workflow({'tasks':_composition_workflow({'engine_type':'nfs','mount_path':str(tmp_path)})})
+    assert result['status']=='failed' and 'network output columns must not overwrite source fields' in result['error']
+    assert sorted(p.name for p in tmp_path.iterdir())==['source.gpkg']
+    assert source.read_bytes()==original
 
 
 @pytest.mark.parametrize('port,problem',[(None,None),('result','count'),('result','occurrences'),('result','crs'),
