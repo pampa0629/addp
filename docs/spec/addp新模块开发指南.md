@@ -148,6 +148,21 @@
 
    按[前端开发工作流](#前端开发工作流)建立模块入口、共享认证、国际化与主题，再登记构建、Console 代理和部署路由。目录与依赖参考现有模块，不复制模块私有业务或整套认证实现。
 
+### 统一模块生命周期接入
+
+在 `cmd/server/main.go` 中使用统一模块生命周期能力，不得只调用注册函数却不把注册状态接入 Ready 门禁。启动顺序固定为：
+
+1. 校验部署配置并初始化自身必需 Infra；
+2. 创建可取消的进程信号 Context；
+3. 绑定 HTTP Listener，注册 `/health/live` 和 `/health/ready`；
+4. 用该 Context 启动统一模块注册生命周期，`health_check_url` 只指向 `/health/ready`；
+5. 在健康路由之后、业务路由之前安装 Ready 门禁；
+6. 进程退出前取消 Context，并等待限时注销完成。
+
+不得使用 `context.Background()` 启动进程级注册，不得在端口绑定之前注册，也不得为了“注册成功”在入口同步阻塞等待 System。
+
+本地启动编排与构建身份见[生命周期规范](addp开发服务生命周期与构建身份规范.md)；注册状态、健康端点与 Ready 门禁语义见[健康与平台控制面规范](api/健康与平台控制面.md#进程存活与模块就绪端点)。
+
 ## 开发工作流
 
 ### 添加新的 API 端点
@@ -283,18 +298,7 @@ export default createAPIClient(() => useAuthStore(), {
 注册与心跳失败的诊断、重试分类和敏感信息边界见[模块注册排查](../guide/troubleshooting/认证与引擎注册.md#模块注册与心跳失败)。
 
 **解决方案**:
-在 `cmd/server/main.go` 中使用统一模块生命周期能力，不得只调用注册函数却不把注册状态接入 Ready 门禁。启动顺序固定为：
-
-1. 校验部署配置并初始化自身必需 Infra；
-2. 创建可取消的进程信号 Context；
-3. 绑定 HTTP Listener，注册 `/health/live` 和 `/health/ready`；
-4. 用该 Context 启动统一模块注册生命周期，`health_check_url` 只指向 `/health/ready`；
-5. 在健康路由之后、业务路由之前安装 Ready 门禁；
-6. 进程退出前取消 Context，并等待限时注销完成。
-
-注册声明的 `health_check_url` 必须指向 `/health/ready`；共享生命周期与注册恢复语义以[生命周期规范](addp开发服务生命周期与构建身份规范.md)和[健康与平台控制面规范](api/健康与平台控制面.md)为准。
-
-不得使用 `context.Background()` 启动进程级注册，不得在端口绑定之前注册，也不得为了“注册成功”在入口同步阻塞等待 System。
+按[统一模块生命周期接入](#统一模块生命周期接入)复核入口、监听、注册状态与 Ready 门禁，以及退出注销顺序；使用共享能力，不另建注册或健康检查路径。
 
 ### 错误 7: 前端 API 路径包含重复的 /api 前缀
 
@@ -320,7 +324,7 @@ export default createAPIClient(() => useAuthStore(), {
 - [ ] owner Backend 通过 `common/schema` 执行唯一版本化迁移，结构变更递增 `SchemaVersion`，并有 migration 测试和 CI 入口
 - [ ] Worker 只读校验 owner 与公共 schema 版本，Backend Ready 后启动，不执行 DDL
 - [ ] 实现唯一存活和就绪端点 (`/health/live`、`/health/ready`)
-- [ ] 使用统一模块生命周期接入注册、心跳、Ready 门禁和注销
+- [ ] 按[统一模块生命周期接入](#统一模块生命周期接入)完成注册、心跳、Ready 门禁和注销
 
 **前端开发**:
 - [ ] 建立前端目录与模块锁文件，Node 版本取根 `.node-version`，安装使用 `npm ci`
