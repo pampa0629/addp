@@ -368,21 +368,26 @@ Console 公开路由与 System standalone 路由使用同一模块内 path 和 q
 
 ## 十二、迁移演进
 
-- 只增加新的 `NNNNNN_name.up.sql`，不修改已发布 migration；
-- 已执行 migration 的版本号、文件名和内容摘要必须保持不变；概念收敛或方案重做也必须使用新版本向前迁移；
+### 通用规则
+
+- 仅通过新的 `NNNNNN_name.up.sql` 向前迁移。已发布或已执行 migration 的版本号、文件名和内容摘要必须保持不变；概念收敛或方案重做也不得改写历史迁移。
+- Permission/Role Catalog 变化由聚合器生成确定性输入，再进入新的向前 migration；
+- 破坏性模型切换不保留旧字段、双写、双读或兼容 query；
+- 需要保留的外部数据必须另行批准离线导入方案，不进入 System Runtime；
+- migration 内不得访问 Redis、HTTP、外部 IdP、密钥服务或其他模块数据库。
+
+### 具体迁移约束
+
 - 标准成员清单能力退出后，迁移 `000140` 停用其六项 Permission、删除全部 Role 关联并撤销受影响会话，并撤销 `tenant.standard_runtime` 的人员目录读取授权。Catalog 的组织引用继续只允许 `addp-catalog` 调用，由 Catalog 专用解析方法处理。
 - Quality 域引用权限的已执行 `000149` 保持原始摘要；后续域读取授权与服务身份刷新使用 `000150`。回归测试须从原始 149 已执行状态升级，校验历史摘要保持不变及重复启动幂等，不能只验证空库迁移。
-- Permission/Role Catalog 变化由聚合器生成确定性输入，再进入新的向前 migration；
 - `000193_resource_observation_read.up.sql` 发布资源观测权限：`monitor.resource_observation.read` 仅允许 Platform、不可委托及租户定制，产品目录只授予 `platform.system_administrator`；内置角色 Manifest 116 同步。迁移推进受影响主体授权版本并撤销旧 Refresh Token Family，不扩大三员其他角色、Prometheus 采集身份或 Tenant Runtime 角色。预算配置沿用 Monitor 已有模块级平台配置 Permission。
 - `000194` 发布专职 `tenant.engine_access_delegation_administrator` 模板，只允许 Tenant Scope 的 User，并组合委派读取／创建／撤销、引擎管理读取与租户账号候选读取。角色 Manifest 117 同步；不改写旧角色、不新增任何 Assignment、不生成管理委派或数据 Grant。账号赋权仍走正常 IAM API 并执行原有授权版本与会话撤销规则。
 - 主机资源告警规则迁移 `000211_platform_resource_alert_rules` 新增 Monitor 的四项平台规则权限，仅绑定既有 `platform.system_administrator`；沿角色绑定触发器推进授权版本，并撤销该角色活动用户的旧刷新令牌族。保留 IAM 内核、其他角色、用户角色分配、租户权限和服务身份。
-- 破坏性模型切换不保留旧字段、双写、双读或兼容 query；
 - DataItem 边界绑定切换时，经确认可丢弃的旧原生目标测试授权不自动转换为新 Grant；通过前向迁移清理相关源规则及依赖记录，重新核验 Meta 边界后显式授权。清理不扩大到 IAM 账号、角色、功能权限或引擎管理委派，也不删除通用审计历史。切换完成后，旧原生目标记录不能作为读取依据，不保留兼容放行路径。
 - `000229` 为现有不可变 `engine_access_grants` 增加 nullable `file_composition` 最小批准快照；原生表／集合行保持 NULL，文件行必须有严格完整组成，不回填或升级旧主文件许可。组成只取可信 Meta 事实，指纹仍是主项身份，源规则依同项／同边界摘要匹配 Grant、依同项身份匹配 Deny。原有 `(tenant_id,engine_id,item_fingerprint,boundary_hash)` 索引继续服务点查，不为组成快照建立独立 ACL 或无查询需求的 JSONB 索引。受管 FTP 模型结果使用同一次普通 User 裁决绑定 `expected_source` 完整组成和当前 Engine 版本，不依赖历史任务仍存在或终态 EA。正式接入及验证分片记录，迁移／共享类型存在不表示 FTP 真实内容链已验收。
 - `000230` 在既有唯一 `source_read_scope` 列中封闭表达 Manager 剖析或 FTP 模型 GLB 两种用途，二者互斥，不新增通用引擎许可。Manager 共用签发／消费内核核验当前 User、功能权限、精确 pending 或 running claim、期限和审计；用途各自核验完整冻结 Scope。GLB 的任务标识／版本来自 Manager 创建事务已冻结的统一执行事实，System 不跨读 Manager 私有任务表；同 UUID 的有限核清只返回原授权及原期限。消费在同一当前源规则核验中锁定原版本 FTP Engine，只解密该快照，不再查询另一个连接。新增前向约束保留剖析原 wire，不改角色、Assignment 或源规则；运行接线、负例门禁和真实 FTP T4 分别验收。
 - `000236` 将现有精确模型组成扩展至 MinIO IFC/3DS 的原生 `service → bucket → prefix → object` 目标；对象主项和每条依赖必须同 bucket，依赖限定在主项所在目录范围，Grant 保存完整组成，目录／bucket／prefix 不成为授权目标。复用现有 `file_composition` 和 `source_read_scope`，不增加另一套对象许可，不回填旧成果的来源事实。FTP/NFS 既有格式范围保持不变，MinIO DAE 未纳入本次迁移。
-- 需要保留的外部数据必须另行批准离线导入方案，不进入 System Runtime；
-- migration 内不得访问 Redis、HTTP、外部 IdP、密钥服务或其他模块数据库。
+
 ### 定向恢复
 
 当前仅登记以下四个精确案例；标准构建、调用与停服／重启步骤统一见[定向恢复的共同操作](../../docs/guide/troubleshooting/数据库迁移.md#定向恢复的共同操作)，各案例的故障现象见对应专题。
