@@ -253,6 +253,8 @@ func suitePermissions(suite string) ([]string, error) {
 	switch suite {
 	case executionTraceLocalSuite:
 		return append([]string(nil), executionTraceLocalPermissions...), nil
+	case "execution-events-pagination":
+		return []string{"monitor.execution.read", "meta.scan_task.read"}, nil
 	case "execution-retention-readonly", "execution-events-retention", "execution-retention-hourly":
 		return []string{"monitor.execution.read"}, nil
 	case "graph-protection":
@@ -337,7 +339,7 @@ func consumerEnvironment(suite string, tenantID int64, accessToken, password str
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": accessToken,
 	}
 	switch suite {
-	case "graph-protection":
+	case "graph-protection", "execution-events-pagination":
 		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
 		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = password
 	case "vector-topology-persistence", "vector-pmtiles-workflow", "highgo-consumer-flow", "gaussdb-consumer-flow", "starrocks-consumer-flow", "pg-source-authorization", "security-plaintext-access", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "raster-workflow-capacity", "raster-nibble-capacity", "redis-consumer-flow", "ftp-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl", "transfer-continuous-events", "security-mysql-owner-protection":
@@ -692,6 +694,25 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_CREATE_USER_ACCESS_TOKEN"] = creatorSession.AccessToken
 		values["ADDP_ONLINE_OWN_ASSIGNMENT_ID"] = fmt.Sprintf("%d", ownAssignmentID)
 		values["ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID"] = fmt.Sprintf("%d", reserveAssignmentID)
+	}
+	if *suite == "execution-events-pagination" {
+		peer, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-events-peer", []string{"monitor.execution.read", "meta.scan_task.read"})
+		if err != nil {
+			return err
+		}
+		foreignTenant, err := createOnlineForeignTenant(ctx, tenantService.Create, reserve.PrincipalID, tenant.ID)
+		if err != nil {
+			return err
+		}
+		foreign, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			foreignTenant.ID, reserve.PrincipalID, "external-online-events-foreign", []string{"monitor.execution.read", "meta.scan_task.read"})
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_EVENTS_PEER_ACCESS_TOKEN"] = peer.AccessToken
+		values["ADDP_ONLINE_EVENTS_FOREIGN_ACCESS_TOKEN"] = foreign.AccessToken
+		values["ADDP_ONLINE_EVENTS_FOREIGN_TENANT_ID"] = fmt.Sprintf("%d", foreignTenant.ID)
 	}
 	if *suite == "execution-retention-readonly" || *suite == "execution-events-retention" || *suite == "execution-retention-hourly" {
 		foreignTenant, err := createOnlineForeignTenant(ctx, tenantService.Create, reserve.PrincipalID, tenant.ID)

@@ -4108,6 +4108,32 @@ def validate_execution_retention_profile(repository: Path, registered: set[str])
             raise RegistrationError("Hourly retention requires its manual-only long budget and regressions")
 
 
+def validate_event_pagination_profile(repository: Path, registered: set[str]) -> None:
+    if "execution-events-pagination" not in registered:
+        return
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
+    job = re.search(r"(?ms)^  event-pagination-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    if (job is None or "runs-on: ubuntu-24.04" not in job.group("body")
+            or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'execution-events-pagination'" not in job.group("body")
+            or "inputs.suite != 'execution-events-pagination'" not in workflow):
+        raise RegistrationError("Event pagination requires its manual Hosted profile")
+    gate = (repository / "scripts/test/online-hosted-event-pagination-gate.sh").read_text()
+    for part in ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'scripts/dev/start.sh -meta -monitor -console',
+                 'playwright install --with-deps chromium', 'run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"'):
+        if part not in gate:
+            raise RegistrationError("Event pagination lifecycle missing " + part)
+    makefile = (repository / "Makefile").read_text()
+    if "$(MAKE) test-execution-events-pagination-runner" not in make_target_commands(makefile, "test-online-runner"):
+        raise RegistrationError("Event pagination regressions need the standard Online owner")
+    commands = make_target_commands(makefile, "test-execution-events-pagination-runner")
+    for name in ("execution-events-pagination-online_test.py", "online-hosted-event-pagination-gate_test.py", "execution-event-pagination-fixture_test.go", "execution-events-pagination.spec.js"):
+        if name not in commands:
+            raise RegistrationError("Event pagination regression missing " + name)
+    fixture = make_target_commands(makefile, "test-execution-event-pagination-fixture")
+    if "ADDP_EXECUTION_EVENT_FIXTURE=1" not in fixture or "TestHostedExecutionEventPaginationFixture" not in fixture:
+        raise RegistrationError("Event pagination fixture requires explicit guarded entry")
+
+
 def check_registration(repository: Path) -> None:
     registry = load_suite_registry(repository)
     registered = load_registered_suites(registry)
@@ -4123,6 +4149,7 @@ def check_registration(repository: Path) -> None:
             f"Online workflow choices {sorted(workflow)} do not match registered suites {sorted(registered)}"
         )
     validate_execution_retention_profile(repository, registered)
+    validate_event_pagination_profile(repository, registered)
     validate_catalog_domain_overview_profile(repository, registered)
     validate_highgo_profile(repository, registered)
     validate_metric_engine_variant(repository, registered)

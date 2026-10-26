@@ -905,6 +905,7 @@ test-pg-authorization-online-runner: ## 验证 PG 源授权 Online 场景、隔�
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
 	@$(MAKE) test-execution-retention-online-runner
+	@$(MAKE) test-execution-events-pagination-runner
 	@$(MAKE) test-catalog-domain-online-runner
 	@$(MAKE) test-workflow-runtime-health-online-runner
 	@$(MAKE) test-starrocks-online-runner
@@ -1426,3 +1427,15 @@ test-execution-retention-online-runner: ## 验证租户执行概览只读评估�
 	@python3 -m unittest scripts/test/execution-retention-readonly-online_test.py scripts/test/execution-events-retention-online_test.py scripts/test/execution-retention-hourly-online_test.py scripts/test/online-hosted-execution-retention-gate_test.py scripts/test/online-gate_test.py
 	@cd system/backend && GOWORK=off go test -v ./cmd/online-test-fixture
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+
+.PHONY: test-execution-events-pagination-runner test-execution-event-pagination-fixture
+test-execution-events-pagination-runner: ## 验证租户大事件分页、截断及真实入口验收守卫
+	@bash -n scripts/test/online-hosted-event-pagination-gate.sh
+	@python3 -m unittest scripts/test/execution-events-pagination-online_test.py scripts/test/online-hosted-event-pagination-gate_test.py scripts/test/online-gate_test.py
+	@cd common && GOWORK=off go test ../scripts/test/execution-event-pagination-fixture_test.go -count=1 -v
+	@cd system/backend && GOWORK=off go test -v ./cmd/online-test-fixture
+	@node --check console/frontend/e2e/online/execution-events-pagination.spec.js
+	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
+
+test-execution-event-pagination-fixture: ## 仅显式隔离Hosted生成Common真实写入事件夹具
+	@cd common && ADDP_EXECUTION_EVENT_FIXTURE=1 GOWORK=off go test ../scripts/test/execution-event-pagination-fixture_test.go -run '^TestHostedExecutionEventPaginationFixture$$' -count=1 -v

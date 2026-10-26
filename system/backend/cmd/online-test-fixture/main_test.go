@@ -1540,3 +1540,14 @@ func TestSecurityMaskingTransferReaderKeepsFunctionalAuthoritySeparate(t *testin
 		t.Fatal("Transfer eligibility expiry must retain only its task/query authority and duplicate read", securityTransferRoleReaderPermissions)
 	}
 }
+
+func TestExecutionEventsPaginationFixtureIsReadOnlyAndHasNoEngineProvisioner(t *testing.T) {
+	permissions, err := suitePermissions("execution-events-pagination")
+	if err != nil || !slices.Equal(permissions, []string{"monitor.execution.read", "meta.scan_task.read"}) || needsEngineProvisioner("execution-events-pagination") {
+		t.Fatal("event pagination fixture changed authority", err)
+	}
+	environment := consumerEnvironment("execution-events-pagination", 2, "private-token", "private-password")
+	if environment["ADDP_ONLINE_TEST_USER_USERNAME"] != "external-online-consumer" || environment["ADDP_ONLINE_TEST_USER_PASSWORD"] != "private-password" {
+		t.Fatal("browser identity unavailable")
+	}
+}

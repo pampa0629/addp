@@ -53,6 +53,10 @@ SUITES: Mapping[str, Suite] = {
         command=(sys.executable, "-m", "scripts.test.execution-retention-hourly-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL")),
     ),
+    "execution-events-pagination": Suite(
+        command=(sys.executable, "-m", "scripts.test.execution-events-pagination-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("meta", "META_URL"), ("monitor", "MONITOR_URL")),
+    ),
     "execution-retention-readonly": Suite(
         command=(sys.executable, "-m", "scripts.test.execution-retention-readonly-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL")),
