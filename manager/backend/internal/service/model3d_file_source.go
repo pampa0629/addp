@@ -16,6 +16,7 @@ import (
 	"github.com/addp/common/engine/workflowaccess"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
+	"github.com/addp/common/format/plugins/fbx"
 	"github.com/addp/common/format/plugins/obj"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -53,7 +54,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 	if err != nil || loc.EngineID != engine.ID || (loc.ItemID != nil && *loc.ItemID != req.Config.Source.ItemID) || loc.Type != sourceType || strings.Join(loc.Path, "/") != primary.StringPath() || commonModels.GenerateItemFingerprint(engine.ID, primary.StringPath()) != req.Config.Source.ItemFingerprint {
 		return ErrModel3DGLBSourceAuthorizationRequired
 	}
-	if (composition.Format == "ifc" || composition.Format == "stl") && len(composition.Refs) != 1 {
+	if (composition.Format == "ifc" || composition.Format == "stl" || composition.Format == "fbx") && len(composition.Refs) != 1 {
 		return ErrModel3DGLBSourceAuthorizationRequired
 	}
 	if err := auth.Checkpoint(ctx); err != nil {
@@ -218,11 +219,14 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 			return errors.New("model main file size changed during preparation")
 		}
 	}
-	if composition.Format == "stl" {
+	if composition.Format == "stl" || composition.Format == "fbx" {
 		// The same strictly revalidated bytes are staged; the source is not reopened.
-		const maxSTLPreparationBytes = int64(64 << 20)
-		if primarySize > maxSTLPreparationBytes {
-			return errors.New("STL preparation exceeds the 64 MiB model budget")
+		maxPreparationBytes := int64(64 << 20)
+		if composition.Format == "fbx" {
+			maxPreparationBytes = fbx.MaxCompositionBytes
+		}
+		if primarySize > maxPreparationBytes {
+			return fmt.Errorf("%s preparation exceeds the model budget", composition.Format)
 		}
 		stream, err := open(ctx, primary)
 		if err != nil {
@@ -234,15 +238,15 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 			return errors.Join(readErr, closeErr)
 		}
 		if int64(len(raw)) != primarySize {
-			return errors.New("STL size changed during preparation")
+			return fmt.Errorf("%s size changed during preparation", composition.Format)
 		}
-		provider, err := format.GetModel3DCompositionProvider(format.FormatSTL)
+		provider, err := format.GetModel3DCompositionProvider(format.FormatType(composition.Format))
 		if err != nil {
 			return err
 		}
 		refs, err := provider.ReadModel3DComposition(ctx, bytes.NewReader(raw), primarySize)
-		if err != nil || len(refs) != 0 {
-			return errors.New("STL structure no longer proves the frozen single-file composition")
+		if err != nil || refs == nil || len(refs) != 0 {
+			return fmt.Errorf("%s structure no longer proves the frozen single-file composition", composition.Format)
 		}
 		primaryBytes = raw
 	}

@@ -113,12 +113,12 @@ class FTPAdmissionTests(unittest.TestCase):
             finally:
                 os.umask(previous)
             self.assertEqual({x['full_name'] for x in report}, {
-                'models/glb/ 原名 %.GLB', 'models/stl/model.stl', 'models/ifc/model.ifc', 'models/3ds/model.3ds', 'models/3ds/texture.png', 'models/dae/model.dae', 'models/dae/texture.png',
+                'models/fbx/model.fbx', 'models/glb/ 原名 %.GLB', 'models/stl/model.stl', 'models/ifc/model.ifc', 'models/3ds/model.3ds', 'models/3ds/texture.png', 'models/dae/model.dae', 'models/dae/texture.png',
                 'models/obj/model.obj', 'models/obj/paint red.mtl', 'models/obj/paint blue.mtl',
                 'models/obj/red/color.png', 'models/obj/blue/color.png',
                 'models/gltf/model.gltf', 'models/gltf/buffers/ geometry%20.mesh',
                 'models/gltf/red/color.png', 'models/gltf/blue/color.png'})
-            source_by_kind = {'gltf':'addp_online_model_fixture.gltf', 'gltf_buffer':'addp_online_gltf_geometry.mesh',
+            source_by_kind = {'fbx':'addp_online_model_fixture.fbx', 'gltf':'addp_online_model_fixture.gltf', 'gltf_buffer':'addp_online_gltf_geometry.mesh',
                               'gltf_png_red':'addp_online_obj_red.png', 'gltf_png_blue':'addp_online_obj_blue.png', 'glb':'addp_online_model_fixture.glb', 'stl': 'addp_online_model_fixture.stl', 'ifc': 'addp_online_model_fixture.ifc', '3ds': 'addp_online_model_fixture.3ds',
                               'png': 'addp_online_exchange_texture.png', 'dae': 'addp_online_model_fixture.dae', 'dae_png': 'addp_online_exchange_texture.png',
                               'obj': 'addp_online_multi_material.obj', 'obj_mtl_red': 'addp_online_multi_material_red.mtl',
@@ -144,7 +144,7 @@ class FTPAdmissionTests(unittest.TestCase):
             self.assertEqual((root / 'models/ifc/model.ifc').read_text(), 'host modified')
 
     def test_model_seed_rejects_redirected_directories_and_files(self):
-        for component in ('root', 'models', 'models/stl', 'models/stl/model.stl', 'models/ifc', 'models/ifc/model.ifc',
+        for component in ('root', 'models', 'models/fbx', 'models/fbx/model.fbx', 'models/stl', 'models/stl/model.stl', 'models/ifc', 'models/ifc/model.ifc',
                           'models/obj', 'models/obj/paint red.mtl', 'models/obj/red', 'models/obj/red/color.png',
                           'models/gltf', 'models/gltf/model.gltf', 'models/gltf/buffers', 'models/gltf/buffers/ geometry%20.mesh'):
             with self.subTest(component=component), tempfile.TemporaryDirectory() as directory:

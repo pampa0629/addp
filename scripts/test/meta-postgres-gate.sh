@@ -11,14 +11,14 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --test)
             case "${2:-}" in
-                all|authorization-facts) test_group="$2"; shift 2 ;;
-                *) echo 'usage: meta-postgres-gate.sh [--test all|authorization-facts] [--source-root checkout]' >&2; exit 2 ;;
+                all|authorization-facts|file-composition) test_group="$2"; shift 2 ;;
+                *) echo 'usage: meta-postgres-gate.sh [--test all|authorization-facts|file-composition] [--source-root checkout]' >&2; exit 2 ;;
             esac
             ;;
         --source-root)
             [ -n "${2:-}" ] || { echo '--source-root requires a checkout path' >&2; exit 2; }
             source_root="$2"; shift 2 ;;
-        *) echo 'usage: meta-postgres-gate.sh [--test all|authorization-facts] [--source-root checkout]' >&2; exit 2 ;;
+        *) echo 'usage: meta-postgres-gate.sh [--test all|authorization-facts|file-composition] [--source-root checkout]' >&2; exit 2 ;;
     esac
 done
 
@@ -72,22 +72,35 @@ service_tests='^(TestDataItemAuthorizationFactsAgainstPostgres|TestScanPlanFacts
 if [ "$test_group" = all ]; then
     service_tests='^(TestProductionBasicScanAgainstPostgres|TestMosaicScanWholeResultAgainstPostgres|TestDataItemAuthorizationFactsAgainstPostgres|TestScanPlanFactsAgainstPostgres|TestFieldLineage(Evidence|MultiSourceWriteFacts|WideOverview)AgainstPostgres|TestLineageCollector(RetriesUnresolvedTarget|ContinuesAfterInvalidFacts|DefersNewExecutions|PreservesClosedFieldRelations)AgainstPostgres)$'
 fi
-go test ./internal/service -run "$service_tests" -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
+if [ "$test_group" != file-composition ]; then
+    go test ./internal/service -run "$service_tests" -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
+fi
 if [ "$test_group" = all ]; then
     go test ./internal/scanadapter -run '^(TestPrecise(Catalog|NativePostgres)ScanAgainstPostgres|TestPreciseContentStorageFactsAgainstPostgres)$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
     go test ./internal/scanprocessor -run '^(TestDelimitedEncodingRefreshAgainstPostgres|TestDelimitedSourceVersionRefreshAgainstPostgres|TestBasicRediscoveryPreservesDeepJSONTableSemanticsAgainstPostgres)$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
+fi
+if [ "$test_group" = all ] || [ "$test_group" = file-composition ]; then
     go test ./internal/scanruntime -run '^(TestObjectModelRelatedRefsAgainstPostgres|TestFTPBasicCompositionAgainstPostgres)$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
+fi
+if [ "$test_group" = all ]; then
     go test ./internal/api -run '^TestMetaScanExecutionReadAgainstPostgres$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
 fi
 if grep -q -- '--- SKIP:' "$WORK_DIR/meta.log"; then
     echo "Meta PostgreSQL gate refuses skipped tests" >&2
     exit 1
 fi
-grep -q -- '--- PASS: TestDataItemAuthorizationFactsAgainstPostgres ' "$WORK_DIR/meta.log" || {
-    echo 'Meta PostgreSQL gate requires the real authorization facts test' >&2
-    exit 1
-}
-grep -q -- '--- PASS: TestScanPlanFactsAgainstPostgres ' "$WORK_DIR/meta.log" || {
-    echo 'Meta PostgreSQL gate requires the real scan plan facts test' >&2
-    exit 1
-}
+if [ "$test_group" = file-composition ]; then
+    for required_test in TestObjectModelRelatedRefsAgainstPostgres TestFTPBasicCompositionAgainstPostgres; do
+        grep -q -- "--- PASS: $required_test " "$WORK_DIR/meta.log" || {
+            echo "Meta PostgreSQL gate requires the real $required_test test" >&2
+            exit 1
+        }
+    done
+else
+    for required_test in TestDataItemAuthorizationFactsAgainstPostgres TestScanPlanFactsAgainstPostgres; do
+        grep -q -- "--- PASS: $required_test " "$WORK_DIR/meta.log" || {
+            echo "Meta PostgreSQL gate requires the real $required_test test" >&2
+            exit 1
+        }
+    done
+fi

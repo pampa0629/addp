@@ -117,13 +117,14 @@ async function generateModel(page, expectedIdentity, model) {
       await expect(basic.locator('.three-status')).toHaveCount(0)
       await expect.poll(async () => {
         const pixels = await modelPixels(page, basic.locator('canvas'))
-        return pixels.neutralSolid / pixels.total
+        return (model.format === 'fbx' ? pixels.colored : pixels.neutralSolid) / pixels.total
       }).toBeGreaterThan(0.01)
       expect(generationRequests).toBe(0)
-      await basic.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'ftp-stl-basic.png') })
-      writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), 'ftp-stl-basic-source.stl'), bytes)
+      await basic.screenshot({ path: resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `ftp-${model.format}-basic.png`) })
+      writeFileSync(resolve(required('ADDP_ONLINE_ARTIFACT_DIR'), `ftp-${model.format}-basic-source.${model.format}`), bytes)
       basicPreview = { status: 200, size: bytes.length, sha256: model.sha256, rendered: true,
         user_bearer: true, cookie_sent: false, ticket_sent: false, generation_requests: 0 }
+
     }
     const generated = page.waitForResponse(response => {
       if (new URL(response.url()).pathname !== '/api/v1/manager/quick-view/actions' || response.request().method() !== 'POST') return false
@@ -201,6 +202,9 @@ async function generateModel(page, expectedIdentity, model) {
         if (['obj','gltf'].includes(model.format)) {
           await expect.poll(async () => (await modelPixels(page, viewer.locator('canvas'))).blue / pixels.total).toBeGreaterThan(0.001)
         }
+      } else if (model.format === 'fbx') {
+        await expect.poll(async () => { pixels = await modelPixels(page, viewer.locator('canvas')); return pixels.colored / pixels.total }).toBeGreaterThan(0.01)
+        expect(pixels.colored / pixels.total).toBeLessThan(0.85)
       } else {
         await expect.poll(async () => {
           pixels = await modelPixels(page, viewer.locator('canvas'))
@@ -228,12 +232,20 @@ async function generateModel(page, expectedIdentity, model) {
     const current = await json(await api.get(capabilityPath), 'FTP model cached capability')
     expect(current.model_3d.result_id).toBe(result.result_id)
     expect(current.model_3d.last_execution_id).toBe(started.execution_id)
+    let sourceRange
+    if (model.format === 'fbx') {
+      const ranged = await api.get(`/api/v1/manager/storage-stream?${new URLSearchParams({locator:model.locator,storage_ref:model.full_name})}`, {headers:{Range:'bytes=4-7'}})
+      expect(ranged.status()).toBe(206)
+      const slice = await ranged.body()
+      expect(slice.equals(Buffer.from('ara '))).toBe(true)
+      sourceRange = {status:206,size:slice.length,sha256:createHash('sha256').update(slice).digest('hex'),content_range:ranged.headers()['content-range']}
+    }
     const sourceDownload = await downloadModelSource(page, frame, model)
     return { format: model.format, item_id: model.item_id, task_id: started.task_id,
       execution_id: started.execution_id, result_id: result.result_id,
       size: actualPageBytes.length, sha256: checksum,
       source_download: sourceDownload, rendered: true, reopened: true, cached_without_execution: true,
-      ...(basicPreview ? { basic_preview: basicPreview } : {}) }
+      ...(basicPreview ? { basic_preview: basicPreview } : {}), ...(sourceRange ? {source_range:sourceRange} : {}) }
   } finally {
     page.off('request', observe)
     page.off('response', observeContent)
@@ -420,7 +432,7 @@ test('FTP account root, scoped rescan, shared previews and byte-exact downloads 
     }
     const direct = await directGLB(page, expectedIdentity, expected.direct_glb)
     const models = []
-    expect(expected.models.map(model => model.format)).toEqual(['ifc', '3ds', 'dae', 'obj', 'stl', 'gltf'])
+    expect(expected.models.map(model => model.format)).toEqual(['ifc', '3ds', 'dae', 'obj', 'stl', 'gltf', 'fbx'])
     for (const model of expected.models) models.push(await generateModel(page, expectedIdentity, model))
     writeFileSync(required('ADDP_ONLINE_FTP_BROWSER_REPORT'), JSON.stringify({
       run_id: expected.run_id, engine_id: expected.engine_id, tenant_id: expected.tenant_id,

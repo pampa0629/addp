@@ -31,7 +31,7 @@ stop_online_fixture() {
   return "$cleanup_status"
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
-# Three sources exercise 21 models, including full grant/deny/revocation and
+# Three sources exercise 24 models, including full grant/deny/revocation and
 # task/result cleanup. Keep this suite's measured budget separate from the
 # shared default and from every product/request execution timeout.
 export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=1200

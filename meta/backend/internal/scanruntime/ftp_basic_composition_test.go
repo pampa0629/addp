@@ -27,6 +27,7 @@ import (
 type ftpStructureFixture struct {
 	filesystemScanTestProvider
 	engineType                       string
+	primary                          string
 	data                             []byte
 	sequential, ranges, bytes, lists int
 	rangeError                       error
@@ -62,7 +63,11 @@ func (p *ftpRangeStructureFixture) OpenRange(ctx context.Context, _ plugin.Conne
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	if !reflect.DeepEqual(target, plugin.FileItemPath(26, "models/model.3ds")) || opts.Offset < 0 || opts.Length <= 0 || opts.Offset+opts.Length > int64(len(p.data)) {
+	primary := p.primary
+	if primary == "" {
+		primary = "models/model.3ds"
+	}
+	if !reflect.DeepEqual(target, plugin.FileItemPath(26, primary)) || opts.Offset < 0 || opts.Length <= 0 || opts.Offset+opts.Length > int64(len(p.data)) {
 		return nil, fmt.Errorf("structure range escaped the primary or its size")
 	}
 	p.ranges++
@@ -146,6 +151,9 @@ func TestFTPBasicCompositionAgainstPostgres(t *testing.T) {
 				}
 				testFileBasicComposition(t, tx, mode, kind)
 				testFileDeepComposition(t, tx, mode, kind)
+				if mode == "directory" {
+					testFBXBasicComposition(t, tx, kind)
+				}
 			})
 		}
 	}

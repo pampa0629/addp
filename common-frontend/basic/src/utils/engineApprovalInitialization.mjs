@@ -54,13 +54,13 @@ function modelPath(path) {
 // independently rereads Meta and computes the approved boundary on submission.
 function fileCompositionPrimary(composition) {
   if (!composition || Object.keys(composition).sort().join(',') !== 'format,refs' ||
-      !['ifc', '3ds', 'dae', 'obj', 'stl', 'glb', 'gltf'].includes(composition.format) || !Array.isArray(composition.refs) ||
+      !['ifc', '3ds', 'dae', 'obj', 'stl', 'glb', 'gltf', 'fbx'].includes(composition.format) || !Array.isArray(composition.refs) ||
       !composition.refs.length || composition.refs.length > 200 || new TextEncoder().encode(JSON.stringify(composition)).length > 65536) return boundaryError()
   const seen = new Set(), gltfRoles = new Set(), primary = composition.refs.filter(ref => ref.primary === true)
   if (primary.length !== 1 || primary[0].required !== true || primary[0].role !== (composition.format === 'gltf' ? 'manifest' : 'model')) return boundaryError()
   const target = primary[0].target
   if (!modelPath(target) || !target.segments.at(-1).name.toLowerCase().endsWith(`.${composition.format}`)) return boundaryError()
-  if (['ifc', 'stl', 'glb'].includes(composition.format) && composition.refs.length !== 1) return boundaryError()
+  if (['ifc', 'stl', 'glb', 'fbx'].includes(composition.format) && composition.refs.length !== 1) return boundaryError()
   const parent = target.segments.slice(0, -1)
   for (const ref of composition.refs) {
     if (!ref || Object.keys(ref).sort().join(',') !== 'primary,required,role,target' || typeof ref.required !== 'boolean' ||

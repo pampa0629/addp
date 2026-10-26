@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/addp/common/dataitem/authorizationfacts"
+	"github.com/addp/common/format/plugins/fbx"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metatest"
 	"github.com/addp/meta/internal/models"
@@ -39,8 +40,11 @@ func seedFileAuthorizationFacts(t *testing.T, db *gorm.DB, engineID uint, format
 	if format == "obj" {
 		item.Attributes["format_info"] = map[string]any{"obj": map[string]any{"composition_complete": true, "material_libraries": []map[string]any{{"reference": "model.mtl", "texture_refs": []string{"TEST.PNG"}}}}}
 	}
-	if format == "stl" || format == "glb" {
+	if format == "stl" || format == "glb" || format == "fbx" {
 		item.Attributes["format_info"] = map[string]any{format: map[string]any{"composition_complete": true}}
+	}
+	if format == "fbx" {
+		item.Attributes["format_info"].(map[string]any)["fbx"].(map[string]any)["profile"] = fbx.Profile
 	}
 	if format == "gltf" {
 		refs[0]["role"] = "manifest"
@@ -61,7 +65,7 @@ func seedFileAuthorizationFacts(t *testing.T, db *gorm.DB, engineID uint, format
 
 func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	for i, fixture := range []struct{ kind, format string }{{"file", "ifc"}, {"file", "3ds"}, {"file", "dae"}, {"object", "ifc"}, {"object", "3ds"}, {"object", "dae"}, {"file", "obj"}, {"object", "obj"}, {"file", "stl"}, {"object", "stl"}, {"file", "glb"}, {"object", "glb"}, {"file", "gltf"}, {"object", "gltf"}} {
+	for i, fixture := range []struct{ kind, format string }{{"file", "ifc"}, {"file", "3ds"}, {"file", "dae"}, {"object", "ifc"}, {"object", "3ds"}, {"object", "dae"}, {"file", "obj"}, {"object", "obj"}, {"file", "stl"}, {"object", "stl"}, {"file", "glb"}, {"object", "glb"}, {"file", "gltf"}, {"object", "gltf"}, {"file", "fbx"}, {"object", "fbx"}} {
 		format := fixture.format
 		t.Run(fixture.kind+"/"+format, func(t *testing.T) {
 			item := seedFileAuthorizationFacts(t, db, uint(350+i), format)
@@ -105,7 +109,7 @@ func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 			if strings.Contains(string(raw), "physical_path") || strings.Contains(string(raw), "texture_refs") {
 				t.Fatal("private attributes escaped fact projection")
 			}
-			if format == "stl" || format == "glb" || format == "gltf" {
+			if format == "stl" || format == "glb" || format == "gltf" || format == "fbx" {
 				native := item.Attributes["format_info"].(map[string]any)[format].(map[string]any)
 				native["composition_complete"] = false
 				native["scan_complete"] = true
@@ -121,9 +125,34 @@ func exerciseFileAuthorizationFacts(t *testing.T, db *gorm.DB) {
 					t.Fatal(err)
 				}
 			}
+			if format == "fbx" {
+				native := item.Attributes["format_info"].(map[string]any)["fbx"].(map[string]any)
+				for _, profile := range []any{nil, "other", true} {
+					native["profile"] = profile
+					if err := db.Model(&item).Update("attributes", item.Attributes).Error; err != nil {
+						t.Fatal(err)
+					}
+					denied, err := s.GetDataItemAuthorizationFacts(t.Context(), 7, item.Fingerprint)
+					if err != nil || denied.BasisState != authorizationfacts.AuthorizationBasisIncomplete || denied.Boundary != nil {
+						t.Fatalf("unproven FBX profile accepted: %+v %v", denied, err)
+					}
+				}
+				native["profile"] = fbx.Profile
+				attrs := item.Attributes["item"].(map[string]any)
+				originalRefs := attrs["refs"].([]any)
+				attrs["refs"] = append(append([]any{}, originalRefs...), map[string]any{"path": "models/extra.png", "role": "texture", "required": true})
+				if err := db.Model(&item).Update("attributes", item.Attributes).Error; err != nil {
+					t.Fatal(err)
+				}
+				denied, err := s.GetDataItemAuthorizationFacts(t.Context(), 7, item.Fingerprint)
+				if err != nil || denied.BasisState != authorizationfacts.AuthorizationBasisUnsupported || denied.Boundary != nil {
+					t.Fatalf("FBX acquired a dependency: %+v %v", denied, err)
+				}
+				attrs["refs"] = originalRefs
+			}
 			if format == "ifc" {
 				delete(item.Attributes["item"].(map[string]any), "refs")
-			} else if format != "stl" && format != "glb" {
+			} else if format != "stl" && format != "glb" && format != "fbx" {
 				refs := item.Attributes["item"].(map[string]any)["refs"].([]any)
 				refs[0], refs[1] = refs[1], refs[0]
 			}

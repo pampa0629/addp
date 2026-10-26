@@ -696,7 +696,7 @@ def latest_owner_execution(report, kind):
 
 
 def verify_denied_generation(client, report, kind, reason):
-    require(kind in {'ifc', '3ds', 'dae', 'obj', 'stl', 'gltf'} and reason in {'composition_changed', 'source_withdrawn'},
+    require(kind in {'ifc', '3ds', 'dae', 'obj', 'stl', 'gltf', 'fbx'} and reason in {'composition_changed', 'source_withdrawn', 'source_denied'},
             'FTP denied generation requires its explicit observed source rule phase')
     model, = [row for row in report['models'] if row['format'] == kind]
     published, = [row for row in report['browser']['models'] if row['format'] == kind]
@@ -1081,6 +1081,44 @@ def changed_glb_fixture(model):
         require(read()==original, 'GLB source restoration differs')
 
 
+@contextmanager
+def changed_fbx_fixture(model):
+    relative = next(relative for kind,relative,_ in SEED.MODEL_SAMPLE_FILES if kind=='fbx')
+    original = (Path(__file__).resolve().parents[2] / 'business/fixtures/manager/addp_online_model_fixture.fbx').read_bytes()
+    require(model['full_name']==model_scope(relative) and hashlib.sha256(original).hexdigest()==model['sha256'],
+            'FBX mutation requires the fixed owned physical source')
+    changed = original[:23] + struct.pack('<I',7500) + original[27:]
+    if model_source_type()=='minio':
+        fixture = import_module('scripts.test.online-file-model-minio-fixture')
+        read = lambda: fixture.read(relative)
+        write = lambda raw: fixture.put(relative, raw)
+    else:
+        root = owned_ftp_fixture() / 'data'
+        parts = Path(relative).parts
+        require(all(not root.joinpath(*parts[:i]).is_symlink() for i in range(len(parts)+1)),
+                'FBX mutation cannot traverse links')
+        target = root / relative
+        read = target.read_bytes
+        write = lambda raw: replace_fixture_file(target, raw)
+    require(read()==original, 'FBX source differs before owned mutation')
+    try:
+        write(changed)
+        yield
+    finally:
+        require(read() in (original,changed), 'FBX cleanup refuses an unrelated content change')
+        write(original)
+        require(read()==original, 'FBX source restoration differs')
+
+
+def verify_changed_fbx_reads(client, report, model):
+    # The same path, size and old complete facts must not admit a different profile.
+    with changed_fbx_fixture(model):
+        denied = verify_raw_model_reads(client, {**report,'models':[model]}, 403)
+
+    restored=verify_raw_model_reads(client,{**report,'models':[model]},200)
+    return {'no_rescan':True,'same_size':True,'unsupported_version':7500,'raw_exits':denied,'restored':restored}
+
+
 def verify_changed_glb_reads(client, report):
     # Deliberately retain the committed complete basic facts and existing Grant.
     # No rescan may hide whether final delivery validates the actual new bytes.
@@ -1157,7 +1195,7 @@ def verify_composition_rules(client, authorization, report, source, deny, timeou
     return result
 
 
-def prepare_models(items, engine_id, samples, kinds=('ifc', '3ds', 'dae', 'obj', 'stl', 'gltf')):
+def prepare_models(items, engine_id, samples, kinds=('ifc', '3ds', 'dae', 'obj', 'stl', 'gltf', 'fbx')):
     expected = {key:(model_scope(relative), source) for key,relative,source in SEED.MODEL_SAMPLE_FILES}
     require(isinstance(samples, list) and len(samples) == len(expected) and
             {sample.get('format') for sample in samples} == set(expected),
@@ -1200,9 +1238,11 @@ def prepare_models(items, engine_id, samples, kinds=('ifc', '3ds', 'dae', 'obj',
             require(native.get('texture_refs') == ['texture.png'],
                     'FTP texture model must retain its exact texture declaration')
             expected_refs.append({'path': by_format['dae_png' if kind == 'dae' else 'png']['full_name'], 'role': 'texture', 'required': True, 'primary': False})
-        if kind in {'stl', 'glb'}:
+        if kind in {'stl', 'glb', 'fbx'}:
             require(native.get('composition_complete') is True and not native.get('texture_refs'),
                     'STL requires basic complete single-primary composition without external references')
+        if kind == 'fbx':
+            require(native.get('profile') == 'binary7400_static_untextured', 'FBX lacks the admitted basic profile')
         if kind == 'gltf':
             require(native.get('composition_complete') is True, 'glTF requires complete basic composition')
             for key,role in [('gltf_png_blue','image'),('gltf_buffer','buffer'),('gltf_png_red','image_1')]:
@@ -1527,7 +1567,7 @@ def validate_browser_report(actual, expected, artifact_dir):
     for observed, source in zip(models, expected['models']):
         require(set(observed) == ({'format', 'item_id', 'task_id', 'execution_id', 'result_id',
                                  'size', 'sha256', 'source_download', 'rendered', 'reopened',
-                                 'cached_without_execution'} | ({'basic_preview'} if source['format'] == 'stl' else set())) and
+                                 'cached_without_execution'} | ({'basic_preview'} if source['format'] == 'stl' else set()) | ({'source_range'} if source['format']=='fbx' else set())) and
                 observed.get('format') == source['format'] and observed.get('item_id') == source['item_id'] and
                 all(type(observed.get(key)) is int and observed[key] > 0 for key in ('task_id', 'result_id', 'size')) and
                 isinstance(observed.get('execution_id'), str) and bool(observed['execution_id']) and
@@ -1539,9 +1579,11 @@ def validate_browser_report(actual, expected, artifact_dir):
             require(isinstance(observed['basic_preview'], dict) and set(observed['basic_preview']) == set(basic_proof) and
                     all(type(observed['basic_preview'][key]) is type(value) and observed['basic_preview'][key] == value for key, value in basic_proof.items()),
                     'STL basic preview must use the current User before any conversion')
-            basic = (artifact_dir / 'ftp-stl-basic-source.stl').read_bytes()
+            basic = (artifact_dir / f"ftp-{source['format']}-basic-source.{source['format']}").read_bytes()
             require(len(basic) == source['size'] and hashlib.sha256(basic).hexdigest() == source['sha256'] and
-                    (artifact_dir / 'ftp-stl-basic.png').is_file(), 'STL basic preview bytes or screenshot missing')
+                    (artifact_dir / f"ftp-{source['format']}-basic.png").is_file(), 'STL basic preview bytes or screenshot missing')
+        if source['format']=='fbx':
+            require(observed['source_range']=={'status':206,'size':4,'sha256':hashlib.sha256(b'ara ').hexdigest(),'content_range':f"bytes 4-7/{source['size']}"},'FBX Range differs from fixed source bytes')
         validate_source_download(observed['source_download'], source, artifact_dir)
         raw = (artifact_dir / f"ftp-{source['format']}.glb").read_bytes()
         require(len(raw) == observed['size'] and hashlib.sha256(raw).hexdigest() == observed.get('sha256'),
@@ -1614,12 +1656,24 @@ def run_profile(client, tenant, engine, samples, model_samples, timeout, source_
         save_completed_phase(report, 'browser_generation_cache_and_source_downloads')
         report['physical_model_storage'] = verify_owned_model_storage(client, report)
         save_completed_phase(report, 'physical_model_storage')
+        fbx, = [model for model in report['models'] if model['format']=='fbx']
+        report['fbx_profile_reads'] = verify_changed_fbx_reads(client, report, fbx)
+        deny = authorization.deny(fbx)
+        try:
+            report['fbx_deny_reads'] = verify_raw_model_reads(client, {**report,'models':[fbx]}, 403)
+            report['fbx_deny_cache'] = verify_cached_results(client, report, {model['format']:403 if model['format']=='fbx' else 200 for model in report['models']})
+            # The explicit Deny must also block a new owner execution before claim.
+            report.setdefault('denied_generations', []).append(verify_denied_generation(client, report, 'fbx', 'source_denied'))
+        finally:
+            authorization.release(deny)
+        report['fbx_released_reads'] = verify_raw_model_reads(client, {**report,'models':[fbx]}, 200)
+        report['fbx_released_cache'] = verify_cached_results(client, report, {model['format']:200 for model in report['models']})
         report['failed_generation'] = verify_failed_generation(client, report, timeout)
         save_completed_phase(report, 'failed_generation_preserves_output')
-        report['denied_generations'] = []
+        report.setdefault('denied_generations', [])
         report['composition_checks'] = {}
         for source in report['models']:
-            if source['format'] in {'ifc', 'stl'}:
+            if source['format'] in {'ifc', 'stl', 'fbx'}:
                 continue
             checks = {}
             report['composition_checks'][source['format']] = checks

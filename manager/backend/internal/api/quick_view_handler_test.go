@@ -24,6 +24,15 @@ import (
 )
 
 func TestQuickViewModel3DGLBActionFreezesCurrentActor(t *testing.T) {
+	// Shared Actor lifecycle remains independent of file-composition admission.
+	testQuickViewModel3DActor(t, "max")
+}
+
+func TestQuickViewFBXRequiresAuthorizationOwnerBeforeCreatingPending(t *testing.T) {
+	testQuickViewModel3DActor(t, "fbx")
+}
+
+func testQuickViewModel3DActor(t *testing.T, modelFormat string) {
 	db := newTaskProviderHandlerTestDB(t)
 	if err := db.Exec("CREATE TABLE manager.preview_state (id INTEGER PRIMARY KEY, tenant_id INTEGER, item_fingerprint TEXT)").Error; err != nil {
 		t.Fatal(err)
@@ -42,7 +51,7 @@ func TestQuickViewModel3DGLBActionFreezesCurrentActor(t *testing.T) {
 		case "/api/v1/system/engines/26":
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": 26, "tenant_id": 7, "engine_type": "nfs", "lifecycle_state": "active", "connection_status": "online"})
 		case "/api/v1/meta/items/77":
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": 77, "engine_id": 26, "tenant_id": 7, "item_type": "file", "name": "building.fbx", "full_name": "models/building.fbx", "attributes": map[string]interface{}{"item": map[string]interface{}{"data_type": "model_3d", "format": "fbx", "layout": "single"}, "storage": map[string]interface{}{"total_size": 1024}}})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": 77, "engine_id": 26, "tenant_id": 7, "item_type": "file", "name": "building." + modelFormat, "full_name": "models/building." + modelFormat, "attributes": map[string]interface{}{"item": map[string]interface{}{"data_type": "model_3d", "format": modelFormat, "layout": "single"}, "storage": map[string]interface{}{"total_size": 1024}}})
 		default:
 			t.Errorf("unexpected owner request: %s", r.URL.Path)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -55,13 +64,23 @@ func TestQuickViewModel3DGLBActionFreezesCurrentActor(t *testing.T) {
 	router := gin.New()
 	router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 7, 31); c.Next() })
 	router.POST("/quick-view/actions", handler.ExecuteQuickViewAction)
-	response := executeTaskProviderRequest(t, router, "/quick-view/actions", `{"locator":"addp://engine/26/path/models/building.fbx?type=file&item_id=77","action":"generate_model_3d_glb"}`)
-	if response.Code != http.StatusAccepted {
+	response := executeTaskProviderRequest(t, router, "/quick-view/actions", strings.ReplaceAll(`{"locator":"addp://engine/26/path/models/building.fbx?type=file&item_id=77","action":"generate_model_3d_glb"}`, "fbx", modelFormat))
+	expectedStatus := http.StatusAccepted
+	if modelFormat == "fbx" {
+		expectedStatus = http.StatusServiceUnavailable
+	}
+	if response.Code != expectedStatus {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 	var rows []commonExecution.TaskExecution
 	if err := db.Find(&rows).Error; err != nil {
 		t.Fatal(err)
+	}
+	if modelFormat == "fbx" {
+		if len(rows) != 0 {
+			t.Fatal("FBX created pending without the source authorization owner")
+		}
+		return
 	}
 	if len(rows) != 1 || rows[0].ActorPrincipalID == nil || *rows[0].ActorPrincipalID != 31 || rows[0].ActorTenantMembershipID == nil || rows[0].IssuedAuthorizationVersion == nil || rows[0].TriggeredBy == nil || *rows[0].TriggeredBy != 31 || rows[0].ExecutionAuthorizationID != nil {
 		t.Fatalf("unexpected origin: %#v", rows)
@@ -166,11 +185,13 @@ func TestRebindManagedQuickViewTaskRejectsActiveBinding(t *testing.T) {
 }
 
 func TestQuickViewModel3DGLBActionPropagatesExistingResultConfirmation(t *testing.T) {
+	// FBX now requires the complete source plan before pending/confirmation.
+	// The generic confirmation lifecycle uses the independent MAX route.
 	db := newTaskProviderHandlerTestDB(t)
 	repo := repository.NewModel3DGLBRepository(db)
 	taskSvc := newGLBTaskServiceWithNFSFacts(repo)
-	locator := "addp://engine/26/path/models/building.fbx?type=file&item_id=77"
-	fingerprint := commonModels.GenerateItemFingerprint(26, "models/building.fbx")
+	locator := "addp://engine/26/path/models/building.max?type=file&item_id=77"
+	fingerprint := commonModels.GenerateItemFingerprint(26, "models/building.max")
 	task := &models.Model3DGLBTask{
 		TenantID: 7,
 		Name:     "GLB quick-view action confirmation",
@@ -178,7 +199,7 @@ func TestQuickViewModel3DGLBActionPropagatesExistingResultConfirmation(t *testin
 		Config: commonModels.JSONMap{
 			"source": commonModels.JSONMap{
 				"item_locator": locator, "source_engine_id": uint(26),
-				"item_fingerprint": fingerprint, "item_id": uint(77), "format": "fbx",
+				"item_fingerprint": fingerprint, "item_id": uint(77), "format": "max",
 			},
 			"result": commonModels.JSONMap{},
 		},
@@ -188,7 +209,7 @@ func TestQuickViewModel3DGLBActionPropagatesExistingResultConfirmation(t *testin
 	}
 	result := &models.Model3DGLB{
 		TenantID: 7, ItemFingerprint: fingerprint, TaskID: &task.ID,
-		Locator: locator, SourceEngineID: 26, SourceFormat: "fbx",
+		Locator: locator, SourceEngineID: 26, SourceFormat: "max",
 		StorageRef: "managed-result", Status: models.Model3DGLBStatusReady,
 		Metadata: commonModels.JSONMap{},
 	}
@@ -202,7 +223,7 @@ func TestQuickViewModel3DGLBActionPropagatesExistingResultConfirmation(t *testin
 	}
 	source := service.QuickViewSource{
 		EngineID: 26,
-		Model3D:  &service.Model3DGLBSource{Format: "fbx", SourceSizeBytes: 1024},
+		Model3D:  &service.Model3DGLBSource{Format: "max", SourceSizeBytes: 1024},
 	}
 
 	ctx := commonExecution.WithUserOrigin(context.Background(), authtest.NewTenantUserAuthContext("7", "31", nil))

@@ -338,7 +338,7 @@ func (e *ManagerModel3DGLBExecutor) prepareSourceForEngine(ctx context.Context, 
 
 func model3DGLBUsesDirectorySource(sourceFormat string) bool {
 	switch format.NormalizeFormat(sourceFormat) {
-	case format.FormatGLTF, format.FormatFBX, format.FormatOBJ, format.FormatDAE, format.Format3DS, format.FormatMAX:
+	case format.FormatGLTF, format.FormatOBJ, format.FormatDAE, format.Format3DS, format.FormatMAX:
 		return true
 	default:
 		return false

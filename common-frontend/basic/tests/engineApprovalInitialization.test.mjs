@@ -231,6 +231,45 @@ test('GLB approval binds one exact required primary for FTP, NFS and MinIO and r
 })
 
 
+test('FBX approval binds one exact required primary for FTP, NFS and MinIO and rejects added constituents', async () => {
+  for (const [source, target] of [
+    ['ftp', filePath('model.fbx')],
+    ['nfs', { ...filePath('model.fbx'), engine_id: 14 }],
+    ['minio', { ...objectPath('model.fbx'), engine_id: 12 }]
+  ]) {
+    const candidate = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(
+      `${target.engine_id}:${target.segments.slice(1).map(part => part.name).join('/')}`))).toString('hex')
+    const facts = () => ({ schema_version: 'meta.data_item_authorization_facts/v1', engine_id: target.engine_id,
+      item_type: target.segments.at(-1).term, item_fingerprint: candidate, basis_state: 'complete',
+      boundary_hash: 'd'.repeat(64), boundary: { layout: 'single', file_composition: { format: 'fbx', refs: [
+        { target: structuredClone(target), role: 'model', required: true, primary: true }
+      ] } } })
+    const binding = await observeNativeApprovalBinding(target, async (id, fp) => {
+      assert.equal(id, String(target.engine_id), source); assert.equal(fp, candidate, source); return facts()
+    })
+    assert.equal(Object.isFrozen(binding.file_composition.refs[0].target.segments), true)
+    const command = JSON.parse(serializeEngineApprovalInitialization({ ...target, engine_id: String(target.engine_id) },
+      'independent', `${source} FBX acceptance`, binding))
+    assert.equal(command.item_fingerprint, candidate)
+    assert.equal(command.expected_boundary_hash, 'd'.repeat(64))
+    assert.equal('file_composition' in command, false)
+    const mutations = [
+      f => { const extra = structuredClone(f.boundary.file_composition.refs[0]); extra.primary = false; extra.role = 'texture'; extra.target.segments.at(-1).name = 'image.png'; f.boundary.file_composition.refs.push(extra) },
+      f => { f.boundary.file_composition.refs[0].required = false },
+      f => { f.boundary.file_composition.refs[0].primary = false },
+      f => { f.boundary.file_composition.refs[0].target.engine_id = 99 },
+      f => { f.boundary.file_composition.refs[0].target.segments.at(-1).name = 'other.fbx' },
+      f => { f.boundary.file_composition.format = 'skp' }
+    ]
+    for (const mutate of mutations) await assert.rejects(observeNativeApprovalBinding(target, async () => {
+      const changed = facts(); mutate(changed); return changed
+    }), /invalidDataItemBoundary/, source)
+    await assert.rejects(observeNativeApprovalBinding(target, async () => ({ ...facts(), basis_state: 'incomplete',
+      boundary: null, boundary_hash: null })), /invalidDataItemBoundary/, source)
+  }
+})
+
+
 test('glTF multi approval retains manifest, buffer and image; rejects false layouts and partial roles', async () => {
   for (const target of [filePath(' 原名 %.gltf'), objectPath(' 原名 %.gltf')]) {
     const fullName = target.segments.slice(1).map(part => part.name).join('/')

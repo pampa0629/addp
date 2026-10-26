@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/addp/common/format/plugins/fbx"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 )
@@ -26,6 +27,9 @@ func model3DGLBCandidateFixture(format string) (Model3DGLBSourceConfig, *commonM
 	}
 	if format == "stl" {
 		item.Attributes["format_info"] = map[string]any{"stl": map[string]any{"composition_complete": true}}
+	}
+	if format == "fbx" {
+		item.Attributes["format_info"] = map[string]any{"fbx": map[string]any{"composition_complete": true, "profile": fbx.Profile}}
 	}
 	if format == "obj" {
 		item.Attributes["format_info"] = map[string]any{"obj": map[string]any{"composition_complete": true, "material_libraries": []map[string]any{{"reference": "model.mtl", "texture_refs": []string{"TEST.PNG"}}}}}
@@ -174,6 +178,37 @@ func TestSTLModelCandidateRequiresBasicCompletenessAndExactSinglePrimary(t *test
 			if fault != "none" {
 				if err == nil {
 					t.Fatal("incomplete STL composition admitted")
+				}
+				return
+			}
+			if err != nil || len(candidate.composition.Refs) != 1 || len(candidate.declarations) != 0 || len(candidate.libraries) != 0 {
+				t.Fatalf("candidate=%+v err=%v", candidate, err)
+			}
+		})
+	}
+}
+
+func TestFBXModelCandidateRequiresBasicCompletenessAndExactSinglePrimary(t *testing.T) {
+	for _, fault := range []string{"none", "deep-only", "extra", "missing-primary", "wrong-profile", "no-profile"} {
+		t.Run(fault, func(t *testing.T) {
+			source, item := model3DGLBCandidateFixture("fbx")
+			facts := item.Attributes["item"].(map[string]any)
+			switch fault {
+			case "deep-only":
+				item.Attributes["format_info"] = map[string]any{"fbx": map[string]any{"scan_complete": true}}
+			case "wrong-profile":
+				item.Attributes["format_info"].(map[string]any)["fbx"].(map[string]any)["profile"] = "other"
+			case "no-profile":
+				delete(item.Attributes["format_info"].(map[string]any)["fbx"].(map[string]any), "profile")
+			case "extra":
+				facts["refs"] = append(facts["refs"].([]map[string]any), map[string]any{"path": "models/neighbor.png", "role": "texture", "required": true})
+			case "missing-primary":
+				delete(facts, "refs")
+			}
+			candidate, err := model3DGLBCandidateFromMeta(7, source, item)
+			if fault != "none" {
+				if err == nil {
+					t.Fatal("incomplete FBX composition admitted")
 				}
 				return
 			}

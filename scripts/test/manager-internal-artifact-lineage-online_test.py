@@ -82,17 +82,15 @@ def fixture_glb(format_name="dae", *, texture_png=None):
         doc["accessors"] = [{"bufferView": 0, "componentType": 5126, "count": 24, "type": "VEC3"}, {"bufferView": 1, "componentType": 5125, "count": 36, "type": "SCALAR"}]
         doc["meshes"][0]["primitives"][0] = {"attributes": {"POSITION": 0}, "indices": 1, "material": 0}
     elif format_name == "fbx":
-        points = [(x, y, z) for z in (-100., 100.) for y in (-100., 100.) for x in (-100., 100.)] * 3
-        binary = b"".join(struct.pack("<3f", *point) for point in points) + struct.pack("<36I", *([0, 1, 2] * 12))
+        points = [(0.,0.,0.),(2.,0.,0.),(0.,3.,1.),(4.,0.,0.),(6.,0.,0.),(4.,3.,1.)]
+        binary = b"".join(struct.pack("<3f", *point) for point in points) + struct.pack("<6H",0,1,2,0,1,2)
         doc.pop("images"); doc.pop("textures")
-        doc["materials"] = [{"pbrMetallicRoughness": {"baseColorFactor": [253/255,236/255,166/255,1.]}}]
-        doc["bufferViews"] = [{"buffer": 0, "byteLength": 288}, {"buffer": 0, "byteOffset": 288, "byteLength": 144}]
-        doc["accessors"] = [{"bufferView": 0, "componentType": 5126, "count": 24, "type": "VEC3"}, {"bufferView": 1, "componentType": 5125, "count": 36, "type": "SCALAR"}]
-        doc["meshes"][0]["primitives"][0] = {"attributes": {"POSITION": 0}, "indices": 1, "material": 0}
-        rx, ry = map(math.radians, [19.52863768959518, -30.398331095399516])
-        cx, sx, cy, sy = math.cos(rx), math.sin(rx), math.cos(ry), math.sin(ry)
-        a, b, c = .0017681174642734368, .0015908040794570112, .0015908040167168886
-        doc["nodes"][0]["matrix"] = [cy*a,0.,-sy*a,0.,sy*sx*b,cx*b,cy*sx*b,0.,sy*cx*c,-sx*c,cy*cx*c,0.,.02918294258415699,.041242070496082306,.2000068873167038,1.]
+        doc["materials"] = [{"pbrMetallicRoughness":{"baseColorFactor":[.2,.4,.8,1.]}}]
+        doc["bufferViews"] = [{"buffer":0,"byteOffset":offset,"byteLength":length} for offset,length in [(0,36),(36,36),(72,6),(78,6)]]
+        doc["accessors"] = [{"bufferView":i,"componentType":5126 if i<2 else 5123,"count":3,"type":"VEC3" if i<2 else "SCALAR"} for i in range(4)]
+        doc["meshes"] = [{"primitives":[{"attributes":{"POSITION":i},"indices":i+2,"material":0}]} for i in range(2)]
+        doc["nodes"] = [{"mesh":i,"matrix":[1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.]} for i in range(2)]
+        doc["scenes"] = [{"nodes":[0,1]}]
     elif format_name == "obj":
         texture = (SCRIPT.parents[2] / "business/fixtures/manager/addp_online_max_texture.png").read_bytes()
         binary = struct.pack("<9f",0,0,0,2,0,0,0,3,0)+struct.pack("<6f",0,0,1,0,0,1)+texture
@@ -377,7 +375,7 @@ class FakeGatewayClient:
                   for i, spec in enumerate(SUITE.TRAJECTORY_SOURCES)],
             ] + [{
                 "id": model["item_id"], "full_name": f"addp-online/model3d/{format_name}/model.{format_name}",
-                "item_type": "object", "fingerprint": model["fingerprint"], "size_bytes": {"fbx": 17200, "obj": 218}.get(format_name, 1024),
+                "item_type": "object", "fingerprint": model["fingerprint"], "size_bytes": {"fbx": 13740, "obj": 218}.get(format_name, 1024),
                 "attributes": {"item": {"data_type": "model_3d", "format": format_name, "layout": "single"},
                                "format_info": {format_name: {"texture_refs": ["texture.png"], "scan_complete": True, "unit_meter": 0.01, "schema_identifiers": ["IFC4"], "schema_version": "IFC4", "entity_count": 16, "entity_type_counts": {"IFCBUILDINGELEMENTPROXY": 1}}} if format_name not in {"osgb", "skp", "max"} else {}},
             } for format_name, model in self.models.items()])
@@ -388,7 +386,7 @@ class FakeGatewayClient:
             if "/fbx/vCube.fbx?" in locator:
                 return response(200, raw=(SCRIPT.parents[2] / "manager/frontend/e2e/fixtures/fbx/vCube.fbx").read_bytes())
             if "/fbx/" in locator:
-                return response(200, raw=(SCRIPT.parents[2] / "engines/model3d-workflow/tests/fixtures/mesh/box.fbx").read_bytes())
+                return response(200, raw=(SCRIPT.parents[2] / "business/fixtures/manager/addp_online_model_fixture.fbx").read_bytes())
             if "/obj/" in locator:
                 return SUITE.Response(200, {}, {'content-type':'application/zip'}, obj_bundle_bytes())
         if parsed.path == "/api/v1/manager/tasks" and method == "GET":
@@ -1090,7 +1088,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             self.assertFalse(model["result_exists"])
             self.assertEqual(client.model_modes[format_name], "basic_preview")
             self.assertEqual(report["artifacts"][format_name]["embedded_images"], 0 if format_name in {"ifc", "fbx"} else 1)
-            self.assertEqual(report["artifacts"][format_name]["vertex_count"], 24 if format_name in {"ifc", "fbx"} else 444 if format_name == "max" else 3)
+            self.assertEqual(report["artifacts"][format_name]["vertex_count"], 24 if format_name == "ifc" else 6 if format_name == "fbx" else 444 if format_name == "max" else 3)
         self.assertFalse(client.pointcloud_task_exists)
         self.assertFalse(client.pointcloud_result_exists)
         self.assertFalse(client.pptx_task_exists)
@@ -1214,7 +1212,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         self.assertEqual(model.cleanup["residual_resources"], 0)
 
     def test_fbx_and_obj_require_source_geometry_material_and_transforms(self):
-        for fmt, count, images in (("fbx", 24, 0), ("obj", 3, 1)):
+        for fmt, count, images in (("fbx", 6, 0), ("obj", 3, 1)):
             with self.subTest(fmt=fmt):
                 facts = SUITE.validate_model_glb(fixture_glb(fmt), fmt)
                 self.assertEqual(facts["vertex_count"], count)
@@ -1222,9 +1220,9 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 with self.assertRaises(SUITE.SuiteError):
                     SUITE.validate_model_glb(alter_glb(fixture_glb(fmt), lambda d: d["accessors"][0].update(count=0)), fmt)
         for mutate, reason in (
-            (lambda d: d["nodes"][0]["matrix"].__setitem__(0, 1.), "source node transforms"),
+            (lambda d: d["nodes"][0]["matrix"].__setitem__(0, 2.), "source node transforms"),
             (lambda d: d["materials"][0]["pbrMetallicRoughness"].update(baseColorFactor=[0.,0.,0.,1.]), "original diffuse color"),
-            (lambda d: d["accessors"][1].update(count=3), "triangle index count"),
+            (lambda d: d["accessors"][2].update(count=6), "triangle index count"),
         ):
             with self.subTest(reason=reason), self.assertRaisesRegex(SUITE.SuiteError, reason):
                 SUITE.validate_model_glb(alter_glb(fixture_glb("fbx"), mutate), "fbx")
@@ -1268,6 +1266,28 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             message = "model source ZIP is invalid or corrupt" if fmt == "obj" else "original source bytes changed"
             with mock.patch.object(client, "_request", side_effect=changed), self.assertRaisesRegex(SUITE.SuiteError, message):
                 SUITE.verify_mesh_source(client, fixture)
+
+    def test_fbx_oracle_rejects_dynamic_media_lost_geometry_and_unknown_extensions(self):
+        raw = fixture_glb('fbx')
+        declared = alter_glb(raw, lambda d: d.update(extensionsUsed=['KHR_materials_volume','FB_ngon_encoding']))
+        self.assertEqual(SUITE.validate_model_glb(declared,'fbx')['instance_count'],2)
+        mutations = [
+            lambda d: d.update(images=[{'uri':'texture.png'}]),
+            lambda d: d.update(animations=[{}]),
+            lambda d: d.update(skins=[{}]),
+            lambda d: d.update(extensionsUsed=['unknown']),
+            lambda d: d.update(extensionsRequired=['FB_ngon_encoding']),
+            lambda d: d['meshes'][0]['primitives'][0].update(extensions={'FB_ngon_encoding':{}}),
+            lambda d: d['meshes'][0]['primitives'][0].update(targets=[{'POSITION':0}]),
+            lambda d: d['materials'][0].update(alphaMode='BLEND'),
+            lambda d: d['scenes'][0].update(nodes=[0]),
+            lambda d: d['scenes'][0].update(nodes=[0,0]),
+            lambda d: d['nodes'][1].update(mesh=0),
+            lambda d: d['nodes'][0]['matrix'].__setitem__(5,100.),
+        ]
+        for change in mutations:
+            with self.subTest(change=change), self.assertRaises(SUITE.SuiteError):
+                SUITE.validate_model_glb(alter_glb(raw,change),'fbx')
 
     def test_colored_fbx_rejects_wrong_identity_bytes_or_existing_resources(self):
         source = SUITE.prepare_basic_fbx_source(FakeGatewayClient(), 27, "addp-online")
@@ -2036,12 +2056,14 @@ class MinIOExactModelGrantPreparationTest(unittest.TestCase):
                     self.assertIs(factory.call_args.args[1],consumer)
                     self.assertEqual(factory.call_args.kwargs,{'source_type':'minio','consumer_permissions':SUITE.REQUIRED_PERMISSIONS})
                     rows = [call.args[0] for call in grants.grant.call_args_list]
-                    expected_formats=['ifc','3ds'] if failed else ['ifc','3ds','dae','obj']
+                    expected_formats=['ifc','3ds'] if failed else ['ifc','3ds','dae','obj','fbx','fbx']
                     self.assertEqual([row['format'] for row in rows],expected_formats)
-                    self.assertEqual([row['full_name'] for row in rows],[f'addp-online/model3d/{kind}/model.{kind}' for kind in expected_formats])
+                    self.assertEqual([row['full_name'] for row in rows],[f'addp-online/model3d/{kind}/model.{kind}' for kind in expected_formats[:5]] + ([] if failed else ['addp-online/model3d/fbx/vCube.fbx']))
                     self.assertEqual([ref['path'] for ref in rows[1]['composition']],['addp-online/model3d/3ds/model.3ds','addp-online/model3d/3ds/texture.png'])
                     if not failed:
-                        self.assertEqual({ref['role'] for ref in rows[-1]['composition']},{'model','material_library','texture'})
+                        self.assertEqual({ref['role'] for ref in rows[3]['composition']},{'model','material_library','texture'})
+                        for row in rows[4:]:
+                            self.assertEqual(row['composition'],[{'path':row['full_name'],'role':'model','required':True,'primary':True}])
 
 
 class ManagerAcceptanceCaseTest(unittest.TestCase):

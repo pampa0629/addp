@@ -9,6 +9,7 @@ import (
 	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/format/plugins/fbx"
 	"github.com/addp/common/format/plugins/obj"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
@@ -95,10 +96,13 @@ func model3DGLBCandidateFromMeta(tenantID uint, source Model3DGLBSourceConfig, i
 	if err != nil {
 		return nil, reject
 	}
-	if (source.Format == "ifc" || source.Format == "stl" || source.Format == "glb") && len(composition.Refs) != 1 {
+	if (source.Format == "ifc" || source.Format == "stl" || source.Format == "glb" || source.Format == "fbx") && len(composition.Refs) != 1 {
 		return nil, reject
 	}
-	if (source.Format == "stl" || source.Format == "glb" || source.Format == "gltf") && commonJSON.Section(item.Attributes, "format_info."+source.Format)["composition_complete"] != true {
+	if (source.Format == "stl" || source.Format == "glb" || source.Format == "gltf" || source.Format == "fbx") && commonJSON.Section(item.Attributes, "format_info."+source.Format)["composition_complete"] != true {
+		return nil, reject
+	}
+	if source.Format == "fbx" && commonJSON.String(item.Attributes, "format_info.fbx", "profile") != fbx.Profile {
 		return nil, reject
 	}
 	candidate := &model3DGLBSourceCandidate{composition: composition}

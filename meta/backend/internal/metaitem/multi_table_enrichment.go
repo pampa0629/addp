@@ -551,14 +551,14 @@ func resolveExchangeModelResourceItems(ctx context.Context, input DirectoryResol
 	var items []*DetectedItem
 	for _, file := range files {
 		formatType := format.DetectFormat(file.Path, nil)
-		if formatType != format.FormatDAE && formatType != format.Format3DS && formatType != format.FormatSTL && formatType != format.FormatGLB {
+		if formatType != format.FormatDAE && formatType != format.Format3DS && formatType != format.FormatSTL && formatType != format.FormatGLB && formatType != format.FormatFBX {
 			continue
 		}
 		if input.StructureReader != nil {
 			items = append(items, resolveStructuredExchangeModelItem(ctx, input, file, byPath, formatType))
 			continue
 		}
-		if formatType == format.FormatSTL || formatType == format.FormatGLB {
+		if formatType == format.FormatSTL || formatType == format.FormatGLB || formatType == format.FormatFBX {
 			items = append(items, exchangeModelResourceItem(file, formatType, nil, byPath, false))
 			continue
 		}

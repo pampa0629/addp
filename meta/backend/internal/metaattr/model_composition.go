@@ -10,7 +10,7 @@ import (
 // In particular, an incomplete observation must remove the previous refs.
 func MergeBasicModelCompositionSnapshot(previous, observed models.JSONMap) {
 	formatName := commonJSON.String(observed, "item", "format")
-	if (formatName != "3ds" && formatName != "dae" && formatName != "obj" && formatName != "glb") || commonJSON.String(previous, "item", "format") != formatName {
+	if (formatName != "3ds" && formatName != "dae" && formatName != "obj" && formatName != "glb" && formatName != "fbx") || commonJSON.String(previous, "item", "format") != formatName {
 		return
 	}
 	next := commonJSON.Section(observed, "format_info."+formatName)
@@ -18,7 +18,7 @@ func MergeBasicModelCompositionSnapshot(previous, observed models.JSONMap) {
 	if formatName == "obj" {
 		completeKey, refsKey = "composition_complete", "material_libraries"
 	}
-	if formatName == "glb" {
+	if formatName == "glb" || formatName == "fbx" {
 		completeKey = "composition_complete"
 	}
 	if _, ok := next[completeKey].(bool); !ok {
@@ -26,7 +26,7 @@ func MergeBasicModelCompositionSnapshot(previous, observed models.JSONMap) {
 	}
 	merged := map[string]interface{}{}
 	for key, value := range commonJSON.Section(previous, "format_info."+formatName) {
-		if key != refsKey && key != completeKey {
+		if key != refsKey && key != completeKey && !(formatName == "fbx" && key == "profile") {
 			merged[key] = value
 		}
 	}

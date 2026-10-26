@@ -42,3 +42,13 @@ func TestGLBBasicFailureReplacesPriorCompleteWhilePreservingDeepFacts(t *testing
 		t.Fatal("basic lost independent observation", native)
 	}
 }
+
+func TestFBXBasicFailureRemovesSuccessfulProfileWithoutPromotingDeep(t *testing.T) {
+	previous := models.JSONMap{"item": map[string]any{"format": "fbx"}, "format_info": map[string]any{"fbx": map[string]any{"composition_complete": true, "profile": "binary7400_static_untextured", "scan_complete": true, "mesh_count": int64(2)}}}
+	observed := models.JSONMap{"item": map[string]any{"format": "fbx"}, "format_info": map[string]any{"fbx": map[string]any{"composition_complete": false}}}
+	MergeBasicModelCompositionSnapshot(previous, observed)
+	native := commonJSON.Section(previous, "format_info.fbx")
+	if native["composition_complete"] != false || native["profile"] != nil || native["mesh_count"] != int64(2) || native["scan_complete"] != true {
+		t.Fatalf("stale FBX proof or lost independent deep facts: %+v", native)
+	}
+}

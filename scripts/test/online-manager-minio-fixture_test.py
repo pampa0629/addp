@@ -85,9 +85,6 @@ class OnlineManagerMinIOFixtureTest(unittest.TestCase):
         self.bin.mkdir()
         shutil.copy2(SCRIPT, self.business / "scripts/online-manager-minio-fixture.sh")
         shutil.copy2(SCRIPT.with_name("online-content-boundary-fixture.py"), self.business / "scripts/online-content-boundary-fixture.py")
-        mesh = self.root / "engines/model3d-workflow/tests/fixtures/mesh"
-        mesh.mkdir(parents=True)
-        shutil.copy2(SCRIPT.parents[2] / "engines/model3d-workflow/tests/fixtures/mesh/box.fbx", mesh / "box.fbx")
         colored = self.root / "manager/frontend/e2e/fixtures/fbx"
         colored.mkdir(parents=True)
         shutil.copy2(SCRIPT.parents[2] / "manager/frontend/e2e/fixtures/fbx/vCube.fbx", colored / "vCube.fbx")
@@ -95,7 +92,7 @@ class OnlineManagerMinIOFixtureTest(unittest.TestCase):
         (self.business / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
         (self.business / "nfs/data/点云/pdal_las12_format0.las").write_bytes(b"LAS fixture")
         (self.business / "fixtures/manager/addp_online_preview_fixture.pptx").write_bytes(b"PPTX fixture")
-        for format_name in ("ifc", "osgb", "skp", "max", "3ds", "dae"):
+        for format_name in ("ifc", "osgb", "skp", "max", "3ds", "dae", "fbx"):
             source = SCRIPT.parents[2] / f"business/fixtures/manager/addp_online_model_fixture.{format_name}"
             shutil.copy2(source, self.business / "fixtures/manager" / source.name)
         shutil.copy2(SCRIPT.parents[2] / "business/fixtures/manager/addp_online_max_texture.png", self.business / "fixtures/manager/addp_online_max_texture.png")
@@ -412,8 +409,8 @@ esac
         self.assertEqual(baseline["max/model.max"], (SCRIPT.parents[2] / "business/fixtures/manager/addp_online_model_fixture.max").read_bytes())
         self.assertEqual(baseline["max/texture.png"], (SCRIPT.parents[2] / "business/fixtures/manager/addp_online_max_texture.png").read_bytes())
         self.assertEqual(baseline["skp/model.skp"], (SCRIPT.parents[2] / "business/fixtures/manager/addp_online_model_fixture.skp").read_bytes())
-        self.assertEqual(baseline["fbx/model.fbx"], (SCRIPT.parents[2] / "engines/model3d-workflow/tests/fixtures/mesh/box.fbx").read_bytes())
-        self.assertEqual(hashlib.sha256(baseline["fbx/model.fbx"]).hexdigest(), "ad2d79fe89d4d646bc7930dc952eb28e69976a321b387bf7851ecd3f37e667f8")
+        self.assertEqual(baseline["fbx/model.fbx"], (SCRIPT.parents[2] / "business/fixtures/manager/addp_online_model_fixture.fbx").read_bytes())
+        self.assertEqual(hashlib.sha256(baseline["fbx/model.fbx"]).hexdigest(), "7d585849dadf512d973a0262bd1ef9bc6e1d105b15596e99b50cdb864d06ef30")
         self.assertEqual(baseline["fbx/vCube.fbx"], (SCRIPT.parents[2] / "manager/frontend/e2e/fixtures/fbx/vCube.fbx").read_bytes())
         self.assertEqual(baseline["fbx/LICENSE-three.txt"], (SCRIPT.parents[2] / "manager/frontend/e2e/fixtures/fbx/LICENSE-three.txt").read_bytes())
         self.assertEqual((len(baseline["fbx/vCube.fbx"]), hashlib.sha256(baseline["fbx/vCube.fbx"]).hexdigest()),

@@ -50,7 +50,7 @@ class MinIOModelFixtureTest(unittest.TestCase):
             items=[]
             for index,sample in enumerate(manifests):
                 kind=sample['format']
-                if kind not in {'ifc','3ds','dae','obj','stl','gltf'}: continue
+                if kind not in {'ifc','3ds','dae','obj','stl','gltf','fbx'}: continue
                 name=sample['full_name']
                 refs=[{'path':name,'role':'model','required':True,'primary':True}]
                 if kind in {'3ds','dae'}: refs.append({'path':name.rsplit('/',1)[0]+'/texture.png','role':'texture','required':True,'primary':False})
@@ -63,6 +63,8 @@ class MinIOModelFixtureTest(unittest.TestCase):
                         'storage':{'physical_path':name},'format_info':{kind:{'scan_complete':True,'texture_refs':['texture.png']}}}})
                 if kind=='stl':
                     items[-1]['attributes']['format_info']={'stl':{'composition_complete':True}}
+                if kind=='fbx':
+                    items[-1]['attributes']['format_info']={'fbx':{'composition_complete':True,'profile':'binary7400_static_untextured'}}
                 if kind=='obj':
                     items[-1]['attributes']['format_info']={'obj':{'composition_complete':True,'material_libraries':[{'reference':'paint blue.mtl','texture_refs':['blue/color.png']},{'reference':'paint red.mtl','texture_refs':['red/color.png']}]}}
                 if kind=='gltf':
@@ -73,7 +75,7 @@ class MinIOModelFixtureTest(unittest.TestCase):
                     items[-1]['attributes']['format_info']={'gltf':{'composition_complete':True}}
             with patch.dict(os.environ,{'ADDP_ONLINE_MODEL_FILE_ENGINE_TYPE':'minio'}):
                 models=FLOW.prepare_models(items,17,manifests)
-                self.assertEqual([model['format'] for model in models],['ifc','3ds','dae','obj','stl','gltf'])
+                self.assertEqual([model['format'] for model in models],['ifc','3ds','dae','obj','stl','gltf','fbx'])
                 dae=next(row for row in models if row['format']=='dae')
                 self.assertEqual([ref['path'] for ref in dae['composition']],
                     ['model-source/models/dae/model.dae','model-source/models/dae/texture.png'])

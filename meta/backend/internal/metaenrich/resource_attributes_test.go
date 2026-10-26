@@ -11,6 +11,7 @@ import (
 	"image/png"
 	"io"
 	"math"
+	"os"
 	"strings"
 	"testing"
 
@@ -316,6 +317,10 @@ func TestEnrichResourceAttributesDetectsUnknownGLBAndWritesModel3DInfo(t *testin
 
 func TestEnrichResourceAttributesDetectsSingleModel3DFormats(t *testing.T) {
 	t.Parallel()
+	fbxFixture, err := os.ReadFile("../../../../business/fixtures/manager/addp_online_model_fixture.fbx")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	tests := []struct {
 		name          string
@@ -357,7 +362,7 @@ endsolid mesh`),
 		{
 			name:          "fbx",
 			path:          "models/mesh.fbx",
-			content:       append([]byte("Kaydara FBX Binary  \x00\x1a\x00"), []byte{0, 0, 0, 0}...),
+			content:       fbxFixture,
 			wantFormat:    format.FormatFBX,
 			wantModelKind: datatype.Model3DKindMeshScene,
 			infoKey:       "format_info.fbx",

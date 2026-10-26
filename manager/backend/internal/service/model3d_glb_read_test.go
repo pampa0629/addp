@@ -101,8 +101,8 @@ func testGLBResultReadForEngine(t *testing.T, engineType, format string) {
 				}
 				// Change authoritative facts after Manager's preliminary A check.
 				// A current Grant for B must not authorize the generated A artifact.
-				if outcome == "composition A to B" && format == "stl" {
-					item.Attributes["format_info"].(map[string]any)["stl"].(map[string]any)["composition_complete"] = false
+				if outcome == "composition A to B" && (format == "stl" || format == "fbx") {
+					item.Attributes["format_info"].(map[string]any)[format].(map[string]any)["composition_complete"] = false
 				} else if outcome == "composition A to B" {
 					refs := item.Attributes["item"].(map[string]any)["refs"].([]map[string]any)
 					refs[1]["path"] = "models/new-composition.PNG"
@@ -187,7 +187,7 @@ func TestGLBReadRejectsTicketsChangedCompositionAndEngineBeforePermissionCall(t 
 }
 
 func TestOldMinIOGLBRequiresRegeneration(t *testing.T) {
-	for _, format := range []string{"3ds", "dae"} {
+	for _, format := range []string{"3ds", "dae", "fbx"} {
 		t.Run(format, func(t *testing.T) {
 			result, engine, item := glbPublishedReadFixtureForFormat(t, "minio", format)
 			delete(result.Metadata, "model3d_source_scope")
@@ -204,5 +204,11 @@ func TestOldMinIOGLBRequiresRegeneration(t *testing.T) {
 func TestSTLGLBResultReadsKeepCurrentSourceChecksAcrossAllEngines(t *testing.T) {
 	for _, kind := range []string{"ftp", "nfs", "minio"} {
 		t.Run(kind, func(t *testing.T) { testGLBResultReadForEngine(t, kind, "stl") })
+	}
+}
+
+func TestFBXGLBResultReadsKeepCurrentSourceChecksAcrossAllEngines(t *testing.T) {
+	for _, kind := range []string{"ftp", "nfs", "minio"} {
+		t.Run(kind, func(t *testing.T) { testGLBResultReadForEngine(t, kind, "fbx") })
 	}
 }

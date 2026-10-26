@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	commonformat "github.com/addp/common/format"
+	"github.com/addp/common/format/plugins/fbx"
 	commonjson "github.com/addp/common/jsonmap"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
@@ -116,10 +117,13 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 	if primaryCount != 1 {
 		return finish(authorizationfacts.AuthorizationBasisNeedsRefresh)
 	}
-	if (format == "ifc" || format == "stl" || format == "glb") && len(refs) != 1 {
+	if (format == "ifc" || format == "stl" || format == "glb" || format == "fbx") && len(refs) != 1 {
 		return finish(authorizationfacts.AuthorizationBasisUnsupported)
 	}
-	if (format == "stl" || format == "glb" || format == "gltf") && commonjson.Section(item.Attributes, "format_info."+format)["composition_complete"] != true {
+	if (format == "stl" || format == "glb" || format == "gltf" || format == "fbx") && commonjson.Section(item.Attributes, "format_info."+format)["composition_complete"] != true {
+		return finish(authorizationfacts.AuthorizationBasisIncomplete)
+	}
+	if format == "fbx" && commonjson.String(item.Attributes, "format_info.fbx", "profile") != fbx.Profile {
 		return finish(authorizationfacts.AuthorizationBasisIncomplete)
 	}
 	if format == "obj" {

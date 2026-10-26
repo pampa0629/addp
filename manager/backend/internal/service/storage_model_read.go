@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/datatype"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
+	"github.com/addp/common/format/plugins/fbx"
 	"github.com/addp/common/format/plugins/glb"
 	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/models"
@@ -158,21 +159,25 @@ func (r *storageRead) stream(ctx context.Context, storageRef, rangeHeader string
 		}
 		return io.NopCloser(bytes.NewReader(raw[options.Offset : options.Offset+length])), length, contentRange, contentType, nil
 	}
-	if r.expected == nil || r.expected.FileComposition.Format != "glb" {
+	if r.expected == nil || (r.expected.FileComposition.Format != "glb" && r.expected.FileComposition.Format != "fbx") {
 		return r.service.streamStorageContent(ctx, resource, storageRef, rangeHeader, 0, check)
 	}
-	// GLB may change at the same source path after basic observation. Validate
+	// Self-contained models may change at the same path after basic observation. Validate
 	// exactly the bytes that will be returned, before exposing even a Range.
-	reader, size, _, contentType, err := r.service.streamStorageContent(ctx, resource, storageRef, "", glb.MaxCompositionBytes, check)
+	budget := glb.MaxCompositionBytes
+	if r.expected.FileComposition.Format == "fbx" {
+		budget = fbx.MaxCompositionBytes
+	}
+	reader, size, _, contentType, err := r.service.streamStorageContent(ctx, resource, storageRef, "", budget, check)
 	if err != nil {
 		return nil, 0, "", "", err
 	}
-	raw, readErr := io.ReadAll(io.LimitReader(reader, glb.MaxCompositionBytes+1))
+	raw, readErr := io.ReadAll(io.LimitReader(reader, budget+1))
 	closeErr := reader.Close()
-	if readErr != nil || closeErr != nil || int64(len(raw)) != size || int64(len(raw)) > glb.MaxCompositionBytes {
+	if readErr != nil || closeErr != nil || int64(len(raw)) != size || int64(len(raw)) > budget {
 		return nil, 0, "", "", commonClient.ErrManagerPreviewReadDenied
 	}
-	provider, err := format.GetModel3DCompositionProvider(format.FormatGLB)
+	provider, err := format.GetModel3DCompositionProvider(format.FormatType(r.expected.FileComposition.Format))
 	if err != nil {
 		return nil, 0, "", "", commonClient.ErrManagerPreviewReadUnavailable
 	}

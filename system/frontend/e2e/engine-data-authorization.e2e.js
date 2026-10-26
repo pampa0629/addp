@@ -838,7 +838,7 @@ async function selectFTPModel(page, format) {
   await page.locator('.resource-tree-select__panel').getByRole('button', { name: new RegExp(`model\\.${format}`) }).click()
   await page.getByTestId('approval-add-selection').click()
 }
-for (const [sourceType, format] of [['ftp','ifc'], ['ftp','3ds'], ['ftp','dae'], ['minio','ifc'], ['minio','3ds'], ['minio','dae'], ['ftp','obj'], ['minio','obj'], ['ftp','stl'], ['nfs','stl'], ['minio','stl'], ['ftp','glb'], ['nfs','glb'], ['minio','glb']]) test(`${sourceType} ${format} uses one full DataItem Grant, confirms constituents and supports exact filtering and revocation`, async ({ page }, testInfo) => {
+for (const [sourceType, format] of [['ftp','ifc'], ['ftp','3ds'], ['ftp','dae'], ['minio','ifc'], ['minio','3ds'], ['minio','dae'], ['ftp','obj'], ['minio','obj'], ['ftp','stl'], ['nfs','stl'], ['minio','stl'], ['ftp','glb'], ['nfs','glb'], ['minio','glb'], ['ftp','fbx'], ['nfs','fbx'], ['minio','fbx']]) test(`${sourceType} ${format} uses one full DataItem Grant, confirms constituents and supports exact filtering and revocation`, async ({ page }, testInfo) => {
   const { reads, writes } = await fixture(page, { allowed: [...grantPermissions, 'catalog.entry.read'], ftp: format, sourceType })
   const expectedPath = sourceType === 'minio' ? minioObjectPath : ftpFilePath
   await selectFTPModel(page, format)
@@ -851,7 +851,7 @@ for (const [sourceType, format] of [['ftp','ifc'], ['ftp','3ds'], ['ftp','dae'],
   const confirmation = page.locator('.el-message-box')
   await expect(confirmation).toContainText('完整文件组成')
   await expect(confirmation).toContainText(`Models / model.${format}`)
-  if (format === 'stl' || format === 'glb') {
+  if (format === 'stl' || format === 'glb' || format === 'fbx') {
     await expect(confirmation).not.toContainText('TEST.PNG')
     await expect(confirmation).not.toContainText('model.mtl')
   }

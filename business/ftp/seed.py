@@ -70,6 +70,7 @@ MODEL_SAMPLE_FILES = (
     ('gltf_png_blue', 'models/gltf/blue/color.png', 'addp_online_obj_blue.png'),
     ('glb', 'models/glb/ 原名 %.GLB', 'addp_online_model_fixture.glb'),
     ('stl', 'models/stl/model.stl', 'addp_online_model_fixture.stl'),
+    ('fbx', 'models/fbx/model.fbx', 'addp_online_model_fixture.fbx'),
     ('ifc', 'models/ifc/model.ifc', 'addp_online_model_fixture.ifc'),
     ('3ds', 'models/3ds/model.3ds', 'addp_online_model_fixture.3ds'),
     ('dae', 'models/dae/model.dae', 'addp_online_model_fixture.dae'),

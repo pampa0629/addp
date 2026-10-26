@@ -143,7 +143,7 @@ func TestManagerModel3DScopeRejectsReplacedFTPConfigVersion(t *testing.T) {
 }
 
 func TestManagerModel3DObjectAdmissionPreservesCatalogAndFormat(t *testing.T) {
-	for _, format := range []string{"ifc", "3ds", "dae", "obj", "stl", "glb"} {
+	for _, format := range []string{"ifc", "3ds", "dae", "obj", "stl", "glb", "fbx"} {
 		for _, kind := range []string{"ftp", "nfs", "minio", "s3"} {
 			for _, term := range []string{"file", "object"} {
 				target := plugin.FileItemPath(33, "models/model."+format)
@@ -190,6 +190,41 @@ func TestSTLModelScopeRequiresOneNativePrimaryForEveryAdmittedEngine(t *testing.
 		scope.FileComposition.Refs = append(scope.FileComposition.Refs, authorizationfacts.FileCompositionRef{Target: extra, Role: "texture", Required: true})
 		if scope.Validate() == nil {
 			t.Fatal("STL acquired external dependencies")
+		}
+	}
+}
+
+func TestFBXModelScopeRequiresOneNativePrimaryForEveryAdmittedEngine(t *testing.T) {
+	for _, kind := range []string{"ftp", "nfs", "minio"} {
+		if !ManagerModel3DSourceFormat(kind, "fbx") || ManagerModel3DSourceFormat(kind, "FBX") {
+			t.Fatal("non-canonical FBX admission")
+		}
+		target := plugin.FileItemPath(33, "models/model.fbx")
+		if kind == "minio" {
+			target = plugin.ObjectItemPath(33, "models", "model.fbx")
+		}
+		composition, err := authorizationfacts.NewFileCompositionBoundary("fbx", []authorizationfacts.FileCompositionRef{{Target: target, Role: "model", Primary: true, Required: true}})
+		if err != nil || !ManagerModel3DSourceComposition(kind, composition) {
+			t.Fatal(err)
+		}
+		scope := &ManagerModel3DReadScope{ConfigDigest: strings.Repeat("a", 64), OwnerTaskID: "1", OwnerTaskVersion: "1", EngineVersion: "1", FileComposition: *composition}
+		if scope.Validate() != nil {
+			t.Fatal("single FBX scope rejected")
+		}
+		scope.FileComposition.Refs[0].Role = "texture"
+		if scope.Validate() == nil || ManagerModel3DSourceComposition(kind, &scope.FileComposition) {
+			t.Fatal("FBX primary role was not constrained")
+		}
+		scope.FileComposition.Refs[0].Role = "model"
+		if ManagerModel3DSourceFormat(kind, "skp") {
+			t.Fatal("SKP admitted before strict composition proof")
+		}
+		extra := target
+		extra.Segments = append([]plugin.EngineCatalogSegment{}, target.Segments...)
+		extra.Segments[len(extra.Segments)-1].Name = "unapproved.png"
+		scope.FileComposition.Refs = append(scope.FileComposition.Refs, authorizationfacts.FileCompositionRef{Target: extra, Role: "texture", Required: true})
+		if scope.Validate() == nil {
+			t.Fatal("FBX acquired external dependencies")
 		}
 	}
 }

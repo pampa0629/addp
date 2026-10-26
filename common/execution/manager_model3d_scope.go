@@ -26,7 +26,7 @@ func ManagerModel3DSourceFormat(engineType, format string) bool {
 // ManagerModel3DFileFormat is the shared exact-composition format admission.
 // Identity, basic completeness and the native file/object shape remain mandatory.
 func ManagerModel3DFileFormat(format string) bool {
-	return format == "ifc" || format == "3ds" || format == "dae" || format == "obj" || format == "stl" || format == "glb" || format == "gltf"
+	return format == "ifc" || format == "3ds" || format == "dae" || format == "obj" || format == "stl" || format == "glb" || format == "gltf" || format == "fbx"
 }
 
 // ManagerModel3DConversionFormat excludes directly previewed GLB from execution authorization.
@@ -37,10 +37,10 @@ func ManagerModel3DConversionFormat(format string) bool {
 // ManagerModel3DSourceComposition also proves the native catalog shape. Engine
 // identity alone must never let a file scope authorize an object or vice versa.
 func ManagerModel3DSourceComposition(engineType string, composition *authorizationfacts.FileCompositionBoundary) bool {
-	if composition == nil || !ManagerModel3DSourceFormat(engineType, composition.Format) || ((composition.Format == "ifc" || composition.Format == "stl" || composition.Format == "glb") && len(composition.Refs) != 1) {
+	if composition == nil || !ManagerModel3DSourceFormat(engineType, composition.Format) || ((composition.Format == "ifc" || composition.Format == "stl" || composition.Format == "glb" || composition.Format == "fbx") && len(composition.Refs) != 1) {
 		return false
 	}
-	if composition.Format == "glb" && composition.Refs[0].Role != "model" {
+	if (composition.Format == "glb" || composition.Format == "fbx") && composition.Refs[0].Role != "model" {
 		return false
 	}
 	primary, err := composition.PrimaryTarget()
@@ -106,7 +106,10 @@ func (s *ManagerModel3DReadScope) Validate() error {
 	primary, err := s.FileComposition.PrimaryTarget()
 	if err != nil || (primary.Segments[len(primary.Segments)-1].Term != plugin.EngineCatalogTermFile &&
 		primary.Segments[len(primary.Segments)-1].Term != plugin.EngineCatalogTermObject) ||
-		((s.FileComposition.Format == "ifc" || s.FileComposition.Format == "stl") && len(s.FileComposition.Refs) != 1) {
+		((s.FileComposition.Format == "ifc" || s.FileComposition.Format == "stl" || s.FileComposition.Format == "fbx") && len(s.FileComposition.Refs) != 1) {
+		return errManagerModel3DScope
+	}
+	if s.FileComposition.Format == "fbx" && s.FileComposition.Refs[0].Role != "model" {
 		return errManagerModel3DScope
 	}
 	return nil

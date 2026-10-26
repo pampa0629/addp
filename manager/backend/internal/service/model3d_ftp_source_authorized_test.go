@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -127,6 +128,9 @@ func fileModelAuthorizedFixture(t *testing.T, engineType, format string, denied 
 		t.Fatal(err)
 	}
 	spy := &ftpModelReadSpy{FTPPlugin: &ftpPlugin.FTPPlugin{}, engineType: engineType, t: t, files: map[string][]byte{item.FullName: []byte("ifc input")}}
+	if format == "fbx" {
+		spy.files[item.FullName] = authorizedFBXFixture(t)
+	}
 	if format == "stl" {
 		spy.files[item.FullName] = []byte("solid triangle\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 2 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid triangle\n")
 	}
@@ -217,13 +221,15 @@ func ftpModelAuthorizedFixture(t *testing.T, format string, denied func(*ftpMode
 func TestNFSModelSourceUsesExactAuthorizedFiles(t *testing.T)     { testExactModelSource(t, "nfs") }
 func TestMinIOModelSourceUsesExactAuthorizedObjects(t *testing.T) { testExactModelSource(t, "minio") }
 func testExactModelSource(t *testing.T, engineType string) {
-	for _, format := range []string{"ifc", "3ds", "dae", "obj", "stl", "gltf"} {
+	for _, format := range []string{"ifc", "3ds", "dae", "obj", "stl", "gltf", "fbx"} {
 		for _, fault := range []string{"none", "revoked", "changed-declaration"} {
 			t.Run(format+"/"+fault, func(t *testing.T) {
 				ctx, request, engine, spy, _ := fileModelAuthorizedFixture(t, engineType, format, func(*ftpModelReadSpy) bool { return fault == "revoked" })
 				if fault == "changed-declaration" && format != "ifc" {
 					if format == "stl" {
 						spy.files["models/model.stl"] = []byte("solid triangle\nfacet normal 0 0 1\n")
+					} else if format == "fbx" {
+						spy.files["models/model.fbx"] = []byte("; FBX 7.4.0 ASCII unsupported")
 					} else if format == "gltf" {
 						spy.files["models/model.gltf"] = []byte(`{"asset":{"version":"2.0"},"buffers":[{"uri":"new.bin","byteLength":4}]}`)
 					} else if format == "obj" {
@@ -275,7 +281,7 @@ func testExactModelSource(t *testing.T, engineType string) {
 }
 
 func TestAuthorizedFTPModelSourceStagesOnlyFrozenFilesAndCleansThem(t *testing.T) {
-	for _, format := range []string{"ifc", "3ds", "dae", "obj", "stl", "gltf"} {
+	for _, format := range []string{"ifc", "3ds", "dae", "obj", "stl", "gltf", "fbx"} {
 		t.Run(format, func(t *testing.T) {
 			ctx, request, engine, spy, calls := ftpModelAuthorizedFixture(t, format, nil)
 			store := &stagingModelStore{}
@@ -514,6 +520,44 @@ func TestSTLPreparationRejectsOversizeAndChangedObservationBeforeWriting(t *test
 				}
 				if fault == "oversize" && len(spy.opens) != 0 {
 					t.Fatal("oversize STL was opened")
+				}
+			})
+		}
+	}
+}
+
+func authorizedFBXFixture(t *testing.T) []byte {
+	t.Helper()
+	raw, err := os.ReadFile("../../../../business/fixtures/manager/addp_online_model_fixture.fbx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+func TestFBXPreparationRejectsOversizeAndChangedObservationBeforeWriting(t *testing.T) {
+	for _, kind := range []string{"ftp", "nfs", "minio"} {
+		for _, fault := range []string{"oversize", "length changed", "invalid structure"} {
+			t.Run(kind+"/"+fault, func(t *testing.T) {
+				ctx, req, engine, spy, _ := fileModelAuthorizedFixture(t, kind, "fbx", nil)
+				if fault == "oversize" {
+					size := int64(64<<20) + 1
+					spy.sizeReported = &size
+				}
+				if fault == "length changed" {
+					size := int64(len(spy.files["models/model.fbx"])) + 1
+					spy.sizeReported = &size
+				}
+				if fault == "invalid structure" {
+					spy.files["models/model.fbx"] = []byte("; FBX 7.4.0 ASCII unsupported")
+				}
+				store, consumed := &stagingModelStore{}, false
+				err := stagingModelExecutor(store).withFileModel3DSource(ctx, req, engine, func(context.Context, workflowaccess.Source, commonModels.JSONMap) error { consumed = true; return nil })
+				if err == nil || consumed || store.puts != 0 || len(store.objects) != 0 || spy.closes != len(spy.opens) {
+					t.Fatalf("invalid FBX escaped into staging: err=%v consumed=%v puts=%d", err, consumed, store.puts)
+				}
+				if fault == "oversize" && len(spy.opens) != 0 {
+					t.Fatal("oversize FBX was opened")
 				}
 			})
 		}

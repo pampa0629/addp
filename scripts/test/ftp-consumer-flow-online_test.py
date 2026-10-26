@@ -26,7 +26,7 @@ GLB = import_module('scripts.test.manager-internal-artifact-lineage-online_test'
 
 def source_download_proof(source, artifacts, entries=None):
     fixture = Path(__file__).resolve().parents[2] / 'business/fixtures/manager'
-    files = {'model.stl': 'addp_online_model_fixture.stl', ' 原名 %.GLB': 'addp_online_model_fixture.glb', 'model.ifc': 'addp_online_model_fixture.ifc', 'model.dae': 'addp_online_model_fixture.dae', 'model.3ds': 'addp_online_model_fixture.3ds',
+    files = {'model.fbx':'addp_online_model_fixture.fbx', 'model.stl': 'addp_online_model_fixture.stl', ' 原名 %.GLB': 'addp_online_model_fixture.glb', 'model.ifc': 'addp_online_model_fixture.ifc', 'model.dae': 'addp_online_model_fixture.dae', 'model.3ds': 'addp_online_model_fixture.3ds',
              'texture.png': 'addp_online_exchange_texture.png'}
     bundled = len(source['composition']) > 1
     if bundled:
@@ -263,7 +263,7 @@ class FakeClient:
         self.samples = [{'format': kind, 'full_name': 'examples/中文 %样例.' + kind, 'size': len(kind), 'sha256': hashlib.sha256(kind.encode()).hexdigest()} for kind in ('csv', 'json', 'parquet')]
         self.items = [{'id': i + 1, 'node_id': i + 10, 'item_type': 'file', 'full_name': sample['full_name'], 'fingerprint': 'fp-' + str(i), 'attributes': {'schema_version': 1, 'item': {'data_type': 'table'}, 'type_info': {'table': {'fields': [{'name': name} for name in ('id', 'amount', 'name')]}}}} for i, sample in enumerate(self.samples)]
         self.model_samples = model_samples()
-        for i, sample in enumerate(row for row in self.model_samples if row['format'] in {'ifc','3ds','dae','obj','stl','glb','gltf'}):
+        for i, sample in enumerate(row for row in self.model_samples if row['format'] in {'ifc','3ds','dae','obj','stl','glb','gltf','fbx'}):
             kind, path = sample['format'], sample['full_name']
             refs = [{'path': path, 'role': 'model', 'required': True, 'primary': True}]
             attributes = {'schema_version': 1,
@@ -273,9 +273,11 @@ class FakeClient:
                 refs.append({'path': f'models/{kind}/texture.png', 'role': 'texture', 'required': True})
                 attributes['item']['refs'] = refs
                 attributes['format_info'] = {kind: {'scan_complete': True, 'texture_refs': ['texture.png']}}
-            if kind in {'stl','glb'}:
+            if kind in {'stl','glb','fbx'}:
                 attributes['item']['refs'] = refs
                 attributes['format_info'] = {kind: {'composition_complete': True}}
+            if kind == 'fbx':
+                attributes['format_info']['fbx']['profile']='binary7400_static_untextured'
             if kind == 'obj':
                 refs.extend({'path':'models/obj/'+name,'role':role,'required':True} for name,role in [
                     ('paint blue.mtl','material_library'),('paint red.mtl','material_library_2'),
@@ -470,7 +472,7 @@ class FTPConsumerTest(unittest.TestCase):
         return SimpleNamespace(request=request), report, published, identifier, calls
 
     def test_denied_generation_records_unclaimed_failure_and_preserves_physical_output(self):
-        for kind in ('ifc', '3ds', 'dae', 'obj', 'stl'):
+        for kind in ('ifc', '3ds', 'dae', 'obj', 'stl', 'fbx'):
             client, report, published, identifier, calls = self.denied_generation_fixture(kind)
             with self.subTest(kind=kind), patch.object(M, 'verify_physical_objects', side_effect=lambda rows: rows):
                 observed = M.verify_denied_generation(client, report, kind, 'source_withdrawn')
@@ -489,7 +491,7 @@ class FTPConsumerTest(unittest.TestCase):
 
     def test_denied_generation_requires_a_migrated_format_and_explicit_denial_phase(self):
         client = SimpleNamespace(request=lambda *args: self.fail('invalid proof must not call a service'))
-        for kind, reason in (('fbx', 'source_withdrawn'), ('stl', 'unknown')):
+        for kind, reason in (('skp', 'source_withdrawn'), ('stl', 'unknown')):
             with self.subTest(kind=kind, reason=reason), self.assertRaisesRegex(M.SuiteError, 'explicit observed'):
                 M.verify_denied_generation(client, {}, kind, reason)
 
@@ -940,7 +942,7 @@ class FTPConsumerTest(unittest.TestCase):
             report = M.run(client, 2, 17, client.samples, client.model_samples, 30)
         self.assertEqual(len(report['samples']), 3)
         self.assertEqual(report['principal_id'], '8')
-        self.assertEqual([model['format'] for model in report['models']], ['ifc', '3ds', 'dae', 'obj', 'stl', 'gltf'])
+        self.assertEqual([model['format'] for model in report['models']], ['ifc', '3ds', 'dae', 'obj', 'stl', 'gltf', 'fbx'])
         self.assertEqual(len([call for call in client.calls if '/downloads/file?' in call[1]]), 3)
         self.assertTrue(all('%25' in sample['locator'] and '&item_id=' in sample['locator'] for sample in report['samples']))
         self.assertEqual(scan.call_args_list[0].args, (client, 17, ['models'], 'basic', 30))
@@ -1022,11 +1024,13 @@ class FTPConsumerTest(unittest.TestCase):
                                         'size': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
                                         'source_download': source_download_proof(source, artifacts), 'rendered': True,
                                         'reopened': True, 'cached_without_execution': True})
+                if source['format']=='fbx':
+                    proof['models'][-1]['source_range']={'status':206,'size':4,'sha256':hashlib.sha256(b'ara ').hexdigest(),'content_range':f"bytes 4-7/{source['size']}"}
                 if source['format'] == 'stl':
                     proof['models'][-1]['basic_preview'] = {'status':200,'size':source['size'],'sha256':source['sha256'],
                         'rendered':True,'user_bearer':True,'cookie_sent':False,'ticket_sent':False,'generation_requests':0}
-                    (artifacts / 'ftp-stl-basic-source.stl').write_bytes((Path(__file__).resolve().parents[2] / 'business/fixtures/manager/addp_online_model_fixture.stl').read_bytes())
-                    (artifacts / 'ftp-stl-basic.png').write_bytes(b'unit proof placeholder; real browser owns PNG')
+                    (artifacts / f"ftp-{source['format']}-basic-source.{source['format']}").write_bytes((Path(__file__).resolve().parents[2] / f"business/fixtures/manager/addp_online_model_fixture.{source['format']}").read_bytes())
+                    (artifacts / f"ftp-{source['format']}-basic.png").write_bytes(b'unit proof placeholder; real browser owns PNG')
             M.validate_browser_report(proof, expected, artifacts)
             for key, value in (('principal_id', 'another'), ('meta_ui_scan', False), ('downloads', []), ('previews', 2), ('models', []), ('direct_glb', {})):
                 changed = {**proof, key: value}
@@ -1087,7 +1091,7 @@ class FTPConsumerTest(unittest.TestCase):
                 return SimpleNamespace(payload=(fixture/pinned[path]).read_bytes())
             result = M.verify_raw_model_reads(SimpleNamespace(request=request), report, status)
             self.assertEqual(len(result),sum(len(model['composition'])*2+1 for model in report['models']))
-            self.assertEqual({row['format'] for row in result},{'ifc','3ds','dae','obj','stl','gltf'})
+            self.assertEqual({row['format'] for row in result},{'ifc','3ds','dae','obj','stl','gltf','fbx'})
             self.assertEqual({row['exit'] for row in result},{'stream','asset','download'})
             self.assertTrue(all(row['status']==status for row in result))
             self.assertNotIn('addp_at_',json.dumps(result))
@@ -1243,7 +1247,7 @@ class FTPConsumerTest(unittest.TestCase):
         issuer = FakeSourceIssuer(report)
         authorization = M.ModelSourceAuthorization(issuer, consumer, report)
         receipts = [authorization.grant(model) for model in report['models']]
-        self.assertEqual(len(receipts), 6)
+        self.assertEqual(len(receipts), 7)
         commands = [body for method, path, body in issuer.calls if path.endswith('/access_grants')]
         self.assertEqual([body['recipient_id'] for body in commands], ['8'] * len(report['models']))
         for body in commands:
@@ -1581,7 +1585,7 @@ class FTPConsumerTest(unittest.TestCase):
             result = M.verify_composition_rules(client, Authorization(), report, source, 'deny-A', 30)
         self.assertEqual(events, ['scan', 'revoke-grant-A', 'grant-B', 'check-403', 'release-deny-A',
                                   'check-200', 'restore-physical', 'scan', 'revoke-grant-B', 'grant-A-new'])
-        cache.assert_called_once_with(client, report, {'ifc': 200, '3ds': 403, 'dae': 200, 'obj': 200, 'stl': 200, 'gltf': 200})
+        cache.assert_called_once_with(client, report, {'ifc': 200, '3ds': 403, 'dae': 200, 'obj': 200, 'stl': 200, 'gltf': 200, 'fbx': 200})
         self.assertNotEqual(result['original_boundary_hash'], result['changed_boundary_hash'])
 
     def test_withdrawn_browser_report_requires_both_original_models_and_no_new_execution(self):
@@ -1656,3 +1660,53 @@ assert.equal(completionReads,0,'collection must not wait on a request cancelled 
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FBXSourceProfileTests(unittest.TestCase):
+    def source(self):
+        with patch.dict(os.environ,{'ADDP_ONLINE_MODEL_FILE_ENGINE_TYPE':'ftp'}):
+            result=next(model for model in M.prepare_models(FakeClient().items,17,model_samples()) if model['format']=='fbx')
+        result['full_name']=M.model_scope('models/fbx/model.fbx')
+        return result
+
+    def test_owned_file_profile_change_is_same_size_and_restored_on_failure(self):
+        with patch.dict(os.environ,{'ADDP_ONLINE_MODEL_FILE_ENGINE_TYPE':'ftp'}):
+            model=self.source()
+            with tempfile.TemporaryDirectory() as directory:
+                root=Path(directory)
+                M.SEED.write_model_samples(root/'data')
+                target=root/'data/models/fbx/model.fbx'
+                original=target.read_bytes()
+                with patch.object(M,'owned_ftp_fixture',return_value=root):
+                    with self.assertRaisesRegex(RuntimeError,'observed failure'):
+                        with M.changed_fbx_fixture(model):
+                            changed=target.read_bytes()
+                            self.assertEqual(len(changed),len(original))
+                            self.assertEqual(changed[:23],original[:23])
+                            self.assertEqual(struct.unpack_from('<I',changed,23)[0],7500)
+                            self.assertEqual(changed[27:],original[27:])
+                            raise RuntimeError('observed failure')
+                self.assertEqual(target.read_bytes(),original)
+
+    def test_owned_object_profile_change_does_not_touch_siblings_and_restores(self):
+        with patch.dict(os.environ,{'ADDP_ONLINE_MODEL_FILE_ENGINE_TYPE':'minio'}):
+            model=self.source()
+            original=(Path(__file__).resolve().parents[2]/'business/fixtures/manager/addp_online_model_fixture.fbx').read_bytes()
+            store={'models/fbx/model.fbx':original,'unrelated':b'do not touch'}
+            fixture=SimpleNamespace(read=lambda key:store[key],put=lambda key,raw:store.__setitem__(key,raw))
+            with patch.object(M,'import_module',return_value=fixture):
+                with M.changed_fbx_fixture(model):
+                    self.assertEqual(struct.unpack_from('<I',store['models/fbx/model.fbx'],23)[0],7500)
+            self.assertEqual(store,{'models/fbx/model.fbx':original,'unrelated':b'do not touch'})
+
+    def test_profile_fact_is_required_and_not_replaceable_by_deep_success(self):
+        for fact in [None,'other',True]:
+            client=FakeClient()
+            item=next(item for item in client.items if item['attributes']['item'].get('format')=='fbx')
+            item['attributes']['format_info']['fbx']['profile']=fact
+            with self.assertRaisesRegex(M.SuiteError,'admitted basic profile'):
+                M.prepare_models(client.items,17,client.model_samples)
+        client=FakeClient()
+        item=next(item for item in client.items if item['attributes']['item'].get('format')=='fbx')
+        item['attributes']['format_info']['fbx'].update(composition_complete=False,scan_complete=True)
+        with self.assertRaises(M.SuiteError):M.prepare_models(client.items,17,client.model_samples)

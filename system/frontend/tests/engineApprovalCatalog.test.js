@@ -12,13 +12,13 @@ describe('System live-catalog protocol adapter', () => {
     const path = { engine_id: 33, version: 'catalog.path/v1', segments: [{ term: 'root', kind: 'root', name: '' }] }
     const directory = { name: 'Models', role: 'branch', term: 'directory', kind: 'directory', path: { ...path, segments: [...path.segments, { term: 'directory', kind: 'directory', name: 'Models' }] } }
     const model = name => ({ name, role: 'leaf', term: 'file', kind: 'file', path: { ...path, segments: [...directory.path.segments, { term: 'file', kind: 'file', name }] } })
-    const api = vi.fn(async (_, path) => ({ nodes: path.segments.length === 0 ? [{ name: '', role: 'branch', term: 'root', kind: 'root', path: { ...path, engine_id: 33, version: 'catalog.path/v1', segments: [{ term: 'root', kind: 'root', name: '' }] } }] : path.segments.length === 1 ? [directory] : [model('Model.3DS'), model('TEST.PNG'), model('part.ifc'), model('part.obj'), model('scene.DAE'), model('scene.GLTF')] }))
+    const api = vi.fn(async (_, path) => ({ nodes: path.segments.length === 0 ? [{ name: '', role: 'branch', term: 'root', kind: 'root', path: { ...path, engine_id: 33, version: 'catalog.path/v1', segments: [{ term: 'root', kind: 'root', name: '' }] } }] : path.segments.length === 1 ? [directory] : [model('Model.3DS'), model('TEST.PNG'), model('part.ifc'), model('part.obj'), model('scene.DAE'), model('scene.GLTF'), model('scene.FBX'), model('scene.skp')] }))
     const adapter = createApprovalCatalogAdapter({ id: '33', name: engineType, engine_type: engineType }, api)
     const root = await adapter.getTreeRoot(), dir = root.children[0]
     expect(isApprovalSelection(dir)).toBe(false)
     await expect(collectApprovalTargets({ raw: { node: dir } }, '33', adapter)).rejects.toThrow()
     const children = await adapter.getNodeChildren(dir)
-    expect(children.map(isApprovalSelection)).toEqual([true, false, true, true, true, true])
+    expect(children.map(isApprovalSelection)).toEqual([true, false, true, true, true, true, true, false])
     expect(await collectApprovalTargets({ raw: { node: children[0] } }, '33', adapter)).toEqual([{ ...model('Model.3DS').path, engine_id: '33' }])
     const nfs = { ...children[0], metadata: { ...children[0].metadata, engine_type: 'minio' } }
     expect(isApprovalSelection(nfs)).toBe(false)
@@ -30,8 +30,8 @@ describe('System live-catalog protocol adapter', () => {
     const node = (term, name, role = 'leaf') => ({ metadata: { engine_type: 'minio', catalog_entry: {
       role, term, kind: term, path: { engine_id: 33, version: 'catalog.path/v1', segments: [...segments, { term, kind: term, name }] }
     } } })
-    for (const name of ['part.ifc', 'model.3DS', 'scene.dae', 'model.obj', 'part.STL', 'scene.GLTF']) expect(isApprovalSelection(node('object', name))).toBe(true)
-    for (const name of ['TEST.PNG', 'model.mtl', 'other.fbx']) expect(isApprovalSelection(node('object', name))).toBe(false)
+    for (const name of ['part.ifc', 'model.3DS', 'scene.dae', 'model.obj', 'part.STL', 'scene.GLTF', 'scene.FBX']) expect(isApprovalSelection(node('object', name))).toBe(true)
+    for (const name of ['TEST.PNG', 'model.mtl', 'other.skp']) expect(isApprovalSelection(node('object', name))).toBe(false)
     expect(isApprovalSelection(node('prefix', 'prefix', 'branch'))).toBe(false)
     expect(isApprovalSelection(node('bucket', 'bucket', 'branch'))).toBe(false)
     expect(isApprovalSelection(node('file', 'model.3ds'))).toBe(false)

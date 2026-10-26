@@ -30,7 +30,7 @@ RASTER_TASK_TYPE = "raster_cog_generation"
 MODEL_TASK_TYPE = "model_3d_glb_generation"
 MODEL_FORMATS = ("dae", "3ds", "ifc", "osgb", "skp", "max", "fbx", "obj")
 MESH_SOURCE_FACTS = {
-    "fbx": {"size_bytes": 17200, "sha256": "ad2d79fe89d4d646bc7930dc952eb28e69976a321b387bf7851ecd3f37e667f8"},
+    "fbx": {"size_bytes": 13740, "sha256": "7d585849dadf512d973a0262bd1ef9bc6e1d105b15596e99b50cdb864d06ef30"},
     "obj": {"size_bytes": 97, "sha256": "77114f3dc32005e8b1d250314fdeab1639ea28c048f4c5908f0959e09d390cb7"},
 }
 MESH_SOURCE_FACTS['obj']['download_members'] = {
@@ -1248,15 +1248,120 @@ def parse_model_glb(raw: bytes):
     return doc, view_bytes
 
 
+def validate_fbx_glb(doc, view_bytes, size_bytes):
+    """Independent world-space oracle for the pinned, self-authored FBX source."""
+    if any(doc.get(key) for key in ('images', 'textures', 'animations', 'skins', 'extensionsRequired')):
+        raise SuiteError('FBX fixture must remain static, untextured and self-contained')
+    # Assimp 5.2.5 lists these optional export capabilities without applying them.
+    if set(_array(doc.get('extensionsUsed',[]), 'FBX declared extensions')) - {'KHR_materials_volume','FB_ngon_encoding'}:
+        raise SuiteError('FBX fixture declares an unexpected extension')
+    accessors = _array(doc.get('accessors'), 'FBX accessors')
+    materials = _array(doc.get('materials'), 'FBX materials')
+    meshes = _array(doc.get('meshes'), 'FBX meshes')
+    def values(index, kind, component, count, width, encoding):
+        index = non_negative_int(index, 'FBX accessor index')
+        if index >= len(accessors):
+            raise SuiteError('FBX accessor is out of bounds')
+        accessor = _object(accessors[index], 'FBX accessor')
+        if (accessor.get('type') != kind or accessor.get('componentType') != component
+                or accessor.get('count') != count or accessor.get('sparse') or accessor.get('normalized')):
+            raise SuiteError('FBX triangle index count or vertex layout changed')
+        data, view = view_bytes(accessor.get('bufferView'))
+        offset = non_negative_int(accessor.get('byteOffset', 0), 'FBX accessor offset')
+        element_size = struct.calcsize(encoding) * width
+        stride = positive_int(view.get('byteStride', element_size), 'FBX accessor stride')
+        if stride < element_size or offset + (count-1)*stride + element_size > len(data):
+            raise SuiteError('FBX accessor bytes are truncated')
+        rows = [struct.unpack_from('<'+str(width)+encoding, data, offset+i*stride) for i in range(count)]
+        if any(not math.isfinite(value) for row in rows for value in row):
+            raise SuiteError('FBX positions must be finite')
+        return rows
+    mesh_triangles = []
+    for mesh in meshes:
+        mesh = _object(mesh, 'FBX mesh')
+        primitives = _array(mesh.get('primitives'), 'FBX primitives')
+        if len(primitives) != 1 or mesh.get('weights'):
+            raise SuiteError('FBX fixture must retain one static triangle per mesh')
+        primitive = _object(primitives[0], 'FBX primitive')
+        if primitive.get('mode', 4) != 4 or primitive.get('targets') or primitive.get('extensions'):
+            raise SuiteError('FBX fixture must retain static triangles')
+        attrs = _object(primitive.get('attributes'), 'FBX attributes')
+        points = values(attrs.get('POSITION'), 'VEC3', 5126, 3, 3, 'f')
+        index = non_negative_int(primitive.get('indices'), 'FBX indices')
+        if index >= len(accessors):
+            raise SuiteError('FBX indices are out of bounds')
+        component = _object(accessors[index], 'FBX indices').get('componentType')
+        encoding = {5121:'B', 5123:'H', 5125:'I'}.get(component)
+        if not encoding:
+            raise SuiteError('FBX indices must be unsigned integers')
+        indices = [row[0] for row in values(index, 'SCALAR', component, 3, 1, encoding)]
+        if sorted(indices) != [0,1,2]:
+            raise SuiteError('FBX triangle indices must retain all three vertices')
+        material = non_negative_int(primitive.get('material'), 'FBX material')
+        if material >= len(materials):
+            raise SuiteError('FBX material index is out of bounds')
+        material = _object(materials[material], 'FBX material')
+        pbr = _object(material.get('pbrMetallicRoughness'), 'FBX PBR')
+        color = pbr.get('baseColorFactor')
+        if (not isinstance(color, list) or len(color) != 4
+                or any(type(v) not in (int,float) or not math.isfinite(v) for v in color)
+                or any(not math.isclose(a,b,abs_tol=1e-6) for a,b in zip(color,[.2,.4,.8,1.]))
+                or material.get('alphaMode','OPAQUE') != 'OPAQUE'
+                or any('Texture' in key for key in pbr) or material.get('extensions')):
+            raise SuiteError('FBX fixture must preserve its original diffuse color and opacity')
+        mesh_triangles.append([points[i] for i in indices])
+    nodes = _array(doc.get('nodes'), 'FBX nodes')
+    scenes = _array(doc.get('scenes'), 'FBX scenes')
+    if len(scenes) != 1 or doc.get('scene',0) != 0:
+        raise SuiteError('FBX fixture must retain one active scene')
+    identity = [1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.,0.,0.,0.,0.,1.]
+    visited, used_meshes, triangles = set(), set(), []
+    def visit(index, parent):
+        index = non_negative_int(index, 'FBX node')
+        if index >= len(nodes) or index in visited:
+            raise SuiteError('FBX scene contains an invalid node, cycle or duplicate instance')
+        visited.add(index)
+        node = _object(nodes[index], 'FBX node')
+        if any(key in node for key in ('translation','rotation','scale','skin','weights','extensions')):
+            raise SuiteError('FBX fixture must retain static matrix transforms')
+        local = _array(node.get('matrix',identity), 'FBX matrix')
+        if (len(local) != 16 or any(type(v) not in (int,float) or not math.isfinite(v) for v in local)
+                or any(not math.isclose(local[i],v,abs_tol=1e-8) for i,v in ((3,0),(7,0),(11,0),(15,1)))):
+            raise SuiteError('FBX matrix must be finite and affine')
+        world = [sum(parent[k*4+row]*local[column*4+k] for k in range(4)) for column in range(4) for row in range(4)]
+        if 'mesh' in node:
+            mesh = non_negative_int(node['mesh'], 'FBX node mesh')
+            if mesh >= len(mesh_triangles):
+                raise SuiteError('FBX node mesh is out of bounds')
+            used_meshes.add(mesh)
+            triangles.append([tuple(sum(world[k*4+axis]*point[k] for k in range(3))+world[12+axis]
+                                    for axis in range(3)) for point in mesh_triangles[mesh]])
+        for child in _array(node.get('children',[]), 'FBX children'):
+            visit(child,world)
+    for index in _array(_object(scenes[0], 'FBX scene').get('nodes'), 'FBX roots'):
+        visit(index,identity)
+    def canonical(triangle):
+        rounded = tuple(tuple(round(v,5) for v in point) for point in triangle)
+        return min(rounded[i:]+rounded[:i] for i in range(3))
+    expected = [[(0.,0.,0.),(2.,0.,0.),(0.,3.,1.)],[(4.,0.,0.),(6.,0.,0.),(4.,3.,1.)]]
+    if (len(triangles) != 2 or used_meshes != set(range(len(meshes)))
+            or sorted(map(canonical,triangles)) != sorted(map(canonical,expected))):
+        raise SuiteError('FBX fixture must preserve both source world triangles and source node transforms')
+    return {'vertex_count':6, 'extent':[6.,3.,1.], 'embedded_images':0,
+            'instance_count':2, 'image_mime_type':None, 'size_bytes':size_bytes}
+
+
 def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
     if format_name not in MODEL_FORMATS:
         raise SuiteError("unexpected model fixture format")
     doc, view_bytes = parse_model_glb(raw)
     if format_name == "max":
         return validate_max_glb(doc, view_bytes, len(raw))
+    if format_name == "fbx":
+        return validate_fbx_glb(doc, view_bytes, len(raw))
     images = _array(doc.get("images", []), "fixture GLB images")
     mime_type = "image/jpeg" if format_name == "osgb" else "image/png"
-    image_count = 0 if format_name in {"ifc", "fbx"} else 1
+    image_count = 0 if format_name == "ifc" else 1
     if len(images) != image_count:
         raise SuiteError(f"fixture GLB must preserve exactly {image_count} embedded images")
     for image in images:
@@ -1290,7 +1395,7 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
             raise SuiteError("fixture accessor index is out of bounds")
         return _object(accessors[index], "fixture accessor")
     position = accessor(attributes.get("POSITION"))
-    expected_vertices = 24 if format_name in {"ifc", "fbx"} else 3
+    expected_vertices = 24 if format_name == "ifc" else 3
     if (position.get("type") != "VEC3" or position.get("componentType") != 5126
             or position.get("count") != expected_vertices or primitive.get("mode", 4) != 4):
         raise SuiteError("fixture mesh must preserve its triangle geometry and vertex count")
@@ -1302,17 +1407,6 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
     points = [struct.unpack_from("<3f", position_bytes, offset + i * stride) for i in range(expected_vertices)]
     if not all(math.isfinite(value) for point in points for value in point):
         raise SuiteError("fixture POSITION must contain finite coordinates")
-    if format_name == "fbx":
-        material_index = non_negative_int(primitive.get("material"), "FBX material")
-        if material_index >= len(materials):
-            raise SuiteError("FBX material index is out of bounds")
-        pbr = _object(_object(materials[material_index], "FBX material").get("pbrMetallicRoughness"), "FBX diffuse material")
-        color = pbr.get("baseColorFactor")
-        if not isinstance(color, list) or len(color) != 4 or any(type(v) not in (int, float) or not math.isfinite(v) for v in color) or any(not math.isclose(a, b, abs_tol=1e-6) for a, b in zip(color, [253/255, 236/255, 166/255, 1.])):
-            raise SuiteError("FBX fixture must preserve its original diffuse color")
-        corners = {(x, y, z) for x in (-100., 100.) for y in (-100., 100.) for z in (-100., 100.)}
-        if set(points) != corners:
-            raise SuiteError("FBX fixture must preserve its original eight box corners")
     # Positions are mesh-local: Assimp retains DAE centimeters and puts the
     # meter conversion on the scene root. Verify dimensions after scene transforms.
     nodes = _array(doc.get("nodes"), "fixture nodes")
@@ -1341,14 +1435,6 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
         if "mesh" in node:
             if node["mesh"] != 0:
                 raise SuiteError("fixture node must reference its only mesh")
-            if format_name == "fbx":
-                rx, ry = map(math.radians, (19.52863768959518, -30.398331095399516))
-                cx, sx, cy, sy = math.cos(rx), math.sin(rx), math.cos(ry), math.sin(ry)
-                a, b, c = 0.0017681174642734368, 0.0015908040794570112, 0.0015908040167168886
-                source_matrix = [cy*a, 0., -sy*a, 0., sy*sx*b, cx*b, cy*sx*b, 0.,
-                                 sy*cx*c, -sx*c, cy*cx*c, 0., 0.02918294258415699, 0.041242070496082306, 0.2000068873167038, 1.]
-                if any(not math.isclose(x, y, rel_tol=1e-5, abs_tol=1e-8) for x, y in zip(world, source_matrix)):
-                    raise SuiteError("FBX fixture must preserve its source node transforms")
             world_points.extend(tuple(sum(world[k * 4 + axis] * point[k] for k in range(3)) + world[12 + axis]
                                       for axis in range(3)) for point in points)
         for child in _array(node.get("children", []), "fixture node children"):
@@ -1362,13 +1448,6 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
     expected_extent = [1., 1., 1.] if format_name == "ifc" else [1., 1., 0.] if format_name == "osgb" else [1., 2., 0.]
     if format_name == "obj":
         expected_extent = [2., 3., 0.]
-    if format_name == "fbx":
-        # Derived independently from the pinned source's geometric XYZ rotation
-        # (19.52863768959518, -30.398331095399516, 0) and nonuniform scale.
-        expected_extent = [0.5105573967092505, 0.4062126128326324, 0.5293064548328336]
-        centre = [(max(point[axis] for point in world_points) + min(point[axis] for point in world_points)) / 2 for axis in range(3)]
-        if any(not math.isclose(a, b, abs_tol=1e-6) for a, b in zip(centre, [0.02918294258415699, 0.041242070496082306, 0.2000068873167038])):
-            raise SuiteError("FBX fixture must preserve its geometric translation")
     if format_name == "skp":
         expected_extent = [0.0762, 0., 0.0508]
         if any(not math.isclose(a, b, abs_tol=1e-6) for a, b in zip(extent, expected_extent)):
@@ -1377,7 +1456,7 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
         raise SuiteError("fixture geometry extent must preserve its source dimensions")
     if "indices" in primitive:
         indices = accessor(primitive["indices"])
-        expected_indices = 36 if format_name in {"ifc", "fbx"} else 3
+        expected_indices = 36 if format_name == "ifc" else 3
         if indices.get("count") != expected_indices or indices.get("type") != "SCALAR":
             raise SuiteError("fixture triangle index count changed")
         index_bytes, _ = view_bytes(indices.get("bufferView"))
@@ -1391,7 +1470,7 @@ def validate_model_glb(raw: bytes, format_name: str) -> dict[str, object]:
         decoded_indices = struct.unpack_from("<" + str(expected_indices) + index_encoding, index_bytes, index_offset)
         if any(index >= expected_vertices for index in decoded_indices):
             raise SuiteError("fixture triangle index exceeds vertex count")
-    elif format_name in {"ifc", "fbx"}:
+    elif format_name == "ifc":
         raise SuiteError("cube fixture must preserve its twelve indexed triangles")
     if image_count:
         if "TEXCOORD_0" not in attributes or accessor(attributes["TEXCOORD_0"]).get("count") != expected_vertices:
@@ -2301,8 +2380,8 @@ def prepare_minio_model_grants(client, environment):
     grants = models.ModelSourceAuthorization(issuer,client,{'tenant_id':tenant,'engine_id':engine,
         'principal_id':str(identity['principal']['id'])},source_type='minio',consumer_permissions=REQUIRED_PERMISSIONS)
     try:
-        for kind in ('ifc','3ds','dae','obj'):
-            name = environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET']+'/model3d/'+kind+'/model.'+kind
+        for kind, filename in [('ifc','model.ifc'),('3ds','model.3ds'),('dae','model.dae'),('obj','model.obj'),('fbx','model.fbx'),('fbx','vCube.fbx')]:
+            name = environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET']+'/model3d/'+kind+'/'+filename
             item = find_fixture_item(client,engine,name,kind)
             refs = [{'path':name,'role':'model','required':True,'primary':True}]
             if kind in {'3ds','dae','obj'}:

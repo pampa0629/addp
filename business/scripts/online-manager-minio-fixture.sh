@@ -108,7 +108,7 @@ for format in ifc osgb skp max 3ds; do
   [ -f "$source" ] || fail "fixture source is missing: $source"
 done
 
-[ -f "${REPOSITORY_DIR}/engines/model3d-workflow/tests/fixtures/mesh/box.fbx" ] || fail "FBX fixture source is missing"
+[ -f "${REPOSITORY_DIR}/business/fixtures/manager/addp_online_model_fixture.fbx" ] || fail "FBX fixture source is missing"
 [ -f "${REPOSITORY_DIR}/manager/frontend/e2e/fixtures/fbx/vCube.fbx" ] || fail "colored FBX fixture source is missing"
 [ -f "${REPOSITORY_DIR}/manager/frontend/e2e/fixtures/fbx/LICENSE-three.txt" ] || fail "colored FBX fixture license is missing"
 [ -f "${BUSINESS_DIR}/fixtures/manager/addp_online_max_texture.png" ] || fail "MAX texture fixture source is missing"
@@ -292,7 +292,7 @@ seed_fixture() {
   cp "${BUSINESS_DIR}/fixtures/manager/addp_online_exchange_texture.png" "$MODEL_FIXTURE_DIR/3ds/texture.png"
   cp "${BUSINESS_DIR}/fixtures/manager/addp_online_max_texture.png" "$MODEL_FIXTURE_DIR/max/texture.png"
   cp "${BUSINESS_DIR}/fixtures/manager/addp_online_max_texture.png" "$MODEL_FIXTURE_DIR/obj/texture.png"
-  cp "${REPOSITORY_DIR}/engines/model3d-workflow/tests/fixtures/mesh/box.fbx" "$MODEL_FIXTURE_DIR/fbx/model.fbx"
+  cp "${REPOSITORY_DIR}/business/fixtures/manager/addp_online_model_fixture.fbx" "$MODEL_FIXTURE_DIR/fbx/model.fbx"
   cp "${REPOSITORY_DIR}/manager/frontend/e2e/fixtures/fbx/vCube.fbx" "$MODEL_FIXTURE_DIR/fbx/vCube.fbx"
   cp "${REPOSITORY_DIR}/manager/frontend/e2e/fixtures/fbx/LICENSE-three.txt" "$MODEL_FIXTURE_DIR/fbx/LICENSE-three.txt"
   POINTCLOUD_FIXTURE_SOURCE="$MODEL_FIXTURE_DIR/pdal_las12_format0.las"
