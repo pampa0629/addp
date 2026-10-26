@@ -547,8 +547,17 @@
 		  <h3>{{ t('catalog.history.auditEvents') }}</h3>
 		  <el-timeline>
 			<el-timeline-item v-for="event in history?.audit_events || []" :key="event.id" :timestamp="formatDate(event.created_at)">
-			  <strong>{{ event.event_type }}</strong>
-			  <div class="audit-details">{{ formatAuditDetails(event.details) }}</div>
+			  <strong class="audit-event-title">{{ auditEventTitle(event, t) }}</strong>
+			  <dl v-if="auditEventSummary(event, t).length" class="audit-summary">
+				<div v-for="row in auditEventSummary(event, t)" :key="row.label">
+				  <dt>{{ row.label }}</dt><dd>{{ row.value }}</dd>
+				</div>
+			  </dl>
+			  <p v-else class="audit-empty">{{ t('catalog.history.noSummary') }}</p>
+			  <details class="audit-technical">
+				<summary>{{ t('catalog.history.technicalDetails') }}</summary>
+				<pre>{{ safeStringify(event) }}</pre>
+			  </details>
 			</el-timeline-item>
 		  </el-timeline>
 		  <el-empty v-if="!historyLoading && !history?.audit_events?.length" :image-size="60" :description="t('catalog.history.empty')" />
@@ -592,7 +601,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Bell, Edit, MoreFilled, Refresh, Star } from '@element-plus/icons-vue'
-import { navigateConsoleModuleRoute, openConsoleRoute, allowsConsoleRoute, resolveCanonicalTabRouteState, resolveConsoleRouteUrl, useConsolePageDescriptor } from '@common-ui'
+import { navigateConsoleModuleRoute, openConsoleRoute, allowsConsoleRoute, resolveCanonicalTabRouteState, resolveConsoleRouteUrl, safeStringify, useConsolePageDescriptor } from '@common-ui'
 import { createLineageApi, normalizeLineageGraph } from '@addp/common-frontend/graph/lineageApi.js'
 import EntryEditor from '../components/EntryEditor.vue'
 import EntryGovernanceDialog from '../components/EntryGovernanceDialog.vue'
@@ -604,6 +613,7 @@ import client from '../api/client'
 import { getMeasurementUnit, listMetricCategories } from '../api/standard'
 import { useAuthStore } from '../store/auth'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
+import { auditEventSummary, auditEventTitle } from '../utils/auditHistoryPresentation'
 import { dataDictionaryExportFileName, normalizeDataDictionaryBlobError, saveDataDictionaryExport } from '../utils/dataDictionaryExport'
 import { activeCodeItemLabels, formatPhysicalType, formatRangeConstraint } from '../utils/dataDictionaryView'
 import { buildCertificationPayload, buildCertificationWithdrawalPayload, buildDeprecationPayload, buildDeprecationWithdrawalPayload, buildWithdrawCurationPayload, curationAction } from '../utils/entryEdit'
@@ -1360,11 +1370,6 @@ async function goRecommendedSuccessor() {
 	await router.push({ name: 'EntryDetail', params: { id: entry.value.recommended_successor.id }, query: route.query })
 }
 
-function formatAuditDetails(details) {
-	if (!details || typeof details !== 'object') return ''
-	return Object.entries(details).map(([key, value]) => `${key}: ${String(value)}`).join(' · ')
-}
-
 async function reloadLatest() {
   editing.value = false
   governanceDialogVisible.value = false
@@ -1508,7 +1513,14 @@ watch(
 .owner-alert { margin-bottom: 16px; }
 .history-card { margin-bottom: 16px; }
 .history-card h3 { color: var(--addp-text-primary); font-size: 15px; margin: 18px 0 10px; }
-.audit-details { color: var(--addp-text-secondary); font-size: 13px; overflow-wrap: anywhere; margin-top: 4px; }
+.audit-summary { margin: 8px 0; font-size: 13px; }
+.audit-summary > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin: 4px 0; }
+.audit-summary dt, .audit-empty { color: var(--addp-text-secondary); }
+.audit-summary dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--addp-text-primary); }
+.audit-empty, .audit-technical { margin: 8px 0; font-size: 13px; }
+.audit-technical summary { cursor: pointer; color: var(--el-color-primary); }
+.audit-technical summary:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+.audit-technical pre { max-height: 24rem; overflow: auto; padding: 12px; border: 1px solid var(--addp-border-color); border-radius: 4px; background: var(--addp-bg-secondary); color: var(--addp-text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
 .rebind-form { margin-top: 16px; }
 @media (max-width: 760px) {
   .summary-header { align-items: flex-start; flex-direction: column; }

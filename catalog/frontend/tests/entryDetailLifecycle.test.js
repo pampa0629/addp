@@ -15,7 +15,8 @@ vi.mock('../src/api/catalog', () => api)
 vi.mock('../src/api/client', () => ({ default: {} }))
 vi.mock('../src/api/standard', () => ({ getMeasurementUnit: vi.fn(), listMetricCategories: vi.fn() }))
 vi.mock('element-plus', () => ({ ElMessage: { error: api.error, success: api.success }, ElMessageBox: {} }))
-vi.mock('@common-ui', () => ({
+vi.mock('@common-ui', async () => ({
+  safeStringify: (await import('@common-ui/utils/formatters')).safeStringify,
   navigateConsoleModuleRoute: vi.fn(), openConsoleRoute: vi.fn(), allowsConsoleRoute: () => false,
   resolveConsoleRouteUrl: () => '', useConsolePageDescriptor: vi.fn(),
   resolveCanonicalTabRouteState: ({ routeQuery }) => ({ tab: routeQuery.tab || 'overview', query: routeQuery, changed: false })
@@ -34,7 +35,7 @@ function deferred() {
   return { promise, resolve, reject }
 }
 const entry = id => ({ id, display_name: `Resource ${id}`, entry_type: 'data_application', entry_status: 'active', governance_status: 'curated' })
-const history = label => ({ source_bindings: [], audit_events: [{ id: label, event_type: label }] })
+const history = label => ({ source_bindings: [], audit_events: [{ id: label, event_type: 'catalog.entry.updated', details: { reason: label } }] })
 function mount() {
   const root = document.createElement('div')
   document.body.appendChild(root)
@@ -67,6 +68,47 @@ beforeEach(() => {
   api.getMyEntryMarks.mockResolvedValue({ favorite: false, following: false })
   api.getEntryHistory.mockImplementation(async id => history(`${id} history`))
   api.replaceMyEntryMarks.mockImplementation(async (_, marks) => marks)
+})
+
+describe('Catalog audit history presentation', () => {
+  it('shows a readable event and responsibilities instead of object coercion', async () => {
+    api.getEntryHistory.mockResolvedValue({ source_bindings: [], audit_events: [{
+      id: 'update', event_type: 'catalog.entry.updated', details: {
+        previous_governance_status: 'discovered', governance_status: 'curated', responsibility_count: 3,
+        responsibilities: [
+          { role: 'accountable_department', subject_type: 'department', subject_id: '10' },
+          { role: 'business_owner', subject_type: 'user', subject_id: '20' },
+          { role: 'data_steward', subject_type: 'user', subject_id: '30' }
+        ]
+      }
+    }] })
+    const view = mount(); await settle()
+    const area = view.root.querySelector('.history-card')
+    expect(area.textContent).not.toContain('[object Object]')
+    expect(area.querySelector('.audit-event-title').textContent).toBe('catalog.history.events.entryUpdated')
+    expect(area.querySelector('.audit-summary').textContent).toContain('catalog.edit.role.business_owner')
+    expect(area.querySelector('details').open).toBe(false)
+  })
+
+  it('preserves complete nested evidence and large string identities without HTML injection', async () => {
+    const event = { id: 'opaque', event_type: 'future.event', details: {
+      subject_id: '9007199254740993', changes: [{ enabled: false, name: '<script>unsafe()</script>', note: null }]
+    } }
+    api.getEntryHistory.mockResolvedValue({ source_bindings: [], audit_events: [event] })
+    const view = mount(); await settle()
+    const evidence = view.root.querySelector('.history-card details pre')
+    expect(evidence).not.toBeNull()
+    expect(JSON.parse(evidence.textContent)).toEqual(event)
+    expect(view.root.querySelector('script')).toBeNull()
+  })
+
+  it('uses a generic event title when an event is unknown or has no details', async () => {
+    api.getEntryHistory.mockResolvedValue({ source_bindings: [], audit_events: [{ id: 'future', event_type: 'future.event', details: null }] })
+    const view = mount(); await settle()
+    expect(view.root.querySelector('.audit-event-title')?.textContent).toBe('catalog.history.events.other')
+    expect(view.root.querySelector('.audit-summary')).toBeNull()
+    expect(view.root.querySelector('.audit-technical').textContent).toContain('future.event')
+  })
 })
 afterEach(() => mounted.splice(0).forEach(({ app, root }) => { app.unmount(); root.remove() }))
 
