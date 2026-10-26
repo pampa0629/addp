@@ -1,5 +1,6 @@
 """Gate-owned Python SDK producer. No System, model or business credentials."""
 import asyncio
+import importlib
 import json
 import os
 from pathlib import Path
@@ -14,10 +15,12 @@ from contextlib import asynccontextmanager
 STARTUP_STAGES=('copy','dependencies','imports','configuration','metrics','http_ready','identity','running')
 STARTUP_ERRORS=('none','dependency_failed','dependency_conflict','distribution_missing','permission_denied','no_space',
                 'module_missing','import_failed','file_missing','startup_failed','cancelled','log_over_budget','diagnostic_write_failed')
+STARTUP_COMPONENTS=('none','unknown','fastapi','starlette','uvicorn','addp_common','httpx','opentelemetry','pydantic',
+                    'cryptography','prometheus_client','protobuf','jsonschema','keyring','typing_extensions')
 
 
-def startup_record(stage,status,error='none',exit_code=None,log_bytes=0):
-    return {'stage':stage,'status':status,'error':error,'exit_code':exit_code,'log_bytes':log_bytes,'log_over_budget':log_bytes>65536}
+def startup_record(stage,status,error='none',exit_code=None,log_bytes=0,component='none'):
+    return {'stage':stage,'status':status,'error':error,'exit_code':exit_code,'log_bytes':log_bytes,'log_over_budget':log_bytes>65536,'component':component}
 
 
 def read_startup(path):
@@ -27,6 +30,7 @@ def read_startup(path):
         value=json.loads(raw)
         if not isinstance(value,dict) or set(value)!=set(startup_record('copy','starting')):raise ValueError()
         if value['stage'] not in STARTUP_STAGES or value['status'] not in ('starting','passed','failed') or value['error'] not in STARTUP_ERRORS:raise ValueError()
+        if value['component'] not in STARTUP_COMPONENTS:raise ValueError()
         code=value['exit_code'];size=value['log_bytes']
         if code is not None and (type(code) is not int or not -255<=code<=255):raise ValueError()
         if type(size) is not int or not 0<=size<=256*1024**2 or type(value['log_over_budget']) is not bool or value['log_over_budget']!=(size>65536):raise ValueError()
@@ -53,6 +57,13 @@ def exception_kind(error):
     if isinstance(error,FileNotFoundError):return 'file_missing'
     if isinstance(error,(KeyboardInterrupt,SystemExit)):return 'cancelled'
     return 'startup_failed'
+
+
+def missing_component(error):
+    if not isinstance(error,ModuleNotFoundError):return 'none'
+    name=(error.name or '').split('.')[0]
+    if name=='google':return 'protobuf'
+    return name if name in STARTUP_COMPONENTS[2:] else 'unknown'
 
 
 def stop_runtime(server,thread,source,primary):
@@ -163,10 +174,10 @@ def main():
     index=int(os.environ['HTTP_T2_INDEX']);root=Path('/source')
     if index not in (1,2):return 1
     current='copy'
-    def stage(name,status='starting',error='none',exit_code=None,log_bytes=0):
+    def stage(name,status='starting',error='none',exit_code=None,log_bytes=0,component='none'):
         nonlocal current
         current=name
-        value=startup_record(name,status,error,exit_code,log_bytes)
+        value=startup_record(name,status,error,exit_code,log_bytes,component)
         try:(root/f'python-{index}.startup.json').write_text(json.dumps(value))
         except OSError:
             print(json.dumps(startup_record(name,'failed','diagnostic_write_failed')),flush=True)
@@ -182,11 +193,14 @@ def main():
             error,size=install_diagnostic(log)
             stage('dependencies','failed',error,result.returncode,size)
             return 1
+        # /tmp/deps did not exist when this interpreter imported stdlib. Clear
+        # PathFinder's cached None before importing packages installed there.
+        importlib.invalidate_caches()
         stage('imports')
         produce(index,root,stage)
         return 0
     except BaseException as error:
-        try:stage(current,'failed',exception_kind(error))
+        try:stage(current,'failed',exception_kind(error),component=missing_component(error))
         except RuntimeError:pass
         return 1
 

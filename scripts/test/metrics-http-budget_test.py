@@ -127,7 +127,7 @@ class HTTPBudget(unittest.TestCase):
             result=subprocess.run(['python3','-',str(receipt),str(Path(m.__file__))],input=body,capture_output=True,text=True,timeout=5)
             self.assertEqual(result.returncode,0,result.stderr)
             self.assertEqual(json.loads(receipt.read_text())['request_counts']['go'],90)
-            value={'stage':'imports','status':'failed','error':'module_missing','exit_code':None,'log_bytes':0,'log_over_budget':False}
+            value={'stage':'imports','status':'failed','error':'module_missing','exit_code':None,'log_bytes':0,'log_over_budget':False,'component':'unknown'}
             (source/'python-1.startup.json').write_text(json.dumps(value))
             result=subprocess.run(['python3','-',str(receipt),str(Path(m.__file__))],input=body,capture_output=True,text=True,timeout=5)
             self.assertEqual(result.returncode,0,result.stderr)
@@ -233,6 +233,28 @@ class HTTPBudget(unittest.TestCase):
             self.assertNotIn('private-token',stdout.getvalue()+output.read_text())
             self.assertEqual(launch.call_count,1);self.assertEqual(sample.call_count,1)
             stop.assert_called_once_with(1234,m.signal.SIGTERM)
+
+    def test_guard_failure_during_owned_cleanup_does_not_interrupt_cleanup_or_pass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);work=root/'addp-metrics-t2.fixture';work.mkdir();output=root/'report.json'
+            ownership={'project':'addp-metrics-t2-'+'a'*32,'work':str(work)}
+            child=Mock(pid=1234);child.poll.return_value=None;receipt=None
+            def start(*args,**kwargs):
+                nonlocal receipt
+                receipt=Path(kwargs['env']['ADDP_HTTP_BUDGET_RECEIPT']);receipt.write_text(json.dumps(ownership))
+                def cleanup(**kwargs):
+                    shutil.rmtree(work);receipt.write_text(json.dumps({**ownership,'cleanup_started':True,'cleanup_verified':True}))
+                    return 1
+                child.wait.side_effect=cleanup
+                return child
+            def sample(*args):
+                receipt.write_text(json.dumps({**ownership,'cleanup_started':True}))
+                raise m.BudgetFailure('http_budget_sample_command_failed','inspect','command_failed',exit_code=1)
+            with patch.object(m.sys,'argv',['budget','bash','scripts/test/monitor-metrics-gate.sh','--case=http-quality']),patch.dict(os.environ,{'ADDP_HTTP_BUDGET_REPORT':str(output)}),patch.object(m,'input_hashes',return_value={}),patch.object(m.subprocess,'Popen',side_effect=start),patch.object(m,'sample',side_effect=sample) as sampled,patch.object(m.os,'killpg') as stop,redirect_stdout(io.StringIO()):
+                self.assertEqual(m.main(),1)
+            stop.assert_not_called();self.assertEqual(sampled.call_count,1)
+            report=json.loads(output.read_text())
+            self.assertEqual(report['result'],'failed');self.assertTrue(report['cleanup_verified'])
 
     def test_preflight_zero_exit_needs_verified_tls_and_exact_zero_business_counts(self):
         for tls_ok,total,expected in [(True,0,0),(False,0,1),(True,1,1)]:

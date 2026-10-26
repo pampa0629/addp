@@ -157,6 +157,8 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
             result=ns['read_startup'](path)
             self.assertEqual(result,{'stage':'unknown','status':'unavailable'})
             self.assertNotIn('private-token',json.dumps(result))
+            self.assertEqual(ns['missing_component'](ModuleNotFoundError('private-token',name='private_package.secret')),'unknown')
+            self.assertEqual(ns['missing_component'](ModuleNotFoundError('private-token',name='fastapi.private')),'fastapi')
 
     def test_python_cleanup_checks_both_sources_and_preserves_first_failure(self):
         ns=runpy.run_path(str(ROOT/'scripts/test/python-http-metrics-probe.py'))
@@ -219,6 +221,27 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
             else:
                 with self.assertRaisesRegex(RuntimeError,'python_http_shutdown_failed'):stop(server,thread,source,False)
             source.close.assert_called_once_with()
+
+    def test_python_bootstrap_can_import_target_created_after_interpreter_start(self):
+        ns=runpy.run_path(str(ROOT/'scripts/test/python-http-metrics-source.py'))
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);target=root/'new-target';name='addp_t2_created_after_start'
+            sys.path.insert(0,str(target))
+            try:
+                self.assertIsNone(importlib.util.find_spec(name))
+                self.assertIsNone(sys.path_importer_cache[str(target)])
+                def install(*args,**kwargs):
+                    target.mkdir();(target/(name+'.py')).write_text('value=1\n')
+                    return subprocess.CompletedProcess([],0)
+                def produce(index,source,stage):
+                    module=importlib.import_module(name)
+                    self.assertEqual(module.value,1);stage('running','passed')
+                def path(value):return root/'install.log' if value=='/tmp/install.log' else root
+                globals_=ns['main'].__globals__
+                with mock.patch.dict(globals_,{'Path':path,'produce':produce}),mock.patch.object(globals_['shutil'],'copytree'),mock.patch.object(globals_['subprocess'],'run',side_effect=install),mock.patch.dict(os.environ,HTTP_T2_INDEX='1'):
+                    self.assertEqual(ns['main'](),0)
+            finally:
+                sys.path.remove(str(target));sys.path_importer_cache.pop(str(target),None);sys.modules.pop(name,None)
 
     def python_traffic(self, index):
         source = ast.parse((ROOT / 'scripts/test/python-http-metrics-source.py').read_text())

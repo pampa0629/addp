@@ -202,8 +202,21 @@ def main():
         except BaseException as failure:
             error=type(failure).__name__ if not isinstance(failure,RuntimeError) else str(failure)
             if isinstance(failure,BudgetFailure):report['failure_detail']=failure.detail
-            try:os.killpg(child.pid,signal.SIGTERM)
-            except ProcessLookupError:pass
+            # A sample can start before the EXIT trap marks cleanup, then fail
+            # as its containers are removed. Keep that failure, but never send
+            # a second SIGTERM into the mandatory cleanup already in progress.
+            cleaning=False
+            try:
+                latest=json.loads(ownership_path.read_text())
+                cleaning=bool(ownership is not None and isinstance(latest.get('project'),str) and
+                              re.fullmatch(r'addp-metrics-t2-[0-9a-f]{32}',latest['project']) and
+                              isinstance(latest.get('work'),str) and latest.get('project')==ownership.get('project') and
+                              latest.get('work')==ownership.get('work') and latest.get('cleanup_started') is True)
+            except (OSError,ValueError,AttributeError):pass
+            report['failure_during_cleanup']=cleaning
+            if not cleaning:
+                try:os.killpg(child.pid,signal.SIGTERM)
+                except ProcessLookupError:pass
         finally:
             # Mandatory owned cleanup is allowed to finish after work cutoff;
             # an overdue/failed run remains failed, never renewed or retried.
@@ -233,7 +246,7 @@ def main():
                 report['result']='passed'
             output.write_text(json.dumps(report,indent=2))
     summary={key:report.get(key) for key in ('case','result','error_code','failure_detail','exit_code','elapsed_seconds','source_tls_proof','source_tls_publication',
-             'cleanup_verified','private_directory_removed','inputs_unchanged','request_counts','request_phases','request_traffic_error','python_sources')}
+             'cleanup_verified','private_directory_removed','inputs_unchanged','request_counts','request_phases','request_traffic_error','python_sources','failure_during_cleanup')}
     print('HTTP functional budget result: '+json.dumps(summary,sort_keys=True),flush=True)
     print('HTTP functional budget report: '+str(output),flush=True)
     return 0 if report['result']=='passed' else 1

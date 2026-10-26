@@ -1871,3 +1871,16 @@ Monitor T1 实际覆盖停流零分母的归一、零请求权重聚合及活动
 `python3 -m unittest scripts/test/metrics-deployment-config_test.py scripts/test/metrics-http-budget_test.py` 116 项通过；`make test-infra-runtime-log-lifecycle` 123 项 runner／既有 System Go fixture及 78 项聚合通过；T2 登记测试 38 项和登记 22／12／9／2、shell／专项 diff 检查通过。首失败被旧 finally 覆盖的回归先失败，修正后通过；覆盖启动子阶段模拟、安装诊断边界／脱敏、超时和恢复失败时仍检查第二来源、关闭全部进程内资源及保留首失败、预算归档回执。此为 T0／确定性证据，未运行本地安装、容器、Python 业务实链、Hosted、容量或定时；真实 Python 启动根因仍待带诊断的自然 Linux CI。
 
 原始日志和补丁／门禁／摘要保存在 `/tmp/addp-p19-python-startup-20261026-y1zoacsw/`。前一轮 66.598 秒本地目录失败和 `1ce3ddac7` 目录分类仅在各自已记范围有效，不是本次 Python 启动原因。本批只提交本会话 hunk，按既有 main 推送产生自然 CI；不手工触发、取消或重跑 Actions，不新开本地窗口。
+
+
+### 启动诊断的 Linux 实跑与同进程导入缓存修正（2026-10-26）
+
+固定 `ffc478e1a8ad0c099d6d21d32477552df32b9abe` 的自然 [HTTP quality Job](https://github.com/pampa0629/addp/actions/runs/40342629801/job/121641589201) 已结束失败。Go 告警子链再次实跑 150.34 秒通过。真实生产者回执首次确认两源均在 imports 阶段 module_missing，安装命令已返回成功；两个退出检查和发现范围恢复均执行，日志保留 Python 身份发布前的首异常，不再被 finally 的退出非零覆盖。日志前部配置 T0 的 prepare 模拟回执不是实际生产者结果，本结论取后部真实回执。
+
+官方 Artifact `12661186120`，19852 字节，下载 SHA256 核对为 `8af2b83c27dbb734ccbb89b68a987860cd6286cf96e878f0062392659467d9db`。预算报告 573.390 秒、整体 failed、输入未变；另有 inspect 非零读取失败（命令 1.022295 秒、检查累计 1.038813 秒、启动剩余 3.983482 秒），随后子入口 -15、cleanup_verified=false、private_directory_removed=false，最终预算未保存 Python 回执。真实启动事实仍在原 Job 日志，但不能称完整清理或 Python 实链通过。原始 ZIP、预算 JSON、日志及 linux-failure-audit.json 位于 `/tmp/addp-p19-python-startup-20261026-y1zoacsw/`。
+
+确定性重现本批新入口的一个缺陷：解释器启动时 /tmp/deps 尚不存在，PathFinder 可缓存该路径为 None；同进程完成安装后直接导入仍不可见。回归实际建立路径负缓存、模拟安装创建模块，再运行真正 bootstrap，修正前返回 1、刷新导入缓存后返回 0；没有运行 pip。现在安装结束后调用 importlib.invalidate_caches()，不更改依赖版本／UID／权限。缺失组件仅保留固定白名单类别，未知为 unknown。此问题属于 ffc478e1a 引入的同进程路径，不反推更早 shell／exec 入口的唯一失败原因。
+
+另一项确定性控制流修正：采样开始后可能进入清理，再遇资源读取失败；旧父进程会重复 SIGTERM 中断已经开始的强制清理。现在只在回执 project／私有目录与本次归属完全相符且 cleanup_started=true 时不再次发送终止，仍保留该资源错误、停止新采样、等待原清理，整次仍 failed；未进入清理仍沿原取消路线。报告保留 failure_during_cleanup 布尔值。四秒与原 120 秒清理期限不变，不忽略消失容器或将清理重叠错误改判通过。当次旧报告没有重叠标记，此回归证明控制流缺陷，不唯一还原该次 inspect 非零和清理中断的全部时序。
+
+先修规范，两个回归先失败后通过；最终配置／预算 118 项、生命周期 123 项 runner／既有 System Go fixture及 79 项聚合、登记测试 38 项与 22／12／9／2、shell／专项 diff 均通过。补丁和门禁日志在上述目录 follow-up/；后续自然 CI 单独核验，不把这份确定性通过当作实际 Python 已启动。本轮未开本地窗口、安装实际依赖或运行 Python 业务实链、Hosted、容量、定时，也未取消或手工重跑 CI。
