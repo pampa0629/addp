@@ -2081,7 +2081,8 @@ def validate_raster_workflow_profile(repository: Path, registered: set[str]) -> 
         ),
         "Makefile": ("test-raster-online-runner", "scripts/test/raster-workflow-online_test.py",
                      "scripts/test/online-raster-minio-fixture_test.py", "scripts/test/online-hosted-raster-gate_test.py",
-                     "scripts/test/raster-image-export-online_test.py", "test_raster_image_export.py"),
+                     "scripts/test/raster-image-export-online_test.py", "test_raster_image_export.py",
+                     "@$(MAKE) test-raster-image-export-online-runner"),
     }
     for relative, fragments in required.items():
         path = repository / relative

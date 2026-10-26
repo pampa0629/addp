@@ -834,9 +834,10 @@ def validate_editor_report(report, evidence):
         or ('node_id' in query and (len(query['node_id']) != 1 or not query['node_id'][0].isdigit() or int(query['node_id'][0]) <= 0))
         or reference(params.get('input_raster')) != mosaic['id'] or save.get('depends_on') != [mosaic['id']]
         or save['id'] != report['save_node_id']
+        or type(params.get('jpeg_quality')) is not int
         or {key: value for key, value in params.items() if key not in ('input_raster', 'target_parent_locator')} != {
             'target_name': evidence['target_name'], 'write_mode': 'create', 'profile': 'cog',
-            'compression': 'DEFLATE', 'blocksize': 128, 'overview_resampling': 'nearest'}):
+            'compression': 'DEFLATE', 'blocksize': 128, 'overview_resampling': 'nearest', 'jpeg_quality':90}):
         raise SuiteError('raster editor changed the exact public output target/profile')
 
 

@@ -814,9 +814,14 @@ test-vector-rasterize-online-runner: ## 验证矢量栅格化独立 T4 夹具、
 	@bash -n scripts/test/online-hosted-vector-rasterize-gate.sh
 	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/vector-rasterize-persistence-online_test.py scripts/test/online-vector-rasterize-fixture_test.py scripts/test/online-hosted-vector-rasterize-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_rasterize_requires_manual_nfs_identity_strict_sizes_and_regressions
 
-test-raster-online-runner: ## 验证栅格 T4 场景、物理夹具与隔离生命周期
-	@python3 -m unittest scripts/test/raster-image-export-online_test.py
+.PHONY: test-raster-image-export-online-runner
+test-raster-image-export-online-runner: ## 验证普通 PNG/JPEG 导出、真实编辑器参数及其 CI 登记
+	@python3 -m unittest scripts/test/raster-image-export-online_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_raster_requires_manual_disposable_profile_and_registered_regressions
+	@python3 -m unittest scripts/test/raster-workflow-online_test.py -k editor
 	@node --check --input-type=module < console/frontend/e2e/online/raster-workflow.spec.js
+
+test-raster-online-runner: ## 验证栅格 T4 场景、物理夹具与隔离生命周期
+	@$(MAKE) test-raster-image-export-online-runner
 	@$(MAKE) test-raster-boundary-clean-online-runner
 	@$(MAKE) test-raster-thin-online-runner
 	@$(MAKE) test-raster-fill-depressions-online-runner

@@ -443,7 +443,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         evidence = {key: value for key, value in original.items() if key not in extra}
         for fault in ('run', 'user', 'runtime', 'task', 'parent', 'deleted', 'reload', 'update', 'replay',
                       'boolean-count', 'source', 'source-crs', 'missing-source-default', 'missing-source', 'order', 'grid', 'operator', 'output',
-                      'target-engine', 'target-path', 'private', 'save-node'):
+                      'target-engine', 'target-path', 'private', 'save-node', 'jpeg-quality', 'missing-quality', 'float-quality'):
             with self.subTest(fault=fault):
                 report = copy.deepcopy(original)
                 tasks = report['workflow_definition']['tasks']
@@ -469,6 +469,9 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                 if fault == 'target-path': tasks[-1]['params']['target_parent_locator'] = 'addp://engine/2/path/raster-target/child?type=bucket'
                 if fault == 'private': tasks[0]['params']['access_plan'] = {}
                 if fault == 'save-node': report['save_node_id'] = tasks[0]['id']
+                if fault == 'jpeg-quality': tasks[-1]['params']['jpeg_quality'] = 85
+                if fault == 'missing-quality': tasks[-1]['params'].pop('jpeg_quality')
+                if fault == 'float-quality': tasks[-1]['params']['jpeg_quality'] = 90.0
                 with self.assertRaises(m.SuiteError): m.validate_editor_report(report, evidence)
 
     def test_editor_requires_only_create_delete_and_never_falls_back_to_api_submission(self):
@@ -973,7 +976,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
         definition=m.mosaic_source_workflow(dict(zip(evidence['source_names'],evidence['source_locators'])),
                                              evidence['target_engine_id'],evidence['case_name'])
         for task in definition['tasks'][:3]: task['params']['source_crs'] = ''
-        definition['tasks'][-1]['params'].update(compression='DEFLATE',overview_resampling='nearest')
+        definition['tasks'][-1]['params'].update(compression='DEFLATE',overview_resampling='nearest',jpeg_quality=90)
         identifier=m.submit(self.client,evidence['workflow_engine_id'],definition)
         self.editor_counter += 1
         task_id = 500 + self.editor_counter

@@ -2080,6 +2080,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         files = (
             "scripts/test/online-gate.py", "scripts/test/online-hosted-raster-gate.sh", "scripts/utils/hosted-online.sh",
             "business/scripts/online-raster-minio-fixture.py", "scripts/test/raster-workflow-online.py",
+            "scripts/test/raster-image-export-online.py",
             "scripts/utils/hosted-product-runtime.sh",
             "console/frontend/e2e/online/raster-workflow.spec.js", "Makefile",
             ".github/workflows/online-t4-gates.yml",
@@ -2099,6 +2100,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             ("scripts/test/online-hosted-raster-gate.sh", "online-raster-minio-fixture.py stop", "true"),
             ("scripts/test/online-hosted-raster-gate.sh", "unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN", "true"),
             ("Makefile", "scripts/test/online-raster-minio-fixture_test.py", ""),
+            ("Makefile", "@$(MAKE) test-raster-image-export-online-runner", ""),
+            ("scripts/test/raster-image-export-online.py", "preserved_sha256", "omitted"),
+            ("scripts/test/raster-workflow-online.py", "report['image_exports']", "omitted_image_phase"),
             ("console/frontend/e2e/online/raster-workflow.spec.js", "auth.principalID", "other"),
             ("scripts/test/raster-workflow-online.py", "spatial_workflow", "incomplete_case"),
             ("business/scripts/online-raster-minio-fixture.py", "verify-mosaic-last", "omitted"),

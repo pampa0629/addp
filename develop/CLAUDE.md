@@ -80,6 +80,8 @@ Develop 模块按具体工作流运行时实例聚合算子定义，用于工作
 
 Adapter 可对 Runtime 已有参数提供双语名称和说明投影，但不重复声明其类型、枚举、默认值或显示条件。`raster_save` 的编码及 JPEG 质量由 Runtime 规范拥有；Adapter 仅按选定 profile 派生同一目标的 canonical format、MIME 和文件名校验，普通 PNG／JPEG 沿既有 write 授权与发布路径执行，不创建第二个保存算子。
 
+统一表单会将 Runtime 声明的默认参数一并保存；显示条件不删除已保存参数。因而 TIFF/COG 工作流也可携带整数 `jpeg_quality=90`，但编码器只在 JPEG 路线应用此值；PNG/JPEG 同样不应用 TIFF 的压缩和金字塔参数。验收须核对完整实际保存参数及选定编码，不能以旧枚举的参数集合拒绝新声明的默认值。
+
 算子面板按 Runtime 的 `category_path` 递归显示目录，同名末级组以完整路径区分，父组显示后代算子总数；搜索展开匹配算子的全部祖先，点击与拖拽共用唯一算子卡片实现。GeoPython 的两级四字分类由 Runtime 拥有，不在 Develop 按引擎类型或算子名称维护分类表。最小验证运行 `make test-develop-frontend` 和 `make test-geopython-workflow`，现有 Frontend / GeoPython CI 已覆盖。
 
 直接连接资源的选择范围与执行校验唯一来自当前 Runtime Instance 的 `compute.workflow.storage_access`，不按计算引擎类型生成名单，不在算子 Adapter 保存名单。缺少声明时没有直接连接候选。输入读取与输出写入分别与存储实例的 `storage.store` 能力取交集。受控 access-plan 选择范围复用 Common 解析器的方法映射；操作只声明挂载目录等所需访问方法。标准验证使用 `make test-module MODULE=develop`，Common 契约变更另运行 `make test-go`。
