@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import fcntl
+import json
 import os
 import subprocess
 import sys
@@ -355,13 +356,115 @@ class ModuleGateTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("commit belongs to this repository", result.stderr)
 
-    def test_meta_postgres_source_checkout_preserves_infra_owner_and_required_facts(self) -> None:
+    def test_meta_postgres_source_checkout_preserves_infra_owner(self) -> None:
         source = (SCRIPT.parents[2] / "scripts/test/meta-postgres-gate.sh").read_text()
         self.assertIn('source "$ROOT_DIR/scripts/infra/ports.sh"', source)
         self.assertIn('cd "$SOURCE_ROOT/meta/backend"', source)
         self.assertIn('addp_infra_verify_test_postgres_dsn "$META_POSTGRES_TEST_DSN"', source)
-        self.assertIn("--- PASS: TestDataItemAuthorizationFactsAgainstPostgres ", source)
-        self.assertIn("--- PASS: TestScanPlanFactsAgainstPostgres ", source)
+
+    def _run_meta_postgres_group(self, arguments: list[str], mode: str = "passed"):
+        # Execute the real selector/guard shell with fake Go and Infra only.
+        # No connection, database or shared owner lock is touched.
+        with tempfile.TemporaryDirectory(dir=self.repository) as directory:
+            root = Path(directory)
+            script = root / "scripts/test/meta-postgres-gate.sh"
+            script.parent.mkdir(parents=True)
+            source = (SCRIPT.parents[2] / "scripts/test/meta-postgres-gate.sh").read_text()
+            script.write_text(source.replace("/tmp/addp-meta-postgres-gate.lock", str(root / "meta.lock")))
+            module = root / "meta/backend/go.mod"
+            module.parent.mkdir(parents=True)
+            module.write_text("module github.com/addp/meta\n")
+            infra = root / "scripts/infra/ports.sh"
+            infra.parent.mkdir(parents=True)
+            infra.write_text('addp_infra_verify_test_postgres_dsn() { printf "%s\\n" "$1" > "$ADDP_META_TEST_INFRA"; }\n')
+            binaries = root / "bin"
+            binaries.mkdir()
+            go = binaries / "go"
+            go.write_text('''#!/usr/bin/env python3
+import json, os, re, sys
+from pathlib import Path
+args = sys.argv[1:]
+with Path(os.environ['ADDP_META_TEST_CALLS']).open('a') as output:
+    output.write(json.dumps({'args':args,'cwd':os.getcwd()})+'\\n')
+package = args[1]
+pattern = args[args.index('-run')+1]
+catalog = {
+    './internal/repository':['TestClaimedComponentsAgainstPostgres'],
+    './internal/service':['TestDataItemAuthorizationFactsAgainstPostgres','TestScanPlanFactsAgainstPostgres','TestProductionBasicScanAgainstPostgres'],
+    './internal/scanadapter':['TestPreciseCatalogScanAgainstPostgres'],
+    './internal/scanprocessor':['TestDelimitedEncodingRefreshAgainstPostgres'],
+    './internal/scanruntime':['TestObjectModelRelatedRefsAgainstPostgres','TestFTPBasicCompositionAgainstPostgres'],
+    './internal/api':['TestMetaScanExecutionReadAgainstPostgres'],
+}
+mode = os.environ['ADDP_META_TEST_MODE']
+if mode == 'failure':
+    sys.exit(17)
+if mode == 'empty':
+    print('PASS [no tests to run]')
+else:
+    for name in catalog[package]:
+        if re.fullmatch(pattern,name) and mode != 'omit:'+name:
+            print('--- PASS: '+name+' (0.01s)')
+    if mode == 'skip':
+        print('--- SKIP: required fixture (0.01s)')
+    print('PASS')
+''')
+            go.chmod(0o755)
+            calls, owner = root / "calls.jsonl", root / "infra-owner"
+            env = dict(os.environ, PATH=f"{binaries}:{os.environ['PATH']}",
+                       META_POSTGRES_TEST_DSN="postgres://fixture/addp_test",
+                       ADDP_META_TEST_CALLS=str(calls), ADDP_META_TEST_INFRA=str(owner), ADDP_META_TEST_MODE=mode)
+            result = subprocess.run(["bash", str(script), *arguments], cwd=root,
+                                    env=env, capture_output=True, text=True, timeout=10)
+            recorded = [json.loads(row) for row in calls.read_text().splitlines()] if calls.exists() else []
+            for call in recorded:
+                self.assertEqual(str(module.parent.resolve()), call['cwd'])
+                self.assertEqual(['-count=1','-v'], call['args'][-2:])
+            return result, recorded, owner.read_text().strip() if owner.exists() else None
+
+    def test_meta_postgres_groups_select_registered_packages_and_real_required_tests(self) -> None:
+        all_packages = ['repository','service','scanadapter','scanprocessor','scanruntime','api']
+        for args, packages in (([],all_packages),(['--test','all'],all_packages),
+                               (['--test','authorization-facts'],['service']),
+                               (['--test','file-composition'],['scanruntime'])):
+            with self.subTest(arguments=args):
+                result, calls, owner = self._run_meta_postgres_group(args)
+                self.assertEqual(0,result.returncode,result.stderr)
+                self.assertEqual([f'./internal/{name}' for name in packages],[call['args'][1] for call in calls])
+                self.assertEqual('postgres://fixture/addp_test',owner)
+                if packages == ['service']:
+                    self.assertNotIn('TestProductionBasicScanAgainstPostgres',result.stdout)
+                    self.assertIn('--- PASS: TestDataItemAuthorizationFactsAgainstPostgres ',result.stdout)
+                    self.assertIn('--- PASS: TestScanPlanFactsAgainstPostgres ',result.stdout)
+                if packages == ['scanruntime']:
+                    self.assertNotIn('TestDataItemAuthorizationFactsAgainstPostgres',result.stdout)
+                    self.assertIn('--- PASS: TestObjectModelRelatedRefsAgainstPostgres ',result.stdout)
+                    self.assertIn('--- PASS: TestFTPBasicCompositionAgainstPostgres ',result.stdout)
+
+    def test_meta_postgres_each_group_rejects_missing_required_proofs_skips_zero_matches_and_go_failure(self) -> None:
+        for group in ('all','authorization-facts','file-composition'):
+            required = ('TestObjectModelRelatedRefsAgainstPostgres','TestFTPBasicCompositionAgainstPostgres') if group == 'file-composition' else ('TestDataItemAuthorizationFactsAgainstPostgres','TestScanPlanFactsAgainstPostgres')
+            for mode in ('skip','empty','failure',*('omit:'+name for name in required)):
+                with self.subTest(group=group,mode=mode):
+                    result, calls, owner = self._run_meta_postgres_group(['--test',group],mode)
+                    self.assertNotEqual(0,result.returncode)
+                    self.assertTrue(calls)
+                    self.assertEqual('postgres://fixture/addp_test',owner)
+                    if mode == 'skip':
+                        self.assertIn('refuses skipped tests',result.stderr)
+                    elif mode == 'failure':
+                        self.assertEqual(17,result.returncode)
+                    else:
+                        missing = mode.removeprefix('omit:') if mode.startswith('omit:') else required[0]
+                        self.assertIn(f'requires the real {missing} test',result.stderr)
+
+    def test_meta_postgres_invalid_group_fails_before_infra_and_go(self) -> None:
+        for args in (['--test'],['--test','unknown'],['--unknown']):
+            with self.subTest(arguments=args):
+                result, calls, owner = self._run_meta_postgres_group(args)
+                self.assertEqual(2,result.returncode)
+                self.assertEqual([],calls)
+                self.assertIsNone(owner)
 
     def test_meta_postgres_cross_checkout_lock_and_child_lifetime(self) -> None:
         lock = self.repository / "meta.lock"
