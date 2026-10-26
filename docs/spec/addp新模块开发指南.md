@@ -95,7 +95,7 @@
    Go 模块的部署加载顺序：
 
    1. 在进程启动入口调用 `commonConfig.LoadEnv()`，只用根 `.env` 补齐缺失的环境变量；显式注入的实际端口和地址优先，禁止硬编码相对 `.env` 路径或增加私有覆盖文件。
-   2. 模块配置嵌入 `commonConfig.BaseConfig`，通过 `commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)` 加载共享部署字段；只增加模块真正需要的字段，不重复定义数据库字段或再建 `SystemURL` 镜像字段。
+   2. 模块配置嵌入 `commonConfig.BaseConfig`，通过 `commonConfig.LoadDeploymentConfig(&cfg.BaseConfig)` 加载共享部署字段；数据库、`SystemServiceURL` 和共享日志配置保持唯一字段与读取路径，不再建 `SystemURL` 镜像字段，只增加模块确有独立语义的配置。
    3. 显式加载并校验模块监听配置、`BaseConfig.SystemServiceURL` 和所属 Service Client Secret 等必要参数。`LoadDeploymentConfig()` 不会替模块填充全部字段，不能把调用过加载器视为配置已完整。
    4. 数据库 DSN 指定 owner `search_path`，复用共享 Infra 配置能力；连接地址、SSL 模式和凭据按部署环境确定，不复制固定本机端口和数据库密码模板。
 
@@ -271,7 +271,7 @@ export default createAPIClient(() => useAuthStore(), {
 
 ### 错误 1: ".env file not found"
 
-核对标准入口是否注入部署环境，以及 `commonConfig.LoadEnv()` 定位的根目录。加载器只补齐缺失值；容器已显式注入配置时，缺少本地 `.env` 不等同于缺少必要配置。禁止改用 `../../.env` 等硬编码路径，处理边界见[部署环境规范](configuration/部署环境与密钥.md#根目录环境配置唯一路径)。
+按[部署加载顺序](#后端接入步骤)核对标准入口的环境注入和加载器定位。容器已显式注入配置时，缺少本地 `.env` 不等同于缺少必要配置，仍须校验模块实际需要的字段；环境文件边界见[部署环境规范](configuration/部署环境与密钥.md#根目录环境配置唯一路径)。
 
 ### 错误 2: "schema does not exist"
 
@@ -283,7 +283,7 @@ export default createAPIClient(() => useAuthStore(), {
 
 ### 错误 4: 配置字段重复定义
 
-数据库字段、`SystemServiceURL`、共享日志配置等复用 `commonConfig.BaseConfig`；删除同一事实的重复字段和读取路径。模块特有配置按[配置管理要求](#后端接入步骤)声明来源，不通过字段复制维持另一套值。
+按[配置接入要求](#后端接入步骤)逐项核对字段归属和加载路径，区分共享部署字段与模块确有独立语义的配置；删除同一事实的重复定义，不通过字段复制维持另一套值。
 
 ### 错误 5: DSN 缺少 search_path 参数
 
@@ -318,7 +318,7 @@ export default createAPIClient(() => useAuthStore(), {
 
 **后端开发**:
 - [ ] 复制并调整目录结构 (`backend/cmd/server/`, `backend/internal/`)
-- [ ] 配置使用 `commonConfig.LoadEnv()` 和 `BaseConfig`
+- [ ] 按[配置接入要求](#后端接入步骤)核对事实来源、共享加载和必要字段校验
 - [ ] 按[数据库接入要求](#后端接入步骤)核对 DSN、schema 登记、owner 迁移及其测试与 CI 入口
 - [ ] Worker 只读校验及启动顺序符合[模块迁移规范](addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)
 - [ ] 实现唯一存活和就绪端点 (`/health/live`、`/health/ready`)
