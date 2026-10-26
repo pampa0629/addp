@@ -8,6 +8,7 @@ import json
 import os
 import platform
 import secrets
+import signal
 import shlex
 import socket
 import subprocess
@@ -40,6 +41,8 @@ WORKER_PROFILES = {
                                  "TRANSFER_BOUNDED_WORKER_CONCURRENCY": "1", "TRANSFER_CONTINUOUS_WORKER_CAPACITY": "1",
                                  "TRANSFER_CONTINUOUS_WORKER_INSTANCE_ID": ""}},
 }
+
+WORKER_PROFILES["service-availability"] = WORKER_PROFILES["meta-workers"]
 
 
 def process_units():
@@ -503,12 +506,139 @@ def engine_source_action(directory, action):
         raise ValueError("PostgreSQL source cleanup failed; core Business destruction was still attempted")
 
 
+# Fault injection is a private fixture action, never a product lifecycle option.
+PAUSED_WORKERS = 'availability-paused-workers.json'
+AVAILABILITY_UNITS = ('meta-worker-1', 'meta-worker-2')
+
+
+def worker_process_record(unit):
+    if unit not in AVAILABILITY_UNITS:
+        raise ValueError('invalid availability Worker unit')
+    path = ROOT / '.dev-pids' / (unit+'.pid')
+    if path.is_symlink():
+        raise ValueError('Worker PID record cannot be a symlink')
+    raw = path.read_text().strip()
+    if re.fullmatch(r'[1-9][0-9]*', raw) is None or int(raw) <= 1:
+        raise ValueError('invalid Worker PID')
+    pid = int(raw)
+    proc = Path('/proc') / str(pid)
+    binary = ROOT / '.dev-bins/addp-meta-worker'
+    if proc.joinpath('cwd').resolve(strict=True) != ROOT or proc.joinpath('exe').resolve(strict=True) != binary.resolve(strict=True):
+        raise ValueError('Worker belongs to another checkout or binary')
+    stat = proc.joinpath('stat').read_text().rsplit(')', 1)[1].split()
+    if stat[0] in {'Z', 'X'}:
+        raise ValueError('Worker is not live')
+    return {'unit': unit, 'pid': pid, 'start_ticks': stat[19]}
+
+
+def availability_worker_boundary(directory):
+    if boundary() != directory or os.environ.get('ADDP_ONLINE_NODE_METRICS_CASE') != 'service-availability':
+        raise ValueError('Worker pause requires the dedicated Hosted case')
+    if not hasattr(os, 'pidfd_open') or not hasattr(signal, 'pidfd_send_signal'):
+        raise ValueError('Worker pause requires Linux pidfd support')
+
+
+def resume_paused_workers(directory):
+    availability_worker_boundary(directory)
+    path = directory / PAUSED_WORKERS
+    if not path.exists() and not path.is_symlink():
+        return
+    if path.is_symlink() or path.stat().st_mode & 0o777 != 0o600 or path.stat().st_size > 2048:
+        raise ValueError('invalid private Worker recovery record')
+    value = json.loads(path.read_text())
+    if (not isinstance(value, dict) or set(value) != {'root', 'workers'} or value['root'] != str(ROOT)
+            or not isinstance(value['workers'], list) or not 1 <= len(value['workers']) <= 2):
+        raise ValueError('invalid Worker recovery scope')
+    seen, failure = set(), False
+    for row in value['workers']:
+        try:
+            if (not isinstance(row, dict) or set(row) != {'unit', 'pid', 'start_ticks'} or row['unit'] not in AVAILABILITY_UNITS
+                    or type(row['pid']) is not int or row['pid'] <= 1 or row['unit'] in seen):
+                raise ValueError('invalid Worker recovery identity')
+            seen.add(row['unit'])
+            # A dead process is already restored for cleanup purposes; never signal a reused PID.
+            if not Path('/proc', str(row['pid'])).exists():
+                continue
+            fd = os.pidfd_open(row['pid'])
+            try:
+                if worker_process_record(row['unit']) != row:
+                    raise ValueError('Worker recovery identity changed')
+                signal.pidfd_send_signal(fd, signal.SIGCONT)
+            finally:
+                os.close(fd)
+        except (OSError, ValueError, KeyError, IndexError):
+            failure = True
+    if failure:
+        raise ValueError('Worker recovery incomplete; record retained')
+    path.unlink()
+
+
+@contextmanager
+def availability_pauses(directory):
+    availability_worker_boundary(directory)
+    path = directory / PAUSED_WORKERS
+    if path.exists() or path.is_symlink():
+        raise ValueError('Worker recovery record already exists')
+    records, fds, paused = {}, {}, []
+    def act(unit, paused_state):
+        if unit not in records or type(paused_state) is not bool:
+            raise ValueError('invalid Worker pause request')
+        if worker_process_record(unit) != records[unit]:
+            raise ValueError('Worker identity changed before fault injection')
+        if paused_state:
+            if unit in paused:
+                raise ValueError('Worker is already paused')
+            # Persist before SIGSTOP; interruption cannot leave an unrecorded paused process.
+            paused.append(unit)
+        elif unit not in paused:
+            raise ValueError('Worker is not paused')
+        data = {'root': str(ROOT), 'workers': [records[u] for u in paused]}
+        temporary = path.with_suffix('.tmp')
+        try:
+            with open(temporary, 'x', opener=lambda name, flags: os.open(name, flags, 0o600)) as out:
+                json.dump(data, out); out.flush(); os.fsync(out.fileno())
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+        signal.pidfd_send_signal(fds[unit], signal.SIGSTOP if paused_state else signal.SIGCONT)
+        # Retain resumed records too: outer recovery can safely send SIGCONT again.
+    try:
+        for unit in AVAILABILITY_UNITS:
+            row = worker_process_record(unit)
+            fd = os.pidfd_open(row['pid'])
+            fds[unit] = fd
+            if worker_process_record(unit) != row or row['pid'] in [r['pid'] for r in records.values()]:
+                raise ValueError('Worker identity raced or is duplicated')
+            records[unit] = row
+        yield act
+    finally:
+        try:
+            # Attempt every pinned original process even if one has exited.
+            failed = False
+            for unit in paused:
+                try:
+                    signal.pidfd_send_signal(fds[unit], signal.SIGCONT)
+                except ProcessLookupError:
+                    pass
+                except OSError:
+                    failed = True
+            if failed:
+                raise ValueError('pinned Worker recovery incomplete')
+            if path.exists():
+                resume_paused_workers(directory)
+        finally:
+            for fd in fds.values():
+                os.close(fd)
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("prepare", "query", "up", "down", "engine-up", "engine-restart", "engine-down", "engine-metrics-up", "engine-metrics-pause", "engine-metrics-resume"))
+    parser.add_argument("action", choices=("prepare", "query", "up", "down", "engine-up", "engine-restart", "engine-down", "engine-metrics-up", "engine-metrics-pause", "engine-metrics-resume", "resume-workers"))
     args = parser.parse_args()
     directory = boundary()
-    if args.action.startswith("engine-"):
+    if args.action == "resume-workers":
+        resume_paused_workers(directory)
+    elif args.action.startswith("engine-"):
         engine_source_action(directory,args.action)
     elif args.action == "prepare":
         prepare(directory)

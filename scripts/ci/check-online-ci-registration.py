@@ -1858,9 +1858,9 @@ def validate_platform_node_metrics_profile(repository: Path, registered: set[str
     options = re.search(r"(?m)^        options:\n(?P<body>(?:          - [a-z-]+\n)+)", choice)
     if ("        type: choice\n" not in choice or "        required: true\n" not in choice
             or "        default: regression\n" not in choice or options is None
-            or re.findall(r"(?m)^          - ([a-z-]+)$", options.group("body")) != ["regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "meta-workers", "transfer-workers", "quality-workers"]
+            or re.findall(r"(?m)^          - ([a-z-]+)$", options.group("body")) != ["regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "meta-workers", "transfer-workers", "quality-workers", "service-availability"]
             or "      ADDP_ONLINE_NODE_METRICS_CASE: ${{ inputs.node_metrics_case }}\n" not in job.group("body")
-            or "regression|complete-comparison|cpu-pressure|host-admission|engine-admission|meta-workers|transfer-workers|quality-workers)" not in gate):
+            or "regression|complete-comparison|cpu-pressure|host-admission|engine-admission|meta-workers|transfer-workers|quality-workers|service-availability)" not in gate):
         raise RegistrationError("platform-node-metrics must select a closed, bounded acceptance case")
 
 

@@ -490,5 +490,88 @@ else: sys.exit(19)
         self.assertFalse((self.root / "docker-state").exists())
 
 
+
+class AvailabilityPauseFixtureTest(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory(prefix='addp-availability-pause-');self.addCleanup(self.temp.cleanup)
+        self.directory=Path(self.temp.name)
+        self.records={u:{'unit':u,'pid':2100+i,'start_ticks':str(1100+i)} for i,u in enumerate(FIXTURE.AVAILABILITY_UNITS)}
+        self.addCleanup(patch.stopall)
+        patch.object(FIXTURE,'boundary',return_value=self.directory).start()
+        patch.dict(os.environ,ADDP_ONLINE_NODE_METRICS_CASE='service-availability').start()
+        self.read=patch.object(FIXTURE,'worker_process_record',side_effect=lambda u:dict(self.records[u])).start()
+        self.open=patch.object(FIXTURE.os,'pidfd_open',side_effect=lambda p:p+100,create=True).start()
+        self.send=patch.object(FIXTURE.signal,'pidfd_send_signal',create=True).start()
+        patch.object(FIXTURE.os,'close').start()
+        real_exists=Path.exists
+        patch.object(Path,'exists',lambda p:True if str(p).startswith('/proc/') else real_exists(p)).start()
+
+    def test_same_meta_profile_and_processes_recovered_on_failure(self):
+        self.assertIs(FIXTURE.WORKER_PROFILES['service-availability'],FIXTURE.WORKER_PROFILES['meta-workers'])
+        with self.assertRaisesRegex(RuntimeError,'phase failed'):
+            with FIXTURE.availability_pauses(self.directory) as act:
+                act('meta-worker-1',True);act('meta-worker-2',True)
+                record=self.directory/FIXTURE.PAUSED_WORKERS
+                self.assertEqual(record.stat().st_mode & 0o777,0o600)
+                self.assertEqual(len(json.loads(record.read_text())['workers']),2)
+                raise RuntimeError('phase failed')
+        self.assertFalse((self.directory/FIXTURE.PAUSED_WORKERS).exists())
+        for pid in (2100,2101):
+            self.assertIn(unittest.mock.call(pid+100,FIXTURE.signal.SIGSTOP),self.send.call_args_list)
+            self.assertIn(unittest.mock.call(pid+100,FIXTURE.signal.SIGCONT),self.send.call_args_list)
+
+    def test_changed_identity_before_signal_is_rejected_and_recovery_record_retained(self):
+        with FIXTURE.availability_pauses(self.directory) as act:
+            self.records['meta-worker-1']['start_ticks']='changed'
+            with self.assertRaisesRegex(ValueError,'identity changed'):act('meta-worker-1',True)
+        self.send.assert_not_called()
+        path=self.directory/FIXTURE.PAUSED_WORKERS
+        path.write_text(json.dumps({'root':str(FIXTURE.ROOT),'workers':[dict(self.records['meta-worker-1'],start_ticks='old')]}));path.chmod(0o600)
+        with self.assertRaisesRegex(ValueError,'incomplete'):FIXTURE.resume_paused_workers(self.directory)
+        self.assertTrue(path.exists());self.send.assert_not_called()
+
+    def test_outer_recovery_rejects_wrong_case_or_foreign_scope(self):
+        with patch.dict(os.environ,ADDP_ONLINE_NODE_METRICS_CASE='meta-workers'),self.assertRaisesRegex(ValueError,'dedicated Hosted'):
+            FIXTURE.resume_paused_workers(self.directory)
+        self.send.assert_not_called()
+        path=self.directory/FIXTURE.PAUSED_WORKERS
+        path.write_text(json.dumps({'root':'/foreign','workers':list(self.records.values())}));path.chmod(0o600)
+        with self.assertRaisesRegex(ValueError,'scope'):FIXTURE.resume_paused_workers(self.directory)
+        self.send.assert_not_called();self.assertTrue(path.exists())
+
+    def test_recovery_tries_other_worker_after_one_failed(self):
+        path=self.directory/FIXTURE.PAUSED_WORKERS
+        path.write_text(json.dumps({'root':str(FIXTURE.ROOT),'workers':list(self.records.values())}));path.chmod(0o600)
+        self.read.side_effect=lambda u:dict(self.records[u],start_ticks='changed') if u.endswith('-1') else self.records[u]
+        with self.assertRaisesRegex(ValueError,'incomplete'):FIXTURE.resume_paused_workers(self.directory)
+        self.send.assert_called_once_with(2201,FIXTURE.signal.SIGCONT)
+        self.assertTrue(path.exists())
+
+
+class AvailabilityProcessRecordTest(unittest.TestCase):
+    def test_proc_proof_rejects_foreign_binary_cwd_and_dead_process(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp).resolve();(root/'.dev-pids').mkdir();(root/'.dev-bins').mkdir()
+            (root/'.dev-pids/meta-worker-1.pid').write_text('51')
+            binary=root/'.dev-bins/addp-meta-worker';binary.write_text('fixture')
+            original_resolve,original_read=Path.resolve,Path.read_text
+            for fault in (None,'cwd','exe','dead'):
+                def resolved(path,**kwargs):
+                    if str(path)=='/proc/51/cwd': return Path('/foreign') if fault=='cwd' else root
+                    if str(path)=='/proc/51/exe': return Path('/foreign') if fault=='exe' else binary
+                    return original_resolve(path,**kwargs)
+                def read(path,*args,**kwargs):
+                    if str(path)=='/proc/51/stat': return '51 (worker with spaces) '+' '.join(['Z' if fault=='dead' else 'S']+['0']*18+['1234','0'])
+                    return original_read(path,*args,**kwargs)
+                with patch.object(FIXTURE,'ROOT',root),patch.object(Path,'resolve',resolved),patch.object(Path,'read_text',read):
+                    if fault:
+                        with self.assertRaises(ValueError):FIXTURE.worker_process_record('meta-worker-1')
+                    else:self.assertEqual(FIXTURE.worker_process_record('meta-worker-1'),{'unit':'meta-worker-1','pid':51,'start_ticks':'1234'})
+            with patch.object(FIXTURE,'ROOT',root):
+                with self.assertRaises(ValueError):FIXTURE.worker_process_record('system')
+                (root/'.dev-pids/meta-worker-1.pid').write_text('1')
+                with self.assertRaises(ValueError):FIXTURE.worker_process_record('meta-worker-1')
+
+
 if __name__ == "__main__":
     unittest.main()

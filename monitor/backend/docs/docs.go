@@ -1866,7 +1866,8 @@ const docTemplate = `{
                             "log_pipeline",
                             "resource",
                             "http_quality",
-                            "process_resource"
+                            "process_resource",
+                            "service_availability"
                         ],
                         "type": "string",
                         "description": "类别 | Category",

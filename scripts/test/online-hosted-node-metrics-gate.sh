@@ -7,8 +7,8 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 ONLINE_SUITE=platform-node-metrics
 ADDP_ONLINE_NODE_METRICS_CASE=${ADDP_ONLINE_NODE_METRICS_CASE-regression}
 case "$ADDP_ONLINE_NODE_METRICS_CASE" in
-  regression|complete-comparison|cpu-pressure|host-admission|engine-admission|meta-workers|transfer-workers|quality-workers) export ADDP_ONLINE_NODE_METRICS_CASE ;;
-  *) echo 'Hosted node metrics case must be regression, complete-comparison, cpu-pressure, host-admission, engine-admission, meta-workers, transfer-workers or quality-workers' >&2; exit 2 ;;
+  regression|complete-comparison|cpu-pressure|host-admission|engine-admission|meta-workers|transfer-workers|quality-workers|service-availability) export ADDP_ONLINE_NODE_METRICS_CASE ;;
+  *) echo 'Hosted node metrics case must be regression, complete-comparison, cpu-pressure, host-admission, engine-admission, meta-workers, transfer-workers, quality-workers or service-availability' >&2; exit 2 ;;
 esac
 HOSTED_FIXTURE_CONTAINERS=()
 HOSTED_FIXTURE_IMAGES=()
@@ -37,6 +37,17 @@ stop_online_fixture() {
   return "$status"
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+# Cleanup must recover paused owned Workers before the standard stop, even when
+# the Python suite was killed before its context manager could unwind.
+if [ "$ADDP_ONLINE_NODE_METRICS_CASE" = service-availability ]; then
+  stop_online_application() {
+    local status=0
+    run_logged python3 scripts/test/platform-node-metrics-fixture.py resume-workers || status=1
+    stop_online_product_runtime || status=1
+    run_logged bash scripts/dev/stop.sh || status=1
+    return "$status"
+  }
+fi
 # One scene now includes process/browser checks, resource alerts and fault recovery.
 # Keep individual waits, browser deadlines and the 60-minute Job limit unchanged.
 export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=1800

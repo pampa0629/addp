@@ -1211,7 +1211,7 @@ class CompleteComparisonCaseTest(unittest.TestCase):
         return value
 
     def test_case_selection_is_closed_and_rejects_before_login(self):
-        for value in ("regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "meta-workers", "transfer-workers", "quality-workers"):
+        for value in ("regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "meta-workers", "transfer-workers", "quality-workers", "service-availability"):
             with patch.dict(ONLINE.os.environ, ADDP_ONLINE_NODE_METRICS_CASE=value):
                 self.assertEqual(ONLINE.acceptance_case(), value)
         for value in ("", "unknown", "cpu-pressure ", "regression "):
@@ -2169,6 +2169,71 @@ class TransferWorkerAcceptanceTest(MetaWorkerAcceptanceTest):
                 for unit in self.profile['replace']:
                     ONLINE.worker_lifecycle(root, 'stop-worker', self.host_id, unit)
                     self.assertEqual(run.call_args.args[0][-1], '-'+unit)
+
+
+class AvailabilityProtocolTest(unittest.TestCase):
+    signed = ResourceAlertProtocolTest.signed
+
+    def context(self):
+        group={'id':'a'*64,'deployment_id':'b'*64,'module_name':'meta','role':'worker','runtime_name':'scan','expected_replicas':2}
+        rule={'id':'33333333-3333-4333-8333-333333333333','version':2,'name':'lease rule','enabled':True,
+              'group_id':group['id'],'trigger_seconds':60,'recovery_seconds':30, **{k:group[k] for k in ('deployment_id','module_name','role','runtime_name')}}
+        return group,rule
+
+    def event(self,kind='opened'):
+        group,rule=self.context()
+        e={k:group[k] for k in ('deployment_id','module_name','role','runtime_name','expected_replicas')}
+        e.update(rule_id=rule['id'],rule_name=rule['name'],rule_version=2,policy={'trigger_seconds':60,'recovery_seconds':30},
+                 intent_changed_at='2026-10-26T01:00:00Z',confirmed_at='2026-10-26T01:01:00Z',
+                 observed_from='2026-10-26T01:02:00Z',observed_to='2026-10-26T01:03:00Z',online_replicas=0,samples=5)
+        if kind=='resolved': e.update(observed_to='2026-10-26T01:02:30Z',online_replicas=1,samples=3)
+        return {'schema':'addp.platform-service-availability-alert/v1','event_id':'44444444-4444-4444-8444-444444444444',
+                'event_type':kind,'incident_id':1,'category':'service_availability','subject_kind':'service_group',
+                'subject_id':group['id'],'signal':rule['id'],'severity':'warning','occurred_at':e['observed_to'],'evidence':e}
+
+    def receiver(self):
+        group,rule=self.context()
+        r=ONLINE.AvailabilityAlertReceiver(Path('/unused'),group,None,None);r.rule=rule
+        return r
+
+    def test_event_requires_owned_group_frozen_policy_and_complete_window(self):
+        group,rule=self.context()
+        for kind in ('opened','resolved'):
+            good=self.event(kind);ONLINE.assert_availability_event(good,group,rule)
+            for mutate in (lambda e:e.update(subject_id='foreign'), lambda e:e.update(instance_id='private'),
+                           lambda e:e['evidence'].update(runtime_name='sync'), lambda e:e['evidence'].update(rule_version=True),
+                           lambda e:e['evidence'].update(rule_name='new name'), lambda e:e['evidence'].update(expected_replicas=1),
+                           lambda e:e['evidence']['policy'].update(trigger_seconds=15), lambda e:e['evidence'].update(samples=2),
+                           lambda e:e['evidence'].update(observed_from=e['evidence']['observed_to']),
+                           lambda e:e['evidence'].update(online_replicas=1 if kind=='opened' else 0),
+                           lambda e:e['evidence'].update(confirmed_at='2026-10-26T01:03:30Z')):
+                bad=copy.deepcopy(good);mutate(bad)
+                with self.subTest(kind=kind,mutate=mutate),self.assertRaises(ONLINE.SuiteError):ONLINE.assert_availability_event(bad,group,rule)
+
+    def test_shared_signed_transport_retries_then_rejects_rebound_or_unsigned_event(self):
+        r=self.receiver();body,headers=self.signed(r)
+        self.assertEqual(r.accept(body,headers),503)
+        self.assertEqual(r.accept(body,headers),202)
+        bad=self.event();bad['incident_id']=2
+        body,headers=self.signed(r,bad)
+        self.assertEqual(r.accept(body,headers),400)
+        body,headers=self.signed(r);headers['X-ADDP-Webhook-Signature']='v1=wrong'
+        self.assertEqual(r.accept(body,headers),400)
+        self.assertEqual(len(r.snapshot()),2)
+
+    def test_browser_requires_actual_identity_reload_and_matching_stable_rule_receipts(self):
+        group,rule=self.context();actor=identity();actor['principal']['id']='admin'
+        actor['authorization']['role_assignments'][0]['permissions'] += sorted(ONLINE.AVAILABILITY_PERMISSIONS)
+        expected={'run_id':'run','admin_id':'admin','service_availability':{'rule':rule,'incident':{'id':1,'status':'resolved'}}}
+        valid={'schema_version':'addp.node-resources-browser/v1','run_id':'run','result':'passed','stage':'complete','identity':actor,
+               'service_availability':dict(expected['service_availability'],reload_restored=True,evidence_visible=True)}
+        ONLINE.validate_availability_browser(valid,expected)
+        for mutate in (lambda v:v.update(result='failed'), lambda v:v['identity']['principal'].update(id='another'),
+                       lambda v:v['service_availability'].update(reload_restored=False),
+                       lambda v:v['service_availability']['rule'].update(enabled=False),
+                       lambda v:v['service_availability']['incident'].update(status='open')):
+            bad=copy.deepcopy(valid);mutate(bad)
+            with self.assertRaises(ONLINE.SuiteError):ONLINE.validate_availability_browser(bad,expected)
 
 
 if __name__ == "__main__":

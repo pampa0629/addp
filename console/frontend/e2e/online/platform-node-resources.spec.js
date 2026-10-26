@@ -48,7 +48,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
       return
     }
     // Admission records its own write receipts; resource polling belongs to the resource cases.
-    if (expected.admission || expected.engine_admission) return
+    if (expected.admission || expected.engine_admission || expected.service_availability) return
     const url = new URL(response.url())
     if (url.pathname === '/api/v1/system/platform/module-instances') {
       pending.push(response.json().then(value => instancePages.push({ query: Object.fromEntries(url.searchParams), value })))
@@ -106,6 +106,39 @@ test('platform node resources through real Console password MFA and Monitor ifra
     save('administrator-password-mfa')
     report.identity = await login(page, 'ADDP_ONLINE_METRICS_ADMIN', expected.admin_id, 'platform.system_administrator')
     const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+    if (expected.service_availability) {
+      const { rule, incident } = expected.service_availability
+      const rulePath = '/api/v1/monitor/platform/service-availability-alert-rules'
+      const alertPath = '/api/v1/monitor/platform/alerts'
+      save('availability-rule-reload')
+      const ruleRead = page.waitForResponse(r => new URL(r.url()).pathname === rulePath && r.ok())
+      await page.goto('/monitor/platform-alerts?tab=availability-rules')
+      const rules = await json(await ruleRead, 'availability rules')
+      expect(rules.total).toBe(1)
+      await expect(monitor.getByTestId('availability-rules')).toContainText(rule.name)
+      const reloaded = page.waitForResponse(r => new URL(r.url()).pathname === rulePath && r.ok())
+      await page.reload()
+      const reread = await json(await reloaded, 'reloaded availability rules')
+      expect(reread.total).toBe(1)
+      const storedRule = reread.data[0]
+      for (const key of ['id','name','group_id','deployment_id','module_name','role','runtime_name','version','enabled','trigger_seconds','recovery_seconds']) expect(storedRule[key]).toEqual(rule[key])
+      expect(storedRule.enabled).toBe(true)
+      await expect(monitor.getByTestId('availability-rules')).toContainText(rule.name)
+      save('availability-recovered-evidence')
+      const incidentRead = page.waitForResponse(r => new URL(r.url()).pathname === alertPath && r.ok())
+      await page.goto('/monitor/platform-alerts?category=service_availability&status=resolved&subject_id=' + encodeURIComponent(rule.group_id))
+      const incidents = await json(await incidentRead, 'availability incident')
+      expect(incidents.total).toBe(1)
+      expect(incidents.data[0]).toEqual(incident)
+      await expect(monitor.getByRole('cell', { name: rule.name, exact: true })).toBeVisible()
+      await monitor.getByRole('button', { name: '触发依据', exact: true }).click()
+      await expect(monitor.getByTestId('availability-evidence')).toBeVisible()
+      await expect(monitor.getByTestId('availability-evidence')).toContainText('元数据扫描')
+      await expect(monitor.getByTestId('availability-evidence')).toContainText('60 秒')
+      await expect(monitor.getByTestId('availability-evidence')).toContainText('30 秒')
+      report.service_availability = { rule: storedRule, incident: incidents.data[0], reload_restored: true, evidence_visible: true }
+      report.result = 'passed'; save('complete'); return
+    }
     if (expected.engine_resources) {
       const owners = expected.engine_resources.owners
       save('engine-professional-list')

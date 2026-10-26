@@ -52,7 +52,7 @@ func platformAlertID(c *gin.Context) (uint, bool) {
 // @Tags 平台告警 | Platform Alerts
 // @Produce json
 // @Security BearerAuth
-// @Param category query string false "类别 | Category" Enums(log_pipeline,resource,http_quality,process_resource)
+// @Param category query string false "类别 | Category" Enums(log_pipeline,resource,http_quality,process_resource,service_availability)
 // @Param status query string false "状态 | Status" Enums(active,open,acknowledged,resolved)
 // @Param search query string false "触发时告警名称，字面包含、忽略大小写，最多100字符 | Opening alert name, case-insensitive literal substring, at most 100 characters"
 // @Param host_name query string false "System 当前主机名称，字面包含、忽略大小写、最多100字符；仅主机资源告警，额外需要主机读取权 | Current System host name, case-insensitive literal substring, at most 100 characters; host resource alerts only, additionally requires host read permission"

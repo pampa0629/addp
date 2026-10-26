@@ -139,6 +139,7 @@ on:
           - meta-workers
           - transfer-workers
           - quality-workers
+          - service-availability
 
 permissions:
   contents: read

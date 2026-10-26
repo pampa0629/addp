@@ -1593,6 +1593,9 @@ class ResourceAlertReceiver:
         self.server, self.thread = None, None
         self.closed = False
 
+    def validate_event(self, value):
+        assert_resource_alert_event(value, self.node, self.target, self.query_policy, self.rule)
+
     def accept(self, body, headers):
         with self.lock:
             try:
@@ -1603,7 +1606,7 @@ class ResourceAlertReceiver:
                 expected = "v1="+hmac.new(self.secret.encode(), stamp.encode()+b"."+body, hashlib.sha256).hexdigest()
                 require(hmac.compare_digest(signature, expected), "notification signature invalid")
                 value = json.loads(body, object_pairs_hook=unique_json_object)
-                assert_resource_alert_event(value, self.node, self.target, self.query_policy, self.rule)
+                self.validate_event(value)
                 require(len(self.receipts) < 16, "excess notification attempts")
                 for receipt in self.receipts:
                     previous = receipt["payload"]
@@ -1937,6 +1940,201 @@ def run_resource_alert_lifecycle(admin, security, machine, tenant_clients, prom,
     write_evidence(report)
 
 
+AVAILABILITY_RULES = '/api/v1/monitor/platform/service-availability-alert-rules'
+AVAILABILITY_PERMISSIONS = {'monitor.platform_service_availability_rule.'+action for action in ('read','create','update','delete')}
+
+
+def assert_availability_event(value, group, rule):
+    fields = {'schema','event_id','event_type','incident_id','category','subject_kind','subject_id','signal','severity','occurred_at','evidence'}
+    require(type(value) is dict and set(value) == fields and value['schema'] == 'addp.platform-service-availability-alert/v1'
+            and canonical_uuid(value['event_id']) and value['event_type'] in {'opened','resolved'}
+            and type(value['incident_id']) is int and value['incident_id'] > 0, 'invalid availability event envelope')
+    require(value['category'] == 'service_availability' and value['subject_kind'] == 'service_group'
+            and value['subject_id'] == group['id'] and value['signal'] == rule['id'] and value['severity'] == 'warning', 'availability event scope changed')
+    e = value['evidence']
+    require(type(e) is dict and set(e) == {'rule_name','rule_id','rule_version','deployment_id','module_name','role','runtime_name',
+            'expected_replicas','intent_changed_at','policy','confirmed_at','observed_from','observed_to','online_replicas','samples'}, 'availability evidence fields changed')
+    for key in ('deployment_id','module_name','role','runtime_name','expected_replicas'):
+        require(type(e[key]) is type(group[key]) and e[key] == group[key], 'availability evidence targets another group')
+    require(e['rule_id'] == rule['id'] and e['rule_name'] == rule['name'] and type(e['rule_version']) is int and e['rule_version'] == rule['version']
+            and e['policy'] == {'trigger_seconds':60,'recovery_seconds':30}
+            and all(type(v) is int for v in e['policy'].values()), 'availability evidence policy changed')
+    times = [instance_timestamp(e[k]) for k in ('intent_changed_at','confirmed_at','observed_from','observed_to')]
+    duration = 60 if value['event_type'] == 'opened' else 30
+    require(times == sorted(times) and duration <= times[-1]-times[-2] <= duration+16
+            and 0 <= instance_timestamp(value['occurred_at'])-times[-1] <= 16
+            and type(e['samples']) is int and e['samples'] >= duration//15+1
+            and type(e['online_replicas']) is int and (e['online_replicas'] == 0 if value['event_type'] == 'opened' else e['online_replicas'] > 0), 'availability evidence has no complete real observation window')
+
+
+class AvailabilityAlertReceiver(ResourceAlertReceiver):
+    def validate_event(self, value):
+        assert_availability_event(value, self.node, self.rule)
+
+
+def validate_availability_browser(value, expected):
+    require(value.get('schema_version') == 'addp.node-resources-browser/v1' and value.get('result') == 'passed'
+            and value.get('stage') == 'complete' and value.get('run_id') == expected['run_id'], 'availability browser incomplete')
+    platform_identity(value.get('identity',{}), 'platform.system_administrator')
+    require(value['identity']['principal']['id'] == expected['admin_id'] and AVAILABILITY_PERMISSIONS <= permissions(value['identity']), 'availability browser identity changed or missing rule permissions')
+    detail = value.get('service_availability', {})
+    require(set(detail) == {'rule','incident','reload_restored','evidence_visible'} and detail['reload_restored'] is True and detail['evidence_visible'] is True,
+            'availability browser evidence missing')
+    rule, incident = expected['service_availability']['rule'], expected['service_availability']['incident']
+    keys = ('id','name','group_id','deployment_id','module_name','role','runtime_name','version','enabled','trigger_seconds','recovery_seconds')
+    require(all(detail['rule'].get(k) == rule[k] for k in keys) and detail['incident'] == incident, 'availability browser differs from current API receipts')
+    return {'result':'passed','reload_restored':True,'evidence_visible':True}
+
+
+def run_service_availability_case(base, directory, admin, actor, denied, node, target, node_input, rows, slots, report):
+    require(AVAILABILITY_PERMISSIONS <= permissions(actor) and set(slots) == set(FIXTURE.AVAILABILITY_UNITS), 'availability authorization or Worker set incomplete')
+    groups = admin.request('GET', AVAILABILITY_RULES+'/groups', (200,)).payload
+    candidates = [g for g in groups.get('data',[]) if (g.get('module_name'),g.get('role'),g.get('runtime_name')) == ('meta','worker','scan')]
+    require(groups.get('total') == len(groups.get('data',[])) and len(candidates) == 1, 'Meta service group is ambiguous')
+    group = candidates[0]
+    require(group['expected_replicas'] == 2 and group['desired_state'] == 'running' and group['state'] == 'observed' and group['online_replicas'] == 2, 'two real Worker leases required')
+    intent = Path(os.environ.get('ADDP_DEPLOYMENT_DISCOVERY_DIR') or FIXTURE.ROOT/'.dev-state/deployment-discovery') / 'service-expectations.json'
+    original_intent = intent.read_bytes()
+    body = {'name':'online-availability-'+os.environ['ADDP_ONLINE_TEST_RUN_ID'], 'group_id':group['id'], 'trigger_seconds':60,'recovery_seconds':30,'enabled':False}
+    rule, dest, dest_body = None, None, None
+    detail = report['service_availability'] = {'result':'failed'}
+    rule_query = AVAILABILITY_RULES+'?page=1&page_size=100'
+    incident_query = ALERTS+'?'+urllib.parse.urlencode({'category':'service_availability','subject_id':group['id'],'page':1,'page_size':100})
+    receiver = AvailabilityAlertReceiver(directory, group, None, None)
+    def current_rule():
+        found = alert_page(admin, rule_query)
+        require(len(found) == 1 and found[0]['id'] == rule['id'] and found[0]['version'] == rule['version']
+                and all(found[0][k] == rule[k] for k in ('name','group_id','trigger_seconds','recovery_seconds','enabled')), 'availability rule changed outside this scene')
+        return found[0]
+    def incidents():
+        found = alert_page(admin, incident_query)
+        require(len(found) <= 1 and all(r['category']=='service_availability' and r['subject_kind']=='service_group'
+                and r['subject_id']==group['id'] and r['signal']==rule['id'] for r in found), 'duplicate or foreign availability incident')
+        return found
+    def evaluated(online, after, verdict='normal'):
+        r = current_rule()
+        return (r.get('online_replicas') == online and r.get('last_verdict') == verdict and not r.get('last_error')
+                and bool(r.get('confirmed_at')) and instance_timestamp(r['last_evaluated_at']) >= after)
+    def wait_without_alert(online, seconds):
+        start = time.monotonic()
+        while time.monotonic()-start < seconds:
+            require(intent.read_bytes() == original_intent, 'fault injection changed deployment intent')
+            require(not incidents(), 'healthy or planned group falsely alerted')
+            r = current_rule()
+            require(r['enabled'] and r.get('online_replicas') == online and r['last_verdict'] == 'normal' and not r['last_error'], 'single-Worker continuity was lost')
+            time.sleep(1)
+    def incident_ready(state, previous=None):
+        found = incidents()
+        if not found or found[0]['status'] != state: return False
+        r = found[0]
+        require(type(r['id']) is int and r['id'] > 0, 'invalid availability incident')
+        if previous:
+            require(r['id']==previous['id'] and r['opened_at']==previous['opened_at'] and r['availability_evidence']==previous['availability_evidence'], 'recovery changed opening incident evidence')
+        else:
+            event = {'schema':'addp.platform-service-availability-alert/v1','event_id':rule['id'],'event_type':'opened',
+                     'incident_id':r['id'],'category':r['category'],'subject_kind':r['subject_kind'],'subject_id':r['subject_id'],
+                     'signal':r['signal'],'severity':r['severity'],'occurred_at':r['opened_at'],'evidence':r['availability_evidence']}
+            assert_availability_event(event,group,rule)
+        return r
+    def deliveries_ready(kinds, incident):
+        require(receiver.invalid == 0, 'availability receiver rejected signed delivery')
+        receipts = receiver.snapshot()
+        found = [r for r in alert_page(admin,ALERT_DELIVERIES+'?page=1&page_size=100') if r.get('destination_id') == dest['id']]
+        require(len(found) <= len(kinds) and len({r['event_type'] for r in found}) == len(found), 'duplicate availability outbox delivery')
+        if {r['event_type'] for r in found} != set(kinds) or any(r['status']!='delivered' for r in found): return False
+        for r in found:
+            assert_alert_delivery(r,receipts,dest,incident['status'])
+            require(r['incident_id']==incident['id'], 'availability delivery belongs to another incident')
+        detail.update(deliveries=found,signed_receipts=receipts)
+        return True
+    try:
+        report['stage']='service-availability-registration'; write_evidence(report)
+        require(not alert_page(admin,rule_query), 'isolated deployment already has availability rules')
+        rule = admin.request('POST', AVAILABILITY_RULES,(201,),body).payload
+        require(rule['version']==1 and rule['enabled'] is False and canonical_uuid(rule['id']), 'availability rule must start disabled')
+        path = AVAILABILITY_RULES+'/'+rule['id']
+        for client in [*denied,API.GatewayClient(base,'',10)]:
+            status = (403,) if client.token else (401,)
+            for endpoint in (rule_query, AVAILABILITY_RULES+'/groups', incident_query): client.request('GET',endpoint,status)
+            client.request('POST',AVAILABILITY_RULES,status,body)
+            client.request('PUT',path,status,dict(body,version=1,enabled=True))
+            client.request('DELETE',path,status,{'version':1})
+        with receiver:
+            dest_body={'name':'online-availability-'+os.environ['ADDP_ONLINE_TEST_RUN_ID'],'channel':'webhook','url':receiver.url,
+                       'recipients':[],'categories':['service_availability'],'event_types':['opened','resolved'],'enabled':False}
+            dest=admin.request('POST',ALERT_DESTINATIONS,(200,),dest_body).payload
+            dest_path=ALERT_DESTINATIONS+'/'+str(dest['id'])
+            dest=admin.request('PUT',dest_path+'/credential',(200,),{'version':dest['version'],'secret':receiver.secret}).payload
+            dest_body['enabled']=True
+            dest=admin.request('PUT',dest_path,(200,),dict(dest_body,version=dest['version'])).payload
+            rule=admin.request('PUT',path,(200,),dict(body,version=1,enabled=True)).payload
+            receiver.rule=rule
+            require(rule['version']==2 and rule['enabled'] is True, 'availability enable CAS failed')
+            admin.request('PUT',path,(409,),dict(body,version=1,enabled=True))
+            eventually(lambda:evaluated(2,0), 'two Worker baseline confirmation',timeout=100)
+            require(not incidents() and not receiver.snapshot(), 'baseline falsely alerted')
+            with FIXTURE.availability_pauses(directory) as change:
+                detail['paused_workers_restored']=False
+                report['stage']='service-availability-single-worker';write_evidence(report)
+                stopped_at=time.time()
+                change('meta-worker-1',True)
+                eventually(lambda:evaluated(1,stopped_at),'single Worker real lease expiry',timeout=150)
+                wait_without_alert(1,76)
+                detail['single_worker_no_alert']=True
+                report['stage']='service-availability-all-workers';write_evidence(report)
+                all_stopped_at=time.time()
+                change('meta-worker-2',True)
+                eventually(lambda:incident_ready('open'),'all Worker real lease expiry and trigger',timeout=210)
+                opened=incident_ready('open'); detail['opened_incident']=opened
+                require(instance_timestamp(opened['availability_evidence']['observed_from'])>=all_stopped_at,'opening window predates fault')
+                eventually(lambda:deliveries_ready(('opened',),opened),'availability signed opening retry',timeout=90)
+                admin.request('DELETE',path,(409,),{'version':rule['version']})
+                report['stage']='service-availability-recovery';write_evidence(report)
+                resumed_at=time.time()
+                change('meta-worker-1',False)
+                eventually(lambda:incident_ready('resolved',opened),'real lease recovery of same incident',timeout=150)
+                resolved=incident_ready('resolved',opened); detail['resolved_incident']=resolved
+                eventually(lambda:deliveries_ready(('opened','resolved'),resolved),'availability signed recovery',timeout=90)
+                recovery=[r['payload'] for r in receiver.snapshot() if r['payload']['event_type']=='resolved']
+                require(recovery and instance_timestamp(recovery[-1]['evidence']['observed_from'])>=resumed_at,'recovery predates real resume')
+                require(intent.read_bytes()==original_intent,'pause/resume altered deployment intent')
+            detail['paused_workers_restored']=True
+            eventually(lambda:evaluated(2,0),'both original Worker leases restored',timeout=100)
+            require({r['instance_id'] for r in worker_current_instances(admin,node['node_id'])}=={r['instance_id'] for r in rows},'resume replaced process identities')
+            # A new browser login consumes only a fresh real MFA window; it must not mutate rules.
+            artifacts=Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR'])
+            expected={'run_id':os.environ['ADDP_ONLINE_TEST_RUN_ID'],'admin_id':actor['principal']['id'],
+                      'service_availability':{'rule':current_rule(),'incident':incident_ready('resolved',opened)}}
+            (artifacts/'node-resources-browser-input.json').write_text(json.dumps(expected))
+            report['stage']='service-availability-console';write_evidence(report)
+            detail['browser']=validate_availability_browser(execute_resource_browser(artifacts),expected)
+            admin=renew_admin(base,actor['principal']['id'])
+            worker_lifecycle(directory,'stop',node['node_id'])
+            eventually(lambda:current_rule()['last_verdict']=='paused','planned module stop pauses rule',timeout=70)
+            end=time.monotonic()+76
+            while time.monotonic()<end:
+                require(incident_ready('resolved',opened) and len(incidents())==1,'planned stop created or changed an incident')
+                time.sleep(1)
+            require(deliveries_ready(('opened','resolved'),resolved), 'planned stop created an extra delivery')
+            detail['planned_stop_no_new_incident']=True
+            rule=admin.request('PUT',path,(200,),dict(body,version=rule['version'],enabled=False)).payload
+            admin.request('DELETE',path,(200,),{'version':rule['version']});rule=None
+            dest=admin.request('PUT',dest_path,(200,),dict(dest_body,version=dest['version'],enabled=False)).payload
+            admin.request('DELETE',dest_path,(200,),{'version':dest['version']});dest=None
+            require(not alert_page(admin,rule_query), 'availability rule remains after deletion')
+            require(len(alert_page(admin,incident_query))==1, 'availability configuration deletion removed history')
+            detail['configuration_removed_history_retained']=True
+            detail['result']='passed'
+    finally:
+        for obj,root,data in ((rule,AVAILABILITY_RULES,body),(dest,ALERT_DESTINATIONS,dest_body)):
+            if obj is not None and data is not None:
+                try: admin.request('PUT',root+'/'+str(obj['id']),(200,),dict(data,version=obj['version'],enabled=False))
+                except (SuiteError,OSError,ValueError): pass
+        detail['receiver_closed']=receiver.closed
+    require(receiver.closed and not (directory/FIXTURE.PAUSED_WORKERS).exists(), 'availability cleanup incomplete')
+    retire_owned_configuration(admin,node,target,node_input,report)
+
+
 def worker_profile():
     profile = FIXTURE.WORKER_PROFILES.get(acceptance_case())
     require(profile is not None, "Worker lifecycle requires a registered worker case")
@@ -2064,6 +2262,9 @@ def run_workers_case(base, directory, admin, admin_identity, machine, denied, re
     eventually(lambda: process_query_ready(admin, rows), "all bound process windows", timeout=130)
     prom = Prometheus(directory)
     slots = worker_slots(prom, rows)
+    if acceptance_case() == "service-availability":
+        run_service_availability_case(base,directory,admin,admin_identity,denied,node,target,node_input,rows,slots,report)
+        return
     source_ports = {r["instance_id"]: FIXTURE.PROCESS_PORTS[r["module_name"]] for r in peers}
     source_ports.update({r["instance_id"]: profile["ports"][module] for r in rows if r["role"] == "backend"})
     source_ports.update({owner["instance_id"]: profile["ports"][unit] for unit, owner in slots.items()})
@@ -2133,7 +2334,7 @@ def run_workers_case(base, directory, admin, admin_identity, machine, denied, re
 
 def acceptance_case():
     value = os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE", "regression")
-    require(value in {"regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "meta-workers", "transfer-workers", "quality-workers"}, "unsupported Hosted metrics acceptance case")
+    require(value in {"regression", "complete-comparison", "cpu-pressure", "host-admission", "engine-admission", "meta-workers", "transfer-workers", "quality-workers", "service-availability"}, "unsupported Hosted metrics acceptance case")
     return value
 
 

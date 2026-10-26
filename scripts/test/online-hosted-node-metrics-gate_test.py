@@ -144,6 +144,16 @@ class HostedMetricsGateTest(unittest.TestCase):
         self.assertNotIn("metrics-fixture:engine-up", trace)
         self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts/"summary.txt").read_text())
 
+    def test_availability_case_recovers_workers_before_standard_application_stop(self):
+        for failure in (None, "ADDP_TEST_SUITE_FAIL"):
+            if self.host.trace.exists(): self.host.trace.unlink()
+            result = self.run_gate(ADDP_ONLINE_NODE_METRICS_CASE="service-availability", **({failure:"1"} if failure else {}))
+            self.assertEqual(result.returncode == 0, failure is None, result.stdout+result.stderr)
+            trace = self.host.trace.read_text()
+            self.assertIn("metrics-case:service-availability",trace)
+            self.assertLess(trace.index("metrics-fixture:resume-workers"),trace.index("application-stop"))
+            self.assertIn("infra_cleanup=zero_residuals",(self.host.artifacts/"summary.txt").read_text())
+
     def test_transfer_workers_uses_the_same_owned_deployment_and_cleanup(self):
         result = self.run_gate(ADDP_ONLINE_NODE_METRICS_CASE="transfer-workers")
         self.assertEqual(result.returncode, 0, result.stdout+result.stderr)

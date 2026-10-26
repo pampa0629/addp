@@ -1633,6 +1633,16 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 
 用户随后明确激活Safari前台并授权继续编辑／启用。同一规则的编辑按钮实际点击成功，截图可见编辑弹窗、原服务组只读及60／30秒条件；名称修改为`验收临时-服务失联-Meta扫描-20261026-编辑复验`，启用开关经键盘切换后截图为开启。Safari无障碍接口仍把该开关读为off，因此不以该字段单独断言保存结果；点击保存后，列表已显示新名称和启用“是”，页面刷新及浏览器整页重新加载均保留；本次连续观测由“正在积累连续观测”（10:18:43／10:18:58）推进为“服务组在线”（10:19:43，Asia/Shanghai）。本轮真实页面的编辑、启用及持久重读通过，最终保留此一条启用的临时规则。未停服务或制造失联，不将在线评估外推为失联／恢复／通知或隔离正式身份Hosted通过；此前显示差异根因仍未认定已修复。本轮仅更新现有证据／设计记录，`git diff --check`为文档验证；CI／Hosted仍等待专门会话回传，不设置定时任务。
 
+### 服务失联Hosted专项准备与本地runner验证（2026-10-26）
+
+按用户确认，将`service-availability`接入既有`platform-node-metrics`闭合case、Meta双Worker配置、正式身份／真实Console及外层清理入口；同步T4限定管理员用途与手动workflow选择及登记拒绝测试。场景验证单Worker真实租约失效仍不报警、全组失效满足60秒只打开一个事件、恢复一个满足30秒恢复同事件、共享回环HTTPS／HMAC重试与投递、计划停止不产生新事件、配置删除保留历史；浏览器用真实密码MFA和HTTP读取核对启用规则、刷新及恢复事件冻结依据，不拦截API。
+
+故障夹具仅允许当次Hosted case；由标准PID文件、实际可执行文件／工作目录及`/proc`启动标记核验两个Meta Worker，使用Linux pidfd固定原进程。暂停前原子保存私有0600恢复记录；正常异常均恢复所有已固定暂停进程，外层生命周期也在标准停止前补做独立恢复，归属变化保留记录并使清理失败。SIGSTOP／SIGCONT不改预期声明、真实时钟、租约或数据库，保持1800秒场景／60分钟Job期限；本机只跑受控fixture测试，未对个人Worker发信号。共享通知接收器只抽出事件校验钩子，资源告警与失联告警复用同一TLS／HMAC与重试入口，没有复制传输实现。顺带补齐已支持的服务失联类别在告警查询Swagger枚举中的遗漏，不改HTTP行为或生产权限。
+
+最终`make test-node-metrics-online-runner`退出0：148项Python回归及System身份Go夹具通过，含新事件窗口／主体／策略拒绝、共享签名传输、浏览器身份及回执、真实`/proc`格式解析的受控夹具、PID启动身份变化拒绝、失败恢复／外层恢复顺序。当前根目录`validate_platform_node_metrics_profile`检查通过；`bash scripts/swagger/gen-swagger.sh monitor`及`bash scripts/swagger/check-route-coverage.sh monitor`通过，96个公开路由方法；`git diff --check`通过。标准入口已沿原Online runner／Platform路径发现，无新增Make路线。原始本地门禁曾出现旧失败分支20秒超时，后续本轮修正及最终完整148项均已通过；不把先前失败改写为通过。日志`/tmp/addp-service-availability-runner-first.log`、`/tmp/addp-availability-{new-tests,runner-final,runner-verified,runner-release,swagger}.log`。
+
+以上仅为验收实现及本地T0／协议断言证据，不是实际Linux pidfd／心跳租约故障注入、真实Hosted页面或T4通过。本会话未执行／调度／轮询CI或Hosted，未设置定时任务；真实故障闭环和退出零残留等专门会话安排并回传，清单第15／49／52行保持部分实现。个人Safari中先前启用的临时规则本轮未改动。
+
 ### 部署证明测试的单一挂载归属回归（2026-10-25）
 
 专门CI会话回传Platform T0失败：run `40207277037` / job `121210797431` 的 `make test-platform → test-business-config → test-deployment-discovery`，旧 `container-proofs_test.py` 仍向SDK指标适配器索要隐式`system-backend`发现挂载，报KeyError。当前生产发现目录已由标准生命周期唯一发布，不应恢复旧适配器双轨。

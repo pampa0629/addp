@@ -4155,6 +4155,7 @@ paths:
         - resource
         - http_quality
         - process_resource
+        - service_availability
         in: query
         name: category
         type: string
