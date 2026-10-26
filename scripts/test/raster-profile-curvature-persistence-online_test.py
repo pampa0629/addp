@@ -272,3 +272,84 @@ class ProfileCurvaturePersistenceTest(unittest.TestCase):
             if 'mean-explicit.cog.tif' in names:result['mean_controls_equal']=False
             return result
         with self.assertRaises(m.SuiteError):m.run_scenario(Path('.'),ENV,Client(),corrupt,diagnostic)
+
+    def test_lineage_waits_after_all_successful_writes_and_before_negative_cases(self):
+        from unittest.mock import patch
+        client=Client();original=m.raster.wait_lineage;checked=[]
+        def wait(client,source,target,execution,timeout):
+            self.assertEqual(len(client.targets),12,'do not serialize the collector tick per artifact')
+            self.assertFalse(any(e['status']=='failed' for e in client.executions.values()))
+            value=original(client,source,target,execution,timeout);checked.append(value);return value
+        with patch.object(m.raster,'wait_lineage',side_effect=wait):
+            report=m.run_scenario(Path('.'),ENV,client,physical,diagnostic)
+        self.assertEqual(len(checked),12)
+        self.assertEqual([c['lineage'][0] for c in report['cases']],checked)
+        self.assertEqual(len(report['failed_parameters']),26)
+
+    def test_batched_lineage_still_rejects_missing_or_wrong_current_execution_edges(self):
+        from unittest.mock import patch
+        for fault in ('missing','execution','source','target','status','kind','truncated'):
+            class Wrong(Client):
+                def request(self,method,path,expected,body=None,headers=None):
+                    response=super().request(method,path,expected,body,headers)
+                    if '/meta/lineage/graph?' in path:
+                        self.assertion_hook()
+                        if fault=='missing':response.payload['edges']=[]
+                        elif fault=='truncated':response.payload['truncated']=True
+                        else:
+                            for edge in response.payload['edges']:
+                                if fault=='execution':edge['evidence']['execution_id']='prior-execution'
+                                if fault=='source':edge['source']['item_id']=-1
+                                if fault=='target':edge['target']['item_id']=-1
+                                if fault=='status':edge['status']='stale'
+                                if fault=='kind':edge['relation_kind']='serve'
+                    return response
+                def assertion_hook(self):
+                    if len(self.targets)!=12:raise AssertionError('lineage was not deferred')
+            client=Wrong()
+            with self.subTest(fault=fault),patch.object(m.raster.time,'sleep'),self.assertRaises(m.SuiteError):
+                m.run_scenario(Path('.'),{**ENV,'ADDP_ONLINE_TEST_TIMEOUT_SECONDS':'.002'},client,physical,diagnostic)
+            self.assertFalse(any(e['status']=='failed' for e in client.executions.values()))
+
+    def test_closed_progress_preserves_all_success_and_negative_stage_counts(self):
+        import json,tempfile
+        from collections import Counter
+        with tempfile.TemporaryDirectory() as directory:
+            env={**ENV,'ADDP_ONLINE_ARTIFACT_DIR':directory,'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN':'private-token-never-record'}
+            report=m.run_scenario(Path('.'),env,Client(),physical,diagnostic)
+            path=Path(directory)/m.CurvatureProgress.SUITES[m.SUITE]
+            raw=path.read_text();record=json.loads(raw)
+            self.assertNotIn('private-token-never-record',raw)
+            self.assertEqual(set(record),{'schema_version','suite','result','elapsed_ms','stages'})
+            self.assertEqual(record['result'],'passed');self.assertEqual(record['suite'],m.SUITE)
+            self.assertEqual(record['stages'],report['stage_progress']['stages'])
+            self.assertEqual(Counter(s['stage'] for s in record['stages']),
+                {'source_scan':1,'execution':12,'automatic_scan':12,'physical':12,'lineage':12,'negative':26,'source_metadata':1})
+            for stage in record['stages']:
+                self.assertEqual(set(stage),{'stage','case_index','status','started_ms','duration_ms'})
+                self.assertEqual(stage['status'],'passed');self.assertGreaterEqual(stage['duration_ms'],0)
+            self.assertFalse(path.with_suffix('.tmp').exists())
+
+    def test_progress_records_running_then_failed_physical_stage_without_private_error(self):
+        import json,tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            env={**ENV,'ADDP_ONLINE_ARTIFACT_DIR':directory};path=Path(directory)/m.CurvatureProgress.SUITES[m.SUITE]
+            def broken(repository,env,names):
+                record=json.loads(path.read_text());self.assertEqual(record['result'],'running')
+                self.assertEqual(record['stages'][-1]['stage'],'physical')
+                self.assertEqual(record['stages'][-1]['status'],'running')
+                self.assertEqual(record['stages'][-1]['case_index'],1)
+                raise m.SuiteError('private SQL/password/metadata must never enter progress')
+            with self.assertRaises(m.SuiteError):m.run_scenario(Path('.'),env,Client(),broken,diagnostic)
+            raw=path.read_text();record=json.loads(raw)
+            self.assertNotIn('private SQL',raw);self.assertEqual(record['result'],'failed')
+            self.assertEqual(record['stages'][-1]['status'],'failed')
+            self.assertEqual([s['stage'] for s in record['stages']],['source_scan','execution','automatic_scan','physical'])
+
+    def test_progress_rejects_unknown_stage_case_or_suite_before_writing(self):
+        with self.assertRaises(m.SuiteError):m.CurvatureProgress({},'foreign-suite')
+        progress=m.CurvatureProgress({},m.SUITE)
+        for stage,index in [('private value',1),('lineage',True),('physical',-1),('negative',27)]:
+            with self.subTest(stage=stage,index=index),self.assertRaises(m.SuiteError):
+                with progress.stage(stage,index):pass
+        self.assertEqual(progress.stages,[])

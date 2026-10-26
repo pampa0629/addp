@@ -19,6 +19,7 @@ source_edges=importlib.import_module('scripts.test.raster-disk-pressure-online')
 support=raster.support
 obj,array,positive,SuiteError=raster.obj,raster.array,raster.positive,raster.SuiteError
 SUITE=fixture.SUITE
+CurvatureProgress=importlib.import_module('scripts.test.raster-profile-curvature-persistence-online').CurvatureProgress
 
 
 class DiagnosticClient(rasterize.DiagnosticClient):
@@ -134,15 +135,17 @@ def check_physical(native,previous):
 
 def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runner=invalid_diagnostic):
     timeout=float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS','600'))
+    progress=CurvatureProgress(env,SUITE)
     tenant=positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'tenant')
     if tenant<=1:raise SuiteError('raster DEM tangential curvature acceptance forbids the default tenant')
     identity=raster.validate_identity(client,tenant,required_permissions=raster.EDITOR_PERMISSIONS)
     engine=positive(env['ADDP_ONLINE_TANGENTIAL_CURVATURE_NFS_ENGINE_ID'],'NFS engine')
     scopes={name:f'addp://engine/{engine}/path/{name}?type=file' for name in fixture.SOURCES}
-    source_scan=support.wait_for_meta_scan(client,engine,time.monotonic()+timeout,scope={'targets':list(scopes.values())})
-    items={name:support.find_fixture_item(client,engine,name,'raster DEM tangential curvature source') for name in fixture.SOURCES}
-    sources={name:scopes[name]+f'&item_id={items[name]["id"]}' for name in fixture.SOURCES}
-    before={name:client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload for name,item in items.items()}
+    with progress.stage('source_scan'):
+        source_scan=support.wait_for_meta_scan(client,engine,time.monotonic()+timeout,scope={'targets':list(scopes.values())})
+        items={name:support.find_fixture_item(client,engine,name,'raster DEM tangential curvature source') for name in fixture.SOURCES}
+        sources={name:scopes[name]+f'&item_id={items[name]["id"]}' for name in fixture.SOURCES}
+        before={name:client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload for name,item in items.items()}
     runtimes=array(client.request('GET','/api/v1/develop/workflow-engines',(200,)).payload,'workflow engines')
     selected=[r for r in runtimes if r.get('engine_type')=='geopython_workflow' and r.get('connection_status')=='online']
     if len(selected)!=1:raise SuiteError('expected exactly one online product GeoPython Runtime')
@@ -150,66 +153,77 @@ def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runne
     parent=f'addp://engine/{engine}/path/outputs?type=directory'
     cases,names,previous,scans=[],[],{},[]
     for name in fixture.TARGETS:
+        case_index=len(cases)+1
         expectation=fixture.artifact_expectation(name)
         target=f'addp://engine/{engine}/path/outputs/{name}?type=file'
-        identifier=raster.submit(client,runtime,definition(sources,parent,name))
-        execution=raster.wait_execution(client,'develop',identifier,timeout)
-        inputs=case_inputs(name)
-        facts,scan=raster.validate_success(execution,[sources[n] for n in inputs],target,'create',expectation,resource_type='file')
-        if scan in scans:raise SuiteError('automatic output scans must be distinct')
-        scans.append(scan)
-        scanned=raster.wait_execution(client,'meta',scan,timeout)
-        scan_identity=validate_scan(scanned,scan,identifier,tenant,int(identity['principal_id']),engine)
-        monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'Monitor execution')
-        if monitor.get('status')!='success' or monitor.get('module')!='develop' or obj(monitor.get('metadata'),'Monitor metadata').get('lineage_facts')!=facts:
-            raise SuiteError('Monitor status, owner or lineage differs')
-        names.append(name);native=physical_runner(repository,env,names);check_physical(native,previous);previous=native['targets'].copy()
-        target_item=support.find_fixture_item(client,engine,'outputs/'+name,'raster COG')
-        item=obj(client.request('GET',f'/api/v1/meta/items/{target_item["id"]}',(200,)).payload,'target detail')
-        raster.validate_target_item(item,expectation,native['targets'][name])
-        artifact=obj(obj(execution['metadata'].get('result'),'result').get('final_result'),'artifact')
-        sizes=raster.strict_sizes(artifact,native['targets'][name],item,name)
-        lineage=[raster.wait_lineage(client,items[n]['id'],item['id'],identifier,timeout) for n in inputs]
+        with progress.stage('execution',case_index):
+            identifier=raster.submit(client,runtime,definition(sources,parent,name))
+            execution=raster.wait_execution(client,'develop',identifier,timeout)
+            inputs=case_inputs(name)
+            facts,scan=raster.validate_success(execution,[sources[n] for n in inputs],target,'create',expectation,resource_type='file')
+            if scan in scans:raise SuiteError('automatic output scans must be distinct')
+            scans.append(scan)
+        with progress.stage('automatic_scan',case_index):
+            scanned=raster.wait_execution(client,'meta',scan,timeout)
+            scan_identity=validate_scan(scanned,scan,identifier,tenant,int(identity['principal_id']),engine)
+            monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'Monitor execution')
+            if monitor.get('status')!='success' or monitor.get('module')!='develop' or obj(monitor.get('metadata'),'Monitor metadata').get('lineage_facts')!=facts:
+                raise SuiteError('Monitor status, owner or lineage differs')
+        with progress.stage('physical',case_index):
+            names.append(name);native=physical_runner(repository,env,names);check_physical(native,previous);previous=native['targets'].copy()
+            target_item=support.find_fixture_item(client,engine,'outputs/'+name,'raster COG')
+            item=obj(client.request('GET',f'/api/v1/meta/items/{target_item["id"]}',(200,)).payload,'target detail')
+            raster.validate_target_item(item,expectation,native['targets'][name])
+            artifact=obj(obj(execution['metadata'].get('result'),'result').get('final_result'),'artifact')
+            sizes=raster.strict_sizes(artifact,native['targets'][name],item,name)
         cases.append({'name':name,'execution_id':identifier,'automatic_scan_execution_id':scan,'target_locator':target,
             'target_item_id':item['id'],'size_evidence':sizes,'physical':native['targets'][name],
-            'lineage':lineage,'scan_identity':scan_identity,'monitor_verified':True})
+            'lineage':[],'scan_identity':scan_identity,'monitor_verified':True})
+    # Preserve every exact relation check, but let the ordinary collector work
+    # while the other independent success chains run, rather than one tick each.
+    for case_index,case in enumerate(cases,1):
+        with progress.stage('lineage',case_index):
+            case['lineage']=[raster.wait_lineage(client,items[n]['id'],case['target_item_id'],case['execution_id'],timeout)
+                             for n in case_inputs(case['name'])]
     before_scans=scan_ids(client)
     if before_scans!=sorted([source_scan,*scans]):raise SuiteError('unexpected source or output scan')
     failures=[]
     old_edges={name:source_edges(client,item['id']) for name,item in items.items()}
     for problem in FAILURES:
         for language in ('zh-cn','en'):
-            identifier=raster.submit(SubmittedLanguageClient(client,language),runtime,definition(sources,parent,'tangential.cog.tif',invalid=problem,language=language))
-            failed=raster.wait_execution(client,'develop',identifier,timeout,expected='failed')
-            if obj(failed.get('error_details'),'failed error').get('category')!='execution_failed':
-                raise SuiteError('DEM tangential curvature failure has the wrong error category')
-            diagnostic=diagnostic_runner(repository,env,identifier,problem,language,timeout)
-            observed=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'failed Monitor execution')
-            if (observed.get('status')!='failed' or observed.get('module')!='develop'
-                or obj(observed.get('error_details'),'Monitor failure').get('category')!='execution_failed'
-                or obj(observed.get('metadata'),'failed Monitor metadata').get('lineage_facts',{}).get('outputs')):
-                raise SuiteError('Monitor failed status/category or absence of output lineage differs')
-            opposite=SubmittedLanguageClient(client,'en' if language=='zh-cn' else 'zh-cn')
-            queried=raster.wait_execution(opposite,'develop',identifier,timeout,expected='failed')
-            if queried.get('error')!=failed.get('error') or queried.get('error_details')!=failed.get('error_details'):
-                raise SuiteError('query language rewrote stored failure')
-            failed_result=obj(failed.get('metadata'),'failed metadata').get('result')
-            if failed_result is not None:failed_result=obj(failed_result,'failed result')
-            if failed.get('outputs') or (failed_result is not None and failed_result.get('meta_scan_runs')):
-                raise SuiteError('invalid parameter published a target or automatic scan')
-            if scan_ids(client)!=before_scans:raise SuiteError('invalid parameter added a scan')
-            if any(source_edges(client,item['id'])!=old_edges[name] for name,item in items.items()):
-                raise SuiteError('invalid parameter added derived lineage')
-            if failed.get('metadata',{}).get('lineage_facts',{}).get('outputs'):
-                raise SuiteError('invalid parameter published output lineage')
-            native=physical_runner(repository,env,names);check_physical(native,previous)
-            failures.append({'problem':problem,'language':language,'execution_id':identifier,'status':'failed','no_publication_or_scan_or_lineage':True,'monitor_verified':True,'query_language_did_not_rewrite_failure':True,'diagnostic':diagnostic})
-    for name,item in items.items():
-        if client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload!=before[name]:
-            raise SuiteError('source metadata changed')
+            with progress.stage('negative',len(failures)+1):
+                identifier=raster.submit(SubmittedLanguageClient(client,language),runtime,definition(sources,parent,'tangential.cog.tif',invalid=problem,language=language))
+                failed=raster.wait_execution(client,'develop',identifier,timeout,expected='failed')
+                if obj(failed.get('error_details'),'failed error').get('category')!='execution_failed':
+                    raise SuiteError('DEM tangential curvature failure has the wrong error category')
+                diagnostic=diagnostic_runner(repository,env,identifier,problem,language,timeout)
+                observed=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'failed Monitor execution')
+                if (observed.get('status')!='failed' or observed.get('module')!='develop'
+                    or obj(observed.get('error_details'),'Monitor failure').get('category')!='execution_failed'
+                    or obj(observed.get('metadata'),'failed Monitor metadata').get('lineage_facts',{}).get('outputs')):
+                    raise SuiteError('Monitor failed status/category or absence of output lineage differs')
+                opposite=SubmittedLanguageClient(client,'en' if language=='zh-cn' else 'zh-cn')
+                queried=raster.wait_execution(opposite,'develop',identifier,timeout,expected='failed')
+                if queried.get('error')!=failed.get('error') or queried.get('error_details')!=failed.get('error_details'):
+                    raise SuiteError('query language rewrote stored failure')
+                failed_result=obj(failed.get('metadata'),'failed metadata').get('result')
+                if failed_result is not None:failed_result=obj(failed_result,'failed result')
+                if failed.get('outputs') or (failed_result is not None and failed_result.get('meta_scan_runs')):
+                    raise SuiteError('invalid parameter published a target or automatic scan')
+                if scan_ids(client)!=before_scans:raise SuiteError('invalid parameter added a scan')
+                if any(source_edges(client,item['id'])!=old_edges[name] for name,item in items.items()):
+                    raise SuiteError('invalid parameter added derived lineage')
+                if failed.get('metadata',{}).get('lineage_facts',{}).get('outputs'):
+                    raise SuiteError('invalid parameter published output lineage')
+                native=physical_runner(repository,env,names);check_physical(native,previous)
+                failures.append({'problem':problem,'language':language,'execution_id':identifier,'status':'failed','no_publication_or_scan_or_lineage':True,'monitor_verified':True,'query_language_did_not_rewrite_failure':True,'diagnostic':diagnostic})
+    with progress.stage('source_metadata'):
+        for name,item in items.items():
+            if client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload!=before[name]:
+                raise SuiteError('source metadata changed')
     return {'schema_version':'addp.'+SUITE+'/v1','suite':SUITE,'result':'passed','run_id':env['ADDP_ONLINE_TEST_RUN_ID'],
         'identity':identity,'sources':sources,'source_scan_execution_id':source_scan,'source_unchanged':True,
-        'cases':cases,'failed_parameters':failures,
+        'cases':cases,'failed_parameters':failures,'stage_progress':progress.finish(),
         'physical':native,'cleanup_boundary':'owned NFS export/directory and disposable deployment; no business DELETE acceptance'}
 
 
