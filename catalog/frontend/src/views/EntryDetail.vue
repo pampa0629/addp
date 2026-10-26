@@ -9,10 +9,10 @@
     <div class="page-header">
       <el-button text :icon="ArrowLeft" @click="goBack">{{ t('catalog.common.back') }}</el-button>
       <div class="header-actions">
-		<el-button v-if="entry" :type="marks.favorite ? 'primary' : ''" :icon="Star" :loading="markSaving" @click="toggleMark('favorite')">
+		<el-button v-if="entry" :type="marks.favorite ? 'primary' : ''" :icon="Star" :loading="markSaving" :disabled="!marksReady" @click="toggleMark('favorite')">
 		  {{ marks.favorite ? t('catalog.marks.favorited') : t('catalog.marks.favorite') }}
 		</el-button>
-		<el-button v-if="entry" :type="marks.following ? 'primary' : ''" :icon="Bell" :loading="markSaving" @click="toggleMark('following')">
+		<el-button v-if="entry" :type="marks.following ? 'primary' : ''" :icon="Bell" :loading="markSaving" :disabled="!marksReady" @click="toggleMark('following')">
 		  {{ marks.following ? t('catalog.marks.following') : t('catalog.marks.follow') }}
 		</el-button>
 	        <el-button v-if="curationActionKey && !editing" data-testid="catalog-curation-action" type="primary" :icon="Edit" @click="openEditor()">
@@ -587,7 +587,7 @@
 <script setup>
 import StandardDefinitionSummary from '../components/StandardDefinitionSummary.vue'
 import { catalogEntryTypeLabel } from '../utils/catalogResourceTypes'
-import { computed, defineAsyncComponent, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -637,6 +637,7 @@ const activeDetailTab = ref('overview')
 const conflict = ref(false)
 const error = ref('')
 const marks = ref({ favorite: false, following: false })
+const marksReady = ref(false)
 const markSaving = ref(false)
 const history = ref(null)
 const historyLoading = ref(false)
@@ -650,6 +651,8 @@ const dataDictionaryLoading = ref(false)
 const dataDictionaryExporting = ref(false)
 const dataDictionaryError = ref('')
 let requestVersion = 0
+let marksRequestVersion = 0
+let historyRequestVersion = 0
 let dataDictionaryRequestVersion = 0
 const canEdit = computed(() => authStore.hasPermission('catalog.entry.update'))
 const canCertify = computed(() => authStore.hasPermission('catalog.entry.certify'))
@@ -987,6 +990,14 @@ async function withdrawCuration() {
 async function loadEntry() {
   const id = String(route.params.id || '').trim()
   const version = ++requestVersion
+  invalidateEntryAuxiliaryRequests()
+  history.value = null
+  historyError.value = ''
+  historyLoading.value = canReadAudit.value
+  if (entry.value?.id !== id) {
+    entry.value = null
+    marks.value = { favorite: false, following: false }
+  }
   loading.value = true
   error.value = ''
   try {
@@ -996,12 +1007,12 @@ async function loadEntry() {
 	  dataDictionaryAsOf.value = null
 	  void loadDataDictionary()
 	  await loadMarks(id)
-	  history.value = null
-	  if (canReadAudit.value) await loadHistory()
+	  if (version === requestVersion && canReadAudit.value) await loadHistory()
 	}
   } catch (requestError) {
     if (version === requestVersion) {
       entry.value = null
+      historyLoading.value = false
       error.value = requestError?.response?.data?.error || t('catalog.entry.loadFailed')
     }
   } finally {
@@ -1244,27 +1255,56 @@ function professionalRelationDetails(edge) {
 }
 
 async function loadMarks(id) {
+  const version = ++marksRequestVersion
+  marksReady.value = false
   try {
-    marks.value = await getMyEntryMarks(id)
+    const response = await getMyEntryMarks(id)
+    if (version !== marksRequestVersion || !isCurrentEntry(id)) return
+    marks.value = response
+    marksReady.value = true
   } catch (requestError) {
+    if (version !== marksRequestVersion || !isCurrentEntry(id)) return
     marks.value = { favorite: false, following: false }
     ElMessage.error(requestError?.response?.data?.error || t('catalog.marks.loadFailed'))
   }
 }
 
 async function toggleMark(type) {
-  if (!entry.value || markSaving.value) return
+  if (!entry.value || !marksReady.value || markSaving.value) return
+  const id = entry.value.id
+  if (!isCurrentEntry(id)) return
+  const version = ++marksRequestVersion
   const next = { ...marks.value, [type]: !marks.value[type] }
   markSaving.value = true
   try {
-    marks.value = await replaceMyEntryMarks(entry.value.id, next)
+    const response = await replaceMyEntryMarks(id, next)
+    if (version !== marksRequestVersion || !isCurrentEntry(id)) return
+    marks.value = response
     ElMessage.success(t('catalog.marks.saved'))
   } catch (requestError) {
+    if (version !== marksRequestVersion || !isCurrentEntry(id)) return
     ElMessage.error(requestError?.response?.data?.error || t('catalog.marks.saveFailed'))
   } finally {
-    markSaving.value = false
+    if (version === marksRequestVersion) markSaving.value = false
   }
 }
+
+function isCurrentEntry(id) {
+  return entry.value?.id === id && String(route.params.id || '').trim() === id
+}
+
+function invalidateEntryAuxiliaryRequests() {
+  marksRequestVersion++
+  historyRequestVersion++
+  marksReady.value = false
+  markSaving.value = false
+  historyLoading.value = false
+}
+
+onBeforeUnmount(() => {
+  requestVersion++
+  invalidateEntryAuxiliaryRequests()
+})
 
 function emptyRebindForm() {
 	return { temporary_entry_id: '', temporary_entry_version: 1, new_source_identity: '', reason: '', evidence: '' }
@@ -1292,15 +1332,21 @@ async function submitRebind() {
 }
 
 async function loadHistory() {
-	if (!entry.value || !canReadAudit.value) return
+	const version = ++historyRequestVersion
+	const id = entry.value?.id
+	historyLoading.value = false
+	if (!id || !isCurrentEntry(id) || !canReadAudit.value) return
 	historyLoading.value = true
 	historyError.value = ''
 	try {
-	  history.value = await getEntryHistory(entry.value.id)
+	  const response = await getEntryHistory(id)
+	  if (version !== historyRequestVersion || !isCurrentEntry(id) || !canReadAudit.value) return
+	  history.value = response
 	} catch (requestError) {
+	  if (version !== historyRequestVersion || !isCurrentEntry(id) || !canReadAudit.value) return
 	  historyError.value = requestError?.response?.data?.error || t('catalog.history.loadFailed')
 	} finally {
-	  historyLoading.value = false
+	  if (version === historyRequestVersion) historyLoading.value = false
 	}
 }
 
