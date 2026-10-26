@@ -1,5 +1,6 @@
 import copy
 import importlib
+import json
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -76,6 +77,25 @@ def execution(module,execution_id):
 
 
 class OrdinaryImages(unittest.TestCase):
+    def test_actual_physical_dispatch_accepts_image_receipts_without_cog_facts(self):
+        for action in ('prepare-images', 'verify-images'):
+            payload=physical(action)
+            payload['preserved_sha256']={name:'a'*64 for name in owner.fixture.preterrain_target_names()
+                | {case+'.cog.tif' for case in owner.fixture.TERRAIN_CASES}}
+            with self.subTest(action=action), patch.object(owner.subprocess,'run',
+                    return_value=SimpleNamespace(returncode=0,stdout=json.dumps(payload),stderr='')) as command:
+                self.assertEqual(owner.physical(Path('.'),{},action),payload)
+                self.assertEqual(command.call_args.args[0][-1],action)
+            for fault in ('source','prior_missing','prior_hash','unexpected_image'):
+                bad=copy.deepcopy(payload)
+                if fault=='source':bad['source_unchanged']=False
+                if fault=='prior_missing':bad['preserved_sha256'].pop(next(iter(bad['preserved_sha256'])))
+                if fault=='prior_hash':bad['preserved_sha256'][next(iter(bad['preserved_sha256']))]='not-a-sha256'
+                if fault=='unexpected_image':bad['images']['tiff']={}
+                with self.subTest(action=action,fault=fault), patch.object(owner.subprocess,'run',
+                        return_value=SimpleNamespace(returncode=0,stdout=json.dumps(bad),stderr='')):
+                    with self.assertRaises(owner.SuiteError):owner.physical(Path('.'),{},action)
+
     def run_scene(self,fault=None):
         client=Client();observed=[]
         def native(repo,env,action):

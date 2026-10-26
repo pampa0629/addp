@@ -713,6 +713,16 @@ def physical(repository, env, action):
             if f'Raster physical fixture failed: {code}' in result.stderr.splitlines()), None)
         raise SuiteError(f'physical raster {action} failed ({result.returncode})' + (f': {reason}' if reason else ''))
     payload = obj(json.loads(result.stdout), 'physical raster evidence')
+    if action in ('prepare-images', 'verify-images'):
+        prior = obj(payload.get('preserved_sha256'), 'pre-image artifacts')
+        images = obj(payload.get('images'), 'physical ordinary images')
+        baseline_names = fixture.preterrain_target_names() | {name+'.cog.tif' for name in fixture.TERRAIN_CASES}
+        if (payload.get('source_unchanged') is not True or set(prior) != baseline_names
+            or any(not isinstance(digest,str) or len(digest)!=64
+                   or any(c not in '0123456789abcdef' for c in digest) for digest in prior.values())
+            or set(images) != (set() if action=='prepare-images' else set(fixture.IMAGE_TARGETS))):
+            raise SuiteError('physical ordinary-image manifest is incomplete')
+        return payload
     if action in ('verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'verify-tiles-failure') + fixture.CLEANUP_ACTIONS:
         prefix = action.removeprefix('verify-')
         count = fixture.TILE_CLEANUP_CASES[prefix][1] if prefix in fixture.TILE_CLEANUP_CASES else 1 if action == 'verify-tiles-failure' else 4
