@@ -3625,7 +3625,7 @@ _CURVATURE_MESSAGES = {
 _CURVATURE_MESSAGES.update({
     'step': ('DEM 平均曲率的米制横纵像元间距必须能表示为严格正有限值',
              'DEM mean curvature requires representable finite, strictly positive horizontal and vertical spacing in metres'),
-    'method': ('DEM 曲率的 method 必须为 mean 或 profile', 'DEM curvature method must be mean or profile'),
+    'method': ('DEM 曲率的 method 必须为 mean、profile 或 tangential', 'DEM curvature method must be mean, profile or tangential'),
     'numeric': ('DEM 平均曲率的高程差、拟合导数及结果必须为有限值',
                 'DEM mean curvature requires finite elevation differences, fitted derivatives and results'),
 })
@@ -3635,6 +3635,8 @@ def _curvature_error(code, method='mean'):
     message = _CURVATURE_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0]
     if method == 'profile':
         message = message.replace('DEM 平均曲率', 'DEM 剖面曲率').replace('DEM mean curvature', 'DEM profile curvature')
+    elif method == 'tangential':
+        message = message.replace('DEM 平均曲率', 'DEM 切向曲率').replace('DEM mean curvature', 'DEM tangential curvature')
     return ValueError(message)
 
 
@@ -3669,6 +3671,21 @@ def _profile_curvature(p, q, r, s, t):
     return (rr*u)*u + ((ss*u)*v)*2. + (tt*v)*v
 
 
+def _tangential_curvature(p, q, r, s, t):
+    """Convex-positive surface normal curvature along the contour tangent."""
+    slope_scale = np.maximum(np.abs(p), np.abs(q))
+    u, v = p/slope_scale, q/slope_scale
+    length = np.hypot(u, v)
+    u, v = u/length, v/length
+    scale = np.maximum(1., slope_scale)
+    px, py, one = p/scale, q/scale, 1./scale
+    normal = -(1./scale)/np.sqrt(one*one + px*px + py*py)
+    rr, ss, tt = r*normal, s*normal, t*normal
+    # The diagonal weights sum to one. Combine them before the mixed term,
+    # rather than subtracting profile curvature from twice the mean.
+    return ((rr*v)*v + (tt*u)*u) - ((ss*u)*v)*2.
+
+
 def _curvature_block(values, valid, dx, dy, elevation_factor, method='mean'):
     """Closed-form equal-weight six-coefficient least squares on nine samples."""
     height, width = values.shape[0]-2, values.shape[1]-2
@@ -3681,7 +3698,7 @@ def _curvature_block(values, valid, dx, dy, elevation_factor, method='mean'):
         return result
     integer = np.issubdtype(values.dtype, np.integer)
     center = values[1:1+height, 1:1+width][complete].astype(object if integer else np.float64)
-    flat = np.ones(center.shape, dtype=bool) if method == 'profile' else None
+    flat = np.ones(center.shape, dtype=bool) if method in ('profile', 'tangential') else None
     neighbours = []
     with np.errstate(over='ignore', invalid='ignore', divide='ignore', under='ignore'):
         for row in range(3):
@@ -3712,7 +3729,8 @@ def _curvature_block(values, valid, dx, dy, elevation_factor, method='mean'):
             curvature = np.full(p.shape, np.nan)
             curvature[flat] = 0.
             directional = (p != 0) | (q != 0)
-            numerical = _profile_curvature(p[directional], q[directional], r[directional], s[directional], t[directional])
+            evaluate = _profile_curvature if method == 'profile' else _tangential_curvature
+            numerical = evaluate(p[directional], q[directional], r[directional], s[directional], t[directional])
             curvature[directional] = numerical
     if not np.all(np.isfinite(numerical)):
         raise _curvature_error('numeric', method)
@@ -3721,8 +3739,8 @@ def _curvature_block(values, valid, dx, dy, elevation_factor, method='mean'):
 
 
 def raster_curvature(input_raster, band, elevation_unit, method='mean'):
-    """Nine-point equal-weight quadratic mean or profile curvature in inverse metres."""
-    if not isinstance(method, str) or method not in ('mean', 'profile'):
+    """Nine-point quadratic mean, profile or tangential curvature in inverse metres."""
+    if not isinstance(method, str) or method not in ('mean', 'profile', 'tangential'):
         raise _curvature_error('method')
     source, horizontal_metres = _dem_admission(input_raster, elevation_unit, band, 1,
         diagnostic=lambda code: _curvature_error(code, method))
@@ -3873,7 +3891,7 @@ _SPECS = [
     (raster_hand_d8, OperatorCategory.RASTER_CELL, 'D8 到河网相对高程（HAND）', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网；完整非法路线及断流失败', role='input'), _param('elevation_raster', 'raster', '同网格、同有效覆盖的DEM；全图下游不升高，允许平坦、逆坡失败', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式二值河网数据波段'), _param('elevation_band', 'int', '显式高程数据波段；相对首次河网高程差，河网0、未到达NoData'), _param('elevation_unit', 'str', '显式高程单位，结果统一米制', enum=['metre', 'foot', 'us_survey_foot'])], 'raster', ['read']),
     (raster_stream_link_d8, OperatorCategory.RASTER_CELL, 'D8 河段编号', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；汇合点归下游段，按河段起点行列顺序从1编号')], 'raster', ['read']),
     (raster_stream_to_vector_d8, OperatorCategory.RASTER_EXTENT, 'D8 河网转矢量线', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜；孤立单像元失败，不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；连接像元中心，保留河段ID及米制长度')], 'GeoDataFrame', ['read']),
-    (raster_curvature, OperatorCategory.RASTER_CELL, 'DEM 曲率', [_INPUT(), _param('band', 'int', '显式高程数据波段；完整有效3×3九点等权二次曲面拟合，凸正凹负'), _param('elevation_unit', 'str', '显式高程单位；输出每米（1/metre），边缘及无效邻域NoData', enum=list(_ELEVATION_METRES)), _param('method', 'str', 'mean：平均曲率；profile：剖面曲率，九点等高平地0、其他零梯度NoData', 'mean', False, enum=['mean', 'profile'])], 'raster', ['read']),
+    (raster_curvature, OperatorCategory.RASTER_CELL, 'DEM 曲率', [_INPUT(), _param('band', 'int', '显式高程数据波段；完整有效3×3九点等权二次曲面拟合，凸正凹负'), _param('elevation_unit', 'str', '显式高程单位；输出每米（1/metre），边缘及无效邻域NoData', enum=list(_ELEVATION_METRES)), _param('method', 'str', 'mean：平均曲率；profile：剖面曲率；tangential：切向曲率；方向方法九点等高平地0、其他零梯度NoData', 'mean', False, enum=['mean', 'profile', 'tangential'])], 'raster', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_CELL, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
     (raster_hillshade, OperatorCategory.RASTER_CELL, 'DEM 地形晕渲', [*_DEM_PARAMS(), _param('azimuth', 'float', '光照方位角，北起顺时针 [0,360)', 315., False), _param('altitude', 'float', '光照高度角 (0,90]', 45., False)], 'raster', ['read']),

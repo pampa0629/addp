@@ -500,6 +500,7 @@
 | RasterRef | 栅格引用 | 对栅格输入或成果的引用语义。 | 公开资源身份仍统一使用 ResourceLocator，不建立第二套身份或持久状态；临时摘要不能重建内部数据集。 |
 | DEM mean curvature | DEM 平均曲率 | 对完整有效3×3九点等权拟合含自由常数项的二次曲面，计算中心处两主曲率的算术平均值，统一每米。 | 凸起为正、凹陷为负，平面为0，鞍面可为0；完整邻域才计算，边缘及无效邻域NoData。不等于高程拉普拉斯、剖面／平面曲率或地貌分类。 |
 | DEM profile curvature | DEM 剖面曲率 | 在同一九点等权拟合曲面上，沿中心最大坡降方向的竖直剖面曲率，统一每米。 | 凸正凹负；九点原始高程全相等的水平平地为0，其他零梯度点NoData，无坡度阈值。复用raster_curvature的profile方法，mean结果保持；不等于平均／平面／切向曲率或高程剖面采样。 |
+| DEM tangential curvature | DEM 切向曲率 | 在同一完整有效3×3九点等权拟合曲面上，沿等高线切向计算曲面法向曲率，统一每米。 | 横向凸正凹负；九点原始高程严格等高的平地为0，其他零梯度点NoData，无坡度阈值。复用raster_curvature的tangential方法，mean/profile结果保持；不等于等高线水平投影的平面曲率、流量或地貌分类。 |
 | DEM terrain analysis | DEM 基础地形分析 | 从显式声明高程单位的栅格数据波段计算坡度、坡向、地形晕渲或等值线。 | 首期仅接受有投影坐标系的北向无旋转网格；水平单位由 CRS 决定，高程单位由参数明确，不能从像元数值猜测。晕渲不表示三维场景，等值线不表示等值面。 |
 | Execution Effect | 执行效果 | 一次计算对数据或外部系统可能产生的效果分类。 | 固定为 `read`、`write`、`ddl`、`external_effect`；工作流按全部算子的最高效果收窄授权，不能由客户端自报后直接信任。 |
 | Engine Access Scope | 引擎访问范围 | Execution Authorization 中一个 Source Engine 与其允许 Execution Effect 集合组成的最小授权单元。 | 授权必须逐引擎保存和校验，不得把独立的 Engine ID 集合与 Effect 集合做笛卡尔积；例如跨引擎传输应分别表达源 `read` 和目标 `write`。 |

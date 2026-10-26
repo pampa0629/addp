@@ -10579,7 +10579,7 @@ def test_dem_curvature_full_nine_effective_samples_and_explicit_second_band(tmp_
 
 @pytest.mark.parametrize('language',['zh-cn','en'])
 @pytest.mark.parametrize('fault',['geographic','rotated','south-up','missing-crs','missing-grid','unit','unit-conflict','unit-unknown','scale','offset','alpha','band','complex','complex-alpha'])
-@pytest.mark.parametrize('method',['mean','profile'])
+@pytest.mark.parametrize('method',['mean','profile','tangential'])
 def test_dem_curvature_bilingual_admission_no_private_output(tmp_path,language,fault,method):
     import operators.raster_compute as compute
     path=tmp_path/'bad.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),5,5,2 if fault=='complex-alpha' else 1,gdal.GDT_CFloat64 if fault in ('complex','complex-alpha') else gdal.GDT_Float64)
@@ -10597,7 +10597,7 @@ def test_dem_curvature_bilingual_admission_no_private_output(tmp_path,language,f
         source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
         with pytest.raises(ValueError) as error:compute.raster_curvature(source,True if fault=='band' else 1,'bad' if fault=='unit' else 'metre',method=method)
         assert str(error.value)==str(compute._curvature_error(key,method))
-        assert ('DEM profile curvature' if language=='en' else 'DEM 剖面曲率') in str(error.value) if method=='profile' else True
+        assert ('DEM '+method+' curvature' if language=='en' else 'DEM '+{'profile':'剖面曲率','tangential':'切向曲率'}[method]) in str(error.value) if method!='mean' else True
         assert set(source.workspace.iterdir())==prior
 
 
@@ -10653,7 +10653,7 @@ def test_dem_curvature_stable_geometric_formula_against_decimal_native_extremes(
 
 @pytest.mark.parametrize('dx,dy',[(math.inf,1.),(0.,1.),(1.,math.inf)])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-@pytest.mark.parametrize('method',['mean','profile'])
+@pytest.mark.parametrize('method',['mean','profile','tangential'])
 def test_dem_curvature_unrepresentable_physical_step_rejects_before_output(tmp_path,monkeypatch,dx,dy,language,method):
     import operators.raster_compute as compute
     path=_curvature_file(tmp_path,np.zeros((5,5)))
@@ -10669,7 +10669,7 @@ def test_dem_curvature_unrepresentable_physical_step_rejects_before_output(tmp_p
 
 @pytest.mark.parametrize('kind',['difference','derivative'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-@pytest.mark.parametrize('method',['mean','profile'])
+@pytest.mark.parametrize('method',['mean','profile','tangential'])
 def test_dem_curvature_nonfinite_intermediate_fails_not_nodata(tmp_path,kind,language,method):
     import operators.raster_compute as compute
     values=np.full((3,3),1.7e308);values[1,1]=-1.7e308
@@ -10681,7 +10681,7 @@ def test_dem_curvature_nonfinite_intermediate_fails_not_nodata(tmp_path,kind,lan
         assert str(error.value)==str(compute._curvature_error('numeric',method));assert set(source.workspace.iterdir())==prior
 
 
-@pytest.mark.parametrize('method',['mean','profile'])
+@pytest.mark.parametrize('method',['mean','profile','tangential'])
 def test_dem_curvature_cross_block_complete_cog_pyramid_bounded_halo_and_source_prior_unchanged(tmp_path,monkeypatch,method):
     import operators.raster_compute as compute
     from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
@@ -10693,7 +10693,7 @@ def test_dem_curvature_cross_block_complete_cog_pyramid_bounded_halo_and_source_
     with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
     mask=np.full(values.shape,255,np.uint8);mask[512,510]=0;ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None
     values[100,100]=values[510,512]=values[512,510]=np.nan
-    expected=(_curvature_lstsq_oracle if method=='mean' else _profile_curvature_lstsq_oracle)(values,2,3);before=path.read_bytes();prior=tmp_path/'prior.bin';prior.write_bytes(b'old output');target=tmp_path/'curvature.cog.tif'
+    expected=_curvature_lstsq_oracle(values,2,3) if method=='mean' else _directional_curvature_lstsq_oracle(values,2,3,method=method);before=path.read_bytes();prior=tmp_path/'prior.bin';prior.write_bytes(b'old output');target=tmp_path/'curvature.cog.tif'
     reads=[];blocks=compute._blocks
     def capture(*args,**kwargs):
         for block in blocks(*args,**kwargs):assert max(block[2][0].shape)<=512;reads.append(block[:2]);yield block
@@ -10716,7 +10716,7 @@ def test_dem_curvature_cross_block_complete_cog_pyramid_bounded_halo_and_source_
 
 
 @pytest.mark.parametrize('stage',['read','compute','write'])
-@pytest.mark.parametrize('method',['mean','profile'])
+@pytest.mark.parametrize('method',['mean','profile','tangential'])
 def test_dem_curvature_injected_failure_cleans_private_output(tmp_path,monkeypatch,stage,method):
     import operators.raster_compute as compute
     path=_curvature_file(tmp_path,np.ones((519,515)));windows=compute._neighbourhood_windows;block=compute._curvature_block;calls=0
@@ -10737,7 +10737,7 @@ def test_dem_curvature_injected_failure_cleans_private_output(tmp_path,monkeypat
 
 @pytest.mark.parametrize('case',['direct','feet','filled','reclassified','invalid','empty-neighbourhood','bad-unit','bad-method'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-@pytest.mark.parametrize('method',['mean','profile'])
+@pytest.mark.parametrize('method',['mean','profile','tangential'])
 def test_dem_curvature_real_async_existing_ports_cog_and_frozen_failure_language(tmp_path,monkeypatch,case,language,method):
     import api_server,workflow_engine
     rows,cols=np.indices((9,11));values=.02*(cols-5)**2+.03*(rows-4)**2-20
@@ -10770,13 +10770,13 @@ def test_dem_curvature_real_async_existing_ports_cog_and_frozen_failure_language
         assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
     else:
         ds=gdal.Open(str(target));band=ds.GetRasterBand(1)
-        np.testing.assert_allclose(read_band_values(band),(_curvature_lstsq_oracle if method=='mean' else _profile_curvature_lstsq_oracle)(values/factor,2,3,factor),rtol=1e-11,atol=1e-11,equal_nan=True)
+        np.testing.assert_allclose(read_band_values(band),(_curvature_lstsq_oracle(values/factor,2,3,factor) if method=='mean' else _directional_curvature_lstsq_oracle(values/factor,2,3,factor,method=method)),rtol=1e-11,atol=1e-11,equal_nan=True)
         assert band.GetUnitType()=='1/metre';band=ds=None
         with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
         artifact=json.loads(status['result']);assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
 
 
-def _profile_curvature_lstsq_oracle(values, dx, dy, factor=1.):
+def _directional_curvature_lstsq_oracle(values, dx, dy, factor=1., method="profile"):
     """Independent least squares and directional first/second fundamental forms."""
     result=np.full(values.shape,np.nan)
     if min(values.shape)<3:return result
@@ -10801,7 +10801,7 @@ def _profile_curvature_lstsq_oracle(values, dx, dy, factor=1.):
         first[:,0,0]=1+p*p;first[:,1,1]=1+q*q;first[:,0,1]=first[:,1,0]=p*q
         norm=np.sqrt(1+p*p+q*q)
         second[:,0,0]=-r/norm;second[:,1,1]=-t/norm;second[:,0,1]=second[:,1,0]=-s/norm
-        tangent=np.column_stack((p,q))
+        tangent=np.column_stack((p,q) if method=="profile" else (-q,p))
         answer[active]=np.einsum('bi,bij,bj->b',tangent,second,tangent)/np.einsum('bi,bij,bj->b',tangent,first,tangent)
     result[1:-1,1:-1][valid]=answer
     return result
@@ -10809,15 +10809,16 @@ def _profile_curvature_lstsq_oracle(values, dx, dy, factor=1.):
 
 @pytest.mark.parametrize('coefficients',[(0,0,0,0,0),(0,0,0,2,-3),(1,0,2,0,0),(-1,0,-2,0,0),(1,0,-1,0,0),(.125,.25,-.5,2,-3)])
 @pytest.mark.parametrize('dx,dy',[(1.,1.),(2.,3.),(.25,4.)])
-def test_dem_profile_curvature_analytic_directional_form_and_mean_unchanged(tmp_path,coefficients,dx,dy):
+@pytest.mark.parametrize('method',['profile','tangential'])
+def test_dem_directional_curvature_analytic_directional_form_and_mean_unchanged(tmp_path,coefficients,dx,dy,method):
     import operators.raster_compute as compute
     a,b,c,d,e=coefficients;rows,cols=np.indices((9,11));x=(cols-5)*dx;y=(4-rows)*dy
     values=a*x*x+b*x*y+c*y*y+d*x+e*y+100
     path=_curvature_file(tmp_path,values,dx,dy);before=path.read_bytes()
     with raster_workspace():
-        source=raster_load(source_plan(path));result=compute.raster_curvature(source,1,'metre',method='profile')
+        source=raster_load(source_plan(path));result=compute.raster_curvature(source,1,'metre',method=method)
         ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1);actual=read_band_values(band)
-        expected=_profile_curvature_lstsq_oracle(values,dx,dy)
+        expected=_directional_curvature_lstsq_oracle(values,dx,dy,method=method)
         np.testing.assert_allclose(actual,expected,rtol=1e-11,atol=1e-12,equal_nan=True)
         np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected))
         assert band.GetUnitType()=='1/metre' and band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue())
@@ -10834,55 +10835,60 @@ def test_dem_profile_curvature_analytic_directional_form_and_mean_unchanged(tmp_
 
 
 @pytest.mark.parametrize('kind',['flat','hill','bowl','saddle','horizontal-fit-residual'])
-def test_dem_profile_curvature_stationary_centres_only_true_flat_is_zero(tmp_path,kind):
+@pytest.mark.parametrize('method',['profile','tangential'])
+def test_dem_directional_curvature_stationary_centres_only_true_flat_is_zero(tmp_path,kind,method):
     import operators.raster_compute as compute
     y,x=np.indices((3,3));x=x-1;y=1-y
     values={'flat':np.full((3,3),42.),'hill':42-x*x-2*y*y,'bowl':x*x+2*y*y,
             'saddle':x*x-y*y,'horizontal-fit-residual':np.outer([1,-2,1],[1,-2,1])}[kind]
     path=_curvature_file(tmp_path,values)
     with raster_workspace():
-        result=compute.raster_curvature(raster_load(source_plan(path)),1,'metre',method='profile');ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
-        actual=read_band_values(band);expected=_profile_curvature_lstsq_oracle(values,2,3)
+        result=compute.raster_curvature(raster_load(source_plan(path)),1,'metre',method=method);ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        actual=read_band_values(band);expected=_directional_curvature_lstsq_oracle(values,2,3,method=method)
         np.testing.assert_array_equal(actual,expected);np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected));band=ds=None
     assert actual[1,1]==0 if kind=='flat' else np.isnan(actual[1,1])
 
 
 @pytest.mark.parametrize('seed',range(8))
-def test_dem_profile_curvature_random_nine_point_lstsq(tmp_path,seed):
+@pytest.mark.parametrize('method',['profile','tangential'])
+def test_dem_directional_curvature_random_nine_point_lstsq(tmp_path,seed,method):
     import operators.raster_compute as compute
     values=np.random.default_rng(seed).normal(size=(9,11))*7+100
     path=_curvature_file(tmp_path,values)
     with raster_workspace():
-        result=compute.raster_curvature(raster_load(source_plan(path)),1,'metre',method='profile');ds=gdal.Open(str(result.path))
-        np.testing.assert_allclose(read_band_values(ds.GetRasterBand(1)),_profile_curvature_lstsq_oracle(values,2,3),rtol=1e-11,atol=1e-12,equal_nan=True);ds=None
+        result=compute.raster_curvature(raster_load(source_plan(path)),1,'metre',method=method);ds=gdal.Open(str(result.path))
+        np.testing.assert_allclose(read_band_values(ds.GetRasterBand(1)),_directional_curvature_lstsq_oracle(values,2,3,method=method),rtol=1e-11,atol=1e-12,equal_nan=True);ds=None
 
 
 @pytest.mark.parametrize('epsg',[3857,2222,2277])
 @pytest.mark.parametrize('unit,factor',[('metre',1.),('foot',.3048),('us_survey_foot',1200/3937)])
-def test_dem_profile_curvature_units_and_height_translation(tmp_path,epsg,unit,factor):
+@pytest.mark.parametrize('method',['profile','tangential'])
+def test_dem_directional_curvature_units_and_height_translation(tmp_path,epsg,unit,factor,method):
     import operators.raster_compute as compute
     rows,cols=np.indices((7,9));x=(cols-4)*2.;y=(3-rows)*3.
     values=(.125*x*x+.25*x*y-.5*y*y+20*x-30*y-100)/factor
     path=_curvature_file(tmp_path,values,epsg=epsg,unit=unit)
     with raster_workspace():
-        result=compute.raster_curvature(raster_load(source_plan(path)),1,unit,method='profile');ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
-        np.testing.assert_allclose(read_band_values(band),_profile_curvature_lstsq_oracle(values,2,3,factor),rtol=1e-11,atol=1e-12,equal_nan=True)
+        result=compute.raster_curvature(raster_load(source_plan(path)),1,unit,method=method);ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        np.testing.assert_allclose(read_band_values(band),_directional_curvature_lstsq_oracle(values,2,3,factor,method=method),rtol=1e-11,atol=1e-12,equal_nan=True)
         assert band.GetUnitType()=='1/metre' and ds.GetSpatialRef().GetAuthorityCode(None)==str(epsg);band=ds=None
 
 
 @pytest.mark.parametrize('shape',[(1,1),(1,8),(7,1),(2,5),(5,2),(3,3),(5,7)])
 @pytest.mark.parametrize('empty',[False,True])
-def test_dem_profile_curvature_empty_small_and_horizontal_flat(tmp_path,shape,empty):
+@pytest.mark.parametrize('method',['profile','tangential'])
+def test_dem_directional_curvature_empty_small_and_horizontal_flat(tmp_path,shape,empty,method):
     import operators.raster_compute as compute
     values=np.full(shape,np.nan if empty else 7.);path=_curvature_file(tmp_path,values)
     with raster_workspace():
-        result=compute.raster_curvature(raster_load(source_plan(path)),1,'metre',method='profile');ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
-        expected=_profile_curvature_lstsq_oracle(values,2,3);np.testing.assert_array_equal(read_band_values(band),expected)
+        result=compute.raster_curvature(raster_load(source_plan(path)),1,'metre',method=method);ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        expected=_directional_curvature_lstsq_oracle(values,2,3,method=method);np.testing.assert_array_equal(read_band_values(band),expected)
         np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected));band=ds=None
 
 
 @pytest.mark.parametrize('fault',['nan','inf','nodata','mask','alpha-zero','alpha-nan','partial-alpha'])
-def test_dem_profile_curvature_full_neighbourhood_explicit_band_and_mask(tmp_path,fault):
+@pytest.mark.parametrize('method',['profile','tangential'])
+def test_dem_directional_curvature_full_neighbourhood_explicit_band_and_mask(tmp_path,fault,method):
     import operators.raster_compute as compute
     rows,cols=np.indices((7,9));values=(cols-4.)**2+(rows-3.)**2+20*cols
     cube=np.stack((np.full(values.shape,.25),values,np.full(values.shape,-9999.),np.full(values.shape,255.)))
@@ -10897,7 +10903,7 @@ def test_dem_profile_curvature_full_neighbourhood_explicit_band_and_mask(tmp_pat
     if fault!='partial-alpha':wanted[3,4]=np.nan
     before=path.read_bytes()
     with raster_workspace():
-        result=compute.raster_curvature(raster_load(source_plan(path)),2,'metre',method='profile');ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1);expected=_profile_curvature_lstsq_oracle(wanted,2,3)
+        result=compute.raster_curvature(raster_load(source_plan(path)),2,'metre',method=method);ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1);expected=_directional_curvature_lstsq_oracle(wanted,2,3,method=method)
         np.testing.assert_allclose(read_band_values(band),expected,rtol=1e-11,atol=1e-12,equal_nan=True)
         np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected));band=ds=None
     assert path.read_bytes()==before
@@ -10915,7 +10921,8 @@ def test_dem_profile_curvature_rejects_invalid_method_before_output(tmp_path,met
 
 
 @pytest.mark.parametrize('dtype',[np.int64,np.uint64])
-def test_dem_profile_curvature_native_64bit_differences_nodata_and_stationary(tmp_path,dtype):
+@pytest.mark.parametrize('method',['profile','tangential'])
+def test_dem_directional_curvature_native_64bit_differences_nodata_and_stationary(tmp_path,dtype,method):
     import operators.raster_compute as compute
     from osgeo import gdal_array
     rows,cols=np.indices((7,7));small=(rows-3)**2+(cols-3)**2+100;base=2**63 if dtype==np.uint64 else -2**63
@@ -10926,7 +10933,7 @@ def test_dem_profile_curvature_native_64bit_differences_nodata_and_stationary(tm
     else:band.SetNoDataValueAsInt64(nodata)
     band=ds=None;wanted=small.astype(float);wanted[0,0]=np.nan;before=path.read_bytes()
     with raster_workspace():
-        result=compute.raster_curvature(raster_load(source_plan(path)),1,'metre',method='profile');ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1);expected=_profile_curvature_lstsq_oracle(wanted,1,1)
+        result=compute.raster_curvature(raster_load(source_plan(path)),1,'metre',method=method);ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1);expected=_directional_curvature_lstsq_oracle(wanted,1,1,method=method)
         np.testing.assert_allclose(read_band_values(band),expected,rtol=1e-12,atol=1e-12,equal_nan=True)
         np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected));band=ds=None
     assert path.read_bytes()==before and np.isnan(expected[3,3])
@@ -10944,22 +10951,91 @@ def test_dem_profile_curvature_stable_extremes_against_decimal(p,q,r,s,t):
 
 
 @pytest.mark.parametrize('slope',[1e-200,1e-300])
-def test_dem_profile_curvature_tiny_nonzero_slope_remains_valid_zero(tmp_path,slope):
+@pytest.mark.parametrize('method',['profile','tangential'])
+def test_dem_directional_curvature_tiny_nonzero_slope_remains_valid_zero(tmp_path,slope,method):
     import operators.raster_compute as compute
     values=np.tile(np.array([-slope,0.,slope]),(3,1));path=_curvature_file(tmp_path,values,1,1)
     with raster_workspace():
-        result=compute.raster_curvature(raster_load(source_plan(path)),1,'metre',method='profile');ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        result=compute.raster_curvature(raster_load(source_plan(path)),1,'metre',method=method);ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
         actual=read_band_values(band);assert actual[1,1]==0 and band.GetMaskBand().ReadAsArray()[1,1]==255;band=ds=None
 
 
 @pytest.mark.parametrize('number',[np.inf,np.nan])
 @pytest.mark.parametrize('language',['zh-cn','en'])
-def test_dem_profile_curvature_numerical_nonfinite_is_failure_not_stationary_nodata(tmp_path,monkeypatch,number,language):
+@pytest.mark.parametrize('method',['profile','tangential'])
+def test_dem_directional_curvature_numerical_nonfinite_is_failure_not_stationary_nodata(tmp_path,monkeypatch,number,language,method):
     import operators.raster_compute as compute
     values=np.tile(np.arange(5.),(5,1));path=_curvature_file(tmp_path,values)
-    monkeypatch.setattr(compute,'_profile_curvature',lambda p,q,r,s,t:np.full(p.shape,number))
+    monkeypatch.setattr(compute,'_profile_curvature' if method=='profile' else '_tangential_curvature',lambda p,q,r,s,t:np.full(p.shape,number))
     with raster_workspace(),raster_error_language(language):
         source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
-        with pytest.raises(ValueError) as error:compute.raster_curvature(source,1,'metre',method='profile')
-        assert ('DEM profile curvature' if language=='en' else 'DEM 剖面曲率') in str(error.value)
+        with pytest.raises(ValueError) as error:compute.raster_curvature(source,1,'metre',method=method)
+        assert ('DEM '+method+' curvature' if language=='en' else 'DEM '+{'profile':'剖面曲率','tangential':'切向曲率'}[method]) in str(error.value)
         assert set(source.workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('kind',['flat','hill','bowl','saddle','horizontal-fit-residual'])
+def test_dem_tangential_curvature_stationary_and_mean_profile_results(tmp_path,kind):
+    import operators.raster_compute as compute
+    yy,xx=np.indices((3,3));x=xx-1.;y=1.-yy
+    values=np.full((3,3),42.) if kind=='flat' else (-(x*x+y*y) if kind=='hill' else x*x+y*y if kind=='bowl' else x*x-y*y if kind=='saddle' else np.outer([1.,-2.,1.],[1.,-2.,1.]))
+    path=_curvature_file(tmp_path,values);before=path.read_bytes()
+    with raster_workspace():
+        source=raster_load(source_plan(path));old=[]
+        for method in ('mean','profile'):
+            ds=gdal.Open(str(compute.raster_curvature(source,1,'metre',method=method).path));old.append(ds.GetRasterBand(1).ReadRaster());ds=None
+        result=compute.raster_curvature(source,1,'metre',method='tangential');ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        actual=read_band_values(band);mask=band.GetMaskBand().ReadAsArray();band=ds=None
+        assert actual[1,1]==0. if kind=='flat' else np.isnan(actual[1,1])
+        assert mask[1,1]==(255 if kind=='flat' else 0)
+        assert np.isnan(actual[[0,-1],:]).all() and np.isnan(actual[:,[0,-1]]).all()
+        for method,wanted in zip(('mean','profile'),old):
+            ds=gdal.Open(str(compute.raster_curvature(source,1,'metre',method=method).path));assert ds.GetRasterBand(1).ReadRaster()==wanted;ds=None
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('p,q,r,s,t',[(1e-200,0.,2.,0.,3.),(1e-200,-2e-200,2.,.5,-3.),(1e200,0.,1e308,0.,1e308),(1.7e308,1.7e308,1.6e308,0.,1.6e308),(1e100,-1e100,1e250,3e249,-2e250),(.2,.3,1.7e308,-1e308,1.7e308),(1e-200,1e-200,1.7e308,1.7e308,1.7e308)])
+def test_dem_tangential_curvature_stable_extremes_against_decimal(p,q,r,s,t):
+    import operators.raster_compute as compute
+    from decimal import Decimal,localcontext
+    with localcontext() as ctx:
+        ctx.prec=2000;P,Q,R,S,T=map(Decimal.from_float,(p,q,r,s,t));slope=P*P+Q*Q
+        expected=float(-(R*Q*Q-2*S*P*Q+T*P*P)/(slope*(1+slope).sqrt()))
+    with np.errstate(over='ignore',under='ignore',invalid='ignore'):
+        actual=float(compute._tangential_curvature(*[np.array([n]) for n in (p,q,r,s,t)])[0])
+    if math.isfinite(expected):assert math.isfinite(actual) and actual==pytest.approx(expected,rel=3e-14,abs=0)
+    else:assert actual==expected  # The public operator rejects a nonfinite result.
+
+
+@pytest.mark.parametrize('slope',[1e-200,1e-300])
+def test_dem_tangential_curvature_tiny_nonzero_gradient_retains_nonzero_contour_curvature(tmp_path,slope):
+    import operators.raster_compute as compute
+    values=np.array([[1.,1.,1.],[-slope,0.,slope],[1.,1.,1.]])
+    path=_curvature_file(tmp_path,values,1.,1.)
+    with raster_workspace():
+        ds=gdal.Open(str(compute.raster_curvature(raster_load(source_plan(path)),1,'metre',method='tangential').path))
+        band=ds.GetRasterBand(1);assert band.ReadAsArray()[1,1]==-2. and band.GetMaskBand().ReadAsArray()[1,1]==255;band=ds=None
+
+
+@pytest.mark.parametrize('seed',range(10))
+def test_dem_tangential_curvature_independent_oracle_euler_identity_and_plan_distinction(tmp_path,seed):
+    import operators.raster_compute as compute
+    rng=np.random.default_rng(seed);values=rng.normal(size=(9,11))*2+50.;path=_curvature_file(tmp_path,values)
+    outputs={}
+    with raster_workspace():
+        source=raster_load(source_plan(path))
+        for method in ('mean','profile','tangential'):
+            ds=gdal.Open(str(compute.raster_curvature(source,1,'metre',method=method).path));outputs[method]=read_band_values(ds.GetRasterBand(1));ds=None
+    want=_directional_curvature_lstsq_oracle(values,2,3,method='tangential')
+    np.testing.assert_allclose(outputs['tangential'],want,rtol=1e-11,atol=1e-12,equal_nan=True)
+    active=np.isfinite(outputs['profile']) & np.isfinite(outputs['tangential'])
+    np.testing.assert_allclose((outputs['profile']+outputs['tangential'])[active],(2*outputs['mean'])[active],rtol=1e-11,atol=1e-12)
+    # A steep analytic surface distinguishes geometric normal contour curvature
+    # from the horizontal projection (plan curvature).
+    rows,cols=np.indices((7,9));x=(cols-4)*2.;y=(3-rows)*3.;surface=.25*x*x+.5*y*y+3*x+4*y
+    other=tmp_path/'steep';other.mkdir();path=_curvature_file(other,surface)
+    with raster_workspace():
+        ds=gdal.Open(str(compute.raster_curvature(raster_load(source_plan(path)),1,'metre',method='tangential').path));actual=ds.GetRasterBand(1).ReadAsArray()[3,4];ds=None
+    numerator=.5*4**2+1.*3**2
+    assert actual==pytest.approx(-numerator/(25*math.sqrt(26)),rel=1e-12)
+    assert not np.isclose(actual,-numerator/25**1.5,rtol=1e-6,atol=0)

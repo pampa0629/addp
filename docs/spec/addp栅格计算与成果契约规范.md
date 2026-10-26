@@ -356,3 +356,10 @@ D8增量子汇水区独立手工Hosted `raster-subcatchments-d8-persistence` 已
 既有`raster_curvature`增加`method=profile`，与默认mean共用完整有效3×3九点等权六系数二次曲面拟合和唯一带halo分块／COG路径。profile为沿最大坡降方向的竖直剖面曲率，凸正凹负、单位`1/metre`；九个有效原始高程严格全相等的水平平地为0，其他拟合梯度同时为零的点为NaN NoData，包括山顶／洼底／鞍点及非平地残差。不设置近零阈值，极小非零坡度继续计算；没有可计算点仍成功全NoData。原mean公式与结果保持，方向未定义的NoData不掩盖非有限数值失败。
 
 显式波段及三种高程单位、水平单位独立换算、北向无旋转矩形投影网格、原始64位差值、完整九点有效性、原网格／CRS及源旧保护规则保持。仅新增method枚举与双语诊断，不新增算子、权限、依赖或跨模块逻辑。独立最小二乘／基本形式方向商、解析曲面及Decimal极值验证沿既有Native入口自动发现；本地结果见[专题](../next/栅格算子体系后续专题.md)。固定`cb2a25b5b`已通过正式Linux Native全量6643项／24 warnings／1844.58秒及标准Platform consistency，完整日志审计见专题；本地全量6642通过／1项范围外Parquet-PyArrow失败仍保留原环境记录。剖面独立Hosted尚未新增或运行，仍等CI会话协调与准备范围确认，不计真实平台扫描／血缘／Monitor、UI或容量。
+
+
+### DEM 切向曲率
+
+已实现既有`raster_curvature(..., method='mean')`的`tangential`方法：沿等高线切向的曲面法向曲率，横向凸正凹负、统一`1/metre`。复用完整有效九点等权二次拟合；九点原始高程严格全相等为0，其他零梯度点NoData，无坡度阈值。mean/profile核与结果保持，切向直接计算，不以两倍mean减profile作为产品算法；非有限数值明确失败。原网格／CRS、Float64／NaN、唯一512×512带halo读取、COG及清理路径不变；不增加权限、依赖或跨模块产品逻辑。方法枚举及非法method的中英文诊断同步为三种合法方法，原剖面Hosted的相应期望同步，不放宽断言。
+
+完整定义见[算子契约](workflow/栅格算子契约.md)。本地曲率专项562项、原剖面runner66项及登记通过；标准本地全量实际6917通过／1项既有Parquet-PyArrow失败，不能记作全量通过。详细源码输入与日志见[后续专题](../next/栅格算子体系后续专题.md#dem-切向曲率首期)。Linux全量与Hosted继续等CI会话回传，未新增独立Hosted脚本，不计真实平台T4、UI或容量。
