@@ -1,6 +1,16 @@
 # ADDP Cleanup（资源回收）体系规范
 
-> 状态：平台级规范。本文定义 ADDP 系统级资源回收体系的概念、职责边界、协议约束和演进顺序。历史背景和当前迁移收口见本文第十三节和第十四节。
+> 状态：平台级规范。本文定义 ADDP 系统级资源回收体系的概念、职责边界、协议约束和演进顺序。
+
+阅读导航：
+
+| 阅读目的 | 正文入口 |
+| --- | --- |
+| 核对 Owner 归属 | [职责边界](#三职责边界) |
+| 确定参与范围与执行条件 | [请求语义](#五请求语义)、[executor 参与范围](#executor-参与范围)、[scan 与 execute](#六scan-与-execute)、[清理模式](#七清理模式) |
+| 区分结果、状态与界面 | [结果模型](#八结果模型)、[状态判定](#状态与通过判定)、[System 页面与 API](#system-页面与任务-api)、[Monitor](#1-monitor) |
+| 核对删除及历史保留 | [Engine 删除工作流](#engine-删除工作流)、[审计](#2-审计)、[协调状态与历史保留](#3-协调状态与历史保留) |
+| 确认验收与进展 | [运行态验收](#十三运行态验收)、[迁移状态](#十四迁移状态)、[已确认决策](#十五已确认决策) |
 
 ## 一、定位
 
@@ -313,7 +323,7 @@ cleanup request（资源回收请求）必须保持中性。
 - 模块安装与启用事实来自 `module_definitions`，实例心跳只提供运行状态与声明，不能改写模块定义。当前严格评估仍依赖已登记实例中的 cause 声明；没有该声明的模块不参与，不能据此断言该 Owner 无相关资源、已完成评估或全部已安装 Owner 均已覆盖。
 - 当次集合写入 task、execution 与请求事件；execute 沿用所引用 scan 的 `expected_modules`。executor 不在明确集合内时忽略请求且不得写入结果，不能用其他 Owner 的在线状态或响应补足缺失 Owner。
 - Engine 删除须逐一取得必选模块的成功结果、非空 impact digest，且无运行任务；缺失结果、检查失败、跳过、部分失败或超时均不能视为完整评估。进入 deleting 后还须按[Engine 删除工作流](#engine-删除工作流)复扫并比较已确认影响摘要，不能仅凭任务终态或收到部分响应继续删除。
-- 注册声明与源码核对不替代离线、租约失效、空集合、显式 scope 拒绝、参与者结果完整性和复扫变化的实际验证；按[运行态验收](#十三运行态验收)分别报告通用扫描与严格删除评估的覆盖范围，未运行、失败或跳过不计为通过。
+- 参与范围专项须覆盖离线、租约失效、空集合、显式 scope 拒绝、结果完整性和复扫变化；按[运行态验收](#十三运行态验收)区分通用扫描与严格删除评估的证据。
 
 ### Engine 删除影响模型
 
@@ -441,14 +451,14 @@ System 父 execution 将 `completed` 映射为 `success`，`completed_with_error
 
 [System 页面](#system-页面与任务-api)将 completed 与 completed_with_errors 都纳入结果展示和历史结果选择；展示结果不代表验收通过，通用 execute 仍要求所引用 scan 为 completed 并通过[确认校验](#六scan-与-execute)。[严格 Engine 删除评估](#executor-参与范围)另须逐模块成功、结果完整、影响摘要有效且无运行任务；skipped、缺失结果及部分失败均不能放行。
 
-状态枚举、汇总结果、共享 execution 或页面标签均不是独立的通过证据；按[运行态验收](#十三运行态验收)分别验证混合结果、缺失响应、超时、状态映射和严格阻断，保留实际产出、失败及清理证据，未运行、失败或跳过不计为通过。
+状态专项须验证混合结果、缺失响应、超时、跨层映射和严格阻断；产出、失败、清理证据及通过条件统一见[运行态验收](#十三运行态验收)。
 
 ### System 页面与任务 API
 
 - `GET /api/v1/system/admin/cleanup/tasks/:task_id` 按[手动入口权限](#六scan-与-execute)核验 Tenant User、`system.cleanup.read` 与任务 Tenant，返回 `task_id`、`action`、`status`、`progress`、`results`、`summary`、`task`。其中 `task.context` 和各模块 `CleanupResultData` 中实际提供的 `statistics`、`details`、`errors` 随响应返回，未经过 Monitor 的 Observation 安全投影；不能以 Tenant 隔离或读取权限推断这些内容已统一脱敏。
 - System 页面按标准 `summary` 展示发现项、状态变更、释放空间、异常与风险，也展示任务 context；详情的“原始 JSON”使用 `JSON.stringify(taskDetail)` 展示完整任务响应。折叠展示和 JSON 格式化不构成敏感字段过滤；具体是否含敏感值须按 Owner 产出、接口响应与页面分别核对，不仅检查摘要表格。
 - `GET /api/v1/system/admin/cleanup/history` 返回 `tasks` 和本次返回条数 `total`，任务中仍含 context；当前后端按 `limit` 读取，不实现 `page` / `page_size` 分页。页面虽然发送这两个分页参数，不能据此宣称已分页或已获得全部历史总数。模块结果仍需逐任务查询，历史列表不等于完整结果集；临时协调状态、执行历史和审计的区别见[保留边界](#3-协调状态与历史保留)。
-- “查看 Monitor”只导航到对应 execution 或 System cleanup 列表，Monitor 仍按[独立读取与安全投影规则](#1-monitor)裁决。System 详情可读不证明 Monitor 父子树或私有明细可读；域接口与 Monitor 的授权、敏感字段、响应范围及实际展示须分别验收。字段保护与返回量控制须按实际出口核对，未证实的能力保留为待核对项，不以通用投影存在作为已覆盖证据；[完整 Cleanup suite 尚未接入](#十三运行态验收)，源码静态核对不代表真实验收通过。
+- “查看 Monitor”只导航到对应 execution 或 System cleanup 列表，Monitor 仍按[独立读取与安全投影规则](#1-monitor)裁决。System 详情可读不证明 Monitor 父子树或私有明细可读；域接口与 Monitor 的授权、敏感字段、响应范围及实际展示须分别验收。字段保护与返回量控制须按实际出口核对，未证实的能力保留为待核对项；统一验收规则与 suite 接入缺口见[运行态验收](#十三运行态验收)。
 
 ## 九、监控与审计
 
@@ -468,7 +478,7 @@ cleanup 不纳入 Orchestrator 编排或 TaskProvider，必须写入 `common.tas
 - Monitor 查询要求当前第一方 Tenant User、`monitor.execution.read` 及各 Owner 的独立读取裁决。System 的 `cleanup` 与 Meta 的 `cleanup_executor` 当前均由各自 `GET /execution-read-scope` 按 `system.cleanup.read` 返回范围；其他 executor 以对应 Owner 声明为准，不在 Monitor 维护权限映射。父 execution 可读不授予子 execution 读取权；Owner 不可用或范围非法时失败关闭。
 - Monitor 从共享执行事实生成显式安全 DTO，不直接读取 executor 私有表，也不把任意 Owner 诊断响应拼入通用 DTO。`execution_config`、原始 `metadata`、模块私有明细、业务数据、凭据和自由文本错误不直接展示；错误按上述规范投影为安全类别、稳定码与合法受控诊断。专业结果仍通过 Owner 既有授权入口读取。
 - Cleanup 的展示目标包括父子树、scan / execute 关联、耗时、安全错误、释放空间、影响记录数和模块结果，以及按当前 Tenant 范围、module、action、cleanup_mode、trigger_type、status 查询。当前 Monitor 通用列表未提供 `action` / `cleanup_mode` 过滤，Common 安全投影也未开放上述 `cleanup_summary`、`cleanup_status`、`cleanup_result`、`summary`；不能因字段已落库便宣称关联、计数或私有结果已在 Monitor 展示。未接通部分保留为能力缺口，不通过透传配置或原始结果补齐。
-- [Cleanup 域接口查询](#system-页面与任务-api)、执行记录存在或源码静态核对，不替代 Monitor 的授权、敏感信息保护、分页与截断验证。按[运行态验收](#十三运行态验收)和执行监控规范分别核对实际 API、页面及跨模块证据；完整 Cleanup suite 尚未接入，未运行、失败或跳过不计为通过。
+- Monitor 专项须核对授权、敏感投影、分页与截断；[Cleanup 域接口](#system-页面与任务-api)和 Monitor 的实际 API、页面及跨模块证据分别记录，执行监控规范与[运行态验收](#十三运行态验收)统一规定判定边界。
 
 ### 2. 审计
 
@@ -496,7 +506,7 @@ cleanup 必须写入 System 审计日志。审计回答“谁、何时、为什�
 
 任务键的 TTL 不代表 `cleanup:results:<task_id>` 模块结果 hash 和历史索引具有相同过期策略。当前 System 查询及 Meta 结果写回路径未联动回收这些结果 hash；其他 Owner 的结果保留、孤儿回收和真实 Redis 残留仍须分别核对，不宣称临时协调状态已整体自动清零。
 
-[任务 API](#system-页面与任务-api)、[Monitor](#1-monitor)和审计查询各自按当前授权读取，缺失记录不改变原授权，也不允许补造历史。[运行态验收](#十三运行态验收)须分别核对临时状态到期与历史缺失、持久执行及审计保留、恢复失败和残留证据；TTL 设置、保留目标、只读候选报告及隔离部署销毁不等于实际过期、概览删除或归档验收通过。未运行、失败或跳过不计为通过。
+[任务 API](#system-页面与任务-api)、[Monitor](#1-monitor)和审计查询各自按当前授权读取，缺失记录不改变原授权，也不允许补造历史。保留专项须分别核对临时状态到期与历史缺失、持久执行及审计保留、恢复失败和残留；TTL 设置、保留目标与只读候选报告不证明过期、删除或归档已执行，证据规则见[运行态验收](#十三运行态验收)。
 
 ## 十、生命周期事件
 
@@ -594,7 +604,9 @@ cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。
 
 ## 十三、运行态验收
 
-本节定义租户级 `scope=["meta"]` 扫描闭环的验收要求；执行统一遵循[标准测试入口](addp测试与验收规范.md#三标准入口)和[T4 Online 隔离规范](testing/T4-Online验收规范.md)。当前 Online registry 尚未登记覆盖本节完整闭环的 Cleanup 专项 suite，须补齐正式场景、身份夹具、断言与清理后再验收；其他 suite 的退出清理不替代本节业务断言，也不据此补记通过。
+本节定义租户级 `scope=["meta"]` 扫描闭环的验收要求；执行统一遵循[标准测试入口](addp测试与验收规范.md#三标准入口)和[T4 Online 隔离规范](testing/T4-Online验收规范.md)。当前 Online registry 尚未登记覆盖本节完整闭环的 Cleanup 专项 suite，须补齐正式场景、身份夹具、断言与清理后再验收。
+
+统一证据边界：规范、注册声明、源码、字段落库、状态或页面标签、单模块测试均不能独自证明完整跨模块验收通过。按实际场景记录产出、首次失败、修复后结果、未覆盖项及清理证据；其他 suite 的退出清理或部署销毁不替代本节业务断言及被测保留／删除策略的执行证据。未运行、失败或跳过不计为通过。
 
 **环境与权限前提**：
 
@@ -606,7 +618,7 @@ cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。
 **验收要求（待正式 suite 覆盖）**：
 
 1. 平台上下文调用 `POST /api/v1/system/admin/cleanup/scan` 返回 HTTP 403；分别核对 `Accept-Language: zh-cn`、`en` 的拒绝提示。另验证缺失相应 Permission 与跨 Tenant 任务读取被拒绝，Tenant 只从 AuthContext 派生，不接受请求自报 `tenant_id`。
-2. 合法 Tenant User 以 `{"scope":["meta"]}` 创建 scan，取得有效 `task_id`，有界查询 `GET /api/v1/system/admin/cleanup/tasks/{task_id}`。正常场景须返回 `completed` 且 Meta 结果成功，判定统一见[状态与通过判定](#状态与通过判定)；`completed_with_errors` 保留为部分失败证据，不计全部通过。创建请求成功、HTTP 200 或取得 task ID 都不等于扫描完成。
+2. 合法 Tenant User 以 `{"scope":["meta"]}` 创建 scan，取得有效 `task_id`，有界查询 `GET /api/v1/system/admin/cleanup/tasks/{task_id}`。正常场景须返回 `completed` 且 Meta 结果成功，混合结果及部分失败按[状态与通过判定](#状态与通过判定)记录。创建请求成功、HTTP 200 或取得 task ID 都不等于扫描完成。
 3. 完整结果包含 `task.execution_id`、`task.expected_modules=["meta"]` 与 `results.meta`，核对参与者、结果及失败摘要，不仅检查字段存在。
 4. 通过 `GET /api/v1/system/tenant/audit/events?entity_type=cleanup_task&entity_id={task_id}` 核对 `cleanup.scan.created`，并按真实终态核对 `cleanup.completed` 或 `cleanup.failed`。缺少审计读取权限或未取得证据须单列，不把任务查询成功视为审计通过。
 5. 通过 `GET /api/v1/monitor/executions/by-execution-id/{execution_id}/tree` 核对授权范围内 `module=system, task_type=cleanup` 的父 execution 及 `module=meta, task_type=cleanup_executor` 的子 execution；父执行可读不授予子执行读取权，须分别核对当前用户的 Owner 裁决。
@@ -614,7 +626,7 @@ cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。
 
 本节仅定义 scan 闭环，不覆盖 `logical_cleanup` / `physical_cleanup` 执行、全部 owner、引擎删除或租户删除的完整链路；这些场景须独立提供断言与证据。引擎删除失败重试与启动续办也须分别验证原任务身份、状态、错误证据、owner 实际结果和最终墓碑；保留首次失败，未具备的重试入口列为未完成项，不用重启成功或另建 execute 掩盖原失败。
 
-上述 `scope=["meta"]` 闭环不覆盖引擎重新登记、墓碑恢复及 owner 重绑。相关专项应按[标准测试入口](addp测试与验收规范.md#三标准入口)分别验证墓碑地址可用于新登记且分配新 ID、显式恢复保留旧 ID、地址被其他非删除实例占用时恢复拒绝，以及权限、版本和搬迁确认的拒绝条件；owner 重绑须核对原引用、原子更新、审计及实际执行。规范、源码、索引声明或单个模块测试不替代真实数据库约束和跨模块验收；恢复后在线也不证明授权与 owner 状态已恢复，未运行、失败或跳过不计为通过。
+上述 `scope=["meta"]` 闭环不覆盖引擎重新登记、墓碑恢复及 owner 重绑。相关专项应按[标准测试入口](addp测试与验收规范.md#三标准入口)分别验证墓碑地址可用于新登记且分配新 ID、显式恢复保留旧 ID、地址被其他非删除实例占用时恢复拒绝，以及权限、版本和搬迁确认的拒绝条件；owner 重绑须核对原引用、原子更新、审计及实际执行。数据库约束与跨模块结果须有独立证据；恢复后在线不证明授权与 owner 状态已恢复。
 
 标准命令形式（须先完成正式 suite 接入，并由其隔离生命周期入口准备与准入；当前不据此执行本节验收）：
 
@@ -625,7 +637,7 @@ make test-online ONLINE_SUITE="$ONLINE_SUITE"
 
 ## 十四、迁移状态
 
-当前迁移遵循单一路线，不保留兼容分支。下表保留既有迁移状态；各 owner 的资源范围、未完成项及后续产物登记要求以[职责正文](#三职责边界)为准，不能仅凭 `physical_cleanup` 推断用户定义可删除。“已完成主路径”不等于引擎删除、租户删除及所有模式均已运行验收，实际覆盖须按[运行态验收](#十三运行态验收)与[标准测试入口](addp测试与验收规范.md#三标准入口)核对；未运行、失败或跳过不计为通过。
+当前迁移遵循单一路线，不保留兼容分支。下表保留既有迁移状态；各 owner 的资源范围、未完成项及后续产物登记要求以[职责正文](#三职责边界)为准，不能仅凭 `physical_cleanup` 推断用户定义可删除。“已完成主路径”不等于所有生命周期与模式均已验收；实际覆盖与证据判定统一见[运行态验收](#十三运行态验收)。
 
 | 步骤 | 状态 |
 | --- | --- |
