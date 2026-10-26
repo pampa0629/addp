@@ -1795,3 +1795,15 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 失败后仅完成同范围的代码与确定性修正 `bd2ab54ef0662b09f64aa9bc7b4f59424f749100`：Nginx 唯一活动证书路径改为来源容器私有 tmpfs；通过 stdin 单次传递最终公开叶子，在 VM 内原子替换并记录文件标识／mtime 比较，私钥及信任根沿原输入不变；宿主文件仅刷新为下次启动引导输入，避免来源 stop/start 回退旧证书。删除在线宿主文件替换路线，不关闭 TLS、不扩大信任或增加容器／配额。发布回执即使后续配置失败也沿现有预算报告保留。T0 使用独立临时目录执行实际 stdin／cat／mv 生命周期，GNU stat 由受控模型模拟；不冒充 VM 文件系统实跑。最终配置／预算 101 项、生命周期 123 项 runner／既有 Go fixture及 70 项聚合、T2 登记和 shell／diff 均通过；修正后的 VM 换证与公共 mTLS 尚未运行，原单次窗口已消费，必须另行确认后才能再开。
 
 原始报告、日志、独立清理回执及摘要：`/tmp/addp-p19-mtls-preflight-20261026-hbhwfxwq/`；`follow-up/` 单列失败后的源码补丁和确定性验证，`audit-summary.json` 分开标注失败源码、后续修正和未验收范围，`artifact-sha256.json` 保留原始文件摘要。此前 Go→Python→Go／Link／日志的固定 SHA Linux Trace T2 证据继续独立有效；本轮不扩写为 Python HTTP 查询／告警实链或生产部署通过。本会话未推送本批，未手工触发 CI／Hosted、重启个人服务或更改个人数据与凭据。
+
+### 容器内换证修正后的公共 mTLS 前置通过（2026-10-26）
+
+用户另行批准原上限的新 20 分钟窗口后，仅运行一次 `ADDP_HTTP_BUDGET_REPORT=/tmp/addp-p19-mtls-preflight-recheck-20261026-co9zukrk/functional.json make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=mtls-preflight`。准备、采样和清理合计 64.570 秒，2026-10-26 20:20:59.130—20:22:03.701（Asia/Shanghai），标准入口退出 0。运行前 HEAD 为 `1c4ec8df446f427da372a296646967879c486d6a`，实际换证实现为 `bd2ab54ef0662b09f64aa9bc7b4f59424f749100`；343 项运行输入摘要前后不变，相关实现输入与此前配置／预算 101 项、生命周期及 Monitor Go 门禁所验证的修正一致，未重复开发或重跑这些确定性检查。
+
+实际容器 tmpfs 发布回执确认文件标识已原子变化。localhost 叶子验证及来源实际 IP 的严格 TLS 握手分别用时 0.003417／0.002220 秒，实际叶子摘要均匹配当次最终证书 `fc77ec0214b3daf7dfd29521b20871e4b884971a00957a63b29cb46bf15c56ec`。八类固定窗口检查（CPU、进程、HTTP、磁盘、磁盘 IO、网络、文件系统及 inode）实际复用既有 Prometheus 容器内的固定 promtool 并通过；真实 mTLS 自然采样、受控 Job 标签、中心自采样及 RSS 通过。不是仅有 reload 成功或宿主证书文件可读。两次握手均未重试，未放宽证书校验、原 15 秒采样／65 秒等待或完整四秒资源检查。
+
+13 次完整资源检查最长 1.007224 秒；峰值硬配额 2.25 CPU／2952790016 字节内存（2.75 GiB），私有可写预算上界 938397696 字节，均低于 4 CPU／4 GiB／2 GiB 停止线。入口在公共前置后按约定退出，业务请求回执为 Go 0、Python 0／0、合计 0；没有进入 Go／Python 业务来源或 HTTP 查询／告警阶段。标准清理与独立按当次 project 过滤的只读复核均确认容器／网络／卷为 0，私有工作目录删除。没有自动重试、续窗、Hosted、容量或定时，亦未重启个人开发服务。
+
+原始 `functional.json`、`functional.log`、`source-state.json`、独立 `cleanup-audit.json`、`audit-summary.json` 和 `artifact-sha256.json` 位于 `/tmp/addp-p19-mtls-preflight-recheck-20261026-co9zukrk/`。预算报告 SHA256 为 `003bb738ff2ce2eb1111339a02c82c472135b4f9b0fb5384b38ff1c11973f816`，日志为 `90c5e30311dcc5b53e82d25681c31e4c7307ddd3b13ce67335a015d206e21ac3`。前一窗口的失败证据保持独立；本次通过只关闭公共前置的本地运行缺口。
+
+另对已有 [Linux HTTP quality Job](https://github.com/pampa0629/addp/actions/runs/40310193163/job/121529457879)（源码 `85d0482ce3169d945dfd37d3ca25e08913620156`、attempt 1）原始日志做离线核对：实际 IP／叶子验证、八类固定窗口、公共采样、ProcessSources 及 HTTPRealSource 已通过；`TestIntegrationMetricsHTTPAlertLifecycle` 在 216.41 秒处因恢复同一事件超时 `unknown/no_data` 失败，不能将整项 HTTP T2 记为通过。该 Job 560.728 秒、清理／输入守卫通过，不能归因为本次 mTLS 或资源超限。日志 `/tmp/addp-ci-20261026-120139/job-121529457879.log` 显示原生来源约 10:53:10 UTC 启动，告警在 10:56:13 打开、10:56:14 通知后切换健康；现有夹具每秒至多一次、总计最多 180 请求，健康切换接近发流结束是优先调查线索。尚未取得逐请求时间与指标窗口证据，不能由时间相近认定唯一根因。下一步优先离线定位受控发流、完整成功窗口及查询判定的关系，保留同一事件恢复断言、原请求总量／超时／资源及权限边界；本轮没有追加业务实链或重跑 CI。
