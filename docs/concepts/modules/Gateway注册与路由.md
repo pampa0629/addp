@@ -4,7 +4,7 @@
 
 持久模块定义、临时实例租约、注册生命周期、Gateway 动态发现与路由资格。实现说明见[Gateway 架构说明](../../../gateway/docs/gateway架构说明.md)。
 
-阅读导航：[Gateway 路由机制](#gateway-路由机制)、[模块注册与路由发现流程](#模块注册与路由发现流程)、[核心机制说明](#核心机制说明)、[存活、就绪、注册与可路由契约](#存活就绪注册与可路由契约)、[路由请求流程](#路由请求流程)、[路由规则](#路由规则)、[配置环境变量](#配置环境变量)、[关键文件位置](#关键文件位置)、[优势与特性](#优势与特性)。
+阅读导航：[Gateway 路由机制](#gateway-路由机制)、[模块注册与路由发现流程](#模块注册与路由发现流程)、[核心机制说明](#核心机制说明)、[存活、就绪、注册与可路由契约](#存活就绪注册与可路由契约)、[路由请求流程](#路由请求流程)、[路由规则](#路由规则)、[配置环境变量](#配置环境变量)、[关键文件位置](#关键文件位置)。
 
 ## Gateway 路由机制
 
@@ -95,8 +95,8 @@ graph TB
 - `module_runtime_instances` 记录会被心跳、注销和租约收敛更新，是实例生命周期历史，不是追加式审计事件；管理员启停等操作审计仍以 `audit_logs` 为唯一事实源。
 
 **4. Gateway 动态发现**:
-- Gateway 启动时以 `revision=0` 从 System 获取已启用模块及其 `up` 的 Backend 完整快照。
-- 后续只通过 revision 长轮询等待拓扑变化；新增、恢复、下线、端点变化和管理员启停会立即唤醒请求。
+- Gateway 使用自身 Platform Service Access Token，通过 `GET /api/v1/system/runtime/modules/watch` 获取路由快照；启动时以 `revision=0` 获取已启用模块及其 `up` 的 Backend 完整快照。`GET /api/v1/system/runtime/modules` 是注册表列表入口，不替代发现长轮询。
+- 后续只通过 revision 长轮询等待拓扑变化；新增、恢复、下线、端点变化和管理员启停会立即唤醒请求，无需重启 Gateway。
 - 长轮询达到 `MODULE_WATCH_TIMEOUT`（默认 **10 秒**）时，即使 revision 未变化也返回一份新鲜完整快照，使 Gateway 持有的租约截止时间持续更新，不会因缓存租约老化形成路由空窗。
 - 只根据 `enabled + role=backend + status=up + lease valid` 的实例创建、更新和移除 HTTP 代理
 - Gateway 原子替换完整快照；System 短暂不可达时保留最近一次快照，但每次选路仍校验其中的租约截止时间。
@@ -207,13 +207,3 @@ MODULE_SERVICE_CLIENT_SECRET=your_module_service_client_secret
 | **Gateway 发现** | [gateway/internal/module_discovery.go](../../../gateway/internal/module_discovery.go) | 模块发现管理器（revision 长轮询） |
 | **Gateway 路由** | [gateway/internal/router/router.go](../../../gateway/internal/router/router.go) | 动态路由配置 |
 | **Common 客户端** | [common/client/system_service.go](../../../common/client/system_service.go) | 模块注册、心跳、重注册与退出注销客户端 |
-
-### 优势与特性
-
-- ✅ **动态上线/下线**：模块启动/停止无需重启 Gateway
-- ✅ **故障自动恢复**：模块重启后自动重新注册为 `up` 状态
-- ✅ **健康监控**：通过心跳机制实时监控模块状态
-- ✅ **单一事实源**：Gateway 只消费 System 注册事实，不维护业务模块硬编码 fallback
-- ✅ **可观测性**：Gateway 使用 Platform Service Access Token 查询模块状态（`GET /api/v1/system/runtime/modules`）
-
----
