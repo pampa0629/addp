@@ -422,7 +422,7 @@ System 只能依赖 `summary` 中的标准摘要字段计算全局视图，不�
 
 - `GET /api/v1/system/admin/cleanup/tasks/:task_id` 按[手动入口权限](#六scan-与-execute)核验 Tenant User、`system.cleanup.read` 与任务 Tenant，返回 `task_id`、`action`、`status`、`progress`、`results`、`summary`、`task`。其中 `task.context` 和各模块 `CleanupResultData` 中实际提供的 `statistics`、`details`、`errors` 随响应返回，未经过 Monitor 的 Observation 安全投影；不能以 Tenant 隔离或读取权限推断这些内容已统一脱敏。
 - System 页面按标准 `summary` 展示发现项、状态变更、释放空间、异常与风险，也展示任务 context；详情的“原始 JSON”使用 `JSON.stringify(taskDetail)` 展示完整任务响应。折叠展示和 JSON 格式化不构成敏感字段过滤；具体是否含敏感值须按 Owner 产出、接口响应与页面分别核对，不仅检查摘要表格。
-- `GET /api/v1/system/admin/cleanup/history` 返回 `tasks` 和本次返回条数 `total`，任务中仍含 context；当前后端按 `limit` 读取，不实现 `page` / `page_size` 分页。页面虽然发送这两个分页参数，不能据此宣称已分页或已获得全部历史总数。模块结果仍需逐任务查询，历史列表不等于完整结果集。
+- `GET /api/v1/system/admin/cleanup/history` 返回 `tasks` 和本次返回条数 `total`，任务中仍含 context；当前后端按 `limit` 读取，不实现 `page` / `page_size` 分页。页面虽然发送这两个分页参数，不能据此宣称已分页或已获得全部历史总数。模块结果仍需逐任务查询，历史列表不等于完整结果集；临时协调状态、执行历史和审计的区别见[保留边界](#3-协调状态与历史保留)。
 - “查看 Monitor”只导航到对应 execution 或 System cleanup 列表，Monitor 仍按[独立读取与安全投影规则](#1-monitor)裁决。System 详情可读不证明 Monitor 父子树或私有明细可读；域接口与 Monitor 的授权、敏感字段、响应范围及实际展示须分别验收。字段保护与返回量控制须按实际出口核对，未证实的能力保留为待核对项，不以通用投影存在作为已覆盖证据；[完整 Cleanup suite 尚未接入](#十三运行态验收)，源码静态核对不代表真实验收通过。
 
 ## 九、监控与审计
@@ -459,7 +459,19 @@ cleanup 必须写入 System 审计日志。审计回答“谁、何时、为什�
 | `cleanup.completed` | cleanup 父 execution 完成。 | task_id、execution_id、status、summary。 |
 | `cleanup.failed` | cleanup 父 execution 失败或部分失败。 | task_id、execution_id、failed_modules、errors。 |
 
-手动触发的 actor 是当前用户；事件触发或定时触发的 actor 是 `system`，但必须记录 `cause_event` 或 schedule 信息。审计日志不随 cleanup physical cleanup 删除。
+手动触发的 actor 是当前用户；事件触发或定时触发的 actor 是 `system`，但必须记录 `cause_event` 或 schedule 信息。审计日志不随 cleanup physical cleanup 删除；各类记录的来源与保留边界见[协调状态与历史保留](#3-协调状态与历史保留)。
+
+### 3. 协调状态与历史保留
+
+| 记录 | 来源与当前行为 | 保留及查询边界 |
+| --- | --- | --- |
+| 临时任务状态与历史列表 | System 从 Redis `cleanup:tasks:<task_id>` 读取任务，scan / execute 创建时设置 1 小时 TTL；Tenant 历史索引仅保留最近 100 个任务 ID。 | 任务键不存在时详情返回 404，不回查 PostgreSQL 重建任务响应；历史读取跳过未取到或无法解码的任务。空列表、本次返回条数或任务 404 不证明未执行、执行记录已删或产物已清理。 |
+| 父子 execution 历史 | System 与 executor 向 `common.task_executions` 写入执行事实，独立于 Redis 临时任务列表。 | 保留与释放按[概览保留与清理契约](tasks/执行监控.md#概览保留与清理契约)裁决；180 天是目标窗口，概览物理删除尚未实施，不能据此自动删除整行或 Owner 专业结果，也不将过程事件的期限套用于概览。 |
+| 操作审计 | Cleanup 事件写入追加式 `system.audit_logs`，不随业务 physical cleanup 删除。 | 表与查询授权见[审计表契约](../../system/docs/tables/audit_logs表.md#六查询授权)，归档与保留见[平台审计归档契约](../../system/docs/tables/audit_logs表.md#八平台审计归档部署契约)；记录存在不证明已归档、归档完整或真实存储保护已验收。 |
+
+任务键的 TTL 不代表 `cleanup:results:<task_id>` 模块结果 hash 和历史索引具有相同过期策略。当前 System 查询及 Meta 结果写回路径未联动回收这些结果 hash；其他 Owner 的结果保留、孤儿回收和真实 Redis 残留仍须分别核对，不宣称临时协调状态已整体自动清零。
+
+[任务 API](#system-页面与任务-api)、[Monitor](#1-monitor)和审计查询各自按当前授权读取，缺失记录不改变原授权，也不允许补造历史。[运行态验收](#十三运行态验收)须分别核对临时状态到期与历史缺失、持久执行及审计保留、恢复失败和残留证据；TTL 设置、保留目标、只读候选报告及隔离部署销毁不等于实际过期、概览删除或归档验收通过。未运行、失败或跳过不计为通过。
 
 ## 十、生命周期事件
 
