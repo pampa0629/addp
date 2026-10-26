@@ -3625,7 +3625,7 @@ _CURVATURE_MESSAGES = {
 _CURVATURE_MESSAGES.update({
     'step': ('DEM 平均曲率的米制横纵像元间距必须能表示为严格正有限值',
              'DEM mean curvature requires representable finite, strictly positive horizontal and vertical spacing in metres'),
-    'method': ('DEM 曲率的 method 必须为 mean、profile 或 tangential', 'DEM curvature method must be mean, profile or tangential'),
+    'method': ('DEM 曲率的 method 必须为 mean、profile、tangential 或 plan', 'DEM curvature method must be mean, profile, tangential or plan'),
     'numeric': ('DEM 平均曲率的高程差、拟合导数及结果必须为有限值',
                 'DEM mean curvature requires finite elevation differences, fitted derivatives and results'),
 })
@@ -3637,6 +3637,8 @@ def _curvature_error(code, method='mean'):
         message = message.replace('DEM 平均曲率', 'DEM 剖面曲率').replace('DEM mean curvature', 'DEM profile curvature')
     elif method == 'tangential':
         message = message.replace('DEM 平均曲率', 'DEM 切向曲率').replace('DEM mean curvature', 'DEM tangential curvature')
+    elif method == 'plan':
+        message = message.replace('DEM 平均曲率', 'DEM 平面曲率').replace('DEM mean curvature', 'DEM plan curvature')
     return ValueError(message)
 
 
@@ -3686,6 +3688,44 @@ def _tangential_curvature(p, q, r, s, t):
     return ((rr*v)*v + (tt*u)*u) - ((ss*u)*v)*2.
 
 
+def _plan_curvature(p, q, r, s, t):
+    """Convex-positive horizontal contour curvature, without forming |grad z|**3."""
+    # Keep original gradient factors in the numerator: normalizing p/q first
+    # can erase a tiny component whose product with a large derivative matters.
+    pm, pe = np.frexp(p)
+    qm, qe = np.frexp(q)
+    rm, re = np.frexp(r)
+    sm, se = np.frexp(s)
+    tm, te = np.frexp(t)
+    scale = np.maximum(np.abs(p), np.abs(q))
+    gm, ge = np.frexp(scale)
+    gm = gm * np.hypot(p/scale, q/scale)
+    denominator = gm*gm*gm
+    terms, shifts = np.frexp(np.stack((-rm*qm*qm, (2.*sm*pm)*qm, -tm*pm*pm))/denominator)
+    exponents = np.stack((re+2*qe, se+pe+qe, te+2*pe)) - 3*ge + shifts
+    # Add the two largest magnitudes first so opposite large contributions can
+    # cancel before a small third term. Powers of two retain scaled products
+    # outside Float64's range until the final result is assembled.
+    zero_exponent = np.iinfo(exponents.dtype).min // 4
+    effective = np.where(terms != 0., exponents, zero_exponent)
+    order = np.lexsort((np.abs(terms), effective), axis=0)
+    terms = np.take_along_axis(terms, order, axis=0)
+    exponents = np.take_along_axis(exponents, order, axis=0)
+    mantissa, exponent = terms[2], exponents[2]
+    for index in (1, 0):
+        other, other_exponent = terms[index], exponents[index]
+        common = np.maximum(np.where(mantissa != 0., exponent, zero_exponent),
+                            np.where(other != 0., other_exponent, zero_exponent))
+        common = np.where(common == zero_exponent, 0, common)
+        mantissa, shift = np.frexp(np.ldexp(mantissa, exponent-common) +
+                                  np.ldexp(other, other_exponent-common))
+        exponent = common + shift
+    result = np.ldexp(mantissa, exponent)
+    if np.any(~np.isfinite(result) | ((mantissa != 0.) & (result == 0.))):
+        raise _curvature_error('numeric', 'plan')
+    return result
+
+
 def _curvature_block(values, valid, dx, dy, elevation_factor, method='mean'):
     """Closed-form equal-weight six-coefficient least squares on nine samples."""
     height, width = values.shape[0]-2, values.shape[1]-2
@@ -3698,7 +3738,7 @@ def _curvature_block(values, valid, dx, dy, elevation_factor, method='mean'):
         return result
     integer = np.issubdtype(values.dtype, np.integer)
     center = values[1:1+height, 1:1+width][complete].astype(object if integer else np.float64)
-    flat = np.ones(center.shape, dtype=bool) if method in ('profile', 'tangential') else None
+    flat = np.ones(center.shape, dtype=bool) if method in ('profile', 'tangential', 'plan') else None
     neighbours = []
     with np.errstate(over='ignore', invalid='ignore', divide='ignore', under='ignore'):
         for row in range(3):
@@ -3729,7 +3769,7 @@ def _curvature_block(values, valid, dx, dy, elevation_factor, method='mean'):
             curvature = np.full(p.shape, np.nan)
             curvature[flat] = 0.
             directional = (p != 0) | (q != 0)
-            evaluate = _profile_curvature if method == 'profile' else _tangential_curvature
+            evaluate = {'profile': _profile_curvature, 'tangential': _tangential_curvature, 'plan': _plan_curvature}[method]
             numerical = evaluate(p[directional], q[directional], r[directional], s[directional], t[directional])
             curvature[directional] = numerical
     if not np.all(np.isfinite(numerical)):
@@ -3739,8 +3779,8 @@ def _curvature_block(values, valid, dx, dy, elevation_factor, method='mean'):
 
 
 def raster_curvature(input_raster, band, elevation_unit, method='mean'):
-    """Nine-point quadratic mean, profile or tangential curvature in inverse metres."""
-    if not isinstance(method, str) or method not in ('mean', 'profile', 'tangential'):
+    """Nine-point quadratic mean, profile, tangential or plan curvature in inverse metres."""
+    if not isinstance(method, str) or method not in ('mean', 'profile', 'tangential', 'plan'):
         raise _curvature_error('method')
     source, horizontal_metres = _dem_admission(input_raster, elevation_unit, band, 1,
         diagnostic=lambda code: _curvature_error(code, method))
@@ -3891,7 +3931,7 @@ _SPECS = [
     (raster_hand_d8, OperatorCategory.RASTER_CELL, 'D8 到河网相对高程（HAND）', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网；完整非法路线及断流失败', role='input'), _param('elevation_raster', 'raster', '同网格、同有效覆盖的DEM；全图下游不升高，允许平坦、逆坡失败', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式二值河网数据波段'), _param('elevation_band', 'int', '显式高程数据波段；相对首次河网高程差，河网0、未到达NoData'), _param('elevation_unit', 'str', '显式高程单位，结果统一米制', enum=['metre', 'foot', 'us_survey_foot'])], 'raster', ['read']),
     (raster_stream_link_d8, OperatorCategory.RASTER_CELL, 'D8 河段编号', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；汇合点归下游段，按河段起点行列顺序从1编号')], 'raster', ['read']),
     (raster_stream_to_vector_d8, OperatorCategory.RASTER_EXTENT, 'D8 河网转矢量线', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜；孤立单像元失败，不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；连接像元中心，保留河段ID及米制长度')], 'GeoDataFrame', ['read']),
-    (raster_curvature, OperatorCategory.RASTER_CELL, 'DEM 曲率', [_INPUT(), _param('band', 'int', '显式高程数据波段；完整有效3×3九点等权二次曲面拟合，凸正凹负'), _param('elevation_unit', 'str', '显式高程单位；输出每米（1/metre），边缘及无效邻域NoData', enum=list(_ELEVATION_METRES)), _param('method', 'str', 'mean：平均曲率；profile：剖面曲率；tangential：切向曲率；方向方法九点等高平地0、其他零梯度NoData', 'mean', False, enum=['mean', 'profile', 'tangential'])], 'raster', ['read']),
+    (raster_curvature, OperatorCategory.RASTER_CELL, 'DEM 曲率', [_INPUT(), _param('band', 'int', '显式高程数据波段；完整有效3×3九点等权二次曲面拟合，凸正凹负'), _param('elevation_unit', 'str', '显式高程单位；输出每米（1/metre），边缘及无效邻域NoData', enum=list(_ELEVATION_METRES)), _param('method', 'str', 'mean：平均曲率；profile：剖面曲率；tangential：切向曲率；plan：平面曲率；方向方法九点等高平地0、其他零梯度NoData', 'mean', False, enum=['mean', 'profile', 'tangential', 'plan'])], 'raster', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_CELL, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
     (raster_hillshade, OperatorCategory.RASTER_CELL, 'DEM 地形晕渲', [*_DEM_PARAMS(), _param('azimuth', 'float', '光照方位角，北起顺时针 [0,360)', 315., False), _param('altitude', 'float', '光照高度角 (0,90]', 45., False)], 'raster', ['read']),

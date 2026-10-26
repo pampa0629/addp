@@ -1166,7 +1166,7 @@ def test_d8_hand_explicit_three_inputs_bands_unit_and_workflow_only_metadata():
     assert spec['detailed_description']['workflow_example']['params'] == {'input_raster': {'$ref': 'source'}, 'stream_raster': {'$ref': 'streams'}, 'elevation_raster': {'$ref': 'elevation'}, 'band': 1, 'stream_band': 1, 'elevation_band': 1, 'elevation_unit': 'metre'}
 
 
-def test_dem_curvature_single_workflow_explicit_band_unit_and_three_methods_metadata():
+def test_dem_curvature_single_workflow_explicit_band_unit_and_four_methods_metadata():
     spec = next(item for item in list_operators() if item['id'] == 'raster_curvature')
     assert spec['description'] == 'DEM 曲率'
     assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
@@ -1175,7 +1175,7 @@ def test_dem_curvature_single_workflow_explicit_band_unit_and_three_methods_meta
     assert set(params) == {'input_raster', 'band', 'elevation_unit', 'method'}
     assert all(params[n]['required'] for n in ('input_raster', 'band', 'elevation_unit'))
     assert not params['method']['required'] and params['method']['default'] == 'mean'
-    assert params['method']['enum'] == ['mean', 'profile', 'tangential']
+    assert params['method']['enum'] == ['mean', 'profile', 'tangential', 'plan']
     assert '其他零梯度NoData' in params['method']['description']
     assert params['input_raster']['param_type'] == 'input' and params['input_raster']['type'] == 'raster'
     assert params['band']['param_type'] == 'param' and params['band']['type'] == 'integer'

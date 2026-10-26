@@ -102,7 +102,7 @@ def definition(sources,parent,name,*,invalid=None,language='zh-cn'):
 
 
 MESSAGES={
- 'method':('DEM 曲率的 method 必须为 mean、profile 或 tangential','DEM curvature method must be mean, profile or tangential'),
+ 'method':('DEM 曲率的 method 必须为 mean、profile、tangential 或 plan','DEM curvature method must be mean, profile, tangential or plan'),
  'band':('DEM 剖面曲率必须显式选择有效的一基高程数据波段','DEM profile curvature requires an explicit valid one-based elevation band'),
  'alpha':('DEM 剖面曲率不能选择 alpha 波段作为高程','DEM profile curvature cannot use an alpha band as elevation'),
  'complex':('DEM 剖面曲率不支持复数高程或复数 alpha 波段','DEM profile curvature does not support complex elevation or alpha bands'),
