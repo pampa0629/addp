@@ -151,6 +151,15 @@ openssl rand -base64 32
 
 栅格入口已使用该前置；验证命令为根目录 `make test-raster-online-runner`，涵盖等待、租户与 Owner 范围、错误保留和退出清理。真实数据、浏览器与成果清理仍须通过原 `raster-workflow` Hosted suite，不能用夹具回归代替。
 
+## 平台审计归档
+
+事务审计与对象归档分别验收。首期复用 Infra 对象存储平台管理桶，不要求独立 A/B 虚拟机或接收端 B；Infra root、主机、磁盘及备份最高管理员仍在信任边界内，在线列表不证明归档完整。架构与来源前缀统一见[部署契约](docs/tables/audit_logs表.md#八平台审计归档部署契约)。
+
+- **受控操作**：`make build-audit-archive`；CLI 顺序、采集／审计身份的私有配置和 PostgreSQL 准备要求见[操作与配置入口](docs/tables/audit_logs表.md#86-构建与受控操作入口)。配置须为 0600 或更严的非符号链接普通文件，不读取根 `.env`；只读 check-store 不改造桶，也不证明身份隔离已验收。
+- **权限与保留**：租户身份不得访问原始归档；正文至少保护 365 天，根与封段检查点自存储创建起至少 20 个 UTC 日历年保护，仅允许受控延长。三员分工、专用存储凭据与 COMPLIANCE 边界见[权限与保留](docs/tables/audit_logs表.md#81-权限与保留)，不为全桶配置统一保留或自动过期删除。
+- **协议与未完成项**：唯一归档协议、流式预算和只读 plan 见[v2 契约](docs/tables/audit_logs表.md#84-分段流式核验与只读到期计划已确认)。plan 不授权删除，实际清理、双人批准和回执尚未实现；[B 协议](docs/tables/audit_logs表.md#85-独立日志接收端-b-的限定协议非首期部署要求)独立保留，不随开发环境启动，也不替代平台桶部署验收。
+- **验证边界**：`make test-module MODULE=system GO_ONLY=1` 与 Hosted-only `make test-system-audit-archive` 的范围见[验收专题](docs/tables/audit_logs表.md#83-验收与实际边界)。隔离 T2 通过不证明真实 Infra 已部署、生产 WORM 保留、最高管理员物理防篡改或全量访问日志；历史失败与后继通过分别保留，存储访问日志按 Infra 实际覆盖另验。
+
 ## 📚 相关文档
 
 - **[CLAUDE.md](./CLAUDE.md)** - 完整技术文档（架构、开发指南、API 详解）
@@ -163,30 +172,3 @@ openssl rand -base64 32
 ---
 
 Copyright © 2025 ADDP Team
-
-## 平台审计归档
-
-事务审计与对象归档分别验收。首期复用 Infra 对象存储平台管理桶，推荐现有 `system` 桶，归档固定使用 `audit/sources/<source UUID>/`，实名查询留痕使用 `audit/queries/<actor UUID>/`；租户存储身份无权列举、读取或写入这些区域，不以 `tenant_0` 表示平台。不要求独立虚拟机或日志接收端 B，Infra root／主机／磁盘／备份最高管理员仍在信任边界内。采集／核验契约、三员权限、WORM 与测试边界统一见 [audit_logs 表：平台审计归档部署契约](docs/tables/audit_logs表.md#八平台审计归档部署契约)。既有在线列表不表示归档已完整，存储访问日志按 Infra 实际覆盖范围另验。
-
-正式构建：`make build-audit-archive`。先运行只读 `addp-audit-archive check-store --config /受控私有路径/collector.json`，核对平台桶版本和 Object Lock 均 Enabled；不连接 PostgreSQL、不上传探针、不修改桶，也不证明 IAM 隔离已验。正式归档命令先执行同一能力检查，失败即停止，不自动启用锁或修改全桶默认保留。随后运行 `addp-audit-archive init --config /受控私有路径/collector.json` 显式建立唯一快照基线，随后以前台进程 `collect --config ...` 消费同一复制槽；不注册到 ADDP 开发启动或设置定时任务。持有专用审计身份的操作者使用 `verify --config /受控私有路径/auditor.json`，或 `query --config ... --event-name iam.example --tenant-id 123` 做有界核验；筛选不授予权限，首期不向 Tenant 角色发放原始归档凭据。stdout 为机器可读结果，失败只返回安全本地化提示。
-
-配置文件必须是非符号链接的私有普通文件（权限 0600 或更严），启动时不读取根 `.env`。两类配置分别部署，不混放原始数据库凭据与人类查询凭据。专用写入密钥持有人纳入可信运维边界：期限由程序指定并精确读回，COMPLIANCE 保护已写版本；不承诺 IAM 动态强制恶意持钥者的新对象完整期限。`addp-audit-archive policy --config ...` 离线生成该配置角色的最小 IAM 策略，不连接存储或 PostgreSQL、不创建用户或安装权限、不输出密钥；由 Infra 受控分发，不能叠加宽泛授权。正文最低保护期已确认为365天；根记录/封段检查点从存储创建时间起至少20个UTC日历年COMPLIANCE保护、只允许延长，不与正文一同到期，首期不清理。以下不含真实密钥；init配置不带root，成功后将输出的完整根对象引用绑定到collect及auditor配置，不能仅按来源编号自动信任新根：
-
-```json
-{"mode":"collector","source_id":"由部署生成并固定的 UUID","endpoint":"https://Infra对象存储端点","region":"目标区域","bucket":"system","access_key":"独立注入","secret_key":"独立注入","retention_days":365,"postgres_dsn":"仅独立采集身份，postgres://独立用户:独立密码@权威主库/数据库?sslmode=verify-full&sslrootcert=/受控证书路径/ca.pem","slot":"addp_audit_archive","publication":"addp_audit_archive"}
-```
-
-`auditor` 配置使用同一来源／端点／区域／桶及已批准期限，必须加入init输出的完整`root`对象（`key/version/sha256`），仅替换为该实名审计身份的独立存储凭据、设置 `actor` 为部署绑定的 UUID，删除 `postgres_dsn/slot/publication`。存储策略将凭据绑定到 `audit/queries/<actor>/`，其他 actor 前缀不可写；`actor` 不接受命令行覆盖。采集和审计身份均须能读取桶的版本及 Object Lock 配置，但不能更改它们。所有连接要求 HTTPS／PG 完整服务端证书校验，不回退明文、多主机或 Infra root 凭据。
-
-来源部署管理员通过既有受控迁移／运维流程启用 `wal_level=logical`、有限 `max_replication_slots/max_slot_wal_keep_size`，并建立只含 `system.audit_logs`、`publish='insert'` 的 publication。独立采集登录只授予所需 `REPLICATION`、`USAGE ON SCHEMA system`、`SELECT ON system.audit_logs`，不得为 SUPERUSER、表 owner 或 migration owner。程序不创建这些角色／publication、不启停数据库、不自动重建失效槽。已有桶缺少版本或 Object Lock 时明确停止，不删除重建或直接改造当前 Infra。旧根级 `sources/`、`queries/` 和 `tenant_0/audit-logs/` 不兼容读取或自动迁移，历史对象保持不动；存在历史交接须先核清，不能重建基线掩盖缺口。
-
-标准验证：`make test-module MODULE=system GO_ONLY=1`；`make test-system-audit-archive` 为已登记的 Hosted-only T2，使用本次独占 PostgreSQL 15 logical 与从既有固定源码构建的 MinIO，测试和退出清理不接触共享 Infra。该门禁使用实际 `policy` 输出配置共享平台桶内的采集／审计身份，并验证租户拒绝、能力只读检查及普通对象 CRUD 不受审计保留影响；结果不证明真实 Infra 已部署、最高管理员物理防篡改或全部访问日志。其临时 MinIO 使用 tmpfs、随 Job 销毁，因此不得当作生产 WORM 保留部署。
-
-原生队列重放验收的只读观测不获取接收器投递锁，只从已核验回执引用的精确版本统计三个已知请求，孤立正文不计确认。阶段日志仅输出固定请求集合的响应／回执计数和错误类型；失败清理前另保留本 Job 来源队列文件数及占用量，不输出投递正文、密钥或任意对象名。历史间歇失败与后继通过分别保存，后继一次通过不能证明历史唯一根因已修复。
-
-当前唯一协议为v2。基线在同一快照流式分片，数据分片软目标4MiB/5秒，段按日界/128MiB/256分片封存；单对象16MiB与事务8MiB预算保持，取消全链64MiB/10000批限制。控制对象实际期限读回须覆盖存储创建时间起20年且当前未过期，运行账号不得修改Legal Hold；正文实际期限至少365天，外部保全状态只读。控制证据延期须受控核验，未提供自动续期或删除入口。完整结果明确区分仍保护与已过期正文，不能把过期核验当受保护证明。
-
-`addp-audit-archive plan --config /受控私有路径/auditor.json`只读核验并输出最旧连续到期段的具体对象版本/摘要和24小时宽限情况；不输出正文、不写计划/批准/访问回执、不执行删除。它不是清理授权，无删除/解除保全命令；实际清理、双人批准及回执尚未实现，计划不能作为已删除的证据。v1对象不自动迁移、不兼容读取；既有存证的协议交接需另行核清，不能重新建来源掩盖缺口。
-
-
-日志接收端 B 不是当前平台桶方案的部署前提。已实现的独立来源协议使用同一构建产物的 `receiver-init`、`receive`、`receiver-verify`，契约见 [8.5](docs/tables/audit_logs表.md#85-独立日志接收端-b-的限定协议非首期部署要求)。它不随开发环境启动。私有配置 `mode=receiver`、`source_id`、`deployment_id`、独立 S3 `endpoint/region/bucket/access_key/secret_key`、`retention_days=365`、`listen`（显式IP:端口）、`tls_cert/tls_key`（绝对路径）及 `receiver_token`（独立至少32字符随机值）；初始化输出的 `root` 必须固定后才可 receive。`checkpoint` 可固定外部保管的较新末回执。只读核验配置使用 `mode=receiver-auditor`，去掉监听、TLS和token，使用独立只读存储凭据并固定root/checkpoint。A 配置 Authorization 为 `Bearer <receiver_token>`，原生队列投递至 HTTPS `/api/v1/internal/audit-receipts`，不得把密钥放命令参数或根 .env。204仅表示完整投递已受保护落存并读回，错误无正文、不回显凭据；详细部署权限及证据边界见8.5。

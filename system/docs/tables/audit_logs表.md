@@ -131,6 +131,8 @@ System 唯一拥有事件语义和采集／核验实现。业务修改仍只写�
 
 T1 验证链连续性、摘要、边界预算、查询隔离、持久化前不确认及错误不输出部分结果。T2 在标准入口创建的独占 PostgreSQL logical Service 与独占对象存储中验证乱序提交／回滚、重传／确认丢失、并发采集、断网续传、实际保留拒绝及查询留痕。新 CLI 的编译、包自动发现和 T2 编排须同次登记。不得连接或修改本地共享 PG、MinIO 或现有服务。
 
+标准验证：`make test-module MODULE=system GO_ONLY=1`；`make test-system-audit-archive` 为已登记的 Hosted-only T2，使用本次独占 PostgreSQL 15 logical 与从既有固定源码构建的 MinIO，测试和退出清理不接触共享 Infra。该门禁使用实际 `policy` 输出配置共享平台桶内的采集／审计身份，并验证租户拒绝、能力只读检查及普通对象 CRUD 不受审计保留影响；结果不证明真实 Infra 已部署、最高管理员物理防篡改或全部访问日志。其临时 MinIO 使用 tmpfs、随 Job 销毁，因此不得当作生产 WORM 保留部署。
+
 对象存储模拟测试不计真实 WORM 通过；自建 MinIO 即使 S3 协议保留测试通过，也不能证明持宿主 root／磁盘管理权的主体无法物理篡改。真实 Infra 的租户前缀隔离、专用凭据、最高管理员信任边界及保留期限仍须在选定目标上做部署验收。真实保留测试仅用专用合成对象和事先确定的短保留期；未到期对象如实列为保留残留，不伪报清零，不为清理降低保留。
 
 存储侧访问日志复用 Infra 已有能力，用于核对绕过 CLI 的直接对象读取、拒绝和策略变更；按实际覆盖范围报告缺口，首期不另建 B 或递归归档链路。CLI 的追加查询记录不是所有对象访问的完整证明；持有对象读取凭据的主体可以直接调用存储 API，不能据 CLI 测试通过宣称无旁路访问或完整查询审计。若项目要求任何正文读取都必须先由服务端审计，则需将凭据仅交给独立审计域的受控查询服务，不向人分发原始存储凭据；该额外入口及身份验证在实施前另行确认，首期不新增 HTTP 服务或复制业务权限模型。
@@ -174,3 +176,25 @@ T1 使用内存 Store/HTTP recorder 覆盖认证来源、字段投影、批次�
 
 
 B 保留拒绝的验收区分存储 WORM 约束和 IAM 条件：当前固定 MinIO `9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a` 对尚在 COMPLIANCE 保护中的既有精确版本，先禁止缩短，再检查允许延期的策略，返回 HTTP 400 / `InvalidRequest` 及明确的 WORM 消息；不能把它误报为操作成功，也不能把任意非空错误当作保护成立。每个受验正文／根／回执版本须先读回成功延长后的实际模式和期限，再执行未来但明显过短的期限请求，记录安全的 S3 错误类型／码／状态／消息、Key／Version及前后期限；独立只读身份须确认同一精确版本、内容摘要、COMPLIANCE模式和延期后截止均未改变。网络错误、签名错误、其他400或500均不计通过。另对新正文／控制对象的过短保护请求明确验证403 / `AccessDenied`且未产生对象，保留两层保护的独立证据；不放宽策略或缩短期限。
+
+原生队列重放验收的只读观测不获取接收器投递锁，只从已核验回执引用的精确版本统计三个已知请求，孤立正文不计确认。阶段日志仅输出固定请求集合的响应／回执计数和错误类型；失败清理前另保留本 Job 来源队列文件数及占用量，不输出投递正文、密钥或任意对象名。历史间歇失败与后继通过分别保存，后继一次通过不能证明历史唯一根因已修复。
+
+### 8.6 构建与受控操作入口
+
+正式构建：`make build-audit-archive`。先运行只读 `addp-audit-archive check-store --config /受控私有路径/collector.json`，核对平台桶版本和 Object Lock 均 Enabled；不连接 PostgreSQL、不上传探针、不修改桶，也不证明 IAM 隔离已验。正式归档命令先执行同一能力检查，失败即停止，不自动启用锁或修改全桶默认保留。随后运行 `addp-audit-archive init --config /受控私有路径/collector.json` 显式建立唯一快照基线，随后以前台进程 `collect --config ...` 消费同一复制槽；不注册到 ADDP 开发启动或设置定时任务。持有专用审计身份的操作者使用 `verify --config /受控私有路径/auditor.json`，或 `query --config ... --event-name iam.example --tenant-id 123` 做有界核验；筛选不授予权限，首期不向 Tenant 角色发放原始归档凭据。stdout 为机器可读结果，失败只返回安全本地化提示。
+
+只读到期计划使用 `addp-audit-archive plan --config /受控私有路径/auditor.json`，限制与未完成项统一见[8.4](#84-分段流式核验与只读到期计划已确认)。
+
+配置文件必须是非符号链接的私有普通文件（权限 0600 或更严），启动时不读取根 `.env`。两类配置分别部署，不混放原始数据库凭据与人类查询凭据。以下仅为占位示例；init 配置不带 root，成功后将输出的完整根对象引用绑定到 collect 与 auditor 配置，不能只按来源编号信任新根：
+
+```json
+{"mode":"collector","source_id":"由部署生成并固定的 UUID","endpoint":"https://Infra对象存储端点","region":"目标区域","bucket":"system","access_key":"独立注入","secret_key":"独立注入","retention_days":365,"postgres_dsn":"仅独立采集身份，postgres://独立用户:独立密码@权威主库/数据库?sslmode=verify-full&sslrootcert=/受控证书路径/ca.pem","slot":"addp_audit_archive","publication":"addp_audit_archive"}
+```
+
+`auditor` 配置使用同一来源／端点／区域／桶及已批准期限，必须加入init输出的完整`root`对象（`key/version/sha256`），仅替换为该实名审计身份的独立存储凭据、设置 `actor` 为部署绑定的 UUID，删除 `postgres_dsn/slot/publication`。存储策略将凭据绑定到 `audit/queries/<actor>/`，其他 actor 前缀不可写；`actor` 不接受命令行覆盖。采集和审计身份均须能读取桶的版本及 Object Lock 配置，但不能更改它们。所有连接要求 HTTPS／PG 完整服务端证书校验，不回退明文、多主机或 Infra root 凭据。
+
+来源部署管理员通过既有受控迁移／运维流程启用 `wal_level=logical`、有限 `max_replication_slots/max_slot_wal_keep_size`，并建立只含 `system.audit_logs`、`publish='insert'` 的 publication。独立采集登录只授予所需 `REPLICATION`、`USAGE ON SCHEMA system`、`SELECT ON system.audit_logs`，不得为 SUPERUSER、表 owner 或 migration owner。程序不创建这些角色／publication、不启停数据库、不自动重建失效槽。
+
+独立接收端 B 的部署前提和证据协议见[8.5](#85-独立日志接收端-b-的限定协议非首期部署要求)，其配置与平台桶 collector/auditor 配置分开：
+
+私有配置 `mode=receiver`、`source_id`、`deployment_id`、独立 S3 `endpoint/region/bucket/access_key/secret_key`、`retention_days=365`、`listen`（显式IP:端口）、`tls_cert/tls_key`（绝对路径）及 `receiver_token`（独立至少32字符随机值）；初始化输出的 `root` 必须固定后才可 receive。`checkpoint` 可固定外部保管的较新末回执。只读核验配置使用 `mode=receiver-auditor`，去掉监听、TLS和token，使用独立只读存储凭据并固定root/checkpoint。A 配置 Authorization 为 `Bearer <receiver_token>`，原生队列投递至 HTTPS `/api/v1/internal/audit-receipts`，不得把密钥放命令参数或根 .env。204仅表示完整投递已受保护落存并读回，错误无正文、不回显凭据。
