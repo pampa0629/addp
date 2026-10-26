@@ -451,3 +451,20 @@ Native候选树`83c8384f0ae808f1d9947b9126ded49c72289797`，原始日志SHA-256�
 实际Node24.11.1下完整`make test-raster-online-runner`退出0，32组Python子门禁及隔离身份夹具Go T1通过，壁钟1105.79秒；共享计数不累加唯一用例数，Go T1不计全量IAM或数据库集成。聚合候选树`83c8384f0ae808f1d9947b9126ded49c72289797`，原始日志SHA-256：`99efb31e84d2d301a66e561b849913343df26ca141565032043e666bbd8a7250`。聚合证据绑定其固定输入；最终runner与登记另已覆盖同期其他会话提交后的共享注册，Native与栅格标准recipe及本套件数值输入一致，不将较早聚合外推为后续整树复跑。所有成功门禁跟踪输入无漂移、无新增Python原生崩溃报告。
 
 实际Hosted由专门CI会话协调，本轮未手动触发、轮询、重跑、取消或设置定时；新套件的Linux全量与真实普通用户T4尚未回传，不计UI、容量或Hosted数值极限，数值极限继续单列既有Native证据。原产品cb2的Linux／Platform固定证据和本地Parquet失败记录分别保留。
+
+
+### DEM 切向曲率独立 Hosted 验收
+
+独立手工入口`raster-tangential-curvature-persistence`、夹具、标准runner、Native recipe、变更选择和CI登记已准备，复用既有Hosted／NFS、同源默认入口Runtime、普通User原12权限及独立600秒业务预算；manual-only／非nightly，保留排队任务，不修改产品算法、权限、其他模块或旧套件。
+
+固定13条COG成功链：三种高程单位与不同水平CRS交叉的直接tangential、填洼接切向、重分类接切向、完全水平平地、非平地零梯度残差、全无效、无完整有效邻域、小图，以及同源默认mean／显式mean／显式profile三条对照。519×515矩形投影多波段样本显式选择第二数据波段，覆盖跨块、横向凸凹／鞍面／倾斜面、陡坡、小而非零坡度及非零切向曲率、NoData／mask／透明／部分透明；3×3残差和2×7小图按实际零层overview核验。
+
+独立九点最小二乘和第一／第二基本形式方向商核全幅像元／mask，保留`RTOL=1e-10`、`ATOL=1e-11`；切向与平面曲率专用解析样本必须区分，水平平地严格0、其他零梯度NaN。默认／显式mean的数据字节一致；profile另用自身方向oracle。三个实际保存结果仅在非零梯度共同有效处核`profile+tangential=2×mean`，不能用该关系生成切向主预期。完整物理核验与这三项实际数据交叉检查各有独立污染反例。
+
+13类中英文共26次准确失败：非法波段、alpha、复数、旋转、南向、经纬度、缺CRS、缺网格、非法单位、单位冲突、未应用scale、未应用offset、非法method。准确核同次执行的curvature任务和提交语言原因，反向查询不改旧失败；失败零发布／新增扫描／派生血缘。严格核完整COG／最近邻金字塔、原网格／CRS／Float64／NaN／`1/metre`、artifact／物理／Meta相等正整数大小、精确扫描父执行／用户／租户／引擎、当前执行所有实际输入血缘／Monitor、源与先前成果不变、所有退出清理及零残留。
+
+本地标准`make test-geopython-workflow`专项（`PYTEST_ADDOPTS='-k curvature --durations=10'`）**626 passed／6358 deselected／46.65秒**，0失败／跳过；其中64项新夹具回归实际执行13条GDAL／COG保存链和26次双语拒绝，并验证污染、源旧保护及stdin Worker无仓库依赖。原562项曲率相关回归保持通过，筛除不计全量。`make test-raster-tangential-curvature-online-runner` **68项／22.521秒**及完整Online登记通过，包含数值控制、三方大小、精确扫描／实际血缘、冻结语言和隔离生命周期的严格失败反例。`make test-python-ci-registration`通过46项、10项及11模块／Python／Online登记，共享计数不累加。
+
+三项门禁候选树均为`3285bc40414c6f977644a5bf6bbecb8e55b8a907`；Native日志SHA-256：`96d2857cf86de6a3e8f24e9f50e4e53e065e0c1d80c8e2e898a564f001558a04`，runner：`818b4397d476872b020f8dcf929de8ac383455c811b1d0e5da6b3e4928bc9bd0`，登记：`0694e3a1c9862743edf7ed3894bde8225ad28405b4e0d26738a7ef19a8cfb671`。实际输入无漂移、无新增Python原生崩溃报告。产品核心和旧套件未修改；本轮未重复完整Native或栅格聚合，不将既有结果冒充新增套件整树证明。
+
+实际Hosted仍由专门CI会话协调，本轮不触发／轮询／重跑／取消CI或Hosted，不设置定时、不启动或重启个人服务／Infra、不执行keepalive。新固定源码Linux全量和真实平台13成功／26失败及清理证据尚未回传，不计T4、UI或容量；数值极限、不可表示步长及原生64位边界继续单列Native。旧固定验收、切向产品本地全量6917通过／1项Parquet-PyArrow失败和834并行镶嵌double-free未确认根因记录分别保留。

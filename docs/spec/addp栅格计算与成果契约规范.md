@@ -362,4 +362,4 @@ D8增量子汇水区独立手工Hosted `raster-subcatchments-d8-persistence` 已
 
 已实现既有`raster_curvature(..., method='mean')`的`tangential`方法：沿等高线切向的曲面法向曲率，横向凸正凹负、统一`1/metre`。复用完整有效九点等权二次拟合；九点原始高程严格全相等为0，其他零梯度点NoData，无坡度阈值。mean/profile核与结果保持，切向直接计算，不以两倍mean减profile作为产品算法；非有限数值明确失败。原网格／CRS、Float64／NaN、唯一512×512带halo读取、COG及清理路径不变；不增加权限、依赖或跨模块产品逻辑。方法枚举及非法method的中英文诊断同步为三种合法方法，原剖面Hosted的相应期望同步，不放宽断言。
 
-完整定义见[算子契约](workflow/栅格算子契约.md)。本地曲率专项562项、原剖面runner66项及登记通过；标准本地全量实际6917通过／1项既有Parquet-PyArrow失败，不能记作全量通过。详细源码输入与日志见[后续专题](../next/栅格算子体系后续专题.md#dem-切向曲率首期)。Linux全量与Hosted继续等CI会话回传，未新增独立Hosted脚本，不计真实平台T4、UI或容量。
+完整定义见[算子契约](workflow/栅格算子契约.md)。本地曲率专项562项、原剖面runner66项及登记通过；标准本地全量实际6917通过／1项既有Parquet-PyArrow失败，不能记作全量通过。详细源码输入与日志见[后续专题](../next/栅格算子体系后续专题.md#dem-切向曲率首期)。Linux全量与Hosted继续等CI会话回传，独立Hosted入口与本地准备验证见[测试场景](testing/scenarios/Manager与空间成果.md)，实际运行待CI协调，不计真实平台T4、UI或容量。
