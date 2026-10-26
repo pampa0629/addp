@@ -214,9 +214,9 @@ bash scripts/dev/start.sh
 bash scripts/dev/start.sh -manager
 ```
 
-启动范围见[模块选择启动指南](../../scripts/docs/模块选择启动指南.md)。模块独立顶层界面和 Console iframe 都使用 Console 同 origin 的 `/module-ui/{frontend}/...`；Portal 使用 `/portal/...`，Workbench 数据应用使用 `/data-apps/:application_id`。独立界面保留模块自己的布局。
+启动范围见[模块选择启动指南](../../scripts/docs/模块选择启动指南.md)。独立界面保留模块自己的布局，正式路径与 Console 加载地址统一见[公开路由事实源](addp前端路由与可恢复状态规范.md#二公开路由事实源)。
 
-模块开发端口是内部服务端口，直接打开时必须在页面脚本执行前跳转到 Console 同 origin 的正式入口，并保留 path、query 和 fragment。跨站点独立部署在该站点登录；具体边界见[登录认证规范](addp登录认证的统一要求.md#五console-与-iframe)，不另建认证入口。
+模块开发端口只用于内部服务，直接打开时必须在页面脚本执行前跳转到 Console 同 origin 的正式入口，并保留 path、query 和 fragment。跨站点独立部署在该站点登录，不另建认证入口；会话协调与跨 origin 边界见[登录认证规范](addp登录认证的统一要求.md#五console-与-iframe)。
 
 ### 开发中的前端-后端连接
 
@@ -239,7 +239,7 @@ export default createAPIClient(() => useAuthStore(), {
 
 1. 在新的 `<module>/frontend/` 下按现有模块组织 Vue 3、Pinia 和 Element Plus 工程，调整包名、标题、业务视图和菜单。只参考需要的结构，不整目录复制已有模块的业务、依赖或构建产物。
 2. 使用根 `.node-version` 对应的 Node，提交模块 `package.json` 和一致的 `package-lock.json`。通过 `overrides` 及 Vite 别名、去重规则保持 Vue 单一实例；common-frontend 复用消费模块依赖，不独立安装自己的 `node_modules`。
-3. Vite 复用共享 `withModuleFrontend()`，并在其模块登记及 Console 的代理、菜单配置中接入新入口。Router 使用 `createWebHistory(import.meta.env.BASE_URL)`；模块公开前缀、内部开发端口和 Console 地址按[认证规范](addp登录认证的统一要求.md#五console-与-iframe)及[端口规范](addp端口分配.md)配置，不各自维护另一套跳转逻辑。
+3. Vite 复用共享 `withModuleFrontend()`，在共享模块登记及 Console 的代理、菜单配置中接入新入口，Router 使用 `createWebHistory(import.meta.env.BASE_URL)`。正式基路径与跳转遵循[公开路由规范](addp前端路由与可恢复状态规范.md#二公开路由事实源)，开发首选值与实际端口遵循[端口规范](addp端口分配.md)，不另写跳转逻辑。
 4. 创建本模块 AuthStore 与路由守卫以调用共享认证能力，业务请求按[前后端连接说明](#开发中的前端-后端连接)接入共享客户端。按 Layout 嵌套路由组织页面，支持独立顶层界面和 Console iframe。
 5. 按[前端国际化接入清单](addp国际化开发规范.md#新增模块检查清单)创建 `src/i18n/zh-cn.json` 与 `en.json`，使用共享 `createAddpI18n()`；iframe 监听 Console 语言变化，Element Plus locale 跟随当前语言，请求统一携带 `Accept-Language`。
 6. 按[主题接入步骤](../../common-frontend/docs/frontend-style/主题接入.md#1-css-变量定义位置)在 `main.js` 中于 Element Plus 基础 CSS 后导入深色变量和共享主题，在 `app.use()` 完成后、挂载前调用共享 `useTheme({ listenToConsole: true, storageKey: 'theme-mode' })` 返回的 `init()`。Layout 与页面使用 ADDP 主题变量，示例和覆盖规则统一维护在该专题。
@@ -309,7 +309,7 @@ export default createAPIClient(() => useAuthStore(), {
 **前端开发**:
 - [ ] 建立前端目录与模块锁文件，Node 版本取根 `.node-version`，安装使用 `npm ci`
 - [ ] 登记开发首选端口，并消费标准启动入口解析的实际端口
-- [ ] 共享 Vite 模块登记、Console 代理和部署路由均能命中正式入口，Router 使用相同基础路径
+- [ ] 按[前端接入步骤](#创建新模块前端)核对共享 Vite 登记、Console 入口与部署路由，Router 基路径一致
 - [ ] 实现 Layout 组件（支持双模式）
 - [ ] 按[主题接入步骤](../../common-frontend/docs/frontend-style/主题接入.md#主题系统实施指南)完成共享 CSS、挂载前初始化和 Layout 变量接入
 - [ ] 配置 common-frontend 别名、依赖去重与 `overrides`，保持 Vue 单一实例
@@ -340,7 +340,7 @@ export default createAPIClient(() => useAuthStore(), {
 - [ ] 前端可以访问后端 API
 - [ ] Console 可以嵌入模块前端
 - [ ] 按[主题验证清单](../../common-frontend/docs/frontend-style/主题接入.md#验证清单)实际切换 Console 主题，核对模块界面与组件变化
-- [ ] 独立顶层入口与 Console iframe 的登录、刷新和退出均遵循共享认证；直接访问开发端口会跳转到正式入口
+- [ ] 按[独立模式与正式入口说明](#运行单个前端-独立模式)验证顶层与 Console iframe 的登录、刷新和退出；直接访问开发端口会跳转到正式入口
 - [ ] 真实镜像下刷新受保护页面的深层 URL，并验证所属静态资源可达
 
 按[测试与验收规范](addp测试与验收规范.md)记录各层结果：登记静态检查、模块测试、真实镜像构建与浏览器运行验收分别陈述；未运行、失败或跳过项不能勾选为通过。联调需要重启开发服务时，由用户在自己的终端执行标准生命周期命令。
