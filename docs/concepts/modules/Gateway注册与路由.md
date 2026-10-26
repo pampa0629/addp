@@ -31,7 +31,7 @@ graph TB
     end
 
     subgraph "3. Gateway 动态发现"
-        Gateway[Gateway<br/>:8000] -.revision 长轮询.-> RegAPI
+        Gateway[Gateway] -.revision 长轮询.-> RegAPI
         Gateway --> Discovery[ModuleDiscovery<br/>模块发现管理器]
         Discovery --> Proxies[动态代理映射<br/>module -> ServiceProxy]
     end
@@ -134,19 +134,19 @@ System 是唯一例外：其 Ready 只依赖自身必需 Infra、迁移和 IAM/b
 
 ```mermaid
 graph LR
-    Client[客户端] --> Gateway[Gateway<br/>:8000]
+    Client[客户端] --> Gateway[Gateway]
 
-    Gateway --> |/api/v1/system/*| System[System Backend<br/>:8180]
-    Gateway --> |/api/v1/manager/*| Manager[Manager Backend<br/>:8081]
-    Gateway --> |/api/v1/meta/*| Meta[Meta Backend<br/>:8082]
-    Gateway --> |/api/v1/catalog/*| Catalog[Catalog Backend<br/>:8192]
-    Gateway --> |/api/v1/workbench/*| Workbench[Workbench Backend<br/>:8193]
-    Gateway --> |/api/v1/security/*| Security[Security Backend<br/>:8194]
-    Gateway --> |/api/v1/transfer/*| Transfer[Transfer Backend<br/>:8083]
-    Gateway --> |/api/v1/orchestrator/*| Orchestrator[Orchestrator Backend<br/>:8084]
-    Gateway --> |/api/v1/develop/*| Develop[Develop Backend<br/>:8185]
-    Gateway --> |/api/v1/service/*| Service[Service Backend<br/>:8086]
-    Gateway --> |/api/v1/monitor/*| Monitor[Monitor Backend<br/>:8100]
+    Gateway --> |/api/v1/system/*| System[System Backend]
+    Gateway --> |/api/v1/manager/*| Manager[Manager Backend]
+    Gateway --> |/api/v1/meta/*| Meta[Meta Backend]
+    Gateway --> |/api/v1/catalog/*| Catalog[Catalog Backend]
+    Gateway --> |/api/v1/workbench/*| Workbench[Workbench Backend]
+    Gateway --> |/api/v1/security/*| Security[Security Backend]
+    Gateway --> |/api/v1/transfer/*| Transfer[Transfer Backend]
+    Gateway --> |/api/v1/orchestrator/*| Orchestrator[Orchestrator Backend]
+    Gateway --> |/api/v1/develop/*| Develop[Develop Backend]
+    Gateway --> |/api/v1/service/*| Service[Service Backend]
+    Gateway --> |/api/v1/monitor/*| Monitor[Monitor Backend]
 
     classDef client fill:#69db7c,stroke:#2f9e44
     classDef gateway fill:#fff9c4,stroke:#f57f17
@@ -159,19 +159,11 @@ graph LR
 
 ### 路由规则
 
-| 路径前缀 | 目标服务 | 端口 | 说明 |
-|---------|---------|------|------|
-| `/api/v1/system/*` | System Backend | 8180 | 用户认证、引擎管理、日志 |
-| `/api/v1/manager/*` | Manager Backend | 8081 | 数据管理、预览、空间快显和瓦片缓存 |
-| `/api/v1/meta/*` | Meta Backend | 8082 | 元数据扫描、索引、搜索 |
-| `/api/v1/catalog/*` | Catalog Backend | 8192 | 企业目录身份、业务编目、责任、语义关联和搜索 |
-| `/api/v1/workbench/*` | Workbench Backend | 8193 | 已发布服务消费、个人视图和后续数据应用创作 |
-| `/api/v1/security/*` | Security Backend | 8194 | 安全分类分级、纳管、敏感发现、资源评估、保护策略和运行时投影变化 |
-| `/api/v1/transfer/*` | Transfer Backend | 8083 | 数据同步、搬运、格式转换 |
-| `/api/v1/orchestrator/*` | Orchestrator Backend | 8084 | 任务编排、调度 |
-| `/api/v1/develop/*` | Develop Backend | 8185 | 查询、工作流、Notebook |
-| `/api/v1/service/*` | Service Backend | 8086 | 数据服务发布、OGC 标准 |
-| `/api/v1/monitor/*` | Monitor Backend | 8100 | 执行监控、统计分析 |
+模块职责见[平台总览](平台总览与模块职责.md#模块详细说明)，控制面、数据面及各协议的实际挂载与授权边界见 [Gateway 路由平面](../../../gateway/docs/gateway架构说明.md#2-路由平面)。图中仅列出部分控制面路径，不作为完整路由清单。
+
+首选端口与容器内部端口统一见[端口分配](../../spec/addp端口分配.md#端口分配)。本地实际端口以标准启动输出和 `.dev-state/ports.env` 为准；根 Compose 通过 Nginx 发布统一入口，模块单独部署的映射由该部署显式指定，不能从图中路径推断宿主机端口，详见[容器发布与公开入口规则](../../spec/addp端口分配.md#前端-docker-端口规则)。
+
+公开 origin 按实际域名、HTTPS 与反向代理配置 `ADDP_PUBLIC_ORIGIN`；地址生成和配置归属见[环境变量参考](../../spec/configuration/环境变量参考.md#根目录-env)。注册租约满足路由资格或后端直连成功，不证明公开 HTTPS、协议转发及认证授权已经验收；按上述 Gateway 路由平面逐项核对实际入口。
 
 ### 配置环境变量
 
