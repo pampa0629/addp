@@ -1779,7 +1779,9 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 
 实源缺口：`make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources` 退出 2，在公共 mTLS 初次采样前置报 `Timed out: real mTLS scrape and controlled job label`，封闭诊断为 `error_kind=tls/health=down`。八项固定窗口 promtool 测试通过不等于整门禁通过；本批新增四指标真实摘要断言尚未执行。与本专题既有公共采样失败边界一致，不由现有诊断推断具体证书根因，不改 TLS／等待时长、不盲目重跑。日志 `/tmp/addp-host-load-t2.log`；项目 `addp-metrics-t2-786570fda5424602a680465383cd9092` 的容器／网络／卷在退出后分别按 Compose project 标签只读核验均为空，临时目录由标准入口清理。
 
-个人 Safari 已在原平台管理员会话看到新视图、切换后的 canonical URL 及列旁说明；运行中的旧 Monitor 后端仍按五项白名单拒绝新摘要，已恢复可用的核心资源视图。新后端的真实 Safari 数据、右侧 TCP 和刷新重读待用户沿 `./scripts/dev/restart.sh -monitor` 重启后复验，不计为新视图实源通过。未操作个人数据库、权限或服务进程，未手工触发／轮询 CI 或 Hosted，未设置定时任务；正式结果仍等专门会话回传。
+个人 Safari 初次复验曾因运行中的旧 Monitor 后端仍按五项白名单拒绝新摘要而失败；2026-10-26 用户自行执行 `./scripts/dev/restart.sh -monitor` 后，沿原平台管理员会话只读复验，新视图能读取真实三档系统负载。初次为 8.21／9.07／10.83 个任务，点击页面“刷新”后为 8.32／8.84／10.58 个任务，采集状态为“正在采集”，不再出现摘要读取失败。详情导航保持同一主机 `755953df-488c-410a-88d4-0ecc47eb1351` 及 `list_view=load-connections`，返回列表和整页重新载入仍选中该视图并重新读取负载。
+
+TCP 在列表及详情均为“—／缺失”，详情就近明确“当前来源未提供可用的宿主 TCP 统计，不代表连接数为 0”；仅验证受限 Docker Desktop 来源的缺样表达，不计真实 TCP 有效数值通过。AX 原始证据为 `/tmp/addp-host-load-safari-e8AXcN/load-refreshed.ax.txt`、`host-detail.ax.txt`、`load-reloaded.ax.txt`。截图能见真实负载，但按钮着色与 AX 选中状态存在滞后，右侧横向滚动返回 `noWindowsAvailable`，页面持续报告隐藏；故右侧 TCP 实际截图、前台自然自动刷新不计本轮通过，也不把个人单 VM／管理员会话结果外推为多主机、TCP 有效来源、此前失败的隔离 T2 或正式 Hosted。未操作个人数据库、权限或服务进程，未手工触发／轮询 CI 或 Hosted，未设置定时任务；正式结果仍等专门会话回传。
 
 
 ### 公共 mTLS 单次前置窗口与容器内换证修正（2026-10-26）
