@@ -300,14 +300,20 @@ cleanup request（资源回收请求）必须保持中性。
 - 具体 artifact 删除 SQL。
 - executor 内部策略开关。
 
-`expected_modules` 默认行为必须明确：
+### executor 参与范围
 
-- 用户或 coordinator 显式指定模块时，只等待指定模块。
-- 未指定模块时，System 按 `module_runtime_instances.metadata.capabilities.cleanup_executor.enabled=true`、实例租约有效且状态为 `up` 的模块集合生成列表。
-- executor 收到请求后，如自身不在 `expected_modules` 中，必须忽略并不得写入结果。
-- `expected_modules` 不得硬编码在 System 或 UI；显式指定的模块也必须是已注册且启用资源回收执行方的模块。
-- Engine 删除影响评估是严格模式：System 必须从全部已安装模块注册记录中选择声明支持 `engine.deleting` 的 cleanup executor，不得只选择状态为 `up` 的模块。任一参与模块为 `down`、响应超时或检查失败时，评估不完整并硬阻断删除。
-- cleanup executor 必须在 `module_runtime_instances.metadata.capabilities.cleanup_executor.causes[]` 声明自己支持的 lifecycle cause；未声明 `engine.deleting` 的模块不参与 Engine 删除评估。模块是否安装、是否启用来自 `module_definitions`，不得由实例心跳改写。
+`expected_modules` 是当次必须响应的模块集合，不是在线实例数量，也不由 System 或 UI 硬编码。三类选择规则如下：
+
+| 请求 | 集合来源 | 范围与失败边界 |
+| --- | --- | --- |
+| 通用 scan，未指定 scope | 从当前启用且有有效租约、可路由 Backend 的模块中，选择声明 `cleanup_executor.enabled=true` 的在线 Backend executor。 | 等待当次发现的集合；未发现任何 executor 时拒绝创建，不将空集合当作“全平台无待回收对象”。 |
+| 通用 scan，显式指定 scope | 在上述可用集合内规范化模块名并去重。 | 只等待所选模块；未注册、未启用或当前不在可用集合中的模块会被拒绝，不因显式指定而纳入离线模块。成功只证明该范围，不代表全平台覆盖。 |
+| Engine 删除预评估与权威复扫 | 从完整模块注册信息中，按实例 `metadata.capabilities.cleanup_executor.enabled=true` 与 `causes[]` 包含 `engine.deleting` 形成必选集合；不先过滤掉 down 实例。 | 不允许用 scope 缩小集合。每个必选模块都须有模块启用、状态为 up 且租约有效的 Backend executor；任一不可用或未发现支持者时拒绝创建评估，不退化为通用 scan 的在线子集。 |
+
+- 模块安装与启用事实来自 `module_definitions`，实例心跳只提供运行状态与声明，不能改写模块定义。当前严格评估仍依赖已登记实例中的 cause 声明；没有该声明的模块不参与，不能据此断言该 Owner 无相关资源、已完成评估或全部已安装 Owner 均已覆盖。
+- 当次集合写入 task、execution 与请求事件；execute 沿用所引用 scan 的 `expected_modules`。executor 不在明确集合内时忽略请求且不得写入结果，不能用其他 Owner 的在线状态或响应补足缺失 Owner。
+- Engine 删除须逐一取得必选模块的成功结果、非空 impact digest，且无运行任务；缺失结果、检查失败、跳过、部分失败或超时均不能视为完整评估。进入 deleting 后还须按[Engine 删除工作流](#engine-删除工作流)复扫并比较已确认影响摘要，不能仅凭任务终态或收到部分响应继续删除。
+- 注册声明与源码核对不替代离线、租约失效、空集合、显式 scope 拒绝、参与者结果完整性和复扫变化的实际验证；按[运行态验收](#十三运行态验收)分别报告通用扫描与严格删除评估的覆盖范围，未运行、失败或跳过不计为通过。
 
 ### Engine 删除影响模型
 
@@ -514,7 +520,7 @@ active / disabled
 约束：
 
 1. 只读预评估不改变 Engine 生命周期，也不得产生任何 cleanup 副作用；评估结果必须绑定 Tenant、Engine、参与模块集合和有效期。
-2. 用户确认必须引用一次已完成且参与者完整的评估；删除入口的 `system.engine.delete`、当前版本和引擎名称确认文本见[引擎删除说明](../../system/docs/tables/engines表.md#删除引擎)，不能用通用 execute 的 `CONFIRM` 代替名称确认。确认后 System 原子切换 Engine 为 `deleting`，所有 owner 的新建、更新和执行入口必须重新校验目标 Engine 为 `active`。
+2. 用户确认必须引用一次已完成且符合[严格参与范围](#executor-参与范围)的完整评估；删除入口的 `system.engine.delete`、当前版本和引擎名称确认文本见[引擎删除说明](../../system/docs/tables/engines表.md#删除引擎)，不能用通用 execute 的 `CONFIRM` 代替名称确认。确认后 System 原子切换 Engine 为 `deleting`，所有 owner 的新建、更新和执行入口必须重新校验目标 Engine 为 `active`。
 3. `deleting` 后必须执行权威复扫。若发现新增影响、任一模块不可用或 `impact_digest` 与用户确认的评估不一致，删除暂停并要求用户查看新结果，不得自动继续。
 4. scan 和 execute 的 `context.engine_id` 指向正在删除的 Engine；各 executor 必须把该 Engine 当作即将失效来源，不能因为 System 记录仍存在而跳过候选。
 5. cleanup 失败时 Engine 保持 `deleting`，保留已有 scan / execute task ID、错误摘要和连接配置。规范要求支持具备对应 Permission 的用户显式重试，但当前引擎删除的独立失败重试入口仍未具备，不能记为已实现。当前重复 DELETE 返回 409；启动仅续办已有 scan task ID 的流程，已有 execute task ID 时沿用原任务，失败、部分失败或超时终态不会因重启自动重跑，缺少 scan task ID 时也不会补建。实际入口与权限边界见[引擎删除说明](../../system/docs/tables/engines表.md#删除引擎)；通用 execute 不替代本节评估、确认、权威复扫与最终墓碑写入。
@@ -623,7 +629,7 @@ make test-online ONLINE_SUITE="$ONLINE_SUITE"
 | [Asset](#asset) 资产与授权治理：第一阶段仅处理租户删除，逻辑清理下架资产、撤销有效授权，物理清理限本域 PG 状态；引擎删除不扫描本域状态。 | 已完成主路径 |
 | [Model](#model) 建模状态治理：第一阶段仅处理租户删除，逻辑清理将实体、逻辑表降为 draft，物理清理限本域 PG 状态；引擎删除不扫描本域状态。 | 已完成主路径 |
 | engine / tenant 生命周期事件触发自动资源回收 scan，并通过 `cause_event` / `context` 限定后续 executor 范围。 | 已完成主路径 |
-| `expected_modules` 从模块注册或 cleanup capability 生成，并由 executor 统一按公共协议 helper 判断是否响应。 | 已完成主路径 |
+| `expected_modules` 按[executor 参与范围](#executor-参与范围)区分通用 scan 与严格 Engine 删除评估，并由 executor 按公共协议判断是否响应。 | 已完成主路径 |
 
 ## 十五、已确认决策
 
