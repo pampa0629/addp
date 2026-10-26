@@ -369,11 +369,12 @@ frontend/src/
 
 ### 日志中间件
 
-`LoggerMiddleware` 自动记录非 GET 请求，以及模块实例运行日志的 GET 读取审计。运行日志读取审计只记录操作者、实例、时间范围和结果，不保存关键字和日志正文。其他审计包括：
-- 用户身份（如果已认证）
-- 请求方法和路径
-- 客户端 IP 地址
-- 请求时间
+`LoggerMiddleware` 在请求处理后尝试写入操作审计；它不覆盖全部 HTTP 访问，也不保存模块服务正文日志。
+
+- **记录范围**：排除路径含 `/internal/` 的请求；其余非 GET 请求纳入审计，普通 GET 跳过，仅匹配模块实例正文接口的 GET 额外记录读取事件。OAuth 安全路径已标记审计落库时不重复写入，不以通用请求审计替代领域事件。
+- **字段与脱敏**：通用事件为 `http.request.completed`，记录方法、路径、HTTP 结果、Request ID、客户端 IP、User-Agent 及可解析的主体／Context／Tenant 元数据，普通事件的 `details` 仅含 `duration_ms`。OAuth 事件另按专用白名单构造，不保存整段请求体或原始 query；允许字段与敏感材料禁存规则统一见[审计表契约](docs/tables/audit_logs表.md#四脱敏白名单)。
+- **运行日志读取**：特定正文 GET 写入 `platform.module_log.read`，关联实例及 HTTP 结果，`details` 只额外包含 `module_name` 和解析成功的 UTC `from/to`；不保存关键字或日志正文。接口匹配、正文权限与分页规则见[运行日志 API 与授权](../docs/spec/addp模块服务运行日志规范.md#51-api-与授权)，审计查询权限不能替代正文读取权限。
+- **失败与验收**：Writer 未配置时不写入；写入失败仅记录应用日志，不回滚已结束请求。领域安全事件的同事务要求见[写入与事务](docs/tables/audit_logs表.md#三写入与事务)。HTTP 成功或源码核对不证明审计已落库；实际记录范围、OAuth 去重、敏感字段缺失、读取授权与写入失败须分别验证。
 
 ### 安全机制
 
