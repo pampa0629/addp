@@ -253,7 +253,7 @@ func suitePermissions(suite string) ([]string, error) {
 	switch suite {
 	case executionTraceLocalSuite:
 		return append([]string(nil), executionTraceLocalPermissions...), nil
-	case "execution-retention-readonly", "execution-events-retention":
+	case "execution-retention-readonly", "execution-events-retention", "execution-retention-hourly":
 		return []string{"monitor.execution.read"}, nil
 	case "graph-protection":
 		return graphProtectionReaderPermissions, nil
@@ -693,7 +693,7 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_OWN_ASSIGNMENT_ID"] = fmt.Sprintf("%d", ownAssignmentID)
 		values["ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID"] = fmt.Sprintf("%d", reserveAssignmentID)
 	}
-	if *suite == "execution-retention-readonly" || *suite == "execution-events-retention" {
+	if *suite == "execution-retention-readonly" || *suite == "execution-events-retention" || *suite == "execution-retention-hourly" {
 		foreignTenant, err := createOnlineForeignTenant(ctx, tenantService.Create, reserve.PrincipalID, tenant.ID)
 		if err != nil {
 			return err

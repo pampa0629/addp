@@ -59,6 +59,10 @@ class HostedExecutionRetentionGateTest(unittest.TestCase):
             #!/usr/bin/env bash
             [ "$ADDP_ONLINE_RETENTION_POSTGRES_ID" = owned-postgres ] || exit 1
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
+            if [ "$ONLINE_SUITE" = execution-retention-hourly ]; then
+              [ "$ADDP_ONLINE_TEST_TIMEOUT_SECONDS" = 8100 ] || exit 1
+              echo hourly-observer-budget >> "$ADDP_TEST_GATE_TRACE"
+            fi
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')
         self.host._write_repository_script('scripts/infra/down.sh', '''
@@ -106,6 +110,22 @@ class HostedExecutionRetentionGateTest(unittest.TestCase):
 
     def test_event_suite_failures_still_destroy_only_owned_deployment(self):
         result=self.run_gate(ONLINE_SUITE_INPUT='execution-events-retention',ADDP_TEST_SUITE_FAIL='1')
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('infra-down',self.host.trace.read_text())
+        self.assertFalse(self.host.secrets.exists())
+
+    def test_hourly_budget_and_dispatch_do_not_change_product_start(self):
+        result=self.run_gate(ONLINE_SUITE_INPUT='execution-retention-hourly')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        trace=self.host.trace.read_text()
+        self.assertIn('make:test-online ONLINE_SUITE=execution-retention-hourly',trace)
+        self.assertIn('hourly-observer-budget',trace)
+        self.assertEqual(trace.count('start:--exact-process -system'),2)
+        self.assertIn('infra-down',trace)
+        self.assertFalse(self.host.secrets.exists())
+
+    def test_hourly_observation_failure_still_destroys_deployment(self):
+        result=self.run_gate(ONLINE_SUITE_INPUT='execution-retention-hourly',ADDP_TEST_SUITE_FAIL='1')
         self.assertNotEqual(result.returncode,0)
         self.assertIn('infra-down',self.host.trace.read_text())
         self.assertFalse(self.host.secrets.exists())

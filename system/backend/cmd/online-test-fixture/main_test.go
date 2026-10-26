@@ -1519,7 +1519,7 @@ func TestWorkflowRuntimeHealthFixtureRequiresNoUserPermissionsOrEngineProvisione
 }
 
 func TestExecutionRetentionFixtureHasOnlyMonitorReadPermission(t *testing.T) {
-	for _, suite := range []string{"execution-retention-readonly", "execution-events-retention"} {
+	for _, suite := range []string{"execution-retention-readonly", "execution-events-retention", "execution-retention-hourly"} {
 		permissions, err := suitePermissions(suite)
 		if err != nil || len(permissions) != 1 || permissions[0] != "monitor.execution.read" || needsEngineProvisioner(suite) {
 			t.Fatalf("%s fixture must not grant Owner, IAM, engine or platform capabilities: %v %v", suite, permissions, err)

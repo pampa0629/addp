@@ -4010,7 +4010,7 @@ def validate_execution_retention_profile(repository: Path, registered: set[str])
     workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
     job = re.search(r"(?ms)^  execution-retention-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
     if (job is None or "runs-on: ubuntu-24.04" not in job.group("body")
-            or "if: github.event_name == 'workflow_dispatch' && (inputs.suite == 'execution-retention-readonly' || inputs.suite == 'execution-events-retention')" not in job.group("body")
+            or "if: github.event_name == 'workflow_dispatch' && (inputs.suite == 'execution-retention-readonly' || inputs.suite == 'execution-events-retention' || inputs.suite == 'execution-retention-hourly')" not in job.group("body")
             or "inputs.suite != 'execution-retention-readonly'" not in workflow):
         raise RegistrationError("Execution retention requires one manual Hosted Linux job")
     gate = (repository / "scripts/test/online-hosted-execution-retention-gate.sh").read_text()
@@ -4034,6 +4034,15 @@ def validate_execution_retention_profile(repository: Path, registered: set[str])
                 or "execution-events-retention-online_test.py" not in commands
                 or not (repository / "scripts/test/execution-events-retention-online_test.py").is_file()):
             raise RegistrationError("Execution events require a dedicated manual Hosted profile and regressions")
+
+    if "execution-retention-hourly" in registered:
+        if ("inputs.suite != 'execution-retention-hourly'" not in workflow
+                or "timeout-minutes: ${{ inputs.suite == 'execution-retention-hourly' && 180 || 60 }}" not in job.group("body")
+                or "execution-retention-hourly) RETENTION_DRIVER=scripts.test.execution-retention-hourly-online" not in gate
+                or "if [ \"$ONLINE_SUITE\" = execution-retention-hourly ]; then export ADDP_ONLINE_TEST_TIMEOUT_SECONDS=8100; fi" not in gate
+                or "execution-retention-hourly-online_test.py" not in commands
+                or not (repository / "scripts/test/execution-retention-hourly-online_test.py").is_file()):
+            raise RegistrationError("Hourly retention requires its manual-only long budget and regressions")
 
 
 def check_registration(repository: Path) -> None:

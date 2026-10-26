@@ -1396,6 +1396,6 @@ test-catalog-domain-online-runner: ## 验证业务域总览 Online 契约、隔�
 .PHONY: test-execution-retention-online-runner
 test-execution-retention-online-runner: ## 验证租户执行概览只读评估及30天事件清理的 Hosted 准入、断言与清理
 	@bash -n scripts/test/online-hosted-execution-retention-gate.sh
-	@python3 -m unittest scripts/test/execution-retention-readonly-online_test.py scripts/test/execution-events-retention-online_test.py scripts/test/online-hosted-execution-retention-gate_test.py scripts/test/online-gate_test.py
+	@python3 -m unittest scripts/test/execution-retention-readonly-online_test.py scripts/test/execution-events-retention-online_test.py scripts/test/execution-retention-hourly-online_test.py scripts/test/online-hosted-execution-retention-gate_test.py scripts/test/online-gate_test.py
 	@cd system/backend && GOWORK=off go test -v ./cmd/online-test-fixture
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"

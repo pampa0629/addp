@@ -22,8 +22,8 @@ def boundary():
     return BASE.boundary(SUITE)
 
 
-def sql(statement):
-    return BASE.sql(statement, SUITE)
+def sql(statement, expected_suite=SUITE):
+    return BASE.sql(statement, expected_suite)
 
 
 def fixture_rows(tenant, foreign):
@@ -35,24 +35,27 @@ def fixture_rows(tenant, foreign):
     return rows
 
 
-def seed_statement(rows, marker):
-    require(len(rows) == 4 and len({r['tenant'] for r in rows}) == 2,
-            'four histories across two Tenants required')
-    # Initial fresh events come from the shared legal history helper. More than
-    # one real 1000-row product batch is required; no test invokes maintenance.
+def seed_history_statement(rows, marker):
+    # Shared immutable payload sentinels and two protected events per history.
     return BASE.seed_statement(rows, marker) + " BEGIN; SET LOCAL statement_timeout='10s'; " + (
         "UPDATE common.task_executions SET metadata=metadata || "
         "'{\"result\":{\"fixture\":true},\"step_results\":[{\"status\":\"success\"}],"
         "\"lineage_facts\":{\"pending\":true}}'::jsonb; "
         "INSERT INTO common.execution_events (execution_id,tenant_id,module,task_type,attempt,occurred_at,kind,counters) "
-        "SELECT execution_id,tenant_id,module,task_type,1,CURRENT_TIMESTAMP-INTERVAL '31 days','progress','{\"records_read\":1}'::jsonb "
-        "FROM common.task_executions CROSS JOIN generate_series(1,251); "
-        "INSERT INTO common.execution_events (execution_id,tenant_id,module,task_type,attempt,occurred_at,kind,counters) "
         "SELECT execution_id,tenant_id,module,task_type,1,CURRENT_TIMESTAMP-INTERVAL '29 days','progress','{\"records_read\":2}'::jsonb "
         "FROM common.task_executions; COMMIT;")
 
 
-def snapshot(cutoff=None, audit_max=None):
+def seed_statement(rows, marker):
+    require(len(rows) == 4 and len({r['tenant'] for r in rows}) == 2,
+            'four histories across two Tenants required')
+    return seed_history_statement(rows, marker) + " BEGIN; SET LOCAL statement_timeout='10s'; " + (
+        "INSERT INTO common.execution_events (execution_id,tenant_id,module,task_type,attempt,occurred_at,kind,counters) "
+        "SELECT execution_id,tenant_id,module,task_type,1,CURRENT_TIMESTAMP-INTERVAL '31 days','progress','{\"records_read\":1}'::jsonb "
+        "FROM common.task_executions CROSS JOIN generate_series(1,251); COMMIT;")
+
+
+def snapshot(cutoff=None, audit_max=None, expected_suite=SUITE):
     if cutoff is None:
         cutoff_sql = "(SELECT max(occurred_at)-INTERVAL '30 days' FROM common.execution_events)"
     else:
@@ -74,7 +77,7 @@ def snapshot(cutoff=None, audit_max=None):
         "'retained_hash',(SELECT md5(string_agg(row_to_json(e)::text,'' ORDER BY id)) FROM common.execution_events e,boundary WHERE occurred_at >= cutoff),"
         "'audit_max_id'," + audit_bound + ", 'audit_count',(SELECT count(*) FROM audits),"
         "'audit_hash',(SELECT md5(string_agg(row_to_json(a)::text,'' ORDER BY id)) FROM audits a),"
-        "'groups',(SELECT json_agg(row_to_json(g) ORDER BY execution_id) FROM groups g)); COMMIT;"))
+        "'groups',(SELECT json_agg(row_to_json(g) ORDER BY execution_id) FROM groups g)); COMMIT;", expected_suite))
 
 
 def assert_snapshots(before, after):
