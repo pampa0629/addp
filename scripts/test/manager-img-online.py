@@ -53,7 +53,7 @@ def validate_meta(owner, detail, spec):
 
 
 def validate_browser(owner, report, evidence):
-    for key, value in {'schema_version': 'addp.manager-raster-media-browser/v2', 'result': 'passed',
+    for key, value in {'schema_version': 'addp.manager-raster-media-browser/v3', 'result': 'passed',
                        'run_id': evidence['run_id'], 'identity': evidence['identity'], 'source_format':evidence['source_format'],
                        'generation_requests': 0, 'failed_business_responses': 0, 'warnings_errors': 0}.items():
         if report.get(key) != value:
@@ -65,7 +65,8 @@ def validate_browser(owner, report, evidence):
         for key in ('case', 'item_id', 'locator', 'sha256', 'source_srid'):
             if actual.get(key) != expected.get(key):
                 raise owner.SuiteError('IMG browser source identity changed')
-        if actual.get('download_sha256') != expected['sha256'] or actual.get('metadata_verified') is not True:
+        if (actual.get('download_sha256') != expected['sha256'] or actual.get('metadata_verified') is not True
+                or actual.get('source_preview_verified') is not True):
             raise owner.SuiteError('IMG browser source bytes or metadata were not verified')
         if expected['source_srid'] is None:
             if any(actual.get(key) is not True for key in ('generation_unavailable', 'map_absent', 'source_image_absent', 'unsupported_message_visible')):

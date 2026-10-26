@@ -26,14 +26,14 @@ def browser_report(evidence):
     cases = []
     for source in evidence['cases']:
         case = {key: source[key] for key in ('case', 'item_id', 'locator', 'sha256', 'source_srid')}
-        case.update(download_sha256=source['sha256'], metadata_verified=True)
+        case.update(download_sha256=source['sha256'], metadata_verified=True, source_preview_verified=True)
         if source['source_srid']:
             case.update(preview_url=source['preview_url'], range_loaded=True, map_loaded=True,
                         reopened=True, reused_result=True, pixels={'cyan': 128, 'magenta': 128, 'yellow': 128})
         else:
             case.update(generation_unavailable=True, map_absent=True, source_image_absent=True, unsupported_message_visible=True)
         cases.append(case)
-    return {'schema_version': 'addp.manager-raster-media-browser/v2', 'result': 'passed', 'run_id': evidence['run_id'],
+    return {'schema_version': 'addp.manager-raster-media-browser/v3', 'result': 'passed', 'run_id': evidence['run_id'],
             'source_format':evidence['source_format'], 'identity': evidence['identity'], 'cases': cases, 'generation_requests': 0,
             'failed_business_responses': 0, 'warnings_errors': 0}
 
@@ -53,6 +53,32 @@ class ManagerIMGTests(unittest.TestCase):
                     patterns=[value for kind,value in locators if kind==role]
                     matches=[re.fullmatch(value[1:-1],name) if value.startswith('/') else value.strip("'\"")==name for value in patterns]
                     self.assertTrue(any(matches),(locale,role,name,patterns))
+
+    def test_real_preview_response_matcher_accepts_grd_without_capability_request(self):
+        import re,subprocess
+        root=Path(__file__).resolve().parents[2]
+        script=(root/'console/frontend/e2e/online/manager-img.spec.js').read_text()
+        function=re.search(r'export function matchesSourcePreviewResponse\(response, locator\) \{.*?\n\}',script,re.S).group(0)
+        program="import assert from 'node:assert/strict';\n"+function.replace('export ','',1)+"""
+const locator='addp://engine/5/path/bucket/raster/grd-v1.grd?type=object&item_id=71'
+const response=(path,source=locator,method='GET')=>({
+  url:()=>`http://gateway${path}?page=1&locator=${encodeURIComponent(source)}&page_size=20`,
+  request:()=>({method:()=>method})})
+// GRD's actual UI emits a preview response, but has no quick-view target.
+assert.equal(matchesSourcePreviewResponse(response('/api/v1/manager/preview'),locator),true)
+for(const candidate of [response('/api/v1/manager/quick-view/capability'),
+ response('/api/v1/meta/items/9'),response('/api/v1/manager/preview','other'),
+ response('/api/v1/manager/preview',locator.replace('item_id=71','item_id=72')),
+ response('/api/v1/manager/preview',locator,'POST')])
+ assert.equal(matchesSourcePreviewResponse(candidate,locator),false)
+for(const extension of ['img','jp2','j2k']) {
+ const source=locator.replace('grd-v1.grd','source.'+extension)
+ assert.equal(matchesSourcePreviewResponse(response('/api/v1/manager/preview',source),source),true)
+}
+"""
+        result=subprocess.run(['node','--input-type=module','-e',program],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn('page.waitForResponse(response => matchesSourcePreviewResponse(response, source.locator))',script)
 
     def test_meta_accepts_located_and_unknown_facts_but_rejects_false_claims(self):
         for spec in (*IMG.SOURCES, *IMG.JPEG2000_SOURCES, *IMG.GRD_SOURCES):
@@ -76,7 +102,9 @@ class ManagerIMGTests(unittest.TestCase):
         report = browser_report(evidence)
         IMG.validate_browser(OWNER, report, evidence)
         for mutate in (
-            lambda r: r.update(generation_requests=1), lambda r: r.update(schema_version='old'),
+            lambda r: r.update(generation_requests=1), lambda r: r['cases'][0].pop('source_preview_verified'),
+            lambda r: r['cases'][0].update(source_preview_verified=False),
+            lambda r: r.update(schema_version='addp.manager-raster-media-browser/v2'), lambda r: r.update(schema_version='old'),
             lambda r: r['cases'][0].update(range_loaded=False), lambda r: r['cases'][1].update(reused_result=False),
             lambda r: r['cases'][1]['pixels'].update(cyan=0), lambda r: r['cases'][2].update(map_absent=False),
             lambda r: r['cases'][2].update(source_image_absent=False), lambda r: r['cases'][2].pop('unsupported_message_visible'),

@@ -6,6 +6,12 @@ import { modelPixels } from '../../../../manager/frontend/e2e/model-preview-supp
 import { createBrowserGpuDiagnostics } from '../../../../common-frontend/basic/src/utils/browserGpuDiagnostics.mjs'
 import { browserAPIFromResponse, isAnonymousRefreshConsoleError, isAnonymousRefreshResponse, json, login } from './transfer-browser-support.js'
 
+export function matchesSourcePreviewResponse(response, locator) {
+  const url = new URL(response.url())
+  return response.request().method() === 'GET' && url.pathname === '/api/v1/manager/preview'
+    && url.searchParams.get('locator') === locator
+}
+
 test('IMG native metadata, COG pixels and cached reopen through the real Console', async ({ page }) => {
   test.setTimeout(240_000)
   const env = process.env
@@ -39,17 +45,16 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
   const cases = []
   for (const source of evidence.cases) {
     diagnostics.setStage(`img-${source.case}:preview`)
-    const capabilityResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/manager/quick-view/capability'
-      && new URL(response.url()).searchParams.get('locator') === source.locator)
-    capabilityResponse.catch(() => {})
+    const sourcePreviewResponse = page.waitForResponse(response => matchesSourcePreviewResponse(response, source.locator))
+    sourcePreviewResponse.catch(() => {})
     const rangeResponse = source.source_srid === null ? null : page.waitForResponse(response =>
       new URL(response.url()).pathname === source.preview_url && response.status() === 206 && Boolean(response.request().headers().range))
     rangeResponse?.catch(() => {})
     await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(source.locator)}`)
-    const api = await browserAPIFromResponse(await capabilityResponse, env.GATEWAY_URL, expectedIdentity)
+    const api = await browserAPIFromResponse(await sourcePreviewResponse, env.GATEWAY_URL, expectedIdentity)
     const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
     const actual = { case: source.case, item_id: source.item_id, locator: source.locator,
-      sha256: source.sha256, source_srid: source.source_srid }
+      sha256: source.sha256, source_srid: source.source_srid, source_preview_verified: true }
     try {
       const meta = await json(await api.get(`/api/v1/meta/items/${source.item_id}`), 'IMG source metadata')
       expect(meta.attributes.item).toMatchObject({ data_type: 'media', format: evidence.source_format, layout: 'single' })
@@ -126,7 +131,7 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
   expect(warnings).toEqual([])
   expect(failures).toEqual([])
   writeFileSync(resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `manager-${evidence.source_format}-browser.json`), JSON.stringify({
-    schema_version: 'addp.manager-raster-media-browser/v2', run_id: evidence.run_id, result: 'passed',
+    schema_version: 'addp.manager-raster-media-browser/v3', run_id: evidence.run_id, result: 'passed',
     source_format: evidence.source_format, identity: evidence.identity, cases, generation_requests: generationRequests,
     failed_business_responses: failures.length, warnings_errors: warnings.length,
     gpu_performance_diagnostics: diagnostics.snapshot()
