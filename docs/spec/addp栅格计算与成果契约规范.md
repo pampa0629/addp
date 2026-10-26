@@ -21,7 +21,11 @@
 
 加载支持自包含 JPEG2000（JP2/J2K，内部定位）、TIFF、PNG、JPEG 和 ERDAS Imagine HFA IMG（不含 spill、dependent file、RRD 引用列表），声明格式必须与实际 GDAL driver 一致；拒绝外部 sidecar 和伪装成 TIFF 的 VRT。缺少 CRS 时可显式补充 `source_crs`，不能覆盖冲突的已有 CRS。空间操作要求可信 CRS 和 geotransform；按尺寸重采样等像素操作允许缺失定位，并保留缺失事实。
 
-栅格文件输出限定 `.tif/.tiff`，GeoTIFF 与 COG 是布局 profile。COG 编码复用唯一实现，压缩支持 DEFLATE/LZW/ZSTD/NONE，块大小为 128–4096 内的 16 倍数。目录全局 overview 及其内部金字塔从完整全局网格生成，不复用 leaf 的局部抽样金字塔。
+单幅保存沿唯一 `raster_save` 输出 TIFF 或普通 PNG/JPEG 图片，选择 `profile=geotiff/cog/png/jpeg`；格式身份分别为 `tiff/tiff/png/jpeg`，文件名必须匹配 `.tif/.tiff`、`.png` 或 `.jpg/.jpeg`。普通图片是用户明确选择的无地理定位成果：不写 CRS、仿射网格、GCP、RPC、定位旁文件或源 EXIF/GPS，不复制源金字塔。原源与 TIFF/COG 输出保持现有语义，批量切片仍只输出 TIFF；IMG 写出暂缓。
+
+PNG 首期接受 Byte 或 UInt16 的灰度、Gray+Alpha、RGB、RGBA，JPEG 接受 Byte 灰度或 RGB；单波段 Undefined 按普通灰度图片解释，多波段必须有明确颜色角色。色表、多光谱、浮点、复数、隐式位深缩减／数值拉伸／选波段／alpha 合成均不自动执行，不可表达时在发布前拒绝。PNG 无损保存原始像元、位深、颜色角色和有效覆盖；JPEG 为有损编码，`jpeg_quality` 为 1–100 整数、默认 90，拒绝 alpha 与存在无效像元的输入，不把有损输出宣称为原数值保真。单幅图片在私有目录编码，关闭 PAM／worldfile，原生完整回读核对主文件、尺寸、波段、类型、颜色角色及全部可解码像元；PNG 额外逐块比较源像元与有效 mask，JPEG 确认完整可解码、无透明／无效覆盖。发现旁文件、仍有空间定位或验证失败时，不调用目标发布。使用既有 create/replace、稳定输出、自动扫描和执行工作目录清理。相关 Native 与正式 Hosted 分别记账。
+
+GeoTIFF 与 COG 是 TIFF 的布局 profile。COG 编码复用唯一实现，压缩支持 DEFLATE/LZW/ZSTD/NONE，块大小为 128–4096 内的 16 倍数。TIFF 专属压缩／金字塔选项只应用于 TIFF/COG，JPEG 质量只应用于 JPEG。目录全局 overview 及其内部金字塔从完整全局网格生成，不复用 leaf 的局部抽样金字塔。
 
 ### 2.2 生命周期与有效性
 
@@ -36,7 +40,7 @@
 | 算子 | 输入及配置 | 结果与约束 |
 | --- | --- | --- |
 | `raster_load` | source-only 访问计划、可选 `source_crs` | 内部 raster 源快照。 |
-| `raster_save` | raster、target-only 计划、GeoTIFF/COG profile | 持久化成果摘要；COG 发布前做结构校验，转换失败不覆盖目标。 |
+| `raster_save` | raster、target-only 计划、GeoTIFF/COG/PNG/JPEG 编码 | 持久化成果摘要；图片不携带 GIS 定位，PNG 无损、JPEG 有损；发布前完成对应校验，转换失败不覆盖目标。 |
 | `raster_tile` | raster、单片像素宽高 | 执行内惰性切片集合；右侧和底部保留实际尺寸，不补像元。 |
 | `raster_save_tiles` | raster_tiles、target-only 子目录计划、GeoTIFF/COG profile | 按行列顺序逐片发布，稳定片名；失败保留已确认写入事实，每片独立登记资源。 |
 | `raster_info` | raster | 尺寸、band dtype/nodata、CRS、transform、四角范围及 overview。 |

@@ -891,6 +891,17 @@ func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
 		}
 	}
 	if spec.TargetKind != "" {
+		targetFormat, contentType := spec.TargetFormat, spec.TargetContentType
+		if len(spec.TargetFormatValues) > 0 {
+			if option := stringParam(params, spec.TargetFormatOption); option != "" {
+				var ok bool
+				targetFormat, ok = spec.TargetFormatValues[option]
+				if !ok {
+					return nil, fmt.Errorf("%s", commoni18n.ForLanguage(commoni18n.Language(ctx), developi18n.MsgRasterSaveTargetInvalid))
+				}
+			}
+			contentType = format.FormatToMIME(format.FormatType(targetFormat))
+		}
 		parentURI, name := strings.TrimSpace(stringParam(params, "target_parent_locator")), strings.TrimSpace(stringParam(params, "target_name"))
 		if parentURI == "" || name == "" {
 			return nil, fmt.Errorf("target_parent_locator and target_name are required")
@@ -898,7 +909,10 @@ func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
 		if spec.TargetExtension != "" && !strings.HasSuffix(strings.ToLower(name), strings.ToLower(spec.TargetExtension)) {
 			return nil, fmt.Errorf("target_name must end with %s", spec.TargetExtension)
 		}
-		if spec.TargetFormat == "tiff" && spec.TargetKind == "file" && format.DetectFormat(name, nil) != format.FormatTIFF {
+		if len(spec.TargetFormatValues) > 0 && string(format.DetectFormat(name, nil)) != targetFormat {
+			return nil, fmt.Errorf("%s", commoni18n.ForLanguage(commoni18n.Language(ctx), developi18n.MsgRasterSaveTargetInvalid))
+		}
+		if targetFormat == "tiff" && spec.TargetKind == "file" && format.DetectFormat(name, nil) != format.FormatTIFF {
 			return nil, fmt.Errorf("target_name must be a TIFF file")
 		}
 		if spec.BatchOutput && (name == "." || name == ".." || strings.ContainsAny(name, "/\\\x00")) {
@@ -922,8 +936,8 @@ func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
 			return nil, err
 		}
 		target, targetLocator, err = workflowaccess.ResolveTarget(workflowaccess.ResourceSpec{
-			Engine: engine, Locator: parent, Kind: spec.TargetKind, Format: spec.TargetFormat, Name: name,
-			WriteMode: stringParam(params, "write_mode"), ContentType: spec.TargetContentType,
+			Engine: engine, Locator: parent, Kind: spec.TargetKind, Format: targetFormat, Name: name,
+			WriteMode: stringParam(params, "write_mode"), ContentType: contentType,
 			Metadata: commonModels.JSONMap{"parent_locator": parentURI, "engine_id": parent.EngineID},
 		})
 		if err != nil {

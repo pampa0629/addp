@@ -263,6 +263,13 @@ func (operator *PublicOperatorDescriptor) LocalizeAdapterParameters(engineType, 
 	if !ok {
 		return
 	}
+	for index := range operator.PublicParameters {
+		parameter := &operator.PublicParameters[index]
+		if presentation, exists := spec.ParameterPresentation[parameter.Name]; exists {
+			parameter.DisplayName = commoni18n.ForLanguage(language, presentation.DisplayName)
+			parameter.Description = commoni18n.ForLanguage(language, presentation.Description)
+		}
+	}
 	for _, declared := range spec.PublicParameters {
 		for index := range operator.PublicParameters {
 			parameter := &operator.PublicParameters[index]

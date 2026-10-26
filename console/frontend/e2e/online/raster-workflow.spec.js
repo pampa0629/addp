@@ -74,6 +74,144 @@ async function verifyTerrainParameterPanel(page, expectedIdentity) {
   }
 }
 
+test('栅格普通图片首次保存、重载与真实执行', async ({ page }) => {
+  const evidence = JSON.parse(process.env.ADDP_ONLINE_RASTER_EVIDENCE || '{}')
+  expect(evidence.case_name).toBe('ordinary-images')
+  const counts = { create: 0, update: 0, execute: 0 }
+  const requestErrors = []
+  let pageErrors = 0
+  page.on('pageerror', () => { pageErrors += 1 })
+  page.on('request', event => {
+    const path = new URL(event.url()).pathname
+    if (event.method() === 'POST' && path === '/api/v1/develop/task-definitions') counts.create += 1
+    if (event.method() === 'PUT' && /^\/api\/v1\/develop\/task-definitions\/\d+$/.test(path)) counts.update += 1
+    if (event.method() === 'POST' && /^\/api\/v1\/develop\/task-definitions\/\d+\/execute$/.test(path)) counts.execute += 1
+  })
+  const token = await login(page, process.env.ADDP_ONLINE_TEST_USER_USERNAME,
+    process.env.ADDP_ONLINE_TEST_USER_PASSWORD, '/develop/workflow?action=create')
+  page.on('response', response => {
+    const path = new URL(response.url()).pathname
+    if (path.startsWith('/api/v1/') && response.status() >= 400) requestErrors.push({ path, status: response.status() })
+  })
+  let api = await request.newContext({ baseURL: process.env.GATEWAY_URL,
+    extraHTTPHeaders: { Authorization: `Bearer ${token}` } })
+  const cases = []
+  try {
+    const auth = identity(await json(await api.get('/api/v1/system/auth/context'), 'image editor AuthContext'))
+    expect([auth.principalID, auth.tenantID, auth.principalType, auth.contextType]).toEqual([
+      evidence.principal_id, evidence.tenant_id, 'user', 'tenant'])
+    expect([...auth.permissions].sort()).toEqual(evidence.permissions_verified)
+    expect(auth.permissions.has('develop.task.update')).toBe(false)
+    for (const profile of ['png', 'jpeg']) {
+      let taskId
+      let record
+      try {
+        if (cases.length) await page.goto(`${process.env.CONSOLE_URL}/develop/workflow?action=create`)
+        const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+        await expect(frame.locator('.engine-select')).toBeVisible()
+        const definition = evidence.definitions[profile]
+        await frame.locator('input[type="file"][accept=".json"]').setInputFiles({
+          name: `ordinary-${profile}.json`, mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(definition))
+        })
+        await expect.poll(() => frame.locator('#workflow-dag-container').evaluate(element =>
+          element.__vueParentComponent.setupState.graph.getNodes().map(node => node.getModel().operator).sort()
+        )).toEqual(['raster_load', 'raster_save'])
+        await frame.getByRole('button', { name: '自动布局', exact: true }).click()
+        await frame.getByRole('button', { name: '适应窗口', exact: true }).click()
+        await selectOperatorNode(page, frame, 'raster_save')
+        await frame.locator('[data-param-name="profile"] .el-select__wrapper').click()
+        await frame.getByRole('option', { name: profile, exact: true }).click()
+        if (profile === 'jpeg') {
+          const quality = frame.locator('[data-param-name="jpeg_quality"]').getByRole('spinbutton')
+          await quality.fill(String(evidence.jpeg_quality))
+          await quality.press('Tab')
+        } else {
+          await expect(frame.locator('[data-param-name="jpeg_quality"]')).toHaveCount(0)
+        }
+        const createdResponse = page.waitForResponse(response => response.request().method() === 'POST' &&
+          new URL(response.url()).pathname === '/api/v1/develop/task-definitions')
+        await frame.locator('.primary-actions').getByRole('button', { name: '保存', exact: true }).click()
+        const saveDialog = frame.getByRole('dialog', { name: '保存工作流', exact: true })
+        await saveDialog.getByPlaceholder('请输入工作流名称').fill(evidence.task_names[profile])
+        await saveDialog.getByRole('button', { name: '保存', exact: true }).click()
+        const created = await json(await createdResponse, 'image editor save')
+        expect(created.id).toBeGreaterThan(0)
+        taskId = created.id
+        expect(created.execution_config.engine_id).toBe(evidence.workflow_engine_id)
+        const saveParams = created.content.workflow_definition.tasks.find(task => task.operator === 'raster_save').params
+        expect(saveParams.profile).toBe(profile)
+        expect(saveParams.target_name).toBe(evidence.target_names[profile])
+        expect(saveParams.target_parent_locator).toBe(evidence.target_parent_locator)
+        expect(saveParams.input_raster.$ref).toBe('load')
+        expect(created.content.workflow_definition.tasks.filter(task => task.operator === 'raster_load')).toHaveLength(1)
+        expect(created.content.workflow_definition.tasks[0].params.locator).toBe(evidence.sources[profile].locator)
+        expect(created.content.workflow_definition.tasks).toHaveLength(2)
+        if (profile === 'jpeg') expect(saveParams.jpeg_quality).toBe(evidence.jpeg_quality)
+        await expect.poll(() => new URL(page.url()).searchParams.get('id')).toBe(String(taskId))
+        const taskRead = page.waitForResponse(response => response.ok() && response.request().method() === 'GET' &&
+          new URL(response.url()).pathname === `/api/v1/develop/task-definitions/${taskId}`)
+        await page.reload()
+        const response = await taskRead
+        const saved = await json(response, 'image editor reloaded task')
+        const freshAPI = await browserAPIFromResponse(response, process.env.GATEWAY_URL, auth)
+        await api.dispose(); api = freshAPI
+        expect(saved.content.workflow_definition).toEqual(created.content.workflow_definition)
+        await expect(frame.locator('.primary-actions').getByRole('button', { name: '执行', exact: true })).toBeEnabled()
+        await frame.getByRole('button', { name: '适应窗口', exact: true }).click()
+        await selectOperatorNode(page, frame, 'raster_save')
+        await frame.locator('.workflow-editor-page').screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,
+          `raster-workflow-ordinary-${profile}-editor.png`) })
+        await frame.locator('.primary-actions').getByRole('button', { name: '执行', exact: true }).click()
+        const executeDialog = frame.getByRole('dialog', { name: '执行工作流', exact: true })
+        const executedResponse = page.waitForResponse(response => response.request().method() === 'POST' &&
+          new URL(response.url()).pathname === `/api/v1/develop/task-definitions/${taskId}/execute`)
+        await executeDialog.getByRole('button', { name: '执行', exact: true }).click()
+        const receipt = await json(await executedResponse, 'image editor execution receipt')
+        let execution
+        await expect.poll(async () => {
+          execution = await json(await api.get(`/api/v1/develop/executions/${receipt.execution_id}`), 'image execution')
+          if (['failed', 'timeout', 'cancelled'].includes(execution.status)) throw new Error('ordinary image execution failed')
+          return execution.status
+        }, { timeout: 90_000 }).toBe('success')
+        expect(execution.source_task_id).toBe(String(taskId))
+        expect(execution.metadata.result.final_result.format).toBe(profile)
+        expect(execution.metadata.result.final_result.lossy).toBe(profile === 'jpeg')
+        expect(execution.metadata.result.final_result.extent).toEqual([])
+        expect(execution.metadata.result.final_result.transform).toEqual([])
+        record = { profile, task_id: taskId, execution_id: receipt.execution_id, source_task_id: execution.source_task_id,
+          workflow_definition: saved.content.workflow_definition, reloaded: true, deleted: false }
+        const monitorRead = page.waitForResponse(response => response.ok() && response.request().method() === 'GET' &&
+          new URL(response.url()).pathname === `/api/v1/monitor/executions/by-execution-id/${receipt.execution_id}/tree`)
+        await page.goto(`${process.env.CONSOLE_URL}/monitor/executions?execution_id=${encodeURIComponent(receipt.execution_id)}`)
+        const monitorAPI = await browserAPIFromResponse(await monitorRead, process.env.GATEWAY_URL, auth)
+        await api.dispose(); api = monitorAPI
+        const detail = page.frameLocator('iframe[data-testid="module-iframe"]').locator('.execution-detail-content')
+        await expect(detail).toBeVisible()
+        await expect(detail).toContainText(receipt.execution_id)
+        await expect(detail.locator('.el-tag').filter({ hasText: /成功|Success/i }).first()).toBeVisible()
+        await expect(detail).toContainText(evidence.target_names[profile])
+        await detail.screenshot({ path: resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,
+          `raster-workflow-ordinary-${profile}-monitor.png`) })
+      } finally {
+        if (taskId) {
+          await json(await api.delete(`/api/v1/develop/task-definitions/${taskId}`), 'image task cleanup')
+          expect((await api.get(`/api/v1/develop/task-definitions/${taskId}`)).status()).toBe(404)
+          if (record) record.deleted = true
+        }
+      }
+      cases.push(record)
+    }
+    expect(counts).toEqual({ create: 2, update: 0, execute: 2 })
+    expect(pageErrors).toBe(0)
+    expect(requestErrors).toEqual([])
+    writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'raster-workflow-ordinary-images-image-editor.json'),
+      JSON.stringify({ ...evidence, schema_version: 'addp.raster-image-editor/v1', result: 'passed',
+        cases, page_requests: counts }, null, 2))
+  } finally {
+    await api.dispose()
+  }
+})
+
 test('栅格 Console 执行状态、持久成果血缘及分析 JSON 一致', async ({ page }) => {
   const evidence = JSON.parse(process.env.ADDP_ONLINE_RASTER_EVIDENCE || '{}')
   const analysis = evidence.result_kind === 'json'

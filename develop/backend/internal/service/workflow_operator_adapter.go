@@ -20,12 +20,19 @@ type workflowResourceOutputSpec struct {
 }
 
 type workflowOperatorAdapterSpec struct {
-	OperatorID       string
-	PublicParameters []commonModels.ParameterDescriptor
-	ResourceInputs   []workflowResourceInputSpec
-	ResourceOutputs  []workflowResourceOutputSpec
-	RuntimeParams    []string
-	AccessPlan       *workflowAccessPlanSpec
+	OperatorID            string
+	PublicParameters      []commonModels.ParameterDescriptor
+	ResourceInputs        []workflowResourceInputSpec
+	ResourceOutputs       []workflowResourceOutputSpec
+	RuntimeParams         []string
+	AccessPlan            *workflowAccessPlanSpec
+	ParameterPresentation map[string]workflowParameterPresentation
+}
+
+// Presentation translates runtime-owned parameters without duplicating their schema.
+type workflowParameterPresentation struct {
+	DisplayName string
+	Description string
 }
 
 type workflowAccessPlanSpec struct {
@@ -36,6 +43,8 @@ type workflowAccessPlanSpec struct {
 	SourceScope         string
 	SourceDataTypes     []string
 	TargetFormat        string
+	TargetFormatOption  string
+	TargetFormatValues  map[string]string
 	TargetKind          string
 	TargetExtension     string
 	TargetContentType   string
@@ -119,6 +128,20 @@ func workflowRasterAdapterSpec(id string) workflowOperatorAdapterSpec {
 	} else if id == "raster_save" || id == "raster_save_tiles" {
 		spec.AccessPlan.SourceKind = ""
 		spec.PublicParameters = spec.PublicParameters[2:]
+	}
+	if id == "raster_save" {
+		spec.AccessPlan.TargetFormatOption = "profile"
+		spec.AccessPlan.TargetFormatValues = map[string]string{"geotiff": "tiff", "cog": "tiff", "png": "png", "jpeg": "jpeg"}
+		spec.ParameterPresentation = map[string]workflowParameterPresentation{
+			"profile":      {DisplayName: developi18n.MsgRasterSaveEncodingLabel, Description: developi18n.MsgRasterSaveEncodingDescription},
+			"jpeg_quality": {DisplayName: developi18n.MsgRasterJPEGQualityLabel, Description: developi18n.MsgRasterJPEGQualityDescription},
+		}
+		for i := range spec.PublicParameters {
+			if spec.PublicParameters[i].Name == "target_resource" {
+				spec.PublicParameters[i].UIConfig["target_name_extension"] = ""
+				spec.PublicParameters[i].Description = developi18n.MsgRasterSaveTargetDescription
+			}
+		}
 	}
 	if id == "raster_save_tiles" {
 		spec.AccessPlan.TargetKind = "directory"

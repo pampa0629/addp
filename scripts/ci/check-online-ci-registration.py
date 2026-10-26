@@ -2061,19 +2061,27 @@ def validate_raster_workflow_profile(repository: Path, registered: set[str]) -> 
             "full_check=True", "type=tmpfs,destination=/data", "source_unchanged", "com.addp.online-fixture",
             "verify-mosaic-first", "verify-mosaic-last", "baseline_sha256", "first_sha256",
             "verify-analysis", "analysis_expectations", "last_sha256",
+            "prepare-images", "verify-images", "verify_ordinary_image",
         ),
         "scripts/test/raster-workflow-online.py": (
             "meta_scan_runs", "wait_lineage", "verify-replace", "failed create modified", "browser_runner",
             "spatial_workflow", "raster_reproject", "raster_clip", "raster_mosaic", "spatial_cases",
             "analysis_workflow", "raster_statistics", "raster_histogram", "validate_analysis", "analysis_cases",
+            "scripts.test.raster-image-export-online", "report['image_exports']",
+        ),
+        "scripts/test/raster-image-export-online.py": (
+            "validate_editor", "validate_artifact", "EDITOR_PERMISSIONS", "preserved_sha256",
+            "prepare-images", "verify-images", "source_unchanged", "strict_sizes", "meta_scan_runs",
         ),
         "console/frontend/e2e/online/raster-workflow.spec.js": (
             "login(", ".execution-lineage", "auth.principalID", "edge.evidence?.execution_id",
             "evidence.source_name", "evidence.target_name", "evidence.case_name",
             "evidence.expected_result", ".workflow-final-result-json", "professional.metadata.result.final_result",
+            "栅格普通图片首次保存、重载与真实执行", "jpeg_quality", "page.reload()",
         ),
         "Makefile": ("test-raster-online-runner", "scripts/test/raster-workflow-online_test.py",
-                     "scripts/test/online-raster-minio-fixture_test.py", "scripts/test/online-hosted-raster-gate_test.py"),
+                     "scripts/test/online-raster-minio-fixture_test.py", "scripts/test/online-hosted-raster-gate_test.py",
+                     "scripts/test/raster-image-export-online_test.py", "test_raster_image_export.py"),
     }
     for relative, fragments in required.items():
         path = repository / relative

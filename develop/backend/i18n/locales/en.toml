@@ -366,3 +366,21 @@ other = "The selected export masking method has changed or is no longer valid. R
 
 [develop.query.export_roles_unavailable]
 other = "Your role eligibility has expired or could not be verified, so the selected export masking method cannot be used. Ask an administrator to check your roles, or select an available method and rerun the query before exporting again."
+
+[develop.workflow.raster_save_target_description]
+other = "Select an output location; use .tif/.tiff for TIFF, .png for PNG, and .jpg/.jpeg for JPEG."
+
+[develop.workflow.raster_save_target_invalid]
+other = "Raster target name must match its encoding: TIFF requires .tif/.tiff, PNG .png, and JPEG .jpg/.jpeg."
+
+[develop.workflow.raster_save_encoding_label]
+other = "Output encoding"
+
+[develop.workflow.raster_save_encoding_description]
+other = "GeoTIFF/COG preserves raster positioning; PNG/JPEG exports ordinary images without georeferencing. PNG is lossless; JPEG is lossy."
+
+[develop.workflow.raster_jpeg_quality_label]
+other = "JPEG quality"
+
+[develop.workflow.raster_jpeg_quality_description]
+other = "An integer from 1 to 100, default 90. JPEG is lossy; higher quality usually produces larger files."

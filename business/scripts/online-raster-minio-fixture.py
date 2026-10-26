@@ -75,6 +75,10 @@ SOURCE_FILES = tuple((name, False, float('nan')) for name in MOSAIC_SOURCE_WINDO
 SOURCE_FILES_BY_ROLE = {'source': SOURCE_FILES,
                         'source-b': (('mosaic-b.tif', False, float('nan')),),
                         'source-c': (('mosaic-c.tif', False, float('nan')),)}
+IMAGE_SOURCES = {'png': 'ordinary-alpha.tif', 'jpeg': 'ordinary-rgb.tif'}
+IMAGE_TARGETS = {'png': 'ordinary.png', 'jpeg': 'ordinary.jpg'}
+IMAGE_SIZE = (37, 23)
+IMAGE_QUALITY = 85
 TILE_FAILURE_PREFIX = 'tiles-write-failure'
 TILE_FAILURE_KEY = 'r0_c160'
 TILE_CLEANUP_CASES = {'tiles-cleanup-mid': ('r0_c0', 1), 'tiles-cleanup-final': ('r160_c160', 4)}
@@ -83,6 +87,7 @@ TILE_KEEP_NAME = 'tiles-basic/keep.txt'
 TILE_KEEP_BYTES = b'Unrelated raster fixture file; replace must preserve these bytes.\n'
 ACTIONS = CLEANUP_ACTIONS + ('verify-tiles-failure', 'verify-tiles', 'prepare-tiles-replace', 'verify-tiles-replace', 'seed', 'verify-create', 'verify-replace', 'verify-mosaic-first', 'verify-mosaic-last', 'verify-analysis') + tuple('verify-' + name for name in GRID_CASES + MULTIBAND_CASES + UTILITY_CASES + FOUNDATION_CASES + RECLASS_CASES + AGGREGATE_CASES + OUTSIDE_CASES + UPDATE_CASES + MOSAIC_CASES) + ('verify-utility-queries',)
 ACTIONS += ('prepare-terrain', 'verify-dem-contour') + tuple('verify-' + name for name in TERRAIN_CASES)
+ACTIONS += ('prepare-images', 'verify-images')
 ANALYSIS_CASES = ('statistics-band-2', 'statistics-all-invalid', 'histogram-auto', 'histogram-range')
 
 
@@ -918,6 +923,8 @@ def physical_worker(action, root):
         private_json(root / 'raster-source-sha256.json', result['source_sha256'])
     if action == 'prepare-terrain':
         private_json(root / 'raster-terrain-baseline.json', result['preserved_sha256'])
+    if action == 'prepare-images':
+        private_json(root / 'raster-image-baseline.json', result['preserved_sha256'])
     if action in CLEANUP_ACTIONS:
         result['cleanup_fault'] = cleanup_evidence(root, action.removeprefix('verify-'))
     return result
@@ -1043,6 +1050,62 @@ def physical_file_facts(path):
     return {'size_bytes': path.stat().st_size, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 
 
+def ordinary_image_pixels(profile, band):
+    """Independent fixture formula; never calls a product operator."""
+    width, height = IMAGE_SIZE
+    return bytes((30+2*x if band == 1 else 70+2*y if band == 2 else 150+x+y if band == 3
+                  else ((x+y) % 3)*127) for y in range(height) for x in range(width))
+
+
+def write_ordinary_image_source(path, profile):
+    from osgeo import gdal, osr
+    channels = 4 if profile == 'png' else 3
+    dataset = gdal.GetDriverByName('GTiff').Create(str(path), *IMAGE_SIZE, channels, gdal.GDT_Byte)
+    crs = osr.SpatialReference(); crs.ImportFromEPSG(32650)
+    dataset.SetSpatialRef(crs)
+    dataset.SetGeoTransform((500000., 2., .25, 3100000., .5, -2.))
+    for band, role in enumerate([gdal.GCI_RedBand, gdal.GCI_GreenBand, gdal.GCI_BlueBand, gdal.GCI_AlphaBand][:channels], 1):
+        target = dataset.GetRasterBand(band)
+        target.SetColorInterpretation(role)
+        target.WriteRaster(0, 0, *IMAGE_SIZE, ordinary_image_pixels(profile, band))
+        target = None
+    dataset = None
+
+
+def verify_ordinary_image(path, profile):
+    from osgeo import gdal
+    dataset = gdal.OpenEx(str(path), gdal.OF_RASTER, allowed_drivers=['PNG' if profile == 'png' else 'JPEG'])
+    channels = 4 if profile == 'png' else 3
+    if (dataset is None or (dataset.RasterXSize, dataset.RasterYSize, dataset.RasterCount) != (*IMAGE_SIZE, channels)
+        or dataset.GetProjection() or dataset.GetGeoTransform(can_return_null=True) is not None
+        or dataset.GetGCPCount() or dataset.GetMetadata('EXIF') or dataset.GetMetadata('RPC') or dataset.GetMetadata('GEOLOCATION')
+        or {Path(p).resolve() for p in dataset.GetFileList()} != {Path(path).resolve()}):
+        raise FixtureError('ordinary image has invalid dimensions/codec or retained spatial/private metadata')
+    roles = [gdal.GCI_RedBand, gdal.GCI_GreenBand, gdal.GCI_BlueBand, gdal.GCI_AlphaBand][:channels]
+    differences, decoded = [], b''
+    for index, role in enumerate(roles, 1):
+        band = dataset.GetRasterBand(index)
+        values = band.ReadRaster()
+        expected = ordinary_image_pixels(profile, index)
+        if band.DataType != gdal.GDT_Byte or band.GetColorInterpretation() != role or len(values) != len(expected):
+            raise FixtureError('ordinary image changed type, colour roles or completeness')
+        if profile == 'png' and values != expected:
+            raise FixtureError('ordinary PNG is not pixel-exact')
+        differences.extend(abs(a-b) for a,b in zip(values, expected))
+        decoded += values
+        mask = band.GetMaskBand().ReadRaster()
+        expected_mask = ordinary_image_pixels('png', 4) if profile == 'png' and index < 4 else bytes([255])*len(expected)
+        if mask != expected_mask:
+            raise FixtureError('ordinary image changed alpha/validity')
+    mae, maximum = sum(differences)/len(differences), max(differences)
+    if profile == 'jpeg' and (mae >= 5 or maximum >= 15):
+        raise FixtureError('ordinary JPEG exceeds the independent smooth-fixture error bounds')
+    return {'format':profile,'width':IMAGE_SIZE[0],'height':IMAGE_SIZE[1], 'band_count':channels,
+            'georeferencing_absent':True,'sidecars_absent':True,'lossy':profile=='jpeg',
+            'decoded_sha256':hashlib.sha256(decoded).hexdigest(),'mean_absolute_error':mae,'max_absolute_error':maximum,
+            **physical_file_facts(Path(path))}
+
+
 def worker(action, path):
     # GDAL stays in the Runtime image; the verifier never imports production operators.
     from minio import Minio
@@ -1069,6 +1132,11 @@ def worker(action, path):
                     write_source_raster(path, name, spatial, source_nodata, role)
                     clients[role].fput_object(config[role]['bucket'], name, str(path), content_type='image/tiff')
                     fingerprints[role + '/' + name] = hashlib.sha256(path.read_bytes()).hexdigest()
+            for profile, name in IMAGE_SOURCES.items():
+                path = root/name
+                write_ordinary_image_source(path, profile)
+                clients['source'].fput_object(config['source']['bucket'], name, str(path), content_type='image/tiff')
+                fingerprints['source/'+name] = hashlib.sha256(path.read_bytes()).hexdigest()
             # A 256px striped TIFF can satisfy the GDAL layout validator. This
             # larger strip has a width > 1024 and is definitively non-tiled.
             path = root / NON_COG_SOURCE
@@ -1111,6 +1179,33 @@ def worker(action, path):
         spatial = action.startswith('verify-mosaic-')
         overlap = action.removeprefix('verify-mosaic-') if spatial else None
         target_name = f'mosaic-{overlap}.cog.tif' if spatial else 'result.cog.tif'
+
+        if action in ('prepare-images', 'verify-images'):
+            for name in IMAGE_SOURCES.values():
+                local = root/name
+                clients['source'].fget_object(config['source']['bucket'],name,str(local))
+                if hashlib.sha256(local.read_bytes()).hexdigest() != fingerprints.get('source/'+name):
+                    raise FixtureError('image export modified its source')
+            baseline_names = preterrain_target_names() | {name+'.cog.tif' for name in TERRAIN_CASES}
+            prior = {}
+            for name in baseline_names:
+                local = root/'previous'/name;local.parent.mkdir(parents=True,exist_ok=True)
+                clients['target'].fget_object(config['target']['bucket'],name,str(local))
+                prior[name] = hashlib.sha256(local.read_bytes()).hexdigest()
+            names = {item.object_name for item in clients['target'].list_objects(config['target']['bucket'],recursive=True)}
+            if action == 'prepare-images':
+                if names != baseline_names: raise FixtureError('unexpected pre-image target set')
+                return {'source_unchanged':True,'preserved_sha256':prior,'images':{}}
+            if prior != json.loads(fingerprint_path.with_name('raster-image-baseline.json').read_text()):
+                raise FixtureError('image export modified a prior accepted artifact')
+            if names != baseline_names | set(IMAGE_TARGETS.values()):
+                raise FixtureError('image export target set has extra, missing or partial files')
+            images = {}
+            for profile,name in IMAGE_TARGETS.items():
+                local = root/name
+                clients['target'].fget_object(config['target']['bucket'],name,str(local))
+                images[profile] = verify_ordinary_image(local,profile)
+            return {'source_unchanged':True,'preserved_sha256':prior,'images':images}
 
         if action == 'prepare-terrain' or action.startswith('verify-dem-'):
             names = set(item.object_name for item in clients['target'].list_objects(config['target']['bucket'],recursive=True))

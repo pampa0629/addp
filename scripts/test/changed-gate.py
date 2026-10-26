@@ -138,6 +138,8 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
         "scripts/test/raster-polygonize-persistence-online.py",
         "scripts/test/raster-contour-persistence-online.py",
         "scripts/test/raster-workflow-online.py",
+        "scripts/test/raster-image-export-online.py",
+        "scripts/test/raster-image-export-online_test.py",
         "scripts/test/raster-workflow-capacity-online.py",
         "scripts/test/vector-topology-capacity.py",
         "scripts/test/vector-topology-capacity_test.py",

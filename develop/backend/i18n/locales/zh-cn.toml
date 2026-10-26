@@ -366,3 +366,21 @@ other = "所选导出脱敏方式已变更或失效。请刷新脱敏方式、�
 
 [develop.query.export_roles_unavailable]
 other = "当前账号的角色资格已失效或无法确认，不能使用所选导出脱敏方式。请联系管理员核对角色，或重新选择当前可用的方式并执行查询后再次导出。"
+
+[develop.workflow.raster_save_target_description]
+other = "选择目标位置；TIFF 使用 .tif/.tiff，PNG 使用 .png，JPEG 使用 .jpg/.jpeg。"
+
+[develop.workflow.raster_save_target_invalid]
+other = "栅格目标名称与编码不一致：TIFF 需要 .tif/.tiff，PNG 需要 .png，JPEG 需要 .jpg/.jpeg。"
+
+[develop.workflow.raster_save_encoding_label]
+other = "输出编码"
+
+[develop.workflow.raster_save_encoding_description]
+other = "GeoTIFF/COG 保留栅格定位；PNG/JPEG 导出普通图片，不含地理定位。PNG 无损，JPEG 有损。"
+
+[develop.workflow.raster_jpeg_quality_label]
+other = "JPEG 质量"
+
+[develop.workflow.raster_jpeg_quality_description]
+other = "1–100 的整数，默认 90。JPEG 有损；较高质量通常生成更大的文件。"

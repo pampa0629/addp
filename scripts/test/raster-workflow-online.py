@@ -1474,6 +1474,8 @@ def main():
     tenant = GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_RASTER_POLICY_TENANT_TOKEN'], 30)
     setup = prepare_resource_policy(platform, tenant, client)
     report = run_scenario(Path(__file__).resolve().parents[2], env, client)
+    images = importlib.import_module('scripts.test.raster-image-export-online')
+    report['image_exports'] = images.run_scenario(sys.modules[__name__], Path(__file__).resolve().parents[2], env, client)
     report['resource_policy'] = finish_resource_policy(platform, tenant, setup, 30)
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
 

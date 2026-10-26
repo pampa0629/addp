@@ -33,6 +33,7 @@ from addp_common.workflow_access import (
 from addp_common.workflow_runtime import WorkflowExecutionError
 from addp_common.workflow_access import require_empty_target_directory, target_child_file_plan
 from .base import OperatorMetadata, OperatorParam, OperatorType, OperatorCategory, OutputPort, register_operator
+from .raster_image_export import encode_image, image_export_error
 
 gdal.UseExceptions()
 _WORKSPACE = ContextVar('raster_workspace', default=None)
@@ -611,16 +612,18 @@ def _cog(dataset, compression='DEFLATE', blocksize=512, overview_resampling='nea
     return result
 
 
-def _encode_raster(input_raster, profile, compression, blocksize, overview_resampling):
+def _encode_raster(input_raster, profile, compression, blocksize, overview_resampling, jpeg_quality=90):
     dataset = _open(input_raster)
-    if profile not in ('cog', 'geotiff'):
-        raise ValueError('profile must be geotiff or cog')
+    if profile not in ('cog', 'geotiff', 'png', 'jpeg'):
+        raise ValueError('profile must be geotiff, cog, png or jpeg')
     budget = (_disk_budget(_raster_disk_bytes(dataset, profile=profile, blocksize=blocksize), 'raster encoding')
               if _DISK_PROTECTED.get() else nullcontext())
     temporary = (gdal.config_option('CPL_TMPDIR', str(_WORKSPACE.get()), thread_local=True)
                  if _DISK_PROTECTED.get() else nullcontext())
     with budget, temporary:
-        if profile == 'cog':
+        if profile in ('png', 'jpeg'):
+            output = _raster(encode_image(dataset, _path(''), profile, jpeg_quality, _DISK_LANGUAGE.get()))
+        elif profile == 'cog':
             output = _cog(dataset, compression, blocksize, overview_resampling)
         else:
             if compression not in ['DEFLATE', 'LZW', 'ZSTD', 'NONE']:
@@ -629,17 +632,24 @@ def _encode_raster(input_raster, profile, compression, blocksize, overview_resam
         return output
 
 
-def raster_save(input_raster, access_plan, profile='geotiff', compression='DEFLATE', blocksize=512, overview_resampling='nearest'):
+def raster_save(input_raster, access_plan, profile='geotiff', compression='DEFLATE', blocksize=512, overview_resampling='nearest', jpeg_quality=90):
     plan = require_target_plan({'access_plan': access_plan})
-    if plan['target']['format'] != 'tiff' or not plan['target']['name'].lower().endswith(('.tif', '.tiff')):
+    image = profile in ('png', 'jpeg')
+    target_format = profile if image else 'tiff'
+    suffixes = {'png': ('.png',), 'jpeg': ('.jpg', '.jpeg')}.get(profile, ('.tif', '.tiff'))
+    if image and (plan['target']['format'] != profile or plan['target']['kind'] != 'file'
+                  or not plan['target']['name'].lower().endswith(suffixes)):
+        raise image_export_error('target', _DISK_LANGUAGE.get())
+    if plan['target']['format'] != target_format or not plan['target']['name'].lower().endswith(suffixes):
         raise ValueError('Raster target must be a TIFF file')
-    output = _encode_raster(input_raster, profile, compression, blocksize, overview_resampling)
+    output = _encode_raster(input_raster, profile, compression, blocksize, overview_resampling, jpeg_quality)
     facts = raster_info(output)
     size = output.path.stat().st_size
     published = publish_target_file(output.path, plan)
     # Location and credentials are caller-owned. Return output facts only.
-    return {'artifact_type': 'raster', 'format': 'tiff', 'profile': profile,
-            'size_bytes': size, 'uploaded_files': published['uploaded_files'], **facts}
+    return {'artifact_type': 'raster', 'format': target_format, 'profile': profile,
+            'size_bytes': size, 'uploaded_files': published['uploaded_files'], **facts,
+            **({'lossy': profile == 'jpeg', **({'jpeg_quality': jpeg_quality} if profile == 'jpeg' else {})} if image else {})}
 
 
 def raster_save_tiles(input_tiles, access_plan, profile='geotiff', compression='DEFLATE', blocksize=512, overview_resampling='nearest'):
@@ -3813,9 +3823,11 @@ _COG_OPTIONS = [
     _param('blocksize', 'int', 'COG 块大小', 512, False),
     _param('overview_resampling', 'str', 'COG 金字塔重采样算法', 'nearest', False, enum=RESAMPLING),
 ]
+_IMAGE_SAVE_OPTIONS = [parameter.model_copy(update={'show_when': {'profile': ['geotiff', 'cog']}})
+                       for parameter in _COG_OPTIONS]
 _SPECS = [
     (raster_load, OperatorCategory.RASTER_IO, '栅格加载', [_param('access_plan', 'object', '源访问计划'), _param('source_crs', 'str', '缺失时补充源 CRS', '', False)], 'raster', ['read']),
-    (raster_save, OperatorCategory.RASTER_IO, '栅格保存', [_INPUT(), _param('access_plan', 'object', '目标访问计划'), _param('profile', 'str', '目标布局', 'geotiff', False, enum=['geotiff', 'cog']), *_COG_OPTIONS], 'object', ['write']),
+    (raster_save, OperatorCategory.RASTER_IO, '栅格保存', [_INPUT(), _param('access_plan', 'object', '目标访问计划'), _param('profile', 'str', '目标布局', 'geotiff', False, enum=['geotiff', 'cog', 'png', 'jpeg']), *_IMAGE_SAVE_OPTIONS, OperatorParam(name='jpeg_quality', data_type='int', type='param', description='JPEG quality', default=90, required=False, show_when={'profile':'jpeg'})], 'object', ['write']),
     (raster_tile, OperatorCategory.RASTER_EXTENT, '栅格切片', [_INPUT(), _param('tile_size', 'list[int]', '每片像素宽高；边缘保留实际尺寸')], 'raster_tiles', ['read']),
     (raster_save_tiles, OperatorCategory.RASTER_IO, '栅格切片批量保存', [_param('input_tiles', 'raster_tiles', '当前执行内的栅格切片集合', role='input'), _param('access_plan', 'object', '目标子目录访问计划'), _param('profile', 'str', '目标布局', 'geotiff', False, enum=['geotiff', 'cog']), *_COG_OPTIONS], 'object', ['read', 'write']),
     (raster_info, OperatorCategory.RASTER_INSPECTION, '栅格信息', [_INPUT()], 'object', ['read']),

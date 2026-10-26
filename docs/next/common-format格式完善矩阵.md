@@ -13,7 +13,7 @@
 | --- | --- |
 | 通用表格读取 | Avro 已从 descriptor 补为单文件 OCF 读取，复杂 schema、writer 与正式运行验收仍缺；ORC 仍只有 descriptor，后续补实际表格接口 |
 | 清单 Excel 206 / B205 二维矢量导出 | KML 已补单文件二维简单要素 writer 和标准导出能力发现，复用固定 CRS 约束及既有空间转换；本地 writer／Transfer／Manager 与 PostGIS、LIBKML 独立验证见内置规范。尚无该出口的正式页面／Hosted 证据；复杂字段、Z/M、样式／KMZ不在首期范围，现有 KML 读侧对扩展属性和空几何的限制仍保留。其余 DWG/VCT/UDB 等目标不由 KML 覆盖 |
-| 清单 Excel 207 / B206 栅格导出 | IMG 的 HFA 读取和 COG 快显已有限定验收；IMG 写出按用户要求暂缓，尚未实现。PNG/JPG 的编码／保存为下一优先项，普通图片与带定位旁文件的成果交付须先明确，不能静默丢弃原 CRS／网格、缩减位深或自行拉伸数值 |
+| 清单 Excel 207 / B206 栅格导出 | IMG 的 HFA 读取和 COG 快显已有限定验收；IMG 写出按用户要求暂缓，尚未实现。PNG/JPG 已按用户确认的普通图片实现 `raster_save` 编码／保存，不携带 GIS 定位或旁文件；PNG 接受 Byte／UInt16 灰度、RGB 及 alpha，JPEG 接受全部有效的 Byte 灰度／RGB，有损质量 1–100、默认 90；不自动拉伸、缩减位深或合成背景。原生及页面回归与既有 `raster-workflow` 正式 Hosted 分别记录；Hosted 尚待运行核验，不计通过。带定位图片、IMG／GRD 等其他出口仍缺 |
 | 清单 GRD | 调研确认是 Grid 栅格文件的常见扩展名，但不是唯一编码：Surfer 6 ASCII／Binary、Surfer 7 Binary、GMT/netCDF 及 Northwood/MapInfo Grid 均需区分。现有原生 GDAL 已含 GSAG／GSBG／GS7BG／netCDF／NWT_GRD 驱动，不依赖商业 SDK；ADDP 尚未登记 GRD 或开放该后缀的栅格读写。建议先评估 Surfer 7 单波段数值栅格，再按需求增加其他变体；必须核对节点／像元定位、行序、NoData／精度、旋转及 CRS 旁文件，不把有 XY 范围当成已知坐标系。依据：[Surfer 官方格式](https://surferhelp.goldensoftware.com/subsys/subsys_gsi_grd_file_format.htm)、[GS7BG](https://gdal.org/en/stable/drivers/raster/gs7bg.html)、[GMT Grid](https://docs.generic-mapping-tools.org/latest/reference/file-formats.html#grid-files)、[Northwood](https://gdal.org/en/stable/drivers/raster/nwtgrd.html)；这里只记录只读调研，不计实现或运行验收 |
 | 清单 VCT / UDB | 未形成统一导出能力；先核官方格式和现有引擎能力，不据后缀宣称可用开源路线 |
 | 其他扩展 | KMZ 尚无内置格式插件；SVG/AVIF/HEIC 的 descriptor 不代表完整媒体解析。当前不以这些扩展代替上述清单内缺口 |
