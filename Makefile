@@ -952,8 +952,14 @@ test-infra-runtime-log-lifecycle: ## 验证 Infra 日志及指标的启动选择
 	@$(MAKE) test-monitor-traces-local-runner
 	@python3 -m unittest scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/trace-deployment-config_test.py scripts/test/trace-capacity_test.py scripts/test/postgres-metrics-lifecycle_test.py
 
+.PHONY: test-gdal-native-lifecycle
+test-gdal-native-lifecycle: ## 验证 GDAL/Arrow 原生来源、准备事务和两个 Runtime 消费者
+	@bash -n scripts/dev/gdal-env.sh
+	@bash -n scripts/dev/geopython-workflow.sh
+	@python3 -m unittest scripts/test/gdal-native-lifecycle_test.py scripts.test.changed-gate_test.ChangedGateTest.test_native_gdal_preparation_selects_both_real_consumers
+
 .PHONY: test-dev-lifecycle
-test-dev-lifecycle: ## 验证 Swagger 增量、增量重启、批量端口检查、构建指纹、Runtime 并发与安装锁
+test-dev-lifecycle: test-gdal-native-lifecycle ## 验证 Swagger 增量、增量重启、批量端口检查、构建指纹、Runtime 并发与安装锁
 	@bash -n scripts/dev/model3d-workflow.sh
 	@bash -n scripts/dev/document-workflow.sh
 	@bash -n scripts/dev/pointcloud-workflow.sh
@@ -962,7 +968,7 @@ test-dev-lifecycle: ## 验证 Swagger 增量、增量重启、批量端口检查
 	@bash -n scripts/dev/gdal-env.sh
 	@bash -n scripts/dev/raster-mosaic-runtime.sh
 	@for script in scripts/dev/restart.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/ports.sh scripts/dev/worker-units.sh scripts/dev/lifecycle-lock.sh scripts/dev/build-identity.sh scripts/dev/jupyter-env.sh scripts/infra/ports.sh scripts/infra/up.sh scripts/infra/down.sh scripts/infra/status.sh scripts/prod/setup-env.sh scripts/prod/start.sh scripts/prod/stop.sh scripts/prod/wait-infra.sh scripts/utils/observability-env.sh scripts/test/infra-port-resolution.sh scripts/swagger/gen-swagger.sh scripts/test/dev-lifecycle-and-build.sh scripts/test/system-runtime-log-gate.sh scripts/test/monitor-metrics-gate.sh scripts/test/monitor-traces-gate.sh; do bash -n "$$script" || exit 1; done
-	@python3 -m unittest scripts/test/pointcloud-native-lifecycle_test.py scripts/test/document-native-lifecycle_test.py scripts/test/gdal-native-lifecycle_test.py scripts/test/metrics-deployment-config_test.py scripts/test/dev-process-metrics-plan_test.py scripts/test/dev-worker-units_test.py scripts/test/model3d-linux-images_test.py scripts/test/model3d-native-lifecycle_test.py
+	@python3 -m unittest scripts/test/pointcloud-native-lifecycle_test.py scripts/test/document-native-lifecycle_test.py scripts/test/metrics-deployment-config_test.py scripts/test/dev-process-metrics-plan_test.py scripts/test/dev-worker-units_test.py scripts/test/model3d-linux-images_test.py scripts/test/model3d-native-lifecycle_test.py
 	@$(MAKE) test-infra-runtime-log-lifecycle
 	@bash scripts/test/infra-port-resolution.sh
 	@bash scripts/test/dev-lifecycle-and-build.sh

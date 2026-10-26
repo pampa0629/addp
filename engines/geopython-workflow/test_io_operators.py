@@ -369,3 +369,18 @@ def test_load_mongodb_uses_schema_as_database_when_connection_database_is_empty(
     assert calls['query'] == {}
     assert calls['closed'] is True
     assert result.to_dict('records') == [{'activity_id': 'activity-1'}]
+
+
+@pytest.mark.parametrize('order', ['gdal-first', 'arrow-first'])
+def test_native_arrow_filesystem_parquet_admission(order):
+    # Preparation and Native CI exercise the identical admitted library graph.
+    # A new interpreter is required; the suite itself already imported GIS.
+    import sys
+    from pathlib import Path
+    from operators._native_process import run
+    helper = Path(__file__).resolve().parents[2] / 'scripts/dev/gdal-arrow.py'
+    result = run([sys.executable, str(helper), 'admit', '--order', order],
+                 capture_output=True, text=True, timeout=60, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    evidence = json.loads(result.stdout.splitlines()[-1])
+    assert evidence['result'] == 'passed' and evidence['order'] == order

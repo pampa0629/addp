@@ -158,6 +158,13 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
         if inputs and any(MODULE_GATE.gate_input_covers(inputs.group(1).split(), path) for path in files):
             affected.add(Path(script).name.split("-", 1)[0])
 
+    # Native preparation is consumed by the real GDAL owners, not only by
+    # platform shell fixtures. Keep the existing module/CI selection shared.
+    if any(path in {"scripts/dev/gdal-env.sh", "scripts/dev/gdal-arrow.py"} for path in files):
+        affected.update({"engines", "manager"})
+    if "scripts/dev/geopython-workflow.sh" in files:
+        affected.add("engines")
+
     # Agent loads platform Skill bodies, references, and runtime configuration from skills/.
     if "skills" in roots:
         affected.add("agent")

@@ -25,7 +25,8 @@ class GDALCIPreparationTests(unittest.TestCase):
                 self.assertIn("source scripts/dev/lifecycle-lock.sh", block)
                 self.assertIn("source scripts/dev/gdal-env.sh", block)
                 self.assertIn("addp_gdal_native_environment", block)
-                self.assertIn("addp_prepare_gdal_binding", block)
+                expected = "addp_prepare_gdal_arrow_dependencies" if job == "geopython-workflow-tests" else "addp_prepare_gdal_binding"
+                self.assertIn(expected, block)
                 self.assertNotIn('-m pip install "GDAL==', block)
 
 
@@ -303,6 +304,197 @@ bash "$ROOT_DIR/scripts/dev/stop.sh" -manager
         result = self.run_fixture(launch, FAIL_START="1")
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.work / ".dev-pids/raster-mosaic-runtime.pid").exists())
+
+
+class NativeArrowIdentityTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('gdal_arrow', ROOT / 'scripts/dev/gdal-arrow.py')
+        cls.helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.helper)
+
+    def test_identity_includes_content_not_just_versions_or_symlink_names(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            library = Path(temporary) / 'libarrow.dylib'
+            library.write_bytes(b'first bottle')
+            first = self.helper.sha256(library)
+            library.write_bytes(b'replaced same version')
+            second = self.helper.sha256(library)
+            self.assertNotEqual(first, second)
+            manifest = {'version': '22.0.0', 'library': str(library), 'sha256': first}
+            original = self.helper.fingerprint(manifest)
+            manifest['sha256'] = second
+            self.assertNotEqual(original, self.helper.fingerprint(manifest))
+
+    def test_only_arrow_cpp_family_is_matched(self):
+        for name in ('libarrow.2200.0.0.dylib', 'libarrow_dataset.so.2200', 'libparquet.so.25'):
+            self.assertRegex(name, self.helper.ARROW_LIBRARY)
+        for name in ('libarrow_python.2200.dylib', 'libgdal.dylib', 'libordinary.so'):
+            self.assertNotRegex(name, self.helper.ARROW_LIBRARY)
+
+    def test_non_arrow_gdal_does_not_require_arrow_pkg_config(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            library = Path(temporary) / 'libgdal.so'
+            library.write_bytes(b'GDAL')
+            values = {('gdal-config', '--libs'): '-L' + temporary + ' -lgdal',
+                      ('gdal-config', '--version'): '3.12.1'}
+            with patch.object(self.helper, 'output', side_effect=lambda *a: values[a]), \
+                 patch.object(self.helper, 'linked_libraries', return_value=[Path('/lib/libc.so')]):
+                self.assertIsNone(self.helper.native_manifest()['arrow'])
+
+    def test_declared_arrow_must_be_the_library_gdal_links(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            gdal = directory / 'libgdal.so'
+            gdal.write_bytes(b'GDAL')
+            arrow = directory / 'other/libarrow.so.2200'
+            arrow.parent.mkdir()
+            arrow.write_bytes(b'ARROW')
+            values = {('gdal-config', '--libs'): '-L' + temporary + ' -lgdal',
+                      ('gdal-config', '--version'): '3.12.1',
+                      ('pkg-config', '--variable=prefix', str((arrow.parent / 'pkgconfig/arrow.pc').resolve())): temporary,
+                      ('pkg-config', '--variable=libdir', str((arrow.parent / 'pkgconfig/arrow.pc').resolve())): temporary}
+            with patch.object(self.helper, 'output', side_effect=lambda *a: values[a]), \
+                 patch.object(self.helper, 'linked_libraries', return_value=[arrow]):
+                with self.assertRaisesRegex(RuntimeError, '来源不一致'):
+                    self.helper.native_manifest()
+
+
+class NativeArrowTransactionTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='addp-arrow-transaction-')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.runtime = self.root / 'engines/geopython-workflow'
+        (self.runtime / 'venv/bin').mkdir(parents=True)
+        (self.runtime / 'requirements.txt').write_text('fixture==1.0\n')
+        (self.root / 'common-python').mkdir()
+        (self.root / 'common-python/pyproject.toml').write_text('[project]\nname="fixture"\n')
+        helper = self.root / 'scripts/dev/gdal-arrow.py'
+        helper.parent.mkdir(parents=True)
+        helper.write_text(r'''import json, os, sys
+from pathlib import Path
+root=Path(os.environ['ROOT_DIR'])
+command=sys.argv[1]
+if command=='manifest':
+ if os.environ.get('FAIL_MANIFEST')=='1': sys.exit(1)
+ print(json.dumps({'arrow':{'version':'22.0.0','prefix':'/native'},'build_requirements':['cython==3.1.8'],'key':(root/'native').read_text()}))
+elif command=='build':
+ cache=Path(sys.argv[sys.argv.index('--cache')+1]); (cache/'pyarrow-fixture.whl').write_bytes(b'wheel')
+ with (root/'events').open('a') as f: f.write('source-build\n')
+ sys.exit(int(os.environ.get('FAIL_BUILD','0')))
+elif command=='fingerprint':
+ print(json.loads(Path(sys.argv[3]).read_text())['key'])
+elif command=='admit':
+ with (root/'events').open('a') as f: f.write('admit '+sys.argv[-1]+'\n')
+ sys.exit(int(os.environ.get('FAIL_ADMISSION','0')))
+''')
+        launcher = self.runtime / 'venv/bin/python'
+        wrapper = self.root / 'python.py'
+        launcher.write_text('#!/bin/sh\nexec '+shlex.quote(sys.executable)+' '+shlex.quote(str(wrapper))+' "$@"\n')
+        launcher.chmod(0o755)
+        wrapper.write_text(r'''import os, sys
+from pathlib import Path
+root=Path(os.environ['ROOT_DIR'])
+if len(sys.argv)>2 and sys.argv[1]=='-c' and 'from osgeo import' in sys.argv[2]: sys.exit(0)
+if sys.argv[1:3]==['-m','pip']:
+ with (root/'events').open('a') as f: f.write('pip '+' '.join(sys.argv[3:])+'\n')
+ if sys.argv[3]=='wheel':
+  cache=Path(sys.argv[sys.argv.index('--wheel-dir')+1]); (cache/'pyarrow-fixture.whl').write_bytes(b'wheel')
+ sys.exit(int(os.environ.get('FAIL_PIP','0')))
+os.execv(sys.executable,[sys.executable]+sys.argv[1:])
+''')
+        (self.root / 'native').write_text('native-a')
+        self.environment = dict(os.environ, ROOT_DIR=str(self.root), SOURCE_ROOT=str(ROOT))
+        self.script = r'''
+set -euo pipefail
+source "$SOURCE_ROOT/scripts/dev/lifecycle-lock.sh"
+source "$SOURCE_ROOT/scripts/dev/gdal-env.sh"
+# Actual transaction and resolver fingerprint, fake external compilers/native
+# binding only. The filesystem/admission are real in the Native owner test.
+addp_install_gdal_binding() { echo gdal-binding >> "$ROOT_DIR/events"; }
+addp_install_gdal_arrow_dependencies "$ROOT_DIR/engines/geopython-workflow" fixture "$ROOT_DIR/common-python"
+'''
+
+    def prepare(self, **environment):
+        return subprocess.run(['bash', '-c', self.script], env=dict(self.environment, **environment),
+                              capture_output=True, text=True, timeout=30)
+
+    def events(self):
+        return (self.root / 'events').read_text().splitlines()
+
+    def test_native_identity_cache_hit_and_same_version_library_replacement(self):
+        result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.root / "events").exists(), result.stdout + result.stderr)
+        events = self.events()
+        self.assertEqual(sum(line == 'source-build' for line in events), 1)
+        self.assertEqual(sum(line.startswith('admit') for line in events), 2)
+        (self.root / 'events').unlink()
+        result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(any(line.startswith('pip install') or line == 'source-build' for line in self.events()))
+        self.assertEqual(sum(line.startswith('admit') for line in self.events()), 2)
+        (self.root / 'native').write_text('native-b')
+        (self.root / 'events').unlink()
+        result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(sum(line == 'source-build' for line in self.events()), 1)
+        self.assertEqual((self.runtime / 'venv/.addp-arrow-native-fingerprint').read_text().strip(), 'native-b')
+
+    def test_failed_native_admission_invalidates_both_preparation_records(self):
+        self.assertEqual(self.prepare().returncode, 0)
+        result = self.prepare(FAIL_ADMISSION='1')
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        for name in ('.addp-dependency-fingerprint', '.addp-arrow-native-fingerprint'):
+            self.assertFalse((self.runtime / 'venv' / name).exists())
+        self.assertEqual(self.prepare().returncode, 0)
+
+    def test_failed_discovery_invalidates_a_previous_success(self):
+        self.assertEqual(self.prepare().returncode, 0)
+        result = self.prepare(FAIL_MANIFEST='1')
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        for name in ('.addp-dependency-fingerprint', '.addp-arrow-native-fingerprint'):
+            self.assertFalse((self.runtime / 'venv' / name).exists())
+
+    def test_concurrent_native_transactions_compile_once(self):
+        for name in ('gdal-env.sh', 'lifecycle-lock.sh'):
+            shutil.copy2(ROOT / 'scripts/dev' / name, self.root / 'scripts/dev' / name)
+        binary = self.root / 'bin'
+        binary.mkdir()
+        gdal = binary / 'gdal-config'
+        gdal.write_text('#!/bin/sh\necho 3.12.1\n')
+        gdal.chmod(0o755)
+        script = self.script.replace(
+            'addp_install_gdal_arrow_dependencies "$ROOT_DIR/engines/geopython-workflow"',
+            'addp_prepare_gdal_arrow_dependencies "$ROOT_DIR/engines/geopython-workflow"')
+        environment = dict(self.environment, PATH=str(binary) + os.pathsep + os.environ['PATH'])
+        processes = [subprocess.Popen(['bash', '-c', script], env=environment,
+                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                      start_new_session=True) for _ in range(3)]
+        try:
+            for process in processes:
+                stdout, stderr = process.communicate(timeout=30)
+                self.assertEqual(process.returncode, 0, stdout + stderr)
+        finally:
+            for process in processes:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.communicate()
+        self.assertEqual(self.events().count('source-build'), 1)
+        self.assertEqual(sum('pip install -r ' in line for line in self.events()), 1)
+        self.assertEqual(sum(line.startswith('admit ') for line in self.events()), 6)
+
+    def test_failed_build_does_not_publish_success(self):
+        result = self.prepare(FAIL_BUILD='1')
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.runtime / 'venv/.addp-arrow-native-fingerprint').exists())
+        self.assertFalse((self.runtime / 'venv/.addp-dependency-fingerprint').exists())
 
 
 if __name__ == "__main__":

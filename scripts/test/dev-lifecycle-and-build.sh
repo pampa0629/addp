@@ -1234,10 +1234,11 @@ set -euo pipefail
 source "$SOURCE_ROOT/scripts/dev/ports.sh"
 source "$SOURCE_ROOT/scripts/dev/geopython-workflow.sh"
 addp_geopython_native_environment() { unset GEOPYTHON_WORKFLOW_LOOPBACK_HOST; }
-addp_sync_python_dependencies() {
-  [ "$1" = "$ROOT_DIR" ] && [ "$2" = "$ROOT_DIR/engines/geopython-workflow" ] || return 2
+addp_prepare_gdal_arrow_dependencies() {
+  [ "$1" = "$ROOT_DIR/engines/geopython-workflow" ] && [ "$3" = "$ROOT_DIR/common-python" ] || return 2
   echo sync >> "$ROOT_DIR/trace"
-  [ "${FAIL_SYNC:-0}" = 0 ]
+  [ "${FAIL_SYNC:-0}" = 0 ] || return 1
+  addp_prepare_gdal_binding "$1/venv/bin/python" GeoPython
 }
 addp_with_python_dependency_lock() { shift; "$@"; }
 gdal-config() { echo 3.12.1; }

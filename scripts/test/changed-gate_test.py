@@ -62,6 +62,16 @@ class ChangedGateTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
+    def test_native_gdal_preparation_selects_both_real_consumers(self):
+        for relative in ("manager/backend/go.mod", "engines/duckdb/go.mod"):
+            path = self.repository / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("module example.com/native\n")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        for path in ("scripts/dev/gdal-env.sh", "scripts/dev/gdal-arrow.py"):
+            self.assertEqual(["engines", "manager"], MODULE.affected_modules(self.repository, [path]))
+        self.assertEqual(["engines"], MODULE.affected_modules(self.repository, ["scripts/dev/geopython-workflow.sh"]))
+
     def test_common_changes_expand_to_go_consumers(self) -> None:
         self.assertEqual(
             ["common", "sample"],

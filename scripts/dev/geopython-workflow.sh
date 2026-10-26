@@ -27,6 +27,19 @@ addp_geopython_native_environment() {
 
 addp_prepare_geopython_workflow() {
   local runtime_dir="$ROOT_DIR/engines/geopython-workflow" python_bin version
+  # Preparation must not replace libraries in a running worker.
+  if addp_dev_port_busy "${GEOPYTHON_WORKFLOW_PORT:-8099}"; then
+    echo '✗ GeoPython 端口仍被占用（所属 Runtime 或外部监听者），不能改写环境；请先停止所属 Runtime' >&2
+    return 1
+  fi
+  local active_pid
+  if [ -f "$ROOT_DIR/.dev-pids/geopython-workflow-engine.pid" ]; then
+    active_pid=$(cat "$ROOT_DIR/.dev-pids/geopython-workflow-engine.pid")
+    if [[ "$active_pid" =~ ^[0-9]+$ ]] && kill -0 "$active_pid" 2>/dev/null; then
+      echo '✗ GeoPython 进程仍在运行，不能改写环境' >&2
+      return 1
+    fi
+  fi
   addp_geopython_native_environment || return 1
   python_bin="$runtime_dir/venv/bin/python"
   if [ ! -x "$python_bin" ]; then
@@ -34,8 +47,7 @@ addp_prepare_geopython_workflow() {
     python3.12 -m venv "$runtime_dir/venv" || return 1
   fi
   "$python_bin" -c 'import sys; assert sys.version_info[:2] == (3,12), "GeoPython 要求 Python 3.12"; from pathlib import Path; assert "include-system-site-packages = false" in Path(sys.prefix, "pyvenv.cfg").read_text(), "GeoPython 不允许继承系统 site-packages，请重建独立 venv"' || return 1
-  addp_sync_python_dependencies "$ROOT_DIR" "$runtime_dir" 'GeoPython Workflow' "$ROOT_DIR/common-python" || return 1
-  addp_prepare_gdal_binding "$python_bin" 'GeoPython' || return 1
+  addp_prepare_gdal_arrow_dependencies "$runtime_dir" 'GeoPython Workflow' "$ROOT_DIR/common-python" || return 1
   version=$(gdal-config --version) || return 1
   "$python_bin" - "$version" <<'PY' || return 1
 from osgeo import gdal, ogr, osr

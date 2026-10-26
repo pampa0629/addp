@@ -661,7 +661,7 @@ jobs:
           source scripts/dev/lifecycle-lock.sh
           source scripts/dev/gdal-env.sh
           addp_gdal_native_environment
-          addp_prepare_gdal_binding "$ROOT_DIR/engines/geopython-workflow/venv/bin/python" "GeoPython CI"
+          addp_prepare_gdal_arrow_dependencies "$ROOT_DIR/engines/geopython-workflow" "GeoPython CI" "$ROOT_DIR/common-python"
 
       - name: Run GeoPython GDAL tests
         if: steps.selection.outputs.run == 'true'
