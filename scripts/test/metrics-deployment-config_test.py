@@ -10,6 +10,7 @@ import socket
 import ssl
 import time
 import re
+import runpy
 import sys
 from pathlib import Path
 import subprocess
@@ -142,6 +143,42 @@ def run_business_postgres_compose(environment, case):
 
 
 class MetricsDeploymentConfigTest(unittest.TestCase):
+    def python_traffic(self, index):
+        source = ast.parse((ROOT / 'scripts/test/python-http-metrics-source.py').read_text())
+        node = next(item for item in source.body if isinstance(item, ast.ClassDef) and item.name == 'HTTPFixtureTraffic')
+        namespace = {}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), '<actual Python traffic planner>', 'exec'), namespace)
+        return namespace['HTTPFixtureTraffic'](index, 1000)
+
+    def test_python_http_traffic_reserves_recovery_within_original_total(self):
+        for index, limit, interval in ((1, 45, 4), (2, 15, 12)):
+            with self.subTest(index=index):
+                traffic = self.python_traffic(index)
+                for i in range(limit):
+                    self.assertEqual(traffic.take(1000+i*interval, False), ('/items/fixture-id','/slow','/failure','/missing/fixture-id')[i%4])
+                    self.assertIsNone(traffic.take(1000+i*interval+interval/2, False))
+                self.assertIsNone(traffic.take(1300, False))
+                self.assertEqual(traffic.snapshot()['healthy_attempts'], 0)
+                for i in range(limit):
+                    self.assertIsNotNone(traffic.take(1301+i*interval/2, i == 0))
+                    self.assertIsNone(traffic.take(1301+i*interval/2+.1, True))
+                self.assertIsNone(traffic.take(1450, True))
+                proof = traffic.snapshot()
+                self.assertEqual(proof['failure_attempts'], limit)
+                self.assertEqual(proof['healthy_attempts'], limit)
+                self.assertEqual(proof['phase'], 'healthy')
+                self.assertEqual(proof['failure_last_ms'], (limit-1)*interval*1000)
+                self.assertEqual(proof['healthy_last_ms'], (301+(limit-1)*interval/2)*1000)
+
+    def test_python_http_phase_switch_does_not_burst_or_replay_missed_slots(self):
+        for index in (1,2):
+            traffic = self.python_traffic(index)
+            self.assertIsNotNone(traffic.take(1000, False))
+            self.assertIsNone(traffic.take(1000.001, True))
+            self.assertIsNotNone(traffic.take(1200, False))
+            self.assertIsNone(traffic.take(1200, True))
+            self.assertEqual(traffic.snapshot()['healthy_attempts'], 1)
+
     def test_initial_scrape_diagnostic_reports_only_bounded_safe_facts(self):
         path = ROOT / 'scripts/test/monitor-metrics-probe.py'
         tree = ast.parse(path.read_text())
@@ -248,7 +285,9 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
             with mock.patch.dict(os.environ,ADDP_METRICS_T2_CASE='mtls-preflight'),redirect_stdout(io.StringIO()):
                 with self.assertRaises(SystemExit) as result:ns['finish_public_preflight']()
             self.assertEqual(result.exception.code,0)
-            self.assertEqual(json.loads((work/'source/python-http-counts.json').read_text()),{'go':0,'python':[0,0],'total':0})
+            traffic=runpy.run_path(str(ROOT/'scripts/test/metrics-http-budget.py'))['request_traffic'](work/'source')
+            self.assertEqual(traffic['request_counts'],{'go':0,'python':[0,0],'total':0})
+            self.assertTrue(all(value is None for value in traffic['request_phases'].values()))
             ns['compose'].return_value='unexpected-python-container'
             with mock.patch.dict(os.environ,ADDP_METRICS_T2_CASE='mtls-preflight'):
                 with self.assertRaisesRegex(AssertionError,'started_python_source'):ns['finish_public_preflight']()

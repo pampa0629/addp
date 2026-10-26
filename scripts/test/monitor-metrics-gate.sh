@@ -66,8 +66,6 @@ cleanup(){
 import json,sys
 from pathlib import Path
 p=Path(sys.argv[1]);value=json.loads(p.read_text());value['cleanup_started']=True
-counts=Path(value['work'])/'source/python-http-counts.json'
-if counts.exists():value['request_counts']=json.loads(counts.read_text())
 proof=Path(value['work'])/'source-tls-proof.json'
 if proof.exists():value['source_tls_proof']=json.loads(proof.read_text())
 publication=Path(value['work'])/'source-tls-publication.json'
@@ -79,6 +77,21 @@ CLEANUP_RECEIPT
   # probe. Never dump those raw logs on failure before that check succeeds.
   if [[ "$result" != 0 ]]; then compose logs --no-color --tail=60 prometheus metrics-source node-exporter metrics-control postgres >&2; fi
   compose down --volumes --remove-orphans >"$WORK_DIR/cleanup.log" 2>&1 || { result=1; cleanup_verified=false; }
+  # Producers are stopped: phase/counter files can no longer be concurrently written.
+  # Capture even an early Go failure, before Python is entered, then destroy files.
+  if [[ -n "${ADDP_HTTP_BUDGET_RECEIPT:-}" && -f "$ADDP_HTTP_BUDGET_RECEIPT" ]]; then
+    python3 - "$ADDP_HTTP_BUDGET_RECEIPT" "$ROOT_DIR/scripts/test/metrics-http-budget.py" <<'REQUEST_TRAFFIC'
+import json,runpy,sys
+from pathlib import Path
+p=Path(sys.argv[1]);value=json.loads(p.read_text());failed=False
+try:value.update(runpy.run_path(sys.argv[2])['request_traffic'](Path(value['work'])/'source'))
+except (OSError,ValueError,RuntimeError,UnicodeError):
+    value['request_traffic_error']='invalid_or_missing_phase_receipt';failed=True
+pending=p.with_suffix('.pending');pending.write_text(json.dumps(value));pending.replace(p)
+raise SystemExit(1 if failed else 0)
+REQUEST_TRAFFIC
+    [[ "$?" == 0 ]] || result=1
+  fi
   local resource remaining
   for resource in container network volume; do
     case "$resource" in

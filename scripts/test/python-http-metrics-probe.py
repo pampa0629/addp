@@ -2,6 +2,7 @@
 import datetime
 import json
 import os
+import runpy
 from pathlib import Path
 import shutil
 import subprocess
@@ -81,10 +82,6 @@ def run(scope):
             for identifier in identifiers:
                 result=subprocess.check_output(['docker','wait',identifier],text=True,timeout=10).strip()
                 if result!='0':raise AssertionError('Python SDK process did not exit cleanly')
-        counts=[int((source/f'python-{i}.requests').read_text()) if (source/f'python-{i}.requests').exists() else 0 for i in (1,2)]
-        go_count=int((source/'process-1.json.requests').read_text()) if (source/'process-1.json.requests').exists() else 0
-        assert counts[0]<=90 and counts[1]<=30 and go_count<=180 and sum(counts)+go_count<=300
-        totals={'go':go_count,'python':counts,'total':sum(counts)+go_count}
-        (source/'python-http-counts.json').write_text(json.dumps(totals))
-        print('Python HTTP T2: controlled request totals '+json.dumps(totals),flush=True)
+        traffic=runpy.run_path(str(root/'scripts/test/metrics-http-budget.py'))['request_traffic'](source)
+        print('Python HTTP T2: controlled request phases '+json.dumps(traffic,sort_keys=True),flush=True)
         discovery(original)

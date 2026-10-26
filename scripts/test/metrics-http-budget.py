@@ -22,6 +22,56 @@ class BudgetFailure(RuntimeError):
         self.detail = {'stage': stage, 'kind': kind, **facts}
 
 
+def validate_request_phase(value, limit):
+    keys={'phase','failure_attempts','healthy_attempts','failure_limit','healthy_limit','failure_last_ms','healthy_last_ms'}
+    if not isinstance(value,dict) or set(value)!=keys or value['phase'] not in ('failure','healthy'):
+        raise RuntimeError('http_request_phase_invalid')
+    for phase in ('failure','healthy'):
+        count=value[phase+'_attempts'];maximum=value[phase+'_limit'];last=value[phase+'_last_ms']
+        if type(count) is not int or not 0<=count<=limit or type(maximum) is not int or maximum!=limit:
+            raise RuntimeError('http_request_phase_invalid')
+        if (count==0 and last is not None) or (count>0 and (type(last) is not int or not 0<=last<=600000)):
+            raise RuntimeError('http_request_phase_invalid')
+    if value['phase']=='failure' and value['healthy_attempts']!=0:
+        raise RuntimeError('http_request_phase_invalid')
+    return value['failure_attempts']+value['healthy_attempts']
+
+
+def request_traffic(source):
+    """Read only after the owned producers stop, before their directory is removed."""
+    counts=[];phases={}
+    for key,stem,identity,limit in (('go','process-1.json','process-1.json',90),('python_1','python-1','python-1.record.json',45),('python_2','python-2','python-2.record.json',15)):
+        counter=source/(stem+'.requests');record=source/(stem+'.http-load.json')
+        count=0
+        if counter.exists():
+            with counter.open('rb') as stream:text=stream.read(4)
+            if len(text)>3 or not re.fullmatch(rb'[0-9]+',text):raise RuntimeError('http_request_count_invalid')
+            count=int(text)
+        proof=None
+        if record.exists() and record.stat().st_size:
+            if record.stat().st_size>1024:raise RuntimeError('http_request_phase_invalid')
+            try:proof=json.loads(record.read_text())
+            except (ValueError,UnicodeError):raise RuntimeError('http_request_phase_invalid') from None
+            if validate_request_phase(proof,limit)!=count:raise RuntimeError('http_request_count_mismatch')
+        elif count or (source/identity).exists() and (source/identity).stat().st_size:
+            raise RuntimeError('http_request_phase_missing')
+        counts.append(count);phases[key]=proof
+    return {'request_counts':{'go':counts[0],'python':counts[1:],'total':sum(counts)},'request_phases':phases}
+
+
+def complete_request_traffic(counts, phases):
+    try:
+        if (not isinstance(counts,dict) or set(counts)!={'go','python','total'} or type(counts['go']) is not int
+                or type(counts['total']) is not int or type(counts['python']) is not list or len(counts['python'])!=2
+                or any(type(value) is not int for value in counts['python'])):return False
+        if not isinstance(phases,dict) or set(phases)!={'go','python_1','python_2'}:return False
+        totals=[validate_request_phase(phases[key],limit) for key,limit in (('go',90),('python_1',45),('python_2',15))]
+        return (all(p['failure_attempts']>0 and p['healthy_attempts']>0 and p['phase']=='healthy' for p in phases.values())
+                and counts=={'go':totals[0],'python':totals[1:],'total':sum(totals)})
+    except (RuntimeError,TypeError):
+        return False
+
+
 def resource_totals(rows, work_bytes, volume_bytes):
     cpu=memory=writable=tmpfs=0
     for row in rows:
@@ -147,6 +197,8 @@ def main():
                 report['project']=ownership['project']
                 report['private_work_path']=ownership['work']
                 report['request_counts']=ownership.get('request_counts')
+                report['request_phases']=ownership.get('request_phases')
+                report['request_traffic_error']=ownership.get('request_traffic_error')
                 report['source_tls_proof']=ownership.get('source_tls_proof')
                 report['source_tls_publication']=ownership.get('source_tls_publication')
                 report['cleanup_verified']=ownership.get('cleanup_verified',False)
@@ -154,12 +206,12 @@ def main():
             report['inputs_unchanged']=input_hashes()==inputs
             preflight=report['case']=='mtls-preflight'
             tls_proven=(report.get('source_tls_proof') or {}).get('passed') is True if preflight else True
-            counts_proven=report.get('request_counts')=={'go':0,'python':[0,0],'total':0} if preflight else bool(report.get('request_counts'))
+            counts_proven=report.get('request_counts')=={'go':0,'python':[0,0],'total':0} if preflight else complete_request_traffic(report.get('request_counts'),report.get('request_phases'))
             if result==0 and error is None and tls_proven and counts_proven and report['inputs_unchanged'] and report.get('cleanup_verified') and report['elapsed_seconds']<1200 and report.get('private_directory_removed') and report['samples']:
                 report['result']='passed'
             output.write_text(json.dumps(report,indent=2))
     summary={key:report.get(key) for key in ('case','result','error_code','failure_detail','exit_code','elapsed_seconds','source_tls_proof','source_tls_publication',
-             'cleanup_verified','private_directory_removed','inputs_unchanged','request_counts')}
+             'cleanup_verified','private_directory_removed','inputs_unchanged','request_counts','request_phases','request_traffic_error')}
     print('HTTP functional budget result: '+json.dumps(summary,sort_keys=True),flush=True)
     print('HTTP functional budget report: '+str(output),flush=True)
     return 0 if report['result']=='passed' else 1

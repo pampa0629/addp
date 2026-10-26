@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,36 @@ import (
 	"github.com/addp/monitor/internal/models"
 	"github.com/addp/monitor/internal/resourcequery"
 )
+
+func TestHTTPStoppedTrafficCannotResolveActiveIncident(t *testing.T) {
+	at := time.Unix(1800000000, 0).UTC()
+	policy := models.HTTPThresholdPolicy{TriggerValue: 50, RecoveryValue: 10, TriggerSeconds: 15, RecoverySeconds: 15}
+	for _, stopped := range []bool{false, true} {
+		ratio, qps := httpThresholdSeries(at, 0), httpThresholdSeries(at, 1)
+		qps.MetricKey, qps.Unit = "http.requests.per_second", "requests_per_second"
+		if stopped {
+			for i := len(qps.Points) - 2; i < len(qps.Points); i++ {
+				zero, undefined := 0.0, math.NaN() // Completed counters no longer advance: 0/0.
+				qps.Points[i].Value, ratio.Points[i].Value = &zero, &undefined
+			}
+		}
+		lines, err := aggregateHTTPRuleSeries([][]resourcequery.HTTPObservation{{{Series: []resourcequery.Series{qps, ratio}}}}, ratio.MetricKey)
+		if err != nil || len(lines) != 1 {
+			t.Fatal(err)
+		}
+		result := evaluateHTTPThreshold(lines[0], policy, at.Add(-time.Hour), at, true)
+		want := PlatformAlertNormal
+		if stopped {
+			want = PlatformAlertUnknown
+		}
+		if result.Verdict != want {
+			t.Fatal("stopped traffic must not manufacture recovery", stopped, result)
+		}
+		if stopped && (lines[0].Points[21].Value != nil || lines[0].Points[21].DataState != "no_data") {
+			t.Fatal("idle ratio must stay unknown")
+		}
+	}
+}
 
 func TestHTTPNotificationUsesItsOwnWeComCategoryAndRejectsUnknownEvents(t *testing.T) {
 	for _, kind := range []string{"opened", "resolved"} {

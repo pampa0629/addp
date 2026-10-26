@@ -84,3 +84,24 @@ func TestHTTPNormalizerRejectsForeignLabelsDuplicatePointsAndBudgetOverflow(t *t
 		t.Fatal(err)
 	}
 }
+
+func TestHTTPNormalizerKeepsStoppedTrafficZeroDenominatorUnknown(t *testing.T) {
+	p, _ := NewHTTPPlan(testTime, testTime, testTime, false, false, nil, "", 60, DefaultBudget())
+	row := func(metric, component, value string) string {
+		return `{"metric":{"addp_metric":"` + metric + `","addp_component":"` + component + `"},"value":` + pair(testTime.Unix(), value) + `}`
+	}
+	body := row("http.requests.per_second", "value", "0") + "," + row("http.requests.per_second", "sampled_at", "1800000000") + "," +
+		row("http.failures.percent", "value", "NaN") + "," + row("http.failures.percent", "sampled_at", "1800000000")
+	rows, err := normalizeHTTP(wire(t, data(body, false)), p, DefaultBudget())
+	if err != nil || len(rows) != 1 {
+		t.Fatal(err)
+	}
+	for _, line := range rows[0].Series {
+		if line.MetricKey == "http.requests.per_second" && (line.Points[0].Value == nil || *line.Points[0].Value != 0) {
+			t.Fatal("idle QPS lost")
+		}
+		if line.MetricKey == "http.failures.percent" && line.Points[0].Value != nil {
+			t.Fatal("0/0 became a healthy failure rate")
+		}
+	}
+}

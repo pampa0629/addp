@@ -20,6 +20,68 @@ def row(cpu=1,memory=512*1024**2):
 
 
 class HTTPBudget(unittest.TestCase):
+    def phase_record(self, limit, healthy=True):
+        return {'phase':'healthy' if healthy else 'failure','failure_attempts':limit,'healthy_attempts':limit if healthy else 0,
+                'failure_limit':limit,'healthy_limit':limit,'failure_last_ms':178000,'healthy_last_ms':390000 if healthy else None}
+
+    def put_traffic(self, source, key, limit, healthy=True):
+        stem={'go':'process-1.json','python_1':'python-1','python_2':'python-2'}[key]
+        proof=self.phase_record(limit,healthy)
+        (source/(stem+'.http-load.json')).write_text(json.dumps(proof))
+        (source/(stem+'.requests')).write_text(str(limit*(2 if healthy else 1)))
+        return proof
+
+    def test_early_go_failure_keeps_phase_counts_without_entering_python(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source=Path(directory);self.put_traffic(source,'go',90,False)
+            result=m.request_traffic(source)
+            self.assertEqual(result['request_counts'],{'go':90,'python':[0,0],'total':90})
+            self.assertIsNone(result['request_phases']['python_1'])
+            self.assertFalse(m.complete_request_traffic(result['request_counts'],result['request_phases']))
+
+    def test_three_sources_need_both_phases_with_matching_original_total(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source=Path(directory)
+            for key,limit in (('go',90),('python_1',45),('python_2',15)):self.put_traffic(source,key,limit)
+            result=m.request_traffic(source)
+            self.assertEqual(result['request_counts'],{'go':180,'python':[90,30],'total':300})
+            self.assertTrue(m.complete_request_traffic(result['request_counts'],result['request_phases']))
+            result['request_counts']['go']-=1
+            self.assertFalse(m.complete_request_traffic(result['request_counts'],result['request_phases']))
+
+    def test_phase_receipts_reject_missing_corrupt_extra_secret_and_mismatched_counts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source=Path(directory);(source/'process-1.json').write_text('{}')
+            with self.assertRaisesRegex(RuntimeError,'phase_missing'):m.request_traffic(source)
+            for change in ('invalid-json','extra','bool','over','clock','mismatch'):
+                with self.subTest(change=change):
+                    proof=self.put_traffic(source,'go',90)
+                    if change=='extra':proof['credential']='never-log-this'
+                    if change=='bool':proof['healthy_attempts']=True
+                    if change=='over':proof['healthy_attempts']=91
+                    if change=='clock':proof['healthy_last_ms']=-1
+                    (source/'process-1.json.http-load.json').write_text('never-log-this' if change=='invalid-json' else json.dumps(proof))
+                    if change=='mismatch':(source/'process-1.json.requests').write_text('179')
+                    with self.assertRaises(RuntimeError) as caught:m.request_traffic(source)
+                    self.assertNotIn('never-log-this',str(caught.exception))
+
+    def test_cleanup_collects_actual_phase_files_after_stopping_sources_before_removal(self):
+        gate=Path(__file__).with_name('monitor-metrics-gate.sh').read_text()
+        body=gate.split("<<'REQUEST_TRAFFIC'\n",1)[1].split('\nREQUEST_TRAFFIC',1)[0]
+        self.assertLess(gate.index('compose down --volumes'),gate.index("<<'REQUEST_TRAFFIC'"))
+        self.assertLess(gate.index("<<'REQUEST_TRAFFIC'"),gate.index('rm -rf "$WORK_DIR"'))
+        with tempfile.TemporaryDirectory() as directory:
+            work=Path(directory);source=work/'source';source.mkdir();receipt=work/'receipt.json'
+            self.put_traffic(source,'go',90,False);receipt.write_text(json.dumps({'work':str(work)}))
+            result=subprocess.run(['python3','-',str(receipt),str(Path(m.__file__))],input=body,capture_output=True,text=True,timeout=5)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual(json.loads(receipt.read_text())['request_counts']['go'],90)
+            (source/'process-1.json.http-load.json').write_text('{"credential":"never-log-this"}')
+            result=subprocess.run(['python3','-',str(receipt),str(Path(m.__file__))],input=body,capture_output=True,text=True,timeout=5)
+            self.assertEqual(result.returncode,1)
+            self.assertEqual(json.loads(receipt.read_text())['request_traffic_error'],'invalid_or_missing_phase_receipt')
+            self.assertNotIn('never-log-this',result.stdout+result.stderr)
+
     def test_cpu_memory_write_reservations_and_stop_lines(self):
         self.assertEqual(m.resource_totals([row()],200,300)['private_write_upper_bytes'],16*1024**2+600)
         m.resource_totals([row(4,4*1024**3)],0,0)
@@ -128,6 +190,26 @@ class HTTPBudget(unittest.TestCase):
                 report=json.loads(output.read_text())
                 self.assertEqual(report['case'],'mtls-preflight')
                 self.assertEqual(report['result'],'passed' if expected==0 else 'failed')
+
+    def test_full_http_zero_exit_needs_three_valid_reserved_recovery_receipts(self):
+        phases={key:self.phase_record(limit) for key,limit in (('go',90),('python_1',45),('python_2',15))}
+        counts={'go':180,'python':[90,30],'total':300}
+        for proof,expected in ((phases,0),(None,1),({**phases,'go':self.phase_record(90,False)},1)):
+            with self.subTest(expected=expected,missing=proof is None),tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);work=root/'addp-metrics-t2.fixture';work.mkdir();output=root/'report.json'
+                ownership={'project':'addp-metrics-t2-'+'a'*32,'work':str(work)}
+                child=Mock(pid=1234);child.poll.side_effect=[None,0]
+                def start(*args,**kwargs):
+                    receipt=Path(kwargs['env']['ADDP_HTTP_BUDGET_RECEIPT']);receipt.write_text(json.dumps(ownership))
+                    def cleanup(**kwargs):
+                        shutil.rmtree(work)
+                        receipt.write_text(json.dumps({**ownership,'cleanup_verified':True,'request_counts':counts,'request_phases':proof}))
+                        return 0
+                    child.wait.side_effect=cleanup
+                    return child
+                with patch.object(m.sys,'argv',['budget','bash','scripts/test/monitor-metrics-gate.sh','--case=http-quality']),patch.dict(os.environ,{'ADDP_HTTP_BUDGET_REPORT':str(output)}),patch.object(m,'input_hashes',return_value={}),patch.object(m.subprocess,'Popen',side_effect=start),patch.object(m,'sample',return_value={'duration_seconds':0}),patch.object(m.time,'sleep'),redirect_stdout(io.StringIO()):
+                    self.assertEqual(m.main(),expected)
+                self.assertEqual(json.loads(output.read_text())['result'],'passed' if expected==0 else 'failed')
 
     def test_existing_standard_case_is_wrapped_and_registered(self):
         root=Path(__file__).resolve().parents[2]

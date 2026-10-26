@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -34,14 +35,15 @@ func TestIntegrationMetricsSelfSource(t *testing.T) {
 	}
 	defer source.Close()
 	var business *httptest.Server
+	traffic := newHTTPFixtureTraffic(time.Now())
+	var healthy atomic.Bool
 	if identity.Role == "backend" {
 		router := gin.New()
 		router.Use(httpmetrics.Process().Middleware(), httpmetrics.Recovery())
 		router.GET("/items/:id", func(c *gin.Context) { c.Status(204) })
 		router.GET("/slow", func(c *gin.Context) { time.Sleep(20 * time.Millisecond); c.Status(204) })
 		router.GET("/failure", func(c *gin.Context) {
-			mode, _ := os.ReadFile(path + ".http-mode")
-			if string(mode) == "healthy" {
+			if healthy.Load() {
 				c.Status(204)
 			} else {
 				c.Status(503)
@@ -49,6 +51,7 @@ func TestIntegrationMetricsSelfSource(t *testing.T) {
 		})
 		business = httptest.NewServer(router)
 		defer business.Close()
+		traffic.persist(t, path)
 	}
 	data, err := json.Marshal(map[string]any{"id": os.Getenv("ADDP_PROCESS_T2_ID"), "module_name": identity.ModuleName, "instance_id": name, "role": identity.Role, "started_at": identity.StartedAt, "instance": listen, "cgroup": source.Declaration().Cgroup, "cgroup_diagnostic": integrationCgroupFacts()})
 	if err != nil || os.WriteFile(path, data, 0666) != nil {
@@ -59,8 +62,6 @@ func TestIntegrationMetricsSelfSource(t *testing.T) {
 		allocation[i] = byte(i)
 	}
 	end := time.Now().Add(8 * time.Minute)
-	requestIndex := 0
-	nextRequest := time.Now()
 	controlled := os.Getenv("ADDP_PROCESS_T2_RESOURCE_CONTROL") == "1"
 	var extra []byte
 	var activeUntil time.Time
@@ -90,18 +91,24 @@ func TestIntegrationMetricsSelfSource(t *testing.T) {
 			}
 			runtime.KeepAlive(extra)
 		}
-		if business != nil && requestIndex < 180 && !time.Now().Before(nextRequest) {
-			nextRequest = time.Now().Add(time.Second)
-			paths := []string{"/items/fixture-id", "/slow", "/failure", "/missing/fixture-id"}
-			response, err := business.Client().Get(business.URL + paths[requestIndex%len(paths)])
-			if err != nil {
-				t.Fatal("owned HTTP fixture request failed")
+		if business != nil {
+			mode, err := os.ReadFile(path + ".http-mode")
+			if err != nil && !os.IsNotExist(err) {
+				t.Fatal("read HTTP fixture phase")
 			}
-			_, _ = io.Copy(io.Discard, response.Body)
-			_ = response.Body.Close()
-			requestIndex++
-			if err := os.WriteFile(path+".requests", []byte(strconv.Itoa(requestIndex)), 0666); err != nil {
-				t.Fatal(err)
+			previousPhase := traffic.Phase
+			requestPath, send := traffic.take(time.Now(), string(mode) == "healthy")
+			healthy.Store(traffic.Phase == "healthy")
+			if send || traffic.Phase != previousPhase {
+				traffic.persist(t, path)
+			}
+			if send {
+				response, err := business.Client().Get(business.URL + requestPath)
+				if err != nil {
+					t.Fatal("owned HTTP fixture request failed")
+				}
+				_, _ = io.Copy(io.Discard, response.Body)
+				_ = response.Body.Close()
 			}
 		}
 		// Bounded real CPU work; no fake counters and no memory growth.
@@ -114,6 +121,52 @@ func TestIntegrationMetricsSelfSource(t *testing.T) {
 		time.Sleep(40 * time.Millisecond)
 	}
 	t.Fatal("standard gate did not stop the test-owned source")
+}
+
+// Fixture-only scheduling: unused failure capacity cannot consume recovery.
+// Keeping nextRequest across the one-way switch also prevents a switch burst.
+type httpFixtureTraffic struct {
+	Phase                string `json:"phase"`
+	FailureAttempts      int    `json:"failure_attempts"`
+	HealthyAttempts      int    `json:"healthy_attempts"`
+	FailureLimit         int    `json:"failure_limit"`
+	HealthyLimit         int    `json:"healthy_limit"`
+	FailureLastMS        *int64 `json:"failure_last_ms"`
+	HealthyLastMS        *int64 `json:"healthy_last_ms"`
+	started, nextRequest time.Time
+}
+
+func newHTTPFixtureTraffic(start time.Time) *httpFixtureTraffic {
+	return &httpFixtureTraffic{Phase: "failure", FailureLimit: 90, HealthyLimit: 90, started: start, nextRequest: start}
+}
+
+func (p *httpFixtureTraffic) take(now time.Time, healthy bool) (string, bool) {
+	if healthy {
+		p.Phase = "healthy"
+	}
+	count, limit, interval := &p.FailureAttempts, p.FailureLimit, 2*time.Second
+	last := &p.FailureLastMS
+	if p.Phase == "healthy" {
+		count, limit, interval, last = &p.HealthyAttempts, p.HealthyLimit, time.Second, &p.HealthyLastMS
+	}
+	if *count >= limit || now.Before(p.nextRequest) {
+		return "", false
+	}
+	paths := []string{"/items/fixture-id", "/slow", "/failure", "/missing/fixture-id"}
+	path := paths[(p.FailureAttempts+p.HealthyAttempts)%len(paths)]
+	*count++
+	elapsed := now.Sub(p.started).Milliseconds()
+	*last = &elapsed
+	p.nextRequest = now.Add(interval)
+	return path, true
+}
+
+func (p *httpFixtureTraffic) persist(t *testing.T, path string) {
+	t.Helper()
+	data, err := json.Marshal(p)
+	if err != nil || os.WriteFile(path+".http-load.json", data, 0666) != nil || os.WriteFile(path+".requests", []byte(strconv.Itoa(p.FailureAttempts+p.HealthyAttempts)), 0666) != nil {
+		t.Fatal("persist HTTP fixture attempt counts")
+	}
 }
 
 // Only the owned T2 executable calls this. Emit fixed booleans, never raw
@@ -134,4 +187,55 @@ func integrationCgroupFacts() map[string]bool {
 	_, _, err = readCgroupUsage(root.FS(), ".")
 	facts["root_usage_parse_valid"] = err == nil
 	return facts
+}
+
+func TestHTTPFixtureTrafficReservesRecoveryAfterFailureBudgetExhaustion(t *testing.T) {
+	start := time.Unix(1000, 0)
+	traffic := newHTTPFixtureTraffic(start)
+	paths := []string{"/items/fixture-id", "/slow", "/failure", "/missing/fixture-id"}
+	for i := 0; i < 90; i++ {
+		at := start.Add(time.Duration(i) * 2 * time.Second)
+		path, ok := traffic.take(at, false)
+		if !ok || path != paths[i%4] {
+			t.Fatal("failure phase template or cadence", i, path, ok)
+		}
+		if _, ok := traffic.take(at.Add(time.Second), false); ok {
+			t.Fatal("failure phase burst")
+		}
+	}
+	if _, ok := traffic.take(start.Add(300*time.Second), false); ok || traffic.HealthyAttempts != 0 {
+		t.Fatal("failure exhausted recovery allocation")
+	}
+	for i := 0; i < 90; i++ {
+		at := start.Add(time.Duration(301+i) * time.Second)
+		// Removing the control file during cleanup must not refill either phase.
+		path, ok := traffic.take(at, i == 0)
+		if !ok || path != paths[(90+i)%4] {
+			t.Fatal("late recovery did not use reserved requests", i, path, ok)
+		}
+		if _, ok := traffic.take(at.Add(500*time.Millisecond), true); ok {
+			t.Fatal("recovery phase burst")
+		}
+	}
+	if _, ok := traffic.take(start.Add(450*time.Second), true); ok || traffic.FailureAttempts != 90 || traffic.HealthyAttempts != 90 {
+		t.Fatal("phase reset or request cap violated", traffic)
+	}
+	if *traffic.FailureLastMS != 178000 || *traffic.HealthyLastMS != 390000 {
+		t.Fatal("request checkpoints are not relative to the producer clock")
+	}
+}
+
+func TestHTTPFixtureTrafficSwitchKeepsCadenceAndDoesNotCatchUp(t *testing.T) {
+	start := time.Unix(1000, 0)
+	traffic := newHTTPFixtureTraffic(start)
+	traffic.take(start, false)
+	if _, ok := traffic.take(start.Add(time.Millisecond), true); ok {
+		t.Fatal("phase switch bypassed previous request interval")
+	}
+	if _, ok := traffic.take(start.Add(200*time.Second), false); !ok {
+		t.Fatal("healthy phase was not latched")
+	}
+	if _, ok := traffic.take(start.Add(200*time.Second), true); ok || traffic.HealthyAttempts != 1 {
+		t.Fatal("missed slots were replayed")
+	}
 }

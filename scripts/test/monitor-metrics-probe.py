@@ -173,8 +173,6 @@ def finish_public_preflight():
     if os.environ.get('ADDP_METRICS_T2_CASE')!='mtls-preflight':return
     assert not compose('ps','-aq','python-http-agent','python-http-copilot'), 'preflight_started_python_source'
     assert not list((WORK/'source').glob('process-*.json.requests')), 'preflight_started_go_business_source'
-    counts={'go':0,'python':[0,0],'total':0}
-    (WORK/'source/python-http-counts.json').write_text(json.dumps(counts))
     print('Metrics T2: public mTLS preflight passed; zero business requests; stopping before source stages',flush=True)
     raise SystemExit(0)
 
@@ -461,6 +459,9 @@ def check_native_process_sources(*, process_alerts=False, cgroup_only=False):
             path.chmod(0o666)
             requests_path=Path(str(path)+'.requests')
             requests_path.write_text('0');requests_path.chmod(0o666)
+            if index == 1:
+                traffic_path=Path(str(path)+'.http-load.json')
+                traffic_path.write_text('');traffic_path.chmod(0o666)
             address = source_ip + ':' + str(19440 + index)
             envs = {'ADDP_PROCESS_METRICS_T2_SOURCE': '1', 'ADDP_PROCESS_T2_INSTANCE': f'native-{index}',
                     'ADDP_PROCESS_T2_LISTEN': address, 'ADDP_PROCESS_T2_ENDPOINT': f'https://{address}/metrics',

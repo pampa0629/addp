@@ -91,6 +91,36 @@ func TestIntegrationMetricsHTTPWindow(t *testing.T) {
 		}
 		tests = append(tests, map[string]any{"name": name, "interval": "15s", "input_series": inputs, "promql_expr_test": []any{map[string]any{"expr": expression, "eval_time": at, "exp_samples": expected}}})
 	}
+	// A stopped source remains UP but its route failure ratio is 0/0. Only
+	// advancing successful traffic supplies a real zero-percent recovery point.
+	for _, stopped := range []bool{false, true} {
+		route := "/failure"
+		p, _ := NewHTTPPlan(testTime, testTime, testTime, false, false, &route, "GET", 60, DefaultBudget())
+		expression, err := scope.httpExpression(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		value := `(` + expression + `) and on(addp_metric,addp_component) label_replace(label_replace(vector(1),"addp_metric","http.failures.percent","",""),"addp_component","value","","")`
+		raw := func(status, errorType string) string {
+			return strings.TrimSuffix(scope.selector("http_server_request_duration_seconds_count"), "}") + `,http_route="/failure",http_request_method="GET",http_response_status_code="` + status + `",error_type="` + errorType + `"}`
+		}
+		count := "0 4 8 12 16 20 24 28 32 36 40"
+		inputs := []any{series(scope.selector("up"), "1+0x10"), series(identity, "1+0x10"), series(scope.selector("process_start_time_seconds"), "1+0x10"), series(scope.selector("addp_http_server_instrumentation_start_time_seconds"), "1+0x10"), series(raw("503", "503"), "0 4 8 12 16 16 16 16 16 16 16")}
+		expected := []any{map[string]any{"labels": `{addp_component="value",addp_metric="http.failures.percent"}`, "value": 0}}
+		name := "successful requests create a real zero-percent route window"
+		if stopped {
+			count = "0 4 8 12 16 16 16 16 16 16 16"
+			// Count NaN != itself to prove the raw undefined sample without
+			// serializing NaN into JSON. normalizeHTTP must keep it unknown.
+			value = `count((` + value + `) != (` + value + `))`
+			expected = []any{map[string]any{"labels": "{}", "value": 1}}
+			name = "stopped route traffic remains undefined"
+		} else {
+			inputs = append(inputs, series(raw("204", ""), "_ _ _ _ _ 4 8 12 16 20 24"))
+		}
+		inputs = append(inputs, series(scope.selector("addp_http_server_duration_seconds_count"), count))
+		tests = append(tests, map[string]any{"name": name, "interval": "15s", "input_series": inputs, "promql_expr_test": []any{map[string]any{"expr": value, "eval_time": "150s", "exp_samples": expected}}})
+	}
 	// Both rankings must retain one shared eligible top ten across all metrics.
 	for _, window := range []int{300, 900} {
 		p, _ := NewHTTPPlan(testTime, testTime, testTime, false, false, nil, "", window, DefaultBudget())
