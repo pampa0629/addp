@@ -13,7 +13,7 @@
 - **账号认证**: 密码 + TOTP、opaque Access Token、Refresh Token Family 与 AuthContext
 - **OAuth 2.0**: 受控 Fosite 唯一主路径，支持 Authorization Code + PKCE、RFC 8252 loopback 和 Device Flow
 - **权限治理**: 平台/租户上下文、Role Assignment、Permission Manifest 与 owner 资源策略
-- **引擎管理**: 管理已接入引擎的连接与实例能力，插件标记的敏感连接字段使用 AES-256-GCM 加密；支持范围按[能力声明规范](../docs/spec/addp引擎能力声明规范.md#一基本原则)及实例 `capabilities` 逐项核对。插件登记、连接检测或能力声明不替代查询、预览、读写等模块消费与跨模块运行验收。
+- **引擎管理**: 管理已接入引擎的连接与实例能力；支持范围按[能力声明规范](../docs/spec/addp引擎能力声明规范.md#一基本原则)及实例 `capabilities` 逐项核对。插件登记、连接检测或能力声明不替代查询、预览、读写等模块消费与跨模块运行验收。
 - **审计日志**: 自动记录操作日志，支持租户隔离
 
 ## 🚀 快速开始
@@ -66,7 +66,7 @@ OAuth 2.0:       /api/v1/system/oauth/*
 ## 🔐 安全特性
 
 - **用户密码**: bcrypt 自适应 Hash
-- **引擎密码**: AES-256-GCM 加密
+- **连接敏感字段**: 按插件声明使用 AES-256-GCM 加密；[字段范围与返回边界](docs/tables/engines表.md#71-敏感字段加密)
 - **认证方式**: opaque Access Token + Refresh Token Family
 
 详细安全机制请查看 [CLAUDE.md#安全机制](./CLAUDE.md#安全机制)

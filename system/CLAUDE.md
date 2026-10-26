@@ -337,7 +337,7 @@ frontend/src/
 - 字段: `id`, `name`, `engine_type`, `connection_info`, `tenant_id`, `created_by`, `lifecycle_state` 及删除工作流状态
 - `version` 只表示 Engine Instance 聚合根的管理员编辑基线；后台连接观测更新 `connection_status`、`last_check_at`、`check_message`，插件成功返回原生产品版本时同次更新只读 `server_version` 与独立 `server_version_checked_at`；失败或未提供版本时保留最后一次成功事实。这些观测不得递增 `version` 或修改 `updated_at`
 - `connection_info` 为 JSONB 类型，灵活存储不同类型的连接配置
-- 敏感字段 (password, access_key 等) 使用 **AES-256-GCM** 加密存储
+- 连接敏感字段的声明、存储与返回规则见[引擎连接安全](docs/tables/engines表.md#71-敏感字段加密)。
 
 **system.api_consumers / system.api_consumer_service_grants / system.api_consumer_credentials**:
 - API Consumer 只表达外部系统对已发布数据面 API 的机器调用，不生成 Principal 或 AuthContext；
@@ -401,14 +401,9 @@ frontend/src/
    - 不可逆哈希,自动加盐
    - 验证: `CheckPassword(plaintext, hash)`
 
-2. **引擎连接密码加密** (system.engines.connection_info)
-   - 算法: **AES-256-GCM** (对称加密 + 认证)
-   - 密钥管理:
-     - 开发环境: 默认32字节密钥
-     - 生产环境: 环境变量 `ENCRYPTION_KEY` (Base64编码)
-   - 加密字段: 由当前引擎插件 `ConnectionSpec` 中的 `sensitive=true` 唯一声明，运行时 `SensitiveFields()` 必须从该描述派生
-   - 自动加密: 创建/更新引擎时自动加密敏感字段
-   - 自动解密: 查询引擎时自动解密返回
+2. **引擎连接敏感字段加密** (`system.engines.connection_info`)
+   - 字段由当前插件 `ConnectionSpec` 的 `sensitive=true` 唯一声明，`SensitiveFields()` 必须从中派生。
+   - AES-256-GCM 持久化处理、更新占位符、密钥加载与按调用路径返回的规则统一见[引擎连接安全](docs/tables/engines表.md#71-敏感字段加密)；声明与静态检查不替代持久化及接口验收。
 
 3. **API 消费凭据安全** (`system.api_consumer_credentials`)
    - 存储：仅存 SHA256 hash，明文仅在创建时返回一次
