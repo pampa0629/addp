@@ -380,7 +380,19 @@ Console 公开路由与 System standalone 路由使用同一模块内 path 和 q
 - `000236` 将现有精确模型组成扩展至 MinIO IFC/3DS 的原生 `service → bucket → prefix → object` 目标；对象主项和每条依赖必须同 bucket，依赖限定在主项所在目录范围，Grant 保存完整组成，目录／bucket／prefix 不成为授权目标。复用现有 `file_composition` 和 `source_read_scope`，不增加另一套对象许可，不回填旧成果的来源事实。FTP/NFS 既有格式范围保持不变，MinIO DAE 未纳入本次迁移。
 - 需要保留的外部数据必须另行批准离线导入方案，不进入 System Runtime；
 - migration 内不得访问 Redis、HTTP、外部 IdP、密钥服务或其他模块数据库。
-- 已登记的定向恢复只有 75 号历史不可变 audience 冲突、113 号 Security 首次失败迁移的完整回滚状态，以及 130 号 Security 原值访问申请权限迁移的完整回滚状态；只能使用 `cmd/iam-migration-repair --migration <75|113|130> --apply`。75 号必须通过精确状态、checksum、约束和触发器校验；113 号必须通过 `(113, dirty)`、checksum 恰好到 112、Security 目标事实零落地与 Standard 原分类权限未变更校验；130 号必须通过 `(130, dirty)`、checksum 恰好到 129、新申请权限零落地、旧豁免变更权限与内置角色绑定仍完整的校验。三者都不得扩展为通用 dirty force、跳过版本或 checksum 改写能力。
+### 定向恢复
+
+当前仅登记以下四个精确案例；标准构建、调用与停服／重启步骤统一见[定向恢复的共同操作](../../docs/guide/troubleshooting/数据库迁移.md#定向恢复的共同操作)，各案例的故障现象见对应专题。
+
+| 迁移 | 精确前置条件 | 允许的恢复范围 |
+| --- | --- | --- |
+| [75：历史不可变 audience 冲突](../../docs/guide/troubleshooting/数据库迁移.md#75-号迁移的定向恢复) | 精确 `(75, dirty)`；checksum 恰好到 74；旧约束与不可变触发器均存在，且至少一条历史 `addp-quality`。 | 串行化事务内暂停触发器、规范化历史 audience 后立即恢复触发器，将状态恢复为 `74/clean`；不修改 checksum、不跳过 75。 |
+| [113：Security 首次失败迁移](../../docs/guide/troubleshooting/数据库迁移.md#113-号迁移的定向恢复) | 精确 `(113, dirty)`；checksum 恰好到 112；Security 目标事实零落地，Standard 原分类权限未变更。 | 仅将状态恢复为 `112/clean`；不删除 System 事实、不修改 checksum、不标记 113 已成功。 |
+| [130：Security 原值访问申请权限迁移](../../docs/guide/troubleshooting/数据库迁移.md#130-号迁移的定向恢复) | 精确 `(130, dirty)`；checksum 恰好到 129；新申请权限零落地，旧豁免变更权限与内置角色绑定仍完整。 | 仅将状态恢复为 `129/clean`；不修改 Permission、RolePermission 或 checksum，不标记 130 已成功。 |
+| [240：进程内核身份声明迁移](../../docs/guide/troubleshooting/数据库迁移.md#240-号进程内核身份声明迁移的定向恢复) | 精确 `(240, dirty)`；1—239 的文件名／SHA-256 逐条匹配且无 240 checksum 记录；旧声明 CHECK 已验证且定义未变，不可变触发器保持启用且函数未变。 | 串行化事务内锁定迁移状态、checksum 和实例表，仅将 `240/dirty` 恢复为 `239/clean`；不改声明行、约束、角色、权限或 checksum。 |
+
+任一前置事实不匹配即拒绝；四者均不得扩展为通用 dirty force、跳过版本或 checksum 改写能力。实际开发库恢复须由用户自行执行或取得本次明确授权。恢复后由唯一 Migration Runner 重跑对应迁移及后续版本，240 号保留专题中的全量重启要求。构建、隔离测试与只读现场核对不等于实际恢复，恢复成功也不等于后续迁移和业务验收通过。
+
 
 ## 十三、验证
 
