@@ -34,7 +34,7 @@ from addp_common.workflow_runtime import WorkflowExecutionError
 from addp_common.workflow_access import require_empty_target_directory, target_child_file_plan
 from .base import OperatorMetadata, OperatorParam, OperatorType, OperatorCategory, OutputPort, register_operator
 from .raster_image_export import encode_image, image_export_error
-from .surfer7 import inspect_surfer7
+from .surfer import inspect_surfer, validate_surfer6_mask
 
 gdal.UseExceptions()
 _WORKSPACE = ContextVar('raster_workspace', default=None)
@@ -457,6 +457,7 @@ def raster_load(access_plan, source_crs=''):
     plan = require_source_plan({'access_plan': access_plan})
     path = stage_source_file(plan, _path().parent / uuid.uuid4().hex)
     source_format = plan['source']['format']
+    native_driver = {'img': 'HFA', 'jpeg2000': 'JP2OpenJPEG'}.get(source_format, '')
     if source_format in ('img', 'jpeg2000', 'grd'):
         # Native rasters expose only the selected primary, never sibling sidecars.
         isolated = _path().parent / uuid.uuid4().hex / path.name
@@ -468,16 +469,17 @@ def raster_load(access_plan, source_crs=''):
         elif source_format == 'jpeg2000':
             _require_single_jpeg2000(path)
         else:
-            inspect_surfer7(path, _DISK_LANGUAGE.get())
-    native_driver = {'img': 'HFA', 'jpeg2000': 'JP2OpenJPEG', 'grd': 'GS7BG'}.get(source_format, '')
+            native_driver = inspect_surfer(path, _DISK_LANGUAGE.get())['driver']
     raster = _raster(path, native_driver)
     try:
         dataset = _open(raster)
     except RuntimeError as exc:
         raise ValueError('Source format must match a supported raster driver') from exc
-    drivers = {'tiff':'GTiff', 'png':'PNG', 'jpeg':'JPEG', 'img':'HFA', 'jpeg2000':'JP2OpenJPEG', 'grd':'GS7BG'}
-    if drivers.get(source_format) != dataset.GetDriver().ShortName:
+    expected_driver = native_driver or {'tiff':'GTiff', 'png':'PNG', 'jpeg':'JPEG'}.get(source_format)
+    if expected_driver != dataset.GetDriver().ShortName:
         raise ValueError('Source format must match a supported raster driver')
+    if native_driver == 'GSBG':
+        validate_surfer6_mask(dataset, _DISK_LANGUAGE.get())
     if source_format in ('img', 'jpeg2000', 'grd'):
         bands = [dataset.GetRasterBand(index) for index in range(1, dataset.RasterCount + 1)]
         if any(gdal.DataTypeIsComplex(band.DataType) for band in bands):
@@ -520,7 +522,7 @@ def raster_inspect(access_plan):
         raster = raster_load(plan)
         facts = raster_info(raster)
         driver = raster.native_driver
-        profile_facts = (inspect_surfer7(raster.path, _DISK_LANGUAGE.get()) if source_format == 'grd' else
+        profile_facts = (inspect_surfer(raster.path, _DISK_LANGUAGE.get()) if source_format == 'grd' else
                          {'profile':'hfa' if source_format == 'img' else _require_single_jpeg2000(raster.path)})
         profile = profile_facts['profile']
         spatial = {}

@@ -17,7 +17,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 }
 func (p *Plugin) RequiredMediaInfoOperators() []string { return []string{"raster_inspect"} }
 func (p *Plugin) BindMediaInfoProvider(runtime engineplugin.WorkflowRuntimeProvider, conn engineplugin.ConnectionInfo, tenantID uint, plan workflowaccess.SourcePlan) (format.BoundMediaInfoProvider, error) {
-	return rastermedia.Bind(p.Format(), "JP2OpenJPEG", runtime, conn, tenantID, plan)
+	return rastermedia.Bind(p.Format(), []string{"JP2OpenJPEG"}, runtime, conn, tenantID, plan)
 }
 func init() {
 	if err := format.RegisterFormatPlugin(&Plugin{}); err != nil {

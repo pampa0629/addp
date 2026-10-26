@@ -1642,6 +1642,7 @@ def manager_seed_imgs(client, bucket, directory, source_format='img'):
 MANAGER_GRD_CASES = (
     ('v1',1,113.,28.,.001,.002,1.70141e38),
     ('v2',2,500000.,3100000.,10.,20.,1000.),
+    ('surfer6',6,100.,200.,2.,3.,1.701410009187828e38),
 )
 
 
@@ -1650,6 +1651,10 @@ def manager_grd_bytes(spec):
     import struct
     case,version,x,y,dx,dy,blank = spec
     values=[-12.,2.,3.,4.,5.,6.,blank,8.,9.,10.,11.,12.,13.,14.,1001. if version==2 else 42.]
+    if version==6:
+        values[1]=.125
+        values[-1]=16777216.
+        return b'DSBB'+struct.pack('<hh6d',5,3,x,x+4*dx,y,y+2*dy,-12.,16777216.)+struct.pack('<15f',*values)
     valid=[v for v in values if v!=blank]
     return (b'DSRB'+struct.pack('<ii',4,version)+b'GRID'+struct.pack('<i',72)
         +struct.pack('<ii8d',3,5,x,y,dx,dy,min(valid),max(valid),0.,blank)
@@ -1665,20 +1670,21 @@ def manager_grd_facts(path,spec):
     if raw!=manager_grd_bytes(spec):
         raise FixtureError('Manager GRD source differs from its complete numeric fixture')
     dataset=gdal.Open(str(path))
-    expected=struct.unpack_from('<15d',raw,100)
+    scalar,offset,driver,dtype=('f',56,'GSBG','Float32') if version==6 else ('d',100,'GS7BG','Float64')
+    expected=struct.unpack_from('<15'+scalar,raw,offset)
     expected=expected[10:15]+expected[5:10]+expected[:5]
     band=dataset.GetRasterBand(1)
-    if (dataset.GetDriver().ShortName!='GS7BG' or dataset.RasterCount!=1
-        or (dataset.RasterXSize,dataset.RasterYSize)!=(5,3) or band.DataType!=gdal.GDT_Float64
+    if (dataset.GetDriver().ShortName!=driver or dataset.RasterCount!=1
+        or (dataset.RasterXSize,dataset.RasterYSize)!=(5,3) or gdal.GetDataTypeName(band.DataType)!=dtype
         or dataset.GetProjection() or dataset.GetFileList()!=[str(path)]
         or any(not math.isclose(a,b,rel_tol=0.,abs_tol=1e-10) for a,b in zip(
             dataset.GetGeoTransform(),(x-dx/2,dx,0.,y+2.5*dy,0.,-dy)))
-        or band.GetNoDataValue()!=blank or struct.unpack('<15d',band.ReadRaster())!=expected
+        or band.GetNoDataValue()!=blank or struct.unpack('<15'+scalar,band.ReadRaster())!=expected
         or band.GetMaskBand().ReadRaster()!=bytes(0 if v==blank else 255 for v in expected)):
         raise FixtureError('Manager GRD full pixels, mask, node grid or unknown CRS changed')
     return {'case':case,'object':'raster/grd-'+case+'.grd','source_srid':None,
         'size_bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest(),
-        'pixels_verified':15,'dtype':'Float64','nodata':blank,'valid_pixels':14,
+        'pixels_verified':15,'dtype':dtype,'nodata':blank,'valid_pixels':14,
         'grid_verified':True,'crs_absent':True}
 
 

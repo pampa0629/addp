@@ -18,7 +18,7 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
   const evidence = JSON.parse(env.ADDP_ONLINE_MANAGER_RASTER_MEDIA_JSON || '{}')
   expect(evidence.run_id).toBe(env.ADDP_ONLINE_TEST_RUN_ID)
   expect(['img', 'jpeg2000', 'grd']).toContain(evidence.source_format)
-  expect(evidence.cases.map(source => source.case)).toEqual({ img: ['wgs84', 'utm50n', 'unlocated'], jpeg2000: ['wgs84', 'utm50n', 'unlocated', 'codestream'], grd: ['v1', 'v2'] }[evidence.source_format])
+  expect(evidence.cases.map(source => source.case)).toEqual({ img: ['wgs84', 'utm50n', 'unlocated'], jpeg2000: ['wgs84', 'utm50n', 'unlocated', 'codestream'], grd: ['v1', 'v2', 'surfer6'] }[evidence.source_format])
   const expectedIdentity = { principalID: evidence.identity.principal_id, tenantID: evidence.identity.tenant_id,
     permissions: new Set(evidence.identity.permissions_verified) }
   const diagnostics = createBrowserGpuDiagnostics('img-login')
@@ -60,6 +60,11 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
       expect(meta.attributes.item).toMatchObject({ data_type: 'media', format: evidence.source_format, layout: 'single' })
       expect(meta.attributes.type_info.media).toMatchObject({ encoding: source.driver, width: source.width ?? 256, height: source.height ?? 256 })
       expect(meta.attributes.format_info[evidence.source_format]).toMatchObject({ scan_complete: true, band_count: source.band_count, driver: source.driver, ...source.grid_facts })
+      if (evidence.source_format === 'grd') {
+        expect(meta.attributes.format_info.grd.bands).toHaveLength(1)
+        expect(meta.attributes.format_info.grd.bands[0]).toMatchObject({ dtype: source.driver === 'GSBG' ? 'Float32' : 'Float64', nodata: source.grid_facts.blank_value, nodata_is_nan: false })
+        if (source.driver === 'GSBG') expect(meta.attributes.format_info.grd).not.toHaveProperty('version')
+      }
       await frame.getByRole('tab', { name: /^(?:属性|Attributes)$/, exact: true }).click()
       await expect(frame.getByText(source.driver, { exact: true }).first()).toBeVisible()
       actual.metadata_verified = true

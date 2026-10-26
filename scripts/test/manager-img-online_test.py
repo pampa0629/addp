@@ -18,6 +18,9 @@ def detail(spec, index=1):
              'format_info': {spec['source_format']: {'scan_complete': True, 'driver': spec['driver'], 'band_count': spec['band_count'], **spec.get('grid_facts',{})}}}
     if spec['source_srid']:
         attrs['capabilities'] = {'spatial': {'srid': spec['source_srid'], 'extent': list(spec['extent'])}}
+    if spec['source_format']=='grd':
+        attrs['format_info']['grd']['bands']=[{'dtype':'Float32' if spec['driver']=='GSBG' else 'Float64',
+            'nodata':spec['grid_facts']['blank_value'],'nodata_is_nan':False}]
     return {'id': index, 'item_type': 'object', 'fingerprint': str(index) * 64,
             'full_name': 'bucket/' + spec['object'], 'size_bytes': 4, 'attributes': attrs}
 
@@ -171,12 +174,12 @@ for(const extension of ['img','jp2','j2k']) {
                'ADDP_ONLINE_MANAGER_MINIO_BUCKET': 'bucket', 'ADDP_ONLINE_ARTIFACT_DIR': str(root)}
         return lambda: IMG.run(Path('/repository'), env, owner, browser_runner=browser, physical_runner=physical, source_format=source_format), generated, cleaned
 
-    def test_grd_reads_both_versions_without_generation_and_preserves_sources(self):
+    def test_grd_reads_both_binary_profiles_without_generation_and_preserves_sources(self):
         with tempfile.TemporaryDirectory() as root:
             run, generated, cleaned = self.scenario(root, source_format='grd')
             report=run()
             self.assertEqual(report['result'],'passed')
-            self.assertEqual([c['case'] for c in report['cases']],['v1','v2'])
+            self.assertEqual([c['case'] for c in report['cases']],['v1','v2','surfer6'])
             self.assertEqual(generated,[])
             self.assertEqual(cleaned,[])
             self.assertTrue(report['source_unchanged'])
@@ -186,6 +189,11 @@ for(const extension of ['img','jp2','j2k']) {
                 bad=copy.deepcopy(good)
                 bad['attributes']['format_info']['grd'].pop(key)
                 with self.assertRaises(OWNER.SuiteError):IMG.validate_meta(OWNER,bad,spec)
+            for key,value in (('dtype','Float64' if spec['driver']=='GSBG' else 'Float32'),('nodata',None),('nodata_is_nan',True)):
+                bad=copy.deepcopy(good);bad['attributes']['format_info']['grd']['bands'][0][key]=value
+                with self.assertRaises(OWNER.SuiteError):IMG.validate_meta(OWNER,bad,spec)
+        bad=detail(IMG.GRD_SOURCES[-1]);bad['attributes']['format_info']['grd']['version']=6
+        with self.assertRaises(OWNER.SuiteError):IMG.validate_meta(OWNER,bad,IMG.GRD_SOURCES[-1])
 
     def test_full_orchestration_generates_exactly_two_and_cleans_both(self):
         with tempfile.TemporaryDirectory() as root:

@@ -30,8 +30,8 @@ func TestNativeInspectionBindsTenantAndFreezesSource(t *testing.T) {
 	for _, spec := range []struct {
 		format format.FormatType
 		driver string
-	}{{format.FormatIMG, "HFA"}, {format.FormatJPEG2000, "JP2OpenJPEG"}, {format.FormatGRD, "GS7BG"}} {
-		t.Run(string(spec.format), func(t *testing.T) {
+	}{{format.FormatIMG, "HFA"}, {format.FormatJPEG2000, "JP2OpenJPEG"}, {format.FormatGRD, "GS7BG"}, {format.FormatGRD, "GSBG"}} {
+		t.Run(string(spec.format)+"/"+spec.driver, func(t *testing.T) {
 			if got := format.DetectFormat("scene.IMG", nil); got != format.FormatIMG {
 				t.Fatal(got)
 			}
@@ -55,11 +55,13 @@ func TestNativeInspectionBindsTenantAndFreezesSource(t *testing.T) {
 						"format_info": map[string]interface{}{"scan_complete": true, "band_count": 3},
 					}}}}, nil
 			}}
-			provider, err := rastermedia.Bind(spec.format, spec.driver, runtime, conn, 7, plan)
+			drivers := []string{spec.driver}
+			provider, err := rastermedia.Bind(spec.format, drivers, runtime, conn, 7, plan)
 			if err != nil {
 				t.Fatal(err)
 			}
 			conn["host"] = "wrong"
+			drivers[0] = "wrong"
 			plan.Source.Access.Path = "/wrong.img"
 			description, err := provider.DescribeMedia(context.Background())
 			if err != nil || description == nil || description.Media.Width != 32 {
@@ -77,12 +79,39 @@ func TestIMGInspectionRejectsIncompleteOrWrongContracts(t *testing.T) {
 		runtime := runtimeStub{invoke: func(engineplugin.ConnectionInfo, engineplugin.OperatorInvokeRequest) (*engineplugin.OperatorInvokeResult, error) {
 			return &engineplugin.OperatorInvokeResult{Status: "success", Result: map[string]interface{}{"result": payload}}, nil
 		}}
-		provider, err := rastermedia.Bind(format.FormatIMG, "HFA", runtime, engineplugin.ConnectionInfo{"host": "runtime"}, 7, workflowaccess.SourcePlan{SchemaVersion: workflowaccess.SchemaVersion, Source: workflowaccess.Source{Kind: workflowaccess.KindFile, Format: "img", Access: workflowaccess.Access{Method: workflowaccess.MethodMountedPath, Path: "/input.img"}}})
+		provider, err := rastermedia.Bind(format.FormatIMG, []string{"HFA"}, runtime, engineplugin.ConnectionInfo{"host": "runtime"}, 7, workflowaccess.SourcePlan{SchemaVersion: workflowaccess.SchemaVersion, Source: workflowaccess.Source{Kind: workflowaccess.KindFile, Format: "img", Access: workflowaccess.Access{Method: workflowaccess.MethodMountedPath, Path: "/input.img"}}})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if _, err := provider.DescribeMedia(context.Background()); err == nil {
 			t.Fatal("accepted incomplete IMG inspection")
 		}
+	}
+}
+
+func TestGRDFactoryAcceptsOnlyItsContentSelectedNativeDrivers(t *testing.T) {
+	for _, driver := range []string{"GS7BG", "GSBG", "HFA", "GTiff", ""} {
+		t.Run(driver, func(t *testing.T) {
+			factory, err := format.GetRuntimeMediaInfoProviderFactory(format.FormatGRD)
+			if err != nil {
+				t.Fatal(err)
+			}
+			runtime := runtimeStub{invoke: func(engineplugin.ConnectionInfo, engineplugin.OperatorInvokeRequest) (*engineplugin.OperatorInvokeResult, error) {
+				return &engineplugin.OperatorInvokeResult{Status: "success", Result: map[string]interface{}{"result": map[string]interface{}{
+					"schema_version": "gdal.raster.inspect/v1", "format": "grd", "description": map[string]interface{}{
+						"media":       map[string]interface{}{"kind": "image", "encoding": driver, "width": 5, "height": 3},
+						"format_info": map[string]interface{}{"scan_complete": true},
+					}}}}, nil
+			}}
+			plan := workflowaccess.SourcePlan{SchemaVersion: workflowaccess.SchemaVersion, Source: workflowaccess.Source{Kind: workflowaccess.KindFile, Format: "grd", Access: workflowaccess.Access{Method: workflowaccess.MethodMountedPath, Path: "/height.grd"}}}
+			provider, err := factory.BindMediaInfoProvider(runtime, engineplugin.ConnectionInfo{"host": "runtime"}, 7, plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = provider.DescribeMedia(context.Background())
+			if (err == nil) != (driver == "GS7BG" || driver == "GSBG") {
+				t.Fatalf("driver %q: %v", driver, err)
+			}
+		})
 	}
 }

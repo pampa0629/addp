@@ -13,8 +13,10 @@ func TestSurferGridIdentityAndNativeFactory(t *testing.T) {
 			t.Fatal(name, got)
 		}
 	}
-	if got := format.DetectFormat("no-extension", []byte("DSRB\x04\x00\x00\x00")); got != format.FormatGRD {
-		t.Fatal(got)
+	for _, signature := range []string{"DSRB\x04\x00\x00\x00", "DSBB\x05\x00\x03\x00"} {
+		if got := format.DetectFormat("no-extension", []byte(signature)); got != format.FormatGRD {
+			t.Fatal(got)
+		}
 	}
 	d := (&Plugin{}).Descriptor()
 	if d.DataType != datatype.Media || len(d.Layouts) != 1 || d.Layouts[0] != format.LayoutSingle {

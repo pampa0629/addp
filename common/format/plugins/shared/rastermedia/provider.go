@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
@@ -13,8 +14,8 @@ import (
 
 const inspectionSchema = "gdal.raster.inspect/v1"
 
-func Bind(formatType format.FormatType, driver string, runtime engineplugin.WorkflowRuntimeProvider, conn engineplugin.ConnectionInfo, tenantID uint, plan workflowaccess.SourcePlan) (format.BoundMediaInfoProvider, error) {
-	if runtime == nil || tenantID == 0 || len(conn) == 0 {
+func Bind(formatType format.FormatType, drivers []string, runtime engineplugin.WorkflowRuntimeProvider, conn engineplugin.ConnectionInfo, tenantID uint, plan workflowaccess.SourcePlan) (format.BoundMediaInfoProvider, error) {
+	if runtime == nil || tenantID == 0 || len(conn) == 0 || len(drivers) == 0 || slices.Contains(drivers, "") {
 		return nil, fmt.Errorf("%s inspection requires a runtime, connection and tenant", formatType)
 	}
 	if err := plan.Validate(); err != nil {
@@ -38,7 +39,7 @@ func Bind(formatType format.FormatType, driver string, runtime engineplugin.Work
 	if err := json.Unmarshal(encoded, &frozen); err != nil {
 		return nil, err
 	}
-	return &boundProvider{runtime: runtime, conn: frozen.Conn, plan: frozen.Plan, tenantID: tenantID, formatType: formatType, driver: driver}, nil
+	return &boundProvider{runtime: runtime, conn: frozen.Conn, plan: frozen.Plan, tenantID: tenantID, formatType: formatType, drivers: slices.Clone(drivers)}, nil
 }
 
 type boundProvider struct {
@@ -47,7 +48,7 @@ type boundProvider struct {
 	plan       workflowaccess.SourcePlan
 	tenantID   uint
 	formatType format.FormatType
-	driver     string
+	drivers    []string
 }
 
 func (p *boundProvider) Format() format.FormatType { return p.formatType }
@@ -73,7 +74,7 @@ func (p *boundProvider) DescribeMedia(ctx context.Context) (*format.MediaDescrib
 	if err := json.Unmarshal(encoded, &description); err != nil {
 		return nil, err
 	}
-	if description.Media == nil || description.Media.Kind != datatype.MediaKindImage || description.Media.Width <= 0 || description.Media.Height <= 0 || description.Media.Encoding != p.driver || description.FormatInfo["scan_complete"] != true {
+	if description.Media == nil || description.Media.Kind != datatype.MediaKindImage || description.Media.Width <= 0 || description.Media.Height <= 0 || !slices.Contains(p.drivers, description.Media.Encoding) || description.FormatInfo["scan_complete"] != true {
 		return nil, fmt.Errorf("%s inspection returned incomplete media facts", p.formatType)
 	}
 	return &description, nil

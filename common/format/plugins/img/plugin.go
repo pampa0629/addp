@@ -19,7 +19,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 func (p *Plugin) RequiredMediaInfoOperators() []string { return []string{"raster_inspect"} }
 
 func (p *Plugin) BindMediaInfoProvider(runtime engineplugin.WorkflowRuntimeProvider, conn engineplugin.ConnectionInfo, tenantID uint, plan workflowaccess.SourcePlan) (format.BoundMediaInfoProvider, error) {
-	return rastermedia.Bind(p.Format(), "HFA", runtime, conn, tenantID, plan)
+	return rastermedia.Bind(p.Format(), []string{"HFA"}, runtime, conn, tenantID, plan)
 }
 
 func init() {
