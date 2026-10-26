@@ -454,7 +454,7 @@ Native候选树`83c8384f0ae808f1d9947b9126ded49c72289797`，原始日志SHA-256�
 
 原剖面套件12成功链／26次双语准确失败已由专门CI会话唯一受理：[Hosted Run 40265540763／Job 121387037149](https://github.com/pampa0629/addp/actions/runs/40265540763/job/121387037149)，workflow_dispatch attempt1，实际源码固定`06f9caf5637580d72e5ef571a8a14fd91d31cd46`，结果尚待回传，未计通过。预查5728到实际06的profile runner／physical fixture／hosted gate三文件逐字节不变；0ea到06的profile runner仅随已确认tangential枚举更新非法method双语提示，fixture与hosted gate不变。保留已受理运行，不取消、不重发；最终仍须按实际06原始归档和Runtime source独立严格审计，不能把0ea全量冒充06全量或Hosted证明。
 
-切向产品`6cdc38dff`及独立准备`1fa0e1810`继续单列待CI回传；本会话不手工触发／轮询／重跑／取消相关运行，不设置定时。原产品cb2固定证据、本地Parquet失败及834并行镶嵌double-free未确认根因记录分别保留，不计UI、容量或Hosted数值极限。
+切向产品固定`6cdc38dff`的Linux全量6918项已通过，独立Hosted实际固定`2f704eb17`已受理待回传；独立准备`1fa0e1810`的整树全量证据未回传，分层结论见切向独立验收；本会话不手工触发／轮询／重跑／取消相关运行，不设置定时。原产品cb2固定证据、本地Parquet失败及834并行镶嵌double-free未确认根因记录分别保留，不计UI、容量或Hosted数值极限。
 
 
 ### DEM 切向曲率独立 Hosted 验收
@@ -471,4 +471,8 @@ Native候选树`83c8384f0ae808f1d9947b9126ded49c72289797`，原始日志SHA-256�
 
 三项门禁候选树均为`3285bc40414c6f977644a5bf6bbecb8e55b8a907`；Native日志SHA-256：`96d2857cf86de6a3e8f24e9f50e4e53e065e0c1d80c8e2e898a564f001558a04`，runner：`818b4397d476872b020f8dcf929de8ac383455c811b1d0e5da6b3e4928bc9bd0`，登记：`0694e3a1c9862743edf7ed3894bde8225ad28405b4e0d26738a7ef19a8cfb671`。实际输入无漂移、无新增Python原生崩溃报告。产品核心和旧套件未修改；本轮未重复完整Native或栅格聚合，不将既有结果冒充新增套件整树证明。
 
-实际Hosted仍由专门CI会话协调，本轮不触发／轮询／重跑／取消CI或Hosted，不设置定时、不启动或重启个人服务／Infra、不执行keepalive。新固定源码Linux全量和真实平台13成功／26失败及清理证据尚未回传，不计T4、UI或容量；数值极限、不可表示步长及原生64位边界继续单列Native。旧固定验收、切向产品本地全量6917通过／1项Parquet-PyArrow失败和834并行镶嵌double-free未确认根因记录分别保留。
+固定产品源码`6cdc38dff129492a83f3200b2b27ffc908e8e6ca`的[Linux Native Job 121379953801](https://github.com/pampa0629/addp/actions/runs/40263251151/job/121379953801)已核完整原始日志：实际标准`make test-geopython-workflow` **6918 passed／24 warnings／1171.37秒**，通过进度点6918一致，0失败／跳过／筛除；实际测试步骤和Job均success、`ADDP_CI_SELECTED=true`。Ubuntu24.04.5 x86_64／Python3.12.15／GDAL3.8.4；原始日志SHA-256：`6307f87b8ed4a2d1c14b9b90c2a6fd21edd2dddd46ac7935cf0c12733432731b`。仅关闭固定6cd切向产品的Linux全量，不覆盖独立准备`1fa0e1810`新增64项夹具或后续HEAD的整树全量。CI会话回报的同源码Platform登记失败及其复验由对应owner归并；本会话未独立审计该层，不计本轮Platform通过，不影响上述已核实的Native结论。
+
+切向独立Hosted已由CI会话首次唯一受理：[40267387076／121392642425](https://github.com/pampa0629/addp/actions/runs/40267387076/job/121392642425)，`workflow_dispatch`／attempt1，官方固定源码`2f704eb174ba00a9f8e54318f22c5264f37c487a`。已核受理记录及三份核心runner／fixture／gate与准备提交`1fa0e181091fcc187db8c8f02675c860d9cfcded`逐字节一致；回传快照为queued，结果待回传，不能记通过。保留原任务，不取消、不重复触发；最终须按官方2f7完整源码／Runtime及13成功链、26双语准确失败和全部清理审计原始归档。
+
+实际运行继续由专门CI会话协调，本会话不触发／轮询／重跑／取消CI或Hosted，不设置定时、不操作个人服务／Infra。真实平台13成功／26失败及清理证据待审计，不计T4、UI或容量；数值极限、不可表示步长及原生64位边界继续单列Native。既有本地全量6917通过／1项Parquet-PyArrow失败和834并行镶嵌double-free未确认根因记录保留，不因Linux绿灯改判。
