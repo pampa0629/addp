@@ -1551,3 +1551,65 @@ func TestExecutionEventsPaginationFixtureIsReadOnlyAndHasNoEngineProvisioner(t *
 		t.Fatal("browser identity unavailable")
 	}
 }
+
+func TestExecutionEventsPaginationPrivateEnvironmentReachesScenarioIdentity(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "identity.env")
+	if err := writeEnvironmentFile(path, map[string]string{
+		"ADDP_ONLINE_TEST_TENANT_ID":              "2",
+		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN":      "synthetic-consumer-token",
+		"ADDP_ONLINE_EVENTS_PEER_ACCESS_TOKEN":    "synthetic-peer'quoted-token",
+		"ADDP_ONLINE_EVENTS_FOREIGN_ACCESS_TOKEN": "synthetic-foreign-token",
+		"ADDP_ONLINE_EVENTS_FOREIGN_TENANT_ID":    "3",
+		"ADDP_ONLINE_UNDECLARED_TOKEN":            "must-not-be-exported",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatal("event pagination identity file must remain owner-only")
+	}
+	// Exercise the real writer, shell export and scenario identity preparation.
+	// Only HTTP identities are simulated; stop before any database/fixture work.
+	command := exec.Command("bash", "-c", `set -eu
+source "$1"
+python3 - "$2" <<'PY'
+import importlib, json, os, sys
+from pathlib import Path
+from unittest.mock import patch
+
+M = importlib.import_module('scripts.test.execution-events-pagination-online')
+directory = Path(sys.argv[1])
+artifact = directory / 'artifact'
+artifact.mkdir()
+assert 'ADDP_ONLINE_UNDECLARED_TOKEN' not in os.environ
+calls = []
+class IdentityPrepared(Exception): pass
+def client(url, token, timeout):
+    assert url == 'http://127.0.0.1:8000' and timeout == 10
+    return token
+def validate(token, tenant, permissions):
+    assert permissions == {'monitor.execution.read', 'meta.scan_task.read'}
+    calls.append((token, tenant))
+    return {'tenant_id': str(tenant)}
+with patch.object(M.BASE, 'boundary', return_value=(directory, artifact)), \
+     patch.object(M.API, 'GatewayClient', side_effect=client), \
+     patch.object(M.API, 'validate_user_identity', side_effect=validate), \
+     patch.object(M, 'run_private', side_effect=IdentityPrepared):
+    try:
+        M.run()
+    except IdentityPrepared:
+        pass
+    else:
+        raise AssertionError('identity preparation did not reach fixture boundary')
+assert calls == [('synthetic-consumer-token', 2), ("synthetic-peer'quoted-token", 2), ('synthetic-foreign-token', 3)]
+report = json.loads((artifact / 'execution-events-pagination.json').read_text())
+assert report['failed_stage'] == 'fixture' and report['checks'] == []
+PY
+`, "event-pagination-environment", path, directory)
+	command.Dir = filepath.Clean(filepath.Join("..", "..", "..", ".."))
+	command.Env = []string{"PATH=" + os.Getenv("PATH"), "GATEWAY_URL=http://127.0.0.1:8000", "ADDP_ONLINE_TEST_RUN_ID=unit-event-environment"}
+	if err := command.Run(); err != nil {
+		t.Fatalf("private identity environment did not reach scenario: %v", err)
+	}
+}
