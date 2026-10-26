@@ -388,9 +388,9 @@ frontend/src/
    - API 复用[模块 Client](frontend/src/api/client.js)：共享 `baseURL` 为 `/api/v1`，System API 调用参数使用 `/system/...`，最终路径为 `/api/v1/system/...`；拼接规则见[前后端连接说明](../docs/spec/addp新模块开发指南.md#开发中的前端-后端连接)。
 
 4. **端口配置**:
-   - 后端默认: 8180
-   - 前端开发: 5173
-   - 前端生产（Nginx）: 8090
+   - 开发首选端口与容器内端口以[端口规范](../docs/spec/addp端口分配.md#端口分配)为准；开发实际端口取标准启动输出及 `.dev-state/ports.env`，不从固定示例推断。
+   - 浏览器入口遵循[公开路由规范](../docs/spec/addp前端路由与可恢复状态规范.md#二公开路由事实源)：Console 使用 `/system/...`，模块 iframe 与 standalone 使用同 origin 的 `/module-ui/system/...`；模块开发监听端口用于内部服务，直接访问会跳转到正式入口。
+   - 根 Compose 部署仅发布 Nginx 统一入口，System 前后端使用容器网络与固定内部端口；部署端口冲突时失败，不按开发模式自动避让。公开 origin 按[部署配置](../docs/spec/configuration/环境变量参考.md#端口分配)设置 `ADDP_PUBLIC_ORIGIN`；域名、HTTPS 或上级反向代理须使用用户实际访问的 origin。模块单独部署仍按对应部署配置确定入口。
 
 ## 安全机制
 
