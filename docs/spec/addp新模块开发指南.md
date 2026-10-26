@@ -280,6 +280,8 @@ export default createAPIClient(() => useAuthStore(), {
 
 **原因**: 模块尚未向 System 成功注册，或心跳失败后正处于 `recovering`
 
+注册与心跳失败的诊断、重试分类和敏感信息边界见[模块注册排查](../guide/troubleshooting/认证与引擎注册.md#模块注册与心跳失败)。
+
 **解决方案**:
 在 `cmd/server/main.go` 中使用统一模块生命周期能力，不得只调用注册函数却不把注册状态接入 Ready 门禁。启动顺序固定为：
 

@@ -13,6 +13,8 @@ curl -i "${GATEWAY_ORIGIN:?设置实际 Gateway origin}/health/ready"
 
 存活只证明进程可响应；Gateway 就绪只要求至少成功应用一次 System 完整模块路由快照，不证明所有模块、Redis、日志库或目标数据源可用。未就绪时 ready 为 503，业务入口由公共中间件拒绝；路由与实例租约需另查。统一响应见[健康端点规范](../../docs/spec/api/健康与平台控制面.md#进程存活与模块就绪端点)。
 
+注册与心跳失败的诊断、重试分类和敏感信息边界见[模块注册排查](../../docs/guide/troubleshooting/认证与引擎注册.md#模块注册与心跳失败)。
+
 ## 瓦片协议入口核对
 
 先按[Service 入口专题](../../service/docs/architecture/瓦片发布与缓存.md#元数据链接与公开入口)区分直连 Service Backend、直连 Gateway 与根 Nginx 统一入口。仓库根 Nginx 尚未转发 `/wmts`、`/tiles`、`/ogc/tiles`，这些路径落入指向 Console 的 `/`；给协议 URL 添加 `/api` 不能视为已挂载的替代入口。
