@@ -370,9 +370,12 @@ Console 公开路由与 System standalone 路由使用同一模块内 path 和 q
 
 - 只增加新的 `NNNNNN_name.up.sql`，不修改已发布 migration；
 - 已执行 migration 的版本号、文件名和内容摘要必须保持不变；概念收敛或方案重做也必须使用新版本向前迁移；
+- 标准成员清单能力退出后，迁移 `000140` 停用其六项 Permission、删除全部 Role 关联并撤销受影响会话，并撤销 `tenant.standard_runtime` 的人员目录读取授权。Catalog 的组织引用继续只允许 `addp-catalog` 调用，由 Catalog 专用解析方法处理。
 - Quality 域引用权限的已执行 `000149` 保持原始摘要；后续域读取授权与服务身份刷新使用 `000150`。回归测试须从原始 149 已执行状态升级，校验历史摘要保持不变及重复启动幂等，不能只验证空库迁移。
 - Permission/Role Catalog 变化由聚合器生成确定性输入，再进入新的向前 migration；
+- `000193_resource_observation_read.up.sql` 发布资源观测权限：`monitor.resource_observation.read` 仅允许 Platform、不可委托及租户定制，产品目录只授予 `platform.system_administrator`；内置角色 Manifest 116 同步。迁移推进受影响主体授权版本并撤销旧 Refresh Token Family，不扩大三员其他角色、Prometheus 采集身份或 Tenant Runtime 角色。预算配置沿用 Monitor 已有模块级平台配置 Permission。
 - `000194` 发布专职 `tenant.engine_access_delegation_administrator` 模板，只允许 Tenant Scope 的 User，并组合委派读取／创建／撤销、引擎管理读取与租户账号候选读取。角色 Manifest 117 同步；不改写旧角色、不新增任何 Assignment、不生成管理委派或数据 Grant。账号赋权仍走正常 IAM API 并执行原有授权版本与会话撤销规则。
+- 主机资源告警规则迁移 `000211_platform_resource_alert_rules` 新增 Monitor 的四项平台规则权限，仅绑定既有 `platform.system_administrator`；沿角色绑定触发器推进授权版本，并撤销该角色活动用户的旧刷新令牌族。保留 IAM 内核、其他角色、用户角色分配、租户权限和服务身份。
 - 破坏性模型切换不保留旧字段、双写、双读或兼容 query；
 - DataItem 边界绑定切换时，经确认可丢弃的旧原生目标测试授权不自动转换为新 Grant；通过前向迁移清理相关源规则及依赖记录，重新核验 Meta 边界后显式授权。清理不扩大到 IAM 账号、角色、功能权限或引擎管理委派，也不删除通用审计历史。切换完成后，旧原生目标记录不能作为读取依据，不保留兼容放行路径。
 - `000229` 为现有不可变 `engine_access_grants` 增加 nullable `file_composition` 最小批准快照；原生表／集合行保持 NULL，文件行必须有严格完整组成，不回填或升级旧主文件许可。组成只取可信 Meta 事实，指纹仍是主项身份，源规则依同项／同边界摘要匹配 Grant、依同项身份匹配 Deny。原有 `(tenant_id,engine_id,item_fingerprint,boundary_hash)` 索引继续服务点查，不为组成快照建立独立 ACL 或无查询需求的 JSONB 索引。受管 FTP 模型结果使用同一次普通 User 裁决绑定 `expected_source` 完整组成和当前 Engine 版本，不依赖历史任务仍存在或终态 EA。正式接入及验证分片记录，迁移／共享类型存在不表示 FTP 真实内容链已验收。
@@ -408,9 +411,4 @@ Console 公开路由与 System standalone 路由使用同一模块内 path 和 q
 
 下文专项分组只证明所选用例覆盖，不替代完整 T2 或 owner 门禁。未运行、失败、跳过项须分别记录，不计为通过；Go T1／PostgreSQL T2 不证明开发库已恢复，也不替代跨模块 Online 或业务运行验收。
 
-标准成员清单能力退出后，迁移 000140 停用其六项 Permission、删除全部 Role 关联并撤销受影响会话，并撤销 `tenant.standard_runtime` 的人员目录读取授权；已应用的历史迁移保持校验和不变。Catalog 的组织引用继续只允许 `addp-catalog` 调用，由 Catalog 专用解析方法处理。
-
-
-资源观测权限由连续迁移 `000193_resource_observation_read.up.sql` 发布：`monitor.resource_observation.read` 仅允许 Platform、不可委托及租户定制，产品目录只授予 `platform.system_administrator`；内置角色 Manifest 116 同步。迁移推进受影响主体授权版本并撤销旧 Refresh Token Family，不扩大三员其他角色、Prometheus 采集身份或 Tenant Runtime 角色。预算配置沿用 Monitor 已有模块级平台配置 Permission。
-
-主机资源告警规则迁移 `000211_platform_resource_alert_rules` 新增 Monitor 的四项平台规则权限，仅绑定既有 `platform.system_administrator`；沿角色绑定触发器推进授权版本，并撤销该角色活动用户的旧刷新令牌族。保留 IAM 内核、其他角色、用户角色分配、租户权限和服务身份。局部验证使用 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test resource-alert-rules"`，同时验证新键作用域/绑定、其他目录与身份不变、授权版本、刷新撤销、重复执行及完整迁移 Runner；必须使用已核实的测试 DSN。
+`000211` 专项验证使用 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test resource-alert-rules"`，覆盖新键作用域/绑定、其他目录与身份不变、授权版本、刷新撤销、重复执行及完整迁移 Runner。
