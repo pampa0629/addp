@@ -28,8 +28,10 @@ const entry = id => ({
   components: [{ id: 'field', component_status: 'active', display_name: 'Sample field' }],
   standard_mappings: [mapping]
 })
-function mount() {
-  const state = reactive({ entry: entry('first'), canEdit: true })
+function mount({ componentRows, selectComponents } = {}) {
+  const initialEntry = entry('first')
+  if (componentRows) initialEntry.components = componentRows
+  const state = reactive({ entry: initialEntry, canEdit: true })
   const controls = new Map()
   const root = document.createElement('div')
   document.body.appendChild(root)
@@ -38,11 +40,11 @@ function mount() {
     ? h('section', { 'data-dialog': '' }, [...(slots.default?.() || []), ...(slots.footer?.() || [])]) : null })
   app.component('el-card', { setup: (_, { slots }) => () => h('div', [...(slots.header?.() || []), ...(slots.default?.() || [])]) })
   app.component('el-table-column', { setup: (_, { slots }) => () => h('div', slots.default?.({ row: state.entry.standard_mappings[0] })) })
-  app.component('el-select', { setup: (_, { attrs, slots }) => () => {
+  app.component('el-select', selectComponents?.ElSelect || { setup: (_, { attrs, slots }) => () => {
     controls.set(attrs.placeholder, attrs)
     return h('div', { 'data-select': attrs.placeholder }, slots.default?.())
   } })
-  app.component('el-option', { props: ['label'], setup: props => () => h('span', props.label) })
+  app.component('el-option', selectComponents?.ElOption || { props: ['label'], setup: props => () => h('span', props.label) })
   app.component('el-button', { setup: (_, { attrs, slots }) => () => h('button', attrs, slots.default?.()) })
   for (const name of ['table', 'empty', 'tag', 'form', 'form-item', 'input', 'input-number']) {
     app.component(`el-${name}`, { setup: (_, { slots }) => () => h('div', slots.default?.()) })
@@ -66,6 +68,34 @@ beforeEach(() => {
 afterEach(() => mounted.splice(0).forEach(({ app, root }) => { app.unmount(); root.remove() }))
 
 describe('standard mapping candidate query lifecycle', () => {
+  it.each(['replace', 'mutate'])('updates a real open field select when %s fills initially empty components', async change => {
+    const { ElSelect, ElOption } = await vi.importActual('element-plus')
+    const view = mount({ componentRows: [], selectComponents: { ElSelect, ElOption } })
+    view.click('catalog.mapping.propose'); await settle()
+    const wrapper = view.root.querySelector('[data-dialog] .el-select__wrapper')
+    wrapper.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await settle()
+    const input = wrapper.querySelector('[role="combobox"]')
+    expect(input.getAttribute('aria-expanded')).toBe('true')
+    const list = document.getElementById(input.getAttribute('aria-controls'))
+    expect(list.querySelectorAll('[role="option"]')).toHaveLength(0)
+
+    const fields = ['person_id', 'person_nickname', 'activity_id'].map(id => ({ id, display_name: id, component_status: 'active' }))
+    fields.push({ id: 'old', display_name: 'Retired field', component_status: 'missing' })
+    if (change === 'replace') view.state.entry = { ...entry('first'), components: fields }
+    else view.state.entry.components.push(...fields)
+    await settle()
+    expect(view.open()).toBe(true)
+    expect(input.getAttribute('aria-expanded')).toBe('true')
+    const options = [...list.querySelectorAll('[role="option"]')]
+    expect(options.map(node => node.textContent)).toEqual(['person_id', 'person_nickname', 'activity_id'])
+    expect(list.textContent).not.toContain('Retired field')
+    options[0].dispatchEvent(new MouseEvent('click', { bubbles: true })); await settle()
+    expect(wrapper.textContent).toContain('person_id')
+    expect(api.createStandardMapping).not.toHaveBeenCalled()
+    expect(api.updateStandardMapping).not.toHaveBeenCalled()
+  })
+
   it('does not reuse an earlier dialog element search after reopening', async () => {
     const pending = deferred()
     api.listReferenceCandidates.mockReturnValue(pending.promise)
