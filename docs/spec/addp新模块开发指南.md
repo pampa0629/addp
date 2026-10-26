@@ -204,7 +204,7 @@
 bash scripts/dev/start.sh
 ```
 
-通过本次启动输出的 Console 地址访问平台。Node 版本以根 `.node-version` 为准，依赖按模块锁文件使用 `npm ci`；启动入口会检查并准备缺失依赖。仅修改支持热更新的前端代码时直接查看更新，确需重启时由用户在终端执行，见[启动脚本使用指南](../../scripts/docs/启动脚本使用指南.md)。
+通过本次启动输出的 Console 地址访问平台。依赖准备按[前端依赖接入步骤](#创建新模块前端)执行，启动入口会检查并准备缺失依赖。仅修改支持热更新的前端代码时直接查看更新，确需重启时由用户在终端执行，见[启动脚本使用指南](../../scripts/docs/启动脚本使用指南.md)。
 
 ### 运行单个前端 (独立模式)
 
@@ -238,7 +238,7 @@ export default createAPIClient(() => useAuthStore(), {
 ### 创建新模块前端
 
 1. 在新的 `<module>/frontend/` 下按现有模块组织 Vue 3、Pinia 和 Element Plus 工程，调整包名、标题、业务视图和菜单。只参考需要的结构，不整目录复制已有模块的业务、依赖或构建产物。
-2. 使用根 `.node-version` 对应的 Node，提交模块 `package.json` 和一致的 `package-lock.json`。通过 `overrides` 及 Vite 别名、去重规则保持 Vue 单一实例；common-frontend 复用消费模块依赖，不独立安装自己的 `node_modules`。
+2. 使用根 `.node-version` 对应的 Node，提交模块 `package.json` 和一致的 `package-lock.json`，安装使用 `npm ci`。通过 `overrides` 及 Vite 别名、去重规则保持 Vue 单一实例；common-frontend 复用消费模块依赖，不独立安装自己的 `node_modules`。版本与依赖归属遵循[前端依赖规范](addp技术栈规约.md#前端依赖版本规范)。
 3. Vite 复用共享 `withModuleFrontend()`，在共享模块登记及 Console 的代理、菜单配置中接入新入口，Router 使用 `createWebHistory(import.meta.env.BASE_URL)`。正式基路径与跳转遵循[公开路由规范](addp前端路由与可恢复状态规范.md#二公开路由事实源)，开发首选值与实际端口遵循[端口规范](addp端口分配.md)，不另写跳转逻辑。
 4. 创建本模块 AuthStore 与路由守卫以调用共享认证能力，业务请求按[前后端连接说明](#开发中的前端-后端连接)接入共享客户端。按 Layout 嵌套路由组织页面，支持独立顶层界面和 Console iframe。
 5. 按[前端国际化接入清单](addp国际化开发规范.md#新增模块检查清单)创建 `src/i18n/zh-cn.json` 与 `en.json`，使用共享 `createAddpI18n()`；iframe 监听 Console 语言变化，Element Plus locale 跟随当前语言，请求统一携带 `Accept-Language`。
@@ -307,12 +307,11 @@ export default createAPIClient(() => useAuthStore(), {
 - [ ] 按[统一模块生命周期接入](#统一模块生命周期接入)完成注册、心跳、Ready 门禁和注销
 
 **前端开发**:
-- [ ] 建立前端目录与模块锁文件，Node 版本取根 `.node-version`，安装使用 `npm ci`
+- [ ] 按[前端依赖接入步骤](#创建新模块前端)核对模块声明、锁文件和 Vue 单一实例
 - [ ] 登记开发首选端口，并消费标准启动入口解析的实际端口
 - [ ] 按[前端接入步骤](#创建新模块前端)核对共享 Vite 登记、Console 入口与部署路由，Router 基路径一致
 - [ ] 实现 Layout 组件（支持双模式）
 - [ ] 按[主题接入步骤](../../common-frontend/docs/frontend-style/主题接入.md#主题系统实施指南)完成共享 CSS、挂载前初始化和 Layout 变量接入
-- [ ] 配置 common-frontend 别名、依赖去重与 `overrides`，保持 Vue 单一实例
 - [ ] 新建组件前已检索并复用 `common-frontend` 和现有模块的规范实现，没有重复建设相同语义职责与交互契约的前端能力
 - [ ] 共享 AuthStore、路由守卫和 API Client 已接入，认证请求经同 origin Gateway
 - [ ] 按[前后端连接说明](#开发中的前端-后端连接)核对实际请求 URL，控制面前缀没有重复拼接
