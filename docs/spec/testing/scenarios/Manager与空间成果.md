@@ -507,7 +507,7 @@ Native候选树`83c8384f0ae808f1d9947b9126ded49c72289797`，原始日志SHA-256�
 
 ## DEM 平面曲率独立 Hosted 验收
 
-已确认独立手工入口 `raster-plan-curvature-persistence`，普通 User 原12权限、非默认 Tenant、同源产品默认入口 Runtime、独立 NFS 与600秒业务预算。仅新增本套件测试、登记和既有文档，不修改产品曲率、权限或其他模块逻辑；实际 Linux／Hosted 运行继续由专门CI会话协调，本会话不触发、轮询或设置定时。
+独立手工入口 `raster-plan-curvature-persistence` 已闭合本轮固定范围，普通 User 原12权限、非默认 Tenant、同源产品默认入口 Runtime、独立 NFS 与600秒业务预算。仅新增本套件测试、登记和既有文档，不修改产品曲率、权限或其他模块逻辑；实际 Linux／Hosted 由专门CI会话协调，本会话仅对其回传结果独立审计，不触发、轮询或设置定时。
 
 15条成功COG链：三种高程／水平单位组合的直接plan，填洼接plan、重分类接plan，完全水平平地、非平地驻点、全无效、无完整有效邻域、小图，实际有效存储高程 `8z+64` 接plan，以及默认mean／显式mean／profile／tangential四条对照。519×515多波段跨512块样本显式选择第二波段，包含凹凸／鞍面／倾斜面、圆形等高线、普通可表示极小非零梯度、合法零、NoData、mask与部分透明。
 
@@ -517,4 +517,10 @@ Native候选树`83c8384f0ae808f1d9947b9126ded49c72289797`，原始日志SHA-256�
 
 每条成功严格核完整像元／mask、COG完整布局、按实际尺寸的最近邻金字塔、Float64／NaN／每米单位、源网格／CRS、artifact／物理／Meta相等正整数大小、自动扫描精确父执行／用户／租户／引擎及当前执行实际输入血缘／Monitor。成功保存后批量逐条等待精确血缘，不绕过普通收集器；保留不含响应、SQL、凭据或错误全文的封闭阶段进度，所有退出清理独立NFS／镜像／部署／Infra及私有工作区。
 
-测试入口为 `make test-raster-plan-curvature-online-runner`；真实GDAL夹具回归进入既有 `make test-geopython-workflow`，夹具／场景变更选择与手工专用workflow同时登记。极限64位、溢出／下溢、次正规数等继续单列Native，不计Hosted、UI、容量或任意影像认证。本地标准 `make test-raster-plan-curvature-online-runner` 通过74项／20.709秒及完整Online登记；标准Native入口以 `PYTEST_ADDOPTS="-k plan_curvature" make test-geopython-workflow` 通过107项／21.08秒（本套夹具69项、既有平面曲率38项），7146项明确筛除，0失败／跳过，输入无漂移，不能计为全量通过。`make test-python-ci-registration` 通过46项、10项及11模块／Online登记，共享计数不累加。Native／runner原始日志SHA-256分别为 `2eea43a21553ef0e8436ac93d40fb041d3abde863cd2773fcd61adb4da898f32`、`32c26208ce25ef6909140cddfe2065979c04a3b612191d9170738cd8db18b4eb`。正式Linux全量和本套Hosted仍待CI协调回传，不计通过；未运行UI、容量或全量IAM。
+测试入口为 `make test-raster-plan-curvature-online-runner`；真实GDAL夹具回归进入既有 `make test-geopython-workflow`，夹具／场景变更选择与手工专用workflow同时登记。极限64位、溢出／下溢、次正规数等继续单列Native，不计Hosted、UI、容量或任意影像认证。本地标准 `make test-raster-plan-curvature-online-runner` 通过74项／20.709秒及完整Online登记；标准Native入口以 `PYTEST_ADDOPTS="-k plan_curvature" make test-geopython-workflow` 通过107项／21.08秒（本套夹具69项、既有平面曲率38项），7146项明确筛除，0失败／跳过，输入无漂移，不能计为全量通过。`make test-python-ci-registration` 通过46项、10项及11模块／Online登记，共享计数不累加。Native／runner原始日志SHA-256分别为 `2eea43a21553ef0e8436ac93d40fb041d3abde863cd2773fcd61adb4da898f32`、`32c26208ce25ef6909140cddfe2065979c04a3b612191d9170738cd8db18b4eb`。上述本地选择测试不外推全量；正式Linux与Hosted结论见下方固定版本证据。未运行UI、容量或全量IAM。
+
+固定源码 **`79ebc6ff93f2301db51a34e64f54e7ac0976014b`** 的正式Linux Native与本套Hosted均已通过并独立审计原始证据。[Linux Native run40283174360／job121440770332](https://github.com/pampa0629/addp/actions/runs/40283174360/job/121440770332) 实际标准 `make test-geopython-workflow` 全量 **7253 passed／24 warnings／1747.09秒**，通过进度点7253一致，0失败／跳过／筛除；Ubuntu24.04.5 x86_64、Python3.12.15、GDAL3.8.4，gdal-first／arrow-first两探针均通过。完整Job日志SHA-256：`b9d985d679cd1b43ca1514cdc62e5726f703fcc3ef8829007698963922628b1c`。只认该Native Job；父Platform仍有范围外公共crypto依赖冲突，不计整套Platform通过，也不在栅格范围调查／修复。
+
+[Hosted run40283794715／job121442687622](https://github.com/pampa0629/addp/actions/runs/40283794715/job/121442687622) 为该源码唯一手工attempt1，Validate／Run／Upload实际步骤成功，总门禁 **409907毫秒**、业务场景409739毫秒，保持600秒预算。15条保存链（11条plan及mean默认／显式、profile、tangential四对照）、26次准确中英文失败及88个封闭阶段全部通过；18源不变，普通User33／Tenant2原12权限，7服务与默认入口Runtime均同源。每条物理／COG／最近邻金字塔、相等正整数三方大小、精确自动扫描身份、当前执行实际输入血缘／Monitor、提交语言冻结及失败无发布／新增扫描血缘均有在场核验报告；26条准确诊断另逐条匹配原始Develop日志。保存结果的方向恒等和plan／tangential关系共同核228529像元，圆半径倒数、高程变换不变性、默认mean相同及私有工作区移除证据齐备。最终应用／夹具清理passed、Infra零残留。
+
+官方artifact **12635131765／2019866字节**，ZIP SHA-256：`e29113fb3d1472ab54fa8940514b7799796098a88376cbd8a0ab7c3b3f6fd722`；40个归档文件逐一核对解压内容，正式suite、online-report与原始Job／场景stdout一致。suite报告SHA-256：`48e411466d02a67ea6a091236af126605fbd5344b4d8ec6a1432d4ba631b33ce`，Hosted完整Job日志SHA-256：`f4cc45d2320edfc081b19b6dd00a7dac913fa59e2074805be8f0122827640ff7`。归档未保留COG原文件，独立审计核的是在场全幅物理oracle报告、源码／回执、原始诊断和清理，不宣称下载后离线重算15个COG。仅闭合该固定范围API T4；数值极限继续单列Native，不计UI、容量、任意影像或业务DELETE。旧剖面909负例23超时、834并行镶嵌double-free及其他固定历史证据分别保留，本轮plan通过不表示这些缺口已修复。
