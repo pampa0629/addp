@@ -131,16 +131,16 @@
 
    | 接入位置 | 必须覆盖的行为 |
    | --- | --- |
-   | `scripts/dev/start.sh` | 参数、模块选择与全量选择、真实依赖、Backend/Worker 构建和就绪顺序、前端启动清单 |
-   | `scripts/dev/restart.sh`、`stop.sh` | 参数及所选进程的停止范围；核验工作区归属，局部操作不扩散停止依赖，重启复用标准 stop/start 路径 |
+   | `scripts/dev/start.sh` | 参数与帮助、模块选择与全量选择、真实依赖、Backend/Worker 构建和就绪顺序、前端启动清单 |
+   | `scripts/dev/restart.sh`、`stop.sh` | 参数与帮助及所选进程的停止范围；核验工作区归属，局部操作不扩散停止依赖，重启复用标准 stop/start 路径 |
    | `scripts/dev/ports.sh` | 新服务端口登记、所属进程与模块映射、实际端口注入；不按固定端口接管未知进程 |
-   | Swagger、构建与测试入口 | 新模块由现有自动发现或显式登记覆盖；同步 owner 测试、根 Make 入口、CI 路径选择与产品镜像登记 |
+   | Swagger、构建与测试入口 | 正式服务、Worker、前端、Python 包、PostgreSQL 门禁和 Dockerfile 均由现有自动发现或显式登记覆盖；同步 owner 测试、根 Make 入口、CI 路径选择与产品镜像登记 |
 
    模块分支只描述本体与真实依赖，公共依赖复用现有选择逻辑，不假定所有模块都需要 Meta。Engine Runtime 由自身显式参数或全量组合选择，业务模块不得隐式拉起可选 Engine Runtime；Manager 自有 Raster Mosaic Runtime 按既有 owner 入口管理。具体依赖组合见[模块选择指南](../../scripts/docs/模块选择启动指南.md)。
 
    Go 构建复用 `scripts/dev/build-identity.sh` 的内容指纹和原子发布路径。启动前核验受管进程与端口，构建完成后再次检查，再登记 PID 和检查 Ready；不得另写直接运行 `.dev-bins/`、重定向固定日志文件的旁路。Backend 服务运行日志遵循[运行日志规范](addp模块服务运行日志规范.md)。
 
-   验证按[测试与验收规范](addp测试与验收规范.md)和[CI 与交付规范](testing/CI与交付规范.md)选择门禁：构建登记用 `make test-build-registration`，生命周期接入用 `make test-dev-lifecycle`，owner 行为用 `make test-module MODULE=<模块>`；自动发现已覆盖的事实不重复维护手写清单。
+   验证按[测试与验收规范](addp测试与验收规范.md)和[CI 与交付规范](testing/CI与交付规范.md)选择门禁：构建登记用 `make test-build-registration`，生命周期接入用 `make test-dev-lifecycle`，owner 行为用 `make test-module MODULE=<模块>`，提交前再运行 `make test-changed`；自动发现已覆盖的事实不重复维护手写清单。
 
    单模块、全量启动和局部重启的运行验证使用[标准生命周期命令](../../scripts/docs/启动脚本使用指南.md)。这些操作用于运行联调，不代替测试；需要重启时由用户在自己的终端执行。
 
@@ -341,15 +341,12 @@ export default createAPIClient(() => useAuthStore(), {
 - [ ] Dockerfile 与模块 Nginx 配置符合[前端镜像规范](../../scripts/docs/前端镜像构建规范.md)
 
 **脚本集成**:
-- [ ] 修改 `scripts/dev/start.sh`（参数、启动标志、全量启动、模块 case、编译、启动、前端配置；单模块公共依赖不要重复写）
-- [ ] `scripts/dev/restart.sh` 的帮助、参数与停止范围能识别新模块，仍复用标准启动与构建路径
-- [ ] `scripts/dev/stop.sh` 与 `ports.sh` 的模块、进程和端口登记完整
-- [ ] Go 构建复用内容指纹与原子发布路径，生命周期接入通过 `make test-dev-lifecycle`
-- [ ] 根 `Makefile` 能自动发现或显式提供模块测试入口，`.github/workflows/` 的路径选择能命中该模块
-- [ ] 正式服务、Worker、前端、Python 包、PostgreSQL 门禁和 Dockerfile 的自动发现或显式登记完整；构建登记使用 `make test-build-registration`，平台其余登记按[CI 与交付规范](testing/CI与交付规范.md)验证
-- [ ] 运行 `make test-module MODULE=<模块>`；提交前再运行 `make test-changed`
+- [ ] 启动、重启、停止与端口入口已按[开发脚本集成要求](#后端接入步骤)核对，参数、停止范围、进程归属和构建路径完整
+- [ ] 所有新增单元的构建、测试与 CI 登记可由自动发现命中，或已完成必要的显式登记
+- [ ] 按上述正文的标准门禁记录实际验证结果
 - [ ] 验证独立启动 (`-your-module`)
 - [ ] 验证全量启动
+- [ ] 验证局部重启，核对所选停止范围，其他模块和公共依赖保持
 
 **文档和配置**:
 - [ ] 在受版本控制的 `.env.example` 与端口规范中登记首选配置，并按配置规范同步本地环境
