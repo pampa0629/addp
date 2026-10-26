@@ -322,7 +322,7 @@ System 启动顺序固定为：
 
 已执行 migration 的摘要记录在 `system.schema_migration_checksums`；该表只由 Migration Runner 维护，不是手工修改版本或跳过迁移的通道。当前版本由 `system/backend/internal/migration/sql` 和 `internal/migration/catalog_test.go` 共同约束；本文不固定抄写版本号。
 
-应急会话撤销的 `000231` 已发布，保持文件与摘要不变。`000232` 只补充其申请和批准表的外键前导索引：已有按 Tenant／申请编号开头的复合索引继续服务列表和请求查询，单列外键的父记录关联检查另有有效的 B-tree 前导索引。升级不改申请、两人批准、执行回执、审计、角色、权限、授权版本或会话事实；沿同一 Runner 向前升级并验证重复运行，保留完整外键索引门禁。新增 `AgainstPostgres$` 回归由既有 `make test-system-iam-postgres` 自动发现，不增加入口或 Workflow，也不连接本地数据库。
+`000231`、`000232` 的索引约束与回归边界见[具体迁移约束](#具体迁移约束)。
 
 ## 十一、管理端信息架构
 
@@ -386,6 +386,7 @@ Console 公开路由与 System standalone 路由使用同一模块内 path 和 q
 - DataItem 边界绑定切换时，经确认可丢弃的旧原生目标测试授权不自动转换为新 Grant；通过前向迁移清理相关源规则及依赖记录，重新核验 Meta 边界后显式授权。清理不扩大到 IAM 账号、角色、功能权限或引擎管理委派，也不删除通用审计历史。切换完成后，旧原生目标记录不能作为读取依据，不保留兼容放行路径。
 - `000229` 为现有不可变 `engine_access_grants` 增加 nullable `file_composition` 最小批准快照；原生表／集合行保持 NULL，文件行必须有严格完整组成，不回填或升级旧主文件许可。组成只取可信 Meta 事实，指纹仍是主项身份，源规则依同项／同边界摘要匹配 Grant、依同项身份匹配 Deny。原有 `(tenant_id,engine_id,item_fingerprint,boundary_hash)` 索引继续服务点查，不为组成快照建立独立 ACL 或无查询需求的 JSONB 索引。受管 FTP 模型结果使用同一次普通 User 裁决绑定 `expected_source` 完整组成和当前 Engine 版本，不依赖历史任务仍存在或终态 EA。正式接入及验证分片记录，迁移／共享类型存在不表示 FTP 真实内容链已验收。
 - `000230` 在既有唯一 `source_read_scope` 列中封闭表达 Manager 剖析或 FTP 模型 GLB 两种用途，二者互斥，不新增通用引擎许可。Manager 共用签发／消费内核核验当前 User、功能权限、精确 pending 或 running claim、期限和审计；用途各自核验完整冻结 Scope。GLB 的任务标识／版本来自 Manager 创建事务已冻结的统一执行事实，System 不跨读 Manager 私有任务表；同 UUID 的有限核清只返回原授权及原期限。消费在同一当前源规则核验中锁定原版本 FTP Engine，只解密该快照，不再查询另一个连接。新增前向约束保留剖析原 wire，不改角色、Assignment 或源规则；运行接线、负例门禁和真实 FTP T4 分别验收。
+- 应急会话撤销的 `000231` 已发布，保持文件与摘要不变。`000232` 只补充其申请和批准表的外键前导索引：已有按 Tenant／申请编号开头的复合索引继续服务列表和请求查询，单列外键的父记录关联检查另有有效的 B-tree 前导索引。升级不改申请、两人批准、执行回执、审计、角色、权限、授权版本或会话事实；沿同一 Runner 向前升级并验证重复运行，保留完整外键索引门禁。新增 `AgainstPostgres$` 回归由既有 `make test-system-iam-postgres` 自动发现，不增加入口或 Workflow，也不连接本地数据库。
 - `000236` 将现有精确模型组成扩展至 MinIO IFC/3DS 的原生 `service → bucket → prefix → object` 目标；对象主项和每条依赖必须同 bucket，依赖限定在主项所在目录范围，Grant 保存完整组成，目录／bucket／prefix 不成为授权目标。复用现有 `file_composition` 和 `source_read_scope`，不增加另一套对象许可，不回填旧成果的来源事实。FTP/NFS 既有格式范围保持不变，MinIO DAE 未纳入本次迁移。
 
 ### 定向恢复
