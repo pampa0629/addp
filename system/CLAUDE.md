@@ -384,9 +384,8 @@ frontend/src/
    - 实际开发库恢复须由用户自行执行或取得本次明确授权，流程见[共同操作与验收边界](../docs/guide/troubleshooting/数据库迁移.md#定向恢复的共同操作)。构建、隔离测试与只读核对不等于已恢复，恢复成功也不等于后续迁移和业务验收通过。
 
 3. **前端添加新页面**:
-   - 在 `src/views/` 创建 Vue 组件
-   - 在 `src/api/` 添加 API 调用函数（注意 URL 前缀为 `/api/v1/system/`）
-   - 在 `src/router/` 注册路由
+   - 页面、布局、Console iframe 与共享认证遵循[页面接入规范](../docs/spec/addp新模块开发指南.md#添加前端页面)。System 页面位于 `frontend/src/views/`，API 封装位于 `frontend/src/api/`；受保护页面沿用[现有路由与权限守卫](frontend/src/router/index.js)。
+   - API 复用[模块 Client](frontend/src/api/client.js)：共享 `baseURL` 为 `/api/v1`，System API 调用参数使用 `/system/...`，最终路径为 `/api/v1/system/...`；拼接规则见[前后端连接说明](../docs/spec/addp新模块开发指南.md#开发中的前端-后端连接)。
 
 4. **端口配置**:
    - 后端默认: 8180
