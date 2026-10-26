@@ -377,7 +377,7 @@ cleanup 使用平台级 `cleanup_mode`，不使用数据库语境的 `soft_delet
 
 ## 八、结果模型
 
-cleanup result（资源回收结果）分为通用字段和模块私有字段。
+cleanup result（资源回收结果）分为通用字段和模块私有字段。本节描述协调协议与 Owner 结果，不是 Monitor 公开 DTO；内部结果与可展示诊断的边界见[Monitor](#1-monitor)。
 
 通用字段建议包括：
 
@@ -424,29 +424,19 @@ cleanup 必须同时进入 Monitor 和审计体系。
 
 ### 1. Monitor
 
-cleanup 不纳入 Orchestrator 编排，但必须写入 `common.task_executions` 以供 Monitor 展示。
+cleanup 不纳入 Orchestrator 编排或 TaskProvider，必须写入 `common.task_executions`；Monitor 的读取授权、安全 DTO、错误投影和截断规则统一遵循[执行监控规范](tasks/执行监控.md#租户执行诊断)。以下只补充 Cleanup 的记录归属与能力边界。
 
-推荐执行记录模型：
+内部执行记录模型：
 
-- System 创建父 execution：
-  - `module=system`
-  - `task_type=cleanup`
-  - `trigger_type=manual`、`scheduled` 或 `event`
-  - `source=system`
-  - `execution_config` 保存 `action`、`cleanup_mode`、`expected_modules`、`based_on_scan`、`context`、`cause_event`
-- 各资源回收执行方创建子 execution：
-  - `module=meta`、`manager`、`transfer` 等
-  - `task_type=cleanup_executor`
-  - `parent_execution_id` 指向 System 父 execution
-  - `metadata` 保存本模块资源回收结果摘要和私有诊断
+- System 创建父 execution：`module=system`、`task_type=cleanup`、`source=system`，`trigger_type=manual|scheduled|event`；`execution_config` 保存 `action`、`cleanup_mode`、`expected_modules`、`based_on_scan`、`context`、`cause_event`，用于协调和审计，不作为 Monitor 公开响应。
+- executor 创建子 execution：`module=meta|manager|transfer|...`、`task_type=cleanup_executor`，以 `parent_execution_id` 关联 System 父 execution。模块结果和诊断由对应 Owner 管理；当前 Meta 将 `cleanup_result` 与 `summary` 写入子 execution 的 `metadata`，System 将 `cleanup_summary` 与 `cleanup_status` 写入父 execution 的 `metadata`。这些内部字段不构成 Monitor 展示契约，也不要求其他 Owner 复制相同私有结构。
 
-Monitor 展示要求：
+读取与展示边界：
 
-- 能查看 cleanup 父子 execution 树。
-- 能按 tenant、module、action、cleanup_mode、trigger_type、status 查询。
-- 能展示 scan / execute 关联、耗时、错误、释放空间、影响记录数和模块结果。
-- 不提供 Orchestrator 编排入口，不提供 TaskProvider 创建 / 编辑入口。
-- 不直接读取 executor 私有表，只读取 `common.task_executions` 和 owner 模块公开只读诊断 API。
+- Monitor 查询要求当前第一方 Tenant User、`monitor.execution.read` 及各 Owner 的独立读取裁决。System 的 `cleanup` 与 Meta 的 `cleanup_executor` 当前均由各自 `GET /execution-read-scope` 按 `system.cleanup.read` 返回范围；其他 executor 以对应 Owner 声明为准，不在 Monitor 维护权限映射。父 execution 可读不授予子 execution 读取权；Owner 不可用或范围非法时失败关闭。
+- Monitor 从共享执行事实生成显式安全 DTO，不直接读取 executor 私有表，也不把任意 Owner 诊断响应拼入通用 DTO。`execution_config`、原始 `metadata`、模块私有明细、业务数据、凭据和自由文本错误不直接展示；错误按上述规范投影为安全类别、稳定码与合法受控诊断。专业结果仍通过 Owner 既有授权入口读取。
+- Cleanup 的展示目标包括父子树、scan / execute 关联、耗时、安全错误、释放空间、影响记录数和模块结果，以及按当前 Tenant 范围、module、action、cleanup_mode、trigger_type、status 查询。当前 Monitor 通用列表未提供 `action` / `cleanup_mode` 过滤，Common 安全投影也未开放上述 `cleanup_summary`、`cleanup_status`、`cleanup_result`、`summary`；不能因字段已落库便宣称关联、计数或私有结果已在 Monitor 展示。未接通部分保留为能力缺口，不通过透传配置或原始结果补齐。
+- Cleanup 域接口查询、执行记录存在或源码静态核对，不替代 Monitor 的授权、敏感信息保护、分页与截断验证。按[运行态验收](#十三运行态验收)和执行监控规范分别核对实际 API、页面及跨模块证据；完整 Cleanup suite 尚未接入，未运行、失败或跳过不计为通过。
 
 ### 2. 审计
 
