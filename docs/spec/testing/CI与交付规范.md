@@ -16,7 +16,7 @@ Push 使用事件的 `before...sha`，PR 使用 base 与本次 SHA 的 merge-bas
 
 Manager Hosted 的 Infra MinIO 构建准备复用固定输入缓存：继续使用原 Dockerfile 与 Infra Compose 构建最终镜像，缓存同时保存带 BuildKit inline 元数据的编译阶段和最终镜像，不改变 Server / mc 源码修订或验收断言。缓存键包含 Linux amd64、构建脚本及全部已跟踪 Infra 构建上下文；只恢复精确键，加载前核对归档摘要，加载后核对镜像身份和架构。热构建必须复用 Dockerfile RUN，并保持两个二进制摘要一致；缓存损坏、缺失的必需热验或构建失败均阻断。独立 Infra MinIO build cache 工作流在全新 Runner 核验复用，原样 Compose 构建仍实际执行。转移归档在产品部署前删除以释放磁盘，仅保存公开固定源码构建层，不保存身份、配置、业务数据或测试结果；构建缓存通过不代表业务 T4 通过。
 
-Platform CI 的 `frontend-deterministic` 仍默认每个 Job 最长20分钟。Monitor 的完整单测、浏览器回归及构建沿唯一 `make test-monitor-frontend`，保持现有单Worker执行；两轮原始check-run注释均明确20分钟超时，第二轮至423/424仍未出完整报告。为保留完整用例、断言、构建和退出清理，Monitor矩阵项单独登记 `timeout_minutes: 30`，Job统一读取该值、缺省20；其他模块不扩大，登记检查拒绝删除Monitor例外、越界值或将例外扩给其他模块。该预算包含安装、测试、构建和退出，不修改产品请求超时、单用例时限、重试或并行度；门禁级端口／缓存隔离不自动证明提高Worker并发安全。原超时／取消保留为未通过，只有后继实际跑完完整门禁才计通过。
+Platform CI 的 `frontend-deterministic` 默认每个 Job 最长20分钟。Monitor 与 Console 的完整单测、浏览器回归及构建分别沿唯一 `make test-monitor-frontend`、`make test-console-frontend`，均保持现有单Worker执行。Monitor 两轮原始check-run注释明确20分钟超时，第二轮至423/424仍未出完整报告；Console 的 `40254270886`、`40254922673`、`40255039253` 三轮同样触及20分钟上限，`40254922673` 已执行至224/233但未完成完整门禁。因此仅这两个矩阵项登记 `timeout_minutes: 30`，Job统一读取该值、缺省20；其他模块不扩大，登记检查拒绝删除这两个例外、越界值、重复项或将例外扩给其他模块。该预算包含安装、测试、构建和退出，不修改产品请求超时、单用例时限、重试或并行度；门禁级端口／缓存隔离不自动证明提高Worker并发安全。原超时／取消保留为未通过；文档提交的选择跳过不能补齐前序缺口，只有后继实际跑完完整门禁才计通过。
 
 Workflow 只负责：
 

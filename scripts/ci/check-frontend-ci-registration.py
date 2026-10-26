@@ -147,7 +147,7 @@ def validate_browser_isolation(repository: Path) -> list[str]:
 
 
 def validate_frontend_job_budgets(jobs: list[str]) -> list[str]:
-    """Keep the measured Monitor exception bounded without expanding other owners."""
+    """Keep the measured Console/Monitor exceptions bounded to these owners."""
     errors = []
     for job in jobs:
         if not job.startswith("  frontend-deterministic:"):
@@ -157,19 +157,20 @@ def validate_frontend_job_budgets(jobs: list[str]) -> list[str]:
             errors.append("frontend-deterministic: job budget must use matrix.timeout_minutes with a 20 minute default")
         matrix = job.split("\n    steps:", 1)[0]
         entries = list(re.finditer(r"(?m)^\s*- module:\s*([a-z][a-z0-9-]*)\s*$", matrix))
-        monitors = 0
+        exceptions = {"monitor": 0, "console": 0}
         for index, match in enumerate(entries):
             owner = match.group(1)
             entry = matrix[match.end():entries[index + 1].start() if index + 1 < len(entries) else len(matrix)]
             budgets = re.findall(r"(?m)^\s*timeout_minutes:\s*([^\n]*)", entry)
-            if owner == "monitor":
-                monitors += 1
+            if owner in exceptions:
+                exceptions[owner] += 1
                 if budgets != ["30"]:
-                    errors.append("monitor: frontend Job must retain its bounded 30 minute budget")
+                    errors.append(f"{owner}: frontend Job must retain its bounded 30 minute budget")
             elif budgets and budgets != ["20"]:
                 errors.append(f"{owner}: frontend Job must retain the 20 minute default")
-        if monitors != 1:
-            errors.append("frontend-deterministic: exactly one Monitor budget entry is required")
+        for owner, count in exceptions.items():
+            if count != 1:
+                errors.append(f"frontend-deterministic: exactly one {owner} budget entry is required")
     return errors
 
 

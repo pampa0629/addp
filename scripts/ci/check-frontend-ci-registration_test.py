@@ -342,13 +342,14 @@ class FrontendJobBudgetTest(unittest.TestCase):
             timeout_minutes: 30
           - module: console
             target: test-console-frontend
+            timeout_minutes: 30
           - module: sample
             target: test-sample-frontend
     steps:
       - run: make ${{ matrix.target }}
 """
 
-    def test_accepts_only_bounded_monitor_exception(self) -> None:
+    def test_accepts_only_bounded_monitor_and_console_exceptions(self) -> None:
         self.assertEqual([], MODULE.validate_frontend_job_budgets([self.job()]))
         self.assertEqual([], MODULE.validate_frontend_job_budgets(["  unrelated:\n    timeout-minutes: 60\n"]))
 
@@ -361,10 +362,17 @@ class FrontendJobBudgetTest(unittest.TestCase):
             ("timeout_minutes: 30", "timeout_minutes: 60"),
             ("timeout_minutes: 30", "timeout_minutes: invalid"),
             ("timeout_minutes: 30", "timeout_minutes: 30\n            timeout_minutes: 60"),
-            ("target: test-console-frontend", "target: test-console-frontend\n            timeout_minutes: 30"),
+            ("target: test-sample-frontend", "target: test-sample-frontend\n            timeout_minutes: 30"),
         ]:
             with self.subTest(after=after):
                 self.assertTrue(MODULE.validate_frontend_job_budgets([self.job().replace(before, after)]))
+
+    def test_each_exception_is_required_once_with_exact_budget(self) -> None:
+        for owner in ['monitor', 'console']:
+            entry = f"          - module: {owner}\n            target: test-{owner}-frontend\n            timeout_minutes: 30\n"
+            for replacement in ['', entry + entry, entry.replace('30', '20'), entry.replace('30', '60')]:
+                with self.subTest(owner=owner, replacement=replacement):
+                    self.assertTrue(MODULE.validate_frontend_job_budgets([self.job().replace(entry, replacement)]))
 
 
 class ConsoleBrowserPreparationTest(unittest.TestCase):

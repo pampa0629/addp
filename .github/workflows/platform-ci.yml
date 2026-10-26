@@ -849,6 +849,7 @@ jobs:
             name: Console
             target: test-console-frontend
             playwright: true
+            timeout_minutes: 30
           - module: develop
             name: Develop
             target: test-develop-frontend
