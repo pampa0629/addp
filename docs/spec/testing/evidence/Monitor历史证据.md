@@ -1906,3 +1906,14 @@ Node `v24.11.1`：新增八项受控浏览器场景与原设备九项合计17项
 ImportError 尚缺具体组件与版本事实，本批没有猜测升级／降级。启动回执新增固定导入检查点、ImportError 组件白名单及实际安装的预声明发行包版本；未知模块为 unknown，版本仅短版本字符串或 unavailable，不留异常正文、任意模块路径或环境。失败发生在 FastAPI、Starlette、Uvicorn 还是 Common 导入时可以区分，异常所属组件与入口检查点分别解释，不从名称关联推断唯一根因。未运行本地依赖安装、容器、业务实链、Hosted、容量或定时。
 
 最终配置／预算 120 项、生命周期 123 项 runner／既有 System Go fixture及 80 项聚合、登记测试 38 项与 22／12／9／2、shell／专项 diff 均通过；实际退出回归、敏感版本／模块拒绝及导入检查点保留均覆盖。标准入口及原 Metrics T2 自动发现／归档已覆盖，未增加旁路或 workflow。后续以新提交的自然 CI 单独核验，旧失败保留，Python 全链与真实清零仍待通过。
+
+
+### Python 来源 FastAPI 导入定位与清理实跑核验（2026-10-27）
+
+已核对源码 `e5391ca36843cd0d99233ea3f63949abb45d81d0` 的自然 [Linux HTTP Job](https://github.com/pampa0629/addp/actions/runs/40351996322/job/121674742810)。2026-10-26 23:43:58—23:53:23（Asia/Shanghai）的 HTTP 预算执行 565.507 秒，整体 failed／退出 1；Go 告警生命周期子链 160.70 秒通过，实际 Go 148 次（失败 90／健康 58），Python 两源均 0。两个来源在身份发布前的 imports 阶段、fastapi 检查点报 import_failed，异常组件 unknown；没有异常符号原文，不能将检查点当作唯一根因。安装完成后的发行包回执均为 FastAPI 0.115.0、Pydantic 2.14.1、Starlette 0.38.6、Uvicorn 0.32.0、HTTPX 0.28.1、Common 0.1.14、cryptography 50.0.2、OTel 三包 1.45.1、prometheus-client 0.26.0、protobuf 7.36.2；这些版本事实不等于已证明版本冲突，亦不代表两个正式消费者的运行栈。
+
+本轮 error_code／failure_detail／failure_during_cleanup 均为 null，输入未变；两个来源都完成退出检查，发现范围恢复，唯一带 python-http profile 的 down 后 `cleanup_verified=true`、`private_directory_removed=true`。清理修正已有这次真实 Linux 零残留证据，整体仍因 Python 导入失败而失败；Go 子链通过不代替 Python SDK→mTLS→采集→Monitor 查询／告警的验收。官方 Artifact 12665281043 为 20228 字节，下载 SHA256 已核对 `0cf19a17c641506751c71d472e8868421609c794841d48d4a6822b293b4534dc`。原始日志、ZIP 提取预算和独立摘要位于 `/tmp/addp-p19-python-startup-20261026-y1zoacsw/import-profile/`（`job-121674742810.log`、`linux-budget-e5391ca36.json`、`linux-e539-audit.json`）。
+
+离线核对另发现两项夹具事实。第一，两个测试源都硬编码 FastAPI 0.115.0／Uvicorn 0.32.0，未使用 Agent FastAPI 0.142.2、Copilot FastAPI 0.110.0 的各自正式 HTTP 依赖声明，不满足技术栈规范中分别验证消费者版本的要求。第二，唯一安装目标 /tmp/deps 位于未指定 exec 的 256 MiB tmpfs；[Docker Moby v28.5.1 实现](https://github.com/moby/moby/blob/v28.5.1/daemon/oci_linux.go#L487-L500)默认合并 noexec／nosuid／nodev，[Linux mmap 规则](https://man7.org/linux/man-pages/man2/mmap.2.html)拒绝从 noexec 文件系统建立可执行映射，而 Pydantic 依赖本地扩展。这证明配置与本地扩展加载要求相冲突；本轮未记录实际 mount 标志或扩展 ImportError，仍不能称已唯一还原本次异常，也不能猜测降级 Pydantic。
+
+拟仅对当次两源现有 tmpfs 显式允许 exec、保留其余隔离与资源上限，增加实际挂载／扩展加载断言，并由各消费者正式 HTTP 声明生成各自测试依赖，删除第三套夹具版本；执行权限变化已提出确认，尚未修订规范或实施该方案。本轮没有新增本地环境、依赖安装、业务负载、Hosted、容量或定时，也未手工触发／重跑 CI。这里只同步只读证据，未将待讨论方案或旧失败记为通过。
