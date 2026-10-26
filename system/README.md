@@ -28,8 +28,9 @@ bash scripts/infra/up.sh
 bash scripts/dev/start.sh -system
 ```
 
-- 后端: http://localhost:8180
-- 前端: http://localhost:5173
+开发首选端口见[端口规范](../docs/spec/addp端口分配.md#端口分配)；本次 Backend、Frontend 和 Console 的实际端口以标准启动输出及 `.dev-state/ports.env` 为准。
+
+浏览器通过本次 Console origin 访问 `/system/...`；模块 iframe 与 standalone 使用同 origin 的 `/module-ui/system/...`。模块开发监听端口属于内部服务，直接打开会跳转到正式入口；路径与同源要求见[公开路由规范](../docs/spec/addp前端路由与可恢复状态规范.md#二公开路由事实源)。
 
 ### 方式 2: Docker 部署
 
