@@ -22,6 +22,7 @@ import GiroInstance from '@giro3d/giro3d/core/Instance.js'
 import COPCSource from '@giro3d/giro3d/sources/COPCSource.js'
 import GiroPointCloud from '@giro3d/giro3d/entities/PointCloud.js'
 import { setLazPerfPath } from '@giro3d/giro3d/sources/las/config.js'
+import { cameraFitDistanceForBox } from '@/utils/scene3dCamera.js'
 
 const props = defineProps({
   data: {
@@ -209,6 +210,10 @@ function ensureGiroInstance() {
   instance.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
   instance.renderer.setClearColor(0x000000, 0)
   instance.mainLoop.automaticCameraPlaneComputation = false
+  // Giro3D resets near to 2 and clamps later assignments to minNearPlane.
+  // Local point clouds must stay visible for both fitted and restored views.
+  instance.view.minNearPlane = MIN_CAMERA_DISTANCE
+  instance.view.near = MIN_CAMERA_DISTANCE
   instance.renderingOptions.enableMSAA = false
 
   instance.scene.add(new THREE.AmbientLight(0xffffff, 0.55))
@@ -280,6 +285,15 @@ async function loadGiroCOPC(url) {
     cloud.pointSize = GIRO_POINT_SIZE
     cloud.depthTest = true
 
+    for (const { attribute } of cloud.getActiveAttributes()) {
+      if (attribute.interpretation !== 'unknown' ||
+        !Number.isFinite(attribute.min) || !Number.isFinite(attribute.max) ||
+        attribute.max <= attribute.min) continue
+      const colorMap = cloud.getAttributeColorMap(attribute.name)
+      colorMap.min = attribute.min
+      colorMap.max = attribute.max
+    }
+
     const bounds = getGiroCloudBounds()
     if (!applyGiroCameraViewState(props.viewState, bounds)) {
       fitGiroCamera(bounds)
@@ -313,14 +327,18 @@ function fitGiroCamera(boundsOverride = null) {
   if (!bounds) return
 
   const sphere = bounds.getBoundingSphere(new THREE.Sphere())
-  const radius = Math.max(sphere.radius, 1)
+  const radius = Math.max(sphere.radius, MIN_CAMERA_DISTANCE)
   const camera = instance.view.camera
-  const offset = new THREE.Vector3(radius * 0.9, -radius * 1.3, radius * 0.9)
+  const direction = new THREE.Vector3(0.9, -1.3, 0.9).normalize()
+  const distance = cameraFitDistanceForBox(
+    bounds, direction, new THREE.Vector3(...GIRO_UP), camera.fov, camera.aspect
+  )
+  if (distance === null) return
 
   camera.up.set(GIRO_UP[0], GIRO_UP[1], GIRO_UP[2])
-  camera.near = Math.max(radius / 10000, 0.1)
+  camera.near = Math.max(radius / 10000, MIN_CAMERA_DISTANCE)
   camera.far = Math.max(radius * 100, 1000)
-  camera.position.copy(sphere.center).add(offset)
+  camera.position.copy(sphere.center).addScaledVector(direction, distance)
   camera.lookAt(sphere.center)
   camera.updateProjectionMatrix()
 
