@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: Line overlap matrix, chain merging, observation or collector comparison
+        description: Line overlap, chain merging, normalization or controlled observation
         type: choice
         default: matrix
         options:
@@ -12,6 +12,7 @@ on:
           - observation
           - comparison
           - chains
+          - normalize
 
 permissions:
   contents: read

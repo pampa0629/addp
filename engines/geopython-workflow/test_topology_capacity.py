@@ -170,10 +170,10 @@ def test_chain_capacity_native_source_all_columns_are_immutable_and_verified(tmp
     from operators.io_operators import load
     case = m.Case('chain-open',12,'chains');m.seed_chains(case,tmp_path/'source.gpkg')
     frame = load(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)},path='source.gpkg')
-    m.verify_chain_source(frame,case); original = m.chain_frame_digest(frame)
+    m.verify_chain_source(frame,case); original = m.attributed_frame_digest(frame)
     for field,value in [('route_key','foreign'),('note','foreign'),('grade',8),('road','foreign')]:
         changed=frame.copy();changed.at[0,field]=value
-        assert m.chain_frame_digest(changed)!=original
+        assert m.attributed_frame_digest(changed)!=original
         with pytest.raises(AssertionError):m.verify_chain_source(changed,case)
 
 
@@ -192,7 +192,7 @@ def test_chain_capacity_native_source_requires_the_single_nullable_schema(tmp_pa
     m.verify_chain_source(frame, case)
     changed = frame.copy(); changed['grade'] = changed.grade.astype(dtype)
     assert changed.grade.tolist() == frame.grade.tolist()
-    assert m.chain_frame_digest(changed) != m.chain_frame_digest(frame)
+    assert m.attributed_frame_digest(changed) != m.attributed_frame_digest(frame)
     with pytest.raises(AssertionError): m.verify_chain_source(changed, case)
 
 
@@ -206,7 +206,7 @@ def test_chain_capacity_native_source_digest_and_oracle_include_index_metadata(t
     if change == 'values': changed.index = pd.RangeIndex(1, len(frame)+1)
     elif change == 'name': changed.index = changed.index.rename('foreign')
     else: changed.index = changed.index.astype('Int64')
-    assert m.chain_frame_digest(changed) != m.chain_frame_digest(frame)
+    assert m.attributed_frame_digest(changed) != m.attributed_frame_digest(frame)
     with pytest.raises(AssertionError): m.verify_chain_source(changed, case)
 
 
@@ -278,3 +278,78 @@ def test_chain_capacity_native_nullable_schema_exact_dual_save_and_source_invari
         pd.testing.assert_series_equal(reloaded.enabled, outputs[port].enabled)
     assert_geodataframe_equal(frame, before)
     assert m.digest(path) == physical_before
+
+
+@pytest.mark.parametrize('kind,size',[('normalize-sparse',8),('normalize-duplicates',7),('normalize-parts',7),('normalize-grid',3),('normalize-sampling',4)])
+def test_normalize_capacity_native_dual_output_exact_oracle_unwrapped(tmp_path,monkeypatch,kind,size):
+    def forbidden(*a,**kw):raise AssertionError('normalize must not run old profile or wrap production')
+    monkeypatch.setattr(m,'observe_compute',forbidden);monkeypatch.setattr(m,'seed_chains',forbidden)
+    case=m.Case(kind,size,'normalize');report=m.run_worker(case,tmp_path,'A');m.validate_worker(report,case,'A')
+    assert report['implementation_identity']['loaded_normalize_matches_source'] is True
+    assert [report['physical'][p]['rows'] for p in ('result','members')]==[m.normalize_counts(case)[p] for p in ('result','members')]
+    assert not (tmp_path/'compute-resources.jsonl').exists()
+
+
+@pytest.mark.parametrize('port,problem',[
+    ('result','edge_id'),('result','occurrence_count'),('result','coordinate'),('result','direction'),('result','missing'),('result','extra'),('result','crs'),('result','int64'),('result','measured'),
+    ('members','edge_id'),('members','source_id'),('members','source_part_no'),('members','source_segment_no'),('members','piece_no'),('members','is_reversed'),
+    ('members','route_key'),('members','note'),('members','null_grade'),('members','null_enabled'),('members','direction'),('members','missing'),('members','extra'),('members','crs'),('members','boolean'),('members','int64')])
+def test_normalize_capacity_native_rejects_real_dual_output_corruption(tmp_path,port,problem):
+    from osgeo import ogr
+    case=m.Case('normalize-sampling',4,'normalize');m.run_worker(case,tmp_path,'A');path=tmp_path/(port+'.gpkg')
+    if problem in ('int64','boolean'):
+        source=ogr.Open(str(path),0);layer=source.GetLayer(0);changed=tmp_path/'changed.gpkg'
+        destination=ogr.GetDriverByName('GPKG').CreateDataSource(str(changed));target=destination.CreateLayer('changed',layer.GetSpatialRef(),ogr.wkbLineString)
+        for definition in layer.schema:
+            field=ogr.FieldDefn(definition.GetName(),definition.GetType());field.SetSubType(definition.GetSubType())
+            if problem=='int64' and field.GetName()==('edge_id' if port=='result' else 'grade'):field.SetType(ogr.OFTReal)
+            if problem=='boolean' and field.GetName()=='enabled':field.SetSubType(ogr.OFSTNone)
+            target.CreateField(field)
+        for feature in layer:
+            clone=ogr.Feature(target.GetLayerDefn());clone.SetFrom(feature);target.CreateFeature(clone)
+        source=destination=target=layer=None;changed.replace(path)
+    else:
+        ds=ogr.Open(str(path),1);layer=ds.GetLayer(0)
+        if problem=='crs':ds.ExecuteSQL('UPDATE gpkg_geometry_columns SET srs_id=4326')
+        elif problem=='missing':layer.DeleteFeature(1)
+        elif problem=='extra':
+            feature=layer.GetFeature(1);feature.SetFID(-1);assert layer.CreateFeature(feature)==0
+        else:
+            feature=layer.GetFeature(5 if problem.startswith('null_') else 1)
+            if problem in ('coordinate','direction','measured'):
+                points=feature.GetGeometryRef().GetPoints();shape=ogr.Geometry(ogr.wkbLineStringM if problem=='measured' else ogr.wkbLineString)
+                for x,y,*_ in (points[::-1] if problem=='direction' else points):
+                    if problem=='measured':shape.AddPointM(x,y,1)
+                    else:shape.AddPoint_2D(x+.25 if problem=='coordinate' else x,y)
+                feature.SetGeometry(shape)
+            elif problem in ('route_key','note','source_id'):feature.SetField(problem,'foreign')
+            elif problem.startswith('null_'):feature.SetField(problem.removeprefix('null_'),0)
+            elif problem=='is_reversed':feature.SetField(problem,1-feature.GetField(problem))
+            else:feature.SetField(problem,feature.GetField(problem)+1)
+            assert layer.SetFeature(feature)==0
+        ds=layer=None
+    with pytest.raises(AssertionError):m.verify_normalize_output(case,path,port)
+
+
+def test_normalize_capacity_native_source_schema_and_index_are_immutable(tmp_path):
+    from operators.io_operators import load
+    case=m.Case('normalize-sampling',4,'normalize');m.seed_normalize(case,tmp_path/'source.gpkg')
+    frame=load(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)},path='source.gpkg');m.verify_normalize_source(frame,case)
+    original=m.attributed_frame_digest(frame)
+    for column,dtype in [('grade','float64'),('enabled','object')]:
+        changed=frame.copy();changed[column]=changed[column].astype(dtype)
+        assert m.attributed_frame_digest(changed)!=original
+        with pytest.raises(AssertionError):m.verify_normalize_source(changed,case)
+    changed=frame.copy();changed.index.name='foreign'
+    assert m.attributed_frame_digest(changed)!=original
+    with pytest.raises(AssertionError):m.verify_normalize_source(changed,case)
+
+
+def test_normalize_capacity_native_oracle_failure_retains_incomplete_stage(tmp_path,monkeypatch):
+    def reject(*args):raise RuntimeError('independent physical oracle failed')
+    monkeypatch.setattr(m,'verify_normalize_output',reject)
+    with pytest.raises(RuntimeError,match='physical oracle failed'):
+        m.run_worker(m.Case('normalize-sampling',4,'normalize'),tmp_path,'A')
+    progress=json.loads((tmp_path/'progress.json').read_text())
+    assert progress['result']=='incomplete' and progress['stage']=='reload_oracle'
+    assert 'save_result' in progress['timings'] and 'save_members' in progress['timings']

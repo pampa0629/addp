@@ -404,6 +404,12 @@ class CapacityTest(unittest.TestCase):
                 (files[1],'default: matrix','default: observation'),
                 (files[1],'          - comparison','          - removed'),
                 (files[1],'          - chains','          - removed'),
+                (files[1],'          - normalize','          - removed'),
+                (files[2],'def normalize_matrix():','def removed_normalize_matrix():'),
+                (files[2],'def verify_normalize_output(case, path, port):','def removed_normalize_output(case, path, port):'),
+                (files[2],"'loaded_normalize_matches_source'","'removed_normalize_binding'"),
+                (files[3],'test_normalize_capacity_native_dual_output_exact_oracle_unwrapped','removed_normalize_native'),
+                (files[3],'test_normalize_capacity_native_rejects_real_dual_output_corruption','removed_normalize_corruption'),
                 (files[1],'timeout-minutes: 90','timeout-minutes: 91'),
                 (files[2],"SCHEMA = 'addp.vector-topology-capacity/v3'","SCHEMA = 'removed'"),
                 (files[2],"if profile == 'chains':","if profile == 'removed':"),
@@ -421,6 +427,70 @@ class CapacityTest(unittest.TestCase):
                 p=root/f;original=p.read_text();self.assertIn(old,original);p.write_text(original.replace(old,new))
                 with self.subTest(f=f,old=old):self.assertTrue(check.validate_topology_capacity(root))
                 p.write_text(original)
+
+
+class NormalizeCapacityTest(unittest.TestCase):
+    def test_normalize_plan_is_only_fifteen_new_once_unwrapped_measurements(self):
+        cases=m.normalize_matrix();plan=m.measurement_plan('normalize')
+        self.assertEqual(len(cases),15);self.assertEqual(len({c.key for c in cases}),15)
+        expected={'normalize-sparse':[1000,10000,100000],'normalize-duplicates':[128,512,2048],
+                  'normalize-parts':[128,512,2048],'normalize-grid':[32,128,512],'normalize-sampling':[32,128,512]}
+        self.assertEqual({c.kind for c in cases},set(expected))
+        for kind,sizes in expected.items():self.assertEqual([c.size for c in cases if c.kind==kind],sizes)
+        self.assertEqual([p['case'] for p in plan],[m.asdict(c) for c in cases])
+        self.assertTrue(all(p['observer']=='A' and p['repetition'] is None and p['case']['operator']=='normalize' for p in plan))
+        self.assertFalse({c.key for c in cases}&{c.key for c in m.matrix()+m.chain_matrix()})
+        self.assertEqual((m.CPUS,m.MEMORY,m.SECONDS,m.NORMALIZE_SCHEMA),(4,2<<30,180,'addp.vector-topology-capacity/v4'))
+        self.assertEqual(m.normalize_counts(m.Case('normalize-grid',512,'normalize')),{'sources':1024,'result':525312,'members':525312})
+        self.assertEqual(m.normalize_counts(m.Case('normalize-sampling',512,'normalize')),{'sources':512,'result':512,'members':262144})
+
+    def test_normalize_closed_form_counts_membership_direction_and_typed_nulls(self):
+        from collections import Counter
+        for kind in ['normalize-sparse','normalize-duplicates','normalize-parts','normalize-grid','normalize-sampling']:
+            case=m.Case(kind,4,'normalize');edges=list(m.normalize_expected(case,'result'));members=list(m.normalize_expected(case,'members'))
+            self.assertEqual(len(edges),m.normalize_counts(case)['result']);self.assertEqual(len(members),m.normalize_counts(case)['members'])
+            counts=Counter(p['edge_id'] for p,g in members)
+            self.assertEqual(counts,{p['edge_id']:p['occurrence_count'] for p,g in edges})
+            for p,g in members:
+                row=int(p['source_id'].split('-')[1]);self.assertEqual(p['route_key'],p['source_id'])
+                self.assertEqual({k:p[k] for k in m.normalize_attributes(row)},m.normalize_attributes(row))
+                canonical=edges[p['edge_id']-1][1]
+                self.assertEqual(g,canonical[::-1] if p['is_reversed'] else canonical)
+            if kind=='normalize-parts':
+                self.assertEqual([p['source_part_no'] for p,g in members],[1,2,3,4]);self.assertEqual(len({p['source_id'] for p,g in members}),1)
+        attrs=m.normalize_attributes(1);self.assertIsNone(attrs['grade']);self.assertIsNone(attrs['enabled'])
+        self.assertGreater(m.normalize_attributes(0)['grade'],2**53)
+
+    def test_normalize_loaded_identity_rejects_monkeypatch_and_stale_code(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'geometry.py';source='def normalize_line_network(frame, field):\n    return frame\n';path.write_text(source)
+            namespace={};exec(compile(source,str(path),'exec'),namespace)
+            module=SimpleNamespace(__file__=str(path),normalize_line_network=namespace['normalize_line_network'])
+            self.assertEqual(m.loaded_implementation_identity(module,'normalize'),{**m.implementation_identity(source,'normalize'),'loaded_normalize_matches_source':True})
+            module.normalize_line_network=lambda *args:None
+            with self.assertRaisesRegex(AssertionError,'loaded normalize'):m.loaded_implementation_identity(module,'normalize')
+
+    def test_normalize_worker_validation_requires_both_ports_and_strict_budget(self):
+        import copy
+        case=m.Case('normalize-sampling',4,'normalize')
+        report={'case':m.asdict(case),'observer':'A','measurement_id':case.key,'result':'passed','stage':'complete',
+            'duration_seconds':1.,'worker_peak_rss_bytes':1,'source_frame_sha256':'f'*64,
+            'timings':{k:0. for k in ['generate','read','source_oracle','compute','save_result','save_members','reload_oracle','source_unchanged']},
+            'implementation_identity':{'loaded_normalize_matches_source':True,'module_sha256':'a'*64,'normalize_line_network_sha256':'b'*64},
+            'physical':{p:{'rows':m.normalize_counts(case)[p],'crs':'EPSG:3857','full_result_sha256':'c'*64,'all_coordinates_attributes_membership_verified':True} for p in ('result','members')},
+            'source':{'size_bytes':1,'sha256':'d'*64},'outputs':{p:{'size_bytes':1,'sha256':'d'*64} for p in ('result','members')}}
+        m.validate_worker(report,case,'A')
+        for path,value in [(('duration_seconds',),181),(('duration_seconds',),float('nan')),(('observer',),'C'),
+            (('physical','members','rows'),4),(('physical','result','all_coordinates_attributes_membership_verified'),False),
+            (('implementation_identity','loaded_normalize_matches_source'),False),(('outputs','members','size_bytes'),0),
+            (('physical','result','crs'),'EPSG:4326'),(('stage',),'save_members')]:
+            changed=copy.deepcopy(report);target=changed
+            for key in path[:-1]:target=target[key]
+            target[path[-1]]=value
+            with self.subTest(path=path),self.assertRaises(AssertionError):m.validate_worker(changed,case,'A')
+        for port in ('result','members'):
+            changed=copy.deepcopy(report);del changed['outputs'][port]
+            with self.assertRaises(AssertionError):m.validate_worker(changed,case,'A')
 
 
 if __name__=='__main__':unittest.main()

@@ -26,6 +26,7 @@ CPUS = 4
 MEMORY = 2 << 30
 SECONDS = 180
 SCHEMA = 'addp.vector-topology-capacity/v3'
+NORMALIZE_SCHEMA = 'addp.vector-topology-capacity/v4'
 LEGACY_COMMIT = '8a3006670e7f6cfaddf018253515ccb37ab5bc78'
 BATCHED_COMMIT = 'adb605b67676bc4396307bc9ea7449c63de183bc'
 GEOMETRY_MODULE = 'engines/geopython-workflow/operators/geometric_operators.py'
@@ -58,7 +59,20 @@ def chain_matrix():
             for size in ((128, 512, 2048) if kind == 'chain-hub' else (1000, 10000, 100000))]
 
 
+def normalize_matrix():
+    return [Case(kind, size, 'normalize')
+            for kind, sizes in [('normalize-sparse', (1000, 10000, 100000)),
+                                ('normalize-duplicates', (128, 512, 2048)),
+                                ('normalize-parts', (128, 512, 2048)),
+                                ('normalize-grid', (32, 128, 512)),
+                                ('normalize-sampling', (32, 128, 512))]
+            for size in sizes]
+
+
 def measurement_plan(profile):
+    if profile == 'normalize':
+        return [{'id': case.key, 'case': asdict(case), 'observer': 'A', 'repetition': None}
+                for case in normalize_matrix()]
     if profile == 'chains':
         return [{'id': case.key, 'case': asdict(case), 'observer': 'A', 'repetition': None}
                 for case in chain_matrix()]
@@ -87,22 +101,22 @@ def definition_name(node):
 
 
 def implementation_identity(source, operator='self'):
-    name = 'merge_line_chains' if operator == 'chains' else '_self_overlap_intersections'
+    name = 'normalize_line_network' if operator == 'normalize' else 'merge_line_chains' if operator == 'chains' else '_self_overlap_intersections'
     collector = next(n for n in ast.parse(source).body if definition_name(n) == name)
     return {'module_sha256': hashlib.sha256(source.encode()).hexdigest(),
-            ('merge_line_chains_sha256' if operator == 'chains' else 'collector_sha256'):
+            ('normalize_line_network_sha256' if operator == 'normalize' else 'merge_line_chains_sha256' if operator == 'chains' else 'collector_sha256'):
                 hashlib.sha256(ast.get_source_segment(source, collector).encode()).hexdigest()}
 
 
 def loaded_implementation_identity(module, operator='self'):
     source = Path(module.__file__).read_text()
     code = compile(source, module.__file__, 'exec', dont_inherit=True, optimize=sys.flags.optimize)
-    name = 'merge_line_chains' if operator == 'chains' else '_self_overlap_intersections'
+    name = 'normalize_line_network' if operator == 'normalize' else 'merge_line_chains' if operator == 'chains' else '_self_overlap_intersections'
     expected = next(c for c in code.co_consts if isinstance(c, types.CodeType) and c.co_name == name)
     # Reject a stale pyc or a monkeypatched function even if the source file is correct.
-    assert getattr(module, name).__code__ == expected, ('loaded merge differs from source' if operator == 'chains' else 'loaded collector differs from source')
+    assert getattr(module, name).__code__ == expected, ('loaded normalize differs from source' if operator == 'normalize' else 'loaded merge differs from source' if operator == 'chains' else 'loaded collector differs from source')
     return {**implementation_identity(source, operator),
-            ('loaded_merge_matches_source' if operator == 'chains' else 'loaded_collector_matches_source'): True}
+            ('loaded_normalize_matches_source' if operator == 'normalize' else 'loaded_merge_matches_source' if operator == 'chains' else 'loaded_collector_matches_source'): True}
 
 
 def comparison_variant(current, legacy, batched):
@@ -467,7 +481,150 @@ def seed_chains(case, path):
     layer.CommitTransaction(); ds = None
 
 
-def chain_frame_digest(frame):
+def normalize_counts(case):
+    assert case.operator == 'normalize' and type(case.size) is int and case.size > 0
+    n = case.size
+    if case.kind == 'normalize-sparse': return {'sources': n, 'result': n, 'members': n}
+    if case.kind == 'normalize-duplicates': return {'sources': n, 'result': 1, 'members': n}
+    if case.kind == 'normalize-parts': return {'sources': 1, 'result': 1, 'members': n}
+    if case.kind == 'normalize-grid': return {'sources': 2*n, 'result': 2*n*(n+1), 'members': 2*n*(n+1)}
+    assert case.kind == 'normalize-sampling'
+    return {'sources': n, 'result': n, 'members': n*n}
+
+
+def normalize_attributes(row):
+    return {'route_key': f'norm-{row:09d}', 'note': None if row % 7 == 0 else f'original-{row:09d}',
+            'grade': None if row % 5 == 1 else 2**53 + 1 + row % 3,
+            'enabled': None if row % 7 == 1 else row % 2 == 0}
+
+
+def normalize_source(case, row):
+    assert 0 <= row < normalize_counts(case)['sources']
+    n = case.size; attrs = normalize_attributes(row)
+    if case.kind == 'normalize-parts':
+        return attrs, [[[0,0],[1,0]] if i % 2 == 0 else [[1,0],[0,0]] for i in range(n)]
+    if case.kind == 'normalize-sparse': points = [[row*4,0],[row*4+1,0]]
+    elif case.kind == 'normalize-duplicates': points = [[0,0],[1,0]]
+    elif case.kind == 'normalize-grid':
+        points = [[0,row+1],[n+1,row+1]] if row < n else [[row-n+1,0],[row-n+1,n+1]]
+    else:
+        assert case.kind == 'normalize-sampling'
+        points = [[i,0] for i in range(n+1)] if row == 0 else [[0,0],[n,0]]
+    return attrs, [points[::-1] if row % 2 else points]
+
+
+def normalize_visits(case):
+    """Closed-form row/part/segment/piece/edge/orientation; no spatial operations."""
+    n = case.size
+    for row in range(normalize_counts(case)['sources']):
+        if case.kind == 'normalize-parts':
+            for part in range(n):
+                reverse = bool(part % 2)
+                yield row, part+1, 1, 1, 1, reverse, [[1,0],[0,0]] if reverse else [[0,0],[1,0]]
+        elif case.kind in ('normalize-sparse', 'normalize-duplicates'):
+            points = normalize_source(case,row)[1][0]
+            yield row, 1, 1, 1, row+1 if case.kind == 'normalize-sparse' else 1, bool(row % 2), points
+        elif case.kind == 'normalize-grid':
+            for p in range(n+1):
+                a = n-p if row % 2 else p
+                points = ([[a,row+1],[a+1,row+1]] if row < n else [[row-n+1,a],[row-n+1,a+1]])
+                yield row, 1, 1, p+1, row*(n+1)+p+1, bool(row % 2), points[::-1] if row % 2 else points
+        else:
+            assert case.kind == 'normalize-sampling'
+            for p in range(n):
+                edge = n-p if row % 2 else p+1
+                points = [[edge-1,0],[edge,0]]
+                yield row, 1, p+1 if row == 0 else 1, 1 if row == 0 else p+1, edge, bool(row % 2), points[::-1] if row % 2 else points
+
+
+def normalize_expected(case, port):
+    assert port in ('result','members')
+    if port == 'result' and case.kind in ('normalize-duplicates','normalize-parts'):
+        yield {'edge_id':1,'occurrence_count':case.size}, [[0,0],[1,0]]
+    elif port == 'result' and case.kind == 'normalize-sampling':
+        for i in range(case.size): yield {'edge_id':i+1,'occurrence_count':case.size}, [[i,0],[i+1,0]]
+    else:
+        for row,part,segment,piece,edge,reverse,points in normalize_visits(case):
+            if port == 'result':
+                yield {'edge_id':edge,'occurrence_count':1}, points[::-1] if reverse else points
+            else:
+                attrs = normalize_attributes(row)
+                yield {**attrs,'edge_id':edge,'source_id':attrs['route_key'],'source_part_no':part,
+                       'source_segment_no':segment,'piece_no':piece,'is_reversed':reverse}, points
+
+
+def seed_normalize(case, path):
+    from osgeo import ogr, osr
+    ogr.UseExceptions(); crs = osr.SpatialReference(); crs.ImportFromEPSG(3857)
+    ds = ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
+    layer = ds.CreateLayer('normalize_inputs',crs,ogr.wkbMultiLineString if case.kind == 'normalize-parts' else ogr.wkbLineString,
+                           options=['GEOMETRY_NAME=network_shape'])
+    for name,kind in [('route_key',ogr.OFTString),('note',ogr.OFTString),('grade',ogr.OFTInteger64),('enabled',ogr.OFTInteger)]:
+        field = ogr.FieldDefn(name,kind)
+        if name == 'enabled': field.SetSubType(ogr.OFSTBoolean)
+        assert layer.CreateField(field) == 0
+    layer.StartTransaction()
+    for row in range(normalize_counts(case)['sources']):
+        attrs,parts = normalize_source(case,row); feature = ogr.Feature(layer.GetLayerDefn())
+        for name,value in attrs.items():
+            if value is not None: feature.SetField(name,value)
+        shape = ogr.Geometry(ogr.wkbMultiLineString) if case.kind == 'normalize-parts' else None
+        for points in parts:
+            line = ogr.Geometry(ogr.wkbLineString)
+            for x,y in points: line.AddPoint_2D(x,y)
+            if shape is None: shape = line
+            else: shape.AddGeometry(line)
+        feature.SetGeometry(shape); assert layer.CreateFeature(feature) == 0
+    layer.CommitTransaction(); ds = None
+
+
+def verify_normalize_source(frame, case):
+    import pandas as pd
+    assert len(frame) == normalize_counts(case)['sources'] and frame.crs.to_epsg() == 3857
+    assert list(frame.columns) == ['route_key','note','grade','enabled',frame.geometry.name]
+    assert str(frame['grade'].dtype) == 'Int64' and str(frame['enabled'].dtype) == 'boolean'
+    assert isinstance(frame.index,pd.RangeIndex) and frame.index.equals(pd.RangeIndex(len(frame))) and frame.index.name is None
+    for i,record in enumerate(frame.itertuples(index=False,name=None)):
+        expected,parts = normalize_source(case,i)
+        actual = {key: None if value is pd.NA or value is None else value.item() if hasattr(value,'item') else value
+                  for key,value in zip(frame.columns[:-1],record[:-1])}
+        assert actual == expected
+        shape = record[-1]; assert shape.is_valid and not shape.has_z
+        if case.kind == 'normalize-parts':
+            assert shape.geom_type == 'MultiLineString'; actual_parts = [[list(p) for p in part.coords] for part in shape.geoms]
+        else:
+            assert shape.geom_type == 'LineString'; actual_parts = [[list(p) for p in shape.coords]]
+        assert actual_parts == parts
+
+
+def verify_normalize_output(case, path, port):
+    from osgeo import ogr
+    ds = ogr.Open(str(path),0); assert ds and ds.GetLayerCount() == 1
+    layer = ds.GetLayer(0); assert layer.GetSpatialRef().GetAuthorityCode(None) == '3857'
+    fields = ['edge_id','occurrence_count'] if port == 'result' else ['route_key','note','grade','enabled','edge_id','source_id','source_part_no','source_segment_no','piece_no','is_reversed']
+    assert [f.GetName() for f in layer.schema] == fields
+    for field in layer.schema:
+        name = field.GetName(); native = ogr.OFTString if name in ('route_key','note','source_id') else ogr.OFTInteger if name in ('enabled','is_reversed') else ogr.OFTInteger64
+        assert field.GetType() == native
+        if name in ('enabled','is_reversed'): assert field.GetSubType() == ogr.OFSTBoolean
+    rows = normalize_counts(case)[port]; assert layer.GetFeatureCount() == rows
+    iterator = iter(layer); checksum = hashlib.sha256()
+    for i,(properties,points) in enumerate(normalize_expected(case,port),1):
+        feature = next(iterator); shape = feature.GetGeometryRef()
+        assert feature.GetFID() == i and shape.GetGeometryName() == 'LINESTRING' and shape.GetCoordinateDimension() == 2 and not shape.IsMeasured() and shape.IsValid()
+        actual = {name:feature.GetField(name) for name in fields}
+        for name in ('enabled','is_reversed'):
+            if name in actual and actual[name] is not None:
+                assert type(actual[name]) in (int,bool) and actual[name] in (0,1); actual[name] = bool(actual[name])
+        coordinates = [list(v) for v in shape.GetPoints()]
+        assert actual == properties and coordinates == points
+        for key,value in properties.items(): assert type(actual[key]) is type(value)
+        checksum.update(json.dumps([actual,coordinates],sort_keys=True).encode())
+    assert next(iterator,None) is None
+    return {'rows':rows,'crs':'EPSG:3857','full_result_sha256':checksum.hexdigest(),'all_coordinates_attributes_membership_verified':True}
+
+
+def attributed_frame_digest(frame):
     checksum = hashlib.sha256()
     checksum.update(str((frame.columns.tolist(), frame.dtypes.astype(str).tolist(), str(frame.crs))).encode())
     checksum.update(str((type(frame.index).__name__, str(frame.index.dtype), frame.index.names)).encode())
@@ -523,14 +680,16 @@ def verify_chain_output(case, path, port):
     return {'rows': rows, 'crs': 'EPSG:3857', 'full_result_sha256': checksum.hexdigest(), 'all_coordinates_attributes_membership_verified': True}
 
 
-def run_chain_worker(case, root, observer, measurement_id):
+def run_dual_worker(case, root, observer, measurement_id):
     import resource
     sys.path.insert(0, '/app')
     from operators.io_operators import load, save
     from operators import geometric_operators
-    assert observer == 'A'; chain_counts(case)
+    assert observer == 'A' and case.operator in ('chains','normalize')
+    normal = case.operator == 'normalize'
+    counts = normalize_counts(case) if normal else chain_counts(case)
     started = time.monotonic()
-    report = {'implementation_identity': loaded_implementation_identity(geometric_operators, 'chains'), 'case': asdict(case),
+    report = {'implementation_identity': loaded_implementation_identity(geometric_operators, case.operator), 'case': asdict(case),
               'observer': observer, 'measurement_id': measurement_id or case.key, 'result': 'incomplete', 'timings': {}}
     progress = root / 'progress.json'
     def phase(name, operation):
@@ -538,20 +697,20 @@ def run_chain_worker(case, root, observer, measurement_id):
         value = operation(); report['timings'][name] = time.monotonic() - before
         write_json(progress, report); return value
     source = root / 'source.gpkg'
-    phase('generate', lambda: seed_chains(case, source)); original = digest(source)
+    phase('generate', lambda: (seed_normalize if normal else seed_chains)(case, source)); original = digest(source)
     connection = {'engine_type':'nfs', 'mount_path':str(root)}
     frame = phase('read', lambda: load(connection_info=connection, path='source.gpkg'))
-    phase('source_oracle', lambda: verify_chain_source(frame, case)); before = chain_frame_digest(frame)
-    result = phase('compute', lambda: geometric_operators.merge_line_chains(frame, 'route_key', ['road','grade']))
+    phase('source_oracle', lambda: (verify_normalize_source if normal else verify_chain_source)(frame, case)); before = attributed_frame_digest(frame)
+    result = phase('compute', lambda: geometric_operators.normalize_line_network(frame, 'route_key') if normal else geometric_operators.merge_line_chains(frame, 'route_key', ['road','grade']))
     assert set(result) == {'result','members'}
     for port in ('result','members'):
-        assert len(result[port]) == chain_counts(case)[port]
-        inherited = ['road', 'grade'] if port == 'result' else frame.columns
+        assert len(result[port]) == counts[port]
+        inherited = ([] if normal else ['road', 'grade']) if port == 'result' else frame.columns
         assert all(result[port][name].dtype == frame[name].dtype for name in inherited)
         phase('save_' + port, lambda port=port: save(result[port], connection_info=connection, path=port + '.gpkg', mode='fail'))
-    physical = phase('reload_oracle', lambda: {port: verify_chain_output(case, root / (port + '.gpkg'), port) for port in ('result','members')})
+    physical = phase('reload_oracle', lambda: {port: (verify_normalize_output if normal else verify_chain_output)(case, root / (port + '.gpkg'), port) for port in ('result','members')})
     def unchanged():
-        assert chain_frame_digest(frame) == before and digest(source) == original
+        assert attributed_frame_digest(frame) == before and digest(source) == original
     phase('source_unchanged', unchanged)
     import platform, geopandas, shapely
     from osgeo import gdal
@@ -564,7 +723,9 @@ def run_chain_worker(case, root, observer, measurement_id):
     write_json(progress, report); return report
 
 
-def validate_chain_worker(report, case, observer, measurement_id):
+def validate_dual_worker(report, case, observer, measurement_id):
+    normal = case.operator == 'normalize'
+    counts = normalize_counts(case) if normal else chain_counts(case)
     assert observer == report['observer'] == 'A' and report['measurement_id'] == (measurement_id or case.key)
     assert report['result'] == 'passed' and report['stage'] == 'complete' and report['case'] == asdict(case)
     assert math.isfinite(report['duration_seconds']) and 0 < report['duration_seconds'] <= SECONDS
@@ -573,12 +734,12 @@ def validate_chain_worker(report, case, observer, measurement_id):
     assert all(math.isfinite(v) and v >= 0 for v in report['timings'].values())
     assert sum(report['timings'].values()) <= report['duration_seconds']
     assert 'compute_observation' not in report
-    identity = report['implementation_identity']; assert identity['loaded_merge_matches_source'] is True
-    for key in ('module_sha256','merge_line_chains_sha256'): assert len(identity[key]) == 64
+    identity = report['implementation_identity']; assert identity['loaded_normalize_matches_source' if normal else 'loaded_merge_matches_source'] is True
+    for key in ('module_sha256','normalize_line_network_sha256' if normal else 'merge_line_chains_sha256'): assert len(identity[key]) == 64
     assert set(report['physical']) == set(report['outputs']) == {'result','members'}
     for port in ('result','members'):
         physical = report['physical'][port]
-        assert physical['rows'] == chain_counts(case)[port] and physical['crs'] == 'EPSG:3857'
+        assert physical['rows'] == counts[port] and physical['crs'] == 'EPSG:3857'
         assert physical['all_coordinates_attributes_membership_verified'] is True and len(physical['full_result_sha256']) == 64
     for fact in (report['source'], *report['outputs'].values()):
         assert type(fact['size_bytes']) is int and fact['size_bytes'] > 0
@@ -679,8 +840,8 @@ def observe_compute(root, report, progress, observer='C'):
 
 def run_worker(case, root, observer='C', measurement_id=None):
     """One process, one full measurement including generation and independent checks."""
-    if case.operator == 'chains':
-        return run_chain_worker(case, root, observer, measurement_id)
+    if case.operator in ('chains','normalize'):
+        return run_dual_worker(case, root, observer, measurement_id)
     import resource
     sys.path.insert(0, '/app')
     from operators.io_operators import load, save
@@ -758,8 +919,8 @@ def classify(returncode, timed_out, state, metrics):
 
 
 def validate_worker(report, case, observer='C', measurement_id=None):
-    if case.operator == 'chains':
-        return validate_chain_worker(report, case, observer, measurement_id)
+    if case.operator in ('chains','normalize'):
+        return validate_dual_worker(report, case, observer, measurement_id)
     assert observer in ('A', 'B', 'C')
     assert report['observer'] == observer and report['measurement_id'] == (measurement_id or case.key)
     assert len(report['source_frame_sha256']) == 64
@@ -865,7 +1026,7 @@ def run_case(case, image, run_id, artifact, observer='C', measurement_id=None, r
         if outcome['result'] == 'passed':
             validate_worker(outcome['worker'], case, observer, measurement_id)
             if expected_identity is not None:
-                assert outcome['worker']['implementation_identity'] == {**expected_identity, 'loaded_merge_matches_source': True}
+                assert outcome['worker']['implementation_identity'] == {**expected_identity, ('loaded_normalize_matches_source' if case.operator == 'normalize' else 'loaded_merge_matches_source'): True}
             assert elapsed <= SECONDS
             assert metrics['swap_current_bytes'] == 0
     except Exception as error:
@@ -921,12 +1082,14 @@ def run_gate(profile='matrix'):
     artifact.mkdir(mode=0o700)
     image = f'localhost:5001/addp-geopython-workflow-engine:topology-capacity-{run_id}'
     registry = f'addp-topology-capacity-registry-{run_id}'
-    report = {'schema_version': SCHEMA, 'source': source, 'experiment_profile': profile,
+    report = {'schema_version': NORMALIZE_SCHEMA if profile == 'normalize' else SCHEMA, 'source': source, 'experiment_profile': profile,
               'runner': {key: os.getenv(key) for key in ('GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_JOB', 'RUNNER_NAME', 'RUNNER_ARCH', 'ImageOS', 'ImageVersion')},
               'host': {'hostname': os.uname().nodename, 'available_cpus': sorted(os.sched_getaffinity(0)),
                        'cpuinfo_sha256': hashlib.sha256(Path('/proc/cpuinfo').read_bytes()).hexdigest()},
               'profile': {'cpu': CPUS, 'memory_bytes': MEMORY, 'swap_bytes': 0, 'seconds_per_case': SECONDS},
               'planned_measurements': plan, 'planned_cases': [item['case'] for item in plan], 'groups': [], 'result': 'incomplete'}
+    if profile == 'normalize':
+        report['normalization_implementation'] = implementation_identity((repository / GEOMETRY_MODULE).read_text(), 'normalize')
     if profile == 'chains':
         report['chain_implementation'] = implementation_identity((repository / GEOMETRY_MODULE).read_text(), 'chains')
     registry_created = False; image_attempted = False
@@ -973,7 +1136,7 @@ def run_gate(profile='matrix'):
         for index, item in enumerate(plan):
             report['groups'].append(run_case(Case(**item['case']), images[item.get('implementation', 'new')], run_id, artifact,
                 observer=item['observer'], measurement_id=item['id'], repetition=item['repetition'], implementation=item.get('implementation'),
-                expected_identity=report.get('chain_implementation')))
+                expected_identity=report.get('normalization_implementation') if profile == 'normalize' else report.get('chain_implementation')))
             write_json(artifact / 'report.json', report)
             if report['groups'][-1].get('cleanup') != 'passed':
                 report['not_run'] = {'reason': 'prior_case_cleanup_failed', 'measurements': plan[index + 1:]}
@@ -1002,13 +1165,13 @@ if __name__ == '__main__':
         raise KeyboardInterrupt('capacity interrupted')
     signal.signal(signal.SIGTERM, terminate)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--worker', choices=[case.key for case in matrix() + chain_matrix()])
-    parser.add_argument('--profile', choices=('matrix', 'observation', 'comparison', 'chains'), default=os.getenv('TOPOLOGY_CAPACITY_PROFILE', 'matrix'))
+    parser.add_argument('--worker', choices=[case.key for case in matrix() + chain_matrix() + normalize_matrix()])
+    parser.add_argument('--profile', choices=('matrix', 'observation', 'comparison', 'chains', 'normalize'), default=os.getenv('TOPOLOGY_CAPACITY_PROFILE', 'matrix'))
     parser.add_argument('--observer', choices=('A', 'B', 'C'), default='C')
     parser.add_argument('--measurement')
     args = parser.parse_args()
     measurement_plan(args.profile)  # Validate environment defaults before any mutation.
     if args.worker:
-        run_worker(next(case for case in matrix() + chain_matrix() if case.key == args.worker), Path('/capacity-data'), args.observer, args.measurement)
+        run_worker(next(case for case in matrix() + chain_matrix() + normalize_matrix() if case.key == args.worker), Path('/capacity-data'), args.observer, args.measurement)
     else:
         raise SystemExit(run_gate(args.profile))
