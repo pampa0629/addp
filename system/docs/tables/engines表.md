@@ -27,7 +27,7 @@
 | `created_by` | INTEGER | | 创建者ID |
 | `deletion_scan_task_id` | VARCHAR(64) | NULLABLE | 删除工作流最近一次 cleanup scan task ID |
 | `deletion_execute_task_id` | VARCHAR(64) | NULLABLE | 删除工作流最近一次 cleanup execute task ID |
-| `deletion_error` | TEXT | | 删除工作流错误摘要；成功后随 Engine 记录删除 |
+| `deletion_error` | TEXT | | 删除工作流错误摘要；失败时保留，成功转为 `deleted` 时清空，Engine 墓碑不删除 |
 | `deletion_requested_at` | TIMESTAMP | NULLABLE | 最近一次删除请求时间 |
 | `deletion_requested_by` | INTEGER | NULLABLE | 最近一次删除请求操作者 |
 | `external_artifact_policy` | VARCHAR(20) | DEFAULT 'delete' | 外部产物策略：`delete` / `abandon` |
@@ -462,21 +462,28 @@ Content-Type: application/json
 - **验收边界**：上述契约及源码核对不替代实际更新、未确认与地址冲突拒绝、版本并发、跨租户与权限拒绝的验证；保留 ID 也不证明 Meta、任务和服务等 owner 的引用仍可执行。按[标准测试入口](../../../docs/spec/addp测试与验收规范.md#三标准入口)分层核对，未运行、失败或跳过不计为通过。
 
 #### 删除引擎
+
+两阶段流程与 owner 职责见[Engine 删除工作流](../../../docs/spec/addp-cleanup体系规范.md#engine-删除工作流)，墓碑与永久 ID 规则见[身份与生命周期](../../../docs/concepts/addp引擎体系图.md#engine-instance-身份与生命周期)。先以 `POST /api/v1/system/engines/:id/deletion-assessments` 提交 `external_artifact_policy`，获取 `assessment_id`；再以 `GET /api/v1/system/engines/:id/deletion-assessments/:assessment_id` 核对完整影响结果。评估不改变原生命周期，确认后才提交删除：
+
 ```
 DELETE /api/v1/system/engines/:id
 Content-Type: application/json
 
 {
+  "version": 1,
+  "assessment_id": "<已完成的评估 ID>",
+  "confirmation_token": "<当前引擎名称>",
   "external_artifact_policy": "delete"
 }
 ```
 
-**限制**：
-- 内置引擎（`is_builtin=true`）不可删除
-- 只有管理员可以删除
-- 删除先返回 HTTP 202，并把 Engine 置为 `deleting`；System 完成 scan 和 physical cleanup 后才物理删除记录
-- cleanup 失败时记录保留为 `deleting`，再次删除可重试
-- 外部引擎不可达时，管理员可显式提交 `external_artifact_policy=abandon`，由 owner 模块把未删除外部产物标记为 `abandoned_external` 后继续删除
+**执行与验收边界**：
+- 评估、查询评估和删除均要求 User 凭据、当前 Tenant Context 与 `system.engine.delete`，继续核验资源租户归属；内置引擎不可删除，不以“管理员”称谓代替实际权限。
+- 示例 `version=1` 须替换为读取到的当前版本，`confirmation_token` 须与当前引擎名称一致。评估须属于该 Tenant 与 Engine、参与者完整、全部成功且无运行任务；当前实现按评估开始时间校验 10 分钟有效期，并要求外部产物策略一致。确认后进入 `deleting` 并权威复扫；模块不可用、运行任务或影响摘要变化均阻断后续执行。
+- HTTP 202 只表示删除流程已启动。cleanup 全部成功后转为 `deleted`，保留永久 ID、非敏感连接字段与删除审计，清除插件声明的敏感字段；System 不物理删除墓碑。用户任务、服务和治理配置的保留或禁用按各 owner 规则执行，不以 cleanup 的物理模式推断其定义已删除。
+- **失败与续办**：失败保留 `deleting`、已有 scan / execute task ID 和错误摘要，不先清除连接凭据。规范要求允许重试；当前重复 DELETE 返回 409，启动续办仅处理已有 scan task ID 的流程，不能将其等同于失败任务重跑或已具备独立重试入口。
+- 外部引擎不可达且存在 owner 已登记产物时，可在预评估与确认中显式选择 `abandon`，由 owner 记录 `abandoned_external`；它表示放弃后续物理删除责任，不证明外部对象已删除，也不绕过评估和确认。
+- 按[标准测试入口](../../../docs/spec/addp测试与验收规范.md#三标准入口)分别验证权限、评估完整性、确认与版本拒绝、复扫阻断、owner 清理和墓碑结果。源码核对、202 响应或单个任务成功不替代完整运行验收；失败恢复、外部产物与残留核验须有实际证据，未运行、失败或跳过不计为通过。
 
 #### 测试连接（创建前）
 ```
