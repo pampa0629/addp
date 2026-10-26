@@ -432,3 +432,20 @@ Node24.11.1下 `make test-raster-stream-to-vector-d8-online-runner` **63项／20
 COG原生新建金字塔按GDAL自定义网格的整数减半规则核精确尺寸，519×515样本为259×257、129×128、64×64，小图为零层；每层再独立核完整最近邻像元及mask，依据GDAL `frmts/gtiff/cogdriver.cpp`及真实文件事实修正了首轮向上取整的错误期望，未降低像元误差阈值或删去布局断言。所有成功门禁跟踪输入无漂移、无新增Python原生崩溃报告。
 
 实际Linux全量及Hosted仍待专门CI会话协调；本轮未触发／轮询／重跑或设置定时，不计真实T4通过、UI、容量或Hosted数值极限。原固定全量与验收证据分别保留。
+
+
+### DEM 剖面曲率独立 Hosted 验收
+
+独立手工入口`raster-profile-curvature-persistence`已准备，复用既有Hosted／NFS生命周期、同源产品默认入口Runtime、普通User原12权限和独立600秒业务预算；仅手动登记，不加入nightly，不取消排队任务。没有修改产品计算逻辑、权限、其他模块或旧套件。
+
+固定12条COG成功链：直接米制／国际英尺／美制测量英尺高程、填洼接profile、重分类接profile、完全水平平地、非平地零梯度残差、全无效、有有效像元但无完整邻域、小图，以及同源默认mean与显式mean两条对照。519×515、矩形投影网格、显式第二数据波段的样本覆盖跨块、凸凹／鞍面／倾斜面、极小非零坡度、NoData／mask／透明和部分透明；3×3残差与2×7小图不虚构金字塔。独立九点最小二乘与第一／第二基本形式方向商核完整像元／mask，保留`RTOL=1e-10`、`ATOL=1e-11`；平地严格0、其他零梯度严格NaN，mean另用基本形式迹核验，并逐字节比较默认／显式mean。
+
+13类中英文共26次准确失败：非法数据波段、alpha波段、复数、旋转、南向、地理CRS、缺CRS、缺网格、非法单位、单位冲突、未应用scale、未应用offset、非法method。准确匹配同次执行的curvature任务和双语原因；反向查询不得改写提交语言。成功严格核完整COG／最近邻金字塔、原网格／CRS、Float64／NaN与`1/metre`、artifact／物理／Meta相等正整数大小、精确扫描父执行／用户／租户／引擎、当前执行实际输入血缘／Monitor；失败必须零发布／新增扫描／派生血缘。每次核源及先前成果不变，生命周期覆盖所有退出与零残留。
+
+本地标准`make test-geopython-workflow`专项（`PYTEST_ADDOPTS='-k curvature --durations=10'`）**411 passed／6290 deselected／54.66秒**，0失败／跳过；其中本套件58项真实GDAL回归覆盖12条保存链、26次双语拒绝、完整像元／金字塔和错误算法／平地／零梯度／极小坡度／mean混用的污染反例。原353项曲率相关回归保持通过，筛除项不计为全量通过。`make test-raster-profile-curvature-online-runner` **66项／29.659秒**及完整Online登记通过，包含三方大小、精确扫描／实际血缘、冻结语言、源旧保护和隔离生命周期的失败反例。`make test-python-ci-registration`通过46项、10项及11模块Python／Online登记，共享计数不累加。
+
+Native候选树`83c8384f0ae808f1d9947b9126ded49c72289797`，原始日志SHA-256：`996ec5cd96dbec2c3b45c8202e2552ace781fab54dd48a0a103ae06b40364ded`。最终独立runner及登记候选树`6bac9fd9e055f4f71a2984c98f916ebb0f0f0797`，runner日志SHA-256：`c5e811ef319dd9a629c8c869d80023935ea1bdfafb60a57c50ca08c6a041351a`；登记日志SHA-256：`b7052da03034348a428324e59c3e9c538dfa38b7b4bd761f5dc9ab9a48a1ef2d`。
+
+实际Node24.11.1下完整`make test-raster-online-runner`退出0，32组Python子门禁及隔离身份夹具Go T1通过，壁钟1105.79秒；共享计数不累加唯一用例数，Go T1不计全量IAM或数据库集成。聚合候选树`83c8384f0ae808f1d9947b9126ded49c72289797`，原始日志SHA-256：`99efb31e84d2d301a66e561b849913343df26ca141565032043e666bbd8a7250`。聚合证据绑定其固定输入；最终runner与登记另已覆盖同期其他会话提交后的共享注册，Native与栅格标准recipe及本套件数值输入一致，不将较早聚合外推为后续整树复跑。所有成功门禁跟踪输入无漂移、无新增Python原生崩溃报告。
+
+实际Hosted由专门CI会话协调，本轮未手动触发、轮询、重跑、取消或设置定时；新套件的Linux全量与真实普通用户T4尚未回传，不计UI、容量或Hosted数值极限，数值极限继续单列既有Native证据。原产品cb2的Linux／Platform固定证据和本地Parquet失败记录分别保留。

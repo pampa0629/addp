@@ -2737,6 +2737,33 @@ def validate_raster_curvature_profile(repository: Path, registered: set[str]) ->
             raise RegistrationError('DEM curvature persistence contract is incomplete: '+relative)
 
 
+def validate_raster_profile_curvature(repository: Path, registered: set[str]) -> None:
+    suite='raster-profile-curvature-persistence'
+    if suite not in registered:return
+    workflow=(repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job=re.search(r'(?ms)^  raster-profile-curvature-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)',workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-profile-curvature-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-profile-curvature-persistence'" not in workflow
+        or 'cancel-in-progress: false' not in job.group('body') or 'nfs-kernel-server nfs-common' not in job.group('body')
+        or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('DEM curvature requires a manual isolated Hosted NFS job')
+    make=(repository/'Makefile').read_text()
+    if 'test-geopython-workflow:' not in make or 'test_online_profile_curvature_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('curvature Native fixture must run in the standard GeoPython recipe')
+    required={
+      'scripts/test/online-hosted-raster-profile-curvature-gate.sh':('source "$ROOT_DIR/scripts/utils/hosted-online.sh"','start_online_geopython_runtime','--mount','--suite raster-workflow','--wait-protection-owners develop,manager','online-raster-profile-curvature-fixture.py stop','unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN','ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),
+      'scripts/test/raster-profile-curvature-persistence-online.py':('raster.validate_identity','raster.EDITOR_PERMISSIONS','fixture.SOURCES','validate_scan(scanned,scan,identifier','raster.strict_sizes','raster.validate_target_item','fixture.artifact_expectation(name)','raster.wait_lineage','scan_ids(client)!=before_scans','source_edges(client','rasterize.check_physical(native,previous)','for name in fixture.TARGETS','for problem in FAILURES',"for language in ('zh-cn','en')",'SubmittedLanguageClient','invalid_diagnostic','case_inputs(name)','raster_curvature','elevation_unit','overview_count','query language rewrote stored failure','curvature_method','flat_zero_verified','zero_gradient_nodata_verified','mean_control_verified','mean_controls_equal','undefined_stationary_centres'),
+      'business/scripts/online-raster-profile-curvature-fixture.py':('NFSExport','owned_root','expected_pixels','expected_dem','np.linalg.lstsq','np.linalg.solve','SOURCE_UNITS','small.cog.tif','sparse.cog.tif','filled.cog.tif','reclassified.cog.tif','1/metre','np.allclose(actual,expected,rtol=RTOL,atol=ATOL,equal_nan=True)','source file changed','runtime_workspaces_removed','GDAL_TIFF_INTERNAL_MASK','full_check=True','nearest_overviews','semantic_masks','math.fsum','np.einsum','mean-default.cog.tif','mean-explicit.cog.tif','stationary.cog.tif','flat.cog.tif'),
+      'engines/geopython-workflow/test_online_profile_curvature_fixture.py':('test_profile_curvature_persistence_real_gdal_twelve_cog_chains_and_complete_pixels','test_profile_curvature_persistence_oracle_rejects_corruption','test_profile_curvature_persistence_twenty_six_failures_no_publication','forced_centre','laplacian','wrong_units'),
+      'Makefile':('@$(MAKE) test-raster-profile-curvature-online-runner','scripts/test/raster-profile-curvature-persistence-online_test.py','scripts/test/online-raster-profile-curvature-fixture_test.py','scripts/test/online-hosted-raster-profile-curvature-gate_test.py','test_profile_curvature_requires_manual_nfs_full_pixels_and_regressions'),
+    }
+    for relative,fragments in required.items():
+        path=repository/relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('DEM curvature persistence contract is incomplete: '+relative)
+
+
 def validate_raster_hand_d8_profile(repository: Path, registered: set[str]) -> None:
     suite='raster-hand-d8-persistence'
     if suite not in registered:return
@@ -4085,6 +4112,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_distance_to_stream_d8_profile(repository, registered)
     validate_raster_hand_d8_profile(repository, registered)
     validate_raster_curvature_profile(repository, registered)
+    validate_raster_profile_curvature(repository, registered)
     validate_raster_flow_length_upstream_d8_profile(repository, registered)
     validate_raster_stream_order_d8_profile(repository, registered)
     validate_raster_stream_shreve_d8_profile(repository, registered)
