@@ -1323,6 +1323,18 @@ System首末记录实际相差7199.984363秒，观察器单调时钟结合初次
 
 本次只闭合固定版本、120条合成历史、同进程两个真实小时区间及连续种子批次／回绕。未验证持续Worker并发写入、重启／故障恢复、超大树或100000条事件维护预算耗尽、用户Owner读取授权及长时授权有效性、Owner释放与专业结果生命周期、180天概览删除、容量／HA或T5；概览删除仍未启用。清单实际327／328／329行维持部分实现，后续建议优先补大量事件分页／截断的真实入口验收，不扩大业务功能。归档仅运行 `git diff --check`，不重复仍有效的运行验收；未操作个人服务、数据库或定时任务。
 
+### 大量事件分页与截断：本地通过，Hosted待运行（2026-10-26）
+
+实现提交 `4a193091a146ef457ce838258dc9482123463c8e` 仅补人工 `execution-events-pagination`、Common测试夹具、最小正式身份、真实Console浏览器入口及标准门禁登记，不修改产品API、采集／展示上限、权限目录或业务功能。新增独立GitHub Hosted Linux Job，使用原标准Infra与应用生命周期；启动System／Gateway／Meta／Monitor／Console，再将普通用户凭据限定传入测试子进程，不注入产品进程。严格守卫独占 `addp_online`、干净已提交源码、当次PostgreSQL容器及仓库外私有目录，拒绝个人环境与混合运行；不操作本地个人服务或数据库。
+
+两组均为绑定真实普通User身份的合成Meta一次性执行，通过Common真实claim／lease及有界事件写入能力准备。第一组尝试追加1005次，预期只存1000条，唯一末条由Common生成 `truncated`，终态仍为success／progress100；第二组准备昨日600条合法历史，再由当日真实lease写入601条，预期共1201条且无采集截断。读取经Gateway／Monitor／真实Meta Owner裁决，API完整走10／13页；真实密码登录的Console／Monitor页面各加载10页到1000条，区分采集截断与展示上限，核对逐页ID／游标、全部DOM投影、刷新／重载／关闭重开回首批100条，以及第二组真实后页仍可读。另覆盖同租户非发起人／跨租户使用已知游标仍404且列表总数为0、非法分页参数400、安全字段及完整执行／事件行读取前后不变。上述是已实现的验收断言，**本段不将其记为真实运行通过**；不是Meta扫描Worker业务验收，不新增扫描定义或业务引擎。
+
+标准 `make test-execution-events-pagination-runner` 已在共享工作区及排除他方WIP的隔离输入通过：24项Python、2项无外部服务的Go守卫、System身份夹具Go包、浏览器JS语法及Online CI登记成功。专用Hosted Go夹具本地因未设置运行标志跳过1项；5项既有System PostgreSQL专项因无标准DSN跳过，不计T2或真实写入通过。隔离基线 `d6fecb323a8e1e053fc0136585ac8645b2faadd3` 加本批15个文件，其内容摘要与最终提交逐一一致；仅含本批差异的索引补丁提交后，工作区原文件字节保持不变，未提交或覆盖他方WIP。影响选择dry-run仅计登记覆盖，不代表整区模块门禁通过。
+
+[Hosted Run40274854201／Job121415332273](https://github.com/pampa0629/addp/actions/runs/40274854201/job/121415332273) 为attempt1、workflow_dispatch，实际绑定上述实现SHA。2026-10-26 13:48（Asia/Shanghai）核对仍为queued、Runner未分配、实际步骤为空；业务、Owner权限反例、浏览器、截图及最终生命周期清理均未运行，不能计为T4通过。不重复派发、不修改Runner配置、不追踪其他Owner CI。后续必须核对实际Job／步骤、官方Artifact摘要、真实构建与身份、9组场景／7组页面断言、两张安全截图及最终零残留，才能更新本段结论。
+
+本地证据：`/tmp/addp-event-pages-runner-isolated-final.log`、`/tmp/addp-event-pages-validation-source.json`、`/tmp/addp-event-pages-owned.patch`；首次新增测试在实现缺失时为ModuleNotFoundError红灯，保留 `/tmp/addp-event-pages-runner-red.log`，不改写历史。排队元数据 `/tmp/addp-event-pages-t4-40274854201-metadata.json`。本轮仍不启用180天概览删除、不修改专业结果期限；更多Owner／专业节点、持续Worker并发、重启／故障、规模与容量、Owner释放／消费者引用裁决及T5不在本批通过范围。清单实际327／328／329行继续部分实现，优先下一步是核对本次既有Hosted运行及证据，不扩大业务开发。
+
 ### 正式身份本地第十窗口：执行、Trace、日志与真实页面闭环通过（2026-10-25）
 
 用户接受“当前源码准入和Gateway构建已通过、历史间歇失败唯一根因未定”的前提，另行授权2026-10-25 06:17:43–07:17:43（Asia/Shanghai）最多60分钟本地窗口；8 CPU／12 GiB、当次卷及私有可写目录4 GiB停止线、单次完整资源测量4秒预算保持。只运行根`make test-monitor-traces-local`，不运行Hosted、不重跑容量、不设置定时，不接管个人服务或以共享数据库承载测试。两次尝试共用同一绝对截止时间，未重置60分钟，所有产品均从各次准确已提交源码私有副本构建；仅固定MinIO／mc按原规则核验复用。本次未改产品代码、身份权限、采样或验收断言。
