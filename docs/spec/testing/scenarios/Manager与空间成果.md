@@ -22,7 +22,7 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 
 首期仅认领带 `DSRB` 文件头的 Surfer 7 二进制 `.grd`，版本 1/2、单波段 Float64、零旋转、完整单 GRID/DATA、主文件不超过 64 MiB。拒绝 ASCII/Surfer 6、其他同后缀格式、非有限值、断层／尾随结构及当前 GDAL 无法等价表达的版本 1 范围缺失值；不读取旁文件，不据 XY 数值推导 CRS，不新增 GRD 导出。完整产品契约见[媒体与地图数据集](../../builtin-formats/媒体与地图数据集.md)。
 
-沿现有 `native-raster-media` 部署和十项普通 User 权限增加两份自建 5×3 非方形网格，分别为版本 1 的经纬度外观 XY 和版本 2 的投影外观 XY；版本 2 还包含大于 BlankValue 的有效数值。独立物理 oracle 核对完整原字节与 SHA-256、15 个 Float64、14 个有效节点、NoData、上下行顺序及半像元网格；Meta 必须提供 GS7BG、单波段、版本和节点原点／间距／形状／范围私有事实，不能发布空间能力。真实 Console iframe 的属性页、预览页及下载按钮逐一核对原文件哈希、截图、无地图、无破图、无 COG 生成入口；不创建 GRD 任务或产物，不宣称 GRD 缓存、地图或导出通过。源字节与 Meta 前后不变，所有部署、源和 Infra 仍由既有生命周期清理并核零残留。证据为 `manager-grd.json`、`manager-grd-browser.json`、两份原文件、Meta 快照及截图；新增范围须以对应 SHA 的正式 Hosted 通过证明，历史两格式报告不替代三格式证据。
+沿现有 `native-raster-media` 部署和十项普通 User 权限增加两份自建 5×3 非方形网格，分别为版本 1 的经纬度外观 XY 和版本 2 的投影外观 XY；版本 2 还包含大于 BlankValue 的有效数值。独立物理 oracle 核对完整原字节与 SHA-256、15 个 Float64、14 个有效节点、NoData、上下行顺序及半像元网格；Meta 必须提供 GS7BG、单波段、版本和节点原点／间距／形状／范围私有事实，不能发布空间能力。真实 Console iframe 的属性页、预览页及下载按钮逐一核对原文件哈希、截图、无地图、无破图、无 COG 生成入口；不创建 GRD 任务或产物，不宣称 GRD 缓存、地图或导出通过。源字节与 Meta 前后不变，所有部署、源和 Infra 仍由既有生命周期清理并核零残留。页面就绪统一观察当前 locator 的 `GET /api/v1/manager/preview`，沿该真实请求的 Bearer 核对同一普通身份；GRD 没有快显 target，不能等待页面本不请求的 COG capability。IMG/JPEG2000 的 Range、像素和缓存重开断言保留，页面报告升 `addp.manager-raster-media-browser/v3` 并逐源要求 `source_preview_verified=true`；旧 v2 不替代该页面证明。证据为 `manager-grd.json`、`manager-grd-browser.json`、两份原文件、Meta 快照及截图；新增范围须以对应 SHA 的正式 Hosted 通过证明，历史两格式报告不替代三格式证据。
 
 ### KML 实际页面导出
 
@@ -40,7 +40,7 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 
 两份有定位 IMG 经正式 `generate_raster_cog` action 生成受管 TIFF/COG，核任务 `source_format=img`、原生 Runtime 身份、完整像元/mask/CRS/仿射网格、完整 COG 布局、API/物理哈希和大小、Range 前后缀及越界拒绝。同一普通 User 在真实 Console iframe 显示 WGS84/UTM COG，检查 WebGL 图层的品红/青/黄像素及截图，重开复用同一结果且不产生额外生成请求；原文件下载哈希保持一致。无定位样例核元数据、不开放地图，以及可见的“不支持直接预览”提示；预览区域不得挂载普通图片组件或 `<img>`，不得把 IMG/JP2/J2K 源交给浏览器图片解码。v2 浏览器报告必须保存 `source_image_absent=true` 与 `unsupported_message_visible=true`，缺失或为假均拒绝，不能仅凭无地图／无生成按钮判通过。生成、页面、复用及退出均核源原字节不变；通过正式 Manager API 删除结果和任务，核内容404、物理对象缺失、源预览模式恢复与零残留。失败仍须尝试本轮已知精确资源清理，保留首个业务错误和清理错误。
 
-IMG 与 JPEG2000 子场景复用唯一媒体栅格 runner，分别归档 `manager-img*.json` 和 `manager-jpeg2000*.json`，报告使用 `addp.manager-raster-media/v1` 与 `addp.manager-raster-media-browser/v2`，旧 Manager 场景断言保持。标准确定性入口仍为 `make test-manager-online-runner`，原生物理夹具由 `make test-geopython-workflow` 自动发现，CI 注册检查须确认新子场景、浏览器和两组回归在已有入口中实际接线。仅手工触发既有 Manager Hosted，不增加定时；真实结果出来前不记通过。该证据不外推 IMG 导出、外部 IGE/RRD/依赖文件、复数/异质波段、自定义 WKT、NFS Hosted 或任意影像容量。
+IMG 与 JPEG2000 子场景复用唯一媒体栅格 runner，分别归档 `manager-img*.json` 和 `manager-jpeg2000*.json`，报告使用 `addp.manager-raster-media/v1` 与 `addp.manager-raster-media-browser/v3`，旧 Manager 场景断言保持。标准确定性入口仍为 `make test-manager-online-runner`，原生物理夹具由 `make test-geopython-workflow` 自动发现，CI 注册检查须确认新子场景、浏览器和两组回归在已有入口中实际接线。仅手工触发既有 Manager Hosted，不增加定时；真实结果出来前不记通过。该证据不外推 IMG 导出、外部 IGE/RRD/依赖文件、复数/异质波段、自定义 WKT、NFS Hosted 或任意影像容量。
 
 JPEG2000 扩展仍使用同一 Manager Hosted、Business MinIO、十项普通 User 权限及产品 Runtime，不新建 suite 或服务。四份 256×256 三波段 Byte 合成源分别为 GeoJP2 WGS84、GMLJP2 UTM50N、无定位 JP2 和原始 J2K；采用可逆无损编码。检查 canonical `jpeg2000/media/single`、JP2OpenJPEG、profile、尺寸和波段，完整下载核源大小/哈希。两份定位源沿同一任务入口生成 COG，核实际 source_format、完整像元、mask、CRS、仿射网格、COG布局、HTTP/物理哈希及Range和416；真实浏览器检查三色像素、截图、重开复用且零新生成请求。两份无定位源无地图、无生成动作，不假定经纬度。每份源 Meta 及字节前后不变，两个 COG 结果/任务经 API 删除后核物理对象缺失、内容404和预览模式恢复，部署与Infra清理仍须通过。此扩展不认证外部定位/PAM、JPX组合、NFS/FTP、JPEG2000写出或任意厂商容量；旧IMG通过证据不代表JPEG2000通过。
 
@@ -476,7 +476,15 @@ Native候选树`83c8384f0ae808f1d9947b9126ded49c72289797`，原始日志SHA-256�
 
 本轮最小充分本地验证：`make test-raster-profile-curvature-online-runner` **72项／17.397秒**、`make test-raster-tangential-curvature-online-runner` **73项／21.893秒**及各自完整Online登记通过；`make test-python-ci-registration`通过46项、10项及11模块登记，共享计数不累加。标准`make test-geopython-workflow`配合`PYTEST_ADDOPTS='-k curvature --durations=10'` **626 passed／6358 deselected／53.35秒**，0失败／跳过，输入无漂移、无新增Python原生崩溃报告；候选树`3c804c7b76fc1c8058c2879664dc227be724b160`，不计新全量。Native日志SHA-256：`31b6ec33af668aaebf06c37fadac8a631dd30b1eec89f79a82ed280677cb7d53`；剖面runner：`18533b2d7209f794f086102bf048f45b784b2f7b55de53e33827bdf5d0c5b9be`，切向runner：`da7da71bf78deca37784421542511fbd682e2ab0ab7285a3f5b0f2546946b84d`，登记：`f85c9e460a41ee518ee184b1fe6652ca13b25900e302df6619e32dcac91770db`。修前回归准确拒绝第一份成果后过早等待；修后仍拒绝缺失／错误执行／源／目标／状态／关系类型／截断血缘，保留双语负例和污染反例。
 
-切向产品固定`6cdc38dff`的Linux全量6918项已通过，首次独立Hosted固定`2f704eb17`超时失败、等待编排修后待CI复验；独立准备`1fa0e1810`的整树全量证据未回传，分层结论见切向独立验收；本会话不手工触发／轮询／重跑／取消相关运行，不设置定时。原产品cb2固定证据、本地Parquet失败及834并行镶嵌double-free未确认根因记录分别保留，不计UI、容量或Hosted数值极限。
+剖面等待编排修复后的固定`909be4e7b1e1269c916bcf431c458f0e1db1dd17`复验 [run40272625047／job121408540481](https://github.com/pampa0629/addp/actions/runs/40272625047/job/121408540481) 仍在600111毫秒超时，整套不计通过。闭集记录确认源扫描、12条成功链的执行／自动扫描／物理／精确血缘阶段通过，仅22次负例完成，第23次offset中文于598227毫秒开始后被截断，无最终suite_report，最后4次负例及源最终核验不能计通过；cleanup passed／Infra零残留单独成立。原始ZIP SHA-256：`2e1434b2925ee9fe73df1dc73a47d91e3f86c2eced2e266c3f3b1107a962e924`。
+
+本轮已定位并消除剖面物理oracle的重复计算：完成的22次负例为16.474–19.416秒，服务器HTTP路由记录中最后业务请求至下次提交的空档为14.891–15.943秒（中位15.534秒）；这仅定位物理子进程方向，不把空档当作精确函数耗时。本地标准Native入口另做函数计时，一次完整12成果核验原有5593548次精确`math.fsum`，预期像元与语义检查重复求驻点。现仅在同次核验进程内复用由相同源／波段／高程单位／前置处理决定的只读平地和驻点事实，九点严格相等样本直接认定精确零矩，所有非平地样本继续精确求和，无坡度阈值。独立最小二乘与基本形式方向商未变；12／26范围、容差、实际文件重读、全幅像元／mask、COG／最近邻金字塔、源及先前成果摘要、三方大小、扫描／血缘／Monitor、冻结语言及退出清理均保持。AST核对只改变`expected_pixels`与`semantic_masks`，实际`verify`／worker／digest／nearest_overviews／生命周期与场景脚本不变；不修改产品算法、公共模块、权限、等待／重试编排、Runtime缓存配置或600秒业务预算。
+
+本地同机函数计时中，完整核验由6.933秒降至1.665秒，`math.fsum`由5593548次降至693602次；独立stdin worker的seed＋完整verify用例由8.57秒降至3.74秒。它们是本地成本证据，不保证Hosted耗时或容量。通过标准Native入口将固定909旧oracle与修后12组预期像元、平地与非平地驻点掩膜逐字节比较，全部一致。新增回归要求预期值与语义检查不重复精确求和、同输入method共享只读事实、不同单位／前置处理仍隔离，以及12样本与独立全量精确矩一致；原实际文件污染反例继续执行。首个重复计算红测原始记录保留，未放宽数值容差。
+
+修后本地验证与正式复验状态：标准 `PYTEST_ADDOPTS='-k profile_curvature --durations=15' make test-geopython-workflow` **93 passed／7173 deselected／22.01秒**，其中剖面夹具71项（含13项新增回归）和既有产品22项，0失败／跳过，JUnit与进度点一致、输入无漂移，不能计为新全量。`make test-raster-profile-curvature-online-runner` **72项／27.472秒**及完整Online登记通过，`make test-python-ci-registration`通过46项、10项与11模块登记，共享计数不累加。原标准Native recipe、夹具／场景变更选择、手工workflow与登记检查已覆盖，未新增入口／配置或改动CI编排。Native日志SHA-256：`b754557277cd562644cd6a7ae94b60d7794627d6f5b3eb6dc61eec16a7c2d659`，runner：`b79bba4bcde10f7fc74634c8bffb3024025fb46eed31fdef0edb2c707ecdc029`；逐字节等价比较日志：`2cd8b2638020b9f4f16ea55b007ef8131e1cfd0d8690590c6c3f8706fbad8071`。修后正式Linux全量及独立Hosted仍待专门CI会话协调，不记为已解决Hosted超时或T4通过；本会话不触发、轮询、重跑、取消或设置定时，不操作个人服务／Infra。
+
+切向与平面等其他方法按各自固定源码证据单列，本轮不重跑或挪作新剖面证据。原产品cb2固定证据、本地Parquet失败及834并行镶嵌double-free未确认根因记录分别保留，不计UI、容量或Hosted数值极限。
 
 
 ### DEM 切向曲率独立 Hosted 验收

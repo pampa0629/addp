@@ -188,3 +188,48 @@ def test_profile_curvature_zero_gradient_and_mean_controls_reject_semantic_mutat
     ds=gdal.OpenEx(str(root/'outputs'/name),gdal.OF_RASTER|gdal.OF_UPDATE,open_options=['IGNORE_COG_LAYOUT_BREAK=YES'])
     ds.GetRasterBand(1).WriteArray(wrong);ds=None
     with pytest.raises(module.FixtureError,match='complete pixel values differ'):module.verify(root,list(module.TARGETS))
+
+
+def test_profile_curvature_semantic_masks_are_shared_without_repeating_exact_sums(monkeypatch):
+    """The expected oracle may memoize immutable input facts; actual files are re-read."""
+    import math
+    module=importlib.import_module('business.scripts.online-raster-profile-curvature-fixture')
+    original=math.fsum;calls=0
+    def counted(values):
+        nonlocal calls
+        calls+=1;return original(values)
+    module.expected_pixels.cache_clear();module.semantic_masks.cache_clear()
+    monkeypatch.setattr(math,'fsum',counted)
+    module.expected_pixels('profile.cog.tif');after_pixels=calls
+    first=module.semantic_masks('profile.cog.tif')
+    assert calls==after_pixels,'semantic verification must reuse the exact stationary facts already used by the oracle'
+    for name in ('mean-default.cog.tif','mean-explicit.cog.tif'):
+        masks=module.semantic_masks(name)
+        assert masks is first and calls==after_pixels,'same source/band/unit/stage must share immutable semantic facts'
+    module.semantic_masks.cache_clear();calls=0
+    flat,undefined=module.semantic_masks('flat.cog.tif')
+    assert calls==0,'strictly equal nine-point samples have exactly zero moments without summing'
+    assert flat[1:-1,1:-1].all() and not undefined.any()
+    assert not flat.flags.writeable and not undefined.flags.writeable
+    # Different stored units/stages must remain distinct cache identities.
+    fresh=module.semantic_masks('profile.cog.tif')
+    assert module.semantic_masks('feet.cog.tif') is not fresh
+    assert module.semantic_masks('reclassified.cog.tif') is not fresh
+
+
+@pytest.mark.parametrize('case_index',range(12))
+def test_profile_curvature_semantic_masks_equal_independent_full_moments(case_index):
+    import math
+    module=importlib.import_module('business.scripts.online-raster-profile-curvature-fixture')
+    name=module.TARGETS[case_index]
+    values=module.expected_dem(name);flat=np.zeros(values.shape,bool);stationary=flat.copy()
+    if min(values.shape)>=3:
+        windows=np.lib.stride_tricks.sliding_window_view(values,(3,3));complete=np.isfinite(windows).all(axis=(-2,-1))
+        samples=windows[complete].reshape(-1,9);relative=(samples-samples[:,4:5])*module.FACTORS[module.CASES[name][2]]
+        xs=np.tile(np.arange(-1,2),3);ys=np.repeat(np.arange(1,-2,-1),3)
+        flat[1:-1,1:-1][complete]=(samples==samples[:,4:5]).all(axis=1)
+        stationary[1:-1,1:-1][complete]=np.array([math.fsum(row*xs)==0 and math.fsum(row*ys)==0 for row in relative],dtype=bool)
+    actual_flat,actual_undefined=module.semantic_masks(name)
+    np.testing.assert_array_equal(actual_flat,flat)
+    np.testing.assert_array_equal(actual_undefined,stationary&~flat)
+    assert not actual_flat.flags.writeable and not actual_undefined.flags.writeable

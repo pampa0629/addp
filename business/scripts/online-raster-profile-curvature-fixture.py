@@ -123,7 +123,6 @@ def expected_dem(name):
 @lru_cache(maxsize=12)
 def expected_pixels(name):
     import numpy as np
-    import math
     values=expected_dem(name);result=np.full(values.shape,np.nan)
     if min(values.shape)<3:return result
     windows=np.lib.stride_tricks.sliding_window_view(values,(3,3));complete=np.isfinite(windows).all(axis=(-2,-1))
@@ -140,9 +139,10 @@ def expected_pixels(name):
     if CASES[name][4] in (None,'mean'):
         answer=np.trace(np.linalg.solve(first,second),axis1=1,axis2=2)/2.
     else:
-        flat=(samples==samples[:,4:5]).all(axis=1)
-        stationary=np.array([math.fsum(row*x)==0 and math.fsum(row*y)==0 for row in relative])
-        answer=np.full(len(p),np.nan);answer[flat]=0.;active=~stationary
+        flat_mask,undefined_mask=semantic_masks(name)
+        flat=flat_mask[1:-1,1:-1][complete]
+        undefined=undefined_mask[1:-1,1:-1][complete]
+        answer=np.full(len(p),np.nan);answer[flat]=0.;active=~(flat|undefined)
         tangent=np.column_stack((p[active],q[active]))
         answer[active]=np.einsum('bi,bij,bj->b',tangent,second[active],tangent)/np.einsum('bi,bij,bj->b',tangent,first[active],tangent)
     result[1:-1,1:-1][complete]=answer
@@ -151,6 +151,12 @@ def expected_pixels(name):
 
 @lru_cache(maxsize=12)
 def semantic_masks(name):
+    # These are immutable deterministic input facts, not cached file validation.
+    # Methods over the same source/band/unit/stage must share the same moments.
+    if name not in CASES:raise FixtureError('unknown exact curvature target')
+    key=CASES[name][:4]
+    canonical=next(target for target in TARGETS if CASES[target][:4]==key)
+    if name!=canonical:return semantic_masks(canonical)
     import numpy as np
     import math
     values=expected_dem(name);flat=np.zeros(values.shape,bool);stationary=flat.copy()
@@ -158,8 +164,13 @@ def semantic_masks(name):
         windows=np.lib.stride_tricks.sliding_window_view(values,(3,3));complete=np.isfinite(windows).all(axis=(-2,-1))
         samples=windows[complete].reshape(-1,9);x=np.tile(np.arange(-1,2),3);y=np.repeat(np.arange(1,-2,-1),3)
         relative=(samples-samples[:,4:5])*FACTORS[CASES[name][2]]
-        flat[1:-1,1:-1][complete]=(samples==samples[:,4:5]).all(axis=1)
-        stationary[1:-1,1:-1][complete]=np.array([math.fsum(row*x)==0 and math.fsum(row*y)==0 for row in relative])
+        is_flat=(samples==samples[:,4:5]).all(axis=1)
+        zero=is_flat.copy()
+        # Equal samples give exact zero moments; retain faithful sums for every
+        # nonflat sample, including residuals and arbitrarily small gradients.
+        zero[~is_flat]=np.array([math.fsum(row*x)==0 and math.fsum(row*y)==0 for row in relative[~is_flat]],dtype=bool)
+        flat[1:-1,1:-1][complete]=is_flat
+        stationary[1:-1,1:-1][complete]=zero
     flat.flags.writeable=False;undefined=stationary&~flat;undefined.flags.writeable=False
     return flat,undefined
 
