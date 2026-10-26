@@ -382,7 +382,7 @@ Console 公开路由与 System standalone 路由使用同一模块内 path 和 q
 - Quality 域引用权限的已执行 `000149` 保持原始摘要；后续域读取授权与服务身份刷新使用 `000150`。回归测试须从原始 149 已执行状态升级，校验历史摘要保持不变及重复启动幂等，不能只验证空库迁移。
 - `000193_resource_observation_read.up.sql` 发布资源观测权限：`monitor.resource_observation.read` 仅允许 Platform、不可委托及租户定制，产品目录只授予 `platform.system_administrator`；内置角色 Manifest 116 同步。迁移推进受影响主体授权版本并撤销旧 Refresh Token Family，不扩大三员其他角色、Prometheus 采集身份或 Tenant Runtime 角色。预算配置沿用 Monitor 已有模块级平台配置 Permission。
 - `000194` 发布专职 `tenant.engine_access_delegation_administrator` 模板，只允许 Tenant Scope 的 User，并组合委派读取／创建／撤销、引擎管理读取与租户账号候选读取。角色 Manifest 117 同步；不改写旧角色、不新增任何 Assignment、不生成管理委派或数据 Grant。账号赋权仍走正常 IAM API 并执行原有授权版本与会话撤销规则。
-- 主机资源告警规则迁移 `000211_platform_resource_alert_rules` 新增 Monitor 的四项平台规则权限，仅绑定既有 `platform.system_administrator`；沿角色绑定触发器推进授权版本，并撤销该角色活动用户的旧刷新令牌族。保留 IAM 内核、其他角色、用户角色分配、租户权限和服务身份。
+- 主机资源告警规则迁移 `000211_platform_resource_alert_rules` 新增 Monitor 的四项平台规则权限，仅绑定既有 `platform.system_administrator`；沿角色绑定触发器推进授权版本，并撤销该角色活动用户的旧刷新令牌族。保留 IAM 内核、其他角色、用户角色分配、租户权限和服务身份。专项命令与覆盖范围见[000211 专项验证](#000211-专项验证)。
 - DataItem 边界绑定切换时，经确认可丢弃的旧原生目标测试授权不自动转换为新 Grant；通过前向迁移清理相关源规则及依赖记录，重新核验 Meta 边界后显式授权。清理不扩大到 IAM 账号、角色、功能权限或引擎管理委派，也不删除通用审计历史。切换完成后，旧原生目标记录不能作为读取依据，不保留兼容放行路径。
 - `000229` 为现有不可变 `engine_access_grants` 增加 nullable `file_composition` 最小批准快照；原生表／集合行保持 NULL，文件行必须有严格完整组成，不回填或升级旧主文件许可。组成只取可信 Meta 事实，指纹仍是主项身份，源规则依同项／同边界摘要匹配 Grant、依同项身份匹配 Deny。原有 `(tenant_id,engine_id,item_fingerprint,boundary_hash)` 索引继续服务点查，不为组成快照建立独立 ACL 或无查询需求的 JSONB 索引。受管 FTP 模型结果使用同一次普通 User 裁决绑定 `expected_source` 完整组成和当前 Engine 版本，不依赖历史任务仍存在或终态 EA。正式接入及验证分片记录，迁移／共享类型存在不表示 FTP 真实内容链已验收。
 - `000230` 在既有唯一 `source_read_scope` 列中封闭表达 Manager 剖析或 FTP 模型 GLB 两种用途，二者互斥，不新增通用引擎许可。Manager 共用签发／消费内核核验当前 User、功能权限、精确 pending 或 running claim、期限和审计；用途各自核验完整冻结 Scope。GLB 的任务标识／版本来自 Manager 创建事务已冻结的统一执行事实，System 不跨读 Manager 私有任务表；同 UUID 的有限核清只返回原授权及原期限。消费在同一当前源规则核验中锁定原版本 FTP Engine，只解密该快照，不再查询另一个连接。新增前向约束保留剖析原 wire，不改角色、Assignment 或源规则；运行接线、负例门禁和真实 FTP T4 分别验收。
@@ -415,5 +415,9 @@ Console 公开路由与 System standalone 路由使用同一模块内 path 和 q
 数据库连接准备统一见[PostgreSQL 测试库与安全连接](../../scripts/infra/docs/PostgreSQL与测试库.md#postgresql-database-清单)及[T2 隔离规范](../../docs/spec/testing/T0-T3测试规范.md#t2)：显式提供已核实的 `ADDP_SYSTEM_POSTGRES_TEST_DSN`，本地仅使用 `addp_iam_test`，CI 使用 Job 独占且随 Job 销毁的数据库。门禁会重建测试库的 `system` 和 `common` Schema，禁止指向开发库或生产库，分包运行也须串行。
 
 下文专项分组只证明所选用例覆盖，不替代完整 T2 或 owner 门禁。未运行、失败、跳过项须分别记录，不计为通过；Go T1／PostgreSQL T2 不证明开发库已恢复，也不替代跨模块 Online 或业务运行验收。
+
+### 000211 专项验证
+
+迁移事实与权限边界见[具体迁移约束](#具体迁移约束)中的 `000211`；连接准备、分组覆盖与未运行／失败／跳过项的判定沿用[本章验证边界](#十三验证)。
 
 `000211` 专项验证使用 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test resource-alert-rules"`，覆盖新键作用域/绑定、其他目录与身份不变、授权版本、刷新撤销、重复执行及完整迁移 Runner。
