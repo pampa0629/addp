@@ -738,6 +738,13 @@
         "hour": "小时",
         "day": "天"
       },
+      "devices": {
+        "title": "设备明细",
+        "disk": "磁盘 IO",
+        "network": "网卡吞吐",
+        "forHost": "{name}的设备明细",
+        "refresh": "刷新设备数据"
+      },
       "listView": {
         "label": "资源视图",
         "resources": "核心资源",

@@ -327,7 +327,7 @@ test('network observations require one interface and complete minute evidence, a
   const disk = { ...reply, series: diskMetrics.map(metric => ({ ...series[0], metric_key: metric.key, unit: metric.unit })) }
   assert.equal(resourceDimensionRows(reply, disk).length, 2)
   const source = readFileSync(new URL('../src/views/NodeResources.vue', import.meta.url), 'utf8')
-  assert.equal((source.match(/v-for="family in deviceSections"/g) || []).length, 1)
+  assert.equal((source.match(/<HostDeviceResources v-for="family in deviceFamilies"/g) || []).length, 1)
   assert.doesNotMatch(source, /function selectDisk|function selectNetwork/)
 })
 
@@ -450,4 +450,21 @@ test('list views restore one canonical projection across detail without changing
     assert.deepEqual(state.query, {})
     assert.equal(hostListMetricSets[state.listView], hostListMetrics)
   }
+})
+
+
+test('host list and detail have one device presentation owner and use the fixed device catalog', () => {
+  const page = readFileSync(new URL('../src/views/NodeResources.vue', import.meta.url), 'utf8')
+  const inline = readFileSync(new URL('../src/components/HostDeviceObservation.vue', import.meta.url), 'utf8')
+  const shared = readFileSync(new URL('../src/components/HostDeviceResources.vue', import.meta.url), 'utf8')
+  for (const source of [page, inline]) {
+    assert.match(source, /import HostDeviceResources from/)
+    assert.doesNotMatch(source, /sortDiskResourceRows|resource-disk-toggle/)
+  }
+  assert.equal((shared.match(/prop="dimensions.device"/g) || []).length, 1)
+  assert.match(shared, /visibleDiskResourceRows/)
+  assert.match(shared, /formatValue\(row.metrics\[metric.key\], metric\)/)
+  assert.match(inline, /createLatestRequestScope/)
+  assert.match(inline, /createAutoRefresh/)
+  assert.doesNotMatch(inline, /setInterval|localStorage|sessionStorage|Promise.all/)
 })

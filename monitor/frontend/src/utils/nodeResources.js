@@ -41,6 +41,7 @@ export const networkMetrics = [
   { key: 'node.network.receive_bytes_per_second', name: 'networkReceive', unit: 'bytes_per_second', precision: 2, windowSeconds: 60 },
   { key: 'node.network.transmit_bytes_per_second', name: 'networkTransmit', unit: 'bytes_per_second', precision: 2, windowSeconds: 60 }
 ]
+export const deviceMetricSets = { disk: diskMetrics, network: networkMetrics }
 export const memoryMetrics = resourceMetrics.filter(metric => metric.key.startsWith('node.memory.'))
 export const allResourceMetrics = [...resourceMetrics, ...mountMetrics, ...diskMetrics, ...networkMetrics]
 export const hostListMetrics = resourceMetrics.filter(metric => ['node.cpu.logical_cores', 'node.cpu.busy_percent', 'node.memory.total_bytes', 'node.memory.used_percent', 'node.uptime_seconds'].includes(metric.key))

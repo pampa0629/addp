@@ -18,7 +18,14 @@
         <el-radio-button v-for="view in Object.keys(hostListMetricSets)" :key="view" :value="view">{{ t(`monitor.resources.listView.${view}`) }}</el-radio-button>
       </el-radio-group>
       <el-alert v-if="summaryErrorKey" :title="t(summaryErrorKey)" type="warning" show-icon :closable="false" data-testid="resource-summary-error" />
-      <el-table :data="nodes" v-loading="loading" :empty-text="t('monitor.resources.empty')" class="resource-node-list" data-testid="resource-node-list">
+      <el-table :data="nodes" row-key="node_id" :expand-row-keys="expandedDevice ? [expandedDevice.nodeID] : []" @expand-change="changeExpandedHost" v-loading="loading" :empty-text="t('monitor.resources.empty')" class="resource-node-list" data-testid="resource-node-list">
+        <el-table-column type="expand" width="44">
+          <template #default="{ row }">
+            <section v-if="expandedDevice?.nodeID === row.node_id" class="resource-device-expansion" :id="`resource-devices-${row.node_id}`" data-testid="resource-device-expansion" :aria-label="t('monitor.resources.devices.forHost', { name: row.display_name })">
+              <HostDeviceObservation :key="row.node_id + ':' + expandedDevice.family" :node="row" :family-name="expandedDevice.family" :identity="identity" :refresh="state.refresh" v-model:show-all-disks="expandedDevice.showAllDisks" :format-value="formatValue" @select="selectListDeviceTrend" @denied="deviceAccessDenied" />
+            </section>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('monitor.resources.node')" min-width="180" fixed="left" show-overflow-tooltip><template #default="{ row }"><span :title="row.node_id">{{ row.display_name }}</span></template></el-table-column>
         <el-table-column :label="t('monitor.resources.addresses')" min-width="180"><template #default="{ row }">{{ row.addresses.join(', ') }}</template></el-table-column>
         <el-table-column v-for="metric in listMetrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="160">
@@ -30,6 +37,11 @@
         </el-table-column>
         <el-table-column :label="t('monitor.resources.overview.collectionTitle')" min-width="150"><template #default="{ row }"><span :title="summaries.get(row.node_id) ? t('monitor.resources.sampledAt') + ': ' + date(summaries.get(row.node_id).collection.sampled_at) : ''">{{ t(!row.enabled ? 'monitor.resources.overview.disabled' : summaries.get(row.node_id) ? `monitor.resources.overview.collection.${summaries.get(row.node_id).collection.state}` : loading ? 'common.loading' : 'monitor.resources.overview.unavailable') }}</span></template></el-table-column>
         <el-table-column :label="t('monitor.resources.nodeState')" width="120"><template #default="{ row }">{{ t(row.enabled ? 'common.enabled' : 'common.disabled') }}</template></el-table-column>
+        <el-table-column :label="t('monitor.resources.devices.title')" min-width="190">
+          <template #default="{ row }">
+            <el-button v-for="family in Object.keys(deviceMetricSets)" :key="family" text type="primary" :data-testid="`resource-list-${family}-${row.node_id}`" :aria-expanded="expandedDevice?.nodeID === row.node_id && expandedDevice.family === family" :aria-controls="`resource-devices-${row.node_id}`" @click="selectListDevices(row, family)">{{ t(`monitor.resources.devices.${family}`) }}</el-button>
+          </template>
+        </el-table-column>
         <el-table-column width="150" fixed="right"><template #default="{ row }"><el-button text type="primary" @click="navigate(`/node-resources/${row.node_id}`, state.query)">{{ t('monitor.resources.view') }}</el-button></template></el-table-column>
       </el-table>
       <div v-if="total !== null" class="resource-pagination"><el-pagination :current-page="state.page" :page-size="state.pageSize" :page-sizes="[10, 20, 50]" :total="total" layout="total, sizes, prev, pager, next" @current-change="changePage" @size-change="changeSize" /></div>
@@ -87,39 +99,7 @@
         </el-table>
       </section>
       <template v-if="instant">
-        <section v-for="family in deviceSections" :key="family.name" class="resource-filesystems" :data-testid="`resource-${family.name}s`">
-          <h3>{{ t(`monitor.resources.${family.name}.title`) }}</h3>
-          <p v-if="family.name === 'network' && family.rows.length" class="resource-hint">{{ t('monitor.resources.network.hint') }}</p>
-          <p v-if="family.name === 'disk' && family.rows.length" class="resource-hint">{{ t('monitor.resources.disk.orderHint') }}</p>
-          <div v-if="family.name === 'disk' && family.rows.length" class="resource-toolbar" data-testid="resource-disk-display">
-            <span class="resource-hint" role="status">{{ t('monitor.resources.disk.deviceCount', { shown: family.visibleRows.length, total: family.rows.length }) }}</span>
-            <el-button v-if="family.collapsedCount" :aria-expanded="showAllDisks" data-testid="resource-disk-toggle" @click="showAllDisks = !showAllDisks">{{ t(showAllDisks ? 'monitor.resources.disk.collapseIdle' : 'monitor.resources.disk.showAll', { total: family.rows.length }) }}</el-button>
-          </div>
-          <p v-if="family.name === 'disk' && family.rows.length && !family.visibleRows.length" class="resource-hint" role="status" data-testid="resource-disk-idle">{{ t('monitor.resources.disk.allIdle') }}</p>
-          <el-alert v-if="family.errorKey" :title="t(family.errorKey)" type="error" :closable="false" :data-testid="`resource-${family.name}-error`" />
-          <div v-if="!loading && !family.errorKey && family.missingMessage" class="resource-empty-status" :data-testid="`resource-${family.name}-status`">
-            <p class="resource-hint" role="status" :data-testid="`resource-${family.name}-empty`">{{ t(family.missingMessage) }}</p>
-            <el-button v-if="!family.rows.length && canConfigure" text type="primary" @click="configureCollection">{{ t(instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure') }}</el-button>
-          </div>
-          <el-table v-if="!family.errorKey && family.visibleRows.length" :data="family.visibleRows" row-key="key" :data-testid="`resource-${family.name}-table`">
-            <el-table-column prop="dimensions.device" :label="t(family.name === 'network' ? 'monitor.resources.network.interface' : 'monitor.resources.filesystem.device')" min-width="160" show-overflow-tooltip />
-            <el-table-column v-for="metric in family.metrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="170">
-              <template #header>
-                <div class="resource-metric-heading">
-                  <span>{{ t(`monitor.resources.metrics.${metric.name}`) }}</span>
-                  <el-popover v-if="family.name === 'disk'" trigger="click" placement="top" :width="280" :content="t(`monitor.resources.disk.columns.${metric.name}.detail`)">
-                    <template #reference>
-                      <el-button text circle size="small" :aria-label="t('monitor.resources.metricHelp', { metric: t(`monitor.resources.metrics.${metric.name}`) })"><el-icon><InfoFilled /></el-icon></el-button>
-                    </template>
-                  </el-popover>
-                </div>
-                <p v-if="family.name === 'disk'" class="resource-hint resource-column-summary">{{ t(`monitor.resources.disk.columns.${metric.name}.summary`) }}</p>
-              </template>
-              <template #default="{ row }"><strong>{{ formatValue(row.metrics[metric.key], metric) }}</strong><p v-if="row.metrics[metric.key]" class="resource-hint">{{ t(`monitor.resources.states.${row.metrics[metric.key].data_state}`) }}</p></template>
-            </el-table-column>
-            <el-table-column :label="t('monitor.resources.trend')" width="140"><template #default="{ row }"><el-button text type="primary" @click="selectDeviceObservation(row, family.metrics[0].key)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button></template></el-table-column>
-          </el-table>
-        </section>
+        <HostDeviceResources v-for="family in deviceFamilies" :key="family.name" :family-name="family.name" :observation="family.value.value" :error-key="family.error.value" :loading="loading" :selected-device="state.metric.startsWith(`node.${family.name}.`) ? state.dimensions.device : ''" v-model:show-all-disks="showAllDisks" :can-configure="Boolean(canConfigure)" :configure-label="instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure'" :format-value="formatValue" @select="selectDeviceObservation" @configure="configureCollection" />
       </template>
       <section v-if="instant" ref="trendSection" tabindex="-1" class="resource-trend">
         <div class="resource-toolbar">
@@ -181,10 +161,11 @@ import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/a
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
 import ResourcePeriodComparison from '../components/ResourcePeriodComparison.vue'
 import HostResourceHeatmap from '../components/HostResourceHeatmap.vue'
+import HostDeviceResources from '../components/HostDeviceResources.vue'
+import HostDeviceObservation from '../components/HostDeviceObservation.vue'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { InfoFilled } from '@element-plus/icons-vue'
 import { useConsolePageDescriptor } from '@common-ui'
 import ChartRenderer from '../../../../common-frontend/chart/src/ChartRenderer.vue'
 import { formatBytes, scaleByteValue, scaleDurationValue, formatDurationSeconds } from '../../../../common-frontend/basic/src/utils/formatters.js'
@@ -192,7 +173,7 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import { useAuthStore } from '../store/auth'
 import { nodeResourcesAPI as api } from '../api/nodeResources'
 import { isTargetUUID } from '../utils/monitoringTargets'
-import { hostListMetricSets, pressureMetrics, supportsResourceComparison, resourceTrendComparison, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceTrendMetrics, resourceTrendChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows, resourceRanges, resolveResourceRoute, trendParameters, validateResourceResponse, validateResourceTrendWindow } from '../utils/nodeResources'
+import { hostListMetricSets, pressureMetrics, supportsResourceComparison, resourceTrendComparison, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceTrendMetrics, resourceTrendChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, deviceMetricSets, resourceRanges, resolveResourceRoute, trendParameters, validateResourceResponse, validateResourceTrendWindow } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
@@ -208,19 +189,13 @@ const listQuery = computed(() => { const { range, metric, compare, end, device, 
 const nodes = ref([]), total = ref(null), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null), inodes = ref(null), disks = ref(null), networks = ref(null)
 const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), inodeErrorKey = ref(''), diskErrorKey = ref(''), networkErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
 const showAllDisks = ref(false), trendSection = ref(null)
-const summaries = ref(new Map()), summaryErrorKey = ref('')
+const summaries = ref(new Map()), summaryErrorKey = ref(''), expandedDevice = ref(null)
 const comparison = ref(null)
 const trendZoom = ref(null)
 const selectedMetric = computed(() => allResourceMetrics.find(item => item.key === state.value.metric))
 const mountRows = computed(() => resourceDimensionRows(filesystems.value, inodes.value))
 const filesystemMissingMessage = computed(() => !filesystemErrorKey.value && !inodeErrorKey.value && (['not_collected', 'failed'].includes(filesystems.value?.collection.filesystem) || !mountRows.value.some(row => Object.values(row.metrics).some(point => currentResourceValue(point) !== null))) ? resourceMissingMessage(filesystems.value?.collection, 'filesystem') : '')
 const deviceFamilies = [{ name: 'disk', metrics: diskMetrics, value: disks, error: diskErrorKey }, { name: 'network', metrics: networkMetrics, value: networks, error: networkErrorKey }]
-const deviceSections = computed(() => deviceFamilies.map(family => {
-  const sourceRows = resourceDimensionRows(family.value.value)
-  const rows = family.name === 'disk' ? sortDiskResourceRows(sourceRows) : sourceRows
-  const compactRows = family.name === 'disk' ? visibleDiskResourceRows(rows, state.value.metric.startsWith('node.disk.') ? state.value.dimensions.device : '') : rows
-  return { name: family.name, metrics: family.metrics, rows, visibleRows: family.name === 'disk' && showAllDisks.value ? rows : compactRows, collapsedCount: rows.length - compactRows.length, errorKey: family.error.value, missingMessage: (['not_collected', 'failed'].includes(family.value.value?.collection[family.name]) || !rows.some(row => Object.values(row.metrics).some(point => currentResourceValue(point) !== null))) ? resourceMissingMessage(family.value.value?.collection, family.name) : '' }
-}))
 const trendMetrics = computed(() => [...resourceMetrics, ...(state.value.dimensions.mountpoint ? mountMetrics : state.value.dimensions.device ? state.value.metric.startsWith('node.network.') ? networkMetrics : diskMetrics : [])])
 const chartMetrics = computed(() => resourceTrendMetrics(state.value.metric))
 const trendPoints = computed(() => (trend.value?.series.find(line => line.metric_key === state.value.metric)?.points || []).filter(point => !comparison.value || Date.parse(point.evaluated_at) > Date.parse(comparison.value.current.start)))
@@ -275,6 +250,22 @@ function resumeLiveTrend() {
 }
 function configureCollection() {
   return instant.value.target_id ? navigate(`/monitoring-targets/${instant.value.target_id}`, {}) : navigate('/monitoring-targets/new', { node_id: nodeID.value })
+}
+function selectListDevices(row, family) {
+  expandedDevice.value = expandedDevice.value?.nodeID === row.node_id && expandedDevice.value.family === family ? null : { nodeID: row.node_id, family, showAllDisks: false }
+}
+function changeExpandedHost(row, expandedRows) {
+  if (expandedRows.some(item => item.node_id === row.node_id)) {
+    if (expandedDevice.value?.nodeID !== row.node_id) expandedDevice.value = { nodeID: row.node_id, family: 'disk', showAllDisks: false }
+  } else if (expandedDevice.value?.nodeID === row.node_id) expandedDevice.value = null
+}
+function selectListDeviceTrend(row, metric) {
+  if (expandedDevice.value) navigate(`/node-resources/${expandedDevice.value.nodeID}`, { ...state.value.query, ...row.dimensions, metric })
+}
+function deviceAccessDenied(error) {
+  invalidate(); refreshBlocked.value = true; loading.value = false
+  expandedDevice.value = null; nodes.value = []; total.value = null; summaries.value = new Map(); summaryErrorKey.value = ''
+  errorKey.value = resourceErrorKey(error)
 }
 function changePage(page) { return navigate(route.path, { ...state.value.query, page: page === 1 ? undefined : String(page) }, 'replace') }
 function changeSize(size) { return navigate('/node-resources', { ...state.value.query, page: undefined, page_size: size === 20 ? undefined : String(size) }, 'replace') }
@@ -336,6 +327,7 @@ async function reload({ automatic = false } = {}) {
           nextSummaryError = error.response?.data?.error_code === 'observability_query_budget_exceeded' ? 'monitor.resources.overview.budget' : resourceErrorKey(error)
         }
       }
+      if (expandedDevice.value && !value.data.some(row => row.node_id === expandedDevice.value.nodeID)) expandedDevice.value = null
       nodes.value = value.data; total.value = value.total
       summaries.value = nextSummaries; summaryErrorKey.value = nextSummaryError
     } else {
@@ -421,7 +413,7 @@ async function reload({ automatic = false } = {}) {
 watch([() => JSON.stringify([nodeID.value, state.value.range, state.value.end, state.value.dimensions, state.value.compare, chartMetrics.value.map(metric => metric.key)]), identity], () => { trendZoom.value = null }, { flush: 'sync' })
 watch([errorKey, trendErrorKey], ([error, trendError]) => { if (error || trendError) trendZoom.value = null }, { flush: 'sync' })
 watch([nodeID, identity], () => { showAllDisks.value = false }, { flush: 'sync' })
-watch([() => route.fullPath, identity], reload, { immediate: true, flush: 'sync' })
+watch([() => route.fullPath, identity], () => { expandedDevice.value = null; reload() }, { immediate: true, flush: 'sync' })
 onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); invalidate(); requestScope.dispose() })
 </script>
 
@@ -430,6 +422,8 @@ onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); invalidate(); r
 .resource-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
 .resource-toolbar h2, .resource-toolbar h3 { flex: 1; }
 .resource-toolbar .el-select { width: 220px; max-width: 100%; }
+.resource-node-list { container-type: inline-size; }
+.resource-device-expansion { position: sticky; left: 0; width: 100cqw; max-width: 100%; box-sizing: border-box; padding: 0 20px 20px; min-width: 0; }
 .resource-list-views { margin-bottom: 16px; }
 .resource-search { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 16px 0; }
 .resource-search > .el-input { width: 320px; max-width: 100%; }
@@ -444,8 +438,6 @@ onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); invalidate(); r
 .resource-empty-status { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .resource-empty-status > .el-alert { flex: 1; min-width: 0; margin: 0; }
 .resource-empty-status > .resource-hint { margin: 0; }
-.resource-metric-heading { display: flex; align-items: center; gap: 4px; }
-.resource-metric-heading .el-button { flex-shrink: 0; }
 .resource-column-summary { font-weight: 400; line-height: 1.4; margin: 4px 0 0; }
 .resource-chart { display: flex; min-width: 0; }
 .resource-compare-control { margin: 16px 0; }

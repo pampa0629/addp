@@ -738,6 +738,13 @@
         "hour": "hours",
         "day": "days"
       },
+      "devices": {
+        "title": "Device details",
+        "disk": "Disk IO",
+        "network": "Network traffic",
+        "forHost": "Device details for {name}",
+        "refresh": "Refresh device data"
+      },
       "listView": {
         "label": "Resource view",
         "resources": "Core resources",
