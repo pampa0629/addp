@@ -177,6 +177,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
     def prepare_source_tls_fixture(self,work):
         (work/'source').mkdir();leaf=b'public-test-leaf'
         (work/'source/server.crt').write_text(ssl.DER_cert_to_PEM_cert(leaf))
+        (work/'source-server-final.crt').write_text(ssl.DER_cert_to_PEM_cert(leaf))
         (work/'source/discovery.json').write_text(json.dumps([{'targets':['192.0.2.4:9443']}]))
         (work/'source-tls-publication.json').write_text(json.dumps({'atomic_identity_changed':True,'same_second_mtime':True,'prior_leaf_sha256':'a'*64,'expected_leaf_sha256':hashlib.sha256(leaf).hexdigest()}))
         return leaf
@@ -203,29 +204,43 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                 context=mock.Mock(check_hostname=True,verify_mode=ssl.CERT_REQUIRED)
                 secured=mock.MagicMock();secured.__enter__.return_value=secured;secured.getpeercert.return_value=b'stale' if mode=='stale_leaf' else leaf
                 context.wrap_socket.return_value=secured
-                if mode=='name_rejected':context.wrap_socket.side_effect=ssl.SSLCertVerificationError(1,'IP address mismatch private-credential')
+                if mode=='name_rejected':context.wrap_socket.side_effect=[secured,ssl.SSLCertVerificationError(1,'IP address mismatch private-credential')]
                 raw=mock.MagicMock();raw.__enter__.return_value=raw
                 clock=mock.patch.object(time,'monotonic',side_effect=[0,1,6,6]) if mode=='deadline' else mock.patch.object(time,'monotonic',return_value=0)
                 output=io.StringIO()
                 with mock.patch.object(socket,'create_connection',return_value=raw) as connect,clock,redirect_stdout(output):
                     with self.assertRaisesRegex(AssertionError,'source_tls_readiness_failed'):ns['source_certificate_readiness'](context)
                 proof=json.loads((work/'source-tls-proof.json').read_text());self.assertFalse(proof['passed'])
-                self.assertEqual(connect.call_count,1)
-                self.assertEqual(proof['checks'][0]['error_kind'],{'stale_leaf':'certificate_fingerprint_mismatch','name_rejected':'certificate_name_mismatch','deadline':'timeout'}[mode])
+                self.assertEqual(connect.call_count,2 if mode=='name_rejected' else 1)
+                self.assertEqual(proof['checks'][-1]['error_kind'],{'stale_leaf':'certificate_fingerprint_mismatch','name_rejected':'certificate_name_mismatch','deadline':'timeout'}[mode])
                 self.assertNotIn('private-credential',json.dumps(proof)+output.getvalue())
                 if mode=='deadline':raw.settimeout.assert_called_once_with(4)
 
-    def test_certificate_atomic_publication_changes_identity_with_same_second_mtime(self):
+    def test_certificate_publication_is_vm_local_and_refreshes_restart_bootstrap(self):
         gate=(ROOT/'scripts/test/monitor-metrics-gate.sh').read_text()
         program=gate.split("<<'CERTIFICATE'\n",1)[1].split('\nCERTIFICATE\n',1)[0]
+        transfer=gate.split("publication_state=$(compose exec -T metrics-source sh -ec '\n",1)[1].split("\n' _ /tmp/addp-source-tls",1)[0]
         with tempfile.TemporaryDirectory() as directory:
-            work=Path(directory);old=work/'server.crt';pending=work/'server.crt.next';proof=work/'proof.json'
-            old.write_text(ssl.DER_cert_to_PEM_cert(b'prior'));pending.write_text(ssl.DER_cert_to_PEM_cert(b'new'))
-            os.utime(old,(100,100));os.utime(pending,(100,100));before=old.stat().st_ino
-            with mock.patch.object(sys,'argv',['fixture',str(work),str(proof)]):exec(compile(program,'publication','exec'),{})
+            work=Path(directory);guest=work/'guest';guest.mkdir();old=work/'bootstrap.crt';final=work/'final.crt';proof=work/'proof.json'
+            old.write_text(ssl.DER_cert_to_PEM_cert(b'prior'));final.write_text(ssl.DER_cert_to_PEM_cert(b'new'))
+            (guest/'server.crt').write_text(old.read_text());before=old.stat().st_ino
+            # Model GNU stat in the VM, including equal second-resolution mtimes.
+            stat=work/'stat'
+            stat.write_text('#!'+sys.executable+'\nimport os,sys\ns=os.stat(sys.argv[-1]);print(str(s.st_dev)+":"+str(s.st_ino)+" 100")\n');stat.chmod(0o755)
+            result=subprocess.run(['sh','-ec',transfer,'_',str(guest)],input=final.read_text(),text=True,capture_output=True,check=True,env=dict(os.environ,PATH=str(work)+os.pathsep+os.environ['PATH']))
+            self.assertEqual((guest/'server.crt').read_text(),final.read_text())
+            self.assertEqual((guest/'server.crt').stat().st_mode & 0o777,0o600)
+            self.assertEqual(old.stat().st_ino,before);self.assertEqual(old.read_text(),ssl.DER_cert_to_PEM_cert(b'prior'))
+            with mock.patch.object(sys,'argv',['fixture',str(old),str(final),str(proof),result.stdout]):exec(compile(program,'publication','exec'),{})
             result=json.loads(proof.read_text())
             self.assertTrue(result['atomic_identity_changed'] and result['same_second_mtime'])
-            self.assertNotEqual(old.stat().st_ino,before);self.assertFalse(pending.exists())
+            self.assertFalse((guest/'server.crt.next').exists())
+            # Later source stop/start must initialize the same final certificate.
+            final_bytes=final.read_bytes();old.write_bytes(final_bytes)
+            self.assertEqual(old.stat().st_ino,before)
+            self.assertEqual(old.read_bytes(),(guest/'server.crt').read_bytes())
+        self.assertNotIn('ssl_certificate /source/server.crt;',gate)
+        self.assertIn('cp "$WORK_DIR/source-server-final.crt" "$WORK_DIR/source/server.crt"',gate)
 
     def test_public_preflight_stops_after_zero_business_receipt(self):
         with tempfile.TemporaryDirectory() as directory:

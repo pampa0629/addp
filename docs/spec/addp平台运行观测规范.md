@@ -386,7 +386,7 @@ HTTP 事件类别为 `http_quality`、主体为模块，触发/恢复沿同一�
 
 #### 公共 mTLS 前置复验：已确认收窄边界
 
-2026-10-26 用户另行确认：先复用当次 Prometheus 容器执行 promtool，不增加临时 2 GiB 容器；来源证书按实际容器 IP 签发后原子替换，验证实际呈送的叶子摘要及严格 IP 名称校验，失败仅输出封闭 TLS 子类。标准入口 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=mtls-preflight` 只执行公共配置／窗口语义／身份拒绝／发现与自然采样前置，通过或失败均清理并停止，不启动 Go／Python 业务请求或 Python 来源进程，不替代 HTTP 功能实链通过。
+2026-10-26 用户另行确认：先复用当次 Prometheus 容器执行 promtool，不增加临时 2 GiB 容器；来源证书按实际容器 IP 签发后，经 stdin 单次发布到当次来源容器的私有 tmpfs 并在容器内原子替换；Nginx 只从容器内路径加载证书，宿主挂载文件仅更新为下次启动的引导输入，不承担在线换证。验证实际呈送的叶子摘要及严格 IP 名称校验，失败仅输出封闭 TLS 子类。标准入口 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=mtls-preflight` 只执行公共配置／窗口语义／身份拒绝／发现与自然采样前置，通过或失败均清理并停止，不启动 Go／Python 业务请求或 Python 来源进程，不替代 HTTP 功能实链通过。
 
 本次一次性窗口含准备和清理最多 20 分钟、4 CPU／4 GiB、卷及私有可写 2 GiB 停止线；完整资源检查仍限四秒，不忽略消失的容器。新增只读 TLS 连接最多四次、每次共享五秒绝对预算，不对失败连接重试；原 15 秒采样和 65 秒自然等待保持。实际叶子不匹配、TLS 失败、未知／缺失证据或守卫失败即停并清理，不自动进入后续功能验收、重跑或续窗；不运行 Hosted、容量或定时。
 

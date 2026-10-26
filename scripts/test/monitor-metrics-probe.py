@@ -131,7 +131,7 @@ def source_certificate_readiness(context):
     publication=json.loads((WORK/'source-tls-publication.json').read_text())
     assert set(publication)=={'atomic_identity_changed','same_second_mtime','prior_leaf_sha256','expected_leaf_sha256'}, 'source_tls_publication_invalid'
     assert type(publication['same_second_mtime']) is bool and all(re.fullmatch('[0-9a-f]{64}',publication[key]) for key in ('prior_leaf_sha256','expected_leaf_sha256')), 'source_tls_publication_invalid'
-    expected=hashlib.sha256(ssl.PEM_cert_to_DER_cert((WORK/'source/server.crt').read_text())).hexdigest()
+    expected=hashlib.sha256(ssl.PEM_cert_to_DER_cert((WORK/'source-server-final.crt').read_text())).hexdigest()
     assert publication['atomic_identity_changed'] is True and publication['expected_leaf_sha256']==expected, 'source_tls_publication_invalid'
     groups=json.loads((WORK/'source/discovery.json').read_text())
     address=groups[0]['targets'][0]

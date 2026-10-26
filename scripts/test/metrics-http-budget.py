@@ -148,6 +148,7 @@ def main():
                 report['private_work_path']=ownership['work']
                 report['request_counts']=ownership.get('request_counts')
                 report['source_tls_proof']=ownership.get('source_tls_proof')
+                report['source_tls_publication']=ownership.get('source_tls_publication')
                 report['cleanup_verified']=ownership.get('cleanup_verified',False)
                 report['private_directory_removed']=not Path(ownership['work']).exists()
             report['inputs_unchanged']=input_hashes()==inputs
@@ -157,7 +158,7 @@ def main():
             if result==0 and error is None and tls_proven and counts_proven and report['inputs_unchanged'] and report.get('cleanup_verified') and report['elapsed_seconds']<1200 and report.get('private_directory_removed') and report['samples']:
                 report['result']='passed'
             output.write_text(json.dumps(report,indent=2))
-    summary={key:report.get(key) for key in ('case','result','error_code','failure_detail','exit_code','elapsed_seconds','source_tls_proof',
+    summary={key:report.get(key) for key in ('case','result','error_code','failure_detail','exit_code','elapsed_seconds','source_tls_proof','source_tls_publication',
              'cleanup_verified','private_directory_removed','inputs_unchanged','request_counts')}
     print('HTTP functional budget result: '+json.dumps(summary,sort_keys=True),flush=True)
     print('HTTP functional budget report: '+str(output),flush=True)

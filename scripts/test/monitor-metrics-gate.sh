@@ -70,6 +70,8 @@ counts=Path(value['work'])/'source/python-http-counts.json'
 if counts.exists():value['request_counts']=json.loads(counts.read_text())
 proof=Path(value['work'])/'source-tls-proof.json'
 if proof.exists():value['source_tls_proof']=json.loads(proof.read_text())
+publication=Path(value['work'])/'source-tls-publication.json'
+if publication.exists():value['source_tls_publication']=json.loads(publication.read_text())
 pending=p.with_suffix('.pending');pending.write_text(json.dumps(value));pending.replace(p)
 CLEANUP_RECEIPT
   fi
@@ -201,7 +203,7 @@ http {
   scgi_temp_path /tmp/scgi;
   server {
     listen 9443 ssl;
-    ssl_certificate /source/server.crt;
+    ssl_certificate /tmp/addp-source-tls/server.crt;
     ssl_certificate_key /source/server.key;
     ssl_client_certificate /source/source-ca.crt;
     ssl_verify_client on;
@@ -248,7 +250,7 @@ servers=[]
 for index in range(6):
     servers.append('''  server {
     listen %d ssl;
-    ssl_certificate /source/server.crt;
+    ssl_certificate /tmp/addp-source-tls/server.crt;
     ssl_certificate_key /source/server.key;
     ssl_client_certificate /source/source-ca.crt;
     ssl_verify_client on;
@@ -278,21 +280,31 @@ Path(sys.argv[2]).write_text(json.dumps([{'targets':[address+':9443'],'labels':{
  'addp_source':'node_exporter','__meta_addp_target_version':'1'}}]))
 Path(sys.argv[3]).write_text('subjectAltName=DNS:localhost,IP:'+address+'\nextendedKeyUsage=serverAuth\n')
 CONFIG
-openssl x509 -req -in "$WORK_DIR/source-server.csr" -CA "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" -CAkey "$WORK_DIR/source-ca.key" -CAserial "$WORK_DIR/source-ca.srl" -CAcreateserial -days 1 -extfile "$WORK_DIR/source-extensions" -out "$WORK_DIR/source/server.crt.next" >/dev/null 2>&1
-python3 - "$WORK_DIR/source" "$WORK_DIR/source-tls-publication.json" <<'CERTIFICATE'
+openssl x509 -req -in "$WORK_DIR/source-server.csr" -CA "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" -CAkey "$WORK_DIR/source-ca.key" -CAserial "$WORK_DIR/source-ca.srl" -CAcreateserial -days 1 -extfile "$WORK_DIR/source-extensions" -out "$WORK_DIR/source-server-final.crt" >/dev/null 2>&1
+publication_state=$(compose exec -T metrics-source sh -ec '
+tls_dir=$1
+stat -c "%d:%i %Y" "$tls_dir/server.crt"
+umask 077
+cat > "$tls_dir/server.crt.next"
+mv "$tls_dir/server.crt.next" "$tls_dir/server.crt"
+stat -c "%d:%i %Y" "$tls_dir/server.crt"
+' _ /tmp/addp-source-tls < "$WORK_DIR/source-server-final.crt")
+python3 - "$WORK_DIR/source/server.crt" "$WORK_DIR/source-server-final.crt" "$WORK_DIR/source-tls-publication.json" "$publication_state" <<'CERTIFICATE'
 from pathlib import Path
-import hashlib,json,ssl,sys
-directory=Path(sys.argv[1]);old=directory/'server.crt';pending=directory/'server.crt.next'
+import hashlib,json,re,ssl,sys
 digest=lambda path: hashlib.sha256(ssl.PEM_cert_to_DER_cert(path.read_text())).hexdigest()
-before=old.stat();prior=digest(old)
-pending.replace(old)
-after=old.stat()
-proof={'atomic_identity_changed':(before.st_dev,before.st_ino)!=(after.st_dev,after.st_ino),
-       'same_second_mtime':int(before.st_mtime)==int(after.st_mtime),
-       'prior_leaf_sha256':prior,'expected_leaf_sha256':digest(old)}
+rows=[line.split() for line in sys.argv[4].splitlines()]
+assert len(rows)==2 and all(len(row)==2 and re.fullmatch('[0-9]+:[0-9]+',row[0]) and re.fullmatch('[0-9]+',row[1]) for row in rows), 'source_certificate_publication_metadata_invalid'
+prior=digest(Path(sys.argv[1]))
+proof={'atomic_identity_changed':rows[0][0]!=rows[1][0],
+       'same_second_mtime':rows[0][1]==rows[1][1],
+       'prior_leaf_sha256':prior,'expected_leaf_sha256':digest(Path(sys.argv[2]))}
 assert proof['atomic_identity_changed'] and prior!=proof['expected_leaf_sha256'], 'source_certificate_publication_failed'
-Path(sys.argv[2]).write_text(json.dumps(proof))
+output=Path(sys.argv[3]);temporary=output.with_suffix('.pending')
+temporary.write_text(json.dumps(proof));temporary.replace(output)
 CERTIFICATE
+# Refresh only the next-start bootstrap. Nginx's live certificate path is tmpfs.
+cp "$WORK_DIR/source-server-final.crt" "$WORK_DIR/source/server.crt"
 compose exec -T metrics-source nginx -t
 compose exec -T metrics-source nginx -s reload
 compose up -d --wait --wait-timeout 90 prometheus metrics-source metrics-control
