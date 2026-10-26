@@ -77,11 +77,11 @@ graph TB
 
 **3. 周期心跳机制**:
 - 模块每 **10 秒**发送一次心跳到 System
-- System 将超过租约超时时间未心跳的运行实例标记为 `down` 并记录 `lease_expired` 与到期时间，但不删除运行实例历史，也不删除持久模块定义。正常注销记录 `graceful` 与注销时间。`lease_expired` 表示失联或疑似异常退出，不证明进程崩溃；同一进程重新注册时恢复为 `up` 并清除离线原因。
-- 同一 `instance_id` 重新注册可恢复为 `up`；新进程必须使用新的 `instance_id`。
-- 任一次心跳失败后，Go 与 Python 公共客户端的下一次请求都必须使用同一 `instance_id` 幂等重注册；注册失败使用有界退避，不能继续发送必然失败的心跳直到租约过期。
-- 公共客户端必须发布 `starting|registered|recovering|failed|stopped` 五态进程内快照。首次注册成功进入 `registered`；任一心跳失败立即进入 `recovering`，重注册成功后恢复。该快照只供本进程就绪判断，不落库、不发布第二套注册事实。
-- 连接失败、超时、`429`、`5xx`，以及 Token Endpoint 返回 `200` 但响应 JSON 无法完整解析的瞬时协议故障是可重试故障；严格刷新凭据后仍然出现的 `400`、`401`、`403`，或 Token JSON 可解析但字段、类型、Scope、有效期不符合 Service Access Token 契约等确定性拒绝，必须进入 `failed` 并终止进程，不得无限重试永不可成功的配置。心跳返回实例不存在时仍使用同 ID 重注册。
+- System 将超过租约超时时间未心跳的运行实例标记为 `down` 并记录 `lease_expired` 与到期时间，但不删除运行实例历史，也不删除持久模块定义。正常注销记录 `graceful` 与注销时间。`lease_expired` 表示失联或疑似异常退出，不证明进程崩溃。
+- 同一进程恢复时复用原 `instance_id`；重新注册成功后恢复为 `up` 并清除离线原因。新进程必须使用新的 `instance_id`。
+- 可重试的心跳失败（含返回实例不存在）后，Go 与 Python 公共客户端的下一次请求必须幂等重注册；可重试的注册失败使用有界退避，不能继续发送必然失败的心跳直到租约过期。
+- 公共客户端必须发布 `starting|registered|recovering|failed|stopped` 五态进程内快照。首次注册成功进入 `registered`；可重试的心跳失败进入 `recovering`，重注册成功后回到 `registered`；确定性拒绝进入 `failed` 并按下条规则终止。该快照只供本进程就绪判断，不落库、不发布第二套注册事实。
+- 连接失败、超时、`429`、`5xx`，以及 Token Endpoint 返回 `200` 但响应 JSON 无法完整解析的瞬时协议故障是可重试故障；严格刷新凭据后仍然出现的 `400`、`401`、`403`，或 Token JSON 可解析但字段、类型、Scope、有效期不符合 Service Access Token 契约等确定性拒绝，必须进入 `failed` 并终止进程，不得无限重试永不可成功的配置。
 - 模块正常退出时应注销本次 `instance_id`；异常退出仍由租约到期收敛。
 - Go 进程入口必须把同一个可取消的信号 Context 传给公共注册客户端；客户端返回生命周期完成信号，入口在关闭资源和退出进程前必须等待该信号，确保限时注销请求已经结束。不得用 `context.Background()` 承载进程级注册生命周期，也不得用 `os.Exit` 绕过等待与清理。
 - Runtime 模块注册、心跳和注销失败必须返回 `{error, error_code}`；稳定错误码使用 `module_registration_invalid`、`module_runtime_instance_not_found`、`module_registry_unauthorized`、`module_registry_forbidden`、`module_registration_failed`、`module_heartbeat_failed` 和 `module_deregistration_failed`。Go 与 Python 公共客户端都必须保留 `method`、`path`、`status_code`、`error_code`、`error_message` 和受限长度的 `response_body`；后台生命周期日志还必须包含 `operation`、`module`、`instance_id` 和 `role`，不得只输出无结构的异常文本。Token Endpoint 的成功响应含凭据，诊断只能记录稳定错误码、可重试性、响应体字节数、Content-Type 和不含值的字段校验原因，禁止记录原始响应体或任何 Token 值。
