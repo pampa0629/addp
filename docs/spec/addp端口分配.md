@@ -274,29 +274,17 @@ make ports-validate
   - **5192: Ontology**
 
 ### 前端 Docker 端口规则
-- **核心模块**：809x 系列（8090-8096）
-  - 8090: System
-  - 8091: Manager
-  - 8092: Meta
-  - 8093: Transfer
-  - 8094: Orchestrator
-  - 8095: Develop
-  - 8096: Service
-- **特殊模块**：
-  - 5179: Monitor（开发和 Docker 端口一致）
-  - **8111: Model（811x 系列起始）**
-  - **8112: Standard（811x 系列）**
-  - **8113: Quality（811x 系列）**
-  - **8114: Asset**
-  - **8115: Portal**
-  - **8116: Monitor**
-  - **8117: Agent**
-  - **8118: Graph**
-  - **8119: Inference**
-  - **8120: Catalog**
-  - **8121: Workbench**
-  - **8122: Security**
-  - **8123: Ontology**
+
+容器内部端口以[端口分配](#端口分配)和各镜像配置为准；宿主机发布与公开访问入口按部署方式区分：
+
+| 部署方式 | 宿主机端口 | 公开访问入口 |
+| --- | --- | --- |
+| 根 `docker-compose.yml`（`addp-platform`） | 模块 Frontend 不单独发布端口，仅 Nginx 按 `NGINX_PORT` 发布统一入口；模块间使用容器网络与固定内部端口。 | 使用 `ADDP_PUBLIC_ORIGIN` 对应的统一入口，Console、模块页面和 API 由路径转发。 |
+| 模块单独部署 | 宿主机映射由该部署显式配置，不能从开发首选端口或镜像内部监听端口推断。 | 使用该部署实际可达的 origin 与正式模块路径；standalone 模式不意味着根 Compose 会另外发布模块端口。 |
+
+[前端开发端口](#前端开发端口规则)是本地开发首选值，实际值取标准启动输出与 `.dev-state/ports.env`；开发入口的端口避让不适用于生产部署，部署端口冲突应失败。
+
+`NGINX_BIND_HOST` 决定根入口的监听范围，不代表公开 origin。通过域名、HTTPS 或上级反向代理访问根 Compose 部署时，必须显式设置用户实际访问的 `ADDP_PUBLIC_ORIGIN`。Console、iframe 与 standalone 的路径和同 origin 要求统一见[公开路由规范](addp前端路由与可恢复状态规范.md#二公开路由事实源)；配置端口映射不等于公开入口已验收。
 
 ## Standard 和 Model 模块配置要求
 
