@@ -34,7 +34,7 @@ from addp_common.workflow_runtime import WorkflowExecutionError
 from addp_common.workflow_access import require_empty_target_directory, target_child_file_plan
 from .base import OperatorMetadata, OperatorParam, OperatorType, OperatorCategory, OutputPort, register_operator
 from .raster_image_export import encode_image, image_export_error
-from .surfer import inspect_surfer, validate_surfer6_mask
+from .surfer import inspect_surfer, validate_surfer6_mask, validate_surfer_ascii_pixels
 
 gdal.UseExceptions()
 _WORKSPACE = ContextVar('raster_workspace', default=None)
@@ -469,7 +469,8 @@ def raster_load(access_plan, source_crs=''):
         elif source_format == 'jpeg2000':
             _require_single_jpeg2000(path)
         else:
-            native_driver = inspect_surfer(path, _DISK_LANGUAGE.get())['driver']
+            surfer_facts = inspect_surfer(path, _DISK_LANGUAGE.get())
+            native_driver = surfer_facts['driver']
     raster = _raster(path, native_driver)
     try:
         dataset = _open(raster)
@@ -478,8 +479,10 @@ def raster_load(access_plan, source_crs=''):
     expected_driver = native_driver or {'tiff':'GTiff', 'png':'PNG', 'jpeg':'JPEG'}.get(source_format)
     if expected_driver != dataset.GetDriver().ShortName:
         raise ValueError('Source format must match a supported raster driver')
-    if native_driver == 'GSBG':
-        validate_surfer6_mask(dataset, _DISK_LANGUAGE.get())
+    if native_driver == 'GSAG':
+        validate_surfer_ascii_pixels(dataset, path, _DISK_LANGUAGE.get())
+    if native_driver in ('GSBG', 'GSAG'):
+        validate_surfer6_mask(dataset, surfer_facts['blank_value'], _DISK_LANGUAGE.get())
     if source_format in ('img', 'jpeg2000', 'grd'):
         bands = [dataset.GetRasterBand(index) for index in range(1, dataset.RasterCount + 1)]
         if any(gdal.DataTypeIsComplex(band.DataType) for band in bands):

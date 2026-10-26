@@ -13,7 +13,7 @@ func TestSurferGridIdentityAndNativeFactory(t *testing.T) {
 			t.Fatal(name, got)
 		}
 	}
-	for _, signature := range []string{"DSRB\x04\x00\x00\x00", "DSBB\x05\x00\x03\x00"} {
+	for _, signature := range []string{"DSRB\x04\x00\x00\x00", "DSBB\x05\x00\x03\x00", "DSAA\n5 3\n"} {
 		if got := format.DetectFormat("no-extension", []byte(signature)); got != format.FormatGRD {
 			t.Fatal(got)
 		}

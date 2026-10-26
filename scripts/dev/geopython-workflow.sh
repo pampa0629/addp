@@ -56,7 +56,7 @@ assert gdal.VersionInfo('RELEASE_NAME') == sys.argv[1], 'GDAL Python/原生版�
 for name in ('PGeo', 'OpenFileGDB'):
     assert ogr.GetDriverByName(name), '缺少 ' + name
 assert ogr.GetDriverByName('OpenFileGDB').GetMetadataItem('DCAP_CREATE') == 'YES'
-for name in ('GTiff', 'COG', 'HFA', 'JP2OpenJPEG', 'GS7BG', 'GSBG'):
+for name in ('GTiff', 'COG', 'HFA', 'JP2OpenJPEG', 'GS7BG', 'GSBG', 'GSAG'):
     assert gdal.GetDriverByName(name), '缺少 ' + name
 s = osr.SpatialReference()
 assert s.ImportFromEPSG(4326) == 0, 'PROJ 坐标系解析失败'

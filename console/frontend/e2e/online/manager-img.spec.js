@@ -18,7 +18,7 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
   const evidence = JSON.parse(env.ADDP_ONLINE_MANAGER_RASTER_MEDIA_JSON || '{}')
   expect(evidence.run_id).toBe(env.ADDP_ONLINE_TEST_RUN_ID)
   expect(['img', 'jpeg2000', 'grd']).toContain(evidence.source_format)
-  expect(evidence.cases.map(source => source.case)).toEqual({ img: ['wgs84', 'utm50n', 'unlocated'], jpeg2000: ['wgs84', 'utm50n', 'unlocated', 'codestream'], grd: ['v1', 'v2', 'surfer6'] }[evidence.source_format])
+  expect(evidence.cases.map(source => source.case)).toEqual({ img: ['wgs84', 'utm50n', 'unlocated'], jpeg2000: ['wgs84', 'utm50n', 'unlocated', 'codestream'], grd: ['v1', 'v2', 'surfer6', 'surfer6-ascii'] }[evidence.source_format])
   const expectedIdentity = { principalID: evidence.identity.principal_id, tenantID: evidence.identity.tenant_id,
     permissions: new Set(evidence.identity.permissions_verified) }
   const diagnostics = createBrowserGpuDiagnostics('img-login')
@@ -63,7 +63,7 @@ test('IMG native metadata, COG pixels and cached reopen through the real Console
       if (evidence.source_format === 'grd') {
         expect(meta.attributes.format_info.grd.bands).toHaveLength(1)
         expect(meta.attributes.format_info.grd.bands[0]).toMatchObject({ dtype: source.driver === 'GSBG' ? 'Float32' : 'Float64', nodata: source.grid_facts.blank_value, nodata_is_nan: false })
-        if (source.driver === 'GSBG') expect(meta.attributes.format_info.grd).not.toHaveProperty('version')
+        if (['GSBG', 'GSAG'].includes(source.driver)) expect(meta.attributes.format_info.grd).not.toHaveProperty('version')
       }
       await frame.getByRole('tab', { name: /^(?:属性|Attributes)$/, exact: true }).click()
       await expect(frame.getByText(source.driver, { exact: true }).first()).toBeVisible()

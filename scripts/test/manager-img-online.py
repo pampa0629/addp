@@ -33,7 +33,11 @@ GRD_SOURCES = tuple({'case':case, 'object':'raster/grd-'+case+'.grd', 'source_sr
     {'case':'surfer6', 'object':'raster/grd-surfer6.grd', 'source_srid':None,
      'source_format':'grd', 'driver':'GSBG', 'width':5, 'height':3, 'band_count':1,
      'grid_facts':{'profile':'surfer6_binary', 'node_origin':[100.,200.], 'node_spacing':[2.,3.],
-                   'node_shape':[3,5], 'node_extent':[100.,200.,108.,206.], 'blank_value':1.701410009187828e38}},)
+                   'node_shape':[3,5], 'node_extent':[100.,200.,108.,206.], 'blank_value':1.701410009187828e38}},
+    {'case':'surfer6-ascii', 'object':'raster/grd-surfer6-ascii.grd', 'source_srid':None,
+     'source_format':'grd', 'driver':'GSAG', 'width':5, 'height':3, 'band_count':1,
+     'grid_facts':{'profile':'surfer6_ascii', 'node_origin':[100.,200.], 'node_spacing':[2.,3.],
+                   'node_shape':[3,5], 'node_extent':[100.,200.,108.,206.], 'blank_value':1.70141e38}},)
 
 
 def validate_meta(owner, detail, spec):
@@ -52,7 +56,7 @@ def validate_meta(owner, detail, spec):
         dtype='Float32' if spec['driver']=='GSBG' else 'Float64'
         if (len(bands)!=1 or bands[0].get('dtype')!=dtype
             or bands[0].get('nodata')!=spec['grid_facts']['blank_value'] or bands[0].get('nodata_is_nan') is not False
-            or (spec['driver']=='GSBG' and 'version' in info)):
+            or (spec['driver'] in ('GSBG','GSAG') and 'version' in info)):
             raise owner.SuiteError('Surfer native dtype, exact NoData or header version facts changed')
     spatial = attrs.get('capabilities', {}).get('spatial', {})
     if spec['source_srid'] is None:

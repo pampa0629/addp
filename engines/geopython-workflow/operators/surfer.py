@@ -1,14 +1,19 @@
-"""Content-selected framing for the supported Surfer binary grid profiles.
+"""Content-selected framing for the supported Surfer grid profiles.
 
 GDAL remains the sole pixel/grid decoder. No related paths are opened here.
 """
 from pathlib import Path
 import math
 import struct
+import re
+import itertools
 
 import numpy as np
 
 MAX_BYTES = 64 << 20
+SURFER6_ASCII_BLANK = 1.70141e38
+_NUMBER = re.compile(rb'[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?')
+
 SURFER6_BLANK = struct.unpack('<f', bytes.fromhex('eeffff7e'))[0]
 
 _MESSAGES = {
@@ -40,7 +45,9 @@ def inspect_surfer(path, language='en'):
         return _inspect_surfer7(path, language)
     if signature == b'DSBB':
         return _inspect_surfer6(path, language)
-    raise ValueError('只支持完整的 Surfer 6/7 二进制 GRD' if language != 'en' else 'Only complete Surfer 6/7 binary GRD is supported')
+    if signature == b'DSAA':
+        return _inspect_surfer6_ascii(path, language)
+    raise ValueError('只支持完整的 Surfer 6/7 GRD' if language != 'en' else 'Only complete Surfer 6/7 GRD is supported')
 
 
 def _inspect_surfer6(path, language):
@@ -78,21 +85,112 @@ def _inspect_surfer6(path, language):
             'node_extent':[x,y,max_x,max_y], 'blank_value':SURFER6_BLANK}
 
 
-def validate_surfer6_mask(dataset, language='en'):
-    """Reject native masks that cannot faithfully represent exact source NoData.
+def _ascii_reject(language):
+    raise ValueError('Surfer 6 ASCII 须为完整、有界且数值可表示的网格' if language != 'en' else
+                     'Surfer 6 ASCII requires a complete bounded grid with representable values')
 
-    Some GDAL Float32 mask comparisons overflow when adding very large values.
-    GDAL still decodes the pixels; this gate only checks their validity semantics.
-    """
+
+def _ascii_number(token, language):
+    if len(token) > 128 or not _NUMBER.fullmatch(token):
+        _ascii_reject(language)
+    value = float(token)
+    mantissa = re.split(rb'[eE]', token, maxsplit=1)[0]
+    if not math.isfinite(value) or (value == 0 and any(c in b'123456789' for c in mantissa)):
+        _ascii_reject(language)
+    return value
+
+
+def _ascii_header(source, language):
+    lines = [source.readline(201) for _ in range(5)]
+    if (sum(map(len, lines)) > 200 or lines[0] not in (b'DSAA\n', b'DSAA\r\n')
+        or any(not line.endswith(b'\n') or b'\r' in line.removesuffix(b'\n').removesuffix(b'\r') for line in lines)):
+        _ascii_reject(language)
+    fields = [line.rstrip(b'\r\n').split() for line in lines[1:]]
+    if any(len(pair) != 2 for pair in fields) or any(not re.fullmatch(rb'[0-9]+', v) for v in fields[0]):
+        _ascii_reject(language)
+    # Only ASCII space/tab delimit fields; bytes.split would also accept controls.
+    if any(re.search(rb'[^0-9a-zA-Z+\-. \t]', line.rstrip(b'\r\n')) for line in lines[1:]):
+        _ascii_reject(language)
+    columns, rows = map(int, fields[0])
+    if rows < 2 or columns < 2 or rows * columns > MAX_BYTES // 2:
+        _ascii_reject(language)
+    x, max_x, y, max_y, minimum, maximum = [_ascii_number(v, language) for pair in fields[1:] for v in pair]
+    dx, dy = (max_x-x)/(columns-1), (max_y-y)/(rows-1)
+    if (max_x <= x or max_y <= y or minimum > maximum
+        or not all(math.isfinite(v) for v in (dx, dy, x-dx/2, max_x+dx/2, y-dy/2, max_y+dy/2))
+        or dx/2 <= 0 or dy/2 <= 0 or x-dx/2 >= x or max_x+dx/2 <= max_x
+        or y-dy/2 >= y or max_y+dy/2 <= max_y):
+        _ascii_reject(language)
+    return {'profile':'surfer6_ascii', 'driver':'GSAG', 'node_origin':[x,y],
+            'node_spacing':[dx,dy], 'node_shape':[rows,columns],
+            'node_extent':[x,y,max_x,max_y], 'blank_value':SURFER6_ASCII_BLANK}
+
+
+def _ascii_values(source, language):
+    pending = b''
+    while block := source.read(65536):
+        if re.search(rb'[^0-9eE+\-. \t\r\n]', block):
+            _ascii_reject(language)
+        parts = re.split(rb'[ \t\r\n]+', pending + block)
+        pending = parts.pop()
+        if len(pending) > 128:
+            _ascii_reject(language)
+        for token in parts:
+            if token:
+                yield _ascii_number(token, language)
+    if pending:
+        yield _ascii_number(pending, language)
+
+
+def _inspect_surfer6_ascii(path, language):
+    with path.open('rb') as source:
+        facts = _ascii_header(source, language)
+        count, expected = 0, math.prod(facts['node_shape'])
+        for _ in _ascii_values(source, language):
+            count += 1
+            if count > expected:
+                _ascii_reject(language)
+        if count != expected:
+            _ascii_reject(language)
+    return facts
+
+
+def validate_surfer_ascii_pixels(dataset, path, language='en'):
+    """Validate the sole native decoder against the complete bounded text stream."""
+    with Path(path).open('rb') as source:
+        facts = _ascii_header(source, language)
+        rows, columns = facts['node_shape']
+        if (dataset.RasterXSize, dataset.RasterYSize) != (columns, rows):
+            _ascii_reject(language)
+        values = _ascii_values(source, language)
+        band = dataset.GetRasterBand(1)
+        for row in range(rows):
+            for start in range(0, columns, 65536):
+                size = min(65536, columns-start)
+                expected = np.fromiter(itertools.islice(values, size), dtype=np.float64)
+                actual = np.frombuffer(band.ReadRaster(start, rows-row-1, size, 1), dtype=np.float64)
+                if (expected.size != size or not np.array_equal(actual, expected)
+                    or not np.array_equal(np.signbit(actual), np.signbit(expected))):
+                    _ascii_reject(language)
+        if next(values, None) is not None:
+            _ascii_reject(language)
+
+
+def validate_surfer6_mask(dataset, blank, language='en'):
+    """Reject native masks that cannot faithfully represent exact source NoData."""
     band = dataset.GetRasterBand(1)
     mask = band.GetMaskBand()
+    dtype = np.float32 if dataset.GetDriver().ShortName == 'GSBG' else np.float64
     width, height = dataset.RasterXSize, dataset.RasterYSize
-    batch_rows = max(1, 65536 // (width*4))
+    if band.GetNoDataValue() != blank:
+        raise ValueError('Surfer 6 GRD 原生 NoData 与源声明不一致' if language != 'en' else
+                         'Surfer 6 GRD native NoData differs from its source profile')
+    batch_rows = max(1, 65536 // (width*np.dtype(dtype).itemsize))
     for row in range(0, height, batch_rows):
         count = min(batch_rows, height-row)
-        pixels = np.frombuffer(band.ReadRaster(0, row, width, count), dtype=np.float32)
+        pixels = np.frombuffer(band.ReadRaster(0, row, width, count), dtype=dtype)
         actual = np.frombuffer(mask.ReadRaster(0, row, width, count), dtype=np.uint8)
-        expected = np.where(pixels == SURFER6_BLANK, 0, 255)
+        expected = np.where(pixels == blank, 0, 255)
         if not np.array_equal(actual, expected):
             raise ValueError('Surfer 6 GRD 原生有效性掩膜无法等价保留源缺失值，拒绝读取' if language != 'en' else
                              'Surfer 6 GRD native validity mask cannot preserve exact source NoData; input rejected')

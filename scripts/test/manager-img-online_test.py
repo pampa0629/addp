@@ -174,12 +174,12 @@ for(const extension of ['img','jp2','j2k']) {
                'ADDP_ONLINE_MANAGER_MINIO_BUCKET': 'bucket', 'ADDP_ONLINE_ARTIFACT_DIR': str(root)}
         return lambda: IMG.run(Path('/repository'), env, owner, browser_runner=browser, physical_runner=physical, source_format=source_format), generated, cleaned
 
-    def test_grd_reads_both_binary_profiles_without_generation_and_preserves_sources(self):
+    def test_grd_reads_all_profiles_without_generation_and_preserves_sources(self):
         with tempfile.TemporaryDirectory() as root:
             run, generated, cleaned = self.scenario(root, source_format='grd')
             report=run()
             self.assertEqual(report['result'],'passed')
-            self.assertEqual([c['case'] for c in report['cases']],['v1','v2','surfer6'])
+            self.assertEqual([c['case'] for c in report['cases']],['v1','v2','surfer6','surfer6-ascii'])
             self.assertEqual(generated,[])
             self.assertEqual(cleaned,[])
             self.assertTrue(report['source_unchanged'])

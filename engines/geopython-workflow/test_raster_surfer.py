@@ -197,12 +197,118 @@ def test_surfer6_native_mask_mismatch_is_rejected_without_rewriting_source(tmp_p
 
 
 @pytest.mark.parametrize('faithful',[False,True])
-def test_surfer6_mask_gate_follows_exact_validity_even_if_native_bug_changes(faithful):
+@pytest.mark.parametrize('driver',['GSBG','GSAG'])
+def test_surfer6_mask_gate_follows_exact_validity_even_if_native_bug_changes(faithful,driver):
     from unittest.mock import Mock
-    values=np.array([SURFER6_BLANK,2e38],dtype=np.float32)
+    from operators.surfer import SURFER6_ASCII_BLANK
+    blank=SURFER6_BLANK if driver=='GSBG' else SURFER6_ASCII_BLANK
+    values=np.array([blank,2e38],dtype=np.float32 if driver=='GSBG' else np.float64)
     band=Mock();band.ReadRaster.return_value=values.tobytes()
     band.GetMaskBand.return_value.ReadRaster.return_value=bytes([0,255 if faithful else 0])
     dataset=Mock(RasterXSize=2,RasterYSize=1);dataset.GetRasterBand.return_value=band
-    if faithful:validate_surfer6_mask(dataset)
+    dataset.GetDriver.return_value.ShortName=driver;band.GetNoDataValue.return_value=blank
+    if faithful:validate_surfer6_mask(dataset,blank)
     else:
-        with pytest.raises(ValueError,match='validity mask'):validate_surfer6_mask(dataset)
+        with pytest.raises(ValueError,match='validity mask'):validate_surfer6_mask(dataset,blank)
+
+
+def grid_ascii(path, ending='\n', all_missing=False):
+    values=['-12.5','0.123456789012345','1.25','-0','4','5','1.70141e38','7','8','9','10','11','12','16777217','9007199254740991']
+    if all_missing:values=['1.70141e38']*15
+    limits='1.70141e38 1.70141e38' if all_missing else '-12.5 9007199254740991'
+    # Tabs and scientific notation; data wrapping is independent of grid rows.
+    path.write_bytes(ending.join(['DSAA','5\t3','1e2 108','200 206',limits,' '.join(values[:4]),'\t'.join(values[4:]),'']).encode('ascii'))
+    return np.array([float(v) for v in values],dtype=np.float64).reshape(3,5)[::-1].copy()
+
+
+@pytest.mark.parametrize('ending',['\n','\r\n'])
+@pytest.mark.parametrize('all_missing',[False,True])
+def test_surfer6_ascii_complete_native_float64_values_grid_mask_and_isolation(tmp_path,ending,all_missing):
+    from operators.surfer import SURFER6_ASCII_BLANK
+    path=tmp_path/'ascii.grd';expected=grid_ascii(path,ending,all_missing);before=path.read_bytes()
+    path.with_suffix('.gsr2').write_text('unselected CRS')
+    path.with_suffix('.grd.aux.xml').write_text('<PAMDataset><SRS>EPSG:4326</SRS></PAMDataset>')
+    with compute.raster_workspace():
+        loaded=compute.raster_load(source_plan(path,'grd'));native=compute._open(loaded)
+        assert native.GetDriver().ShortName=='GSAG' and native.RasterCount==1
+        assert native.GetFileList()==[str(loaded.path)] and not native.GetProjection()
+        assert native.GetRasterBand(1).DataType==gdal.GDT_Float64
+        assert native.GetRasterBand(1).GetNoDataValue()==SURFER6_ASCII_BLANK
+        np.testing.assert_array_equal(native.ReadAsArray(),expected)
+        np.testing.assert_array_equal(np.signbit(native.ReadAsArray()),np.signbit(expected))
+        np.testing.assert_array_equal(native.GetRasterBand(1).GetMaskBand().ReadAsArray(),np.where(expected==SURFER6_ASCII_BLANK,0,255))
+        assert native.GetGeoTransform()==(99.,2.,0.,207.5,0.,-3.)
+        declared=compute.raster_load(source_plan(path,'grd'),source_crs='EPSG:32650')
+        assert compute.raster_info(declared)['extent_srid']==32650
+        np.testing.assert_array_equal(compute._open(declared).ReadAsArray(),expected)
+    report=compute.raster_inspect(source_plan(path,'grd'))['description']
+    assert report['spatial'] is None and report['media']['encoding']=='GSAG'
+    info=report['format_info']
+    assert info['profile']=='surfer6_ascii' and 'version' not in info and info['scan_complete']
+    assert info['node_shape']==[3,5] and info['node_extent']==[100.,200.,108.,206.]
+    assert info['bands'][0]['dtype']=='Float64' and info['blank_value']==SURFER6_ASCII_BLANK
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('fault',['bom','non_ascii','comma','comment','nan','infinity','overflow','underflow',
+    'tail_number','tail_text','truncated','dimension','single_row','reversed_extent','collapsed_grid',
+    'too_long_token','too_long_header','header_controls','double_cr','bad_number','no_header_newline'])
+def test_surfer6_ascii_rejects_unproved_text_before_native_open(tmp_path,fault):
+    path=tmp_path/'bad.grd';grid_ascii(path);raw=path.read_bytes()
+    changes={
+        'bom':(b'DSAA',b'\xef\xbb\xbfDSAA'), 'non_ascii':(b'1.25',b'\xff'),
+        'comma':(b'1.25',b'1,25'), 'comment':(b'1.25',b'#1.25'),
+        'nan':(b'1.25',b'NaN'), 'infinity':(b'1.25',b'inf'), 'overflow':(b'1.25',b'1e400'),
+        'underflow':(b'1.25',b'1e-400'), 'dimension':(b'5\t3',b'5.0 3'),
+        'single_row':(b'5\t3',b'5 1'), 'reversed_extent':(b'1e2 108',b'108 100'),
+        'collapsed_grid':(b'1e2 108',b'1e16 10000000000000002'),
+        'too_long_token':(b'1.25',b'1.'+b'0'*128),
+        'too_long_header':(b'1e2 108',b' '*200+b'100 108'),
+        'header_controls':(b'5\t3',b'5\x0b3'), 'double_cr':(b'DSAA\n',b'DSAA\r\r\n'),
+        'bad_number':(b'1.25',b'1.2.3'), 'no_header_newline':(b'DSAA\n',b'DSAA '),
+    }
+    if fault in changes:raw=raw.replace(*changes[fault],1)
+    if fault=='tail_number':raw+=b' 99\n'
+    if fault=='tail_text':raw+=b' END\n'
+    if fault=='truncated':raw=raw.rsplit(b'9007199254740991',1)[0]
+    path.write_bytes(raw)
+    with patch.object(compute.gdal,'OpenEx') as native:
+        with pytest.raises(ValueError):compute.raster_inspect(source_plan(path,'grd'))
+        native.assert_not_called()
+    assert path.read_bytes()==raw
+
+
+def test_surfer6_ascii_chunk_split_and_no_final_newline(tmp_path):
+    path=tmp_path/'split.grd';grid_ascii(path)
+    raw=path.read_bytes();offset=raw.index(b'0.123456789012345')
+    # Make a decimal token cross the payload scanner's 64KiB boundary.
+    header_size=sum(len(line) for line in raw.splitlines(keepends=True)[:5])
+    path.write_bytes(raw[:offset]+b' '*(header_size+65536-5-offset)+raw[offset:].rstrip())
+    with compute.raster_workspace():
+        loaded=compute.raster_load(source_plan(path,'grd'))
+        assert compute._open(loaded).ReadAsArray()[2,1]==.123456789012345
+
+
+@pytest.mark.parametrize('language,fragment',[('zh-cn','掩膜'),('en','validity mask')])
+def test_surfer6_ascii_near_blank_native_mask_mismatch_is_rejected(tmp_path,language,fragment):
+    from operators.surfer import SURFER6_ASCII_BLANK
+    path=tmp_path/'near-blank.grd';grid_ascii(path)
+    path.write_bytes(path.read_bytes().replace(b'1.25',b'1.701410009187828e38'))
+    before=path.read_bytes();ds=gdal.Open(str(path));pixels=ds.ReadAsArray()
+    faithful=np.array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray(),np.where(pixels==SURFER6_ASCII_BLANK,0,255))
+    ds=None
+    with compute.raster_workspace(),patch.object(compute,'_DISK_LANGUAGE') as selected:
+        selected.get.return_value=language
+        if faithful:compute.raster_load(source_plan(path,'grd'))
+        else:
+            with pytest.raises(ValueError,match=fragment):compute.raster_load(source_plan(path,'grd'))
+    assert path.read_bytes()==before
+
+
+def test_surfer6_ascii_native_pixel_difference_is_rejected(tmp_path):
+    from unittest.mock import Mock
+    from operators.surfer import validate_surfer_ascii_pixels
+    path=tmp_path/'ascii.grd';grid_ascii(path)
+    dataset=Mock(RasterXSize=5,RasterYSize=3)
+    dataset.GetRasterBand.return_value.ReadRaster.return_value=np.zeros(5,dtype=np.float64).tobytes()
+    with pytest.raises(ValueError,match='representable'):validate_surfer_ascii_pixels(dataset,path)

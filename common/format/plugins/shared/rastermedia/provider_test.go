@@ -30,7 +30,7 @@ func TestNativeInspectionBindsTenantAndFreezesSource(t *testing.T) {
 	for _, spec := range []struct {
 		format format.FormatType
 		driver string
-	}{{format.FormatIMG, "HFA"}, {format.FormatJPEG2000, "JP2OpenJPEG"}, {format.FormatGRD, "GS7BG"}, {format.FormatGRD, "GSBG"}} {
+	}{{format.FormatIMG, "HFA"}, {format.FormatJPEG2000, "JP2OpenJPEG"}, {format.FormatGRD, "GS7BG"}, {format.FormatGRD, "GSBG"}, {format.FormatGRD, "GSAG"}} {
 		t.Run(string(spec.format)+"/"+spec.driver, func(t *testing.T) {
 			if got := format.DetectFormat("scene.IMG", nil); got != format.FormatIMG {
 				t.Fatal(got)
@@ -90,7 +90,7 @@ func TestIMGInspectionRejectsIncompleteOrWrongContracts(t *testing.T) {
 }
 
 func TestGRDFactoryAcceptsOnlyItsContentSelectedNativeDrivers(t *testing.T) {
-	for _, driver := range []string{"GS7BG", "GSBG", "HFA", "GTiff", ""} {
+	for _, driver := range []string{"GS7BG", "GSBG", "GSAG", "HFA", "GTiff", ""} {
 		t.Run(driver, func(t *testing.T) {
 			factory, err := format.GetRuntimeMediaInfoProviderFactory(format.FormatGRD)
 			if err != nil {
@@ -109,7 +109,7 @@ func TestGRDFactoryAcceptsOnlyItsContentSelectedNativeDrivers(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, err = provider.DescribeMedia(context.Background())
-			if (err == nil) != (driver == "GS7BG" || driver == "GSBG") {
+			if (err == nil) != (driver == "GS7BG" || driver == "GSBG" || driver == "GSAG") {
 				t.Fatalf("driver %q: %v", driver, err)
 			}
 		})

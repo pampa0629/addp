@@ -1643,14 +1643,20 @@ MANAGER_GRD_CASES = (
     ('v1',1,113.,28.,.001,.002,1.70141e38),
     ('v2',2,500000.,3100000.,10.,20.,1000.),
     ('surfer6',6,100.,200.,2.,3.,1.701410009187828e38),
+    ('surfer6-ascii','ascii',100.,200.,2.,3.,1.70141e38),
 )
 
 
 def manager_grd_bytes(spec):
-    """Independent little-endian Surfer file; minimum-Y row comes first."""
+    """Independent Surfer file; minimum-Y row comes first."""
     import struct
     case,version,x,y,dx,dy,blank = spec
     values=[-12.,2.,3.,4.,5.,6.,blank,8.,9.,10.,11.,12.,13.,14.,1001. if version==2 else 42.]
+    if version=='ascii':
+        values[1]=.123456789012345
+        values[-1]=9007199254740991.
+        header=f'DSAA\r\n5\t3\r\n{x:g} {x+4*dx:g}\r\n{y:g} {y+2*dy:g}\r\n-12 9007199254740991\r\n'
+        return (header+' '.join(format(v,'.17g') for v in values[:4])+'\r\n'+'\t'.join(format(v,'.17g') for v in values[4:])+'\r\n').encode('ascii')
     if version==6:
         values[1]=.125
         values[-1]=16777216.
@@ -1670,8 +1676,16 @@ def manager_grd_facts(path,spec):
     if raw!=manager_grd_bytes(spec):
         raise FixtureError('Manager GRD source differs from its complete numeric fixture')
     dataset=gdal.Open(str(path))
-    scalar,offset,driver,dtype=('f',56,'GSBG','Float32') if version==6 else ('d',100,'GS7BG','Float64')
-    expected=struct.unpack_from('<15'+scalar,raw,offset)
+    if version=='ascii':
+        scalar,driver,dtype='d','GSAG','Float64'
+        lines=raw.decode('ascii').splitlines()
+        if (lines[0]!='DSAA' or lines[1].split()!=['5','3']
+            or [float(v) for line in lines[2:5] for v in line.split()]!=[100.,108.,200.,206.,-12.,9007199254740991.]):
+            raise FixtureError('Manager ASCII GRD header differs from its fixture')
+        expected=tuple(float(v) for line in lines[5:] for v in line.split())
+    else:
+        scalar,offset,driver,dtype=('f',56,'GSBG','Float32') if version==6 else ('d',100,'GS7BG','Float64')
+        expected=struct.unpack_from('<15'+scalar,raw,offset)
     expected=expected[10:15]+expected[5:10]+expected[:5]
     band=dataset.GetRasterBand(1)
     if (dataset.GetDriver().ShortName!=driver or dataset.RasterCount!=1
