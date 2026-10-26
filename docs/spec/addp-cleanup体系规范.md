@@ -319,7 +319,7 @@ Engine 删除 scan 除可回收对象外，还必须报告不会被自动删除�
 | `will_disable` | 强绑定目标 Engine、删除后必须退出活跃路径的配置。 | 禁用或标记 `missing_engine`，不得因 Engine 删除物理删除定义。 |
 | `will_delete` | Meta 快照、缓存、受管派生产物等可回收 owner 状态。 | 按 owner 策略物理回收。 |
 | `running` | 当前仍在使用目标 Engine 的执行。 | 硬阻断删除，必须先等待结束或由 owner 显式取消。 |
-| `external_artifact` | 位于外部 Engine 内且由 ADDP owner 明确登记的产物。 | 删除失败时硬阻断；管理员可显式选择 `abandon`。 |
+| `external_artifact` | 位于外部 Engine 内且由 ADDP owner 明确登记的产物。 | 删除失败时硬阻断；显式放弃须满足[Engine 删除工作流](#engine-删除工作流)的权限与确认要求。 |
 
 每个 executor 必须返回各分类数量和 `impact_digest`。Digest 由 owner 使用稳定资源 ID 和 disposition 计算，System 只比较摘要，不解释模块私有资源。模块可返回安全的 `management_path` 供 Console 跳转到 owner 页面处理依赖。
 
@@ -336,16 +336,17 @@ cleanup 分为两个动作，支持手动、事件驱动和定时触发：
 
 | 触发方式 | 适用场景 | 约束 |
 | --- | --- | --- |
-| `manual` | 具有对应 Cleanup Permission 的 Tenant 主体主动排查和治理。 | 可发起 scan；execute 必须基于已完成 scan；当前 HTTP 手动入口必须使用 `tenant` 会话模式并绑定明确 Tenant。 |
+| `manual` | 当前 Tenant User 按对应 Permission 主动排查和治理。 | scan / execute 使用 User 凭据与 AuthContext 中的当前 Tenant；execute 必须基于已完成 scan，并通过下述权限与确认校验。 |
 | `event` | engine deleted / disabled、tenant deleted、item deleted、source facts changed、config version changed 等生命周期事件。 | 默认只自动 scan 或低风险状态标记，不默认执行高风险 physical cleanup。 |
 | `scheduled` | 周期性发现历史残留、事件漏处理或外部漂移。 | 只负责发现和审计摘要；高风险 execute 仍需显式确认或策略授权。 |
 
 约束：
 
+- 手动 scan / execute 要求当前 Tenant User 与 `system.cleanup.execute`；任务、历史读取另需 `system.cleanup.read`。身份与权限按[授权上下文规范](addp授权上下文规范.md#五权限计算)校验，不按“管理员”名称或角色称谓放行；确认字段不授予 Permission，也不替代 Tenant 归属校验。
 - execute 必须基于明确的 `based_on_scan`。
 - execute 不应绕过 scan 重新解释另一套范围。
 - `platform` 会话模式不得发起 Tenant 级手动资源回收；全局资源回收必须另行定义显式 Platform Scope、Permission 和审计语义。
-- execute 请求必须携带管理员确认语义。当前 HTTP API 使用 `confirmed=true` 表示管理员已核对 scan 结果、影响范围和 cleanup mode；`physical_cleanup` 或 `risk_level=high` 的 execute 还必须提供确认文本 `CONFIRM`。
+- execute 请求必须携带有权用户的显式确认。当前 HTTP API 使用 `confirmed=true` 表示已核对 scan 结果、影响范围和 cleanup mode；`physical_cleanup` 或 `risk_level=high` 的 execute 还必须提供确认文本 `CONFIRM`。
 - 手动 `physical_cleanup` 还必须显式选择 `external_artifact_policy=delete|abandon`，不允许由 System 或 owner 模块隐式推断。`delete` 表示删除已登记外部产物；`abandon` 仅在外部产物无法访问时放弃平台后续物理删除责任，由 owner 把登记记录终止为 `abandoned_external`，不表示外部对象已删除。
 - System 创建 execute 时必须复制 scan context 并把本次显式选择的 `external_artifact_policy` 写入 execute task、execution、event 和审计记录，不得回写原 scan context。`logical_cleanup` 不接受该策略。
 - 确认文本只用于证明显式确认，不应作为业务密钥保存；审计日志只记录是否提供了确认文本、确认时间、风险等级和影响摘要。
@@ -354,7 +355,7 @@ cleanup 分为两个动作，支持手动、事件驱动和定时触发：
 - 重新调用通用 `POST /api/v1/system/admin/cleanup/execute` 仍须通过当前 Tenant 与 `system.cleanup.execute`、已完成 scan 及本节确认校验；它创建新的 execute task 和 execution，不将原失败任务改为成功，也不等于恢复原 Engine 删除工作流。不得以新任务成功推断原 Engine 已转为 `deleted`。
 - scan 不得产生副作用；必要的短期诊断缓存必须由 executor 自己负责过期。
 - event 触发的自动 scan 必须记录 `cause_event`，并能关联到后续 execute。
-- 自动 physical cleanup 只允许用于确定性缓存、已过保留期对象或已被策略明确授权的低风险资源；其他物理删除必须由管理员确认。
+- 自动 physical cleanup 只允许用于确定性缓存、已过保留期对象或已被策略明确授权的低风险资源；其他物理删除必须由具备对应入口 Permission 的用户显式确认。
 
 ## 七、清理模式
 
@@ -457,7 +458,7 @@ cleanup 必须写入 System 审计日志。审计回答“谁、何时、为什�
 | --- | --- | --- |
 | `cleanup.scan.created` | scan 请求创建。 | actor、tenant、expected_modules、trigger_type、cause_event、context。 |
 | `cleanup.execute.created` | execute 请求创建。 | actor、tenant、based_on_scan、cleanup_mode、expected_modules、context。 |
-| `cleanup.execute.confirmed` | 管理员确认 execute。 | actor、based_on_scan、risk_level、cleanup_mode、external_artifact_policy、确认时间、是否提供确认文本、影响摘要。 |
+| `cleanup.execute.confirmed` | execute 的显式确认校验通过；规则见[scan 与 execute](#六scan-与-execute)。 | actor、based_on_scan、risk_level、cleanup_mode、external_artifact_policy、确认时间、是否提供确认文本、影响摘要。 |
 | `cleanup.completed` | cleanup 父 execution 完成。 | task_id、execution_id、status、summary。 |
 | `cleanup.failed` | cleanup 父 execution 失败或部分失败。 | task_id、execution_id、failed_modules、errors。 |
 
@@ -481,7 +482,7 @@ cleanup 不等于所有生命周期事件都必须由 System 同步调度。
 
 - 事件只携带中性身份和必要上下文。
 - 模块内部资源清理由模块自己决定。
-- 需要管理员确认、风险评估或跨模块审计时，使用 cleanup request（资源回收请求）。
+- 需要有权用户显式确认、风险评估或跨模块审计时，使用 cleanup request（资源回收请求）。
 - 不需要用户确认的幂等缓存失效可以由模块内部直接处理，但仍应保留必要日志。
 - 一般生命周期事件可以自动触发 scan；高风险 execute 不得因为普通事件发生而默认执行。用户在 Engine 删除确认中明确授权“清理并删除”时，该删除工作流可以基于本次 scan 自动执行 physical cleanup。
 - `tenant deleted` 触发的 cleanup 中，`tenant_id` 是历史审计主体和资源归属范围；即使租户记录已离开活跃租户列表，Monitor、审计和 executor 仍应允许按该历史 `tenant_id` 写入 execution / result，不应把“租户已删除”解释为 cleanup 上下文非法。
@@ -504,11 +505,11 @@ active / disabled
 约束：
 
 1. 只读预评估不改变 Engine 生命周期，也不得产生任何 cleanup 副作用；评估结果必须绑定 Tenant、Engine、参与模块集合和有效期。
-2. 用户确认必须引用一次已完成且参与者完整的评估。确认后 System 原子切换 Engine 为 `deleting`，所有 owner 的新建、更新和执行入口必须重新校验目标 Engine 为 `active`。
+2. 用户确认必须引用一次已完成且参与者完整的评估；删除入口的 `system.engine.delete`、当前版本和引擎名称确认文本见[引擎删除说明](../../system/docs/tables/engines表.md#删除引擎)，不能用通用 execute 的 `CONFIRM` 代替名称确认。确认后 System 原子切换 Engine 为 `deleting`，所有 owner 的新建、更新和执行入口必须重新校验目标 Engine 为 `active`。
 3. `deleting` 后必须执行权威复扫。若发现新增影响、任一模块不可用或 `impact_digest` 与用户确认的评估不一致，删除暂停并要求用户查看新结果，不得自动继续。
 4. scan 和 execute 的 `context.engine_id` 指向正在删除的 Engine；各 executor 必须把该 Engine 当作即将失效来源，不能因为 System 记录仍存在而跳过候选。
 5. cleanup 失败时 Engine 保持 `deleting`，保留已有 scan / execute task ID、错误摘要和连接配置。规范要求支持具备对应 Permission 的用户显式重试，但当前引擎删除的独立失败重试入口仍未具备，不能记为已实现。当前重复 DELETE 返回 409；启动仅续办已有 scan task ID 的流程，已有 execute task ID 时沿用原任务，失败、部分失败或超时终态不会因重启自动重跑，缺少 scan task ID 时也不会补建。实际入口与权限边界见[引擎删除说明](../../system/docs/tables/engines表.md#删除引擎)；通用 execute 不替代本节评估、确认、权威复扫与最终墓碑写入。
-6. 外部引擎不可达且存在 owner 已登记外部产物时，管理员可显式选择 `external_artifact_policy=abandon`。Owner 模块必须把记录终止为 `abandoned_external`，保存外部 schema/object、最后错误、放弃时间和操作者审计；该记录不再进入自动 cleanup 候选。
+6. 外部引擎不可达且存在 owner 已登记外部产物时，具备 `system.engine.delete` 的当前 Tenant User 可按上述评估与确认流程显式选择 `external_artifact_policy=abandon`。Owner 模块必须把记录终止为 `abandoned_external`，保存外部 schema/object、最后错误、放弃时间和操作者审计；该记录不再进入自动 cleanup 候选。
 7. `abandoned_external` 表示平台放弃后续物理删除责任，不表示外部对象已删除。外部对象由 DBA 或外部系统管理员处理。
 8. System 不读取或修改 owner 私有表；放弃语义仍通过 cleanup request 的中性 context 传递，由 owner executor 落库。
 9. cleanup 完成后必须保留原 Engine Instance 的永久 ID、Tenant、类型和地址键墓碑，不得物理删除、释放或复用 ID。登记与恢复统一遵循[Engine Instance 身份与生命周期](../concepts/addp引擎体系图.md#engine-instance-身份与生命周期)，地址键由[插件声明](addp引擎插件接口规范.md#二基础接口)规范化生成，不等于永久身份。`deleted` 墓碑不占用地址；同 Tenant、同 `engine_type` 下没有非删除实例占用该地址时，普通登记通过注册校验后获得新 ID，不会复活旧墓碑。显式恢复用于同一实际引擎，沿用原 ID，须满足权限、当前版本及完整连接配置要求；地址变化时另须显式确认，地址已被其他非删除实例占用则返回 409。
