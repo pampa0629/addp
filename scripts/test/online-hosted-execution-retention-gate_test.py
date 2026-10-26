@@ -91,6 +91,30 @@ class HostedExecutionRetentionGateTest(unittest.TestCase):
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('infra_cleanup=zero_residuals', (self.host.artifacts/'summary.txt').read_text())
 
+    def test_event_suite_uses_same_owned_lifecycle_and_its_own_dispatch(self):
+        result=self.run_gate(ONLINE_SUITE_INPUT='execution-events-retention')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        trace=self.host.trace.read_text()
+        ordered=['infra-up','retention:authorize','stop-exact:-system','retention:prepare',
+                 'start:--exact-process -system','start:--exact-process -gateway',
+                 'make:test-online ONLINE_SUITE=execution-events-retention','application-stop','infra-down']
+        offset=0
+        for action in ordered:
+            offset=trace.index(action,offset)+len(action)
+        self.assertFalse(self.host.secrets.exists())
+        self.assertIn('infra_cleanup=zero_residuals',(self.host.artifacts/'summary.txt').read_text())
+
+    def test_event_suite_failures_still_destroy_only_owned_deployment(self):
+        result=self.run_gate(ONLINE_SUITE_INPUT='execution-events-retention',ADDP_TEST_SUITE_FAIL='1')
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('infra-down',self.host.trace.read_text())
+        self.assertFalse(self.host.secrets.exists())
+
+    def test_unknown_suite_cannot_start_any_service(self):
+        result=self.run_gate(ONLINE_SUITE_INPUT='unknown')
+        self.assertNotEqual(result.returncode,0)
+        self.assertFalse(self.host.trace.exists())
+
     def test_rejects_nonhosted_before_starting_any_service(self):
         result=self.run_gate(check=True,GITHUB_ACTIONS='false')
         self.assertNotEqual(result.returncode,0)

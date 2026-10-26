@@ -45,6 +45,10 @@ class Suite:
 # Only executable owner-maintained Online suites belong here. Do not register
 # placeholders: an entry means the suite is ready for real Online acceptance.
 SUITES: Mapping[str, Suite] = {
+    "execution-events-retention": Suite(
+        command=(sys.executable, "-m", "scripts.test.execution-events-retention-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL")),
+    ),
     "execution-retention-readonly": Suite(
         command=(sys.executable, "-m", "scripts.test.execution-retention-readonly-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL")),

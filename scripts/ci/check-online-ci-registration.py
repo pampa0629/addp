@@ -4010,12 +4010,12 @@ def validate_execution_retention_profile(repository: Path, registered: set[str])
     workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
     job = re.search(r"(?ms)^  execution-retention-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
     if (job is None or "runs-on: ubuntu-24.04" not in job.group("body")
-            or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'execution-retention-readonly'" not in job.group("body")
+            or "if: github.event_name == 'workflow_dispatch' && (inputs.suite == 'execution-retention-readonly' || inputs.suite == 'execution-events-retention')" not in job.group("body")
             or "inputs.suite != 'execution-retention-readonly'" not in workflow):
         raise RegistrationError("Execution retention requires one manual Hosted Linux job")
     gate = (repository / "scripts/test/online-hosted-execution-retention-gate.sh").read_text()
     for fragment in ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'scripts/dev/stop-exact-process.sh -system',
-                     'scripts/dev/start.sh --exact-process -system', 'execution-retention-readonly-online prepare',
+                     'scripts/dev/start.sh --exact-process -system', '-m "$RETENTION_DRIVER" prepare',
                      'run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"'):
         if fragment not in gate:
             raise RegistrationError("Execution retention lifecycle missing " + fragment)
@@ -4026,6 +4026,14 @@ def validate_execution_retention_profile(repository: Path, registered: set[str])
     for name in ("execution-retention-readonly-online_test.py", "online-hosted-execution-retention-gate_test.py"):
         if name not in commands or not (repository / "scripts/test" / name).is_file():
             raise RegistrationError("Execution retention regression missing " + name)
+
+    if "execution-events-retention" in registered:
+        if ("ONLINE_SUITE_INPUT: ${{ inputs.suite }}" not in job.group("body")
+                or "inputs.suite != 'execution-events-retention'" not in workflow
+                or "scripts.test.execution-events-retention-online" not in gate
+                or "execution-events-retention-online_test.py" not in commands
+                or not (repository / "scripts/test/execution-events-retention-online_test.py").is_file()):
+            raise RegistrationError("Execution events require a dedicated manual Hosted profile and regressions")
 
 
 def check_registration(repository: Path) -> None:

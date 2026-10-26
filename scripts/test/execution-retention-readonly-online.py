@@ -41,10 +41,10 @@ def require(condition, message):
         raise API.SuiteError(message)
 
 
-def boundary():
+def boundary(expected_suite=SUITE):
     secret = HOSTED.deployment_secret()
-    require(os.environ.get('ONLINE_SUITE') == SUITE and os.environ.get('ADDP_ONLINE_TEST') == '1',
-            'dedicated read-only retention suite required')
+    require(os.environ.get('ONLINE_SUITE') == expected_suite and os.environ.get('ADDP_ONLINE_TEST') == '1',
+            'dedicated execution maintenance suite required')
     require(not os.environ.get('ADDP_ONLINE_OWNER_MANAGED') and not os.environ.get('ADDP_EXECUTION_TRACE_LOCAL'),
             'mixed deployment profiles forbidden')
     artifact = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']).resolve(strict=True)
@@ -76,8 +76,8 @@ def validate_container(container, expected, environment):
     return values['POSTGRES_USER']
 
 
-def sql(statement):
-    boundary()
+def sql(statement, expected_suite=SUITE):
+    boundary(expected_suite)
     inspected = subprocess.run(['docker', 'inspect', 'addp-postgres'], check=True,
                                capture_output=True, text=True, timeout=10)
     container, = json.loads(inspected.stdout)
@@ -187,8 +187,8 @@ def snapshot():
         "'events_hash',(SELECT md5(string_agg(row_to_json(e)::text,'' ORDER BY id)) FROM common.execution_events e)); COMMIT;"))
 
 
-def authorize():
-    secret, _ = boundary()
+def authorize(expected_suite=SUITE):
+    secret, _ = boundary(expected_suite)
     identity = user_identity()
     # Readiness alone does not guarantee the startup maintenance goroutine has
     # finished or that its output receiver has flushed the first summary.

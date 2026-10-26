@@ -105,6 +105,7 @@ class OnlineGateTest(unittest.TestCase):
                 "ontology-revision-lifecycle",
                 "orchestrator-execution",
                 "execution-retention-readonly",
+                "execution-events-retention",
                 "platform-administrator-governance",
                 "platform-node-metrics",
                 "pg-source-authorization",

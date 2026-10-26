@@ -1519,9 +1519,11 @@ func TestWorkflowRuntimeHealthFixtureRequiresNoUserPermissionsOrEngineProvisione
 }
 
 func TestExecutionRetentionFixtureHasOnlyMonitorReadPermission(t *testing.T) {
-	permissions, err := suitePermissions("execution-retention-readonly")
-	if err != nil || len(permissions) != 1 || permissions[0] != "monitor.execution.read" || needsEngineProvisioner("execution-retention-readonly") {
-		t.Fatalf("retention fixture must not grant Owner, IAM, engine or platform capabilities: %v %v", permissions, err)
+	for _, suite := range []string{"execution-retention-readonly", "execution-events-retention"} {
+		permissions, err := suitePermissions(suite)
+		if err != nil || len(permissions) != 1 || permissions[0] != "monitor.execution.read" || needsEngineProvisioner(suite) {
+			t.Fatalf("%s fixture must not grant Owner, IAM, engine or platform capabilities: %v %v", suite, permissions, err)
+		}
 	}
 }
 
