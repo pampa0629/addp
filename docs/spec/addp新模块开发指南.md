@@ -242,18 +242,7 @@ export default createAPIClient(() => useAuthStore(), {
 3. Vite 复用共享 `withModuleFrontend()`，并在其模块登记及 Console 的代理、菜单配置中接入新入口。Router 使用 `createWebHistory(import.meta.env.BASE_URL)`；模块公开前缀、内部开发端口和 Console 地址按[认证规范](addp登录认证的统一要求.md#五console-与-iframe)及[端口规范](addp端口分配.md)配置，不各自维护另一套跳转逻辑。
 4. 创建本模块 AuthStore 与路由守卫以调用共享认证能力，业务请求使用上节客户端。按 Layout 嵌套路由组织页面，支持独立顶层界面和 Console iframe。
 5. 按[前端国际化接入清单](addp国际化开发规范.md#新增模块检查清单)创建 `src/i18n/zh-cn.json` 与 `en.json`，使用共享 `createAddpI18n()`；iframe 监听 Console 语言变化，Element Plus locale 跟随当前语言，请求统一携带 `Accept-Language`。
-6. Layout 背景与边框使用主题 CSS 变量；在 `main.js` 引入 Element Plus 基础 CSS 后，引入深色变量和共享主题，并在挂载前初始化：
-
-   ```javascript
-   import 'element-plus/theme-chalk/dark/css-vars.css'
-   import '@common-ui/styles/theme.css'
-   import { useTheme } from '@common-ui'
-
-   // app.use() 完成后、app.mount() 之前
-   const { init: initTheme } = useTheme({ listenToConsole: true, storageKey: 'theme-mode' })
-   initTheme()
-   app.mount('#app')
-   ```
+6. 按[主题接入步骤](../../common-frontend/docs/frontend-style/主题接入.md#1-css-变量定义位置)在 `main.js` 中于 Element Plus 基础 CSS 后导入深色变量和共享主题，在 `app.use()` 完成后、挂载前调用共享 `useTheme({ listenToConsole: true, storageKey: 'theme-mode' })` 返回的 `init()`。Layout 与页面使用 ADDP 主题变量，示例和覆盖规则统一维护在该专题。
 
 7. 共享能力从 `@common-ui` 复用；地图能力按实际需要引入 `@common-ui-map` 及其依赖，不按模块名称预设依赖集合。别名、导出与组件契约见[共享前端说明](../../common-frontend/README.md)，颜色、布局及唯一所有权要求见[前端风格规范](../../common-frontend/docs/addp前端风格设计规范.md)。
 8. 按[前端镜像构建规范](../../scripts/docs/前端镜像构建规范.md)维护 Dockerfile、静态输入和模块 Nginx 配置，登记唯一构建入口、根 Compose 服务及统一 Nginx 路由。构建上下文为仓库根目录，Compose 消费标准入口产出的镜像；根 Compose 只发布 Nginx 宿主端口，不为模块前端增加独立端口或 `full` profile。
@@ -301,9 +290,9 @@ export default createAPIClient(() => useAuthStore(), {
 
 ### 错误 8: 前端模块不跟随 Console 主题切换
 
-先按[主题接入步骤](#创建新模块前端)检查 `main.js` 是否引入 Element Plus 深色变量和共享主题 CSS，并在挂载前调用 `useTheme({ listenToConsole: true })`。
+先按[前端接入步骤](#创建新模块前端)核对初始化，再沿[主题排查顺序](../../common-frontend/docs/frontend-style/主题接入.md#常见问题和解决方案)检查共享 CSS、HTML 主题 class、计算样式和局部覆盖；不要复制第二份初始化或全局覆盖。
 
-再检查 Layout、iframe 内容容器和页面的背景、边框是否使用 ADDP 主题变量，以及 scoped 样式和 Element Plus 覆盖是否符合[前端风格规范](../../common-frontend/docs/addp前端风格设计规范.md)。不要复制第二份主题初始化；切换 Console 主题后逐层确认实际生效样式。
+切换 Console 主题后逐层确认实际生效样式，并按[主题验证清单](../../common-frontend/docs/frontend-style/主题接入.md#验证清单)核对独立顶层与 iframe；静态样式检查不计作浏览器交互通过。
 
 ## 检查清单
 
@@ -322,8 +311,7 @@ export default createAPIClient(() => useAuthStore(), {
 - [ ] 登记开发首选端口，并消费标准启动入口解析的实际端口
 - [ ] 共享 Vite 模块登记、Console 代理和部署路由均能命中正式入口，Router 使用相同基础路径
 - [ ] 实现 Layout 组件（支持双模式）
-- [ ] **Layout.vue 背景/边框使用 CSS 变量（`var(--addp-bg-primary/secondary)`，非硬编码颜色）**
-- [ ] **main.js 导入主题 CSS 并调用 `useTheme({ listenToConsole: true })`**
+- [ ] 按[主题接入步骤](../../common-frontend/docs/frontend-style/主题接入.md#主题系统实施指南)完成共享 CSS、挂载前初始化和 Layout 变量接入
 - [ ] 配置 common-frontend 别名、依赖去重与 `overrides`，保持 Vue 单一实例
 - [ ] 新建组件前已检索并复用 `common-frontend` 和现有模块的规范实现，没有重复建设相同语义职责与交互契约的前端能力
 - [ ] 共享 AuthStore、路由守卫和 API Client 已接入，认证请求经同 origin Gateway
@@ -351,7 +339,7 @@ export default createAPIClient(() => useAuthStore(), {
 - [ ] 模块注册到 Gateway 成功
 - [ ] 前端可以访问后端 API
 - [ ] Console 可以嵌入模块前端
-- [ ] **切换 Console 主题，模块前端背景/边框随之变化**
+- [ ] 按[主题验证清单](../../common-frontend/docs/frontend-style/主题接入.md#验证清单)实际切换 Console 主题，核对模块界面与组件变化
 - [ ] 独立顶层入口与 Console iframe 的登录、刷新和退出均遵循共享认证；直接访问开发端口会跳转到正式入口
 - [ ] 真实镜像下刷新受保护页面的深层 URL，并验证所属静态资源可达
 
