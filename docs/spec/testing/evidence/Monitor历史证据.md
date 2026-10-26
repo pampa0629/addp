@@ -1323,7 +1323,7 @@ System首末记录实际相差7199.984363秒，观察器单调时钟结合初次
 
 本次只闭合固定版本、120条合成历史、同进程两个真实小时区间及连续种子批次／回绕。未验证持续Worker并发写入、重启／故障恢复、超大树或100000条事件维护预算耗尽、用户Owner读取授权及长时授权有效性、Owner释放与专业结果生命周期、180天概览删除、容量／HA或T5；概览删除仍未启用。清单实际327／328／329行维持部分实现，后续建议优先补大量事件分页／截断的真实入口验收，不扩大业务功能。归档仅运行 `git diff --check`，不重复仍有效的运行验收；未操作个人服务、数据库或定时任务。
 
-### 大量事件分页与截断：本地通过，Hosted待运行（2026-10-26）
+### 大量事件分页与截断：首次Hosted身份交付失败，修后待复验（2026-10-26）
 
 实现提交 `4a193091a146ef457ce838258dc9482123463c8e` 仅补人工 `execution-events-pagination`、Common测试夹具、最小正式身份、真实Console浏览器入口及标准门禁登记，不修改产品API、采集／展示上限、权限目录或业务功能。新增独立GitHub Hosted Linux Job，使用原标准Infra与应用生命周期；启动System／Gateway／Meta／Monitor／Console，再将普通用户凭据限定传入测试子进程，不注入产品进程。严格守卫独占 `addp_online`、干净已提交源码、当次PostgreSQL容器及仓库外私有目录，拒绝个人环境与混合运行；不操作本地个人服务或数据库。
 
@@ -1331,9 +1331,15 @@ System首末记录实际相差7199.984363秒，观察器单调时钟结合初次
 
 标准 `make test-execution-events-pagination-runner` 已在共享工作区及排除他方WIP的隔离输入通过：24项Python、2项无外部服务的Go守卫、System身份夹具Go包、浏览器JS语法及Online CI登记成功。专用Hosted Go夹具本地因未设置运行标志跳过1项；5项既有System PostgreSQL专项因无标准DSN跳过，不计T2或真实写入通过。隔离基线 `d6fecb323a8e1e053fc0136585ac8645b2faadd3` 加本批15个文件，其内容摘要与最终提交逐一一致；仅含本批差异的索引补丁提交后，工作区原文件字节保持不变，未提交或覆盖他方WIP。影响选择dry-run仅计登记覆盖，不代表整区模块门禁通过。
 
-[Hosted Run40274854201／Job121415332273](https://github.com/pampa0629/addp/actions/runs/40274854201/job/121415332273) 为attempt1、workflow_dispatch，实际绑定上述实现SHA。2026-10-26 13:48（Asia/Shanghai）核对仍为queued、Runner未分配、实际步骤为空；业务、Owner权限反例、浏览器、截图及最终生命周期清理均未运行，不能计为T4通过。不重复派发、不修改Runner配置、不追踪其他Owner CI。后续必须核对实际Job／步骤、官方Artifact摘要、真实构建与身份、9组场景／7组页面断言、两张安全截图及最终零残留，才能更新本段结论。
+[首次Hosted Run40274854201／Job121415332273](https://github.com/pampa0629/addp/actions/runs/40274854201/job/121415332273) 为attempt1、workflow_dispatch，固定上述初始源码；已从早先queued转为completed／failure。实际Online gate失败，预检和上传／汇总成功不能覆盖业务失败。官方Artifact `12631636857` 为51521字节、仅5个安全报告／生命周期文件，ZIP SHA-256 `97b577e326f44265cbc3f61e0f58b5eb83705cd96bb79dfe3c9b6e1c1d4acec8` 已独立匹配GitHub声明及源码。报告为 `online_scenario_failed`、`failure_stage=scenario`，Online分发器总耗时455毫秒、预检177毫秒；四服务构建与checkout一致，原普通User／Tenant2／两项Permission核验成功，随后 `failed_stage=identity`、`checks=[]`，原始日志为 `execution_events_pagination_failed:KeyError`。Common写入、分页／截断、Owner隔离、Console及截图均未执行，不能计为T4通过。外层 `cleanup=passed`、`infra_cleanup=zero_residuals` 单列为生命周期结果，不算业务通过；保留该首次失败，不rerun或取消。
 
-本地证据：`/tmp/addp-event-pages-runner-isolated-final.log`、`/tmp/addp-event-pages-validation-source.json`、`/tmp/addp-event-pages-owned.patch`；首次新增测试在实现缺失时为ModuleNotFoundError红灯，保留 `/tmp/addp-event-pages-runner-red.log`，不改写历史。排队元数据 `/tmp/addp-event-pages-t4-40274854201-metadata.json`。本轮仍不启用180天概览删除、不修改专业结果期限；更多Owner／专业节点、持续Worker并发、重启／故障、规模与容量、Owner释放／消费者引用裁决及T5不在本批通过范围。清单实际327／328／329行继续部分实现，优先下一步是核对本次既有Hosted运行及证据，不扩大业务开发。
+已核明根因：System测试helper创建peer／foreign后，将三项 `ADDP_ONLINE_EVENTS_PEER_ACCESS_TOKEN`、`ADDP_ONLINE_EVENTS_FOREIGN_ACCESS_TOKEN`、`ADDP_ONLINE_EVENTS_FOREIGN_TENANT_ID` 放入内存values，却遗漏于 `writeEnvironmentFile` 的显式导出清单；场景构造身份列表时首先索引缺失的foreign Tenant，直接KeyError。修复提交 `2350759ad8ee1b05e6394626d7be49886e846e05` 只补这三个显式导出项及回归，不泛化导出values，不增权限或修改产品API。新增回归实际调用writer、核对0600、清空继承环境后source文件、运行实际Python场景的身份准备，并模拟HTTP身份观察，在到达fixture边界时停止；核对三主体／Tenant／两项Permission、引号原样传递、未知字段拒绝导出，不在参数／输出保存真实凭据。该确定性测试先红灯、修复后通过，不能替代真实HTTP或Hosted身份验收。
+
+修后 `make test-execution-events-pagination-runner` 在共享工作区及排除他方WIP的隔离输入均通过：24项Python、Common两个无外部服务Go守卫、包含新增交付回归的System身份夹具包、JS语法与Online CI登记成功；专用Hosted夹具本地SKIP1、既有System PG专项无DSN SKIP5，不计T2或真实写入。隔离基线 `148bca32d853171c47f1aa364edc85775d94b5cf` 仅叠加两个自有Go文件，内容摘要与修复提交一致。既有 `test-online-runner`／Platform入口已调用本标准目标，无需新增CI路线；只提交自有路径，未改动他方已暂存或未提交文件。
+
+去重确认修复SHA没有既有manual运行后，只派发一次[修后Hosted Run40281399550／Job121435288938](https://github.com/pampa0629/addp/actions/runs/40281399550/job/121435288938)，attempt1、workflow_dispatch、实际绑定 `2350759ad8ee1b05e6394626d7be49886e846e05`；2026-10-26 14:44（Asia/Shanghai）已分配Runner并开始工具链准备，真实断言尚未执行。待核实际Job／步骤、官方Artifact摘要、构建与身份、9组场景／7组页面断言、两张安全截图及最终零残留后，才能更新为通过。不重复派发，不改Runner配置，不调查或修复其他Owner CI。
+
+本地初版证据 `/tmp/addp-event-pages-runner-isolated-final.log`、`/tmp/addp-event-pages-validation-source.json`、`/tmp/addp-event-pages-owned.patch`；最初实现缺失红灯 `/tmp/addp-event-pages-runner-red.log` 保留。首次Hosted归档 `/tmp/addp-ci-20261026-063018/archive-40274854201.zip` 及同名目录、独立官方摘要 `/tmp/addp-event-pages-t4-40274854201-artifact-verified.json`。修后红／绿及隔离日志 `/tmp/addp-event-env-runner-{red,green,isolated}.log`、输入回执 `/tmp/addp-event-env-validation-source.json`。本轮不启用180天概览删除、不修改专业结果期限；更多Owner／专业节点、持续Worker并发、重启／故障、规模容量、Owner释放／消费者引用裁决及T5不在本批通过范围。清单实际327／328／329行继续部分实现，下一步只核对本次修后Hosted及证据，不扩大业务开发。
 
 ### 正式身份本地第十窗口：执行、Trace、日志与真实页面闭环通过（2026-10-25）
 
