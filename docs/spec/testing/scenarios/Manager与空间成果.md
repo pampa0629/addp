@@ -451,7 +451,13 @@ Node24.11.1下 `make test-raster-stream-to-vector-d8-online-runner` **63项／20
 
 COG原生新建金字塔按GDAL自定义网格的整数减半规则核精确尺寸，519×515样本为259×257、129×128、64×64，小图为零层；每层再独立核完整最近邻像元及mask，依据GDAL `frmts/gtiff/cogdriver.cpp`及真实文件事实修正了首轮向上取整的错误期望，未降低像元误差阈值或删去布局断言。所有成功门禁跟踪输入无漂移、无新增Python原生崩溃报告。
 
-固定`3fe8aa81cc738c2a9e67c1d28415f60f82a4cb87`的正式[Linux Native run40198410350／job121184162628](https://github.com/pampa0629/addp/actions/runs/40198410350/job/121184162628) 已核标准 `make test-geopython-workflow` 全量6394 passed／23warnings／1927.50秒、0失败／跳过／筛除；原始日志SHA-256：`a753f83043cdcd3af5bdbbcefc6b54aca944e285ebc309568742ca4412cb0a57`，只覆盖该固定源码，不等于当前HEAD或整个Platform通过。平均曲率独立Hosted尚缺本会话可独立审计的原始归档，实际执行状态待CI会话回传确认，不以本地归档缺失推断未运行、排队或失败；原8成功链／24次准确双语失败／600秒及全部严格断言保持，先核既有任务避免重复派发。本会话未触发、轮询、重跑或设置定时，不计本套T4、UI、容量或Hosted数值极限；剖面／切向／平面通过不替代本套范围。
+固定`3fe8aa81cc738c2a9e67c1d28415f60f82a4cb87`的正式[Linux Native run40198410350／job121184162628](https://github.com/pampa0629/addp/actions/runs/40198410350/job/121184162628) 已核标准 `make test-geopython-workflow` 全量6394 passed／23warnings／1927.50秒、0失败／跳过／筛除；原始日志SHA-256：`a753f83043cdcd3af5bdbbcefc6b54aca944e285ebc309568742ca4412cb0a57`，只覆盖该固定源码，不等于当前HEAD或整个Platform通过。
+
+Native前置为固定`cabfbe79c3d09c8db9211abbda8c848a0beb011f`的[Linux Job 121497755392](https://github.com/pampa0629/addp/actions/runs/40300756435/job/121497755392)：完整原始日志核准标准`make test-geopython-workflow`全量 **7298 passed／24 warnings／1599.59秒**，通过进度点同为7298，0失败／跳过／筛除，Ubuntu24.04 x86_64／GDAL3.8.4，两种GDAL／Arrow导入顺序探测均通过。日志SHA-256：`e604944185c940b6a9668342af46334ddede0393ca2183ac35d1fe0f471ecc80`。cab到05e的8份受控验收输入逐字节一致，但Runtime／构建路径另有变化，因此不把cab全量记为05e整树Native或整个Platform通过；旧3fe全量6394项证据仍按其固定版本保留。
+
+固定`05e44e4a0a3cce04c9860765745d074d0ab70e7c`的[平均曲率独立Hosted run40339721289／job121630801003](https://github.com/pampa0629/addp/actions/runs/40339721289/job/121630801003)已独立审计通过，首次手工attempt1的准入、实际Hosted gate及上传步骤均成功。预检与业务 **554613毫秒**、场景554487毫秒，低于原600秒预算；原8条COG成功链与12类24次准确中英失败全部完成。15份源文件、普通User33／Tenant2原12权限、七个Backend与默认入口产品Runtime均绑定05e；完整像元／mask、独立九点与解析oracle、三单位、原网格／CRS、COG及真实金字塔的现场物理报告均通过。8份artifact／物理／Meta大小逐项为相等正整数，8个输出自动扫描逐一核父执行／用户／租户／引擎身份、当前执行实际输入血缘及Monitor；源登记另有1个扫描ID，不混记为第9个输出身份。24次失败与归档原始Runtime诊断逐一对应，反向查询不改提交语言，零发布／新增扫描／派生血缘。源和先前成果不变，Runtime工作目录、NFS export及归属根目录删除、部署清理和Infra零残留均核实。
+
+正式artifact `12659759018`，ZIP **2224771字节**、SHA-256 `12fa1eb458c30c489278002a03971c0c5879421f5199c00eccec19ced7fb74b8`，39个归档成员与解包字节逐一一致。套件报告SHA-256：`8751df4a513197973ad1db0e85d226566a92e67369eb467b1457d7ba114d9b55`；完整原始Job日志SHA-256：`d6344ede34d7203519b5d24d22a4949b4fd37ba2eac079aaa3d98ef88fac2e1d`。归档保留运行时完整物理校验报告，未留COG原字节，不宣称离线成果重算；仅认证本固定版本原API T4，不计UI、容量、生产、业务DELETE、全量IAM或Hosted数值极限，也不关闭旧834原生崩溃待根因问题。本会话只读审计CI回传，未触发、轮询、重跑或设置定时。
 
 
 ### DEM 剖面曲率独立 Hosted 验收
