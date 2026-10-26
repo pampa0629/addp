@@ -4,13 +4,18 @@
       <div class="card-header">
         <h3><el-icon class="header-icon"><Document /></el-icon>{{ $t('standard.documentPanel.title') }}</h3>
         <div v-if="canLink || canCreateAndLink" class="header-actions">
-          <el-button v-if="canLink" size="small" @click="openLinkDialog">{{ $t('standard.documentPanel.linkExisting') }}</el-button>
+          <el-button v-if="canLink && canReadDocuments" size="small" @click="openLinkDialog">{{ $t('standard.documentPanel.linkExisting') }}</el-button>
           <el-button v-if="canCreateAndLink" size="small" type="primary" @click="openUploadDialog">{{ $t('standard.documentPanel.uploadNew') }}</el-button>
         </div>
       </div>
     </template>
 
-    <div v-if="docs.length === 0 && !loading" class="empty-tip">
+    <el-alert v-if="!canReadDocuments" :title="$t('standard.documentPanel.readForbidden')" type="info" :closable="false" />
+    <div v-else-if="loadError">
+      <el-alert :title="loadError" type="error" :closable="false" />
+      <el-button @click="loadDocs">{{ $t('standard.documentPanel.retry') }}</el-button>
+    </div>
+    <div v-else-if="docs.length === 0 && !loading" class="empty-tip">
       <el-empty :description="$t('standard.documentPanel.noDocuments')" :image-size="60" />
     </div>
 
@@ -126,7 +131,9 @@
 
 <script setup>
 import { getStandardDisplayRevision as displayRevision } from '../utils/standardRevision'
-import { computed, ref, onMounted, watch } from 'vue'
+import { computed, ref, onBeforeUnmount, watch } from 'vue'
+import { createLatestRequestCoordinator } from '@common-ui'
+import { useAuthStore } from '../store/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Paperclip } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
@@ -154,6 +161,10 @@ const props = defineProps({
 
 const emit = defineEmits(['update:entityVersion'])
 
+const authStore = useAuthStore()
+const canReadDocuments = computed(() => authStore.hasPermission(`standard.${props.entityType}.read`) && authStore.hasPermission('standard.document.read'))
+const documentRequests = createLatestRequestCoordinator()
+const candidateRequests = createLatestRequestCoordinator()
 const { canUpdate: canUpdateEntity } = useStandardPermissions(props.entityType)
 const { canCreate: canCreateDocument, canUpdate: canUpdateDocument } = useStandardPermissions('document')
 const canCreateAndLink = computed(() => canUpdateEntity.value && canCreateDocument.value)
@@ -170,6 +181,7 @@ const api = {
 
 const docs = ref([])
 const loading = ref(false)
+const loadError = ref('')
 
 // 上传新文档
 const showUploadDialog = ref(false)
@@ -203,15 +215,21 @@ const docTypeLabel = (type) => ({
 const docTypeTagType = getDocumentTypeTagType
 
 const loadDocs = async () => {
-  if (!props.entityId) return
+  const request = documentRequests.begin()
+  docs.value = []
+  loadError.value = ''
+  loading.value = false
+  if (!props.entityId || !canReadDocuments.value) return
   loading.value = true
   try {
     const res = await api[props.entityType].list(props.entityId)
-    docs.value = res || []
+    if (documentRequests.isCurrent(request)) docs.value = res || []
   } catch (e) {
-    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
+    if (documentRequests.isCurrent(request)) {
+      loadError.value = getStandardErrorMessage(e, t, 'standard.common.loadFailed')
+    }
   } finally {
-    loading.value = false
+    if (documentRequests.isCurrent(request)) loading.value = false
   }
 }
 
@@ -297,14 +315,18 @@ const onLinkDialogOpen = () => {
 }
 
 const searchDocs = async (keyword) => {
+  const request = candidateRequests.begin()
+  searchedDocs.value = []
+  docSearchLoading.value = false
+  if (!canReadDocuments.value) return
   docSearchLoading.value = true
   try {
     const res = await documentAPI.list({ keyword, page_size: 50 })
-    searchedDocs.value = res.data || []
+    if (candidateRequests.isCurrent(request)) searchedDocs.value = res.data || []
   } catch (e) {
-    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
+    if (candidateRequests.isCurrent(request)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
   } finally {
-    docSearchLoading.value = false
+    if (candidateRequests.isCurrent(request)) docSearchLoading.value = false
   }
 }
 
@@ -341,12 +363,19 @@ const confirmLink = async () => {
   }
 }
 
-watch(() => props.entityId, (val) => {
-  if (val) loadDocs()
-})
+watch([() => props.entityId, () => props.entityType, () => authStore.authContext, canReadDocuments], () => {
+  candidateRequests.invalidate()
+  searchedDocs.value = []
+  selectedDocIds.value = []
+  docSearchLoading.value = false
+  showLinkDialog.value = false
+  showUploadDialog.value = false
+  loadDocs()
+}, { immediate: true, flush: 'sync' })
 
-onMounted(() => {
-  if (props.entityId) loadDocs()
+onBeforeUnmount(() => {
+  documentRequests.invalidate()
+  candidateRequests.invalidate()
 })
 </script>
 

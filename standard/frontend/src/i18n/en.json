@@ -575,6 +575,8 @@
     },
     "documentPanel": {
       "title": "Related Documents",
+      "readForbidden": "You do not have permission to view linked documents",
+      "retry": "Retry",
       "linkExisting": "Link Existing",
       "uploadNew": "Upload New",
       "noDocuments": "No related documents",

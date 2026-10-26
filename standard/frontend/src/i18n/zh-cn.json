@@ -574,6 +574,8 @@
     },
     "documentPanel": {
       "title": "关联文档",
+      "readForbidden": "无权查看关联文档",
+      "retry": "重试",
       "linkExisting": "关联已有文档",
       "uploadNew": "上传新文档",
       "noDocuments": "暂无关联文档",

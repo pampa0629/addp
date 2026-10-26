@@ -2232,6 +2232,76 @@ test('presents Standard pages as read-only when the role only has read permissio
   await expect(page.getByRole('button', { name: /保存|审批|添加规则|上传新文档|关联已有文档/ })).toHaveCount(0)
 })
 
+for (const [resource, path, language, hint] of [
+  ['element', '/elements/41', 'zh-cn', '无权查看关联文档'],
+  ['glossary', '/glossaries/21', 'en', 'You do not have permission to view linked documents'],
+  ['metric', '/metrics/51', 'zh-cn', '无权查看关联文档']
+]) {
+  test(`document panel skips unreadable references: ${resource}`, async ({ page }) => {
+    await installMockBackend(page, {
+      language, permissions: [`standard.${resource}.read`, 'standard.domain.read', ...(resource === 'metric' ? ['standard.unit.read'] : [])],
+      elements: [{ id: 41, code: 'activity_id', name: '活动编号', data_type: 'string', status: 'approved' }],
+      metrics: [{ id: 51, code: 'participant_count', name: '活动参与人数', type: 'atomic', status: 'approved' }]
+    })
+    const reads = []
+    await page.route(`**/standard${path}/documents`, route => {
+      reads.push(route.request().url())
+      return fulfillJSON(route, { error: 'Unexpected document request' }, 403)
+    })
+    await page.goto(path)
+    await expect(page.getByText(hint, { exact: true })).toBeVisible()
+    await expect(page.getByText(/^(暂无关联文档|No related documents)$/)).toHaveCount(0)
+    await expect(page.locator('.el-message--error')).toHaveCount(0)
+    expect(reads).toEqual([])
+  })
+}
+
+test('document panel separates failed reads from empty results and retries', async ({ page }) => {
+  await installMockBackend(page, { permissions: ['standard.element.read', 'standard.domain.read', 'standard.document.read'],
+    elements: [{ id: 41, code: 'activity_id', name: '活动编号', data_type: 'string', status: 'approved' }] })
+  let reads = 0
+  await page.route('**/standard/elements/41/documents', route => ++reads === 1
+    ? fulfillJSON(route, { error: 'Document read denied by server' }, 403) : fulfillJSON(route, []))
+  await page.goto('/elements/41')
+  const panel = page.locator('.el-card').filter({ has: page.getByRole('heading', { name: '关联文档', exact: true }) })
+  await expect(panel.getByRole('alert')).toContainText('Document read denied by server')
+  await expect(panel.getByText('暂无关联文档', { exact: true })).toHaveCount(0)
+  await panel.getByRole('button', { name: '重试', exact: true }).click()
+  await expect(panel.getByText('暂无关联文档', { exact: true })).toBeVisible()
+  expect(reads).toBe(2)
+})
+
+test('document panel discards late reads on permission removal and reloads on grant', async ({ page }) => {
+  const minimal = ['standard.element.read', 'standard.domain.read']
+  await installMockBackend(page, { permissions: [...minimal, 'standard.document.read'],
+    authContextPermissionsByToken: { 'standard-e2e-minimal-token': minimal },
+    elements: [{ id: 41, code: 'activity_id', name: '活动编号', data_type: 'string', status: 'approved' }] })
+  let release, reads = 0
+  const pending = new Promise(resolve => { release = resolve })
+  await page.route('**/standard/elements/41/documents', async route => {
+    if (++reads === 1) await pending
+    await fulfillJSON(route, [createDocumentFixture()])
+  })
+  const firstRead = page.waitForRequest(request => request.url().endsWith('/elements/41/documents'))
+  await page.goto('/elements/41'); await firstRead
+  const changeToken = token => page.evaluate(token => {
+    const channel = new BroadcastChannel('addp-auth-session')
+    channel.postMessage({ type: 'token', token, expiresAt: Date.now() + 900_000 }); channel.close()
+  }, token)
+  await changeToken('standard-e2e-minimal-token')
+  await expect(page.getByText('无权查看关联文档', { exact: true })).toBeVisible()
+  const completed = page.waitForResponse(response => response.url().endsWith('/elements/41/documents'))
+  release(); await completed
+  await expect(page.getByRole('cell', { name: '户外数据标准', exact: true })).toHaveCount(0)
+  expect(reads).toBe(1)
+  await changeToken('standard-e2e-token')
+  await expect(page.getByRole('cell', { name: '户外数据标准', exact: true })).toBeVisible()
+  expect(reads).toBe(2)
+  await changeToken('standard-e2e-minimal-token')
+  await expect(page.getByText('无权查看关联文档', { exact: true })).toBeVisible()
+  await expect(page.getByRole('cell', { name: '户外数据标准', exact: true })).toHaveCount(0)
+})
+
 test('matches document panel controls to the backend permission combinations', async ({ page }) => {
   await installMockBackend(page, {
     permissions: [
