@@ -690,6 +690,12 @@ const docTemplate = `{
                         "description": "Accepted",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.CreateQueryExportResponse"
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     },
                     "400": {
@@ -699,12 +705,24 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     },
                     "403": {
                         "description": "缺少角色专用导出执行权限 | Missing role-specific export execution permissions",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     },
                     "404": {
@@ -714,12 +732,24 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     },
                     "409": {
                         "description": "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效 | Role eligibility unavailable or masking method invalid",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     },
                     "422": {
@@ -729,6 +759,12 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     },
                     "503": {
@@ -737,6 +773,12 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": {
                                 "type": "string"
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
                             }
                         }
                     }
@@ -933,6 +975,12 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.CreateQueryExportResponse"
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     },
                     "404": {
@@ -942,12 +990,24 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     },
                     "409": {
                         "description": "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效 | Role eligibility unavailable or masking method invalid",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     }
                 },
@@ -982,7 +1042,13 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "下载内容流 | Download content stream"
+                        "description": "下载内容流 | Download content stream",
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
+                        }
                     },
                     "404": {
                         "description": "Not Found",
@@ -991,12 +1057,24 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     },
                     "409": {
                         "description": "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效；query_export_not_ready：尚未完成 | Role eligibility unavailable, masking method invalid, or export not ready",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     }
                 },
@@ -2913,7 +2991,8 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
-                                "type": "integer"
+                                "type": "integer",
+                                "format": "int64"
                             }
                         }
                     }
@@ -5967,7 +6046,8 @@ const docTemplate = `{
                 "positions": {
                     "type": "object",
                     "additionalProperties": {
-                        "type": "integer"
+                        "type": "integer",
+                        "format": "int64"
                     }
                 }
             }

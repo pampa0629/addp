@@ -1548,6 +1548,7 @@ definitions:
         type: integer
       positions:
         additionalProperties:
+          format: int64
           type: integer
         type: object
     type: object
@@ -2378,20 +2379,36 @@ paths:
       responses:
         "202":
           description: Accepted
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.CreateQueryExportResponse'
         "400":
           description: Bad Request
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             additionalProperties:
               type: string
             type: object
         "403":
           description: 缺少角色专用导出执行权限 | Missing role-specific export execution permissions
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
         "404":
           description: Not Found
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             additionalProperties:
               type: string
@@ -2399,17 +2416,29 @@ paths:
         "409":
           description: query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效
             | Role eligibility unavailable or masking method invalid
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
         "422":
           description: 当前引擎不支持完整查询结果导出 | Engine does not support full query result
             export
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             additionalProperties:
               type: string
             type: object
         "503":
           description: Service Unavailable
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             additionalProperties:
               type: string
@@ -2600,10 +2629,18 @@ paths:
       responses:
         "200":
           description: OK
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.CreateQueryExportResponse'
         "404":
           description: Not Found
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             additionalProperties:
               type: string
@@ -2611,6 +2648,10 @@ paths:
         "409":
           description: query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效
             | Role eligibility unavailable or masking method invalid
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
       summary: 获取查询导出会话 | Get query export session
@@ -2638,8 +2679,16 @@ paths:
       responses:
         "200":
           description: 下载内容流 | Download content stream
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
         "404":
           description: Not Found
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             additionalProperties:
               type: string
@@ -2648,6 +2697,10 @@ paths:
           description: query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效；query_export_not_ready：尚未完成
             | Role eligibility unavailable, masking method invalid, or export not
             ready
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
       summary: 下载查询导出文件 | Download query export file
@@ -4186,6 +4239,7 @@ paths:
           description: 统计数据 | Statistics
           schema:
             additionalProperties:
+              format: int64
               type: integer
             type: object
       summary: 获取开发任务统计 | Get development task statistics

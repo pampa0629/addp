@@ -59,11 +59,13 @@ func (h *ExportHandler) ResolveExecutionSource(c *gin.Context) {
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Failure 503 {object} map[string]interface{} "引擎不可用 | Engine unavailable"
+// @Header all {string} Cache-Control "no-store；禁止缓存此响应 | no-store; do not cache this response"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.create"]
 // @Router /exports [post]
 // @Security BearerAuth
 func (h *ExportHandler) CreateExport(c *gin.Context) {
+	commonAPI.NoStore(c)
 	if h == nil || h.exportService == nil {
 		commonAPI.InternalServerError(c, "export service is not available")
 		return
@@ -91,11 +93,13 @@ func (h *ExportHandler) CreateExport(c *gin.Context) {
 // @Success 200 {object} service.ExportSessionResponse "导出会话 | Export session"
 // @Failure 404 {object} map[string]interface{} "会话不存在 | Session not found"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Header all {string} Cache-Control "no-store；禁止缓存此响应 | no-store; do not cache this response"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /exports/{id} [get]
 // @Security BearerAuth
 func (h *ExportHandler) GetExport(c *gin.Context) {
+	commonAPI.NoStore(c)
 	id, ok := parseExportSessionID(c)
 	if !ok {
 		return
@@ -118,11 +122,13 @@ func (h *ExportHandler) GetExport(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{} "会话不存在 | Session not found"
 // @Failure 409 {object} map[string]interface{} "导出尚未完成 | Export not ready"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @Header all {string} Cache-Control "no-store；禁止缓存此响应 | no-store; do not cache this response"
 // @x-addp-auth-mode "resource_ticket"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
 // @Router /exports/{id}/file [get]
 // @Security BearerAuth
 func (h *ExportHandler) DownloadExportFile(c *gin.Context) {
+	commonAPI.NoStore(c)
 	id, ok := parseExportSessionID(c)
 	if !ok {
 		return

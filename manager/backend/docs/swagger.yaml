@@ -4061,25 +4061,45 @@ paths:
       responses:
         "202":
           description: 导出会话已创建 | Export session created
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             $ref: '#/definitions/github_com_addp_manager_internal_service.ExportSessionResponse'
         "400":
           description: 请求参数错误 | Bad request
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             additionalProperties: true
             type: object
         "403":
           description: 无权访问 | Access denied
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             additionalProperties: true
             type: object
         "500":
           description: 服务器内部错误 | Internal server error
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             additionalProperties: true
             type: object
         "503":
           description: 引擎不可用 | Engine unavailable
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             additionalProperties: true
             type: object
@@ -4107,15 +4127,27 @@ paths:
       responses:
         "200":
           description: 导出会话 | Export session
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             $ref: '#/definitions/github_com_addp_manager_internal_service.ExportSessionResponse'
         "404":
           description: 会话不存在 | Session not found
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             additionalProperties: true
             type: object
         "500":
           description: 服务器内部错误 | Internal server error
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             additionalProperties: true
             type: object
@@ -4142,18 +4174,34 @@ paths:
       responses:
         "200":
           description: 下载内容流 | Download content stream
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
         "404":
           description: 会话不存在 | Session not found
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             additionalProperties: true
             type: object
         "409":
           description: 导出尚未完成 | Export not ready
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             additionalProperties: true
             type: object
         "500":
           description: 服务器内部错误 | Internal server error
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
           schema:
             additionalProperties: true
             type: object

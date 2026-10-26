@@ -4,9 +4,15 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/gin-gonic/gin"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
+	"github.com/gin-gonic/gin"
 )
+
+// NoStore prevents HTTP caches from retaining this response. Call before writing
+// a status or body; current authorization must still be checked by the caller.
+func NoStore(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+}
 
 // BindIDParam 解析并绑定 ID 参数
 // 消除 10+ 处重复的 strconv.ParseUint + 错误处理

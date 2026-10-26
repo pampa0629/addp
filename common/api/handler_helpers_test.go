@@ -1,14 +1,48 @@
 package api_test
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestNoStoreBeforeJSONAndStreamDelivery(t *testing.T) {
+	for _, status := range []int{http.StatusOK, http.StatusAccepted, http.StatusNotFound, http.StatusConflict, http.StatusServiceUnavailable} {
+		for _, stream := range []bool{false, true} {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Header("Cache-Control", "public, max-age=3600")
+			commonapi.NoStore(ctx)
+			if ctx.Writer.Written() {
+				t.Fatal("cache policy committed the response before the caller")
+			}
+			body := `{"status":"test"}`
+			if stream {
+				body = "phone\n138****7055\n\"\"\n"
+				ctx.Header("Content-Type", "text/csv")
+				ctx.Header("Content-Disposition", `attachment; filename="masked.csv"`)
+				ctx.Status(status)
+				_, _ = io.Copy(ctx.Writer, strings.NewReader(body))
+			} else {
+				ctx.Data(status, "application/json", []byte(body))
+			}
+			response := recorder.Result()
+			if response.Header.Get("Cache-Control") != "no-store" || len(response.Header.Values("Cache-Control")) != 1 || response.StatusCode != status || recorder.Body.String() != body {
+				t.Fatalf("response changed or caching enabled: status=%d headers=%v", response.StatusCode, response.Header)
+			}
+			if stream && (response.Header.Get("Content-Type") != "text/csv" || response.Header.Get("Content-Disposition") != `attachment; filename="masked.csv"`) {
+				t.Fatal("stream download metadata changed")
+			}
+			_ = response.Body.Close()
+		}
+	}
+}
 
 func TestBindIDParam(t *testing.T) {
 	gin.SetMode(gin.TestMode)

@@ -1287,6 +1287,12 @@ const docTemplate = `{
                         "description": "导出会话已创建 | Export session created",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_manager_internal_service.ExportSessionResponse"
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     },
                     "400": {
@@ -1294,6 +1300,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     },
                     "403": {
@@ -1301,6 +1313,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     },
                     "500": {
@@ -1308,6 +1326,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     },
                     "503": {
@@ -1315,6 +1339,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     }
                 },
@@ -1353,6 +1383,12 @@ const docTemplate = `{
                         "description": "导出会话 | Export session",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_manager_internal_service.ExportSessionResponse"
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     },
                     "404": {
@@ -1360,6 +1396,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     },
                     "500": {
@@ -1367,6 +1409,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     }
                 },
@@ -1402,13 +1450,25 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "下载内容流 | Download content stream"
+                        "description": "下载内容流 | Download content stream",
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
+                        }
                     },
                     "404": {
                         "description": "会话不存在 | Session not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     },
                     "409": {
@@ -1416,6 +1476,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     },
                     "500": {
@@ -1423,6 +1489,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；禁止缓存此响应 | no-store; do not cache this response"
+                            }
                         }
                     }
                 },

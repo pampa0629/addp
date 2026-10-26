@@ -84,11 +84,13 @@ func (h *ExecutionHandler) ResolveExportExecutionSource(c *gin.Context) {
 // @Failure 404 {object} map[string]string
 // @Failure 422 {object} map[string]string "当前引擎不支持完整查询结果导出 | Engine does not support full query result export"
 // @Failure 503 {object} map[string]string
+// @Header all {string} Cache-Control "no-store；禁止缓存此响应 | no-store; do not cache this response"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.read","develop.task.execute","develop.data_read.execute"]
 // @x-addp-conditional-permissions ["system.execution_authorization.create","transfer.task.execute"]
 // @Router /executions/{execution_id}/exports [post]
 func (h *ExecutionHandler) CreateQueryExport(c *gin.Context) {
+	commonAPI.NoStore(c)
 	if h == nil || h.queryExports == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error": commoni18n.T(c, developi18n.MsgQueryExportUnavailable), "error_code": "query_export_unavailable",
@@ -141,11 +143,13 @@ func queryExportCreateError(c *gin.Context, err error) {
 // @Success 200 {object} models.CreateQueryExportResponse
 // @Failure 409 {object} models.ErrorResponse "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效 | Role eligibility unavailable or masking method invalid"
 // @Failure 404 {object} map[string]string
+// @Header all {string} Cache-Control "no-store；禁止缓存此响应 | no-store; do not cache this response"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.read"]
 // @x-addp-conditional-permissions ["develop.data_read.execute","transfer.task.execute"]
 // @Router /exports/{id} [get]
 func (h *ExecutionHandler) GetQueryExport(c *gin.Context) {
+	commonAPI.NoStore(c)
 	id, ok := queryExportSessionID(c)
 	if !ok {
 		return
@@ -167,11 +171,13 @@ func (h *ExecutionHandler) GetQueryExport(c *gin.Context) {
 // @Success 200 "下载内容流 | Download content stream"
 // @Failure 404 {object} map[string]string
 // @Failure 409 {object} models.ErrorResponse "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效；query_export_not_ready：尚未完成 | Role eligibility unavailable, masking method invalid, or export not ready"
+// @Header all {string} Cache-Control "no-store；禁止缓存此响应 | no-store; do not cache this response"
 // @x-addp-auth-mode "resource_ticket"
 // @x-addp-required-permissions ["develop.task.read","develop.data_read.execute"]
 // @Description 角色专用文件必须使用当前 User Bearer 并复核 Transfer 导出选项；Resource Ticket 不替代完整角色资格。| Role-specific files require the current User Bearer and a fresh Transfer export-choice check; Resource Tickets do not replace complete role eligibility.
 // @Router /exports/{id}/file [get]
 func (h *ExecutionHandler) DownloadQueryExport(c *gin.Context) {
+	commonAPI.NoStore(c)
 	id, ok := queryExportSessionID(c)
 	if !ok {
 		return
@@ -489,7 +495,7 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 // @x-addp-conditional-permissions ["develop.data_read.execute"]
 // @Router /executions/{execution_id}/result [get]
 func (h *ExecutionHandler) GetQueryResult(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
+	commonAPI.NoStore(c)
 	bearer, _ := requestUserAccessToken(c)
 	execution, err := h.devExecutor.GetQueryResult(c.Request.Context(), c.Param("execution_id"), tenantIDValue(c), bearer)
 	if err != nil {
