@@ -28,10 +28,8 @@
    - ✅ 支持全量启动模式（默认行为）
 
 5. **国际化原则**
-   - ✅ 新模块必须按 [ADDP 国际化开发规范](addp国际化开发规范.md) 创建前后端翻译文件
-   - ✅ 前端用户可见文本必须使用 Vue I18n，不得硬编码中文或英文
-   - ✅ 后端用户可见错误消息必须通过 `common/middleware/i18n` 翻译
-   - ✅ Swagger 注解必须使用 `中文 | English` 双语格式
+   - ✅ 前后端用户可见文本遵循[国际化基本原则](addp国际化开发规范.md#基本原则)，复用共享能力，业务词条归所属模块
+   - ✅ Swagger 注解按[双语规范](addp国际化开发规范.md#swagger-双语注解规范)使用 `中文 | English`；文档双语不能代替运行时错误翻译
 
 6. **Console 页面描述原则**
    - ✅ 侧边栏固定菜单页由 Console 自动记录最近访问；若侧边栏短标签依赖模块上下文，必须在 `SIDEBAR_MENUS` 中另设可独立识别的 `recentLabel`
@@ -109,13 +107,8 @@
 	- 不读取 `JWT_SECRET`，不在模块内自行解析用户 Token
 5. **国际化集成**:
 
-   - 注册 `common/middleware/i18n.I18nMiddleware()`
-   - 创建 `<module>/backend/i18n/i18n.go`
-   - 创建 `<module>/backend/i18n/locales/zh-cn.toml` 和 `en.toml`
-   - Handler 中的用户可见错误消息使用 `commoni18n.T(c, modulei18n.MsgXxx)`
-   - Swagger 注解使用 `中文 | English` 格式
-
-   详细要求参见 [ADDP 国际化开发规范](addp国际化开发规范.md)。
+   - 在 `<module>/backend/i18n/` 维护业务消息 key 与翻译文件，文件组织及注册方式见[后端规范](addp国际化开发规范.md#后端规范)。
+   - Router 接入共享 [i18n 中间件](addp国际化开发规范.md#路由中间件)，Handler 按[消息翻译要求](addp国际化开发规范.md#handler-使用)返回用户可见消息；Service 错误仍遵循[分层边界](addp国际化开发规范.md#service-层错误)。
 
 6. **Docker 集成**:
 
@@ -248,7 +241,7 @@ export default createAPIClient(() => useAuthStore(), {
 2. 使用根 `.node-version` 对应的 Node，提交模块 `package.json` 和一致的 `package-lock.json`。通过 `overrides` 及 Vite 别名、去重规则保持 Vue 单一实例；common-frontend 复用消费模块依赖，不独立安装自己的 `node_modules`。
 3. Vite 复用共享 `withModuleFrontend()`，并在其模块登记及 Console 的代理、菜单配置中接入新入口。Router 使用 `createWebHistory(import.meta.env.BASE_URL)`；模块公开前缀、内部开发端口和 Console 地址按[认证规范](addp登录认证的统一要求.md#五console-与-iframe)及[端口规范](addp端口分配.md)配置，不各自维护另一套跳转逻辑。
 4. 创建本模块 AuthStore 与路由守卫以调用共享认证能力，业务请求使用上节客户端。按 Layout 嵌套路由组织页面，支持独立顶层界面和 Console iframe。
-5. 按[国际化规范](addp国际化开发规范.md)创建 `src/i18n/zh-cn.json` 与 `en.json`，使用共享 `createAddpI18n()`；iframe 监听 Console 语言变化，Element Plus locale 跟随当前语言，请求统一携带 `Accept-Language`。
+5. 按[前端国际化接入清单](addp国际化开发规范.md#新增模块检查清单)创建 `src/i18n/zh-cn.json` 与 `en.json`，使用共享 `createAddpI18n()`；iframe 监听 Console 语言变化，Element Plus locale 跟随当前语言，请求统一携带 `Accept-Language`。
 6. Layout 背景与边框使用主题 CSS 变量；在 `main.js` 引入 Element Plus 基础 CSS 后，引入深色变量和共享主题，并在挂载前初始化：
 
    ```javascript
@@ -335,7 +328,7 @@ export default createAPIClient(() => useAuthStore(), {
 - [ ] 新建组件前已检索并复用 `common-frontend` 和现有模块的规范实现，没有重复建设相同语义职责与交互契约的前端能力
 - [ ] 共享 AuthStore、路由守卫和 API Client 已接入，认证请求经同 origin Gateway
 - [ ] API Client 默认前缀 `/api/v1` 与调用方路径 `/<module>/resources` 拼接正确，没有重复前缀
-- [ ] 中英文、Element Plus locale、Console 语言同步和 `Accept-Language` 已接入
+- [ ] 中英文、Element Plus locale、Console 语言同步和 `Accept-Language` 已接入，并按[国际化验证要求](addp国际化开发规范.md#验证方式)核对
 - [ ] Dockerfile 与模块 Nginx 配置符合[前端镜像规范](../../scripts/docs/前端镜像构建规范.md)
 
 **脚本集成**:
