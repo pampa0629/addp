@@ -176,6 +176,8 @@ def test_mesh_converters_publish_glb(tmp_path, operator_name, suffix, source_for
     source_dir.mkdir()
     source = source_dir / f"model{suffix}"
     source.write_text("v 0 0 0\n" if source_format == "obj" else "mesh", encoding="utf-8")
+    if source_format == "fbx":
+        source.write_bytes((Path(__file__).parent / "fixtures/mesh/static-two-triangles.fbx").read_bytes())
     if source_format == "gltf":
         import json
         from .glb_fixture import triangle_doc
@@ -190,7 +192,7 @@ def test_mesh_converters_publish_glb(tmp_path, operator_name, suffix, source_for
         return CommandResult(returncode=0)
 
     plan = directory_plan(source_dir, target, source_format, "glb", entrypoint=source.name)
-    if source_format == "stl":
+    if source_format in ("stl", "fbx"):
         plan = file_plan(source, target, source_format, "glb")
     facts = invoke_operator(
         operator_name,

@@ -51,28 +51,27 @@ func (p *Plugin) SniffFormat(peek []byte) bool {
 }
 
 func (p *Plugin) DescribeModel3D(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.Model3DDescribeResult, error) {
-	header := make([]byte, 64)
-	n, err := input.Read(header)
-	if err != nil && err != io.EOF {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
+	if input == nil {
+		return nil, fmt.Errorf("FBX describe requires a primary reader")
 	}
-	encoding := "ascii"
-	if bytes.HasPrefix(header[:n], fbxBinaryMagic) {
-		encoding = "binary"
+	raw, err := io.ReadAll(io.LimitReader(input, MaxCompositionBytes+1))
+	if err != nil {
+		return nil, err
 	}
-	meshCount := int64(1)
+	facts, err := readStructure(ctx, bytes.NewReader(raw), int64(len(raw)))
+	if err != nil {
+		return nil, err
+	}
 	return &format.Model3DDescribeResult{
 		Model3D: &datatype.Model3DInfo{
 			ModelKind: datatype.Model3DKindMeshScene,
-			MeshCount: &meshCount,
+			MeshCount: &facts.meshes,
 		},
 		FormatInfo: map[string]interface{}{
-			"encoding": encoding,
+			"encoding": "binary", "version": 7400, "profile": Profile,
 		},
 	}, nil
 }

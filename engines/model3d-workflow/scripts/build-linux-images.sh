@@ -130,10 +130,12 @@ with tempfile.TemporaryDirectory() as tmp:
 
     mesh_source = Path(tmp) / 'mesh source'
     mesh_source.mkdir()
-    fbx = mesh_source / 'box.fbx'
-    fbx.write_bytes(Path('/fixture/mesh/box.fbx').read_bytes())
-    if hashlib.sha256(fbx.read_bytes()).hexdigest() != 'ad2d79fe89d4d646bc7930dc952eb28e69976a321b387bf7851ecd3f37e667f8':
-        raise SystemExit('FBX fixture differs from the pinned Assimp v5.4.3 source')
+    fbx = mesh_source / 'static-two-triangles.fbx'
+    fbx.write_bytes(Path('/fixture/mesh/static-two-triangles.fbx').read_bytes())
+    if hashlib.sha256(fbx.read_bytes()).hexdigest() != '7d585849dadf512d973a0262bd1ef9bc6e1d105b15596e99b50cdb864d06ef30':
+        raise SystemExit('FBX fixture differs from the self-authored Binary 7400 source')
+    legacy_fbx = mesh_source / 'legacy-box.fbx'
+    legacy_fbx.write_bytes(Path('/fixture/mesh/box.fbx').read_bytes())
     obj = mesh_source / 'triangle.obj'
     obj.write_text('mtllib triangle.mtl\no panel\nv 0 0 0\nv 2 0 0\nv 0 3 0\n'
                    'vt 0 0\nvt 1 0\nvt 0 1\nusemtl paint\nf 1/1 2/2 3/3\n')
@@ -154,29 +156,45 @@ with tempfile.TemporaryDirectory() as tmp:
     if hashlib.sha256(three_ds.read_bytes()).hexdigest() != '856a75ee6a2de1be4e0cf19ed67dd49018d34486c762a115a45c173e30603bd6':
         raise SystemExit('3DS fixture differs from the Hosted source')
     source_hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in mesh_source.iterdir()}
-    for format_name, source, triangle_count in (('fbx', fbx, 12), ('obj', obj, 1), ('3ds', three_ds, 1)):
+    for format_name, source, triangle_count in (('fbx', fbx, 2), ('obj', obj, 1), ('3ds', three_ds, 1)):
         target = Path(tmp) / f'{format_name}.glb'
         plan = {'schema_version': 'addp.workflow.access-plan/v1',
                 'source': {'kind': 'directory', 'format': format_name, 'entrypoint': source.name,
                            'access': {'method': 'mounted_path', 'path': str(mesh_source)}},
                 'target': {'kind': 'file', 'format': 'glb', 'name': target.name, 'write_mode': 'create',
                            'access': {'method': 'mounted_path', 'path': str(target)}}}
+        if format_name == 'fbx':
+            plan['source'] = {'kind':'file','format':'fbx','access':{'method':'mounted_path','path':str(source)}}
         for attempt in range(32 if format_name == '3ds' else 1):
             operators.invoke_operator(f'{format_name}_to_glb', {'access_plan': plan}, timeout_seconds=60)
             doc = validate_glb(target, basic_static=True)
             plan['target']['write_mode'] = 'replace'
         primitives = [p for mesh in doc['meshes'] for p in mesh['primitives']]
-        if len(doc['meshes']) != 1 or any(p.get('mode', 4) != 4 for p in primitives):
+        if (format_name != 'fbx' and len(doc['meshes']) != 1) or any(p.get('mode', 4) != 4 for p in primitives):
             raise SystemExit(f'{format_name} static mesh topology differs')
         if sum(doc['accessors'][p['indices']]['count'] for p in primitives) != triangle_count * 3:
             raise SystemExit(f'{format_name} triangle count differs')
         scene = trimesh.load(target, force='scene')
         if format_name == 'fbx':
-            # GLB export merges equivalent vertices. Compare source geometry,
-            # rather than requiring the FBX importer's expanded storage count.
-            corners = {(x, y, z) for x in (-100.0, 100.0) for y in (-100.0, 100.0) for z in (-100.0, 100.0)}
-            if len(scene.geometry) != 1 or set(map(tuple, next(iter(scene.geometry.values())).vertices)) != corners:
-                raise SystemExit('FBX box coordinates differ from the source')
+            triangles = [sorted(tuple(round(float(v),6) for v in vertex) for vertex in triangle)
+                         for mesh in scene.dump() for triangle in mesh.triangles]
+            expected = [[(0.,0.,0.),(0.,3.,1.),(2.,0.,0.)],[(4.,0.,0.),(4.,3.,1.),(6.,0.,0.)]]
+            if sorted(triangles) != expected or len(scene.graph.nodes_geometry) != 2 or doc.get('images'):
+                raise SystemExit('FBX complete metre-space triangles, instances or untextured scope differ')
+            for primitive in primitives:
+                material = doc['materials'][primitive['material']]
+                color = material['pbrMetallicRoughness']['baseColorFactor']
+                if len(color)!=4 or any(abs(a-b)>1e-6 for a,b in zip(color,[.2,.4,.8,1])) or material.get('alphaMode','OPAQUE')!='OPAQUE':
+                    raise SystemExit('FBX source material color or opacity differs')
+            previous = target.read_bytes()
+            plan['source']['access']['path'] = str(legacy_fbx)
+            try:
+                operators.invoke_operator('fbx_to_glb', {'access_plan':plan}, timeout_seconds=60)
+            except operators.ConverterError as error:
+                if error.error_code!='UNSUPPORTED_MODEL_SOURCE' or target.read_bytes()!=previous:
+                    raise SystemExit('Legacy FBX layer indices were not rejected before conversion')
+            else:
+                raise SystemExit('Legacy FBX with missing layer indices was accepted')
         if format_name in {'obj', '3ds'}:
             if sum(doc['accessors'][p['attributes']['POSITION']]['count'] for p in primitives) != 3:
                 raise SystemExit(f'{format_name} vertex count differs')
@@ -196,7 +214,8 @@ with tempfile.TemporaryDirectory() as tmp:
         previous = target.read_bytes()
         invalid = mesh_source / f'invalid.{format_name}'
         invalid.write_text('not a model')
-        plan['source']['entrypoint'] = invalid.name
+        if format_name == 'fbx': plan['source']['access']['path'] = str(invalid)
+        else: plan['source']['entrypoint'] = invalid.name
         plan['target']['write_mode'] = 'replace'
         try:
             operators.invoke_operator(f'{format_name}_to_glb', {'access_plan': plan}, timeout_seconds=60)

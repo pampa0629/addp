@@ -22,21 +22,12 @@ func TestFBXDescriptor(t *testing.T) {
 	}
 }
 
-func TestDescribeModel3DReadsBinaryFBXHeader(t *testing.T) {
+func TestDescribeModel3DRejectsHeaderWithoutCompleteStructure(t *testing.T) {
 	content := append([]byte{}, fbxBinaryMagic...)
 	content = append(content, []byte{0x00, 0x00, 0x00, 0x00}...)
 	result, err := NewPlugin().DescribeModel3D(context.Background(), bytes.NewReader(content), nil)
-	if err != nil {
-		t.Fatalf("DescribeModel3D() error = %v", err)
-	}
-	if result == nil || result.Model3D == nil {
-		t.Fatalf("DescribeModel3D() = %#v, want model info", result)
-	}
-	if result.Model3D.ModelKind != datatype.Model3DKindMeshScene {
-		t.Fatalf("ModelKind = %q, want mesh_scene", result.Model3D.ModelKind)
-	}
-	if result.FormatInfo["encoding"] != "binary" {
-		t.Fatalf("format_info = %#v, want binary encoding", result.FormatInfo)
+	if err == nil || result != nil {
+		t.Fatalf("header invented a mesh: %#v, %v", result, err)
 	}
 }
 

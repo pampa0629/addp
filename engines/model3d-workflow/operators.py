@@ -15,6 +15,7 @@ from typing import Any, Callable
 from urllib.parse import urlparse
 
 from exchange_model import validate_source
+from fbx_model import stage_fbx_source
 from gltf_model import validate_source as validate_gltf_source, has_used_textures, prepare_converter_source
 from glb_validation import read_glb as _read_glb, validate_glb
 from max_converter import conversion_options
@@ -164,7 +165,7 @@ def list_operators() -> list[dict[str, Any]]:
             "engine_type": ENGINE_TYPE,
             "category": "三维模型转换",
             "category_path": ["三维模型转换", "快显"],
-            "description": "将 FBX 单体网格模型转换为前端可快速预览的 GLB artifact。",
+            "description": "将 Binary 7400 静态无贴图 FBX 单文件模型转换为 GLB artifact；其他版本、动画和外部资源明确拒绝。",
             "execution_modes": ["workflow", "direct"],
             "effects": ["read", "write"],
             "parameters": [
@@ -734,6 +735,9 @@ def _mesh_model_to_glb(
     timeout_seconds: int | None,
 ) -> dict[str, Any]:
     access_plan = require_access_plan(params)
+    if source_label == 'FBX' and (access_plan['source']['kind'] != 'file' or plan_source_format(access_plan) != 'fbx'):
+        raise ConverterError('UNSUPPORTED_MODEL_SOURCE', 'Source model is outside supported conversion scope',
+                             details='FBX requires a file/fbx access plan')
     file_name = target_name(access_plan)
 
     temp_dir = Path(tempfile.mkdtemp(prefix="addp-model3d-glb-"))
@@ -742,6 +746,14 @@ def _mesh_model_to_glb(
     try:
         source_path = str(_stage_model_source(access_plan, temp_dir, reject_symlinks=source_label.lower() == "gltf"))
         source_texture_refs = []
+        source_profile = None
+        if source_label == 'FBX':
+            try:
+                staged, source_facts = stage_fbx_source(Path(source_path), temp_dir)
+                source_path = str(staged)
+                source_profile = source_facts['profile']
+            except (ValueError, OSError) as error:
+                raise ConverterError('UNSUPPORTED_MODEL_SOURCE', 'Source model is outside supported conversion scope', details=str(error)) from error
         if source_label.lower() == "gltf":
             try:
                 gltf_source = validate_gltf_source(Path(source_path))
@@ -767,7 +779,9 @@ def _mesh_model_to_glb(
             )
 
         try:
-            doc = _validate_glb_artifact(target_file, basic_static=source_label.lower() in {"dae", "3ds"})
+            doc = _validate_glb_artifact(target_file, basic_static=source_label.lower() in {"dae", "3ds", "fbx"})
+            if source_label == 'FBX' and doc.get('images'):
+                raise ConverterError('INVALID_GLB', 'Untextured FBX conversion produced images', http_status=500)
         except ConverterError as error:
             logging.getLogger(__name__).error(
                 "Mesh GLB validation failed: source_format=%s details=%s stdout=%s stderr=%s",
@@ -801,6 +815,8 @@ def _mesh_model_to_glb(
         }
         if postprocess:
             facts["postprocess"] = postprocess
+        if source_profile is not None:
+            facts['source_profile'] = source_profile
         return facts
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)

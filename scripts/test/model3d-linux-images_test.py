@@ -121,8 +121,20 @@ include("''' + (port / 'portfile.cmake').as_posix() + '''")
         for extension in ('*.json', '*.lock', '*.cpp', '*.cmake', '*.dockerignore', '*.fbx'):
             self.assertIn(extension, block)
 
-    def test_fbx_fixture_is_the_pinned_upstream_box_with_original_license(self):
+    def test_fbx_fixtures_bind_static_positive_and_legacy_negative(self):
         fixture = ROOT / 'engines/model3d-workflow/tests/fixtures/mesh'
+        static = (fixture / 'static-two-triangles.fbx').read_bytes()
+        self.assertEqual(len(static), 13740)
+        self.assertEqual(hashlib.sha256(static).hexdigest(),
+                         '7d585849dadf512d973a0262bd1ef9bc6e1d105b15596e99b50cdb864d06ef30')
+        self.assertTrue(static.startswith(b'Kaydara FBX Binary  \x00\x1a\x00'))
+        self.assertEqual(int.from_bytes(static[23:27], 'little'), 7400)
+        smoke = SCRIPT.read_text()
+        self.assertIn('/fixture/mesh/static-two-triangles.fbx', smoke)
+        self.assertIn(hashlib.sha256(static).hexdigest(), smoke)
+        self.assertIn('Legacy FBX with missing layer indices was accepted', smoke)
+        self.assertIn('UNSUPPORTED_MODEL_SOURCE', smoke)
+        self.assertIn('fbx_model.py', (ROOT / 'engines/model3d-workflow/docker/runtime/Dockerfile').read_text())
         box = (fixture / 'box.fbx').read_bytes()
         self.assertEqual(len(box), 17200)
         self.assertEqual(hashlib.sha256(box).hexdigest(),

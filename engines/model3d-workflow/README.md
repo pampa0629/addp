@@ -10,7 +10,7 @@
 glTF 首期只接受静态 glTF 2.0 core：主清单至多 16 MiB，单次 URI 解码，精确本地 buffer（不限定后缀）、PNG/JPEG、合法 data URI 与 bufferView 图片。跨语言正反例位于 `common/format/plugins/gltf/testdata/composition-cases.json`，与 Common 的唯一 `ParseGLTFComposition` 入口一致；动画、蒙皮、morph、非空未支持扩展、越界/歧义 URI、缺失/短 buffer、非法图片及非有限浮点数据在调用转换器前拒绝。组成证明与实际内容验证不同，外部图片字节由 Runtime 实际解码。
 
 固定 Assimp 5.2.5 对百分号外部 URI 和非 base64 data URI 的处理不完整。Runtime 只使用已核验的同一份 buffer/图片缓冲，在既有私有临时目录中生成全部资源为标准 base64 data URI 的转换副本，再调用唯一 Assimp 路线；不重新枚举源目录、不额外重开源、不修改原始 manifest、依赖文件、名称或原文件 ZIP。合法 buffer 尾随数据不交给要求长度相等的 Assimp，副本只使用声明的 byteLength 字节。转换副本从不发布，随现有临时目录销毁；输出仍通过统一 GLB 验证后才发布。根 `make test-model3d-workflow MODEL3D_WORKFLOW_PYTHON=engines/model3d-workflow/venv/bin/python` 验证 profile、源失败保留旧产物及私有适配；显式绑定现有 `MODEL3D_MESH_CONVERTER_BIN` 时，同一入口另跑真实转换与两三角/UV/红蓝贴图字节 oracle。没有绑定时的原生用例跳过不得计为原生通过；三引擎授权、ZIP、缓存及删除/清理由消费 Owner 的 Hosted 独立验收。
-- `fbx_to_glb`：FBX 单体网格模型转换为持久化 GLB。
+- `fbx_to_glb`：Binary 7400 静态无贴图 FBX 单文件模型转换为持久化 GLB。
 - `obj_to_glb`：OBJ 单体网格模型转换为持久化 GLB。
 - `stl_to_glb`：STL 单体网格模型转换为持久化 GLB。
 - `dae_to_glb`：Collada 1.4.0 / 1.4.1 静态模型及 PNG/JPEG 漫反射贴图转换为自包含 GLB。
@@ -149,7 +149,9 @@ make test-model3d-workflow
 
 现有 Product binary build CI 会按受影响路径选择 Model3D 镜像，构建后用真实 Blender 检查静态 GLB、贴图、默认米与手选毫米的 1000 倍比例、源文件不变及失败时旧产物保留。此检查不代替真实业务源、Manager 页面与 Monitor 的 T4 验收。
 
-产品构建的最终 Runtime 转换检查还覆盖 FBX／OBJ 静态网格：FBX 使用 Assimp `v5.4.3`（提交 `c35200e38ea8f058812b83de2ef32c6093b0ece2`）的 [box.fbx](https://github.com/assimp/assimp/blob/c35200e38ea8f058812b83de2ef32c6093b0ece2/test/models/FBX/box.fbx)，保留在 `tests/fixtures/mesh/`，源 SHA-256 为 `ad2d79fe89d4d646bc7930dc952eb28e69976a321b387bf7851ecd3f37e667f8`；原始许可完整保留在同目录 `LICENSE-assimp.txt`。上游 [独立断言](https://github.com/assimp/assimp/blob/c35200e38ea8f058812b83de2ef32c6093b0ece2/test/unit/utFBXImporterExporter.cpp#L67) 为一个网格、36 个顶点和 12 个三角面。OBJ 使用 ADDP 自建三角形及漫反射 PNG，核对源坐标、三角面、UV 贴图引用、实际内嵌像素与不透明度。两者经正式 access plan 和 operator 发布，并验证源字节不变、无效输入失败且保留旧产物；不扩大为动画、全部 FBX 版本、复杂材质或 Manager Hosted 页面已验收。
+产品构建的最终 Runtime 转换检查覆盖 FBX／OBJ 静态网格。FBX 首期仅支持 `binary7400_static_untextured`：主文件不超过 64 MiB，完整证明无 Texture／Video／外部引用、动画、蒙皮或形变；所有网格和图层索引必须有效。Common 格式插件与 Runtime 分别在各自读取边界执行同一 profile，并消费 `common/format/plugins/fbx/testdata/composition-cases.json` 的共同正反例。Common 只读取绑定的唯一主文件，不裁决授权；Runtime 要求 `file/fbx` 访问计划，校验后交给 Assimp 的是同字节私有快照，源后续变化不会替换已验证输入。ASCII、其他版本及越界声明明确拒绝，不增加转换器或修复源文件的旁路。
+
+FBX 正向夹具 `tests/fixtures/mesh/static-two-triangles.fbx` 为 ADDP 自建的两个静态三角形，13740 字节，SHA-256 `7d585849dadf512d973a0262bd1ef9bc6e1d105b15596e99b50cdb864d06ef30`。制作时从自建 OBJ／MTL 经绑定的 Assimp 5.2.5 导出，再为自有夹具编写 Binary 7400 framing、明确米单位及不透明材质，移除未使用的空图层声明；这只用于夹具制作，产品运行不修改 FBX 源。两个三角形世界坐标分别为 `(0,0,0),(2,0,0),(0,3,1)` 与 `(4,0,0),(6,0,0),(4,3,1)`，Y 向上，材质 RGBA 为 `(0.2,0.4,0.8,1)`。原 Assimp `v5.4.3` 的 `box.fbx`（SHA-256 `ad2d79fe89d4d646bc7930dc952eb28e69976a321b387bf7851ecd3f37e667f8`，原许可保留于 `LICENSE-assimp.txt`）缺少颜色索引，保留为转换前拒绝并保留旧成果的反例。共同语料还保留 Three.js `vCube.fbx` 与原始 `LICENSE-three.txt`，验证合法的索引颜色／法线／UV。OBJ 继续使用自建三角形及漫反射 PNG。构建检查比较完整三角形、节点实例、材质颜色／不透明度、源字节及失败保留；不等于三引擎 Manager Hosted 已验收。
 
 OBJ 的 FTP/NFS/MinIO 精确组成路线与 Go 格式层使用同一语义：OBJ 必须以 `.obj` 为实际入口，每行 `mtllib` 的整行余部是一个原始文件名；首期一个或多个 MTL 必须位于 OBJ 同目录，PNG/JPEG 可位于子目录。Runtime 只打开明确依赖，目录描述符和 no-follow/nonblock 约束拒绝软链接、FIFO、错大小写和越界；MTL 合计预算在读取内容前核对，不使用同 basename 材质库或贴图兜底。旧的按空格拆分材质库校验已删除，OBJ 复用 `validate_source` 与同一 Assimp→GLB 发布主路径。声明贴图而转换器输出无贴图时拒绝发布；复杂材质仍受现有 GLB 基本静态门禁限制。
 
