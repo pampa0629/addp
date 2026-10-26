@@ -55,5 +55,12 @@ class EventPaginationOnlineTest(unittest.TestCase):
   self.assertNotIn('.route(',browser)
   self.assertIn('login(',browser)
   self.assertIn('toHaveCount(1000)',browser)
+ def test_history_tail_rebinds_the_current_browser_response(self):
+  browser=(M.ROOT/'console/frontend/e2e/online/execution-events-pagination.spec.js').read_text()
+  self.assertIn('browserAPIFromResponse(currentResponse',browser)
+  self.assertIn('currentResponse = response',browser)
+  self.assertNotIn('await api.get(`${pathFor(id)}',browser)
+  for stage in ('_initial', '_first_page', '_dom', '_tail_identity', '_tail'):
+   self.assertIn(stage,browser)
 
 if __name__=='__main__':unittest.main()

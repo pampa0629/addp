@@ -1,7 +1,7 @@
 import { test, expect, request } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { login, identity, json } from './transfer-browser-support.js'
+import { login, identity, json, browserAPIFromResponse } from './transfer-browser-support.js'
 
 test.use({ screenshot: 'off', trace: 'off', video: 'off' })
 const pathFor = id => `/api/v1/monitor/executions/by-execution-id/${id}/events`
@@ -32,6 +32,9 @@ test('real Console event pagination, storage truncation and display cap', async 
     expect(actual.tenantID).toBe(input.tenant_id)
     expect(actual.principalType).toBe('user'); expect(actual.contextType).toBe('tenant')
     expect([...actual.permissions].sort()).toEqual(['meta.scan_task.read', 'monitor.execution.read'])
+    const expectedIdentity = { principalID: input.principal_id, tenantID: input.tenant_id, permissions: actual.permissions }
+    await api.dispose()
+    api = undefined
     checks.push('real_password_auth_and_owner_identity')
     const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
     const detail = frame.locator('.execution-detail-content')
@@ -47,6 +50,7 @@ test('real Console event pagination, storage truncation and display cap', async 
     }
     async function loadAll(name, id, captureFirst) {
       const expectedIDs = input.ids[name]
+      stage = `${name}_initial`
       await expect(detail).toBeVisible()
       await expect(detail).toContainText(id)
       await expect(events).toContainText('过程事件保留 30 天')
@@ -56,15 +60,19 @@ test('real Console event pagination, storage truncation and display cap', async 
       const first = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === pathFor(id) && new URL(response.url()).searchParams.get('after') === '0')
       await events.getByRole('button', { name: '刷新过程', exact: true }).click()
       const firstResponse = await first
+      stage = `${name}_first_page`
       expect(firstResponse.status()).toBe(200)
       let result = await firstResponse.json()
       expect(result.items.map(item => item.id)).toEqual(expectedIDs.slice(0, 100))
       const items = [...result.items]
+      let currentResponse = firstResponse
       for (let n = 2; n <= 10; n++) {
+        stage = `${name}_page_${n}`
         const cursor = result.next_cursor
         const loaded = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === pathFor(id) && new URL(response.url()).searchParams.get('after') === String(cursor))
         await events.getByRole('button', { name: '加载后续事件', exact: true }).click()
         const response = await loaded
+        currentResponse = response
         expect(response.status()).toBe(200)
         result = await response.json()
         expect(result.items.map(item => item.id)).toEqual(expectedIDs.slice((n - 1) * 100, n * 100))
@@ -76,7 +84,9 @@ test('real Console event pagination, storage truncation and display cap', async 
       }
       await expect(rows).toHaveCount(1000)
       expect(new Set(items.map(item => item.id)).size).toBe(1000)
+      stage = `${name}_dom`
       await inspectDOM(items)
+      stage = `${name}_limit`
       await expect(events.getByRole('button', { name: '加载后续事件', exact: true })).toHaveCount(0)
       await expect(events.getByRole('status')).toHaveText(warning)
       expect(result.has_more).toBe(name === 'history')
@@ -86,9 +96,15 @@ test('real Console event pagination, storage truncation and display cap', async 
       } else {
         await expect(rows.filter({ hasText: '采集截断' })).toHaveCount(0)
         expect(items.every(item => item.kind !== 'truncated')).toBe(true)
-        const tail = await json(await api.get(`${pathFor(id)}?after=${result.next_cursor}&limit=100`), 'real API tail')
-        expect(tail.items.map(item => item.id)).toEqual(expectedIDs.slice(1000, 1100))
+        stage = `${name}_tail_identity`
+        const current = await browserAPIFromResponse(currentResponse, process.env.GATEWAY_URL, expectedIdentity)
+        try {
+          stage = `${name}_tail`
+          const tail = await json(await current.get(`${pathFor(id)}?after=${result.next_cursor}&limit=100`), 'real API tail')
+          expect(tail.items.map(item => item.id)).toEqual(expectedIDs.slice(1000, 1100))
+        } finally { await current.dispose() }
       }
+      stage = `${name}_screenshot`
       await events.locator('.event-scroll').evaluate(element => { element.scrollTop = element.scrollHeight })
       await events.getByRole('status').scrollIntoViewIfNeeded()
       await page.screenshot({ path: resolve(artifact, `execution-events-${name}.png`), fullPage: true })
