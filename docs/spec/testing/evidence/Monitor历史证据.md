@@ -1836,6 +1836,16 @@ Monitor T1 实际覆盖停流零分母的归一、零请求权重聚合及活动
 
 原始日志、预算报告、源码绑定、独立清理及汇总位于 `/tmp/addp-p19-http-full-20261026-u9f8dxrv/`。`functional.json` SHA256=`ec289ce3c4f0ec42a78ac809e2592d51e778e9ff59b512d0f025cd812df22767`，`functional.log` SHA256=`f1290a1a52daf0ab49a77905881ff043d61a2c085b5e4af53214ca03bf40b206`，其余摘要见 `artifact-sha256.json`。本次只记录实际失败与清理；前一固定输入的公共 mTLS 通过、分阶段修正的 T0/T1 和已有独立 Trace 证据分别保留，完整 HTTP 查询／告警／通知仍未通过，不推送或手工触发／重跑 CI。
 
+### 私有目录读取失败的封闭分类与耗时证据（2026-10-26）
+
+用户继续后，仅推进上节建议的诊断代码与确定性门禁，没有新开运行窗口。先修订运行观测规范 6.4 和 T0–T3 条款，再补 `metrics-http-budget.py`：私有目录 `du` 单独固定 `LC_ALL=C`，原命令、扫描范围和非零失败语义不变。仅对同一次失败已捕获且不超过 4096 字节的 stderr 作封闭后缀分类，保留 `directory_error=path_disappeared/permission_denied/io_error/mixed/unclassified/empty/over_budget`、字节数及超预算标记；超预算不保留前缀，原文、路径、命令和环境不进日志或报告。这是 CLI 文本分类，不是系统 errno 或唯一根因证明；本次未改子进程输出捕获方式，不把解析上限宣称为输出捕获硬上限。
+
+失败详情另保留同一单调时钟的 `command_seconds`（命令返回／抛出时的本身耗时）、`sample_seconds`（本次完整检查至此累计耗时）、`command_budget_seconds`（该命令启动时剩余预算）。不重置四秒、不新增读取或重试；既有 Docker 消失分类保持，超时／命令不可执行仍失败。失败后的清理成功也不能改判通过。旧 66.598 秒运行没有保存 stderr，此修正不能回填当时类别或确认扫描竞态，历史失败和完整 HTTP 实链缺口保持。
+
+最小验证：`python3 -m unittest scripts/test/metrics-http-budget_test.py` 17 项通过；`make test-infra-runtime-log-lifecycle` 退出 0（123 项本地 runner／既有 System Go fixture，78 项聚合）；`python3 scripts/ci/check-t2-ci-registration_test.py` 38 项和原登记 22／12／9／2 通过，专项 diff 检查通过。新增回归先报缺字段／缺分类函数，再由当前实现通过；覆盖 4096 边界与 4097 拒绝、未知／非 UTF-8／混合、敏感正文不保留、仅目录命令 C 环境、两段不同耗时及原共享期限递减、超时／创建失败、单次命令不重试，以及报告／stdout 保留封闭事实且运行继续为失败。没有运行实际 Docker、du 探针、文件并发负载、业务或隔离环境；既有标准入口和 Metrics T2 输入登记已覆盖，无新增 workflow 或旁路。
+
+诊断源码、输入摘要、红／绿及标准门禁日志保存在 `/tmp/addp-p19-directory-diagnostic-20261026-ap5xjngx/`，见 `audit-summary.json`、`artifact-sha256.json`。本次仅本地提交，不推送或触发／重跑 CI，不运行 Hosted、容量、定时或个人服务操作。下一步应在另行确认的单次准备阶段取证窗口取得真实目录失败分类，未得到该证据前不认定根因已修复，也不直接将完整 HTTP 实链记为通过。
+
 
 ## 主机列表按设备展开（2026-10-26）
 

@@ -20,6 +20,57 @@ def row(cpu=1,memory=512*1024**2):
 
 
 class HTTPBudget(unittest.TestCase):
+    def test_directory_diagnostic_is_closed_bounded_and_never_retains_text(self):
+        secret=b'/private/credential-do-not-log'
+        cases=[(b'du: '+secret+b': No such file or directory\n','path_disappeared'),
+               (b'du: '+secret+b': Permission denied\n','permission_denied'),
+               (b'du: '+secret+b': Operation not permitted\n','permission_denied'),
+               (b'du: '+secret+b': Input/output error\n','io_error'),
+               (b'du: '+secret+b': private failure\n','unclassified'),
+               (b'\xff','unclassified'),
+               (b'','empty'),(b'x'*4097,'over_budget'),
+               (b'du: a: No such file or directory\ndu: b: Permission denied\n','mixed'),
+               (b'du: a: No such file or directory\nunknown\n','mixed')]
+        for stderr,expected in cases:
+            with self.subTest(expected=expected):
+                result=m.directory_failure_diagnostic(stderr)
+                self.assertEqual(result,{'directory_error':expected,'stderr_bytes':len(stderr),'stderr_over_budget':len(stderr)>4096})
+                self.assertNotIn('credential',json.dumps(result))
+        suffix=b': No such file or directory\n'
+        exact=b'du: '+b'x'*(4096-4-len(suffix))+suffix
+        self.assertEqual(len(exact),4096)
+        self.assertEqual(m.directory_failure_diagnostic(exact)['directory_error'],'path_disappeared')
+
+    def test_private_directory_failure_preserves_same_deadline_and_separate_timings(self):
+        with tempfile.TemporaryDirectory(prefix='addp-metrics-t2.') as directory:
+            failure=subprocess.CalledProcessError(1,['du','-sk','private-command'],stderr=b'du: private-token: No such file or directory\n')
+            with patch.object(m.time,'monotonic',side_effect=[10,10,10.2,10.5,11.25]),patch.object(m.subprocess,'check_output',side_effect=[b'',failure]) as command:
+                with self.assertRaises(m.BudgetFailure) as caught:m.sample({'project':'addp-metrics-t2-'+'a'*32,'work':directory})
+            facts=caught.exception.detail
+            self.assertEqual(facts['stage'],'private_directory_size')
+            self.assertEqual(facts['kind'],'command_failed')
+            self.assertEqual(facts['exit_code'],1)
+            self.assertEqual(facts['directory_error'],'path_disappeared')
+            self.assertEqual((facts['command_seconds'],facts['sample_seconds'],facts['command_budget_seconds']),(.75,1.25,3.5))
+            self.assertEqual([c.kwargs['timeout'] for c in command.call_args_list],[4,3.5])
+            self.assertNotIn('env',command.call_args_list[0].kwargs)
+            self.assertEqual(command.call_args_list[1].kwargs['env']['LC_ALL'],'C')
+            self.assertEqual(command.call_count,2)
+            self.assertNotIn('private-token',str(caught.exception)+json.dumps(facts))
+
+    def test_directory_timeout_or_spawn_failure_keeps_shared_budget_without_raw_error(self):
+        for error,kind,finish in ((subprocess.TimeoutExpired('private-command',3.5,stderr=b'private-token'),'deadline',4),
+                                  (OSError('private-token'),'command_unavailable',.75)):
+            with self.subTest(kind=kind),tempfile.TemporaryDirectory(prefix='addp-metrics-t2.') as directory:
+                with patch.object(m.time,'monotonic',side_effect=[0,0,.2,.5,finish]),patch.object(m.subprocess,'check_output',side_effect=[b'',error]) as command:
+                    with self.assertRaises(m.BudgetFailure) as caught:m.sample({'project':'addp-metrics-t2-'+'a'*32,'work':directory})
+                facts=caught.exception.detail
+                self.assertEqual(facts['kind'],kind)
+                self.assertEqual((facts['command_seconds'],facts['sample_seconds'],facts['command_budget_seconds']),(finish-.5,finish,3.5))
+                self.assertEqual(command.call_count,2)
+                self.assertEqual(command.call_args.kwargs['timeout'],3.5)
+                self.assertNotIn('private-token',json.dumps(facts)+str(caught.exception))
+
     def phase_record(self, limit, healthy=True):
         return {'phase':'healthy' if healthy else 'failure','failure_attempts':limit,'healthy_attempts':limit if healthy else 0,
                 'failure_limit':limit,'healthy_limit':limit,'failure_last_ms':178000,'healthy_last_ms':390000 if healthy else None}
@@ -107,7 +158,8 @@ class HTTPBudget(unittest.TestCase):
                 failure=subprocess.CalledProcessError(1,['private-command'],stderr=secret)
                 with patch.object(m.time,'monotonic',return_value=0),patch.object(m.subprocess,'check_output',side_effect=outputs+[failure]) as command:
                     with self.assertRaises(m.BudgetFailure) as caught:m.sample(ownership)
-                self.assertEqual(caught.exception.detail,{'stage':stage,'kind':'container_disappeared','exit_code':1})
+                self.assertEqual(caught.exception.detail,{'stage':stage,'kind':'container_disappeared','exit_code':1,
+                                 'command_seconds':0,'sample_seconds':0,'command_budget_seconds':4})
                 self.assertEqual(command.call_count,len(outputs)+1)
                 self.assertNotIn('private',str(caught.exception)+json.dumps(caught.exception.detail))
                 self.assertTrue(all(call.kwargs['timeout']==4 for call in command.call_args_list))
@@ -116,9 +168,10 @@ class HTTPBudget(unittest.TestCase):
     def test_sample_timeout_keeps_step_and_does_not_restart_budget(self):
         ownership={'project':'addp-metrics-t2-'+'a'*32,'work':'/tmp/addp-metrics-t2.fixture'}
         failure=subprocess.TimeoutExpired('private-command',4,stderr=b'private-credential')
-        with patch.object(m.time,'monotonic',side_effect=[0,0,1,1]),patch.object(m.subprocess,'check_output',side_effect=[b'owned\n',failure]) as command:
+        with patch.object(m.time,'monotonic',side_effect=[0,0,1,1,3]),patch.object(m.subprocess,'check_output',side_effect=[b'owned\n',failure]) as command:
             with self.assertRaises(m.BudgetFailure) as caught:m.sample(ownership)
-        self.assertEqual(caught.exception.detail,{'stage':'inspect','kind':'deadline'})
+        self.assertEqual(caught.exception.detail,{'stage':'inspect','kind':'deadline','command_seconds':2,
+                         'sample_seconds':3,'command_budget_seconds':3})
         self.assertEqual([call.kwargs['timeout'] for call in command.call_args_list],[4,3])
         self.assertNotIn('private',str(caught.exception)+json.dumps(caught.exception.detail))
 
@@ -156,7 +209,9 @@ class HTTPBudget(unittest.TestCase):
                     return 143
                 child.wait.side_effect=cleanup
                 return child
-            failure=m.BudgetFailure('http_budget_sample_command_failed','inspect','container_disappeared',exit_code=1)
+            failure=m.BudgetFailure('http_budget_sample_command_failed','private_directory_size','command_failed',exit_code=1,
+                                    command_seconds=.75,sample_seconds=1.25,command_budget_seconds=3.5,
+                                    **m.directory_failure_diagnostic(b'du: private-token: No such file or directory\n'))
             stdout=io.StringIO()
             with patch.object(m.sys,'argv',['budget','bash','scripts/test/monitor-metrics-gate.sh','--case=http-quality']),patch.dict(os.environ,{'ADDP_HTTP_BUDGET_REPORT':str(output)}),patch.object(m,'input_hashes',return_value={}),patch.object(m.subprocess,'Popen',side_effect=start) as launch,patch.object(m,'sample',side_effect=failure) as sample,patch.object(m.os,'killpg') as stop,redirect_stdout(stdout):
                 self.assertEqual(m.main(),1)
@@ -168,6 +223,7 @@ class HTTPBudget(unittest.TestCase):
             self.assertEqual(summary['failure_detail'],failure.detail)
             self.assertEqual(summary['error_code'],'http_budget_sample_command_failed')
             self.assertNotIn('input_sha256',summary)
+            self.assertNotIn('private-token',stdout.getvalue()+output.read_text())
             self.assertEqual(launch.call_count,1);self.assertEqual(sample.call_count,1)
             stop.assert_called_once_with(1234,m.signal.SIGTERM)
 

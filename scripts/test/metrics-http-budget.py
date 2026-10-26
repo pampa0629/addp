@@ -96,26 +96,47 @@ def resource_totals(rows, work_bytes, volume_bytes):
     return facts
 
 
+def directory_failure_diagnostic(stderr):
+    """Classify bounded CLI text, never infer errno or retain any raw prefix."""
+    result={'directory_error':'empty','stderr_bytes':len(stderr),'stderr_over_budget':len(stderr)>4096}
+    if result['stderr_over_budget']:
+        result['directory_error']='over_budget'
+        return result
+    suffixes={b'No such file or directory':'path_disappeared',b'Permission denied':'permission_denied',
+              b'Operation not permitted':'permission_denied',b'Input/output error':'io_error'}
+    kinds={suffixes.get(line.rpartition(b': ')[2],'unclassified') for line in stderr.splitlines() if line.strip()}
+    if kinds:result['directory_error']=next(iter(kinds)) if len(kinds)==1 else 'mixed'
+    return result
+
+
 def sample(ownership):
     began=time.monotonic();end=began+4
     def command(stage,args):
-        remaining=end-time.monotonic()
-        if remaining<=0:raise BudgetFailure('http_budget_sample_deadline',stage,'deadline')
+        started=time.monotonic();remaining=end-started
+        def failed(code,kind,finished,**facts):
+            raise BudgetFailure(code,stage,kind,command_seconds=round(finished-started,6),
+                                sample_seconds=round(finished-began,6),command_budget_seconds=round(max(0,remaining),6),**facts) from None
+        if remaining<=0:failed('http_budget_sample_deadline','deadline',started)
+        options={'timeout':remaining,'stderr':subprocess.PIPE}
+        if stage=='private_directory_size':options['env']=dict(os.environ,LC_ALL='C')
         try:
-            value=subprocess.check_output(args,timeout=remaining,stderr=subprocess.PIPE)
+            value=subprocess.check_output(args,**options)
         except subprocess.TimeoutExpired:
-            raise BudgetFailure('http_budget_sample_deadline',stage,'deadline') from None
+            failed('http_budget_sample_deadline','deadline',time.monotonic())
         except subprocess.CalledProcessError as failure:
+            finished=time.monotonic()
             missing=stage in {'inspect','volume_size'} and b'No such container' in (failure.stderr or b'')
-            raise BudgetFailure('http_budget_sample_command_failed',stage,
-                                'container_disappeared' if missing else 'command_failed',exit_code=failure.returncode) from None
+            diagnostic=directory_failure_diagnostic(failure.stderr or b'') if stage=='private_directory_size' else {}
+            failed('http_budget_sample_command_failed','container_disappeared' if missing else 'command_failed',
+                   finished,exit_code=failure.returncode,**diagnostic)
         except OSError:
-            raise BudgetFailure('http_budget_sample_command_failed',stage,'command_unavailable') from None
-        if time.monotonic()>=end:raise BudgetFailure('http_budget_sample_deadline',stage,'deadline')
+            failed('http_budget_sample_command_failed','command_unavailable',time.monotonic())
+        finished=time.monotonic()
+        if finished>=end:failed('http_budget_sample_deadline','deadline',finished)
         try:
             return value.decode()
         except UnicodeError:
-            raise BudgetFailure('http_budget_sample_invalid',stage,'invalid_output') from None
+            failed('http_budget_sample_invalid','invalid_output',finished)
     def size(stage,args):
         text=command(stage,args)
         try:
