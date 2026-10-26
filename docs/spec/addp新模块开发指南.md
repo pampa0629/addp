@@ -220,7 +220,7 @@ bash scripts/dev/start.sh -manager
 
 ### 开发中的前端-后端连接
 
-浏览器业务与认证请求统一经当前 origin 的 `/api/v1` 进入 Gateway，开发环境由 Vite 代理到实际 Gateway 地址。开发服务地址取本次启动解析结果，不在业务客户端写死后端端口。
+浏览器控制面业务与认证请求统一经当前 origin 的 `/api/v1` 进入 Gateway，开发环境由 Vite 代理到实际 Gateway 地址。开发服务地址取本次启动解析结果，不在业务客户端写死后端端口；Query、OGC 和瓦片等数据面入口按[路由前缀要求](api/资源路由与命名.md#路由前缀要求)另行核对。
 
 模块的 `api/client.js` 使用共享客户端；其默认 `baseURL` 为 `/api/v1`，调用方传 `/<module>/resources`，最终路径为 `/api/v1/<module>/resources`：
 
@@ -240,7 +240,7 @@ export default createAPIClient(() => useAuthStore(), {
 1. 在新的 `<module>/frontend/` 下按现有模块组织 Vue 3、Pinia 和 Element Plus 工程，调整包名、标题、业务视图和菜单。只参考需要的结构，不整目录复制已有模块的业务、依赖或构建产物。
 2. 使用根 `.node-version` 对应的 Node，提交模块 `package.json` 和一致的 `package-lock.json`。通过 `overrides` 及 Vite 别名、去重规则保持 Vue 单一实例；common-frontend 复用消费模块依赖，不独立安装自己的 `node_modules`。
 3. Vite 复用共享 `withModuleFrontend()`，并在其模块登记及 Console 的代理、菜单配置中接入新入口。Router 使用 `createWebHistory(import.meta.env.BASE_URL)`；模块公开前缀、内部开发端口和 Console 地址按[认证规范](addp登录认证的统一要求.md#五console-与-iframe)及[端口规范](addp端口分配.md)配置，不各自维护另一套跳转逻辑。
-4. 创建本模块 AuthStore 与路由守卫以调用共享认证能力，业务请求使用上节客户端。按 Layout 嵌套路由组织页面，支持独立顶层界面和 Console iframe。
+4. 创建本模块 AuthStore 与路由守卫以调用共享认证能力，业务请求按[前后端连接说明](#开发中的前端-后端连接)接入共享客户端。按 Layout 嵌套路由组织页面，支持独立顶层界面和 Console iframe。
 5. 按[前端国际化接入清单](addp国际化开发规范.md#新增模块检查清单)创建 `src/i18n/zh-cn.json` 与 `en.json`，使用共享 `createAddpI18n()`；iframe 监听 Console 语言变化，Element Plus locale 跟随当前语言，请求统一携带 `Accept-Language`。
 6. 按[主题接入步骤](../../common-frontend/docs/frontend-style/主题接入.md#1-css-变量定义位置)在 `main.js` 中于 Element Plus 基础 CSS 后导入深色变量和共享主题，在 `app.use()` 完成后、挂载前调用共享 `useTheme({ listenToConsole: true, storageKey: 'theme-mode' })` 返回的 `init()`。Layout 与页面使用 ADDP 主题变量，示例和覆盖规则统一维护在该专题。
 
@@ -286,7 +286,7 @@ export default createAPIClient(() => useAuthStore(), {
 
 **现象**：请求 URL 出现 `/api/v1/api/v1/...` 等重复前缀。
 
-**原因与处理**：共享 `createAPIClient()` 默认 `baseURL` 为 `/api/v1`，调用方只传 `/<module>/resources`，最终路径为 `/api/v1/<module>/resources`。核对浏览器实际请求、客户端前缀与调用参数，再按[前后端连接说明](#开发中的前端-后端连接)修正重复部分，不通过代理重写保留错误路径。
+**原因与处理**：核对浏览器实际请求、客户端前缀与调用参数，按[前后端连接说明](#开发中的前端-后端连接)修正重复拼接；不通过代理重写保留错误路径。
 
 ### 错误 8: 前端模块不跟随 Console 主题切换
 
@@ -315,7 +315,7 @@ export default createAPIClient(() => useAuthStore(), {
 - [ ] 配置 common-frontend 别名、依赖去重与 `overrides`，保持 Vue 单一实例
 - [ ] 新建组件前已检索并复用 `common-frontend` 和现有模块的规范实现，没有重复建设相同语义职责与交互契约的前端能力
 - [ ] 共享 AuthStore、路由守卫和 API Client 已接入，认证请求经同 origin Gateway
-- [ ] API Client 默认前缀 `/api/v1` 与调用方路径 `/<module>/resources` 拼接正确，没有重复前缀
+- [ ] 按[前后端连接说明](#开发中的前端-后端连接)核对实际请求 URL，控制面前缀没有重复拼接
 - [ ] 中英文、Element Plus locale、Console 语言同步和 `Accept-Language` 已接入，并按[国际化验证要求](addp国际化开发规范.md#验证方式)核对
 - [ ] Dockerfile 与模块 Nginx 配置符合[前端镜像规范](../../scripts/docs/前端镜像构建规范.md)
 
