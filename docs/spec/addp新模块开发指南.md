@@ -1,5 +1,18 @@
 # ADDP 新模块开发指南
 
+先读关键原则，再按下表选择工作入口；具体契约沿对应专题规范核对。
+
+## 阅读导航
+
+| 工作内容 | 入口 |
+| --- | --- |
+| 后端目录、数据库、配置、认证与脚本集成 | [后端接入步骤](#后端接入步骤) |
+| 监听、注册、Ready 门禁与退出注销 | [统一模块生命周期接入](#统一模块生命周期接入) |
+| 增加接口或变更数据库结构 | [API 端点](#添加新的-api-端点)、[数据库迁移](#数据库迁移) |
+| 创建前端工程或增加页面 | [新模块前端](#创建新模块前端)、[页面接入](#添加前端页面) |
+| 开发启动、独立模式与请求路径 | [前端开发工作流](#前端开发工作流)、[前后端连接](#开发中的前端-后端连接) |
+| 定位问题与核对交付 | [常见错误和排查](#常见错误和排查)、[检查清单](#检查清单) |
+
 ## ⚠️ 关键原则（必读）
 
 新模块开发必须遵循以下原则，确保与现有模块的一致性：
@@ -101,10 +114,11 @@
 
 4. **认证**:
 
-	- 复用 `common/middleware/auth` 调用 System AuthContext API
-	- 从 AuthContext 读取 Principal、会话模式、唯一当前 Tenant、Scope 和必要授权事实并传递给服务层
-	- 使用稳定 Permission 执行功能授权，禁止新增 `user_type` helper 或角色名称硬编码分支
-	- 不读取 `JWT_SECRET`，不在模块内自行解析用户 Token
+   - 复用 `common/middleware/auth` 调用 System AuthContext API
+   - 从 AuthContext 读取 Principal、会话模式、唯一当前 Tenant、Scope 和必要授权事实并传递给服务层
+   - 使用稳定 Permission 执行功能授权，禁止新增 `user_type` helper 或角色名称硬编码分支
+   - 不读取 `JWT_SECRET`，不在模块内自行解析用户 Token
+
 5. **国际化集成**:
 
    - 在 `<module>/backend/i18n/` 维护业务消息 key 与翻译文件，文件组织及注册方式见[后端规范](addp国际化开发规范.md#后端规范)。
@@ -176,9 +190,9 @@
 
 ### 数据库迁移
 
-结构变更沿用 owner Backend 的唯一启动迁移路径；同步模型、迁移、`SchemaVersion` 与 owner migration 测试，并由根 Make / CI 标准入口验证。禁止另建根目录集中 SQL、手工集中迁移入口或第二套启动迁移路线。
+结构变更按[数据库接入要求](#后端接入步骤)同步模型、迁移、版本与验证。禁止另建根目录集中 SQL、手工集中迁移入口或第二套启动迁移路线。
 
-已有版本化 migration 只新增向前版本，不修改已发布文件。`common/schema` 的事务锁与版本记录不替代 owner 的既有 SQL 迁移目录；Backend 独占迁移、Worker 只读校验及结构升级时的停止顺序，遵循[模块迁移规范](addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)。
+已有版本化 migration 只新增向前版本，不修改已发布文件。`common/schema` 的事务锁与版本记录不替代 owner 的既有 SQL 迁移目录；结构升级时的停止与恢复顺序遵循[模块迁移规范](addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)。
 
 修改 Meta 技术元数据时，同步核对[Meta 模型](../../meta/backend/internal/models/)、扫描读写与消费方契约。attributes 的标准分区、`schema_version` 和历史数据处理遵循[元数据 attributes 规范](addp元数据attributes规范.md)；旧 attributes 不保留兼容读写，应按规范清理后重新扫描，不在此另设数据迁移模板。
 
@@ -240,10 +254,9 @@ export default createAPIClient(() => useAuthStore(), {
 1. 在新的 `<module>/frontend/` 下按现有模块组织 Vue 3、Pinia 和 Element Plus 工程，调整包名、标题、业务视图和菜单。只参考需要的结构，不整目录复制已有模块的业务、依赖或构建产物。
 2. 使用根 `.node-version` 对应的 Node，提交模块 `package.json` 和一致的 `package-lock.json`，安装使用 `npm ci`。通过 `overrides` 及 Vite 别名、去重规则保持 Vue 单一实例；common-frontend 复用消费模块依赖，不独立安装自己的 `node_modules`。版本与依赖归属遵循[前端依赖规范](addp技术栈规约.md#前端依赖版本规范)。
 3. Vite 复用共享 `withModuleFrontend()`，在共享模块登记及 Console 的代理、菜单配置中接入新入口，Router 使用 `createWebHistory(import.meta.env.BASE_URL)`。正式基路径与跳转遵循[公开路由规范](addp前端路由与可恢复状态规范.md#二公开路由事实源)，开发首选值与实际端口遵循[端口规范](addp端口分配.md)，不另写跳转逻辑。
-4. 创建本模块 AuthStore 与路由守卫以调用共享认证能力，业务请求按[前后端连接说明](#开发中的前端-后端连接)接入共享客户端。按 Layout 嵌套路由组织页面，支持独立顶层界面和 Console iframe。
+4. 创建本模块 AuthStore 与路由守卫以调用共享认证能力，业务请求按[前后端连接说明](#开发中的前端-后端连接)接入共享客户端；页面与双模式 Layout 按[页面接入步骤](#添加前端页面)组织。
 5. 按[前端国际化接入清单](addp国际化开发规范.md#新增模块检查清单)创建 `src/i18n/zh-cn.json` 与 `en.json`，使用共享 `createAddpI18n()`；iframe 监听 Console 语言变化，Element Plus locale 跟随当前语言，请求统一携带 `Accept-Language`。
 6. 按[主题接入步骤](../../common-frontend/docs/frontend-style/主题接入.md#1-css-变量定义位置)在 `main.js` 中于 Element Plus 基础 CSS 后导入深色变量和共享主题，在 `app.use()` 完成后、挂载前调用共享 `useTheme({ listenToConsole: true, storageKey: 'theme-mode' })` 返回的 `init()`。Layout 与页面使用 ADDP 主题变量，示例和覆盖规则统一维护在该专题。
-
 7. 共享能力从 `@common-ui` 复用；地图能力按实际需要引入 `@common-ui-map` 及其依赖，不按模块名称预设依赖集合。别名、导出与组件契约见[共享前端说明](../../common-frontend/README.md)，颜色、布局及唯一所有权要求见[前端风格规范](../../common-frontend/docs/addp前端风格设计规范.md)。
 8. 按[镜像输入与运行阶段要求](../../scripts/docs/前端镜像构建规范.md#核心要求)维护 Dockerfile、静态输入和模块 Nginx 配置，登记[唯一产品镜像构建入口](../../scripts/build/README.md#build-imagessh)、根 Compose 服务及统一 Nginx 路由。Compose 消费该入口产出的镜像；宿主端口发布遵循[容器入口规则](addp端口分配.md#前端-docker-端口规则)，不为模块前端增加独立端口或 `full` profile。
 
@@ -299,7 +312,7 @@ export default createAPIClient(() => useAuthStore(), {
 开发新模块时，使用此清单确保所有步骤完成：
 
 **后端开发**:
-- [ ] 复制并调整目录结构 (`backend/cmd/server/`, `backend/internal/`)
+- [ ] 按[后端接入步骤](#后端接入步骤)建立目录结构（`backend/cmd/server/`、`backend/internal/`）
 - [ ] 按[配置接入要求](#后端接入步骤)核对事实来源、共享加载和必要字段校验
 - [ ] 按[数据库接入要求](#后端接入步骤)核对 DSN、schema 登记、owner 迁移及其测试与 CI 入口
 - [ ] Worker 只读校验及启动顺序符合[模块迁移规范](addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)
@@ -310,7 +323,7 @@ export default createAPIClient(() => useAuthStore(), {
 - [ ] 按[前端依赖接入步骤](#创建新模块前端)核对模块声明、锁文件和 Vue 单一实例
 - [ ] 登记开发首选端口，并消费标准启动入口解析的实际端口
 - [ ] 按[前端接入步骤](#创建新模块前端)核对共享 Vite 登记、Console 入口与部署路由，Router 基路径一致
-- [ ] 实现 Layout 组件（支持双模式）
+- [ ] 按[页面接入步骤](#添加前端页面)完成双模式 Layout 与所属父菜单激活
 - [ ] 按[主题接入步骤](../../common-frontend/docs/frontend-style/主题接入.md#主题系统实施指南)完成共享 CSS、挂载前初始化和 Layout 变量接入
 - [ ] 新建组件前已检索并复用 `common-frontend` 和现有模块的规范实现，没有重复建设相同语义职责与交互契约的前端能力
 - [ ] 共享 AuthStore、路由守卫和 API Client 已接入，认证请求经同 origin Gateway
@@ -321,7 +334,7 @@ export default createAPIClient(() => useAuthStore(), {
 **脚本集成**:
 - [ ] 启动、重启、停止与端口入口已按[开发脚本集成要求](#后端接入步骤)核对，参数、停止范围、进程归属和构建路径完整
 - [ ] 所有新增单元的构建、测试与 CI 登记可由自动发现命中，或已完成必要的显式登记
-- [ ] 按上述正文的标准门禁记录实际验证结果
+- [ ] 按[开发脚本集成要求](#后端接入步骤)的标准门禁记录实际验证结果
 - [ ] 验证独立启动 (`-your-module`)
 - [ ] 验证全量启动
 - [ ] 验证局部重启，核对所选停止范围，其他模块和公共依赖保持
