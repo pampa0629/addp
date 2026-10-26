@@ -213,6 +213,7 @@ func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
 // @Summary 执行 locator 快显动作 | Execute locator quick view action
 // @Description 前端提交 Resource Locator、后端 capability 返回的 action，以及可选的 MAX 源单位 source_unit（缺省米）和外部贴图声明 texture_files。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、三维模型 GLB、3D Tiles、S3M、3DGS KSplat、点云 COPC 和 PPTX 静态 PDF 快显。 | Execute a backend-declared quick view action by Resource Locator; optional MAX source_unit defaults to metres and texture_files declares external images. The backend creates and executes the corresponding task from capability facts, including PPTX static PDF generation.
 // @Description FTP／NFS／MinIO 的 IFC／3DS／DAE／OBJ 生成还须由 System 按当前 User 核验 manager.data_item.read 和精确文件组成；失败不可领取，不借用机器或创建人来源。 | FTP/NFS/MinIO IFC/3DS/DAE/OBJ generation additionally requires System to verify current User manager.data_item.read and the exact file composition; failed authorization cannot be claimed or replaced with machine/creator identity.
+// @Description GLB 来源组成不完整返回409与error_code=source_composition_incomplete，提示重新扫描目录；源读取授权未通过返回403与error_code=source_authorization_required。error为按请求语言翻译的安全提示，不返回内部授权或转换错误。 | Incomplete GLB source composition returns 409 with error_code=source_composition_incomplete and requires a directory rescan; failed source read authorization returns 403 with error_code=source_authorization_required. The error text is localized and excludes internal authorization or conversion details.
 // @Tags Manager
 // @Accept json
 // @Produce json
@@ -220,9 +221,9 @@ func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
 // @Success 202 {object} ExecuteQuickViewActionResponse "已提交执行 | Execution submitted"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "当前用户凭据失效 | Current User credential rejected"
-// @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
+// @Failure 403 {object} map[string]interface{} "功能权限不足或源数据读取授权未通过 | Functional permission or source data read authorization denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
-// @Failure 409 {object} map[string]interface{} "任务已有活动执行或缺少已有结果动作 | Active execution or existing result action required"
+// @Failure 409 {object} map[string]interface{} "源文件组成不完整、已有活动执行或缺少已有结果动作 | Incomplete source composition, active execution or existing result action required"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Failure 503 {object} map[string]interface{} "来源引擎不可用 | Source engine unavailable"
 // @x-addp-auth-mode "permission"
@@ -312,6 +313,9 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, commonClient.ErrManagerPreviewCredentialRejected) {
 			managerError(c, http.StatusUnauthorized, commoni18n.MsgUnauthorized)
+			return
+		}
+		if quickViewSourceError(c, err) {
 			return
 		}
 		if errors.Is(err, commonapi.ErrForbidden) {

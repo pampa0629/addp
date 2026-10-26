@@ -547,7 +547,7 @@ import {
   quickViewTileAdvisoryMessage as tileAdvisoryMessage,
   shouldShowQuickViewTileAdvisoryNotice
 } from '@/utils/quickViewTileAdvisory'
-import { quickViewReasonText } from '@/utils/quickViewReasonText'
+import { quickViewActionErrorText, quickViewReasonText } from '@/utils/quickViewReasonText'
 import {
   waitForRasterCOGExecution
 } from '@/utils/rasterCOGTask'
@@ -2230,7 +2230,7 @@ const handleGenerateModel3DGLB = async () => {
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
       console.error('提交三维模型 GLB 快显生成失败:', error)
-      ElMessage.error(t('manager.explorer.generateModel3DGLBFailed'))
+      ElMessage.error(quickViewActionErrorText(t, error, 'manager.explorer.generateModel3DGLBFailed'))
     }
   } finally {
     model3DGLBGenerationLoading.value = false

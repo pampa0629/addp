@@ -1,13 +1,26 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 
 	commonAPI "github.com/addp/common/api"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	manageri18n "github.com/addp/manager/i18n"
+	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
+
+func quickViewSourceError(c *gin.Context, err error) bool {
+	status, code, message := http.StatusForbidden, "source_authorization_required", manageri18n.MsgModel3DSourceAuthorizationRequired
+	if errors.Is(err, service.ErrModel3DGLBSourceCompositionIncomplete) {
+		status, code, message = http.StatusConflict, "source_composition_incomplete", manageri18n.MsgModel3DSourceCompositionIncomplete
+	} else if !errors.Is(err, service.ErrModel3DGLBSourceAuthorizationRequired) {
+		return false
+	}
+	c.JSON(status, gin.H{"error": commoni18n.T(c, message), "error_code": code})
+	return true
+}
 
 func managerError(c *gin.Context, status int, messageID string) {
 	commonAPI.ErrorResponse(c, status, commoni18n.T(c, messageID))

@@ -69,6 +69,29 @@ func TestModel3DGLBCandidateRetainsExactRefsAndOriginalDeclarations(t *testing.T
 	}
 }
 
+func TestModel3DGLBCandidateDistinguishesIncompleteCompositionFromIdentityMismatch(t *testing.T) {
+	for _, fault := range []string{"missing refs", "unfinished declaration", "identity"} {
+		t.Run(fault, func(t *testing.T) {
+			source, item := model3DGLBCandidateFixture("3ds")
+			switch fault {
+			case "missing refs":
+				delete(item.Attributes["item"].(map[string]any), "refs")
+			case "unfinished declaration":
+				item.Attributes["format_info"].(map[string]any)["3ds"].(map[string]any)["scan_complete"] = false
+			case "identity":
+				item.TenantID++
+			}
+			candidate, err := model3DGLBCandidateFromMeta(7, source, item)
+			if candidate != nil || !errors.Is(err, ErrModel3DGLBSourceAuthorizationRequired) {
+				t.Fatalf("invalid source accepted: candidate=%v err=%v", candidate, err)
+			}
+			if errors.Is(err, ErrModel3DGLBSourceCompositionIncomplete) != (fault != "identity") {
+				t.Fatalf("incorrect public error classification for %s: %v", fault, err)
+			}
+		})
+	}
+}
+
 func TestOBJModelCandidateRequiresFullMaterialClosureAndCopiesNativeFacts(t *testing.T) {
 	source, item := model3DGLBCandidateFixture("obj")
 	candidate, err := model3DGLBCandidateFromMeta(7, source, item)

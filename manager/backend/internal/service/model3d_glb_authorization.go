@@ -16,6 +16,7 @@ import (
 )
 
 var ErrModel3DGLBSourceAuthorizationRequired = fmt.Errorf("%w: model GLB execution source authorization required", commonAPI.ErrForbidden)
+var ErrModel3DGLBSourceCompositionIncomplete = fmt.Errorf("%w: model GLB source composition incomplete", ErrModel3DGLBSourceAuthorizationRequired)
 
 type model3DGLBSourceEngineClient interface {
 	GetEngineForTenant(context.Context, uint, uint) (*commonModels.Engine, error)

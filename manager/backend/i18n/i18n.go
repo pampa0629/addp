@@ -105,6 +105,8 @@ const (
 	MsgTaskExecutionBusy                     = "manager.error.task_execution_busy"
 	MsgModel3DTilesExecutionBusy             = "manager.error.model3d_tiles_execution_busy"
 	MsgExistingResultActionRequired          = "manager.error.existing_result_action_required"
+	MsgModel3DSourceAuthorizationRequired    = "manager.error.model3d_source_authorization_required"
+	MsgModel3DSourceCompositionIncomplete    = "manager.error.model3d_source_composition_incomplete"
 	MsgDataProfileUnsupported                = "manager.error.data_profile_unsupported"
 	MsgDataProfileUnavailable                = "manager.error.data_profile_unavailable"
 	MsgDataProfileSourceReadRequired         = "manager.error.data_profile_source_read_required"

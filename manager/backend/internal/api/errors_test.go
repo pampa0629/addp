@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,6 +12,47 @@ import (
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
+
+func TestQuickViewSourceErrorContractAndTranslations(t *testing.T) {
+	for _, lang := range []string{commoni18n.LangZhCN, commoni18n.LangEn} {
+		for _, composition := range []bool{false, true} {
+			err := service.ErrModel3DGLBSourceAuthorizationRequired
+			status, code := http.StatusForbidden, "source_authorization_required"
+			message := "无法取得原始模型及关联文件的读取授权，请核对源数据读取权限。"
+			if lang == commoni18n.LangEn {
+				message = "Could not obtain read authorization for the original model and its related files. Check source data read permissions."
+			}
+			if composition {
+				err = service.ErrModel3DGLBSourceCompositionIncomplete
+				status, code = http.StatusConflict, "source_composition_incomplete"
+				message = "原始模型及关联文件的组成信息不完整，请重新扫描模型所在目录后再生成快显。"
+				if lang == commoni18n.LangEn {
+					message = "The original model and related file composition is incomplete. Rescan the model directory before generating a quick view."
+				}
+			}
+			t.Run(lang+"/"+code, func(t *testing.T) {
+				w := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(w)
+				c.Request = httptest.NewRequest(http.MethodPost, "/quick-view/actions", nil)
+				ctx, _ := commoni18n.WithLanguage(c.Request.Context(), lang)
+				c.Request = c.Request.WithContext(ctx)
+				if !quickViewSourceError(c, fmt.Errorf("private upstream detail: %w", err)) || w.Code != status {
+					t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+				}
+				var body map[string]string
+				if json.Unmarshal(w.Body.Bytes(), &body) != nil || len(body) != 2 || body["error_code"] != code || body["error"] != message {
+					t.Fatalf("unexpected response: %s", w.Body.String())
+				}
+			})
+		}
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	if quickViewSourceError(c, service.ErrExistingResultActionRequired) || w.Body.Len() != 0 {
+		t.Fatal("source error mapper intercepted the independent overwrite confirmation")
+	}
+}
 
 func TestEngineUnavailableUsesStableTransientErrorContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)

@@ -293,6 +293,42 @@ for (const format of ['dae', '3ds', 'max']) {
   })
 }
 
+for (const locale of ['zh-cn', 'en']) {
+  for (const failure of [
+    { status: 403, code: 'source_authorization_required', text: ['无法取得原始模型及关联文件的读取授权，请核对源数据读取权限。', 'Could not obtain read authorization for the original model and its related files. Check source data read permissions.'] },
+    { status: 409, code: 'source_composition_incomplete', text: ['原始模型及关联文件的组成信息不完整，请重新扫描模型所在目录后再生成快显。', 'The original model and related file composition is incomplete. Rescan the model directory before generating a quick view.'] },
+    { status: 403, code: '', text: ['没有生成快显所需的权限，请核对功能权限及原始数据读取授权。', 'Quick view generation is not permitted. Check functional permissions and source data read authorization.'] },
+    { status: 403, code: 'source_authorization_required', overwrite: true, text: ['无法取得原始模型及关联文件的读取授权，请核对源数据读取权限。', 'Could not obtain read authorization for the original model and its related files. Check source data read permissions.'] }
+  ]) {
+    test(`explains GLB source failure ${failure.status} ${failure.code || 'generic'} overwrite=${!!failure.overwrite} in ${locale}`, async ({ page }) => {
+      const locator = 'addp://engine/12/path/doc/model.3ds?type=file&item_id=1203'
+      const backend = await installMockBackend(page, { locale, exchangeModel: { format: '3ds', locator } })
+      const requests = []
+      await page.route('**/api/v1/manager/quick-view/actions', route => {
+        requests.push(route.request().postDataJSON())
+        if (failure.overwrite && requests.length === 1) {
+          return fulfillJSON(route, { error: 'Existing result requires confirmation', code: 'existing_result_action_required' }, 409)
+        }
+        return fulfillJSON(route, { error: 'private upstream response detail', error_code: failure.code }, failure.status)
+      })
+      await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
+      const generate = page.getByRole('button', { name: locale === 'zh-cn' ? '生成 GLB 快显' : 'Generate GLB Quick View', exact: true })
+      await generate.click()
+      if (failure.overwrite) {
+        await page.locator('.el-message-box').getByRole('button', { name: locale === 'zh-cn' ? '确认覆盖' : 'Overwrite', exact: true }).click()
+      }
+      await expect(page.locator('.el-message--error')).toHaveText(failure.text[locale === 'zh-cn' ? 0 : 1])
+      await expect(page.locator('.el-message--error')).not.toContainText('private upstream')
+      await expect(generate).toBeEnabled()
+      expect(requests).toEqual([
+        { locator, action: 'generate_model_3d_glb' },
+        ...(failure.overwrite ? [{ locator, action: 'generate_model_3d_glb', existing_result_action: 'overwrite' }] : [])
+      ])
+      expect(backend.quickViewActions).toEqual([])
+    })
+  }
+}
+
 test('hides GLB generation when FTP source capability excludes the format', async ({ page }) => {
   const locator = 'addp://engine/12/path/doc/model.max?type=file&item_id=1203'
   const backend = await installMockBackend(page, { exchangeModel: { format: 'max', locator } })
@@ -740,10 +776,10 @@ async function installMockBackend(page, options = {}) {
     tasks
   }
 
-  await page.addInitScript(() => {
-    localStorage.setItem('addp-lang', 'zh-cn')
+  await page.addInitScript(locale => {
+    localStorage.setItem('addp-lang', locale)
     localStorage.setItem('theme-mode', 'light')
-  })
+  }, options.locale || 'zh-cn')
 
   await page.route('**/plugins/manifest.json', route => fulfillJSON(route, { scripts: exchangeModel?.bytes ? ['/plugins/model-3d-preview.js'] : options.keyValue ? ['/plugins/key-value-preview.js'] : recordSet ? ['/plugins/table-preview.js'] : [] }))
   await page.route('**/api/v1/**', async route => {

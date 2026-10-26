@@ -338,3 +338,9 @@ other = "The source version cannot be verified. Preview is paused; please retry 
 
 [manager.error.download_bundle_invalid]
 other = "The file composition contains invalid, duplicate or conflicting paths. Rescan metadata before downloading the bundle."
+
+[manager.error.model3d_source_authorization_required]
+other = "Could not obtain read authorization for the original model and its related files. Check source data read permissions."
+
+[manager.error.model3d_source_composition_incomplete]
+other = "The original model and related file composition is incomplete. Rescan the model directory before generating a quick view."

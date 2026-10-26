@@ -25,3 +25,16 @@ export function quickViewReasonText(t, reason) {
   const key = QUICK_VIEW_REASON_KEYS[normalized]
   return key ? t(key) : normalized
 }
+
+export function quickViewActionErrorText(t, error, fallbackKey) {
+  const status = error?.response?.status
+  const code = error?.response?.data?.error_code
+  if (status === 409 && code === 'source_composition_incomplete') {
+    return t('manager.explorer.quickViewSourceCompositionIncomplete')
+  }
+  if (status === 403 && code === 'source_authorization_required') {
+    return t('manager.explorer.quickViewSourceAuthorizationRequired')
+  }
+  if (status === 403) return t('manager.explorer.quickViewPermissionDenied')
+  return t(fallbackKey)
+}

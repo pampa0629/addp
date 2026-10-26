@@ -52,6 +52,9 @@ func model3DGLBCandidateFromMeta(tenantID uint, source Model3DGLBSourceConfig, i
 		commonJSON.String(item.Attributes, "storage", "physical_path") != item.FullName {
 		return nil, reject
 	}
+	// Identity has been checked. Remaining failures describe the observed file
+	// composition, rather than a decision about the current user's read grant.
+	reject = ErrModel3DGLBSourceCompositionIncomplete
 	type rawRef struct {
 		Path      string `json:"path"`
 		Role      string `json:"role"`
