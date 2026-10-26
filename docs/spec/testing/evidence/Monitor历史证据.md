@@ -1692,3 +1692,26 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 修复后同一标准入口30项退出0，`git diff --check`通过；沿原Make／Platform T0自动发现，无需新增登记。日志 `/tmp/addp-service-availability-selector-{red,green}.log`，原CI证据 `/tmp/addp-ci-20261025-180006/job-121231972455.log`，Job为 https://github.com/pampa0629/addp/actions/runs/40214288480/job/121231972455 。未将原失败改写为整轮通过，未重跑已有有效实库／Hosted，未查询或重跑远程CI、设置定时任务或操作个人服务；修复后的自然CI等专门会话回传。
 
 后续专门CI会话回传，本会话只读复核原始日志 `/tmp/addp-ci-20261025-200006/job-121248639865.log`：固定源码 `1fb051a50e7c46975411542a0e9340f7fcb97929` 的 [Platform consistency](https://github.com/pampa0629/addp/actions/runs/40219785488/job/121248639865) 实际执行到末尾，`ADDP_CI_SELECTED=true`、`ADDP_CI_STATUS=success`；其中停止流程相关61项及迁移runner契约30项均Ran/OK。停止流程、发现挂载证明及精确迁移选择三项修复已具备该固定源码的Linux标准T0证据。旧失败与本地Dev聚合超时保留；本结论仅覆盖该Job，不代表整个workflow、当前共享HEAD、Safari弹窗与规则写入、真实失联触发／恢复／通知或Hosted通过。本次仅归档回传证据，未触发／重跑／轮询CI或操作个人服务，清单相关功能仍部分实现。
+
+
+## 2026-10-26 Python 全量 HTTP 质量首批与公共 mTLS 前置失败
+
+用户确认 Common Python 统一 HTTP 观测与受保护来源、首接 Agent/Copilot 单进程 backend。实现提交 `0eca81f9b41c26b4f40375fa661067def49d56f2`：唯一 ASGI 生命周期同时服务全量 HTTP 指标与可选 Trace，删除原独立 Trace 中间件路径；指标不依赖 Trace 开关／采样。复用既有进程声明、开发／产品部署及 Platform 权限，仅发布身份、启动时间和 HTTP 指标，不发布 CPU／RSS／cgroup。每源最多 512 组详细标签、4 MiB 输出，超限整源失败、不截断；私有 Registry、串行 mTLS 来源、完整头读取及关闭边界沿同一实现验证。不新增 Tenant 字段、业务端口指标路由、权限或数据库。
+
+最小标准验证已执行：Common Python 全量 421 项通过、54 subtests 通过，1 项可选 GeoPandas 跳过；`make test-agent-eval ADDP_AGENT_PYTHON=/tmp/addp-p19-http-metrics-gates/agent ADDP_AGENT_EVAL_REPORT=/tmp/addp-p19-http-metrics-agent-verified.json` 通过；`make test-copilot COPILOT_PYTHON=/tmp/addp-p19-http-metrics-gates/copilot` 185 项通过。Common Python 使用仓库既有标准入口与外部依赖覆盖，不修改个人模块 venv；收尾仅移除未使用 import／多余空行后，HTTP 指标及共享 Trace 定向 23 项、21 subtests 再次通过。
+
+`make test-module MODULE=common GO_ONLY=1`、`make test-module MODULE=monitor GO_ONLY=1`、`make test-infra-runtime-log-lifecycle` 均退出 0；后者含 123 项本地 runner 前置及 64 项生命周期／预算测试。`python3 -m unittest scripts/test/metrics-deployment-config_test.py scripts/test/metrics-http-budget_test.py` 90 项通过；Python CI 登记 10 项及 11 owners、T2 登记 22／12／9／2 均通过。Agent／Copilot Swagger 路由覆盖 14／12 一致，公开 API 契约未变。`make test-changed` 已尝试但在 T2 环境前置拒绝（缺少 PostgreSQL／其他已选共享 owner 的连接输入），退出 2，不计全量聚合通过；不因此启动共享数据库或修复无关 owner。相关后续仍由既有 Platform Python／Agent／Copilot 与 Release Linux Metrics／Trace T2 门禁覆盖，本轮未查询、触发或认定其远程通过。
+
+唯一获准的功能窗口使用 `ADDP_HTTP_BUDGET_REPORT=/tmp/addp-p19-python-http-quality-20261026/functional.json make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=http-quality`，2026-10-26 14:18:31.754—14:20:46.220（Asia/Shanghai），134.467 秒，退出 2。先通过八类固定 promtool 窗口语义断言，随后公共前置 `real mTLS scrape and controlled job label` 在原 65 秒自然采样等待中失败：夹具样本为零、发现一个活动目标且 health=down／error_kind=tls；没有观测到 HTTP SD 失败计数。Go 业务源及 Python 实链阶段均未进入，Python 容器未创建，业务请求为零，不能计作 Python T2、告警实链或全套 Metrics 通过。
+
+本窗口采集 32 次资源检查，最大 0.260 秒，均在原完整 4 秒口径内；容器硬配额峰值 2.25 CPU／2.75 GiB，私有可写预算上界峰值约 1.44 GiB（含 tmpfs 配额预留，不能称为实占磁盘），未触发资源守卫。342 项输入摘要运行期间一致。标准退出清理及独立按当次 project 精确过滤的只读复核均确认容器／网络／卷为零、私有工作目录已删除。没有自动重试／续窗、运行 Hosted、重跑容量、设置定时或重启个人服务。共享 ASGI 调整后的真实 Trace T2 未运行，与旧混合链通过证据分开保留。
+
+证据目录 `/tmp/addp-p19-python-http-quality-20261026/`：`functional.json` SHA256 `e8772a2dd64d4d5053f6dd113395a66126c0467260d2536916510d6a4514d0f3`；`functional.log` SHA256 `81228778f9e8eb36b658ccce3f010e65ef7544ec5291b2359e10c6ef8cd76694`；`cleanup-audit.json` SHA256 `ba6b2e4daefac07de6eede702a8d792a9446923856502d7425c75d0614a35309`。同目录 `audit-summary.json` 保存分项日志摘要及资源／清理汇总。门禁早期的导入、夹具和登记失败日志仍保留，不能被最终确定性通过覆盖。
+
+### 公共采样失败的离线关联
+
+用户要求先离线调查、讨论最小修正及验收后再运行。核对失败窗口的输入 SHA256 与当前源，gate／probe／Compose、Prometheus 模板、配置生成器及中心服务定义六项完全一致。控制面发现已有活动目标；宿主机以 collector 身份通过 `https://localhost:<当次映射>/metrics`，中心却以当前容器 IP 采样失败。Prometheus 06:19:14 UTC 的匿名、外来 CA 与明文握手日志对应既有负向探针，不能用它们认定实际采样为 unknown authority。
+
+现有启动链先用不含当次容器 IP 的证书启动 Nginx，inspect IP 后重签来源证书并执行 `nginx -s reload`；当前就绪只看信号命令成功，没有核对实际呈送的证书已切换且覆盖该 IP。宿主机正向探针验证 localhost，初始／最终证书均含 localhost，不能辨认是否仍在呈送初始证书。因此“换证加载／IP SAN 校验差异”是优先核查假设，尚不是确认根因；也不能排除链校验、有效期或客户端证书等其他 TLS 子类。
+
+已确认的诊断缺口是 `fixture_scrape_diagnostic` 将所有 certificate／TLS 错误折叠为单一 tls；当次原始 lastError、实际呈送叶子证书及请求日志均未保留，清理后无法唯一还原。下一步待讨论：保持严格 TLS 与原资源／时间边界，在原标准入口补充封闭子类、预期／实际公开证书摘要及名称／链／有效期匹配结果、换证后真实 IP 就绪断言；任何未知仍明确未知。不得通过跳过校验、改 server_name、扩大信任或延长原采样等待绕过失败。本文仅记录调查和待确认方案，尚未实施或运行该修正。
