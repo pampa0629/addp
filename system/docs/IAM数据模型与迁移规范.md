@@ -396,20 +396,17 @@ Console 公开路由与 System standalone 路由使用同一模块内 path 和 q
 
 ## 十三、验证
 
-非数据库单元测试：
+测试分层与入口以[测试与验收规范](../../docs/spec/addp测试与验收规范.md#三标准入口)为准，以下命令均在仓库根目录执行，按验证目的选择：
 
-```bash
-cd system/backend
-go test ./internal/authorization/... ./internal/migration ./internal/iam/...
-```
+| 目的 | 标准入口 | 范围 |
+| --- | --- | --- |
+| Go 定位检查 | `make test-module MODULE=system GO_ONLY=1` | 仅 System Go T1，不替代完整 owner 门禁。 |
+| System 变更验证 | `make test-module MODULE=system` | 已登记的 T0–T3 owner 门禁。 |
+| IAM、Fosite Storage、API 与 migration PostgreSQL 回归 | `make test-system-iam-postgres` | 真实 PostgreSQL T2；分组选择沿用 `SYSTEM_IAM_POSTGRES_TEST_ARGS`。 |
 
-完整 IAM、Fosite Storage、API 和 migration PostgreSQL 发布门必须使用专用一次性数据库：
+数据库连接准备统一见[PostgreSQL 测试库与安全连接](../../scripts/infra/docs/PostgreSQL与测试库.md#postgresql-database-清单)及[T2 隔离规范](../../docs/spec/testing/T0-T3测试规范.md#t2)：显式提供已核实的 `ADDP_SYSTEM_POSTGRES_TEST_DSN`，本地仅使用 `addp_iam_test`，CI 使用 Job 独占且随 Job 销毁的数据库。门禁会重建测试库的 `system` 和 `common` Schema，禁止指向开发库或生产库，分包运行也须串行。
 
-```bash
-ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?...' make test-system-iam-postgres
-```
-
-该门禁会重建目标数据库的 `system` 和 `common` Schema，禁止指向开发库或生产库。
+下文专项分组只证明所选用例覆盖，不替代完整 T2 或 owner 门禁。未运行、失败、跳过项须分别记录，不计为通过；Go T1／PostgreSQL T2 不证明开发库已恢复，也不替代跨模块 Online 或业务运行验收。
 
 标准成员清单能力退出后，迁移 000140 停用其六项 Permission、删除全部 Role 关联并撤销受影响会话，并撤销 `tenant.standard_runtime` 的人员目录读取授权；已应用的历史迁移保持校验和不变。Catalog 的组织引用继续只允许 `addp-catalog` 调用，由 Catalog 专用解析方法处理。
 
