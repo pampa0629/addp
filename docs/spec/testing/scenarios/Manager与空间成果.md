@@ -450,7 +450,11 @@ Native候选树`83c8384f0ae808f1d9947b9126ded49c72289797`，原始日志SHA-256�
 
 实际Node24.11.1下完整`make test-raster-online-runner`退出0，32组Python子门禁及隔离身份夹具Go T1通过，壁钟1105.79秒；共享计数不累加唯一用例数，Go T1不计全量IAM或数据库集成。聚合候选树`83c8384f0ae808f1d9947b9126ded49c72289797`，原始日志SHA-256：`99efb31e84d2d301a66e561b849913343df26ca141565032043e666bbd8a7250`。聚合证据绑定其固定输入；最终runner与登记另已覆盖同期其他会话提交后的共享注册，Native与栅格标准recipe及本套件数值输入一致，不将较早聚合外推为后续整树复跑。所有成功门禁跟踪输入无漂移、无新增Python原生崩溃报告。
 
-实际Hosted由专门CI会话协调，本轮未手动触发、轮询、重跑、取消或设置定时；新套件的Linux全量与真实普通用户T4尚未回传，不计UI、容量或Hosted数值极限，数值极限继续单列既有Native证据。原产品cb2的Linux／Platform固定证据和本地Parquet失败记录分别保留。
+固定准备源码`0ea036e724c4f9bbd47e592150714dd1a8da2d1e`的[Linux Native Job 121371189978](https://github.com/pampa0629/addp/actions/runs/40260352611/job/121371189978)已核完整原始日志：实际标准`make test-geopython-workflow` **6701 passed／24 warnings／1162.25秒**，通过进度点同为6701，0失败／跳过／筛除；实际测试步骤和Job均success、`ADDP_CI_SELECTED=true`。Ubuntu24.04.5 x86_64／Python3.12.15／GDAL3.8.4；初始osgeo探测缺失后成功准备绑定并实际跑完全量，不是跳过。原始日志SHA-256：`79e97e790b78d64d86d5a2e59b7ab2dcdb5bf075e4fc195ffe28e7a1568666df`。同源码[Platform consistency Job 121371189977](https://github.com/pampa0629/addp/actions/runs/40260352611/job/121371189977)的标准`make test-platform`实际通过，已读2894行门禁主体并核成功步骤；原始日志SHA-256：`ef053a19544c2a51ffe1390ca5cf6b66a98943aac7508c06315b44dc11150aa5`。这两层仅关闭固定0ea的Linux Native／Platform，覆盖其已登记的剖面独立Native夹具，不能外推后续HEAD、切向产品或切向独立套件。
+
+原剖面套件12成功链／26次双语准确失败已由专门CI会话唯一受理：[Hosted Run 40265540763／Job 121387037149](https://github.com/pampa0629/addp/actions/runs/40265540763/job/121387037149)，workflow_dispatch attempt1，实际源码固定`06f9caf5637580d72e5ef571a8a14fd91d31cd46`，结果尚待回传，未计通过。预查5728到实际06的profile runner／physical fixture／hosted gate三文件逐字节不变；0ea到06的profile runner仅随已确认tangential枚举更新非法method双语提示，fixture与hosted gate不变。保留已受理运行，不取消、不重发；最终仍须按实际06原始归档和Runtime source独立严格审计，不能把0ea全量冒充06全量或Hosted证明。
+
+切向产品`6cdc38dff`及独立准备`1fa0e1810`继续单列待CI回传；本会话不手工触发／轮询／重跑／取消相关运行，不设置定时。原产品cb2固定证据、本地Parquet失败及834并行镶嵌double-free未确认根因记录分别保留，不计UI、容量或Hosted数值极限。
 
 
 ### DEM 切向曲率独立 Hosted 验收
