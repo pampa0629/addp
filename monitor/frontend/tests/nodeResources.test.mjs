@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { readFileSync } from 'node:fs'
-import { allResourceMetrics, hostLoadConnectionMetrics, hostListMetricSets, hostListMetrics, pressureMetrics, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows } from '../src/utils/nodeResources.js'
+import { existsSync, readFileSync } from 'node:fs'
+import { allResourceMetrics, hostLoadConnectionMetrics, hostListMetricSets, hostListMetrics, pressureMetrics, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows, resourceDetailGroups, filesystemResourceState, sortDiskResourceRows, visibleDiskResourceRows } from '../src/utils/nodeResources.js'
 import { supportsResourceComparison, resourceTrendComparison } from '../src/utils/nodeResources.js'
 import { resourceTrendMetrics, resourceTrendChartRows } from '../src/utils/nodeResources.js'
 
@@ -455,7 +455,7 @@ test('list views restore one canonical projection across detail without changing
 
 test('host list and detail have one device presentation owner and use the fixed device catalog', () => {
   const page = readFileSync(new URL('../src/views/NodeResources.vue', import.meta.url), 'utf8')
-  const inline = readFileSync(new URL('../src/components/HostDeviceObservation.vue', import.meta.url), 'utf8')
+  const inline = readFileSync(new URL('../src/components/HostResourceDetailObservation.vue', import.meta.url), 'utf8')
   const shared = readFileSync(new URL('../src/components/HostDeviceResources.vue', import.meta.url), 'utf8')
   for (const source of [page, inline]) {
     assert.match(source, /import HostDeviceResources from/)
@@ -467,4 +467,41 @@ test('host list and detail have one device presentation owner and use the fixed 
   assert.match(inline, /createLatestRequestScope/)
   assert.match(inline, /createAutoRefresh/)
   assert.doesNotMatch(inline, /setInterval|localStorage|sessionStorage|Promise.all/)
+})
+
+
+test('filesystem list preserves separate fixed capacity and inode budgets and full mount identities', () => {
+  assert.deepEqual(resourceDetailGroups.filesystem, [filesystemMetrics, inodeMetrics])
+  assert.deepEqual(resourceDetailGroups.filesystem.map(group => group.length), [5, 4])
+  const mount = { device: '/dev/a', mountpoint: '/data', fstype: 'ext4' }
+  const mounts = [mount, { ...mount, fstype: 'xfs' }, { ...mount, device: '/dev/b' }]
+  const reply = (metric, value) => ({ collection: { state: 'collecting', filesystem: 'available' }, series: mounts.map(dimensions => ({ metric_key: metric, dimensions, points: [{ data_state: 'valid', value }] })) })
+  const capacity = reply(filesystemMetrics[1].key, 1024), inodes = reply(inodeMetrics[3].key, 0)
+  inodes.series.reverse()
+  const state = filesystemResourceState(capacity, inodes)
+  assert.equal(state.rows.length, 3)
+  assert.equal(new Set(state.rows.map(row => row.key)).size, 3)
+  assert.equal(state.missingMessage, '')
+  for (const row of state.rows) {
+    assert.equal(row.metrics[filesystemMetrics[1].key].value, 1024)
+    assert.equal(row.metrics[inodeMetrics[3].key].value, 0)
+  }
+  assert.equal(filesystemResourceState(null, inodes, 'budget').rows.length, 3)
+  assert.equal(filesystemResourceState(capacity, null, '', 'unavailable').rows.length, 3)
+  assert.equal(filesystemResourceState(null, null, 'budget').missingMessage, '')
+  assert.equal(filesystemResourceState({ collection: { state: 'collecting', filesystem: 'not_collected' }, series: [] }, null).missingMessage, 'monitor.resources.filesystem.notCollected')
+})
+
+test('filesystem rows have one presentation owner shared by host list and detail', () => {
+  const page = readFileSync(new URL('../src/views/NodeResources.vue', import.meta.url), 'utf8')
+  const inline = readFileSync(new URL('../src/components/HostResourceDetailObservation.vue', import.meta.url), 'utf8')
+  const shared = readFileSync(new URL('../src/components/HostFilesystemResources.vue', import.meta.url), 'utf8')
+  for (const source of [page, inline]) {
+    assert.match(source, /import HostFilesystemResources from/)
+    assert.doesNotMatch(source, /data-testid="resource-filesystem-table"|prop="dimensions.mountpoint"/)
+  }
+  assert.equal((shared.match(/data-testid="resource-filesystem-table"/g) || []).length, 1)
+  assert.match(shared, /filesystemResourceState/)
+  assert.match(shared, /row-key="key"/)
+  assert.equal(existsSync(new URL('../src/components/HostDeviceObservation.vue', import.meta.url)), false)
 })

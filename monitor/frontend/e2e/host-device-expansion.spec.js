@@ -8,7 +8,7 @@ import { resourceBackend, node, secondNode, identity, resourcePermissions, setId
 const deviceReads = state => state.reads.filter(row => row.path.endsWith('/resource_observations'))
 const summaryReads = state => state.reads.filter(row => row.path.endsWith('/resource_summaries'))
 const button = (page, family, id = node) => page.getByTestId(`resource-list-${family}-${id}`)
-const panel = page => page.getByTestId('resource-device-expansion')
+const panel = page => page.getByTestId('resource-detail-expansion')
 const point = (value, data_state = 'valid') => ({ value, data_state })
 const disks = [
   { device: 'nbd10', points: { diskRead: point(0), diskWrite: point(0), diskBusy: point(0) } },
@@ -39,7 +39,7 @@ for (const locale of ['zh-cn', 'en']) test(`list loads only one chosen host and 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   const panelBounds = await panel(page).boundingBox(), listBounds = await page.getByTestId('resource-node-list').boundingBox()
   expect(panelBounds.width).toBeLessThanOrEqual(listBounds.width)
-  const refreshBounds = await panel(page).getByTestId('resource-device-refresh').boundingBox()
+  const refreshBounds = await panel(page).getByTestId('resource-detail-refresh').boundingBox()
   expect(refreshBounds.x).toBeGreaterThanOrEqual(listBounds.x)
   expect(refreshBounds.x + refreshBounds.width).toBeLessThanOrEqual(listBounds.x + listBounds.width + 1)
   const path = join(mkdtempSync(join(tmpdir(), 'addp-host-device-list-')), `${locale}.png`)
@@ -110,15 +110,15 @@ test('budget, malformed version and partial missing data clear old values while 
   await expect(panel(page).getByTestId('resource-network-table')).toHaveCount(0)
   await expect(page.getByTestId('resource-summary-memoryTotal').first()).toHaveText('16.00 GiB')
   state.networkMode = ''; wrongVersion = true
-  await panel(page).getByTestId('resource-device-refresh').click()
+  await panel(page).getByTestId('resource-detail-refresh').click()
   await expect(panel(page).getByTestId('resource-network-error')).toBeVisible()
   wrongVersion = false; partial = true
-  await panel(page).getByTestId('resource-device-refresh').click()
+  await panel(page).getByTestId('resource-detail-refresh').click()
   const values = panel(page).getByTestId('resource-network-table').locator('strong')
   await expect(values).toHaveText(['—', '2.00 KiB/s'])
   await expect(panel(page).getByTestId('resource-network-error')).toHaveCount(0)
   state.networkMode = 'unavailable'
-  await panel(page).getByTestId('resource-device-refresh').click()
+  await panel(page).getByTestId('resource-detail-refresh').click()
   await expect(panel(page).getByTestId('resource-network-error')).toBeVisible()
   await expect(panel(page).getByTestId('resource-network-table')).toHaveCount(0)
   expect(summaryReads(state)).toHaveLength(1)
@@ -132,10 +132,10 @@ test('uncollected network and stopped hosts preserve explicit unknown states', a
   await expect(panel(page).getByTestId('resource-network-empty')).toContainText('未提供网络接口指标')
   await expect(panel(page).getByTestId('resource-network-table')).toHaveCount(0)
   state.networkMode = 'network-idle'
-  await panel(page).getByTestId('resource-device-refresh').click()
+  await panel(page).getByTestId('resource-detail-refresh').click()
   await expect(panel(page).getByTestId('resource-network-table').locator('strong')).toHaveText(['0.00 B/s', '0.00 B/s'])
   state.networkMode = 'disconnected'
-  await panel(page).getByTestId('resource-device-refresh').click()
+  await panel(page).getByTestId('resource-detail-refresh').click()
   await expect(panel(page).getByTestId('resource-network-table')).toHaveCount(0)
   await expect(panel(page).getByTestId('resource-network-empty')).toBeVisible()
 })
@@ -168,6 +168,7 @@ test('only the expanded family refreshes, hidden pages pause, and a removed curr
   await page.clock.fastForward(15001)
   await expect.poll(() => deviceReads(state).length).toBe(2)
   await expect.poll(() => summaryReads(state).length).toBe(2)
+  await expect(panel(page).getByTestId('resource-network-table')).toBeVisible()
   expect(deviceReads(state).every(row => row.query.node_id === node && row.query.metrics === networkMetrics.map(metric => metric.key).join(','))).toBe(true)
   await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, value: true }); document.dispatchEvent(new Event('visibilitychange')) })
   const before = deviceReads(state).length

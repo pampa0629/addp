@@ -38,10 +38,10 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { InfoFilled } from '@element-plus/icons-vue'
-import { deviceMetricSets, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows, currentResourceValue, resourceMissingMessage } from '../utils/nodeResources'
+import { resourceDetailGroups, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows, currentResourceValue, resourceMissingMessage } from '../utils/nodeResources'
 
 const props = defineProps({
-  familyName: { type: String, required: true, validator: value => Object.hasOwn(deviceMetricSets, value) },
+  familyName: { type: String, required: true, validator: value => value !== 'filesystem' && Object.hasOwn(resourceDetailGroups, value) },
   observation: { type: Object, default: null }, errorKey: { type: String, default: '' }, loading: Boolean,
   selectedDevice: { type: String, default: '' }, showAllDisks: Boolean, canConfigure: Boolean,
   configureLabel: { type: String, default: 'monitor.resources.configure' }, formatValue: { type: Function, required: true }
@@ -53,7 +53,7 @@ const family = computed(() => {
   const rows = props.familyName === 'disk' ? sortDiskResourceRows(sourceRows) : sourceRows
   const compactRows = props.familyName === 'disk' ? visibleDiskResourceRows(rows, props.selectedDevice) : rows
   return {
-    name: props.familyName, metrics: deviceMetricSets[props.familyName], rows,
+    name: props.familyName, metrics: resourceDetailGroups[props.familyName][0], rows,
     visibleRows: props.familyName === 'disk' && props.showAllDisks ? rows : compactRows,
     collapsedCount: rows.length - compactRows.length, errorKey: props.errorKey,
     missingMessage: (['not_collected', 'failed'].includes(props.observation?.collection[props.familyName]) || !rows.some(row => Object.values(row.metrics).some(point => currentResourceValue(point) !== null))) ? resourceMissingMessage(props.observation?.collection, props.familyName) : ''

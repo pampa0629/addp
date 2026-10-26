@@ -41,7 +41,7 @@ export const networkMetrics = [
   { key: 'node.network.receive_bytes_per_second', name: 'networkReceive', unit: 'bytes_per_second', precision: 2, windowSeconds: 60 },
   { key: 'node.network.transmit_bytes_per_second', name: 'networkTransmit', unit: 'bytes_per_second', precision: 2, windowSeconds: 60 }
 ]
-export const deviceMetricSets = { disk: diskMetrics, network: networkMetrics }
+export const resourceDetailGroups = { disk: [diskMetrics], network: [networkMetrics], filesystem: [filesystemMetrics, inodeMetrics] }
 export const memoryMetrics = resourceMetrics.filter(metric => metric.key.startsWith('node.memory.'))
 export const allResourceMetrics = [...resourceMetrics, ...mountMetrics, ...diskMetrics, ...networkMetrics]
 export const hostListMetrics = resourceMetrics.filter(metric => ['node.cpu.logical_cores', 'node.cpu.busy_percent', 'node.memory.total_bytes', 'node.memory.used_percent', 'node.uptime_seconds'].includes(metric.key))
@@ -67,6 +67,11 @@ export function resourceDimensionRows(...values) {
     rows.get(key).metrics[series.metric_key] = series.points[0]
   }
   return [...rows.values()]
+}
+export function filesystemResourceState(capacity, inodes, capacityError = '', inodeError = '') {
+  const rows = resourceDimensionRows(capacity, inodes)
+  const missing = !capacityError && !inodeError && (['not_collected', 'failed'].includes(capacity?.collection.filesystem) || !rows.some(row => Object.values(row.metrics).some(point => currentResourceValue(point) !== null)))
+  return { rows, missingMessage: missing ? resourceMissingMessage(capacity?.collection, 'filesystem') : '' }
 }
 export const resourceRanges = { '5m': 300, '1h': 3600, '24h': 86400, '7d': 604800 }
 const defaultMetric = 'node.memory.used_percent'

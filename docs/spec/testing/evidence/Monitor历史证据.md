@@ -1873,6 +1873,17 @@ Monitor T1 实际覆盖停流零分母的归一、零请求权重聚合及活动
 原始日志和补丁／门禁／摘要保存在 `/tmp/addp-p19-python-startup-20261026-y1zoacsw/`。前一轮 66.598 秒本地目录失败和 `1ce3ddac7` 目录分类仅在各自已记范围有效，不是本次 Python 启动原因。本批只提交本会话 hunk，按既有 main 推送产生自然 CI；不手工触发、取消或重跑 Actions，不新开本地窗口。
 
 
+## 主机列表文件系统容量与 inode 展开（2026-10-26）
+
+沿已确认的按主机行内展开方案新增“文件系统”入口；最多展开当前授权页一台主机的一类资源。容量五项与 inode 四项沿既有顺序分别读取，按完整 `device／mountpoint／fstype` 对齐，保留各自查询／采样时间和错误，不改公式、不跨挂载汇总、不拆分超限组。列表和详情只使用 `HostFilesystemResources.vue` 这一份挂载表格；原内联实现删除，原设备读取组件收敛为 `HostResourceDetailObservation.vue`，旧文件及旧翻译命名删除。沿精确挂载进入既有趋势并保留列表上下文。
+
+本批同时修复行内读取组合漏传共享 `createAutoRefresh` 必需的 `visibilityChanged` 回调：原实现在隐藏／恢复时抛错，切回前台未重读；现按原契约补齐调用，不修改共享工具。新增场景验证隐藏暂停、恢复后两组重读且无浏览器异常，以及收起第一组时不继续读 inode、切换时迟到第二组不回填、第二组拒绝后清空列表并停读。
+
+Node `v24.11.1`：新增八项受控浏览器场景与原设备九项合计17项通过；进一步补充截图后的文件系统专项八项再次通过。覆盖中英／窄屏／横向滚动、同挂载点的设备或文件系统类型差异、乱序对齐、容量与 inode 独立预算／不可用错误、版本拒绝、合法零／缺样、未提供能力、精确趋势与返回、自动刷新及身份撤销。首轮三项失败为两项新测试漏写既有 inode 单位与上述回调问题，保留原失败日志，不计通过。最终标准入口 `make test-monitor-frontend` 退出0：127项单元测试、467项Playwright场景与Vite生产构建全部通过（保留原chunk大小提示）；前端源码及测试输入摘要在门禁前后核对一致，日志 `/tmp/addp-host-filesystem-final-gate.log`。沿已有 `make test-monitor-frontend`、Platform CI Monitor frontend 与 Playwright 自动发现，无新增测试入口或依赖。
+
+日志：`/tmp/addp-host-filesystem-targeted.log`（14通过／3失败）、`/tmp/addp-host-filesystem-targeted-v2.log`（17通过）、`/tmp/addp-host-filesystem-visual.log`（8通过）。截图目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-filesystem-list-NgAnEN`（中）与 `addp-host-filesystem-list-7grzkp`（英），已目视检查宽屏、窄屏及 inode 横向滚动。既有个人 Safari 工具观测限制未解除，且 Desktop VM 来源不提供 filesystem／inode，不能以受控数据证明个人环境真实分区读数。未运行新的后端／实源 T2、个人 Safari 或 Hosted 验收，未触发／轮询 CI、未设定时任务、未重启服务；CI 与 Hosted 继续等专门会话回传。
+
+
 ### 启动诊断的 Linux 实跑与同进程导入缓存修正（2026-10-26）
 
 固定 `ffc478e1a8ad0c099d6d21d32477552df32b9abe` 的自然 [HTTP quality Job](https://github.com/pampa0629/addp/actions/runs/40342629801/job/121641589201) 已结束失败。Go 告警子链再次实跑 150.34 秒通过。真实生产者回执首次确认两源均在 imports 阶段 module_missing，安装命令已返回成功；两个退出检查和发现范围恢复均执行，日志保留 Python 身份发布前的首异常，不再被 finally 的退出非零覆盖。日志前部配置 T0 的 prepare 模拟回执不是实际生产者结果，本结论取后部真实回执。

@@ -18,11 +18,11 @@
         <el-radio-button v-for="view in Object.keys(hostListMetricSets)" :key="view" :value="view">{{ t(`monitor.resources.listView.${view}`) }}</el-radio-button>
       </el-radio-group>
       <el-alert v-if="summaryErrorKey" :title="t(summaryErrorKey)" type="warning" show-icon :closable="false" data-testid="resource-summary-error" />
-      <el-table :data="nodes" row-key="node_id" :expand-row-keys="expandedDevice ? [expandedDevice.nodeID] : []" @expand-change="changeExpandedHost" v-loading="loading" :empty-text="t('monitor.resources.empty')" class="resource-node-list" data-testid="resource-node-list">
+      <el-table :data="nodes" row-key="node_id" :expand-row-keys="expandedDetail ? [expandedDetail.nodeID] : []" @expand-change="changeExpandedHost" v-loading="loading" :empty-text="t('monitor.resources.empty')" class="resource-node-list" data-testid="resource-node-list">
         <el-table-column type="expand" width="44">
           <template #default="{ row }">
-            <section v-if="expandedDevice?.nodeID === row.node_id" class="resource-device-expansion" :id="`resource-devices-${row.node_id}`" data-testid="resource-device-expansion" :aria-label="t('monitor.resources.devices.forHost', { name: row.display_name })">
-              <HostDeviceObservation :key="row.node_id + ':' + expandedDevice.family" :node="row" :family-name="expandedDevice.family" :identity="identity" :refresh="state.refresh" v-model:show-all-disks="expandedDevice.showAllDisks" :format-value="formatValue" @select="selectListDeviceTrend" @denied="deviceAccessDenied" />
+            <section v-if="expandedDetail?.nodeID === row.node_id" class="resource-detail-expansion" :id="`resource-details-${row.node_id}`" data-testid="resource-detail-expansion" :aria-label="t('monitor.resources.details.forHost', { name: row.display_name })">
+              <HostResourceDetailObservation :key="row.node_id + ':' + expandedDetail.family" :node="row" :family-name="expandedDetail.family" :identity="identity" :refresh="state.refresh" v-model:show-all-disks="expandedDetail.showAllDisks" :format-value="formatValue" @select="selectListResourceTrend" @denied="detailAccessDenied" />
             </section>
           </template>
         </el-table-column>
@@ -37,9 +37,9 @@
         </el-table-column>
         <el-table-column :label="t('monitor.resources.overview.collectionTitle')" min-width="150"><template #default="{ row }"><span :title="summaries.get(row.node_id) ? t('monitor.resources.sampledAt') + ': ' + date(summaries.get(row.node_id).collection.sampled_at) : ''">{{ t(!row.enabled ? 'monitor.resources.overview.disabled' : summaries.get(row.node_id) ? `monitor.resources.overview.collection.${summaries.get(row.node_id).collection.state}` : loading ? 'common.loading' : 'monitor.resources.overview.unavailable') }}</span></template></el-table-column>
         <el-table-column :label="t('monitor.resources.nodeState')" width="120"><template #default="{ row }">{{ t(row.enabled ? 'common.enabled' : 'common.disabled') }}</template></el-table-column>
-        <el-table-column :label="t('monitor.resources.devices.title')" min-width="190">
+        <el-table-column :label="t('monitor.resources.details.title')" min-width="290">
           <template #default="{ row }">
-            <el-button v-for="family in Object.keys(deviceMetricSets)" :key="family" text type="primary" :data-testid="`resource-list-${family}-${row.node_id}`" :aria-expanded="expandedDevice?.nodeID === row.node_id && expandedDevice.family === family" :aria-controls="`resource-devices-${row.node_id}`" @click="selectListDevices(row, family)">{{ t(`monitor.resources.devices.${family}`) }}</el-button>
+            <el-button v-for="family in Object.keys(resourceDetailGroups)" :key="family" text type="primary" :data-testid="`resource-list-${family}-${row.node_id}`" :aria-expanded="expandedDetail?.nodeID === row.node_id && expandedDetail.family === family" :aria-controls="`resource-details-${row.node_id}`" @click="selectListDetails(row, family)">{{ t(`monitor.resources.details.${family}`) }}</el-button>
           </template>
         </el-table-column>
         <el-table-column width="150" fixed="right"><template #default="{ row }"><el-button text type="primary" @click="navigate(`/node-resources/${row.node_id}`, state.query)">{{ t('monitor.resources.view') }}</el-button></template></el-table-column>
@@ -76,28 +76,7 @@
           </el-collapse>
         </article>
       </section>
-      <section v-if="instant" class="resource-filesystems" data-testid="resource-filesystems">
-        <h3>{{ t('monitor.resources.filesystem.title') }}</h3>
-        <p v-if="mountRows.length" class="resource-hint">{{ t('monitor.resources.filesystem.hint') }}</p>
-        <p v-if="mountRows.length && filesystems" class="resource-hint">{{ t('monitor.resources.queriedAt') }}: {{ date(filesystems.queried_at) }}</p>
-        <el-alert v-if="filesystemErrorKey" :title="t(filesystemErrorKey)" type="error" show-icon :closable="false" data-testid="resource-filesystem-error" />
-        <el-alert v-if="inodeErrorKey" :title="`${t('monitor.resources.filesystem.inode')}: ${t(inodeErrorKey)}`" type="error" show-icon :closable="false" data-testid="resource-inode-error" />
-        <p v-if="mountRows.length && inodes" class="resource-hint">{{ t('monitor.resources.filesystem.inode') }} · {{ t('monitor.resources.queriedAt') }}: {{ date(inodes.queried_at) }}</p>
-        <div class="resource-empty-status" data-testid="resource-filesystem-status">
-          <el-alert v-if="!loading && filesystemMissingMessage && ['not_collected', 'failed'].includes(filesystems?.collection.filesystem)" :title="t(filesystemMissingMessage)" type="info" :closable="false" data-testid="resource-filesystem-capability" />
-          <p v-else-if="!loading && filesystemMissingMessage" class="resource-hint" role="status" data-testid="resource-filesystem-empty">{{ t(filesystemMissingMessage) }}</p>
-          <el-button v-if="!loading && !mountRows.length && !filesystemErrorKey && !inodeErrorKey && canConfigure" text type="primary" @click="configureCollection">{{ t(instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure') }}</el-button>
-        </div>
-        <el-table v-if="mountRows.length" :data="mountRows" data-testid="resource-filesystem-table">
-          <el-table-column prop="dimensions.device" :label="t('monitor.resources.filesystem.device')" min-width="160" show-overflow-tooltip />
-          <el-table-column prop="dimensions.mountpoint" :label="t('monitor.resources.filesystem.mountpoint')" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="dimensions.fstype" :label="t('monitor.resources.filesystem.type')" min-width="100" show-overflow-tooltip />
-          <el-table-column v-for="metric in mountMetrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="170">
-            <template #default="{ row }"><strong>{{ formatValue(row.metrics[metric.key], metric) }}</strong><p v-if="row.metrics[metric.key]" class="resource-hint">{{ t(`monitor.resources.states.${row.metrics[metric.key].data_state}`) }}</p><p v-if="row.metrics[metric.key]" class="resource-hint">{{ date(row.metrics[metric.key].sampled_at) }}</p></template>
-          </el-table-column>
-          <el-table-column :label="t('monitor.resources.trend')" width="140" fixed="right"><template #default="{ row }"><el-button text type="primary" @click="selectFilesystem(row)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button></template></el-table-column>
-        </el-table>
-      </section>
+      <HostFilesystemResources v-if="instant" :capacity="filesystems" :inodes="inodes" :capacity-error-key="filesystemErrorKey" :inode-error-key="inodeErrorKey" :loading="loading" :can-configure="Boolean(canConfigure)" :configure-label="instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure'" :format-value="formatValue" @select="selectFilesystem" @configure="configureCollection" />
       <template v-if="instant">
         <HostDeviceResources v-for="family in deviceFamilies" :key="family.name" :family-name="family.name" :observation="family.value.value" :error-key="family.error.value" :loading="loading" :selected-device="state.metric.startsWith(`node.${family.name}.`) ? state.dimensions.device : ''" v-model:show-all-disks="showAllDisks" :can-configure="Boolean(canConfigure)" :configure-label="instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure'" :format-value="formatValue" @select="selectDeviceObservation" @configure="configureCollection" />
       </template>
@@ -162,7 +141,8 @@ import { createLatestRequestScope } from '../../../../common-frontend/basic/src/
 import ResourcePeriodComparison from '../components/ResourcePeriodComparison.vue'
 import HostResourceHeatmap from '../components/HostResourceHeatmap.vue'
 import HostDeviceResources from '../components/HostDeviceResources.vue'
-import HostDeviceObservation from '../components/HostDeviceObservation.vue'
+import HostFilesystemResources from '../components/HostFilesystemResources.vue'
+import HostResourceDetailObservation from '../components/HostResourceDetailObservation.vue'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -173,7 +153,7 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import { useAuthStore } from '../store/auth'
 import { nodeResourcesAPI as api } from '../api/nodeResources'
 import { isTargetUUID } from '../utils/monitoringTargets'
-import { hostListMetricSets, pressureMetrics, supportsResourceComparison, resourceTrendComparison, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceTrendMetrics, resourceTrendChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, deviceMetricSets, resourceRanges, resolveResourceRoute, trendParameters, validateResourceResponse, validateResourceTrendWindow } from '../utils/nodeResources'
+import { hostListMetricSets, pressureMetrics, supportsResourceComparison, resourceTrendComparison, validateResourceSummaries, validateCollection, currentResourceValue, resourceTrendMetrics, resourceTrendChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, filesystemResourceState, resourceDetailGroups, resourceRanges, resolveResourceRoute, trendParameters, validateResourceResponse, validateResourceTrendWindow } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
@@ -189,12 +169,11 @@ const listQuery = computed(() => { const { range, metric, compare, end, device, 
 const nodes = ref([]), total = ref(null), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null), inodes = ref(null), disks = ref(null), networks = ref(null)
 const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), inodeErrorKey = ref(''), diskErrorKey = ref(''), networkErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
 const showAllDisks = ref(false), trendSection = ref(null)
-const summaries = ref(new Map()), summaryErrorKey = ref(''), expandedDevice = ref(null)
+const summaries = ref(new Map()), summaryErrorKey = ref(''), expandedDetail = ref(null)
 const comparison = ref(null)
 const trendZoom = ref(null)
 const selectedMetric = computed(() => allResourceMetrics.find(item => item.key === state.value.metric))
-const mountRows = computed(() => resourceDimensionRows(filesystems.value, inodes.value))
-const filesystemMissingMessage = computed(() => !filesystemErrorKey.value && !inodeErrorKey.value && (['not_collected', 'failed'].includes(filesystems.value?.collection.filesystem) || !mountRows.value.some(row => Object.values(row.metrics).some(point => currentResourceValue(point) !== null))) ? resourceMissingMessage(filesystems.value?.collection, 'filesystem') : '')
+const filesystemMissingMessage = computed(() => filesystemResourceState(filesystems.value, inodes.value, filesystemErrorKey.value, inodeErrorKey.value).missingMessage)
 const deviceFamilies = [{ name: 'disk', metrics: diskMetrics, value: disks, error: diskErrorKey }, { name: 'network', metrics: networkMetrics, value: networks, error: networkErrorKey }]
 const trendMetrics = computed(() => [...resourceMetrics, ...(state.value.dimensions.mountpoint ? mountMetrics : state.value.dimensions.device ? state.value.metric.startsWith('node.network.') ? networkMetrics : diskMetrics : [])])
 const chartMetrics = computed(() => resourceTrendMetrics(state.value.metric))
@@ -251,20 +230,20 @@ function resumeLiveTrend() {
 function configureCollection() {
   return instant.value.target_id ? navigate(`/monitoring-targets/${instant.value.target_id}`, {}) : navigate('/monitoring-targets/new', { node_id: nodeID.value })
 }
-function selectListDevices(row, family) {
-  expandedDevice.value = expandedDevice.value?.nodeID === row.node_id && expandedDevice.value.family === family ? null : { nodeID: row.node_id, family, showAllDisks: false }
+function selectListDetails(row, family) {
+  expandedDetail.value = expandedDetail.value?.nodeID === row.node_id && expandedDetail.value.family === family ? null : { nodeID: row.node_id, family, showAllDisks: false }
 }
 function changeExpandedHost(row, expandedRows) {
   if (expandedRows.some(item => item.node_id === row.node_id)) {
-    if (expandedDevice.value?.nodeID !== row.node_id) expandedDevice.value = { nodeID: row.node_id, family: 'disk', showAllDisks: false }
-  } else if (expandedDevice.value?.nodeID === row.node_id) expandedDevice.value = null
+    if (expandedDetail.value?.nodeID !== row.node_id) expandedDetail.value = { nodeID: row.node_id, family: 'disk', showAllDisks: false }
+  } else if (expandedDetail.value?.nodeID === row.node_id) expandedDetail.value = null
 }
-function selectListDeviceTrend(row, metric) {
-  if (expandedDevice.value) navigate(`/node-resources/${expandedDevice.value.nodeID}`, { ...state.value.query, ...row.dimensions, metric })
+function selectListResourceTrend(row, metric) {
+  if (expandedDetail.value) navigate(`/node-resources/${expandedDetail.value.nodeID}`, { ...state.value.query, ...row.dimensions, metric })
 }
-function deviceAccessDenied(error) {
+function detailAccessDenied(error) {
   invalidate(); refreshBlocked.value = true; loading.value = false
-  expandedDevice.value = null; nodes.value = []; total.value = null; summaries.value = new Map(); summaryErrorKey.value = ''
+  expandedDetail.value = null; nodes.value = []; total.value = null; summaries.value = new Map(); summaryErrorKey.value = ''
   errorKey.value = resourceErrorKey(error)
 }
 function changePage(page) { return navigate(route.path, { ...state.value.query, page: page === 1 ? undefined : String(page) }, 'replace') }
@@ -327,7 +306,7 @@ async function reload({ automatic = false } = {}) {
           nextSummaryError = error.response?.data?.error_code === 'observability_query_budget_exceeded' ? 'monitor.resources.overview.budget' : resourceErrorKey(error)
         }
       }
-      if (expandedDevice.value && !value.data.some(row => row.node_id === expandedDevice.value.nodeID)) expandedDevice.value = null
+      if (expandedDetail.value && !value.data.some(row => row.node_id === expandedDetail.value.nodeID)) expandedDetail.value = null
       nodes.value = value.data; total.value = value.total
       summaries.value = nextSummaries; summaryErrorKey.value = nextSummaryError
     } else {
@@ -413,7 +392,7 @@ async function reload({ automatic = false } = {}) {
 watch([() => JSON.stringify([nodeID.value, state.value.range, state.value.end, state.value.dimensions, state.value.compare, chartMetrics.value.map(metric => metric.key)]), identity], () => { trendZoom.value = null }, { flush: 'sync' })
 watch([errorKey, trendErrorKey], ([error, trendError]) => { if (error || trendError) trendZoom.value = null }, { flush: 'sync' })
 watch([nodeID, identity], () => { showAllDisks.value = false }, { flush: 'sync' })
-watch([() => route.fullPath, identity], () => { expandedDevice.value = null; reload() }, { immediate: true, flush: 'sync' })
+watch([() => route.fullPath, identity], () => { expandedDetail.value = null; reload() }, { immediate: true, flush: 'sync' })
 onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); invalidate(); requestScope.dispose() })
 </script>
 
@@ -423,7 +402,7 @@ onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); invalidate(); r
 .resource-toolbar h2, .resource-toolbar h3 { flex: 1; }
 .resource-toolbar .el-select { width: 220px; max-width: 100%; }
 .resource-node-list { container-type: inline-size; }
-.resource-device-expansion { position: sticky; left: 0; width: 100cqw; max-width: 100%; box-sizing: border-box; padding: 0 20px 20px; min-width: 0; }
+.resource-detail-expansion { position: sticky; left: 0; width: 100cqw; max-width: 100%; box-sizing: border-box; padding: 0 20px 20px; min-width: 0; }
 .resource-list-views { margin-bottom: 16px; }
 .resource-search { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 16px 0; }
 .resource-search > .el-input { width: 320px; max-width: 100%; }
@@ -434,10 +413,7 @@ onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); invalidate(); r
 .resource-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
 .resource-card { min-width: 0; border: 1px solid var(--addp-border-color); border-radius: 8px; padding: 16px; background: var(--addp-bg-primary); overflow-wrap: anywhere; }
 .resource-card strong { display: block; margin-top: 12px; font-size: 22px; }
-.resource-trend, .resource-filesystems { margin-top: 24px; }
-.resource-empty-status { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
-.resource-empty-status > .el-alert { flex: 1; min-width: 0; margin: 0; }
-.resource-empty-status > .resource-hint { margin: 0; }
+.resource-trend { margin-top: 24px; }
 .resource-column-summary { font-weight: 400; line-height: 1.4; margin: 4px 0 0; }
 .resource-chart { display: flex; min-width: 0; }
 .resource-compare-control { margin: 16px 0; }
