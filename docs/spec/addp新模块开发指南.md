@@ -245,9 +245,9 @@ export default createAPIClient(() => useAuthStore(), {
 6. 按[主题接入步骤](../../common-frontend/docs/frontend-style/主题接入.md#1-css-变量定义位置)在 `main.js` 中于 Element Plus 基础 CSS 后导入深色变量和共享主题，在 `app.use()` 完成后、挂载前调用共享 `useTheme({ listenToConsole: true, storageKey: 'theme-mode' })` 返回的 `init()`。Layout 与页面使用 ADDP 主题变量，示例和覆盖规则统一维护在该专题。
 
 7. 共享能力从 `@common-ui` 复用；地图能力按实际需要引入 `@common-ui-map` 及其依赖，不按模块名称预设依赖集合。别名、导出与组件契约见[共享前端说明](../../common-frontend/README.md)，颜色、布局及唯一所有权要求见[前端风格规范](../../common-frontend/docs/addp前端风格设计规范.md)。
-8. 按[前端镜像构建规范](../../scripts/docs/前端镜像构建规范.md)维护 Dockerfile、静态输入和模块 Nginx 配置，登记唯一构建入口、根 Compose 服务及统一 Nginx 路由。构建上下文为仓库根目录，Compose 消费标准入口产出的镜像；根 Compose 只发布 Nginx 宿主端口，不为模块前端增加独立端口或 `full` profile。
+8. 按[镜像输入与运行阶段要求](../../scripts/docs/前端镜像构建规范.md#核心要求)维护 Dockerfile、静态输入和模块 Nginx 配置，登记[唯一产品镜像构建入口](../../scripts/build/README.md#build-imagessh)、根 Compose 服务及统一 Nginx 路由。Compose 消费该入口产出的镜像；宿主端口发布遵循[容器入口规则](addp端口分配.md#前端-docker-端口规则)，不为模块前端增加独立端口或 `full` profile。
 
-镜像必须支持正式入口下的 history 深层路由刷新，以及所属 assets、预览插件和 WASM 等资源路径。Manager 的特殊资源与本地依赖布局只在确有相同输入时参考，不作为所有模块的通用复制模板。
+正式入口的 history 深层路由、assets、预览插件和 WASM 等资源按[Nginx 与资源路径要求](../../scripts/docs/前端镜像构建规范.md#nginx-与资源路径)核对。Manager 的特殊资源与本地依赖布局只在确有相同输入时参考，不作为所有模块的通用复制模板。
 
 ## 常见错误和排查
 
@@ -316,7 +316,7 @@ export default createAPIClient(() => useAuthStore(), {
 - [ ] 共享 AuthStore、路由守卫和 API Client 已接入，认证请求经同 origin Gateway
 - [ ] 按[前后端连接说明](#开发中的前端-后端连接)核对实际请求 URL，控制面前缀没有重复拼接
 - [ ] 中英文、Element Plus locale、Console 语言同步和 `Accept-Language` 已接入，并按[国际化验证要求](addp国际化开发规范.md#验证方式)核对
-- [ ] Dockerfile 与模块 Nginx 配置符合[前端镜像规范](../../scripts/docs/前端镜像构建规范.md)
+- [ ] 按[前端镜像接入步骤](#创建新模块前端)核对构建输入、模块 Nginx 与 Compose／统一路由登记
 
 **脚本集成**:
 - [ ] 启动、重启、停止与端口入口已按[开发脚本集成要求](#后端接入步骤)核对，参数、停止范围、进程归属和构建路径完整
@@ -340,6 +340,6 @@ export default createAPIClient(() => useAuthStore(), {
 - [ ] Console 可以嵌入模块前端
 - [ ] 按[主题验证清单](../../common-frontend/docs/frontend-style/主题接入.md#验证清单)实际切换 Console 主题，核对模块界面与组件变化
 - [ ] 按[独立模式与正式入口说明](#运行单个前端-独立模式)验证顶层与 Console iframe 的登录、刷新和退出；直接访问开发端口会跳转到正式入口
-- [ ] 真实镜像下刷新受保护页面的深层 URL，并验证所属静态资源可达
+- [ ] 按[镜像验证要求](../../scripts/docs/前端镜像构建规范.md#新增模块与验证)在真实镜像下刷新受保护页面的深层 URL，并验证所属静态资源可达
 
 按[测试与验收规范](addp测试与验收规范.md)记录各层结果：登记静态检查、模块测试、真实镜像构建与浏览器运行验收分别陈述；未运行、失败或跳过项不能勾选为通过。联调需要重启开发服务时，由用户在自己的终端执行标准生命周期命令。
