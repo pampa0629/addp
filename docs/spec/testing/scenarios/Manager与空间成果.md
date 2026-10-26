@@ -504,3 +504,17 @@ Native候选树`83c8384f0ae808f1d9947b9126ded49c72289797`，原始日志SHA-256�
 本轮最小充分本地验证：`make test-raster-profile-curvature-online-runner` **72项／17.397秒**、`make test-raster-tangential-curvature-online-runner` **73项／21.893秒**及各自完整Online登记通过；`make test-python-ci-registration`通过46项、10项及11模块登记，共享计数不累加。标准`make test-geopython-workflow`配合`PYTEST_ADDOPTS='-k curvature --durations=10'` **626 passed／6358 deselected／53.35秒**，0失败／跳过，输入无漂移、无新增Python原生崩溃报告；候选树`3c804c7b76fc1c8058c2879664dc227be724b160`，不计新全量。Native日志SHA-256：`31b6ec33af668aaebf06c37fadac8a631dd30b1eec89f79a82ed280677cb7d53`；剖面runner：`18533b2d7209f794f086102bf048f45b784b2f7b55de53e33827bdf5d0c5b9be`，切向runner：`da7da71bf78deca37784421542511fbd682e2ab0ab7285a3f5b0f2546946b84d`，登记：`f85c9e460a41ee518ee184b1fe6652ca13b25900e302df6619e32dcac91770db`。修前回归准确拒绝第一份成果后过早等待；修后仍拒绝缺失／错误执行／源／目标／状态／关系类型／截断血缘，保留双语负例和污染反例。
 
 修后真实平台13成功／26失败及全部清理仍待CI会话协调新固定源码复验与原始归档审计，本会话不触发／轮询／重跑／取消运行或设置定时。数值极限继续Native单列，不计T4、UI或容量；原本地Parquet失败、834并行镶嵌double-free根因未确认记录与各固定Linux成功分别保留。
+
+## DEM 平面曲率独立 Hosted 验收
+
+已确认独立手工入口 `raster-plan-curvature-persistence`，普通 User 原12权限、非默认 Tenant、同源产品默认入口 Runtime、独立 NFS 与600秒业务预算。仅新增本套件测试、登记和既有文档，不修改产品曲率、权限或其他模块逻辑；实际 Linux／Hosted 运行继续由专门CI会话协调，本会话不触发、轮询或设置定时。
+
+15条成功COG链：三种高程／水平单位组合的直接plan，填洼接plan、重分类接plan，完全水平平地、非平地驻点、全无效、无完整有效邻域、小图，实际有效存储高程 `8z+64` 接plan，以及默认mean／显式mean／profile／tangential四条对照。519×515多波段跨512块样本显式选择第二波段，包含凹凸／鞍面／倾斜面、圆形等高线、普通可表示极小非零梯度、合法零、NoData、mask与部分透明。
+
+完整像元主预期由独立九点等权自由常数最小二乘及等高线单位切向的水平法向加速度计算，保留 `RTOL=1e-10`、`ATOL=1e-11`；不用产品卷积核或切向结果生成plan主预期。另核圆形等高线 `-1/r`、正高程缩放平移不变性、水平平地严格0、其他精确零梯度NoData及无阈值。默认／显式mean保存数据字节一致；实际保存四方法仅在非零梯度共同有效处核 `profile+tangential=2×mean` 及 `tangential=plan*g/sqrt(1+g²)`。每种物理／语义断言均有污染反例。
+
+13类非法输入各以中英文提交，共26次准确失败：非法波段、alpha、复数、旋转、南向、经纬度、缺CRS、缺网格、非法高程单位、单位冲突、未应用scale、未应用offset、非法method。核当前执行及curvature任务准确原因、提交语言冻结／反向查询不改写、Monitor失败、无发布／新增扫描／派生血缘。所有失败继续全量核源及先前成果、文件清理。
+
+每条成功严格核完整像元／mask、COG完整布局、按实际尺寸的最近邻金字塔、Float64／NaN／每米单位、源网格／CRS、artifact／物理／Meta相等正整数大小、自动扫描精确父执行／用户／租户／引擎及当前执行实际输入血缘／Monitor。成功保存后批量逐条等待精确血缘，不绕过普通收集器；保留不含响应、SQL、凭据或错误全文的封闭阶段进度，所有退出清理独立NFS／镜像／部署／Infra及私有工作区。
+
+测试入口为 `make test-raster-plan-curvature-online-runner`；真实GDAL夹具回归进入既有 `make test-geopython-workflow`，夹具／场景变更选择与手工专用workflow同时登记。极限64位、溢出／下溢、次正规数等继续单列Native，不计Hosted、UI、容量或任意影像认证。本地标准 `make test-raster-plan-curvature-online-runner` 通过74项／20.709秒及完整Online登记；标准Native入口以 `PYTEST_ADDOPTS="-k plan_curvature" make test-geopython-workflow` 通过107项／21.08秒（本套夹具69项、既有平面曲率38项），7146项明确筛除，0失败／跳过，输入无漂移，不能计为全量通过。`make test-python-ci-registration` 通过46项、10项及11模块／Online登记，共享计数不累加。Native／runner原始日志SHA-256分别为 `2eea43a21553ef0e8436ac93d40fb041d3abde863cd2773fcd61adb4da898f32`、`32c26208ce25ef6909140cddfe2065979c04a3b612191d9170738cd8db18b4eb`。正式Linux全量和本套Hosted仍待CI协调回传，不计通过；未运行UI、容量或全量IAM。
