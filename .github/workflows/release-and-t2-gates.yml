@@ -2056,9 +2056,20 @@ jobs:
           go-version-file: common/go.mod
           cache: false
       - name: Verify isolated metrics lifecycle
+        id: metrics_lifecycle
         env:
           MONITOR_METRICS_TEST_ARGS: --case=${{ matrix.case }}
+          ADDP_HTTP_BUDGET_REPORT: ${{ runner.temp }}/monitor-http-budget.json
         run: make test-monitor-metrics
+
+      - name: Preserve HTTP functional budget evidence
+        if: always() && matrix.case == 'http-quality' && steps.metrics_lifecycle.outcome != 'skipped'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: monitor-http-budget-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/monitor-http-budget.json
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Summarize metrics case
         if: always()

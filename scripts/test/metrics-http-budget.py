@@ -15,45 +15,78 @@ from datetime import datetime, timezone
 ROOT=Path(__file__).resolve().parents[2]
 
 
+class BudgetFailure(RuntimeError):
+    """Closed diagnostic facts only; never retain commands or daemon output."""
+    def __init__(self, code, stage, kind, **facts):
+        super().__init__(code)
+        self.detail = {'stage': stage, 'kind': kind, **facts}
+
+
 def resource_totals(rows, work_bytes, volume_bytes):
     cpu=memory=writable=tmpfs=0
     for row in rows:
         config=row['HostConfig'];state=row['State']
         if state.get('OOMKilled') or state.get('Status') in ('dead','restarting'):
-            raise RuntimeError('http_budget_container_failure')
+            raise BudgetFailure('http_budget_container_failure','resource_totals','container_failure')
         cores=config.get('NanoCpus',0)/1e9
         if not cores and config.get('CpuPeriod',0)>0:cores=config.get('CpuQuota',0)/config['CpuPeriod']
         limit=config.get('Memory',0)
-        if cores<=0 or limit<=0:raise RuntimeError('http_budget_hard_limit_missing')
+        if cores<=0 or limit<=0:raise BudgetFailure('http_budget_hard_limit_missing','resource_totals','hard_limit_missing')
         cpu+=cores;memory+=limit;writable+=row.get('SizeRw',0)
         for mount,options in (config.get('Tmpfs') or {}).items():
             match=re.search(r'(?:^|,)size=([0-9]+)([kmg]?)(?:,|$)',options.lower())
-            if not match:raise RuntimeError('http_budget_tmpfs_unbounded')
+            if not match:raise BudgetFailure('http_budget_tmpfs_unbounded','resource_totals','tmpfs_unbounded')
             tmpfs+=int(match[1])*{'':1,'k':1024,'m':1024**2,'g':1024**3}[match[2]]
     total=work_bytes+volume_bytes+writable+tmpfs
-    if cpu>4 or memory>4*1024**3 or total>=2*1024**3:raise RuntimeError('http_budget_limit')
-    return {'cpu_hard_limit':cpu,'memory_hard_limit_bytes':memory,'private_write_upper_bytes':total,
-            'work_bytes':work_bytes,'volume_bytes':volume_bytes,'writable_layers_bytes':writable,'tmpfs_reserved_bytes':tmpfs}
+    facts={'cpu_hard_limit':cpu,'memory_hard_limit_bytes':memory,'private_write_upper_bytes':total,
+           'work_bytes':work_bytes,'volume_bytes':volume_bytes,'writable_layers_bytes':writable,'tmpfs_reserved_bytes':tmpfs}
+    violations=[name for name,exceeded in [('cpu',cpu>4),('memory',memory>4*1024**3),('private_write',total>=2*1024**3)] if exceeded]
+    if violations:
+        raise BudgetFailure('http_budget_limit','resource_totals','limit_exceeded',violations=violations,measurements=facts)
+    return facts
 
 
 def sample(ownership):
     began=time.monotonic();end=began+4
-    def command(args):
+    def command(stage,args):
         remaining=end-time.monotonic()
-        if remaining<=0:raise RuntimeError('http_budget_sample_deadline')
-        value=subprocess.check_output(args,timeout=remaining)
-        if time.monotonic()>=end:raise RuntimeError('http_budget_sample_deadline')
-        return value.decode()
+        if remaining<=0:raise BudgetFailure('http_budget_sample_deadline',stage,'deadline')
+        try:
+            value=subprocess.check_output(args,timeout=remaining,stderr=subprocess.PIPE)
+        except subprocess.TimeoutExpired:
+            raise BudgetFailure('http_budget_sample_deadline',stage,'deadline') from None
+        except subprocess.CalledProcessError as failure:
+            missing=stage in {'inspect','volume_size'} and b'No such container' in (failure.stderr or b'')
+            raise BudgetFailure('http_budget_sample_command_failed',stage,
+                                'container_disappeared' if missing else 'command_failed',exit_code=failure.returncode) from None
+        except OSError:
+            raise BudgetFailure('http_budget_sample_command_failed',stage,'command_unavailable') from None
+        if time.monotonic()>=end:raise BudgetFailure('http_budget_sample_deadline',stage,'deadline')
+        try:
+            return value.decode()
+        except UnicodeError:
+            raise BudgetFailure('http_budget_sample_invalid',stage,'invalid_output') from None
+    def size(stage,args):
+        text=command(stage,args)
+        try:
+            result=int(text.split()[0])*1024
+            if result<0:raise ValueError()
+            return result
+        except (IndexError,ValueError):
+            raise BudgetFailure('http_budget_sample_invalid',stage,'invalid_size') from None
     project,work=ownership['project'],Path(ownership['work'])
     if not re.fullmatch(r'addp-metrics-t2-[0-9a-f]{32}',project) or not work.is_absolute() or not work.name.startswith('addp-metrics-t2.') or work.is_relative_to(ROOT):
         raise RuntimeError('http_budget_ownership_invalid')
-    ids=command(['docker','ps','-aq','--filter','label=com.docker.compose.project='+project]).split()
-    rows=json.loads(command(['docker','inspect','--size',*ids])) if ids else []
+    ids=command('inventory',['docker','ps','-aq','--filter','label=com.docker.compose.project='+project]).split()
+    try:
+        rows=json.loads(command('inspect',['docker','inspect','--size',*ids])) if ids else []
+    except json.JSONDecodeError:
+        raise BudgetFailure('http_budget_sample_invalid','inspect','invalid_output') from None
     volume=0
     for row in rows:
         if row.get('Config',{}).get('Labels',{}).get('com.docker.compose.service')=='prometheus' and row['State'].get('Running'):
-            volume=int(command(['docker','exec',row['Id'],'du','-sk','/prometheus']).split()[0])*1024
-    disk=int(command(['du','-sk',str(work)]).split()[0])*1024 if work.exists() else 0
+            volume=size('volume_size',['docker','exec',row['Id'],'du','-sk','/prometheus'])
+    disk=size('private_directory_size',['du','-sk',str(work)]) if work.exists() else 0
     return {**resource_totals(rows,disk,volume),'duration_seconds':time.monotonic()-began}
 
 
@@ -97,6 +130,7 @@ def main():
                 time.sleep(.1)
         except BaseException as failure:
             error=type(failure).__name__ if not isinstance(failure,RuntimeError) else str(failure)
+            if isinstance(failure,BudgetFailure):report['failure_detail']=failure.detail
             try:os.killpg(child.pid,signal.SIGTERM)
             except ProcessLookupError:pass
         finally:
@@ -119,6 +153,9 @@ def main():
             if result==0 and error is None and report['inputs_unchanged'] and report.get('cleanup_verified') and report.get('request_counts') and report['elapsed_seconds']<1200 and report.get('private_directory_removed') and report['samples']:
                 report['result']='passed'
             output.write_text(json.dumps(report,indent=2))
+    summary={key:report.get(key) for key in ('result','error_code','failure_detail','exit_code','elapsed_seconds',
+             'cleanup_verified','private_directory_removed','inputs_unchanged','request_counts')}
+    print('HTTP functional budget result: '+json.dumps(summary,sort_keys=True),flush=True)
     print('HTTP functional budget report: '+str(output),flush=True)
     return 0 if report['result']=='passed' else 1
 
