@@ -375,11 +375,8 @@ frontend/src/
 ## 开发注意事项
 
 1. **添加新的 API 端点**:
-   - 在 `internal/models/` 定义请求/响应结构
-   - 在 `internal/repository/` 添加数据访问方法
-   - 在`internal/service/` 实现业务逻辑
-   - 在 `internal/api/` 创建 HTTP 处理器
-   - 在 `internal/api/router.go` 注册路由（注意路由前缀为 `/api/v1/system/`）
+   - 分层职责、DTO 与共享能力遵循[API 实施规范](../docs/spec/api/文档与实施.md#后端实现分层与共享能力)，具体步骤见[新接口开发](../docs/spec/api/文档与实施.md#新接口开发)。
+   - System API 组在[路由入口](backend/internal/api/router.go)声明，前缀为 `/api/v1/system`；契约同步、生成与覆盖检查统一遵循[Swagger 强制同步要求](../docs/spec/addp-Swagger集成指南.md#强制同步要求)。
 
 2. **数据库迁移**:
    - 表归属、初始化顺序与失败处理统一见[System 迁移 Runner](docs/IAM数据模型与迁移规范.md#十system-统一迁移-runner)：IAM 及其约束依赖的基础资源表（含 `system.engines`）使用版本化 SQL，不进入 `AutoMigrate`；GORM 仅在迁移成功后初始化尚未迁入 Runner 的非基础业务表。失败不得以表存在性或默认数据兜底。
