@@ -382,9 +382,7 @@ frontend/src/
    - 在 `internal/api/router.go` 注册路由（注意路由前缀为 `/api/v1/system/`）
 
 2. **数据库迁移**:
-   - IAM 表以[迁移规范](docs/IAM数据模型与迁移规范.md#十二迁移演进)为准，必须使用显式版本化 SQL，不得加入 `AutoMigrate`。
-   - System 统一 migration runner 同时管理 IAM 表和 IAM 约束依赖的基础资源表；`system.engines` 不得再进入 `AutoMigrate`。
-   - 迁移 runner 成功后才允许执行剩余非基础业务表初始化，不能在启动过程中用表存在性或默认数据兜底。
+   - 表归属、初始化顺序与失败处理统一见[System 迁移 Runner](docs/IAM数据模型与迁移规范.md#十system-统一迁移-runner)：IAM 及其约束依赖的基础资源表（含 `system.engines`）使用版本化 SQL，不进入 `AutoMigrate`；GORM 仅在迁移成功后初始化尚未迁入 Runner 的非基础业务表。失败不得以表存在性或默认数据兜底。
    - 版本超前、checksum 不一致和 dirty 状态见[数据库迁移故障排查](../docs/guide/troubleshooting/数据库迁移.md#system-backend-因数据库迁移版本超前而启动超时)；75、113、130、240 号迁移的精确前置条件与允许修改范围见[定向恢复清单](docs/IAM数据模型与迁移规范.md#定向恢复)。
    - 实际开发库恢复须由用户自行执行或取得本次明确授权，流程见[共同操作与验收边界](../docs/guide/troubleshooting/数据库迁移.md#定向恢复的共同操作)。构建、隔离测试与只读核对不等于已恢复，恢复成功也不等于后续迁移和业务验收通过。
 
