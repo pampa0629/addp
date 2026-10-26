@@ -257,6 +257,7 @@ frontend/src/
 | API端点详情 | 对应单表文档 | API、接口、请求响应 |
 | 权限控制规则 | 对应单表文档 | 权限、访问控制、租户隔离 |
 | 数据加密机制 | engines表、数据库架构 | 加密、AES、bcrypt |
+| 平台审计归档 | [审计归档专题导航](#审计归档专题导航) | 归档、COMPLIANCE、可信根、保留、只读计划 |
 
 ### 架构说明
 
@@ -301,6 +302,14 @@ frontend/src/
 - [iam_security_policy表](docs/tables/iam_security_policy表.md) - IAM 平台安全策略与重启生效版本
 
 **重要**:修改表结构或 API 时,必须同步更新对应的单表文档。
+
+### 审计归档专题导航
+
+事务审计与对象归档分别验收，完整契约统一见[平台审计归档部署契约](docs/tables/audit_logs表.md#八平台审计归档部署契约)。
+
+- **权限与受控操作**：[在线查询授权](docs/tables/audit_logs表.md#六查询授权)、[三员权限与保留](docs/tables/audit_logs表.md#81-权限与保留)、[构建及私有配置](docs/tables/audit_logs表.md#86-构建与受控操作入口)。归档原始凭据不发放给 Tenant；正文至少保护 365 天，根与封段检查点自存储创建起至少保护 20 个 UTC 日历年，期限与 COMPLIANCE 要求按专题核验。
+- **协议与故障边界**：[基线、提交与故障](docs/tables/audit_logs表.md#82-基线提交与故障)、[v2 流式核验与只读 plan](docs/tables/audit_logs表.md#84-分段流式核验与只读到期计划已确认)。plan 不授权删除，实际清理、双人批准和回执尚未实现。
+- **验证与独立接收端**：[验收与实际边界](docs/tables/audit_logs表.md#83-验收与实际边界)、[B 的限定协议](docs/tables/audit_logs表.md#85-独立日志接收端-b-的限定协议非首期部署要求)。B 不是平台桶部署前提，也不随开发环境启动。隔离 T2 通过不证明真实 Infra 已部署、生产 WORM、最高管理员物理防篡改或全量访问日志；历史失败与后继通过分别保留。
 
 ## 核心功能实现
 
