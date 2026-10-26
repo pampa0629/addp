@@ -318,9 +318,9 @@ System 启动顺序固定为：
 6. 确认数据库版本等于嵌入最新版本，并记录新执行 migration 的文件名和摘要；
 7. 释放启动期连接，打开 GORM 运行时连接并启动 HTTP 服务；GORM 只管理尚未迁入统一 runner 的非基础业务表，不得管理 `system.engines`。
 
-等待锁的实例必须在获得锁后重新读取版本。migration 失败会保留 dirty 状态并阻止 System 启动，不允许自动回退、跳过版本或运行时兜底。
+等待锁的实例必须在获得锁后重新读取版本。migration 失败会保留 dirty 状态并阻止 System 启动；处理规则见[通用规则](#通用规则)。
 
-已执行 migration 的摘要记录在 `system.schema_migration_checksums`；该表只由 Migration Runner 维护，不是手工修改版本或跳过迁移的通道。当前版本由 `system/backend/internal/migration/sql` 和 `internal/migration/catalog_test.go` 共同约束；本文不固定抄写版本号。
+已执行 migration 的摘要记录在 `system.schema_migration_checksums`，只由 Migration Runner 维护。当前版本由 `system/backend/internal/migration/sql` 和 `internal/migration/catalog_test.go` 共同约束；本文不固定抄写版本号。
 
 `000231`、`000232` 的索引约束与回归边界见[具体迁移约束](#具体迁移约束)。
 
@@ -371,6 +371,7 @@ Console 公开路由与 System standalone 路由使用同一模块内 path 和 q
 ### 通用规则
 
 - 仅通过新的 `NNNNNN_name.up.sql` 向前迁移。已发布或已执行 migration 的版本号、文件名和内容摘要必须保持不变；概念收敛或方案重做也不得改写历史迁移。
+- migration 失败不允许自动回退、跳过版本或运行时兜底。
 - Permission/Role Catalog 变化由聚合器生成确定性输入，再进入新的向前 migration；
 - 破坏性模型切换不保留旧字段、双写、双读或兼容 query；
 - 需要保留的外部数据必须另行批准离线导入方案，不进入 System Runtime；
