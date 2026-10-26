@@ -1780,3 +1780,18 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 实源缺口：`make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources` 退出 2，在公共 mTLS 初次采样前置报 `Timed out: real mTLS scrape and controlled job label`，封闭诊断为 `error_kind=tls/health=down`。八项固定窗口 promtool 测试通过不等于整门禁通过；本批新增四指标真实摘要断言尚未执行。与本专题既有公共采样失败边界一致，不由现有诊断推断具体证书根因，不改 TLS／等待时长、不盲目重跑。日志 `/tmp/addp-host-load-t2.log`；项目 `addp-metrics-t2-786570fda5424602a680465383cd9092` 的容器／网络／卷在退出后分别按 Compose project 标签只读核验均为空，临时目录由标准入口清理。
 
 个人 Safari 已在原平台管理员会话看到新视图、切换后的 canonical URL 及列旁说明；运行中的旧 Monitor 后端仍按五项白名单拒绝新摘要，已恢复可用的核心资源视图。新后端的真实 Safari 数据、右侧 TCP 和刷新重读待用户沿 `./scripts/dev/restart.sh -monitor` 重启后复验，不计为新视图实源通过。未操作个人数据库、权限或服务进程，未手工触发／轮询 CI 或 Hosted，未设置定时任务；正式结果仍等专门会话回传。
+
+
+### 公共 mTLS 单次前置窗口与容器内换证修正（2026-10-26）
+
+用户确认先修 promtool 复用、实际 IP 换证生效与 TLS 分型，通过确定性门禁后只运行一次 20 分钟公共前置；4 CPU／4 GiB、私有可写 2 GiB、完整四秒、原 15 秒采样／65 秒等待保持，通过或失败均清理停止，不进入 Python 实链。实现 `603ba1ed766b5584a834194eba66864f4e6f1344` 新增原标准入口的 `--case=mtls-preflight`；promtool 使用既有 Prometheus 及专用只读规则目录，删除额外 run --rm；新前置在公共采样后退出并要求零业务计数及 TLS 证明。两次新增握手分别验证实际呈送摘要和 IP，每次 TCP／TLS 共享五秒，不重试；不改产品 API／权限或启动个人服务。
+
+窗口前配置／预算 100 项（配置 92、预算 8）通过，补充前置成功仍须 TLS 证明及准确零计数后，预算最新 9 项通过；Monitor Go 标准模块门禁通过，包含真实 fixture 调用的 fake Docker T1，验证只 exec 既有中心、输入可读与退出删除，不冒充 promtool 真实公式执行。生命周期标准入口 123 项 runner／既有 Go fixture、69 项聚合通过；T2 登记 22／12／9／2、shell 语法及 diff 检查通过。首轮确定性检查有一项旧分支正则断言未包含新 case 而失败，已同步并取得后续上述通过，不将旧失败算通过。
+
+唯一实跑：`ADDP_HTTP_BUDGET_REPORT=/tmp/addp-p19-mtls-preflight-20261026-hbhwfxwq/functional.json make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=mtls-preflight`，2026-10-26 18:00:38.942—18:00:54.356（Asia/Shanghai），15.414 秒，Make 退出 2／子入口退出 1，判失败。宿主原子替换证书的程序已经完成 stat／读取断言，随后来源容器的 `nginx -t` 明确报告 `/source/server.crt` 不存在，配置检查失败；尚未 reload、启动中心、执行固定窗口公式、新增 TLS 连接或自然采样。此结论只确认本轮跨宿主／VM 挂载路径的可见性失败；没有保留当时宿主／VM 详细文件状态，不据此推断更早初始采样 TLS 失败的唯一根因或归罪为已证实的 Docker 缺陷。
+
+本轮输入 343 项摘要无漂移，两次资源检查最长 0.171 秒，峰值硬配额 1 CPU／640 MiB，私有可写预算上界 285495296 字节，未触发资源守卫。只有 source／node／当次 PostgreSQL 等准备资源，未启动 Python 或 Go 业务源，业务计数回执尚未形成，不能借退出清理成功计为前置通过。标准清理及独立按当次 project 精确过滤的只读复核确认容器／网络／卷为 0、私有工作目录删除。没有重试、续窗、Hosted、容量或定时。
+
+失败后仅完成同范围的代码与确定性修正 `bd2ab54ef0662b09f64aa9bc7b4f59424f749100`：Nginx 唯一活动证书路径改为来源容器私有 tmpfs；通过 stdin 单次传递最终公开叶子，在 VM 内原子替换并记录文件标识／mtime 比较，私钥及信任根沿原输入不变；宿主文件仅刷新为下次启动引导输入，避免来源 stop/start 回退旧证书。删除在线宿主文件替换路线，不关闭 TLS、不扩大信任或增加容器／配额。发布回执即使后续配置失败也沿现有预算报告保留。T0 使用独立临时目录执行实际 stdin／cat／mv 生命周期，GNU stat 由受控模型模拟；不冒充 VM 文件系统实跑。最终配置／预算 101 项、生命周期 123 项 runner／既有 Go fixture及 70 项聚合、T2 登记和 shell／diff 均通过；修正后的 VM 换证与公共 mTLS 尚未运行，原单次窗口已消费，必须另行确认后才能再开。
+
+原始报告、日志、独立清理回执及摘要：`/tmp/addp-p19-mtls-preflight-20261026-hbhwfxwq/`；`follow-up/` 单列失败后的源码补丁和确定性验证，`audit-summary.json` 分开标注失败源码、后续修正和未验收范围，`artifact-sha256.json` 保留原始文件摘要。此前 Go→Python→Go／Link／日志的固定 SHA Linux Trace T2 证据继续独立有效；本轮不扩写为 Python HTTP 查询／告警实链或生产部署通过。本会话未推送本批，未手工触发 CI／Hosted、重启个人服务或更改个人数据与凭据。
