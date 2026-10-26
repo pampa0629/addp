@@ -123,11 +123,13 @@ func bearerToken(c *gin.Context) string {
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
 // @Failure 409 {object} map[string]interface{} "源版本变化或索引绑定不完整，需刷新元数据 | Source changed or index binding incomplete; refresh metadata"
 // @Failure 503 {object} map[string]interface{} "引擎或授权服务不可用 | Engine or authorization service unavailable"
+// @Header all {string} Cache-Control "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.data_item.read"]
 // @Router /preview [get]
 // @Security BearerAuth
 func (h *ExplorerHandler) Preview(c *gin.Context) {
+	commonAPI.NoStore(c)
 	tenantID := tenantIDFromContext(c)
 
 	// 解析 locator

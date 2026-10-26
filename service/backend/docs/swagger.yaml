@@ -19,6 +19,7 @@ definitions:
       scopePath:
         type: string
       sizeBytes:
+        format: int64
         type: integer
       storageBucket:
         type: string
@@ -2340,40 +2341,97 @@ paths:
       responses:
         "200":
           description: OK
+          headers:
+            Cache-Control:
+              description: no-store；查询结果及拒绝响应禁止缓存 | no-store; do not cache query results
+                or refusals
+              type: string
           schema:
             $ref: '#/definitions/github_com_addp_service_internal_models.QueryExecutionResult'
         "400":
           description: Bad Request
+          headers:
+            Cache-Control:
+              description: no-store；查询结果及拒绝响应禁止缓存 | no-store; do not cache query results
+                or refusals
+              type: string
           schema:
             additionalProperties:
               type: string
             type: object
         "401":
           description: Unauthorized
+          headers:
+            Cache-Control:
+              description: no-store；查询结果及拒绝响应禁止缓存 | no-store; do not cache query results
+                or refusals
+              type: string
           schema:
             additionalProperties:
               type: string
             type: object
         "403":
           description: Forbidden
+          headers:
+            Cache-Control:
+              description: no-store；查询结果及拒绝响应禁止缓存 | no-store; do not cache query results
+                or refusals
+              type: string
           schema:
             additionalProperties:
               type: string
             type: object
         "404":
           description: Not Found
+          headers:
+            Cache-Control:
+              description: no-store；查询结果及拒绝响应禁止缓存 | no-store; do not cache query results
+                or refusals
+              type: string
           schema:
             additionalProperties:
               type: string
             type: object
         "409":
           description: 脱敏选择已变更或不适用 | Masking selection changed or unavailable
+          headers:
+            Cache-Control:
+              description: no-store；查询结果及拒绝响应禁止缓存 | no-store; do not cache query results
+                or refusals
+              type: string
           schema:
             additionalProperties:
               type: string
             type: object
         "500":
           description: Internal Server Error
+          headers:
+            Cache-Control:
+              description: no-store；查询结果及拒绝响应禁止缓存 | no-store; do not cache query results
+                or refusals
+              type: string
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "501":
+          description: REST 查询协议未启用 | REST query protocol is disabled
+          headers:
+            Cache-Control:
+              description: no-store；查询结果及拒绝响应禁止缓存 | no-store; do not cache query results
+                or refusals
+              type: string
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: 查询服务未启用 | Query service is inactive
+          headers:
+            Cache-Control:
+              description: no-store；查询结果及拒绝响应禁止缓存 | no-store; do not cache query results
+                or refusals
+              type: string
           schema:
             additionalProperties:
               type: string

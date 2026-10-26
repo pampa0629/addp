@@ -2788,6 +2788,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
+                            }
                         }
                     },
                     "400": {
@@ -2795,6 +2801,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
+                            }
                         }
                     },
                     "401": {
@@ -2802,6 +2814,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
+                            }
                         }
                     },
                     "403": {
@@ -2809,6 +2827,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
+                            }
                         }
                     },
                     "404": {
@@ -2816,6 +2840,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
+                            }
                         }
                     },
                     "409": {
@@ -2823,6 +2853,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
+                            }
                         }
                     },
                     "422": {
@@ -2830,6 +2866,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
+                            }
                         }
                     },
                     "503": {
@@ -2837,6 +2879,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
+                            }
                         }
                     }
                 },

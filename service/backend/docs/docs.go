@@ -138,6 +138,12 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_service_internal_models.QueryExecutionResult"
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；查询结果及拒绝响应禁止缓存 | no-store; do not cache query results or refusals"
+                            }
                         }
                     },
                     "400": {
@@ -146,6 +152,12 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": {
                                 "type": "string"
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；查询结果及拒绝响应禁止缓存 | no-store; do not cache query results or refusals"
                             }
                         }
                     },
@@ -156,6 +168,12 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；查询结果及拒绝响应禁止缓存 | no-store; do not cache query results or refusals"
+                            }
                         }
                     },
                     "403": {
@@ -164,6 +182,12 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": {
                                 "type": "string"
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；查询结果及拒绝响应禁止缓存 | no-store; do not cache query results or refusals"
                             }
                         }
                     },
@@ -174,6 +198,12 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；查询结果及拒绝响应禁止缓存 | no-store; do not cache query results or refusals"
+                            }
                         }
                     },
                     "409": {
@@ -183,6 +213,12 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；查询结果及拒绝响应禁止缓存 | no-store; do not cache query results or refusals"
+                            }
                         }
                     },
                     "500": {
@@ -191,6 +227,42 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": {
                                 "type": "string"
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；查询结果及拒绝响应禁止缓存 | no-store; do not cache query results or refusals"
+                            }
+                        }
+                    },
+                    "501": {
+                        "description": "REST 查询协议未启用 | REST query protocol is disabled",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；查询结果及拒绝响应禁止缓存 | no-store; do not cache query results or refusals"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "查询服务未启用 | Query service is inactive",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；查询结果及拒绝响应禁止缓存 | no-store; do not cache query results or refusals"
                             }
                         }
                     }
@@ -4024,7 +4096,8 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "sizeBytes": {
-                    "type": "integer"
+                    "type": "integer",
+                    "format": "int64"
                 },
                 "storageBucket": {
                     "type": "string"

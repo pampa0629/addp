@@ -2781,6 +2781,12 @@
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
+                            }
                         }
                     },
                     "400": {
@@ -2788,6 +2794,12 @@
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
+                            }
                         }
                     },
                     "401": {
@@ -2795,6 +2807,12 @@
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
+                            }
                         }
                     },
                     "403": {
@@ -2802,6 +2820,12 @@
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
+                            }
                         }
                     },
                     "404": {
@@ -2809,6 +2833,12 @@
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
+                            }
                         }
                     },
                     "409": {
@@ -2816,6 +2846,12 @@
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
+                            }
                         }
                     },
                     "422": {
@@ -2823,6 +2859,12 @@
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
+                            }
                         }
                     },
                     "503": {
@@ -2830,6 +2872,12 @@
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store；预览响应禁止缓存 | no-store; do not cache preview responses"
+                            }
                         }
                     }
                 },

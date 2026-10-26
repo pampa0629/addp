@@ -32,3 +32,15 @@ func TestExportEarlyRefusalsAreNotCacheable(t *testing.T) {
 		})
 	}
 }
+
+func TestPreviewMissingLocatorIsNotCacheable(t *testing.T) {
+	router := gin.New()
+	router.GET("/preview", NewExplorerHandler(nil, nil, nil, nil, nil).Preview)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/preview", nil))
+	response := recorder.Result()
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest || response.Header.Get("Cache-Control") != "no-store" {
+		t.Fatalf("preview validation refusal may be cached: status=%d headers=%v", response.StatusCode, response.Header)
+	}
+}

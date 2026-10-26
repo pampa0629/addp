@@ -410,9 +410,13 @@ func (h *QueryServiceHandler) RefreshSourceSnapshot(c *gin.Context) {
 // @Failure 403 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @Failure 501 {object} map[string]string "REST 查询协议未启用 | REST query protocol is disabled"
+// @Failure 503 {object} map[string]string "查询服务未启用 | Query service is inactive"
+// @Header all {string} Cache-Control "no-store；查询结果及拒绝响应禁止缓存 | no-store; do not cache query results or refusals"
 // @x-addp-auth-mode "public"
 // @Router /api/query/{serviceName}/query [post]
 func (h *QueryServiceHandler) QueryData(c *gin.Context) {
+	commonapi.NoStore(c)
 	ensureQueryRequestID(c)
 	serviceName := c.Param("serviceName")
 

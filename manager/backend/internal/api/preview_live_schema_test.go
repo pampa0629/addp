@@ -72,6 +72,9 @@ func TestPreviewRejectsLiveSchemaDriftBeforeReadingAndRecovers(t *testing.T) {
 	request := func() *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, httptest.NewRequest("GET", "/preview?locator="+urlQueryEscape("addp://engine/9/path/business/cards?type=table&item_id=1"), nil))
+		if w.Result().Header.Get("Cache-Control") != "no-store" {
+			t.Fatalf("preview delivery/refusal may be cached: status=%d", w.Code)
+		}
 		return w
 	}
 	assertPhone := func(w *httptest.ResponseRecorder, want string) {

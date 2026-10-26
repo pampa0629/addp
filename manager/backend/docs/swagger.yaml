@@ -5092,43 +5092,75 @@ paths:
       responses:
         "200":
           description: 预览数据 | Preview data
+          headers:
+            Cache-Control:
+              description: no-store；预览响应禁止缓存 | no-store; do not cache preview responses
+              type: string
           schema:
             additionalProperties: true
             type: object
         "400":
           description: 请求参数错误 | Bad request
+          headers:
+            Cache-Control:
+              description: no-store；预览响应禁止缓存 | no-store; do not cache preview responses
+              type: string
           schema:
             additionalProperties: true
             type: object
         "401":
           description: 凭据无效 | Invalid credential
+          headers:
+            Cache-Control:
+              description: no-store；预览响应禁止缓存 | no-store; do not cache preview responses
+              type: string
           schema:
             additionalProperties: true
             type: object
         "403":
           description: 无权访问 | Access denied
+          headers:
+            Cache-Control:
+              description: no-store；预览响应禁止缓存 | no-store; do not cache preview responses
+              type: string
           schema:
             additionalProperties: true
             type: object
         "404":
           description: 资源不存在 | Resource not found
+          headers:
+            Cache-Control:
+              description: no-store；预览响应禁止缓存 | no-store; do not cache preview responses
+              type: string
           schema:
             additionalProperties: true
             type: object
         "409":
           description: 源版本变化或索引绑定不完整，需刷新元数据 | Source changed or index binding incomplete;
             refresh metadata
+          headers:
+            Cache-Control:
+              description: no-store；预览响应禁止缓存 | no-store; do not cache preview responses
+              type: string
           schema:
             additionalProperties: true
             type: object
         "422":
           description: 轨迹点数或扫描预算超限，或源数据无效 | Trajectory point/scan budget exceeded
             or invalid source data
+          headers:
+            Cache-Control:
+              description: no-store；预览响应禁止缓存 | no-store; do not cache preview responses
+              type: string
           schema:
             additionalProperties: true
             type: object
         "503":
           description: 引擎或授权服务不可用 | Engine or authorization service unavailable
+          headers:
+            Cache-Control:
+              description: no-store；预览响应禁止缓存 | no-store; do not cache preview responses
+              type: string
           schema:
             additionalProperties: true
             type: object
