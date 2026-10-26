@@ -77,8 +77,8 @@
 
    - 使用 PostgreSQL schema 隔离 (所有模块使用 PostgreSQL 和专用 schemas)
    - 使用 GORM 作为 ORM；连接数据库与执行迁移分离，模块 schema 只由 owner Backend 的启动迁移负责
-   - 在 `scripts/infra/init-postgresql.sql` 登记模块 schema 与注释；表、约束和索引由 owner 通过 `common/schema` 的事务锁与版本记录迁移，变更同步递增 `SchemaVersion`
-   - Worker 只校验模块及公共 schema 版本，不执行 DDL；Backend Ready 后再启动所属 Worker。版本与启动顺序见[生命周期规范](addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)
+   - 在 `scripts/infra/init-postgresql.sql` 登记模块 schema 与注释，登记不能代替 owner 迁移；表、约束和索引由 owner 通过 `common/schema` 的事务锁与版本记录迁移，变更同步递增 `SchemaVersion`，并提供 migration 测试和 CI 入口
+   - Worker 只校验模块及公共 schema 版本，缺失或不匹配即明确失败，不执行 DDL 或自行修复版本；Backend Ready 后再启动所属 Worker。版本与启动顺序见[生命周期规范](addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)
    - 使用 `updated_at` 触发器进行时间戳跟踪
 
 3. **配置管理**（必须遵循）:
@@ -275,7 +275,7 @@ export default createAPIClient(() => useAuthStore(), {
 
 ### 错误 2: "schema does not exist"
 
-核对连接的 database、owner `search_path`、Backend 迁移结果和版本记录。初始化脚本中的 schema 登记不能代替 owner 迁移；Worker 遇到缺失或不匹配应明确失败，不能自行创建表或修复版本。按[模块迁移顺序](addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)处理。
+核对实际连接的 database、owner `search_path`、Backend 迁移结果和版本记录，再按[数据库接入要求](#后端接入步骤)与[模块迁移顺序](addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)定位处理。
 
 ### 错误 3: 重启脚本不识别新模块
 
@@ -287,7 +287,7 @@ export default createAPIClient(() => useAuthStore(), {
 
 ### 错误 5: DSN 缺少 search_path 参数
 
-检查 DSN 是否包含正确的 owner `search_path`，以及模块迁移是否在正确 schema 执行。发现表落入 `public` 时，先查清现有数据和迁移状态，再由 owner 处理；不要以追加第二套启动建表路径掩盖问题。
+按[数据库接入要求](#后端接入步骤)检查 DSN 的 owner `search_path` 与迁移目标。发现表落入 `public` 时，先查清现有数据和迁移状态，再由 owner 处理；不要以追加第二套启动建表路径掩盖问题。
 
 ### 错误 6: 模块 Alive 但未 Ready，Gateway 无法路由
 
@@ -319,10 +319,8 @@ export default createAPIClient(() => useAuthStore(), {
 **后端开发**:
 - [ ] 复制并调整目录结构 (`backend/cmd/server/`, `backend/internal/`)
 - [ ] 配置使用 `commonConfig.LoadEnv()` 和 `BaseConfig`
-- [ ] DSN 包含 `search_path` 参数
-- [ ] 在 `init-postgresql.sql` 中登记 owner schema
-- [ ] owner Backend 通过 `common/schema` 执行唯一版本化迁移，结构变更递增 `SchemaVersion`，并有 migration 测试和 CI 入口
-- [ ] Worker 只读校验 owner 与公共 schema 版本，Backend Ready 后启动，不执行 DDL
+- [ ] 按[数据库接入要求](#后端接入步骤)核对 DSN、schema 登记、owner 迁移及其测试与 CI 入口
+- [ ] Worker 只读校验及启动顺序符合[模块迁移规范](addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)
 - [ ] 实现唯一存活和就绪端点 (`/health/live`、`/health/ready`)
 - [ ] 按[统一模块生命周期接入](#统一模块生命周期接入)完成注册、心跳、Ready 门禁和注销
 
