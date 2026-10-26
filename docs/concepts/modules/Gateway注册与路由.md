@@ -15,7 +15,7 @@ Gateway 作为 ADDP 的统一入口，负责请求路由和转发。ADDP 采用 
 ```mermaid
 graph TB
     subgraph "1. 模块启动注册"
-        Manager[Manager<br/>Backend] -.监听就绪后注册.-> SystemReg[System<br/>模块注册表]
+        Manager[Manager<br/>Backend] -.监听就绪后注册.-> SystemReg[System Backend<br/>模块注册中心]
         Meta[Meta<br/>Backend] -.监听就绪后注册.-> SystemReg
         Transfer[Transfer<br/>Backend] -.监听就绪后注册.-> SystemReg
         Other[其他模块...] -.监听就绪后注册.-> SystemReg
@@ -31,14 +31,17 @@ graph TB
     end
 
     subgraph "3. Gateway 动态发现"
-        Gateway[Gateway] -.revision 长轮询.-> RegAPI
+        Gateway[Gateway] -.SYSTEM_URL 直连与 revision 长轮询.-> RegAPI
         Gateway --> Discovery[ModuleDiscovery<br/>模块发现管理器]
         Discovery --> Proxies[动态代理映射<br/>module -> ServiceProxy]
     end
 
     subgraph "4. 请求路由"
         Client[客户端请求<br/>/api/v1/:module/*] --> Gateway
-        Gateway --> DynamicRoute{动态路由查找}
+        Gateway --> RouteType{目标模块}
+        RouteType -->|system| SystemProxy[部署引导代理<br/>SYSTEM_URL]
+        SystemProxy --> SystemReg
+        RouteType -->|业务模块| DynamicRoute{动态路由查找}
         DynamicRoute -->|找到| Forward[转发到模块代理]
         DynamicRoute -->|未找到或无可用 Backend| Unavailable[503 模块不可用]
     end
@@ -51,7 +54,7 @@ graph TB
 
     class Manager,Meta,Transfer,Other backend
     class SystemReg,DefinitionTable,InstanceTable,RegAPI system
-    class Gateway,Discovery,Proxies,DynamicRoute,Forward,Unavailable gateway
+    class Gateway,Discovery,Proxies,RouteType,SystemProxy,DynamicRoute,Forward,Unavailable gateway
     class Client client
 ```
 
@@ -103,7 +106,7 @@ graph TB
 - 多个 Backend 实例的选择必须来自同一发现结果，不能回退到环境变量中的第二套路由事实源
 
 **5. 单一路由机制**:
-- 模块动态注册表是 Gateway 业务模块路由的唯一事实源。
+- 模块动态注册表是 Gateway 业务模块路由的唯一事实源；`/api/v1/system/*` 固定使用 `SYSTEM_URL` 引导代理，不依赖 System 自注册实例的租约，也不作为业务模块发现失败时的 fallback。两类请求仍由各 owner 执行认证与授权。
 - System 注册中心暂时不可达时，Gateway 可以继续使用最近一次成功且尚未超过本地失效窗口的发现快照；不得读取 `*_SERVICE_URL` 建立平行 fallback 路由。
 - 没有可用 Backend 实例或快照已失效时返回 503，不能把请求静默发往未受租约管理的地址。
 
@@ -136,24 +139,26 @@ System 是唯一例外：其 Ready 只依赖自身必需 Infra、迁移和 IAM/b
 graph LR
     Client[客户端] --> Gateway[Gateway]
 
-    Gateway --> |/api/v1/system/*| System[System Backend]
-    Gateway --> |/api/v1/manager/*| Manager[Manager Backend]
-    Gateway --> |/api/v1/meta/*| Meta[Meta Backend]
-    Gateway --> |/api/v1/catalog/*| Catalog[Catalog Backend]
-    Gateway --> |/api/v1/workbench/*| Workbench[Workbench Backend]
-    Gateway --> |/api/v1/security/*| Security[Security Backend]
-    Gateway --> |/api/v1/transfer/*| Transfer[Transfer Backend]
-    Gateway --> |/api/v1/orchestrator/*| Orchestrator[Orchestrator Backend]
-    Gateway --> |/api/v1/develop/*| Develop[Develop Backend]
-    Gateway --> |/api/v1/service/*| Service[Service Backend]
-    Gateway --> |/api/v1/monitor/*| Monitor[Monitor Backend]
+    Gateway --> |/api/v1/system/*| SystemProxy[部署引导代理<br/>SYSTEM_URL]
+    SystemProxy --> System[System Backend]
+    Gateway --> DynamicProxy[业务模块代理<br/>注册快照与有效 Backend 租约]
+    DynamicProxy --> |/api/v1/manager/*| Manager[Manager Backend]
+    DynamicProxy --> |/api/v1/meta/*| Meta[Meta Backend]
+    DynamicProxy --> |/api/v1/catalog/*| Catalog[Catalog Backend]
+    DynamicProxy --> |/api/v1/workbench/*| Workbench[Workbench Backend]
+    DynamicProxy --> |/api/v1/security/*| Security[Security Backend]
+    DynamicProxy --> |/api/v1/transfer/*| Transfer[Transfer Backend]
+    DynamicProxy --> |/api/v1/orchestrator/*| Orchestrator[Orchestrator Backend]
+    DynamicProxy --> |/api/v1/develop/*| Develop[Develop Backend]
+    DynamicProxy --> |/api/v1/service/*| Service[Service Backend]
+    DynamicProxy --> |/api/v1/monitor/*| Monitor[Monitor Backend]
 
     classDef client fill:#69db7c,stroke:#2f9e44
     classDef gateway fill:#fff9c4,stroke:#f57f17
     classDef backend fill:#e1f5ff,stroke:#01579b
 
     class Client client
-    class Gateway gateway
+    class Gateway,SystemProxy,DynamicProxy gateway
     class System,Manager,Meta,Catalog,Workbench,Security,Transfer,Orchestrator,Develop,Service,Monitor backend
 ```
 
