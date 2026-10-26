@@ -119,7 +119,7 @@ class HTTPBudget(unittest.TestCase):
     def test_cleanup_collects_actual_phase_files_after_stopping_sources_before_removal(self):
         gate=Path(__file__).with_name('monitor-metrics-gate.sh').read_text()
         body=gate.split("<<'REQUEST_TRAFFIC'\n",1)[1].split('\nREQUEST_TRAFFIC',1)[0]
-        self.assertLess(gate.index('compose down --volumes'),gate.index("<<'REQUEST_TRAFFIC'"))
+        self.assertLess(gate.index('compose --profile python-http down --volumes'),gate.index("<<'REQUEST_TRAFFIC'"))
         self.assertLess(gate.index("<<'REQUEST_TRAFFIC'"),gate.index('rm -rf "$WORK_DIR"'))
         with tempfile.TemporaryDirectory() as directory:
             work=Path(directory);source=work/'source';source.mkdir();receipt=work/'receipt.json'
@@ -127,7 +127,7 @@ class HTTPBudget(unittest.TestCase):
             result=subprocess.run(['python3','-',str(receipt),str(Path(m.__file__))],input=body,capture_output=True,text=True,timeout=5)
             self.assertEqual(result.returncode,0,result.stderr)
             self.assertEqual(json.loads(receipt.read_text())['request_counts']['go'],90)
-            value={'stage':'imports','status':'failed','error':'module_missing','exit_code':None,'log_bytes':0,'log_over_budget':False,'component':'unknown'}
+            value={'stage':'imports','status':'failed','error':'module_missing','exit_code':None,'log_bytes':0,'log_over_budget':False,'component':'unknown','checkpoint':'none','versions':{}}
             (source/'python-1.startup.json').write_text(json.dumps(value))
             result=subprocess.run(['python3','-',str(receipt),str(Path(m.__file__))],input=body,capture_output=True,text=True,timeout=5)
             self.assertEqual(result.returncode,0,result.stderr)
@@ -139,6 +139,19 @@ class HTTPBudget(unittest.TestCase):
             self.assertEqual(json.loads(receipt.read_text())['request_traffic_error'],'invalid_or_missing_phase_receipt')
             self.assertEqual(json.loads(receipt.read_text())['python_sources']['startup']['python_1'],value)
             self.assertNotIn('never-log-this',result.stdout+result.stderr)
+
+    def test_actual_cleanup_selects_the_same_python_profile_without_starting_services(self):
+        gate=Path(__file__).with_name('monitor-metrics-gate.sh').read_text()
+        body=gate.split('cleanup(){',1)[1].split('\ntrap cleanup EXIT',1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);work=root/'work';work.mkdir();calls=root/'calls'
+            script='''compose(){ echo "$*" >> "$CALLS"; }
+docker(){ :; }
+cleanup(){'''+body+'\nfalse\ncleanup\n'
+            result=subprocess.run(['bash','-c',script],env=dict(os.environ,WORK_DIR=str(work),COMPOSE_PROJECT='owned',CALLS=str(calls),ADDP_HTTP_BUDGET_RECEIPT=''),capture_output=True,text=True,timeout=5)
+            self.assertEqual(result.returncode,1)
+            self.assertEqual([c for c in calls.read_text().splitlines() if ' down ' in ' '+c+' '],['--profile python-http down --volumes --remove-orphans'])
+            self.assertFalse(work.exists())
 
     def test_cpu_memory_write_reservations_and_stop_lines(self):
         self.assertEqual(m.resource_totals([row()],200,300)['private_write_upper_bytes'],16*1024**2+600)

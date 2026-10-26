@@ -76,7 +76,7 @@ CLEANUP_RECEIPT
   # The new SQL source's logs are checked for secret exposure in memory by its
   # probe. Never dump those raw logs on failure before that check succeeds.
   if [[ "$result" != 0 ]]; then compose logs --no-color --tail=60 prometheus metrics-source node-exporter metrics-control postgres >&2; fi
-  compose down --volumes --remove-orphans >"$WORK_DIR/cleanup.log" 2>&1 || { result=1; cleanup_verified=false; }
+  compose --profile python-http down --volumes --remove-orphans >"$WORK_DIR/cleanup.log" 2>&1 || { result=1; cleanup_verified=false; }
   # Producers are stopped: phase/counter files can no longer be concurrently written.
   # Capture even an early Go failure, before Python is entered, then destroy files.
   if [[ -n "${ADDP_HTTP_BUDGET_RECEIPT:-}" && -f "$ADDP_HTTP_BUDGET_RECEIPT" ]]; then

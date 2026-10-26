@@ -183,16 +183,21 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                 root=Path(directory)
                 def path(value):return root/'install.log' if value=='/tmp/install.log' else root
                 def produce(index,source,stage):
-                    if failing!='imports':stage(failing)
+                    if failing=='imports':
+                        stage('imports',checkpoint='fastapi')
+                        raise ImportError('private-token',name='pydantic._internal')
+                    stage(failing)
                     raise ModuleNotFoundError('private-token')
                 run=mock.Mock(return_value=subprocess.CompletedProcess([],1 if failing=='dependencies' else 0))
                 copy=mock.Mock(side_effect=PermissionError('private-token') if failing=='copy' else None)
                 globals_=ns['main'].__globals__
-                with mock.patch.dict(globals_,{'Path':path,'produce':produce}),mock.patch.object(globals_['shutil'],'copytree',copy),mock.patch.object(globals_['subprocess'],'run',run),mock.patch.dict(os.environ,HTTP_T2_INDEX='1'):
+                with mock.patch.dict(globals_,{'Path':path,'produce':produce,'dependency_versions':lambda:{}}),mock.patch.object(globals_['shutil'],'copytree',copy),mock.patch.object(globals_['subprocess'],'run',run),mock.patch.dict(os.environ,HTTP_T2_INDEX='1'):
                     self.assertEqual(ns['main'](),1)
                 facts=ns['read_startup'](root/'python-1.startup.json')
                 self.assertEqual(facts['stage'],failing)
                 self.assertEqual(facts['status'],'failed')
+                if failing=='imports':
+                    self.assertEqual((facts['checkpoint'],facts['component']),('fastapi','pydantic'))
                 self.assertNotIn('private-token',json.dumps(facts))
                 self.assertEqual(run.call_count,0 if failing=='copy' else 1)
 
@@ -238,10 +243,26 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                     self.assertEqual(module.value,1);stage('running','passed')
                 def path(value):return root/'install.log' if value=='/tmp/install.log' else root
                 globals_=ns['main'].__globals__
-                with mock.patch.dict(globals_,{'Path':path,'produce':produce}),mock.patch.object(globals_['shutil'],'copytree'),mock.patch.object(globals_['subprocess'],'run',side_effect=install),mock.patch.dict(os.environ,HTTP_T2_INDEX='1'):
+                with mock.patch.dict(globals_,{'Path':path,'produce':produce,'dependency_versions':lambda:{}}),mock.patch.object(globals_['shutil'],'copytree'),mock.patch.object(globals_['subprocess'],'run',side_effect=install),mock.patch.dict(os.environ,HTTP_T2_INDEX='1'):
                     self.assertEqual(ns['main'](),0)
             finally:
                 sys.path.remove(str(target));sys.path_importer_cache.pop(str(target),None);sys.modules.pop(name,None)
+
+    def test_python_import_checkpoint_and_versions_never_keep_private_module_or_version(self):
+        ns=runpy.run_path(str(ROOT/'scripts/test/python-http-metrics-source.py'))
+        self.assertEqual(ns['missing_component'](ImportError('private-token',name='pydantic._internal')),'pydantic')
+        self.assertEqual(ns['missing_component'](ImportError('private-token',name='private_package.secret')),'unknown')
+        with mock.patch.object(ns['dependency_versions'].__globals__['importlib'].metadata,'version',return_value='private-token'):
+            versions=ns['dependency_versions']()
+        self.assertTrue(all(v=='unavailable' for v in versions.values()))
+        with tempfile.TemporaryDirectory() as directory:
+            p=Path(directory)/'startup'
+            value=ns['startup_record']('imports','failed','import_failed',component='pydantic',checkpoint='fastapi',versions={'fastapi':'0.115.0','pydantic':'2.12.4'})
+            p.write_text(json.dumps(value));self.assertEqual(ns['read_startup'](p),value)
+            value['versions']['pydantic']='private-token';p.write_text(json.dumps(value))
+            result=ns['read_startup'](p)
+            self.assertEqual(result,{'stage':'unknown','status':'unavailable'})
+            self.assertNotIn('private-token',json.dumps(result))
 
     def python_traffic(self, index):
         source = ast.parse((ROOT / 'scripts/test/python-http-metrics-source.py').read_text())

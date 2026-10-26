@@ -1864,7 +1864,7 @@ Monitor T1 实际覆盖停流零分母的归一、零请求权重聚合及活动
 
 只读核验已有自然 CI 原始日志：[bdf 的 HTTP Job](https://github.com/pampa0629/addp/actions/runs/40334346467/job/121612153803) 精确 checkout `bdf8788266408209a1c3da6aab948a0c4321b248`，Go `TestIntegrationMetricsHTTPAlertLifecycle` 实跑 152.28 秒通过，覆盖同一事件恢复及签名通知；后续真实进程／来源停止断言也通过。[206 的 HTTP Job](https://github.com/pampa0629/addp/actions/runs/40339327143/job/121630064969) 精确源码 `206261e751090a7bfb4e816dd0a8fbd97273d3d3`，相同 Go 子链实跑 150.27 秒通过。两轮均在 Python 发布身份前退出，finally 的非零退出异常再次覆盖首失败；日志回执分别 539.709／547.187 秒、Go 148／Python 0，输入未变且私有目录删除，但 cleanup_verified=false。不能继续将旧 Go unknown/no_data 当作这两轮的实际失败，也不能将 Go 子项通过或目录删除写成整项 HTTP／完整清理通过。
 
-当前证据没有容器内安装日志或 Python 启动子阶段，未唯一确认包解析、导入、权限或 TLS 原因；没有改包版本、镜像或 UID／只读约束。先修规范，再将原来源脚本作为唯一 stdlib 启动入口，沿原参数复制／安装后再导入 SDK；删除 Compose 内单独 shell 安装路线。新增复制、依赖、导入、配置、指标监听、HTTP 就绪、身份及运行的固定阶段回执，失败只留枚举／退出码／字节数。仅解析最多 64 KiB 的既有临时安装日志，超预算标记而不保留前缀；不把该解析限额说成输出捕获硬限额。异常正文、依赖日志、路径和凭据不归档；原 120 秒来源启动等待、90／480 秒进程期限、10 秒退出检查、600／1200 等既有调用上限、四秒资源检查及全部硬限额保持。
+当前证据没有容器内安装日志或 Python 启动子阶段，未唯一确认包解析、导入、权限或 TLS 原因；没有改包版本、镜像或 UID／只读约束。先修规范，再将原来源脚本作为唯一 stdlib 启动入口，沿原参数复制／安装后再导入 SDK；删除 Compose 内单独 shell 安装路线。新增复制、依赖、导入、配置、指标监听、HTTP 就绪、身份及运行的固定阶段回执，失败只留枚举／退出码／字节数。仅解析最多 64 KiB 的既有临时安装日志，超预算标记而不保留前缀；不把该解析限额说成输出捕获硬限额。异常正文、依赖日志、路径和凭据不归档；原 120 秒来源启动等待、90／480 秒进程期限、10 秒退出检查、600 秒检查点校验上限、1200 秒整体预算、四秒资源检查及全部硬限额保持。
 
 确定修复的控制流缺陷：Python finally 不再遇首个非零退出就跳过后续来源；两个 stop 文件、退出检查及发现范围恢复独立执行，错误另记，已有首失败保持原异常。进程内退出也在 join 出错后继续关闭来源，不能以清理错误覆盖请求首失败。回执沿原预算报告和原 CI Artifact 保存；即使请求阶段记录损坏，仍独立保留启动／清理事实。没有新增容错路线或把未知／不完整诊断改成业务通过。
 
@@ -1895,3 +1895,14 @@ Node `v24.11.1`：新增八项受控浏览器场景与原设备九项合计17项
 另一项确定性控制流修正：采样开始后可能进入清理，再遇资源读取失败；旧父进程会重复 SIGTERM 中断已经开始的强制清理。现在只在回执 project／私有目录与本次归属完全相符且 cleanup_started=true 时不再次发送终止，仍保留该资源错误、停止新采样、等待原清理，整次仍 failed；未进入清理仍沿原取消路线。报告保留 failure_during_cleanup 布尔值。四秒与原 120 秒清理期限不变，不忽略消失容器或将清理重叠错误改判通过。当次旧报告没有重叠标记，此回归证明控制流缺陷，不唯一还原该次 inspect 非零和清理中断的全部时序。
 
 先修规范，两个回归先失败后通过；最终配置／预算 118 项、生命周期 123 项 runner／既有 System Go fixture及 79 项聚合、登记测试 38 项与 22／12／9／2、shell／专项 diff 均通过。补丁和门禁日志在上述目录 follow-up/；后续自然 CI 单独核验，不把这份确定性通过当作实际 Python 已启动。本轮未开本地窗口、安装实际依赖或运行 Python 业务实链、Hosted、容量、定时，也未取消或手工重跑 CI。
+
+
+### Python ImportError 分层回执与清理 profile 修正（2026-10-26）
+
+自然 [75c5c42b9 的 HTTP Job](https://github.com/pampa0629/addp/actions/runs/40347081176/job/121657200460) 仍失败，Go 告警子链实跑 153.45 秒通过；Python 失败从 module_missing 变为 imports/import_failed，仍在身份发布前，不能将导入缓存修正写成完整启动通过。577.072 秒的预算回执保留两源启动／退出事实、Go 147 次／Python 0、输入未变；failure_during_cleanup=true，子入口退出 1，私有目录已删除，证明没有再次 SIGTERM 打断这次清理。但 cleanup_verified=false，仍不能称零残留。Artifact 12663195763（20172 字节）下载 SHA256 已核对 d90f3b1552f8eb2fe5de071e04b89f8354cc2721909e14bd600e34756769162d；原始预算及日志在 `/tmp/addp-p19-python-startup-20261026-y1zoacsw/import-profile/`。
+
+只读核对发现确定性清理遗漏：Python 来源通过 --profile python-http up 创建，原唯一 down 未启用该 profile，实际清理日志也未移除两个 Python 服务。[Docker 官方 profile 规则](https://docs.docker.com/compose/how-tos/profiles/)明确默认 down 不包含未激活 profile 的服务。现在唯一 down 同时启用 python-http，继续限当次 project，保留 --volumes／--remove-orphans，不启动任何新服务或更改资源／期限。shell 回归执行真实 cleanup 函数、替换 Docker 命令，原代码缺 profile 时失败，修正后验证同一 profile、原首失败仍非零及私有目录删除；不将受控回归当实际清零通过。
+
+ImportError 尚缺具体组件与版本事实，本批没有猜测升级／降级。启动回执新增固定导入检查点、ImportError 组件白名单及实际安装的预声明发行包版本；未知模块为 unknown，版本仅短版本字符串或 unavailable，不留异常正文、任意模块路径或环境。失败发生在 FastAPI、Starlette、Uvicorn 还是 Common 导入时可以区分，异常所属组件与入口检查点分别解释，不从名称关联推断唯一根因。未运行本地依赖安装、容器、业务实链、Hosted、容量或定时。
+
+最终配置／预算 120 项、生命周期 123 项 runner／既有 System Go fixture及 80 项聚合、登记测试 38 项与 22／12／9／2、shell／专项 diff 均通过；实际退出回归、敏感版本／模块拒绝及导入检查点保留均覆盖。标准入口及原 Metrics T2 自动发现／归档已覆盖，未增加旁路或 workflow。后续以新提交的自然 CI 单独核验，旧失败保留，Python 全链与真实清零仍待通过。

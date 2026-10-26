@@ -1,10 +1,12 @@
 """Gate-owned Python SDK producer. No System, model or business credentials."""
 import asyncio
 import importlib
+import importlib.metadata
 import json
 import os
 from pathlib import Path
 import shutil
+import re
 import subprocess
 import sys
 import threading
@@ -17,10 +19,22 @@ STARTUP_ERRORS=('none','dependency_failed','dependency_conflict','distribution_m
                 'module_missing','import_failed','file_missing','startup_failed','cancelled','log_over_budget','diagnostic_write_failed')
 STARTUP_COMPONENTS=('none','unknown','fastapi','starlette','uvicorn','addp_common','httpx','opentelemetry','pydantic',
                     'cryptography','prometheus_client','protobuf','jsonschema','keyring','typing_extensions')
+VERSION_PACKAGES=('addp-common','fastapi','starlette','uvicorn','pydantic','httpx','opentelemetry-api','opentelemetry-sdk',
+                  'opentelemetry-proto','protobuf','prometheus-client','cryptography')
 
 
-def startup_record(stage,status,error='none',exit_code=None,log_bytes=0,component='none'):
-    return {'stage':stage,'status':status,'error':error,'exit_code':exit_code,'log_bytes':log_bytes,'log_over_budget':log_bytes>65536,'component':component}
+def startup_record(stage,status,error='none',exit_code=None,log_bytes=0,component='none',checkpoint='none',versions=None):
+    return {'stage':stage,'status':status,'error':error,'exit_code':exit_code,'log_bytes':log_bytes,'log_over_budget':log_bytes>65536,
+            'component':component,'checkpoint':checkpoint,'versions':versions or {}}
+
+
+def dependency_versions():
+    result={}
+    for name in VERSION_PACKAGES:
+        try:value=importlib.metadata.version(name)
+        except (importlib.metadata.PackageNotFoundError,OSError,ValueError,TypeError):value='unavailable'
+        result[name]=value if isinstance(value,str) and (value=='unavailable' or re.fullmatch(r'[0-9][A-Za-z0-9.+!-]{0,47}',value)) else 'unavailable'
+    return result
 
 
 def read_startup(path):
@@ -31,6 +45,10 @@ def read_startup(path):
         if not isinstance(value,dict) or set(value)!=set(startup_record('copy','starting')):raise ValueError()
         if value['stage'] not in STARTUP_STAGES or value['status'] not in ('starting','passed','failed') or value['error'] not in STARTUP_ERRORS:raise ValueError()
         if value['component'] not in STARTUP_COMPONENTS:raise ValueError()
+        if value['checkpoint'] not in STARTUP_COMPONENTS:raise ValueError()
+        versions=value['versions']
+        if not isinstance(versions,dict) or not set(versions)<=set(VERSION_PACKAGES):raise ValueError()
+        if any(not isinstance(v,str) or v!='unavailable' and not re.fullmatch(r'[0-9][A-Za-z0-9.+!-]{0,47}',v) for v in versions.values()):raise ValueError()
         code=value['exit_code'];size=value['log_bytes']
         if code is not None and (type(code) is not int or not -255<=code<=255):raise ValueError()
         if type(size) is not int or not 0<=size<=256*1024**2 or type(value['log_over_budget']) is not bool or value['log_over_budget']!=(size>65536):raise ValueError()
@@ -60,7 +78,7 @@ def exception_kind(error):
 
 
 def missing_component(error):
-    if not isinstance(error,ModuleNotFoundError):return 'none'
+    if not isinstance(error,ImportError):return 'none'
     name=(error.name or '').split('.')[0]
     if name=='google':return 'protobuf'
     return name if name in STARTUP_COMPONENTS[2:] else 'unknown'
@@ -106,9 +124,13 @@ class HTTPFixtureTraffic:
 
 
 def produce(index,root,stage):
+    stage('imports',checkpoint='fastapi')
     from fastapi import FastAPI
+    stage('imports',checkpoint='starlette')
     from starlette.responses import Response
+    stage('imports',checkpoint='uvicorn')
     import uvicorn
+    stage('imports',checkpoint='addp_common')
     from addp_common.client.module_registry import ModuleRegistration
     from addp_common.httpmetrics import start_optional
     from addp_common.httpmetrics.server import HTTPObservationMiddleware
@@ -173,11 +195,11 @@ def produce(index,root,stage):
 def main():
     index=int(os.environ['HTTP_T2_INDEX']);root=Path('/source')
     if index not in (1,2):return 1
-    current='copy'
-    def stage(name,status='starting',error='none',exit_code=None,log_bytes=0,component='none'):
-        nonlocal current
-        current=name
-        value=startup_record(name,status,error,exit_code,log_bytes,component)
+    current='copy';current_checkpoint='none';versions={}
+    def stage(name,status='starting',error='none',exit_code=None,log_bytes=0,component='none',checkpoint='none'):
+        nonlocal current,current_checkpoint
+        current=name;current_checkpoint=checkpoint
+        value=startup_record(name,status,error,exit_code,log_bytes,component,checkpoint,versions)
         try:(root/f'python-{index}.startup.json').write_text(json.dumps(value))
         except OSError:
             print(json.dumps(startup_record(name,'failed','diagnostic_write_failed')),flush=True)
@@ -196,11 +218,12 @@ def main():
         # /tmp/deps did not exist when this interpreter imported stdlib. Clear
         # PathFinder's cached None before importing packages installed there.
         importlib.invalidate_caches()
+        versions=dependency_versions()
         stage('imports')
         produce(index,root,stage)
         return 0
     except BaseException as error:
-        try:stage(current,'failed',exception_kind(error),component=missing_component(error))
+        try:stage(current,'failed',exception_kind(error),component=missing_component(error),checkpoint=current_checkpoint)
         except RuntimeError:pass
         return 1
 
