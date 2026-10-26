@@ -351,6 +351,7 @@ cleanup 分为两个动作，支持手动、事件驱动和定时触发：
 - 确认文本只用于证明显式确认，不应作为业务密钥保存；审计日志只记录是否提供了确认文本、确认时间、风险等级和影响摘要。
 - executor 可以在 execute 前做幂等复查，但复查结果必须在 result 中报告。
 - scan result 与 execute result 的关联必须可审计。
+- 重新调用通用 `POST /api/v1/system/admin/cleanup/execute` 仍须通过当前 Tenant 与 `system.cleanup.execute`、已完成 scan 及本节确认校验；它创建新的 execute task 和 execution，不将原失败任务改为成功，也不等于恢复原 Engine 删除工作流。不得以新任务成功推断原 Engine 已转为 `deleted`。
 - scan 不得产生副作用；必要的短期诊断缓存必须由 executor 自己负责过期。
 - event 触发的自动 scan 必须记录 `cause_event`，并能关联到后续 execute。
 - 自动 physical cleanup 只允许用于确定性缓存、已过保留期对象或已被策略明确授权的低风险资源；其他物理删除必须由管理员确认。
@@ -506,7 +507,7 @@ active / disabled
 2. 用户确认必须引用一次已完成且参与者完整的评估。确认后 System 原子切换 Engine 为 `deleting`，所有 owner 的新建、更新和执行入口必须重新校验目标 Engine 为 `active`。
 3. `deleting` 后必须执行权威复扫。若发现新增影响、任一模块不可用或 `impact_digest` 与用户确认的评估不一致，删除暂停并要求用户查看新结果，不得自动继续。
 4. scan 和 execute 的 `context.engine_id` 指向正在删除的 Engine；各 executor 必须把该 Engine 当作即将失效来源，不能因为 System 记录仍存在而跳过候选。
-5. cleanup 失败时 Engine 保持 `deleting`，保留 scan / execute task ID 和错误摘要，允许管理员重试；不得先删除连接配置。
+5. cleanup 失败时 Engine 保持 `deleting`，保留已有 scan / execute task ID、错误摘要和连接配置。规范要求支持具备对应 Permission 的用户显式重试，但当前引擎删除的独立失败重试入口仍未具备，不能记为已实现。当前重复 DELETE 返回 409；启动仅续办已有 scan task ID 的流程，已有 execute task ID 时沿用原任务，失败、部分失败或超时终态不会因重启自动重跑，缺少 scan task ID 时也不会补建。实际入口与权限边界见[引擎删除说明](../../system/docs/tables/engines表.md#删除引擎)；通用 execute 不替代本节评估、确认、权威复扫与最终墓碑写入。
 6. 外部引擎不可达且存在 owner 已登记外部产物时，管理员可显式选择 `external_artifact_policy=abandon`。Owner 模块必须把记录终止为 `abandoned_external`，保存外部 schema/object、最后错误、放弃时间和操作者审计；该记录不再进入自动 cleanup 候选。
 7. `abandoned_external` 表示平台放弃后续物理删除责任，不表示外部对象已删除。外部对象由 DBA 或外部系统管理员处理。
 8. System 不读取或修改 owner 私有表；放弃语义仍通过 cleanup request 的中性 context 传递，由 owner executor 落库。
@@ -576,7 +577,7 @@ cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。
 5. 通过 `GET /api/v1/monitor/executions/by-execution-id/{execution_id}/tree` 核对授权范围内 `module=system, task_type=cleanup` 的父 execution 及 `module=meta, task_type=cleanup_executor` 的子 execution；父执行可读不授予子执行读取权，须分别核对当前用户的 Owner 裁决。
 6. 全流程使用明确超时与有界异步等待，不自动重试权限失败或业务冲突。成功、失败、中断均按 owner 回收本轮测试资源并核验零残留；审计及执行历史按 profile 保留或随 disposable 部署销毁，不直接删历史凑零残留。报告按[T4 证据要求](testing/T4-Online验收规范.md#报告)绑定源码、Run ID、身份范围、断言、失败与清理结果，不记录 Token、Secret 或完整敏感响应。清理失败仍为失败。
 
-本节仅定义 scan 闭环，不覆盖 `logical_cleanup` / `physical_cleanup` 执行、全部 owner、引擎删除或租户删除的完整链路；这些场景须独立提供断言与证据。
+本节仅定义 scan 闭环，不覆盖 `logical_cleanup` / `physical_cleanup` 执行、全部 owner、引擎删除或租户删除的完整链路；这些场景须独立提供断言与证据。引擎删除失败重试与启动续办也须分别验证原任务身份、状态、错误证据、owner 实际结果和最终墓碑；保留首次失败，未具备的重试入口列为未完成项，不用重启成功或另建 execute 掩盖原失败。
 
 上述 `scope=["meta"]` 闭环不覆盖引擎重新登记、墓碑恢复及 owner 重绑。相关专项应按[标准测试入口](addp测试与验收规范.md#三标准入口)分别验证墓碑地址可用于新登记且分配新 ID、显式恢复保留旧 ID、地址被其他非删除实例占用时恢复拒绝，以及权限、版本和搬迁确认的拒绝条件；owner 重绑须核对原引用、原子更新、审计及实际执行。规范、源码、索引声明或单个模块测试不替代真实数据库约束和跨模块验收；恢复后在线也不证明授权与 owner 状态已恢复，未运行、失败或跳过不计为通过。
 
