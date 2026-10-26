@@ -738,6 +738,11 @@
         "hour": "小时",
         "day": "天"
       },
+      "listView": {
+        "label": "资源视图",
+        "resources": "核心资源",
+        "load-connections": "负载与连接"
+      },
       "tcpSummary": "ESTABLISHED + CLOSE_WAIT，不含监听和 TIME_WAIT。",
       "tcpUnavailable": "当前来源未提供可用的宿主 TCP 统计，不代表连接数为 0。",
       "units": {

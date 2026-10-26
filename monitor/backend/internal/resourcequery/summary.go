@@ -17,12 +17,17 @@ func HostListMetrics() []string {
 	return []string{"node.cpu.logical_cores", "node.cpu.busy_percent", "node.memory.total_bytes", "node.memory.used_percent", "node.uptime_seconds"}
 }
 
+func HostLoadConnectionMetrics() []string {
+	return []string{"node.load.average_1m", "node.load.average_5m", "node.load.average_15m", "node.tcp.current_connections"}
+}
+
 func NewSummaryPlan(count int, keys []string, at time.Time, b Budget) (Plan, error) {
 	if count < 1 || count > 100 {
 		return Plan{}, ErrInvalid
 	}
+	allowed := append(HostListMetrics(), HostLoadConnectionMetrics()...)
 	for _, key := range keys {
-		if !slices.Contains(HostListMetrics(), key) {
+		if !slices.Contains(allowed, key) {
 			return Plan{}, ErrInvalid
 		}
 	}

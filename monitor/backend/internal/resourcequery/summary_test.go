@@ -12,8 +12,13 @@ import (
 )
 
 func TestSummaryBatchQueriesFixedFormulasAndStrictlySeparatesNodes(t *testing.T) {
+	for name, keys := range map[string][]string{"core": HostListMetrics(), "load_connections": HostLoadConnectionMetrics()} {
+		t.Run(name, func(t *testing.T) { testSummaryBatchQueries(t, keys) })
+	}
+}
+
+func testSummaryBatchQueries(t *testing.T, keys []string) {
 	second := "22222222-2222-4222-8222-222222222222"
-	keys := HostListMetrics()
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -21,7 +26,7 @@ func TestSummaryBatchQueriesFixedFormulasAndStrictlySeparatesNodes(t *testing.T)
 			t.Error("batch did not use bounded form query")
 		}
 		expression := r.PostForm.Get("query")
-		if !strings.Contains(expression, `addp_node_id="`+testNode+`"`) || !strings.Contains(expression, `addp_node_id="`+second+`"`) || strings.Contains(expression, "node_load") {
+		if !strings.Contains(expression, `addp_node_id="`+testNode+`"`) || !strings.Contains(expression, `addp_node_id="`+second+`"`) {
 			t.Error("fixed per-node scope lost")
 		}
 		data := envelope{}
@@ -119,10 +124,16 @@ func TestSummaryProjectionReservesTheWholeRequestedBatch(t *testing.T) {
 	if _, err := NewSummaryPlan(21, HostListMetrics(), testTime, b); !errors.Is(err, ErrBudget) {
 		t.Fatal("five-key batch exceeded series budget", err)
 	}
-	for _, keys := range [][]string{nil, {"node.cpu.busy_percent", "node.cpu.busy_percent"}, {"node.load.average_1m"}, {"node.disk.io_busy_percent"}, {"node.tcp.current_connections"}, {"arbitrary"}} {
+	for _, keys := range [][]string{nil, {"node.cpu.busy_percent", "node.cpu.busy_percent"}, {"node.memory.available_bytes"}, {"node.disk.io_busy_percent"}, {"arbitrary"}} {
 		if _, err := NewSummaryPlan(1, keys, testTime, b); !errors.Is(err, ErrInvalid) {
 			t.Fatal(keys, err)
 		}
+	}
+	if p, err := NewSummaryPlan(25, HostLoadConnectionMetrics(), testTime, b); err != nil || len(p.Metrics) != 4 {
+		t.Fatal(p, err)
+	}
+	if _, err := NewSummaryPlan(26, HostLoadConnectionMetrics(), testTime, b); !errors.Is(err, ErrBudget) {
+		t.Fatal("four-key batch exceeded series budget", err)
 	}
 	b.MaxMetrics = 4
 	if _, err := NewSummaryPlan(1, HostListMetrics(), testTime, b); !errors.Is(err, ErrBudget) {

@@ -14,11 +14,18 @@
         <el-button native-type="submit">{{ t('common.search') }}</el-button>
         <el-button @click="resetFilters" data-testid="resource-reset">{{ t('common.reset') }}</el-button>
       </el-form>
+      <el-radio-group :model-value="state.listView" :aria-label="t('monitor.resources.listView.label')" class="resource-list-views" data-testid="resource-list-view" @change="changeListView">
+        <el-radio-button v-for="view in Object.keys(hostListMetricSets)" :key="view" :value="view">{{ t(`monitor.resources.listView.${view}`) }}</el-radio-button>
+      </el-radio-group>
       <el-alert v-if="summaryErrorKey" :title="t(summaryErrorKey)" type="warning" show-icon :closable="false" data-testid="resource-summary-error" />
       <el-table :data="nodes" v-loading="loading" :empty-text="t('monitor.resources.empty')" class="resource-node-list" data-testid="resource-node-list">
         <el-table-column :label="t('monitor.resources.node')" min-width="180" fixed="left" show-overflow-tooltip><template #default="{ row }"><span :title="row.node_id">{{ row.display_name }}</span></template></el-table-column>
         <el-table-column :label="t('monitor.resources.addresses')" min-width="180"><template #default="{ row }">{{ row.addresses.join(', ') }}</template></el-table-column>
-        <el-table-column v-for="metric in hostListMetrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="160">
+        <el-table-column v-for="metric in listMetrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="160">
+          <template #header>
+            <span>{{ t(`monitor.resources.metrics.${metric.name}`) }}</span>
+            <p v-if="metric.unit === 'load' || metric.unit === 'connections'" class="resource-hint resource-column-summary">{{ t(metric.unit === 'load' ? 'monitor.resources.loadSummary' : 'monitor.resources.tcpSummary') }}</p>
+          </template>
           <template #default="{ row }"><strong :data-testid="`resource-summary-${metric.name}`">{{ formatValue(summaryPoint(row, metric), metric) }}</strong><p v-if="summaryPoint(row, metric) && summaryPoint(row, metric).data_state !== 'valid'" class="resource-hint">{{ t(`monitor.resources.states.${summaryPoint(row, metric).data_state}`) }}</p></template>
         </el-table-column>
         <el-table-column :label="t('monitor.resources.overview.collectionTitle')" min-width="150"><template #default="{ row }"><span :title="summaries.get(row.node_id) ? t('monitor.resources.sampledAt') + ': ' + date(summaries.get(row.node_id).collection.sampled_at) : ''">{{ t(!row.enabled ? 'monitor.resources.overview.disabled' : summaries.get(row.node_id) ? `monitor.resources.overview.collection.${summaries.get(row.node_id).collection.state}` : loading ? 'common.loading' : 'monitor.resources.overview.unavailable') }}</span></template></el-table-column>
@@ -185,7 +192,7 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import { useAuthStore } from '../store/auth'
 import { nodeResourcesAPI as api } from '../api/nodeResources'
 import { isTargetUUID } from '../utils/monitoringTargets'
-import { hostListMetrics, pressureMetrics, supportsResourceComparison, resourceTrendComparison, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceTrendMetrics, resourceTrendChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows, resourceRanges, resolveResourceRoute, trendParameters, validateResourceResponse, validateResourceTrendWindow } from '../utils/nodeResources'
+import { hostListMetricSets, pressureMetrics, supportsResourceComparison, resourceTrendComparison, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceTrendMetrics, resourceTrendChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows, resourceRanges, resolveResourceRoute, trendParameters, validateResourceResponse, validateResourceTrendWindow } from '../utils/nodeResources'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
@@ -196,6 +203,7 @@ const collectionMessage = computed(() => !instant.value ? '' : instant.value.col
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const nodeID = computed(() => typeof route.params.node_id === 'string' ? route.params.node_id : '')
 const state = computed(() => resolveResourceRoute(route.query, Boolean(nodeID.value)))
+const listMetrics = computed(() => hostListMetricSets[state.value.listView])
 const listQuery = computed(() => { const { range, metric, compare, end, device, mountpoint, fstype, ...query } = state.value.query; return query })
 const nodes = ref([]), total = ref(null), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null), inodes = ref(null), disks = ref(null), networks = ref(null)
 const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), inodeErrorKey = ref(''), diskErrorKey = ref(''), networkErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
@@ -272,7 +280,8 @@ function changePage(page) { return navigate(route.path, { ...state.value.query, 
 function changeSize(size) { return navigate('/node-resources', { ...state.value.query, page: undefined, page_size: size === 20 ? undefined : String(size) }, 'replace') }
 function search() { return navigate('/node-resources', { ...state.value.query, search: searchText.value.trim() || undefined, page: undefined }, 'replace') }
 function changeFilter(key, value) { return navigate('/node-resources', { ...state.value.query, search: searchText.value.trim() || undefined, [key]: value || undefined, page: undefined }, 'replace') }
-function resetFilters() { searchText.value = ''; return navigate('/node-resources', { page_size: state.value.query.page_size, refresh: state.value.query.refresh }, 'replace') }
+function changeListView(value) { return navigate('/node-resources', { ...state.value.query, list_view: value === 'resources' ? undefined : value }, 'replace') }
+function resetFilters() { searchText.value = ''; return navigate('/node-resources', { page_size: state.value.query.page_size, refresh: state.value.query.refresh, list_view: state.value.query.list_view }, 'replace') }
 function selectTrend(key, value) {
   const query = { ...state.value.query, [key]: value }
   if (key === 'metric' && !value.startsWith('node.filesystem.') && !value.startsWith('node.disk.') && !value.startsWith('node.network.')) for (const dimension of ['device', 'mountpoint', 'fstype']) delete query[dimension]
@@ -314,12 +323,13 @@ async function reload({ automatic = false } = {}) {
     if (!id) {
       const value = await request(config => api.nodes({ page: state.value.page, page_size: state.value.pageSize, ...(state.value.search ? { search: state.value.search } : {}), ...(state.value.nodeKind ? { node_kind: state.value.nodeKind } : {}), ...(state.value.enabled ? { enabled: state.value.enabled } : {}) }, config))
       if (!requestScope.current(ticket)) return
+      const metrics = listMetrics.value
       let nextSummaries = new Map(), nextSummaryError = ''
       if (value.data.length) {
         try {
-          const overview = await request(config => api.summaries(value.data.map(row => row.node_id), hostListMetrics.map(metric => metric.key), config))
+          const overview = await request(config => api.summaries(value.data.map(row => row.node_id), metrics.map(metric => metric.key), config))
           if (!requestScope.current(ticket)) return
-          nextSummaries = validateResourceSummaries(overview, value.data, hostListMetrics)
+          nextSummaries = validateResourceSummaries(overview, value.data, metrics)
         } catch (error) {
           if (!requestScope.current(ticket)) return
           if ([401, 403, 404].includes(error.response?.status)) throw error
@@ -420,6 +430,7 @@ onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); invalidate(); r
 .resource-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
 .resource-toolbar h2, .resource-toolbar h3 { flex: 1; }
 .resource-toolbar .el-select { width: 220px; max-width: 100%; }
+.resource-list-views { margin-bottom: 16px; }
 .resource-search { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 16px 0; }
 .resource-search > .el-input { width: 320px; max-width: 100%; }
 .resource-pagination { margin-top: 16px; overflow-x: auto; }

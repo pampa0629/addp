@@ -1763,3 +1763,20 @@ Monitor 列表复用 System 已有主机 `node_kind`／`enabled` 与名称／地
 进一步只读查到固定 Nginx 1.28 支持跨 reload 继承 SSL 对象；[官方规范](https://nginx.org/en/docs/ngx_core_module.html#ssl_object_cache_inheritable)说明文件修改时间和文件标识未变时可继承。旧夹具覆盖原证书文件后只确认 reload 信号成功，未核对实际呈送证书；这加强了换证生效判定的调查价值，但仍缺少当次 inode／mtime／叶子摘要，不能认定该缓存就是原本地失败根因。下一步待确认方案仍需保留严格 TLS、原 4 秒／资源边界，先收敛 promtool 额外容器和证书加载判定，再决定仅公共前置的新窗口；不得自动进入 Python 业务实链。
 
 原始复核、摘要和本地门禁日志位于 `/tmp/addp-p19-http-budget-diagnostics-20261026-zd251axo/`，`audit-summary.json` 区分固定源码通过、本次 HTTP 失败、未知触发原因与尚未运行范围，`artifact-sha256.json` 保存文件摘要。没有改个人 venv、服务、权限或数据库；用户重启结果是现场反馈，不冒充本会话正式身份运行验收。
+
+
+## 主机列表负载与连接视图（2026-10-26）
+
+主机列表默认保留核心资源五项，新增“负载与连接”视图，仅请求 1／5／15 分钟系统平均负载及 TCP 当前连接数。复用既有指标公式、单位、新鲜度、当前用户逐主机授权及同一批量摘要；后端摘要白名单同步为这两组共九项标量的非空无重复子集，不新增接口或权限。每页默认 20 台，新视图请求 80 条序列，继续在 Owner 裁决和来源查询前校验原整批预算。TOP5／采集配置仍只请求原两项。
+
+唯一 URL 参数为 `list_view=load-connections`，默认核心资源省略；切换保留已提交筛选、分页和刷新，不提交搜索草稿；详情返回、重载及重置筛选保留视图。列标题就近解释负载为任务数而非百分比、TCP 为 ESTABLISHED＋CLOSE_WAIT。有效零、缺样、失败及撤权不混淆，迟到响应不能覆盖新视图。
+
+本地验证：
+
+- Node `v24.11.1` 下 `make test-monitor-frontend` 退出 0：124 项单元测试、450 项浏览器场景（含新增六项）与 Vite 生产构建通过。中英 20 台主机验证单批精确四指标／80 条序列、响应乱序、TCP 有效零和独立缺样；另覆盖窄屏、视图切换、详情返回／重载、重置、超限／撤权、15 秒定时刷新（测试时钟）和身份切换后的迟到响应清除。既有构建大 chunk 提示不影响构建成功。日志 `/tmp/addp-host-list-final-gate.log`；浏览器结果目录见日志 `Browser gate monitor` 行，截图 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-load-6wzJX2/zh-cn.png` 与同轮完整门禁截图路径见日志。首轮六项专项有两项因脚本点击 Element Plus 透明 radio 输入框被标签遮挡而失败；改为点击可见标签后，最终完整门禁全部通过，原失败日志 `/tmp/addp-host-load-e2e.log` 保留。
+- `make test-module MODULE=monitor GO_ONLY=1` 退出 0，覆盖两组摘要的预算、逐用户授权、停用排除、未知／新鲜度及批量身份隔离；新增四指标 25 台可规划、26 台在 Owner／来源读取前拒绝。日志 `/tmp/addp-host-load-go.log`。本地 Go T1 不替代真实来源 T2。
+- `bash scripts/swagger/gen-swagger.sh monitor` 及 `bash scripts/swagger/check-route-coverage.sh monitor` 均退出 0，96 个公开路由方法一致；日志 `/tmp/addp-host-load-swagger.log`。
+
+实源缺口：`make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources` 退出 2，在公共 mTLS 初次采样前置报 `Timed out: real mTLS scrape and controlled job label`，封闭诊断为 `error_kind=tls/health=down`。八项固定窗口 promtool 测试通过不等于整门禁通过；本批新增四指标真实摘要断言尚未执行。与本专题既有公共采样失败边界一致，不由现有诊断推断具体证书根因，不改 TLS／等待时长、不盲目重跑。日志 `/tmp/addp-host-load-t2.log`；项目 `addp-metrics-t2-786570fda5424602a680465383cd9092` 的容器／网络／卷在退出后分别按 Compose project 标签只读核验均为空，临时目录由标准入口清理。
+
+个人 Safari 已在原平台管理员会话看到新视图、切换后的 canonical URL 及列旁说明；运行中的旧 Monitor 后端仍按五项白名单拒绝新摘要，已恢复可用的核心资源视图。新后端的真实 Safari 数据、右侧 TCP 和刷新重读待用户沿 `./scripts/dev/restart.sh -monitor` 重启后复验，不计为新视图实源通过。未操作个人数据库、权限或服务进程，未手工触发／轮询 CI 或 Hosted，未设置定时任务；正式结果仍等专门会话回传。

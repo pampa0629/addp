@@ -5021,7 +5021,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "显式选择 CPU 核数、一分钟忙碌率、内存总量、内存使用率、运行时长五项标量的非空无重复子集；节点数乘指标数计入整批预算，逐节点由 System 核验当前用户。停用节点或目标不查询历史。| Explicit non-empty distinct subset of five scalars: logical CPU cores, one-minute CPU busy percentage, total memory, memory used percentage and uptime. Node count times metric count shares one batch budget; current-user System authorization for every node. Disabled nodes or targets do not reuse history.",
+                "description": "显式选择九项固定标量的非空无重复子集：CPU 核数、一分钟忙碌率、内存总量、内存使用率、运行时长、三档系统平均负载和 TCP 当前连接数；节点数乘指标数计入整批预算，逐节点由 System 核验当前用户。停用节点或目标不查询历史。| Explicit non-empty distinct subset of nine fixed scalars: logical CPU cores, one-minute CPU busy percentage, total memory, memory used percentage, uptime, three system load averages and current TCP connections. Node count times metric count shares one batch budget; current-user System authorization for every node. Disabled nodes or targets do not reuse history.",
                 "produces": [
                     "application/json"
                 ],
@@ -5039,7 +5039,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "逗号分隔的固定五项摘要指标的非空无重复子集 | Non-empty distinct comma-separated subset of the fixed five summary metrics",
+                        "description": "逗号分隔的固定九项摘要指标的非空无重复子集 | Non-empty distinct comma-separated subset of the fixed nine summary metrics",
                         "name": "metrics",
                         "in": "query",
                         "required": true

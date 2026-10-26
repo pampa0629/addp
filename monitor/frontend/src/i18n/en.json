@@ -738,6 +738,11 @@
         "hour": "hours",
         "day": "days"
       },
+      "listView": {
+        "label": "Resource view",
+        "resources": "Core resources",
+        "load-connections": "Load and connections"
+      },
       "tcpSummary": "ESTABLISHED + CLOSE_WAIT; excludes listeners and TIME_WAIT.",
       "tcpUnavailable": "The current source has no usable host TCP statistics. This does not mean zero connections.",
       "units": {

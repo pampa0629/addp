@@ -137,7 +137,7 @@ func TestResourceQueryParsingStrictAndPolicyCAS(t *testing.T) {
 		}
 	}
 	id := "11111111-1111-4111-8111-111111111111"
-	for _, metrics := range []string{"", "node.cpu.busy_percent,node.cpu.busy_percent", "node.load.average_1m", "node.disk.io_busy_percent", "node.tcp.current_connections"} {
+	for _, metrics := range []string{"", "node.cpu.busy_percent,node.cpu.busy_percent", "node.memory.available_bytes", "node.disk.io_busy_percent"} {
 		req := httptest.NewRequest("GET", "/api/v1/monitor/platform/resource_summaries?node_ids="+id+"&metrics="+metrics, nil)
 		req.Header.Set("Authorization", "Bearer addp_at_user")
 		w := httptest.NewRecorder()

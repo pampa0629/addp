@@ -44,6 +44,8 @@ export const networkMetrics = [
 export const memoryMetrics = resourceMetrics.filter(metric => metric.key.startsWith('node.memory.'))
 export const allResourceMetrics = [...resourceMetrics, ...mountMetrics, ...diskMetrics, ...networkMetrics]
 export const hostListMetrics = resourceMetrics.filter(metric => ['node.cpu.logical_cores', 'node.cpu.busy_percent', 'node.memory.total_bytes', 'node.memory.used_percent', 'node.uptime_seconds'].includes(metric.key))
+export const hostLoadConnectionMetrics = resourceMetrics.filter(metric => metric.unit === 'load' || metric.unit === 'connections')
+export const hostListMetricSets = { resources: hostListMetrics, 'load-connections': hostLoadConnectionMetrics }
 export const pressureMetrics = resourceMetrics.filter(metric => ['node.cpu.busy_percent', 'node.memory.used_percent'].includes(metric.key))
 const dimensionKeys = ['device', 'mountpoint', 'fstype']
 export function validResourceDimensions(value, allowEmpty = true) {
@@ -73,6 +75,7 @@ export function supportsResourceComparison(metric, range) {
 export function resolveResourceRoute(query = {}, detail = false) {
   const filters = resolveHostNodeFilters(query)
   const pagination = resolveTargetRoute({ ...(query.page === undefined ? {} : { page: query.page }), ...(query.page_size === undefined ? {} : { page_size: query.page_size }) })
+  const listView = query.list_view === 'load-connections' ? 'load-connections' : 'resources'
   const search = typeof query.search === 'string' ? query.search.trim().slice(0, 200) : ''
   const range = detail && typeof query.range === 'string' && Object.hasOwn(resourceRanges, query.range) ? query.range : '1h'
   let metric = detail && allResourceMetrics.some(item => item.key === query.metric) ? query.metric : defaultMetric
@@ -97,8 +100,8 @@ export function resolveResourceRoute(query = {}, detail = false) {
   const invalidEnd = hasEnd && !validEnd
   const refresh = hasEnd ? 'off' : typeof query.refresh === 'string' && autoRefreshOptions.includes(query.refresh) ? query.refresh : '15'
   const compare = detail && query.compare === 'previous' && supportsResourceComparison(metric, range)
-  const canonical = { ...pagination.query, ...canonicalDimensions, ...filters.query, ...(search ? { search } : {}), ...(detail && range !== '1h' ? { range } : {}), ...(detail && metric !== defaultMetric ? { metric } : {}), ...(compare ? { compare: 'previous' } : {}), ...(hasEnd ? { end: end || query.end } : {}), ...(refresh !== '15' ? { refresh } : {}) }
-  return { page: pagination.page, pageSize: pagination.pageSize, nodeKind: filters.nodeKind, enabled: filters.enabled, search, range, metric, compare, refresh, end, invalidEnd, dimensions, invalidDimensions, query: canonical,
+  const canonical = { ...pagination.query, ...canonicalDimensions, ...filters.query, ...(listView !== 'resources' ? { list_view: listView } : {}), ...(search ? { search } : {}), ...(detail && range !== '1h' ? { range } : {}), ...(detail && metric !== defaultMetric ? { metric } : {}), ...(compare ? { compare: 'previous' } : {}), ...(hasEnd ? { end: end || query.end } : {}), ...(refresh !== '15' ? { refresh } : {}) }
+  return { page: pagination.page, pageSize: pagination.pageSize, nodeKind: filters.nodeKind, enabled: filters.enabled, listView, search, range, metric, compare, refresh, end, invalidEnd, dimensions, invalidDimensions, query: canonical,
     changed: Object.keys(query).length !== Object.keys(canonical).length || Object.keys(canonical).some(key => query[key] !== canonical[key]) }
 }
 export function trendParameters(nodeID, metric, range, serverEnd, dimensions = {}, compare = false) {

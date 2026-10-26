@@ -93,18 +93,26 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 	}
 	otherScope := scope
 	otherScope.NodeID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
-	summaries, err := c.Summaries(queryContext, []Scope{scope, otherScope}, HostListMetrics(), now, b)
-	if err != nil || len(summaries) != 2 || summaries[scope.NodeID].Collection.State != "collecting" || summaries[otherScope.NodeID].Collection.State != "no_sample" {
-		t.Fatalf("native summary scope evidence: %+v %v", summaries, err)
-	}
-	for _, row := range summaries[scope.NodeID].Series {
-		if row.Points[0].DataState != "valid" || row.Points[0].Value == nil {
-			t.Fatal("native summary missing current value", row)
+	for _, summaryKeys := range [][]string{HostListMetrics(), HostLoadConnectionMetrics()} {
+		summaries, err := c.Summaries(queryContext, []Scope{scope, otherScope}, summaryKeys, now, b)
+		if err != nil || len(summaries) != 2 || summaries[scope.NodeID].Collection.State != "collecting" || summaries[otherScope.NodeID].Collection.State != "no_sample" {
+			t.Fatalf("native summary scope evidence: %+v %v", summaries, err)
 		}
-	}
-	for _, row := range summaries[otherScope.NodeID].Series {
-		if row.Points[0].DataState != "no_data" || row.Points[0].Value != nil {
-			t.Fatal("native summary crossed node scope", row)
+		for _, row := range summaries[scope.NodeID].Series {
+			if restricted && row.MetricKey == "node.tcp.current_connections" {
+				if row.Points[0].DataState != "no_data" || row.Points[0].Value != nil || row.Points[0].SampledAt != nil {
+					t.Fatal("restricted summary fabricated TCP", row)
+				}
+				continue
+			}
+			if row.Points[0].DataState != "valid" || row.Points[0].Value == nil {
+				t.Fatal("native summary missing current value", row)
+			}
+		}
+		for _, row := range summaries[otherScope.NodeID].Series {
+			if row.Points[0].DataState != "no_data" || row.Points[0].Value != nil {
+				t.Fatal("native summary crossed node scope", row)
+			}
 		}
 	}
 	otherCollection, err := c.Collection(context.Background(), otherScope, now, b)
@@ -371,14 +379,14 @@ func runPromtoolCases(t *testing.T, name string, tests []any, fuzzy bool) {
 	}
 	work := os.Getenv("METRICS_T2_WORK")
 	filename := name + "-query-tests.yml"
-	path := filepath.Join(work, "source", filename)
+	path := filepath.Join(work, "query-tests", filename)
 	if err = os.WriteFile(path, payload, 0644); err != nil {
 		t.Fatal(err)
 	}
 	defer os.Remove(path)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "docker", "compose", "--env-file", "/dev/null", "-p", os.Getenv("METRICS_T2_PROJECT"), "-f", os.Getenv("METRICS_T2_COMPOSE"), "run", "--rm", "--no-deps", "--volume", filepath.Join(work, "source")+":/query-tests:ro", "--entrypoint", "/bin/promtool", "prometheus", "test", "rules", "/query-tests/"+filename)
+	cmd := exec.CommandContext(ctx, "docker", "compose", "--env-file", "/dev/null", "-p", os.Getenv("METRICS_T2_PROJECT"), "-f", os.Getenv("METRICS_T2_COMPOSE"), "exec", "-T", "prometheus", "/bin/promtool", "test", "rules", "/query-tests/"+filename)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("native %s scenarios: %v\n%s", name, err, output)
 	}

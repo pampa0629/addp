@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import { allResourceMetrics, hostListMetrics, pressureMetrics, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows } from '../src/utils/nodeResources.js'
+import { allResourceMetrics, hostLoadConnectionMetrics, hostListMetricSets, hostListMetrics, pressureMetrics, validateResourceSummaries, validateCollection, resourceMissingMessage, currentResourceValue, resourceChartRows, resolveResourceRoute, trendParameters, validateResourceResponse, filesystemMetrics, inodeMetrics, diskMetrics, networkMetrics, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows } from '../src/utils/nodeResources.js'
 import { supportsResourceComparison, resourceTrendComparison } from '../src/utils/nodeResources.js'
 import { resourceTrendMetrics, resourceTrendChartRows } from '../src/utils/nodeResources.js'
 
@@ -48,7 +48,7 @@ test('node resource trends delegate chart rendering and formatting to the shared
   assert.doesNotMatch(source, /echarts|setOption|Intl\.NumberFormat|localStorage/)
 })
 
-for (const metrics of [pressureMetrics, hostListMetrics]) test(`summary ${metrics.length}-key projection exactly matches the authorized page, saved versions and shared fresh anchor`, () => {
+for (const metrics of [pressureMetrics, hostListMetrics, hostLoadConnectionMetrics]) test(`summary ${metrics.length}-key projection exactly matches the authorized page, saved versions and shared fresh anchor`, () => {
   const at = '2026-10-07T00:00:00Z', nodes = [{ node_id: 'a', version: 1 }, { node_id: 'b', version: 2 }]
   const reply = { data: nodes.map(node => ({ subject: { kind: 'node', node_id: node.node_id }, node_version: node.version, policy_version: 1, end: at, queried_at: at,
     collection: { state: 'collecting', sampled_at: at, filesystem: 'available', network: 'available' },
@@ -431,4 +431,23 @@ test('host list filters retain System enums across detail without widening the m
   const params = trendParameters('host', 'node.cpu.busy_percent', '5m', '2026-10-07T00:00:00Z')
   assert.equal('node_kind' in params, false)
   assert.equal('enabled' in params, false)
+})
+
+
+test('list views restore one canonical projection across detail without changing filters or pagination', () => {
+  const query = { page: '2', page_size: '10', node_kind: 'virtual', enabled: 'false', search: 'VM', list_view: 'load-connections', refresh: 'off' }
+  for (const detail of [false, true]) {
+    const state = resolveResourceRoute(query, detail)
+    assert.deepEqual(state.query, query)
+    assert.equal(state.changed, false)
+    assert.equal(state.listView, 'load-connections')
+    assert.equal(hostListMetricSets[state.listView], hostLoadConnectionMetrics)
+  }
+  assert.deepEqual(hostLoadConnectionMetrics.map(metric => metric.key), ['node.load.average_1m', 'node.load.average_5m', 'node.load.average_15m', 'node.tcp.current_connections'])
+  assert.equal(hostLoadConnectionMetrics.length * resolveResourceRoute().pageSize, 80)
+  for (const list_view of ['resources', 'unknown', ['load-connections'], '', null]) {
+    const state = resolveResourceRoute({ list_view })
+    assert.deepEqual(state.query, {})
+    assert.equal(hostListMetricSets[state.listView], hostListMetrics)
+  }
 })
