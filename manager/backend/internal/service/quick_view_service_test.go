@@ -719,7 +719,7 @@ func TestQuickViewCapabilityUsesReadyModel3DGLBForSupportedSourceFormats(t *test
 			if capability.QuickView.PreviewURL != fmt.Sprintf("/api/v1/manager/model_3d_glb/%d/content", result.ID) {
 				t.Fatalf("preview_url = %q, want model3d GLB preview artifact content URL", capability.QuickView.PreviewURL)
 			}
-			if capability.Model3D == nil || capability.Model3D.Format != tc.format || capability.Model3D.FileName != tc.fileName {
+			if capability.Model3D == nil || !capability.Model3D.HasCurrentResult || capability.Model3D.Format != tc.format || capability.Model3D.FileName != tc.fileName {
 				t.Fatalf("model3d info = %#v, want ready GLB facts", capability.Model3D)
 			}
 			if capability.CanGenerateTileCache || capability.TileCacheGeneration.Available {
@@ -730,6 +730,62 @@ func TestQuickViewCapabilityUsesReadyModel3DGLBForSupportedSourceFormats(t *test
 			}
 			if !containsString(capability.AvailableActions, QuickViewActionBackToBasicPreview) {
 				t.Fatalf("available_actions = %#v, want back to basic preview action", capability.AvailableActions)
+			}
+		})
+	}
+}
+
+func TestModel3DGLBCapabilityReportsCurrentResultWithoutMakingItPreviewable(t *testing.T) {
+	for _, name := range []string{"missing", "failed", "building", "old ready", "deleted", "soft deleted", "other tenant", "other item"} {
+		t.Run(name, func(t *testing.T) {
+			db := newTileCacheTaskServiceTestDB(t)
+			createModel3DGLBTableForTest(t, db)
+			identity := QuickViewIdentity{TenantID: 7, ItemFingerprint: "fp-3ds", Locator: "addp://engine/26/path/model.3ds?type=file&item_id=11"}
+			result := &models.Model3DGLB{
+				TenantID: 7, ItemFingerprint: identity.ItemFingerprint, Locator: identity.Locator,
+				SourceEngineID: 26, SourceFormat: "3ds", SourceSizeBytes: 100,
+				Status: models.Model3DGLBStatusFailed, StorageRef: "old-result", Metadata: commonModels.JSONMap{},
+			}
+			switch name {
+			case "building":
+				result.Status = models.Model3DGLBStatusBuilding
+			case "old ready":
+				result.Status = models.Model3DGLBStatusReady
+			case "deleted":
+				result.Status = models.Model3DGLBStatusDeleted
+			case "soft deleted":
+				result.DeletedAt = gorm.DeletedAt{Time: time.Now(), Valid: true}
+			case "other tenant":
+				result.TenantID = 8
+			case "other item":
+				result.ItemFingerprint = "fp-other"
+			}
+			if name != "missing" {
+				if err := repository.NewModel3DGLBRepository(db).Create(context.Background(), result); err != nil {
+					t.Fatal(err)
+				}
+			}
+			capability, err := NewQuickViewService(db, nil).BuildCapabilityFromSource(context.Background(), QuickViewSource{
+				Identity: identity, EngineID: 26, EngineType: "nfs",
+				Model3D: &Model3DGLBSource{Format: "3ds", Layout: "single", SourceSizeBytes: 200},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := json.Marshal(capability.Model3D)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var info map[string]interface{}
+			if err := json.Unmarshal(encoded, &info); err != nil {
+				t.Fatal(err)
+			}
+			want := name == "failed" || name == "building" || name == "old ready"
+			if info["has_current_result"] != want {
+				t.Fatalf("has_current_result = %v, want %v", info["has_current_result"], want)
+			}
+			if capability.CanUseQuickView || capability.Model3D.PreviewURL != "" || capability.Model3D.ResultID != nil {
+				t.Fatalf("current-result fact must not expose unusable result: %#v", capability)
 			}
 		})
 	}

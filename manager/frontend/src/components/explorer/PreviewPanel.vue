@@ -588,9 +588,9 @@ let sourceDownloadController = null
 const router = useRouter()
 const executeWithCurrentResultConfirmation = useCurrentResultConfirmation()
 
-const executeConfirmedQuickViewAction = (locator, action, options = {}) => executeWithCurrentResultConfirmation(payload => (
+const executeConfirmedQuickViewAction = (locator, action, options = {}, confirmationOptions = {}) => executeWithCurrentResultConfirmation(payload => (
   quickViewAPI.executeQuickViewAction(locator, action, { ...toQuickViewExistingResultPayload(payload), ...options })
-))
+), confirmationOptions)
 const model3DOptions = ref({})
 
 const loadKeyValue = async selection => {
@@ -2206,7 +2206,8 @@ const handleGenerateModel3DGLB = async () => {
   model3DGLBGenerationLoading.value = true
   try {
     const execution = await executeConfirmedQuickViewAction(locator, 'generate_model_3d_glb',
-      objectCanonicalFormat.value === 'max' ? model3DOptions.value : {})
+      objectCanonicalFormat.value === 'max' ? model3DOptions.value : {},
+      { hasCurrentResult: quickViewStatus.value?.model_3d?.has_current_result === true })
     const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
     ElMessage.success(t('manager.explorer.generateModel3DGLBSubmitted'))
     if (executionID) {

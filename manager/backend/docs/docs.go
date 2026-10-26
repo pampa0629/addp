@@ -8044,6 +8044,9 @@ const docTemplate = `{
                 "format": {
                     "type": "string"
                 },
+                "has_current_result": {
+                    "type": "boolean"
+                },
                 "last_execution_id": {
                     "type": "string"
                 },

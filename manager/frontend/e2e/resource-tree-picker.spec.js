@@ -294,6 +294,42 @@ for (const format of ['dae', '3ds', 'max']) {
 }
 
 for (const locale of ['zh-cn', 'en']) {
+  test(`confirms an existing unavailable GLB before any generation request in ${locale}`, async ({ page }) => {
+    const locator = 'addp://engine/12/path/doc/model.3ds?type=file&item_id=1203'
+    await installMockBackend(page, { locale, exchangeModel: { format: '3ds', locator } })
+    const requests = []
+    const browserErrors = []
+    page.on('console', message => { if (message.type() === 'error') browserErrors.push(message.text()) })
+    page.on('pageerror', error => browserErrors.push(error.message))
+    await page.route('**/api/v1/manager/quick-view/capability?**', route => fulfillJSON(route, {
+      locator, source_kind: 'model_3d', source_engine_id: 12,
+      model_3d: { format: '3ds', has_current_result: true },
+      can_use_quick_view: false, status: 'unavailable', unavailable_reason: 'requires_glb_generation',
+      available_actions: ['generate_model_3d_glb']
+    }))
+    await page.route('**/api/v1/manager/quick-view/actions', route => {
+      requests.push(route.request().postDataJSON())
+      return fulfillJSON(route, {}, 202)
+    })
+    await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
+    const generate = page.getByRole('button', { name: locale === 'zh-cn' ? '生成 GLB 快显' : 'Generate GLB Quick View', exact: true })
+    const dialog = page.locator('.el-message-box')
+    await generate.click()
+    await expect(dialog).toBeVisible()
+    expect(requests).toEqual([])
+    await dialog.getByRole('button', { name: locale === 'zh-cn' ? '取消' : 'Cancel', exact: true }).click()
+    await expect(generate).toBeEnabled()
+    expect(requests).toEqual([])
+    await generate.click()
+    await expect(dialog).toBeVisible()
+    expect(requests).toEqual([])
+    await dialog.getByRole('button', { name: locale === 'zh-cn' ? '确认覆盖' : 'Overwrite', exact: true }).click()
+    await expect(generate).toBeEnabled()
+    expect(requests).toEqual([{ locator, action: 'generate_model_3d_glb', existing_result_action: 'overwrite' }])
+    await expect(page.locator('.el-message--error')).toHaveCount(0)
+    expect(browserErrors).toEqual([])
+  })
+
   for (const failure of [
     { status: 403, code: 'source_authorization_required', text: ['无法取得原始模型及关联文件的读取授权，请核对源数据读取权限。', 'Could not obtain read authorization for the original model and its related files. Check source data read permissions.'] },
     { status: 409, code: 'source_composition_incomplete', text: ['原始模型及关联文件的组成信息不完整，请重新扫描模型所在目录后再生成快显。', 'The original model and related file composition is incomplete. Rescan the model directory before generating a quick view.'] },

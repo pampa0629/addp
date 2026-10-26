@@ -439,14 +439,15 @@ type QuickViewRasterMosaicInfo struct {
 }
 
 type QuickViewModel3DInfo struct {
-	Format          string  `json:"format,omitempty"`
-	Layout          string  `json:"layout,omitempty"`
-	ResultID        *uint   `json:"result_id,omitempty"`
-	TaskID          *uint   `json:"task_id,omitempty"`
-	LastExecutionID *string `json:"last_execution_id,omitempty"`
-	FileName        string  `json:"file_name,omitempty"`
-	SizeBytes       int64   `json:"size_bytes,omitempty"`
-	PreviewURL      string  `json:"preview_url,omitempty"`
+	HasCurrentResult bool    `json:"has_current_result"`
+	Format           string  `json:"format,omitempty"`
+	Layout           string  `json:"layout,omitempty"`
+	ResultID         *uint   `json:"result_id,omitempty"`
+	TaskID           *uint   `json:"task_id,omitempty"`
+	LastExecutionID  *string `json:"last_execution_id,omitempty"`
+	FileName         string  `json:"file_name,omitempty"`
+	SizeBytes        int64   `json:"size_bytes,omitempty"`
+	PreviewURL       string  `json:"preview_url,omitempty"`
 }
 
 type QuickViewModel3DTilesFormatInfo struct {
@@ -1228,6 +1229,13 @@ func (s *QuickViewService) applyModel3DCapability(ctx context.Context, capabilit
 		return nil
 	}
 
+	if s.model3DRepo != nil {
+		current, err := s.model3DRepo.GetCurrentByFingerprint(ctx, identity.TenantID, identity.ItemFingerprint)
+		if err != nil {
+			return err
+		}
+		capability.Model3D.HasCurrentResult = current != nil
+	}
 	readyGLB, err := s.readyModel3DGLB(ctx, identity, engineID)
 	if err != nil {
 		return err
@@ -2507,6 +2515,7 @@ func model3DInfoFromQuickView(result *models.Model3DGLB, source *Model3DGLBSourc
 	if result == nil {
 		return info
 	}
+	info.HasCurrentResult = true
 	info.Format = strings.TrimSpace(result.SourceFormat)
 	if info.Format == "" {
 		info.Format = string(format.FormatOSGB)
