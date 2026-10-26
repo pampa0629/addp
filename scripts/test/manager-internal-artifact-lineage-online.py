@@ -2432,7 +2432,7 @@ def run_raster_media_scenes(repository, environment, report):
     img_spec = importlib.util.spec_from_file_location('manager_img_online', Path(__file__).with_name('manager-img-online.py'))
     img_scene = importlib.util.module_from_spec(img_spec)
     img_spec.loader.exec_module(img_scene)
-    for source_format in ('img', 'jpeg2000'):
+    for source_format in ('img', 'jpeg2000', 'grd'):
         try:
             child = img_scene.run(repository, environment, sys.modules[__name__], source_format=source_format)
         except BaseException:
@@ -2448,9 +2448,9 @@ def run_native_raster_media_case(repository, environment, client, identity):
     report = {
         "schema_version": "addp.manager-native-raster-media/v1",
         "suite": "manager-internal-artifact-lineage", "case": "native-raster-media",
-        "source_formats": ["img", "jpeg2000"],
+        "source_formats": ["img", "jpeg2000", "grd"],
         "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"], "identity": identity,
-        "result": "incomplete", "img": {"result": "not_run"}, "jpeg2000": {"result": "not_run"},
+        "result": "incomplete", "img": {"result": "not_run"}, "jpeg2000": {"result": "not_run"}, "grd": {"result": "not_run"},
     }
     try:
         report["meta_scan_execution_id"] = wait_for_meta_scan(

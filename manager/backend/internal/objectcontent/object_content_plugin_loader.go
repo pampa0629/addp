@@ -558,7 +558,7 @@ func mediaMatcherDefaults(mediaKind string) ([]string, []string, []string) {
 func formatDescriptorMatchesMediaKind(descriptor commonformat.FormatDescriptor, mediaKind string) bool {
 	// MIME identifies the codec, not browser decoding capability. Native raster
 	// sources are rendered only through a managed COG, never as an image URL.
-	if descriptor.Format == commonformat.FormatIMG || descriptor.Format == commonformat.FormatJPEG2000 {
+	if descriptor.Format == commonformat.FormatIMG || descriptor.Format == commonformat.FormatJPEG2000 || descriptor.Format == commonformat.FormatGRD {
 		return false
 	}
 	if mediaKind == "" {

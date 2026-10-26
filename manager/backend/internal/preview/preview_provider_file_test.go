@@ -176,6 +176,11 @@ func TestPreviewHintSemanticMatrix(t *testing.T) {
 			wantMaterial: "unsupported", wantRenderer: "unsupported", wantPreviewable: false,
 		},
 		{
+			name:         "surfer_numeric_grid_is_not_a_browser_image",
+			input:        previewHintInput{Name: "height.grd", Format: format.FormatGRD, DataType: string(datatype.Media), ContentType: "application/octet-stream"},
+			wantMaterial: "unsupported", wantRenderer: "unsupported", wantPreviewable: false,
+		},
+		{
 			name: "known_video",
 			input: previewHintInput{
 				Name:     "clip.mp4",

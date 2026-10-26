@@ -10,13 +10,19 @@
 
 ### 明确的验收 case
 
-2026-10-24 用户批准在同一 suite 内增加独立 `native-raster-media` case，专门验收 IMG 与 JPEG2000；默认 `full` 保留原完整场景、八模型、授权、基础 FBX 及其他已有断言。二者复用同一 Hosted disposable 部署、既有十项普通 User 权限和原生产品 Runtime，不增加服务、权限或 suite，也不通过旧源码或放宽模型源授权运行。
+2026-10-24 用户批准在同一 suite 内增加独立 `native-raster-media` case，专门验收 IMG 与 JPEG2000；2026-10-26 按用户确认的读取范围扩展 Surfer 7 GRD；默认 `full` 保留原完整场景、八模型、授权、基础 FBX 及其他已有断言。二者复用同一 Hosted disposable 部署、既有十项普通 User 权限和原生产品 Runtime，不增加服务、权限或 suite，也不通过旧源码或放宽模型源授权运行。
 
 唯一选择项为 `ADDP_ONLINE_MANAGER_CASE=full|native-raster-media|kml-export`，未提供时明确选择 `full`，未知或空值在任何 Hosted 生命周期动作前拒绝。标准业务入口仍为 `ADDP_ONLINE_MANAGER_CASE=native-raster-media make test-online ONLINE_SUITE=manager-internal-artifact-lineage`；人工 Hosted 使用既有 workflow 的 `suite=manager-internal-artifact-lineage` 和明确 `manager_case`。Job 名称、Artifact 名称和 `manager-case.json` 必须显式包含所选 case，不能把任一独立 case 的通过标为完整 Manager 场景通过。KML case 的独立数据、身份、导出与清理边界见下节。
 
-`native-raster-media` 只执行下述既有 IMG/JPEG2000 子场景，沿同一入口验证真实 Meta、原文件、COG、页面、缓存和领域／物理清理；两个子场景任一个失败即失败，不因另一个通过继续宣称整项通过。独立根报告为 `manager-native-raster-media.json`、`schema_version=addp.manager-native-raster-media/v1`，包含 `case=native-raster-media`、完整 `source_formats=[img,jpeg2000]`、普通身份、两个子报告及真实失败状态；总 `online-report.json` 仍由统一分发器生成。未执行的模型、点云、文档、结构化数据及其他格式既不计通过，也不伪装成跳过后完整通过；完整 case 在新模型源授权迁移完成前仍可能受其原有正向断言阻断，须单独验收。成功／失败后的应用、夹具、凭据与 Infra 清理继续使用同一 Hosted 生命周期，不修改开发服务。
+`native-raster-media` 执行既有 IMG/JPEG2000 子场景及 Surfer 7 GRD 只读子场景。前两者沿同一入口验证真实 Meta、原文件、COG、页面、缓存和领域／物理清理；GRD 验证完整数值源、元数据、页面原文件下载及无定位边界。三个子场景任一个失败即失败，不因另一个通过继续宣称整项通过。独立根报告为 `manager-native-raster-media.json`、`schema_version=addp.manager-native-raster-media/v1`，包含 `case=native-raster-media`、完整 `source_formats=[img,jpeg2000,grd]`、普通身份、三个子报告及真实失败状态；总 `online-report.json` 仍由统一分发器生成。未执行的模型、点云、文档、结构化数据及其他格式既不计通过，也不伪装成跳过后完整通过；完整 case 在新模型源授权迁移完成前仍可能受其原有正向断言阻断，须单独验收。成功／失败后的应用、夹具、凭据与 Infra 清理继续使用同一 Hosted 生命周期，不修改开发服务。
 
 case 路由、默认完整场景保留、未知值只读拒绝、子场景失败与清理、case 归档及 workflow 接线由现有 `make test-manager-online-runner` 及 CI 登记检查覆盖；不新增长期脚本或根 Makefile 入口。
+
+### Surfer 7 GRD 读取
+
+首期仅认领带 `DSRB` 文件头的 Surfer 7 二进制 `.grd`，版本 1/2、单波段 Float64、零旋转、完整单 GRID/DATA、主文件不超过 64 MiB。拒绝 ASCII/Surfer 6、其他同后缀格式、非有限值、断层／尾随结构及当前 GDAL 无法等价表达的版本 1 范围缺失值；不读取旁文件，不据 XY 数值推导 CRS，不新增 GRD 导出。完整产品契约见[媒体与地图数据集](../../builtin-formats/媒体与地图数据集.md)。
+
+沿现有 `native-raster-media` 部署和十项普通 User 权限增加两份自建 5×3 非方形网格，分别为版本 1 的经纬度外观 XY 和版本 2 的投影外观 XY；版本 2 还包含大于 BlankValue 的有效数值。独立物理 oracle 核对完整原字节与 SHA-256、15 个 Float64、14 个有效节点、NoData、上下行顺序及半像元网格；Meta 必须提供 GS7BG、单波段、版本和节点原点／间距／形状／范围私有事实，不能发布空间能力。真实 Console iframe 的属性页、预览页及下载按钮逐一核对原文件哈希、截图、无地图、无破图、无 COG 生成入口；不创建 GRD 任务或产物，不宣称 GRD 缓存、地图或导出通过。源字节与 Meta 前后不变，所有部署、源和 Infra 仍由既有生命周期清理并核零残留。证据为 `manager-grd.json`、`manager-grd-browser.json`、两份原文件、Meta 快照及截图；新增范围须以对应 SHA 的正式 Hosted 通过证明，历史两格式报告不替代三格式证据。
 
 ### KML 实际页面导出
 

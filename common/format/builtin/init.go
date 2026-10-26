@@ -67,6 +67,7 @@ import (
 	_ "github.com/addp/common/format/plugins/xml"
 
 	// 导入内置媒体信息 provider，触发 init() 自动注册
+	_ "github.com/addp/common/format/plugins/grd"
 	_ "github.com/addp/common/format/plugins/image"
 	_ "github.com/addp/common/format/plugins/img"
 	_ "github.com/addp/common/format/plugins/jpeg2000"

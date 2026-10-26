@@ -9,6 +9,7 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/workflowaccess"
 	"github.com/addp/common/format"
+	_ "github.com/addp/common/format/plugins/grd"
 	_ "github.com/addp/common/format/plugins/img"
 	"github.com/addp/common/format/plugins/shared/rastermedia"
 )
@@ -29,7 +30,7 @@ func TestNativeInspectionBindsTenantAndFreezesSource(t *testing.T) {
 	for _, spec := range []struct {
 		format format.FormatType
 		driver string
-	}{{format.FormatIMG, "HFA"}, {format.FormatJPEG2000, "JP2OpenJPEG"}} {
+	}{{format.FormatIMG, "HFA"}, {format.FormatJPEG2000, "JP2OpenJPEG"}, {format.FormatGRD, "GS7BG"}} {
 		t.Run(string(spec.format), func(t *testing.T) {
 			if got := format.DetectFormat("scene.IMG", nil); got != format.FormatIMG {
 				t.Fatal(got)

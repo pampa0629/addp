@@ -14,8 +14,8 @@ OWNER = importlib.import_module('scripts.test.manager-internal-artifact-lineage-
 
 def detail(spec, index=1):
     attrs = {'item': {'data_type': 'media', 'format': spec['source_format'], 'layout': 'single'},
-             'type_info': {'media': {'kind': 'image', 'encoding': spec['driver'], 'width': 256, 'height': 256}},
-             'format_info': {spec['source_format']: {'scan_complete': True, 'driver': spec['driver'], 'band_count': 3}}}
+             'type_info': {'media': {'kind': 'image', 'encoding': spec['driver'], 'width': spec.get('width',256), 'height': spec.get('height',256)}},
+             'format_info': {spec['source_format']: {'scan_complete': True, 'driver': spec['driver'], 'band_count': spec['band_count'], **spec.get('grid_facts',{})}}}
     if spec['source_srid']:
         attrs['capabilities'] = {'spatial': {'srid': spec['source_srid'], 'extent': list(spec['extent'])}}
     return {'id': index, 'item_type': 'object', 'fingerprint': str(index) * 64,
@@ -55,7 +55,7 @@ class ManagerIMGTests(unittest.TestCase):
                     self.assertTrue(any(matches),(locale,role,name,patterns))
 
     def test_meta_accepts_located_and_unknown_facts_but_rejects_false_claims(self):
-        for spec in (*IMG.SOURCES, *IMG.JPEG2000_SOURCES):
+        for spec in (*IMG.SOURCES, *IMG.JPEG2000_SOURCES, *IMG.GRD_SOURCES):
             good = detail(spec)
             IMG.validate_meta(OWNER, good, spec)
             mutations = [lambda d: d['attributes']['format_info'][spec['source_format']].update(scan_complete=False),
@@ -102,7 +102,7 @@ class ManagerIMGTests(unittest.TestCase):
         with self.assertRaises(OWNER.SuiteError): IMG.validate_browser(OWNER, bad, evidence)
 
     def scenario(self, root, *, fail_browser=False, fail_delete=False, wrong_task_format=False, source_format="img"):
-        sources = {"img": IMG.SOURCES, "jpeg2000": IMG.JPEG2000_SOURCES}[source_format]
+        sources = {"img": IMG.SOURCES, "jpeg2000": IMG.JPEG2000_SOURCES, "grd":IMG.GRD_SOURCES}[source_format]
         items = [detail(spec, i) for i, spec in enumerate(sources, 1)]
         seed = {'source_unchanged': True, source_format+'_sources': [{**{k: s[k] for k in ('case', 'object', 'source_srid')},
                  'size_bytes': 4, 'sha256': hashlib.sha256(b'test').hexdigest()} for s in sources]}
@@ -142,6 +142,22 @@ class ManagerIMGTests(unittest.TestCase):
                'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'synthetic-unit-token', 'ADDP_ONLINE_TEST_RUN_ID': 'run',
                'ADDP_ONLINE_MANAGER_MINIO_BUCKET': 'bucket', 'ADDP_ONLINE_ARTIFACT_DIR': str(root)}
         return lambda: IMG.run(Path('/repository'), env, owner, browser_runner=browser, physical_runner=physical, source_format=source_format), generated, cleaned
+
+    def test_grd_reads_both_versions_without_generation_and_preserves_sources(self):
+        with tempfile.TemporaryDirectory() as root:
+            run, generated, cleaned = self.scenario(root, source_format='grd')
+            report=run()
+            self.assertEqual(report['result'],'passed')
+            self.assertEqual([c['case'] for c in report['cases']],['v1','v2'])
+            self.assertEqual(generated,[])
+            self.assertEqual(cleaned,[])
+            self.assertTrue(report['source_unchanged'])
+        for spec in IMG.GRD_SOURCES:
+            good=detail(spec)
+            for key in spec['grid_facts']:
+                bad=copy.deepcopy(good)
+                bad['attributes']['format_info']['grd'].pop(key)
+                with self.assertRaises(OWNER.SuiteError):IMG.validate_meta(OWNER,bad,spec)
 
     def test_full_orchestration_generates_exactly_two_and_cleans_both(self):
         with tempfile.TemporaryDirectory() as root:

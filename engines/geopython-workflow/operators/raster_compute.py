@@ -34,6 +34,7 @@ from addp_common.workflow_runtime import WorkflowExecutionError
 from addp_common.workflow_access import require_empty_target_directory, target_child_file_plan
 from .base import OperatorMetadata, OperatorParam, OperatorType, OperatorCategory, OutputPort, register_operator
 from .raster_image_export import encode_image, image_export_error
+from .surfer7 import inspect_surfer7
 
 gdal.UseExceptions()
 _WORKSPACE = ContextVar('raster_workspace', default=None)
@@ -456,26 +457,28 @@ def raster_load(access_plan, source_crs=''):
     plan = require_source_plan({'access_plan': access_plan})
     path = stage_source_file(plan, _path().parent / uuid.uuid4().hex)
     source_format = plan['source']['format']
-    if source_format in ('img', 'jpeg2000'):
-        # Do not expose sibling .aux.xml, .rrd or .ige resources to native HFA.
+    if source_format in ('img', 'jpeg2000', 'grd'):
+        # Native rasters expose only the selected primary, never sibling sidecars.
         isolated = _path().parent / uuid.uuid4().hex / path.name
         isolated.parent.mkdir()
         shutil.copyfile(path, isolated)
         path = isolated
         if source_format == 'img':
             _require_self_contained_hfa(path)
-        else:
+        elif source_format == 'jpeg2000':
             _require_single_jpeg2000(path)
-    native_driver = {'img': 'HFA', 'jpeg2000': 'JP2OpenJPEG'}.get(source_format, '')
+        else:
+            inspect_surfer7(path, _DISK_LANGUAGE.get())
+    native_driver = {'img': 'HFA', 'jpeg2000': 'JP2OpenJPEG', 'grd': 'GS7BG'}.get(source_format, '')
     raster = _raster(path, native_driver)
     try:
         dataset = _open(raster)
     except RuntimeError as exc:
         raise ValueError('Source format must match a supported raster driver') from exc
-    drivers = {'tiff':'GTiff', 'png':'PNG', 'jpeg':'JPEG', 'img':'HFA', 'jpeg2000':'JP2OpenJPEG'}
+    drivers = {'tiff':'GTiff', 'png':'PNG', 'jpeg':'JPEG', 'img':'HFA', 'jpeg2000':'JP2OpenJPEG', 'grd':'GS7BG'}
     if drivers.get(source_format) != dataset.GetDriver().ShortName:
         raise ValueError('Source format must match a supported raster driver')
-    if source_format in ('img', 'jpeg2000'):
+    if source_format in ('img', 'jpeg2000', 'grd'):
         bands = [dataset.GetRasterBand(index) for index in range(1, dataset.RasterCount + 1)]
         if any(gdal.DataTypeIsComplex(band.DataType) for band in bands):
             raise ValueError(f'Complex {native_driver} bands require an explicit real-valued conversion before loading')
@@ -511,15 +514,17 @@ def raster_inspect(access_plan):
     """Read-only native media facts; no publication and no pixel statistics."""
     plan = require_source_plan({'access_plan': access_plan})
     source_format = plan['source']['format']
-    if source_format not in ('img', 'jpeg2000'):
-        raise ValueError('raster_inspect requires IMG or JPEG2000 format')
+    if source_format not in ('img', 'jpeg2000', 'grd'):
+        raise ValueError('raster_inspect requires IMG, JPEG2000 or Surfer GRD format')
     with raster_workspace():
         raster = raster_load(plan)
         facts = raster_info(raster)
         driver = raster.native_driver
-        profile = 'hfa' if source_format == 'img' else _require_single_jpeg2000(raster.path)
+        profile_facts = (inspect_surfer7(raster.path, _DISK_LANGUAGE.get()) if source_format == 'grd' else
+                         {'profile':'hfa' if source_format == 'img' else _require_single_jpeg2000(raster.path)})
+        profile = profile_facts['profile']
         spatial = {}
-        if facts['extent']:
+        if facts['extent'] and source_format != 'grd':
             spatial['extent'] = facts['extent']
         if facts['extent_srid']:
             spatial['srid'] = facts['extent_srid']
@@ -535,7 +540,7 @@ def raster_inspect(access_plan):
                       'mime_type': 'image/jp2' if profile == 'jp2' else 'application/octet-stream',
                       'height': facts['height'], 'size_bytes': raster.path.stat().st_size},
             'spatial': spatial or None,
-            'format_info': {'profile': profile, 'driver': driver, 'scan_complete': True,
+            'format_info': {**profile_facts, 'driver': driver, 'scan_complete': True,
                             'band_count': facts['band_count'], 'bands': facts['bands']}}}
 
 

@@ -2335,6 +2335,8 @@ func TestNativeRasterSourcesNeverResolveToBrowserImage(t *testing.T) {
 		{Name: "scene.JP2", Extension: ".JP2", ContentType: "image/jp2"},
 		{ContentType: "image/jp2"},
 		{Name: "scene.img", Format: "img", ContentType: "application/x-img"},
+		{Name: "height.grd", Format: "grd", ContentType: "application/octet-stream"},
+		{Name: "height.GRD", Extension: ".GRD", ContentType: "application/octet-stream"},
 	} {
 		t.Run(req.Name+req.ContentType, func(t *testing.T) {
 			req.PreviewURL = "/api/v1/manager/storage-stream?source=native"

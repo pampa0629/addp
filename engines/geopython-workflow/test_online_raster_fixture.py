@@ -1404,6 +1404,33 @@ def test_manager_cog_rejects_non_cog_layout(manager_physical):
         fixture.manager_worker('verify', manager_physical)
 
 
+def test_manager_grd_full_numeric_sources_and_no_generated_route(manager_physical):
+    report=fixture.manager_worker('grd-source',manager_physical)
+    assert report['source_unchanged']
+    assert [s['case'] for s in report['grd_sources']]==['v1','v2']
+    for facts in report['grd_sources']:
+        assert facts['pixels_verified']==15 and facts['valid_pixels']==14
+        assert facts['dtype']=='Float64' and facts['grid_verified'] and facts['crs_absent']
+    fixture.private_json(manager_physical.parent/'manager-raster-request.json',{'source_format':'grd','source_case':'v1'})
+    with pytest.raises(fixture.FixtureError,match='read-only'):
+        fixture.manager_worker('verify',manager_physical)
+
+
+@pytest.mark.parametrize('case',['v1','v2'])
+def test_manager_grd_rejects_changed_source_even_with_rewritten_hash(manager_physical,case):
+    import struct
+    key=('source','business','raster/grd-'+case+'.grd')
+    raw=bytearray(LocalMinio.objects[key]);struct.pack_into('<d',raw,100,99.)
+    LocalMinio.objects[key]=bytes(raw)
+    path=manager_physical.parent/'manager-raster-source.json'
+    receipt=json.loads(path.read_text())
+    for facts in receipt['grd_sources']:
+        if facts['case']==case:facts['sha256']=hashlib.sha256(raw).hexdigest()
+    path.write_text(json.dumps(receipt))
+    with pytest.raises(fixture.FixtureError,match='complete numeric fixture'):
+        fixture.manager_worker('grd-source',manager_physical)
+
+
 def manager_img_target(config, case, corrupt=None, source_format='img'):
     extension = 'img' if source_format == 'img' else 'jp2'
     source = config.parent / f'{case}.{extension}'

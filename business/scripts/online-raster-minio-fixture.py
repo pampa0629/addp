@@ -1510,7 +1510,7 @@ def manager_physical(action, request=None):
     if (os.environ.get('ADDP_ONLINE_HOSTED') != '1'
             or os.environ.get('ONLINE_SUITE') != 'manager-internal-artifact-lineage'):
         raise FixtureError('Manager raster physical verification requires its Hosted owner')
-    if action not in ('seed', 'verify', 'deleted', 'pdf-verify', 'pdf-deleted', 'img-source', 'jpeg2000-source'):
+    if action not in ('seed', 'verify', 'deleted', 'pdf-verify', 'pdf-deleted', 'img-source', 'jpeg2000-source', 'grd-source'):
         raise FixtureError('unknown Manager physical action')
     root = environment()
     image = os.environ.get('ADDP_ONLINE_RASTER_RUNTIME_IMAGE', '')
@@ -1639,6 +1639,73 @@ def manager_seed_imgs(client, bucket, directory, source_format='img'):
     return sources
 
 
+MANAGER_GRD_CASES = (
+    ('v1',1,113.,28.,.001,.002,1.70141e38),
+    ('v2',2,500000.,3100000.,10.,20.,1000.),
+)
+
+
+def manager_grd_bytes(spec):
+    """Independent little-endian Surfer file; minimum-Y row comes first."""
+    import struct
+    case,version,x,y,dx,dy,blank = spec
+    values=[-12.,2.,3.,4.,5.,6.,blank,8.,9.,10.,11.,12.,13.,14.,1001. if version==2 else 42.]
+    valid=[v for v in values if v!=blank]
+    return (b'DSRB'+struct.pack('<ii',4,version)+b'GRID'+struct.pack('<i',72)
+        +struct.pack('<ii8d',3,5,x,y,dx,dy,min(valid),max(valid),0.,blank)
+        +b'DATA'+struct.pack('<i15d',120,*values))
+
+
+def manager_grd_facts(path,spec):
+    from osgeo import gdal
+    import struct
+    import math
+    case,version,x,y,dx,dy,blank = spec
+    raw=Path(path).read_bytes()
+    if raw!=manager_grd_bytes(spec):
+        raise FixtureError('Manager GRD source differs from its complete numeric fixture')
+    dataset=gdal.Open(str(path))
+    expected=struct.unpack_from('<15d',raw,100)
+    expected=expected[10:15]+expected[5:10]+expected[:5]
+    band=dataset.GetRasterBand(1)
+    if (dataset.GetDriver().ShortName!='GS7BG' or dataset.RasterCount!=1
+        or (dataset.RasterXSize,dataset.RasterYSize)!=(5,3) or band.DataType!=gdal.GDT_Float64
+        or dataset.GetProjection() or dataset.GetFileList()!=[str(path)]
+        or any(not math.isclose(a,b,rel_tol=0.,abs_tol=1e-10) for a,b in zip(
+            dataset.GetGeoTransform(),(x-dx/2,dx,0.,y+2.5*dy,0.,-dy)))
+        or band.GetNoDataValue()!=blank or struct.unpack('<15d',band.ReadRaster())!=expected
+        or band.GetMaskBand().ReadRaster()!=bytes(0 if v==blank else 255 for v in expected)):
+        raise FixtureError('Manager GRD full pixels, mask, node grid or unknown CRS changed')
+    return {'case':case,'object':'raster/grd-'+case+'.grd','source_srid':None,
+        'size_bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest(),
+        'pixels_verified':15,'dtype':'Float64','nodata':blank,'valid_pixels':14,
+        'grid_verified':True,'crs_absent':True}
+
+
+def manager_seed_grids(client,bucket,directory):
+    sources=[]
+    for spec in MANAGER_GRD_CASES:
+        path=Path(directory)/('grd-'+spec[0]+'.grd')
+        path.write_bytes(manager_grd_bytes(spec))
+        facts=manager_grd_facts(path,spec)
+        client.fput_object(bucket,facts['object'],str(path),content_type='application/octet-stream')
+        sources.append(facts)
+    return sources
+
+
+def manager_grd_source(client,bucket,root):
+    seeded=json.loads((root/'manager-raster-source.json').read_text())['grd_sources']
+    actual=[]
+    with tempfile.TemporaryDirectory(prefix='manager-grd-physical-') as directory:
+        for spec in MANAGER_GRD_CASES:
+            path=Path(directory)/(spec[0]+'.grd')
+            client.fget_object(bucket,'raster/grd-'+spec[0]+'.grd',str(path))
+            actual.append(manager_grd_facts(path,spec))
+    if actual!=seeded:
+        raise FixtureError('Manager GRD physical source receipt changed')
+    return {'source_unchanged':True,'grd_sources':actual}
+
+
 def manager_img_worker(action, path):
     from minio import Minio
     from minio.error import S3Error
@@ -1650,8 +1717,12 @@ def manager_img_worker(action, path):
     source = config['source']
     clients = {role: Minio(entry['endpoint'], access_key=entry['access_key'], secret_key=entry['secret_key'], secure=False)
                for role, entry in config.items()}
-    request = {} if action in ('img-source','jpeg2000-source') else json.loads((root / 'manager-raster-request.json').read_text())
-    source_format = action.removesuffix('-source') if action in ('img-source','jpeg2000-source') else request.get('source_format', 'img')
+    request = {} if action in ('img-source','jpeg2000-source','grd-source') else json.loads((root / 'manager-raster-request.json').read_text())
+    source_format = action.removesuffix('-source') if action in ('img-source','jpeg2000-source','grd-source') else request.get('source_format', 'img')
+    if source_format == 'grd':
+        if action != 'grd-source':
+            raise FixtureError('GRD read-only acceptance cannot verify generated outputs')
+        return manager_grd_source(clients['source'], source['bucket'], root)
     if source_format not in ('img','jpeg2000'): raise FixtureError('unknown raster source format')
     cases = MANAGER_IMG_CASES if source_format == 'img' else MANAGER_JPEG2000_CASES
     seeded = json.loads((root / 'manager-raster-source.json').read_text())[source_format+'_sources']
@@ -1730,7 +1801,7 @@ def manager_worker(action, path):
     if action.startswith('pdf-'):
         return manager_pdf_worker(action, path)
     request_file = Path(path).parent / 'manager-raster-request.json'
-    if action in ('img-source','jpeg2000-source') or (request_file.exists() and json.loads(request_file.read_text()).get('source_case')):
+    if action in ('img-source','jpeg2000-source','grd-source') or (request_file.exists() and json.loads(request_file.read_text()).get('source_case')):
         return manager_img_worker(action, path)
     from minio import Minio
     from minio.error import S3Error
@@ -1750,7 +1821,8 @@ def manager_worker(action, path):
             clients['source'].fput_object(source['bucket'], source['object'], str(source_path), content_type='image/tiff')
             return {'sha256': hashlib.sha256(source_path.read_bytes()).hexdigest(), 'size_bytes': source_path.stat().st_size,
                     'img_sources': manager_seed_imgs(clients['source'], source['bucket'], directory),
-                    'jpeg2000_sources': manager_seed_imgs(clients['source'], source['bucket'], directory, 'jpeg2000')}
+                    'jpeg2000_sources': manager_seed_imgs(clients['source'], source['bucket'], directory, 'jpeg2000'),
+                    'grd_sources': manager_seed_grids(clients['source'], source['bucket'], directory)}
         clients['source'].fget_object(source['bucket'], source['object'], str(source_path))
         seeded = json.loads((root / 'manager-raster-source.json').read_text())
         if hashlib.sha256(source_path.read_bytes()).hexdigest() != seeded['sha256']:

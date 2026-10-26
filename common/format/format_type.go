@@ -30,6 +30,7 @@ const (
 	FormatGIF      FormatType = "gif"
 	FormatTIFF     FormatType = "tiff"
 	FormatIMG      FormatType = "img"
+	FormatGRD      FormatType = "grd"
 	FormatJPEG2000 FormatType = "jpeg2000"
 	FormatWebP     FormatType = "webp"
 	FormatBMP      FormatType = "bmp"

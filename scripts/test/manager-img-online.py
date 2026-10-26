@@ -22,6 +22,14 @@ JPEG2000_SOURCES = tuple(dict(spec, source_format='jpeg2000', driver='JP2OpenJPE
     {'case':'codestream', 'object':'raster/jpeg2000-codestream.j2k', 'source_srid':None,
      'band_count':3, 'source_format':'jpeg2000', 'driver':'JP2OpenJPEG'},)
 
+GRD_SOURCES = tuple({'case':case, 'object':'raster/grd-'+case+'.grd', 'source_srid':None,
+    'source_format':'grd', 'driver':'GS7BG', 'width':5, 'height':3, 'band_count':1,
+    'grid_facts':{'profile':'surfer7_binary', 'version':version, 'node_origin':origin,
+                  'node_spacing':spacing, 'node_shape':[3,5], 'node_extent':extent,
+                  'blank_value':blank}}
+    for case,version,origin,spacing,extent,blank in (
+        ('v1',1,[113.,28.],[.001,.002],[113.,28.,113.004,28.004],1.70141e38),
+        ('v2',2,[500000.,3100000.],[10.,20.],[500000.,3100000.,500040.,3100040.],1000.)))
 
 
 def validate_meta(owner, detail, spec):
@@ -30,9 +38,11 @@ def validate_meta(owner, detail, spec):
     media = attrs.get('type_info', {}).get('media', {})
     info = attrs.get('format_info', {}).get(spec['source_format'], {})
     if (any(item.get(key) != value for key, value in {'data_type': 'media', 'format': spec['source_format'], 'layout': 'single'}.items())
-            or any(media.get(key) != value for key, value in {'kind': 'image', 'encoding': spec['driver'], 'width': 256, 'height': 256}.items())
-            or info.get('scan_complete') is not True or info.get('driver') != spec['driver'] or info.get('band_count') != 3):
+            or any(media.get(key) != value for key, value in {'kind': 'image', 'encoding': spec['driver'], 'width': spec.get('width',256), 'height': spec.get('height',256)}.items())
+            or info.get('scan_complete') is not True or info.get('driver') != spec['driver'] or info.get('band_count') != spec['band_count']):
         raise owner.SuiteError('IMG native Meta facts are incomplete')
+    if any(info.get(key) != value for key,value in spec.get('grid_facts',{}).items()):
+        raise owner.SuiteError('Surfer 7 node grid or version facts differ from the physical source')
     spatial = attrs.get('capabilities', {}).get('spatial', {})
     if spec['source_srid'] is None:
         if spatial:
@@ -81,7 +91,7 @@ def run_browser(repository, environment, evidence, owner):
 
 
 def run(repository, environment, owner, *, browser_runner=None, physical_runner=None, source_format="img"):
-    sources = {"img": SOURCES, "jpeg2000": JPEG2000_SOURCES}[source_format]
+    sources = {"img": SOURCES, "jpeg2000": JPEG2000_SOURCES, "grd":GRD_SOURCES}[source_format]
     tenant = owner.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'], 'IMG Tenant')
     engine = owner.positive_int(environment['ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID'], 'IMG Engine')
     client = owner.GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30)
@@ -94,7 +104,7 @@ def run(repository, environment, owner, *, browser_runner=None, physical_runner=
         raise owner.SuiteError('IMG physical source evidence is incomplete')
     fixtures, cases, snapshots = [], [], {}
     report = {'schema_version': 'addp.manager-raster-media/v1', 'source_format': source_format, 'run_id': environment['ADDP_ONLINE_TEST_RUN_ID'],
-              'identity': identity, 'result': 'incomplete', 'cases': cases, 'cleanup': {}}
+              'identity': identity, 'result': 'incomplete', 'cases': cases, 'physical_sources': seed[source_format+'_sources'], 'cleanup': {}}
     error = None
     try:
         for spec, seeded in zip(sources, seed[source_format+'_sources']):
