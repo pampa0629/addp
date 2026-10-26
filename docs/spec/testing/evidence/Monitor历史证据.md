@@ -1881,7 +1881,12 @@ Monitor T1 实际覆盖停流零分母的归一、零请求权重聚合及活动
 
 Node `v24.11.1`：新增八项受控浏览器场景与原设备九项合计17项通过；进一步补充截图后的文件系统专项八项再次通过。覆盖中英／窄屏／横向滚动、同挂载点的设备或文件系统类型差异、乱序对齐、容量与 inode 独立预算／不可用错误、版本拒绝、合法零／缺样、未提供能力、精确趋势与返回、自动刷新及身份撤销。首轮三项失败为两项新测试漏写既有 inode 单位与上述回调问题，保留原失败日志，不计通过。最终标准入口 `make test-monitor-frontend` 退出0：127项单元测试、467项Playwright场景与Vite生产构建全部通过（保留原chunk大小提示）；前端源码及测试输入摘要在门禁前后核对一致，日志 `/tmp/addp-host-filesystem-final-gate.log`。沿已有 `make test-monitor-frontend`、Platform CI Monitor frontend 与 Playwright 自动发现，无新增测试入口或依赖。
 
-日志：`/tmp/addp-host-filesystem-targeted.log`（14通过／3失败）、`/tmp/addp-host-filesystem-targeted-v2.log`（17通过）、`/tmp/addp-host-filesystem-visual.log`（8通过）。截图目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-filesystem-list-NgAnEN`（中）与 `addp-host-filesystem-list-7grzkp`（英），已目视检查宽屏、窄屏及 inode 横向滚动。既有个人 Safari 工具观测限制未解除，且 Desktop VM 来源不提供 filesystem／inode，不能以受控数据证明个人环境真实分区读数。未运行新的后端／实源 T2、个人 Safari 或 Hosted 验收，未触发／轮询 CI、未设定时任务、未重启服务；CI 与 Hosted 继续等专门会话回传。
+日志：`/tmp/addp-host-filesystem-targeted.log`（14通过／3失败）、`/tmp/addp-host-filesystem-targeted-v2.log`（17通过）、`/tmp/addp-host-filesystem-visual.log`（8通过）。截图目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-host-filesystem-list-NgAnEN`（中）与 `addp-host-filesystem-list-7grzkp`（英），已目视检查宽屏、窄屏及 inode 横向滚动。既有个人 Safari 工具观测限制未解除，且 Desktop VM 来源不提供 filesystem／inode，不能以受控数据证明个人环境真实分区读数。未运行新的后端／实源 T2、个人 Safari 或 Hosted 验收，未触发／轮询 CI、未设定时任务、未重启服务；当时 CI 与 Hosted 待专门会话回传；Linux 前端结果现已按下段独立复核，Hosted 仍待回传。
+
+
+2026-10-27 独立复核专门 CI 会话回传的 [Linux Monitor frontend Job](https://github.com/pampa0629/addp/actions/runs/40351996188/job/121674238730)：push／attempt 1，实际 checkout `e5391ca36843cd0d99233ea3f63949abb45d81d0`。GitHub Job 与实际 `Run Monitor frontend gate` 步骤均为 success，`make test-monitor-frontend` 原始日志确认 tests/pass 各127、fail 0、467 browser passed（23.3分钟），生产构建10.55秒完成。产品 `12d3eba1f6d9294ca16c2bfe9204e046e2d872e6` 至该实际提交的 `monitor/frontend`、`common-frontend`、根 Makefile、标准前端／浏览器入口、prepare-frontend-gate 与 Platform workflow 均无差异，因此覆盖本批实现。
+
+通过 `gh api repos/pampa0629/addp/actions/jobs/121674238730` 及对应 run 的只读请求核对终态，再独立下载原始日志至 `/tmp/addp-monitor-e539-independent-job.log`；与回传归档逐字节相同，SHA256 为 `2665d7996277041d5b79bf80c985e6f223a4b944f4b0b69130f1d170df985511`。回传审计 `/tmp/addp-ci-20261026-180018/Monitor_e539_actual_frontend_audit.json`。父 Platform run 的终态为 cancelled，不计整套 workflow 通过；旧超时保留，不能据此认定其根因已修。后继作业若实际跳过也不计第二轮复验。这一证据仅证明固定源码的 Linux 标准前端门禁，不替代 Safari、个人实源、正式身份 Hosted 或生产验收，不扩展文件系统告警范围；本轮未重跑或调度任何验收。
 
 
 ### 启动诊断的 Linux 实跑与同进程导入缓存修正（2026-10-26）
