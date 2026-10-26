@@ -1,9 +1,13 @@
 import ast
+import hashlib
 import importlib.util
+import ipaddress
 import io
 import json
 import os
 import signal
+import socket
+import ssl
 import time
 import re
 import sys
@@ -141,8 +145,8 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
     def test_initial_scrape_diagnostic_reports_only_bounded_safe_facts(self):
         path = ROOT / 'scripts/test/monitor-metrics-probe.py'
         tree = ast.parse(path.read_text())
-        function = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
-                        and node.name == 'fixture_scrape_diagnostic')
+        functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
+                     and node.name in {'fixture_scrape_diagnostic','tls_failure_kind'}]
         secret = 'do-not-log-this-credential'
         namespace = {'json': json, 're': re,
                      'query': lambda expression: [] if expression.startswith('addp_fixture') else [{'value': [1, '2']}],
@@ -151,7 +155,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                           'scrapeUrl': 'https://user:' + secret + '@private:9443/metrics',
                           'lastError': 'x509: certificate invalid ' + secret},
                          {'labels': {'job': 'other'}, 'health': 'up', 'lastError': secret}]}}
-        exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), 'exec'), namespace)
+        exec(compile(ast.Module(body=functions, type_ignores=[]), str(path), 'exec'), namespace)
         output = io.StringIO()
         with redirect_stdout(output):
             namespace['fixture_scrape_diagnostic']()
@@ -160,8 +164,84 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
             self.assertNotIn(forbidden, text)
         result = json.loads(text.split('diagnostic ', 1)[1])
         self.assertEqual(result, {'fixture_series_count': 0, 'fixture_value_matches': False,
-                                 'targets': [{'health': 'down', 'error_kind': 'tls'}],
+                                 'targets': [{'health': 'down', 'error_kind': 'tls_unknown'}],
                                  'http_sd_failure_observed': True})
+
+    def source_tls_functions(self,work):
+        path=ROOT/'scripts/test/monitor-metrics-probe.py';tree=ast.parse(path.read_text())
+        functions=[node for node in tree.body if isinstance(node,ast.FunctionDef) and node.name in {'tls_failure_kind','source_certificate_readiness','finish_public_preflight'}]
+        namespace={'WORK':work,'ssl':ssl,'socket':socket,'hashlib':hashlib,'ipaddress':ipaddress,'json':json,'time':time,'re':re,'os':os,'port':lambda *_:'1234','compose':mock.Mock(return_value='')}
+        exec(compile(ast.Module(body=functions,type_ignores=[]),str(path),'exec'),namespace)
+        return namespace
+
+    def prepare_source_tls_fixture(self,work):
+        (work/'source').mkdir();leaf=b'public-test-leaf'
+        (work/'source/server.crt').write_text(ssl.DER_cert_to_PEM_cert(leaf))
+        (work/'source/discovery.json').write_text(json.dumps([{'targets':['192.0.2.4:9443']}]))
+        (work/'source-tls-publication.json').write_text(json.dumps({'atomic_identity_changed':True,'same_second_mtime':True,'prior_leaf_sha256':'a'*64,'expected_leaf_sha256':hashlib.sha256(leaf).hexdigest()}))
+        return leaf
+
+    def test_verified_leaf_and_ip_are_distinct_probes_with_one_budget_each(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work=Path(directory);leaf=self.prepare_source_tls_fixture(work);ns=self.source_tls_functions(work)
+            context=mock.Mock(check_hostname=True,verify_mode=ssl.CERT_REQUIRED)
+            secured=mock.MagicMock();secured.__enter__.return_value=secured;secured.getpeercert.return_value=leaf
+            context.wrap_socket.return_value=secured
+            raw=mock.MagicMock();raw.__enter__.return_value=raw
+            with mock.patch.object(socket,'create_connection',return_value=raw) as connect,mock.patch.object(time,'monotonic',return_value=0),redirect_stdout(io.StringIO()):
+                ns['source_certificate_readiness'](context)
+            proof=json.loads((work/'source-tls-proof.json').read_text())
+            self.assertTrue(proof['passed']);self.assertEqual(len(proof['checks']),2)
+            self.assertEqual([call.kwargs['server_hostname'] for call in context.wrap_socket.call_args_list],['localhost','192.0.2.4'])
+            self.assertEqual(connect.call_count,2)
+            self.assertTrue(all(call.kwargs['timeout']==5 for call in connect.call_args_list))
+
+    def test_stale_leaf_name_failure_and_expired_budget_stop_without_retry(self):
+        for mode in ('stale_leaf','name_rejected','deadline'):
+            with self.subTest(mode=mode),tempfile.TemporaryDirectory() as directory:
+                work=Path(directory);leaf=self.prepare_source_tls_fixture(work);ns=self.source_tls_functions(work)
+                context=mock.Mock(check_hostname=True,verify_mode=ssl.CERT_REQUIRED)
+                secured=mock.MagicMock();secured.__enter__.return_value=secured;secured.getpeercert.return_value=b'stale' if mode=='stale_leaf' else leaf
+                context.wrap_socket.return_value=secured
+                if mode=='name_rejected':context.wrap_socket.side_effect=ssl.SSLCertVerificationError(1,'IP address mismatch private-credential')
+                raw=mock.MagicMock();raw.__enter__.return_value=raw
+                clock=mock.patch.object(time,'monotonic',side_effect=[0,1,6,6]) if mode=='deadline' else mock.patch.object(time,'monotonic',return_value=0)
+                output=io.StringIO()
+                with mock.patch.object(socket,'create_connection',return_value=raw) as connect,clock,redirect_stdout(output):
+                    with self.assertRaisesRegex(AssertionError,'source_tls_readiness_failed'):ns['source_certificate_readiness'](context)
+                proof=json.loads((work/'source-tls-proof.json').read_text());self.assertFalse(proof['passed'])
+                self.assertEqual(connect.call_count,1)
+                self.assertEqual(proof['checks'][0]['error_kind'],{'stale_leaf':'certificate_fingerprint_mismatch','name_rejected':'certificate_name_mismatch','deadline':'timeout'}[mode])
+                self.assertNotIn('private-credential',json.dumps(proof)+output.getvalue())
+                if mode=='deadline':raw.settimeout.assert_called_once_with(4)
+
+    def test_certificate_atomic_publication_changes_identity_with_same_second_mtime(self):
+        gate=(ROOT/'scripts/test/monitor-metrics-gate.sh').read_text()
+        program=gate.split("<<'CERTIFICATE'\n",1)[1].split('\nCERTIFICATE\n',1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            work=Path(directory);old=work/'server.crt';pending=work/'server.crt.next';proof=work/'proof.json'
+            old.write_text(ssl.DER_cert_to_PEM_cert(b'prior'));pending.write_text(ssl.DER_cert_to_PEM_cert(b'new'))
+            os.utime(old,(100,100));os.utime(pending,(100,100));before=old.stat().st_ino
+            with mock.patch.object(sys,'argv',['fixture',str(work),str(proof)]):exec(compile(program,'publication','exec'),{})
+            result=json.loads(proof.read_text())
+            self.assertTrue(result['atomic_identity_changed'] and result['same_second_mtime'])
+            self.assertNotEqual(old.stat().st_ino,before);self.assertFalse(pending.exists())
+
+    def test_public_preflight_stops_after_zero_business_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work=Path(directory);(work/'source').mkdir();ns=self.source_tls_functions(work)
+            with mock.patch.dict(os.environ,ADDP_METRICS_T2_CASE='mtls-preflight'),redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as result:ns['finish_public_preflight']()
+            self.assertEqual(result.exception.code,0)
+            self.assertEqual(json.loads((work/'source/python-http-counts.json').read_text()),{'go':0,'python':[0,0],'total':0})
+            ns['compose'].return_value='unexpected-python-container'
+            with mock.patch.dict(os.environ,ADDP_METRICS_T2_CASE='mtls-preflight'):
+                with self.assertRaisesRegex(AssertionError,'started_python_source'):ns['finish_public_preflight']()
+
+    def test_tls_error_categories_never_return_peer_text(self):
+        classify=self.source_tls_functions(Path('/unused'))['tls_failure_kind']
+        for text,expected in [('x509: certificate signed by unknown authority private-token','certificate_untrusted'),('x509: certificate has expired or is not yet valid private-token','certificate_time_invalid'),('tls: certificate required private-token','peer_certificate_required'),('remote error: tls: bad certificate private-token','peer_certificate_rejected'),('tls: unknown private-token','tls_unknown')]:
+            self.assertEqual(classify(text),expected)
 
     def cgroup_probe(self, mismatch=False):
         path = ROOT / 'scripts/test/monitor-metrics-probe.py'
@@ -461,7 +541,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertIn('--case=host-resources) metrics_case=host-resources ;;', gate)
         self.assertIn('--case=process-alerts) metrics_case=process-alerts ;;', gate)
         self.assertIn('--case=cgroup-source) metrics_case=cgroup-source ;;', gate)
-        self.assertRegex(gate, r'(?s)if \[\[ "\$metrics_case" != host-resources \]\]; then.*?go test -c ./processmetrics.*?\nfi\npython3 "\$ROOT_DIR/scripts/test/monitor-metrics-probe.py"')
+        self.assertRegex(gate, r'(?s)if \[\[ "\$metrics_case" != host-resources && "\$metrics_case" != mtls-preflight \]\]; then.*?go test -c ./processmetrics.*?\nfi\npython3 "\$ROOT_DIR/scripts/test/monitor-metrics-probe.py"')
 
     def test_ci_requires_every_isolated_metrics_case_and_preserves_budget(self):
         workflow = (ROOT / '.github/workflows/release-and-t2-gates.yml').read_text()

@@ -1,10 +1,13 @@
 """Real scrape, admission, mTLS, persistence and owned outage checks."""
 import json
+import hashlib
+import ipaddress
 import datetime
 import math
 import os
 import re
 import ssl
+import socket
 import subprocess
 import time
 import urllib.error
@@ -101,6 +104,81 @@ def rejected(url, ctx):
     raise AssertionError('Unauthenticated access accepted: ' + url)
 
 
+def tls_failure_kind(error, verify_code=None):
+    """Classify without returning any part of an endpoint or peer message."""
+    text=str(error).lower()
+    if verify_code==9:return 'certificate_not_yet_valid'
+    if verify_code==10:return 'certificate_expired'
+    if verify_code in (62,64) or any(word in text for word in ('hostname mismatch','ip address mismatch','certificate is valid for','ip sans','cannot validate certificate for')):
+        return 'certificate_name_mismatch'
+    if any(word in text for word in ('unknown authority','local issuer certificate','self-signed certificate','self signed certificate')):
+        return 'certificate_untrusted'
+    if 'expired or is not yet valid' in text:return 'certificate_time_invalid'
+    if 'expired' in text:return 'certificate_expired'
+    if 'not yet valid' in text:return 'certificate_not_yet_valid'
+    if 'certificate required' in text or "didn't provide a certificate" in text:return 'peer_certificate_required'
+    if 'bad certificate' in text or 'certificate unknown' in text:return 'peer_certificate_rejected'
+    if any(word in text for word in ('certificate','tls','ssl')):return 'tls_unknown'
+    if 'timeout' in text or 'deadline' in text or isinstance(error,TimeoutError):return 'timeout'
+    if 'connection' in text or isinstance(error,ConnectionError):return 'connection'
+    code=re.search(r'\b([45][0-9]{2})\b',text)
+    return 'http_'+code[1] if code else 'other' if text else 'none'
+
+
+def source_certificate_readiness(context):
+    """Two distinct verified handshakes, each with one absolute 5s budget."""
+    assert context.check_hostname and context.verify_mode==ssl.CERT_REQUIRED, 'source_tls_verification_required'
+    publication=json.loads((WORK/'source-tls-publication.json').read_text())
+    assert set(publication)=={'atomic_identity_changed','same_second_mtime','prior_leaf_sha256','expected_leaf_sha256'}, 'source_tls_publication_invalid'
+    assert type(publication['same_second_mtime']) is bool and all(re.fullmatch('[0-9a-f]{64}',publication[key]) for key in ('prior_leaf_sha256','expected_leaf_sha256')), 'source_tls_publication_invalid'
+    expected=hashlib.sha256(ssl.PEM_cert_to_DER_cert((WORK/'source/server.crt').read_text())).hexdigest()
+    assert publication['atomic_identity_changed'] is True and publication['expected_leaf_sha256']==expected, 'source_tls_publication_invalid'
+    groups=json.loads((WORK/'source/discovery.json').read_text())
+    address=groups[0]['targets'][0]
+    source_ip=str(ipaddress.IPv4Address(address.rsplit(':',1)[0]))
+    assert address==source_ip+':9443', 'source_tls_discovery_invalid'
+    published_port=int(port('metrics-source',9443))
+    proof={'publication':publication,'checks':[],'passed':False}
+    def publish():
+        pending=WORK/'source-tls-proof.pending'
+        pending.write_text(json.dumps(proof,sort_keys=True));pending.replace(WORK/'source-tls-proof.json')
+    for stage,name in (('localhost_leaf','localhost'),('source_ip',source_ip)):
+        began=time.monotonic();deadline=began+5
+        result={'stage':stage,'status':'failed','error_kind':'other'}
+        try:
+            with socket.create_connection(('127.0.0.1',published_port),timeout=5) as raw:
+                remaining=deadline-time.monotonic()
+                if remaining<=0:raise TimeoutError()
+                raw.settimeout(remaining)
+                with context.wrap_socket(raw,server_hostname=name) as secured:
+                    leaf=secured.getpeercert(binary_form=True)
+            if time.monotonic()>=deadline:raise TimeoutError()
+            result['leaf_sha256']=hashlib.sha256(leaf).hexdigest()
+            if result['leaf_sha256']!=expected:
+                result['error_kind']='certificate_fingerprint_mismatch'
+            else:
+                result.update(status='passed',error_kind='none')
+        except Exception as error:
+            verify_code=getattr(error,'verify_code',None)
+            result['error_kind']=tls_failure_kind(error,verify_code)
+            if type(verify_code) is int and 0<=verify_code<=1000:result['verify_code']=verify_code
+        result['duration_seconds']=round(time.monotonic()-began,6)
+        proof['checks'].append(result);publish()
+        print('Metrics T2: source TLS readiness '+json.dumps(result,sort_keys=True),flush=True)
+        if result['status']!='passed':raise AssertionError('source_tls_readiness_failed')
+    proof['passed']=True;publish()
+
+
+def finish_public_preflight():
+    if os.environ.get('ADDP_METRICS_T2_CASE')!='mtls-preflight':return
+    assert not compose('ps','-aq','python-http-agent','python-http-copilot'), 'preflight_started_python_source'
+    assert not list((WORK/'source').glob('process-*.json.requests')), 'preflight_started_go_business_source'
+    counts={'go':0,'python':[0,0],'total':0}
+    (WORK/'source/python-http-counts.json').write_text(json.dumps(counts))
+    print('Metrics T2: public mTLS preflight passed; zero business requests; stopping before source stages',flush=True)
+    raise SystemExit(0)
+
+
 # Production TLS forwarder uses the same hard resource/network boundary in T2.
 forwarder = json.loads(subprocess.check_output(['docker', 'inspect', compose('ps', '-q', 'metrics-control')], text=True))[0]
 assert forwarder['Config']['User'] == '65534:65534'
@@ -124,6 +202,7 @@ for path, method, expected in (('/metrics', 'GET', 404),
         raise AssertionError('Control forwarder accepted forbidden request')
 print('Metrics T2: private TLS forwarding rejects paths, methods, queries and anonymous discovery', flush=True)
 
+source_certificate_readiness(source_context)
 assert get(base + '/-/ready')
 assert get(source + '/metrics', source_context)
 anonymous = ssl.create_default_context(cafile=str(TLS / 'ca.crt'))
@@ -197,11 +276,7 @@ def fixture_scrape_diagnostic():
         if target.get('labels', {}).get('job') != 'addp_nodes':
             continue
         error = target.get('lastError', '').lower()
-        code = re.search(r'\b([45][0-9]{2})\b', error)
-        kind = ('none' if not error else 'tls' if 'certificate' in error or 'tls' in error
-                else 'timeout' if 'timeout' in error or 'deadline' in error
-                else 'connection' if 'connection' in error
-                else 'http_' + code[1] if code else 'other')
+        kind = tls_failure_kind(error)
         diagnostic['targets'].append({'health': target.get('health') if target.get('health') in
                                       ('up', 'down', 'unknown') else 'unknown', 'error_kind': kind})
     failures = query('prometheus_sd_http_failures_total')
@@ -217,6 +292,7 @@ except AssertionError:
 # Scrape jobs have independent initial offsets; fixture readiness is not self readiness.
 eventually(self_sample_ready, 'center self scrape and resident memory')
 assert job_is_up('addp_nodes', '1')
+finish_public_preflight()
 initial_sample_time = query('addp_fixture_resource_bytes{job="addp_nodes"}')[0]['value'][0]
 # Write atomically without replacing the bind-mounted source directory.
 def source_text(text):

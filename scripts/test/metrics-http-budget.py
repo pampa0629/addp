@@ -102,12 +102,12 @@ def main():
         raise RuntimeError('http_budget_owner_command_required')
     args=sys.argv[3:]
     command=['bash',str(ROOT/'scripts/test/monitor-metrics-gate.sh'),*args]
-    if args!=['--case=http-quality']:
+    if args not in (['--case=http-quality'],['--case=mtls-preflight']):
         os.execvpe('bash',command,os.environ)
     started=time.monotonic()
     wall_started=datetime.now(timezone.utc).isoformat()
     inputs=input_hashes()
-    report={'started_at':wall_started,'input_sha256':inputs,'result':'failed','maximum_seconds':1200,'samples':[],'hosted':False,'capacity':False,'schedule':False}
+    report={'case':args[0].split('=',1)[1],'started_at':wall_started,'input_sha256':inputs,'result':'failed','maximum_seconds':1200,'samples':[],'hosted':False,'capacity':False,'schedule':False}
     output=Path(os.environ.get('ADDP_HTTP_BUDGET_REPORT',str(Path(tempfile.gettempdir())/('addp-http-metrics-'+uuid.uuid4().hex+'.json'))))
     if not output.is_absolute() or output.is_relative_to(ROOT) or output.exists() or output.with_suffix('.started').exists():
         raise RuntimeError('http_budget_receipt_exists')
@@ -147,13 +147,17 @@ def main():
                 report['project']=ownership['project']
                 report['private_work_path']=ownership['work']
                 report['request_counts']=ownership.get('request_counts')
+                report['source_tls_proof']=ownership.get('source_tls_proof')
                 report['cleanup_verified']=ownership.get('cleanup_verified',False)
                 report['private_directory_removed']=not Path(ownership['work']).exists()
             report['inputs_unchanged']=input_hashes()==inputs
-            if result==0 and error is None and report['inputs_unchanged'] and report.get('cleanup_verified') and report.get('request_counts') and report['elapsed_seconds']<1200 and report.get('private_directory_removed') and report['samples']:
+            preflight=report['case']=='mtls-preflight'
+            tls_proven=(report.get('source_tls_proof') or {}).get('passed') is True if preflight else True
+            counts_proven=report.get('request_counts')=={'go':0,'python':[0,0],'total':0} if preflight else bool(report.get('request_counts'))
+            if result==0 and error is None and tls_proven and counts_proven and report['inputs_unchanged'] and report.get('cleanup_verified') and report['elapsed_seconds']<1200 and report.get('private_directory_removed') and report['samples']:
                 report['result']='passed'
             output.write_text(json.dumps(report,indent=2))
-    summary={key:report.get(key) for key in ('result','error_code','failure_detail','exit_code','elapsed_seconds',
+    summary={key:report.get(key) for key in ('case','result','error_code','failure_detail','exit_code','elapsed_seconds','source_tls_proof',
              'cleanup_verified','private_directory_removed','inputs_unchanged','request_counts')}
     print('HTTP functional budget result: '+json.dumps(summary,sort_keys=True),flush=True)
     print('HTTP functional budget report: '+str(output),flush=True)

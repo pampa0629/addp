@@ -10,6 +10,7 @@ case "${1:-}" in
   --case=postgres-observation) metrics_case=postgres-observation ;;
   --case=postgres-source) metrics_case=postgres-source ;;
   --case=http-quality) metrics_case=http-quality ;;
+  --case=mtls-preflight) metrics_case=mtls-preflight ;;
   --case=process-alerts) metrics_case=process-alerts ;;
   --case=host-resources) metrics_case=host-resources ;;
   --case=cgroup-source) metrics_case=cgroup-source ;;
@@ -27,7 +28,7 @@ WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-metrics-t2.XXXXXX")
 COMPOSE_PROJECT="addp-metrics-t2-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
 COMPOSE_FILE="$ROOT_DIR/scripts/test/docker-compose.monitor-metrics-t2.yml"
 export METRICS_T2_WORK="$WORK_DIR" ADDP_METRICS_TLS_DIR="$WORK_DIR/tls"
-if [[ "$metrics_case" == http-quality ]]; then
+if [[ "$metrics_case" == http-quality || "$metrics_case" == mtls-preflight ]]; then
   mkdir -m 700 "$WORK_DIR/go-cache" "$WORK_DIR/go-tmp" "$WORK_DIR/tmp"
   export GOCACHE="$WORK_DIR/go-cache" GOTMPDIR="$WORK_DIR/go-tmp" TMPDIR="$WORK_DIR/tmp"
   export GOMAXPROCS=2 GOFLAGS=-p=2
@@ -67,6 +68,8 @@ from pathlib import Path
 p=Path(sys.argv[1]);value=json.loads(p.read_text());value['cleanup_started']=True
 counts=Path(value['work'])/'source/python-http-counts.json'
 if counts.exists():value['request_counts']=json.loads(counts.read_text())
+proof=Path(value['work'])/'source-tls-proof.json'
+if proof.exists():value['source_tls_proof']=json.loads(proof.read_text())
 pending=p.with_suffix('.pending');pending.write_text(json.dumps(value));pending.replace(p)
 CLEANUP_RECEIPT
   fi
@@ -130,7 +133,7 @@ if [[ "$metrics_case" == postgres-observation ]]; then
   postgres_directory_probe
   exit 0
 fi
-mkdir -m 755 "$WORK_DIR/tls" "$WORK_DIR/source" "$WORK_DIR/deployment" "$WORK_DIR/node-tls" "$WORK_DIR/control"
+mkdir -m 755 "$WORK_DIR/tls" "$WORK_DIR/source" "$WORK_DIR/deployment" "$WORK_DIR/node-tls" "$WORK_DIR/control" "$WORK_DIR/query-tests"
 # A one-run CA and deployer client; never install these in a personal environment.
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=ADDP-Metrics-T2-CA -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign -keyout "$WORK_DIR/ca.key" -out "$ADDP_METRICS_TLS_DIR/ca.crt" >/dev/null 2>&1
 for identity in server health; do
@@ -260,8 +263,6 @@ CONFIG
 printf 'addp_fixture_resource_bytes{job="spoof",addp_node_id="spoof",addp_tenant_id="spoof",addp_source="spoof",exported_addp_node_id="spoof",addp_target_version="spoof"} 4096\n' >"$WORK_DIR/source/metrics"
 echo '[]' >"$WORK_DIR/source/discovery.json"
 echo 'Metrics T2: validate fixed-version configuration and mutual TLS'
-compose run --rm --no-deps --entrypoint /bin/promtool prometheus check config /etc/prometheus/addp.yml
-compose run --rm --no-deps --entrypoint /bin/promtool prometheus check web-config /etc/prometheus/web.yml
 compose up -d --wait --wait-timeout 90 metrics-source node-exporter postgres
 node_ip=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(compose ps -q node-exporter)")
 printf 'subjectAltName=DNS:localhost,IP:%s\nextendedKeyUsage=serverAuth\n' "$node_ip" >"$WORK_DIR/node-extensions"
@@ -277,10 +278,27 @@ Path(sys.argv[2]).write_text(json.dumps([{'targets':[address+':9443'],'labels':{
  'addp_source':'node_exporter','__meta_addp_target_version':'1'}}]))
 Path(sys.argv[3]).write_text('subjectAltName=DNS:localhost,IP:'+address+'\nextendedKeyUsage=serverAuth\n')
 CONFIG
-openssl x509 -req -in "$WORK_DIR/source-server.csr" -CA "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" -CAkey "$WORK_DIR/source-ca.key" -CAserial "$WORK_DIR/source-ca.srl" -CAcreateserial -days 1 -extfile "$WORK_DIR/source-extensions" -out "$WORK_DIR/source/server.crt" >/dev/null 2>&1
+openssl x509 -req -in "$WORK_DIR/source-server.csr" -CA "$ADDP_METRICS_DEPLOYMENT_DIR/source-ca.crt" -CAkey "$WORK_DIR/source-ca.key" -CAserial "$WORK_DIR/source-ca.srl" -CAcreateserial -days 1 -extfile "$WORK_DIR/source-extensions" -out "$WORK_DIR/source/server.crt.next" >/dev/null 2>&1
+python3 - "$WORK_DIR/source" "$WORK_DIR/source-tls-publication.json" <<'CERTIFICATE'
+from pathlib import Path
+import hashlib,json,ssl,sys
+directory=Path(sys.argv[1]);old=directory/'server.crt';pending=directory/'server.crt.next'
+digest=lambda path: hashlib.sha256(ssl.PEM_cert_to_DER_cert(path.read_text())).hexdigest()
+before=old.stat();prior=digest(old)
+pending.replace(old)
+after=old.stat()
+proof={'atomic_identity_changed':(before.st_dev,before.st_ino)!=(after.st_dev,after.st_ino),
+       'same_second_mtime':int(before.st_mtime)==int(after.st_mtime),
+       'prior_leaf_sha256':prior,'expected_leaf_sha256':digest(old)}
+assert proof['atomic_identity_changed'] and prior!=proof['expected_leaf_sha256'], 'source_certificate_publication_failed'
+Path(sys.argv[2]).write_text(json.dumps(proof))
+CERTIFICATE
+compose exec -T metrics-source nginx -t
 compose exec -T metrics-source nginx -s reload
-compose run --rm --no-deps --entrypoint nginx metrics-control -t
 compose up -d --wait --wait-timeout 90 prometheus metrics-source metrics-control
+compose exec -T prometheus /bin/promtool check config /etc/prometheus/addp.yml
+compose exec -T prometheus /bin/promtool check web-config /etc/prometheus/web.yml
+compose exec -T metrics-control nginx -t
 export METRICS_T2_PROJECT="$COMPOSE_PROJECT" METRICS_T2_COMPOSE="$COMPOSE_FILE"
 if [[ "$metrics_case" == all || "$metrics_case" == postgres-source ]]; then
   export METRICS_T2_POSTGRES_SOURCE_ENABLED=true
@@ -289,7 +307,7 @@ if [[ "$metrics_case" == all || "$metrics_case" == postgres-source ]]; then
   postgres_directory_probe
 fi
 if [[ "$metrics_case" == postgres-source ]]; then exit 0; fi
-if [[ "$metrics_case" != host-resources ]]; then
+if [[ "$metrics_case" != host-resources && "$metrics_case" != mtls-preflight ]]; then
 # Compile the current Common test source for the owned Linux container, without
 # installing Go or mounting the workspace into it. The cleanup trap owns it.
 process_arch=$(docker info --format '{{.Architecture}}')

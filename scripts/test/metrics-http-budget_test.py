@@ -109,6 +109,26 @@ class HTTPBudget(unittest.TestCase):
             self.assertEqual(launch.call_count,1);self.assertEqual(sample.call_count,1)
             stop.assert_called_once_with(1234,m.signal.SIGTERM)
 
+    def test_preflight_zero_exit_needs_verified_tls_and_exact_zero_business_counts(self):
+        for tls_ok,total,expected in [(True,0,0),(False,0,1),(True,1,1)]:
+            with self.subTest(tls=tls_ok,total=total),tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);work=root/'addp-metrics-t2.fixture';work.mkdir();output=root/'report.json'
+                ownership={'project':'addp-metrics-t2-'+'a'*32,'work':str(work)}
+                child=Mock(pid=1234);child.poll.side_effect=[None,0]
+                def start(*args,**kwargs):
+                    receipt=Path(kwargs['env']['ADDP_HTTP_BUDGET_RECEIPT']);receipt.write_text(json.dumps(ownership))
+                    def cleanup(**kwargs):
+                        shutil.rmtree(work)
+                        receipt.write_text(json.dumps({**ownership,'cleanup_started':True,'cleanup_verified':True,'source_tls_proof':{'passed':tls_ok},'request_counts':{'go':total,'python':[0,0],'total':total}}))
+                        return 0
+                    child.wait.side_effect=cleanup
+                    return child
+                with patch.object(m.sys,'argv',['budget','bash','scripts/test/monitor-metrics-gate.sh','--case=mtls-preflight']),patch.dict(os.environ,{'ADDP_HTTP_BUDGET_REPORT':str(output)}),patch.object(m,'input_hashes',return_value={}),patch.object(m.subprocess,'Popen',side_effect=start),patch.object(m,'sample',return_value={'duration_seconds':0}),patch.object(m.time,'sleep'),redirect_stdout(io.StringIO()):
+                    self.assertEqual(m.main(),expected)
+                report=json.loads(output.read_text())
+                self.assertEqual(report['case'],'mtls-preflight')
+                self.assertEqual(report['result'],'passed' if expected==0 else 'failed')
+
     def test_existing_standard_case_is_wrapped_and_registered(self):
         root=Path(__file__).resolve().parents[2]
         self.assertIn('metrics-http-budget.py bash scripts/test/monitor-metrics-gate.sh $(MONITOR_METRICS_TEST_ARGS)',(root/'Makefile').read_text())
