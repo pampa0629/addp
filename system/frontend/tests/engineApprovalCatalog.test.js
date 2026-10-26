@@ -1,5 +1,6 @@
+import { safePickerEngineID } from '@common-ui'
 import { describe, expect, it, vi } from 'vitest'
-import { approvalTargetFromSelection, approvalTargetsEqual, collectApprovalTargets, createApprovalCatalogAdapter, isApprovalTable, isApprovalSelection, safePickerEngineID } from '../src/utils/engineApprovalCatalog'
+import { approvalTargetFromSelection, approvalTargetsEqual, collectApprovalTargets, createApprovalCatalogAdapter, isApprovalTable, isApprovalSelection } from '../src/utils/engineApprovalCatalog'
 
 const rootPath = { engine_id: 2, version: 'catalog.path/v1', segments: [{ term: 'server', kind: 'server', name: '' }] }
 const root = { name: '', path: rootPath, role: 'branch', term: 'server', kind: 'server' }
@@ -19,14 +20,14 @@ describe('System live-catalog protocol adapter', () => {
     const children = await adapter.getNodeChildren(dir)
     expect(children.map(isApprovalSelection)).toEqual([true, false, true, true, true, true])
     expect(await collectApprovalTargets({ raw: { node: children[0] } }, '33', adapter)).toEqual([{ ...model('Model.3DS').path, engine_id: '33' }])
-    const nfs = { ...children[0], metadata: { ...children[0].metadata, approval_engine_type: 'minio' } }
+    const nfs = { ...children[0], metadata: { ...children[0].metadata, engine_type: 'minio' } }
     expect(isApprovalSelection(nfs)).toBe(false)
     expect(() => approvalTargetFromSelection({ raw: { node: nfs } }, '33')).toThrow()
     expect((await adapter.search('33', 'model.3ds')).map(node => node.label)).toEqual(['Model.3DS'])
   })
   it('selects MinIO IFC/3DS/DAE objects only, never a bucket, prefix or texture', () => {
     const segments = [{ term: 'service', kind: 'service', name: '' }, { term: 'bucket', kind: 'bucket', name: 'models' }]
-    const node = (term, name, role = 'leaf') => ({ metadata: { approval_engine_type: 'minio', catalog_entry: {
+    const node = (term, name, role = 'leaf') => ({ metadata: { engine_type: 'minio', catalog_entry: {
       role, term, kind: term, path: { engine_id: 33, version: 'catalog.path/v1', segments: [...segments, { term, kind: term, name }] }
     } } })
     for (const name of ['part.ifc', 'model.3DS', 'scene.dae', 'model.obj', 'part.STL', 'scene.GLTF']) expect(isApprovalSelection(node('object', name))).toBe(true)

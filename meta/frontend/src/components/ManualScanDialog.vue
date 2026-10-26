@@ -9,7 +9,7 @@
           <el-alert :closable="false" type="info" :title="scope.kind === 'engine' ? t('meta.scan.manual.wholeEngine') : scope.paths.join('；')" />
           <el-button text @click="scope = null">{{ t('meta.scan.manual.reselect') }}</el-button>
         </template>
-        <ResourceTreePicker v-else v-model="selection" :engine-id="context.engine.id" mode="any"
+        <ResourceTreePicker v-else v-model="selection" :engine-id="context.engine.id" :adapter="catalogAdapter" mode="any"
           :show-engine-selector="false" :title="t('meta.scan.manual.target')" tree-height="260px"
           @error="pickerError = true" @select="pickerError = false" />
       </el-form-item>
@@ -28,7 +28,7 @@
         <el-descriptions-item :label="t('meta.scan.manual.target')">{{ targetLabel }}</el-descriptions-item>
         <el-descriptions-item :label="t('meta.scan.scanDepth')">{{ t(`meta.scan.${scanDepth === 'basic' ? 'basicScan' : 'deepScan'}`) }}</el-descriptions-item>
       </el-descriptions>
-      <p v-if="prepared">{{ t(`meta.scan.manual.${scope || selection?.resource?.kind === 'node' ? 'branchScope' : 'leafScope'}`) }}</p>
+      <p v-if="prepared">{{ t(`meta.scan.manual.${scope || selection?.raw?.node?.metadata?.catalog_entry?.role === 'branch' ? 'branchScope' : 'leafScope'}`) }}</p>
     </el-form>
     <template #footer>
       <el-button @click="emit('close')">{{ t('meta.scan.cancel') }}</el-button>
@@ -40,12 +40,14 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ResourceTreePicker } from '@common-ui'
+import { ResourceTreePicker, createEngineCatalogTreeAdapter } from '@common-ui'
+import metaApi from '../api/meta'
 import { prepareManualScan } from '../utils/manualScan.js'
 
 const props = defineProps({ context: { type: Object, required: true }, busy: Boolean })
 const emit = defineEmits(['close', 'submit'])
 const { t } = useI18n()
+const catalogAdapter = createEngineCatalogTreeAdapter(props.context.engine, (id, path) => metaApi.listCatalogChildren(id, path))
 const scope = ref(props.context.scope)
 const selection = ref(null)
 const scanDepth = ref('basic')

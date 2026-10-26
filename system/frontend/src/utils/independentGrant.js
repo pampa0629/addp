@@ -1,5 +1,4 @@
-import { serializeEngineCatalogTarget, approvedBoundaryFields } from '@common-ui'
-import { safePickerEngineID } from './engineApprovalCatalog'
+import { serializeEngineCatalogTarget, approvedBoundaryFields, safePickerEngineID } from '@common-ui'
 
 function decimal(value) {
   if (typeof value === 'number' && !Number.isSafeInteger(value)) throw new Error('invalidGrant')

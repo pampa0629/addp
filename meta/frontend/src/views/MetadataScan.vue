@@ -1020,7 +1020,10 @@ const deriveAutoTaskEntryPaths = () => {
 const openManualScan = (scope = null, force = false) => {
   if (!canExecuteScan.value || !selectedResource.value || scanning.value || unscannedScanning.value) return
   manualScanContext.value = {
-    engine: { id: selectedResource.value.id, name: selectedResource.value.name },
+    engine: {
+      id: selectedResource.value.id, name: selectedResource.value.name, engine_type: selectedResource.value.engine_type,
+      lifecycle_state: selectedResource.value.lifecycle_state, connection_status: selectedResource.value.connection_status
+    },
     scope,
     force
   }

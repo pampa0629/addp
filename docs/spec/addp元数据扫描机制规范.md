@@ -704,6 +704,8 @@ node 扫描仍由 detector 从 catalog 范围重新发现 item 并落库。item 
 
 Meta 手动扫描在提交前统一展示引擎、精确目标、深度和强制更新选项，点击扫描／重新扫描入口只打开配置，不直接创建 execution。单项选择复用共享资源树选择器的完整 locator，原样提交 `targets`；顶层范围和批量范围使用原有 `catalog_paths`，不得将单表改为父 schema。提交后使用同一 manual execution 入口和执行等待逻辑，不创建调度任务。
 
+手动扫描的目标选择来自实时 Engine Catalog，通过共享原生目录树适配器浏览 Provider 已存在的目录和叶子，不以 Meta 是否已入库作为可选条件。新建 prefix／目录可在首次扫描前精确选择，不补造 Meta node/item ID。目录提交其自身的类型化 locator，单文件提交叶子 locator；目录读取、路径解析或选择失败时明确报错，不回退到父目录、桶或整个引擎。目录浏览不触发扫描、内容读取或授权签发。
+
 确定授权边界只需要可靠完成基础识别，不要求 deep。手动界面默认 basic；deep 由用户显式选择，用于补充字段、统计等增强事实，不能作为签发读取授权的隐式前提。
 
 Transfer 完成后触发 Meta 扫描时，应按本次执行实际写出的内容提交 `ref_groups`。Transfer 不应调用 data item detector，不应判断 refs 是否组成 Shapefile、GeoPackage 等 data item，也不应为了让 Meta 重新识别而把目标扩大为父目录 `catalog_paths`。

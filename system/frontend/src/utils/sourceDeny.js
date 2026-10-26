@@ -1,5 +1,4 @@
-import { serializeEngineCatalogTarget } from '@common-ui'
-import { safePickerEngineID } from './engineApprovalCatalog'
+import { serializeEngineCatalogTarget, safePickerEngineID } from '@common-ui'
 
 // Capture a single immutable restriction command. A retry must never extend
 // its validity or replace its ID after an unknown outcome.
