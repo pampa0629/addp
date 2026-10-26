@@ -377,7 +377,7 @@ cleanup 使用平台级 `cleanup_mode`，不使用数据库语境的 `soft_delet
 
 ## 八、结果模型
 
-cleanup result（资源回收结果）分为通用字段和模块私有字段。本节描述协调协议与 Owner 结果，不是 Monitor 公开 DTO；内部结果与可展示诊断的边界见[Monitor](#1-monitor)。
+cleanup result（资源回收结果）分为通用字段和模块私有字段。本节描述协调协议与 Owner 结果；[System 页面与任务 API](#system-页面与任务-api)和[Monitor](#1-monitor)采用不同读取与展示路径，不能互相推定返回范围或保护能力。
 
 通用字段建议包括：
 
@@ -418,6 +418,13 @@ System 只能依赖 `summary` 中的标准摘要字段计算全局视图，不�
 
 `scanned_items` 是 scan 阶段的候选规模，`affected_records` 只表示 execute 阶段实际改变的记录。System UI 在 scan 结果中必须优先展示“发现项”，不得用值为 0 的 `affected_records` 暗示 scan 未发现候选。scan 结果不得把“候选任务定义数”写入 `disabled_task_definitions` 或 `deleted_task_definitions`；二者分别只记录 execute 实际禁用和实际物理删除的任务定义数。System UI 必须把两类任务处理结果明确展示，不能仅依赖 `affected_records` 让用户推断物理删除是否发生。
 
+### System 页面与任务 API
+
+- `GET /api/v1/system/admin/cleanup/tasks/:task_id` 按[手动入口权限](#六scan-与-execute)核验 Tenant User、`system.cleanup.read` 与任务 Tenant，返回 `task_id`、`action`、`status`、`progress`、`results`、`summary`、`task`。其中 `task.context` 和各模块 `CleanupResultData` 中实际提供的 `statistics`、`details`、`errors` 随响应返回，未经过 Monitor 的 Observation 安全投影；不能以 Tenant 隔离或读取权限推断这些内容已统一脱敏。
+- System 页面按标准 `summary` 展示发现项、状态变更、释放空间、异常与风险，也展示任务 context；详情的“原始 JSON”使用 `JSON.stringify(taskDetail)` 展示完整任务响应。折叠展示和 JSON 格式化不构成敏感字段过滤；具体是否含敏感值须按 Owner 产出、接口响应与页面分别核对，不仅检查摘要表格。
+- `GET /api/v1/system/admin/cleanup/history` 返回 `tasks` 和本次返回条数 `total`，任务中仍含 context；当前后端按 `limit` 读取，不实现 `page` / `page_size` 分页。页面虽然发送这两个分页参数，不能据此宣称已分页或已获得全部历史总数。模块结果仍需逐任务查询，历史列表不等于完整结果集。
+- “查看 Monitor”只导航到对应 execution 或 System cleanup 列表，Monitor 仍按[独立读取与安全投影规则](#1-monitor)裁决。System 详情可读不证明 Monitor 父子树或私有明细可读；域接口与 Monitor 的授权、敏感字段、响应范围及实际展示须分别验收。字段保护与返回量控制须按实际出口核对，未证实的能力保留为待核对项，不以通用投影存在作为已覆盖证据；[完整 Cleanup suite 尚未接入](#十三运行态验收)，源码静态核对不代表真实验收通过。
+
 ## 九、监控与审计
 
 cleanup 必须同时进入 Monitor 和审计体系。
@@ -436,7 +443,7 @@ cleanup 不纳入 Orchestrator 编排或 TaskProvider，必须写入 `common.tas
 - Monitor 查询要求当前第一方 Tenant User、`monitor.execution.read` 及各 Owner 的独立读取裁决。System 的 `cleanup` 与 Meta 的 `cleanup_executor` 当前均由各自 `GET /execution-read-scope` 按 `system.cleanup.read` 返回范围；其他 executor 以对应 Owner 声明为准，不在 Monitor 维护权限映射。父 execution 可读不授予子 execution 读取权；Owner 不可用或范围非法时失败关闭。
 - Monitor 从共享执行事实生成显式安全 DTO，不直接读取 executor 私有表，也不把任意 Owner 诊断响应拼入通用 DTO。`execution_config`、原始 `metadata`、模块私有明细、业务数据、凭据和自由文本错误不直接展示；错误按上述规范投影为安全类别、稳定码与合法受控诊断。专业结果仍通过 Owner 既有授权入口读取。
 - Cleanup 的展示目标包括父子树、scan / execute 关联、耗时、安全错误、释放空间、影响记录数和模块结果，以及按当前 Tenant 范围、module、action、cleanup_mode、trigger_type、status 查询。当前 Monitor 通用列表未提供 `action` / `cleanup_mode` 过滤，Common 安全投影也未开放上述 `cleanup_summary`、`cleanup_status`、`cleanup_result`、`summary`；不能因字段已落库便宣称关联、计数或私有结果已在 Monitor 展示。未接通部分保留为能力缺口，不通过透传配置或原始结果补齐。
-- Cleanup 域接口查询、执行记录存在或源码静态核对，不替代 Monitor 的授权、敏感信息保护、分页与截断验证。按[运行态验收](#十三运行态验收)和执行监控规范分别核对实际 API、页面及跨模块证据；完整 Cleanup suite 尚未接入，未运行、失败或跳过不计为通过。
+- [Cleanup 域接口查询](#system-页面与任务-api)、执行记录存在或源码静态核对，不替代 Monitor 的授权、敏感信息保护、分页与截断验证。按[运行态验收](#十三运行态验收)和执行监控规范分别核对实际 API、页面及跨模块证据；完整 Cleanup suite 尚未接入，未运行、失败或跳过不计为通过。
 
 ### 2. 审计
 
