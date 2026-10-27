@@ -64,7 +64,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 栅格处理 | 范围处理 | 9 | `raster_clip`、`raster_mosaic`、`raster_update`、`raster_tile`、`raster_footprint`、`raster_polygonize`、`vector_rasterize`、`raster_contour`、`raster_stream_to_vector_d8` |
 | 栅格处理 | 波段处理 | 2 | `raster_stack`、`raster_select_bands` |
 | 栅格处理 | 像元计算 | 23 | `raster_band_math`、`raster_reclassify`、`raster_proximity`、`raster_nibble`、`raster_boundary_clean`、`raster_thin`、`raster_aggregate`、`raster_fill_depressions`、`raster_flow_direction_d8`、`raster_flow_accumulation_d8`、`raster_flow_accumulation_weighted_d8`、`raster_flow_length_d8`、`raster_flow_length_upstream_d8`、`raster_distance_to_stream_d8`、`raster_drainage_basins_d8`、`raster_watershed_d8`、`raster_subcatchments_d8`、`raster_snap_pour_points`、`raster_stream_order_d8`、`raster_stream_link_d8`、`raster_slope`、`raster_aspect`、`raster_hillshade` |
-| 栅格处理 | 栅格统计 | 6 | `raster_statistics`、`raster_zonal_statistics`、`raster_focal_statistics`、`raster_vector_zonal_statistics`、`raster_recommend_band_combination`、`raster_histogram` |
+| 栅格处理 | 栅格统计 | 7 | `raster_statistics`、`raster_cut_fill`、`raster_zonal_statistics`、`raster_focal_statistics`、`raster_vector_zonal_statistics`、`raster_recommend_band_combination`、`raster_histogram` |
 | 栅格处理 | 栅格检查 | 2 | `raster_info`、`validate_cog` |
 | 栅格处理 | 成果生成 | 3 | `raster_to_cog`、`raster_build_overviews`、`build_raster_mosaic` |
 

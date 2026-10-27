@@ -11151,3 +11151,255 @@ def test_dem_plan_curvature_unrepresentable_result_rejects_and_cleans_not_nodata
         source=raster_load(source_plan(path));before=set(source.workspace.iterdir())
         with pytest.raises(ValueError) as error:compute.raster_curvature(source,1,'metre',method='plan')
         assert str(error.value)==str(compute._curvature_error('numeric','plan'));assert set(source.workspace.iterdir())==before
+
+
+_CUT_FILL_COUNTS = ['total_count','valid_count','invalid_count','cut_count','fill_count','unchanged_count']
+_CUT_FILL_MEASURES = ['valid_area_m2','cut_area_m2','fill_area_m2','unchanged_area_m2',
+                      'cut_volume_m3','fill_volume_m3','net_increase_m3']
+
+
+def _cut_fill_pair(tmp_path, before, after, *, epsg=3857, step=(2.,3.), dtype=None):
+    paths=[]
+    crs=osr.SpatialReference();crs.ImportFromEPSG(epsg)
+    for name,values in [('before',before),('after',after)]:
+        path=tmp_path/(name+'.tif')
+        if dtype is None:
+            create_raster(path,values,(500000,step[0],0,3000000,0,-step[1]),'EPSG:'+str(epsg))
+        else:
+            bands=values[None,...] if values.ndim==2 else values
+            ds=gdal.GetDriverByName('GTiff').Create(str(path),values.shape[-1],values.shape[-2],len(bands),dtype)
+            ds.SetGeoTransform((500000,step[0],0,3000000,0,-step[1]));ds.SetSpatialRef(crs)
+            for i,array in enumerate(bands,1):ds.GetRasterBand(i).WriteArray(array)
+            ds=None
+        paths.append(path)
+    return paths
+
+
+def _run_cut_fill(paths, band=1, after_band=1, unit='metre', after_unit='metre'):
+    from operators.raster_compute import raster_cut_fill
+    return raster_cut_fill(*(raster_load(source_plan(path)) for path in paths),band,after_band,unit,after_unit)
+
+
+@pytest.mark.parametrize('epsg,factor',[(3857,1.),(2227,1200/3937),(2230,1200/3937),(26943,1.)])
+@pytest.mark.parametrize('change',[1,-1,0])
+def test_dem_cut_fill_counts_nonnegative_volumes_net_sign_and_rectangular_area(tmp_path,epsg,factor,change):
+    paths=_cut_fill_pair(tmp_path,np.array([[0.,-2.,4.]]),np.array([[0.,-2.,4.]])+change,epsg=epsg)
+    snapshots=[p.read_bytes() for p in paths]
+    with raster_workspace():
+        result=_run_cut_fill(paths);row=result.iloc[0]
+        assert list(result.columns)==_CUT_FILL_COUNTS+_CUT_FILL_MEASURES
+        assert result.dtypes.astype(str).tolist()==['int64']*6+['Float64']*7
+        assert row.total_count==row.valid_count==3 and row.invalid_count==0
+        assert row.fill_count==(3 if change>0 else 0) and row.cut_count==(3 if change<0 else 0)
+        assert row.unchanged_count==(3 if change==0 else 0)
+        area=6*factor**2
+        assert row.valid_area_m2==pytest.approx(3*area)
+        assert row.cut_volume_m3==pytest.approx(3*area*max(-change,0))
+        assert row.fill_volume_m3==pytest.approx(3*area*max(change,0))
+        assert row.net_increase_m3==pytest.approx(change*3*area)
+        assert row.cut_volume_m3>=0 and row.fill_volume_m3>=0
+    assert snapshots==[p.read_bytes() for p in paths]
+
+
+@pytest.mark.parametrize('first,second',[(a,b) for a in ('metre','foot','us_survey_foot') for b in ('metre','foot','us_survey_foot')])
+def test_dem_cut_fill_independent_decimal_mixed_vertical_units(tmp_path,first,second):
+    from decimal import Decimal,localcontext
+    factors={'metre':1.,'foot':.3048,'us_survey_foot':1200/3937}
+    before=np.array([[0.,-30.,15.5],[9.,-1.,4.]])
+    after=np.array([[0.,-1.,15.5],[2.,7.,-20.]])
+    paths=_cut_fill_pair(tmp_path,before,after,step=(.25,4.))
+    with localcontext() as ctx:
+        ctx.prec=100
+        delta=[Decimal.from_float(float(b))*Decimal.from_float(factors[second])-Decimal.from_float(float(a))*Decimal.from_float(factors[first]) for a,b in zip(before.flat,after.flat)]
+        cut=sum((-v for v in delta if v<0),Decimal(0));fill=sum((v for v in delta if v>0),Decimal(0))
+        expected=[float(cut),float(fill),float(fill-cut)]
+    with raster_workspace():row=_run_cut_fill(paths,unit=first,after_unit=second).iloc[0]
+    assert row.cut_count==sum(v<0 for v in delta) and row.fill_count==sum(v>0 for v in delta)
+    assert row.unchanged_count==sum(v==0 for v in delta)
+    assert [row.cut_volume_m3,row.fill_volume_m3,row.net_increase_m3]==expected
+
+
+@pytest.mark.parametrize('dtype,base,nodata',[(gdal.GDT_Int64,2**60,-2**63),(gdal.GDT_UInt64,2**64-4,2**64-1)])
+def test_dem_cut_fill_native_64bit_adjacent_differences_and_nodata_before_cast(tmp_path,dtype,base,nodata):
+    datatype=np.int64 if dtype==gdal.GDT_Int64 else np.uint64
+    before=np.array([[base,base+1,nodata]],dtype=datatype);after=np.array([[base+1,base,nodata+1 if dtype==gdal.GDT_Int64 else nodata-1]],dtype=datatype)
+    paths=_cut_fill_pair(tmp_path,before,after,dtype=dtype)
+    for path in paths:
+        ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(1).SetNoDataValue(nodata);ds=None
+    with raster_workspace():row=_run_cut_fill(paths).iloc[0]
+    assert row.valid_count==2 and row.invalid_count==1 and row.cut_count==row.fill_count==1
+    assert row.cut_volume_m3==row.fill_volume_m3==6 and row.net_increase_m3==0
+
+
+@pytest.mark.parametrize('case',['opposite-extremes-feet','large-offset','net-cancellation','tiny-difference','mixed-native-types'])
+def test_dem_cut_fill_no_intermediate_overflow_or_lost_residual(tmp_path,case):
+    if case=='opposite-extremes-feet':
+        before=np.array([[-1e308]]);after=-before;unit='foot';step=(.5,1.);expected=(0.,3.048e307,3.048e307)
+    elif case=='large-offset':
+        before=np.array([[1e16]]);after=before+2;unit='metre';step=(1.,1.);expected=(0.,2.,2.)
+    elif case=='net-cancellation':
+        before=np.array([[1e308,0.,0.]]);after=np.array([[0.,1e308,1.]]);unit='metre';step=(1.,1.);expected=(1e308,1e308,1.)
+    elif case=='tiny-difference':
+        before=np.array([[0.]]);after=np.array([[5e-324]]);unit='metre';step=(1.,1.);expected=(0.,5e-324,5e-324)
+    else:
+        before=np.array([[2**53+1]],dtype=np.int64);after=np.array([[float(2**53)]]);unit='metre';step=(1.,1.);expected=(1.,0.,-1.)
+    paths=_cut_fill_pair(tmp_path,before,after,step=step)
+    if case=='mixed-native-types':
+        # The common helper defaults to Float64; recreate this role with native Int64.
+        paths[0].unlink();ds=gdal.GetDriverByName('GTiff').Create(str(paths[0]),1,1,1,gdal.GDT_Int64);ds.SetGeoTransform((500000,1,0,3000000,0,-1));crs=osr.SpatialReference();crs.ImportFromEPSG(3857);ds.SetSpatialRef(crs);ds.GetRasterBand(1).WriteArray(before);ds=None
+    with raster_workspace():row=_run_cut_fill(paths,unit=unit,after_unit=unit).iloc[0]
+    np.testing.assert_allclose([row.cut_volume_m3,row.fill_volume_m3,row.net_increase_m3],expected,rtol=1e-15,atol=0)
+    if case=='tiny-difference':assert row.fill_count==1 and row.unchanged_count==0
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('case',['area-overflow','area-underflow','volume-overflow','volume-underflow','area-total-overflow'])
+def test_dem_cut_fill_unrepresentable_area_volume_explicit_bilingual_failure(tmp_path,language,case):
+    import operators.raster_compute as compute
+    step={'area-overflow':(1e200,1e200),'area-underflow':(1e-200,1e-200),'area-total-overflow':(1e308,1.)}.get(case,(1.,1.))
+    before=np.zeros((1,2))
+    after=np.full((1,2),1e308 if case=='volume-overflow' else 5e-324 if case=='volume-underflow' else 1.)
+    if case=='volume-underflow':step=(.25,1.)
+    paths=_cut_fill_pair(tmp_path,before,after,step=step)
+    with raster_workspace(),raster_error_language(language):
+        inputs=[raster_load(source_plan(p)) for p in paths];prior=set(inputs[0].workspace.iterdir())
+        with pytest.raises(ValueError) as error:compute.raster_cut_fill(*inputs,1,1,'metre','metre')
+        assert str(error.value)==compute._CUT_FILL_MESSAGES['range'][language=='en']
+        assert set(inputs[0].workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('role',[0,1])
+@pytest.mark.parametrize('fault',['band','alpha','complex','complex-alpha','unit','unit-conflict','scale','offset','rotated','south-up','geographic','missing-crs','missing-grid'])
+def test_dem_cut_fill_each_role_exact_bilingual_dem_admission(tmp_path,language,role,fault):
+    import operators.raster_compute as compute
+    paths=_cut_fill_pair(tmp_path,np.zeros((3,4)),np.ones((3,4)))
+    path=paths[role];path.unlink()
+    ds=gdal.GetDriverByName('GTiff').Create(str(path),4,3,2 if fault=='complex-alpha' else 1,gdal.GDT_CFloat64 if fault.startswith('complex') else gdal.GDT_Float64)
+    if fault!='missing-grid':ds.SetGeoTransform((500000,2,.1 if fault=='rotated' else 0,3000000,0,3 if fault=='south-up' else -3))
+    if fault!='missing-crs':crs=osr.SpatialReference();crs.ImportFromEPSG(4326 if fault=='geographic' else 3857);ds.SetSpatialRef(crs)
+    selected=ds.GetRasterBand(1);selected.Fill(0)
+    if fault=='alpha':selected.SetColorInterpretation(gdal.GCI_AlphaBand)
+    if fault=='complex-alpha':ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    if fault=='unit-conflict':selected.SetUnitType('foot')
+    if fault=='scale':selected.SetScale(2)
+    if fault=='offset':selected.SetOffset(1)
+    selected=ds=None
+    indices=[1,1];units=['metre','metre']
+    if fault=='band':indices[role]=True
+    if fault=='unit':units[role]='feet'
+    key={'complex-alpha':'complex','offset':'scale','rotated':'grid','south-up':'grid','geographic':'grid','missing-crs':'grid','missing-grid':'grid'}.get(fault,fault)
+    with raster_workspace(),raster_error_language(language):
+        inputs=[raster_load(source_plan(p)) for p in paths];prior=set(inputs[0].workspace.iterdir())
+        with pytest.raises(ValueError) as error:compute.raster_cut_fill(*inputs,*indices,*units)
+        assert str(error.value)==compute._CUT_FILL_MESSAGES[('before_' if role==0 else 'after_')+key][language=='en']
+        assert set(inputs[0].workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('case',['size','transform','crs','empty','disjoint-valid'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_dem_cut_fill_alignment_and_no_joint_coverage_are_not_zero_volume(tmp_path,case,language):
+    import operators.raster_compute as compute
+    before=np.zeros((2,3));after=np.zeros((2,3))
+    if case=='size':after=np.zeros((3,3))
+    if case=='empty':before[:]=np.nan
+    if case=='disjoint-valid':before[:,0]=np.nan;after[:,1:]=np.nan
+    paths=_cut_fill_pair(tmp_path,before,after)
+    if case in ('transform','crs'):
+        ds=gdal.Open(str(paths[1]),gdal.GA_Update)
+        if case=='transform':ds.SetGeoTransform((500001,2,0,3000000,0,-3))
+        else:crs=osr.SpatialReference();crs.ImportFromEPSG(32650);ds.SetSpatialRef(crs)
+        ds=None
+    with raster_workspace(),raster_error_language(language):
+        with pytest.raises(ValueError) as error:_run_cut_fill(paths)
+        assert str(error.value)==compute._CUT_FILL_MESSAGES['empty' if case in ('empty','disjoint-valid') else 'alignment'][language=='en']
+
+
+def test_dem_cut_fill_cross_block_selected_bands_full_coverage_oracle_bounded_reads(tmp_path,monkeypatch):
+    shape=(513,517);r,c=np.indices(shape)
+    before=(r-c).astype(float);delta=((r+2*c)%7-3).astype(float);after=before+delta
+    before[::31,::17]=-9999;after[::19,::23]=np.inf
+    paths=_cut_fill_pair(tmp_path,np.stack([np.full(shape,np.nan),before,np.full(shape,255.)]),np.stack([np.full(shape,np.nan),after,np.full(shape,255.)]))
+    valid=(before!=-9999)&np.isfinite(after)
+    for index,path in enumerate(paths):
+        ds=gdal.Open(str(path),gdal.GA_Update);alpha=ds.GetRasterBand(3);alpha.SetColorInterpretation(gdal.GCI_AlphaBand)
+        coverage=np.full(shape,255.);coverage[::(13+index),::11]=0;coverage[5,5]=128;alpha.WriteArray(coverage);valid &= coverage>0
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.GetRasterBand(2).CreateMaskBand(gdal.GMF_PER_DATASET)
+        mask=np.full(shape,255,dtype=np.uint8);mask[::(37+index),::29]=0;ds.GetRasterBand(2).GetMaskBand().WriteArray(mask);valid &= mask!=0
+        alpha=ds=None
+    originals=[p.read_bytes() for p in paths];prior_file=tmp_path/'prior.csv';prior_file.write_text('preserved\n');prior=prior_file.read_bytes()
+    reads=[]
+    original_read=gdal.Band.ReadAsArray
+    def bounded(self,x=0,y=0,win_xsize=None,win_ysize=None,*args,**kwargs):
+        reads.append((x,y,win_xsize,win_ysize));assert 0<win_xsize<=512 and 0<win_ysize<=512
+        return original_read(self,x,y,win_xsize,win_ysize,*args,**kwargs)
+    monkeypatch.setattr(gdal.Band,'ReadAsArray',bounded)
+    with raster_workspace():row=_run_cut_fill(paths,2,2).iloc[0]
+    values=delta[valid];n=int(valid.sum());cut=values[values<0];fill=values[values>0]
+    assert row.valid_count==n and row.invalid_count==before.size-n
+    assert row.cut_count==cut.size and row.fill_count==fill.size and row.unchanged_count==int((values==0).sum())
+    assert row.cut_volume_m3==-math.fsum(cut)*6 and row.fill_volume_m3==math.fsum(fill)*6 and row.net_increase_m3==math.fsum(values)*6
+    assert row.valid_area_m2==n*6 and row.cut_area_m2==cut.size*6 and row.fill_area_m2==fill.size*6
+    assert {x for x,y,w,h in reads}=={0,512} and {y for x,y,w,h in reads}=={0,512}
+    assert originals==[p.read_bytes() for p in paths] and prior_file.read_bytes()==prior
+
+
+def test_dem_cut_fill_metadata_executable_example_existing_dataframe_schema(tmp_path):
+    spec=next(item for item in list_operators() if item['id']=='raster_cut_fill');params={p['name']:p for p in spec['parameters']}
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read'] and spec['attributes']['resource_groups']==['raster']
+    assert spec['output_ports'][0]['type']=='DataFrame'
+    for name in ('input_raster','after_raster'):assert params[name]['type']=='raster' and params[name]['param_type']=='input'
+    for name in ('band','after_band','elevation_unit','after_elevation_unit'):assert params[name]['required']
+    paths=_cut_fill_pair(tmp_path,np.zeros((2,3)),np.ones((2,3)))
+    tasks=[{'id':name,'operator':'raster_load','params':{'access_plan':source_plan(path)},'depends_on':[]} for name,path in zip(('source','after'),paths)]
+    tasks += [{'id':'stats',**spec['detailed_description']['workflow_example'],'depends_on':['source','after']}]
+    result=execute_workflow({'tasks':tasks});assert result['status']=='success',result
+    preview=json.loads(result['final_result']);assert preview['type']=='pandas_dataframe' and preview['row_count']==1 and preview['truncated'] is False
+    assert [p['name'] for p in preview['schema']]==_CUT_FILL_COUNTS+_CUT_FILL_MEASURES
+    assert [p['type'] for p in preview['schema']]==['int64']*6+['Float64']*7
+    assert preview['preview_rows'][0]['fill_volume_m3']==36.
+
+
+@pytest.mark.parametrize('case',['direct','filled','reclassified','empty','bad-band','save-failure'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_dem_cut_fill_async_table_save_frozen_failure_language_and_cleanup(tmp_path,monkeypatch,case,language):
+    import api_server,workflow_engine,pandas as pd
+    before=np.zeros((3,3));after=np.full((3,3),2.)
+    if case=='filled':after=np.array([[2.,2.,2.],[2.,0.,2.],[2.,2.,2.]])
+    if case=='empty':before[:]=np.nan
+    paths=_cut_fill_pair(tmp_path,before,after);snapshots=[p.read_bytes() for p in paths]
+    target=tmp_path/'volumes.csv'
+    if case=='save-failure':target.write_text('keep existing\n')
+    tasks=[{'id':name,'operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}} for name,path in zip(('source','after'),paths)]
+    after_ref='after'
+    if case=='filled':tasks.append({'id':'processed','operator':'raster_fill_depressions','depends_on':['after'],'params':{'input_raster':{'$ref':'after'},'band':1,'elevation_unit':'metre'}});after_ref='processed'
+    if case=='reclassified':tasks.append({'id':'processed','operator':'raster_reclassify','depends_on':['after'],'params':{'input_raster':{'$ref':'after'},'band':1,'rules':[{'value':2,'class':-3}]}});after_ref='processed'
+    tasks.extend([{'id':'stats','operator':'raster_cut_fill','depends_on':['source',after_ref],'params':{'input_raster':{'$ref':'source'},'after_raster':{'$ref':after_ref},'band':1,'after_band':9 if case=='bad-band' else 1,'elevation_unit':'metre','after_elevation_unit':'metre'}},
+                  {'id':'save','operator':'save','depends_on':['stats'],'params':{'input_df':{'$ref':'stats'},'connection_info':{'mount_path':str(tmp_path)},'path':target.name,'mode':'fail'}}])
+    workspaces=[];execute=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_cut_fill':workspaces.extend(params[key].workspace for key in ('input_raster','after_raster'))
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture)
+    client=api_server.app.test_client();assert client.post('/api/operators/raster_cut_fill/invoke',json={'params':{}}).status_code==403
+    response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}});assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en' if language=='zh-cn' else 'zh-cn'}).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    failed=case in ('empty','bad-band','save-failure');assert status['status']==('failed' if failed else 'success'),status
+    assert workspaces and all(not p.exists() for p in workspaces) and snapshots==[p.read_bytes() for p in paths]
+    if failed:
+        if case=='save-failure':assert target.read_text()=='keep existing\n'
+        else:
+            assert not target.exists()
+            phrase=('没有共同有效像元' if case=='empty' else '施工后必须显式选择') if language=='zh-cn' else ('no jointly valid pixels' if case=='empty' else 'after requires an explicit valid')
+            assert phrase in status['error']
+        assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
+    else:
+        saved=pd.read_csv(target);assert list(saved.columns)==_CUT_FILL_COUNTS+_CUT_FILL_MEASURES and len(saved)==1
+        expected=(162.,0.,-162.) if case=='reclassified' else (0.,108.,108.)
+        assert saved.loc[0,['cut_volume_m3','fill_volume_m3','net_increase_m3']].tolist()==list(expected)
+        assert saved.valid_count.tolist()==[9] and target.stat().st_size>0
+        preview=json.loads(status['all_results']['stats']);assert preview['row_count']==1 and preview['preview_rows'][0]['net_increase_m3']==expected[2]

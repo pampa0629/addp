@@ -2433,6 +2433,83 @@ def _dem_admission(input_raster, elevation_unit, band, minimum_size, *, diagnost
     return dataset, horizontal_metres
 
 
+_CUT_FILL_MESSAGES = {
+    role + '_' + key: (zh.replace('DEM 填洼', '双DEM填挖方' + label),
+                       en.replace('DEM depression filling', 'DEM cut/fill ' + role))
+    for role, label in (('before', '施工前'), ('after', '施工后'))
+    for key, (zh, en) in _FILL_MESSAGES.items() if key != 'overflow'
+}
+_CUT_FILL_MESSAGES.update({
+    'alignment': ('双DEM填挖方的两份DEM必须具有相同CRS、尺寸和完整网格，请先显式对齐',
+                  'DEM cut/fill inputs must have the same CRS, dimensions and complete grid; align explicitly first'),
+    'empty': ('双DEM填挖方没有共同有效像元，不能生成零土方结果',
+              'DEM cut/fill has no jointly valid pixels; a zero-volume result cannot be produced'),
+    'range': ('双DEM填挖方的面积或体积超出有限Float64范围，非零量不能下溢为零',
+              'DEM cut/fill area or volume exceeds finite Float64 range; a nonzero quantity must not underflow to zero'),
+})
+
+
+def _cut_fill_error(code):
+    return ValueError(_CUT_FILL_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _cut_fill_float(value):
+    try:
+        result = float(value)
+    except OverflowError as cause:
+        raise _cut_fill_error('range') from cause
+    if not math.isfinite(result) or (value != 0 and result == 0):
+        raise _cut_fill_error('range')
+    return result
+
+
+def raster_cut_fill(input_raster, after_raster, band, after_band, elevation_unit, after_elevation_unit):
+    """Integrate vertical columns on the exact common grid, retaining native differences."""
+    before, horizontal = _dem_admission(input_raster, elevation_unit, band, 1,
+                                       diagnostic=lambda key: _cut_fill_error('before_' + key))
+    after, _ = _dem_admission(after_raster, after_elevation_unit, after_band, 1,
+                             diagnostic=lambda key: _cut_fill_error('after_' + key))
+    try:
+        _require_same_grid(before, after)
+    except ValueError as cause:
+        raise _cut_fill_error('alignment') from cause
+    transform = before.GetGeoTransform()
+    area = Fraction(transform[1]) * Fraction(-transform[5]) * Fraction(horizontal) ** 2
+    _cut_fill_float(area)
+    before_factor = Fraction(_ELEVATION_METRES[elevation_unit])
+    after_factor = Fraction(_ELEVATION_METRES[after_elevation_unit])
+    cut = fill = Fraction(0)
+    cut_count = fill_count = unchanged_count = 0
+    for x, y, arrays, masks in _blocks(before, [band], native=True):
+        height, width = arrays[0].shape
+        _, _, later, later_masks = next(_blocks(after, [after_band], window=(x, y, width, height), native=True))
+        jointly_valid = masks[0] & later_masks[0]
+        # tolist preserves native integers; no whole-image storage or premature
+        # Float64 conversion. Rational arithmetic also handles unlike vertical units.
+        for original, updated in zip(arrays[0][jointly_valid].tolist(), later[0][jointly_valid].tolist()):
+            delta = Fraction(updated) * after_factor - Fraction(original) * before_factor
+            if delta > 0:
+                fill += delta
+                fill_count += 1
+            elif delta < 0:
+                cut -= delta
+                cut_count += 1
+            else:
+                unchanged_count += 1
+    valid_count = cut_count + fill_count + unchanged_count
+    if valid_count == 0:
+        raise _cut_fill_error('empty')
+    total = before.RasterXSize * before.RasterYSize
+    counts = dict(zip(('total_count', 'valid_count', 'invalid_count', 'cut_count', 'fill_count', 'unchanged_count'),
+                      (total, valid_count, total-valid_count, cut_count, fill_count, unchanged_count)))
+    measures = dict(zip(('valid_area_m2', 'cut_area_m2', 'fill_area_m2', 'unchanged_area_m2',
+                         'cut_volume_m3', 'fill_volume_m3', 'net_increase_m3'),
+                        (valid_count*area, cut_count*area, fill_count*area, unchanged_count*area,
+                         cut*area, fill*area, (fill-cut)*area)))
+    return pd.DataFrame({**{name: pd.array([value], dtype='int64') for name, value in counts.items()},
+                         **{name: pd.array([_cut_fill_float(value)], dtype='Float64') for name, value in measures.items()}})
+
+
 def _dem_source(input_raster, elevation_unit, band, minimum_size, *, diagnostic=None):
     dataset, horizontal_metres = _dem_admission(input_raster, elevation_unit, band, minimum_size, diagnostic=diagnostic)
     def invalid(code, message):
@@ -3922,6 +3999,7 @@ _SPECS = [
     (raster_polygonize, OperatorCategory.RASTER_EXTENT, '分类栅格转面', [_INPUT(), _param('band', 'int', '从 1 开始的整数分类数据波段'), _param('connectivity', 'int', '同分类像元的邻接方式，仅接受整数 4 或 8', 4, False)], 'GeoDataFrame', ['read']),
     (vector_rasterize, OperatorCategory.RASTER_EXTENT, '矢量栅格化', [_param('input_gdf', 'GeoDataFrame', '有效二维面输入，后输入要素覆盖前者', role='input'), _param('reference_raster', 'raster', '仅提供同 CRS 的完整网格，不继承像元值或有效性', role='input'), _param('field', 'str', '数值属性字段，与常量二选一', None, False), _param('burn_value', 'float', '有限数值常量，与属性字段二选一', None, False), _param('all_touched', 'bool', '是否烧写所有触及像元；默认使用 GDAL 像元中心语义', False, False)], 'raster', ['read']),
     (raster_statistics, OperatorCategory.RASTER_STATISTICS, '栅格统计', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False)], 'object', ['read']),
+    (raster_cut_fill, OperatorCategory.RASTER_STATISTICS, '双DEM填挖方统计', [_INPUT(), _param('after_raster', 'raster', '施工后DEM，须与施工前同CRS、尺寸和完整网格，由用户保证相同高程基准', role='input'), _param('band', 'int', '显式施工前高程数据波段'), _param('after_band', 'int', '显式施工后高程数据波段'), _param('elevation_unit', 'str', '显式施工前高程单位', enum=list(_ELEVATION_METRES)), _param('after_elevation_unit', 'str', '显式施工后高程单位；挖填体积各非负，净增加为填方减挖方，统一立方米', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段')], 'DataFrame', ['read']),
     (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_size', 'int', '以像元为单位的正方形窗口边长：3 或 5'), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）')], 'raster', ['read']),
     (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False)], 'GeoDataFrame', ['read']),
@@ -3962,6 +4040,8 @@ for function, category, label, params, output, effects in _SPECS:
                      'raster_stack': {'other_raster': {'$ref': 'other'}},
                      'raster_update': {'update_raster': {'$ref': 'update'}},
                      'raster_select_bands': {'bands': [3, 2, 1], 'color_model': 'rgb'}}.get(name, {}))
+    if name == 'raster_cut_fill':
+        examples.update({'after_raster': {'$ref': 'after'}, 'band': 1, 'after_band': 1, 'elevation_unit': 'metre', 'after_elevation_unit': 'metre'})
     if name == 'raster_zonal_statistics':
         examples.update({'zones_raster': {'$ref': 'zones'}, 'band': 1, 'zones_band': 1})
     if name == 'raster_proximity':
