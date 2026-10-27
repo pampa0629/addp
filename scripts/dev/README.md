@@ -1,6 +1,6 @@
 # ADDP 开发脚本
 
-本目录包含所有与 ADDP 开发模式相关的启动、停止、重启脚本。日常操作选择见[启动脚本使用指南](../docs/启动脚本使用指南.md)。
+本目录维护开发脚本的实现细节、专用 Runner 接口和依赖变更流程。日常启停与排障见[启动脚本使用指南](../docs/启动脚本使用指南.md#选择操作)，模块参数、依赖组合与选择器例外见[模块选择指南](../docs/模块选择启动指南.md#选择一个或多个模块)。
 
 ## 核心原则
 
@@ -35,40 +35,11 @@ scripts/dev/
 
 ### 快速启动(推荐)
 
-```bash
-# 一键启动完整环境(基础设施 + 后端 + 前端)
-bash scripts/dev/start.sh
-
-# 开发首选地址（实际地址以启动输出和 .dev-state/ports.env 为准）
-# - Console: http://localhost:5170
-# - System: http://localhost:5173
-# - Manager: http://localhost:5174
-# - API Gateway: http://localhost:8000
-```
+全量及所选模块的启停命令统一见[操作速查](../docs/启动脚本使用指南.md#选择操作)。访问地址以启动输出和 `.dev-state/ports.env` 为准；首选端口、实际端口与公开入口遵循[端口规范](../../docs/spec/addp端口分配.md)。
 
 ### 单独脚本使用
 
-重启时序、Swagger 预检及失败边界见[重启说明](#restartsh)；依赖整理的执行范围与文件变更见[modtidy.sh 说明](#modtidysh)。
-
-```bash
-# 启动开发环境
-bash scripts/dev/start.sh
-# 按下文 start.sh 的依赖、启动与就绪流程执行
-
-# 停止所有服务
-bash scripts/dev/stop.sh
-# 停止顺序与安全边界见下文 stop.sh
-
-# 重启服务
-bash scripts/dev/restart.sh
-
-# 在 Codex 等托管命令环境中启动并前台保活
-bash scripts/dev/keepalive.sh restart -orchestrator
-# Ctrl+C 退出会全量停止当前工作区开发服务，范围见下文 keepalive.sh
-
-# 清理 Go 依赖
-bash scripts/dev/modtidy.sh
-```
+按下文的 [start.sh](#startsh)、[stop.sh](#stopsh) 和 [restart.sh](#restartsh) 说明核对实现约束；通用失败处理见[启动与重启边界](../docs/启动脚本使用指南.md#启动与重启边界)与[停止及进程归属](../docs/启动脚本使用指南.md#停止与进程归属)。托管环境保活按 [keepalive.sh](#keepalivesh) 的许可和退出范围使用，依赖整理见 [modtidy.sh](#modtidysh)。
 
 ## 脚本详细说明
 
@@ -84,7 +55,7 @@ bash scripts/dev/modtidy.sh
 
 **功能**: 启动完整开发环境
 
-指定模块时，按所选模块的依赖并集形成启动清单，复用运行中的依赖、补齐缺失项。具体模块边界见[生命周期规范](../../docs/spec/addp开发服务生命周期与构建身份规范.md#一生命周期互斥)，例如单独选择 Asset 不启动 Meta Backend/Worker。Engine Runtime 不属于模块启动依赖：`-manager`、`-develop`、`-service`、`-agent`、`-copilot`、`-gateway`、`-console` 都不会隐式拉起 DuckDB、Inference、Workflow 或 Jupyter Runtime；需要本地运行某个 Runtime 时使用其显式参数。无参数全量启动仍包含默认部署的 Runtime。SuperMap Workflow Engine 依赖预先构建的 iObjects C++ 基础镜像和许可，当前通过 System 引擎管理手动登记。
+依赖并集、前后端组合、Gateway/Console 选择器和显式 Runtime 的范围统一见[模块选择指南](../docs/模块选择启动指南.md#如何合并依赖)及[Runtime 联调](../docs/模块选择启动指南.md#显式选择-runtime-联调)。SuperMap Workflow Engine 依赖预先构建的 iObjects C++ 基础镜像和许可，当前通过 System 引擎管理手动登记。
 
 `--exact-process` 与 `--wait-live` 不是日常开发参数，只允许 `ADDP_ONLINE_HOST=1` 的专用 Runner 使用。它们复用同一构建和正式二进制入口，只为 T4 控制 Manager → System → Gateway 的真实乱序；`stop-exact-process.sh` 同样受专用主机开关保护，并在发信号前验证 PID 对应当前 checkout 的目标 ADDP 二进制。`stop-exact-process.sh --force -manager` 直接发出 SIGKILL，用于异常退出验收；省略 `--force` 时先发送 SIGTERM，等待优雅退出。强制停止仅用于专用 Runner 的故障阶段。普通模块启动仍只有上述自动依赖路径。
 
@@ -133,7 +104,7 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 **功能**: 智能重启服务。
 
 - 无参数或 `-all` 时先停止，再准备 Agent/Copilot 依赖、同步和检查全部 Swagger，失败后不启动；局部重启先预检所选 Go 模块，失败时保留现有服务。未选 Go 模块时跳过局部预检；所选 Agent/Copilot 在停止后同步依赖并生成、检查 OpenAPI，失败时不启动。完整时序见[生命周期规范](../../docs/spec/addp开发服务生命周期与构建身份规范.md#一生命周期互斥)。
-- 所有局部重启统一通过 `stop.sh -<模块> ...` 停止所选服务，再通过 `start.sh -<模块> ...` 启动；运行中的公共依赖复用，缺失的依赖由启动入口补齐。停止失败时不进入准备和启动阶段。
+- 局部范围、依赖复用与补齐统一见[启停操作说明](../docs/启动脚本使用指南.md#选择操作)；停止失败时不进入准备和启动阶段，后续失败处理见[启动与重启边界](../docs/启动脚本使用指南.md#启动与重启边界)。
 - Go Backend 和 Worker 分别核验进程状态；已运行的受管进程跳过构建检查和编译。编译后、启动前重新核验端口和工作区归属，不跨编译阶段复用监听快照。单独重启 Runtime 不会顺带编译仍在运行的 Meta Backend/Worker。
 - Go 增量构建与缓存规则统一见[生命周期规范的原子构建](../../docs/spec/addp开发服务生命周期与构建身份规范.md#二原子构建)。重启保留已有二进制和 Go 包缓存，所有选定服务仍重新启动；复用产物保留 `build_id`、`built_at`，新进程生成新的 `started_at`。
 - Swagger/OpenAPI 的生成与复用规则见[Swagger 集成指南](../../docs/spec/addp-Swagger集成指南.md#开发期增量生成)；复用产物仍须通过覆盖校验。生成失败、覆盖不一致或检查无法执行均阻断编译和启动。全部生成结束后才计算源码指纹并编译；同一模块的 `docs.go` 写入不得与两者并行。
@@ -142,23 +113,7 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 - Go 后端和前端在各自启动阶段各查询一次 TCP LISTEN 快照，命中占用后实时复核；单项启动实时查询。端口冲突和扫描失败会中断启动，新进程退出不能被其他监听者的 HTTP 成功响应掩盖。
 - 重启编排和缓存保留通过 `make test-dev-lifecycle` 验证，并纳入 `make test-platform` / Platform CI。
 
-**实现**:
-```bash
-# 局部重启 Manager
-bash scripts/dev/restart.sh -manager
-
-# 局部重启扩展服务
-bash scripts/dev/restart.sh -geopython-workflow
-bash scripts/dev/restart.sh -math-workflow
-bash scripts/dev/restart.sh -model3d-workflow
-bash scripts/dev/restart.sh -pointcloud-workflow
-bash scripts/dev/restart.sh -document-workflow
-bash scripts/dev/restart.sh -supermap-workflow
-bash scripts/dev/restart.sh -spark-workflow
-bash scripts/dev/restart.sh -jupyter
-bash scripts/dev/restart.sh -copilot
-bash scripts/dev/restart.sh -agent
-```
+**命令与范围**：模块及 Runtime 的重启命令见[操作速查](../docs/启动脚本使用指南.md#选择操作)和[Runtime 启停](../docs/启动脚本使用指南.md#显式启动-runtime)；Gateway 选择器与停止范围的差异见[模块选择说明](../docs/模块选择启动指南.md#重启与停止的范围)。
 
 GeoPython Workflow 使用原生 Python 3.12、GDAL 和 MDBTools/ODBC；准备与启动统一在 `geopython-workflow.sh`，虚拟环境不继承系统包。macOS 先安装 `brew install python@3.12 gdal mdbtools pkg-config`。局部与全量重启均先通过 stop.sh 停止所选服务，再准备依赖并验证原生能力。开发入口不构建或启动 GeoPython 镜像；产品部署保留容器方式，产品栅格 Hosted 验收通过根构建入口独立完成。环境隔离与端口归属要求见[GeoPython 运行说明](../../engines/geopython-workflow/docs/geopython-workflow容器管理指南.md#本地开发)。
 
@@ -169,12 +124,6 @@ PointCloud Workflow 使用独立 Conda 前缀中的 Python/PDAL 原生进程；�
 Document Workflow 使用独立 Python 3.12 venv、私有官方 LibreOffice 和固定中文字体；局部重启先通过 stop.sh 停止所选服务，再由 start.sh 准备依赖、检查完整性和版本并启动，核对 PID、监听归属及 HTTP 健康状态。真实三页中文 PDF 转换由 `make test-document-native` 和 CI 独立验证。开发态只处理可信文件，检测到同名 `document-workflow-engine` 容器或外部监听者时拒绝启动；生产保留容器隔离。完整约束见[Document README](../../engines/document-workflow/README.md)。
 
 SuperMap Workflow 首次使用或升级 iObjects C++ SDK、许可时，通过 `SUPERMAP_CPP_SDK_PATH` 指向完整 SDK 母版并运行 `bash scripts/build/build-supermap-workflow-base.sh` 构建稳定基础镜像。之后 `restart.sh -supermap-workflow` 和 `restart.sh -all` 根据构建指纹决定是否重新编译当前 C++ 源码并替换 8103 容器，不需要 rebuild 开关，也不挂载宿主机源码或 SDK 目录。
-
-**使用场景**:
-
-- 修改代码后需要重启
-- 服务异常需要重置
-- 只调整 Python/扩展服务时，避免影响正在运行的 Go 后端服务
 
 **Infra 处理**：开发重启保留健康的核心 Infra；启动入口只在核心未就绪时调用 `scripts/infra/up.sh`。所选观测能力异常单独报告，不触发健康核心设施重建，业务继续启动但命令返回非零。设施配置应用或故障处理见[Infra 生命周期指南](../infra/docs/生命周期脚本.md)，按实际问题选择操作。
 
@@ -210,12 +159,10 @@ bash scripts/dev/keepalive.sh restart -all
 
 ## 启动依赖关系
 
-模块参数按依赖并集合并启动清单。System Backend、Gateway 和 Console 构成公共入口；Meta 是否启动、后端依赖是否同时带前端，以及显式 Runtime 的选择规则统一见[模块选择启动指南](../docs/模块选择启动指南.md)。
+模块依赖组合与 Runtime 选择见[模块选择指南](../docs/模块选择启动指南.md#如何合并依赖)；Backend/Worker 的通用就绪顺序见[启动与重启边界](../docs/启动脚本使用指南.md#启动与重启边界)。事实读取与启动编排还须遵循：
 
-- 核心 Infra 就绪后启动 System；各模块 Backend 就绪后启动自己的 Worker，模块之间仍并行。
 - Manager/Meta/Transfer 通过 **System** 获取 AuthContext、Engine 和模块目录等 System-owned 事实；各模块普通运行配置不从 System 加载。
 - Gateway 在本次选择的后端启动阶段完成后启动，业务路由使用 System 的实例发现；前端按本次选择的清单启动。
-- Engine Runtime 使用显式参数选择，无参数全量启动包含默认 Runtime；不由模块名称推断应启动全部计算引擎。
 
 具体就绪、迁移和停止约束见[生命周期规范](../../docs/spec/addp开发服务生命周期与构建身份规范.md)。
 
@@ -227,15 +174,9 @@ bash scripts/dev/keepalive.sh restart -all
 
 ### 服务启动失败
 
-先检查启动终端的失败信息及 Infra 状态，再读取当前工作区的端口分配与进程记录：
+按[启动失败排查](../docs/启动脚本使用指南.md#端口与启动状态)核对原始报错、Infra、实际端口与进程归属。System 的日志来源还须核对：
 
-```bash
-bash scripts/infra/status.sh
-sed -n '/^SYSTEM_BACKEND_PORT=/p' .dev-state/ports.env
-ps -p "$(cat .dev-pids/system.pid)" -o pid=,command=
-```
-
-PID 文件或端口记录存在不代表服务已就绪；结合实际进程命令行核对工作区归属。已登记实例与有效可信未登记来源均可从 System 的相应入口查询日志；未登记不等于启动失败，目录存在不代表正文已送达。尚未纳入目录或页面不可用时，可结合受控节点源 `logs/runtime/system/<instance_id>/*.jsonl` 及启动终端输出诊断，不从路径推断 System 可信身份。修正原因后，从项目根目录使用 `bash scripts/dev/restart.sh -system` 重启，不绕过标准入口手动运行后端。
+已登记实例与有效可信未登记来源均可从 System 的相应入口查询日志；未登记不等于启动失败，目录存在不代表正文已送达。尚未纳入目录或页面不可用时，可结合受控节点源 `logs/runtime/system/<instance_id>/*.jsonl` 及启动终端输出诊断，不从路径推断 System 可信身份。修正原因后，从项目根目录使用 `bash scripts/dev/restart.sh -system` 重启，不绕过标准入口手动运行后端。
 
 ### 健康检查超时
 
@@ -250,43 +191,17 @@ curl -fsS "http://127.0.0.1:${SYSTEM_BACKEND_PORT:?未找到本工作区实际�
 
 ### 前端启动失败
 
-```bash
-# 1. 检查 Node.js 版本（必须与根目录 .node-version 声明的 Node.js 24 一致）
-node -v
-
-# 2. 重新安装依赖
-cd system/frontend
-rm -rf node_modules
-npm install
-
-# 3. 返回项目根目录，由标准入口重启 System 后端与前端
-cd ../..
-bash scripts/dev/restart.sh -system
-```
+先按[前端工具链规范](../../docs/spec/addp技术栈规约.md#前端技术栈)核对根 `.node-version`，再检查模块 `package.json` 与 `package-lock.json` 是否一致。安装与失败边界遵循[Node 依赖安装规范](../../docs/spec/addp开发服务生命周期与构建身份规范.md#node-依赖安装)：生命周期只执行 `npm ci`，缺少锁文件直接失败；依赖声明变更须走显式维护流程并审查锁文件差异。需要更新依赖时先停止受影响服务；通过标准入口重启，命令与范围见[启停操作速查](../docs/启动脚本使用指南.md#选择操作)。
 
 ### PID 文件残留
 
-从项目根目录重新运行 `bash scripts/dev/stop.sh`，由标准入口合并 PID 记录和工作区残留监听者并核验归属。失败时保留错误与 PID 证据，先排查归属或生命周期锁；不要先删除 `.dev-pids/`，也不要按通用进程名执行 `pkill`。停止顺序与互斥要求见[生命周期规范](../../docs/spec/addp开发服务生命周期与构建身份规范.md)。
+按[停止与进程归属](../docs/启动脚本使用指南.md#停止与进程归属)复核标准停止结果，保留失败时的错误与 PID 证据；launchd 作业、残留监听者及工作区归属的处理要求见本文 [stop.sh](#stopsh)。
 
 ## 开发工作流
 
 ### 日常开发
 
-```bash
-# 1. 启动开发环境
-bash scripts/dev/start.sh
-
-# 2. 修改代码
-vim system/backend/internal/service/user_service.go
-
-# 3. 重启服务（按需编译，构建输入未变时复用产物）
-bash scripts/dev/restart.sh
-
-# 4. 在 System → 模块管理 → 服务实例 → 查看日志中排查对应实例
-
-# 5. 停止环境
-bash scripts/dev/stop.sh
-```
+日常启停与代码变化后的重启按[操作速查](../docs/启动脚本使用指南.md#选择操作)执行，实例日志与进程核对见[排查失败](../docs/启动脚本使用指南.md#排查失败)。涉及依赖变化时使用下文的维护流程；启停用于开发联调，测试分层和实际运行验收见[测试与运行验收](../docs/启动脚本使用指南.md#测试与运行验收)。
 
 ### 添加新依赖
 
@@ -318,6 +233,8 @@ bash scripts/dev/stop.sh
 
 ## 相关文档
 
+- [启动脚本使用指南](../docs/启动脚本使用指南.md) - 日常启停、停止与进程归属、排障和验收入口
+- [模块选择启动指南](../docs/模块选择启动指南.md) - 依赖组合、显式 Runtime 与 Gateway/Console 选择器例外
 - [scripts/infra/README.md](../infra/README.md) - 基础设施脚本文档
 - [CLAUDE.md](../../CLAUDE.md) - 项目整体架构
 - [开发服务生命周期与构建身份规范](../../docs/spec/addp开发服务生命周期与构建身份规范.md) - 启动、停止、模块迁移与 Worker 顺序
