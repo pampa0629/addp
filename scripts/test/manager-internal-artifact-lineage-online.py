@@ -651,11 +651,14 @@ def find_fixture_item(client: GatewayClient, engine_id: int, full_name: str, lab
 
 def build_item_locator(engine_id: int, item: Mapping[str, object]) -> str:
     item_id = positive_int(item.get("id"), "fixture item id")
+    item_type = item.get("item_type")
+    if item_type not in {"file", "object"}:
+        raise SuiteError("fixture item_type must be file or object")
     full_name = item.get("full_name")
     if not isinstance(full_name, str) or not full_name.strip():
         raise SuiteError("fixture full_name is missing")
     path = urllib.parse.quote(full_name.strip("/"), safe="/")
-    return f"addp://engine/{engine_id}/path/{path}?type=object&item_id={item_id}"
+    return f"addp://engine/{engine_id}/path/{path}?type={item_type}&item_id={item_id}"
 
 
 def assert_no_existing_resources(client: GatewayClient, fingerprint: str) -> None:

@@ -153,6 +153,8 @@ def physical(action, repository, environment):
             "run",
             "--rm",
             "-i",
+            "--user",
+            f"{os.getuid()}:{os.getgid()}",
             "--name",
             "addp-manager-raster-verifier",
             "--network",

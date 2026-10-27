@@ -2,6 +2,7 @@ import base64
 import hashlib
 import importlib
 import json
+import os
 from pathlib import Path
 import secrets
 import shutil
@@ -137,10 +138,7 @@ class ORCSceneTest(unittest.TestCase):
             validate_user_identity=identity,
             wait_for_meta_scan=lambda *a, **k: "scan-id",
             find_fixture_item=lambda c, e, *args: client.item(e),
-            build_item_locator=lambda e, i: f"addp://engine/{e}/path/"
-            + i["full_name"]
-            + "?type="
-            + i["item_type"],
+            build_item_locator=OWNER.build_item_locator,
         )
 
         def physical(action):
@@ -207,6 +205,10 @@ class ORCSceneTest(unittest.TestCase):
         self.assertEqual(client.deleted, list(reversed(client.tasks)))
         self.assertEqual(actions, ["seed", "verify", "delete"])
         self.assertEqual([c["source_case"] for c in report["cases"]], ["minio", "nfs"])
+        self.assertEqual(report['cases'][0]['locator'],
+                         'addp://engine/12/path/sample/orc/table.orc?type=object&item_id=12')
+        self.assertEqual(report['cases'][1]['locator'],
+                         'addp://engine/14/path/orc/table.orc?type=file&item_id=14')
         self.assertTrue((root / "manager-orc.json").is_file())
 
     def test_value_failure_never_passes_but_still_cleans(self):
@@ -249,6 +251,8 @@ class ORCSceneTest(unittest.TestCase):
             real_run = subprocess.run
             delivered = []
             def launch(command, **kwargs):
+                self.assertIn('--user', command, 'fixture files must belong to the host lifecycle owner')
+                self.assertEqual(command[command.index('--user')+1], f'{os.getuid()}:{os.getgid()}')
                 # Docker closes container STDIN unless interactive mode is set.
                 worker_input = kwargs['input'] if '-i' in command or '--interactive' in command else ''
                 result = real_run(

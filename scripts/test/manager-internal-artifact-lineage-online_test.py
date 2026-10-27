@@ -1718,12 +1718,21 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
 
     def test_builds_canonical_resource_locator_from_meta_item(self) -> None:
         locator = SUITE.build_item_locator(
-            12, {"id": 91, "full_name": "addp-online/point cloud/source.las"}
+            12, {"id": 91, "full_name": "addp-online/point cloud/source.las", "item_type": "object"}
         )
         self.assertEqual(
             locator,
             "addp://engine/12/path/addp-online/point%20cloud/source.las?type=object&item_id=91",
         )
+
+    def test_locator_preserves_file_identity_and_rejects_untyped_items(self) -> None:
+        self.assertEqual(
+            SUITE.build_item_locator(3, {'id': 2, 'full_name': 'orc/table.orc', 'item_type': 'file'}),
+            'addp://engine/3/path/orc/table.orc?type=file&item_id=2',
+        )
+        for kind in (None, 'directory', 'prefix', 'table'):
+            with self.subTest(kind=kind), self.assertRaises(SUITE.SuiteError):
+                SUITE.build_item_locator(3, {'id':2, 'full_name':'orc/table.orc', 'item_type':kind})
 
     def test_accepts_zero_as_a_canonical_non_negative_count(self) -> None:
         self.assertEqual(SUITE.non_negative_int(0, "total"), 0)
