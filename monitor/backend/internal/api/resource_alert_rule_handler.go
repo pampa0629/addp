@@ -75,7 +75,7 @@ func (h *ResourceAlertRuleHandler) List(c *gin.Context) {
 
 // Create godoc
 // @Summary 创建停用的主机资源告警规则 | Create a disabled host resource alert rule
-// @Description 四项条件参数必须显式填写；0 < 恢复百分比 < 触发百分比 <= 100，持续时间为 15–300 秒且是 15 的倍数 | All four condition parameters are required; 0 < recovery percent < trigger percent <= 100; durations are 15–300 seconds in multiples of 15
+// @Description 文件系统指标必须选择完整 device/mountpoint/fstype；标量指标 dimensions 为空。四项条件参数必须显式填写；0 < 恢复百分比 < 触发百分比 <= 100，持续时间为 15–300 秒且是 15 的倍数 | Filesystem metrics require exact device/mountpoint/fstype dimensions; scalar dimensions are empty. All four condition parameters are required; 0 < recovery percent < trigger percent <= 100; durations are 15–300 seconds in multiples of 15
 // @Tags 平台告警 | Platform Alerts
 // @Produce json
 // @Security BearerAuth
@@ -106,7 +106,7 @@ func (h *ResourceAlertRuleHandler) Create(c *gin.Context) {
 
 // Update godoc
 // @Summary 修改主机资源告警规则 | Update host resource alert rule
-// @Description 主机及指标不可修改；活动告警沿用触发时保存的恢复条件 | Host and metric are immutable; active alerts keep the recovery policy saved at opening
+// @Description 主机、指标及挂载维度不可修改；活动告警沿用触发时保存的恢复条件 | Host, metric and mount dimensions are immutable; active alerts keep the recovery policy saved at opening
 // @Tags 平台告警 | Platform Alerts
 // @Produce json
 // @Security BearerAuth

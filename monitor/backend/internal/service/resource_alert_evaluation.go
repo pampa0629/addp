@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
 
@@ -98,23 +99,32 @@ func (s *ResourceAlertRuleService) Evaluate(parent context.Context, at time.Time
 		reason string
 	}
 	observations := map[string]observation{}
-	for i := 0; i < len(rules); {
-		j := i + 1
-		for j < len(rules) && rules[j].NodeID == rules[i].NodeID {
-			j++
-		}
-		node := rules[i].NodeID
+	groups := map[string][]models.ResourceAlertRule{}
+	for _, r := range rules {
+		groups[resourceRuleGroup(r)] = append(groups[resourceRuleGroup(r)], r)
+	}
+	groupKeys := make([]string, 0, len(groups))
+	for group := range groups {
+		groupKeys = append(groupKeys, group)
+	}
+	sort.Strings(groupKeys)
+	for _, group := range groupKeys {
+		members := groups[group]
+		node := members[0].NodeID
 		source, ok := sources[node]
 		if !ok {
-			observations[node] = observation{reason: "collection_paused"}
-			i = j
+			observations[group] = observation{reason: "collection_paused"}
 			continue
 		}
 		keys := []string{"node.uptime_seconds"}
-		for _, r := range rules[i:j] {
+		dimensions := members[0].Dimensions
+		for _, r := range members {
 			keys = append(keys, r.MetricKey)
 		}
-		plan, e := resourcequery.NewPlan(keys, at.Add(-315*time.Second), at, at, true, nil, cfg.Budget)
+		if len(dimensions) != 0 {
+			keys = append(keys, filesystemPressureKeys...)
+		}
+		plan, e := resourcequery.NewPlan(keys, at.Add(-315*time.Second), at, at, true, dimensions, cfg.Budget)
 		row := observation{source: source}
 		if e != nil || plan.StepSeconds != resourcequery.MinimumStepSeconds {
 			row.reason = "query_budget"
@@ -125,8 +135,7 @@ func (s *ResourceAlertRuleService) Evaluate(parent context.Context, at time.Time
 				row.series = nil
 			}
 		}
-		observations[node] = row
-		i = j
+		observations[group] = row
 	}
 	// Re-read current System identities, targets and resolved addresses after all
 	// network work. No private System table or administrator token is consulted.
@@ -139,7 +148,7 @@ func (s *ResourceAlertRuleService) Evaluate(parent context.Context, at time.Time
 
 	resets := map[string][]models.ResourceAlertRule{}
 	for _, r := range rules {
-		row := observations[r.NodeID]
+		row := observations[resourceRuleGroup(r)]
 		source, ok := current[r.NodeID]
 		if row.reason == "" && (!ok || source != row.source) {
 			row.reason = "source_changed"
@@ -232,28 +241,18 @@ func (s *ResourceAlertRuleService) applyResourceRule(ctx context.Context, expect
 				updates["last_error"] = "source_changed"
 			} else {
 				signature := fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("%d/%d/%s/%d/%s/%d/%s", r.Version, source.nodeVersion, target.ID, target.Version, source.address, cfg.Version, s.startedAt.Format(time.RFC3339Nano)))))
-				since := at
-				if r.WindowSignature == signature && r.WindowSince != nil && r.LastEvaluatedAt != nil && at.Sub(*r.LastEvaluatedAt) <= 16*time.Second {
-					since = *r.WindowSince
-				}
-				if since.Before(r.UpdatedAt) {
-					since = r.UpdatedAt
-				}
-				if since.Before(s.startedAt) {
-					since = s.startedAt
-				}
 				policyToUse := r.ResourcePressurePolicy
 				evidenceVersion := r.Version
 				ruleName := r.Name
 				var active models.PlatformAlertIncident
-				e = tx.Where("category=? AND subject_kind=? AND subject_id=? AND signal=? AND status IN ?", models.PlatformAlertCategoryResource, models.PlatformAlertSubjectHostNode, r.NodeID, r.MetricKey, []string{"open", "acknowledged"}).Take(&active).Error
+				e = tx.Where("category=? AND subject_kind=? AND subject_id=? AND signal=? AND status IN ?", models.PlatformAlertCategoryResource, models.PlatformAlertSubjectHostNode, r.NodeID, models.ResourceAlertSignal(r.MetricKey, r.Dimensions), []string{"open", "acknowledged"}).Take(&active).Error
 				if e != nil && !errors.Is(e, gorm.ErrRecordNotFound) {
 					return e
 				}
 				hasActive := e == nil
-				qualified := true
+				qualified := validResourceRuleDimensions(r.MetricKey, r.Dimensions) && r.MountKey == models.ResourceMountKey(r.Dimensions)
 				if hasActive {
-					if active.ResourceEvidence == nil || active.ResourceEvidence.RuleID != r.ID || !active.ResourceEvidence.Policy.Valid() {
+					if active.ResourceEvidence == nil || active.ResourceEvidence.RuleID != r.ID || !active.ResourceEvidence.Policy.Valid() || (r.MetricKey == models.FilesystemCapacityMetric && (active.ResourceEvidence.Filesystem == nil || !sameResourceDimensions(active.ResourceEvidence.Filesystem.Dimensions, r.Dimensions))) {
 						qualified = false
 					} else {
 						policyToUse = active.ResourceEvidence.Policy
@@ -268,27 +267,55 @@ func (s *ResourceAlertRuleService) applyResourceRule(ctx context.Context, expect
 					}
 					byKey[v.MetricKey] = v
 				}
+				companions := []resourcequery.Series{}
+				for _, key := range filesystemPressureKeys {
+					if r.MetricKey == models.FilesystemCapacityMetric {
+						companions = append(companions, byKey[key])
+					}
+				}
+				if r.MetricKey == models.FilesystemCapacityMetric && len(byKey[r.MetricKey].Points) > 0 {
+					if latest, valid := filesystemPressureEvidence(byKey[r.MetricKey], companions, len(byKey[r.MetricKey].Points)-1); valid {
+						signature = fmt.Sprintf("%x", sha256.Sum256([]byte(signature+fmt.Sprintf("/capacity:%g", latest.TotalBytes))))
+					}
+				}
+				since := at
+				if r.WindowSignature == signature && r.WindowSince != nil && r.LastEvaluatedAt != nil && at.Sub(*r.LastEvaluatedAt) <= 16*time.Second {
+					since = *r.WindowSince
+				}
+				if since.Before(r.UpdatedAt) {
+					since = r.UpdatedAt
+				}
+				if since.Before(s.startedAt) {
+					since = s.startedAt
+				}
 				result := resourcePressureResult{Verdict: PlatformAlertUnknown}
 				if qualified {
-					result = evaluateResourcePressure(byKey[r.MetricKey], byKey["node.uptime_seconds"], since, at, true, hasActive, policyToUse)
+					result = evaluateResourcePressure(byKey[r.MetricKey], byKey["node.uptime_seconds"], since, at, true, hasActive, policyToUse, companions...)
 				}
 				verdict = result.Verdict
 				updates["last_verdict"], updates["last_error"] = string(verdict), "warming_up"
 				// A short valid prefix is expected during warming. An invalid newest
 				// sample breaks continuity immediately and starts a new window next round.
-				newestValid := pressureNewestValid(byKey[r.MetricKey], byKey["node.uptime_seconds"], at)
+				newestValid := pressureNewestValid(byKey[r.MetricKey], byKey["node.uptime_seconds"], at, companions...)
 				if newestValid {
 					updates["window_signature"], updates["window_since"] = signature, since
 				}
 				if verdict == PlatformAlertNormal || verdict == PlatformAlertRisk {
 					updates["last_error"], updates["last_sample_at"], updates["last_value"] = "", result.SampledTo, result.Latest
 					evidence = &models.ResourceAlertEvidence{RuleName: ruleName, RuleID: r.ID, RuleVersion: evidenceVersion, Policy: policyToUse, NodeVersion: source.nodeVersion, TargetID: target.ID, TargetVersion: target.Version, QueryPolicyVersion: cfg.Version, EvaluatedAt: at, SampledFrom: result.SampledFrom, SampledTo: result.SampledTo, Samples: result.Samples, Minimum: result.Minimum, Maximum: result.Maximum, Latest: result.Latest}
+					if r.MetricKey == models.FilesystemCapacityMetric {
+						evidence.Filesystem, _ = filesystemPressureEvidence(byKey[r.MetricKey], companions, len(byKey[r.MetricKey].Points)-1)
+					}
 				} else if !newestValid {
 					updates["last_error"] = "no_data"
+					metric := byKey[r.MetricKey]
+					if r.MetricKey == models.FilesystemCapacityMetric && len(metric.Points) > 0 && metric.Points[len(metric.Points)-1].DataState == "no_data" {
+						updates["last_error"] = "mount_missing"
+					}
 				}
 			}
 		}
-		if err = reconcilePlatformAlert(tx, s.alerts, PlatformAlertEvaluation{Category: models.PlatformAlertCategoryResource, SubjectKind: models.PlatformAlertSubjectHostNode, SubjectID: r.NodeID, Signal: r.MetricKey, Severity: "warning", Verdict: verdict, ResourceEvidence: evidence}, at); err != nil {
+		if err = reconcilePlatformAlert(tx, s.alerts, PlatformAlertEvaluation{Category: models.PlatformAlertCategoryResource, SubjectKind: models.PlatformAlertSubjectHostNode, SubjectID: r.NodeID, Signal: models.ResourceAlertSignal(r.MetricKey, r.Dimensions), Severity: "warning", Verdict: verdict, ResourceEvidence: evidence}, at); err != nil {
 			return err
 		}
 		// Evaluation state never changes the user's configuration CAS or edit time.
@@ -296,9 +323,17 @@ func (s *ResourceAlertRuleService) applyResourceRule(ctx context.Context, expect
 	})
 }
 
-func pressureNewestValid(metric, uptime resourcequery.Series, at time.Time) bool {
+func pressureNewestValid(metric, uptime resourcequery.Series, at time.Time, companions ...resourcequery.Series) bool {
 	if len(metric.Points) == 0 || len(uptime.Points) == 0 {
 		return false
+	}
+	if !pressureMetricDimensions(metric) {
+		return false
+	}
+	if metric.MetricKey == models.FilesystemCapacityMetric {
+		if _, ok := filesystemPressureEvidence(metric, companions, len(metric.Points)-1); !ok {
+			return false
+		}
 	}
 	m, u := metric.Points[len(metric.Points)-1], uptime.Points[len(uptime.Points)-1]
 	return validPressurePoint(m) && validPressurePoint(u) && m.EvaluatedAt.Equal(at) && u.EvaluatedAt.Equal(at) && m.SampledAt.Equal(*u.SampledAt) && !m.SampledAt.After(at) && at.Sub(*m.SampledAt) <= 16*time.Second && *m.Value >= 0 && *m.Value <= 100 && *u.Value >= 0

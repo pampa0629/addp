@@ -15,6 +15,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +31,13 @@ import (
 // Run and the HTTP sender are production implementations; only System identity
 // reads remain module fixtures. This is T2, not a full authenticated deployment.
 func TestIntegrationMetricsResourceAlertLifecycle(t *testing.T) {
+	testMetricsResourceAlertLifecycle(t, false)
+}
+func TestIntegrationMetricsFilesystemAlertLifecycle(t *testing.T) {
+	testMetricsResourceAlertLifecycle(t, true)
+}
+
+func testMetricsResourceAlertLifecycle(t *testing.T, filesystem bool) {
 	if os.Getenv("ADDP_RESOURCE_RULE_LIFECYCLE_INTEGRATION") != "1" {
 		t.Skip("requires standard Monitor metrics lifecycle T2 gate")
 	}
@@ -50,6 +58,13 @@ func TestIntegrationMetricsResourceAlertLifecycle(t *testing.T) {
 		data := "node_uname_info{sysname=\"Linux\"} 1\nnode_exporter_build_info{version=\"1.12.1\"} 1\nnode_boot_time_seconds 1\nnode_memory_MemTotal_bytes 100000000\n"
 		if available != "" {
 			data += "node_memory_MemAvailable_bytes " + available + "\n"
+		}
+		if filesystem {
+			data += "node_scrape_collector_success{collector=\"filesystem\"} 1\n"
+			if available != "" {
+				labels := `{device="/dev/data",mountpoint="/data",fstype="ext4"}`
+				data += "node_filesystem_device_error" + labels + " 0\nnode_filesystem_size_bytes" + labels + " 100000000\nnode_filesystem_free_bytes" + labels + " " + available + "\nnode_filesystem_avail_bytes" + labels + " " + available + "\n"
+			}
 		}
 		file, e := os.CreateTemp(filepath.Dir(sourceFile), ".rule-source-")
 		if e != nil {
@@ -189,6 +204,25 @@ func TestIntegrationMetricsResourceAlertLifecycle(t *testing.T) {
 	policy := models.ResourcePressurePolicy{TriggerPercent: 80, RecoveryPercent: 75, TriggerSeconds: 30, RecoverySeconds: 30}
 	enabled := false
 	input := ResourceAlertRuleInput{Name: "metrics-lifecycle", NodeID: node, MetricKey: "node.memory.used_percent", TriggerPercent: &policy.TriggerPercent, RecoveryPercent: &policy.RecoveryPercent, TriggerSeconds: &policy.TriggerSeconds, RecoverySeconds: &policy.RecoverySeconds, Enabled: &enabled}
+	if filesystem {
+		input.MetricKey = models.FilesystemCapacityMetric
+		input.Dimensions = testFilesystemMount.Copy()
+		policy.TriggerPercent, policy.RecoveryPercent = 85, 80
+		writeSource("10000000")
+		ready := false
+		deadline := time.Now().Add(35 * time.Second)
+		for time.Now().Before(deadline) {
+			result, e := observations.Query(ctx, "fixture-admission", node, "module-fixture-user", []string{input.MetricKey}, time.Time{}, time.Time{}, false, input.Dimensions)
+			if e == nil && result.Collection != nil && result.Collection.State == "collecting" && result.Collection.Filesystem == "available" && len(result.Series) == 1 && len(result.Series[0].Points) == 1 && validPressurePoint(result.Series[0].Points[0]) {
+				ready = true
+				break
+			}
+			time.Sleep(time.Second)
+		}
+		if !ready {
+			t.Fatal("filesystem source did not publish current exact mount")
+		}
+	}
 	rule, err := rules.Save(ctx, "", "module-fixture-user", input, time.Now().UTC())
 	if err != nil || rule.Enabled {
 		t.Fatal("create disabled rule", err)
@@ -257,7 +291,7 @@ func TestIntegrationMetricsResourceAlertLifecycle(t *testing.T) {
 		if e := f.db.First(&state, "id=?", rule.ID).Error; e != nil {
 			t.Fatal(e)
 		}
-		return state.LastError == "no_data"
+		return state.LastError == "no_data" || state.LastError == "mount_missing"
 	})
 	for until := time.Now().Add(31 * time.Second); time.Now().Before(until); time.Sleep(time.Second) {
 		if readIncident().Status != "open" {
@@ -287,7 +321,7 @@ func TestIntegrationMetricsResourceAlertLifecycle(t *testing.T) {
 	mu.Lock()
 	got := append([]receipt(nil), receipts...)
 	mu.Unlock()
-	if len(got) != 3 || got[0] != got[1] || got[0].kind != "opened" || got[2].kind != "resolved" || got[0].delivery == got[2].delivery || got[0].event == got[2].event {
+	if len(got) != 3 || !reflect.DeepEqual(got[0], got[1]) || got[0].kind != "opened" || got[2].kind != "resolved" || got[0].delivery == got[2].delivery || got[0].event == got[2].event {
 		t.Fatal("retry or recovery delivery identity changed")
 	}
 	for _, r := range got {
@@ -298,7 +332,7 @@ func TestIntegrationMetricsResourceAlertLifecycle(t *testing.T) {
 		if r.kind == "resolved" {
 			index = 1
 		}
-		if r.event != events[index].ID || events[index].ResourceEvidence == nil || r.evidence != *events[index].ResourceEvidence {
+		if r.event != events[index].ID || events[index].ResourceEvidence == nil || !reflect.DeepEqual(r.evidence, *events[index].ResourceEvidence) {
 			t.Fatal("HTTP event identity or evidence differs from committed event")
 		}
 		matched := false
@@ -309,7 +343,7 @@ func TestIntegrationMetricsResourceAlertLifecycle(t *testing.T) {
 			t.Fatal("HTTP delivery identity differs from committed outbox")
 		}
 	}
-	if got[2].evidence.Maximum >= 75 || readIncident().ResourceEvidence.Latest != incident.ResourceEvidence.Latest {
+	if got[2].evidence.Maximum >= policy.RecoveryPercent || readIncident().ResourceEvidence.Latest != incident.ResourceEvidence.Latest {
 		t.Fatal("recovery lost low window or overwrote opening evidence")
 	}
 	t.Log(fmt.Sprintf("lifecycle complete: events=%d delivered=%d HTTP attempts=%d", len(events), len(deliveries), len(got)))

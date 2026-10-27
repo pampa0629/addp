@@ -1,6 +1,9 @@
 package models
 
 import (
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"math"
 	"time"
 
@@ -23,11 +26,13 @@ func (p ResourcePressurePolicy) Valid() bool {
 }
 
 type ResourceAlertRule struct {
-	ID                     string `gorm:"primaryKey;size:36" json:"id"`
-	Version                uint64 `gorm:"not null" json:"version"`
-	Name                   string `gorm:"not null;size:100" json:"name"`
-	NodeID                 string `gorm:"not null;size:36;uniqueIndex:uq_resource_rule_subject,priority:1" json:"node_id"`
-	MetricKey              string `gorm:"not null;size:100;uniqueIndex:uq_resource_rule_subject,priority:2" json:"metric_key"`
+	ID                     string                   `gorm:"primaryKey;size:36" json:"id"`
+	Version                uint64                   `gorm:"not null" json:"version"`
+	Name                   string                   `gorm:"not null;size:100" json:"name"`
+	NodeID                 string                   `gorm:"not null;size:36;uniqueIndex:uq_resource_rule_mount,priority:1" json:"node_id"`
+	MetricKey              string                   `gorm:"not null;size:100;uniqueIndex:uq_resource_rule_mount,priority:2" json:"metric_key"`
+	Dimensions             resourcequery.Dimensions `gorm:"serializer:json;type:jsonb;not null;default:'{}'" json:"dimensions"`
+	MountKey               string                   `gorm:"not null;size:64;default:'';uniqueIndex:uq_resource_rule_mount,priority:3" json:"-"`
 	ResourcePressurePolicy `gorm:"embedded"`
 	Enabled                bool       `gorm:"not null" json:"enabled"`
 	WindowSignature        string     `gorm:"size:64" json:"-"`
@@ -45,20 +50,44 @@ func (ResourceAlertRule) TableName() string { return "monitor.resource_alert_rul
 
 // Immutable evidence belongs to the lifecycle event; it contains no transport
 // endpoint, credential or mutable reference needed to interpret old thresholds.
+const FilesystemCapacityMetric = "node.filesystem.used_percent"
+
+// A selector hash is an observation key, never a physical-volume identity.
+func ResourceMountKey(d resourcequery.Dimensions) string {
+	if len(d) == 0 {
+		return ""
+	}
+	raw, _ := json.Marshal(d)
+	return fmt.Sprintf("%x", sha256.Sum256(raw))
+}
+func ResourceAlertSignal(metric string, d resourcequery.Dimensions) string {
+	if metric == FilesystemCapacityMetric {
+		return metric + ":" + ResourceMountKey(d)
+	}
+	return metric
+}
+
+type FilesystemCapacityEvidence struct {
+	Dimensions     resourcequery.Dimensions `json:"dimensions"`
+	TotalBytes     float64                  `json:"total_bytes"`
+	UsedBytes      float64                  `json:"used_bytes"`
+	AvailableBytes float64                  `json:"available_bytes"`
+}
 type ResourceAlertEvidence struct {
-	RuleName           string                 `json:"rule_name,omitempty"`
-	RuleID             string                 `json:"rule_id"`
-	RuleVersion        uint64                 `json:"rule_version"`
-	Policy             ResourcePressurePolicy `json:"policy"`
-	NodeVersion        int64                  `json:"node_version"`
-	TargetID           string                 `json:"target_id"`
-	TargetVersion      int64                  `json:"target_version"`
-	QueryPolicyVersion uint64                 `json:"query_policy_version"`
-	EvaluatedAt        time.Time              `json:"evaluated_at"`
-	SampledFrom        time.Time              `json:"sampled_from"`
-	SampledTo          time.Time              `json:"sampled_to"`
-	Samples            int                    `json:"samples"`
-	Minimum            float64                `json:"minimum"`
-	Maximum            float64                `json:"maximum"`
-	Latest             float64                `json:"latest"`
+	Filesystem         *FilesystemCapacityEvidence `json:"filesystem,omitempty"`
+	RuleName           string                      `json:"rule_name,omitempty"`
+	RuleID             string                      `json:"rule_id"`
+	RuleVersion        uint64                      `json:"rule_version"`
+	Policy             ResourcePressurePolicy      `json:"policy"`
+	NodeVersion        int64                       `json:"node_version"`
+	TargetID           string                      `json:"target_id"`
+	TargetVersion      int64                       `json:"target_version"`
+	QueryPolicyVersion uint64                      `json:"query_policy_version"`
+	EvaluatedAt        time.Time                   `json:"evaluated_at"`
+	SampledFrom        time.Time                   `json:"sampled_from"`
+	SampledTo          time.Time                   `json:"sampled_to"`
+	Samples            int                         `json:"samples"`
+	Minimum            float64                     `json:"minimum"`
+	Maximum            float64                     `json:"maximum"`
+	Latest             float64                     `json:"latest"`
 }

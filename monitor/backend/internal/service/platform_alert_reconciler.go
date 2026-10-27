@@ -47,6 +47,9 @@ func (e PlatformAlertEvaluation) valid() bool {
 		if e.SubjectKind != models.PlatformAlertSubjectHostNode || err != nil || id.String() != e.SubjectID || e.InstanceID != "" {
 			return false
 		}
+		if strings.HasPrefix(e.Signal, models.FilesystemCapacityMetric+":") && (e.Verdict == PlatformAlertNormal || e.Verdict == PlatformAlertRisk) && !validFilesystemAlertEvidence(e.Signal, e.ResourceEvidence) {
+			return false
+		}
 	case models.PlatformAlertCategoryProcess:
 		id, err := strconv.ParseUint(e.SubjectID, 10, 64)
 		if err != nil || id == 0 || strconv.FormatUint(id, 10) != e.SubjectID || e.SubjectKind != models.PlatformAlertSubjectInstance || !resourceRuleUUID(e.Signal) || e.InstanceID == "" || len(e.InstanceID) > 100 || strings.ContainsAny(e.InstanceID, "\r\n\x00") {

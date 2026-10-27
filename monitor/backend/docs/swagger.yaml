@@ -185,6 +185,17 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_addp_monitor_internal_models.FilesystemCapacityEvidence:
+    properties:
+      available_bytes:
+        type: number
+      dimensions:
+        $ref: '#/definitions/github_com_addp_monitor_internal_resourcequery.Dimensions'
+      total_bytes:
+        type: number
+      used_bytes:
+        type: number
+    type: object
   github_com_addp_monitor_internal_models.HTTPAlertEvidence:
     properties:
       evaluated_at:
@@ -502,6 +513,8 @@ definitions:
     properties:
       evaluated_at:
         type: string
+      filesystem:
+        $ref: '#/definitions/github_com_addp_monitor_internal_models.FilesystemCapacityEvidence'
       latest:
         type: number
       maximum:
@@ -535,6 +548,8 @@ definitions:
     properties:
       created_at:
         type: string
+      dimensions:
+        $ref: '#/definitions/github_com_addp_monitor_internal_resourcequery.Dimensions'
       enabled:
         type: boolean
       id:
@@ -1582,12 +1597,15 @@ definitions:
     type: object
   github_com_addp_monitor_internal_service.ResourceAlertRuleInput:
     properties:
+      dimensions:
+        $ref: '#/definitions/github_com_addp_monitor_internal_resourcequery.Dimensions'
       enabled:
         type: boolean
       metric_key:
         enum:
         - node.cpu.busy_percent
         - node.memory.used_percent
+        - node.filesystem.used_percent
         type: string
       name:
         type: string
@@ -2587,6 +2605,8 @@ definitions:
     properties:
       created_at:
         type: string
+      dimensions:
+        $ref: '#/definitions/github_com_addp_monitor_internal_resourcequery.Dimensions'
       enabled:
         type: boolean
       id:
@@ -6085,8 +6105,8 @@ paths:
     put:
       consumes:
       - application/json
-      description: 主机及指标不可修改；活动告警沿用触发时保存的恢复条件 | Host and metric are immutable; active
-        alerts keep the recovery policy saved at opening
+      description: 主机、指标及挂载维度不可修改；活动告警沿用触发时保存的恢复条件 | Host, metric and mount dimensions
+        are immutable; active alerts keep the recovery policy saved at opening
       parameters:
       - description: 规则 ID | Rule ID
         in: path

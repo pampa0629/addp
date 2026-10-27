@@ -1158,7 +1158,8 @@
         "hostUnavailable": "This host cannot currently be read. Resource monitoring is unavailable.",
         "trend": "View trigger-period trend",
         "current": "View current host resources"
-      }
+      },
+      "filesystemPressure": "Filesystem available-capacity usage"
     },
     "resourceRules": {
       "title": "Resource rules",
@@ -1199,8 +1200,13 @@
         "query_unavailable": "Resource query failed; check the collection pipeline",
         "query_budget": "Query budget cannot support 15-second evaluation",
         "query_policy": "Query budget is temporarily unavailable",
-        "unconfigured": "Required evaluation configuration is unavailable"
-      }
+        "unconfigured": "Required evaluation configuration is unavailable",
+        "mount_missing": "The selected mount is not currently observed"
+      },
+      "mount": "Filesystem mount",
+      "noMounts": "No currently valid filesystem observation is available for this host.",
+      "filesystemHint": "This exact mount is fixed after creation. Missing or permanently removed mounts do not resolve existing alerts.",
+      "mountRequired": "Select a currently observed filesystem mount."
     },
     "http": {
       "title": "HTTP quality",

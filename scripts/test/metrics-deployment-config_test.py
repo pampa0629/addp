@@ -679,7 +679,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertIn('postgres-observation-probe.py', pg_scope.group())
         self.assertIn('postgres_directory_probe', pg_scope.group())
         stub = 'python3(){ printf "probe\\n"; }; postgres_directory_probe(){ printf "directory\\n"; }; metrics_case="$1"\n'
-        for case in ('http-quality', 'process-alerts', 'host-resources', 'all', 'postgres-source', 'cgroup-source'):
+        for case in ('http-quality', 'process-alerts', 'host-resources', 'filesystem-alerts', 'all', 'postgres-source', 'cgroup-source'):
             completed = subprocess.run(['bash', '-c', stub + pg_scope.group(), '_', case], capture_output=True, text=True, timeout=5)
             self.assertEqual(completed.returncode, 0)
             expected = ['probe'] * pg_scope.group().count('\n  python3 ') + ['directory']
@@ -714,15 +714,57 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         gate = (ROOT / 'scripts/test/monitor-metrics-gate.sh').read_text()
         self.assertIn("''|--case=all) metrics_case=all ;;", gate)
         self.assertIn('--case=host-resources) metrics_case=host-resources ;;', gate)
+        self.assertIn('--case=filesystem-alerts) metrics_case=filesystem-alerts ;;', gate)
+        self.assertIn('check_controlled_host_sources(filesystem_only=True)', (ROOT / 'scripts/test/monitor-metrics-probe.py').read_text())
         self.assertIn('--case=process-alerts) metrics_case=process-alerts ;;', gate)
         self.assertIn('--case=cgroup-source) metrics_case=cgroup-source ;;', gate)
-        self.assertRegex(gate, r'(?s)if \[\[ "\$metrics_case" != host-resources && "\$metrics_case" != mtls-preflight \]\]; then.*?go test -c ./processmetrics.*?\nfi\npython3 "\$ROOT_DIR/scripts/test/monitor-metrics-probe.py"')
+        self.assertRegex(gate, r'(?s)if \[\[ "\$metrics_case" != host-resources && "\$metrics_case" != mtls-preflight && "\$metrics_case" != filesystem-alerts \]\]; then.*?go test -c ./processmetrics.*?\nfi\npython3 "\$ROOT_DIR/scripts/test/monitor-metrics-probe.py"')
+
+    def test_controlled_host_scope_checks_exact_sources_and_restores_discovery(self):
+        path = ROOT / 'scripts/test/monitor-metrics-probe.py'
+        function = next(node for node in ast.parse(path.read_text()).body
+                        if isinstance(node, ast.FunctionDef) and node.name == 'check_controlled_host_sources')
+        for case, filesystem_only, count, expected in (
+            ('filesystem-alerts', True, 1, ['^TestIntegrationMetricsFilesystemAlertLifecycle$']),
+            ('host-resources', False, 6, ['^TestIntegrationMetricsResourceOverview$', '^TestIntegrationMetricsResourceAlertLifecycle$']),
+            ('all', False, 6, ['^TestIntegrationMetricsResourceOverview$', '^TestIntegrationMetricsResourceAlertLifecycle$', '^TestIntegrationMetricsFilesystemAlertLifecycle$']),
+        ):
+            for fails in (False, True):
+                with self.subTest(case=case, fails=fails), tempfile.TemporaryDirectory() as directory:
+                    work = Path(directory)
+                    (work / 'source').mkdir()
+                    original = json.dumps([{'targets': ['192.0.2.1:9443']}])
+                    discovery = mock.Mock()
+                    scopes = [{'addp_node_id': f'00000000-0000-4000-8000-{index+1:012d}',
+                               'instance': f'192.0.2.1:{19450+index}'} for index in range(count)]
+                    run = mock.Mock(side_effect=RuntimeError('owned child failed') if fails else None)
+                    def ready(check, label):
+                        self.assertTrue(check(), label)
+                    namespace = dict(json=json, Path=Path, WORK=work, base='https://owned-center', __file__=str(path), time=mock.Mock(time=lambda: 10),
+                                     resource_query_environment=lambda: {}, original_discovery=original,
+                                     discovery_text=discovery, eventually=ready, port=lambda *_: '1234',
+                                     api=lambda _: {'activeTargets': [{'labels': dict(scope, job='addp_nodes'),
+                                             'health': 'up', 'lastError': ''} for scope in scopes]},
+                                     query=lambda _: [{'metric': scope, 'value': [11, '11']} for scope in scopes],
+                                     os=mock.Mock(environ={'ADDP_METRICS_T2_CASE': case, 'METRICS_T2_POSTGRES_PASSWORD': 'owned-fixture'}),
+                                     subprocess=mock.Mock(run=run))
+                    exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), 'exec'), namespace)
+                    with redirect_stdout(io.StringIO()):
+                        if fails:
+                            with self.assertRaisesRegex(RuntimeError, 'owned child failed'):
+                                namespace['check_controlled_host_sources'](filesystem_only)
+                        else:
+                            namespace['check_controlled_host_sources'](filesystem_only)
+                    selected = [call.args[0][call.args[0].index('-run')+1] for call in run.call_args_list]
+                    self.assertEqual(selected, expected[:1] if fails else expected)
+                    self.assertEqual(discovery.call_args.args, (original,))
+                    self.assertEqual(len(json.loads(discovery.call_args_list[0].args[0])), count)
 
     def test_ci_requires_every_isolated_metrics_case_and_preserves_budget(self):
         workflow = (ROOT / '.github/workflows/release-and-t2-gates.yml').read_text()
         cases = re.search(r'^  monitor-metrics-cases:\n(.*?)(?=^  \S|\Z)', workflow, re.M | re.S).group(1)
         self.assertIn('fail-fast: false', cases)
-        self.assertIn('case: [postgres-source, http-quality, process-alerts, host-resources, cgroup-source]', cases)
+        self.assertIn('case: [postgres-source, http-quality, process-alerts, host-resources, filesystem-alerts, cgroup-source]', cases)
         self.assertIn('timeout-minutes: 20', cases)
         self.assertIn('MONITOR_METRICS_TEST_ARGS: --case=${{ matrix.case }}', cases)
         self.assertEqual(cases.count('run: make test-monitor-metrics\n'), 1)
@@ -1031,6 +1073,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertIn("'^TestIntegrationMetricsResourceOverview$'", probe)
         self.assertEqual(probe.count("'^TestIntegrationMetricsResourcePressureEvidence$'"), 2)
         self.assertIn("'^TestIntegrationMetricsResourceAlertLifecycle$'", probe)
+        self.assertIn("'^TestIntegrationMetricsFilesystemAlertLifecycle$'", probe)
         self.assertIn('postgres', re.search(r'^# ADDP_T2_OWNED_SERVICES=(.+)$', script, re.M).group(1).split(','))
 
     def test_sole_config_uses_native_platform_oauth_and_independent_tls(self):

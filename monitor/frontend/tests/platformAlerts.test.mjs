@@ -134,3 +134,19 @@ test('host name uses the same canonical literal query and never loses invalid UR
  }
  assert.deepEqual(platformAlertQuery(platformAlertState({host_name:'   '})),{})
 })
+
+test('filesystem incident navigation uses frozen full mount identity and capacity with safe units', async () => {
+ const { resourceAlertEvidence, resourceAlertTrendRoute } = await import('../src/utils/platformAlerts.js')
+ const dimensions = { device: '/dev/data', mountpoint: '/data', fstype: 'ext4' }
+ const row = { category:'resource', subject_kind:'host_node', subject_id:'f83e9874-2164-4411-a5c0-650d143006cf', signal:'node.filesystem.used_percent:'+ 'a'.repeat(64), resource_evidence:{
+  rule_id:'a0e9964c-e2d3-46ba-b151-52249cff528e',rule_version:2,node_version:1,target_id:'1621bb62-cb0e-40e1-b988-0d4d36683e51',target_version:1,query_policy_version:1,
+  policy:{trigger_percent:85,recovery_percent:80,trigger_seconds:300,recovery_seconds:120},
+  evaluated_at:'2026-10-27T00:00:00Z',sampled_from:'2026-10-26T23:55:00Z',sampled_to:'2026-10-27T00:00:00Z',samples:21,minimum:86,maximum:95,latest:90,
+  filesystem:{dimensions,total_bytes:100,used_bytes:90,available_bytes:10}
+ } }
+ assert.equal(resourceAlertEvidence(row),row.resource_evidence)
+ assert.deepEqual(resourceAlertTrendRoute(row),{path:`/node-resources/${row.subject_id}`,query:{metric:'node.filesystem.used_percent',...dimensions,end:'2026-10-27T00:00:00.000Z',refresh:'off'}})
+ for (const mutate of [r=>r.resource_evidence.filesystem=null,r=>delete r.resource_evidence.filesystem.dimensions.fstype,r=>r.resource_evidence.filesystem.available_bytes=50,r=>r.resource_evidence.filesystem.used_bytes=NaN,r=>r.signal='node.filesystem.used_percent:invalid',r=>r.resource_evidence.latest=80]) {
+  const invalid=structuredClone(row);mutate(invalid);assert.equal(resourceAlertEvidence(invalid),null);assert.equal(resourceAlertTrendRoute(invalid),null)
+ }
+})

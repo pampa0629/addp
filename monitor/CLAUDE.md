@@ -62,6 +62,7 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 - `/traces` 及 Trace 搜索/详情使用独立 `monitor.trace.read`，逐请求以当前 User 核验所有参与实例（含离线历史），关联日志另走 System 正文权限。实际 Client/Server 父子匹配才构成调用边；Orchestrator→Develop bounded query 的短阶段以独立 Trace 和最多两条因果 Link 关联，Link 目标同样核验当前 User 实例权限，不递归读取。采样结果不能推算全量 QPS。传播、120 秒尾采样、72 小时/20 GiB 初值及本地验收见正式规范 6.5；当前策略是 Monitor-owned 不可变版本 2，不新增热编辑控制面。Python 同步 HTTP 由 Common Python 唯一 ASGI/HTTPX 内核接入 Agent/Copilot，复用同一部署声明、采样与日志关联；不代表 Python 全量 HTTP 指标或其他 Runtime 已接入。
 - 资源查询策略是 Monitor 平台 CAS 单例，对新请求热生效；资源与规则后台只用最小身份投影，不保存管理员 Token。目标管理、用户观测读取和采集服务权限彼此独立。
 - 平台主机 CPU/内存规则创建即停用，按主机合并指标与 uptime；缺样、控制面不可用、预算不足、来源变化、暂停或重启均不作为恢复。活动 incident 阻止规则删除，停用不伪造恢复，历史事件保留触发时证据。
+- 文件系统容量沿同一资源规则接口及权限按完整device／mountpoint／fstype选择，创建停用，默认85%／300秒触发、80%／120秒恢复，固定warning；挂载创建后不转绑，容量改变重建窗口。维度与容量快照进入独立信号及事件证据，通知／详情／趋势精确关联；缺样及永久卸载不恢复，停用规则及未恢复事件保留，不新增结束状态。后台只沿既有固定目录、来源和查询预算，不新增绝对容量、inode或预测规则。唯一EnsureMonitorStore前向替换旧两列唯一索引；实链专项沿同一标准metrics入口的filesystem-alerts／all，CI分项矩阵自动覆盖，受控文件系统指标经真实Prometheus、SQL与签名HTTP，不填充个人磁盘。
 - 平台日志、资源与 HTTP 事件复用同一事务协调器/outbox，协议分别为 addp.platform-log-alert/v1、addp.platform-resource-alert/v1 与 addp.platform-http-alert/v1。旧目标不自动订阅新类别；Webhook/SMTP/企业微信不跨协议兜底，人工重投保留原身份和历史时间。
 - 平台日志观测只由独立 addp-log-observer 上报有界安全事实；Monitor 不读取接收器宿主文件或上传日志正文。平台操作审计归 System，进程日志、执行事件与审计保留各自事实源。
 

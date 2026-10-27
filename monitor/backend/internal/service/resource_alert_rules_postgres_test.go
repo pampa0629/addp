@@ -35,7 +35,14 @@ func (i *resourceRuleIdentity) GetObservabilityIdentities(context.Context) (*com
 	return &commonmodels.ObservabilityIdentitySnapshot{ObservedAt: time.Now().UTC(), Nodes: nodes, ModuleInstances: append([]commonmodels.ObservabilityModuleIdentity{}, i.processFacts...)}, i.err
 }
 
+type filesystemRuleSample struct {
+	percent, total         float64
+	missing                bool
+	changedAt              time.Time
+	nextPercent, nextTotal float64
+}
 type resourceRuleBackend struct {
+	filesystems map[string]*filesystemRuleSample
 	resourceBackend
 	value       float64
 	changeAt    time.Time
@@ -54,6 +61,40 @@ func (b *resourceRuleBackend) Query(_ context.Context, p resourcequery.Plan, sco
 	}
 	if b.fail {
 		return nil, errors.New("fixture transport failure")
+	}
+	if len(p.Dimensions) == 3 {
+		sample := b.filesystems[models.ResourceMountKey(p.Dimensions)]
+		if sample == nil || sample.missing {
+			return resourcequery.Empty(p, "no_data"), nil
+		}
+		metric, uptime, companions := filesystemPressureWindow(sample.percent, p.End, sample.total)
+		rows := append([]resourcequery.Series{metric, uptime}, companions...)
+		if !sample.changedAt.IsZero() {
+			nextMetric, nextUptime, nextCompanions := filesystemPressureWindow(sample.nextPercent, p.End, sample.nextTotal)
+			next := append([]resourcequery.Series{nextMetric, nextUptime}, nextCompanions...)
+			for i := range rows {
+				for j := range rows[i].Points {
+					if !rows[i].Points[j].SampledAt.Before(sample.changedAt) {
+						rows[i].Points[j] = next[i].Points[j]
+					}
+				}
+			}
+		}
+		selected := []resourcequery.Series{}
+		for _, descriptor := range p.Metrics {
+			for _, row := range rows {
+				if row.MetricKey == descriptor.Key {
+					if row.MetricKey != "node.uptime_seconds" {
+						row.Dimensions = p.Dimensions.Copy()
+					}
+					if p.Start.Equal(p.End) {
+						row.Points = row.Points[len(row.Points)-1:]
+					}
+					selected = append(selected, row)
+				}
+			}
+		}
+		return selected, nil
 	}
 	rows := []resourcequery.Series{}
 	var uptime resourcequery.Series

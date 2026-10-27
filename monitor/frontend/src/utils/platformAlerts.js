@@ -1,4 +1,5 @@
 import { normalizeQueryTimestamp } from '../../../../common-frontend/basic/src/utils/runtimeInstanceTime.mjs'
+import { validResourceDimensions } from './nodeResources.js'
 import { isTargetUUID } from './monitoringTargets.js'
 
 const alertTimeBound = value => {
@@ -40,9 +41,15 @@ export function resourceAlertHostID(row) {
   return row?.category === 'resource' && row.subject_kind === 'host_node' && isTargetUUID(row.subject_id) ? row.subject_id : ''
 }
 
+export const filesystemAlertMetric = 'node.filesystem.used_percent'
+export function resourceAlertMetric(row) {
+  if (['node.cpu.busy_percent','node.memory.used_percent'].includes(row?.signal)) return row.signal
+  return typeof row?.signal === 'string' && /^node\.filesystem\.used_percent:[a-f0-9]{64}$/u.test(row.signal) ? filesystemAlertMetric : ''
+}
+
 // Interpret the saved opening evidence; never reconstruct it from a live rule.
 export function resourceAlertEvidence(row) {
-  if (!resourceAlertHostID(row) || !['node.cpu.busy_percent', 'node.memory.used_percent'].includes(row.signal)) return null
+  if (!resourceAlertHostID(row) || !resourceAlertMetric(row)) return null
   const e = row.resource_evidence, p = e?.policy
   if (!e || !p || !isTargetUUID(e.rule_id) || !isTargetUUID(e.target_id) ||
     ![e.rule_version, e.node_version, e.target_version, e.samples].every(value => Number.isSafeInteger(value) && value > 0) ||
@@ -51,6 +58,10 @@ export function resourceAlertEvidence(row) {
     !(p.recovery_percent > 0 && p.recovery_percent < p.trigger_percent) ||
     ![p.trigger_seconds, p.recovery_seconds].every(value => Number.isInteger(value) && value >= 15 && value <= 300 && value % 15 === 0) ||
     e.minimum > e.latest || e.latest > e.maximum) return null
+  if (resourceAlertMetric(row) === filesystemAlertMetric) {
+    const f = e.filesystem
+    if (!f || !validResourceDimensions(f.dimensions, false) || ![f.total_bytes,f.used_bytes,f.available_bytes].every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0) || f.total_bytes <= 0 || f.used_bytes > f.total_bytes || f.available_bytes > f.total_bytes-f.used_bytes+4*Number.EPSILON*f.total_bytes || f.used_bytes+f.available_bytes <= 0 || Math.abs(e.latest-100*f.used_bytes/(f.used_bytes+f.available_bytes)) > 0.000001) return null
+  } else if (e.filesystem) return null
   const times = [e.sampled_from, e.sampled_to, e.evaluated_at].map(value => typeof value === 'string' ? Date.parse(value) : NaN)
   return times.every(Number.isFinite) && times[0] <= times[1] && times[1] <= times[2] ? e : null
 }
@@ -58,6 +69,6 @@ export function resourceAlertEvidence(row) {
 export function resourceAlertTrendRoute(row) {
   const evidence = resourceAlertEvidence(row)
   if (!evidence) return null
-  return { path: `/node-resources/${row.subject_id}`, query: { metric: row.signal,
+  return { path: `/node-resources/${row.subject_id}`, query: { metric: resourceAlertMetric(row), ...(evidence.filesystem?.dimensions || {}),
     end: new Date(Math.floor(Date.parse(evidence.evaluated_at) / 1000) * 1000).toISOString(), refresh: 'off' } }
 }

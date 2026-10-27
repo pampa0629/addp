@@ -29,6 +29,11 @@ func EnsureMonitorStore(db *gorm.DB) error {
 	); err != nil {
 		return err
 	}
+	// The old two-column index would reject independent mounts. AutoMigrate has
+	// already populated empty dimensions/keys for existing scalar rules.
+	if err := db.Exec("DROP INDEX IF EXISTS monitor.uq_resource_rule_subject").Error; err != nil {
+		return err
+	}
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_monitor_platform_alert_active
  ON monitor.platform_alert_incidents(category, subject_kind, subject_id, signal) WHERE status IN ('open','acknowledged')`).Error; err != nil {
 		return err

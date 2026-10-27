@@ -250,10 +250,10 @@ func (n *PlatformAlertService) Status(ctx context.Context) (string, error) {
 	return "unconfigured", nil
 }
 func (n *PlatformAlertService) RecordTx(tx *gorm.DB, event models.PlatformAlertEvent, incident models.PlatformAlertIncident, now time.Time) error {
-	if !(PlatformAlertEvaluation{Category: incident.Category, SubjectKind: incident.SubjectKind, SubjectID: incident.SubjectID, Signal: incident.Signal, InstanceID: incident.InstanceID, Severity: incident.Severity, Verdict: PlatformAlertRisk, AvailabilityEvidence: event.AvailabilityEvidence}).valid() || event.IncidentID != incident.ID || (event.Type != "opened" && event.Type != "resolved") {
+	if !(PlatformAlertEvaluation{Category: incident.Category, SubjectKind: incident.SubjectKind, SubjectID: incident.SubjectID, Signal: incident.Signal, InstanceID: incident.InstanceID, Severity: incident.Severity, Verdict: PlatformAlertRisk, ResourceEvidence: event.ResourceEvidence, AvailabilityEvidence: event.AvailabilityEvidence}).valid() || event.IncidentID != incident.ID || (event.Type != "opened" && event.Type != "resolved") {
 		return ErrLogInvalid
 	}
-	if incident.Category == models.PlatformAlertCategoryResource && (incident.Severity != "warning" || (incident.Signal != "node.cpu.busy_percent" && incident.Signal != "node.memory.used_percent")) {
+	if incident.Category == models.PlatformAlertCategoryResource && (incident.Severity != "warning" || (incident.Signal != "node.cpu.busy_percent" && incident.Signal != "node.memory.used_percent" && !validFilesystemAlertEvidence(incident.Signal, event.ResourceEvidence))) {
 		return ErrLogInvalid
 	}
 	if incident.Category == models.PlatformAlertCategoryHTTP && incident.Severity != "warning" {

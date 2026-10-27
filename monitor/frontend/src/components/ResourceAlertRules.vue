@@ -1,11 +1,12 @@
 <template>
   <section data-testid="resource-rules">
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
-    <el-button v-if="canCreate && canReadHosts" type="primary" :disabled="loading || !presets.length" @click="edit()">{{ t('monitor.resourceRules.create') }}</el-button>
+    <el-button v-if="canCreate && canReadHosts" type="primary" data-testid="resource-rule-create" :disabled="loading || !presets.length" @click="edit()">{{ t('monitor.resourceRules.create') }}</el-button>
     <el-table v-loading="loading" :data="rows">
       <el-table-column prop="name" :label="t('monitor.platformAlerts.name')" min-width="160" show-overflow-tooltip />
       <el-table-column :label="t('monitor.targets.node')" min-width="190" show-overflow-tooltip><template #default="{ row }">{{ hosts[row.node_id]?.display_name || row.node_id }}</template></el-table-column>
       <el-table-column :label="t('monitor.resourceRules.metric')" min-width="150"><template #default="{ row }">{{ metricLabel(row.metric_key) }}</template></el-table-column>
+      <el-table-column :label="t('monitor.resourceRules.mount')" min-width="250" show-overflow-tooltip><template #default="{ row }">{{ row.metric_key === filesystemMetric ? mountLabel(row.dimensions) : '—' }}</template></el-table-column>
       <el-table-column :label="t('monitor.resourceRules.trigger')" min-width="180"><template #default="{ row }">{{ t('monitor.resourceRules.above', { percent: row.trigger_percent, seconds: row.trigger_seconds }) }}</template></el-table-column>
       <el-table-column :label="t('monitor.resourceRules.recovery')" min-width="180"><template #default="{ row }">{{ t('monitor.resourceRules.below', { percent: row.recovery_percent, seconds: row.recovery_seconds }) }}</template></el-table-column>
       <el-table-column :label="t('monitor.platformAlerts.enabled')" width="100"><template #default="{ row }">{{ t(`monitor.platformAlerts.facts.${row.enabled ? 'yes' : 'no'}`) }}</template></el-table-column>
@@ -20,7 +21,7 @@
       </template></el-table-column>
     </el-table>
     <el-pagination v-if="total > 0 && !loading" layout="total, prev, pager, next" :current-page="page" :page-size="20" :total="total" @current-change="$emit('page', $event)" />
-    <el-dialog v-model="open" :title="t(editing ? 'monitor.resourceRules.edit' : 'monitor.resourceRules.create')" width="min(620px, 95vw)" :close-on-click-modal="false" :close-on-press-escape="!busy" :show-close="!busy">
+    <el-dialog class="addp-dialog" v-model="open" :title="t(editing ? 'monitor.resourceRules.edit' : 'monitor.resourceRules.create')" width="min(620px, 95vw)" :close-on-click-modal="false" :close-on-press-escape="!busy" :show-close="!busy">
       <el-alert v-if="editError" :title="editError" type="error" :closable="false" />
       <el-form label-position="top" :disabled="busy" @submit.prevent="save">
         <el-form-item :label="t('monitor.platformAlerts.name')"><el-input v-model="draft.name" maxlength="100" data-testid="rule-name" /></el-form-item>
@@ -28,7 +29,18 @@
           <el-input v-if="editing" :model-value="selected?.display_name || draft.node_id" readonly />
           <HostNodeSelect v-else v-model="draft.node_id" :selected="selected" :allowed="canReadHosts" :identity="JSON.stringify([auth.authContext, auth.permissions])" :api="nodeResourcesAPI" :label="t('monitor.targets.node')" :placeholder="t('monitor.targets.nodeSearch')" :more-label="t('monitor.targets.moreNodes')" :error-message="t('monitor.targets.nodeLoadingFailed')" @selected="selected = $event" />
         </el-form-item>
-        <el-form-item :label="t('monitor.resourceRules.metric')"><el-select v-model="draft.metric_key" :disabled="!!editing" @change="applyPreset" :aria-label="t('monitor.resourceRules.metric')"><el-option v-for="preset in presets" :key="preset.metric_key" :value="preset.metric_key" :label="metricLabel(preset.metric_key)" /></el-select></el-form-item>
+        <el-form-item :label="t('monitor.resourceRules.metric')"><el-select data-testid="resource-rule-metric" v-model="draft.metric_key" :disabled="!!editing" @change="applyPreset" :aria-label="t('monitor.resourceRules.metric')"><el-option v-for="preset in presets" :key="preset.metric_key" :value="preset.metric_key" :label="metricLabel(preset.metric_key)" :disabled="preset.metric_key === filesystemMetric && !canReadResources" /></el-select></el-form-item>
+        <el-form-item v-if="draft.metric_key === filesystemMetric" :label="t('monitor.resourceRules.mount')">
+          <el-input v-if="editing" :model-value="mountLabel(draft.dimensions)" readonly />
+          <template v-else>
+            <el-alert v-if="mountError" :title="t(mountError)" type="error" :closable="false" data-testid="filesystem-rule-mount-error" />
+            <el-select :model-value="resourceDimensionID(draft.dimensions || {})" :loading="mountLoading" :disabled="!draft.node_id || mountLoading || !canReadResources" :aria-label="t('monitor.resourceRules.mount')" data-testid="filesystem-rule-mount" @change="value => draft.dimensions = mounts.find(row => resourceDimensionID(row.dimensions) === value)?.dimensions || {}">
+              <el-option v-for="row in mounts" :key="row.key" :value="resourceDimensionID(row.dimensions)" :label="mountLabel(row.dimensions)" />
+            </el-select>
+            <small v-if="!mountLoading && draft.node_id && !mounts.length && !mountError">{{ t('monitor.resourceRules.noMounts') }}</small>
+          </template>
+          <small>{{ t('monitor.resourceRules.filesystemHint') }}</small>
+        </el-form-item>
         <el-form-item :label="t('monitor.resourceRules.trigger')"><div class="rule-condition"><el-input-number v-model="draft.trigger_percent" :min="0" :max="100" :aria-label="t('monitor.resourceRules.triggerPercent')" /><span>%</span><el-input-number v-model="draft.trigger_seconds" :min="15" :max="300" :step="15" step-strictly :aria-label="t('monitor.resourceRules.triggerSeconds')" /><span>{{ t('monitor.resourceRules.seconds') }}</span></div><small>{{ t('monitor.resourceRules.triggerHint') }}</small></el-form-item>
         <el-form-item :label="t('monitor.resourceRules.recovery')"><div class="rule-condition"><el-input-number v-model="draft.recovery_percent" :min="0" :max="100" :aria-label="t('monitor.resourceRules.recoveryPercent')" /><span>%</span><el-input-number v-model="draft.recovery_seconds" :min="15" :max="300" :step="15" step-strictly :aria-label="t('monitor.resourceRules.recoverySeconds')" /><span>{{ t('monitor.resourceRules.seconds') }}</span></div><small>{{ t('monitor.resourceRules.recoveryHint') }}</small></el-form-item>
         <el-form-item :label="t('monitor.platformAlerts.enabled')"><el-switch v-model="draft.enabled" :disabled="!editing" :aria-label="t('monitor.platformAlerts.enabled')" /><small v-if="!editing">{{ t('monitor.resourceRules.disabledHint') }}</small></el-form-item>
@@ -45,24 +57,31 @@ import { useAuthStore } from '../store/auth'
 import { platformAlertsAPI as api } from '../api/platformAlerts'
 import { nodeResourcesAPI } from '../api/nodeResources'
 import HostNodeSelect from '../../../../common-frontend/basic/src/components/HostNodeSelect.vue'
+import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
+import { resourceDimensionID, resourceDimensionRows, validateResourceResponse, validateCollection, validResourceDimensions, currentResourceValue, resourceErrorKey } from '../utils/nodeResources'
 import { loadHostReferences } from '../utils/hostReferences'
 const props = defineProps({ page: { type: Number, required: true } })
 defineEmits(['page'])
 const auth = useAuthStore(), { t } = useI18n()
 const canRead = computed(() => auth.contextType === 'platform' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation && auth.hasPermission('monitor.platform_resource_rule.read'))
+const filesystemMetric = 'node.filesystem.used_percent'
+const canReadResources = computed(() => canReadHosts.value && auth.hasPermission('monitor.resource_observation.read'))
+const mounts = ref([]), mountLoading = ref(false), mountError = ref('')
+const mountRequests = createLatestRequestScope()
+const mountLabel = dimensions => ['mountpoint','device','fstype'].map(key => dimensions?.[key] || '—').join(' · ')
 const canCreate = computed(() => canRead.value && auth.hasPermission('monitor.platform_resource_rule.create'))
 const canUpdate = computed(() => canRead.value && auth.hasPermission('monitor.platform_resource_rule.update'))
 const canDelete = computed(() => canRead.value && auth.hasPermission('monitor.platform_resource_rule.delete'))
 const canReadHosts = computed(() => canRead.value && auth.hasPermission('platform.host_node.read'))
 const rows = ref([]), total = ref(0), presets = ref([]), hosts = ref({}), loading = ref(false), error = ref(''), busy = ref(false)
 const open = ref(false), editing = ref(''), draft = ref({}), selected = ref(null), editError = ref('')
-const metricLabel = value => t(value === 'node.cpu.busy_percent' ? 'monitor.platformAlerts.cpuPressure' : 'monitor.platformAlerts.memoryPressure')
-const reason = value => t(`monitor.resourceRules.reasons.${['warming_up','no_data','source_changed','collection_paused','collection_disabled','identity_unavailable','query_unavailable','query_budget','query_policy','unconfigured'].includes(value) ? value : 'unconfigured'}`)
+const metricLabel = value => t(value === filesystemMetric ? 'monitor.platformAlerts.filesystemPressure' : value === 'node.cpu.busy_percent' ? 'monitor.platformAlerts.cpuPressure' : 'monitor.platformAlerts.memoryPressure')
+const reason = value => t(`monitor.resourceRules.reasons.${['warming_up','no_data','source_changed','collection_paused','collection_disabled','identity_unavailable','query_unavailable','query_budget','query_policy','unconfigured','mount_missing'].includes(value) ? value : 'unconfigured'}`)
 const errorText = e => e.response?.data?.error || t('monitor.platformAlerts.failed')
 let ticket = 0, epoch = 0, controller, disposed = false
 const abandoned = Symbol('abandoned rule operation')
 function check(lease) { if (disposed || lease !== epoch) throw abandoned }
-function clear() { epoch++; ticket++; controller?.abort(); rows.value = []; total.value = 0; presets.value = []; hosts.value = {}; error.value = ''; open.value = false; draft.value = {}; selected.value = null; loading.value = false; busy.value = false }
+function clear() { mountRequests.invalidate(); mounts.value = []; mountError.value = ''; mountLoading.value = false; epoch++; ticket++; controller?.abort(); rows.value = []; total.value = 0; presets.value = []; hosts.value = {}; error.value = ''; open.value = false; draft.value = {}; selected.value = null; loading.value = false; busy.value = false }
 async function load() {
   controller?.abort(); controller = new AbortController(); const own = ++ticket, lease = epoch
   rows.value = []; total.value = 0; hosts.value = {}; error.value = ''
@@ -86,7 +105,7 @@ async function edit(row) {
   if (busy.value || !canReadHosts.value || (row ? !canUpdate.value : !canCreate.value)) return
   const lease = epoch; editError.value = ''; selected.value = row ? hosts.value[row.node_id] : null
   editing.value = row?.id || ''
-  draft.value = row ? Object.fromEntries(['version','name','node_id','metric_key','trigger_percent','recovery_percent','trigger_seconds','recovery_seconds','enabled'].map(key => [key, row[key]])) : { name: '', node_id: '', metric_key: presets.value[0]?.metric_key, enabled: false }
+  draft.value = row ? Object.fromEntries(['version','name','node_id','metric_key','dimensions','trigger_percent','recovery_percent','trigger_seconds','recovery_seconds','enabled'].map(key => [key, row[key]])) : { name: '', node_id: '', metric_key: presets.value[0]?.metric_key, dimensions: {}, enabled: false }
   if (!row) applyPreset()
   open.value = true
   if (row && !selected.value) {
@@ -99,6 +118,7 @@ async function edit(row) {
 async function save() {
   if (busy.value || !selected.value || (editing.value ? !canUpdate.value : !canCreate.value)) return
   const d = draft.value
+  if (d.metric_key === filesystemMetric && !validResourceDimensions(d.dimensions, false)) { editError.value = t('monitor.resourceRules.mountRequired'); return }
   if (!d.name.trim() || ![d.recovery_percent,d.trigger_percent].every(value => typeof value === 'number' && Number.isFinite(value)) || !(d.recovery_percent > 0 && d.recovery_percent < d.trigger_percent && d.trigger_percent <= 100) || ![d.trigger_seconds,d.recovery_seconds].every(value => Number.isInteger(value) && value >= 15 && value <= 300 && value % 15 === 0)) { editError.value = t('monitor.resourceRules.invalid'); return }
   const lease = epoch; busy.value = true; editError.value = ''
   try { if (editing.value) await api.updateRule(editing.value, { ...d }); else await api.createRule({ ...d, enabled: false }); check(lease); open.value = false; await load() }
@@ -112,8 +132,24 @@ async function remove(row) {
   catch (e) { if (lease === epoch && ![abandoned,'cancel','close'].includes(e)) error.value = e.response?.status === 409 ? t('monitor.resourceRules.deleteConflict') : errorText(e) }
   finally { if (lease === epoch) busy.value = false }
 }
+watch(() => [open.value, draft.value.node_id, draft.value.metric_key, canReadResources.value], async () => {
+  const own = mountRequests.invalidate(); mounts.value = []; mountError.value = ''; mountLoading.value = false
+  if (editing.value || !open.value) return
+  draft.value.dimensions = {}
+  if (draft.value.metric_key !== filesystemMetric || !draft.value.node_id || !canReadResources.value) return
+  const nodeID = draft.value.node_id
+  mountLoading.value = true
+  try {
+    const result = await mountRequests.request(config => nodeResourcesAPI.instant({ node_id: nodeID, metrics: filesystemMetric }, config))
+    if (!mountRequests.current(own)) return
+    validateCollection(result.collection, result.queried_at); validateResourceResponse(result, nodeID, [filesystemMetric])
+    if (result.collection.state !== 'collecting' || result.collection.filesystem !== 'available') { mountError.value = 'monitor.resourceRules.noMounts'; return }
+    mounts.value = resourceDimensionRows(result).filter(row => currentResourceValue(row.metrics[filesystemMetric]) !== null)
+  } catch (error) { if (mountRequests.current(own)) mountError.value = resourceErrorKey(error) }
+  finally { if (mountRequests.current(own)) mountLoading.value = false }
+})
 watch(() => [props.page, JSON.stringify([auth.authContext, auth.permissions])], () => { clear(); load() }, { immediate: true })
-onUnmounted(() => { disposed = true; clear() })
+onUnmounted(() => { disposed = true; mountRequests.dispose(); clear() })
 defineExpose({ load })
 </script>
 <style scoped>

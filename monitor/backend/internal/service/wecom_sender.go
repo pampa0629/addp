@@ -121,10 +121,25 @@ func wecomPlatformAlertPayload(raw, deliveryID string) (any, error) {
 	} else if event.Schema == "addp.platform-resource-alert/v1" && event.SubjectKind == "host_node" && event.SubjectID != "" && event.EventID != "" && event.IncidentID != 0 && !event.OccurredAt.IsZero() {
 		label := map[string]string{"opened": "资源压力告警", "resolved": "资源压力恢复"}[event.EventType]
 		signal := map[string]string{"node.cpu.busy_percent": "CPU 忙碌率", "node.memory.used_percent": "内存使用率"}[event.Signal]
+		var capacity *models.ResourceAlertEvidence
+		if strings.HasPrefix(event.Signal, models.FilesystemCapacityMetric+":") {
+			var saved struct {
+				Evidence *models.ResourceAlertEvidence `json:"evidence"`
+			}
+			if json.Unmarshal([]byte(raw), &saved) != nil || !validFilesystemAlertEvidence(event.Signal, saved.Evidence) {
+				return nil, ErrLogInvalid
+			}
+			capacity = saved.Evidence
+			signal = "文件系统可用容量使用率"
+		}
 		if label == "" || signal == "" || event.Severity != "warning" {
 			return nil, ErrLogInvalid
 		}
 		content = fmt.Sprintf("**ADDP 平台主机：%s**\n> 主机 ID：%s\n> 指标：%s\n> 事件发生时间（UTC）：%s\n> 告警 ID：%d\n> 事件 ID：%s", label, wecomText(event.SubjectID), signal, event.OccurredAt.UTC().Format(time.RFC3339Nano), event.IncidentID, wecomText(event.EventID))
+		if capacity != nil {
+			f := capacity.Filesystem
+			content += fmt.Sprintf("\n> 挂载：%s / %s / %s\n> 使用率：%.2f%%\n> 总容量：%s\n> 已用：%s\n> 普通用户可用：%s", wecomText(f.Dimensions["device"]), wecomText(f.Dimensions["mountpoint"]), wecomText(f.Dimensions["fstype"]), capacity.Latest, filesystemCapacityIEC(f.TotalBytes), filesystemCapacityIEC(f.UsedBytes), filesystemCapacityIEC(f.AvailableBytes))
+		}
 	} else if event.Schema == "addp.platform-process-resource-alert/v1" && event.SubjectKind == "module_instance" && event.SubjectID != "" && event.InstanceID != "" && event.EventID != "" && event.IncidentID != 0 && !event.OccurredAt.IsZero() {
 		label := map[string]string{"opened": "资源超限告警", "resolved": "资源告警恢复"}[event.EventType]
 		if label == "" || event.Severity != "warning" {

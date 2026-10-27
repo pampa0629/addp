@@ -4650,7 +4650,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "主机及指标不可修改；活动告警沿用触发时保存的恢复条件 | Host and metric are immutable; active alerts keep the recovery policy saved at opening",
+                "description": "主机、指标及挂载维度不可修改；活动告警沿用触发时保存的恢复条件 | Host, metric and mount dimensions are immutable; active alerts keep the recovery policy saved at opening",
                 "consumes": [
                     "application/json"
                 ],
@@ -7055,6 +7055,23 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_monitor_internal_models.FilesystemCapacityEvidence": {
+            "type": "object",
+            "properties": {
+                "available_bytes": {
+                    "type": "number"
+                },
+                "dimensions": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_resourcequery.Dimensions"
+                },
+                "total_bytes": {
+                    "type": "number"
+                },
+                "used_bytes": {
+                    "type": "number"
+                }
+            }
+        },
         "github_com_addp_monitor_internal_models.HTTPAlertEvidence": {
             "type": "object",
             "properties": {
@@ -7536,6 +7553,9 @@ const docTemplate = `{
                 "evaluated_at": {
                     "type": "string"
                 },
+                "filesystem": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_models.FilesystemCapacityEvidence"
+                },
                 "latest": {
                     "type": "number"
                 },
@@ -7585,6 +7605,9 @@ const docTemplate = `{
             "properties": {
                 "created_at": {
                     "type": "string"
+                },
+                "dimensions": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_resourcequery.Dimensions"
                 },
                 "enabled": {
                     "type": "boolean"
@@ -9175,6 +9198,9 @@ const docTemplate = `{
                 "trigger_seconds"
             ],
             "properties": {
+                "dimensions": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_resourcequery.Dimensions"
+                },
                 "enabled": {
                     "type": "boolean"
                 },
@@ -9182,7 +9208,8 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "node.cpu.busy_percent",
-                        "node.memory.used_percent"
+                        "node.memory.used_percent",
+                        "node.filesystem.used_percent"
                     ]
                 },
                 "name": {
@@ -10663,6 +10690,9 @@ const docTemplate = `{
             "properties": {
                 "created_at": {
                     "type": "string"
+                },
+                "dimensions": {
+                    "$ref": "#/definitions/github_com_addp_monitor_internal_resourcequery.Dimensions"
                 },
                 "enabled": {
                     "type": "boolean"

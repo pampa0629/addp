@@ -1922,3 +1922,24 @@ ImportError 尚缺具体组件与版本事实，本批没有猜测升级／降�
 离线核对另发现两项夹具事实。第一，两个测试源都硬编码 FastAPI 0.115.0／Uvicorn 0.32.0，未使用 Agent FastAPI 0.142.2、Copilot FastAPI 0.110.0 的各自正式 HTTP 依赖声明，不满足技术栈规范中分别验证消费者版本的要求。第二，唯一安装目标 /tmp/deps 位于未指定 exec 的 256 MiB tmpfs；[Docker Moby v28.5.1 实现](https://github.com/moby/moby/blob/v28.5.1/daemon/oci_linux.go#L487-L500)默认合并 noexec／nosuid／nodev，[Linux mmap 规则](https://man7.org/linux/man-pages/man2/mmap.2.html)拒绝从 noexec 文件系统建立可执行映射，而 Pydantic 依赖本地扩展。这证明配置与本地扩展加载要求相冲突；本轮未记录实际 mount 标志或扩展 ImportError，仍不能称已唯一还原本次异常，也不能猜测降级 Pydantic。
 
 拟仅对当次两源现有 tmpfs 显式允许 exec、保留其余隔离与资源上限，增加实际挂载／扩展加载断言，并由各消费者正式 HTTP 声明生成各自测试依赖，删除第三套夹具版本；执行权限变化已提出确认，尚未修订规范或实施该方案。本轮没有新增本地环境、依赖安装、业务负载、Hosted、容量或定时，也未手工触发／重跑 CI。这里只同步只读证据，未将待讨论方案或旧失败记为通过。
+
+
+## 文件系统容量告警首期（2026-10-27）
+
+先更新术语表、平台运行观测规范与API契约，再沿既有主机资源规则实现。完整主机／device／mountpoint／fstype独立绑定和信号；创建停用，默认严格超过85%连续300秒触发warning、严格低于80%连续120秒恢复，15秒评估。使用现有可用容量使用率，核验同次采样的总量／已用／普通用户可用及uptime；容量改变和来源／规则生命周期变化重新计时。缺样、重复、过期、预算失败和挂载缺失不恢复；永久卸载可停用规则，未恢复事件保留，有活动事件仍禁止删除，不新增结束状态或自动转绑。触发时挂载／容量证据保存在事件与通知中，页面就近展示并精确进入同挂载趋势。沿原权限、唯一API、协调器及outbox，不改IAM或租户范围。
+
+存储沿唯一EnsureMonitorStore前向替换旧主机／指标唯一索引为含挂载键的唯一索引；既有标量规则空维度，历史信号不改写。PostgreSQL专项实际重建旧两列索引，证明收敛后原标量配置保留且同主机不同文件系统类型可分别建规则；还验证两挂载隔离、容量变化重建、缺样保留、真实outbox及企业微信载荷、缺失挂载停用与重新启用拒绝、身份不可改和活动事件阻止删除。
+
+本地有效结果：
+
+- `make test-module MODULE=monitor GO_ONLY=1` 退出0，最终日志 `/tmp/addp-filesystem-alert-go-delivery.log`；覆盖本批阈值等号、连续窗口、容量快照、采样／维度不一致、重复点与信号隔离等Go T1。
+- 在标准Infra状态确认实际端口后，用显式测试连接环境运行 `make test-monitor-postgres` 退出0；仅共享addp-postgres的addp_test，密码在子进程内取得且未输出。完整repository／service PostgreSQL T2及新增两项均通过，最终service32.657秒，日志 `/tmp/addp-filesystem-alert-postgres-migration-final.log`。早期新用例发现RecordTx缺传资源证据，已沿原路径修正；原失败不计通过。
+- Node24.11.1下 `make test-monitor-frontend` 退出0：128项单元、473项Playwright、Vite生产构建7.37秒通过，原chunk大小提示保留。最终日志 `/tmp/addp-filesystem-alert-frontend-full.log`，127个源码／测试输入SHA256在前后核对无变化；摘要 `/tmp/addp-filesystem-alert-frontend-inputs.json`。新增六项中英浏览器场景单独退出0，日志 `/tmp/addp-filesystem-alert-browser-targeted-v6.log`；覆盖精确挂载、停用后启用CAS、已消失挂载编辑停用、预算／能力错误、迟到响应和撤权、冻结容量证据与趋势。中英窄屏截图已目视核对，目录为系统临时目录中的addp-filesystem-rule-2puy59及addp-filesystem-rule-5RJqyY。受控T3不替代真实Safari或真实主机采集。
+- Swagger按单模块标准入口生成；`bash scripts/swagger/check-route-coverage.sh monitor` 退出0，96个公开路由方法覆盖一致。日志 `/tmp/addp-filesystem-alert-swagger.log`、`/tmp/addp-filesystem-alert-route-coverage.log`。
+- 标准metrics入口的配置／登记T0最终102项通过，shell语法与diff检查通过。新增filesystem-alerts限定分项复用同一准备、mTLS、来源和清理内核；执行选择及失败时恢复发现文件有确定性测试，all保留新增专项，host-resources保留原范围。Release现有隔离矩阵同步登记该分项，不新增工作流或定时任务。
+
+真实Prometheus／SQL／签名HTTP专项尚未通过，必须与上述T1／SQL T2／页面T3分开：首次 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources` 在旧六来源资源总览用例失败，未执行新增告警；日志 `/tmp/addp-filesystem-alert-metrics-host.log`。没有修复或重跑该其他owner用例。限定分项第一次运行在共同采样超限预检超时，日志 `/tmp/addp-filesystem-alert-metrics-exact.log`；保留失败并加入固定形状、安全的源文件诊断，未放宽采样预算。
+
+最终 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=filesystem-alerts` 中102项配置／登记T0、固定版本promtool窗口、真实mTLS、中心自采集、采样超限与恢复、来源离线与恢复均实际通过；随后受控主机发现等待失败。原始日志 `/tmp/addp-filesystem-alert-metrics-exact-v2.log` 显示Nginx连续两轮打开/source/discovery.json为ENOENT，中心仍保留原发现身份，未进入TestIntegrationMetricsFilesystemAlertLifecycle；边界定位于当次测试夹具文件读取，Docker挂载／文件发布的具体根因尚未证实，不将其写成产品告警失败或已修复。没有通过延长等待、忽略缺样、改容量指标或跳过预检来通过；新的真实触发／缺样保留／恢复及签名通知代码仍待专门会话的Linux该分项结果。
+
+三次拥有明确归属的当次项目均已正常down，随后按精确Compose项目label独立核验容器／网络／卷全部为0，回执 `/tmp/addp-filesystem-alert-cleanup.json`。未填充磁盘，未修改或重启个人服务／数据库／配置，未执行Safari、Hosted、CI调度／轮询或定时任务。CI与Hosted继续等专门会话回传，本批不能写为完整运行验收完成。

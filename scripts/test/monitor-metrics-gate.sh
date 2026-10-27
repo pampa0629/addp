@@ -13,6 +13,7 @@ case "${1:-}" in
   --case=mtls-preflight) metrics_case=mtls-preflight ;;
   --case=process-alerts) metrics_case=process-alerts ;;
   --case=host-resources) metrics_case=host-resources ;;
+  --case=filesystem-alerts) metrics_case=filesystem-alerts ;;
   --case=cgroup-source) metrics_case=cgroup-source ;;
   *) echo 'Metrics T2: unsupported case' >&2; exit 2 ;;
 esac
@@ -339,7 +340,7 @@ if [[ "$metrics_case" == all || "$metrics_case" == postgres-source ]]; then
   postgres_directory_probe
 fi
 if [[ "$metrics_case" == postgres-source ]]; then exit 0; fi
-if [[ "$metrics_case" != host-resources && "$metrics_case" != mtls-preflight ]]; then
+if [[ "$metrics_case" != host-resources && "$metrics_case" != mtls-preflight && "$metrics_case" != filesystem-alerts ]]; then
 # Compile the current Common test source for the owned Linux container, without
 # installing Go or mounting the workspace into it. The cleanup trap owns it.
 process_arch=$(docker info --format '{{.Architecture}}')

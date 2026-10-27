@@ -1158,7 +1158,8 @@
         "hostUnavailable": "当前无法读取此主机，暂不能打开资源监控。",
         "trend": "查看触发时段趋势",
         "current": "查看当前主机资源"
-      }
+      },
+      "filesystemPressure": "文件系统可用容量使用率"
     },
     "resourceRules": {
       "title": "资源规则",
@@ -1199,8 +1200,13 @@
         "query_unavailable": "资源查询失败，请检查采集链路",
         "query_budget": "查询预算不足，无法按 15 秒间隔评估",
         "query_policy": "暂时无法读取查询预算",
-        "unconfigured": "评估所需配置暂不可用"
-      }
+        "unconfigured": "评估所需配置暂不可用",
+        "mount_missing": "目标挂载未观测到"
+      },
+      "mount": "文件系统挂载",
+      "noMounts": "此主机暂无有效的文件系统挂载观测。",
+      "filesystemHint": "创建后固定此挂载；缺样或永久卸载均不自动恢复已有告警。",
+      "mountRequired": "请选择当前有效观测到的文件系统挂载。"
     },
     "http": {
       "title": "接口质量",

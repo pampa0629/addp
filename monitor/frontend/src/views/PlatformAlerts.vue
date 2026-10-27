@@ -115,6 +115,10 @@
           <el-descriptions :column="1" border>
             <el-descriptions-item :label="t('monitor.resourceRules.trigger')">{{ t('monitor.platformAlerts.evidence.above', { percent: number(selectedEvidence.policy.trigger_percent), duration: duration(selectedEvidence.policy.trigger_seconds) }) }}</el-descriptions-item>
             <el-descriptions-item :label="t('monitor.resourceRules.recovery')">{{ t('monitor.platformAlerts.evidence.below', { percent: number(selectedEvidence.policy.recovery_percent), duration: duration(selectedEvidence.policy.recovery_seconds) }) }}</el-descriptions-item>
+            <template v-if="selectedEvidence.filesystem">
+              <el-descriptions-item v-for="key in ['device','mountpoint','fstype']" :key="key" :label="t(`monitor.resources.filesystem.${key === 'fstype' ? 'type' : key}`)">{{ selectedEvidence.filesystem.dimensions[key] }}</el-descriptions-item>
+              <el-descriptions-item v-for="metric in [{ key: 'total_bytes', name: 'filesystemTotal' }, { key: 'used_bytes', name: 'filesystemUsed' }, { key: 'available_bytes', name: 'filesystemAvailable' }]" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)">{{ formatBytes(selectedEvidence.filesystem[metric.key], 2, locale) }}</el-descriptions-item>
+            </template>
             <el-descriptions-item :label="t('monitor.platformAlerts.evidence.latest')">{{ percent(selectedEvidence.latest) }}</el-descriptions-item>
             <el-descriptions-item :label="t('monitor.platformAlerts.evidence.minimum')">{{ percent(selectedEvidence.minimum) }}</el-descriptions-item>
             <el-descriptions-item :label="t('monitor.platformAlerts.evidence.maximum')">{{ percent(selectedEvidence.maximum) }}</el-descriptions-item>
@@ -172,6 +176,7 @@
   </main>
 </template>
 <script setup>
+import { formatBytes } from '../../../../common-frontend/basic/src/utils/formatters.js'
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -243,7 +248,7 @@ const categoryLabel = value => ['log_pipeline', 'resource', 'http_quality', 'pro
 const channelLabel = value => value === 'wecom' ? t('monitor.platformAlerts.wecom') : value === 'email' ? t('monitor.platformAlerts.email') : 'Webhook'
 const destinationLabel = row => row.destination_name || t('monitor.platformAlerts.unavailableTarget', { id: row.destination_id })
 const fact = value => t(`monitor.platformAlerts.facts.${value ? 'yes' : 'no'}`)
-const signalLabel = value => value?.startsWith('node.') ? ({ 'node.cpu.busy_percent': t('monitor.platformAlerts.cpuPressure'), 'node.memory.used_percent': t('monitor.platformAlerts.memoryPressure') })[value] || value : t(`monitor.platformAlerts.signals.${value?.split(':')[0]}`)
+const signalLabel = value => value?.startsWith('node.filesystem.used_percent:') ? t('monitor.platformAlerts.filesystemPressure') : value?.startsWith('node.') ? ({ 'node.cpu.busy_percent': t('monitor.platformAlerts.cpuPressure'), 'node.memory.used_percent': t('monitor.platformAlerts.memoryPressure') })[value] || value : t(`monitor.platformAlerts.signals.${value?.split(':')[0]}`)
 const errorText = value => value.response?.data?.error || t('monitor.platformAlerts.failed')
 const deliveryError = code => {
   if (!code) return '—'

@@ -16,6 +16,9 @@ type resourcePressureResult struct {
 }
 
 func defaultResourcePressurePolicy(key string) models.ResourcePressurePolicy {
+	if key == models.FilesystemCapacityMetric {
+		return models.ResourcePressurePolicy{TriggerPercent: 85, RecoveryPercent: 80, TriggerSeconds: 300, RecoverySeconds: 120}
+	}
 	if key == "node.cpu.busy_percent" {
 		return models.ResourcePressurePolicy{TriggerPercent: 90, RecoveryPercent: 80, TriggerSeconds: 300, RecoverySeconds: 120}
 	}
@@ -26,7 +29,7 @@ func defaultResourcePressurePolicy(key string) models.ResourcePressurePolicy {
 // caller must resolve one current source and supply the common validity boundary
 // of its rule, node/target versions and uninterrupted collection lifecycle.
 // Unknown and paused deliberately leave an existing incident unresolved.
-func evaluateResourcePressure(metric, uptime resourcequery.Series, validSince, at time.Time, enabled, active bool, policy models.ResourcePressurePolicy) resourcePressureResult {
+func evaluateResourcePressure(metric, uptime resourcequery.Series, validSince, at time.Time, enabled, active bool, policy models.ResourcePressurePolicy, companions ...resourcequery.Series) resourcePressureResult {
 	result := resourcePressureResult{Verdict: PlatformAlertUnknown}
 	if !policy.Valid() {
 		return result
@@ -40,14 +43,14 @@ func evaluateResourcePressure(metric, uptime resourcequery.Series, validSince, a
 	switch metric.MetricKey {
 	case "node.cpu.busy_percent":
 		window = 60
-	case "node.memory.used_percent":
+	case "node.memory.used_percent", models.FilesystemCapacityMetric:
 		// Instantaneous memory ratio has no calculation window.
 	default:
 		return result
 	}
 	const maxPoints = 22 // Five minutes plus one 15s boundary slot.
 	if at.IsZero() || at.Nanosecond() != 0 || validSince.IsZero() || validSince.After(at) ||
-		metric.Unit != "percent" || metric.WindowSeconds != window || len(metric.Dimensions) != 0 ||
+		metric.Unit != "percent" || metric.WindowSeconds != window || !pressureMetricDimensions(metric) ||
 		uptime.MetricKey != "node.uptime_seconds" || uptime.Unit != "seconds" || uptime.WindowSeconds != 0 || len(uptime.Dimensions) != 0 ||
 		len(metric.Points) == 0 || len(metric.Points) > maxPoints || len(metric.Points) != len(uptime.Points) {
 		return result
@@ -61,6 +64,7 @@ func evaluateResourcePressure(metric, uptime resourcequery.Series, validSince, a
 	maxGap := step + time.Second
 	var newest, previous time.Time
 	var boot float64
+	var capacity float64
 	matched := true
 	for i := len(metric.Points) - 1; i >= 0; i-- {
 		point, witness := metric.Points[i], uptime.Points[i]
@@ -71,6 +75,19 @@ func evaluateResourcePressure(metric, uptime resourcequery.Series, validSince, a
 			expected.Sub(*point.SampledAt) < 0 || expected.Sub(*point.SampledAt) > maxGap ||
 			point.SampledAt.Add(-time.Duration(window)*time.Second).Before(validSince) ||
 			*point.Value < 0 || *point.Value > 100 || *witness.Value < 0 {
+			return result
+		}
+		if metric.MetricKey == models.FilesystemCapacityMetric {
+			snapshot, ok := filesystemPressureEvidence(metric, companions, i)
+			if !ok {
+				return result
+			}
+			if newest.IsZero() {
+				capacity = snapshot.TotalBytes
+			} else if snapshot.TotalBytes != capacity {
+				return result
+			}
+		} else if len(companions) != 0 {
 			return result
 		}
 		// The uptime catalog formula uses evaluation time, not scrape time.
