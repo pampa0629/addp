@@ -4014,3 +4014,58 @@ def test_hosted_normalize_case_dual_save_independent_physical_oracle(tmp_path,po
         ds=None
         with pytest.raises(fixture.FixtureError):fixture.verify_normalize(path,port)
     assert source.read_bytes()==original
+
+
+@pytest.mark.parametrize('port,problem',[(None,None),('chains','count'),('chains','member_count'),('chains','direction'),('chains','crs'),('chains','int_type'),
+    ('chain_edges','edge_id'),('chain_edges','occurrence_count'),('chain_edges','member_no'),('chain_edges','source_part_no'),('chain_edges','is_reversed'),('chain_edges','bool_type'),
+    ('edge_sources','source_id'),('edge_sources','source_part_no'),('edge_sources','source_segment_no'),('edge_sources','piece_no'),('edge_sources','is_reversed'),
+    ('edge_sources','chain_id'),('edge_sources','member_no'),('edge_sources','null'),('edge_sources','int_type'),('edge_sources','bool_type'),('edge_sources','direction')])
+def test_hosted_normalize_chains_case_three_save_independent_physical_oracle(tmp_path,port,problem):
+    import importlib
+    from osgeo import ogr
+    fixture=importlib.import_module('business.scripts.online-vector-topology-fixture')
+    owner=importlib.import_module('scripts.test.vector-topology-persistence-online')
+    case=fixture.COMPOSITION_CASE;profile=fixture.network_profile(case)
+    (tmp_path/'outputs').mkdir();(tmp_path/'.addp-online-owner').touch()
+    fixture.worker('seed',tmp_path,case);source=tmp_path/profile['source'];original=source.read_bytes()
+    connection={'engine_type':'nfs','mount_path':str(tmp_path)}
+    def definition(failed=False):
+        value=owner.normalize_definition('source','parent',failed,case)
+        value['tasks'][0]['params']={'connection_info':connection,'path':source.name}
+        for task in value['tasks'][3:]:
+            params=task['params'];params.pop('target_parent_locator');name=params.pop('target_name')
+            params.update(connection_info=connection,path='outputs/'+name)
+        return value
+    frame=get_operator('load')(connection_info=connection,path=source.name)
+    assert str(frame.route_key.dtype)=='Int64' and str(frame.grade.dtype)=='Int64' and str(frame.enabled.dtype)=='boolean'
+    execution=execute_workflow(definition());assert execution['status']=='success',execution.get('error')
+    verified=fixture.worker('verify',tmp_path,case)
+    assert [verified['targets'][n]['feature_count'] for n in profile['targets']]==[9,15,22]
+    if port is None:
+        archive=tmp_path.parent/(tmp_path.name+'-archive');archive.mkdir()
+        fixture.archive_physical_evidence(tmp_path,archive,verified,case)
+        assert (archive/'topology-physical'/source.name).read_bytes()==original
+        failed=execute_workflow(definition(True));assert failed['status']=='failed'
+        assert 'id_field must explicitly name one existing non-geometry scalar column' in failed['error']
+        assert fixture.worker('verify',tmp_path,case)==verified
+    else:
+        path=tmp_path/'outputs'/profile['targets'][profile['ports'].index(port)]
+        ds=ogr.Open(str(path),1);layer=ds.GetLayer(0)
+        if problem=='count':assert layer.DeleteFeature(1)==0
+        elif problem=='crs':ds.ExecuteSQL('UPDATE gpkg_geometry_columns SET srs_id=4326')
+        elif problem in ('int_type','bool_type'):
+            field=('grade' if port=='edge_sources' else 'chain_id') if problem=='int_type' else 'is_reversed'
+            assert layer.AlterFieldDefn(layer.GetLayerDefn().GetFieldIndex(field),ogr.FieldDefn(field,ogr.OFTReal),ogr.ALTER_TYPE_FLAG)==0
+        else:
+            feature=layer.GetFeature(7 if problem=='null' else 1)
+            if problem=='direction':
+                shape=ogr.Geometry(ogr.wkbLineString)
+                for x,y in feature.GetGeometryRef().GetPoints()[::-1]:shape.AddPoint_2D(x,y)
+                feature.SetGeometry(shape)
+            elif problem=='null':feature.SetField('grade',0)
+            elif problem=='is_reversed':feature.SetField(problem,not feature.GetField(problem))
+            else:feature.SetField(problem,feature.GetField(problem)+1)
+            assert layer.SetFeature(feature)==0
+        feature=layer=ds=None
+        with pytest.raises(fixture.FixtureError):fixture.worker('verify',tmp_path,case)
+    assert source.read_bytes()==original

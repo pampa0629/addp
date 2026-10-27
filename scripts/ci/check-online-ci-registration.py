@@ -2018,7 +2018,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         or "nfs-kernel-server nfs-common" not in job.group("body")
         or load_suite_registry(repository)["vector-topology-persistence"].nightly):
         raise RegistrationError("topology requires a manual isolated Hosted NFS job")
-    if ('      topology_case:' not in workflow or '          - line-network-normalize' not in workflow
+    if ('      topology_case:' not in workflow or '          - line-network-normalize' not in workflow or '          - line-network-normalize-chains' not in workflow
         or 'ADDP_ONLINE_TOPOLOGY_CASE: ${{ inputs.topology_case }}' not in job.group('body')):
         raise RegistrationError('topology requires an explicit independently selected normalization case')
     platform = (repository/'.github/workflows/platform-ci.yml').read_text()
@@ -2032,12 +2032,12 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     normalize_required = {
         'scripts/test/online-hosted-topology-gate.sh': ('full|line-network-normalize', 'topology-case.json'),
         'scripts/test/vector-topology-persistence-online.py': ('run_normalize_scenario', 'normalize_definition',
-            'validate_normalize_success', 'addp.topology-normalize/v1', 'normalization validation failure must publish neither',
-            '重合规整独立普通User双成果与字段拒绝$', 'addp.topology-normalize-browser/v1'),
+            'validate_normalize_success', "schema+'/v1'", 'normalization validation failure must publish neither',
+            "fixture.network_profile(case)['title']+'$'", "fixture.network_profile(case)['schema']+'-browser/v1'"),
         'business/scripts/online-vector-topology-fixture.py': ('normalize_source_features', 'normalize_expected_features',
             'normalize_worker', 'verify_normalize', 'occurrence_count', 'source_segment_no'),
         'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('重合规整独立普通User双成果与字段拒绝',
-            'normalizedMapExpectation', 'addp.topology-normalize-browser/v1', 'normalization lineage'),
+            'normalizedMapExpectation', "'addp.topology-normalize'", 'normalization lineage'),
         'engines/geopython-workflow/test_topology_operators.py': ('test_hosted_normalize_case_dual_save_independent_physical_oracle',),
         'scripts/test/vector-topology-persistence-online_test.py': ('test_real_playwright_discovery_selects_exactly_one_case_without_running_business',
             "[*args,'--list','--reporter=json']"),
@@ -2045,6 +2045,19 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     for relative,fragments in normalize_required.items():
         if any(fragment not in (repository/relative).read_text() for fragment in fragments):
             raise RegistrationError('topology normalization case contract incomplete: '+relative)
+    composition_required = {
+        'business/scripts/online-vector-topology-fixture.py': ('line-network-normalize-chains', 'composition_source_features',
+            'composition_expected_features', 'verify_composition_relations', '2**40', 'original direction or business fields differ'),
+        'scripts/test/vector-topology-persistence-online.py': ("'match_fields':[]", "'depends_on':['normal','chains'] if composition and port=='edge_sources' else ['chains'] if composition else ['normal']", 'invalid_chain_id_field'),
+        'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('重合规整链路合并独立普通User三成果与字段拒绝',
+            'verifyNetworkCase', 'chains:9,chain_edges:15,edge_sources:22', 'if(expected.length>20)', 'fullPageRead', 'addp.topology-normalize-chains'),
+        'engines/geopython-workflow/test_topology_operators.py': ('test_hosted_normalize_chains_case_three_save_independent_physical_oracle',),
+        'scripts/test/vector-topology-persistence-online_test.py': ('test_composition_exact_three_outputs_and_failure_barrier_without_old_scenarios',),
+        'scripts/test/online-hosted-topology-gate.sh': ('full|line-network-normalize|line-network-normalize-chains',),
+    }
+    for relative,fragments in composition_required.items():
+        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+            raise RegistrationError('topology composition case contract incomplete: '+relative)
     required = {
         "scripts/test/online-hosted-topology-gate.sh": ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
             'start_online_geopython_runtime', '--mount', '--suite vector-topology-persistence',

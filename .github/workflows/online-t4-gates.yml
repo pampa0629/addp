@@ -102,6 +102,7 @@ on:
         options:
           - full
           - line-network-normalize
+          - line-network-normalize-chains
       manager_case:
         description: Manager acceptance case (full preserves all model assertions)
         required: true

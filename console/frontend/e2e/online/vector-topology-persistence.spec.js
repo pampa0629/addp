@@ -378,12 +378,12 @@ function normalizedMapExpectation(features) {
     coordinates:row.geometry.coordinates.map(webMercatorPreviewCoordinate) })).sort()
 }
 
-test('重合规整独立普通User双成果与字段拒绝', async ({ page }) => {
+async function verifyNetworkCase(page,caseName,counts,schema) {
   const evidence = JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE || '{}')
-  expect(evidence.case).toBe('line-network-normalize')
-  expect(evidence.outputs.map(o=>o.port)).toEqual(['result','members'])
-  expect(evidence.expected.result).toHaveLength(9)
-  expect(evidence.expected.members).toHaveLength(17)
+  expect(evidence.case).toBe(caseName)
+  expect(evidence.outputs.map(o=>o.port)).toEqual(Object.keys(counts))
+  expect(Object.keys(evidence.expected)).toEqual(Object.keys(counts))
+  for(const [port,count] of Object.entries(counts))expect(evidence.expected[port]).toHaveLength(count)
   expect(evidence.source.before.id).toBe(evidence.source.id)
   const expectedIdentity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
   const executionRead=page.waitForResponse(r=>r.request().method()==='GET' && new URL(r.url()).pathname===`/api/v1/develop/executions/${evidence.execution_id}`)
@@ -393,13 +393,13 @@ test('重合规整独立普通User双成果与字段拒绝', async ({ page }) =>
   try {
     const execution=await json(response,'normalized execution')
     expect(execution.status).toBe('success')
-    expect(Object.keys(execution.outputs).sort()).toEqual(['save_members','save_result'])
+    expect(Object.keys(execution.outputs).sort()).toEqual(Object.keys(counts).map(p=>'save_'+p).sort())
   } finally {await executionAPI.dispose()}
   const frame=page.frameLocator('iframe[data-testid="module-iframe"]')
   await expect(frame.getByText('成功',{exact:true})).toBeVisible()
   for(const output of evidence.outputs)await expect(frame.locator('.workflow-result')).toContainText(output.name)
-  await page.screenshot({path:resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,'normalize-execution.png')})
-  const raw={schema_version:'addp.topology-normalize-lineage/v1',case:evidence.case,run_id:evidence.run_id,execution_id:evidence.execution_id,observations:[]}
+  await page.screenshot({path:resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,`${caseName}-execution.png`)})
+  const raw={schema_version:schema+'-lineage/v1',case:evidence.case,run_id:evidence.run_id,execution_id:evidence.execution_id,observations:[]}
   for(const output of evidence.outputs){
     const expected=evidence.expected[output.port], fields=Object.keys(expected[0].properties)
     const locator=`${output.locator}&item_id=${output.item_id}`
@@ -407,7 +407,16 @@ test('重合规整独立普通User双成果与字段拒绝', async ({ page }) =>
       new URL(r.url()).pathname==='/api/v1/manager/preview' && new URL(r.url()).searchParams.get('locator')===locator &&
       new URL(r.url()).searchParams.get('child_name')===output.layer_name)
     await page.goto(`${process.env.CONSOLE_URL}/manager/data-explorer?locator=${encodeURIComponent(locator)}`)
-    const previewResponse=await previewRead,preview=await json(previewResponse,'normalized preview')
+    let previewResponse=await previewRead
+    if(expected.length>20){
+      const fullPageRead=page.waitForResponse(r=>r.request().method()==='GET'&&new URL(r.url()).pathname==='/api/v1/manager/preview'&&
+        new URL(r.url()).searchParams.get('locator')===locator&&new URL(r.url()).searchParams.get('child_name')===output.layer_name&&
+        new URL(r.url()).searchParams.get('page')==='1'&&new URL(r.url()).searchParams.get('page_size')==='50')
+      await frame.locator('.table-preview .el-pagination__sizes .el-select').click()
+      await frame.getByRole('option',{name:/^50(?:\D|$)/}).click()
+      previewResponse=await fullPageRead
+    }
+    const preview=await json(previewResponse,'normalized preview')
     const api=await browserAPIFromResponse(previewResponse,process.env.GATEWAY_URL,expectedIdentity)
     let graph,source
     try {
@@ -450,7 +459,7 @@ test('重合规整独立普通User双成果与字段拒绝', async ({ page }) =>
     },0))).toBeGreaterThan(30)
     raw.observations.push({output_item_id:output.item_id,source,graph,preview,rendered:{...rendered,green_pixels:greenPixels}})
     writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,'topology-source-lineage-raw.json'),JSON.stringify(raw,null,2))
-    await page.screenshot({path:resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,`normalize-${output.port}-map.png`)})
+    await page.screenshot({path:resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,`${caseName}-${output.port}-map.png`)})
   }
   const failedRead=page.waitForResponse(r=>r.request().method()==='GET'&&new URL(r.url()).pathname===`/api/v1/develop/executions/${evidence.failed_execution_id}`)
   await page.goto(`${process.env.CONSOLE_URL}/develop/executions/${evidence.failed_execution_id}`)
@@ -461,6 +470,14 @@ test('重合规整独立普通User双成果与字段拒绝', async ({ page }) =>
     expect(await json(await api.get(`/api/v1/meta/items/${evidence.source.id}`),'unchanged source')).toEqual(evidence.source.before)
   } finally {await api.dispose()}
   await expect(frame.getByText('失败',{exact:true})).toBeVisible()
-  await page.screenshot({path:resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,'normalize-failed.png')})
-  writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,'topology-browser.json'),JSON.stringify({...evidence,schema_version:'addp.topology-normalize-browser/v1',result:'passed'},null,2))
+  await page.screenshot({path:resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,`${caseName}-failed.png`)})
+  writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,'topology-browser.json'),JSON.stringify({...evidence,schema_version:schema+'-browser/v1',result:'passed'},null,2))
+}
+
+test('重合规整独立普通User双成果与字段拒绝', async ({page}) => {
+  await verifyNetworkCase(page,'line-network-normalize',{result:9,members:17},'addp.topology-normalize')
+})
+
+test('重合规整链路合并独立普通User三成果与字段拒绝', async ({page}) => {
+  await verifyNetworkCase(page,'line-network-normalize-chains',{chains:9,chain_edges:15,edge_sources:22},'addp.topology-normalize-chains')
 })

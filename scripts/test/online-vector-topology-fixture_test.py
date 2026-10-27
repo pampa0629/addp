@@ -398,3 +398,36 @@ class NormalizeFixtureTest(unittest.TestCase):
             for change in changes:
                 rows=copy.deepcopy(original);change(rows)
                 with self.subTest(kind=kind,change=change),self.assertRaises(m.FixtureError):m.validate_normalize_features(rows,kind)
+
+
+class CompositionFixtureTest(unittest.TestCase):
+    def test_composition_counts_types_and_source_unchanged(self):
+        original=m.composition_source_features();self.assertEqual(len(original),11)
+        self.assertTrue(all(type(r['properties']['route_key']) is int and 2**32<r['properties']['route_key']<2**53 for r in original))
+        tables={p:m.composition_expected_features(p) for p in m.COMPOSITION_PORTS}
+        self.assertEqual([len(tables[p]) for p in m.COMPOSITION_PORTS],[9,15,22]);m.verify_composition_relations(tables)
+        self.assertEqual(original,m.composition_source_features())
+        self.assertEqual(m.topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':m.COMPOSITION_CASE}),m.COMPOSITION_CASE)
+        with patch.object(m,'normalize_worker',return_value={'only':'composition'}) as worker:
+            self.assertEqual(m.worker('seed',Path('/unused'),m.COMPOSITION_CASE),{'only':'composition'})
+            worker.assert_called_once_with('seed',Path('/unused'),m.COMPOSITION_CASE)
+    def test_composition_oracle_rejects_missing_duplicate_type_provenance_geometry_and_field_scope(self):
+        for port in m.COMPOSITION_PORTS:
+            original=m.composition_expected_features(port);m.validate_normalize_features(original,port,m.COMPOSITION_CASE)
+            changes=[lambda rows:rows.pop(),lambda rows:rows.reverse(),lambda rows:rows.append(copy.deepcopy(rows[0])),
+                lambda rows:rows[0]['geometry']['coordinates'].reverse(),lambda rows:rows[0]['geometry']['coordinates'][0].__setitem__(0,999)]
+            for key,value in original[0]['properties'].items():
+                changes.append(lambda rows,key=key:rows[0]['properties'].__setitem__(key,'wrong'))
+                if type(value) in (bool,int):changes.append(lambda rows,key=key,value=value:rows[0]['properties'].__setitem__(key,int(value) if type(value)is bool else float(value)))
+            for change in changes:
+                altered=copy.deepcopy(original);change(altered)
+                with self.subTest(port=port,change=change),self.assertRaises(m.FixtureError):m.validate_normalize_features(altered,port,m.COMPOSITION_CASE)
+    def test_composition_relation_checker_rejects_lost_chain_member_occurrence_or_direction(self):
+        mutations=[lambda t:t['chains'][0]['properties'].update(member_count=999),
+            lambda t:t['chain_edges'][0]['properties'].update(occurrence_count=999),
+            lambda t:t['chain_edges'][0]['properties'].update(is_reversed=True),
+            lambda t:t['edge_sources'][0]['properties'].update(is_reversed=True),
+            lambda t:t['edge_sources'][0]['properties'].update(chain_id=1)]
+        for mutate in mutations:
+            tables={p:m.composition_expected_features(p) for p in m.COMPOSITION_PORTS};mutate(tables)
+            with self.subTest(mutate=mutate),self.assertRaises(m.FixtureError):m.verify_composition_relations(tables)

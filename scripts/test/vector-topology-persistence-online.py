@@ -18,53 +18,62 @@ vector = importlib.import_module('scripts.utils.online_vector_persistence')
 scan_ids = importlib.import_module('scripts.test.vector-pmtiles-workflow-online').scan_ids
 
 
-def normalize_definition(source,parent,failed=False):
+def normalize_definition(source,parent,failed=False,case=fixture.NORMALIZE_CASE):
+    profile=fixture.network_profile(case);composition=case==fixture.COMPOSITION_CASE
     tasks=[{'id':'normal_input','operator':'load','params':{'locator':source},'depends_on':[]},
-        {'id':'normal','operator':'normalize_line_network','params':{'input_gdf':{'$ref':'normal_input'},'id_field':'missing_id' if failed else 'route_key'},'depends_on':['normal_input']}]
-    for port,name in zip(fixture.NORMALIZE_PORTS,fixture.NORMALIZE_TARGETS):
-        tasks.append({'id':'save_'+port,'operator':'save','params':{
-            'input_df':{'$ref':'normal'} if port=='result' else {'$ref':'normal','port':'members'},
-            'target_parent_locator':parent,'target_name':('failed-' if failed else '')+name,'mode':'fail'},'depends_on':['normal']})
+        {'id':'normal','operator':'normalize_line_network','params':{'input_gdf':{'$ref':'normal_input'},'id_field':'route_key' if composition or not failed else 'missing_id'},'depends_on':['normal_input']}]
+    if composition:
+        tasks.append({'id':'chains','operator':'merge_line_chains','params':{'input_gdf':{'$ref':'normal'},
+            'id_field':'missing_id' if failed else 'edge_id','match_fields':[]},'depends_on':['normal']})
+    for port,name in zip(profile['ports'],profile['targets']):
+        ref=({'$ref':'chains'} if port=='chains' else {'$ref':'chains','port':'members'} if port=='chain_edges' else {'$ref':'normal','port':'members'}) if composition else ({'$ref':'normal'} if port=='result' else {'$ref':'normal','port':'members'})
+        tasks.append({'id':'save_'+port,'operator':'save','params':{'input_df':ref,
+            'target_parent_locator':parent,'target_name':('failed-' if failed else '')+name,'mode':'fail'},
+            'depends_on':['normal','chains'] if composition and port=='edge_sources' else ['chains'] if composition else ['normal']})
     return {'tasks':tasks}
 
 
-def validate_normalize_success(execution,source,targets):
+def validate_normalize_success(execution,source,targets,case=fixture.NORMALIZE_CASE):
+    count=len(fixture.network_profile(case)['ports'])
     outputs=obj(execution.get('outputs'),'normalize stable outputs')
     expected={'save_'+port:{'resource':{'locator':locator,'type':'file','write_mode':'create'}} for port,locator in targets.items()}
-    if outputs!=expected:raise SuiteError('normalization must publish exactly both named ports')
+    if outputs!=expected:raise SuiteError('normalization must publish exactly the selected named ports')
     metadata=obj(execution.get('metadata'),'normalize metadata');facts=obj(metadata.get('lineage_facts'),'normalize facts')
     inputs=array(facts.get('inputs'),'normalize inputs');produced=array(facts.get('outputs'),'normalize outputs')
     if (facts.get('schema_version')!='addp.lineage-facts/v1' or
         [(x.get('port'),x.get('locator')) for x in inputs]!=[('input.normal_input',source)] or
-        len(produced)!=2 or {x.get('locator') for x in produced}!=set(targets.values()) or
+        len(produced)!=count or {x.get('locator') for x in produced}!=set(targets.values()) or
         any(x.get('write_mode')!='create' for x in produced)):
-        raise SuiteError('normalization source port or double create facts differ')
+        raise SuiteError('normalization source port or selected create facts differ')
     scans=array(obj(metadata.get('result'),'normalize result').get('meta_scan_runs'),'normalize scans')
-    if (len(scans)!=2 or {s.get('target_locator') for s in scans}!=set(targets.values()) or
+    if (len(scans)!=count or {s.get('target_locator') for s in scans}!=set(targets.values()) or
         any(s.get('status')!='submitted' or not isinstance(s.get('execution_id'),str) or not s['execution_id'] for s in scans) or
-        len({s['execution_id'] for s in scans})!=2):raise SuiteError('normalization requires exactly two distinct automatic scans')
+        len({s['execution_id'] for s in scans})!=count):raise SuiteError('normalization requires exactly the selected distinct automatic scans')
     return facts,scans
 
 
 def run_normalize_scenario(repository,env,client,physical_runner,browser_runner,diagnostic_runner):
+    case=fixture.topology_case(env);profile=fixture.network_profile(case)
+    ports,targets_names=profile['ports'],profile['targets'];source_name=profile['source'];schema=profile['schema']
+    composition=case==fixture.COMPOSITION_CASE
     tenant=positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'tenant')
     if tenant<=1:raise SuiteError('normalization forbids default Tenant')
     identity=raster.validate_identity(client,tenant,required_permissions=PERMISSIONS)
     timeout=float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS','600'))
     engine=positive(env['ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID'],'NFS engine')
-    scope=f'addp://engine/{engine}/path/{fixture.NORMALIZE_SOURCE}?type=file'
+    scope=f'addp://engine/{engine}/path/{source_name}?type=file'
     scan=support.wait_for_meta_scan(client,engine,time.monotonic()+timeout,scope={'targets':[scope]})
-    item=support.find_fixture_item(client,engine,fixture.NORMALIZE_SOURCE,'normalization source')
+    item=support.find_fixture_item(client,engine,source_name,'normalization source')
     before=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
-    source={'name':fixture.NORMALIZE_SOURCE,'id':item['id'],'locator':scope+f'&item_id={item["id"]}','scan_execution_id':scan,'before':before}
+    source={'name':source_name,'id':item['id'],'locator':scope+f'&item_id={item["id"]}','scan_execution_id':scan,'before':before}
     selected=[r for r in array(client.request('GET','/api/v1/develop/workflow-engines',(200,)).payload,'runtimes')
               if r.get('engine_type')=='geopython_workflow' and r.get('connection_status')=='online']
     if len(selected)!=1:raise SuiteError('normalization requires one online product Runtime')
     runtime=positive(selected[0]['id'],'Runtime');parent=f'addp://engine/{engine}/path/outputs?type=directory'
-    targets={port:f'addp://engine/{engine}/path/outputs/{name}?type=file' for port,name in zip(fixture.NORMALIZE_PORTS,fixture.NORMALIZE_TARGETS)}
-    identifier=raster.submit(client,runtime,normalize_definition(source['locator'],parent))
+    targets={port:f'addp://engine/{engine}/path/outputs/{name}?type=file' for port,name in zip(ports,targets_names)}
+    identifier=raster.submit(client,runtime,normalize_definition(source['locator'],parent,case=case))
     execution=raster.wait_execution(client,'develop',identifier,timeout)
-    facts,scans=validate_normalize_success(execution,source['locator'],targets)
+    facts,scans=validate_normalize_success(execution,source['locator'],targets,case)
     observed=[]
     for scan in scans:
         result=raster.wait_execution(client,'meta',scan['execution_id'],timeout)
@@ -76,17 +85,17 @@ def run_normalize_scenario(repository,env,client,physical_runner,browser_runner,
     if monitor.get('status')!='success' or monitor.get('module')!='develop' or obj(monitor.get('metadata'),'Monitor metadata').get('lineage_facts')!=facts:
         raise SuiteError('normalization Monitor status or facts differ')
     native=physical_runner(repository,env)
-    if (native.get('exact_inventory_verified') is not True or set(native.get('sources',{}))!={fixture.NORMALIZE_SOURCE} or
-        set(native.get('targets',{}))!=set(fixture.NORMALIZE_TARGETS)):raise SuiteError('normalization exact one-source two-output physical inventory differs')
+    if (native.get('exact_inventory_verified') is not True or set(native.get('sources',{}))!={source_name} or
+        set(native.get('targets',{}))!=set(targets_names)):raise SuiteError('normalization exact one-source two-output physical inventory differs')
     outputs=[]
-    for port,name in zip(fixture.NORMALIZE_PORTS,fixture.NORMALIZE_TARGETS):
+    for port,name in zip(ports,targets_names):
         target=support.find_fixture_item(client,engine,'outputs/'+name,'normalized output')
         detail=obj(client.request('GET',f'/api/v1/meta/items/{target["id"]}',(200,)).payload,'normalization target')
         sizes=validate_item(detail,native['targets'][name],name)
         outputs.append({'port':port,'name':name,'locator':targets[port],'item_id':target['id'],
                         'automatic_scan_execution_id':next(s['execution_id'] for s in scans if s['target_locator']==targets[port]),
                         **native['targets'][name],'size_evidence':sizes})
-    checkpoint={'schema_version':'addp.topology-normalize-checkpoint/v1','case':fixture.NORMALIZE_CASE,'result':'incomplete',
+    checkpoint={'schema_version':schema+'-checkpoint/v1','case':case,'result':'incomplete',
                 'stage':'before_lineage','run_id':env['ADDP_ONLINE_TEST_RUN_ID'],'identity':identity,'execution_id':identifier,
                 'source':source,'outputs':outputs,'lineage_facts':facts,'stable_outputs':execution['outputs'],
                 'automatic_scan_observations':observed,'monitor':monitor,'physical':native}
@@ -97,13 +106,13 @@ def run_normalize_scenario(repository,env,client,physical_runner,browser_runner,
     if client.request('GET',f'/api/v1/meta/items/{source["id"]}',(200,)).payload!=before:raise SuiteError('normalization source Meta changed')
     scans_before=scan_ids(client)
     if scans_before!=sorted([source['scan_execution_id'],*[s['execution_id'] for s in scans]]):raise SuiteError('normalization source/output scan inventory differs')
-    failed_id=raster.submit(client,runtime,normalize_definition(source['locator'],parent,failed=True))
+    failed_id=raster.submit(client,runtime,normalize_definition(source['locator'],parent,failed=True,case=case))
     failed=raster.wait_execution(client,'develop',failed_id,timeout,expected='failed')
     fm=obj(failed.get('metadata'),'failed normalize metadata');fr=fm.get('result')
     if failed.get('status')!='failed' or failed.get('outputs') or fm.get('lineage_facts') or (isinstance(fr,dict) and fr.get('meta_scan_runs')):
         raise SuiteError('normalization validation failure must publish neither port nor scan/facts')
-    diagnostic=diagnostic_runner(repository,env,failed_id,task='normal',
-        reason='id_field must explicitly name one existing non-geometry scalar column',cause='invalid_normalize_id_field')
+    diagnostic=diagnostic_runner(repository,env,failed_id,task='chains' if composition else 'normal',
+        reason='id_field must explicitly name one existing non-geometry scalar column',cause='invalid_chain_id_field' if composition else 'invalid_normalize_id_field')
     failed_monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{failed_id}',(200,)).payload,'failed normalize Monitor')
     if failed_monitor.get('status')!='failed' or failed_monitor.get('module')!='develop':raise SuiteError('normalization failure Monitor differs')
     if scan_ids(client)!=scans_before or physical_runner(repository,env)!=native:raise SuiteError('normalization failure changed scans or physical files')
@@ -111,13 +120,13 @@ def run_normalize_scenario(repository,env,client,physical_runner,browser_runner,
              'observation':{'status':failed['status'],'outputs':failed.get('outputs'),'lineage_facts':fm.get('lineage_facts'),
                             'meta_scan_runs':fr.get('meta_scan_runs') if isinstance(fr,dict) else None},'monitor':failed_monitor}
     (directory/'topology-normalize-failure.json').write_text(json.dumps({**checkpoint,'stage':'field_failure_validated','failed_normalize':failure},indent=2)+'\n')
-    evidence={'case':fixture.NORMALIZE_CASE,'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],**identity,'execution_id':identifier,
+    evidence={'case':case,'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],**identity,'execution_id':identifier,
               'failed_execution_id':failed_id,'source':source,'outputs':[{k:v for k,v in o.items() if k not in ('lineage','size_evidence')} for o in outputs],
-              'expected':{port:fixture.normalize_expected_features(port) for port in fixture.NORMALIZE_PORTS}}
+              'expected':{port:fixture.network_features(case,port) for port in ports}}
     report=browser_runner(repository,env,evidence)
     final=physical_runner(repository,env)
     if final!=native:raise SuiteError('normalization browser changed source or outputs')
-    return {'schema_version':'addp.topology-normalize/v1','case':fixture.NORMALIZE_CASE,'suite':SUITE,'result':'passed',
+    return {'schema_version':schema+'/v1','case':case,'suite':SUITE,'result':'passed',
             'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],'identity':identity,'execution_id':identifier,'source':source,
             'outputs':outputs,'stable_outputs':execution['outputs'],'lineage_facts':facts,'automatic_scans':scans,
             'automatic_scan_observations':observed,'monitor':monitor,'physical':native,'post_browser_physical':final,
@@ -271,14 +280,14 @@ def browser(repository, env, evidence):
     path.unlink(missing_ok=True)
     case=fixture.topology_case(env)
     # Playwright prefixes file/project names in grep titles; match the exact test-name suffix.
-    pattern='重合规整独立普通User双成果与字段拒绝$' if case==fixture.NORMALIZE_CASE else '同一普通User核对构面、修复、严格吸附、面叠面缝悬点线叠自叠线交自交及打断连通分组链路合并地图及塌缩失败$'
+    pattern=fixture.network_profile(case)['title']+'$' if case in (fixture.NORMALIZE_CASE,fixture.COMPOSITION_CASE) else '同一普通User核对构面、修复、严格吸附、面叠面缝悬点线叠自叠线交自交及打断连通分组链路合并地图及塌缩失败$'
     result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test', 'e2e/online/vector-topology-persistence.spec.js',
         '--config=playwright.online.config.js','--grep',pattern], cwd=repository/'console/frontend',
         env=dict(env, ADDP_ONLINE_TOPOLOGY_EVIDENCE=json.dumps(evidence)), stdout=sys.stderr, stderr=sys.stderr, timeout=240)
     if result.returncode or not path.is_file():
         raise SuiteError('topology Console evidence missing or failed')
     report = obj(json.loads(path.read_text()), 'browser evidence')
-    schema='addp.topology-normalize-browser/v1' if fixture.topology_case(env)==fixture.NORMALIZE_CASE else 'addp.topology-browser/v14'
+    schema=fixture.network_profile(case)['schema']+'-browser/v1' if case in (fixture.NORMALIZE_CASE,fixture.COMPOSITION_CASE) else 'addp.topology-browser/v14'
     if report != {**evidence, 'schema_version': schema, 'result': 'passed'}:
         raise SuiteError('browser report does not bind the exact run, User and outputs')
     return report
@@ -286,7 +295,7 @@ def browser(repository, env, evidence):
 
 def run_scenario(repository, env, client, physical_runner=physical, browser_runner=browser,
                  diagnostic_runner=collapsed_snap_diagnostic):
-    if fixture.topology_case(env)==fixture.NORMALIZE_CASE:
+    if fixture.topology_case(env) in (fixture.NORMALIZE_CASE,fixture.COMPOSITION_CASE):
         return run_normalize_scenario(repository,env,client,physical_runner,browser_runner,diagnostic_runner)
     tenant = positive(env['ADDP_ONLINE_TEST_TENANT_ID'], 'tenant')
     if tenant <= 1:

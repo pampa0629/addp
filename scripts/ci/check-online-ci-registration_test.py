@@ -978,6 +978,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[5], 'normalize_worker'), (paths[7], 'normalizedMapExpectation'),
             (paths[13], 'test_real_playwright_discovery_selects_exactly_one_case_without_running_business'),
             (paths[13], "[*args,'--list','--reporter=json']"),
+            (paths[0], '          - line-network-normalize-chains'), (paths[3], 'full|line-network-normalize|line-network-normalize-chains'),
+            (paths[5], 'composition_expected_features'), (paths[5], 'verify_composition_relations'),
+            (paths[4], "'depends_on':['normal','chains'] if composition and port=='edge_sources' else ['chains'] if composition else ['normal']"), (paths[4], 'invalid_chain_id_field'),
+            (paths[7], 'if(expected.length>20)'), (paths[7], 'chains:9,chain_edges:15,edge_sources:22'),
+            (paths[9], 'test_hosted_normalize_chains_case_three_save_independent_physical_oracle'),
             (paths[14], 'frontend-directory: console/frontend'), (paths[14], 'frontend-directory: manager/frontend')
         ):
             target = self.repository / relative; original = target.read_text(); target.write_text(original.replace(fragment, 'omitted'))

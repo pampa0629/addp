@@ -183,6 +183,16 @@ NFS export/owned root、Runtime/registry、部署与 Infra 全部清理并核零
 
 同源另提交一次缺失 id_field 的计算失败 DAG，必须由指定 normalize 节点的确切字段校验原因失败，两个下游 save 都不发布、无新增扫描或输出 facts，原源／成功成果不变；不承诺保存阶段跨文件事务回滚。浏览器核同 User 的成功／失败执行页与两幅地图，共四截图。阶段证据 result=incomplete 不替代最终 `addp.topology-normalize/v1` 和 `addp.topology-normalize-browser/v1` 的 passed；两者显式绑定 case、Run ID、身份、当前执行、源和两端口预期。原始图／预览／OL 与完整物理证据须保留；领域、NFS export／owned root、Runtime／registry、部署／Infra 全部清理零残留，清理不认证业务 DELETE。新场景沿现有标准 runner、Native、Console 及 workflow 登记检查，不新增 suite、权限或容量运行。
 
+### 重合规整与链路合并独立组合
+
+用户确认新增 `topology_case=line-network-normalize-chains`，沿现有 vector-topology-persistence 标准入口与 Hosted 生命周期，只运行一个 EPSG:3857 GPKG 源的 `load → normalize_line_network → merge_line_chains(id_field=edge_id, match_fields=[])`；三份既有 save 分别保存 chains、chain_edges、edge_sources，全部显式依赖合并成功。原 full 与 line-network-normalize 含义不变，不运行旧整包或容量。非默认 Tenant、普通 User 精确11权限和600秒预算不变，无新算子/API/权限。
+
+夹具11条源要素，独立手写期望为9条链、15条唯一边明细、22条原始经过明细，覆盖共享边、四种方向、分支、闭环、多部件重复、微小断口及零长度原段。业务来源ID用超过32位且在JSON安全整数范围内的2^40级Int64，NULL/Boolean、原业务chain_id/member_no必须保留；Native既有2^60级回归不外推为浏览器超安全整数认证。按同次edge_id核两级关系及方向异或，计数按唯一边与原经过分别核；原始字段不放到主链，业务来源关系不塞进Meta技术血缘。
+
+每成果必须有一次同User/Tenant自动扫描、严格正整数physical==Meta大小、源到成果的一条当前execution active derive和一致Monitor；三幅真实LineString地图须全量核9/15/22条标准EWKB、字段/原生类型、FID区别、原坐标/OL投影及像素。归档一源三成果原始字节和三份原图/源Meta/原始预览。成功页、三图及失败页共五截图；浏览器前后源文件、源Meta和成果都不变。
+
+同源另提交一次合并id_field缺失的失败DAG，须在合并节点以精确参数校验原因失败，三个下游save无发布、无新增扫描和输出facts；不承诺保存阶段跨文件事务回滚。最终Owner/browser报告绑定独立case、同run/身份/执行/三份精确期望；incomplete仅阶段证据。领域、NFS/export/owned root、Runtime/registry、部署/Infra完整清理零残留，不认证业务DELETE。新增case同次接入既有runner、Native、Console、workflow登记及mutation回归；代码或本地通过不计真实T4通过。
+
 ## manager-hybrid-search
 
 Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 MinIO Engine Instance，Fixture owner 额外幂等写入仓库内确定性 JPG。专用 Tenant 必须通过正式 Inference 与 Manager 配置 API 预置支持文本和图片、维度为 2560 的 Model Profile 及 `semantic_search_embedding` 场景绑定；Provider Credential 只保存在 Inference 加密存储，Online 环境只声明预期 Model Profile ID。suite 不创建、更新或删除 Provider、Deployment、Model Profile、Credential 和场景绑定，而经 Gateway 触发真实 Meta scan 与 Manager ad-hoc embedding，验证 Inference、pgvector、Meilisearch 和 Manager 对称 RRF 融合的完整链路：同一 `document_id` 的关键词与向量候选只能返回一次，纯向量候选必须在融合后参与统一分页，响应不得包含旧 `vector_hits`。每轮 embedding 结果必须通过 Manager 正式 API 删除并确认零残留；新增 suite 只登记手工 `workflow_dispatch`，首次真实通过前不得加入夜间调度。

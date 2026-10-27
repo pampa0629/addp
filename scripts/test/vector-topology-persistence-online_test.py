@@ -951,7 +951,7 @@ import {readFileSync} from 'node:fs'
 const source=readFileSync(process.argv[1],'utf8')
 const expected=JSON.parse(process.argv[2])
 const {webMercatorPreviewCoordinate}=await import(process.argv[3])
-const helperStart=source.indexOf('function normalizedMapExpectation('),helperEnd=source.indexOf("test('重合规整独立普通User",helperStart)
+const helperStart=source.indexOf('function normalizedMapExpectation('),helperEnd=source.indexOf('async function verifyNetworkCase(',helperStart)
 const normalizedMapExpectation=new Function('webMercatorPreviewCoordinate',source.slice(helperStart,helperEnd)+';return normalizedMapExpectation')(webMercatorPreviewCoordinate)
 const start=source.indexOf('    await expect.poll(async()=>{',helperEnd),end=source.indexOf('    let greenPixels',start)
 assert.ok(start>0&&end>start)
@@ -964,17 +964,17 @@ async function run(rows,projection='EPSG:3857'){
  await check(renderer,expect,Object.keys(expected[0].properties),expected,normalizedMapExpectation)
 }
 await run(expected);await run([...expected].reverse())
-const changes=[rows=>rows.pop(),rows=>rows.push(structuredClone(rows[0])),rows=>rows[0].properties.edge_id++,
+const changes=[rows=>rows.pop(),rows=>rows.push(structuredClone(rows[0])),rows=>rows[0].properties['edge_id' in rows[0].properties?'edge_id':'chain_id']++,
  rows=>rows[0].geometry.coordinates.reverse(),rows=>rows[0].geometry.coordinates[0][0]+=1]
 if('source_id' in expected[0].properties)changes.push(rows=>rows[0].properties.source_id='wrong',
  rows=>rows[0].properties.source_segment_no++,rows=>rows[0].properties.is_reversed=0,rows=>rows[5].properties.grade=0)
-else changes.push(rows=>rows[0].properties.occurrence_count++)
+else changes.push(rows=>rows[0].properties['occurrence_count' in rows[0].properties?'occurrence_count':'member_count']++)
 for(const change of changes){const rows=structuredClone(expected);change(rows);await assert.rejects(run(rows),{code:'ERR_ASSERTION'})}
 await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
 '''
-        for port in m.fixture.NORMALIZE_PORTS:
+        for case,port in [(case,port) for case in (m.fixture.NORMALIZE_CASE,m.fixture.COMPOSITION_CASE) for port in m.fixture.network_profile(case)['ports']]:
             result=subprocess.run(['node','--input-type=module','-e',script,
-                str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),json.dumps(m.fixture.normalize_expected_features(port)),
+                str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),json.dumps(m.fixture.network_features(case,port)),
                 (repository/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri()],capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr)
 
@@ -984,6 +984,7 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
         repository=Path(__file__).resolve().parents[2]
         run=m.subprocess.run
         titles={m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
+            m.fixture.COMPOSITION_CASE:'重合规整链路合并独立普通User三成果与字段拒绝',
             'full':'同一普通User核对构面、修复、严格吸附、面叠面缝悬点线叠自叠线交自交及打断连通分组链路合并地图及塌缩失败'}
         for case,title in titles.items():
             with self.subTest(case=case):
@@ -1004,3 +1005,85 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
                 with patch.object(m.subprocess,'run',side_effect=discover),self.assertRaisesRegex(m.SuiteError,'evidence missing'):
                     m.browser(repository,environment,{'case':case})
                 self.assertFalse((Path(self.directory.name)/'topology-browser.json').exists())
+
+
+class CompositionClient(NormalizeClient):
+    def __init__(self):
+        super().__init__();self.source_name=m.fixture.COMPOSITION_SOURCE;self.source['full_name']=self.source_name
+        self.targets={20+i:base.item(n,20+i) for i,n in enumerate(m.fixture.COMPOSITION_TARGETS)}
+        original=normalize_execution();source=f'addp://engine/3/path/{self.source_name}?type=file&item_id=10'
+        targets={p:f'addp://engine/3/path/outputs/{n}?type=file' for p,n in zip(m.fixture.COMPOSITION_PORTS,m.fixture.COMPOSITION_TARGETS)}
+        original['outputs']={'save_'+p:{'resource':{'locator':t,'type':'file','write_mode':'create'}} for p,t in targets.items()}
+        original['metadata']['lineage_facts']={'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.normal_input','locator':source}],
+            'outputs':[{'locator':t,'write_mode':'create'} for t in targets.values()]}
+        original['metadata']['result']['meta_scan_runs']=[{'execution_id':'scan-'+p,'target_locator':t,'status':'submitted'} for p,t in targets.items()]
+        self.executions['normalize-execution']=original
+    def request(self,method,path,expected,body=None):
+        if path=='/api/v1/develop/executions' and method=='POST':
+            self.calls.append((method,path,body));tasks=body['content']['workflow_definition']['tasks']
+            assert [t['operator'] for t in tasks]==['load','normalize_line_network','merge_line_chains','save','save','save']
+            assert tasks[2]['params']['match_fields']==[] and all('chains' in t['depends_on'] and t['params']['input_df']['$ref'] in t['depends_on'] for t in tasks[3:])
+            return SimpleNamespace(payload={'execution_id':'normalize-failed' if tasks[2]['params']['id_field']=='missing_id' else 'normalize-execution'})
+        if path.startswith('/api/v1/meta/scan/runs?'):
+            ids=['source-scan',*['scan-'+p for p in m.fixture.COMPOSITION_PORTS]]
+            return SimpleNamespace(payload={'total':len(ids),'items':[{'execution_id':i} for i in ids]})
+        return super().request(method,path,expected,body)
+
+
+def composition_physical(*args):
+    return {'exact_inventory_verified':True,'sources':{m.fixture.COMPOSITION_SOURCE:{'sha256':'source','size_bytes':500}},
+        'targets':{name:{'sha256':name,'size_bytes':98304,'layer_name':name[:-5],'geometry_column':'network_shape','fid_column':'fid','feature_count':count}
+                   for name,count in zip(m.fixture.COMPOSITION_TARGETS,(9,15,22))}}
+
+
+class CompositionOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
+        self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.COMPOSITION_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
+    def run_case(self,client=None,physical=composition_physical,browser=lambda r,e,v:v):
+        return m.run_scenario(Path('.'),self.env,client or CompositionClient(),physical,browser,
+            diagnostic_runner=lambda *a,**kw:self.assertEqual((kw['task'],kw['cause']),('chains','invalid_chain_id_field')) or {'cause':kw['cause']})
+    def test_composition_exact_three_outputs_and_failure_barrier_without_old_scenarios(self):
+        with patch.object(m,'definition',side_effect=AssertionError('old full must not run')):
+            report=self.run_case()
+        self.assertEqual(report['schema_version'],'addp.topology-normalize-chains/v1')
+        self.assertEqual([o['port'] for o in report['outputs']],list(m.fixture.COMPOSITION_PORTS))
+        self.assertEqual([len(report['browser']['expected'][p]) for p in m.fixture.COMPOSITION_PORTS],[9,15,22])
+        self.assertEqual(len(report['automatic_scan_observations']),3)
+        self.assertTrue(report['failed_normalize']['no_publication_or_scan'])
+        tasks=m.normalize_definition('s','p',case=m.fixture.COMPOSITION_CASE)['tasks']
+        self.assertEqual([t['params']['input_df'] for t in tasks[3:]],[{'$ref':'chains'},{'$ref':'chains','port':'members'},{'$ref':'normal','port':'members'}])
+    def test_composition_rejects_missing_duplicate_wrong_binding_facts_scans_and_sizes(self):
+        original=CompositionClient().executions['normalize-execution'];source=original['metadata']['lineage_facts']['inputs'][0]['locator']
+        targets={p:v['resource']['locator'] for p,v in ((key[5:],v) for key,v in original['outputs'].items())}
+        for mutate in [lambda e:e['outputs'].pop('save_chain_edges'),lambda e:e['outputs']['save_chains'].update(resource={'locator':targets['edge_sources'],'type':'file','write_mode':'create'}),
+            lambda e:e['metadata']['lineage_facts']['outputs'].pop(),lambda e:e['metadata']['lineage_facts']['inputs'][0].update(port='input.chains'),
+            lambda e:e['metadata']['result']['meta_scan_runs'][2].update(execution_id='scan-chains'),
+            lambda e:e['metadata']['lineage_facts']['outputs'][0].update(write_mode='fail')]:
+            value=copy.deepcopy(original);mutate(value)
+            with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):m.validate_normalize_success(value,source,targets,m.fixture.COMPOSITION_CASE)
+        for field,value in [('actor',True),('actor',34),('scan_tenant','2'),('permissions',sorted(m.PERMISSIONS|{'extra.read'}))]:
+            client=CompositionClient();setattr(client,field,value)
+            with self.subTest(field=field),self.assertRaises(m.SuiteError):self.run_case(client)
+        for i in range(3):
+            client=CompositionClient();client.targets[20+i]['size_bytes']=0
+            with self.subTest(i=i),self.assertRaises(m.SuiteError):self.run_case(client)
+    def test_composition_browser_failure_keeps_checkpoint_not_passed(self):
+        def broken(*args):raise m.SuiteError('map failed')
+        with self.assertRaises(m.SuiteError):self.run_case(browser=broken)
+        checkpoint=json.loads((Path(self.directory.name)/'topology-normalize-failure.json').read_text())
+        self.assertEqual(checkpoint['case'],m.fixture.COMPOSITION_CASE);self.assertEqual(checkpoint['result'],'incomplete')
+        self.assertEqual(checkpoint['schema_version'],'addp.topology-normalize-chains-checkpoint/v1')
+    def test_composition_browser_report_cannot_be_old_case_or_omit_third_output(self):
+        evidence={'case':m.fixture.COMPOSITION_CASE,'run_id':'r','outputs':[{'port':p} for p in m.fixture.COMPOSITION_PORTS]}
+        path=Path(self.directory.name)/'topology-browser.json'
+        for wrong in (False,True):
+            def invoke(args,**kwargs):
+                self.assertEqual(args[-2:],['--grep','重合规整链路合并独立普通User三成果与字段拒绝$'])
+                report={**evidence,'schema_version':'addp.topology-normalize-chains-browser/v1','result':'passed'}
+                if wrong:report['outputs']=report['outputs'][:2]
+                path.write_text(json.dumps(report));return SimpleNamespace(returncode=0)
+            with patch.object(m.subprocess,'run',side_effect=invoke):
+                if wrong:
+                    with self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
+                else:m.browser(Path('.'),self.env,evidence)

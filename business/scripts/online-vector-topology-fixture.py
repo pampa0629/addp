@@ -18,10 +18,99 @@ NORMALIZE_SOURCE = 'normalize-input.gpkg'
 NORMALIZE_TARGETS = ('normalized-edges.gpkg', 'normalized-members.gpkg')
 NORMALIZE_PORTS = ('result', 'members')
 
+COMPOSITION_CASE = 'line-network-normalize-chains'
+COMPOSITION_SOURCE = 'normalize-chains-input.gpkg'
+COMPOSITION_PORTS = ('chains','chain_edges','edge_sources')
+COMPOSITION_TARGETS = ('chains.gpkg','chain-edges.gpkg','edge-sources.gpkg')
+
+
+def network_profile(case):
+    if case==NORMALIZE_CASE:
+        return {'source':NORMALIZE_SOURCE,'ports':NORMALIZE_PORTS,'targets':NORMALIZE_TARGETS,
+                'schema':'addp.topology-normalize','title':'重合规整独立普通User双成果与字段拒绝'}
+    if case==COMPOSITION_CASE:
+        return {'source':COMPOSITION_SOURCE,'ports':COMPOSITION_PORTS,'targets':COMPOSITION_TARGETS,
+                'schema':'addp.topology-normalize-chains','title':'重合规整链路合并独立普通User三成果与字段拒绝'}
+    raise FixtureError('unknown network case')
+
+
+def composition_source_features():
+    gap=2**-40
+    shapes=[[[0,0],[4,0]],[[3,0],[1,0]],[[10,0],[12,2],[10,4]],
+        [[[12,2],[10,0]],[[10,4],[12,2]]],[[0,10],[4,10]],[[2,10],[2,12]],
+        [[20,0],[22,0],[22,2],[20,0]],[[[20,0],[22,2],[22,0],[20,0]],[[20,0],[22,0]]],
+        [[31,0],[31,0],[30,0],[30,0]],[[31+gap,0],[32,0]],[[40,0],[41,0],[42,0]]]
+    grades=[1,2,7,None,1,1,2,None,None,3,4]
+    return [{'properties':{'route_key':2**40+i+1,'note':None if i%2==0 else f'原属性-{i}',
+                          'grade':grades[i],'enabled':(True,None,False)[i%3],
+                          'chain_id':9000+i,'member_no':100+i},
+             'geometry':{'type':'MultiLineString' if i in (3,7) else 'LineString','coordinates':points}}
+            for i,points in enumerate(shapes)]
+
+
+def composition_expected_features(port):
+    # Handwritten original occurrences and chain traversal; never call production noding/merging.
+    gap=2**-40
+    edges=[[[0,0],[1,0]],[[1,0],[3,0]],[[3,0],[4,0]],[[10,0],[12,2]],[[10,4],[12,2]],
+           [[0,10],[2,10]],[[2,10],[4,10]],[[2,10],[2,12]],
+           [[20,0],[22,0]],[[22,0],[22,2]],[[20,0],[22,2]],
+           [[30,0],[31,0]],[[31+gap,0],[32,0]],[[40,0],[41,0]],[[41,0],[42,0]]]
+    visits=[(0,1,1,1,1,False),(0,1,1,2,2,False),(0,1,1,3,3,False),(1,1,1,1,2,True),
+            (2,1,1,1,4,False),(2,1,2,1,5,True),(3,1,1,1,4,True),(3,2,1,1,5,False),
+            (4,1,1,1,6,False),(4,1,1,2,7,False),(5,1,1,1,8,False),
+            (6,1,1,1,9,False),(6,1,2,1,10,False),(6,1,3,1,11,True),
+            (7,1,1,1,11,False),(7,1,2,1,10,True),(7,1,3,1,9,True),(7,2,1,1,9,False),
+            (8,1,2,1,12,True),(9,1,1,1,13,False),(10,1,1,1,14,False),(10,1,2,1,15,False)]
+    walks=[[(1,False),(2,False),(3,False)],[(4,False),(5,True)],[(6,False)],[(7,False)],[(8,False)],
+           [(9,False),(10,False),(11,True)],[(12,False)],[(13,False)],[(14,False),(15,False)]]
+    counts={edge:sum(v[4]==edge for v in visits) for edge in range(1,16)}
+    row=lambda props,points:{'properties':props,'geometry':{'type':'LineString','coordinates':points}}
+    if port=='chains':
+        return [row({'chain_id':i,'member_count':len(walk)},
+                    [p for n,(edge,reverse) in enumerate(walk) for p in (edges[edge-1][::-1] if reverse else edges[edge-1])[0 if n==0 else 1:]])
+                for i,walk in enumerate(walks,1)]
+    if port=='chain_edges':
+        return [row({'edge_id':edge,'occurrence_count':counts[edge],'chain_id':chain,'member_no':member,
+                     'source_part_no':1,'is_reversed':reverse},edges[edge-1])
+                for chain,walk in enumerate(walks,1) for member,(edge,reverse) in enumerate(walk,1)]
+    if port=='edge_sources':
+        sources=composition_source_features()
+        return [row({**sources[index]['properties'],'edge_id':edge,'source_id':sources[index]['properties']['route_key'],
+                     'source_part_no':part,'source_segment_no':segment,'piece_no':piece,'is_reversed':reverse},
+                    edges[edge-1][::-1] if reverse else edges[edge-1]) for index,part,segment,piece,edge,reverse in visits]
+    raise FixtureError('unknown composition output')
+
+
+def network_features(case,kind):
+    if case==COMPOSITION_CASE:
+        return composition_source_features() if kind=='source' else composition_expected_features(kind)
+    return normalize_source_features() if kind=='source' else normalize_expected_features(kind)
+
+
+def verify_composition_relations(tables):
+    chains={r['properties']['chain_id']:r for r in tables['chains']}
+    edges={r['properties']['edge_id']:r for r in tables['chain_edges']}
+    if len(chains)!=9 or len(edges)!=15 or len(tables['edge_sources'])!=22:raise FixtureError('composition cardinality differs')
+    if sum(r['properties']['member_count'] for r in chains.values())!=len(edges):raise FixtureError('composition unique edge count differs')
+    combinations=set()
+    for edge_id,edge in edges.items():
+        p=edge['properties'];sources=[r for r in tables['edge_sources'] if r['properties']['edge_id']==edge_id]
+        if len(sources)!=p['occurrence_count']:raise FixtureError('composition occurrence count differs')
+        points=chains[p['chain_id']]['geometry']['coordinates'][p['member_no']-1:p['member_no']+1]
+        canonical=edge['geometry']['coordinates']
+        if p['source_part_no']!=1 or points!=(canonical[::-1] if p['is_reversed'] else canonical):raise FixtureError('composition chain edge direction differs')
+        for source in sources:
+            original=source['properties'];reverse=original['is_reversed'] ^ p['is_reversed']
+            if (source['geometry']['coordinates']!=(points[::-1] if reverse else points) or
+                original['chain_id']<9000 or original['member_no']<100):raise FixtureError('composition original direction or business fields differ')
+            combinations.add((original['is_reversed'],p['is_reversed']))
+    if combinations!={(False,False),(False,True),(True,False),(True,True)}:raise FixtureError('composition four direction combinations differ')
+
+
 
 def topology_case(environment=None):
     value = (os.environ if environment is None else environment).get('ADDP_ONLINE_TOPOLOGY_CASE', 'full')
-    if value not in ('full', NORMALIZE_CASE):
+    if value not in ('full', NORMALIZE_CASE, COMPOSITION_CASE):
         raise FixtureError('unknown topology case')
     return value
 
@@ -60,8 +149,8 @@ def normalize_expected_features(kind='result'):
             for row,part,segment,piece,edge,reverse in visits]
 
 
-def validate_normalize_features(features,kind='result'):
-    expected=normalize_source_features() if kind=='source' else normalize_expected_features(kind)
+def validate_normalize_features(features,kind='result',case=NORMALIZE_CASE):
+    expected=network_features(case,kind)
     if features!=expected: raise FixtureError('normalization exact coordinates, order, attributes or provenance differ')
     for row,oracle in zip(features,expected):
         if list(row['properties'])!=list(oracle['properties']): raise FixtureError('normalization field order differs')
@@ -70,16 +159,18 @@ def validate_normalize_features(features,kind='result'):
                 raise FixtureError('normalization null, Integer64 or Boolean type differs')
 
 
-def seed_normalize(path):
+def seed_normalize(path,case=NORMALIZE_CASE):
     from osgeo import ogr,osr
     crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
     ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
     layer=ds.CreateLayer(path.stem,crs,ogr.wkbUnknown,options=['GEOMETRY_NAME=network_shape'])
-    for name,kind in [('route_key',ogr.OFTString),('note',ogr.OFTString),('grade',ogr.OFTInteger64),('enabled',ogr.OFTInteger)]:
+    fields=[('route_key',ogr.OFTInteger64 if case==COMPOSITION_CASE else ogr.OFTString),('note',ogr.OFTString),('grade',ogr.OFTInteger64),('enabled',ogr.OFTInteger)]
+    if case==COMPOSITION_CASE:fields += [('chain_id',ogr.OFTInteger64),('member_no',ogr.OFTInteger64)]
+    for name,kind in fields:
         field=ogr.FieldDefn(name,kind)
         if name=='enabled':field.SetSubType(ogr.OFSTBoolean)
         assert layer.CreateField(field)==0
-    for row in normalize_source_features():
+    for row in network_features(case,'source'):
         feature=ogr.Feature(layer.GetLayerDefn())
         for field,value in row['properties'].items():
             if value is not None:feature.SetField(field,value)
@@ -88,25 +179,26 @@ def seed_normalize(path):
     ds=None
 
 
-def verify_normalize(path,kind='result'):
+def verify_normalize(path,kind='result',case=NORMALIZE_CASE,records=None):
     from osgeo import ogr,osr
     ds=ogr.Open(str(path),0)
     if ds is None or ds.GetLayerCount()!=1:raise FixtureError('normalization requires exactly one GPKG layer')
     layer=ds.GetLayer(0);schema=layer.GetLayerDefn();crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
     if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs):raise FixtureError('normalization CRS differs')
-    expected=normalize_source_features() if kind=='source' else normalize_expected_features(kind)
+    expected=network_features(case,kind)
     fields=list(expected[0]['properties'])
     if [schema.GetFieldDefn(i).GetName() for i in range(schema.GetFieldCount())]!=fields:
         raise FixtureError('normalization physical fields differ')
     for field in fields:
         definition=schema.GetFieldDefn(schema.GetFieldIndex(field))
-        native=ogr.OFTString if field in ('route_key','note','source_id') else ogr.OFTInteger if field in ('enabled','is_reversed') else ogr.OFTInteger64
+        native=ogr.OFTString if field=='note' or case==NORMALIZE_CASE and field in ('route_key','source_id') else ogr.OFTInteger if field in ('enabled','is_reversed') else ogr.OFTInteger64
         if definition.GetType()!=native or (field in ('enabled','is_reversed') and definition.GetSubType()!=ogr.OFSTBoolean):
             raise FixtureError('normalization physical Integer64/Boolean schema differs')
     rows=[]
-    for feature in layer:
+    for number,feature in enumerate(layer,1):
+        if feature.GetFID()!=number:raise FixtureError('normalization FID order differs')
         shape=feature.GetGeometryRef()
-        if shape is None or shape.GetCoordinateDimension()!=2 or not shape.IsValid():raise FixtureError('normalization geometry invalid')
+        if shape is None or shape.GetCoordinateDimension()!=2 or shape.IsMeasured() or not shape.IsValid():raise FixtureError('normalization geometry invalid')
         if shape.GetGeometryName()=='LINESTRING':
             geometry={'type':'LineString','coordinates':[list(p) for p in shape.GetPoints()]}
         elif kind=='source' and shape.GetGeometryName()=='MULTILINESTRING':
@@ -118,24 +210,27 @@ def verify_normalize(path,kind='result'):
                 if props[field] not in (0,1):raise FixtureError('normalization Boolean value differs')
                 props[field]=bool(props[field])
         rows.append({'properties':props,'geometry':geometry})
-    validate_normalize_features(rows,kind)
+    validate_normalize_features(rows,kind,case)
+    if records is not None:records[kind]=rows
     return {**digest(path),'feature_count':len(rows),'crs':'EPSG:3857','layer_name':layer.GetName(),
             'geometry_column':schema.GetGeomFieldDefn(0).GetName(),'fid_column':layer.GetFIDColumn(),'fields':fields}
 
 
-def normalize_worker(action,root):
+def normalize_worker(action,root,case=NORMALIZE_CASE):
+    profile=network_profile(case);source=profile['source'];targets=profile['targets'];ports=profile['ports']
     if action=='seed':
-        if (root/NORMALIZE_SOURCE).exists() or list((root/'outputs').iterdir()):raise FixtureError('refusing existing data')
-        seed_normalize(root/NORMALIZE_SOURCE)
-        return {'sources':{NORMALIZE_SOURCE:digest(root/NORMALIZE_SOURCE)}}
+        if (root/source).exists() or list((root/'outputs').iterdir()):raise FixtureError('refusing existing data')
+        seed_normalize(root/source,case)
+        return {'sources':{source:digest(root/source)}}
     if action!='verify':raise FixtureError('unknown normalization action')
-    if (sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',NORMALIZE_SOURCE]) or
-        sorted(p.name for p in (root/'outputs').iterdir())!=sorted(NORMALIZE_TARGETS)):
+    if (sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',source]) or
+        sorted(p.name for p in (root/'outputs').iterdir())!=sorted(targets)):
         raise FixtureError('normalization inventory contains extra source, output or sidecar')
-    verify_normalize(root/NORMALIZE_SOURCE,'source')
-    return {'sources':{NORMALIZE_SOURCE:digest(root/NORMALIZE_SOURCE)},
-            'targets':{name:verify_normalize(root/'outputs'/name,port) for name,port in zip(NORMALIZE_TARGETS,NORMALIZE_PORTS)},
-            'exact_inventory_verified':True}
+    verify_normalize(root/source,'source',case)
+    records={}
+    outputs={name:verify_normalize(root/'outputs'/name,port,case,records) for name,port in zip(targets,ports)}
+    if case==COMPOSITION_CASE:verify_composition_relations(records)
+    return {'sources':{source:digest(root/source)},'targets':outputs,'exact_inventory_verified':True}
 
 
 # Explicit coordinates are independent of the production matching algorithm.
@@ -1039,7 +1134,7 @@ def validate_features(name, features):
 
 def worker(action, root, case=None):
     case=topology_case() if case is None else topology_case({"ADDP_ONLINE_TOPOLOGY_CASE":case})
-    if case==NORMALIZE_CASE:return normalize_worker(action,root)
+    if case in (NORMALIZE_CASE,COMPOSITION_CASE):return normalize_worker(action,root,case)
     if action == 'seed':
         if any((root / name).exists() for name in SOURCES) or list((root / 'outputs').iterdir()):
             raise FixtureError('refusing existing data')
@@ -1144,7 +1239,7 @@ def runtime_worker(action, root):
 def archive_physical_evidence(root, directory, result, case=None):
     """Retain only this synthetic fixture's verified bytes for offline audit."""
     case=topology_case() if case is None else topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':case})
-    sources,targets=((NORMALIZE_SOURCE,),NORMALIZE_TARGETS) if case==NORMALIZE_CASE else (SOURCES,TARGETS)
+    sources,targets=((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
     archive = directory / 'topology-physical'
     if archive.is_symlink() or (archive/'outputs').is_symlink():
         raise FixtureError('physical archive must not follow symlinks')
