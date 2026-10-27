@@ -111,7 +111,7 @@ var sourceInitializerPermissions = []string{
 func suiteSourceInitializerPermissions(suite string) []string {
 	switch suite {
 	case "ftp-consumer-flow", "manager-internal-artifact-lineage":
-		if suite == "manager-internal-artifact-lineage" && os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "kml-export" {
+		if suite == "manager-internal-artifact-lineage" && (os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "kml-export" || os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "native-table-orc") {
 			return append([]string{}, sourceInitializerPermissions...)
 		}
 		return append(append([]string{}, sourceInitializerPermissions...),
@@ -208,6 +208,11 @@ var managerArtifactPermissions = []string{
 	"manager.data_item.update",
 	"manager.data_item.read", "manager.derived_artifact.create", "manager.derived_artifact.delete", "manager.derived_artifact.read",
 	"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read",
+}
+
+var managerORCPermissions = []string{
+	"manager.content.read", "manager.data_item.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read",
+	"transfer.task.create", "transfer.task.read", "transfer.task.execute", "transfer.task.delete", "system.execution_authorization.create",
 }
 
 var managerKMLExportPermissions = []string{
@@ -308,6 +313,8 @@ func suitePermissions(suite string) ([]string, error) {
 		switch os.Getenv("ADDP_ONLINE_MANAGER_CASE") {
 		case "kml-export":
 			return managerKMLExportPermissions, nil
+		case "native-table-orc":
+			return managerORCPermissions, nil
 		case "", "full", "native-raster-media":
 		default:
 			return nil, errors.New("unsupported Manager Online acceptance case")

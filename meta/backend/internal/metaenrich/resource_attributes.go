@@ -28,6 +28,7 @@ type ResourceAttributesInput struct {
 	FormatDetector       RuntimeFormatDetector
 	ContainerInspector   ContainerInspector
 	MediaInspector       RuntimeMediaInspector
+	TableInspector       RuntimeTableInspector
 	SourceEngine         *commonModels.Engine
 	TenantID             uint
 }
@@ -48,6 +49,11 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 		return item, nil, metaErrors.ErrInvalidDelimitedOptions
 	}
 	canReadContent := input.ContentReader != nil && input.EngineCatalogPathFor != nil && input.PhysicalPath != ""
+	if handled, err := EnrichRuntimeTableItem(ctx, attrs, input.TableInspector, input.SourceEngine, input.TenantID, item, input.PhysicalPath); err != nil {
+		return item, nil, err
+	} else if handled {
+		return item, item.Fields, nil
+	}
 	if item.Layout == format.LayoutSingle && canReadContent {
 		beforeDataType := item.DataType
 		beforeFormat := item.Format

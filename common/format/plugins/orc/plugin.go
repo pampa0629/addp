@@ -21,7 +21,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor {
 		Format:         p.Format(),
 		I18nKey:        "format.orc",
 		DataType:       datatype.Table,
-		Layouts:        []string{format.LayoutSingle, format.LayoutWhole},
+		Layouts:        []string{format.LayoutSingle},
 		Identification: format.FormatIdentification{Extensions: []string{".orc"}, MimeTypes: []string{"application/orc", "application/vnd.apache.orc"}},
 	}
 }

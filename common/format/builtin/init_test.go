@@ -66,7 +66,7 @@ func TestUnknownFormatSnapshotRegistersBinaryReader(t *testing.T) {
 	}
 }
 
-func TestDescriptorOnlyTableFormatsExposeMissingProviders(t *testing.T) {
+func TestRuntimeTableFormatsExposeFactoryWithoutStreamProviders(t *testing.T) {
 	for _, formatType := range []format.FormatType{format.FormatORC} {
 		t.Run(string(formatType), func(t *testing.T) {
 			snapshot, ok := format.GetFormatCapabilitySnapshot(formatType)
@@ -76,12 +76,18 @@ func TestDescriptorOnlyTableFormatsExposeMissingProviders(t *testing.T) {
 			if !snapshot.Implementations.FormatPlugin {
 				t.Fatalf("%s implementations = %#v, want descriptor plugin", formatType, snapshot.Implementations)
 			}
+			if !snapshot.Implementations.RuntimeTable {
+				t.Fatal("runtime single-file table factory is missing")
+			}
+			if len(snapshot.Descriptor.Layouts) != 1 || snapshot.Descriptor.Layouts[0] != format.LayoutSingle {
+				t.Fatal("runtime ORC must only advertise single layout")
+			}
 			if snapshot.Implementations.TableInfoProvider ||
 				snapshot.Implementations.TableSampleReader ||
 				snapshot.Implementations.TableReaderProvider ||
 				snapshot.Implementations.TableWriterProvider ||
 				snapshot.Implementations.ScopeTableReader {
-				t.Fatalf("%s should expose missing table providers until implemented: %#v", formatType, snapshot.Implementations)
+				t.Fatalf("%s must not expose unbound stream or scope table providers: %#v", formatType, snapshot.Implementations)
 			}
 		})
 	}

@@ -7,6 +7,7 @@ import geopandas as gpd
 import pandas as pd
 from addp_common.workflow_runtime import WorkflowRunner, WorkflowExecutionError, WorkflowValidationError
 from operators import OPERATORS, get_operator
+from operators.orc_table import SourceChanged as OrcSourceChanged
 from operators.raster_compute import RasterDataset, RasterTiles, raster_info, raster_tiles_info, raster_workspace, raster_error_language
 
 logger = logging.getLogger(__name__)
@@ -101,5 +102,7 @@ def execute_single_operator(operator_name, params):
             if isinstance(result, gpd.GeoDataFrame):
                 projected = json.dumps(projected, ensure_ascii=False, allow_nan=False)
             return {'status': 'success', 'result': projected}
+    except OrcSourceChanged:
+        return {'status':'failed','error_code':'ORC_SOURCE_CHANGED','error':'ORC source changed; refresh metadata'}
     except Exception as exc:
         return {'status': 'failed', 'error': str(exc)}

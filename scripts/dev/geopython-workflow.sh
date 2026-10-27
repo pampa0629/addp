@@ -51,6 +51,8 @@ addp_prepare_geopython_workflow() {
   version=$(gdal-config --version) || return 1
   "$python_bin" - "$version" <<'PY' || return 1
 from osgeo import gdal, ogr, osr
+import pyorc
+assert pyorc.__version__ == "0.12.0", "ORC dependency mismatch"
 import sys
 assert gdal.VersionInfo('RELEASE_NAME') == sys.argv[1], 'GDAL Python/原生版本不一致'
 for name in ('PGeo', 'OpenFileGDB'):

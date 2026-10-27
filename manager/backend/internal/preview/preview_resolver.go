@@ -235,7 +235,7 @@ func (r *PreviewResolver) PreviewWithQueryExecutor(ctx context.Context, req *Pre
 	if refProvider := r.resolveRefPreviewProvider(req, providerReq); refProvider != nil {
 		provider = refProvider
 	}
-	if provider.Name() == "builtin:scope-table" {
+	if provider.Name() == "builtin:scope-table" || provider.Name() == "builtin:file-table" {
 		if err := r.bindRuntimeScopeTableReader(ctx, req, providerReq); err != nil {
 			return nil, err
 		}
@@ -860,6 +860,9 @@ func isFileTableFormat(formatType format.FormatType, attrs map[string]interface{
 	if formatType == "" || formatType == format.FormatUnknown {
 		return false
 	}
+	if _, err := format.GetRuntimeTableProviderFactory(formatType); err == nil {
+		return itemLayoutFromMetaAttributes(attrs) == format.LayoutSingle
+	}
 	if _, err := format.GetTableSampleReader(formatType); err == nil {
 		if _, infoErr := format.GetTableInfoProvider(formatType); infoErr == nil {
 			return true
@@ -885,13 +888,23 @@ func hasScopeTablePreviewProvider(formatType format.FormatType) bool {
 }
 
 func (r *PreviewResolver) bindRuntimeScopeTableReader(ctx context.Context, req *PreviewResolverRequest, providerReq *PreviewRequest) error {
-	if req == nil || providerReq == nil || providerReq.ScopeTableReaderProvider != nil {
+	if req == nil || providerReq == nil || providerReq.ScopeTableReaderProvider != nil || providerReq.RuntimeTableProvider != nil {
 		return nil
 	}
 	formatType := resolveScopeTableFormat(providerReq)
-	factory, err := format.GetRuntimeScopeTableReaderFactory(formatType)
-	if err != nil {
+	factory, scopeErr := format.GetRuntimeScopeTableReaderFactory(formatType)
+	singleFactory, singleErr := format.GetRuntimeTableProviderFactory(formatType)
+	if scopeErr != nil && singleErr != nil {
 		return nil
+	}
+	var required []string
+	if singleErr == nil {
+		if itemLayoutFromMetaAttributes(providerReq.Attributes) != format.LayoutSingle {
+			return fmt.Errorf("runtime single-file table requires single layout")
+		}
+		required = singleFactory.RequiredTableReadOperators()
+	} else {
+		required = factory.RequiredScopeTableReadOperators()
 	}
 	if req.TenantID == nil || *req.TenantID == 0 {
 		return ErrEngineAccessDenied
@@ -926,7 +939,7 @@ func (r *PreviewResolver) bindRuntimeScopeTableReader(ctx context.Context, req *
 		if runtimeEngine == nil || runtimeEngine.LifecycleState != commonModels.EngineLifecycleActive {
 			continue
 		}
-		if err := dbbridge.RequireDirectWorkflowOperators(ctx, runtimeEngine, factory.RequiredScopeTableReadOperators()...); err != nil {
+		if err := dbbridge.RequireDirectWorkflowOperators(ctx, runtimeEngine, required...); err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", runtimeEngine.Name, err))
 			continue
 		}
@@ -935,15 +948,24 @@ func (r *PreviewResolver) bindRuntimeScopeTableReader(ctx context.Context, req *
 			failures = append(failures, fmt.Sprintf("%s: %v", runtimeEngine.Name, err))
 			continue
 		}
-		bound, err := factory.BindScopeTableReader(runtimeProvider, plugin.ConnectionInfo(runtimeEngine.ConnectionInfo), plan)
-		if err != nil {
-			failures = append(failures, fmt.Sprintf("%s: %v", runtimeEngine.Name, err))
-			continue
+		if singleErr == nil {
+			bound, err := singleFactory.BindTableProvider(runtimeProvider, plugin.ConnectionInfo(runtimeEngine.ConnectionInfo), plan)
+			if err != nil {
+				failures = append(failures, fmt.Sprintf("%s: %v", runtimeEngine.Name, err))
+				continue
+			}
+			providerReq.RuntimeTableProvider = bound
+		} else {
+			bound, err := factory.BindScopeTableReader(runtimeProvider, plugin.ConnectionInfo(runtimeEngine.ConnectionInfo), plan)
+			if err != nil {
+				failures = append(failures, fmt.Sprintf("%s: %v", runtimeEngine.Name, err))
+				continue
+			}
+			providerReq.ScopeTableReaderProvider = bound
 		}
-		providerReq.ScopeTableReaderProvider = bound
 		return nil
 	}
-	message := fmt.Sprintf("no active workflow runtime provides %s preview operators %s", formatType, strings.Join(factory.RequiredScopeTableReadOperators(), ", "))
+	message := fmt.Sprintf("no active workflow runtime provides %s preview operators %s", formatType, strings.Join(required, ", "))
 	if len(failures) > 0 {
 		message += "; discovery failures: " + strings.Join(failures, "; ")
 	}

@@ -377,16 +377,16 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         raise RegistrationError("manager-internal-artifact-lineage requires Ubuntu Hosted job")
     manager_input = re.search(r"(?ms)^      manager_case:\n(?P<body>.*?)(?=^      [a-z_]+:\n|^jobs:|\Z)", workflow)
     if (not manager_input or any(fragment not in manager_input.group('body') for fragment in
-            ('required: true', 'type: choice', 'default: full', '- full', '- native-raster-media', '- kml-export'))
+            ('required: true', 'type: choice', 'default: full', '- full', '- native-raster-media', '- native-table-orc', '- kml-export'))
             or any(fragment not in job.group('body') for fragment in (
                 'ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}',
                 'name: Online T4 (manager-internal-artifact-lineage, ${{ inputs.manager_case }}, Linux x86_64)',
                 'name: online-t4-manager-internal-artifact-lineage-${{ inputs.manager_case }}-${{ github.run_id }}'))
             or any(fragment not in hosted for fragment in (
-                'ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}', 'full|native-raster-media|kml-export)',
+                'ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}', 'full|native-raster-media|native-table-orc|kml-export)',
                 'manager-case.json', 'addp.manager-acceptance-case/v1'))):
         raise RegistrationError('Manager acceptance case requires explicit full/media selection and case-specific evidence')
-    if hosted.index('full|native-raster-media|kml-export)') > hosted.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
+    if hosted.index('full|native-raster-media|native-table-orc|kml-export)') > hosted.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
         raise RegistrationError('Manager acceptance case must reject invalid input before Hosted lifecycle')
     if "nfs-kernel-server" not in job.group("body"):
         raise RegistrationError("Manager content boundary acceptance requires its Hosted NFS package")
@@ -436,6 +436,19 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
             or any(fragment not in img_owner for fragment in ('manager-img.spec.js', 'generate_raster_cog', 'cleanup_managed_artifact', 'source_format', 'JPEG2000_SOURCES', 'GRD_SOURCES', 'grid_facts', 'addp.manager-raster-media/v1'))
             or any(fragment not in img_browser for fragment in ('modelPixels', 'range_loaded', 'reused_result', 'generation_unavailable', 'source_image_absent', 'unsupported_message_visible', 'download_sha256', 'matchesSourcePreviewResponse', 'source_preview_verified', 'addp.manager-raster-media-browser/v3'))):
         raise RegistrationError('Manager IMG Hosted subscene must include real generation, browser, cleanup and standard regressions')
+    for relative in ('scripts/test/manager-orc-online.py','scripts/test/manager-orc-online_test.py',
+                     'business/scripts/online-orc-fixture.py','console/frontend/e2e/online/manager-orc.spec.js'):
+        if not (repository / relative).is_file():
+            raise RegistrationError('Manager ORC requires its source, physical, browser and regression files')
+    orc_owner = (repository / 'scripts/test/manager-orc-online.py').read_text()
+    orc_browser = (repository / 'console/frontend/e2e/online/manager-orc.spec.js').read_text()
+    if ("if case == 'native-table-orc':" not in manager_owner
+            or 'manager-orc-online' not in manager_owner
+            or not img_runner or 'scripts/test/manager-orc-online_test.py' not in img_runner.group('body')
+            or 'console/frontend/e2e/online/manager-orc.spec.js' not in img_runner.group('body')
+            or any(fragment not in orc_owner for fragment in ('task-definitions','source_version','physical("verify")','physical("delete")','manager-orc.json'))
+            or any(fragment not in orc_browser for fragment in ('page_button_verified: true','original_button_download_verified: true',"expect(expected.permissions.size).toBe(11)"))):
+        raise RegistrationError('Manager ORC requires complete page, download, batch and cleanup evidence')
     browser_config = (repository / "console/frontend/playwright.online.config.js").read_text(encoding="utf-8")
     for flag in ("--use-gl=angle", "--use-angle=swiftshader-webgl", "--enable-unsafe-swiftshader"):
         if flag not in browser_config:

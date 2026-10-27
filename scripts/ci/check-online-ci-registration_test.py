@@ -2227,10 +2227,17 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         make = self.repository / 'Makefile'
         make.write_text((make.read_text() if make.exists() else '') + '\ntest-manager-online-runner:\n\t@node --check --input-type=module < console/frontend/e2e/online/manager-img.spec.js\n\t@python3 -m unittest scripts/test/manager-img-online_test.py\n')
         make.write_text(make.read_text() + '\t@node --check --input-type=module < console/frontend/e2e/online/manager-kml-export.spec.js\n\t@python3 -m unittest scripts/test/manager-kml-export-online_test.py\n')
+        for relative in ('scripts/test/manager-orc-online.py','scripts/test/manager-orc-online_test.py',
+                         'business/scripts/online-orc-fixture.py','console/frontend/e2e/online/manager-orc.spec.js'):
+            target=self.repository/relative
+            target.parent.mkdir(parents=True,exist_ok=True)
+            target.write_text((SCRIPT.parents[2]/relative).read_text())
+        owner.write_text(owner.read_text()+"\nif case == 'native-table-orc':\nmanager-orc-online\n")
+        make.write_text(make.read_text()+'\t@node --check --input-type=module < console/frontend/e2e/online/manager-orc.spec.js\n\t@python3 -m unittest scripts/test/manager-orc-online_test.py\n')
         CHECK.check_registration(self.repository)
         for file, fragment, reason in (
             (hosted, 'manager-case.json', 'acceptance case'),
-            (hosted, 'full|native-raster-media|kml-export)', 'acceptance case'),
+            (hosted, 'full|native-raster-media|native-table-orc|kml-export)', 'acceptance case'),
             (kml_owner, 'source_unchanged=True', 'KML export'),
             (kml_browser, 'actual_button_download: true', 'KML export'),
             (self.workflow, 'ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}', 'acceptance case'),

@@ -220,3 +220,7 @@ Model3D Workflow Runtime 使用 `Pillow==12.3.0` 校验生成 GLB 中的 PNG/JPE
 首期认证固定 `falkordb/falkordb:v4.20.6@sha256:217bc520be076ce9e85b0ba426b2379ccbaebd17f2fe6e174288bd1b36d486bb`，官方 Go 结果客户端固定 `github.com/FalkorDB/falkordb-go/v2@v2.1.0`。客户端的内部 Background I/O 必须绑定到 Owner 请求 context，取消关闭本次独占连接，不自动重试。使用已有 go-redis v9.17.2 传输，RESP2；原生参数头编码与结果解码归插件。只读范围证明仅认证原生 module version 42006，其他版本明确拒绝，需补同等认证后再放开，不把版本未知当作已支持。
 
 `make test-common-falkordb-unit` 覆盖共享 openCypher AST 与两种图插件的确定性边界；`make test-common-falkordb` 创建独占、无持久卷实例并销毁，已登记根集成入口与 Release/T2 CI，Owner 自动发现按声明输入计算影响。Ontology Infra 的生命周期与数据不被该门禁使用。
+
+### ORC 原生只读依赖
+
+GeoPython Runtime 内部固定 `pyorc==0.12.0`，不由 Common Go 或业务 Backend 加载原生 ORC 库。开发准备、产品镜像与原生测试使用同一固定版本；macOS/Linux 需分别验证 ORC 与现有 GDAL/Arrow 的实际读写共存。不得为启用 ORC 替换既有同源 PyArrow。PyORC 及其打包依赖的许可证与 notices 随分发保留。

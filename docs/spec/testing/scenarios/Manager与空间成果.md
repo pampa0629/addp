@@ -12,7 +12,7 @@
 
 2026-10-24 用户批准在同一 suite 内增加独立 `native-raster-media` case，专门验收 IMG 与 JPEG2000；2026-10-26 按用户确认的读取范围扩展 Surfer 7 GRD；默认 `full` 保留原完整场景、八模型、授权、基础 FBX 及其他已有断言。二者复用同一 Hosted disposable 部署、既有十项普通 User 权限和原生产品 Runtime，不增加服务、权限或 suite，也不通过旧源码或放宽模型源授权运行。
 
-唯一选择项为 `ADDP_ONLINE_MANAGER_CASE=full|native-raster-media|kml-export`，未提供时明确选择 `full`，未知或空值在任何 Hosted 生命周期动作前拒绝。标准业务入口仍为 `ADDP_ONLINE_MANAGER_CASE=native-raster-media make test-online ONLINE_SUITE=manager-internal-artifact-lineage`；人工 Hosted 使用既有 workflow 的 `suite=manager-internal-artifact-lineage` 和明确 `manager_case`。Job 名称、Artifact 名称和 `manager-case.json` 必须显式包含所选 case，不能把任一独立 case 的通过标为完整 Manager 场景通过。KML case 的独立数据、身份、导出与清理边界见下节。
+唯一选择项为 `ADDP_ONLINE_MANAGER_CASE=full|native-raster-media|native-table-orc|kml-export`，未提供时明确选择 `full`，未知或空值在任何 Hosted 生命周期动作前拒绝。标准业务入口仍为 `ADDP_ONLINE_MANAGER_CASE=native-raster-media make test-online ONLINE_SUITE=manager-internal-artifact-lineage`；人工 Hosted 使用既有 workflow 的 `suite=manager-internal-artifact-lineage` 和明确 `manager_case`。Job 名称、Artifact 名称和 `manager-case.json` 必须显式包含所选 case，不能把任一独立 case 的通过标为完整 Manager 场景通过。KML case 的独立数据、身份、导出与清理边界见下节。
 
 `native-raster-media` 执行既有 IMG/JPEG2000 子场景及 Surfer 7 GRD 只读子场景。前两者沿同一入口验证真实 Meta、原文件、COG、页面、缓存和领域／物理清理；GRD 验证完整数值源、元数据、页面原文件下载及无定位边界。三个子场景任一个失败即失败，不因另一个通过继续宣称整项通过。独立根报告为 `manager-native-raster-media.json`、`schema_version=addp.manager-native-raster-media/v1`，包含 `case=native-raster-media`、完整 `source_formats=[img,jpeg2000,grd]`、普通身份、三个子报告及真实失败状态；总 `online-report.json` 仍由统一分发器生成。未执行的模型、点云、文档、结构化数据及其他格式既不计通过，也不伪装成跳过后完整通过；完整 case 在新模型源授权迁移完成前仍可能受其原有正向断言阻断，须单独验收。成功／失败后的应用、夹具、凭据与 Infra 清理继续使用同一 Hosted 生命周期，不修改开发服务。
 
@@ -556,3 +556,13 @@ Native候选树`83c8384f0ae808f1d9947b9126ded49c72289797`，原始日志SHA-256�
 [Hosted run40283794715／job121442687622](https://github.com/pampa0629/addp/actions/runs/40283794715/job/121442687622) 为该源码唯一手工attempt1，Validate／Run／Upload实际步骤成功，总门禁 **409907毫秒**、业务场景409739毫秒，保持600秒预算。15条保存链（11条plan及mean默认／显式、profile、tangential四对照）、26次准确中英文失败及88个封闭阶段全部通过；18源不变，普通User33／Tenant2原12权限，7服务与默认入口Runtime均同源。每条物理／COG／最近邻金字塔、相等正整数三方大小、精确自动扫描身份、当前执行实际输入血缘／Monitor、提交语言冻结及失败无发布／新增扫描血缘均有在场核验报告；26条准确诊断另逐条匹配原始Develop日志。保存结果的方向恒等和plan／tangential关系共同核228529像元，圆半径倒数、高程变换不变性、默认mean相同及私有工作区移除证据齐备。最终应用／夹具清理passed、Infra零残留。
 
 官方artifact **12635131765／2019866字节**，ZIP SHA-256：`e29113fb3d1472ab54fa8940514b7799796098a88376cbd8a0ab7c3b3f6fd722`；40个归档文件逐一核对解压内容，正式suite、online-report与原始Job／场景stdout一致。suite报告SHA-256：`48e411466d02a67ea6a091236af126605fbd5344b4d8ec6a1432d4ba631b33ce`，Hosted完整Job日志SHA-256：`f4cc45d2320edfc081b19b6dd00a7dac913fa59e2074805be8f0122827640ff7`。归档未保留COG原文件，独立审计核的是在场全幅物理oracle报告、源码／回执、原始诊断和清理，不宣称下载后离线重算15个COG。仅闭合该固定范围API T4；数值极限继续单列Native，不计UI、容量、任意影像或业务DELETE。旧剖面909负例23超时、834并行镶嵌double-free及其他固定历史证据分别保留，本轮plan通过不表示这些缺口已修复。
+
+### ORC 单文件表格 Hosted
+
+2026-10-27 用户批准 `native-table-orc` 独立 case，标准业务入口为 `ADDP_ONLINE_MANAGER_CASE=native-table-orc make test-online ONLINE_SUITE=manager-internal-artifact-lineage`。人工 Hosted 沿原 Manager Job，复用隔离 NFSv3、Business MinIO、现有 GeoPython 产品镜像、六个业务 Backend 与 Console；不构建或启动本 case 不使用的模型、点云或文档 Runtime，不改变其他 case 的断言及部署。
+
+一次性普通 User 仅使用已批准 11 项现有权限：`manager.content.read`、`manager.data_item.read`、`meta.catalog.read`、`meta.scan_task.execute`、`meta.scan_task.read`、`monitor.execution.read`、`transfer.task.create`、`transfer.task.read`、`transfer.task.execute`、`transfer.task.delete`、`system.execution_authorization.create`。不授予管理员角色，不修改个人／生产账号或产品权限声明。源和目标由明确 locator 及 source-only plan 绑定，不枚举同目录兄弟源。
+
+两份相同物理内容的 NFS／MinIO 单文件各含 2503 行，覆盖超过 JavaScript 安全范围的大整数、decimal(38,9)、NULL／空值及二进制。验收深度扫描、Meta 原生字段与 footer 行数／源版本、三页精确值与尾页、真实页面下一页和原文件下载；真实 Transfer 以 1000 行批次写 Parquet，由产品镜像内独立 PyArrow 完整回读所有字段、数值、缺失掩膜和 Decimal 精度。源字节／元数据不变、本人任务删除及物理夹具产物清理分别断言；应用部署、NFS 导出、卷、镜像和 Infra 零残留由既有 Hosted 生命周期独立收尾。报告为 `manager-orc.json`、`manager-orc-browser.json`、两份原文件、Meta 与截图，并与 `online-report.json` 和运行 SHA 一并复核；没有真实报告时不得回填 Hosted 通过。
+
+对应 T1/T0 沿 `make test-geopython-workflow`、六个受影响 Go owner、`make test-manager-online-runner`、`make test-online-runner` 与现有 CI 注册检查；不新建 Job／suite。ORC 源变化在 Runtime 使用封闭 `ORC_SOURCE_CHANGED`，Manager 复用 `preview_source_refresh_required` 409 和既有国际化提示；不通过解析本地化异常文本识别变化。

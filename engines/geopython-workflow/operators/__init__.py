@@ -25,6 +25,7 @@ from .raster_compute import OPERATORS as RASTER_COMPUTE_OPERATORS
 from .raster_band_recommendation import OPERATORS as RASTER_BAND_RECOMMENDATION_OPERATORS
 from .vector_tile_operators import vector_to_pmtiles
 from .gdal_vector_dataset import OPERATORS as GDAL_VECTOR_DATASET_OPERATORS
+from .orc_table import OPERATORS as ORC_TABLE_OPERATORS
 from .data_operations import (
     clip, voronoi, split_by_area,
     batch_buffer, batch_centroid
@@ -67,6 +68,7 @@ for ops_dict in [
     RASTER_BAND_RECOMMENDATION_OPERATORS,
     VECTOR_TILE_OPERATORS,
     GDAL_VECTOR_DATASET_OPERATORS,
+    ORC_TABLE_OPERATORS,
     DATA_OPERATORS,
     ATTRIBUTE_OPERATORS,
     FILTER_OPERATORS

@@ -764,6 +764,32 @@ func (s *ExecutionEngineService) configureRuntimeFormatProviders(
 	build *planner.TableTransferBuildResult,
 	tableExecutor *executor.TableTransferExecutor,
 ) error {
+	if factory, err := format.GetRuntimeTableProviderFactory(build.Plan.Source.Format); err == nil {
+		if build.Plan.Source.Layout != format.LayoutSingle {
+			return fmt.Errorf("runtime table source requires single layout")
+		}
+		_, runtime, conn, err := s.resolveDirectWorkflowRuntime(ctx, tenantID, factory.RequiredTableReadOperators())
+		if err != nil {
+			return err
+		}
+		locator, err := spec.Source.ResourceLocator()
+		if err != nil {
+			return err
+		}
+		resource, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{Engine: engineFromBinding(build.SourceEngine), Locator: locator, Kind: workflowaccess.KindFile, Format: string(build.Plan.Source.Format)})
+		if err != nil {
+			return err
+		}
+		plan, err := workflowaccess.NewSourcePlan(resource)
+		if err != nil {
+			return err
+		}
+		bound, err := factory.BindTableProvider(runtime, conn, plan)
+		if err != nil {
+			return err
+		}
+		tableExecutor.SourceRuntimeTableProvider = bound
+	}
 	if factory, err := format.GetRuntimeScopeTableReaderFactory(build.Plan.Source.Format); err == nil {
 		runtimeEngine, runtimeProvider, runtimeConn, err := s.resolveDirectWorkflowRuntime(ctx, tenantID, factory.RequiredScopeTableReadOperators())
 		if err != nil {

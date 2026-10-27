@@ -212,6 +212,23 @@ type RuntimeScopeTableProviderFactory interface {
 	FormatPlugin
 }
 
+// RuntimeTableProviderFactory binds one single-file table to its authorized
+// source plan. Unlike scope/container factories it has no child or layer.
+type RuntimeTableProviderFactory interface {
+	FormatPlugin
+	RequiredTableReadOperators() []string
+	BindTableProvider(engineplugin.WorkflowRuntimeProvider, engineplugin.ConnectionInfo, workflowaccess.SourcePlan) (BoundTableProvider, error)
+}
+
+// BoundTableProvider never accepts an unrelated stream: its source is fixed by
+// the factory binding. Describe, windows and continuous reads share one codec.
+type BoundTableProvider interface {
+	FormatPlugin
+	DescribeTable(context.Context, *ParseOptions) (*TableDescribeResult, error)
+	SampleTable(context.Context, int64, int64, *ParseOptions) ([]map[string]interface{}, error)
+	OpenTableReader(context.Context, *ParseOptions) (TableReader, error)
+}
+
 // RuntimeFormatDetectorFactory binds an access plan for a weakly identified
 // base format to a detector whose native dependencies live in a workflow
 // runtime. It refines format identity without changing the data item boundary.

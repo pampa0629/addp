@@ -73,6 +73,7 @@ func (p Processor) enrichDeep(ctx context.Context, input *input, attrs models.JS
 		FormatDetector:       p.formatDetector,
 		ContainerInspector:   p.containerInspector,
 		MediaInspector:       p.mediaInspector,
+		TableInspector:       p.tableInspector,
 		SourceEngine:         input.Resource,
 		TenantID:             input.TenantID,
 	})

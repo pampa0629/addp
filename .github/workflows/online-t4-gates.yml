@@ -109,6 +109,7 @@ on:
         options:
           - full
           - native-raster-media
+          - native-table-orc
           - kml-export
       graph_case:
         description: Graph acceptance scope

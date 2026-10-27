@@ -375,3 +375,11 @@ func (r *ProviderRegistry) ListFormatPluginFormats() []FormatType {
 	})
 	return formats
 }
+
+func GetRuntimeTableProviderFactory(formatType FormatType) (RuntimeTableProviderFactory, error) {
+	return globalProviderRegistry.GetRuntimeTableProviderFactory(formatType)
+}
+
+func (r *ProviderRegistry) GetRuntimeTableProviderFactory(formatType FormatType) (RuntimeTableProviderFactory, error) {
+	return pluginCapability[RuntimeTableProviderFactory](r, formatType, "runtime single-file table provider factory")
+}

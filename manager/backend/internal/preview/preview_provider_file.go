@@ -58,6 +58,9 @@ func contentReaderContextForPreview(req *PreviewRequest) (plugin.ConnectionInfo,
 }
 
 func (p *FileTablePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
+	if req != nil && req.RuntimeTableProvider != nil {
+		return previewRuntimeFileTable(ctx, req)
+	}
 	contentCtx, err := p.contentContextForPreview(req)
 	if err != nil {
 		return nil, err

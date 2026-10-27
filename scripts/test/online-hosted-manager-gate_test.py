@@ -39,6 +39,7 @@ class HostedManagerGateTest(unittest.TestCase):
             echo "nfs-fixture:$1" >> "$ADDP_TEST_GATE_TRACE"
             if [ "$1" = start ]; then
               printf '{}\\n' > "$ADDP_ONLINE_SECRET_DIR/manager-nfs-engine.json"
+              printf '/tmp/owned-orc-unit\\n' > "$ADDP_ONLINE_SECRET_DIR/nfs-root"
               [ "${ADDP_TEST_NFS_FIXTURE_FAIL:-0}" != 1 ] || exit 1
             fi
         """)
@@ -161,6 +162,17 @@ class HostedManagerGateTest(unittest.TestCase):
                 self.assertIn('ADDP_ONLINE_MANAGER_CASE', result.stderr)
                 self.assertFalse(self.host.trace.exists())
                 self.assertFalse(self.host.secrets.exists())
+
+    def test_orc_case_uses_transfer_and_only_native_table_runtime(self):
+        result=self.run_gate(ADDP_ONLINE_MANAGER_CASE='native-table-orc')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        trace=self.host.trace.read_text()
+        self.assertIn('manager-case:native-table-orc',trace)
+        self.assertIn('manager,transfer',trace)
+        self.assertNotIn('start:-pointcloud-workflow',trace)
+        self.assertNotIn('--services model3d-workflow-engine',trace)
+        report=json.loads((self.host.artifacts/'manager-case.json').read_text())
+        self.assertEqual(report['case'],'native-table-orc')
 
     def test_native_media_case_is_explicit_and_uses_same_cleanup(self):
         result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='native-raster-media')

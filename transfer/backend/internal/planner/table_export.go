@@ -1027,6 +1027,20 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 			return executor.TableSourcePlan{}, err
 		}
 		parseOptions := tableParseOptions(endpoint.Options, sourceFormat)
+		if _, err := format.GetRuntimeTableProviderFactory(sourceFormat); err == nil {
+			if itemDescriptor.Layout != format.LayoutSingle {
+				return executor.TableSourcePlan{}, fmt.Errorf("runtime table source requires single layout")
+			}
+			version := commonJSON.String(endpoint.Attributes, "format_info."+string(sourceFormat), "source_version")
+			if version == "" {
+				return executor.TableSourcePlan{}, fmt.Errorf("runtime table source requires scanned source version; refresh metadata")
+			}
+			if parseOptions.ExtraParams == nil {
+				parseOptions.ExtraParams = map[string]interface{}{}
+			}
+			parseOptions.ExtraParams["source_version"] = version
+		}
+
 		if sourceFormat == format.FormatCSV || sourceFormat == format.FormatTSV {
 			if stringValue(endpoint.Options, "encoding") == "" {
 				if encoding := commonJSON.String(endpoint.Attributes, "format_info."+string(sourceFormat), "encoding"); encoding != "" {
@@ -2208,6 +2222,9 @@ func validateTransferReadableTableFormat(formatType format.FormatType) error {
 }
 
 func hasTableTransferReader(formatType format.FormatType) bool {
+	if _, err := format.GetRuntimeTableProviderFactory(formatType); err == nil {
+		return true
+	}
 	if _, err := format.GetTableReaderProvider(formatType); err == nil {
 		return true
 	}

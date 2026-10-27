@@ -65,6 +65,7 @@ type PreviewRequest struct {
 	// ScopeTableReaderProvider is bound by PreviewResolver when a whole-scope
 	// format requires native dependencies from a workflow runtime.
 	ScopeTableReaderProvider format.ScopeTableReaderProvider
+	RuntimeTableProvider     format.BoundTableProvider
 	KeyValueOptions          plugin.KeyValueReadOptions
 	executePrepared          PreparedPreviewExecutor
 }

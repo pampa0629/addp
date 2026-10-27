@@ -144,6 +144,7 @@ type TableTransferExecutor struct {
 	SourceContentReader        engineplugin.ContentReadableProvider
 	SourceTableReadProvider    format.TableReaderProvider
 	SourceInfoProvider         format.TableInfoProvider
+	SourceRuntimeTableProvider format.BoundTableProvider
 	SourceMultiReadProvider    format.MultiTableReaderProvider
 	SourceScopeReadProvider    format.ScopeTableReaderProvider
 	TargetContentWriter        engineplugin.ContentWritableProvider
@@ -271,6 +272,12 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 			spatialInfo:          plan.SpatialInfo,
 		}, nil
 	case TableEndpointEncoded:
+		if e.SourceRuntimeTableProvider != nil {
+			if plan.Layout != format.LayoutSingle {
+				return nil, fmt.Errorf("runtime table source requires single layout")
+			}
+			return &encodedContentTableSource{runtimeProvider: e.SourceRuntimeTableProvider, parseOptions: plan.ParseOptions, resumeMarker: plan.ResumeMarker, tableInfo: plan.TableInfo}, nil
+		}
 		if e.SourceContentReader == nil {
 			return nil, fmt.Errorf("encoded table source requires content reader")
 		}

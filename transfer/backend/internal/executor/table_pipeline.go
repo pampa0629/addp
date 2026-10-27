@@ -634,6 +634,7 @@ func (r *nativeOffsetBatchReader) ResumeMarker() *resume.Marker {
 }
 
 type encodedContentTableSource struct {
+	runtimeProvider     format.BoundTableProvider
 	reader              engineplugin.ContentReadableProvider
 	tableProvider       format.TableReaderProvider
 	multiReaderProvider format.MultiTableReaderProvider
@@ -651,6 +652,37 @@ type encodedContentTableSource struct {
 
 func (s *encodedContentTableSource) Open(ctx context.Context) (TableBatchReader, error) {
 	parseOptions := parseOptionsWithResumeMarker(s.parseOptions, s.resumeMarker)
+	if s.runtimeProvider != nil {
+		reader, err := s.runtimeProvider.OpenTableReader(ctx, parseOptions)
+		if err != nil {
+			return nil, err
+		}
+		if err = validateEncodedTableFields(s.tableInfo, reader.Fields(), parseOptions); err != nil {
+			_ = reader.Close(ctx)
+			return nil, err
+		}
+		actual := tableInfoFromFormatReader(reader)
+		if !tableInfoEmpty(s.tableInfo) {
+			var selection *format.FieldSelectionOptions
+			if parseOptions != nil {
+				selection = parseOptions.FieldSelection
+			}
+			declared, err := format.ApplyFieldSelectionToTableInfo(s.tableInfo, selection)
+			if err != nil {
+				_ = reader.Close(ctx)
+				return nil, err
+			}
+			for i, f := range declared.Fields {
+				g := actual.Fields[i]
+				if f.Type != g.Type || f.Precision != g.Precision || f.Scale != g.Scale {
+					_ = reader.Close(ctx)
+					return nil, fmt.Errorf("runtime source schema differs from declared table")
+				}
+			}
+		}
+		return &multiTableBatchReader{tableReader: reader, tableInfo: actual}, nil
+	}
+
 	if s.scopeReaderProvider != nil {
 		scope := contentRefFromCatalogPath(s.path)
 		scope.Role = contentio.RoleScope

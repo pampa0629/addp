@@ -8,8 +8,8 @@ ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=manager-internal-artifact-lineage
 export ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}
 case "$ADDP_ONLINE_MANAGER_CASE" in
-  full|native-raster-media|kml-export) ;;
-  *) echo 'ADDP_ONLINE_MANAGER_CASE must be full, native-raster-media or kml-export' >&2; exit 1 ;;
+  full|native-raster-media|native-table-orc|kml-export) ;;
+  *) echo 'ADDP_ONLINE_MANAGER_CASE must be full, native-raster-media, native-table-orc or kml-export' >&2; exit 1 ;;
 esac
 HOSTED_FIXTURE_CONTAINERS=(addp-manager-model3d-runtime business-minio addp-manager-online-registry addp-manager-raster-runtime addp-manager-raster-verifier)
 if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ]; then
@@ -102,8 +102,10 @@ for attempt in $(seq 1 30); do
   [ "$attempt" -lt 30 ] || fail "temporary image registry did not become ready"
   sleep 1
 done
+if [ "$ADDP_ONLINE_MANAGER_CASE" != native-table-orc ]; then
 run_logged bash scripts/build/build-images.sh --verify --jobs 1 \
   --registry 127.0.0.1:5001 --tag online --services model3d-workflow-engine
+fi
 run_logged docker pull python:3.11-slim
 run_logged docker tag python:3.11-slim localhost:5001/python:3.11-slim
 run_logged docker push localhost:5001/python:3.11-slim
@@ -113,15 +115,27 @@ run_logged bash business/scripts/online-manager-minio-fixture.sh start
 run_logged bash business/scripts/online-manager-nfs-fixture.sh start
 application_owned=1
 # Manager must install its initial Security projection before protected reads.
+if [ "$ADDP_ONLINE_MANAGER_CASE" = native-table-orc ]; then
+  for start_target in -security -meta -manager -monitor -transfer; do
+    run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
+  done
+  nfs_root=$(cat "$ADDP_ONLINE_SECRET_DIR/nfs-root")
+  start_online_geopython_runtime "$RUNTIME_TAG" --mount "type=bind,src=$nfs_root,dst=$nfs_root,readonly"
+else
 for start_target in -security -meta -manager -monitor -pointcloud-workflow -document-workflow; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
 start_online_model3d_runtime addp-manager-model3d-runtime 127.0.0.1:5001/addp-model3d-workflow-engine:online
 start_online_geopython_runtime "$RUNTIME_TAG"
+fi
 export ADDP_ONLINE_MANAGER_MINIO_RASTER_OBJECT=raster/source.tif
-run_logged python3 business/scripts/online-raster-minio-fixture.py manager-seed
+if [ "$ADDP_ONLINE_MANAGER_CASE" != native-table-orc ]; then
+  run_logged python3 business/scripts/online-raster-minio-fixture.py manager-seed
+fi
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
-run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite manager-internal-artifact-lineage --wait-protection-owners manager --output "$1"' _ "$IDENTITY_ENV"
+protection_owners=manager
+if [ "$ADDP_ONLINE_MANAGER_CASE" = native-table-orc ]; then protection_owners=manager,transfer; fi
+run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite manager-internal-artifact-lineage --wait-protection-owners "$2" --output "$1"' _ "$IDENTITY_ENV" "$protection_owners"
 source "$IDENTITY_ENV"
 run_logged python3 scripts/test/online-engine-registration.py \
   --descriptor "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE" --output "$ENGINE_RESULT_ENV"

@@ -125,6 +125,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor
 | 单资源表格元信息 | `TableInfoProvider` | Meta、Manager 探查、Transfer 规划 |
 | 单资源表格样本 | `TableSampleReader` | Manager、轻量探查 |
 | 单资源表格全量读取 | `TableReaderProvider` | Transfer 主链路 |
+| 原生单文件表格绑定 | `RuntimeTableProviderFactory` → `BoundTableProvider` | 绑定 source-only access plan；Meta 描述、Manager 逻辑窗口、Transfer 连续读取 |
 | 单资源表格写出 | `TableWriterProvider` | Transfer 写侧 |
 | 多组件表格元信息 | `MultiTableInfoProvider` | Meta、Manager 探查、Transfer 规划 |
 | 多组件表格样本 | `MultiTableSampleReader` | Manager、轻量探查 |
@@ -146,7 +147,7 @@ func (p *Plugin) Descriptor() format.FormatDescriptor
 | 空间横切事实 | 通过 describe result 或等价结构提供 `datatype.SpatialInfo`，由 Meta 写入 `capabilities.spatial` | Meta、Manager、Search |
 | 访问定位索引 | 通过 describe result 或等价结构提供 `datatype.AccessIndex`，由 Meta 写入 `access_index.<data_type>`；`AccessIndex` 不是 data type 或 type info | Meta、Manager、Transfer |
 
-新增实现必须直接使用拆分后的接口。multi / scope 的 info、sample、连续全量读取必须分别使用对应接口；Transfer 主链路读取 whole scope table 必须使用明确的 `ScopeTableReaderProvider`，不得引入组合 provider，也不得用 sample reader 冒充全量读取。
+新增实现必须直接使用拆分后的接口。multi / scope 的 info、sample、连续全量读取必须分别使用对应接口；Transfer 主链路读取 whole scope table 必须使用明确的 `ScopeTableReaderProvider`，不得引入无明确资源绑定的组合 provider，也不得用 sample reader 冒充全量读取。需要原生依赖的单文件表格允许唯一 `RuntimeTableProviderFactory` 返回已绑定精确源的 `BoundTableProvider`；它的 Describe、Sample 和 OpenTableReader 方法不接收任意 io.Reader，不改变格式为 container／scope。连续读取必须返回独立 TableReader，并绑定源版本，不能用反复读样本代替。
 
 Info provider 一次解析可能同时得到多类事实。以 table 为例：
 

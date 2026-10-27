@@ -70,6 +70,17 @@ COPY engines/geopython-workflow/container_entrypoint.sh .
 
 RUN python -c "from osgeo import gdal; assert gdal.GetDriverByName('JP2OpenJPEG'), 'JPEG2000 requires JP2OpenJPEG'; assert gdal.GetDriverByName('GS7BG'), 'Surfer 7 requires GS7BG'; assert gdal.GetDriverByName('GSBG'), 'Surfer 6 Binary requires GSBG'; assert gdal.GetDriverByName('GSAG'), 'Surfer 6 ASCII requires GSAG'"
 
+# Read with the actual native ORC wheel before admitting the product image.
+RUN python - <<'PYORC'
+import io, pyorc
+assert pyorc.__version__ == '0.12.0'
+stream = io.BytesIO()
+with pyorc.Writer(stream, 'struct<id:bigint>') as writer:
+    writer.writerows([(2**63-1,), (None,)])
+stream.seek(0)
+assert pyorc.Reader(stream).read() == [(2**63-1,), (None,)]
+PYORC
+
 # Verify the packaged API and health route without starting a service or contacting System.
 RUN python -c "import api_server; assert api_server.app.test_client().get('/health').status_code == 200"
 

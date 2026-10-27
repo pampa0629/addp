@@ -1613,3 +1613,12 @@ PY
 		t.Fatalf("private identity environment did not reach scenario: %v", err)
 	}
 }
+
+func TestManagerORCFixtureUsesApprovedElevenPermissions(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "native-table-orc")
+	got, err := suitePermissions("manager-internal-artifact-lineage")
+	want := []string{"manager.content.read", "manager.data_item.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read", "transfer.task.create", "transfer.task.read", "transfer.task.execute", "transfer.task.delete", "system.execution_authorization.create"}
+	if err != nil || !slices.Equal(got, want) {
+		t.Fatalf("ORC fixture permissions differ: %v %v", got, err)
+	}
+}

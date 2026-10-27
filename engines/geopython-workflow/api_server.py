@@ -455,6 +455,8 @@ def invoke_operator_endpoint(operator_name):
 
         execution_time = (time.time() - start) * 1000
 
+        if result.get('error_code') == 'ORC_SOURCE_CHANGED':
+            return jsonify(error_response('ORC_SOURCE_CHANGED', 'ORC source changed; refresh metadata')), 409
         if result['status'] == 'success':
             response = {
                 "status": "success",

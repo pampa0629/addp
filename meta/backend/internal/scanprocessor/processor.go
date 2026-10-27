@@ -77,10 +77,14 @@ type Processor struct {
 	formatDetector     metaenrich.RuntimeFormatDetector
 	containerInspector metaenrich.ContainerInspector
 	mediaInspector     metaenrich.RuntimeMediaInspector
+	tableInspector     metaenrich.RuntimeTableInspector
 }
 
 func (p Processor) WithContainerInspector(inspector metaenrich.ContainerInspector) Processor {
 	p.containerInspector = inspector
+	if tables, ok := inspector.(metaenrich.RuntimeTableInspector); ok {
+		p.tableInspector = tables
+	}
 	if media, ok := inspector.(metaenrich.RuntimeMediaInspector); ok {
 		p.mediaInspector = media
 	}
