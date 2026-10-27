@@ -119,7 +119,9 @@ System `GET /platform/engine_deployments/discovery` 仅接受非委托 Platform 
 
 SIGTERM／SIGINT处理器只锁存停止请求，由非阻塞唤醒管道打断原30秒空闲等待；不在异步处理器直接抛退出异常，避免信号命中Python析构器时成为被忽略异常。主循环、锁等待和Docker读取在显式检查点响应停止；Docker命令仍仅启动一次，分段等待同一子进程，不重置原单次10秒／整轮30秒预算。取消读取先回收当次自有子进程，再按原非阻塞失效及退出核验流程清理；归属、单次停止信号与未退出保留记录不变。
 
-该接口不创建纳管身份、不更改管理员声明、历史或租户权限；管理员批量确认遵循 4.4；专业指标尚待实施，不以候选读取或来源自动发布代替产品接入验收。
+PostgreSQL 专业来源沿同一发现文件发布：部署侧仅核对两个自有采集容器的 Owner、scope、project、数据库容器完整 ID／启动时刻及显式 HTTPS 发布端口；不读环境、Secret 或 SQL。采集身份不加入管理员确认摘要或不可变部署声明，公开发现 DTO 排除专业端点。
+
+该接口不创建纳管身份、不更改管理员声明、历史或租户权限；管理员批量确认遵循 [4.4](#44-平台引擎部署登记)，专业来源的私有投影与准入见 [4.7](#47-postgresql-受保护的固定指标来源)。候选读取、来源自动发布、专业采集与用户查询分别验证，不以发现成功代替产品接入验收。
 
 ### 4.6 PostgreSQL 数据库侧汇总读取边界
 
@@ -155,7 +157,9 @@ SQL Exporter 只监听其网络命名空间的回环 HTTP `127.0.0.1:9399`，同
 
 所选版本在 SQL 失败时可能仍返回 HTTP 200 和累计 `scrape_errors_total`，此时不得输出旧数据库样本。HTTP `up` 只证明传输可达，累计错误计数也不是当前失败状态；专业读取必须验证固定样本及新鲜采样时间。T2 覆盖权限撤销后的两次真实失败、错误计数递增与无旧样本、恢复新样本、统计关闭／恢复，以及错误客户端证书、明文 HTTP、路径和方法拒绝。精确入口为 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source`，默认完整门禁同样包含；业务／Infra 全退出核验由同一门禁负责。
 
-该契约包含可选部署生命周期及独占传输验证，不代表个人实例已经启用或专业页面已通过正式身份 T4。已实现的自动关联、引擎指标读取及页面仍须沿明确身份投影与当前 User 授权，不将来源模板直接登记成节点或租户 Engine。上游行为参照 [SQL Exporter 固定版本](https://github.com/burningalchemist/sql_exporter/tree/0.24.11)；不引入 PostgreSQL exporter 已弃用的自定义查询作为并行路线。
+PostgreSQL 专业来源经 [4.5](#45-部署侧自动发现来源) 的同一发现文件进入 System 私有观测投影；Monitor 继续统一 mTLS／CIDR／端口准入、端点去重及样本预算。专业来源缺失、停用、归属不明或数据库容器变化时只移除该来源，不清空合法主机／进程身份。
+
+该契约包含可选部署生命周期及独占传输验证，不代表个人实例已经启用或专业页面已通过正式身份 T4。用户授权及当前容器运行段分别沿 [6.2](#62-资源查询与预算)、[6.3](#63-趋势时段比较与总览)，不将来源模板直接登记成节点或租户 Engine。数据库侧、来源 T2 与专业查询／页面 T4 的固定版本、失败及未覆盖项见[采集来源与引擎指标证据](testing/evidence/Monitor采集来源与引擎指标历史证据.md)，不外推当前 HEAD 或生产验收。上游行为参照 [SQL Exporter 固定版本](https://github.com/burningalchemist/sql_exporter/tree/0.24.11)；不引入 PostgreSQL exporter 已弃用的自定义查询作为并行路线。
 
 ### 4.8 服务部署预期与分组租约观测
 
@@ -272,6 +276,8 @@ System 只在当前有效实例的 module／role、三项内核身份及进程�
 
 资源读取仅允许非委托 Platform User，使用 `monitor.resource_observation.read` 并按主体要求核验 System 读取权限。System 当前身份投影和普通用户读取共同检查当前主体、来源、版本、启动边界及租约，不能用后台身份跳过用户授权。
 
+PostgreSQL 专业查询同时核验 `monitor.resource_observation.read` 与 System 的 `platform.engine_deployment.read`，查询完成后重核；私有观测投影不代替当前 User 的读取授权。
+
 | 接口（Monitor `/api/v1/monitor` 下） | 约束 |
 | --- | --- |
 | `/platform/resource_observations`、`/platform/resource_trends` | 显式 node_id、固定 metrics 白名单；趋势使用整秒 RFC3339 start/end，维度严格匹配 |
@@ -348,6 +354,8 @@ System 只在当前有效实例的 module／role、三项内核身份及进程�
 总览读取本次完整授权主机集合，包括停用主机，独立于列表分页/筛选。System 单页最多 100 个并在同一只读快照计数、取数；双指标受默认 100 序列预算约束，当前最多评估 50 台。超范围或预算整份 422，不读取前页冒充平台总览。
 
 CPU/内存分别报告应覆盖、有效、缺失、过期及未接入数量；仅 valid 参与前五名，按值降序、同值 node_id 升序，真实零值参与。缺覆盖明确“不完整”；整轮成功原子发布，不发部分榜单。不合计主机容量、进程 RSS、容器配额、共享挂载或引擎集群容量，后续先明确去重与分母。
+
+PostgreSQL 专业观测仅显示当前数据库容器运行段，最长七天；重启／统计重置处的速率留空。
 
 ### 6.4 HTTP 接口质量（分阶段接入）
 
@@ -694,5 +702,3 @@ Prometheus 始终使用原独立最小身份。每次退出释放压力和接收
 - [Prometheus HTTP SD](https://prometheus.io/docs/prometheus/latest/http_sd/)、[配置](https://prometheus.io/docs/prometheus/latest/configuration/configuration/)、[存储](https://prometheus.io/docs/prometheus/latest/storage/)
 - [node_exporter 容器部署](https://github.com/prometheus/node_exporter#docker)、[exporter-toolkit Web/TLS](https://github.com/prometheus/exporter-toolkit/blob/master/docs/web-configuration.md)
 - [Linux 磁盘统计](https://www.kernel.org/doc/html/latest/admin-guide/iostats.html)、[OpenTelemetry 采样](https://opentelemetry.io/docs/concepts/sampling/)
-
-PostgreSQL 专业来源沿同一发现文件与 System 私有观测投影提供：部署侧仅核对两个自有采集容器的 Owner、scope、project、数据库容器完整 ID／启动时刻及显式 HTTPS 发布端口；不读环境、Secret 或 SQL。采集身份不加入管理员确认摘要或不可变部署声明，公开发现 DTO 排除专业端点。专业来源缺失、停用、归属不明或数据库容器变化时只移除该来源，不清空合法主机／进程身份。Monitor 继续统一 mTLS／CIDR／端口准入、端点去重及样本预算。当前用户查询同时核验 monitor.resource_observation.read 与 System 的 platform.engine_deployment.read，查询后重核；仅显示当前数据库容器运行段，最长七天，重启／统计重置处的速率留空。
