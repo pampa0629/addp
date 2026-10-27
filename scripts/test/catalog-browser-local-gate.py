@@ -293,13 +293,15 @@ def cleanup(identity, report=None):
         if (life.work/'images.json').exists():life.images=json.loads((life.work/'images.json').read_text())
         result=report or {'scope':'local-catalog-browser','formal_t4':False,'run_id':identity,'commit':state['commit'],'result':'failed','reason':'interrupted_or_expired'}
         try:
-            if (life.work/'identities.json').exists():life.fixture('all')
-            result['membership_release']='passed'
+            if (life.work/'identities.json').exists():
+                life.fixture('all')
+                result['membership_release']='passed'
+            else:result['membership_release']='not_created'
         except Exception:result['membership_release']='failed'
         try:
             current=baseline(life)
             result['daily_containers_unchanged']=all(current.get(k)==v for k,v in state['initial'].items())
-        except Exception:result['daily_containers_unchanged']=False
+        except Exception:result['daily_containers_unchanged']=None
         # Capture only safe error type/category; private command log is destroyed.
         errors=super(Lifecycle,life).cleanup(preserve_on_failure=True)
         if errors:

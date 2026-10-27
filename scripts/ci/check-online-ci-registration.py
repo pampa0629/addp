@@ -4045,7 +4045,8 @@ def validate_local_execution_trace_profile(repository: Path) -> None:
 
 
 def validate_local_catalog_browser_profile(repository: Path) -> None:
-    make = (repository / "Makefile").read_text()
+    make_path = repository / "Makefile"
+    make = make_path.read_text() if make_path.is_file() else ""
     path = repository / "scripts/test/catalog-browser-local-gate.py"
     if not path.exists() and "test-catalog-browser-local:" not in make:
         return

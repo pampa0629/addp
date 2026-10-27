@@ -87,6 +87,10 @@ class CatalogBrowserLifecycleTest(unittest.TestCase):
                 self.assertEqual(calls[0],(321,0))
             finally:shutil.rmtree(life.work)
 
+    def test_unregistered_minimal_repository_needs_no_makefile(self):
+        with tempfile.TemporaryDirectory() as directory:
+            CHECK.validate_local_catalog_browser_profile(Path(directory))
+
     def test_registration_rejects_missing_cleanup_and_github_execution(self):
         paths=['Makefile','scripts/test/catalog-browser-local-gate.py','scripts/test/catalog-browser-local-gate_test.py',
                'scripts/test/catalog-browser-local-fixture.py','scripts/test/catalog-browser-local-fixture_test.py',
