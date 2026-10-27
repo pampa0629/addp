@@ -855,3 +855,9 @@ TCP 当前连接数采用 [RFC 4022 的 tcpCurrEstab](https://www.rfc-editor.org
 | --- | --- | --- | --- |
 | raster runtime resource policy | 栅格运行资源策略 | System 按 Engine Instance 管理的 GeoPython 进程栅格运行、等待与 GDAL 块缓存预算。 | 进程容量跨 Tenant 共享；不是算子参数、静态 capabilities、连接信息或总内存保证；Runtime 只应用与执行。 |
 | raster tenant quota | 租户栅格额度 | 当前 Tenant 在一个 GeoPython Runtime 中允许同时运行和等待的上限。 | System 引擎实例管理拥有事实；Tenant 管理员只能调整本租户且受平台约束；额度不是独享资源或容量预留。 |
+
+## 声明式嵌套字段
+
+| 术语 | 中文 | 定义 | 边界 |
+|---|---|---|---|
+| declared nested field | 声明式嵌套字段 | 源 schema 确定的对象成员或数组元素结构，由 Common `FieldInfo.fields` / `element` 递归表达。 | 对象使用 json、数组使用 array；不是源查询路径展开，不自动扁平化或承诺嵌套写出。 |

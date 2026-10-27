@@ -112,7 +112,7 @@ FormatPlugin 是稳定格式身份入口，不是 detector。`Descriptor()` 是�
 
 `Descriptor()` 只描述格式身份、识别规则、默认 data type 和 layout。实际 Go 进程里是否已经具备 info provider、content reader 或 writer provider，只能由当前已注册 `FormatPlugin` 是否实现对应接口动态判断，不能写入 descriptor。
 
-内置格式的 descriptor 由各自格式包维护，代码位置为 `common/format/plugins/<format>/`。`common/format` 根包负责 descriptor 注册、查询和冲突诊断，不再集中保存一份内置格式大清单。即使某个格式当前只有静态声明、暂时没有解析 provider，也应建立对应格式包，并让 plugin 实现 `FormatDescriptorProvider`，例如逻辑格式、文档族、媒体族或 ORC / Avro 这类 descriptor-only 阶段能力。
+内置格式的 descriptor 由各自格式包维护，代码位置为 `common/format/plugins/<format>/`。`common/format` 根包负责 descriptor 注册、查询和冲突诊断，不再集中保存一份内置格式大清单。即使某个格式当前只有静态声明、暂时没有解析 provider，也应建立对应格式包，并让 plugin 实现 `FormatDescriptorProvider`，能力状态应按实际 provider 核对；不得将已有 reader 的 ORC / Avro 仍记作 descriptor-only。
 
 扩展名、MIME、content signature 等格式识别事实优先来自 `FormatDescriptor.Identification`。`common/format` 根包中的 detection fallback 只服务“内置 descriptor 尚未加载时仍可做最低限度识别”和 magic bytes 等算法性判断，不是第二套格式规范清单。fallback 只允许保留 bootstrap 主扩展名 / 主 MIME；完整扩展名、MIME 变体和 wildcard 识别必须来自 descriptor。新增或调整格式时，必须先更新对应格式包的 `Descriptor()`；只有能说明独立价值的通用兜底，才允许进入 fallback。
 

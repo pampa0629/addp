@@ -30,9 +30,9 @@ func BigintJSONText(value interface{}) (string, error) {
 // RowsForJSON copies an already protected result into its public representation.
 // It never changes Provider values or infers a column type from a Go value.
 func RowsForJSON(fields []FieldInfo, rows []map[string]interface{}) ([]map[string]interface{}, error) {
-	types := make(map[string]FieldType, len(fields))
+	types := make(map[string]FieldInfo, len(fields))
 	for _, field := range fields {
-		types[field.Name] = field.Type
+		types[field.Name] = field
 	}
 	result := make([]map[string]interface{}, len(rows))
 	for i, row := range rows {
@@ -43,12 +43,7 @@ func RowsForJSON(fields []FieldInfo, rows []map[string]interface{}) ([]map[strin
 		for name, value := range row {
 			if value != nil {
 				var err error
-				switch types[name] {
-				case FieldTypeBigInt:
-					value, err = BigintJSONText(value)
-				case FieldTypeDecimal:
-					value, err = decimalJSONText(value)
-				}
+				value, err = fieldValueForJSON(types[name], value, 0)
 				if err != nil {
 					return nil, fmt.Errorf("serialize field %q: %w", name, err)
 				}
@@ -58,6 +53,64 @@ func RowsForJSON(fields []FieldInfo, rows []map[string]interface{}) ([]map[strin
 		result[i] = copyRow
 	}
 	return result, nil
+}
+
+func fieldValueForJSON(field FieldInfo, value interface{}, depth int) (interface{}, error) {
+	if value == nil {
+		return nil, nil
+	}
+	if depth > 16 {
+		return nil, fmt.Errorf("nested JSON field exceeds depth budget")
+	}
+	// Whole-field protection can replace structured values with text.
+	if _, protected := value.(string); protected {
+		return value, nil
+	}
+	switch field.Type {
+	case FieldTypeBigInt:
+		return BigintJSONText(value)
+	case FieldTypeDecimal:
+		return decimalJSONText(value)
+	case FieldTypeJSON:
+		if len(field.Fields) == 0 {
+			return value, nil
+		}
+		object, ok := value.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("declared object requires object value")
+		}
+		result := make(map[string]interface{}, len(object))
+		byName := make(map[string]FieldInfo, len(field.Fields))
+		for _, child := range field.Fields {
+			byName[child.Name] = child
+		}
+		for name, item := range object {
+			converted, err := fieldValueForJSON(byName[name], item, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			result[name] = converted
+		}
+		return result, nil
+	case FieldTypeArray:
+		if field.Element == nil {
+			return value, nil
+		}
+		array, ok := value.([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("declared array requires array value")
+		}
+		result := make([]interface{}, len(array))
+		for i, item := range array {
+			var err error
+			result[i], err = fieldValueForJSON(*field.Element, item, depth+1)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return result, nil
+	}
+	return value, nil
 }
 
 func decimalJSONText(value interface{}) (string, error) {

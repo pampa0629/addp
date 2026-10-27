@@ -4000,8 +4000,17 @@ const docTemplate = `{
                 "default_expression": {
                     "type": "string"
                 },
+                "element": {
+                    "$ref": "#/definitions/datatype.FieldInfo"
+                },
                 "element_type": {
                     "$ref": "#/definitions/datatype.FieldType"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.FieldInfo"
+                    }
                 },
                 "generated": {
                     "type": "boolean"

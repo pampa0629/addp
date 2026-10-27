@@ -580,4 +580,4 @@ DAE 同样实现 `Model3DCompositionProvider`，通过调用方绑定的 range r
 
 OBJ 复用同一单文档接口返回完整 `mtllib` 原始声明，MTL 的 `obj.ReadMTLTextureRefs` 是 OBJ 格式包的结构解析 helper，不另注册 MTL 数据格式，也不接收自由路径回调。调用方逐个绑定明确的 MTL range reader，并独立证明目录/批准范围与合计预算；格式包不访问依赖、引擎、权限或 Meta。名字、选项、完整性和硬预算以[OBJ 格式规范](../../docs/spec/builtin-formats/三维模型与场景.md#obj-精确组成授权)为准；深度几何 `scan_complete` 与基础 `composition_complete` 不共用含义。
 
-ORC 单文件只读通过 `RuntimeTableProviderFactory` 绑定 source-only access plan；`BoundTableProvider` 的描述、分页和连续读取共用 GeoPython 内部固定 PyORC。它不实现未绑定的 io.Reader 表格接口，也不把 ORC 声明为 container 或 whole。范围与预算见[列式文件规范](../../docs/spec/builtin-formats/列式文件与数据容器.md#orc-单文件只读)。
+ORC 单文件只读通过 `RuntimeTableProviderFactory` 绑定 source-only access plan；`BoundTableProvider` 的描述、分页和连续读取共用 GeoPython 内部固定 PyORC。平面标量可连续批量读取；声明式嵌套 struct/list 仅开放描述和分页，批量入口明确拒绝，Map/Union 不支持。它不实现未绑定的 io.Reader 表格接口，也不把 ORC 声明为 container 或 whole。范围与预算见[列式文件规范](../../docs/spec/builtin-formats/列式文件与数据容器.md#orc-单文件只读)。

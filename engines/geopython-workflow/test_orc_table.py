@@ -23,7 +23,10 @@ class Timestamp(pyorc.converters.ORCConverter):
         return v
 
 
-CONVERTERS = {pyorc.TypeKind.TIMESTAMP: Timestamp, pyorc.TypeKind.TIMESTAMP_INSTANT: Timestamp}
+CONVERTERS = {
+    pyorc.TypeKind.TIMESTAMP: Timestamp,
+    pyorc.TypeKind.TIMESTAMP_INSTANT: Timestamp,
+}
 
 
 def plan(path):
@@ -38,7 +41,10 @@ def plan(path):
 
 
 def write(
-    path, rows, schema="struct<id:bigint,text:string>", compression=pyorc.CompressionKind.ZLIB
+    path,
+    rows,
+    schema="struct<id:bigint,text:string>",
+    compression=pyorc.CompressionKind.ZLIB,
 ):
     with path.open("wb") as f:
         with pyorc.Writer(
@@ -131,7 +137,9 @@ def test_exact_scalars(tmp_path, compression):
     assert rows[0]["instant"] == "1970-01-01T00:00:00.987654321Z"
     assert rows[0]["blob"] == base64.b64encode(row[7]).decode()
     assert (
-        rows[2]["blob"] == "" and rows[2]["text"] == "" and all(v is None for v in rows[1].values())
+        rows[2]["blob"] == ""
+        and rows[2]["text"] == ""
+        and all(v is None for v in rows[1].values())
     )
 
 
@@ -141,18 +149,23 @@ def test_paging_projection_eof_and_source_unchanged(tmp_path, count):
     p = write(tmp_path / "rows.orc", rows)
     before = (tmp_path / "rows.orc").read_bytes()
     d = describe(p)
-    assert d["table"]["row_count"] == count and d["format_info"]["validation"] == "footer"
+    assert (
+        d["table"]["row_count"] == count and d["format_info"]["validation"] == "footer"
+    )
     actual = []
     for offset in range(0, count + 137, 137):
         actual += read(p, d, offset, 137, ["id"])["rows"]
     assert actual == [{"id": str(i)} for i in range(count)]
-    assert read(p, d, count + 20)["rows"] == [] and (tmp_path / "rows.orc").read_bytes() == before
+    assert (
+        read(p, d, count + 20)["rows"] == []
+        and (tmp_path / "rows.orc").read_bytes() == before
+    )
 
 
 @pytest.mark.parametrize(
     "schema,rows",
     [
-        ("struct<a:array<int>>", [([1],)]),
+        ("struct<a:uniontype<int,string>>", [(1,)]),
         ("struct<a:map<string,int>>", [({"x": 1},)]),
         ("int", [3]),
     ],
@@ -220,7 +233,11 @@ class ObjectClient:
 
 def test_object_storage_conditional_ranges_and_version(tmp_path):
     path = tmp_path / "source.orc"
-    write(path, [(i, str(i) * 100) for i in range(10000)], compression=pyorc.CompressionKind.NONE)
+    write(
+        path,
+        [(i, str(i) * 100) for i in range(10000)],
+        compression=pyorc.CompressionKind.NONE,
+    )
     client = ObjectClient(path.read_bytes())
     p = {
         "schema_version": "addp.workflow.access-plan/v1",
@@ -282,17 +299,26 @@ def test_real_http_returns_typed_source_change(tmp_path):
             }
         },
     )
-    assert response.status_code == 409 and response.json["error_code"] == "ORC_SOURCE_CHANGED"
-    assert "rows" not in response.json and str(tmp_path) not in response.get_data(as_text=True)
+    assert (
+        response.status_code == 409
+        and response.json["error_code"] == "ORC_SOURCE_CHANGED"
+    )
+    assert "rows" not in response.json and str(tmp_path) not in response.get_data(
+        as_text=True
+    )
 
 
-def test_hosted_physical_oracle_independently_checks_every_parquet_value(tmp_path, monkeypatch):
+def test_hosted_physical_oracle_independently_checks_every_parquet_value(
+    tmp_path, monkeypatch
+):
     import importlib.util
     import pyarrow as pa
     import pyarrow.parquet as parquet
     import minio
 
-    script = Path(__file__).resolve().parents[2] / "business/scripts/online-orc-fixture.py"
+    script = (
+        Path(__file__).resolve().parents[2] / "business/scripts/online-orc-fixture.py"
+    )
     spec = importlib.util.spec_from_file_location("orc_physical_fixture", script)
     fixture = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(fixture)
@@ -312,7 +338,11 @@ def test_hosted_physical_oracle_independently_checks_every_parquet_value(tmp_pat
             objects.pop(name, None)
 
         def list_objects(self, bucket, prefix, **kwargs):
-            return [SimpleNamespace(object_name=k) for k in sorted(objects) if k.startswith(prefix)]
+            return [
+                SimpleNamespace(object_name=k)
+                for k in sorted(objects)
+                if k.startswith(prefix)
+            ]
 
     monkeypatch.setattr(minio, "Minio", lambda *a, **k: Client())
     request = {
@@ -347,16 +377,22 @@ def test_hosted_physical_oracle_independently_checks_every_parquet_value(tmp_pat
         x["all_values_and_nulls_verified"] for x in proof["outputs"]
     )
     values[2000]["blob"] = b"wrong"
-    parquet.write_table(pa.Table.from_pylist(values, schema=schema).select(sorted(schema.names)), file)
+    parquet.write_table(
+        pa.Table.from_pylist(values, schema=schema).select(sorted(schema.names)), file
+    )
     objects["orc-output/from-nfs.parquet"] = file.read_bytes()
     with pytest.raises(AssertionError):
         fixture.worker(dict(request, action="verify"))
-    assert fixture.worker(dict(request, action="delete"))["remaining_owned_outputs"] == 0
+    assert (
+        fixture.worker(dict(request, action="delete"))["remaining_owned_outputs"] == 0
+    )
 
 
 def test_literal_field_names_are_not_interpreted_as_nested_column_paths(tmp_path):
     p = write(
-        tmp_path / "literal.orc", [(2**63 - 1, "literal")], "struct<`a.b`:bigint,`a space`:string>"
+        tmp_path / "literal.orc",
+        [(2**63 - 1, "literal")],
+        "struct<`a.b`:bigint,`a space`:string>",
     )
     d = describe(p)
     result = read(p, d, columns=["a space", "a.b"])
@@ -367,7 +403,9 @@ def test_wall_clock_and_instant_have_different_timezone_semantics(tmp_path):
     from zoneinfo import ZoneInfo
 
     path = tmp_path / "timezone.orc"
-    value = dt.datetime(2026, 7, 1, 12, 30, 5, 123456, tzinfo=ZoneInfo("America/New_York"))
+    value = dt.datetime(
+        2026, 7, 1, 12, 30, 5, 123456, tzinfo=ZoneInfo("America/New_York")
+    )
     with path.open("wb") as stream:
         with pyorc.Writer(
             stream,
@@ -378,7 +416,10 @@ def test_wall_clock_and_instant_have_different_timezone_semantics(tmp_path):
     p = plan(path)
     d = describe(p)
     assert read(p, d)["rows"] == [
-        {"wall": "2026-07-01T12:30:05.123456000", "instant": "2026-07-01T16:30:05.123456000Z"}
+        {
+            "wall": "2026-07-01T12:30:05.123456000",
+            "instant": "2026-07-01T16:30:05.123456000Z",
+        }
     ]
 
 
@@ -388,10 +429,14 @@ def test_discovery_declares_readonly_object_batch_contract():
     descriptions = {d["name"]: d for d in list_operators()}
     for name in ["orc.inspect", "orc.read_batch"]:
         metadata = descriptions[name]
-        assert metadata["execution_modes"] == ["direct"] and metadata["effects"] == ["read"]
+        assert metadata["execution_modes"] == ["direct"] and metadata["effects"] == [
+            "read"
+        ]
         assert metadata["output_ports"][0]["type"] == "object"
     columns = next(
-        p for p in descriptions["orc.read_batch"]["parameters"] if p["name"] == "columns"
+        p
+        for p in descriptions["orc.read_batch"]["parameters"]
+        if p["name"] == "columns"
     )
     assert columns["type"] == "array" and columns["item_type"] == "string"
 
@@ -425,3 +470,90 @@ def test_null_root_struct_is_not_silently_flattened(tmp_path):
     d = describe(p)
     with pytest.raises(ValueError, match="NULL root"):
         read(p, d)
+
+
+def test_nested_struct_lists_nulls_and_exact_leaf_types(tmp_path):
+    schema = "struct<`a.b`:struct<id:bigint,amount:decimal(38,9),items:array<struct<blob:binary,wall:timestamp>>>,nums:array<array<bigint>>>"
+    source = write(
+        tmp_path / "nested.orc",
+        [
+            (
+                (
+                    2**63 - 1,
+                    Decimal("12345678901234567890.123456789"),
+                    [(b"\x00\xff", (0, 123456789)), None, (b"", (0, 0))],
+                ),
+                [[2**63 - 1, None], [], None],
+            ),
+            (None, None),
+            ((None, None, []), []),
+        ],
+        schema,
+    )
+    desc = describe(source)
+    root = desc["table"]["fields"][0]
+    assert root["name"] == "a.b" and root["type"] == "json"
+    assert root["fields"][1]["precision"] == 38 and root["fields"][1]["scale"] == 9
+    assert root["fields"][2]["element"]["fields"][0]["type"] == "bytes"
+    rows = read(source, desc)["rows"]
+    assert rows[0]["a.b"]["id"] == str(2**63 - 1)
+    assert rows[0]["a.b"]["amount"] == "12345678901234567890.123456789"
+    assert rows[0]["a.b"]["items"] == [
+        {"blob": "AP8=", "wall": "1970-01-01T00:00:00.123456789"},
+        None,
+        {"blob": "", "wall": "1970-01-01T00:00:00.000000000"},
+    ]
+    assert rows[0]["nums"] == [[str(2**63 - 1), None], [], None]
+    assert rows[1] == {"a.b": None, "nums": None}
+    assert rows[2] == {"a.b": {"id": None, "amount": None, "items": []}, "nums": []}
+    assert read(source, desc, 2, 1, ["a.b"])["rows"] == [{"a.b": rows[2]["a.b"]}]
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        "struct<x:" + "array<" * 17 + "int" + ">" * 17 + ">",
+        "struct<x:struct<bad:map<string,int>>>",
+        "struct<x:array<uniontype<int,string>>>",
+    ],
+)
+def test_nested_unsupported_or_overdepth_schema_rejected(tmp_path, schema):
+    # No rows needed: schema rejection must happen before page decoding.
+    source = write(tmp_path / "schema.orc", [], schema)
+    with pytest.raises((ValueError, RuntimeError)):
+        describe(source)
+
+
+def test_nested_node_and_top_value_budgets_reject_whole_page(tmp_path, monkeypatch):
+    source = write(tmp_path / "budget.orc", [([1, 2, 3],)], "struct<x:array<int>>")
+    desc = describe(source)
+    monkeypatch.setattr(orc, "MAX_VALUE_NODES", 3)
+    with pytest.raises(ValueError, match="node budget"):
+        read(source, desc)
+    monkeypatch.setattr(orc, "MAX_VALUE_NODES", 65536)
+    monkeypatch.setattr(orc, "MAX_VALUE_BYTES", 4)
+    with pytest.raises(ValueError, match="byte budget"):
+        read(source, desc)
+
+
+@pytest.mark.parametrize(
+    "schema", ["struct<a:int,b:int>", "struct<x:struct<a:int,b:int>>"]
+)
+def test_duplicate_native_names_cannot_collapse_declared_schema(tmp_path, schema):
+    path = tmp_path / "duplicate.orc"
+    p = write(path, [], schema, pyorc.CompressionKind.NONE)
+    raw = path.read_bytes()
+    names = b"\x1a\x01a\x1a\x01b"
+    assert raw.count(names) == 1
+    path.write_bytes(raw.replace(names, b"\x1a\x01a\x1a\x01a"))
+    with pytest.raises(ValueError, match="schema"):
+        describe(p)
+
+
+def test_nested_budget_does_not_shrink_existing_flat_page_capacity(tmp_path):
+    schema = "struct<" + ",".join(f"c{i}:int" for i in range(40)) + ">"
+    source = write(tmp_path / "wide-flat.orc", [tuple(range(40))] * 2000, schema)
+    desc = describe(source)
+    result = read(source, desc, limit=2000)["rows"]
+    assert len(result) == 2000
+    assert all(len(row) == 40 and row["c39"] == 39 for row in result)

@@ -100,8 +100,19 @@ func (p *provider) DescribeTable(ctx context.Context, options *format.ParseOptio
 	if err = json.Unmarshal(data, &result); err != nil {
 		return nil, err
 	}
-	if result.Table == nil || result.Table.RowCount == nil || *result.Table.RowCount < 0 || len(result.Table.Fields) == 0 {
+	if result.Table == nil || result.Table.RowCount == nil || *result.Table.RowCount < 0 || len(result.Table.Fields) == 0 || len(result.Table.Fields) > 256 {
 		return nil, fmt.Errorf("ORC runtime returned incomplete table facts")
+	}
+	budget := 1
+	seen := map[string]bool{}
+	for _, field := range result.Table.Fields {
+		if seen[field.Name] {
+			return nil, fmt.Errorf("ORC schema repeats field")
+		}
+		seen[field.Name] = true
+		if err := validateField(field, 1, &budget, false); err != nil {
+			return nil, err
+		}
 	}
 	if version, _ := result.FormatInfo["source_version"].(string); version == "" {
 		return nil, fmt.Errorf("ORC runtime omitted source version")
@@ -116,14 +127,35 @@ func (p *provider) DescribeTable(ctx context.Context, options *format.ParseOptio
 	return &result, nil
 }
 func (p *provider) OpenTableReader(ctx context.Context, options *format.ParseOptions) (format.TableReader, error) {
+	return p.open(ctx, options, false)
+}
+func (p *provider) open(ctx context.Context, options *format.ParseOptions, preview bool) (*reader, error) {
 	if options != nil {
 		if err := resume.RejectUnsupported(options.ResumeMarker, "orc.table_reader"); err != nil {
 			return nil, err
 		}
 	}
-	info, err := p.DescribeTable(ctx, options)
+	fullOptions := format.DefaultParseOptions()
+	if options != nil {
+		*fullOptions = *options
+		fullOptions.FieldSelection = nil
+	}
+	info, err := p.DescribeTable(ctx, fullOptions)
 	if err != nil {
 		return nil, err
+	}
+	if !preview {
+		for _, field := range info.Table.Fields {
+			if field.Type == datatype.FieldTypeJSON || field.Type == datatype.FieldTypeArray {
+				return nil, fmt.Errorf("ORC nested fields support preview only; batch transfer is not supported")
+			}
+		}
+	}
+	if options != nil {
+		info, err = format.ApplyFieldSelectionToTableDescribeResult(info, options.FieldSelection)
+		if err != nil {
+			return nil, err
+		}
 	}
 	version := info.FormatInfo["source_version"].(string)
 	return &reader{provider: p, fields: info.Table.Fields, version: version, count: *info.Table.RowCount}, nil
@@ -132,11 +164,10 @@ func (p *provider) SampleTable(ctx context.Context, offset, limit int64, options
 	if offset < 0 || limit <= 0 || limit > MaxBatchRows {
 		return nil, fmt.Errorf("ORC window requires offset >= 0 and limit in 1..%d", MaxBatchRows)
 	}
-	opened, err := p.OpenTableReader(ctx, options)
+	r, err := p.open(ctx, options, true)
 	if err != nil {
 		return nil, err
 	}
-	r := opened.(*reader)
 	defer r.Close(ctx)
 	r.offset = offset
 	return r.ReadRows(ctx, int(limit))
@@ -150,7 +181,7 @@ type reader struct {
 	closed        bool
 }
 
-func (r *reader) Fields() []datatype.FieldInfo { return append([]datatype.FieldInfo(nil), r.fields...) }
+func (r *reader) Fields() []datatype.FieldInfo { return datatype.CloneFieldInfos(r.fields) }
 func (r *reader) Close(context.Context) error  { r.closed = true; return nil }
 func (r *reader) ReadRows(ctx context.Context, limit int) ([]map[string]interface{}, error) {
 	if err := ctx.Err(); err != nil {
@@ -200,55 +231,11 @@ func (r *reader) ReadRows(ctx context.Context, limit int) ([]map[string]interfac
 			if !ok {
 				return nil, fmt.Errorf("ORC row omitted field")
 			}
-			if v == nil {
-				continue
+			decoded, err := decodeValue(v, f, 0)
+			if err != nil {
+				return nil, err
 			}
-			switch f.Type {
-			case datatype.FieldTypeBigInt:
-				s, ok := v.(string)
-				if !ok {
-					return nil, fmt.Errorf("ORC bigint must be exact text")
-				}
-				n, e := strconv.ParseInt(s, 10, 64)
-				if e != nil {
-					return nil, e
-				}
-				row[f.Name] = n
-			case datatype.FieldTypeBytes:
-				s, ok := v.(string)
-				if !ok {
-					return nil, fmt.Errorf("ORC bytes must be base64")
-				}
-				b, e := base64.StdEncoding.Strict().DecodeString(s)
-				if e != nil {
-					return nil, e
-				}
-				row[f.Name] = b
-			case datatype.FieldTypeDecimal:
-				if _, ok := v.(string); !ok {
-					return nil, fmt.Errorf("ORC decimal must be exact text")
-				}
-			case datatype.FieldTypeInt:
-				n, ok := v.(float64)
-				if !ok || math.Trunc(n) != n || n < math.MinInt32 || n > math.MaxInt32 {
-					return nil, fmt.Errorf("ORC int is invalid")
-				}
-				row[f.Name] = int64(n)
-			case datatype.FieldTypeTimestamp, datatype.FieldTypeDate:
-				s, ok := v.(string)
-				if !ok {
-					return nil, fmt.Errorf("ORC temporal value must be exact text")
-				}
-				layout := "2006-01-02T15:04:05.999999999"
-				if f.Type == datatype.FieldTypeDate {
-					layout = "2006-01-02"
-				} else if f.NativeType == "timestamp with local time zone" {
-					layout = time.RFC3339Nano
-				}
-				if _, e := time.Parse(layout, s); e != nil {
-					return nil, e
-				}
-			}
+			row[f.Name] = decoded
 		}
 	}
 	r.offset += int64(len(rows))
@@ -257,3 +244,142 @@ func (r *reader) ReadRows(ctx context.Context, limit int) ([]map[string]interfac
 
 var _ format.RuntimeTableProviderFactory = (*Plugin)(nil)
 var _ format.BoundTableProvider = (*provider)(nil)
+
+func decodeValue(v interface{}, f datatype.FieldInfo, depth int) (interface{}, error) {
+	if depth > 16 {
+		return nil, fmt.Errorf("ORC value depth exceeds budget")
+	}
+	if v == nil {
+		return nil, nil
+	}
+	switch f.Type {
+	case datatype.FieldTypeJSON:
+		value, ok := v.(map[string]interface{})
+		if !ok || len(value) != len(f.Fields) {
+			return nil, fmt.Errorf("ORC object differs from schema")
+		}
+		object := make(map[string]interface{}, len(value))
+		for _, child := range f.Fields {
+			raw, present := value[child.Name]
+			if !present {
+				return nil, fmt.Errorf("ORC object omitted member")
+			}
+			decoded, err := decodeValue(raw, child, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			object[child.Name] = decoded
+		}
+		return object, nil
+	case datatype.FieldTypeArray:
+		values, ok := v.([]interface{})
+		if !ok || f.Element == nil {
+			return nil, fmt.Errorf("ORC array differs from schema")
+		}
+		array := make([]interface{}, len(values))
+		for i, item := range values {
+			decoded, err := decodeValue(item, *f.Element, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			array[i] = decoded
+		}
+		return array, nil
+	}
+	switch f.Type {
+	case datatype.FieldTypeBigInt:
+		s, ok := v.(string)
+		if !ok {
+			return nil, fmt.Errorf("ORC bigint must be exact text")
+		}
+		n, e := strconv.ParseInt(s, 10, 64)
+		if e != nil {
+			return nil, e
+		}
+		return n, nil
+	case datatype.FieldTypeBytes:
+		s, ok := v.(string)
+		if !ok {
+			return nil, fmt.Errorf("ORC bytes must be base64")
+		}
+		b, e := base64.StdEncoding.Strict().DecodeString(s)
+		if e != nil {
+			return nil, e
+		}
+		return b, nil
+	case datatype.FieldTypeDecimal:
+		if _, ok := v.(string); !ok {
+			return nil, fmt.Errorf("ORC decimal must be exact text")
+		}
+	case datatype.FieldTypeInt:
+		n, ok := v.(float64)
+		if !ok || math.Trunc(n) != n || n < math.MinInt32 || n > math.MaxInt32 {
+			return nil, fmt.Errorf("ORC int is invalid")
+		}
+		return int64(n), nil
+	case datatype.FieldTypeBool:
+		if _, ok := v.(bool); !ok {
+			return nil, fmt.Errorf("ORC bool is invalid")
+		}
+	case datatype.FieldTypeString:
+		if _, ok := v.(string); !ok {
+			return nil, fmt.Errorf("ORC string is invalid")
+		}
+	case datatype.FieldTypeFloat, datatype.FieldTypeDouble:
+		if value, ok := v.(float64); !ok || math.IsNaN(value) || math.IsInf(value, 0) {
+			return nil, fmt.Errorf("ORC float is invalid")
+		}
+	case datatype.FieldTypeTimestamp, datatype.FieldTypeDate:
+		s, ok := v.(string)
+		if !ok {
+			return nil, fmt.Errorf("ORC temporal value must be exact text")
+		}
+		layout := "2006-01-02T15:04:05.999999999"
+		if f.Type == datatype.FieldTypeDate {
+			layout = "2006-01-02"
+		} else if f.NativeType == "timestamp with local time zone" {
+			layout = time.RFC3339Nano
+		}
+		if _, e := time.Parse(layout, s); e != nil {
+			return nil, e
+		}
+	}
+	return v, nil
+}
+
+func validateField(f datatype.FieldInfo, depth int, budget *int, element bool) error {
+	(*budget)++
+	if depth > 16 || *budget > 1024 || (!element && f.Name == "") || (element && f.Name != "") || !f.Nullable {
+		return fmt.Errorf("ORC schema is incomplete or exceeds budget")
+	}
+	switch f.Type {
+	case datatype.FieldTypeJSON:
+		if len(f.Fields) == 0 || f.Element != nil {
+			return fmt.Errorf("ORC object schema is incomplete")
+		}
+		seen := map[string]bool{}
+		for _, child := range f.Fields {
+			if seen[child.Name] {
+				return fmt.Errorf("ORC object repeats member")
+			}
+			seen[child.Name] = true
+			if err := validateField(child, depth+1, budget, false); err != nil {
+				return err
+			}
+		}
+	case datatype.FieldTypeArray:
+		if f.Element == nil || f.ElementType != f.Element.Type || len(f.Fields) != 0 {
+			return fmt.Errorf("ORC array schema is incomplete")
+		}
+		return validateField(*f.Element, depth+1, budget, true)
+	case datatype.FieldTypeBool, datatype.FieldTypeInt, datatype.FieldTypeBigInt,
+		datatype.FieldTypeFloat, datatype.FieldTypeDouble, datatype.FieldTypeString,
+		datatype.FieldTypeBytes, datatype.FieldTypeDecimal, datatype.FieldTypeDate, datatype.FieldTypeTimestamp:
+		if len(f.Fields) != 0 || f.Element != nil {
+			return fmt.Errorf("ORC scalar declares nested schema")
+		}
+	default:
+		return fmt.Errorf("ORC field type is unsupported")
+	}
+	return nil
+}

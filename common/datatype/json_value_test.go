@@ -65,3 +65,32 @@ func TestRowsForJSONPreservesNativeExactDecimalRepresentations(t *testing.T) {
 		t.Fatal("integral Decimal changed")
 	}
 }
+
+func TestDeclaredNestedJSONPreservesExactNumbersAndNullContainers(t *testing.T) {
+	big := FieldInfo{Type: FieldTypeBigInt, Nullable: true}
+	fields := []FieldInfo{{Name: "value", Type: FieldTypeJSON, Fields: []FieldInfo{
+		{Name: "ids", Type: FieldTypeArray, ElementType: FieldTypeBigInt, Element: &big},
+		{Name: "amount", Type: FieldTypeDecimal, Precision: 38, Scale: 9},
+	}}}
+	original := map[string]interface{}{"ids": []interface{}{int64(9007199254740993), nil}, "amount": "12345678901234567890.123456789"}
+	rows, err := RowsForJSON(fields, []map[string]interface{}{{"value": original}, {"value": nil}, {"value": "masked"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	object := rows[0]["value"].(map[string]interface{})
+	if object["ids"].([]interface{})[0] != "9007199254740993" || object["amount"] != original["amount"] || rows[1]["value"] != nil || rows[2]["value"] != "masked" {
+		t.Fatal(rows)
+	}
+	if original["ids"].([]interface{})[0] != int64(9007199254740993) {
+		t.Fatal("mutated provider data")
+	}
+	table := (&TableInfo{Fields: fields}).Clone()
+	table.Fields[0].Fields[0].Element.Type = FieldTypeString
+	if big.Type != FieldTypeBigInt {
+		t.Fatal("nested schema clone aliases provider")
+	}
+	restored := TableInfoFromPayload(TableInfoPayload(&TableInfo{Fields: fields}), "")
+	if restored.Fields[0].Fields[0].Element.Type != FieldTypeBigInt {
+		t.Fatal("nested schema lost in payload")
+	}
+}

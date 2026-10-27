@@ -161,8 +161,14 @@ definitions:
         type: string
       default_expression:
         type: string
+      element:
+        $ref: '#/definitions/datatype.FieldInfo'
       element_type:
         $ref: '#/definitions/datatype.FieldType'
+      fields:
+        items:
+          $ref: '#/definitions/datatype.FieldInfo'
+        type: array
       generated:
         type: boolean
       generation_expression:

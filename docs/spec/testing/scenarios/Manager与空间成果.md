@@ -618,6 +618,8 @@ Native候选树`83c8384f0ae808f1d9947b9126ded49c72289797`，原始日志SHA-256�
 
 对应 T1/T0 沿 `make test-geopython-workflow`、六个受影响 Go owner、`make test-manager-online-runner`、`make test-online-runner` 与现有 CI 注册检查；不新建 Job／suite。ORC 源变化在 Runtime 使用封闭 `ORC_SOURCE_CHANGED`，Manager 复用 `preview_source_refresh_required` 409 和既有国际化提示；不通过解析本地化异常文本识别变化。
 
+ORC 嵌套扩展复用同一 `native-table-orc` case、原 11 项权限与精确两引擎夹具范围；不增服务／Job／权限。保留原平面 2503 行、原始下载、两次真实 Transfer→Parquet 全值回读和完整清理断言，另在两源各加入 43 行 struct/list 组合文件：Meta 完整类型树，三页全部 43 行的结构与精确值、NULL／空集合区别，实际页面下一页与下载、四张截图、源字节和元数据不变。原生 decoder、Common 批量 reader 继续拒绝 Map／Union；嵌套源的 `OpenTableReader` 在任何行内容读取前拒绝，即使请求仅标量列也不能绕过。该只读扩展不计为嵌套批量传输通过；正式 Hosted 结果按固定源码与新产物单独登记。
+
 
 ### 双DEM填挖方统计独立 Hosted 验收
 

@@ -32,6 +32,9 @@ MAX_FILE_BYTES = 256 * 1024 * 1024
 MAX_READ_BYTES = 128 * 1024 * 1024
 MAX_SINGLE_READ = 4 * 1024 * 1024
 MAX_COLUMNS = 256
+MAX_SCHEMA_DEPTH = 16
+MAX_SCHEMA_NODES = 1024
+MAX_VALUE_NODES = 65536
 MAX_BATCH_ROWS = 2000
 MAX_VALUE_BYTES = 1024 * 1024
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
@@ -50,7 +53,9 @@ class SourceFile(io.RawIOBase):
         access = plan["source"]["access"]
         try:
             if access["method"] == "mounted_path":
-                self.file = os.fdopen(os.open(access["path"], os.O_RDONLY | os.O_NOFOLLOW), "rb")
+                self.file = os.fdopen(
+                    os.open(access["path"], os.O_RDONLY | os.O_NOFOLLOW), "rb"
+                )
                 self.size = os.fstat(self.file.fileno()).st_size
             else:
                 self.client = _object_store_client(access)
@@ -78,7 +83,9 @@ class SourceFile(io.RawIOBase):
         else:
             fact = self.client.stat_object(self.bucket, self.object)
             identity = [self.bucket, self.object, fact.size, fact.etag, fact.version_id]
-        return hashlib.sha256(json.dumps(identity, separators=(",", ":")).encode()).hexdigest()
+        return hashlib.sha256(
+            json.dumps(identity, separators=(",", ":")).encode()
+        ).hexdigest()
 
     def check(self):
         if self.current_version() != self.version:
@@ -96,7 +103,9 @@ class SourceFile(io.RawIOBase):
     def seek(self, offset, whence=0):
         if whence not in (0, 1, 2):
             raise ValueError("invalid ORC seek origin")
-        position = offset + (0 if whence == 0 else self.position if whence == 1 else self.size)
+        position = offset + (
+            0 if whence == 0 else self.position if whence == 1 else self.size
+        )
         if not 0 <= position <= self.size:
             raise ValueError("ORC seek outside source")
         self.position = position
@@ -160,27 +169,12 @@ def _converters(pyorc):
     }
 
 
-def _reader(source, columns=None):
-    import pyorc
-
-    if pyorc.__version__ != "0.12.0":
-        raise ValueError("ORC runtime dependency version differs from the fixed version")
-    if source.read(3) != b"ORC":
-        raise ValueError("invalid ORC file signature")
-    source.seek(0)
-    reader = pyorc.Reader(source, batch_size=64, converters=_converters(pyorc))
-    if (
-        reader.schema.kind != pyorc.TypeKind.STRUCT
-        or not 1 <= len(reader.schema.fields) <= MAX_COLUMNS
-    ):
-        raise ValueError("ORC requires a bounded nonempty flat struct")
-    if reader.compression.name not in {"NONE", "ZLIB", "SNAPPY", "LZ4", "ZSTD"}:
-        raise ValueError("ORC compression is not supported")
-    if reader.num_of_stripes > 4096 or len(reader) > 2**53 - 1:
-        raise ValueError("ORC footer exceeds budget")
-    if any("acid" in k.lower() for k in reader.user_metadata):
-        raise ValueError("ORC transactional table files are not supported")
-    fields = []
+def _field(typ, name, depth, budget, ordinal=0):
+    budget[0] += 1
+    if depth > MAX_SCHEMA_DEPTH or budget[0] > MAX_SCHEMA_NODES:
+        raise ValueError("ORC nested schema exceeds budget")
+    if name is not None and (not name or len(name.encode()) > 1024):
+        raise ValueError("ORC field name is not supported")
     kinds = {
         "BOOLEAN": "bool",
         "BYTE": "int",
@@ -197,20 +191,66 @@ def _reader(source, columns=None):
         "DATE": "date",
         "TIMESTAMP": "timestamp",
         "TIMESTAMP_INSTANT": "timestamp",
+        "STRUCT": "json",
+        "LIST": "array",
     }
-    for index, (name, typ) in enumerate(reader.schema.fields.items()):
-        if typ.kind.name not in kinds or not name or len(name.encode()) > 1024:
-            raise ValueError("ORC field type or name is not supported")
-        field = {
-            "name": name,
-            "type": kinds[typ.kind.name],
-            "native_type": str(typ),
-            "nullable": True,
-            "ordinal_position": index + 1,
-        }
-        if typ.kind.name == "DECIMAL":
-            field.update(precision=typ.precision, scale=typ.scale)
-        fields.append(field)
+    kind = kinds.get(typ.kind.name)
+    if kind is None:
+        raise ValueError("ORC field type is not supported")
+    field = {"type": kind, "native_type": str(typ), "nullable": True}
+    if name is not None:
+        field.update(name=name, ordinal_position=ordinal)
+    if typ.kind.name == "STRUCT":
+        if not typ.fields:
+            raise ValueError("ORC empty struct is not supported")
+        field["fields"] = [
+            _field(child, key, depth + 1, budget, index + 1)
+            for index, (key, child) in enumerate(typ.fields.items())
+        ]
+    elif typ.kind.name == "LIST":
+        element = _field(typ.type, None, depth + 1, budget)
+        field.update(element=element, element_type=element["type"])
+    elif kind == "decimal":
+        field.update(precision=typ.precision, scale=typ.scale)
+    return field
+
+
+def _reader(source, columns=None):
+    import pyorc
+
+    if pyorc.__version__ != "0.12.0":
+        raise ValueError(
+            "ORC runtime dependency version differs from the fixed version"
+        )
+    if source.read(3) != b"ORC":
+        raise ValueError("invalid ORC file signature")
+    source.seek(0)
+    reader = pyorc.Reader(source, batch_size=64, converters=_converters(pyorc))
+    if (
+        reader.schema.kind != pyorc.TypeKind.STRUCT
+        or not 1 <= len(reader.schema.fields) <= MAX_COLUMNS
+    ):
+        raise ValueError("ORC requires a bounded nonempty struct")
+    if reader.compression.name not in {"NONE", "ZLIB", "SNAPPY", "LZ4", "ZSTD"}:
+        raise ValueError("ORC compression is not supported")
+    if reader.num_of_stripes > 4096 or len(reader) > 2**53 - 1:
+        raise ValueError("ORC footer exceeds budget")
+    if any("acid" in k.lower() for k in reader.user_metadata):
+        raise ValueError("ORC transactional table files are not supported")
+    budget = [1]  # Include the root struct.
+    fields = [
+        _field(typ, name, 1, budget, index + 1)
+        for index, (name, typ) in enumerate(reader.schema.fields.items())
+    ]
+    # PyORC's Python schema uses dict members and can collapse repeated names.
+    # The native footer still has every column: an extra column beyond the
+    # declared tree means that tree cannot represent the complete source.
+    try:
+        reader[budget[0]]
+    except IndexError:
+        pass
+    else:
+        raise ValueError("ORC schema lost native columns through duplicate names")
     if columns is not None:
         if (
             not isinstance(columns, list)
@@ -241,7 +281,11 @@ def inspect(protocol, access_plan, source_version=""):
         result = {
             "protocol": PROTOCOL,
             "describe": {
-                "table": {"fields": fields, "row_count": len(reader), "size_bytes": source.size},
+                "table": {
+                    "fields": fields,
+                    "row_count": len(reader),
+                    "size_bytes": source.size,
+                },
                 "format_info": {
                     "schema": str(reader.schema),
                     "compression": reader.compression.name,
@@ -255,10 +299,21 @@ def inspect(protocol, access_plan, source_version=""):
         return result
 
 
-def _value(value, field):
+def _value(value, field, budget):
+    if budget is not None:
+        budget[0] += 1
+        if budget[0] > MAX_VALUE_NODES:
+            raise ValueError("ORC nested values exceed node budget")
     if value is None:
         return None
     kind = field["type"]
+    if kind == "json":
+        return {
+            child["name"]: _value(value[child["name"]], child, budget)
+            for child in field["fields"]
+        }
+    if kind == "array":
+        return [_value(item, field["element"], budget) for item in value]
     if kind == "bigint":
         return str(value)
     if kind == "decimal":
@@ -276,7 +331,9 @@ def _value(value, field):
         text = (dt.datetime(1970, 1, 1) + dt.timedelta(seconds=seconds)).isoformat(
             timespec="seconds"
         ) + f".{nanos:09d}"
-        return text + ("Z" if field["native_type"] == "timestamp with local time zone" else "")
+        return text + (
+            "Z" if field["native_type"] == "timestamp with local time zone" else ""
+        )
     if kind == "date":
         return value.isoformat()
     if isinstance(value, str) and len(value.encode()) > MAX_VALUE_BYTES:
@@ -302,11 +359,27 @@ def read_batch(protocol, access_plan, source_version, offset, limit, columns):
         reader.seek(min(offset, len(reader)))
         rows = []
         encoded_bytes = 0
+        value_budget = (
+            [0] if any(f["type"] in {"json", "array"} for f in fields) else None
+        )
         for raw in reader.read(limit):
             if raw is None:
                 raise ValueError("ORC NULL root structs are not flat table rows")
-            row = {field["name"]: _value(raw[field["name"]], field) for field in fields}
-            encoded_bytes += len(json.dumps(row, ensure_ascii=False, allow_nan=False).encode())
+            row = {}
+            for field in fields:
+                value = _value(raw[field["name"]], field, value_budget)
+                if (
+                    field["type"] in {"json", "array"}
+                    and len(
+                        json.dumps(value, ensure_ascii=False, allow_nan=False).encode()
+                    )
+                    > MAX_VALUE_BYTES
+                ):
+                    raise ValueError("ORC value exceeds byte budget")
+                row[field["name"]] = value
+            encoded_bytes += len(
+                json.dumps(row, ensure_ascii=False, allow_nan=False).encode()
+            )
             if encoded_bytes > MAX_RESPONSE_BYTES:
                 raise ValueError("ORC response exceeds byte budget")
             rows.append(row)
@@ -344,8 +417,14 @@ def _register(name, function, params):
     @wraps(function)
     def invoke(**values):
         completed = _native_process.run(
-            [sys.executable, "-c", "from operators.orc_table import _native_main; _native_main()"],
-            input=json.dumps({"operation": function.__name__, "params": values}, allow_nan=False),
+            [
+                sys.executable,
+                "-c",
+                "from operators.orc_table import _native_main; _native_main()",
+            ],
+            input=json.dumps(
+                {"operation": function.__name__, "params": values}, allow_nan=False
+            ),
             capture_output=True,
             text=True,
             timeout=60,
@@ -370,7 +449,9 @@ def _register(name, function, params):
         overview="受控单文件 ORC 表格读取",
         params=params,
         output_ports=[
-            OutputPort(name="default", type="object", description="ORC table batch protocol")
+            OutputPort(
+                name="default", type="object", description="ORC table batch protocol"
+            )
         ],
         use_cases=["元数据", "表格分页", "连续批次"],
         notes=["只读；不提供目录合并或写出"],
@@ -394,7 +475,11 @@ def _param(name, kind, required=True, default=None):
 _BASE = [_param("protocol", "string"), _param("access_plan", "object")]
 OPERATORS = dict(
     [
-        _register("orc.inspect", inspect, _BASE + [_param("source_version", "string", False, "")]),
+        _register(
+            "orc.inspect",
+            inspect,
+            _BASE + [_param("source_version", "string", False, "")],
+        ),
         _register(
             "orc.read_batch",
             read_batch,

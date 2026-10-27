@@ -50,7 +50,10 @@ def wait_execution(client, execution_id):
                 "records_read": COUNT,
                 "records_written": COUNT,
             }
-        require(status not in {"failed", "cancelled", "timeout"}, "ORC Transfer execution failed")
+        require(
+            status not in {"failed", "cancelled", "timeout"},
+            "ORC Transfer execution failed",
+        )
         time.sleep(1)
     raise ValueError("ORC Transfer execution did not converge")
 
@@ -84,6 +87,125 @@ def task_body(source, parent, name):
     }
 
 
+def nested_public_row(index):
+    number = str(2**53 + index)
+    profile = (
+        None
+        if index % 3 == 0
+        else (
+            {"counter": None, "amount": None, "blob": None}
+            if index % 5 == 0
+            else {
+                "counter": number,
+                "amount": f"12345678901234567890.{index:09d}",
+                "blob": "" if index % 2 == 0 else "AP8=",
+            }
+        )
+    )
+    samples = (
+        None
+        if index % 7 == 0
+        else (
+            []
+            if index % 5 == 0
+            else [{"value": number, "label": None}, {"value": None, "label": "嵌套"}]
+        )
+    )
+    matrix = (
+        None
+        if index % 7 == 0
+        else ([] if index % 5 == 0 else [[number, None], [], None])
+    )
+    return {"id": number, "profile": profile, "samples": samples, "matrix": matrix}
+
+
+def check_nested(client, owner, engine, full_name, name, seed, artifact):
+    item = owner.find_fixture_item(client, engine, full_name, name + " nested ORC")
+    detail = client.request("GET", f"/api/v1/meta/items/{item['id']}", (200,)).payload
+    attrs = detail.get("attributes", {})
+    binding = attrs.get("format_info", {}).get("orc", {})
+    require(
+        attrs.get("item", {}).get("format") == "orc"
+        and attrs.get("item", {}).get("layout") == "single"
+        and binding.get("source_version")
+        and binding.get("validation") == "footer",
+        "nested ORC source binding differs",
+    )
+    info = attrs.get("type_info", {}).get("table", {})
+    fields = info.get("fields", [])
+    require(
+        info.get("row_count") == 43
+        and [f["name"] for f in fields] == ["id", "profile", "samples", "matrix"],
+        "nested ORC top-level facts differ",
+    )
+    profile, samples, matrix = fields[1:]
+    require(
+        profile["type"] == "json"
+        and [(f["name"], f["type"]) for f in profile["fields"]]
+        == [("counter", "bigint"), ("amount", "decimal"), ("blob", "bytes")]
+        and profile["fields"][1]["precision"] == 38
+        and profile["fields"][1]["scale"] == 9
+        and samples["element_type"] == "json"
+        and samples["element"]["type"] == "json"
+        and [(f["name"], f["type"]) for f in samples["element"]["fields"]]
+        == [("value", "bigint"), ("label", "string")]
+        and matrix["element_type"] == "array"
+        and matrix["element"]["element_type"] == "bigint"
+        and matrix["element"]["element"]["type"] == "bigint",
+        "nested ORC declared type tree differs",
+    )
+    locator = owner.build_item_locator(engine, item)
+    pages = []
+    for page in (1, 2, 3):
+        preview = client.request(
+            "GET",
+            "/api/v1/manager/preview?"
+            + urlencode({"locator": locator, "page": page, "page_size": 20}),
+            (200,),
+        ).payload
+        table = preview.get("data", {})
+        start = (page - 1) * 20
+        require(
+            preview.get("preview_type") == "table"
+            and table.get("total") == 43
+            and table.get("has_more") is (page != 3)
+            and table.get("rows")
+            == [nested_public_row(i) for i in range(start, min(start + 20, 43))],
+            "nested ORC page lost structure or precision",
+        )
+        pages.append(
+            {"page": page, "rows": len(table["rows"]), "values_verified": True}
+        )
+    downloaded = client.request(
+        "GET",
+        "/api/v1/manager/downloads/file?" + urlencode({"locator": locator}),
+        (200,),
+    ).raw
+    require(
+        len(downloaded) == seed["size_bytes"]
+        and hashlib.sha256(downloaded).hexdigest() == seed["sha256"],
+        "nested ORC original download differs",
+    )
+    (artifact / f"orc-nested-source-{name}.orc").write_bytes(downloaded)
+    (artifact / f"orc-nested-meta-{name}.json").write_text(
+        json.dumps(detail, ensure_ascii=False, indent=2)
+    )
+    require(
+        client.request("GET", f"/api/v1/meta/items/{item['id']}", (200,)).payload
+        == detail,
+        "nested ORC preview modified metadata",
+    )
+    return {
+        "source_case": name,
+        "locator": locator,
+        "fields_verified": True,
+        "pages": pages,
+        "original_download_verified": True,
+        "sha256": seed["sha256"],
+        "size_bytes": seed["size_bytes"],
+    }
+
+
 def run(repository, environment, owner, *, physical_runner=None, browser_runner=None):
     require(
         environment.get("ADDP_ONLINE_MANAGER_CASE") == "native-table-orc",
@@ -96,6 +218,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
         "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
         "result": "incomplete",
         "cases": [],
+        "nested_cases": [],
         "cleanup": {},
     }
     spec = importlib.util.spec_from_file_location(
@@ -103,14 +226,22 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
     )
     fixture = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(fixture)
-    physical = physical_runner or (lambda action: fixture.physical(action, repository, environment))
+    physical = physical_runner or (
+        lambda action: fixture.physical(action, repository, environment)
+    )
     client = owner.GatewayClient(
-        environment["GATEWAY_URL"], environment["ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"], 30
+        environment["GATEWAY_URL"],
+        environment["ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"],
+        30,
     )
     tenant = owner.positive_int(environment["ADDP_ONLINE_TEST_TENANT_ID"], "ORC tenant")
     report["identity"] = owner.validate_user_identity(client, tenant, PERMISSIONS)
-    minio = owner.positive_int(environment["ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID"], "ORC MinIO")
-    nfs = owner.positive_int(environment["ADDP_ONLINE_MANAGER_NFS_ENGINE_ID"], "ORC NFS")
+    minio = owner.positive_int(
+        environment["ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID"], "ORC MinIO"
+    )
+    nfs = owner.positive_int(
+        environment["ADDP_ONLINE_MANAGER_NFS_ENGINE_ID"], "ORC NFS"
+    )
     require(minio != nfs, "ORC sources must be separate Engines")
     tasks = []
     cleanup = []
@@ -135,10 +266,15 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                 client, engine, time.monotonic() + 180, scope={"catalog_paths": [scope]}
             )
             item = owner.find_fixture_item(client, engine, full_name, name + " ORC")
-            detail = client.request("GET", f"/api/v1/meta/items/{item['id']}", (200,)).payload
+            detail = client.request(
+                "GET", f"/api/v1/meta/items/{item['id']}", (200,)
+            ).payload
             attrs = detail.get("attributes", {})
             require(
-                {k: attrs.get("item", {}).get(k) for k in ["data_type", "format", "layout"]}
+                {
+                    k: attrs.get("item", {}).get(k)
+                    for k in ["data_type", "format", "layout"]
+                }
                 == {"data_type": "table", "format": "orc", "layout": "single"},
                 "ORC item identity changed",
             )
@@ -188,7 +324,10 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                     + urlencode({"locator": locator, "page": page, "page_size": 20}),
                     (200,),
                 ).payload
-                require(preview.get("preview_type") == "table", "ORC must use real table preview")
+                require(
+                    preview.get("preview_type") == "table",
+                    "ORC must use real table preview",
+                )
                 table = preview.get("data", {})
                 rows = table.get("rows", [])
                 start = (page - 1) * 20
@@ -207,10 +346,14 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                         and row["flag"] == (None if i % 7 == 0 else i % 2 == 0),
                         "ORC page lost exact values or nulls",
                     )
-                case["pages"].append({"page": page, "rows": len(rows), "values_verified": True})
+                case["pages"].append(
+                    {"page": page, "rows": len(rows), "values_verified": True}
+                )
             stage = "original_download"
             downloaded = client.request(
-                "GET", "/api/v1/manager/downloads/file?" + urlencode({"locator": locator}), (200,)
+                "GET",
+                "/api/v1/manager/downloads/file?" + urlencode({"locator": locator}),
+                (200,),
             )
             require(
                 len(downloaded.raw) == seed["size_bytes"]
@@ -231,7 +374,10 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             task_id = owner.positive_int(created.get("id"), "ORC Transfer task")
             tasks.append(task_id)
             started = client.request(
-                "POST", f"/api/v1/transfer/task-definitions/{task_id}/start", (200, 201), {}
+                "POST",
+                f"/api/v1/transfer/task-definitions/{task_id}/start",
+                (200, 201),
+                {},
             ).payload
             execution_id = started.get("execution_id")
             require(
@@ -240,15 +386,34 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             )
             case["transfer"] = wait_execution(client, execution_id)
             require(
-                client.request("GET", f"/api/v1/meta/items/{item['id']}", (200,)).payload == detail,
+                client.request(
+                    "GET", f"/api/v1/meta/items/{item['id']}", (200,)
+                ).payload
+                == detail,
                 "ORC read modified source metadata",
+            )
+        stage = "nested_preview"
+        require(seed.get("nested", {}).get("count") == 43, "nested ORC fixture absent")
+        for name, engine, full_name in [
+            ("minio", minio, bucket + "/orc/nested.orc"),
+            ("nfs", nfs, "orc/nested.orc"),
+        ]:
+            report["nested_cases"].append(
+                check_nested(
+                    client, owner, engine, full_name, name, seed["nested"], artifact
+                )
             )
         stage = "physical_verification"
         verified = physical("verify")
         require(
             len(verified.get("outputs", [])) == 2
-            and all(x.get("all_values_and_nulls_verified") is True for x in verified["outputs"])
-            and verified.get("source_sha256") == seed["sha256"],
+            and all(
+                x.get("all_values_and_nulls_verified") is True
+                for x in verified["outputs"]
+            )
+            and verified.get("source_sha256") == seed["sha256"]
+            and verified.get("nested_source_sha256") == seed["nested"]["sha256"]
+            and verified.get("nested_all_values_verified") is True,
             "ORC physical batch output or source changed",
         )
         require(
@@ -272,12 +437,15 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             "run_id": report["run_id"],
             "identity": report["identity"],
             "cases": report["cases"],
+            "nested_cases": report["nested_cases"],
         }
         stage = "browser"
         if browser_runner:
             browser = browser_runner(browser_context)
         else:
-            env = dict(environment, ADDP_ONLINE_MANAGER_ORC_JSON=json.dumps(browser_context))
+            env = dict(
+                environment, ADDP_ONLINE_MANAGER_ORC_JSON=json.dumps(browser_context)
+            )
             subprocess.run(
                 [
                     "npm",
@@ -306,6 +474,18 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             ),
             "ORC real browser acceptance incomplete",
         )
+        require(
+            len(browser.get("nested_cases", [])) == 2
+            and all(
+                c.get("page_button_verified") is True
+                and c.get("nested_values_verified") is True
+                and c.get("original_button_download_verified") is True
+                and c.get("sha256") == seed["nested"]["sha256"]
+                and c.get("size_bytes") == seed["nested"]["size_bytes"]
+                for c in browser["nested_cases"]
+            ),
+            "nested ORC browser acceptance incomplete",
+        )
         report["browser"] = browser
         report["result"] = "passed"
     except BaseException as error:
@@ -317,8 +497,12 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
     finally:
         for task in reversed(tasks):
             try:
-                client.request("DELETE", f"/api/v1/transfer/task-definitions/{task}", (200, 204))
-                client.request("GET", f"/api/v1/transfer/task-definitions/{task}", (404,))
+                client.request(
+                    "DELETE", f"/api/v1/transfer/task-definitions/{task}", (200, 204)
+                )
+                client.request(
+                    "GET", f"/api/v1/transfer/task-definitions/{task}", (404,)
+                )
             except Exception:
                 cleanup.append("owned_task_delete_failed")
         if seeded:

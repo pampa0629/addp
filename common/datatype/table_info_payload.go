@@ -104,6 +104,15 @@ func normalizeFieldInfo(field FieldInfo) FieldInfo {
 	field.DefaultExpression = strings.TrimSpace(field.DefaultExpression)
 	field.GenerationExpression = strings.TrimSpace(field.GenerationExpression)
 	field.Type = ParseFieldType(string(field.Type))
+	for i := range field.Fields {
+		name := field.Fields[i].Name
+		field.Fields[i] = normalizeFieldInfo(field.Fields[i])
+		field.Fields[i].Name = name
+	}
+	if field.Element != nil {
+		element := normalizeFieldInfo(*field.Element)
+		field.Element = &element
+	}
 	if IsSpatialFieldType(field.Type) {
 		field.Type = FieldTypeGeometry
 	}

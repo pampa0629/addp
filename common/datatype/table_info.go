@@ -19,21 +19,23 @@ type TableInfo struct {
 
 // FieldInfo describes a common field or property semantic model.
 type FieldInfo struct {
-	Name                 string    `json:"name,omitempty"`
-	Path                 []string  `json:"path,omitempty"`
-	Type                 FieldType `json:"type,omitempty"`
-	ElementType          FieldType `json:"element_type,omitempty"`
-	NativeType           string    `json:"native_type,omitempty"`
-	Nullable             bool      `json:"nullable"`
-	PrimaryKey           bool      `json:"primary_key,omitempty"`
-	Comment              string    `json:"comment,omitempty"`
-	Size                 int       `json:"size,omitempty"`
-	Precision            int       `json:"precision,omitempty"`
-	Scale                int       `json:"scale,omitempty"`
-	OrdinalPosition      int       `json:"ordinal_position,omitempty"`
-	DefaultExpression    string    `json:"default_expression,omitempty"`
-	Generated            bool      `json:"generated,omitempty"`
-	GenerationExpression string    `json:"generation_expression,omitempty"`
+	Name                 string      `json:"name,omitempty"`
+	Path                 []string    `json:"path,omitempty"`
+	Type                 FieldType   `json:"type,omitempty"`
+	ElementType          FieldType   `json:"element_type,omitempty"`
+	Fields               []FieldInfo `json:"fields,omitempty"`
+	Element              *FieldInfo  `json:"element,omitempty"`
+	NativeType           string      `json:"native_type,omitempty"`
+	Nullable             bool        `json:"nullable"`
+	PrimaryKey           bool        `json:"primary_key,omitempty"`
+	Comment              string      `json:"comment,omitempty"`
+	Size                 int         `json:"size,omitempty"`
+	Precision            int         `json:"precision,omitempty"`
+	Scale                int         `json:"scale,omitempty"`
+	OrdinalPosition      int         `json:"ordinal_position,omitempty"`
+	DefaultExpression    string      `json:"default_expression,omitempty"`
+	Generated            bool        `json:"generated,omitempty"`
+	GenerationExpression string      `json:"generation_expression,omitempty"`
 }
 
 // Clone returns a deep copy of TableInfo.
@@ -42,10 +44,7 @@ func (t *TableInfo) Clone() *TableInfo {
 		return nil
 	}
 	cloned := *t
-	cloned.Fields = append([]FieldInfo(nil), t.Fields...)
-	for i := range cloned.Fields {
-		cloned.Fields[i].Path = append([]string(nil), t.Fields[i].Path...)
-	}
+	cloned.Fields = CloneFieldInfos(t.Fields)
 	cloned.PrimaryKey = append([]string(nil), t.PrimaryKey...)
 	cloned.Native = cloneInterfaceMap(t.Native)
 	if t.RowCount != nil {
@@ -69,6 +68,22 @@ func (t *TableInfo) Clone() *TableInfo {
 		cloned.UpdatedAt = &updatedAt
 	}
 	return &cloned
+}
+
+// CloneFieldInfos preserves declared nested schemas without sharing mutable data.
+func CloneFieldInfos(fields []FieldInfo) []FieldInfo {
+	if fields == nil {
+		return nil
+	}
+	result := append([]FieldInfo(nil), fields...)
+	for i := range result {
+		result[i].Path = append([]string(nil), fields[i].Path...)
+		result[i].Fields = CloneFieldInfos(fields[i].Fields)
+		if fields[i].Element != nil {
+			result[i].Element = &CloneFieldInfos([]FieldInfo{*fields[i].Element})[0]
+		}
+	}
+	return result
 }
 
 // FieldNames returns the table field names in declared order.

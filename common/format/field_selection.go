@@ -12,7 +12,7 @@ func ApplyFieldSelectionToTableInfo(info *datatype.TableInfo, selection *FieldSe
 	}
 	copied := info.Clone()
 	fieldByName := make(map[string]datatype.FieldInfo, len(info.Fields))
-	for _, field := range info.Fields {
+	for _, field := range copied.Fields {
 		fieldByName[field.Name] = field
 	}
 	fields := make([]datatype.FieldInfo, 0, len(selection.Include))
@@ -50,7 +50,7 @@ func ApplyFieldSelectionToTableDescribeResult(result *TableDescribeResult, selec
 		FormatInfo:  cloneInterfaceMap(result.FormatInfo),
 	}
 	fieldByName := make(map[string]datatype.FieldInfo, len(result.Table.Fields))
-	for _, field := range result.Table.Fields {
+	for _, field := range copied.Table.Fields {
 		fieldByName[field.Name] = field
 	}
 	fields := make([]datatype.FieldInfo, 0, len(selection.Include))
