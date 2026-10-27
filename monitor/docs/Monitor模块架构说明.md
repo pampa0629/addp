@@ -32,6 +32,6 @@ Monitor 聚合任务执行事实，提供授权诊断、统计、健康观测、
 
 ## 验证与运行边界
 
-从仓库根目录使用 `make test-module MODULE=monitor`，当前工作区按范围使用 `make test-changed`；持久化与页面分别沿 `make test-monitor-postgres`、`make test-monitor-frontend`。测试分层、已有跨模块场景与证据要求见[测试与验收规范](../../docs/spec/addp测试与验收规范.md)，未运行、失败与通过分别记录。
+从仓库根目录使用 `make test-module MODULE=monitor`，当前工作区按范围使用 `make test-changed`；持久化与页面分别沿 `make test-monitor-postgres`、`make test-monitor-frontend`。测试分层及跨模块场景沿[测试与验收规范](../../docs/spec/addp测试与验收规范.md)；固定版本、失败、清理及未覆盖项统一见[模块主题证据导航](../CLAUDE.md#历史证据导航)，按各专题原记录认定。
 
 本页没有新增测试入口，不把旧样本数量、成功率、缓存命中率或日期标记作为当前验收证据。真实 System / Gateway / Owner / Worker 链路仍按对应 T4 场景核对，生产部署不由单元测试或历史通过结论外推。端口、启动与重启沿[端口规范](../../docs/spec/addp端口分配.md)和[部署指南](../../docs/guide/addp部署和开发步骤.md)，需要重启时由用户执行标准生命周期命令。
