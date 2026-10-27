@@ -34,6 +34,8 @@ Manager 导入使用持久 Transfer `sync` 任务并保持上传者私有来源�
 
 ## 技术栈与端口
 
+引擎缓存服务在 Service Token Source 就绪后只创建一个实例，其 Redis 引擎事件订阅由该实例持有，并在进程退出时调用 `Stop()`。当前变更事件只清除引擎配置缓存，不代表跨进程连接池回收或热生效已完成。
+
 - 后端：Go + Gin + GORM，默认端口 `8081`，环境变量 `MANAGER_BACKEND_PORT`。
 - 前端：Vue 3 + Element Plus + OpenLayers，开发端口 `5174`，启动脚本环境变量 `MANAGER_FE_PORT`。
 - 数据库：PostgreSQL `manager` schema。

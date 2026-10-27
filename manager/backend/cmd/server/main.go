@@ -134,10 +134,6 @@ func main() {
 		logger.L().Warn("Redis 未配置，资源变更事件同步功能将被禁用")
 	}
 
-	// 初始化资源缓存服务（带 Redis 事件订阅）
-	engineCacheService := service.NewEngineCacheService(cfg.SystemServiceURL, nil, redisClient)
-	_ = engineCacheService // TODO: 集成到 metadataService 中使用
-
 	// 初始化缓存管理器和扫描事件处理器（用于 Meta 扫描完成后自动刷新缓存）
 	var cacheManager *service.CacheManager
 	var scanEventHandler *service.ScanEventHandler
@@ -161,7 +157,8 @@ func main() {
 	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, serviceTokenSource, nil)
 	securityClient := commonClient.NewSecurityClient(cfg.SecurityServiceURL, serviceTokenSource, nil)
 	systemClient := commonClient.NewSystemClient(cfg.SystemServiceURL, serviceTokenSource)
-	engineCacheService = service.NewEngineCacheService(cfg.SystemServiceURL, serviceTokenSource, redisClient)
+	engineCacheService := service.NewEngineCacheService(cfg.SystemServiceURL, serviceTokenSource, redisClient)
+	defer engineCacheService.Stop()
 	workflowRuntimeLister := service.NewWorkflowRuntimeEngineLister(systemServiceClient)
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, serviceTokenSource)
 	inferenceClient, err := commonClient.NewInferenceClient(cfg.SystemServiceURL, serviceTokenSource, nil)
