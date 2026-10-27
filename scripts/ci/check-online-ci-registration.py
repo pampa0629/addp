@@ -2952,6 +2952,31 @@ def validate_raster_tangential_curvature(repository: Path, registered: set[str])
             raise RegistrationError('DEM curvature persistence contract is incomplete: '+relative)
 
 
+def validate_raster_tpi(repository: Path, registered: set[str]) -> None:
+    import ast
+    suite='raster-tpi-persistence'
+    if suite not in registered:return
+    workflow=(repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job=re.search(r'(?ms)^  raster-tpi-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)',workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-tpi-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-tpi-persistence'" not in workflow
+        or 'cancel-in-progress: false' not in job.group('body') or 'nfs-kernel-server nfs-common' not in job.group('body')
+        or '${{ runner.temp }}/addp-online-${{ github.run_id }}/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('TPI requires a manual isolated Hosted NFS job and whole original-COG evidence upload')
+    make=(repository/'Makefile').read_text()
+    if 'test-geopython-workflow:' not in make or 'test_online_tpi_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('TPI Native fixture must run in the standard GeoPython recipe')
+    required={'scripts/test/online-hosted-raster-tpi-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-tpi-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-tpi-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_tpi', 'unit_unknown', 'validate_lineage', 'input.source', 'output.save', 'archived_cogs', 'incomplete fixed TPI matrix'), 'business/scripts/online-raster-tpi-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_dem', 'context.prec=2500', 'Decimal(8)', 'np.unique', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'metre', 'int64.cog.tif', 'uint64.cog.tif', 'saddle.cog.tif', 'sparse.cog.tif', 'archive_cogs', 'tpi-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs'), 'engines/geopython-workflow/test_online_tpi_fixture.py': ('test_tpi_persistence_real_gdal_thirteen_chains_complete_exact_pixels_and_original_cogs', 'test_tpi_persistence_twenty_six_accurate_bilingual_failures_no_publication', 'test_tpi_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'centre_in_mean', 'test_tpi_original_cog_archive_cannot_change_or_silently_repair', 'test_tpi_worker_stdin_is_repository_independent_and_sources_remain_immutable'), 'Makefile': ('@$(MAKE) test-raster-tpi-online-runner', 'test_online_tpi_fixture.py', 'scripts/test/raster-tpi-persistence-online_test.py', 'scripts/test/online-raster-tpi-fixture_test.py', 'scripts/test/online-hosted-raster-tpi-gate_test.py', 'test_tpi_requires_manual_nfs_exact_pixels_archive_and_regressions')}
+    for relative,fragments in required.items():
+        path=repository/relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('TPI persistence contract is incomplete: '+relative)
+    for relative,key,size in [('business/scripts/online-raster-tpi-fixture.py','CASES',13),('scripts/test/raster-tpi-persistence-online.py','FAILURES',13)]:
+        tree=ast.parse((repository/relative).read_text());values=[n.value for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id==key for t in n.targets)]
+        if len(values)!=1 or len(ast.literal_eval(values[0]))!=size:raise RegistrationError('TPI fixed 13-success/26-bilingual-failure matrix changed')
+
+
 def validate_raster_plan_curvature(repository: Path, registered: set[str]) -> None:
     suite='raster-plan-curvature-persistence'
     if suite not in registered:return
@@ -4401,6 +4426,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_cut_fill(repository, registered)
     validate_raster_tangential_curvature(repository, registered)
     validate_raster_plan_curvature(repository, registered)
+    validate_raster_tpi(repository, registered)
     validate_raster_flow_length_upstream_d8_profile(repository, registered)
     validate_raster_stream_order_d8_profile(repository, registered)
     validate_raster_stream_shreve_d8_profile(repository, registered)

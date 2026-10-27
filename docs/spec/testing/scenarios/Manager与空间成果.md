@@ -643,4 +643,17 @@ Node24.11.1下标准`make test-raster-cut-fill-online-runner`通过 **62项／29
 
 修后本地标准`PYTEST_ADDOPTS='-k cut_fill --durations=15' make test-geopython-workflow`通过171项／7630筛除／13.20秒，0失败／跳过，JUnit及进度点均171；原产品114项与独立夹具57项包含在内，不累加为新唯一计数。Node24.11.1下标准`make test-raster-cut-fill-online-runner`通过66项／22.312秒及完整Online登记，包含来源角色交换、任务声明／事实顺序、23类端口与操作篡改、拒绝现场封闭证据和不可变归档反例；旧位置比较配合真实节点端口响应的失败红灯已保留。两门禁同候选树`f43a9bbe208149dca5c3d87d14f0612e1d61cd05`，934个跟踪输入无漂移、无新增Python原生崩溃报告，相关可执行输入一致；日志SHA-256分别为`7b4b024b3108ef351069b8b834bf98ed6e813388f87b30e526a8dc8c97f340c9`、`5b862744f00799ce58215b8c07b64a51eddbffc080a76114838de1b08865c360`。本次不重跑旧有效全量或其他独立Hosted，不把模拟平台runner计作真实Hosted通过。
 
-修复后的实际Hosted仍由专门CI会话协调唯一必要复验，尚未取得修后原始验收结果；本会话不查询实时CI、不触发、重跑或取消任务，不设置定时。不计UI、容量、生产或业务DELETE；数值极限仍单列Native，TPI证据及其未确认独立Hosted提案完全分开。
+修复后的实际Hosted仍由专门CI会话协调唯一必要复验，尚未取得修后原始验收结果；本会话不查询实时CI、不触发、重跑或取消任务，不设置定时。不计UI、容量、生产或业务DELETE；数值极限仍单列Native，TPI产品与独立Hosted准备证据另节记账。
+
+
+### DEM 地形位置指数（TPI）独立 Hosted 验收
+
+按用户批准新增独立手工`raster-tpi-persistence`，复用Hosted／NFS、同源默认入口产品Runtime、普通User原12权限和600秒业务预算，不加入nightly或修改原套件。固定13条COG保存链：米制混合凸凹、水平平地／倾斜平面／对称鞍面三种合法零、三组高程及水平单位交叉、填洼接TPI、重分类接TPI、Int64／UInt64普通大基值原生高差、全无效及有有效像元却无完整九点邻域。519×515矩形多波段样本显式选择第二高程波段，覆盖跨块、NoData／mask／透明／非有限覆盖与有效部分透明。13类非法输入各中英文提交，共26次准确失败：波段、alpha、复数高程、非法声明单位、单位冲突、未知波段单位、scale、offset、经纬度、旋转、南向、缺CRS、缺定位；逐条定位当前tpi节点及提交语言，反向查询不得改写原失败。
+
+独立高精度Decimal八邻居均值与解析平面／鞍面校验完整Float64／NaN像元、mask、合法零、正负号、原网格／CRS及米制单位，不导入产品计算函数；严格比较最终存储值，一ULP错误也拒绝。完整COG布局、金字塔像元／mask、artifact／物理文件／Meta相等正整数大小、精确扫描父执行／用户／租户／引擎、当前实际源血缘／Monitor、源和先前成果不变及所有清理保持。失败不得发布、新增扫描或派生血缘。每次核验后归档已成功COG原字节到`tpi-cogs/`及`tpi-cogs-manifest.json`大小／SHA-256清单，已有成果与清单不可被静默修复，收尾再次核清单／hash／大小；未知文件、软链接或归档变更严格失败，支持回传离线重读。
+
+本地标准Native入口`PYTEST_ADDOPTS='-k tpi --durations=15' make test-geopython-workflow`通过 **194项／7664筛除／26.34秒**，0失败／跳过，JUnit与通过进度点均194；含原产品137项和新增独立夹具57项，不累加为额外唯一计数。实际执行13条GDAL→COG保存链、26次准确双语失败，独立Decimal及解析零核完整像元／mask／单位／网格，覆盖一ULP、错误九点均值／符号／单位、布局／金字塔／NoData／编码／副文件篡改拒绝、原字节归档／清单破坏拒绝、源hash保护及stdin Worker脱离仓库导入运行；归档COG已在本地离线重读。候选树`99aa79f3e5d8fadf10207fe090802e6219e9e2d7`，日志SHA-256：`32ab172546f75457a0d09d3428ed0d729ef1d86c48053417b6f4394006be0f3e`。
+
+Node24.11.1下标准`make test-raster-tpi-online-runner`通过 **59项／19.847秒**及完整Online登记，含模拟普通用户／精确扫描及当前来源血缘／Monitor、三方严格大小、完整物理标记及原字节回执、失败冻结语言、准入／部分启动／收尾与清理反例；不计真实平台通过。候选树`627ac30483f6d46f4d7b972ee1fc24fcc623c8b7`，日志SHA-256：`9217b65f635649496f5f224a90cc70eb79023e5fb5f3cb89ad563cb381a2d280`。标准`make test-python-ci-registration`54项、10项及11模块／完整Online登记通过，日志SHA-256：`5dae029ba39c1da93df00415db9ca1bb329752e03cfd0103534c826b98da15f5`。每次门禁941个跟踪输入前后无漂移，无新增Python原生崩溃报告；数值夹具／DAG／Native测试输入一致，Native之后仅修正文档及Hosted shell注释／就绪诊断标签，最终shell已由独立runner复验。新增标准Native文件、独立／聚合runner、变更选择、手工workflow及固定13／26矩阵／原COG归档省略拒绝检查同次登记，原聚合其他子套件不整组复跑。重复门禁计数不求和，已有产品及旧固定验收不挪作新Hosted证据。
+
+实际Hosted运行、Linux全量、填挖方复验与其余Hosted仍由专门CI会话协调，本会话不触发、查询实时CI、重跑、取消或设置定时。数值极限继续单列Native，复数alpha等额外类型组合不计为本套Hosted覆盖；本套不认证全部单位组合、UI、容量、生产或业务DELETE，不改产品算法、权限或跨模块逻辑。

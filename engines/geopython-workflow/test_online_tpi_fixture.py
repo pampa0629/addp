@@ -1,0 +1,132 @@
+"""Real GDAL preparation for independently archived TPI Hosted acceptance."""
+import importlib,json,os,shutil,subprocess,sys
+from pathlib import Path
+import numpy as np
+from osgeo import gdal
+import pytest
+
+def native_definition(scene,module,root,name,*,invalid=None,language='zh-cn',target=None):
+    definition=scene.definition({n:n for n in module.SOURCES},'parent',name,invalid=invalid,language=language)
+    for task in definition['tasks']:
+        params=task['params']
+        if task['operator']=='raster_load':
+            path=root/params.pop('locator');params['access_plan']={'schema_version':'addp.workflow.access-plan/v1','source':{'kind':'file','format':'tiff','access':{'method':'mounted_path','path':str(path)}}}
+        elif task['operator']=='raster_save':
+            params.pop('target_parent_locator');path=target or root/'outputs'/params['target_name'];params.pop('target_name');mode=params.pop('write_mode')
+            params['access_plan']={'schema_version':'addp.workflow.access-plan/v1','target':{'kind':'file','format':'tiff','name':path.name,'write_mode':mode,'access':{'method':'mounted_path','path':str(path)}}}
+    return definition
+
+@pytest.fixture(scope='module')
+def tpi_persistence(tmp_path_factory):
+    module=importlib.import_module('business.scripts.online-raster-tpi-fixture');scene=importlib.import_module('scripts.test.raster-tpi-persistence-online')
+    from workflow_engine import execute_workflow
+    root=tmp_path_factory.mktemp('tpi-export');(root/'outputs').mkdir();(root/'.addp-online-owner').write_text('tpi-123-1');initial=module.seed(root)
+    for name in module.TARGETS:
+        result=execute_workflow(native_definition(scene,module,root,name));assert result['status']=='success',result
+        artifact=json.loads(result['final_result']);assert type(artifact['size_bytes']) is int and artifact['size_bytes']==(root/'outputs'/name).stat().st_size>0
+    return module,root,initial
+
+
+def test_tpi_persistence_real_gdal_thirteen_chains_complete_exact_pixels_and_original_cogs(tpi_persistence,tmp_path):
+    module,root,initial=tpi_persistence;facts=module.verify(root,list(module.TARGETS));assert facts['sources']==initial['sources'] and len(facts['targets'])==13
+    archived=module.archive_cogs(root,tmp_path,facts);assert len(archived)==13
+    for name,fact in facts['targets'].items():
+        assert all(fact[k] for k in ('full_pixel_and_mask_verification','cog_valid','independent_decimal_oracle_verified','complete_neighbourhood_verified','metre_unit_verified','nearest_overviews_verified','eight_equal_neighbours_verified','legal_zero_verified'))
+        assert fact['size_bytes']==(root/'outputs'/name).stat().st_size>0 and fact['overview_count']==3 and fact['has_overviews']
+        assert (tmp_path/archived[name]['path']).read_bytes()==(root/'outputs'/name).read_bytes()
+        ds=gdal.Open(str(tmp_path/archived[name]['path']));np.testing.assert_array_equal(ds.ReadAsArray(),module.expected_pixels(name));ds=None
+        if name in ('invalid.cog.tif','sparse.cog.tif'):assert fact['valid_pixels']==0
+        elif name in ('flat.cog.tif','plane.cog.tif','saddle.cog.tif','filled.cog.tif'):assert fact['valid_pixels']==fact['zero_pixels']==(module.HEIGHT-2)*(module.WIDTH-2)
+        else:assert fact['valid_pixels']>0
+    values,valid=module.expected_dem('sparse.cog.tif');assert valid.any() and not np.isfinite(module.expected_pixels('sparse.cog.tif')).any()
+    actual=module.expected_pixels('tpi.cog.tif');assert np.nanmax(actual)>0 and np.nanmin(actual)<0
+    assert np.isnan(actual[[0,-1],:]).all() and np.isnan(actual[:,[0,-1]]).all() and np.isfinite(actual[500,500])
+    assert np.isnan(actual[509:512,510:513]).all()
+    for source in module.SOURCES:
+        ds=gdal.Open(str(root/source));assert ds.GetFileList()==[str(root/source)];ds=None
+
+
+@pytest.mark.parametrize('problem',['band','alpha','complex','rotated','south_up','geographic','no_crs','no_grid','unit','unit_conflict','scale','offset','unit_unknown'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_tpi_persistence_twenty_six_accurate_bilingual_failures_no_publication(tpi_persistence,tmp_path,monkeypatch,problem,language):
+    import workflow_engine
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime.errors import WorkflowExecutionError
+    module,root,initial=tpi_persistence;scene=importlib.import_module('scripts.test.raster-tpi-persistence-online');target=tmp_path/'failed.cog.tif'
+    definition=native_definition(scene,module,root,'tpi.cog.tif',invalid=problem,language=language,target=target)
+    workspaces=[];execute=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_tpi':workspaces.append(params['input_raster'].workspace)
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture)
+    with pytest.raises(WorkflowExecutionError) as error:GeoPythonWorkflowRunner(language=language).execute(definition)
+    assert error.value.error_code=='EXECUTION_FAILED' and str(error.value)=='任务 tpi 执行失败: '+scene.MESSAGES[problem][language=='en']
+    assert workspaces and all(not p.exists() for p in workspaces) and not target.exists()
+    assert {n:module.digest(root/n) for n in module.SOURCES}==initial['sources']
+
+
+@pytest.mark.parametrize('fault',['value','one_ulp','sign','edge_zero','hole_zero','mask','crs','grid','dtype','nodata','scale','unit','overviews','overview_value','sidecar','source_sidecar','missing_owner','missing','extra'])
+def test_tpi_persistence_oracle_rejects_physical_corruption(tpi_persistence,tmp_path,fault):
+    module,original,_=tpi_persistence;root=tmp_path/'changed';shutil.copytree(original,root);path=root/'outputs'/'tpi.cog.tif'
+    if fault in ('value','one_ulp','sign','edge_zero','hole_zero','mask','crs','grid','nodata','scale','unit','overview_value'):
+        ds=gdal.OpenEx(str(path),gdal.OF_RASTER|gdal.OF_UPDATE,open_options=['IGNORE_COG_LAYOUT_BREAK=YES']);band=ds.GetRasterBand(1)
+        if fault in ('value','one_ulp','sign','edge_zero','hole_zero'):
+            row,col=(0,50) if fault=='edge_zero' else (510,511) if fault=='hole_zero' else (60,61)
+            wanted=module.expected_pixels('tpi.cog.tif')[row,col]
+            value=0. if fault in ('edge_zero','hole_zero') else np.nextafter(wanted,np.inf) if fault=='one_ulp' else -wanted if fault=='sign' else 12345.
+            band.WriteRaster(col,row,1,1,np.array([value],np.float64).tobytes(),buf_type=gdal.GDT_Float64)
+        elif fault=='mask':
+            with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+            band.GetMaskBand().Fill(255)
+        elif fault=='crs':ds.SetProjection('')
+        elif fault=='grid':ds.SetGeoTransform((1,1,0,1,0,-1))
+        elif fault=='nodata':band.SetNoDataValue(-999.)
+        elif fault=='unit':band.SetUnitType('foot')
+        elif fault=='overview_value':band.GetOverview(0).Fill(1234.)
+        else:band.SetScale(2.)
+        band=ds=None
+    elif fault in ('dtype','overviews'):
+        alt=root/'replacement.tif';ds=gdal.Translate(str(alt),str(path),format='GTiff',outputType=gdal.GDT_Float32 if fault=='dtype' else gdal.GDT_Float64);ds=None;alt.replace(path)
+    elif fault=='sidecar':(root/'outputs'/'tpi.cog.tif.aux.xml').write_text('unexpected')
+    elif fault=='source_sidecar':(root/'dem.tif.msk').write_text('unexpected')
+    elif fault=='missing_owner':(root/'.addp-online-owner').unlink()
+    elif fault=='missing':path.unlink()
+    else:(root/'outputs'/'extra.tif').write_text('unexpected')
+    with pytest.raises(module.FixtureError):module.verify(root,list(module.TARGETS))
+
+
+@pytest.mark.parametrize('fault',['centre_in_mean','wrong_sign','wrong_units'])
+def test_tpi_independent_decimal_oracle_rejects_wrong_semantics(tpi_persistence,tmp_path,fault):
+    module,original,_=tpi_persistence;root=tmp_path/'changed';shutil.copytree(original,root)
+    expected=module.expected_pixels('tpi.cog.tif');bad=expected*8/9 if fault=='centre_in_mean' else -expected if fault=='wrong_sign' else expected*.3048
+    path=root/'outputs'/'tpi.cog.tif';ds=gdal.OpenEx(str(path),gdal.OF_RASTER|gdal.OF_UPDATE,open_options=['IGNORE_COG_LAYOUT_BREAK=YES']);ds.GetRasterBand(1).WriteArray(bad);ds=None
+    with pytest.raises(module.FixtureError):module.verify(root,list(module.TARGETS))
+
+
+@pytest.mark.parametrize('fault',['bytes','size','hash','missing_entry','extra','symlink','manifest_symlink'])
+def test_tpi_original_cog_archive_cannot_change_or_silently_repair(tpi_persistence,tmp_path,fault):
+    module,root,_=tpi_persistence;facts=module.verify(root,list(module.TARGETS));module.archive_cogs(root,tmp_path,facts)
+    path=tmp_path/'tpi-cogs'/'tpi.cog.tif';manifest=tmp_path/'tpi-cogs-manifest.json'
+    if fault=='bytes':path.write_bytes(b'changed')
+    elif fault in ('size','hash','missing_entry'):
+        value=json.loads(manifest.read_text())
+        if fault=='missing_entry':value.pop('tpi.cog.tif')
+        else:value['tpi.cog.tif']['size_bytes' if fault=='size' else 'sha256']=1 if fault=='size' else 'bad'
+        manifest.write_text(json.dumps(value))
+    elif fault=='extra':path.with_name('extra.tif').write_text('extra')
+    elif fault=='symlink':path.unlink();path.symlink_to(root/'outputs'/'tpi.cog.tif')
+    else:manifest.unlink();manifest.symlink_to(tmp_path/'missing')
+    with pytest.raises(module.FixtureError):module.archive_cogs(root,tmp_path,facts)
+
+
+def test_tpi_worker_stdin_is_repository_independent_and_sources_remain_immutable(tpi_persistence,tmp_path,monkeypatch):
+    module,root,initial=tpi_persistence;cwd=tmp_path/'empty';cwd.mkdir();scratch=tmp_path/'scratch';scratch.mkdir()
+    env={**os.environ,'PYTHONPATH':'','TMPDIR':str(scratch),'PYTHONDONTWRITEBYTECODE':'1'}
+    done=subprocess.run([sys.executable,'-I','-c','import sys; exec(compile(sys.stdin.read(),"<fixture-worker>","exec"))','--worker','verify',str(root),*module.TARGETS],input=Path(module.__file__).read_text(),text=True,capture_output=True,cwd=cwd,env=env,timeout=150)
+    assert done.returncode==0,done.stderr;assert json.loads(done.stdout)['sources']==initial['sources']
+    secret=tmp_path/'secret';secret.mkdir();(secret/'tpi-source.json').write_text(json.dumps(initial))
+    monkeypatch.setattr(module,'guard',lambda:secret);monkeypatch.setattr(module,'owned_root',lambda _:root);monkeypatch.setattr(module,'runtime_worker',lambda action,owned,names:module.verify(owned,names));monkeypatch.setattr(module.sys,'argv',['fixture','verify',*module.TARGETS])
+    monkeypatch.setenv('ADDP_ONLINE_ARTIFACT_DIR',str(tmp_path/'artifacts'));assert module.main('verify')['sources']==initial['sources']
+    changed=tmp_path/'changed';shutil.copytree(root,changed);(changed/'dem.tif').write_bytes(b'changed source')
+    monkeypatch.setattr(module,'owned_root',lambda _:changed)
+    with pytest.raises(module.FixtureError,match='source file changed'):module.main('verify')

@@ -595,6 +595,23 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                     CHECK.validate_raster_tangential_curvature(self.repository,{'raster-tangential-curvature-persistence'})
                 target.write_text(original)
 
+    def test_tpi_requires_manual_nfs_exact_pixels_archive_and_regressions(self):
+        source=SCRIPT.parents[2]
+        required={'scripts/test/online-hosted-raster-tpi-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-tpi-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-tpi-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_tpi', 'unit_unknown', 'validate_lineage', 'input.source', 'output.save', 'archived_cogs', 'incomplete fixed TPI matrix'), 'business/scripts/online-raster-tpi-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_dem', 'context.prec=2500', 'Decimal(8)', 'np.unique', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'metre', 'int64.cog.tif', 'uint64.cog.tif', 'saddle.cog.tif', 'sparse.cog.tif', 'archive_cogs', 'tpi-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs'), 'engines/geopython-workflow/test_online_tpi_fixture.py': ('test_tpi_persistence_real_gdal_thirteen_chains_complete_exact_pixels_and_original_cogs', 'test_tpi_persistence_twenty_six_accurate_bilingual_failures_no_publication', 'test_tpi_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'centre_in_mean', 'test_tpi_original_cog_archive_cannot_change_or_silently_repair', 'test_tpi_worker_stdin_is_repository_independent_and_sources_remain_immutable'), 'Makefile': ('@$(MAKE) test-raster-tpi-online-runner', 'test_online_tpi_fixture.py', 'scripts/test/raster-tpi-persistence-online_test.py', 'scripts/test/online-raster-tpi-fixture_test.py', 'scripts/test/online-hosted-raster-tpi-gate_test.py', 'test_tpi_requires_manual_nfs_exact_pixels_archive_and_regressions')}
+        for relative in ('scripts/test/online-gate.py','.github/workflows/online-t4-gates.yml',*required):
+            target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
+        CHECK.validate_raster_tpi(self.repository,{'raster-tpi-persistence'})
+        for relative,fragments in required.items():
+            target=self.repository/relative;original=target.read_text()
+            for fragment in fragments:
+                self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
+                with self.subTest(relative=relative,fragment=fragment),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_tpi(self.repository,{'raster-tpi-persistence'})
+                target.write_text(original)
+        for relative,key,original_fragment in [('business/scripts/online-raster-tpi-fixture.py','CASES',"'flat.cog.tif':('flat.tif',2,'metre','direct'),"),('scripts/test/raster-tpi-persistence-online.py','FAILURES',"'offset',")]:
+            target=self.repository/relative;original=target.read_text();self.assertIn(original_fragment,original);target.write_text(original.replace(original_fragment,'',1))
+            with self.subTest(key=key),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_tpi(self.repository,{'raster-tpi-persistence'})
+            target.write_text(original)
+
     def test_plan_curvature_requires_manual_nfs_full_pixels_and_regressions(self):
         source=SCRIPT.parents[2]
         required={
