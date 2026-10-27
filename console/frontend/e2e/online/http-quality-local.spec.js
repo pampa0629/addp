@@ -20,11 +20,22 @@ test('formal Python products to real Console HTTP quality', async ({ page }) => 
     if (input.schema !== 'addp.http-quality-browser/v1' || !/^addp-http-local-[a-f0-9]{32}$/.test(input.run_id) || input.instances?.length !== 2 || new Set(input.instances.map(row => row.module_name)).size !== 2 || input.instances.some(row => !['agent', 'copilot'].includes(row.module_name) || !Number.isSafeInteger(row.id) || row.id < 1 || row.role !== 'backend' || !/^[A-Za-z0-9_-]{1,100}$/.test(row.instance_id))) throw new Error('http_browser_input_invalid')
     report.run_id = input.run_id
     let requestFailure
-    page.on('request', request => {
-      const url = new URL(request.url())
-      if (!url.pathname.startsWith('/api/v1/')) return
+    // Reject out-of-scope transport before it reaches a backend. Permitted
+    // requests continue unchanged; no response, identity or metrics are mocked.
+    await page.route('**/api/v1/**', async route => {
+      const request = route.request(), url = new URL(request.url())
+      const allowed = !requestFailure && report.api_requests < 80 && url.origin === 'http://nginx' &&
+        ['GET', 'POST'].includes(request.method()) &&
+        (request.method() !== 'POST' || ['/api/v1/system/login', '/api/v1/system/auth/mfa-verifications', '/api/v1/system/logout'].includes(url.pathname)) &&
+        !/\/api\/v1\/(agent|copilot)\//.test(url.pathname)
+      if (!allowed) {
+        requestFailure = 'http_browser_request_scope_exceeded'
+        await route.abort('blockedbyclient')
+        await page.close()
+        return
+      }
       report.api_requests++
-      if (report.api_requests > 80 || url.origin !== 'http://nginx' || !['GET', 'POST'].includes(request.method()) || (request.method() === 'POST' && !['/api/v1/system/login', '/api/v1/system/auth/mfa-verifications', '/api/v1/system/logout'].includes(url.pathname)) || /\/api\/v1\/(agent|copilot)\//.test(url.pathname)) requestFailure = 'http_browser_request_scope_exceeded'
+      await route.continue()
     })
     report.stage = 'password-mfa'
     await localConsoleLogin(page, expect, { prefix: 'ADDP_HTTP_LOCAL_', path: '/monitor/http-quality?module_name=agent&refresh=off' })
