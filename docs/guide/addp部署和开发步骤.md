@@ -43,9 +43,7 @@ bash scripts/infra/status.sh
 bash scripts/dev/start.sh
 ```
 
-开发环境的 `start.sh`、`restart.sh`、`stop.sh` 和 `keepalive.sh` 使用工作区级生命周期锁。同一工作区已有启动、停止、重启或保活操作时，新的生命周期操作会立即失败并显示当前操作信息，不能并行修改 `.dev-pids`、`.dev-bins` 或运行进程。详细契约见 [开发服务生命周期与构建身份规范](../spec/addp开发服务生命周期与构建身份规范.md)。
-
-`keepalive.sh` 在整个托管周期持锁、退出清理后释放；即使只托管单模块，退出仍停止当前工作区整套开发服务。托管环境适用范围、本次明确许可及不得接管外部环境等边界见[保活说明](troubleshooting/开发服务与构建.md#codex-等托管命令环境中-restartsh-退出后服务立刻不可用)。
+开发启停由工作区级生命周期锁保护。锁冲突、`keepalive.sh` 持锁与退出清理范围、停止归属统一见[停止与进程归属](../../scripts/docs/启动脚本使用指南.md#停止与进程归属)，完整契约见[生命周期规范](../spec/addp开发服务生命周期与构建身份规范.md#一生命周期互斥)。
 
 开发生命周期安装 Node 依赖时以 `package-lock.json` 为不可变构建输入，并统一执行 `npm ci`；缺少锁文件时直接失败，锁文件生成只属于显式的依赖维护流程。因此本地启动和 Hosted Online 门禁不会在安装依赖时改写已跟踪的锁文件或污染构建身份。
 
@@ -53,32 +51,9 @@ bash scripts/dev/start.sh
 
 启动脚本按 Compose 项目、服务名和容器健康状态检查 Infra；其他服务即使占用 ADDP 的首选端口，也不能被当作 ADDP Infra。实际宿主机映射由 Compose 查询并注入开发进程。Backend 仍须通过 `/health/ready`：Ontology 还需验证 PostgreSQL、FalkorDB 图能力及 System 注册全部就绪。
 
-开发启动还会检查 Gateway、模块 Backend/Frontend 和工作流 Runtime 的首选端口。发生冲突时，启动输出会显示替代端口，实际地址以输出和 `.dev-state/ports.env` 为准；Console 的代理、iframe、API 文档和各前端 Gateway 代理同步使用该结果。停止脚本只清理当前工作区的进程及容器，不会清理占用首选端口的其他服务。
+开发启动还会检查 Gateway、模块 Backend/Frontend 和工作流 Runtime 的首选端口。发生冲突时，启动输出会显示替代端口，实际地址以输出和 `.dev-state/ports.env` 为准；Console 的代理、iframe、API 文档和各前端 Gateway 代理同步使用该结果。
 
-自动启动以下内容:
-1. 基础设施 (如未运行)
-2. 所有后端服务 (System、Manager、Meta、Transfer、Orchestrator、Develop、GeoPython Workflow、Model3D Workflow Engine、PointCloud Workflow Engine)
-3. Gateway 服务
-4. 所有前端服务 (可选,提示用户)
-
-停止所有服务:
-```bash
-bash scripts/dev/stop.sh
-```
-
-代码修改后重启:
-```bash
-bash scripts/dev/restart.sh
-```
-
-按模块启动或重启:
-
-```bash
-bash scripts/dev/start.sh -manager
-bash scripts/dev/restart.sh -transfer
-```
-
-`start.sh -<模块名>` 启动所选模块及其依赖，已经运行的受管服务跳过启动。`restart.sh -<模块名>` 只重启所选模块的后端、Worker 和前端，保留其他模块及运行中的依赖；无参数或 `-all` 才全量重启。两个入口均支持多个模块参数，`-all` 不能与模块参数混用。局部重启期间，调用所选模块的功能可能短暂不可用，System、Gateway 属于公共能力，应按影响范围选择重启时机。
+全量、单模块和多模块的启动、重启、停止命令统一见[启停操作速查](../../scripts/docs/启动脚本使用指南.md#选择操作)；复用运行中依赖、Swagger 预检与停止失败后的处理见[启动与重启边界](../../scripts/docs/启动脚本使用指南.md#启动与重启边界)。
 
 核心 Infra 健康时，应用启动和重启直接复用现有容器，不构建 Infra 镜像、不执行 Compose 更新。日志或指标关闭不会触发 Infra 启动；所选观测能力异常会单独提示并返回非零，业务启动继续，需要修复设施时显式运行 `bash scripts/infra/up.sh`。
 
