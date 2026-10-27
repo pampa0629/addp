@@ -479,6 +479,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             and all(
                 c.get("page_button_verified") is True
                 and c.get("nested_values_verified") is True
+                and c.get("structured_dialogs_verified") is True
                 and c.get("original_button_download_verified") is True
                 and c.get("sha256") == seed["nested"]["sha256"]
                 and c.get("size_bytes") == seed["nested"]["size_bytes"]

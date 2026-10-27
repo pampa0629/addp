@@ -264,6 +264,7 @@ class ORCSceneTest(unittest.TestCase):
                     c,
                     page_button_verified=True,
                     nested_values_verified=True,
+                    structured_dialogs_verified=True,
                     original_button_download_verified=True,
                 )
                 for c in context["nested_cases"]

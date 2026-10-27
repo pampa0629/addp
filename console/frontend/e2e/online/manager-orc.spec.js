@@ -54,7 +54,18 @@ test('ordinary user pages and downloads both single-file ORC sources', async ({ 
             const matrix = i % 7 === 0 ? null : (i % 5 === 0 ? [] : [[number, null], [], null])
             expect(row).toEqual({ id: number, profile, samples, matrix })
           }
-          await expect(frame.locator('.el-table__body').first()).toContainText('嵌套')
+          const detailIndex = second.data.rows.findIndex(row => row.profile?.counter && row.samples?.length && row.matrix?.length)
+          expect(detailIndex).toBeGreaterThanOrEqual(0)
+          const detailRow = frame.locator('.el-table__body tr').nth(detailIndex)
+          for (const [buttonIndex, field] of ['profile', 'samples', 'matrix'].entries()) {
+            await detailRow.locator('button.structured-cell').nth(buttonIndex).click()
+            const dialog = frame.getByRole('dialog', { name: field, exact: true })
+            await expect(dialog).toBeVisible()
+            await expect(dialog.locator('.structured-value-json')).toHaveText(JSON.stringify(second.data.rows[detailIndex][field], null, 2))
+            if (field === 'profile') await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'orc-nested-' + source.source_case + '-profile.png') })
+            await dialog.locator('.el-dialog__headerbtn').click()
+            await expect(dialog).not.toBeVisible()
+          }
         }
         expect(second.data.rows[0].id).toBe((9007199254740992n + BigInt(size)).toString())
         await expect(frame.getByText(second.data.rows[0].id, { exact: true }).first()).toBeVisible()
@@ -71,7 +82,7 @@ test('ordinary user pages and downloads both single-file ORC sources', async ({ 
           expect(authenticated.status()).toBe(200)
           expect(await authenticated.body()).toEqual(raw)
           await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'orc-' + (source.nested ? 'nested-' : '') + source.source_case + '-page2.png') })
-          ;(source.nested ? nestedOutcomes : outcomes).push({ nested_values_verified: source.nested === true, source_case: source.source_case, page_button_verified: true, original_button_download_verified: true,
+          ;(source.nested ? nestedOutcomes : outcomes).push({ nested_values_verified: source.nested === true, structured_dialogs_verified: source.nested === true, source_case: source.source_case, page_button_verified: true, original_button_download_verified: true,
             sha256: createHash('sha256').update(raw).digest('hex'), size_bytes: raw.length })
         } finally { await download.delete() }
       } finally { await api.dispose() }
