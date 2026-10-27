@@ -148,6 +148,8 @@ ${REGISTRY:-localhost:5001}/addp-<service>:${IMAGE_TAG:-latest}
 
 ## 常见问题
 
+[返回故障排查总入口](../../docs/guide/addp常见故障排查.md#按现象查找)
+
 ### 1. Docker 未运行
 
 ```bash
