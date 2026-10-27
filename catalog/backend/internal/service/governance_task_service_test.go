@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -54,6 +55,9 @@ func TestResponsibilityReconciliationOpensAndResolvesOneGovernanceTask(t *testin
 	if err != nil || result.Total != 1 || len(result.Data) != 1 || result.Data[0].EntryDisplayName != "orders" ||
 		result.Data[0].Resolution == nil || *result.Data[0].Resolution != models.GovernanceTaskResolutionReferenceRestored {
 		t.Fatalf("resolved governance task list = %#v error=%v", result, err)
+	}
+	if result.Data[0].ObservedSnapshot["name"] != "Former Owner" {
+		t.Fatalf("task subject snapshot was replaced by source snapshot: %#v", result.Data[0].ObservedSnapshot)
 	}
 }
 
@@ -189,6 +193,13 @@ func assertResponsibilityRecoveryUsesCurrentEntryVisibility(t *testing.T, db *go
 			}
 			for _, task := range result.Data {
 				actual[task.CatalogEntryID]++
+				var stored models.GovernanceTask
+				if err := db.Where("id = ?", task.ID).First(&stored).Error; err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(task.ObservedSnapshot, stored.ObservedSnapshot) {
+					t.Fatalf("task subject snapshot changed in list: got=%#v want=%#v", task.ObservedSnapshot, stored.ObservedSnapshot)
+				}
 				if _, err := entries.Get(ctx, 7, check.access, task.CatalogEntryID); err != nil {
 					t.Fatalf("queue returned an entry that cannot be opened: %v", err)
 				}

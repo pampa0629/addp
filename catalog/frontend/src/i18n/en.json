@@ -403,6 +403,13 @@
       "subject": "Invalid subject",
       "reason": "Reason",
       "time": "Opened/resolved",
+      "openedAt": "Opened",
+      "resolvedAt": "Resolved",
+      "resolutionUnknown": "Resolution not recorded or unrecognized",
+      "resolutionValue": {
+        "reference_restored": "Subject reference restored",
+        "responsibility_replaced": "Previous responsibility removed or replaced"
+      },
       "empty": "No responsibility governance tasks match the current filters",
       "loadFailed": "Failed to load the responsibility governance queue",
       "reasonValue": {

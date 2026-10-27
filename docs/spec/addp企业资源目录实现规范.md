@@ -142,6 +142,8 @@ System 的 Department / Project Group 管理契约以 `system/docs/IAM数据模�
 
 `catalog.governance_tasks` 是 Catalog 内派生的治理工作事实，不是责任关系副本。第一阶段字段固定表达 CatalogEntry、任务类型、责任角色、主体类型与 ID、失效原因、已观察主体摘要、`open` / `resolved` 状态、打开/解决时间和解决方式；数据库必须保证同一 Tenant、CatalogEntry、责任角色和主体最多一条 open `responsibility_transfer` 任务。任务不跨 Schema 建外键，System 不保存其反向投影。
 
+治理队列列表的 `observed_snapshot` 保留任务记录的主体摘要，不能被目录资源来源快照替代；目录名称独立解析。已解决任务直接展示“主体引用已恢复”或“原责任关系已移除或替换”等已记录的解决方式，并分别标示发生时间和解决时间；未记录或无法识别的解决方式明确标示，不据此推断数据访问授权。
+
 #### 3.2.1 责任与实际数据授权
 
 办理候选摘要必须包含原决定冻结的 `item_fingerprint` 和 `boundary_hash`，与 `target` 一起用于显式初始化批准要求；不得从当前 Meta 事实替换原批准边界，也不得由前端猜测或补造。候选读取仍不构成 Grant；正式初始化、受理和签发继续独立核验当前事实及预期边界。

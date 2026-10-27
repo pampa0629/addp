@@ -403,6 +403,13 @@
       "subject": "失效主体",
       "reason": "失效原因",
       "time": "发生/解决时间",
+      "openedAt": "发生时间",
+      "resolvedAt": "解决时间",
+      "resolutionUnknown": "解决方式未记录或无法识别",
+      "resolutionValue": {
+        "reference_restored": "主体引用已恢复",
+        "responsibility_replaced": "原责任关系已移除或替换"
+      },
       "empty": "当前条件下没有责任治理任务",
       "loadFailed": "加载责任治理队列失败",
       "reasonValue": {

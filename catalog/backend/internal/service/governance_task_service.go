@@ -65,12 +65,12 @@ func (s *GovernanceTaskService) List(ctx context.Context, tenantID int64, access
 	}
 	type taskRow struct {
 		models.GovernanceTask
-		BusinessName     *string
-		EntryVersion     int64
-		ObservedSnapshot commonModels.JSONMap
+		BusinessName   *string
+		EntryVersion   int64
+		SourceSnapshot commonModels.JSONMap `gorm:"column:source_snapshot"`
 	}
 	var rows []taskRow
-	err := query.Select("task.*, entry.business_name, entry.version AS entry_version, source.observed_snapshot").
+	err := query.Select("task.*, entry.business_name, entry.version AS entry_version, source.observed_snapshot AS source_snapshot").
 		Joins("JOIN catalog.entries AS entry ON entry.tenant_id = task.tenant_id AND entry.id = task.catalog_entry_id").
 		Joins("LEFT JOIN catalog.source_bindings AS source ON source.tenant_id = task.tenant_id AND source.catalog_entry_id = task.catalog_entry_id AND source.is_current = ?", true).
 		Order("task.opened_at DESC, task.id ASC").Offset((filter.Page - 1) * filter.PageSize).Limit(filter.PageSize).Scan(&rows).Error
@@ -79,7 +79,7 @@ func (s *GovernanceTaskService) List(ctx context.Context, tenantID int64, access
 	}
 	data := make([]GovernanceTaskSummary, 0, len(rows))
 	for _, row := range rows {
-		displayName, _ := row.ObservedSnapshot["name"].(string)
+		displayName, _ := row.SourceSnapshot["name"].(string)
 		if row.BusinessName != nil && *row.BusinessName != "" {
 			displayName = *row.BusinessName
 		}

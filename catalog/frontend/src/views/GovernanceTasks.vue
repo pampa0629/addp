@@ -63,15 +63,19 @@
         <el-table-column prop="reason" :label="t('catalog.governanceTasks.reason')" min-width="170">
           <template #default="{ row }">{{ catalogStatusLabel(t, 'catalog.governanceTasks.reasonValue', row.reason) }}</template>
         </el-table-column>
-        <el-table-column prop="status" :label="t('catalog.governanceTasks.status')" width="120">
+        <el-table-column prop="status" :label="t('catalog.governanceTasks.status')" min-width="180">
           <template #default="{ row }">
             <el-tag :type="row.status === 'open' ? 'warning' : 'success'">
               {{ row.status === 'open' ? t('catalog.governanceTasks.statusOpen') : t('catalog.governanceTasks.statusResolved') }}
             </el-tag>
+            <div v-if="row.status === 'resolved'" class="task-resolution">{{ resolutionLabel(row) }}</div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('catalog.governanceTasks.time')" min-width="180">
-          <template #default="{ row }">{{ formatDate(row.resolved_at || row.opened_at) }}</template>
+        <el-table-column :label="t('catalog.governanceTasks.time')" min-width="220">
+          <template #default="{ row }">
+            <div class="task-time"><span>{{ t('catalog.governanceTasks.openedAt') }}</span>{{ formatDate(row.opened_at) }}</div>
+            <div v-if="row.status === 'resolved'" class="task-time"><span>{{ t('catalog.governanceTasks.resolvedAt') }}</span>{{ formatDate(row.resolved_at) }}</div>
+          </template>
         </el-table-column>
       </el-table>
       <el-empty v-if="!loading && result.data.length === 0" :description="t('catalog.governanceTasks.empty')" />
@@ -201,6 +205,12 @@ function subjectLabel(row) {
   return name || t('catalog.edit.referenceUnavailable')
 }
 
+function resolutionLabel(row) {
+  return ['reference_restored', 'responsibility_replaced'].includes(row.resolution)
+    ? t(`catalog.governanceTasks.resolutionValue.${row.resolution}`)
+    : t('catalog.governanceTasks.resolutionUnknown')
+}
+
 function formatDate(value) {
   if (!value) return '-'
   return new Intl.DateTimeFormat(locale.value === 'en' ? 'en-US' : 'zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
@@ -231,6 +241,9 @@ watch(() => route.query, async query => {
 .filter-card :deep(.el-input) { width: 330px; }
 .table-card :deep(.el-table__row) { cursor: pointer; }
 .entry-link { color: var(--el-color-primary); font-weight: 600; }
+.task-resolution { margin-top: 4px; color: var(--addp-text-secondary); font-size: 13px; overflow-wrap: anywhere; }
+.task-time { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.task-time > span { color: var(--addp-text-secondary); }
 .pagination-row { display: flex; justify-content: flex-end; margin-top: 16px; }
 @media (max-width: 900px) {
   .page-header { flex-direction: column; }
