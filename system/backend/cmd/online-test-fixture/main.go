@@ -383,10 +383,17 @@ func run(args []string, environment []string) error {
 	flags.SetOutput(os.Stderr)
 	suite := flags.String("suite", "", "registered Online suite")
 	output := flags.String("output", "", "absolute path for the generated shell environment")
+	releaseCatalog := flags.String("catalog-local-release", "", "release preparer or all local Catalog memberships")
 	observe := flags.String("observe-catalog-grant", "", "read-only Catalog issuance observation for the dedicated Online deployment")
 	waitOwners := flags.String("wait-protection-owners", "", "comma-separated Owner schemas whose protection initialization must complete before exporting identities")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if *suite == catalogBrowserLocalSuite || *releaseCatalog != "" || os.Getenv("ADDP_CATALOG_BROWSER_LOCAL") != "" {
+		if flags.NArg() != 0 || *observe != "" || *waitOwners != "" {
+			return errors.New("invalid local Catalog fixture arguments")
+		}
+		return runCatalogBrowserLocal(environment, *suite, *output, *releaseCatalog)
 	}
 	if *observe != "" {
 		if flags.NArg() != 0 || *output != "" || *waitOwners != "" || *suite != "enterprise-catalog-publishing" {

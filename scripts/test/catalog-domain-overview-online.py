@@ -43,7 +43,7 @@ def validate_identity(client, tenant, permissions):
     return facts, principal_id
 
 
-def prepare_reference(client, run_id):
+def prepare_reference(client, run_id, *, unit_id=None):
     prefix = fixture_prefix(run_id) + '_source'
     domain = client.request('POST', '/api/v1/standard/domains', (201,), {'name': prefix, 'code': prefix}).payload
     domain_id = require_positive_int(domain, 'id')
@@ -51,6 +51,7 @@ def prepare_reference(client, run_id):
         'scope_type': 'domain', 'owner_domain_id': domain_id, 'code': prefix, 'name': prefix,
         'definition': 'Disposable external standard for Catalog T4', 'tags': [],
         'data_type': 'string', 'value_domain_kind': 'unrestricted', 'nullable': True,
+        **({'unit_id': unit_id} if unit_id is not None else {}),
         'effective_from': (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
     }).payload
     element_id = require_positive_int(element, 'id')

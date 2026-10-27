@@ -4031,6 +4031,26 @@ def validate_local_execution_trace_profile(repository: Path) -> None:
             raise RegistrationError("local execution Trace must not execute in GitHub Actions")
 
 
+def validate_local_catalog_browser_profile(repository: Path) -> None:
+    make = (repository / "Makefile").read_text()
+    path = repository / "scripts/test/catalog-browser-local-gate.py"
+    if not path.exists() and "test-catalog-browser-local:" not in make:
+        return
+    for fragment in ("test-catalog-browser-local:", "clean-catalog-browser-local:", "finish-catalog-browser-local:",
+                     "test-catalog-browser-local-runner:", "@$(MAKE) test-catalog-browser-local-runner"):
+        if fragment not in make:
+            raise RegistrationError("local Catalog browser lifecycle/runner entry missing")
+    for relative in ("scripts/test/catalog-browser-local-gate.py", "scripts/test/catalog-browser-local-gate_test.py",
+                     "scripts/test/catalog-browser-local-fixture.py", "scripts/test/catalog-browser-local-fixture_test.py",
+                     "scripts/utils/disposable-compose.py", "system/backend/cmd/online-test-fixture/catalog_browser_local.go",
+                     "system/backend/cmd/online-test-fixture/catalog_browser_local_postgres_test.go"):
+        if not (repository / relative).is_file():
+            raise RegistrationError("local Catalog browser owner input missing")
+    for workflow in (repository / ".github/workflows").glob("*.y*ml"):
+        if re.search(r"(?:make\s+test-catalog-browser-local(?![A-Za-z0-9_-])|python3?\s+scripts/test/catalog-browser-local-gate.py)", workflow.read_text()):
+            raise RegistrationError("local Opera acceptance must not execute in GitHub Actions")
+
+
 def validate_local_sgm_profile(repository: Path) -> None:
     """The approved technical page gate must never become a public T4 choice."""
     make_path = repository / "Makefile"
@@ -4360,6 +4380,7 @@ def check_registration(repository: Path) -> None:
     validate_enterprise_catalog_publishing_profile(repository, registered)
     validate_workbench_service_consumption_profile(repository, registered)
     validate_manager_internal_artifact_lineage_profile(repository, registered)
+    validate_local_catalog_browser_profile(repository)
     validate_local_sgm_profile(repository)
     validate_local_execution_trace_profile(repository)
     validate_manager_hybrid_search_profile(repository, registered)

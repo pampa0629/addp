@@ -1431,6 +1431,7 @@ test-system-audit-archive: ## 仅 GitHub Hosted 独占 PostgreSQL 与对象存�
 
 .PHONY: test-catalog-domain-online-runner
 test-catalog-domain-online-runner: ## 验证业务域总览 Online 契约、隔离清理与 CI 注册
+	@$(MAKE) test-catalog-browser-local-runner
 	@python3 -m unittest scripts/test/catalog-domain-overview-online_test.py scripts/test/online-hosted-catalog-domain-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_catalog_overview_requires_cleanup_permissions_and_browser_contract
 	@node --check console/frontend/e2e/catalog-domain-overview.spec.js
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
@@ -1453,3 +1454,14 @@ test-execution-events-pagination-runner: ## 验证租户大事件分页、截断
 
 test-execution-event-pagination-fixture: ## 仅显式隔离Hosted生成Common真实写入事件夹具
 	@cd common && ADDP_EXECUTION_EVENT_FIXTURE=1 GOWORK=off go test ../scripts/test/execution-event-pagination-fixture_test.go -run '^TestHostedExecutionEventPaginationFixture$$' -count=1 -v
+
+.PHONY: test-catalog-browser-local test-catalog-browser-local-runner clean-catalog-browser-local finish-catalog-browser-local
+test-catalog-browser-local: ## 创建一次性隔离部署，等待Opera验收并自动清理（不运行API T4）
+	@python3 scripts/test/catalog-browser-local-gate.py $(CATALOG_BROWSER_ARGS)
+clean-catalog-browser-local: ## 按运行ID恢复清理本次Catalog浏览器验收资源
+	@python3 scripts/test/catalog-browser-local-gate.py --cleanup "$(CATALOG_BROWSER_RUN_ID)"
+finish-catalog-browser-local: ## 提交真实Opera证据，结束并清理本轮隔离部署
+	@python3 scripts/test/catalog-browser-local-gate.py --finish "$(CATALOG_BROWSER_RUN_ID)" --evidence "$(CATALOG_BROWSER_EVIDENCE)"
+test-catalog-browser-local-runner: ## Catalog本地隔离、身份、清理与CI登记确定性门禁
+	@python3 -m unittest scripts/test/catalog-browser-local-gate_test.py scripts/test/catalog-browser-local-fixture_test.py
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run '^TestCatalogBrowser(Admission|ReaderPermissions|DatabaseIdentity)$$' -count=1

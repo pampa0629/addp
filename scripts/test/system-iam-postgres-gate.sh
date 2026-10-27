@@ -177,6 +177,10 @@ case "$PACKAGE_FILTER" in
 esac
 test_pattern='AgainstPostgres$'
 case "$TEST_FILTER" in
+    catalog-browser)
+        [ "$PACKAGE_FILTER" = "online-fixture" ] || { echo "catalog-browser requires --package online-fixture" >&2; exit 2; }
+        test_pattern='^TestCatalogBrowserIdentitiesAgainstPostgres$'
+        ;;
     execution-subject-roles)
         if [ "$PACKAGE_FILTER" != "iam" ]; then
             echo "execution-subject-roles test requires --package iam" >&2

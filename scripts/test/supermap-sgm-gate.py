@@ -124,7 +124,7 @@ class Lifecycle:
         flags = ("--all",) if kind == "container" else ()
         return self.docker(kind, "ls", *flags, "-q", "--filter", f"label={self.label}={self.run_id}").split()
 
-    def cleanup(self):
+    def cleanup(self, *, preserve_on_failure=False):
         failures = []
         if self.trace is not None:
             self.trace.terminate()
@@ -154,6 +154,8 @@ class Lifecycle:
                 require(not self.docker("image", "ls", "-q", tag).strip(), "image tag residue")
             except GateError:
                 failures.append("image")
+        if failures and preserve_on_failure:
+            return failures
         try:
             shutil.rmtree(self.work)
             require(not self.work.exists(), "private directory residue")

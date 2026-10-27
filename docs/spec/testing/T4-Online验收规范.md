@@ -31,6 +31,17 @@ T4 只在隔离的 ADDP 测试部署执行，并按运行条件选择唯一部�
 
 2026-10-23 用户确认 `make test-monitor-traces-local`：在本机独占一次性容器部署验证正式密码／MFA、Orchestrator → Develop bounded query、Platform Trace 查询和精确日志关联。它是人工本地技术证据，不属于上述 GitHub profile，也不允许伪造 Hosted 环境；不会进入工作流、夜间调度或替代正式 Runner T4。身份、资源、停止线和清理的唯一契约见[运行观测规范](../addp平台运行观测规范.md#正式身份的本机隔离闭环)。System 专用夹具仅放行该明确本地标记与 `execution-trace-local`，不推广 SGM 例外，也不扩大生产权限。
 
+## Catalog 本地隔离浏览器验收
+
+`make test-catalog-browser-local` 是本机一次性 Catalog 浏览器验收入口，不属于 GitHub T4 profile，不调用 `make test-online`，不重跑已通过的 API T4。使用已提交源码、正式产品构建与 Compose 服务定义，独占 System、Gateway、Catalog、Standard、Model、Console 及必需基础设施。具体账号和页面断言见[授权与共享](scenarios/授权与共享.md#catalog-本地普通用户浏览器复验)。
+
+- 本机 Docker、每轮唯一运行 ID、容器／网络／数据卷和回环端口；独立 PostgreSQL 容器仅使用 `addp_test`，不连接共享 `addp-postgres`。配置只从模板生成，拒绝外部数据库连接和 GitHub／其他验收 profile，不加载日常 `.env`。只读记录日常容器身份，验收后核对未修改。
+- 浏览器入口使用每轮唯一 `*.localhost` 主机名与精确允许的 Origin，隔离 Cookie、Storage 和跨标签页通信；不以不同端口冒充 Cookie 隔离，不修改系统 hosts 或日常浏览器登录状态。
+- System-owned `catalog-browser-local` 夹具在任何身份写入前核验数据库名、运行 ID 对应的 PostgreSQL `cluster_name`、私密输出目录及空 User 状态。通过正式 IAM 服务创建租户、准备身份和限时普通用户，不写 IAM 表、不直接签发浏览器 Token。账号使用正常密码登录，业务样本通过 Owner API 创建。
+- 主入口负责准备、就绪等待和清理；默认页面租约 60 分钟，最长 120 分钟。独立看护进程处理父进程退出和总时限；正常结束、失败、超时及信号均清理。`make clean-catalog-browser-local CATALOG_BROWSER_RUN_ID=<id>` 只恢复清理该运行 ID 的资源。宿主机／Docker 故障导致未清理时必须报告失败，恢复后使用相同入口清理，不能宣称零残留。
+- 回收准备身份；退出销毁本轮数据库及已发布历史、服务、网络、数据卷、镜像标签、凭据与临时副本，核对逐项零残留。不得全局 prune、重启或停止个人开发服务。
+- `make test-catalog-browser-local-runner` 验证准入、权限、生命周期、清理和 CI 登记，加入现有 Catalog runner；System 夹具测试由 System 标准测试发现。真实 Opera 验收不加入 GitHub workflow／schedule。报告保留提交、身份权限摘要、样本关系、页面断言和清理结果，不归档凭据、Token 或原始认证响应。
+
 ## 开关、身份与拓扑预检
 
 每次 T4 运行至少满足：

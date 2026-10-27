@@ -171,7 +171,7 @@ class LocalSGMContract(unittest.TestCase):
 
     def test_host_network_or_privileged_product_change_requires_review(self):
         for unsafe in ({"network_mode": "host"}, {"privileged": True}):
-            with self.subTest(unsafe=unsafe), self.assertRaises(GATE.T2.GateError):
+            with self.subTest(unsafe=unsafe), self.assertRaises(ValueError):
                 GATE.isolate_compose({"services": {"x": {"image": "x", **unsafe}}}, ["x"], "run", {})
 
     def test_all_failures_cleanup_owned_resources_and_discard_private_logs(self):
