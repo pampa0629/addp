@@ -27,6 +27,8 @@ MEMORY = 2 << 30
 SECONDS = 180
 SCHEMA = 'addp.vector-topology-capacity/v3'
 NORMALIZE_SCHEMA = 'addp.vector-topology-capacity/v4'
+COMPOSITION_SCHEMA = 'addp.vector-topology-capacity/v5'
+COMPOSITION_PORTS = ('chains', 'chain_edges', 'edge_sources')
 LEGACY_COMMIT = '8a3006670e7f6cfaddf018253515ccb37ab5bc78'
 BATCHED_COMMIT = 'adb605b67676bc4396307bc9ea7449c63de183bc'
 GEOMETRY_MODULE = 'engines/geopython-workflow/operators/geometric_operators.py'
@@ -69,7 +71,20 @@ def normalize_matrix():
             for size in sizes]
 
 
+def composition_matrix():
+    return [Case(kind, size, 'normalize-chains')
+            for kind, sizes in [('compose-sparse', (1000, 10000, 100000)),
+                                ('compose-open', (1000, 10000, 100000)),
+                                ('compose-sampling', (32, 128, 512)),
+                                ('compose-grid', (32, 128, 512)),
+                                ('compose-ring', (1000, 10000, 100000))]
+            for size in sizes]
+
+
 def measurement_plan(profile):
+    if profile == 'normalize-chains':
+        return [{'id': case.key, 'case': asdict(case), 'observer': 'A', 'repetition': None}
+                for case in composition_matrix()]
     if profile == 'normalize':
         return [{'id': case.key, 'case': asdict(case), 'observer': 'A', 'repetition': None}
                 for case in normalize_matrix()]
@@ -101,6 +116,8 @@ def definition_name(node):
 
 
 def implementation_identity(source, operator='self'):
+    if operator == 'normalize-chains':
+        return {**implementation_identity(source, 'normalize'), **implementation_identity(source, 'chains')}
     name = 'normalize_line_network' if operator == 'normalize' else 'merge_line_chains' if operator == 'chains' else '_self_overlap_intersections'
     collector = next(n for n in ast.parse(source).body if definition_name(n) == name)
     return {'module_sha256': hashlib.sha256(source.encode()).hexdigest(),
@@ -109,6 +126,8 @@ def implementation_identity(source, operator='self'):
 
 
 def loaded_implementation_identity(module, operator='self'):
+    if operator == 'normalize-chains':
+        return {**loaded_implementation_identity(module, 'normalize'), **loaded_implementation_identity(module, 'chains')}
     source = Path(module.__file__).read_text()
     code = compile(source, module.__file__, 'exec', dont_inherit=True, optimize=sys.flags.optimize)
     name = 'normalize_line_network' if operator == 'normalize' else 'merge_line_chains' if operator == 'chains' else '_self_overlap_intersections'
@@ -554,21 +573,26 @@ def normalize_expected(case, port):
 
 
 def seed_normalize(case, path):
+    return seed_network_source(path, normalize_counts(case)['sources'], lambda row: normalize_source(case, row),
+                               case.kind == 'normalize-parts')
+
+
+def seed_network_source(path, rows, source_definition, multi=False):
     from osgeo import ogr, osr
     ogr.UseExceptions(); crs = osr.SpatialReference(); crs.ImportFromEPSG(3857)
     ds = ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
-    layer = ds.CreateLayer('normalize_inputs',crs,ogr.wkbMultiLineString if case.kind == 'normalize-parts' else ogr.wkbLineString,
+    layer = ds.CreateLayer('normalize_inputs',crs,ogr.wkbMultiLineString if multi else ogr.wkbLineString,
                            options=['GEOMETRY_NAME=network_shape'])
     for name,kind in [('route_key',ogr.OFTString),('note',ogr.OFTString),('grade',ogr.OFTInteger64),('enabled',ogr.OFTInteger)]:
         field = ogr.FieldDefn(name,kind)
         if name == 'enabled': field.SetSubType(ogr.OFSTBoolean)
         assert layer.CreateField(field) == 0
     layer.StartTransaction()
-    for row in range(normalize_counts(case)['sources']):
-        attrs,parts = normalize_source(case,row); feature = ogr.Feature(layer.GetLayerDefn())
+    for row in range(rows):
+        attrs,parts = source_definition(row); feature = ogr.Feature(layer.GetLayerDefn())
         for name,value in attrs.items():
             if value is not None: feature.SetField(name,value)
-        shape = ogr.Geometry(ogr.wkbMultiLineString) if case.kind == 'normalize-parts' else None
+        shape = ogr.Geometry(ogr.wkbMultiLineString) if multi else None
         for points in parts:
             line = ogr.Geometry(ogr.wkbLineString)
             for x,y in points: line.AddPoint_2D(x,y)
@@ -579,18 +603,23 @@ def seed_normalize(case, path):
 
 
 def verify_normalize_source(frame, case):
+    return verify_network_source(frame, normalize_counts(case)['sources'], lambda row: normalize_source(case, row),
+                                 case.kind == 'normalize-parts')
+
+
+def verify_network_source(frame, rows, source_definition, multi=False):
     import pandas as pd
-    assert len(frame) == normalize_counts(case)['sources'] and frame.crs.to_epsg() == 3857
+    assert len(frame) == rows and frame.crs.to_epsg() == 3857
     assert list(frame.columns) == ['route_key','note','grade','enabled',frame.geometry.name]
     assert str(frame['grade'].dtype) == 'Int64' and str(frame['enabled'].dtype) == 'boolean'
     assert isinstance(frame.index,pd.RangeIndex) and frame.index.equals(pd.RangeIndex(len(frame))) and frame.index.name is None
     for i,record in enumerate(frame.itertuples(index=False,name=None)):
-        expected,parts = normalize_source(case,i)
+        expected,parts = source_definition(i)
         actual = {key: None if value is pd.NA or value is None else value.item() if hasattr(value,'item') else value
                   for key,value in zip(frame.columns[:-1],record[:-1])}
         assert actual == expected
         shape = record[-1]; assert shape.is_valid and not shape.has_z
-        if case.kind == 'normalize-parts':
+        if multi:
             assert shape.geom_type == 'MultiLineString'; actual_parts = [[list(p) for p in part.coords] for part in shape.geoms]
         else:
             assert shape.geom_type == 'LineString'; actual_parts = [[list(p) for p in shape.coords]]
@@ -598,18 +627,22 @@ def verify_normalize_source(frame, case):
 
 
 def verify_normalize_output(case, path, port):
+    fields = ['edge_id','occurrence_count'] if port == 'result' else ['route_key','note','grade','enabled','edge_id','source_id','source_part_no','source_segment_no','piece_no','is_reversed']
+    return verify_network_output(path, fields, normalize_counts(case)[port], normalize_expected(case, port))
+
+
+def verify_network_output(path, fields, rows, expected):
     from osgeo import ogr
     ds = ogr.Open(str(path),0); assert ds and ds.GetLayerCount() == 1
     layer = ds.GetLayer(0); assert layer.GetSpatialRef().GetAuthorityCode(None) == '3857'
-    fields = ['edge_id','occurrence_count'] if port == 'result' else ['route_key','note','grade','enabled','edge_id','source_id','source_part_no','source_segment_no','piece_no','is_reversed']
     assert [f.GetName() for f in layer.schema] == fields
     for field in layer.schema:
         name = field.GetName(); native = ogr.OFTString if name in ('route_key','note','source_id') else ogr.OFTInteger if name in ('enabled','is_reversed') else ogr.OFTInteger64
         assert field.GetType() == native
         if name in ('enabled','is_reversed'): assert field.GetSubType() == ogr.OFSTBoolean
-    rows = normalize_counts(case)[port]; assert layer.GetFeatureCount() == rows
+    assert layer.GetFeatureCount() == rows
     iterator = iter(layer); checksum = hashlib.sha256()
-    for i,(properties,points) in enumerate(normalize_expected(case,port),1):
+    for i,(properties,points) in enumerate(expected,1):
         feature = next(iterator); shape = feature.GetGeometryRef()
         assert feature.GetFID() == i and shape.GetGeometryName() == 'LINESTRING' and shape.GetCoordinateDimension() == 2 and not shape.IsMeasured() and shape.IsValid()
         actual = {name:feature.GetField(name) for name in fields}
@@ -622,6 +655,181 @@ def verify_normalize_output(case, path, port):
         checksum.update(json.dumps([actual,coordinates],sort_keys=True).encode())
     assert next(iterator,None) is None
     return {'rows':rows,'crs':'EPSG:3857','full_result_sha256':checksum.hexdigest(),'all_coordinates_attributes_membership_verified':True}
+
+
+def composition_counts(case):
+    assert case.operator == 'normalize-chains' and type(case.size) is int and case.size > 0
+    n = case.size
+    if case.kind == 'compose-grid':
+        return {'sources': 2*n, 'chains': 2*n*(n+1), 'chain_edges': 2*n*(n+1), 'edge_sources': 2*n*(n+1)}
+    if case.kind == 'compose-sampling':
+        return {'sources': n, 'chains': 1, 'chain_edges': n, 'edge_sources': n*n}
+    assert case.kind in ('compose-sparse', 'compose-open', 'compose-ring')
+    assert case.kind != 'compose-ring' or n >= 4 and n % 4 == 0
+    return {'sources': n, 'chains': n if case.kind == 'compose-sparse' else 1, 'chain_edges': n, 'edge_sources': n}
+
+
+def composition_normal_case(case):
+    composition_counts(case)
+    assert case.kind in ('compose-sparse', 'compose-grid', 'compose-sampling')
+    return Case(case.kind.replace('compose-', 'normalize-'), case.size, 'normalize')
+
+
+def composition_vertex(case, i):
+    if case.kind == 'compose-open':
+        return [i, 0]
+    assert case.kind == 'compose-ring' and 0 <= i <= case.size
+    side = case.size // 4
+    if i <= side: return [i, 0]
+    if i <= 2*side: return [side, i-side]
+    if i <= 3*side: return [3*side-i, side]
+    return [0, 4*side-i]
+
+
+def composition_source(case, row):
+    assert 0 <= row < composition_counts(case)['sources']
+    if case.kind in ('compose-sparse', 'compose-grid', 'compose-sampling'):
+        return normalize_source(composition_normal_case(case), row)
+    points = [composition_vertex(case, row), composition_vertex(case, row+1)]
+    return normalize_attributes(row), [points[::-1] if row % 2 else points]
+
+
+def composition_edge(case, edge):
+    """Arithmetic identity/coordinates only; no production geometry operations."""
+    assert 1 <= edge <= composition_counts(case)['chain_edges']
+    n = case.size
+    if case.kind == 'compose-sparse': points = [[(edge-1)*4, 0], [(edge-1)*4+1, 0]]
+    elif case.kind == 'compose-grid':
+        row, p = divmod(edge-1, n+1); a = n-p if row % 2 else p
+        points = [[a,row+1],[a+1,row+1]] if row < n else [[row-n+1,a],[row-n+1,a+1]]
+    elif case.kind == 'compose-sampling': points = [[edge-1, 0], [edge, 0]]
+    else:
+        points = sorted([composition_vertex(case, edge-1), composition_vertex(case, edge)])
+    return {'edge_id': edge, 'occurrence_count': n if case.kind == 'compose-sampling' else 1}, points
+
+
+def composition_walks(case):
+    """Closed-form walks of these five fixtures, not a graph traversal oracle."""
+    count = composition_counts(case)['chain_edges']
+    if case.kind in ('compose-sparse', 'compose-grid'):
+        for edge in range(1, count+1): yield ((edge, False),)
+    else:
+        yield ((edge, case.kind == 'compose-ring' and composition_vertex(case, edge-1) > composition_vertex(case, edge))
+               for edge in range(1, count+1))
+
+
+def composition_expected(case, port):
+    assert port in COMPOSITION_PORTS
+    if port == 'edge_sources':
+        if case.kind in ('compose-sparse', 'compose-grid', 'compose-sampling'):
+            yield from normalize_expected(composition_normal_case(case), 'members')
+        else:
+            for row in range(case.size):
+                attrs, parts = composition_source(case, row); edge, canonical = composition_edge(case, row+1)
+                yield {**attrs, 'edge_id': row+1, 'source_id': attrs['route_key'], 'source_part_no': 1,
+                       'source_segment_no': 1, 'piece_no': 1, 'is_reversed': parts[0] != canonical}, parts[0]
+        return
+    for chain, walk in enumerate(composition_walks(case), 1):
+        points = []; count = 0
+        for ordinal, (edge, reverse) in enumerate(walk, 1):
+            attrs, canonical = composition_edge(case, edge)
+            if port == 'chain_edges':
+                yield {**attrs, 'chain_id': chain, 'member_no': ordinal, 'source_part_no': 1, 'is_reversed': reverse}, canonical
+            else:
+                oriented = canonical[::-1] if reverse else canonical
+                if points: assert points[-1] == oriented[0]
+                points.extend(oriented if not points else oriented[1:]); count += 1
+        if port == 'chains': yield {'chain_id': chain, 'member_count': count}, points
+
+
+def verify_composition_output(case, path, port):
+    assert port in COMPOSITION_PORTS
+    fields = {'chains': ['chain_id','member_count'],
+              'chain_edges': ['edge_id','occurrence_count','chain_id','member_no','source_part_no','is_reversed'],
+              'edge_sources': ['route_key','note','grade','enabled','edge_id','source_id','source_part_no',
+                               'source_segment_no','piece_no','is_reversed']}[port]
+    return verify_network_output(path, fields, composition_counts(case)[port], composition_expected(case, port))
+
+
+def composition_timings():
+    return ('generate', 'read', 'source_oracle', 'normalize', 'merge',
+            *(f'save_{p}' for p in COMPOSITION_PORTS),
+            *(f'reload_{p}' for p in COMPOSITION_PORTS), 'source_unchanged')
+
+
+def run_composition_worker(case, root, observer, measurement_id):
+    import resource
+    sys.path.insert(0, '/app')
+    from operators.io_operators import load, save
+    from operators import geometric_operators as geometry
+    assert observer == 'A'
+    counts = composition_counts(case)
+    started = time.monotonic()
+    report = {'implementation_identity': loaded_implementation_identity(geometry, 'normalize-chains'),
+              'case': asdict(case), 'observer': observer, 'measurement_id': measurement_id or case.key,
+              'result': 'incomplete', 'timings': {}}
+    progress = root / 'progress.json'
+    def phase(name, operation):
+        report['stage'] = name; write_json(progress, report); before = time.monotonic()
+        value = operation(); report['timings'][name] = time.monotonic()-before
+        write_json(progress, report); return value
+    source = root / 'source.gpkg'
+    phase('generate', lambda: seed_network_source(source, counts['sources'], lambda row: composition_source(case, row)))
+    original = digest(source); connection = {'engine_type':'nfs', 'mount_path':str(root)}
+    frame = phase('read', lambda: load(connection_info=connection, path='source.gpkg'))
+    phase('source_oracle', lambda: verify_network_source(frame, counts['sources'], lambda row: composition_source(case, row)))
+    before = attributed_frame_digest(frame)
+    normalized = phase('normalize', lambda: geometry.normalize_line_network(frame, 'route_key'))
+    assert set(normalized) == {'result','members'}
+    assert len(normalized['result']) == counts['chain_edges'] and len(normalized['members']) == counts['edge_sources']
+    assert all(normalized['members'][field].dtype == frame[field].dtype for field in frame.columns)
+    merged = phase('merge', lambda: geometry.merge_line_chains(normalized['result'], 'edge_id', []))
+    assert set(merged) == {'result','members'}
+    outputs = {'chains':merged['result'], 'chain_edges':merged['members'], 'edge_sources':normalized['members']}
+    for port in COMPOSITION_PORTS:
+        assert len(outputs[port]) == counts[port]
+        phase('save_'+port, lambda port=port: save(outputs[port], connection_info=connection, path=port+'.gpkg', mode='fail'))
+    physical = {port:phase('reload_'+port, lambda port=port: verify_composition_output(case, root/(port+'.gpkg'), port))
+                for port in COMPOSITION_PORTS}
+    def unchanged():
+        assert attributed_frame_digest(frame) == before and digest(source) == original
+    phase('source_unchanged', unchanged)
+    import platform, geopandas, shapely
+    from osgeo import gdal
+    report.update(result='passed', stage='complete', source_frame_sha256=before, source=original,
+                  outputs={port:digest(root/(port+'.gpkg')) for port in COMPOSITION_PORTS}, physical=physical,
+                  relations={'unique_edges':counts['chain_edges'], 'original_occurrences':counts['edge_sources'],
+                             'exact_membership_and_two_level_directions_verified':True},
+                  duration_seconds=time.monotonic()-started,
+                  worker_peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*(1 if sys.platform=='darwin' else 1024),
+                  versions={'python':platform.python_version(),'machine':platform.machine(),'geopandas':geopandas.__version__,
+                            'shapely':shapely.__version__,'geos':shapely.geos_version_string,'gdal':gdal.VersionInfo('RELEASE_NAME')})
+    write_json(progress, report); return report
+
+
+def validate_composition_worker(report, case, observer, measurement_id):
+    counts = composition_counts(case)
+    assert observer == report['observer'] == 'A' and report['measurement_id'] == (measurement_id or case.key)
+    assert report['result'] == 'passed' and report['stage'] == 'complete' and report['case'] == asdict(case)
+    assert math.isfinite(report['duration_seconds']) and 0 < report['duration_seconds'] <= SECONDS
+    assert report['worker_peak_rss_bytes'] > 0 and len(report['source_frame_sha256']) == 64
+    assert set(report['timings']) == set(composition_timings())
+    assert all(math.isfinite(v) and v >= 0 for v in report['timings'].values())
+    assert sum(report['timings'].values()) <= report['duration_seconds']
+    assert 'compute_observation' not in report
+    identity = report['implementation_identity']
+    assert identity['loaded_normalize_matches_source'] is True and identity['loaded_merge_matches_source'] is True
+    for field in ('module_sha256','normalize_line_network_sha256','merge_line_chains_sha256'): assert len(identity[field]) == 64
+    assert set(report['physical']) == set(report['outputs']) == set(COMPOSITION_PORTS)
+    for port in COMPOSITION_PORTS:
+        physical = report['physical'][port]
+        assert type(physical['rows']) is int and physical['rows'] == counts[port] and physical['crs'] == 'EPSG:3857'
+        assert physical['all_coordinates_attributes_membership_verified'] is True and len(physical['full_result_sha256']) == 64
+    assert report['relations'] == {'unique_edges':counts['chain_edges'], 'original_occurrences':counts['edge_sources'],
+                                   'exact_membership_and_two_level_directions_verified':True}
+    for fact in (report['source'], *report['outputs'].values()):
+        assert type(fact['size_bytes']) is int and fact['size_bytes'] > 0
+        assert len(fact['sha256']) == 64 and all(c in '0123456789abcdef' for c in fact['sha256'])
 
 
 def attributed_frame_digest(frame):
@@ -739,7 +947,7 @@ def validate_dual_worker(report, case, observer, measurement_id):
     assert set(report['physical']) == set(report['outputs']) == {'result','members'}
     for port in ('result','members'):
         physical = report['physical'][port]
-        assert physical['rows'] == counts[port] and physical['crs'] == 'EPSG:3857'
+        assert type(physical['rows']) is int and physical['rows'] == counts[port] and physical['crs'] == 'EPSG:3857'
         assert physical['all_coordinates_attributes_membership_verified'] is True and len(physical['full_result_sha256']) == 64
     for fact in (report['source'], *report['outputs'].values()):
         assert type(fact['size_bytes']) is int and fact['size_bytes'] > 0
@@ -840,6 +1048,8 @@ def observe_compute(root, report, progress, observer='C'):
 
 def run_worker(case, root, observer='C', measurement_id=None):
     """One process, one full measurement including generation and independent checks."""
+    if case.operator == 'normalize-chains':
+        return run_composition_worker(case, root, observer, measurement_id)
     if case.operator in ('chains','normalize'):
         return run_dual_worker(case, root, observer, measurement_id)
     import resource
@@ -919,6 +1129,8 @@ def classify(returncode, timed_out, state, metrics):
 
 
 def validate_worker(report, case, observer='C', measurement_id=None):
+    if case.operator == 'normalize-chains':
+        return validate_composition_worker(report, case, observer, measurement_id)
     if case.operator in ('chains','normalize'):
         return validate_dual_worker(report, case, observer, measurement_id)
     assert observer in ('A', 'B', 'C')
@@ -991,13 +1203,22 @@ def run_case(case, image, run_id, artifact, observer='C', measurement_id=None, r
         directory = cgroup_directory(inspect(name)['State']['Pid']); before = read_metrics(directory)
         timed_out = False; started = time.monotonic(); returncode = None
         metrics = before; peak_rss = before['process_peak_rss_bytes']; samples = 0
+        stage_samples = {stage: {'samples':0, 'observed_memory_current_peak_bytes':None} for stage in composition_timings()} if case.operator == 'normalize-chains' else None
         with (root / 'worker.log').open('w') as log, (root / 'resources.jsonl').open('w') as series:
             process = subprocess.Popen(['docker', 'exec', name, 'python', '/capacity.py', '--worker', case.key, '--observer', observer, '--measurement', measurement_id], stdout=log, stderr=subprocess.STDOUT)
             while process.poll() is None:
                 try:
                     metrics = read_metrics(directory)
                     peak_rss = max(peak_rss, metrics['process_peak_rss_bytes']); samples += 1
-                    series.write(json.dumps({'elapsed_seconds': time.monotonic() - started, **metrics}) + '\n'); series.flush()
+                    sample = {'elapsed_seconds': time.monotonic() - started, **metrics}
+                    if stage_samples is not None:
+                        checkpoint = workspace / 'progress.json'
+                        stage = json.loads(checkpoint.read_text()).get('stage') if checkpoint.is_file() else 'worker_starting'
+                        sample['worker_stage'] = stage
+                        if stage in stage_samples:
+                            stage_samples[stage]['samples'] += 1
+                            stage_samples[stage]['observed_memory_current_peak_bytes'] = max(stage_samples[stage]['observed_memory_current_peak_bytes'] or 0, metrics['memory_current_bytes'])
+                    series.write(json.dumps(sample) + '\n'); series.flush()
                 except FileNotFoundError:
                     # The cgroup may disappear after OOM kills the whole container.
                     # Docker's terminal OOMKilled fact remains authoritative below.
@@ -1018,6 +1239,9 @@ def run_case(case, image, run_id, artifact, observer='C', measurement_id=None, r
                        image_id=config['Image'], container_state=state,
                        rss_method='sum-of-observed-container-process-VmHWM; not simultaneous RSS',
                        sampling_interval_seconds=.25)
+        if stage_samples is not None:
+            outcome['stage_memory_samples'] = stage_samples
+            outcome['stage_memory_method'] = 'observed memory.current maximum at external 0.25s samples; null means unobserved; not exact stage peaks'
         progress = workspace / 'progress.json'
         outcome['worker'] = json.loads(progress.read_text()) if progress.is_file() else None
         if progress.is_file(): shutil.copyfile(progress, root / 'worker-progress.json')
@@ -1026,7 +1250,7 @@ def run_case(case, image, run_id, artifact, observer='C', measurement_id=None, r
         if outcome['result'] == 'passed':
             validate_worker(outcome['worker'], case, observer, measurement_id)
             if expected_identity is not None:
-                assert outcome['worker']['implementation_identity'] == {**expected_identity, ('loaded_normalize_matches_source' if case.operator == 'normalize' else 'loaded_merge_matches_source'): True}
+                assert outcome['worker']['implementation_identity'] == {**expected_identity, **({'loaded_normalize_matches_source': True, 'loaded_merge_matches_source': True} if case.operator == 'normalize-chains' else {('loaded_normalize_matches_source' if case.operator == 'normalize' else 'loaded_merge_matches_source'): True})}
             assert elapsed <= SECONDS
             assert metrics['swap_current_bytes'] == 0
     except Exception as error:
@@ -1082,12 +1306,14 @@ def run_gate(profile='matrix'):
     artifact.mkdir(mode=0o700)
     image = f'localhost:5001/addp-geopython-workflow-engine:topology-capacity-{run_id}'
     registry = f'addp-topology-capacity-registry-{run_id}'
-    report = {'schema_version': NORMALIZE_SCHEMA if profile == 'normalize' else SCHEMA, 'source': source, 'experiment_profile': profile,
+    report = {'schema_version': COMPOSITION_SCHEMA if profile == 'normalize-chains' else NORMALIZE_SCHEMA if profile == 'normalize' else SCHEMA, 'source': source, 'experiment_profile': profile,
               'runner': {key: os.getenv(key) for key in ('GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_JOB', 'RUNNER_NAME', 'RUNNER_ARCH', 'ImageOS', 'ImageVersion')},
               'host': {'hostname': os.uname().nodename, 'available_cpus': sorted(os.sched_getaffinity(0)),
                        'cpuinfo_sha256': hashlib.sha256(Path('/proc/cpuinfo').read_bytes()).hexdigest()},
               'profile': {'cpu': CPUS, 'memory_bytes': MEMORY, 'swap_bytes': 0, 'seconds_per_case': SECONDS},
               'planned_measurements': plan, 'planned_cases': [item['case'] for item in plan], 'groups': [], 'result': 'incomplete'}
+    if profile == 'normalize-chains':
+        report['composition_implementation'] = implementation_identity((repository / GEOMETRY_MODULE).read_text(), 'normalize-chains')
     if profile == 'normalize':
         report['normalization_implementation'] = implementation_identity((repository / GEOMETRY_MODULE).read_text(), 'normalize')
     if profile == 'chains':
@@ -1136,7 +1362,7 @@ def run_gate(profile='matrix'):
         for index, item in enumerate(plan):
             report['groups'].append(run_case(Case(**item['case']), images[item.get('implementation', 'new')], run_id, artifact,
                 observer=item['observer'], measurement_id=item['id'], repetition=item['repetition'], implementation=item.get('implementation'),
-                expected_identity=report.get('normalization_implementation') if profile == 'normalize' else report.get('chain_implementation')))
+                expected_identity=report.get('composition_implementation') if profile == 'normalize-chains' else report.get('normalization_implementation') if profile == 'normalize' else report.get('chain_implementation')))
             write_json(artifact / 'report.json', report)
             if report['groups'][-1].get('cleanup') != 'passed':
                 report['not_run'] = {'reason': 'prior_case_cleanup_failed', 'measurements': plan[index + 1:]}
@@ -1165,13 +1391,13 @@ if __name__ == '__main__':
         raise KeyboardInterrupt('capacity interrupted')
     signal.signal(signal.SIGTERM, terminate)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--worker', choices=[case.key for case in matrix() + chain_matrix() + normalize_matrix()])
-    parser.add_argument('--profile', choices=('matrix', 'observation', 'comparison', 'chains', 'normalize'), default=os.getenv('TOPOLOGY_CAPACITY_PROFILE', 'matrix'))
+    parser.add_argument('--worker', choices=[case.key for case in matrix() + chain_matrix() + normalize_matrix() + composition_matrix()])
+    parser.add_argument('--profile', choices=('matrix', 'observation', 'comparison', 'chains', 'normalize', 'normalize-chains'), default=os.getenv('TOPOLOGY_CAPACITY_PROFILE', 'matrix'))
     parser.add_argument('--observer', choices=('A', 'B', 'C'), default='C')
     parser.add_argument('--measurement')
     args = parser.parse_args()
     measurement_plan(args.profile)  # Validate environment defaults before any mutation.
     if args.worker:
-        run_worker(next(case for case in matrix() + chain_matrix() + normalize_matrix() if case.key == args.worker), Path('/capacity-data'), args.observer, args.measurement)
+        run_worker(next(case for case in matrix() + chain_matrix() + normalize_matrix() + composition_matrix() if case.key == args.worker), Path('/capacity-data'), args.observer, args.measurement)
     else:
         raise SystemExit(run_gate(args.profile))

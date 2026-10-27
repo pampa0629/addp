@@ -88,7 +88,7 @@ def validate_topology_capacity(repository: Path) -> list[str]:
         '.github/workflows/vector-topology-capacity.yml': ('  workflow_dispatch:',
                      'run: make test-vector-topology-capacity\n', 'run: make test-vector-topology-capacity-runner',
                      'runs-on: ubuntu-24.04', 'if: always()', 'actions/upload-artifact@',
-                     'default: matrix', '          - observation', '          - comparison', '          - chains', '          - normalize',
+                     'default: matrix', '          - observation', '          - comparison', '          - chains', '          - normalize\n', '          - normalize-chains',
                      'timeout-minutes: 90', 'fetch-depth: 0', 'TOPOLOGY_CAPACITY_PROFILE: ${{ inputs.profile }}'),
         'scripts/test/vector-topology-capacity.py': ('CPUS = 4', 'MEMORY = 2 << 30', 'SECONDS = 180',
                      "SCHEMA = 'addp.vector-topology-capacity/v3'",
@@ -102,6 +102,9 @@ def validate_topology_capacity(repository: Path) -> list[str]:
                      "'loaded_merge_matches_source'", "report.get('chain_implementation')",
                      "['road','grade']", "('result','members')",
                      "NORMALIZE_SCHEMA = 'addp.vector-topology-capacity/v4'", "if profile == 'normalize':",
+                     "COMPOSITION_SCHEMA = 'addp.vector-topology-capacity/v5'", 'def composition_matrix():',
+                     'def run_composition_worker(', 'def verify_composition_output(case, path, port):',
+                     "report.get('composition_implementation')", 'def validate_composition_worker(',
                      'def normalize_matrix():', 'def normalize_counts(case):', 'def normalize_expected(case, port):',
                      'def verify_normalize_output(case, path, port):', 'def run_dual_worker(',
                      "'loaded_normalize_matches_source'", "report.get('normalization_implementation')"),
@@ -111,7 +114,9 @@ def validate_topology_capacity(repository: Path) -> list[str]:
                      'test_chain_capacity_native_dual_outputs_and_unwrapped_production',
                      'test_chain_capacity_native_rejects_real_dual_output_corruption',
                      'test_normalize_capacity_native_dual_output_exact_oracle_unwrapped',
-                     'test_normalize_capacity_native_rejects_real_dual_output_corruption',),
+                     'test_normalize_capacity_native_rejects_real_dual_output_corruption',
+                     'test_composition_capacity_native_three_outputs_exact_oracle_unwrapped',
+                     'test_composition_capacity_native_rejects_real_three_output_corruption',),
     }
     errors = []
     for name, fragments in required.items():

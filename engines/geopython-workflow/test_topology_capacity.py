@@ -353,3 +353,88 @@ def test_normalize_capacity_native_oracle_failure_retains_incomplete_stage(tmp_p
     progress=json.loads((tmp_path/'progress.json').read_text())
     assert progress['result']=='incomplete' and progress['stage']=='reload_oracle'
     assert 'save_result' in progress['timings'] and 'save_members' in progress['timings']
+
+
+@pytest.mark.parametrize('kind,size', [('compose-sparse',8),('compose-open',12),('compose-sampling',4),('compose-grid',3),('compose-ring',12)])
+def test_composition_capacity_native_three_outputs_exact_oracle_unwrapped(tmp_path, monkeypatch, kind, size):
+    def forbidden(*args, **kwargs): raise AssertionError('composition must not execute old profiles or wrap production')
+    monkeypatch.setattr(m, 'observe_compute', forbidden); monkeypatch.setattr(m, 'run_dual_worker', forbidden)
+    case=m.Case(kind,size,'normalize-chains'); report=m.run_worker(case,tmp_path,'A'); m.validate_worker(report,case,'A')
+    assert set(report['physical'])==set(m.COMPOSITION_PORTS)
+    assert report['implementation_identity']['loaded_normalize_matches_source'] is True
+    assert report['implementation_identity']['loaded_merge_matches_source'] is True
+    assert [report['physical'][p]['rows'] for p in m.COMPOSITION_PORTS]==[m.composition_counts(case)[p] for p in m.COMPOSITION_PORTS]
+    assert not (tmp_path/'compute-resources.jsonl').exists()
+
+
+@pytest.mark.parametrize('port,problem',[
+    ('chains','member_count'),('chains','chain_id'),('chains','direction'),('chains','missing'),('chains','crs'),('chains','int64'),
+    ('chain_edges','edge_id'),('chain_edges','occurrence_count'),('chain_edges','chain_id'),('chain_edges','member_no'),
+    ('chain_edges','source_part_no'),('chain_edges','is_reversed'),('chain_edges','coordinate'),('chain_edges','extra'),
+    ('edge_sources','source_id'),('edge_sources','route_key'),('edge_sources','null_grade'),('edge_sources','null_enabled'),
+    ('edge_sources','source_segment_no'),('edge_sources','piece_no'),('edge_sources','is_reversed'),('edge_sources','direction'),
+    ('edge_sources','int64'),('edge_sources','boolean'),('edge_sources','measured')])
+def test_composition_capacity_native_rejects_real_three_output_corruption(tmp_path, port, problem):
+    from osgeo import ogr
+    case=m.Case('compose-sampling',4,'normalize-chains'); m.run_worker(case,tmp_path,'A'); path=tmp_path/(port+'.gpkg')
+    if problem in ('int64','boolean'):
+        source=ogr.Open(str(path),0); layer=source.GetLayer(0); changed=tmp_path/'changed.gpkg'
+        destination=ogr.GetDriverByName('GPKG').CreateDataSource(str(changed)); target=destination.CreateLayer('changed',layer.GetSpatialRef(),ogr.wkbLineString)
+        for definition in layer.schema:
+            field=ogr.FieldDefn(definition.GetName(),definition.GetType()); field.SetSubType(definition.GetSubType())
+            if problem=='int64' and field.GetName()==('chain_id' if port=='chains' else 'grade'): field.SetType(ogr.OFTReal)
+            if problem=='boolean' and field.GetName()=='enabled': field.SetSubType(ogr.OFSTNone)
+            target.CreateField(field)
+        for feature in layer:
+            clone=ogr.Feature(target.GetLayerDefn()); clone.SetFrom(feature); target.CreateFeature(clone)
+        source=destination=target=layer=None; changed.replace(path)
+    else:
+        ds=ogr.Open(str(path),1); layer=ds.GetLayer(0)
+        if problem=='crs': ds.ExecuteSQL('UPDATE gpkg_geometry_columns SET srs_id=4326')
+        elif problem=='missing': layer.DeleteFeature(1)
+        elif problem=='extra':
+            feature=layer.GetFeature(1); feature.SetFID(-1); assert layer.CreateFeature(feature)==0
+        else:
+            feature=layer.GetFeature(5 if problem.startswith('null_') else 1)
+            if problem in ('coordinate','direction','measured'):
+                coordinates=feature.GetGeometryRef().GetPoints(); shape=ogr.Geometry(ogr.wkbLineStringM if problem=='measured' else ogr.wkbLineString)
+                for x,y,*_ in (coordinates[::-1] if problem=='direction' else coordinates):
+                    if problem=='measured': shape.AddPointM(x,y,1)
+                    else: shape.AddPoint_2D(x+.25 if problem=='coordinate' else x,y)
+                feature.SetGeometry(shape)
+            elif problem in ('source_id','route_key'): feature.SetField(problem,'foreign')
+            elif problem.startswith('null_'): feature.SetField(problem.removeprefix('null_'),0)
+            elif problem=='is_reversed': feature.SetField(problem,1-feature.GetField(problem))
+            else: feature.SetField(problem,feature.GetField(problem)+1)
+            assert layer.SetFeature(feature)==0
+        ds=layer=None
+    with pytest.raises(AssertionError): m.verify_composition_output(case,path,port)
+
+
+@pytest.mark.parametrize('stage', ['normalize','merge','save_chain_edges','reload_edge_sources'])
+def test_composition_capacity_native_failure_retains_actual_incomplete_stage(tmp_path, monkeypatch, stage):
+    from operators import geometric_operators as geometry
+    from operators import io_operators as io
+    def reject(*args, **kwargs): raise RuntimeError('intentional composition failure')
+    if stage in ('normalize','merge'):
+        # This test injects only a phase error. Source binding is verified before
+        # deliberate replacement; separate tests reject actual loaded drift.
+        identity=m.loaded_implementation_identity(geometry,'normalize-chains')
+        monkeypatch.setattr(m,'loaded_implementation_identity',lambda *a:identity)
+        monkeypatch.setattr(geometry,'normalize_line_network' if stage=='normalize' else 'merge_line_chains',reject)
+    elif stage=='save_chain_edges':
+        original=io.save
+        def save(*a,**kw):
+            if kw.get('path')=='chain_edges.gpkg': reject()
+            return original(*a,**kw)
+        monkeypatch.setattr(io,'save',save)
+    else:
+        original=m.verify_composition_output
+        def verify(case,path,port):
+            if port=='edge_sources': reject()
+            return original(case,path,port)
+        monkeypatch.setattr(m,'verify_composition_output',verify)
+    with pytest.raises(RuntimeError,match='intentional composition'):
+        m.run_worker(m.Case('compose-open',8,'normalize-chains'),tmp_path,'A')
+    report=json.loads((tmp_path/'progress.json').read_text()); assert report['result']=='incomplete' and report['stage']==stage
+    assert stage not in report['timings']

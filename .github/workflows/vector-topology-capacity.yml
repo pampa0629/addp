@@ -13,6 +13,7 @@ on:
           - comparison
           - chains
           - normalize
+          - normalize-chains
 
 permissions:
   contents: read

@@ -331,44 +331,51 @@ class CapacityTest(unittest.TestCase):
             execute.assert_not_called()
 
     def test_timeout_and_unknown_create_both_clean_exact_owned_container_and_workspace(self):
-        case=m.Case('many',6,'self')
-        for unknown in (False,True):
-            with self.subTest(unknown=unknown),tempfile.TemporaryDirectory() as temporary:
-                root=Path(temporary);name=f'addp-topology-capacity-ours-{case.key}';exists=False;running=False;calls=[]
-                def execute(args,**kwargs):
-                    nonlocal exists,running
-                    calls.append(args)
-                    if args[1]=='create':
-                        exists=True
-                        if unknown:raise RuntimeError('unknown CLI outcome after create')
-                    if args[1]=='start':running=True
-                    if args[1]=='kill':running=False
-                    if args[1]=='rm':exists=False
-                    if args[1:3]==['container','ls']:return name+'\n' if exists else ''
-                    return ''
-                def inspect(_):
-                    return {'Config':{'Cmd':['sh','container_entrypoint.sh'],'Labels':{'com.addp.capacity-run':'ours'}},
-                        'HostConfig':{'NanoCpus':4_000_000_000,'Memory':2<<30,'MemorySwap':2<<30},
-                        'State':{'Pid':42,'Running':running,'OOMKilled':False},'Image':'sha256:our-image'}
-                class Process:
-                    code=None
-                    def __init__(self,*args,**kwargs):
-                        (root/case.key/'data/progress.json').write_text(json.dumps({'result':'incomplete','stage':'compute'}))
-                    def poll(self):return self.code
-                    def kill(self):self.code=-9
-                    def wait(self):return self.code
-                metrics={'process_peak_rss_bytes':20,'oom':0,'oom_kill':0,'swap_current_bytes':0}
-                with patch.object(m,'command',side_effect=execute),patch.object(m,'inspect',side_effect=inspect),\
-                     patch.object(m.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout='',stderr='')),\
-                     patch.object(m.subprocess,'Popen',side_effect=Process) as process,\
-                     patch.object(resources,'cgroup_directory',return_value=root),patch.object(resources,'read_metrics',return_value=metrics),\
-                     patch.object(m.time,'monotonic',side_effect=[0,1,181,182]):
-                    result=m.run_case(case,'our-image','ours',root)
-                self.assertFalse(exists);self.assertEqual(result['cleanup'],'passed')
-                self.assertFalse((root/case.key/'data').exists())
-                self.assertEqual(sum(c[1]=='create' for c in calls),1)
-                self.assertEqual(result['result'],'failed' if unknown else 'time_limit')
-                self.assertEqual(process.call_count,0 if unknown else 1)
+        for case in (m.Case('many',6,'self'),m.Case('compose-open',8,'normalize-chains')):
+            for unknown in (False,True):
+                with self.subTest(unknown=unknown),tempfile.TemporaryDirectory() as temporary:
+                    root=Path(temporary);name=f'addp-topology-capacity-ours-{case.key}';exists=False;running=False;calls=[]
+                    def execute(args,**kwargs):
+                        nonlocal exists,running
+                        calls.append(args)
+                        if args[1]=='create':
+                            exists=True
+                            if unknown:raise RuntimeError('unknown CLI outcome after create')
+                        if args[1]=='start':running=True
+                        if args[1]=='kill':running=False
+                        if args[1]=='rm':exists=False
+                        if args[1:3]==['container','ls']:return name+'\n' if exists else ''
+                        return ''
+                    def inspect(_):
+                        return {'Config':{'Cmd':['sh','container_entrypoint.sh'],'Labels':{'com.addp.capacity-run':'ours'}},
+                            'HostConfig':{'NanoCpus':4_000_000_000,'Memory':2<<30,'MemorySwap':2<<30},
+                            'State':{'Pid':42,'Running':running,'OOMKilled':False},'Image':'sha256:our-image'}
+                    class Process:
+                        code=None
+                        def __init__(self,*args,**kwargs):
+                            (root/case.key/'data/progress.json').write_text(json.dumps({'result':'incomplete','stage':'normalize' if case.operator=='normalize-chains' else 'compute'}))
+                        def poll(self):return self.code
+                        def kill(self):self.code=-9
+                        def wait(self):return self.code
+                    metrics={'process_peak_rss_bytes':20,'oom':0,'oom_kill':0,'swap_current_bytes':0,'memory_current_bytes':128}
+                    with patch.object(m,'command',side_effect=execute),patch.object(m,'inspect',side_effect=inspect),\
+                         patch.object(m.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout='',stderr='')),\
+                         patch.object(m.subprocess,'Popen',side_effect=Process) as process,\
+                         patch.object(resources,'cgroup_directory',return_value=root),patch.object(resources,'read_metrics',return_value=metrics),\
+                         patch.object(m.time,'monotonic',side_effect=[0,1,181,182]):
+                        result=m.run_case(case,'our-image','ours',root)
+                    self.assertFalse(exists);self.assertEqual(result['cleanup'],'passed')
+                    self.assertFalse((root/case.key/'data').exists())
+                    self.assertEqual(sum(c[1]=='create' for c in calls),1)
+                    self.assertEqual(result['result'],'failed' if unknown else 'time_limit')
+                    self.assertEqual(process.call_count,0 if unknown else 1)
+
+                    if not unknown and case.operator=='normalize-chains':
+                        self.assertEqual(result['worker']['stage'],'normalize')
+                        self.assertEqual(result['stage_memory_samples']['normalize'],{'samples':1,'observed_memory_current_peak_bytes':128})
+                        self.assertEqual(result['stage_memory_samples']['merge'],{'samples':0,'observed_memory_current_peak_bytes':None})
+                        sample=json.loads((root/case.key/'resources.jsonl').read_text().splitlines()[0])
+                        self.assertEqual(sample['worker_stage'],'normalize')
 
     def test_cgroup_limits_and_path_are_fail_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -404,7 +411,13 @@ class CapacityTest(unittest.TestCase):
                 (files[1],'default: matrix','default: observation'),
                 (files[1],'          - comparison','          - removed'),
                 (files[1],'          - chains','          - removed'),
-                (files[1],'          - normalize','          - removed'),
+                (files[1],'          - normalize\n','          - removed\n'),
+                (files[1],'          - normalize-chains','          - removed'),
+                (files[2],'def composition_matrix():','def removed_composition_matrix():'),
+                (files[2],'def verify_composition_output(case, path, port):','def removed_composition_output(case, path, port):'),
+                (files[2],'def run_composition_worker(','def removed_composition_worker('),
+                (files[3],'test_composition_capacity_native_three_outputs_exact_oracle_unwrapped','removed_composition_native'),
+                (files[3],'test_composition_capacity_native_rejects_real_three_output_corruption','removed_composition_corruption'),
                 (files[2],'def normalize_matrix():','def removed_normalize_matrix():'),
                 (files[2],'def verify_normalize_output(case, path, port):','def removed_normalize_output(case, path, port):'),
                 (files[2],"'loaded_normalize_matches_source'","'removed_normalize_binding'"),
@@ -491,6 +504,86 @@ class NormalizeCapacityTest(unittest.TestCase):
         for port in ('result','members'):
             changed=copy.deepcopy(report);del changed['outputs'][port]
             with self.assertRaises(AssertionError):m.validate_worker(changed,case,'A')
+
+
+class CompositionCapacityTest(unittest.TestCase):
+    def test_composition_plan_is_fifteen_new_measurements_and_original_budget(self):
+        cases=m.composition_matrix(); plan=m.measurement_plan('normalize-chains')
+        self.assertEqual({k:[c.size for c in cases if c.kind==k] for k in {c.kind for c in cases}}, {
+            'compose-sparse':[1000,10000,100000], 'compose-open':[1000,10000,100000],
+            'compose-sampling':[32,128,512], 'compose-grid':[32,128,512], 'compose-ring':[1000,10000,100000]})
+        self.assertEqual(len(cases),15); self.assertEqual(len({c.key for c in cases}),15)
+        self.assertTrue(all(p['observer']=='A' and p['repetition'] is None and p['case']['operator']=='normalize-chains' for p in plan))
+        self.assertEqual([p['case'] for p in plan],[m.asdict(c) for c in cases])
+        self.assertFalse({c.key for c in cases}&{c.key for c in m.matrix()+m.chain_matrix()+m.normalize_matrix()})
+        self.assertEqual((m.CPUS,m.MEMORY,m.SECONDS,m.COMPOSITION_SCHEMA),(4,2<<30,180,'addp.vector-topology-capacity/v5'))
+        self.assertEqual(m.composition_counts(m.Case('compose-grid',512,'normalize-chains')),{'sources':1024,'chains':525312,'chain_edges':525312,'edge_sources':525312})
+        self.assertEqual(m.composition_counts(m.Case('compose-sampling',512,'normalize-chains')),{'sources':512,'chains':1,'chain_edges':512,'edge_sources':262144})
+
+    def test_composition_closed_forms_exact_relation_and_direction_xor(self):
+        from collections import Counter
+        for kind in ('compose-sparse','compose-open','compose-sampling','compose-grid','compose-ring'):
+            case=m.Case(kind,8,'normalize-chains'); counts=m.composition_counts(case)
+            rows={p:list(m.composition_expected(case,p)) for p in m.COMPOSITION_PORTS}
+            self.assertEqual({p:len(v) for p,v in rows.items()},{p:counts[p] for p in m.COMPOSITION_PORTS})
+            edges={p['edge_id']:(p,g) for p,g in rows['chain_edges']}
+            occurrence=Counter(p['edge_id'] for p,g in rows['edge_sources'])
+            self.assertEqual(occurrence,{p['edge_id']:p['occurrence_count'] for p,g in rows['chain_edges']})
+            self.assertEqual(sum(p['member_count'] for p,g in rows['chains']),len(edges))
+            chains={p['chain_id']:(p,g) for p,g in rows['chains']}
+            for chain_id,(chain,coordinates) in chains.items():
+                rebuilt=[]; selected=[(p,g) for p,g in rows['chain_edges'] if p['chain_id']==chain_id]
+                self.assertEqual([p['member_no'] for p,g in selected],list(range(1,len(selected)+1)))
+                for p,g in selected:
+                    oriented=g[::-1] if p['is_reversed'] else g
+                    if rebuilt:self.assertEqual(rebuilt[-1],oriented[0])
+                    rebuilt.extend(oriented if not rebuilt else oriented[1:])
+                self.assertEqual(rebuilt,coordinates)
+            for p,g in rows['edge_sources']:
+                edge,canonical=edges[p['edge_id']]; original_reversed=p['is_reversed'] ^ edge['is_reversed']
+                along_chain=canonical[::-1] if edge['is_reversed'] else canonical
+                self.assertEqual(g,along_chain[::-1] if original_reversed else along_chain)
+                attrs=m.normalize_attributes(int(p['source_id'].split('-')[1]))
+                self.assertEqual({k:p[k] for k in attrs},attrs)
+            self.assertGreater(m.normalize_attributes(0)['grade'],2**53)
+
+    def test_composition_identity_binds_both_unmodified_loaded_functions(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp)/'geometry.py'; source='def normalize_line_network(frame, field):\n    return frame\ndef merge_line_chains(frame, field, match):\n    return frame\n'
+            path.write_text(source); namespace={}; exec(compile(source,str(path),'exec'),namespace)
+            module=SimpleNamespace(__file__=str(path),**{k:v for k,v in namespace.items() if not k.startswith('__')})
+            expected={**m.implementation_identity(source,'normalize-chains'),'loaded_normalize_matches_source':True,'loaded_merge_matches_source':True}
+            self.assertEqual(m.loaded_implementation_identity(module,'normalize-chains'),expected)
+            for name in ('normalize_line_network','merge_line_chains'):
+                original=getattr(module,name); setattr(module,name,lambda *a:None)
+                with self.assertRaises(AssertionError):m.loaded_implementation_identity(module,'normalize-chains')
+                setattr(module,name,original)
+
+    def test_composition_report_rejects_missing_ports_identity_types_counts_and_budget(self):
+        import copy
+        case=m.Case('compose-open',8,'normalize-chains'); counts=m.composition_counts(case)
+        report={'case':m.asdict(case),'observer':'A','measurement_id':case.key,'result':'passed','stage':'complete',
+            'duration_seconds':1.,'worker_peak_rss_bytes':1,'source_frame_sha256':'f'*64,
+            'timings':dict.fromkeys(m.composition_timings(),0.),
+            'implementation_identity':{'loaded_normalize_matches_source':True,'loaded_merge_matches_source':True,'module_sha256':'a'*64,'normalize_line_network_sha256':'b'*64,'merge_line_chains_sha256':'c'*64},
+            'physical':{p:{'rows':counts[p],'crs':'EPSG:3857','full_result_sha256':'c'*64,'all_coordinates_attributes_membership_verified':True} for p in m.COMPOSITION_PORTS},
+            'source':{'size_bytes':1,'sha256':'d'*64},'outputs':{p:{'size_bytes':1,'sha256':'d'*64} for p in m.COMPOSITION_PORTS},
+            'relations':{'unique_edges':8,'original_occurrences':8,'exact_membership_and_two_level_directions_verified':True}}
+        m.validate_worker(report,case,'A')
+        changes=[(('duration_seconds',),181),(('duration_seconds',),float('nan')),(('observer',),'C'),(('stage',),'merge'),
+                 (('implementation_identity','loaded_merge_matches_source'),False),(('implementation_identity','loaded_normalize_matches_source'),False),
+                 (('relations','unique_edges'),7),(('relations','exact_membership_and_two_level_directions_verified'),False)]
+        for p in m.COMPOSITION_PORTS:
+            changes.extend([(('outputs',p,'size_bytes'),0),(('outputs',p,'size_bytes'),True),(('physical',p,'rows'),0),
+                            (('physical',p,'crs'),'EPSG:4326'),(('physical',p,'all_coordinates_attributes_membership_verified'),False)])
+            for field in ('physical','outputs'):
+                changed=copy.deepcopy(report); del changed[field][p]
+                with self.assertRaises(AssertionError):m.validate_worker(changed,case,'A')
+        for path,value in changes:
+            changed=copy.deepcopy(report); target=changed
+            for key in path[:-1]:target=target[key]
+            target[path[-1]]=value
+            with self.subTest(path=path),self.assertRaises(AssertionError):m.validate_worker(changed,case,'A')
 
 
 if __name__=='__main__':unittest.main()
