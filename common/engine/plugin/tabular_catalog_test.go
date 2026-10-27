@@ -400,7 +400,8 @@ func (*tabularCatalogTestPlugin) TestConnection(context.Context, ConnectionInfo)
 func (*tabularCatalogTestPlugin) Capabilities() EngineCapabilities                     { return EngineCapabilities{} }
 func (*tabularCatalogTestPlugin) GORMDialect() string                                  { return "test" }
 func (*tabularCatalogTestPlugin) CreateConnectionPool(ConnectionInfo, *PoolConfig) (*gorm.DB, error) {
-	return &gorm.DB{}, nil
+	db, _ := poolTestDB()
+	return db, nil
 }
 
 func TestTabularExactLookupNeverEnumeratesOrReadsUnrequestedDetails(t *testing.T) {
