@@ -1996,3 +1996,12 @@ ImportError 尚缺具体组件与版本事实，本批没有猜测升级／降�
 确定性回归使用真实私有文件锁与受控线程，验证采样先开始时禁止删除、清理先发布时不启动读取、剩余Docker命令预算、四秒及清理锁截止、归属不符、真实命令失败后释放锁、解锁错误不覆盖首失败。实际Shell子进程验证Python退出后FD锁仍由Shell持有、原退出后释放；整轮成功负例验证清理逾期不因零残留改判。相同新回归对父提交临时副本失败、当前实现通过，未改写共享源码做回退。最终配置／预算135项、生命周期123项runner／既有System Go fixture及88项聚合、登记38项与22／12／9／2、Shell语法及专项diff通过。既有固定输入、Makefile和CI自动发现覆盖，未增加新入口／workflow或依赖。
 
 原始门禁、红／绿对照、补丁与输入摘要在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-handoff-20261027-0slhhjwm`。本地没有新建容器或实际运行HTTP／Hosted／容量／定时；修后的真实整体结果待唯一自然Linux HTTP Job单列核验，确定性通过不计为完整门禁通过。
+
+
+### 挂载告警入口的共享所有权门禁登记修复（2026-10-27）
+
+专门CI会话回传[Platform consistency失败](https://github.com/pampa0629/addp/actions/runs/40465364758/job/122059331587)后读取原始日志/tmp/addp-ci-20261027-073016/job-122059331587.log，确认唯一首失败为hostNodeSelectOwnership.test.mjs仍要求ResourceAlertRules直接导入HostNodeSelect。2d373a47e已将其迁入唯一ResourceAlertRuleEditor，产品主路径正确但本会话漏同步共享测试消费者登记；上轮Monitor129单元／67浏览器不能覆盖或替代这一平台门禁。原始首个失败Job122058289956仍保留，不把其他Redis／HTTP失败算作本批修复阻碍。
+
+按现有开发原则和共享组件契约修正原测试：改为登记实际Editor消费者，补上已有EngineDeployments；扫描所有模块frontend/src及共享basic/src的实际HostNodeSelect使用，与四个闭合集合一致才通过。每个消费标签均须显式提供api／allowed／identity，并只导入同一共享实现；已有@common-ui公开导入须由index.js唯一重新导出同一文件。保留共享组件不依赖业务store／模块、Monitor旧本地HostNodeSelect与hostAdmission删除及Monitor不拥有主机创建／导入的原断言；新增规则列表与挂载页只能组合唯一Editor、不得重新拥有选择器／表单／POST／PUT的断言。没有恢复重复实现，也没有修改产品组件、接口、权限或授权失效清空行为；业务行为仍由Monitor现有浏览器用例覆盖，未在共享测试中复制业务运行逻辑。
+
+Node24.11.1下标准`make test-common-frontend`先重现283项中282通过／1失败（/tmp/addp-host-selector-owner-red.log），修正后最终284全部通过（/tmp/addp-host-selector-owner-final.log）；当前`npm --prefix monitor/frontend test`129项通过（/tmp/addp-host-selector-monitor-unit.log），diff检查通过。已核对2d373a47e至本次验证的monitor/frontend和common-frontend/basic/src无差异，因此沿用上节实际浏览器及构建证据，不重复运行有效浏览器／Hosted。当前只修测试登记与本证据；Platform workflow原有make test-platform调用make test-common-frontend，包内通配自动发现覆盖修改，无新增入口或CI选择登记需求。未运行整套Platform、未把本地子门禁写成远程CI已恢复；自然CI和Hosted继续等专门会话回传，未轮询、重跑、取消工作流、创建定时任务或操作个人服务。此为既有功能的CI验证覆盖修复，不提升功能清单整行运行验收状态。
