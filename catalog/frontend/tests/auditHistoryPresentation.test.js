@@ -15,9 +15,9 @@ const eventTypes = [
   'catalog.standard_mapping.approved', 'catalog.standard_mapping.rejected', 'catalog.standard_mapping.withdrawn'
 ]
 
-describe.each(['zh-CN', 'en'])('Catalog audit presentation in %s', locale => {
+describe.each(['zh-cn', 'en'])('Catalog audit presentation in %s', locale => {
   const missing = vi.fn()
-  const { t } = createI18n({ legacy: false, locale, fallbackLocale: false, messages: { 'zh-CN': zh, en }, missing }).global
+  const { t } = createI18n({ legacy: false, locale, fallbackLocale: false, messages: { 'zh-cn': zh, en }, missing }).global
   const summary = (details, event_type = 'catalog.entry.updated') => auditEventSummary({ event_type, details }, t)
   const value = (rows, key) => rows.find(row => row.label === t(key))?.value
 
@@ -60,6 +60,51 @@ describe.each(['zh-CN', 'en'])('Catalog audit presentation in %s', locale => {
     for (const [operation, key] of [['assign_primary_domain', 'assignPrimaryDomain'], ['assign_accountable_department', 'assignAccountableDepartment']]) {
       expect(value(summary({ operation }, 'catalog.entry.batch_governance_applied'), 'catalog.entries.batchGovernance.operation')).toBe(t(`catalog.entries.batchGovernance.${key}`))
     }
+    expect(missing).not.toHaveBeenCalled()
+  })
+
+  it('shows each recorded responsibility state transition and reason in both languages', () => {
+    const changes = [
+      { role: 'data_steward', subject_id: '9007199254740993', previous_status: 'active', status: 'needs_transfer', reason: 'subject_not_found' },
+      { role: 'data_steward', subject_id: '9007199254740994', previous_status: 'active', status: 'needs_transfer', reason: 'subject_not_referenceable' },
+      { role: 'business_owner', previous_status: 'needs_transfer', status: 'active', reason: 'reference_restored' }
+    ]
+    const before = JSON.stringify(changes)
+    const rows = summary({ changes }, 'catalog.responsibility.reference_state_changed')
+    const changeRows = rows.slice(-3)
+    expect(changeRows.map(row => row.value)).toEqual(locale === 'en' ? [
+      'Active → Transfer required; Reason: Subject not found',
+      'Active → Transfer required; Reason: Subject is not currently referenceable',
+      'Transfer required → Active; Reason: Subject is referenceable again'
+    ] : [
+      '有效 → 待移交；原因：主体不存在',
+      '有效 → 待移交；原因：主体当前不可引用',
+      '待移交 → 有效；原因：主体已恢复为可引用'
+    ])
+    expect(new Set(changeRows.map(row => row.label)).size).toBe(3)
+    expect(changeRows[0].label).toContain(t('catalog.edit.role.data_steward'))
+    expect(JSON.stringify(rows)).not.toContain('9007199254740993')
+    expect(JSON.stringify(changes)).toBe(before)
+    expect(missing).not.toHaveBeenCalled()
+  })
+
+  it('does not infer missing or unknown responsibility states and reasons', () => {
+    const changes = [null, [], 'bad', { role: {}, previous_status: {}, status: 'future', reason: { text: 'nested' } },
+      { role: 'data_steward', status: 'active', reason: 'future_reason' }]
+    const before = JSON.stringify(changes)
+    const rows = summary({ changes }, 'catalog.responsibility.reference_state_changed')
+    const changeRows = rows.slice(-2)
+    expect(changeRows.map(row => row.value)).toEqual(locale === 'en' ? [
+      'State not recorded or unrecognized → State not recorded or unrecognized; Reason: Not recorded or unrecognized',
+      'State not recorded or unrecognized → Active; Reason: Not recorded or unrecognized'
+    ] : [
+      '状态未记录或无法识别 → 状态未记录或无法识别；原因：未记录或无法识别',
+      '状态未记录或无法识别 → 有效；原因：未记录或无法识别'
+    ])
+    expect(JSON.stringify(rows)).not.toContain('[object Object]')
+    expect(JSON.stringify(rows)).not.toContain('future_reason')
+    expect(JSON.stringify(changes)).toBe(before)
+    expect(summary({ changes }, 'catalog.entry.updated')).toHaveLength(2)
     expect(missing).not.toHaveBeenCalled()
   })
 

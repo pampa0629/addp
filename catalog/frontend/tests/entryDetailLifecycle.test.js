@@ -2,14 +2,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, reactive, ref } from 'vue'
 import EntryDetail from '../src/views/EntryDetail.vue'
+import zh from '../src/i18n/zh-cn.json'
+import en from '../src/i18n/en.json'
 
 const api = vi.hoisted(() => ({
-  route: null, auth: null, router: { replace: vi.fn(), push: vi.fn() },
+  route: null, auth: null, locale: null, translate: null, router: { replace: vi.fn(), push: vi.fn() },
   getEntry: vi.fn(), getMyEntryMarks: vi.fn(), getEntryHistory: vi.fn(), replaceMyEntryMarks: vi.fn(),
   error: vi.fn(), success: vi.fn()
 }))
 vi.mock('vue-router', () => ({ useRoute: () => api.route, useRouter: () => api.router }))
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key, locale: ref('en') }) }))
+vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (...args) => api.translate(...args), locale: api.locale }) }))
 vi.mock('../src/store/auth', () => ({ useAuthStore: () => api.auth }))
 vi.mock('../src/api/catalog', () => api)
 vi.mock('../src/api/client', () => ({ default: {} }))
@@ -62,6 +64,8 @@ function mount() {
 }
 beforeEach(() => {
   vi.resetAllMocks()
+  api.translate = key => key
+  api.locale = ref('en')
   api.route = reactive({ params: { id: 'A' }, query: { tab: 'relations' }, path: '/entries/A' })
   api.auth = { hasPermission: permission => ['catalog.entry.read', 'catalog.audit.read'].includes(permission), authContext: { principal: { id: 'owner' }, context: { tenant_id: 'tenant' } } }
   api.getEntry.mockImplementation(async id => entry(id))
@@ -71,6 +75,43 @@ beforeEach(() => {
 })
 
 describe('Catalog audit history presentation', () => {
+  it('renders per-subject state changes outside technical details and switches language without rewriting evidence', async () => {
+    const { createI18n } = await vi.importActual('vue-i18n')
+    const missing = vi.fn()
+    const { t, locale } = createI18n({ legacy: false, locale: 'zh-cn', fallbackLocale: false, messages: { 'zh-cn': zh, en }, missing }).global
+    api.translate = t
+    api.locale = locale
+    const event = { id: 'state-change', event_type: 'catalog.responsibility.reference_state_changed', details: { changes: [
+      { role: 'data_steward', subject_type: 'user', subject_id: '9007199254740993', previous_status: 'active', status: 'needs_transfer', reason: 'subject_not_found' },
+      { role: 'data_steward', subject_type: 'user', subject_id: '9007199254740994', previous_status: 'needs_transfer', status: 'active', reason: 'reference_restored' }
+    ] } }
+    const before = JSON.stringify(event)
+    api.getEntryHistory.mockResolvedValue({ source_bindings: [], audit_events: [event] })
+    const view = mount(); await settle()
+    const summary = view.root.querySelector('.audit-summary')
+    const raw = view.root.querySelector('.audit-technical pre')
+    expect(summary.textContent).toContain('有效 → 待移交；原因：主体不存在')
+    expect(summary.textContent).toContain('待移交 → 有效；原因：主体已恢复为可引用')
+    expect(summary.textContent).toContain('数据管理员 · 变更 1')
+    expect(summary.textContent).toContain('数据管理员 · 变更 2')
+    expect(summary.closest('details')).toBeNull()
+    expect(view.root.querySelector('details').open).toBe(false)
+    expect(JSON.parse(raw.textContent)).toEqual(event)
+    const zhSummary = summary.textContent
+    locale.value = 'en'; await settle()
+    expect(summary.textContent).toContain('Active → Transfer required; Reason: Subject not found')
+    expect(summary.textContent).toContain('Transfer required → Active; Reason: Subject is referenceable again')
+    expect(view.root.querySelector('.audit-event-title').textContent).toBe('Responsibility subject status changed')
+    expect(JSON.parse(raw.textContent)).toEqual(event)
+    locale.value = 'zh-cn'; await settle()
+    expect(summary.textContent).toBe(zhSummary)
+    expect(summary.textContent).not.toContain('[object Object]')
+    expect(summary.textContent).not.toContain('9007199254740993')
+    expect(JSON.stringify(event)).toBe(before)
+    expect(api.getEntryHistory).toHaveBeenCalledTimes(1)
+    expect(missing).not.toHaveBeenCalled()
+  })
+
   it('shows a readable event and responsibilities instead of object coercion', async () => {
     api.getEntryHistory.mockResolvedValue({ source_bindings: [], audit_events: [{
       id: 'update', event_type: 'catalog.entry.updated', details: {

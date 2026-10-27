@@ -886,6 +886,13 @@
       "auditEvents": "Domain audit",
       "technicalDetails": "Technical details",
       "noSummary": "No business summary available",
+      "responsibilityChange": {
+        "label": "{role} · Change {index}",
+        "summary": "{previous} → {current}; Reason: {reason}",
+        "referenceRestored": "Subject is referenceable again",
+        "unknownState": "State not recorded or unrecognized",
+        "unknownReason": "Not recorded or unrecognized"
+      },
       "events": {
         "sourceDiscovered": "Resource source discovered",
         "entryUpdated": "Business curation updated",

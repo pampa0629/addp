@@ -61,6 +61,19 @@ export function auditEventSummary(event, t) {
   const recordedRoles = [...new Set(responsibilityRows.map(row => row?.role).filter(role => roles.includes(role)))]
   if (recordedRoles.length) add('catalog.edit.responsibilityRole', recordedRoles.map(role => t(`catalog.edit.role.${role}`)).join(t('catalog.edit.listSeparator')))
   if (Array.isArray(details.changes)) add('catalog.history.fields.responsibilityChanges', String(details.changes.length))
+  if (event.event_type === 'catalog.responsibility.reference_state_changed' && Array.isArray(details.changes)) {
+    details.changes.forEach((change, index) => {
+      if (!change || typeof change !== 'object' || Array.isArray(change)) return
+      const role = label('catalog.edit.role', change.role, roles) || t('catalog.edit.responsibilityRole')
+      const state = value => label('catalog.status.responsibility', value, ['active', 'needs_transfer']) || t('catalog.history.responsibilityChange.unknownState')
+      const reason = label('catalog.governanceTasks.reasonValue', change.reason, ['subject_not_found', 'subject_not_referenceable']) ||
+        t(`catalog.history.responsibilityChange.${change.reason === 'reference_restored' ? 'referenceRestored' : 'unknownReason'}`)
+      rows.push({
+        label: t('catalog.history.responsibilityChange.label', { role, index: index + 1 }),
+        value: t('catalog.history.responsibilityChange.summary', { previous: state(change.previous_status), current: state(change.status), reason })
+      })
+    })
+  }
   if (Array.isArray(details.approved_standard_mappings)) add('catalog.history.fields.certifiedMappingCount', String(details.approved_standard_mappings.length))
   if (details.operation === 'assign_primary_domain') add('catalog.entries.batchGovernance.operation', t('catalog.entries.batchGovernance.assignPrimaryDomain'))
   if (details.operation === 'assign_accountable_department') add('catalog.entries.batchGovernance.operation', t('catalog.entries.batchGovernance.assignAccountableDepartment'))

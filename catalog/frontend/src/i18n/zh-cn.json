@@ -886,6 +886,13 @@
       "auditEvents": "领域审计",
       "technicalDetails": "技术详情",
       "noSummary": "暂无业务摘要",
+      "responsibilityChange": {
+        "label": "{role} · 变更 {index}",
+        "summary": "{previous} → {current}；原因：{reason}",
+        "referenceRestored": "主体已恢复为可引用",
+        "unknownState": "状态未记录或无法识别",
+        "unknownReason": "未记录或无法识别"
+      },
       "events": {
         "sourceDiscovered": "发现资源来源",
         "entryUpdated": "更新业务编目",

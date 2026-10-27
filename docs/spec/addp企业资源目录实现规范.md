@@ -138,6 +138,8 @@ System 的 Department / Project Group 管理契约以 `system/docs/IAM数据模�
 3. 同一 System 身份恢复为可引用时，关系恢复为 `active`，治理任务以 `reference_restored` 自动解决，并递增聚合版本；
 4. 未认证的已编目条目通过 `PUT /entries/:id` 完整编目更新替换责任；已弃用条目只通过 `PUT /entries/:id/responsibilities` 完整替换责任子资源。被删除或替换的失效责任任务以 `responsibility_replaced` 在同一事务自动解决；不提供独立“忽略失效责任”或手工关闭任务 API。
 
+责任主体状态变化的治理历史摘要逐条展示审计 `changes` 中记录的责任角色、前后责任状态和失效或恢复原因；同一角色的多个主体变化分别保留。摘要只解释当时记录，不用当前主体名称或当前状态补写历史；未记录或无法识别的状态、原因明确标示，不推断为账号已停用或删除。原始主体身份及完整事件仍保留在可展开的技术详情中。
+
 `catalog.governance_tasks` 是 Catalog 内派生的治理工作事实，不是责任关系副本。第一阶段字段固定表达 CatalogEntry、任务类型、责任角色、主体类型与 ID、失效原因、已观察主体摘要、`open` / `resolved` 状态、打开/解决时间和解决方式；数据库必须保证同一 Tenant、CatalogEntry、责任角色和主体最多一条 open `responsibility_transfer` 任务。任务不跨 Schema 建外键，System 不保存其反向投影。
 
 #### 3.2.1 责任与实际数据授权
