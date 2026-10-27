@@ -2,7 +2,7 @@
 
 [返回脚本导航](../README.md)
 
-专项入口：[Manager 内部产物与内容边界](#manager-内部产物与内容边界) · [分类蚕食容量](#分类蚕食容量) · [D8 河网转矢量线](#d8-河网转矢量线)
+专项入口：[Manager 内部产物与内容边界](#manager-内部产物与内容边界) · [栅格工作流](#栅格工作流) · [完整场景容量校准](#完整场景容量校准) · [分类蚕食容量](#分类蚕食容量) · [D8 河网转矢量线](#d8-河网转矢量线)
 
 测试分层、身份和清理规则以[测试与验收规范](../../docs/spec/addp测试与验收规范.md)为准；历史结果仅适用于所列源码和运行尝试，不代表当前 HEAD 已重跑。
 
@@ -18,10 +18,65 @@
 
 矢量 PMTiles 工作流验收在 `online-t4-gates.yml` 手工选择 `vector-pmtiles-workflow`；`online-hosted-vector-pmtiles-gate.sh` 复用共享 Hosted 生命周期和真实 GeoPython 产品镜像，Business 夹具仅拥有本轮独立 MinIO。通过普通 User 的 Develop 执行两点 GeoJSON 纯几何 create、重复 create 冲突保护、50 面 Shapefile 精确字段 replace，核对稳定目标身份、自动扫描及当前血缘；真实 Console 核对 min_zoom=0、no-store、原生瓦片哈希、要素数和地图。离线入口 `make test-vector-pmtiles-online-runner` 纳入平台聚合，真实 GDAL oracle 纳入 `make test-geopython-workflow`。成功与失败均须清理，完整验收边界见[测试与验收规范](../../docs/spec/addp测试与验收规范.md)；登记入口不代表 Hosted 结果已经通过。
 
-栅格工作流验收在 `online-t4-gates.yml` 手工选择 `raster-workflow`，由 `online-hosted-raster-gate.sh` 复用 Hosted 生命周期和标准 Runtime 启动入口。Business owner `online-raster-minio-fixture.py` 管理两套 tmpfs MinIO，凭据只存于 owner-only 临时文件；目标 Engine 使用独立普通写入账号，目标侧 root 仅用于夹具管理与物理核验。独立 Provisioner 注册源、目标 Engine 后从业务进程移除 Provisioner Token 与数据库密码。普通 User 通过 Develop 执行栅格工作流，验证 create、重复 create 失败不改目标、replace、原始像元和完整 COG 布局、自动 Meta scan/血缘，以及同一 User 的 Console Monitor 状态与源目标卡片。批量切片先以 DEFLATE create，再以 NONE replace，保留无关文件；追加的新目录场景精确拒绝第二片写入，要求父执行失败，仅首片进入稳定输出、自动扫描与 Meta 目录，且已有成果字节不变。发布后清理故障复用 Business-owned 存储代理：真实 PUT 成功后按上传哈希唯一定位临时 COG，保留原文件，在私有 sidecar 路径触发删除失败；分别核对首片与四片已确认时的失败清单、稳定输出、新自动扫描、原有成果哈希及工作目录清理。代理及其 Docker socket 仅属于 Hosted 夹具，故障事件保存在不归档的 owner-only 目录，产品无故障开关；首片和全部发布后的清理故障已通过原 Hosted T4。每片严格校验 artifact、物理对象和 DataItem 的正整数大小相等。退出时清理业务容器、Runtime 镜像、registry、Infra 数据卷和凭据，清理失败使门禁失败。`make test-raster-online-runner` 验证场景与生命周期，归入 `make test-online-runner` 和 `make test-platform`；独立物理校验器的真实 GDAL 回归归入既有 `make test-geopython-workflow`。原 suite 的四种单波段聚合、多波段 mean、旋转网格多波段 sum、波段选择、孔洞／分离面片、旋转网格与四邻接／自接触轮廓、批量 create/replace、拒写及两类发布后清理故障已通过[Hosted T4 38589484655](https://github.com/pampa0629/addp/actions/runs/38589484655)，运行版本 `44e246a5a`；最新证据与边界见[栅格算子体系后续专题](../../docs/next/栅格算子体系后续专题.md)。轮廓复用原三波段源，以 `bands=[2]` 验证 65,528 个有效像元及完整覆盖位置，区分默认并集与全部波段交集。原成功与失败场景均保留，总计 55 轮浏览器、40 份最终 COG，预算为 1740 秒。报告保存 45 次已确认写入的三方正整数大小、14 次独立切片自动扫描、当前 derive、只读轮廓及清理证据。普通成果与切片共用唯一严格大小断言；按执行 ID 和目标文件名归档每次已确认写入的三方大小，保留覆盖前记录，未确认或未发布片不进入大小证据。内部孔洞场景复用区域外裁剪 COG，核对 53,247 个有效像元、两个面片和一个孔洞，并确认输入成果字节不变；该场景已包含于上述 Hosted 基线。旋转场景使用两个非零旋转项及列行不同分辨率的三波段源，按完整逆变换核对 65,532 个有效像元；该场景已包含于上述 Hosted 基线。四邻接与自接触场景使用同一双波段源，显式选第 1／2 波段，分别核对四个角点相邻面片及一个面片中的两个角点相接孔洞，保留 4／14 个有效零值像元；同样已包含于上述 Hosted 基线。此 suite 不登记 schedule，也不得在当前开发部署运行。
+### 栅格工作流
 
-完整场景容量校准单独手工选择 `raster-workflow-capacity`，标准业务入口为 `make test-online ONLINE_SUITE=raster-workflow-capacity`，仅允许上述一次性 Hosted 部署运行。`online-hosted-raster-capacity-gate.sh` 复用同一产品镜像启动与身份校验，Runtime 为 4 CPU quota／2 GiB／无额外 swap；Business `online-raster-capacity-fixture.py` 使用当次磁盘 MinIO，下载固定长度与 SHA-256 的完整 Sentinel-2 B02/B03/B04/B08，并完整核对组合源。管理员正式 API 配置 64／128／256 MiB 缓存与运行额度 1／2，每组两条四波段计算／average／COG 工作流，共两轮、12 组、24 条链；每组新建 Runtime，核对策略应用版本、实际运行及等待数量、cgroup 峰值、OOM 和容器进程 VmHWM 之和。耗时只计提交至父执行终态，不含独立物理 oracle 与 Meta 扫描；顺序在第二轮反转，不清空宿主机文件缓存。完整成果像元、mask、四层金字塔、COG 布局、源哈希、artifact／对象／DataItem 正整数大小、自动扫描、血缘和 Monitor 全部通过后才计为通过。每组清空目标对象，退出核对全生命周期清理；失败也归档当组采样。原矩阵后追加目录镶嵌负载：同一完整四波段源无损分为四片，通过普通 User 的 Manager `raster_mosaic_generation` 正式创建／执行／读取入口，以 leaf 并发 1／4 各两轮生成四份 COG 和 5490×5490 全局总览；固定 64 MiB 缓存、运行额度 1，每组重建 Runtime。仅容量身份增加 Manager 创建／读取权限；原 Raster 身份不变。独立 oracle 核对七份完整文件、明确的零字节目录标记、全部四波段像元／mask／金字塔、源哈希，以及 whole 物理总大小／对象 stat 总大小／Meta DataItem 正整数大小相等，28 次自动扫描均须互异。原 24 条链与新增四次目录任务全部完成、清理通过后才能声明扩展容量验收通过；旧容量证据仅覆盖原计算负载。Native oracle 自动发现于 `make test-geopython-workflow`，身份夹具与场景回归纳入 `make test-raster-online-runner`，CI 登记同步核对。业务预算 10800 秒，容量专属测试会话 4 小时，原 Raster suite 的 1740 秒与普通 30 分钟测试 Token 均保持原值。新入口不登记夜间调度，结果只支持该工作负载和实际测量条件，不能直接改变默认资源策略。
+#### 入口、身份与清理
 
+栅格工作流验收在 `online-t4-gates.yml` 手工选择 `raster-workflow`，由 `online-hosted-raster-gate.sh` 复用 Hosted 生命周期和标准 Runtime 启动入口。此 suite 不登记 schedule，也不得在当前开发部署运行。
+
+Business owner `online-raster-minio-fixture.py` 管理两套 tmpfs MinIO，凭据只存于 owner-only 临时文件；目标 Engine 使用独立普通写入账号，目标侧 root 仅用于夹具管理与物理核验。独立 Provisioner 注册源、目标 Engine 后从业务进程移除 Provisioner Token 与数据库密码。
+
+退出时清理业务容器、Runtime 镜像、registry、Infra 数据卷和凭据，清理失败使门禁失败。`make test-raster-online-runner` 验证场景与生命周期，归入 `make test-online-runner` 和 `make test-platform`；独立物理校验器的真实 GDAL 回归归入既有 `make test-geopython-workflow`。完整场景要求见[正式测试场景](../../docs/spec/testing/scenarios/Manager与空间成果.md#raster-workflow)。
+
+#### 主场景与失败断言
+
+普通 User 通过 Develop 执行栅格工作流，验证 create、重复 create 失败不改目标、replace、原始像元和完整 COG 布局、自动 Meta scan/血缘，以及同一 User 的 Console Monitor 状态与源目标卡片。
+
+批量切片先以 DEFLATE create，再以 NONE replace，保留无关文件；目录拒写场景精确拒绝第二片写入，要求父执行失败，仅首片进入稳定输出、自动扫描与 Meta 目录，且已有成果字节不变。
+
+发布后清理故障复用 Business-owned 存储代理：真实 PUT 成功后按上传哈希唯一定位临时 COG，保留原文件，在私有 sidecar 路径触发删除失败；分别核对首片与四片已确认时的失败清单、稳定输出、新自动扫描、原有成果哈希及工作目录清理。代理及其 Docker socket 仅属于 Hosted 夹具，故障事件保存在不归档的 owner-only 目录，产品无故障开关。
+
+普通成果与切片共用唯一严格大小断言：artifact、物理对象和 DataItem 的大小须为相等的正整数；按执行 ID 和目标文件名归档每次已确认写入的三方大小，保留覆盖前记录，未确认或未发布片不进入大小证据。
+
+#### 固定版本证据
+
+原 suite 的四种单波段聚合、多波段 mean、旋转网格多波段 sum、波段选择、孔洞／分离面片、旋转网格与四邻接／自接触轮廓、批量 create/replace、拒写及两类发布后清理故障已通过[Hosted T4 38589484655](https://github.com/pampa0629/addp/actions/runs/38589484655)，运行版本 `44e246a5a`；最新证据与边界见[栅格算子体系后续专题](../../docs/next/栅格算子体系后续专题.md)。
+
+原成功与失败场景均保留，总计 55 轮浏览器、40 份最终 COG，预算为 1740 秒。报告保存 45 次已确认写入的三方正整数大小、14 次独立切片自动扫描、当前 derive、只读轮廓及清理证据。
+
+以下细项均属于上述固定版本基线：
+
+- 轮廓复用原三波段源，以 `bands=[2]` 验证 65,528 个有效像元及完整覆盖位置，区分默认并集与全部波段交集。
+- 内部孔洞场景复用区域外裁剪 COG，核对 53,247 个有效像元、两个面片和一个孔洞，并确认输入成果字节不变。
+- 旋转场景使用两个非零旋转项及列行不同分辨率的三波段源，按完整逆变换核对 65,532 个有效像元。
+- 四邻接与自接触场景使用同一双波段源，显式选第 1／2 波段，分别核对四个角点相邻面片及一个面片中的两个角点相接孔洞，保留 4／14 个有效零值像元。
+
+### 完整场景容量校准
+
+#### 环境与计算矩阵
+
+完整场景容量校准单独手工选择 `raster-workflow-capacity`，标准业务入口为 `make test-online ONLINE_SUITE=raster-workflow-capacity`，仅允许上述一次性 Hosted 部署运行。`online-hosted-raster-capacity-gate.sh` 复用同一产品镜像启动与身份校验，Runtime 为 4 CPU quota／2 GiB／无额外 swap；Business `online-raster-capacity-fixture.py` 使用当次磁盘 MinIO，下载固定长度与 SHA-256 的完整 Sentinel-2 B02/B03/B04/B08，并完整核对组合源。
+
+管理员正式 API 配置 64／128／256 MiB 缓存与运行额度 1／2，每组两条四波段计算／average／COG 工作流，共两轮、12 组、24 条链；每组新建 Runtime，核对策略应用版本、实际运行及等待数量、cgroup 峰值、OOM 和容器进程 VmHWM 之和。耗时只计提交至父执行终态，不含独立物理 oracle 与 Meta 扫描；顺序在第二轮反转，不清空宿主机文件缓存。
+
+完整成果像元、mask、四层金字塔、COG 布局、源哈希、artifact／对象／DataItem 正整数大小、自动扫描、血缘和 Monitor 全部通过后才计为通过。每组清空目标对象，退出核对全生命周期清理；失败也归档当组采样。
+
+#### 目录镶嵌与通过条件
+
+目录镶嵌负载：同一完整四波段源无损分为四片，通过普通 User 的 Manager `raster_mosaic_generation` 正式创建／执行／读取入口，以 leaf 并发 1／4 各两轮生成四份 COG 和 5490×5490 全局总览；固定 64 MiB 缓存、运行额度 1，每组重建 Runtime。仅容量身份增加 Manager 创建／读取权限；原 Raster 身份不变。
+
+独立 oracle 核对七份完整文件、明确的零字节目录标记、全部四波段像元／mask／金字塔、源哈希，以及 whole 物理总大小／对象 stat 总大小／Meta DataItem 正整数大小相等，28 次自动扫描均须互异。
+
+原 24 条链与新增四次目录任务全部完成、清理通过后才能声明扩展容量验收通过；旧容量证据仅覆盖原计算负载。
+
+#### 门禁与结论边界
+
+Native oracle 自动发现于 `make test-geopython-workflow`，身份夹具与场景回归纳入 `make test-raster-online-runner`，CI 登记同步核对。业务预算 10800 秒，容量专属测试会话 4 小时，原 Raster suite 的 1740 秒与普通 30 分钟测试 Token 均保持原值。
+
+新入口不登记夜间调度，结果只支持该工作负载和实际测量条件，不能直接改变默认资源策略。
+
+
+### 独立持久化专项
 
 `make test-online ONLINE_SUITE=raster-focal-statistics-persistence` 是邻域统计独立手工 Hosted，复用原普通用户 12 权限、NFS 和同源默认入口产品 Runtime；600 秒业务预算验证六条 COG 保存链、跨块完整像元／mask、严格三方大小、精确自动扫描、当前执行血缘及零残留，非法波段／窗口失败不得发布或新增扫描。确定性脚本入口为 `make test-raster-focal-statistics-online-runner`，并入原栅格 Runner；真实 GDAL 回归沿现有 Native 入口。固定版本 `fe0d7cc8e` 的[独立 Hosted](https://github.com/pampa0629/addp/actions/runs/39228689716/job/117981136802) 已通过并经归档审计，预检／业务 359770 毫秒，完整结果见正式场景文档；同源 Linux 全量 1251 项及 Platform 均通过。原五套有效 T4 保持。
 
