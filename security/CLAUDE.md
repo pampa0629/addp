@@ -600,3 +600,8 @@ Transfer 任务选择／保存／执行与 Develop 全量导出尚未接通，�
 
 
 2026-10-27 补充收口：4c新增ExportSession私有保护记录触及Ontology已捕获的Transfer service整文件来源，但漏同步平台来源审查，专门CI会话报回漂移。已在本地用 `make test-platform-review` 强制非缓存复现，按平台定义规范逐项复核：CreateTask停止态创建语义/权限/效果不变，新增初始化仅在已验证模块来源的CreateAdHocExecution中，运行和再次交付继续未建模。平台修订34→35，只更新service真实提交4c及摘要/用途，保留所有来源、覆盖和绑定；定义其余字段逐项相同。非缓存来源门禁、Ontology/Transfer Go T1均通过，未扩展业务规则、IAM或发布内核；不将此前通过记录冒充该门禁已通过，不将本次本地结果记为CI恢复或新构建实际CSV通过。详见 ontology/CLAUDE.md 和 `/tmp/p145-export-platform-review-audit.json`；CI及待重启后的实际CSV边界保持。
+
+
+2026-10-28 修后 CI 回传归档：专门 CI 会话已核实真实 Job 终态，本会话仅复核其保存的 Job 元数据与原始日志，未联网查询、重跑或触发 CI。修复提交 `79fa05e7b9907b0ad978ce8716ac050b56314a80` 的 [Go workspace Job 122248960679](https://github.com/pampa0629/addp/actions/runs/40521342460/job/122248960679) 实际执行 `Run all tracked Go module tests` 并成功，原始日志含 `ontology/internal/platform 0.676s` 通过；包含该修复的后继 `7ebf98370ebc965e09cb5744983dbf8ee7fbbbce` 的 [Platform consistency Job 122257071998](https://github.com/pampa0629/addp/actions/runs/40523616999/job/122257071998) 实际执行 `Run platform consistency gate` 并成功，同包 `0.176s` 通过。独立核对两份日志 SHA-256 与专门会话审计一致、Job/run/head SHA/attempt 精确匹配、成功步骤实际完成非跳过，并验证修复提交是后继来源的祖先。因此本次4c引起的来源漂移已有修后实际 CI 恢复证据；旧失败记录保留，不推广为当前或未来 HEAD 的全部 CI 通过。
+
+证据：`/tmp/addp-ci-20261027-160029/Transfer_79fa_review_source_actual_CI_recovery_audit.json` 与对应 `job-122248960679.log`、`job-122257071998.log`；本会话独立复核 `/tmp/p145-export-source-ci-return-independent-audit.json`。此归档仅补来源审查门禁恢复，不能替代新构建的实际 CSV、旧文件拒绝与重新导出恢复验收，也不证明修订35已在运行环境激活。用户已确认重启且四个相关 Backend 曾核对包含4c；当前尚未收到已有 `/tmp/p145-run-export-protection-acceptance.sh --temporary-protection-cycle` 的运行报告，CSV验收保持未验证。本轮仅文档归档，复用已完成测试，不重复产品门禁，不新增任务、调度、配置或权限，不操作本地服务。
