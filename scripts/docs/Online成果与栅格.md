@@ -2,21 +2,19 @@
 
 [返回脚本导航](../README.md)
 
-专项入口：[分类蚕食容量](#分类蚕食容量) · [D8 河网转矢量线](#d8-河网转矢量线)
+专项入口：[Manager 内部产物与内容边界](#manager-内部产物与内容边界) · [分类蚕食容量](#分类蚕食容量) · [D8 河网转矢量线](#d8-河网转矢量线)
 
 测试分层、身份和清理规则以[测试与验收规范](../../docs/spec/addp测试与验收规范.md)为准；历史结果仅适用于所列源码和运行尝试，不代表当前 HEAD 已重跑。
 
 ## Manager 内部产物与内容边界
 
-`manager-internal-artifact-lineage` 使用 `scripts/test/online-hosted-manager-gate.sh` 管理 GitHub Hosted Ubuntu x86_64 临时部署：从零建立 Infra、最小权限登录身份与 Business MinIO Engine Instance，启动 System、Gateway、Meta、Manager、Monitor、Console 和 PointCloud、Document、Model3D Runtime。Business owner 确定性生成 LAS、带 PNG 贴图的 DAE/3DS，并发布已跟踪的 3 页 PPTX；不依赖本机被忽略的数据目录。suite 经同一次真实 Meta scan，通过 Manager owner 入口生成 COPC、PDF 和 GLB，核对 Manager/Monitor 的 `addp.lineage-facts/v1`、Range 读取、GLB 内嵌纹理与非空网格、Console 模型加载，以及 PPTX 翻页后引擎刷新不重复生成。结果和任务仅按本轮捕获 ID 经 Manager API 删除，预览偏好恢复原值；生命周期在所有退出路径销毁当次业务容器、网络、数据卷和 Infra，校验零残留。确定性测试和真实验收分别使用 `make test-online-runner` 与 `make test-online ONLINE_SUITE=manager-internal-artifact-lineage`；首次 Hosted T4 成功前只允许手工触发。
+`manager-internal-artifact-lineage` 使用 `scripts/test/online-hosted-manager-gate.sh` 管理 GitHub Hosted Ubuntu x86_64 临时部署：从零建立 Infra、最小权限登录身份与 Business MinIO Engine Instance，启动 System、Gateway、Meta、Manager、Monitor、Console 和 PointCloud、Document、Model3D Runtime；无需永久账号或自备 Runner。Business owner 确定性生成 LAS、带 PNG 贴图的 DAE/3DS，并发布已跟踪的 3 页 PPTX；不依赖本机被忽略的数据目录。suite 经同一次真实 Meta scan，通过 Manager owner 入口生成 COPC、PDF 和 GLB，核对 Manager/Monitor 的 `addp.lineage-facts/v1`、Range 读取、GLB 内嵌纹理与非空网格、Console 模型加载，以及 PPTX 翻页后引擎刷新不重复生成。结果和任务仅按本轮捕获 ID 经 Manager API 删除，预览偏好恢复原值；生命周期在所有退出路径销毁当次业务容器、网络、数据卷和 Infra，校验零残留。确定性测试和真实验收分别使用 `make test-online-runner` 与 `make test-online ONLINE_SUITE=manager-internal-artifact-lineage`；首次 Hosted T4 成功前只允许手工触发，不计为 T4 通过。
 
 该 Hosted suite 同时覆盖 Meta 内容边界：使用 `business/scripts/online-content-boundary-fixture.py` 为 MinIO 与临时 NFS export 生成相同的两组 Shapefile、同名异类文件及范围外记录，分别从目录和显式 refs 入口执行 basic→deep→basic。`content-boundaries.json` 保存执行 ID、item ID/fingerprint、父节点与 refs，并验证再次 basic 保留深度事实、组件不重复登记及范围外记录不变。NFS fixture 由 `business/scripts/online-manager-nfs-fixture.sh` 独占管理，仅允许 GitHub Hosted Ubuntu，使用系统 `nfs-kernel-server` 并将只读 export 限于回环客户端；拒绝既有 export，失败也必须清理本轮 export、临时数据与服务。个人 macOS NFS 不在该脚本操作范围。确定性验证使用 `make test-manager-online-runner`。2026-10-15，提交 `935dabe02` 的 [Hosted T4 38660099411](https://github.com/pampa0629/addp/actions/runs/38660099411) 已真实通过四个边界场景及原有完整 suite；归档的 `content-boundaries.json` 与主报告一致，12 次边界扫描均成功，普通 User 身份和五个服务构建版本一致，生命周期清理通过、Infra 零残留。
 
 组件收敛扩展沿用同一套件、权限和生命周期，保留上述四个空范围场景，再增加 NFS／MinIO 各自的目录与 refs 既有记录场景。每个新范围先用精确 `targets` 登记十条独立 single；后续 basic→deep→basic 均使用 `force=false`，目录仅收敛被两组 Shapefile 认领的六条组件，refs 仅收敛指定组合的三条组件。校验退役详情 404、主项身份与父节点保留、范围外及未认领记录不变，`addp.content-boundaries/v2` 报告记录准备执行、被移除的 ID／fingerprint 和保留记录。共享生成器输出 41 个文件，既有 NFS、MinIO 清理路线不变；标准门禁和 Hosted Job 继续覆盖八个场景。2026-10-15，提交 `468df57af` 的 [Hosted 38676830266](https://github.com/pampa0629/addp/actions/runs/38676830266) 独立边界报告八项 passed，24 次边界扫描和四次准备执行均有 Worker success 终态，18 条被认领组件清理及详情 404、主项身份与无关记录保留断言通过。五个服务构建提交一致，退出清理 passed、Infra zero_residuals；后续 3DS 转换失败使完整 suite 为 failed，主报告没有完整 suite_report，因此本次只计数据项边界领域通过，完整套件仍须对应领域修复后复验。
 
 ## 矢量与栅格成果
-
-Manager 内部产物验收 `manager-internal-artifact-lineage` 使用 GitHub Hosted Ubuntu x86_64 临时部署，由 `scripts/test/online-hosted-manager-gate.sh` 从零建立最小权限身份、Business MinIO 与真实 Runtime，复用 `make test-online` 业务断言并在退出时销毁环境；无需永久账号或自备 Runner。首次真实运行成功前只登记手工触发，不计为 T4 通过。
 
 矢量 PMTiles 工作流验收在 `online-t4-gates.yml` 手工选择 `vector-pmtiles-workflow`；`online-hosted-vector-pmtiles-gate.sh` 复用共享 Hosted 生命周期和真实 GeoPython 产品镜像，Business 夹具仅拥有本轮独立 MinIO。通过普通 User 的 Develop 执行两点 GeoJSON 纯几何 create、重复 create 冲突保护、50 面 Shapefile 精确字段 replace，核对稳定目标身份、自动扫描及当前血缘；真实 Console 核对 min_zoom=0、no-store、原生瓦片哈希、要素数和地图。离线入口 `make test-vector-pmtiles-online-runner` 纳入平台聚合，真实 GDAL oracle 纳入 `make test-geopython-workflow`。成功与失败均须清理，完整验收边界见[测试与验收规范](../../docs/spec/addp测试与验收规范.md)；登记入口不代表 Hosted 结果已经通过。
 
