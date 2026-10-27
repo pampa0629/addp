@@ -6,9 +6,10 @@
 
 - [start.sh](#startsh) - 生产环境启动脚本
 - [stop.sh](#stopsh) - 生产环境停止脚本
-- [health-check.sh](#health-checksh) - 健康检查脚本
+- [health-check.sh](#health-checksh) - 容器状态、回环入口探测与验收范围
 - [wait-infra.sh](#wait-infrash) - 基础设施就绪等待
 - [swarm/](#swarm) - 现存 Swarm 脚本及部署缺口
+- [健康检查失败排查](#问题-3-健康检查失败) · [状态与资源查看](#查看状态) · [测试与验收规范](../../docs/spec/addp测试与验收规范.md)
 
 ---
 
@@ -30,7 +31,7 @@ cd /path/to/addp
 2. 启动基础设施并等待其就绪。
 3. 启动 System Backend，使用 Docker Compose 容器健康检查等待就绪。
 4. 启动 `addp-platform` 中全部平台服务，并等待有健康检查的容器变为 healthy、其他容器进入 running。
-5. 启动 `addp-runtimes` 中全部内置 Runtime，再检查两组服务状态。
+5. 启动 `addp-runtimes` 中全部内置 Runtime，再列出平台与 Runtime 状态；本机入口探测另按[健康检查说明](#health-checksh)执行。
 
 容器内部端口固定，平台 Compose 仅将 Nginx 的 `NGINX_PORT` 发布到宿主机。启动脚本报告统一访问地址；`ADDP_PUBLIC_ORIGIN` 留空时为 `http://localhost:<NGINX_PORT>`。域名、HTTPS 或上级反向代理部署须填写用户实际访问的 `ADDP_PUBLIC_ORIGIN`。
 
@@ -75,7 +76,28 @@ cd /path/to/addp
 
 ## health-check.sh
 
-`./scripts/prod/health-check.sh` 检查基础设施和应用 Compose 中全部容器的运行或健康状态，并通过实际发布的 Nginx 端口请求 `/health`。任一容器未就绪或统一入口不可达时返回非零状态；不依赖模块在宿主机发布固定端口。
+从项目根目录执行：
+
+```bash
+bash scripts/prod/health-check.sh
+```
+
+该入口单次核对容器状态并探测本机 Nginx HTTP 路径，不承担启动等待或业务验收。实际逻辑见 [health-check.sh](health-check.sh)。
+
+| 检查层 | 实际范围与判定 |
+| --- | --- |
+| 服务枚举 | 分别读取 `docker-compose.infra.yml`、`docker-compose.yml`、`docker-compose.runtimes.yml` 的 `config --services` 输出；不叠加生产启动入口生成的观测等覆盖文件，不能据此认定本次部署全部可选组件已覆盖 |
+| 容器状态 | 对枚举服务使用 `ps -a -q` 找容器，优先读取 `.State.Health.Status`，无健康探针时读取 `.State.Status`；healthy 或 running 通过，缺容器或其他状态记失败。running 不等于模块 Ready 或业务可用 |
+| 一次性初始化 | 仅 Infra 的 `redpanda-init` 允许 exited 且退出码 0，表示初始化完成；其他已退出容器不按此例外通过 |
+| Nginx 入口 | 从平台 Compose 查询 Nginx 的实际发布端口，再以 `curl -fsS` 请求 `http://127.0.0.1:<端口>/health`；无映射或请求失败记失败，不按模块宿主机固定端口探测 |
+
+Nginx `/health` 由[根配置](../../nginx/nginx.conf)直接返回，脚本也不校验响应正文。该回环探测不使用 `ADDP_PUBLIC_ORIGIN`，不能证明公开域名、HTTPS 证书、上级代理、浏览器入口、认证或数据服务可用；这些须从实际消费入口单独验证。
+
+**失败与覆盖边界**：缺失容器、状态不通过或入口请求失败会累积非零结果；Docker 查询或 inspect 错误也可能提前中断。脚本不轮询等就绪，不自动修复；curl 未配置显式超时，不能套用 [wait-infra.sh](#wait-infrash) 的等待预算。
+
+服务枚举通过进程替换读取，脚本未单独检查 `config --services` 的退出结果；枚举失败时可能漏查服务。须结合原始报错、三份配置的预期服务及实际输出核对覆盖，不能只凭最终退出码推定完整检查。实际状态与失败排查分别见[查看状态](#查看状态)、[健康检查失败](#问题-3-健康检查失败)；可选观测状态还须按[Infra 故障排查](../infra/docs/故障排查.md)核对。
+
+容器检查、回环 HTTP 探测、公开入口和业务结果分别记录。标准门禁、隔离 T4 与 T5 认证遵循[测试与验收规范](../../docs/spec/addp测试与验收规范.md)；未执行、失败或未覆盖项不能计为通过，健康检查成功不代表业务就绪、日志完整或升级/恢复验收通过。
 
 ---
 
@@ -180,7 +202,7 @@ vi .env  # 核对 Registry、镜像版本、公共 URL、反向代理及 Busines
 
 检测到已有 `addp-infra_postgres_data` 卷而根 `.env` 缺失时，初始化会拒绝重建，须从原部署恢复配置。配置校验失败时先修正对应问题；不要通过重新生成密码连接旧数据卷。
 
-通过启动输出中的 `ADDP_PUBLIC_ORIGIN` 访问 Console，再验证所需业务功能；上述健康检查只核对容器状态与 Nginx `/health`，不代替业务验收。
+通过启动输出中的 `ADDP_PUBLIC_ORIGIN` 访问 Console，再以合法身份验证所需业务功能；本机探测与公开入口的分工统一见[健康检查与验收范围](#health-checksh)。
 
 ### 更新部署
 
@@ -204,7 +226,7 @@ vi .env
 ./scripts/prod/health-check.sh
 ```
 
-健康检查不代替升级后的业务功能与数据结构验收；验证范围和标准入口见[测试与验收规范](../../docs/spec/addp测试与验收规范.md)。
+升级后的业务功能与数据结构仍须独立验收，检查分工与标准入口统一见[健康检查说明](#health-checksh)。
 
 ### 回滚部署
 
@@ -243,14 +265,7 @@ lsof -nP -iTCP -sTCP:LISTEN
 
 ### 问题 3: 健康检查失败
 
-运行生产健康检查，再按失败服务核对对应 Compose 项目；例如 Manager Backend：
-
-```bash
-bash scripts/prod/health-check.sh
-docker compose -f docker-compose.yml ps -a manager-backend
-```
-
-该检查核对容器状态和实际 Nginx `/health`，不能代替模块业务功能验收。按[查看日志](#查看日志)定位容器入口问题，模块正文使用 System 的实例日志入口；配置问题对照所属模块配置规范核对，不导出整份容器环境。
+按[健康检查说明](#health-checksh)运行标准入口并保留原始结果，区分容器状态、一次性初始化与回环 HTTP 请求失败。按[查看状态](#查看状态)核对对应 Compose 项目及已退出容器，再通过[查看日志](#查看日志)定位容器入口问题；模块正文使用 System 的[实例日志入口](#模块实例运行日志)。配置问题对照所属模块规范核对，不导出整份容器环境。
 
 修正原因后，平台重启使用本文[停止与启动流程](#stopsh)。涉及数据库结构变化时，遵循[Backend 迁移与 Worker 启动顺序](../../docs/spec/addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)，先停止相关 Worker 领取任务并妥善结束在途任务，再迁移和恢复。
 
@@ -278,6 +293,8 @@ docker compose -f docker-compose.runtimes.yml logs --tail=100 duckdb-engine
 ```
 
 ### 查看状态
+
+以下命令用于状态和资源诊断，不执行入口请求或业务验收；容器与探测结果按[健康检查范围](#health-checksh)分别核对。
 
 ```bash
 # Infra 状态、实际端口与观测能力诊断
@@ -316,7 +333,7 @@ docker system df
 | --- | --- |
 | 配置与对外访问 | 根 `.env` 初始化和 Secret 处理见[首次部署](#首次部署)，变量归属与生效见[配置规范](../../docs/spec/addp配置介绍.md)。按实际入口配置 `ADDP_PUBLIC_ORIGIN`、HTTPS/上级代理和防火墙，访问要求见[启动流程](#启动流程)。 |
 | 备份恢复 | 生产备份范围、密钥保护与恢复演练要求见[数据丢失与备份边界](#问题-4-数据丢失)。本地 Infra 导出不是完整生产备份；工具与覆盖范围见[Infra 备份专题](../infra/docs/备份恢复与搜索迁移.md#本地-infra-备份与隔离恢复演练)。 |
-| 健康与日志 | 容器状态和统一入口按[健康检查](#health-checksh)核对；正文、权限与日志链路分别见[模块实例日志](#模块实例运行日志)和[Infra 日志专题](../infra/docs/运行日志.md#模块实例运行日志)。健康检查通过不证明日志完整或业务验收通过。 |
+| 健康与日志 | 检查范围、失败判定与业务验收分工统一见[健康检查](#health-checksh)；日志正文、权限和链路见[模块实例日志](#模块实例运行日志)与[Infra 日志专题](../infra/docs/运行日志.md#模块实例运行日志)。 |
 | 更新与可靠性 | 先在测试环境验证目标版本，再按[更新部署](#更新部署)操作。可用性和发布结论以[测试与验收规范](../../docs/spec/addp测试与验收规范.md)及实际证据为准，Swarm 缺口见[现状说明](#swarm)。 |
 | 资源限制 | 根据实际部署负载配置并验证 CPU、内存限制；配置位置见[平台 Compose](../../docker-compose.yml)与[Runtime Compose](../../docker-compose.runtimes.yml)。 |
 
