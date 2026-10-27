@@ -151,7 +151,9 @@ bash scripts/local/stop.sh
 bash scripts/prod/start.sh
 ```
 
-首次部署的配置准备和服务启动顺序统一见 Prod README 的[首次部署](../../scripts/prod/README.md#首次部署)与[启动流程](../../scripts/prod/README.md#启动流程)。[健康检查](../../scripts/prod/README.md#health-checksh)仅核对所检查容器的运行/健康状态与 Nginx `/health` 可达性，不替代所需业务功能和数据结果验收；验收范围与标准入口见[测试与验收规范](../spec/addp测试与验收规范.md)。
+首次部署的配置准备和服务启动顺序统一见 Prod README 的[首次部署](../../scripts/prod/README.md#首次部署)与[启动流程](../../scripts/prod/README.md#启动流程)。
+
+容器状态、Nginx 回环 HTTP 探测及失败/覆盖边界统一见[健康检查正文](../../scripts/prod/README.md#health-checksh)，排查见[健康检查失败](../../scripts/prod/README.md#问题-3-健康检查失败)。公开 HTTPS、认证与业务数据结果须从实际消费入口独立验收；标准门禁见[测试与验收规范](../spec/addp测试与验收规范.md)。
 
 **访问地址**：公开 origin 和根 `.env` 配置见[配置规范的环境变量参考](../spec/configuration/环境变量参考.md#根目录-env)；默认访问地址、Nginx 端口及监听范围见[端口规范](../spec/addp端口分配.md)。Console、模块前端和 `/api/` 统一经 Nginx 访问，容器内仍使用稳定服务名和端口，不额外发布应用模块宿主机端口。域名、HTTPS 或上级反向代理部署须将 `ADDP_PUBLIC_ORIGIN` 设为用户实际访问的 origin；`NGINX_BIND_HOST` 单独控制宿主机监听范围，隔离验收限制为 `127.0.0.1`。
 
