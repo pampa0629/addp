@@ -3,13 +3,16 @@ package api
 import (
 	"context"
 	"errors"
+	"net/url"
+	"strconv"
+	"time"
+
 	"github.com/addp/common/client"
 	"github.com/addp/monitor/internal/metricsdiscovery"
 	"github.com/addp/monitor/internal/models"
+	"github.com/addp/monitor/internal/resourcequery"
 	"github.com/addp/monitor/internal/service"
 	"github.com/gin-gonic/gin"
-	"strconv"
-	"time"
 )
 
 type ResourceAlertRuleHandler struct {
@@ -46,6 +49,10 @@ func ruleRequest(c *gin.Context) bool {
 // @Param page query int false "页码 | Page" default(1)
 // @Param page_size query int false "每页条数 | Page size" default(20) maximum(100)
 // @Param node_id query string false "主机 ID | Host ID"
+// @Param metric_key query string false "固定指标键 | Fixed metric key" Enums(node.cpu.busy_percent,node.memory.used_percent,node.filesystem.used_percent)
+// @Param device query string false "完整挂载设备，须同时提供主机、容量指标及另外两个维度 | Exact mount device; requires host, capacity metric and both other dimensions"
+// @Param mountpoint query string false "完整挂载点 | Exact mountpoint"
+// @Param fstype query string false "文件系统类型 | Exact filesystem type"
 // @Success 200 {object} service.ResourceAlertRulePage
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
@@ -57,10 +64,19 @@ func ruleRequest(c *gin.Context) bool {
 // @x-addp-required-permissions ["monitor.platform_resource_rule.read"]
 // @Router /platform/resource-alert-rules [get]
 func (h *ResourceAlertRuleHandler) List(c *gin.Context) {
-	for k, v := range c.Request.URL.Query() {
-		if (k != "page" && k != "page_size" && k != "node_id") || len(v) != 1 {
+	query, parseErr := url.ParseQuery(c.Request.URL.RawQuery)
+	if parseErr != nil {
+		resourceRuleRespond(c, nil, service.ErrLogInvalid)
+		return
+	}
+	filter := service.ResourceAlertRuleFilter{NodeID: query.Get("node_id"), MetricKey: query.Get("metric_key"), Dimensions: resourcequery.Dimensions{}}
+	for k, v := range query {
+		if (k != "page" && k != "page_size" && k != "node_id" && k != "metric_key" && k != "device" && k != "mountpoint" && k != "fstype") || len(v) != 1 || ((k == "metric_key" || k == "device" || k == "mountpoint" || k == "fstype") && v[0] == "") {
 			resourceRuleRespond(c, nil, service.ErrLogInvalid)
 			return
+		}
+		if k == "device" || k == "mountpoint" || k == "fstype" {
+			filter.Dimensions[k] = v[0]
 		}
 	}
 	page, e := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -69,7 +85,7 @@ func (h *ResourceAlertRuleHandler) List(c *gin.Context) {
 		resourceRuleRespond(c, nil, service.ErrLogInvalid)
 		return
 	}
-	value, err := h.service.List(c.Request.Context(), page, size, c.Query("node_id"))
+	value, err := h.service.List(c.Request.Context(), page, size, filter)
 	resourceRuleRespond(c, value, err)
 }
 

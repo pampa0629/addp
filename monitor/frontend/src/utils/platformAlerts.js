@@ -19,10 +19,24 @@ export function platformAlertSearch(value) {
   return value.trim()
 }
 
+const ruleFilterKeys = ['node_id','metric_key','device','mountpoint','fstype']
+export function resourceRuleFilterState(query) {
+  if (!ruleFilterKeys.some(key => Object.hasOwn(query,key))) return null
+  const params = Object.fromEntries(ruleFilterKeys.map(key => [key, typeof query[key] === 'string' && query[key] && !/[\p{Cs}]/u.test(query[key]) ? query[key] : '\u0000']))
+  const {node_id,metric_key,...dimensions} = params
+  return {params, valid:isTargetUUID(node_id) && metric_key === 'node.filesystem.used_percent' && Boolean(validResourceDimensions(dimensions,false)) && Object.values(dimensions).every(value => !/[\p{Cs}]/u.test(value))}
+}
+export function resourceRuleMountRoute(nodeID, dimensions) {
+  if (!validResourceDimensions(dimensions,false)) return null
+  const filter = resourceRuleFilterState({node_id:nodeID,metric_key:'node.filesystem.used_percent',...dimensions})
+  return filter?.valid ? {path:'/platform-alerts',query:{tab:'rules',...filter.params}} : null
+}
+
 // Stable platform-management state; opaque IDs are never inferred from names.
 export function platformAlertState(query = {}) {
   const positive = value => typeof value === 'string' && /^[1-9][0-9]*$/u.test(value) && Number(value) <= 10000 ? Number(value) : 1
   return { tab: ['notifications', 'rules', 'http-rules', 'process-rules', 'availability-rules'].includes(query.tab) ? query.tab : 'incidents',
+    rule_filter: query.tab === 'rules' ? resourceRuleFilterState(query) : null,
     search: platformAlertSearch(query.search), host_name: platformAlertSearch(query.host_name),
     time_from: alertTimeBound(query.time_from), time_to: alertTimeBound(query.time_to),
     severity: query.severity === undefined ? '' : typeof query.severity === 'string' && query.severity.length <= 32 ? query.severity : 'invalid',
@@ -32,7 +46,7 @@ export function platformAlertState(query = {}) {
     availability_rule_page: positive(query.availability_rule_page), process_rule_page: positive(query.process_rule_page), http_rule_page: positive(query.http_rule_page), rule_page: positive(query.rule_page), page: positive(query.page), delivery_page: positive(query.delivery_page) }
 }
 export function platformAlertQuery(state) {
-  return { ...(['notifications', 'rules', 'http-rules', 'process-rules', 'availability-rules'].includes(state.tab) ? { tab: state.tab } : {}), ...(state.category ? { category: state.category } : {}), ...(state.severity ? { severity: state.severity } : {}),
+  return { ...(['notifications', 'rules', 'http-rules', 'process-rules', 'availability-rules'].includes(state.tab) ? { tab: state.tab } : {}), ...(state.tab === 'rules' && state.rule_filter ? state.rule_filter.params : {}), ...(state.category ? { category: state.category } : {}), ...(state.severity ? { severity: state.severity } : {}),
     ...(state.status === 'active' ? {} : { status: state.status || 'all' }), ...(state.subject_id ? { subject_id: state.subject_id } : {}), ...(state.search ? { search: state.search } : {}), ...(state.host_name ? { host_name: state.host_name } : {}), ...(state.time_from ? { time_from: state.time_from } : {}), ...(state.time_to ? { time_to: state.time_to } : {}),
     ...(state.availability_rule_page > 1 ? { availability_rule_page: String(state.availability_rule_page) } : {}), ...(state.process_rule_page > 1 ? { process_rule_page: String(state.process_rule_page) } : {}), ...(state.http_rule_page > 1 ? { http_rule_page: String(state.http_rule_page) } : {}), ...(state.rule_page > 1 ? { rule_page: String(state.rule_page) } : {}), ...(state.page > 1 ? { page: String(state.page) } : {}), ...(state.delivery_page > 1 ? { delivery_page: String(state.delivery_page) } : {}) }
 }

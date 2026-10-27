@@ -1162,6 +1162,9 @@
       "filesystemPressure": "文件系统可用容量使用率"
     },
     "resourceRules": {
+      "viewCapacity": "查看已有容量规则",
+      "noMatching": "此挂载暂无容量规则",
+      "invalidFilter": "挂载规则筛选不完整或无效，请返回主机页面重新选择。",
       "createCapacity": "创建容量告警",
       "saved": "规则已保存；新建规则默认停用。",
       "title": "资源规则",

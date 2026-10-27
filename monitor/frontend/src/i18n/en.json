@@ -1162,6 +1162,9 @@
       "filesystemPressure": "Filesystem available-capacity usage"
     },
     "resourceRules": {
+      "viewCapacity": "View capacity rules",
+      "noMatching": "No capacity rule for this mount",
+      "invalidFilter": "The mount rule filter is incomplete or invalid. Return to the host and select the mount again.",
       "createCapacity": "Create capacity alert",
       "saved": "Rule saved. New rules are disabled by default.",
       "title": "Resource rules",

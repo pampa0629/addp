@@ -165,3 +165,23 @@ test('host mount actions and rule management use one resource rule editor', () =
  assert.match(editor, /api\.updateRule\(/u)
  assert.doesNotMatch(editor, /localStorage|sessionStorage|navigateMonitorRoute|router\./u)
 })
+
+
+test('mount rule navigation is exact and invalid filters never widen to all rules', async () => {
+ const {resourceRuleMountRoute,resourceRuleFilterState} = await import('../src/utils/platformAlerts.js')
+ const node_id='11111111-1111-4111-8111-111111111111', dimensions={device:'/dev/a%_',mountpoint:'/data 文',fstype:'ext4'}
+ const target=resourceRuleMountRoute(node_id,dimensions)
+ assert.deepEqual(target,{path:'/platform-alerts',query:{tab:'rules',node_id,metric_key:'node.filesystem.used_percent',...dimensions}})
+ assert.deepEqual(platformAlertQuery(platformAlertState(target.query)),target.query)
+ assert.equal(resourceRuleFilterState({}),null)
+ for(const patch of [{fstype:undefined},{device:['x','y']},{node_id:'bad'},{metric_key:'node.cpu.busy_percent'},{mountpoint:'relative'},{fstype:String.fromCharCode(0xd800)}]) {
+  const q={...target.query,...patch}, state=platformAlertState(q)
+  assert.equal(state.rule_filter.valid,false)
+  const canonical=platformAlertQuery(state)
+  assert.ok(Object.hasOwn(canonical,'node_id'))
+  assert.equal(platformAlertState(canonical).rule_filter.valid,false)
+ }
+ assert.deepEqual(platformAlertQuery({...platformAlertState(target.query),tab:'notifications'}),{tab:'notifications'})
+ assert.equal(resourceRuleMountRoute('bad',dimensions),null)
+ assert.equal(resourceRuleMountRoute(node_id,{...dimensions,node_id:'22222222-2222-4222-8222-222222222222'}),null)
+})

@@ -22,7 +22,7 @@
         <el-table-column type="expand" width="44">
           <template #default="{ row }">
             <section v-if="expandedDetail?.nodeID === row.node_id" class="resource-detail-expansion" :id="`resource-details-${row.node_id}`" data-testid="resource-detail-expansion" :aria-label="t('monitor.resources.details.forHost', { name: row.display_name })">
-              <HostResourceDetailObservation :key="row.node_id + ':' + expandedDetail.family" :node="row" :family-name="expandedDetail.family" :identity="identity" :refresh="state.refresh" v-model:show-all-disks="expandedDetail.showAllDisks" :format-value="formatValue" :can-create-capacity-alert="canCreateCapacityAlert" @create-capacity-alert="mount => createCapacityAlert(row, mount)" @select="selectListResourceTrend" @denied="detailAccessDenied" />
+              <HostResourceDetailObservation :key="row.node_id + ':' + expandedDetail.family" :node="row" :family-name="expandedDetail.family" :identity="identity" :refresh="state.refresh" v-model:show-all-disks="expandedDetail.showAllDisks" :format-value="formatValue" :can-create-capacity-alert="canCreateCapacityAlert" :can-view-capacity-rules="canViewCapacityRules" @view-capacity-rules="mount => viewCapacityRules(row, mount)" @create-capacity-alert="mount => createCapacityAlert(row, mount)" @select="selectListResourceTrend" @denied="detailAccessDenied" />
             </section>
           </template>
         </el-table-column>
@@ -76,7 +76,7 @@
           </el-collapse>
         </article>
       </section>
-      <HostFilesystemResources v-if="instant" :capacity="filesystems" :inodes="inodes" :capacity-error-key="filesystemErrorKey" :inode-error-key="inodeErrorKey" :loading="loading" :can-configure="Boolean(canConfigure)" :configure-label="instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure'" :format-value="formatValue" :can-create-capacity-alert="canCreateCapacityAlert" @create-capacity-alert="mount => createCapacityAlert(node, mount)" @select="selectFilesystem" @configure="configureCollection" />
+      <HostFilesystemResources v-if="instant" :capacity="filesystems" :inodes="inodes" :capacity-error-key="filesystemErrorKey" :inode-error-key="inodeErrorKey" :loading="loading" :can-configure="Boolean(canConfigure)" :configure-label="instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure'" :format-value="formatValue" :can-create-capacity-alert="canCreateCapacityAlert" :can-view-capacity-rules="canViewCapacityRules" @view-capacity-rules="mount => viewCapacityRules(node, mount)" @create-capacity-alert="mount => createCapacityAlert(node, mount)" @select="selectFilesystem" @configure="configureCollection" />
       <template v-if="instant">
         <HostDeviceResources v-for="family in deviceFamilies" :key="family.name" :family-name="family.name" :observation="family.value.value" :error-key="family.error.value" :loading="loading" :selected-device="state.metric.startsWith(`node.${family.name}.`) ? state.dimensions.device : ''" v-model:show-all-disks="showAllDisks" :can-configure="Boolean(canConfigure)" :configure-label="instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure'" :format-value="formatValue" @select="selectDeviceObservation" @configure="configureCollection" />
       </template>
@@ -156,10 +156,12 @@ import { useAuthStore } from '../store/auth'
 import { nodeResourcesAPI as api } from '../api/nodeResources'
 import { isTargetUUID } from '../utils/monitoringTargets'
 import { hostListMetricSets, pressureMetrics, supportsResourceComparison, resourceTrendComparison, validateResourceSummaries, validateCollection, currentResourceValue, resourceTrendMetrics, resourceTrendChartRows, resourceErrorKey, resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, diskMetrics, networkMetrics, allResourceMetrics, filesystemResourceState, resourceDetailGroups, resourceRanges, resolveResourceRoute, trendParameters, validateResourceResponse, validateResourceTrendWindow } from '../utils/nodeResources'
+import { resourceRuleMountRoute } from '../utils/platformAlerts'
 import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
 const canRead = computed(() => auth.contextType === 'platform' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation && auth.hasPermission('monitor.resource_observation.read') && auth.hasPermission('platform.host_node.read'))
+const canViewCapacityRules = computed(() => canRead.value && auth.hasPermission('monitor.platform_resource_rule.read'))
 const canCreateCapacityAlert = computed(() => canRead.value && auth.hasPermission('monitor.platform_resource_rule.read') && auth.hasPermission('monitor.platform_resource_rule.create'))
 const capacityRuleEditor = ref(null)
 const canReadAlerts = computed(() => canRead.value && auth.hasPermission('monitor.platform_alert.read'))
@@ -224,6 +226,11 @@ function formatValue(value, metric) {
   return metric.unit === 'load' ? t('monitor.resources.loadValue', { value: formatted }) : formatted
 }
 function navigate(path, query, history = 'push') { return navigateMonitorRoute(router, { path, query }, { history }) }
+function viewCapacityRules(host, mount) {
+  if (!canViewCapacityRules.value || !host) return
+  const target = resourceRuleMountRoute(host.node_id, mount.dimensions)
+  if (target) navigateMonitorRoute(router, target)
+}
 function createCapacityAlert(host, mount) {
   if (!canCreateCapacityAlert.value || !host || loading.value) return
   capacityRuleEditor.value?.show(null, host, mount.dimensions)

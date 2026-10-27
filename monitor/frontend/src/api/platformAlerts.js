@@ -14,7 +14,7 @@ export const platformAlertsAPI = {
   createHTTPRule: data => client.post(`${base}/http-alert-rules`, data),
   updateHTTPRule: (id, data) => client.put(`${base}/http-alert-rules/${id}`, data),
   deleteHTTPRule: row => client.delete(`${base}/http-alert-rules/${row.id}`, { data: { version: row.version } }),
-  rules: (page, signal) => client.get(`${base}/resource-alert-rules`, { params: { page, page_size: 20 }, signal }),
+  rules: (page, signal, filter = {}) => client.get(`${base}/resource-alert-rules`, { params: { page, page_size: 20, ...filter }, signal }),
   createRule: data => client.post(`${base}/resource-alert-rules`, data),
   updateRule: (id, data) => client.put(`${base}/resource-alert-rules/${id}`, data),
   deleteRule: row => client.delete(`${base}/resource-alert-rules/${row.id}`, { data: { version: row.version } }),

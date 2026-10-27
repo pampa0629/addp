@@ -244,3 +244,93 @@ test('an explicit owner denial during host refresh clears an already open capaci
  await expect(dialog(page)).toBeHidden()
  expect(writes(state)).toHaveLength(0)
 })
+
+
+const lookupKeys = ['platform.host_node.read','monitor.resource_observation.read','monitor.platform_resource_rule.read']
+const ruleForMount = (dimensions,name='Exact mount',id='a0e9964c-e2d3-46ba-b151-52249cff528e') => ({id,node_id:node,metric_key:metric,dimensions,name,version:1,enabled:false,trigger_percent:85,recovery_percent:80,trigger_seconds:300,recovery_seconds:120,last_verdict:'paused',last_error:''})
+const lookupQuery = dimensions => new URLSearchParams({tab:'rules',node_id:node,metric_key:metric,...dimensions}).toString()
+for(const locale of ['zh-cn','en']) test(`view mount rules is exact, read-only, reloadable and returns to the host (${locale})`,async({page})=>{
+ const english=locale==='en', other={...mount,fstype:'xfs'}
+ const unrelated=Array.from({length:25},(_,i)=>ruleForMount({...mount,device:'/dev/other'+i},'Other mount '+i))
+ const state=await shortcutSetup(page,{locale,keys:lookupKeys,rules:[...unrelated,ruleForMount(other,'Exact xfs')]})
+ const location=page.url()
+ await expect(page.getByTestId('filesystem-create-alert')).toHaveCount(0)
+ await shortcutRows(page).nth(1).getByTestId('filesystem-view-rules').click()
+ const rules=page.getByTestId('resource-rules')
+ await expect(rules).toContainText('Exact xfs')
+ await expect(rules).not.toContainText('Other mount')
+ await expect(rules.getByRole('button',{name:english?'Edit':'编辑',exact:true})).toHaveCount(0)
+ await expect(page.getByTestId('resource-rule-create')).toHaveCount(0)
+ expect(state.requests.filter(r=>r.path.includes('/resource-alert-rules')&&r.method==='GET').at(-1).query).toMatchObject({node_id:node,metric_key:metric,...other,page:'1'})
+ expect(writes(state)).toHaveLength(0)
+ expect(Object.fromEntries(new URL(page.url()).searchParams)).toMatchObject({tab:'rules',node_id:node,metric_key:metric,...other})
+ await page.setViewportSize({width:620,height:900})
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+ const folder=mkdtempSync(join(tmpdir(),'addp-mount-rule-view-'))
+ await page.screenshot({path:join(folder,locale+'.png'),animations:'disabled'});console.log(`Mount rule view screenshot: ${folder}`)
+ await page.reload()
+ await expect(page.getByTestId('resource-rules')).toContainText('Exact xfs')
+ await page.goBack()
+ await expect(page).toHaveURL(location)
+ await expect(page.getByTestId('resource-search')).toHaveValue('keep')
+})
+
+test('missing capacity samples still allow reading and stopping an existing enabled mount rule',async({page})=>{
+ const row={...ruleForMount(mount),enabled:true}
+ const state=await shortcutSetup(page,{detail:true,keys:[...lookupKeys,'monitor.platform_resource_rule.update'],rules:[row],resourceOptions:{mounts:[mount],observationResponse:body=>{for(const series of body.series)if(series.metric_key===metric)Object.assign(series.points[0],{data_state:'no_data',value:null,sampled_at:null})}}})
+ await shortcutRows(page).first().getByTestId('filesystem-view-rules').click()
+ await expect(page.getByTestId('resource-rules')).toContainText(row.name)
+ const before=state.resourceState.reads.filter(r=>r.path.endsWith('/resource_observations')).length
+ await page.getByTestId('resource-rules').getByRole('button',{name:'编辑',exact:true}).click()
+ await dialog(page).locator('.el-switch').click()
+ await dialog(page).getByRole('button',{name:'保存',exact:true}).click()
+ await expect(dialog(page)).toBeHidden()
+ expect(writes(state)).toHaveLength(1)
+ expect(writes(state)[0].body).toMatchObject({enabled:false,version:1,dimensions:mount})
+ expect(state.resourceState.reads.filter(r=>r.path.endsWith('/resource_observations'))).toHaveLength(before)
+})
+
+test('view rules distinguishes no matching rule from a failed query and never creates automatically',async({page})=>{
+ const state=await shortcutSetup(page,{keys:lookupKeys,rules:[ruleForMount({...mount,device:'/dev/other'})],resourceOptions:{mounts:[mount]}})
+ await shortcutRows(page).first().getByTestId('filesystem-view-rules').click()
+ await expect(page.getByTestId('resource-rules')).toContainText('此挂载暂无容量规则')
+ await page.route('**/api/v1/monitor/platform/resource-alert-rules?*',route=>route.fulfill({status:503,json:{error:'Rule lookup unavailable'}}))
+ await page.reload()
+ await expect(page.getByTestId('resource-rules')).toContainText('Rule lookup unavailable')
+ await expect(page.getByTestId('resource-rules')).not.toContainText('此挂载暂无容量规则')
+ expect(writes(state)).toHaveLength(0)
+})
+
+test('invalid or partial mount rule URLs fail closed without querying all rules',async({page})=>{
+ const state=await fixture(page,{keys:lookupKeys,resources:true,path:'/platform-alerts?tab=rules&device=x'})
+ for(const query of ['tab=rules&device=x',lookupQuery(mount)+'&fstype=xfs',lookupQuery(mount).replace('node.filesystem.used_percent','node.cpu.busy_percent')]) {
+  await page.goto('/platform-alerts?'+query)
+  await expect(page.getByTestId('resource-rules')).toContainText('挂载规则筛选不完整或无效')
+ }
+ expect(state.requests.filter(r=>r.path.includes('/resource-alert-rules'))).toHaveLength(0)
+})
+
+test('view mount rules hides on rule-read revocation without granting it through create rights',async({page})=>{
+ const state=await shortcutSetup(page,{keys,resourceOptions:{mounts:[mount]}})
+ await expect(page.getByTestId('filesystem-view-rules')).toBeVisible()
+ await setIdentity(page,identity(keys.filter(k=>k!=='monitor.platform_resource_rule.read')))
+ await page.getByTestId(`resource-list-filesystem-${node}`).click()
+ await expect(page.getByTestId('filesystem-view-rules')).toHaveCount(0)
+ expect(writes(state)).toHaveLength(0)
+})
+
+test('switching precise mount filters cancels late lookups and revocation cannot restore their rows',async({page})=>{
+ const other={...mount,fstype:'xfs'}
+ const state=await shortcutSetup(page,{keys:lookupKeys,rules:[ruleForMount(mount,'Old ext4'),ruleForMount(other,'New xfs')]})
+ state.hold()
+ await shortcutRows(page).first().getByTestId('filesystem-view-rules').click()
+ await expect.poll(()=>state.requests.filter(r=>r.path.includes('/resource-alert-rules')&&r.query.device).length).toBe(1)
+ await page.goto('/platform-alerts?'+lookupQuery(other))
+ await expect.poll(()=>state.requests.filter(r=>r.path.includes('/resource-alert-rules')&&r.query.device).length).toBe(2)
+ state.release()
+ await expect(page.getByTestId('resource-rules')).toContainText('New xfs')
+ await expect(page.getByTestId('resource-rules')).not.toContainText('Old ext4')
+ await setIdentity(page,identity(['platform.host_node.read','monitor.resource_observation.read']))
+ await expect(page.getByTestId('resource-rules')).toHaveCount(0)
+ expect(writes(state)).toHaveLength(0)
+})

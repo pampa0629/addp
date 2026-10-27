@@ -2016,3 +2016,19 @@ Node24.11.1下标准`make test-common-frontend`先重现283项中282通过／1�
 205次完整资源检查全部小于四秒，最长1.285895秒；采样锁等待最长0.000208秒，清理锁等待0.000446秒，未触发清理超期。本轮在原20分钟内同时完成业务、预算与退出清理；成功样本的容器硬配额峰值3.25 CPU／4026531840字节内存、私有可写预算上界1807532095字节，均未触线，这些不是CPU／RSS实际用量或容量基线。确定性门禁的135项配置／预算、123＋88项生命周期及登记结果沿前述固定修复有效。
 
 本轮仅为标准Linux HTTP T2：真实Go与两个ASGI SDK来源→mTLS／HTTP SD／Prometheus→Monitor查询／自然一分钟／告警与通知闭环及资源守卫清理通过；不冒充个人本地实链窗口、完整Agent/Copilot正式backend登录或页面、正式密码/MFA T4、Hosted、容量、72小时保留或全workflow通过。旧44230c5c8业务子链通过但整门禁失败的证据仍保留，历史inspect退出1缺少stderr及对象的唯一原因仍未知，不因本轮通过倒改历史归因。本次未手工触发／重跑／取消CI，未新增本地窗口、Hosted、容量或定时，也未重启个人服务。下一步建议先明确正式Agent/Copilot产品进程及页面的HTTP观测本地验收边界，再申请运行窗口。
+
+
+### 主机挂载行查看已有容量规则入口（2026-10-27）
+
+主机列表展开及详情的完整挂载行新增“查看已有容量规则”，复用现有规则read权限、唯一模块导航、规则列表及ResourceAlertRuleEditor；无需create／update或当前容量样本。URL保存node_id、固定容量metric_key和完整device／mountpoint／fstype，原规则GET在Count／分页之前精确取交集，包含启用和停用规则；无匹配与读取失败分开。刷新、规则分页保留筛选，返回恢复原主机上下文；缺失／重复／错配／非法条件明确拒绝，不退回全量列表。切换筛选取消旧请求，身份／权限撤销清空旧结果，原创建／修改／启停权限及采样核验不变，不新增API路由、角色、后台投影或迁移。
+
+实施前确认现有Monitor Go、PostgreSQL与前端T1／T3、Swagger及Platform共享所有权门禁覆盖本批路径；根Makefile、module-gate、frontend-browser-gate及既有CI自动发现无需新登记。先同步平台观测、可恢复路由和API规范，再改原主路径。新增真实PG回归在25条较新不匹配及同设备异fstype规则之前筛选，核对总数、第二页、字面“/%”不作通配及原主机筛选；API拒绝部分、重复、非法编码和错配指标。前端新增七项浏览器场景覆盖中英只读定位、分页外规则、刷新／返回、缺样下查看及停用、空结果／503、非法URL、权限撤销与晚响应；单元补额外维度不能覆盖主机身份。
+
+本地标准`make test-module MODULE=monitor GO_ONLY=1`通过（/tmp/addp-mount-rule-query-go-final2.log）；依据标准infra/status确认addp-postgres实际25432后，仅使用addp_test执行`make test-monitor-postgres`，repository及service全套通过，新精确筛选用例通过（/tmp/addp-mount-rule-query-postgres-final.log）。`npm --prefix monitor/frontend test`最终130项、`make test-common-frontend`284项、Monitor标准Swagger生成及96个公开方法覆盖通过；最终`npm --prefix monitor/frontend run build`通过（3.77秒），日志分别为/tmp/addp-mount-rule-view-unit-delivery.log、/tmp/addp-mount-rule-view-common.log、/tmp/addp-mount-rule-query-swagger-retry.log、/tmp/addp-mount-rule-query-coverage-delivery.log、/tmp/addp-mount-rule-view-build-delivery.log。
+
+历史失败单列保留：首轮新增七项6通过／1失败，发现query键顺序导致重复规范化与两次查询；统一tab在前的唯一规范顺序后，原精确一次调用断言不放宽，单项通过。随后完整前端门禁浏览器165通过／13失败／1中断／309未运行，独立诊断3通过／5失败／12未运行，均未通过。失败包括既有宿主页面、图表和初始化，新晚响应场景也在fixture初始化前置阶段失败；当时18核系统负载约177、内存压力级别2，轨迹另有ERR_NETWORK_CHANGED，也有全HTTP200但页面未就绪的失败，不能将所有失败归因于单一环境因素。原日志/tmp/addp-mount-rule-view-frontend-full.log、/tmp/addp-mount-rule-view-diagnostic.log，原结果目录addp-monitor-playwright-results-YS2HVY／JT4sCX；只中止当次标准wrapper，两个run.json中的runtimeDir均已核对删除，未操作其他会话进程、增加超时、降低断言或重启个人服务。
+
+本轮未操作个人Safari、CI／Hosted或定时任务。完整浏览器门禁的后续结果单列如下；受控HTTP页面验证不能替代个人真实来源、Safari视觉或正式身份验收。后端增加查询参数，个人运行复验须由用户执行`./scripts/dev/restart.sh -monitor`，不得把旧进程返回400当成新接口已验收。
+
+
+最终复验：实际运行条件恢复为系统负载约6／内存压力级别1，且最后一项维度拒绝校验及单元变更已落地后，重新执行标准`make test-monitor-frontend`，退出0：130项单元、488项浏览器（19.1分钟，含本次七项）、Vite构建（3.92秒）全部通过，无失败／跳过。日志/tmp/addp-mount-rule-view-frontend-delivery.log，日志记载临时结果目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-7korI9`，已按标准成功退出路径移除；最终128个Monitor前端输入摘要与/tmp/addp-mount-rule-view-delivery-inputs.json完全一致。标准wrapper清理返回成功；中英620像素截图addp-mount-rule-view-a1295S／Z4NyGG均已查看，只读入口无创建／编辑按钮、上下文与唯一匹配规则可见。此前失败不改判，只以这轮独立终态支持最终本地T3通过；未修改断言、超时或产品采样口径。当前本批本地验证已通过，CI／Hosted与个人真实运行仍未执行或取得新结果。

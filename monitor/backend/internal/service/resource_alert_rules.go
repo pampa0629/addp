@@ -73,9 +73,22 @@ func resourcePressureMetric(key string) bool {
 	return key == "node.cpu.busy_percent" || key == "node.memory.used_percent" || key == models.FilesystemCapacityMetric
 }
 
-func (s *ResourceAlertRuleService) List(ctx context.Context, page, size int, node string) (ResourceAlertRulePage, error) {
+type ResourceAlertRuleFilter struct {
+	NodeID     string
+	MetricKey  string
+	Dimensions resourcequery.Dimensions
+}
+
+func (f ResourceAlertRuleFilter) Valid() bool {
+	if (f.NodeID != "" && !resourceRuleUUID(f.NodeID)) || (f.MetricKey != "" && !resourcePressureMetric(f.MetricKey)) {
+		return false
+	}
+	return len(f.Dimensions) == 0 || (f.NodeID != "" && f.MetricKey == models.FilesystemCapacityMetric && validResourceRuleDimensions(f.MetricKey, f.Dimensions))
+}
+
+func (s *ResourceAlertRuleService) List(ctx context.Context, page, size int, filter ResourceAlertRuleFilter) (ResourceAlertRulePage, error) {
 	result := ResourceAlertRulePage{Presets: []ResourceRulePreset{{MetricKey: "node.cpu.busy_percent", Policy: defaultResourcePressurePolicy("node.cpu.busy_percent")}, {MetricKey: "node.memory.used_percent", Policy: defaultResourcePressurePolicy("node.memory.used_percent")}, {MetricKey: models.FilesystemCapacityMetric, Policy: defaultResourcePressurePolicy(models.FilesystemCapacityMetric)}}, Data: []models.ResourceAlertRule{}, Page: page, PageSize: size}
-	if page < 1 || page > 10000 || size < 1 || size > 100 || (node != "" && !resourceRuleUUID(node)) {
+	if page < 1 || page > 10000 || size < 1 || size > 100 || !filter.Valid() {
 		return result, ErrLogInvalid
 	}
 	if s == nil || s.db == nil {
@@ -84,8 +97,15 @@ func (s *ResourceAlertRuleService) List(ctx context.Context, page, size int, nod
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	query := s.db.WithContext(ctx).Model(&models.ResourceAlertRule{})
-	if node != "" {
-		query = query.Where("node_id=?", node)
+	if filter.NodeID != "" {
+		query = query.Where("node_id=?", filter.NodeID)
+	}
+	if filter.MetricKey != "" {
+		query = query.Where("metric_key=?", filter.MetricKey)
+	}
+	if len(filter.Dimensions) != 0 {
+		d := filter.Dimensions
+		query = query.Where("mount_key=? AND dimensions->>'device'=? AND dimensions->>'mountpoint'=? AND dimensions->>'fstype'=?", models.ResourceMountKey(d), d["device"], d["mountpoint"], d["fstype"])
 	}
 	if err := query.Count(&result.Total).Error; err != nil {
 		return result, err

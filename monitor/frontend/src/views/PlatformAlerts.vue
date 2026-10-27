@@ -158,7 +158,7 @@
     <InstanceAlertRules kind="process" v-if="state.tab === 'process-rules' && canReadRules" :key="ruleIdentity" ref="processRulesPanel" :page="state.process_rule_page" @page="change({ process_rule_page: $event })" />
     <InstanceAlertRules kind="http" v-if="state.tab === 'http-rules' && canReadHTTPRules" :key="ruleIdentity" ref="httpRulesPanel" :page="state.http_rule_page" @page="change({ http_rule_page: $event })" />
     <ServiceAvailabilityRules v-if="state.tab === 'availability-rules' && canReadAvailability" :key="ruleIdentity" ref="availabilityPanel" :page="state.availability_rule_page" @page="change({ availability_rule_page: $event })" />
-    <ResourceAlertRules v-if="state.tab === 'rules' && canReadRules" :key="ruleIdentity" ref="rulesPanel" :page="state.rule_page" @page="change({ rule_page: $event })" />
+    <ResourceAlertRules v-if="state.tab === 'rules' && canReadRules" :key="ruleIdentity" ref="rulesPanel" :filter="state.rule_filter" :page="state.rule_page" @page="change({ rule_page: $event })" />
     <el-dialog v-model="destinationOpen" :title="t('monitor.platformAlerts.destination')" width="min(640px, 95vw)" :close-on-click-modal="false">
       <el-alert v-if="editError" :title="editError" type="error" :closable="false" />
       <el-form label-position="top">

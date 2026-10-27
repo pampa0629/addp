@@ -18,7 +18,7 @@
       <el-table-column v-for="metric in mountMetrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="170">
         <template #default="{ row }"><strong>{{ formatValue(row.metrics[metric.key], metric) }}</strong><p v-if="row.metrics[metric.key]" class="resource-hint">{{ t(`monitor.resources.states.${row.metrics[metric.key].data_state}`) }}</p><p v-if="row.metrics[metric.key]" class="resource-hint">{{ date(row.metrics[metric.key].sampled_at) }}</p></template>
       </el-table-column>
-      <el-table-column v-if="canCreateCapacityAlert" :label="t('monitor.platformAlerts.actions')" width="180" fixed="right"><template #default="{ row }"><el-button text type="primary" data-testid="filesystem-create-alert" :disabled="loading || capacity?.collection.state !== 'collecting' || capacity?.collection.filesystem !== 'available' || currentResourceValue(row.metrics[filesystemMetrics[0].key]) === null" @click="$emit('create-capacity-alert', row)">{{ t('monitor.resourceRules.createCapacity') }}</el-button></template></el-table-column>
+      <el-table-column v-if="canCreateCapacityAlert || canViewCapacityRules" :label="t('monitor.platformAlerts.actions')" width="200" fixed="right"><template #default="{ row }"><div class="filesystem-rule-actions"><el-button v-if="canCreateCapacityAlert" text type="primary" data-testid="filesystem-create-alert" :disabled="loading || capacity?.collection.state !== 'collecting' || capacity?.collection.filesystem !== 'available' || currentResourceValue(row.metrics[filesystemMetrics[0].key]) === null" @click="$emit('create-capacity-alert', row)">{{ t('monitor.resourceRules.createCapacity') }}</el-button><el-button v-if="canViewCapacityRules" text type="primary" data-testid="filesystem-view-rules" @click="$emit('view-capacity-rules', row)">{{ t('monitor.resourceRules.viewCapacity') }}</el-button></div></template></el-table-column>
       <el-table-column :label="t('monitor.resources.trend')" width="140" fixed="right"><template #default="{ row }"><el-button text type="primary" @click="$emit('select', row, filesystemMetrics[0].key)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button></template></el-table-column>
     </el-table>
   </section>
@@ -32,9 +32,9 @@ import { filesystemMetrics, mountMetrics, filesystemResourceState, currentResour
 const props = defineProps({
   capacity: { type: Object, default: null }, inodes: { type: Object, default: null },
   capacityErrorKey: { type: String, default: '' }, inodeErrorKey: { type: String, default: '' }, loading: Boolean,
-  canConfigure: Boolean, canCreateCapacityAlert: Boolean, configureLabel: { type: String, default: 'monitor.resources.configure' }, formatValue: { type: Function, required: true }
+  canConfigure: Boolean, canCreateCapacityAlert: Boolean, canViewCapacityRules: Boolean, configureLabel: { type: String, default: 'monitor.resources.configure' }, formatValue: { type: Function, required: true }
 })
-defineEmits(['configure', 'select', 'create-capacity-alert'])
+defineEmits(['configure', 'select', 'create-capacity-alert', 'view-capacity-rules'])
 const { t, locale } = useI18n()
 const state = computed(() => filesystemResourceState(props.capacity, props.inodes, props.capacityErrorKey, props.inodeErrorKey))
 const mountRows = computed(() => state.value.rows)
@@ -43,6 +43,8 @@ const date = value => formatFieldPresentationValue(value, { temporal_format: 'da
 </script>
 
 <style scoped>
+.filesystem-rule-actions { display: flex; flex-direction: column; align-items: flex-start; }
+.filesystem-rule-actions .el-button + .el-button { margin-left: 0; }
 .resource-filesystems { margin-top: 24px; min-width: 0; }
 .resource-hint { color: var(--addp-text-secondary); margin-top: 8px; font-size: 13px; }
 .resource-empty-status { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }

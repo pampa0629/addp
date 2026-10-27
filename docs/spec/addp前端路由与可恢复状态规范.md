@@ -202,3 +202,6 @@ Model ER 图的 `domain_id` 省略表示等待选择，`all` 表示显式全域�
 ## Console 内存导航草稿
 
 跨模块的未保存草稿复用共享 Console navigation bridge：4 KiB 内纯 JSON，60 秒有效且一次消费，绑定身份、权限快照和精确目的路由；Console 只传输，不裁决领域有效性。发送与读取均校验当前同源 iframe，取消导航及另行导航、权限/身份变化时清除，不进入 URL、history state、浏览器存储、最近访问或日志。此类编排在独立模块模式先转入 Console 再接收输入，不维护第二套存储路线。接收 Owner 取得后再验证其领域结构与主体，并按自己的接口权限保存；刷新不恢复未保存草稿。
+
+
+Monitor容量规则挂载定位仍使用`/monitor/platform-alerts?tab=rules`，唯一附加筛选为`node_id/metric_key/device/mountpoint/fstype`。挂载入口显式带入主机UUID、固定容量指标及完整三元组；保存稳定身份而非未保存表单。字段一旦出现须完整合法，重复／缺失／非法输入保留为拒绝条件并显示错误，禁止删掉筛选后查询全部规则；刷新及规则分页保留，切离rules页移除。导航沿唯一模块桥push，浏览器返回原主机上下文；无当前采样仍可按原规则read权限查看，写入权限及停用／缺样语义不变。

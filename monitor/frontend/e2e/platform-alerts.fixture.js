@@ -27,7 +27,11 @@ export async function fixture(page, { destinations = [], deliveries = [], delive
     if (path.includes('/resource-alert-rules')) {
       if (req.method() === 'GET') {
         if (held) await barrier
-        return reply({ data: rules, total: ruleTotal, page: Number(new URL(req.url()).searchParams.get('page')), presets: [
+        const q = new URL(req.url()).searchParams
+        const scoped = q.has('node_id') || q.has('metric_key') || q.has('device')
+        const matched = rules.filter(row => (!q.has('node_id') || row.node_id === q.get('node_id')) && (!q.has('metric_key') || row.metric_key === q.get('metric_key')) && ['device','mountpoint','fstype'].every(key => !q.has(key) || row.dimensions?.[key] === q.get(key)))
+        const pageNumber = Number(q.get('page')), size = Number(q.get('page_size'))
+        return reply({ data: scoped ? matched.slice((pageNumber-1)*size,pageNumber*size) : rules, total: scoped ? matched.length : ruleTotal, page: pageNumber, presets: [
           { metric_key: 'node.cpu.busy_percent', policy: { trigger_percent: 90, recovery_percent: 80, trigger_seconds: 300, recovery_seconds: 120 } },
           { metric_key: 'node.memory.used_percent', policy: { trigger_percent: 80, recovery_percent: 75, trigger_seconds: 300, recovery_seconds: 120 } },
           { metric_key: 'node.filesystem.used_percent', policy: { trigger_percent: 85, recovery_percent: 80, trigger_seconds: 300, recovery_seconds: 120 } }

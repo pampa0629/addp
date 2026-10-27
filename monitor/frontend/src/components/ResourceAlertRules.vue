@@ -1,8 +1,9 @@
 <template>
   <section data-testid="resource-rules">
+    <el-alert v-if="filter" :title="`${filter.params.node_id} · ${mountLabel(filter.params)}`" type="info" :closable="false" data-testid="resource-rule-filter" />
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
-    <el-button v-if="canCreate && canReadHosts" type="primary" data-testid="resource-rule-create" :disabled="loading || !presets.length" @click="edit()">{{ t('monitor.resourceRules.create') }}</el-button>
-    <el-table v-loading="loading" :data="rows">
+    <el-button v-if="canCreate && canReadHosts && (!filter || (filter.valid && auth.hasPermission('monitor.resource_observation.read')))" type="primary" data-testid="resource-rule-create" :disabled="loading || !presets.length" @click="edit()">{{ t('monitor.resourceRules.create') }}</el-button>
+    <el-table v-loading="loading" :data="rows" :empty-text="filter && !error && total === 0 ? t('monitor.resourceRules.noMatching') : undefined">
       <el-table-column prop="name" :label="t('monitor.platformAlerts.name')" min-width="160" show-overflow-tooltip />
       <el-table-column :label="t('monitor.targets.node')" min-width="190" show-overflow-tooltip><template #default="{ row }">{{ hosts[row.node_id]?.display_name || row.node_id }}</template></el-table-column>
       <el-table-column :label="t('monitor.resourceRules.metric')" min-width="150"><template #default="{ row }">{{ metricLabel(row.metric_key) }}</template></el-table-column>
@@ -33,8 +34,9 @@ import { filesystemAlertMetric as filesystemMetric, resourceMountLabel as mountL
 import { platformAlertsAPI as api } from '../api/platformAlerts'
 import { nodeResourcesAPI } from '../api/nodeResources'
 import ResourceAlertRuleEditor from './ResourceAlertRuleEditor.vue'
+import { resourceDimensionID } from '../utils/nodeResources'
 import { loadHostReferences } from '../utils/hostReferences'
-const props = defineProps({ page: { type: Number, required: true } })
+const props = defineProps({ page: { type: Number, required: true }, filter: { type: Object, default: null } })
 defineEmits(['page'])
 const auth = useAuthStore(), { t } = useI18n()
 const canRead = computed(() => auth.contextType === 'platform' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation && auth.hasPermission('monitor.platform_resource_rule.read'))
@@ -56,10 +58,12 @@ async function load() {
   controller?.abort(); controller = new AbortController(); const own = ++ticket, lease = epoch
   rows.value = []; total.value = 0; hosts.value = {}; error.value = ''
   if (!canRead.value) return
+  if (props.filter && !props.filter.valid) { error.value = t('monitor.resourceRules.invalidFilter'); return }
   loading.value = true
   try {
-    const result = await api.rules(props.page, controller.signal); check(lease); if (own !== ticket) return
+    const result = await api.rules(props.page, controller.signal, props.filter?.params); check(lease); if (own !== ticket) return
     if (!Array.isArray(result.data) || !Array.isArray(result.presets) || !Number.isSafeInteger(result.total)) throw new Error('invalid_rules')
+    if (props.filter && (result.total > 1 || result.data.some(row => row.node_id !== props.filter.params.node_id || row.metric_key !== props.filter.params.metric_key || resourceDimensionID(row.dimensions || {}) !== resourceDimensionID(props.filter.params)))) throw new Error('invalid_rules')
     rows.value = result.data; total.value = result.total; presets.value = result.presets
     if (canReadHosts.value) {
       const signal = controller.signal
@@ -70,7 +74,10 @@ async function load() {
   } catch (e) { if (lease === epoch && own === ticket && e !== abandoned && e.code !== 'ERR_CANCELED') { rows.value = []; total.value = 0; error.value = errorText(e) } }
   finally { if (lease === epoch && own === ticket) loading.value = false }
 }
-function edit(row) { editor.value?.show(row, row ? hosts.value[row.node_id] : null) }
+function edit(row) {
+  if (!row && props.filter?.valid) { const {node_id,metric_key,...dimensions} = props.filter.params; editor.value?.show(null,{node_id},dimensions) }
+  else editor.value?.show(row, row ? hosts.value[row.node_id] : null)
+}
 async function remove(row) {
   if (busy.value || !canDelete.value) return
   const lease = epoch; busy.value = true
@@ -78,7 +85,7 @@ async function remove(row) {
   catch (e) { if (lease === epoch && ![abandoned,'cancel','close'].includes(e)) error.value = e.response?.status === 409 ? t('monitor.resourceRules.deleteConflict') : errorText(e) }
   finally { if (lease === epoch) busy.value = false }
 }
-watch(() => [props.page, JSON.stringify([auth.authContext, auth.permissions])], () => { clear(); load() }, { immediate: true })
+watch(() => [props.page, JSON.stringify(props.filter), JSON.stringify([auth.authContext, auth.permissions])], () => { clear(); load() }, { immediate: true })
 onUnmounted(() => { disposed = true; clear() })
 defineExpose({ load })
 </script>

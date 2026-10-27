@@ -5964,6 +5964,27 @@ paths:
         in: query
         name: node_id
         type: string
+      - description: 固定指标键 | Fixed metric key
+        enum:
+        - node.cpu.busy_percent
+        - node.memory.used_percent
+        - node.filesystem.used_percent
+        in: query
+        name: metric_key
+        type: string
+      - description: 完整挂载设备，须同时提供主机、容量指标及另外两个维度 | Exact mount device; requires host,
+          capacity metric and both other dimensions
+        in: query
+        name: device
+        type: string
+      - description: 完整挂载点 | Exact mountpoint
+        in: query
+        name: mountpoint
+        type: string
+      - description: 文件系统类型 | Exact filesystem type
+        in: query
+        name: fstype
+        type: string
       produces:
       - application/json
       responses:

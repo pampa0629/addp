@@ -4526,6 +4526,35 @@ const docTemplate = `{
                         "description": "主机 ID | Host ID",
                         "name": "node_id",
                         "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "node.cpu.busy_percent",
+                            "node.memory.used_percent",
+                            "node.filesystem.used_percent"
+                        ],
+                        "type": "string",
+                        "description": "固定指标键 | Fixed metric key",
+                        "name": "metric_key",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "完整挂载设备，须同时提供主机、容量指标及另外两个维度 | Exact mount device; requires host, capacity metric and both other dimensions",
+                        "name": "device",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "完整挂载点 | Exact mountpoint",
+                        "name": "mountpoint",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "文件系统类型 | Exact filesystem type",
+                        "name": "fstype",
+                        "in": "query"
                     }
                 ],
                 "responses": {

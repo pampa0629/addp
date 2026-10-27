@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"errors"
-	"github.com/addp/monitor/internal/models"
-	"github.com/addp/monitor/internal/resourcequery"
 	"testing"
 	"time"
+
+	"github.com/addp/monitor/internal/models"
+	"github.com/addp/monitor/internal/resourcequery"
+	"github.com/google/uuid"
 )
 
 func newFilesystemRuleFixture(t *testing.T) *resourceRuleFixture {
@@ -143,4 +145,52 @@ func TestIntegrationPostgresFilesystemRuleStoreDropsOldUniqueIndex(t *testing.T)
 	f.input.Dimensions = resourcequery.Dimensions{"device": "/dev/other", "mountpoint": "/data", "fstype": "ext4"}
 	f.backend.filesystems[models.ResourceMountKey(f.input.Dimensions)] = &filesystemRuleSample{percent: 90, total: 1024}
 	f.create(t)
+}
+
+func TestIntegrationPostgresFilesystemRuleExactFilterBeforePagination(t *testing.T) {
+	f := newFilesystemRuleFixture(t)
+	wanted := f.create(t)
+	rows := []models.ResourceAlertRule{}
+	for i := 0; i < 25; i++ {
+		r := wanted
+		r.ID = uuid.NewString()
+		r.Dimensions = wanted.Dimensions.Copy()
+		r.Dimensions["device"] = "/dev/other" + r.ID
+		r.MountKey = models.ResourceMountKey(r.Dimensions)
+		r.CreatedAt = f.at.Add(time.Duration(i+1) * time.Second)
+		rows = append(rows, r)
+	}
+	otherType := wanted
+	otherType.ID = uuid.NewString()
+	otherType.Dimensions = wanted.Dimensions.Copy()
+	otherType.Dimensions["fstype"] = "xfs"
+	otherType.MountKey = models.ResourceMountKey(otherType.Dimensions)
+	rows = append(rows, otherType)
+	if e := f.db.Create(&rows).Error; e != nil {
+		t.Fatal(e)
+	}
+	filter := ResourceAlertRuleFilter{NodeID: wanted.NodeID, MetricKey: models.FilesystemCapacityMetric, Dimensions: wanted.Dimensions.Copy()}
+	page, e := f.s.List(context.Background(), 1, 20, filter)
+	if e != nil || page.Total != 1 || page.TotalPages != 1 || len(page.Data) != 1 || page.Data[0].ID != wanted.ID || page.Data[0].Enabled {
+		t.Fatalf("exact dormant mount: total=%d len=%d err=%v", page.Total, len(page.Data), e)
+	}
+	page, e = f.s.List(context.Background(), 2, 20, filter)
+	if e != nil || page.Total != 1 || len(page.Data) != 0 {
+		t.Fatalf("page outside exact scope: %+v %v", page, e)
+	}
+	filter.Dimensions["mountpoint"] = "/%"
+	page, e = f.s.List(context.Background(), 1, 20, filter)
+	if e != nil || page.Total != 0 || len(page.Data) != 0 {
+		t.Fatalf("missing literal mount widened: %+v %v", page, e)
+	}
+	filter = ResourceAlertRuleFilter{NodeID: wanted.NodeID}
+	page, e = f.s.List(context.Background(), 1, 20, filter)
+	if e != nil || page.Total != 27 || len(page.Data) != 20 {
+		t.Fatalf("host pagination: total=%d len=%d err=%v", page.Total, len(page.Data), e)
+	}
+	for _, bad := range []ResourceAlertRuleFilter{{MetricKey: "arbitrary"}, {MetricKey: models.FilesystemCapacityMetric, Dimensions: wanted.Dimensions}, {NodeID: wanted.NodeID, MetricKey: models.FilesystemCapacityMetric, Dimensions: resourcequery.Dimensions{"device": "x"}}} {
+		if _, e = f.s.List(context.Background(), 1, 20, bad); !errors.Is(e, ErrLogInvalid) {
+			t.Fatalf("invalid filter: %v", e)
+		}
+	}
 }
