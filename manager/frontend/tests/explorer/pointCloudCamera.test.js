@@ -79,11 +79,12 @@ const bunnyBounds = () => new THREE.Box3(
   new THREE.Vector3(0.061009, 0.187321, 0.058799)
 )
 
-function preview() {
-  const state = PointCloudPreview.setup({ data: {}, viewState: {} }, { expose() {}, emit() {} })
+function preview(viewState = {}) {
+  const emit = vi.fn()
+  const state = PointCloudPreview.setup({ data: {}, viewState }, { expose() {}, emit })
   state.viewportRef.value = {}
   const instance = state.ensureGiroInstance()
-  return { state, view: instance.view }
+  return { state, view: instance.view, emit }
 }
 
 function expectBoundsVisible(view, bounds) {
@@ -101,6 +102,51 @@ function expectBoundsVisible(view, bounds) {
 }
 
 describe('COPC camera clipping', () => {
+  const offscreenBunnyView = {
+    position: [-0.1290937428803298, 0.14804490511304996, 0.09989538879486387],
+    target: [0.011023821091263708, 0.05090279841455564, 0.08494665594904667]
+  }
+
+  it.each([0.525, 1.3, 1.6])('refits the existing offscreen E57 view at aspect %s without regenerating', async aspect => {
+    const { state, view, emit } = preview(offscreenBunnyView)
+    view.setSize(539 * aspect, 539)
+    await state.loadGiroCOPC('/existing-copc-content')
+    const bounds = bunnyBounds()
+    expect(state.giroControls.value.target.toArray()).toEqual(bounds.getCenter(new THREE.Vector3()).toArray())
+    view.update()
+    for (const x of [bounds.min.x, bounds.max.x]) {
+      for (const y of [bounds.min.y, bounds.max.y]) {
+        for (const z of [bounds.min.z, bounds.max.z]) {
+          const point = new THREE.Vector3(x, y, z).project(view.camera)
+          expect(Math.abs(point.x)).toBeLessThan(1)
+          expect(Math.abs(point.y)).toBeLessThan(1)
+        }
+      }
+    }
+    expect(emit).toHaveBeenCalledWith('view-state-change', expect.objectContaining({
+      target: bounds.getCenter(new THREE.Vector3()).toArray()
+    }))
+  })
+
+  it('preserves a valid zoomed view instead of requiring the whole cloud to fit', () => {
+    const { state, view, emit } = preview()
+    const bounds = bunnyBounds()
+    const target = bounds.getCenter(new THREE.Vector3())
+    const position = target.clone().add(new THREE.Vector3(0.04, -0.06, 0.04))
+    expect(state.applyGiroCameraViewState({ position: position.toArray(), target: target.toArray() }, bounds)).toBe(true)
+    expect(view.camera.position.toArray()).toEqual(position.toArray())
+    expect(emit).not.toHaveBeenCalled()
+  })
+
+  it('rejects a distant saved target relative to a small cloud even when looking through its center', () => {
+    const { state } = preview()
+    const center = bunnyBounds().getCenter(new THREE.Vector3())
+    expect(state.applyGiroCameraViewState({
+      position: center.clone().add(new THREE.Vector3(0, -0.5, 0)).toArray(),
+      target: center.clone().add(new THREE.Vector3(0, 0.5, 0)).toArray()
+    }, bunnyBounds())).toBe(false)
+  })
+
   it('keeps the small E57 bunny inside the frustum after initial camera fitting', () => {
     const { state, view } = preview()
     const bounds = bunnyBounds()

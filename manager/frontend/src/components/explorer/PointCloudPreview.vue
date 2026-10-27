@@ -362,14 +362,26 @@ function finiteVector(values) {
 function cameraViewStateMatchesBounds(position, target, bounds) {
   if (!bounds || bounds.isEmpty()) return true
   const sphere = bounds.getBoundingSphere(new THREE.Sphere())
-  const radius = Math.max(sphere.radius, 1)
+  const radius = Math.max(sphere.radius, MIN_CAMERA_DISTANCE)
   const targetVector = new THREE.Vector3(target[0], target[1], target[2])
   const positionVector = new THREE.Vector3(position[0], position[1], position[2])
   const distanceToTarget = positionVector.distanceTo(targetVector)
   const targetDistanceToBounds = bounds.distanceToPoint(targetVector)
   if (targetDistanceToBounds > radius * 2) return false
   if (distanceToTarget > radius * 200) return false
-  return true
+  // Validate before applying controls: a nearby target can still leave a small
+  // cloud offscreen. Preserve zoomed views when the cloud center remains visible.
+  const camera = giroInstance.value.view.camera.clone()
+  if (distanceToTarget <= camera.near) return false
+  camera.position.copy(positionVector)
+  camera.up.set(...GIRO_UP)
+  camera.lookAt(targetVector)
+  camera.updateProjectionMatrix()
+  camera.updateMatrixWorld()
+  const frustum = new THREE.Frustum().setFromProjectionMatrix(
+    new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+  )
+  return frustum.containsPoint(sphere.center)
 }
 
 function pickGiroPointAt(canvasX, canvasY) {
