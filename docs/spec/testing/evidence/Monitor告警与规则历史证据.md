@@ -355,3 +355,10 @@ Node24.11.1下标准`make test-common-frontend`先重现283项中282通过／1�
 
 
 最终复验：实际运行条件恢复为系统负载约6／内存压力级别1，且最后一项维度拒绝校验及单元变更已落地后，重新执行标准`make test-monitor-frontend`，退出0：130项单元、488项浏览器（19.1分钟，含本次七项）、Vite构建（3.92秒）全部通过，无失败／跳过。日志/tmp/addp-mount-rule-view-frontend-delivery.log，日志记载临时结果目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-7korI9`，已按标准成功退出路径移除；最终128个Monitor前端输入摘要与/tmp/addp-mount-rule-view-delivery-inputs.json完全一致。标准wrapper清理返回成功；中英620像素截图addp-mount-rule-view-a1295S／Z4NyGG均已查看，只读入口无创建／编辑按钮、上下文与唯一匹配规则可见。此前失败不改判，只以这轮独立终态支持最终本地T3通过；未修改断言、超时或产品采样口径。当前本批本地验证已通过，CI／Hosted与个人真实运行仍未执行或取得新结果。
+
+
+## 挂载规则入口的个人Safari前置核对（2026-10-27）
+
+23:32起（Asia/Shanghai）沿现有Safari平台系统管理员会话只读核对。Console首次显示“无法确认当前页面的访问权限”，点击原重试后恢复主机列表；System 8180、Monitor 8100及Gateway 8000的/health/ready实际均200，不将非就绪地址/health的404判为服务离线。进入Docker Desktop Linux VM资源详情，CPU／内存及vda磁盘IO有有效值，文件系统明确显示“当前采集源未提供文件系统指标”，网卡来源未提供，TCP明确缺失且不显示零。当前没有真实挂载行，故不能执行挂载行创建／查看容量规则的个人实源验收，不能由已有受控HTTP与Linux前端通过代替。
+
+详情返回保留原list_view=load-connections，三档负载、缺失TCP、采集／纳管状态及一个主机可读。页面持续报告“隐藏，自动刷新已暂停”；native Raise未恢复该状态，横向滚动接口报noWindowsAvailable，截图中右侧部分仍不可见。已请求用户将Safari置于当前桌面前台，右侧列视觉及前台自动刷新仍未验，不将无障碍树可读等同全部可见。未写规则／通知、修改采集或个人数据库、重启服务、触发CI／Hosted或设置定时任务。此次仅记录运行前置与阻碍，未核验运行二进制对应提交，不将当前工作区HEAD写成运行源码身份；来源恢复、挂载规则跳转及正式身份闭环仍待相应环境验证。
