@@ -1,6 +1,8 @@
 # ADDP 本地 Docker 部署脚本
 
-本目录包含用于本地 Docker Compose 部署测试的脚本。
+本目录包含用于本地 Docker Compose 部署测试的脚本。运行模式与生命周期归属见[开发与容器部署](../docs/开发与容器部署.md)。
+
+阅读导航：[停止范围](#2-stopsh---停止服务) · [数据持久化与恢复](#数据持久化) · [故障排查](#故障排查流程) · [模块实例日志](#模块实例运行日志)。
 
 ## 概述
 
@@ -77,20 +79,21 @@ bash scripts/local/start.sh
 
 #### 2. stop.sh - 停止服务
 
-**功能**: 停止运行中的 ADDP 服务
+**功能**: 先停止内置 Runtime，再停止平台容器。
 
 ```bash
-# 停止应用层 (保留基础设施)
+# 停止 Runtime 与平台（保留 Infra 和数据卷）
 bash scripts/local/stop.sh
 
-# 停止所有服务 (包括基础设施)
+# 额外停止 Infra（仍保留数据卷，Business 不在范围内）
 bash scripts/local/stop.sh --all
 ```
 
-**选项**:
-- `--all`: 同时停止基础设施层
+`--all` 通过 `scripts/infra/down.sh` 停止基础设施；两种方式都保留数据卷，Business 由所属入口管理。卷与恢复边界统一见[数据持久化](#数据持久化)。
 
-`stop.sh` 始终保留数据卷；`--all` 通过 `scripts/infra/down.sh` 停止基础设施。数据卷删除不属于常规停止或故障排查步骤。
+Local 入口按两份 Compose 配置执行 `down`。操作前须核对 Compose project、service 和 `com.docker.compose.project.working_dir`，不能只凭容器名称或端口判断归属；规则与 Infra 停止入口的工作区核验范围见[项目隔离规范](../infra/docs/部署与项目隔离.md#执行顺序)及[容器归属](../infra/docs/部署与项目隔离.md#容器命名规范)。
+
+各阶段顺序执行，途中失败时前序服务可能已经停止；按 Runtime、平台及所选 Infra 的实际状态复核结果，未执行或失败的阶段不能计为停止完成。
 
 #### 3. status.sh - 查看状态
 
@@ -117,7 +120,7 @@ bash scripts/local/restart.sh
 bash scripts/local/restart.sh --all
 ```
 
-**实现**: 顺序调用 `stop.sh` 和 `start.sh`,中间等待 3 秒确保容器完全停止。
+**实现**: 顺序调用 `stop.sh` 和 `start.sh`，中间等待 3 秒；停止失败时不执行启动。`--all` 的范围沿用[停止说明](#2-stopsh---停止服务)，该等待时间不代替实际状态与业务验收。
 
 ## 架构说明
 
@@ -214,22 +217,13 @@ docker compose -f docker-compose.yml logs -f system-backend
 
 ## 数据持久化
 
-所有数据存储在 Docker volumes 中,停止服务不会丢失数据:
+停止保留范围见[stop.sh](#2-stopsh---停止服务)。持久化状态按实际挂载盘点：Infra 具名卷清单、逻辑名与物理前缀统一见[Infra 数据持久化](../infra/docs/部署与项目隔离.md#数据持久化)；模块日志源及 Runtime 工作、数据目录还包含宿主机挂载，具体输入见[平台 Compose](../../docker-compose.yml)与[Runtime Compose](../../docker-compose.runtimes.yml)。
 
-```bash
-# 查看 volumes
-docker volume ls | grep addp
+保留卷和宿主机数据不等于已有完整备份或恢复成功。备份覆盖、标准入口及证据要求见[本地 Infra 备份与隔离恢复演练](../infra/docs/备份恢复与搜索迁移.md#本地-infra-备份与隔离恢复演练)：默认覆盖 System PostgreSQL、Infra MinIO 当前对象及根 `.env`，不覆盖全部持久状态或 Business；`make infra-restore-drill` 只在一次性容器验证恢复，不向现有部署回写数据，也不代表完整平台恢复验收。
 
-# 数据卷
-postgres_data        - PostgreSQL 数据
-redis_data           - Redis 持久化数据
-minio_data           - MinIO 对象存储数据
-meilisearch_data_v1543 - 当前 Meilisearch 索引数据
-```
+需要重建数据时，先核验可恢复备份和目标 Compose project，再按[Infra 删除卷规则](../infra/docs/部署与项目隔离.md#执行顺序)走专用交互确认；`--force` 不跳过本地卷删除确认。Docker Desktop 或 Docker CLI 直接删除 volume 不受脚本保护。旧 Meilisearch 卷仍按[迁移与回滚流程](../infra/docs/备份恢复与搜索迁移.md#旧-meilisearch-卷迁移与回滚)保留和处理，普通启动不承担升级。
 
-以上数据卷名称是 Compose 逻辑名，Infra 卷默认带 `addp-infra_` 物理前缀。旧 `meilisearch_data` 仅作为回滚材料保留，不由当前版本挂载；旧卷迁移须按[Infra 迁移与回滚流程](../infra/docs/备份恢复与搜索迁移.md#旧-meilisearch-卷迁移与回滚)执行，普通启动不承担升级。
-
-需要重建持久化数据时，先核验可恢复备份和目标 Compose project，再使用 `scripts/infra/down.sh --volumes` 的专用交互确认流程。Docker Desktop 或 Docker CLI 直接删除 volume 不受脚本保护。
+停止结果、容器健康、隔离恢复演练与业务数据验收须按[测试与验收规范](../../docs/spec/addp测试与验收规范.md)分别记录；未运行、失败或未覆盖项不能计为恢复通过。
 
 ## 高级用法
 
@@ -261,7 +255,7 @@ docker compose -f docker-compose.yml exec system-backend sh
 
 ### 手动管理服务
 
-设施初始化或配置应用使用 `bash scripts/infra/up.sh`；完整本地容器部署使用 `bash scripts/local/start.sh`。平台重启使用 `bash scripts/local/restart.sh`，默认保留 Infra 和数据卷。启动前核对本工作区归属，详细职责见[Infra 生命周期指南](../infra/docs/生命周期脚本.md)。
+设施初始化或配置应用按[Infra 生命周期指南](../infra/docs/生命周期脚本.md)执行；本地启动、重启与停止统一使用上文[脚本说明](#脚本说明)，操作前核对项目和工作区归属。数据重建与恢复按[持久化边界](#数据持久化)处理。
 
 只读查看单个服务状态，例如：
 
@@ -298,7 +292,7 @@ docker compose -f docker-compose.yml ps -a system-backend
 2. **资源消耗**: 完整平台需要较多资源,建议至少 8GB RAM
 3. **首次启动**: 首次启动需要初始化数据库,可能需要 1-2 分钟
 4. **网络边界**: 内部服务通过 Docker 网络互访，对外只发布约定入口；网络连接本身不代替访问鉴权
-5. **数据备份**: 定期备份重要数据 (PostgreSQL, MinIO)
+5. **数据备份**: 按[持久化与恢复边界](#数据持久化)盘点覆盖范围和恢复证据
 
 ## 故障排查流程
 
@@ -312,4 +306,4 @@ docker compose -f docker-compose.yml ps -a system-backend
 
 `docker logs`、`docker compose logs`、`docker service logs` 用于容器入口与日志设施自身诊断；受控节点源 `logs/runtime/<module>/<instance_id>/*.jsonl` 与启动终端输出用于本地诊断，不从路径推断 System 可信身份。未登记不等于 DOWN 或启动失败，目录存在也不代表正文已送达。
 
-应用停止或重启不停止日志 Infra、不删除日志卷；部署、计数、保留、备份和验证入口见 [Infra 运行日志说明](../infra/docs/运行日志.md#模块实例运行日志)。首版允许明确缺口，不承诺零丢失、完整重放或存储高可用。
+应用与 Infra 的停止范围见[停止说明](#2-stopsh---停止服务)，日志卷沿既定数据保留规则处理；部署、计数、保留、备份和验证入口见 [Infra 运行日志说明](../infra/docs/运行日志.md#模块实例运行日志)。首版允许明确缺口，不承诺零丢失、完整重放或存储高可用。
