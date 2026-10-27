@@ -607,6 +607,8 @@
 
 本地标准npm run test:e2e -- e2e/filesystem-alert-rules.spec.js --trace=retain-on-failure全21项通过（1.0分钟，/tmp/addp-mount-capacity-refresh-green.log），包括缺样下查看／停用和身份撤销；npm --prefix monitor/frontend test的130项通过（/tmp/addp-mount-capacity-refresh-unit.log），限定diff检查通过。产品源码、共享依赖及构建输入未改，复用上述有效CI完整T1／T3／build；本次只改浏览器用例及证据，既有标准前端门禁自动发现覆盖，无新入口／CI路径。未触发、轮询、重跑或取消CI／Hosted，无定时任务，不操作个人服务／Safari；真实来源和Safari运行验收仍单列待做。
 
+修复后的完整CI回传已于2026-10-28独立核对，固定7ebf98370的130单元／488浏览器／构建通过，个人实源缺口不变；见[本修复CI闭环](Monitor告警与规则历史证据.md#挂载缺样断言修复的完整ci闭环2026-10-28)。
+
 
 ### 2026-10-27 正式 Python HTTP 首轮本地窗口失败并清理（产品 profile 投影缺项）
 

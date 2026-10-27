@@ -362,3 +362,10 @@ Node24.11.1下标准`make test-common-frontend`先重现283项中282通过／1�
 23:32起（Asia/Shanghai）沿现有Safari平台系统管理员会话只读核对。Console首次显示“无法确认当前页面的访问权限”，点击原重试后恢复主机列表；System 8180、Monitor 8100及Gateway 8000的/health/ready实际均200，不将非就绪地址/health的404判为服务离线。进入Docker Desktop Linux VM资源详情，CPU／内存及vda磁盘IO有有效值，文件系统明确显示“当前采集源未提供文件系统指标”，网卡来源未提供，TCP明确缺失且不显示零。当前没有真实挂载行，故不能执行挂载行创建／查看容量规则的个人实源验收，不能由已有受控HTTP与Linux前端通过代替。
 
 详情返回保留原list_view=load-connections，三档负载、缺失TCP、采集／纳管状态及一个主机可读。页面持续报告“隐藏，自动刷新已暂停”；native Raise未恢复该状态，横向滚动接口报noWindowsAvailable，截图中右侧部分仍不可见。已请求用户将Safari置于当前桌面前台，右侧列视觉及前台自动刷新仍未验，不将无障碍树可读等同全部可见。未写规则／通知、修改采集或个人数据库、重启服务、触发CI／Hosted或设置定时任务。此次仅记录运行前置与阻碍，未核验运行二进制对应提交，不将当前工作区HEAD写成运行源码身份；来源恢复、挂载规则跳转及正式身份闭环仍待相应环境验证。
+
+
+## 挂载缺样断言修复的完整CI闭环（2026-10-28）
+
+专门CI会话回传后，仅核对已有归档，不触发或轮询新Job。修复9ad52efda9d0b7d9fea1e644060363461c07a784的有效后继为7ebf98370ebc965e09cb5744983dbf8ee7fbbbce，[Monitor Job 122257072557](https://github.com/pampa0629/addp/actions/runs/40523616999/job/122257072557)的实际Run Monitor frontend gate及Job均success；原始日志确认130单元／0失败／0跳过、488浏览器（25.1分钟）和Vite构建（10.57秒）通过。filesystem-alert-rules.spec.js的mount action requires both rule permissions and valid current capacity实际执行，包含9ad新增的真实no_data响应及刷新完成后disabled断言；node-resources.spec.js的disabled refresh clears old metrics用例也实际执行，两者是不同用例，不混淆修复归属。Report skipped步骤本身跳过不表示正式门禁跳过。
+
+已独立核对9ad至7eb的monitor/frontend无差异，后继源码包含修后的测试；不能以修前版本偶然通过代替本次证据。归档日志/tmp/addp-ci-20261027-160029/job-122257072557.log的SHA256为4b356a2735e7196114f6f1de7a7f1a213e0413785c8d12b6db0447c38631ee6e，与Monitor_9ad_actual_full_frontend_recovery_audit.json一致，callback-live-job-122257072557.json的head_sha及正式执行步骤终态一致。旧35／a1f失败及旧预算超时保留，不倒改历史，也不宣称父workflow或当前HEAD全通过。此处仅关闭本修复的受控HTTP前端CI缺口；个人Safari隐藏页、右侧列／前台刷新与真实Linux文件系统挂载行仍未验，既有告警实源缺口不由本CI代替。此次仅文档归档及限定diff／链接核对，未运行新产品测试、Hosted、容量或定时任务，未操作个人服务。
