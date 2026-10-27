@@ -303,6 +303,8 @@ def read_batch(protocol, access_plan, source_version, offset, limit, columns):
         rows = []
         encoded_bytes = 0
         for raw in reader.read(limit):
+            if raw is None:
+                raise ValueError("ORC NULL root structs are not flat table rows")
             row = {field["name"]: _value(raw[field["name"]], field) for field in fields}
             encoded_bytes += len(json.dumps(row, ensure_ascii=False, allow_nan=False).encode())
             if encoded_bytes > MAX_RESPONSE_BYTES:

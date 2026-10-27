@@ -177,11 +177,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/planner/table_export.go",
       "anchor": "func validateTableTransferSpec(",
-      "commit": "47b02db01342a049c4fe01ae1f3ee15369b04863",
-      "sha256": "bbf74595f3cc23a153ff27d7cb87e92301f6ae6ee97418eee37b4e847acf9b09",
+      "commit": "5227df6c72f08bd5baecf6d4a8b2de7d320d111f",
+      "sha256": "a1bf0a2adc1a9ff401c2c51fe7eb4bf51777b6e32f88840d123c77b09cc0873a",
       "use": {
-        "zh-cn": "复核 KML 固定 CRS 声明及共享重投影，仅扩展未建模的 encoded 执行；native table、bounded/snapshot、replace/append、查询绑定与源字段角色资格校验保持；停止态创建不执行、调度或扫描，权限、条件与效果不变。",
-        "en": "KML fixed-CRS declarations reuse reprojection for unmodeled encoded execution only. Native table, bounded/snapshot, replace/append, query binding and Owner-verified source field roles remain unchanged. Stopped native creation retains its permissions, conditions and effects, without execution, scheduling or scanning."
+        "zh-cn": "复核 KML 固定 CRS 与 encoded ORC 单文件 reader／源版本绑定；本轮只扩展未建模的 encoded 读取。停止态 native table 的 bounded/snapshot、replace/append、查询与字段资格校验，以及创建权限、条件和效果保持；不执行、调度或扫描。",
+        "en": "Review KML fixed CRS and encoded ORC single-file reading with source-version binding. Encoded execution remains unmodeled. Stopped native creation retains bounded/snapshot, replace/append, query and field checks, permissions, conditions and effects; no execution, schedule or scan."
       }
     },
     {

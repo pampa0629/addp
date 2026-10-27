@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import importlib
 import json
@@ -149,7 +150,17 @@ class ORCSceneTest(unittest.TestCase):
             if action == "verify":
                 return {
                     "source_sha256": hashlib.sha256(b"orc").hexdigest(),
-                    "outputs": [{"all_values_and_nulls_verified": True}] * 2,
+                    "outputs": [
+                        {
+                            "object": "orc-output/from-" + name + ".parquet",
+                            "rows": 2503,
+                            "sha256": hashlib.sha256(b"parquet-fixture").hexdigest(),
+                            "size_bytes": len(b"parquet-fixture"),
+                            "content_base64": base64.b64encode(b"parquet-fixture").decode(),
+                            "all_values_and_nulls_verified": True,
+                        }
+                        for name in ("minio", "nfs")
+                    ],
                 }
             return {"remaining_owned_outputs": 0, "output_objects_removed": True}
 

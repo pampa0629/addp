@@ -89,6 +89,7 @@ def worker(request):
                         "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                         "size_bytes": path.stat().st_size,
                         "all_values_and_nulls_verified": True,
+                        "content_base64": base64.b64encode(path.read_bytes()).decode("ascii"),
                     }
                 )
             source = Path(directory) / "source.orc"

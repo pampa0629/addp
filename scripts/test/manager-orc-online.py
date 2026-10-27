@@ -1,6 +1,7 @@
 """Ordinary-user ORC scan, page, download and real Transfer batch acceptance."""
 
 from __future__ import annotations
+import base64
 import hashlib
 import importlib.util
 import json
@@ -243,6 +244,22 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             and verified.get("source_sha256") == seed["sha256"],
             "ORC physical batch output or source changed",
         )
+        require(
+            {x.get("object") for x in verified["outputs"]}
+            == {"orc-output/from-minio.parquet", "orc-output/from-nfs.parquet"},
+            "ORC output identities differ",
+        )
+        for output in verified["outputs"]:
+            raw = base64.b64decode(output.pop("content_base64"), validate=True)
+            require(
+                0 < len(raw) <= 2 * 1024 * 1024
+                and len(raw) == output["size_bytes"]
+                and hashlib.sha256(raw).hexdigest() == output["sha256"],
+                "ORC archived output differs from physical oracle",
+            )
+            filename = "orc-result-" + Path(output["object"]).name
+            (artifact / filename).write_bytes(raw)
+            output["archive_file"] = filename
         report["physical"] = verified
         browser_context = {
             "run_id": report["run_id"],

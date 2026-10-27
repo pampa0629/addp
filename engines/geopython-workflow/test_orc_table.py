@@ -393,3 +393,34 @@ def test_discovery_declares_readonly_object_batch_contract():
         p for p in descriptions["orc.read_batch"]["parameters"] if p["name"] == "columns"
     )
     assert columns["type"] == "array" and columns["item_type"] == "string"
+
+
+def test_float_double_and_bounded_text_types(tmp_path):
+    import math
+    import struct
+
+    single = struct.unpack("f", struct.pack("f", 0.1))[0]
+    double = math.nextafter(1.0, 2.0)
+    p = write(
+        tmp_path / "floating.orc",
+        [(single, double, "中文", "four"), (None, None, None, None)],
+        "struct<f:float,d:double,v:varchar(12),c:char(4)>",
+    )
+    d = describe(p)
+    assert [(f["type"], f["native_type"]) for f in d["table"]["fields"]] == [
+        ("float", "float"),
+        ("double", "double"),
+        ("string", "varchar(12)"),
+        ("string", "char(4)"),
+    ]
+    assert read(p, d)["rows"] == [
+        {"f": single, "d": double, "v": "中文", "c": "four"},
+        {"f": None, "d": None, "v": None, "c": None},
+    ]
+
+
+def test_null_root_struct_is_not_silently_flattened(tmp_path):
+    p = write(tmp_path / "root-null.orc", [None], "struct<a:int>")
+    d = describe(p)
+    with pytest.raises(ValueError, match="NULL root"):
+        read(p, d)
