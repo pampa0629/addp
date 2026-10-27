@@ -1,4 +1,3 @@
-import { createHmac } from 'node:crypto'
 import { traceLinkQuery, traceRoute } from '../../../../monitor/frontend/src/utils/traces.js'
 
 const traceID = value => typeof value === 'string' && /^[0-9a-f]{32}$/.test(value) && !/^0+$/.test(value)
@@ -31,17 +30,4 @@ export function admitExecutionTraceBrowserEnvironment(env) {
   if (url.protocol !== 'http:' || url.hostname !== 'nginx' || url.port || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('execution_trace_local_browser_environment_denied')
 }
 
-// RFC 6238, SHA-1/six digits, matching System's configured authenticator. The
-// caller waits for a fresh counter so an earlier API login cannot replay a code.
-export function executionTraceTOTP(secret, now = Date.now()) {
-  if (typeof secret !== 'string' || !/^[A-Z2-7]{16,128}$/.test(secret) || !Number.isFinite(now) || now < 0) throw new Error('execution_trace_local_browser_mfa_invalid')
-  let bits = 0, count = 0
-  const bytes = []
-  for (const letter of secret) {
-    bits = (bits << 5) | 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'.indexOf(letter); count += 5
-    if (count >= 8) { count -= 8; bytes.push((bits >>> count) & 255) }
-  }
-  const counter = Buffer.alloc(8); counter.writeBigUInt64BE(BigInt(Math.floor(now / 30000)))
-  const digest = createHmac('sha1', Buffer.from(bytes)).update(counter).digest(), offset = digest[19] & 15
-  return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1000000).padStart(6, '0')
-}
+export { localIdentityTOTP as executionTraceTOTP } from './local-identity-support.mjs'

@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test'
 import { lstatSync, readFileSync, writeFileSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
-import { executionTraceBrowserInput, admitExecutionTraceBrowserEnvironment, executionTraceTOTP } from './execution-trace-local-support.mjs'
+import { executionTraceBrowserInput, admitExecutionTraceBrowserEnvironment } from './execution-trace-local-support.mjs'
+
+import { localConsoleLogin } from './local-identity-support.mjs'
 
 // A failed password or MFA action must never create browser captures.
 test.use({ screenshot: 'off', trace: 'off', video: 'off', locale: 'zh-CN' })
@@ -20,30 +22,15 @@ test('execution trace local real Console password MFA, causal link and checkpoin
     const input = executionTraceBrowserInput(JSON.parse(readFileSync(inputPath, 'utf8')))
     report.run_id = input.run_id
     report.stage = 'password-mfa'
-    const identityResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/system/auth/context' && response.ok())
-    identityResponse.catch(() => {})
-    await page.goto('/login?redirect=' + encodeURIComponent(input.trace_path))
-    await page.locator('input[autocomplete="username"]').fill(process.env.ADDP_EXECUTION_TRACE_ADMIN_USERNAME)
-    await page.locator('input[autocomplete="current-password"]').fill(process.env.ADDP_EXECUTION_TRACE_ADMIN_PASSWORD)
-    const passwordResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/system/login')
-    await page.locator('.auth-login-primary').click()
-    expect((await (await passwordResponse).json()).next_action).toBe('verify_mfa')
-    await expect(page.locator('input[autocomplete="one-time-code"]')).toBeVisible()
-    await new Promise(done => setTimeout(done, 30000 - Date.now() % 30000 + 150))
-    const code = executionTraceTOTP(process.env.ADDP_EXECUTION_TRACE_ADMIN_TOTP)
-    const mfaResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/system/auth/mfa-verifications')
-    const initialTraceResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/monitor/platform/traces/' + input.trace_id)
-    initialTraceResponse.catch(() => {})
-    await page.locator('input[autocomplete="one-time-code"]').fill(code)
-    await page.locator('.auth-login-primary').click()
-    expect((await (await mfaResponse).json()).next_action).toBe('session_issued')
-    const identity = await (await identityResponse).json()
-    expect(identity.principal.type).toBe('user')
+    let initialTraceResponse
+    const identity = await localConsoleLogin(page, expect, {
+      prefix: 'ADDP_EXECUTION_TRACE_', path: input.trace_path,
+      beforeMFA: () => {
+        initialTraceResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/monitor/platform/traces/' + input.trace_id)
+        initialTraceResponse.catch(() => {})
+      }
+    })
     if (input.admin_id !== undefined) expect(identity.principal.id).toBe(input.admin_id)
-    expect(identity.context.type).toBe('platform')
-    expect(identity.delegation ?? null).toBeNull()
-    expect(identity.authentication.assurance_level).toMatch(/^aal[23]$/)
-    expect(identity.authorization.role_assignments.map(role => role.role_key)).toEqual(['platform.system_administrator'])
     report.assertions.password_mfa_platform_user = true
     report.stage = 'retained-terminal'
     const initialResponse = await initialTraceResponse

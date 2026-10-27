@@ -4044,6 +4044,28 @@ def validate_local_execution_trace_profile(repository: Path) -> None:
             raise RegistrationError("local execution Trace must not execute in GitHub Actions")
 
 
+def validate_local_http_quality_profile(repository: Path) -> None:
+    """Run mocks in normal lifecycle CI, never the real manual product profile."""
+    make=(repository / "Makefile").read_text() if (repository / "Makefile").is_file() else ""
+    entry="scripts/test/monitor-http-local-gate.py"
+    if not (repository / entry).exists() and "test-monitor-http-local:" not in make:
+        return
+    for marker in ("test-monitor-http-local:", "@python3 "+entry,
+                   "test-monitor-http-local-runner:", "@$(MAKE) test-monitor-http-local-runner",
+                   "scripts/test/monitor-http-local-gate_test.py", "scripts/test/monitor-http-local-online_test.py"):
+        if marker not in make:
+            raise RegistrationError("local HTTP quality requires manual entry and deterministic lifecycle registration")
+    for relative in (entry, "scripts/test/monitor-http-local-online.py",
+                     "console/frontend/e2e/online/http-quality-local.spec.js",
+                     "console/frontend/e2e/online/local-identity-support.mjs",
+                     "system/backend/cmd/online-test-fixture/http_quality_local.go"):
+        if not (repository / relative).is_file():
+            raise RegistrationError("local HTTP quality formal product input missing")
+    for workflow in (repository / ".github/workflows").glob("*.y*ml"):
+        if re.search(r"(?:make\s+test-monitor-http-local(?![A-Za-z0-9_-])|python3?\s+scripts/test/monitor-http-local-gate.py)", workflow.read_text()):
+            raise RegistrationError("local HTTP quality must not execute in GitHub Actions")
+
+
 def validate_local_catalog_browser_profile(repository: Path) -> None:
     make_path = repository / "Makefile"
     make = make_path.read_text() if make_path.is_file() else ""
@@ -4397,6 +4419,7 @@ def check_registration(repository: Path) -> None:
     validate_local_catalog_browser_profile(repository)
     validate_local_sgm_profile(repository)
     validate_local_execution_trace_profile(repository)
+    validate_local_http_quality_profile(repository)
     validate_manager_hybrid_search_profile(repository, registered)
     validate_security_transfer_protection_profile(repository, registered)
     validate_security_plaintext_access_profile(repository, registered)

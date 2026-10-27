@@ -96,9 +96,11 @@ class VolumePreparationContractTests(unittest.TestCase):
                     self.assertEqual([args[-1] for args in calls if args[1]=='create'],
                         [life.run_id+'_postgres-data',life.run_id+'_runtime-logs'])
         source=__import__('inspect').getsource(m.build)
-        order=['prepare_isolated_configuration(', 'prepare_sampling_volumes(', "life.builder_ids =", 'life.prepare_volume_sampler(', 'life.sample()', 'life.thread.start()', 'start_dependencies(']
+        order=['prepare_isolated_configuration(', 'prepare_sampling_volumes(', 'prepare_builder(', 'life.sample()', 'life.thread.start()', 'start_dependencies(']
         positions=[source.index(token) for token in order]
         self.assertEqual(positions,sorted(positions))
+        builder=__import__('inspect').getsource(m.prepare_builder)
+        self.assertLess(builder.index('life.builder_ids ='),builder.index('life.prepare_volume_sampler('))
 
     def test_sampler_admission_is_bounded_readonly_and_cannot_replace_a_running_helper(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -578,10 +580,10 @@ class LocalTraceResourceGuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             life, _ = self.sample_lifecycle(directory, 1024)
             clock = [0.0]
-            def entered(): clock[0] = 2
+            def entered(**kwargs): clock[0] = 2; return True
             def read(**kwargs): clock[0] = 3; return 0
             life.sample_lock = mock.MagicMock()
-            life.sample_lock.__enter__.side_effect = entered
+            life.sample_lock.acquire.side_effect = entered
             life.owned_bind_bytes = read
             with mock.patch.object(m.time, 'monotonic', side_effect=lambda: clock[0]):
                 life.sample()

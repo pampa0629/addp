@@ -128,12 +128,16 @@ func TestExecutionTraceFixtureDoesNotPregrantPreparationAuthority(t *testing.T) 
 		}
 		value, ok := field.Value.(*ast.BasicLit)
 		if !ok {
-			t.Fatal("fixture role key must be explicit")
+			selector, ok := field.Value.(*ast.SelectorExpr)
+			if !ok || selector.Sel.Name != "role" {
+				t.Fatal("fixture role must come from its explicit local profile")
+			}
+			return true
 		}
 		roles = append(roles, strings.Trim(value.Value, "\""))
 		return true
 	})
-	if !reflect.DeepEqual(roles, []string{"local.execution_trace"}) {
+	if len(roles) != 0 {
 		t.Fatal("fixture must only create the original ordinary business role", roles)
 	}
 	raw, err := os.ReadFile("execution_trace_local.go")
@@ -189,7 +193,7 @@ func TestExecutionTraceWaitsForActualDevelopProtectionBeforeCredentialExport(t *
 		t.Fatal(err)
 	}
 	source := string(raw)
-	if calls != 1 || strings.Index(source, "waitForOwnerProtection(ctx, db,") > strings.Index(source, "return writeExecutionTraceLocalEnvironment(output, values)") {
+	if calls != 1 || strings.Index(source, "waitForOwnerProtection(ctx, db,") > strings.Index(source, "return writeLocalIdentityEnvironment(output, values, profile.keys)") {
 		t.Fatal("credentials exported before real owner protection readiness")
 	}
 }

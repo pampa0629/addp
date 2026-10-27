@@ -389,6 +389,12 @@ func run(args []string, environment []string) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+	if httpQualityLocalSelected(environment, *suite) {
+		if flags.NArg() != 0 || *observe != "" || *waitOwners != "" || *releaseCatalog != "" {
+			return errors.New("invalid HTTP local fixture arguments")
+		}
+		return runHTTPQualityLocal(environment, *output, *suite)
+	}
 	if *suite == catalogBrowserLocalSuite || *releaseCatalog != "" || os.Getenv("ADDP_CATALOG_BROWSER_LOCAL") != "" {
 		if flags.NArg() != 0 || *observe != "" || *waitOwners != "" {
 			return errors.New("invalid local Catalog fixture arguments")

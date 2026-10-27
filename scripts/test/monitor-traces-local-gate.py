@@ -69,13 +69,13 @@ def require(condition, code):
         raise GateError(code)
 
 
-def owned_list_identity(args, run_id):
+def owned_list_identity(args, run_id, label=LABEL):
     """Semantic API signature for the only owned list route, never raw argv."""
     for kind, path in (('container', '/containers/json'), ('volume', '/volumes')):
         expected = ['docker', kind, 'ls', *(['-a'] if kind == 'container' else []),
-                    '-q', '--filter', f'label={LABEL}={run_id}']
+                    '-q', '--filter', f'label={label}={run_id}']
         if list(args) == expected:
-            query = {'filters': {'label': [f'{LABEL}={run_id}']}}
+            query = {'filters': {'label': [f'{label}={run_id}']}}
             if kind == 'container':
                 query['all'] = True
             canonical = json.dumps({'method': 'GET', 'path': path, 'query': query}, sort_keys=True, separators=(',', ':'))
@@ -87,7 +87,8 @@ def owned_list_identity(args, run_id):
 
 class CommandEvidence:
     """Bounded owned-list journal; sample commands share these same records."""
-    def __init__(self, limit=4096):
+    def __init__(self, limit=4096, *, label=LABEL):
+        self.label = label
         self.limit = limit
         self.records = []
         self.active = set()
@@ -95,7 +96,7 @@ class CommandEvidence:
         self.lock = threading.Lock()
 
     def begin(self, args, run_id, phase):
-        identity = owned_list_identity(args, run_id)
+        identity = owned_list_identity(args, run_id, self.label)
         with self.lock:
             if identity:
                 signature = identity['request_signature_sha256']
@@ -508,7 +509,7 @@ def private_docker_client(life, endpoint):
     return directory
 
 
-def validate_resources(rows, allowed_exits=()):
+def validate_resources(rows, allowed_exits=(), *, normal_stops=(), label=LABEL):
     cpu = memory = 0
     for row in rows:
         host, state = row['HostConfig'], row['State']
@@ -519,7 +520,7 @@ def validate_resources(rows, allowed_exits=()):
             planned_builder = row.get('Id') in allowed_exits
             require(state.get('ExitCode') == 0 or planned_builder and state.get('Status')=='exited' and state.get('ExitCode')==1, 'owned_container_failed')
             labels=row.get('Config',{}).get('Labels',{}) or {}
-            require(row.get('Id') in allowed_exits or labels.get('com.docker.compose.service') in ('runtime-log-store-init','trace-store-init') or labels.get(LABEL+'.role')=='oneshot', 'owned_service_exited')
+            require(row.get('Id') in allowed_exits or row.get('Id') in normal_stops and state.get('ExitCode') == 0 or labels.get('com.docker.compose.service') in ('runtime-log-store-init','trace-store-init') or labels.get(label+'.role')=='oneshot', 'owned_service_exited')
         if not state.get('Running'):
             continue
         quota = host.get('NanoCpus', 0) / 1e9
@@ -532,16 +533,16 @@ def validate_resources(rows, allowed_exits=()):
     return cpu, memory
 
 
-def isolate(document, run_id, images):
+def isolate(document, run_id, images, *, label=LABEL, limits=LIMITS):
     result = {'name': run_id, 'services': {}, 'networks': {
-        'data': {'internal': True, 'labels': {LABEL: run_id}},
-        'entry': {'labels': {LABEL: run_id}}}, 'volumes': {}}
+        'data': {'internal': True, 'labels': {label: run_id}},
+        'entry': {'labels': {label: run_id}}}, 'volumes': {}}
     for name, original in document.items():
         service = copy.deepcopy(original)
-        require(name in LIMITS and not service.get('privileged') and 'network_mode' not in service, 'unexpected_service_contract')
+        require(name in limits and not service.get('privileged') and 'network_mode' not in service, 'unexpected_service_contract')
         service.update(container_name=run_id + '-' + name, image=images.get(name, service.get('image')),
-                       restart='no', labels={**service.get('labels', {}), LABEL: run_id},
-                       networks={'data': {'aliases': [name]}}, cpus=LIMITS[name][0], mem_limit=f'{LIMITS[name][1]}m')
+                       restart='no', labels={**service.get('labels', {}), label: run_id},
+                       networks={'data': {'aliases': [name]}}, cpus=limits[name][0], mem_limit=f'{limits[name][1]}m')
         require(isinstance(service.get('image'),str) and service['image'], 'every_service_requires_built_image')
         for key in ('build', 'depends_on', 'ports', 'profiles', 'extends'):
             service.pop(key, None)
@@ -557,7 +558,7 @@ def isolate(document, run_id, images):
                 require(mount.get('read_only') and not target.startswith('/capacity'), 'unexpected_writable_bind')
                 mounts.append(mount)
                 continue
-            result['volumes'][source] = {'labels': {LABEL: run_id}}
+            result['volumes'][source] = {'labels': {label: run_id}}
             mounts.append({'type': 'volume', 'source': source, 'target': target, 'read_only': mount.get('read_only', False), 'volume':{'nocopy':True}})
         service['volumes'] = mounts
         if name in ('postgres', 'system-backend', 'gateway', 'nginx'):
@@ -569,8 +570,29 @@ def isolate(document, run_id, images):
 
 
 class Lifecycle:
+    label = LABEL
+    run_prefix = 'addp-trace-local-'
+    strict_resources = False
+    work_seconds = MAX_SECONDS
+    planned_stops = frozenset()
+    product_services = BACKENDS+FRONTENDS
+    compile_services = BACKENDS+('runtime-log',)
+
+    @property
+    def sampling_image(self):
+        return self.minio_image
+
+    @contextmanager
+    def sampling_lease(self, began):
+        seconds=max(0, 4-(time.monotonic()-began)) if self.strict_resources else -1
+        require(self.sample_lock.acquire(timeout=seconds), 'resource_sample_deadline_exceeded')
+        try:
+            yield
+        finally:
+            self.sample_lock.release()
+
     def __init__(self):
-        self.run_id = 'addp-trace-local-' + uuid.uuid4().hex
+        self.run_id = self.run_prefix + uuid.uuid4().hex
         self.uuid = str(uuid.uuid4())
         self.work = Path(tempfile.mkdtemp(prefix=self.run_id + '-')).resolve()
         self.work.chmod(0o700)
@@ -593,16 +615,16 @@ class Lifecycle:
         self.sampler_started = False
         self.sample_deadline = None
         self.sample_thread_id = None
-        self.command_evidence = CommandEvidence()
+        self.command_evidence = CommandEvidence(label=self.label)
         self.checkout = self.work / 'source'
 
     def check(self):
-        require(time.monotonic() - self.started < MAX_SECONDS, "total_deadline_exceeded")
+        require(time.monotonic() - self.started < self.work_seconds, "total_deadline_exceeded")
         require(self.failure is None, self.failure or "resource_guard_failed")
 
     def request_timeout(self, seconds=10):
         self.check()
-        return min(seconds, MAX_SECONDS - (time.monotonic() - self.started))
+        return min(seconds, self.work_seconds - (time.monotonic() - self.started))
 
     def wait(self, seconds):
         deadline = time.monotonic() + seconds
@@ -634,7 +656,7 @@ class Lifecycle:
             now = time.monotonic()
             if guarded:
                 require(self.failure is None, self.failure or 'resource_guard_failed')
-                require(now - self.started < MAX_SECONDS, 'total_deadline_exceeded')
+                require(now - self.started < self.work_seconds, 'total_deadline_exceeded')
             require(now < deadline, 'command_deadline_exceeded')
 
         try:
@@ -718,7 +740,7 @@ class Lifecycle:
             self.command_evidence.finish(timing)
 
     def docker(self, *args, **kw):
-        if args and args[0]=='run' and LABEL+'.role=oneshot' in args:
+        if args and args[0]=='run' and self.label+'.role=oneshot' in args:
             require('--rm' not in args,'oneshot_exit_state_must_be_retained')
         return self.command(['docker', *args], **kw)
 
@@ -730,7 +752,7 @@ class Lifecycle:
 
     def owned(self, kind, **kw):
         return self.docker(kind, 'ls', *(['-a'] if kind == 'container' else []), '-q', '--filter',
-                           f'label={LABEL}={self.run_id}', guarded=False, **kw).split()
+                           f'label={self.label}={self.run_id}', guarded=False, **kw).split()
 
     def resume_builder(self):
         require(self.builder_stopped and bool(self.builder_ids),'owned_builder_resume_requires_planned_stop')
@@ -749,20 +771,22 @@ class Lifecycle:
     def prepare_volume_sampler(self, volumes, *, timeout):
         require(not self.sampler_started, 'volume_sampler_already_started')
         volumes=tuple(sorted(set(volumes)))
-        args = ['run', '-d', '--rm', '--name', self.run_id + '-space', '--label', f'{LABEL}={self.run_id}',
-                '--label', LABEL+'.role=sampler', '--cpus', str(SAMPLER_CPU), '--memory', '64m',
+        args = ['run', '-d', '--rm', '--name', self.run_id + '-space', '--label', f'{self.label}={self.run_id}',
+                '--label', self.label+'.role=sampler', '--cpus', str(SAMPLER_CPU), '--memory', '64m',
                 '--network', 'none', '--tmpfs', '/data:rw,noexec,nosuid,size=1m', '--entrypoint', '/bin/sh']
         for i,name in enumerate(volumes):
             args += ['--mount',f'type=volume,source={name},target=/space/{i},readonly']
-        args += [self.minio_image,'-ec','while :; do sleep 3600; done']
+        args += [self.sampling_image,'-ec','while :; do sleep 3600; done']
         self.docker(*args,guarded=False,timeout=timeout)
         self.sampler_started=True
         self.sampler_volumes=volumes
 
     def sample(self):
         waiting = time.monotonic()
-        with self.sample_lock:
-            self.sample_began = time.monotonic()
+        with self.sampling_lease(waiting):
+            if self.strict_resources and self.samples:
+                require(waiting-self.samples[-1]['sample_started_monotonic'] <= 5, 'resource_sample_cadence_exceeded')
+            self.sample_began = waiting if self.strict_resources else time.monotonic()
             self.sample_deadline = self.sample_began + 4
             self.sample_thread_id = threading.get_ident()
             self.sample_phase = self.phase
@@ -835,11 +859,11 @@ class Lifecycle:
             ids = set(self.owned('container', timeout=remaining())) | self.builder_ids
             self.sample_counts['container_count'] = len(ids)
         with self.measure_step('inspect_owned_containers'):
-            rows = json.loads(self.docker('inspect', *sorted(ids), guarded=False, timeout=remaining())) if ids else []
+            rows = json.loads(self.docker('inspect', *(['--size'] if self.strict_resources else []), *sorted(ids), guarded=False, timeout=remaining())) if ids else []
             remaining()
         with self.measure_step('validate_container_states'):
             try:
-                cpu, memory = validate_resources(rows, self.builder_ids if self.builder_stopped else ())
+                cpu, memory = validate_resources(rows, self.builder_ids if self.builder_stopped else (), normal_stops=self.planned_stops, label=self.label)
             except GateError:
                 self.failed_container_states=[{'id':r['Id'],'service':(r.get('Config',{}).get('Labels') or {}).get('com.docker.compose.service'),
                     'status':r['State'].get('Status'),'exit_code':r['State'].get('ExitCode'),'oom':r['State'].get('OOMKilled')} for r in rows]
@@ -856,7 +880,12 @@ class Lifecycle:
                         volumes += builder_volumes
             volumes = tuple(sorted(set(volumes)))
             self.sample_counts['volume_count'] = len(volumes)
-        total = 0
+        writable = 0
+        if self.strict_resources:
+            require(all(type(row.get('SizeRw')) is int and row['SizeRw'] >= 0 for row in rows), 'owned_writable_layer_measurement_missing')
+            writable = sum(row['SizeRw'] for row in rows)
+            self.sample_measured['container_writable_bytes'] = writable
+        total = writable
         if volumes:
             # Keep Docker create/start outside repeated du measurements. Rebuild
             # this owned read-only helper only when its exact mount set changes.
@@ -872,11 +901,12 @@ class Lifecycle:
                         'du -sk /space/* | awk \'{s+=$1} END {print s*1024}\'',guarded=False,timeout=remaining()).strip()
                     lines=measured.splitlines()
                     if len(lines)==1 and re.fullmatch(r'\d+(?:\.\d+)?(?:[eE][+]?[0-9]+)?',measured):
-                        total=int(float(measured));remaining();break
+                        total=writable+int(float(measured));remaining();break
                     self.measurement_failure = {'output_sha256':hashlib.sha256(measured.encode()).hexdigest(),
                         'line_count':len(lines),'du_diagnostic':any(line.startswith('du:') for line in lines)}
                     diagnostics=[line for line in lines if not re.fullmatch(r'\d+(?:\.\d+)?(?:[eE][+]?[0-9]+)?',line)]
                     if diagnostics and all(line.startswith('du:') and line.endswith('No such file or directory') for line in diagnostics):
+                        require(not self.strict_resources, 'owned_resource_measurement_failed')
                         self.sample_step['result'] = 'retry'
                         retries['volume']+=1;remaining();continue
                     raise GateError('owned_volume_measurement_invalid') from None
@@ -885,7 +915,7 @@ class Lifecycle:
                 try:
                     total += self.owned_bind_bytes(timeout=remaining());remaining();break
                 except GateError:
-                    if not getattr(self,'last_failure',{}).get('du_missing_file'):raise
+                    if self.strict_resources or not getattr(self,'last_failure',{}).get('du_missing_file'):raise
                     self.sample_step['result'] = 'retry'
                     retries['private']+=1;remaining()
         if hasattr(self,'measurement_failure'):del self.measurement_failure
@@ -896,7 +926,7 @@ class Lifecycle:
             remaining()
         sample = {'elapsed_seconds': round(time.monotonic()-self.started, 2), **self.sample_diagnostics(),
                   'cpu_hard_limit': cpu, 'memory_hard_limit_bytes': memory,
-                  'volume_allocated_bytes': total, 'complete_scan_retries': retries}
+                  'volume_allocated_bytes': total, 'container_writable_bytes': writable, 'complete_scan_retries': retries}
         remaining()
         self.samples.append(sample)
 
@@ -923,14 +953,15 @@ class Lifecycle:
         self.stop.set()
         errors = []
         if self.thread:
-            self.thread.join(timeout=6)
+            self.thread.join(timeout=10 if self.strict_resources else 6)
             if self.thread.is_alive():
                 errors.append('resource_guard_not_stopped')
+                if self.strict_resources:return errors
         self.phase = 'cleanup'
         # Release read-only mounts before Buildx removes its state volume,
         # including a helper created just before its client timed out.
         try:
-            helpers=self.docker('ps','-aq','--filter',f'label={LABEL}={self.run_id}',
+            helpers=self.docker('ps','-aq','--filter',f'label={self.label}={self.run_id}',
                 '--filter','name=^'+self.run_id+'-space$',guarded=False).split()
             if helpers:self.docker('rm','-fv',*helpers,guarded=False)
             self.sampler_started=False
@@ -970,7 +1001,7 @@ class Lifecycle:
         return errors
 
 
-def defaults(life):
+def isolated_defaults(life):
     text = life.command(['bash', '-c', 'set -a; source .env.example; env -0'], env=life.env)
     env = dict(item.split('=', 1) for item in text.split('\0') if '=' in item)
     # Do not retain user's shell environment from the shell defaults.
@@ -980,6 +1011,11 @@ def defaults(life):
             env[key] = secrets.token_hex(32)
     for key in ('ENCRYPTION_KEY', 'IAM_MFA_ENCRYPTION_KEY', 'OAUTH_USER_CODE_PEPPER'):
         env[key] = base64.b64encode(secrets.token_bytes(32)).decode()
+    return env
+
+
+def defaults(life):
+    env = isolated_defaults(life)
     secret = secrets.token_hex(32)
     env.update(ENV='test', POSTGRES_DB='addp_online', POSTGRES_USER='trace_local', POSTGRES_PASSWORD=secrets.token_hex(24),
                POSTGRES_HOST='127.0.0.1', POSTGRES_PORT='5432', ADDP_EXECUTION_TRACE_LOCAL='1',
@@ -1030,6 +1066,24 @@ def build(life):
     references={name:f'localhost:5001/addp-{name}:{life.run_id}' for name in BACKENDS+FRONTENDS}
     prepare_isolated_configuration(life,env,references)
     prepare_sampling_volumes(life)
+    proxies = prepare_builder(life)
+    life.phase='initial_resource_sample'
+    life.sample()
+    life.thread=threading.Thread(target=life.monitor,daemon=True)
+    life.thread.start()
+    life.phase='isolated_dependencies_start'
+    start_dependencies(life.compose,(life.checkout/'scripts/infra/init-postgresql.sql').read_text(),
+                       lambda phase:setattr(life,'phase',phase))
+    life.dependencies_ready=True
+    life.phase='builder_stop_guard_preflight'
+    life.stop_builder()
+    images=build_products(life,env,proxies)
+    life.phase='product_nginx_route_contract'
+    verify_nginx_routes(life,images['nginx'])
+    return commit,env,images
+
+
+def prepare_builder(life):
     # All builds use the product Make entry, with a private bounded BuildKit worker.
     life.phase = 'bounded_builder'
     config = life.work/'buildkit.toml'
@@ -1048,16 +1102,10 @@ def build(life):
     rows=json.loads(life.docker('inspect',*sorted(life.builder_ids)))
     life.builder_volumes.update(m['Name'] for row in rows for m in row.get('Mounts',[]) if m['Type']=='volume')
     life.prepare_volume_sampler(life.owned('volume')+sorted(life.builder_volumes),timeout=30)
-    life.phase='initial_resource_sample'
-    life.sample()
-    life.thread=threading.Thread(target=life.monitor,daemon=True)
-    life.thread.start()
-    life.phase='isolated_dependencies_start'
-    start_dependencies(life.compose,(life.checkout/'scripts/infra/init-postgresql.sql').read_text(),
-                       lambda phase:setattr(life,'phase',phase))
-    life.dependencies_ready=True
-    life.phase='builder_stop_guard_preflight'
-    life.stop_builder()
+    return proxies
+
+
+def build_products(life,env,proxies):
     docker_path = shutil.which('docker', path=env['PATH'])
     shim = life.work/'tools';shim.mkdir()
     wrapper = shim/'docker'
@@ -1065,7 +1113,7 @@ def build(life):
        'if a and a[0]=="build":\n'
        ' p=[v for k in ("HTTP_PROXY","HTTPS_PROXY") if os.environ.get("TRACE_LOCAL_"+k) for key in (k,k.lower()) for v in ("--build-arg",key+"="+os.environ["TRACE_LOCAL_"+k])]\n'
        ' a=["buildx","--builder",os.environ["TRACE_LOCAL_BUILDER"],"build","--load",*p,*a[1:]]\n'
-       'elif a and a[0]=="run": a=["run","--cpus","1","--memory","2g","--label",os.environ["TRACE_LOCAL_LABEL"],"--label","com.addp.execution-trace-local.role=oneshot",*[v for v in a[1:] if v!="--rm"]]\n'
+       'elif a and a[0]=="run": a=["run","--cpus","1","--memory","2g","--label",os.environ["TRACE_LOCAL_LABEL"],"--label",os.environ["TRACE_LOCAL_ROLE_LABEL"],*[v for v in a[1:] if v!="--rm"]]\n'
        'if a and a[0]=="run":\n'
        ' a=[v+":ro" if v.endswith(":/go/pkg/mod") else v for v in a]\n'
        'os.execv(os.environ["TRACE_LOCAL_DOCKER"],[os.environ["TRACE_LOCAL_DOCKER"],*a])\n')
@@ -1077,21 +1125,21 @@ def build(life):
     # validated credential-free loopback proxy instead of inheriting the shell.
     client_proxies=daemon_build_proxies({'HTTPProxy':os.environ.get('HTTP_PROXY') or os.environ.get('http_proxy'),
                                        'HTTPSProxy':os.environ.get('HTTPS_PROXY') or os.environ.get('https_proxy')},client=True)
-    build_env={**env, **client_proxies, 'PATH':str(shim)+os.pathsep+env['PATH'], 'TRACE_LOCAL_DOCKER':docker_path, 'TRACE_LOCAL_BUILDER':life.builder, 'TRACE_LOCAL_LABEL':LABEL+'='+life.run_id, 'ADDP_BUILD_GOMODCACHE':str(life.public_modcache), **{'TRACE_LOCAL_'+k:v for k,v in proxies.items()}}
+    build_env={**env, **client_proxies, 'PATH':str(shim)+os.pathsep+env['PATH'], 'TRACE_LOCAL_DOCKER':docker_path, 'TRACE_LOCAL_BUILDER':life.builder, 'TRACE_LOCAL_LABEL':life.label+'='+life.run_id, 'TRACE_LOCAL_ROLE_LABEL':life.label+'.role=oneshot', 'ADDP_BUILD_GOMODCACHE':str(life.public_modcache), **{'TRACE_LOCAL_'+k:v for k,v in proxies.items()}}
     life.phase='product_compile'
-    life.docker('run', '--name', life.run_id+'-compile', '--label', f'{LABEL}={life.run_id}', '--label', LABEL+'.role=oneshot', '--cpus', '2', '--memory', '3g',
+    life.docker('run', '--name', life.run_id+'-compile', '--label', f'{life.label}={life.run_id}', '--label', life.label+'.role=oneshot', '--cpus', '2', '--memory', '3g',
                 '--mount', f'type=bind,source={life.checkout},target=/workspace',
                 '--mount', f'type=bind,source={life.public_modcache},target=/dependencies,readonly',
                 '-e','ADDP_BUILD_GOMODCACHE=/dependencies','-w', '/workspace',
                 '-e', 'GOMAXPROCS=2', '-e', 'GOFLAGS=-p=2', 'golang:1.24',
-                'make', 'build', 'BUILD_ARGS=--arch arm64 --services '+','.join(BACKENDS+('runtime-log',)), timeout=2200)
+                'make', 'build', 'BUILD_ARGS=--arch arm64 --services '+','.join(life.compile_services), timeout=2200)
     # Product binaries are complete; reclaim only this run's disposable Go
     # object cache before the next bounded build consumes the same disk budget.
     shutil.rmtree(life.checkout/'.cache/go-build',ignore_errors=False)
     life.phase='bounded_builder_resume'
     life.resume_builder()
     life.phase='product_images'
-    services=BACKENDS+FRONTENDS
+    services=life.product_services
     references=[f'localhost:5001/addp-{name}:{life.run_id}' for name in services]
     life.tags.extend(references)
     for service in services:
@@ -1106,15 +1154,12 @@ def build(life):
     life.phase='browser_dependencies'
     version=json.loads((life.checkout/'console/frontend/package-lock.json').read_text())['packages']['node_modules/@playwright/test']['version']
     life.browser_image='mcr.microsoft.com/playwright:v'+version+'-noble'
-    life.docker('run','--name',life.run_id+'-browser-prepare','--label',f'{LABEL}={life.run_id}',
-                '--label',LABEL+'.role=oneshot','--cpus','1','--memory','2g',
+    life.docker('run','--name',life.run_id+'-browser-prepare','--label',f'{life.label}={life.run_id}',
+                '--label',life.label+'.role=oneshot','--cpus','1','--memory','2g',
                 '--mount',f'type=bind,source={life.checkout},target=/workspace','-w','/workspace/console/frontend',
                 *[part for k,v in proxies.items() for key in (k,k.lower()) for part in ('-e',key+'='+v)],
                 life.browser_image,'npm','ci','--no-audit','--no-fund',timeout=300)
-    life.phase='product_nginx_route_contract'
-    verify_nginx_routes(life,images['nginx'])
-    # Builder's state remains under the same disk stop line until final cleanup.
-    return commit,env,images
+    return images
 
 
 def verify_nginx_routes(life, image):
@@ -1182,7 +1227,7 @@ def prepare_sampling_volumes(life):
     life.phase='owned_volume_preparation'
     for logical in sorted(life.deployment_config['volumes']):
         name=life.run_id+'_'+logical
-        labels={LABEL:life.run_id,'com.docker.compose.project':life.run_id,'com.docker.compose.volume':logical}
+        labels={life.label:life.run_id,'com.docker.compose.project':life.run_id,'com.docker.compose.volume':logical}
         args=[part for key,value in labels.items() for part in ('--label',key+'='+value)]
         require(life.docker('volume','create',*args,name).strip()==name,'owned_volume_preparation_identity_mismatch')
         actual=json.loads(life.docker('volume','inspect',name))[0]
@@ -1419,7 +1464,7 @@ def run_resource_guard_diagnostic(life, report, window_started):
             life.compose = compose
 
 
-def identity(life, env):
+def identity(life, env, *, suite="execution-trace-local", prefix="ADDP_EXECUTION_TRACE_"):
     life.phase='formal_identity_preparation'
     # Helper has this run's PG network namespace; localhost never means shared PG.
     identity_env=life.work/'identity.env'
@@ -1427,15 +1472,15 @@ def identity(life, env):
     helper_env.update(GOWORK='off',GOMAXPROCS='1',GOFLAGS='-p=1',POSTGRES_HOST='127.0.0.1',POSTGRES_PORT='5432',
                       GOCACHE='/private/helper-go-cache',GOPATH='/private/helper-go-path',GOMODCACHE='/dependencies')
     private=life.work/'helper.env';private.write_text('\n'.join(k+'='+v for k,v in helper_env.items())+'\n');private.chmod(0o600)
-    life.docker('run','--name',life.run_id+'-identity','--label',f'{LABEL}={life.run_id}',
-        '--label',LABEL+'.role=oneshot','--user',str(os.getuid())+':'+str(os.getgid()),'--cpus','.5','--memory','1g','--network','container:'+life.run_id+'-postgres',
+    life.docker('run','--name',life.run_id+'-identity','--label',f'{life.label}={life.run_id}',
+        '--label',life.label+'.role=oneshot','--user',str(os.getuid())+':'+str(os.getgid()),'--cpus','.5','--memory','1g','--network','container:'+life.run_id+'-postgres',
         '--env-file',str(private),'--mount',f'type=bind,source={life.checkout},target=/workspace',
         '--mount',f'type=bind,source={life.public_modcache},target=/dependencies,readonly',
         '--mount',f'type=bind,source={life.work},target=/private','-w','/workspace/system/backend','golang:1.24',
-        'go','run','./cmd/online-test-fixture','--suite','execution-trace-local','--output','/private/identity.env',timeout=300)
+        'go','run','./cmd/online-test-fixture','--suite',suite,'--output','/private/identity.env',timeout=300)
     # The helper emits shell-quoted values; source only that private owned file.
     text=life.command(['bash','-c','set -a; source "$1"; env -0','_',str(identity_env)],env=life.env)
-    env.update({k:v for item in text.split('\0') if '=' in item for k,v in [item.split('=',1)] if k.startswith('ADDP_EXECUTION_TRACE_')})
+    env.update({k:v for item in text.split('\0') if '=' in item for k,v in [item.split('=',1)] if k.startswith(prefix)})
 
 
 def main():

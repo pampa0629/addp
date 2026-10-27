@@ -41,9 +41,11 @@ it('uses RFC 6238 current-time TOTP without changing clocks or replaying API pha
 })
 it('keeps browser ownership with real UI and public responses, with no token injection or captures', () => {
   const source = readFileSync(new URL('../../e2e/online/execution-trace-local.spec.js', import.meta.url), 'utf8')
+  const protocol = readFileSync(new URL('../../e2e/online/local-identity-support.mjs', import.meta.url), 'utf8')
+  const combined = source + protocol
   expect(source).toContain("test.use({ screenshot: 'off', trace: 'off', video: 'off'")
-  for (const forbidden of ['page.route(', 'context.route(', 'storageState', 'localStorage', 'setExtraHTTPHeaders', 'Bearer ', 'request.newContext', '.screenshot(', '.tracing.']) expect(source).not.toContain(forbidden)
-  for (const required of ['autocomplete="current-password"', 'autocomplete="one-time-code"', '/api/v1/system/auth/context', "getByTestId('trace-spans')", "getByTestId('trace-links')", "getByTestId('runtime-log-output')", "body.msg === 'execution.checkpoint'", "flag: 'wx'", "[200, 404].includes"]) expect(source).toContain(required)
+  for (const forbidden of ['page.route(', 'context.route(', 'storageState', 'localStorage', 'setExtraHTTPHeaders', 'Bearer ', 'request.newContext', '.screenshot(', '.tracing.']) expect(combined).not.toContain(forbidden)
+  for (const required of ['autocomplete="current-password"', 'autocomplete="one-time-code"', '/api/v1/system/auth/context', "getByTestId('trace-spans')", "getByTestId('trace-links')", "getByTestId('runtime-log-output')", "body.msg === 'execution.checkpoint'", "flag: 'wx'", "[200, 404].includes"]) expect(combined).toContain(required)
   expect(source).not.toMatch(/\.post\(|\.put\(|\.patch\(|\.delete\(/)
   expect(source).toContain("report.assertions.link_instance_currently_readable = true")
 })

@@ -125,7 +125,20 @@ func requireExecutionTraceLocalDatabase(db *gorm.DB, environment []string) error
 // session. The harness must use public password login/MFA/AuthContext for every
 // User. The separate Tenant initial administrator only prepares this run's
 // engine and grants; it never serves as business or Platform Trace identity.
+type localIdentityProfile struct {
+	id, title, prefix, role string
+	permissions, keys       []string
+	developProtection       bool
+}
+
 func prepareExecutionTraceLocalIdentities(db *gorm.DB, cfg *config.Config, output string) error {
+	return prepareLocalIdentities(db, cfg, output, localIdentityProfile{
+		id: "local-execution-trace", title: "Local execution trace", prefix: "ADDP_EXECUTION_TRACE", role: "local.execution_trace",
+		permissions: executionTraceLocalPermissions, keys: executionTraceLocalEnvironmentKeys, developProtection: true,
+	})
+}
+
+func prepareLocalIdentities(db *gorm.DB, cfg *config.Config, output string, profile localIdentityProfile) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	repo := iam.NewRepository(db)
@@ -142,7 +155,7 @@ func prepareExecutionTraceLocalIdentities(db *gorm.DB, cfg *config.Config, outpu
 	if err != nil {
 		return err
 	}
-	inputs, err := platformBootstrapInputs(time.Now(), "local-execution-trace", "Local execution trace")
+	inputs, err := platformBootstrapInputs(time.Now(), profile.id, profile.title)
 	if err != nil {
 		return err
 	}
@@ -150,25 +163,25 @@ func prepareExecutionTraceLocalIdentities(db *gorm.DB, cfg *config.Config, outpu
 		return fmt.Errorf("bootstrap execution trace identities: %w", err)
 	}
 	values := map[string]string{}
-	for i, prefix := range []string{"ADDP_EXECUTION_TRACE_ADMIN", "ADDP_EXECUTION_TRACE_SECURITY"} {
+	for i, prefix := range []string{profile.prefix + "_ADMIN", profile.prefix + "_SECURITY"} {
 		values[prefix+"_USERNAME"], values[prefix+"_PASSWORD"], values[prefix+"_TOTP"] = inputs[i].Username, inputs[i].Password, inputs[i].TOTPSecret
 	}
 	clock, err := testsupport.FixtureDatabaseClock(ctx, db)
 	if err != nil {
 		return err
 	}
-	preparer, password, err := createUserCredentials(ctx, identity, "local-execution-trace-preparer")
+	preparer, password, err := createUserCredentials(ctx, identity, profile.id+"-preparer")
 	if err != nil {
 		return err
 	}
 	tenants := iam.NewPlatformTenantService(repo, clock)
-	tenant, err := tenants.Create(ctx, iam.CreateTenantInput{Code: "local-execution-trace", Name: "Local execution trace", InitialAdministratorPrincipalID: preparer.PrincipalID, ActorPrincipalID: preparer.PrincipalID, Audit: audit("local-execution-trace-tenant")})
+	tenant, err := tenants.Create(ctx, iam.CreateTenantInput{Code: profile.id, Name: profile.title, InitialAdministratorPrincipalID: preparer.PrincipalID, ActorPrincipalID: preparer.PrincipalID, Audit: audit(profile.id + "-tenant")})
 	if err != nil {
 		return err
 	}
 	roles := iam.NewTenantRoleService(repo, clock)
-	values["ADDP_EXECUTION_TRACE_PREPARER_USERNAME"], values["ADDP_EXECUTION_TRACE_PREPARER_PASSWORD"] = "local-execution-trace-preparer", password
-	consumer, password, err := createUserCredentials(ctx, identity, "local-execution-trace-user")
+	values[profile.prefix+"_PREPARER_USERNAME"], values[profile.prefix+"_PREPARER_PASSWORD"] = profile.id+"-preparer", password
+	consumer, password, err := createUserCredentials(ctx, identity, profile.id+"-user")
 	if err != nil {
 		return err
 	}
@@ -177,28 +190,34 @@ func prepareExecutionTraceLocalIdentities(db *gorm.DB, cfg *config.Config, outpu
 	if err != nil {
 		return err
 	}
-	role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenant.ID, RoleKey: "local.execution_trace", Name: "Local execution trace business user", PermissionKeys: append([]string(nil), executionTraceLocalPermissions...), ActorPrincipalID: preparer.PrincipalID, Audit: audit("local-execution-trace-role")})
+	role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenant.ID, RoleKey: profile.role, Name: profile.title + " business user", PermissionKeys: append([]string(nil), profile.permissions...), ActorPrincipalID: preparer.PrincipalID, Audit: audit(profile.id + "-role")})
 	if err != nil {
 		return err
 	}
-	if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{role.ID}, Reason: "Disposable local execution trace acceptance", ActorPrincipalID: preparer.PrincipalID, Audit: audit("local-execution-trace-assignment")}); err != nil {
+	if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{role.ID}, Reason: "Disposable " + strings.ToLower(profile.title) + " acceptance", ActorPrincipalID: preparer.PrincipalID, Audit: audit(profile.id + "-assignment")}); err != nil {
 		return err
 	}
-	values["ADDP_EXECUTION_TRACE_USER_USERNAME"], values["ADDP_EXECUTION_TRACE_USER_PASSWORD"], values["ADDP_EXECUTION_TRACE_TENANT_ID"] = "local-execution-trace-user", password, fmt.Sprint(tenant.ID)
-	if err := waitForOwnerProtection(ctx, db, []string{"develop"}, tenant.ID); err != nil {
-		return fmt.Errorf("execution trace Develop protection readiness: %w", err)
+	values[profile.prefix+"_USER_USERNAME"], values[profile.prefix+"_USER_PASSWORD"], values[profile.prefix+"_TENANT_ID"] = profile.id+"-user", password, fmt.Sprint(tenant.ID)
+	if profile.developProtection {
+		if err := waitForOwnerProtection(ctx, db, []string{"develop"}, tenant.ID); err != nil {
+			return fmt.Errorf("execution trace Develop protection readiness: %w", err)
+		}
 	}
-	return writeExecutionTraceLocalEnvironment(output, values)
+	return writeLocalIdentityEnvironment(output, values, profile.keys)
 }
 
 func writeExecutionTraceLocalEnvironment(output string, values map[string]string) error {
+	return writeLocalIdentityEnvironment(output, values, executionTraceLocalEnvironmentKeys)
+}
+
+func writeLocalIdentityEnvironment(output string, values map[string]string, expected []string) error {
 	if err := validateExecutionTraceOutput(output); err != nil {
 		return err
 	}
-	if len(values) != len(executionTraceLocalEnvironmentKeys) {
+	if len(values) != len(expected) {
 		return errors.New("execution trace credentials have an unexpected field set")
 	}
-	keys := append([]string(nil), executionTraceLocalEnvironmentKeys...)
+	keys := append([]string(nil), expected...)
 	sort.Strings(keys)
 	for _, key := range keys {
 		if values[key] == "" || strings.ContainsAny(values[key], "\x00\r\n") {

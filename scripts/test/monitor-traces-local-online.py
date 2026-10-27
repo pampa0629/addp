@@ -41,6 +41,7 @@ def permissions(context):
 def guard_client(client, life):
     request = client.request
     def guarded(*args, **kwargs):
+        if hasattr(life,"before_api_request"): life.before_api_request(args[1] if len(args)>1 else kwargs.get("path",""))
         client.timeout = life.request_timeout()
         try:
             reply = request(*args, **kwargs)
@@ -73,6 +74,7 @@ def totp(secret, life=None):
 
 
 def browser_json(client,life,path,body,expected=(200,)):
+    if hasattr(life,"before_api_request"): life.before_api_request(path)
     request=urllib.request.Request(client.base_url+path,data=json.dumps(body).encode(),method='POST',
         headers={'Content-Type':'application/json','Accept':'application/json','Authorization':'Bearer '+client.token})
     try:
@@ -144,11 +146,12 @@ def prepare_engine_authority(client,identity,env,life,report):
     return final
 
 
-def login(env, who, platform=False, life=None):
+def login(env, who, platform=False, life=None, *, identity_prefix="ADDP_EXECUTION_TRACE_"):
     # Every login has a separate real HttpOnly refresh-cookie jar. Bearer
     # business requests still reuse the shared owner API client.
     opener=urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
     def exchange(path, body):
+        if life and hasattr(life,"before_api_request"): life.before_api_request(path)
         request=urllib.request.Request(env['GATEWAY_URL']+path,data=json.dumps(body).encode(),method='POST',
                                        headers={'Content-Type':'application/json','Accept':'application/json'})
         with opener.open(request,timeout=life.request_timeout() if life else 10) as response:
@@ -156,7 +159,7 @@ def login(env, who, platform=False, life=None):
             reply = json.load(response)
         if life:life.check()
         return reply
-    prefix = 'ADDP_EXECUTION_TRACE_' + who
+    prefix = identity_prefix + who
     reply = exchange('/api/v1/system/login', {
         'username': env[prefix+'_USERNAME'], 'password': env[prefix+'_PASSWORD']})
     if platform:
@@ -178,7 +181,7 @@ def login(env, who, platform=False, life=None):
     if platform:
         require(identity.get('context',{}).get('type')=='platform' and identity.get('authentication',{}).get('assurance_level') in ('aal2','aal3'),'platform_mfa_identity_required')
     else:
-        require(identity.get('context',{}).get('type')=='tenant' and identity['context'].get('tenant_id')==env['ADDP_EXECUTION_TRACE_TENANT_ID'],'exact_tenant_identity_required')
+        require(identity.get('context',{}).get('type')=='tenant' and identity['context'].get('tenant_id')==env[identity_prefix+'TENANT_ID'],'exact_tenant_identity_required')
     return client, identity
 
 
