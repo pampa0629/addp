@@ -4096,8 +4096,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "sizeBytes": {
-                    "type": "integer",
-                    "format": "int64"
+                    "type": "integer"
                 },
                 "storageBucket": {
                     "type": "string"

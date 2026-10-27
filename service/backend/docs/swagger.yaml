@@ -19,7 +19,6 @@ definitions:
       scopePath:
         type: string
       sizeBytes:
-        format: int64
         type: integer
       storageBucket:
         type: string
