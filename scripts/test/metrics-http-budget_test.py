@@ -127,7 +127,7 @@ class HTTPBudget(unittest.TestCase):
             result=subprocess.run(['python3','-',str(receipt),str(Path(m.__file__))],input=body,capture_output=True,text=True,timeout=5)
             self.assertEqual(result.returncode,0,result.stderr)
             self.assertEqual(json.loads(receipt.read_text())['request_counts']['go'],90)
-            value={'stage':'imports','status':'failed','error':'module_missing','exit_code':None,'log_bytes':0,'log_over_budget':False,'component':'unknown','checkpoint':'none','versions':{}}
+            value={'stage':'imports','status':'failed','error':'module_missing','exit_code':None,'log_bytes':0,'log_over_budget':False,'component':'unknown','checkpoint':'none','versions':{},'dependency_mount':{'noexec':False,'nosuid':True,'nodev':True},'native_imported':False}
             (source/'python-1.startup.json').write_text(json.dumps(value))
             result=subprocess.run(['python3','-',str(receipt),str(Path(m.__file__))],input=body,capture_output=True,text=True,timeout=5)
             self.assertEqual(result.returncode,0,result.stderr)

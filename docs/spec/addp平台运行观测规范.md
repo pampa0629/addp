@@ -398,6 +398,8 @@ Python 测试来源启动沿唯一入口按复制、依赖安装、导入、配�
 
 导入失败另保留固定组件白名单的导入检查点、ImportError 组件类别和实际安装版本；版本只读取预声明发行包名，值限制为短版本字符或 unavailable，未知模块路径／异常正文不保留。检查点与异常组件分别解释，不将入口组件当作唯一错误来源。退出 down 必须启用与 Python 来源启动相同的 python-http profile，覆盖当次项目内所有已创建服务；不能将停止／退出检查等同于删除容器，也不改变资源或清理期限。
 
+Python HTTP 测试来源的唯一 256 MiB /tmp tmpfs 显式使用 exec／nosuid／nodev，限当次两个隔离来源，以允许已安装本地扩展加载；保留非 root、只读根目录、cap_drop ALL、no-new-privileges、原 CPU／内存／私有可写／四秒／清理预算，不改变宿主或产品挂载。安装前从当前文件系统读取实际 noexec／nosuid／nodev 标志，禁止 noexec 或缺少其余两项隔离；实际标志仅以封闭布尔回执保存。安装后先验证 Pydantic Core 的本地扩展确实由扩展加载器导入，才进入框架及业务来源；无挂载或本地扩展通过证据不得将启动计为通过，不保留模块路径或异常正文。两源分别从 Agent／Copilot 正式 requirements.txt 提取 FastAPI／Uvicorn（含原 extras）／HTTPX／Pydantic 声明，保持约束原文，每项须唯一且齐全，缺失或重复立即失败；删除共用第三套框架版本及共用 requirements 文件，不改变消费者声明或绕过解析。相关依赖文件纳入 Metrics 固定输入摘要及自然 CI 选择，本批先运行确定性门禁，真实运行只沿自然 Linux Metrics CI，不新开本地窗口。
+
 #### 公共 mTLS 前置复验：已确认收窄边界
 
 2026-10-26 用户另行确认：先复用当次 Prometheus 容器执行 promtool，不增加临时 2 GiB 容器；来源证书按实际容器 IP 签发后，经 stdin 单次发布到当次来源容器的私有 tmpfs 并在容器内原子替换；Nginx 只从容器内路径加载证书，宿主挂载文件仅更新为下次启动的引导输入，不承担在线换证。验证实际呈送的叶子摘要及严格 IP 名称校验，失败仅输出封闭 TLS 子类。标准入口 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=mtls-preflight` 只执行公共配置／窗口语义／身份拒绝／发现与自然采样前置，通过或失败均清理并停止，不启动 Go／Python 业务请求或 Python 来源进程，不替代 HTTP 功能实链通过。

@@ -1943,3 +1943,14 @@ ImportError 尚缺具体组件与版本事实，本批没有猜测升级／降�
 最终 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=filesystem-alerts` 中102项配置／登记T0、固定版本promtool窗口、真实mTLS、中心自采集、采样超限与恢复、来源离线与恢复均实际通过；随后受控主机发现等待失败。原始日志 `/tmp/addp-filesystem-alert-metrics-exact-v2.log` 显示Nginx连续两轮打开/source/discovery.json为ENOENT，中心仍保留原发现身份，未进入TestIntegrationMetricsFilesystemAlertLifecycle；边界定位于当次测试夹具文件读取，Docker挂载／文件发布的具体根因尚未证实，不将其写成产品告警失败或已修复。没有通过延长等待、忽略缺样、改容量指标或跳过预检来通过；新的真实触发／缺样保留／恢复及签名通知代码仍待专门会话的Linux该分项结果。
 
 三次拥有明确归属的当次项目均已正常down，随后按精确Compose项目label独立核验容器／网络／卷全部为0，回执 `/tmp/addp-filesystem-alert-cleanup.json`。未填充磁盘，未修改或重启个人服务／数据库／配置，未执行Safari、Hosted、CI调度／轮询或定时任务。CI与Hosted继续等专门会话回传，本批不能写为完整运行验收完成。
+
+
+### Python 测试来源本地扩展挂载及正式 HTTP 依赖修正（2026-10-27）
+
+用户确认继续实施最小修正后，先修运行观测规范 6.4 与 T0–T3 条款，再调整原唯一 Python 来源入口。两个当次来源继承的唯一 /tmp tmpfs 显式为 exec／nosuid／nodev，仍为 256 MiB；非 root、只读根、cap_drop ALL、no-new-privileges、CPU／内存／私有可写／完整四秒和全部请求／清理预算均保持。安装前读取当次 /tmp 的实际 statvfs 标志，noexec、缺少 nosuid／nodev 或读取失败均禁止安装和业务启动；安装后必须成功导入 Pydantic Core 本地扩展且加载器为 ExtensionFileLoader，才进入 FastAPI。回执只增加实际挂载布尔值与 native_imported 布尔值、白名单组件／版本；失败不留路径、异常正文或任意模块名。这是已确认配置矛盾的修正，不反推旧 Job 未捕获的唯一异常符号。
+
+删除共用 FastAPI 0.115.0／Uvicorn 0.32.0 版本和共用 requirements 文件。现分别从 Agent／Copilot 正式 requirements.txt 提取 FastAPI、Uvicorn（保留 extras）、HTTPX、Pydantic 四项完整声明，缺项或重复失败关闭，不改变消费者版本或绕过 pip 解析。各来源只读取自己的依赖文件，仍为 HTTP SDK 夹具，不冒充完整 Agent／Copilot 产品依赖和业务启动。两个原 requirements 文件同步纳入既有 ADDP_T2_INPUT_FILES；实际固定摘要收集及共享 CI 选择确认二者都命中 Monitor，不新增 Makefile 入口或 workflow。
+
+新增四项回归先于实现失败，覆盖原 mount 缺 exec、未按实际挂载拒绝以及缺少依赖提取／本地扩展内核；随后补充实际标志读取、本地扩展失败不进入框架、独立来源文件及严格回执脱敏反例。首次完整配置／生命周期聚合发现旧回执测试缺少新增字段，更新唯一结构而非兼容旧结构后重跑。最终 `python3 -m unittest scripts/test/metrics-deployment-config_test.py scripts/test/metrics-http-budget_test.py` 127 项通过；`make test-infra-runtime-log-lifecycle` 的 123 项 runner／既有 System Go fixture及 80 项聚合通过；T2 登记测试 38 项、登记检查 22／12／9／2、shell 语法与本专项 diff 检查通过。T0 没有启动容器、安装实际依赖或导入产品依赖。
+
+补丁、红／绿门禁日志及输入／选择摘要位于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-python-native-fix-20261027-040bs6so`。本轮没有新开本地实链窗口、运行 Hosted、容量或定时，也没有修改／重启个人服务。修正后的实际挂载、本地扩展与两源 SDK→mTLS→采集查询告警仍待自然 Linux Metrics CI 单列核验，不将本地确定性通过算作完整 HTTP 实链通过。

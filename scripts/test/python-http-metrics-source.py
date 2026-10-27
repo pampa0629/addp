@@ -1,6 +1,7 @@
 """Gate-owned Python SDK producer. No System, model or business credentials."""
 import asyncio
 import importlib
+import importlib.machinery
 import importlib.metadata
 import json
 import os
@@ -16,16 +17,27 @@ from contextlib import asynccontextmanager
 
 STARTUP_STAGES=('copy','dependencies','imports','configuration','metrics','http_ready','identity','running')
 STARTUP_ERRORS=('none','dependency_failed','dependency_conflict','distribution_missing','permission_denied','no_space',
-                'module_missing','import_failed','file_missing','startup_failed','cancelled','log_over_budget','diagnostic_write_failed')
+                'module_missing','import_failed','file_missing','startup_failed','cancelled','log_over_budget','diagnostic_write_failed','mount_rejected')
 STARTUP_COMPONENTS=('none','unknown','fastapi','starlette','uvicorn','addp_common','httpx','opentelemetry','pydantic',
-                    'cryptography','prometheus_client','protobuf','jsonschema','keyring','typing_extensions')
+                    'cryptography','prometheus_client','protobuf','jsonschema','keyring','typing_extensions','pydantic_core')
 VERSION_PACKAGES=('addp-common','fastapi','starlette','uvicorn','pydantic','httpx','opentelemetry-api','opentelemetry-sdk',
-                  'opentelemetry-proto','protobuf','prometheus-client','cryptography')
+                  'opentelemetry-proto','protobuf','prometheus-client','cryptography','pydantic-core')
 
 
-def startup_record(stage,status,error='none',exit_code=None,log_bytes=0,component='none',checkpoint='none',versions=None):
+def startup_record(stage,status,error='none',exit_code=None,log_bytes=0,component='none',checkpoint='none',versions=None,dependency_mount=None,native_imported=False):
     return {'stage':stage,'status':status,'error':error,'exit_code':exit_code,'log_bytes':log_bytes,'log_over_budget':log_bytes>65536,
-            'component':component,'checkpoint':checkpoint,'versions':versions or {}}
+            'component':component,'checkpoint':checkpoint,'versions':versions or {},'dependency_mount':dependency_mount,'native_imported':native_imported}
+
+
+def dependency_mount():
+    flags=os.statvfs('/tmp').f_flag
+    return {'noexec':bool(flags&os.ST_NOEXEC),'nosuid':bool(flags&os.ST_NOSUID),'nodev':bool(flags&os.ST_NODEV)}
+
+
+def verify_native_dependency():
+    module=importlib.import_module('pydantic_core._pydantic_core')
+    if not isinstance(module.__loader__,importlib.machinery.ExtensionFileLoader):
+        raise RuntimeError('python_http_native_extension_required')
 
 
 def dependency_versions():
@@ -46,6 +58,9 @@ def read_startup(path):
         if value['stage'] not in STARTUP_STAGES or value['status'] not in ('starting','passed','failed') or value['error'] not in STARTUP_ERRORS:raise ValueError()
         if value['component'] not in STARTUP_COMPONENTS:raise ValueError()
         if value['checkpoint'] not in STARTUP_COMPONENTS:raise ValueError()
+        mount=value['dependency_mount']
+        if mount is not None and (not isinstance(mount,dict) or set(mount)!={'noexec','nosuid','nodev'} or any(type(v) is not bool for v in mount.values())):raise ValueError()
+        if type(value['native_imported']) is not bool:raise ValueError()
         versions=value['versions']
         if not isinstance(versions,dict) or not set(versions)<=set(VERSION_PACKAGES):raise ValueError()
         if any(not isinstance(v,str) or v!='unavailable' and not re.fullmatch(r'[0-9][A-Za-z0-9.+!-]{0,47}',v) for v in versions.values()):raise ValueError()
@@ -195,22 +210,26 @@ def produce(index,root,stage):
 def main():
     index=int(os.environ['HTTP_T2_INDEX']);root=Path('/source')
     if index not in (1,2):return 1
-    current='copy';current_checkpoint='none';versions={}
+    current='copy';current_checkpoint='none';versions={};mount=None;native_imported=False
     def stage(name,status='starting',error='none',exit_code=None,log_bytes=0,component='none',checkpoint='none'):
         nonlocal current,current_checkpoint
         current=name;current_checkpoint=checkpoint
-        value=startup_record(name,status,error,exit_code,log_bytes,component,checkpoint,versions)
+        value=startup_record(name,status,error,exit_code,log_bytes,component,checkpoint,versions,mount,native_imported)
         try:(root/f'python-{index}.startup.json').write_text(json.dumps(value))
         except OSError:
             print(json.dumps(startup_record(name,'failed','diagnostic_write_failed')),flush=True)
             raise RuntimeError('python_http_diagnostic_write_failed') from None
     try:
         stage('copy')
+        mount=dependency_mount()
+        if mount['noexec'] or not mount['nosuid'] or not mount['nodev']:
+            stage('copy','failed','mount_rejected')
+            return 1
         shutil.copytree('/app/common-python','/tmp/common-python',dirs_exist_ok=True)
         stage('dependencies')
         log=Path('/tmp/install.log')
         with log.open('wb') as output:
-            result=subprocess.run([sys.executable,'-m','pip','install','--no-cache-dir','--target','/tmp/deps','/tmp/common-python','-r','/source/python-requirements.txt'],stdout=output,stderr=subprocess.STDOUT)
+            result=subprocess.run([sys.executable,'-m','pip','install','--no-cache-dir','--target','/tmp/deps','/tmp/common-python','-r',f'/source/python-{index}.requirements.txt'],stdout=output,stderr=subprocess.STDOUT)
         if result.returncode:
             error,size=install_diagnostic(log)
             stage('dependencies','failed',error,result.returncode,size)
@@ -219,7 +238,9 @@ def main():
         # PathFinder's cached None before importing packages installed there.
         importlib.invalidate_caches()
         versions=dependency_versions()
-        stage('imports')
+        stage('imports',checkpoint='pydantic_core')
+        verify_native_dependency()
+        native_imported=True
         produce(index,root,stage)
         return 0
     except BaseException as error:

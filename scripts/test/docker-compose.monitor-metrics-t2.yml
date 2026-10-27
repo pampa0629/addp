@@ -8,7 +8,7 @@ x-python-http: &python-http
   security_opt: [no-new-privileges:true]
   cpus: 0.5
   mem_limit: 512m
-  tmpfs: ["/tmp:size=256m,mode=1777"]
+  tmpfs: ["/tmp:exec,nosuid,nodev,size=256m,mode=1777"]
   environment:
     PYTHONPATH: /tmp/deps:/app/common-python
     PYTHONDONTWRITEBYTECODE: "1"

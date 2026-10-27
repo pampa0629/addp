@@ -3,11 +3,27 @@ import datetime
 import json
 import os
 import runpy
+import re
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import time
+
+
+def http_requirements(root,index):
+    module={1:'agent',2:'copilot'}[index]
+    selected={}
+    for line in (root/module/'backend/requirements.txt').read_text().splitlines():
+        entry=line.partition('#')[0].strip()
+        name=re.match(r'^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[^\]\n]+\])?\s*(?:[<>=!~]|;|$)',entry)
+        if name is None:continue
+        key=name[1].lower().replace('_','-')
+        if key not in ('fastapi','uvicorn','httpx','pydantic'):continue
+        if key in selected:raise ValueError('python_http_requirements_invalid')
+        selected[key]=entry
+    if set(selected)!={'fastapi','uvicorn','httpx','pydantic'}:raise ValueError('python_http_requirements_invalid')
+    return '\n'.join(selected.values())+'\n'
 
 
 def startup_evidence(source):
@@ -75,9 +91,9 @@ def run(scope):
     shutil.copytree(root/'common-python/addp_common',source/'python-common/addp_common',ignore=shutil.ignore_patterns('__pycache__'),dirs_exist_ok=True)
     for name in ('pyproject.toml','README.md'):
         shutil.copy2(root/'common-python'/name,source/'python-common'/name)
-    (source/'python-requirements.txt').write_text('fastapi==0.115.0\nuvicorn==0.32.0\n')
     services=('python-http-agent','python-http-copilot')
     for index in (1,2):
+        (source/f'python-{index}.requirements.txt').write_text(http_requirements(root,index))
         startup=source/f'python-{index}.startup.json';startup.write_text('');startup.chmod(0o666)
     original=(source/'discovery.json').read_text()
     phase='prepare'

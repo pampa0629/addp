@@ -143,6 +143,96 @@ def run_business_postgres_compose(environment, case):
 
 
 class MetricsDeploymentConfigTest(unittest.TestCase):
+    def test_python_http_tmpfs_allows_native_loading_without_other_privilege_changes(self):
+        text=(ROOT/'scripts/test/docker-compose.monitor-metrics-t2.yml').read_text()
+        shared=text.split('services:',1)[0]
+        options=set(re.search(r'tmpfs: \["/tmp:([^"]+)"\]',shared)[1].split(','))
+        self.assertEqual(options,{'exec','nosuid','nodev','size=256m','mode=1777'})
+        for constraint in ('read_only: true','cap_drop: [ALL]','no-new-privileges:true','cpus: 0.5','mem_limit: 512m','65534:65534'):
+            self.assertIn(constraint,shared)
+        for name in ('python-http-agent','python-http-copilot'):
+            body=re.search(r'^  '+name+r':\n((?:    .*\n|\n)+)',text,re.M)[1]
+            self.assertIn('<<: *python-http',body)
+            self.assertNotIn('tmpfs:',body)
+
+    def test_python_http_requirements_follow_each_consumer_without_a_third_stack(self):
+        ns=runpy.run_path(str(ROOT/'scripts/test/python-http-metrics-probe.py'))
+        for index,module in ((1,'agent'),(2,'copilot')):
+            expected=[line.strip() for line in (ROOT/module/'backend/requirements.txt').read_text().splitlines()
+                      if re.match(r'^(fastapi|uvicorn(?:\[standard\])?|httpx|pydantic)(?:[<>=!~]|\s)',line)]
+            self.assertEqual(ns['http_requirements'](ROOT,index).splitlines(),expected)
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            for module in ('agent','copilot'):
+                path=root/module/'backend/requirements.txt';path.parent.mkdir(parents=True)
+                path.write_text('unrelated==1\nfastapi==0.123.4\nuvicorn[standard]==0.32.0\nhttpx>=0.27,<1\npydantic>=2.11,<3\n')
+            expected='fastapi==0.123.4\nuvicorn[standard]==0.32.0\nhttpx>=0.27,<1\npydantic>=2.11,<3\n'
+            self.assertEqual(ns['http_requirements'](root,1),expected)
+            agent=root/'agent/backend/requirements.txt';agent.write_text(expected.replace('0.123.4','0.123.5'))
+            self.assertIn('0.123.5',ns['http_requirements'](root,1))
+            self.assertEqual(ns['http_requirements'](root,2),expected)
+            for invalid in (expected.replace('httpx>=0.27,<1\n',''),expected+'pydantic==2.11.0\n'):
+                agent.write_text(invalid)
+                with self.assertRaisesRegex(ValueError,'python_http_requirements_invalid'):ns['http_requirements'](root,1)
+        for path in ('agent/backend/requirements.txt','copilot/backend/requirements.txt'):
+            self.assertIn(path,(ROOT/'scripts/test/monitor-metrics-gate.sh').read_text().splitlines()[3])
+
+    def test_python_http_mount_and_native_extension_gate_actual_bootstrap(self):
+        ns=runpy.run_path(str(ROOT/'scripts/test/python-http-metrics-source.py'))
+        good={'noexec':False,'nosuid':True,'nodev':True}
+        for flags in (good,dict(good,noexec=True),dict(good,nosuid=False),dict(good,nodev=False),None):
+            with self.subTest(flags=flags),tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);calls=[]
+                def mount():
+                    calls.append('mount')
+                    if flags is None:raise OSError('private-token')
+                    return flags
+                def native():calls.append('native')
+                def produce(index,source,stage):calls.append('produce');stage('imports',checkpoint='fastapi')
+                def install(*args,**kwargs):calls.append('install');return subprocess.CompletedProcess([],0)
+                def path(value):return root/'install.log' if value=='/tmp/install.log' else root
+                globals_=ns['main'].__globals__
+                with mock.patch.dict(globals_,{'Path':path,'produce':produce,'dependency_versions':lambda:{},'dependency_mount':mount,'verify_native_dependency':native}),mock.patch.object(globals_['shutil'],'copytree'),mock.patch.object(globals_['subprocess'],'run',side_effect=install),mock.patch.dict(os.environ,HTTP_T2_INDEX='1'):
+                    self.assertEqual(ns['main'](),0 if flags==good else 1)
+                self.assertEqual(calls,['mount','install','native','produce'] if flags==good else ['mount'])
+                facts=ns['read_startup'](root/'python-1.startup.json')
+                self.assertEqual(facts['dependency_mount'],flags)
+                self.assertEqual(facts['native_imported'],flags==good)
+                self.assertNotIn('private-token',json.dumps(facts))
+
+    def test_python_native_import_failure_never_starts_framework_or_business(self):
+        ns=runpy.run_path(str(ROOT/'scripts/test/python-http-metrics-source.py'))
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            def path(value):return root/'install.log' if value=='/tmp/install.log' else root
+            produce=mock.Mock();native=mock.Mock(side_effect=ImportError('private-token',name='pydantic_core._pydantic_core'))
+            globals_=ns['main'].__globals__
+            with mock.patch.dict(globals_,{'Path':path,'produce':produce,'dependency_versions':lambda:{},'dependency_mount':lambda:{'noexec':False,'nosuid':True,'nodev':True},'verify_native_dependency':native}),mock.patch.object(globals_['shutil'],'copytree'),mock.patch.object(globals_['subprocess'],'run',return_value=subprocess.CompletedProcess([],0)) as install,mock.patch.dict(os.environ,HTTP_T2_INDEX='2'):
+                self.assertEqual(ns['main'](),1)
+            self.assertEqual(install.call_args.args[0][-2:],['-r','/source/python-2.requirements.txt'])
+            produce.assert_not_called();native.assert_called_once_with()
+            facts=ns['read_startup'](root/'python-2.startup.json')
+            self.assertEqual((facts['stage'],facts['checkpoint'],facts['component'],facts['native_imported']),('imports','pydantic_core','pydantic_core',False))
+            self.assertNotIn('private-token',json.dumps(facts))
+
+    def test_python_mount_flags_come_from_the_actual_filesystem(self):
+        ns=runpy.run_path(str(ROOT/'scripts/test/python-http-metrics-source.py'))
+        target=ns['dependency_mount'].__globals__['os']
+        with mock.patch.object(target,'ST_NOEXEC',8,create=True),mock.patch.object(target,'ST_NOSUID',2,create=True),mock.patch.object(target,'ST_NODEV',4,create=True),mock.patch.object(target,'statvfs',return_value=mock.Mock(f_flag=6)) as read:
+            self.assertEqual(ns['dependency_mount'](),{'noexec':False,'nosuid':True,'nodev':True})
+            read.assert_called_once_with('/tmp')
+            read.return_value.f_flag=8
+            self.assertEqual(ns['dependency_mount'](),{'noexec':True,'nosuid':False,'nodev':False})
+
+    def test_python_native_dependency_requires_a_loaded_extension(self):
+        ns=runpy.run_path(str(ROOT/'scripts/test/python-http-metrics-source.py'))
+        loader=importlib.machinery.ExtensionFileLoader('pydantic_core._pydantic_core','/private/extension.so')
+        with mock.patch.object(ns['verify_native_dependency'].__globals__['importlib'],'import_module',return_value=mock.Mock(__loader__=loader)) as load:
+            ns['verify_native_dependency']()
+            load.assert_called_once_with('pydantic_core._pydantic_core')
+        with mock.patch.object(ns['verify_native_dependency'].__globals__['importlib'],'import_module',return_value=mock.Mock(__loader__=object())):
+            with self.assertRaisesRegex(RuntimeError,'python_http_native_extension_required'):ns['verify_native_dependency']()
+
     def test_python_startup_diagnostics_are_closed_and_bounded(self):
         ns=runpy.run_path(str(ROOT/'scripts/test/python-http-metrics-source.py'))
         with tempfile.TemporaryDirectory() as directory:
@@ -175,6 +265,9 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
             self.assertIs(caught.exception,first)
             self.assertEqual(wait.call_count,2)
             discovery.assert_called_once_with('[]')
+            for index in (1,2):
+                self.assertEqual((source/f'python-{index}.requirements.txt').read_text(),ns['http_requirements'](ROOT,index))
+            self.assertFalse((source/'python-requirements.txt').exists())
 
     def test_python_bootstrap_reports_failed_substage_without_install_or_private_text(self):
         ns=runpy.run_path(str(ROOT/'scripts/test/python-http-metrics-source.py'))
@@ -191,7 +284,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                 run=mock.Mock(return_value=subprocess.CompletedProcess([],1 if failing=='dependencies' else 0))
                 copy=mock.Mock(side_effect=PermissionError('private-token') if failing=='copy' else None)
                 globals_=ns['main'].__globals__
-                with mock.patch.dict(globals_,{'Path':path,'produce':produce,'dependency_versions':lambda:{}}),mock.patch.object(globals_['shutil'],'copytree',copy),mock.patch.object(globals_['subprocess'],'run',run),mock.patch.dict(os.environ,HTTP_T2_INDEX='1'):
+                with mock.patch.dict(globals_,{'Path':path,'produce':produce,'dependency_versions':lambda:{},'dependency_mount':lambda:{'noexec':False,'nosuid':True,'nodev':True},'verify_native_dependency':lambda:None}),mock.patch.object(globals_['shutil'],'copytree',copy),mock.patch.object(globals_['subprocess'],'run',run),mock.patch.dict(os.environ,HTTP_T2_INDEX='1'):
                     self.assertEqual(ns['main'](),1)
                 facts=ns['read_startup'](root/'python-1.startup.json')
                 self.assertEqual(facts['stage'],failing)
@@ -243,7 +336,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                     self.assertEqual(module.value,1);stage('running','passed')
                 def path(value):return root/'install.log' if value=='/tmp/install.log' else root
                 globals_=ns['main'].__globals__
-                with mock.patch.dict(globals_,{'Path':path,'produce':produce,'dependency_versions':lambda:{}}),mock.patch.object(globals_['shutil'],'copytree'),mock.patch.object(globals_['subprocess'],'run',side_effect=install),mock.patch.dict(os.environ,HTTP_T2_INDEX='1'):
+                with mock.patch.dict(globals_,{'Path':path,'produce':produce,'dependency_versions':lambda:{},'dependency_mount':lambda:{'noexec':False,'nosuid':True,'nodev':True},'verify_native_dependency':lambda:None}),mock.patch.object(globals_['shutil'],'copytree'),mock.patch.object(globals_['subprocess'],'run',side_effect=install),mock.patch.dict(os.environ,HTTP_T2_INDEX='1'):
                     self.assertEqual(ns['main'](),0)
             finally:
                 sys.path.remove(str(target));sys.path_importer_cache.pop(str(target),None);sys.modules.pop(name,None)
@@ -263,6 +356,10 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
             result=ns['read_startup'](p)
             self.assertEqual(result,{'stage':'unknown','status':'unavailable'})
             self.assertNotIn('private-token',json.dumps(result))
+            value['versions']={};value['dependency_mount']={'noexec':False,'nosuid':True,'nodev':'private-token'};p.write_text(json.dumps(value))
+            self.assertEqual(ns['read_startup'](p),{'stage':'unknown','status':'unavailable'})
+            value['dependency_mount']=None;value['native_imported']=1;p.write_text(json.dumps(value))
+            self.assertEqual(ns['read_startup'](p),{'stage':'unknown','status':'unavailable'})
 
     def python_traffic(self, index):
         source = ast.parse((ROOT / 'scripts/test/python-http-metrics-source.py').read_text())
