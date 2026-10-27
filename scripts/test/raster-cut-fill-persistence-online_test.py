@@ -50,8 +50,11 @@ class Client:
                 if self.failure_scans:self.scans.append('invalid-scan')
             else:
                 target='addp://engine/3/path/outputs/'+name+'?type=file';scan='scan-'+name;self.scans.append(scan)
-                facts={'schema_version':'addp.lineage-facts/v1','inputs':[{'locator':t['params']['locator']} for t in tasks if 'locator' in t['params']],
-                    'outputs':[{'locator':target,'write_mode':'create'}]}
+                # Develop's node-scoped facts are ordered by node ID, not task declaration.
+                facts={'schema_version':'addp.lineage-facts/v1',
+                    'inputs':[{'port':'input.'+t['id'],'locator':t['params']['locator']} for t in sorted(tasks,key=lambda t:t['id']) if 'locator' in t['params']],
+                    'outputs':[{'port':'output.save','locator':target,'write_mode':'create'}],
+                    'operations':[{'kind':'derive','operator':'save','input_ports':['input.after','input.before'],'output_ports':['output.save']}]}
                 artifact=preview(name)
                 self.executions[identifier]={'status':'success','outputs':{'save':{'resource':{'locator':target,'type':'file','write_mode':'create'}}},
                     'metadata':{'lineage_facts':facts,'result':{'final_result':artifact,'meta_scan_runs':[{'status':'submitted','target_locator':target,'execution_id':scan}]}}}
@@ -85,6 +88,7 @@ class CutFillPersistenceTest(unittest.TestCase):
             env={**ENV,'ADDP_ONLINE_ARTIFACT_DIR':root};client=client or Client()
             report=m.run_scenario(Path('.'),env,client,physical_runner,diagnostic)
             self.assertEqual(len(list((Path(root)/'cut-fill-csv').glob('*.csv'))),12)
+            self.assertEqual(len(list((Path(root)/'cut-fill-lineage').glob('*.json'))),12)
             return report,client
 
     def test_twelve_exact_dags_two_actual_sources_bands_units_and_existing_save(self):
@@ -94,6 +98,9 @@ class CutFillPersistenceTest(unittest.TestCase):
             tasks=m.definition(sources,'parent',name)['tasks'];a,b,u,v,stage=m.fixture.CASES[name]
             self.assertEqual([t['params']['locator'] for t in tasks if t['operator']=='raster_load'],[a,b])
             self.assertEqual(m.case_inputs(name),[a,b]);self.assertEqual(tasks[-2]['operator'],'raster_cut_fill')
+            self.assertEqual(tasks[-2]['params']['input_raster'],{'$ref':'before'})
+            self.assertEqual(tasks[-2]['params']['after_raster'],{'$ref':{'direct':'after','fill':'fill','reclassify':'classes'}[stage]})
+            if stage!='direct':self.assertEqual(tasks[-3]['params']['input_raster'],{'$ref':'after'})
             self.assertEqual(tasks[-2]['params']['elevation_unit'],u);self.assertEqual(tasks[-2]['params']['after_elevation_unit'],v)
             self.assertEqual(tasks[-2]['params']['band'],2);self.assertEqual(tasks[-2]['params']['after_band'],2 if stage=='direct' else 1)
             self.assertEqual(tasks[-1]['params'],{'input_df':{'$ref':'cut_fill'},'target_parent_locator':'parent','target_name':name,'mode':'fail'})
@@ -108,6 +115,92 @@ class CutFillPersistenceTest(unittest.TestCase):
             self.assertEqual(len(case['lineage']),2);self.assertTrue(case['monitor_verified']);self.assertEqual(case['size_evidence']['physical_size_bytes'],case['size_evidence']['meta_size_bytes'])
         headers=[h for method,path,h in client.headers if method=='POST' and path=='/api/v1/develop/executions']
         self.assertEqual(len(headers),48);self.assertEqual([h['Accept-Language'] for h in headers[12:]],['zh-cn','en']*18)
+
+    def success_fixture(self,name='mixed.csv',reverse_declarations=False):
+        sources={n:'addp://engine/3/path/'+n+'?type=file&item_id='+str(i+10) for i,n in enumerate(m.fixture.SOURCES)}
+        workflow=m.definition(sources,'addp://engine/3/path/outputs?type=directory',name)
+        if reverse_declarations:workflow['tasks'][:2]=workflow['tasks'][1::-1]
+        client=Client();client.request('POST','/api/v1/develop/executions',(202,),{'content':{'workflow_definition':workflow}})
+        target='addp://engine/3/path/outputs/'+name+'?type=file';a,b=m.case_inputs(name)
+        return client.executions['exec-'+name],{'input.before':sources[a],'input.after':sources[b]},target
+
+    def test_node_ports_bind_roles_independent_of_task_and_fact_array_order(self):
+        for name in m.fixture.TARGETS:
+            for reverse in (False,True):
+                with self.subTest(name=name,reverse=reverse):
+                    execution,bindings,target=self.success_fixture(name,reverse)
+                    for reorder in (False,True):
+                        facts=execution['metadata']['lineage_facts']
+                        if reorder:facts['inputs'].reverse();facts['operations'][0]['input_ports'].reverse()
+                        actual,scan,result=m.validate_success(execution,bindings,target)
+                        self.assertEqual(actual,facts);self.assertEqual(scan,'scan-'+name)
+        ordinary,_,_=self.success_fixture();reversed_case,_,_=self.success_fixture('reversed.csv')
+        self.assertNotEqual(ordinary['metadata']['lineage_facts']['inputs'],reversed_case['metadata']['lineage_facts']['inputs'])
+
+    def test_role_swaps_duplicate_missing_and_extra_ports_or_relations_fail_closed(self):
+        def mutate(execution,fault):
+            facts=execution['metadata']['lineage_facts'];op=facts['operations'][0]
+            if fault=='swap-resources':facts['inputs'][0]['locator'],facts['inputs'][1]['locator']=facts['inputs'][1]['locator'],facts['inputs'][0]['locator']
+            elif fault=='swap-ports':facts['inputs'][0]['port'],facts['inputs'][1]['port']=facts['inputs'][1]['port'],facts['inputs'][0]['port']
+            elif fault=='missing-source':facts['inputs'].pop()
+            elif fault=='duplicate-port':facts['inputs'].append(copy.deepcopy(facts['inputs'][0]))
+            elif fault=='extra-source':facts['inputs'].append({'port':'input.unused','locator':'addp://engine/3/path/unused?type=file'})
+            elif fault=='no-ports':facts['inputs'][0].pop('port')
+            elif fault=='wrong-source':facts['inputs'][0]['locator']='addp://engine/3/path/other?type=file'
+            elif fault=='wrong-schema':facts['schema_version']='other'
+            elif fault=='extra-envelope':facts['all_inputs']=facts['inputs']
+            elif fault=='missing-operations':facts['operations']=[]
+            elif fault=='extra-operation':facts['operations'].append(copy.deepcopy(op))
+            elif fault=='operation-role':op['input_ports']=['input.before']
+            elif fault=='operation-extra-source':op['input_ports'].append('input.unused')
+            elif fault=='operation-duplicate':op['input_ports'].append('input.before')
+            elif fault=='wrong-kind':op['kind']='copy'
+            elif fault=='wrong-operator':op['operator']='raster_cut_fill'
+            elif fault=='wrong-output-port':facts['outputs'][0]['port']='output.other'
+            elif fault=='wrong-operation-output':op['output_ports']=['output.other']
+            elif fault=='wrong-mode':facts['outputs'][0]['write_mode']='replace'
+            elif fault=='extra-output':facts['outputs'].append(copy.deepcopy(facts['outputs'][0]))
+            elif fault=='wrong-target':facts['outputs'][0]['locator']='addp://engine/3/path/other.csv?type=file'
+            elif fault=='execution-output':execution['outputs']['save']['resource']['write_mode']='replace'
+            elif fault=='no-scan':execution['metadata']['result']['meta_scan_runs']=[]
+            else:raise AssertionError(fault)
+        faults=('swap-resources','swap-ports','missing-source','duplicate-port','extra-source','no-ports','wrong-source','wrong-schema','extra-envelope','missing-operations','extra-operation','operation-role','operation-extra-source','operation-duplicate','wrong-kind','wrong-operator','wrong-output-port','wrong-operation-output','wrong-mode','extra-output','wrong-target','execution-output','no-scan')
+        for fault in faults:
+            execution,bindings,target=self.success_fixture();mutate(execution,fault)
+            with self.subTest(fault=fault),self.assertRaises(m.SuiteError):m.validate_success(execution,bindings,target)
+
+    def test_failure_freezes_closed_actual_and_expected_facts_before_rejection(self):
+        class Bad(Client):
+            def request(self,method,path,expected,body=None,headers=None):
+                result=super().request(method,path,expected,body,headers)
+                if '/develop/executions/exec-mixed.csv' in path:
+                    result.payload['metadata']['lineage_facts']['inputs'][0]['locator']='addp://engine/3/path/wrong.tif?type=file'
+                    result.payload['metadata']['private_access_token']='NEVER_ARCHIVE'
+                    result.payload['metadata']['lineage_facts']['private_token']='NEVER_ARCHIVE'
+                return result
+        with tempfile.TemporaryDirectory() as root:
+            env={**ENV,'ADDP_ONLINE_ARTIFACT_DIR':root}
+            with self.assertRaises(m.SuiteError):m.run_scenario(Path('.'),env,Bad(),physical,diagnostic)
+            path=Path(root)/'cut-fill-lineage'/'mixed.csv.json';data=json.loads(path.read_text())
+            self.assertEqual(data['execution_id'],'exec-mixed.csv');self.assertEqual(data['case'],'mixed.csv')
+            self.assertEqual([v['port'] for v in data['expected']['inputs']],['input.after','input.before'])
+            self.assertNotEqual(data['actual']['inputs'][0]['locator'],data['expected']['inputs'][0]['locator'])
+            self.assertNotIn('NEVER_ARCHIVE',path.read_text());self.assertFalse((Path(root)/'cut-fill-csv').exists())
+
+    def test_lineage_evidence_is_immutable_and_rejects_symlinks_or_extra_inventory(self):
+        for fault in ('overwrite','extra','symlink'):
+            execution,bindings,target=self.success_fixture()
+            with tempfile.TemporaryDirectory() as root:
+                env={**ENV,'ADDP_ONLINE_ARTIFACT_DIR':root};proof=m.record_lineage(env,'owned','mixed.csv',bindings,target,execution)
+                path=Path(root)/proof['path'];cases=[{'name':'mixed.csv','lineage_evidence':proof}]
+                m.verify_lineage_archive(env,cases)
+                for field,bad in (('path','other.json'),('size_bytes',True),('sha256','bad')):
+                    changed=copy.deepcopy(cases);changed[0]['lineage_evidence'][field]=bad
+                    with self.subTest(field=field),self.assertRaises(m.SuiteError):m.verify_lineage_archive(env,changed)
+                if fault=='overwrite':path.write_text('{}')
+                elif fault=='extra':path.with_name('extra.json').write_text('{}')
+                else:path.unlink();path.symlink_to(Path(root)/'missing')
+                with self.subTest(fault=fault),self.assertRaises(m.SuiteError):m.verify_lineage_archive(env,cases)
 
     def test_identity_size_and_failure_publication_are_fail_closed(self):
         for field,value in [('actor',1),('corrupt_size',True),('failure_publishes',True),('failure_scans',True)]:

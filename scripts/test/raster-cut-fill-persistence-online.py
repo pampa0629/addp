@@ -5,7 +5,6 @@ import base64,hashlib,importlib,json,math,os,re,subprocess,sys,time
 from pathlib import Path
 raster=importlib.import_module('scripts.test.raster-workflow-online')
 rasterize=importlib.import_module('scripts.test.vector-rasterize-persistence-online')
-zonal=importlib.import_module('scripts.test.raster-zonal-statistics-persistence-online')
 fixture=importlib.import_module('business.scripts.online-raster-cut-fill-fixture')
 scan_ids=importlib.import_module('scripts.test.vector-pmtiles-workflow-online').scan_ids
 validate_scan=importlib.import_module('scripts.test.raster-nibble-capacity-online').validate_scan
@@ -138,6 +137,94 @@ def archive_csv(env,native):
     temporary.write_text(json.dumps(manifest,sort_keys=True,indent=2)+'\n');temporary.replace(path)
     return manifest
 
+
+def expected_lineage(bindings,target):
+    if (set(bindings)!={'input.before','input.after'} or any(not isinstance(v,str) or not v for v in bindings.values())
+        or not isinstance(target,str) or not target):
+        raise SuiteError('cut/fill requires both exact role-bound source locators and one target')
+    return {'schema_version':'addp.lineage-facts/v1',
+        'inputs':[{'port':p,'locator':bindings[p]} for p in sorted(bindings)],
+        'outputs':[{'port':'output.save','locator':target,'write_mode':'create'}],
+        'operations':[{'kind':'derive','operator':'save','input_ports':sorted(bindings),'output_ports':['output.save']}]}
+
+
+def validate_success(execution,bindings,target):
+    if obj(execution.get('outputs'),'outputs')!={'save':{'resource':{'locator':target,'type':'file','write_mode':'create'}}}:
+        raise SuiteError('expected the exact named cut/fill CSV file output')
+    metadata=obj(execution.get('metadata'),'metadata');facts=obj(metadata.get('lineage_facts'),'lineage')
+    expected=expected_lineage(bindings,target)
+    if set(facts)!=set(expected) or facts['schema_version']!=expected['schema_version']:
+        raise SuiteError('cut/fill lineage envelope differs')
+    for side in ('inputs','outputs'):
+        actual={}
+        for ref in array(facts[side],side):
+            ref=obj(ref,'lineage resource');port=ref.get('port')
+            if not isinstance(port,str) or not port or port in actual:raise SuiteError('duplicate or missing cut/fill lineage port')
+            actual[port]=ref
+        if actual!={ref['port']:ref for ref in expected[side]}:
+            raise SuiteError('cut/fill role-bound source/target lineage differs')
+    operations=[]
+    for raw in array(facts['operations'],'operations'):
+        operation=dict(obj(raw,'operation'))
+        for side in ('input_ports','output_ports'):
+            ports=array(operation.get(side),side)
+            if any(not isinstance(p,str) or not p for p in ports) or len(set(ports))!=len(ports):
+                raise SuiteError('duplicate or missing cut/fill operation port')
+            operation[side]=sorted(ports)
+        operations.append(operation)
+    if operations!=expected['operations']:raise SuiteError('cut/fill exact save/derive operation differs')
+    result=obj(metadata.get('result'),'result');scans=array(result.get('meta_scan_runs'),'scans')
+    if (len(scans)!=1 or scans[0].get('status')!='submitted' or scans[0].get('target_locator')!=target
+        or not isinstance(scans[0].get('execution_id'),str) or not scans[0]['execution_id']):
+        raise SuiteError('expected one automatic exact cut/fill CSV scan')
+    return facts,scans[0]['execution_id'],result
+
+
+def record_lineage(env,identifier,name,bindings,target,execution):
+    """Freeze only public execution/lineage contract fields, including on rejection."""
+    if name not in fixture.TARGETS:raise SuiteError('unknown exact cut/fill lineage case')
+    def closed(value,fields):
+        if not isinstance(value,dict):return {'invalid_type':type(value).__name__}
+        def public(key,item):
+            if key in ('input_ports','output_ports'):
+                return item if isinstance(item,list) and all(isinstance(p,str) for p in item) else {'invalid_type':type(item).__name__}
+            if key=='item_id':return item if type(item) is int else {'invalid_type':type(item).__name__}
+            return item if isinstance(item,str) else {'invalid_type':type(item).__name__}
+        return {**{k:public(k,value[k]) for k in fields if k in value},
+                'unrecognized_fields':sorted(set(value)-set(fields))}
+    def refs(values):
+        return [closed(v,('port','locator','write_mode','item_id','item_fingerprint')) for v in values] if isinstance(values,list) else {'invalid_type':type(values).__name__}
+    metadata=execution.get('metadata');metadata=metadata if isinstance(metadata,dict) else {}
+    facts=metadata.get('lineage_facts');actual={'invalid_type':type(facts).__name__}
+    if isinstance(facts,dict):
+        actual={'schema_version':closed(facts,('schema_version',)).get('schema_version'),'inputs':refs(facts.get('inputs')),'outputs':refs(facts.get('outputs')),
+                'operations':[closed(v,('kind','operator','input_ports','output_ports')) for v in facts.get('operations',[])] if isinstance(facts.get('operations'),list) else {'invalid_type':type(facts.get('operations')).__name__},
+                'unrecognized_fields':sorted(set(facts)-{'schema_version','inputs','outputs','operations'})}
+    outputs=execution.get('outputs');public_outputs={'invalid_type':type(outputs).__name__}
+    if isinstance(outputs,dict):
+        public_outputs={key:closed(value.get('resource') if isinstance(value,dict) else value,('locator','type','write_mode','item_id')) for key,value in outputs.items()}
+    value={'schema_version':'addp.raster-cut-fill-lineage/v1','case':name,'execution_id':identifier,
+           'expected':expected_lineage(bindings,target),'actual':actual,'execution_outputs':public_outputs}
+    directory=Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'cut-fill-lineage'
+    if directory.is_symlink():raise SuiteError('lineage archive directory must not be symlink')
+    directory.mkdir(parents=True,exist_ok=True);path=directory/(name+'.json')
+    with path.open('xb') as stream:stream.write((json.dumps(value,ensure_ascii=False,sort_keys=True,indent=2)+'\n').encode())
+    return {'path':'cut-fill-lineage/'+path.name,'size_bytes':path.stat().st_size,'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
+
+
+def verify_lineage_archive(env,cases):
+    directory=Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'cut-fill-lineage'
+    if directory.is_symlink() or not directory.is_dir() or {p.name for p in directory.iterdir()}!={c['name']+'.json' for c in cases}:
+        raise SuiteError('lineage archive inventory differs')
+    for case in cases:
+        proof=case['lineage_evidence'];path=directory/(case['name']+'.json')
+        if (proof.get('path')!='cut-fill-lineage/'+path.name or type(proof.get('size_bytes')) is not int
+            or proof['size_bytes']<=0 or not isinstance(proof.get('sha256'),str) or not re.fullmatch('[0-9a-f]{64}',proof['sha256'])):
+            raise SuiteError('cut/fill lineage archive receipt differs')
+        if path.is_symlink() or not path.is_file() or path.stat().st_size!=proof['size_bytes'] or hashlib.sha256(path.read_bytes()).hexdigest()!=proof['sha256']:
+            raise SuiteError('frozen cut/fill lineage evidence changed')
+
+
 def validate_preview(result,name,geometry=None):
     preview=obj(result,'table preview');schema=[{'name':n,'type':'int64' if i<6 else 'Float64'} for i,n in enumerate(fixture.COLUMNS)]
     if (preview.get('type')!='pandas_dataframe' or preview.get('schema')!=schema or type(preview.get('row_count')) is not int or preview['row_count']!=1
@@ -173,8 +260,9 @@ def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runne
         target=f'addp://engine/{engine}/path/outputs/{name}?type=file'
         identifier=raster.submit(client,runtime,definition(sources,parent,name))
         execution=raster.wait_execution(client,'develop',identifier,timeout)
-        inputs=case_inputs(name)
-        facts,scan,result=zonal.validate_success(execution,[sources[n] for n in inputs],target)
+        inputs=case_inputs(name);bindings={'input.before':sources[inputs[0]],'input.after':sources[inputs[1]]}
+        evidence=record_lineage(env,identifier,name,bindings,target,execution)
+        facts,scan,result=validate_success(execution,bindings,target)
         if scan in scans:raise SuiteError('automatic output scans must be distinct')
         scans.append(scan)
         scanned=raster.wait_execution(client,'meta',scan,timeout)
@@ -191,7 +279,7 @@ def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runne
         lineage=[]
         cases.append({'name':name,'execution_id':identifier,'automatic_scan_execution_id':scan,'target_locator':target,
             'target_item_id':item['id'],'size_evidence':sizes,'physical':native['targets'][name],
-            'lineage':lineage,'scan_identity':scan_identity,'monitor_verified':True})
+            'lineage':lineage,'lineage_evidence':evidence,'scan_identity':scan_identity,'monitor_verified':True})
     for case in cases:
         case['lineage']=[raster.wait_lineage(client,items[n]['id'],case['target_item_id'],case['execution_id'],timeout) for n in case_inputs(case['name'])]
     before_scans=scan_ids(client)
@@ -228,6 +316,7 @@ def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runne
     for name,item in items.items():
         if client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload!=before[name]:
             raise SuiteError('source metadata changed')
+    verify_lineage_archive(env,cases)
     archived=archive_csv(env,native)
     return {'schema_version':'addp.'+SUITE+'/v1','suite':SUITE,'result':'passed','run_id':env['ADDP_ONLINE_TEST_RUN_ID'],
         'identity':identity,'sources':sources,'source_scan_execution_id':source_scan,'source_unchanged':True,
