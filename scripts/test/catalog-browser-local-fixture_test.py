@@ -9,7 +9,7 @@ class BrowserFixtureTest(unittest.TestCase):
     def test_failed_readiness_does_not_become_browser_success(self):
         class Client:
             def request(self,method,path,status,body=None,**kwargs):
-                if path.endswith('/units'):return SimpleNamespace(payload=[{'id':7,'code':'m'}])
+                if path.endswith('/units'):return SimpleNamespace(payload=[{'id':7,'code':'metre','scope_type':'platform'}])
                 if path.endswith('/elements/2'):return SimpleNamespace(payload={'id':2,'owner_domain_id':9,'version':1})
                 if path.endswith('/overview?view=inventory'):return SimpleNamespace(payload={'total_entries':0})
                 if path.endswith('/entries/resolve-sources'):raise AssertionError('must not reach ready')
@@ -24,7 +24,7 @@ class BrowserFixtureTest(unittest.TestCase):
         class Client:
             def request(self,method,path,status,body=None,**kwargs):
                 calls.append((method,path,body))
-                if path.endswith('/units'):payload=[{'id':7,'code':'m'}]
+                if path.endswith('/units'):payload=[{'id':7,'code':'metre','scope_type':'platform'}]
                 elif path.endswith('/elements/2'):payload={'id':2,'owner_domain_id':9,'version':1}
                 elif path.endswith('/overview?view=inventory'):payload={'total_entries':2}
                 elif path.endswith('/entries/resolve-sources'):payload={'results':[{'found':True,'entry':{'id':'local'}},{'found':True,'entry':{'id':'source'}}]}

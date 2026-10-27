@@ -3,6 +3,11 @@ import hashlib
 import importlib
 import json
 import time
+import argparse
+import os
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import urllib.request
 
 API=importlib.import_module('scripts.utils.online-api')
@@ -36,7 +41,7 @@ def prepare(gateway, credentials):
     units=client.request('GET','/api/v1/standard/units',(200,),response_type=list).payload
     require(len(units)>0,'published unit catalog unavailable')
     # Consume an existing formal unit, not a made-up unit ID or new platform definition.
-    unit=next((row for row in units if row.get('code')=='m'),None)
+    unit=next((row for row in units if row.get('code')=='metre' and row.get('scope_type')=='platform'),None)
     require(unit is not None,'formal metre unit unavailable')
     prefix=DOMAIN.fixture_prefix(credentials['run_id'])
     source_id=DOMAIN.prepare_reference(client,credentials['run_id'],unit_id=unit['id'])
@@ -77,3 +82,22 @@ def verify_source(gateway,credentials,samples):
     client=login(gateway,credentials,'extended')
     source=client.request('GET',f"/api/v1/standard/elements/{samples['source_element']}",(200,)).payload
     require(source_digest(source)==samples['source_digest'],'browser acceptance changed the source standard')
+
+
+def main():
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--gateway',required=True)
+    parser.add_argument('--identities',required=True)
+    parser.add_argument('--samples',required=True)
+    parser.add_argument('--verify',action='store_true')
+    args=parser.parse_args()
+    credentials=json.loads(Path(args.identities).read_text())
+    if args.verify:
+        verify_source(args.gateway,credentials,json.loads(Path(args.samples).read_text()))
+    else:
+        samples=prepare(args.gateway,credentials)
+        with open(args.samples,'x',opener=lambda p,f:os.open(p,f,0o600)) as stream:
+            json.dump(samples,stream,ensure_ascii=False)
+
+if __name__=='__main__':
+    main()

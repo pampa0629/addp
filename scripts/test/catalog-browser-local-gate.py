@@ -196,6 +196,9 @@ def prepare(life):
     require(platform.system() in ('Darwin','Linux'),'local_host_required')
     initial=baseline(life)
     commit=life.command(['git','rev-parse','HEAD'],cwd=ROOT).strip()
+    for relative in ('scripts/test/catalog-browser-local-gate.py','scripts/test/catalog-browser-local-fixture.py','system/backend/cmd/online-test-fixture/catalog_browser_local.go'):
+        committed=life.command(['git','show',commit+':'+relative],cwd=ROOT)
+        require((ROOT/relative).read_text()==committed,'commit_catalog_inputs_before_acceptance')
     life.report['commit']=commit
     state={'run_id':life.uuid,'parent_pid':os.getpid(),'deadline':time.time()+10800,'minutes':life.minutes,
            'initial':initial,'docker_host':endpoint,'commit':commit}
@@ -252,7 +255,9 @@ def prepare(life):
     life.fixture()
     credentials=json.loads((life.work/'identities.json').read_text())
     life.announce('prepare_owner_samples')
-    samples=importlib.import_module('scripts.test.catalog-browser-local-fixture').prepare(gateway,credentials)
+    life.command([sys.executable,'scripts/test/catalog-browser-local-fixture.py','--gateway',gateway,
+        '--identities',str(life.work/'identities.json'),'--samples',str(life.work/'samples.json')],timeout=180)
+    samples=json.loads((life.work/'samples.json').read_text())
     life.fixture('preparer')
     ready={'run_id':life.uuid,'origin':life.origin,'commit':commit,'samples':samples,
            'users':{name:{k:v for k,v in user.items() if k!='password'} for name,user in credentials['users'].items() if name!='preparer'},
@@ -346,7 +351,8 @@ def main(argv=None):
             if (life.work/'finished.json').exists():
                 evidence=validate_evidence(json.loads((life.work/'finished.json').read_text()),ready)
                 gateway='http://127.0.0.1:'+str(life.port('gateway',8000))
-                importlib.import_module('scripts.test.catalog-browser-local-fixture').verify_source(gateway,json.loads((life.work/'identities.json').read_text()),ready['samples'])
+                life.command([sys.executable,'scripts/test/catalog-browser-local-fixture.py','--gateway',gateway,
+                    '--identities',str(life.work/'identities.json'),'--samples',str(life.work/'samples.json'),'--verify'],timeout=30)
                 life.report.update(result='passed',browser=evidence,source_unchanged=True)
                 break
             time.sleep(1)
