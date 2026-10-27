@@ -43,6 +43,7 @@ test('ordinary user pages and downloads both single-file ORC sources', async ({ 
         expect(second.preview_type).toBe('table')
         expect(second.data.page).toBe(2)
         expect(second.data.total).toBe(source.nested ? 43 : 2503)
+        const size = second.data.page_size
         if (source.nested) {
           await expect(frame.getByRole('columnheader', { name: 'profile', exact: true })).toBeVisible()
           for (const [offset, row] of second.data.rows.entries()) {
@@ -55,7 +56,6 @@ test('ordinary user pages and downloads both single-file ORC sources', async ({ 
           }
           await expect(frame.locator('.el-table__body').first()).toContainText('嵌套')
         }
-        const size = second.data.page_size
         expect(second.data.rows[0].id).toBe((9007199254740992n + BigInt(size)).toString())
         await expect(frame.getByText(second.data.rows[0].id, { exact: true }).first()).toBeVisible()
         const downloadReady = page.waitForEvent('download')
