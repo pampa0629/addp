@@ -3,9 +3,14 @@ import hashlib
 import importlib
 import json
 from pathlib import Path
+import secrets
+import shutil
+import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 SCENE = importlib.import_module("scripts.test.manager-orc-online")
 OWNER = importlib.import_module("scripts.test.manager-internal-artifact-lineage-online")
@@ -102,7 +107,7 @@ class Client:
 
 
 class ORCSceneTest(unittest.TestCase):
-    def exercise(self, fail=False):
+    def exercise(self, fail=False, seed_fail=False, cleanup_fail=False):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         root = Path(temp.name)
@@ -141,6 +146,8 @@ class ORCSceneTest(unittest.TestCase):
         def physical(action):
             actions.append(action)
             if action == "seed":
+                if seed_fail:
+                    raise ValueError("ORC seed unavailable")
                 return {
                     "count": 2503,
                     "pyorc": "0.12.0",
@@ -162,6 +169,8 @@ class ORCSceneTest(unittest.TestCase):
                         for name in ("minio", "nfs")
                     ],
                 }
+            if cleanup_fail:
+                raise ValueError("ORC cleanup unavailable")
             return {"remaining_owned_outputs": 0, "output_objects_removed": True}
 
         browser = lambda context: {
@@ -207,6 +216,52 @@ class ORCSceneTest(unittest.TestCase):
         report = json.loads((root / "manager-orc.json").read_text())
         self.assertEqual(report["result"], "failed")
         self.assertEqual(actions, ["seed", "delete"])
+
+    def test_cleanup_failure_retains_primary_failure_and_both_reported_stages(self):
+        root, client, actions, run = self.exercise(seed_fail=True, cleanup_fail=True)
+        with self.assertRaisesRegex(ValueError, "ORC seed unavailable"):
+            run()
+        report = json.loads((root / "manager-orc.json").read_text())
+        self.assertEqual(report["failure_stage"], "physical_seed")
+        self.assertEqual(report["cleanup"]["result"], "failed")
+        self.assertEqual(report["cleanup"]["errors"], ["owned_output_delete_failed"])
+        self.assertEqual(actions, ["seed", "delete"])
+
+    def test_physical_container_delivers_json_to_worker_stdin(self):
+        fixture = importlib.import_module("business.scripts.online-orc-fixture")
+        root = Path('/tmp/addp-online-manager-nfs.' + secrets.token_hex(3))
+        root.mkdir(mode=0o700)
+        self.addCleanup(shutil.rmtree, root)
+        (root / '.addp-online-owner').write_text('manager-123-1')
+        with tempfile.TemporaryDirectory() as directory:
+            secret = Path(directory)
+            (secret / 'nfs-root').write_text(str(root))
+            env = {
+                'ADDP_ONLINE_HOSTED':'1', 'GITHUB_ACTIONS':'true', 'RUNNER_OS':'Linux',
+                'ADDP_ONLINE_MANAGER_CASE':'native-table-orc',
+                'ADDP_ONLINE_SECRET_DIR':str(secret), 'ADDP_ONLINE_TEST_RUN_ID':'manager-123-1',
+                'ADDP_ONLINE_MANAGER_MINIO_PORT':'59002',
+                'ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY':'unit-access',
+                'ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY':'unit-not-a-secret',
+                'ADDP_ONLINE_MANAGER_MINIO_BUCKET':'unit-bucket',
+                'ADDP_ONLINE_RASTER_RUNTIME_IMAGE':'unit-image',
+            }
+            real_run = subprocess.run
+            delivered = []
+            def launch(command, **kwargs):
+                # Docker closes container STDIN unless interactive mode is set.
+                worker_input = kwargs['input'] if '-i' in command or '--interactive' in command else ''
+                result = real_run(
+                    [sys.executable, '-c', 'import json,sys; print(json.dumps(json.load(sys.stdin)))'],
+                    **dict(kwargs, input=worker_input),
+                )
+                if result.returncode == 0:
+                    delivered.append(json.loads(result.stdout)['action'])
+                return result
+            with patch.object(fixture.subprocess, 'run', side_effect=launch):
+                for action in ['seed', 'verify', 'delete']:
+                    self.assertEqual(fixture.physical(action, Path('/tmp'), env)['action'], action)
+            self.assertEqual(delivered, ['seed', 'verify', 'delete'])
 
     def test_dispatch_case_and_fixture_guards(self):
         self.assertEqual(

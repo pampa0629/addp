@@ -152,6 +152,7 @@ def physical(action, repository, environment):
             "docker",
             "run",
             "--rm",
+            "-i",
             "--name",
             "addp-manager-raster-verifier",
             "--network",
@@ -173,7 +174,7 @@ def physical(action, repository, environment):
         timeout=120,
     )
     if result.returncode:
-        raise ValueError("ORC physical verification failed")
+        raise ValueError(f"ORC physical {action} failed (exit {result.returncode})")
     return json.loads(result.stdout)
 
 

@@ -115,6 +115,8 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
     tasks = []
     cleanup = []
     seeded = False
+    primary_failed = False
+    stage = "physical_seed"
     try:
         seeded = True
         seed = physical("seed")
@@ -128,6 +130,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             ("minio", minio, bucket + "/orc", bucket + "/orc/table.orc"),
             ("nfs", nfs, "orc", "orc/table.orc"),
         ]:
+            stage = "metadata_scan"
             owner.wait_for_meta_scan(
                 client, engine, time.monotonic() + 180, scope={"catalog_paths": [scope]}
             )
@@ -177,6 +180,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             (artifact / f"orc-meta-{name}.json").write_text(
                 json.dumps(detail, ensure_ascii=False, indent=2)
             )
+            stage = "paged_preview"
             for page in [1, 2, 126]:
                 preview = client.request(
                     "GET",
@@ -204,6 +208,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                         "ORC page lost exact values or nulls",
                     )
                 case["pages"].append({"page": page, "rows": len(rows), "values_verified": True})
+            stage = "original_download"
             downloaded = client.request(
                 "GET", "/api/v1/manager/downloads/file?" + urlencode({"locator": locator}), (200,)
             )
@@ -214,6 +219,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             )
             (artifact / f"orc-source-{name}.orc").write_bytes(downloaded.raw)
             case["original_download_verified"] = True
+            stage = "transfer_batch"
             target = "from-" + name + ".parquet"
             parent = f"addp://engine/{minio}/path/{bucket}/orc-output?type=prefix"
             created = client.request(
@@ -237,6 +243,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
                 client.request("GET", f"/api/v1/meta/items/{item['id']}", (200,)).payload == detail,
                 "ORC read modified source metadata",
             )
+        stage = "physical_verification"
         verified = physical("verify")
         require(
             len(verified.get("outputs", [])) == 2
@@ -266,6 +273,7 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
             "identity": report["identity"],
             "cases": report["cases"],
         }
+        stage = "browser"
         if browser_runner:
             browser = browser_runner(browser_context)
         else:
@@ -300,8 +308,11 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
         )
         report["browser"] = browser
         report["result"] = "passed"
-    except BaseException:
+    except BaseException as error:
+        primary_failed = True
         report["result"] = "failed"
+        report["failure_stage"] = stage
+        report["error_type"] = type(error).__name__
         raise
     finally:
         for task in reversed(tasks):
@@ -323,9 +334,11 @@ def run(repository, environment, owner, *, physical_runner=None, browser_runner=
         )
         if cleanup:
             report["result"] = "failed"
+            if not primary_failed:
+                report["failure_stage"] = "cleanup"
         (artifact / "manager-orc.json").write_text(
             json.dumps(report, ensure_ascii=False, indent=2) + "\n"
         )
-        if cleanup:
+        if cleanup and not primary_failed:
             raise ValueError("ORC owned-resource cleanup failed")
     return report
