@@ -2,6 +2,8 @@
 from pathlib import Path
 import importlib.util
 import unittest
+from datetime import datetime,timezone,timedelta
+import copy
 from unittest import mock
 spec=importlib.util.spec_from_file_location('http_local_online',Path(__file__).with_name('monitor-http-local-online.py'))
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
@@ -35,6 +37,23 @@ class HTTPProductOracles(unittest.TestCase):
         with self.assertRaisesRegex(m.auth.LocalTraceAssertionFailure,'history_no_valid_points'):
             m.require_history({'data':[{'collection':{'state':'not_active'},'observations':[]}]})
         m.require_history({'data':[{'observations':[{'series':[{'points':[{'data_state':'valid','value':1}]}]}]}]})
+
+    def test_stopped_source_requires_exact_identity_inactive_empty_and_new_agent_sample(self):
+        stop=datetime.now(timezone.utc)-timedelta(seconds=70)
+        instances=[{'id':1,'module_name':'agent','instance_id':'agent-owned','role':'backend'},
+                   {'id':2,'module_name':'copilot','instance_id':'copilot-owned','role':'backend'}]
+        payload={'data':[{'subject':instances[0].copy(),'collection':{'state':'collecting','sampled_at':datetime.now(timezone.utc).isoformat()},
+            'observations':[{'series':[{'metric_key':'http.requests.per_second','points':[{'data_state':'valid','value':.1}]}]}]},
+            {'subject':instances[1].copy(),'collection':{'state':'not_active'},'observations':[]}]}
+        m.verify_stopped_sources(payload,instances,stop)
+        for mutate in (lambda v:v['data'][1]['collection'].update(state='collecting'),
+                       lambda v:v['data'][1]['collection'].update(state='failed'),
+                       lambda v:v['data'][1].update(observations=[{'series':[]}]),
+                       lambda v:v['data'][0]['collection'].update(sampled_at=(stop-timedelta(seconds=1)).isoformat()),
+                       lambda v:v['data'][0]['subject'].update(id=999),
+                       lambda v:v['data'][0]['observations'][0]['series'][0]['points'][0].update(data_state='stale')):
+            value=copy.deepcopy(payload);mutate(value)
+            with self.assertRaises(m.auth.LocalTraceAssertionFailure):m.verify_stopped_sources(value,instances,stop)
 
     def test_live_oracle_requires_all_seven_metrics_correct_subjects_and_zero_server_failure(self):
         instance={'id':1,'module_name':'agent','instance_id':'owned','role':'backend'}

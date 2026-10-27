@@ -60,6 +60,28 @@ def require_history(payload):
         for series in observation.get('series',[]) for point in series.get('points',[])), 'http_history_no_valid_points')
 
 
+def verify_stopped_sources(payload,instances,stopped_at):
+    rows=payload.get('data',[])
+    require(len(rows)==2,'stopped_source_subject_count')
+    expected={row['module_name']:row for row in instances}
+    by_module={row.get('subject',{}).get('module_name'):row for row in rows}
+    require(set(by_module)=={'agent','copilot'},'stopped_source_subject_identity')
+    for name,row in by_module.items():
+        require(all(row['subject'].get(key)==expected[name][key] for key in ('id','module_name','instance_id','role')),
+            'stopped_source_subject_identity')
+    agent=by_module['agent']
+    require(agent['collection']['state']=='collecting','agent_source_lost')
+    sampled=agent['collection'].get('sampled_at')
+    require(isinstance(sampled,str),'agent_fresh_sample_missing')
+    try: at=datetime.fromisoformat(sampled.replace('Z','+00:00'))
+    except ValueError:raise auth.LocalTraceAssertionFailure('agent_fresh_sample_invalid') from None
+    require(at.tzinfo is not None and stopped_at<=at<=datetime.now(timezone.utc),'agent_sample_not_after_stop')
+    require(valid_point(agent,'http.requests.per_second')>=0,'agent_fresh_metric_missing')
+    copilot=by_module['copilot']
+    require(copilot['collection']['state']=='not_active' and copilot['observations']==[],
+        'stopped_source_must_be_inactive_and_empty')
+
+
 def logout(life,env,clients):
     for client in clients:
         life.before_api_request('/api/v1/system/logout')
@@ -191,7 +213,6 @@ def run(life,env,report):
     report['controlled_requests']=results
     report['assertions'].update(real_password_mfa=True,tenant_minimal_permission=True,unauthorized_observation_denied=True,
         two_product_sources_collecting=True,one_minute_qps_4xx_and_seven_metrics=True)
-    history_queries={}
     for row in instances:
         detail=observation(admin,[row],endpoint='http_interfaces',extra={'sort':'qps'})
         routes=detail['data'][0]['observations']
@@ -201,33 +222,27 @@ def run(life,env,report):
         require(not any('not-an-integer' in item.get('route','') or 'local_missing' in item.get('route','') for item in routes),
             'raw_parameter_route_leak')
         end=datetime.now(timezone.utc).replace(microsecond=0)-timedelta(seconds=15)
-        history_queries[row['module_name']]={'start':(end-timedelta(minutes=5)).isoformat(),'end':end.isoformat()}
-        history=observation(admin,[row],endpoint='http_trends',extra=history_queries[row['module_name']])
+        bounds={'start':(end-timedelta(minutes=5)).isoformat(),'end':end.isoformat()}
+        history=observation(admin,[row],endpoint='http_trends',extra=bounds)
         require_history(history)
     report['assertions']['normalized_ranking_and_history']=True
-    report['not_accepted']=['5m/15m完整窗口','模型与工具调用','5xx与告警通知重演','Hosted','容量与长期保留']
+    report['not_accepted']=['停源后历史读取（产品缺口，另批设计）','5m/15m完整窗口','模型与工具调用','5xx与告警通知重演','Hosted','容量与长期保留']
     browser(life,env,report,instances)
     life.phase='single_planned_copilot_stop'
     row=json.loads(life.docker('inspect',life.run_id+'-copilot-backend'))[0]
     require(row['State']['Running'] and row['Config']['Labels'].get(life.label)==life.run_id,'copilot_stop_owner_mismatch')
     life.planned_stops=frozenset({row['Id']})
+    stopped_at=datetime.now(timezone.utc)
     life.docker('stop','--time','15',row['Id'],timeout=25)
     stopped=json.loads(life.docker('inspect',row['Id']))[0]
     require(not stopped['State']['Running'] and stopped['State']['ExitCode']==0 and not stopped['State']['OOMKilled'],
         'copilot_planned_stop_not_clean')
     life.wait(70)
     after=observation(admin,instances)
-    by_module={r['subject']['module_name']:r for r in after['data']}
-    require(by_module['agent']['collection']['state']=='collecting','agent_source_lost')
-    require(by_module['copilot']['collection']['state']!='collecting' and not by_module['copilot']['observations'],
-        'stopped_source_must_not_be_healthy_zero')
+    verify_stopped_sources(after,instances,stopped_at)
     report['source_stop_summary']=after
     report['assertions']['single_source_stop_isolation']=True
-    life.phase='stopped_source_retained_history'
-    stopped_owner=next(row for row in instances if row['module_name']=='copilot')
-    retained=observation(admin,[stopped_owner],endpoint='http_trends',extra=history_queries['copilot'])
-    require_history(retained)  # Known product gap; retain this accepted assertion until scope is confirmed.
-    report['assertions']['stopped_history_readable']=True
+    report['stopped_history_readback']='not_accepted_product_gap'
     life.phase='formal_logout_and_revocation'
     logout(life,env,clients)
     report['assertions']['logout_old_sessions_denied']=True

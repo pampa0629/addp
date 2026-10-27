@@ -47,6 +47,18 @@ class Lifecycle(core.Lifecycle):
     compile_services=('system-backend','gateway','monitor-backend','runtime-log')
     sampling_image=SAMPLER_IMAGE
 
+    @property
+    def phase(self):
+        return getattr(self,'_phase','admission')
+
+    @phase.setter
+    def phase(self,value):
+        require(isinstance(value,str) and re.fullmatch('[a-z0-9_]{1,100}',value),'local_phase_invalid')
+        changed=value!=getattr(self,'_phase',None)
+        self._phase=value
+        if changed and hasattr(self,'started'):
+            print('Local formal Python HTTP: phase='+value+' elapsed_seconds='+str(round(time.monotonic()-self.started,2)),flush=True)
+
     def command(self,*args,**kwargs):
         if self.phase=='cleanup' and hasattr(self,'cleanup_deadline'):
             remaining=self.cleanup_deadline-time.monotonic()
