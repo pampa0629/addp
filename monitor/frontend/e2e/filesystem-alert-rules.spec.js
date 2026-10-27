@@ -175,16 +175,37 @@ test('shortcut never substitutes a disappeared mount, a rejected source or a cha
 })
 
 test('mount action requires both rule permissions and valid current capacity, without speculative reads',async({page})=>{
- const state=await shortcutSetup(page,{keys:keys.filter(key=>key!=='monitor.platform_resource_rule.create'),resourceOptions:{mounts:[mount]}})
+ let missingCapacity=false
+ const state=await shortcutSetup(page,{keys:keys.filter(key=>key!=='monitor.platform_resource_rule.create'),resourceOptions:{mounts:[mount],observationResponse:body=>{
+  if(missingCapacity) for(const series of body.series) if(series.metric_key===metric) Object.assign(series.points[0],{data_state:'no_data',value:null,sampled_at:null})
+ }}})
  await expect(page.getByTestId('filesystem-create-alert')).toHaveCount(0)
  const before=state.requests.filter(row=>row.path.includes('/resource-alert-rules')).length
  await setIdentity(page,identity(keys))
  await page.getByTestId(`resource-list-filesystem-${node}`).click()
  await expect(page.getByTestId('filesystem-create-alert')).toBeVisible()
  expect(state.requests.filter(row=>row.path.includes('/resource-alert-rules'))).toHaveLength(before)
- state.resourceState.filesystemMode='no-sample'
- await page.getByTestId('resource-detail-refresh').click()
+ const refresh=page.getByTestId('resource-detail-refresh')
+ await expect(refresh).toBeEnabled()
+ await expect(page.getByTestId('filesystem-create-alert')).toBeEnabled()
+ missingCapacity=true
+ state.resourceState.hold()
+ const [response]=await Promise.all([
+  page.waitForResponse(r=>r.url().includes('/resource_observations?')&&new URL(r.url()).searchParams.get('metrics')?.includes(metric)),
+  (async()=>{
+   try {
+    await refresh.click()
+    await expect(refresh).toBeDisabled()
+    await expect(page.getByTestId('filesystem-create-alert')).toHaveCount(0)
+   } finally { state.resourceState.release() }
+  })()
+ ])
+ const observed=await response.json()
+ expect(observed.series.find(series=>series.metric_key===metric).points[0]).toMatchObject({data_state:'no_data',value:null,sampled_at:null})
+ await expect(refresh).toBeEnabled()
  await expect(page.getByTestId('filesystem-create-alert')).toBeDisabled()
+ await expect(page.getByTestId('filesystem-view-rules')).toBeEnabled()
+ expect(state.requests.filter(row=>row.path.includes('/resource-alert-rules'))).toHaveLength(before)
  await setIdentity(page,identity(keys.filter(key=>key!=='monitor.platform_resource_rule.read')))
  await page.getByTestId(`resource-list-filesystem-${node}`).click()
  await expect(page.getByTestId('filesystem-create-alert')).toHaveCount(0)

@@ -593,3 +593,16 @@
 只读调查发现验收边界差异：`monitor/backend/internal/service/process_observation.go` 按当前实例在线状态建立采集范围，离线实例为 `not_active`；`http_observation.go` 对非collecting实例清空HTTP观测，即便指定停源前的固定历史区间。停源后历史读取尚有产品缺口，不能把空观测计为历史通过。已向用户提出“存活时验证历史，停源后验证不可用及Agent新鲜；离线历史另批设计”的收窄建议，尚待确认。当前脚本仍保留停源后历史非空断言，当前产品语义不能满足该断言；本轮不浪费真实窗口运行已知不满足的标准，不擅自移除断言或修改产品查询语义。
 
 准备证据目录：`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-python-product-preparation-20261027-vqi4ado7`，清单 `preparation-evidence.json` 绑定本实现提交及四份日志散列。未运行 Hosted、容量、定时或新的产品隔离环境；未验证新提交自然CI结果。此前SDK Linux HTTP T2的通过证据仍仅属于其原固定SHA，不迁移为本正式产品场景通过。
+
+
+### 挂载创建按钮缺样断言的CI不一致取证（2026-10-27）
+
+专门CI会话回传固定提交35b284d61的[Monitor Job 122199730934](https://github.com/pampa0629/addp/actions/runs/40507288527/job/122199730934)：filesystem-alert-rules.spec.js原第187行等待创建按钮disabled，五秒内14次仍enabled。已读取原日志/tmp/addp-ci-20261027-140028/job-122199730934.log、官方Artifact 12738115228的截图及error-context，ZIP SHA256核对为1fe10782f3eff0fde7ee914fc4d74843a2ca7c4868c1cff98e4a9ba8b05bf7e9；该失败用例未归档trace.zip，不虚称已有原始网络轨迹。截图显示73.68%有效样本，不能仅凭后继通过把旧失败倒改成成功。
+
+同时读取后继4c9e1e53的[Monitor Job 122211532002](https://github.com/pampa0629/addp/actions/runs/40510701877/job/122211532002)原始日志：标准make test-monitor-frontend的130单元、488浏览器（24.9分钟）及构建（10.68秒）实际通过；35b284d61至4c9e1e53的monitor/frontend无差异。这份有效完整证据保留，不重跑488全量，也不外推为本次修改测试后的远程CI已通过。
+
+根因定位于原测试夹具：该用例设置filesystemMode='no-sample'，但resource-observations.fixture.js的observations不识别此模式；只有resource_summaries另行处理同名模式。容量观测仍返回valid与原值，原toBeDisabled可能只在加载期间短暂成立，不能证明刷新结束后的缺样约束。产品HostResourceDetailObservation.reload本来就清空旧观测，loading期间创建不可用，完成后依据当前容量点判断。先在原测试补“刷新结束及实际响应必须no_data”的取证断言，标准单项明确失败：期望no_data、实际valid；日志/tmp/addp-mount-capacity-refresh-red.log，失败轨迹addp-monitor-playwright-results-cLTc1F保留，run.json的runtimeDir已核对清除。此结果证明缺样从未注入，不凭猜测修改产品；原CI每次DOM采样的精确时序没有原始trace，仍不作倒推。
+
+修正仅在该用例沿已有observationResponse钩子明确返回容量点no_data／null／null；不新增夹具模式、产品读取或另一条采样路径。先确认初始加载完成且创建可用，再用原hold/release控制一次刷新：在途旧行清空，释放后核对HTTP响应为缺样，等待刷新按钮重新可用后仍要求创建disabled，且查看已有规则enabled；规则接口读取数不增加，撤销read后入口消失，始终无写入。没有增加sleep／超时、放宽disabled断言或改变业务权限／口径。
+
+本地标准npm run test:e2e -- e2e/filesystem-alert-rules.spec.js --trace=retain-on-failure全21项通过（1.0分钟，/tmp/addp-mount-capacity-refresh-green.log），包括缺样下查看／停用和身份撤销；npm --prefix monitor/frontend test的130项通过（/tmp/addp-mount-capacity-refresh-unit.log），限定diff检查通过。产品源码、共享依赖及构建输入未改，复用上述有效CI完整T1／T3／build；本次只改浏览器用例及证据，既有标准前端门禁自动发现覆盖，无新入口／CI路径。未触发、轮询、重跑或取消CI／Hosted，无定时任务，不操作个人服务／Safari；真实来源和Safari运行验收仍单列待做。
