@@ -100,14 +100,39 @@ class HTTPProductLocalTests(unittest.TestCase):
         self.assertEqual(m.Lifecycle.compile_services,('system-backend','gateway','monitor-backend','runtime-log'))
         self.assertIn('agent-backend',m.Lifecycle.product_services);self.assertIn('copilot-backend',m.Lifecycle.product_services)
 
+    def test_projection_selects_the_two_product_metrics_profiles(self):
+        # Compose config omits inactive profiles. Model that actual behavior,
+        # rather than handing the adapter an impossible always-complete map.
+        with tempfile.TemporaryDirectory() as directory:
+            life=SimpleNamespace(work=Path(directory),run_id='owned',uuid='run',network='owned_data',addresses=m.source_addresses('172.29.0.0/16'))
+            services={name:{'image':'product:'+name,'environment':{},'volumes':[],'command':[]} for name in m.LIMITS}
+            calls=[]
+            def compose(args,**kwargs):
+                calls.append(args)
+                if 'docker-compose.infra.yml' in args:
+                    profiles={args[i+1] for i,value in enumerate(args[:-1]) if value=='--profile'}
+                    included={'postgres','redis'}
+                    if 'observability-metrics' in profiles:included.add('prometheus')
+                    if 'observability-metrics-control' in profiles:included.add('metrics-control')
+                    return json.dumps({'services':{name:services[name] for name in included}})
+                return json.dumps({'services':services})
+            life.command=compose;life.private_json=lambda name,value:Path(directory)/name
+            config=m.project(life,{}, {})
+            self.assertTrue({'prometheus','metrics-control'}<=config['services'].keys())
+            self.assertEqual(sum(args.count('--profile') for args in calls),2)
+
     def test_projection_has_owned_static_sources_and_product_readonly_mounts(self):
         with tempfile.TemporaryDirectory() as directory:
             life=SimpleNamespace(work=Path(directory),run_id='owned',uuid='run',network='owned_data',addresses=m.source_addresses('172.29.0.0/16'))
             services={name:{'image':'product:'+name,'environment':{},'volumes':[],'command':[]} for name in m.LIMITS}
+            services['prometheus']['volumes']=[{'type':'volume','source':'prometheus_data','target':'/prometheus','volume':{}}]
+            services['postgres']['volumes']=[{'type':'volume','source':'postgres_data','target':'/var/lib/postgresql/data','volume':{'nocopy':True}}]
             outputs=iter([json.dumps({'services':services}),json.dumps({'services':services})])
             life.command=mock.Mock(side_effect=lambda *a,**kw:next(outputs));life.private_json=lambda name,value:Path(directory)/name
             config=m.project(life,{}, {})
             self.assertEqual(config['networks']['data'],{'external':True,'name':'owned_data'})
+            self.assertFalse(config['services']['prometheus']['volumes'][0].get('volume',{}).get('nocopy',False))
+            self.assertTrue(config['services']['postgres']['volumes'][0]['volume']['nocopy'])
             for module,address in life.addresses.items():
                 row=config['services'][module+'-backend']
                 self.assertEqual(row['networks']['data']['ipv4_address'],address)

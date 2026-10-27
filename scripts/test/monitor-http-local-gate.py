@@ -158,16 +158,26 @@ def tls(life,env):
 
 
 def project(life,env,images):
-    infra=json.loads(life.command(['docker','compose','--env-file','/dev/null','-f','docker-compose.infra.yml',
-        'config','--format','json'],env=env))
+    infra=json.loads(life.command(['docker','compose','--env-file','/dev/null','--profile','observability-metrics',
+        '--profile','observability-metrics-control','-f','docker-compose.infra.yml','config','--format','json'],env=env))
     files=['docker-compose.yml','scripts/prod/metrics-platform.yml','scripts/prod/metrics-query.yml',
            str(life.work/'metrics-deployment/platform-process-metrics.json')]
     product=json.loads(life.command(['docker','compose','--env-file','/dev/null',
         *[v for f in files for v in ('-f',f)],'config','--format','json'],env=env))
+    require({'postgres','redis','prometheus','metrics-control'}<=infra.get('services',{}).keys(),
+        'product_metrics_profile_services_missing')
+    require(set(BACKENDS+FRONTENDS)<=product.get('services',{}).keys(),'product_http_services_missing')
     document={name:infra['services'][name] for name in ('postgres','redis','prometheus','metrics-control')}
     document.update({name:product['services'][name] for name in BACKENDS+FRONTENDS})
     document['postgres']['command']+=['-c','cluster_name=addp-http-quality-local-'+life.uuid]
     config=core.isolate(document,life.run_id,images,label=LABEL,limits=LIMITS)
+    # Preserve the product volume initialization contract (notably the non-root
+    # Prometheus data directory); only names/ownership are isolated here.
+    for name,service in config['services'].items():
+        original={mount['target']:mount for mount in document[name].get('volumes',[]) if mount['type']=='volume'}
+        for mount in service['volumes']:
+            if mount['type']=='volume' and mount['target'] in original:
+                mount['volume']=dict(original[mount['target']].get('volume',{}))
     config['networks']['data']={'external':True,'name':life.network}
     for module,address in life.addresses.items():
         service=config['services'][module+'-backend']
