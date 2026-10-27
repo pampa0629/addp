@@ -339,3 +339,19 @@
 按现有开发原则和共享组件契约修正原测试：改为登记实际Editor消费者，补上已有EngineDeployments；扫描所有模块frontend/src及共享basic/src的实际HostNodeSelect使用，与四个闭合集合一致才通过。每个消费标签均须显式提供api／allowed／identity，并只导入同一共享实现；已有@common-ui公开导入须由index.js唯一重新导出同一文件。保留共享组件不依赖业务store／模块、Monitor旧本地HostNodeSelect与hostAdmission删除及Monitor不拥有主机创建／导入的原断言；新增规则列表与挂载页只能组合唯一Editor、不得重新拥有选择器／表单／POST／PUT的断言。没有恢复重复实现，也没有修改产品组件、接口、权限或授权失效清空行为；业务行为仍由Monitor现有浏览器用例覆盖，未在共享测试中复制业务运行逻辑。
 
 Node24.11.1下标准`make test-common-frontend`先重现283项中282通过／1失败（/tmp/addp-host-selector-owner-red.log），修正后最终284全部通过（/tmp/addp-host-selector-owner-final.log）；当前`npm --prefix monitor/frontend test`129项通过（/tmp/addp-host-selector-monitor-unit.log），diff检查通过。已核对2d373a47e至本次验证的monitor/frontend和common-frontend/basic/src无差异，因此沿用上节实际浏览器及构建证据，不重复运行有效浏览器／Hosted。当前只修测试登记与本证据；Platform workflow原有make test-platform调用make test-common-frontend，包内通配自动发现覆盖修改，无新增入口或CI选择登记需求。未运行整套Platform、未把本地子门禁写成远程CI已恢复；自然CI和Hosted继续等专门会话回传，未轮询、重跑、取消工作流、创建定时任务或操作个人服务。此为既有功能的CI验证覆盖修复，不提升功能清单整行运行验收状态。
+
+
+## 主机挂载行查看已有容量规则入口（2026-10-27）
+
+主机列表展开及详情的完整挂载行新增“查看已有容量规则”，复用现有规则read权限、唯一模块导航、规则列表及ResourceAlertRuleEditor；无需create／update或当前容量样本。URL保存node_id、固定容量metric_key和完整device／mountpoint／fstype，原规则GET在Count／分页之前精确取交集，包含启用和停用规则；无匹配与读取失败分开。刷新、规则分页保留筛选，返回恢复原主机上下文；缺失／重复／错配／非法条件明确拒绝，不退回全量列表。切换筛选取消旧请求，身份／权限撤销清空旧结果，原创建／修改／启停权限及采样核验不变，不新增API路由、角色、后台投影或迁移。
+
+实施前确认现有Monitor Go、PostgreSQL与前端T1／T3、Swagger及Platform共享所有权门禁覆盖本批路径；根Makefile、module-gate、frontend-browser-gate及既有CI自动发现无需新登记。先同步平台观测、可恢复路由和API规范，再改原主路径。新增真实PG回归在25条较新不匹配及同设备异fstype规则之前筛选，核对总数、第二页、字面“/%”不作通配及原主机筛选；API拒绝部分、重复、非法编码和错配指标。前端新增七项浏览器场景覆盖中英只读定位、分页外规则、刷新／返回、缺样下查看及停用、空结果／503、非法URL、权限撤销与晚响应；单元补额外维度不能覆盖主机身份。
+
+本地标准`make test-module MODULE=monitor GO_ONLY=1`通过（/tmp/addp-mount-rule-query-go-final2.log）；依据标准infra/status确认addp-postgres实际25432后，仅使用addp_test执行`make test-monitor-postgres`，repository及service全套通过，新精确筛选用例通过（/tmp/addp-mount-rule-query-postgres-final.log）。`npm --prefix monitor/frontend test`最终130项、`make test-common-frontend`284项、Monitor标准Swagger生成及96个公开方法覆盖通过；最终`npm --prefix monitor/frontend run build`通过（3.77秒），日志分别为/tmp/addp-mount-rule-view-unit-delivery.log、/tmp/addp-mount-rule-view-common.log、/tmp/addp-mount-rule-query-swagger-retry.log、/tmp/addp-mount-rule-query-coverage-delivery.log、/tmp/addp-mount-rule-view-build-delivery.log。
+
+历史失败单列保留：首轮新增七项6通过／1失败，发现query键顺序导致重复规范化与两次查询；统一tab在前的唯一规范顺序后，原精确一次调用断言不放宽，单项通过。随后完整前端门禁浏览器165通过／13失败／1中断／309未运行，独立诊断3通过／5失败／12未运行，均未通过。失败包括既有宿主页面、图表和初始化，新晚响应场景也在fixture初始化前置阶段失败；当时18核系统负载约177、内存压力级别2，轨迹另有ERR_NETWORK_CHANGED，也有全HTTP200但页面未就绪的失败，不能将所有失败归因于单一环境因素。原日志/tmp/addp-mount-rule-view-frontend-full.log、/tmp/addp-mount-rule-view-diagnostic.log，原结果目录addp-monitor-playwright-results-YS2HVY／JT4sCX；只中止当次标准wrapper，两个run.json中的runtimeDir均已核对删除，未操作其他会话进程、增加超时、降低断言或重启个人服务。
+
+本轮未操作个人Safari、CI／Hosted或定时任务。完整浏览器门禁的后续结果单列如下；受控HTTP页面验证不能替代个人真实来源、Safari视觉或正式身份验收。后端增加查询参数，个人运行复验须由用户执行`./scripts/dev/restart.sh -monitor`，不得把旧进程返回400当成新接口已验收。
+
+
+最终复验：实际运行条件恢复为系统负载约6／内存压力级别1，且最后一项维度拒绝校验及单元变更已落地后，重新执行标准`make test-monitor-frontend`，退出0：130项单元、488项浏览器（19.1分钟，含本次七项）、Vite构建（3.92秒）全部通过，无失败／跳过。日志/tmp/addp-mount-rule-view-frontend-delivery.log，日志记载临时结果目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-7korI9`，已按标准成功退出路径移除；最终128个Monitor前端输入摘要与/tmp/addp-mount-rule-view-delivery-inputs.json完全一致。标准wrapper清理返回成功；中英620像素截图addp-mount-rule-view-a1295S／Z4NyGG均已查看，只读入口无创建／编辑按钮、上下文与唯一匹配规则可见。此前失败不改判，只以这轮独立终态支持最终本地T3通过；未修改断言、超时或产品采样口径。当前本批本地验证已通过，CI／Hosted与个人真实运行仍未执行或取得新结果。
