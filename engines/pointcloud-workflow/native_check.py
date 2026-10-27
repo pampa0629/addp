@@ -8,7 +8,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-REQUIRED_DRIVERS = {'readers.las', 'readers.e57', 'readers.pcd', 'readers.text', 'writers.copc'}
+REQUIRED_DRIVERS = {'readers.las', 'readers.e57', 'readers.pcd', 'readers.text', 'writers.copc', 'writers.ply'}
 
 
 def check_native(prefix: Path) -> None:

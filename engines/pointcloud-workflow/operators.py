@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 import re
 import time
+import math
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -159,7 +161,7 @@ def point_cloud_to_copc(
     access_plan = require_access_plan(params)
     runtime_access_plan = _runtime_access_plan(access_plan, env)
     source = _required_object(access_plan, "source")
-    options = _optional_object(params, "options")
+    options = _validated_precision_options(_optional_object(params, "options"))
     source_plan_format = plan_source_format(access_plan)
     file_name = target_name(access_plan)
 
@@ -174,6 +176,7 @@ def point_cloud_to_copc(
     temp_dir = _make_work_dir(env)
     target_file = temp_dir / file_name
     started_at = time.time()
+    deadline = time.monotonic() + timeout_seconds if timeout_seconds and timeout_seconds > 0 else None
     reporter = _ProgressReporter(params.get("progress_callback"), env)
     try:
         reporter.emit("prepare", "started", "准备点云 COPC 转换", overall_progress=1, force=True)
@@ -181,17 +184,26 @@ def point_cloud_to_copc(
         source_file = stage_source_file(runtime_access_plan, temp_dir)
         source_uri = str(source_file)
         pdal_source_uri = _prepare_pdal_source_uri(source_uri, source_format, temp_dir)
+        source_quantization = _las_quantization(source_file) if source_format in {"las", "laz"} else None
+        runtime_env = _runtime_env(runtime_access_plan, temp_dir, env)
+        scan_started = time.monotonic()
+        bounds = _scan_coordinate_bounds(
+            pdal, pdal_source_uri, source_format, temp_dir,
+            runner=runner, env=runtime_env, timeout_seconds=_remaining_seconds(deadline),
+            progress_callback=lambda: reporter.emit("prepare", "progress", "准备点云 COPC 转换", overall_progress=3),
+        )
+        scan_elapsed_ms = int((time.monotonic() - scan_started) * 1000)
+        options, selection = _resolve_precision(options, source_quantization, bounds)
         command = [pdal, "translate", pdal_source_uri, str(target_file)]
         command.extend(_pdal_reader_args(source_format))
         command.append("--writers.copc.forward=all")
         command.extend(_pdal_copc_option_args(options, env))
-        runtime_env = _runtime_env(runtime_access_plan, temp_dir, env)
         reporter.emit("convert", "started", "生成点云 COPC 文件", overall_progress=5, force=True)
         result = _run_executable(
             command,
             runner=runner,
             env_name=PDAL_ENV,
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=_remaining_seconds(deadline),
             extra_env=runtime_env,
             work_dir=temp_dir,
             progress_callback=lambda: reporter.emit(
@@ -209,6 +221,15 @@ def point_cloud_to_copc(
                 details=str(target_file),
                 http_status=500,
             )
+        quantization = _las_quantization(target_file)
+        if quantization["point_count"] != bounds["point_count"] or any(
+            quantization[kind][index] != options[f"{kind}_{axis}"]
+            for kind in ("scale", "offset") for index, axis in enumerate("xyz")
+        ):
+            raise ConverterError("CONVERSION_FAILED", "COPC quantization verification failed", details="output point count or scale/offset differs from the conversion plan")
+        quantization["selection"] = selection
+        quantization["source_bounds"] = {"min": bounds["min"], "max": bounds["max"]}
+        quantization["range_scan"] = {"elapsed_ms": scan_elapsed_ms, "temporary_bytes": bounds["temporary_bytes"]}
         reporter.emit(
             "publish",
             "started",
@@ -234,6 +255,7 @@ def point_cloud_to_copc(
             "publish": publish_result,
             "source_format": source_format,
             "target_format": "copc",
+            "quantization": quantization,
             "converter": pdal,
             "command": _redact_command(command),
             "stdout": result.stdout,
@@ -243,6 +265,142 @@ def point_cloud_to_copc(
         }
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+
+def _remaining_seconds(deadline: float | None) -> float | None:
+    if deadline is None:
+        return None
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise ConverterError("CONVERSION_TIMEOUT", "pointcloud conversion command timed out", http_status=504)
+    return remaining
+
+def _validated_precision_options(options: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(options)
+    for kind in ("scale", "offset"):
+        for axis in "xyz":
+            key = f"{kind}_{axis}"
+            if key not in normalized:
+                continue
+            value = normalized[key]
+            if value == "auto":
+                continue
+            try:
+                number = float(value) if not isinstance(value, bool) else math.nan
+            except (TypeError, ValueError, OverflowError):
+                number = math.nan
+            if not math.isfinite(number) or (kind == "scale" and number <= 0):
+                raise ConverterError("INVALID_PARAMS", "Invalid COPC quantization option", details=key)
+            normalized[key] = number
+    return normalized
+
+
+def _resolve_precision(options: dict[str, Any], source: dict[str, Any] | None, bounds: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+    resolved = dict(options)
+    selection = {}
+    for index, axis in enumerate("xyz"):
+        low, high = bounds["min"][index], bounds["max"][index]
+        # Offset first: an explicit offset may require a larger automatic scale
+        # than the span alone in order to fit the LAS signed integer domain.
+        for kind in ("offset", "scale"):
+            key = f"{kind}_{axis}"
+            if key in options:
+                value, selection[key] = options[key], "explicit"
+            elif source is not None:
+                value, selection[key] = source[kind][index], "source"
+            else:
+                value, selection[key] = "auto", "auto"
+            if value == "auto":
+                if kind == "offset":
+                    value = low
+                else:
+                    distance = max(abs(low - resolved[f"offset_{axis}"]), abs(high - resolved[f"offset_{axis}"]))
+                    # A constant axis is represented exactly by its offset; 1 is
+                    # merely a valid encoding scale, not a precision floor.
+                    value = math.nextafter(distance / 2147483647, math.inf) if distance else 1.0
+                if not math.isfinite(value) or (value <= 0 and kind == "scale"):
+                    raise ConverterError("INVALID_PARAMS", "Invalid COPC quantization option", details=key)
+            resolved[key] = value
+        for bound in (low, high):
+            integer = (bound - resolved[f"offset_{axis}"]) / resolved[f"scale_{axis}"]
+            if not math.isfinite(integer) or integer <= -2147483648.5 or integer >= 2147483647.5:
+                raise ConverterError("INVALID_PARAMS", "Invalid COPC quantization option", details=f"{axis}: coordinate exceeds signed 32-bit integer range")
+    return resolved, selection
+
+
+def _scan_coordinate_bounds(
+    pdal: str, source: str, source_format: str, work_dir: Path, *,
+    runner: CommandRunner | None, env: dict[str, str], timeout_seconds: int | None,
+    progress_callback: Callable[[], None] | None = None,
+) -> dict[str, Any]:
+    # PDAL metadata JSON rounds doubles. Export only XYZ as binary doubles and
+    # reduce it in bounded chunks; this preserves small deltas at world offsets.
+    deadline = time.monotonic() + timeout_seconds if timeout_seconds and timeout_seconds > 0 else None
+    path = work_dir / "coordinate-bounds.ply"
+    command = [pdal, "translate", source, str(path)]
+    command.extend(_pdal_reader_args(source_format))
+    command.extend(["--dims", "X,Y,Z", "--writer", "writers.ply", "--writers.ply.storage_mode=little endian", "--writers.ply.dims=X=double,Y=double,Z=double"])
+    try:
+        _run_executable(command, runner=runner, env_name=PDAL_ENV, timeout_seconds=timeout_seconds,
+                        extra_env=env, work_dir=work_dir, progress_callback=progress_callback)
+        temporary_bytes = path.stat().st_size
+        low, high, count = [math.inf] * 3, [-math.inf] * 3, 0
+        with path.open("rb") as stream:
+            if stream.readline() != b"ply\n" or stream.readline() != b"format binary_little_endian 1.0\n":
+                raise ValueError("unexpected coordinate stream format")
+            properties, expected_count = [], None
+            while True:
+                line = stream.readline(4096)
+                if line == b"end_header\n":
+                    break
+                if not line or not line.endswith(b"\n"):
+                    raise ValueError("incomplete coordinate stream header")
+                if line.startswith(b"element vertex "):
+                    expected_count = int(line.split()[2])
+                elif line.startswith(b"property "):
+                    properties.append(line.strip())
+                elif not line.startswith(b"comment "):
+                    raise ValueError("unexpected coordinate stream header")
+            if properties != [f"property float64 {axis}".encode() for axis in "xyz"]:
+                raise ValueError("unexpected coordinate stream dimensions")
+            while chunk := stream.read(24 * 16384):
+                _remaining_seconds(deadline)
+                for point in struct.iter_unpack("<3d", chunk):
+                    count += 1
+                    for index, value in enumerate(point):
+                        if not math.isfinite(value):
+                            raise ValueError("source contains non-finite coordinates")
+                        low[index] = min(low[index], value)
+                        high[index] = max(high[index], value)
+                if progress_callback:
+                    progress_callback()
+            if count == 0 or count != expected_count:
+                raise ValueError("empty or incomplete coordinate stream")
+        return {"min": low, "max": high, "point_count": count, "temporary_bytes": temporary_bytes}
+    except (OSError, ValueError, struct.error) as exc:
+        raise ConverterError("CONVERSION_FAILED", "Invalid point cloud coordinate bounds", details=str(exc)) from exc
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def _las_quantization(path: Path) -> dict[str, Any]:
+    # LAS 1.0–1.4 share these header offsets; read binary doubles so that
+    # metadata JSON formatting cannot round the source scale/offset.
+    with path.open("rb") as stream:
+        header = stream.read(375)
+    if len(header) < 227 or header[:4] != b"LASF" or header[24] != 1:
+        raise ConverterError("CONVERSION_FAILED", "Invalid LAS quantization header", details=path.name)
+    scale = list(struct.unpack_from("<3d", header, 131))
+    offset = list(struct.unpack_from("<3d", header, 155))
+    if any(not math.isfinite(v) or v <= 0 for v in scale) or any(not math.isfinite(v) for v in offset):
+        raise ConverterError("CONVERSION_FAILED", "Invalid LAS quantization parameters", details=path.name)
+    count = struct.unpack_from("<I", header, 107)[0]
+    if header[25] >= 4:
+        if len(header) < 375:
+            raise ConverterError("CONVERSION_FAILED", "Incomplete LAS 1.4 header", details=path.name)
+        count = struct.unpack_from("<Q", header, 247)[0]
+    return {"scale": scale, "offset": offset, "point_count": count}
 
 
 def _pdal_copc_option_args(options: dict[str, Any], env: dict[str, str] | None = None) -> list[str]:
