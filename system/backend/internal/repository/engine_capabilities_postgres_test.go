@@ -1,18 +1,36 @@
 package repository_test
 
 import (
+	"context"
 	"errors"
 	"os"
 	"testing"
 	"time"
 
 	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/nfs"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
+	"github.com/addp/system/internal/service"
 	"github.com/addp/system/internal/testsupport"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+type capabilityRefreshNFSFixture struct {
+	*nfs.NFSPlugin
+	rangeRead bool
+}
+
+func (p *capabilityRefreshNFSFixture) Type() string { return "cap_refresh_nfs_fixture" }
+func (p *capabilityRefreshNFSFixture) TestConnection(context.Context, engineplugin.ConnectionInfo) error {
+	return nil
+}
+func (p *capabilityRefreshNFSFixture) Capabilities() engineplugin.EngineCapabilities {
+	caps := engineplugin.NewFileCapabilities(p.Type())
+	caps.Storage.Store.RangeRead = p.rangeRead
+	return caps
+}
 
 func TestEngineCapabilityRefreshPreservesObservationAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
@@ -102,4 +120,59 @@ func TestEngineCapabilityRefreshPreservesObservationAgainstPostgres(t *testing.T
 	if err := repo.UpdateCapabilities(&oldVersion); !errors.Is(err, repository.ErrEngineVersionConflict) {
 		t.Fatalf("stale capability writer ignored an administrative update: %v", err)
 	}
+
+	t.Run("startup refresh keeps JSONB-equivalent source version", func(t *testing.T) {
+		fixture := &capabilityRefreshNFSFixture{NFSPlugin: &nfs.NFSPlugin{}, rangeRead: true}
+		engineplugin.Register(fixture)
+		t.Cleanup(func() { engineplugin.Unregister(fixture.Type()) })
+		encoded, err := engineplugin.MarshalEngineCapabilities(fixture.Capabilities())
+		if err != nil {
+			t.Fatal(err)
+		}
+		declaration := models.JSONString(encoded)
+		source := &models.Engine{Name: t.Name(), EngineType: fixture.Type(), EngineOrigin: "general", Version: 236,
+			LifecycleState: models.EngineLifecycleActive, ConnectionStatus: models.EngineConnectionOnline,
+			ConnectionInfo: models.ConnectionInfo{}, Capabilities: &declaration}
+		if err := repo.Create(source); err != nil {
+			t.Fatal(err)
+		}
+		before, err := repo.GetByID(source.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(*before.Capabilities) == encoded {
+			t.Fatal("fixture must exercise PostgreSQL JSONB serialization")
+		}
+		svc := service.NewEngineService(repo, nil, nil)
+		for i := 0; i < 2; i++ {
+			if !svc.CheckAndUpdateConnectionStatus(source.ID) {
+				t.Fatal("startup/explicit refresh failed")
+			}
+			current, err := repo.GetByID(source.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if current.Version != before.Version || !current.UpdatedAt.Equal(before.UpdatedAt) {
+				t.Fatalf("unchanged capabilities invalidated source version: before=%d after=%d", before.Version, current.Version)
+			}
+			if current.LastCheckAt == nil || current.ConnectionStatus != models.EngineConnectionOnline {
+				t.Fatal("refresh did not persist connectivity observation")
+			}
+		}
+		fixture.rangeRead = false
+		if !svc.CheckAndUpdateConnectionStatus(source.ID) {
+			t.Fatal("changed capability refresh failed")
+		}
+		changed, err := repo.GetByID(source.ID)
+		if err != nil || changed.Version != before.Version+1 {
+			t.Fatalf("real capability change must advance version: %v", err)
+		}
+		if !svc.CheckAndUpdateConnectionStatus(source.ID) {
+			t.Fatal("repeat refresh failed")
+		}
+		repeated, err := repo.GetByID(source.ID)
+		if err != nil || repeated.Version != changed.Version {
+			t.Fatalf("repeated changed declaration advanced version: %v", err)
+		}
+	})
 }

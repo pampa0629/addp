@@ -737,4 +737,6 @@ Kafka 示例（插件实现完成后才允许落库声明）：
 
 独立 `engine_type=elasticsearch`，粗分类为 dynamic_schema，但 Catalog Model 必须是 `service -> index`，不得套用 MongoDB database/collection 模型。首版只声明经真实验证的目录、Mapping 字段 Facts、精确计数（显式请求）、RecordReadSession 与 `es_dsl` 查询；不声明写入、CDC、查询结果搬运、空间服务或动态采样。Mapping native 的 `schema_type=mapping`、`is_sampled=false` 表达字段来源，不证明 `_source` 结构完整。
 
+实例能力刷新必须按经过校验的结构化能力语义比较，不按 JSON 文本比较。PostgreSQL JSONB 的空格、键序变化不构成能力变化；启动健康检查、手动连接测试及恢复在线后的刷新，在能力不变时只更新连接观测，不推进 Engine 聚合版本或使既有快显的来源版本失效。真实能力变化仍推进版本，既有源授权与成果读取校验保持不变。
+
 同一物理地址的 Workflow Runtime 重复自注册必须沿用永久 Engine ID，并校验、刷新其完整能力声明。刷新不能覆盖管理员维护的名称、描述、启用状态、地址、凭据和最新连接观测。相同能力不推进版本；能力变化通过实例版本的乐观锁局部更新并发布 Engine update 事件，删除中的实例仍拒绝注册。声明中的接入类型删除也必须完整生效，不能合并保留旧能力。

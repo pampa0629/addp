@@ -1590,7 +1590,7 @@ func (s *EngineService) refreshEngineCapabilities(engineID uint) error {
 	if err := s.validateCapabilitiesForEngine(engine.EngineType, capabilitiesJSON); err != nil {
 		return fmt.Errorf("能力声明验证失败: %w", err)
 	}
-	if engine.Capabilities != nil && string(*engine.Capabilities) == capabilities {
+	if engine.Capabilities != nil && capabilitiesJSONEqual(string(*engine.Capabilities), capabilities) {
 		return nil
 	}
 	engine.Capabilities = capabilitiesJSON
