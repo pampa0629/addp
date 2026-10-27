@@ -21,6 +21,9 @@
 | 启动、重启、停止与源码开发排障速查 | [启动脚本使用指南](docs/启动脚本使用指南.md) |
 | 模块参数、依赖并集与 Runtime 联调范围 | [模块选择启动指南](docs/模块选择启动指南.md) |
 | 开发脚本、容器部署与 Swarm 脚本现状 | [开发与容器部署](docs/开发与容器部署.md) |
+| 本地容器启动、状态展示与失败范围 | [Local 启动阶段](local/README.md#1-startsh---启动服务)、[状态范围](local/README.md#3-statussh---查看状态)、[超时排查](local/README.md#5-健康检查超时) |
+| 生产容器状态、回环 HTTP 与验收范围 | [Prod 健康检查](prod/README.md#health-checksh)、[失败与覆盖排查](prod/README.md#问题-3-健康检查失败) |
+| 按现象定位跨专题故障 | [故障排查总入口](../docs/guide/addp常见故障排查.md#按现象查找) |
 | 统一构建事实、编译、镜像、推送和部署包 | [构建打包与推送](docs/构建打包与推送.md) |
 | 前端镜像上下文、锁文件与共享依赖布局 | [前端镜像构建规范](docs/前端镜像构建规范.md) |
 | 场景选择、日常开发、容器测试、发布与常见问题 | [工作流与常见问题](docs/工作流与常见问题.md) |
@@ -33,6 +36,7 @@
 
 ## 验证入口
 
+- Local 状态展示、Prod 回环 HTTP 探测与公开 HTTPS、认证和业务结果分别核对，实际覆盖和失败边界按上表正文执行；未执行、失败或未覆盖项不能计为通过。
 - 变更验证使用 `make test-changed`，明确单个 Owner 时使用 `make test-module MODULE=<模块>`。
 - Online 与发布认证分别使用 `make test-online ONLINE_SUITE=<suite>`、`make test-release RELEASE_SUITE=<suite>`，身份、环境与覆盖边界见[统一测试规范](../docs/spec/addp测试与验收规范.md)。
 - PDAL、IFC、LibreOffice 必需工具故障与恢复使用 `workflow-runtime-health-recovery` suite，复用 GitHub Hosted Ubuntu 一次性部署；本地确定性入口为 `make test-workflow-runtime-health-online-runner`，准备、断言与清理见[Runtime 健康恢复规范](../docs/spec/testing/scenarios/部署与执行恢复.md#workflow-runtime-health-recovery)。
