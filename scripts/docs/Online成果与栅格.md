@@ -2,6 +2,8 @@
 
 [返回脚本导航](../README.md)
 
+专项入口：[分类蚕食容量](#分类蚕食容量) · [D8 河网转矢量线](#d8-河网转矢量线)
+
 测试分层、身份和清理规则以[测试与验收规范](../../docs/spec/addp测试与验收规范.md)为准；历史结果仅适用于所列源码和运行尝试，不代表当前 HEAD 已重跑。
 
 ## Manager 内部产物与内容边界
@@ -32,3 +34,15 @@ Manager 内部产物验收 `manager-internal-artifact-lineage` 使用 GitHub Hos
 `make test-online ONLINE_SUITE=vector-zonal-statistics-persistence` 为矢量分区统计独立手工 Hosted；原普通用户 12 权限、NFS 与同源默认产品入口、独立 600 秒预检／业务预算，验证中心覆盖、全部触及＋自定义前缀、重分类→转面→统计三条 GeoPackage 保存链和非法波段／列冲突失败清理。严格核对完整几何／属性／字段类型／计数／统计／null、物理与 Meta 大小、扫描归属、当前执行全部实际输入血缘及零残留。脚本回归入口 `make test-vector-zonal-statistics-online-runner` 并入栅格 Runner，真实 GDAL oracle 沿已有 Native 门禁；仅登记入口不代表 T4 通过，当前真实 Hosted 尚未通过。详见 [Manager 与空间成果](../../docs/spec/testing/scenarios/Manager与空间成果.md#vector-zonal-statistics-persistence)。
 
 邻近距离首期已获授权增加独立手工 `raster-proximity-persistence`：复用 Hosted／NFS／同源产品镜像和原 12 权限，米制多波段与英尺制 UInt32 两条 COG DAG，完整距离／mask／单位／网格、严格三方大小、精确扫描、当前执行单源血缘、源与先前成果不可变及失败零残留；独立 600 秒预算；16 项真实 GDAL 夹具、51 项脚本门禁及 CI 登记验证通过，真实 Hosted 尚未执行。
+
+### 分类蚕食容量
+
+独立手工入口为 `make test-online ONLINE_SUITE=raster-nibble-capacity`，仅在专属 GitHub Hosted Linux x86_64 部署运行。[Hosted 生命周期脚本](../test/online-hosted-raster-nibble-capacity-gate.sh)统一管理准入、同源默认入口产品 Runtime、NFS 和资源限制，不在个人开发环境执行。
+
+本地确定性入口为 `make test-raster-nibble-capacity-online-runner` 与 `make test-geopython-workflow`。容量矩阵、资源观测、策略恢复和固定版本证据统一见[分类蚕食容量正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md#分类蚕食容量raster-nibble-capacity)；工作目录、NFS／部署及 Infra 的零残留清理是通过前提。确定性门禁不替代 Hosted 容量验收，结果不外推为 UI、任意影像或稳定吞吐认证，也不据此改变默认资源策略。
+
+### D8 河网转矢量线
+
+独立手工入口为 `make test-online ONLINE_SUITE=raster-stream-to-vector-d8-persistence`，复用隔离 Hosted、NFS、同源默认入口产品 Runtime 和普通 User 原 12 项权限。Hosted 触发与证据核对由专门 CI 会话协调；入口登记与本地准备结果不等于 Hosted 已执行或通过。
+
+本地准备使用 `make test-raster-stream-to-vector-d8-online-runner`，该入口由 `make test-raster-online-runner` 聚合；真实 GDAL 夹具进入既有 `make test-geopython-workflow`。完整保存链、准确失败、工作目录／NFS／部署／Infra 清理及实际证据统一见[D8 河网正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md#d8-河网转矢量线独立-hosted-验收)。失败须零发布、零新增扫描血缘，清理仍为验收前提；数值极限继续单列 Native，不计 UI 或容量，未执行、失败或未覆盖项不能计为通过。
