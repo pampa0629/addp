@@ -42,6 +42,8 @@ export function resourceAlertHostID(row) {
 }
 
 export const filesystemAlertMetric = 'node.filesystem.used_percent'
+export const resourceMountLabel = dimensions => ['mountpoint','device','fstype'].map(key => dimensions?.[key] || '—').join(' · ')
+export const resourceRuleMetricLabelKey = value => value === filesystemAlertMetric ? 'monitor.platformAlerts.filesystemPressure' : value === 'node.cpu.busy_percent' ? 'monitor.platformAlerts.cpuPressure' : 'monitor.platformAlerts.memoryPressure'
 export function resourceAlertMetric(row) {
   if (['node.cpu.busy_percent','node.memory.used_percent'].includes(row?.signal)) return row.signal
   return typeof row?.signal === 'string' && /^node\.filesystem\.used_percent:[a-f0-9]{64}$/u.test(row.signal) ? filesystemAlertMetric : ''

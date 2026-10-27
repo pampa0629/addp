@@ -22,7 +22,7 @@
         <el-table-column type="expand" width="44">
           <template #default="{ row }">
             <section v-if="expandedDetail?.nodeID === row.node_id" class="resource-detail-expansion" :id="`resource-details-${row.node_id}`" data-testid="resource-detail-expansion" :aria-label="t('monitor.resources.details.forHost', { name: row.display_name })">
-              <HostResourceDetailObservation :key="row.node_id + ':' + expandedDetail.family" :node="row" :family-name="expandedDetail.family" :identity="identity" :refresh="state.refresh" v-model:show-all-disks="expandedDetail.showAllDisks" :format-value="formatValue" @select="selectListResourceTrend" @denied="detailAccessDenied" />
+              <HostResourceDetailObservation :key="row.node_id + ':' + expandedDetail.family" :node="row" :family-name="expandedDetail.family" :identity="identity" :refresh="state.refresh" v-model:show-all-disks="expandedDetail.showAllDisks" :format-value="formatValue" :can-create-capacity-alert="canCreateCapacityAlert" @create-capacity-alert="mount => createCapacityAlert(row, mount)" @select="selectListResourceTrend" @denied="detailAccessDenied" />
             </section>
           </template>
         </el-table-column>
@@ -76,7 +76,7 @@
           </el-collapse>
         </article>
       </section>
-      <HostFilesystemResources v-if="instant" :capacity="filesystems" :inodes="inodes" :capacity-error-key="filesystemErrorKey" :inode-error-key="inodeErrorKey" :loading="loading" :can-configure="Boolean(canConfigure)" :configure-label="instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure'" :format-value="formatValue" @select="selectFilesystem" @configure="configureCollection" />
+      <HostFilesystemResources v-if="instant" :capacity="filesystems" :inodes="inodes" :capacity-error-key="filesystemErrorKey" :inode-error-key="inodeErrorKey" :loading="loading" :can-configure="Boolean(canConfigure)" :configure-label="instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure'" :format-value="formatValue" :can-create-capacity-alert="canCreateCapacityAlert" @create-capacity-alert="mount => createCapacityAlert(node, mount)" @select="selectFilesystem" @configure="configureCollection" />
       <template v-if="instant">
         <HostDeviceResources v-for="family in deviceFamilies" :key="family.name" :family-name="family.name" :observation="family.value.value" :error-key="family.error.value" :loading="loading" :selected-device="state.metric.startsWith(`node.${family.name}.`) ? state.dimensions.device : ''" v-model:show-all-disks="showAllDisks" :can-configure="Boolean(canConfigure)" :configure-label="instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure'" :format-value="formatValue" @select="selectDeviceObservation" @configure="configureCollection" />
       </template>
@@ -129,6 +129,7 @@
         </template>
       </section>
     </template>
+    <ResourceAlertRuleEditor ref="capacityRuleEditor" />
   </main>
   <el-alert v-else :title="t('monitor.resources.errors.denied')" type="error" :closable="false" show-icon />
 </template>
@@ -142,6 +143,7 @@ import ResourcePeriodComparison from '../components/ResourcePeriodComparison.vue
 import HostResourceHeatmap from '../components/HostResourceHeatmap.vue'
 import HostDeviceResources from '../components/HostDeviceResources.vue'
 import HostFilesystemResources from '../components/HostFilesystemResources.vue'
+import ResourceAlertRuleEditor from '../components/ResourceAlertRuleEditor.vue'
 import HostResourceDetailObservation from '../components/HostResourceDetailObservation.vue'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -158,6 +160,8 @@ import { navigateMonitorRoute } from '../utils/moduleNavigation'
 
 const { t, locale } = useI18n(), auth = useAuthStore(), route = useRoute(), router = useRouter()
 const canRead = computed(() => auth.contextType === 'platform' && auth.authContext?.principal?.type === 'user' && !auth.authContext?.delegation && auth.hasPermission('monitor.resource_observation.read') && auth.hasPermission('platform.host_node.read'))
+const canCreateCapacityAlert = computed(() => canRead.value && auth.hasPermission('monitor.platform_resource_rule.read') && auth.hasPermission('monitor.platform_resource_rule.create'))
+const capacityRuleEditor = ref(null)
 const canReadAlerts = computed(() => canRead.value && auth.hasPermission('monitor.platform_alert.read'))
 const canConfigure = computed(() => canRead.value && auth.hasPermission('monitor.monitoring_target.read') && (instant.value?.target_id || auth.hasPermission('monitor.monitoring_target.create')))
 const collectionMessage = computed(() => !instant.value ? '' : instant.value.collection.state !== 'collecting' ? `monitor.resources.collection.${instant.value.collection.state}` : instant.value.series.some(series => series.points[0].data_state === 'no_data') ? 'monitor.resources.collection.waiting' : '')
@@ -220,6 +224,10 @@ function formatValue(value, metric) {
   return metric.unit === 'load' ? t('monitor.resources.loadValue', { value: formatted }) : formatted
 }
 function navigate(path, query, history = 'push') { return navigateMonitorRoute(router, { path, query }, { history }) }
+function createCapacityAlert(host, mount) {
+  if (!canCreateCapacityAlert.value || !host || loading.value) return
+  capacityRuleEditor.value?.show(null, host, mount.dimensions)
+}
 function openRelatedAlerts() {
   if (node.value && canReadAlerts.value) navigate('/platform-alerts', { category: 'resource', subject_id: nodeID.value })
 }
@@ -391,8 +399,9 @@ async function reload({ automatic = false } = {}) {
 }
 watch([() => JSON.stringify([nodeID.value, state.value.range, state.value.end, state.value.dimensions, state.value.compare, chartMetrics.value.map(metric => metric.key)]), identity], () => { trendZoom.value = null }, { flush: 'sync' })
 watch([errorKey, trendErrorKey], ([error, trendError]) => { if (error || trendError) trendZoom.value = null }, { flush: 'sync' })
+watch(refreshBlocked, blocked => { if (blocked) capacityRuleEditor.value?.close() }, { flush: 'sync' })
 watch([nodeID, identity], () => { showAllDisks.value = false }, { flush: 'sync' })
-watch([() => route.fullPath, identity], () => { expandedDetail.value = null; reload() }, { immediate: true, flush: 'sync' })
+watch([() => route.fullPath, identity], () => { capacityRuleEditor.value?.close(); expandedDetail.value = null; reload() }, { immediate: true, flush: 'sync' })
 onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); invalidate(); requestScope.dispose() })
 </script>
 

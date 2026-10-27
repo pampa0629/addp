@@ -18,6 +18,7 @@
       <el-table-column v-for="metric in mountMetrics" :key="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" min-width="170">
         <template #default="{ row }"><strong>{{ formatValue(row.metrics[metric.key], metric) }}</strong><p v-if="row.metrics[metric.key]" class="resource-hint">{{ t(`monitor.resources.states.${row.metrics[metric.key].data_state}`) }}</p><p v-if="row.metrics[metric.key]" class="resource-hint">{{ date(row.metrics[metric.key].sampled_at) }}</p></template>
       </el-table-column>
+      <el-table-column v-if="canCreateCapacityAlert" :label="t('monitor.platformAlerts.actions')" width="180" fixed="right"><template #default="{ row }"><el-button text type="primary" data-testid="filesystem-create-alert" :disabled="loading || capacity?.collection.state !== 'collecting' || capacity?.collection.filesystem !== 'available' || currentResourceValue(row.metrics[filesystemMetrics[0].key]) === null" @click="$emit('create-capacity-alert', row)">{{ t('monitor.resourceRules.createCapacity') }}</el-button></template></el-table-column>
       <el-table-column :label="t('monitor.resources.trend')" width="140" fixed="right"><template #default="{ row }"><el-button text type="primary" @click="$emit('select', row, filesystemMetrics[0].key)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button></template></el-table-column>
     </el-table>
   </section>
@@ -27,13 +28,13 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
-import { filesystemMetrics, mountMetrics, filesystemResourceState } from '../utils/nodeResources'
+import { filesystemMetrics, mountMetrics, filesystemResourceState, currentResourceValue } from '../utils/nodeResources'
 const props = defineProps({
   capacity: { type: Object, default: null }, inodes: { type: Object, default: null },
   capacityErrorKey: { type: String, default: '' }, inodeErrorKey: { type: String, default: '' }, loading: Boolean,
-  canConfigure: Boolean, configureLabel: { type: String, default: 'monitor.resources.configure' }, formatValue: { type: Function, required: true }
+  canConfigure: Boolean, canCreateCapacityAlert: Boolean, configureLabel: { type: String, default: 'monitor.resources.configure' }, formatValue: { type: Function, required: true }
 })
-defineEmits(['configure', 'select'])
+defineEmits(['configure', 'select', 'create-capacity-alert'])
 const { t, locale } = useI18n()
 const state = computed(() => filesystemResourceState(props.capacity, props.inodes, props.capacityErrorKey, props.inodeErrorKey))
 const mountRows = computed(() => state.value.rows)

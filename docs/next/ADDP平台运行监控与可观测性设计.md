@@ -205,3 +205,6 @@ Monitor 新增单实例即时 `container_resource_observations`，复用当前 U
 ## 文件系统容量告警首期
 
 2026-10-27已确认并实现按完整主机／device／mountpoint／fstype独立预警，默认85%／300秒触发、80%／120秒恢复，创建停用、固定warning。缺样及挂载未观测到不恢复，永久卸载保留未恢复事件与停用规则，不新增结束状态；具体契约归[正式规范](../spec/addp平台运行观测规范.md#文件系统容量规则)。本地Go、真实PostgreSQL与完整前端门禁通过；Prometheus专项在进入新增告警用例前被夹具文件读取失败阻断，不能计通过，具体见[分层证据](../spec/testing/evidence/Monitor历史证据.md#文件系统容量告警首期2026-10-27)。CI和Hosted等专门会话回传，不设置定时任务。
+
+
+主机列表展开和详情的挂载行已接入“创建容量告警”，沿唯一ResourceAlertRuleEditor固定并重核主机及完整挂载，复用服务器预设、原权限和停用创建；取消、明确Owner拒绝或身份变化清空草稿。规则列表的第二份表单已删除，本地前端分层证据见[入口验证](../spec/testing/evidence/Monitor历史证据.md#主机挂载行创建容量告警入口2026-10-27)，不代替真实来源／Safari或Hosted验收。

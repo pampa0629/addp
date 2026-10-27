@@ -22,7 +22,7 @@ test('resource rules retain a canonical independent page and reuse the only host
  assert.deepEqual(platformAlertQuery(platformAlertState({ tab: 'rules', rule_page: '3' })), { tab: 'rules', rule_page: '3' })
  assert.deepEqual(platformAlertQuery(platformAlertState({ tab: 'rules', rule_page: '01' })), { tab: 'rules' })
  const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
- for (const path of ['../src/views/MonitoringTargets.vue','../src/components/ResourceAlertRules.vue']) {
+ for (const path of ['../src/views/MonitoringTargets.vue','../src/components/ResourceAlertRuleEditor.vue']) {
   assert.match(read(path), /<HostNodeSelect/u)
   assert.doesNotMatch(read(path), /remote-method="searchNodes"/u)
  }
@@ -149,4 +149,19 @@ test('filesystem incident navigation uses frozen full mount identity and capacit
  for (const mutate of [r=>r.resource_evidence.filesystem=null,r=>delete r.resource_evidence.filesystem.dimensions.fstype,r=>r.resource_evidence.filesystem.available_bytes=50,r=>r.resource_evidence.filesystem.used_bytes=NaN,r=>r.signal='node.filesystem.used_percent:invalid',r=>r.resource_evidence.latest=80]) {
   const invalid=structuredClone(row);mutate(invalid);assert.equal(resourceAlertEvidence(invalid),null);assert.equal(resourceAlertTrendRoute(invalid),null)
  }
+})
+
+
+test('host mount actions and rule management use one resource rule editor', () => {
+ const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
+ for (const path of ['../src/components/ResourceAlertRules.vue','../src/views/NodeResources.vue']) {
+  const source = read(path)
+  assert.match(source, /<ResourceAlertRuleEditor/u)
+  assert.doesNotMatch(source, /data-testid="rule-name"|api\.createRule\(|api\.updateRule\(/u)
+ }
+ const editor = read('../src/components/ResourceAlertRuleEditor.vue')
+ assert.match(editor, /data-testid="rule-name"/u)
+ assert.match(editor, /api\.createRule\(/u)
+ assert.match(editor, /api\.updateRule\(/u)
+ assert.doesNotMatch(editor, /localStorage|sessionStorage|navigateMonitorRoute|router\./u)
 })

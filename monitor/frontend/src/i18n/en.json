@@ -1162,6 +1162,8 @@
       "filesystemPressure": "Filesystem available-capacity usage"
     },
     "resourceRules": {
+      "createCapacity": "Create capacity alert",
+      "saved": "Rule saved. New rules are disabled by default.",
       "title": "Resource rules",
       "create": "Create resource rule",
       "edit": "Edit resource rule",
@@ -1181,7 +1183,7 @@
       "recoveryHint": "Recovery must be greater than 0 and lower than the trigger. Active alerts keep the recovery policy saved when opened. Missing data never means recovery.",
       "disabledHint": "New rules are saved disabled. Review the settings, then edit to enable.",
       "invalid": "Enter a name and use 0 < recovery < trigger ≤ 100. Durations must be 15–300 seconds in multiples of 15.",
-      "conflict": "The rule changed or this host already has a rule for this metric. Your input is retained. Close and refresh the list to review.",
+      "conflict": "The rule changed or a rule already exists for this resource. Your input is retained. Close and refresh the rule list to review.",
       "deleteHint": "Delete “{name}”? Active alerts must meet their recovery conditions first. Alert history is retained.",
       "deleteConflict": "The rule changed or still has an active alert. Refresh to review; edit and disable it to pause evaluation.",
       "verdicts": {

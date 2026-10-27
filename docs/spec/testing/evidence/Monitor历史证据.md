@@ -1967,3 +1967,19 @@ ImportError 尚缺具体组件与版本事实，本批没有猜测升级／降�
 只读代码确认仍有生命周期竞态窗口：父进程读取 cleanup_started=false 后进入包含 inventory／inspect／du 的多步采样；子入口可同时标记 cleanup_started并开始down。现有协调只在读取失败后阻止再次SIGTERM，不能互斥已开始的采样与资源删除。本轮 failure_during_cleanup证实错误与清理重叠，但没有原始stderr及具体对象，不能唯一证明某容器消失就是本次命令退出1的原因。已提出当次采样与清理互斥、锁等待计入原四秒及真实错误继续失败的最小方案，待用户确认；没有擅自改变生命周期或重试输入。
 
 官方Artifact 12715410863（21672字节），下载SHA256核对 `2fd7f54ef48bc6dc12be5c413cabc4b6097aa9e0d8b5e27118cd97b753eff427`。原始日志、ZIP、预算及独立摘要在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-python-native-fix-20261027-040bs6so`（job-122046852189.log、linux-budget-44230c5c8.json、audit-summary.json）；首次下载网络EOF，重新只读下载后才核对成功，不是重跑验收。这里只追加证据，`git diff --check`通过，代码的127项配置／预算、123＋80项生命周期和登记门禁沿前述固定提交仍有效；本轮未运行Hosted、容量或定时，未修改个人服务。完整标准HTTP门禁仍未通过，剩余优先项为采样／清理协调及其整门禁验证。
+
+
+## 主机挂载行创建容量告警入口（2026-10-27）
+
+先更新正式观测规范，再在主机列表展开及详情的完整挂载行增加“创建容量告警”。只向当前非委托Platform User、具备既有资源观测／主机读取及资源规则读取／创建权限的用户显示，有效容量采样才可点击。挂载入口只打开表单，固定并重新核验主机及完整device／mountpoint／fstype，读取既有服务器预设；缺样、挂载消失、主机版本变化或拒绝均不换绑、不写入。仍须填写名称并显式保存，创建停用，取消不写入，冲突保留输入。没有新增API、权限、后台投影或容量判定口径。
+
+规则列表原内联表单及保存逻辑已移除，由Monitor领域组件ResourceAlertRuleEditor唯一拥有表单、校验及POST／PUT。主机列表与详情使用同一实例入口，HostFilesystemResources只展示并上抛完整挂载；保留现有HostNodeSelect、最新请求作用域及通用对话框样式。名称／条件等未保存内容不写URL或浏览器存储，关闭、身份／页面变化均清除，迟到数据不回填。新增唯一所有权单元测试防止列表或主机页面重新复制表单及保存路径。
+
+本地Node24.11.1分层结果：
+
+- 原规则四项专项重跑通过（/tmp/addp-mount-alert-editor-refactor.log），证明抽取后正常创建、编辑、停用消失挂载等既有行为保留。新增入口七项最终专项通过（/tmp/addp-mount-capacity-shortcut-targeted-v3.log）：中英文窄屏、同挂载点不同fstype、取消无写入、精确带入、服务器预设91／81及45／30而非前端硬编码、有效零值、缺样／预算／版本拒绝、两项规则权限分别约束、迟到数据及撤权、重核主机403、冲突保留。早期测试将输入值当作文本、覆盖GET路由遗漏query，以及引用错误的冲突文案导致失败；原日志保留，不计通过。
+- `make test-monitor-frontend` 退出0，129项单元、480项Playwright（17.6分钟）及Vite生产构建3.58秒通过，日志/tmp/addp-mount-capacity-frontend-full.log。该全量版本的128个源码／测试输入摘要在/tmp/addp-mount-capacity-frontend-inputs.json。
+- 全量后补查确认一个新增入口的清理遗漏：弹窗打开后，主机自动刷新明确403时，父页面已清除主机，但表单仍显示。新增真实组件回归先失败（/tmp/addp-mount-capacity-owner-denial-red.log），在既有refreshBlocked裁决上增加唯一同步关闭监听后通过（/tmp/addp-mount-capacity-owner-denial-green.log）；不改变既有401／403／404判定或重试规则。它覆盖自动刷新后关闭草稿及无写入，不能用身份事件通知代替Owner实际拒绝。
+- 最终只修改上述一行监听并增加该用例；相对已通过全量的前端输入仅NodeResources.vue与filesystem-alert-rules.spec.js两处变化，其他输入结果复用。最终`npm --prefix monitor/frontend test`129项通过；通过既有scripts/test/frontend-browser-gate.mjs标准包装的`npm --prefix monitor/frontend run test:e2e -- e2e/filesystem-alert-rules.spec.js e2e/host-filesystem-expansion.spec.js e2e/host-device-expansion.spec.js e2e/platform-alerts.spec.js`67项受影响浏览器回归全部通过（2.7分钟），日志/tmp/addp-mount-capacity-affected-final.log；最终`npm --prefix monitor/frontend run build`退出0，4.83秒完成，日志/tmp/addp-mount-capacity-build-final.log。最终128输入摘要/tmp/addp-mount-capacity-final-inputs.json前后核对一致，单元日志/tmp/addp-mount-capacity-unit-final.log；不能将未重跑的最终481项全量记为实际通过。
+
+已目视核对中英文窄屏弹窗及保存后的挂载行截图；最终专项目录/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-mount-capacity-shortcut-m3c5jA（英文）及addp-mount-capacity-shortcut-NsNOKp（中文），临时路径由专项日志记录。沿既有Monitor前端测试、Playwright自动发现和Platform Monitor frontend门禁，不增加测试入口、依赖或工作流；未改变HTTP契约，无需重新生成Swagger或运行数据库／指标门禁。本批没有后端修改，未操作个人服务或数据库，未执行Safari或正式身份运行验收，也未调度／轮询CI、Hosted或创建定时任务。原文件系统Prometheus专项未通过状态不因本批受控页面结果提升，CI和Hosted仍等专门会话回传。

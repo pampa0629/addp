@@ -4,7 +4,7 @@
       <span v-if="familyName !== 'filesystem' && observations[0]" class="resource-hint" data-testid="resource-detail-queried-at">{{ t('monitor.resources.queriedAt') }}: {{ formatFieldPresentationValue(observations[0].queried_at, { temporal_format: 'datetime' }, locale) }}</span>
       <el-button :loading="loading" data-testid="resource-detail-refresh" @click="reload()">{{ t('monitor.resources.details.refresh') }}</el-button>
     </header>
-    <HostFilesystemResources v-if="familyName === 'filesystem'" :capacity="observations[0]" :inodes="observations[1]" :capacity-error-key="errorKeys[0]" :inode-error-key="errorKeys[1]" :loading="loading" :format-value="formatValue" @select="(row, metric) => $emit('select', row, metric)" />
+    <HostFilesystemResources v-if="familyName === 'filesystem'" :capacity="observations[0]" :inodes="observations[1]" :capacity-error-key="errorKeys[0]" :inode-error-key="errorKeys[1]" :loading="loading" :format-value="formatValue" :can-create-capacity-alert="canCreateCapacityAlert" @create-capacity-alert="row => $emit('create-capacity-alert', row)" @select="(row, metric) => $emit('select', row, metric)" />
     <HostDeviceResources v-else :family-name="familyName" :observation="observations[0]" :error-key="errorKeys[0]" :loading="loading" :show-all-disks="showAllDisks" :format-value="formatValue" @update:show-all-disks="$emit('update:showAllDisks', $event)" @select="(row, metric) => $emit('select', row, metric)" />
   </div>
 </template>
@@ -22,9 +22,9 @@ import { resourceDetailGroups, resourceErrorKey, validateCollection, validateRes
 
 const props = defineProps({
   node: { type: Object, required: true }, familyName: { type: String, required: true }, identity: { type: String, required: true },
-  refresh: { type: String, required: true }, showAllDisks: Boolean, formatValue: { type: Function, required: true }
+  refresh: { type: String, required: true }, canCreateCapacityAlert: Boolean, showAllDisks: Boolean, formatValue: { type: Function, required: true }
 })
-const emit = defineEmits(['update:showAllDisks', 'select', 'denied'])
+const emit = defineEmits(['update:showAllDisks', 'select', 'denied', 'create-capacity-alert'])
 const { t, locale } = useI18n()
 const observations = ref([]), loading = ref(false), errorKeys = ref([])
 const scope = createLatestRequestScope()

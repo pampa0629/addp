@@ -99,3 +99,148 @@ for (const locale of ['zh-cn','en']) test(`filesystem evidence keeps frozen capa
  expect(Object.fromEntries(new URL(page.url()).searchParams)).toMatchObject({...mount,metric,refresh:'off'})
  expect(state.resourceState.reads.filter(row=>row.path.endsWith('/resource_trends')).at(-1).query).toMatchObject({...mount,metrics:metric})
 })
+
+
+const shortcutRows = page => page.getByTestId('resource-filesystem-table').locator('.el-table__body-wrapper tbody tr')
+async function shortcutSetup(page, options = {}) {
+ const state = await fixture(page, { keys, resources:true, resourceOptions:{ mounts:[mount,{...mount,fstype:'xfs'}], ...options.resourceOptions }, ...options, path:'/platform-alerts?tab=rules' })
+ await page.goto(options.detail ? `/node-resources/${node}?refresh=off` : '/node-resources?refresh=off&search=keep')
+ if (!options.detail) await page.getByTestId(`resource-list-filesystem-${node}`).click()
+ await expect(shortcutRows(page)).toHaveCount(options.resourceOptions?.mounts?.length || 2)
+ return state
+}
+for (const locale of ['zh-cn','en']) test(`mount row opens the sole editor with exact identity and explicit disabled creation (${locale})`,async({page})=>{
+ const english=locale==='en'
+ const state=await shortcutSetup(page,{locale})
+ const location=page.url(), before=state.requests.filter(row=>row.method==='GET'&&row.path.includes('/resource-alert-rules')).length
+ await shortcutRows(page).nth(1).getByTestId('filesystem-create-alert').click()
+ await expect(dialog(page)).toBeVisible()
+ await expect(dialog(page).getByTestId('filesystem-rule-fixed-mount')).toHaveValue(mountLabel({...mount,fstype:'xfs'}))
+ await expect(dialog(page).getByTestId('resource-rule-metric').locator('.el-select__wrapper')).toHaveClass(/is-disabled/)
+ await expect(dialog(page).getByRole('button',{name:english?'Save':'保存',exact:true})).toBeEnabled()
+ await expect(dialog(page).getByTestId('resource-rule-fixed-host')).toHaveValue('节点甲')
+ expect(writes(state)).toHaveLength(0)
+ expect(page.url()).toBe(location)
+ await dialog(page).getByRole('button',{name:english?'Close':'关闭',exact:true}).click()
+ expect(writes(state)).toHaveLength(0)
+ await shortcutRows(page).nth(1).getByTestId('filesystem-create-alert').click()
+ await expect(dialog(page).getByRole('button',{name:english?'Save':'保存',exact:true})).toBeEnabled()
+ await dialog(page).getByTestId('rule-name').fill('Data capacity')
+ await page.setViewportSize({width:620,height:900})
+ await expect.poll(async()=>{const b=await dialog(page).boundingBox();return b?b.y+b.height:Infinity}).toBeLessThanOrEqual(901)
+ const folder=mkdtempSync(join(tmpdir(),'addp-mount-capacity-shortcut-'))
+ await page.screenshot({path:join(folder,locale+'.png'),animations:'disabled'});console.log(`Mount capacity shortcut screenshot: ${folder}`)
+ await dialog(page).getByRole('button',{name:english?'Save':'保存',exact:true}).click()
+ await expect(dialog(page)).toBeHidden()
+ expect(writes(state)).toHaveLength(1)
+ expect(writes(state)[0].body).toMatchObject({node_id:node,metric_key:metric,dimensions:{...mount,fstype:'xfs'},enabled:false,trigger_percent:85,recovery_percent:80,trigger_seconds:300,recovery_seconds:120})
+ await page.screenshot({path:join(folder,locale+'-row.png'),animations:'disabled'})
+ expect(state.requests.filter(row=>row.method==='GET'&&row.path.includes('/resource-alert-rules'))).toHaveLength(before+2)
+ expect(page.url()).toBe(location)
+ await page.reload()
+ await expect(dialog(page)).toHaveCount(0)
+ expect(writes(state)).toHaveLength(1)
+})
+
+test('host detail uses server presets and accepts a valid zero capacity ratio',async({page})=>{
+ const state=await shortcutSetup(page,{detail:true,resourceOptions:{mounts:[mount],observationResponse:body=>{
+  for(const series of body.series) if(series.metric_key===metric) series.points[0].value=0
+ }}})
+ await page.route('**/api/v1/monitor/platform/resource-alert-rules?*',async route=>{
+  if(route.request().method()!=='GET') return route.fallback()
+  await route.fulfill({json:{data:[],total:0,presets:[{metric_key:metric,policy:{trigger_percent:91,recovery_percent:81,trigger_seconds:45,recovery_seconds:30}}]}})
+ })
+ await shortcutRows(page).first().getByTestId('filesystem-create-alert').click()
+ await expect(dialog(page).getByRole('button',{name:'保存',exact:true})).toBeEnabled()
+ await dialog(page).getByTestId('rule-name').fill('Root capacity')
+ await dialog(page).getByRole('button',{name:'保存',exact:true}).click()
+ await expect(dialog(page)).toBeHidden()
+ expect(writes(state)[0].body).toMatchObject({trigger_percent:91,recovery_percent:81,trigger_seconds:45,recovery_seconds:30,enabled:false,dimensions:mount})
+})
+
+test('shortcut never substitutes a disappeared mount, a rejected source or a changed node version',async({page})=>{
+ let wrongVersion=false
+ const state=await shortcutSetup(page,{resourceOptions:{mounts:[mount],observationResponse:body=>{if(wrongVersion)body.node_version++}}})
+ for(const mode of ['missing','budget','version']) {
+  state.resourceState.filesystemMode=mode==='budget'?'budget':''
+  state.resourceState.mounts=mode==='missing'?[{...mount,fstype:'xfs'}]:[mount]
+  wrongVersion=mode==='version'
+  await shortcutRows(page).first().getByTestId('filesystem-create-alert').click()
+  await expect(dialog(page).getByTestId('filesystem-rule-mount-error')).toBeVisible()
+  await expect(dialog(page).getByTestId('filesystem-rule-fixed-mount')).toHaveValue(mountLabel(mount))
+  await expect(dialog(page).getByRole('button',{name:'保存',exact:true})).toBeDisabled()
+  expect(writes(state)).toHaveLength(0)
+  await dialog(page).getByRole('button',{name:'关闭',exact:true}).click()
+ }
+})
+
+test('mount action requires both rule permissions and valid current capacity, without speculative reads',async({page})=>{
+ const state=await shortcutSetup(page,{keys:keys.filter(key=>key!=='monitor.platform_resource_rule.create'),resourceOptions:{mounts:[mount]}})
+ await expect(page.getByTestId('filesystem-create-alert')).toHaveCount(0)
+ const before=state.requests.filter(row=>row.path.includes('/resource-alert-rules')).length
+ await setIdentity(page,identity(keys))
+ await page.getByTestId(`resource-list-filesystem-${node}`).click()
+ await expect(page.getByTestId('filesystem-create-alert')).toBeVisible()
+ expect(state.requests.filter(row=>row.path.includes('/resource-alert-rules'))).toHaveLength(before)
+ state.resourceState.filesystemMode='no-sample'
+ await page.getByTestId('resource-detail-refresh').click()
+ await expect(page.getByTestId('filesystem-create-alert')).toBeDisabled()
+ await setIdentity(page,identity(keys.filter(key=>key!=='monitor.platform_resource_rule.read')))
+ await page.getByTestId(`resource-list-filesystem-${node}`).click()
+ await expect(page.getByTestId('filesystem-create-alert')).toHaveCount(0)
+ expect(writes(state)).toHaveLength(0)
+})
+
+test('closing or revoking an in-flight shortcut cannot repopulate its draft or save a rule',async({page})=>{
+ const state=await shortcutSetup(page,{resourceOptions:{mounts:[mount]}})
+ state.resourceState.hold()
+ await shortcutRows(page).first().getByTestId('filesystem-create-alert').click()
+ await expect(dialog(page).getByTestId('filesystem-rule-mount')).toHaveCount(0)
+ await expect(dialog(page).getByRole('button',{name:'保存',exact:true})).toBeDisabled()
+ await dialog(page).getByRole('button',{name:'关闭',exact:true}).click()
+ state.resourceState.release()
+ await expect(dialog(page)).toBeHidden()
+ await shortcutRows(page).first().getByTestId('filesystem-create-alert').click()
+ await expect(dialog(page).getByRole('button',{name:'保存',exact:true})).toBeEnabled()
+ await setIdentity(page,identity(keys.filter(key=>key!=='monitor.platform_resource_rule.create')))
+ await expect(dialog(page)).toHaveCount(0)
+ await expect(page.getByTestId('filesystem-create-alert')).toHaveCount(0)
+ expect(writes(state)).toHaveLength(0)
+})
+
+
+test('shortcut rechecks host access and preserves a conflicted draft without automatic writes',async({page})=>{
+ const state=await shortcutSetup(page,{ruleConflict:true,resourceOptions:{mounts:[mount]}})
+ let denied=true
+ await page.route(`**/api/v1/system/platform/host_nodes/${node}`,route=>denied?route.fulfill({status:403,json:{error:'Host access denied'}}):route.fallback())
+ await shortcutRows(page).first().getByTestId('filesystem-create-alert').click()
+ await expect(dialog(page)).toContainText('Host access denied')
+ await expect(dialog(page).getByRole('button',{name:'保存',exact:true})).toBeDisabled()
+ expect(writes(state)).toHaveLength(0)
+ await dialog(page).getByRole('button',{name:'关闭',exact:true}).click()
+ denied=false
+ await shortcutRows(page).first().getByTestId('filesystem-create-alert').click()
+ await expect(dialog(page).getByRole('button',{name:'保存',exact:true})).toBeEnabled()
+ await dialog(page).getByTestId('rule-name').fill('Preserve this name')
+ await dialog(page).getByRole('button',{name:'保存',exact:true}).click()
+ await expect(dialog(page)).toContainText('当前输入已保留')
+ await expect(dialog(page).getByTestId('rule-name')).toHaveValue('Preserve this name')
+ expect(writes(state)).toHaveLength(1)
+ await dialog(page).getByRole('button',{name:'关闭',exact:true}).click()
+ expect(writes(state)).toHaveLength(1)
+})
+
+test('an explicit owner denial during host refresh clears an already open capacity draft',async({page})=>{
+ await page.clock.install()
+ const state=await shortcutSetup(page,{detail:true,resourceOptions:{mounts:[mount]}})
+ await page.goto(`/node-resources/${node}?refresh=10`)
+ await expect(shortcutRows(page)).toHaveCount(1)
+ await shortcutRows(page).first().getByTestId('filesystem-create-alert').click()
+ await expect(dialog(page).getByRole('button',{name:'保存',exact:true})).toBeEnabled()
+ await dialog(page).getByTestId('rule-name').fill('Must be cleared')
+ state.resourceState.mode='denied'
+ await page.clock.fastForward(10001)
+ await expect(page.getByTestId('resource-error')).toBeVisible()
+ await expect(dialog(page)).toBeHidden()
+ expect(writes(state)).toHaveLength(0)
+})
