@@ -30,9 +30,9 @@
 | 测试脚本目录、T0–T3、CI 登记、Agent 评测和 CLI 发布 | [测试与发布入口](docs/测试与发布入口.md) |
 | Online 分发、预检、Runner 隔离、报告、日志和节点指标 | [Online编排与观测](docs/Online编排与观测.md) |
 | 标准/模型引用、企业目录 ECV 矩阵与质量动态绑定 | [Online目录与治理](docs/Online目录与治理.md) |
-| 模块/消费方恢复、SQL ETL、指标、Workbench 与关系引擎 | [Online引擎与消费](docs/Online引擎与消费.md) |
+| 模块/消费方恢复、SQL ETL、指标、Workbench、关系引擎与 Redis | [Online引擎与消费](docs/Online引擎与消费.md) |
 | Manager 内部产物、内容边界、矢量与栅格工作流、容量 | [Online成果与栅格](docs/Online成果与栅格.md) |
-| Transfer 保护、原值访问、MySQL 与空间字段保护 | [Online数据保护](docs/Online数据保护.md) |
+| 字段保护、原值访问、角色撤销／到期及拒绝矩阵 | [Online数据保护](docs/Online数据保护.md) |
 
 ## 验证入口
 

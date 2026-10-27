@@ -2,6 +2,8 @@
 
 [返回脚本导航](../README.md)
 
+本页导航：[Transfer 保护与原值访问](#transfer-保护与原值访问) · [MySQL 与空间字段保护](#mysql-与空间字段保护) · [Service 角色方式撤销后的旧游标](#service-角色方式撤销后的旧游标) · [用户角色资格撤销](#用户角色资格撤销) · [角色资格自然到期](#角色资格自然到期) · [Develop 角色资格自然到期](#develop-角色资格自然到期) · [Transfer 资格自然到期与旧文件](#transfer-资格自然到期与旧文件) · [四出口逐原因矩阵](#四出口逐原因矩阵)
+
 测试分层、身份和清理规则以[测试与验收规范](../../docs/spec/addp测试与验收规范.md)为准；历史结果仅适用于所列源码和运行尝试，不代表当前 HEAD 已重跑。
 
 ## Transfer 保护与原值访问
@@ -12,7 +14,7 @@
 
 ## MySQL 与空间字段保护
 
-`security-mysql-owner-protection` 使用唯一 GitHub Hosted Linux x86_64 disposable profile，由 `scripts/test/online-hosted-security-gate.sh` 复用共享 Hosted 生命周期。每轮从零启动 Infra、PostGIS PostgreSQL 与 MySQL，System owner helper 创建一次性 Tenant、最小权限非管理员 User、独立引擎登记用户和独立治理初始化用户；Business 只管理物理数据及 owner-only Engine descriptor，引擎登记和分类、等级、email/phone 敏感类型及默认保护初始化分别通过 System、Security 正式 API 完成。初始化令牌在业务验收前移除，不复用个人环境、永久身份、GitHub Environment 或仓库 Secret。suite 先验证默认保护同事务创建、非法参数整体回滚和探针清理，再经 Meta 扫描和 Security 正式 API 建立 Enrollment/Assessment。MySQL `customers.email` 在 Manager、Develop、Service、Transfer 四个出口均移除，但保留 5 条非敏感记录；临时任务及服务按捕获 ID 清理。成功、失败退出都停止应用并销毁当次业务容器及 Infra，核对零残留；凭据只保存在 `runner.temp` 的 owner-only Secret 目录并删除。旧 macOS self-hosted 部署入口与其 Security 专属物理夹具已移除。
+`security-mysql-owner-protection` 使用唯一 GitHub Hosted Linux x86_64 disposable profile，由 `scripts/test/online-hosted-security-gate.sh` 复用共享 Hosted 生命周期。每轮从零启动 Infra、PostGIS PostgreSQL 与 MySQL，System owner helper 创建一次性 Tenant、最小权限非管理员 User、独立引擎登记用户和独立治理初始化用户；Business 只管理物理数据及 owner-only Engine descriptor，引擎登记和分类、等级、email/phone 敏感类型及默认保护初始化分别通过 System、Security 正式 API 完成。初始化令牌在业务验收前移除，不复用个人环境、永久身份、GitHub Environment 或仓库 Secret。suite 先验证默认保护同事务创建、非法参数整体回滚和探针清理，再经 Meta 扫描和 Security 正式 API 建立 Enrollment/Assessment。MySQL `customers.email` 在 Manager、Develop、Service、Transfer 四个出口均移除，但保留 5 条非敏感记录；临时任务及服务按捕获 ID 清理。成功、失败退出都停止应用并销毁当次业务容器及 Infra，核对零残留；凭据只保存在 `runner.temp` 的 owner-only Secret 目录并删除。
 
 同一 Hosted suite 的 Console 浏览器阶段使用上述普通 User 正式登录，在 Manager 从已纳管的 MySQL `customers` 点击导出表格式能力声明支持的 CSV，通过 Python 标准 CSV 解析器核对完整五行、敏感 email 字段移除及非敏感字段保留，再以同一身份查询并打开 Monitor 中对应的 Transfer 一次性执行。执行必须成功、来源为 Manager、无任务定义引用，且 `triggered_by` 与已验证 User 一致；不允许浏览器自报身份或用 API 创建代替点击导出。测试身份只额外持有数据探查页面必需的 `manager.content.read`、`manager.derived_artifact.create/read` 与 `monitor.execution.read`；原有 `manager.data_item.read` 同时参与页面入口校验，准备身份仍不进入业务阶段。Playwright 失败、缺失或不匹配的浏览器报告使整个 suite 失败。全新匿名浏览器初始化时唯一一次 `/system/refresh` 的 401 及对应 Chromium 网络告警单独计数并验证；正式登录成功后，任何 401、业务失败响应或 warning/error 均使验收失败，JavaScript 异常全程检查。浏览器报告只接受 v2，包含上述匿名刷新计数、安全执行 UUID、业务计数与断言结果，截图归档，原始下载文件删除。Monitor 加入同一版本健康预检，应用与文件仍由既有 Hosted 生命周期清理；此扩展通过真实 T4 前不计为已验收。
 
