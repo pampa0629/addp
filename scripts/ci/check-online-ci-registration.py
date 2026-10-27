@@ -2789,6 +2789,89 @@ def validate_raster_curvature_profile(repository: Path, registered: set[str]) ->
             raise RegistrationError('DEM curvature persistence contract is incomplete: '+relative)
 
 
+def validate_raster_cut_fill(repository: Path, registered: set[str]) -> None:
+    suite='raster-cut-fill-persistence'
+    if suite not in registered:return
+    workflow=(repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job=re.search(r'(?ms)^  raster-cut-fill-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)',workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-cut-fill-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-cut-fill-persistence'" not in workflow
+        or 'cancel-in-progress: false' not in job.group('body') or 'nfs-kernel-server nfs-common' not in job.group('body')
+        or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('DEM cut/fill requires a manual isolated Hosted NFS job')
+    make=(repository/'Makefile').read_text()
+    if 'test-geopython-workflow:' not in make or 'test_online_cut_fill_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('cut/fill Native fixture must run in the standard GeoPython recipe')
+    required={'scripts/test/online-hosted-raster-cut-fill-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
+                                                        'start_online_geopython_runtime',
+                                                        '--mount',
+                                                        '--suite raster-workflow',
+                                                        '--wait-protection-owners develop,manager',
+                                                        'online-raster-cut-fill-fixture.py stop',
+                                                        'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
+                                                        'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),
+ 'scripts/test/raster-cut-fill-persistence-online.py': ('raster.validate_identity',
+                                                        'raster.EDITOR_PERMISSIONS',
+                                                        'validate_scan(scanned,scan,identifier',
+                                                        'zonal.validate_success',
+                                                        'validate_preview',
+                                                        'validate_item',
+                                                        'raster.wait_lineage',
+                                                        'scan_ids(client)!=before_scans',
+                                                        'source_edges(client',
+                                                        'rasterize.check_physical(native,previous)',
+                                                        'for name in fixture.TARGETS',
+                                                        'for problem in FAILURES',
+                                                        "for language in ('zh-cn','en')",
+                                                        'SubmittedLanguageClient',
+                                                        'invalid_diagnostic',
+                                                        'case_inputs(name)',
+                                                        'raster_cut_fill',
+                                                        'after_elevation_unit',
+                                                        'archive_csv',
+                                                        'cut-fill-csv-manifest.json',
+                                                        'csv_base64',
+                                                        'previous archived CSV changed',
+                                                        'query language rewrote stored failure'),
+ 'business/scripts/online-raster-cut-fill-fixture.py': ('NFSExport',
+                                                        'owned_root',
+                                                        'expected_row',
+                                                        'Counter',
+                                                        'context.prec=200',
+                                                        'range(35)',
+                                                        'independent_decimal_oracle_verified',
+                                                        'count_and_area_conservation_verified',
+                                                        'nonnegative_gross_and_net_difference_verified',
+                                                        'parse_csv',
+                                                        'csv_base64',
+                                                        'source file changed',
+                                                        'runtime_workspaces_removed',
+                                                        'GDAL_TIFF_INTERNAL_MASK'),
+ 'engines/geopython-workflow/test_online_cut_fill_fixture.py': ('test_cut_fill_persistence_real_gdal_twelve_csv_chains_complete_oracle_and_original_bytes',
+                                                                'test_cut_fill_persistence_thirty_six_exact_failures_no_publication',
+                                                                'test_cut_fill_persistence_oracle_rejects_csv_corruption',
+                                                                'one_ulp',
+                                                                'test_cut_fill_persistence_worker_runs_from_stdin_without_repository_imports'),
+ 'Makefile': ('@$(MAKE) test-raster-cut-fill-online-runner',
+              'scripts/test/raster-cut-fill-persistence-online_test.py',
+              'scripts/test/online-raster-cut-fill-fixture_test.py',
+              'scripts/test/online-hosted-raster-cut-fill-gate_test.py',
+              'test_cut_fill_requires_manual_nfs_complete_csv_archive_and_regressions')}
+    for relative,fragments in required.items():
+        path=repository/relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('cut/fill persistence contract is incomplete: '+relative)
+    # Fixed first-phase matrix is executable data, not a comment claiming coverage.
+    import ast
+    fixture=ast.parse((repository/'business/scripts/online-raster-cut-fill-fixture.py').read_text())
+    scene=ast.parse((repository/'scripts/test/raster-cut-fill-persistence-online.py').read_text())
+    def literal(tree,name):
+        return next(ast.literal_eval(node.value) for node in tree.body if isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id==name for t in node.targets))
+    if len(literal(fixture,'CASES'))!=12 or len(literal(scene,'FAILURES'))!=18:
+        raise RegistrationError('cut/fill requires exactly twelve saves and thirty-six bilingual failures')
+
+
 def validate_raster_profile_curvature(repository: Path, registered: set[str]) -> None:
     suite='raster-profile-curvature-persistence'
     if suite not in registered:return
@@ -4246,6 +4329,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_hand_d8_profile(repository, registered)
     validate_raster_curvature_profile(repository, registered)
     validate_raster_profile_curvature(repository, registered)
+    validate_raster_cut_fill(repository, registered)
     validate_raster_tangential_curvature(repository, registered)
     validate_raster_plan_curvature(repository, registered)
     validate_raster_flow_length_upstream_d8_profile(repository, registered)

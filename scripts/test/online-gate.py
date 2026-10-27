@@ -211,6 +211,13 @@ SUITES: Mapping[str, Suite] = {
                   ("manager", "MANAGER_URL"), ("monitor", "MONITOR_URL"),
                   ("security", "SECURITY_URL")),
     ),
+    "raster-cut-fill-persistence": Suite(
+        command=(sys.executable, "-m", "scripts.test.raster-cut-fill-persistence-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
+                  ("develop", "DEVELOP_URL"), ("meta", "META_URL"),
+                  ("manager", "MANAGER_URL"), ("monitor", "MONITOR_URL"),
+                  ("security", "SECURITY_URL")),
+    ),
     "raster-tangential-curvature-persistence": Suite(
         command=(sys.executable, "-m", "scripts.test.raster-tangential-curvature-persistence-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),

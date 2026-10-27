@@ -566,3 +566,18 @@ Native候选树`83c8384f0ae808f1d9947b9126ded49c72289797`，原始日志SHA-256�
 两份相同物理内容的 NFS／MinIO 单文件各含 2503 行，覆盖超过 JavaScript 安全范围的大整数、decimal(38,9)、NULL／空值及二进制。验收深度扫描、Meta 原生字段与 footer 行数／源版本、三页精确值与尾页、真实页面下一页和原文件下载；真实 Transfer 以 1000 行批次写 Parquet，由产品镜像内独立 PyArrow 完整回读所有字段、数值、缺失掩膜和 Decimal 精度。源字节／元数据不变、本人任务删除及物理夹具产物清理分别断言；应用部署、NFS 导出、卷、镜像和 Infra 零残留由既有 Hosted 生命周期独立收尾。报告为 `manager-orc.json`、`manager-orc-browser.json`、两份原文件、Meta 与截图，并与 `online-report.json` 和运行 SHA 一并复核；没有真实报告时不得回填 Hosted 通过。
 
 对应 T1/T0 沿 `make test-geopython-workflow`、六个受影响 Go owner、`make test-manager-online-runner`、`make test-online-runner` 与现有 CI 注册检查；不新建 Job／suite。ORC 源变化在 Runtime 使用封闭 `ORC_SOURCE_CHANGED`，Manager 复用 `preview_source_refresh_required` 409 和既有国际化提示；不通过解析本地化异常文本识别变化。
+
+
+### 双DEM填挖方统计独立 Hosted 验收
+
+已按确认范围准备独立手工`raster-cut-fill-persistence`，复用Hosted／NFS、同源默认入口产品Runtime、普通User原12权限和独立600秒业务预算；不加入nightly，不改产品算法、权限或其他套件。519×515矩形多波段样本显式选择第二高程波段，30份源覆盖两源各自NoData／mask／透明／部分透明、合法零／负高程及跨512块。12条成功CSV链固定为米制混合挖填、前后互换、完全不变、纯填、纯挖、三组不同高程单位组合、填洼接统计、重分类接统计、Int64和UInt64相邻大高程；水平网格覆盖米与美制测量英尺。18类非法参数／数据各按中英文提交，共36条准确失败，须定位到cut_fill节点：两角色非法波段、非法声明单位／单位冲突、alpha／复数、scale／offset、CRS／尺寸／完整网格不符、旋转／南向／经纬度／缺CRS／缺定位，以及一源全无效和有效区互不相交。反向查询语言不改既有失败。
+
+独立oracle按完整35×35周期的闭式计数及所有特殊像元修正，以200位Decimal计算高差／面积／体积，不导入产品计算函数；完整标量遍历另核周期计数。水平面积使用源文件实际解码的网格和CRS线性换算事实，保留WKT序列化末位事实，CSV物理值仍逐项精确比较，一ULP篡改反例不得通过。严格核单行13列、6个Int64／7个Float64逻辑Schema、总／有效／排除及挖／填／不变计数守恒、平方米／立方米、挖填非负、净填减挖及前后互换关系；普通表格仅沿既有save链路，不生成RasterArtifact。物理／Meta大小必须为相等正整数，不补造第三方大小字段。
+
+每次完整物理核验后，将已成功CSV原字节保存到`cut-fill-csv/`，清单`cut-fill-csv-manifest.json`记录文件名、大小及SHA-256；收尾再次逐字节比对，之前归档发生变化或出现额外／软链接文件均失败。12份CSV、清单、完整日志和回执由独立Job归档。每份成果核精确扫描父执行／用户／租户／引擎身份、当前执行两份实际源血缘与Monitor；全部保存后、负例前逐条核齐血缘，保留普通采集机制。失败无发布／新增扫描／派生血缘；源、先前CSV和Meta事实保持不变，Runtime工作区、NFS export／归属目录、部署及Infra清理不弱化。
+
+本地标准Native入口专项`PYTEST_ADDOPTS='-k cut_fill --durations=15' make test-geopython-workflow`通过 **171项／7428筛除／15.04秒**（含原产品114项、本套夹具57项），0失败／跳过，JUnit与进度点一致；实际完成12条GDAL→CSV链、36次准确双语失败、完整物理／原字节归档、CSV／Schema／一ULP／源侧文件与清理篡改拒绝，以及stdin Worker脱离仓库导入运行。候选树`efc303284017076f39202a6e376e0a86a5a4fca3`，原始日志SHA-256：`ee792a179833aef2f7c6c0b5cb1bf2dd8e4280ddbf575eb82aacf67e77a184a3`。既有产品固定b631的本地全量7520项单列，本次专项不冒充新全量。
+
+Node24.11.1下标准`make test-raster-cut-fill-online-runner`通过 **62项／29.186秒**及完整Online登记，覆盖模拟普通用户／扫描／当前血缘、冻结语言、大小与完整CSV反例、原字节归档／源hash保护，以及Hosted准入／部分启动／失败收尾／清理反例；不是实际平台验收。候选树`b01331fa51e46647a2500b28b411898f82531363`，日志SHA-256：`bd14894993ceaf9ece5f39c9e864b5b8a29e44ce6bf076a4807cc85204d68e72`。`make test-python-ci-registration`50项、10项及11模块／Online登记通过，日志SHA-256：`40d2792fc46f01cd5ded30101d4abc1d4006504b8673751919507e251baac53a`；重复计数不相加。各门禁924个跟踪输入无漂移、无新增Python原生崩溃报告，Native与独立runner的16个本会话输入逐字节一致。根Native recipe、变更选择、聚合runner、独立手工workflow和失败即拒绝的固定12／36矩阵登记同次完成；原聚合其余子套件没有整组复跑。
+
+以上为本地准备证据，真实Hosted尚未运行；Linux及其余Hosted仍等专门CI会话回传，实际运行由CI会话协调。本会话不触发、轮询或设置定时，不计真实普通User、扫描／血缘／Monitor、UI、容量、生产或业务DELETE。溢出／下溢、极端抵消和其余角色／单位组合继续单列Native，不挪用为Hosted数值极限证据。

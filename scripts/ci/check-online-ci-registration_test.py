@@ -469,6 +469,79 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                     CHECK.validate_raster_curvature_profile(self.repository,{'raster-curvature-persistence'})
                 target.write_text(original)
 
+    def test_cut_fill_requires_manual_nfs_complete_csv_archive_and_regressions(self):
+        source=SCRIPT.parents[2]
+        required={'.github/workflows/online-t4-gates.yml': ("inputs.suite != 'raster-cut-fill-persistence'",
+                                           "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-cut-fill-persistence'"),
+ 'scripts/test/online-hosted-raster-cut-fill-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
+                                                        'start_online_geopython_runtime',
+                                                        '--mount',
+                                                        '--suite raster-workflow',
+                                                        '--wait-protection-owners develop,manager',
+                                                        'online-raster-cut-fill-fixture.py stop',
+                                                        'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
+                                                        'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'),
+ 'scripts/test/raster-cut-fill-persistence-online.py': ('raster.validate_identity',
+                                                        'raster.EDITOR_PERMISSIONS',
+                                                        'validate_scan(scanned,scan,identifier',
+                                                        'zonal.validate_success',
+                                                        'validate_preview',
+                                                        'validate_item',
+                                                        'raster.wait_lineage',
+                                                        'scan_ids(client)!=before_scans',
+                                                        'source_edges(client',
+                                                        'rasterize.check_physical(native,previous)',
+                                                        'for name in fixture.TARGETS',
+                                                        'for problem in FAILURES',
+                                                        "for language in ('zh-cn','en')",
+                                                        'SubmittedLanguageClient',
+                                                        'invalid_diagnostic',
+                                                        'case_inputs(name)',
+                                                        'raster_cut_fill',
+                                                        'after_elevation_unit',
+                                                        'archive_csv',
+                                                        'cut-fill-csv-manifest.json',
+                                                        'csv_base64',
+                                                        'previous archived CSV changed',
+                                                        'query language rewrote stored failure'),
+ 'business/scripts/online-raster-cut-fill-fixture.py': ('NFSExport',
+                                                        'owned_root',
+                                                        'expected_row',
+                                                        'Counter',
+                                                        'context.prec=200',
+                                                        'range(35)',
+                                                        'independent_decimal_oracle_verified',
+                                                        'count_and_area_conservation_verified',
+                                                        'nonnegative_gross_and_net_difference_verified',
+                                                        'parse_csv',
+                                                        'csv_base64',
+                                                        'source file changed',
+                                                        'runtime_workspaces_removed',
+                                                        'GDAL_TIFF_INTERNAL_MASK'),
+ 'engines/geopython-workflow/test_online_cut_fill_fixture.py': ('test_cut_fill_persistence_real_gdal_twelve_csv_chains_complete_oracle_and_original_bytes',
+                                                                'test_cut_fill_persistence_thirty_six_exact_failures_no_publication',
+                                                                'test_cut_fill_persistence_oracle_rejects_csv_corruption',
+                                                                'one_ulp',
+                                                                'test_cut_fill_persistence_worker_runs_from_stdin_without_repository_imports'),
+ 'Makefile': ('@$(MAKE) test-raster-cut-fill-online-runner',
+              'scripts/test/raster-cut-fill-persistence-online_test.py',
+              'scripts/test/online-raster-cut-fill-fixture_test.py',
+              'scripts/test/online-hosted-raster-cut-fill-gate_test.py',
+              'test_cut_fill_requires_manual_nfs_complete_csv_archive_and_regressions')}
+        for relative in ('scripts/test/online-gate.py',*required):
+            target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
+        CHECK.validate_raster_cut_fill(self.repository,{'raster-cut-fill-persistence'})
+        for relative,fragments in required.items():
+            target=self.repository/relative;original=target.read_text()
+            for fragment in fragments:
+                self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
+                with self.subTest(relative=relative,fragment=fragment),self.assertRaises(CHECK.RegistrationError):
+                    CHECK.validate_raster_cut_fill(self.repository,{'raster-cut-fill-persistence'})
+                target.write_text(original)
+        target=self.repository/'business/scripts/online-raster-cut-fill-fixture.py';original=target.read_text();target.write_text(original.replace("'mixed.csv':", "'removed.csv':",1).replace("'reversed.csv':('after.tif','before.tif','metre','metre','direct'),",''))
+        with self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_cut_fill(self.repository,{'raster-cut-fill-persistence'})
+        target.write_text(original)
+
     def test_profile_curvature_requires_manual_nfs_full_pixels_and_regressions(self):
         source=SCRIPT.parents[2]
         required={
