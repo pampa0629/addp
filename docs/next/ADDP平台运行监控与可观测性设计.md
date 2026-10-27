@@ -35,7 +35,7 @@
 | 优先级 | 下一步 | 进入条件 |
 | --- | --- | --- |
 | 1 | 补齐原生宿主与多进程部署覆盖 | Linux VM 单新 Monitor 绑定已验；原生宿主与 Desktop VM 分别声明，多进程按各自实例身份验证，不在线改挂既有实例 |
-| 2 | 补齐原功能表的服务质量、引擎专业指标及容器资源 | PostgreSQL 已实现及已验范围见[采集来源与引擎指标证据][monitor-engine]；其他引擎和容器资源先明确对象归属、配额和 OS 支持，复用固定目录与唯一采集链 |
+| 2 | 补齐原功能表的服务质量、引擎专业指标及容器资源 | PostgreSQL 已实现及已验范围见[采集来源与引擎指标证据][monitor-engine]；其他引擎、cAdvisor 节点部署／容器视图及实例资源组后续扩展，按[运行环境边界](../spec/addp平台运行观测规范.md#52-部署与运行环境)分别推进；先明确对象归属、配额和 OS 支持，复用固定目录与唯一采集链 |
 | 3 | Trace 长时保留验证与后续覆盖 | 原三 Go HTTP 链短测仅支持原 20 GiB／72 小时外推；真实过期删除、长期合并增长及查询余量另定窗口，不沿用原四十分钟短测或本地闭环授权。各批已验范围见[Trace 证据][monitor-trace]；正式 Runner T4、其他 Runtime、continuous、Python 异步、SQL Span 与真实长时窗口分别确认 |
 | 4 | 生产发布及受控运维 | 真实平台 T5；SSH/初始化/防火墙/启停另有权限、计划、执行与审计确认 |
 
@@ -154,9 +154,9 @@ System 私有观测投影已在主机和模块实例基础上，按 2026-10-20 �
 
 ## 服务实例配额与容器利用率（部署侧证明方式已确认）
 
-2026-10-24 只读核对：当前本机 Monitor、Meta／Transfer／Quality Worker 是 macOS 原生进程；标准开发启动直接执行 `.dev-bins`，未施加独立 CPU／内存配额。Common 自身采集只返回 CPU 累计时间、RSS 和启动时间，现有进程采集声明及部署输入没有资源限额。根 Compose 中 Meta／Transfer Worker 的资源限额示例仍是注释，不能视为已执行配置；Business 部分引擎容器的限额也不属于这些原生进程。继续遵守正式规范 6.1：没有明确配额就不生成进程配额利用率，不以宿主总量或 Go 运行参数补分母。
+2026-10-24 只读核对时，本机 Monitor、Meta／Transfer／Quality Worker 是 macOS 原生进程；标准开发启动直接执行 `.dev-bins`，未施加独立 CPU／内存配额。Common 自身采集只返回 CPU 累计时间、RSS 和启动时间，现有进程采集声明及部署输入没有资源限额。根 Compose 中 Meta／Transfer Worker 的资源限额示例仍是注释，不能视为已执行配置；Business 部分引擎容器的限额也不属于这些原生进程。继续遵守正式规范 6.1：没有明确配额就不生成进程配额利用率，不以宿主总量或 Go 运行参数补分母。
 
-2026-10-24 按用户继续推进的确认，下一批先支持**明确一实例一独立 Linux 容器**的运维观测，先在当前实例详情分开展示进程 CPU 核消耗／RSS 与容器整体 CPU／内存，不扩大原批量进程摘要目录、列表读取量或默认分页。容器 CPU 用量与其可核验限额比较，内存以同一 cgroup 的整体用量与硬上限比较；不把进程 RSS 除以容器内存上限称作容器使用率，不将超限等同泄漏。`GOMAXPROCS` 是 Go 并行度，`GOMEMLIMIT` 是 Go 运行时软限制，均不能替代操作系统硬上限。来源定义参考 [Linux cgroup v2](https://docs.kernel.org/admin-guide/cgroup-v2.html)、[Go runtime](https://pkg.go.dev/runtime#GOMAXPROCS)及[Go 内存软限制](https://pkg.go.dev/runtime/debug#SetMemoryLimit)。
+2026-10-24 已确认的首期范围限定为**明确一实例一独立 Linux 容器**的运维观测，在当前实例详情分开展示进程 CPU 核消耗／RSS 与容器整体 CPU／内存，不扩大原批量进程摘要目录、列表读取量或默认分页。容器 CPU 用量与其可核验限额比较，内存以同一 cgroup 的整体用量与硬上限比较；不把进程 RSS 除以容器内存上限称作容器使用率，不将超限等同泄漏。`GOMAXPROCS` 是 Go 并行度，`GOMEMLIMIT` 是 Go 运行时软限制，均不能替代操作系统硬上限。来源定义参考 [Linux cgroup v2](https://docs.kernel.org/admin-guide/cgroup-v2.html)、[Go runtime](https://pkg.go.dev/runtime#GOMAXPROCS)及[Go 内存软限制](https://pkg.go.dev/runtime/debug#SetMemoryLimit)。
 
 首批仅考虑 cgroup v2，仅读取当前实例所属边界的固定资源文件，明确容器关联、限制层级／可见范围及采样时间；不向 Web 服务开放 Docker socket，不扫描其他进程或读取环境凭据。共享容器、无法确认容器关联／层级限制、无有限硬上限及不支持的平台不输出归一化利用率；macOS 原生实例仍显示绝对消耗与未设置／不支持的原因。不自动配置额度、不更改现有部署限制、不把整机可见 CPU／内存当作实例独享资源。具体资源身份、字段投影、当前用户裁决与指标公式沿下述已确认接入方式落实，采集与查询只保留一条主路径。
 
@@ -168,7 +168,7 @@ System 私有观测投影已在主机和模块实例基础上，按 2026-10-20 �
 
 Linux cgroup v2 的父级约束仍作用于子级；cgroup 命名空间与子树挂载可能隐藏父级。容器内读到有限的 `cpu.max`／`memory.max`，只证明可见层的硬上限，不证明完整限制层级，也不表示实例独享或保证可用的资源。Docker inspect 的配置额度同样不能单独证明父级限制。来源参考 [cgroup v2 层级规则](https://docs.kernel.org/admin-guide/cgroup-v2.html)及 [cgroup 命名空间](https://man7.org/linux/man-pages/man7/cgroup_namespaces.7.html)。
 
-已确认由**部署侧**提供有期限的只读证明：精确关联 Docker Engine／完整容器 ID／本次容器启动、当前登记实例及本次进程启动；记录实际 cgroup 及已核验的限制层级。应用仅采自身 cgroup 用量，不持有 Docker socket。部署侧若只能证明叶级配置或不能读取真实层级，则只保留绝对用量，不发布有效配额利用率。该方案需要明确增加部署侧的发布职责和 System 私有投影契约；现有引擎发现能力不能直接外推成已获支持的应用容器发现。
+已确认由**部署侧**提供有期限的只读证明：精确关联 Docker Engine／完整容器 ID／本次容器启动、当前登记实例及本次进程启动；记录实际 cgroup 及已核验的限制层级。应用仅采自身 cgroup 用量，不持有 Docker socket。部署侧若只能证明叶级配置或不能读取真实层级，则只保留绝对用量，不发布有效配额利用率。该方案由部署侧发布只读证明，System 沿私有投影关联当前实例；现有引擎发现能力不能直接外推成已获支持的应用容器发现。
 
 2026-10-24 用户已选择部署侧只读证明方案。应用不开放宿主 cgroup 层级，不修改现有容器命名空间／挂载配置，不保留第二套自动降级实现。
 

@@ -187,7 +187,7 @@ flowchart LR
     A --> E[Tempo]
 ```
 
-指标使用单一 pull 路线，不并存 remote_write；原始高频时序留在 Prometheus，配置、事件、投递和审计留在各 Owner 的 PostgreSQL。日志正文保持受控文件 → Alloy → Loki → System，不在失败时退回主机文件读取。Go 同步 HTTP Trace 范围与预算沿 6.5；cAdvisor 已有受控来源准入内核，节点部署与容器资源视图尚未交付。
+指标使用单一 pull 路线，不并存 remote_write；原始高频时序留在 Prometheus，配置、事件、投递和审计留在各 Owner 的 PostgreSQL。日志正文保持受控文件 → Alloy → Loki → System，不在失败时退回主机文件读取。Go 同步 HTTP Trace 范围与预算沿 6.5；自身 cgroup、实例资源组与 cAdvisor 的当前接入范围见 [5.2](#52-部署与运行环境)。
 
 不增加独立 Alertmanager 告警 Owner，不要求 Grafana 成为产品入口。成熟组件负责采集、存储和传输，Monitor 负责领域规则、事件和授权体验。
 
@@ -217,7 +217,11 @@ flowchart LR
 | Docker Desktop Linux VM | 独立 virtual 主机，承载 Business/Infra；支持 CPU、内存、负载、运行时长及内核磁盘统计 |
 | Desktop 文件系统与网络 | filesystem、netdev、netstat 仍关闭，不用容器挂载或网卡冒充 VM 全局数据 |
 | 原生 macOS 服务 | 观察自身 Go 进程 CPU、当前 RSS 和时长，不绑定到 Desktop VM 冒充其进程 |
-| 容器资源 | 待独立实现；容器配额、进程消耗与 VM/宿主容量不混用 |
+| 自身 cgroup 采样 | Linux Common SDK 显式选择 `cgroup_v2=true` 后已接入自身组原始量及内核身份；仅有组样本不证明独立容器或配额，见 [6.1](#61-固定指标目录) |
+| 单实例资源组观测 | 已接通部署证明关联、System 投影及 Monitor 单实例即时查询／页面；利用率仍须完整、新鲜且匹配的限制层级证明，见 [6.1](#61-固定指标目录)、[6.2](#62-资源查询与预算) |
+| cAdvisor 容器视图 | 已有受控来源准入内核；其标准节点部署与容器资源视图尚未交付 |
+
+自身采样、部署关联与正式身份验收分别认定。共享组 T2 不证明独立 Linux 容器的完整限制层级或正式身份配额页面；固定版本、失败及未覆盖项见[实例与服务发现证据](testing/evidence/Monitor实例与服务发现历史证据.md)。容器配额、进程消耗与 VM/宿主容量不混用。
 
 Desktop 来源固定启用 cpu、meminfo、loadavg、diskstats、stat、uname、time；保持独立 bridge/PID/挂载命名空间、非 root、只读根、cap_drop=ALL 和 no-new-privileges，不挂宿主根、设备或 Docker Socket。磁盘代表 VM 内核设备统计，不证明 Mac 物理磁盘或某个引擎的独占消耗。远程 Engine、非 Linux Engine 和未知环境拒绝接入。
 
@@ -262,7 +266,7 @@ TCP 当前连接数为 `node.tcp.current_connections`（unit=`connections`，瞬
 
 进程目录独立：CPU 使用 `process.cpu.core_equivalents`，1 核表示消耗一个逻辑核的计算时间；内存为当前 `process.memory.resident_bytes`，时长从本次启动计算。无明确配额不生成配额利用率，不用宿主总内存计算进程使用率，也不用 Go 堆或峰值 RSS 替代当前 RSS。macOS 自身采样严格核对系统接口成功与返回长度，失败不生成有效零值。
 
-自身 cgroup 采样与容器身份分开：Linux Common SDK 仅在进程部署输入显式选择 `cgroup_v2=true` 时，才可在既有 mTLS 来源发布当前 cgroup v2 的 `addp_cgroup_identity_info`、`addp_cgroup_cpu_usage_seconds_total` 和 `addp_cgroup_memory_current_bytes`。身份只含内核 boot UUID、cgroup inode 和 PID namespace inode，均以规范字符串标识；只读 `/proc/self/cgroup`、`/proc/self/mountinfo`、自身 PID／cgroup namespace、内核 boot ID 及当前组固定资源文件，不扫描其他进程或组。路径、凭据和原始错误不发布；文件、字段、读取量及路径严格有界。迁组／身份变化或读取失败时清除本次组指标，不能变为有效零值，也不能影响原进程 CPU／RSS／启动指标。该三项为后续容器来源的私有采集事实，不扩展当前用户查询目录、列表摘要或告警。
+自身 cgroup 采样与容器身份分开：Linux Common SDK 仅在进程部署输入显式选择 `cgroup_v2=true` 时，才可在既有 mTLS 来源发布当前 cgroup v2 的 `addp_cgroup_identity_info`、`addp_cgroup_cpu_usage_seconds_total` 和 `addp_cgroup_memory_current_bytes`。身份只含内核 boot UUID、cgroup inode 和 PID namespace inode，均以规范字符串标识；只读 `/proc/self/cgroup`、`/proc/self/mountinfo`、自身 PID／cgroup namespace、内核 boot ID 及当前组固定资源文件，不扫描其他进程或组。路径、凭据和原始错误不发布；文件、字段、读取量及路径严格有界。迁组／身份变化或读取失败时清除本次组指标，不能变为有效零值，也不能影响原进程 CPU／RSS／启动指标。这三项仅是私有采集事实，不直接成为用户查询目录；单实例资源组观测沿本节部署证明及 [6.2](#62-资源查询与预算) 的既有契约处理，列表摘要与告警范围不随采样声明扩大。
 
 `cpu.stat` 沿 Linux 扁平键值格式读取 `usage_usec`；内核的 `core_sched.force_idle_usec` 等点号命名空间键不应使整组样本失效。仍严格校验有界字段名、每行两项、唯一键及规范无符号整数；不把其他计数并入 CPU 用量、不改变指标目录。字段依据见 [Linux v6.11 内核实现](https://github.com/torvalds/linux/blob/v6.11/kernel/cgroup/rstat.c#L555)。
 
