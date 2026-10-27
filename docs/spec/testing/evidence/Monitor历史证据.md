@@ -1954,3 +1954,16 @@ ImportError 尚缺具体组件与版本事实，本批没有猜测升级／降�
 新增四项回归先于实现失败，覆盖原 mount 缺 exec、未按实际挂载拒绝以及缺少依赖提取／本地扩展内核；随后补充实际标志读取、本地扩展失败不进入框架、独立来源文件及严格回执脱敏反例。首次完整配置／生命周期聚合发现旧回执测试缺少新增字段，更新唯一结构而非兼容旧结构后重跑。最终 `python3 -m unittest scripts/test/metrics-deployment-config_test.py scripts/test/metrics-http-budget_test.py` 127 项通过；`make test-infra-runtime-log-lifecycle` 的 123 项 runner／既有 System Go fixture及 80 项聚合通过；T2 登记测试 38 项、登记检查 22／12／9／2、shell 语法与本专项 diff 检查通过。T0 没有启动容器、安装实际依赖或导入产品依赖。
 
 补丁、红／绿门禁日志及输入／选择摘要位于 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-python-native-fix-20261027-040bs6so`。本轮没有新开本地实链窗口、运行 Hosted、容量或定时，也没有修改／重启个人服务。修正后的实际挂载、本地扩展与两源 SDK→mTLS→采集查询告警仍待自然 Linux Metrics CI 单列核验，不将本地确定性通过算作完整 HTTP 实链通过。
+
+
+### 正式 HTTP 声明两源 Linux 业务子链通过，整门禁仍因清理重叠读取失败（2026-10-27）
+
+已核对修正源码 `44230c5c8d733b737145735a2432b31cb4891c3d` 的自然 [Linux HTTP Job 122046852189](https://github.com/pampa0629/addp/actions/runs/40461400796/job/122046852189)。14:30:26.448—14:44:05.065（Asia/Shanghai），预算执行 818.616 秒，整体 failed，子入口退出 0；没有手工触发／重跑或另开本地窗口。正式版本提取和本地扩展修正已取得实际运行证据：两源 startup 均 running／passed，实际挂载 noexec=false／nosuid=true／nodev=true，native_imported=true。Agent 使用 FastAPI 0.142.2／Uvicorn 0.32.0／HTTPX 0.28.1，Copilot 使用 0.110.0／0.27.0／0.27.0；两源 Pydantic 2.14.1、Pydantic Core 2.50.1。原启动阻塞已跨过，不需猜测降级 Pydantic；此夹具只复用 HTTP 四项直接声明，不是完整产品依赖、正式身份或页面验收。
+
+固定窗口公式 0.62 秒通过；Go 实际查询／趋势、告警打开／签名重试／同一事件恢复（150.38 秒）与来源停止隔离通过；Python 两源 SDK→mTLS→唯一发现与自然完整一分钟→Monitor 查询／历史趋势、告警打开／签名重试／同一事件恢复（164.07 秒）及来源停止隔离通过。两源都正常退出，发现范围恢复，failure_stage=null。实际 Go 148（失败90／健康58）、Python 75（45／30）和28（15／13），总计251，三源均有失败及恢复尝试且未超原额度。产品子链通过与整门禁通过分别陈述。
+
+整门禁仍因资源采样失败：stage=inspect、kind=command_failed、退出1，命令1.075732秒、整次检查至此1.091369秒、命令开始剩余3.984363秒，并非四秒超时；failure_during_cleanup=true。最终 cleanup_verified=true、private_directory_removed=true、inputs_unchanged=true，零残留及原首失败均保留，不将资源失败忽略或改判通过。201个成功采样最长1.226349秒，样本峰值硬配额3.25 CPU／4026531840字节内存、私有可写预算上界1807519807字节；这些只代表已成功取得的样本，不推断失败读取瞬间或容量通过。
+
+只读代码确认仍有生命周期竞态窗口：父进程读取 cleanup_started=false 后进入包含 inventory／inspect／du 的多步采样；子入口可同时标记 cleanup_started并开始down。现有协调只在读取失败后阻止再次SIGTERM，不能互斥已开始的采样与资源删除。本轮 failure_during_cleanup证实错误与清理重叠，但没有原始stderr及具体对象，不能唯一证明某容器消失就是本次命令退出1的原因。已提出当次采样与清理互斥、锁等待计入原四秒及真实错误继续失败的最小方案，待用户确认；没有擅自改变生命周期或重试输入。
+
+官方Artifact 12715410863（21672字节），下载SHA256核对 `2fd7f54ef48bc6dc12be5c413cabc4b6097aa9e0d8b5e27118cd97b753eff427`。原始日志、ZIP、预算及独立摘要在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-python-native-fix-20261027-040bs6so`（job-122046852189.log、linux-budget-44230c5c8.json、audit-summary.json）；首次下载网络EOF，重新只读下载后才核对成功，不是重跑验收。这里只追加证据，`git diff --check`通过，代码的127项配置／预算、123＋80项生命周期和登记门禁沿前述固定提交仍有效；本轮未运行Hosted、容量或定时，未修改个人服务。完整标准HTTP门禁仍未通过，剩余优先项为采样／清理协调及其整门禁验证。
