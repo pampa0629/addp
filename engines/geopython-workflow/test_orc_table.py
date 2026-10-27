@@ -336,7 +336,8 @@ def test_hosted_physical_oracle_independently_checks_every_parquet_value(tmp_pat
         ]
     )
     values = [dict(zip(schema.names, fixture.row(i))) for i in range(fixture.COUNT)]
-    table = pa.Table.from_pylist(values, schema=schema)
+    # ADDP's existing parquet-go Group writer orders physical columns by name.
+    table = pa.Table.from_pylist(values, schema=schema).select(sorted(schema.names))
     file = tmp_path / "output.parquet"
     parquet.write_table(table, file)
     for source in ("minio", "nfs"):
@@ -346,7 +347,7 @@ def test_hosted_physical_oracle_independently_checks_every_parquet_value(tmp_pat
         x["all_values_and_nulls_verified"] for x in proof["outputs"]
     )
     values[2000]["blob"] = b"wrong"
-    parquet.write_table(pa.Table.from_pylist(values, schema=schema), file)
+    parquet.write_table(pa.Table.from_pylist(values, schema=schema).select(sorted(schema.names)), file)
     objects["orc-output/from-nfs.parquet"] = file.read_bytes()
     with pytest.raises(AssertionError):
         fixture.worker(dict(request, action="verify"))

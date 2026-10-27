@@ -266,6 +266,12 @@ class ORCSceneTest(unittest.TestCase):
                 for action in ['seed', 'verify', 'delete']:
                     self.assertEqual(fixture.physical(action, Path('/tmp'), env)['action'], action)
             self.assertEqual(delivered, ['seed', 'verify', 'delete'])
+            failure = SimpleNamespace(returncode=1, stdout='{"error_code":"output_columns_or_count"}',
+                                      stderr='private credentials must not enter diagnostics')
+            with patch.object(fixture.subprocess, 'run', return_value=failure):
+                with self.assertRaisesRegex(ValueError, 'output_columns_or_count') as raised:
+                    fixture.physical('verify', Path('/tmp'), env)
+                self.assertNotIn('private credentials', str(raised.exception))
 
     def test_dispatch_case_and_fixture_guards(self):
         self.assertEqual(

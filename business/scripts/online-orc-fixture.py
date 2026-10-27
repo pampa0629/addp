@@ -14,6 +14,7 @@ import tempfile
 
 COUNT = 2503
 SCHEMA = "struct<id:bigint,measure:decimal(38,9),flag:boolean,label:string,blob:binary>"
+FIELD_NAMES = ["id", "measure", "flag", "label", "blob"]
 
 
 def row(index):
@@ -74,14 +75,14 @@ def worker(request):
                 path = Path(directory) / Path(name).name
                 client.fget_object(bucket, name, str(path))
                 table = parquet.read_table(path)
-                assert table.schema.field("measure").type.precision == 38
-                assert table.schema.field("measure").type.scale == 9
+                assert table.schema.field("measure").type.precision == 38, "output_precision"
+                assert table.schema.field("measure").type.scale == 9, "output_scale"
                 assert (
-                    table.column_names == ["id", "measure", "flag", "label", "blob"]
+                    table.column_names == sorted(FIELD_NAMES)
                     and table.num_rows == COUNT
-                )
+                ), "output_columns_or_count"
                 for i, actual in enumerate(table.to_pylist()):
-                    assert tuple(actual.values()) == row(i)
+                    assert tuple(actual[name] for name in FIELD_NAMES) == row(i), "output_values"
                 reports.append(
                     {
                         "object": name,
@@ -94,7 +95,7 @@ def worker(request):
                 )
             source = Path(directory) / "source.orc"
             client.fget_object(bucket, "orc/table.orc", str(source))
-            assert source.read_bytes() == (root / "orc/table.orc").read_bytes()
+            assert source.read_bytes() == (root / "orc/table.orc").read_bytes(), "source_bytes"
             return {
                 "outputs": reports,
                 "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
@@ -176,13 +177,27 @@ def physical(action, repository, environment):
         timeout=120,
     )
     if result.returncode:
-        raise ValueError(f"ORC physical {action} failed (exit {result.returncode})")
+        code = "worker_failed"
+        try:
+            candidate = json.loads(result.stdout).get("error_code")
+            if isinstance(candidate, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,80}", candidate):
+                code = candidate
+        except (ValueError, AttributeError):
+            pass
+        raise ValueError(f"ORC physical {action} failed ({code}, exit {result.returncode})")
     return json.loads(result.stdout)
 
 
 if __name__ == "__main__":
     if sys.argv[1] == "worker":
-        print(json.dumps(worker(json.load(sys.stdin))))
+        try:
+            print(json.dumps(worker(json.load(sys.stdin))))
+        except Exception as error:
+            code = str(error) if isinstance(error, AssertionError) else type(error).__name__
+            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,80}", code):
+                code = "worker_failed"
+            print(json.dumps({"error_code": code}))
+            raise SystemExit(1)
     else:
         print(
             json.dumps(physical(sys.argv[1], Path(__file__).resolve().parents[2], dict(os.environ)))
