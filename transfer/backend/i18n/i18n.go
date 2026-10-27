@@ -10,6 +10,7 @@ import (
 var localeFS embed.FS
 
 const (
+	MsgExportProtectionUnavailable     = "transfer.export.protection_unavailable"
 	MsgProductionReceiptUnavailable    = "transfer.production_receipt.unavailable"
 	MsgExecutionNotFound               = "transfer.execution.not_found"
 	MsgExecutionReadUnavailable        = "transfer.execution.read_unavailable"

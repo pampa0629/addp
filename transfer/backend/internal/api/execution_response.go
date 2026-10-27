@@ -239,11 +239,12 @@ type ExecutionMetadataScan struct {
 // ModuleExecutionResult is authorized by Service Client/source, independently
 // of User reads. Only export-session artifact identities cross this boundary.
 type ModuleExecutionResult struct {
-	ExecutionID string                  `json:"execution_id"`
-	TaskID      uint                    `json:"task_id"`
-	Status      models.ExecutionStatus  `json:"status"`
-	ErrorMsg    string                  `json:"error_msg,omitempty"`
-	Metadata    ModuleExecutionMetadata `json:"metadata"`
+	ExportProtectionCurrent *bool                   `json:"export_protection_current,omitempty"`
+	ExecutionID             string                  `json:"execution_id"`
+	TaskID                  uint                    `json:"task_id"`
+	Status                  models.ExecutionStatus  `json:"status"`
+	ErrorMsg                string                  `json:"error_msg,omitempty"`
+	Metadata                ModuleExecutionMetadata `json:"metadata"`
 }
 
 type ModuleExecutionMetadata struct {

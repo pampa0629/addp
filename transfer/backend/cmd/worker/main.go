@@ -60,7 +60,7 @@ func main() {
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
 	systemRuntimeClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
 	systemClient := commonClient.NewSystemClient(cfg.SystemServiceURL, tokenSource)
-	protectionStore, err := projectionstore.Open(db, cfg.DBSchema, "transfer", nil)
+	protectionStore, err := projectionstore.Open(db, cfg.DBSchema, "transfer", transferprotection.ExportArtifactBarrier{})
 	if err != nil {
 		log.Fatalf("初始化 Transfer 保护投影存储失败: %v", err)
 	}

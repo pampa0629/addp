@@ -27,3 +27,6 @@ other = "导出执行来源不存在"
 
 [export.execution_source.unavailable]
 other = "暂时无法核验导出执行来源，请稍后重试"
+
+[export.protection_changed]
+other = "保护规则已更新或原导出保护状态已失效，请重新导出。"

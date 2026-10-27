@@ -32,8 +32,9 @@ const (
 )
 
 var (
-	ErrSessionNotFound = errors.New("export session not found")
-	ErrNotReady        = errors.New("export file is not ready")
+	ErrSessionNotFound   = errors.New("export session not found")
+	ErrNotReady          = errors.New("export file is not ready")
+	ErrProtectionChanged = errors.New("export artifact protection changed; export again")
 )
 
 // Session is the shared control-plane record for a short-lived export artifact.
@@ -444,12 +445,21 @@ func (s *Service) getSession(ctx context.Context, id, tenantID, userID uint) (*S
 }
 
 func (s *Service) refresh(ctx context.Context, session *Session) error {
-	if session == nil || session.Status == StatusSuccess || session.Status == StatusFailed {
+	if session == nil || session.Status == StatusFailed {
 		return nil
 	}
 	execution, err := s.transfer.GetExecution(ctx, session.TransferExecutionID, session.TenantID)
 	if err != nil {
 		return err
+	}
+	if execution == nil {
+		return errors.New("export execution is unavailable")
+	}
+	if execution.Status == StatusSuccess && (execution.ExecutionID != session.TransferExecutionID || execution.ExportProtectionCurrent == nil || !*execution.ExportProtectionCurrent) {
+		return ErrProtectionChanged
+	}
+	if session.Status == StatusSuccess && execution.Status != StatusSuccess {
+		return ErrProtectionChanged
 	}
 	nextStatus := transferStatus(execution.Status)
 	nextManifest := session.ArtifactManifest

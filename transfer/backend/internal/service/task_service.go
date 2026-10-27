@@ -586,6 +586,9 @@ func (s *TaskService) CreateAdHocExecution(
 		}},
 		CreatedAt: now, UpdatedAt: now,
 	}
+	if req.ExportSession != nil {
+		record.Metadata[models.ExportProtectionMetadataKey] = &models.ExportProtectionReceipt{}
+	}
 	choices, err := models.SourceProtectionChoices(config)
 	if err != nil {
 		return nil, err

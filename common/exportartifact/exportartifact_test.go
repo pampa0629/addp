@@ -16,6 +16,8 @@ import (
 )
 
 type transferStub struct {
+	result  *commonClient.TransferExecutionResponse
+	reads   int
 	request *commonClient.CreateTransferExecutionRequest
 	err     error
 }
@@ -28,7 +30,15 @@ func (s *transferStub) CreateExecution(_ context.Context, request *commonClient.
 	return &commonClient.CreateTransferExecutionResponse{ExecutionID: request.ExportSession.ExecutionID, Status: StatusPending}, nil
 }
 
-func (s *transferStub) GetExecution(_ context.Context, _ string, _ uint) (*commonClient.TransferExecutionResponse, error) {
+func (s *transferStub) GetExecution(_ context.Context, id string, _ uint) (*commonClient.TransferExecutionResponse, error) {
+	s.reads++
+	if s.result != nil {
+		result := *s.result
+		if result.ExecutionID == "" {
+			result.ExecutionID = id
+		}
+		return &result, nil
+	}
 	return &commonClient.TransferExecutionResponse{Status: StatusPending}, nil
 }
 

@@ -26,12 +26,24 @@ import (
 
 // ExecutionService 执行记录服务（使用统一执行表）
 type ExecutionService struct {
-	prepareRoleExecution func(context.Context, *models.TransferTask, *commonExecution.TaskExecution) error
-	db                   *gorm.DB
-	taskExecutionRepo    *commonExecution.TaskExecutionRepository // 统一执行记录仓库
-	taskRepo             *repository.TaskRepository
-	logger               *slog.Logger
-	activeLeases         sync.Map
+	exportArtifactVerifier func(context.Context, int64, string) (bool, error)
+	prepareRoleExecution   func(context.Context, *models.TransferTask, *commonExecution.TaskExecution) error
+	db                     *gorm.DB
+	taskExecutionRepo      *commonExecution.TaskExecutionRepository // 统一执行记录仓库
+	taskRepo               *repository.TaskRepository
+	logger                 *slog.Logger
+	activeLeases           sync.Map
+}
+
+func (s *ExecutionService) SetExportArtifactVerifier(verify func(context.Context, int64, string) (bool, error)) {
+	s.exportArtifactVerifier = verify
+}
+
+func (s *ExecutionService) ExportArtifactCurrent(ctx context.Context, tenant int64, executionID string) (bool, error) {
+	if s.exportArtifactVerifier == nil {
+		return false, dataprotection.ErrNotReady
+	}
+	return s.exportArtifactVerifier(ctx, tenant, executionID)
 }
 
 func (s *ExecutionService) BindBoundedLease(executionID uint, lease commonExecution.Lease) {
@@ -425,6 +437,9 @@ func (s *ExecutionService) updateLockedExecution(ctx context.Context, tx *gorm.D
 			metadata = commonModels.JSONMap{}
 		}
 		if values, ok := updates["metadata"].(map[string]interface{}); ok {
+			if _, reserved := values[models.ExportProtectionMetadataKey]; reserved {
+				return fmt.Errorf("export protection requires its owner write path")
+			}
 			if _, reserved := values[models.ProductionAuthorizationMetadataKey]; reserved {
 				return fmt.Errorf("initial authorization requires its owner continuation path")
 			}
@@ -435,6 +450,9 @@ func (s *ExecutionService) updateLockedExecution(ctx context.Context, tx *gorm.D
 				metadata[key] = value
 			}
 		} else if values, ok := updates["metadata"].(commonModels.JSONMap); ok {
+			if _, reserved := values[models.ExportProtectionMetadataKey]; reserved {
+				return fmt.Errorf("export protection requires its owner write path")
+			}
 			if _, reserved := values[models.ProductionAuthorizationMetadataKey]; reserved {
 				return fmt.Errorf("initial authorization requires its owner continuation path")
 			}
@@ -466,6 +484,9 @@ func (s *ExecutionService) updateLockedExecution(ctx context.Context, tx *gorm.D
 
 // FinishExecution 完成执行（设置结束时间和状态）
 func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status models.ExecutionStatus, execErr error, resultMetadata commonModels.JSONMap) error {
+	if _, reserved := resultMetadata[models.ExportProtectionMetadataKey]; reserved {
+		return fmt.Errorf("export protection requires its owner write path")
+	}
 	if _, reserved := resultMetadata[models.ProductionAuthorizationMetadataKey]; reserved {
 		return fmt.Errorf("initial authorization requires its owner continuation path")
 	}

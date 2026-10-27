@@ -86,11 +86,12 @@ func (h *ExportHandler) CreateExport(c *gin.Context) {
 
 // GetExport 获取数据库 item 导出会话状态。
 // @Summary 获取导出会话 | Get export session
-// @Description 查询导出会话状态；若底层 Transfer 已完成，响应中包含 download_url。| Query export session status. When the underlying Transfer execution succeeds, the response contains download_url.
+// @Description 查询导出状态并重新核验 Transfer 保护状态；规则变化或保护状态失效返回409/export_protection_changed，请重新导出。| Rechecks Transfer artifact protection. Changed or invalid protection returns 409/export_protection_changed; export again.
 // @Tags Manager
 // @Produce json
 // @Param id path int true "导出会话 ID | Export session ID"
 // @Success 200 {object} service.ExportSessionResponse "导出会话 | Export session"
+// @Failure 409 {object} map[string]interface{} "export_protection_changed：保护已变化，请重新导出 | Protection changed; export again"
 // @Failure 404 {object} map[string]interface{} "会话不存在 | Session not found"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Header all {string} Cache-Control "no-store；禁止缓存此响应 | no-store; do not cache this response"
@@ -114,13 +115,13 @@ func (h *ExportHandler) GetExport(c *gin.Context) {
 
 // DownloadExportFile 下载数据库 item 导出结果。
 // @Summary 下载导出结果 | Download export result
-// @Description 下载已完成导出会话的结果文件。| Download the result file of a completed export session.
+// @Description 下载前重新核验当前保护状态；失效返回409/export_protection_changed，不能交付旧文件。| Rechecks current protection before download. Invalid protection returns 409/export_protection_changed without delivering the old artifact.
 // @Tags Manager
 // @Produce octet-stream
 // @Param id path int true "导出会话 ID | Export session ID"
 // @Success 200 "下载内容流 | Download content stream"
 // @Failure 404 {object} map[string]interface{} "会话不存在 | Session not found"
-// @Failure 409 {object} map[string]interface{} "导出尚未完成 | Export not ready"
+// @Failure 409 {object} map[string]interface{} "导出尚未完成或保护状态已失效，需要重新导出 | Export not ready or protection changed; export again"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Header all {string} Cache-Control "no-store；禁止缓存此响应 | no-store; do not cache this response"
 // @x-addp-auth-mode "resource_ticket"
@@ -159,6 +160,9 @@ func parseExportSessionID(c *gin.Context) (uint, bool) {
 }
 
 func exportError(c *gin.Context, err error) {
+	if exportartifact.WriteProtectionError(c, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, engineaccess.ErrUnavailable):
 		engineUnavailable(c)

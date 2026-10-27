@@ -103,7 +103,7 @@ func main() {
 	if err := continuousPolicyService.Apply(context.Background(), cfg); err != nil {
 		log.Fatalf("Failed to load continuous policy: %v", err)
 	}
-	protectionStore, err := projectionstore.Open(db, cfg.DBSchema, "transfer", nil)
+	protectionStore, err := projectionstore.Open(db, cfg.DBSchema, "transfer", transferprotection.ExportArtifactBarrier{})
 	if err != nil {
 		log.Fatalf("初始化 Transfer 保护投影存储失败: %v", err)
 	}
@@ -137,6 +137,7 @@ func main() {
 	// 初始化 Service 层。HTTP 进程需要 execution engine 解析 replay plan 和采集请求时 retention 快照，
 	// 实际 bounded 数据处理仍只由 worker 执行。
 	executionService := service.NewExecutionService(db, taskExecutionRepo) // 使用统一执行表
+	executionService.SetExportArtifactVerifier(protectionGate.ExportArtifactCurrent)
 	executionEngineService := service.NewExecutionEngineService(
 		transferRepo.NewTaskRepository(db),
 		transferRepo.NewSyncStateRepository(db),

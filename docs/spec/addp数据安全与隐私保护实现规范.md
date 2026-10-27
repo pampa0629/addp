@@ -266,6 +266,12 @@ Service 首期角色方式保存于 QueryService 的 `data_config.protection_cho
 
 Develop 对导出候选、保存及文件交付的复核是同步 BFF 调用：只原样转发当前已认证 User Bearer 给 Transfer 的定向候选／选择核验接口，不转发 User ID 或角色断言，不保留凭据或改用 Service Token。导出会话只额外保留源 locator 与所选字段引用，Get/Open 对角色专用文件必须按当前用户再核验；后台文件生成成功不构成后续下载资格。角色专用下载使用现有同一路由的 User Bearer 调用，不能仅凭不携带完整角色事实的 Resource Ticket 交付；浏览器经共享认证客户端取得文件 Blob 后触发下载，不把令牌放入 URL。无选择的默认会话不调用该核验。查询实时选择、导出选择与默认历史预览分别遵守各自出口，不长期保存受保护字段原值。
 
+用户导出暂存文件的再次交付必须绑定 Transfer 实际执行的 `export` 保护事实，默认方式和角色专用方式共同适用。Transfer 在来源读取准备阶段，依据原生 DataItem 或同一 PreparedQuery 的已证明 ReadSet，记录本次执行的精确来源及保护投影身份／修订、有效期；不以 Manager 的 preview 或 Develop 的 query 投影替代。未纳管来源也必须记录身份，以便后续纳管能够使旧文件失效。来源不可证明、保护事实未就绪或旧执行缺少记录时，不允许把暂存文件作为当前有效导出交付。
+
+记录只保存在现有 Transfer execution 的私有 metadata，不新增授权、数据副本或用户配置。来源记录与本地投影版本通过既有 checkpoint 锁绑定；相关目标的 upsert／release 在投影安装的同一事务内将既有记录标记失效，失效不可因恢复原规则或解除纳管而复活。无关 Tenant、来源或 Owner 的保护变化不使该文件失效。自然到期在每次交付核验时拒绝，即使没有新变化或 Security 暂时不可达。该记录不是源数据权限、角色资格或原值授权，不能替代现有核验。
+
+Manager／Develop 复用现有模块来源约束的 Transfer execution result 接口，读取受控的当前文件保护有效性；不向用户暴露私有记录，不新增逐请求 Security 调用。成功会话的状态和文件请求也必须重新核验，不能因已缓存 success 而直接交付对象存储文件。保护记录失效或缺失时返回 HTTP 409，稳定错误码 `export_protection_changed`，双语提示“保护规则已更新或原导出保护状态已失效，请重新导出”。角色专用方式原有的角色资格失效、选项失效等精确拒绝原因仍优先保留，不合并为通用保护变化。浏览器两种方式统一通过现有认证客户端获取 Blob，并显示交付阶段的 JSON 拒绝提示，不把错误响应当文件下载。不自动重跑查询、重新处理旧文件或恢复默认方式；重新导出生成新的执行与文件。状态读取仍保留执行成功审计，文件删除沿用既有暂存清理，不处理用户已经下载的副本。生效边界为 Transfer 已持久安装的本地投影及每次交付前核验，不宣称跨 Owner 瞬时撤回已发送字节。
+
 Manager 的预览 JSON、Service 的结构化查询数据（JSON／CSV／GeoJSON，包含游标续页），以及 Manager 与 Develop 的用户导出会话创建、状态读取和文件下载 Handler，必须在写出响应前设置 `Cache-Control: no-store`。覆盖成功及参数错误、资源或会话不存在、资格或方式失效等 Handler 内拒绝响应，避免 HTTP 缓存复用上次交付而跳过当前核验。该响应声明由 `common/api` 统一提供，不改变状态码、错误原因、数据内容或现有身份校验，不调整专门的瓦片、文件或派生缓存契约；不能撤回用户已经下载的文件，也不负责清除既有副本。上游 Gateway 或认证中间件在进入 Handler 前返回的响应不属于本项覆盖范围。
 
 原生表／集合读取与查询读取复用同一字段选择、角色选项解析和精确来源消费校验。`PrepareTableProtection` 显式接收已核验的请求作用域选择；无选择沿用字段默认决策，有选择时来源未受管、字段未命中、出口不匹配、角色事实到期或选项修订变化均拒绝。分批输出在交付前复核当前投影中的选项，不能把准备阶段的选项永久冻结到后续批次。角色事实的获取与执行租约复核仍由 Owner 负责，共享层不以 User ID、角色名称或历史任务创建者推断资格。
@@ -455,6 +461,8 @@ Authorization: Bearer <owner-service-access-token>
 - cursor 和 `change_id` 完全不透明，Owner 只能原样保存和回传；
 - `operation` 只允许 `upsert|release`；`release` 包含 target、projection_id 和 release revision，不包含空 Projection；
 - 变化历史首期不设保留窗口，以便 Owner 从起点恢复。
+
+同一修订的重复投影仅在完整 JSON 内容一致时幂等接受；JSONB 对空白和对象键顺序的规范化不构成内容变化，同修订不同内容仍拒绝。
 
 Owner 必须在单个本地数据库事务中：
 

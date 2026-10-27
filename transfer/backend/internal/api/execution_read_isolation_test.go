@@ -1,7 +1,10 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	transfermodels "github.com/addp/transfer/internal/models"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -144,6 +147,9 @@ func testTransferExecutionReadIsolation(t *testing.T, db *gorm.DB) {
 		row.Metadata["continuous"] = map[string]interface{}{"partitions": map[string]interface{}{"0": map[string]interface{}{
 			"type": "kafka_offset", "version": "v1", "values": map[string]string{"next_offset": "42", "private": "private-sentinel"},
 		}}}
+		if name == "export" {
+			row.Metadata[transfermodels.ExportProtectionMetadataKey] = map[string]interface{}{"ready": true, "private": "private-sentinel"}
+		}
 		row.ExecutionConfig = models.JSONMap{"sql": "private-sentinel"}
 		if err := db.Create(&row).Error; err != nil {
 			t.Fatal(err)
@@ -157,7 +163,19 @@ func testTransferExecutionReadIsolation(t *testing.T, db *gorm.DB) {
 	if err := db.Model(&execution.TaskExecution{}).Where("execution_id = ?", ids["peer"]).Update("parent_execution_id", ids["history"]).Error; err != nil {
 		t.Fatal(err)
 	}
-	h := NewExecutionHandler(service.NewExecutionService(db, execution.NewTaskExecutionRepository(db)), nil)
+	executionService := service.NewExecutionService(db, execution.NewTaskExecutionRepository(db))
+	exportCurrent, exportError, exportChecks := true, false, 0
+	executionService.SetExportArtifactVerifier(func(_ context.Context, gotTenant int64, id string) (bool, error) {
+		exportChecks++
+		if gotTenant != tenant || id != ids["export"] {
+			t.Error("artifact verifier received an unowned execution")
+		}
+		if exportError {
+			return false, errors.New("private-verifier-error")
+		}
+		return exportCurrent, nil
+	})
+	h := NewExecutionHandler(executionService, nil)
 	router := gin.New()
 	router.Use(commonauth.MustNewMiddleware(commonauth.MiddlewareConfig{SystemURL: server.URL}), commonauth.MustNewContextGuard("tenant"))
 	user := router.Group("", commonauth.MustNewPermissionGuard("transfer.task.read"))
@@ -250,6 +268,17 @@ func testTransferExecutionReadIsolation(t *testing.T, db *gorm.DB) {
 	request("provider", "/task-provider/executions/"+ids["other-module"], 404)
 	request("wrong-provider", "/task-provider/executions/"+ids["history"], 403)
 	result := request("export", "/executions/"+ids["export"]+"/result", 200)
+	if result["export_protection_current"] != true {
+		t.Fatal("missing current protection fact", result)
+	}
+	exportCurrent = false
+	if body := request("export", "/executions/"+ids["export"]+"/result", 200); body["export_protection_current"] != false {
+		t.Fatal("stale protection fact", body)
+	}
+	exportError = true
+	request("export", "/executions/"+ids["export"]+"/result", 503)
+	exportError = false
+	checks := exportChecks
 	refs := result["metadata"].(map[string]interface{})["target_refs"].([]interface{})
 	if len(refs) != 1 || refs[0].(map[string]interface{})["path"] != "tenant/export/result.csv" {
 		t.Fatalf("lost export target refs: %#v", result)
@@ -257,6 +286,9 @@ func testTransferExecutionReadIsolation(t *testing.T, db *gorm.DB) {
 	request("wrong-export", "/executions/"+ids["export"]+"/result", 404)
 	request("export", "/executions/"+ids["history"]+"/result", 404)
 	request("owner", "/executions/"+ids["export"]+"/result", 403)
+	if checks != exportChecks {
+		t.Fatal("unowned request reached artifact protection verifier")
+	}
 	for _, path := range []string{"/executions?task_id=oops", "/executions/statistics?task_id=oops", "/executions/statistics?start_time=oops", "/executions/statistics?start_time=2026-10-12T00:00:00Z&end_time=2026-10-11T00:00:00Z"} {
 		request("owner", path, 400)
 	}

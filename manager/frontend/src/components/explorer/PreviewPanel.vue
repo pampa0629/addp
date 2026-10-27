@@ -519,7 +519,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { MagicStick, Download, Location, Collection, Document, View, Refresh, Select, InfoFilled, WarningFilled, Grid } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
-import { createAuthenticatedFetch, downloadFromUrl, ExportDialog, parseLocator, waitForExportSession } from '@addp/common-frontend'
+import { createAuthenticatedFetch, downloadAuthenticatedExport, downloadFromUrl, ExportDialog, parseLocator, waitForExportSession } from '@addp/common-frontend'
 import client from '@/api/client'
 import { useAuthStore } from '@/store/auth'
 import { downloadModel3DSource } from '@/utils/model3DSource'
@@ -1318,7 +1318,7 @@ const handleExport = async ({ format, fileName }) => {
       failedMessage: t('manager.explorer.exportFailedUnknown'),
       timeoutMessage: t('manager.explorer.exportTimeout')
     })
-    downloadFromUrl(ready.download_url, ready.file_name || fileName || defaultExportFileName.value)
+    await downloadAuthenticatedExport(client, ready, { signal: exportAbortController.signal, failedMessage: t('manager.explorer.exportFailedUnknown') })
     ElMessage.success(t('manager.explorer.downloadStarted'))
   } catch (error) {
     if (error?.name === 'AbortError') return

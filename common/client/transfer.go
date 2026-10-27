@@ -149,14 +149,15 @@ type CreateTransferExecutionResponse struct {
 
 // TransferExecutionResponse Transfer 执行记录响应。
 type TransferExecutionResponse struct {
-	ID              uint                   `json:"id"`
-	ExecutionID     string                 `json:"execution_id"`
-	TaskID          uint                   `json:"task_id"`
-	Status          string                 `json:"status"`
-	Progress        int                    `json:"progress"`
-	ErrorMessage    string                 `json:"error_msg,omitempty"`
-	ExecutionConfig map[string]interface{} `json:"execution_config,omitempty"`
-	Metadata        map[string]interface{} `json:"metadata,omitempty"`
+	ExportProtectionCurrent *bool                  `json:"export_protection_current,omitempty"`
+	ID                      uint                   `json:"id"`
+	ExecutionID             string                 `json:"execution_id"`
+	TaskID                  uint                   `json:"task_id"`
+	Status                  string                 `json:"status"`
+	Progress                int                    `json:"progress"`
+	ErrorMessage            string                 `json:"error_msg,omitempty"`
+	ExecutionConfig         map[string]interface{} `json:"execution_config,omitempty"`
+	Metadata                map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // TransferTaskSubmissionError excludes dependency response bodies and credentials.

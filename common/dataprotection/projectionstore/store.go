@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/jsonmap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -484,7 +486,7 @@ func (s *Store) applyChange(tx *gorm.DB, tenantID int64, change dataprotection.P
 		var current projectionRow
 		err = tx.Table(s.entriesTable).Where("tenant_id = ? AND projection_id = ?", tenantID, change.Projection.ProjectionID).First(&current).Error
 		if err == nil && current.Revision >= change.Projection.Revision {
-			if current.Revision == change.Projection.Revision && current.ProjectionPayload == string(payload) {
+			if current.Revision == change.Projection.Revision && sameProjectionPayload([]byte(current.ProjectionPayload), payload) {
 				return nil
 			}
 			return errors.New("protection projection revision conflict")
@@ -521,6 +523,17 @@ func (s *Store) applyChange(tx *gorm.DB, tenantID int64, change dataprotection.P
 	default:
 		return errors.New("unsupported protection projection change operation")
 	}
+}
+
+// PostgreSQL JSONB canonicalizes whitespace and member ordering. Equality must
+// retain the complete payload and exact numbers, not its database formatting.
+func sameProjectionPayload(left, right []byte) bool {
+	a, err := jsonmap.DecodeObjectStrict(left, len(left), 128)
+	if err != nil {
+		return false
+	}
+	b, err := jsonmap.DecodeObjectStrict(right, len(right), 128)
+	return err == nil && reflect.DeepEqual(a, b)
 }
 
 func (s *Store) reload(ctx context.Context) error {

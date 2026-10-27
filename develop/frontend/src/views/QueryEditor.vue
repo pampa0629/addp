@@ -788,7 +788,6 @@ import {
   engineSelectionState,
   isEngineSelectable,
   listResourceTreeEngines,
-  downloadFromUrl,
   downloadAuthenticatedExport,
   parseLocator,
   useResizable,
@@ -1834,8 +1833,7 @@ const submitFullExport = async ({ format: exportFormat, fileName }) => {
       failedMessage: t('develop.queryResult.exportFullFailed'),
       timeoutMessage: t('develop.queryResult.exportTimeout')
     })
-    if (ready.requires_current_user) await downloadAuthenticatedExport(client, ready, { signal: fullExportAbortController.signal, failedMessage: t('develop.queryResult.exportFullFailed') })
-    else downloadFromUrl(ready.download_url, ready.file_name || normalizedFileName)
+    await downloadAuthenticatedExport(client, ready, { signal: fullExportAbortController.signal, failedMessage: t('develop.queryResult.exportFullFailed') })
     ElMessage.success(t('develop.queryResult.exportDownloaded'))
     announcement.value = t('develop.queryResult.exportDownloaded')
   } catch (error) {

@@ -27,3 +27,6 @@ other = "Export execution source not found"
 
 [export.execution_source.unavailable]
 other = "Export execution source could not be verified; try again later"
+
+[export.protection_changed]
+other = "Protection rules have changed or the original export protection is no longer valid. Export again."

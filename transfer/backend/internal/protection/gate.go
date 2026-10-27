@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
+	commonExecution "github.com/addp/common/execution"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/transfer/internal/executor"
@@ -109,6 +110,13 @@ func (g *Gate) PrepareBoundedEncodedRecordProtection(
 	if err != nil {
 		return nil, err
 	}
+	target, err := dataprotection.DataItemTargetFromCatalogPath(model, path)
+	if err != nil {
+		return nil, err
+	}
+	if err := captureExportTargets(ctx, g.store, int64(tenantID), []dataprotection.ResourceReference{target}); err != nil {
+		return nil, err
+	}
 	protect, err := g.store.PrepareTableProtection(ctx, int64(tenantID), model, path, fields, exportAction, nil, time.Now().UTC())
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", executor.ErrProtectionPreparation, err)
@@ -163,6 +171,13 @@ func (p *boundedTableProtection) PrepareCatalogTableProtection(ctx context.Conte
 	if p == nil || !sameCatalogPath(p.sourcePath, path) {
 		return nil, fmt.Errorf("%w: native source path does not match task source", ErrSourceRequired)
 	}
+	target, err := dataprotection.DataItemTargetFromCatalogPath(p.model, path)
+	if err != nil {
+		return nil, err
+	}
+	if err := captureExportTargets(ctx, p.store, p.tenantID, []dataprotection.ResourceReference{target}); err != nil {
+		return nil, err
+	}
 	selection, err := p.selection(ctx)
 	if err != nil {
 		return nil, err
@@ -174,6 +189,19 @@ func (p *boundedTableProtection) PrepareCatalogTableProtection(ctx context.Conte
 func (p *boundedTableProtection) PrepareQueryProtection(ctx context.Context, prepared engineplugin.PreparedQuery) (*dataprotection.PreparedTableProtection, error) {
 	if p == nil {
 		return nil, ErrSourceRequired
+	}
+	if _, export := ctx.Value(exportExecutionKey{}).(*commonExecution.TaskExecution); export {
+		readSet, err := prepared.ReadSet(ctx)
+		if err != nil {
+			return nil, err
+		}
+		targets, err := dataprotection.DataItemTargetsFromQueryReadSet(p.model, readSet)
+		if err != nil {
+			return nil, err
+		}
+		if err := captureExportTargets(ctx, p.store, p.tenantID, targets); err != nil {
+			return nil, err
+		}
 	}
 	selection, err := p.selection(ctx)
 	if err != nil {

@@ -4121,9 +4121,9 @@ paths:
       - manager.derived_artifact.create
   /exports/{id}:
     get:
-      description: 查询导出会话状态；若底层 Transfer 已完成，响应中包含 download_url。| Query export session
-        status. When the underlying Transfer execution succeeds, the response contains
-        download_url.
+      description: 查询导出状态并重新核验 Transfer 保护状态；规则变化或保护状态失效返回409/export_protection_changed，请重新导出。|
+        Rechecks Transfer artifact protection. Changed or invalid protection returns
+        409/export_protection_changed; export again.
       parameters:
       - description: 导出会话 ID | Export session ID
         in: path
@@ -4150,6 +4150,16 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "409":
+          description: export_protection_changed：保护已变化，请重新导出 | Protection changed;
+            export again
+          headers:
+            Cache-Control:
+              description: no-store；禁止缓存此响应 | no-store; do not cache this response
+              type: string
+          schema:
+            additionalProperties: true
+            type: object
         "500":
           description: 服务器内部错误 | Internal server error
           headers:
@@ -4169,8 +4179,9 @@ paths:
       - manager.derived_artifact.read
   /exports/{id}/file:
     get:
-      description: 下载已完成导出会话的结果文件。| Download the result file of a completed export
-        session.
+      description: 下载前重新核验当前保护状态；失效返回409/export_protection_changed，不能交付旧文件。| Rechecks
+        current protection before download. Invalid protection returns 409/export_protection_changed
+        without delivering the old artifact.
       parameters:
       - description: 导出会话 ID | Export session ID
         in: path
@@ -4196,7 +4207,8 @@ paths:
             additionalProperties: true
             type: object
         "409":
-          description: 导出尚未完成 | Export not ready
+          description: 导出尚未完成或保护状态已失效，需要重新导出 | Export not ready or protection changed;
+            export again
           headers:
             Cache-Control:
               description: no-store；禁止缓存此响应 | no-store; do not cache this response

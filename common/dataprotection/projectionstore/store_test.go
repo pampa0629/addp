@@ -14,6 +14,24 @@ import (
 
 type failingProjectionChangeBarrier struct{}
 
+func TestProjectionPayloadEqualityUsesStrictJSONContent(t *testing.T) {
+	left := []byte(`{"revision":"1","parameters":{"n":9007199254740993},"rules":[]}`)
+	if !sameProjectionPayload(left, []byte(`{ "rules": [], "parameters": {"n": 9007199254740993}, "revision": "1" }`)) {
+		t.Fatal("JSONB formatting changed equality")
+	}
+	for _, other := range []string{
+		`{"revision":"1","parameters":{"n":9007199254740992},"rules":[]}`,
+		`{"revision":"2","parameters":{"n":9007199254740993},"rules":[]}`,
+		`{"revision":"1","parameters":{"n":9007199254740993},"rules":[],"unknown":true}`,
+		`{"revision":"1","revision":"2","parameters":{"n":9007199254740993},"rules":[]}`,
+		`null`,
+	} {
+		if sameProjectionPayload(left, []byte(other)) {
+			t.Fatalf("changed or ambiguous content accepted: %s", other)
+		}
+	}
+}
+
 func (failingProjectionChangeBarrier) ApplyProjectionChanges(context.Context, *gorm.DB, int64, []dataprotection.ProjectionChange, time.Time) error {
 	return errors.New("derived result cleanup failed")
 }

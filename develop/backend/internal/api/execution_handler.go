@@ -78,7 +78,7 @@ func (h *ExecutionHandler) ResolveExportExecutionSource(c *gin.Context) {
 // @Param execution_id path string true "查询执行 ID | Query execution ID"
 // @Param body body models.CreateQueryExportRequest true "导出格式与文件名 | Export format and file name"
 // @Success 202 {object} models.CreateQueryExportResponse
-// @Failure 409 {object} models.ErrorResponse "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效 | Role eligibility unavailable or masking method invalid"
+// @Failure 409 {object} models.ErrorResponse "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效；export_protection_changed：保护已变化，请重新导出 | Role eligibility unavailable, masking method invalid, or export protection changed; export again"
 // @Failure 403 {object} models.ErrorResponse "缺少角色专用导出执行权限 | Missing role-specific export execution permissions"
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
@@ -141,7 +141,7 @@ func queryExportCreateError(c *gin.Context, err error) {
 // @Produce json
 // @Param id path int true "导出会话 ID | Export session ID"
 // @Success 200 {object} models.CreateQueryExportResponse
-// @Failure 409 {object} models.ErrorResponse "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效 | Role eligibility unavailable or masking method invalid"
+// @Failure 409 {object} models.ErrorResponse "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效；export_protection_changed：保护已变化，请重新导出 | Role eligibility unavailable, masking method invalid, or export protection changed; export again"
 // @Failure 404 {object} map[string]string
 // @Header all {string} Cache-Control "no-store；禁止缓存此响应 | no-store; do not cache this response"
 // @x-addp-auth-mode "permission"
@@ -170,11 +170,11 @@ func (h *ExecutionHandler) GetQueryExport(c *gin.Context) {
 // @Param id path int true "导出会话 ID | Export session ID"
 // @Success 200 "下载内容流 | Download content stream"
 // @Failure 404 {object} map[string]string
-// @Failure 409 {object} models.ErrorResponse "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效；query_export_not_ready：尚未完成 | Role eligibility unavailable, masking method invalid, or export not ready"
+// @Failure 409 {object} models.ErrorResponse "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效；query_export_not_ready：尚未完成；export_protection_changed：保护已变化，请重新导出 | Role eligibility unavailable, masking method invalid, export not ready, or protection changed; export again"
 // @Header all {string} Cache-Control "no-store；禁止缓存此响应 | no-store; do not cache this response"
 // @x-addp-auth-mode "resource_ticket"
 // @x-addp-required-permissions ["develop.task.read","develop.data_read.execute"]
-// @Description 角色专用文件必须使用当前 User Bearer 并复核 Transfer 导出选项；Resource Ticket 不替代完整角色资格。| Role-specific files require the current User Bearer and a fresh Transfer export-choice check; Resource Tickets do not replace complete role eligibility.
+// @Description 所有文件交付前复核 Transfer 当前保护状态，失效返回409/export_protection_changed并要求重新导出。角色专用文件同时核验当前 User 资格。| All artifacts recheck current Transfer protection; invalid protection returns 409/export_protection_changed and requires a fresh export. Role-specific files also verify the current User.
 // @Router /exports/{id}/file [get]
 func (h *ExecutionHandler) DownloadQueryExport(c *gin.Context) {
 	commonAPI.NoStore(c)
@@ -206,6 +206,9 @@ func queryExportSessionID(c *gin.Context) (uint, bool) {
 }
 
 func queryExportError(c *gin.Context, err error) {
+	if exportartifact.WriteProtectionError(c, err) {
+		return
+	}
 	if writeQueryExportProtectionError(c, err) {
 		return
 	}

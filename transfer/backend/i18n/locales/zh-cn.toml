@@ -138,3 +138,6 @@ other = "当前账号的角色或执行授权不满足所选导出方式，请�
 
 [transfer.protection.unavailable]
 other = "暂时无法核验导出保护，请稍后重试。"
+
+[transfer.export.protection_unavailable]
+other = "暂时无法核验导出文件的保护状态，请稍后重试。"

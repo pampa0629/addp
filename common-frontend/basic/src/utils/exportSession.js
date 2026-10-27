@@ -42,8 +42,9 @@ export function downloadFromUrl(url, fileName = 'download') {
   document.body.removeChild(link)
 }
 
-// A role-specialized export requires a current User request at the actual file
-// boundary. Use the normal authenticated client, never a token in the URL.
+// Both default and role-specialized artifacts use the normal authenticated
+// client so a delivery-time protection conflict is shown instead of saved as
+// a file. Never put credentials in the URL.
 export async function downloadAuthenticatedExport(client, session, options = {}) {
   const url = new URL(session.download_url, window.location.origin)
   if (url.origin !== window.location.origin || url.search || url.hash || !/^\/api\/v1\/[a-z][a-z0-9_-]*\/exports\/[1-9][0-9]*\/file$/.test(url.pathname)) {

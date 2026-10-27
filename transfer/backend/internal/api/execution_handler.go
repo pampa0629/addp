@@ -119,6 +119,7 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 
 // GetOwnedExecutionResult 获取当前模块自己创建的一次性执行结果。
 // @Summary 获取模块一次性执行结果 | Get module-owned one-off execution result
+// @Description 导出成功后返回 export_protection_current；按当前 Transfer 本地投影和私有执行记录核验，不返回保护记录。缺失或 false 不能交付文件。| Successful exports include export_protection_current, checked against current local Transfer protection and the private receipt. Missing or false forbids artifact delivery.
 // @Description 仅返回 source 与当前模块 Service Client 一致、且没有 Transfer 任务定义的一次性 execution。| Returns only a one-off execution whose source matches the authenticated module Service Client and which has no Transfer task definition.
 // @Tags 执行管理 | Execution Management
 // @Produce json
@@ -127,6 +128,7 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 // @Failure 403 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
+// @Failure 503 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["transfer.execution.read"]
 // @Router /executions/{execution_id}/result [get]
@@ -152,6 +154,14 @@ func (h *ExecutionHandler) GetOwnedExecutionResult(c *gin.Context) {
 	if err != nil {
 		respondExecutionReadError(c, err)
 		return
+	}
+	if execution.Status == models.ExecutionStatusSuccess && execution.Metadata[models.ExportProtectionMetadataKey] != nil {
+		valid, err := h.executionService.ExportArtifactCurrent(c.Request.Context(), int64(commonAuth.GetTenantID(c)), execution.ExecutionID)
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error_code": "transfer_export_protection_unavailable", "error": i18nmiddleware.T(c, transferi18n.MsgExportProtectionUnavailable)})
+			return
+		}
+		result.ExportProtectionCurrent = &valid
 	}
 	c.JSON(http.StatusOK, result)
 }

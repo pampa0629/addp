@@ -30,6 +30,7 @@ import (
 	"github.com/addp/transfer/internal/executor"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
+	transferprotection "github.com/addp/transfer/internal/protection"
 	"github.com/addp/transfer/internal/repository"
 )
 
@@ -120,6 +121,7 @@ func (s *ExecutionEngineService) ExecuteExecution(ctx context.Context, execution
 	if _, err := models.SourceProtectionChoices(execution.ExecutionConfig); err != nil {
 		return fmt.Errorf("%w: %w", executor.ErrProtectionPreparation, err)
 	}
+	ctx = transferprotection.WithExportExecution(ctx, execution)
 	runtimeTask := *task
 	runtimeTask.Config = execution.ExecutionConfig
 	return s.executeCommonTransferTask(ctx, &runtimeTask, execution, executionID)

@@ -21,6 +21,7 @@ const (
 	MsgInvalidParams                   = "err.invalid_params"
 	MsgMethodNotAllowed                = "err.method_not_allowed"
 	MsgAuthorizationServiceUnavailable = "err.authorization_service_unavailable"
+	MsgExportProtectionChanged         = "export.protection_changed"
 	MsgExportSourceInvalid             = "export.execution_source.invalid"
 	MsgExportSourceNotFound            = "export.execution_source.not_found"
 	MsgExportSourceUnavailable         = "export.execution_source.unavailable"

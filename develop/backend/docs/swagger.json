@@ -734,7 +734,7 @@
                         }
                     },
                     "409": {
-                        "description": "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效 | Role eligibility unavailable or masking method invalid",
+                        "description": "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效；export_protection_changed：保护已变化，请重新导出 | Role eligibility unavailable, masking method invalid, or export protection changed; export again",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
                         },
@@ -992,7 +992,7 @@
                         }
                     },
                     "409": {
-                        "description": "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效 | Role eligibility unavailable or masking method invalid",
+                        "description": "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效；export_protection_changed：保护已变化，请重新导出 | Role eligibility unavailable, masking method invalid, or export protection changed; export again",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
                         },
@@ -1016,7 +1016,7 @@
         },
         "/exports/{id}/file": {
             "get": {
-                "description": "路径绑定 Resource Ticket 验证后，仍复核原查询 execution 的当前本人专业读取权。| After route-bound Resource Ticket validation, recheck current professional read access to the original own query execution.\n角色专用文件必须使用当前 User Bearer 并复核 Transfer 导出选项；Resource Ticket 不替代完整角色资格。| Role-specific files require the current User Bearer and a fresh Transfer export-choice check; Resource Tickets do not replace complete role eligibility.",
+                "description": "路径绑定 Resource Ticket 验证后，仍复核原查询 execution 的当前本人专业读取权。| After route-bound Resource Ticket validation, recheck current professional read access to the original own query execution.\n所有文件交付前复核 Transfer 当前保护状态，失效返回409/export_protection_changed并要求重新导出。角色专用文件同时核验当前 User 资格。| All artifacts recheck current Transfer protection; invalid protection returns 409/export_protection_changed and requires a fresh export. Role-specific files also verify the current User.",
                 "produces": [
                     "application/octet-stream"
                 ],
@@ -1059,7 +1059,7 @@
                         }
                     },
                     "409": {
-                        "description": "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效；query_export_not_ready：尚未完成 | Role eligibility unavailable, masking method invalid, or export not ready",
+                        "description": "query_protection_roles_unavailable：角色资格不可用；query_protection_choice_invalid：脱敏方式失效；query_export_not_ready：尚未完成；export_protection_changed：保护已变化，请重新导出 | Role eligibility unavailable, masking method invalid, export not ready, or protection changed; export again",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
                         },
@@ -2984,7 +2984,8 @@
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
-                                "type": "integer"
+                                "type": "integer",
+                                "format": "int64"
                             }
                         }
                     }
@@ -6047,7 +6048,8 @@
                 "positions": {
                     "type": "object",
                     "additionalProperties": {
-                        "type": "integer"
+                        "type": "integer",
+                        "format": "int64"
                     }
                 }
             }

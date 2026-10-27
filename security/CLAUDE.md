@@ -584,3 +584,16 @@ Transfer 任务选择／保存／执行与 Develop 全量导出尚未接通，�
 实际验证：两次 `python3 /tmp/p145-audit-export-csv.py <实际文件> --rows 5 --mode default --report <报告>` 通过；`python3 /tmp/p145-export-isolation-audit.py` 对八格 HTTP 矩阵、真实运行日志、会话归属、查询／Transfer 身份及五行计数、两份文件散列、精确拒绝正文、定义空选择与临时策略仍 revoked/revision 6 的独立只读断言全部通过。Develop ready/registered 的运行实例为 `b02b1dcd-7380-412a-9300-becf7d2657ac`，构建仍为 `e931905933bab26701e2586eb8df9a49d9da4a30`，上述请求均来自该实例。报告 `/tmp/p145-export-isolation-local-20261024/acceptance-report.json`，安全请求摘录及管理员详情／文件 AX 同目录保存；`admin-to-owner-file.png` 已目视核对，窄响应面板显示文本被截断，完整错误由 AX 与日志核对，不把截图单独当完整错误码证据。临时受控标签已关闭，原有用户窗口保留，三条成功会话与执行审计按既有临时文件生命周期保留。
 
 本轮只补验收记录，无产品代码变更，复用输入未变的 T1/T2/T3；不启停服务、不设置定时、不派发或跟进 CI。只证明现有同租户两名第一方用户在 Develop→Transfer、MySQL Persons、五行默认 CSV 的自身可用及双向跨用户拒绝，不扩展为跨租户、其他出口／格式／引擎、失效文件生命周期或 Hosted T4。既有角色撤销同步边界、MySQL 目标新表 DDL 失败和其他角色组合缺口保持，Excel 实际行 155／156／157 父项继续部分实现，由 p0 统一维护。
+
+
+## 导出文件保护变更失效（2026-10-27）
+
+按用户确认，默认与角色专用用户导出共同绑定 Transfer `export` 的实际来源和保护投影。Worker 在原生表／同一 PreparedQuery 的准备阶段，以 checkpoint 版本和当前 lease 将精确来源、投影身份／修订／checksum 与有效期写入现有 execution 私有 metadata；无选择的默认导出仍不增加角色或原值授权依赖。Transfer 在相关 upsert／release 的同一事务中不可逆标记旧记录失效，按 100 条分页处理；无关目标不影响文件，重复同修订同内容不误伤，恢复原规则不复活旧文件。Get/Open 每次读取当前模块自己创建的 Transfer execution result 的受控 `export_protection_current`，缺失、失效或自然到期均拒绝；执行成功审计保留，原文件仍沿既有暂存清理。旧执行没有记录时须重新导出，不设兼容放行。角色资格／选项原有精确原因继续优先保留，其他保护失效统一409/`export_protection_changed`及中英文重新导出提示，保留 `no-store`。Manager／Develop 的默认与角色下载统一使用已有认证 Blob 客户端，交付阶段拒绝显示错误，不保存成文件；不修改普通源文件、瓦片或栅格下载。
+
+真实 PostgreSQL 首次暴露既有同修订投影按字符串比较的问题：JSONB 规范化键顺序及空白导致内容相同被误报修订冲突。已复用 Common 严格 JSON 解码按完整对象内容比较，保留精确数字及未知字段，拒绝重复键／不同内容，未放宽修订裁决。首次失败日志 `/tmp/p145-export-version-transfer-postgres.log`；旧 cached-success 路径的反向回归确实失败，日志 `/tmp/p145-export-version-common-red.log`。首份 HTTP 对象夹具曾缺 Last-Modified，补齐协议后验证，不将夹具失败记作产品保护失效。
+
+实际验证：`make test-go`（JSONB修正后的全仓 Go T1）通过，后续 Transfer 内部及清理断言扩展由 `make test-module MODULE=transfer GO_ONLY=1` 再次通过；`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test projection-store"` 的真实投影存储组及完整 `make test-transfer-postgres` 通过且无跳过，新增 TestIntegrationPostgresExportArtifactProtection 覆盖未纳管后纳管、无关表、同修订幂等、同事务回滚、规则更新／release 后不可复活、自然到期、重新加载、原生／PreparedQuery 两条真实准备钩子及101个文件跨批失效，回滚核对所有夹具 execution 与临时 schema 零残留。该组不是完整 Common PostgreSQL 引擎门禁，不记为实际用户 T4。
+
+`make test-common-frontend` 284项、`make test-develop-frontend` 110项受控浏览器及构建、`make test-manager-frontend` 387项组件／单元与281项受控浏览器及构建通过。新增 Develop 默认方式的中英文 status／file 409场景确认有明确提示且无文件下载。Swagger 用当前已提交基线加本会话源文件在临时副本走标准生成，隔离其他会话未提交字段变化；94／60／38条 Manager／Develop／Transfer 路由覆盖通过，顺带同步基线已有注解的生成差异，无对应产品行为变更。已有模块／前端标准入口和 Go CI 自动发现本次文件；Transfer PostgreSQL 标准入口同次登记新增用例，无新 workflow 或验收 suite。
+
+本轮不启停服务、不更改实际角色／原值／源授权，不派发、轮询或定时跟进CI。恢复 Docker 后完成上述 T2；新构建实际 HTTP CSV 与旧文件拒绝仍待用户重启全部模块后验收，隔离 Hosted 由专门CI会话跟进，均未计为通过。Excel 实际行155/B空（动态脱敏与静态加密执行总述）、156/B155（动态脱敏实时生效）父项仍为部分实现，由p0统一维护。日志：`/tmp/p145-export-version-go-jsonb-final.log`、`/tmp/p145-export-version-common-projection-postgres-green.log`、`/tmp/p145-export-version-transfer-postgres-final.log`、`/tmp/p145-export-version-transfer-delivery-final.log`、`/tmp/p145-export-version-common-frontend.log`、`/tmp/p145-export-version-develop-frontend.log`、`/tmp/p145-export-version-manager-frontend.log`。

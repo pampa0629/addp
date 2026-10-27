@@ -135,3 +135,6 @@ other = "The masking choice or source is no longer available. Refresh the option
 other = "Your current roles or execution authorization do not permit the selected export method. Check your roles and execution permissions."
 [transfer.protection.unavailable]
 other = "Export protection could not be verified. Try again later."
+
+[transfer.export.protection_unavailable]
+other = "Export protection cannot be verified right now. Try again later."
