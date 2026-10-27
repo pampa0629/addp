@@ -572,3 +572,24 @@
 ### 主机挂载行查看已有容量规则入口（2026-10-27）
 
 [完整记录、失败与验收边界](Monitor告警与规则历史证据.md#主机挂载行查看已有容量规则入口2026-10-27)
+
+
+### 2026-10-27 正式 Python HTTP 产品本地验收入口准备（未启动真实窗口）
+
+本节只记录入口与确定性验证，不替代正式 Agent／Copilot 产品实链。实现提交 `4fc716fbf4d39f086d0b61797be34f72e8ad5ece`，浏览器传输边界加固 `eb5759b15fd8945f676537b862b2132fdf103672`。人工入口 `make test-monitor-http-local` 复用现有隔离生命周期、正式 Make 产品构建、五后端及 Console／System／Monitor 页面；IAM 准备仅接受当次回环独占 `addp_test` 和随机 cluster_name，正式密码／MFA／AuthContext 单一路径与原 Trace 共用。普通 Tenant User 仅 `agent.session.read`，Platform 系统管理员观测，安全管理员和 Tenant 负例；不新增产品权限。
+
+范围及守卫已落地：一次60分钟含构建清理，55分钟停止业务；8 CPU／12 GiB、卷＋容器可写层＋私有目录4 GiB停止，完整检查含锁等待与 `inspect --size` 保持四秒，读取失败不重试。Agent Python3.12／Copilot Python3.11 完整依赖及镜像身份检查，两源各60次只读GET、总量最多300、单并发／1 QPS；身份和页面另限200，页面预留80并关闭自动刷新；浏览器只对允许请求原样continue，越界或预算耗尽在传输前abort并关闭页面，不生成mock响应。四次受保护只读指标读取按真实模板／状态精确核对增量；真实 Console 中英文页面验证摘要、排行、趋势；仅允许当次 Copilot 确切容器一次正常停源，其他退出／OOM均失败。此处均为已写入入口的断言，尚不是这些真实子链的通过证据。
+
+本轮实际验证：
+
+| 入口 | 结果与层级 |
+| --- | --- |
+| `make test-monitor-http-local-runner` | 18项确定性检查通过；HTTP／Trace／保护就绪相关 System Go 身份夹具检查通过；真实人工入口在公共CI禁止，runner沿既有生命周期门禁登记 |
+| `make test-monitor-traces-local-runner` | 原Trace及身份、清理、准入等123项通过，Node语法与相关Go检查通过；未运行原Trace真实场景 |
+| `make test-infra-runtime-log-lifecycle` | 本轮准备期运行通过，其中既有运行观测生命周期88项通过；之后共享内核改动由上述最终runner覆盖，未重跑任何容量负载 |
+| `PATH=<已核实Node24.11.1目录>:$PATH make test-console-frontend` | 195项单元、233项受控浏览器用例及构建通过；使用前端受控HTTP，不能当作正式后端／真实登录实链。此后新人工HTTP用例仅做当前版本Node语法检查，未冒充上述233项覆盖 |
+| `make test-monitor-http-local` | **未运行**，60分钟真实本地窗口尚未启动 |
+
+只读调查发现验收边界差异：`monitor/backend/internal/service/process_observation.go` 按当前实例在线状态建立采集范围，离线实例为 `not_active`；`http_observation.go` 对非collecting实例清空HTTP观测，即便指定停源前的固定历史区间。停源后历史读取尚有产品缺口，不能把空观测计为历史通过。已向用户提出“存活时验证历史，停源后验证不可用及Agent新鲜；离线历史另批设计”的收窄建议，尚待确认。当前脚本仍保留停源后历史非空断言，当前产品语义不能满足该断言；本轮不浪费真实窗口运行已知不满足的标准，不擅自移除断言或修改产品查询语义。
+
+准备证据目录：`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-python-product-preparation-20261027-vqi4ado7`，清单 `preparation-evidence.json` 绑定本实现提交及四份日志散列。未运行 Hosted、容量、定时或新的产品隔离环境；未验证新提交自然CI结果。此前SDK Linux HTTP T2的通过证据仍仅属于其原固定SHA，不迁移为本正式产品场景通过。
