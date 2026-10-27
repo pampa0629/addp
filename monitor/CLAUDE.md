@@ -12,7 +12,7 @@ Monitor 聚合各 Owner 写入的执行事实，提供授权诊断、统计、�
 | 节点、采集发现、资源查询、平台告警与权限 | [平台运行观测规范](../docs/spec/addp平台运行观测规范.md) |
 | 平台日志、可信来源、观测与通知 | [模块服务运行日志规范](../docs/spec/addp模块服务运行日志规范.md) |
 | 配置与后续范围 | [配置规范](../docs/spec/addp配置介绍.md)、[运行观测后续事项](../docs/next/ADDP平台运行监控与可观测性设计.md) |
-| 历史通过、失败与覆盖限制 | [Monitor 历史证据](../docs/spec/testing/evidence/Monitor历史证据.md)；不代表当前 HEAD 已重跑 |
+| 历史通过、失败与覆盖限制 | [主题证据导航](#历史证据导航)；固定版本及未覆盖范围由各专题维护 |
 
 ## 核心边界
 
@@ -57,9 +57,9 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 - 固定目录当前共 26 项；TCP 当前连接数为宿主网络统计中的 ESTABLISHED＋CLOSE_WAIT 整数，不含监听和 TIME_WAIT，受限 Desktop 缺少该来源时显示无数据而非零。CPU、负载、容量/inode、磁盘吞吐/IO 时间、网卡吞吐及进程 CPU/RSS/时长使用各自单位与完整窗口，不跨设备层累加、不用共享挂载或进程 RSS 推导集群容量。资源查询与采集证据共用现有 mTLS、预算与期限，指标和公式只由 resourcequery 维护。
 - 主机列表摘要显式请求核数、CPU 忙碌率、内存总量／使用率及运行时长五项，默认每页 20 台；`resource_summaries` 必须携带 node_ids 和闭合 metrics 子集，批次按节点数乘指标数预检预算。TOP5 与采集配置页仍只选择 CPU／内存百分比两项，不因列表扩列增加读取；所有消费者共用同一批量查询内核，禁止省略指标或逐行补查。
 - `/engine-resources` 提供 Infra／Business PostgreSQL 的十二项专业指标、当前页四项摘要和当前数据库容器段最长七天趋势。System 逐请求裁决当前 User 的引擎部署读取，私有投影只用于发现且查询后重核；同一 HTTP SD、mTLS、端点去重和资源预算，不增加手填目标或租户用量归算。SQL 快照不完整、过期、统计重置或权限变化均不保留旧值。来源/查询实链专项沿 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source`。
-- 平台 HTTP 质量入口为 `/http-quality`，使用独立七项 HTTP 目录和固定 1/5/15 分钟窗口，模板排行最多十项；Gateway ingress 与 Backend 分层读取。统计读取与 HTTP 规则分别授权，当前 User 的实例裁决和后台最小身份投影不得混用；契约见正式规范 6.4。Go 使用 Common 唯一采集工厂，Python 未接入，Tenant 发布服务质量归 Service。
+- 平台 HTTP 质量入口为 `/http-quality`，使用独立七项 HTTP 目录和固定 1/5/15 分钟窗口，模板排行最多十项；Gateway ingress 与 Backend 分层读取。统计读取与 HTTP 规则分别授权，当前 User 的实例裁决和后台最小身份投影不得混用；契约见[运行观测规范 6.4](../docs/spec/addp平台运行观测规范.md#64-http-接口质量分阶段接入)。Go／Python 分别复用 Common `httpmetrics` 与 Common Python 唯一 ASGI 观测内核；SDK 来源 Linux T2 不代表完整 Agent/Copilot 正式 backend 登录／页面或正式身份 T4，具体范围见[HTTP 质量与采样证据](../docs/spec/testing/evidence/MonitorHTTP质量与采样历史证据.md)。Tenant 发布服务质量归 Service。
 - 本地 HTTP 专项使用 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=http-quality`，复用专属指标链与规则/outbox 测试库，跳过 PostgreSQL 专业来源探针及后续主机回归；完整回归仍用默认入口。该分项不代表正式身份 T4。
-- `/traces` 及 Trace 搜索/详情使用独立 `monitor.trace.read`，逐请求以当前 User 核验所有参与实例（含离线历史），关联日志另走 System 正文权限。实际 Client/Server 父子匹配才构成调用边；Orchestrator→Develop bounded query 的短阶段以独立 Trace 和最多两条因果 Link 关联，Link 目标同样核验当前 User 实例权限，不递归读取。采样结果不能推算全量 QPS。传播、120 秒尾采样、72 小时/20 GiB 初值及本地验收见正式规范 6.5；当前策略是 Monitor-owned 不可变版本 2，不新增热编辑控制面。Python 同步 HTTP 由 Common Python 唯一 ASGI/HTTPX 内核接入 Agent/Copilot，复用同一部署声明、采样与日志关联；不代表 Python 全量 HTTP 指标或其他 Runtime 已接入。
+- `/traces` 及 Trace 搜索/详情使用独立 `monitor.trace.read`，逐请求以当前 User 核验所有参与实例（含离线历史），关联日志另走 System 正文权限。实际 Client/Server 父子匹配才构成调用边；Orchestrator→Develop bounded query 的短阶段以独立 Trace 和最多两条因果 Link 关联，Link 目标同样核验当前 User 实例权限，不递归读取。采样结果不能推算全量 QPS。传播、120 秒尾采样、72 小时/20 GiB 初值及本地验收见[运行观测规范 6.5](../docs/spec/addp平台运行观测规范.md#65-分布式追踪与日志关联二期第一批)；当前策略是 Monitor-owned 不可变版本 2，不新增热编辑控制面。Python 同步 HTTP 由 Common Python 唯一 ASGI/HTTPX 内核接入 Agent/Copilot，复用同一部署声明、采样与日志关联；同步 Trace 与全量 HTTP 质量分别验收，不外推至其他 Runtime、Python 异步或 SQL Span。
 - 资源查询策略是 Monitor 平台 CAS 单例，对新请求热生效；资源与规则后台只用最小身份投影，不保存管理员 Token。目标管理、用户观测读取和采集服务权限彼此独立。
 - 平台主机 CPU/内存规则创建即停用，按主机合并指标与 uptime；缺样、控制面不可用、预算不足、来源变化、暂停或重启均不作为恢复。活动 incident 阻止规则删除，停用不伪造恢复，历史事件保留触发时证据。
 - 文件系统容量沿同一资源规则接口及权限按完整device／mountpoint／fstype选择，创建停用，默认85%／300秒触发、80%／120秒恢复，固定warning；挂载创建后不转绑，容量改变重建窗口。维度与容量快照进入独立信号及事件证据，通知／详情／趋势精确关联；缺样及永久卸载不恢复，停用规则及未恢复事件保留，不新增结束状态。后台只沿既有固定目录、来源和查询预算，不新增绝对容量、inode或预测规则。唯一EnsureMonitorStore前向替换旧两列唯一索引；实链专项沿同一标准metrics入口的filesystem-alerts／all，CI分项矩阵自动覆盖，受控文件系统指标经真实Prometheus、SQL与签名HTTP，不填充个人磁盘。
@@ -67,6 +67,8 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 - 主机挂载行的“创建容量告警”与规则列表共用唯一ResourceAlertRuleEditor；列表不再拥有第二份表单或保存逻辑。挂载入口沿原权限固定主机及完整挂载，重读当前授权主机／挂载与服务器预设后才可保存，创建仍停用；未保存内容只在组件内，取消、身份或页面上下文变化清空。
 - 平台日志、资源与 HTTP 事件复用同一事务协调器/outbox，协议分别为 addp.platform-log-alert/v1、addp.platform-resource-alert/v1 与 addp.platform-http-alert/v1。旧目标不自动订阅新类别；Webhook/SMTP/企业微信不跨协议兜底，人工重投保留原身份和历史时间。
 - 平台日志观测只由独立 addp-log-observer 上报有界安全事实；Monitor 不读取接收器宿主文件或上传日志正文。平台操作审计归 System，进程日志、执行事件与审计保留各自事实源。
+
+服务实例详情的容器／资源组观测使用 `/platform/container_resource_observations?instance_ids=<单个当前实例>`，复用原 Resource Observation Permission、System 当前 User 实例读取、私有身份／受限来源和预算。四项固定组指标与进程 CPU/RSS 分开；利用率只使用当前匹配的部署硬上界，在证明时点评估，完成时重读投影，拒绝变化／过期／共享边界，不改变原批量摘要、告警和趋势目录。Linux 组 CPU 完整窗口与原进程查询共享同一公式；原生 Mac 无组样本。前端只展示无私有身份的结果，在卡片旁解释未知证明、无有限上界、CPU 稳定记录不足及缺样。标准门禁 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=cgroup-source` 覆盖真实 SDK/mTLS/Prometheus 组读取，不能将共享夹具计为独立容器证明或 Hosted 通过。
 
 ## 开发与验证
 
@@ -80,11 +82,25 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 
 本地数据库先用 `bash scripts/infra/status.sh` 确认实际映射，测试资源与清理只走标准入口。需要运行验收或重启时遵守根 AGENTS.md，由用户在自己的终端执行标准生命周期命令；不接管个人服务，不执行未经单独授权的 keepalive。
 
+## 历史证据导航
+
+[Monitor 历史证据总入口](../docs/spec/testing/evidence/Monitor历史证据.md)保留原记录及旧锚点。下表仅定位已有结果；固定源码、失败／修复、清理和未覆盖项以专题原记录为准，失败、取消、排队或未执行不计通过。本机隔离闭环、Linux T2、受控页面 T3 与正式身份 Hosted T4 分别认定，不合并为当前 HEAD 或生产 T5 通过。
+
+| 主题 | 证据范围 |
+| --- | --- |
+| [综合验收](../docs/spec/testing/evidence/Monitor综合验收历史证据.md) | 跨主题结论、Metrics 分组、固定版本 Linux 前端与分项失败 |
+| [节点与主机资源](../docs/spec/testing/evidence/Monitor节点与主机资源历史证据.md) | 列表／设备／文件系统、趋势、个人 Safari 与实源覆盖 |
+| [实例与服务发现](../docs/spec/testing/evidence/Monitor实例与服务发现历史证据.md) | 主机绑定、多 Worker、cgroup、容器证明及部署预期／发现 |
+| [告警与规则](../docs/spec/testing/evidence/Monitor告警与规则历史证据.md) | CPU/RSS、事件查询、服务失联、文件系统规则及挂载入口 |
+| [Trace 与日志](../docs/spec/testing/evidence/MonitorTrace与日志历史证据.md) | 同步 HTTP、短阶段 Link、容量外推、正式身份本地窗口及历次失败 |
+| [HTTP 质量与采样](../docs/spec/testing/evidence/MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go／Python 来源、采样／清理交接及限定 Linux T2 |
+| [采集来源与引擎指标](../docs/spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md) | 自动接入、采集账号、PostgreSQL 来源 T2 与专业观测 Hosted T4 |
+| [执行监控与留存](../docs/spec/testing/evidence/Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志、只读维护与过程事件 |
+| [部署与前置诊断](../docs/spec/testing/evidence/Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证及 Compose 超时 |
+
 ## 仍需独立证据的范围
 
 - 实际多主机 TOP5、独立 Owner 撤权与全平台容量，不能由六个受控指标来源 T2 或单主机 T4 外推。
 - 容器/专业引擎、Python 进程指标、Agent/Copilot 同步 HTTP 之外的追踪和面向用户的采集生效回执按[后续事项](../docs/next/ADDP平台运行监控与可观测性设计.md)分别推进；节点登记不自动证明承载关联。
 - 180 天概览清理、专业运行时历史及其他 Owner 阶段事件沿任务规范；已落地的 30 天过程事件清理不代替这些范围。
-- 生产安装权限、物理身份、HA、规模和 T5 均需对应独立验收。历史失败、排队或部分通过仍按[证据专题](../docs/spec/testing/evidence/Monitor历史证据.md)记录，不合并为当前工作区通过。
-
-服务实例详情的容器／资源组观测使用 `/platform/container_resource_observations?instance_ids=<单个当前实例>`，复用原 Resource Observation Permission、System 当前 User 实例读取、私有身份／受限来源和预算。四项固定组指标与进程 CPU/RSS 分开；利用率只使用当前匹配的部署硬上界，在证明时点评估，完成时重读投影，拒绝变化／过期／共享边界，不改变原批量摘要、告警和趋势目录。Linux 组 CPU 完整窗口与原进程查询共享同一公式；原生 Mac 无组样本。前端只展示无私有身份的结果，在卡片旁解释未知证明、无有限上界、CPU 稳定记录不足及缺样。标准门禁 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=cgroup-source` 覆盖真实 SDK/mTLS/Prometheus 组读取，不能将共享夹具计为独立容器证明或 Hosted 通过。
+- 生产安装权限、物理身份、HA、规模和 T5 均需对应独立验收；历史记录的定位和判定统一见[主题证据导航](#历史证据导航)。
