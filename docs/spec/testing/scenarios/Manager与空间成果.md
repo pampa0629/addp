@@ -6,7 +6,18 @@
 
 专项导读：[公共前提](#独立持久化专项公共前提) · [Runner／Native 验证入口](#独立持久化专项验证入口)
 
-本页场景：[manager-internal-artifact-lineage](#manager-internal-artifact-lineage)、[manager-hybrid-search](#manager-hybrid-search)、[vector-pmtiles-workflow](#vector-pmtiles-workflow)、[raster-workflow](#raster-workflow)、[raster-contour-persistence](#raster-contour-persistence)、[raster-polygonize-persistence](#raster-polygonize-persistence)、[raster-boundary-clean-persistence](#raster-boundary-clean-persistence)、[raster-thin-persistence](#raster-thin-persistence)。
+本页场景导航仅用于定位，适用范围以各场景正文为准：
+
+| 内容 | 场景入口 |
+| --- | --- |
+| Manager 与文件 | [内部产物与 case](#manager-internal-artifact-lineage) · [混合检索](#manager-hybrid-search) · [KML／GML／TopoJSON S3](#kmlgmltopojson-的-s3-兼容消费) · [设备静态轨迹](#设备静态轨迹范围读取) · [ORC 单文件](#orc-单文件表格-hosted) |
+| 矢量与地图 | [拓扑持久化](#拓扑构面面叠面缝悬点与线叠持久化vector-topology-persistence) · [重合规整](#重合规整独立场景) · [PMTiles 工作流](#vector-pmtiles-workflow) |
+| 栅格流程与持久化 | [Raster 工作流](#raster-workflow) · [等值线](#raster-contour-persistence) · [分类转面](#raster-polygonize-persistence) · [矢量栅格化](#vector-rasterize-persistence) · [整数分区统计](#raster-zonal-statistics-persistence) · [邻域统计](#raster-focal-statistics-persistence) · [矢量分区统计](#vector-zonal-statistics-persistence) · [邻近距离](#raster-proximity-persistence) · [细化](#raster-thin-persistence) · [边界清理](#raster-boundary-clean-persistence) |
+| 容量与磁盘 | [分类蚕食容量](#分类蚕食容量raster-nibble-capacity) · [容量验证入口](#分类蚕食容量的验证入口) · [临时磁盘保护](#raster-disk-pressure) |
+| DEM 地形与统计 | [填洼](#raster-fill-depressions-persistence) · [平均曲率](#dem-平均曲率独立-hosted-验收) · [剖面曲率](#dem-剖面曲率独立-hosted-验收) · [切向曲率](#dem-切向曲率独立-hosted-验收) · [平面曲率](#dem-平面曲率独立-hosted-验收) · [双 DEM 填挖方](#双dem填挖方统计独立-hosted-验收) |
+| D8 流向与累积 | [流向](#dem-d8-流向持久化) · [汇流累积](#d8-汇流累积持久化) · [加权累积](#raster-flow-accumulation-weighted-d8-persistence) · [下游流长](#d8-下游流长持久化) · [上游最长流长](#d8-上游最长流长持久化) · [汇水分区](#d8-汇水分区持久化) |
+| D8 河网与汇水 | [Strahler](#raster-stream-order-d8-persistence) · [Shreve](#shreve-独立持久化验收) · [河段编号](#d8-河段编号独立持久化) · [河网转线](#d8-河网转矢量线独立-hosted-验收) · [指定汇水点](#raster-watershed-d8-persistence) · [汇水点吸附](#raster-snap-pour-points-persistence) · [增量子汇水区](#raster-subcatchments-d8-persistence) |
+| D8 面积、距离与高程 | [汇流面积](#raster-flow-accumulation-area-d8-persistence) · [到河网沿流距离](#raster-distance-to-stream-d8-persistence) · [HAND](#raster-hand-d8-persistence) |
 
 ## manager-internal-artifact-lineage
 
@@ -322,7 +333,13 @@ Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 M
 
 每组重建同镜像的本轮 Runtime 后测量 cgroup v2 的内存、OOM、CPU 与进程 VmHWM 之和，验证实际串行排队／双任务并发及额度排空。将 TMPDIR 绑定到本轮 NFS 根内的私有目录，使用受限自有路径的宿主机只读采样记录私有文件逻辑／分配大小，避免采样进程计入 Runtime 内存。采样间隔包含 HTTP 观察和采样开销，不宣称捕获连续精确峰值。每像元 32 字节是私有距离／供体中间文件的逻辑上界，源、工作 TIFF、COG 和金字塔另计；运行前按并发与网格保守预留磁盘，空间不足应失败。
 
-使用独立解析最近供体 oracle 分块核对全部像元、mask、CRS／网格和完整 COG 布局；逐项核对 artifact／物理／Meta 相等正整数大小、精确自动扫描、同用户／租户、当前执行血缘、Monitor、源及先前成果不变。保留逐组资源原始观测及进度，即使 OOM 或失败也不丢弃诊断；工作目录、NFS／部署和 Infra 清理仍为通过前提。确定性回归由 `make test-raster-nibble-capacity-online-runner` 与 `make test-geopython-workflow` 覆盖，CI 注册同次验证；容量脚本入口同时运行隔离身份夹具 Go T1。不增加夜间调度。
+使用独立解析最近供体 oracle 分块核对全部像元、mask、CRS／网格和完整 COG 布局；逐项核对 artifact／物理／Meta 相等正整数大小、精确自动扫描、同用户／租户、当前执行血缘、Monitor、源及先前成果不变。保留逐组资源原始观测及进度，即使 OOM 或失败也不丢弃诊断；工作目录、NFS／部署和 Infra 清理仍为通过前提。
+
+### 分类蚕食容量的验证入口
+
+脚本回归使用 `make test-raster-nibble-capacity-online-runner`，由 `make test-raster-online-runner` 聚合；容量脚本入口同时运行隔离身份夹具 Go T1。真实 GDAL 与容量 oracle 由 `make test-geopython-workflow` 覆盖，CI 注册同次核对。不增加夜间调度。
+
+### 分类蚕食容量的固定版本证据
 
 固定源码 `d12960c06e4e41a21c821780ec99f8fd7677c98a` 的[独立 Hosted 39408596156](https://github.com/pampa0629/addp/actions/runs/39408596156/job/118580519411) 已通过并经完整原始归档严格审计：8 组／16 链、1098700928 个像元及对应 mask、COG、三方严格大小、16 个精确扫描、同用户及当前执行血缘、源与先前成果不变、策略恢复和全部零残留通过；预检与业务 3120412 毫秒，小于 10800 秒预算。报告 SHA-256 为 `5a628bc5f9b30275aa26ca36c3a813ec49b22a7889b85096e9762f0584698959`。同源[Linux Native](https://github.com/pampa0629/addp/actions/runs/39408524778/job/118580271250) 的标准 `make test-geopython-workflow` 全量 1666 项通过、21 warnings、757.20 秒，无失败或跳过；同源 Platform 在范围外 Infra 生命周期门禁失败，不计整个平台通过。资源逐组指标及其适用边界见[栅格专题](../../../next/栅格算子体系后续专题.md#分类蚕食容量验收)，不把此次确定性分类样本容量计作 UI、任意影像或稳定吞吐认证。
 
@@ -408,11 +425,9 @@ Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 M
 
 ### D8 河网转矢量线独立 Hosted 验收
 
-已批准独立手工 `raster-stream-to-vector-d8-persistence`，复用隔离Hosted／NFS、同源默认入口Runtime、普通User原12权限及600秒预算。三种水平单位的直接双输入，加累积阈值、DEM／填洼完整链及空河网／全无效，共八条GeoPackage保存；孤立单像元（含非河网入流）、混合孤立点、断流、非二值掩膜、覆盖／网格不一致、精确64位非法方向、循环及两个角色非法波段十类各中英，共20条准确失败。独立逐边oracle核每条真实河网边恰好一次，完整中心坐标／方向／ID间隔／零基起止行列／米制长度、汇合端点、单像元终点、跨块及交叉独立。按通用矢量save契约核GeoPackage的完整几何／字段类型／CRS、物理与Meta相等正整数大小、精确扫描与当前执行所有实际输入血缘／Monitor、源与先前成果不变及全部清理；空成果核Schema与CRS。失败零发布／新增扫描血缘，反向查询不改提交语言，不新增RasterArtifact。编号／长度与坐标数值极限继续单列Native，不模拟Hosted越界；不改原套件、权限、算法或跨模块产品逻辑，不计UI或容量。夹具、标准入口和手工CI登记已实现并通过本地准备门禁；实际Hosted尚未运行，仍由专门CI会话协调，本会话不触发、轮询或设置定时。
+独立手工入口为 `make test-online ONLINE_SUITE=raster-stream-to-vector-d8-persistence`，复用隔离Hosted／NFS、同源默认入口Runtime、普通User原12权限及600秒预算。三种水平单位的直接双输入，加累积阈值、DEM／填洼完整链及空河网／全无效，共八条GeoPackage保存；孤立单像元（含非河网入流）、混合孤立点、断流、非二值掩膜、覆盖／网格不一致、精确64位非法方向、循环及两个角色非法波段十类各中英，共20条准确失败。独立逐边oracle核每条真实河网边恰好一次，完整中心坐标／方向／ID间隔／零基起止行列／米制长度、汇合端点、单像元终点、跨块及交叉独立。按通用矢量save契约核GeoPackage的完整几何／字段类型／CRS、物理与Meta相等正整数大小、精确扫描与当前执行所有实际输入血缘／Monitor、源与先前成果不变及全部清理；空成果核Schema与CRS。失败零发布／新增扫描血缘，反向查询不改提交语言，不新增RasterArtifact。编号／长度与坐标数值极限继续单列Native，不模拟Hosted越界；不改原套件、权限、算法或跨模块产品逻辑，不计UI或容量。夹具、标准入口和手工CI登记已实现并通过本地准备门禁；实际Hosted尚未运行，仍由专门CI会话协调，本会话不触发、轮询或设置定时。
 
-独立Hosted准备的标准Native专项 `make test-geopython-workflow`（`-k stream_to_vector_d8`）**158 passed／4280 deselected／5.52秒**，0失败／跳过，输入无漂移；其中新增夹具46项，涵盖八份真实GDAL GeoPackage、20条双语准确失败、23类物理篡改拒绝及源／先前成果不变。基于修正提交5419a73ad，候选树 `2290b776308c6e0c86940a4a6f0557a48f598906`，原始日志SHA-256 `89cf9b3e1ae6efbe5dbb9c3cc8c0faeb1d4afc409da51eb8ce7f48b6f6f9157e`；筛除不计通过，不把专项与旧全量相加。三种单位直接样本各21条线／444条边／465个顶点，跳过终点ID2；阈值样本34条线／3542条边，DEM为7条／3612条，填洼链为5条／2582条，空河网与全无效均零要素且保留Schema／CRS。
-
-Node24.11.1下 `make test-raster-stream-to-vector-d8-online-runner` **63项／20.403秒**及完整Online登记通过，原始日志SHA-256 `a5a53ce92de30f6d24e240ea662b64d2e84b181b958ff72c832be4d700c4e6fc`。完整 `make test-raster-online-runner` 退出0、输入无漂移，耗时744.59秒，25组Python子门禁及原215项生命周期、隔离身份夹具Go T1通过（共享回归重复，不求和作唯一测试数）；原始日志SHA-256 `b52e1fa5f190351d166207ca1186873a9322c9a1f1184a243412926ae6c2c496`。这些是本地准备与Native证据，不计正式Linux全量、真实Hosted用户／扫描／当前执行血缘／Monitor及清理通过；数值极限继续单列Native，不模拟Hosted越界。实际Hosted仍等专门CI会话协调和完整原始归档领域审计，无自行触发／轮询／定时。
+验证入口：`make test-raster-stream-to-vector-d8-online-runner` 由 `make test-raster-online-runner` 聚合；真实 GDAL 夹具与篡改拒绝沿 `make test-geopython-workflow`。本地准备、Native 专项及后续固定版本 Linux 全量的命令、计数、日志摘要和适用范围统一见[D8 分版本证据](../../../next/栅格算子体系后续专题.md#d8-河网转矢量线独立-hosted-验收)。专项筛除不计通过，不与旧全量相加；Native 与真实 Hosted 结论分别记账。
 
 ## raster-snap-pour-points-persistence
 
