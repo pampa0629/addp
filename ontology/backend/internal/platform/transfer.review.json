@@ -34,11 +34,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/service/task_service.go",
       "anchor": "Status:       models.TaskStatusIdle,",
-      "commit": "d01c5772f84d19c74010d1bd048433c8000d85be",
-      "sha256": "83b81308733e91b2adac40afec274a9163c79a6db98cfd9b14bc812b4708323e",
+      "commit": "4c9e1e53ee1e895c398dd0e0aaa46de54d832422",
+      "sha256": "66231213ede45a280924dea632d7a627cf5e2aef2bdaa742ae459a0446148850",
       "use": {
-        "zh-cn": "创建仍只保存 idle/stopped 定义。无角色选择不新增角色或 EA 依赖；显式角色方式在持久化前复核当前第一方 User，委托不借用他人角色。手动执行／重试和模块导出的 EA 绑定属于未建模执行范围，调度授权与创建效果不变。",
-        "en": "Creation still only persists an idle/stopped definition. Default choices add no role or EA dependency; explicit role choices validate the current first-party User before persistence without borrowing roles for delegation. Manual execution/retry and module export EA binding remain unmodeled execution behavior; schedule authorization and creation effects are unchanged."
+        "zh-cn": "创建仍只保存 idle/stopped 定义：默认无新增角色或 EA 依赖，显式方式复核本人角色，委托不借用角色。新增私有保护记录仅用于已核验 Manager/Develop 来源的 ExportSession 一次性执行，不授予权限、不变换字段或写业务数据。导出生成与再次交付仍未建模，创建 Tool 的条件、确认和效果不变。",
+        "en": "Creation still saves an idle/stopped definition; default choices add no role or EA dependency, explicit choices check the current User, and delegation borrows no roles. A private protection receipt is initialized only for verified Manager/Develop ExportSession ad-hoc executions: no grants, field changes or business writes. Export generation and redelivery remain unmodeled; create Tool conditions, confirmation and effects are unchanged."
       }
     },
     {
