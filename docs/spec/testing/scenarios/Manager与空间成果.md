@@ -643,7 +643,7 @@ Node24.11.1下标准`make test-raster-cut-fill-online-runner`通过 **62项／29
 
 修后本地标准`PYTEST_ADDOPTS='-k cut_fill --durations=15' make test-geopython-workflow`通过171项／7630筛除／13.20秒，0失败／跳过，JUnit及进度点均171；原产品114项与独立夹具57项包含在内，不累加为新唯一计数。Node24.11.1下标准`make test-raster-cut-fill-online-runner`通过66项／22.312秒及完整Online登记，包含来源角色交换、任务声明／事实顺序、23类端口与操作篡改、拒绝现场封闭证据和不可变归档反例；旧位置比较配合真实节点端口响应的失败红灯已保留。两门禁同候选树`f43a9bbe208149dca5c3d87d14f0612e1d61cd05`，934个跟踪输入无漂移、无新增Python原生崩溃报告，相关可执行输入一致；日志SHA-256分别为`7b4b024b3108ef351069b8b834bf98ed6e813388f87b30e526a8dc8c97f340c9`、`5b862744f00799ce58215b8c07b64a51eddbffc080a76114838de1b08865c360`。本次不重跑旧有效全量或其他独立Hosted，不把模拟平台runner计作真实Hosted通过。
 
-修复后的实际Hosted仍由专门CI会话协调唯一必要复验，尚未取得修后原始验收结果；本会话不查询实时CI、不触发、重跑或取消任务，不设置定时。不计UI、容量、生产或业务DELETE；数值极限仍单列Native，TPI产品与独立Hosted准备证据另节记账。
+唯一修后[Hosted复验40537589903／Job122306936837](https://github.com/pampa0629/addp/actions/runs/40537589903/job/122306936837)，固定源码`16452b15069b6b1bd30cfcd91426d36898765f46`，实际19080毫秒在首条mixed.csv报`operations must be an array`，不是600秒耗尽；官方归档886754字节，SHA-256：`a1a7584038fd4b320c91168cf2c98a52bb60f2b7b02e0234a3d76f416a1fefe7`。新增封闭证据已证明公开input.before／input.after的角色来源与output.save／create准确，但公开operations为null；该版本Common Observation明确主动隐藏operations，不能将公开空值当成内部未持久化。原始内部持久化事实未归档，完整12成功／36失败及CSV原件仍未验收；外层cleanup通过／Infra零残留另记。下一步需要分别校验公开安全投影、受控内部持久化事实和现有Meta当前执行双源关系；现有栅格入口没有内部只读取证通道，新增该验收取证边界需先确认，不改Common／Develop安全投影，不删除或弱化内部operations断言。实际Hosted仍由专门CI会话协调；本会话不查询实时CI、不触发、重跑或取消任务，不设置定时。不计UI、容量、生产或业务DELETE；数值极限仍单列Native，TPI产品与独立Hosted准备证据另节记账。
 
 
 ### DEM 地形位置指数（TPI）独立 Hosted 验收
@@ -656,4 +656,8 @@ Node24.11.1下标准`make test-raster-cut-fill-online-runner`通过 **62项／29
 
 Node24.11.1下标准`make test-raster-tpi-online-runner`通过 **59项／19.847秒**及完整Online登记，含模拟普通用户／精确扫描及当前来源血缘／Monitor、三方严格大小、完整物理标记及原字节回执、失败冻结语言、准入／部分启动／收尾与清理反例；不计真实平台通过。候选树`627ac30483f6d46f4d7b972ee1fc24fcc623c8b7`，日志SHA-256：`9217b65f635649496f5f224a90cc70eb79023e5fb5f3cb89ad563cb381a2d280`。标准`make test-python-ci-registration`54项、10项及11模块／完整Online登记通过，日志SHA-256：`5dae029ba39c1da93df00415db9ca1bb329752e03cfd0103534c826b98da15f5`。每次门禁941个跟踪输入前后无漂移，无新增Python原生崩溃报告；数值夹具／DAG／Native测试输入一致，Native之后仅修正文档及Hosted shell注释／就绪诊断标签，最终shell已由独立runner复验。新增标准Native文件、独立／聚合runner、变更选择、手工workflow及固定13／26矩阵／原COG归档省略拒绝检查同次登记，原聚合其他子套件不整组复跑。重复门禁计数不求和，已有产品及旧固定验收不挪作新Hosted证据。
 
-实际Hosted运行、Linux全量、填挖方复验与其余Hosted仍由专门CI会话协调，本会话不触发、查询实时CI、重跑、取消或设置定时。数值极限继续单列Native，复数alpha等额外类型组合不计为本套Hosted覆盖；本套不认证全部单位组合、UI、容量、生产或业务DELETE，不改产品算法、权限或跨模块逻辑。
+固定准备源码`63d6299ea75f988f6ed1ecd6e20fc3ee86b81beb`的[Linux GeoPython Job122307960573](https://github.com/pampa0629/addp/actions/runs/40537881422/job/122307960573)已核完整原始日志：实际标准`make test-geopython-workflow` **7858 passed／24 warnings／1349.40秒**，0失败／跳过／筛除，实际测试步骤success；日志SHA-256：`45eae4d19ae5dc2e828eb06a8cbac8d2849bba68373788d238ff050d20935868`。仅记固定63d整树Linux Native，不代替Hosted、其他Job或后续HEAD。此前本地广泛试跑失败／中断事实保留，不用本次结果改写旧失败。
+
+首次[TPI Hosted40538763760／Job122311113578](https://github.com/pampa0629/addp/actions/runs/40538763760/job/122311113578)，同固定63d，19276毫秒在首条execution血缘核对报`TPI exact source-port/create/derive facts differ`；官方归档985958字节，SHA-256：`e6f4a4ef0416d5aacc2263a03116d25fb2515f5e0f46996c5c39bce908ac4281`。source_scan通过，尚无13份COG原件和完整13／26回执；外层cleanup通过／Infra零残留。此版本Develop复用Common Observation主动隐藏operations，但本次没有完整actual血缘差异归档，不能认定只有operations不同，更不能宣称内部持久化通过。验收修复需补拒绝前封闭差异证据，并将公开安全投影与受控内部事实分层核验；新增只读取证边界待确认，不改产品安全投影／权限，不把null当完整血缘通过。
+
+后续Linux及Hosted仍由专门CI会话协调，本会话不触发、查询实时CI、重跑、取消或设置定时。数值极限继续单列Native，复数alpha等额外类型组合不计为本套Hosted覆盖；本套不认证全部单位组合、UI、容量、生产或业务DELETE，不改产品算法、权限或跨模块逻辑。
