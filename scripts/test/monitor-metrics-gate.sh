@@ -63,16 +63,26 @@ cleanup(){
   trap - EXIT INT TERM
   set +e
   if [[ -n "${ADDP_HTTP_BUDGET_RECEIPT:-}" && -f "$ADDP_HTTP_BUDGET_RECEIPT" ]]; then
-    python3 - "$ADDP_HTTP_BUDGET_RECEIPT" <<'CLEANUP_RECEIPT'
-import json,sys
+    # FD 9 is shared with the Python child: its flock remains held by this
+    # shell through down, final receipts and private-directory removal.
+    exec 9>"${ADDP_HTTP_BUDGET_RECEIPT}.lock"
+    python3 - "$ADDP_HTTP_BUDGET_RECEIPT" "$ROOT_DIR/scripts/test/metrics-http-budget.py" <<'CLEANUP_RECEIPT'
+import json,sys,runpy
 from pathlib import Path
-p=Path(sys.argv[1]);value=json.loads(p.read_text());value['cleanup_started']=True
+p=Path(sys.argv[1])
+try:value=runpy.run_path(sys.argv[2])['begin_cleanup'](p,9)
+except BaseException:
+    print('HTTP cleanup: resource handoff failed',file=sys.stderr)
+    raise SystemExit(73)
 proof=Path(value['work'])/'source-tls-proof.json'
 if proof.exists():value['source_tls_proof']=json.loads(proof.read_text())
 publication=Path(value['work'])/'source-tls-publication.json'
 if publication.exists():value['source_tls_publication']=json.loads(publication.read_text())
 pending=p.with_suffix('.pending');pending.write_text(json.dumps(value));pending.replace(p)
 CLEANUP_RECEIPT
+    local handoff_result=$?
+    if [[ "$handoff_result" == 73 ]]; then exit 1; fi
+    [[ "$handoff_result" == 0 ]] || result=1
   fi
   # The new SQL source's logs are checked for secret exposure in memory by its
   # probe. Never dump those raw logs on failure before that check succeeds.

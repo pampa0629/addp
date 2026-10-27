@@ -1983,3 +1983,16 @@ ImportError 尚缺具体组件与版本事实，本批没有猜测升级／降�
 - 最终只修改上述一行监听并增加该用例；相对已通过全量的前端输入仅NodeResources.vue与filesystem-alert-rules.spec.js两处变化，其他输入结果复用。最终`npm --prefix monitor/frontend test`129项通过；通过既有scripts/test/frontend-browser-gate.mjs标准包装的`npm --prefix monitor/frontend run test:e2e -- e2e/filesystem-alert-rules.spec.js e2e/host-filesystem-expansion.spec.js e2e/host-device-expansion.spec.js e2e/platform-alerts.spec.js`67项受影响浏览器回归全部通过（2.7分钟），日志/tmp/addp-mount-capacity-affected-final.log；最终`npm --prefix monitor/frontend run build`退出0，4.83秒完成，日志/tmp/addp-mount-capacity-build-final.log。最终128输入摘要/tmp/addp-mount-capacity-final-inputs.json前后核对一致，单元日志/tmp/addp-mount-capacity-unit-final.log；不能将未重跑的最终481项全量记为实际通过。
 
 已目视核对中英文窄屏弹窗及保存后的挂载行截图；最终专项目录/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-mount-capacity-shortcut-m3c5jA（英文）及addp-mount-capacity-shortcut-NsNOKp（中文），临时路径由专项日志记录。沿既有Monitor前端测试、Playwright自动发现和Platform Monitor frontend门禁，不增加测试入口、依赖或工作流；未改变HTTP契约，无需重新生成Swagger或运行数据库／指标门禁。本批没有后端修改，未操作个人服务或数据库，未执行Safari或正式身份运行验收，也未调度／轮询CI、Hosted或创建定时任务。原文件系统Prometheus专项未通过状态不因本批受控页面结果提升，CI和Hosted仍等专门会话回传。
+
+
+### HTTP 采样／清理原子交接实现与确定性验证（2026-10-27）
+
+核对现行“进入清理后停止新采样”、完整四秒、原120秒清理与1200秒整轮判定后，本次按既有必要CI修复范围落实交接，不新增产品阶段、权限或运行范围。此前将私有协调实现再次列为产品边界确认过宽；本次没有从协调消息推定Hosted、容量、定时或本地窗口授权。旧44230c5c8的业务子链通过与整门禁失败仍保留，不回写为通过。
+
+当次预算目录使用唯一文件锁：父进程在四秒开始计时后取锁，持锁重读相同project／私有目录与清理状态，才执行原完整采样；发布清理标记后等待中的采样终止交接，不发Docker读取，也不增加伪样本。清理先发布同一回执，再取得同一锁；Shell继承的FD9在Python步骤退出后仍保持锁，覆盖唯一down、归属零残留检查和私有目录删除，随原进程退出释放。已开始的采样和删除不再并行；真实inspect／du失败仍保留并释放锁，原强制清理继续，不重试读取、不忽略对象消失、不提供无锁备用删除路线。无法取得交接锁时明确清理未确认，不能假造零残留。
+
+取锁与回执读取消耗同一四秒，原采样命令只使用剩余时间，解析／汇总后再核整轮检查期限；成功回执分列lock_wait_seconds。清理在入口记录唯一120秒单调截止，锁等待不重置截止；报告保留cleanup_lock_wait_seconds及cleanup_overdue，超期即使最终清零也不得判整轮通过。原1200秒、资源／请求上限、首失败及清理重叠时不重复SIGTERM均保持；不更改Docker daemon或个人服务。原先只有清理前一次标志检查的路线已替换，完整采样内核仍唯一。
+
+确定性回归使用真实私有文件锁与受控线程，验证采样先开始时禁止删除、清理先发布时不启动读取、剩余Docker命令预算、四秒及清理锁截止、归属不符、真实命令失败后释放锁、解锁错误不覆盖首失败。实际Shell子进程验证Python退出后FD锁仍由Shell持有、原退出后释放；整轮成功负例验证清理逾期不因零残留改判。相同新回归对父提交临时副本失败、当前实现通过，未改写共享源码做回退。最终配置／预算135项、生命周期123项runner／既有System Go fixture及88项聚合、登记38项与22／12／9／2、Shell语法及专项diff通过。既有固定输入、Makefile和CI自动发现覆盖，未增加新入口／workflow或依赖。
+
+原始门禁、红／绿对照、补丁与输入摘要在 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-http-handoff-20261027-0slhhjwm`。本地没有新建容器或实际运行HTTP／Hosted／容量／定时；修后的真实整体结果待唯一自然Linux HTTP Job单列核验，确定性通过不计为完整门禁通过。

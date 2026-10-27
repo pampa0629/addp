@@ -1,5 +1,6 @@
 """The existing HTTP T2 case has one local resource/request window, no retries."""
 import json
+import fcntl
 import hashlib
 import os
 from pathlib import Path
@@ -109,8 +110,63 @@ def directory_failure_diagnostic(stderr):
     return result
 
 
-def sample(ownership):
+def acquire_lock(fd, end, stage, stopped):
+    while True:
+        stop=stopped()
+        remaining=end-time.monotonic()
+        if remaining<=0:raise BudgetFailure('http_budget_handoff_deadline',stage,'deadline')
+        if stop:return False
+        try:
+            fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            return True
+        except BlockingIOError:time.sleep(min(.01,remaining))
+        except OSError:raise BudgetFailure('http_budget_handoff_failed',stage,'lock_unavailable') from None
+
+
+def begin_cleanup(receipt, fd):
+    began=time.monotonic()
+    value=json.loads(receipt.read_text())
+    value['cleanup_started']=True
+    value['cleanup_deadline_monotonic']=began+120
+    pending=receipt.with_suffix('.pending');pending.write_text(json.dumps(value));pending.replace(receipt)
+    try:acquire_lock(fd,value['cleanup_deadline_monotonic'],'cleanup_handoff',lambda:False)
+    except BaseException:
+        finished=time.monotonic()
+        value.update(cleanup_verified=False,cleanup_overdue=finished>=value['cleanup_deadline_monotonic'],cleanup_lock_wait_seconds=finished-began)
+        pending.write_text(json.dumps(value));pending.replace(receipt)
+        raise
+    value['cleanup_lock_wait_seconds']=time.monotonic()-began
+    pending.write_text(json.dumps(value));pending.replace(receipt)
+    return value
+
+
+def owned_sample(ownership,receipt):
     began=time.monotonic();end=began+4
+    def stopped():
+        latest=json.loads(receipt.read_text())
+        if any(latest.get(k)!=ownership.get(k) for k in ('project','work')):
+            raise RuntimeError('http_budget_ownership_invalid')
+        return latest.get('cleanup_started') is True
+    with open(str(receipt)+'.lock','a') as lock:
+        try:
+            if not acquire_lock(lock.fileno(),end,'sample_handoff',stopped):return None
+            cleaning=stopped()
+            if time.monotonic()>=end:raise BudgetFailure('http_budget_handoff_deadline','sample_handoff','deadline')
+            if cleaning:return None
+            waited=time.monotonic()-began
+            result=sample(ownership,end)
+            if time.monotonic()>=end:raise BudgetFailure('http_budget_sample_deadline','sample_handoff','deadline')
+            result['lock_wait_seconds']=waited
+            return result
+        finally:
+            primary=sys.exc_info()[0] is not None
+            try:fcntl.flock(lock.fileno(),fcntl.LOCK_UN)
+            except OSError:
+                if not primary:raise BudgetFailure('http_budget_handoff_failed','sample_handoff','unlock_failed') from None
+
+
+def sample(ownership,end):
+    began=end-4
     def command(stage,args):
         started=time.monotonic();remaining=end-started
         def failed(code,kind,finished,**facts):
@@ -197,14 +253,14 @@ def main():
                     if not ownership.get("cleanup_started") and (last_sample is None or now-last_sample>=4):
                         if last_sample is not None and now-last_sample>5:raise RuntimeError('http_budget_sample_cadence')
                         last_sample=now
-                        report['samples'].append(sample(ownership))
+                        reading=owned_sample(ownership,ownership_path)
+                        if reading is not None:report['samples'].append(reading)
                 time.sleep(.1)
         except BaseException as failure:
             error=type(failure).__name__ if not isinstance(failure,RuntimeError) else str(failure)
             if isinstance(failure,BudgetFailure):report['failure_detail']=failure.detail
-            # A sample can start before the EXIT trap marks cleanup, then fail
-            # as its containers are removed. Keep that failure, but never send
-            # a second SIGTERM into the mandatory cleanup already in progress.
+            # Keep every read failure. Cleanup can already be waiting for the
+            # released sample lock; do not interrupt that mandatory cleanup.
             cleaning=False
             try:
                 latest=json.loads(ownership_path.read_text())
@@ -228,6 +284,10 @@ def main():
             if ownership_path.exists():
                 ownership=json.loads(ownership_path.read_text())
             if ownership:
+                report['cleanup_lock_wait_seconds']=ownership.get('cleanup_lock_wait_seconds')
+                if ownership.get('cleanup_overdue'):report['cleanup_overdue']=True
+                cleanup_end=ownership.get('cleanup_deadline_monotonic')
+                if cleanup_end is not None and time.monotonic()>=cleanup_end:report['cleanup_overdue']=True
                 report['project']=ownership['project']
                 report['private_work_path']=ownership['work']
                 report['request_counts']=ownership.get('request_counts')
@@ -242,11 +302,11 @@ def main():
             preflight=report['case']=='mtls-preflight'
             tls_proven=(report.get('source_tls_proof') or {}).get('passed') is True if preflight else True
             counts_proven=report.get('request_counts')=={'go':0,'python':[0,0],'total':0} if preflight else complete_request_traffic(report.get('request_counts'),report.get('request_phases'))
-            if result==0 and error is None and tls_proven and counts_proven and report['inputs_unchanged'] and report.get('cleanup_verified') and report['elapsed_seconds']<1200 and report.get('private_directory_removed') and report['samples']:
+            if result==0 and error is None and not report.get('cleanup_overdue') and tls_proven and counts_proven and report['inputs_unchanged'] and report.get('cleanup_verified') and report['elapsed_seconds']<1200 and report.get('private_directory_removed') and report['samples']:
                 report['result']='passed'
             output.write_text(json.dumps(report,indent=2))
     summary={key:report.get(key) for key in ('case','result','error_code','failure_detail','exit_code','elapsed_seconds','source_tls_proof','source_tls_publication',
-             'cleanup_verified','private_directory_removed','inputs_unchanged','request_counts','request_phases','request_traffic_error','python_sources','failure_during_cleanup')}
+             'cleanup_verified','cleanup_overdue','cleanup_lock_wait_seconds','private_directory_removed','inputs_unchanged','request_counts','request_phases','request_traffic_error','python_sources','failure_during_cleanup')}
     print('HTTP functional budget result: '+json.dumps(summary,sort_keys=True),flush=True)
     print('HTTP functional budget report: '+str(output),flush=True)
     return 0 if report['result']=='passed' else 1

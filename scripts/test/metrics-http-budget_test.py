@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 from contextlib import redirect_stdout
 from unittest.mock import Mock, patch
@@ -20,6 +21,113 @@ def row(cpu=1,memory=512*1024**2):
 
 
 class HTTPBudget(unittest.TestCase):
+    def test_cleanup_cannot_delete_during_an_active_sample(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt=Path(directory)/'ownership.json';owner={'project':'owned','work':directory};receipt.write_text(json.dumps(owner))
+            entered=threading.Event();release=threading.Event();cleaning=threading.Event();deleted=threading.Event();errors=[]
+            acquire=m.acquire_lock
+            def observe(fd,end,stage,stopped):
+                if stage=='cleanup_handoff':cleaning.set()
+                return acquire(fd,end,stage,stopped)
+            def read(*args):
+                entered.set()
+                if not release.wait(2):raise RuntimeError('test_release_missing')
+                return {'duration_seconds':.01}
+            def sample():
+                try:m.owned_sample(owner,receipt)
+                except BaseException as error:errors.append(error)
+            def cleanup():
+                try:
+                    with open(str(receipt)+'.lock','a') as lock:
+                        m.begin_cleanup(receipt,lock.fileno());deleted.set()
+                except BaseException as error:errors.append(error)
+            with patch.object(m,'sample',side_effect=read),patch.object(m,'acquire_lock',side_effect=observe):
+                first=threading.Thread(target=sample);second=threading.Thread(target=cleanup)
+                try:
+                    first.start();self.assertTrue(entered.wait(2));second.start();self.assertTrue(cleaning.wait(2))
+                    self.assertFalse(deleted.is_set());self.assertTrue(json.loads(receipt.read_text())['cleanup_started'])
+                finally:
+                    release.set();first.join(3)
+                    if second.ident is not None:second.join(3)
+                self.assertFalse(first.is_alive() or second.is_alive());self.assertFalse(errors);self.assertTrue(deleted.is_set())
+
+    def test_cleanup_first_stops_new_sampling_without_waiting_for_deletion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt=Path(directory)/'ownership.json';owner={'project':'owned','work':directory};receipt.write_text(json.dumps(owner))
+            with open(str(receipt)+'.lock','a') as lock,patch.object(m,'sample') as read:
+                m.begin_cleanup(receipt,lock.fileno())
+                self.assertIsNone(m.owned_sample(owner,receipt));read.assert_not_called()
+                with open(str(receipt)+'.lock','a') as other:
+                    with self.assertRaises(BlockingIOError):m.fcntl.flock(other,m.fcntl.LOCK_EX|m.fcntl.LOCK_NB)
+
+    def test_waiting_for_lock_reduces_the_real_command_budget(self):
+        with tempfile.TemporaryDirectory(prefix='addp-metrics-t2.') as directory:
+            receipt=Path(directory)/'ownership.json';owner={'project':'addp-metrics-t2-'+'a'*32,'work':directory};receipt.write_text(json.dumps(owner))
+            with patch.object(m.time,'monotonic',return_value=10) as clock:
+                def acquire(fd,end,stage,stopped):
+                    self.assertEqual(end,14);clock.return_value=11;return True
+                with patch.object(m,'acquire_lock',side_effect=acquire),patch.object(m.subprocess,'check_output',side_effect=[b'',b'0\n']) as execute:
+                    result=m.owned_sample(owner,receipt)
+                self.assertEqual(result['lock_wait_seconds'],1)
+                self.assertEqual([c.kwargs['timeout'] for c in execute.call_args_list],[3,3])
+
+    def test_handoff_wait_uses_original_sample_deadline_and_rejects_foreign_owner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt=Path(directory)/'ownership.json';owner={'project':'owned','work':directory};receipt.write_text(json.dumps(owner))
+            with patch.object(m.time,'monotonic',side_effect=[0,4]),patch.object(m,'sample') as read:
+                with self.assertRaisesRegex(m.BudgetFailure,'handoff_deadline'):m.owned_sample(owner,receipt)
+                read.assert_not_called()
+            receipt.write_text(json.dumps({**owner,'project':'foreign'}))
+            with self.assertRaisesRegex(RuntimeError,'ownership_invalid'):m.owned_sample(owner,receipt)
+
+    def test_real_read_failure_releases_lock_and_cleanup_keeps_original_120_seconds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt=Path(directory)/'ownership.json';owner={'project':'owned','work':directory};receipt.write_text(json.dumps(owner))
+            failure=m.BudgetFailure('http_budget_sample_command_failed','inspect','command_failed',exit_code=1)
+            with patch.object(m,'sample',side_effect=failure):
+                with self.assertRaises(m.BudgetFailure) as caught:m.owned_sample(owner,receipt)
+            self.assertIs(caught.exception,failure)
+            with open(str(receipt)+'.lock','a') as lock,patch.object(m.time,'monotonic',return_value=100):
+                value=m.begin_cleanup(receipt,lock.fileno())
+                self.assertEqual(value['cleanup_deadline_monotonic'],220)
+
+    def test_cleanup_lock_timeout_is_failed_without_unbounded_wait(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt=Path(directory)/'ownership.json';receipt.write_text(json.dumps({'project':'owned','work':directory}))
+            with open(str(receipt)+'.lock','a') as lock,patch.object(m.time,'monotonic',side_effect=[0,120,120]):
+                with self.assertRaisesRegex(m.BudgetFailure,'handoff_deadline'):m.begin_cleanup(receipt,lock.fileno())
+            value=json.loads(receipt.read_text());self.assertTrue(value['cleanup_overdue']);self.assertFalse(value['cleanup_verified'])
+
+    def test_unlock_failure_does_not_mask_the_first_real_read_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt=Path(directory)/'ownership.json';owner={'project':'owned','work':directory};receipt.write_text(json.dumps(owner))
+            failure=m.BudgetFailure('http_budget_sample_command_failed','inspect','command_failed',exit_code=1)
+            with patch.object(m,'sample',side_effect=failure),patch.object(m.fcntl,'flock',side_effect=[None,OSError('private-token')]):
+                with self.assertRaises(m.BudgetFailure) as caught:m.owned_sample(owner,receipt)
+            self.assertIs(caught.exception,failure)
+
+    def test_shell_holds_cleanup_lock_after_python_returns(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt=Path(directory)/'ownership.json';receipt.write_text(json.dumps({'project':'owned','work':directory}))
+            script='''exec 9>"$1.lock"
+python3 - "$1" "$2" <<'PYLOCK'
+import runpy,sys
+from pathlib import Path
+runpy.run_path(sys.argv[2])['begin_cleanup'](Path(sys.argv[1]),9)
+PYLOCK
+echo locked
+read -r release
+'''
+            child=subprocess.Popen(['bash','-c',script,'fixture',str(receipt),str(Path(m.__file__))],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
+            try:
+                self.assertEqual(child.stdout.readline().strip(),'locked')
+                with open(str(receipt)+'.lock','a') as lock:
+                    with self.assertRaises(BlockingIOError):m.fcntl.flock(lock,m.fcntl.LOCK_EX|m.fcntl.LOCK_NB)
+                child.communicate('release\n',timeout=3);self.assertEqual(child.returncode,0)
+                with open(str(receipt)+'.lock','a') as lock:m.fcntl.flock(lock,m.fcntl.LOCK_EX|m.fcntl.LOCK_NB)
+            finally:
+                if child.poll() is None:child.kill();child.communicate()
+
     def test_directory_diagnostic_is_closed_bounded_and_never_retains_text(self):
         secret=b'/private/credential-do-not-log'
         cases=[(b'du: '+secret+b': No such file or directory\n','path_disappeared'),
@@ -44,8 +152,8 @@ class HTTPBudget(unittest.TestCase):
     def test_private_directory_failure_preserves_same_deadline_and_separate_timings(self):
         with tempfile.TemporaryDirectory(prefix='addp-metrics-t2.') as directory:
             failure=subprocess.CalledProcessError(1,['du','-sk','private-command'],stderr=b'du: private-token: No such file or directory\n')
-            with patch.object(m.time,'monotonic',side_effect=[10,10,10.2,10.5,11.25]),patch.object(m.subprocess,'check_output',side_effect=[b'',failure]) as command:
-                with self.assertRaises(m.BudgetFailure) as caught:m.sample({'project':'addp-metrics-t2-'+'a'*32,'work':directory})
+            with patch.object(m.time,'monotonic',side_effect=[10,10.2,10.5,11.25]),patch.object(m.subprocess,'check_output',side_effect=[b'',failure]) as command:
+                with self.assertRaises(m.BudgetFailure) as caught:m.sample({'project':'addp-metrics-t2-'+'a'*32,'work':directory},14)
             facts=caught.exception.detail
             self.assertEqual(facts['stage'],'private_directory_size')
             self.assertEqual(facts['kind'],'command_failed')
@@ -62,8 +170,8 @@ class HTTPBudget(unittest.TestCase):
         for error,kind,finish in ((subprocess.TimeoutExpired('private-command',3.5,stderr=b'private-token'),'deadline',4),
                                   (OSError('private-token'),'command_unavailable',.75)):
             with self.subTest(kind=kind),tempfile.TemporaryDirectory(prefix='addp-metrics-t2.') as directory:
-                with patch.object(m.time,'monotonic',side_effect=[0,0,.2,.5,finish]),patch.object(m.subprocess,'check_output',side_effect=[b'',error]) as command:
-                    with self.assertRaises(m.BudgetFailure) as caught:m.sample({'project':'addp-metrics-t2-'+'a'*32,'work':directory})
+                with patch.object(m.time,'monotonic',side_effect=[0,.2,.5,finish]),patch.object(m.subprocess,'check_output',side_effect=[b'',error]) as command:
+                    with self.assertRaises(m.BudgetFailure) as caught:m.sample({'project':'addp-metrics-t2-'+'a'*32,'work':directory},4)
                 facts=caught.exception.detail
                 self.assertEqual(facts['kind'],kind)
                 self.assertEqual((facts['command_seconds'],facts['sample_seconds'],facts['command_budget_seconds']),(finish-.5,finish,3.5))
@@ -164,8 +272,8 @@ cleanup(){'''+body+'\nfalse\ncleanup\n'
         with self.assertRaises(RuntimeError):m.resource_totals([r],0,0)
 
     def test_sample_keeps_four_second_absolute_deadline(self):
-        with patch.object(m.time,'monotonic',side_effect=[0,0,4]),patch.object(m.subprocess,'check_output',return_value=b'') as command:
-            with self.assertRaisesRegex(RuntimeError,'sample_deadline'):m.sample({'project':'addp-metrics-t2-'+'a'*32,'work':'/tmp/addp-metrics-t2.fixture'})
+        with patch.object(m.time,'monotonic',side_effect=[0,4]),patch.object(m.subprocess,'check_output',return_value=b'') as command:
+            with self.assertRaisesRegex(RuntimeError,'sample_deadline'):m.sample({'project':'addp-metrics-t2-'+'a'*32,'work':'/tmp/addp-metrics-t2.fixture'},4)
         self.assertEqual(command.call_args.kwargs['timeout'],4)
 
     def test_disappearing_container_reports_exact_step_without_retry_or_raw_error(self):
@@ -177,7 +285,7 @@ cleanup(){'''+body+'\nfalse\ncleanup\n'
             with self.subTest(stage=stage):
                 failure=subprocess.CalledProcessError(1,['private-command'],stderr=secret)
                 with patch.object(m.time,'monotonic',return_value=0),patch.object(m.subprocess,'check_output',side_effect=outputs+[failure]) as command:
-                    with self.assertRaises(m.BudgetFailure) as caught:m.sample(ownership)
+                    with self.assertRaises(m.BudgetFailure) as caught:m.sample(ownership,4)
                 self.assertEqual(caught.exception.detail,{'stage':stage,'kind':'container_disappeared','exit_code':1,
                                  'command_seconds':0,'sample_seconds':0,'command_budget_seconds':4})
                 self.assertEqual(command.call_count,len(outputs)+1)
@@ -188,8 +296,8 @@ cleanup(){'''+body+'\nfalse\ncleanup\n'
     def test_sample_timeout_keeps_step_and_does_not_restart_budget(self):
         ownership={'project':'addp-metrics-t2-'+'a'*32,'work':'/tmp/addp-metrics-t2.fixture'}
         failure=subprocess.TimeoutExpired('private-command',4,stderr=b'private-credential')
-        with patch.object(m.time,'monotonic',side_effect=[0,0,1,1,3]),patch.object(m.subprocess,'check_output',side_effect=[b'owned\n',failure]) as command:
-            with self.assertRaises(m.BudgetFailure) as caught:m.sample(ownership)
+        with patch.object(m.time,'monotonic',side_effect=[0,1,1,3]),patch.object(m.subprocess,'check_output',side_effect=[b'owned\n',failure]) as command:
+            with self.assertRaises(m.BudgetFailure) as caught:m.sample(ownership,4)
         self.assertEqual(caught.exception.detail,{'stage':'inspect','kind':'deadline','command_seconds':2,
                          'sample_seconds':3,'command_budget_seconds':3})
         self.assertEqual([call.kwargs['timeout'] for call in command.call_args_list],[4,3])
@@ -202,7 +310,7 @@ cleanup(){'''+body+'\nfalse\ncleanup\n'
             ownership={'project':'addp-metrics-t2-'+'a'*32,'work':directory}
             for stage,outputs in [('volume_size',[b'owned\n',json.dumps([inspected]).encode()]),('private_directory_size',[b''])]:
                 with self.subTest(stage=stage),patch.object(m.time,'monotonic',return_value=0),patch.object(m.subprocess,'check_output',side_effect=outputs+[b'private-credential']):
-                    with self.assertRaises(m.BudgetFailure) as caught:m.sample(ownership)
+                    with self.assertRaises(m.BudgetFailure) as caught:m.sample(ownership,4)
                 self.assertEqual(caught.exception.detail,{'stage':stage,'kind':'invalid_size'})
                 self.assertNotIn('credential',str(caught.exception)+json.dumps(caught.exception.detail))
 
@@ -292,7 +400,7 @@ cleanup(){'''+body+'\nfalse\ncleanup\n'
     def test_full_http_zero_exit_needs_three_valid_reserved_recovery_receipts(self):
         phases={key:self.phase_record(limit) for key,limit in (('go',90),('python_1',45),('python_2',15))}
         counts={'go':180,'python':[90,30],'total':300}
-        for proof,expected in ((phases,0),(None,1),({**phases,'go':self.phase_record(90,False)},1)):
+        for proof,overdue,expected in ((phases,False,0),(None,False,1),({**phases,'go':self.phase_record(90,False)},False,1),(phases,True,1)):
             with self.subTest(expected=expected,missing=proof is None),tempfile.TemporaryDirectory() as directory:
                 root=Path(directory);work=root/'addp-metrics-t2.fixture';work.mkdir();output=root/'report.json'
                 ownership={'project':'addp-metrics-t2-'+'a'*32,'work':str(work)}
@@ -301,13 +409,14 @@ cleanup(){'''+body+'\nfalse\ncleanup\n'
                     receipt=Path(kwargs['env']['ADDP_HTTP_BUDGET_RECEIPT']);receipt.write_text(json.dumps(ownership))
                     def cleanup(**kwargs):
                         shutil.rmtree(work)
-                        receipt.write_text(json.dumps({**ownership,'cleanup_verified':True,'request_counts':counts,'request_phases':proof}))
+                        receipt.write_text(json.dumps({**ownership,'cleanup_verified':True,'request_counts':counts,'request_phases':proof,**({'cleanup_deadline_monotonic':0} if overdue else {})}))
                         return 0
                     child.wait.side_effect=cleanup
                     return child
                 with patch.object(m.sys,'argv',['budget','bash','scripts/test/monitor-metrics-gate.sh','--case=http-quality']),patch.dict(os.environ,{'ADDP_HTTP_BUDGET_REPORT':str(output)}),patch.object(m,'input_hashes',return_value={}),patch.object(m.subprocess,'Popen',side_effect=start),patch.object(m,'sample',return_value={'duration_seconds':0}),patch.object(m.time,'sleep'),redirect_stdout(io.StringIO()):
                     self.assertEqual(m.main(),expected)
                 self.assertEqual(json.loads(output.read_text())['result'],'passed' if expected==0 else 'failed')
+                if overdue:self.assertTrue(json.loads(output.read_text())['cleanup_overdue'])
 
     def test_existing_standard_case_is_wrapped_and_registered(self):
         root=Path(__file__).resolve().parents[2]
