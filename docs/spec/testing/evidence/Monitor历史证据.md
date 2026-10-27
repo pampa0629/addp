@@ -606,3 +606,18 @@
 修正仅在该用例沿已有observationResponse钩子明确返回容量点no_data／null／null；不新增夹具模式、产品读取或另一条采样路径。先确认初始加载完成且创建可用，再用原hold/release控制一次刷新：在途旧行清空，释放后核对HTTP响应为缺样，等待刷新按钮重新可用后仍要求创建disabled，且查看已有规则enabled；规则接口读取数不增加，撤销read后入口消失，始终无写入。没有增加sleep／超时、放宽disabled断言或改变业务权限／口径。
 
 本地标准npm run test:e2e -- e2e/filesystem-alert-rules.spec.js --trace=retain-on-failure全21项通过（1.0分钟，/tmp/addp-mount-capacity-refresh-green.log），包括缺样下查看／停用和身份撤销；npm --prefix monitor/frontend test的130项通过（/tmp/addp-mount-capacity-refresh-unit.log），限定diff检查通过。产品源码、共享依赖及构建输入未改，复用上述有效CI完整T1／T3／build；本次只改浏览器用例及证据，既有标准前端门禁自动发现覆盖，无新入口／CI路径。未触发、轮询、重跑或取消CI／Hosted，无定时任务，不操作个人服务／Safari；真实来源和Safari运行验收仍单列待做。
+
+
+### 2026-10-27 正式 Python HTTP 首轮本地窗口失败并清理（产品 profile 投影缺项）
+
+用户已确认收窄停源验收：存活时验证历史趋势；停源后Copilot必须not_active／空观测，Agent须有停源后的新鲜样本；停源后历史读取列为另批产品缺口。本轮未改变产品查询语义。收窄及反例提交 `469b0f618583c74340bb40e5efa8fde0990122cf`，19项确定性检查与相关System Go夹具检查通过后，仅启动一次 `make test-monitor-http-local`。
+
+实际窗口固定上述469b0f618源码，2026-10-27 23:31:51至23:31:58（Asia/Shanghai），外层计时6.447秒、生命周期6.371秒；原60分钟／8 CPU／12 GiB／4 GiB停止线、完整资源检查四秒均未放宽。结果为**失败**：阶段metrics_deployment_projection，错误KeyError。仅完成源码快照、当次网络及私有证书／配置准备；尚未进入产品构建、正式登录、采集查询、受控业务请求、页面或停源。resource_samples为空，资源守卫完整扫描尚未启动，不能据此宣称四秒守卫、资源峰值或正式产品闭环通过。
+
+清理完成：当次容器／网络／卷、私有目录及材料零残留，cleanup.zero_owned_resources=true、failures=[]。本轮失败后停止，未复用剩余时间、未自动重试或续窗；未运行Hosted、容量、定时、模型／工具调用或告警重演。
+
+离线定位复现：原入口的Compose config未显式选择observability-metrics／observability-metrics-control，实际渲染省略prometheus，随后读取缺项触发KeyError。新增遵循真实profile过滤行为的回归在修正前同样报KeyError: prometheus。另在配置审查发现隔离投影统一覆盖产品命名卷nocopy设置；相应回归也先失败，未将其描述为本次实际遭遇的容器权限故障。
+
+修正 `c15f8fa2aac3869c9f9f7237d3ffced0aa74790b`：显式选择既有两个profile，缺少所选产品服务时返回封闭错误；保留产品命名卷初始化选项，TLS输入卷继续沿既定受控复制／只读挂载。未新增服务或依赖，未改变配额、超时、身份／业务断言或产品行为。`make test-monitor-http-local-runner` 最终20项及相关HTTP／Trace／保护就绪System Go检查通过。离线调用两次真实Compose config，使用合成证书元数据且不启动服务／网络／卷，成功投影13个所需服务，Prometheus卷保留产品默认nocopy=false；这只证明配置渲染，不证明TLS、构建或运行通过。原Trace／Console前一阶段证据仍按原范围保存，未重跑或迁移为本正式实链通过。
+
+本轮归档：/private/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-formal-python-http-20261027-s4xbp81b，evidence-manifest.json绑定469源码、修正提交、窗口／失败报告、红绿回归及离线投影证明的散列。runtime-report.json SHA256为`b996f0f7a9f41d275a7525a307517f5b9897e5484e3b659aeccae0321773f29a`。修正尚未在真实新窗口运行验证；下一步须由用户另行确认原上限的新窗口，本轮保持失败与清理通过的独立结论。
