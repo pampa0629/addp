@@ -78,17 +78,17 @@ Native oracle 自动发现于 `make test-geopython-workflow`，身份夹具与�
 
 ### 独立持久化专项
 
-各专项独立手工触发，不改变已有套件、权限或跨模块产品逻辑。场景要求由下列正式场景维护，固定版本结果与未覆盖范围统一见[验收基线](../../docs/next/栅格算子体系后续专题.md#二当前验收基线)；入口登记、早期准备和真实 Hosted 分别记账，不外推为当前 HEAD 通过。
+下列五项的身份、隔离部署、独立预算与清理要求统一见[独立持久化专项公共前提](../../docs/spec/testing/scenarios/Manager与空间成果.md#独立持久化专项公共前提)，各项独有断言见对应正式场景。固定版本结果与未覆盖范围统一见[验收基线](../../docs/next/栅格算子体系后续专题.md#二当前验收基线)；入口登记、早期准备和真实 Hosted 分别记账，不外推为当前 HEAD 通过。
 
-`make test-online ONLINE_SUITE=raster-focal-statistics-persistence` 是邻域统计独立手工 Hosted，复用原普通用户 12 权限、NFS 和同源默认入口产品 Runtime；600 秒业务预算验证六条 COG 保存链、跨块完整像元／mask、严格三方大小、精确自动扫描、当前执行血缘及零残留，非法波段／窗口失败不得发布或新增扫描。确定性脚本入口为 `make test-raster-focal-statistics-online-runner`，并入原栅格 Runner；真实 GDAL 回归沿现有 Native 入口。固定版本 `fe0d7cc8e` 的[独立 Hosted](https://github.com/pampa0629/addp/actions/runs/39228689716/job/117981136802) 已通过并经归档审计，预检／业务 359770 毫秒，完整结果见[邻域统计正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md#raster-focal-statistics-persistence)；同源 Linux 全量 1251 项及 Platform 均通过。
+`make test-online ONLINE_SUITE=raster-focal-statistics-persistence` 验证邻域统计的六条 COG 保存链、跨块完整像元／mask、严格三方大小、精确自动扫描、当前执行血缘，非法波段／窗口失败不得发布或新增扫描。确定性脚本入口为 `make test-raster-focal-statistics-online-runner`，并入原栅格 Runner；真实 GDAL 回归沿现有 Native 入口。固定版本 `fe0d7cc8e` 的[独立 Hosted](https://github.com/pampa0629/addp/actions/runs/39228689716/job/117981136802) 已通过并经归档审计，预检／业务 359770 毫秒，完整结果见[邻域统计正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md#raster-focal-statistics-persistence)；同源 Linux 全量 1251 项及 Platform 均通过。
 
-`make test-online ONLINE_SUITE=raster-zonal-statistics-persistence` 为整数栅格分区统计的独立手工 Hosted T4；600 秒预算，复用 NFS 与普通用户原 12 权限，验证四条完整 CSV 保存链、有限预览、严格物理／Meta 大小、自动扫描、血缘与两条非法参数失败清理。不新增 RasterArtifact；实现与证据边界见 [Manager 与空间成果](../../docs/spec/testing/scenarios/Manager与空间成果.md#raster-zonal-statistics-persistence)。
+`make test-online ONLINE_SUITE=raster-zonal-statistics-persistence` 验证整数栅格分区统计的四条完整 CSV 保存链、有限预览、严格物理／Meta 大小、自动扫描、血缘与两条非法参数失败清理。不新增 RasterArtifact；实现与证据边界见 [Manager 与空间成果](../../docs/spec/testing/scenarios/Manager与空间成果.md#raster-zonal-statistics-persistence)。
 
-`make test-online ONLINE_SUITE=vector-rasterize-persistence` 为二维面矢量栅格化的独立手工 Hosted T4；600 秒业务预算，复用 NFS 与普通用户原 12 权限，验证三条 COG 链和非法字段失败清理。实现与证据边界见 [Manager 与空间成果](../../docs/spec/testing/scenarios/Manager与空间成果.md#vector-rasterize-persistence)。
+`make test-online ONLINE_SUITE=vector-rasterize-persistence` 验证二维面矢量栅格化的三条 COG 链和非法字段失败清理。实现与证据边界见 [Manager 与空间成果](../../docs/spec/testing/scenarios/Manager与空间成果.md#vector-rasterize-persistence)。
 
-`make test-online ONLINE_SUITE=vector-zonal-statistics-persistence` 为矢量分区统计独立手工 Hosted；原普通用户 12 权限、NFS 与同源默认产品入口、独立 600 秒预检／业务预算，验证中心覆盖、全部触及＋自定义前缀、重分类→转面→统计三条 GeoPackage 保存链和非法波段／列冲突失败清理。严格核对完整几何／属性／字段类型／计数／统计／null、物理与 Meta 大小、扫描归属、当前执行全部实际输入血缘及零残留。脚本回归入口 `make test-vector-zonal-statistics-online-runner` 并入栅格 Runner，真实 GDAL oracle 沿已有 Native 门禁；仅登记入口不代表 T4 通过，实际结果按上述固定版本验收基线核对。场景要求见 [Manager 与空间成果](../../docs/spec/testing/scenarios/Manager与空间成果.md#vector-zonal-statistics-persistence)。
+`make test-online ONLINE_SUITE=vector-zonal-statistics-persistence` 验证矢量分区统计的中心覆盖、全部触及＋自定义前缀、重分类→转面→统计三条 GeoPackage 保存链和非法波段／列冲突失败清理。严格核对完整几何／属性／字段类型／计数／统计／null、物理与 Meta 大小、扫描归属、当前执行全部实际输入血缘。脚本回归入口 `make test-vector-zonal-statistics-online-runner` 并入栅格 Runner，真实 GDAL oracle 沿已有 Native 门禁；仅登记入口不代表 T4 通过，实际结果按上述固定版本验收基线核对。场景要求见 [Manager 与空间成果](../../docs/spec/testing/scenarios/Manager与空间成果.md#vector-zonal-statistics-persistence)。
 
-邻近距离的独立手工入口为 `make test-online ONLINE_SUITE=raster-proximity-persistence`：复用 Hosted／NFS／同源产品镜像和原 12 权限，米制多波段与英尺制 UInt32 两条 COG DAG，完整距离／mask／单位／网格、严格三方大小、精确扫描、当前执行单源血缘、源与先前成果不可变及失败零残留；独立 600 秒预算；早期准备记录为 16 项真实 GDAL 夹具、51 项脚本门禁及 CI 登记验证通过，该记录未标注源码版本，不作为当前 HEAD 的通过证据。场景要求见[邻近距离正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md#raster-proximity-persistence)，后续固定版本 Hosted 结果按上述验收基线核对。
+邻近距离的独立手工入口为 `make test-online ONLINE_SUITE=raster-proximity-persistence`，验证米制多波段与英尺制 UInt32 两条 COG DAG，完整距离／mask／单位／网格、严格三方大小、精确扫描、当前执行单源血缘。早期准备记录为 16 项真实 GDAL 夹具、51 项脚本门禁及 CI 登记验证通过，该记录未标注源码版本，不作为当前 HEAD 的通过证据。场景要求见[邻近距离正式场景](../../docs/spec/testing/scenarios/Manager与空间成果.md#raster-proximity-persistence)，后续固定版本 Hosted 结果按上述验收基线核对。
 
 ### 分类蚕食容量
 
