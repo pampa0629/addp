@@ -1,6 +1,6 @@
 # ADDP 部署和开发步骤
 
-本文介绍基础设施、开发、构建和部署的标准入口。
+本文介绍基础设施、开发、构建和部署的标准入口。新增模块的目录、配置、生命周期和前端接入统一见[新模块指南的阅读导航](../spec/addp新模块开发指南.md#阅读导航)，交付前按其[检查清单](../spec/addp新模块开发指南.md#检查清单)核对。
 
 ## 快速开始
 
@@ -107,7 +107,7 @@ make build-images IMAGE_BUILD_ARGS="--services pointcloud-workflow-engine --forc
 bash scripts/build/package.sh
 ```
 
-`make build` 与 `make build-images` 是平台唯一标准构建入口，分别薄调用 `scripts/build/compile.sh` 与 `scripts/build/build-images.sh`。`make build BUILD_ARGS="--arch amd64 --services system-backend,gateway"` 可精确构建指定服务；Go 产物按实际依赖指纹判断缓存并写入构建身份，供 Online 预检核对。新增正式服务、Worker、前端或 Compose 镜像时，必须在同一次变更中补齐对应构建登记；`make test-platform` 会自动校验完整性。
+`make build` 与 `make build-images` 是平台唯一标准构建入口，分别薄调用 `scripts/build/compile.sh` 与 `scripts/build/build-images.sh`。`make build BUILD_ARGS="--arch amd64 --services system-backend,gateway"` 可精确构建指定服务；Go 产物按实际依赖指纹判断缓存并写入构建身份，供 Online 预检核对。
 
 代码交付前默认使用统一影响分析入口，不要等推送后的 CI 通知才补测试或构建适配：
 
@@ -122,7 +122,7 @@ make test-changed BASE_REF=<ref>
 make test-module MODULE=<模块>
 ```
 
-共享 Go、前端和 Python 代码会根据仓库内真实依赖扩散到消费者。`make test-platform` 负责检查新模块、测试入口、前端、Python 包、PostgreSQL 门禁和产品构建是否完整登记。GitHub Actions 在 `main` push 后和每日定时任务中使用独立 Runner 复验；本地 `start.sh`、`restart.sh`、`git commit` 均不会触发 CI。
+共享 Go、前端和 Python 代码会根据仓库内真实依赖扩散到消费者。`make test-platform` 校验构建与测试登记完整性；新增模块的脚本、构建、测试及 CI 接入按[新模块指南](../spec/addp新模块开发指南.md#后端接入步骤)在同一次变更中完成。GitHub Actions 在 `main` push 后和每日定时任务中使用独立 Runner 复验；本地 `start.sh`、`restart.sh`、`git commit` 均不会触发 CI。
 
 GeoPython、Spark、Model3D、PointCloud 和 Document Workflow 在开发模式下使用原生进程，便于调试和快速迭代；产品部署保留正式容器镜像。各引擎的平台支持和依赖要求见下文及模块 README。
 
