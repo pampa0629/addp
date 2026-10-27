@@ -776,7 +776,7 @@ def run_online(
         available = ", ".join(sorted(suites)) or "none"
         raise OnlineGateError(f"unknown ONLINE_SUITE {suite_name!r}; registered suites: {available}")
 
-    if suite_name == 'manager-internal-artifact-lineage' and environment.get('ADDP_ONLINE_MANAGER_CASE') == 'kml-export':
+    if suite_name == 'manager-internal-artifact-lineage' and environment.get('ADDP_ONLINE_MANAGER_CASE') in {'kml-export', 'native-table-orc'}:
         suite = replace(suite, services=(*suite.services, ('transfer', 'TRANSFER_URL')))
 
     timeout = parse_positive_timeout(

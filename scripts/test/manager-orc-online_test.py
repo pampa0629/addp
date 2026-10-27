@@ -282,6 +282,32 @@ class ORCSceneTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 fixture.physical(action, Path("/tmp"), {})
 
+    def test_orc_preflight_requires_and_verifies_transfer_source_identity(self):
+        gate = importlib.import_module('scripts.test.online-gate')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repository = root/'repository'
+            repository.mkdir()
+            suite = gate.SUITES['manager-internal-artifact-lineage']
+            env = dict(
+                {variable:'http://127.0.0.1:8000' for _,variable in suite.services},
+                ADDP_ONLINE_TEST='1', ADDP_ONLINE_MANAGER_CASE='native-table-orc',
+                ADDP_ONLINE_TEST_RUN_ID='manager-123-1', ADDP_ONLINE_ARTIFACT_DIR=str(root/'artifacts'),
+                POSTGRES_DB='addp_online', TRANSFER_URL='http://127.0.0.1:8083',
+            )
+            with patch.object(gate, 'run_stage', return_value=({},1)) as run_stage:
+                report = gate.run_online('manager-internal-artifact-lineage', repository, env,
+                                         lock_root=root/'locks')
+                command = run_stage.call_args_list[0].args[1]
+                self.assertIn('transfer=http://127.0.0.1:8083', command)
+                self.assertEqual(report['service_addresses']['transfer'], 'http://127.0.0.1:8083')
+            env.pop('TRANSFER_URL')
+            with patch.object(gate, 'run_stage') as run_stage:
+                with self.assertRaisesRegex(gate.OnlineGateError, 'TRANSFER_URL'):
+                    gate.run_online('manager-internal-artifact-lineage', repository, env,
+                                    lock_root=root/'locks')
+                run_stage.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
