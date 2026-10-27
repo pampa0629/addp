@@ -11403,3 +11403,233 @@ def test_dem_cut_fill_async_table_save_frozen_failure_language_and_cleanup(tmp_p
         assert saved.loc[0,['cut_volume_m3','fill_volume_m3','net_increase_m3']].tolist()==list(expected)
         assert saved.valid_count.tolist()==[9] and target.stat().st_size>0
         preview=json.loads(status['all_results']['stats']);assert preview['row_count']==1 and preview['preview_rows'][0]['net_increase_m3']==expected[2]
+
+
+def _tpi_decimal_oracle(values, factor=1.):
+    """Independent scalar Decimal mean over the eight non-central samples."""
+    from decimal import Decimal, localcontext
+    answer = np.full(values.shape, np.nan)
+    with localcontext() as context:
+        context.prec = 2500
+        for row in range(1, values.shape[0]-1):
+            for col in range(1, values.shape[1]-1):
+                cells = values[row-1:row+2, col-1:col+2]
+                if not np.isfinite(cells).all():
+                    continue
+                decimal = [Decimal(int(v)) if isinstance(v, (int, np.integer)) else Decimal.from_float(float(v)) for v in cells.ravel()]
+                centre = decimal.pop(4)
+                answer[row, col] = float((centre-sum(decimal)/Decimal(8))*Decimal.from_float(factor))
+    return answer
+
+
+@pytest.mark.parametrize('a,b,c,d,e', [(0,0,0,0,0), (0,0,0,2,-3), (1,2,0,0,0), (-1,-2,0,0,0), (1,-1,0,0,0), (0,0,1,0,0)])
+@pytest.mark.parametrize('dx,dy', [(1.,1.),(2.,3.),(.25,4.)])
+def test_dem_tpi_analytic_plane_hill_bowl_saddle_valid_zero(tmp_path,a,b,c,d,e,dx,dy):
+    from operators.raster_compute import raster_tpi
+    row,col=np.indices((7,9));x=(col-4)*dx;y=(row-3)*dy
+    values=a*x*x+b*y*y+c*x*y+d*x+e*y-20
+    path=_curvature_file(tmp_path,values,dx,dy);before=path.read_bytes()
+    with raster_workspace():
+        result=raster_tpi(raster_load(source_plan(path)),1,'metre');ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        expected=np.full(values.shape,np.nan);expected[1:-1,1:-1]=-.75*(a*dx*dx+b*dy*dy)
+        np.testing.assert_array_equal(read_band_values(band),expected)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected))
+        assert band.GetUnitType()=='metre' and band.DataType==gdal.GDT_Float64
+        assert ds.GetGeoTransform()==(500000.,dx,0.,3000000.,0.,-dy)
+        band=ds=None
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('epsg',[3857,2227,26943])
+@pytest.mark.parametrize('unit,factor',[('metre',1.),('foot',.3048),('us_survey_foot',1200/3937)])
+def test_dem_tpi_independent_decimal_original_samples_and_vertical_units(tmp_path,epsg,unit,factor):
+    from operators.raster_compute import raster_tpi
+    values=np.random.default_rng(178).normal(size=(8,9))*8+1e6
+    values[3,4]=np.nan
+    path=_curvature_file(tmp_path,values,epsg=epsg,unit=unit)
+    with raster_workspace():
+        result=raster_tpi(raster_load(source_plan(path)),1,unit);ds=gdal.Open(str(result.path))
+        np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_tpi_decimal_oracle(values,factor));ds=None
+
+
+@pytest.mark.parametrize('fault',['nodata','nan','inf','mask','alpha-zero','alpha-nan','partial-alpha'])
+def test_dem_tpi_full_neighbourhood_second_band_and_independent_coverage(tmp_path,fault):
+    from operators.raster_compute import raster_tpi
+    rows,cols=np.indices((7,9));values=(cols-4.)**2+(rows-3.)**2
+    cube=np.stack((np.full(values.shape,np.nan),values,np.full(values.shape,-9999.),np.full(values.shape,255.)))
+    if fault in ('nan','inf','nodata'):cube[1,3,4]={'nan':np.nan,'inf':np.inf,'nodata':-9999.}[fault]
+    if fault.startswith('alpha-'):cube[3,3,4]=0 if fault=='alpha-zero' else np.nan
+    if fault=='partial-alpha':cube[3,3,4]=128
+    path=_curvature_file(tmp_path,cube,unit='');ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(2).SetUnitType('metre');ds.GetRasterBand(4).SetColorInterpretation(gdal.GCI_AlphaBand)
+    if fault=='mask':
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+        mask=np.full(values.shape,255,np.uint8);mask[3,4]=0;ds.GetRasterBand(1).GetMaskBand().WriteArray(mask)
+    ds=None;expected=values.copy()
+    if fault!='partial-alpha':expected[3,4]=np.nan
+    with raster_workspace():
+        result=raster_tpi(raster_load(source_plan(path)),2,'metre');ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        wanted=_tpi_decimal_oracle(expected);np.testing.assert_array_equal(read_band_values(band),wanted)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(wanted));band=ds=None
+
+
+@pytest.mark.parametrize('shape',[(1,1),(1,7),(6,1),(2,6),(3,3),(5,7)])
+@pytest.mark.parametrize('empty',[False,True])
+def test_dem_tpi_small_or_all_invalid_grid_returns_nodata(tmp_path,shape,empty):
+    from operators.raster_compute import raster_tpi
+    values=np.full(shape,np.nan if empty else 0.);path=_curvature_file(tmp_path,values)
+    with raster_workspace():
+        result=raster_tpi(raster_load(source_plan(path)),1,'metre');ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_tpi_decimal_oracle(values));ds=None
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('fault',['geographic','rotated','south-up','missing-crs','missing-grid','unit','unit-conflict','unit-unknown','scale','offset','alpha','band','complex','complex-alpha'])
+def test_dem_tpi_bilingual_admission_and_no_private_output(tmp_path,language,fault):
+    import operators.raster_compute as compute
+    path=tmp_path/'bad-tpi.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),5,5,2 if fault=='complex-alpha' else 1,gdal.GDT_CFloat64 if fault in ('complex','complex-alpha') else gdal.GDT_Float64)
+    if fault!='missing-grid':ds.SetGeoTransform((0,1,.2 if fault=='rotated' else 0,5,0,1 if fault=='south-up' else -1))
+    if fault!='missing-crs':crs=osr.SpatialReference();crs.ImportFromEPSG(4326 if fault=='geographic' else 3857);ds.SetSpatialRef(crs)
+    band=ds.GetRasterBand(1);band.Fill(1)
+    if fault in ('unit-conflict','unit-unknown'):band.SetUnitType('foot' if fault=='unit-conflict' else 'fathom')
+    if fault=='scale':band.SetScale(2)
+    if fault=='offset':band.SetOffset(10)
+    if fault=='alpha':band.SetColorInterpretation(gdal.GCI_AlphaBand)
+    if fault=='complex-alpha':ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    band=ds=None
+    key={'unit-unknown':'unit-conflict','offset':'scale','missing-grid':'grid','missing-crs':'grid','geographic':'grid','rotated':'grid','south-up':'grid','complex-alpha':'complex'}.get(fault,fault)
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        with pytest.raises(ValueError) as error:compute.raster_tpi(source,True if fault=='band' else 1,'bad' if fault=='unit' else 'metre')
+        assert str(error.value)==str(compute._tpi_error(key))
+        assert ('DEM topographic position index' if language=='en' else 'DEM 地形位置指数') in str(error.value)
+        assert set(source.workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('band',[0,-1,2,1.0,True,None,'1'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_dem_tpi_explicit_band_validation(tmp_path,band,language):
+    import operators.raster_compute as compute
+    path=_curvature_file(tmp_path,np.ones((3,3)))
+    with raster_workspace(),raster_error_language(language):
+        with pytest.raises(ValueError,match='DEM'):compute.raster_tpi(raster_load(source_plan(path)),band,'metre')
+
+
+@pytest.mark.parametrize('dtype,base,nodata',[(gdal.GDT_Int64,-2**63+16,-2**63),(gdal.GDT_UInt64,2**64-33,2**64-1)])
+def test_dem_tpi_native_64bit_neighbour_differences_and_adjacent_nodata(tmp_path,dtype,base,nodata):
+    from operators.raster_compute import raster_tpi
+    values=np.array([[base+int((r-3)**2+(c-3)**2) for c in range(7)] for r in range(7)],dtype=np.int64 if dtype==gdal.GDT_Int64 else np.uint64)
+    values[1,1]=nodata;values[5,5]=nodata+1 if dtype==gdal.GDT_Int64 else nodata-1;path,_=_cut_fill_pair(tmp_path,values,values,dtype=dtype);ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(1).SetNoDataValue(nodata);ds=None
+    wanted=_tpi_decimal_oracle(values);wanted[1:3,1:3]=np.nan
+    with raster_workspace():
+        result=raster_tpi(raster_load(source_plan(path)),1,'metre');ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),wanted);ds=None
+
+
+@pytest.mark.parametrize('case',['large-base','cancellation','intermediate-overflow','tiny-nonzero','overflow','underflow','invalid-extreme'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_dem_tpi_extreme_stored_values_keep_final_representable_differences(tmp_path,case,language):
+    import operators.raster_compute as compute
+    values=np.zeros((3,3));factor=1.
+    if case=='large-base':values[:]=2.**60;values[1,1]=np.nextafter(2.**60,np.inf)
+    if case=='cancellation':values[:]=1.;values[0,0]=1e308;values[2,2]=-1e308;values[1,1]=0.
+    if case=='intermediate-overflow':values[:]=np.finfo(float).max;values[1,1]=np.nextafter(np.finfo(float).max,0.)
+    if case=='tiny-nonzero':values[1,1]=1e-300
+    if case=='overflow':values[:]=-np.finfo(float).max;values[1,1]=np.finfo(float).max
+    if case=='underflow':values[0,0]=np.nextafter(0.,1.)
+    if case=='invalid-extreme':values[:]=-np.finfo(float).max;values[1,1]=np.finfo(float).max;values[0,0]=np.nan
+    path=_curvature_file(tmp_path,values)
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        if case in ('overflow','underflow'):
+            with pytest.raises(ValueError) as error:compute.raster_tpi(source,1,'metre')
+            assert str(error.value)==str(compute._tpi_error('numeric'));assert set(source.workspace.iterdir())==prior
+        else:
+            result=compute.raster_tpi(source,1,'metre');ds=gdal.Open(str(result.path));np.testing.assert_array_equal(read_band_values(ds.GetRasterBand(1)),_tpi_decimal_oracle(values,factor));ds=None
+
+
+def test_dem_tpi_cross_block_bounded_reads_full_cog_mask_and_source_unchanged(tmp_path,monkeypatch):
+    import operators.raster_compute as compute
+    from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+    row,col=np.indices((519,515));values=2.*col*col-row*row+3*row*col-100
+    values[509,510]=np.nan;path=_curvature_file(tmp_path,values);before=path.read_bytes();reads=[];blocks=compute._blocks
+    def bounded(*args,**kwargs):
+        window=kwargs.get('window');assert window and window[2]<=512 and window[3]<=512
+        assert kwargs.get('native') is True;reads.append(window)
+        yield from blocks(*args,**kwargs)
+    target=tmp_path/'tpi.cog.tif';prior=tmp_path/'prior.tif';prior.write_bytes(b'previous output')
+    with raster_workspace():
+        source=raster_load(source_plan(path))
+        with monkeypatch.context() as patch:
+            patch.setattr(compute,'_blocks',bounded);result=compute.raster_tpi(source,1,'metre')
+        artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128)
+        assert artifact['size_bytes']==target.stat().st_size>0
+    ds=gdal.Open(str(target));band=ds.GetRasterBand(1);wanted=np.full(values.shape,np.nan);wanted[1:-1,1:-1]=-.75;wanted[508:511,509:512]=np.nan
+    np.testing.assert_array_equal(read_band_values(band),wanted);np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(wanted))
+    assert not validate(ds,full_check=True)[1] and band.GetOverviewCount()>0 and band.GetUnitType()=='metre'
+    assert ds.GetGeoTransform()==(500000.,2.,0.,3000000.,0.,-3.)
+    band=ds=None;assert any(x>=509 and y>=509 for x,y,w,h in reads)
+    assert path.read_bytes()==before and prior.read_bytes()==b'previous output'
+
+
+@pytest.mark.parametrize('stage',['read','compute','after-first-write'])
+def test_dem_tpi_injected_failure_cleans_private_outputs(tmp_path,monkeypatch,stage):
+    import operators.raster_compute as compute
+    path=_curvature_file(tmp_path,np.ones((519,515)));windows=compute._neighbourhood_windows;block=compute._tpi_block;calls=0
+    def failing_windows(*args,**kwargs):
+        for item in windows(*args,**kwargs):
+            if stage=='read':raise RuntimeError('injected TPI failure')
+            yield item
+    def failing_block(*args):
+        nonlocal calls;calls+=1
+        if stage=='compute' or (stage=='after-first-write' and calls==2):raise RuntimeError('injected TPI failure')
+        return block(*args)
+    monkeypatch.setattr(compute,'_neighbourhood_windows',failing_windows);monkeypatch.setattr(compute,'_tpi_block',failing_block)
+    with raster_workspace():
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        with pytest.raises(RuntimeError,match='injected TPI failure'):compute.raster_tpi(source,1,'metre')
+        assert set(source.workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('case',['direct','feet','filled','reclassified','all-invalid','incomplete','bad-unit'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_dem_tpi_real_async_existing_ports_cog_and_frozen_language(tmp_path,monkeypatch,case,language):
+    import api_server,workflow_engine
+    row,col=np.indices((7,9));values=(col-4.)**2+(row-3.)**2-20;unit='foot' if case=='feet' else 'metre';factor=.3048 if case=='feet' else 1.
+    if case=='all-invalid':values[:]=np.nan
+    if case=='incomplete':values[:]=np.nan;values[3,4]=0
+    values=values/factor;path=_curvature_file(tmp_path,values,unit=unit);before=path.read_bytes();target=tmp_path/'async-tpi.cog.tif'
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}}];prior='source'
+    if case=='filled':
+        tasks.append({'id':'fill','operator':'raster_fill_depressions','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'elevation_unit':'metre'}});prior='fill';values=_fill_level_reachability_oracle(values)
+    if case=='reclassified':
+        tasks.append({'id':'classes','operator':'raster_reclassify','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'rules':[{'min':None,'max':-10,'class':0},{'min':-10,'max':None,'class':1}]}});prior='classes';values=np.where(values<-10,0.,1.)
+    tasks.extend([{'id':'tpi','operator':'raster_tpi','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'elevation_unit':'yard' if case=='bad-unit' else unit}}, {'id':'save','operator':'raster_save','depends_on':['tpi'],'params':{'input_raster':{'$ref':'tpi'},'access_plan':target_plan(target),'profile':'cog','blocksize':128}}])
+    workspaces=[];execute=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_tpi':workspaces.append(params['input_raster'].workspace)
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture);client=api_server.app.test_client();assert client.post('/api/operators/raster_tpi/invoke',json={'params':{}}).status_code==403
+    response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}});assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en' if language=='zh-cn' else 'zh-cn'}).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    assert status['status']==('failed' if case=='bad-unit' else 'success'),status
+    assert workspaces and all(not p.exists() for p in workspaces) and path.read_bytes()==before
+    if case=='bad-unit':
+        assert not target.exists();assert ('高程单位' if language=='zh-cn' else 'elevation_unit') in status['error']
+        assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
+    else:
+        ds=gdal.Open(str(target));band=ds.GetRasterBand(1);np.testing.assert_array_equal(read_band_values(band),_tpi_decimal_oracle(values,factor));assert band.GetUnitType()=='metre';band=ds=None
+        with raster_workspace():assert validate_cog(raster_load(source_plan(target)))['valid']
+        artifact=json.loads(status['result']);assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0
+
+
+@pytest.mark.parametrize('unit',[None,True,1,'METRE','yard',{},[]])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_dem_tpi_requires_exact_explicit_unit(tmp_path,unit,language):
+    import operators.raster_compute as compute
+    path=_curvature_file(tmp_path,np.ones((3,3)))
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        with pytest.raises(ValueError) as error:compute.raster_tpi(source,1,unit)
+        assert str(error.value)==str(compute._tpi_error('unit'));assert set(source.workspace.iterdir())==prior

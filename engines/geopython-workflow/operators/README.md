@@ -174,3 +174,5 @@ make test-geopython-workflow
 `raster_hand_d8` 提供显式D8方向／河网／DEM的到河网相对高程：全图下游高程不升高、允许平坦，逆坡失败；相对首次河网高程差统一米制，河网与等高非河网0、未到达NoData。三波段及高程单位必填，复用原COG主路径；完整输入／数值／失败边界见平台栅格算子契约。
 
 `raster_curvature`：DEM曲率，`method=mean/profile/tangential/plan`默认mean保留平均曲率；同一完整有效3×3九点等权二次曲面，凸正凹负，单位`1/metre`。profile沿最大坡降方向，tangential沿等高线切向计算法向曲率；plan为等高线水平投影的几何曲率；三种方向方法九点严格等高平地为0、其他零梯度点NoData；无完整邻域NoData。显式波段与高程单位，复用原COG主路径，详见平台栅格算子契约。
+
+`raster_tpi`计算完整有效3×3窗口的中心高程减周围8点等权均值，统一米制，合法零不排除；复用DEM准入、带halo分块、已有raster端口及COG保存。边缘与无效邻域为NaN；原生高差与抵消保留至最终Float64转换，溢出／非零下溢严格失败。详见[栅格算子契约](../../../docs/spec/workflow/栅格算子契约.md#dem-地形位置指数tpi)。
