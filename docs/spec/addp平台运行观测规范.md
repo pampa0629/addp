@@ -264,6 +264,10 @@ TCP 当前连接数为 `node.tcp.current_connections`（unit=`connections`，瞬
 
 磁盘忙碌时间占比不是饱和度，平均读写耗时包含排队和处理；没有完成请求时平均耗时为空，有请求且耗时确为零才可显示零。设备层级、桥接与虚拟接口不简单累加；不通过插值、截断异常值或用相似指标伪装缺值。磁盘列表优先展示活动设备，无活动设备可展开。
 
+PostgreSQL 专业观测的固定查询目录首期 12 项：总连接、活跃连接、空闲连接、事务内空闲连接、活跃等待、锁等待、IO 等待、最大连接数（均为数量）；每秒提交、每秒回滚、每秒死锁（各自为独立累计量的速率）；非模板数据库总容量（字节、页面自动换算）。这是整体 PostgreSQL 观测，不将采集事务当业务吞吐、不归算租户用量，也不凭连接数直接判断健康。
+
+速率使用固定一分钟完整窗口，至少四次有效采样，并验证过去和当前属于同一服务启动／统计代际、无计数回退且窗口两端新鲜；重启、统计重置或统计关闭时留空，不补零、不跨代际计算。SQL Exporter 的 HTTP 200／up=1 仍不足以证明 SQL 成功，必须验证固定快照、采样时间与字段完整性；来源不可用或 SQL 失败清空当前值，缺样形成趋势断点。
+
 进程目录独立：CPU 使用 `process.cpu.core_equivalents`，1 核表示消耗一个逻辑核的计算时间；内存为当前 `process.memory.resident_bytes`，时长从本次启动计算。无明确配额不生成配额利用率，不用宿主总内存计算进程使用率，也不用 Go 堆或峰值 RSS 替代当前 RSS。macOS 自身采样严格核对系统接口成功与返回长度，失败不生成有效零值。
 
 自身 cgroup 采样与容器身份分开：Linux Common SDK 仅在进程部署输入显式选择 `cgroup_v2=true` 时，才可在既有 mTLS 来源发布当前 cgroup v2 的 `addp_cgroup_identity_info`、`addp_cgroup_cpu_usage_seconds_total` 和 `addp_cgroup_memory_current_bytes`。身份只含内核 boot UUID、cgroup inode 和 PID namespace inode，均以规范字符串标识；只读 `/proc/self/cgroup`、`/proc/self/mountinfo`、自身 PID／cgroup namespace、内核 boot ID 及当前组固定资源文件，不扫描其他进程或组。路径、凭据和原始错误不发布；文件、字段、读取量及路径严格有界。迁组／身份变化或读取失败时清除本次组指标，不能变为有效零值，也不能影响原进程 CPU／RSS／启动指标。这三项仅是私有采集事实，不直接成为用户查询目录；单实例资源组观测沿本节部署证明及 [6.2](#62-资源查询与预算) 的既有契约处理，列表摘要与告警范围不随采样声明扩大。
@@ -289,6 +293,9 @@ PostgreSQL 专业查询同时核验 `monitor.resource_observation.read` 与 Syst
 | `/platform/process_resource_summaries` | 当前授权实例批量 CPU/RSS/时长，固定目录；普通实例 DTO 仅公开采集声明布尔值 |
 | `/platform/process_resource_trends` | 仅 instance_id/start/end，固定 CPU/RSS 两条序列；不读取已退出实例历史 |
 | `/platform/container_resource_observations` | `instance_ids` 恰好一个当前实例；固定资源组 CPU 核消耗、memory.current 及两项硬上界利用率，不改变批量摘要目录；无有效证明时只读当前声明内核边界的绝对用量 |
+| `/platform/engine_resource_observations` | 单部署即时观测，固定十二项专业目录，最多十二指标 |
+| `/platform/engine_resource_summaries` | 当前授权页部署的四项摘要，沿同一查询预算 |
+| `/platform/engine_resource_trends` | 单部署固定专业目录，仅读当前数据库容器运行段 |
 | `/platform/resource_overview` | 不接受 query/body，完整授权主机范围及 CPU/内存 TOP5 |
 | `/settings/resource-query-policy` | Monitor 普通平台配置，沿 `monitor.configuration.read/update`，版本 CAS 与审计 |
 
@@ -359,7 +366,9 @@ PostgreSQL 专业查询同时核验 `monitor.resource_observation.read` 与 Syst
 
 CPU/内存分别报告应覆盖、有效、缺失、过期及未接入数量；仅 valid 参与前五名，按值降序、同值 node_id 升序，真实零值参与。缺覆盖明确“不完整”；整轮成功原子发布，不发部分榜单。不合计主机容量、进程 RSS、容器配额、共享挂载或引擎集群容量，后续先明确去重与分母。
 
-PostgreSQL 专业观测仅显示当前数据库容器运行段，最长七天；重启／统计重置处的速率留空。
+页面在运行监控下提供“引擎监控”，从现有 System 引擎部署列表进入；不让用户重复填写节点或端点，复用共享格式化、图表、自动刷新与 URL 恢复。
+
+PostgreSQL 专业观测的历史范围：即时值与最多七天趋势只读取当前 PostgreSQL 容器运行段；采集器重启但数据库运行身份不变时可延续，数据库容器重建后不混入旧容器数据。数据库进程重启或统计重置位置的速率仍按前述代际检查留空。退出容器历史及跨运行段拼接另定保留／授权规则。
 
 ### 6.4 HTTP 接口质量（分阶段接入）
 
