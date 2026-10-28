@@ -244,4 +244,23 @@ ImportError 尚缺具体组件与版本事实，本批没有猜测升级／降�
 
 修正后验证：新HTTP缓存准入回归先红；`make test-infra-runtime-log-lifecycle`通过，其中HTTP22项、原Trace123项、既有生命周期88项及相关Go／CI登记通过；随后补充当次TLS辅助容器使用确切ID和禁止隐式拉取的用例，`make test-monitor-http-local-runner`最终23项及相关Go检查通过。对失败后已保存的真实缓存元数据，离线验证器也通过；这些结果不代表新完整实链或采样镜像内进程已运行。新修正尚未启动真实新窗口，原Trace／Console／SDK Linux证据仍保持其原固定源码与覆盖范围。
 
-本机保留窗口记录、runtime-report.json、缓存只读回执、红绿门禁和evidence-manifest.json；临时归档可由本会话标准指针`/tmp/addp-p19-current-http-product-window`定位。runtime-report.json SHA256为`94e66706654ad24ecaa4d0c75821701c56c6a5588d16c688b3277b793f044733`。本轮结论独立保持“运行失败、清理通过”；构建、真实身份和页面等未运行项不得计通过，下一轮须用户另行授权。
+本机保留窗口记录、runtime-report.json、缓存只读回执、红绿门禁和evidence-manifest.json；临时归档可由本会话标准指针`/tmp/addp-p19-http-product-window-bfdb7a34f1c8`定位。runtime-report.json SHA256为`94e66706654ad24ecaa4d0c75821701c56c6a5588d16c688b3277b793f044733`。本轮结论独立保持“运行失败、清理通过”；构建、真实身份和页面等未运行项不得计通过，下一轮须用户另行授权。
+
+
+<a id="formal-python-http-local-20261028-cache-reclaim"></a>
+
+## 2026-10-28 正式Python产品HTTP独立窗口：编译后私有目录测量失败
+
+用户明确另开一次原上限60分钟独立本地窗口，接受仅核验复用同一固定摘要Nginx缓存；所有资源／四秒／失败清理及停源收窄边界不变。专项构建输入与已验证a5db60d9a修正一致，实际启动及源码快照为`dcf57cc7344c68135e14eac9c29c065f9dea52ff`。2026-10-28 15:40:28至15:43:45（Asia/Shanghai），外层197.163秒、生命周期197.082秒，结果**failed**。失败后停止并零残留清理，未自动重试、复用剩余时间或续窗。
+
+本轮实际覆盖固定摘要缓存准入、卷采样辅助启动、初始资源检查及标准Go编译命令返回0；尚未进入产品镜像构建、正式后端启动、真实密码/MFA、业务请求、指标查询、Console页面或停源断言。sampler_image回执核对了官方固定仓库摘要、不可变ID及Linux ARM64，acquisition=verified_local_cache。不能把这部分覆盖计为完整产品依赖、正式身份或页面验收通过。
+
+45次已完成资源扫描最长0.537962秒，均小于原四秒。完成观测的硬配额最大2.25 CPU／3288334336字节内存（配额，不是实际内存峰值）；合计可写占用最大4159303680字节，约3.874 GiB。下一次扫描在elapsed=195.04秒、measure_private_bindings阶段因原生du返回1失败，du_missing_file=true，失败扫描历时0.404023秒，**不是四秒超时**。原始错误输出SHA256为`9d5a4fd6ae507e15a2645e0d3e0702c666294907ff0ff1ee1938ec20d9513259`；没有保留原始路径，不能唯一确认哪一个文件消失。
+
+主线程随后报告bounded_builder_resume阶段、command_failed_1；共享构建内核在Go命令成功后直接shutil.rmtree当次.cache/go-build，未与sample_lock互斥。可确认私有文件消失与该回收时段重叠的风险，但未把缺失路径写成已唯一定位。失败采样没有得到完整可写值，不能据前45次最大值推导全程未触4 GiB；未放宽或忽略真实du失败。
+
+cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网络／卷及私有材料零残留，当前运行断言仍空。未运行Hosted、容量、定时、模型／工具或告警重演；未迁移SDK Linux或既有Trace/Console证据为本轮通过。
+
+待用户确认的最小方案（本轮未改回收代码）：回收前先沿原四秒完整预检，失败或触线即停，不靠删缓存隐藏已触线；缓存删除复用采样锁，锁等待和可中止删除的合格预算独立四秒。采样自身锁等待及全部读取仍限原四秒，不重试、跳过或缩小扫描；路径仅限当次Go对象缓存。先修规范、唯一共享回收内核及互斥/超时/路径/终止清理确定性门禁，新的真实窗口另行确认。中途回收后仍继续采样，须明确这段生命周期约束，不能直接套用退出清理的停止采样语义。
+
+本机窗口报告、resource-summary.json、提案及evidence-manifest.json由稳定临时指针`/tmp/addp-p19-http-product-window-dcf57cc7344c`定位；runtime-report.json SHA256=`62100e1d0fcd4e60330276fc8ad60fc6277c50692114e422082de66e32ee4e0a`。本节独立结论仍为“运行失败、清理通过”，不计完整四秒守卫、完整构建或产品闭环通过。
