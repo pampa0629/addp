@@ -61,14 +61,20 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 矢量处理 | 成果生成 | 1 | `vector_to_pmtiles` |
 | 栅格处理 | 数据读写 | 3 | `raster_load`、`raster_save`、`raster_save_tiles` |
 | 栅格处理 | 网格处理 | 3 | `raster_reproject`、`raster_resample`、`raster_align` |
-| 栅格处理 | 范围处理 | 9 | `raster_clip`、`raster_mosaic`、`raster_update`、`raster_tile`、`raster_footprint`、`raster_polygonize`、`vector_rasterize`、`raster_contour`、`raster_stream_to_vector_d8` |
+| 栅格处理 | 范围处理 | 5 | `raster_clip`、`raster_mosaic`、`raster_update`、`raster_tile`、`raster_footprint` |
 | 栅格处理 | 波段处理 | 2 | `raster_stack`、`raster_select_bands` |
-| 栅格处理 | 像元计算 | 23 | `raster_band_math`、`raster_reclassify`、`raster_proximity`、`raster_nibble`、`raster_boundary_clean`、`raster_thin`、`raster_aggregate`、`raster_fill_depressions`、`raster_flow_direction_d8`、`raster_flow_accumulation_d8`、`raster_flow_accumulation_weighted_d8`、`raster_flow_length_d8`、`raster_flow_length_upstream_d8`、`raster_distance_to_stream_d8`、`raster_drainage_basins_d8`、`raster_watershed_d8`、`raster_subcatchments_d8`、`raster_snap_pour_points`、`raster_stream_order_d8`、`raster_stream_link_d8`、`raster_slope`、`raster_aspect`、`raster_hillshade` |
+| 栅格处理 | 基础计算 | 3 | `raster_band_math`、`raster_aggregate`、`raster_proximity` |
+| 栅格处理 | 分类处理 | 4 | `raster_reclassify`、`raster_nibble`、`raster_boundary_clean`、`raster_thin` |
+| 栅格处理 | 地形分析 | 8 | `raster_slope`、`raster_aspect`、`raster_hillshade`、`raster_curvature`、`raster_tpi`、`raster_tri`、`raster_roughness`、`raster_contour` |
+| 栅格处理 | 水流分析 | 6 | `raster_fill_depressions`、`raster_flow_direction_d8`、`raster_flow_accumulation_d8`、`raster_flow_accumulation_weighted_d8`、`raster_flow_length_d8`、`raster_flow_length_upstream_d8` |
+| 栅格处理 | 汇水分析 | 4 | `raster_drainage_basins_d8`、`raster_snap_pour_points`、`raster_watershed_d8`、`raster_subcatchments_d8` |
+| 栅格处理 | 河网分析 | 5 | `raster_stream_order_d8`、`raster_stream_link_d8`、`raster_stream_to_vector_d8`、`raster_distance_to_stream_d8`、`raster_hand_d8` |
+| 栅格处理 | 格式转换 | 2 | `raster_polygonize`、`vector_rasterize` |
 | 栅格处理 | 栅格统计 | 7 | `raster_statistics`、`raster_cut_fill`、`raster_zonal_statistics`、`raster_focal_statistics`、`raster_vector_zonal_statistics`、`raster_recommend_band_combination`、`raster_histogram` |
 | 栅格处理 | 栅格检查 | 2 | `raster_info`、`validate_cog` |
 | 栅格处理 | 成果生成 | 3 | `raster_to_cog`、`raster_build_overviews`、`build_raster_mosaic` |
 
-`raster_inspect`、`crs_to_projjson` 和 GDAL vector dataset 批协议算子仅供受控 direct 调用，不进入工作流面板计数。分类调整不改变算子身份、参数、端口和已有工作流定义。
+`raster_inspect`、`crs_to_projjson` 和 GDAL vector dataset 批协议算子仅供受控 direct 调用，不进入工作流面板计数。分类调整不改变算子身份、参数、端口和已有工作流定义；不增加第三级目录或前端名称映射。原像元计算拆为基础计算、分类处理、地形分析、水流分析、汇水分析和河网分析；转面／栅格化归格式转换，等值线归地形分析，河网转线归河网分析。
 
 ## 拓扑构面
 

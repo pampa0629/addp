@@ -5747,7 +5747,7 @@ def test_boundary_clean_discovery_single_required_band_and_workflow_resource_con
     spec=next(item for item in list_operators() if item['id']=='raster_boundary_clean')
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
     assert spec['attributes']['resource_groups']==['raster']
-    assert spec['category_path']==['栅格处理','像元计算']
+    assert spec['category_path']==['栅格处理','分类处理']
     assert [p['name'] for p in spec['parameters']]==['input_raster','band']
     assert all(p['required'] for p in spec['parameters'])
     assert spec['detailed_description']['workflow_example']['params']['band']==1
@@ -6057,7 +6057,7 @@ def test_raster_thin_async_save_reclassification_and_cleanup(tmp_path,monkeypatc
 def test_raster_thin_discovery_and_single_workflow_contract():
     spec=next(item for item in list_operators() if item['id']=='raster_thin')
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
-    assert spec['attributes']['resource_groups']==['raster'] and spec['category_path']==['栅格处理','像元计算']
+    assert spec['attributes']['resource_groups']==['raster'] and spec['category_path']==['栅格处理','分类处理']
     assert [p['name'] for p in spec['parameters']]==['input_raster','band','foreground_value']
     assert all(p['required'] for p in spec['parameters'])
     assert spec['detailed_description']['workflow_example']['params']['foreground_value']==1
@@ -6317,7 +6317,7 @@ def test_dem_fill_depressions_discovery_and_required_parameters():
     spec = next(item for item in list_operators() if item['id'] == 'raster_fill_depressions')
     assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
     assert spec['attributes']['resource_groups'] == ['raster']
-    assert spec['category_path'] == ['栅格处理', '像元计算']
+    assert spec['category_path'] == ['栅格处理', '水流分析']
     params = {param['name']: param for param in spec['parameters']}
     assert set(params) == {'input_raster', 'band', 'elevation_unit'}
     assert params['band']['required'] and params['elevation_unit']['required']
@@ -6589,7 +6589,7 @@ def test_dem_d8_real_async_workflow_cog_save_exact_pixels_and_cleanup(tmp_path,m
 def test_dem_d8_discovery_single_workflow_and_explicit_parameters():
     spec=next(item for item in list_operators() if item['id']=='raster_flow_direction_d8')
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
-    assert spec['attributes']['resource_groups']==['raster'] and spec['category_path']==['栅格处理','像元计算']
+    assert spec['attributes']['resource_groups']==['raster'] and spec['category_path']==['栅格处理','水流分析']
     params={param['name']:param for param in spec['parameters']}
     assert set(params)=={'input_raster','band','elevation_unit'} and all(p['required'] for p in params.values())
     assert params['elevation_unit']['enum']==['metre','foot','us_survey_foot']
@@ -6862,7 +6862,7 @@ def test_d8_consumers_real_async_save_and_failure_cleanup(tmp_path,monkeypatch,c
 def test_d8_consumers_discovery_explicit_direction_band_only(operator_name):
     spec=next(item for item in list_operators() if item['id']==operator_name)
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
-    assert spec['attributes']['resource_groups']==['raster'] and spec['category_path']==['栅格处理','像元计算']
+    assert spec['attributes']['resource_groups']==['raster'] and spec['category_path']==['栅格处理', '汇水分析' if operator_name == 'raster_drainage_basins_d8' else '水流分析']
     params={p['name']:p for p in spec['parameters']}
     expected = {'input_raster', 'band', 'measure'} if operator_name == 'raster_flow_accumulation_d8' else {'input_raster', 'band'}
     assert set(params) == expected and params['input_raster']['required'] and params['band']['required']
@@ -7738,7 +7738,7 @@ def test_d8_strahler_real_async_two_input_save_threshold_composition_and_failure
 def test_d8_streams_discovery_single_route_and_two_required_raster_inputs(operator):
     spec=next(item for item in list_operators() if item['id']==operator)
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read'] and spec['attributes']['resource_groups']==['raster']
-    assert spec['category_path']==['栅格处理','像元计算']
+    assert spec['category_path']==['栅格处理','河网分析']
     params={p['name']:p for p in spec['parameters']}
     required={'input_raster','stream_raster','band','stream_band'}
     assert set(params)==required|({'method'} if operator=='raster_stream_order_d8' else set())
@@ -8064,7 +8064,7 @@ def test_d8_weighted_async_two_input_cog_composition_and_cleanup(tmp_path,monkey
 def test_d8_weighted_discovery_two_inputs_required_and_single_route():
     spec=next(item for item in list_operators() if item['id']=='raster_flow_accumulation_weighted_d8')
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read'] and spec['attributes']['resource_groups']==['raster']
-    assert spec['category_path']==['栅格处理','像元计算']
+    assert spec['category_path']==['栅格处理','水流分析']
     params={p['name']:p for p in spec['parameters']}
     assert set(params)=={'input_raster','weights_raster','band','weights_band'} and all(p['required'] for p in params.values())
     assert all(params[p]['type']=='raster' and params[p]['param_type']=='input' for p in ('input_raster','weights_raster'))
@@ -8359,7 +8359,7 @@ def test_d8_watershed_real_async_composition_cog_and_failure_cleanup(tmp_path,mo
 def test_d8_watershed_discovery_required_dual_inputs_and_single_route(operator):
     spec=next(item for item in list_operators() if item['id']==operator)
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read'] and spec['attributes']['resource_groups']==['raster']
-    assert spec['category_path']==['栅格处理','像元计算']
+    assert spec['category_path']==['栅格处理','汇水分析']
     params={p['name']:p for p in spec['parameters']}
     assert set(params)=={'input_raster','points_raster','band','points_band'} and all(p['required'] for p in params.values())
     assert all(params[p]['type']=='raster' and params[p]['param_type']=='input' for p in ('input_raster','points_raster'))
@@ -9330,7 +9330,7 @@ def test_snap_pour_points_real_async_composition_and_language_freeze(tmp_path,mo
 def test_snap_pour_points_discovery_required_inputs_and_single_owner():
     spec=next(item for item in list_operators() if item['id']=='raster_snap_pour_points')
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read'] and spec['attributes']['resource_groups']==['raster']
-    assert spec['category_path']==['栅格处理','像元计算']
+    assert spec['category_path']==['栅格处理','汇水分析']
     params={p['name']:p for p in spec['parameters']}
     assert set(params)=={'input_raster','points_raster','band','points_band','radius_metres'} and all(p['required'] for p in params.values())
     assert all(params[p]['type']=='raster' and params[p]['param_type']=='input' for p in ('input_raster','points_raster'))

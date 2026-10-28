@@ -1076,9 +1076,15 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("矢量处理", "成果生成"), "vector_to_pmtiles"),
         (("栅格处理", "数据读写"), "raster_load raster_save raster_save_tiles"),
         (("栅格处理", "网格处理"), "raster_reproject raster_resample raster_align"),
-        (("栅格处理", "范围处理"), "raster_clip raster_mosaic raster_update raster_tile raster_footprint raster_polygonize vector_rasterize raster_contour raster_stream_to_vector_d8"),
+        (("栅格处理", "范围处理"), "raster_clip raster_mosaic raster_update raster_tile raster_footprint"),
         (("栅格处理", "波段处理"), "raster_stack raster_select_bands"),
-        (("栅格处理", "像元计算"), "raster_band_math raster_reclassify raster_proximity raster_nibble raster_boundary_clean raster_thin raster_aggregate raster_fill_depressions raster_flow_direction_d8 raster_flow_accumulation_d8 raster_flow_accumulation_weighted_d8 raster_flow_length_d8 raster_flow_length_upstream_d8 raster_distance_to_stream_d8 raster_hand_d8 raster_drainage_basins_d8 raster_watershed_d8 raster_subcatchments_d8 raster_snap_pour_points raster_stream_order_d8 raster_stream_link_d8 raster_curvature raster_tpi raster_tri raster_roughness raster_slope raster_aspect raster_hillshade"),
+        (("栅格处理", "基础计算"), "raster_band_math raster_aggregate raster_proximity"),
+        (("栅格处理", "分类处理"), "raster_reclassify raster_nibble raster_boundary_clean raster_thin"),
+        (("栅格处理", "地形分析"), "raster_slope raster_aspect raster_hillshade raster_curvature raster_tpi raster_tri raster_roughness raster_contour"),
+        (("栅格处理", "水流分析"), "raster_fill_depressions raster_flow_direction_d8 raster_flow_accumulation_d8 raster_flow_accumulation_weighted_d8 raster_flow_length_d8 raster_flow_length_upstream_d8"),
+        (("栅格处理", "汇水分析"), "raster_drainage_basins_d8 raster_snap_pour_points raster_watershed_d8 raster_subcatchments_d8"),
+        (("栅格处理", "河网分析"), "raster_stream_order_d8 raster_stream_link_d8 raster_stream_to_vector_d8 raster_distance_to_stream_d8 raster_hand_d8"),
+        (("栅格处理", "格式转换"), "raster_polygonize vector_rasterize"),
         (("栅格处理", "栅格统计"), "raster_statistics raster_cut_fill raster_zonal_statistics raster_focal_statistics raster_vector_zonal_statistics raster_recommend_band_combination raster_histogram"),
         (("栅格处理", "栅格检查"), "raster_info validate_cog"),
         (("栅格处理", "成果生成"), "raster_to_cog raster_build_overviews build_raster_mosaic"),
@@ -1096,6 +1102,21 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         assert all(len(name) == 4 for name in path)
         assert operator["category"] == path[-1]
     assert "crs_to_projjson" not in expected
+    # The maintained catalogue must list every workflow operator exactly once,
+    # with the same ownership and counts as discovery; stale copied totals fail.
+    import re
+    readme = (Path(__file__).parent / "operators" / "README.md").read_text()
+    documented = {}
+    for line in readme.splitlines():
+        columns = [column.strip() for column in line.split("|")]
+        if len(columns) != 6 or columns[1] not in ("通用处理", "矢量处理", "栅格处理"):
+            continue
+        names = re.findall(r"`([^`]+)`", columns[4])
+        assert int(columns[3]) == len(names)
+        for name in names:
+            assert name not in documented
+            documented[name] = [columns[1], columns[2]]
+    assert documented == expected
 
 
 def test_d8_stream_order_exposes_one_method_selector_and_keeps_strahler_default():
@@ -1113,7 +1134,7 @@ def test_d8_stream_order_exposes_one_method_selector_and_keeps_strahler_default(
 def test_d8_stream_vector_single_route_two_explicit_inputs_and_vector_output():
     spec=next(item for item in list_operators() if item['id']=='raster_stream_to_vector_d8')
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
-    assert spec['attributes']['resource_groups']==['raster'] and spec['category_path']==['栅格处理','范围处理']
+    assert spec['attributes']['resource_groups']==['raster'] and spec['category_path']==['栅格处理','河网分析']
     params={p['name']:p for p in spec['parameters']}
     assert set(params)=={'input_raster','stream_raster','band','stream_band'}
     assert all(p['required'] for p in params.values())
@@ -1141,7 +1162,7 @@ def test_d8_distance_to_stream_explicit_two_inputs_and_metre_output_metadata():
     spec = next(item for item in list_operators() if item['id'] == 'raster_distance_to_stream_d8')
     assert spec['description'] == 'D8 到河网沿流距离'
     assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
-    assert spec['attributes']['resource_groups'] == ['raster'] and spec['category_path'] == ['栅格处理', '像元计算']
+    assert spec['attributes']['resource_groups'] == ['raster'] and spec['category_path'] == ['栅格处理', '河网分析']
     params = {p['name']: p for p in spec['parameters']}
     assert set(params) == {'input_raster', 'stream_raster', 'band', 'stream_band'}
     assert all(p['required'] for p in params.values())
@@ -1155,7 +1176,7 @@ def test_d8_hand_explicit_three_inputs_bands_unit_and_workflow_only_metadata():
     spec = next(item for item in list_operators() if item['id'] == 'raster_hand_d8')
     assert spec['description'] == 'D8 到河网相对高程（HAND）'
     assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
-    assert spec['attributes']['resource_groups'] == ['raster'] and spec['category_path'] == ['栅格处理', '像元计算']
+    assert spec['attributes']['resource_groups'] == ['raster'] and spec['category_path'] == ['栅格处理', '河网分析']
     params = {p['name']: p for p in spec['parameters']}
     assert set(params) == {'input_raster', 'stream_raster', 'elevation_raster', 'band', 'stream_band', 'elevation_band', 'elevation_unit'}
     assert all(p['required'] for p in params.values())
@@ -1170,7 +1191,7 @@ def test_dem_curvature_single_workflow_explicit_band_unit_and_four_methods_metad
     spec = next(item for item in list_operators() if item['id'] == 'raster_curvature')
     assert spec['description'] == 'DEM 曲率'
     assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
-    assert spec['attributes']['resource_groups'] == ['raster'] and spec['category_path'] == ['栅格处理', '像元计算']
+    assert spec['attributes']['resource_groups'] == ['raster'] and spec['category_path'] == ['栅格处理', '地形分析']
     params = {p['name']: p for p in spec['parameters']}
     assert set(params) == {'input_raster', 'band', 'elevation_unit', 'method'}
     assert all(params[n]['required'] for n in ('input_raster', 'band', 'elevation_unit'))
@@ -1188,7 +1209,7 @@ def test_dem_tpi_single_workflow_explicit_band_unit_metres_and_complete_window_m
     spec=next(item for item in list_operators() if item['id']=='raster_tpi')
     assert spec['description']=='DEM 地形位置指数'
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
-    assert spec['attributes']['resource_groups']==['raster'] and spec['category_path']==['栅格处理','像元计算']
+    assert spec['attributes']['resource_groups']==['raster'] and spec['category_path']==['栅格处理','地形分析']
     params={p['name']:p for p in spec['parameters']}
     assert set(params)=={'input_raster','band','elevation_unit'} and all(p['required'] for p in params.values())
     assert params['input_raster']['param_type']=='input' and params['input_raster']['type']=='raster'
@@ -1202,7 +1223,7 @@ def test_dem_tri_single_workflow_explicit_band_unit_metres_and_complete_window_m
     spec=next(item for item in list_operators() if item['id']=='raster_tri')
     assert spec['description']=='DEM 地形崎岖度'
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
-    assert spec['attributes']['resource_groups']==['raster'] and spec['category_path']==['栅格处理','像元计算']
+    assert spec['attributes']['resource_groups']==['raster'] and spec['category_path']==['栅格处理','地形分析']
     params={p['name']:p for p in spec['parameters']}
     assert set(params)=={'input_raster','band','elevation_unit'} and all(p['required'] for p in params.values())
     assert params['input_raster']['param_type']=='input' and params['input_raster']['type']=='raster'
@@ -1237,7 +1258,7 @@ def test_dem_roughness_single_workflow_explicit_band_unit_metres_and_complete_wi
     spec=next(item for item in list_operators() if item['id']=='raster_roughness')
     assert spec['description']=='DEM 地形粗糙度'
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
-    assert spec['attributes']['resource_groups']==['raster'] and spec['category_path']==['栅格处理','像元计算']
+    assert spec['attributes']['resource_groups']==['raster'] and spec['category_path']==['栅格处理','地形分析']
     params={p['name']:p for p in spec['parameters']}
     assert set(params)=={'input_raster','band','elevation_unit'} and all(p['required'] for p in params.values())
     assert params['input_raster']['param_type']=='input' and params['input_raster']['type']=='raster'

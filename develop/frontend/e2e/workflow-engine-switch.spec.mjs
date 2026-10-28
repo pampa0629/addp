@@ -1333,7 +1333,7 @@ async function installMockBackend(page, {
       { ...createOperator('vector_leaf', 'Vector Leaf', '几何处理', ENGINE_A.engine_type), category_path: ['矢量处理', '几何处理'] },
       { ...createOperator('raster_leaf', 'Raster Leaf', '数据读写', ENGINE_A.engine_type), category_path: ['栅格处理', '数据读写'] },
       { ...createOperator('field_leaf', 'Field Leaf', '字段处理', ENGINE_A.engine_type), category_path: ['通用处理', '字段处理'] },
-      { ...createOperator('raster_math', 'Raster Math', '像元计算', ENGINE_A.engine_type), category_path: ['栅格处理', '像元计算'] }
+      { ...createOperator('raster_math', 'Raster Math', '基础计算', ENGINE_A.engine_type), category_path: ['栅格处理', '基础计算'] }
     )
   }
 
