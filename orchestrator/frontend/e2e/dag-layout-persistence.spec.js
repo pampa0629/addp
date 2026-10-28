@@ -72,6 +72,7 @@ test.describe('responsive orchestration dialog snapshots', () => {
     await expect(detailDialog.getByText(execution.execution_id, { exact: true })).toBeVisible()
     await expectDialogWithinViewport(page, detailSurface)
     await expect(detailSurface.locator('.el-dialog__body')).toHaveCSS('overflow', 'auto')
+    await expect(detailSurface.locator('.el-dialog__headerbtn')).toBeFocused()
     await expect(detailSurface).toHaveScreenshot('orchestration-execution-detail-narrow.png', { animations: 'disabled' })
   })
 })
