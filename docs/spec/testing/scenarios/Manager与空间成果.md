@@ -183,6 +183,7 @@ NFS export/owned root、Runtime/registry、部署与 Infra 全部清理并核零
 
 同源另提交一次缺失 id_field 的计算失败 DAG，必须由指定 normalize 节点的确切字段校验原因失败，两个下游 save 都不发布、无新增扫描或输出 facts，原源／成功成果不变；不承诺保存阶段跨文件事务回滚。浏览器核同 User 的成功／失败执行页与两幅地图，共四截图。阶段证据 result=incomplete 不替代最终 `addp.topology-normalize/v1` 和 `addp.topology-normalize-browser/v1` 的 passed；两者显式绑定 case、Run ID、身份、当前执行、源和两端口预期。原始图／预览／OL 与完整物理证据须保留；领域、NFS export／owned root、Runtime／registry、部署／Infra 全部清理零残留，清理不认证业务 DELETE。新场景沿现有标准 runner、Native、Console 及 workflow 登记检查，不新增 suite、权限或容量运行。
 
+
 ### 重合规整与链路合并独立组合
 
 用户确认新增 `topology_case=line-network-normalize-chains`，沿现有 vector-topology-persistence 标准入口与 Hosted 生命周期，只运行一个 EPSG:3857 GPKG 源的 `load → normalize_line_network → merge_line_chains(id_field=edge_id, match_fields=[])`；三份既有 save 分别保存 chains、chain_edges、edge_sources，全部显式依赖合并成功。原 full 与 line-network-normalize 含义不变，不运行旧整包或容量。非默认 Tenant、普通 User 精确11权限和600秒预算不变，无新算子/API/权限。

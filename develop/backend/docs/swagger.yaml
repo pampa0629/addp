@@ -1554,7 +1554,6 @@ definitions:
         type: integer
       positions:
         additionalProperties:
-          format: int64
           type: integer
         type: object
     type: object
@@ -4247,7 +4246,6 @@ paths:
           description: 统计数据 | Statistics
           schema:
             additionalProperties:
-              format: int64
               type: integer
             type: object
       summary: 获取开发任务统计 | Get development task statistics
