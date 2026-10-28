@@ -9,6 +9,19 @@ import unittest
 CONFIG = import_module('business.starrocks.config')
 ROOT = CONFIG.ROOT
 ENTRY = ROOT / 'business/starrocks/entrypoint.sh'
+BACKEND_MYSQL = '''
+backend_output="$2"
+mysql_status="${3:-0}"
+mysql() {
+    # A real client consumes the query before returning its result. Closing
+    # stdin early races the producer and causes SIGPIPE under pipefail.
+    local query
+    query=$(cat)
+    [ "$query" = 'SHOW BACKENDS;' ] || return 2
+    printf "%s" "$backend_output"
+    return "$mysql_status"
+}
+'''
 
 class BusinessStarRocksTest(unittest.TestCase):
     def shell(self, code, *args, **kwargs):
@@ -39,8 +52,21 @@ class BusinessStarRocksTest(unittest.TestCase):
                              ('Alive\tTotalCapacity\tAvailCapacity\ntrue\t0.000 B\t0.000 B\n',False),
                              ('Alive\tTotalCapacity\tAvailCapacity\nfalse\t145 GB\t20 GB\n',False),
                              ('Alive\tHost\n',False), ('Alive\tHost\ntrue\ta\ntrue\tb\n',False)]:
-            result = self.shell('backend_output="$2"; mysql() { printf "%s" "$backend_output"; }; backend_ready', text)
-            self.assertEqual(result.returncode == 0, passed, result.stderr)
+            with self.subTest(response=text):
+                result = self.shell(BACKEND_MYSQL + 'backend_ready', text)
+                self.assertEqual(result.returncode == 0, passed, f'exit={result.returncode}: {result.stderr}')
+
+    def test_backend_mysql_fixture_requires_the_complete_query(self):
+        for query, status in [('SHOW BACKENDS;\n', 0), ('', 2), ('SELECT 1;\n', 2),
+                              ('SHOW BACKENDS;\nSELECT 1;\n', 2)]:
+            with self.subTest(query=query):
+                result = self.shell(BACKEND_MYSQL + 'printf "%s" "$4" | mysql', 'response', '0', query)
+                self.assertEqual(result.returncode, status, result.stderr)
+
+    def test_backend_health_preserves_mysql_failure_with_healthy_output(self):
+        healthy = 'Alive\tTotalCapacity\tAvailCapacity\ntrue\t145 GB\t20 GB\n'
+        result = self.shell(BACKEND_MYSQL + 'backend_ready', healthy, '23')
+        self.assertEqual(result.returncode, 23, result.stderr)
 
     def test_existing_unmarked_metadata_is_never_reinitialized(self):
         with tempfile.TemporaryDirectory() as tmp:
