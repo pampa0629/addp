@@ -91,10 +91,30 @@ class RasterLineageTest(unittest.TestCase):
         p.unlink();p.parent.rmdir();p.parent.symlink_to(self.secret,target_is_directory=True)
         with self.assertRaises(m.SuiteError):self.collect()
 
-    def test_only_two_approved_suites_and_exact_run_are_admitted(self):
+    def test_only_approved_suites_and_exact_run_are_admitted(self):
         for key,value in [('ONLINE_SUITE','raster-workflow'),('ADDP_ONLINE_TEST_RUN_ID','tpi-old-1'),('ADDP_ONLINE_TEST','0'),('ADDP_ONLINE_OWNER_MANAGED','1')]:
             with patch.dict(os.environ,{**self.env,key:value},clear=True),patch.object(m.BASE.HOSTED,'deployment_secret',return_value=self.secret),self.subTest(key=key),self.assertRaises(m.SuiteError):m.boundary(os.environ)
         with patch.dict(os.environ,self.env,clear=True),patch.object(m.BASE.HOSTED,'deployment_secret',return_value=self.secret):self.assertEqual(m.boundary(os.environ)[1:2],('raster-tpi-persistence',))
+
+    def test_tri_is_only_an_additional_closed_suite_and_not_a_cross_suite_receipt(self):
+        for suite,prefix in [('raster-cut-fill-persistence','cut-fill'),('raster-tpi-persistence','tpi'),('raster-tri-persistence','tri')]:
+            env={**self.env,'ONLINE_SUITE':suite,'ADDP_ONLINE_TEST_RUN_ID':prefix+'-123-1'}
+            with patch.dict(os.environ,env,clear=True),patch.object(m.BASE.HOSTED,'deployment_secret',return_value=self.secret):self.assertEqual(m.boundary(os.environ)[1:],(suite,prefix+'-123-1'))
+            with patch.dict(os.environ,{**env,'ADDP_ONLINE_TEST_RUN_ID':'wrong-123-1'},clear=True),patch.object(m.BASE.HOSTED,'deployment_secret',return_value=self.secret),self.assertRaises(m.SuiteError):m.boundary(os.environ)
+
+    def test_tri_read_and_closed_archive_require_its_own_receipt(self):
+        env={**self.env,'ONLINE_SUITE':'raster-tri-persistence','ADDP_ONLINE_TEST_RUN_ID':'tri-123-1'}
+        expected=copy.deepcopy(EXPECTED);expected['outputs'][0]['locator']=expected['outputs'][0]['locator'].replace('tpi.cog','tri.cog')
+        public={**copy.deepcopy(expected),'operations':None};value={**self.value,'facts':expected}
+        with patch.dict(os.environ,env,clear=True),patch.object(m,'boundary',return_value=(self.secret,'raster-tri-persistence','tri-123-1')),patch.object(m,'inspect',return_value=self.container),patch.object(m.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=json.dumps(value)))as query:
+            with self.assertRaises(m.SuiteError):m.read_current(os.environ,IDENTIFIER,2,33,{'tasks':[]})
+            query.assert_not_called()
+            self.path.write_text(json.dumps({**self.owner,'suite':'raster-tri-persistence','run_id':'tri-123-1'}))
+            actual=m.read_current(os.environ,IDENTIFIER,2,33,{'tasks':[]});self.assertEqual(actual,expected)
+            self.assertIn('BEGIN READ ONLY;',query.call_args.kwargs['input'])
+            proof=m.collect(env,'raster-tri-persistence',IDENTIFIER,'tri.cog.tif',expected,{'metadata':{'lineage_facts':public}},2,33,{'tasks':[]},lambda *args:actual)
+            self.assertEqual(proof['path'],'tri-lineage/tri.cog.tif.json')
+            m.verify_archive(env,'raster-tri-persistence',[{'name':'tri.cog.tif','lineage_evidence':proof}])
 
     def test_personal_environment_rejected_before_docker(self):
         with patch.dict(os.environ,{},clear=True),patch.object(m,'inspect') as inspected,self.assertRaises(Exception):m.prepare()

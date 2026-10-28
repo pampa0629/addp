@@ -1,4 +1,4 @@
-"""Two approved Hosted raster suites: bounded read-only persistence evidence.
+"""Approved Hosted raster suites: bounded read-only persistence evidence.
 
 Business requests remain ordinary User requests. This observer never supplies
 credentials to them and never substitutes SQL for API authorization or Meta.
@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 BASE = importlib.import_module('scripts.test.execution-retention-readonly-online')
 SuiteError = importlib.import_module('scripts.test.manager-internal-artifact-lineage-online').SuiteError
-SUITES = {'raster-cut-fill-persistence': 'cut-fill-lineage', 'raster-tpi-persistence': 'tpi-lineage'}
+SUITES = {'raster-cut-fill-persistence': 'cut-fill-lineage', 'raster-tpi-persistence': 'tpi-lineage', 'raster-tri-persistence': 'tri-lineage'}
 RECEIPT = 'raster-lineage-owner.json'
 FIELDS = {'schema_version', 'inputs', 'outputs', 'operations'}
 
@@ -34,9 +34,9 @@ def boundary(env):
     suite = env.get('ONLINE_SUITE')
     require(suite in SUITES and env.get('ADDP_ONLINE_TEST') == '1'
             and not env.get('ADDP_ONLINE_OWNER_MANAGED') and not env.get('ADDP_EXECUTION_TRACE_LOCAL'),
-            'observer only owns the two approved Hosted suites')
+            'observer only owns approved Hosted raster suites')
     run = env.get('ADDP_ONLINE_TEST_RUN_ID', '')
-    prefix = 'cut-fill' if suite == 'raster-cut-fill-persistence' else 'tpi'
+    prefix = suite.removeprefix('raster-').removesuffix('-persistence')
     require(run == prefix + '-' + env.get('GITHUB_RUN_ID', '') + '-' + env.get('GITHUB_RUN_ATTEMPT', '')
             and re.fullmatch(r'[a-z-]+-\d+-\d+', run), 'observer Run ID differs')
     artifacts = Path(env['ADDP_ONLINE_ARTIFACT_DIR']).resolve(strict=True)

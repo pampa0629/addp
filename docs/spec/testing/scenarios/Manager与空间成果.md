@@ -671,3 +671,18 @@ ORC 嵌套扩展复用同一 `native-table-orc` case、原 11 项权限与精确
 本地候选树 `292cfef00be9448c5ad967639b5b31b82df9c4e9` 已通过标准 `PYTEST_ADDOPTS='-k tpi' make test-geopython-workflow`（209 passed／7678筛除／31.37秒，0失败／跳过），以及 Node 24.11.1 下 `make test-raster-tpi-online-runner`（85项／25.643秒）；943项被跟踪输入前后无漂移，无新增Python崩溃报告。包含缓存命中禁止重算、缓存损坏／缺失／跨Run／源hash变化拒绝、原件篡改、部分准备清理、反例篡改scope后仍按创建时路径清理和首个失败保留等回归；原生stdin Worker仍不依赖仓库导入，实际成果检查和13份COG原字节归档不减少。完整Python／Online登记检查通过（56项＋10项，11模块；共享测试不累加为唯一数量），现有根Makefile／Native recipe与独立Hosted入口已覆盖，无需改编排。
 
 缓存仅在当前隔离Runtime的私有临时目录内保留约26.5MiB独立期望数组；宿主私有锚点绑定Run／夹具代码／源hash，每次验证校验锚点及所读数组hash，无缺失后重算或跨轮复用。首次生成和清理均在原600秒业务子进程内；超时由现有隔离Runtime／私有凭据目录生命周期清理，正常收尾必须给出缓存移除证据。固定字段细分提交等待、内部血缘取证、诊断、Monitor／反向语言查询、无发布检查、像元／mask／元数据、COG布局、概览、缓存读取与归档耗时，嵌套耗时不可重复相加。新源码Linux全量及真实Hosted尚待CI会话协调和回传，不据本地耗时宣称Hosted已提速；原a26的535785毫秒结果仍作为原版本固定证据。
+
+
+### DEM 地形崎岖度（TRI）独立 Hosted 验收
+
+用户已批准独立手工`raster-tri-persistence`：复用Hosted／NFS、同源默认入口Runtime及普通User原12权限，600秒业务预算保持。固定13条COG成功链（普通凸凹、水平平地、倾斜平面、重复对称鞍面、三组水平／高程单位交叉、填洼接TRI、重分类接TRI、Int64／UInt64普通大基值微差、全无效和无完整有效九点），13类各中英文准确失败共26次；不将数值极限Native外推Hosted。显式第二高程波段，跨块、多波段、NoData／mask／alpha／非有限覆盖及合法零保留。
+
+独立2500位Decimal Riley平方和开方oracle，不导入产品计算函数，一ULP错误即拒绝；完整像元／mask、非负／平地零／倾斜平面和鞍面正值、米制／原网格／CRS、完整COG／最近邻概览、artifact／物理／Meta相等正整数大小、精确扫描身份、当前实际输入完整内部血缘／公开安全投影／Meta关系及Monitor严格保持。每条成功及负例后重读全部已有成果，39调用／429次实际成果全检；归档13份COG原字节及大小／SHA-256清单，原件或清单变化不得静默修复。源及旧成果不变、失败零发布／零新增扫描血缘及全部清理均须通过。
+
+只为TRI增加现有内部血缘只读取证白名单，继续限定当前隔离Run／容器／用户／租户／执行和固定只读查询，不扩大权限或公开字段。本轮独立期望缓存绑定Run／夹具SHA／源hash，首次准备、读取及清理全部纳入600秒业务；缓存缺失／篡改／跨轮复用及清理失败严格失败，不缓存实际成果或跳过检查。保留安全细分计时，不改产品、共享生命周期、其他套件业务矩阵、并发或轮询。
+
+本地仅本会话改动的固定候选树`5967b65dd01bf29629b83098390240560ef23d5b`通过标准`PYTEST_ADDOPTS='-k "dem_tri or test_online_tri_fixture"' make test-geopython-workflow`：**231 passed／7903筛除／87.95秒**，0失败／跳过；包括159项产品TRI和72项真实GDAL独立夹具准备回归，数量包含、不累计。实际核完整13链保存、26次准确双语失败、原件字节与manifest不可篡改／修复、RMS／符号／单位错误和一ULP拒绝、缓存跨轮／源hash／形状／权限篡改、部分准备及清理、stdin Worker无仓库导入和原源不变。重复对称鞍面样本的所有接缝同样全量核验，中心零梯度仍有正TRI；此设计限制独立高精度开方的重复工作，不减少任何实际成果检查。
+
+合并同期共享登记改动后的候选树`61e117a544da0c2d71310edac64b9ca955a88cb7`在Node24.11.1下标准`make test-raster-tri-online-runner` **87项／31.578秒**通过，包含39次调用／429次实际成果全检计数、13／26固定矩阵、600秒原预算、当前User与只读取证、父执行精确扫描／Meta关系／Monitor、清理失败不得成功及手工Hosted隔离生命周期模拟。受共享取证边界影响的既有`make test-raster-tpi-online-runner` **87项／32.743秒**、`make test-raster-cut-fill-online-runner` **88项／30.964秒**均通过；原两套业务夹具和场景文件逐字节未改，SQL取证、投影、身份与归档函数AST保持。`make test-python-ci-registration`56项及10项、11模块／Online完整登记通过；共享测试不累加唯一数量。950项跟踪输入前后无漂移，无新增Python崩溃报告。相对Native固定候选仅两个CI登记文件合并其他会话改动，相关栅格校验函数AST、Native产品／夹具／recipe及其他自有输入均保持；三套Runner与完整登记已核合并后的实际源码，不声称两个整树相同。标准Native recipe、聚合Runner、变更选路／回归、独立suite／手工workflow及防遗漏校验同次登记，保持nightly关闭。
+
+原始Native日志`/tmp/addp-tri-hosted-native.log` SHA-256：`040b8327b4be3b43153d56f3908b8418ffd35509e443c66b81e255e48b667842`；独立Runner`/tmp/addp-tri-hosted-tri.log` SHA-256：`5c694409a8bac4ef5167eb2c2fafdf5cb89e42d97a0fd11cae1b3246d7b2ffaa`。对应JSON／JUnit与范围复核`/tmp/addp-tri-hosted-work/scope-review.json`保留。上述为本地准备证据，不是Native全量或真实Hosted通过；实际Linux全量和Hosted仍由CI会话协调及回传，本会话未触发／轮询／重跑／取消、设置定时或操作个人服务／Infra。UI、容量、任意影像及Hosted数值极限均未验。

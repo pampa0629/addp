@@ -2958,7 +2958,7 @@ def validate_raster_tangential_curvature(repository: Path, registered: set[str])
 
 
 def validate_raster_lineage_observer(repository: Path, registered: set[str]) -> None:
-    if not registered.intersection({'raster-cut-fill-persistence','raster-tpi-persistence'}):return
+    if not registered.intersection({'raster-cut-fill-persistence','raster-tpi-persistence','raster-tri-persistence'}):return
     required={
         'scripts/utils/online_raster_lineage.py': ('BEGIN READ ONLY;', 'statement_timeout', 'LIMIT 1', 'public observation must hide internal operations', 'actor_principal_id', 'workflow_matches', "public=True", "public=False", 'closed(public, expected)', 'closed(internal, expected)', 'validate_container', 'StartedAt', 'read_error', "'prepare'"),
         'scripts/test/online-raster-lineage_test.py': ('test_public_null_and_complete_internal_are_both_required', 'test_public_cannot_expose_operations_or_omit_them', 'test_internal_null_empty_missing_extra_and_wrong_operation_rejected', 'test_current_execution_identity_and_workflow_are_required', 'test_container_identity_restart_labels_and_database_cannot_change'),
@@ -2967,7 +2967,7 @@ def validate_raster_lineage_observer(repository: Path, registered: set[str]) -> 
         text=(repository/path).read_text()
         if any(fragment not in text for fragment in fragments):raise RegistrationError('bounded raster internal lineage evidence incomplete: '+path)
     make=(repository/'Makefile').read_text()
-    for prefix in ('cut-fill','tpi'):
+    for prefix in ('cut-fill','tpi','tri'):
         gate=(repository/f'scripts/test/online-hosted-raster-{prefix}-gate.sh').read_text()
         if 'run_logged python3 scripts/utils/online_raster_lineage.py prepare' not in gate:raise RegistrationError('raster owner receipt preparation omitted')
         block=make.split(f'test-raster-{prefix}-online-runner:',1)[1].split('\n.PHONY:',1)[0]
@@ -2997,6 +2997,31 @@ def validate_raster_tpi(repository: Path, registered: set[str]) -> None:
     for relative,key,size in [('business/scripts/online-raster-tpi-fixture.py','CASES',13),('scripts/test/raster-tpi-persistence-online.py','FAILURES',13)]:
         tree=ast.parse((repository/relative).read_text());values=[n.value for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id==key for t in n.targets)]
         if len(values)!=1 or len(ast.literal_eval(values[0]))!=size:raise RegistrationError('TPI fixed 13-success/26-bilingual-failure matrix changed')
+
+
+def validate_raster_tri(repository: Path, registered: set[str]) -> None:
+    import ast
+    suite='raster-tri-persistence'
+    if suite not in registered:return
+    workflow=(repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job=re.search(r'(?ms)^  raster-tri-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)',workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-tri-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-tri-persistence'" not in workflow
+        or 'cancel-in-progress: false' not in job.group('body') or 'nfs-kernel-server nfs-common' not in job.group('body')
+        or '${{ runner.temp }}/addp-online-${{ github.run_id }}/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('TRI requires a manual isolated Hosted NFS job and whole original-COG evidence upload')
+    make=(repository/'Makefile').read_text()
+    if 'test-geopython-workflow:' not in make or 'test_online_tri_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('TRI Native fixture must run in the standard GeoPython recipe')
+    required={'scripts/test/online-hosted-raster-tri-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-tri-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-tri-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_tri', 'unit_unknown', 'validate_lineage', 'input.source', 'output.save', 'archived_cogs', 'incomplete fixed TRI matrix', 'oracle_prepare', 'oracle_cleanup', 'all 429 full target checks are required', 'physical_verification_calls', 'substage_ms', 'physical_profile_ms', 'ADDP_ONLINE_TRI_ORACLE_ANCHOR_SHA256', 'nonnegative_verified', 'inclined plane or saddle must have strictly positive complete TRI values'), 'business/scripts/online-raster-tri-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_dem', 'context.prec=2500', 'sum((centre-v)**2 for v in samples).sqrt()*factor', 'np.unique', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'metre', 'int64.cog.tif', 'uint64.cog.tif', 'saddle.cog.tif', 'sparse.cog.tif', 'archive_cogs', 'tri-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'source_hash_ms', 'cache_load_ms', 'worker_transport_ms', 'negative Riley TRI value', 'inclined plane or saddle TRI must be positive', 'nonnegative_verified'), 'engines/geopython-workflow/test_online_tri_fixture.py': ('test_tri_persistence_real_gdal_thirteen_chains_complete_exact_pixels_and_original_cogs', 'test_tri_persistence_twenty_six_accurate_bilingual_failures_no_publication', 'test_tri_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'rms', 'test_tri_original_cog_archive_cannot_change_or_silently_repair', 'test_tri_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_tri_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_tri_oracle_cache_poison_or_cross_scope_fails', 'test_tri_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('@$(MAKE) test-raster-tri-online-runner', 'test_online_tri_fixture.py', 'scripts/test/raster-tri-persistence-online_test.py', 'scripts/test/online-raster-tri-fixture_test.py', 'scripts/test/online-hosted-raster-tri-gate_test.py', 'test_tri_requires_manual_nfs_exact_pixels_archive_and_regressions'), 'scripts/test/online-raster-tri-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-tri-persistence-online_test.py': ('test_oracle_preparation_and_cleanup_are_inside_progress_and_all_429_checks_remain', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
+    for relative,fragments in required.items():
+        path=repository/relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('TRI persistence contract is incomplete: '+relative)
+    for relative,key,size in [('business/scripts/online-raster-tri-fixture.py','CASES',13),('scripts/test/raster-tri-persistence-online.py','FAILURES',13)]:
+        tree=ast.parse((repository/relative).read_text());values=[n.value for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id==key for t in n.targets)]
+        if len(values)!=1 or len(ast.literal_eval(values[0]))!=size:raise RegistrationError('TRI fixed 13-success/26-bilingual-failure matrix changed')
 
 
 def validate_raster_plan_curvature(repository: Path, registered: set[str]) -> None:
@@ -4449,6 +4474,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_tangential_curvature(repository, registered)
     validate_raster_plan_curvature(repository, registered)
     validate_raster_tpi(repository, registered)
+    validate_raster_tri(repository, registered)
     validate_raster_lineage_observer(repository, registered)
     validate_raster_flow_length_upstream_d8_profile(repository, registered)
     validate_raster_stream_order_d8_profile(repository, registered)

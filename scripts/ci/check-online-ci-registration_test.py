@@ -595,10 +595,10 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                     CHECK.validate_raster_tangential_curvature(self.repository,{'raster-tangential-curvature-persistence'})
                 target.write_text(original)
 
-    def test_two_raster_suites_require_bounded_internal_lineage_observer(self):
+    def test_approved_raster_suites_require_bounded_internal_lineage_observer(self):
         source=SCRIPT.parents[2]
         paths=['scripts/utils/online_raster_lineage.py','scripts/test/online-raster-lineage_test.py','Makefile',
-               'scripts/test/online-hosted-raster-cut-fill-gate.sh','scripts/test/online-hosted-raster-tpi-gate.sh']
+               'scripts/test/online-hosted-raster-cut-fill-gate.sh','scripts/test/online-hosted-raster-tpi-gate.sh','scripts/test/online-hosted-raster-tri-gate.sh']
         for relative in paths:
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         CHECK.validate_raster_lineage_observer(self.repository,{'raster-tpi-persistence'})
@@ -606,6 +606,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                    (paths[0],'closed(internal, expected)'),(paths[1],'test_public_cannot_expose_operations_or_omit_them'),
                    (paths[3],'run_logged python3 scripts/utils/online_raster_lineage.py prepare'),
                    (paths[4],'run_logged python3 scripts/utils/online_raster_lineage.py prepare'),
+                   (paths[5],'run_logged python3 scripts/utils/online_raster_lineage.py prepare'),
                    ('Makefile','scripts/test/online-raster-lineage_test.py')]
         for relative,fragment in mutations:
             target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
@@ -627,6 +628,23 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for relative,key,original_fragment in [('business/scripts/online-raster-tpi-fixture.py','CASES',"'flat.cog.tif':('flat.tif',2,'metre','direct'),"),('scripts/test/raster-tpi-persistence-online.py','FAILURES',"'offset',")]:
             target=self.repository/relative;original=target.read_text();self.assertIn(original_fragment,original);target.write_text(original.replace(original_fragment,'',1))
             with self.subTest(key=key),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_tpi(self.repository,{'raster-tpi-persistence'})
+            target.write_text(original)
+
+    def test_tri_requires_manual_nfs_exact_pixels_archive_and_regressions(self):
+        source=SCRIPT.parents[2]
+        required={'scripts/test/online-hosted-raster-tri-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-tri-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-tri-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_tri', 'unit_unknown', 'validate_lineage', 'input.source', 'output.save', 'archived_cogs', 'incomplete fixed TRI matrix', 'oracle_prepare', 'oracle_cleanup', 'all 429 full target checks are required', 'physical_verification_calls', 'substage_ms', 'physical_profile_ms', 'ADDP_ONLINE_TRI_ORACLE_ANCHOR_SHA256', 'nonnegative_verified', 'inclined plane or saddle must have strictly positive complete TRI values'), 'business/scripts/online-raster-tri-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_dem', 'context.prec=2500', 'sum((centre-v)**2 for v in samples).sqrt()*factor', 'np.unique', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'metre', 'int64.cog.tif', 'uint64.cog.tif', 'saddle.cog.tif', 'sparse.cog.tif', 'archive_cogs', 'tri-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'source_hash_ms', 'cache_load_ms', 'worker_transport_ms', 'negative Riley TRI value', 'inclined plane or saddle TRI must be positive', 'nonnegative_verified'), 'engines/geopython-workflow/test_online_tri_fixture.py': ('test_tri_persistence_real_gdal_thirteen_chains_complete_exact_pixels_and_original_cogs', 'test_tri_persistence_twenty_six_accurate_bilingual_failures_no_publication', 'test_tri_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'rms', 'test_tri_original_cog_archive_cannot_change_or_silently_repair', 'test_tri_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_tri_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_tri_oracle_cache_poison_or_cross_scope_fails', 'test_tri_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('@$(MAKE) test-raster-tri-online-runner', 'test_online_tri_fixture.py', 'scripts/test/raster-tri-persistence-online_test.py', 'scripts/test/online-raster-tri-fixture_test.py', 'scripts/test/online-hosted-raster-tri-gate_test.py', 'test_tri_requires_manual_nfs_exact_pixels_archive_and_regressions'), 'scripts/test/online-raster-tri-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-tri-persistence-online_test.py': ('test_oracle_preparation_and_cleanup_are_inside_progress_and_all_429_checks_remain', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
+        for relative in ('scripts/test/online-gate.py','.github/workflows/online-t4-gates.yml',*required):
+            target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
+        CHECK.validate_raster_tri(self.repository,{'raster-tri-persistence'})
+        for relative,fragments in required.items():
+            target=self.repository/relative;original=target.read_text()
+            for fragment in fragments:
+                self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
+                with self.subTest(relative=relative,fragment=fragment),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_tri(self.repository,{'raster-tri-persistence'})
+                target.write_text(original)
+        for relative,key,original_fragment in [('business/scripts/online-raster-tri-fixture.py','CASES',"'flat.cog.tif':('flat.tif',2,'metre','direct'),"),('scripts/test/raster-tri-persistence-online.py','FAILURES',"'offset',")]:
+            target=self.repository/relative;original=target.read_text();self.assertIn(original_fragment,original);target.write_text(original.replace(original_fragment,'',1))
+            with self.subTest(key=key),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_tri(self.repository,{'raster-tri-persistence'})
             target.write_text(original)
 
     def test_plan_curvature_requires_manual_nfs_full_pixels_and_regressions(self):
