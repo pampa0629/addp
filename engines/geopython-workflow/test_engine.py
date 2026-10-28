@@ -882,6 +882,7 @@ def test_multi_distance_buffer_single_layer_order_types_and_source_unchanged():
         expected = buffer(source, distance, resolution=1).reset_index(drop=True)
         actual = result.iloc[offset * 2:(offset + 1) * 2].drop(columns='distance').reset_index(drop=True)
         assert_geodataframe_equal(actual, expected)
+        assert actual.geometry.to_wkb().tolist() == expected.geometry.to_wkb().tolist()
     assert result.source_id.dtype == source.source_id.dtype
     assert result.enabled.dtype == source.enabled.dtype
     assert result.label.dtype == source.label.dtype
@@ -977,6 +978,42 @@ def test_multi_distance_buffer_keeps_native_crs_policy_and_units(crs):
     assert result.geometry.iloc[0].bounds == (-2., -2., 2., 2.)
 
 
+def _assert_multi_distance_saved_geometry(actual, computed_wkb, centre, distance):
+    from math import hypot
+    from osgeo import ogr
+
+    # Persistence must retain every coordinate bit, including signed zero.
+    assert bytes(actual.ExportToWkb()) == computed_wkb, 'buffer save changed computed WKB'
+    assert actual.GetGeometryType() == ogr.wkbPolygon
+    assert actual.GetCoordinateDimension() == 2 and actual.IsValid()
+    assert actual.GetGeometryCount() == 1
+    coordinates = actual.GetGeometryRef(0).GetPoints()
+    assert len(coordinates) == 5 and coordinates[0] == coordinates[-1]
+    x, y = centre
+    # Independent closed-form checks for this resolution=1 point fixture.
+    assert actual.GetEnvelope() == (x - distance, x + distance, y - distance, y + distance)
+    assert actual.GetArea() == 2 * distance * distance
+    assert all(hypot(px - x, py - y) == distance for px, py in coordinates)
+
+
+@pytest.mark.parametrize('change', ['one_ulp', 'signed_zero'])
+def test_multi_distance_buffer_physical_oracle_rejects_coordinate_bit_changes(change):
+    from math import inf, nextafter
+    from osgeo import ogr
+
+    expected = ogr.CreateGeometryFromWkt('POLYGON ((2 0,0 -2,-2 0,0 2,2 0))')
+    computed_wkb = bytes(expected.ExportToWkb())
+    _assert_multi_distance_saved_geometry(expected, computed_wkb, (0., 0.), 2.)
+    altered = expected.Clone()
+    altered.GetGeometryRef(0).SetPoint_2D(1, nextafter(0., inf) if change == 'one_ulp' else -0., -2.)
+    assert bytes(altered.ExportToWkb()) != computed_wkb
+    assert altered.GetEnvelope() == expected.GetEnvelope()
+    assert altered.GetArea() == expected.GetArea()
+    assert altered.IsValid()
+    with pytest.raises(AssertionError, match='buffer save changed computed WKB'):
+        _assert_multi_distance_saved_geometry(altered, computed_wkb, (0., 0.), 2.)
+
+
 @pytest.mark.parametrize('port', [None, 'default'])
 @pytest.mark.parametrize('empty', [False, True])
 def test_multi_distance_buffer_workflow_save_and_independent_ogr_reload(tmp_path, port, empty):
@@ -986,6 +1023,14 @@ def test_multi_distance_buffer_workflow_save_and_independent_ogr_reload(tmp_path
     from osgeo import ogr
     from geopandas.testing import assert_geodataframe_equal
     from workflow_engine import GeoPythonWorkflowRunner
+
+    class RecordingRunner(GeoPythonWorkflowRunner):
+        def _execute_operator(self, operator, params):
+            outputs = super()._execute_operator(operator, params)
+            if operator == 'batch_buffer':
+                self.computed_wkb = outputs['__ports__']['default'].geometry.to_wkb().tolist()
+            return outputs
+
     source = _multi_distance_source().drop(columns='geometry')
     # Use nullable scalar columns in a real GeoPackage, without a list-saving adapter.
     before = source.copy(deep=True)
@@ -999,7 +1044,9 @@ def test_multi_distance_buffer_workflow_save_and_independent_ogr_reload(tmp_path
          'connection_info': {'engine_type': 'nfs', 'mount_path': str(tmp_path)},
          'path': 'buffers.gpkg', 'mode': 'fail'}, 'depends_on': ['multi']},
     ]}
-    outcome = GeoPythonWorkflowRunner().execute(workflow, {'source': source})
+    runner = RecordingRunner()
+    outcome = runner.execute(workflow, {'source': source})
+    assert len(runner.computed_wkb) == (0 if empty else 6)
     projected = json.loads(outcome.final_result)
     assert projected['type'] == 'FeatureCollection'
     path = tmp_path / 'buffers.gpkg'
@@ -1019,10 +1066,9 @@ def test_multi_distance_buffer_workflow_save_and_independent_ogr_reload(tmp_path
         assert feature.GetField('enabled') == (1 if source_row == 0 else None)
         assert feature.GetField('label') == ('甲' if source_row == 0 else None)
         assert feature.GetField('distance') == distance
-        expected_point = ogr.Geometry(ogr.wkbPoint)
-        expected_point.AddPoint_2D(source_row * 10., 0.)
-        expected = expected_point.Buffer(distance, 1)
-        assert feature.GetGeometryRef().ExportToWkb() == expected.ExportToWkb()
+        _assert_multi_distance_saved_geometry(
+            feature.GetGeometryRef(), runner.computed_wkb[index], (source_row * 10., 0.), distance,
+        )
     dataset = None
     assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
     assert_geodataframe_equal(source, before)
