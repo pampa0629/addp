@@ -605,3 +605,18 @@ Transfer 任务选择／保存／执行与 Develop 全量导出尚未接通，�
 2026-10-28 修后 CI 回传归档：专门 CI 会话已核实真实 Job 终态，本会话仅复核其保存的 Job 元数据与原始日志，未联网查询、重跑或触发 CI。修复提交 `79fa05e7b9907b0ad978ce8716ac050b56314a80` 的 [Go workspace Job 122248960679](https://github.com/pampa0629/addp/actions/runs/40521342460/job/122248960679) 实际执行 `Run all tracked Go module tests` 并成功，原始日志含 `ontology/internal/platform 0.676s` 通过；包含该修复的后继 `7ebf98370ebc965e09cb5744983dbf8ee7fbbbce` 的 [Platform consistency Job 122257071998](https://github.com/pampa0629/addp/actions/runs/40523616999/job/122257071998) 实际执行 `Run platform consistency gate` 并成功，同包 `0.176s` 通过。独立核对两份日志 SHA-256 与专门会话审计一致、Job/run/head SHA/attempt 精确匹配、成功步骤实际完成非跳过，并验证修复提交是后继来源的祖先。因此本次4c引起的来源漂移已有修后实际 CI 恢复证据；旧失败记录保留，不推广为当前或未来 HEAD 的全部 CI 通过。
 
 证据：`/tmp/addp-ci-20261027-160029/Transfer_79fa_review_source_actual_CI_recovery_audit.json` 与对应 `job-122248960679.log`、`job-122257071998.log`；本会话独立复核 `/tmp/p145-export-source-ci-return-independent-audit.json`。此归档仅补来源审查门禁恢复，不能替代新构建的实际 CSV、旧文件拒绝与重新导出恢复验收，也不证明修订35已在运行环境激活。用户已确认重启且四个相关 Backend 曾核对包含4c；当前尚未收到已有 `/tmp/p145-run-export-protection-acceptance.sh --temporary-protection-cycle` 的运行报告，CSV验收保持未验证。本轮仅文档归档，复用已完成测试，不重复产品门禁，不新增任务、调度、配置或权限，不操作本地服务。
+
+
+### 默认导出保护变更的本地实际 CSV 收口（2026-10-28）
+
+用户重启后，沿 Gateway 正式登录 outdoor-develop（User33、Tenant1）及 addp-owner（User31、Tenant1，完成现有 TOTP），对既有 MySQL `business.security_persons_acceptance_20261015` 完成默认 Manager 原生表全量导出与 Develop 同一直接字段 SQL（LIMIT5）导出的三阶段实际 HTTP 验收。四个相关 Backend 的 ready 响应均记录构建 `13b34fb5f22e28f932ae633d7780ebdd615f2b6d`，包含产品修复 `4c9e1e53ee1e895c398dd0e0aaa46de54d832422`；不据此推断 Worker 的独立构建 SHA 或本体修订35已激活。
+
+42项请求与42个唯一 request ID逐项关联对应 Owner 的运行日志路由／状态，实际生成6份CSV：每阶段 Manager2188行、Develop5行，独立复核CSV字节摘要、列序、唯一行标识、非保护字段及保护结果。默认／恢复阶段Manager均为863个掩码值和1325个空单元格，Develop为1个掩码值和4个空单元格；临时全遮盖阶段Manager1121个非空值均只含星号、1067个为空，Develop仍1个全遮盖和4个空单元格。全遮盖与默认参数不同，不要求两阶段非空数量相同；恢复默认的两份CSV摘要与各自初始文件完全一致。
+
+精确既有 Transfer/export 覆盖策略临时 active 后，两个初始会话的状态／文件在中英文下均409/`export_protection_changed`；覆盖恢复 revoked 后，初始与全遮盖四个旧会话仍全部拒绝，合计24次真实拒绝，响应保持 `no-store`、明确重新导出建议且无文件附件。重新导出两份默认CSV成功。独立只读核对6条真实Transfer执行均success、读取数等于写入数、精确DataItem与三阶段保护版本绑定；前四条私有记录不可逆invalidated，恢复后的两条有效。执行成功历史保持，未用下载拒绝改写原成功审计。Owner日志使用路由模板，精确会话对应由冻结的脚本循环、会话／execution绑定及私有保护记录共同核对，不声称日志展示了原始会话路径参数。
+
+策略由原revoked/version6经active/version7恢复revoked/version8，两条新修订均为User31的本次唯一验收原因；保留策略修订、执行与导出会话审计，文件沿既有暂存生命周期保留，不声称零残留或追回用户已下载副本。两份临时登录均正常logout204。未修改角色、源授权、原值授权或源表数据，未自行操作服务生命周期或跟进CI。
+
+前两次临时脚本失败均保留：首次遗漏管理员既有MFA步骤，在登录阶段退出；第二次Manager请求漏带已有Meta item_id，未取得字段快照而在保护准备阶段fail-closed，未写出CSV。已按现有认证契约补齐MFA／上下文响应解析，Manager来源与正常UI及既有成功脚本一致携带item_id44573，未放宽保护校验或改变产品代码。临时脚本11项回归及语法检查通过。独立审计初次因两批旧文件复用检查名称而拒绝，后按冻结顺序、42个唯一请求与实际Owner日志逐项校验，仍严格要求24拒绝／6物理CSV／6执行及恢复事实；未修改原始运行报告。
+
+证据：`/tmp/p145-export-protection-http-20261027/acceptance-report.json`、同目录`independent-runtime-audit.json`、`request-endpoint-evidence.json`及6份CSV；独立命令`python3 /tmp/p145-export-protection-independent-audit.py`退出0。失败材料及脚本修正证据为`/tmp/p145-export-protection-http-20261027-failed-login/`、`/tmp/p145-export-protection-http-20261027-failed-missing-source-snapshot/`、`/tmp/p145-export-protection-login-fix-audit.json`、`/tmp/p145-export-protection-source-fix-audit.json`。本轮新增的是限定默认出口的本地真实HTTP证据，不计为浏览器实际验收或隔离Hosted通过，也不替代角色专用文件、其他引擎／格式、自然到期、全量Service续页或在途并发撤销验证。相关投影在Owner同步生效前仍有既有窗口。清单实际行155/B空总述、156/B155动态脱敏实时生效继续部分实现；优先将本轮同一矩阵纳入既有隔离套件，CI由专门会话跟进，静态透明加密及通用SQL等既有缺口保留。
