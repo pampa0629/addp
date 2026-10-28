@@ -227,7 +227,7 @@ read -r release
     def test_cleanup_collects_actual_phase_files_after_stopping_sources_before_removal(self):
         gate=Path(__file__).with_name('monitor-metrics-gate.sh').read_text()
         body=gate.split("<<'REQUEST_TRAFFIC'\n",1)[1].split('\nREQUEST_TRAFFIC',1)[0]
-        self.assertLess(gate.index('compose --profile python-http down --volumes'),gate.index("<<'REQUEST_TRAFFIC'"))
+        self.assertLess(gate.index('compose --profile python-http --profile block-capacity down --volumes'),gate.index("<<'REQUEST_TRAFFIC'"))
         self.assertLess(gate.index("<<'REQUEST_TRAFFIC'"),gate.index('rm -rf "$WORK_DIR"'))
         with tempfile.TemporaryDirectory() as directory:
             work=Path(directory);source=work/'source';source.mkdir();receipt=work/'receipt.json'
@@ -258,7 +258,7 @@ docker(){ :; }
 cleanup(){'''+body+'\nfalse\ncleanup\n'
             result=subprocess.run(['bash','-c',script],env=dict(os.environ,WORK_DIR=str(work),COMPOSE_PROJECT='owned',CALLS=str(calls),ADDP_HTTP_BUDGET_RECEIPT=''),capture_output=True,text=True,timeout=5)
             self.assertEqual(result.returncode,1)
-            self.assertEqual([c for c in calls.read_text().splitlines() if ' down ' in ' '+c+' '],['--profile python-http down --volumes --remove-orphans'])
+            self.assertEqual([c for c in calls.read_text().splitlines() if ' down ' in ' '+c+' '],['--profile python-http --profile block-capacity down --volumes --remove-orphans'])
             self.assertFalse(work.exists())
 
     def test_cpu_memory_write_reservations_and_stop_lines(self):

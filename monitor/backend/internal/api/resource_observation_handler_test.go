@@ -242,3 +242,29 @@ func TestProcessResourceAuditRecordsOnlySystemIDs(t *testing.T) {
 		t.Fatalf("unsafe process audit %s", encoded)
 	}
 }
+
+func TestBlockCapacityDimensionsUseTheCanonicalInstantQuery(t *testing.T) {
+	router := gin.New()
+	router.GET("/query", func(c *gin.Context) {
+		_, _, _, _, dimensions, ok := resourceQuery(c, false)
+		if ok {
+			c.JSON(200, dimensions)
+		}
+	})
+	for _, item := range []struct {
+		query  string
+		status int
+	}{
+		{"node_id=x&metrics=node.block.capacity_bytes&device=vda&kind=device", 200},
+		{"node_id=x&metrics=node.block.capacity_bytes&device=vda&kind=physical", 400},
+		{"node_id=x&metrics=node.block.capacity_bytes&kind=device", 400},
+		{"node_id=x&metrics=node.block.capacity_bytes&device=vda&kind=device&kind=mapped", 400},
+		{"node_id=x&metrics=node.block.capacity_bytes&device=vda&kind=device&private=no", 400},
+	} {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest("GET", "/query?"+item.query, nil))
+		if w.Code != item.status {
+			t.Fatal(item, w.Code, w.Body.String())
+		}
+	}
+}

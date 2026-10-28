@@ -4850,7 +4850,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "即时响应附带当前采集状态 collection 及文件系统/网络采集器证据；抓取成功不等于指标或业务健康。| Instant responses include current collection and filesystem/network collector evidence, not metric or business health. 固定十项标量（含 TCP 当前连接数：ESTABLISHED＋CLOSE_WAIT）、五项字节容量、四项 inode 和两项磁盘读写、三项磁盘 IO 时间及两项网络收发（按 device，一分钟窗口）；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零、平均 IO 耗时无完成请求或缺少有效证据返回 no_data | Ten scalar (including current TCP connections: ESTABLISHED plus CLOSE_WAIT), five byte-capacity, four inode, two disk throughput, three disk IO timing and two network per-device one-minute metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total, no completed IO for mean duration or missing evidence returns no_data",
+                "description": "即时响应附带当前采集状态 collection 及文件系统/网络采集器证据；另含仅即时的 node.block.capacity_bytes（device/kind）和 block_capacity 状态，不合计物理总量；抓取成功不等于指标或业务健康。| Instant responses include current collection and filesystem/network collector evidence, not metric or business health. Instant-only node.block.capacity_bytes uses device/kind and block_capacity evidence; no physical capacity aggregation. 固定十项标量（含 TCP 当前连接数：ESTABLISHED＋CLOSE_WAIT）、五项字节容量、四项 inode 和两项磁盘读写、三项磁盘 IO 时间及两项网络收发（按 device，一分钟窗口）；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零、平均 IO 耗时无完成请求或缺少有效证据返回 no_data | Ten scalar (including current TCP connections: ESTABLISHED plus CLOSE_WAIT), five byte-capacity, four inode, two disk throughput, three disk IO timing and two network per-device one-minute metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total, no completed IO for mean duration or missing evidence returns no_data",
                 "produces": [
                     "application/json"
                 ],
@@ -4877,6 +4877,18 @@ const docTemplate = `{
                         "type": "string",
                         "description": "磁盘设备或网络接口精确值；限定时不混合分组族，文件系统还需挂载点与类型 | Exact disk device or network interface; selected grouped families cannot mix; filesystem also requires mountpoint and fstype",
                         "name": "device",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "device",
+                            "mapped",
+                            "raid",
+                            "unknown"
+                        ],
+                        "type": "string",
+                        "description": "仅即时块容量，须与device同时选择；结构类型不代表物理身份 | Instant block capacity only; requires device; structure does not prove physical identity",
+                        "name": "kind",
                         "in": "query"
                     },
                     {
@@ -7908,6 +7920,18 @@ const docTemplate = `{
         "github_com_addp_monitor_internal_resourcequery.Collection": {
             "type": "object",
             "properties": {
+                "block_capacity": {
+                    "type": "string",
+                    "enum": [
+                        "available",
+                        "empty",
+                        "unsupported",
+                        "failed",
+                        "not_collected",
+                        "stale",
+                        "unknown"
+                    ]
+                },
                 "filesystem": {
                     "type": "string"
                 },
@@ -7972,7 +7996,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "dimensions": {
-                    "description": "标量为空对象；磁盘及网络仅 device；文件系统为三项 | Empty for scalars; device for disk/network; device, mountpoint and fstype for mounts.",
+                    "description": "标量为空对象；块容量 device/kind；磁盘及网络 device；挂载三项 | Empty for scalars; device/kind for capacity; device for IO/network; three mount dimensions.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_addp_monitor_internal_resourcequery.Dimensions"

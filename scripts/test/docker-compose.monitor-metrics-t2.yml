@@ -49,10 +49,22 @@ services:
       interval: 1s
       timeout: 3s
       retries: 45
+  block-capacity:
+    extends:
+      file: ../infra/node-block-capacity.yml
+      service: block-capacity
+    profiles: [block-capacity]
   node-exporter:
     extends:
       file: ../infra/node-metrics.yml
       service: node-exporter
+    volumes:
+      - type: volume
+        source: block-capacity
+        target: /textfile
+        read_only: true
+        volume:
+          nocopy: true
     ports:
       - target: 9100
         published: "${ADDP_NODE_METRICS_PUBLISH_PORT:-0}"
@@ -105,6 +117,14 @@ services:
     ports: ["127.0.0.1::19445"]
 
 volumes:
+  block-capacity:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=1m,uid=65534,gid=65534,mode=0700
+    labels:
+      io.addp.node-metrics.owner: ${ADDP_NODE_METRICS_OWNER:-t2}
   prometheus_data:
 secrets:
   metrics-postgres-password:

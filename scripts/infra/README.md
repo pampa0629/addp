@@ -31,3 +31,7 @@
 - [docker-compose.infra.yml](../../docker-compose.infra.yml) - 基础设施容器配置
 - [.env.example](../../.env.example) - 环境变量配置模板
 - [docs/spec/addp配置介绍.md](../../docs/spec/addp配置介绍.md) - 配置分层与管理能力规范
+
+### 可选磁盘与卷容量
+
+标准节点入口在 `ADDP_NODE_METRICS_ENABLED=true` 后可显式选择 `ADDP_NODE_BLOCK_CAPACITY_ENABLED=true`。默认关闭；部署者仍使用同一 `node-metrics.py up/down/status`，不手工采样或导入文件。仅仅读元数据的非特权采集器每十五秒原子发布专属 Textfile，原生 Linux 绑定只读 sysfs/proc，Desktop 使用自身 VM 视图，不访问 Mac 物理盘、原始设备或 Docker Socket。容量与卷／底层设备逐项展示，不求和；零容量、分区、RAM、loop 不进入主表。开关变更由部署者应用标准节点入口，未选、采集失败及超限均不影响原 CPU／文件系统等来源。停用扩展移除其容器和归属核验后的专属临时卷；节点 down 同样清理。不向个人环境自动应用。来源协议见[运行观测规范](../../docs/spec/addp平台运行观测规范.md#磁盘与卷容量)。

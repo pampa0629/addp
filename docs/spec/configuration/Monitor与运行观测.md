@@ -115,3 +115,7 @@ Tempo 使用独立 `TEMPO_BUCKET/TEMPO_S3_ACCESS_KEY/TEMPO_S3_SECRET_KEY`，不�
 Monitor 查询通过独立 `MONITOR_TEMPO_URL` HTTPS origin 和 `MONITOR_TRACE_TLS_DIR` 三文件客户端目录访问只读代理，不能复用来源证书。原生开发显式使用 Infra 实际回环映射；容器部署由唯一生产入口将 SDK 数组与私有目录投影为每服务独立只读挂载，查询目录仅挂 Monitor。改变部署输入由用户按标准生命周期重启相应进程；配置失败或中心故障不影响业务 Ready，接受导出不等于采样保留回执。
 
 本轮只使用 `make test-monitor-traces` 的当次隔离设施验证，不接管个人服务，不扩展或运行 Hosted。
+
+## 节点设备容量扩展
+
+`ADDP_NODE_BLOCK_CAPACITY_ENABLED=false` 为默认关闭的部署选项，仅在节点来源启用时校验。选择 true 后由 `scripts/infra/node-metrics.py` 统一准备只读采集及专属 Textfile 目录、启停和清理；不要求用户执行采样脚本或导入 JSON。协议、限额及 VM 边界沿[块设备容量规范](../addp平台运行观测规范.md#磁盘与卷容量)。开关变更由部署者沿标准节点入口应用，不影响其他观测或业务 Ready；不修改根环境文件或自动重启个人来源。

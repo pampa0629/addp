@@ -1,0 +1,28 @@
+services:
+  block-capacity:
+    volumes:
+      - /sys:/source-sys:ro
+      - type: bind
+        source: /proc/stat
+        target: /source-proc/stat
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /proc/devices
+        target: /source-proc/devices
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /proc/diskstats
+        target: /source-proc/diskstats
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /proc/sys/kernel/osrelease
+        target: /source-proc/sys/kernel/osrelease
+        read_only: true
+        bind:
+          create_host_path: false

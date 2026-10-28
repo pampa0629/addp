@@ -44,6 +44,13 @@ def deployment(env):
     return directory
 
 
+def capacity_enabled(env):
+    value = env.get('ADDP_NODE_BLOCK_CAPACITY_ENABLED', 'false')
+    if value not in ('true', 'false'):
+        raise ValueError('ADDP_NODE_BLOCK_CAPACITY_ENABLED must be true or false')
+    return value == 'true'
+
+
 def deployment_runtime(system, kernel, endpoint, docker_os):
     version = re.match(r'^(\d+)\.(\d+)', kernel)
     if (not version or tuple(map(int, version.groups())) < (5, 12)
@@ -139,16 +146,24 @@ def run(action, env, *, node_kind=None, display_name=None, addresses=(), host_on
                                   'label=com.docker.compose.project=' + PROJECT], text=True).split()
     containers = docker_json('inspect', *ids) if ids else []
     for item in containers:
-        if item['Config']['Labels'].get('io.addp.node-metrics.owner') != str(ROOT):
+        if (item['Config']['Labels'].get('io.addp.node-metrics.owner') != str(ROOT)
+                or item['Config']['Labels'].get('com.docker.compose.service') not in ('node-exporter', 'block-capacity')):
             raise ValueError('Node metrics project belongs to another workspace')
+    capacity = capacity_enabled(env) if action in ('up', 'export-admission') else False
     if action == 'export-admission':
-        if (len(containers) != 1 or containers[0].get('State', {}).get('Running') is not True
-                or containers[0]['Config']['Labels'].get('com.docker.compose.service') != 'node-exporter'):
+        expected = {'node-exporter', 'block-capacity'} if capacity else {'node-exporter'}
+        services = [item['Config']['Labels'].get('com.docker.compose.service') for item in containers]
+        if (set(services) != expected or len(services) != len(expected)
+                or any(item.get('State', {}).get('Running') is not True for item in containers)):
             raise ValueError('Admission export requires the owned running node source')
         write_admission(admission_document(env, runtime, node_kind, display_name, addresses, modules))
         return
     desktop = runtime == 'desktop'
     values = dict(env, ADDP_NODE_METRICS_OWNER=str(ROOT),
+                  ADDP_NODE_METRICS_TEXTFILE='--collector.textfile' if capacity else '--no-collector.textfile',
+                  ADDP_NODE_METRICS_KERNEL=info['KernelVersion'] if action == 'up' else 'unused',
+                  ADDP_NODE_CAPACITY_SYSFS='/sys' if desktop else '/source-sys',
+                  ADDP_NODE_CAPACITY_PROCFS='/proc' if desktop else '/source-proc',
                   ADDP_NODE_METRICS_ROOTFS='/' if desktop else '/host',
                   ADDP_NODE_METRICS_PROCFS='/proc' if desktop else '/host/proc',
                   ADDP_NODE_METRICS_SYSFS='/sys' if desktop else '/host/sys',
@@ -164,9 +179,28 @@ def run(action, env, *, node_kind=None, display_name=None, addresses=(), host_on
     args = ['docker', 'compose', '--env-file', '/dev/null', '-p', PROJECT,
             '-f', str(ROOT / 'scripts/infra/node-metrics.yml'),
             '-f', str(ROOT / f'scripts/infra/node-metrics-{runtime}.yml')]
-    commands = {'up': ['up', '-d', '--force-recreate', '--wait', '--wait-timeout', '30', 'node-exporter'],
+    # Always include the owned extension on down/status, so disabled inputs do
+    # not strand its resources. No user-supplied path or profile is consumed.
+    extension = capacity or action in ('down', 'status')
+    if extension:
+        args += ['-f', str(ROOT / 'scripts/infra/node-block-capacity.yml')]
+        if not desktop:
+            args += ['-f', str(ROOT / 'scripts/infra/node-block-capacity-linux.yml')]
+    commands = {'up': ['up', '-d', '--remove-orphans', '--force-recreate', '--wait', '--wait-timeout', '30', 'node-exporter'] + (['block-capacity'] if capacity else []),
                 'down': ['down'], 'status': ['ps']}
+    # Validate ownership before any mutation, including removal of a volume left
+    # after an interrupted previous deployment. The name is project-local.
+    volume_name = PROJECT + '_block-capacity'
+    volumes = subprocess.check_output(['docker', 'volume', 'ls', '-q', '--filter', 'name=^' + volume_name + '$'], text=True).split()
+    if volumes:
+        if volumes != [volume_name]:
+            raise ValueError('Unexpected node volume')
+        volume = docker_json('volume', 'inspect', volume_name)[0]
+        if (volume.get('Labels') or {}).get('io.addp.node-metrics.owner') != str(ROOT):
+            raise ValueError('Node capacity volume belongs to another workspace')
     subprocess.run(args + commands[action], env=values, check=True)
+    if volumes and (action == 'down' or action == 'up' and not capacity):
+        subprocess.run(['docker', 'volume', 'rm', volume_name], env=values, check=True)
     if action == 'up':
         scope = 'Docker Desktop VM (kernel-global metrics only)' if desktop else 'native Linux node'
         print(f'Node metrics: deployed {scope}; source readiness and Monitor admission require mTLS verification')

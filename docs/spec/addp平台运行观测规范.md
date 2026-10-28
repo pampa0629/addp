@@ -265,6 +265,7 @@ Desktop 来源固定启用 cpu、meminfo、loadavg、diskstats、stat、uname、
 | 文件系统 inode | 4 | 总量、空闲、已用及使用率，与字节容量分开 |
 | 磁盘 | 5 | 读写吞吐、IO 忙碌时间占比、平均读写耗时，保留 device 维度 |
 | 网络 | 2 | 网卡收发字节速率，保留 device 维度 |
+| 磁盘与卷容量 | 1 | 仅即时的 `node.block.capacity_bytes`，保留 device／kind，不提供趋势或汇总 |
 
 容量用 IEC 自适应单位，运行时长用天/小时/分钟；解释放在对应指标或列旁。系统平均负载是运行/等待 CPU 以及不可中断等待（常见于 IO）的任务数量平均值，不是百分比，也不是内存或 CPU 使用率，必须结合核数及其他指标判断。
 
@@ -289,6 +290,18 @@ PostgreSQL 专业观测的固定查询目录首期 12 项：总连接、活跃�
 容器资源沿同一进程来源接入：SDK 在启动时取得的 boot UUID／cgroup inode／PID namespace inode 随不可变私有声明登记，后续采样仍核对当前边界。部署发布器在原有受管目录发布 `addp.container-proofs/v1`，仅可信本机 Linux Docker、当前工作区 `addp-platform`、标准 runtime-log 单应用入口；读完整容器 ID／启动／宿主 PID及真实完整 cgroup v2 层级，双读核对，最长 90 秒。父级隐藏、平台不支持、读取失败或来源中断清除当前证明，不以 Docker 配置额度替代真实父级限制。首期要求层级 CPU burst 为零；CPU 上界来自完整层级 quota/period 与有效 cpuset，内存取有限 memory.max 最小值；均为硬上界，不是独享或保证容量。连续快照一致的限制记录重新启动／变化／超时即重新累计；CPU 比率要求记录覆盖完整一分钟及边界裕量。
 
 System 只在当前有效实例的 module／role、三项内核身份及进程／容器启动时间匹配且容器边界唯一时，沿既有后台投影附带证明；不改变主机关联、IAM、普通实例 DTO 或登记租约。Monitor 先按当前 User 精确读取实例，再查询对应来源；CPU 复用至少四样本、完整一分钟边界、无重置及双端身份保护，内存使用整组 memory.current，不能用 RSS 替代。查询在证明时点评估，返回前重读同一投影，限制／实例／租约变化则拒绝，不缓存旧额度。比例不裁剪到 100%，无有限上界、稳定记录不足或无有效采样时保留空值并在对应卡片解释；原生开发仍是宿主进程。
+
+### 磁盘与卷容量
+
+2026-10-28 用户确认：只展示当前纳管节点内核可见的已就绪非分区块设备及可核实结构类型，不合计整机／集群物理总量，不计算块设备使用率，不增加趋势或告警。排除分区、RAM、loop、零容量对象；选择依据内核属性及设备关系，不按设备名猜物理身份。映射卷与底层设备分别显示，不能相加。原文件系统明细与规则保持原契约。
+
+部署侧沿唯一节点来源入口显式选择 `ADDP_NODE_BLOCK_CAPACITY_ENABLED=true`，默认关闭。专属非特权只读采集器仅读受控 sysfs 的容量、设备号、分区、映射关系与启动证明；原生 Linux 读取宿主 sysfs／proc，Desktop 仅在内核与设备号核对成立时提供 VM 视图，不增加宿主根、Docker Socket、原始设备或业务文件访问。System 不新增实体或后台投影。
+
+唯一发布路径为专用目录内 node_exporter Textfile Collector。每十五秒原子替换唯一 `block-capacity.prom`；仅允许 `addp_block_capacity_` 前缀，非受管文件拒绝。帧含 success、supported、sample_time_seconds、boot_time_seconds、device_count、bytes（device／kind），文件不带 Prometheus 样本时间戳；失败帧不含容量，未选不发布。容量为 sysfs size 的512字节扇区换算，限制精确整数范围；扫描上限4096对象、100就绪设备，超限整帧失败，不截断。按内核 major driver 排除 ramdisk／loop，按 partition 属性排除分区；结构类型仅使用 device、mapped、raid、unknown，不表示物理性。
+
+源时间、原生 node_boot_time_seconds、当前抓取状态和整帧完整性共同裁定当前值；旧文件不能因新抓取变新鲜，设备消失不能沿 lookback 拼回旧帧。采集关闭、失败、过期、空集合及不支持分别表示，不能伪造零容量。后端沿既有 User／主机读取裁决、固定目录和原查询预算；不得直连 Docker、执行远程命令、增加 System 读取或绕过预算。设备明细及 IEC 容量就近展示来源范围，不暴露 sysfs 路径、序列号或私有证明。
+
+来源 T0／T1、真实来源与 Prometheus T2、页面 T3分别验证；API 变动同步 Swagger。既有隔离 Hosted 的临时管理员只读用途扩展为当次节点容量、状态及同页读取；沿原真实密码／MFA、独立 Prometheus 身份和退出清理，不造盘、不挂卸载、不加压。CI／Hosted 实际执行等专门会话安排，本会话不调度或设置定时任务。
 
 ### 6.2 资源查询与预算
 

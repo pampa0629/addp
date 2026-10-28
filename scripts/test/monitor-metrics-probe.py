@@ -221,7 +221,8 @@ def check_resource_windows():
     backend = Path(__file__).resolve().parents[2] / 'monitor/backend'
     binary = WORK / 'resource-windows.test'
     environment = dict(os.environ, GOWORK='off')
-    selection = '^TestIntegrationMetrics(CPUWindow|ProcessWindow|HTTPWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes)$'
+    selection = '^TestIntegrationMetrics(CPUWindow|ProcessWindow|HTTPWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes|BlockCapacity)$'
+    if os.environ.get('ADDP_METRICS_T2_CASE') == 'block-capacity': selection = '^TestIntegrationMetricsBlockCapacity$'
     print('Metrics window T2: build test binary (preparation limit 180s)', flush=True)
     subprocess.run(['go', 'test', '-c', './internal/resourcequery', '-o', str(binary)],
                    cwd=backend, env=environment, check=True, timeout=180)
@@ -233,7 +234,75 @@ def check_resource_windows():
                    check=True, timeout=60)
 
 
+original_discovery = (WORK / 'source/discovery.json').read_text()
+def discovery_text(text):
+    pending = WORK / 'source/discovery.pending'
+    pending.write_text(text)
+    pending.replace(WORK / 'source/discovery.json')
+
+
 check_resource_windows()
+
+if os.environ.get('ADDP_METRICS_T2_CASE') in ('all', 'block-capacity'):
+    sampler_id = compose('ps', '-q', 'block-capacity')
+    sampler = json.loads(subprocess.check_output(['docker', 'inspect', sampler_id], text=True))[0]
+    assert sampler['Config']['User'] == '65534:65534'
+    assert sampler['HostConfig']['ReadonlyRootfs'] and sampler['HostConfig']['CapDrop'] == ['ALL']
+    assert sampler['HostConfig']['NetworkMode'] == 'none' and not sampler['HostConfig']['Privileged']
+    assert sampler['HostConfig']['PidMode'] != 'host'
+    assert all(m['Destination'] in ('/sampler.py', '/textfile') for m in sampler['Mounts'])
+    assert all(not m['RW'] for m in sampler['Mounts'] if m['Destination'] != '/textfile')
+    node_base = 'https://localhost:' + port('node-exporter', 9100)
+    eventually(lambda: b'addp_block_capacity_success 1' in get(node_base + '/metrics', source_context), 'managed block capacity succeeds')
+    proof = json.loads(compose('exec', '-T', 'block-capacity', 'python3', '-B', '-c',
+        "import json,runpy,platform;from pathlib import Path;m=runpy.run_path('/sampler.py');b,r=m['snapshot'](Path('/sys'),Path('/proc'),platform.release());print(json.dumps({n+':'+k:v for n,k,v in r}))"))
+    assert len(proof) <= 100
+    current_node = json.loads(subprocess.check_output(['docker', 'inspect', compose('ps', '-q', 'node-exporter')], text=True))[0]
+    instance = next(iter(current_node['NetworkSettings']['Networks'].values()))['IPAddress'] + ':9100'
+    block_projection = json.loads(original_discovery)
+    block_projection[0]['targets'] = [instance]
+    expected_discovery = json.dumps(block_projection)
+    discovery_text(expected_discovery)
+    try:
+        eventually(lambda: bool(query('up{job="addp_nodes",instance="' + instance + '"} == 1')), 'real block exporter is scraped')
+    except AssertionError:
+        targets = api('targets')['activeTargets']
+        nodes = [target for target in targets if target.get('labels', {}).get('job') == 'addp_nodes']
+        report = {'stage': 'block-source-readiness',
+                  'host_file_current': json.loads((WORK/'source/discovery.json').read_text()) == block_projection,
+                  'container_file_current': json.loads(compose('exec','-T','metrics-source','cat','/source/discovery.json')) == block_projection, 'active_node_targets': len(nodes),
+                  'matching_instance_targets': sum(target.get('labels', {}).get('instance') == instance for target in nodes),
+                  'source_leaf_matches_ip': False,
+                  'targets': [{'matches_instance': target.get('labels', {}).get('instance') == instance,
+                               'health': target.get('health') if target.get('health') in ('up','down','unknown') else 'unknown',
+                               'error_kind': tls_failure_kind(target.get('lastError',''))} for target in nodes]}
+        try:
+            request = urllib.request.Request(control + '/api/v1/monitor/platform/metrics_discovery', headers={'Authorization':'Bearer addp_at_t2_native_oauth'})
+            with urllib.request.urlopen(request, context=context, timeout=5) as response:
+                report['http_sd_body_current'] = json.loads(response.read()) == block_projection
+            requests = (WORK/'source/requests.log').read_text()
+            report['sd_200'] = requests.count('GET /api/v1/monitor/platform/metrics_discovery 200')
+            report['sd_304'] = requests.count('GET /api/v1/monitor/platform/metrics_discovery 304')
+            report['sd_401'] = requests.count('GET /api/v1/monitor/platform/metrics_discovery 401')
+        except (OSError,ValueError,ssl.SSLError): report['http_sd_body_current'] = False
+        try:
+            import ipaddress
+            certificate = ssl._ssl._test_decode_cert(str(WORK / 'node-tls/server.crt'))
+            report['source_leaf_matches_ip'] = ('IP Address', str(ipaddress.ip_address(instance.rsplit(':',1)[0]))) in certificate.get('subjectAltName', ())
+        except (OSError,ValueError,ssl.SSLError): pass
+        print('Metrics T2: bounded block readiness diagnostic ' + json.dumps(report, sort_keys=True), flush=True)
+        raise
+    # First UP must be the scrape containing the managed frame, not an old file.
+    eventually(lambda: bool(query('addp_block_capacity_success{job="addp_nodes",instance="' + instance + '"} == 1')), 'managed capacity frame reaches Prometheus')
+    query_env = dict(os.environ, GOWORK='off', ADDP_METRICS_QUERY_INTEGRATION='1',
+        MONITOR_PROMETHEUS_URL=base, MONITOR_PROMETHEUS_CA_FILE=str(TLS / 'ca.crt'),
+        MONITOR_PROMETHEUS_CLIENT_CERT_FILE=str(WORK / 'query-tls/client.crt'), MONITOR_PROMETHEUS_CLIENT_KEY_FILE=str(WORK / 'query-tls/client.key'),
+        ADDP_METRICS_QUERY_NODE_ID=block_projection[0]['labels']['addp_node_id'], ADDP_METRICS_QUERY_INSTANCE=instance, ADDP_BLOCK_CAPACITY_EXPECTED=json.dumps(proof))
+    subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsBlockCapacitySource$', '-count=1', '-v'],
+        cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=query_env, check=True, timeout=120)
+    discovery_text(original_discovery)
+    print('Metrics T2: managed read-only block capacity, native device values, mTLS, fixed query and source time passed', flush=True)
+    if os.environ.get('ADDP_METRICS_T2_CASE') == 'block-capacity': raise SystemExit(0)
 
 flags = api('status/flags')
 assert flags['storage.tsdb.retention.time'] == '1w', flags
@@ -365,11 +434,6 @@ compose('start', 'metrics-source')
 eventually(valid_sample, 'source recovery')
 
 # SD error must preserve the previous targets; only a successful empty array removes them.
-original_discovery = (WORK / 'source/discovery.json').read_text()
-def discovery_text(text):
-    pending = WORK / 'source/discovery.pending'
-    pending.write_text(text)
-    pending.replace(WORK / 'source/discovery.json')
 
 
 def native_process_cpu_history_ready(records):

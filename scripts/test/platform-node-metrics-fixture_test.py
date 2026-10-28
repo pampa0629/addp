@@ -56,6 +56,17 @@ class MetricsFixtureTest(unittest.TestCase):
         self.assertNotIn("not-for-artifacts", json.dumps(proof))
         self.assertNotIn(str(FIXTURE.ROOT), json.dumps(proof))
 
+    def test_fixed_textfile_directory_is_inert_only_when_collector_is_explicitly_disabled(self):
+        row = self.native_exporter()
+        row['Config']['Cmd'].extend(['--no-collector.textfile', '--collector.textfile.directory=/textfile'])
+        self.assertTrue(self.prove_native(row=row)['filesystem_collector'])
+        for change in ('enabled', 'duplicate', 'no-disable'):
+            bad = copy.deepcopy(row)
+            if change == 'enabled': bad['Config']['Cmd'].append('--collector.textfile')
+            if change == 'duplicate': bad['Config']['Cmd'].append('--collector.textfile.directory=/textfile')
+            if change == 'no-disable': bad['Config']['Cmd'].remove('--no-collector.textfile')
+            with self.subTest(change=change), self.assertRaises(ValueError): self.prove_native(row=bad)
+
     def test_native_source_proof_rejects_non_host_sources_and_changed_ownership(self):
         for info in ({"OSType": "windows"}, {"OSType": "linux", "KernelVersion": "other"},
                      {"OSType": "linux", "KernelVersion": "test-kernel", "OperatingSystem": "Docker Desktop"}):

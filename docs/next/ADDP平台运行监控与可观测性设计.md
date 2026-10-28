@@ -12,6 +12,7 @@
 | 采集配置 | 主机来源 CRUD、认证发现、独立采集启停、列表与详情采集结果 | 已接入；主机纳管状态、配置启停与实际采集结果分别表达 |
 | 主机资源与趋势 | 26 项固定主机指标（含 TCP）、设备／挂载明细及共享图表交互，CPU卡补同一分钟空闲率辅助展示；目录与缺值口径见[规范 6.1][monitor-catalog]，缩放、单位、图例及组合图见[规范 6.3][monitor-presentation]。 | 指标链路、交互和 TCP 分层结果见[节点证据][monitor-host]；原 Linux Hosted 不覆盖全部新增交互，新增真实页面 Hosted 待回传。真实 Linux 采集与挂载读数的[验收准备](../spec/testing/evidence/Monitor节点与主机资源历史证据.md#真实-linux-采集与挂载页面验收准备2026-10-28)已补（含列表展开／手工刷新／收起），实际运行未验。空闲率的[本地展示证据](../spec/testing/evidence/Monitor节点与主机资源历史证据.md#主机-cpu-空闲率辅助展示2026-10-28)不代替正式实源页面。文件系统视口按完整挂载身份隔离；仅显示来源支持的指标，不据此诊断内存泄漏 |
 | 主机列表资源视图 | 核心资源／负载与连接两种列视图、[当前页摘要][monitor-core-summary]及按需[设备展开][monitor-device-expansion]／文件系统展开；筛选恢复、唯一展示、分组读取和预算沿[规范 6.3][monitor-presentation]。 | 五项摘要见[固定 `9bf8dddcb` Linux 前端][monitor-fixed-frontend]；[文件系统展开][monitor-filesystem-expansion]含固定 `e5391ca36`、首轮失败与修复，父 workflow 取消不计整体通过。[负载／连接证据][monitor-load-view]保留实源摘要 T2 前置失败；个人仅验三档负载与导航、TCP 缺样，右侧截图／前台刷新未验。设备／文件系统实源、个人 Safari 与正式身份 Hosted 不由前端门禁代替；列表扩展不扩大 TOP5／采集配置的两项读取 |
+| 磁盘与卷容量 | 已接通默认关闭的受管采集、即时固定目录、主机列表与详情的唯一设备表；不汇总物理总量 | [首期范围](#磁盘与卷容量首期)已确认；Desktop VM 实源 T2、独立受控页面 T3 和构建通过，完整前端长回归未通过，原生 Linux／Safari／Hosted 待验，见[本地证据](../spec/testing/evidence/Monitor节点与主机资源历史证据.md#磁盘与卷容量首期实现与本地分层验证2026-10-28) |
 | 主机资源热力面板 | 复用当前 CPU、内存和各完整挂载使用率，提供主题热力与趋势入口，见[规范 6.3][monitor-presentation]。 | 本地交互见[热力面板证据][monitor-heatmap]，固定 Linux 前端见[`9bf8dddcb` 证据][monitor-fixed-frontend]；[实源页面验收准备](../spec/testing/evidence/Monitor节点与主机资源历史证据.md#热力面板实源页面验收准备2026-10-28)已补，真实来源正式页面 Hosted 待回传。不新增接口或查询，不计算健康分或告警阈值 |
 | 服务状态、资源与趋势 | 实例筛选／重置、租约状态、Go 进程资源与趋势及当前主机导航，沿[规范 6.3][monitor-presentation]；Meta、Quality 及 Transfer 两类 Worker 已支持默认单实例、可选双实例、独立 PID 与缺失补回，Transfer 持续同步双实例拒绝固定 Owner 身份。 | 绑定、双 Worker 实源隔离、趋势／环比见[实例证据][monitor-instance]，新增真实页面 Hosted 待回传。[Meta][monitor-meta-workers]／[Transfer][monitor-transfer-workers]／[Quality][monitor-quality-workers]专项的实例数量、登记／绑定、补回与页面断言由各专题维护；仅接通入口，真实 Hosted 未执行。原生 macOS 绑定、其他模块副本和全部语言覆盖仍不足，不开放退出实例历史 |
 | 资源总览与 TOP5 | 主机数量、纳管/采集状态、CPU 与内存 TOP5、覆盖率 | 单真实主机 Hosted 与受控多源 T2 见[跨主题证据](../spec/testing/evidence/Monitor综合验收历史证据.md#节点实例与资源告警)；不宣称多真实主机完整 T4，不提供全局物理容量合计 |
@@ -183,3 +184,21 @@ Business 认证目录首次切换须由部署方沿标准生命周期重建容�
 [monitor-engine]: ../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md
 [monitor-execution]: ../spec/testing/evidence/Monitor执行监控与留存历史证据.md
 [monitor-diagnostics]: ../spec/testing/evidence/Monitor部署与前置诊断历史证据.md
+
+
+## 磁盘与卷容量首期
+
+原图硬件卡的“磁盘总容量”不能由现有挂载容量或IO累计量推算。仓库锁定的 [node_exporter v1.12.1 diskstats](https://github.com/prometheus/node_exporter/blob/v1.12.1/collector/diskstats_linux.go) 提供IO及设备信息，没有本项设备容量；[util-linux lsblk实现](https://github.com/util-linux/util-linux/blob/v2.41.2/misc-utils/lsblk.c) 从sysfs的size读取扇区数并左移9位转换为字节。当前受限Desktop来源的非root只读取样已能看到VM的vda与其vda1分区，二者不能相加为物理总量；只证明可行性，见[前置证据](../spec/testing/evidence/Monitor节点与主机资源历史证据.md#块设备容量只读前置核对2026-10-28)。
+
+2026-10-28 用户确认以下首期范围；术语、正式规范、来源与产品按同一协议实施：
+
+1. 产品显示“磁盘与卷容量”，对象是**当前纳管节点可见的已就绪非分区块设备**，逐设备展示IEC容量、可核实的结构类型和采样状态。分区、loop、RAM设备及零容量未就绪对象不作为主表磁盘；正式选择按内核属性和设备关系，不按sda／vda名称猜物理性。映射卷与底层盘分别表示，未知类型明确未知；不输出整机／集群物理总量，不计算块设备使用率，不新增趋势或容量告警，原文件系统明细和告警保持原契约。
+2. 原生Linux读取受控宿主sysfs；Desktop仅在内核、设备号及来源归属证明成立时读取其VM可见设备，不能宣称Mac物理磁盘、Docker卷总量或完整存储池。看不到或无法证明的环境明确不支持，不扩大Desktop的宿主／设备访问权限。
+3. Infra标准节点入口增加**受管只读采集职责**，只读固定白名单的容量、设备号、分区／必要映射属性及采样／启动证明，不读取序列号、业务文件、凭据或原始设备，不给采集器Docker Socket、特权或Shell管理接口。System继续仅裁决主机身份／权限，不新增CMDB实体或后台投影；Monitor通过当前User和既有主机读取权查询固定目录，不执行远程命令。
+4. 唯一发布路线复用 [node_exporter官方Textfile Collector](https://github.com/prometheus/node_exporter/blob/v1.12.1/README.md#textfile-collector)：节点侧自动原子发布专用目录、专用前缀的容量及采样状态／时间，exporter只读消费，再沿原mTLS／Prometheus链路查询。该扩展仅承载新增块容量，不能替代或覆盖原生CPU／文件系统指标，严格拒绝非受管文件；不让用户运行脚本或手工导入JSON，不另开推送或直连查询路径。
+5. 能力显式选择、默认关闭，统一随标准节点入口准备、启停及清理；未选择、失败、陈旧或超预算只影响本项，其他观测及业务继续运行。原子发布、源采样时间、同次启动和帧完整性共同判定有效性，不能把exporter刚抓到旧文件当新数据；整组超限拒绝，不截断、不拆批、不提高现有预算。
+6. 实施同批完成来源生命周期、目录／API及Swagger、唯一前端设备视图、既有标准测试与CI登记。先做受控sysfs、旧文件／失败／设备变化、预算和权限回归，再做实源T2及页面T3。既有一次性隔离Hosted仅增加当次节点容量／状态查询及同一真实页面的只读用途，不造盘、不挂卸载设备、不加压；原真实密码／MFA、独立Prometheus身份及全退出清理保持原契约，真实运行仍由专门会话安排。
+
+本批不修改个人来源、不重启服务、不设置定时任务。来源、查询、页面及真实运行分别记录验证结果；现有文件系统容量不是设备容量的替代。
+
+当前产品已接通；尚须补齐原生 Linux 容量扩展的部署归属／受管帧证明及真实 Console 页面收据。既有原生文件系统验收仍只接受显式关闭 Textfile 的节点来源，不能把其既有通过外推为本项容量扩展通过。完整前端长回归未通过，须在连续唤醒环境复验；不据独立三场景或构建通过宣称整轮通过。

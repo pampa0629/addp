@@ -13,13 +13,14 @@ import (
 // Collection is current bounded collection evidence, not historical node health.
 // 当前有界采集证据；不代表主机或历史时点的健康状态。
 type Collection struct {
-	State      string     `json:"state"`
-	SampledAt  *time.Time `json:"sampled_at"`
-	Filesystem string     `json:"filesystem"`
-	Network    string     `json:"network" enums:"available,failed,not_collected,unknown"`
+	BlockCapacity string     `json:"block_capacity,omitempty" enums:"available,empty,unsupported,failed,not_collected,stale,unknown"`
+	State         string     `json:"state"`
+	SampledAt     *time.Time `json:"sampled_at"`
+	Filesystem    string     `json:"filesystem"`
+	Network       string     `json:"network" enums:"available,failed,not_collected,unknown"`
 }
 
-func (c *Client) Collection(ctx context.Context, scope Scope, at time.Time, budget Budget) (Collection, error) {
+func (c *Client) Collection(ctx context.Context, scope Scope, at time.Time, budget Budget, block bool) (Collection, error) {
 	result := Collection{State: "no_sample", Filesystem: "unknown", Network: "unknown"}
 	if scope.Validate() != nil || budget.Validate() != nil || at.IsZero() || at.Nanosecond() != 0 {
 		return result, ErrInvalid
@@ -29,14 +30,14 @@ func (c *Client) Collection(ctx context.Context, scope Scope, at time.Time, budg
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(budget.TimeoutSeconds)*time.Second)
 	defer cancel()
-	data, err := c.read(ctx, "/api/v1/query", url.Values{"query": {collectionExpression(scope)}, "time": {at.Format(time.RFC3339)}, "timeout": {strconv.Itoa(budget.TimeoutSeconds) + "s"}, "lookback_delta": {strconv.FormatInt(LookbackSeconds, 10) + "s"}})
+	data, err := c.readForm(ctx, "/api/v1/query", url.Values{"query": {collectionExpression(scope, block)}, "time": {at.Format(time.RFC3339)}, "timeout": {strconv.Itoa(budget.TimeoutSeconds) + "s"}, "lookback_delta": {strconv.FormatInt(LookbackSeconds, 10) + "s"}})
 	if err != nil {
 		return result, err
 	}
 	return normalizeCollection(data, at)
 }
 
-func collectionExpression(scope Scope) string {
+func collectionExpression(scope Scope, block bool) string {
 	up := scope.selector("up")
 	expressions := []struct{ key, expression string }{
 		{"up_count", "count(" + up + ") or vector(0)"},
@@ -51,6 +52,18 @@ func collectionExpression(scope Scope) string {
 			{collector.key + "_sampled_at", "max(timestamp(" + selector + "))"},
 		}...)
 	}
+	if block {
+		_, sampled, guard := blockCapacityFrame(scope)
+		bc := scope.selector("addp_block_capacity_success")
+		expressions = append(expressions, []struct{ key, expression string }{
+			{"block_count", "count(" + bc + ") or vector(0)"},
+			{"block_ready", "(" + sampled + guard + ")"},
+			{"block_devices", "(max(" + scope.selector("addp_block_capacity_device_count") + ")" + guard + ")"},
+			{"block_supported", "max(" + scope.selector("addp_block_capacity_supported") + ")"},
+			{"block_time", "max(" + scope.selector("addp_block_capacity_sample_time_seconds") + ")"},
+			{"block_collector_count", "count(" + strings.TrimSuffix(scope.selector("node_scrape_collector_success"), "}") + `,collector="textfile"}) or vector(0)`},
+		}...)
+	}
 	parts := make([]string, 0, len(expressions))
 	for _, v := range expressions {
 		parts = append(parts, `label_replace((`+v.expression+`),"signal",`+strconv.Quote(v.key)+`,"","")`)
@@ -60,7 +73,7 @@ func collectionExpression(scope Scope) string {
 
 func normalizeCollection(data envelope, at time.Time) (Collection, error) {
 	result := Collection{State: "no_sample", Filesystem: "unknown", Network: "unknown"}
-	allowed := map[string]bool{"up_count": true, "up": true, "sampled_at": true, "filesystem_count": true, "filesystem": true, "filesystem_sampled_at": true, "network_count": true, "network": true, "network_sampled_at": true}
+	allowed := map[string]bool{"up_count": true, "up": true, "sampled_at": true, "filesystem_count": true, "filesystem": true, "filesystem_sampled_at": true, "network_count": true, "network": true, "network_sampled_at": true, "block_count": true, "block_ready": true, "block_devices": true, "block_supported": true, "block_time": true, "block_collector_count": true}
 	values, err := normalizeSignals(data, at, allowed)
 	if err != nil {
 		return result, err
@@ -75,6 +88,36 @@ func normalizeCollection(data envelope, at time.Time) (Collection, error) {
 		return result, err
 	}
 	result.Network, err = collectorEvidence(values, "network", stamp)
+	if count, present := values["block_count"]; present {
+		result.BlockCapacity = "failed"
+		if count == 0 {
+			if collectors, known := values["block_collector_count"]; known && collectors == 0 {
+				result.BlockCapacity = "not_collected"
+			}
+		} else if count == 1 {
+			stamp, hasTime := values["block_time"]
+			if hasTime && stamp == math.Trunc(stamp) && stamp <= float64(at.Unix()) {
+				if float64(at.Unix())-stamp > float64(FreshnessSeconds) {
+					result.BlockCapacity = "stale"
+				} else if supported, known := values["block_supported"]; known {
+					if supported == 0 {
+						result.BlockCapacity = "unsupported"
+					} else if supported == 1 {
+						ready, valid := values["block_ready"]
+						devices, complete := values["block_devices"]
+						if valid && ready == stamp && complete && devices == math.Trunc(devices) && devices >= 0 && devices <= 100 {
+							result.BlockCapacity = "available"
+							if devices == 0 {
+								result.BlockCapacity = "empty"
+							}
+						}
+					}
+				}
+			}
+		} else if count != math.Trunc(count) {
+			return result, ErrUnavailable
+		}
+	}
 	return result, err
 }
 

@@ -52,14 +52,15 @@ func (n *resourceNodes) GetHostNodeForUser(_ context.Context, id, token string) 
 func (n *resourceNodes) AuthorizeHostNodesForUser(context.Context, string) error { return n.err }
 
 type resourceBackend struct {
-	validAge      *time.Duration
-	evidence      *resourcequery.Collection
-	calls         int
-	collections   int
-	scope         resourcequery.Scope
-	err           error
-	summaryCalls  int
-	summaryScopes []resourcequery.Scope
+	blockCollection bool
+	validAge        *time.Duration
+	evidence        *resourcequery.Collection
+	calls           int
+	collections     int
+	scope           resourcequery.Scope
+	err             error
+	summaryCalls    int
+	summaryScopes   []resourcequery.Scope
 }
 
 func (b *resourceBackend) Summaries(ctx context.Context, scopes []resourcequery.Scope, keys []string, at time.Time, budget resourcequery.Budget) (map[string]resourcequery.Summary, error) {
@@ -75,7 +76,7 @@ func (b *resourceBackend) Summaries(ctx context.Context, scopes []resourcequery.
 		if err != nil {
 			return nil, err
 		}
-		collection, err := b.Collection(ctx, scope, at, budget)
+		collection, err := b.Collection(ctx, scope, at, budget, false)
 		if err != nil {
 			return nil, err
 		}
@@ -84,7 +85,8 @@ func (b *resourceBackend) Summaries(ctx context.Context, scopes []resourcequery.
 	return result, nil
 }
 
-func (b *resourceBackend) Collection(_ context.Context, scope resourcequery.Scope, _ time.Time, _ resourcequery.Budget) (resourcequery.Collection, error) {
+func (b *resourceBackend) Collection(_ context.Context, scope resourcequery.Scope, _ time.Time, _ resourcequery.Budget, block bool) (resourcequery.Collection, error) {
+	b.blockCollection = block
 	b.collections++
 	b.scope = scope
 	if b.evidence != nil {
@@ -139,7 +141,7 @@ func TestResourceQueryCurrentUserScopeStoppedTargetsAndHotBudget(t *testing.T) {
 		return svc.Query(context.Background(), "user-1", node, "addp_at_current_user", []string{"node.memory.used_percent"}, time.Time{}, time.Time{}, false, nil)
 	}
 	r, e := query()
-	if e != nil || backend.calls != 1 || backend.collections != 1 || r.Collection.State != "no_sample" || backend.scope.NodeID != node || backend.scope.Instance != "127.0.0.1:9100" || r.TargetSavedVersion != 2 || r.NodeVersion != 3 || r.Series[0].Points[0].DataState != "no_data" {
+	if e != nil || backend.calls != 1 || backend.collections != 1 || backend.blockCollection || r.Collection.State != "no_sample" || backend.scope.NodeID != node || backend.scope.Instance != "127.0.0.1:9100" || r.TargetSavedVersion != 2 || r.NodeVersion != 3 || r.Series[0].Points[0].DataState != "no_data" {
 		t.Fatalf("query=%+v err=%v", r, e)
 	}
 	nodes.enabled = false
@@ -285,5 +287,20 @@ func TestResourceQueryExpiryClearsAllCollectorEvidence(t *testing.T) {
 	result, err := svc.Query(context.Background(), "user", node, "addp_at_current_user", []string{"node.memory.used_percent"}, time.Time{}, time.Time{}, false, nil)
 	if err != nil || result.Collection.State != "stale" || result.Collection.Filesystem != "unknown" || result.Collection.Network != "unknown" {
 		t.Fatalf("expired coverage retained: %+v %v", result.Collection, err)
+	}
+}
+
+func TestResourceQueryBlockEvidenceStaysInTheRequestedFamily(t *testing.T) {
+	node := uuid.NewString()
+	backend := &resourceBackend{}
+	nodes := &resourceNodes{enabled: true}
+	targets := &targetTestStore{rows: []metricsdiscovery.NodeTarget{{ID: uuid.NewString(), Version: 2, Subject: metricsdiscovery.NodeSubject{Kind: "node", NodeID: node}, MonitorKind: "host_resources", Source: metricsdiscovery.NodeSource{Type: "node_exporter", Endpoint: "https://127.0.0.1:9100/metrics"}, Enabled: true}}}
+	policies := &resourcePolicies{row: models.ResourceQueryPolicy{Budget: resourcequery.DefaultBudget()}}
+	svc := NewResourceObservationService(policies, targets, nodes, backend, true, resourceSourcePolicy(t), ProcessObservationDependencies{})
+	for _, key := range []string{"node.block.capacity_bytes", "node.memory.used_percent"} {
+		_, e := svc.Query(context.Background(), "user", node, "addp_at_current_user", []string{key}, time.Time{}, time.Time{}, false, nil)
+		if e != nil || backend.blockCollection != (key == "node.block.capacity_bytes") {
+			t.Fatal(key, e, backend.blockCollection)
+		}
 	}
 }

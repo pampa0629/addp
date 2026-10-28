@@ -56,7 +56,7 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 
 - 采集配置由非委托 Platform User 管理，引用节点始终交 System 当前裁决。主体/类别创建后只读，更新/删除执行 CAS；并发预算、端点预留、停用/删除不依赖来源健康的规则见正式规范。
 - `addp-prometheus` 仅以独立 Platform Service Access Token 读取原生 HTTP SD，不获目标管理或后台身份权限；成功空列表与失败分开，保存版本不是 Prometheus 生效回执。凭据、证书和 Secret 文件由各自部署/配置 owner 管理。
-- `scripts/infra/node-metrics.py` 是独立来源部署入口；原生 Linux 与 Desktop VM 身份分别确认。Desktop 当前七采集器含 diskstats，只表示 VM 内核块设备视图，不代表 Mac 本机或单容器，也不提供 filesystem/inode/netdev/netstat。
+- `scripts/infra/node-metrics.py` 是独立来源部署入口；原生 Linux 与 Desktop VM 身份分别确认。Desktop 当前七采集器含 diskstats，只表示 VM 内核块设备视图，不代表 Mac 本机或单容器，也不提供 filesystem/inode/netdev/netstat。 可选磁盘与卷容量由同一入口选择，唯一只读采样与 Textfile 发布协议见运行观测规范“磁盘与卷容量”；不增加主机容量求和、趋势、告警或 System 投影。
 - [固定指标、单位及采样窗口](../docs/spec/addp平台运行观测规范.md#61-固定指标目录)与[资源查询预算](../docs/spec/addp平台运行观测规范.md#62-资源查询与预算)统一由 [resourcequery](backend/internal/resourcequery/) 实现；前端和规则复用这一目录与公式，不另算同名指标或绕过现有 mTLS、预算及期限。
 - 主机列表、TOP5 和采集配置页共用同一批量查询内核，`resource_summaries` 显式提交 `node_ids` 与各自所需 `metrics`，不省略指标或逐行补查。列视图、默认分页、指标选择及整批预算沿[列表与总览契约](../docs/spec/addp平台运行观测规范.md#63-趋势时段比较与总览)，不因页面扩列扩大其他消费者读取。
 - `/engine-resources` 的固定目录、有效性与历史范围沿[规范 6.1—6.3](../docs/spec/addp平台运行观测规范.md#61-固定指标目录)。模块通过 System 当前 User 裁决并在查询后重核，私有发现投影不授予读取权；不增加手填目标或租户用量归算，失败不保留旧值。来源/查询实链专项沿 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source`。

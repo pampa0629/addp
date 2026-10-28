@@ -332,3 +332,37 @@ Online 与受控 Console T3 共用 `readResourceHeatmap`，纯收据生成与拒
 - `make test-node-metrics-online-runner`：153项确定性测试及System Go Metrics夹具通过，日志 `/tmp/addp-cpu-idle-online-runner.log`；既有真实Console脚本增加同一有效CPU响应的空闲文本核对与强制展示收据，不增加请求或身份用途。
 
 沿既有 Monitor／Console frontend 自动发现与 Online runner，未新增依赖、标准入口或CI路线。此次只改前端及验收，没有后端重启、IAM、个人配置或数据库操作；真实Linux、Safari及正式密码／MFA Hosted仍未据此通过，继续等专门会话回传。未触发／轮询CI或Hosted、未设置定时任务。磁盘分区容量继续按完整挂载展示，不把该补项外推为整机物理磁盘容量或整个硬件信息卡已完整验收。
+
+
+## 块设备容量只读前置核对（2026-10-28）
+
+本轮仅调查原图硬件容量的数据来源与设备层级，没有产品实现或正式测试。仓库锁定node_exporter v1.12.1的diskstats源码与现有固定目录只提供IO及设备信息，当前文件系统容量不能当物理总量。官方Textfile Collector支持节点绑定的扩展指标，但旧文件在每次抓取时仍会出现，因此正式实现还须独立源采样时间和失败／完整性保护，不能只按Prometheus抓取时间判断新鲜。
+
+只读核对当前唯一归属本仓库的node-exporter容器，保持原User 65534:65534、非特权、只读根及无宿主根挂载，仅使用固定的/sys/class/block元数据与/proc/diskstats／内核版本；未读业务文件、序列号或凭据，未写容器文件、挂载或修改配置。Desktop来源与Docker daemon内核一致，43个可见块对象中24个size为0；诊断取样见vda=3,996,276,228,096B、vda1=2,199,022,206,976B、vdb=600,440,832B，三者设备号均匹配同一VM的diskstats，sysfs父关系确认vda1属于vda。另有RAM设备，故既不能将所有条目算物理盘，也不能将盘和分区直接求和。诊断取样中的名称过滤不是生产设备选择算法。
+
+封闭元数据收据 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-block-capacity-probe-cij4zyyg/observations.json`（0600）仅保留配置布尔项、容器身份摘要与上述元数据，没有原始inspect／环境。结果标记read_only_feasibility；新采集器未安装、Prometheus查询及正式页面未验证，不能计T1／T2／T3／T4通过。首期提案见[运行监控后续事项](../../../next/ADDP平台运行监控与可观测性设计.md#磁盘与卷容量首期)，用户随后确认该范围，产品实现及分层验证见下节；此前置阶段不计产品门禁。文档只做差异／链接及事实核对，不重复旧产品门禁；未调度CI／Hosted、未设置定时任务、未重启个人服务或修改来源。
+
+
+## 磁盘与卷容量首期实现与本地分层验证（2026-10-28）
+
+用户已确认逐设备容量明细、默认关闭的部署侧只读采集及当次隔离 Hosted 只读用途。术语与正式规范先行，产品沿唯一节点入口、专属 Textfile、原 mTLS／Prometheus 和当前 User／主机读取裁决接入 `node.block.capacity_bytes`，device／kind 为封闭维度；固定主机目录总计27项。只提供当前设备容量，不提供物理总量、使用率、趋势或告警，不改 System 后台投影、IAM 或查询预算。
+
+标准节点生命周期精确核验本工作区容器／专属卷归属；显式启用后启动非 root、只读根、无网络／特权／Socket 的采集器。原生 Linux 只读 sysfs 与四个白名单 proc 文件；Desktop 不新增宿主根、PID 或设备挂载，只读自身 VM 元数据。每十五秒原子替换专属文件，按驱动 major、partition 与映射属性筛选，排除 RAM／loop／分区／零容量。整帧100就绪设备、4096对象和精确整数上限，超限不截断。源时间、启动、设备号、采样变化、Textfile 解析及完整帧共同核验；缺文件与未启用区分，过期／失败／不可核验／成功空集合分别表达。容量证据只随请求该指标读取，原标量、列表摘要及告警不增加本项查询。关闭扩展／停止节点时清理其受管临时卷。
+
+主机列表按设备展开及详情中的“查看设备容量”共用唯一 `HostBlockCapacity` 和原 `HostResourceDetailObservation` 请求／自动刷新内核，延迟读取、不汇总、IEC单位；就近说明映射卷与底层设备不可相加、Desktop只是VM视图。失败、撤权、身份变化和迟到响应不保留旧容量；原趋势入口不接受容量指标。API、Swagger、原 Metrics T2 的 block-capacity 分项、Owned service／输入登记和 Release 矩阵同批同步；不另建 CI 或调度路线。
+
+本地工作区证据分别认定（最终提交号以本次交付与维护会话汇报为准）：
+
+- Go T1：`make test-module MODULE=monitor GO_ONLY=1` 通过，含即时限制、维度／整组预算、采样状态、API query、当前 User 路径及容量查询不扩散至标量的回归。日志 `/tmp/addp-block-monitor-go-final.log`。
+- 来源／查询 T2：`make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=block-capacity` 最终通过；115项标准脚本回归、锁定 Prometheus 的9项容量公式／旧文件／缺帧／移除／启动／未来时间／解析错误场景，以及真实非特权采集器→node_exporter→mTLS→Prometheus→Monitor 固定查询。逐设备数值与同一来源当前 sysfs 读取一致；本机环境为 Docker Desktop Linux VM，不能外推原生 Linux 部署层。结束输出全部当次容器、网络、卷及私有临时文件清零。日志 `/tmp/addp-block-metrics-t2.log`。
+- 新增前端 T1：标准前端入口的131项确定性检查通过。独立页面 T3：`npm --prefix monitor/frontend run test:e2e -- e2e/block-capacity.spec.js` 最终3/3通过（8.5秒），核对中英文窄屏、延迟读取、2 TiB逐项而不求和、状态、失败清除、恢复、折叠和撤权；日志 `/tmp/addp-block-browser-final.log`。受控截图 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-block-capacity-zh-cn.png`、同目录 `addp-block-capacity-en.png` 已目视核对；不是实际主机容量或正式身份页面证据。
+- 构建：`npm --prefix monitor/frontend run build` 通过（3.31秒），日志 `/tmp/addp-block-build.log`；原大 chunk 提示不计失败。
+- Online runner：`make test-node-metrics-online-runner` 154项及 System Go 身份夹具通过；仅证明既有验收边界与默认关闭 Textfile 的原生节点证明适配，不证明容量扩展 Hosted 已准备或运行。日志 `/tmp/addp-block-online-runner.log`。
+- 部署与登记：`make test-infra-runtime-log-lifecycle` 通过（含88项生命周期／预算、相关23／136项登记回归），日志 `/tmp/addp-block-infra-lifecycle.log`。`make test-platform` 首轮在两项旧清理参数断言失败，本批同步加入 block-capacity profile 后上述受影响子门禁通过；完整 Platform 未再重跑，不将该子门禁替代整批通过。
+- Swagger：`bash scripts/swagger/gen-swagger.sh monitor` 与 `bash scripts/swagger/check-route-coverage.sh monitor` 通过，96个公开路由方法；日志 `/tmp/addp-block-swagger-gen-final.log`、`/tmp/addp-block-swagger-check-final.log`。
+
+失败与限制保留：完整 `make test-monitor-frontend` 首轮485/493通过、8失败（26.6分钟），第二轮425/493通过、68失败（约3.7小时），均未通过且构建阶段未执行；独立构建另计。第二轮保留目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-jJp4jp`，日志 `/tmp/addp-block-monitor-frontend-final.log`。只读电源事件核对发现该时窗 Mac 反复睡眠／唤醒，不能作为连续长回归环境；也不能仅据此断言所有失败皆为环境原因。没有改电源设置、增加测试超时或删除失败案例；稳定环境的完整前端仍待核验。
+
+容量 T2 曾在新分支变量初始化及退出 profile 清理失败，已修正并核验当次遗留容器／卷清零；后续两轮出现发现目标未切换到 node-exporter（来源已成功采样、原目标仍UP、证书IP匹配），尚未稳定复现根因。保留封闭文件／容器／HTTP／目标匹配诊断，未放宽TLS或增加等待预算；最终真实链路及清理通过只按当次结果认定，不宣称间歇性发现问题已经修复。标准脚本中受控生产停止测试另曾10秒超时，单项原条件复验及后续标准115项通过，未放宽时限或修改生产停止实现。
+
+本批没有应用个人节点开关、重启服务、读取个人业务数据、触发／轮询 CI／Hosted 或设置定时任务。CI／Hosted等专门会话回传；原生 Linux 容量扩展的受管来源证明、真实 Console／Safari 及正式身份 Hosted 仍未验，容量对应的原生证明和页面收据准备也仍需补齐。不得以默认关闭容量的旧文件系统 Hosted 或本机 VM T2 外推这些范围。

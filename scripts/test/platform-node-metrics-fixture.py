@@ -124,7 +124,10 @@ def native_node_source_proof():
         negative = option.replace("--", "--no-", 1)
         if [arg for arg in args if arg in (option, negative) or arg.startswith((option+"=", negative+"="))] != [option]:
             raise ValueError("native filesystem collector is not explicitly enabled")
-    if any(arg.startswith("--collector.textfile") for arg in args):
+    textfile_paths = [arg for arg in args if arg.startswith("--collector.textfile.directory")]
+    if (any(arg.startswith("--collector.textfile") and arg != "--collector.textfile.directory=/textfile" for arg in args)
+            or textfile_paths and (textfile_paths != ["--collector.textfile.directory=/textfile"]
+                                  or [arg for arg in args if arg.startswith("--no-collector.textfile")] != ["--no-collector.textfile"])):
         raise ValueError("native source cannot use a textfile substitute")
     return {"schema_version": "addp.native-node-source/v1", "native_linux": True,
             "source_id_sha256": hashlib.sha256(ids[0].encode()).hexdigest(),

@@ -4,7 +4,8 @@
       <span v-if="familyName !== 'filesystem' && observations[0]" class="resource-hint" data-testid="resource-detail-queried-at">{{ t('monitor.resources.queriedAt') }}: {{ formatFieldPresentationValue(observations[0].queried_at, { temporal_format: 'datetime' }, locale) }}</span>
       <el-button :loading="loading" data-testid="resource-detail-refresh" @click="reload()">{{ t('monitor.resources.details.refresh') }}</el-button>
     </header>
-    <HostFilesystemResources v-if="familyName === 'filesystem'" :capacity="observations[0]" :inodes="observations[1]" :capacity-error-key="errorKeys[0]" :inode-error-key="errorKeys[1]" :loading="loading" :format-value="formatValue" :can-create-capacity-alert="canCreateCapacityAlert" :can-view-capacity-rules="canViewCapacityRules" @view-capacity-rules="row => $emit('view-capacity-rules', row)" @create-capacity-alert="row => $emit('create-capacity-alert', row)" @select="(row, metric) => $emit('select', row, metric)" />
+    <HostBlockCapacity v-if="familyName === 'block'" :observation="observations[0]" :error-key="errorKeys[0]" :loading="loading" :format-value="formatValue" />
+    <HostFilesystemResources v-else-if="familyName === 'filesystem'" :capacity="observations[0]" :inodes="observations[1]" :capacity-error-key="errorKeys[0]" :inode-error-key="errorKeys[1]" :loading="loading" :format-value="formatValue" :can-create-capacity-alert="canCreateCapacityAlert" :can-view-capacity-rules="canViewCapacityRules" @view-capacity-rules="row => $emit('view-capacity-rules', row)" @create-capacity-alert="row => $emit('create-capacity-alert', row)" @select="(row, metric) => $emit('select', row, metric)" />
     <HostDeviceResources v-else :family-name="familyName" :observation="observations[0]" :error-key="errorKeys[0]" :loading="loading" :show-all-disks="showAllDisks" :format-value="formatValue" @update:show-all-disks="$emit('update:showAllDisks', $event)" @select="(row, metric) => $emit('select', row, metric)" />
   </div>
 </template>
@@ -15,6 +16,7 @@ import { useI18n } from 'vue-i18n'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
 import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
+import HostBlockCapacity from './HostBlockCapacity.vue'
 import HostDeviceResources from './HostDeviceResources.vue'
 import HostFilesystemResources from './HostFilesystemResources.vue'
 import { nodeResourcesAPI as api } from '../api/nodeResources'

@@ -725,7 +725,8 @@
         "networkTransmit": "网络发送吞吐",
         "diskBusy": "IO 忙碌时间占比",
         "diskReadDuration": "平均读取耗时",
-        "diskWriteDuration": "平均写入耗时"
+        "diskWriteDuration": "平均写入耗时",
+        "blockCapacity": "磁盘与卷容量"
       },
       "ranges": {
         "5m": "近 5 分钟",
@@ -745,7 +746,8 @@
         "network": "网卡吞吐",
         "filesystem": "文件系统",
         "forHost": "{name}的资源明细",
-        "refresh": "刷新资源明细"
+        "refresh": "刷新资源明细",
+        "block": "磁盘与卷容量"
       },
       "listView": {
         "label": "资源视图",
@@ -878,6 +880,28 @@
         "fixed": "历史趋势：结束时间固定为 {time}，不会随刷新推进。上方资源卡片仍是当前值；曲线受指标保留期及当前采集来源约束，缺失样本保留为空。",
         "live": "返回实时趋势",
         "invalid": "历史结束时间无效，或晚于当前服务端查询时间。"
+      },
+      "block": {
+        "title": "磁盘与卷容量",
+        "show": "查看设备容量",
+        "hide": "收起设备容量",
+        "hint": "逐设备显示当前节点可见容量；映射卷与底层设备不能相加，不代表整机物理总量。",
+        "scope": "Docker Desktop 中为 Linux 虚拟机视图，不代表 Mac 物理磁盘或 Docker 卷总量。",
+        "device": "设备",
+        "kind": "结构类型",
+        "capacity": "容量",
+        "empty": "暂无有效设备容量",
+        "unknown": "设备容量采集状态未知",
+        "not_collected": "未启用设备容量采集",
+        "failed": "设备容量采集失败或证据不完整",
+        "stale": "设备容量采样已过期",
+        "kinds": {
+          "device": "块设备",
+          "mapped": "映射卷",
+          "raid": "RAID 设备",
+          "unknown": "未知结构"
+        },
+        "unsupported": "当前节点的设备容量视图不可核验，不支持展示"
       }
     },
     "process": {

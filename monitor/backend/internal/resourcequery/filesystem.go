@@ -10,11 +10,15 @@ import (
 // Dimensions is a closed observation selector, never a physical volume identity.
 type Dimensions map[string]string
 
+func (d Definition) Block() bool      { return d.Key == "node.block.capacity_bytes" }
 func (d Definition) Filesystem() bool { return strings.HasPrefix(d.Key, "node.filesystem.") }
 func (d Definition) Disk() bool       { return strings.HasPrefix(d.Key, "node.disk.") }
 func (d Definition) Network() bool    { return strings.HasPrefix(d.Key, "node.network.") }
-func (d Definition) Grouped() bool    { return d.Filesystem() || d.Disk() || d.Network() }
+func (d Definition) Grouped() bool    { return d.Filesystem() || d.Disk() || d.Network() || d.Block() }
 func (d Definition) DimensionKeys() []string {
+	if d.Block() {
+		return []string{"device", "kind"}
+	}
 	if d.Filesystem() {
 		return []string{"device", "mountpoint", "fstype"}
 	}
@@ -24,6 +28,9 @@ func (d Definition) DimensionKeys() []string {
 	return nil
 }
 func (p Plan) GroupLimit(d Definition) int {
+	if d.Block() {
+		return p.BlockGroups
+	}
 	if d.Network() {
 		return p.NetworkGroups
 	}
@@ -36,10 +43,16 @@ func (d Dimensions) Validate() error {
 	if len(d) == 0 {
 		return nil
 	}
-	if len(d) != 3 && len(d) != 1 {
+	if len(d) != 3 && len(d) != 1 && len(d) != 2 {
 		return ErrInvalid
 	}
 	keys := []string{"device"}
+	if len(d) == 2 {
+		if d["kind"] != "device" && d["kind"] != "mapped" && d["kind"] != "raid" && d["kind"] != "unknown" {
+			return ErrInvalid
+		}
+		keys = append(keys, "kind")
+	}
 	if len(d) == 3 {
 		keys = append(keys, "mountpoint", "fstype")
 	}

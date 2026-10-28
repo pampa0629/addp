@@ -14,7 +14,7 @@ type ResourceQueryPolicyStore interface {
 	Save(context.Context, models.ResourceQueryPolicy, uint64) (models.ResourceQueryPolicy, error)
 }
 type ResourceBackend interface {
-	Collection(context.Context, resourcequery.Scope, time.Time, resourcequery.Budget) (resourcequery.Collection, error)
+	Collection(context.Context, resourcequery.Scope, time.Time, resourcequery.Budget, bool) (resourcequery.Collection, error)
 	Query(context.Context, resourcequery.Plan, resourcequery.Scope, resourcequery.Budget) ([]resourcequery.Series, error)
 	Summaries(context.Context, []resourcequery.Scope, []string, time.Time, resourcequery.Budget) (map[string]resourcequery.Summary, error)
 }
@@ -173,7 +173,7 @@ func (s *ResourceObservationService) Query(ctx context.Context, principal, node,
 			result.TargetID, result.TargetSavedVersion = target.ID, target.Version
 			scope := resourcequery.Scope{NodeID: node, Instance: resolved.Address}
 			if !trend {
-				collection, collectionErr := s.backend.Collection(ctx, scope, now.Truncate(time.Second), cfg.Budget)
+				collection, collectionErr := s.backend.Collection(ctx, scope, now.Truncate(time.Second), cfg.Budget, plan.BlockGroups > 0)
 				if collectionErr != nil {
 					return result, collectionErr
 				}
@@ -203,6 +203,9 @@ func markCurrentFreshness(result *ResourceObservationResponse) {
 		result.Collection.State = "stale"
 		result.Collection.Filesystem = "unknown"
 		result.Collection.Network = "unknown"
+		if result.Collection.BlockCapacity != "" {
+			result.Collection.BlockCapacity = "unknown"
+		}
 	}
 	for i := range result.Series {
 		for j := range result.Series[i].Points {

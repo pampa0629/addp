@@ -61,7 +61,7 @@ func resourceQuery(c *gin.Context, trend bool) (string, []string, time.Time, tim
 	q, e := url.ParseQuery(c.Request.URL.RawQuery)
 	invalid := e != nil
 	for key, values := range q {
-		if len(values) != 1 || values[0] == "" || (key != "node_id" && key != "metrics" && key != "device" && key != "mountpoint" && key != "fstype" && (!trend || (key != "start" && key != "end"))) {
+		if len(values) != 1 || values[0] == "" || (key != "node_id" && key != "metrics" && key != "device" && key != "mountpoint" && key != "fstype" && key != "kind" && (!trend || (key != "start" && key != "end"))) {
 			invalid = true
 		}
 	}
@@ -69,7 +69,7 @@ func resourceQuery(c *gin.Context, trend bool) (string, []string, time.Time, tim
 		invalid = true
 	}
 	dimensions := resourcequery.Dimensions{}
-	for _, key := range []string{"device", "mountpoint", "fstype"} {
+	for _, key := range []string{"device", "mountpoint", "fstype", "kind"} {
 		if q.Has(key) {
 			dimensions[key] = q.Get(key)
 		}
@@ -97,13 +97,14 @@ func resourceQuery(c *gin.Context, trend bool) (string, []string, time.Time, tim
 
 // Instant godoc
 // @Summary 读取节点即时资源 | Read current node resources
-// @Description 即时响应附带当前采集状态 collection 及文件系统/网络采集器证据；抓取成功不等于指标或业务健康。| Instant responses include current collection and filesystem/network collector evidence, not metric or business health. 固定十项标量（含 TCP 当前连接数：ESTABLISHED＋CLOSE_WAIT）、五项字节容量、四项 inode 和两项磁盘读写、三项磁盘 IO 时间及两项网络收发（按 device，一分钟窗口）；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零、平均 IO 耗时无完成请求或缺少有效证据返回 no_data | Ten scalar (including current TCP connections: ESTABLISHED plus CLOSE_WAIT), five byte-capacity, four inode, two disk throughput, three disk IO timing and two network per-device one-minute metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total, no completed IO for mean duration or missing evidence returns no_data
+// @Description 即时响应附带当前采集状态 collection 及文件系统/网络采集器证据；另含仅即时的 node.block.capacity_bytes（device/kind）和 block_capacity 状态，不合计物理总量；抓取成功不等于指标或业务健康。| Instant responses include current collection and filesystem/network collector evidence, not metric or business health. Instant-only node.block.capacity_bytes uses device/kind and block_capacity evidence; no physical capacity aggregation. 固定十项标量（含 TCP 当前连接数：ESTABLISHED＋CLOSE_WAIT）、五项字节容量、四项 inode 和两项磁盘读写、三项磁盘 IO 时间及两项网络收发（按 device，一分钟窗口）；文件系统按挂载维度，字节使用率为 used/(used+available)，inode 使用率为 used/total；inode 总量为零、平均 IO 耗时无完成请求或缺少有效证据返回 no_data | Ten scalar (including current TCP connections: ESTABLISHED plus CLOSE_WAIT), five byte-capacity, four inode, two disk throughput, three disk IO timing and two network per-device one-minute metrics; fixed mount dimensions, byte usage used/(used+available), inode usage used/total; zero inode total, no completed IO for mean duration or missing evidence returns no_data
 // @Tags 平台运行监控 | Platform Runtime Monitoring
 // @Produce json
 // @Security BearerAuth
 // @Param node_id query string true "节点 UUID | Node UUID"
 // @Param metrics query string true "逗号分隔的固定目录键，最多十二项 | Comma separated fixed catalog keys, at most twelve"
 // @Param device query string false "磁盘设备或网络接口精确值；限定时不混合分组族，文件系统还需挂载点与类型 | Exact disk device or network interface; selected grouped families cannot mix; filesystem also requires mountpoint and fstype"
+// @Param kind query string false "仅即时块容量，须与device同时选择；结构类型不代表物理身份 | Instant block capacity only; requires device; structure does not prove physical identity" Enums(device,mapped,raid,unknown)
 // @Param mountpoint query string false "文件系统挂载点精确值 | Exact filesystem mountpoint"
 // @Param fstype query string false "文件系统类型精确值 | Exact filesystem type"
 // @Success 200 {object} service.ResourceObservationResponse

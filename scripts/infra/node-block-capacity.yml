@@ -1,0 +1,40 @@
+# Included only by the standard node lifecycle when explicitly selected.
+services:
+  node-exporter:
+    volumes:
+      - type: volume
+        source: block-capacity
+        target: /textfile
+        read_only: true
+        volume:
+          nocopy: true
+  block-capacity:
+    image: python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254
+    user: "65534:65534"
+    command: [python3, -B, /sampler.py, --kernel, "${ADDP_NODE_METRICS_KERNEL:?Explicit node kernel required}", --sysfs, "${ADDP_NODE_CAPACITY_SYSFS:?Explicit sysfs required}", --proc, "${ADDP_NODE_CAPACITY_PROCFS:?Explicit procfs required}"]
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 0.25
+    mem_limit: 64m
+    pids_limit: 16
+    restart: unless-stopped
+    labels:
+      io.addp.node-metrics.owner: ${ADDP_NODE_METRICS_OWNER:-t2}
+    volumes:
+      - ./block-capacity.py:/sampler.py:ro
+      - type: volume
+        source: block-capacity
+        target: /textfile
+        volume:
+          nocopy: true
+volumes:
+  block-capacity:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=1m,uid=65534,gid=65534,mode=0700
+    labels:
+      io.addp.node-metrics.owner: ${ADDP_NODE_METRICS_OWNER:-t2}

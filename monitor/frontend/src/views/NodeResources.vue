@@ -77,6 +77,11 @@
           </el-collapse>
         </article>
       </section>
+      <section v-if="instant" class="resource-trend" data-testid="block-capacity-section">
+        <h3>{{ t('monitor.resources.block.title') }}</h3>
+        <el-button data-testid="resource-block-toggle" :aria-expanded="showBlockCapacity" @click="showBlockCapacity = !showBlockCapacity">{{ t(showBlockCapacity ? 'monitor.resources.block.hide' : 'monitor.resources.block.show') }}</el-button>
+        <HostResourceDetailObservation v-if="showBlockCapacity" :key="nodeID" :node="node" family-name="block" :identity="identity" :refresh="state.refresh" :format-value="formatValue" @denied="detailAccessDenied" />
+      </section>
       <HostFilesystemResources v-if="instant" :capacity="filesystems" :inodes="inodes" :capacity-error-key="filesystemErrorKey" :inode-error-key="inodeErrorKey" :loading="loading" :can-configure="Boolean(canConfigure)" :configure-label="instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure'" :format-value="formatValue" :can-create-capacity-alert="canCreateCapacityAlert" :can-view-capacity-rules="canViewCapacityRules" @view-capacity-rules="mount => viewCapacityRules(node, mount)" @create-capacity-alert="mount => createCapacityAlert(node, mount)" @select="selectFilesystem" @configure="configureCollection" />
       <template v-if="instant">
         <HostDeviceResources v-for="family in deviceFamilies" :key="family.name" :family-name="family.name" :observation="family.value.value" :error-key="family.error.value" :loading="loading" :selected-device="state.metric.startsWith(`node.${family.name}.`) ? state.dimensions.device : ''" v-model:show-all-disks="showAllDisks" :can-configure="Boolean(canConfigure)" :configure-label="instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure'" :format-value="formatValue" @select="selectDeviceObservation" @configure="configureCollection" />
@@ -174,6 +179,7 @@ const state = computed(() => resolveResourceRoute(route.query, Boolean(nodeID.va
 const listMetrics = computed(() => hostListMetricSets[state.value.listView])
 const listQuery = computed(() => { const { range, metric, compare, end, device, mountpoint, fstype, ...query } = state.value.query; return query })
 const nodes = ref([]), total = ref(null), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null), inodes = ref(null), disks = ref(null), networks = ref(null)
+const showBlockCapacity = ref(false)
 const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), inodeErrorKey = ref(''), diskErrorKey = ref(''), networkErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
 const showAllDisks = ref(false), trendSection = ref(null)
 const summaries = ref(new Map()), summaryErrorKey = ref(''), expandedDetail = ref(null)
@@ -264,6 +270,7 @@ function selectListResourceTrend(row, metric) {
 function detailAccessDenied(error) {
   invalidate(); refreshBlocked.value = true; loading.value = false
   expandedDetail.value = null; nodes.value = []; total.value = null; summaries.value = new Map(); summaryErrorKey.value = ''
+  showBlockCapacity.value = false; node.value = null; instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null
   errorKey.value = resourceErrorKey(error)
 }
 function changePage(page) { return navigate(route.path, { ...state.value.query, page: page === 1 ? undefined : String(page) }, 'replace') }

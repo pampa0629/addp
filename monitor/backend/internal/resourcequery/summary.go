@@ -70,7 +70,7 @@ func (c *Client) Summaries(ctx context.Context, scopes []Scope, keys []string, a
 			return `label_replace((` + expression + `),"addp_summary_node",` + strconv.Quote(scope.NodeID) + `,"","")`
 		}
 		metrics = append(metrics, label(expression))
-		collections = append(collections, label(collectionExpression(scope)))
+		collections = append(collections, label(collectionExpression(scope, false)))
 	}
 	read := func(parts []string, bound int) (map[string]envelope, error) {
 		return c.readSummaryGroups(ctx, parts, at, b, ids, bound, "addp_summary_node")

@@ -655,7 +655,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                 raise subprocess.TimeoutExpired(command, options['timeout'])
             return subprocess.CompletedProcess(command, 0)
 
-        with tempfile.TemporaryDirectory() as directory, mock.patch.object(subprocess, 'run', side_effect=run):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(subprocess, 'run', side_effect=run), mock.patch.dict(os.environ, {'ADDP_METRICS_T2_CASE': 'all'}):
             work = Path(directory)
             self.resource_window_check(work)()
         self.assertEqual(len(calls), 2)
@@ -665,7 +665,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertEqual(Path(calls[1][0][0]).parent, work)
         self.assertIn('-test.timeout=60s', calls[1][0])
         self.assertIn('-test.count=1', calls[1][0])
-        self.assertIn('-test.run=^TestIntegrationMetrics(CPUWindow|ProcessWindow|HTTPWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes)$', calls[1][0])
+        self.assertIn('-test.run=^TestIntegrationMetrics(CPUWindow|ProcessWindow|HTTPWindow|DiskWindow|DiskIOWindow|NetworkWindow|Filesystem|FilesystemInodes|BlockCapacity)$', calls[1][0])
         self.assertEqual(calls[1][1]['cwd'], ROOT / 'monitor/backend/internal/resourcequery')
         self.assertTrue(all(options['check'] for _, options in calls))
         self.assertEqual(calls[1][1]['env']['ADDP_METRICS_QUERY_INTEGRATION'], '1')
@@ -876,7 +876,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertIn('check_controlled_host_sources(filesystem_only=True)', (ROOT / 'scripts/test/monitor-metrics-probe.py').read_text())
         self.assertIn('--case=process-alerts) metrics_case=process-alerts ;;', gate)
         self.assertIn('--case=cgroup-source) metrics_case=cgroup-source ;;', gate)
-        self.assertRegex(gate, r'(?s)if \[\[ "\$metrics_case" != host-resources && "\$metrics_case" != mtls-preflight && "\$metrics_case" != filesystem-alerts \]\]; then.*?go test -c ./processmetrics.*?\nfi\npython3 "\$ROOT_DIR/scripts/test/monitor-metrics-probe.py"')
+        self.assertRegex(gate, r'(?s)if \[\[ "\$metrics_case" != host-resources && "\$metrics_case" != mtls-preflight && "\$metrics_case" != filesystem-alerts && "\$metrics_case" != block-capacity \]\]; then.*?go test -c ./processmetrics.*?\nfi\npython3 "\$ROOT_DIR/scripts/test/monitor-metrics-probe.py"')
 
     def test_controlled_host_scope_checks_exact_sources_and_restores_discovery(self):
         path = ROOT / 'scripts/test/monitor-metrics-probe.py'
@@ -922,7 +922,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         workflow = (ROOT / '.github/workflows/release-and-t2-gates.yml').read_text()
         cases = re.search(r'^  monitor-metrics-cases:\n(.*?)(?=^  \S|\Z)', workflow, re.M | re.S).group(1)
         self.assertIn('fail-fast: false', cases)
-        self.assertIn('case: [postgres-source, http-quality, process-alerts, host-resources, filesystem-alerts, cgroup-source]', cases)
+        self.assertIn('case: [postgres-source, http-quality, process-alerts, host-resources, filesystem-alerts, cgroup-source, block-capacity]', cases)
         self.assertIn('timeout-minutes: 20', cases)
         self.assertIn('MONITOR_METRICS_TEST_ARGS: --case=${{ matrix.case }}', cases)
         self.assertEqual(cases.count('run: make test-monitor-metrics\n'), 1)
@@ -2287,3 +2287,124 @@ class ComposeConfigDiagnosticTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class BlockCapacitySamplerTest(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location('block_capacity', ROOT / 'scripts/infra/block-capacity.py')
+        self.sampler = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.sampler)
+        self.temp = tempfile.TemporaryDirectory(prefix='addp-block-capacity-')
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name)
+        self.sys = root / 'sys'; self.proc = root / 'proc'; self.out = root / 'out'
+        (self.sys / 'class/block').mkdir(parents=True)
+        (self.proc / 'sys/kernel').mkdir(parents=True)
+        self.out.mkdir()
+        (self.proc / 'sys/kernel/osrelease').write_text(node_config.platform.release())
+        (self.proc / 'stat').write_text('cpu 1 2 3\nbtime 100\n')
+        (self.proc / 'devices').write_text('Character devices:\n1 mem\nBlock devices:\n1 ramdisk\n7 loop\n8 sd\n253 device-mapper\n9 md\n')
+        (self.proc / 'diskstats').write_text('')
+
+    def device(self, name, major, minor, *, size=1024, virtual=False, partition=False, kind=None):
+        path = self.sys / 'devices' / ('virtual/block' if virtual else 'pci/block') / name
+        path.mkdir(parents=True)
+        (path / 'size').write_text(str(size)); (path / 'dev').write_text(f'{major}:{minor}')
+        if partition: (path / 'partition').write_text('1')
+        if kind: (path / kind).mkdir()
+        (self.sys / 'class/block' / name).symlink_to(path)
+        with (self.proc / 'diskstats').open('a') as stream: stream.write(f'{major} {minor} {name} 0 0 0\n')
+        return path
+
+    def collect(self):
+        return self.sampler.snapshot(self.sys, self.proc, node_config.platform.release())
+
+    def test_kernel_attributes_select_devices_without_name_inference_or_sum(self):
+        self.device('ram-name-real', 8, 0)
+        self.device('sda-looking-ram', 1, 0, virtual=True)
+        self.device('looks-physical-loop', 7, 0, virtual=True)
+        self.device('part', 8, 1, partition=True)
+        self.device('empty', 8, 2, size=0)
+        self.device('mapped', 253, 0, virtual=True, kind='dm')
+        self.device('array', 9, 0, virtual=True, kind='md')
+        self.device('unknown', 8, 3, virtual=True)
+        boot, rows = self.collect()
+        self.assertEqual(boot, 100)
+        self.assertEqual(rows, [('array', 'raid', 524288), ('mapped', 'mapped', 524288), ('ram-name-real', 'device', 524288), ('unknown', 'unknown', 524288)])
+
+    def test_identity_budget_boundary_and_unproven_numbers_reject_whole_frame(self):
+        path = self.device('device', 8, 0)
+        with self.assertRaises(ValueError): self.sampler.snapshot(self.sys, self.proc, 'another-kernel')
+        (self.proc / 'diskstats').write_text('')
+        with self.assertRaises(ValueError): self.collect()
+        (self.proc / 'diskstats').write_text('8 0 device 0\n')
+        (path / 'size').write_text(str(2**53))
+        with self.assertRaises(ValueError): self.collect()
+        (path / 'size').write_text('1024')
+        with mock.patch.object(self.sampler, 'MAX_DEVICES', 0), self.assertRaises(ValueError): self.collect()
+        with mock.patch.object(self.sampler, 'MAX_OBJECTS', 0), self.assertRaises(ValueError): self.collect()
+        (self.sys / 'class/block/device').unlink()
+        (self.sys / 'class/block/device').symlink_to(self.out)
+        with self.assertRaises(ValueError): self.collect()
+
+    def test_atomic_success_failure_empty_and_device_removal_replace_old_data(self):
+        path = self.device('device', 8, 0)
+        self.assertTrue(self.sampler.sample(self.sys, self.proc, self.out, node_config.platform.release()))
+        frame = self.out / self.sampler.FILENAME
+        value = frame.read_text()
+        self.assertIn('addp_block_capacity_bytes{device="device",kind="device"} 524288', value)
+        self.assertIn('boot_time_seconds 100', value)
+        self.assertEqual(frame.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(len(list(self.out.iterdir())), 1)
+        (path / 'size').write_text('not a number')
+        self.assertFalse(self.sampler.sample(self.sys, self.proc, self.out, node_config.platform.release()))
+        self.assertNotIn('addp_block_capacity_bytes', frame.read_text())
+        self.assertIn('success 0', frame.read_text())
+        (self.sys / 'class/block/device').unlink()
+        self.assertTrue(self.sampler.sample(self.sys, self.proc, self.out, node_config.platform.release()))
+        self.assertIn('device_count 0', frame.read_text())
+        self.assertNotIn('addp_block_capacity_bytes', frame.read_text())
+        (self.out / 'native-forgery.prom').write_text('node_filesystem_size_bytes 123')
+        with self.assertRaises(ValueError): self.sampler.publish(self.out, sampled_at=123)
+        self.assertFalse(frame.exists())
+
+    def test_shutdown_and_sampler_compose_are_nonprivileged_and_no_desktop_host_mount(self):
+        compose_file = ROOT / 'scripts/infra/node-block-capacity.yml'
+        values = dict(os.environ, ADDP_NODE_METRICS_KERNEL='6.8.0', ADDP_NODE_CAPACITY_SYSFS='/sys', ADDP_NODE_CAPACITY_PROCFS='/proc')
+        source = json.loads(subprocess.check_output(['docker', 'compose', '--env-file', '/dev/null', '-f', str(ROOT / 'scripts/infra/node-metrics.yml'), '-f', str(compose_file), 'config', '--format', 'json'], env=values, text=True))['services']['block-capacity']
+        self.assertEqual(source['user'], '65534:65534')
+        self.assertTrue(source['read_only']); self.assertEqual(source['cap_drop'], ['ALL'])
+        self.assertEqual(source['network_mode'], 'none')
+        self.assertNotIn('pid', source); self.assertNotIn('privileged', source)
+        self.assertFalse(any(v['target'] in ('/sys', '/proc', '/host') or 'sock' in str(v) for v in source['volumes']))
+        self.assertFalse(node_config.capacity_enabled({}))
+        self.assertTrue(node_config.capacity_enabled({'ADDP_NODE_BLOCK_CAPACITY_ENABLED': 'true'}))
+        with self.assertRaises(ValueError): node_config.capacity_enabled({'ADDP_NODE_BLOCK_CAPACITY_ENABLED': '1'})
+
+    def test_standard_selection_overrides_paths_and_volume_cleanup_checks_owner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tls = Path(directory)
+            for name in ('ca.crt', 'server.crt', 'server.key'): (tls / name).write_text(name)
+            env = {'DOCKER_HOST': 'unix:///local/docker.sock', 'ADDP_NODE_METRICS_ENABLED': 'true', 'ADDP_NODE_METRICS_TLS_DIR': str(tls),
+                   'ADDP_NODE_METRICS_LISTEN': '127.0.0.1:19100', 'ADDP_NODE_BLOCK_CAPACITY_ENABLED': 'true', 'ADDP_NODE_CAPACITY_SYSFS': '/untrusted', 'ADDP_NODE_METRICS_TEXTFILE': '--collector.filesystem'}
+            info = {'KernelVersion': '6.8.0', 'OperatingSystem': 'Docker Desktop', 'OSType': 'linux'}
+            with mock.patch.object(node_config.platform, 'system', return_value='Darwin'), mock.patch.object(node_config, 'docker_json', return_value=info), mock.patch.object(node_config.subprocess, 'check_output', return_value=''), mock.patch.object(node_config.subprocess, 'run') as execute:
+                node_config.run('up', env)
+                args = execute.call_args.args[0]; values = execute.call_args.kwargs['env']
+                self.assertIn(str(ROOT / 'scripts/infra/node-block-capacity.yml'), args)
+                self.assertNotIn(str(ROOT / 'scripts/infra/node-block-capacity-linux.yml'), args)
+                self.assertEqual(args[-2:], ['node-exporter', 'block-capacity'])
+                self.assertEqual(values['ADDP_NODE_CAPACITY_SYSFS'], '/sys')
+                self.assertEqual(values['ADDP_NODE_CAPACITY_PROCFS'], '/proc')
+                self.assertEqual(values['ADDP_NODE_METRICS_TEXTFILE'], '--collector.textfile')
+            volume = node_config.PROJECT + '_block-capacity'
+            for owner in (str(ROOT), '/foreign'):
+                def output(args, **_): return (volume + '\n') if args[1:3] == ['volume', 'ls'] else ''
+                with mock.patch.object(node_config.platform, 'system', return_value='Darwin'), mock.patch.object(node_config, 'docker_json', side_effect=[info, [{'Labels': {'io.addp.node-metrics.owner': owner}}]]), mock.patch.object(node_config.subprocess, 'check_output', side_effect=output), mock.patch.object(node_config.subprocess, 'run') as execute:
+                    disabled = dict(env, ADDP_NODE_BLOCK_CAPACITY_ENABLED='false')
+                    if owner == str(ROOT):
+                        node_config.run('up', disabled)
+                        self.assertIn('--remove-orphans', execute.call_args_list[0].args[0])
+                        self.assertEqual(execute.call_args_list[-1].args[0], ['docker', 'volume', 'rm', volume])
+                    else:
+                        with self.assertRaises(ValueError): node_config.run('up', disabled)
+                        execute.assert_not_called()

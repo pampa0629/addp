@@ -505,3 +505,18 @@ test('filesystem rows have one presentation owner shared by host list and detail
   assert.match(shared, /row-key="key"/)
   assert.equal(existsSync(new URL('../src/components/HostDeviceObservation.vue', import.meta.url)), false)
 })
+
+test('block capacity is a closed instant-only device family with independent identity and no physical sum', () => {
+  const at = '2026-10-07T00:00:00Z', id = '11111111-1111-4111-8111-111111111111'
+  const key = 'node.block.capacity_bytes'
+  const response = { subject: { kind: 'node', node_id: id }, end: at, queried_at: at, series: ['device', 'mapped'].map(kind => ({ metric_key: key, dimensions: { device: 'same', kind }, unit: 'bytes', window_seconds: 0, points: [{ evaluated_at: at, sampled_at: at, value: 1024, data_state: 'valid' }] })) }
+  assert.equal(validateResourceResponse(response, id, [key]), response)
+  assert.equal(resourceDimensionRows(response).length, 2)
+  assert.deepEqual(resourceDetailGroups.block[0].map(metric => metric.key), [key])
+  assert.throws(() => resourceTrendMetrics(key))
+  assert.equal(resolveResourceRoute({ metric: key }, true).metric, 'node.memory.used_percent')
+  for (const mutate of [v => { v.series[0].dimensions.kind = 'physical' }, v => { v.series[0].points[0].value = 0 }, v => { v.series[0].points[0].value = 1.5 }, v => { v.series[0].dimensions.private = 'no' }]) {
+    const bad = structuredClone(response); mutate(bad); assert.throws(() => validateResourceResponse(bad, id, [key]))
+  }
+  assert.throws(() => validateResourceResponse(response, id, [key], true))
+})

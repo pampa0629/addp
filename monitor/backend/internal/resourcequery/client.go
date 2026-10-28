@@ -63,7 +63,7 @@ type Point struct {
 }
 type Series struct {
 	MetricKey string `json:"metric_key"`
-	// 标量为空对象；磁盘及网络仅 device；文件系统为三项 | Empty for scalars; device for disk/network; device, mountpoint and fstype for mounts.
+	// 标量为空对象；块容量 device/kind；磁盘及网络 device；挂载三项 | Empty for scalars; device/kind for capacity; device for IO/network; three mount dimensions.
 	Dimensions    Dimensions `json:"dimensions"`
 	Unit          string     `json:"unit"`
 	WindowSeconds int        `json:"window_seconds"`
@@ -238,8 +238,11 @@ func normalize(data envelope, p Plan, b Budget) ([]Series, error) {
 	if len(data.Data.Result) > wireBound {
 		return nil, ErrBudget
 	}
-	groups := map[string]map[string]Dimensions{"filesystem": {}, "disk": {}, "network": {}}
+	groups := map[string]map[string]Dimensions{"filesystem": {}, "disk": {}, "network": {}, "block": {}}
 	family := func(d Definition) string {
+		if d.Block() {
+			return "block"
+		}
 		if d.Network() {
 			return "network"
 		}
@@ -353,7 +356,7 @@ func normalize(data envelope, p Plan, b Budget) ([]Series, error) {
 						continue
 					}
 				}
-				if !vok || !tok || math.IsNaN(v) || math.IsInf(v, 0) || math.IsNaN(ts) || math.IsInf(ts, 0) || v < 0 || ts < 0 || ts > float64(point.EvaluatedAt.Unix()) || (row.Unit == "percent" && v > 100) || ((row.Unit == "inodes" || row.Unit == "connections") && (v > 9007199254740991 || math.Trunc(v) != v)) {
+				if !vok || !tok || math.IsNaN(v) || math.IsInf(v, 0) || math.IsNaN(ts) || math.IsInf(ts, 0) || v < 0 || ts < 0 || ts > float64(point.EvaluatedAt.Unix()) || (row.Unit == "percent" && v > 100) || ((d.Block() || row.Unit == "inodes" || row.Unit == "connections") && (v > 9007199254740991 || math.Trunc(v) != v)) {
 					continue
 				}
 				sec, fraction := math.Modf(ts)

@@ -54,6 +54,7 @@ type Definition struct {
 
 // Scalars have one series; grouped families retain their closed observation dimensions.
 var definitions = []Definition{
+	{"node.block.capacity_bytes", "bytes", 0},
 	{"node.cpu.logical_cores", "cores", 0},
 	{"node.cpu.busy_percent", "percent", 60},
 	{"node.memory.total_bytes", "bytes", 0},
@@ -95,6 +96,7 @@ type Plan struct {
 	FilesystemGroups int
 	DiskGroups       int
 	NetworkGroups    int
+	BlockGroups      int
 }
 
 func NewPlan(keys []string, start, end, now time.Time, trend bool, dimensions Dimensions, b Budget) (Plan, error) {
@@ -128,9 +130,14 @@ func newPlan(keys []string, start, end, now time.Time, trend bool, dimensions Di
 			return p, ErrInvalid
 		}
 	}
-	scalar, filesystem, disk, network := 0, 0, 0, 0
+	scalar, filesystem, disk, network, block := 0, 0, 0, 0, 0
 	for _, d := range p.Metrics {
-		if d.Filesystem() {
+		if d.Block() {
+			if trend {
+				return p, ErrInvalid
+			}
+			block++
+		} else if d.Filesystem() {
 			filesystem++
 		} else if d.Disk() {
 			disk++
@@ -140,18 +147,21 @@ func newPlan(keys []string, start, end, now time.Time, trend bool, dimensions Di
 			scalar++
 		}
 	}
-	if len(dimensions) > 0 && ((len(dimensions) == 1 && (disk+network == 0 || filesystem > 0 || (disk > 0 && network > 0))) || (len(dimensions) == 3 && (filesystem == 0 || disk+network > 0))) {
+	if len(dimensions) > 0 && ((block > 0 && (len(dimensions) != 2 || scalar+filesystem+disk+network != 0)) || (len(dimensions) == 2 && block == 0) || (len(dimensions) == 1 && (disk+network == 0 || filesystem > 0 || (disk > 0 && network > 0))) || (len(dimensions) == 3 && (filesystem == 0 || disk+network > 0))) {
 		return p, ErrInvalid
 	}
 	p.Dimensions = dimensions.Copy()
 	p.SeriesUpperBound = scalar
-	if filesystem+disk+network > 0 {
-		groups := (b.MaxSeries - scalar) / (filesystem + disk + network)
+	if filesystem+disk+network+block > 0 {
+		groups := (b.MaxSeries - scalar) / (filesystem + disk + network + block)
 		if len(dimensions) > 0 {
 			groups = 1
 		}
 		if groups < 1 {
 			return p, ErrBudget
+		}
+		if block > 0 {
+			p.BlockGroups = groups
 		}
 		if filesystem > 0 {
 			p.FilesystemGroups = groups
@@ -162,7 +172,7 @@ func newPlan(keys []string, start, end, now time.Time, trend bool, dimensions Di
 		if network > 0 {
 			p.NetworkGroups = groups
 		}
-		p.SeriesUpperBound += groups * (filesystem + disk + network)
+		p.SeriesUpperBound += groups * (filesystem + disk + network + block)
 	}
 	if end.IsZero() || end.Nanosecond() != 0 || end.After(now) || end.Unix() < 0 {
 		return p, ErrInvalid
@@ -224,7 +234,10 @@ func (p Plan) Expression(s Scope) (string, error) {
 	for _, d := range p.Metrics {
 		var value, stamp string
 		components := []struct{ k, v string }{}
-		if d.Filesystem() {
+		if d.Block() {
+			value, stamp, presence := blockCapacityExpression(s, p.Dimensions)
+			components = append(components, struct{ k, v string }{"value", value}, struct{ k, v string }{"sampled_at", stamp}, struct{ k, v string }{"observed_at", presence})
+		} else if d.Filesystem() {
 			value, stamp, presence := filesystemExpression(s, d.Key, p.Dimensions)
 			components = append(components, struct{ k, v string }{"value", value}, struct{ k, v string }{"sampled_at", stamp}, struct{ k, v string }{"observed_at", presence})
 		} else if d.Disk() || d.Network() {

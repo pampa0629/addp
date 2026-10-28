@@ -21,6 +21,8 @@ services:
       - --collector.stat
       - --collector.uname
       - --collector.time
+      - ${ADDP_NODE_METRICS_TEXTFILE:---no-collector.textfile}
+      - --collector.textfile.directory=/textfile
     user: "65534:65534"
     cpus: 0.25
     mem_limit: 256m

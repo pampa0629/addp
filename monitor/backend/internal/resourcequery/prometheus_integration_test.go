@@ -83,7 +83,7 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 	if !restricted {
 		testTCPPromtool(t)
 	}
-	collection, err := c.Collection(context.Background(), scope, now, b)
+	collection, err := c.Collection(context.Background(), scope, now, b, false)
 	expectedFilesystem := "available"
 	if restricted {
 		expectedFilesystem = "not_collected"
@@ -115,7 +115,7 @@ func TestIntegrationMetricsResourceQueries(t *testing.T) {
 			}
 		}
 	}
-	otherCollection, err := c.Collection(context.Background(), otherScope, now, b)
+	otherCollection, err := c.Collection(context.Background(), otherScope, now, b, false)
 	if err != nil || otherCollection.State != "no_sample" || otherCollection.Filesystem != "unknown" || otherCollection.Network != "unknown" {
 		t.Fatalf("collection scope leaked: %+v %v", otherCollection, err)
 	}

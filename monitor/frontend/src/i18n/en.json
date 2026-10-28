@@ -725,7 +725,8 @@
         "networkTransmit": "Network transmit throughput",
         "diskBusy": "IO busy time",
         "diskReadDuration": "Mean read duration",
-        "diskWriteDuration": "Mean write duration"
+        "diskWriteDuration": "Mean write duration",
+        "blockCapacity": "Disk and volume capacity"
       },
       "ranges": {
         "5m": "Last 5 minutes",
@@ -745,7 +746,8 @@
         "network": "Network traffic",
         "filesystem": "Filesystems",
         "forHost": "Resource details for {name}",
-        "refresh": "Refresh resource details"
+        "refresh": "Refresh resource details",
+        "block": "Disk and volume capacity"
       },
       "listView": {
         "label": "Resource view",
@@ -878,6 +880,28 @@
         "fixed": "Historical trend ending at {time}. Refresh keeps this time fixed. Resource cards above still show current values. Retention and the current source constrain the curve; missing samples remain gaps.",
         "live": "Return to live trend",
         "invalid": "The historical end time is invalid or later than the current server query time."
+      },
+      "block": {
+        "title": "Disk and volume capacity",
+        "show": "View device capacity",
+        "hide": "Hide device capacity",
+        "hint": "Capacity per visible device. Mapped volumes and underlying devices cannot be added; this is not a physical host total.",
+        "scope": "Docker Desktop shows its Linux VM view, not Mac physical disks or total Docker volume capacity.",
+        "device": "Device",
+        "kind": "Structure",
+        "capacity": "Capacity",
+        "empty": "No valid device capacity",
+        "unknown": "Device capacity collection is unknown",
+        "not_collected": "Device capacity collection is disabled",
+        "failed": "Device capacity collection failed or evidence is incomplete",
+        "stale": "Device capacity samples are stale",
+        "kinds": {
+          "device": "Block device",
+          "mapped": "Mapped volume",
+          "raid": "RAID device",
+          "unknown": "Unknown structure"
+        },
+        "unsupported": "The device capacity view cannot be verified on this node"
       }
     },
     "process": {
