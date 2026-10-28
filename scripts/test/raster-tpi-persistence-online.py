@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Registered raster -> raster DEM topographic position index -> COG -> exact automatic scan and current lineage."""
 from __future__ import annotations
+from contextlib import contextmanager
 import importlib
 import json
 import os
@@ -22,6 +23,20 @@ SUITE=fixture.SUITE
 lineage_observer=importlib.import_module('scripts.utils.online_raster_lineage')
 class TpiProgress(importlib.import_module('scripts.test.raster-profile-curvature-persistence-online').CurvatureProgress):
     SUITES={SUITE:'tpi-progress.json'}
+    STAGES=importlib.import_module('scripts.test.raster-profile-curvature-persistence-online').CurvatureProgress.STAGES|{'identity','oracle_prepare','oracle_cleanup'}
+    MEASURES={'submit_wait','internal_lineage','diagnostic','monitor_query','absence_checks','physical_verify_archive','metadata','archive_receipts'}
+
+    @contextmanager
+    def measure(self,name):
+        if name not in self.MEASURES or not self.stages or self.stages[-1]['status']!='running':raise SuiteError('unknown TPI measurement')
+        start=time.monotonic()
+        try:yield
+        finally:
+            values=self.stages[-1].setdefault('substage_ms',{});values[name]=values.get(name,0)+round((time.monotonic()-start)*1000)
+
+    def physical_profile(self,native):
+        self.stages[-1]['physical_profile_ms']={'worker_total_ms':native['worker_total_ms'],'worker':native['verification_timing_ms'],'host':native['host_timing_ms']}
+
     def snapshot(self):
         value=super().snapshot();value['schema_version']='addp.raster-tpi-progress/v1';return value
 
@@ -99,16 +114,28 @@ def invalid_diagnostic(repository,env,identifier,problem,language,timeout):
     raise SuiteError('missing exact tpi task and submitted-language diagnostic')
 
 
-def physical(repository,env,names):
-    result=subprocess.run([sys.executable,'business/scripts/online-raster-tpi-fixture.py','verify',*names],
+def fixture_call(repository,env,action,names=()):
+    if action not in ('verify','prepare-oracle','cleanup-oracle'):raise SuiteError('unknown exact oracle action')
+    result=subprocess.run([sys.executable,'business/scripts/online-raster-tpi-fixture.py',action,*names],
         cwd=repository,env=dict(env),text=True,capture_output=True,timeout=150)
     if result.returncode:raise SuiteError('independent raster DEM topographic position index physical verification failed: '+result.stderr[-1000:])
     return obj(json.loads(result.stdout),'raster DEM topographic position index physical evidence')
 
 
-def check_physical(native,previous):
+def physical(repository,env,names):return fixture_call(repository,env,'verify',names)
+
+
+def check_physical(native,previous,scope_hash):
     rasterize.check_physical(native,previous)
     if native.get('runtime_workspaces_removed') is not True:raise SuiteError('Runtime workspace cleanup proof missing')
+    cache=obj(native.get('oracle_cache'),'oracle cache proof')
+    targets=obj(native.get('targets'),'targets')
+    if (cache!={'scope_sha256':scope_hash,'read_only_expected':True,'expected_arrays_loaded':len(targets),'full_target_checks':len(targets)}
+        or cache.get('read_only_expected')is not True or type(cache.get('expected_arrays_loaded'))is not int or type(cache.get('full_target_checks'))is not int):raise SuiteError('oracle cache scope/count proof differs')
+    for key,fields in [('verification_timing_ms',{'source_hash_ms','cache_load_ms','target_hash_ms','pixels_mask_metadata_ms','cog_layout_ms','overviews_ms'}),('host_timing_ms',{'worker_transport_ms','source_receipt_ms','archive_ms'})]:
+        values=obj(native.get(key),'physical timings')
+        if set(values)!=fields or any(type(v)is not int or not 0<=v<=600000 for v in values.values()):raise SuiteError('invalid bounded physical timings')
+    if type(native.get('worker_total_ms'))is not int or not 0<=native['worker_total_ms']<=600000:raise SuiteError('invalid bounded worker timing')
     targets=obj(native.get('targets'),'targets');archive=obj(native.get('archived_cogs'),'archived COGs')
     if set(targets)!=set(archive):raise SuiteError('original COG archive inventory differs')
     for name,fact in targets.items():
@@ -138,12 +165,9 @@ def validate_lineage(facts,source,target):
     lineage_observer.validate(facts,expected_lineage(source,target),public=False)
 
 
-def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runner=invalid_diagnostic,lineage_reader=lineage_observer.read_current):
+def _run_scenario(repository,env,client,progress,scope_hash,tenant,identity,physical_runner,diagnostic_runner,lineage_reader):
     timeout=float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS','600'))
-    progress=TpiProgress(env,SUITE)
-    tenant=positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'tenant')
-    if tenant<=1:raise SuiteError('raster DEM topographic position index acceptance forbids the default tenant')
-    identity=raster.validate_identity(client,tenant,required_permissions=raster.EDITOR_PERMISSIONS)
+    full_checks=0;physical_calls=0
     engine=positive(env['ADDP_ONLINE_TPI_NFS_ENGINE_ID'],'NFS engine')
     scopes={name:f'addp://engine/{engine}/path/{name}?type=file' for name in fixture.SOURCES}
     with progress.stage('source_scan'):
@@ -162,13 +186,14 @@ def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runne
         expectation=fixture.artifact_expectation(name)
         target=f'addp://engine/{engine}/path/outputs/{name}?type=file'
         with progress.stage('execution',case_index):
-            workflow=definition(sources,parent,name)
-            identifier=raster.submit(client,runtime,workflow)
-            execution=raster.wait_execution(client,'develop',identifier,timeout)
+            with progress.measure('submit_wait'):
+                workflow=definition(sources,parent,name)
+                identifier=raster.submit(client,runtime,workflow)
+                execution=raster.wait_execution(client,'develop',identifier,timeout)
             inputs=case_inputs(name)
-            inputs=case_inputs(name)
-            evidence=lineage_observer.collect(env,SUITE,identifier,name,expected_lineage(sources[inputs[0]],target),execution,
-                                               tenant,int(identity['principal_id']),workflow,lineage_reader)
+            with progress.measure('internal_lineage'):
+                evidence=lineage_observer.collect(env,SUITE,identifier,name,expected_lineage(sources[inputs[0]],target),execution,
+                                                   tenant,int(identity['principal_id']),workflow,lineage_reader)
             facts,scan=raster.validate_success(execution,[sources[n] for n in inputs],target,'create',expectation,resource_type='file')
             lineage_observer.validate(facts,expected_lineage(sources[inputs[0]],target),public=True)
             if scan in scans:raise SuiteError('automatic output scans must be distinct')
@@ -180,12 +205,16 @@ def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runne
             if monitor.get('status')!='success' or monitor.get('module')!='develop' or obj(monitor.get('metadata'),'Monitor metadata').get('lineage_facts')!=facts:
                 raise SuiteError('Monitor status, owner or lineage differs')
         with progress.stage('physical',case_index):
-            names.append(name);native=physical_runner(repository,env,names);check_physical(native,previous);previous=native['targets'].copy()
-            target_item=support.find_fixture_item(client,engine,'outputs/'+name,'raster COG')
-            item=obj(client.request('GET',f'/api/v1/meta/items/{target_item["id"]}',(200,)).payload,'target detail')
-            raster.validate_target_item(item,expectation,native['targets'][name])
-            artifact=obj(obj(execution['metadata'].get('result'),'result').get('final_result'),'artifact')
-            sizes=raster.strict_sizes(artifact,native['targets'][name],item,name)
+            names.append(name)
+            with progress.measure('physical_verify_archive'):
+                native=physical_runner(repository,env,names);check_physical(native,previous,scope_hash);previous=native['targets'].copy()
+            progress.physical_profile(native);full_checks+=len(names);physical_calls+=1
+            with progress.measure('metadata'):
+                target_item=support.find_fixture_item(client,engine,'outputs/'+name,'raster COG')
+                item=obj(client.request('GET',f'/api/v1/meta/items/{target_item["id"]}',(200,)).payload,'target detail')
+                raster.validate_target_item(item,expectation,native['targets'][name])
+                artifact=obj(obj(execution['metadata'].get('result'),'result').get('final_result'),'artifact')
+                sizes=raster.strict_sizes(artifact,native['targets'][name],item,name)
         cases.append({'name':name,'execution_id':identifier,'automatic_scan_execution_id':scan,'target_locator':target,
             'target_item_id':item['id'],'size_evidence':sizes,'physical':native['targets'][name],
             'lineage':[],'lineage_evidence':evidence,'scan_identity':scan_identity,'monitor_verified':True})
@@ -202,40 +231,82 @@ def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runne
     for problem in FAILURES:
         for language in ('zh-cn','en'):
             with progress.stage('negative',len(failures)+1):
-                identifier=raster.submit(SubmittedLanguageClient(client,language),runtime,definition(sources,parent,'tpi.cog.tif',invalid=problem,language=language))
-                failed=raster.wait_execution(client,'develop',identifier,timeout,expected='failed')
+                with progress.measure('submit_wait'):
+                    identifier=raster.submit(SubmittedLanguageClient(client,language),runtime,definition(sources,parent,'tpi.cog.tif',invalid=problem,language=language))
+                    failed=raster.wait_execution(client,'develop',identifier,timeout,expected='failed')
                 if obj(failed.get('error_details'),'failed error').get('category')!='execution_failed':
                     raise SuiteError('DEM topographic position index failure has the wrong error category')
-                diagnostic=diagnostic_runner(repository,env,identifier,problem,language,timeout)
-                observed=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'failed Monitor execution')
-                if (observed.get('status')!='failed' or observed.get('module')!='develop'
-                    or obj(observed.get('error_details'),'Monitor failure').get('category')!='execution_failed'
-                    or obj(observed.get('metadata'),'failed Monitor metadata').get('lineage_facts',{}).get('outputs')):
-                    raise SuiteError('Monitor failed status/category or absence of output lineage differs')
-                opposite=SubmittedLanguageClient(client,'en' if language=='zh-cn' else 'zh-cn')
-                queried=raster.wait_execution(opposite,'develop',identifier,timeout,expected='failed')
-                if queried.get('error')!=failed.get('error') or queried.get('error_details')!=failed.get('error_details'):
-                    raise SuiteError('query language rewrote stored failure')
-                failed_result=obj(failed.get('metadata'),'failed metadata').get('result')
-                if failed_result is not None:failed_result=obj(failed_result,'failed result')
-                if failed.get('outputs') or (failed_result is not None and failed_result.get('meta_scan_runs')):
-                    raise SuiteError('invalid parameter published a target or automatic scan')
-                if scan_ids(client)!=before_scans:raise SuiteError('invalid parameter added a scan')
-                if any(source_edges(client,item['id'])!=old_edges[name] for name,item in items.items()):
-                    raise SuiteError('invalid parameter added derived lineage')
-                if failed.get('metadata',{}).get('lineage_facts',{}).get('outputs'):
-                    raise SuiteError('invalid parameter published output lineage')
-                native=physical_runner(repository,env,names);check_physical(native,previous)
+                with progress.measure('diagnostic'):
+                    diagnostic=diagnostic_runner(repository,env,identifier,problem,language,timeout)
+                with progress.measure('monitor_query'):
+                    observed=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'failed Monitor execution')
+                    if (observed.get('status')!='failed' or observed.get('module')!='develop'
+                        or obj(observed.get('error_details'),'Monitor failure').get('category')!='execution_failed'
+                        or obj(observed.get('metadata'),'failed Monitor metadata').get('lineage_facts',{}).get('outputs')):
+                        raise SuiteError('Monitor failed status/category or absence of output lineage differs')
+                    opposite=SubmittedLanguageClient(client,'en' if language=='zh-cn' else 'zh-cn')
+                    queried=raster.wait_execution(opposite,'develop',identifier,timeout,expected='failed')
+                    if queried.get('error')!=failed.get('error') or queried.get('error_details')!=failed.get('error_details'):
+                        raise SuiteError('query language rewrote stored failure')
+                with progress.measure('absence_checks'):
+                    failed_result=obj(failed.get('metadata'),'failed metadata').get('result')
+                    if failed_result is not None:failed_result=obj(failed_result,'failed result')
+                    if failed.get('outputs') or (failed_result is not None and failed_result.get('meta_scan_runs')):
+                        raise SuiteError('invalid parameter published a target or automatic scan')
+                    if scan_ids(client)!=before_scans:raise SuiteError('invalid parameter added a scan')
+                    if any(source_edges(client,item['id'])!=old_edges[name] for name,item in items.items()):
+                        raise SuiteError('invalid parameter added derived lineage')
+                    if failed.get('metadata',{}).get('lineage_facts',{}).get('outputs'):
+                        raise SuiteError('invalid parameter published output lineage')
+                with progress.measure('physical_verify_archive'):
+                    native=physical_runner(repository,env,names);check_physical(native,previous,scope_hash)
+                progress.physical_profile(native);full_checks+=len(names);physical_calls+=1
                 failures.append({'problem':problem,'language':language,'execution_id':identifier,'status':'failed','no_publication_or_scan_or_lineage':True,'monitor_verified':True,'query_language_did_not_rewrite_failure':True,'diagnostic':diagnostic})
     with progress.stage('source_metadata'):
         for name,item in items.items():
             if client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload!=before[name]:
                 raise SuiteError('source metadata changed')
-    lineage_observer.verify_archive(env,SUITE,cases)
+        with progress.measure('archive_receipts'):lineage_observer.verify_archive(env,SUITE,cases)
+    if full_checks!=429 or physical_calls!=39:raise SuiteError('all 429 full target checks are required')
     return {'schema_version':'addp.'+SUITE+'/v1','suite':SUITE,'result':'passed','run_id':env['ADDP_ONLINE_TEST_RUN_ID'],
         'identity':identity,'sources':sources,'source_scan_execution_id':source_scan,'source_unchanged':True,
-        'cases':cases,'failed_parameters':failures,'stage_progress':progress.finish(),
+        'cases':cases,'failed_parameters':failures,'full_target_checks':full_checks,'physical_verification_calls':physical_calls,
         'physical':native,'archived_cogs':native['archived_cogs'],'cleanup_boundary':'owned NFS export/directory and disposable deployment; no business DELETE acceptance'}
+
+
+def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runner=invalid_diagnostic,lineage_reader=lineage_observer.read_current,oracle_runner=fixture_call):
+    # Both first construction and cleanup run inside the unchanged business child budget.
+    env=dict(env);progress=TpiProgress(env,SUITE);primary=None;cleanup_error=None;report=None;prepared=None
+    try:
+        with progress.stage('identity'):
+            tenant=positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'tenant')
+            if tenant<=1:raise SuiteError('raster DEM topographic position index acceptance forbids the default tenant')
+            identity=raster.validate_identity(client,tenant,required_permissions=raster.EDITOR_PERMISSIONS)
+        with progress.stage('oracle_prepare'):
+            prepared=obj(oracle_runner(repository,env,'prepare-oracle'),'oracle preparation')
+            for key in ('scope_sha256','anchor_sha256'):
+                if not isinstance(prepared.get(key),str)or not re.fullmatch('[0-9a-f]{64}',prepared[key]):raise SuiteError('invalid frozen oracle identity')
+            if type(prepared.get('expected_array_count'))is not int or prepared['expected_array_count']!=13:raise SuiteError('oracle requires thirteen independent arrays')
+            if type(prepared.get('cache_bytes'))is not int or not 13*fixture.WIDTH*fixture.HEIGHT*8<prepared['cache_bytes']<13*(fixture.WIDTH*fixture.HEIGHT*8+1024):raise SuiteError('oracle byte bound differs')
+            build=obj(prepared.get('timing_ms'),'oracle prepare timings')
+            if set(build)!={'expected_build_ms','cache_write_ms'}or any(type(v)is not int or not 0<=v<=600000 for v in build.values()):raise SuiteError('oracle preparation timings differ')
+            env['ADDP_ONLINE_TPI_ORACLE_ANCHOR_SHA256']=prepared['anchor_sha256']
+        report=_run_scenario(repository,env,client,progress,prepared['scope_sha256'],tenant,identity,physical_runner,diagnostic_runner,lineage_reader)
+    except BaseException as error:primary=error
+    finally:
+        try:
+            with progress.stage('oracle_cleanup'):
+                removed=obj(oracle_runner(repository,env,'cleanup-oracle'),'oracle cleanup')
+                if removed.get('oracle_cache_removed')is not True:raise SuiteError('oracle cleanup proof missing')
+        except BaseException as error:cleanup_error=error
+    if primary is not None:
+        if cleanup_error is not None:
+            detail=str(primary)if isinstance(primary,SuiteError)else type(primary).__name__
+            raise SuiteError(detail+'; oracle cleanup also failed: '+type(cleanup_error).__name__)from primary
+        raise primary
+    if cleanup_error is not None:raise cleanup_error
+    report['oracle_cache']={'preparation':prepared,'removed':True,'verification_calls':report['physical_verification_calls'],'full_target_checks':report['full_target_checks']}
+    report['stage_progress']=progress.finish();return report
 
 
 def main():
