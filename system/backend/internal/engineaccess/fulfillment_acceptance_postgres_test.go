@@ -62,7 +62,7 @@ func exerciseFulfillmentAcceptance(t *testing.T, db *gorm.DB, base fulfillmentRe
 		}
 		operator.AuthorizationVersion = current.AuthorizationVersion
 		binding := shared.SharingFulfillmentBinding{ItemFingerprint: factstest.Binding(base.Path).ItemFingerprint, BoundaryHash: factstest.Binding(base.Path).BoundaryHash, CallerPrincipalID: base.CallerPrincipalID, Operator: shared.SharingFulfillmentOperator{PrincipalID: operator.PrincipalID, MembershipID: operator.MembershipID, AuthorizationVersion: operator.AuthorizationVersion},
-			Path: base.Path, DecisionID: base.DecisionID, RequirementVersion: 1, RecipientType: base.RecipientType, RecipientID: base.RecipientID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked}
+			Path: base.Path, DecisionID: base.DecisionID, RecipientType: base.RecipientType, RecipientID: base.RecipientID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked}
 		service := NewService(NewRepository(db), nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{base.Path}})
 		if _, err := service.AcceptFulfillment(ctx, actor, uuid.New(), binding); !errors.Is(err, ErrFulfillmentCapability) {
 			t.Fatalf("missing credential=%v", err)
@@ -115,7 +115,7 @@ func exerciseFulfillmentAcceptance(t *testing.T, db *gorm.DB, base fulfillmentRe
 		actor.TokenExpiresAt = runtimeNow.Add(time.Minute)
 		for _, mutate := range []func(*shared.SharingFulfillmentBinding){
 			func(b *shared.SharingFulfillmentBinding) { b.Operator.AuthorizationVersion++ },
-			func(b *shared.SharingFulfillmentBinding) { b.RequirementVersion++ },
+			func(b *shared.SharingFulfillmentBinding) { b.Action = "write" },
 			func(b *shared.SharingFulfillmentBinding) { b.RecipientID = 9007199254740993 },
 		} {
 			bad := binding
@@ -177,7 +177,7 @@ func exerciseFulfillmentAcceptance(t *testing.T, db *gorm.DB, base fulfillmentRe
 			t.Fatalf("historical retry=%+v %v", retried, err)
 		}
 		changed := binding
-		changed.RequirementVersion++
+		changed.DecisionID = uuid.New()
 		if _, err := service.AcceptFulfillment(ctx, actor, id, changed); !errors.Is(err, commonapi.ErrConflict) {
 			t.Fatalf("changed retry=%v", err)
 		}

@@ -29,7 +29,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 	t.Run("independent grant formal commands", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.independent_grants", Name: "Independent grant fixture", PermissionKeys: []string{"system.engine_access_grant.create", "system.engine_access_grant.read", "system.engine_access_grant.revoke", "system.engine_access_approval_requirement.initialize"}, ActorPrincipalID: adminID})
+		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.independent_grants", Name: "Independent grant fixture", PermissionKeys: []string{"system.engine_access_grant.create", "system.engine_access_grant.read", "system.engine_access_grant.revoke"}, ActorPrincipalID: adminID})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -72,12 +72,12 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			}
 			return engine.Version, nil
 		}))
-		basis, err := service.InitializeApprovalRequirement(ctx, InitializeApprovalRequirementInput{ItemFingerprint: factstest.Binding(path).ItemFingerprint, ExpectedBoundaryHash: factstest.Binding(path).BoundaryHash, Actor: actor, EngineID: int64(base.EngineID), CatalogPath: path, Mode: "independent", Reason: "Explicit independent approval"})
+		basis, err := installFixturePermit(ctx, NewRepository(db), tenantID, adminID, path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		receiver, _ := newUser(t, time.Hour)
-		input := CreateIndependentGrantInput{ItemFingerprint: factstest.Binding(path).ItemFingerprint, ExpectedBoundaryHash: factstest.Binding(path).BoundaryHash, Actor: actor, EngineID: int64(base.EngineID), RequestID: uuid.New(), CatalogPath: path, RequirementVersion: basis.Version, RecipientType: "user", RecipientID: receiver.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Explicit standalone read access"}
+		input := CreateIndependentGrantInput{ItemFingerprint: factstest.Binding(path).ItemFingerprint, ExpectedBoundaryHash: factstest.Binding(path).BoundaryHash, Actor: actor, EngineID: int64(base.EngineID), RequestID: uuid.New(), CatalogPath: path, DirectPermissionVersion: basis.Version, DirectPermissionSource: "explicit", RecipientType: "user", RecipientID: receiver.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Explicit standalone read access"}
 		t.Run("personal department and project grants withdraw independently", func(t *testing.T) {
 			user, _ := newUser(t, time.Hour)
 			organizations := iam.NewOrganizationService(iam.NewRepository(db), testDatabaseClock(t, db))
@@ -181,70 +181,19 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 		if calls != 0 {
 			t.Fatal("unqualified command inspected source")
 		}
-		t.Run("first configuration requires its separate permission before source IO", func(t *testing.T) {
-			user, expires := newUser(t, time.Hour)
-			seedDelegation(t, user.MembershipID, expires.Add(-time.Second))
-			onlyGrant, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.grant_without_initialization", Name: "Grant only", PermissionKeys: []string{"system.engine_access_grant.create"}, ActorPrincipalID: adminID})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{onlyGrant.ID}, ActorPrincipalID: adminID, Reason: "No initialization authority"}); err != nil {
-				t.Fatal(err)
-			}
-			principal, err := iam.NewRepository(db).GetPrincipal(ctx, user.PrincipalID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			first := input
-			first.Actor = Actor{TenantID: tenantID, PrincipalID: user.PrincipalID, MembershipID: user.MembershipID, AuthorizationVersion: principal.AuthorizationVersion, TokenExpiresAt: time.Now().Add(time.Minute)}
-			first.RequestID, first.InitializeApproval, first.RequirementVersion = uuid.New(), true, 1
-			first.CatalogPath = engineplugin.TabularItemPath(base.EngineID, "schema", "public", "unauthorized_initialization")
-			first.ItemFingerprint, first.ExpectedBoundaryHash = testReadBindings(first.CatalogPath)[0].ItemFingerprint, testReadBindings(first.CatalogPath)[0].BoundaryHash
-			if _, err := service.CreateIndependentGrant(ctx, first); !errors.Is(err, commonapi.ErrForbidden) {
-				t.Fatalf("missing initialization permission: %v", err)
-			}
-			if calls != 0 {
-				t.Fatal("missing initialization permission inspected the source")
-			}
-		})
-		t.Run("first configuration and Grant are one atomic command", func(t *testing.T) {
+		t.Run("Grant cannot create its own permit", func(t *testing.T) {
 			first := input
 			first.RequestID = uuid.New()
-			first.CatalogPath = engineplugin.TabularItemPath(base.EngineID, "schema", "public", "atomic_first_authorization")
+			first.CatalogPath = engineplugin.TabularItemPath(base.EngineID, "schema", "public", "unauthorized_initialization")
 			first.ItemFingerprint, first.ExpectedBoundaryHash = testReadBindings(first.CatalogPath)[0].ItemFingerprint, testReadBindings(first.CatalogPath)[0].BoundaryHash
-			first.RequirementVersion, first.InitializeApproval = 1, true
-			failed := first
-			past := time.Now().Add(-time.Minute)
-			failed.ExpiryMode, failed.ExpiresAt = shared.SharingExpiryAtTime, &past
-			if _, err := service.CreateIndependentGrant(ctx, failed); !errors.Is(err, ErrIndependentGrantExpiry) {
-				t.Fatalf("bad first grant: %v", err)
-			}
-			encoded, err := shared.EncodeSharingTarget(first.CatalogPath)
-			if err != nil {
+			if _, err := service.CreateIndependentGrant(ctx, first); !errors.Is(err, ErrIndependentGrantBasis) {
 				t.Fatal(err)
 			}
-			if _, err := NewRepository(db).approvalRequirement(ctx, tenantID, first.EngineID, encoded); !errors.Is(err, gorm.ErrRecordNotFound) {
-				t.Fatalf("failed Grant left approval behind: %v", err)
-			}
-			issued, err := service.CreateIndependentGrant(ctx, first)
-			if err != nil || issued == nil {
-				t.Fatalf("atomic initialization: %+v %v", issued, err)
-			}
-			if _, err := service.CreateIndependentGrant(ctx, first); err != nil {
-				t.Fatalf("original command recovery: %v", err)
-			}
-			changed := first
-			changed.InitializeApproval = false
-			if _, err := service.CreateIndependentGrant(ctx, changed); !errors.Is(err, ErrIndependentGrantConflict) {
-				t.Fatalf("initialization intent was not bound: %v", err)
-			}
-			changed = first
-			changed.RequestID = uuid.New()
-			if _, err := service.CreateIndependentGrant(ctx, changed); !errors.Is(err, ErrIndependentGrantBasis) {
-				t.Fatalf("existing approval overwritten: %v", err)
+			if _, err := NewRepository(db).directPermission(ctx, tenantID, first.EngineID, first.ItemFingerprint); !errors.Is(err, gorm.ErrRecordNotFound) {
+				t.Fatalf("Grant created permit: %v", err)
 			}
 		})
-		for _, mutate := range []func(*CreateIndependentGrantInput){func(i *CreateIndependentGrantInput) { i.RequirementVersion++ }, func(i *CreateIndependentGrantInput) {
+		for _, mutate := range []func(*CreateIndependentGrantInput){func(i *CreateIndependentGrantInput) { i.DirectPermissionVersion++ }, func(i *CreateIndependentGrantInput) {
 			i.CatalogPath = engineplugin.TabularItemPath(base.EngineID, "schema", "public", "missing_approval")
 			i.ItemFingerprint, i.ExpectedBoundaryHash = testReadBindings(i.CatalogPath)[0].ItemFingerprint, testReadBindings(i.CatalogPath)[0].BoundaryHash
 		}} {
@@ -287,8 +236,10 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 				command := input
 				command.RequestID, command.CatalogPath = uuid.New(), target
 				command.ItemFingerprint, command.ExpectedBoundaryHash = binding.ItemFingerprint, binding.BoundaryHash
-				command.InitializeApproval = true
-				command.RequirementVersion = 1
+				if _, err := installFixturePermit(ctx, NewRepository(db), tenantID, adminID, target); err != nil {
+					t.Fatal(err)
+				}
+				command.DirectPermissionVersion = 1
 				row, err := typedService.CreateIndependentGrant(ctx, command)
 				if err != nil || row == nil || row.ItemFingerprint != binding.ItemFingerprint || row.BoundaryHash != binding.BoundaryHash {
 					t.Fatalf("typed grant=%+v err=%v", row, err)
@@ -313,14 +264,17 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 				command := input
 				command.RequestID, command.CatalogPath = uuid.New(), engineplugin.TabularItemPath(base.EngineID, "schema", "public", table)
 				command.ItemFingerprint, command.ExpectedBoundaryHash = testReadBindings(command.CatalogPath)[0].ItemFingerprint, testReadBindings(command.CatalogPath)[0].BoundaryHash
-				command.RequirementVersion, command.InitializeApproval = 1, true
+				command.DirectPermissionVersion = 1
+				if _, err := installFixturePermit(ctx, NewRepository(db), tenantID, adminID, command.CatalogPath); err != nil {
+					t.Fatal(err)
+				}
 				if _, err := service.CreateIndependentGrant(ctx, command); err != nil {
 					t.Fatal(err)
 				}
 				commands = append(commands, command)
 			}
 			command := commands[0]
-			command.RequestID, command.RecipientID, command.InitializeApproval = uuid.New(), other.PrincipalID, false
+			command.RequestID, command.RecipientID = uuid.New(), other.PrincipalID
 			if _, err := service.CreateIndependentGrant(ctx, command); err != nil {
 				t.Fatal(err)
 			}
@@ -336,7 +290,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			}
 			for kind, id := range map[string]int64{"department": department.ID, "project_group": group.ID} {
 				organization := commands[0]
-				organization.RequestID, organization.RecipientType, organization.RecipientID, organization.InitializeApproval = uuid.New(), kind, id, false
+				organization.RequestID, organization.RecipientType, organization.RecipientID = uuid.New(), kind, id
 				if _, err := service.CreateIndependentGrant(ctx, organization); err != nil {
 					t.Fatal(err)
 				}
@@ -399,7 +353,10 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			command := input
 			command.RequestID, command.CatalogPath = uuid.New(), engineplugin.TabularItemPath(base.EngineID, "schema", "public", "record_states")
 			command.ItemFingerprint, command.ExpectedBoundaryHash = testReadBindings(command.CatalogPath)[0].ItemFingerprint, testReadBindings(command.CatalogPath)[0].BoundaryHash
-			command.RequirementVersion, command.InitializeApproval = 1, true
+			command.DirectPermissionVersion = 1
+			if _, err := installFixturePermit(ctx, NewRepository(db), tenantID, adminID, command.CatalogPath); err != nil {
+				t.Fatal(err)
+			}
 			// Issuance and state filtering use the database wall clock. Keep the
 			// fixture's expiry and wait on that same clock, including VM drift.
 			expires := testDatabaseClock(t, db)().Add(5 * time.Second)
@@ -409,7 +366,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			}
 			other, _ := newUser(t, time.Hour)
 			revoked := command
-			revoked.RequestID, revoked.RecipientID, revoked.InitializeApproval = uuid.New(), other.PrincipalID, false
+			revoked.RequestID, revoked.RecipientID = uuid.New(), other.PrincipalID
 			if _, err := service.CreateIndependentGrant(ctx, revoked); err != nil {
 				t.Fatal(err)
 			}
@@ -472,7 +429,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 		})
 		t.Run("concurrent new commands issue only one relation", func(t *testing.T) {
 			path := engineplugin.TabularItemPath(base.EngineID, "schema", "public", "concurrent_relation")
-			basis, err := service.InitializeApprovalRequirement(ctx, InitializeApprovalRequirementInput{ItemFingerprint: factstest.Binding(path).ItemFingerprint, ExpectedBoundaryHash: factstest.Binding(path).BoundaryHash, Actor: actor, EngineID: input.EngineID, CatalogPath: path, Mode: "independent", Reason: "Concurrency fixture"})
+			basis, err := installFixturePermit(ctx, NewRepository(db), tenantID, adminID, path)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -490,7 +447,7 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			results := make(chan outcome, 2)
 			for i := 0; i < 2; i++ {
 				command := input
-				command.RequestID, command.CatalogPath, command.RequirementVersion = uuid.New(), path, basis.Version
+				command.RequestID, command.CatalogPath, command.DirectPermissionVersion = uuid.New(), path, basis.Version
 				command.ItemFingerprint, command.ExpectedBoundaryHash = testReadBindings(path)[0].ItemFingerprint, testReadBindings(path)[0].BoundaryHash
 				go func() { row, err := concurrent.CreateIndependentGrant(ctx, command); results <- outcome{row, err} }()
 			}
@@ -520,13 +477,16 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 			original := input
 			original.CatalogPath = engineplugin.TabularItemPath(base.EngineID, "schema", "public", "legacy_relation")
 			original.ItemFingerprint, original.ExpectedBoundaryHash = testReadBindings(original.CatalogPath)[0].ItemFingerprint, testReadBindings(original.CatalogPath)[0].BoundaryHash
-			original.RequestID, original.RequirementVersion, original.InitializeApproval = uuid.New(), 1, true
+			original.RequestID, original.DirectPermissionVersion = uuid.New(), 1
+			if _, err := installFixturePermit(ctx, NewRepository(db), tenantID, adminID, original.CatalogPath); err != nil {
+				t.Fatal(err)
+			}
 			first, err := service.CreateIndependentGrant(ctx, original)
 			if err != nil {
 				t.Fatal(err)
 			}
 			legacy := original
-			legacy.RequestID, legacy.InitializeApproval = uuid.New(), false
+			legacy.RequestID = uuid.New()
 			row, err := prepareIndependentGrant(legacy)
 			if err != nil {
 				t.Fatal(err)
@@ -602,34 +562,93 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 				t.Fatal(err)
 			}
 		})
-		t.Run("mode changes preserve issued read access", func(t *testing.T) {
-			modeActor := qualify(t, true)
-			updateRole, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.approval_mode_update", Name: "Explicit mode update fixture", PermissionKeys: []string{"system.engine_access_approval_requirement.update"}, ActorPrincipalID: adminID})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: modeActor.MembershipID, RoleIDs: []int64{updateRole.ID}, ActorPrincipalID: adminID, Reason: "Explicit mode update permission"}); err != nil {
-				t.Fatal(err)
-			}
-			principal, err := iam.NewRepository(db).GetPrincipal(ctx, modeActor.PrincipalID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			modeActor.AuthorizationVersion = principal.AuthorizationVersion
-			beforeChange := calls
+		t.Run("permit changes preserve issued read access", func(t *testing.T) {
 			version := basis.Version
-			for _, mode := range []string{"catalog", "independent"} {
-				updated, err := service.UpdateApprovalRequirement(ctx, UpdateApprovalRequirementInput{Actor: modeActor, EngineID: input.EngineID, ID: basis.ID, Version: version, Mode: mode, Reason: "Explicit change without revoking existing access"})
-				if err != nil || updated == nil || updated.Mode != mode || updated.Version != version+1 {
-					t.Fatalf("mode=%s update=%+v err=%v", mode, updated, err)
+			for _, allowed := range []bool{false, true} {
+				command := fixturePermitInput(ctx, NewRepository(db), tenantID, adminID, path, allowed, version)
+				err := NewRepository(db).transaction(ctx, func(tx *Repository) error {
+					row, err := fixtureSetPermit(ctx, tx, command, func(*Repository) error { return nil })
+					if err == nil {
+						version = row.Version
+					}
+					return err
+				})
+				if err != nil {
+					t.Fatal(err)
 				}
-				version = updated.Version
 				assertRead("grant")
 			}
-			if calls != beforeChange {
-				t.Fatal("mode update performed source inspection")
+		})
+
+		t.Run("deployment default issuance and explicit override", func(t *testing.T) {
+			version := fixtureDisabledCatalogDeclaration(t, ctx, db)
+			target := engineplugin.TabularItemPath(base.EngineID, "schema", "public", "deployment_default")
+			binding := factstest.Binding(target)
+			repo := NewRepository(db)
+			svc := NewService(repo, func(*models.Engine) bool { return true }).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{target}}).WithIndependentTargetVerifier(service.independentTarget)
+			command := input
+			command.RequestID = uuid.New()
+			command.CatalogPath = target
+			command.ItemFingerprint = binding.ItemFingerprint
+			command.ExpectedBoundaryHash = binding.BoundaryHash
+			command.DirectPermissionSource = "deployment_default"
+			command.DirectPermissionVersion = version
+			t.Cleanup(func() {
+				cleanup, done := context.WithTimeout(context.Background(), 5*time.Second)
+				defer done()
+				if _, err := repo.findSourceGrant(cleanup, command.RequestID); errors.Is(err, gorm.ErrRecordNotFound) {
+					return
+				} else if err != nil {
+					t.Error(err)
+					return
+				}
+				if _, err := svc.RevokeGrant(cleanup, RevokeGrantInput{Actor: actor, EngineID: command.EngineID, RequestID: command.RequestID, Reason: "Complete isolated deployment-default verification"}); err != nil {
+					t.Error(err)
+				}
+			})
+			granted, err := svc.CreateIndependentGrant(ctx, command)
+			if err != nil || granted == nil || granted.DirectPermissionSource != "deployment_default" {
+				t.Fatal("disabled declaration did not allow direct issuance", err)
+			}
+			var settings int64
+			if err := db.Table("system.engine_access_direct_permissions").Where("item_fingerprint=?", binding.ItemFingerprint).Count(&settings).Error; err != nil || settings != 0 {
+				t.Fatal("default materialized an implicit setting", settings, err)
+			}
+			if err := db.Exec(`UPDATE system.module_definitions SET enabled=true,version=version+1 WHERE module_name='catalog'`).Error; err != nil {
+				t.Fatal(err)
+			}
+			fresh := command
+			fresh.RequestID = uuid.New()
+			if result, err := svc.CreateIndependentGrant(ctx, fresh); result != nil || !errors.Is(err, ErrIndependentGrantBasis) {
+				t.Fatal("enabled Catalog allowed a stale default", err)
+			}
+			read, err := repo.readCurrentSourceRules(ctx, sourceReadRequest{TenantID: tenantID, Source: receiver, Targets: []engineplugin.EngineCatalogPath{target}, Bindings: testReadBindings(target)})
+			if err != nil || read == nil || !read.Covered {
+				t.Fatal("deployment change revoked an existing Grant", err)
+			}
+			replay, err := svc.CreateIndependentGrant(ctx, command)
+			if err != nil || replay == nil || !replay.GrantedAt.Equal(granted.GrantedAt) {
+				t.Fatal("deployment change rewrote issuance history", err)
+			}
+			// Explicit denial dominates a disabled declaration, without creating
+			// an implicit grant or preventing business-approved issuance.
+			if err := db.Exec(`UPDATE system.module_definitions SET enabled=false,version=version+1 WHERE module_name='catalog'`).Error; err != nil {
+				t.Fatal(err)
+			}
+			permitInput := fixturePermitInput(ctx, repo, tenantID, adminID, target, false, 0)
+			if err := repo.transaction(ctx, func(tx *Repository) error {
+				_, err := fixtureSetPermit(ctx, tx, permitInput, func(*Repository) error { return nil })
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			fresh.DirectPermissionSource = "explicit"
+			fresh.DirectPermissionVersion = 1
+			if result, err := svc.CreateIndependentGrant(ctx, fresh); result != nil || !errors.Is(err, ErrIndependentGrantBasis) {
+				t.Fatal("deployment default overrode explicit deny", err)
 			}
 		})
+
 		beforeRetry := calls
 		service.WithIndependentTargetVerifier(nil)
 		retried, err := service.CreateIndependentGrant(ctx, input)
@@ -670,5 +689,6 @@ func exerciseIndependentGrantCommands(t *testing.T, db *gorm.DB, tenantID int64,
 		if err := db.Table("system.engine_access_fulfillment_outcomes").Where("request_id=?", input.RequestID).Count(&receiptCount).Error; err != nil || receiptCount != 0 {
 			t.Fatalf("fake Catalog receipt=%d %v", receiptCount, err)
 		}
+		exerciseDirectPermissionIssuanceOrdering(t, db, actor, receiver, input, adminID)
 	})
 }

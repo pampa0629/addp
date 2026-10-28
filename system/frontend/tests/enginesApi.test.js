@@ -11,7 +11,7 @@ import {
 
 vi.mock('../src/api/client', () => ({
   default: {
-    get: vi.fn(), post: vi.fn()
+    get: vi.fn(), post: vi.fn(), put: vi.fn()
   }
 }))
 
@@ -19,18 +19,24 @@ describe('engines API', () => {
   beforeEach(() => {
     client.get.mockReset()
     client.post.mockReset()
+    client.put.mockReset()
   })
 
-  it('uses explicit approval configuration and live discovery APIs without Meta or grant writes', async () => {
-    const body = '{"catalog_path":{"engine_id":9007199254740993,"version":"v1","segments":[]},"mode":"independent","reason":"Configure"}'
-    await enginesAPI.listApprovalRequirements('9007199254740993', { page: 2, page_size: 10 })
-    await enginesAPI.initializeApprovalRequirement('9007199254740993', body)
+  it('uses the single direct-permission contract without implicit configuration writes', async () => {
+    const fingerprint = 'a'.repeat(64)
+    const body = '{"catalog_path":{"engine_id":9007199254740993,"version":"v1","segments":[]},"allowed":false,"expected_source":"explicit","expected_version":"2","reason":"Review"}'
+    await enginesAPI.listDirectPermissions('9007199254740993', { state: 'allowed', page: 2, page_size: 10 })
+    await enginesAPI.getDirectPermission('9007199254740993', fingerprint)
+    await enginesAPI.setDirectPermission('9007199254740993', fingerprint, body)
     await enginesAPI.listCatalogChildren('2', { version: 'v1', engine_id: 2, segments: [] })
-    expect(client.get).toHaveBeenCalledWith('/system/engines/9007199254740993/access_approval_requirements', { params: { page: 2, page_size: 10 } })
-    expect(client.post.mock.calls).toEqual([
-      ['/system/engines/9007199254740993/access_approval_requirements', body, { headers: { 'Content-Type': 'application/json' } }],
-      ['/system/engines/2/catalog/children', { path: { version: 'v1', engine_id: 2, segments: [] } }]
+    expect(client.get.mock.calls).toEqual([
+      ['/system/engines/9007199254740993/direct-permissions', { params: { state: 'allowed', page: 2, page_size: 10 } }],
+      [`/system/engines/9007199254740993/data-items/${fingerprint}/direct-permission`]
     ])
+    expect(client.put).toHaveBeenCalledWith(`/system/engines/9007199254740993/data-items/${fingerprint}/direct-permission`, body, { headers: { 'Content-Type': 'application/json' } })
+    expect(client.post.mock.calls).toEqual([['/system/engines/2/catalog/children', { path: { version: 'v1', engine_id: 2, segments: [] } }]])
+    expect(enginesAPI).not.toHaveProperty('initializeApprovalRequirement')
+    expect(enginesAPI).not.toHaveProperty('listApprovalRequirements')
   })
 
   it('uses the canonical delegation endpoints and preserves explicit write parameters', async () => {

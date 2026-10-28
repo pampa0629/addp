@@ -78,7 +78,7 @@ func TestCatalogFulfillmentChecksAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	check := models.FulfillmentCheck{RequestID: uuid.New(), TenantID: 7, CatalogEntryID: entry.ID,
-		RequestBinding: json.RawMessage(`{"decision_id":"` + uuid.NewString() + `","requirement_version":3,"recipient_id":9007199254740993}`)}
+		RequestBinding: json.RawMessage(`{"decision_id":"` + uuid.NewString() + `","recipient_id":9007199254740993}`)}
 	// Committed before any sending. A later process/transaction rollback does
 	// not release this persistent guard as it would release an ordinary lock.
 	if err := db.Transaction(func(tx *gorm.DB) error { return tx.Create(&check).Error }); err != nil {

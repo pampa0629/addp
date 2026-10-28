@@ -19,16 +19,16 @@ import (
 // Only original request parameters needed for explicit replay are exposed.
 // Machine identity, original IAM versions and purpose text are not public DTOs.
 type SharingFulfillmentRequest struct {
-	RequestID          uuid.UUID             `json:"request_id"`
-	DecisionID         uuid.UUID             `json:"decision_id"`
-	RequirementVersion int64                 `json:"requirement_version,string" swaggertype:"string"`
-	Target             SharingDecisionTarget `json:"target"`
-	RecipientType      string                `json:"recipient_type"`
-	RecipientID        int64                 `json:"recipient_id,string" swaggertype:"string"`
-	Action             string                `json:"action"`
-	ExpiryMode         string                `json:"expiry_mode" enums:"at_time,until_revoked"`
-	ExpiresAt          *time.Time            `json:"expires_at" format:"date-time" extensions:"x-nullable"`
-	CreatedAt          time.Time             `json:"created_at"`
+	RequestID  uuid.UUID `json:"request_id"`
+	DecisionID uuid.UUID `json:"decision_id"`
+
+	Target        SharingDecisionTarget `json:"target"`
+	RecipientType string                `json:"recipient_type"`
+	RecipientID   int64                 `json:"recipient_id,string" swaggertype:"string"`
+	Action        string                `json:"action"`
+	ExpiryMode    string                `json:"expiry_mode" enums:"at_time,until_revoked"`
+	ExpiresAt     *time.Time            `json:"expires_at" format:"date-time" extensions:"x-nullable"`
+	CreatedAt     time.Time             `json:"created_at"`
 }
 
 type SharingFulfillmentHistory struct {
@@ -102,7 +102,7 @@ func fulfillmentRequestView(check models.FulfillmentCheck) (SharingFulfillmentRe
 		return SharingFulfillmentRequest{}, binding, err
 	}
 	return SharingFulfillmentRequest{
-		RequestID: check.RequestID, DecisionID: binding.DecisionID, RequirementVersion: binding.RequirementVersion,
+		RequestID: check.RequestID, DecisionID: binding.DecisionID,
 		Target:        SharingDecisionTarget{Version: binding.Path.Version, EngineID: strconv.FormatUint(uint64(binding.Path.EngineID), 10), Segments: binding.Path.Segments},
 		RecipientType: binding.RecipientType, RecipientID: binding.RecipientID, Action: binding.Action,
 		ExpiryMode: binding.ExpiryMode, ExpiresAt: binding.ExpiresAt, CreatedAt: check.CreatedAt,

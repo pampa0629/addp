@@ -114,6 +114,7 @@ func TestRegisterIAMManagementRoutes(t *testing.T) {
 		"DELETE /api/v1/system/tenant/roles/:id",
 		"PUT /api/v1/system/platform/tenants/:id",
 		"PUT /api/v1/system/platform/security_policy",
+		"POST /api/v1/system/platform/modules",
 		"PUT /api/v1/system/platform/modules/:module_name",
 		"PUT /api/v1/system/platform/users/:id",
 		"PUT /api/v1/system/tenant/departments/:id",

@@ -15,6 +15,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+const (
+	approvalModeCatalog     = "catalog"
+	approvalModeIndependent = "independent"
+)
+
 var ErrGrantRelationExists = errors.Join(commonapi.ErrConflict, errors.New("source grant relation already exists"))
 
 // sourceGrant owns the immutable source rule. An accepted Catalog receipt is
@@ -36,12 +41,12 @@ type sourceGrant struct {
 	Action                       string
 	ExpiryMode                   string
 	ExpiresAt                    *time.Time
-	RequirementVersion           int64
+	DirectPermissionVersion      int64
+	DirectPermissionSource       string
 	OperatorPrincipalID          int64
 	OperatorMembershipID         int64
 	OperatorAuthorizationVersion int64
 	Reason                       *string
-	InitializedApproval          bool
 	ProducerOwner                *string
 	ProductionExecutionID        *uuid.UUID `gorm:"type:uuid"`
 	IssuerPrincipalID            *int64

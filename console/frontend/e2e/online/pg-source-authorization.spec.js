@@ -187,10 +187,12 @@ test('PG collection qualification workspace approves, recovers and revokes the e
 test('PG authorization workspace filters and revokes the exact Grant through real System and Manager pages', async ({ page, browser }) => {
   if (process.env.ADDP_ONLINE_HOSTED !== '1' || process.env.ADDP_ONLINE_TEST !== '1') throw new Error('dedicated Hosted entry required')
   const binding = JSON.parse(process.env.ADDP_PG_BROWSER_BINDING)
-  if (!binding.run_id || !binding.grant_id || !binding.issuer_id || !binding.engine_id || !binding.locator) throw new Error('incomplete workspace binding')
+  if (!binding.run_id || !binding.grant_id || !binding.issuer_id || !binding.engine_id || !binding.locator ||
+      binding.direct_permission?.engine_id !== binding.engine_id || binding.direct_permission?.state !== 'allowed' ||
+      !binding.direct_permission?.item_fingerprint) throw new Error('incomplete workspace binding')
   const destination = resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR, 'pg-authorization-workspace.json')
   const base = `/api/v1/system/engines/${binding.engine_id}`
-  const checks = [], previewStatuses = [], writes = [], failures = []
+  const checks = [], previewStatuses = [], directPermissionObservations = [], writes = [], failures = []
   let phase = 'login', loginRequests = 0
   const readerContext = await browser.newContext({ baseURL: process.env.CONSOLE_URL })
   const readerPage = await readerContext.newPage()
@@ -204,7 +206,8 @@ test('PG authorization workspace filters and revokes the exact Grant through rea
   }
   const record = result => writeFileSync(destination, JSON.stringify({ ...binding,
     schema_version: 'addp.pg-authorization-workspace/v1', result, checks,
-    login_requests: loginRequests, preview_statuses: previewStatuses, ...(result === 'failed' ? { phase } : {}) }))
+    login_requests: loginRequests, preview_statuses: previewStatuses, direct_permission_observations: directPermissionObservations,
+    ...(result === 'failed' ? { phase } : {}) }))
   const matchesPreview = response => {
     const url = new URL(response.url())
     return url.pathname === '/api/v1/manager/preview' && url.searchParams.get('locator') === binding.locator
@@ -221,6 +224,7 @@ test('PG authorization workspace filters and revokes the exact Grant through rea
     const authorizer = await frame.evaluate(sessionSnapshot, 'system-auth')
     expect(authorizer).toMatchObject({ principal_id: binding.issuer_id, tenant_id: binding.tenant_id, persisted_token: false })
     expect(authorizer.permissions).toContain('system.engine_access_grant.revoke')
+    expect(authorizer.permissions).toContain('system.engine_access_direct_permission.read')
     expect(authorizer.permissions).not.toContain('manager.data_item.read')
     const tabs = workspace.getByTestId('authorization-workspace-tabs')
     const list = system.getByTestId('source-grant-list')
@@ -245,6 +249,52 @@ test('PG authorization workspace filters and revokes the exact Grant through rea
       await system.getByTestId(testID).click()
       await system.getByRole('option', { name: label, exact: true }).click()
     }
+    phase = 'direct_permission_filters'
+    const permissions = system.getByTestId('direct-permissions')
+    const permissionRows = permissions.getByTestId('direct-permission-list').locator('.el-table__body-wrapper tbody tr')
+    async function permissionListing(action, search, state) {
+      const pending = page.waitForResponse(response => {
+        const url = new URL(response.url())
+        return response.request().method() === 'GET' && url.pathname === base + '/direct-permissions' &&
+          (url.searchParams.get('search') || '') === search && (url.searchParams.get('state') || '') === state &&
+          url.searchParams.get('page') === '1' && url.searchParams.get('page_size') === '20'
+      })
+      await action()
+      const response = await pending
+      expect(response.status()).toBe(200)
+      const result = await response.json()
+      expect(result).toMatchObject({ page: 1, page_size: 20 })
+      expect(Array.isArray(result.data)).toBe(true)
+      return result
+    }
+    await permissionListing(() => system.getByRole('tab', { name: '直接授权许可', exact: true }).click(), '', '')
+    await expect(permissions).toBeVisible()
+    await expect(workspace).toHaveCount(0)
+    await permissions.getByTestId('direct-permission-search').fill('metric_people')
+    for (const [state, label, total] of [['', null, 1], ['allowed', '允许直接授权', 1], ['denied', '不允许直接授权', 0]]) {
+      if (label) await option('direct-permission-state', label)
+      const result = await permissionListing(() => permissions.getByRole('button', { name: '刷新', exact: true }).click(), 'metric_people', state)
+      expect(result).toMatchObject({ total, total_pages: total })
+      expect(result.data).toHaveLength(total)
+      if (total) {
+        expect(result.data[0]).toMatchObject({ ...binding.direct_permission, name: 'metric_people', item_type: 'table' })
+        await expect(permissionRows).toHaveCount(1)
+        await expect(permissionRows).toContainText('metric_people')
+        await expect(permissionRows).toContainText('允许直接授权')
+        await expect(permissionRows).toContainText(binding.direct_permission.source === 'explicit' ? '显式设置' : '部署默认')
+      } else {
+        await expect(permissionRows).toHaveCount(0)
+      }
+      directPermissionObservations.push({ search: 'metric_people', state, total,
+        item_fingerprints: result.data.map(row => row.item_fingerprint) })
+      expect(writes).toEqual([])
+    }
+    await system.getByRole('tab', { name: '数据授权', exact: true }).click()
+    await expect(workspace).toBeVisible()
+    await expect(permissions).toHaveCount(0)
+    expect(writes).toEqual([])
+    checks.push('direct_permission_tab_read_only_filters')
+
     phase = 'exclusive_navigation'
     await expect(tabs.getByRole('radio', { name: '当前授权', exact: true })).toBeChecked()
     const boxes = await Promise.all(['新增授权', '当前授权', '全部授权记录'].map(name => tabs.getByText(name, { exact: true }).boundingBox()))

@@ -255,8 +255,6 @@ other = "The service account was changed by another user. Refresh and try again"
 
 [system.iam.role_key_invalid]
 other = "Role key must use namespace.name (e.g. custom.ontology_manager); each segment must start with a lowercase letter and contain only lowercase letters, digits, and underscores."
-[system.engine_access_approval_requirement.already_initialized]
-other = "This source target already has an approval requirement. Initialization cannot replace it; check the current requirement."
 
 [system.engine_access_delegation.version_conflict]
 other = "The delegation changed; refresh and retry"
@@ -319,7 +317,7 @@ other = "View issuance, expiry and revocation history with effective engine dele
 [system.engine_access_grant_command_conflict]
 other = "Parameters differ from the original Grant issuance; consult the original record"
 [system.engine_access_grant_approval_changed]
-other = "The approval mode or version changed; no new Grant was issued. Refresh the target information"
+other = "Direct authorization permission is denied or changed; no new Grant was issued. Refresh the target information"
 [system.engine_access_grant_expiry_elapsed]
 other = "The Grant expiry is no longer future; no new Grant was issued. Select an explicit valid expiry"
 [system.engine_access_grant_source_unavailable]
@@ -421,8 +419,6 @@ other = "The observability identity snapshot exceeds its configured budget."
 
 ["system.observability_identity.timeout"]
 other = "The observability identity snapshot timed out."
-[system.engine_access_approval_requirement.version_conflict]
-other = "The approval mode has changed. Refresh and review it before confirming again."
 [system.engine_access_grant_relation_exists]
 other = "This recipient already has an active read grant for this data; no duplicate was issued. Manage the current relation. To change validity, explicitly withdraw it and obtain approval under the current requirements."
 [system.engine_access.authorization_facts_unavailable]
@@ -434,8 +430,6 @@ other = "Authorization target does not exist or does not belong to this engine"
 [system.engine_access.authorization_boundary_changed]
 other = "The DataItem boundary has changed, is missing or is incomplete. Review it before explicitly approving again."
 
-[system.engine_access_approval_requirement.not_configured]
-other = "No approval mode is configured for this DataItem. An authorized operator must explicitly configure it before fulfillment."
 
 [permissions.platform.engine_deployment.create.name]
 other = "Register engine deployment"
@@ -525,3 +519,18 @@ other = "Revoke an active collection qualification while retaining history and e
 other = "Check metadata collection execution qualification"
 [permissions.system.meta_collection_qualification.execute.description]
 other = "Allow only the Meta runtime to check current qualification against the real execution plan and active lease"
+
+[system.engine_access_direct_permission.version_conflict]
+other = "Direct authorization permission changed. Refresh and review before confirming."
+
+[permissions.system.engine_access_direct_permission.read.name]
+other = "Read direct authorization permissions"
+
+[permissions.system.engine_access_direct_permission.read.description]
+other = "View effective direct authorization permissions for Meta-identified DataItems without granting data access"
+
+[permissions.system.engine_access_direct_permission.update.name]
+other = "Manage direct authorization permissions"
+
+[permissions.system.engine_access_direct_permission.update.description]
+other = "Engine authorization administrators configure direct issuance permission without affecting Catalog business approvals or existing Grants"

@@ -307,11 +307,12 @@ async function create() {
       const binding = await observeNativeApprovalBinding(requirement.catalog_path, enginesAPI.getAuthorizationFacts)
       return captureIndependentGrant(props.engine.id, { ...requirement, binding }, form, candidates.value)
     }))
+    if (epoch !== generation || !props.authorizationReady || !canCreate.value) return
     const first = captured[0]
     const composition = captured.filter(command => command.compositionPaths.length).map(command =>
       t('system.engine.sourceGrants.confirmComposition', { target: command.targetLabel, files: command.compositionPaths.join('；') })).join('\n')
     await ElMessageBox.confirm(t('system.engine.sourceGrants.confirmBody', { target: captured.map(command => command.targetLabel).join('；'), recipient: first.recipientLabel, expiry: first.expiryMode === 'until_revoked' ? t('system.engine.sourceGrants.until_revoked') : formatTime(first.expiresAt) }) + (composition ? `\n${composition}` : ''), t('system.engine.sourceGrants.create'), { customClass: 'addp-message-box', confirmButtonText: t('common.confirm'), cancelButtonText: t('common.cancel') })
-    if (epoch !== generation || !canCreate.value) return
+    if (epoch !== generation || !props.authorizationReady || !canCreate.value) return
     if (!recovering) outcomes.value = []
     attempt.value = captured
     for (const command of captured) {
@@ -395,11 +396,20 @@ async function submitDeny() {
   } finally { if (epoch === generation) denySaving.value = false }
 }
 watch(denyVisible, visible => { if (!visible && !denySaving.value) denyAttempt.value = null })
-watch(() => JSON.stringify(props.requirements), () => {
-  generation++; attempt.value = null; outcomes.value = []; saving.value = false; formError.value = ''; form.recipientType = 'user'; form.recipientID = ''; form.expiryMode = ''; form.expiresAt = null; form.reason = ''
-  loadCandidates(); load()
+watch(() => JSON.stringify(props.requirements), (value, previous) => {
+  const current = JSON.parse(value), prior = previous ? JSON.parse(previous) : []
+  // Completing the first observation of already-selected targets must not erase
+  // a draft typed while Meta was unavailable. A changed observed permission or
+  // target set still invalidates both the command and its draft.
+  const completedObservation = !attempt.value && prior.length === current.length && prior.every((row, index) =>
+    approvalTargetsEqual(row.catalog_path, current[index].catalog_path) && (!row.source || JSON.stringify(row) === JSON.stringify(current[index])))
+  generation++; attempt.value = null; outcomes.value = []; saving.value = false; formError.value = ''
+  ElMessageBox.close()
+  if (!completedObservation) { form.recipientType = 'user'; form.recipientID = ''; form.expiryMode = ''; form.expiresAt = null; form.reason = '' }
+  loadCandidates({ preserveSelection: completedObservation }); load()
 })
 watch(() => props.authorizationKey, () => {
+  ElMessageBox.close()
   cancelFilterTimer(); generation++; attempt.value = null; outcomes.value = []; candidates.value = []; members.value = []; rows.value = []; recipientNames.value = {}; total.value = 0; page.value = 1
 
   filterDraft.tableSearch = ''; filterDraft.recipientType = ''; filterDraft.recipientID = ''; filterDraft.state = ''; appliedFilters.value = {}; filterMembers.value = []
@@ -423,7 +433,7 @@ watch([() => props.view, () => props.listMode], ([view]) => {
   load()
 })
 watch([saving, attempt, revoking, denySaving, denyAttempt], () => emit('busy', saving.value || !!attempt.value || revoking.value || denySaving.value || !!denyAttempt.value), { immediate: true })
-onBeforeUnmount(() => { cancelFilterTimer(); generation++ })
+onBeforeUnmount(() => { cancelFilterTimer(); generation++; ElMessageBox.close() })
 </script>
 
 <style scoped>

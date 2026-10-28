@@ -38,9 +38,6 @@ definitions:
         type: string
       recipient_type:
         type: string
-      requirement_version:
-        example: ""
-        type: string
     type: object
   authorization.SharingFulfillmentOperator:
     properties:
@@ -1281,9 +1278,6 @@ definitions:
         x-nullable: true
       request_id:
         type: string
-      requirement_version:
-        example: ""
-        type: string
       state:
         enum:
         - pending
@@ -1587,8 +1581,6 @@ definitions:
       decision_id:
         type: string
       request_id:
-        type: string
-      requirement_version:
         type: string
     type: object
   internal_api.rebindSourceRequest:

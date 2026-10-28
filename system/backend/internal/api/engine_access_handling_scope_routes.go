@@ -50,7 +50,7 @@ func RegisterEngineAccessHandlingScopeRoutes(api *gin.RouterGroup, runtime *IAMR
 // @x-addp-required-permissions ["system.engine_access_fulfillment.create"]
 // @Router /engines/{id}/access_handling_scope [get]
 func (h *EngineAccessHandlingScopeHandler) Get(c *gin.Context) {
-	actor, engineID, ok := approvalRequirementActor(c)
+	actor, engineID, ok := engineAccessActor(c)
 	if !ok {
 		return
 	}

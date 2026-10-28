@@ -1,6 +1,7 @@
 import client from './client'
 
 export const modulesAPI = {
+  create: data => client.post('/system/platform/modules', data),
   list: () => client.get('/system/platform/modules'),
   get: (moduleName) => client.get(`/system/platform/modules/${encodeURIComponent(moduleName)}`),
   sources: (params = {}, signal) => client.get('/system/platform/module-log-sources', { params, signal }),

@@ -161,7 +161,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		r.ItemFingerprint, r.BoundaryHash = bound.ItemFingerprint, bound.BoundaryHash
 		r.RecipientID = user.ID
 		r.Operator = userProvenance{PrincipalID: user.ID, MembershipID: member.ID, AuthorizationVersion: currentUser.AuthorizationVersion}
-		r.RequirementVersion = 1
+
 		return r
 	}
 	repo := NewRepository(db)
@@ -187,22 +187,18 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	// Only coordination predicates are tested here. This is NOT a production
 	// business approval or approval-requirement service.
 	verified := func(*Repository) error { return nil }
-	actorType, actorContext := iam.PrincipalTypeUser, iam.ContextTypeTenant
-	change := func(path engineplugin.EngineCatalogPath, mode string, version int64, verify func(*Repository) error) (*approvalRequirement, error) {
-		input := approvalRequirementChange{TenantID: tenant.ID, Path: path, Mode: mode, ExpectedVersion: version, Reason: "Explicit fixture handoff",
-			Audit: iam.AuditMetadata{PrincipalID: &user.ID, PrincipalType: &actorType, ContextType: &actorContext, TenantID: &tenant.ID}}
-		if mode == approvalModeIndependent && version > 0 {
-			input.SuccessorPrincipalID = user.ID
-		}
-		var row *approvalRequirement
+	change := func(path engineplugin.EngineCatalogPath, allowed bool, version int64, verify func(*Repository) error) (*directPermission, error) {
+		input := fixturePermitInput(ctx, repo, tenant.ID, user.ID, path, allowed, version)
+		var row *directPermission
 		err := repo.transaction(ctx, func(tx *Repository) error {
 			var err error
-			row, err = tx.changeApprovalRequirement(ctx, input, verify)
+			row, err = fixtureSetPermit(ctx, tx, input, verify)
 			return err
 		})
 		return row, err
 	}
-	if _, err := change(newRequest().Path, approvalModeCatalog, 0, verified); err != nil {
+
+	if _, err := change(newRequest().Path, false, 0, verified); err != nil {
 		t.Fatal(err)
 	}
 	exerciseMetaCollectionQualifications(t, db, tenant.ID, user.ID, engine, newOperator, seedDelegation)
@@ -293,7 +289,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 			func(v *fulfillmentRequest) { v.TenantID++ },
 			func(v *fulfillmentRequest) { v.CallerPrincipalID++ },
 			func(v *fulfillmentRequest) { v.DecisionID = uuid.New() },
-			func(v *fulfillmentRequest) { v.RequirementVersion++ },
+			func(v *fulfillmentRequest) { v.DecisionID = uuid.New() },
 			func(v *fulfillmentRequest) { v.RecipientType = "department" },
 			func(v *fulfillmentRequest) { v.RecipientID++ },
 			func(v *fulfillmentRequest) { v.ExpiresAt = testFulfillmentExpiry(v.ExpiresAt.Add(time.Second)) },
@@ -581,7 +577,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		r := newRequest()
 		r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "public", uuid.NewString())
 		r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
-		if _, err := change(r.Path, approvalModeCatalog, 0, verified); err != nil {
+		if _, err := change(r.Path, false, 0, verified); err != nil {
 			t.Fatal(err)
 		}
 		tx := db.Begin()
@@ -600,12 +596,11 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		bounded, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 		err := repo.transaction(bounded, func(second *Repository) error {
-			input := approvalRequirementChange{TenantID: tenant.ID, Path: other.Path, Mode: approvalModeCatalog,
-				Reason: "Independent target", Audit: iam.AuditMetadata{PrincipalID: &user.ID, PrincipalType: &actorType,
-					ContextType: &actorContext, TenantID: &tenant.ID}}
-			if _, err := second.changeApprovalRequirement(bounded, input, verified); err != nil {
+			input := fixturePermitInput(bounded, second, tenant.ID, user.ID, other.Path, false, 0)
+			if _, err := fixtureSetPermit(bounded, second, input, verified); err != nil {
 				return err
 			}
+
 			_, err := second.settleFulfillment(bounded, other, true, confirmation, verified)
 			return err
 		})
@@ -695,7 +690,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		r := newRequest()
 		r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "public", "recovery_handoff")
 		r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
-		if _, err := change(r.Path, approvalModeCatalog, 0, verified); err != nil {
+		if _, err := change(r.Path, false, 0, verified); err != nil {
 			t.Fatal(err)
 		}
 		r.ExpiresAt = testFulfillmentExpiry(time.Now().Add(time.Second))
@@ -703,7 +698,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := change(r.Path, approvalModeIndependent, 1, verified); err != nil {
+		if _, err := change(r.Path, true, 1, verified); err != nil {
 			t.Fatal(err)
 		}
 		if err := db.Exec("SELECT pg_sleep(1.05)").Error; err != nil {
@@ -722,112 +717,89 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 			t.Fatalf("expired closed result could not be recovered: %+v %v", row, err)
 		}
 	})
-	t.Run("requirement mutation needs owner transaction actor and qualification verification", func(t *testing.T) {
-		input := approvalRequirementChange{TenantID: tenant.ID, Path: engineplugin.TabularItemPath(engine.ID, "schema", "public", "qualification_checks"),
-			Mode: approvalModeIndependent, Reason: "Explicit initialization",
-			Audit: iam.AuditMetadata{PrincipalID: &user.ID, PrincipalType: &actorType, ContextType: &actorContext, TenantID: &tenant.ID}}
-		if _, err := repo.changeApprovalRequirement(ctx, input, verified); !errors.Is(err, errApprovalRequirementInput) {
-			t.Fatalf("nontransactional requirement mutation: %v", err)
-		}
-		for _, mutate := range []func(*approvalRequirementChange){
-			func(v *approvalRequirementChange) { v.SuccessorPrincipalID = user.ID },
-			func(v *approvalRequirementChange) { v.ExpectedVersion = 1 },
-			func(v *approvalRequirementChange) { v.Mode = "unknown" },
-			func(v *approvalRequirementChange) { v.Audit.PrincipalID = nil },
-			func(v *approvalRequirementChange) { v.Audit.PrincipalType = nil },
-			func(v *approvalRequirementChange) { v.Audit.ContextType = nil },
-			func(v *approvalRequirementChange) { v.Audit.TenantID = nil },
-			func(v *approvalRequirementChange) { v.Reason = " " },
-		} {
-			invalid := input
-			mutate(&invalid)
-			err := repo.transaction(ctx, func(tx *Repository) error {
-				_, err := tx.changeApprovalRequirement(ctx, invalid, verified)
-				return err
-			})
-			if !errors.Is(err, errApprovalRequirementInput) {
-				t.Fatalf("invalid requirement mutation accepted: %v", err)
-			}
+	t.Run("permit mutation requires transaction and current qualification", func(t *testing.T) {
+		path := engineplugin.TabularItemPath(engine.ID, "schema", "public", "qualification_checks")
+		input := fixturePermitInput(ctx, repo, tenant.ID, user.ID, path, true, 0)
+		if _, err := fixtureSetPermit(ctx, repo, input, verified); !errors.Is(err, commonapi.ErrBadRequest) {
+			t.Fatal(err)
 		}
 		failure := errors.New("qualification revoked")
 		err := repo.transaction(ctx, func(tx *Repository) error {
-			_, err := tx.changeApprovalRequirement(ctx, input, func(*Repository) error { return failure })
+			_, err := fixtureSetPermit(ctx, tx, input, func(*Repository) error { return failure })
 			return err
 		})
 		if !errors.Is(err, failure) {
-			t.Fatalf("qualification failure=%v", err)
+			t.Fatal(err)
 		}
-		path, _ := encodeFulfillmentPath(input.Path)
-		if _, err := repo.approvalRequirement(ctx, tenant.ID, int64(engine.ID), path); !errors.Is(err, gorm.ErrRecordNotFound) {
-			t.Fatalf("qualification failure initialized authority: %v", err)
+		if _, err := repo.directPermission(ctx, tenant.ID, int64(engine.ID), input.ItemFingerprint); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatal(err)
 		}
 	})
-	t.Run("missing or independent requirement cannot accept Catalog requests", func(t *testing.T) {
+	t.Run("Catalog acceptance is independent of direct configuration", func(t *testing.T) {
 		r := newRequest()
 		r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "public", "no_requirement")
 		r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
-		if _, err := settle(r, true); !errors.Is(err, errApprovalRequirementUnavailable) {
-			t.Fatalf("missing requirement: %v", err)
-		}
-		if _, err := change(r.Path, approvalModeIndependent, 0, verified); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := settle(r, true); !errors.Is(err, errApprovalRequirementUnavailable) {
-			t.Fatalf("independent requirement: %v", err)
-		}
-		if _, err := settle(r, false); err != nil {
-			t.Fatalf("unknown acceptance remains closable: %v", err)
+		for _, mode := range []string{"", approvalModeIndependent, approvalModeCatalog} {
+			if mode == approvalModeIndependent {
+				if _, err := change(r.Path, true, 0, verified); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if mode == approvalModeCatalog {
+				if _, err := change(r.Path, false, 1, verified); err != nil {
+					t.Fatal(err)
+				}
+			}
+			r.RequestID = uuid.New()
+			if _, err := settle(r, true); err != nil {
+				t.Fatalf("Catalog refused with direct configuration %q: %v", mode, err)
+			}
 		}
 	})
 	t.Run("requirement changes are explicit and audit rolls back with them", func(t *testing.T) {
 		r := newRequest()
 		r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "public", "explicit_versions")
 		r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
-		if _, err := change(r.Path, approvalModeCatalog, 0, nil); !errors.Is(err, errApprovalRequirementInput) {
+		if _, err := change(r.Path, false, 0, nil); !errors.Is(err, commonapi.ErrBadRequest) {
 			t.Fatalf("missing qualification verifier: %v", err)
 		}
-		row, err := change(r.Path, approvalModeCatalog, 0, verified)
+		row, err := change(r.Path, false, 0, verified)
 		if err != nil || row.Version != 1 {
 			t.Fatalf("initialize=%+v err=%v", row, err)
 		}
-		if _, err := change(r.Path, approvalModeIndependent, 0, verified); !errors.Is(err, errApprovalRequirementVersion) {
+		if _, err := change(r.Path, true, 0, verified); !errors.Is(err, ErrDirectPermissionVersion) {
 			t.Fatalf("initialization cannot replace current requirement: %v", err)
 		}
 		failure := errors.New("interrupt after authority and audit write")
 		err = repo.transaction(ctx, func(tx *Repository) error {
-			input := approvalRequirementChange{TenantID: tenant.ID, Path: r.Path, ExpectedVersion: 1, Mode: approvalModeIndependent,
-				SuccessorPrincipalID: user.ID, Reason: "Explicit exit", Audit: iam.AuditMetadata{PrincipalID: &user.ID,
-					PrincipalType: &actorType, ContextType: &actorContext, TenantID: &tenant.ID}}
-			if _, err := tx.changeApprovalRequirement(ctx, input, verified); err != nil {
+			input := fixturePermitInput(ctx, tx, tenant.ID, user.ID, r.Path, true, 1)
+			if _, err := fixtureSetPermit(ctx, tx, input, verified); err != nil {
 				return err
 			}
+
 			return failure
 		})
 		if !errors.Is(err, failure) {
 			t.Fatal(err)
 		}
-		path, _ := encodeFulfillmentPath(r.Path)
-		current, err := repo.approvalRequirement(ctx, tenant.ID, int64(engine.ID), path)
+		current, err := repo.directPermission(ctx, tenant.ID, int64(engine.ID), r.ItemFingerprint)
 		var audits int64
-		if err != nil || current.Version != 1 || current.Mode != approvalModeCatalog {
+		if err != nil || current.Version != 1 || current.Allowed {
 			t.Fatalf("rollback current=%+v err=%v", current, err)
 		}
-		if err := db.Table("system.audit_logs").Where("entity_type = ? AND entity_id = ?", "engine_access_approval_requirement", row.ID.String()).Count(&audits).Error; err != nil || audits != 1 {
+		if err := db.Table("system.audit_logs").Where("entity_type = ? AND entity_id = ?", "engine_access_direct_permission", row.ID.String()).Count(&audits).Error; err != nil || audits != 1 {
 			t.Fatalf("rollback audits=%d err=%v", audits, err)
 		}
-		if _, err := change(r.Path, approvalModeIndependent, 1, verified); err != nil {
+		if _, err := change(r.Path, true, 1, verified); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := change(r.Path, approvalModeCatalog, 1, verified); !errors.Is(err, errApprovalRequirementVersion) {
+		if _, err := change(r.Path, false, 1, verified); !errors.Is(err, ErrDirectPermissionVersion) {
 			t.Fatalf("old retry cannot re-enable after exit: %v", err)
 		}
-		if row, err := change(r.Path, approvalModeCatalog, 2, verified); err != nil || row.Version != 3 {
+		if row, err := change(r.Path, false, 2, verified); err != nil || row.Version != 3 {
 			t.Fatalf("re-enable=%+v err=%v", row, err)
 		}
-		if _, err := settle(r, true); !errors.Is(err, errApprovalRequirementVersion) {
-			t.Fatalf("old version cannot consume new activation: %v", err)
-		}
-		r.RequirementVersion = 3
+
 		if _, err := settle(r, true); err != nil {
 			t.Fatalf("explicit current version cannot accept: %v", err)
 		}
@@ -836,17 +808,18 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		r := newRequest()
 		r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "业务.域", " 表/名 "+strings.Repeat("资源", 600))
 		r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
-		row, err := change(r.Path, approvalModeCatalog, 0, verified)
+		row, err := change(r.Path, false, 0, verified)
 		if err != nil {
 			t.Fatal(err)
 		}
 		other := r
+		other.RequestID = uuid.New()
 		other.Path = engineplugin.TabularItemPath(engine.ID, "schema", "业务.域", "表/名"+strings.Repeat("资源", 600))
 		other.ItemFingerprint, other.BoundaryHash = testReadBindings(other.Path)[0].ItemFingerprint, testReadBindings(other.Path)[0].BoundaryHash
-		if _, err := settle(other, true); !errors.Is(err, errApprovalRequirementUnavailable) {
-			t.Fatalf("trimmed name inherited requirement: %v", err)
+		if _, err := settle(other, true); err != nil {
+			t.Fatalf("separate Catalog target refused: %v", err)
 		}
-		otherRow, err := change(other.Path, approvalModeIndependent, 0, verified)
+		otherRow, err := change(other.Path, true, 0, verified)
 		if err != nil || row.ID == otherRow.ID {
 			t.Fatalf("distinct identity=%+v err=%v", otherRow, err)
 		}
@@ -854,15 +827,15 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, statement := range []string{
-			"UPDATE system.engine_access_approval_requirements SET mode = 'independent' WHERE id = ?",
-			"UPDATE system.engine_access_approval_requirements SET catalog_path = '{}'::jsonb, version = version + 1 WHERE id = ?",
-			"DELETE FROM system.engine_access_approval_requirements WHERE id = ?",
+			"UPDATE system.engine_access_direct_permissions SET allowed = true WHERE id = ?",
+			"UPDATE system.engine_access_direct_permissions SET catalog_path = '{}'::jsonb, version = version + 1 WHERE id = ?",
+			"DELETE FROM system.engine_access_direct_permissions WHERE id = ?",
 		} {
 			if err := db.Exec(statement, row.ID).Error; err == nil {
 				t.Fatalf("accepted authority mutation: %s", statement)
 			}
 		}
-		if err := db.Exec("TRUNCATE system.engine_access_approval_requirements").Error; err == nil {
+		if err := db.Exec("TRUNCATE system.engine_access_direct_permissions").Error; err == nil {
 			t.Fatal("accepted authority truncate")
 		}
 	})
@@ -871,11 +844,12 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 			r := newRequest()
 			r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "public", uuid.NewString())
 			r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
-			if _, err := change(r.Path, approvalModeCatalog, 0, verified); err != nil {
+			if _, err := change(r.Path, false, 0, verified); err != nil {
 				t.Fatal(err)
 			}
 			held, release, done := make(chan struct{}), make(chan struct{}), make(chan error, 2)
-			hold := func(*Repository) error { close(held); <-release; return nil }
+			var holdOnce sync.Once
+			hold := func(*Repository) error { holdOnce.Do(func() { close(held); <-release }); return nil }
 			go func() {
 				if acceptFirst {
 					done <- repo.transaction(ctx, func(tx *Repository) error {
@@ -883,7 +857,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 						return err
 					})
 				} else {
-					_, err := change(r.Path, approvalModeIndependent, 1, hold)
+					_, err := change(r.Path, true, 1, hold)
 					done <- err
 				}
 			}()
@@ -905,10 +879,8 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 						_, err := tx.settleFulfillment(ctx, r, true, confirmation, verified)
 						return err
 					}
-					input := approvalRequirementChange{TenantID: tenant.ID, Path: r.Path, ExpectedVersion: 1, Mode: approvalModeIndependent,
-						SuccessorPrincipalID: user.ID, Reason: "Explicit concurrent exit", Audit: iam.AuditMetadata{PrincipalID: &user.ID,
-							PrincipalType: &actorType, ContextType: &actorContext, TenantID: &tenant.ID}}
-					_, err := tx.changeApprovalRequirement(ctx, input, verified)
+					input := fixturePermitInput(ctx, tx, tenant.ID, user.ID, r.Path, true, 1)
+					_, err := fixtureSetPermit(ctx, tx, input, verified)
 					return err
 				})
 			}()
@@ -935,22 +907,16 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 			if !blocked {
 				t.Fatal("second operation did not wait on the shared target lock")
 			}
-			var unavailable int
 			for i := 0; i < 2; i++ {
-				if err := <-done; errors.Is(err, errApprovalRequirementUnavailable) {
-					unavailable++
-				} else if err != nil {
+				if err := <-done; err != nil {
 					t.Fatal(err)
 				}
-			}
-			if (!acceptFirst && unavailable != 1) || (acceptFirst && unavailable != 0) {
-				t.Fatalf("acceptFirst=%t rejected=%d", acceptFirst, unavailable)
 			}
 			var count int64
 			if err := db.Model(&fulfillmentOutcome{}).Where("request_id = ?", r.RequestID).Count(&count).Error; err != nil {
 				t.Fatal(err)
 			}
-			if (!acceptFirst && count != 0) || (acceptFirst && count != 1) {
+			if count != 1 {
 				t.Fatalf("acceptFirst=%t accepted results=%d", acceptFirst, count)
 			}
 			if acceptFirst {
@@ -964,8 +930,8 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 				}
 			}
 			r.RequestID = uuid.New()
-			if _, err := settle(r, true); !errors.Is(err, errApprovalRequirementUnavailable) {
-				t.Fatalf("new acceptance after exit: %v", err)
+			if _, err := settle(r, true); err != nil {
+				t.Fatalf("new business acceptance must remain available: %v", err)
 			}
 		}
 	})
@@ -1138,4 +1104,5 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		}
 	})
 	exerciseTransferProductionBindingAgainstPostgres(t, db, tenant.ID)
+	exerciseDevelopmentAuthorizationRetirement(t, db)
 }

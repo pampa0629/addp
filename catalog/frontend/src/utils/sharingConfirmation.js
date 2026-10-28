@@ -97,15 +97,10 @@ export function captureSharingConfirmation(entry, form, recipientOptions, decisi
     recipient_id: form.recipientID, expiry_mode: form.expiryMode, expires_at: expiresAt, reason })
 }
 
-export function validateHandlingRequirement(candidate, requirement) {
-  if (!canonicalSharingUUID(candidate?.id) ||
-      !isSharingInt64(candidate?.target?.engine_id) || !candidate?.target?.version || !Array.isArray(candidate?.target?.segments) ||
-      requirement?.mode !== 'catalog' || typeof requirement?.requirement_version !== 'string' ||
-      !isSharingInt64(requirement.requirement_version)) throw new Error('invalidHandlingRequirement')
-}
-
-export function captureSharingRequest(candidate, requirement, requestID) {
-  validateHandlingRequirement(candidate, requirement)
-  if (!canonicalSharingUUID(requestID)) throw new Error('invalidHandlingRequirement')
-  return Object.freeze({ request_id: requestID, decision_id: candidate.id, requirement_version: requirement.requirement_version })
+export function captureSharingRequest(candidate, requestID) {
+  if (!canonicalSharingUUID(candidate?.id) || !canonicalSharingUUID(requestID) ||
+      !isSharingInt64(candidate?.target?.engine_id) || !candidate?.target?.version || !Array.isArray(candidate?.target?.segments)) {
+    throw new Error('invalidSharingRequest')
+  }
+  return Object.freeze({ request_id: requestID, decision_id: candidate.id })
 }

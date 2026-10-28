@@ -28,7 +28,7 @@ func recoveryRequest(actor FulfillmentRuntimeActor, id uuid.UUID, binding shared
 	}
 	return fulfillmentRequest{RequestID: id, TenantID: actor.TenantID, CallerPrincipalID: actor.PrincipalID,
 		Operator: userProvenance{binding.Operator.PrincipalID, binding.Operator.MembershipID, binding.Operator.AuthorizationVersion},
-		Path:     binding.Path, DecisionID: binding.DecisionID, RequirementVersion: binding.RequirementVersion,
+		Path:     binding.Path, DecisionID: binding.DecisionID,
 		ItemFingerprint: binding.ItemFingerprint, BoundaryHash: binding.BoundaryHash,
 		RecipientType: binding.RecipientType, RecipientID: binding.RecipientID, Action: binding.Action,
 		ExpiryMode: binding.ExpiryMode, ExpiresAt: binding.ExpiresAt}, nil

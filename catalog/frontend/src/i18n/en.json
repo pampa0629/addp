@@ -1,10 +1,6 @@
 {
   "catalog": {
     "sharing": {
-      "initialize": "Initialize this table's approval requirement",
-      "initializeReason": "Initialization reason",
-      "initializeBoundary": "Explicitly initialize Catalog business approval only if this table has no requirement. A failed query does not establish absence. Existing configuration is never overwritten; insufficient permission is rejected. This does not grant data access.",
-      "invalidInitialization": "Select a valid sharing confirmation and enter an initialization reason.",
       "title": "Business authorization",
       "workspace": {
         "create": "Approve data use",
@@ -140,9 +136,7 @@
         "absent": "Awaiting fulfillment",
         "unknown": "Grant status not verified"
       },
-      "setupTitle": "First-use configuration (not a data access grant)",
       "selectDecision": "Select a business approval for this data item",
-      "observeRequirement": "Recheck approval requirement and existing grants",
       "checkingExistingGrant": "Checking this recipient's existing grants…",
       "existingGrant": "This recipient already has an unexpired, unrevoked grant; no new handling is needed",
       "existingGrantDetail": "Existing validity: {expiry}. No request will be submitted and the existing grant will not change. Actual readability must still be checked.",
@@ -151,7 +145,6 @@
       "noNewHandling": "New requests require an active, non-deprecated Meta data item. Existing requests can still be queried.",
       "handlingUncertain": "The original ID and parameters are fixed; the outcome is uncertain. Query the original request first. An explicit retry sends the same ID and parameters without substituting a new version.",
       "retryRequest": "Retry this same fulfillment request",
-      "invalidRequirement": "A valid exact-target Catalog requirement with a lossless version has not been obtained. Missing requirements are never initialized automatically.",
       "invalidRouteIdentity": "The original confirmation or request ID in this link is invalid. Reopen the resource entry; an invalid link is not treated as a new fulfillment request.",
       "invalidConfirmation": "Select an active recipient, choose a validity mode and enter a purpose. A specified expiry must be in the future.",
       "state": {

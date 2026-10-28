@@ -423,7 +423,7 @@ func TestEngineAccessDelegationAgainstPostgres(t *testing.T) {
 	if finalAudits != initialAudits+6 {
 		t.Fatalf("audit count=%d want=%d", finalAudits, initialAudits+6)
 	}
-	exerciseApprovalRequirementAPI(t, db, identity, service, actor, engine, otherTenant.ID)
+	exerciseDirectPermissionAPI(t, db, identity, service, actor, engine, otherTenant.ID)
 	exerciseHandlingScopeAPI(t, db, identity, service, actor, engine, otherTenant.ID)
 	exerciseAuthorizationFactsAPI(t, db, identity, actor, engine)
 }
@@ -449,6 +449,9 @@ func engineDelegationTestRequest(t *testing.T, router http.Handler, method, path
 	data, err := json.Marshal(body)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if body == nil {
+		data = nil
 	}
 	request := httptest.NewRequest(method, path, bytes.NewReader(data))
 	request.Header.Set("Authorization", "Bearer addp_at_fixture")

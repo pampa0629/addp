@@ -39,7 +39,7 @@ func exerciseFulfillmentRuntimeRecovery(t *testing.T, db *gorm.DB, request fulfi
 		actor := FulfillmentRuntimeActor{Actor: Actor{TenantID: request.TenantID, PrincipalID: principal.ID, MembershipID: member.ID, AuthorizationVersion: principal.AuthorizationVersion, TokenExpiresAt: time.Now().Add(time.Minute)}, ClientID: "addp-catalog"}
 		binding := shared.SharingFulfillmentBinding{ItemFingerprint: factstest.Binding(request.Path).ItemFingerprint, BoundaryHash: factstest.Binding(request.Path).BoundaryHash, CallerPrincipalID: request.CallerPrincipalID,
 			Operator: shared.SharingFulfillmentOperator{PrincipalID: request.Operator.PrincipalID, MembershipID: request.Operator.MembershipID, AuthorizationVersion: request.Operator.AuthorizationVersion},
-			Path:     request.Path, DecisionID: request.DecisionID, RequirementVersion: request.RequirementVersion,
+			Path:     request.Path, DecisionID: request.DecisionID,
 			RecipientType: request.RecipientType, RecipientID: request.RecipientID, Action: request.Action, ExpiryMode: request.ExpiryMode, ExpiresAt: request.ExpiresAt}
 		service := NewService(NewRepository(db), nil)
 		lookup, err := service.ResolveFulfillment(ctx, actor, request.RequestID, binding)
@@ -68,7 +68,7 @@ func exerciseFulfillmentRuntimeRecovery(t *testing.T, db *gorm.DB, request fulfi
 			t.Fatalf("history=%+v err=%v", lookup, err)
 		}
 		changed := binding
-		changed.RequirementVersion++
+		changed.DecisionID = uuid.New()
 		if _, err := service.ResolveFulfillment(ctx, actor, request.RequestID, changed); !errors.Is(err, commonapi.ErrConflict) {
 			t.Fatalf("binding conflict=%v", err)
 		}

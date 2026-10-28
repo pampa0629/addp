@@ -132,7 +132,7 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 			if err != nil || canonical.CatalogRequestID == nil || *canonical.CatalogRequestID != id ||
 				canonical.TenantID != actor.TenantID || canonical.EngineID != int64(base.Path.EngineID) ||
 				canonical.RecipientType != base.RecipientType || canonical.RecipientID != base.RecipientID ||
-				canonical.Action != base.Action || canonical.RequirementVersion != base.RequirementVersion ||
+				canonical.Action != base.Action || canonical.DirectPermissionVersion != 0 ||
 				canonical.OperatorPrincipalID != base.Operator.PrincipalID || canonical.OperatorMembershipID != base.Operator.MembershipID ||
 				canonical.OperatorAuthorizationVersion != base.Operator.AuthorizationVersion ||
 				!shared.EqualSharingExpiry(canonical.ExpiryMode, canonical.ExpiresAt, base.ExpiryMode, base.ExpiresAt) {
@@ -301,7 +301,7 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 			assertCount(t, id, 1)
 			for _, mutate := range []func(*shared.SharingFulfillmentBinding){
 				func(b *shared.SharingFulfillmentBinding) { b.Operator.AuthorizationVersion++ },
-				func(b *shared.SharingFulfillmentBinding) { b.RequirementVersion++ },
+				func(b *shared.SharingFulfillmentBinding) { b.DecisionID = uuid.New() },
 				func(b *shared.SharingFulfillmentBinding) { b.DecisionID = uuid.New() },
 				func(b *shared.SharingFulfillmentBinding) { b.RecipientID = 9007199254740993 },
 				func(b *shared.SharingFulfillmentBinding) {
@@ -525,13 +525,10 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 			binding.ItemFingerprint, binding.BoundaryHash = testReadBindings(binding.Path)[0].ItemFingerprint, testReadBindings(binding.Path)[0].BoundaryHash
 			acceptor.WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{base.Path, binding.Path}})
 			issuer.WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{base.Path, binding.Path}})
-			principalType, contextType := iam.PrincipalTypeUser, iam.ContextTypeTenant
-			input := approvalRequirementChange{TenantID: actor.TenantID, Path: binding.Path, Mode: approvalModeCatalog,
-				Reason: "Explicit grant fixture arrangement", Audit: iam.AuditMetadata{PrincipalID: &adminID,
-					PrincipalType: &principalType, ContextType: &contextType, TenantID: &actor.TenantID}}
+			input := fixturePermitInput(ctx, issuer.repository, actor.TenantID, adminID, binding.Path, false, 0)
 			change := func() error {
 				return issuer.repository.transaction(ctx, func(tx *Repository) error {
-					_, err := tx.changeApprovalRequirement(ctx, input, func(*Repository) error { return nil })
+					_, err := fixtureSetPermit(ctx, tx, input, func(*Repository) error { return nil })
 					return err
 				})
 			}
@@ -539,7 +536,7 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 				t.Fatal(err)
 			}
 			id := prepare(t, binding)
-			input.Mode, input.ExpectedVersion, input.SuccessorPrincipalID = approvalModeIndependent, 1, adminID
+			input.Allowed, input.ExpectedSource, input.ExpectedVersion = true, "explicit", 1
 			if err := change(); err != nil {
 				t.Fatal(err)
 			}

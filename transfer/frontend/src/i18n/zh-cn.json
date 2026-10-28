@@ -338,6 +338,8 @@
 	    "pending": "初始读取授权待处理",
 	    "issued": "初始读取授权已签发",
 	    "denied": "初始读取授权未签发",
+	    "retired": "旧初始读取授权已清理",
+	    "retiredDescription": "旧授权已统一清理，不会自动重新签发。任务成果仍保留，需要访问时请重新办理授权。",
 	    "pendingDescription": "任务成果已保留，系统正在继续核查授权，无需重新运行任务。",
 	    "issuedDescription": "当前能否读取仍以有效权限及安全规则为准。",
 	    "deniedDescription": "可联系授权管理员按正常流程办理，不影响已生成的任务成果。",

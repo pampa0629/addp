@@ -108,9 +108,6 @@ func (s *Service) AcceptFulfillment(ctx context.Context, actor FulfillmentRuntim
 		if errors.Is(err, errFulfillmentClosed) {
 			return commonapi.ErrConflict
 		}
-		if errors.Is(err, errApprovalRequirementVersion) || errors.Is(err, errApprovalRequirementUnavailable) {
-			return commonapi.ErrConflict
-		}
 		if err != nil {
 			return err
 		}

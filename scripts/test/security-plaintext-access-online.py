@@ -858,7 +858,7 @@ def initialize_hosted(tenant_id: int, engine_id: int, gateway_url: str) -> None:
     try:
         for index, consumer in enumerate((applicant, approver)):
             REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, tenant_id,
-                [(engine_id, "schema", "addp_online_security", "exemption_source")], initialize_approval=index == 0)
+                [(engine_id, "schema", "addp_online_security", "exemption_source")])
     except REGISTRATION.RegistrationError as error:
         raise SuiteError(str(error)) from error
 

@@ -64,6 +64,34 @@ func exerciseSharingDataItemMigration(t *testing.T, db *gorm.DB) {
 		}
 		return value
 	}
+	// Simulate the previous installation with no owner retirement checkpoint.
+	beforeRetirement := snapshot()
+	if err := db.Exec("DELETE FROM catalog.startup_schema_revision").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot() != beforeRetirement {
+		t.Fatal("authorization retirement changed Catalog resources or audit")
+	}
+	for _, table := range []string{"catalog.sharing_decisions", "catalog.fulfillment_checks"} {
+		var n int64
+		if err := db.Table(table).Count(&n).Error; err != nil || n != 0 {
+			t.Fatalf("retirement left %s: %d %v", table, n, err)
+		}
+	}
+	decision.ID = uuid.New()
+	if err := db.Create(&decision).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	var surviving int64
+	if err := db.Model(&models.SharingDecision{}).Where("id=?", decision.ID).Count(&surviving).Error; err != nil || surviving != 1 {
+		t.Fatalf("repeat startup deleted new approval: %d %v", surviving, err)
+	}
 	// Reconstruct the previous native-target schema, preserving actual history.
 	if err := db.Exec(`ALTER TABLE catalog.sharing_decisions DROP COLUMN item_fingerprint CASCADE, DROP COLUMN boundary_hash CASCADE`).Error; err != nil {
 		t.Fatal(err)

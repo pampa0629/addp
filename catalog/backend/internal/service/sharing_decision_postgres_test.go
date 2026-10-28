@@ -140,7 +140,7 @@ func TestPostgresSharingDecisionIsAtomicImmutableAndRetryable(t *testing.T) {
 				return err
 			}
 			changed := request
-			changed.RequirementVersion++
+			changed.Operator.AuthorizationVersion++
 			if _, _, err := prepareSharingFulfillment(context.Background(), tx, 7, entry.ID, result.ID, changed); !errors.Is(err, ErrSharingDecisionConflict) {
 				t.Fatalf("changed requirement reused request: %v", err)
 			}

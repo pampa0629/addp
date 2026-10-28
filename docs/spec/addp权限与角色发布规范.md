@@ -127,12 +127,13 @@ Role 只组合现有 Permission，不产生新 Permission，也不表达资源�
 
 角色交接绑定原任人和接任人，在同一事务中完成授予和撤任；不能先撤掉最后一个岗位持有人再创建接任角色。独立撤任必须保留同岗位可用持有人。新增角色、交接和恢复均不允许目标或接任人参与申请／复核。身份暂停立即撤销旧会话；恢复不复活旧会话。普通账号生命周期接口不得再执行平台角色持有人的受控状态变更。
 
+> 直接许可职责以《授权上下文规范》5.5.5 为准：DataItem 许可取代互斥批准模式，业务批准后办理始终保留。迁移 000248 撤销旧配置 Permission 的角色绑定并停用旧 Permission，发布新的读取与管理 Permission；不把旧首次配置或自定义配置权升级为许可管理权。迁移与运行验收状态见《System IAM 数据模型与迁移规范》。
 
-引擎授权管理员（`tenant.engine_access_delegation_administrator`）是专职 Tenant Management Role，只允许当前 Tenant Scope 的 User。它提供委派管理、批准要求读取／初始化／显式切换、独立只读 Grant 创建／历史读取／撤销及页面候选读取。当前租户有效的委派创建 Permission 表达管理员管理范围，管理员无需委托自己；每项操作仍独立核验功能 Permission。切换权限 `system.engine_access_approval_requirement.update` 默认仅组合进此模板，不组合进数据授权办理员或其他角色。切到直接批准还核验操作人自己的授权办理资格，防止无人承接。角色不授予数据内容读取、业务共享确认或 Explicit Deny，不自动分配账号，不创建委派或 Grant；模板扩展沿现有 IAM 发布机制推进已分配主体授权版本并撤销旧会话。
+引擎授权管理员（`tenant.engine_access_delegation_administrator`）是专职 Tenant Management Role，只允许当前 Tenant Scope 的 User。它组合委托管理、直接授权许可读取／管理、只读 Grant 创建／历史读取／撤销及必要页面候选读取。当前租户有效的委托创建 Permission 表达管理员管理范围，管理员无需委托自己；每项操作仍独立核验功能 Permission。许可管理 `system.engine_access_direct_permission.update` 不可租户自定义，仅组合进该内置模板，并在后端同时核验当前管理员资格；普通办理员或有效委托不能替代。角色不授予数据内容读取、Catalog 业务批准或 Explicit Deny，不自动分配账号，不创建委托或 Grant。模板变更沿既有发布机制推进受影响主体授权版本并撤销旧会话。
 
-数据授权办理员（`tenant.source_data_authorizer`）只允许 Tenant Scope 的 User，统一组合直接批准与业务批准后的办理能力：精确 DataItem 批准要求的读取／首次配置、只读 Grant 的创建／历史读取／撤销、Catalog 条目读取和人类授权办理，以及页面所需的引擎管理读取、实时结构目录和账号／部门／项目组候选读取。直接批准使用 Grant 创建 Permission；业务批准使用 `system.engine_access_fulfillment.create`，仍须由 Catalog 验证有效业务确认，再由 System 受理和签发。两项 Permission 保持独立校验，由同一内置角色组合；不因持有角色而绕过目标批准方式。
+数据授权办理员（`tenant.source_data_authorizer`）只允许 Tenant Scope 的 User，统一组合直接 Grant 创建与业务批准后办理：直接许可读取、只读 Grant 创建／历史读取／撤销、Catalog 条目读取和人类授权办理，以及页面所需引擎和账号／部门／项目组候选读取。直接办理使用 Grant 创建 Permission，并要求目标有效许可允许；业务办理使用 `system.engine_access_fulfillment.create`，由 Catalog 验证有效业务批准，再由 System 受理和签发，不读取直接许可。两项 Permission 保持独立校验，由同一内置角色组合；角色不包含开启／关闭许可能力。
 
-每项正式办理仍须具有当前租户授权管理员资格或目标引擎的有效管理委派。该角色不提供委派管理、业务共享确认、批准方式切换、机器 execute、Explicit Deny 或数据内容读取／导出／写入，不自动创建委派或 Grant。角色扩展沿现有 IAM 发布机制推进已分配主体授权版本并撤销旧会话；不新增 Role Assignment，不扩张其他角色，不重写租户自定义角色及其历史。既有自定义角色仍按显式 Permission 集合判权，但产品完整办理职责只使用这个内置模板。具备角色分配权限的账号可以给自己分配该高风险角色，但须完成现有 MFA 增强认证；自我分配不豁免审计、会话失效或管理范围核验。小团队可由同一管理员兼任委派管理和授权办理，另一个账号仅作为数据接收方，无需增加专职账号。
+每项正式办理仍须具有当前租户授权管理员资格或目标引擎的有效管理委派。该角色不提供委派管理、业务共享确认、直接授权许可管理、机器 execute、Explicit Deny 或数据内容读取／导出／写入，不自动创建委派或 Grant。角色扩展沿现有 IAM 发布机制推进已分配主体授权版本并撤销旧会话；不新增 Role Assignment，不扩张其他角色，不重写租户自定义角色及其历史。既有自定义角色仍按显式 Permission 集合判权，但产品完整办理职责只使用这个内置模板。具备角色分配权限的账号可以给自己分配该高风险角色，但须完成现有 MFA 增强认证；自我分配不豁免审计、会话失效或管理范围核验。小团队可由同一管理员兼任委派管理和授权办理，另一个账号仅作为数据接收方，无需增加专职账号。
 
 普通 User 的本地密码和 MFA Credential 重置分别使用 `iam.local_account.reset` 与 `iam.mfa_credential.reset`，只授予 Platform Security Administrator。两者都不得作用于任何有效 Platform Role 持有人；平台三员通过独立的双人批准凭据恢复流程重新登记，不能形成合格治理组合时使用离线凭据恢复；不能扩大普通用户重置 Permission 绕过三员治理。
 
@@ -285,3 +286,7 @@ ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?...' make test-syste
 ```
 
 不得对开发库或生产库运行会重建 Schema 的发布门。
+
+### 数据项身份清单机器权限（2026-10-28）
+
+`meta.data_item_identity.read` 由 Meta 发布，低风险、不可自定义、不可委托，仅默认授予 `tenant.system_runtime`。其运行接口另限定 `addp-system` Tenant Service；只允许读取租户与引擎内的最小 DataItem 身份清单。该独立能力不扩大人员权限，不代替数据读取许可，也不扩大原精确 `meta.authorization_facts.read` 的调用者范围。

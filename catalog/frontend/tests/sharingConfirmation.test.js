@@ -72,18 +72,14 @@ describe('explicit human sharing confirmation', () => {
       expect(hasInvalidSharingRouteIdentity({ sharing_request_id: invalid })).toBe(true)
     }
   })
-  it('freezes the original handling version without defaults, numeric rounding or target overrides', () => {
+  it('freezes only the business decision and request identity, without direct authorization configuration', () => {
     const candidate = { id, target: { engine_id: '9007199254740993', version: 'v1', segments: [] } }
-    const requirement = { mode: 'catalog', requirement_version: '9007199254740993' }
-    const captured = captureSharingRequest(candidate, requirement, id)
-    expect(captured).toEqual({ request_id: id, decision_id: id, requirement_version: '9007199254740993' })
+    const captured = captureSharingRequest(candidate, id)
+    expect(captured).toEqual({ request_id: id, decision_id: id })
     expect(Object.isFrozen(captured)).toBe(true)
-    for (const invalid of [{}, { mode: 'independent', requirement_version: '1' }, { ...requirement, requirement_version: 9007199254740993 },
-      { ...requirement, requirement_version: '01' }, { ...requirement, requirement_version: '9223372036854775808' }]) {
-      expect(() => captureSharingRequest(candidate, invalid, id)).toThrow('invalidHandlingRequirement')
-    }
-    expect(() => captureSharingRequest(candidate, requirement, '')).toThrow()
-    expect(() => captureSharingRequest({ ...candidate, target: { ...candidate.target, engine_id: 9007199254740993 } }, requirement, id)).toThrow()
+    expect(() => captureSharingRequest(candidate, '')).toThrow('invalidSharingRequest')
+    expect(() => captureSharingRequest({ ...candidate, id: '' }, id)).toThrow('invalidSharingRequest')
+    expect(() => captureSharingRequest({ ...candidate, target: { ...candidate.target, engine_id: 9007199254740993 } }, id)).toThrow('invalidSharingRequest')
   })
   it('keeps read, confirmation and fulfillment permissions independent of curation and responsibility', () => {
     expect(sharingEligibility(entry, auth(['catalog.entry.read', 'catalog.entry.update']))).toEqual({ owner: true, confirm: false, create: false, history: false })

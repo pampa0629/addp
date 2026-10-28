@@ -21,7 +21,7 @@ func exerciseTransferProductionBindingAgainstPostgres(t *testing.T, db *gorm.DB,
 		}
 		// Internal evidence preparation must not create approval requirements,
 		// accepted requests, content grants/denies, revocations or IAM audit.
-		tables := []string{"engine_access_approval_requirements", "engine_access_fulfillment_outcomes", "engine_access_grants", "engine_access_denies", "engine_access_grant_revocations", "audit_logs"}
+		tables := []string{"engine_access_direct_permissions", "engine_access_fulfillment_outcomes", "engine_access_grants", "engine_access_denies", "engine_access_grant_revocations", "audit_logs"}
 		counts := make([]int64, len(tables))
 		for i, table := range tables {
 			if err := db.Table("system." + table).Count(&counts[i]).Error; err != nil {

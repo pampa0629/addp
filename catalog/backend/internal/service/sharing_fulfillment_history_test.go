@@ -62,7 +62,7 @@ func seedFulfillmentHistory(t *testing.T, db *gorm.DB) (models.Entry, *models.Fu
 	}
 	request := preparationFixture(t, decision)
 	request.Operator.AuthorizationVersion = 9007199254740993
-	request.RequirementVersion = 9007199254740993
+
 	var check *models.FulfillmentCheck
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		var err error
@@ -133,7 +133,7 @@ func exerciseSharingBusinessReview(t *testing.T, db *gorm.DB) {
 						lookup.Resolution.Deadline = &deadline
 					}
 					if failure == "binding" {
-						lookup.Resolution.Binding.RequirementVersion++
+						lookup.Resolution.Binding.DecisionID = uuid.New()
 					}
 				}
 				_ = json.NewEncoder(w).Encode(lookup)
@@ -416,8 +416,8 @@ func exerciseSharingFulfillmentHistory(t *testing.T, db *gorm.DB) {
 				t.Fatalf("private/result field %s exposed: %s", forbidden, body)
 			}
 		}
-		if !strings.Contains(string(body), `"requirement_version":"9007199254740993"`) {
-			t.Fatal("requirement version lost string precision")
+		if strings.Contains(string(body), `"requirement_version"`) {
+			t.Fatal("retired requirement version exposed")
 		}
 		rows, total, err = s.ListSharingFulfillments(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, auth, "addp_at_handler", 2, 1)
 		if err != nil || total != 1 || len(rows) != 0 {
@@ -491,7 +491,7 @@ func exerciseSharingFulfillmentHistory(t *testing.T, db *gorm.DB) {
 				}
 				switch failure {
 				case "binding":
-					resolution.Binding.RequirementVersion++
+					resolution.Binding.DecisionID = uuid.New()
 				case "tenant":
 					resolution.TenantID++
 				case "request":
@@ -516,7 +516,7 @@ func exerciseSharingFulfillmentHistory(t *testing.T, db *gorm.DB) {
 		for _, outcome := range []string{"pending", "accepted", "closed"} {
 			state = outcome
 			result, err := get()
-			if err != nil || result.State != outcome || result.RequestID != check.RequestID || result.RequirementVersion != binding.RequirementVersion || result.Target.EngineID != "12" || !result.CreatedAt.Equal(check.CreatedAt) {
+			if err != nil || result.State != outcome || result.RequestID != check.RequestID || result.Target.EngineID != "12" || !result.CreatedAt.Equal(check.CreatedAt) {
 				t.Fatalf("historical %s=%+v err=%v", outcome, result, err)
 			}
 			if outcome == "accepted" && (result.Deadline == nil || !result.Deadline.Equal(deadline) || result.RecordedAt == nil || !result.RecordedAt.Equal(recorded)) {

@@ -103,7 +103,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					return actual.Version, nil
 				}))
 				role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.file_grant_issuer_" + kind + "_" + format, Name: "File grant issuer",
-					PermissionKeys: []string{"system.engine_access_delegation.create", "system.engine_access_grant.create", "system.engine_access_grant.read", "system.engine_access_grant.revoke", "system.engine_access_deny.create", "system.engine_access_deny.release", "system.engine_access_approval_requirement.initialize"}, ActorPrincipalID: adminID})
+					PermissionKeys: []string{"system.engine_access_delegation.create", "system.engine_access_grant.create", "system.engine_access_grant.read", "system.engine_access_grant.revoke", "system.engine_access_deny.create", "system.engine_access_deny.release"}, ActorPrincipalID: adminID})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -162,8 +162,19 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				}
 				read(request, false)
 				input := CreateIndependentGrantInput{Actor: actor, EngineID: int64(engine.ID), RequestID: uuid.New(), CatalogPath: primary,
-					ItemFingerprint: current.ItemFingerprint, ExpectedBoundaryHash: *current.BoundaryHash, RequirementVersion: 1, InitializeApproval: true,
+					ItemFingerprint: current.ItemFingerprint, ExpectedBoundaryHash: *current.BoundaryHash, DirectPermissionVersion: 1, DirectPermissionSource: "explicit",
 					RecipientType: "user", RecipientID: reader.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Approve complete A composition"}
+				binding, err := current.ApprovedBinding()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := repo.transaction(ctx, func(tx *Repository) error {
+					permitInput := fixturePermitBindingInput(ctx, tx, tenantID, adminID, primary, binding, true, 0)
+					_, err := fixtureSetPermit(ctx, tx, permitInput, func(*Repository) error { return nil })
+					return err
+				}); err != nil {
+					t.Fatal(err)
+				}
 				grantA, err := service.CreateIndependentGrant(ctx, input)
 				if err != nil {
 					t.Fatal(err)
@@ -245,7 +256,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					t.Fatal(err)
 				}
 				read(currentRequest, false)
-				input.RequestID, input.InitializeApproval, input.ExpectedBoundaryHash, input.Reason = uuid.New(), false, *current.BoundaryHash, "Explicitly approve B composition"
+				input.RequestID, input.ExpectedBoundaryHash, input.Reason = uuid.New(), *current.BoundaryHash, "Explicitly approve B composition"
 				grantB, err := service.CreateIndependentGrant(ctx, input)
 				if err != nil {
 					t.Fatal(err)

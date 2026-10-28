@@ -46,6 +46,7 @@ type Service struct {
 	fulfillmentBasis        FulfillmentBasisReader
 	independentTarget       IndependentTargetVerifier
 	authorizationFacts      AuthorizationFactsReader
+	dataItemIdentities      DataItemIdentityReader
 	productionReceipts      TransferProductionReceiptReader
 	metaScanFacts           MetaScanFactsReader
 	executionEngineSnapshot func(*models.Engine) (*models.Engine, error)

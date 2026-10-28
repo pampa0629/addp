@@ -188,7 +188,7 @@ func (s *Service) IssueInitialTransferGrant(ctx context.Context, actor Productio
 		owner := productionOwner
 		grant := &sourceGrant{RequestID: requestID, ApprovalMode: productionApprovalMode, TenantID: actor.TenantID, EngineID: int64(r.Target.EngineID),
 			CatalogPath: path, ItemFingerprint: binding.ItemFingerprint, BoundaryHash: binding.BoundaryHash, RecipientType: "user", RecipientID: prepared.sources.Source.PrincipalID,
-			Action: "read", ExpiryMode: mode, ExpiresAt: observation.sourceRules.ExpiresAt, RequirementVersion: 0,
+			Action: "read", ExpiryMode: mode, ExpiresAt: observation.sourceRules.ExpiresAt,
 			OperatorPrincipalID: prepared.sources.Source.PrincipalID, OperatorMembershipID: prepared.sources.Source.MembershipID, OperatorAuthorizationVersion: prepared.sources.Source.AuthorizationVersion,
 			ProducerOwner: &owner, ProductionExecutionID: &executionID, IssuerPrincipalID: &actor.PrincipalID, IssuerMembershipID: &actor.MembershipID}
 		outcome, err := tx.insertInitialProductionOutcome(ctx, actor.Actor, executionID, &requestID, "")

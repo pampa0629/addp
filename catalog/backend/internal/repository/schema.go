@@ -25,6 +25,9 @@ func Migrate(db *gorm.DB) error {
 				return fmt.Errorf("acquire catalog schema lock: %w", err)
 			}
 		}
+		if err := retireDevelopmentAuthorizationHistory(tx); err != nil {
+			return err
+		}
 		if err := migrateSharingDecisionExpiry(tx); err != nil {
 			return err
 		}

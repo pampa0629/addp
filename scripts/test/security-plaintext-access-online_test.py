@@ -214,8 +214,8 @@ class SecurityPlaintextAccessOnlineTest(unittest.TestCase):
         scan.assert_called_once()
         self.assertEqual(grants.call_count, 2)
         self.assertEqual(grants.call_args_list[0].args[3], [(17, 'schema', 'addp_online_security', 'exemption_source')])
-        self.assertTrue(grants.call_args_list[0].kwargs['initialize_approval'])
-        self.assertFalse(grants.call_args_list[1].kwargs['initialize_approval'])
+        self.assertEqual(grants.call_args_list[0].kwargs, {})
+        self.assertEqual(grants.call_args_list[1].kwargs, {})
         definition = governance.call_args.args[2][0]
         self.assertEqual(definition['detector'], 'addp.detector.phone_metadata/v2')
 

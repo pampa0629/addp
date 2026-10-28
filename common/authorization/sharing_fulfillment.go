@@ -18,23 +18,22 @@ type SharingFulfillmentOperator struct {
 }
 
 type SharingFulfillmentBinding struct {
-	CallerPrincipalID  int64                      `json:"caller_principal_id,string" swaggertype:"string"`
-	Operator           SharingFulfillmentOperator `json:"operator"`
-	Path               plugin.EngineCatalogPath   `json:"path"`
-	ItemFingerprint    string                     `json:"item_fingerprint"`
-	BoundaryHash       string                     `json:"boundary_hash"`
-	DecisionID         uuid.UUID                  `json:"decision_id"`
-	RequirementVersion int64                      `json:"requirement_version,string" swaggertype:"string"`
-	RecipientType      string                     `json:"recipient_type"`
-	RecipientID        int64                      `json:"recipient_id,string" swaggertype:"string"`
-	Action             string                     `json:"action"`
-	ExpiryMode         string                     `json:"expiry_mode"`
-	ExpiresAt          *time.Time                 `json:"expires_at"`
+	CallerPrincipalID int64                      `json:"caller_principal_id,string" swaggertype:"string"`
+	Operator          SharingFulfillmentOperator `json:"operator"`
+	Path              plugin.EngineCatalogPath   `json:"path"`
+	ItemFingerprint   string                     `json:"item_fingerprint"`
+	BoundaryHash      string                     `json:"boundary_hash"`
+	DecisionID        uuid.UUID                  `json:"decision_id"`
+	RecipientType     string                     `json:"recipient_type"`
+	RecipientID       int64                      `json:"recipient_id,string" swaggertype:"string"`
+	Action            string                     `json:"action"`
+	ExpiryMode        string                     `json:"expiry_mode"`
+	ExpiresAt         *time.Time                 `json:"expires_at"`
 }
 
 func (b SharingFulfillmentBinding) Validate() error {
 	if b.CallerPrincipalID <= 0 || b.Operator.PrincipalID <= 0 || b.Operator.MembershipID <= 0 ||
-		b.Operator.AuthorizationVersion <= 0 || b.DecisionID == uuid.Nil || b.RequirementVersion <= 0 || b.RecipientID <= 0 ||
+		b.Operator.AuthorizationVersion <= 0 || b.DecisionID == uuid.Nil || b.RecipientID <= 0 ||
 		(b.RecipientType != "user" && b.RecipientType != "project_group") || b.Action != "read" {
 		return errors.New("invalid sharing fulfillment binding")
 	}

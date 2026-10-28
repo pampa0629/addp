@@ -143,9 +143,9 @@
       <template v-if="canPrepare && !requestID">
         <el-form label-position="top" @submit.prevent="submitRequest">
           <el-form-item :label="t('catalog.sharing.selectDecision')" required>
-            <el-select v-model="selectedDecision" filterable :loading="candidateLoading" :disabled="initializing || handlingSaving || !!handlingAttempt"
+            <el-select v-model="selectedDecision" filterable :loading="candidateLoading" :disabled="handlingSaving || !!handlingAttempt"
               data-testid="sharing-decision-select"
-              :placeholder="t('catalog.sharing.selectDecision')" @visible-change="visible => visible && loadCandidates()" @change="observeRequirement">
+              :placeholder="t('catalog.sharing.selectDecision')" @visible-change="visible => visible && loadCandidates()" @change="observeCandidate">
               <el-option v-for="option in candidates" :key="option.id" :value="option.id" :label="candidateLabel(option)">
                 <div class="approval-option"><span>{{ candidateLabel(option) }}</span><span :class="['approval-status', { 'approval-status-pending': candidateGrantStatuses[option.id] !== 'existing' }]">{{ candidateStatusLabel(option) }}</span></div>
               </el-option>
@@ -159,20 +159,13 @@
           <el-descriptions-item :label="t('catalog.sharing.recipient')">{{ candidateLabel(selectedCandidate) }}</el-descriptions-item>
           <el-descriptions-item :label="t('catalog.sharing.expiry')">{{ expiryLabel(selectedCandidate) }}</el-descriptions-item>
         </el-descriptions>
+        <el-button v-if="selectedCandidate && canReadGrants" data-testid="sharing-refresh-existing-grant"
+          :loading="grantObservationLoading" :disabled="handlingSaving || !!handlingAttempt" @click="observeCandidate">{{ t('catalog.common.refresh') }}</el-button>
         <p v-if="grantObservationLoading" role="status">{{ t('catalog.sharing.checkingExistingGrant') }}</p>
         <el-alert v-if="existingGrant" data-testid="sharing-existing-grant" type="warning" :closable="false" :title="t('catalog.sharing.existingGrant')"
           :description="t('catalog.sharing.existingGrantDetail', { expiry: expiryLabel(existingGrant) })" />
         <el-alert v-if="grantObservationFailed" data-testid="sharing-grant-check-unavailable" type="info" :closable="false" :title="t('catalog.sharing.grantCheckUnavailable')" />
-        <el-button v-if="selectedCandidate" data-testid="sharing-observe-requirement" :disabled="initializing || !!handlingAttempt || handlingSaving" :loading="requirementLoading" @click="observeRequirement">{{ t('catalog.sharing.observeRequirement') }}</el-button>
-        <el-form v-if="canInitialize && selectedCandidate && requirementMissing && !requirementLoading && !handlingAttempt" class="initialization-form" label-position="top" @submit.prevent="initializeRequirement">
-          <h4>{{ t('catalog.sharing.setupTitle') }}</h4>
-          <el-alert type="info" :closable="false" :title="t('catalog.sharing.initializeBoundary')" />
-          <el-form-item :label="t('catalog.sharing.initializeReason')" required>
-            <el-input v-model="initializationReason" data-testid="sharing-initialize-reason" type="textarea" maxlength="2000" :disabled="initializing" />
-          </el-form-item>
-          <el-button data-testid="sharing-initialize" :loading="initializing" @click="initializeRequirement">{{ t('catalog.sharing.initialize') }}</el-button>
-        </el-form>
-        <el-button data-testid="sharing-prepare" type="primary" :disabled="!requirement || requirementLoading || grantObservationLoading || !!existingGrant" :loading="handlingSaving" @click="submitRequest">{{ t('catalog.sharing.prepare') }}</el-button>
+        <el-button data-testid="sharing-prepare" type="primary" :disabled="!selectedCandidate || grantObservationLoading || !!existingGrant" :loading="handlingSaving" @click="submitRequest">{{ t('catalog.sharing.prepare') }}</el-button>
       </template>
       <el-alert v-else-if="!requestID" type="info" :closable="false" :title="t('catalog.sharing.noNewHandling')" />
       <div v-if="requestID" class="record-heading">
@@ -239,9 +232,9 @@ import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../store/auth'
-import { createSharingDecision, getSharingDecision, listSharingConfirmations, listSharingConfirmationResults, listSharingRecipients, listSharingRequests, getSharingRequest, listSharingDecisions, observeSharingRequirement, findExistingSharingGrant, observeSharingCandidateGrants, prepareSharingRequest, initializeSharingRequirement } from '../api/catalog'
-import { captureSharingConfirmation, captureSharingRequest, sharingEligibility, sharingProgress, validateHandlingRequirement, matchingSharingApproval } from '../utils/sharingConfirmation'
-import { openConsoleRoute, serializeEngineApprovalInitialization } from '@common-ui'
+import { createSharingDecision, getSharingDecision, listSharingConfirmations, listSharingConfirmationResults, listSharingRecipients, listSharingRequests, getSharingRequest, listSharingDecisions, findExistingSharingGrant, observeSharingCandidateGrants, prepareSharingRequest } from '../api/catalog'
+import { captureSharingConfirmation, captureSharingRequest, sharingEligibility, sharingProgress, matchingSharingApproval } from '../utils/sharingConfirmation'
+import { openConsoleRoute } from '@common-ui'
 import { getSharingBoundary } from '../api/catalog'
 import { sharingRecipientLabel, sharingRecipientOptionLabel } from '../utils/sharingRecipientPresentation'
 
@@ -261,9 +254,7 @@ const canPrepare = computed(() => eligibility.value.history && props.entry?.entr
 const candidates = ref([]), candidatePage = ref(1), candidateTotal = ref(0), candidateLoading = ref(false), selectedDecision = ref('')
 const candidateGrantStatuses = ref({})
 const selectedCandidate = computed(() => candidates.value.find(item => item.id === selectedDecision.value))
-const canInitialize = computed(() => canPrepare.value && auth.hasPermission('system.engine_access_approval_requirement.initialize'))
-const initializationReason = ref(''), initializing = ref(false)
-const requirement = ref(null), requirementMissing = ref(false), requirementLoading = ref(false), handlingAttempt = ref(null), handlingSaving = ref(false), handlingError = ref(''), handlingSucceeded = ref(false)
+const handlingAttempt = ref(null), handlingSaving = ref(false), handlingError = ref(''), handlingSucceeded = ref(false)
 const canReadGrants = computed(() => auth.hasPermission('system.engine_access_grant.read'))
 const existingGrant = ref(null), grantObservationLoading = ref(false), grantObservationFailed = ref(false)
 const form = reactive({ recipientType: 'user', recipientID: '', expiryMode: '', expiresAt: null, reason: '' })
@@ -274,7 +265,7 @@ const history = ref([]), page = ref(1), total = ref(0), historyLoading = ref(fal
 const request = ref(null), requestLoading = ref(false), requestError = ref('')
 const confirmations = ref([]), confirmationPage = ref(1), confirmationTotal = ref(0), confirmationsLoading = ref(false), confirmationsError = ref('')
 const results = ref([]), resultsPage = ref(1), resultsTotal = ref(0), resultsLoading = ref(false), resultsError = ref('')
-const switchingBlocked = computed(() => saving.value || handlingSaving.value || initializing.value ||
+const switchingBlocked = computed(() => saving.value || handlingSaving.value ||
   (!!attempt.value && !confirmation.value) || (!!handlingAttempt.value && !handlingSucceeded.value))
 const progress = computed(() => sharingProgress({ decisionID: props.decisionID, requestID: props.requestID,
   confirmation: confirmation.value, request: request.value, candidate: selectedCandidate.value,
@@ -283,7 +274,7 @@ const progress = computed(() => sharingProgress({ decisionID: props.decisionID, 
   results: results.value, resultsPage: resultsPage.value, canCreate: eligibility.value.create,
   canHandle: selectedCandidate.value?.id === props.decisionID }))
 let confirmationsSequence = 0, resultsSequence = 0, grantObservationSequence = 0, candidateGrantSequence = 0
-let generation = 0, recipientSequence = 0, historySequence = 0, requestSequence = 0, confirmationSequence = 0, candidateSequence = 0, requirementSequence = 0
+let generation = 0, recipientSequence = 0, historySequence = 0, requestSequence = 0, confirmationSequence = 0, candidateSequence = 0
 const message = error => error?.response?.data?.error || t('catalog.sharing.queryFailed')
 const formatTime = value => value ? new Date(value).toLocaleString(locale.value) : '—'
 const expiryLabel = row => row.expiry_mode === 'until_revoked' ? t('catalog.sharing.until_revoked') : formatTime(row.expires_at)
@@ -346,14 +337,14 @@ async function openRequest(row) {
 }
 
 async function loadCandidates() {
-  if (!canPrepare.value || initializing.value || handlingAttempt.value || props.requestID) return
+  if (!canPrepare.value || handlingAttempt.value || props.requestID) return
   const seq = ++candidateSequence, epoch = generation
   const preferred = selectedDecision.value || props.decisionID
   const originalDecision = props.decisionID
-  candidates.value = []; candidateTotal.value = 0; selectedDecision.value = ''; requirement.value = null; requirementMissing.value = false; requirementSequence++
+  candidates.value = []; candidateTotal.value = 0; selectedDecision.value = '';
   candidateGrantSequence++; candidateGrantStatuses.value = {}
   clearGrantObservation()
-  candidateLoading.value = true; requirementLoading.value = false; handlingError.value = ''
+  candidateLoading.value = true; handlingError.value = ''
   try {
     const result = await listSharingDecisions(props.entry.id, { page: candidatePage.value, page_size: 20 })
     if (seq === candidateSequence && epoch === generation && originalDecision === props.decisionID) {
@@ -361,7 +352,7 @@ async function loadCandidates() {
       loadCandidateGrantStatuses(result.data)
       if (result.data.some(row => row.id === preferred)) {
         selectedDecision.value = preferred
-        await observeRequirement()
+        await observeCandidate()
       }
     }
   } catch (error) { if (seq === candidateSequence && epoch === generation) handlingError.value = message(error) }
@@ -379,28 +370,11 @@ async function loadCandidateGrantStatuses(rows) {
   } catch { /* Unknown never becomes a claim that no Grant exists. */ }
 }
 
-async function observeRequirement() {
-  const candidate = selectedCandidate.value
-  const seq = ++requirementSequence, epoch = generation
-  requirement.value = null; requirementMissing.value = false; requirementLoading.value = false; handlingError.value = ''
+async function observeCandidate() {
+  handlingError.value = ''
   clearGrantObservation()
-  if (!canPrepare.value || handlingAttempt.value || !candidate) return
-  requirementLoading.value = true
-  try {
-    const result = await observeSharingRequirement(candidate.target)
-    // Validate the lossless response before enabling an explicit command.
-    validateHandlingRequirement(candidate, result)
-    if (seq === requirementSequence && epoch === generation) {
-      requirement.value = result
-      await observeExistingGrant(candidate)
-    }
-  } catch (error) {
-    if (seq === requirementSequence && epoch === generation) {
-      requirementMissing.value = error?.response?.status === 404 && error?.response?.data?.error_code === 'approval_requirement_not_configured'
-      handlingError.value = error.message === 'invalidHandlingRequirement' ? t('catalog.sharing.invalidRequirement') : message(error)
-    }
-  }
-  finally { if (seq === requirementSequence && epoch === generation) requirementLoading.value = false }
+  const candidate = selectedCandidate.value
+  if (canPrepare.value && !handlingAttempt.value && candidate) await observeExistingGrant(candidate)
 }
 
 function clearGrantObservation() {
@@ -426,38 +400,20 @@ async function observeExistingGrant(candidate) {
   }
 }
 
-async function initializeRequirement() {
-  if (initializing.value || !canInitialize.value || !requirementMissing.value || requirement.value || requirementLoading.value || handlingAttempt.value || props.requestID) return
-  const candidate = selectedCandidate.value
-  let payload
-  try { payload = serializeEngineApprovalInitialization(candidate?.target, 'catalog', initializationReason.value,
-    { item_fingerprint: candidate?.item_fingerprint, boundary_hash: candidate?.boundary_hash, native_target: candidate?.target }) }
-  catch { handlingError.value = t('catalog.sharing.invalidInitialization'); return }
-  const epoch = generation, decision = selectedDecision.value
-  initializing.value = true; handlingError.value = ''
-  try {
-    await initializeSharingRequirement(candidate.target, payload)
-    // A configuration response is not a handling version or a Grant. Reobserve
-    // the selected target through the existing qualification boundary.
-    if (epoch === generation && decision === selectedDecision.value) await observeRequirement()
-  } catch (error) { if (epoch === generation && decision === selectedDecision.value) handlingError.value = message(error) }
-  finally { if (epoch === generation) initializing.value = false }
-}
-
 async function submitRequest() {
   if (handlingSaving.value || !canPrepare.value || handlingSucceeded.value ||
-      (!handlingAttempt.value && (requirementLoading.value || grantObservationLoading.value || existingGrant.value))) return
+      (!handlingAttempt.value && (grantObservationLoading.value || existingGrant.value))) return
   handlingError.value = ''
   const epoch = generation
   handlingSaving.value = true
   try {
     if (!handlingAttempt.value) {
       const candidate = selectedCandidate.value
+      if (!candidate) return
       // Reobserve before freezing an ID. Transport retries after capture always
       // recover the original command, without an unrelated new preflight gate.
-      validateHandlingRequirement(candidate, requirement.value)
       if (!await observeExistingGrant(candidate) || epoch !== generation) return
-      handlingAttempt.value = captureSharingRequest(candidate, requirement.value, crypto.randomUUID())
+      handlingAttempt.value = captureSharingRequest(candidate, crypto.randomUUID())
     }
     if (props.decisionID !== handlingAttempt.value.decision_id) {
       confirmationSequence++; confirmation.value = null; confirmationError.value = ''; confirmationLoading.value = false
@@ -472,7 +428,7 @@ async function submitRequest() {
     handlingSucceeded.value = result.state !== 'pending'
     await loadHistory()
     if (epoch === generation) await loadRequest(handlingAttempt.value.request_id)
-  } catch (error) { if (epoch === generation) handlingError.value = error.message === 'invalidHandlingRequirement' ? t('catalog.sharing.invalidRequirement') : message(error) }
+  } catch (error) { if (epoch === generation) handlingError.value = message(error) }
   finally { if (epoch === generation) handlingSaving.value = false }
 }
 
@@ -606,7 +562,7 @@ async function loadRequest(id) {
   finally { if (seq === requestSequence && epoch === generation) requestLoading.value = false }
 }
 
-watch(() => [props.entry.id, auth.authContext?.principal?.id, auth.authContext?.context?.tenant_id, auth.authContext?.context?.tenant_membership_id, auth.authContext?.authorization?.authorization_version, eligibility.value.owner, eligibility.value.confirm, eligibility.value.create, eligibility.value.history, canPrepare.value, canInitialize.value], () => {
+watch(() => [props.entry.id, auth.authContext?.principal?.id, auth.authContext?.context?.tenant_id, auth.authContext?.context?.tenant_membership_id, auth.authContext?.authorization?.authorization_version, eligibility.value.owner, eligibility.value.confirm, eligibility.value.create, eligibility.value.history, canPrepare.value, canReadGrants.value], () => {
   generation++; attempt.value = null; confirmation.value = null; request.value = null; recipients.value = []; history.value = []; total.value = 0
   clearGrantObservation()
   candidateGrantSequence++; candidateGrantStatuses.value = {}
@@ -614,10 +570,8 @@ watch(() => [props.entry.id, auth.authContext?.principal?.id, auth.authContext?.
   clearConfirmationResults(); resultsPage.value = 1
   recipientLoading.value = saving.value = confirmationLoading.value = requestLoading.value = historyLoading.value = false
   confirmationError.value = recipientError.value = requestError.value = historyError.value = ''
-  candidates.value = []; candidateTotal.value = 0; candidatePage.value = 1; selectedDecision.value = ''; requirement.value = null; handlingAttempt.value = null
-  candidateLoading.value = requirementLoading.value = handlingSaving.value = handlingSucceeded.value = false; handlingError.value = ''
-  initializing.value = false; initializationReason.value = ''
-  requirementMissing.value = false
+  candidates.value = []; candidateTotal.value = 0; candidatePage.value = 1; selectedDecision.value = ''; handlingAttempt.value = null
+  candidateLoading.value = handlingSaving.value = handlingSucceeded.value = false; handlingError.value = ''
   workspace.value = !eligibility.value.confirm && canPrepare.value && props.decisionID && !props.requestID ? 'handling' : 'records'
   recordKind.value = props.requestID && eligibility.value.history ? 'requests' : eligibility.value.confirm ? 'confirmations' : 'requests'
   detailOpen.value = workspace.value === 'records' && !!(props.decisionID || props.requestID) && (eligibility.value.confirm || eligibility.value.history)
@@ -630,11 +584,11 @@ watch(() => [props.entry.id, auth.authContext?.principal?.id, auth.authContext?.
 }, { immediate: true })
 watch(() => props.decisionID, value => {
   if (saving.value || handlingSaving.value) return
-  candidateSequence++; requirementSequence++; requestSequence++
+  candidateSequence++; requestSequence++
   candidateGrantSequence++; candidateGrantStatuses.value = {}
   clearGrantObservation()
-  candidates.value = []; candidateTotal.value = 0; candidatePage.value = 1; selectedDecision.value = ''; requirement.value = null; requirementMissing.value = false
-  candidateLoading.value = requirementLoading.value = false; handlingError.value = ''; initializationReason.value = ''
+  candidates.value = []; candidateTotal.value = 0; candidatePage.value = 1; selectedDecision.value = '';
+  candidateLoading.value = handlingError.value = '';
   request.value = null; requestError.value = ''; requestLoading.value = false; handlingAttempt.value = null; handlingSucceeded.value = false
   confirmationSequence++; confirmation.value = null; confirmationError.value = ''; confirmationLoading.value = false; clearConfirmationResults(); resultsPage.value = 1
   if (attempt.value && value !== attempt.value.decision_id) attempt.value = null
@@ -644,15 +598,15 @@ watch(() => props.decisionID, value => {
 watch(() => props.requestID, value => {
   if (handlingSaving.value) return
   if (handlingAttempt.value && value !== handlingAttempt.value.request_id) {
-    handlingAttempt.value = null; handlingSucceeded.value = false; requirement.value = null; selectedDecision.value = ''
-    handlingError.value = ''; requirementSequence++
+    handlingAttempt.value = null; handlingSucceeded.value = false; selectedDecision.value = ''
+    handlingError.value = '';
   }
   if (value) loadRequest(value)
 })
 watch(canReadGrants, () => {
   clearGrantObservation()
   loadCandidateGrantStatuses(candidates.value)
-  if (canPrepare.value && selectedCandidate.value && requirement.value && !handlingAttempt.value && !handlingSaving.value && !props.requestID) observeExistingGrant(selectedCandidate.value)
+  if (canPrepare.value && selectedCandidate.value && !handlingAttempt.value && !handlingSaving.value && !props.requestID) observeExistingGrant(selectedCandidate.value)
 })
 onBeforeUnmount(() => { generation++ })
 </script>
@@ -675,7 +629,6 @@ onBeforeUnmount(() => { generation++ })
 .record-filter .el-select { width: 260px; max-width: 100%; }
 .confirmation-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; max-width: 960px; }
 .form-full { grid-column: 1 / -1; }
-.initialization-form { border: 1px solid var(--addp-border-color); border-radius: 8px; padding: 16px; margin: 16px 0; }
 .sharing-panel :deep(.el-card__header) { padding: 16px 20px; }
 .sharing-panel :deep(.el-descriptions__content) { overflow-wrap: anywhere; }
 @media (max-width: 640px) {

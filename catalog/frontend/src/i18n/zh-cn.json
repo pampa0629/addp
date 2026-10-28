@@ -1,10 +1,6 @@
 {
   "catalog": {
     "sharing": {
-      "initialize": "初始化本表批准要求",
-      "initializeReason": "初始化原因",
-      "initializeBoundary": "若本表尚未配置批准要求，可显式初始化为 Catalog 业务批准。查询失败不代表配置不存在；已有配置不会被覆盖，权限不足时会拒绝。此操作不授予数据访问。",
-      "invalidInitialization": "请选择有效共享确认并填写初始化原因。",
       "title": "业务授权",
       "workspace": {
         "create": "批准数据使用",
@@ -140,9 +136,7 @@
         "absent": "待办理",
         "unknown": "授权状态待核查"
       },
-      "setupTitle": "首次使用配置（不是数据访问授权）",
       "selectDecision": "选择本数据项的业务批准",
-      "observeRequirement": "重新核查批准要求与已有授权",
       "checkingExistingGrant": "正在核查该接收方的已有授权…",
       "existingGrant": "该接收方已有未到期、未撤销的授权，无需重复办理",
       "existingGrantDetail": "已有授权期限：{expiry}。本次不会提交，也不会修改已有授权；实际可读性仍需核查。",
@@ -151,7 +145,6 @@
       "noNewHandling": "仅有效 Meta 数据项且未弃用时可发起新办理；已有请求仍可查询。",
       "handlingUncertain": "原请求编号及参数已固定，结果暂不确定。请先查询原请求；需要重试时仅发送同一编号和原参数，不补新版本。",
       "retryRequest": "同参数重试本次办理",
-      "invalidRequirement": "尚未取得精确目标的有效 Catalog 批准要求及无损版本，不能办理；缺失要求不会自动初始化。",
       "invalidRouteIdentity": "链接中的原确认或原请求编号无效，请返回资源条目重新打开；不会将错误链接当作新办理入口。",
       "invalidConfirmation": "请选择有效接收方、明确有效期并填写用途；指定日期必须晚于当前时间。",
       "state": {

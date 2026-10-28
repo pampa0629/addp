@@ -248,7 +248,9 @@ const schemaChangeDescription = computed(() => {
 	})
 })
 const initialAuthorizationStatus = computed(() => {
-  const status = execution.value?.metadata?.initial_authorization?.status
+  const authorization = execution.value?.metadata?.initial_authorization
+  const status = authorization?.status
+  if (status === 'denied' && authorization.code === 'authorization_history_retired') return 'retired'
   return ['pending', 'issued', 'denied'].includes(status) ? status : ''
 })
 const needsRefresh = result => ['pending', 'running'].includes(result.status) || result.metadata?.initial_authorization?.status === 'pending'

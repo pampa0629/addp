@@ -16,9 +16,8 @@ import (
 )
 
 type SharingFulfillmentInput struct {
-	RequestID          uuid.UUID
-	DecisionID         uuid.UUID
-	RequirementVersion int64
+	RequestID  uuid.UUID
+	DecisionID uuid.UUID
 }
 
 type SharingFulfillmentResult struct {
@@ -39,7 +38,7 @@ func (s *EntryService) PrepareSharingFulfillment(ctx context.Context, tenantID i
 	if err != nil {
 		return nil, ErrSharingHandlingForbidden
 	}
-	if input.RequestID == uuid.Nil || input.DecisionID == uuid.Nil || input.RequirementVersion <= 0 {
+	if input.RequestID == uuid.Nil || input.DecisionID == uuid.Nil {
 		return nil, ErrInvalidEntryUpdate
 	}
 	if s.sharingFulfillment == nil || s.sharingHandling == nil {
@@ -97,7 +96,7 @@ func (s *EntryService) PrepareSharingFulfillment(ctx context.Context, tenantID i
 		}
 		var err error
 		check, _, err = prepareSharingFulfillment(ctx, tx, tenantID, entryID, input.DecisionID,
-			sharingFulfillmentPreparation{input.RequestID, caller, operator, input.RequirementVersion, path})
+			sharingFulfillmentPreparation{input.RequestID, caller, operator, path})
 		return err
 	})
 	if err != nil {

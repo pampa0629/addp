@@ -43,6 +43,18 @@
       <el-alert v-if="activeTab === 'unregistered-logs' && !canReadLogs" :title="t('system.module.sources.permissionDenied')" type="error" :closable="false" />
       <el-tabs v-model="activeTab" class="module-tabs">
         <el-tab-pane :label="t('system.module.tabs.overview')" name="overview">
+          <el-alert v-if="canDeclareCatalog" class="module-alert" type="warning" :closable="false" show-icon
+            :title="t('system.module.catalogDeclaration.title')">
+            <p>{{ t('system.module.catalogDeclaration.description') }}</p>
+            <el-radio-group v-model="catalogDeclaration" :disabled="isUpdating('catalog')" :aria-label="t('system.module.catalogDeclaration.title')">
+              <el-radio :value="true">{{ t('system.module.catalogDeclaration.enabled') }}</el-radio>
+              <el-radio :value="false">{{ t('system.module.catalogDeclaration.disabled') }}</el-radio>
+            </el-radio-group>
+            <el-button type="primary" :loading="isUpdating('catalog')"
+              :disabled="typeof catalogDeclaration !== 'boolean' || !!conflictMessage" @click="declareCatalog">
+              {{ t('system.module.catalogDeclaration.submit') }}
+            </el-button>
+          </el-alert>
           <div class="summary-grid">
             <div class="summary-item">
               <span class="summary-value">{{ modules.length }}</span>
@@ -222,7 +234,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { StatusAnnouncer } from '@common-ui'
 import ModuleLogPipeline from '../components/ModuleLogPipeline.vue'
@@ -244,6 +256,9 @@ const authStore = useAuthStore()
 const canReadLogs = computed(() => authStore.hasPermission('platform.module_log.read'))
 const canReadPipeline = computed(() => authStore.hasPermission('monitor.log_pipeline.read'))
 const modules = ref([])
+const modulesLoaded = ref(false)
+const catalogDeclaration = ref(null)
+const canDeclareCatalog = computed(() => modulesLoaded.value && !loadError.value && canUpdate.value && !modules.value.some(item => item.module_name === 'catalog'))
 const attentionOnly = ref(false)
 const loading = ref(false)
 const loadError = ref('')
@@ -376,6 +391,7 @@ async function loadModules({ announce = false, force = false, silent = false } =
   try {
     const response = await modulesAPI.list()
     modules.value = response.modules || []
+    modulesLoaded.value = true
     if (announce) announcement.value = t('system.module.refreshed')
     return true
   } catch (error) {
@@ -400,11 +416,42 @@ function openInstanceHistory(module) {
   }, { history: 'replace' })
 }
 
+async function confirmCatalogIntent(enabled) {
+  try {
+    await ElMessageBox.confirm(
+      t(enabled ? 'system.module.catalogDeclaration.enableImpact' : 'system.module.catalogDeclaration.disableImpact'),
+      t('system.module.catalogDeclaration.title'),
+      { type: 'warning', confirmButtonText: t('common.confirm'), cancelButtonText: t('common.cancel') }
+    )
+    return true
+  } catch { return false }
+}
+
+async function declareCatalog() {
+  if (!canDeclareCatalog.value || typeof catalogDeclaration.value !== 'boolean' || isUpdating('catalog') || conflictMessage.value) return
+  const enabled = catalogDeclaration.value
+  setUpdating('catalog', true)
+  try {
+    if (!await confirmCatalogIntent(enabled)) return
+    const created = await modulesAPI.create({ module_name: 'catalog', enabled })
+    modules.value.push(created)
+    ElMessage.success(t('system.module.catalogDeclaration.success'))
+  } catch (error) {
+    if (error.response?.status === 409) {
+      conflictMessage.value = t('system.module.conflict')
+      refreshPaused.value = true
+    } else {
+      ElMessage.error(error.response?.data?.error || t('system.module.updateFailed'))
+    }
+  } finally { setUpdating('catalog', false) }
+}
+
 async function updateEnabled(module, enabled) {
   if (module.module_name === 'system' || module.module_name === 'gateway' || !canUpdate.value || isUpdating(module.module_name)) return
   setUpdating(module.module_name, true)
   conflictMessage.value = ''
   try {
+    if (module.module_name === 'catalog' && !await confirmCatalogIntent(enabled)) return
     const updated = await modulesAPI.update(module.module_name, { enabled, version: module.version })
     const index = modules.value.findIndex(item => item.module_name === module.module_name)
     if (index >= 0) modules.value.splice(index, 1, updated)

@@ -116,7 +116,12 @@ class KMLCaseRoutingTest(unittest.TestCase):
             return SimpleNamespace(payload={'observed_at': '2026-10-25T00:00:00Z'} if granted else {})
         def initializer_request(method, path, expected, body=None):
             if path == '/api/v1/system/auth/context':
-                return SimpleNamespace(payload=auth(8, registration.SOURCE_INITIALIZER_PERMISSIONS))
+                context = auth(8, registration.SOURCE_INITIALIZER_PERMISSIONS)
+                context['authorization']['role_assignments'][0]['role_key'] = registration.SOURCE_INITIALIZER_ROLE
+                return SimpleNamespace(payload=context)
+            if path.endswith('/direct-permission'):
+                return SimpleNamespace(payload={'engine_id': path.split('/')[5], 'item_fingerprint': path.split('/')[-2],
+                    'state': 'allowed', 'source': 'explicit', 'version': '1'})
             if method == 'GET':
                 item = next(item for item in items if item['fingerprint'] == path.split('/')[-2])
                 return SimpleNamespace(payload={'schema_version': 'meta.data_item_authorization_facts/v1',
@@ -128,7 +133,7 @@ class KMLCaseRoutingTest(unittest.TestCase):
             # The public SourceGrantView identifies issuance by request_id;
             # request-only fields and an internal database id are not returned.
             receipt = {key: copy.deepcopy(body[key]) for key in ('request_id', 'catalog_path',
-                'requirement_version', 'recipient_type', 'recipient_id', 'action', 'expiry_mode', 'item_fingerprint', 'reason')}
+                'direct_permission_source', 'direct_permission_version', 'recipient_type', 'recipient_id', 'action', 'expiry_mode', 'item_fingerprint', 'reason')}
             receipt.update(engine_id='4', approval_mode='independent', boundary_hash=body['expected_boundary_hash'],
                 granted_at='2026-10-25T00:00:00Z', catalog_request_id=None, expires_at=None,
                 operator_principal_id='8', operator_membership_id='9', revocation=None)

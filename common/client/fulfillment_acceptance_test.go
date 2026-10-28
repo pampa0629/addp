@@ -17,14 +17,25 @@ func TestFulfillmentAcceptanceAndBasisUseTenantServiceIdentity(t *testing.T) {
 	id := uuid.New()
 	binding := authorization.SharingFulfillmentBinding{ItemFingerprint: factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "源.表")).ItemFingerprint, BoundaryHash: factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "源.表")).BoundaryHash, CallerPrincipalID: 9007199254740993,
 		Operator: authorization.SharingFulfillmentOperator{PrincipalID: 4, MembershipID: 5, AuthorizationVersion: 6},
-		Path:     plugin.TabularItemPath(12, "schema", "public", "源.表"), DecisionID: uuid.New(), RequirementVersion: 1,
+		Path:     plugin.TabularItemPath(12, "schema", "public", "源.表"), DecisionID: uuid.New(),
 		RecipientType: "user", RecipientID: 7, Action: "read", ExpiryMode: authorization.SharingExpiryUntilRevoked}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" || r.Header.Get("Authorization") != "Bearer fixture-service-token" || r.Header.Get("X-Tenant-ID") != "" {
 			t.Error("runtime identity must use the service Bearer, not a tenant header")
 		}
+		var wire json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&wire); err != nil {
+			t.Fatal(err)
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(wire, &fields); err != nil {
+			t.Fatal(err)
+		}
+		if _, exists := fields["requirement_version"]; exists {
+			t.Fatal("retired approval version transmitted")
+		}
 		var actual authorization.SharingFulfillmentBinding
-		if err := json.NewDecoder(r.Body).Decode(&actual); err != nil || actual.CallerPrincipalID != binding.CallerPrincipalID {
+		if err := json.Unmarshal(wire, &actual); err != nil || actual.CallerPrincipalID != binding.CallerPrincipalID {
 			t.Fatalf("incomplete or imprecise binding: %+v %v", actual, err)
 		}
 		switch r.URL.Path {

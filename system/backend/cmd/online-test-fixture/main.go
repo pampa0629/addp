@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +29,7 @@ import (
 const onlineDatabase = "addp_online"
 
 const engineProvisionerRoleKey = "tenant.infrastructure_administrator"
+const directPermissionAdministratorRoleKey = "tenant.engine_access_delegation_administrator"
 const pgAuthorizationWorkspaceRoleKey = "tenant.source_data_authorizer"
 const securityMaskingEligibilityRoleKey = "online.security_masking_eligible"
 
@@ -102,10 +104,22 @@ var securityInitializerPermissions = []string{
 // Source authorization is preparation-only; the owner consumer receives exact
 // DataItem read Grants, never the ability to issue Grants or manage delegations.
 var sourceInitializerPermissions = []string{
-	"system.engine_access_approval_requirement.initialize",
+	"iam.department.read",
+	"iam.project_group.read",
+	"iam.tenant_membership.read",
+	"system.engine.read",
 	"system.engine_access_delegation.create",
+	"system.engine_access_delegation.read",
+	"system.engine_access_delegation.revoke",
+	"system.engine_access_direct_permission.read",
+	"system.engine_access_direct_permission.update",
 	"system.engine_access_grant.create",
 	"system.engine_access_grant.read",
+	"system.engine_access_grant.revoke",
+	"system.engine_catalog.read",
+	"system.meta_collection_qualification.approve",
+	"system.meta_collection_qualification.read",
+	"system.meta_collection_qualification.revoke",
 }
 
 func suiteSourceInitializerPermissions(suite string) []string {
@@ -115,12 +129,22 @@ func suiteSourceInitializerPermissions(suite string) []string {
 			return append([]string{}, sourceInitializerPermissions...)
 		}
 		return append(append([]string{}, sourceInitializerPermissions...),
-			"system.engine_access_grant.revoke", "system.engine_access_deny.create", "system.engine_access_deny.release")
+			"system.engine_access_deny.create", "system.engine_access_deny.release")
 	case "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow":
 		return append([]string{}, sourceInitializerPermissions...)
 	default:
 		return nil
 	}
+}
+
+func sourceInitializerSupplement(effective []string) []string {
+	var supplement []string
+	for _, key := range effective {
+		if !slices.Contains(sourceInitializerPermissions, key) {
+			supplement = append(supplement, key)
+		}
+	}
+	return supplement
 }
 
 var pgAuthorizationConsumerPermissions = []string{
@@ -132,11 +156,8 @@ var pgAuthorizationConsumerPermissions = []string{
 // The formal authorizer role supplies both handling workflows and their reads.
 // This fixture supplements only the commands needed by the isolated PG suite.
 var pgAuthorizationOperatorPermissions = []string{
-	"system.engine_access_delegation.create", "system.engine_access_deny.create", "system.engine_access_deny.release",
-	"catalog.inventory.read",
-	"system.engine_access_approval_requirement.update",
+	"system.engine_access_deny.create", "system.engine_access_deny.release", "catalog.inventory.read",
 	"meta.scan_task.create", "meta.scan_task.update", "meta.scan_task.delete",
-	"system.meta_collection_qualification.read", "system.meta_collection_qualification.approve", "system.meta_collection_qualification.revoke",
 }
 
 var pgAuthorizationConfirmerPermissions = []string{
@@ -614,7 +635,7 @@ func run(args []string, environment []string) error {
 			values[key] = value
 		}
 		operator, _, operatorPassword, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
-			tenant.ID, administrator.PrincipalID, "external-online-pg-authorizer", pgAuthorizationOperatorPermissions, pgAuthorizationWorkspaceRoleKey)
+			tenant.ID, administrator.PrincipalID, "external-online-pg-authorizer", pgAuthorizationOperatorPermissions, pgAuthorizationWorkspaceRoleKey, directPermissionAdministratorRoleKey)
 		if err != nil {
 			return err
 		}
@@ -869,7 +890,7 @@ func run(args []string, environment []string) error {
 	}
 	if sourcePermissions := suiteSourceInitializerPermissions(*suite); len(sourcePermissions) > 0 {
 		sourceInitializer, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
-			tenant.ID, administrator.PrincipalID, "external-online-source-initializer", sourcePermissions)
+			tenant.ID, administrator.PrincipalID, "external-online-source-initializer", sourceInitializerSupplement(sourcePermissions), directPermissionAdministratorRoleKey)
 		if err != nil {
 			return err
 		}
@@ -1100,16 +1121,19 @@ func createPermissionFixture(
 	if err != nil {
 		return nil, 0, "", fmt.Errorf("establish %s membership: %w", username, err)
 	}
-	role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{
-		TenantID: tenantID, RoleKey: "online." + strings.ReplaceAll(username, "-", "_"),
-		Name: username, PermissionKeys: permissions,
-		ActorPrincipalID: actorPrincipalID,
-		Audit:            audit(username + "-role"),
-	})
-	if err != nil {
-		return nil, 0, "", fmt.Errorf("create %s role: %w", username, err)
+	var roleIDs []int64
+	if len(permissions) > 0 {
+		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{
+			TenantID: tenantID, RoleKey: "online." + strings.ReplaceAll(username, "-", "_"),
+			Name: username, PermissionKeys: permissions,
+			ActorPrincipalID: actorPrincipalID,
+			Audit:            audit(username + "-role"),
+		})
+		if err != nil {
+			return nil, 0, "", fmt.Errorf("create %s role: %w", username, err)
+		}
+		roleIDs = append(roleIDs, role.ID)
 	}
-	roleIDs := []int64{role.ID}
 	for _, key := range builtinRoleKeys {
 		builtin, err := repository.GetActiveBuiltinRoleByKey(ctx, key)
 		if err != nil {

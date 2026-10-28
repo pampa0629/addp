@@ -292,11 +292,11 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 	}
 	tenant = "7"
 	preparePath := "/api/v1/catalog/entries/" + id.String() + "/sharing_fulfillments"
-	prepareBody := fmt.Sprintf(`{"request_id":%q,"decision_id":%q,"requirement_version":"1"}`, uuid.NewString(), longID.String())
+	prepareBody := fmt.Sprintf(`{"request_id":%q,"decision_id":%q}`, uuid.NewString(), longID.String())
 	permissions = []string{"catalog.entry.read", "catalog.entry.update"}
 	request(http.MethodPost, preparePath, prepareBody, http.StatusForbidden)
 	permissions = []string{"catalog.entry.read", "system.engine_access_fulfillment.create"}
-	for _, invalid := range []string{`{}`, strings.TrimSuffix(prepareBody, "}") + `,"operator":{"principal_id":"40"}}`, strings.Replace(prepareBody, `"requirement_version":"1"`, `"requirement_version":1`, 1)} {
+	for _, invalid := range []string{`{}`, strings.TrimSuffix(prepareBody, "}") + `,"operator":{"principal_id":"40"}}`, strings.TrimSuffix(prepareBody, "}") + `,"requirement_version":"1"}`} {
 		request(http.MethodPost, preparePath, invalid, http.StatusBadRequest)
 	}
 	request(http.MethodPost, preparePath, prepareBody, http.StatusServiceUnavailable)
@@ -307,7 +307,7 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 		CallerPrincipalID: 60,
 		Operator:          authorization.SharingFulfillmentOperator{PrincipalID: 41, MembershipID: 51, AuthorizationVersion: 9007199254740993},
 		Path:              plugin.EngineCatalogBranchLeafPath(plugin.TabularCatalogModel("schema"), 12, "schema", "public", "table", "table", "orders"),
-		DecisionID:        longID, RequirementVersion: 9007199254740993, RecipientType: "user", RecipientID: 40,
+		DecisionID:        longID, RecipientType: "user", RecipientID: 40,
 		Action: "read", ExpiryMode: authorization.SharingExpiryUntilRevoked,
 	}
 	raw, err := json.Marshal(binding)
@@ -380,7 +380,7 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 		Data  []service.SharingFulfillmentHistory `json:"data"`
 		Total int64                               `json:"total"`
 	}
-	if err := json.Unmarshal([]byte(myHistory), &found); err != nil || found.Total != 1 || len(found.Data) != 1 || found.Data[0].RequestID != historyID || !strings.Contains(myHistory, `"requirement_version":"9007199254740993"`) {
+	if err := json.Unmarshal([]byte(myHistory), &found); err != nil || found.Total != 1 || len(found.Data) != 1 || found.Data[0].RequestID != historyID || strings.Contains(myHistory, `"requirement_version"`) {
 		t.Fatalf("my original request=%s err=%v", myHistory, err)
 	}
 	var stored models.FulfillmentCheck

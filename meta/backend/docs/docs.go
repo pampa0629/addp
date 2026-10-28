@@ -1680,6 +1680,84 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/data-item-identities/query": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅供 addp-system Tenant Service 查询当前租户精确引擎内已识别数据项；返回最小身份，不读取源内容、不扫描、不裁决权限。先过滤再计数分页；最多 20000 个不重复指纹、每页最多 100 项，正文最多 2 MiB。include 空集合返回空结果 | Restricted to addp-system Tenant Service. Reads minimal identified DataItem identities for one engine in the current tenant, without source reads, scans or access decisions. Filters precede counting and pagination. At most 20000 unique fingerprints, 100 rows per page and 2 MiB body. Empty include means no matches",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Runtime"
+                ],
+                "summary": "查询数据项身份清单 | Query DataItem identities",
+                "parameters": [
+                    {
+                        "description": "身份查询 | Identity query",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/authorizationfacts.IdentityQuery"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/authorizationfacts.IdentityPage"
+                        }
+                    },
+                    "400": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "413": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.data_item_identity.read"
+                ]
+            }
+        },
         "/runtime/data-items/{fingerprint}/authorization-facts": {
             "get": {
                 "security": [
@@ -3271,6 +3349,26 @@ const docTemplate = `{
                 }
             }
         },
+        "authorizationfacts.DataItemIdentity": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "full_name": {
+                    "type": "string"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "authorizationfacts.FileCompositionBoundary": {
             "type": "object",
             "properties": {
@@ -3299,6 +3397,59 @@ const docTemplate = `{
                 },
                 "target": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "authorizationfacts.IdentityPage": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/authorizationfacts.DataItemIdentity"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "authorizationfacts.IdentityQuery": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "fingerprint_filter": {
+                    "type": "string",
+                    "enum": [
+                        "include",
+                        "exclude"
+                    ]
+                },
+                "fingerprints": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "search": {
+                    "type": "string"
                 }
             }
         },

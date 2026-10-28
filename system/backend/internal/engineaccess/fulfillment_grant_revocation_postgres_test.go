@@ -334,7 +334,7 @@ func exerciseGrantRevocations(t *testing.T, db *gorm.DB, acceptor *Service, runt
 			assertCount(t, g.RequestID, 1)
 			original := Actor{TenantID: runtime.TenantID, PrincipalID: base.Operator.PrincipalID, MembershipID: base.Operator.MembershipID,
 				AuthorizationVersion: base.Operator.AuthorizationVersion, TokenExpiresAt: testDatabaseClock(t, db)().Add(time.Minute)}
-			if _, err := service.GetHandlingRequirement(ctx, original, base.Path); !errors.Is(err, commonapi.ErrForbidden) {
+			if _, err := service.GetHandlingScope(ctx, original, int64(base.Path.EngineID)); !errors.Is(err, commonapi.ErrForbidden) {
 				t.Fatalf("disabled new handling=%v", err)
 			}
 		})

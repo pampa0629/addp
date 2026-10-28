@@ -56,7 +56,7 @@ func RegisterEngineAccessAuthorizationFactsRoutes(api *gin.RouterGroup, runtime 
 // @Router /engines/{id}/data-items/{fingerprint}/authorization-facts [get]
 func (h *EngineAccessAuthorizationFactsHandler) Get(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	actor, engineID, ok := approvalRequirementActor(c)
+	actor, engineID, ok := engineAccessActor(c)
 	if !ok {
 		return
 	}

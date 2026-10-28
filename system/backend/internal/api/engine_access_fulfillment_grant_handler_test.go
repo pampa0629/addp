@@ -1,10 +1,10 @@
 package api
 
 import (
- "github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"net/http/httptest"
 	"reflect"
 	"strings"
@@ -71,8 +71,8 @@ func TestFulfillmentGrantHTTPIdentityBindingAndHistory(t *testing.T) {
 	ac.Client.ClientID = &clientID
 	ac.Authorization.RoleAssignments = []shared.RoleAssignment{{AssignmentID: "1", RoleKey: "tenant.catalog_runtime", SourceType: "bootstrap", ValidFrom: time.Now().Add(-time.Minute),
 		Scope: shared.AssignmentScope{Type: "tenant", TenantID: ac.Context.TenantID}, Permissions: []string{engineaccess.FulfillmentReconcilePermission}}}
-	binding := shared.SharingFulfillmentBinding{ ItemFingerprint: factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "fixture")).ItemFingerprint, BoundaryHash: factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "fixture")).BoundaryHash,CallerPrincipalID: 41, Operator: shared.SharingFulfillmentOperator{PrincipalID: 3, MembershipID: 4, AuthorizationVersion: 5},
-		Path: plugin.TabularItemPath(12, "schema", "public", "fixture"), DecisionID: uuid.New(), RequirementVersion: 1, RecipientType: "user", RecipientID: 7, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked}
+	binding := shared.SharingFulfillmentBinding{ItemFingerprint: factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "fixture")).ItemFingerprint, BoundaryHash: factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "fixture")).BoundaryHash, CallerPrincipalID: 41, Operator: shared.SharingFulfillmentOperator{PrincipalID: 3, MembershipID: 4, AuthorizationVersion: 5},
+		Path: plugin.TabularItemPath(12, "schema", "public", "fixture"), DecisionID: uuid.New(), RecipientType: "user", RecipientID: 7, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked}
 	id := uuid.New()
 	prefix := "/api/v1/system/runtime/engine-access-fulfillments/"
 	path := prefix + id.String() + "/grant"
@@ -154,8 +154,8 @@ func TestFulfillmentGrantHTTPStableLocalizedErrors(t *testing.T) {
 	ac.Client.ClientID = &clientID
 	ac.Authorization.RoleAssignments = []shared.RoleAssignment{{AssignmentID: "1", RoleKey: "tenant.catalog_runtime", SourceType: "bootstrap", ValidFrom: time.Now().Add(-time.Minute),
 		Scope: shared.AssignmentScope{Type: "tenant", TenantID: ac.Context.TenantID}, Permissions: []string{engineaccess.FulfillmentReconcilePermission}}}
-	binding := shared.SharingFulfillmentBinding{ ItemFingerprint: factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "fixture")).ItemFingerprint, BoundaryHash: factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "fixture")).BoundaryHash,CallerPrincipalID: 41, Operator: shared.SharingFulfillmentOperator{PrincipalID: 3, MembershipID: 4, AuthorizationVersion: 5},
-		Path: plugin.TabularItemPath(12, "schema", "public", "fixture"), DecisionID: uuid.New(), RequirementVersion: 1, RecipientType: "user", RecipientID: 7, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked}
+	binding := shared.SharingFulfillmentBinding{ItemFingerprint: factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "fixture")).ItemFingerprint, BoundaryHash: factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "fixture")).BoundaryHash, CallerPrincipalID: 41, Operator: shared.SharingFulfillmentOperator{PrincipalID: 3, MembershipID: 4, AuthorizationVersion: 5},
+		Path: plugin.TabularItemPath(12, "schema", "public", "fixture"), DecisionID: uuid.New(), RecipientType: "user", RecipientID: 7, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked}
 	encoded, err := json.Marshal(binding)
 	if err != nil {
 		t.Fatal(err)

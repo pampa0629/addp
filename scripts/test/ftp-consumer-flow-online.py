@@ -593,19 +593,20 @@ class ModelSourceAuthorization:
             'FTP approval requires matching complete System facts, never a directory or caller-supplied composition')
         return facts
 
-    def grant(self, model, *, initialize=True):
+    def grant(self, model):
         facts = self.facts(model)
+        permission = REGISTRATION.ensure_direct_permission(self.issuer, self.target(model['full_name']), facts)
         command = str(uuid.uuid4())
         body = {'request_id': command, 'catalog_path': self.target(model['full_name']),
                 'item_fingerprint': model['fingerprint'], 'expected_boundary_hash': facts['boundary_hash'],
-                'requirement_version': '1', 'initialize_approval': initialize, 'recipient_type': 'user',
+                'direct_permission_source': permission['source'], 'direct_permission_version': permission['version'], 'recipient_type': 'user',
                 'recipient_id': self.recipient, 'action': 'read', 'expiry_mode': 'until_revoked',
                 'reason': 'Disposable FTP exact model composition approval'}
         # Retain our command before the write, including an unknown outcome.
         self.grants.append(command)
         receipt = self.issuer.request('POST', self.base + '/access_grants', (201,), body).payload
         expected = {key: body[key] for key in ('request_id', 'catalog_path', 'item_fingerprint',
-                                             'requirement_version', 'recipient_type', 'recipient_id', 'action', 'expiry_mode')}
+                                             'direct_permission_source', 'direct_permission_version', 'recipient_type', 'recipient_id', 'action', 'expiry_mode')}
         expected.update(engine_id=str(self.engine_id), approval_mode='independent', expires_at=None,
                         boundary_hash=facts['boundary_hash'], file_composition=facts['boundary']['file_composition'],
                         operator_principal_id=self.operator, revocation=None)
@@ -1179,7 +1180,7 @@ def verify_composition_rules(client, authorization, report, source, deny, timeou
                     'FTP changed texture reference must change the complete approval boundary')
             # The production relation admits one active Grant per item/subject.
             authorization.revoke(prior['request_id'])
-            new_grant = authorization.grant(changed, initialize=False)
+            new_grant = authorization.grant(changed)
             denied = source_read_control(client, report['engine_id'], changed, 403)
             authorization.release(deny)
             allowed = source_read_control(client, report['engine_id'], changed, 200)
@@ -1191,7 +1192,7 @@ def verify_composition_rules(client, authorization, report, source, deny, timeou
     finally:
         scan_scope(client, report['engine_id'], [model_scope('models/' + source['format'])], 'basic', timeout)
     authorization.revoke(new_grant['request_id'])
-    result['restored_grant'] = authorization.grant(source, initialize=False)
+    result['restored_grant'] = authorization.grant(source)
     return result
 
 

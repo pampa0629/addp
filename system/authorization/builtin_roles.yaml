@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 139
+manifest_version: 140
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -796,12 +796,11 @@ roles:
       - iam.project_group.read
       - iam.tenant_membership.read
       - system.engine.read
-      - system.engine_access_approval_requirement.initialize
-      - system.engine_access_approval_requirement.read
-      - system.engine_access_approval_requirement.update
       - system.engine_access_delegation.create
       - system.engine_access_delegation.read
       - system.engine_access_delegation.revoke
+      - system.engine_access_direct_permission.read
+      - system.engine_access_direct_permission.update
       - system.engine_access_grant.create
       - system.engine_access_grant.read
       - system.engine_access_grant.revoke
@@ -1192,8 +1191,7 @@ roles:
       - iam.project_group.read
       - iam.tenant_membership.read
       - system.engine.read
-      - system.engine_access_approval_requirement.initialize
-      - system.engine_access_approval_requirement.read
+      - system.engine_access_direct_permission.read
       - system.engine_access_fulfillment.create
       - system.engine_access_grant.create
       - system.engine_access_grant.read
@@ -1227,6 +1225,7 @@ roles:
     permissions:
       - catalog.sharing_fulfillment.read
       - meta.authorization_facts.read
+      - meta.data_item_identity.read
       - meta.task_provider.read
       - transfer.production_receipt.read
   - key: tenant.transfer_runtime

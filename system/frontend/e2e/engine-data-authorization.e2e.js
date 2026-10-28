@@ -2,8 +2,7 @@ import { browserTestOrigin } from '../../../common-frontend/basic/src/utils/brow
 import { createHash } from 'node:crypto'
 import { expect, test } from '@playwright/test'
 
-const permissions = ['system.engine.read', 'system.engine_access_approval_requirement.read',
-  'system.engine_access_approval_requirement.initialize', 'system.engine_catalog.read']
+const permissions = ['system.engine.read', 'system.engine_access_direct_permission.read', 'system.engine_catalog.read', 'system.engine_access_grant.create', 'system.engine_access_grant.read']
 const rootPath = { engine_id: 2, version: 'catalog.path/v1', segments: [{ term: 'server', kind: 'server', name: '' }] }
 const schemaPath = { ...rootPath, segments: [...rootPath.segments, { term: 'schema', kind: 'namespace', name: 'outdoor' }] }
 const tablePath = { ...rootPath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'activities' }] }
@@ -55,13 +54,16 @@ test('all records state filter applies before pagination and survives current vi
   await expect(page.getByTestId('engine-source-grants').locator('.el-pagination')).toContainText('共 25 条')
   expect(writes).toEqual([])
 })
-async function fixture(page, { allowed = permissions, conflict = false, denied = false, existing = false, requirementPath = tablePath, failWrite = false, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, changeConflict = false, changeUnknown = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false, factsState = 'complete', denies = [], denyFailure = false, releaseFailure = false, ftp = '', sourceType = 'ftp' } = {}) {
+async function fixture(page, { allowed = permissions, conflict = false, denied = false, permit = 'deployment_default', permitRows = null, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, changeConflict = false, changeUnknown = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false, factsState = 'complete', denies = [], denyFailure = false, releaseFailure = false, ftp = '', sourceType = 'ftp', factsTarget = null } = {}) {
   const modelRoot = sourceType === 'minio' ? minioRootPath : ftpRootPath
   const modelBranch = sourceType === 'minio' ? minioBucketPath : ftpDirectoryPath
   const modelPath = sourceType === 'minio' ? minioObjectPath : ftpFilePath
   const modelKind = sourceType === 'minio' ? 'object' : 'file'
   const writes = [], reads = []
-  let rows = existing ? [{ id: 'cc0a8000-6000-4000-8000-800000000001', engine_id: '2', mode: typeof existing === 'string' ? existing : 'catalog', version: 1, catalog_path: requirementPath }] : []
+  const fingerprintOf = target => createHash('sha256').update(`2:${target.segments.filter(s => s.name).map(s => s.name).join(ftp ? '/' : '.')}`).digest('hex')
+  const rowFor = target => ({ engine_id: '2', item_fingerprint: fingerprintOf(target), full_name: target.segments.filter(s => s.name).map(s => s.name).join('/'), name: target.segments.at(-1).name, item_type: ftp ? modelKind : 'table', state: permit === 'denied' ? 'denied' : permit === 'unknown' ? 'unknown' : 'allowed', source: ['allowed', 'denied'].includes(permit) ? 'explicit' : permit === 'unknown' ? 'deployment_unknown' : 'deployment_default', version: permit === 'unknown' ? '0' : '1' })
+  const items = ftp ? [modelPath(`model.${ftp}`)] : [tablePath, ...(secondTable ? [{ ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'persons' }] }] : [])]
+  let rows = permitRows || items.map(rowFor)
   let grants = [...history], failedGrant = false, failedChange = false, failedDeny = false, failedRelease = false
   const restrictions = [...denies]
   await page.addInitScript(language => localStorage.setItem('addp-lang', language), language)
@@ -105,7 +107,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
       if (factsState === 'unknown404') return reply({ error: 'Endpoint not found' }, 404)
       return reply({schema_version:'meta.data_item_authorization_facts/v1',engine_id:2,item_fingerprint:fingerprint,item_type:'table',
       full_name:`${native.segments[1].name}.${native.segments[2].name}`,basis_state:factsState,observed_at:new Date().toISOString(),
-      boundary_hash:factsState === 'complete' ? 'b'.repeat(64) : null,boundary:factsState === 'complete' ? {layout:'single',native_target:native} : null})
+      boundary_hash:factsState === 'complete' ? 'b'.repeat(64) : null,boundary:factsState === 'complete' ? {layout:'single',native_target:factsTarget || native} : null})
     }
     if (path.endsWith('/access_delegations')) {
       reads.push(path)
@@ -167,7 +169,6 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
       if (grantFailure && !failedGrant) { failedGrant = true; return reply({ error: '签发结果未知，请按原命令核对' }, 503) }
       const grant = { ...body, approval_mode: 'independent', engine_id: '2', granted_at: '2026-10-07T00:00:00Z', revocation: null }
       grants.push(grant)
-      if (body.initialize_approval) rows.push({ engine_id: '2', mode: 'independent', version: 1, catalog_path: body.catalog_path })
       return reply(grant, 201)
     }
     if (path.includes('/access_grants/') && path.endsWith('/revoke')) {
@@ -179,25 +180,29 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
       grants = grants.map(item => same(item) && !item.revocation ? { ...item, revocation: { ...revocation, request_id: item.request_id } } : item)
       return reply(revocation)
     }
-    if (path.includes('/access_approval_requirements/')) {
-      if (request.method() === 'GET') { reads.push(path); return reply(rows[0]) }
+    if (path.endsWith('/direct-permission')) {
+      const fingerprint = path.split('/').at(-2), index = rows.findIndex(row => row.item_fingerprint === fingerprint)
+      if (index < 0) return reply({ error: 'Unknown DataItem' }, 404)
+      if (request.method() === 'GET') { reads.push(request.url()); return denied ? reply({ error: '本引擎管理委派不足' }, 403) : reply(rows[index]) }
       const body = request.postDataJSON(); writes.push({ path, body })
       if (changeConflict && !failedChange) {
-        failedChange = true; rows[0] = { ...rows[0], version: 2 }
-        return reply({ error: 'Mode changed', error_code: 'resource_version_conflict' }, 409)
+        failedChange = true; rows[index] = { ...rows[index], source: 'explicit', version: '2' }
+        return reply({ error: 'Permission changed; review required', error_code: 'resource_version_conflict' }, 409)
       }
-      rows[0] = { ...rows[0], mode: body.mode, version: body.version + 1 }
-      if (changeUnknown && !failedChange) { failedChange = true; return reply({ error: 'Result unknown, review the current mode' }, 503) }
-      return reply(rows[0])
+      const current = rows[index]
+      expect(body.expected_source).toBe(current.source)
+      expect(body.expected_version).toBe(current.version)
+      expect(body.expected_boundary_hash).toBe('b'.repeat(64))
+      rows[index] = { ...current, state: body.allowed ? 'allowed' : 'denied', source: 'explicit', version: current.source === 'explicit' ? String(Number(current.version) + Number((current.state === 'allowed') !== body.allowed)) : '1' }
+      if (changeUnknown && !failedChange) { failedChange = true; return reply({ error: 'Result unknown; review the current permission' }, 503) }
+      return reply(rows[index])
     }
-    if (path.endsWith('/access_approval_requirements')) {
-      if (request.method() === 'GET') { reads.push(path); return denied ? reply({ error: '本引擎管理委派不足' }, 403) : reply({ data: rows, total: rows.length, page: 1, page_size: 10, total_pages: 1 }) }
-      const body = request.postDataJSON(); writes.push({ path, body })
-      if (conflict) return reply({ error: '本表已有批准安排，不能覆盖' }, 409)
-      if (failWrite) return reply({ error: '结果尚未确认，请核对' }, 503)
-      const returnedPath = { ...body.catalog_path, segments: body.catalog_path.segments.map(segment => ({ kind: segment.kind, name: segment.name, term: segment.term })) }
-      rows = [{ id: 'cc0a8000-6000-4000-8000-800000000002', engine_id: '2', mode: body.mode, version: 1, catalog_path: returnedPath }]
-      return reply(rows[0], 201)
+    if (path.endsWith('/direct-permissions')) {
+      reads.push(request.url())
+      if (denied) return reply({ error: '本引擎管理委派不足' }, 403)
+      const query = new URL(request.url()).searchParams, page = Number(query.get('page')), size = Number(query.get('page_size'))
+      const filtered = rows.filter(row => (!query.get('state') || row.state === query.get('state')) && (!query.get('search') || row.full_name.includes(query.get('search'))))
+      return reply({ data: filtered.slice((page - 1) * size, page * size), total: filtered.length, page, page_size: size })
     }
     if (path.endsWith('/catalog/entries')) return reply({ data: [], total: 0 })
     if (path.endsWith('/catalog/children')) {
@@ -585,108 +590,8 @@ test('only data authorization permission exposes the authorization action but no
 
 
 const grantPermissions = [...permissions, 'system.engine_access_grant.create', 'system.engine_access_grant.read', 'system.engine_access_grant.revoke', 'iam.tenant_membership.read']
-const modeAdminPermissions = [...grantPermissions, 'system.engine_access_approval_requirement.update', 'catalog.entry.read']
+const permitAdminPermissions = [...grantPermissions, 'system.engine_access_direct_permission.update', 'system.engine_access_delegation.create']
 
-async function startModeChange(page) {
-  await page.goto('/engines/2?tab=data-authorization')
-  await selectData(page)
-  await page.getByTestId('approval-change').click()
-  const dialog = page.getByRole('dialog', { name: '切换批准方式', exact: true })
-  await expect(dialog).toBeVisible()
-  return dialog
-}
-async function setChangedMode(page, mode) {
-  await page.getByTestId('approval-change-mode').click()
-  await page.getByRole('option', { name: mode, exact: true }).click()
-}
-async function confirmModeChange(page) {
-  await page.getByTestId('approval-change-save').click()
-  const confirm = page.locator('.el-message-box')
-  await expect(confirm).toContainText('本次不发放读取权')
-  await confirm.getByRole('button', { name: '确定', exact: true }).click()
-}
-test('mode administrator explicitly changes existing business approval without issuing or mutating grants', async ({ page }) => {
-  const { writes } = await fixture(page, { allowed: modeAdminPermissions, existing: true, history: [historicalGrant()] })
-  const dialog = await startModeChange(page)
-  await expect(dialog).toContainText('既有授权的范围、期限及撤销关系不变')
-  await setChangedMode(page, '直接批准')
-  await page.getByTestId('approval-change-reason').fill('业务流程调整，交接为直接批准')
-  await page.getByTestId('approval-change-save').click()
-  await page.locator('.el-message-box').getByRole('button', { name: '取消', exact: true }).click()
-  expect(writes).toEqual([])
-  await expect(page.getByTestId('approval-change-reason')).toHaveValue('业务流程调整，交接为直接批准')
-  await confirmModeChange(page)
-  await expect(dialog).toHaveCount(0)
-  await expect(page.getByTestId('approval-targets')).toContainText('直接批准')
-  await page.getByTestId('authorization-workspace-tabs').getByText('当前授权', { exact: true }).click()
-  await expect(page.getByTestId('engine-source-grants')).toContainText('已签发')
-  expect(writes).toEqual([{ path: '/api/v1/system/engines/2/access_approval_requirements/cc0a8000-6000-4000-8000-800000000001',
-    body: { version: 1, mode: 'independent', reason: '业务流程调整，交接为直接批准' } }])
-})
-test('mode conflict preserves input and requires read-only review followed by explicit confirmation', async ({ page }) => {
-  const { writes, reads } = await fixture(page, { allowed: modeAdminPermissions, existing: true, changeConflict: true })
-  await startModeChange(page)
-  await setChangedMode(page, '直接批准')
-  await page.getByTestId('approval-change-reason').fill('保留交接原因')
-  await confirmModeChange(page)
-  await expect(page.getByTestId('approval-change-error')).toContainText('页面不会自动重试')
-  await expect(page.getByTestId('approval-change-reason')).toHaveValue('保留交接原因')
-  await expect(page.getByTestId('approval-change-save')).toBeDisabled()
-  expect(writes).toHaveLength(1)
-  await page.getByTestId('approval-change-reload').click()
-  await expect(page.getByTestId('approval-change-save')).toBeEnabled()
-  expect(writes).toHaveLength(1)
-  expect(reads.some(path => path.includes('/access_approval_requirements/'))).toBe(true)
-  await confirmModeChange(page)
-  await expect(page.getByTestId('approval-change-save')).toHaveCount(0)
-  expect(writes).toHaveLength(2)
-  expect(writes[1].body).toEqual({ version: 2, mode: 'independent', reason: '保留交接原因' })
-})
-test('unknown switch outcome is resolved by observation without repeating a completed change', async ({ page }) => {
-  const { writes } = await fixture(page, { allowed: modeAdminPermissions, existing: true, changeUnknown: true })
-  const dialog = await startModeChange(page)
-  await setChangedMode(page, '直接批准')
-  await page.getByTestId('approval-change-reason').fill('确认未知结果')
-  await confirmModeChange(page)
-  await expect(page.getByTestId('approval-change-save')).toBeDisabled()
-  await page.getByTestId('approval-change-reload').click()
-  await expect(dialog).toContainText('当前方式：直接批准')
-  await expect(page.getByTestId('approval-change-save')).toBeDisabled()
-  expect(writes).toHaveLength(1)
-  await dialog.getByRole('button', { name: '取消', exact: true }).click()
-  await expect(page.getByTestId('approval-targets')).toContainText('直接批准')
-})
-test('ordinary handlers cannot change approval modes', async ({ page }) => {
-  const { writes } = await fixture(page, { allowed: grantPermissions, existing: true })
-  await page.goto('/engines/2?tab=data-authorization')
-  await selectData(page)
-  await expect(page.getByTestId('approval-change')).toHaveCount(0)
-  expect(writes).toEqual([])
-})
-test('switching to direct approval requires the current administrator to be a qualified successor', async ({ page }) => {
-  const { writes } = await fixture(page, { allowed: modeAdminPermissions.filter(key => key !== 'system.engine_access_grant.create'), existing: true })
-  const dialog = await startModeChange(page)
-  await expect(dialog).toContainText('还需要当前账号具备授予读取权限')
-  await page.getByTestId('approval-change-mode').click()
-  await expect(page.getByRole('option', { name: '直接批准', exact: true })).toHaveClass(/is-disabled/)
-  expect(writes).toEqual([])
-})
-test('English approval mode dialog fits a narrow viewport without issuing access', async ({ page }, testInfo) => {
-  const { writes } = await fixture(page, { allowed: modeAdminPermissions, existing: true, language: 'en' })
-  await page.goto('/engines/2?tab=data-authorization')
-  await selectData(page)
-  await page.setViewportSize({ width: 390, height: 844 })
-  await page.getByTestId('approval-change').click()
-  const dialog = page.getByRole('dialog', { name: 'Change approval mode', exact: true })
-  await expect(dialog).toBeVisible()
-  await page.getByTestId('approval-change-reason').fill('Explicit approval handoff')
-  await expect(page.getByTestId('approval-change-reason')).toBeFocused()
-  const bounds = await dialog.boundingBox()
-  expect(bounds.x).toBeGreaterThanOrEqual(0)
-  expect(bounds.x + bounds.width).toBeLessThanOrEqual(390)
-  await page.screenshot({ path: testInfo.outputPath('approval-mode-mobile-en.png'), fullPage: true, animations: 'disabled' })
-  expect(writes).toEqual([])
-})
 function historicalGrant(kind = 'user') {
   return { request_id: `history-${kind}`, engine_id: '2', catalog_path: tablePath, recipient_type: kind, recipient_id: '33',
     item_fingerprint: createHash('sha256').update('2:outdoor.activities').digest('hex'),
@@ -757,7 +662,7 @@ async function selectData(page, schema = false) {
 }
 test('new authorization unifies native search and tree selection without granting from free text', async ({ page }, testInfo) => {
   await page.clock.install()
-  const { reads, writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent' })
+  const { reads, writes } = await fixture(page, { allowed: grantPermissions, permit: 'allowed' })
   await page.goto('/engines/2?tab=data-authorization')
   await page.getByTestId('authorization-new').click()
   const input = page.getByTestId('approval-resource-input')
@@ -810,10 +715,6 @@ test('new authorization picker closes with Escape and does not overflow narrow w
   await expect(input).toHaveValue('activities')
   expect(writes).toEqual([])
 })
-async function chooseMode(page, mode = '直接批准') {
-  await page.getByTestId('approval-mode').click()
-  await page.getByRole('option', { name: mode, exact: true }).click()
-}
 async function grantDraft(page) {
   const form = page.getByTestId('source-grant-form')
   await expect(form).toBeVisible()
@@ -843,9 +744,6 @@ for (const [sourceType, format] of [['ftp','ifc'], ['ftp','3ds'], ['ftp','dae'],
   const expectedPath = sourceType === 'minio' ? minioObjectPath : ftpFilePath
   await selectFTPModel(page, format)
   await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别完整')
-  await page.getByTestId('approval-mode').click()
-  await expect(page.getByRole('option', { name: '业务批准', exact: true })).toHaveCount(0)
-  await page.getByRole('option', { name: '直接批准', exact: true }).click()
   await grantDraft(page)
   await page.getByTestId('source-grant-confirm').click()
   const confirmation = page.locator('.el-message-box')
@@ -862,7 +760,7 @@ for (const [sourceType, format] of [['ftp','ifc'], ['ftp','3ds'], ['ftp','dae'],
   await confirmGrant(page)
   await expect(page.getByTestId('engine-source-grants')).toContainText('只读授权已签发')
   expect(writes).toHaveLength(1)
-  expect(writes[0].body).toMatchObject({ catalog_path: expectedPath(`model.${format}`), item_fingerprint: createHash('sha256').update(`2:Models/model.${format}`).digest('hex'), expected_boundary_hash: 'c'.repeat(64), initialize_approval: true, action: 'read', recipient_id: '33' })
+  expect(writes[0].body).toMatchObject({ catalog_path: expectedPath(`model.${format}`), item_fingerprint: createHash('sha256').update(`2:Models/model.${format}`).digest('hex'), expected_boundary_hash: 'c'.repeat(64), direct_permission_source: 'deployment_default', direct_permission_version: '1', action: 'read', recipient_id: '33' })
   expect(writes[0].body.file_composition).toBeUndefined()
   const filter = page.getByTestId('source-grant-table-filter')
   await filter.press('ArrowDown')
@@ -896,7 +794,7 @@ for (const sourceType of ['ftp', 'minio']) test(`${sourceType} branch and textur
 })
 for (const factsState of ['incomplete', 'needs_refresh']) test(`FTP ${factsState} cannot issue a whole-model Grant`, async ({ page }) => {
   const { writes } = await fixture(page, { allowed: grantPermissions, ftp: '3ds', factsState })
-  await selectFTPModel(page, '3ds'); await chooseMode(page); await grantDraft(page)
+  await selectFTPModel(page, '3ds'); await grantDraft(page)
   await expect(page.getByTestId('source-grant-confirm')).toBeDisabled()
   expect(writes).toEqual([])
 })
@@ -905,7 +803,7 @@ for (const [factsState, label] of [
   ['unsupported', '当前类型暂不支持'], ['failed', '核对失败'], ['forbidden', '无数据项核对权限'], ['unknown404', '核对失败']
 ]) {
   test(`native tree selection cannot issue without complete DataItem facts: ${factsState}`, async ({ page }) => {
-    const { reads, writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent', factsState })
+    const { reads, writes } = await fixture(page, { allowed: grantPermissions, permit: 'allowed', factsState })
     await page.goto('/engines/2?tab=data-authorization')
     await selectData(page); await grantDraft(page)
     await expect(page.getByTestId('approval-basis-status')).toContainText(label)
@@ -919,8 +817,8 @@ test('DataItem basis identity ignores PostgreSQL jsonb object key ordering', asy
   // jsonb reorders object keys; native catalog candidates retain Go field order.
   // Object key order and an exactly representable Engine ID representation are
   // not a different target, but ordered segment values still are.
-  const requirementPath = { version: tablePath.version, segments: tablePath.segments.map(({ term, kind, name }) => ({ kind, name, term })), engine_id: '2' }
-  const { reads, writes, setFactsState } = await fixture(page, { allowed: grantPermissions, existing: 'independent', requirementPath })
+  const reorderedPath = { version: tablePath.version, segments: tablePath.segments.map(({ term, kind, name }) => ({ kind, name, term })), engine_id: '2' }
+  const { reads, writes, setFactsState } = await fixture(page, { allowed: grantPermissions, permit: 'allowed', factsTarget: reorderedPath })
   await page.goto('/engines/2?tab=data-authorization')
   await selectData(page); await grantDraft(page)
   await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别完整')
@@ -941,7 +839,7 @@ test('DataItem basis identity ignores PostgreSQL jsonb object key ordering', asy
   expect(reads.filter(url => url.includes('/authorization-facts'))).toHaveLength(4)
 })
 test('DataItem basis recheck refreshes only facts and preserves the grant draft', async ({ page }) => {
-  const { reads, writes, setFactsState } = await fixture(page, { allowed: grantPermissions, existing: 'independent', factsState: 'missing' })
+  const { reads, writes, setFactsState } = await fixture(page, { allowed: grantPermissions, permit: 'allowed', factsState: 'missing' })
   await page.goto('/engines/2?tab=data-authorization')
   await selectData(page); await grantDraft(page)
   await expect(page.getByTestId('approval-basis-status')).toContainText('未找到数据项')
@@ -955,7 +853,7 @@ test('DataItem basis recheck refreshes only facts and preserves the grant draft'
   expect(writes).toEqual([])
 })
 test('DataItem facts observation is skipped without its function permission', async ({ page }) => {
-  const { reads, writes } = await fixture(page, { allowed: permissions })
+  const { reads, writes } = await fixture(page, { allowed: permissions.filter(permission => permission !== 'system.engine_access_grant.read') })
   await page.goto('/engines/2?tab=data-authorization'); await selectData(page)
   await expect(page.getByTestId('approval-basis-status')).toContainText('无数据项核对权限')
   await expect(page.getByTestId('approval-basis-refresh')).toBeDisabled()
@@ -963,7 +861,7 @@ test('DataItem facts observation is skipped without its function permission', as
   expect(writes).toEqual([])
 })
 test('complete DataItem display cannot replace fresh facts verification at signing', async ({ page }) => {
-  const { reads, writes, setFactsState } = await fixture(page, { allowed: grantPermissions, existing: 'independent' })
+  const { reads, writes, setFactsState } = await fixture(page, { allowed: grantPermissions, permit: 'allowed' })
   await page.goto('/engines/2?tab=data-authorization'); await selectData(page); await grantDraft(page)
   await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别完整')
   setFactsState('incomplete')
@@ -977,7 +875,7 @@ test('complete DataItem display cannot replace fresh facts verification at signi
   await expect(page.getByTestId('source-grant-confirm')).toBeDisabled()
 })
 test('late DataItem basis responses cannot overwrite a removed and re-added target', async ({ page }) => {
-  const { writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent' })
+  const { writes } = await fixture(page, { allowed: grantPermissions, permit: 'allowed' })
   await page.goto('/engines/2?tab=data-authorization'); await selectData(page)
   await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别完整')
   let release, started, hold = true
@@ -1003,7 +901,7 @@ async function refreshSameAuthorization(page) {
   await page.evaluate(async () => (await import('/src/store/auth.js')).useAuthStore().fetchAuthContext())
 }
 test('authorization workspace separates current history and creation without writes on navigation', async ({ page }, testInfo) => {
-  const { writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent', history: [historicalGrant()] })
+  const { writes } = await fixture(page, { allowed: grantPermissions, permit: 'allowed', history: [historicalGrant()] })
   await page.goto('/engines/2?tab=data-authorization')
   const list = page.getByTestId('source-grant-list')
   await expect(list).toContainText('Outdoor reader')
@@ -1037,7 +935,7 @@ test('authorization workspace separates current history and creation without wri
 })
 
 test('successful new authorization returns to current grants and locates the issued relation', async ({ page }) => {
-  const { writes, reads } = await fixture(page, { allowed: grantPermissions, existing: 'independent', history: [historicalGrant('department')] })
+  const { writes, reads } = await fixture(page, { allowed: grantPermissions, permit: 'allowed', history: [historicalGrant('department')] })
   await page.goto('/engines/2?tab=data-authorization')
   await selectData(page); await grantDraft(page); await confirmGrant(page)
   const list = page.getByTestId('source-grant-list')
@@ -1080,24 +978,24 @@ test('English authorization workspace actions fit a narrow viewport', async ({ p
   await page.screenshot({ path: testInfo.outputPath('authorization-workspace-mobile-en.png'), fullPage: true })
   expect(writes).toEqual([])
 })
-test('first direct approval and read grant use one explicit command without Catalog or a separate configuration write', async ({ page }, testInfo) => {
+test('deployment-default permission grants without modifying the DataItem permission', async ({ page }, testInfo) => {
   const { writes, reads } = await fixture(page, { allowed: grantPermissions })
   await page.goto('/engines/2?tab=data-authorization')
-  await selectData(page); await chooseMode(page); await grantDraft(page)
+  await selectData(page); await grantDraft(page)
   expect(writes).toEqual([])
   await page.screenshot({ path: testInfo.outputPath('first-direct-authorization.png') })
   await confirmGrant(page)
   await expect(page.getByTestId('engine-source-grants')).toContainText('只读授权已签发')
   expect(writes).toHaveLength(1)
   expect(writes[0].path).toMatch(/access_grants$/)
-  expect(writes[0].body).toMatchObject({ catalog_path: tablePath, initialize_approval: true, requirement_version: '1',
+  expect(writes[0].body).toMatchObject({ catalog_path: tablePath, direct_permission_source: 'deployment_default', direct_permission_version: '1',
     recipient_id: '33', recipient_type: 'user', action: 'read', expiry_mode: 'until_revoked', expires_at: null })
   expect(reads.every(path => new URL(path, browserTestOrigin('system')).pathname.startsWith('/api/v1/system/'))).toBe(true)
   await selectData(page)
   await expect(page.getByTestId('approval-mode')).toHaveCount(0)
   await grantDraft(page); await confirmGrant(page)
   expect(writes).toHaveLength(2)
-  expect(writes[1].body.initialize_approval).toBe(false)
+  expect(writes[1].body.direct_permission_source).toBe('deployment_default')
 })
 test('schema expands current ordinary tables, permits removal, and never grants the parent or view', async ({ page }) => {
   const { writes } = await fixture(page, { allowed: grantPermissions, secondTable: true })
@@ -1107,13 +1005,13 @@ test('schema expands current ordinary tables, permits removal, and never grants 
   await expect(targets).toContainText('activities'); await expect(targets).toContainText('persons')
   await expect(targets).not.toContainText('activities_view')
   await targets.getByRole('row').filter({ hasText: 'persons' }).getByRole('button', { name: '移除' }).click()
-  await chooseMode(page); await grantDraft(page); await confirmGrant(page)
+   await grantDraft(page); await confirmGrant(page)
   expect(writes).toHaveLength(1); expect(writes[0].body.catalog_path).toEqual(tablePath)
 })
 test('partial batch keeps immutable commands and retries only failed tables', async ({ page }) => {
   const { writes } = await fixture(page, { allowed: grantPermissions, secondTable: true, grantFailure: true })
   await page.goto('/engines/2?tab=data-authorization')
-  await selectData(page, true); await chooseMode(page); await grantDraft(page); await confirmGrant(page)
+  await selectData(page, true); await grantDraft(page); await confirmGrant(page)
   await expect(page.getByTestId('source-grant-outcomes')).toContainText('签发结果未知')
   expect(writes).toHaveLength(2)
   await expect(page.getByTestId('approval-add-selection')).toBeDisabled()
@@ -1124,15 +1022,15 @@ test('partial batch keeps immutable commands and retries only failed tables', as
   expect(writes).toHaveLength(3); expect(writes[2].body).toEqual(writes[0].body)
   expect(writes[1].body.request_id).not.toBe(writes[0].body.request_id)
 })
-test('existing direct approval grants and revokes an explicit recipient without initialization', async ({ page }) => {
-  const { writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent' })
+test('explicit direct permission grants and revokes an exact recipient', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: grantPermissions, permit: 'allowed' })
   await page.goto('/engines/2?tab=data-authorization')
   await selectData(page); await grantDraft(page); await confirmGrant(page)
   const history = page.getByTestId('engine-source-grants')
   await expect(history).toContainText('Outdoor reader')
   await expect(history).toContainText('outdoor')
   await expect(history).not.toContainText('账号 · 33')
-  expect(writes).toHaveLength(1); expect(writes[0].body.initialize_approval).toBe(false)
+  expect(writes).toHaveLength(1); expect(writes[0].body.direct_permission_source).toBe('explicit')
   await page.getByTestId('source-grant-list').locator('.el-table__expand-icon').click()
   await page.getByTestId('source-grant-revoke').click()
   await expect(page.getByRole('dialog', { name: '撤销授权', exact: true })).toContainText('Outdoor reader')
@@ -1145,7 +1043,7 @@ test('existing direct approval grants and revokes an explicit recipient without 
 })
 test('unchanged engine and authorization refresh preserve the draft; losing permission clears it', async ({ page }) => {
   await page.clock.install()
-  const { writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent' })
+  const { writes } = await fixture(page, { allowed: grantPermissions, permit: 'allowed' })
   await page.goto('/engines/2?tab=data-authorization'); await selectData(page); await grantDraft(page)
   const response = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/engines'))
   await page.clock.runFor(10000); await response
@@ -1162,10 +1060,9 @@ test('unchanged engine and authorization refresh preserve the draft; losing perm
   await expect(page.getByTestId('approval-targets')).toHaveCount(0)
   expect(writes).toEqual([])
 })
-for (const existing of [false, 'independent']) test(`opaque token rotation preserves the ${existing ? 'existing' : 'first'} approval grant draft`, async ({ page }) => {
-  const { writes } = await fixture(page, { allowed: grantPermissions, existing })
+for (const permit of ['deployment_default', 'allowed']) test(`opaque token rotation preserves the ${permit} grant draft`, async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: grantPermissions, permit })
   await page.goto('/engines/2?tab=data-authorization'); await selectData(page)
-  if (!existing) await chooseMode(page)
   await grantDraft(page)
   let release, requested
   const held = new Promise(resolve => { release = resolve })
@@ -1191,7 +1088,7 @@ for (const existing of [false, 'independent']) test(`opaque token rotation prese
   expect(writes).toEqual([])
 })
 for (const change of ['permission', 'membership', 'failure']) test(`token rotation never restores a draft after ${change} changes`, async ({ page }) => {
-  const { writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent' })
+  const { writes } = await fixture(page, { allowed: grantPermissions, permit: 'allowed' })
   await page.goto('/engines/2?tab=data-authorization'); await selectData(page); await grantDraft(page)
   await page.route('**/api/v1/system/auth/context', async route => {
     if (change === 'failure') return route.fulfill({ status: 503, json: { error: 'Unavailable' } })
@@ -1205,7 +1102,7 @@ for (const change of ['permission', 'membership', 'failure']) test(`token rotati
 })
 test('authorization version change clears the selected snapshot', async ({ page }) => {
   await fixture(page, { allowed: grantPermissions })
-  await page.goto('/engines/2?tab=data-authorization'); await selectData(page); await chooseMode(page)
+  await page.goto('/engines/2?tab=data-authorization'); await selectData(page)
   await page.evaluate(async () => {
     const store = (await import('/src/store/auth.js')).useAuthStore()
     store.authContext = { ...store.authContext, authorization: { ...store.authContext.authorization, authorization_version: '2' } }
@@ -1214,7 +1111,7 @@ test('authorization version change clears the selected snapshot', async ({ page 
   await expect(page.getByTestId('source-grant-form')).toHaveCount(0)
 })
 test('rotation cancels an open grant confirmation without submitting or losing its draft', async ({ page }) => {
-  const { writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent' })
+  const { writes } = await fixture(page, { allowed: grantPermissions, permit: 'allowed' })
   await page.goto('/engines/2?tab=data-authorization'); await selectData(page); await grantDraft(page)
   await page.getByTestId('source-grant-confirm').click()
   const confirmation = page.getByRole('dialog').filter({ hasText: '即将授予 Outdoor reader' })
@@ -1224,53 +1121,22 @@ test('rotation cancels an open grant confirmation without submitting or losing i
   await expect(page.getByTestId('source-grant-reason')).toHaveValue('Explicit read permission')
   expect(writes).toEqual([])
 })
-test('read-only configuration neither browses sources nor exposes grant controls', async ({ page }) => {
-  const { reads, writes } = await fixture(page, { allowed: ['system.engine.read', 'system.engine_access_approval_requirement.read'], existing: true })
-  await page.goto('/engines/2?tab=data-authorization')
-  await page.getByTestId('authorization-new').click()
-  await page.locator('.el-collapse-item__header').filter({ hasText: '已配置的批准方式' }).click()
-  await expect(page.getByTestId('engine-data-authorization')).toContainText('业务批准')
-  await expect(page.getByTestId('source-grant-form')).toHaveCount(0)
-  expect(reads.some(path => path.includes('/catalog/'))).toBe(false); expect(writes).toEqual([])
-})
 test('missing engine catalog permission explains why source selection is unavailable', async ({ page }) => {
-  const { reads, writes } = await fixture(page, { allowed: permissions.filter(permission => permission !== 'system.engine_catalog.read') })
+  const { reads, writes } = await fixture(page, { allowed: grantPermissions.filter(permission => permission !== 'system.engine_catalog.read') })
   await page.goto('/engines/2?tab=data-authorization')
   await page.getByTestId('authorization-new').click()
   await expect(page.getByTestId('engine-data-authorization')).toContainText('选择数据项需要引擎目录浏览权限')
   expect(reads.some(path => path.includes('/catalog/'))).toBe(false); expect(writes).toEqual([])
 })
-test('existing business approval is not overwritten and Catalog absence never downgrades it', async ({ page }) => {
-  const { writes } = await fixture(page, { allowed: grantPermissions, existing: 'catalog' })
-  await page.goto('/engines/2?tab=data-authorization'); await selectData(page)
-  await expect(page.getByTestId('approval-targets')).toContainText('业务批准')
-  await expect(page.getByTestId('approval-mode')).toHaveCount(0)
-  await expect(page.getByTestId('source-grant-form')).toHaveCount(0)
-  await expect(page.getByRole('button').filter({ hasText: '前往业务批准' })).toBeDisabled()
-  expect(writes).toEqual([])
-})
-test('available Catalog offers business approval with a navigation action but no direct grant', async ({ page }) => {
-  const { writes } = await fixture(page, { allowed: [...grantPermissions, 'catalog.entry.read'] })
-  await page.goto('/engines/2?tab=data-authorization'); await selectData(page); await chooseMode(page, '业务批准')
-  await page.getByTestId('approval-reason').fill('Business owner confirmation required')
-  await page.getByTestId('approval-initialize').click()
-  const confirm = page.getByRole('dialog').filter({ hasText: '业务批准需在 Catalog' }).filter({ has: page.getByRole('button', { name: '确定', exact: true }) })
-  await expect(confirm).toBeVisible()
-  await confirm.getByRole('button', { name: '确定', exact: true }).click()
-  await expect(page.getByRole('button').filter({ hasText: '前往业务批准' })).toBeEnabled()
-  expect(writes).toHaveLength(1); expect(writes[0].path).toMatch(/access_approval_requirements$/)
-  expect(writes[0].body.mode).toBe('catalog')
-  await expect(page.getByTestId('source-grant-form')).toHaveCount(0)
-})
-test('conflicting first approval retains the original command and does not fall back', async ({ page }) => {
+test('conflicting permission observation retains the original command and does not fall back', async ({ page }) => {
   const { writes } = await fixture(page, { allowed: grantPermissions, conflict: true })
   await page.goto('/engines/2?tab=data-authorization')
-  await selectData(page); await chooseMode(page); await grantDraft(page); await confirmGrant(page)
+  await selectData(page); await grantDraft(page); await confirmGrant(page)
   await expect(page.getByTestId('source-grant-outcomes')).toContainText('不能覆盖')
-  expect(writes).toHaveLength(1); expect(writes[0].body.initialize_approval).toBe(true)
+  expect(writes).toHaveLength(1); expect(writes[0].body.direct_permission_source).toBe('deployment_default')
 })
 test('cancelled confirmation does not write; unknown result requires an explicit same-command retry', async ({ page }) => {
-  const { writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent', grantFailure: true })
+  const { writes } = await fixture(page, { allowed: grantPermissions, permit: 'allowed', grantFailure: true })
   await page.goto('/engines/2?tab=data-authorization'); await selectData(page); await grantDraft(page)
   await confirmGrant(page, true); expect(writes).toEqual([])
   await confirmGrant(page)
@@ -1279,12 +1145,6 @@ test('cancelled confirmation does not write; unknown result requires an explicit
   await confirmGrant(page)
   await expect(page.getByTestId('engine-source-grants')).toContainText('已找回原命令的签发历史')
   expect(writes).toHaveLength(2); expect(writes[1].body).toEqual(writes[0].body)
-})
-test('management scope denial is visible and never initializes as a fallback', async ({ page }) => {
-  const { writes } = await fixture(page, { denied: true, allowed: ['system.engine.read', 'system.engine_access_approval_requirement.read'] })
-  await page.goto('/engines/2?tab=data-authorization')
-  await expect(page.getByTestId('engine-data-authorization')).toContainText('本引擎管理委派不足')
-  expect(writes).toEqual([])
 })
 test('without authorization permission the route restores to basic details', async ({ page }) => {
   const { reads, writes } = await fixture(page, { allowed: ['system.engine.read'] })
@@ -1295,7 +1155,7 @@ test('without authorization permission the route restores to basic details', asy
   expect(reads).toEqual([]); expect(writes).toEqual([])
 })
 test('definite duplicate rejection does not keep an automatic original-command retry', async ({ page }) => {
-  const { writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent', grantDuplicate: true, history: [historicalGrant()] })
+  const { writes } = await fixture(page, { allowed: grantPermissions, permit: 'allowed', grantDuplicate: true, history: [historicalGrant()] })
   await page.goto('/engines/2?tab=data-authorization')
   await selectData(page); await grantDraft(page); await confirmGrant(page)
   await expect(page.getByTestId('source-grant-outcomes')).toContainText('未重复发放')
@@ -1514,11 +1374,191 @@ test('automatic text filtering debounces typing and isolates old responses befor
 })
 
 test('unauthorized recipient type never loads candidates or issues grants', async ({ page }) => {
-  const { writes } = await fixture(page, { allowed: grantPermissions, existing: 'independent' })
+  const { writes } = await fixture(page, { allowed: grantPermissions, permit: 'allowed' })
   await page.goto('/engines/2?tab=data-authorization'); await selectData(page)
   await page.getByTestId('source-grant-recipient-type').click()
   await page.getByRole('option', { name: '部门', exact: true }).click()
   await expect(page.getByTestId('source-grant-form')).toContainText('读取此类接收方候选需要')
   await expect(page.getByTestId('source-grant-confirm')).toBeDisabled()
   expect(writes).toEqual([])
+})
+
+async function startPermissionChange(page) {
+  await page.goto('/engines/2?tab=direct-permissions')
+  await page.getByTestId('direct-permission-edit').first().click()
+  const dialog = page.getByRole('dialog', { name: '设置许可', exact: true })
+  await expect(dialog).toBeVisible()
+  return dialog
+}
+async function confirmPermission(page) {
+  await page.getByTestId('direct-permission-save').click()
+  const confirmation = page.locator('.el-message-box')
+  await expect(confirmation).toContainText('不签发读取权限')
+  await confirmation.getByRole('button', { name: '确定', exact: true }).click()
+}
+test('administrator sets explicit permission from the dedicated tab without touching Grants', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: permitAdminPermissions, permit: 'denied', history: [historicalGrant()] })
+  const dialog = await startPermissionChange(page)
+  await expect(dialog).toContainText('不影响 Catalog 业务办理')
+  await page.getByTestId('direct-permission-value').getByText('允许直接授权', { exact: true }).click()
+  await page.getByTestId('direct-permission-reason').fill('允许经授权办理员直接授权')
+  await page.getByTestId('direct-permission-save').click()
+  await page.locator('.el-message-box').getByRole('button', { name: '取消', exact: true }).click()
+  expect(writes).toEqual([])
+  await expect(page.getByTestId('direct-permission-reason')).toHaveValue('允许经授权办理员直接授权')
+  await confirmPermission(page)
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByTestId('direct-permission-list')).toContainText('允许直接授权')
+  await page.getByRole('tab', { name: '数据授权', exact: true }).click()
+  await expect(page.getByTestId('source-grant-list')).toContainText('已签发')
+  expect(writes).toHaveLength(1)
+  expect(writes[0].path).toMatch(/\/data-items\/[a-f0-9]{64}\/direct-permission$/)
+  expect(writes[0].body).toEqual({ catalog_path: tablePath, expected_boundary_hash: 'b'.repeat(64), allowed: true, expected_source: 'explicit', expected_version: '1', reason: '允许经授权办理员直接授权' })
+})
+test('permission conflict preserves input until explicit read-only review and reconfirmation', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: permitAdminPermissions, permit: 'denied', changeConflict: true })
+  await startPermissionChange(page)
+  await page.getByTestId('direct-permission-value').getByText('允许直接授权', { exact: true }).click()
+  await page.getByTestId('direct-permission-reason').fill('保留原原因')
+  await confirmPermission(page)
+  await expect(page.getByTestId('direct-permission-save')).toBeDisabled()
+  await expect(page.getByTestId('direct-permission-reason')).toHaveValue('保留原原因')
+  expect(writes).toHaveLength(1)
+  await page.getByRole('button', { name: '刷新并核对当前许可', exact: true }).click()
+  await expect(page.getByTestId('direct-permission-save')).toBeEnabled()
+  expect(writes).toHaveLength(1)
+  await confirmPermission(page)
+  await expect(page.getByTestId('direct-permission-save')).toHaveCount(0)
+  expect(writes).toHaveLength(2)
+  expect(writes[1].body).toMatchObject({ expected_version: '2', expected_source: 'explicit', allowed: true, reason: '保留原原因' })
+})
+test('unknown permission write outcome is observed without silently replaying it', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: permitAdminPermissions, permit: 'denied', changeUnknown: true })
+  const dialog = await startPermissionChange(page)
+  await page.getByTestId('direct-permission-value').getByText('允许直接授权', { exact: true }).click()
+  await page.getByTestId('direct-permission-reason').fill('确认未知写入')
+  await confirmPermission(page)
+  await expect(page.getByTestId('direct-permission-save')).toBeDisabled()
+  await page.getByRole('button', { name: '刷新并核对当前许可', exact: true }).click()
+  await expect(dialog).toContainText('版本 2')
+  expect(writes).toHaveLength(1)
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(page.getByTestId('direct-permission-list')).toContainText('允许直接授权')
+  expect(writes).toHaveLength(1)
+})
+test('direct-permission readers can list effective defaults but cannot set permission or issue Grants', async ({ page }) => {
+  const { writes, reads } = await fixture(page, { allowed: ['system.engine.read', 'system.engine_access_direct_permission.read'] })
+  await page.goto('/engines/2?tab=direct-permissions')
+  await expect(page.getByTestId('direct-permission-list')).toContainText('部署默认')
+  await expect(page.getByTestId('direct-permission-edit')).toHaveCount(0)
+  await expect(page.getByRole('tab', { name: '数据授权', exact: true })).toHaveCount(0)
+  expect(reads.some(path => path.includes('/catalog/') || path.includes('/authorization-facts'))).toBe(false)
+  expect(writes).toEqual([])
+})
+test('direct-permission filter uses server totals and pages including deployment defaults', async ({ page }) => {
+  const rows = Array.from({ length: 44 }, (_, index) => ({ engine_id: '2', item_fingerprint: createHash('sha256').update(`item-${index}`).digest('hex'), full_name: `outdoor/item_${index}`, name: `item_${index}`, item_type: 'table', state: index < 23 ? 'allowed' : 'denied', source: index % 2 ? 'explicit' : 'deployment_default', version: '1' }))
+  const { reads, writes } = await fixture(page, { allowed: permissions, permitRows: rows })
+  await page.goto('/engines/2?tab=direct-permissions')
+  const panel = page.getByTestId('direct-permissions')
+  await expect(panel.locator('.el-pagination')).toContainText('共 44 条')
+  await page.getByTestId('direct-permission-state').click()
+  await page.getByRole('option', { name: '允许直接授权', exact: true }).click()
+  await panel.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(panel.locator('.el-pagination')).toContainText('共 23 条')
+  await panel.locator('.el-pager').getByText('2', { exact: true }).click()
+  await expect(page.getByTestId('direct-permission-list')).toContainText('item_22')
+  expect(new URL(reads.filter(url => url.includes('/direct-permissions?')).at(-1)).searchParams.get('state')).toBe('allowed')
+  await page.getByTestId('direct-permission-search').fill('item_22')
+  await panel.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(panel.locator('.el-pagination')).toContainText('共 1 条')
+  await expect(page.getByTestId('direct-permission-list')).toContainText('部署默认')
+  expect(new URL(reads.filter(url => url.includes('/direct-permissions?')).at(-1)).searchParams.get('page')).toBe('1')
+  expect(writes).toEqual([])
+})
+test('selected denied DataItem remains in the batch and blocks signing instead of silently skipping it', async ({ page }) => {
+  const second = { ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'persons' }] }
+  const permitRows = [tablePath, second].map((path, index) => ({ engine_id: '2', item_fingerprint: createHash('sha256').update(`2:outdoor.${path.segments.at(-1).name}`).digest('hex'), full_name: `outdoor/${path.segments.at(-1).name}`, state: index ? 'denied' : 'allowed', source: 'explicit', version: '1' }))
+  const { reads, writes } = await fixture(page, { allowed: grantPermissions, secondTable: true, permitRows })
+  await page.goto('/engines/2?tab=data-authorization')
+  expect(reads.some(url => url.includes('/direct-permission'))).toBe(false)
+  await selectData(page, true); await grantDraft(page)
+  await expect(page.getByTestId('approval-targets')).toContainText('不允许直接授权')
+  await expect(page.getByTestId('source-grant-form')).toContainText('授予读取权限 · 2')
+  await expect(page.getByTestId('source-grant-confirm')).toBeDisabled()
+  expect(reads.filter(url => url.includes('/direct-permission'))).toHaveLength(2)
+  expect(reads.some(url => url.includes('/direct-permissions?'))).toBe(false)
+  await page.getByTestId('approval-targets').getByRole('row').filter({ hasText: 'persons' }).getByRole('button', { name: '移除', exact: true }).click()
+  await grantDraft(page); await confirmGrant(page)
+  expect(writes).toHaveLength(1)
+  expect(writes[0].body.catalog_path).toEqual(tablePath)
+})
+test('permission management denial stays visible and never creates a setting', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: permissions, denied: true })
+  await page.goto('/engines/2?tab=direct-permissions')
+  await expect(page.getByTestId('direct-permissions')).toContainText('本引擎管理委派不足')
+  expect(writes).toEqual([])
+})
+test('permission draft and confirmation are discarded when the administrator loses qualification', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: permitAdminPermissions, permit: 'denied' })
+  await startPermissionChange(page)
+  await page.getByTestId('direct-permission-reason').fill('不能继续提交')
+  await page.getByTestId('direct-permission-save').click()
+  await expect(page.locator('.el-message-box')).toBeVisible()
+  await page.evaluate(async () => {
+    const store = (await import('/src/store/auth.js')).useAuthStore(), context = JSON.parse(JSON.stringify(store.authContext))
+    context.authorization.role_assignments[0].permissions = context.authorization.role_assignments[0].permissions.filter(p => p !== 'system.engine_access_delegation.create')
+    store.authContext = context
+  })
+  await expect(page.locator('.el-message-box')).toBeHidden()
+  await expect(page.getByTestId('direct-permission-save')).toHaveCount(0)
+  await expect(page.getByTestId('direct-permission-edit')).toHaveCount(0)
+  expect(writes).toEqual([])
+})
+
+test('late signing facts cannot reopen confirmation after leaving the authorization workspace', async ({ page }) => {
+  const { writes } = await fixture(page, { allowed: grantPermissions, permit: 'allowed' })
+  await page.goto('/engines/2?tab=data-authorization'); await selectData(page); await grantDraft(page)
+  let release, started
+  const held = new Promise(resolve => { release = resolve }), arrived = new Promise(resolve => { started = resolve })
+  await page.route('**/authorization-facts', async route => { started(); await held; await route.fallback() })
+  try {
+    await page.getByTestId('source-grant-confirm').click(); await arrived
+    await page.evaluate(async () => (await import('/src/router/index.js')).default.push('/engines'))
+    const response = page.waitForResponse(item => item.url().includes('/authorization-facts'))
+    release(); await response
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    await expect(page.locator('.el-message-box')).toBeHidden()
+    expect(writes).toEqual([])
+  } finally { release() }
+})
+
+test('same-identity rotation preserves permission input but requires a fresh review before submission', async ({ page }) => {
+  const { writes, reads } = await fixture(page, { allowed: permitAdminPermissions, permit: 'denied' })
+  await startPermissionChange(page)
+  await page.getByTestId('direct-permission-value').getByText('允许直接授权', { exact: true }).click()
+  await page.getByTestId('direct-permission-reason').fill('令牌刷新后仍需核对')
+  await page.getByTestId('direct-permission-save').click()
+  await expect(page.locator('.el-message-box')).toBeVisible()
+  let release, started
+  const held = new Promise(resolve => { release = resolve }), arrived = new Promise(resolve => { started = resolve })
+  await page.route('**/api/v1/system/auth/context', async route => { started(); await held; await route.fallback() })
+  try {
+    await page.evaluate(async () => (await import('/src/store/auth.js')).useAuthStore().setToken('rotated-permission-fixture', 3600))
+    await arrived
+    await expect(page.locator('.el-message-box')).toBeHidden()
+    await expect(page.getByTestId('direct-permission-save')).toHaveCount(0)
+    expect(writes).toEqual([])
+  } finally { release() }
+  await expect(page.getByTestId('direct-permission-reason')).toHaveValue('令牌刷新后仍需核对')
+  await expect(page.getByTestId('direct-permission-value').getByRole('radio', { name: '允许直接授权', exact: true })).toBeChecked()
+  await expect(page.getByTestId('direct-permission-save')).toBeDisabled()
+  const factsBefore = reads.filter(url => url.includes('/authorization-facts')).length
+  await page.getByRole('button', { name: '刷新并核对当前许可', exact: true }).click()
+  await expect(page.getByTestId('direct-permission-save')).toBeEnabled()
+  expect(reads.filter(url => url.includes('/authorization-facts'))).toHaveLength(factsBefore + 1)
+  expect(writes).toEqual([])
+  await confirmPermission(page)
+  await expect(page.getByTestId('direct-permission-save')).toHaveCount(0)
+  expect(writes).toHaveLength(1)
+  expect(writes[0].body).toMatchObject({ allowed: true, reason: '令牌刷新后仍需核对' })
 })

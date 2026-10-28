@@ -117,12 +117,11 @@ func TestPGAuthorizationFixtureSeparatesOperatorAndReader(t *testing.T) {
 			t.Fatalf("consumer gained control-plane permission: %s", key)
 		}
 	}
-	if len(permissions) != 9 || len(pgAuthorizationOperatorPermissions) != 11 || len(sourceInitializerPermissions) != 4 {
+	if len(permissions) != 9 || len(pgAuthorizationOperatorPermissions) != 6 || len(sourceInitializerPermissions) != 16 {
 		t.Fatal("PG fixture widened shared initializer or reader permissions")
 	}
-	for _, key := range []string{"system.engine_access_delegation.create", "system.engine_access_deny.create", "system.engine_access_deny.release", "catalog.inventory.read", "system.engine_access_approval_requirement.update",
-		"meta.scan_task.create", "meta.scan_task.update", "meta.scan_task.delete",
-		"system.meta_collection_qualification.read", "system.meta_collection_qualification.approve", "system.meta_collection_qualification.revoke"} {
+	for _, key := range []string{"system.engine_access_deny.create", "system.engine_access_deny.release", "catalog.inventory.read",
+		"meta.scan_task.create", "meta.scan_task.update", "meta.scan_task.delete"} {
 		if !slices.Contains(pgAuthorizationOperatorPermissions, key) {
 			t.Fatalf("operator lacks explicit command permission: %s", key)
 		}
@@ -311,38 +310,39 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	for _, permission := range catalog.Permissions {
 		permissions[permission.Key] = permission
 	}
-	workspaceRoleFound := false
+	found := map[string]bool{}
+	combined := slices.Clone(pgAuthorizationOperatorPermissions)
 	for _, role := range catalog.Roles {
-		if role.Key != pgAuthorizationWorkspaceRoleKey {
+		if role.Key != pgAuthorizationWorkspaceRoleKey && role.Key != directPermissionAdministratorRoleKey {
 			continue
 		}
-		workspaceRoleFound = true
+		found[role.Key] = true
 		if role.RoleType != "tenant_builtin" || !slices.Equal(role.AllowedScopeTypes, []string{"tenant"}) || !slices.Equal(role.AllowedPrincipalTypes, []string{"user"}) {
-			t.Fatal("PG workspace must use the formal Tenant User authorizer role")
+			t.Fatal("PG workspace must use formal Tenant User roles")
 		}
-		combined := slices.Clone(pgAuthorizationOperatorPermissions)
-		for _, key := range []string{"catalog.entry.read", "system.engine_access_fulfillment.create"} {
-			if !slices.Contains(role.Permissions, key) || slices.Contains(pgAuthorizationOperatorPermissions, key) {
-				t.Fatalf("PG business handling must come from the unified builtin role, not the fixture supplement: %s", key)
+		if role.Key == directPermissionAdministratorRoleKey {
+			expected, actual := slices.Clone(sourceInitializerPermissions), slices.Clone(role.Permissions)
+			slices.Sort(expected)
+			slices.Sort(actual)
+			if !slices.Equal(expected, actual) {
+				t.Fatalf("source initializer differs from formal administrator: %v", actual)
 			}
 		}
 		for _, key := range role.Permissions {
-			if slices.Contains(combined, key) {
-				t.Fatalf("PG fixture supplement duplicates the formal authorizer role: %s", key)
+			if slices.Contains(pgAuthorizationOperatorPermissions, key) {
+				t.Fatalf("supplement duplicates builtin permission: %s", key)
 			}
-			combined = append(combined, key)
-		}
-		if len(combined) != 23 || slices.Contains(combined, "manager.data_item.read") {
-			t.Fatal("PG workspace widened its exact operator permissions")
-		}
-		for _, key := range []string{"system.engine.read", "system.engine_catalog.read", "system.engine_access_approval_requirement.read", "iam.tenant_membership.read", "iam.department.read", "iam.project_group.read"} {
 			if !slices.Contains(combined, key) {
-				t.Fatalf("PG workspace lacks formal read permission: %s", key)
+				combined = append(combined, key)
 			}
 		}
 	}
-	if !workspaceRoleFound {
-		t.Fatal("PG workspace builtin role is missing")
+	if len(found) != 2 || len(combined) != 24 || slices.Contains(combined, "manager.data_item.read") {
+		t.Fatalf("PG workspace role union changed: %v", combined)
+	}
+	direct := permissions["system.engine_access_direct_permission.update"]
+	if direct.TenantCustomizable || !slices.Contains(combined, direct.Key) || len(sourceInitializerSupplement(sourceInitializerPermissions)) != 0 {
+		t.Fatal("direct permission update must originate only from formal administrator assignment")
 	}
 	allPermissions := append(append(append(append(append([]string{}, consumerPermissions...), metricPermissions...), ontologyPermissions...), publicOriginReadPermissions...), publicOriginCreatePermissions...)
 	allPermissions = append(allPermissions, orchestratorPermissions...)
@@ -353,8 +353,7 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	allPermissions = append(allPermissions, vectorPMTilesPermissions...)
 	allPermissions = append(allPermissions, securityPermissions...)
 	allPermissions = append(allPermissions, securityInitializerPermissions...)
-	allPermissions = append(allPermissions, sourceInitializerPermissions...)
-	allPermissions = append(allPermissions, suiteSourceInitializerPermissions("ftp-consumer-flow")...)
+	allPermissions = append(allPermissions, sourceInitializerSupplement(suiteSourceInitializerPermissions("ftp-consumer-flow"))...)
 	allPermissions = append(allPermissions, pgAuthorizationConsumerPermissions...)
 	allPermissions = append(allPermissions, pgAuthorizationOperatorPermissions...)
 	allPermissions = append(allPermissions, graphReviewPermissions...)
@@ -757,12 +756,12 @@ func TestManagerKMLExportFixtureReducesConsumerAndInitializerPermissions(t *test
 	if err != nil || !slices.Equal(actual, want) {
 		t.Fatalf("KML export consumer permissions: %v %v", actual, err)
 	}
-	if got := suiteSourceInitializerPermissions("manager-internal-artifact-lineage"); !slices.Equal(got, sourceInitializerPermissions) || len(got) != 4 {
+	if got := suiteSourceInitializerPermissions("manager-internal-artifact-lineage"); !slices.Equal(got, sourceInitializerPermissions) || len(got) != 16 {
 		t.Fatalf("KML source initialization expanded: %v", got)
 	}
 	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "full")
 	actual, err = suitePermissions("manager-internal-artifact-lineage")
-	if err != nil || len(actual) != 10 || len(suiteSourceInitializerPermissions("manager-internal-artifact-lineage")) != 7 {
+	if err != nil || len(actual) != 10 || len(suiteSourceInitializerPermissions("manager-internal-artifact-lineage")) != 18 {
 		t.Fatal("KML changed the full case identity")
 	}
 	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "unknown")
@@ -994,8 +993,8 @@ func TestSecurityFixtureSeparatesPreparationFromOwnerPermissions(t *testing.T) {
 			t.Fatalf("preparation permission leaked into consumer: %s", key)
 		}
 	}
-	if len(sourceInitializerPermissions) != 4 {
-		t.Fatal("source initializer must have only its four formal preparation qualifications")
+	if len(sourceInitializerPermissions) != 16 {
+		t.Fatal("source initializer must have the exact formal engine authorization administrator permissions")
 	}
 	for _, key := range sourceInitializerPermissions {
 		if contains(permissions, key) || contains(securityInitializerPermissions, key) || contains(consumerPermissions, key) {
@@ -1475,14 +1474,12 @@ func TestFTPFixtureSeparatesModelConsumerAndSourceAuthorization(t *testing.T) {
 		t.Fatal("consumer environment must not manufacture an issuer credential")
 	}
 	issuer := suiteSourceInitializerPermissions("ftp-consumer-flow")
-	wantIssuer := []string{"system.engine_access_approval_requirement.initialize", "system.engine_access_delegation.create",
-		"system.engine_access_grant.create", "system.engine_access_grant.read", "system.engine_access_grant.revoke",
-		"system.engine_access_deny.create", "system.engine_access_deny.release"}
+	wantIssuer := append(slices.Clone(sourceInitializerPermissions), "system.engine_access_deny.create", "system.engine_access_deny.release")
 	if !slices.Equal(issuer, wantIssuer) {
-		t.Fatal("FTP source initializer must have only its seven explicit lifecycle qualifications")
+		t.Fatal("FTP source initializer must have the formal administrator role and its two explicit Deny qualifications")
 	}
 	for _, key := range append(append([]string{}, issuer...), "system.execution_authorization.create", "manager.derived_artifact.update", "monitor.execution.read") {
-		if slices.Contains(permissions, key) {
+		if key != "system.engine_catalog.read" && slices.Contains(permissions, key) {
 			t.Fatalf("FTP consumer received an unrelated or source-issuing qualification: %s", key)
 		}
 	}
@@ -1491,12 +1488,12 @@ func TestFTPFixtureSeparatesModelConsumerAndSourceAuthorization(t *testing.T) {
 		t.Fatal("Manager MinIO model acceptance requires a separate exact-source issuer", err)
 	}
 	for _, key := range wantIssuer {
-		if slices.Contains(managerPermissions, key) {
+		if key != "system.engine_catalog.read" && slices.Contains(managerPermissions, key) {
 			t.Fatalf("Manager browser received issuer permission %s", key)
 		}
 	}
 	issuer[0] = "mutated"
-	if !slices.Equal(suiteSourceInitializerPermissions("ftp-consumer-flow"), wantIssuer) || len(sourceInitializerPermissions) != 4 {
+	if !slices.Equal(suiteSourceInitializerPermissions("ftp-consumer-flow"), wantIssuer) || len(sourceInitializerPermissions) != 16 {
 		t.Fatal("FTP-specific lifecycle permissions must not mutate the shared initializer")
 	}
 	for _, suite := range []string{"highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow"} {

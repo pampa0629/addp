@@ -15,8 +15,7 @@ import { getMeasurementUnit, listMetricCategories } from '../src/api/standard'
 import { listDomainQualityIssues, listDomainQualityPlans, listDomainQualityRules } from '../src/api/quality'
 import { domainQualityQuery } from '../src/utils/domainQualitySummary'
 import { transferEntryResponsibilities } from '../src/api/catalog'
-import { createSharingDecision, getSharingDecision, getSharingRequest, listSharingRecipients, listSharingRequests, listSharingDecisions, observeSharingRequirement, findExistingSharingGrant, observeSharingCandidateGrants, prepareSharingRequest, initializeSharingRequirement, listSharingConfirmations, listSharingConfirmationResults } from '../src/api/catalog'
-import { serializeEngineApprovalInitialization } from '../../../common-frontend/basic/src/utils/engineApprovalInitialization.mjs'
+import { createSharingDecision, getSharingDecision, getSharingRequest, listSharingRecipients, listSharingRequests, listSharingDecisions, findExistingSharingGrant, observeSharingCandidateGrants, prepareSharingRequest, listSharingConfirmations, listSharingConfirmationResults } from '../src/api/catalog'
 
 describe('catalog frontend API paths', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -80,29 +79,13 @@ describe('catalog frontend API paths', () => {
     expect(client.get).not.toHaveBeenCalled()
   })
 
-  it('serializes the existing numeric path contract losslessly, including quoted names, under the User client', async () => {
-    const target = { engine_id: '9007199254740993', version: 'v1', segments: [{ term: 'table', kind: 'table', name: 'a"b' }] }
-    const body = serializeEngineApprovalInitialization(target, 'catalog', ' Configure "approval" ', { item_fingerprint: 'a'.repeat(64), boundary_hash: 'b'.repeat(64), native_target: target })
-    expect(body).toContain('"engine_id":9007199254740993,')
-    expect(body).not.toContain('9007199254740992')
-    expect(JSON.parse(body).catalog_path.segments).toEqual(target.segments)
-    expect(JSON.parse(body).reason).toBe('Configure "approval"')
-    expect(JSON.parse(body).mode).toBe('catalog')
-    await initializeSharingRequirement(target, body)
-    expect(client.post).toHaveBeenCalledWith('/system/engines/9007199254740993/access_approval_requirements', body, { headers: { 'Content-Type': 'application/json' } })
-    expect(() => serializeEngineApprovalInitialization({ ...target, engine_id: '1,"mode":"independent"' }, 'catalog', 'Configure')).toThrow()
-    expect(() => serializeEngineApprovalInitialization(target, 'catalog', ' ')).toThrow()
-  })
-
-  it('observes only the exact target under the User client before a separate explicit preparation command', async () => {
+  it('prepares the selected business decision without querying direct authorization configuration', async () => {
     const target = { engine_id: '9007199254740993', version: 'v1', segments: [{ name: 'root' }, { name: 'table' }] }
-    const payload = { request_id: 'request', decision_id: 'decision', requirement_version: '9007199254740993' }
+    const payload = { request_id: 'request', decision_id: 'decision' }
     await listSharingDecisions('entry/id', { page: 2, page_size: 20 })
-    await observeSharingRequirement(target)
     await prepareSharingRequest('entry/id', payload)
     expect(client.get).toHaveBeenCalledExactlyOnceWith('/catalog/entries/entry%2Fid/sharing_decision_candidates', { params: { page: 2, page_size: 20 } })
     expect(client.post.mock.calls).toEqual([
-      ['/system/engines/9007199254740993/access_handling_requirement', { version: target.version, segments: target.segments }],
       ['/catalog/entries/entry%2Fid/sharing_fulfillments', payload]
     ])
   })

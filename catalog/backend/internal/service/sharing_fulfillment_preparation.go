@@ -22,11 +22,10 @@ import (
 type sharingFulfillmentOperator = authorization.SharingFulfillmentOperator
 
 type sharingFulfillmentPreparation struct {
-	RequestID          uuid.UUID
-	CallerPrincipalID  int64
-	Operator           sharingFulfillmentOperator
-	RequirementVersion int64
-	Path               plugin.EngineCatalogPath
+	RequestID         uuid.UUID
+	CallerPrincipalID int64
+	Operator          sharingFulfillmentOperator
+	Path              plugin.EngineCatalogPath
 }
 
 type sharingFulfillmentBinding = authorization.SharingFulfillmentBinding
@@ -39,7 +38,7 @@ func prepareSharingFulfillment(ctx context.Context, tx *gorm.DB, tenantID int64,
 ) (*models.FulfillmentCheck, bool, error) {
 	if tx == nil || tenantID <= 0 || entryID == uuid.Nil || decisionID == uuid.Nil || input.RequestID == uuid.Nil ||
 		input.CallerPrincipalID <= 0 || input.Operator.PrincipalID <= 0 || input.Operator.MembershipID <= 0 ||
-		input.Operator.AuthorizationVersion <= 0 || input.RequirementVersion <= 0 {
+		input.Operator.AuthorizationVersion <= 0 {
 		return nil, false, ErrInvalidEntryUpdate
 	}
 	if _, ok := tx.Statement.ConnPool.(gorm.TxCommitter); !ok {
@@ -69,7 +68,7 @@ func prepareSharingFulfillment(ctx context.Context, tx *gorm.DB, tenantID int64,
 	// System outcome. Transport fields come from the future trusted consumer;
 	// immutable business parameters come only from owner-persisted history.
 	expected := sharingFulfillmentBinding{CallerPrincipalID: input.CallerPrincipalID, Operator: input.Operator, Path: originalPath,
-		ItemFingerprint: decision.ItemFingerprint, BoundaryHash: decision.BoundaryHash, DecisionID: decision.ID, RequirementVersion: input.RequirementVersion,
+		ItemFingerprint: decision.ItemFingerprint, BoundaryHash: decision.BoundaryHash, DecisionID: decision.ID,
 		RecipientType: decision.RecipientType, RecipientID: decision.RecipientID, Action: decision.Action, ExpiryMode: decision.ExpiryMode, ExpiresAt: decision.ExpiresAt}
 	if expected.Validate() != nil {
 		return nil, false, ErrSharingDecisionConflict

@@ -320,6 +320,9 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 		if err := transferRepo.MigrateCaptureProviderResources(tx); err != nil {
 			return err
 		}
+		if err := transferRepo.RetireDevelopmentAuthorizationHistory(tx); err != nil {
+			return err
+		}
 		if err := transferRepo.RemoveExecutionLogs(tx); err != nil {
 			return err
 		}

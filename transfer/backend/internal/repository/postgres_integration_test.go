@@ -69,6 +69,7 @@ func TestIntegrationPostgresExecutionEventsRemoveRetiredText(t *testing.T) {
 	if stored.Metadata["execution_logs"] != nil || stored.Metadata["target_refs"] == nil {
 		t.Fatalf("metadata = %#v", stored.Metadata)
 	}
+	exerciseProductionAuthorizationRetirement(t, db, &stored)
 }
 
 func TestIntegrationPostgresRuntimeLeaseSQLMigrationMatchesGORMModel(t *testing.T) {

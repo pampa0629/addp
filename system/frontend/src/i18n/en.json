@@ -29,6 +29,16 @@
       "disabledSuccess": "Module disabled",
       "enabledAria": "Toggle enabled state for module {name}",
       "systemAlwaysEnabled": "Always enabled",
+      "catalogDeclaration": {
+        "title": "Catalog deployment state",
+        "description": "Catalog has not been declared. Select the deployment state; a disconnected or stopped process does not mean disabled.",
+        "enabled": "Enable Catalog",
+        "disabled": "Catalog not enabled",
+        "submit": "Declare deployment state",
+        "success": "Catalog deployment state declared",
+        "enableImpact": "Enabling Catalog makes direct authorization disallowed by default for items without an explicit setting. Explicit settings and existing data grants remain unchanged.",
+        "disableImpact": "Without Catalog enabled, qualified operators may directly authorize items without an explicit setting. Explicit settings and existing data grants remain unchanged. This does not automatically grant anyone read access."
+      },
       "tabs": {
         "overview": "Module Overview",
         "instances": "Service Instances"
@@ -678,6 +688,7 @@
           "audit": "Catalog Audit",
           "authorization": "Asset Authorization",
           "authorization_facts": "Authorization Resource Facts",
+          "data_item_identity": "DataItem identities",
           "backup": "Backup",
           "build_task": "Graph Build Task",
           "catalog": "Metadata Catalog",
@@ -712,7 +723,7 @@
           "element": "Data Element",
           "engine": "Engine",
           "engine_catalog": "Engine Catalog",
-          "engine_access_approval_requirement": "Source Access Approval Requirement",
+          "engine_access_direct_permission": "Direct Authorization Permission",
           "engine_access_fulfillment": "Source Access Fulfillment",
           "engine_access_grant": "Source Data Grant",
           "engine_access_initial_grant": "Initial Task Output Grant",
@@ -1170,10 +1181,32 @@
         "invalid": "Inspect a real task, enter a purpose (up to 2000 characters), and select a future expiry.",
         "invalidReason": "Enter a revocation reason (up to 2000 characters) and review the current revocable version."
       },
+      "directPermission": {
+        "title": "Direct authorization permissions",
+        "boundary": "Controls new direct Grants. Catalog business approval remains available; existing Grants, Denies and revocations are unchanged. Unconfigured items use the persistent Catalog deployment declaration.",
+        "search": "DataItem name or path",
+        "state": "Effective permission",
+        "source": "Permission source",
+        "all": "All",
+        "states": {
+          "allowed": "Direct authorization allowed",
+          "denied": "Direct authorization not allowed",
+          "unknown": "Deployment state unknown",
+          "pending": "Not checked"
+        },
+        "sources": {
+          "explicit": "Explicit setting",
+          "deployment_default": "Deployment default",
+          "deployment_unknown": "Deployment undeclared"
+        },
+        "edit": "Set permission",
+        "selectedHint": "Only the selected DataItems are shown. An engine authorization administrator may enable direct authorization in its separate tab; Catalog business fulfillment remains available.",
+        "changeBoundary": "Sets future direct authorization permission for this DataItem only. Does not issue reading access, revoke existing Grants or affect Catalog business fulfillment."
+      },
       "dataAuthorization": {
         "newAuthorization": "New authorization",
         "title": "Data authorization",
-        "boundary": "Choose data and recipients, an approval mode and read validity, then confirm. Authorization administrators may handle grants directly; delegating handling does not grant reading.",
+        "boundary": "Select data and recipients, review direct authorization permission and the reading validity, then confirm. Handling does not automatically grant the handler read access.",
         "selectData": "1. Choose data to authorize",
         "basis": {
           "title": "DataItem basic identification",
@@ -1192,49 +1225,22 @@
         "addSelection": "Add to this authorization",
         "snapshotOnly": "Select ordinary tables individually or expand a schema, up to 200 items, excluding views and future tables. FTP/NFS supports IFC/3DS/DAE/OBJ/STL/self-contained GLB/static glTF/Binary 7400 static untextured FBX primary model files; MinIO supports IFC/3DS/DAE/OBJ/STL/self-contained GLB/static glTF/Binary 7400 static untextured FBX primary model objects. Review the complete composition as one DataItem. Directories, buckets and prefixes are for navigation; materials and textures are not granted separately.",
         "remove": "Remove",
-        "newTarget": "Approval mode not selected",
-        "catalogUnavailable": "Business approval requires an available Catalog and entry-read permission. New business approval cannot currently be configured; existing business approval is never downgraded.",
-        "initializeRequired": "First authorization also requires approval initialization permission. Changing an existing mode requires a separate administrator permission.",
-        "changeMode": "Change approval mode",
-        "currentMode": "Current mode",
-        "changeReason": "Reason for change",
-        "changeBoundary": "Only the approval mode for future authorizations changes. Existing grant scopes, expiry and revocations remain unchanged. This action grants no data read access.",
-        "changeConfirm": "Change “{target}” to “{mode}”. Existing grants remain intact; future authorizations use the new mode. This action grants no read access.",
-        "changed": "Approval mode changed; existing grants remain unchanged. You can now handle read authorizations under the new mode.",
-        "successorRequired": "Changing to direct approval also requires your account's Grant creation permission to take over future handling. This does not grant you data read access.",
-        "reviewCurrent": "Refresh and review current mode",
-        "versionConflict": "Another operation changed this approval mode. Your reason is preserved. Refresh and review it before explicitly confirming again; no automatic retry is performed.",
-        "businessBoundary": "Business approval needs confirmation by the Catalog business owner. This only configures the mode, without granting read access; continue in Catalog filtered by engine and table name.",
-        "prepareBusiness": "Configure business approval",
-        "openBusiness": "Continue with business approval",
+        "reviewCurrent": "Refresh and review current permission",
         "selectionFailed": "A complete eligible DataItem list could not be obtained or exceeds 200 items. No DataItems were added. Narrow the selection or retry.",
-        "configurations": "Configured approval modes",
-        "initialize": "Configure approval mode for the first time",
         "target": "DataItem",
-        "mode": "Approval mode",
+        "mode": "Authorization source",
         "version": "Version",
         "reason": "Configuration reason",
         "pickTable": "Select an ordinary table or supported model DataItem",
-        "selectMode": "Select an approval mode",
-        "saveMode": "Save approval mode",
-        "tableOnly": "Browsing is not read permission. Only DataItems with complete basic identification can be authorized, not entire databases, directories or future DataItems.",
-        "readRequired": "Reading configuration requires approval-mode read permission and management qualification (administrator or delegated handler).",
+        "readRequired": "Reviewing direct authorization permission requires its read permission and management qualification for this engine.",
         "browseRequired": "Selecting DataItems requires engine catalog read permission. Contact your permission administrator.",
         "unsupported": "The engine cannot be browsed or its ID cannot be safely represented. Confirm that the engine is active and online.",
-        "exists": "This DataItem already uses {mode}. Initial configuration cannot override an existing arrangement.",
-        "invalid": "Select a supported DataItem, explicitly choose an approval mode and enter a configuration reason.",
-        "confirmBody": "Configure {target} to use {mode}. This only sets the approval mode; it does not grant data reading to any account.",
-        "saved": "Approval mode saved. No data reading permission has been granted.",
         "failed": "No reliable result was obtained. Refresh to check; this page never automatically retries or claims configuration took effect.",
         "modes": {
           "independent": "Direct approval",
           "catalog": "Business approval",
           "task_production": "Initial task output grant",
           "mixed": "Multiple authorization sources"
-        },
-        "descriptions": {
-          "independent": "Approved by a person with independent approval permission and effective engine management delegation. Catalog deployment or cataloging is not required.",
-          "catalog": "New grants require a valid sharing confirmation from the current Catalog business owner. A Catalog outage never automatically switches to independent approval."
         }
       },
       "delegations": {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import test from 'node:test'
-import { serializeEngineApprovalInitialization, serializeEngineCatalogTarget, readNativeApprovalFacts, observeNativeApprovalBinding, approvedBoundaryFields } from '../src/utils/engineApprovalInitialization.mjs'
+import { serializeEngineCatalogTarget, readNativeApprovalFacts, observeNativeApprovalBinding, approvedBoundaryFields } from '../src/utils/engineApprovalInitialization.mjs'
 
 const target = { engine_id: '9007199254740993', version: 'v1', segments: [{ term: 'table', kind: 'table', name: 'a"b/中文' }] }
 const binding = { item_fingerprint: 'a'.repeat(64), boundary_hash: 'b'.repeat(64), native_target: target }
@@ -13,36 +13,20 @@ test('direct grants reuse the same structured target serializer', () => {
   assert.match(grant, /serializeEngineCatalogTarget.*from '@common-ui'/)
   assert.doesNotMatch(grant, /Number\(.*engine_id/)
 })
-test('both explicit modes use one lossless numeric path serializer', () => {
-  for (const mode of ['catalog', 'independent']) {
-    const body = serializeEngineApprovalInitialization(target, mode, ' Reason "quoted" ', binding)
-    assert.match(body, /"engine_id":9007199254740993,/)
-    assert.doesNotMatch(body, /9007199254740992/)
-    assert.equal(JSON.parse(body).mode, mode)
-    assert.equal(JSON.parse(body).reason, 'Reason "quoted"')
-    assert.deepEqual(JSON.parse(body).catalog_path.segments, target.segments)
-    assert.deepEqual(Object.keys(JSON.parse(body)), ['catalog_path', 'mode', 'reason', 'item_fingerprint', 'expected_boundary_hash'])
-  }
+test('malformed IDs never serialize', () => {
+  for (const id of [9007199254740993, '', '0', '01', '-1', '1e3', '9223372036854775808']) assert.throws(() => serializeEngineCatalogTarget({ ...target, engine_id: id }))
 })
-test('missing mode, malformed IDs, oversized int64 and empty reasons never serialize', () => {
-  for (const id of [9007199254740993, '', '0', '01', '-1', '1e3', '1,"mode":"independent"', '9223372036854775808']) {
-    assert.throws(() => serializeEngineApprovalInitialization({ ...target, engine_id: id }, 'independent', 'Reason'))
-  }
-  for (const mode of ['', undefined, 'unknown']) assert.throws(() => serializeEngineApprovalInitialization(target, mode, 'Reason'))
-  for (const reason of ['', ' ', '字'.repeat(2001)]) assert.throws(() => serializeEngineApprovalInitialization(target, 'catalog', reason))
-  assert.throws(() => serializeEngineApprovalInitialization(null, 'catalog', 'Reason'))
-})
-test('System and Catalog consume the same initializer and shared tree owner', () => {
+test('System retains one target and boundary implementation without an initializer', () => {
   const root = resolve(import.meta.dirname, '../../..')
-  const read = path => readFileSync(resolve(root, path), 'utf8')
-  assert.match(read('common-frontend/basic/src/index.js'), /engineApprovalInitialization.mjs/)
-  const panel = read('system/frontend/src/components/engines/EngineDataAuthorization.vue')
+  const panel = readFileSync(resolve(root, 'system/frontend/src/components/engines/EngineDataAuthorization.vue'), 'utf8')
   assert.match(panel, /ResourceTreeSelect/)
-  assert.doesNotMatch(panel, /<el-tree\b|<ResourceTree\s|\/meta\//)
-  assert.match(panel, /serializeEngineApprovalInitialization/)
-  assert.match(read('catalog/frontend/src/components/SharingPanel.vue'), /serializeEngineApprovalInitialization/)
-  assert.doesNotMatch(read('catalog/frontend/src/utils/sharingConfirmation.js'), /serializeApprovalInitialization/)
+  assert.match(panel, /readNativeApprovalFacts/)
+  assert.doesNotMatch(panel, /serializeEngineApprovalInitialization|initializeApprovalRequirement|<el-tree\b|\/meta\//)
 })
+function boundaryPayload(target, binding) {
+ const fields = approvedBoundaryFields(target, binding)
+ return `{"catalog_path":${serializeEngineCatalogTarget(target)},"item_fingerprint":${JSON.stringify(fields.item_fingerprint)},"expected_boundary_hash":${JSON.stringify(fields.expected_boundary_hash)}}`
+}
 
 test('native approval observation accepts exact numeric IDs and requires the trusted complete typed boundary', async () => {
   const native = { engine_id: 2, version: 'catalog.path/v1', segments: [
@@ -62,7 +46,7 @@ test('native approval observation accepts exact numeric IDs and requires the tru
   const collision = { ...native, segments: [native.segments[0], { ...native.segments[1], name: 'a' }, { ...native.segments[2], name: 'b.c' }] }
   await assert.rejects(observeNativeApprovalBinding(native, async (...args) => ({ ...await read(...args), boundary: { native_target: collision } })))
   await assert.rejects(observeNativeApprovalBinding({ ...native, engine_id: 9007199254740992 }, () => { throw new Error('rounded identity reached owner') }))
-  assert.throws(() => serializeEngineApprovalInitialization({ ...native, engine_id: '2' }, 'independent', 'Explicit', undefined))
+  assert.throws(() => boundaryPayload({ ...native, engine_id: '2' }, undefined))
   for (const state of ['incomplete', 'needs_refresh', 'unsupported']) {
     const readState = async (...args) => ({ ...await read(...args), basis_state: state, boundary: null, boundary_hash: null })
     assert.deepEqual(await readNativeApprovalFacts(native, readState), { state, binding: null })
@@ -90,10 +74,9 @@ test('file approval uses the exact primary fingerprint and freezes the full comp
   assert.equal(binding.file_composition.refs.length, 2)
   assert.equal(Object.isFrozen(binding.file_composition.refs[1].target.segments), true)
   assert.equal(approvedBoundaryFields(target, binding).expected_boundary_hash, 'c'.repeat(64))
-  const command = JSON.parse(serializeEngineApprovalInitialization({ ...target, engine_id: '33' }, 'independent', 'Explicit model', binding))
+  const command = JSON.parse(boundaryPayload({ ...target, engine_id: '33' }, binding))
   assert.equal(command.item_fingerprint, candidate)
   assert.equal('file_composition' in command, false)
-  assert.throws(() => serializeEngineApprovalInitialization({ ...target, engine_id: '33' }, 'catalog', 'Unsupported file business mode', binding))
   const textureFirst = await observeNativeApprovalBinding(target, async (_, fp) => { const facts = fileFacts(fp); facts.boundary.file_composition.refs.reverse(); return facts })
   assert.deepEqual(approvedBoundaryFields(target, textureFirst), approvedBoundaryFields(target, binding))
 })
@@ -118,7 +101,7 @@ test('DAE approval binds the full model and texture set and rejects an incomplet
   const binding = await observeNativeApprovalBinding(target, async (_, fp) => makeFacts(fp))
   assert.equal(binding.file_composition.format, 'dae')
   assert.equal(binding.file_composition.refs.length, 2)
-  assert.equal(JSON.parse(serializeEngineApprovalInitialization({ ...target, engine_id: '33' }, 'independent', 'DAE exact composition', binding)).expected_boundary_hash, 'c'.repeat(64))
+  assert.equal(JSON.parse(boundaryPayload({ ...target, engine_id: '33' }, binding)).expected_boundary_hash, 'c'.repeat(64))
   await assert.rejects(observeNativeApprovalBinding(target, async (_, fp) => { const facts = makeFacts(fp); facts.boundary.file_composition.refs[1].target = filePath('../outside.PNG'); return facts }))
   await assert.rejects(observeNativeApprovalBinding(target, async (_, fp) => { const facts = makeFacts(fp); facts.boundary.file_composition.format = 'obj'; return facts }))
 })
@@ -139,7 +122,6 @@ test('object model binding preserves bucket, prefix and names and never accepts 
     const binding = await observeNativeApprovalBinding(target, async (_,fp) => {assert.equal(fp,candidate);return objectFacts(fp,format)})
     assert.equal(binding.file_composition.format,format)
     assert.equal(approvedBoundaryFields(target,binding).item_fingerprint,candidate)
-    assert.throws(() => serializeEngineApprovalInitialization({...target,engine_id:'33'},'catalog','no bucket approval',binding))
   }
   const mutations = [
     f => {f.item_type='file'},
@@ -171,8 +153,7 @@ test('STL approval binds one exact required primary for FTP, NFS and MinIO and r
       assert.equal(id, String(target.engine_id), source); assert.equal(fp, candidate, source); return facts()
     })
     assert.equal(Object.isFrozen(binding.file_composition.refs[0].target.segments), true)
-    const command = JSON.parse(serializeEngineApprovalInitialization({ ...target, engine_id: String(target.engine_id) },
-      'independent', `${source} STL acceptance`, binding))
+    const command = JSON.parse(boundaryPayload({ ...target, engine_id: String(target.engine_id) }, binding))
     assert.equal(command.item_fingerprint, candidate)
     assert.equal(command.expected_boundary_hash, 'd'.repeat(64))
     assert.equal('file_composition' in command, false)
@@ -209,8 +190,7 @@ test('GLB approval binds one exact required primary for FTP, NFS and MinIO and r
       assert.equal(id, String(target.engine_id), source); assert.equal(fp, candidate, source); return facts()
     })
     assert.equal(Object.isFrozen(binding.file_composition.refs[0].target.segments), true)
-    const command = JSON.parse(serializeEngineApprovalInitialization({ ...target, engine_id: String(target.engine_id) },
-      'independent', `${source} GLB acceptance`, binding))
+    const command = JSON.parse(boundaryPayload({ ...target, engine_id: String(target.engine_id) }, binding))
     assert.equal(command.item_fingerprint, candidate)
     assert.equal(command.expected_boundary_hash, 'd'.repeat(64))
     assert.equal('file_composition' in command, false)
@@ -248,8 +228,7 @@ test('FBX approval binds one exact required primary for FTP, NFS and MinIO and r
       assert.equal(id, String(target.engine_id), source); assert.equal(fp, candidate, source); return facts()
     })
     assert.equal(Object.isFrozen(binding.file_composition.refs[0].target.segments), true)
-    const command = JSON.parse(serializeEngineApprovalInitialization({ ...target, engine_id: String(target.engine_id) },
-      'independent', `${source} FBX acceptance`, binding))
+    const command = JSON.parse(boundaryPayload({ ...target, engine_id: String(target.engine_id) }, binding))
     assert.equal(command.item_fingerprint, candidate)
     assert.equal(command.expected_boundary_hash, 'd'.repeat(64))
     assert.equal('file_composition' in command, false)

@@ -1,8 +1,8 @@
 package api
 
 import (
- "github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"context"
+	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	"testing"
 	"time"
 
@@ -52,8 +52,8 @@ func TestFulfillmentRecoveryRoutesUseServiceIdentityAndStrictBinding(t *testing.
 	if err := RegisterEngineAccessFulfillmentAcceptanceRoutes(router.Group("/api/v1/system"), &IAMRuntime{Authentication: authentication, ServiceCredential: credential}, &EngineAccessFulfillmentAcceptanceHandler{service: fixture}); err != nil {
 		t.Fatal(err)
 	}
-	binding := shared.SharingFulfillmentBinding{ ItemFingerprint: factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "fixture")).ItemFingerprint, BoundaryHash: factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "fixture")).BoundaryHash,CallerPrincipalID: 41, Operator: shared.SharingFulfillmentOperator{PrincipalID: 3, MembershipID: 4, AuthorizationVersion: 5},
-		Path: plugin.TabularItemPath(12, "schema", "public", "fixture"), DecisionID: uuid.New(), RequirementVersion: 1, RecipientType: "user", RecipientID: 7, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked}
+	binding := shared.SharingFulfillmentBinding{ItemFingerprint: factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "fixture")).ItemFingerprint, BoundaryHash: factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "fixture")).BoundaryHash, CallerPrincipalID: 41, Operator: shared.SharingFulfillmentOperator{PrincipalID: 3, MembershipID: 4, AuthorizationVersion: 5},
+		Path: plugin.TabularItemPath(12, "schema", "public", "fixture"), DecisionID: uuid.New(), RecipientType: "user", RecipientID: 7, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked}
 	path := "/api/v1/system/runtime/engine-access-fulfillments/" + uuid.NewString()
 	engineDelegationTestRequest(t, router, "POST", path+"/resolve", binding, 200)
 	engineDelegationTestRequest(t, router, "POST", path+"/close", binding, 200)

@@ -371,3 +371,52 @@ func updatePlatformModule(t *testing.T, router http.Handler, payload string) *ht
 	router.ServeHTTP(response, request)
 	return response
 }
+
+func TestCatalogDeploymentDeclarationRejectsIncompleteAndLegacyBodies(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	handler := NewModuleRegistryHandler(service.NewModuleRegistryService(nil), nil)
+	router.POST("/platform/modules", handler.CreateModulePlatform)
+	for _, body := range []string{"", "{}", "null", `{"module_name":"catalog"}`, `{"module_name":"catalog","enabled":null}`, `{"module_name":"manager","enabled":false}`, `{"module_name":"catalog","enabled":false,"version":0}`, `{"module_name":"catalog","enabled":false} {}`} {
+		response := performModuleRegistryRequest(router, http.MethodPost, "/platform/modules", body)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("body %q: status %d", body, response.Code)
+		}
+	}
+}
+
+func TestCatalogDeploymentDeclarationCreatesFalseWithoutRuntime(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.ModuleRegistryState{ID: 1, Revision: 1}).Error; err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	handler := NewModuleRegistryHandler(service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db)), nil)
+	router.POST("/platform/modules", handler.CreateModulePlatform)
+	response := performModuleRegistryRequest(router, http.MethodPost, "/platform/modules", `{"module_name":"catalog","enabled":false}`)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var result models.ModuleInfo
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Enabled || result.Version != 1 || len(result.Instances) != 0 {
+		t.Fatalf("result=%#v", result)
+	}
+	response = performModuleRegistryRequest(router, http.MethodPost, "/platform/modules", `{"module_name":"catalog","enabled":true}`)
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "resource_version_conflict") {
+		t.Fatalf("duplicate=%d %s", response.Code, response.Body.String())
+	}
+	var fact models.ModuleDefinition
+	if err := db.Where("module_name = ?", "catalog").Take(&fact).Error; err != nil || fact.Enabled || fact.Version != 1 {
+		t.Fatalf("overwritten: %#v %v", fact, err)
+	}
+}

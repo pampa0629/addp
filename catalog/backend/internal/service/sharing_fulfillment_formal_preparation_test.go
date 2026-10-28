@@ -119,7 +119,7 @@ func exerciseSharingFulfillmentPreparation(t *testing.T, db *gorm.DB) {
 		}))
 		defer server.Close()
 		s.WithSharingFulfillmentClient(client.NewSystemFulfillmentClient(server.URL, recoveryRuntimeTestTokens{}, server.Client()))
-		prepare := SharingFulfillmentInput{RequestID: uuid.New(), DecisionID: decision.ID, RequirementVersion: 1}
+		prepare := SharingFulfillmentInput{RequestID: uuid.New(), DecisionID: decision.ID}
 		result, err := s.PrepareSharingFulfillment(ctx, 7, EntryAccess{Inventory: true}, entry.ID, prepare, auth, "addp_at_handler")
 		if err != nil || result.State != "pending" || calls != 1 {
 			t.Fatalf("uncertain send=%+v calls=%d %v", result, calls, err)

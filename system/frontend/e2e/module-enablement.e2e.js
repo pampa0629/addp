@@ -370,3 +370,54 @@ test('one instance expires and recovers while automatic refresh preserves filter
   expect(queries.at(-1)).toEqual({ ...allQuery, status: 'up' })
   expect(errors).toEqual([])
 })
+
+test('Catalog intent is explicit, conflicts preserve input and reads never declare it', async ({ page }) => {
+  await mockModuleQueryAPI(page)
+  await page.route('**/api/v1/system/auth/context', route => fulfillJSON(route, 200, {
+    principal: { id: '1', type: 'user' }, context: { type: 'platform' },
+    authorization: { role_assignments: [{ scope: { type: 'platform' }, permissions: ['platform.module.read', 'platform.module.update'] }] }
+  }))
+  let modules = []
+  const creates = []
+  let conflict = true
+  await page.route('**/api/v1/system/platform/modules', route => {
+    if (route.request().method() === 'OPTIONS') return fulfillJSON(route, 204, {})
+    if (route.request().method() === 'GET') return fulfillJSON(route, 200, { modules })
+    expect(route.request().method()).toBe('POST')
+    const body = route.request().postDataJSON()
+    creates.push(body)
+    if (conflict) return fulfillJSON(route, 409, { error: 'changed', error_code: 'resource_version_conflict' })
+    modules = [{ id: 1, module_name: 'catalog', route_prefix: '/catalog', enabled: body.enabled, version: 1, instances: [] }]
+    return fulfillJSON(route, 201, modules[0])
+  })
+  await page.goto('/modules')
+  const submit = page.getByRole('button', { name: '登记部署状态', exact: true })
+  await expect(submit).toBeVisible()
+  await expect(submit).toBeDisabled()
+  expect(creates).toEqual([])
+  await page.locator('label.el-radio').filter({ hasText: '未启用 Catalog' }).click()
+  await submit.click()
+  await expect(page.getByRole('dialog')).toContainText('这不会向任何人自动授予读取权限')
+  await page.getByRole('button', { name: '取消', exact: true }).click()
+  expect(creates).toEqual([])
+  await submit.click()
+  await page.getByRole('button', { name: '确定', exact: true }).click()
+  await expect.poll(() => creates.length).toBe(1)
+  await expect(page.getByRole('radio', { name: '未启用 Catalog', exact: true })).toBeChecked()
+  await expect(submit).toBeDisabled()
+  conflict = false
+  await page.getByRole('button', { name: '重新加载', exact: true }).click()
+  await expect(submit).toBeEnabled()
+  await submit.click()
+  await page.getByRole('button', { name: '确定', exact: true }).click()
+  await expect(submit).toHaveCount(0)
+  expect(creates).toEqual([{ module_name: 'catalog', enabled: false }, { module_name: 'catalog', enabled: false }])
+  await expect(page.locator('.module-technical-name').filter({ hasText: /^catalog$/ })).toBeVisible()
+})
+
+test('module readers cannot declare Catalog deployment intent', async ({ page }) => {
+  await mockModuleQueryAPI(page)
+  await page.goto('/modules')
+  await expect(page.getByRole('heading', { name: '模块管理', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '登记部署状态', exact: true })).toHaveCount(0)
+})

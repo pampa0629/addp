@@ -25,7 +25,7 @@ class FakeClient:
             "business_description": "Stable description",
             "governance_status": "curated",
             "visibility": "tenant",
-            "source": {"source_identity": "fingerprint-1", "source_status": "active"},
+            "source": {"source_identity": "a" * 64, "source_status": "active"},
             "semantic_links": [{"semantic_type": "domain", "semantic_id": "31", "relation_role": "primary"}],
             "responsibilities": [
                 {"role": "accountable_department", "subject_type": "department", "subject_id": "41"},
@@ -44,8 +44,7 @@ class FakeClient:
             {"term": "schema", "kind": "schema", "name": "public"},
             {"term": "table", "kind": "table", "name": SUITE.FIXTURE_TABLE},
         ]}
-        self.requirement = {"id": "20000000-0000-0000-0000-000000000001", "engine_id": "7",
-                            "catalog_path": copy.deepcopy(self.target), "mode": "catalog", "version": 1}
+        self.direct_permission = {"state": "denied", "source": "explicit", "version": "1"}
         self.decisions = {}
         self.receipts = {}
         self.grants = {}
@@ -62,15 +61,11 @@ class FakeClient:
         entry_path = f"/api/v1/catalog/entries/{self.entry['id']}"
         if path == "/api/v1/system/engines/7/access_handling_scope":
             return SUITE.Response(200, {"tenant_id": "42", "engine_id": "7", "operator": self.operator})
-        requirement_path = "/api/v1/system/engines/7/access_approval_requirements"
-        if path.startswith(requirement_path + "?"):
-            return SUITE.Response(200, {"data": [self.requirement] if self.requirement else [],
-                                        "total": 1 if self.requirement else 0})
-        if path == requirement_path and method == "POST":
-            assert self.requirement is None
-            self.requirement = {"id": "20000000-0000-0000-0000-000000000001", "engine_id": "7",
-                                "catalog_path": copy.deepcopy(body["catalog_path"]), "mode": "catalog", "version": 1}
-            return SUITE.Response(201, copy.deepcopy(self.requirement))
+        if any(part in path for part in ("access_approval_requirements", "access_handling_requirement", "direct-permission")):
+            raise AssertionError("Catalog must not query or mutate direct authorization configuration")
+        if path == entry_path + "/sharing_boundary":
+            return SUITE.Response(200, {"item_fingerprint": "a" * 64, "boundary_hash": "b" * 64,
+                                       "native_target": copy.deepcopy(self.target)})
         if path == entry_path + "/sharing_decisions":
             created = body["decision_id"] not in self.decisions
             if not created and any(self.decisions[body["decision_id"]].get(key) != value
@@ -83,6 +78,7 @@ class FakeClient:
                     "confirmed_by": "51", "action": "read",
                     "confirmer_membership_id": "61", "authorization_version": "2", "self_beneficiary": True,
                     "entry_version": str(self.entry["version"]),
+                    "item_fingerprint": "a" * 64, "boundary_hash": body["expected_boundary_hash"],
                     "target": {**copy.deepcopy(self.target), "engine_id": "7"},
                 }
             return SUITE.Response(201 if created else 200, copy.deepcopy(self.decisions[body["decision_id"]]))
@@ -91,7 +87,7 @@ class FakeClient:
         if path == entry_path + "/sharing_fulfillments":
             request_id = body["request_id"]
             if request_id in self.receipts and any(self.receipts[request_id]["binding"][key] != body[key]
-                                                  for key in ("decision_id", "requirement_version")):
+                                                  for key in ("decision_id",)):
                 return SUITE.Response(409, {"error_code": "catalog_sharing_decision_conflict"})
             if request_id not in self.receipts:
                 now = SUITE.datetime.now(SUITE.timezone.utc)
@@ -100,7 +96,7 @@ class FakeClient:
                     "recorded_at": now.isoformat(), "deadline": (now + SUITE.timedelta(minutes=5)).isoformat(),
                     "binding": {"caller_principal_id": "71", "operator": copy.deepcopy(self.operator),
                                 "path": copy.deepcopy(self.target), "decision_id": body["decision_id"],
-                                "requirement_version": body["requirement_version"], "recipient_type": "user",
+                                "item_fingerprint": "a" * 64, "boundary_hash": "b" * 64, "recipient_type": "user",
                                 "recipient_id": "51", "action": "read", "expiry_mode": "at_time",
                                 "expires_at": self.decisions[body["decision_id"]]["expires_at"]},
                 }
@@ -116,7 +112,7 @@ class FakeClient:
         if path.startswith("/api/v1/meta/executions/execution-"):
             return SUITE.Response(200, {"execution_id": path.rsplit("/", 1)[-1], "status": "success"})
         if path == "/api/v1/meta/engines/7/items":
-            return SUITE.Response(200, [{"id": 9, "name": SUITE.FIXTURE_TABLE, "fingerprint": "fingerprint-1"}])
+            return SUITE.Response(200, [{"id": 9, "name": SUITE.FIXTURE_TABLE, "fingerprint": "a" * 64}])
         if path.startswith("/api/v1/catalog/entries?view=inventory&source_identity="):
             return SUITE.Response(200, {"data": [{"id": self.entry["id"]}], "total": 1})
         if path.startswith("/api/v1/catalog/entries?view=governance&source_identity="):
@@ -130,13 +126,13 @@ class FakeClient:
                         {
                             "source_module": "meta",
                             "source_type": "data_item",
-                            "source_identity": "fingerprint-1",
+                            "source_identity": "a" * 64,
                             "found": True,
                             "entry": {
                                 "id": self.entry["id"],
                                 "display_name": self.entry.get("business_name") or "fixture",
                                 "source_status": "active",
-                                "source_identity": "fingerprint-1",
+                                "source_identity": "a" * 64,
                             },
                         }
                     ]
@@ -400,7 +396,7 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
         self.assertEqual(len(client.receipts), 1)
         self.assertEqual(
             browser_calls,
-            [(client.entry["id"], "fingerprint-1", "ADDP Online Catalog Fixture run-1", 1, 20, 30, report["catalog_sharing"]["decision_id"])],
+            [(client.entry["id"], "a" * 64, "ADDP Online Catalog Fixture run-1", 1, 20, 30, report["catalog_sharing"]["decision_id"])],
         )
         self.assertEqual(report["residual_resources"], 0)
         self.assertFalse(client.asset_exists)
@@ -422,8 +418,8 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
         self.assertEqual(len(prepares), 3)
         self.assertEqual(prepares[0], prepares[2])
         self.assertEqual(prepares[0]["request_id"], prepares[1]["request_id"])
-        self.assertEqual(prepares[1]["requirement_version"], "2" if prepares[0]["requirement_version"] == "1" else "1")
-        self.assertEqual(set(prepares[0]), {"request_id", "decision_id", "requirement_version"})
+        self.assertNotEqual(prepares[1]["decision_id"], prepares[0]["decision_id"])
+        self.assertEqual(set(prepares[0]), {"request_id", "decision_id"})
         self.assertEqual(report["receipt"], next(iter(client.receipts.values())))
         self.assertEqual(report["recovery_boundary"], "caller_response_discard_after_commit")
         self.assertEqual(report["grant_write"], "passed")
@@ -447,16 +443,6 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
                     with self.assertRaisesRegex(SUITE.SuiteError, "not rejected canonically"):
                         SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", client.observe_grant)
 
-    def test_changed_requirement_version_stays_canonical_at_int64_boundary(self) -> None:
-        for version in (2, 9223372036854775807):
-            with self.subTest(version=version):
-                client = FakeClient()
-                client.requirement["version"] = version
-                SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", client.observe_grant)
-                prepares = [body for path, body in client.writes if path.endswith("/sharing_fulfillments")]
-                self.assertEqual([body["requirement_version"] for body in prepares], [str(version), "1", str(version)])
-                self.assertEqual(len(client.receipts), 1)
-
     def test_rejected_reuse_cannot_change_original_decision_or_receipt(self) -> None:
         for suffix in ("/sharing_decisions", "/sharing_fulfillments"):
             with self.subTest(suffix=suffix):
@@ -476,45 +462,16 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
                 self.assertEqual(len(client.decisions), 1)
                 self.assertLessEqual(len(client.receipts), 1)
 
-    def test_sharing_initializes_only_missing_exact_fixture_requirement(self) -> None:
-        for initialized in (False, True):
-            with self.subTest(initialized=initialized):
+    def test_catalog_is_independent_of_direct_configuration(self) -> None:
+        for setting in (None, {"state": "denied", "source": "explicit", "version": "1"},
+                        {"state": "allowed", "source": "explicit", "version": "9223372036854775807"}):
+            with self.subTest(setting=setting):
                 client = FakeClient()
-                if initialized:
-                    client.requirement = None
+                client.direct_permission = setting
                 report = SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", client.observe_grant)
-                self.assertEqual(report["approval_requirement_initialized"], initialized)
-                writes = [(path, body) for path, body in client.writes if path.endswith("/access_approval_requirements")]
-                self.assertEqual(len(writes), int(initialized))
-                if writes:
-                    self.assertEqual(set(writes[0][1]), {"catalog_path", "mode", "reason"})
-                    self.assertEqual(writes[0][1]["mode"], "catalog")
-                    self.assertEqual(writes[0][1]["catalog_path"], client.target)
-
-    def test_existing_independent_mode_is_not_overwritten_or_prepared(self) -> None:
-        client = FakeClient()
-        client.requirement["mode"] = "independent"
-        with self.assertRaisesRegex(SUITE.SuiteError, "Catalog mode; no overwrite"):
-            SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", client.observe_grant)
-        self.assertFalse(any(path.endswith(("/access_approval_requirements", "/sharing_fulfillments"))
-                             for path, _ in client.writes))
-
-    def test_paged_requirement_lookup_finds_exact_target_without_reinitializing(self) -> None:
-        class PagedClient(FakeClient):
-            def request(self, method, path, expected, body=None):
-                if "access_approval_requirements?page=" in path:
-                    self.calls.append((method, path))
-                    row = copy.deepcopy(self.requirement)
-                    if "?page=1&" in path:
-                        row["catalog_path"]["segments"][-1]["name"] = "other_table"
-                    return SUITE.Response(200, {"data": [row], "total": 2})
-                return super().request(method, path, expected, body)
-        client = PagedClient()
-        requirement, initialized = SUITE.fixture_approval_requirement(client, 7, client.target, "run-1")
-        self.assertFalse(initialized)
-        self.assertEqual(requirement, client.requirement)
-        self.assertEqual(len(client.calls), 2)
-        self.assertEqual(client.writes, [])
+                self.assertEqual(report["grant_write"], "passed")
+                self.assertEqual(client.direct_permission, setting)
+                self.assertFalse(any("direct-permission" in path for _, path in client.calls))
 
     def test_missing_business_owner_does_not_reassign_or_create_decision(self) -> None:
         client = FakeClient()
@@ -529,7 +486,9 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
             "operator": lambda r: r["binding"]["operator"].update(authorization_version="99"),
             "target": lambda r: r["binding"]["path"].update(engine_id=8),
             "decision": lambda r: r["binding"].update(decision_id="20000000-0000-0000-0000-000000000002"),
-            "requirement": lambda r: r["binding"].update(requirement_version="99"),
+            "fingerprint": lambda r: r["binding"].update(item_fingerprint="c" * 64),
+            "boundary": lambda r: r["binding"].update(boundary_hash="d" * 64),
+            "retired-field": lambda r: r["binding"].update(requirement_version="99"),
             "human-caller": lambda r: r["binding"].update(caller_principal_id="51"),
             "tenant": lambda r: r.update(tenant_id="43"),
             "grant-copy": lambda r: r["binding"].update(grant_id="91"),
@@ -826,7 +785,7 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
             "result": "passed",
             "tenant_id": "42",
             "catalog_entry_id": self.entry_id,
-            "source_identity": "fingerprint-1",
+            "source_identity": "a" * 64,
             "coverage_total_entries": 1,
             "coverage_dimensions": 7,
             "human_readable_filter_selectors": 3,
@@ -849,7 +808,7 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
     def test_validates_browser_report_contract(self) -> None:
         report = self.browser_report
         validated = SUITE.validate_browser_report(
-            report, "run-1", "42", self.entry_id, "fingerprint-1", 1, 20, 30, self.decision_id
+            report, "run-1", "42", self.entry_id, "a" * 64, 1, 20, 30, self.decision_id
         )
 
         self.assertEqual(validated, report)
@@ -864,14 +823,14 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
             with self.subTest(key=key, invalid=invalid):
                 broken = {**report, key: invalid}
                 with self.assertRaisesRegex(SUITE.SuiteError, key):
-                    SUITE.validate_browser_report(broken, "run-1", "42", self.entry_id, "fingerprint-1", 1, 20, 30, self.decision_id)
+                    SUITE.validate_browser_report(broken, "run-1", "42", self.entry_id, "a" * 64, 1, 20, 30, self.decision_id)
         for key in ["anonymous_refresh_401", "failed_business_responses", "technical_source_names", "source_fingerprint_interactions", "source_layout_viewports",
                     "source_facts_reload", "sharing_current_account", "sharing_decision_id", "sharing_browser_commands"]:
             with self.subTest(missing=key):
                 broken = dict(report)
                 del broken[key]
                 with self.assertRaisesRegex(SUITE.SuiteError, key):
-                    SUITE.validate_browser_report(broken, "run-1", "42", self.entry_id, "fingerprint-1", 1, 20, 30, self.decision_id)
+                    SUITE.validate_browser_report(broken, "run-1", "42", self.entry_id, "a" * 64, 1, 20, 30, self.decision_id)
 
     def test_browser_receives_exact_decision_and_requires_a_fresh_matching_report(self) -> None:
         environment = {"ADDP_ONLINE_TEST_RUN_ID": "run-1", "ADDP_ONLINE_TEST_TENANT_ID": "42"}
@@ -897,13 +856,13 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
                      patch.object(SUITE.subprocess, "run", side_effect=browser_process):
                     if outcome == "passed":
                         self.assertEqual(SUITE.run_browser(Path("/fixture"), environment, self.entry_id,
-                            "fingerprint-1", "Fixture", 1, 20, 30, self.decision_id), self.browser_report)
+                            "a" * 64, "Fixture", 1, 20, 30, self.decision_id), self.browser_report)
                     else:
                         expected = {"missing": "did not write", "mismatch": "sharing_decision_id",
                                     "process_failure": "exited with status"}[outcome]
                         with self.assertRaisesRegex(SUITE.SuiteError, expected):
                             SUITE.run_browser(Path("/fixture"), environment, self.entry_id,
-                                              "fingerprint-1", "Fixture", 1, 20, 30, self.decision_id)
+                                              "a" * 64, "Fixture", 1, 20, 30, self.decision_id)
 
     @property
     def decision_id(self) -> str:

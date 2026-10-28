@@ -52,6 +52,19 @@ definitions:
       schema_version:
         type: string
     type: object
+  authorizationfacts.DataItemIdentity:
+    properties:
+      engine_id:
+        type: integer
+      full_name:
+        type: string
+      item_fingerprint:
+        type: string
+      item_type:
+        type: string
+      name:
+        type: string
+    type: object
   authorizationfacts.FileCompositionBoundary:
     properties:
       format:
@@ -71,6 +84,41 @@ definitions:
         type: string
       target:
         $ref: '#/definitions/plugin.EngineCatalogPath'
+    type: object
+  authorizationfacts.IdentityPage:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/authorizationfacts.DataItemIdentity'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  authorizationfacts.IdentityQuery:
+    properties:
+      engine_id:
+        type: integer
+      fingerprint_filter:
+        enum:
+        - include
+        - exclude
+        type: string
+      fingerprints:
+        items:
+          type: string
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      search:
+        type: string
     type: object
   client.MetaMosaicOutput:
     properties:
@@ -2534,6 +2582,63 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - meta.catalog.read
+  /runtime/data-item-identities/query:
+    post:
+      consumes:
+      - application/json
+      description: 仅供 addp-system Tenant Service 查询当前租户精确引擎内已识别数据项；返回最小身份，不读取源内容、不扫描、不裁决权限。先过滤再计数分页；最多
+        20000 个不重复指纹、每页最多 100 项，正文最多 2 MiB。include 空集合返回空结果 | Restricted to addp-system
+        Tenant Service. Reads minimal identified DataItem identities for one engine
+        in the current tenant, without source reads, scans or access decisions. Filters
+        precede counting and pagination. At most 20000 unique fingerprints, 100 rows
+        per page and 2 MiB body. Empty include means no matches
+      parameters:
+      - description: 身份查询 | Identity query
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/authorizationfacts.IdentityQuery'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/authorizationfacts.IdentityPage'
+        "400":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+        "413":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 查询失败 | Query failed
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询数据项身份清单 | Query DataItem identities
+      tags:
+      - Meta Runtime
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.data_item_identity.read
   /runtime/data-items/{fingerprint}/authorization-facts:
     get:
       description: 仅供 addp-system 与 addp-catalog Tenant Service 经共享 MetaClient 精确读取已提交的身份与边界，200

@@ -4238,10 +4238,6 @@ const docTemplate = `{
                 },
                 "recipient_type": {
                     "type": "string"
-                },
-                "requirement_version": {
-                    "type": "string",
-                    "example": ""
                 }
             }
         },
@@ -6064,10 +6060,6 @@ const docTemplate = `{
                 "request_id": {
                     "type": "string"
                 },
-                "requirement_version": {
-                    "type": "string",
-                    "example": ""
-                },
                 "state": {
                     "type": "string",
                     "enum": [
@@ -6508,9 +6500,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "request_id": {
-                    "type": "string"
-                },
-                "requirement_version": {
                     "type": "string"
                 }
             }

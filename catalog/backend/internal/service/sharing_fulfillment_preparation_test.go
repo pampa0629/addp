@@ -23,8 +23,8 @@ func preparationFixture(t *testing.T, decision *SharingDecisionResult) sharingFu
 		t.Fatal(err)
 	}
 	return sharingFulfillmentPreparation{RequestID: uuid.New(), CallerPrincipalID: 60,
-		Operator:           sharingFulfillmentOperator{PrincipalID: 50, MembershipID: 51, AuthorizationVersion: 52},
-		RequirementVersion: 1, Path: path}
+		Operator: sharingFulfillmentOperator{PrincipalID: 50, MembershipID: 51, AuthorizationVersion: 52},
+		Path:     path}
 }
 
 func openSharingPreparationTestDB(t *testing.T) *gorm.DB {
@@ -76,7 +76,6 @@ func TestSharingFulfillmentPreparationBindingRetryAndRollback(t *testing.T) {
 		func(i *sharingFulfillmentPreparation) { i.Operator.PrincipalID++ },
 		func(i *sharingFulfillmentPreparation) { i.Operator.MembershipID++ },
 		func(i *sharingFulfillmentPreparation) { i.Operator.AuthorizationVersion++ },
-		func(i *sharingFulfillmentPreparation) { i.RequirementVersion++ },
 		func(i *sharingFulfillmentPreparation) { i.Path.EngineID++ },
 		func(i *sharingFulfillmentPreparation) {
 			i.Path.Segments = append([]plugin.EngineCatalogSegment(nil), i.Path.Segments...)
@@ -203,7 +202,7 @@ func TestSharingFulfillmentPreparationRejectsSystemUnsupportedTargetBeforePendin
 				t.Fatalf("unsupported target froze basis: %d %v", count, err)
 			}
 			binding := sharingFulfillmentBinding{CallerPrincipalID: request.CallerPrincipalID, Operator: request.Operator, Path: request.Path,
-				DecisionID: decision.ID, RequirementVersion: 1, RecipientType: "user", RecipientID: decision.RecipientID,
+				DecisionID: decision.ID, RecipientType: "user", RecipientID: decision.RecipientID,
 				Action: "read", ExpiryMode: decision.ExpiryMode, ExpiresAt: decision.ExpiresAt}
 			raw, _ := json.Marshal(binding)
 			if _, err := decodeSharingFulfillmentBinding(raw); !errors.Is(err, ErrSharingDecisionConflict) {

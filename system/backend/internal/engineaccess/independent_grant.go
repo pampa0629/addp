@@ -18,7 +18,7 @@ import (
 
 var (
 	ErrIndependentGrantConflict          = errors.Join(commonapi.ErrConflict, errors.New("independent grant command conflict"))
-	ErrIndependentGrantBasis             = errors.Join(commonapi.ErrConflict, errors.New("independent approval basis changed or missing"))
+	ErrIndependentGrantBasis             = errors.Join(commonapi.ErrConflict, errors.New("direct permission changed, missing or denied"))
 	ErrIndependentGrantExpiry            = errors.Join(commonapi.ErrConflict, errors.New("grant expiry is no longer future"))
 	ErrIndependentGrantSourceUnavailable = errors.New("independent grant source structure unavailable")
 )
@@ -37,29 +37,30 @@ func (s *Service) WithIndependentTargetVerifier(verifier IndependentTargetVerifi
 // SourceGrantView exposes issuance/revocation history, not an access verdict.
 // Do not expose the operator's historical authorization version as a credential.
 type SourceGrantView struct {
-	RequestID             uuid.UUID        `json:"request_id"`
-	GrantedAt             time.Time        `json:"granted_at"`
-	ApprovalMode          string           `json:"approval_mode"`
-	CatalogRequestID      *uuid.UUID       `json:"catalog_request_id"`
-	EngineID              int64            `json:"engine_id,string" swaggertype:"string"`
-	CatalogPath           json.RawMessage  `json:"catalog_path" swaggertype:"object"`
-	ItemFingerprint       string           `json:"item_fingerprint"`
-	BoundaryHash          string           `json:"boundary_hash"`
-	FileComposition       json.RawMessage  `json:"file_composition,omitempty" swaggertype:"object"`
-	RecipientType         string           `json:"recipient_type"`
-	RecipientID           int64            `json:"recipient_id,string" swaggertype:"string"`
-	Action                string           `json:"action"`
-	ExpiryMode            string           `json:"expiry_mode"`
-	ExpiresAt             *time.Time       `json:"expires_at"`
-	RequirementVersion    int64            `json:"requirement_version,string" swaggertype:"string"`
-	OperatorPrincipalID   int64            `json:"operator_principal_id,string" swaggertype:"string"`
-	OperatorMembershipID  int64            `json:"operator_membership_id,string" swaggertype:"string"`
-	Reason                *string          `json:"reason"`
-	Revocation            *GrantRevocation `json:"revocation"`
-	ProducerOwner         *string          `json:"producer_owner,omitempty"`
-	ProductionExecutionID *uuid.UUID       `json:"production_execution_id,omitempty"`
-	IssuerPrincipalID     *int64           `json:"issuer_principal_id,omitempty,string" swaggertype:"string"`
-	IssuerMembershipID    *int64           `json:"issuer_membership_id,omitempty,string" swaggertype:"string"`
+	RequestID               uuid.UUID        `json:"request_id"`
+	GrantedAt               time.Time        `json:"granted_at"`
+	ApprovalMode            string           `json:"approval_mode"`
+	CatalogRequestID        *uuid.UUID       `json:"catalog_request_id"`
+	EngineID                int64            `json:"engine_id,string" swaggertype:"string"`
+	CatalogPath             json.RawMessage  `json:"catalog_path" swaggertype:"object"`
+	ItemFingerprint         string           `json:"item_fingerprint"`
+	BoundaryHash            string           `json:"boundary_hash"`
+	FileComposition         json.RawMessage  `json:"file_composition,omitempty" swaggertype:"object"`
+	RecipientType           string           `json:"recipient_type"`
+	RecipientID             int64            `json:"recipient_id,string" swaggertype:"string"`
+	Action                  string           `json:"action"`
+	ExpiryMode              string           `json:"expiry_mode"`
+	ExpiresAt               *time.Time       `json:"expires_at"`
+	DirectPermissionVersion int64            `json:"direct_permission_version,string" swaggertype:"string"`
+	DirectPermissionSource  string           `json:"direct_permission_source"`
+	OperatorPrincipalID     int64            `json:"operator_principal_id,string" swaggertype:"string"`
+	OperatorMembershipID    int64            `json:"operator_membership_id,string" swaggertype:"string"`
+	Reason                  *string          `json:"reason"`
+	Revocation              *GrantRevocation `json:"revocation"`
+	ProducerOwner           *string          `json:"producer_owner,omitempty"`
+	ProductionExecutionID   *uuid.UUID       `json:"production_execution_id,omitempty"`
+	IssuerPrincipalID       *int64           `json:"issuer_principal_id,omitempty,string" swaggertype:"string"`
+	IssuerMembershipID      *int64           `json:"issuer_membership_id,omitempty,string" swaggertype:"string"`
 }
 
 func sourceGrantView(row *sourceGrant) SourceGrantView {
@@ -67,7 +68,7 @@ func sourceGrantView(row *sourceGrant) SourceGrantView {
 		CatalogRequestID: row.CatalogRequestID, EngineID: row.EngineID, CatalogPath: row.CatalogPath,
 		ItemFingerprint: row.ItemFingerprint, BoundaryHash: row.BoundaryHash, FileComposition: row.FileComposition,
 		RecipientType: row.RecipientType, RecipientID: row.RecipientID, Action: row.Action,
-		ExpiryMode: row.ExpiryMode, ExpiresAt: row.ExpiresAt, RequirementVersion: row.RequirementVersion,
+		ExpiryMode: row.ExpiryMode, ExpiresAt: row.ExpiresAt, DirectPermissionVersion: row.DirectPermissionVersion, DirectPermissionSource: row.DirectPermissionSource,
 		OperatorPrincipalID: row.OperatorPrincipalID, OperatorMembershipID: row.OperatorMembershipID, Reason: row.Reason,
 		ProducerOwner: row.ProducerOwner, ProductionExecutionID: row.ProductionExecutionID,
 		IssuerPrincipalID: row.IssuerPrincipalID, IssuerMembershipID: row.IssuerMembershipID}
@@ -80,8 +81,8 @@ type CreateIndependentGrantInput struct {
 	CatalogPath                engineplugin.EngineCatalogPath
 	ItemFingerprint            string
 	ExpectedBoundaryHash       string
-	RequirementVersion         int64
-	InitializeApproval         bool
+	DirectPermissionVersion    int64
+	DirectPermissionSource     string
 	RecipientType              string
 	RecipientID                int64
 	Action, ExpiryMode, Reason string
@@ -96,7 +97,7 @@ func prepareIndependentGrant(input CreateIndependentGrantInput) (*sourceGrant, e
 	path, err := shared.EncodeSharingTarget(input.CatalogPath)
 	expires, expiryErr := shared.NormalizeSharingExpiry(input.ExpiryMode, input.ExpiresAt)
 	segments := input.CatalogPath.Segments
-	if err != nil || expiryErr != nil || input.RequestID == uuid.Nil || input.RequirementVersion <= 0 || (input.InitializeApproval && input.RequirementVersion != 1) ||
+	if err != nil || expiryErr != nil || input.RequestID == uuid.Nil || input.DirectPermissionVersion <= 0 || (input.DirectPermissionSource != directPermissionExplicit && input.DirectPermissionSource != directPermissionDeployment) ||
 		input.EngineID <= 0 || int64(input.CatalogPath.EngineID) != input.EngineID || len(segments) < 2 ||
 		!independentReadTargetSegment(segments[len(segments)-1]) ||
 		input.RecipientID <= 0 || !oneOfRecipient(input.RecipientType) || input.Action != "read" || !validReason(input.Reason) {
@@ -107,9 +108,9 @@ func prepareIndependentGrant(input CreateIndependentGrantInput) (*sourceGrant, e
 		TenantID: input.Actor.TenantID, EngineID: input.EngineID, CatalogPath: path,
 		ItemFingerprint: input.ItemFingerprint, BoundaryHash: input.ExpectedBoundaryHash,
 		RecipientType: input.RecipientType, RecipientID: input.RecipientID, Action: input.Action,
-		ExpiryMode: input.ExpiryMode, ExpiresAt: expires, RequirementVersion: input.RequirementVersion,
+		ExpiryMode: input.ExpiryMode, ExpiresAt: expires, DirectPermissionVersion: input.DirectPermissionVersion, DirectPermissionSource: input.DirectPermissionSource,
 		OperatorPrincipalID: input.Actor.PrincipalID, OperatorMembershipID: input.Actor.MembershipID,
-		OperatorAuthorizationVersion: input.Actor.AuthorizationVersion, Reason: &reason, InitializedApproval: input.InitializeApproval}, nil
+		OperatorAuthorizationVersion: input.Actor.AuthorizationVersion, Reason: &reason}, nil
 }
 
 func independentReadTargetSegment(segment engineplugin.EngineCatalogSegment) bool {
@@ -120,7 +121,7 @@ func sameIndependentGrant(a, b *sourceGrant) bool {
 	return a.ApprovalMode == approvalModeIndependent && a.CatalogRequestID == nil &&
 		a.RequestID == b.RequestID && a.TenantID == b.TenantID && a.EngineID == b.EngineID && equalJSON(a.CatalogPath, b.CatalogPath) &&
 		a.ItemFingerprint == b.ItemFingerprint && a.BoundaryHash == b.BoundaryHash &&
-		a.RequirementVersion == b.RequirementVersion && a.InitializedApproval == b.InitializedApproval && a.RecipientType == b.RecipientType && a.RecipientID == b.RecipientID &&
+		a.DirectPermissionVersion == b.DirectPermissionVersion && a.DirectPermissionSource == b.DirectPermissionSource && a.RecipientType == b.RecipientType && a.RecipientID == b.RecipientID &&
 		a.Action == b.Action && a.OperatorPrincipalID == b.OperatorPrincipalID && a.OperatorMembershipID == b.OperatorMembershipID &&
 		a.Reason != nil && b.Reason != nil && *a.Reason == *b.Reason &&
 		shared.EqualSharingExpiry(a.ExpiryMode, a.ExpiresAt, b.ExpiryMode, b.ExpiresAt)
@@ -168,11 +169,6 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 	// current operator qualification, not a running source or current recipient.
 	err = s.withEngineManagementScope(ctx, input.Actor, input.EngineID, authorization.PermissionSystemEngineAccessGrantCreate, false,
 		func(tx *Repository, check func() error) error {
-			if input.InitializeApproval {
-				if err := tx.checkInitializationPermission(ctx, input.Actor); err != nil {
-					return err
-				}
-			}
 			prior, err := tx.matchIndependentGrant(ctx, row)
 			if qualificationErr := check(); qualificationErr != nil {
 				return qualificationErr
@@ -226,34 +222,9 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 			if err := tx.lockFulfillmentTarget(ctx, row.TenantID, row.CatalogPath); err != nil {
 				return err
 			}
-			if input.InitializeApproval {
-				audit := input.Audit
-				principalType, contextType := iam.PrincipalTypeUser, iam.ContextTypeTenant
-				audit.PrincipalID, audit.PrincipalType = &input.Actor.PrincipalID, &principalType
-				audit.TenantID, audit.ContextType = &input.Actor.TenantID, &contextType
-				_, err := tx.changeApprovalRequirement(ctx, approvalRequirementChange{TenantID: row.TenantID,
-					Path: input.CatalogPath, Mode: approvalModeIndependent, ExpectedVersion: 0, Reason: input.Reason, Audit: audit},
-					func(*Repository) error {
-						if err := check(); err != nil {
-							return err
-						}
-						return tx.checkInitializationPermission(ctx, input.Actor)
-					})
-				if errors.Is(err, errApprovalRequirementVersion) {
-					return ErrIndependentGrantBasis
-				}
-				if err != nil {
-					return err
-				}
-			}
 			checkNew := func() error {
 				if err := check(); err != nil {
 					return err
-				}
-				if input.InitializeApproval {
-					if err := tx.checkInitializationPermission(ctx, input.Actor); err != nil {
-						return err
-					}
 				}
 				engine, err := tx.engine(ctx, row.TenantID, row.EngineID, false)
 				if err != nil {
@@ -262,12 +233,12 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 				if engine.Version != engineVersion {
 					return ErrIndependentGrantBasis
 				}
-				requirement, err := tx.approvalRequirement(ctx, row.TenantID, row.EngineID, row.CatalogPath)
-				if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && (requirement.Mode != approvalModeIndependent || requirement.Version != row.RequirementVersion)) {
-					return ErrIndependentGrantBasis
-				}
+				permission, err := tx.effectiveDirectPermission(ctx, row.TenantID, row.EngineID, row.ItemFingerprint, true)
 				if err != nil {
 					return err
+				}
+				if permission.State != directPermissionAllowed || permission.Source != row.DirectPermissionSource || permission.Version != row.DirectPermissionVersion {
+					return ErrIndependentGrantBasis
 				}
 				now, err := tx.wallClock(ctx)
 				if err != nil {
@@ -310,23 +281,6 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 		return nil, err
 	}
 	return result, nil
-}
-
-// Called only with the operator IAM facts locked by the management scope.
-func (r *Repository) checkInitializationPermission(ctx context.Context, actor Actor) error {
-	now, err := r.wallClock(ctx)
-	if err != nil {
-		return err
-	}
-	rows, err := r.identity().ListEffectiveRoleAssignmentPermissions(ctx, actor.PrincipalID,
-		iam.PrincipalTypeUser, iam.ContextTypeTenant, &actor.TenantID, &actor.MembershipID, now)
-	if err != nil {
-		return err
-	}
-	if !hasCurrentTenantPermission(rows, actor.TenantID, authorization.PermissionSystemEngineAccessApprovalRequirementInitialize, now) {
-		return commonapi.ErrForbidden
-	}
-	return nil
 }
 
 func (r *Repository) listSourceGrants(ctx context.Context, tenantID, engineID int64, page, size int, filter SourceGrantFilter) ([]SourceGrantView, int64, error) {

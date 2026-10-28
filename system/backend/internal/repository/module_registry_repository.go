@@ -68,9 +68,14 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 	if err != nil {
 		return false, err
 	}
-	taskProvider, err := marshalRegistryJSON(req.TaskProvider)
-	if err != nil {
-		return false, err
+	// A typed nil marshals to JSON null, whereas an absent declaration is SQL
+	// NULL. Keep the owner declaration canonical so re-registration is a no-op.
+	var taskProvider datatypes.JSON
+	if req.TaskProvider != nil {
+		taskProvider, err = marshalRegistryJSON(req.TaskProvider)
+		if err != nil {
+			return false, err
+		}
 	}
 	hostNodeIPs, err := marshalRegistryJSON(req.HostNodeIPs)
 	if err != nil {
@@ -191,6 +196,32 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 		return nil
 	})
 	return changed, err
+}
+
+// CreateCatalogDefinition records platform administrator intent without a
+// runtime lease. OnConflict never overwrites a concurrent service registration.
+func (r *ModuleRegistryRepository) CreateCatalogDefinition(enabled bool) (*models.ModuleDefinition, error) {
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		// Use a map: GORM's model default:true must not replace explicit false.
+		result := tx.Model(&models.ModuleDefinition{}).Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "module_name"}}, DoNothing: true,
+		}).Create(map[string]interface{}{
+			"module_name": "catalog", "route_prefix": "/catalog", "enabled": enabled,
+			"version": int64(1), "created_at": now, "updated_at": now,
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrModuleDefinitionVersionConflict
+		}
+		return bumpModuleRegistryRevision(tx, now)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r.GetModule("catalog")
 }
 
 func (r *ModuleRegistryRepository) UpdateEnabled(moduleName string, enabled bool, version int64) (*models.ModuleDefinition, bool, error) {

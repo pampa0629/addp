@@ -63,11 +63,6 @@ export async function listSharingDecisions(id, params) {
 }
 
 // Current User client; never use the Catalog runtime identity for this read.
-export async function observeSharingRequirement(target) {
-	return client.post(`/system/engines/${encodeURIComponent(target.engine_id)}/access_handling_requirement`, {
-		version: target.version, segments: target.segments
-	})
-}
 
 // Read the direct relation, not a user's combined department/project sources.
 // This optional User observation never replaces System's write-time guard.
@@ -121,11 +116,6 @@ export async function prepareSharingRequest(id, payload) {
 	return client.post(`/catalog/entries/${encodeURIComponent(id)}/sharing_fulfillments`, payload)
 }
 
-export async function initializeSharingRequirement(target, serializedPayload) {
-	return client.post(`/system/engines/${encodeURIComponent(target.engine_id)}/access_approval_requirements`, serializedPayload, {
-		headers: { 'Content-Type': 'application/json' }
-	})
-}
 
 export async function getSharingRequest(id, requestID) {
 	return client.get(`/catalog/entries/${encodeURIComponent(id)}/sharing_fulfillments/${encodeURIComponent(requestID)}`)

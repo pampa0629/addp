@@ -158,7 +158,6 @@ func TestSharingFulfillmentRecoveryUnknownOrMismatchedResultStaysPending(t *test
 		{name: "caller mismatch", mutate: func(r *sharingFulfillmentResolution) { r.Binding.CallerPrincipalID++ }},
 		{name: "operator mismatch", mutate: func(r *sharingFulfillmentResolution) { r.Binding.Operator.PrincipalID++ }},
 		{name: "membership mismatch", mutate: func(r *sharingFulfillmentResolution) { r.Binding.Operator.MembershipID++ }},
-		{name: "requirement mismatch", mutate: func(r *sharingFulfillmentResolution) { r.Binding.RequirementVersion++ }},
 		{name: "decision mismatch", mutate: func(r *sharingFulfillmentResolution) { r.Binding.DecisionID = uuid.New() }},
 		{name: "engine mismatch", mutate: func(r *sharingFulfillmentResolution) { r.Binding.Path.EngineID++ }},
 		{name: "path mismatch", mutate: func(r *sharingFulfillmentResolution) {

@@ -51,6 +51,17 @@ func TestProductionReceiptRequiresOriginalSuccessfulCommittedExecution(t *testin
 			t.Fatal(err)
 		}
 	}
+	item.Metadata[models.ProductionAuthorizationMetadataKey] = models.ProductionAuthorization{SchemaVersion: "transfer.initial-authorization/v1", Status: "denied", Code: models.ProductionAuthorizationRetired}
+	if err := db.Model(&item).Update("metadata", item.Metadata).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ReadProductionReceipt(t.Context(), 7, id); !errors.Is(err, commonapi.ErrConflict) {
+		t.Fatalf("retired authorization can reissue from receipt: %v", err)
+	}
+	delete(item.Metadata, models.ProductionAuthorizationMetadataKey)
+	if err := db.Model(&item).Update("metadata", item.Metadata).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Model(&item).Updates(map[string]interface{}{"actor_principal_id": nil, "actor_tenant_membership_id": nil, "issued_authorization_version": nil}).Error; err != nil {
 		t.Fatal(err)
 	}

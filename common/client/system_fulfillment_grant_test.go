@@ -19,7 +19,7 @@ func fulfillmentGrantClientBinding() shared.SharingFulfillmentBinding {
 	expires := time.Date(2030, 1, 2, 3, 4, 5, 123456000, time.UTC)
 	return shared.SharingFulfillmentBinding{ItemFingerprint: factstest.Binding(plugin.TabularItemPath(12, "schema", "原.模式", " 源/表 ")).ItemFingerprint, BoundaryHash: factstest.Binding(plugin.TabularItemPath(12, "schema", "原.模式", " 源/表 ")).BoundaryHash, CallerPrincipalID: 9007199254740993,
 		Operator: shared.SharingFulfillmentOperator{PrincipalID: 9007199254740995, MembershipID: 5, AuthorizationVersion: 9007199254740997},
-		Path:     plugin.TabularItemPath(12, "schema", "原.模式", " 源/表 "), DecisionID: uuid.New(), RequirementVersion: 9007199254740999,
+		Path:     plugin.TabularItemPath(12, "schema", "原.模式", " 源/表 "), DecisionID: uuid.New(),
 		RecipientType: "project_group", RecipientID: 9007199254741001, Action: "read", ExpiryMode: shared.SharingExpiryAtTime, ExpiresAt: &expires}
 }
 

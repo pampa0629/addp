@@ -111,6 +111,13 @@ type ModuleRoutingSnapshot struct {
 	ObservedAt time.Time     `json:"observed_at"`
 }
 
+// ModuleDefinitionCreateRequest explicitly declares Catalog deployment intent
+// before any Catalog process exists. It does not register a runtime instance.
+type ModuleDefinitionCreateRequest struct {
+	ModuleName string `json:"module_name" binding:"required,oneof=catalog" enums:"catalog"`
+	Enabled    *bool  `json:"enabled" binding:"required"`
+}
+
 type ModuleDefinitionUpdateRequest struct {
 	Enabled *bool `json:"enabled" binding:"required"`
 	Version int64 `json:"version" binding:"required,gt=0"`

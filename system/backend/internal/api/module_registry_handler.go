@@ -384,6 +384,42 @@ func (h *ModuleRegistryHandler) ListModuleRuntimeInstancesPlatform(c *gin.Contex
 	}
 }
 
+// CreateModulePlatform godoc
+// @Summary      登记 Catalog 部署意图 | Declare Catalog deployment intent
+// @Description  由平台模块管理员显式登记尚不存在的 Catalog 启用状态；不创建运行实例，已有定义返回冲突且不覆盖 | Explicitly creates a missing Catalog definition using platform module management authority; creates no runtime instance and never overwrites an existing definition
+// @Tags         平台模块管理 | Platform Module Management
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body models.ModuleDefinitionCreateRequest true "部署声明 | Deployment declaration"
+// @Success      201 {object} models.ModuleInfo
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      401 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["platform.module.update"]
+// @Router       /platform/modules [post]
+func (h *ModuleRegistryHandler) CreateModulePlatform(c *gin.Context) {
+	var req models.ModuleDefinitionCreateRequest
+	if err := commonapi.BindOptionalJSONStrict(c, &req); err != nil {
+		commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgModuleRegistrationInvalid))
+		return
+	}
+	module, err := h.service.CreateModuleDefinition(&req)
+	switch {
+	case errors.Is(err, service.ErrModuleDefinitionVersionConflict):
+		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, sysi18n.MsgModuleVersionConflict), "error_code": "resource_version_conflict"})
+	case errors.Is(err, service.ErrInvalidModuleRegistration):
+		commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgModuleRegistrationInvalid))
+	case err != nil:
+		commonapi.RespondError(c, http.StatusInternalServerError, commoni18n.T(c, sysi18n.MsgInternalError))
+	default:
+		c.JSON(http.StatusCreated, module)
+	}
+}
+
 // UpdateModulePlatform godoc
 // @Summary      更新平台模块启用状态 | Update platform module enabled state
 // @Description  只更新业务模块的管理员 enabled 意图；System 与 Gateway 固定启用，更新返回 409 bootstrap_module_immutable | Updates only business module enabled intent; System and Gateway are always enabled, and updates return 409 bootstrap_module_immutable

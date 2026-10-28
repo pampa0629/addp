@@ -4231,10 +4231,6 @@
                 },
                 "recipient_type": {
                     "type": "string"
-                },
-                "requirement_version": {
-                    "type": "string",
-                    "example": ""
                 }
             }
         },
@@ -6057,10 +6053,6 @@
                 "request_id": {
                     "type": "string"
                 },
-                "requirement_version": {
-                    "type": "string",
-                    "example": ""
-                },
                 "state": {
                     "type": "string",
                     "enum": [
@@ -6501,9 +6493,6 @@
                     "type": "string"
                 },
                 "request_id": {
-                    "type": "string"
-                },
-                "requirement_version": {
                     "type": "string"
                 }
             }

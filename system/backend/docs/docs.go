@@ -1790,362 +1790,6 @@ const docTemplate = `{
                 ]
             }
         },
-        "/engines/{id}/access_approval_requirements": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "当前租户及当前管理资格范围内的配置事实，不包含连接信息或内容授权 | Configuration facts in the current tenant and management qualification, without connection information or content grants",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "源授权批准要求 | Source Access Approval Requirements"
-                ],
-                "summary": "查询引擎源授权批准要求 | List source access approval requirements for an engine",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "引擎 ID | Engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "页码，默认 1 | Page, default 1",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "每页数量，默认 10，最多 100 | Page size, default 10, maximum 100",
-                        "name": "page_size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "批准要求列表 | Approval requirements",
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "data": {
-                                    "type": "array",
-                                    "items": {
-                                        "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.ApprovalRequirementView"
-                                    }
-                                },
-                                "page": {
-                                    "type": "integer"
-                                },
-                                "page_size": {
-                                    "type": "integer"
-                                },
-                                "total": {
-                                    "type": "integer"
-                                },
-                                "total_pages": {
-                                    "type": "integer"
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.engine_access_approval_requirement.read"
-                ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "当前用户需独立初始化权限及管理资格（授权管理员或本引擎受托办理人）；必须明确选择 catalog 或 independent，仅新建精确目标要求。已有要求返回 409，不切换模式、不授予批准资格或内容访问；不依赖 Catalog 在线 | Requires initialization permission and administrator or delegated engine handler qualification. Explicit catalog or independent mode creates only an exact target requirement. Existing facts return 409; no mode switch, approval qualification or content grant. Catalog availability is not required",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "源授权批准要求 | Source Access Approval Requirements"
-                ],
-                "summary": "首次配置源目标批准方式 | Configure the approval mode for a source target for the first time",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "引擎 ID | Engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Meta 数据项身份、精确 single 边界及预期摘要、明确批准方式与原因 | Meta DataItem identity, exact single boundary, expected digest, explicit approval mode and reason",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.InitializeEngineAccessApprovalRequirementRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "已初始化 | Initialized",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.ApprovalRequirementView"
-                        }
-                    },
-                    "400": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.engine_access_approval_requirement.initialize"
-                ]
-            }
-        },
-        "/engines/{id}/access_approval_requirements/{requirement_id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "按当前租户及引擎隔离，并核验授权管理员或本引擎受托办理资格；不存在及跨租户均返回 404 | Scoped to current tenant and engine with current administrator or delegated engine handler qualification checks; missing and cross-tenant IDs return 404",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "源授权批准要求 | Source Access Approval Requirements"
-                ],
-                "summary": "读取源授权批准要求 | Get a source access approval requirement",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "引擎 ID | Engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "批准要求 UUID | Approval requirement UUID",
-                        "name": "requirement_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "批准要求 | Approval requirement",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.ApprovalRequirementView"
-                        }
-                    },
-                    "400": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.engine_access_approval_requirement.read"
-                ]
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "需独立更新权限及当前引擎管理资格；切到 independent 还需本人直接授权权限，并将本人记为当次承接人。目标派生自当前租户及引擎内的原记录；正整数版本匹配才可切换。同模式不递增版本或追加切换审计。既有 Grant 和已受理请求不变，不发放读取权，不依据 Catalog 存活自动切换 | Requires update permission and current engine management qualification. Independent mode additionally requires the actor's Grant creation permission and records this actor as the handoff successor. Target derives from the tenant and engine scoped record; a positive matching version is required. Same mode does not advance the version or add a change audit. Existing Grants and accepted requests remain unchanged; no read access or availability-based switching",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "源授权批准要求 | Source Access Approval Requirements"
-                ],
-                "summary": "显式切换源目标批准方式 | Explicitly change a source target's approval mode",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "引擎 ID | Engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "批准要求 UUID | Approval requirement UUID",
-                        "name": "requirement_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "当前版本、目标方式与切换原因 | Current version, desired mode and change reason",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.UpdateEngineAccessApprovalRequirementRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "批准要求，不是读取授权 | Approval requirement, not a read grant",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.ApprovalRequirementView"
-                        }
-                    },
-                    "400": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.engine_access_approval_requirement.update"
-                ]
-            }
-        },
         "/engines/{id}/access_delegations": {
             "get": {
                 "security": [
@@ -2817,7 +2461,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "当前 Tenant User 需独立授予权限及引擎管理资格；支持 Meta 基础识别 complete 的 schema 普通单表、数据库单表／集合和 FTP IFC／3DS 完整组成 single 数据项，必须提交数据项身份及确认时边界摘要，批准要求为 independent 且版本匹配。文件组成快照由 System 独立读取 Meta 后冻结，不能由请求自报或把旧主文件许可升级。不要求企业 Catalog 编目；结构核验不读取样本 | Current Tenant User needs Grant creation permission and engine management qualification. Supports Meta-complete schema ordinary-table, database-table/collection and complete FTP IFC/3DS single DataItems, with explicit identity, expected boundary hash and independent approval version. System freezes file composition from Meta, not caller input or an upgraded primary-only permission. No enterprise Catalog curation is required; structural verification reads no samples\n同命令同操作者同参数重试仅恢复原签发及撤销事实，不续期或恢复读取。不同参数 409；成功不替代消费侧功能权限、Deny、当前主体和安全策略 | Identical command, operator and parameters recover issuance and revocation history without renewal or restored access. Changed parameters return 409; success does not replace consumer permissions, Deny, current identity or security policy\n同目标、接收方和动作已有有效授权时，新命令返回 409 engine_access_grant_relation_exists，不重复发放或静默变更期限；包括业务批准来源 | A new command returns 409 engine_access_grant_relation_exists when the same target, recipient and action already have active access, including business-approved Grants. No duplicate issuance or silent validity change\n授权管理员不需委托自己，受托办理员需有效引擎委托。initialize_approval=true 须额外具有首次配置权限且版本为 1；首次配置与 Grant 原子提交，不覆盖已有要求 | Authorization administrators need no self-delegation; handlers need an effective engine delegation. initialize_approval=true additionally requires initialization permission and version 1; configuration and Grant commit atomically without overwriting an existing basis",
+                "description": "当前 Tenant User 需独立授予权限及引擎管理资格；支持 Meta 基础识别 complete 的 schema 普通单表、数据库单表／集合和 FTP IFC／3DS 完整组成 single 数据项，必须提交数据项身份及确认时边界摘要，直接授权许可有效且来源、版本匹配。文件组成快照由 System 独立读取 Meta 后冻结，不能由请求自报或把旧主文件许可升级。不要求企业 Catalog 编目；结构核验不读取样本 | Current Tenant User needs Grant creation permission and engine management qualification. Supports Meta-complete schema ordinary-table, database-table/collection and complete FTP IFC/3DS single DataItems, with explicit identity, expected boundary hash and effective direct permission source and version. System freezes file composition from Meta, not caller input or an upgraded primary-only permission. No enterprise Catalog curation is required; structural verification reads no samples\n同命令同操作者同参数重试仅恢复原签发及撤销事实，不续期或恢复读取。不同参数 409；成功不替代消费侧功能权限、Deny、当前主体和安全策略 | Identical command, operator and parameters recover issuance and revocation history without renewal or restored access. Changed parameters return 409; success does not replace consumer permissions, Deny, current identity or security policy\n同目标、接收方和动作已有有效授权时，新命令返回 409 engine_access_grant_relation_exists，不重复发放或静默变更期限；包括业务批准来源 | A new command returns 409 engine_access_grant_relation_exists when the same target, recipient and action already have active access, including business-approved Grants. No duplicate issuance or silent validity change",
                 "consumes": [
                     "application/json"
                 ],
@@ -2837,7 +2481,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "显式命令、精确 DataItem 主目标、边界摘要、批准版本、接收方、只读动作、期限与原因 | Explicit command, exact primary DataItem target, boundary hash, approval version, recipient, read action, expiry and reason",
+                        "description": "显式命令、精确 DataItem 主目标、边界摘要、许可来源及版本、接收方、只读动作、期限与原因 | Explicit command, exact primary DataItem target, boundary hash, permission source and version, recipient, read action, expiry and reason",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -2897,9 +2541,6 @@ const docTemplate = `{
                     }
                 },
                 "x-addp-auth-mode": "permission",
-                "x-addp-conditional-permissions": [
-                    "system.engine_access_approval_requirement.initialize"
-                ],
                 "x-addp-required-permissions": [
                     "system.engine_access_grant.create"
                 ]
@@ -3135,86 +2776,6 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "system.engine_access_grant.revoke"
-                ]
-            }
-        },
-        "/engines/{id}/access_handling_requirement": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "已通过资格核验但尚未配置批准方式时，返回 404 approval_requirement_not_configured；不自动初始化，跨租户或不存在引擎仍隐藏 | A qualified observation of an unconfigured target returns 404 approval_requirement_not_configured without initialization; cross-tenant or missing engines remain hidden\n只读结构化查询。仅本人办理权限及管理资格（授权管理员或本引擎受托办理人），不枚举配置、不初始化缺失要求，不授予访问；版本为无损字符串，正式提交仍须核验原预期版本 | Read-only structured query under current human handling permission and administrator or delegated engine handler qualification. No configuration enumeration, initialization or access grant; the version is a lossless string and formal submission rechecks the original expected version",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "源授权办理 | Source Access Fulfillment"
-                ],
-                "summary": "观察精确目标的当前批准要求 | Observe the exact target's current approval requirement",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "引擎 ID，唯一来源 | Engine ID, sole source",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "完整结构化叶子路径，含结构根 | Complete structured leaf path including its root",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.EngineAccessHandlingRequirementRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "当前批准要求观察，不是凭据 | Current approval requirement observation, not a credential",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.HandlingRequirementView"
-                        }
-                    },
-                    "400": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.engine_access_fulfillment.create"
                 ]
             }
         },
@@ -3575,6 +3136,190 @@ const docTemplate = `{
                 ]
             }
         },
+        "/engines/{id}/data-items/{fingerprint}/direct-permission": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅查询Meta已识别身份；显式设置优先，否则使用Catalog持久启用状态，未登记为未知。运行健康不改变默认。不授予读取权，不初始化许可 | Queries a Meta-identified item. Explicit settings win; otherwise persistent Catalog enablement determines the default, with undeclared state unknown. Runtime health never changes this default. No content grant or implicit initialization",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "直接授权许可 | Direct Authorization Permissions"
+                ],
+                "summary": "查询数据项有效直接授权许可 | Read effective direct permission for a DataItem",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据项指纹 | DataItem fingerprint",
+                        "name": "fingerprint",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当次观察，不是凭据 | Current observation, not a credential",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.DirectPermissionView"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_access_direct_permission.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "需独立许可管理权限和当前引擎授权管理员资格；普通办理委托不能代替。提交实际观察的来源与版本，显式设置覆盖部署默认。仅控制后续直接签发，不修改已有Grant，不阻断Catalog业务办理，不授予内容读取 | Requires dedicated manage permission and current engine authorization administrator qualification; delegated handlers are insufficient. Submit the observed source and version; explicit settings override deployment defaults. Controls future direct issuance only, without changing Grants, blocking Catalog fulfillment or granting content access",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "直接授权许可 | Direct Authorization Permissions"
+                ],
+                "summary": "设置精确数据项的直接授权许可 | Set direct authorization permission for an exact DataItem",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "数据项指纹 | DataItem fingerprint",
+                        "name": "fingerprint",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "目标、边界、许可值、原观察及原因 | Target, boundary, desired value, prior observation and reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.SetEngineDirectPermissionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "显式许可观察 | Explicit permission observation",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.DirectPermissionView"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_access_direct_permission.update"
+                ]
+            }
+        },
         "/engines/{id}/deletion-assessments": {
             "post": {
                 "security": [
@@ -3701,6 +3446,141 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "system.engine.delete"
+                ]
+            }
+        },
+        "/engines/{id}/direct-permissions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "包含未显式配置的数据项；由Meta按身份筛选后计数分页，System组合许可来源。跨服务查询不持有IAM锁；配置变化返回冲突，故障不返回空清单 | Includes unconfigured items. Meta filters identities before counting and pagination; System combines permission provenance. No IAM lock crosses the owner request; configuration changes return conflict, and failures never become empty lists",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "直接授权许可 | Direct Authorization Permissions"
+                ],
+                "summary": "按有效状态查询数据项直接授权许可 | List DataItems by effective direct permission",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "名称或路径搜索 | Name or path search",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "精确数据项身份 | Exact DataItem identity",
+                        "name": "item_fingerprint",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "allowed",
+                            "denied",
+                            "unknown"
+                        ],
+                        "type": "string",
+                        "description": "有效许可状态 | Effective permission state",
+                        "name": "state",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认1 | Page, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认20，最多100 | Page size, default 20, maximum 100",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "有效许可清单 | Effective permission list",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.DirectPermissionIdentityView"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_access_direct_permission.read"
                 ]
             }
         },
@@ -7859,6 +7739,77 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "platform.module.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "由平台模块管理员显式登记尚不存在的 Catalog 启用状态；不创建运行实例，已有定义返回冲突且不覆盖 | Explicitly creates a missing Catalog definition using platform module management authority; creates no runtime instance and never overwrites an existing definition",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台模块管理 | Platform Module Management"
+                ],
+                "summary": "登记 Catalog 部署意图 | Declare Catalog deployment intent",
+                "parameters": [
+                    {
+                        "description": "部署声明 | Deployment declaration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ModuleDefinitionCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ModuleInfo"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.module.update"
                 ]
             }
         },
@@ -16057,10 +16008,6 @@ const docTemplate = `{
                 },
                 "recipient_type": {
                     "type": "string"
-                },
-                "requirement_version": {
-                    "type": "string",
-                    "example": ""
                 }
             }
         },
@@ -17208,33 +17155,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_system_internal_engineaccess.ApprovalRequirementView": {
-            "type": "object",
-            "properties": {
-                "catalog_path": {
-                    "type": "object"
-                },
-                "engine_id": {
-                    "type": "string",
-                    "example": ""
-                },
-                "id": {
-                    "type": "string"
-                },
-                "item_fingerprint": {
-                    "type": "string"
-                },
-                "mode": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
         "github_com_addp_system_internal_engineaccess.DenyRelease": {
             "type": "object",
             "properties": {
@@ -17252,6 +17172,79 @@ const docTemplate = `{
                     "example": ""
                 },
                 "released_by_principal_id": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
+        "github_com_addp_system_internal_engineaccess.DirectPermissionIdentityView": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "full_name": {
+                    "type": "string"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string",
+                    "enum": [
+                        "explicit",
+                        "deployment_default",
+                        "deployment_unknown"
+                    ]
+                },
+                "state": {
+                    "type": "string",
+                    "enum": [
+                        "allowed",
+                        "denied",
+                        "unknown"
+                    ]
+                },
+                "version": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
+        "github_com_addp_system_internal_engineaccess.DirectPermissionView": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string",
+                    "enum": [
+                        "explicit",
+                        "deployment_default",
+                        "deployment_unknown"
+                    ]
+                },
+                "state": {
+                    "type": "string",
+                    "enum": [
+                        "allowed",
+                        "denied",
+                        "unknown"
+                    ]
+                },
+                "version": {
                     "type": "string",
                     "example": ""
                 }
@@ -17282,22 +17275,6 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
-                }
-            }
-        },
-        "github_com_addp_system_internal_engineaccess.HandlingRequirementView": {
-            "type": "object",
-            "properties": {
-                "mode": {
-                    "type": "string",
-                    "enum": [
-                        "catalog",
-                        "independent"
-                    ]
-                },
-                "requirement_version": {
-                    "type": "string",
-                    "example": ""
                 }
             }
         },
@@ -17559,6 +17536,13 @@ const docTemplate = `{
                 "catalog_request_id": {
                     "type": "string"
                 },
+                "direct_permission_source": {
+                    "type": "string"
+                },
+                "direct_permission_version": {
+                    "type": "string",
+                    "example": ""
+                },
                 "engine_id": {
                     "type": "string",
                     "example": ""
@@ -17612,10 +17596,6 @@ const docTemplate = `{
                 },
                 "request_id": {
                     "type": "string"
-                },
-                "requirement_version": {
-                    "type": "string",
-                    "example": ""
                 },
                 "revocation": {
                     "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.GrantRevocation"
@@ -19489,6 +19469,24 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_system_internal_models.ModuleDefinitionCreateRequest": {
+            "type": "object",
+            "required": [
+                "enabled",
+                "module_name"
+            ],
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "module_name": {
+                    "type": "string",
+                    "enum": [
+                        "catalog"
+                    ]
+                }
+            }
+        },
         "github_com_addp_system_internal_models.ModuleDefinitionUpdateRequest": {
             "type": "object",
             "required": [
@@ -20161,6 +20159,16 @@ const docTemplate = `{
                 "catalog_path": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
                 },
+                "direct_permission_source": {
+                    "type": "string",
+                    "enum": [
+                        "explicit",
+                        "deployment_default"
+                    ]
+                },
+                "direct_permission_version": {
+                    "type": "string"
+                },
                 "expected_boundary_hash": {
                     "type": "string"
                 },
@@ -20173,9 +20181,6 @@ const docTemplate = `{
                         "at_time",
                         "until_revoked"
                     ]
-                },
-                "initialize_approval": {
-                    "type": "boolean"
                 },
                 "item_fingerprint": {
                     "type": "string"
@@ -20195,9 +20200,6 @@ const docTemplate = `{
                     ]
                 },
                 "request_id": {
-                    "type": "string"
-                },
-                "requirement_version": {
                     "type": "string"
                 }
             }
@@ -20272,24 +20274,6 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "integer"
-                }
-            }
-        },
-        "internal_api.EngineAccessHandlingRequirementRequest": {
-            "type": "object",
-            "required": [
-                "segments",
-                "version"
-            ],
-            "properties": {
-                "segments": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/plugin.EngineCatalogSegment"
-                    }
-                },
-                "version": {
-                    "type": "string"
                 }
             }
         },
@@ -22859,37 +22843,6 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.InitializeEngineAccessApprovalRequirementRequest": {
-            "type": "object",
-            "required": [
-                "catalog_path",
-                "expected_boundary_hash",
-                "item_fingerprint",
-                "mode",
-                "reason"
-            ],
-            "properties": {
-                "catalog_path": {
-                    "$ref": "#/definitions/plugin.EngineCatalogPath"
-                },
-                "expected_boundary_hash": {
-                    "type": "string"
-                },
-                "item_fingerprint": {
-                    "type": "string"
-                },
-                "mode": {
-                    "type": "string",
-                    "enum": [
-                        "catalog",
-                        "independent"
-                    ]
-                },
-                "reason": {
-                    "type": "string"
-                }
-            }
-        },
         "internal_api.RasterPlatformUpdate": {
             "type": "object",
             "required": [
@@ -23018,27 +22971,37 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.UpdateEngineAccessApprovalRequirementRequest": {
+        "internal_api.SetEngineDirectPermissionRequest": {
             "type": "object",
             "required": [
-                "mode",
-                "reason",
-                "version"
+                "allowed",
+                "catalog_path",
+                "expected_boundary_hash",
+                "reason"
             ],
             "properties": {
-                "mode": {
+                "allowed": {
+                    "type": "boolean"
+                },
+                "catalog_path": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "expected_boundary_hash": {
+                    "type": "string"
+                },
+                "expected_source": {
                     "type": "string",
                     "enum": [
-                        "catalog",
-                        "independent"
+                        "explicit",
+                        "deployment_default",
+                        "deployment_unknown"
                     ]
+                },
+                "expected_version": {
+                    "type": "string"
                 },
                 "reason": {
                     "type": "string"
-                },
-                "version": {
-                    "type": "integer",
-                    "minimum": 1
                 }
             }
         },

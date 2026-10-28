@@ -677,14 +677,14 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 					if err != nil {
 						t.Fatal(err)
 					}
-					actorType, actorContext := iam.PrincipalTypeUser, iam.ContextTypeTenant
 					if err := repo.transaction(ctx, func(tx *Repository) error {
-						_, err := tx.changeApprovalRequirement(ctx, approvalRequirementChange{TenantID: runtime.TenantID, Path: path, Mode: approvalModeIndependent, Reason: "Explicit storage fixture arrangement",
-							Audit: iam.AuditMetadata{PrincipalID: &actor.PrincipalID, PrincipalType: &actorType, ContextType: &actorContext, TenantID: &runtime.TenantID}}, func(*Repository) error { return nil })
+						input := fixturePermitInput(ctx, tx, runtime.TenantID, actor.PrincipalID, path, true, 0)
+						_, err := fixtureSetPermit(ctx, tx, input, func(*Repository) error { return nil })
 						return err
 					}); err != nil {
 						t.Fatal(err)
 					}
+
 					if result := read(t, user, path); result.Covered {
 						t.Fatal("approval configuration alone granted access")
 					}
@@ -692,10 +692,10 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 					row := &sourceGrant{RequestID: uuid.New(), ApprovalMode: approvalModeIndependent,
 						TenantID: runtime.TenantID, EngineID: int64(path.EngineID), CatalogPath: encoded, ItemFingerprint: testReadBindings(path)[0].ItemFingerprint, BoundaryHash: testReadBindings(path)[0].BoundaryHash,
 						RecipientType: kind, RecipientID: recipientID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked,
-						RequirementVersion: 1, OperatorPrincipalID: actor.PrincipalID, OperatorMembershipID: actor.MembershipID,
+						DirectPermissionVersion: 1, DirectPermissionSource: "explicit", OperatorPrincipalID: actor.PrincipalID, OperatorMembershipID: actor.MembershipID,
 						OperatorAuthorizationVersion: actor.AuthorizationVersion, Reason: &reason}
 					bad := *row
-					bad.RequirementVersion++
+					bad.DirectPermissionVersion++
 					if err := repo.insertSourceGrant(ctx, &bad); err == nil {
 						t.Fatal("mismatched independent requirement accepted")
 					}

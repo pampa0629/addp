@@ -76,6 +76,9 @@ class Server:
                 elif path == '/api/v1/system/login':
                     server.current_reader_token = f'reader-{server.version}-private-token'
                     result = {'next_action': 'session_issued', 'session': {'access_token': server.current_reader_token}}
+                elif path.endswith('/direct-permission'):
+                    result = {'engine_id': path.split('/')[5], 'item_fingerprint': path.split('/')[-2],
+                              'state': 'allowed', 'source': 'explicit', 'version': '1'}
                 elif path.endswith('/authorization-facts'):
                     status, result = 503, {'error': 'dependency unavailable', 'error_code': 'authorization_facts_unavailable'}
                 elif path == READ_CHECK:
@@ -504,7 +507,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
 
     def test_latency_sampling_is_read_only_and_excludes_warmups(self):
         server, lifecycle = self.lifecycle()
-        command, _ = lifecycle.grant(self.facts, initialize=True)
+        command, _ = lifecycle.grant(self.facts)
         before_calls = len(server.calls)
         self.assertEqual((ONLINE.LATENCY_ROUNDS, ONLINE.LATENCY_SAMPLES, ONLINE.LATENCY_WARMUPS), (3, 500, 10))
         # Each warmup costs 1s; each measured request costs 1..500ms per round.
@@ -530,7 +533,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
 
     def test_observer_failure_stops_sampling_without_retry_or_rule_writes(self):
         server, lifecycle = self.lifecycle()
-        command, _ = lifecycle.grant(self.facts, initialize=True)
+        command, _ = lifecycle.grant(self.facts)
         start = len(server.calls)
         with patch.object(ONLINE, 'AuditLatencyObservation') as context:
             context.return_value.__enter__.return_value.healthy.side_effect = ONLINE.SuiteError('observer failed')
@@ -545,7 +548,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
         for fault in ('denied', 'transport', 'invalid_time', 'extra_data', 'credential', 'context', 'grant', 'boundary', 'budget'):
             with self.subTest(fault=fault):
                 server, lifecycle = self.lifecycle()
-                command, _ = lifecycle.grant(self.facts, initialize=True)
+                command, _ = lifecycle.grant(self.facts)
                 request = lifecycle.reader.request
                 count = 0
                 def intercept(method, path, expected, body=None):
@@ -616,7 +619,7 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
               ['DELETE', '/catalog/children', true], ['POST', '/access_grants', true],
               ['POST', '/access_grants/known/revoke', true], ['POST', '/access_denies', true],
               ['POST', '/access_denies/known/release', true], ['PATCH', '/unknown', true],
-              ['POST', '/access_approval_requirements', true], ['POST', '/access_delegations', true],
+              ['PUT', '/data-items/test/direct-permission', true], ['POST', '/access_delegations', true],
             ]) {
               if (classify(method, base + suffix, base) !== expected) {
                 throw new Error('incorrect workspace classification: ' + method + ' ' + suffix)
@@ -667,7 +670,8 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
             observed = observation.return_value.__enter__.return_value
             observed.finish.side_effect = lambda: lifecycle.revoke(lifecycle.grants[-1]) or {'result': 'passed'}
             lifecycle.workspace_flow(report, '35')
-            self.assertEqual(observation.call_args.args, (3, '33', ONLINE.locator(2, 'metric_people', 10), 2, '35', lifecycle.grants[-1]))
+            self.assertEqual(observation.call_args.args, (3, '33', ONLINE.locator(2, 'metric_people', 10), 2, '35', lifecycle.grants[-1],
+                ONLINE.REGISTRATION.read_direct_permission(lifecycle.operator, 2, self.facts['item_fingerprint'])))
         self.assertEqual(report['checks'], ONLINE.WORKSPACE_CHECKS)
         self.assertIsNotNone(server.grants[lifecycle.grants[-1]]['revocation'])
         lifecycle.cleanup()
@@ -1114,9 +1118,8 @@ class PGCatalogApprovalTest(unittest.TestCase):
         self.facts = {'item_fingerprint': 'c' * 64, 'boundary_hash': 'd' * 64}
         self.entry = {'id': '553f9868-9021-4d23-bae2-43d5a9fbc030', 'version': '1',
                       'governance_status': 'discovered', 'visibility': 'tenant', 'responsibilities': [], 'semantic_links': []}
-        self.requirement = {'id': 'f96cac39-7738-4b3f-b8a2-166b0a1a2e21', 'engine_id': '2',
-            'catalog_path': self.path, 'item_fingerprint': self.facts['item_fingerprint'], 'mode': 'catalog', 'version': 1,
-            'updated_at': '2026-10-16T09:00:01+08:00'}
+        self.permission = {'engine_id': '2', 'item_fingerprint': self.facts['item_fingerprint'],
+            'state': 'unknown', 'source': 'deployment_unknown', 'version': '0'}
         self.fulfillments = {}
         self.lifecycle = ONLINE.Lifecycle(self.client('operator'), self.client('reader'), 3, 2, '33',
             {'department': '41', 'project_group': '51'}, self.client('outsider'), self.client('coordinator'),
@@ -1129,13 +1132,14 @@ class PGCatalogApprovalTest(unittest.TestCase):
         def request(method, url, expected, body=None, **kwargs):
             path = urlsplit(url).path
             direct = path.endswith('/access_grants') and method == 'POST'
-            update = '/access_approval_requirements/' in path and method == 'PUT'
+            permit = path.endswith('/direct-permission')
+            update = permit and method == 'PUT'
             fault = self.server.fault
             valid_direct = direct and (body['request_id'] in self.server.grants or (
-                self.requirement['mode'] == 'independent' and (body['requirement_version'] == str(self.requirement['version'])
+                self.permission['state'] == 'allowed' and (body['direct_permission_version'] == self.permission['version']
                                                             or fault == 'stale_direct_accepted')))
             if (valid_direct or ('/catalog/' not in path and not update
-                    and not path.endswith(('/access_approval_requirements', '/access_handling_requirement'))
+                    and not permit
                     and not direct)):
                 return original(method, url, expected, body, **kwargs)
             self.server.calls.append((kind, method, path, body))
@@ -1143,24 +1147,18 @@ class PGCatalogApprovalTest(unittest.TestCase):
             if update:
                 if kind != 'operator' and fault != 'missing_update_permission_ignored':
                     result, status = {'error': 'update forbidden'}, 403
-                elif body['version'] != self.requirement['version'] and fault != 'stale_update_accepted':
+                elif body['expected_version'] != self.permission['version'] and fault != 'stale_update_accepted':
                     result, status = {'error': 'stale update', 'error_code': 'resource_version_conflict'}, 409
                 else:
-                    if body['mode'] != self.requirement['mode'] or fault == 'same_mode_changes_version':
-                        self.requirement.update(mode=body['mode'], version=self.requirement['version'] + 1)
-                        self.requirement['updated_at'] = f"2026-10-16T09:00:0{self.requirement['version']}+08:00"
-                        # The write returns wallClock().UTC(); the persisted PG
-                        # timestamptz read can represent that instant in local time.
-                        result = dict(self.requirement, updated_at=f"2026-10-16T01:00:0{self.requirement['version']}Z")
-                    else:
-                        result = dict(self.requirement)
-                        if fault == 'same_mode_changes_timestamp':
-                            result['updated_at'] = '2026-10-16T09:01:03+08:00'
-                        elif fault == 'same_mode_drops_timestamp_zone':
-                            result['updated_at'] = '2026-10-16T01:00:03'
+                    state = 'allowed' if body['allowed'] else 'denied'
+                    if self.permission['source'] != 'explicit' or state != self.permission['state'] or fault == 'same_value_changes_version':
+                        self.permission.update(state=state, source='explicit', version=str(int(self.permission['version']) + 1))
+                    result = dict(self.permission)
+                    if fault == 'same_value_changes_source':
+                        result['source'] = 'deployment_default'
                     if fault == 'switch_rewrites_old_grant':
                         for row in self.server.grants.values():
-                            row['requirement_version'] = str(self.requirement['version'])
+                            row['direct_permission_version'] = self.permission['version']
             elif direct:
                 status, result = 409, {'error': 'wrong approval mode', 'error_code': 'engine_access_grant_approval_changed'}
                 if fault == 'direct_fallback':
@@ -1168,9 +1166,10 @@ class PGCatalogApprovalTest(unittest.TestCase):
                     self.server.grants[body['request_id']] = result
                 elif fault == 'duplicate_masks_approval':
                     result['error_code'] = 'engine_access_grant_relation_exists'
-            elif path.endswith('/access_handling_requirement'):
-                result = {'mode': 'independent' if self.server.catalog_down and fault == 'implicit_mode_change'
-                          else self.requirement['mode'], 'requirement_version': str(self.requirement['version'])}
+            elif permit:
+                result = dict(self.permission)
+                if self.server.catalog_down and fault == 'implicit_mode_change':
+                    result['state'] = 'allowed'
             elif '/catalog/' in path and self.server.catalog_down:
                 status, result = 503, {'error': 'module unavailable'}
                 if fault == 'offline_fulfillment_issued':
@@ -1178,8 +1177,6 @@ class PGCatalogApprovalTest(unittest.TestCase):
                     status, result = 200, {'state': 'accepted'}
                 elif fault == 'outage_wrong_status':
                     status = 404
-            elif path.endswith('/access_approval_requirements'):
-                result, status = dict(self.requirement), 201
             elif path == '/api/v1/catalog/entries':
                 result = {'data': [] if fault == 'missing_catalog_source' else [dict(self.entry)], 'total': 1}
             elif path.endswith('/sharing_boundary'):
@@ -1201,13 +1198,8 @@ class PGCatalogApprovalTest(unittest.TestCase):
                     if result['state'] == 'closed' and fault == 'closed_stale_request_reopens':
                         result['state'] = 'pending'
                     return SimpleNamespace(status=200, payload=result)
-                if body['request_id'] not in self.server.grants and (self.requirement['mode'] != 'catalog'
-                        or body['requirement_version'] != str(self.requirement['version'])):
-                    self.fulfillments[body['request_id']] = dict(body, state='pending' if fault == 'stale_catalog_never_closes'
-                                                               else 'closed', granted_at=None)
-                    if fault == 'stale_catalog_auto_upgrades':
-                        self.fulfillments[body['request_id']].update(state='accepted', requirement_version=str(self.requirement['version']))
-                    return SimpleNamespace(status=202, payload={'request_id': body['request_id'], 'state': 'pending'})
+                if self.permission['state'] == 'allowed' and fault == 'direct_configuration_blocks_catalog':
+                    return SimpleNamespace(status=202, payload={'request_id': body['request_id'], 'state': 'closed'})
                 self.request_id = body['request_id']
                 if self.request_id not in self.server.grants and fault != 'never_issue':
                     self.issue(self.request_id)
@@ -1229,8 +1221,8 @@ class PGCatalogApprovalTest(unittest.TestCase):
                     result, status = {'error': 'not found'}, 404
                 else:
                     result = {'request_id': grant['request_id'], 'state': 'accepted', 'granted_at': grant['granted_at'],
-                              'decision_id': self.decision['decision_id'], 'requirement_version': '1',
-                              'recipient_id': '33', 'action': 'read'}
+                              'decision_id': grant['business_decision_id'],
+                              'recipient_id': grant['recipient_id'], 'action': 'read'}
             elif method == 'PUT':
                 self.entry.update(body, version='2')
                 result = dict(self.entry)
@@ -1245,9 +1237,10 @@ class PGCatalogApprovalTest(unittest.TestCase):
     def issue(self, request_id):
         decision = self.decision
         grant = {'request_id': request_id, 'catalog_request_id': request_id, 'approval_mode': 'catalog',
-                 'engine_id': '2', 'operator_principal_id': '35', 'requirement_version': '1',
+                 'business_decision_id': decision['decision_id'],
+                 'engine_id': '2', 'operator_principal_id': '35', 'direct_permission_source': '', 'direct_permission_version': '0',
                  'catalog_path': self.path, 'item_fingerprint': self.facts['item_fingerprint'],
-                 'boundary_hash': self.facts['boundary_hash'], 'recipient_type': 'user', 'recipient_id': '33',
+                 'boundary_hash': self.facts['boundary_hash'], 'recipient_type': 'user', 'recipient_id': decision['recipient_id'],
                  'action': 'read', 'expiry_mode': 'at_time', 'expires_at': decision['expires_at'],
                  'granted_at': '2026-10-16T01:00:00Z', 'revocation': None}
         if self.server.fault == 'wrong_grant_boundary':
@@ -1266,20 +1259,18 @@ class PGCatalogApprovalTest(unittest.TestCase):
         self.assertTrue(self.report['catalog_approval']['revoked_replay_denied'])
         decisions = [call for call in self.server.calls if call[2].endswith('/sharing_decisions')]
         requests = [call for call in self.server.calls if call[2].endswith('/sharing_fulfillments')]
-        self.assertEqual([call[0] for call in decisions], ['business'])
-        self.assertEqual([call[0] for call in requests], ['operator'] * 7)
-        self.assertEqual(requests[0][3], requests[-2][3])
-        self.assertNotEqual(requests[0][3]['request_id'], requests[-3][3]['request_id'])
-        self.assertEqual(set(requests[0][3]), {'request_id', 'decision_id', 'requirement_version'})
+        self.assertEqual([call[0] for call in decisions], ['business', 'business'])
+        self.assertEqual([call[0] for call in requests], ['operator'] * 6)
+        self.assertEqual(requests[0][3], requests[-1][3])
+        self.assertNotEqual(requests[0][3]['request_id'], requests[2][3]['request_id'])
+        self.assertEqual(set(requests[0][3]), {'request_id', 'decision_id'})
         self.assertFalse(any('/runtime/' in call[2] for call in self.server.calls))
         direct = [call for call in self.server.calls if call[2].endswith('/access_grants') and call[1] == 'POST']
         self.assertEqual(len(direct), 6)
-        self.assertTrue(all(call[3]['recipient_id'] == '34' and not call[3]['initialize_approval'] for call in direct))
-        self.assertEqual(self.report['approval_mode_handoff']['versions'], [1, 2, 3])
-        self.assertEqual(self.report['approval_mode_handoff']['stale_catalog_state'], 'closed')
-        self.assertEqual(self.report['approval_mode_noop_timestamps'], {
-            'before': '2026-10-16T01:00:03Z', 'after': '2026-10-16T09:00:03+08:00'})
-        self.assertEqual(self.requirement['version'], 3)
+        self.assertTrue(all(call[3]['recipient_id'] == '34' and call[3]['direct_permission_source'] == 'explicit' for call in direct))
+        self.assertEqual(self.report['direct_permission_changes']['versions'], [1, 2, 3])
+        self.assertIn('catalog_acceptance_independent_of_direct_configuration', self.report['checks'])
+        self.assertEqual(self.permission['version'], '3')
         self.assertTrue(self.report['catalog_outage']['same_credential'])
         self.assertFalse(self.server.catalog_down)
         self.assertEqual(self.lifecycle.paths, [ONLINE.table_path(2, 'metric_people'), self.path])
@@ -1294,19 +1285,19 @@ class PGCatalogApprovalTest(unittest.TestCase):
             with self.subTest(fault=fault):
                 self.reset()
                 self.server.fault = fault
-                with self.assertRaises(ONLINE.SuiteError):
+                with self.assertRaises((ONLINE.SuiteError, ONLINE.REGISTRATION.RegistrationError)):
                     self.run_flow()
                 self.assertNotEqual(len(self.report['checks']), 21)
 
     def test_approval_switch_rejects_permission_version_grant_mutation_and_silent_catalog_upgrade(self):
         for fault in ('missing_update_permission_ignored', 'switch_rewrites_old_grant', 'stale_direct_accepted',
-                      'same_mode_changes_version', 'same_mode_changes_timestamp', 'same_mode_drops_timestamp_zone',
+                      'same_value_changes_version', 'same_value_changes_source',
                       'stale_update_accepted', 'direct_replay_renews', 'direct_replay_restores_revoked',
-                      'stale_catalog_auto_upgrades', 'stale_catalog_never_closes', 'closed_stale_request_reopens'):
+                      'direct_configuration_blocks_catalog'):
             with self.subTest(fault=fault):
                 self.reset()
                 self.server.fault = fault
-                with self.assertRaises(ONLINE.SuiteError):
+                with self.assertRaises((ONLINE.SuiteError, ONLINE.REGISTRATION.RegistrationError)):
                     self.run_flow()
                 self.assertFalse(self.server.catalog_down)
                 self.lifecycle.cleanup()
@@ -1319,7 +1310,7 @@ class PGCatalogApprovalTest(unittest.TestCase):
             with self.subTest(fault=fault):
                 self.reset()
                 self.server.fault = fault
-                with self.assertRaises(ONLINE.SuiteError):
+                with self.assertRaises((ONLINE.SuiteError, ONLINE.REGISTRATION.RegistrationError)):
                     self.run_flow()
                 self.assertFalse(self.server.catalog_down)
                 self.lifecycle.cleanup()
@@ -1600,18 +1591,26 @@ class PGBrowserObservationTest(unittest.TestCase):
                            ADDP_ONLINE_PG_OPERATOR_PASSWORD='operator-private-password')
         with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE.subprocess, 'Popen', return_value=self.process) as popen, \
              patch.object(ONLINE.os, 'killpg'):
-            with REAL_WORKSPACE_OBSERVATION(2, '33', 'target', 1, '35', 'owned-grant') as browser:
+            permission = {'engine_id': '1', 'item_fingerprint': 'a' * 64, 'state': 'allowed', 'source': 'explicit', 'version': '3'}
+            with REAL_WORKSPACE_OBSERVATION(2, '33', 'target', 1, '35', 'owned-grant', permission) as browser:
                 expected = dict(browser.binding, schema_version='addp.pg-authorization-workspace/v1', result='passed',
-                                checks=ONLINE.WORKSPACE_CHECKS, login_requests=2, preview_statuses=[200, 403])
+                                checks=ONLINE.WORKSPACE_CHECKS, login_requests=2, preview_statuses=[200, 403],
+                                direct_permission_observations=[{'search': 'metric_people', 'state': state, 'total': total,
+                                    'item_fingerprints': ['a' * 64] if total else []}
+                                    for state, total in [('', 1), ('allowed', 1), ('denied', 0)]])
                 browser.evidence.write_text(json.dumps(expected))
                 self.assertEqual(browser.finish(), expected)
                 env = popen.call_args.kwargs['env']
                 self.assertFalse(any('TOKEN' in key or 'SECRET' in key for key in env))
                 self.assertEqual(env['ADDP_ONLINE_PG_OPERATOR_PASSWORD'], 'operator-private-password')
                 self.assertIn(browser.test_name, popen.call_args.args[0])
-                for fault in ('missing_check', 'wrong_grant', 'relogin', 'still_readable', 'extra_field'):
-                    bad = dict(expected)
+                for fault in ('missing_check', 'missing_permission_check', 'wrong_permission_target', 'denied_filter_leaks_target',
+                              'wrong_grant', 'relogin', 'still_readable', 'extra_field'):
+                    bad = deepcopy(expected)
                     if fault == 'missing_check': bad['checks'] = bad['checks'][:-1]
+                    if fault == 'missing_permission_check': bad['checks'].remove('direct_permission_tab_read_only_filters')
+                    if fault == 'wrong_permission_target': bad['direct_permission_observations'][1]['item_fingerprints'] = ['b' * 64]
+                    if fault == 'denied_filter_leaks_target': bad['direct_permission_observations'][2].update(total=1, item_fingerprints=['a' * 64])
                     if fault == 'wrong_grant': bad['grant_id'] = 'unowned'
                     if fault == 'relogin': bad['login_requests'] = 3
                     if fault == 'still_readable': bad['preview_statuses'] = [200, 200]
@@ -2849,7 +2848,7 @@ class InitialProductionOnlineTest(unittest.TestCase):
     def row(self):
         row = dict(request_id=self.command, approval_mode='task_production', producer_owner='transfer',
                    production_execution_id=self.execution, catalog_path=self.path, recipient_type='user', recipient_id='33',
-                   operator_principal_id='33', action='read', requirement_version='0', expiry_mode='at_time',
+                   operator_principal_id='33', action='read', direct_permission_source='', direct_permission_version='0', expiry_mode='at_time',
                    expires_at=self.expiry, revocation={'reason': 'test'} if self.output_revoked else None,
                    issuer_principal_id='55', issuer_membership_id='66', **self.facts)
         if self.bad:
@@ -2934,7 +2933,7 @@ class InitialProductionOnlineTest(unittest.TestCase):
         for invalid in ({'approval_mode': 'independent'}, {'producer_owner': 'develop'},
                         {'production_execution_id': 'f9041a08-785c-48bc-bb12-c0650b720dac'},
                         {'recipient_id': '34'}, {'operator_principal_id': '35'}, {'issuer_principal_id': '33'},
-                        {'boundary_hash': 'c' * 64}, {'requirement_version': '1'},
+                        {'boundary_hash': 'c' * 64}, {'direct_permission_version': '1'},
                         {'expires_at': '2031-10-20T10:00:00Z'}):
             self.bad = invalid
             with self.subTest(invalid=invalid), self.assertRaises(ONLINE.SuiteError):

@@ -138,6 +138,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		WithExecutionEngineSnapshot(engineService.DecryptAuthorizedExecutionSnapshot)
 	authorizationFactsService := engineaccess.NewService(engineaccess.NewRepository(db), nil)
 	var metaFacts engineaccess.AuthorizationFactsReader
+	var metaIdentities engineaccess.DataItemIdentityReader
 	var metaScanFacts engineaccess.MetaScanFactsReader
 	if err := RegisterIAMManagerProfileAuthorizationRoutes(api, runtime, &IAMManagerProfileAuthorizationHandler{
 		service: iam.NewManagerProfileAuthorizationService(runtime.Repository, fulfillmentService.PrepareExecutionSourceRead),
@@ -159,7 +160,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		}
 		fulfillmentService.WithFulfillmentBasisReader(commonClient.NewCatalogFulfillmentClient(cfg.CatalogServiceURL, tokens, nil))
 		metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokens)
-		metaFacts, metaScanFacts = metaClient, metaClient
+		metaFacts, metaScanFacts, metaIdentities = metaClient, metaClient, metaClient
 		authorizationFactsService.WithAuthorizationFactsReader(metaFacts)
 		fulfillmentService.WithAuthorizationFactsReader(metaFacts)
 		fulfillmentService.WithTransferProductionReceiptReader(commonClient.NewTransferClient(cfg.TransferServiceURL, tokens))
@@ -189,10 +190,10 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	}); err != nil {
 		panic(err)
 	}
-	if err := RegisterEngineAccessApprovalRequirementRoutes(api, runtime, &EngineAccessApprovalRequirementHandler{
-		service: engineaccess.NewService(engineaccess.NewRepository(db), hasLiveEngineCatalogCapability).WithAuthorizationFactsReader(metaFacts),
+	if err := RegisterEngineAccessDirectPermissionRoutes(api, runtime, &EngineAccessDirectPermissionHandler{
+		service: engineaccess.NewService(engineaccess.NewRepository(db), hasLiveEngineCatalogCapability).WithAuthorizationFactsReader(metaFacts).WithDataItemIdentityReader(metaIdentities),
 	}); err != nil {
-		panic(fmt.Errorf("register engine approval requirement routes: %w", err))
+		panic(fmt.Errorf("register engine direct permission routes: %w", err))
 	}
 	if err := registerExecutionReadScopeRoute(api, runtime); err != nil {
 		panic(err)

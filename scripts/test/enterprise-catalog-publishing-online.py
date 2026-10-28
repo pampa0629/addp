@@ -98,8 +98,6 @@ REQUIRED_PERMISSIONS = {
     "catalog.inventory.read",
     "catalog.sharing_decision.create",
     "system.engine_access_fulfillment.create",
-    "system.engine_access_approval_requirement.initialize",
-    "system.engine_access_approval_requirement.read",
     "asset.management.read",
     "asset.category.create",
     "asset.category.delete",
@@ -634,42 +632,6 @@ def curate_fixture_entry(
     return curated, restore, initialized
 
 
-def fixture_approval_requirement(
-    client: GatewayClient, engine_id: int, target: dict[str, object], run_id: str
-) -> tuple[dict[str, object], bool]:
-    """Initialize only the exact permanent fixture; never switch an existing mode."""
-    route = f"/api/v1/system/engines/{engine_id}/access_approval_requirements"
-    matches = []
-    page = 1
-    seen = 0
-    while True:
-        listing = _object(client.request("GET", route + f"?page={page}&page_size=100", (200,)).payload,
-                          "approval requirement listing")
-        rows = _array(listing.get("data"), "approval requirement rows")
-        total = non_negative_int(listing.get("total"), "approval requirement total")
-        for row in rows:
-            row = _object(row, "approval requirement")
-            if row.get("catalog_path") == target:
-                matches.append(row)
-        seen += len(rows)
-        if seen >= total:
-            break
-        if not rows or page >= 100:
-            raise SuiteError("approval requirement pagination did not converge")
-        page += 1
-    if len(matches) > 1:
-        raise SuiteError("duplicate exact fixture approval requirements")
-    initialized = not matches
-    requirement = matches[0] if matches else _object(client.request("POST", route, (201,), {
-        "catalog_path": target, "mode": "catalog", "reason": f"Initialize dedicated Online Catalog fixture for {run_id}",
-    }).payload, "initialized approval requirement")
-    if (requirement.get("engine_id") != str(engine_id) or requirement.get("catalog_path") != target
-            or requirement.get("mode") != "catalog"):
-        raise SuiteError("fixture approval requirement must match the exact target in Catalog mode; no overwrite")
-    positive_int(requirement.get("version"), "approval requirement version")
-    return requirement, initialized
-
-
 def aware_timestamp(value: object, field: str) -> datetime:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -682,7 +644,7 @@ def aware_timestamp(value: object, field: str) -> datetime:
 
 def fulfillment_receipt(
     response: Response, request_id: str, tenant_id: int, decision: dict[str, object],
-    target: dict[str, object], operator: dict[str, object], requirement_version: str,
+    target: dict[str, object], operator: dict[str, object],
 ) -> dict[str, object]:
     result = _object(response.payload, "formal fulfillment")
     if response.status != 200 or result.get("state") != "accepted" or result.get("request_id") != request_id:
@@ -691,7 +653,8 @@ def fulfillment_receipt(
     binding = _object(receipt.get("binding"), "fulfillment binding")
     expected = {
         "operator": operator, "path": target, "decision_id": decision["id"],
-        "requirement_version": requirement_version, "recipient_type": "user",
+        "item_fingerprint": decision["item_fingerprint"], "boundary_hash": decision["boundary_hash"],
+        "recipient_type": "user",
         "recipient_id": decision["recipient_id"], "action": "read",
         "expiry_mode": "at_time", "expires_at": decision["expires_at"],
     }
@@ -785,9 +748,17 @@ def validate_fixture_sharing(
         raise SuiteError("dedicated Online User handling scope mismatch")
     for key in ("principal_id", "tenant_membership_id", "authorization_version"):
         positive_int(operator.get(key), "operator " + key)
+    boundary = _object(client.request("GET", route + "/sharing_boundary", (200,)).payload, "sharing boundary")
+    for key in ("item_fingerprint", "boundary_hash"):
+        value = boundary.get(key)
+        if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
+            raise SuiteError("sharing boundary identity is invalid")
+    if boundary["item_fingerprint"] != entry.get("source", {}).get("source_identity"):
+        raise SuiteError("sharing boundary does not match current entry source")
     decision_id = str(uuid.uuid4())
     decision_body = {
         "decision_id": decision_id, "version": str(positive_int(entry.get("version"), "sharing entry version")),
+        "expected_boundary_hash": boundary["boundary_hash"],
         "recipient_type": "user", "recipient_id": str(principal_id), "expiry_mode": "at_time",
         "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
         "reason": f"Dedicated Online read-only confirmation for {run_id}; automatic issuance, no source content read",
@@ -800,6 +771,8 @@ def validate_fixture_sharing(
             or decision.get("authorization_version") != operator["authorization_version"]
             or decision.get("recipient_id") != str(principal_id) or decision.get("recipient_type") != "user"
             or decision.get("action") != "read" or decision.get("expiry_mode") != "at_time"
+            or decision.get("item_fingerprint") != boundary["item_fingerprint"]
+            or decision.get("boundary_hash") != boundary["boundary_hash"]
             or decision.get("self_beneficiary") is not True
             or aware_timestamp(decision.get("expires_at"), "decision expiry") != aware_timestamp(
                 decision_body["expires_at"], "requested expiry")):
@@ -822,27 +795,27 @@ def validate_fixture_sharing(
     if target.get("engine_id") != str(engine_id):
         raise SuiteError("sharing target belongs to a different engine")
     target["engine_id"] = engine_id  # EngineCatalogPath owner wire contract uses a numeric engine ID.
+    if target != boundary.get("native_target"):
+        raise SuiteError("sharing decision target differs from observed boundary")
     segments = _array(target.get("segments"), "sharing target segments")
     if not segments or _object(segments[-1], "sharing target leaf").get("name") != FIXTURE_TABLE:
         raise SuiteError("sharing target is not the dedicated Online fixture table")
-    requirement, initialized = fixture_approval_requirement(client, engine_id, target, run_id)
     request_id = str(uuid.uuid4())
-    request = {"request_id": request_id, "decision_id": decision_id,
-               "requirement_version": str(requirement["version"])}
+    request = {"request_id": request_id, "decision_id": decision_id}
     try:
         first = fulfillment_receipt(client.request("POST", route + "/sharing_fulfillments", (200, 202), request),
-                                    request_id, tenant_id, decision, target, operator, request["requirement_version"])
+                                    request_id, tenant_id, decision, target, operator)
         observer = grant_observer or observe_system_grant
         first_grant = wait_for_issuance(observer, request_id, first)
         conflict = client.request("POST", route + "/sharing_fulfillments", (409,),
-                                  dict(request, requirement_version="2" if request["requirement_version"] == "1" else "1"))
+                                  dict(request, decision_id=str(uuid.uuid4())))
         if (conflict.status != 409 or _object(conflict.payload, "fulfillment conflict").get("error_code")
                 != "catalog_sharing_decision_conflict"):
-            raise SuiteError("fulfillment reuse with changed requirement version was not rejected canonically")
+            raise SuiteError("fulfillment reuse with changed business decision was not rejected canonically")
         # Discard the acknowledgement as a usable result; keep it only as the test oracle.
-        # Replay contains just the original three inputs. This is not an inter-service outage.
+        # Replay contains just the original two identities. This is not an inter-service outage.
         recovered = fulfillment_receipt(client.request("POST", route + "/sharing_fulfillments", (200, 202), request),
-                                        request_id, tenant_id, decision, target, operator, request["requirement_version"])
+                                        request_id, tenant_id, decision, target, operator)
     except SuiteError as error:
         raise SuiteError(f"formal fulfillment request={request_id}, decision={decision_id}: {error}") from error
     if first != recovered:
@@ -860,8 +833,7 @@ def validate_fixture_sharing(
         if denial.status != 403:
             raise SuiteError("human Token was not rejected at the machine-only boundary")
     return {
-        "decision_id": decision_id, "request_id": request_id, "approval_requirement_id": requirement["id"],
-        "approval_requirement_initialized": initialized, "receipt": recovered,
+        "decision_id": decision_id, "request_id": request_id, "receipt": recovered,
         "recovery_boundary": "caller_response_discard_after_commit", "same_parameter_recovery": "passed",
         "changed_parameter_reuse": "rejected_without_changing_original_results",
         "human_runtime_denial": "passed", "grant_write": "passed", "source_content_read": "not-run",

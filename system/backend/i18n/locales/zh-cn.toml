@@ -255,8 +255,6 @@ other = "服务账号已被其他用户修改，请刷新后重试"
 
 [system.iam.role_key_invalid]
 other = "角色标识须为“命名空间.名称”（例如 custom.ontology_manager）；两段均以小写英文字母开头，仅允许小写英文字母、数字和下划线。"
-[system.engine_access_approval_requirement.already_initialized]
-other = "该源目标已存在批准要求；首次初始化不能覆盖，请核对当前要求。"
 
 [system.engine_access_delegation.version_conflict]
 other = "委派已被修改，请刷新后重试"
@@ -319,7 +317,7 @@ other = "结合有效引擎管理委派查看签发、期限和撤销历史；�
 [system.engine_access_grant_command_conflict]
 other = "本次参数与原授权签发记录不一致，请查看原记录"
 [system.engine_access_grant_approval_changed]
-other = "批准方式或版本已变化，未签发新授权；请刷新目标信息"
+other = "直接授权许可未允许或已变化，未签发新授权；请刷新目标信息"
 [system.engine_access_grant_expiry_elapsed]
 other = "授权期限已不在未来，未签发新授权；请明确选择有效期限"
 [system.engine_access_grant_source_unavailable]
@@ -421,10 +419,8 @@ other = "观测身份快照超过规定预算。"
 
 ["system.observability_identity.timeout"]
 other = "观测身份快照读取超时。"
-[system.engine_access_approval_requirement.version_conflict]
-other = "批准方式已被更新，请刷新核对后再确认切换。"
 [system.engine_access_grant_relation_exists]
-other = "该接收方已有此数据的有效读取授权，未重复发放。请在当前授权中管理；变更期限须明确收回原关系并按当前批准方式重新授予。"
+other = "该接收方已有此数据的有效读取授权，未重复发放。请在当前授权中管理；变更期限须明确收回原关系并按当前授权条件重新授予。"
 [system.engine_access.authorization_facts_unavailable]
 other = "暂时无法核验数据项授权边界，请检查 Meta 和 System 服务身份配置"
 
@@ -434,8 +430,6 @@ other = "授权目标不存在或不属于当前引擎"
 [system.engine_access.authorization_boundary_changed]
 other = "数据项授权边界已变化、缺失或尚未完整识别，请重新核对后明确批准。"
 
-[system.engine_access_approval_requirement.not_configured]
-other = "本数据项尚未配置批准方式，请由有权限的人员明确配置后再办理。"
 
 [permissions.platform.engine_deployment.create.name]
 other = "登记引擎部署"
@@ -525,3 +519,18 @@ other = "撤销指定的有效采集资格并保留历史，不修改数据授�
 other = "核验元数据采集执行资格"
 [permissions.system.meta_collection_qualification.execute.description]
 other = "仅 Meta 服务按真实执行计划及有效租约核验当前采集资格"
+
+[system.engine_access_direct_permission.version_conflict]
+other = "直接授权许可已变化，请刷新核对后再确认。"
+
+[permissions.system.engine_access_direct_permission.read.name]
+other = "查看直接授权许可"
+
+[permissions.system.engine_access_direct_permission.read.description]
+other = "查看 Meta 已识别数据项的有效直接授权许可，不授予数据读取权限"
+
+[permissions.system.engine_access_direct_permission.update.name]
+other = "管理直接授权许可"
+
+[permissions.system.engine_access_direct_permission.update.description]
+other = "引擎授权管理员设置数据项是否允许直接授权，不影响 Catalog 业务批准及已有授权"

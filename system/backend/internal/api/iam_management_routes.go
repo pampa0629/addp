@@ -87,6 +87,7 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime, modu
 		modules := platform.Group("/modules")
 		{
 			modules.GET("", platformModuleRead, moduleHandler.ListModulesPlatform)
+			modules.POST("", platformModuleUpdate, moduleHandler.CreateModulePlatform)
 			modules.GET("/:module_name", platformModuleRead, moduleHandler.GetModulePlatform)
 			modules.GET("/:module_name/instances/:instance_id/logs", platformLogRead, moduleHandler.GetModuleRuntimeLogs)
 			modules.PUT("/:module_name", platformModuleUpdate, moduleHandler.UpdateModulePlatform)

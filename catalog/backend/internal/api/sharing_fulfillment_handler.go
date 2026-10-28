@@ -10,9 +10,8 @@ import (
 )
 
 type prepareSharingFulfillmentRequest struct {
-	RequestID          string `json:"request_id"`
-	DecisionID         string `json:"decision_id"`
-	RequirementVersion string `json:"requirement_version"`
+	RequestID  string `json:"request_id"`
+	DecisionID string `json:"decision_id"`
 }
 
 // PrepareSharingFulfillment godoc
@@ -52,13 +51,8 @@ func (h *Handler) PrepareSharingFulfillment(c *gin.Context) {
 		respondError(c, 400, service.ErrInvalidEntryUpdate)
 		return
 	}
-	version, err := parseCanonicalPositiveInt64(input.RequirementVersion)
-	if err != nil {
-		respondError(c, 400, service.ErrInvalidEntryUpdate)
-		return
-	}
 	result, err := h.entries.PrepareSharingFulfillment(c.Request.Context(), tenant, entryAccess(c), entryID,
-		service.SharingFulfillmentInput{RequestID: requestID, DecisionID: decisionID, RequirementVersion: version}, ac, commonAuth.CanonicalBearerToken(c.GetHeader("Authorization")))
+		service.SharingFulfillmentInput{RequestID: requestID, DecisionID: decisionID}, ac, commonAuth.CanonicalBearerToken(c.GetHeader("Authorization")))
 	if err != nil {
 		respondError(c, 500, err)
 		return

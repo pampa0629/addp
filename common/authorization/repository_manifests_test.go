@@ -86,6 +86,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			if key == "meta.inspect.execute" && role.Key != "tenant.transfer_runtime" {
 				t.Fatalf("unexpected Infra inspection role %q", role.Key)
 			}
+			if key == "meta.data_item_identity.read" && role.Key != "tenant.system_runtime" {
+				t.Fatalf("identity enumeration assigned to %s", role.Key)
+			}
 			if key == "meta.authorization_facts.read" && role.Key != "tenant.system_runtime" && role.Key != "tenant.catalog_runtime" {
 				t.Fatalf("unexpected authorization facts role %q", role.Key)
 			}
@@ -95,8 +98,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			if key == PlatformDefinitionPublishPermission && role.Key != "platform.ontology_runtime" {
 				t.Fatalf("built-in role %q unexpectedly grants platform publication", role.Key)
 			}
-			if key == "system.engine_access_approval_requirement.update" && role.Key != "tenant.engine_access_delegation_administrator" {
-				t.Fatalf("built-in role %q unexpectedly grants approval mode changes", role.Key)
+			if key == "system.engine_access_direct_permission.update" && role.Key != "tenant.engine_access_delegation_administrator" {
+				t.Fatalf("built-in role %q unexpectedly grants direct permission management", role.Key)
 			}
 			if (key == "system.engine_access_grant.create" || key == "system.engine_access_grant.read") && role.Key != "tenant.source_data_authorizer" && role.Key != "tenant.engine_access_delegation_administrator" {
 				t.Fatalf("built-in role %q unexpectedly grants independent source Grant permission %q", role.Key, key)
@@ -133,8 +136,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			if key == "system.engine_access_fulfillment.create" && role.Key != "tenant.source_data_authorizer" {
 				t.Fatalf("built-in role %q unexpectedly grants human business handling", role.Key)
 			}
-			if (key == "system.engine_access_approval_requirement.initialize" || key == "system.engine_access_approval_requirement.read") && role.Key != "tenant.source_data_authorizer" && role.Key != "tenant.engine_access_delegation_administrator" {
-				t.Fatalf("built-in role %q unexpectedly grants approval requirement permission %q", role.Key, key)
+			if key == "system.engine_access_direct_permission.read" && role.Key != "tenant.source_data_authorizer" && role.Key != "tenant.engine_access_delegation_administrator" {
+				t.Fatalf("built-in role %q unexpectedly grants direct permission %q", role.Key, key)
 			}
 			if key == "catalog.sharing_decision.create" {
 				t.Fatalf("built-in role %q unexpectedly grants business confirmation", role.Key)
@@ -152,7 +155,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "tenant.source_data_authorizer", []string{
 		"catalog.entry.read",
 		"iam.department.read", "iam.project_group.read", "iam.tenant_membership.read", "system.engine.read",
-		"system.engine_access_approval_requirement.initialize", "system.engine_access_approval_requirement.read",
+		"system.engine_access_direct_permission.read",
 		"system.engine_access_fulfillment.create",
 		"system.engine_access_grant.create", "system.engine_access_grant.read", "system.engine_access_grant.revoke",
 		"system.engine_catalog.read",
@@ -163,11 +166,11 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"iam.department.read", "iam.project_group.read",
 		"iam.tenant_membership.read",
 		"system.engine.read",
-		"system.engine_access_approval_requirement.initialize", "system.engine_access_approval_requirement.read",
-		"system.engine_access_approval_requirement.update",
 		"system.engine_access_delegation.create",
 		"system.engine_access_delegation.read",
 		"system.engine_access_delegation.revoke",
+		"system.engine_access_direct_permission.read",
+		"system.engine_access_direct_permission.update",
 		"system.engine_access_grant.create", "system.engine_access_grant.read", "system.engine_access_grant.revoke",
 		"system.engine_catalog.read",
 		"system.meta_collection_qualification.approve", "system.meta_collection_qualification.read", "system.meta_collection_qualification.revoke",
@@ -178,7 +181,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "platform.inference_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "platform.catalog_runtime", []string{"platform.tenant.read", "system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "tenant.catalog_runtime", []string{"develop.catalog.read", "iam.department.read", "iam.project_group.read", "iam.tenant_membership.read", "meta.authorization_facts.read", "meta.catalog.read", "model.catalog.read", "quality.catalog.read", "service.catalog.read", "standard.catalog.read", "standard.domain.read", "standard.element.read", "standard.glossary.read", "system.engine_access_fulfillment.execute", "workbench.catalog.read"})
-	assertRepositoryRolePermissions(t, roles, "tenant.system_runtime", []string{"catalog.sharing_fulfillment.read", "meta.authorization_facts.read", "meta.task_provider.read", "transfer.production_receipt.read"})
+	assertRepositoryRolePermissions(t, roles, "tenant.system_runtime", []string{"catalog.sharing_fulfillment.read", "meta.authorization_facts.read", "meta.data_item_identity.read", "meta.task_provider.read", "transfer.production_receipt.read"})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.system_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "platform.duckdb_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "tenant.duckdb_runtime", []string{"system.execution_authorization.execute"})

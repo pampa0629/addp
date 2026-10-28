@@ -106,7 +106,7 @@ func (s *Service) CreateDeny(ctx context.Context, input CreateDenyInput) (*Sourc
 		func(tx *Repository, check func() error) error {
 			if err := tx.db.WithContext(ctx).Raw(`SELECT EXISTS (
  SELECT 1 FROM system.engine_access_grants WHERE tenant_id = ? AND engine_id = ? AND item_fingerprint = ? AND catalog_path = ?::jsonb
- UNION ALL SELECT 1 FROM system.engine_access_approval_requirements WHERE tenant_id = ? AND engine_id = ? AND item_fingerprint = ? AND catalog_path = ?::jsonb
+ UNION ALL SELECT 1 FROM system.engine_access_direct_permissions WHERE tenant_id = ? AND engine_id = ? AND item_fingerprint = ? AND catalog_path = ?::jsonb
  UNION ALL SELECT 1 FROM system.engine_access_denies WHERE tenant_id = ? AND engine_id = ? AND item_fingerprint = ? AND catalog_path = ?::jsonb)`,
 				row.TenantID, row.EngineID, row.ItemFingerprint, string(row.CatalogPath),
 				row.TenantID, row.EngineID, row.ItemFingerprint, string(row.CatalogPath),

@@ -202,7 +202,7 @@ func TestMFASessionClosureAgainstPostgres(t *testing.T) {
 	if err != nil || len(authorizerAssignments) != 1 || authorizerAssignments[0].RoleKey != "tenant.source_data_authorizer" {
 		t.Fatalf("AAL2 source data authorizer self assignment = %#v err=%v", authorizerAssignments, err)
 	}
-	for _, table := range []string{"engine_access_delegations", "engine_access_grants", "engine_access_approval_requirements"} {
+	for _, table := range []string{"engine_access_delegations", "engine_access_grants", "engine_access_direct_permissions"} {
 		var count int64
 		if err := db.Table("system." + table).Count(&count).Error; err != nil {
 			t.Fatal(err)

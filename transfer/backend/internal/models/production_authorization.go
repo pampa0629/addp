@@ -9,6 +9,9 @@ import (
 
 const ProductionAuthorizationMetadataKey = "initial_authorization"
 
+// A one-time development-history retirement, not a source access decision.
+const ProductionAuthorizationRetired = "authorization_history_retired"
+
 // Delivery status only. System's immutable outcome and canonical Grant remain
 // authoritative; no source rules, actor credentials or access verdicts here.
 type ProductionAuthorization struct {

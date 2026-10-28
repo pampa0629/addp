@@ -253,6 +253,20 @@ func (s *ModuleRegistryService) ListModuleRuntimeInstances(
 	return result, total, nil
 }
 
+func (s *ModuleRegistryService) CreateModuleDefinition(req *models.ModuleDefinitionCreateRequest) (*models.ModuleInfo, error) {
+	if req == nil || req.ModuleName != "catalog" || req.Enabled == nil {
+		return nil, ErrInvalidModuleRegistration
+	}
+	definition, err := s.repo.CreateCatalogDefinition(*req.Enabled)
+	if errors.Is(err, repository.ErrModuleDefinitionVersionConflict) {
+		return nil, ErrModuleDefinitionVersionConflict
+	}
+	if err != nil {
+		return nil, err
+	}
+	return s.convertToModuleInfo(definition, false), nil
+}
+
 func (s *ModuleRegistryService) UpdateModuleDefinition(moduleName string, req *models.ModuleDefinitionUpdateRequest) (*models.ModuleInfo, error) {
 	moduleName = strings.TrimSpace(moduleName)
 	if moduleName == "" || req == nil || req.Enabled == nil || req.Version < 1 {

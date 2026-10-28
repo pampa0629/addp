@@ -9,7 +9,7 @@ import (
 
 func (s *Service) GetHandlingScope(ctx context.Context, actor Actor, engineID int64) (*authorization.EngineAccessHandlingScope, error) {
 	var result *authorization.EngineAccessHandlingScope
-	err := s.withApprovalRequirementScope(ctx, actor, engineID, systemauthorization.PermissionSystemEngineAccessFulfillmentCreate,
+	err := s.withEngineManagementScope(ctx, actor, engineID, systemauthorization.PermissionSystemEngineAccessFulfillmentCreate, true,
 		func(tx *Repository, check func() error) error {
 			now, err := tx.wallClock(ctx)
 			if err != nil {

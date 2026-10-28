@@ -1,10 +1,83 @@
 # System IAM 数据模型与迁移规范
 
-更新日期：2026-10-04
+更新日期：2026-10-28
 
 状态：System 模块正式实现规范。本文定义已投入运行的 IAM PostgreSQL 模型、事务边界、迁移路径和安全约束。
 
 租户功能权限收敛：Role Assignment 只支持 Platform / Tenant，租户角色与分配请求不接收组织范围字段。旧部门／项目组分配先保留完整审计再退役，不升格为租户授权；范围目录、AuthContext 与数据库约束同步收敛。部门、项目组、部门层级、账号与全部组织成员关系保持原事实，源数据 Grant 与 Catalog 业务授权不在此次 IAM 收敛中改写。
+
+## 直接授权许可迁移计划（2026-10-28）
+
+状态：直接许可持久模型、签发校验、API、独立 Tab、部署登记和一次性历史退役已实现，互斥模式运行路径已删除。迁移及受影响授权链路的本地 PostgreSQL 门禁通过，System／Catalog 前端标准门禁通过；完整 IAM 包另有两个未改动用例因认证时间在未来失败，不计为整包通过。开发数据库尚未迁移，本轮真实跨服务 T4 尚未验收。以下定义唯一新协议，旧模式仅作为前向迁移输入。
+
+1. **前置清点。** 只读核对旧目标身份、模式、版本与审计来源、现有直接／业务 Grant、撤销和 Deny、未核清业务请求及正式受理窗口，以及旧配置权限在内置与自定义角色中的分布。旧 `independent` 记录可能由普通办理员首次建立，不能据模式推断管理员曾批准。迁移只走新的前向迁移，不改旧 migration checksum，不在运行中的个人开发库手工清理授权。
+2. **已确认的存量映射。** 旧 `independent` 配置全部转为“允许直接授权”，旧 `catalog` 配置转为“未允许直接授权”；无配置目标不创建显式记录，按 Catalog 持久启用状态计算默认值。旧 `catalog` 迁移的显式禁止仍优先于未启用 Catalog 时的默认允许。用户已明确接受旧直接配置的延续，包括可能由普通办理员首次建立的配置。迁移记录真实的存量映射依据，保留配置身份、版本及既有通用审计，不伪造一次管理员开启操作。迁移后所有新的开启／关闭仍仅允许引擎授权管理员。2026-10-28 用户进一步确认：旧授权历史可以统一清理，包括此前两项持续授权；本次一次性清理不保留这两项例外，不自动重新授予。
+3. **事实模型。** 新可变事实仅表达精确 DataItem 的显式直接授权许可及并发版本；记录缺失表示使用部署默认，不另存逐项默认值副本；禁止继续以 `catalog/independent` 二选一表示许可。迁移须保持 DataItem 身份无损，不根据表名猜测身份，不把目录／schema 扩展成许可。新 Grant 的批准来源和命令仍是不可变事实；不得把旧配置映射伪造成管理员操作或新 Grant。清理旧历史后直接移除旧批准要求版本与首次初始化字段，不保留历史兼容 DTO。
+4. **角色与权限。** 直接授权、业务批准后办理、许可读取和许可管理分别校验。许可管理默认只授予引擎授权管理员，并在后端同时核验管理员资格；仅组合配置 Permission 或持有引擎委托不能绕过。普通办理员移除旧首次配置能力；不能把其旧 `.initialize` 自动升级为新许可管理权。自定义角色旧配置权限也不得自动升格。沿既有 Manifest／前向迁移／授权版本及会话失效机制发布，不新增真实账号或角色分配。
+5. **业务协议收敛。** 新 Catalog 确认、准备及 System 新受理不再依赖目标批准要求模式与版本；删除 Catalog 的模式观察、初始化和模式冲突处理，以及统一 client、DTO、Swagger、前端中对应新命令字段。原受理、核清、签发、审计和不可变参数约束继续由各 owner 负责。本次开发阶段升级在停止相关写入及后台续办后，由各 owner 的一次性迁移清理旧办理记录及依赖；不得让旧进程继续签发。清理不伪造一次正常核清或业务撤销，不重新发起旧请求。
+6. **已确认的开发历史清理。** 清理旧数据 Grant（含两项持续授权）、撤销、Deny／解除、旧业务办理及受理记录；不重新签发、不保留旧字段兼容。配置映射仍按第 2 项执行。System 只修改自身领域表，Catalog 只清理自身旧授权办理／批准记录，不跨 schema 操作；IAM 账号、角色分配、组织成员、引擎委托、Meta 采集资格、目录条目／责任／来源绑定、通用审计及源数据不在清理范围。任务产出的物理成功与成果数据保持不变；旧初始授权续办须同时退役，不能因 Grant 记录消失再次签发。
+7. **页面及查询。** 实现独立“直接授权许可”Tab，按数据项与许可状态服务端过滤、计数和分页；新增授权只读取已选 DataItem 的有效许可状态与来源。列表覆盖当前引擎全部已识别 DataItem，“已允许”包含显式允许及默认允许；未知部署状态单列，默认值覆盖未配置目标但不批量物化配置记录。Meta 提供权威身份查询，System 计算有效许可；不得先分页再过滤或截断后返回不完整总数。统一现有资源选择能力及 client，删除旧全量配置折叠列表、模式切换、首次配置表单与旧 query，不新增平行 ACL 页面。当前授权和全部授权记录仅展示切换后按新协议创建的记录。
+8. **部署事实及初始化。** 已确认复用 System `module_definitions` 的 Catalog 持久 `enabled`，沿现有平台模块管理权限及并发版本更新，不新增第二套部署开关。新部署初始化显式登记启用／未启用，升级保留已有持久状态；缺少记录保持未知，不能因未注册、网络故障、租约过期或 URL 缺失推导未启用。部署登记前不能按默认允许签发。平台模块停用操作必须清楚提示未配置目标的默认许可变化；首次注册与重注册不得覆盖明确的部署意图。持久启用状态变更与默认许可签发须在数据库中排序，适配现有注册、初始化、平台模块页面与相关门禁。
+9. **一次性交付范围。** 涉及 System 数据迁移／授权事务／模块部署登记及管理／Manifest／API／前端，Catalog 办理协议／前端，Common 统一 client、协议绑定及相关消费者、原 PG Online 夹具与场景规范。逐一核对实际引用，不扩展新的引擎适配，不修改 Provider、Security 或审计方式。实施前确认根 Make 与既有 CI 路径登记覆盖；接口变更同次更新生成常量及双语 Swagger。
+
+### 许可解析、部署登记与事务顺序
+
+| 精确 DataItem 显式值 | Catalog 持久状态 | 有效直接授权许可 | 展示来源 |
+| --- | --- | --- | --- |
+| 允许 | 启用／未启用／尚未登记 | 允许 | 显式设置 |
+| 禁止 | 启用／未启用／尚未登记 | 不允许 | 显式设置 |
+| 无记录 | 启用 | 不允许 | 部署默认 |
+| 无记录 | 明确未启用 | 允许 | 部署默认 |
+| 无记录 | 尚未登记或读取失败 | 未知，拒绝新直接签发 | 部署状态未知 |
+
+已知显式设置优先，不要求 Catalog 在线；获取显式设置自身失败也必须拒绝，不能当作“无记录”继续用部署默认。两类版本分别表达 DataItem 配置和模块定义，不能把默认允许伪造为许可版本 1。精确观察返回有效状态、来源及实际参与裁决的版本；签发须在事务内重新读取并核对，观察结果不是授权凭据。
+
+部署登记沿现有 System 平台模块管理资源完成；首次登记是创建操作（初始持久版本为 1），不得把更新版本 0 或省略版本作为隐式创建。已登记后沿原带版本的启停操作更新。重复创建、与首次服务注册撞名均返回冲突并要求重新读取，不能覆盖已有启用意图；未启动的 Catalog 定义不伪造 Runtime 实例、地址、心跳或 Ready。复用原 `platform.module.update` 管理资格，不给 Tenant 办理员新增平台权限。注册与重注册保留已登记启用意图；没有模块记录时，查询只返回未知，不通过读操作补建默认值。
+
+精确签发裁决优先读取显式记录，无记录时才以 Catalog 持久状态为依据；列表在同一数据库语句快照读取显式集合与部署事实。新直接签发持有精确目标锁，并对参与默认值的 Catalog 定义加共享锁，持有至授权事务提交，防止状态改变后仍按旧默认值写入。模块启停使用现有定义行更新锁；首次登记通过唯一模块名约束排序。未知状态不签发，不能通过锁不存在的记录证明未部署。许可变更与签发统一保持 IAM／引擎／精确目标的既有锁顺序，不在持锁时请求 Catalog HTTP。
+
+配置映射与一次性历史清理是两个独立步骤：先从旧配置读取精确身份与允许值，再退出旧模式字段；不从 Grant 推导许可。历史清理只用于本次开发阶段升级，不成为运行时清理 API 或授权捷径。旧进程必须退出后才升级，数据库 owner 迁移完成后才能恢复签发与后台续办。清理完成后旧请求编号不得从旧 Catalog 或 Transfer 待处理记录中自动重放。
+
+### 开发历史退役的 owner 执行边界
+
+System 前向迁移 `000246` 在同一事务清理旧 Grant／撤销、Deny／解除及业务办理受理记录，包含原两项持续授权。只在本次迁移事务内暂停目标表的领域不可变触发器，保持外键核验并在提交前恢复保护。旧任务产出签发终态保留执行标识作为拒绝重放依据，去掉已清理 Grant 的引用；不能因删除历史重新获得首次签发机会。
+
+Catalog 复用共享启动迁移检查点，revision 1 一次性清理自身 `sharing_decisions` 与 `fulfillment_checks`；后续启动不再清理新批准。Transfer 启动版本 7 将旧成功执行的初始授权续办标记终止，移除旧 Grant 引用；后台不再领取，产出回执接口拒绝以该旧执行继续办理。执行物理结果、成果数据、其他元数据与既有来源证据保持不变。页面将该状态显示为“旧初始读取授权已清理”，不误报成首次未签发，也不自动重跑任务。
+
+以上是新许可模型发布时的一次性升级步骤，不提供人工清理 API，也不是周期清理。三个 owner 的旧写入／续办进程全部退出后才能统一升级；不得单独重启某个新 owner，同时保留其他旧签发进程运行。本地隔离库已验证清理、重复启动及非授权事实保持；开发库尚未执行，真实升级／跨服务 T4 未验收。
+
+### Catalog 业务办理的协议切换
+
+新业务办理只提交不可变的 `request_id` 与 `decision_id`，不再接受 `requirement_version`；统一绑定和公开办理历史也移除该字段。Catalog 页面删除模式观察及首次配置入口，仍核查候选、已有有效授权、当前办理资格和原参恢复。System 受理保留当前人员、引擎范围、业务依据、Meta 边界、接收主体与期限校验，不读取直接配置。迁移 `000247` 在升级中间阶段将 Catalog Grant 的旧版本列固定为 0；`000248` 随后移除该列和首次初始化字段，改为仅直接来源保存 `direct_permission_source/version`。Catalog 与任务产出来源的这两个字段固定为空字符串／0，不能成为业务准入条件。
+
+前置 Catalog 解耦验证曾覆盖无配置及旧直接／业务配置下均可受理，相关 Go、PostgreSQL、前端和 runner 结果仅属于当时输入。新许可模型完成后必须复核缺失／关闭／开启许可下 Catalog 均可办理，并保持直接签发、同参恢复、去重和清理断言；以本节后续标准门禁的新结果为准。
+
+### 有效许可列表的跨服务身份查询
+
+2026-10-28 已确认独立机器权限 `meta.data_item_identity.read`，默认仅授予 `tenant.system_runtime`；Meta 同时限定 `addp-system` 的当前 Tenant Service 身份。人员、Catalog 运行身份及原 `meta.authorization_facts.read` 不因该变化获得枚举能力。
+
+Meta 的唯一最小清单接口为 `POST /api/v1/meta/runtime/data-item-identities/query`，经统一 `MetaClient` 调用。复杂查询在请求体携带 `engine_id`、`search`、`fingerprint_filter`（`include`／`exclude`）及 `fingerprints`、`page`／`page_size`；不存在 Tenant 覆盖字段。无集合过滤时省略过滤字段；显式 include 空集合产生空结果，不能变成查询全部。集合只承载本次查询的身份谓词，不保存 System 许可，不接受权限、角色或 Grant。单次最多 20,000 个唯一指纹，服务端拒绝超限或畸形请求，不能截断后声称完整；System 必须显式报告查询无法完成，不能遗漏默认允许或显式禁止的项。
+
+结果只包含当前未删除 DataItem 的 `item_fingerprint`、`engine_id`、`name`、`full_name`、`item_type` 与标准管理分页信息。Meta 在同一只读快照中先过滤再计数和分页，按指纹稳定排序；不读取源、不扫描、不返回样本、字段、完整 attributes 或凭据。身份清单不证明可授权边界；实际许可配置与 Grant 签发仍通过既有精确授权事实接口核验。
+
+System 读取当前显式许可与部署默认，按最终状态推导包含／排除的身份集合；无状态过滤时查询全部，再对当前页组合相同观察的许可。跨服务查询期间不持有 IAM／许可事务锁；返回前重新核对资格与本次配置观察，变化则报告冲突，不能混用不同配置版本。Meta 不参与许可裁决；System 不持久复制 DataItem 清单。名单查询失败不能被解释为空列表。
+
+### 一次性清理与新写协议的落地检查
+
+- 旧可变批准要求迁移为精确 DataItem 显式许可，保留稳定身份、指纹、版本；旧互斥模式只作为迁移输入，不保留为当前配置字段。
+- 旧 Grant／撤销、Deny／解除、System 受理历史按依赖顺序在同一 owner 迁移事务清理，正常不可变保护随后恢复。禁止 `CASCADE` 扩散到未授权对象；循环外键必须显式核对并使用原可延迟约束，不关闭全库参照完整性。
+- Catalog 在自己的迁移中清理旧批准和办理队列，删除旧请求版本字段及模式初始化入口；不删除条目、责任、来源、编目信息或通用审计。新 Catalog 命令只根据正式业务依据办理，不查询直接许可。
+- 任务产出初始授权需要单独核对 System 终态与 Transfer 待处理标记：已成功生成的表、任务与执行事实不删除，不重跑计算；旧授权终态不能因清理变成可再次签发的首次请求。保留必要的拒绝重放事实不等于保留旧 Grant 或旧协议。具体清理语句须经依赖核查与隔离测试，不能仅清空 Grant 表。
+- 新直接命令必须提交实际观察的许可来源及版本；正式命令在事务内复核当前 IAM／引擎范围、接收主体及已核验 Meta 边界，数据库 INSERT guard 同步核验许可来源／版本、操作人和接收主体的结构约束，不通过旧批准要求字段旁路。
+- T2 必须覆盖旧配置映射、旧授权及续办清理、重复启动不再清理新记录、旧请求不恢复授权，以及未纳入清理的 IAM／组织／委托／采集资格等事实保持不变；不在个人开发库试迁移。
+
+当前本地验证：`make test-authorization` 及 Common／Meta／System／Catalog／Transfer 受影响 Go 门禁通过；标准 PostgreSQL 门禁覆盖 System migration、engineaccess、repository、api、online-test-fixture、Meta authorization-facts、Catalog 与 Transfer，均通过。包含许可关闭／默认值变化与签发的四个真实并发顺序、迁移映射与不可重放、权限发布和最小身份清单隔离。System 前端 175 项单测、245 项隔离浏览器及构建通过；Catalog 270 项测试及构建、共享前端 283 项测试、Transfer 受影响前端及构建通过。完整 IAM PostgreSQL 包的两个既有当前角色用例报“authenticated time must not be in the future”，相关文件本轮未改；本轮涉及的 MFA／会话清理用例通过，但该整包结果仍为失败。以上为本地及隔离数据库／模拟 API 浏览器证据，不替代新协议真实跨服务 T4 或开发库升级。
+主链路验证范围与标准入口：
+
+- T0/T1：`make test-authorization`、System 与 Catalog 的标准模块门禁、Common 受影响客户端及协议门禁；前端覆盖独立 Tab、状态筛选、精确查询、空选择零全量读取、未知状态拒绝提交及旧入口删除。纯规范阶段先运行 `make test-changed`，不能把文档门禁计为功能验收。
+- T2：既有 System IAM PostgreSQL migration／engineaccess 与 Catalog PostgreSQL 标准入口，覆盖旧 Grant／Deny 清理且重复启动不删除新记录、旧普通办理员不获开启权、管理员开启关闭、业务流程在许可缺失／关闭／开启三态均可办理、Catalog 持久启用／未启用与显式允许／禁止／未配置的组合、未知及临时故障不放开、启用变化只影响未配置目标、部署默认值变更与签发并发排序、并发关闭与直接签发顺序、版本冲突、同命令恢复与重复关系拒绝、旧协议退出及续办退役。测试仅使用标准入口隔离库。
+- T3：System、Catalog 前端构建及 Swagger 路由覆盖；Common 契约变更按依赖扩散。复用根 Make 和现有自动发现，不另建临时测试入口。
+- T4：扩展既有 `pg-source-authorization` 隔离验收，验证新 Tab 的真实筛选及选择后状态、未许可直接授权拒绝、管理员许可后办理、许可关闭后拒绝新增、Catalog 两种许可状态均可业务签发、原 Grant 在关闭许可后仍可读、撤销与失败清理。先运行 `make test-pg-authorization-online-runner`，本地通过后才派发一次必要固定版本验收；已获准清理的两项旧持续授权不再作为保留例外，但仍不使用真实账号作验收夹具，不新增定时跟进。
 
 ## 一、事实边界
 
@@ -14,7 +87,7 @@ System 是 ADDP 唯一 IAM 逻辑权威，负责 Principal、账号、认证方�
 
 DataItem 授权资源事实由 Meta 的 Runtime API 提供，System 不跨 schema 查询。迁移 000205 登记不可委托、不可租户定制的 `meta.authorization_facts.read` 并关联 `tenant.system_runtime`；前向迁移 000206 将同一读取 Permission 关联 `tenant.catalog_runtime`，两者均用 `common/client.MetaClient.ReadAuthorizationFacts` 及自身 Tenant Service 凭据消费唯一契约。不新增人员 Role Assignment 或数据 Grant；现有 Role Permission 触发器推进受影响服务主体的授权版本，迁移显式撤销其旧 Token Family，不重复手工推进。管理员核对、新批准及正式读取消费在 IAM 锁外读取 Meta，随后在本地事务中重新核验当前资格。000207 将首期 schema 普通表 single 的 Grant 改为 `item_fingerprint + boundary_hash` 绑定；`catalog_path` 仅保留实际定位与批准时边界／审计坐标，不是独立 ACL 键。
 
-System 自身拥有引擎访问控制领域。该领域的 `engine_access_grants` 是精确源数据规则的唯一不可变签发存储。迁移 000195 将目标、接收主体、动作、期限、批准方式与操作者来源收拢到 Grant：`request_id` 唯一标识签发命令；Catalog 来源另以同编号 `catalog_request_id` 引用 `engine_access_fulfillment_outcomes`，从 accepted 回执提取规则并核验原窗口；独立来源不伪造回执，须匹配当前独立批准要求版本。既有记录保留原编号、签发时间和撤销关系，不产生新授权、Role Assignment 或授权版本变更。读取及撤销只消费 Grant 的规则参数；回执不再是读取侧授权事实来源。Grant 不复制 Catalog 责任、业务决定或 IAM Role/Permission。正式 Catalog 签发与原参反查入口保持 `POST /runtime/engine-access-fulfillments/{request_id}/grant` 及其 `/resolve`，只允许固定 `addp-catalog` Tenant Service 凭据与履约 Permission；独立授予使用公开 `POST /api/v1/system/engines/:id/access_grants`，同路径 `GET` 提供两种来源的分页历史；创建与读取分别要求 000196 的独立功能权限以及当前有效引擎管理委派，000197 仅将权限组合进专门的源数据授权办理员模板，不自动分配账号或扩张其他角色。签发命令明确只读目标、接收主体、批准要求版本、期限及原因，源端只读结构核验不持 IAM 写锁，正式事务复核当前资格及依据并原子写 Grant 与审计；原编号原参只恢复历史，不能续期或恢复撤销。签发历史不能代替后续到期、撤销、Deny 和当前接收主体的访问裁决。
+System 自身拥有引擎访问控制领域，`engine_access_grants` 是精确源数据规则的唯一不可变签发存储。`request_id` 唯一标识命令；`approval_mode` 仅记录 `catalog/independent/task_production` 签发来源，不表达 DataItem 互斥模式。Catalog 来源以同编号 `catalog_request_id` 引用 accepted 回执并提取规则，核验原窗口；直接来源不伪造业务回执，以 `direct_permission_source/version` 记录许可观察并在新签发事务内复核；任务产出沿独立已确认规则办理。读取及撤销只消费 Grant，回执与许可配置均不能直接授予访问。正式 Catalog 签发／反查使用固定 Runtime 端点，直接授予使用 `POST /api/v1/system/engines/:id/access_grants`，当前关系和完整历史分别用 `GET /access_grants` 与 `/access_grants/history`。创建、读取和撤销分别校验独立功能权限及当前引擎管理资格；Meta 边界／源结构 RPC 不跨 IAM 锁，事务内重核资格并原子写入 Grant 与审计。原编号同参只恢复原历史，不续期、不恢复撤销；历史签发不替代后续到期、Deny、接收主体及 Security 访问裁决。
 
 当前源数据读取规则由 `engineaccess` 私有只读批量观察方法复用上述不可变历史，不新增 ACL 表或可编辑副本。该方法拥有独立只读事务，拒绝嵌入调用方写事务；整批目标在一条 SQL、一个已提交快照和一个数据库时刻下核验当前主体、直接组织成员、引擎与 Grant／Deny。仅全部精确目标都有有效 Grant 且没有有效 Deny 时返回规则覆盖，不读取来源数据库、不获取仲裁或 IAM 写锁、不产生规则或审计副作用。规则观察本身不独立认证，也不是完整访问许可；正式同步入口按下述契约组合可信凭据与固定功能／Client 条件。适用的执行范围与 Security 仍由实际读取 owner 校验，主体 ID／成员关系 ID／授权版本引用自身不是认证证明。
 
@@ -159,13 +232,13 @@ Role、Assignment、Membership、组织关系或 Principal 状态变化时，数
 
 ### 源授权办理协调底座
 
-正式准备→可信反查→首次受理（2026-10-03）：Catalog 人类入口从可信 AuthContext 派生操作人，只接收请求／决定编号和批准要求版本；本地完整待核清绑定提交后才发送。System `POST /runtime/engine-access-fulfillments/:request_id/accept` 限定 `addp-catalog` 当前 Tenant Service 身份及 `.execute`；使用独立 `addp-system` Tenant Service OAuth 在事务锁外反查 Catalog 精确待核清依据。返回后对机器主体、办理人、确认人及接收账号去重升序锁定，事务内核验当前 IAM、独立人类办理权限、管理委派、接收主体及精确批准要求版本。确认人历史授权版本仅供审计，办理人版本必须与请求一致；等待后按数据库墙钟复核权限及期限。反查期间先提交的原受理／关闭结果优先按完整绑定核清，不由旧人员状态阻断历史恢复。
+正式准备→可信反查→首次受理（2026-10-03）：Catalog 人类入口从可信 AuthContext 派生操作人，只接收请求／决定编号；本地完整待核清绑定提交后才发送。System `POST /runtime/engine-access-fulfillments/:request_id/accept` 限定 `addp-catalog` 当前 Tenant Service 身份及 `.execute`；使用独立 `addp-system` Tenant Service OAuth 在事务锁外反查 Catalog 精确待核清依据。返回后对机器主体、办理人、确认人及接收账号去重升序锁定，事务内核验当前 IAM、独立人类办理权限、管理委派、接收主体与业务依据。确认人历史授权版本仅供审计，办理人版本必须与请求一致；等待后按数据库墙钟复核权限及期限。反查期间先提交的原受理／关闭结果优先按完整绑定核清，不由旧人员状态阻断历史恢复。
 
 迁移 `000180_catalog_fulfillment_basis_runtime` 登记不可委托、不可租户定制的 `catalog.sharing_fulfillment.read`，只授予内置 `tenant.system_runtime`；为存量已初始化 Tenant 和未来新 Tenant 接入 `addp-system`。OAuth Client 初始停用且 Secret 为空，SQL 不保存明文或借用其他服务 Secret。`SYSTEM_SERVICE_CLIENT_SECRET` 是可选独立配置：缺失不阻断 System Ready，新受理明确返回 503 `fulfillment_capability_unavailable`，历史核清／关闭及同参结果恢复仍可用；移除配置通过既有 Provisioner 停用 Client 并撤销活动 Token Family，不回退独立批准或推断 Catalog 退出。未运行真实 OAuth 双服务 Online T4，不以受控 owner Transport 夹具替代其验收。
 
-源授权办理协调底座使用 `system.engine_access_fulfillment_outcomes` 保存同次请求唯一、不可改写的 `accepted` 或 `closed` 结果。它不是 Grant、批准要求或访问凭据；没有结果与已关闭严格不同。请求编号绑定租户、机器主体、精确结构化路径、决定引用、批准要求版本及参数；System 数据库墙钟产生受理时间及不超过原授权到期的 5 分钟截止时间。结果与最小审计同事务，重试只返回原结果。正式新受理已由专用 Runtime 接口消费该底座，真实业务决定与当前资格独立核验；受理接口本身不写入 Grant，内部签发另由 000182 对应路径落实。受理回执不能代替内容访问裁决。
+源授权办理协调底座使用 `system.engine_access_fulfillment_outcomes` 保存同次请求唯一、不可改写的 `accepted` 或 `closed` 结果。它不是 Grant、直接授权许可或访问凭据；没有结果与已关闭严格不同。请求编号绑定租户、机器主体、精确结构化路径、决定引用及参数；System 数据库墙钟产生受理时间及不超过原授权到期的 5 分钟截止时间。结果与最小审计同事务，重试只返回原结果。正式新受理已由专用 Runtime 接口消费该底座，真实业务决定与当前资格独立核验；受理接口本身不写入 Grant，内部签发另由 000182 对应路径落实。受理回执不能代替内容访问裁决。
 
-核清读取使用独立只读事务，拒绝在受理写事务中读取自身未提交结果；与仲裁共用唯一的完整绑定匹配路径，不取请求或目标仲裁锁。不存在返回未找到，参数不同返回绑定冲突，数据库错误原样保留；查询均不创建关闭结果、不追加办理审计。退出、更换批准要求版本或原窗口到期不改变历史查询结果，也不因此重新授予或续期。
+核清读取使用独立只读事务，拒绝在受理写事务中读取自身未提交结果；与仲裁共用唯一的完整绑定匹配路径，不取请求或目标仲裁锁。不存在返回未找到，参数不同返回绑定冲突，数据库错误原样保留；查询均不创建关闭结果、不追加办理审计。直接授权许可变化或原窗口到期不改变 Catalog 历史查询结果，也不因此重新授予或续期。
 
 生产核清通过 `POST /runtime/engine-access-fulfillments/:request_id/resolve|close` 接入：限定 `addp-catalog` 当前 Tenant Service 身份及 `system.engine_access_fulfillment.execute`，Tenant 从规范 AuthContext 派生，请求中的原调用主体须匹配认证主体。服务当前 OAuth Client、Service Principal、Tenant Membership、授权版本、Permission 与 Token 期限在本地事务核验，关闭等待请求／目标锁后再次核验期限再提交；原操作人或接收方后来失效不阻断历史核清。明确未找到只是查询结果，关闭与原受理竞争，返回先提交的原结果。迁移 000176 仅向 `tenant.catalog_runtime` 增加此不可委托、不可租户定制的 Tenant Permission，受影响的活跃角色分配主体递增授权版本并撤销 Refresh Family；不新增 User Role 授权、Assignment、新受理或 Grant。Catalog 后台使用独立 Service 客户端消费结果，不持 System 事务锁跨模块调用，通信故障保留待核清保护，不影响服务 Ready。
 
@@ -173,7 +246,7 @@ Role、Assignment、Membership、组织关系或 Principal 状态变化时，数
 
 完整 `binding` 同时绑定原操作人的 User Principal、Tenant Membership 和授权版本，以十进制字符串保留 bigint 精度，不保存 User Token 或 Role／Permission／责任副本。首次受理通过 IAM Repository 的事务内 `LockUserAuthorizationSource` 按 Principal → Membership → Tenant 取得共享行锁，再进入请求和目标边界；核验当前对象类型、状态、成员身份范围、授权版本和有效期，业务核验后重新检查数据库墙钟。共享锁既阻止 IAM 状态修改，又兼容审计外键引用检查，避免身份写锁与目标锁的循环等待；原管理委派写事务不改用共享锁。原操作人失效不阻止同参历史核清或持久关闭，但不得据历史结果新建受理。此底线本身不证明这些字段确实来自该用户操作；正式消费者通过 Catalog 专用 owner 接口核对原操作人持久来源，并独立核验当前功能 Permission 与管理委派，不保存或透传 User Token。
 
-`system.engine_access_approval_requirements` 保存精确源目标的 `catalog/independent` 要求及并发版本，既不是 Grant，也不保存 Catalog 责任副本或审批人白名单。初始化必须显式执行；缺失不能推导为允许独立批准。要求变更与新受理使用同一目标事务锁，新 Catalog 受理必须匹配当前模式和版本；退出不改变之前已受理的原结果，重新启用也不能复用旧版本新建受理。承接账号只写入当次交接审计，后续批准仍须核验当前独立批准 Permission 与有效管理委派。迁移 000168 不自动初始化存量目标、不创建 Permission 或真实 Grant。迁移 000174 随真实初始化／读取 API 发布两个 Tenant Scope、不可委托且允许租户自定义的独立 Permission，不默认分配角色或修改主体授权版本。初始化固定建立版本 1 的 `catalog` 要求，IAM 当前权限与管理委派在同一事务核验，等待目标锁后再次检查期限并写入配置及审计；已有要求返回冲突，不覆盖独立模式。读取同时按当前 Tenant、Engine 及当前委派隔离。退出／重新启用与 Grant 仍待贯通；跨模块首次受理已接通，内部交接核验回调不视为生产资格证明。
+`system.engine_access_direct_permissions` 保存 Tenant／Engine 内精确 DataItem 的显式 `allowed`、稳定指纹与并发版本。`000248` 从旧配置映射：旧 `independent` 为允许、旧 `catalog` 为禁止，保留配置身份／版本和审计历史；旧配置表、模式及目标摘要字段退出。缺失记录按持久部署默认计算，不补建默认记录。设置需要当前独立许可管理 Permission 与引擎授权管理员资格；新记录版本 1，修改只递增一次，同显式值保持原版本。身份不可变，不能删除记录以恢复部署默认；许可变更与新直接签发使用同一精确目标锁，等待与审计后重新核验当前资格。新 Catalog 业务受理不读取该配置。只读列表跨服务查询期间不持 IAM 锁，返回前复核资格和完整许可观察，变化返回冲突。详细 API、部署优先级与迁移清理见文首。
 
 迁移 `000170_catalog_sharing_decision_permission` 随 Catalog 真实业务确认 API 发布独立 `catalog.sharing_decision.create`：仅 Tenant Scope、high risk、不可委托、允许租户定制。它只登记功能权限，不默认分配给内置管理员或任何 Role，不新增 Assignment 或数据 Grant、不修改已有主体授权版本。Catalog 仍须以该权限与当前业务负责人资格取交集；System 新受理消费者已接通，实际源数据规则尚未贯通。前向升级和重复执行由既有 System IAM PostgreSQL 门禁覆盖，不操作开发业务库的迁移状态。
 

@@ -567,3 +567,74 @@ func TestModuleRegistrationChecksPermissionCatalogOwnership(t *testing.T) {
 		t.Fatalf("cross-owner permission error = %v, want invalid registration", err)
 	}
 }
+
+func TestCatalogDeploymentDeclarationDoesNotCreateRuntimeOrOverwriteIntent(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		name := "disabled"
+		if enabled {
+			name = "enabled"
+		}
+		t.Run(name, func(t *testing.T) {
+			db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Create(&models.ModuleRegistryState{ID: 1, Revision: 1}).Error; err != nil {
+				t.Fatal(err)
+			}
+			repo := repository.NewModuleRegistryRepository(db)
+			registry := NewModuleRegistryService(repo)
+			created, err := registry.CreateModuleDefinition(&models.ModuleDefinitionCreateRequest{ModuleName: "catalog", Enabled: &enabled})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if created.Enabled != enabled || created.Version != 1 || len(created.Instances) != 0 || created.ModuleName != "catalog" {
+				t.Fatalf("declaration = %#v", created)
+			}
+			revision, err := repo.GetRegistryRevision()
+			if err != nil || revision != 2 {
+				t.Fatalf("revision=%d error=%v", revision, err)
+			}
+			opposite := !enabled
+			if _, err := registry.CreateModuleDefinition(&models.ModuleDefinitionCreateRequest{ModuleName: "catalog", Enabled: &opposite}); !errors.Is(err, ErrModuleDefinitionVersionConflict) {
+				t.Fatalf("duplicate declaration: %v", err)
+			}
+			after, _ := repo.GetRegistryRevision()
+			if after != revision {
+				t.Fatal("conflict changed registry revision")
+			}
+			// A real owner registration may publish runtime facts but must preserve administrator intent.
+			registration := models.ModuleRegistrationRequest{ModuleName: "catalog", RoutePrefix: "/catalog", InstanceID: "catalog-1", Role: models.ModuleRuntimeRoleBackend, ModuleURL: "http://catalog:8192", ProcessStartedAt: time.Now()}
+			if err := registry.Register(&registration); err != nil {
+				t.Fatal(err)
+			}
+			got, err := registry.GetModule("catalog")
+			if err != nil || got.Enabled != enabled || got.Version != 1 {
+				t.Fatalf("registration changed intent: %#v, %v", got, err)
+			}
+			changed, err := registry.UpdateModuleDefinition("catalog", &models.ModuleDefinitionUpdateRequest{Enabled: &opposite, Version: got.Version})
+			if err != nil || changed.Enabled != opposite || changed.Version != 2 {
+				t.Fatalf("update = %#v, %v", changed, err)
+			}
+			if err := registry.Register(&registration); err != nil {
+				t.Fatal(err)
+			}
+			got, err = registry.GetModule("catalog")
+			if err != nil || got.Enabled != opposite || got.Version != 2 {
+				t.Fatalf("reregistration changed intent: %#v, %v", got, err)
+			}
+		})
+	}
+}
+
+func TestCatalogDeploymentDeclarationRequiresExplicitSupportedIntent(t *testing.T) {
+	s := NewModuleRegistryService(nil)
+	for _, input := range []*models.ModuleDefinitionCreateRequest{nil, {}, {ModuleName: "catalog"}, {ModuleName: "manager", Enabled: boolPointer(false)}} {
+		if _, err := s.CreateModuleDefinition(input); !errors.Is(err, ErrInvalidModuleRegistration) {
+			t.Fatalf("input %#v: %v", input, err)
+		}
+	}
+}

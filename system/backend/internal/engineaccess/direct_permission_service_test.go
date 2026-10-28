@@ -3,47 +3,58 @@ package engineaccess
 import (
 	"context"
 	"errors"
-	"github.com/addp/common/dataitem/authorizationfacts/factstest"
+	"fmt"
 	"testing"
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/dataitem/authorizationfacts"
+	"github.com/addp/common/dataitem/authorizationfacts/factstest"
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/authorization"
 	"github.com/addp/system/internal/iam"
-	"github.com/google/uuid"
 )
 
-func TestApprovalRequirementUpdateRejectsInvalidCommandBeforeStorage(t *testing.T) {
+func TestDirectPermissionQueryCapacityDoesNotBecomeBadRequestOrEmptySuccess(t *testing.T) {
+	observation := &directPermissionObservation{
+		Settings:   make(map[string]directPermissionSetting),
+		Deployment: &catalogDeploymentDeclaration{Enabled: true, Version: 1},
+	}
+	for i := 0; i <= authorizationfacts.MaxIdentityQueryFingerprints; i++ {
+		observation.Settings[fmt.Sprintf("%064x", i)] = directPermissionSetting{Allowed: true, Version: 1}
+	}
+	if _, err := prepareDirectPermissionIdentityQuery(2, 1, 20, DirectPermissionFilter{State: "allowed"}, observation); !errors.Is(err, ErrAuthorizationFactsUnavailable) || errors.Is(err, commonapi.ErrBadRequest) {
+		t.Fatalf("complete oversized filter must fail as unavailable: %v", err)
+	}
+	if _, err := prepareDirectPermissionIdentityQuery(2, 1, 20, DirectPermissionFilter{State: "invalid"}, observation); !errors.Is(err, commonapi.ErrBadRequest) || errors.Is(err, ErrAuthorizationFactsUnavailable) {
+		t.Fatalf("invalid filter must remain bad request: %v", err)
+	}
+	fingerprint := fmt.Sprintf("%064x", authorizationfacts.MaxIdentityQueryFingerprints)
+	query, err := prepareDirectPermissionIdentityQuery(2, 1, 1, DirectPermissionFilter{ItemFingerprint: fingerprint}, observation)
+	if err != nil || query.Validate() != nil || query.FingerprintFilter != "include" || len(query.Fingerprints) != 1 || query.Fingerprints[0] != fingerprint {
+		t.Fatalf("single-item query must remain complete: %+v %v", query, err)
+	}
+}
+
+func TestDirectPermissionRejectsInvalidCommandBeforeStorage(t *testing.T) {
 	service := &Service{}
-	valid := UpdateApprovalRequirementInput{EngineID: 1, ID: uuid.New(), Version: 1, Mode: "catalog", Reason: "Explicit change"}
-	for name, mutate := range map[string]func(*UpdateApprovalRequirementInput){
-		"missing id":       func(i *UpdateApprovalRequirementInput) { i.ID = uuid.Nil },
-		"zero version":     func(i *UpdateApprovalRequirementInput) { i.Version = 0 },
-		"negative version": func(i *UpdateApprovalRequirementInput) { i.Version = -1 },
-		"missing engine":   func(i *UpdateApprovalRequirementInput) { i.EngineID = 0 },
-		"unknown mode":     func(i *UpdateApprovalRequirementInput) { i.Mode = "unknown" },
-		"missing reason":   func(i *UpdateApprovalRequirementInput) { i.Reason = " " },
+	path := engineplugin.TabularItemPath(1, "schema", "public", "table")
+	binding := factstest.Binding(path)
+	valid := SetDirectPermissionInput{EngineID: 1, CatalogPath: path, ItemFingerprint: binding.ItemFingerprint, ExpectedBoundaryHash: binding.BoundaryHash, ExpectedSource: "explicit", ExpectedVersion: 1, Reason: "Explicit change"}
+	for name, mutate := range map[string]func(*SetDirectPermissionInput){
+		"zero explicit version": func(i *SetDirectPermissionInput) { i.ExpectedVersion = 0 },
+		"negative version":      func(i *SetDirectPermissionInput) { i.ExpectedVersion = -1 },
+		"missing engine":        func(i *SetDirectPermissionInput) { i.EngineID = 0 },
+		"missing fingerprint":   func(i *SetDirectPermissionInput) { i.ItemFingerprint = "" },
+		"missing boundary":      func(i *SetDirectPermissionInput) { i.ExpectedBoundaryHash = "" },
+		"unknown source":        func(i *SetDirectPermissionInput) { i.ExpectedSource = "independent" },
+		"missing reason":        func(i *SetDirectPermissionInput) { i.Reason = " " },
 	} {
 		t.Run(name, func(t *testing.T) {
 			input := valid
 			mutate(&input)
-			if _, err := service.UpdateApprovalRequirement(context.Background(), input); !errors.Is(err, commonapi.ErrBadRequest) {
+			if _, err := service.SetDirectPermission(context.Background(), input); !errors.Is(err, commonapi.ErrBadRequest) {
 				t.Fatal(err)
-			}
-		})
-	}
-}
-
-func TestApprovalRequirementInitializationRejectsMissingOrUnknownModeBeforeStorage(t *testing.T) {
-	service := &Service{}
-	for _, mode := range []string{"", "Catalog", "unknown", " independent "} {
-		t.Run(mode, func(t *testing.T) {
-			_, err := service.InitializeApprovalRequirement(context.Background(), InitializeApprovalRequirementInput{ItemFingerprint: factstest.Binding(engineplugin.TabularItemPath(1, "schema", "public", "table")).ItemFingerprint, ExpectedBoundaryHash: factstest.Binding(engineplugin.TabularItemPath(1, "schema", "public", "table")).BoundaryHash,
-				EngineID: 1, CatalogPath: engineplugin.TabularItemPath(1, "schema", "public", "table"), Mode: mode, Reason: "Explicit configuration",
-			})
-			if !errors.Is(err, commonapi.ErrBadRequest) {
-				t.Fatalf("invalid mode %q reached storage: %v", mode, err)
 			}
 		})
 	}
@@ -52,7 +63,7 @@ func TestApprovalRequirementInitializationRejectsMissingOrUnknownModeBeforeStora
 func TestApprovalRequirementPermissionUsesCurrentTenantScopeAndExpiry(t *testing.T) {
 	now := time.Now().UTC()
 	tenantID := int64(7)
-	permission := "system.engine_access_approval_requirement.initialize"
+	permission := "system.engine_access_direct_permission.update"
 	valid := iam.RoleAssignmentPermissionProjection{TenantID: &tenantID, ScopeType: "tenant", PermissionKey: permission, ValidFrom: now}
 	if !hasCurrentTenantPermission([]iam.RoleAssignmentPermissionProjection{valid}, tenantID, permission, now) {
 		t.Fatal("valid qualification denied")
@@ -85,10 +96,9 @@ func TestEngineManagementPermissionsDoNotImplyOtherActions(t *testing.T) {
 	now := time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
 	tenantID := int64(7)
 	permissions := []string{
-		authorization.PermissionSystemEngineAccessApprovalRequirementUpdate,
+		authorization.PermissionSystemEngineAccessDirectPermissionUpdate,
 		authorization.PermissionSystemEngineAccessGrantCreate,
-		authorization.PermissionSystemEngineAccessApprovalRequirementInitialize,
-		authorization.PermissionSystemEngineAccessApprovalRequirementRead,
+		authorization.PermissionSystemEngineAccessDirectPermissionRead,
 		authorization.PermissionSystemEngineAccessGrantRevoke,
 		authorization.PermissionSystemEngineAccessDenyCreate,
 		authorization.PermissionSystemEngineAccessDenyRelease,

@@ -78,7 +78,7 @@ type RevokeMetaCollectionRequest struct {
 // @Router /engines/{id}/meta_collection_task_facts/{task_id} [get]
 func (h *MetaCollectionHandler) TaskFacts(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	actor, engineID, ok := approvalRequirementActor(c)
+	actor, engineID, ok := engineAccessActor(c)
 	if !ok {
 		return
 	}
@@ -110,7 +110,7 @@ func (h *MetaCollectionHandler) TaskFacts(c *gin.Context) {
 // @Router /engines/{id}/meta_collection_qualifications [get]
 func (h *MetaCollectionHandler) List(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	actor, engineID, ok := approvalRequirementActor(c)
+	actor, engineID, ok := engineAccessActor(c)
 	if !ok {
 		return
 	}
@@ -149,7 +149,7 @@ func (h *MetaCollectionHandler) List(c *gin.Context) {
 // @x-addp-required-permissions ["system.meta_collection_qualification.approve"]
 // @Router /engines/{id}/meta_collection_qualifications [post]
 func (h *MetaCollectionHandler) Approve(c *gin.Context) {
-	actor, engineID, ok := approvalRequirementActor(c)
+	actor, engineID, ok := engineAccessActor(c)
 	if !ok {
 		return
 	}
@@ -182,7 +182,7 @@ func (h *MetaCollectionHandler) Approve(c *gin.Context) {
 // @x-addp-required-permissions ["system.meta_collection_qualification.revoke"]
 // @Router /engines/{id}/meta_collection_qualifications/{qualification_id} [delete]
 func (h *MetaCollectionHandler) Revoke(c *gin.Context) {
-	actor, engineID, ok := approvalRequirementActor(c)
+	actor, engineID, ok := engineAccessActor(c)
 	if !ok {
 		return
 	}

@@ -630,6 +630,9 @@
           <el-tab-pane v-if="renderedAuthorizationTabs.includes('data-authorization')" :label="t('system.engine.dataAuthorization.title')" name="data-authorization">
             <EngineDataAuthorization v-if="detailTab === 'data-authorization'" :key="selectedEngine.id" :engine="selectedEngine" :authorization-key="authorizationKey" :authorization-ready="authorizationReady" />
           </el-tab-pane>
+          <el-tab-pane v-if="renderedAuthorizationTabs.includes('direct-permissions')" :label="t('system.engine.directPermission.title')" name="direct-permissions">
+            <EngineDirectPermissions v-if="detailTab === 'direct-permissions'" :key="authorizationKey" :engine="selectedEngine" :authorization-key="authorizationKey" :authorization-ready="authorizationReady" />
+          </el-tab-pane>
           <el-tab-pane v-if="renderedAuthorizationTabs.includes('delegations')" :label="t('system.engine.delegations.navigationTitle')" name="delegations">
             <EngineAccessDelegations v-if="detailTab === 'delegations'" :key="selectedEngine.id" :engine-id="selectedEngine.id" />
           </el-tab-pane>
@@ -780,6 +783,7 @@ import { navigateSystemRoute } from '../utils/moduleNavigation'
 import { resolveEngineDetailRouteState } from '../utils/routeState'
 import EngineAccessDelegations from '../components/engines/EngineAccessDelegations.vue'
 import EngineMetaCollectionQualifications from '../components/engines/EngineMetaCollectionQualifications.vue'
+import EngineDirectPermissions from '../components/engines/EngineDirectPermissions.vue'
 import EngineDataAuthorization from '../components/engines/EngineDataAuthorization.vue'
 import EngineFilterBar from '../components/engines/EngineFilterBar.vue'
 import { useEngineAuthorizationSession } from '../utils/engineAuthorizationSession'
@@ -882,7 +886,7 @@ const detailsVisible = ref(false)
 const selectedEngine = ref(null)
 const { authorizationPending, authorizationReady, authorizationKey } = useEngineAuthorizationSession(authStore, selectedEngine)
 const detailTab = ref('basic')
-const isAuthorizationView = computed(() => ['data-authorization', 'delegations', 'collection-qualifications'].includes(detailTab.value))
+const isAuthorizationView = computed(() => ['data-authorization', 'direct-permissions', 'delegations', 'collection-qualifications'].includes(detailTab.value))
 useConsolePageDescriptor(router, 'system', {
   title: computed(() => t(isAuthorizationView.value ? 'system.engine.recentAuthorizationTitle' : 'system.engine.recentDetailTitle')),
   subject: computed(() => selectedEngine.value?.name || ''),
@@ -1994,8 +1998,8 @@ const resetDeletionDialog = () => {
 
 const availableAuthorizationTabs = computed(() => {
   const tabs = []
-  if (['read', 'initialize', 'update'].some(action => authStore.hasPermission(`system.engine_access_approval_requirement.${action}`)) ||
-    ['create', 'read', 'revoke'].some(action => authStore.hasPermission(`system.engine_access_grant.${action}`))) tabs.push('data-authorization')
+  if (['create', 'read', 'revoke'].some(action => authStore.hasPermission(`system.engine_access_grant.${action}`))) tabs.push('data-authorization')
+  if (authStore.hasPermission('system.engine_access_direct_permission.read')) tabs.push('direct-permissions')
   if (['read', 'create', 'revoke'].some(action => authStore.hasPermission(`system.engine_access_delegation.${action}`))) tabs.push('delegations')
   if (['read', 'approve', 'revoke'].some(action => authStore.hasPermission(`system.meta_collection_qualification.${action}`))) tabs.push('collection-qualifications')
   return tabs

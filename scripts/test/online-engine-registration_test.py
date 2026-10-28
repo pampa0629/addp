@@ -23,12 +23,22 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
     def grant_clients(self):
         current = {'principal': {'type': 'user', 'id': '8'},
                    'context': {'type': 'tenant', 'tenant_id': '2'},
-                   'authorization': {'role_assignments': [{'permissions': sorted(REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)}]}}
+                   'authorization': {'role_assignments': [{'role_key': REGISTRATION.SOURCE_INITIALIZER_ROLE, 'permissions': sorted(REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)}]}}
         consumer_current = {'principal': {'type': 'user', 'id': '7'}, 'context': {'type': 'tenant', 'tenant_id': '2'}}
         authorizer, consumer = Mock(), Mock()
+        permissions = {}
         def prepare(method, path, expected, body=None):
             if path == '/api/v1/system/auth/context':
                 return SimpleNamespace(payload=current)
+            if path.endswith('/direct-permission'):
+                fp = path.split('/')[-2]
+                permission = permissions.setdefault(fp, {'engine_id': path.split('/')[5], 'item_fingerprint': fp,
+                    'state': 'unknown', 'source': 'deployment_unknown', 'version': '0'})
+                if method == 'PUT':
+                    self.assertEqual(body['expected_source'], permission['source'])
+                    self.assertEqual(body['expected_version'], permission['version'])
+                    permission.update(state='allowed', source='explicit', version='1')
+                return SimpleNamespace(payload=dict(permission))
             if method == 'GET':
                 fingerprint = path.split('/')[-2]
                 item = self.target
@@ -69,7 +79,8 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
         body = writes[0].args[3]
         self.assertEqual(body['recipient_id'], '7')
         self.assertEqual(body['action'], 'read')
-        self.assertIs(body['initialize_approval'], True)
+        self.assertEqual((body['direct_permission_source'], body['direct_permission_version']), ('explicit', '1'))
+        self.assertNotIn('initialize_approval', body)
         self.assertEqual(body['item_fingerprint'], hashlib.sha256(b'4:results.hdfs_totals').hexdigest())
         self.assertEqual(body['expected_boundary_hash'], 'a' * 64)
         self.assertEqual(body['catalog_path']['segments'][-1], {'term': 'table', 'kind': 'table', 'name': 'hdfs_totals'})
@@ -78,13 +89,14 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
         self.assertTrue(all(call.args[3]['targets'] == [body['catalog_path']] for call in checks))
 
     def test_grant_preparation_rejects_self_wrong_tenant_and_extra_permissions_before_writes(self):
-        for invalid in ('self', 'tenant', 'extra', 'missing'):
+        for invalid in ('self', 'tenant', 'extra', 'missing', 'custom_role'):
             current, authorizer, consumer = self.grant_clients()
             if invalid == 'self': current['principal']['id'] = '7'
             if invalid == 'tenant': current['context']['tenant_id'] = '9'
             permissions = current['authorization']['role_assignments'][0]['permissions']
             if invalid == 'extra': permissions.append('system.engine.create')
             if invalid == 'missing': permissions.pop()
+            if invalid == 'custom_role': current['authorization']['role_assignments'][0]['role_key'] = 'online.custom'
             with self.subTest(invalid=invalid), self.assertRaises(REGISTRATION.RegistrationError):
                 REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, 2, [(4, 'schema', 'results', 'hdfs_totals')])
             self.assertTrue(all(call.args[0] == 'GET' for call in authorizer.request.call_args_list))
@@ -141,6 +153,49 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
             with self.subTest(corruption=corruption), self.assertRaises(REGISTRATION.RegistrationError):
                 REGISTRATION.initialize_exact_record_read_grants(authorizer, consumer, 2, [(4, 'schema', 'results', 'hdfs_totals')])
             self.assertFalse(any(call.args[0] == 'POST' for call in authorizer.request.call_args_list))
+
+    def test_direct_permission_observation_rejects_wrong_identity_or_unknown_default(self):
+        valid = {'engine_id': '4', 'item_fingerprint': 'a' * 64,
+                 'state': 'allowed', 'source': 'explicit', 'version': '1'}
+        mutations = [{'engine_id': '9'}, {'item_fingerprint': 'b' * 64}, {'version': 1},
+                     {'version': '01'}, {'source': 'cached'}, {'state': 'unknown'},
+                     {'source': 'deployment_unknown'}, {'version': '0'}]
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                client = Mock()
+                client.request.return_value = SimpleNamespace(payload=valid | mutation)
+                with self.assertRaises(REGISTRATION.RegistrationError):
+                    REGISTRATION.read_direct_permission(client, 4, 'a' * 64)
+                self.assertEqual(client.request.call_count, 1)
+
+    def test_default_allow_is_observed_without_overwriting_explicit_policy(self):
+        client = Mock()
+        allowed = {'engine_id': '4', 'item_fingerprint': 'a' * 64,
+                   'state': 'allowed', 'source': 'deployment_default', 'version': '7'}
+        client.request.return_value = SimpleNamespace(payload=allowed)
+        self.assertEqual(REGISTRATION.ensure_direct_permission(client, {'engine_id': 4},
+            {'item_fingerprint': 'a' * 64, 'boundary_hash': 'b' * 64}), allowed)
+        self.assertEqual([call.args[0] for call in client.request.call_args_list], ['GET'])
+
+    def test_direct_permission_write_pins_boundary_and_compare_and_set_without_retry(self):
+        client = Mock()
+        path = {'engine_id': 4, 'version': 'catalog.path/v1', 'segments': []}
+        facts = {'item_fingerprint': 'a' * 64, 'boundary_hash': 'b' * 64}
+        current = {'engine_id': '4', 'item_fingerprint': 'a' * 64,
+                   'state': 'denied', 'source': 'explicit', 'version': '2'}
+        client.request.return_value = SimpleNamespace(payload=current | {'state': 'allowed', 'version': '3'})
+        result = REGISTRATION.set_direct_permission(client, path, facts, True, current=current)
+        self.assertEqual(result['version'], '3')
+        body = client.request.call_args.args[3]
+        self.assertEqual({key: body[key] for key in ('catalog_path', 'expected_boundary_hash', 'allowed',
+            'expected_source', 'expected_version')}, {'catalog_path': path, 'expected_boundary_hash': 'b' * 64,
+            'allowed': True, 'expected_source': 'explicit', 'expected_version': '2'})
+        for mutation in ({'item_fingerprint': 'c' * 64}, {'version': '4'}, {'source': 'deployment_default'}):
+            client.reset_mock()
+            client.request.return_value = SimpleNamespace(payload=result | mutation)
+            with self.subTest(mutation=mutation), self.assertRaises(REGISTRATION.RegistrationError):
+                REGISTRATION.set_direct_permission(client, path, facts, True, current=current)
+            self.assertEqual(client.request.call_count, 1)
 
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(

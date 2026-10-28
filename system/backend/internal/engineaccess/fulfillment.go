@@ -28,20 +28,19 @@ var (
 // entering the target boundary. The identity baseline below is not that proof.
 // This binding is neither proof of business approval nor a data access token.
 type fulfillmentRequest struct {
-	RequestID          uuid.UUID
-	TenantID           int64
-	CallerPrincipalID  int64
-	Operator           userProvenance
-	Path               engineplugin.EngineCatalogPath
-	ItemFingerprint    string
-	BoundaryHash       string
-	DecisionID         uuid.UUID
-	RequirementVersion int64
-	RecipientType      string
-	RecipientID        int64
-	Action             string
-	ExpiryMode         string
-	ExpiresAt          *time.Time
+	RequestID         uuid.UUID
+	TenantID          int64
+	CallerPrincipalID int64
+	Operator          userProvenance
+	Path              engineplugin.EngineCatalogPath
+	ItemFingerprint   string
+	BoundaryHash      string
+	DecisionID        uuid.UUID
+	RecipientType     string
+	RecipientID       int64
+	Action            string
+	ExpiryMode        string
+	ExpiresAt         *time.Time
 }
 
 type fulfillmentOutcome struct {
@@ -66,7 +65,7 @@ func (request fulfillmentRequest) encode() (json.RawMessage, json.RawMessage, er
 	}
 	expiresAt, expiryErr := authorization.NormalizeSharingExpiry(request.ExpiryMode, request.ExpiresAt)
 	if request.RequestID == uuid.Nil || request.TenantID <= 0 || request.CallerPrincipalID <= 0 || !request.Operator.valid() ||
-		request.DecisionID == uuid.Nil || request.RequirementVersion <= 0 || request.RecipientID <= 0 ||
+		request.DecisionID == uuid.Nil || request.RecipientID <= 0 ||
 		!oneOfRecipient(request.RecipientType) || request.Action != "read" || expiryErr != nil {
 		return nil, nil, errFulfillmentBinding
 	}
@@ -75,17 +74,16 @@ func (request fulfillmentRequest) encode() (json.RawMessage, json.RawMessage, er
 		return nil, nil, errFulfillmentBinding
 	}
 	binding, err := json.Marshal(struct {
-		Operator           userProvenance `json:"operator"`
-		DecisionID         uuid.UUID      `json:"decision_id"`
-		RequirementVersion int64          `json:"requirement_version"`
-		RecipientType      string         `json:"recipient_type"`
-		RecipientID        int64          `json:"recipient_id"`
-		Action             string         `json:"action"`
-		ExpiryMode         string         `json:"expiry_mode"`
-		ExpiresAt          *time.Time     `json:"expires_at"`
-		ItemFingerprint    string         `json:"item_fingerprint"`
-		BoundaryHash       string         `json:"boundary_hash"`
-	}{request.Operator, request.DecisionID, request.RequirementVersion, request.RecipientType,
+		Operator        userProvenance `json:"operator"`
+		DecisionID      uuid.UUID      `json:"decision_id"`
+		RecipientType   string         `json:"recipient_type"`
+		RecipientID     int64          `json:"recipient_id"`
+		Action          string         `json:"action"`
+		ExpiryMode      string         `json:"expiry_mode"`
+		ExpiresAt       *time.Time     `json:"expires_at"`
+		ItemFingerprint string         `json:"item_fingerprint"`
+		BoundaryHash    string         `json:"boundary_hash"`
+	}{request.Operator, request.DecisionID, request.RecipientType,
 		request.RecipientID, request.Action, request.ExpiryMode, expiresAt, request.ItemFingerprint, request.BoundaryHash})
 	return path, binding, err
 }
@@ -271,9 +269,6 @@ func (r *Repository) settleFulfillment(ctx context.Context, request fulfillmentR
 		if verify == nil {
 			return nil, errFulfillmentBinding
 		}
-		if err := r.requireCatalogApproval(ctx, request, path); err != nil {
-			return nil, err
-		}
 		if err := verify(r); err != nil {
 			return nil, err
 		}
@@ -325,7 +320,7 @@ func (r *Repository) settleFulfillment(ctx context.Context, request fulfillmentR
 		Result:    iam.AuditResultSucceeded, RiskLevel: iam.AuditRiskHigh, ModuleName: "system",
 		EntityType: "engine_access_fulfillment", EntityID: request.RequestID.String(),
 		Details: map[string]any{"engine_id": request.Path.EngineID, "decision_id": request.DecisionID,
-			"requirement_version": request.RequirementVersion, "operator": request.Operator},
+			"operator": request.Operator},
 	})
 	return &row, err
 }

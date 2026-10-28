@@ -17,7 +17,7 @@ func testFulfillmentRequest() fulfillmentRequest {
 	return fulfillmentRequest{ItemFingerprint: binding.ItemFingerprint, BoundaryHash: binding.BoundaryHash, RequestID: uuid.New(), TenantID: 7, CallerPrincipalID: 9,
 		Operator: userProvenance{PrincipalID: 17, MembershipID: 18, AuthorizationVersion: 2},
 		Path:     engineplugin.TabularItemPath(12, "schema", "业务.域", " 表/名 "), DecisionID: uuid.New(),
-		RequirementVersion: 3, RecipientType: "user", RecipientID: 21, Action: "read", ExpiryMode: authorization.SharingExpiryAtTime, ExpiresAt: &expiresAt}
+		RecipientType: "user", RecipientID: 21, Action: "read", ExpiryMode: authorization.SharingExpiryAtTime, ExpiresAt: &expiresAt}
 }
 
 func testFulfillmentExpiry(value time.Time) *time.Time {
@@ -40,7 +40,6 @@ func TestFulfillmentBindingPreservesExactIdentity(t *testing.T) {
 		func(r *fulfillmentRequest) { r.Operator.MembershipID++ },
 		func(r *fulfillmentRequest) { r.Operator.AuthorizationVersion++ },
 		func(r *fulfillmentRequest) { r.DecisionID = uuid.New() },
-		func(r *fulfillmentRequest) { r.RequirementVersion++ },
 		func(r *fulfillmentRequest) { r.RecipientID++ },
 		func(r *fulfillmentRequest) { r.ExpiresAt = testFulfillmentExpiry(r.ExpiresAt.Add(time.Second)) },
 		func(r *fulfillmentRequest) { r.ExpiryMode, r.ExpiresAt = authorization.SharingExpiryUntilRevoked, nil },
@@ -68,7 +67,7 @@ func TestFulfillmentBindingRejectsIncompleteInputs(t *testing.T) {
 		func(r *fulfillmentRequest) { r.TenantID = 0 },
 		func(r *fulfillmentRequest) { r.CallerPrincipalID = 0 },
 		func(r *fulfillmentRequest) { r.DecisionID = uuid.Nil },
-		func(r *fulfillmentRequest) { r.RequirementVersion = 0 },
+		func(r *fulfillmentRequest) { r.BoundaryHash = "" },
 		func(r *fulfillmentRequest) { r.RecipientID = 0 },
 		func(r *fulfillmentRequest) { r.RecipientType = "role" },
 		func(r *fulfillmentRequest) { r.Action = "write" },

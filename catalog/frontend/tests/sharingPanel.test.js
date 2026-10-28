@@ -7,7 +7,7 @@ import en from '../src/i18n/en.json'
 
 const fixtures = vi.hoisted(() => ({ auth: null, api: Object.fromEntries([
   'createSharingDecision', 'getSharingDecision', 'getSharingBoundary', 'listSharingRecipients', 'listSharingRequests', 'getSharingRequest',
-  'listSharingDecisions', 'observeSharingRequirement', 'findExistingSharingGrant', 'observeSharingCandidateGrants', 'prepareSharingRequest', 'initializeSharingRequirement', 'listSharingConfirmations', 'listSharingConfirmationResults'
+  'listSharingDecisions', 'findExistingSharingGrant', 'observeSharingCandidateGrants', 'prepareSharingRequest', 'listSharingConfirmations', 'listSharingConfirmationResults'
 ].map(name => [name, vi.fn()])) }))
 vi.mock('../src/store/auth', () => ({ useAuthStore: () => fixtures.auth }))
 vi.mock('../src/api/catalog', () => fixtures.api)
@@ -76,7 +76,6 @@ beforeEach(() => {
   fixtures.api.listSharingConfirmationResults.mockResolvedValue({ data: [], total: 0 })
   fixtures.api.listSharingRecipients.mockResolvedValue({ data: [{ id: '60', recipient_type: 'user', name: 'B', status: 'active' }] })
   fixtures.api.listSharingDecisions.mockResolvedValue({ data: [decision], total: 1 })
-  fixtures.api.observeSharingRequirement.mockResolvedValue({ mode: 'catalog', requirement_version: '9007199254740993' })
   fixtures.api.findExistingSharingGrant.mockResolvedValue(null)
   fixtures.api.observeSharingCandidateGrants.mockResolvedValue({ [decision.id]: 'absent' })
 })
@@ -222,7 +221,7 @@ describe('business authorization workspace', () => {
     expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
     expect(view.recordRequest).not.toHaveBeenCalled()
     fixtures.api.findExistingSharingGrant.mockResolvedValue(null)
-    await view.button('sharing-observe-requirement').props.onClick(); await settle()
+    await view.button('sharing-refresh-existing-grant').props.onClick(); await settle()
     expect(view.button('sharing-existing-grant')).toBeUndefined()
     expect(view.button('sharing-prepare').props.disabled).toBe(false)
   })
@@ -235,7 +234,7 @@ describe('business authorization workspace', () => {
     expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
     expect(view.state.requestID).toBe('')
     fixtures.api.findExistingSharingGrant.mockResolvedValue(null)
-    await view.button('sharing-observe-requirement').props.onClick(); await settle()
+    await view.button('sharing-refresh-existing-grant').props.onClick(); await settle()
     fixtures.api.prepareSharingRequest.mockRejectedValue(new Error('offline'))
     await view.button('sharing-prepare').props.onClick(); await settle()
     const reads = fixtures.api.findExistingSharingGrant.mock.calls.length
@@ -251,7 +250,7 @@ describe('business authorization workspace', () => {
     fixtures.api.findExistingSharingGrant.mockRejectedValue(new Error('unavailable'))
     fixtures.auth.permissions.push('system.engine_access_grant.read'); await settle()
     await switchWorkspace(view, 'handling')
-    await view.button('sharing-observe-requirement').props.onClick(); await settle()
+    await view.button('sharing-refresh-existing-grant').props.onClick(); await settle()
     expect(view.button('sharing-grant-check-unavailable').props.title).toBe('catalog.sharing.grantCheckUnavailable')
     expect(view.button('sharing-existing-grant')).toBeUndefined()
     expect(view.button('sharing-prepare').props.disabled).toBe(false)
@@ -262,7 +261,7 @@ describe('business authorization workspace', () => {
     const view = mount(decision.id); await settle(); await switchWorkspace(view, 'handling')
     let finish
     fixtures.api.findExistingSharingGrant.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
-    const observing = view.button('sharing-observe-requirement').props.onClick(); await settle()
+    const observing = view.button('sharing-refresh-existing-grant').props.onClick(); await settle()
     view.state.decisionID = ''; await settle()
     finish(decision); await observing; await settle()
     expect(view.button('sharing-existing-grant')).toBeUndefined()
@@ -289,7 +288,7 @@ describe('business authorization workspace', () => {
     await switchWorkspace(view, 'records')
     expect(navigation()).toBe('records')
     expect(view.button('sharing-confirmations')).toBeDefined()
-    for (const command of ['createSharingDecision', 'prepareSharingRequest', 'initializeSharingRequirement']) expect(fixtures.api[command]).not.toHaveBeenCalled()
+    for (const command of ['createSharingDecision', 'prepareSharingRequest']) expect(fixtures.api[command]).not.toHaveBeenCalled()
   })
   it('opens a read-only detail instead of stacking it below the list; back clears record identities', async () => {
     fixtures.api.listSharingConfirmations.mockResolvedValue({ data: [decision], total: 1 })
@@ -337,13 +336,13 @@ describe('business authorization workspace', () => {
     expect(view.button('sharing-prepare')).toBeDefined()
     expect(fixtures.api.getSharingDecision).not.toHaveBeenCalled()
   })
-  it.each([403, 404, 503])('does not offer initialization on an ambiguous %s even to an initializer', async status => {
-    fixtures.auth.permissions.push('system.engine_access_approval_requirement.initialize')
-    fixtures.api.getSharingDecision.mockResolvedValue(decision)
-    fixtures.api.observeSharingRequirement.mockRejectedValue({ response: { status, data: { error: 'Unavailable' } } })
-    const view = mount(decision.id); await settle(); await switchWorkspace(view, 'handling')
-    expect(view.button('sharing-initialize')).toBeUndefined()
+  it.each([403, 404, 503])('does not prepare when authoritative candidates fail with %s', async status => {
+    fixtures.api.listSharingDecisions.mockRejectedValue({ response: { status, data: { error: 'Unavailable' } } })
+    const view = mount(); await settle(); await switchWorkspace(view, 'handling')
+    await view.button('sharing-decision-select').props.onVisibleChange(true); await settle()
     expect(view.button('sharing-prepare').props.disabled).toBe(true)
+    await view.button('sharing-prepare').props.onClick(); await settle()
+    expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
   })
   it('offers System navigation only for a resolved engine and independently permitted reader', async () => {
     const view = mount(); await settle()
@@ -423,10 +422,8 @@ describe('task-oriented sharing guidance', () => {
     await switchWorkspace(view, 'handling')
     expect(view.button('sharing-decision-select').props.modelValue).toBe(decision.id)
     expect(view.button('sharing-current-selected')).toBeDefined()
-    expect(fixtures.api.observeSharingRequirement).toHaveBeenCalledWith(decision.target)
     expect(view.button('sharing-prepare').props.disabled).toBe(false)
     expect(view.button('sharing-progress')).toBeUndefined()
-    expect(fixtures.api.initializeSharingRequirement).not.toHaveBeenCalled()
     expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
     expect(fixtures.api.createSharingDecision).not.toHaveBeenCalled()
   })
@@ -436,7 +433,6 @@ describe('task-oriented sharing guidance', () => {
     const view = mount(decision.id); await settle()
     await switchWorkspace(view, 'handling')
     expect(view.button('sharing-decision-select').props.modelValue).toBe('')
-    expect(fixtures.api.observeSharingRequirement).not.toHaveBeenCalled()
     expect(view.button('sharing-prepare').props.disabled).toBe(true)
     expect(view.button('sharing-progress')).toBeUndefined()
   })
@@ -485,7 +481,6 @@ describe('task-oriented sharing guidance', () => {
     resolve({ data: [decision], total: 1 }); await settle()
     await switchWorkspace(view, 'handling')
     expect(view.button('sharing-decision-select').props.modelValue).toBe('')
-    expect(fixtures.api.observeSharingRequirement).not.toHaveBeenCalled()
   })
   it('records the chosen confirmation and request together without losing the frozen retry command', async () => {
     fixtures.api.getSharingDecision.mockImplementation(async (_, value) => ({ ...decision, id: value }))
@@ -575,45 +570,15 @@ describe('actual sharing panel commands and recovery', () => {
     dropdown.props['onUpdate:modelValue'](decision.id); await settle()
     await dropdown.props.onChange(); await settle()
   }
-  it('requires independent initialization permission and an explicit reason, then reobserves before enabling preparation', async () => {
-    fixtures.auth.permissions.push('system.engine_access_approval_requirement.initialize')
-    fixtures.api.observeSharingRequirement.mockRejectedValueOnce({ response: { status: 404, data: { error: 'Not found', error_code: 'approval_requirement_not_configured' } } })
-      .mockResolvedValue({ mode: 'catalog', requirement_version: '8' })
-    fixtures.api.initializeSharingRequirement.mockResolvedValue({ version: 1 })
-    const view = mount(); await settle(); await selectDecision(view)
-    expect(fixtures.api.initializeSharingRequirement).not.toHaveBeenCalled()
-    await view.button('sharing-initialize').props.onClick(); await settle()
-    expect(fixtures.api.initializeSharingRequirement).not.toHaveBeenCalled()
-    view.button('sharing-initialize-reason').props['onUpdate:modelValue']('Configure approval')
-    await view.button('sharing-initialize').props.onClick(); await settle()
-    expect(fixtures.api.initializeSharingRequirement).toHaveBeenCalledTimes(1)
-    expect(fixtures.api.initializeSharingRequirement.mock.calls[0][1]).toContain('"engine_id":9007199254740993,')
-    expect(JSON.parse(fixtures.api.initializeSharingRequirement.mock.calls[0][1]).mode).toBe('catalog')
-    expect(JSON.parse(fixtures.api.initializeSharingRequirement.mock.calls[0][1])).toMatchObject({
-      item_fingerprint: decision.item_fingerprint, expected_boundary_hash: decision.boundary_hash
-    })
-    expect(fixtures.api.observeSharingRequirement).toHaveBeenCalledTimes(2)
-    expect(view.button('sharing-prepare').props.disabled).toBe(false)
-    expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
-  })
-  it('never initializes automatically on 403 or network failure and hides initialization without its separate permission', async () => {
-    fixtures.api.observeSharingRequirement.mockRejectedValue({ response: { status: 403 } })
+  it('requires no direct-permit initialization to handle an approved business decision', async () => {
+    fixtures.auth.permissions = ['catalog.entry.read', 'system.engine_access_fulfillment.create']
+    fixtures.api.prepareSharingRequest.mockResolvedValue({ request_id: id, state: 'accepted' })
     const view = mount(); await settle(); await selectDecision(view)
     expect(view.button('sharing-initialize')).toBeUndefined()
-    expect(fixtures.api.initializeSharingRequirement).not.toHaveBeenCalled()
-    expect(view.button('sharing-prepare').props.disabled).toBe(true)
-  })
-  it('retains configuration failure without preparing or automatically retrying a conflicting initialization', async () => {
-    fixtures.auth.permissions.push('system.engine_access_approval_requirement.initialize')
-    fixtures.api.observeSharingRequirement.mockRejectedValue({ response: { status: 404, data: { error_code: 'approval_requirement_not_configured' } } })
-    fixtures.api.initializeSharingRequirement.mockRejectedValue({ response: { status: 409, data: { error: 'Already configured' } } })
-    const view = mount(); await settle(); await selectDecision(view)
-    view.button('sharing-initialize-reason').props['onUpdate:modelValue']('Configure approval')
-    await view.button('sharing-initialize').props.onClick(); await settle()
-    expect(fixtures.api.initializeSharingRequirement).toHaveBeenCalledTimes(1)
-    expect(view.button('sharing-initialize-reason').props.modelValue).toBe('Configure approval')
-    expect(view.button('sharing-prepare').props.disabled).toBe(true)
-    expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
+    expect(view.button('sharing-prepare').props.disabled).toBe(false)
+    await view.button('sharing-prepare').props.onClick(); await settle()
+    expect(fixtures.api.prepareSharingRequest).toHaveBeenCalledExactlyOnceWith('entry', { request_id: id, decision_id: decision.id })
+    expect(fixtures.api.createSharingDecision).not.toHaveBeenCalled()
   })
   it('allows a separately qualified handler to prepare without business-owner or confirmation permission', async () => {
     fixtures.auth.authContext.principal.id = '70'
@@ -632,7 +597,6 @@ describe('actual sharing panel commands and recovery', () => {
       .mockResolvedValue({ request_id: id, state: 'accepted', target: decision.target })
     const view = mount(); await settle(); await selectDecision(view)
     expect(fixtures.api.listSharingDecisions).toHaveBeenCalledWith('entry', { page: 1, page_size: 20 })
-    expect(fixtures.api.observeSharingRequirement).toHaveBeenCalledWith(decision.target)
     expect(view.button('sharing-prepare').props.disabled).toBe(false)
     const submit = view.button('sharing-prepare').props.onClick
     await Promise.all([submit(), submit()]); await settle()
@@ -640,13 +604,12 @@ describe('actual sharing panel commands and recovery', () => {
     expect(view.state.requestID).toBe(id)
     expect(fixtures.api.prepareSharingRequest).toHaveBeenCalledTimes(1)
     const payload = fixtures.api.prepareSharingRequest.mock.calls[0][1]
-    expect(payload).toEqual({ request_id: id, decision_id: decision.id, requirement_version: '9007199254740993' })
+    expect(payload).toEqual({ request_id: id, decision_id: decision.id })
     expect(Object.isFrozen(payload)).toBe(true)
     await view.button('sharing-query-request').props.onClick(); await settle()
     expect(fixtures.api.prepareSharingRequest).toHaveBeenCalledTimes(1)
     await view.button('sharing-retry-request').props.onClick(); await settle()
     expect(fixtures.api.prepareSharingRequest.mock.calls[1][1]).toBe(payload)
-    expect(fixtures.api.observeSharingRequirement).toHaveBeenCalledTimes(1)
     expect(view.nodes().some(node => node.props?.title === 'catalog.sharing.state.accepted')).toBe(true)
     expect(view.button('sharing-retry-request')).toBeUndefined()
   })
@@ -675,7 +638,6 @@ describe('actual sharing panel commands and recovery', () => {
     const view = mount('', id); await settle()
     expect(fixtures.api.getSharingRequest).toHaveBeenCalledWith('entry', id)
     expect(fixtures.api.listSharingDecisions).not.toHaveBeenCalled()
-    expect(fixtures.api.observeSharingRequirement).not.toHaveBeenCalled()
     expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
     expect(view.button('sharing-prepare')).toBeUndefined()
   })
@@ -686,9 +648,10 @@ describe('actual sharing panel commands and recovery', () => {
     expect(view.nodes().some(node => node.props?.title === 'catalog.sharing.queryFailed')).toBe(true)
     expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
   })
-  it('ignores an old requirement response after handling permission is withdrawn', async () => {
+  it('ignores an old grant observation after handling permission is withdrawn', async () => {
     let resolve
-    fixtures.api.observeSharingRequirement.mockReturnValue(new Promise(done => { resolve = done }))
+    fixtures.auth.permissions.push('system.engine_access_grant.read')
+    fixtures.api.findExistingSharingGrant.mockReturnValue(new Promise(done => { resolve = done }))
     const view = mount(); await settle()
     await switchWorkspace(view, 'handling')
     const dropdown = view.button('sharing-decision-select')
@@ -696,22 +659,15 @@ describe('actual sharing panel commands and recovery', () => {
     dropdown.props['onUpdate:modelValue'](decision.id); await settle()
     const pending = dropdown.props.onChange(); await settle()
     fixtures.auth.permissions = ['catalog.entry.read', 'catalog.sharing_decision.create']; await settle()
-    resolve({ mode: 'catalog', requirement_version: '1' }); await pending; await settle()
+    resolve(null); await pending; await settle()
     expect(view.button('sharing-prepare')).toBeUndefined()
     expect(view.nodes().some(node => node.tag === 'table' && !node.props['data-testid'])).toBe(false)
     expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
   })
-  it.each([{ mode: 'independent', requirement_version: '1' }, { mode: 'catalog', requirement_version: 1 }, { mode: 'catalog', requirement_version: '0' }])('rejects an unusable requirement without a new command: %j', async requirement => {
-    fixtures.api.observeSharingRequirement.mockResolvedValue(requirement)
-    const view = mount(); await settle(); await selectDecision(view)
-    expect(view.button('sharing-prepare').props.disabled).toBe(true)
-    await view.button('sharing-prepare').props.onClick(); await settle()
-    expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
-    expect(view.nodes().some(node => node.props?.title === 'catalog.sharing.invalidRequirement')).toBe(true)
-  })
   it('invalidates a late observation when selection clears', async () => {
     let resolve
-    fixtures.api.observeSharingRequirement.mockReturnValue(new Promise(done => { resolve = done }))
+    fixtures.auth.permissions.push('system.engine_access_grant.read')
+    fixtures.api.findExistingSharingGrant.mockReturnValue(new Promise(done => { resolve = done }))
     const view = mount(); await settle()
     await switchWorkspace(view, 'handling')
     const dropdown = view.button('sharing-decision-select')
@@ -719,7 +675,7 @@ describe('actual sharing panel commands and recovery', () => {
     dropdown.props['onUpdate:modelValue'](decision.id); await settle()
     const pending = dropdown.props.onChange(); await settle()
     dropdown.props['onUpdate:modelValue'](''); await settle(); await dropdown.props.onChange()
-    resolve({ mode: 'catalog', requirement_version: '1' }); await pending; await settle()
+    resolve(null); await pending; await settle()
     expect(view.button('sharing-prepare').props.disabled).toBe(true)
     expect(fixtures.api.prepareSharingRequest).not.toHaveBeenCalled()
   })

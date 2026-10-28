@@ -22,7 +22,7 @@ func (fulfillmentTestTokens) Token(_ context.Context, tenant uint) (string, erro
 func TestSystemFulfillmentLookupDoesNotInterpretFailuresAsMiss(t *testing.T) {
 	binding := authorization.SharingFulfillmentBinding{ItemFingerprint: factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "源.表")).ItemFingerprint, BoundaryHash: factstest.Binding(plugin.TabularItemPath(12, "schema", "public", "源.表")).BoundaryHash, CallerPrincipalID: 9007199254740993,
 		Operator: authorization.SharingFulfillmentOperator{PrincipalID: 4, MembershipID: 5, AuthorizationVersion: 6},
-		Path:     plugin.TabularItemPath(12, "schema", "public", "源.表"), DecisionID: uuid.New(), RequirementVersion: 1,
+		Path:     plugin.TabularItemPath(12, "schema", "public", "源.表"), DecisionID: uuid.New(),
 		RecipientType: "user", RecipientID: 7, Action: "read", ExpiryMode: authorization.SharingExpiryUntilRevoked}
 	requestID := uuid.New()
 	for _, scenario := range []struct {

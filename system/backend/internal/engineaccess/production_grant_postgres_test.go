@@ -182,7 +182,7 @@ func exerciseInitialProductionGrants(t *testing.T, db *gorm.DB, acceptor *Servic
 		if err := db.Where("request_id=?", issued.Grant.RequestID).Take(&grant).Error; err != nil {
 			t.Fatal(err)
 		}
-		if grant.RequirementVersion != 0 || grant.CatalogRequestID != nil || grant.OperatorPrincipalID != user.PrincipalID || grant.IssuerPrincipalID == nil || *grant.IssuerPrincipalID != actor.PrincipalID {
+		if grant.DirectPermissionVersion != 0 || grant.CatalogRequestID != nil || grant.OperatorPrincipalID != user.PrincipalID || grant.IssuerPrincipalID == nil || *grant.IssuerPrincipalID != actor.PrincipalID {
 			t.Fatal("faked approval or mixed human/machine provenance", grant)
 		}
 		// Initial grants are ordinary source rules: they cover only the bound

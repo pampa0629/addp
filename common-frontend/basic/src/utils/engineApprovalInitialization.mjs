@@ -9,16 +9,6 @@ export function serializeEngineCatalogTarget(target) {
   return `{"engine_id":${id},"version":${JSON.stringify(target.version)},"segments":${JSON.stringify(target.segments)}}`
 }
 
-export function serializeEngineApprovalInitialization(target, mode, reason, binding) {
-  reason = typeof reason === 'string' ? reason.trim() : ''
-  if (!['catalog', 'independent'].includes(mode) || !reason || Array.from(reason).length > 2000) {
-    throw new Error('invalidApprovalInitialization')
-  }
-  const fields = approvedBoundaryFields(target, binding)
-  if (binding.file_composition && mode !== 'independent') throw new Error('invalidApprovalInitialization')
-  return `{"catalog_path":${serializeEngineCatalogTarget(target)},"mode":${JSON.stringify(mode)},"reason":${JSON.stringify(reason)},"item_fingerprint":${JSON.stringify(fields.item_fingerprint)},"expected_boundary_hash":${JSON.stringify(fields.expected_boundary_hash)}}`
-}
-
 // Protocol validation only. Owner facts are always fetched by the caller;
 // neither a browser candidate fingerprint nor a tree selection proves access.
 export function approvedBoundaryFields(target, binding) {
