@@ -235,15 +235,15 @@ Infra 即时识别 `POST /inspect` 仅接受 `addp-transfer` Tenant Service 与 
 
 #### 普通后台产物
 
-后台扫描来源统一为模块名 develop、transfer、manager。Transfer bounded 在保存实际输出后提交父 UUID；continuous 初次结构扫描在私有 lease fencing 事务内保存 prepared target 后提交父 UUID。Manager PMTiles 在有效 Common lease 内保存实际文件和 attempt，按精确 RefGroup 提交，不进入 mosaic whole 回执路径。Meta 拒绝没有可验证来源的 Service 扫描。来源校验和本人读取矩阵复用既有 HTTP T1 与 PostgreSQL T2，不增加数据库或 CI 入口。
+后台产物的来源、Transfer bounded／continuous 保存目标的时点及 PMTiles 与 mosaic 的区别，统一沿[生产执行与后台扫描的来源](../docs/spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)。Meta 拒绝没有可验证来源的 Service 扫描；来源继承不授予数据访问或本人读取权限。
 
-Develop 产物自动扫描继续使用 manual 入口，只有 `addp-develop` 服务可提交 `source=develop` 与父执行 UUID；Meta 在子记录创建事务中验证同租户 running workflow、完整主体事实和请求目标与已保存产物的精确匹配，再继承发起人。没有父执行不得借用此来源，不能附加未声明的请求目标或放宽读取权限。完整叶子 locator 必须冻结到执行配置并传给 Worker，复用 Provider 的精确解析和既有处理器；禁止展开到所属 schema／database、清理兄弟项或标记父范围完成。System 数据访问授权闭环是后续阶段，发起人归属不能替代授权。
+Develop 路径沿[产物自动扫描的执行归属](../docs/spec/tasks/生产来源与产物扫描.md#develop-产物自动扫描的执行归属)核验服务、父执行、主体与已保存的精确产物，不扩大扫描范围或因来源继承放宽读取。完整资源访问授权与 Worker 重核仍依该契约的后续边界衔接，不以本期来源绑定宣称授权闭环已完成。
 
 #### Transfer 首次产出与结构审批
 
 PG 成功产出限定基础识别使用 `POST /runtime/transfer-productions/:execution_id/basic-scan`，仅固定 `addp-transfer` Tenant Service 与现有扫描执行权限；不接收正文、目标或主体。Meta 用自身 `addp-meta` 和统一 `TransferClient` 反查 v3 成功产出，仅允许已证明创建提交、非重试首次执行和完整人类来源的精确 PG 表，复用同一范围解析与扫描 Worker。原 `/scan/run/manual` 仍要求 running 父任务；新适配器独立绑定可信历史人类和直接父 UUID，不复制执行授权。并发请求通过同租户原执行锁恢复唯一子扫描；已排队或已结束扫描只恢复原状态，不复活失败执行。`TRANSFER_URL` 是既有部署地址，仅作运行时软依赖，不增加 Ready 前置；无正文、私有回执或凭据投影到响应。Go T1 和 `make test-meta-postgres` 覆盖精确范围、归属、并发去重与恢复；PG 普通表的新建成果基础补扫、初始授权及实际读取／撤权已通过 Hosted T4，限定范围见[验收证据索引](../docs/spec/testing/验收证据索引.md)，不外推其他产出入口或引擎。
 
-Transfer 已应用结构审批扫描继续使用 `/scan/run/manual`，来源引用 `schema_change_source`，与父 execution 互斥。仅允许 `addp-transfer`；创建事务锁定 Common 中 Transfer 保存的结构阻塞历史，核验已应用 request/revision、实际目标、独立审批主体和有效 claim 后创建无父扫描，按审批人隔离读取，不读取 Transfer 私表。私有来源不进入专业诊断；新扫描的审批关联在进度和收尾写入时保留。现有 HTTP 读取隔离用例同时进入 Meta SQLite T1 与 PostgreSQL T2，覆盖其他 User／服务、错 Tenant、错 request、过期 claim、变更范围扩大及来源缺失拒绝；无需新增路由、权限或数据库。
+Transfer 已应用结构审批补扫的入口、审批人、claim、精确目标及与父 execution 互斥的规则统一见[生产来源契约](../docs/spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)。Meta 只核验 Common 中已保存的审批来源，不跨读 Transfer 私表；审批关联在进度与收尾写入时保留，私有来源不进入专业诊断。
 
 #### Manager mosaic 来源与完成回执
 
@@ -298,6 +298,8 @@ make test-meta-postgres
 Backend／Worker 服务正文使用[模块实例运行日志](../scripts/infra/docs/运行日志.md#模块实例运行日志)，扫描过程事件与专业结果仍通过 Monitor／Meta 的授权入口读取，不能用进程日志或空事件推断扫描已成功。
 
 ### 专项验证入口
+
+后台来源与结构审批读取复用现有 HTTP 读取隔离用例及 Meta SQLite T1／PostgreSQL T2，保留本人读取矩阵，并覆盖其他 User／服务、错 Tenant、错 request、过期 claim、变更范围扩大和来源缺失的拒绝；不新增路由、权限、数据库或 CI 入口。完整回归分工见[Meta 扫描与结果归属门禁](../docs/spec/testing/Owner补充门禁.md#meta-扫描与结果归属门禁)，确定性覆盖不替代真实链路验收。
 
 授权事实 PostgreSQL 回归可通过 `make test-meta-postgres META_POSTGRES_TEST_ARGS="--test authorization-facts"` 定向运行，使用同一 `addp_test` 安全校验与回滚夹具，覆盖三类 single 目标及冻结扫描计划事实。原入口以跨 checkout 的持久文件描述符锁拒绝同一 Meta 门禁并发，锁覆盖测试子进程，结束自动释放且不删除锁文件。默认 `make test-meta-postgres` 仍运行完整 Meta PostgreSQL 门禁，定向通过不代表完整门禁通过。
 
