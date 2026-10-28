@@ -6,11 +6,88 @@ from __future__ import annotations
 
 import io
 import math
+from collections import Counter
+from itertools import chain
 
 from PIL import Image
 from pathlib import PurePosixPath
 
 NS = "{http://sketchup.google.com/schemas/sketchup/1.0/material}"
+
+
+def validate_vff_material_bindings(source, model):
+    """Refuse ambiguous identities before export, not prove full composition.
+
+    Read original registrations rather than the SDK's already-overwritten ID
+    dictionary. Use the same fixed SDK's tree framing, one subtree at a time;
+    unknown resource semantics remain outside this conversion guard.
+    """
+    import zipfile
+    from defusedxml import ElementTree as ET
+    from openskp import _core
+    from openskp.legacy import is_legacy
+
+    with source.open('rb') as stream:
+        if is_legacy(stream.read(512)):
+            return
+    folders, names, member_names, registry = {}, {}, {}, {}
+    with zipfile.ZipFile(source) as archive:
+        members = archive.namelist()
+        counts = Counter(members)
+        for member in members:
+            if not (member.startswith('materials/') and member.endswith('material.xml')):
+                continue
+            parts = member.split('/')
+            if len(parts) != 3 or parts[2] != 'material.xml' or parts[1] in ('', '.', '..') or counts[member] != 1:
+                raise ValueError('Ambiguous SKP material XML identity')
+            _core._validate_zip_entry_size(archive, member)
+            root = ET.fromstring(archive.read(member), forbid_dtd=True, forbid_entities=True, forbid_external=True)
+            name = material_element(root).get('name')
+            if parts[1] in folders or name in names:
+                raise ValueError('Duplicate SKP material XML name or directory')
+            folders[parts[1]] = member
+            names[name] = member
+            member_names[member] = name
+        if counts['model.dat'] != 1:
+            raise ValueError('SKP material bindings require one model.dat')
+        _core._validate_zip_entry_size(archive, 'model.dat')
+        data = archive.read('model.dat')
+    for _, _, node in _core.iter_top_level_lazy(data, 0, len(data), _core.CONTAINER_TAGS):
+        pending = [node]
+        while pending:
+            current = pending.pop()
+            pending.extend(current['children'])
+            if current['tag'] != 'C832':
+                continue
+            ids = [child for child in current['children'] if child['tag'] == 'DC05']
+            tokens = [child for child in current['children'] if child['tag'] == 'CC32']
+            if len(ids) != 1 or len(tokens) != 1:
+                raise ValueError('Ambiguous SKP material registration')
+            payload = ids[0]['payload']
+            if len(payload) < 7 or payload[:2] != bytes.fromhex('DE05'):
+                raise ValueError('Unsupported SKP material ID encoding')
+            size = int.from_bytes(payload[2:6], 'little')
+            if not 1 <= size <= 8 or len(payload) != 6 + size:
+                raise ValueError('Invalid SKP material ID encoding')
+            ident = int.from_bytes(payload[6:], 'little')
+            token = tokens[0]['payload'].decode('utf-8', errors='strict')
+            if ident in registry:
+                raise ValueError('Duplicate SKP material ID')
+            candidates = {mapping[token] for mapping in (folders, names) if token in mapping}
+            if not token or len(candidates) != 1:
+                raise ValueError('Missing or conflicting SKP material identity')
+            member = candidates.pop()
+            registry[ident] = member_names[member]
+    if set(model.materials_by_id) != set(registry) or any(
+        model.materials_by_id[ident].name != name for ident, name in registry.items()
+    ):
+        raise ValueError('SDK SKP material binding differs from source registration')
+    for definition in chain((model.root,), model.definitions.values()):
+        references = (ident for face in definition.faces.values()
+                      for ident in (face.material_id, face.back_material_id))
+        for ident in chain(references, (instance.material_id for instance in definition.instances)):
+            if ident is not None and ident not in registry:
+                raise ValueError('Dangling SKP material reference')
 
 
 def _shape(element, attributes, children=()):

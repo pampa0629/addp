@@ -402,6 +402,65 @@ with tempfile.TemporaryDirectory() as tmp:
             raise AssertionError('SKP bad material was silently accepted')
     print('SKP missing and unsupported material smoke passed')
 
+    # Authored VFF identities: valid baseline first, then three semantic
+    # counterexamples that a structurally valid GLB alone cannot detect.
+    def skp_record(tag, payload):
+        return bytes.fromhex(tag) + struct.pack('<I', len(payload)) + payload
+    def skp_id(value):
+        return skp_record('DC05', skp_record('DE05', bytes([value])))
+    vertices = b''.join(skp_record('C409', skp_id(i + 1) + skp_record('C509', struct.pack('<3d', *p)))
+                        for i, p in enumerate([(0, 0, 0), (2, 0, 0), (0, 2, 0)]))
+    edges = b''.join(skp_record('B80B', skp_id(i + 10) + skp_record('B90B', bytes([i + 1]))
+                          + skp_record('BA0B', bytes([(i + 1) % 3 + 1]))) for i in range(3))
+    ring = b''.join(skp_record('A00F', skp_record('A10F', bytes([i + 10])) + skp_record('A20F', b'\0')) for i in range(3))
+    face = skp_record('AC0D', skp_record('D007', skp_id(20) + skp_record('D107', b'\x64'))
+                      + skp_record('AF0D', b'\x65') + skp_record('AD0D', struct.pack('<4d', 0, 0, 1, 0))
+                      + skp_record('AE0D', skp_record('9411', skp_record('9511', ring))))
+    registry = b''.join(skp_record('C832', skp_id(i + 100) + skp_record('CC32', name.encode()))
+                        for i, name in enumerate(('MatA', 'MatB')))
+    material_content = {'model.dat': skp_record('F401', skp_record('F701', skp_record('D430', skp_record('D530', registry)))
+                                               + skp_record('F601', vertices + edges + face))}
+    for i, name in enumerate(('MatA', 'MatB')):
+        material_content[f'materials/{name}/image.png'] = sources[i]
+        material_content[f'materials/{name}/material.xml'] = (
+            '<materialDocument xmlns="http://sketchup.google.com/schemas/sketchup/1.0/material">'
+            f'<material name="{name}" type="1" hasTexture="1" colorRed="255" colorGreen="255" colorBlue="255">'
+            '<texture textureFilename="image.png" xScale="2" yScale="2"><images>'
+            '<image id="1" path="./image.png" file_name="image.png"/></images></texture></material></materialDocument>').encode()
+    def save_material_control(content, path):
+        with path.open('wb') as stream:
+            stream.write(b'\xff\xfe\xff\x0e' + b'\0' * 28)
+            with zipfile.ZipFile(stream, 'w', zipfile.ZIP_DEFLATED) as archive:
+                for name, payload in content.items():
+                    archive.writestr(name, payload)
+    binding_source = Path(tmp) / 'skp-binding.skp'
+    binding_target = Path(tmp) / 'skp-binding.glb'
+    save_material_control(material_content, binding_source)
+    convert(binding_source, binding_target)
+    validate_glb(binding_target, basic_static=True)
+    prior_binding = binding_target.read_bytes()
+    for case in ('namespace', 'duplicate-id', 'dangling'):
+        content = dict(material_content)
+        if case == 'namespace':
+            for folder, name in [('MatA', 'MatB'), ('MatB', 'MatA')]:
+                key = f'materials/{folder}/material.xml'
+                content[key] = content[key].replace(f'name="{folder}"'.encode(), f'name="{name}"'.encode())
+        else:
+            before, after = ((bytes.fromhex('DC0507000000DE050100000065'), bytes.fromhex('DC0507000000DE050100000064'))
+                             if case == 'duplicate-id' else (bytes.fromhex('D1070100000064'), bytes.fromhex('D107010000007f')))
+            assert content['model.dat'].count(before) == 1
+            content['model.dat'] = content['model.dat'].replace(before, after)
+        save_material_control(content, binding_source)
+        source_bytes = binding_source.read_bytes()
+        try:
+            convert(binding_source, binding_target)
+        except ValueError as error:
+            assert 'material' in str(error).lower()
+        else:
+            raise AssertionError('SKP ambiguous or dangling material was published')
+        assert binding_source.read_bytes() == source_bytes and binding_target.read_bytes() == prior_binding
+    print('SKP material identity refusal smoke passed')
+
     from operators import ConverterError
     fixture = Path('/app/max-fixture')
     max_source = fixture / 'horsewalk02.max'

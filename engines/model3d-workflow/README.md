@@ -146,6 +146,8 @@ make test-model3d-workflow
 
 SKP 继续使用固定 OpenSKP 1.3.0 的唯一实例化 GLB 路线；`skp_dependency.py prepare` 在停止态统一修正精确图片读取、完整内容去重、正背面材质绑定和未支持材质拒绝，并更新安装 RECORD。未知源码拒绝准备，Worker 和标准测试入口均校验当前修正哈希。开发脚本只在停止态持安装锁准备，活动依赖漂移要求先停止，不现场修包；Linux CI 和产品镜像执行同一准备。其边界见[SKP 规范](../../docs/spec/builtin-formats/三维模型与场景.md#固定-openskp-转换依赖修正)。这不开放 SKP 精确组成授权。
 
+VFF 的材质身份由 `skp_materials.validate_vff_material_bindings` 在固定 SDK 解析后、GLB 写出前复核：原始登记中的重复 ID、XML 重名、名称/目录冲突、缺失绑定，以及全部定义与根节点的正背面和实例悬空引用均明确失败；SDK 绑定结果必须与唯一源候选一致。XML 名和目录名不同但唯一可定位、多个 ID 指向同一材质、没有显式材质的默认面仍允许。该校验复用固定 SDK 的记录边界，不修改其五份源码修正或 RECORD，不解释未知模型/资源语义，也不开放新精确组成授权。现有 Model3D 标准入口覆盖原反例、合法控制和旧产物保留；产品镜像的同一验证脚本增加三项实际拒绝及旧 GLB 保留 smoke，不新增测试入口或服务。
+
 标准目标通过 `MODEL3D_WORKFLOW_PYTHON` 指定测试解释器。已准备本页原生 Python 3.12 环境时，可显式传入 `MODEL3D_WORKFLOW_PYTHON=engines/model3d-workflow/venv/bin/python`；同一变量也可传给 `make test-module MODULE=engines`。
 
 确定性测试由 `make test-model3d-workflow` 自动发现；开发生命周期由 `make test-dev-lifecycle` 验证。产品镜像使用上面的根构建入口，Manager Hosted 与编排回归使用 `make test-manager-online-runner` 和 `make test-online-runner`。

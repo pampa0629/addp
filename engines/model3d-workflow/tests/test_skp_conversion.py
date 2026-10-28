@@ -98,7 +98,7 @@ def test_skp_refuses_non_file_skp_plan(tmp_path, source_kind):
     assert not target.exists()
 
 
-def modern_material_skp(path, mutation=None):
+def modern_material_skp(path, mutation=None, registry_names=('Front', 'Back')):
     """ADDP-authored minimal VFF triangle; a regression input, not a profile proof."""
     import struct
     import zipfile
@@ -119,7 +119,7 @@ def modern_material_skp(path, mutation=None):
                   + record('AF0D', b'\x65') + record('AD0D', struct.pack('<4d', 0, 0, 1, 0))
                   + record('AE0D', record('9411', record('9511', loop))))
     materials = b''.join(record('C832', ident(100 + i) + record('CC32', name.encode()))
-                         for i, name in enumerate(('Front', 'Back')))
+                         for i, name in enumerate(registry_names))
     content = {'model.dat': record('F401', record('F701', record('D430', record('D530', materials)))
                                  + record('F601', vertices + edges + face))}
     for name, color in [('Front', (220, 30, 60, 128)), ('Back', (20, 40, 230, 255))]:
@@ -178,6 +178,99 @@ def test_vff_same_size_prefix_images_preserve_pixels_alpha_uv_and_front_back(tmp
     assert len(material_by_normal) == 2
     assert material_by_normal[(0., 1., 0.)] == (220, 30, 60, 128)
     assert material_by_normal[(0., -1., 0.)] == (20, 40, 230, 255)
+
+
+def mutate_material_binding(content, ET, case):
+    """Authored negative controls; no downloaded source or native profile claim."""
+    if case in ('name-folder-collision', 'duplicate-xml-name'):
+        for folder, name in [('Front', 'Back'), ('Back', 'Front')]:
+            root = ET.fromstring(content[f'materials/{folder}/material.xml'])
+            root[0].set('name', 'Front' if case == 'duplicate-xml-name' else name)
+            content[f'materials/{folder}/material.xml'] = ET.tostring(root)
+    elif case == 'missing-xml':
+        del content['materials/Back/material.xml']
+    else:
+        patterns = {
+            'duplicate-registry-id': (bytes.fromhex('DC0507000000DE050100000065'), bytes.fromhex('DC0507000000DE050100000064')),
+            'dangling-front': (bytes.fromhex('D1070100000064'), bytes.fromhex('D107010000007f')),
+            'dangling-back': (bytes.fromhex('AF0D0100000065'), bytes.fromhex('AF0D010000007f')),
+            'unbound-registry': (bytes.fromhex('CC3204000000') + b'Back', bytes.fromhex('CC3204000000') + b'Lost'),
+        }
+        before, after = patterns[case]
+        assert content['model.dat'].count(before) == 1
+        content['model.dat'] = content['model.dat'].replace(before, after)
+
+
+@pytest.mark.parametrize('case', ['name-folder-collision', 'duplicate-registry-id',
+                                  'dangling-front', 'dangling-back', 'duplicate-xml-name',
+                                  'missing-xml', 'unbound-registry'])
+def test_vff_material_identity_failure_keeps_previous_artifact(tmp_path, case):
+    source = modern_material_skp(tmp_path / 'binding.skp',
+                                 lambda content, ET: mutate_material_binding(content, ET, case))
+    original = source.read_bytes()
+    target = tmp_path / 'model.glb'
+    target.write_bytes(b'previous ready artifact')
+    plan = file_plan(source, target, 'skp', 'glb')
+    plan['target']['write_mode'] = 'replace'
+    with pytest.raises(ConverterError) as error:
+        invoke_operator('skp_to_glb', {'access_plan': plan}, timeout_seconds=30)
+    assert 'material' in error.value.details.lower()
+    assert source.read_bytes() == original
+    assert target.read_bytes() == b'previous ready artifact'
+
+
+def test_vff_distinct_xml_names_and_folder_names_keep_face_binding(tmp_path):
+    def mutate(content, ET):
+        for folder in ('Front', 'Back'):
+            key = f'materials/{folder}/material.xml'
+            root = ET.fromstring(content[key])
+            root[0].set('name', f'Display {folder}')
+            content[key] = ET.tostring(root)
+    source = modern_material_skp(tmp_path / 'named.skp', mutate)
+    original = source.read_bytes()
+    target = tmp_path / 'model.glb'
+    invoke_operator('skp_to_glb', {'access_plan': file_plan(source, target, 'skp', 'glb')}, timeout_seconds=30)
+    scene = trimesh.load(target, force='scene')
+    pixels = {tuple(np.round(mesh.face_normals[0], 5)): mesh.visual.material.baseColorTexture.convert('RGBA').getpixel((0, 0))
+              for mesh in scene.geometry.values()}
+    assert pixels == {(0., 1., 0.): (220, 30, 60, 128), (0., -1., 0.): (20, 40, 230, 255)}
+    assert source.read_bytes() == original
+
+
+def test_vff_multiple_ids_may_explicitly_reference_one_material(tmp_path):
+    source = modern_material_skp(tmp_path / 'shared.skp', registry_names=('Front', 'Front'))
+    original = source.read_bytes()
+    target = tmp_path / 'shared.glb'
+    invoke_operator('skp_to_glb', {'access_plan': file_plan(source, target, 'skp', 'glb')}, timeout_seconds=30)
+    scene = trimesh.load(target, force='scene')
+    assert scene.geometry
+    assert all(mesh.visual.material.baseColorTexture.convert('RGBA').getpixel((0, 0)) == (220, 30, 60, 128)
+               for mesh in scene.geometry.values())
+    assert source.read_bytes() == original
+
+
+@pytest.mark.parametrize('case', ['definition-front', 'definition-back', 'root-instance',
+                                  'definition-instance', 'sdk-binding'])
+def test_vff_binding_guard_checks_all_parsed_consumers(tmp_path, case):
+    from types import SimpleNamespace
+    from openskp import SkpFile
+    from skp_materials import validate_vff_material_bindings
+    source = modern_material_skp(tmp_path / 'guard.skp')
+    model = SkpFile.open(source).parse()
+    if case.startswith('definition-'):
+        model.definitions[99] = SimpleNamespace(faces={}, instances=[])
+        if case.endswith('instance'):
+            model.definitions[99].instances.append(SimpleNamespace(material_id=999))
+        else:
+            model.definitions[99].faces[1] = SimpleNamespace(
+                material_id=999 if case.endswith('front') else None,
+                back_material_id=999 if case.endswith('back') else None)
+    elif case == 'root-instance':
+        model.root.instances.append(SimpleNamespace(material_id=999))
+    else:
+        model.materials_by_id[100] = model.materials_by_id[101]
+    with pytest.raises(ValueError, match='material'):
+        validate_vff_material_bindings(source, model)
 
 
 @pytest.mark.parametrize('case', ['missing-decoy', 'normal', 'roughness', 'metalness', 'occlusion',

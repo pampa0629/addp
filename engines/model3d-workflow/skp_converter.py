@@ -10,12 +10,14 @@ from openskp.export import instanced_glb
 from glb_validation import read_glb, validate_glb
 from operators import _write_glb
 from skp_dependency import verify
+from skp_materials import validate_vff_material_bindings
 
 
 def convert(source: Path, target: Path) -> None:
     verify()
     skp = SkpFile.open(str(source))
     model = skp.parse()
+    validate_vff_material_bindings(source, model)
     # This release records visibility but its GLB exporter does not apply it.
     # Reject it rather than publish a scene containing hidden geometry.
     if any(layer.hidden for layer in model.layers) or any(
