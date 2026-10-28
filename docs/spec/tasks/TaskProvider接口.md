@@ -173,6 +173,12 @@ HTTP 状态码表达错误类型，响应体不得重复携带 `status=error`。
 
 执行响应不得使用 `{status,data}` 包装；`status` 字段表示 execution status，不表示 HTTP 请求成功或失败。
 
+### Orchestrator 默认值校验
+
+Orchestrator 保存编排和执行前共用同一参数校验路径：用具体任务的 `input_defaults` 补齐 Step 未覆盖的顶层参数，再按 `input_schema` 严格校验。没有默认值的必填参数仍必须提供；显式参数（包括 `null`、`0`、`false`）优先，不能因校验失败回退默认值。显式对象按整体校验，不做深合并来补其内部缺失的必填字段。
+
+该补齐只用于 Orchestrator 校验，不写回 Step，也不扩充发给 owner 的部分覆盖 `parameters`；owner 保持任务配置的唯一事实源，并执行最终领域校验。保存时仅允许完整的声明输出绑定作为延迟值，执行时重取最新具体任务契约、解析绑定后严格校验真实值；完整保存与执行约束见[编排定义规范](编排与调度.md#orchestrator-规范)。
+
 ### 多任务类型 provider
 
 多任务类型模块通过 `task_type` 分派到 owner 模块内部不同任务表和服务。

@@ -62,7 +62,7 @@ Orchestrator 是 `orchestrator.workflow.*` 的 Permission owner；定义只存�
 
 Orchestrator 执行可靠性统一沿[正式契约](../docs/spec/tasks/编排与调度.md#orchestrator-执行可靠性)：Backend 内嵌监督器是唯一执行者，API／Scheduler 只入队；冻结 Steps、Common lease、失联／停机／不确定提交及不自动重放的边界由该契约维护，用户取消仍不支持。模块启动迁移由 Backend 在模块 schema 锁下执行。
 
-保存和执行前的参数校验共用同一路径，使用具体任务的 `input_defaults` 补齐未覆盖的顶层参数，再执行严格 Schema 校验；不把默认值写入 Step 或 owner 请求。缺少默认值的必填项、显式错误值以及不完整的显式资源对象仍拒绝。
+参数处理统一沿 [Orchestrator 默认值校验](../docs/spec/tasks/TaskProvider接口.md#orchestrator-默认值校验)，编辑器操作与绑定示例见[执行参数专题](docs/参数化模板说明.md)；本模块不另行定义合并或回退规则。
 
 保存编排定义沿用 System Task Authorization Subject：创建／更新除各自 `orchestrator.workflow.create|update` 外，还需 `orchestrator.workflow.execute` 与 `system.execution_authorization.create`，由 System 以当前 User 凭据同步核验并绑定定义摘要；不保存 Token。System 通用任务主体接口接入 Transfer 后，Orchestrator 仍仅解析自己的 orchestration 二元组，不能解析 Transfer sync 主体。Swagger 同步声明三项权限交集。
 
