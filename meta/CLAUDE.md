@@ -1,12 +1,8 @@
 # Meta 模块说明
 
-Infra 即时识别 `POST /inspect` 仅接受 `addp-transfer` Tenant Service 与 `meta.inspect.execute`；Transfer 先核验当前 bounded execution 的完整 User 来源、lease 及 Manager 私有上传归属，再调用 Meta。该权限仅授予 `tenant.transfer_runtime`，普通用户、其他机器身份和平台 Context 拒绝；不增加第二个识别接口。验证由 Meta Go HTTP 权限矩阵、授权目录／Swagger、System IAM PostgreSQL 迁移及既有 Transfer Hosted 导入场景覆盖。
-
-Manager mosaic 自动扫描结果通过专用 `GET /runtime/mosaic-scans/{execution_id}/result?parent_execution_id=...` 返回：仅 `addp-manager` 与现有 `meta.scan_task.execute`，重核同租户、当前父执行有效 lease/attempt、精确目标、来源和持久父子关联；不借用 TaskProvider，不应用用户本人读取规则。成功收尾必须从本次 deep 扫描的 `raster_mosaic + whole` item 经既有资源树转换器取得正式身份，并与扫描终态一并持久化 `mosaic_output` 回执；进度更新不得丢弃创建时的 `produced_target` 绑定。响应只返回 UUID、父 UUID、状态及成功的 locator/item ID/fingerprint，不返回任意 metadata、配置、原始错误或授权。标准 Meta 模块 T1 和 `make test-meta-postgres` 包含直接 HTTP 权限矩阵及真实 PostgreSQL 收尾回归，既有 CI 自动登记同一入口。
+阅读导航：[模块定位](#模块定位)、[扫描分层](#meta-扫描分层约定)、[核心 API](#核心-api)、[服务身份与来源](#服务身份与-system-调用)、[前端监控边界](#前端执行监控边界)、[开发与验证](#开发与验证)、[数据库启动所有权](#数据库启动所有权)。
 
 ## 模块定位
-
-PG 成功产出限定基础识别使用 `POST /runtime/transfer-productions/:execution_id/basic-scan`，仅固定 `addp-transfer` Tenant Service 与现有扫描执行权限；不接收正文、目标或主体。Meta 用自身 `addp-meta` 和统一 `TransferClient` 反查 v3 成功产出，仅允许已证明创建提交、非重试首次执行和完整人类来源的精确 PG 表，复用同一范围解析与扫描 Worker。原 `/scan/run/manual` 仍要求 running 父任务；新适配器独立绑定可信历史人类和直接父 UUID，不复制执行授权。并发请求通过同租户原执行锁恢复唯一子扫描；已排队或已结束扫描只恢复原状态，不复活失败执行。`TRANSFER_URL` 是既有部署地址，仅作运行时软依赖，不增加 Ready 前置；无正文、私有回执或凭据投影到响应。Go T1 和 `make test-meta-postgres` 覆盖精确范围、归属、并发去重与恢复；PG 普通表的新建成果基础补扫、初始授权及实际读取／撤权已通过 Hosted T4，限定范围见[验收证据索引](../docs/spec/testing/验收证据索引.md)，不外推其他产出入口或引擎。
 
 Meta 模块负责从 Engine Catalog 扫描并持久化 DataItem 技术事实，以及元数据查询、对象元数据提取、扫描任务调度和扫描运行记录。Meta 不拥有企业 `CatalogEntry`、业务语义关联、责任或治理状态，也不再向 Asset 提供自动发现接口。企业 Catalog 接入时，Meta 只提供 DataItem fingerprint 为身份的可恢复游标变化源和精确批量读取契约，不同步调用 Catalog，也不保存 `catalog_entry_id` 反向投影。Security 对显式纳管 DataItem 使用 `GET /api/v1/meta/runtime/data-items/{fingerprint}/security-facts` 精确读取无原值字段事实；无字段的文档则继续使用 `GET /api/v1/meta/runtime/data-items/{fingerprint}/security-sample` 临时读取有界正文样本。两个端点都固定 `addp-security` Client Guard 和 `meta.security_facts.read`，不提供列表或变化订阅；样本不写入 Meta attributes。PostgreSQL table 的 Catalog 变化摘要由 Meta 直接带出结构化 `schema_name + table_name`，供 Catalog 向 Quality 动态解析当前摘要；消费方不得拆分 `full_name` 猜测定位。
 
@@ -42,17 +38,11 @@ meta/
 
 ## 前端执行监控边界
 
-普通 User 的人工扫描、任务手动触发、item 刷新和资源树刷新必须从当前已认证 AuthContext 固化完整人类来源；仅传 `userID`、任务创建人或历史记录不能补齐 Principal、Membership 和授权版本。资源树刷新返回既有安全 `ScanExecutionResponse`，不序列化 TaskExecution 的配置、任意原始 metadata、授权及租约字段。该来源记录不授予扫描或源内容访问资格；集中治理 PG 整引擎 basic `ScanTask` 已接入 System 采集资格批准与 Worker 当次核验，其他入口不能借用该资格，具体边界见下文“Meta 扫描分层约定”。
-
-冻结计划事实由 `GET /runtime/scan-executions/:execution_id/authorization-facts` 最小投影，固定 `addp-system` Tenant Service + 既有 `meta.task_provider.read`。唯一共享 DTO／客户端为 `execution.MetaScanPlanFacts`／`MetaClient.ReadScanPlanFacts`，200 不是 Allow。接口仅读同一已提交快照，不调用源 Provider 或当前 System Engine API；新执行冻结所用 Engine 版本和类型，有任务的执行还冻结真实功能定义摘要。当前任务功能变化后返回 needs_refresh/null scope，旧执行缺真实冻结版本或任务摘要时返回 409，不补造版本。仅已证明的 native item、已冻结类型的 whole 根及严格私有 PG 首次产出目标可返回 complete，未证明 selector/组成保持非完整。严格 wire、摘要与剩余 Worker 接线边界见平台《元数据扫描机制规范》的“冻结扫描计划事实契约”。现有 Common/Meta Go、Meta PostgreSQL 与 Swagger 标准入口覆盖本片，不新建测试路线。
-
-首次产出补扫在唯一私有 provenance 事务将严格成功回执原 typed Target 冻结为 execution_config.initial_production_target，不加公开请求字段；GET 以原行父 UUID、生产标记、人类 Actor、manual/basic/force、唯一精确目标及 PG 普通表约束作同快照投影。缺失或冲突不猜 locator、不扩大根范围；System 仍独立核验原生产与当前资格。标准 Meta Go 和 authorization-facts PostgreSQL 组复用原入口覆盖本片；本片不启 EA/claim 屏障、不派 Hosted。
+人工扫描主体与计划事实见[人工来源与冻结计划](#人工来源与冻结计划)，私有服务入口见[服务身份与来源](#服务身份与-system-调用)。
 
 Meta 前端只保留扫描任务定义、调度配置和当前扫描反馈。跨扫描任务的执行列表、通用状态筛选与统计统一由 Monitor 展示；MetadataScan 页头使用 `common-frontend` 的 `MonitorExecutionsButton(module=meta, task_type=scan)` 进入统一监控，不保留 `/meta/tasks` 菜单、路由或独立执行列表。
 
 专业扫描读取统一沿[Meta 专业执行读取与响应](../docs/spec/tasks/执行监控.md#meta-专业执行读取与响应)，用户任务历史、本人一次性执行、TaskProvider 独立机器身份及安全 DTO 由该正文维护；前端按显式投影消费，不序列化内部执行记录。验证入口与分版本证据见[开发与验证](#开发与验证)。
-
-Manager mosaic 自动扫描复用 `/scan/run/manual`，仅 `addp-manager` 可使用 `manager` 来源。创建事务锁定同租户 running 的 Manager mosaic 父执行，以锁定后数据库时钟验证有效 lease，核对完整主体、当前 attempt 的持久产物及唯一 dataset 目录，随后仅继承发起主体与直接父 UUID；不复制执行授权或租约。读取继续采用现有 Meta Permission 和本人一次性执行范围。Manager 专用身份、父归属、过期 lease、产物未确认或错 attempt、父目录/兄弟目录/附加目录、其他用户及跨租户拒绝均复用现有 HTTP T1 与 `TestMetaScanExecutionReadAgainstPostgres`，无新增 CI 或测试库；真实栅格容量复验由该 suite Owner 负责。
 
 ## Meta 扫描分层约定
 
@@ -183,6 +173,13 @@ service.ScanService
 
 Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中的 `layout`、`data_type`、`format` 选择 preview provider。因此格式识别和类型修正应在 Meta scan / refresh 阶段完成。
 
+### 直连图叶子扫描
+
+根节点直连 graph leaf 的引擎由既有 DirectLeafRuntime 扫描，通用运行时必须消费 Graph Facts 并通过 `ApplyGraphItemAttributes` 写入 `data_type=graph` 与 `type_info.graph`；不将图伪装成表或 Unknown。直接叶子扫描复用 `DataItemIdentityFromCatalogPath`，与保护目标生成保持一致；不使用 `StringPath()` 生成数据项身份。FalkorDB 完整 graph key 保留为单段目录名称和 full_name，包含首尾斜杠的名字不得裁剪，稳定重扫不改变 DataItem ID／fingerprint。真实扫描回归纳入 `make test-common-falkordb`，与 Common／Develop 共享同次 disposable 实例并自动销毁；不借用 Ontology Infra。
+
+FalkorDB 图属性结构来自每个节点形态或关系类型的最多 100 条记录观察，500 项预算统计去重后的属性名／原生类型组合；相同属性在多条记录出现不能耗尽结构预算，同名不同类型仍合并为 mixed，真正超出预算必须明确失败，不能截断后声明结构完整。节点和关系两侧的重复观察、混合类型及 500/501 边界由同一 Common FalkorDB T2 覆盖。
+
+
 ## 核心 API
 
 路由前缀：`/api/v1/meta`。
@@ -200,6 +197,10 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 - 字段与空间信息：`GET /items/:item_id/fields`、`GET /items/:item_id/spatial`、`GET /items/:item_id`。
 - 统计：`GET /stats`。引擎缓存是 Meta 内部实现细节，不提供公开清理或预热 API。
 
+### 已落库结构快照读取
+
+`GET /items/:item_id` 与 `GET /items/by-catalog-path` 是已落库结构快照读取：只有 `gorm.ErrRecordNotFound` 返回 404，数据库查询故障返回 500，不能让 Transfer 等消费方把故障当作“缺少快照”。按路径查询遇到非 NotFound 错误立即停止，不继续路径候选掩盖错误；响应不透出原始数据库错误。T1 的 `TestItemSnapshotReadSeparatesMissingAndDatabaseFailure` 验证身份绑定、完整字段与错误分类；不触发扫描或业务数据读取。
+
 ## 服务身份与 System 调用
 
 - Meta Backend 与 Worker 统一使用 `addp-meta` Confidential OAuth Client，不读取 `INTERNAL_API_KEY`，不接收或代传 User Access Token。
@@ -210,11 +211,45 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 - `common.task_executions.execution_config` 只保存可重放的扫描参数，不保存 Token、Client Secret 或其他凭据。Worker 执行时根据记录中的 `tenant_id` 重新换取短期 Service Access Token。
 - 引擎明文连接缓存必须以 `tenant_id + engine_id` 为键。引擎变更事件不包含授权 Tenant，因此事件处理只清除该 engine 的全部 Tenant 缓存，不主动回源；System 失败不得回退到过期缓存或其他 Tenant 缓存。
 
-查询 API 边界：
+### 查询 API 边界
 
 - 已定位资源优先使用 `node_id` / `item_id` 主资源查询。
 - 跨模块定位时使用 `engine_id + catalog_path` 的正式条件查询：`/nodes/by-catalog-path`、`/items/by-catalog-path`。
 - `/metadata/object` 历史对象快捷查询已删除；对象 item 定位统一使用 `items/by-catalog-path`，不新增按存储技术形态分叉的新快捷入口。
+
+### 人工来源与冻结计划
+
+普通 User 的人工扫描、任务手动触发、item 刷新和资源树刷新必须从当前已认证 AuthContext 固化完整人类来源；仅传 `userID`、任务创建人或历史记录不能补齐 Principal、Membership 和授权版本。资源树刷新返回既有安全 `ScanExecutionResponse`，不序列化 TaskExecution 的配置、任意原始 metadata、授权及租约字段。该来源记录不授予扫描或源内容访问资格；集中治理 PG 整引擎 basic `ScanTask` 已接入 System 采集资格批准与 Worker 当次核验，其他入口不能借用该资格，具体边界见下文“Meta 扫描分层约定”。
+
+冻结计划事实由 `GET /runtime/scan-executions/:execution_id/authorization-facts` 最小投影，固定 `addp-system` Tenant Service + 既有 `meta.task_provider.read`。唯一共享 DTO／客户端为 `execution.MetaScanPlanFacts`／`MetaClient.ReadScanPlanFacts`，200 不是 Allow。接口仅读同一已提交快照，不调用源 Provider 或当前 System Engine API；新执行冻结所用 Engine 版本和类型，有任务的执行还冻结真实功能定义摘要。当前任务功能变化后返回 needs_refresh/null scope，旧执行缺真实冻结版本或任务摘要时返回 409，不补造版本。仅已证明的 native item、已冻结类型的 whole 根及严格私有 PG 首次产出目标可返回 complete，未证明 selector/组成保持非完整。严格 wire、摘要与剩余 Worker 接线边界见平台《元数据扫描机制规范》的“冻结扫描计划事实契约”。现有 Common/Meta Go、Meta PostgreSQL 与 Swagger 标准入口覆盖本片，不新建测试路线。
+
+首次产出补扫在唯一私有 provenance 事务将严格成功回执原 typed Target 冻结为 execution_config.initial_production_target，不加公开请求字段；GET 以原行父 UUID、生产标记、人类 Actor、manual/basic/force、唯一精确目标及 PG 普通表约束作同快照投影。缺失或冲突不猜 locator、不扩大根范围；System 仍独立核验原生产与当前资格。标准 Meta Go 和 authorization-facts PostgreSQL 组复用原入口覆盖本片；本片不启 EA/claim 屏障、不派 Hosted。
+
+### 私有识别入口
+
+Infra 即时识别 `POST /inspect` 仅接受 `addp-transfer` Tenant Service 与 `meta.inspect.execute`；Transfer 先核验当前 bounded execution 的完整 User 来源、lease 及 Manager 私有上传归属，再调用 Meta。该权限仅授予 `tenant.transfer_runtime`，普通用户、其他机器身份和平台 Context 拒绝；不增加第二个识别接口。验证由 Meta Go HTTP 权限矩阵、授权目录／Swagger、System IAM PostgreSQL 迁移及既有 Transfer Hosted 导入场景覆盖。
+
+### 后台产物扫描与回执
+
+来源与父子执行契约统一见[生产来源与产物扫描](../docs/spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)、[Develop 产物归属](../docs/spec/tasks/生产来源与产物扫描.md#develop-产物自动扫描的执行归属)和 [Manager mosaic 归属](../docs/spec/tasks/生产来源与产物扫描.md#manager-栅格-mosaic-产物自动扫描的执行归属)；以下保留 Meta 的入口、持久化与验证约束。
+
+#### 普通后台产物
+
+后台扫描来源统一为模块名 develop、transfer、manager。Transfer bounded 在保存实际输出后提交父 UUID；continuous 初次结构扫描在私有 lease fencing 事务内保存 prepared target 后提交父 UUID。Manager PMTiles 在有效 Common lease 内保存实际文件和 attempt，按精确 RefGroup 提交，不进入 mosaic whole 回执路径。Meta 拒绝没有可验证来源的 Service 扫描。来源校验和本人读取矩阵复用既有 HTTP T1 与 PostgreSQL T2，不增加数据库或 CI 入口。
+
+Develop 产物自动扫描继续使用 manual 入口，只有 `addp-develop` 服务可提交 `source=develop` 与父执行 UUID；Meta 在子记录创建事务中验证同租户 running workflow、完整主体事实和请求目标与已保存产物的精确匹配，再继承发起人。没有父执行不得借用此来源，不能附加未声明的请求目标或放宽读取权限。完整叶子 locator 必须冻结到执行配置并传给 Worker，复用 Provider 的精确解析和既有处理器；禁止展开到所属 schema／database、清理兄弟项或标记父范围完成。System 数据访问授权闭环是后续阶段，发起人归属不能替代授权。
+
+#### Transfer 首次产出与结构审批
+
+PG 成功产出限定基础识别使用 `POST /runtime/transfer-productions/:execution_id/basic-scan`，仅固定 `addp-transfer` Tenant Service 与现有扫描执行权限；不接收正文、目标或主体。Meta 用自身 `addp-meta` 和统一 `TransferClient` 反查 v3 成功产出，仅允许已证明创建提交、非重试首次执行和完整人类来源的精确 PG 表，复用同一范围解析与扫描 Worker。原 `/scan/run/manual` 仍要求 running 父任务；新适配器独立绑定可信历史人类和直接父 UUID，不复制执行授权。并发请求通过同租户原执行锁恢复唯一子扫描；已排队或已结束扫描只恢复原状态，不复活失败执行。`TRANSFER_URL` 是既有部署地址，仅作运行时软依赖，不增加 Ready 前置；无正文、私有回执或凭据投影到响应。Go T1 和 `make test-meta-postgres` 覆盖精确范围、归属、并发去重与恢复；PG 普通表的新建成果基础补扫、初始授权及实际读取／撤权已通过 Hosted T4，限定范围见[验收证据索引](../docs/spec/testing/验收证据索引.md)，不外推其他产出入口或引擎。
+
+Transfer 已应用结构审批扫描继续使用 `/scan/run/manual`，来源引用 `schema_change_source`，与父 execution 互斥。仅允许 `addp-transfer`；创建事务锁定 Common 中 Transfer 保存的结构阻塞历史，核验已应用 request/revision、实际目标、独立审批主体和有效 claim 后创建无父扫描，按审批人隔离读取，不读取 Transfer 私表。私有来源不进入专业诊断；新扫描的审批关联在进度和收尾写入时保留。现有 HTTP 读取隔离用例同时进入 Meta SQLite T1 与 PostgreSQL T2，覆盖其他 User／服务、错 Tenant、错 request、过期 claim、变更范围扩大及来源缺失拒绝；无需新增路由、权限或数据库。
+
+#### Manager mosaic 来源与完成回执
+
+Manager mosaic 自动扫描复用 `/scan/run/manual`，仅 `addp-manager` 可使用 `manager` 来源。创建事务锁定同租户 running 的 Manager mosaic 父执行，以锁定后数据库时钟验证有效 lease，核对完整主体、当前 attempt 的持久产物及唯一 dataset 目录，随后仅继承发起主体与直接父 UUID；不复制执行授权或租约。读取继续采用现有 Meta Permission 和本人一次性执行范围。Manager 专用身份、父归属、过期 lease、产物未确认或错 attempt、父目录/兄弟目录/附加目录、其他用户及跨租户拒绝均复用现有 HTTP T1 与 `TestMetaScanExecutionReadAgainstPostgres`，无新增 CI 或测试库；真实栅格容量复验由该 suite Owner 负责。
+
+Manager mosaic 自动扫描结果通过专用 `GET /runtime/mosaic-scans/{execution_id}/result?parent_execution_id=...` 返回：仅 `addp-manager` 与现有 `meta.scan_task.execute`，重核同租户、当前父执行有效 lease/attempt、精确目标、来源和持久父子关联；不借用 TaskProvider，不应用用户本人读取规则。成功收尾必须从本次 deep 扫描的 `raster_mosaic + whole` item 经既有资源树转换器取得正式身份，并与扫描终态一并持久化 `mosaic_output` 回执；进度更新不得丢弃创建时的 `produced_target` 绑定。响应只返回 UUID、父 UUID、状态及成功的 locator/item ID/fingerprint，不返回任意 metadata、配置、原始错误或授权。标准 Meta 模块 T1 和 `make test-meta-postgres` 包含直接 HTTP 权限矩阵及真实 PostgreSQL 收尾回归，既有 CI 自动登记同一入口。
 
 ## 前端公开路由
 
@@ -262,37 +297,26 @@ make test-meta-postgres
 
 Backend／Worker 服务正文使用[模块实例运行日志](../scripts/infra/docs/运行日志.md#模块实例运行日志)，扫描过程事件与专业结果仍通过 Monitor／Meta 的授权入口读取，不能用进程日志或空事件推断扫描已成功。
 
-## 相关文档
-
-- `meta/docs/数据库架构.md`
-- `meta/docs/tables/meta_node表.md`
-- `meta/docs/tables/meta_item表.md`
-- `meta/docs/tables/scan_tasks表.md`
-- `docs/concepts/addp术语表.md`
-- `docs/spec/addp元数据扫描机制规范.md`
-- `docs/spec/addp数据项探测器规范.md`
-- `docs/spec/addp元数据attributes规范.md`
-- `docs/spec/addp存储引擎路径体系规范.md`
-- `docs/spec/addp引擎插件接口规范.md`
-- `docs/spec/addp引擎能力声明规范.md`
-- `docs/spec/addp-cleanup体系规范.md`
-- `manager/CLAUDE.md`
-
-## 数据库启动所有权
-
-本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见 `docs/spec/addp开发服务生命周期与构建身份规范.md`。
-
-Develop 产物自动扫描继续使用 manual 入口，只有 `addp-develop` 服务可提交 `source=develop` 与父执行 UUID；Meta 在子记录创建事务中验证同租户 running workflow、完整主体事实和请求目标与已保存产物的精确匹配，再继承发起人。没有父执行不得借用此来源，不能附加未声明的请求目标或放宽读取权限。完整叶子 locator 必须冻结到执行配置并传给 Worker，复用 Provider 的精确解析和既有处理器；禁止展开到所属 schema／database、清理兄弟项或标记父范围完成。System 数据访问授权闭环是后续阶段，发起人归属不能替代授权。
-
-`GET /items/:item_id` 与 `GET /items/by-catalog-path` 是已落库结构快照读取：只有 `gorm.ErrRecordNotFound` 返回 404，数据库查询故障返回 500，不能让 Transfer 等消费方把故障当作“缺少快照”。按路径查询遇到非 NotFound 错误立即停止，不继续路径候选掩盖错误；响应不透出原始数据库错误。T1 的 `TestItemSnapshotReadSeparatesMissingAndDatabaseFailure` 验证身份绑定、完整字段与错误分类；不触发扫描或业务数据读取。
+### 专项验证入口
 
 授权事实 PostgreSQL 回归可通过 `make test-meta-postgres META_POSTGRES_TEST_ARGS="--test authorization-facts"` 定向运行，使用同一 `addp_test` 安全校验与回滚夹具，覆盖三类 single 目标及冻结扫描计划事实。原入口以跨 checkout 的持久文件描述符锁拒绝同一 Meta 门禁并发，锁覆盖测试子进程，结束自动释放且不删除锁文件。默认 `make test-meta-postgres` 仍运行完整 Meta PostgreSQL 门禁，定向通过不代表完整门禁通过。
 
-后台扫描来源统一为模块名 develop、transfer、manager。Transfer bounded 在保存实际输出后提交父 UUID；continuous 初次结构扫描在私有 lease fencing 事务内保存 prepared target 后提交父 UUID。Manager PMTiles 在有效 Common lease 内保存实际文件和 attempt，按精确 RefGroup 提交，不进入 mosaic whole 回执路径。Meta 拒绝没有可验证来源的 Service 扫描。来源校验和本人读取矩阵复用既有 HTTP T1 与 PostgreSQL T2，不增加数据库或 CI 入口。
+[结构快照读取](#已落库结构快照读取)保留缺失与数据库故障的 T1 边界；[直连图叶子扫描](#直连图叶子扫描)保留 graph 身份、属性预算和共用 disposable T2 范围。专项入口说明只表示覆盖与运行方法，实际通过须按报告的源码和环境认定。
 
-Transfer 已应用结构审批扫描继续使用 `/scan/run/manual`，来源引用 `schema_change_source`，与父 execution 互斥。仅允许 `addp-transfer`；创建事务锁定 Common 中 Transfer 保存的结构阻塞历史，核验已应用 request/revision、实际目标、独立审批主体和有效 claim 后创建无父扫描，按审批人隔离读取，不读取 Transfer 私表。私有来源不进入专业诊断；新扫描的审批关联在进度和收尾写入时保留。现有 HTTP 读取隔离用例同时进入 Meta SQLite T1 与 PostgreSQL T2，覆盖其他 User／服务、错 Tenant、错 request、过期 claim、变更范围扩大及来源缺失拒绝；无需新增路由、权限或数据库。
+## 数据库启动所有权
+本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见[模块迁移与 Worker 启动顺序](../docs/spec/addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)。
 
-
-根节点直连 graph leaf 的引擎由既有 DirectLeafRuntime 扫描，通用运行时必须消费 Graph Facts 并通过 `ApplyGraphItemAttributes` 写入 `data_type=graph` 与 `type_info.graph`；不将图伪装成表或 Unknown。直接叶子扫描复用 `DataItemIdentityFromCatalogPath`，与保护目标生成保持一致；不使用 `StringPath()` 生成数据项身份。FalkorDB 完整 graph key 保留为单段目录名称和 full_name，包含首尾斜杠的名字不得裁剪，稳定重扫不改变 DataItem ID／fingerprint。真实扫描回归纳入 `make test-common-falkordb`，与 Common／Develop 共享同次 disposable 实例并自动销毁；不借用 Ontology Infra。
-
-FalkorDB 图属性结构来自每个节点形态或关系类型的最多 100 条记录观察，500 项预算统计去重后的属性名／原生类型组合；相同属性在多条记录出现不能耗尽结构预算，同名不同类型仍合并为 mixed，真正超出预算必须明确失败，不能截断后声明结构完整。节点和关系两侧的重复观察、混合类型及 500/501 边界由同一 Common FalkorDB T2 覆盖。
+## 相关文档
+- [数据库架构](docs/数据库架构.md)
+- [meta_node 表](docs/tables/meta_node表.md)
+- [meta_item 表](docs/tables/meta_item表.md)
+- [scan_tasks 表](docs/tables/scan_tasks表.md)
+- [术语表](../docs/concepts/addp术语表.md)
+- [元数据扫描机制](../docs/spec/addp元数据扫描机制规范.md)
+- [数据项探测器](../docs/spec/addp数据项探测器规范.md)
+- [元数据 attributes](../docs/spec/addp元数据attributes规范.md)
+- [存储引擎路径体系](../docs/spec/addp存储引擎路径体系规范.md)
+- [引擎插件接口](../docs/spec/addp引擎插件接口规范.md)
+- [引擎能力声明](../docs/spec/addp引擎能力声明规范.md)
+- [资源回收](../docs/spec/addp-cleanup体系规范.md)
+- [Manager 模块说明](../manager/CLAUDE.md)
