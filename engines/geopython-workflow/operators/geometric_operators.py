@@ -10,7 +10,7 @@ import pandas as pd
 import shapely
 from collections import Counter
 from itertools import pairwise
-from math import fsum, hypot
+from math import fsum, hypot, nextafter
 from numbers import Real
 from typing import List
 from .base import (
@@ -821,6 +821,123 @@ def check_dangling_points(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.Geo
     )
 
 
+class NearLineInputError(ValueError):
+    """Near-line diagnostics localized by the existing execution adapter."""
+
+    _messages = {
+        'zh-cn': {
+            'tolerance': '近接检查的容差必须是以坐标系水平单位表示的有限正数。',
+            'source': '近接检查的源图层须具有有效有限二维线、已知投影坐标系及非空唯一标识；不接受缺失或空几何，允许空批。',
+            'reference': '近接检查的参考图层须具有有效有限二维线、已知投影坐标系及非空唯一标识；不接受缺失或空几何，允许空批。',
+            'crs': '近接检查要求两个图层使用相同的已知投影坐标系和匹配的水平单位；请先显式重投影。',
+            'calculation': '近接检查无法可靠计算有限的最近位置和距离，未生成成果。',
+        },
+        'en': {
+            'tolerance': 'Line proximity tolerance must be a finite positive number in horizontal CRS units.',
+            'source': 'Line proximity requires valid finite XY source lines, a known projected CRS and unique non-null IDs; '
+                      'missing or empty geometries are rejected, but empty batches are allowed.',
+            'reference': 'Line proximity requires valid finite XY reference lines, a known projected CRS and unique non-null IDs; '
+                         'missing or empty geometries are rejected, but empty batches are allowed.',
+            'crs': 'Line proximity requires the same known projected CRS and matching horizontal units; reproject explicitly first.',
+            'calculation': 'Line proximity cannot reliably compute finite nearest coordinates and distance; no result was produced.',
+        },
+    }
+
+    def __init__(self, code):
+        self.code = code
+        super().__init__(self.message('zh-cn'))
+
+    def message(self, language):
+        return self._messages[language][self.code]
+
+
+def check_line_proximity(
+    input_gdf: gpd.GeoDataFrame,
+    reference_gdf: gpd.GeoDataFrame,
+    id_field: str,
+    reference_id_field: str,
+    tolerance: float,
+) -> gpd.GeoDataFrame:
+    """Report every near reference feature for each unconnected source dangle."""
+    if isinstance(tolerance, (bool, np.bool_)) or not isinstance(tolerance, Real):
+        raise NearLineInputError('tolerance')
+    try:
+        tolerance = float(tolerance)
+    except OverflowError as exc:
+        raise NearLineInputError('tolerance') from exc
+    if not np.isfinite(tolerance) or tolerance <= 0:
+        raise NearLineInputError('tolerance')
+
+    try:
+        dangling = check_dangling_points(input_gdf, id_field)
+    except ValueError as exc:
+        raise NearLineInputError('source') from exc
+    try:
+        reference = _finite_xy_geometry(reference_gdf, 'reference_gdf')
+        _require_projected_xy_crs(reference.crs)
+        reference_ids = _source_identifiers(reference_gdf, reference_id_field)
+        _require_nonempty_valid_lines(reference)
+    except ValueError as exc:
+        raise NearLineInputError('reference') from exc
+    if not dangling.crs.equals(reference.crs):
+        raise NearLineInputError('crs')
+
+    segments, owners = [], []
+    for owner, shape in enumerate(reference.array):
+        for part in shapely.get_parts(shape):
+            for start, end in pairwise(part.coords):
+                if start != end:
+                    # Canonical direction makes projection independent of the
+                    # reference path direction without modifying source data.
+                    segments.append(shapely.LineString(sorted((start, end))))
+                    owners.append(owner)
+    tree = shapely.STRtree(segments)
+    source_rows, reference_rows, distances, nearest_x, nearest_y = [], [], [], [], []
+    limit = float(np.finfo(float).max)
+    for row, point in enumerate(dangling.geometry):
+        if len(tree.query(point, predicate='intersects')):
+            continue
+        x, y = point.x, point.y
+        envelope = shapely.box(
+            max(-limit, nextafter(x - tolerance, -float('inf'))),
+            max(-limit, nextafter(y - tolerance, -float('inf'))),
+            min(limit, nextafter(x + tolerance, float('inf'))),
+            min(limit, nextafter(y + tolerance, float('inf'))),
+        )
+        best = {}
+        for segment_row in tree.query(envelope):
+            try:
+                connection = shapely.shortest_line(point, segments[segment_row])
+            except shapely.errors.GEOSException as exc:
+                raise NearLineInputError('calculation') from exc
+            if connection.is_empty:
+                raise NearLineInputError('calculation')
+            nx, ny = connection.coords[-1]
+            distance = hypot(nx - x, ny - y)
+            if not np.isfinite([nx, ny, distance]).all():
+                raise NearLineInputError('calculation')
+            owner = owners[segment_row]
+            candidate = (distance, nx, ny)
+            if owner not in best or candidate < best[owner]:
+                best[owner] = candidate
+        for owner in sorted(best):
+            distance, nx, ny = best[owner]
+            if 0 < distance < tolerance:
+                source_rows.append(row)
+                reference_rows.append(owner)
+                distances.append(distance)
+                nearest_x.append(nx)
+                nearest_y.append(ny)
+    return gpd.GeoDataFrame(
+        {'source_id': dangling['source_id'].iloc[source_rows].reset_index(drop=True),
+         'reference_id': reference_ids.iloc[reference_rows].reset_index(drop=True),
+         'distance': pd.Series(distances, dtype='float64'),
+         'nearest_x': pd.Series(nearest_x, dtype='float64'),
+         'nearest_y': pd.Series(nearest_y, dtype='float64')},
+        geometry=gpd.GeoSeries(dangling.geometry.iloc[source_rows].reset_index(drop=True), crs=dangling.crs),
+    )
+
+
 def check_polygon_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Report each positive-area polygon pair once, retaining explicit source IDs."""
     geometry = _finite_xy_geometry(input_gdf)
@@ -1148,6 +1265,25 @@ CHECK_DANGLING_POINTS_METADATA = OperatorMetadata(
     use_cases=["定位线网断头及其原始要素", "检查孤立线端点后由业务确认是否应连接"],
     notes=["真实交点相连，重合段不重复计度，闭环端点计两次", "同点逐来源报告，同一源只报告一次；按源行和 XY 稳定排序", "不使用距离容差，不吸附、延伸、删线、重投影或改写源", "不生成 Quality 结论；保存另接 save，线网及索引驻内存，不承诺固定容量"],
     workflow_example={"id": "check_dangles", "operator": "check_dangling_points", "params": {"input_gdf": {"$ref": "load"}, "id_field": "line_id"}, "depends_on": ["load"]},
+)
+
+CHECK_LINE_PROXIMITY_METADATA = OperatorMetadata(
+    name="check_line_proximity", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    description="近接检查", brief_description="报告未精确接上的源悬点与容差内全部参考线，只检查不移动几何",
+    execution_modes=["workflow"], effects=["read"],
+    overview="复用源线网悬点提取；已精确落在任一参考线上的点不再报告。"
+             "其余悬点逐参考要素保留严格容差内的最近位置、双方来源和原单位距离，不替用户选择连接对象。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="源线图层", notes="有效有限二维线与已知投影 CRS；复用悬点检查，允许空批，拒绝缺失或空几何"),
+        OperatorParam(name="reference_gdf", type="input", data_type="GeoDataFrame", required=True, description="参考线图层", notes="有效有限二维线，与源使用相同已知投影 CRS 和水平单位；参考图层不动"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="源线要素标识字段", notes="现有非几何标量列，值非空且唯一；不使用行索引或 FID"),
+        OperatorParam(name="reference_id_field", type="param", data_type="str", required=True, description="参考线要素标识字段", notes="参考图层现有非几何标量列，值非空且唯一"),
+        OperatorParam(name="tolerance", type="param", data_type="float", required=True, description="有限正容差，单位沿源投影坐标系", notes="仅报告0＜距离＜容差，边界不报，不自动换算米"),
+    ],
+    output_ports=[OutputPort(name="result", type="geodataframe", description="source_id/reference_id/distance/nearest_x/nearest_y/原悬点Point，保留双方标识类型和源CRS", is_default=True)],
+    use_cases=["定位差一点接上参考道路的悬点及全部候选", "检查小断口后由用户决定连接对象"],
+    notes=["精确落在任一参考线上的悬点整体排除；其余保留全部严格容差内参考要素，不只取全局最近一条", "每个悬点与参考要素对输出一次；等距最近位置按X/Y稳定决胜，不按部件或索引遍历顺序", "按源行/悬点XY/参考行排序，输出原悬点及最近坐标，不复制业务属性", "同图层接到两个输入时，自身覆盖端点按精确相接规则排除，不增加自动排除自身模式", "不重投影、吸附、延伸或修复，不生成Quality结论；保存另接save", "线网、参考段索引和成果驻内存，不承诺固定容量"],
+    workflow_example={"id": "check_near", "operator": "check_line_proximity", "params": {"input_gdf": {"$ref": "load"}, "reference_gdf": {"$ref": "reference"}, "id_field": "line_id", "reference_id_field": "ref_id", "tolerance": 1.0}, "depends_on": ["load", "reference"]},
 )
 
 CHECK_POLYGON_OVERLAP_METADATA = OperatorMetadata(
@@ -1762,6 +1898,7 @@ OPERATORS = dict([
     register_operator(CHECK_POLYGON_OVERLAP_METADATA, check_polygon_overlap),
     register_operator(CHECK_POLYGON_GAP_METADATA, check_polygon_gap),
     register_operator(CHECK_DANGLING_POINTS_METADATA, check_dangling_points),
+    register_operator(CHECK_LINE_PROXIMITY_METADATA, check_line_proximity),
     register_operator(CHECK_LINE_OVERLAP_METADATA, check_line_overlap),
     register_operator(CHECK_LINE_SELF_OVERLAP_METADATA, check_line_self_overlap),
     register_operator(CHECK_LINE_INTERSECTION_METADATA, check_line_intersection),

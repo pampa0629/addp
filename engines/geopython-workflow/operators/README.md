@@ -51,7 +51,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 通用处理 | 数据清洗 | 2 | `fill_null`、`drop_duplicates` |
 | 通用处理 | 数据筛选 | 5 | `filter_by_attribute`、`sort_by_field`、`select_top_n`、`sample`、`random_split` |
 | 通用处理 | 数值统计 | 4 | `normalize_field`、`encode_categorical`、`bin_field`、`aggregate` |
-| 矢量处理 | 几何处理 | 24 | `buffer`、`centroid`、`simplify`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer`、`batch_centroid`、`dissolve`、`polygonize`、`check_geometry`、`repair_geometry`、`snap_geometry`、`check_polygon_overlap`、`check_polygon_gap`、`check_dangling_points`、`check_line_overlap`、`check_line_self_overlap`、`check_line_intersection`、`check_line_self_intersection`、`split_line_intersections`、`group_line_components`、`merge_line_chains`、`normalize_line_network` |
+| 矢量处理 | 几何处理 | 25 | `buffer`、`centroid`、`simplify`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer`、`batch_centroid`、`dissolve`、`polygonize`、`check_geometry`、`repair_geometry`、`snap_geometry`、`check_polygon_overlap`、`check_polygon_gap`、`check_dangling_points`、`check_line_proximity`、`check_line_overlap`、`check_line_self_overlap`、`check_line_intersection`、`check_line_self_intersection`、`split_line_intersections`、`group_line_components`、`merge_line_chains`、`normalize_line_network` |
 | 矢量处理 | 叠加分析 | 4 | `intersection`、`union`、`difference`、`clip` |
 | 矢量处理 | 空间关系 | 3 | `contains`、`intersects`、`distance_to` |
 | 矢量处理 | 几何量测 | 3 | `get_area`、`get_length`、`get_bounds` |
@@ -115,6 +115,10 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 ## 悬点检查
 
 `check_dangling_points` 报告去重平面线网中度为一的端点，并逐条关联原始来源 ID。它不修改线、吸附或判断质量，连接语义与构面余线的区别见[悬点检查契约](../../../docs/spec/workflow/矢量算子契约.md#悬点检查契约)。
+
+## 近接检查
+
+`check_line_proximity` 复用源线悬点提取；精确落在任一参考线上的点整体排除，其余逐参考要素报告严格容差内的原悬点、双方来源、距离和最近位置。只检查不改线，详见[近接检查契约](../../../docs/spec/workflow/矢量算子契约.md#近接检查契约)。
 
 ## 几何检查与修复
 

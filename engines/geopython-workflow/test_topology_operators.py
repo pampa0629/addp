@@ -4069,3 +4069,256 @@ def test_hosted_normalize_chains_case_three_save_independent_physical_oracle(tmp
         feature=layer=ds=None
         with pytest.raises(fixture.FixtureError):fixture.worker('verify',tmp_path,case)
     assert source.read_bytes()==original
+
+
+
+def near_line_frames(crs="EPSG:3857"):
+    source = line_overlap_frame([LineString([(-10, 0), (0, 0)])], pd.Series([2**53 + 1], dtype="Int64"), crs)
+    source = source.rename_geometry("source_shape")
+    reference = line_overlap_frame([
+        LineString([(.5, -1), (.5, 1)]),
+        LineString([(-.5, -1), (-.5, 1)]),
+        MultiLineString([[(.25, -1), (.25, 1)], [(-.25, 1), (-.25, -1)], [(.25, 1), (.25, -1)]]),
+    ], pd.Series(["east", "west", "multi"], dtype="string"), crs)
+    reference = reference.rename_geometry("reference_shape").rename(columns={"route_key": "ref_key"})
+    return source, reference
+
+
+def near_lines(source, reference, tolerance=1., **kwargs):
+    return get_operator("check_line_proximity")(
+        source, reference, kwargs.get("id_field", "route_key"), kwargs.get("reference_id_field", "ref_key"), tolerance,
+    )
+
+
+def test_near_line_keeps_all_reference_candidates_ids_attributes_and_exact_nearest_positions():
+    source, reference = near_line_frames()
+    source.index = pd.Index([42], name="source_row")
+    reference.index = [8, 8, 1]
+    source["geometry"] = gpd.GeoSeries([Point(999, 999)], index=source.index, crs=source.crs)
+    reference["geometry"] = gpd.GeoSeries([Point(999, 999)] * 3, index=reference.index, crs=reference.crs)
+    source["grade"] = pd.Series([2**53 + 3], index=source.index, dtype="Int64")
+    before_source, before_reference = source.copy(deep=True), reference.copy(deep=True)
+    result = near_lines(source, reference)
+    assert result.columns.tolist() == ["source_id", "reference_id", "distance", "nearest_x", "nearest_y", "geometry"]
+    assert result.source_id.tolist() == [2**53 + 1] * 3
+    assert result.reference_id.tolist() == ["east", "west", "multi"]
+    assert result['distance'].tolist() == [.5, .5, .25]
+    assert result.nearest_x.tolist() == [.5, -.5, -.25] and result.nearest_y.tolist() == [0., 0., 0.]
+    assert [tuple(point.coords[0]) for point in result.geometry] == [(0., 0.)] * 3
+    assert result.source_id.dtype == source.route_key.dtype and result.reference_id.dtype == reference.ref_key.dtype
+    assert all(str(result[column].dtype) == "float64" for column in ["distance", "nearest_x", "nearest_y"])
+    assert result.index.equals(pd.RangeIndex(3)) and result.crs == source.crs
+    assert_geodataframe_equal(source, before_source)
+    assert_geodataframe_equal(reference, before_reference)
+
+
+@pytest.mark.parametrize("location", ["endpoint", "interior", "part"])
+def test_near_line_exact_contact_to_any_reference_suppresses_every_near_candidate(location):
+    source, reference = near_line_frames()
+    touching = {"endpoint": LineString([(0, 0), (0, 1)]),
+                "interior": LineString([(0, -1), (0, 1)]),
+                "part": MultiLineString([[(100, 100), (101, 101)], [(0, -1), (0, 1)]])}[location]
+    reference.loc[2, "reference_shape"] = touching
+    assert near_lines(source, reference).empty
+    assert near_lines(source, source.rename(columns={"route_key": "ref_key"})).empty
+
+
+@pytest.mark.parametrize("offset,reported", [(1., False), (np.nextafter(1., 0.), True),
+    (np.nextafter(1., 2.), False), (2**-40, True), (2**-500, True)])
+def test_near_line_strict_distance_boundary_and_tiny_positive_distance(offset, reported):
+    source, reference = near_line_frames()
+    reference = reference.iloc[:1].copy()
+    reference.loc[reference.index[0], "reference_shape"] = LineString([(offset, -1), (offset, 1)])
+    result = near_lines(source, reference)
+    assert len(result) == int(reported)
+    if reported:
+        assert result['distance'].tolist() == [offset] and result.nearest_x.tolist() == [offset]
+        assert result.nearest_y.tolist() == [0.] and tuple(result.geometry.iloc[0].coords[0]) == (0., 0.)
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("parts,expected", [
+    ([LineString([(-.5, -1), (-.5, 2), (.5, 2), (.5, -1)])], (-.5, 0.)),
+    ([LineString([(-1, .5), (1, .5)]), LineString([(-1, -.5), (1, -.5)])], (0., -.5)),
+])
+def test_near_line_equal_distance_uses_xy_not_part_or_direction_order(parts, expected, reverse):
+    source, reference = near_line_frames()
+    if reverse:
+        parts = [LineString(list(part.coords)[::-1]) for part in parts[::-1]]
+    reference = reference.iloc[:1].copy()
+    reference.loc[reference.index[0], "reference_shape"] = parts[0] if len(parts) == 1 else MultiLineString(parts)
+    result = near_lines(source, reference)
+    assert len(result) == 1 and result['distance'].tolist() == [.5]
+    assert (result.nearest_x.iloc[0], result.nearest_y.iloc[0]) == expected
+
+
+def test_near_line_uses_exact_network_dangles_not_every_original_part_endpoint():
+    source = line_overlap_frame([LineString([(0, 0), (2, 0)]), LineString([(1, 0), (1, 2)])])
+    reference = line_overlap_frame([LineString([(.5, .125), (1.5, .125)])]).rename(columns={"route_key": "ref_key"})
+    assert near_lines(source, reference, .2).empty
+    closed = line_overlap_frame([LineString([(0, 0), (1, 0), (1, 1), (0, 0)])])
+    assert near_lines(closed, reference, 10.).empty
+
+
+def test_near_line_shared_source_dangle_preserves_each_source_and_reference_row_order():
+    source = line_overlap_frame([LineString([(-10, 0), (0, 0)]), LineString([(0, 0), (-10, 0)])],
+                               pd.Series([9, 7], dtype="Int64"))
+    _, reference = near_line_frames()
+    result = near_lines(source, reference)
+    assert result.source_id.tolist() == [9, 9, 9, 7, 7, 7]
+    assert result.reference_id.tolist() == ["east", "west", "multi"] * 2
+    assert result['distance'].tolist() == [.5, .5, .25] * 2
+
+
+@pytest.mark.parametrize("crs", ["EPSG:3857", "EPSG:2263"])
+def test_near_line_native_units_are_not_converted_to_metres(crs):
+    source, reference = near_line_frames(crs)
+    result = near_lines(source, reference)
+    assert result['distance'].tolist() == [.5, .5, .25] and result.crs == source.crs
+
+
+@pytest.mark.parametrize("side", ["source", "reference", "both"])
+def test_near_line_empty_batches_keep_both_id_types_and_complete_schema(side):
+    source, reference = near_line_frames()
+    if side in {"source", "both"}: source = source.iloc[:0].copy()
+    if side in {"reference", "both"}: reference = reference.iloc[:0].copy()
+    result = near_lines(source, reference)
+    assert result.empty and result.columns.tolist() == ["source_id", "reference_id", "distance", "nearest_x", "nearest_y", "geometry"]
+    assert result.source_id.dtype == source.route_key.dtype and result.reference_id.dtype == reference.ref_key.dtype
+    assert result.crs == source.crs and result.geometry.name == "geometry"
+    assert all(str(result[column].dtype) == "float64" for column in ["distance", "nearest_x", "nearest_y"])
+
+
+@pytest.mark.parametrize("tolerance", [0, -1, np.nan, np.inf, -np.inf, True, np.bool_(False), "1", None, [], 10**400])
+def test_near_line_rejects_nonpositive_nonfinite_boolean_or_nonnumeric_tolerance(tolerance):
+    from operators.geometric_operators import NearLineInputError
+    source, reference = near_line_frames()
+    with pytest.raises(NearLineInputError) as error: near_lines(source, reference, tolerance)
+    assert error.value.code == "tolerance"
+
+
+@pytest.mark.parametrize("source_crs,reference_crs", [(None, "EPSG:3857"), ("EPSG:3857", None),
+    ("EPSG:4326", "EPSG:4326"), ("OGC:CRS84", "OGC:CRS84"), ("EPSG:4978", "EPSG:4978"),
+    ("EPSG:3857", "EPSG:32650"), ("EPSG:3857", "EPSG:2263")])
+def test_near_line_rejects_unknown_nonprojected_or_mismatched_crs(source_crs, reference_crs):
+    from operators.geometric_operators import NearLineInputError
+    source, _ = near_line_frames(source_crs)
+    _, reference = near_line_frames(reference_crs)
+    with pytest.raises(NearLineInputError): near_lines(source, reference)
+
+
+@pytest.mark.parametrize("side", ["source", "reference"])
+@pytest.mark.parametrize("geometry", [None, LineString(), Point(0, 0), LineString([(0, 0), (0, 0)]),
+    LineString([(0, 0, 1), (1, 0, 1)]), shapely.from_wkt("LINESTRING M (0 0 1, 1 0 1)"),
+    LineString([(0, 0), (np.inf, 1)])])
+def test_near_line_rejects_missing_empty_non_line_nonxy_or_invalid_geometry(side, geometry):
+    from operators.geometric_operators import NearLineInputError
+    source, reference = near_line_frames()
+    frame, field = (source, "source_shape") if side == "source" else (reference, "reference_shape")
+    frame.loc[frame.index[0], field] = geometry
+    with pytest.raises(NearLineInputError) as error: near_lines(source, reference)
+    assert error.value.code == side
+
+
+@pytest.mark.parametrize("side", ["source", "reference"])
+@pytest.mark.parametrize("field", [None, "missing", "geometry_column", "duplicate", "null", "blank", "nonscalar"])
+def test_near_line_requires_explicit_nonnull_unique_scalar_ids_on_both_inputs(side, field):
+    from operators.geometric_operators import NearLineInputError
+    source, reference = near_line_frames()
+    frame = source if side == "source" else reference
+    key = "route_key" if side == "source" else "ref_key"
+    if field == "geometry_column": key = frame.geometry.name
+    elif field in {None, "missing"}: key = field
+    else:
+        frame[key] = (["same"] * len(frame) if field == "duplicate" else [None] * len(frame) if field == "null" else
+                      [" "] * len(frame) if field == "blank" else [[1]] * len(frame))
+        if field == "duplicate" and len(frame) == 1:
+            source = pd.concat([frame, frame], ignore_index=True)
+    with pytest.raises(NearLineInputError) as error:
+        near_lines(source, reference, **({"id_field": key} if side == "source" else {"reference_id_field": key}))
+    assert error.value.code == side
+
+
+@pytest.mark.parametrize("empty_result", [False, True])
+def test_near_line_workflow_point_save_reloaded_by_independent_ogr_and_sources_unchanged(tmp_path, empty_result):
+    from osgeo import ogr
+    source, reference = near_line_frames()
+    source.to_file(tmp_path / "source.gpkg", driver="GPKG")
+    reference.to_file(tmp_path / "reference.gpkg", driver="GPKG")
+    before = {name: (tmp_path / name).read_bytes() for name in ["source.gpkg", "reference.gpkg"]}
+    connection = {"engine_type": "nfs", "mount_path": str(tmp_path)}
+    tasks = [
+        {"id": "source", "operator": "load", "params": {"connection_info": connection, "path": "source.gpkg"}, "depends_on": []},
+        {"id": "reference", "operator": "load", "params": {"connection_info": connection, "path": "reference.gpkg"}, "depends_on": []},
+        {"id": "near", "operator": "check_line_proximity", "params": {"input_gdf": {"$ref": "source"}, "reference_gdf": {"$ref": "reference"}, "id_field": "route_key", "reference_id_field": "ref_key", "tolerance": .1 if empty_result else 1.}, "depends_on": ["source", "reference"]},
+        {"id": "save", "operator": "save", "params": {"input_df": {"$ref": "near"}, "connection_info": connection, "path": "near.gpkg", "mode": "fail"}, "depends_on": ["near"]},
+    ]
+    execution = execute_workflow({"tasks": tasks})
+    assert execution["status"] == "success", execution
+    dataset = ogr.Open(str(tmp_path / "near.gpkg"))
+    layer = dataset.GetLayer(0)
+    assert layer.GetFeatureCount() == (0 if empty_result else 3)
+    assert layer.GetSpatialRef().GetAuthorityCode(None) == "3857"
+    definition = layer.GetLayerDefn()
+    assert [definition.GetFieldDefn(i).GetName() for i in range(definition.GetFieldCount())] == ["source_id", "reference_id", "distance", "nearest_x", "nearest_y"]
+    assert definition.GetFieldDefn(0).GetType() == ogr.OFTInteger64
+    assert definition.GetFieldDefn(1).GetType() == ogr.OFTString
+    assert all(definition.GetFieldDefn(i).GetType() == ogr.OFTReal for i in [2, 3, 4])
+    if not empty_result:
+        for feature, ref, distance, nx in zip(layer, ["east", "west", "multi"], [.5, .5, .25], [.5, -.5, -.25]):
+            assert feature.GetField("source_id") == 2**53 + 1 and feature.GetField("reference_id") == ref
+            assert feature.GetField("distance") == distance and feature.GetField("nearest_x") == nx
+            assert feature.GetField("nearest_y") == 0. and feature.GetGeometryRef().GetGeometryName() == "POINT"
+            assert feature.GetGeometryRef().GetX() == feature.GetGeometryRef().GetY() == 0.
+    dataset = None
+    tasks[2]["params"]["tolerance"] = 0
+    tasks[3]["params"]["path"] = "rejected.gpkg"
+    assert execute_workflow({"tasks": tasks})["status"] == "failed"
+    assert not (tmp_path / "rejected.gpkg").exists()
+    assert all((tmp_path / name).read_bytes() == value for name, value in before.items())
+
+
+@pytest.mark.parametrize("language,expected", [("zh-cn", "近接检查的容差必须"), ("en", "Line proximity tolerance must")])
+def test_near_line_runtime_discovery_workflow_only_context_and_localized_failure(language, expected, monkeypatch):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    monkeypatch.setattr(api_server, "executions", ExecutionRegistry())
+    source, reference = near_line_frames()
+    params = {"input_gdf": json.loads(source.to_json()), "reference_gdf": json.loads(reference.to_json()),
+              "id_field": "route_key", "reference_id_field": "ref_key", "tolerance": 0}
+    with api_server.app.test_client() as client:
+        spec = next(op for op in client.get("/api/operators").get_json()["operators"] if op["id"] == "check_line_proximity")
+        assert spec["description"] == "近接检查" and spec["category_path"] == ["矢量处理", "几何处理"]
+        assert spec["execution_modes"] == ["workflow"] and spec["effects"] == ["read"]
+        assert [(port["name"], port["type"], port["is_default"]) for port in spec["output_ports"]] == [("result", "geodataframe", True)]
+        assert {param["name"] for param in spec["parameters"]} == set(params)
+        assert all(param["required"] for param in spec["parameters"])
+        assert client.post("/api/operators/check_line_proximity/invoke", json={"params": params}).status_code == 403
+        workflow = {"tasks": [{"id": "near", "operator": "check_line_proximity", "params": params, "depends_on": []}]}
+        assert client.post("/api/workflow", json={"workflow_def": workflow}).status_code == 400
+        response = client.post("/api/workflow", headers={"Accept-Language": language}, json={"workflow_def": workflow, "runtime": {
+            "tenant_id": 7, "execution_authorization": {"id": 1, "effects": ["read"]}}})
+        assert response.status_code == 202
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            state = client.get("/api/executions/" + response.get_json()["execution_id"]).get_json()
+            if state["status"] in {"success", "failed"}: break
+            time.sleep(.01)
+        assert state["status"] == "failed" and state["error_code"] == "EXECUTION_FAILED"
+        assert expected in state["error"]
+
+
+@pytest.mark.parametrize("problem", ["empty", "nonfinite"])
+def test_near_line_nearest_calculation_failure_does_not_return_partial_results(monkeypatch, problem):
+    from operators.geometric_operators import NearLineInputError
+    source, reference = near_line_frames()
+    real = shapely.shortest_line
+    calls = []
+    def faulty(a, b):
+        calls.append(1)
+        if len(calls) == 2:
+            return LineString() if problem == "empty" else LineString([(0, 0), (np.nan, 0)])
+        return real(a, b)
+    monkeypatch.setattr(shapely, "shortest_line", faulty)
+    with pytest.raises(NearLineInputError) as error: near_lines(source, reference)
+    assert error.value.code == "calculation" and len(calls) == 2

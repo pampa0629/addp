@@ -9,6 +9,7 @@ from addp_common.workflow_runtime import WorkflowRunner, WorkflowExecutionError,
 from operators import OPERATORS, get_operator
 from operators.orc_table import SourceChanged as OrcSourceChanged
 from operators.spatial_relations import DistanceInputError
+from operators.geometric_operators import NearLineInputError
 from operators.raster_compute import RasterDataset, RasterTiles, raster_info, raster_tiles_info, raster_workspace, raster_error_language
 
 logger = logging.getLogger(__name__)
@@ -77,7 +78,7 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
     def _execute_operator(self, operator, params):
         try:
             return _execute_workflow_operator(operator, params)
-        except DistanceInputError as exc:
+        except (DistanceInputError, NearLineInputError) as exc:
             raise ValueError(exc.message(self.language)) from exc
 
     def execute(self, workflow_def, input_data=None, progress=None):
