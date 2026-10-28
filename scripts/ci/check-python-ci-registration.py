@@ -88,6 +88,7 @@ def validate_topology_capacity(repository: Path) -> list[str]:
         '.github/workflows/vector-topology-capacity.yml': ('  workflow_dispatch:',
                      'run: make test-vector-topology-capacity\n', 'run: make test-vector-topology-capacity-runner',
                      'runs-on: ubuntu-24.04', 'if: always()', 'actions/upload-artifact@',
+                     'default: all', '          - compose-grid-512-normalize-chains', 'TOPOLOGY_CAPACITY_CASE: ${{ inputs.case }}',
                      'default: matrix', '          - observation', '          - comparison', '          - chains', '          - normalize\n', '          - normalize-chains',
                      'timeout-minutes: 90', 'fetch-depth: 0', 'TOPOLOGY_CAPACITY_PROFILE: ${{ inputs.profile }}'),
         'scripts/test/vector-topology-capacity.py': ('CPUS = 4', 'MEMORY = 2 << 30', 'SECONDS = 180',
@@ -104,6 +105,9 @@ def validate_topology_capacity(repository: Path) -> list[str]:
                      "NORMALIZE_SCHEMA = 'addp.vector-topology-capacity/v4'", "if profile == 'normalize':",
                      "COMPOSITION_SCHEMA = 'addp.vector-topology-capacity/v5'", 'def composition_matrix():',
                      'def run_composition_worker(', 'def verify_composition_output(case, path, port):',
+                     "def measurement_plan(profile, case_key='all'):", 'COMPOSITION_SINGLE_CASE =',
+                     'single case selection is restricted', "'case_selection': case_key",
+                     'ogr.Feature.IsFieldSetAndNotNull', 'encoder = json.JSONEncoder(sort_keys=True).encode',
                      "report.get('composition_implementation')", 'def validate_composition_worker(',
                      'def normalize_matrix():', 'def normalize_counts(case):', 'def normalize_expected(case, port):',
                      'def verify_normalize_output(case, path, port):', 'def run_dual_worker(',
@@ -116,7 +120,9 @@ def validate_topology_capacity(repository: Path) -> list[str]:
                      'test_normalize_capacity_native_dual_output_exact_oracle_unwrapped',
                      'test_normalize_capacity_native_rejects_real_dual_output_corruption',
                      'test_composition_capacity_native_three_outputs_exact_oracle_unwrapped',
-                     'test_composition_capacity_native_rejects_real_three_output_corruption',),
+                     'test_composition_capacity_native_rejects_real_three_output_corruption',
+                     'test_composition_capacity_native_indexed_reader_matches_frozen_scalar_full_digest',
+                     'test_composition_capacity_native_reader_keeps_null_int64_boolean_unicode_and_signed_zero',),
     }
     errors = []
     for name, fragments in required.items():

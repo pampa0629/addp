@@ -438,3 +438,96 @@ def test_composition_capacity_native_failure_retains_actual_incomplete_stage(tmp
         m.run_worker(m.Case('compose-open',8,'normalize-chains'),tmp_path,'A')
     report=json.loads((tmp_path/'progress.json').read_text()); assert report['result']=='incomplete' and report['stage']==stage
     assert stage not in report['timings']
+
+
+def scalar_network_reference(path, fields, rows, expected):
+    """Frozen a1f85 scalar oracle, test-only; never an executable capacity route."""
+    from osgeo import ogr
+    import hashlib
+    ds=ogr.Open(str(path),0); assert ds and ds.GetLayerCount()==1
+    layer=ds.GetLayer(0); assert layer.GetSpatialRef().GetAuthorityCode(None)=='3857'
+    assert [f.GetName() for f in layer.schema]==fields
+    for field in layer.schema:
+        name=field.GetName(); native=ogr.OFTString if name in ('route_key','note','source_id') else ogr.OFTInteger if name in ('enabled','is_reversed') else ogr.OFTInteger64
+        assert field.GetType()==native
+        if name in ('enabled','is_reversed'): assert field.GetSubType()==ogr.OFSTBoolean
+    assert layer.GetFeatureCount()==rows
+    iterator=iter(layer); checksum=hashlib.sha256()
+    for i,(properties,points) in enumerate(expected,1):
+        feature=next(iterator); shape=feature.GetGeometryRef()
+        assert feature.GetFID()==i and shape.GetGeometryName()=='LINESTRING' and shape.GetCoordinateDimension()==2 and not shape.IsMeasured() and shape.IsValid()
+        actual={name:feature.GetField(name) for name in fields}
+        for name in ('enabled','is_reversed'):
+            if name in actual and actual[name] is not None:
+                assert type(actual[name]) in (int,bool) and actual[name] in (0,1); actual[name]=bool(actual[name])
+        coordinates=[list(v) for v in shape.GetPoints()]
+        assert actual==properties and coordinates==points
+        for key,value in properties.items(): assert type(actual[key]) is type(value)
+        checksum.update(json.dumps([actual,coordinates],sort_keys=True).encode())
+    assert next(iterator,None) is None
+    return {'rows':rows,'crs':'EPSG:3857','full_result_sha256':checksum.hexdigest(),'all_coordinates_attributes_membership_verified':True}
+
+
+@pytest.mark.parametrize('kind,size', [('compose-sparse',8),('compose-open',12),('compose-sampling',4),('compose-grid',3),('compose-ring',12)])
+def test_composition_capacity_native_indexed_reader_matches_frozen_scalar_full_digest(tmp_path, monkeypatch, kind, size):
+    from osgeo import ogr
+    case=m.Case(kind,size,'normalize-chains'); report=m.run_worker(case,tmp_path,'A')
+    expected={}
+    for port in m.COMPOSITION_PORTS:
+        path=tmp_path/(port+'.gpkg'); ds=ogr.Open(str(path),0); fields=[f.GetName() for f in ds.GetLayer(0).schema]; ds=None
+        expected[port]=scalar_network_reference(path,fields,m.composition_counts(case)[port],m.composition_expected(case,port))
+        assert expected[port]==report['physical'][port]
+    def forbidden(*a,**kw): raise AssertionError('no per-value generic GetField/type dispatch or per-row dumps')
+    with monkeypatch.context() as patch:
+        patch.setattr(ogr.Feature,'GetField',forbidden); patch.setattr(ogr.Feature,'GetFieldType',forbidden); patch.setattr(m.json,'dumps',forbidden)
+        for port in m.COMPOSITION_PORTS:
+            assert m.verify_composition_output(case,tmp_path/(port+'.gpkg'),port)==expected[port]
+
+
+def test_composition_capacity_native_reader_keeps_null_int64_boolean_unicode_and_signed_zero(tmp_path, monkeypatch):
+    from osgeo import ogr,osr
+    crs=osr.SpatialReference(); crs.ImportFromEPSG(3857)
+    path=tmp_path/'typed.gpkg'; ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path)); layer=ds.CreateLayer('typed',crs,ogr.wkbLineString,options=['GEOMETRY_NAME=actual_shape'])
+    fields=['route_key','note','grade','enabled']
+    for name,kind in zip(fields,[ogr.OFTString,ogr.OFTString,ogr.OFTInteger64,ogr.OFTInteger]):
+        field=ogr.FieldDefn(name,kind)
+        if name=='enabled': field.SetSubType(ogr.OFSTBoolean)
+        layer.CreateField(field)
+    expected=[]
+    for i,(note,grade,enabled) in enumerate([(None,2**63-1,True),('中文"\\\n',-2**63+1,False),('',None,None)]):
+        props={'route_key':str(i+10),'note':note,'grade':grade,'enabled':enabled}; points=[[-0.0,i],[2**-40,i+1]]
+        feature=ogr.Feature(layer.GetLayerDefn())
+        for name,value in props.items():
+            if value is None:feature.SetFieldNull(name)
+            else:feature.SetField(name,int(value) if type(value) is bool else value)
+        shape=ogr.Geometry(ogr.wkbLineString)
+        for x,y in points:shape.AddPoint_2D(x,y)
+        feature.SetGeometry(shape); assert layer.CreateFeature(feature)==0; expected.append((props,points))
+    ds=layer=None
+    baseline=scalar_network_reference(path,fields,3,iter(expected))
+    original=m.json.JSONEncoder; calls=[]
+    def encoder(*args,**kw): calls.append(kw); return original(*args,**kw)
+    monkeypatch.setattr(m.json,'JSONEncoder',encoder)
+    assert m.verify_network_output(path,fields,3,iter(expected))==baseline
+    assert calls==[{'sort_keys':True}]
+
+
+@pytest.mark.parametrize('problem',['fid','z','point','empty','invalid','extra_field','field_order','boolean_value'])
+def test_composition_capacity_native_indexed_reader_preserves_geometry_and_schema_rejections(tmp_path, problem):
+    from osgeo import ogr
+    case=m.Case('compose-grid',3,'normalize-chains'); m.run_worker(case,tmp_path,'A'); path=tmp_path/'edge_sources.gpkg'
+    ds=ogr.Open(str(path),1); layer=ds.GetLayer(0)
+    if problem=='extra_field':layer.CreateField(ogr.FieldDefn('foreign',ogr.OFTString))
+    elif problem=='field_order':
+        mapping=list(range(len(layer.schema))); mapping[0],mapping[1]=mapping[1],mapping[0]; assert layer.ReorderFields(mapping)==0
+    elif problem=='fid':
+        feature=layer.GetFeature(1); layer.DeleteFeature(1); feature.SetFID(9000); assert layer.CreateFeature(feature)==0
+    else:
+        feature=layer.GetFeature(1)
+        if problem=='boolean_value':feature.SetField('enabled',0)
+        else:
+            wkt={'z':'LINESTRING Z (0 1 1, 1 1 1)','point':'POINT (0 1)','empty':'LINESTRING EMPTY','invalid':'LINESTRING (0 1,0 1)'}[problem]
+            feature.SetGeometry(ogr.CreateGeometryFromWkt(wkt))
+        assert layer.SetFeature(feature)==0
+    ds=layer=None
+    with pytest.raises(AssertionError):m.verify_composition_output(case,path,'edge_sources')

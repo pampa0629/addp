@@ -29,6 +29,7 @@ SCHEMA = 'addp.vector-topology-capacity/v3'
 NORMALIZE_SCHEMA = 'addp.vector-topology-capacity/v4'
 COMPOSITION_SCHEMA = 'addp.vector-topology-capacity/v5'
 COMPOSITION_PORTS = ('chains', 'chain_edges', 'edge_sources')
+COMPOSITION_SINGLE_CASE = 'compose-grid-512-normalize-chains'
 LEGACY_COMMIT = '8a3006670e7f6cfaddf018253515ccb37ab5bc78'
 BATCHED_COMMIT = 'adb605b67676bc4396307bc9ea7449c63de183bc'
 GEOMETRY_MODULE = 'engines/geopython-workflow/operators/geometric_operators.py'
@@ -81,7 +82,14 @@ def composition_matrix():
             for size in sizes]
 
 
-def measurement_plan(profile):
+def measurement_plan(profile, case_key='all'):
+    if case_key != 'all':
+        if profile != 'normalize-chains' or case_key != COMPOSITION_SINGLE_CASE:
+            raise ValueError('single case selection is restricted to normalize-chains grid 512')
+        selected = [item for item in measurement_plan(profile) if item['id'] == case_key]
+        if len(selected) != 1:
+            raise ValueError('single case must exist exactly once in registered plan')
+        return selected
     if profile == 'normalize-chains':
         return [{'id': case.key, 'case': asdict(case), 'observer': 'A', 'repetition': None}
                 for case in composition_matrix()]
@@ -563,11 +571,13 @@ def normalize_expected(case, port):
     elif port == 'result' and case.kind == 'normalize-sampling':
         for i in range(case.size): yield {'edge_id':i+1,'occurrence_count':case.size}, [[i,0],[i+1,0]]
     else:
+        previous_row, attrs = None, None
         for row,part,segment,piece,edge,reverse,points in normalize_visits(case):
             if port == 'result':
                 yield {'edge_id':edge,'occurrence_count':1}, points[::-1] if reverse else points
             else:
-                attrs = normalize_attributes(row)
+                if row != previous_row:
+                    attrs = normalize_attributes(row); previous_row = row
                 yield {**attrs,'edge_id':edge,'source_id':attrs['route_key'],'source_part_no':part,
                        'source_segment_no':segment,'piece_no':piece,'is_reversed':reverse}, points
 
@@ -636,23 +646,33 @@ def verify_network_output(path, fields, rows, expected):
     ds = ogr.Open(str(path),0); assert ds and ds.GetLayerCount() == 1
     layer = ds.GetLayer(0); assert layer.GetSpatialRef().GetAuthorityCode(None) == '3857'
     assert [f.GetName() for f in layer.schema] == fields
-    for field in layer.schema:
-        name = field.GetName(); native = ogr.OFTString if name in ('route_key','note','source_id') else ogr.OFTInteger if name in ('enabled','is_reversed') else ogr.OFTInteger64
+    readers = []
+    for index, field in enumerate(layer.schema):
+        name = field.GetName(); boolean = name in ('enabled','is_reversed')
+        native = ogr.OFTString if name in ('route_key','note','source_id') else ogr.OFTInteger if boolean else ogr.OFTInteger64
         assert field.GetType() == native
-        if name in ('enabled','is_reversed'): assert field.GetSubType() == ogr.OFSTBoolean
+        if boolean: assert field.GetSubType() == ogr.OFSTBoolean
+        getter = ogr.Feature.GetFieldAsString if native == ogr.OFTString else ogr.Feature.GetFieldAsInteger if boolean else ogr.Feature.GetFieldAsInteger64
+        readers.append((name, index, getter, boolean))
     assert layer.GetFeatureCount() == rows
+    not_null = ogr.Feature.IsFieldSetAndNotNull
+    encoder = json.JSONEncoder(sort_keys=True).encode
     iterator = iter(layer); checksum = hashlib.sha256()
     for i,(properties,points) in enumerate(expected,1):
         feature = next(iterator); shape = feature.GetGeometryRef()
+        assert shape is not None
         assert feature.GetFID() == i and shape.GetGeometryName() == 'LINESTRING' and shape.GetCoordinateDimension() == 2 and not shape.IsMeasured() and shape.IsValid()
-        actual = {name:feature.GetField(name) for name in fields}
-        for name in ('enabled','is_reversed'):
-            if name in actual and actual[name] is not None:
-                assert type(actual[name]) in (int,bool) and actual[name] in (0,1); actual[name] = bool(actual[name])
-        coordinates = [list(v) for v in shape.GetPoints()]
+        actual = {}
+        for name, index, getter, boolean in readers:
+            value = getter(feature, index) if not_null(feature, index) else None
+            if boolean and value is not None:
+                assert type(value) in (int,bool) and value in (0,1); value = bool(value)
+            actual[name] = value
+        original_points = shape.GetPoints(); assert original_points is not None
+        coordinates = [list(v) for v in original_points]
         assert actual == properties and coordinates == points
         for key,value in properties.items(): assert type(actual[key]) is type(value)
-        checksum.update(json.dumps([actual,coordinates],sort_keys=True).encode())
+        checksum.update(encoder([actual,coordinates]).encode())
     assert next(iterator,None) is None
     return {'rows':rows,'crs':'EPSG:3857','full_result_sha256':checksum.hexdigest(),'all_coordinates_attributes_membership_verified':True}
 
@@ -1288,8 +1308,8 @@ def cleanup_images(attempts):
     return errors
 
 
-def run_gate(profile='matrix'):
-    plan = measurement_plan(profile)
+def run_gate(profile='matrix', case_key='all'):
+    plan = measurement_plan(profile, case_key)
     repository = Path(__file__).resolve().parents[2]
     if (os.getenv('GITHUB_ACTIONS') != 'true' or os.getenv('RUNNER_OS') != 'Linux'
             or os.getenv('GITHUB_EVENT_NAME') != 'workflow_dispatch' or sys.platform != 'linux'):
@@ -1306,7 +1326,7 @@ def run_gate(profile='matrix'):
     artifact.mkdir(mode=0o700)
     image = f'localhost:5001/addp-geopython-workflow-engine:topology-capacity-{run_id}'
     registry = f'addp-topology-capacity-registry-{run_id}'
-    report = {'schema_version': COMPOSITION_SCHEMA if profile == 'normalize-chains' else NORMALIZE_SCHEMA if profile == 'normalize' else SCHEMA, 'source': source, 'experiment_profile': profile,
+    report = {'schema_version': COMPOSITION_SCHEMA if profile == 'normalize-chains' else NORMALIZE_SCHEMA if profile == 'normalize' else SCHEMA, 'source': source, 'experiment_profile': profile, 'case_selection': case_key,
               'runner': {key: os.getenv(key) for key in ('GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_JOB', 'RUNNER_NAME', 'RUNNER_ARCH', 'ImageOS', 'ImageVersion')},
               'host': {'hostname': os.uname().nodename, 'available_cpus': sorted(os.sched_getaffinity(0)),
                        'cpuinfo_sha256': hashlib.sha256(Path('/proc/cpuinfo').read_bytes()).hexdigest()},
@@ -1393,11 +1413,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--worker', choices=[case.key for case in matrix() + chain_matrix() + normalize_matrix() + composition_matrix()])
     parser.add_argument('--profile', choices=('matrix', 'observation', 'comparison', 'chains', 'normalize', 'normalize-chains'), default=os.getenv('TOPOLOGY_CAPACITY_PROFILE', 'matrix'))
+    parser.add_argument('--case', choices=('all', COMPOSITION_SINGLE_CASE), default=os.getenv('TOPOLOGY_CAPACITY_CASE', 'all'))
     parser.add_argument('--observer', choices=('A', 'B', 'C'), default='C')
     parser.add_argument('--measurement')
     args = parser.parse_args()
-    measurement_plan(args.profile)  # Validate environment defaults before any mutation.
+    measurement_plan(args.profile, args.case)  # Validate environment defaults before any mutation.
     if args.worker:
         run_worker(next(case for case in matrix() + chain_matrix() + normalize_matrix() + composition_matrix() if case.key == args.worker), Path('/capacity-data'), args.observer, args.measurement)
     else:
-        raise SystemExit(run_gate(args.profile))
+        raise SystemExit(run_gate(args.profile, args.case))

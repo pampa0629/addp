@@ -15,6 +15,14 @@ on:
           - normalize
           - normalize-chains
 
+      case:
+        description: All profile cases or only the original failed composition grid tier
+        type: choice
+        default: all
+        options:
+          - all
+          - compose-grid-512-normalize-chains
+
 permissions:
   contents: read
 
@@ -34,6 +42,7 @@ jobs:
       - name: Run manual line capacity gate
         env:
           TOPOLOGY_CAPACITY_PROFILE: ${{ inputs.profile }}
+          TOPOLOGY_CAPACITY_CASE: ${{ inputs.case }}
         run: make test-vector-topology-capacity
       - name: Upload original capacity observations
         if: always()

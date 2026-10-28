@@ -413,6 +413,12 @@ class CapacityTest(unittest.TestCase):
                 (files[1],'          - chains','          - removed'),
                 (files[1],'          - normalize\n','          - removed\n'),
                 (files[1],'          - normalize-chains','          - removed'),
+                (files[1],'TOPOLOGY_CAPACITY_CASE: ${{ inputs.case }}','REMOVED: all'),
+                (files[1],'          - compose-grid-512-normalize-chains','          - removed'),
+                (files[2],"'case_selection': case_key","'removed_selection': case_key"),
+                (files[2],'ogr.Feature.IsFieldSetAndNotNull','removed_null_safety'),
+                (files[2],'encoder = json.JSONEncoder(sort_keys=True).encode','encoder = None'),
+                (files[3],'test_composition_capacity_native_indexed_reader_matches_frozen_scalar_full_digest','removed_reader_digest'),
                 (files[2],'def composition_matrix():','def removed_composition_matrix():'),
                 (files[2],'def verify_composition_output(case, path, port):','def removed_composition_output(case, path, port):'),
                 (files[2],'def run_composition_worker(','def removed_composition_worker('),
@@ -519,6 +525,26 @@ class CompositionCapacityTest(unittest.TestCase):
         self.assertEqual((m.CPUS,m.MEMORY,m.SECONDS,m.COMPOSITION_SCHEMA),(4,2<<30,180,'addp.vector-topology-capacity/v5'))
         self.assertEqual(m.composition_counts(m.Case('compose-grid',512,'normalize-chains')),{'sources':1024,'chains':525312,'chain_edges':525312,'edge_sources':525312})
         self.assertEqual(m.composition_counts(m.Case('compose-sampling',512,'normalize-chains')),{'sources':512,'chains':1,'chain_edges':512,'edge_sources':262144})
+
+    def test_composition_single_case_selector_is_exact_and_fails_before_mutation(self):
+        key='compose-grid-512-normalize-chains'
+        expected=[v for v in m.measurement_plan('normalize-chains') if v['id']==key]
+        self.assertEqual(m.measurement_plan('normalize-chains',key),expected)
+        self.assertEqual(len(expected),1); self.assertEqual(m.measurement_plan('normalize-chains','all'),m.measurement_plan('normalize-chains'))
+        with patch.object(m,'command') as docker:
+            for profile,case in [('normalize',key),('matrix',key),('normalize-chains','compose-grid-128-normalize-chains'),('normalize-chains','unknown'),('normalize-chains','')]:
+                with self.subTest(profile=profile,case=case),self.assertRaises(ValueError):m.run_gate(profile,case)
+            docker.assert_not_called()
+        for cases in ([],[m.Case('compose-grid',512,'normalize-chains')]*2):
+            with patch.object(m,'composition_matrix',return_value=cases),self.assertRaises(ValueError):m.measurement_plan('normalize-chains',key)
+
+    def test_source_expected_attributes_are_built_once_per_original_source(self):
+        for kind in ('normalize-grid','normalize-sampling','normalize-parts'):
+            case=m.Case(kind,4,'normalize')
+            with patch.object(m,'normalize_attributes',wraps=m.normalize_attributes) as build:
+                rows=list(m.normalize_expected(case,'members'))
+            self.assertEqual(len(rows),m.normalize_counts(case)['members'])
+            self.assertEqual(build.call_count,m.normalize_counts(case)['sources'])
 
     def test_composition_closed_forms_exact_relation_and_direction_xor(self):
         from collections import Counter
