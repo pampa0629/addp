@@ -696,4 +696,8 @@ ORC 嵌套扩展复用同一 `native-table-orc` case、原 11 项权限与精确
 
 保留完整像元／mask、米制／原网格／CRS、COG／最近邻概览、三方相等正整数大小、精确扫描身份、当前实际输入完整内部血缘／公开安全投影／Meta关系及Monitor；39调用／429次实际成果全检，归档13份COG原字节及大小／hash清单，源与先前成果不变、失败零发布／新增扫描血缘及全部清理严格保持。仅扩展既有受控只读血缘取证的套件白名单；期望缓存绑定本轮／夹具／源hash，不缓存实际成果，所有准备与收尾均计入600秒。
 
-本地标准Native专项224通过／8308筛除（147项产品＋1项元数据＋76项真实GDAL夹具），0失败／跳过，30.94秒；独立runner 88项、受影响TRI／TPI各88项及填挖方89项、完整CI登记56＋10项／11模块通过。各runner共享测试不累加为唯一数量。Linux全量和真实Hosted由CI会话协调，本会话不触发／轮询／重跑／设置定时；不计UI、容量或任意影像。标准入口为`make test-raster-roughness-online-runner`，真实GDAL夹具纳入`make test-geopython-workflow`。
+本地标准Native专项224通过／8308筛除（147项产品＋1项元数据＋76项真实GDAL夹具），0失败／跳过，30.94秒；独立runner 88项、受影响TRI／TPI各88项及填挖方89项、完整CI登记56＋10项／11模块通过。各runner共享测试不累加为唯一数量。上述本地证据不替代实际Hosted；本会话不触发／轮询／重跑／设置定时，不计当前HEAD全量、UI、容量或任意影像。标准入口为`make test-raster-roughness-online-runner`，真实GDAL夹具纳入`make test-geopython-workflow`。
+
+固定`60da3691404ee74d3b6789d2948f575be1edef9c`的[唯一Hosted40700360070／122858214770](https://github.com/pampa0629/addp/actions/runs/40700360070/job/122858214770)已完成严格终审：13成功／26准确双语失败、39次物理调用／429次实际成果全检，业务215112毫秒，7服务与默认入口Runtime同源、普通User原12权限保持。13份COG原字节及清单逐一核验，CI会话使用固定提交夹具的独立Decimal参考核全像元／mask、519×515网格／CRS／米制、3级nearest概览及COG布局，含中心极大／极小和两侧邻居的九点max−min样本。13份独占只读内部血缘与公开安全投影分别核，13次当前执行Meta扫描、Monitor、源／先前成果不变、缓存／Runtime工作区移除和部署零残留通过。
+
+官方Artifact12823445733为2937897字节、SHA-256 `84f5f3859f668ddbf11cc17484c74ae23da4eebd574a8d477104e55d641b5e76`；领域会话只读复核官方digest／大小／ZIP CRC、原始日志hash与实际步骤、13原件及13血缘回执字节、矩阵和清理记录，不重复运行计算。源TIFF未归档，离线参考来自固定提交的确定性夹具；不外推数值极限Hosted、页面、容量、业务DELETE或当前HEAD全量。准备源码ae5的原全量Job因范围外矢量断言失败，仍记失败；本次Hosted通过不追认该Job为绿。
