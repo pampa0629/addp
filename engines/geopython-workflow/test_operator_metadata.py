@@ -1220,3 +1220,14 @@ def test_vector_geometry_readme_matches_registered_names_and_count():
     registered=[item['name'] for item in list_operators() if item['category_path']==['矢量处理','几何处理'] and 'workflow' in item['execution_modes']]
     assert len(documented)==len(set(documented))==int(row.split('|')[3].strip())==len(registered)
     assert set(documented)==set(registered)
+
+
+def test_distance_to_metadata_requires_shared_projected_crs_and_native_distance_units():
+    spec = next(item for item in list_operators() if item['name'] == 'distance_to')
+    params = {param['name']: param for param in spec['parameters']}
+    assert set(params) == {'input_gdf', 'target_geom'}
+    assert '相同的已知投影坐标系' in params['target_geom']['notes']
+    notes = ' '.join(spec['detailed_description']['notes'])
+    assert '英尺制为对应英尺' in notes and '不自动换算米' in notes
+    assert '未知、地理、地心或不匹配坐标系明确拒绝' in notes
+    assert '投影坐标系为米' not in notes

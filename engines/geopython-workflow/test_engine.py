@@ -659,8 +659,8 @@ def test_distance_to_uses_active_geometry_not_decoy_named_geometry_columns():
     assert_geodataframe_equal(source,source_before);assert_geodataframe_equal(target,target_before)
 
 
-@pytest.mark.parametrize('crs',[None,'EPSG:4326','EPSG:3857'])
-def test_distance_to_keeps_existing_crs_policy_without_reprojection(crs):
+@pytest.mark.parametrize('crs', ['EPSG:3857', 'EPSG:2263'])
+def test_distance_to_preserves_projected_native_units_without_reprojection(crs):
     from operators import get_operator
     source,target=_distance_to_frames('route_shape','reference_shape',crs)
     result=get_operator('distance_to')(source,target)
@@ -692,13 +692,13 @@ def test_distance_to_active_geometry_overwrites_distance_on_copy_only():
 def test_distance_to_active_geometry_distance_conflict_preserves_inputs_and_can_be_renamed(empty):
     from geopandas.testing import assert_geodataframe_equal
     from operators import get_operator
-    from operators.spatial_relations import DistanceGeometryColumnConflict
+    from operators.spatial_relations import DistanceInputError
 
     source, target = _distance_to_frames('distance', 'reference_shape')
     if empty:
         source = source.iloc[:0].copy()
     source_before, target_before = source.copy(deep=True), target.copy(deep=True)
-    with pytest.raises(DistanceGeometryColumnConflict, match='请先手动重命名源几何列'):
+    with pytest.raises(DistanceInputError, match='请先手动重命名源几何列'):
         get_operator('distance_to')(source, target)
     assert_geodataframe_equal(source, source_before)
     assert_geodataframe_equal(target, target_before)
@@ -746,4 +746,104 @@ def test_distance_to_active_geometry_conflict_uses_submitted_workflow_language(l
     # A failed execution does not poison a later renamed input on the same runner.
     result = runner.execute(workflow, {'source': source.rename_geometry('shape'), 'target': target})
     import json
+    assert [feature['properties']['distance'] for feature in json.loads(result.final_result)['features']] == [5., 10.]
+
+
+@pytest.mark.parametrize('empty', [False, True])
+@pytest.mark.parametrize('source_crs,target_crs,code', [
+    (None, 'EPSG:3857', 'projected_crs'),
+    ('EPSG:3857', None, 'projected_crs'),
+    (None, None, 'projected_crs'),
+    ('EPSG:4326', 'EPSG:4326', 'projected_crs'),
+    ('EPSG:4326', 'EPSG:3857', 'projected_crs'),
+    ('EPSG:3857', 'EPSG:4326', 'projected_crs'),
+    ('OGC:CRS84', 'OGC:CRS84', 'projected_crs'),
+    ('EPSG:4978', 'EPSG:4978', 'projected_crs'),
+    ('EPSG:3857', 'EPSG:4978', 'projected_crs'),
+    ('EPSG:3857', 'EPSG:32650', 'crs_mismatch'),
+    ('EPSG:3857', 'EPSG:2263', 'crs_mismatch'),
+])
+def test_distance_to_rejects_unknown_nonprojected_and_mismatched_crs_without_mutation(
+    source_crs, target_crs, code, empty,
+):
+    from geopandas.testing import assert_geodataframe_equal
+    from operators import get_operator
+    from operators.spatial_relations import DistanceInputError
+
+    source, _ = _distance_to_frames('route_shape', 'reference_shape', source_crs)
+    _, target = _distance_to_frames('route_shape', 'reference_shape', target_crs)
+    if empty:
+        source = source.iloc[:0].copy()
+    before_source, before_target = source.copy(deep=True), target.copy(deep=True)
+    with pytest.raises(DistanceInputError) as error:
+        get_operator('distance_to')(source, target)
+    assert error.value.code == code
+    assert '请先显式重投影' in str(error.value)
+    assert_geodataframe_equal(source, before_source)
+    assert_geodataframe_equal(target, before_target)
+
+
+@pytest.mark.parametrize('side', ['source', 'target'])
+def test_distance_to_rejects_projected_crs_with_mixed_horizontal_units(side):
+    from pyproj import CRS
+    from operators import get_operator
+    from operators.spatial_relations import DistanceInputError
+
+    definition = CRS.from_epsg(3857).to_json_dict()
+    definition['coordinate_system']['axis'][1]['unit'] = {
+        'type': 'LinearUnit', 'name': 'foot', 'conversion_factor': 0.3048,
+    }
+    mixed = CRS.from_json_dict(definition)
+    assert mixed.is_projected
+    assert mixed.axis_info[0].unit_conversion_factor != mixed.axis_info[1].unit_conversion_factor
+    source, target = _distance_to_frames()
+    if side == 'source':
+        source = source.set_crs(mixed, allow_override=True)
+    else:
+        target = target.set_crs(mixed, allow_override=True)
+    with pytest.raises(DistanceInputError) as error:
+        get_operator('distance_to')(source, target)
+    assert error.value.code == 'projected_crs'
+
+
+def test_distance_to_accepts_semantically_equal_crs_expressions_without_changing_them():
+    from geopandas.testing import assert_geodataframe_equal
+    from operators import get_operator
+
+    source, target = _distance_to_frames('source_shape', 'target_shape')
+    target = target.set_crs(source.crs.to_wkt(version='WKT1_GDAL'), allow_override=True)
+    before_source, before_target = source.copy(deep=True), target.copy(deep=True)
+    assert source.crs.equals(target.crs)
+    result = get_operator('distance_to')(source, target)
+    assert result['distance'].tolist() == [5., 10.]
+    assert_geodataframe_equal(result.drop(columns='distance'), before_source)
+    assert_geodataframe_equal(source, before_source)
+    assert_geodataframe_equal(target, before_target)
+
+
+@pytest.mark.parametrize('language,projected_message,mismatch_message', [
+    ('zh-cn', '距离计算要求两个输入均具有已知的投影坐标系', '距离计算要求两个输入使用相同的投影坐标系'),
+    ('en', 'Distance calculation requires both inputs to have a known projected CRS',
+           'Distance calculation requires the same projected CRS for both inputs'),
+])
+@pytest.mark.parametrize('target_crs,code', [('EPSG:4326', 'projected_crs'), ('EPSG:32650', 'crs_mismatch')])
+def test_distance_to_crs_error_uses_submitted_workflow_language(
+    language, projected_message, mismatch_message, target_crs, code,
+):
+    import json
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    from workflow_engine import GeoPythonWorkflowRunner
+
+    source, good_target = _distance_to_frames('source_shape', 'target_shape')
+    _, bad_target = _distance_to_frames('source_shape', 'target_shape', target_crs)
+    workflow = {'tasks': [{'id': 'distance', 'operator': 'distance_to', 'params': {
+        'input_gdf': {'$input': 'source'}, 'target_geom': {'$input': 'target'},
+    }, 'depends_on': []}]}
+    runner = GeoPythonWorkflowRunner(language=language)
+    with pytest.raises(WorkflowExecutionError) as failure:
+        runner.execute(workflow, {'source': source, 'target': bad_target})
+    assert (projected_message if code == 'projected_crs' else mismatch_message) in str(failure.value)
+    assert failure.value.error_code == 'EXECUTION_FAILED'
+    assert failure.value.all_results == {} and failure.value.task_order == ['distance']
+    result = runner.execute(workflow, {'source': source, 'target': good_target})
     assert [feature['properties']['distance'] for feature in json.loads(result.final_result)['features']] == [5., 10.]

@@ -8,24 +8,36 @@ import geopandas as gpd
 from .base import (
     OperatorMetadata, OperatorParam, OperatorType, OperatorCategory, register_operator
 )
+from .geometric_operators import _require_projected_xy_crs
 
 
 # ==================== 算子实现 ====================
 
-class DistanceGeometryColumnConflict(ValueError):
-    """The distance result would overwrite the source's active geometry."""
+class DistanceInputError(ValueError):
+    """Distance input admission errors localized by the execution adapter."""
 
     _messages = {
-        'zh-cn': '源图层的活动几何列名 distance 与距离输出列冲突；请先手动重命名源几何列，再执行距离计算。',
-        'en': 'Source active geometry column distance conflicts with the distance output column; '
-              'rename the source geometry column before running distance calculation.',
+        'zh-cn': {
+            'geometry_column_conflict': '源图层的活动几何列名 distance 与距离输出列冲突；请先手动重命名源几何列，再执行距离计算。',
+            'projected_crs': '距离计算要求两个输入均具有已知的投影坐标系，且两个水平轴使用相同、有限且为正的线性单位；请先显式重投影。',
+            'crs_mismatch': '距离计算要求两个输入使用相同的投影坐标系；请先显式重投影，不能仅因单位相同就直接计算。',
+        },
+        'en': {
+            'geometry_column_conflict': 'Source active geometry column distance conflicts with the distance output column; '
+                                        'rename the source geometry column before running distance calculation.',
+            'projected_crs': 'Distance calculation requires both inputs to have a known projected CRS with matching, '
+                             'finite positive horizontal linear units; reproject explicitly first.',
+            'crs_mismatch': 'Distance calculation requires the same projected CRS for both inputs; '
+                            'reproject explicitly first, even when their units match.',
+        },
     }
 
-    def __init__(self):
+    def __init__(self, code):
+        self.code = code
         super().__init__(self.message('zh-cn'))
 
     def message(self, language):
-        return self._messages[language]
+        return self._messages[language][self.code]
 
 
 def contains(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -78,7 +90,15 @@ def distance_to(input_gdf: gpd.GeoDataFrame, target_geom: gpd.GeoDataFrame) -> g
         GeoDataFrame 添加 distance 列
     """
     if input_gdf.geometry.name == 'distance':
-        raise DistanceGeometryColumnConflict()
+        raise DistanceInputError('geometry_column_conflict')
+
+    try:
+        _require_projected_xy_crs(input_gdf.crs)
+        _require_projected_xy_crs(target_geom.crs)
+    except ValueError as exc:
+        raise DistanceInputError('projected_crs') from exc
+    if not input_gdf.crs.equals(target_geom.crs):
+        raise DistanceInputError('crs_mismatch')
 
     result = input_gdf.copy()
 
@@ -226,7 +246,7 @@ DISTANCE_TO_METADATA = OperatorMetadata(
             data_type="GeoDataFrame",
             required=True,
             description="目标图层",
-            notes="需与input_gdf具有相同的坐标系,且建议使用投影坐标系以获得准确距离"
+            notes="必须与input_gdf使用相同的已知投影坐标系，两个水平轴的线性单位须相同、有限且为正；不自动重投影"
         )
     ],
 
@@ -238,8 +258,8 @@ DISTANCE_TO_METADATA = OperatorMetadata(
     ],
 
     notes=[
-        "距离单位与坐标系一致:投影坐标系为米,地理坐标系为度",
-        "地理坐标系(EPSG:4326)的度单位不直观,建议先转投影坐标系",
+        "距离保留源投影坐标系的水平单位：米制为米、英尺制为对应英尺，不自动换算米",
+        "未知、地理、地心或不匹配坐标系明确拒绝；须先显式重投影，仅单位相同仍不能混算不同投影",
         "返回的是最近距离,如需到所有目标的距离需遍历",
         "大数据集建议先用空间索引加速最近邻查询"
     ],
