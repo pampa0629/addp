@@ -583,8 +583,8 @@ class Lifecycle:
         return self.minio_image
 
     @contextmanager
-    def sampling_lease(self, began):
-        seconds=max(0, 4-(time.monotonic()-began)) if self.strict_resources else -1
+    def sampling_lease(self, began, *, deadline=None):
+        seconds=max(0, min(began+4,deadline)-time.monotonic()) if deadline is not None else (max(0, 4-(time.monotonic()-began)) if self.strict_resources else -1)
         require(self.sample_lock.acquire(timeout=seconds), 'resource_sample_deadline_exceeded')
         try:
             yield
@@ -632,7 +632,7 @@ class Lifecycle:
             self.check()
             time.sleep(min(.1, max(0, deadline-time.monotonic())))
 
-    def command(self, args, *, env=None, cwd=None, data=None, timeout=600, guarded=True, output_limit=None):
+    def command(self, args, *, env=None, cwd=None, data=None, timeout=600, guarded=True, output_limit=None, process_observer=None):
         entered_ns = time.monotonic_ns()
         began = entered_ns / 1e9
         deadline = began + timeout
@@ -672,6 +672,7 @@ class Lifecycle:
                     timing['spawn_finished_monotonic_ns'] = time.monotonic_ns()
                     timing['spawn_seconds'] = round((timing['spawn_finished_monotonic_ns']-timing['spawn_started_monotonic_ns'])/1e9, 6)
                 try:
+                    if process_observer is not None:process_observer(p)
                     check_deadline()
                     timing['wait_started_monotonic_ns'] = time.monotonic_ns()
                     try:
@@ -781,19 +782,21 @@ class Lifecycle:
         self.sampler_started=True
         self.sampler_volumes=volumes
 
-    def sample(self):
+    def sample(self, *, deadline=None):
         waiting = time.monotonic()
-        with self.sampling_lease(waiting):
+        with self.sampling_lease(waiting,deadline=deadline):
             if self.strict_resources and self.samples:
                 require(waiting-self.samples[-1]['sample_started_monotonic'] <= 5, 'resource_sample_cadence_exceeded')
-            self.sample_began = waiting if self.strict_resources else time.monotonic()
-            self.sample_deadline = self.sample_began + 4
+            acquired = time.monotonic()
+            self.sample_began = waiting if self.strict_resources or deadline is not None else acquired
+            self.sample_deadline = min(self.sample_began+4,deadline) if deadline is not None else self.sample_began+4
             self.sample_thread_id = threading.get_ident()
             self.sample_phase = self.phase
             self.sample_steps = []
             self.sample_counts = {'container_count': None, 'volume_count': None}
             self.sample_measured = {}
-            self.sample_lock_wait = self.sample_began - waiting
+            self.sample_lock_wait = acquired - waiting
+            self.sample_no_retry = self.strict_resources or deadline is not None
             try:
                 return self._sample()
             except Exception as error:
@@ -808,6 +811,7 @@ class Lifecycle:
             finally:
                 self.sample_thread_id = None
                 self.sample_deadline = None
+                del self.sample_no_retry
 
     def sample_diagnostics(self):
         finished = time.monotonic()
@@ -848,6 +852,7 @@ class Lifecycle:
 
     def _sample(self):
         retries={'volume':0,'private':0}
+        no_retry=getattr(self,'sample_no_retry',self.strict_resources)
         if hasattr(self,'measurement_failure'):del self.measurement_failure
         def remaining():
             value=self.sample_deadline-time.monotonic()
@@ -906,7 +911,7 @@ class Lifecycle:
                         'line_count':len(lines),'du_diagnostic':any(line.startswith('du:') for line in lines)}
                     diagnostics=[line for line in lines if not re.fullmatch(r'\d+(?:\.\d+)?(?:[eE][+]?[0-9]+)?',line)]
                     if diagnostics and all(line.startswith('du:') and line.endswith('No such file or directory') for line in diagnostics):
-                        require(not self.strict_resources, 'owned_resource_measurement_failed')
+                        require(not no_retry, 'owned_resource_measurement_failed')
                         self.sample_step['result'] = 'retry'
                         retries['volume']+=1;remaining();continue
                     raise GateError('owned_volume_measurement_invalid') from None
@@ -915,7 +920,7 @@ class Lifecycle:
                 try:
                     total += self.owned_bind_bytes(timeout=remaining());remaining();break
                 except GateError:
-                    if self.strict_resources or not getattr(self,'last_failure',{}).get('du_missing_file'):raise
+                    if no_retry or not getattr(self,'last_failure',{}).get('du_missing_file'):raise
                     self.sample_step['result'] = 'retry'
                     retries['private']+=1;remaining()
         if hasattr(self,'measurement_failure'):del self.measurement_failure
@@ -952,6 +957,26 @@ class Lifecycle:
     def cleanup(self):
         self.stop.set()
         errors = []
+        child=getattr(self,'cache_reclaim_process',None)
+        try:child_running=child is not None and child.poll() is None
+        except OSError:
+            if hasattr(self,'cache_reclaim_receipt'):self.cache_reclaim_receipt['cleanup_child_stopped']=False
+            return ['cache_reclaim_child_status_unknown']
+        if child_running:
+            try:
+                try:os.killpg(child.pid,signal.SIGKILL)
+                except ProcessLookupError:pass
+                child.wait(timeout=1)
+            except (OSError,subprocess.TimeoutExpired):
+                if hasattr(self,'cache_reclaim_receipt'):self.cache_reclaim_receipt['cleanup_child_stopped']=False
+                return ['cache_reclaim_child_not_stopped']
+            if child.poll() is None:
+                if hasattr(self,'cache_reclaim_receipt'):self.cache_reclaim_receipt['cleanup_child_stopped']=False
+                return ['cache_reclaim_child_not_stopped']
+        if child is not None and hasattr(self,'cache_reclaim_receipt'):self.cache_reclaim_receipt['cleanup_child_stopped']=True
+        if getattr(self,'cache_reclaim_lock_held',False):
+            self.sample_lock.release()
+            self.cache_reclaim_lock_held=False
         if self.thread:
             self.thread.join(timeout=10 if self.strict_resources else 6)
             if self.thread.is_alive():
@@ -1105,6 +1130,72 @@ def prepare_builder(life):
     return proxies
 
 
+def reclaim_go_build_cache(life):
+    """One owned cache route: fresh full check, then bounded exclusive deletion."""
+    target=life.checkout/'.cache/go-build'
+    receipt={'target':'owned_go_build_cache','result':'failed','precheck':{'result':'failed'},
+             'deletion':{'result':'not_started','attempted':False}}
+    life.cache_reclaim_receipt=receipt
+    def valid_target():
+        require(life.work.is_absolute() and life.work.resolve()==life.work and not life.work.is_relative_to(ROOT) and
+            life.checkout==life.work/'source' and target.is_dir() and target.resolve()==target and target.is_relative_to(life.work),
+            'go_cache_reclaim_target_invalid')
+    def closed_error(error):
+        return str(error) if isinstance(error,GateError) and re.fullmatch('[a-z0-9_]+',str(error)) else type(error).__name__
+    life.phase='go_cache_precheck'
+    began=time.monotonic();precheck=receipt['precheck'];precheck.update(budget_seconds=4,started_monotonic=began)
+    try:
+        life.check();valid_target()
+        life.sample(deadline=began+4)
+        require(time.monotonic()<began+4,'resource_sample_deadline_exceeded')
+        life.check();precheck['result']='passed'
+    except BaseException as error:
+        precheck['error_code']=closed_error(error);raise
+    finally:
+        finished=time.monotonic()
+        precheck.update(finished_monotonic=finished,elapsed_seconds=round(finished-began,6))
+        if precheck['result']=='passed' and finished>=began+4:
+            precheck.update(result='failed',error_code='resource_sample_deadline_exceeded')
+            raise GateError('resource_sample_deadline_exceeded')
+    life.phase='go_cache_reclaim'
+    began=time.monotonic();deadline=began+4;step=receipt['deletion']
+    step.update(result='failed',budget_seconds=4,started_monotonic=began,lock_wait_seconds=None,child_stopped=True)
+    def remaining():
+        seconds=deadline-time.monotonic()
+        require(seconds>0,'go_cache_reclaim_deadline_exceeded')
+        return seconds
+    try:
+        life.check()
+        require(life.sample_lock.acquire(timeout=remaining()),'go_cache_reclaim_deadline_exceeded')
+        life.cache_reclaim_lock_held=True
+        step['lock_wait_seconds']=round(time.monotonic()-began,6)
+        life.check();valid_target()
+        step['attempted']=True
+        def observe(child):
+            life.cache_reclaim_process=child
+            step.update(child_pid=child.pid,child_started_monotonic=time.monotonic())
+        life.command([sys.executable,'-I','-c','import shutil,sys; shutil.rmtree(sys.argv[1])',str(target)],
+            timeout=remaining(),process_observer=observe)
+        remaining();life.check()
+        require(not target.exists(),'go_cache_reclaim_residue')
+        receipt['result']=step['result']='passed'
+    except BaseException as error:
+        step['error_code']=closed_error(error);raise
+    finally:
+        child=getattr(life,'cache_reclaim_process',None)
+        try:step['child_stopped']=child is None or child.poll() is not None
+        except OSError:step['child_stopped']=False
+        if getattr(life,'cache_reclaim_lock_held',False) and step['child_stopped']:
+            life.sample_lock.release();life.cache_reclaim_lock_held=False
+        finished=time.monotonic()
+        step.update(finished_monotonic=finished,elapsed_seconds=round(finished-began,6),
+            lock_retained_for_cleanup=bool(getattr(life,'cache_reclaim_lock_held',False)))
+        if receipt['result']=='passed' and (finished>=deadline or not step['child_stopped']):
+            receipt['result']=step['result']='failed'
+            step['error_code']='go_cache_reclaim_deadline_exceeded' if finished>=deadline else 'go_cache_reclaim_child_not_stopped'
+            raise GateError(step['error_code'])
+
+
 def build_products(life,env,proxies):
     docker_path = shutil.which('docker', path=env['PATH'])
     shim = life.work/'tools';shim.mkdir()
@@ -1135,7 +1226,7 @@ def build_products(life,env,proxies):
                 'make', 'build', 'BUILD_ARGS=--arch arm64 --services '+','.join(life.compile_services), timeout=2200)
     # Product binaries are complete; reclaim only this run's disposable Go
     # object cache before the next bounded build consumes the same disk budget.
-    shutil.rmtree(life.checkout/'.cache/go-build',ignore_errors=False)
+    reclaim_go_build_cache(life)
     life.phase='bounded_builder_resume'
     life.resume_builder()
     life.phase='product_images'
@@ -1571,6 +1662,7 @@ def main():
                 except GateError:pass
         if diagnostics:report['failed_service_diagnostics']=diagnostics
     finally:
+        if hasattr(life,'cache_reclaim_receipt'):report['go_cache_reclaim']=life.cache_reclaim_receipt
         report['resource_samples']=life.samples
         if hasattr(life,'source_commit'):report['source_commit']=life.source_commit
         if hasattr(life,'minio_provenance'):report['minio_product']=life.minio_provenance

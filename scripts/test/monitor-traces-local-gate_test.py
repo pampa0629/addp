@@ -53,6 +53,195 @@ def bare_lifecycle(directory):
     return life
 
 
+class GoCacheReclaimTests(unittest.TestCase):
+    def fixture(self,directory):
+        life=bare_lifecycle(Path(directory).resolve());life.started=m.time.monotonic()
+        target=life.checkout/'.cache/go-build';target.mkdir(parents=True);(target/'object').write_text('owned-cache')
+        life.sample=mock.Mock()
+        child=mock.Mock(pid=12345);child.poll.return_value=0
+        def delete(args,**kwargs):
+            self.assertTrue(life.cache_reclaim_lock_held)
+            self.assertFalse(life.sample_lock.acquire(blocking=False))
+            self.assertEqual(args[-1],str(target));self.assertLessEqual(kwargs['timeout'],4)
+            kwargs['process_observer'](child)
+            m.shutil.rmtree(target)
+            return ''
+        life.command=mock.Mock(side_effect=delete)
+        return life,target,child
+
+    def test_full_precheck_precedes_exclusive_delete_and_receipt_is_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,target,child=self.fixture(directory);events=[]
+            life.sample.side_effect=lambda **kwargs:(self.assertTrue(target.exists()),events.append('precheck'))
+            delete=life.command.side_effect
+            life.command.side_effect=lambda *a,**kw:(events.append('delete'),delete(*a,**kw))[-1]
+            m.reclaim_go_build_cache(life)
+            self.assertEqual(events,['precheck','delete']);self.assertFalse(target.exists())
+            self.assertEqual(life.cache_reclaim_receipt['result'],'passed')
+            self.assertTrue(life.cache_reclaim_receipt['deletion']['child_stopped'])
+            self.assertFalse(life.cache_reclaim_lock_held)
+            self.assertNotIn(str(life.work),json.dumps(life.cache_reclaim_receipt))
+            self.assertIsInstance(life.sample.call_args.kwargs['deadline'],float)
+
+    def test_native_deletion_child_is_reaped_before_unlock_without_docker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,target,_=self.fixture(directory)
+            life.command=m.Lifecycle.command.__get__(life)
+            m.reclaim_go_build_cache(life)
+            self.assertFalse(target.exists());self.assertFalse(life.cache_reclaim_lock_held)
+            self.assertIsNotNone(life.cache_reclaim_process.poll())
+            self.assertTrue(life.cache_reclaim_receipt['deletion']['child_stopped'])
+            self.assertLess(life.cache_reclaim_receipt['deletion']['elapsed_seconds'],4)
+
+    def test_failed_or_expired_precheck_never_deletes_to_hide_stop_line(self):
+        for code in ('owned_volume_stop_line_reached','command_failed_1'):
+            with self.subTest(code=code),tempfile.TemporaryDirectory() as directory:
+                life,target,_=self.fixture(directory);life.sample.side_effect=m.GateError(code)
+                with self.assertRaisesRegex(m.GateError,code):m.reclaim_go_build_cache(life)
+                self.assertTrue(target.exists());life.command.assert_not_called()
+                self.assertEqual(life.cache_reclaim_receipt['deletion']['result'],'not_started')
+        with tempfile.TemporaryDirectory() as directory:
+            life,target,_=self.fixture(directory);clock=[1.0];life.started=1
+            life.sample.side_effect=lambda **kw:clock.__setitem__(0,5.01)
+            with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]),self.assertRaisesRegex(m.GateError,'resource_sample_deadline'):
+                m.reclaim_go_build_cache(life)
+            life.command.assert_not_called();self.assertTrue(target.exists())
+
+    def test_active_sample_prevents_deletion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,target,_=self.fixture(directory);ready=threading.Event();errors=[]
+            def precheck(**kwargs):
+                ready.set()
+                with life.sample_lock:self.assertTrue(target.exists())
+            life.sample.side_effect=precheck
+            def run():
+                try:m.reclaim_go_build_cache(life)
+                except BaseException as error:errors.append(error)
+            life.sample_lock.acquire();worker=threading.Thread(target=run);worker.start()
+            try:
+                ready.wait(timeout=1)
+                self.assertTrue(target.exists(),'cache removed while active sample owns lock')
+                life.command.assert_not_called()
+            finally:
+                life.sample_lock.release();worker.join(timeout=1)
+            self.assertFalse(worker.is_alive());self.assertEqual(errors,[]);self.assertFalse(target.exists())
+
+    def test_sampler_cannot_read_during_delete_but_resumes_after_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,target,child=self.fixture(directory);life.sample=m.Lifecycle.sample.__get__(life)
+            scanned=threading.Event();entered=threading.Event();errors=[];readers=[]
+            life._sample=lambda:scanned.set() if life.phase=='go_cache_reclaim' else None
+            def read():
+                entered.set()
+                try:life.sample(deadline=m.time.monotonic()+4)
+                except BaseException as error:errors.append(error)
+            def delete(args,**kwargs):
+                kwargs['process_observer'](child)
+                worker=threading.Thread(target=read);readers.append(worker);worker.start()
+                self.assertTrue(entered.wait(timeout=1));self.assertFalse(scanned.is_set())
+                m.shutil.rmtree(target)
+            life.command.side_effect=delete
+            m.reclaim_go_build_cache(life)
+            for worker in readers:worker.join(timeout=1);self.assertFalse(worker.is_alive())
+            self.assertTrue(scanned.is_set());self.assertEqual(errors,[])
+
+    def test_delete_lock_wait_consumes_the_same_four_second_budget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,target,child=self.fixture(directory);clock=[1.0];life.started=1
+            life.sample_lock=mock.Mock()
+            def acquire(**kw):clock[0]+=3;return True
+            life.sample_lock.acquire.side_effect=acquire
+            def delete(args,**kwargs):
+                self.assertAlmostEqual(kwargs['timeout'],1);kwargs['process_observer'](child)
+                m.shutil.rmtree(target);clock[0]+=.5
+            life.command.side_effect=delete
+            with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]):m.reclaim_go_build_cache(life)
+            self.assertEqual(life.cache_reclaim_receipt['deletion']['lock_wait_seconds'],3)
+            life.sample_lock.release.assert_called_once()
+
+    def test_delete_timeout_is_failure_and_reaped_child_precedes_unlock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,target,child=self.fixture(directory);clock=[1.0];life.started=1
+            def delete(args,**kwargs):
+                kwargs['process_observer'](child);clock[0]=5.1
+                raise m.GateError('command_deadline_exceeded')
+            life.command.side_effect=delete
+            with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]),self.assertRaises(m.GateError):m.reclaim_go_build_cache(life)
+            self.assertEqual(life.command.call_count,1);self.assertTrue(target.exists())
+            self.assertFalse(life.cache_reclaim_lock_held)
+            self.assertEqual(life.cache_reclaim_receipt['result'],'failed')
+            self.assertGreater(life.cache_reclaim_receipt['deletion']['elapsed_seconds'],4)
+
+    def test_return_code_zero_at_deadline_is_still_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,target,child=self.fixture(directory);clock=[1.0];life.started=1
+            def delete(args,**kwargs):
+                kwargs['process_observer'](child);m.shutil.rmtree(target);clock[0]=5.0
+                return ''
+            life.command.side_effect=delete
+            with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]),self.assertRaisesRegex(m.GateError,'go_cache_reclaim_deadline'):
+                m.reclaim_go_build_cache(life)
+            self.assertEqual(life.cache_reclaim_receipt['result'],'failed');self.assertFalse(life.cache_reclaim_lock_held)
+
+    def test_live_child_retains_lock_and_cleanup_refuses_resource_removal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,target,child=self.fixture(directory);child.poll.return_value=None
+            def delete(args,**kwargs):
+                kwargs['process_observer'](child)
+                raise m.subprocess.TimeoutExpired('PRIVATE',4)
+            life.command.side_effect=delete
+            with self.assertRaises(m.subprocess.TimeoutExpired):m.reclaim_go_build_cache(life)
+            self.assertTrue(life.cache_reclaim_lock_held);self.assertFalse(life.sample_lock.acquire(blocking=False))
+            life.docker=mock.Mock(return_value='');child.wait.side_effect=m.subprocess.TimeoutExpired('PRIVATE',1)
+            with mock.patch.object(m.os,'killpg'):
+                self.assertEqual(life.cleanup(),['cache_reclaim_child_not_stopped'])
+            life.docker.assert_not_called();self.assertTrue(target.exists());self.assertTrue(life.cache_reclaim_lock_held)
+            child.poll.return_value=0
+            self.assertEqual(life.cleanup(),[]);self.assertFalse(life.cache_reclaim_lock_held)
+
+    def test_precheck_deadline_includes_lock_wait_even_for_trace_profile(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,_=LocalTraceResourceGuardTests().sample_lifecycle(directory,1024);clock=[0.0]
+            life.sample_lock=mock.Mock()
+            def acquire(**kw):clock[0]=3.6;return True
+            life.sample_lock.acquire.side_effect=acquire
+            underlying=life.docker
+            def delayed(*args,**kwargs):clock[0]+=.3;return underlying(*args,**kwargs)
+            life.docker=delayed
+            with mock.patch.object(m.time,'monotonic',side_effect=lambda:clock[0]),self.assertRaisesRegex(m.GateError,'resource_sample_deadline'):
+                life.sample(deadline=4)
+            self.assertEqual(life.sample_lock_wait,3.6);self.assertEqual(life.sample_began,0)
+            self.assertEqual(life.samples,[]);life.sample_lock.release.assert_called_once()
+
+    def test_precheck_never_retries_private_file_disappearance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,_=LocalTraceResourceGuardTests().sample_lifecycle(directory,1024)
+            life.last_failure={'du_missing_file':True};life.owned_bind_bytes=mock.Mock(side_effect=m.GateError('command_failed_1'))
+            with mock.patch.object(m.time,'monotonic',return_value=1),self.assertRaises(m.GateError):life.sample(deadline=5)
+            life.owned_bind_bytes.assert_called_once();self.assertEqual(life.samples,[])
+
+    def test_unknown_child_status_fails_closed_without_unlock_or_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,target,child=self.fixture(directory);child.poll.side_effect=OSError('PRIVATE')
+            def delete(args,**kwargs):
+                kwargs['process_observer'](child)
+                raise m.GateError('command_deadline_exceeded')
+            life.command.side_effect=delete
+            with self.assertRaises(m.GateError):m.reclaim_go_build_cache(life)
+            life.docker=mock.Mock()
+            self.assertEqual(life.cleanup(),['cache_reclaim_child_status_unknown'])
+            life.docker.assert_not_called();self.assertTrue(target.exists());self.assertTrue(life.cache_reclaim_lock_held)
+            child.poll.side_effect=None;child.poll.return_value=0;life.docker=mock.Mock(return_value='')
+            self.assertEqual(life.cleanup(),[])
+
+    def test_target_cannot_escape_or_follow_a_symlink(self):
+        with tempfile.TemporaryDirectory() as directory,tempfile.TemporaryDirectory() as outside:
+            life,target,_=self.fixture(directory);m.shutil.rmtree(target);target.symlink_to(Path(outside),target_is_directory=True)
+            protected=Path(outside)/'untouched';protected.write_text('safe')
+            with self.assertRaisesRegex(m.GateError,'target_invalid'):m.reclaim_go_build_cache(life)
+            self.assertEqual(protected.read_text(),'safe');life.sample.assert_not_called();life.command.assert_not_called()
+
+
 class VolumePreparationContractTests(unittest.TestCase):
     def test_protection_readiness_failure_exports_only_fixed_markers(self):
         markers=m.diagnostic_markers(b'execution trace Develop protection readiness: Tenant PRIVATE-TOKEN protection initialization incomplete')
@@ -1241,7 +1430,9 @@ class LocalTraceCommandBudgetTests(unittest.TestCase):
                  mock.patch.object(m.time, 'sleep', side_effect=AssertionError('fixed sleep forbidden')), \
                  mock.patch.object(m.os, 'killpg') as kill:
                 with self.assertRaisesRegex(m.GateError, 'owned_volume_stop_line_reached'):
-                    life.command(['synthetic-owned-command'])
+                    life.command(['synthetic-owned-command'],process_observer=lambda child:setattr(life,'observed_child',child))
+            self.assertIs(life.observed_child,process)
+            self.assertEqual(process.poll.return_value,0)
             self.assertLessEqual(calls[0], .05)
             kill.assert_called_once_with(process.pid, signal.SIGTERM)
             self.assertEqual(calls[1], 1)

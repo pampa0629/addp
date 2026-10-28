@@ -325,7 +325,7 @@ def main():
         if hasattr(life,'api_failure'):report['api_failure']=life.api_failure
     finally:
         for key,attribute in [('source_commit','source_commit'),('input_sha256','input_hashes'),('images','images'),
-                ('python_dependencies','python_proof'),('resource_guard_failure','resource_failure'),('sampler_image','sampler_image_proof')]:
+                ('python_dependencies','python_proof'),('resource_guard_failure','resource_failure'),('sampler_image','sampler_image_proof'),('go_cache_reclaim','cache_reclaim_receipt')]:
             if hasattr(life,attribute):report[key]=getattr(life,attribute)
         if hasattr(life,'request_budget'):
             report['request_attempt_counts']={'controlled':life.request_budget.controlled,'control':life.request_budget.control}
