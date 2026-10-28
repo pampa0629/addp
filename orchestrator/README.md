@@ -27,42 +27,28 @@ bash scripts/infra/up.sh
 bash scripts/dev/start.sh -orchestrator
 ```
 
-- 后端: http://localhost:8084
-- 前端: http://localhost:5175
+开发首选端口统一见[端口规范](../docs/spec/addp端口分配.md)，实际地址以标准启动输出和 `.dev-state/ports.env` 为准；模块直连端口与 Console／公开访问入口分别核对。
 
 ### 方式 2: Docker 部署
 
-```bash
-cd orchestrator
-docker-compose up -d
-```
+产品容器部署沿[生产部署入口](../scripts/prod/README.md#startsh)，本机容器部署测试沿[Local 使用说明](../scripts/local/README.md)。镜像准备、容器状态与业务就绪按对应入口分别检查；开发修改继续使用上方原生启动脚本。
 
 ## 📡 主要 API 端点
 
-```
-编排管理:    POST/GET/PUT/DELETE /api/v1/orchestrations
-执行管理:    GET /api/v1/executions
-手动触发:    POST /api/v1/orchestrations/{id}/execute
-定时调度:    PUT /api/v1/orchestrations/{id}/schedule
-```
-
-完整 API 文档请查看 [核心 API](./CLAUDE.md#核心-api)
+公开管理与执行查询使用 `/api/v1/orchestrator` 前缀，定时调度配置随编排定义创建／更新保存。精确路径、方法、人用与 TaskProvider 机器入口及权限统一见[核心 API](./CLAUDE.md#核心-api)。
 
 ## 🏗️ 工作流编排流程
 
+```mermaid
+flowchart TD
+    A[保存编排定义] --> B[手动触发或 Scheduler]
+    B --> C[创建 pending execution 并冻结 Steps]
+    C --> D[Backend 监督器领取 execution lease]
+    D --> E[按依赖串行推进步骤并等待真实子执行]
+    E --> F[持久化步骤、进度与终态]
 ```
-定义编排 (DAG)
-    ↓
-手动触发 / 定时触发 (Scheduler)
-    ↓
-创建执行实例
-    ↓
-Executor 解析 DAG → 拓扑排序
-    ↓
-逐步执行各步骤 (支持并发)
-    ↓
-记录执行结果 (成功/失败/超时)
-```
+
+当前 v1 的串行执行、步骤等待、租约和不确定提交边界统一沿[执行可靠性契约](../docs/spec/tasks/编排与调度.md#orchestrator-执行可靠性)。画布操作与节点最后记录的展示见[编排编辑器交互](./CLAUDE.md#编排编辑器交互)，图示不代表并行、恢复重放或用户取消已获支持。
 
 ## 🔗 动态任务提供者支持
 
@@ -94,6 +80,9 @@ Orchestrator 不缓存 TaskProvider 运行可用性，每次使用都从 System 
 ## 📚 相关文档
 
 - **[CLAUDE.md](./CLAUDE.md)** - 完整技术文档（架构、场景、故障排查）
+- [编排编辑器交互](./CLAUDE.md#编排编辑器交互) - 保存、画布和本次执行状态
+- [前端与编辑器验证](./CLAUDE.md#前端与编辑器验证) - 受控回归、像素组和实际验收边界
+- [历史证据导航](./CLAUDE.md#历史证据导航) - 固定版本、取消与未覆盖范围
 - **[数据库架构](./docs/数据库架构.md)** - 数据结构和 API 详解
 - **[参数化模板说明](./docs/参数化模板说明.md)** - 参数模板化功能
 - **[../system/CLAUDE.md](../system/CLAUDE.md)** - System 模块（引擎管理）
