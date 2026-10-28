@@ -154,31 +154,21 @@ System 私有观测投影已在主机和模块实例基础上，按 2026-10-20 �
 
 ## 服务实例配额与容器利用率（部署侧证明方式已确认）
 
-2026-10-24 只读核对时，本机 Monitor、Meta／Transfer／Quality Worker 是 macOS 原生进程；标准开发启动直接执行 `.dev-bins`，未施加独立 CPU／内存配额。Common 自身采集只返回 CPU 累计时间、RSS 和启动时间，现有进程采集声明及部署输入没有资源限额。根 Compose 中 Meta／Transfer Worker 的资源限额示例仍是注释，不能视为已执行配置；Business 部分引擎容器的限额也不属于这些原生进程。继续遵守正式规范 6.1：没有明确配额就不生成进程配额利用率，不以宿主总量或 Go 运行参数补分母。
+2026-10-24 只读核对时，本机 Monitor、Meta／Transfer／Quality Worker 由标准开发入口作为 macOS 原生进程运行，未施加独立 CPU／内存配额。根 Compose 中 Meta／Transfer Worker 的限额示例仍是注释；Business 引擎容器的限额不属于这些原生进程。**开发方式保持原生**，不能为了展示配额把 Worker 改为容器。`GOMAXPROCS` 是 Go 并行度，`GOMEMLIMIT` 是 Go 运行时软限制，均不能替代操作系统硬上限，见 [Go runtime](https://pkg.go.dev/runtime#GOMAXPROCS)及[Go 内存软限制](https://pkg.go.dev/runtime/debug#SetMemoryLimit)。
 
-2026-10-24 已确认的首期范围限定为**明确一实例一独立 Linux 容器**的运维观测，在当前实例详情分开展示进程 CPU 核消耗／RSS 与容器整体 CPU／内存，不扩大原批量进程摘要目录、列表读取量或默认分页。容器 CPU 用量与其可核验限额比较，内存以同一 cgroup 的整体用量与硬上限比较；不把进程 RSS 除以容器内存上限称作容器使用率，不将超限等同泄漏。`GOMAXPROCS` 是 Go 并行度，`GOMEMLIMIT` 是 Go 运行时软限制，均不能替代操作系统硬上限。来源定义参考 [Linux cgroup v2](https://docs.kernel.org/admin-guide/cgroup-v2.html)、[Go runtime](https://pkg.go.dev/runtime#GOMAXPROCS)及[Go 内存软限制](https://pkg.go.dev/runtime/debug#SetMemoryLimit)。
+2026-10-24 已确认的首期范围为**明确一实例一独立 Linux 容器**的运维观测：在实例详情分开显示进程 CPU／RSS 与容器整体用量／硬上界，不扩展批量列表的读取量、默认分页、告警或趋势。无明确配额不生成配额利用率，不用宿主总量补实例分母，不把进程 RSS 当作容器整体用量，不将超限等同泄漏；硬上界也不表示独享或保证可用容量。指标及计算条件统一见[正式规范 6.1](../spec/addp平台运行观测规范.md#61-固定指标目录)，单实例读取范围、固定目录与预算见[6.2](../spec/addp平台运行观测规范.md#62-资源查询与预算)。
 
-首批仅考虑 cgroup v2，仅读取当前实例所属边界的固定资源文件，明确容器关联、限制层级／可见范围及采样时间；不向 Web 服务开放 Docker socket，不扫描其他进程或读取环境凭据。共享容器、无法确认容器关联／层级限制、无有限硬上限及不支持的平台不输出归一化利用率；macOS 原生实例仍显示绝对消耗与未设置／不支持的原因。不自动配置额度、不更改现有部署限制、不把整机可见 CPU／内存当作实例独享资源。具体资源身份、字段投影、当前用户裁决与指标公式沿下述已确认接入方式落实，采集与查询只保留一条主路径。
-
-实现不改 IAM 或个人部署；有效采样、完整部署证明与正式身份验收分别判定。采样、身份关联、实源查询与页面的标准门禁见下节；Linux T2 仅用标准一次性受限设施，不修改个人资源限制。既有 CPU／RSS 验收不自动扩展为新增容器读取，完整实机及正式身份 Hosted 仍待专门会话回传。
+原生开发不自动配置额度或修改部署限制；macOS 不生成组用量或有效零值，详情就近解释未接入，不铺四张空卡片。采样、完整部署证明、身份关联及正式身份验收分别判定，既有 CPU／RSS 验收用途不自动扩展为容器读取。
 
 ### 已确定：部署侧提供容器关联与完整限制层级
 
-引擎发现与应用容器证明是两个事实来源：`infra`／`business` 引擎来源不能用于推断 ADDP Backend／Worker 所在容器。应用身份由 Common 的不可变进程声明与部署侧内核证明精确关联。当前原生开发方式保持不变，不能为了展示配额而把开发 Worker 改为容器。
+引擎发现与应用容器证明是两个事实来源，`infra`／`business` 引擎来源不能推断 ADDP Backend／Worker 所在容器。2026-10-24 已确认由**部署侧**发布有期限的只读证明，Common 仅采自身 cgroup，System 沿唯一私有投影精确关联当前实例，Monitor 按当前 User 的实例读取权限查询并在完成时重核。私有投影不代替用户授权，不改变 IAM、主机关联或普通实例 DTO；响应不含容器 ID、端点、内核身份或文件路径；应用不持有 Docker socket、不开放宿主 cgroup 层级、不扫描其他进程，不读取环境凭据或业务命令，也不修改现有容器命名空间／挂载配置或保留第二套降级路线。身份匹配、证明发布范围／有效期、指标口径及重核规则统一由[正式规范 6.1](../spec/addp平台运行观测规范.md#61-固定指标目录)维护；Platform User、Permission、System 读取裁决及查询预算统一见[6.2](../spec/addp平台运行观测规范.md#62-资源查询与预算)。
 
-Linux cgroup v2 的父级约束仍作用于子级；cgroup 命名空间与子树挂载可能隐藏父级。容器内读到有限的 `cpu.max`／`memory.max`，只证明可见层的硬上限，不证明完整限制层级，也不表示实例独享或保证可用的资源。Docker inspect 的配置额度同样不能单独证明父级限制。来源参考 [cgroup v2 层级规则](https://docs.kernel.org/admin-guide/cgroup-v2.html)及 [cgroup 命名空间](https://man7.org/linux/man-pages/man7/cgroup_namespaces.7.html)。
+完整限制层级是有效证明的前提：父级约束仍作用于子级，cgroup 命名空间与子树挂载可能隐藏祖先；容器内有限的 `cpu.max`／`memory.max` 或 Docker inspect 配置额度均不能单独证明真实完整层级，见 [cgroup v2 层级规则](https://docs.kernel.org/admin-guide/cgroup-v2.html)及 [cgroup 命名空间](https://man7.org/linux/man-pages/man7/cgroup_namespaces.7.html)。共享容器、父级不可见、权限不足或 Docker Desktop 等不支持来源不提供有效证明；不通过提升应用权限或在业务容器内执行命令绕过。无有效证明时仅可沿当前声明边界读取绝对用量，无有限硬上界时不计算对应利用率，具体判定沿正式规范 6.1、6.2。
 
-已确认由**部署侧**提供有期限的只读证明：精确关联 Docker Engine／完整容器 ID／本次容器启动、当前登记实例及本次进程启动；记录实际 cgroup 及已核验的限制层级。应用仅采自身 cgroup 用量，不持有 Docker socket。部署侧若只能证明叶级配置或不能读取真实层级，则只保留绝对用量，不发布有效配额利用率。该方案由部署侧发布只读证明，System 沿私有投影关联当前实例；现有引擎发现能力不能直接外推成已获支持的应用容器发现。
+验证沿 Common 跨平台采样／固定文件解析及 Common／System／Monitor Go T1、部署发现 T1、System 精确身份／投影的进程登记 PostgreSQL T2、既有 cgroup-source Prometheus T2、前端单位／缺配额／共享边界拒绝 T1/T3，以及双模块 Swagger 生成／覆盖；按受影响 owner 扩散，同步 API、Swagger 与 CI 路径登记。Linux T2 仅用标准一次性受限设施，不修改个人资源限制。
 
-2026-10-24 用户已选择部署侧只读证明方案。应用不开放宿主 cgroup 层级，不修改现有容器命名空间／挂载配置，不保留第二套自动降级实现。
-
-Common SDK 仅在部署项显式选择 `cgroup_v2=true` 后读取当前组 CPU／内存及内核身份，沿原 mTLS 监听发布三项原始族；文件／路径／数字严格有界，失败保留原进程采集。Mac 原生实例不生成组用量或有效零值，详情仅就近说明未接入，不铺四张空卡片。产品接入遵循以下唯一契约；本地采样、证明关联、Linux 缺样修正及剩余实机／正式身份范围见[实例与服务发现证据][monitor-instance]。既有 CPU／RSS T4 用途不自动扩展为容器读取。CI／Hosted 等专门会话回传，不设置定时任务。
-
-本批接通契约：SDK 将启动时实际取得的 boot UUID、cgroup inode、PID namespace inode 随不可变进程声明登记。部署发布器沿现有受管目录原子发布独立 `addp.container-proofs/v1` 文件，只支持本机 Linux Docker、当前工作区 `addp-platform` 项目及标准 runtime-log 单应用入口；固定 inspect 字段只读容器完整身份、启动时间、宿主 PID 和入口的模块／角色，不读环境或业务命令。由可只读访问宿主 proc 命名空间与完整 cgroup v2 根挂载的可信部署身份读取该容器真实 cgroup 及全部祖先的 `cpu.max`／`cpu.max.burst`、`memory.max` 和有效 cpuset，读取前后复核容器／内核身份及限制；首期拒绝非零 CPU burst 配置，不把带突发额度的 quota/period 当作同一上界。Docker Desktop、权限不足或父级不可见时不提供有效证明；不通过提升应用权限或在业务容器内执行命令绕过。证明最长 90 秒，持续不变的限制从连续两次发布累计；中断、重启或变化后重新累计，CPU 仅在完整一分钟窗口内限制未变时计算。
-
-System 沿唯一后台投影读取该文件，匹配模块／角色、三项内核身份、容器与进程启动先后及当前有效租约；重复证明、同一容器关联多个当前实例或身份不一致时不关联。不自动登记主机或推断主机关联，不增加 IAM 权限或普通实例 DTO 字段。证明只表达完整可见硬上界，不保证独享或可用容量；CPU 上界取祖先 quota/period 与叶级有效 cpuset 的最小值，内存上界取祖先有限 memory.max 的最小值，各自无有限上界时不计算对应利用率。
-
-Monitor 新增单实例即时 `container_resource_observations`，复用当前 User 的实例读取、受限源解析、查询预算、完成时租约与新鲜度核验；只读四项固定目录：组 CPU 核消耗、组 memory.current、CPU 上界利用率、内存硬上界利用率。CPU 沿原一分钟完整边界、至少四样本、无重置规则；所有来源同时精确核验进程与 cgroup 身份。响应不含容器 ID、端点、内核身份或文件路径，详情弹窗将容器整体用量／硬上界／利用率与进程 CPU／RSS 分开展示，原因就近展示；不改变批量列表、告警或趋势范围。完成时重读私有证明，变更则拒绝本次容器结果，绝不复用旧配额。标准门禁包含 Common 跨平台采样／固定文件解析及 Common／System／Monitor Go T1、部署发现 T1、System 精确身份／投影的进程登记 PostgreSQL T2、现有 cgroup-source Prometheus T2、前端单位／缺配额／共享边界拒绝 T1/T3、双模块 Swagger 生成／覆盖；按受影响 owner 扩散验证，同步 API、Swagger 与 CI 路径登记，覆盖新增源文件和测试。正式身份 Hosted 仍由专门会话另行安排。
+固定版本、失败与修复结论及各层覆盖范围见[实例与服务发现证据][monitor-instance]。共享组 SDK T2 与受控页面 T3 不证明独立 Linux 容器的真实完整限制层级、正式身份的配额查询／页面或 Hosted T4；完整实机及正式身份 Hosted 仍待专门验收会话回传，未执行项不计通过。
 
 
 ## 服务同用途副本失联告警：已确认目标与部署事实来源
