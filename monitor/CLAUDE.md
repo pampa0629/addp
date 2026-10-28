@@ -30,7 +30,7 @@ Monitor 聚合各 Owner 写入的执行事实，提供授权诊断、统计、�
 | 入口 | 职责 |
 | --- | --- |
 | [权限清单](authorization/permissions.yaml) | Monitor 是自身 execution、statistics、health、通知、观测及平台告警 Permission owner；通过 Common 发布期聚合，不在启动时动态注册。 |
-| [Router](backend/internal/api/router.go)及[生成 Swagger](backend/docs/) | `/api/v1/monitor` 下的精确路由、Context Guard、Permission、参数和响应；健康检查复用公共 `/health/live`、`/health/ready`。 |
+| [Router](backend/internal/api/router.go)及[生成 Swagger](backend/docs/) | `/api/v1/monitor` 下的精确路由、Context Guard、Permission、参数和响应；Monitor 自身健康复用 `/health/live`、`/health/ready`，Provider 与后台实例观测分别沿[正式健康口径](../docs/spec/tasks/执行监控.md#provider-与后台运行实例健康)。 |
 | [业务服务](backend/internal/service/)与[持久模型](backend/internal/models/) | 执行读取、统计、Provider/Runtime 健康、规则、通知和资源查询。 |
 | [metricsdiscovery](backend/internal/metricsdiscovery/) | 唯一节点来源准入、受控 CIDR/端口、固定 HTTPS 路径、DNS 固定 IP、mTLS 与发现预算内核。 |
 | [resourcequery](backend/internal/resourcequery/) | 唯一固定指标目录、PromQL、窗口/采样证据、步长及点数预算；不开放任意标签或 PromQL。 |
