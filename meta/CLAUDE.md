@@ -46,9 +46,9 @@ Meta 前端只保留扫描任务定义、调度配置和当前扫描反馈。跨
 
 ## Meta 扫描分层约定
 
-集中治理 `ScanTask` 首期只允许已由 System 明确批准的 PG entire-engine basic：Worker 绑定原始计划摘要与当前 lease，经统一 `SystemServiceClient.CheckMetaCollection` 在首次执行、根目录及每个 schema 枚举前重核。无资格、撤销、到期、任务／引擎配置变化或依赖不可用不得打开下一次源 I/O；首次拒绝写失败终态。定义在排队或运行中删除时仍须结束原 execution，不重建任务摘要，不使缺失定义阻塞队列。深度与其他 selector 未支持时拒绝，不降级。独立交互和可信成果补扫不借用此资格。任务事实只从真实配置投影给固定 System Runtime，不连接源或把事实 200 当 Allow。标准 Meta Go 与 `make test-meta-postgres META_POSTGRES_TEST_ARGS="--test authorization-facts"` 覆盖本期事实和失败路径；跨服务 T4 已验证未批准拒绝、批准后两次手动运行、复制任务／功能配置变化／撤销后拒绝及失败清理，后续独立审批页 T4 还验证了页面批准、同命令恢复、撤销及对应 Worker 结果，见[验收证据索引](../docs/spec/testing/验收证据索引.md)。固定 `0bd708dc9` 的后续真实 T4 已验证资格到期前成功、过期原命令重放不复活、期限后下一次执行拒绝及零残留；保持同一凭据和全部资格历史。固定 `d6a7f555d` 的后续真实 T4 又验证 PG basic 的原一分钟定时触发：未批准拒绝、同资格两次成功、撤销并重放后拒绝，结束关闭调度并核验资格／任务和源规则零残留。非预期致命失败清理仅有确定性反例，不冒充 Hosted 故障注入通过。排队／运行中配置变化仍缺真实 T4，也不外推 deep、其他 selector、引擎或生产容量。
+集中治理 `ScanTask` 首期范围为已由 System 明确批准的 PG entire-engine basic，当前资格与 Worker 重核统一沿[采集资格规范](../docs/spec/addp元数据扫描机制规范.md#采集资格与两种范围语义)。Meta 通过 `SystemServiceClient.CheckMetaCollection` 核对冻结摘要与当前 lease；不支持的深度／selector 拒绝，不降级，独立交互和可信成果补扫不借用该资格。定义在排队／运行中删除时仍须结束原 execution，不重建任务摘要，也不让缺失定义阻塞队列。
 
-PG basic 的资格重核以一次 `EngineCatalogProvider.ListChildren` 枚举为读取单元，已放行调用可结束其内部 SQL，下一次调用须重核。中途明确拒绝立即结束后续 namespace 遍历，同时保留拒绝类型、失败目标诊断及已完成枚举的计数，不把全范围标为完成。确定性阻塞／撤销回归进入标准 Meta Go；固定 `8fa4ab9ed` 的真实 Hosted T4 已用独占源锁及只读语句计数验证在途撤销：已放行枚举保留 1 节点／5 项，下一枚举 `permission_denied`，撤销后重跑无新增源调用，资格／任务、源锁／临时 schema 及 Infra 零残留。固定 `af7376f6f` 的后续真实 T4 已验证同一枚举跨期限的自然到期门禁，原批准重放不续期、再次执行无源读取，91 项检查、三段浏览器及清理通过。旧 `3a5cd4c54` 的源统计失败未复现且缺少原计数，根因仍未确认，不将本轮通过称为偶发故障已修复。不外推逐 SQL 中断或配置变化；意外中断清理仍只有确定性反例。
+PG basic 的资格重核以一次 `EngineCatalogProvider.ListChildren` 枚举为读取单元，已放行调用可结束其内部 SQL，下一次调用须重核。中途明确拒绝立即结束后续 namespace 遍历，保留拒绝类型、失败目标诊断及已完成枚举计数，不把全范围标为完成。逐语句诊断不改变这一运行边界，也不表示已支持逐 SQL 取消；分版本验证从[采集资格验证范围](#采集资格验证范围)进入。
 
 Meta 扫描链路按“通用规则、Meta 编排、Engine Catalog 规划、内容增强、Attributes 落库”分层。后续改造应优先保持以下边界，避免把同一类逻辑散落到多个扫描入口。
 
@@ -296,6 +296,10 @@ make test-meta-postgres
 测试分层与必要前提见[测试与验收规范](../docs/spec/addp测试与验收规范.md)，本地 PostgreSQL 实际端口和允许的测试库见 [Infra 指南](../scripts/infra/README.md)。前端或数据库独立门禁不代表完整模块通过，服务 Ready 也不替代真实认证、Worker 与业务链路验收；历史结果仍按上方固定版本和实际覆盖判定。
 
 Backend／Worker 服务正文使用[模块实例运行日志](../scripts/infra/docs/运行日志.md#模块实例运行日志)，扫描过程事件与专业结果仍通过 Monitor／Meta 的授权入口读取，不能用进程日志或空事件推断扫描已成功。
+
+### 采集资格验证范围
+
+确定性入口与 authorization-facts PostgreSQL 专项见[专项验证入口](#专项验证入口)；API／Worker、审批页、自然到期、定时及在途门禁的固定源码、失败、清理和未覆盖项统一见[采集资格验收导读](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#meta-采集资格验收导读)。不在模块入口重复维护各轮通过状态，后续成功不能改记早轮失败或外推当前 HEAD 已复验。
 
 ### 专项验证入口
 
