@@ -236,6 +236,9 @@ finish() {
   trap - EXIT INT TERM
   set +e
   if [ "$application_owned" -eq 1 ]; then
+    if declare -F before_online_application_stop >/dev/null 2>&1; then
+      before_online_application_stop || { cleanup=failed; echo "Hosted cleanup failed: application preparation" >&2; }
+    fi
     stop_online_application || { cleanup=failed; echo "Hosted cleanup failed: application" >&2; }
   fi
   if [ "$fixture_owned" -eq 1 ]; then

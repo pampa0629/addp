@@ -96,6 +96,14 @@ on:
         required: false
         type: string
         default: ''
+      quality_case:
+        description: Quality acceptance scope (bounded-recovery runs only its new cases)
+        required: true
+        type: choice
+        default: full
+        options:
+          - full
+          - bounded-recovery
       topology_case:
         description: Topology acceptance case (normalization runs only its new branch)
         required: true
@@ -1461,6 +1469,7 @@ jobs:
       ADDP_ONLINE_HOST: "1"
       ADDP_ONLINE_HOSTED: "1"
       ONLINE_SUITE_INPUT: quality-dynamic-binding
+      ADDP_ONLINE_QUALITY_CASE: ${{ inputs.quality_case || 'full' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

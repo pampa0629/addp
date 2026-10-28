@@ -904,7 +904,8 @@ test-node-metrics-online-runner: ## 验证节点指标 Online 身份边界、浏
 
 .PHONY: test-quality-online-runner
 test-quality-online-runner: ## 验证 Quality Hosted 准备、身份、事件及退出清理契约
-	@python3 -m unittest scripts/test/quality-dynamic-binding-online_test.py scripts/test/quality-online-fixture_test.py scripts/test/online-quality-postgres-fixture_test.py scripts/test/online-hosted-quality-gate_test.py scripts/ci/check-quality-online-ci-registration_test.py
+	@python3 scripts/ci/check-quality-bounded-recovery.py --repository "$(CURDIR)"
+	@python3 -m unittest scripts/test/quality-dynamic-binding-online_test.py scripts/test/quality-bounded-recovery-online_test.py scripts/test/quality-bounded-recovery-faults_test.py scripts/test/quality-online-fixture_test.py scripts/test/online-quality-postgres-fixture_test.py scripts/test/online-hosted-quality-gate_test.py scripts/ci/check-quality-online-ci-registration_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 .PHONY: test-transfer-online-runner

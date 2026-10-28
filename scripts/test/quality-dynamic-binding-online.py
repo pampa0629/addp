@@ -398,7 +398,11 @@ def main():
             signal.signal(signum, interrupted)
         signal.alarm(600)
         owner = API.GatewayClient(os.environ["GATEWAY_URL"], token, timeout)
-        run_suite(owner, tenant, run_id, fixtures, report, checkpoint)
+        acceptance_case = os.environ.get("ADDP_ONLINE_QUALITY_CASE", "full")
+        require(acceptance_case in {"full", "bounded-recovery"}, "unknown Quality acceptance case")
+        scenario = (import_module("scripts.test.quality-bounded-recovery-online").run_suite
+                    if acceptance_case == "bounded-recovery" else run_suite)
+        scenario(owner, tenant, run_id, fixtures, report, checkpoint)
         reader = API.GatewayClient(os.environ["GATEWAY_URL"], reader_token, timeout)
         for item in report["observations"]:
             history = owner.request("GET", f"{QUALITY}/executions/{item['execution_id']}", (200,)).payload

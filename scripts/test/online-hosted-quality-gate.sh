@@ -6,12 +6,26 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=quality-dynamic-binding
+quality_case=${ADDP_ONLINE_QUALITY_CASE:-full}
+case "$quality_case" in
+  full|bounded-recovery) ;;
+  *) echo 'Unknown Quality acceptance case' >&2; exit 1 ;;
+esac
+before_online_application_stop() {
+  [ "${ADDP_ONLINE_QUALITY_CASE:-full}" = bounded-recovery ] || return 0
+  run_logged python3 -m scripts.test.quality-bounded-recovery-faults resume
+}
 HOSTED_FIXTURE_CONTAINERS=(addp-quality-online-disposable)
 HOSTED_FIXTURE_IMAGES=()
 stop_online_fixture() {
   run_logged python3 business/scripts/online-quality-postgres-fixture.py stop
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+export ADDP_ONLINE_QUALITY_CASE="$quality_case"
+if [ "$quality_case" = bounded-recovery ]; then
+  export ADDP_DEV_QUALITY_WORKER_REPLICAS=2 QUALITY_WORKER_CONCURRENCY=1
+  export QUALITY_WORKER_LEASE_DURATION=30s QUALITY_WORKER_POLL_INTERVAL=500ms
+fi
 export MODEL_URL=http://127.0.0.1:8181 QUALITY_URL=http://127.0.0.1:8182
 export ORCHESTRATOR_URL=http://127.0.0.1:8084 MONITOR_URL=http://127.0.0.1:8100
 export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/quality-engine.json"

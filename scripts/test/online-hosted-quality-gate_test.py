@@ -29,6 +29,10 @@ class HostedQualityGateTest(unittest.TestCase):
               echo "source:$2" >> "$ADDP_TEST_GATE_TRACE"
               [ "${ADDP_TEST_FAIL_AT:-}" != "source:$2" ]; exit
             fi
+            if [ "${1:-}" = -m ] && [ "${2:-}" = scripts.test.quality-bounded-recovery-faults ]; then
+              echo "recovery:$3" >> "$ADDP_TEST_GATE_TRACE"
+              [ "${ADDP_TEST_FAIL_AT:-}" != recovery ]; exit
+            fi
             if [ "${1:-}" = -m ] && [ "${2:-}" = scripts.test.quality-online-fixture ]; then
               echo "owner:$3" >> "$ADDP_TEST_GATE_TRACE"
               [ "${ADDP_TEST_FAIL_AT:-}" != "owner:$3" ] || exit 1
@@ -57,6 +61,12 @@ class HostedQualityGateTest(unittest.TestCase):
             [ -z "${ADDP_ONLINE_FIXTURE_QUALITY_ACCESS_TOKEN:-}" ] || exit 1
             [ "$MONITOR_URL" = http://127.0.0.1:8100 ] || exit 1
             [ "$QUALITY_URL" = http://127.0.0.1:8182 ] || exit 1
+            if [ "${ADDP_ONLINE_QUALITY_CASE:-full}" = bounded-recovery ]; then
+              [ "$QUALITY_WORKER_LEASE_DURATION" = 30s ] || exit 1
+              [ "$QUALITY_WORKER_CONCURRENCY" = 1 ] || exit 1
+              [ "$ADDP_DEV_QUALITY_WORKER_REPLICAS" = 2 ] || exit 1
+              echo 'case:bounded-recovery' >> "$ADDP_TEST_GATE_TRACE"
+            fi
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             [ "${ADDP_TEST_FAIL_AT:-}" != suite ]
         ''')
@@ -119,6 +129,27 @@ class HostedQualityGateTest(unittest.TestCase):
                 self.assertFalse(self.host.secrets.exists())
                 self.assertIn("result=failed", (self.host.artifacts / "summary.txt").read_text())
                 self.host.trace.unlink()
+
+    def test_recovery_case_uses_temporary_configuration_and_recovers_before_outer_shutdown(self):
+        result = self.run_gate(ADDP_ONLINE_QUALITY_CASE="bounded-recovery")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        trace = self.host.trace.read_text().splitlines()
+        self.assertIn("case:bounded-recovery", trace)
+        self.assertLess(trace.index("recovery:resume"), trace.index("application-stop"))
+        self.assertFalse(self.host.secrets.exists())
+
+    def test_recovery_failure_still_destroys_the_owned_deployment_and_marks_failure(self):
+        result = self.run_gate(ADDP_ONLINE_QUALITY_CASE="bounded-recovery", ADDP_TEST_FAIL_AT="recovery")
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text().splitlines()
+        self.assertLess(trace.index("recovery:resume"), trace.index("application-stop"))
+        self.assertIn("infra-down", trace)
+        self.assertFalse(self.host.secrets.exists())
+        self.assertIn("cleanup=failed", (self.host.artifacts / "summary.txt").read_text())
+
+    def test_unknown_case_is_rejected_before_any_lifecycle_action(self):
+        self.assertNotEqual(self.run_gate(check=True, ADDP_ONLINE_QUALITY_CASE="unknown").returncode, 0)
+        self.assertFalse(self.host.trace.exists())
 
 
 if __name__ == "__main__":
