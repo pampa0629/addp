@@ -37,3 +37,22 @@ export function filesystemMountReceipt(receipts, nodeId) {
   return { capacity_index: receipts.indexOf(capacity), inode_index: receipts.indexOf(inodes),
     row_index: rowIndex, dimensions: { ...row.dimensions }, metrics }
 }
+
+// One DOM receipt reader for both real Online and controlled Console iframe acceptance.
+export async function readFilesystemMountTable(table, receipts, nodeId, expect) {
+  const receipt = filesystemMountReceipt(receipts, nodeId)
+  const row = table.locator('.el-table__body tr').nth(receipt.row_index)
+  const dimensionCells = row.locator('td .cell')
+  for (const [index, key] of ['device', 'mountpoint', 'fstype'].entries()) {
+    await expect(dimensionCells.nth(index)).toHaveText(receipt.dimensions[key])
+  }
+  const values = row.locator('strong')
+  await expect(values).toHaveCount(Object.keys(receipt.metrics).length)
+  for (const [index, [key, text]] of Object.entries(receipt.metrics).entries()) {
+    await values.nth(index).scrollIntoViewIfNeeded()
+    await expect(values.nth(index)).toBeVisible()
+    await expect(values.nth(index)).toHaveText(text)
+    receipt.metrics[key] = (await values.nth(index).textContent()).trim()
+  }
+  return { receipt, row }
+}

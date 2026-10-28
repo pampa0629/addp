@@ -1005,6 +1005,52 @@ for(const failBody of [false,true]){
                 with self.subTest(change=change), self.assertRaises(ONLINE.SuiteError):
                     ONLINE.validate_resource_comparison_browser(invalid, expected, artifacts)
 
+    def mount_reading_receipt(self, capacity_index=0, inode_index=1):
+        return {"capacity_index": capacity_index, "inode_index": inode_index, "row_index": 0,
+            "dimensions": {"device": "/dev/a", "mountpoint": "/data", "fstype": "ext4"}, "metrics": {
+                "node.filesystem.used_percent": "73.68 %", "node.filesystem.total_bytes": "100.00 B",
+                "node.filesystem.used_bytes": "70.00 B", "node.filesystem.available_bytes": "25.00 B",
+                "node.filesystem.free_bytes": "30.00 B", "node.filesystem.inodes_used_percent": "20.00 %",
+                "node.filesystem.inodes_total": "100 个", "node.filesystem.inodes_free": "80 个", "node.filesystem.inodes_used": "20 个"}}
+
+    def add_filesystem_list_evidence(self, report):
+        rows = report["resources"]
+        before = len(rows)
+        for family in (ONLINE.FILESYSTEM_METRICS, ONLINE.INODE_METRICS)*2:
+            rows.append({"path": ONLINE.OBSERVATIONS, "query": {"node_id": "node-id", "metrics": ",".join(family)}, "value": self.resource_reply(family)})
+        report["filesystem_list"] = {"before_index": before, "opened": self.mount_reading_receipt(before, before+1),
+            "refreshed": self.mount_reading_receipt(before+2, before+3), "unchanged_url": True, "iframe_preserved": True, "collapsed": True}
+
+    def test_filesystem_list_requires_new_bounded_batches_and_exact_mount_readings(self):
+        report = {"resources": []}
+        self.add_filesystem_list_evidence(report)
+        result = ONLINE.validate_filesystem_list_browser(report)
+        self.assertEqual(result["bounded_reads"], 4)
+        # Fresh requests can legitimately share the same evaluation instant.
+        self.assertEqual(report["resources"][0]["value"]["end"], report["resources"][2]["value"]["end"])
+        for change in (lambda r: r.pop("filesystem_list"), lambda r: r.update(filesystem_list=None),
+                       lambda r: r["filesystem_list"].pop("collapsed"),
+                       lambda r: r["filesystem_list"].update(unchanged_url=False),
+                       lambda r: r["filesystem_list"].update(iframe_preserved=False),
+                       lambda r: r["filesystem_list"].update(collapsed=False),
+                       lambda r: r["filesystem_list"].update(before_index=True),
+                       lambda r: r["filesystem_list"].update(before_index=-1),
+                       lambda r: r["filesystem_list"].update(before_index=1),
+                       lambda r: r["filesystem_list"].update(refreshed=copy.deepcopy(r["filesystem_list"]["opened"])),
+                       lambda r: r["filesystem_list"]["opened"].update(row_index=1),
+                       lambda r: r["filesystem_list"]["refreshed"]["dimensions"].update(device="other-device"),
+                       lambda r: r["filesystem_list"]["refreshed"]["metrics"].update({"node.filesystem.inodes_free": "81 个"}),
+                       lambda r: r["resources"][3]["value"]["series"][0]["points"][0].update(data_state="no_data", value=None)):
+            bad = copy.deepcopy(report); change(bad)
+            with self.subTest(change=change), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_filesystem_list_browser(bad)
+        # Arrival order can differ; request-family identity, never fixed arrival order, owns the reading.
+        for begin in (0, 2):
+            report["resources"][begin], report["resources"][begin+1] = report["resources"][begin+1], report["resources"][begin]
+        for phase, begin in (("opened", 0), ("refreshed", 2)):
+            report["filesystem_list"][phase].update(capacity_index=begin+1, inode_index=begin)
+        self.assertTrue(ONLINE.validate_filesystem_list_browser(report)["complete_mount_readings"])
+
     def test_browser_report_binds_real_identity_versions_server_time_and_screenshots(self):
         expected = {"run_id": "unique-run", "node": {"node_id": "node-id", "version": 1},
                     "target": {"id": "target-id", "version": 2}, "policy_version": 0,
@@ -1036,12 +1082,7 @@ for(const failBody of [false,true]){
                   "navigation": {"list_summary_batch": True, "iframe_preserved": True, "history": True, "metric_reload": True, "range_reload": True, "server_window": True, "filesystem_reload": True, "inode_reload": True, "disk_reload": True, "network_reload": True},
                   "presentation": {"iec_capacity": True, "elapsed_uptime": True, "system_load_count": True, "disk_rate_units": True, "network_rate_units": True, "disk_timing_units": True}}
         capacity_index = next(i for i, row in enumerate(rows) if row["path"] == ONLINE.OBSERVATIONS and set(row["query"]["metrics"].split(",")) == set(ONLINE.FILESYSTEM_METRICS))
-        report["filesystem_mount"] = {"capacity_index": capacity_index, "inode_index": capacity_index+1, "row_index": 0,
-            "dimensions": {"device": "/dev/a", "mountpoint": "/data", "fstype": "ext4"}, "metrics": {
-                "node.filesystem.used_percent": "73.68 %", "node.filesystem.total_bytes": "100.00 B",
-                "node.filesystem.used_bytes": "70.00 B", "node.filesystem.available_bytes": "25.00 B",
-                "node.filesystem.free_bytes": "30.00 B", "node.filesystem.inodes_used_percent": "20.00 %",
-                "node.filesystem.inodes_total": "100 个", "node.filesystem.inodes_free": "80 个", "node.filesystem.inodes_used": "20 个"}}
+        report["filesystem_mount"] = self.mount_reading_receipt(capacity_index, capacity_index+1)
         following = copy.deepcopy(report["summaries"][0])
         fresh = following["value"]["data"][0]
         at = "2026-10-06T00:01:15Z"
@@ -1054,9 +1095,10 @@ for(const failBody of [false,true]){
             "iframe_preserved": True, "off_restored": True, "off_no_requests": True, "before_index": 0, "after_index": 1}
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
-            for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "tcp"):
+            for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "tcp", "list-filesystem"):
                 (artifacts / ("node-resources-" + name + ".png")).write_bytes(b"\x89PNG\r\n\x1a\n" + b"x"*1000)
             self.add_period_comparison_evidence(report, artifacts)
+            self.add_filesystem_list_evidence(report)
             self.assertEqual(ONLINE.validate_resource_browser(report, expected, artifacts)["result"], "passed")
             for change in (lambda r: r.pop("filesystem_mount"),
                            lambda r: r.update(filesystem_mount=None),

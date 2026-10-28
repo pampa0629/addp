@@ -7,7 +7,7 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import { processMetrics, validateProcessInstances, validateProcessSummaries, validateProcessTrend } from '../../../../monitor/frontend/src/utils/processResources.js'
 import { validateResourceOverview } from '../../../../monitor/frontend/src/utils/resourceOverview.js'
 import { json, matchesRedirectURL } from './transfer-browser-support.js'
-import { scalarResourceReceipts, filesystemMountReceipt } from './node-resource-receipts.js'
+import { scalarResourceReceipts, readFilesystemMountTable } from './node-resource-receipts.js'
 import { engineMetrics, engineSummaryMetrics, validateEngineResources } from '../../../../monitor/frontend/src/utils/engineResources.js'
 
 // Login failures must never capture MFA input or credentials.
@@ -588,21 +588,8 @@ test('platform node resources through real Console password MFA and Monitor ifra
     const filesystemTable = monitor.getByTestId('resource-filesystem-table')
     await expect(filesystemTable.getByRole('button', { name: '查看趋势' }).first()).toBeVisible()
     await Promise.all(pending)
-    const mountReceipt = filesystemMountReceipt(resources, expected.node.node_id)
+    const { receipt: mountReceipt, row: mountRow } = await readFilesystemMountTable(filesystemTable, resources, expected.node.node_id, expect)
     const supportedMount = mountReceipt.dimensions
-    const mountRow = filesystemTable.locator('.el-table__body tr').nth(mountReceipt.row_index)
-    const dimensionCells = mountRow.locator('td .cell')
-    for (const [index, key] of ['device', 'mountpoint', 'fstype'].entries()) {
-      await expect(dimensionCells.nth(index)).toHaveText(supportedMount[key])
-    }
-    const mountValues = mountRow.locator('strong')
-    await expect(mountValues).toHaveCount(Object.keys(mountReceipt.metrics).length)
-    for (const [index, [key, text]] of Object.entries(mountReceipt.metrics).entries()) {
-      await mountValues.nth(index).scrollIntoViewIfNeeded()
-      await expect(mountValues.nth(index)).toBeVisible()
-      await expect(mountValues.nth(index)).toHaveText(text)
-      mountReceipt.metrics[key] = (await mountValues.nth(index).textContent()).trim()
-    }
     report.filesystem_mount = mountReceipt
     await mountRow.getByRole('button', { name: '查看趋势' }).click()
     await expect(page).toHaveURL(url => url.searchParams.get('metric') === 'node.filesystem.used_percent' && Boolean(url.searchParams.get('mountpoint')) && Boolean(url.searchParams.get('device')) && Boolean(url.searchParams.get('fstype')))
@@ -845,6 +832,37 @@ test('platform node resources through real Console password MFA and Monitor ifra
     expect(summaries).toHaveLength(listOffCount)
     report.host_list_auto_refresh = { natural_timer: true, server_end_advanced: true, unchanged_url: true,
       iframe_preserved: true, off_restored: true, off_no_requests: true, before_index: listBeforeIndex, after_index: listAfterIndex }
+    save('host-list-filesystem-open-refresh-collapse')
+    const mountListURL = page.url(), mountListDocument = await documentOrigin(), mountListStart = resources.length
+    const mountListButton = monitor.getByTestId(`resource-list-filesystem-${expected.node.node_id}`)
+    const mountPanel = monitor.getByTestId('resource-detail-expansion')
+    const mountListTable = mountPanel.getByTestId('resource-filesystem-table')
+    await expect(mountListButton).toHaveAttribute('aria-expanded', 'false')
+    await mountListButton.click()
+    await expect(mountListButton).toHaveAttribute('aria-expanded', 'true')
+    await expect(mountListTable).toBeVisible()
+    await expect(mountPanel.getByTestId('resource-detail-refresh')).toBeEnabled()
+    await Promise.all(pending)
+    const { receipt: openedMount } = await readFilesystemMountTable(mountListTable, resources, expected.node.node_id, expect)
+    expect(resources).toHaveLength(mountListStart + 2)
+    expect([openedMount.capacity_index, openedMount.inode_index].sort((a, b) => a - b)).toEqual([mountListStart, mountListStart + 1])
+    await mountPanel.getByTestId('resource-detail-refresh').click()
+    await expect.poll(async () => { await Promise.all(pending); return resources.length }).toBe(mountListStart + 4)
+    await expect(mountPanel.getByTestId('resource-detail-refresh')).toBeEnabled()
+    await Promise.all(pending)
+    const { receipt: refreshedMount } = await readFilesystemMountTable(mountListTable, resources, expected.node.node_id, expect)
+    expect(resources).toHaveLength(mountListStart + 4)
+    expect([refreshedMount.capacity_index, refreshedMount.inode_index].sort((a, b) => a - b)).toEqual([mountListStart + 2, mountListStart + 3])
+    expect(page.url()).toBe(mountListURL)
+    expect(await documentOrigin()).toBe(mountListDocument)
+    await page.screenshot({ path: resolve(artifact, 'node-resources-list-filesystem.png'), animations: 'disabled' })
+    await mountListButton.click()
+    await expect(mountListButton).toHaveAttribute('aria-expanded', 'false')
+    await expect(mountPanel).toHaveCount(0)
+    await Promise.all(pending)
+    expect(resources).toHaveLength(mountListStart + 4)
+    report.filesystem_list = { before_index: mountListStart, opened: openedMount, refreshed: refreshedMount,
+      unchanged_url: true, iframe_preserved: true, collapsed: true }
     save('overview-natural-refresh-off-and-navigation')
     await page.goto('/monitor/resource-overview')
     await expect(monitor.getByTestId('overview-statistics')).toBeVisible()

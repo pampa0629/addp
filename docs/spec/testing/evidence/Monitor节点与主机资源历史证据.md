@@ -297,3 +297,12 @@ Node `v24.11.1`：新增八项受控浏览器场景与原设备九项合计17项
 - 在 `console/frontend` 执行 `npm exec -- playwright test --config=playwright.online.config.js --list e2e/online/platform-node-resources.spec.js`：发现唯一既有场景，导入解析成功；仅发现，不计浏览器执行通过。
 
 继续由既有 Online runner、Console frontend 单元自动发现及手动 Hosted regression 接入，无新增依赖或 CI 路线。本轮不改产品前端／后端、Swagger、个人配置或服务，不重跑既有受控产品前端门禁。本机仍为 Darwin／Docker Desktop，真实原生 Linux、正式登录后的挂载读数及完整 Hosted 零残留尚未运行；CI 和 Hosted 由专门会话安排并回传，不在本会话调度或设定时任务。这是验收实现与本地准备证据，不能填为真实采集／正式页面已验收。
+
+
+### 列表展开、手工刷新与收起的验收准备（2026-10-28）
+
+沿同一真实 Linux regression，补主机列表关闭自动刷新后的“文件系统”展开、一次手工刷新和收起。首次与刷新分别只读当前节点容量／inode两组，资源收据总上限由186增加至190；产品查询预算、接口、权限、对象范围、suite／浏览器超时不变，不添加等待窗口、规则读取或写入。列表与详情复用唯一 `readFilesystemMountTable` 九项 DOM 读数核对，不复制格式化或选择逻辑。中央要求两轮各自的新响应索引，拒绝以打开时旧响应充当刷新、错挂载／错读数、缺失收起及 URL／iframe 保持证明；允许新请求共享同一评估时刻，不强求即时手工刷新跨过采样步长。新增 `node-resources-list-filesystem.png` 列表截图随原证据归档并核验 PNG。
+
+本地 `make test-node-metrics-online-runner`：152项确定性测试及 System Go Metrics 正式身份夹具通过，日志 `/tmp/addp-native-filesystem-list-runner-final.log`。`npm --prefix console/frontend test`：30文件202项单元测试通过，日志 `/tmp/addp-native-filesystem-list-console-unit.log`。在 `console/frontend` 执行标准 `npm run test:e2e -- node-resource-navigation.spec.js`：5项受控浏览器T3通过，日志 `/tmp/addp-native-filesystem-list-console-browser-final.log`；新增场景沿实际 Console／Monitor iframe，使用同一个 DOM 读数核对函数，刷新后将 inode 使用率20%改为30%、空闲量80改为70，核对值更新、完整身份、仅四次当前节点观测、收起、URL及原 iframe 文档保持。标准隔离浏览器入口退出0，未启动或接管个人服务。Online Playwright `--list` 发现唯一既有场景，导入解析通过，仅计测试发现。
+
+本批只改验收实现及证据，既有 Online runner、Console frontend 单元与浏览器自动发现覆盖，无新依赖、入口或 workflow。上述T3为受控HTTP数据，不计真实Linux来源、正式密码／MFA、Safari或Hosted通过；未触发／轮询CI及Hosted、未设置定时任务。正式运行仍等专门会话安排与回传，原失败及前一批验证范围保留。

@@ -849,8 +849,7 @@ def validate_resource_comparison_browser(value, expected, artifacts):
                      "single_query_each": True, "url_restore": True}
 
 
-def validate_filesystem_mount_browser(value):
-    receipt, rows = value.get("filesystem_mount", {}), value["resources"]
+def validate_filesystem_mount_readings(rows, receipt):
     require(isinstance(receipt, dict) and set(receipt) == {"capacity_index", "inode_index", "row_index", "dimensions", "metrics"}, "browser mount readings missing")
     sources = []
     for field, family in (("capacity_index", FILESYSTEM_METRICS), ("inode_index", INODE_METRICS)):
@@ -891,12 +890,33 @@ def validate_filesystem_mount_browser(value):
             continue
         match = re.fullmatch(r"([0-9][0-9,]*\.[0-9]{2}) " + re.escape(suffix), text)
         require(match is not None and abs(float(match[1].replace(",", ""))-number) <= 0.005000001, "browser mount value or unit differs from API")
+    return dimensions
+
+
+def validate_filesystem_mount_browser(value):
+    rows = value["resources"]
+    dimensions = validate_filesystem_mount_readings(rows, value.get("filesystem_mount"))
     # The same complete three-part identity must own both restored trends.
     for metric in ("node.filesystem.used_percent", "node.filesystem.inodes_used_percent"):
         require(any(row["path"] == TRENDS and row["query"].get("metrics") == metric
                     and all(row["query"].get(name) == item for name, item in dimensions.items()) for row in rows),
                 "browser mount readings were not bound to restored trends")
     return {"capacity_and_inodes": True, "complete_mount_identity": True, "same_mount_trends": True}
+
+
+def validate_filesystem_list_browser(value):
+    receipt, rows = value.get("filesystem_list"), value["resources"]
+    require(isinstance(receipt, dict) and set(receipt) == {"before_index", "opened", "refreshed", "unchanged_url", "iframe_preserved", "collapsed"}
+            and all(receipt[key] is True for key in ("unchanged_url", "iframe_preserved", "collapsed")), "browser filesystem list lifecycle missing")
+    before = receipt["before_index"]
+    require(type(before) is int and 0 <= before <= len(rows)-4, "browser filesystem list batch reference invalid")
+    for phase, offset in (("opened", 0), ("refreshed", 2)):
+        mounted = receipt[phase]
+        validate_filesystem_mount_readings(rows, mounted)
+        indices = [mounted["capacity_index"], mounted["inode_index"]]
+        require(sorted(indices) == [before+offset, before+offset+1], "browser filesystem list reused another batch")
+    return {"complete_mount_readings": True, "manual_refresh": True, "bounded_reads": 4,
+            "collapsed": True, "unchanged_url": True, "iframe_preserved": True}
 
 
 def validate_resource_browser(value, expected, artifacts):
@@ -927,8 +947,8 @@ def validate_resource_browser(value, expected, artifacts):
             and after == before + 1, "host list auto refresh batch references invalid")
     require(utc_timestamp(summaries[after]["value"]["data"][0]["end"]) > utc_timestamp(summaries[before]["value"]["data"][0]["end"]), "host list automatic server window did not advance")
     rows = value.get("resources")
-    # The original 26 rounds, two TCP selection/restore rounds and three comparison rounds, each with six reads.
-    require(isinstance(rows, list) and 8 <= len(rows) <= 186, "browser resource evidence missing or unbounded")
+    # Original 31 six-read rounds plus four list observations: capacity/inodes on open and refresh.
+    require(isinstance(rows, list) and 8 <= len(rows) <= 190, "browser resource evidence missing or unbounded")
     comparison_indices, comparison = validate_resource_comparison_browser(value, expected, artifacts)
     instants, trends = [], []
     for row_index, row in enumerate(rows):
@@ -967,14 +987,15 @@ def validate_resource_browser(value, expected, artifacts):
     require(value.get("presentation") == {"iec_capacity": True, "elapsed_uptime": True, "system_load_count": True, "disk_rate_units": True, "network_rate_units": True, "disk_timing_units": True}, "browser quantity display evidence missing")
     require(len(instants) >= 2 and {("node.tcp.current_connections", 300), ("node.memory.used_percent", 3600), ("node.cpu.busy_percent", 300), ("node.filesystem.used_percent", 300), ("node.filesystem.inodes_used_percent", 300), *((key, 300) for key in ALL_METRICS if key in DISK_METRICS or key in NETWORK_METRICS)} <= set(trends), "browser restore evidence incomplete")
     mounted = validate_filesystem_mount_browser(value)
-    for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "tcp"):
+    mounted_list = validate_filesystem_list_browser(value)
+    for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "tcp", "list-filesystem"):
         screenshot = artifacts / ("node-resources-" + name + ".png")
         require(screenshot.is_file() and screenshot.stat().st_size > 1000
                 and screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "browser screenshot missing or invalid")
     return {"result": "passed", "password_mfa": True, "same_platform_identity": True,
             "catalog_metric_count": len(ALL_METRICS), "trend_server_window": True, "navigation_restore": True, "host_list_auto_refresh": True,
             "security_administrator_denied": True, "auto_refresh": True, "disk_trends": True, "network_trends": True, "disk_timing_trends": True, "quantity_display": True,
-            "filesystem_mount": mounted, "period_comparison": comparison}
+            "filesystem_mount": mounted, "filesystem_list": mounted_list, "period_comparison": comparison}
 
 
 def assert_process_trend_evidence(trend, owner, policy_version, *, require_valid=True):
@@ -1083,7 +1104,7 @@ def run_resource_browser(node, target, policy, display_name, admin, security, pr
     # Store only the subject/version facts needed by the page, never target TLS/credentials.
     expected["node"] = {"node_id": node["node_id"], "version": node["version"]}
     (artifacts / "node-resources-browser-input.json").write_text(json.dumps(expected))
-    for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "services", "overview", "comparison-cpu", "comparison-memory", "comparison-restored"):
+    for name in ("list", "detail", "restored", "filesystem", "list-filesystem", "inodes", "disks", "networks", "services", "overview", "comparison-cpu", "comparison-memory", "comparison-restored"):
         (artifacts / ("node-resources-" + name + ".png")).unlink(missing_ok=True)
     value = execute_resource_browser(artifacts)
     result = validate_resource_browser(value, expected, artifacts)

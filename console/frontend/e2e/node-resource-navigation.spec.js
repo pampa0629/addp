@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { readFilesystemMountTable } from './online/node-resource-receipts.js'
 import { identity, node, resourceBackend, resourcePermissions } from '../../../monitor/frontend/e2e/node-resources.fixture'
 
 test('node resource navigation preserves the real Monitor iframe and one Console history', async ({ page }) => {
@@ -69,4 +70,56 @@ test('host type and management state restore through one Console history and ifr
   await monitor.getByRole('button', { name: '返回主机列表', exact: true }).click()
   await expect(monitor.getByTestId('resource-search')).toHaveValue('Node')
   expect(state.reads.filter(read => read.path.endsWith('/host_nodes')).at(-1).query).toEqual({ page: '2', page_size: '20', search: 'Node', node_kind: 'virtual', enabled: 'false' })
+})
+
+test('filesystem list open, changed-value refresh and collapse preserve the Console iframe and exact receipts', async ({ page }) => {
+  let changed = false
+  const state = await resourceBackend(page, { observationResponse: body => {
+    if (!changed || !body.series[0].metric_key.startsWith('node.filesystem.inodes_')) return
+    const values = { inodes_total: 100, inodes_free: 70, inodes_used: 30, inodes_used_percent: 30 }
+    for (const series of body.series) for (const point of series.points) point.value = values[series.metric_key.split('.').at(-1)]
+  } })
+  const resources = [], pending = []
+  page.on('response', response => {
+    const url = new URL(response.url())
+    if (url.pathname === '/api/v1/monitor/platform/resource_observations') {
+      pending.push(response.json().then(value => resources.push({ path: url.pathname, query: Object.fromEntries(url.searchParams), value })))
+    }
+  })
+  await page.goto('/monitor/node-resources?refresh=off')
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  const button = monitor.getByTestId(`resource-list-filesystem-${node}`)
+  const panel = monitor.getByTestId('resource-detail-expansion')
+  const table = panel.getByTestId('resource-filesystem-table')
+  await expect(button).toBeVisible()
+  const frame = page.frames().find(frame => frame.parentFrame())
+  const origin = await frame.evaluate(() => performance.timeOrigin), url = page.url()
+  expect(resources).toHaveLength(0)
+  await button.click()
+  await expect(button).toHaveAttribute('aria-expanded', 'true')
+  await expect(table).toBeVisible()
+  await expect(panel.getByTestId('resource-detail-refresh')).toBeEnabled()
+  await Promise.all(pending)
+  const { receipt: opened } = await readFilesystemMountTable(table, resources, node, expect)
+  expect(resources).toHaveLength(2)
+  expect([opened.capacity_index, opened.inode_index].sort()).toEqual([0, 1])
+  expect(opened.metrics['node.filesystem.inodes_used_percent']).toBe('20.00 %')
+  changed = true
+  await panel.getByTestId('resource-detail-refresh').click()
+  await expect.poll(async () => { await Promise.all(pending); return resources.length }).toBe(4)
+  await expect(panel.getByTestId('resource-detail-refresh')).toBeEnabled()
+  const { receipt: refreshed } = await readFilesystemMountTable(table, resources, node, expect)
+  expect([refreshed.capacity_index, refreshed.inode_index].sort()).toEqual([2, 3])
+  expect(refreshed.metrics['node.filesystem.inodes_used_percent']).toBe('30.00 %')
+  expect(refreshed.metrics['node.filesystem.inodes_free']).toBe('70 个')
+  expect(page.url()).toBe(url)
+  expect(await frame.evaluate(() => performance.timeOrigin)).toBe(origin)
+  await button.click()
+  await expect(button).toHaveAttribute('aria-expanded', 'false')
+  await expect(panel).toHaveCount(0)
+  await Promise.all(pending)
+  expect(resources).toHaveLength(4)
+  expect(state.reads.filter(row => row.path.endsWith('/resource_observations')).every(row => row.query.node_id === node)).toBe(true)
+  expect(page.url()).toBe(url)
+  expect(await frame.evaluate(() => performance.timeOrigin)).toBe(origin)
 })
