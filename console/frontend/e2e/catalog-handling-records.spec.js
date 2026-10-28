@@ -9,7 +9,7 @@ const rows = [
   { state: 'accepted', unissued_reason: 'relation_exists' },
   { state: 'accepted', unissued_reason: 'window_expired' }, { state: 'closed' }
 ].map((outcome, index) => ({
-  request_id: id(index + 100), decision_id: decisionID, requirement_version: '9007199254740993',
+  request_id: id(index + 100), decision_id: decisionID,
   recipient_type: index === 3 ? 'project_group' : 'user', recipient_id: '9007199254740993',
   recipient_name: index === 3 ? '户外分析项目组' : '户外开发者', recipient_code: index === 3 ? 'outdoor-analysis' : 'outdoor-develop',
   recipient_label_status: 'resolved', action: 'read', expiry_mode: 'until_revoked', expires_at: null,
@@ -19,7 +19,7 @@ const rows = [
 }))
 
 async function openRecords(page, { fail = false } = {}) {
-  const writes = [], unexpected = [], errors = [], details = [], requests = []
+  const writes = [], unexpected = [], errors = [], details = [], requests = [], obsoleteRequests = []
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   page.on('pageerror', error => errors.push(error.message))
@@ -28,6 +28,7 @@ async function openRecords(page, { fail = false } = {}) {
   })
   await page.route('**/api/v1/**', route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname
+    if (path.includes('/access_approval_requirements') || url.searchParams.has('requirement_version') || /"requirement_version"\s*:/.test(request.postData() || '')) obsoleteRequests.push(`${request.method()} ${path}`)
     if (path === '/api/v1/system/refresh') return route.fulfill({ json: { access_token: 'catalog-handling-records-token', expires_in: 900 } })
     if (path === '/api/v1/system/users/me') return route.fulfill({ json: { id: '9007199254740993', username: 'outdoor-develop', display_name: '户外开发者' } })
     if (path === '/api/v1/system/auth/context') return route.fulfill({ json: {
@@ -59,7 +60,7 @@ async function openRecords(page, { fail = false } = {}) {
   await expect(catalog.getByTestId('catalog-entry-detail')).toHaveAttribute('data-load-state', 'loaded')
   const records = catalog.getByTestId('sharing-request-records')
   await expect(records).toBeVisible()
-  return { catalog, records, details, requests, verify() { expect(writes).toEqual([]); expect(unexpected).toEqual([]); expect(errors).toEqual([]) } }
+  return { catalog, records, details, requests, verify() { expect(writes).toEqual([]); expect(unexpected).toEqual([]); expect(obsoleteRequests).toEqual([]); expect(errors).toEqual([]) } }
 }
 
 test('my handling records show recipients and each authoritative outcome without technical IDs or per-row browser reads', async ({ page }) => {

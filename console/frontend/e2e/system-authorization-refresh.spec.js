@@ -1,12 +1,12 @@
 import { expect, test } from '@playwright/test'
 
 const authorizationURL = '/system/engines/2?tab=data-authorization'
-const permissions = ['system.engine.read', 'system.engine_access_approval_requirement.read',
-  'system.engine_access_approval_requirement.initialize', 'system.engine_catalog.read']
+const permissions = ['system.engine.read', 'system.engine_access_grant.read',
+  'system.engine_access_direct_permission.read', 'system.engine_catalog.read']
 
 async function setup(page, { storage = true } = {}) {
   let generation = 0, hold = false, allowed = [...permissions]
-  const pending = [], unexpected = [], writes = [], errors = []
+  const pending = [], unexpected = [], writes = [], errors = [], reads = [], obsoleteRequests = []
   page.on('pageerror', error => errors.push(error.stack || error.message))
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   const context = () => ({
@@ -16,6 +16,7 @@ async function setup(page, { storage = true } = {}) {
   })
   await page.route('**/api/v1/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname
+    if (path.includes('/access_approval_requirements')) obsoleteRequests.push(`${request.method()} ${path}`)
     if (path === '/api/v1/system/refresh') return route.fulfill({ json: { access_token: `engine-token-${++generation}`, expires_in: 900 } })
     if (path === '/api/v1/system/users/me') return route.fulfill({ json: { id: '1', display_name: 'Engine administrator fixture' } })
     if (path === '/api/v1/system/auth/context') {
@@ -24,6 +25,7 @@ async function setup(page, { storage = true } = {}) {
     }
     if (path === '/api/v1/system/engines/2/catalog/children' && request.method() === 'POST') return route.fulfill({ json: { nodes: [] } })
     if (request.method() !== 'GET') writes.push(`${request.method()} ${path}`)
+    else reads.push(path)
     const engine = { id: '2', name: storage ? '授权验证 PostgreSQL' : '无存储工作流', engine_type: storage ? 'postgresql' : 'geopython_workflow',
       engine_origin: 'general', lifecycle_state: 'active', connection_status: 'online',
       capabilities: { schema_version: 'engine.capabilities/v1', engine_type: storage ? 'postgresql' : 'geopython_workflow',
@@ -31,7 +33,8 @@ async function setup(page, { storage = true } = {}) {
     const responses = {
       '/api/v1/system/engines': [engine], '/api/v1/system/engines/2': engine,
       '/api/v1/system/engine-types': [],
-      '/api/v1/system/engines/2/access_approval_requirements': { data: [], total: 0, page: 1, page_size: 10, total_pages: 1 }
+      '/api/v1/system/engines/2/access_grants': { data: [], total: 0, page: 1, page_size: 20, total_pages: 0 },
+      '/api/v1/system/engines/2/direct-permissions': { data: [], total: 0, page: 1, page_size: 20 }
     }
     if (request.method() === 'GET' && Object.hasOwn(responses, path)) return route.fulfill({ json: responses[path] })
     unexpected.push(`${request.method()} ${path}`)
@@ -47,7 +50,7 @@ async function setup(page, { storage = true } = {}) {
   }
   const original = page.frames().find(value => value.url().includes('/module-ui/system/'))
   return {
-    iframe, frame, original,
+    iframe, frame, original, reads,
     async beginRefresh() {
       hold = true
       await page.evaluate(async () => {
@@ -86,6 +89,7 @@ async function setup(page, { storage = true } = {}) {
     verifyNoWrites() {
       expect(writes).toEqual([])
       expect(unexpected).toEqual([])
+      expect(obsoleteRequests).toEqual([])
       expect(errors).toEqual([])
     }
   }
@@ -98,6 +102,10 @@ test('keeps the real engine authorization tab and URL through repeated token rot
     await fixture.finishRefresh()
     await fixture.verifyRestored()
   }
+  await fixture.frame.getByRole('tab', { name: '直接授权许可', exact: true }).click()
+  await expect(fixture.frame.getByTestId('direct-permission-list')).toBeVisible()
+  await expect(fixture.frame.getByTestId('direct-permission-edit')).toHaveCount(0)
+  expect(fixture.reads).toContain('/api/v1/system/engines/2/direct-permissions')
   fixture.verifyNoWrites()
 })
 

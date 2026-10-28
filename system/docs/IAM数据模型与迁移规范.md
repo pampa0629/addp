@@ -71,7 +71,7 @@ System 读取当前显式许可与部署默认，按最终状态推导包含／�
 - 新直接命令必须提交实际观察的许可来源及版本；正式命令在事务内复核当前 IAM／引擎范围、接收主体及已核验 Meta 边界，数据库 INSERT guard 同步核验许可来源／版本、操作人和接收主体的结构约束，不通过旧批准要求字段旁路。
 - T2 必须覆盖旧配置映射、旧授权及续办清理、重复启动不再清理新记录、旧请求不恢复授权，以及未纳入清理的 IAM／组织／委托／采集资格等事实保持不变；不在个人开发库试迁移。
 
-当前本地验证：`make test-authorization` 及 Common／Meta／System／Catalog／Transfer 受影响 Go 门禁通过；标准 PostgreSQL 门禁覆盖 System migration、engineaccess、repository、api、online-test-fixture、Meta authorization-facts、Catalog 与 Transfer，均通过。包含许可关闭／默认值变化与签发的四个真实并发顺序、迁移映射与不可重放、权限发布和最小身份清单隔离。System 前端 175 项单测、245 项隔离浏览器及构建通过；Catalog 270 项测试及构建、共享前端 283 项测试、Transfer 受影响前端及构建通过。完整 IAM PostgreSQL 包的两个既有当前角色用例报“authenticated time must not be in the future”，相关文件本轮未改；本轮涉及的 MFA／会话清理用例通过，但该整包结果仍为失败。以上为本地及隔离数据库／模拟 API 浏览器证据，不替代新协议真实跨服务 T4 或开发库升级。
+当前本地验证：`make test-authorization` 及 Common／Meta／System／Catalog／Transfer 受影响 Go 门禁通过；标准 PostgreSQL 门禁覆盖 System migration、engineaccess、repository、api、online-test-fixture、Meta authorization-facts、Catalog 与 Transfer，均通过。包含许可关闭／默认值变化与签发的四个真实并发顺序、迁移映射与不可重放、权限发布和最小身份清单隔离。System 前端 175 项单测、245 项隔离浏览器及构建通过；Console 207 项单测、239 项隔离浏览器及构建通过，两个宿主授权夹具已删除旧协议。Catalog 270 项测试及构建、共享前端 283 项测试、Transfer 受影响前端及构建通过。完整 IAM PostgreSQL 包的两个既有当前角色用例报“authenticated time must not be in the future”，相关文件本轮未改；本轮涉及的 MFA／会话清理用例通过，但该整包结果仍为失败。以上为本地及隔离数据库／模拟 API 浏览器证据，不替代新协议真实跨服务 T4 或开发库升级。
 主链路验证范围与标准入口：
 
 - T0/T1：`make test-authorization`、System 与 Catalog 的标准模块门禁、Common 受影响客户端及协议门禁；前端覆盖独立 Tab、状态筛选、精确查询、空选择零全量读取、未知状态拒绝提交及旧入口删除。纯规范阶段先运行 `make test-changed`，不能把文档门禁计为功能验收。
