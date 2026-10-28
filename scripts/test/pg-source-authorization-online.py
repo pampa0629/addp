@@ -45,6 +45,8 @@ BROWSER_CHECKS = ['department_exit_silent_refresh', 'project_exit_silent_refresh
                   'same_iframe_without_relogin', 'denied_preview_clears_old_rows']
 WORKSPACE_CHECKS = ['direct_permission_tab_read_only_filters', 'exclusive_workspace_tabs', 'integrated_create_picker_without_write',
                     'table_text_and_tree_filters', 'recipient_type_and_account_filters',
+                    'browser_direct_permission_cancel_zero_write', 'browser_direct_permission_conflict_requires_review',
+                    'browser_direct_permission_close_preserves_grant',
                     'browser_revocation_updates_current_and_history', 'browser_revocation_denies_manager_read']
 PRODUCTION_CHECKS = ['new_pg_output_initial_grant_issued', 'new_pg_output_basic_only_identification',
                      'new_pg_output_manager_readable', 'output_survives_source_withdrawal',
@@ -643,11 +645,12 @@ class BrowserObservation:
 
 
 class WorkspaceObservation(BrowserObservation):
-    """Use normal browser login; only the known, pretracked Grant may be revoked."""
+    """Two administrator sessions edit one permit; only the tracked Grant is revoked."""
 
-    def __init__(self, tenant, principal, target, engine, issuer, grant, permission):
+    def __init__(self, tenant, principal, target, engine, issuer, grant, permission, facts):
         super().__init__(tenant, principal, target)
-        self.binding.update(engine_id=str(engine), issuer_id=str(issuer), grant_id=grant, direct_permission=dict(permission))
+        self.binding.update(engine_id=str(engine), issuer_id=str(issuer), grant_id=grant, direct_permission=dict(permission),
+                            permission_target={'catalog_path': facts['boundary']['native_target'], 'boundary_hash': facts['boundary_hash']})
         self.evidence = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']) / 'pg-authorization-workspace.json'
         self.test_name = 'PG authorization workspace'
         self.login_keys += ('ADDP_ONLINE_PG_OPERATOR_USERNAME', 'ADDP_ONLINE_PG_OPERATOR_PASSWORD')
@@ -660,12 +663,25 @@ class WorkspaceObservation(BrowserObservation):
         require(self.evidence.is_file(), 'PG browser workspace report missing')
         result = json.loads(self.evidence.read_text())
         expected = dict(self.binding, schema_version='addp.pg-authorization-workspace/v1', result='passed',
-                        checks=WORKSPACE_CHECKS, login_requests=2, preview_statuses=[200, 403],
+                        checks=WORKSPACE_CHECKS, login_requests=3, preview_statuses=[200, 403],
+                        direct_permission_edit=self.expected_permission_edit(),
                         direct_permission_observations=[{'search': 'metric_people', 'state': state, 'total': total,
                             'item_fingerprints': [self.binding['direct_permission']['item_fingerprint']] if total else []}
                             for state, total in [('', 1), ('allowed', 1), ('denied', 0)]])
         require(result == expected, 'PG browser workspace evidence is incomplete or changed identity')
         return result
+
+    def expected_permission_edit(self):
+        initial = self.binding['direct_permission']
+        version = int(initial['version'])
+        require(initial['source'] == 'explicit' and initial['state'] == 'allowed', 'workspace requires explicit baseline permission')
+        return {'item_fingerprint': initial['item_fingerprint'], 'boundary_hash': self.binding['permission_target']['boundary_hash'],
+                'versions': [str(version + offset) for offset in range(3)],
+                'writes': [{'expected_version': str(version), 'allowed': False, 'status': 200},
+                           {'expected_version': str(version), 'allowed': False, 'status': 409},
+                           {'expected_version': str(version + 1), 'allowed': True, 'status': 200}],
+                'conflict_code': 'resource_version_conflict', 'cancelled_writes': 0, 'review_writes': 0,
+                'grant_unchanged': True, 'closed_preview_status': 200, 'same_reader_credential': True, 'final_state': 'allowed'}
 
 
 class CollectionObservation(BrowserObservation):
@@ -2137,14 +2153,35 @@ class Lifecycle:
         permission = REGISTRATION.read_direct_permission(self.operator, self.engine, facts['item_fingerprint'])
         require(permission['state'] == 'allowed' and permission['source'] == body['direct_permission_source']
                 and permission['version'] == body['direct_permission_version'], 'workspace permission changed after its Grant')
-        with WorkspaceObservation(self.tenant, self.recipient, target, self.engine, issuer, command, permission) as browser:
-            report['workspace_browser'] = browser.finish()
+        try:
+            with WorkspaceObservation(self.tenant, self.recipient, target, self.engine, issuer, command, permission, facts) as browser:
+                report['workspace_browser'] = browser.finish()
+            current = REGISTRATION.read_direct_permission(self.operator, self.engine, facts['item_fingerprint'])
+            require(current == dict(permission, version=str(int(permission['version']) + 2)),
+                    'workspace browser did not restore the exact permission with two transitions')
+        finally:
+            # The context has terminated its browsers before restoring our disposable setting.
+            report['workspace_permission_cleanup'] = 'failed'
+            self.restore_workspace_permission(permission, facts)
+            report['workspace_permission_cleanup'] = 'allowed'
         preview(self.reader, target, False)
         require(self.listing()['total'] == 0, 'browser withdrawal left current source rules')
         history = self.listing(history=True, state='revoked')
         require(any(row.get('request_id') == command and row.get('revocation') for row in history['data']),
                 'browser withdrawal did not preserve its exact Grant history')
         report['checks'].extend(WORKSPACE_CHECKS)
+
+    def restore_workspace_permission(self, baseline, facts):
+        current = REGISTRATION.read_direct_permission(self.operator, self.engine, facts['item_fingerprint'])
+        version = int(baseline['version'])
+        expected = [dict(baseline, state=state, version=str(version + offset))
+                    for offset, state in enumerate(('allowed', 'denied', 'allowed'))]
+        require(current in expected, 'workspace cleanup encountered an unowned permission version or state')
+        if current == expected[1]:
+            current = REGISTRATION.set_direct_permission(self.operator, self.path, facts, True, current=current)
+            require(current == expected[2], 'workspace cleanup could not restore its allowed permission')
+            require(REGISTRATION.read_direct_permission(self.operator, self.engine, facts['item_fingerprint']) == expected[2],
+                    'workspace cleanup permission readback did not match restoration')
 
     def deny(self, facts, *, recipient_type='user', recipient_id=None, catalog_path=None):
         command = str(uuid.uuid4())
