@@ -107,6 +107,7 @@ class VolumePreparationContractTests(unittest.TestCase):
             life=bare_lifecycle(directory);life.docker=mock.Mock(return_value='owned')
             life.prepare_volume_sampler(['z','a','z'],timeout=30)
             args=life.docker.call_args.args
+            self.assertEqual(args[args.index('--pull')+1],'never')
             self.assertEqual(life.sampler_volumes,('a','z'))
             self.assertEqual(life.docker.call_args.kwargs,{'guarded':False,'timeout':30})
             self.assertIn(str(m.SAMPLER_CPU),args);self.assertIn('64m',args);self.assertIn('none',args)

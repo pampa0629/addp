@@ -771,7 +771,7 @@ class Lifecycle:
     def prepare_volume_sampler(self, volumes, *, timeout):
         require(not self.sampler_started, 'volume_sampler_already_started')
         volumes=tuple(sorted(set(volumes)))
-        args = ['run', '-d', '--rm', '--name', self.run_id + '-space', '--label', f'{self.label}={self.run_id}',
+        args = ['run', '--pull', 'never', '-d', '--rm', '--name', self.run_id + '-space', '--label', f'{self.label}={self.run_id}',
                 '--label', self.label+'.role=sampler', '--cpus', str(SAMPLER_CPU), '--memory', '64m',
                 '--network', 'none', '--tmpfs', '/data:rw,noexec,nosuid,size=1m', '--entrypoint', '/bin/sh']
         for i,name in enumerate(volumes):

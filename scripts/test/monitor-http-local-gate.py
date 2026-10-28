@@ -45,7 +45,10 @@ class Lifecycle(core.Lifecycle):
     work_seconds=3300  # reserve five minutes of the original 60-minute window for cleanup
     product_services=BACKENDS+FRONTENDS
     compile_services=('system-backend','gateway','monitor-backend','runtime-log')
-    sampling_image=SAMPLER_IMAGE
+    @property
+    def sampling_image(self):
+        require(hasattr(self,'sampler_image_proof'),'sampler_image_not_admitted')
+        return self.sampler_image_proof['image_id']
 
     @property
     def phase(self):
@@ -75,6 +78,25 @@ def validate_profile(env,machine,daemon):
     core.validate_profile(env,machine,daemon)
     require(not any(env.get(k) for k in ('ADDP_EXECUTION_TRACE_LOCAL','ADDP_CATALOG_BROWSER_LOCAL')),
             'other_local_profile_forbidden')
+
+
+def validate_sampler_image(metadata):
+    require(isinstance(metadata,dict),'sampler_image_metadata_invalid')
+    image_id=metadata.get('id')
+    expected='nginx@'+SAMPLER_IMAGE.split('@')[1]
+    require(isinstance(image_id,str) and re.fullmatch('sha256:[a-f0-9]{64}',image_id) and
+        metadata.get('os')=='linux' and metadata.get('architecture')=='arm64' and
+        isinstance(metadata.get('repo_digests'),list) and expected in metadata['repo_digests'],
+        'sampler_image_identity_mismatch')
+    return {'reference':SAMPLER_IMAGE,'image_id':image_id,'platform':'linux/arm64',
+        'repository_digest':expected,'acquisition':'verified_local_cache'}
+
+
+def admit_sampler_image(life):
+    life.phase='sampler_image_admission'
+    metadata=json.loads(life.docker('image','inspect',SAMPLER_IMAGE,'--format',
+        '{"id":{{json .Id}},"os":{{json .Os}},"architecture":{{json .Architecture}},"repo_digests":{{json .RepoDigests}}}',timeout=5))
+    life.sampler_image_proof=validate_sampler_image(metadata)
 
 
 def source_addresses(subnet):
@@ -213,6 +235,7 @@ def build(life):
     life.command(['git','clone','--no-local','--depth','1','--single-branch','--branch','main',core.ROOT.as_uri(),str(life.checkout)])
     require(life.command(['git','rev-parse','HEAD']).strip()==commit,'snapshot_commit_changed')
     life.source_commit=commit
+    admit_sampler_image(life)
     life.phase='owned_network_admission'
     life.network=life.run_id+'_data'
     life.docker('network','create','--internal','--label',LABEL+'='+life.run_id,life.network)
@@ -225,8 +248,6 @@ def build(life):
     life.phase='metrics_deployment_projection';tls(life,env)
     references={name:f'localhost:5001/addp-{name}:{life.run_id}' for name in BACKENDS+FRONTENDS}
     project(life,env,references);core.prepare_sampling_volumes(life)
-    # Pull before the four-second sampler begins; never hide pull latency inside a scan.
-    life.docker('pull',SAMPLER_IMAGE,timeout=120)
     proxies=core.prepare_builder(life)
     life.sample();life.thread=threading.Thread(target=life.monitor,daemon=True);life.thread.start()
     life.stop_builder()
@@ -239,11 +260,11 @@ def build(life):
 
 def prepare_source_tls(life):
     for module in ('agent','copilot'):
-        life.docker('run','--name',life.run_id+'-tls-'+module,'--label',LABEL+'='+life.run_id,
+        life.docker('run','--pull','never','--name',life.run_id+'-tls-'+module,'--label',LABEL+'='+life.run_id,
             '--label',LABEL+'.role=oneshot','--cpus','.1','--memory','64m','--network','none','--read-only',
             '--mount',f'type=bind,source={life.work/(module+"-source")},target=/input,readonly',
             '--mount',f'type=volume,source={life.run_id+"_sdk-"+module+"-tls"},target=/tls',
-            '--entrypoint','/bin/sh',SAMPLER_IMAGE,'-ec',
+            '--entrypoint','/bin/sh',life.sampling_image,'-ec',
             'cp /input/ca.crt /input/server.crt /input/server.key /tls/; chmod 700 /tls; chmod 600 /tls/server.key; '
             'test "$(stat -c %u /tls)" = 0; test "$(stat -c %u /tls/server.key)" = 0',timeout=10)
 
@@ -304,7 +325,7 @@ def main():
         if hasattr(life,'api_failure'):report['api_failure']=life.api_failure
     finally:
         for key,attribute in [('source_commit','source_commit'),('input_sha256','input_hashes'),('images','images'),
-                ('python_dependencies','python_proof'),('resource_guard_failure','resource_failure')]:
+                ('python_dependencies','python_proof'),('resource_guard_failure','resource_failure'),('sampler_image','sampler_image_proof')]:
             if hasattr(life,attribute):report[key]=getattr(life,attribute)
         if hasattr(life,'request_budget'):
             report['request_attempt_counts']={'controlled':life.request_budget.controlled,'control':life.request_budget.control}

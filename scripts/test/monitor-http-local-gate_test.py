@@ -100,6 +100,36 @@ class HTTPProductLocalTests(unittest.TestCase):
         self.assertEqual(m.Lifecycle.compile_services,('system-backend','gateway','monitor-backend','runtime-log'))
         self.assertIn('agent-backend',m.Lifecycle.product_services);self.assertIn('copilot-backend',m.Lifecycle.product_services)
 
+    def test_sampler_cache_requires_exact_digest_native_platform_and_safe_proof(self):
+        image={'id':'sha256:'+'a'*64,'os':'linux','architecture':'arm64',
+            'repo_digests':['nginx@'+m.SAMPLER_IMAGE.split('@')[1]],'private_environment':'never-export'}
+        proof=m.validate_sampler_image(image)
+        self.assertEqual(proof['image_id'],image['id']);self.assertNotIn('never-export',json.dumps(proof))
+        for changes in ({'id':'tag:latest'},{'os':'windows'},{'architecture':'amd64'},
+                {'repo_digests':[]},{'repo_digests':['other@'+m.SAMPLER_IMAGE.split('@')[1]]}):
+            with self.subTest(changes=changes),self.assertRaises(m.core.GateError):m.validate_sampler_image({**image,**changes})
+
+    def test_sampler_admission_only_inspects_cache_and_never_pulls_or_retries(self):
+        image={'id':'sha256:'+'a'*64,'os':'linux','architecture':'arm64','repo_digests':['nginx@'+m.SAMPLER_IMAGE.split('@')[1]]}
+        life=SimpleNamespace(docker=mock.Mock(return_value=json.dumps(image)))
+        m.admit_sampler_image(life)
+        self.assertEqual(life.sampler_image_proof['image_id'],image['id'])
+        self.assertEqual(life.docker.call_count,1);self.assertEqual(life.docker.call_args.args[:2],('image','inspect'))
+        life=SimpleNamespace(docker=mock.Mock(side_effect=m.core.GateError('command_failed_1')))
+        with self.assertRaises(m.core.GateError):m.admit_sampler_image(life)
+        self.assertEqual(life.docker.call_count,1)
+
+    def test_source_tls_helpers_use_admitted_id_without_implicit_pull(self):
+        image_id='sha256:'+'a'*64
+        life=SimpleNamespace(work=Path('/synthetic'),run_id='owned',sampling_image=image_id,docker=mock.Mock())
+        m.prepare_source_tls(life)
+        self.assertEqual(life.docker.call_count,2)
+        for call in life.docker.call_args_list:
+            self.assertEqual(call.args[0],'run');self.assertEqual(call.args[call.args.index('--pull')+1],'never')
+            self.assertIn(image_id,call.args);self.assertNotIn(m.SAMPLER_IMAGE,call.args)
+        instance=m.Lifecycle.__new__(m.Lifecycle)
+        with self.assertRaisesRegex(m.core.GateError,'sampler_image_not_admitted'):_=instance.sampling_image
+
     def test_projection_selects_the_two_product_metrics_profiles(self):
         # Compose config omits inactive profiles. Model that actual behavior,
         # rather than handing the adapter an impossible always-complete map.
