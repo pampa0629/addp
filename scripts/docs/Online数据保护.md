@@ -91,10 +91,21 @@
 | 结构不匹配 | 实际预览 | 实际查询 | 实际服务 | 实际传输 |
 | 操作不支持 | 协议层 | 实际 MySQL 查询 | 实际 MySQL SQL 服务 | 实际 PostgreSQL 查询源传输 |
 
-Transfer 的这两个 SQL 查询源拒绝复用套件已纳管的 PostgreSQL `spatial_algorithm_source.value_a` 合成字段，报告记录实际源 Locator 和引擎；它们不证明 MySQL 查询源已获支持。MySQL 当前未声明 `compute.query.read_session`，以它创建查询源任务会在配置校验返回400，尚未进入保护准备阶段，不能把这个400记为保护拒绝。MySQL 原生表的未就绪、结构不匹配、自然到期和正常脱敏搬运仍使用原有探针；不为验收扩大 Provider 能力、权限或源授权。
+Transfer 的这两个 SQL 查询源拒绝复用套件已纳管的 PostgreSQL `spatial_algorithm_source.value_a` 合成字段，报告记录实际源 Locator 和引擎；它们不证明 MySQL 查询源已获支持。该矩阵最初使用的版本尚未声明MySQL `compute.query.read_session`，其配置校验400未计为保护拒绝；后续已实现的MySQL查询连续读取不改变这两项既有PostgreSQL拒绝探针的证据归属。MySQL 原生表的未就绪、结构不匹配、自然到期和正常脱敏搬运仍使用原有探针；不为验收扩大 Provider 能力、权限或源授权。
 
 这是当前普通表／MongoDB 集合验收 profile 的覆盖边界，协议层单元格仍明确保留实际出口 T4 缺口，不表示产品入口永远不可能触发。`make test-common-postgres` 的 `TestProjectionStoreReasonMatrixAgainstPostgres` 对四个 Owner 的七种共享协议原因持久化、重开、拒绝和正常修订恢复作 T2 验证；PreparedQuery 证明与编译器拒绝由受控协议夹具提供，不能冒称原生引擎或 HTTP T4。尚未生效仍通过协议显式时间参数验证，不更改系统时钟或添加产品设置。新增临时 Service／Transfer 定义必须按实际 ID 删除并确认消失，结构探针沿既有归属 fixture 的 finally 恢复；无需额外数据库、部署入口或 CI 路线。实现、确定性门禁与实际 T4 结果分别记录，v24 旧证据不能替代新增 runtime 单元格。
 
 未就绪探针不能依赖“尚未人工复核”的自动发现窗口：命中检测器置信度的 Finding 会直接采用默认保护并进入 active。套件因此复用已有、字段名不会命中检测器的 PostgreSQL 合成表，在发现完成且零 Finding、尚无人工 Assessment 的真实 enrolling 阶段验证四出口；不暂停 Worker、不加锁、不改检测器阈值或产品状态。报告记录该组实际源与发现完成事实，后续人工指定、三算法、SQL拒绝和银行卡流程沿原路径继续。
 
 查询源拒绝语句必须符合实际原生方言：PostgreSQL 的字符串字面量过滤可以安全重写，不能因 MySQL 的保守限制而预期 PostgreSQL 拒绝。Transfer 的操作不支持探针使用直接字段的 `SELECT DISTINCT`（血缘直接、输出重写不支持）；计算输出探针使用 `CAST(value_a AS text)`（血缘派生），不依赖尚不能证明所有函数依赖的 SUBSTRING 重载。两者须经真实 PostgreSQL Provider／Transfer pipeline 的精确准备拒绝和目标不变回归，且保留字符串过滤合法对照必须只写脱敏值；不扩展 Provider 或函数可信范围。
+
+
+## 默认导出文件随保护规则变化失效
+
+领域报告 v33 取代 v32 作为当前套件契约，保留既有角色资格自然到期、四出口原因矩阵、MongoDB血缘和浏览器v9全部断言。本轮复用已纳管的合成MySQL银行卡五行表、现有普通治理账号及独立Transfer/export覆盖策略，不新增角色、权限、原值或源授权，不改变源数据和部署路线。Manager原生表来源必须携带Meta树提供的item_id以获得计划字段快照；Develop使用同一成功直接字段查询的固定快照，显式空查询／导出选择。MySQL查询连续读取已由既有Provider实现，本轮不扩展引擎能力。
+
+同一用户完成默认、临时全遮盖、显式恢复默认三个阶段。每阶段分别经Manager原生表和Develop查询创建独立导出，核对会话与真实Transfer执行UUID、本人trigger_by、无任务定义、手动执行及实际五行读写，下载并逐值独立校验6份CSV的结构、唯一行标识、Unicode、null/空单元格、非保护字段及掩码。CSV仅在保护断言通过后写入现有artifact目录；恢复阶段按记录值与初始文件比较，不能要求未声明排序的原生表字节顺序固定。
+
+临时覆盖发布并由Transfer确认更高修订后，两个初始会话的状态和文件在中英文下均应409/export_protection_changed；撤销该覆盖并确认再次推进投影后，初始及全遮盖的四个旧会话仍全部拒绝，合计24次真实拒绝。随后新建两个默认导出成功，旧文件不能因恢复原规则而复活。所有创建、状态轮询、成功文件和拒绝响应须单一no-store，拒绝JSON无结果／附件且给出本地化重新导出建议。传输层仅记录Cache-Control、Content-Type、Content-Disposition和X-Request-ID，不收集Cookie、Token或其他凭据头；每个最终边界以owner、阶段、会话、动作、语言及唯一request ID标识，不能复用展示名称当作唯一键。最终矩阵严格42项，状态轮询另留缓存检查证据。
+
+本轮策略变更必须绑定自己的Assessment、Transfer/export和唯一验收原因，采用当前版本的乐观并发控制；已有活动覆盖或并发他人变更时拒绝接管。失败、中断以及写请求结果不确定时均按真实读回的本次归属／修订恢复为revoked，不重放写请求、不覆盖他人修改。身份和功能资格、保护基线及原查询快照保持不变。成功保留6个导出会话、执行与策略修订审计及文件证据，随既有隔离Infra最终销毁，不新增清理接口或声称领域零残留包含这些保留审计；不得把物理清理报告与本轮实际保留范围混淆。真实隔离运行尚需专门CI会话回传，确定性Runner门禁及此前本地Persons验收均不能替代新的Hosted证据。

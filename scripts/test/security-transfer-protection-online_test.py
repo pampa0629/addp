@@ -71,6 +71,10 @@ class GatewayDownloadTest(unittest.TestCase):
                     headers = Message()
                     for value in values:headers.add_header("Cache-Control", value)
                     headers.add_header("Set-Cookie", "private-session-cookie")
+                    headers.add_header("Content-Type", "text/csv" if raw_response else "application/json")
+                    headers.add_header("X-Request-ID", "request-one")
+                    headers.add_header("X-Request-ID", "request-two")
+                    if raw_response:headers.add_header("Content-Disposition", "attachment; filename=fixture.csv")
                     raw = b"phone\n***\n" if raw_response else b'{"error_code":"query_protection_roles_unavailable"}'
                     reply = Mock(status=status, headers=headers)
                     reply.read.return_value = raw
@@ -80,11 +84,21 @@ class GatewayDownloadTest(unittest.TestCase):
                         if status == 409:
                             opened.side_effect = ONLINE.urllib.error.HTTPError("http://localhost/exports/1", status, "Conflict", headers, io.BytesIO(raw))
                         result = ONLINE.GatewayClient("http://localhost:8000", "fixture-token", 30).request(
-                            "GET", "/api/v1/develop/exports/1", (status,), raw_response=raw_response)
+                            "GET", "/api/v1/develop/exports/1", (status,), raw_response=raw_response, language="en")
                     self.assertEqual(result.status, status)
                     self.assertEqual(result.cache_control, values)
                     self.assertEqual(result.payload, raw if raw_response else ONLINE.json.loads(raw))
+                    self.assertEqual(result.content_type, "text/csv" if raw_response else "application/json")
+                    self.assertEqual(result.content_disposition, "attachment; filename=fixture.csv" if raw_response else None)
+                    self.assertEqual(result.request_id, ("request-one", "request-two"))
+                    self.assertEqual(opened.call_args.args[0].get_header("Accept-language"), "en")
                     self.assertNotIn("private-session-cookie", repr(result))
+
+    def test_unknown_acceptance_language_is_rejected_before_transport(self):
+        with patch.object(ONLINE.urllib.request, "urlopen") as opened, self.assertRaises(ONLINE.SuiteError):
+            ONLINE.GatewayClient("http://localhost:8000", "fixture-token", 30).request(
+                "GET", "/api/v1/develop/exports/1", (200,), language="unsupported")
+        opened.assert_not_called()
 
 
 class SecurityTransferProtectionOnlineTest(unittest.TestCase):

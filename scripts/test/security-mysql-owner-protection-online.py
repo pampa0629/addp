@@ -3372,6 +3372,254 @@ def transfer_role_csv(client: GatewayClient, execution: Mapping[str, object], se
              "cache_control": {"create": create_cache, "status": status_cache, "file": file_cache}}, session_path)
 
 
+def export_boundary(response: SUPPORT.Response, owner: str, phase: str, session_id: int,
+                    stage: str, language: str = "") -> dict[str, object]:
+    cache = export_no_store(response)
+    identifiers = {part.strip() for value in response.request_id for part in value.split(",") if part.strip()}
+    if len(identifiers) != 1:
+        raise SuiteError("export response needs one unambiguous request identity")
+    request_id = identifiers.pop()
+    try:
+        if str(uuid.UUID(request_id)) != request_id or uuid.UUID(request_id).int == 0:
+            raise ValueError
+    except (ValueError, TypeError, AttributeError) as error:
+        raise SuiteError("export response request identity must be a UUID") from error
+    return {"owner": owner, "phase": phase, "session_id": session_id, "stage": stage,
+            "language": language, "request_id": request_id, "http_status": response.status, "cache_control": cache}
+
+
+def default_export_csv(client: GatewayClient, owner: str, locator: str, query_id: str,
+                       phase: str, actor_id: str, deadline: float, directory: Path,
+                       boundaries: list[dict[str, object]]) -> tuple[dict[str, object], dict[str, object]]:
+    selected = phase == "tightened"
+    route = "/api/v1/manager/exports" if owner == "manager" else "/api/v1/develop/executions/" + query_id + "/exports"
+    filename = owner + "-" + phase + ".csv"
+    body = {"format": "csv", "file_name": filename}
+    if owner == "manager":
+        body["source_item_locator"] = locator
+    response = client.request("POST", route, (202,), body)
+    session = _object(response.payload, "default export session")
+    session_id = positive_int(session.get("id"), "default export session ID")
+    transfer_id = session.get("transfer_execution_id")
+    try:
+        if not isinstance(transfer_id, str) or str(uuid.UUID(transfer_id)) != transfer_id or uuid.UUID(transfer_id).int == 0 or transfer_id == query_id:
+            raise ValueError
+    except (ValueError, TypeError, AttributeError) as error:
+        raise SuiteError("default export requires a separate actual Transfer UUID") from error
+    boundaries.append(export_boundary(response, owner, phase, session_id, "create"))
+    path = "/api/v1/" + owner + "/exports/" + str(session_id)
+    polls = []
+    while time.monotonic() < deadline:
+        response = client.request("GET", path, (200,))
+        poll = export_boundary(response, owner, phase, session_id, "status")
+        polls.append(poll)
+        session = _object(response.payload, "default export status")
+        if (session.get("id") != session_id or session.get("transfer_execution_id") != transfer_id
+                or session.get("format") != "csv" or session.get("requires_current_user", False) is not False):
+            raise SuiteError("default export changed its session identity or acquired a role selection")
+        if session.get("status") == "success":
+            break
+        if session.get("status") in TERMINAL_STATUSES:
+            raise SuiteError("default export failed before file delivery")
+        time.sleep(1)
+    else:
+        raise SuiteError("default export generation timed out")
+    boundaries.append(poll)
+    if urllib.parse.urlsplit(str(session.get("download_url"))).path != path + "/file":
+        raise SuiteError("default export download route differs from its session")
+    transfer = _object(client.request("GET", "/api/v1/transfer/executions/" + transfer_id, (200,)).payload,
+                       "default export actual Transfer execution")
+    if (transfer.get("execution_id") != transfer_id or transfer.get("status") != "success"
+            or nonnegative_int(transfer.get("task_id"), "default export task") != 0
+            or transfer.get("trigger_type") != "manual"
+            or positive_int(transfer.get("trigger_by"), "default export initiator") != positive_int(actor_id, "current User")
+            or nonnegative_int(transfer.get("records_read"), "default export read count") != 5
+            or nonnegative_int(transfer.get("records_written"), "default export write count") != 5):
+        raise SuiteError("default export execution provenance, status or counts differ")
+    response = client.request("GET", path + "/file", (200,), raw_response=True)
+    boundaries.append(export_boundary(response, owner, phase, session_id, "file"))
+    if (not isinstance(response.content_type, str) or response.content_type.split(";", 1)[0].strip().lower() != "text/csv"
+            or not isinstance(response.content_disposition, str) or response.content_disposition.split(";", 1)[0].strip().lower() != "attachment"
+            or not isinstance(response.payload, bytes) or not response.payload):
+        raise SuiteError("default export must deliver actual CSV attachment bytes")
+    try:
+        reader = csv.DictReader(io.StringIO(response.payload.decode("utf-8-sig"), newline=""))
+        rows = list(reader)
+    except (UnicodeError, csv.Error) as error:
+        raise SuiteError("default export is not valid UTF-8 CSV") from error
+    if reader.fieldnames != BANK_FIELDS or any(set(row) != set(BANK_FIELDS) for row in rows):
+        raise SuiteError("default CSV changed the source columns")
+    for row in rows:
+        if row[BANK_FIELD] == "":
+            row[BANK_FIELD] = None
+    rows.sort(key=lambda row: normalize_id(row.get("id")))
+    evidence = assert_role_masked_rows(rows, BANK_FIELDS, selected)
+    records = {normalize_id(row["id"]): row for row in rows}
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    (directory / filename).write_bytes(response.payload)
+    return ({**evidence, "owner": owner, "phase": phase, "session_id": session_id,
+             "transfer_execution_id": transfer_id, "artifact": filename, "bytes": len(response.payload),
+             "sha256": hashlib.sha256(response.payload).hexdigest(), "status_poll_observations": polls,
+             "csv_empty_cells_verified": True}, records)
+
+
+def default_export_refusals(client: GatewayClient, exports: list[dict[str, object]], phase: str,
+                            boundaries: list[dict[str, object]]) -> None:
+    for item in exports:
+        owner, session_id = str(item["owner"]), positive_int(item["session_id"], "old export session")
+        path = "/api/v1/" + owner + "/exports/" + str(session_id)
+        for language, advice in (("zh-CN", "重新导出"), ("en", "Export again")):
+            for stage, suffix in (("status", ""), ("file", "/file")):
+                response = client.request("GET", path + suffix, (409,), language=language)
+                boundary = export_boundary(response, owner, phase, session_id, stage, language)
+                payload = _object(response.payload, "old export protection refusal")
+                if (set(payload) != {"error", "error_code"} or payload.get("error_code") != "export_protection_changed"
+                        or not isinstance(payload.get("error"), str) or advice not in payload["error"]
+                        or not isinstance(response.content_type, str) or response.content_type.split(";", 1)[0].strip().lower() != "application/json"
+                        or response.content_disposition is not None):
+                    raise SuiteError("old export must refuse with its precise localized JSON cause and no attachment or result")
+                boundaries.append(dict(boundary, error_code=payload["error_code"], result_absent=True,
+                                       reexport_advice_verified=True))
+
+
+def exercise_default_export_protection(client: GatewayClient, engine_id: int, database: str,
+        bank: Mapping[str, object], identity: Mapping[str, object], deadline: float, directory: Path) -> dict[str, object]:
+    """Only this disposable source's export override changes; no IAM or source writes."""
+    source = find_item(client, engine_id, database + "." + BANK_SOURCE, "table")
+    locator = build_item_locator(engine_id, source)
+    if urllib.parse.parse_qs(urllib.parse.urlsplit(locator).query).get("item_id") != [str(positive_int(source.get("id"), "source Meta item"))]:
+        raise SuiteError("native Manager export must retain its actual Meta snapshot identity")
+    assessment_id, enrollment_id = str(bank["assessment_id"]), str(bank["enrollment_id"])
+    def policies():
+        return [item for item in list_pages(client, "/api/v1/security/protection-policies")
+                if item.get("assessment_id") == assessment_id and item.get("consumer_owner") == "transfer" and item.get("action") == "export"]
+    existing = policies()
+    if len(existing) > 1 or any(item.get("state") != "revoked" for item in existing):
+        raise SuiteError("default export probe cannot take over an active or ambiguous Policy")
+    previous = existing[0] if existing else None
+    policy_id = str(previous["id"]) if previous else None
+    initial_version = positive_int(previous["version"], "initial export Policy version") if previous else 0
+    nonce = "online-default-export-" + str(uuid.uuid4())
+    initial_projection = role_projection(client, enrollment_id, "transfer")
+    baseline = definition_array(client, "/api/v1/security/protection-baselines")
+    before_identity = validate_user_identity(client, positive_int(identity["tenant_id"], "export Tenant"))
+    if before_identity != identity:
+        raise SuiteError("default export must retain its original ordinary User")
+    query = develop_execution(client, engine_id, locator, deadline,
+        "SELECT " + ",".join(BANK_FIELDS) + " FROM " + BANK_SOURCE + " ORDER BY id", "sql", choices=[], export_choices=[])
+    assert_develop_role_result(query, False)
+    query_id = str(query["execution_id"])
+    if str(uuid.UUID(query_id)) != query_id or uuid.UUID(query_id).int == 0:
+        raise SuiteError("default export query needs its actual UUID")
+    query_snapshot = json.loads(json.dumps(query.get("execution_config")))
+    content = _object(_object(query_snapshot, "default query snapshot").get("content"), "default query content")
+    if content.get("protection_choices") != [] or content.get("export_protection_choices") != []:
+        raise SuiteError("default export query must freeze explicit empty choices")
+    exports, boundaries, records, projections = [], [], {}, {"before": initial_projection}
+    attempted = False
+    restored = False
+    final_policy = None
+    def read_owned_policy():
+        candidates = policies()
+        if len(candidates) > 1:
+            raise SuiteError("concurrent export Policy identity change")
+        if not candidates:
+            return None
+        current = _object(client.request("GET", "/api/v1/security/protection-policies/" + str(candidates[0]["id"]), (200,)).payload, "export Policy readback")
+        if (current.get("assessment_id") != assessment_id or current.get("consumer_owner") != "transfer"
+                or current.get("action") != "export" or (policy_id is not None and str(current.get("id")) != policy_id)):
+            raise SuiteError("export Policy binding changed during cleanup")
+        return current
+    def restore_policy():
+        nonlocal restored, final_policy, policy_id
+        current = read_owned_policy()
+        if current is None and previous is None:
+            restored = True  # The attempted create did not persist.
+            return
+        if current is None:
+            raise SuiteError("existing export Policy disappeared during cleanup")
+        version = positive_int(current.get("version"), "cleanup export Policy version")
+        if current.get("state") == "revoked" and version == initial_version:
+            restored, final_policy = True, current
+            return
+        revision = _object(current.get("current"), "cleanup Policy revision")
+        if (not isinstance(revision.get("rationale"), str) or not revision["rationale"].startswith(nonce)
+                or version not in {initial_version + 1, initial_version + 2}):
+            raise SuiteError("concurrent Policy mutation: cleanup will not overwrite it")
+        policy_id = str(current["id"])
+        if current.get("state") == "active" and version == initial_version + 1:
+            final_policy = _object(client.request("DELETE", "/api/v1/security/protection-policies/" + policy_id, (200,),
+                {"version": version, "rationale": nonce + " restore default export"}).payload, "restored export Policy")
+        elif current.get("state") == "revoked" and version == initial_version + 2:
+            final_policy = current  # A DELETE with an uncertain result already committed.
+        else:
+            raise SuiteError("unexpected export Policy cleanup transition")
+        if final_policy.get("state") != "revoked" or positive_int(final_policy.get("version"), "restored Policy version") != initial_version + 2:
+            raise SuiteError("export Policy restoration did not revoke exactly our override")
+        restored = True
+    failure = None
+    try:
+        for phase in ("before", "tightened", "restored"):
+            if phase == "tightened":
+                body = {"effect": "mask", "algorithm": STRUCTURED_MASK_ALGORITHM,
+                        "parameters": {"prefix_runes": 0, "suffix_runes": 0, "mask_rune": "*"},
+                        "invalid_value_effect": "suppress", "role_options": [], "rationale": nonce + " temporary export tightening"}
+                attempted = True
+                response = client.request("PUT" if previous else "POST", "/api/v1/security/protection-policies" + ("/" + policy_id if previous else ""),
+                    (200,) if previous else (201,), dict(body, version=initial_version) if previous else dict(body, assessment_id=assessment_id, consumer_owner="transfer", action="export"))
+                active = _object(response.payload, "temporary default export Policy")
+                candidate_id = active.get("id")
+                if (not isinstance(candidate_id, str) or str(uuid.UUID(candidate_id)) != candidate_id or uuid.UUID(candidate_id).int == 0
+                        or (policy_id is not None and candidate_id != policy_id)
+                        or active.get("assessment_id") != assessment_id or active.get("consumer_owner") != "transfer"
+                        or active.get("action") != "export" or active.get("state") != "active"
+                        or positive_int(active.get("version"), "active Policy version") != initial_version + 1):
+                    raise SuiteError("default export tightening changed an unexpected Policy binding or version")
+                policy_id = candidate_id
+                projections[phase] = wait_role_projection(client, enrollment_id, projections["before"], deadline, "transfer")
+                default_export_refusals(client, exports, "after_tightening", boundaries)
+            elif phase == "restored":
+                restore_policy()
+                projections[phase] = wait_role_projection(client, enrollment_id, projections["tightened"], deadline, "transfer")
+                default_export_refusals(client, exports, "after_restoration", boundaries)
+            for owner in ("manager", "develop"):
+                item, data = default_export_csv(client, owner, locator, query_id, phase, str(identity["principal_id"]), deadline, directory, boundaries)
+                exports.append(item)
+                records[owner, phase] = data
+                if phase == "restored" and data != records[owner, "before"]:
+                    raise SuiteError("default re-export did not restore the initial record values")
+        ids = [item["transfer_execution_id"] for item in exports]
+        keys = {(x["owner"], x["phase"], x["session_id"], x["stage"], x["language"]) for x in boundaries}
+        if (len(exports) != 6 or len(set(ids + [query_id])) != 7 or len(boundaries) != 42 or len(keys) != 42
+                or len({x["request_id"] for x in boundaries}) != 42
+                or sum(x["http_status"] == 409 for x in boundaries) != 24
+                or records["manager", "before"] != records["develop", "before"]
+                or records["manager", "tightened"] != records["develop", "tightened"]
+                or validate_user_identity(client, positive_int(identity["tenant_id"], "export Tenant")) != identity
+                or definition_array(client, "/api/v1/security/protection-baselines") != baseline):
+            raise SuiteError("default export matrix, identity, baseline or owner parity differs")
+        retained_query = _object(client.request("GET", "/api/v1/develop/executions/" + query_id, (200,)).payload, "unchanged default export query")
+        if retained_query.get("execution_config") != query_snapshot:
+            raise SuiteError("default export changed its original query snapshot")
+        assert_develop_role_result(retained_query, False)
+    except BaseException as error:
+        failure = error
+    if attempted and not restored:
+        try:
+            restore_policy()
+        except BaseException as error:
+            raise SuiteError("default export Policy cleanup failed: " + str(error)) from failure
+    if failure:
+        raise failure
+    if not restored or final_policy is None:
+        raise SuiteError("default export did not verify restoration")
+    return {"source_locator": locator, "query_execution_id": query_id, "exports": exports, "boundaries": boundaries,
+            "projections": projections, "policy_id": policy_id, "initial_policy_version": initial_version,
+            "final_policy_version": positive_int(final_policy["version"], "final Policy version"),
+            "policy_restored": True, "same_user_and_baselines_unchanged": True, "query_snapshot_unchanged": True,
+            "retained_export_sessions": 6, "artifact_cleanup_scope": "isolated Infra teardown"}
+
+
 def exercise_transfer_role_membership_expiry(client: GatewayClient, engine_id: int, target_engine_id: int, database: str,
         bank: Mapping[str, object], owner_identity: Mapping[str, object], run_id: str, deadline: float,
         environment: Mapping[str, str] | None = None) -> dict[str, object]:
@@ -3749,6 +3997,9 @@ def run_scenario(
         client, source_engine_id, source_database, bank_card_metadata, identity, deadline, role_environment)
     transfer_role_membership_expiry = exercise_transfer_role_membership_expiry(
         client, source_engine_id, target_engine_id, source_database, bank_card_metadata, identity, run_id, deadline, role_environment)
+    default_export_protection = exercise_default_export_protection(
+        client, source_engine_id, source_database, bank_card_metadata, identity, deadline,
+        Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR")) / "default-export-protection")
     source_full_name = f"{source_database}.{SOURCE_TABLE}"
     source_item = find_item(client, source_engine_id, source_full_name, "table")
     target_item = find_item(
@@ -3832,7 +4083,7 @@ def run_scenario(
             source_locator, target_parent_locator, target_locator, service_name, task_name, identity, deadline, task_ids)
         result = {
             "resource_validity": resource_validity,
-            "schema_version": "addp.security-mysql-owner-protection-online/v32",
+            "schema_version": "addp.security-mysql-owner-protection-online/v33",
             "result": "passed",
             "identity": identity,
             "governance": governance,
@@ -3844,6 +4095,7 @@ def run_scenario(
             "service_role_membership_expiry": service_role_membership_expiry,
             "develop_role_membership_expiry": develop_role_membership_expiry,
             "transfer_role_membership_expiry": transfer_role_membership_expiry,
+            "default_export_protection": default_export_protection,
             "fixture": {
                 "source_engine_id": str(source_engine_id),
                 "target_engine_id": str(target_engine_id),

@@ -3604,5 +3604,188 @@ class FourOutletReasonMatrixTest(unittest.TestCase):
                     cleanup.assert_called_once_with(client,41)
 
 
+class DefaultExportBackend:
+    def __init__(self, fault=None):
+        self.fault = fault
+        self.policy = {"id": str(uuid.UUID(int=81)), "assessment_id": "assessment", "consumer_owner": "transfer", "action": "export",
+                       "state": "revoked", "version": 6, "current": {"rationale": "previous audit"}}
+        if fault == "initial_active": self.policy["state"] = "active"
+        self.present = fault not in {"new_policy", "uncertain_create"}
+        self.initial_version = 6 if self.present else 0
+        self.policy["version"] = self.initial_version
+        self.boundary_number = 0
+        self.bad_boundary = None
+        self.bad_cache = ()
+        self.revision = 10
+        self.sessions = {}
+        self.transfer = {}
+        self.events = []
+        self.serial = 0
+        self.query = {"execution_id": str(uuid.UUID(int=80)), "status": "success",
+                      "execution_config": {"content": {"protection_choices": [], "export_protection_choices": []}}}
+
+    def response(self, status, payload, *, file=False, refusal=False):
+        self.serial += 1
+        cache = ("public",) if self.fault == "cache" else ("no-store",)
+        rid = str(uuid.UUID(int=1 if self.fault == "duplicate_request" else self.serial))
+        return ONLINE.SUPPORT.Response(status, payload, cache,
+            "text/csv" if file else "application/json; charset=utf-8",
+            "attachment; filename=fixture.csv" if file or (refusal and self.fault == "refusal_attachment") else None,
+            (rid,) if self.fault != "missing_request" else ())
+
+    def request(self, method, path, expected, body=None, **kwargs):
+        self.events.append((method, path, copy.deepcopy(body), copy.deepcopy(kwargs)))
+        response = self.handle(method, path, body, **kwargs)
+        if (path.startswith(("/api/v1/manager/exports", "/api/v1/develop/exports/"))
+                or method=="POST" and path.startswith("/api/v1/develop/executions/") and path.endswith("/exports")):
+            self.boundary_number += 1
+            if self.bad_boundary == self.boundary_number:response.cache_control=self.bad_cache
+        if response.status not in expected:
+            raise ONLINE.SuiteError("unexpected test response status")
+        return response
+
+    def handle(self, method, path, body, **kwargs):
+        if path.startswith("/api/v1/security/protection-policies?page="):
+            return self.response(200, {"data": [copy.deepcopy(self.policy)] if self.present else [], "total_pages": 1})
+        if path == "/api/v1/security/protection-enrollments/enrollment":
+            return self.response(200, {"state": "active", "owner_progress": [{"consumer_owner": "transfer", "projection_state": "active",
+                "projection_id": "projection", "revision": f"{self.revision:020d}", "published_cursor": "cursor-"+str(self.revision), "acknowledged": True}]})
+        if path in {"/api/v1/security/protection-policies/" + self.policy["id"], "/api/v1/security/protection-policies"}:
+            if method == "GET": return self.response(200, copy.deepcopy(self.policy))
+            if method in {"PUT","POST"}:
+                if method=="PUT":assert body["version"] == self.policy["version"]
+                else:assert not self.present;self.present=True
+                assert body["role_options"] == []
+                self.policy.update(state="active", version=self.initial_version+1, current=copy.deepcopy(body))
+                self.revision += 1
+                for item in self.sessions.values():item["invalidated"] = True
+                if self.fault in {"uncertain_tighten","uncertain_create"}: raise ONLINE.SuiteError("uncertain tightening")
+                return self.response(200 if method=="PUT" else 201, copy.deepcopy(self.policy))
+            if method == "DELETE":
+                assert body["version"] == self.policy["version"]
+                self.policy.update(state="revoked", version=self.initial_version+2, current={**self.policy["current"], "rationale":body["rationale"]})
+                self.revision += 1
+                for item in self.sessions.values():item["invalidated"] = True
+                if self.fault == "uncertain_revoke": raise ONLINE.SuiteError("uncertain restoration")
+                return self.response(200, copy.deepcopy(self.policy))
+        if path == "/api/v1/develop/executions/" + self.query["execution_id"]:
+            return self.response(200, copy.deepcopy(self.query))
+        if method == "GET" and path.startswith("/api/v1/transfer/executions/"):
+            value = copy.deepcopy(self.transfer[path.rsplit("/",1)[1]])
+            for fault, key, bad in (("wrong_actor","trigger_by",99), ("wrong_counts","records_written",4), ("bound_task","task_id",3)):
+                if self.fault == fault:value[key] = bad
+            return self.response(200, value)
+        if method == "POST" and (path == "/api/v1/manager/exports" or path.endswith("/exports") and path.startswith("/api/v1/develop/executions/")):
+            owner = "manager" if path.startswith("/api/v1/manager") else "develop"
+            if owner == "manager": assert "item_id=41" in body["source_item_locator"]
+            identifier = len(self.sessions)+1
+            transfer_id = str(uuid.UUID(int=100+identifier))
+            session_path = "/api/v1/"+owner+"/exports/"+str(identifier)
+            value = {"id":identifier,"format":"csv","status":"success","download_url":session_path+"/file", "transfer_execution_id":transfer_id}
+            self.sessions[identifier] = {"response":value,"owner":owner,"masked":self.policy["state"]=="active", "invalidated":False}
+            self.transfer[transfer_id] = {"execution_id":transfer_id,"status":"success","task_id":0,"trigger_type":"manual","trigger_by":9,"records_read":5,"records_written":5}
+            return self.response(202,copy.deepcopy(value))
+        if path.startswith(("/api/v1/manager/exports/","/api/v1/develop/exports/")):
+            identifier = int(path.split("/")[5]);item=self.sessions[identifier]
+            if item["invalidated"] and not (self.fault == "old_revives" and self.policy["state"] == "revoked"):
+                language=kwargs.get("language")
+                assert language in {"zh-CN","en"}
+                value={"error":"保护已更新，请重新导出。" if language=="zh-CN" else "Protection changed. Export again.","error_code":"export_protection_changed"}
+                if self.fault == "wrong_reason":value["error_code"]="query_protection_roles_unavailable"
+                if self.fault == "refusal_data":value["rows"]=[]
+                if self.fault == "wrong_language":value["error"]="request failed"
+                return self.response(409,value,refusal=True)
+            if not path.endswith("/file"):return self.response(200,copy.deepcopy(item["response"]))
+            if item["masked"] and self.fault in {"interrupt_file","concurrent_policy"}:
+                if self.fault=="concurrent_policy":self.policy["current"]["rationale"]="other operator change"
+                raise KeyboardInterrupt()
+            stream=io.StringIO();writer=csv.DictWriter(stream,fieldnames=ONLINE.BANK_FIELDS);writer.writeheader()
+            for index in range(1,6):
+                key=str(index);value=ONLINE.BANK_SOURCE_VALUES[key]
+                masked="*"*len(value) if value else None
+                output=masked if item["masked"] else ONLINE.BANK_MASKED[key]
+                if item["masked"] and self.fault=="default_instead":output=ONLINE.BANK_MASKED[key]
+                if self.fault=="raw_csv":output=value
+                writer.writerow({"id":key,"customer_code":"CUST-1000"+key,ONLINE.BANK_FIELD:output,
+                    "bank_account_no":"account-"+key,"card_id":"card-"+key,"bank_card_verified":"verified-"+key,"credit_card_number":100+index})
+            return self.response(200,stream.getvalue().encode(),file=True)
+        raise AssertionError("unexpected default export route "+method+" "+path)
+
+
+class DefaultExportProtectionTest(unittest.TestCase):
+    def run_case(self, backend, directory):
+        identity={"principal_id":"9","tenant_id":"2"}
+        locator="addp://engine/23/path/fixture/bank_card_accounts?type=table&item_id=41"
+        if backend.fault=="missing_meta":locator=locator.split("&item_id=")[0]
+        with (patch.object(ONLINE,"find_item",return_value={"id":41}),
+              patch.object(ONLINE,"build_item_locator",return_value=locator),
+              patch.object(ONLINE,"definition_array",return_value=[{"version":1}]),
+              patch.object(ONLINE,"validate_user_identity",return_value=identity),
+              patch.object(ONLINE,"develop_execution",return_value=copy.deepcopy(backend.query)),
+              patch.object(ONLINE,"assert_develop_role_result",return_value={"rows":5})):
+            return ONLINE.exercise_default_export_protection(backend,23,"fixture",{"assessment_id":"assessment","enrollment_id":"enrollment"},
+                identity,time.monotonic()+30,Path(directory))
+
+    def test_six_real_csv_controls_and_24_sticky_refusals_use_unique_boundary_keys(self):
+        backend=DefaultExportBackend()
+        with tempfile.TemporaryDirectory() as directory:
+            report=self.run_case(backend,directory)
+            self.assertEqual(len(list(Path(directory).glob("*.csv"))),6)
+            self.assertEqual(len(report["exports"]),6)
+            self.assertEqual(len(report["boundaries"]),42)
+            self.assertEqual(sum(x["http_status"]==409 for x in report["boundaries"]),24)
+            self.assertEqual(len({x["request_id"] for x in report["boundaries"]}),42)
+            self.assertTrue(report["policy_restored"] and report["query_snapshot_unchanged"])
+            self.assertEqual(report["initial_policy_version"],6);self.assertEqual(report["final_policy_version"],8)
+            self.assertEqual(len({x["transfer_execution_id"] for x in report["exports"]}),6)
+            self.assertTrue(all(x["cache_control"]=="no-store" for x in report["boundaries"]))
+        self.assertEqual([e[0] for e in backend.events if e[0] in {"PUT","DELETE"}],["PUT","DELETE"])
+        self.assertEqual(backend.policy["state"],"revoked")
+        self.assertEqual(sum(path.startswith("/api/v1/system/") for _,path,_,_ in backend.events),0)
+
+    def test_fresh_policy_creation_is_revoked_and_its_audit_is_retained(self):
+        backend=DefaultExportBackend("new_policy")
+        with tempfile.TemporaryDirectory() as directory:report=self.run_case(backend,directory)
+        self.assertEqual(report["initial_policy_version"],0);self.assertEqual(report["final_policy_version"],2)
+        self.assertEqual(backend.policy["state"],"revoked")
+
+    def test_each_of_42_delivery_boundaries_rejects_missing_public_or_conflicting_cache(self):
+        for index in range(1,43):
+            for cache in ((),("public",),("no-store","public")):
+                backend=DefaultExportBackend();backend.bad_boundary=index;backend.bad_cache=cache
+                with self.subTest(index=index,cache=cache),tempfile.TemporaryDirectory() as directory:
+                    with self.assertRaisesRegex(ONLINE.SuiteError,"Cache-Control"):self.run_case(backend,directory)
+                self.assertEqual(backend.policy["state"],"revoked")
+
+    def test_protocol_leaks_wrong_provenance_and_false_recovery_cannot_pass(self):
+        for fault in ("cache","missing_request","duplicate_request","wrong_actor","wrong_counts","bound_task", "raw_csv",
+                      "default_instead","wrong_reason","refusal_attachment","refusal_data","wrong_language","old_revives","initial_active","missing_meta"):
+            backend=DefaultExportBackend(fault)
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                with self.assertRaises(ONLINE.SuiteError):self.run_case(backend,directory)
+            if fault!="initial_active":self.assertEqual(backend.policy["state"],"revoked")
+            if fault=="missing_meta":self.assertEqual(backend.sessions,{})
+
+    def test_uncertain_write_is_read_back_and_never_retried(self):
+        for fault in ("uncertain_tighten","uncertain_revoke","uncertain_create"):
+            backend=DefaultExportBackend(fault)
+            with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory:
+                with self.assertRaises(ONLINE.SuiteError):self.run_case(backend,directory)
+            self.assertEqual(backend.policy["state"],"revoked")
+            self.assertEqual(sum(method in {"PUT","POST"} and path.startswith("/api/v1/security/") for method,path,_,_ in backend.events),1)
+            self.assertEqual(sum(method=="DELETE" for method,_,_,_ in backend.events),1)
+
+    def test_interrupt_restores_own_override_but_does_not_overwrite_a_concurrent_operator(self):
+        backend=DefaultExportBackend("interrupt_file")
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(KeyboardInterrupt):self.run_case(backend,directory)
+        self.assertEqual(backend.policy["state"],"revoked")
+        backend=DefaultExportBackend("concurrent_policy")
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ONLINE.SuiteError,"cleanup failed"):self.run_case(backend,directory)
+        self.assertEqual(backend.policy["state"],"active")
+        self.assertFalse(any(method=="DELETE" for method,_,_,_ in backend.events))
+
+
 if __name__ == "__main__":
     unittest.main()

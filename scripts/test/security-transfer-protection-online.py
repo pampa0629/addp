@@ -54,6 +54,9 @@ class Response:
     status: int
     payload: Any
     cache_control: tuple[str, ...] = ()
+    content_type: str | None = None
+    content_disposition: str | None = None
+    request_id: tuple[str, ...] = ()
 
 
 class GatewayClient:
@@ -71,8 +74,10 @@ class GatewayClient:
         path: str,
         expected: Iterable[int],
         body: dict[str, object] | None = None,
-        *, raw_response: bool = False,
+        *, raw_response: bool = False, language: str | None = None,
     ) -> Response:
+        if language is not None and language not in {"zh-CN", "en"}:
+            raise SuiteError("unsupported acceptance response language")
         data = None if body is None else json.dumps(body).encode()
         request = urllib.request.Request(
             self.base_url + path,
@@ -81,6 +86,7 @@ class GatewayClient:
             headers={
                 "Accept": "application/octet-stream" if raw_response else "application/json",
                 "Content-Type": "application/json",
+                **({"Accept-Language": language} if language else {}),
                 **({"Authorization": f"Bearer {self.token}"} if self.token else {}),
             },
         )
@@ -89,15 +95,21 @@ class GatewayClient:
                 status = response.status
                 raw = response.read()
                 cache_control = tuple(response.headers.get_all("Cache-Control", []))
+                content_type = response.headers.get("Content-Type")
+                content_disposition = response.headers.get("Content-Disposition")
+                request_id = tuple(response.headers.get_all("X-Request-ID", []))
         except urllib.error.HTTPError as error:
             status = error.code
             raw = error.read()
             cache_control = tuple(error.headers.get_all("Cache-Control", []))
+            content_type = error.headers.get("Content-Type")
+            content_disposition = error.headers.get("Content-Disposition")
+            request_id = tuple(error.headers.get_all("X-Request-ID", []))
         except (urllib.error.URLError, TimeoutError) as error:
             raise SuiteError(f"{method} {path} transport failed: {error}") from error
         expected_statuses = set(expected)
         if raw_response and status in expected_statuses:
-            return Response(status=status, payload=raw, cache_control=cache_control)
+            return Response(status, raw, cache_control, content_type, content_disposition, request_id)
         try:
             payload = json.loads(raw) if raw else {}
         except json.JSONDecodeError as error:
@@ -105,7 +117,7 @@ class GatewayClient:
         if status not in expected_statuses:
             code = payload.get("error_code", "unknown") if isinstance(payload, dict) else "unknown"
             raise SuiteError(f"{method} {path} returned HTTP {status} ({code})")
-        return Response(status=status, payload=payload, cache_control=cache_control)
+        return Response(status, payload, cache_control, content_type, content_disposition, request_id)
 
 
 def _object(payload: Any, resource: str) -> dict[str, object]:

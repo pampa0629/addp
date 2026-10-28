@@ -620,3 +620,12 @@ Transfer 任务选择／保存／执行与 Develop 全量导出尚未接通，�
 前两次临时脚本失败均保留：首次遗漏管理员既有MFA步骤，在登录阶段退出；第二次Manager请求漏带已有Meta item_id，未取得字段快照而在保护准备阶段fail-closed，未写出CSV。已按现有认证契约补齐MFA／上下文响应解析，Manager来源与正常UI及既有成功脚本一致携带item_id44573，未放宽保护校验或改变产品代码。临时脚本11项回归及语法检查通过。独立审计初次因两批旧文件复用检查名称而拒绝，后按冻结顺序、42个唯一请求与实际Owner日志逐项校验，仍严格要求24拒绝／6物理CSV／6执行及恢复事实；未修改原始运行报告。
 
 证据：`/tmp/p145-export-protection-http-20261027/acceptance-report.json`、同目录`independent-runtime-audit.json`、`request-endpoint-evidence.json`及6份CSV；独立命令`python3 /tmp/p145-export-protection-independent-audit.py`退出0。失败材料及脚本修正证据为`/tmp/p145-export-protection-http-20261027-failed-login/`、`/tmp/p145-export-protection-http-20261027-failed-missing-source-snapshot/`、`/tmp/p145-export-protection-login-fix-audit.json`、`/tmp/p145-export-protection-source-fix-audit.json`。本轮新增的是限定默认出口的本地真实HTTP证据，不计为浏览器实际验收或隔离Hosted通过，也不替代角色专用文件、其他引擎／格式、自然到期、全量Service续页或在途并发撤销验证。相关投影在Owner同步生效前仍有既有窗口。清单实际行155/B空总述、156/B155动态脱敏实时生效继续部分实现；优先将本轮同一矩阵纳入既有隔离套件，CI由专门会话跟进，静态透明加密及通用SQL等既有缺口保留。
+
+
+### 默认导出失效矩阵接入隔离套件（2026-10-28）
+
+既有`security-mysql-owner-protection`领域契约升级v33，浏览器v9不变。复用合成银行卡五行表、现有普通治理账号、既有Meta Locator和Transfer/export覆盖策略，新增`default_export_protection`：Manager原生表与同一Develop直接查询快照各做默认／全遮盖／恢复默认三次真实导出；6份CSV在保护及相邻字段／Unicode／空值断言后保存于已有artifact目录，逐次复核实际Transfer UUID、trigger_by、五行读写和非任务定义来源。两个初始会话在规则更新后、全部四个旧会话在恢复默认后分别校验中英文status/file精确409/export_protection_changed、无结果／附件及重新导出建议，共24拒绝，最终42个边界使用会话／动作／语言和独立请求UUID作为身份；轮询另外逐次校验no-store。新文件恢复按记录值比较，不依赖原生表未声明的物理行序。
+
+临时策略只在自己的Assessment和Transfer/export绑定下用当前版本变更。已有活动覆盖或并发他人变更时不接管；中断及PUT／POST／DELETE结果不确定时只读回、核对本次唯一原因和版本后撤销本次覆盖，不重试写操作，不覆盖他人事实。身份、基线和原查询快照保持。保留6会话／执行、策略审计及CSV，沿既有隔离Infra最终销毁；不新增权限、账号、授权、部署、清理接口或T4入口，保留原有各出口及物理清理边界。公共测试HTTP客户端仅增加Content-Type、Content-Disposition和X-Request-ID的保存及两种验收语言，禁止收集Cookie／Token；产品API及Swagger不变。
+
+验证：`make test-security-online-runner`退出0，含38／58／31／293项Python回归、System合成身份Go门禁和CI登记检查；新增6个领域测试覆盖完整6CSV／24拒绝、全部42边界分别缺失／public／矛盾缓存头（126个反例）、错误原因／原值或默认值误替代／发起人或读写数错误／旧文件复活、缺Meta标识、现有活动策略拒绝、首次创建／未知写结果恢复、中断恢复及并发清理拒绝。HTTP客户端的成功JSON／CSV／错误响应验证安全头保留、Cookie不留存及未知语言在发请求前拒绝。定向反例通过不计作真实HTTP；日志`/tmp/p145-default-export-runner-targeted.log`与`/tmp/p145-default-export-runner-full.log`。现有Make入口与固定Hosted suite自动发现本次变更，CI注册及其删除反例同步为v33，无新增workflow。此前Persons的本地42项实际验收保持有效；新增v33真实隔离Hosted尚未运行，由专门CI会话跟进，不自行触发、轮询或设置定时。清单155/B空和156/B155仍部分实现。
