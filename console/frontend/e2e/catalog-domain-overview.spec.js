@@ -31,7 +31,7 @@ async function fixture(page, { inventory = true, quality = false, localFirstPage
    ...(localFirstPage ? { owner_domain_id: ref.source_identity === '76' ? '32' : '31' } : { scope_type: 'tenant_common' }),
    entry: { id: `00000000-0000-4000-8000-0000000000${ref.source_identity}`, display_name: localFirstPage ? `${ref.source_identity === '76' ? '跨域' : '本域'}活动标识${ref.source_identity}` : '公共活动标识' }
   })) } })
-  if (quality && /^\/api\/v1\/quality\/(rules|plans|issues)$/.test(path)) return route.fulfill({ json: { data: [{ id: 1, name: '户外质量检查'.repeat(30), table_name: 'dim_outdoor_person_'.repeat(18), column_name: 'person_nickname_'.repeat(15) }], total: 1 } })
+  if (quality && /^\/api\/v1\/quality\/(rules|plans|issues)$/.test(path)) return route.fulfill({ json: { data: [{ id: 1, name: '户外质量检查'.repeat(30), table_name: 'dim_outdoor_person_'.repeat(18), column_name: 'person_nickname_'.repeat(15) }], total: { rules: 14, plans: 3, issues: 0 }[path.split('/').at(-1)] } })
   if (path === '/api/v1/catalog/entries/facets') return route.fulfill({ json: { view: 'inventory', primary_domains: { status: 'current', options: [] }, accountable_departments: { status: 'current', options: [] }, source_engines: { status: 'current', options: [] }, entry_types: [{ entry_type: 'element', count: 1 }] } })
   if (path === '/api/v1/catalog/entries') return route.fulfill({ json: { data: [{ id: '00000000-0000-4000-8000-000000000071', version: 1, display_name: '户外活动标识', entry_type: 'element', governance_status: 'discovered', visibility: 'inventory', source_status: 'active' }], total: 1, page: 1, page_size: 20, total_pages: 1 } })
   return route.fulfill({ status: 500, json: { error: `unexpected ${request.method()} ${path}` } })
@@ -49,6 +49,9 @@ test('Catalog domain overview shares inventory counts, resource drill-down and a
  await expect(overview.getByRole('button', { name: '业务定义 · 5/5', exact: true })).toBeDisabled()
  await expect(overview.getByTestId('catalog-domain-reference-summary')).toContainText('公共活动标识')
  await expect(overview).toContainText('无权查看此类引用')
+ await expect(overview.getByTestId('catalog-domain-quality-summary').locator('section[data-state="forbidden"]')).toHaveCount(3)
+ await expect(overview.getByTestId('catalog-domain-quality-summary').getByRole('button', { name: '在 Quality 查看全部', exact: true })).toHaveCount(0)
+ expect(reads.some(path => path.includes('/api/v1/quality/'))).toBe(false)
  expect(reads.some(path => path.includes('/api/v1/model/') || path.includes('/api/v1/standard/'))).toBe(false)
  await overview.getByRole('button', { name: '数据元 · 1', exact: true }).click()
  await expect(page).toHaveURL(/\/catalog\/entries\?view=inventory&entry_type=element&primary_domain_id=31$/)
@@ -100,9 +103,9 @@ test('Catalog reference sections with no results have no pagination', async ({ p
 })
 
 for (const width of [1280, 1040]) {
- test(`Catalog overview layout separates domain context and wraps Quality identifiers at ${width}px`, async ({ page }) => {
+ test(`Catalog overview layout separates domain context and limits Quality to counts at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 900 })
-  const { catalog, writes, errors } = await fixture(page, { quality: true })
+  const { catalog, reads, writes, errors } = await fixture(page, { quality: true })
   await page.goto('/catalog/domains?domain_id=31&view=inventory')
   const overview = catalog.getByTestId('catalog-domain-overview')
   await expect(overview.getByRole('heading', { name: '户外域', exact: true })).toBeVisible()
@@ -111,8 +114,16 @@ for (const width of [1280, 1040]) {
   expect(heading.y - (selectors.y + selectors.height)).toBeGreaterThanOrEqual(16)
   const quality = catalog.getByTestId('catalog-domain-quality-summary')
   await expect(quality.locator('section[data-state="ready"]')).toHaveCount(3)
-  await expect(quality.locator('li').last()).toHaveText('dim_outdoor_person_'.repeat(18) + '.' + 'person_nickname_'.repeat(15))
-  expect(await quality.evaluate(root => [root, ...root.querySelectorAll('section, li')].every(node => node.scrollWidth <= node.clientWidth + 1))).toBe(true)
+  for (const [index, count] of [14, 3, 0].entries()) await expect(quality.locator('section').nth(index)).toContainText(`共 ${count} 项`)
+  await expect(quality.getByRole('button', { name: '在 Quality 查看全部', exact: true })).toHaveCount(3)
+  await expect(quality.locator('ul, li')).toHaveCount(0)
+  await expect(quality).not.toContainText('户外质量检查')
+  await expect(quality).not.toContainText('dim_outdoor_person_')
+  const requests = reads.filter(path => path.includes('/api/v1/quality/'))
+  expect(requests).toHaveLength(3)
+  expect(requests.every(path => path.includes('owner_domain_id=31') && path.includes('page_size=1'))).toBe(true)
+  expect(requests.find(path => path.includes('/issues?'))).toContain('status=open')
+  expect(await quality.evaluate(root => [root, ...root.querySelectorAll('section')].every(node => node.scrollWidth <= node.clientWidth + 1))).toBe(true)
   expect(await overview.evaluate(root => root.ownerDocument.documentElement.scrollWidth <= root.ownerDocument.documentElement.clientWidth + 1)).toBe(true)
   expect(writes).toEqual([]); expect(errors).toEqual([])
  })

@@ -286,7 +286,6 @@
         "forbidden": "无权查看此类质量治理内容",
         "unavailable": "Quality 当前不可用，其他目录内容不受影响。",
         "loading": "正在读取 Quality…",
-        "empty": "本域暂无此类内容",
         "retry": "重试",
         "viewAll": "在 Quality 查看全部"
       },

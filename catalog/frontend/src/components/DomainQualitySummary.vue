@@ -5,10 +5,8 @@
     <div class="quality-grid">
       <section v-for="section in sections" :key="section.key" :data-state="section.status">
         <strong>{{ t(`catalog.entries.domainQuality.${section.key}`) }}</strong>
-        <span v-if="section.status === 'ready'"> · {{ t('catalog.entries.domainQuality.count', { count: section.total }) }}</span>
-        <p v-if="section.status !== 'ready'">{{ t(`catalog.entries.domainQuality.${section.status === 'forbidden' ? 'forbidden' : section.status === 'unavailable' ? 'unavailable' : 'loading'}`) }}</p>
-        <p v-else-if="section.items.length === 0">{{ t('catalog.entries.domainQuality.empty') }}</p>
-        <ul v-else><li v-for="item in section.items" :key="item.id">{{ item.name || t('catalog.entries.unnamed') }}</li></ul>
+        <p v-if="section.status === 'ready'" class="quality-count">{{ t('catalog.entries.domainQuality.count', { count: section.total }) }}</p>
+        <p v-else>{{ t(`catalog.entries.domainQuality.${section.status === 'forbidden' ? 'forbidden' : section.status === 'unavailable' ? 'unavailable' : 'loading'}`) }}</p>
         <el-button v-if="section.status === 'unavailable'" link @click="load(section)">{{ t('catalog.entries.domainQuality.retry') }}</el-button>
         <el-button v-if="section.status === 'ready' && allowsConsoleRoute(section.route, auth.contextType, auth.permissions)" link type="primary" @click="open(section)">{{ t('catalog.entries.domainQuality.viewAll') }}</el-button>
       </section>
@@ -26,7 +24,7 @@ const props = defineProps({ domainId: { type: String, required: true }, refreshT
 const auth = useAuthStore()
 const { t } = useI18n()
 const readers = { rules: listDomainQualityRules, plans: listDomainQualityPlans, issues: listDomainQualityIssues }
-const sections = reactive(DOMAIN_QUALITY_SECTIONS.map(section => ({ ...section, status: 'idle', items: [], total: 0, requestVersion: 0 })))
+const sections = reactive(DOMAIN_QUALITY_SECTIONS.map(section => ({ ...section, status: 'idle', total: 0, requestVersion: 0 })))
 const load = section => loadDomainQualitySection(section, { domainId: props.domainId, hasPermission: key => auth.hasPermission(key), list: readers[section.key] })
 function open(section) {
  const query = new URLSearchParams({ owner_domain_id: props.domainId, ...(section.key === 'issues' ? { status: 'open' } : {}) })
@@ -36,10 +34,10 @@ watch([() => props.domainId, () => props.refreshToken, () => auth.permissions.jo
 onBeforeUnmount(() => sections.forEach(section => { section.requestVersion++ }))
 </script>
 <style scoped>
-p,li { color:var(--el-text-color-secondary); }
+p { color:var(--el-text-color-secondary); }
 .quality-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;}
 section {min-width:0;overflow-wrap:anywhere;border:1px solid var(--el-border-color);padding:16px;border-radius:var(--el-border-radius-base);}
-ul {padding-inline-start:20px;line-height:1.6;}
+.quality-count {font-size:var(--el-font-size-extra-large);font-weight:600;color:var(--el-text-color-primary);margin:16px 0;}
 section :deep(.el-button){max-width:100%;white-space:normal;text-align:start;}
 @media(max-width:900px){.quality-grid{grid-template-columns:1fr;}}
 </style>

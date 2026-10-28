@@ -286,7 +286,6 @@
         "forbidden": "You cannot view this type of quality governance content",
         "unavailable": "Quality is currently unavailable. Other catalog content is unaffected.",
         "loading": "Loading from Quality…",
-        "empty": "No content of this type belongs to this domain",
         "retry": "Retry",
         "viewAll": "View all in Quality"
       },
