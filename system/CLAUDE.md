@@ -2,7 +2,9 @@ Graph 保护投影 Runtime（000218）：只向既有 `tenant.graph_runtime` 发
 
 # CLAUDE.md
 
-Meta basic 采集资格由 System 唯一保存及裁决，首期限定 PG entire-engine `ScanTask`，绑定真实任务功能摘要、引擎版本、用途和明确期限。独立批准／读取／撤销 Permission 与当前引擎管理资格取交集；Meta Runtime 的当次消费同时核对当前 Common execution／lease 和 Meta 事实，不签发普通源数据 Grant。000234 发布最小审批与双向机器事实读取职责，不自动分配账号、不批准旧任务、不改变现有 Grant／Deny。标准定向验证：`make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess --test meta-collection"` 及 `--package migration --test meta-collection`，默认 T2 同样自动发现。审批工作区由 `EngineMetaCollectionQualifications.vue` 唯一拥有，入口为引擎授权 `tab=collection-qualifications`，只在 PG 存储引擎及独立 Permission 下提供。新增批准先读任务事实，原命令恢复不重签，撤销冲突必须显式刷新再确认；记录状态不等于执行 Allow。前端使用既有 `make test-system-frontend`，无需新路由或 CI 入口。详情见 `system/docs/IAM数据模型与迁移规范.md` 和 `docs/spec/addp授权上下文规范.md`。正式 API／Worker 及采集资格审批页真实登录、核对、批准、同命令恢复和撤销的限定 PG basic 跨服务 T4 已通过，具体证据及未验范围见[验收证据索引](../docs/spec/testing/验收证据索引.md)；后续固定 `0bd708dc9` 的真实 T4 还验证资格到期前执行成功、过期命令重放不续期或复活、期限后下一次执行拒绝，以及同一凭据／资格历史不变和零残留。固定 `d6a7f555d` 的真实 T4 还验证 PG basic 原一分钟 Cron 的未批准拒绝、同资格两次定时成功及撤销后定时拒绝，重放原命令不复活；结束关闭调度，资格／任务和源规则零残留。非预期致命失败清理仍以确定性反例为证，不宣称 Hosted 已注入该故障。不以此替代排队／运行中变更及在途到期／撤销竞态、deep、其他 selector／引擎或生产容量验收。
+Meta basic 采集资格由 System 唯一保存及裁决，首期限定 PG entire-engine `ScanTask`，绑定真实任务功能摘要、引擎版本、用途和明确期限。独立批准／读取／撤销 Permission 与当前引擎管理资格取交集；Meta Runtime 的当次消费同时核对当前 Common execution／lease 和 Meta 事实，不签发普通源数据 Grant。000234 发布最小审批与双向机器事实读取职责，不自动分配账号、不批准旧任务、不改变现有 Grant／Deny。标准定向验证：`make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package engineaccess --test meta-collection"` 及 `--package migration --test meta-collection`，默认 T2 同样自动发现。审批工作区由 `EngineMetaCollectionQualifications.vue` 唯一拥有，入口为引擎授权 `tab=collection-qualifications`，只在 PG 存储引擎及独立 Permission 下提供。新增批准先读任务事实，原命令恢复不重签，撤销冲突必须显式刷新再确认；记录状态不等于执行 Allow。前端使用既有 `make test-system-frontend`，无需新路由或 CI 入口。职责与消费契约见 [IAM 数据模型规范](docs/IAM数据模型与迁移规范.md#meta-basic-采集资格)和[授权上下文规范](../docs/spec/addp授权上下文规范.md#557-dataitem-授权的统一目标契约)。
+
+采集资格的 API／Worker、审批页、下一次执行自然到期、Cron 及运行中撤销／到期，统一按[分版本验收导读](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#meta-采集资格验收导读)定位固定源码、完整证据、失败与未覆盖项，不合并为当前 HEAD 或完整矩阵通过。范围仍限 PG 整引擎 basic、一次 Catalog 枚举边界；排队／运行中配置变化竞态、逐 SQL 取消、deep、其他 selector／引擎和生产容量不能据此认定通过。非预期致命失败清理仍以确定性反例为证，不宣称 Hosted 已注入该故障。
 
 数据授权办理员统一角色：`tenant.source_data_authorizer` 组合直接 Grant 创建、Catalog 人类办理、直接许可读取和必要候选读取。直接办理须目标有效许可允许；Catalog 办理须有效业务依据，两者分别核验功能 Permission 与当前引擎管理资格。角色不授予业务批准、许可管理、Deny、机器 execute 或数据内容读取。当前模板以 `system/authorization/builtin_roles.yaml` 为准。
 
@@ -90,7 +92,7 @@ PG 任务产出初始授权沿同一源 Grant 表与读取／撤销链管理，�
 - 一个 User 可拥有多个 Tenant Membership，但一个 Tenant Context 只绑定一个 Membership；
 - Platform Context 与 Tenant Context 互斥，平台角色不自动获得租户业务数据权限；
 - 平台最高管理职责拆分为系统管理员、安全管理员和审计管理员；三员 Role Assignment 两两互斥，职责与日常写权限分离；管理员治理按目标岗位矩阵申请／复核，审计员只有限复核系统／安全管理员请求，不获得普通账号写权限；
-- 所有管理和业务操作使用 AuthContext 中的 Role Assignment 与 Permission，不根据账号名或身份类别放行。
+- 所有管理和业务操作使用 AuthContext 中的 Role Assignment 与 Permission，不根据账号名或身份类别放行。解析耗时、内部诊断字段与安全边界见 [AuthContext 解析诊断](docs/IAM数据模型与迁移规范.md#authcontext-解析诊断)，Hosted 观察与性能测量方法见该节的场景导航。
 - 平台安全管理员创建普通 User 和凭据；平台系统管理员创建/初始化 Tenant 时必须指定该 User 为首位 `tenant.administrator`。Tenant、首个 Membership、首个 Assignment 和审计同事务，平台三员不得成为首位 Tenant Administrator。
 
 ### 数据隔离

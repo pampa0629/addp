@@ -272,6 +272,12 @@ DataItem 边界绑定区别 Allow 与 Deny：Grant 按稳定数据项身份及�
 
 迁移 000186 随真实解除命令发布独立 `.release` Permission，不默认分配角色或推进已有主体授权版本。`engine_access_deny_releases` 以原 Deny UUID 为主键及外键，仅追加解除者 Principal／Tenant Membership、数据库墙钟和必填原因；原规则继续保存目标、主体及期限。行与整表历史不可 UPDATE／DELETE／TRUNCATE。插入触发器核验解除者是原 Tenant 的 User 成员，覆盖调用方时间，并拒绝 `at_time` 原规则到期后的首次解除。服务复用当前引擎管理资格及精确目标锁，解除和高风险审计同事务，等待后和提交前核验资格与数据库期限；首次到期不写事实，已解除的原参重试优先恢复历史。历史接收主体失效或引擎停用不妨碍解除，不依赖 Catalog、不修改任何 Grant、不表示当前访问已允许。
 
+### AuthContext 解析诊断
+
+身份解析成功但耗时达到 100ms 时，System 沿既有 IAM 内部诊断路径记录 `iam.auth_context.resolve_slow`，包含 request_id、固定阶段墙钟耗时、连接池当前值及本次解析时间窗内的池等待累计增量。阶段耗时包含排队与执行；池增量属于同进程共享连接池，不能直接当作该请求的独占等待时间，等待时长累计只包含已结束的等待，嵌套解析也不得重复相加。快请求不输出慢诊断，失败和拒绝保留原诊断路径；不记录凭据、SQL、完整 AuthContext 或组织内容，不改变 HTTP、审计及任何权限裁决。
+
+Hosted 只读观察器的采集、资源预算与证据归因边界见[审计尾延迟诊断场景](../../docs/spec/testing/scenarios/授权与共享.md#审计尾延迟诊断)；串行与并发性能样本的统计口径及验收层级见[读取裁决性能采样约束](../../docs/spec/testing/scenarios/授权与共享.md#读取裁决性能采样约束)。实现诊断、确定性回归和真实 T4 分别认定，不因日志存在而认定历史峰值已修复。
+
 ### 6.1 Context Selection
 
 `context_selection_tickets` 保存登录后的短期上下文候选快照。Ticket 只使用一次，消费时必须重新校验 Principal、Membership、Platform Assignment、认证强度和授权版本。
