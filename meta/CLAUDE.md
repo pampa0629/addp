@@ -219,15 +219,15 @@ FalkorDB 图属性结构来自每个节点形态或关系类型的最多 100 条
 
 ### 人工来源与冻结计划
 
-普通 User 的人工扫描、任务手动触发、item 刷新和资源树刷新必须从当前已认证 AuthContext 固化完整人类来源；仅传 `userID`、任务创建人或历史记录不能补齐 Principal、Membership 和授权版本。资源树刷新返回既有安全 `ScanExecutionResponse`，不序列化 TaskExecution 的配置、任意原始 metadata、授权及租约字段。该来源记录不授予扫描或源内容访问资格；集中治理 PG 整引擎 basic `ScanTask` 已接入 System 采集资格批准与 Worker 当次核验，其他入口不能借用该资格，具体边界见下文“Meta 扫描分层约定”。
+人工扫描、任务手动触发、item 刷新和资源树刷新按[生产来源规范](../docs/spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)从当前可信 AuthContext 固化完整人类来源，不能仅凭 userID、任务创建者或历史记录补齐身份。资源树刷新继续返回安全 `ScanExecutionResponse`，字段与读取范围沿[Meta 专业读取契约](../docs/spec/tasks/执行监控.md#meta-专业执行读取与响应)。来源不授予扫描或源内容访问资格，交互入口与集中治理的范围、批准和 Worker 重核按[采集资格规范](../docs/spec/addp元数据扫描机制规范.md#采集资格与两种范围语义)独立裁决。
 
-冻结计划事实由 `GET /runtime/scan-executions/:execution_id/authorization-facts` 最小投影，固定 `addp-system` Tenant Service + 既有 `meta.task_provider.read`。唯一共享 DTO／客户端为 `execution.MetaScanPlanFacts`／`MetaClient.ReadScanPlanFacts`，200 不是 Allow。接口仅读同一已提交快照，不调用源 Provider 或当前 System Engine API；新执行冻结所用 Engine 版本和类型，有任务的执行还冻结真实功能定义摘要。当前任务功能变化后返回 needs_refresh/null scope，旧执行缺真实冻结版本或任务摘要时返回 409，不补造版本。仅已证明的 native item、已冻结类型的 whole 根及严格私有 PG 首次产出目标可返回 complete，未证明 selector/组成保持非完整。严格 wire、摘要与剩余 Worker 接线边界见平台《元数据扫描机制规范》的“冻结扫描计划事实契约”。现有 Common/Meta Go、Meta PostgreSQL 与 Swagger 标准入口覆盖本片，不新建测试路线。
+冻结计划事实通过 `GET /runtime/scan-executions/:execution_id/authorization-facts` 供固定 `addp-system` Tenant Service 以 `meta.task_provider.read` 读取，唯一 DTO／客户端仍是 `execution.MetaScanPlanFacts`／`MetaClient.ReadScanPlanFacts`。严格 wire、冻结版本与摘要、任务变化后的 needs_refresh/null scope、旧快照的 409 及 complete 支持范围统一见[冻结扫描计划事实契约](../docs/spec/addp元数据扫描机制规范.md#冻结扫描计划事实契约)。Meta 仅读同一已提交快照，不调用源 Provider 或当前 System Engine API；未证明的范围保持非完整，200／complete 都不等于 Allow。
 
-首次产出补扫在唯一私有 provenance 事务将严格成功回执原 typed Target 冻结为 execution_config.initial_production_target，不加公开请求字段；GET 以原行父 UUID、生产标记、人类 Actor、manual/basic/force、唯一精确目标及 PG 普通表约束作同快照投影。缺失或冲突不猜 locator、不扩大根范围；System 仍独立核验原生产与当前资格。标准 Meta Go 和 authorization-facts PostgreSQL 组复用原入口覆盖本片；本片不启 EA/claim 屏障、不派 Hosted。
+首次 PG 产出补扫的私有冻结与原执行投影沿上述事实契约：`execution_config.initial_production_target` 保留成功回执的原 typed Target，不增加公开请求字段，也不从 locator 反推。缺失或冲突保持非完整，不扩大根范围；System 仍独立核验原生产事实与当前资格。该投影与执行授权、Worker 消费的验证分工见[专项验证入口](#专项验证入口)。
 
 ### 私有识别入口
 
-Infra 即时识别 `POST /inspect` 仅接受 `addp-transfer` Tenant Service 与 `meta.inspect.execute`；Transfer 先核验当前 bounded execution 的完整 User 来源、lease 及 Manager 私有上传归属，再调用 Meta。该权限仅授予 `tenant.transfer_runtime`，普通用户、其他机器身份和平台 Context 拒绝；不增加第二个识别接口。验证由 Meta Go HTTP 权限矩阵、授权目录／Swagger、System IAM PostgreSQL 迁移及既有 Transfer Hosted 导入场景覆盖。
+Infra 即时识别 `POST /inspect` 的前置来源核验与权限归属统一见[生产来源契约](../docs/spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)。Meta 继续只接受持有 `meta.inspect.execute` 的 `addp-transfer` Tenant Service；普通 User、其他 Service 与平台 Context 拒绝，不另建识别入口。Transfer 的 bounded lease 与私有上传归属核验由该契约维护，不能以可连接 Infra 替代。
 
 ### 后台产物扫描与回执
 
@@ -247,9 +247,9 @@ Transfer 已应用结构审批补扫的入口、审批人、claim、精确目标
 
 #### Manager mosaic 来源与完成回执
 
-Manager mosaic 自动扫描复用 `/scan/run/manual`，仅 `addp-manager` 可使用 `manager` 来源。创建事务锁定同租户 running 的 Manager mosaic 父执行，以锁定后数据库时钟验证有效 lease，核对完整主体、当前 attempt 的持久产物及唯一 dataset 目录，随后仅继承发起主体与直接父 UUID；不复制执行授权或租约。读取继续采用现有 Meta Permission 和本人一次性执行范围。Manager 专用身份、父归属、过期 lease、产物未确认或错 attempt、父目录/兄弟目录/附加目录、其他用户及跨租户拒绝均复用现有 HTTP T1 与 `TestMetaScanExecutionReadAgainstPostgres`，无新增 CI 或测试库；真实栅格容量复验由该 suite Owner 负责。
+Manager mosaic 的实际产物来源、精确目标、发起主体与子扫描读取统一沿[产物归属规范](../docs/spec/tasks/生产来源与产物扫描.md#manager-栅格-mosaic-产物自动扫描的执行归属)。Meta 在创建事务中锁定父执行，并使用锁定后的数据库时钟验证当前有效 lease；产物 attempt 与唯一 dataset 范围须匹配。来源继承不复制执行授权或租约，也不改变 Meta Permission 与本人一次性执行读取边界。
 
-Manager mosaic 自动扫描结果通过专用 `GET /runtime/mosaic-scans/{execution_id}/result?parent_execution_id=...` 返回：仅 `addp-manager` 与现有 `meta.scan_task.execute`，重核同租户、当前父执行有效 lease/attempt、精确目标、来源和持久父子关联；不借用 TaskProvider，不应用用户本人读取规则。成功收尾必须从本次 deep 扫描的 `raster_mosaic + whole` item 经既有资源树转换器取得正式身份，并与扫描终态一并持久化 `mosaic_output` 回执；进度更新不得丢弃创建时的 `produced_target` 绑定。响应只返回 UUID、父 UUID、状态及成功的 locator/item ID/fingerprint，不返回任意 metadata、配置、原始错误或授权。标准 Meta 模块 T1 和 `make test-meta-postgres` 包含直接 HTTP 权限矩阵及真实 PostgreSQL 收尾回归，既有 CI 自动登记同一入口。
+回执入口 `GET /runtime/mosaic-scans/{execution_id}/result?parent_execution_id=...` 仍是 Manager 私有接口，其 Client、Permission、父子绑定及闭合响应沿上述产物归属规范，不借用 TaskProvider。Meta 必须从本次 deep 扫描的 `raster_mosaic + whole` item 经资源树转换器取得正式身份，与扫描终态一并持久化 `mosaic_output`；进度更新保留创建时的 `produced_target`。回执不能带出任意 metadata、配置、原始错误或授权，不能用 Runtime 物理路径替代正式身份。
 
 ## 前端公开路由
 
@@ -299,13 +299,20 @@ Backend／Worker 服务正文使用[模块实例运行日志](../scripts/infra/d
 
 ### 专项验证入口
 
+人工来源与冻结计划的确定性检查沿现有 Common／Meta Go、Meta PostgreSQL 的 authorization-facts 组及 Swagger 标准入口，不另建测试路线。首次产出目标的事实投影不签发许可或执行 EA／claim 屏障；投影专项记录仅覆盖上述确定性入口，不包含独立 Hosted 结论；既有 PG 产出链路的结果也不能外推为本接口全部范围已验收。实际准入、授权与 Worker 消费仍按各自契约和固定版本证据判定。
+
 后台来源与结构审批读取复用现有 HTTP 读取隔离用例及 Meta SQLite T1／PostgreSQL T2，保留本人读取矩阵，并覆盖其他 User／服务、错 Tenant、错 request、过期 claim、变更范围扩大和来源缺失的拒绝；不新增路由、权限、数据库或 CI 入口。完整回归分工见[Meta 扫描与结果归属门禁](../docs/spec/testing/Owner补充门禁.md#meta-扫描与结果归属门禁)，确定性覆盖不替代真实链路验收。
+
+Infra 即时识别的验证沿 Meta Go HTTP 权限矩阵、授权目录／Swagger、System IAM PostgreSQL 迁移及既有 Transfer Hosted 导入场景。
+
+mosaic 归属复用 HTTP T1 与 `TestMetaScanExecutionReadAgainstPostgres`，保留 Manager 专用身份、父归属、过期 lease、产物未确认或错 attempt、父目录／兄弟目录／附加目录、其他 User 及跨 Tenant 的拒绝范围；标准 Meta 模块 T1 与 `make test-meta-postgres` 覆盖直接权限矩阵和真实 PostgreSQL 收尾，既有 CI 自动登记，无新增测试库。真实栅格容量复验仍归原 suite Owner，确定性通过不代表该 T4 已复验。
 
 授权事实 PostgreSQL 回归可通过 `make test-meta-postgres META_POSTGRES_TEST_ARGS="--test authorization-facts"` 定向运行，使用同一 `addp_test` 安全校验与回滚夹具，覆盖三类 single 目标及冻结扫描计划事实。原入口以跨 checkout 的持久文件描述符锁拒绝同一 Meta 门禁并发，锁覆盖测试子进程，结束自动释放且不删除锁文件。默认 `make test-meta-postgres` 仍运行完整 Meta PostgreSQL 门禁，定向通过不代表完整门禁通过。
 
 [结构快照读取](#已落库结构快照读取)保留缺失与数据库故障的 T1 边界；[直连图叶子扫描](#直连图叶子扫描)保留 graph 身份、属性预算和共用 disposable T2 范围。专项入口说明只表示覆盖与运行方法，实际通过须按报告的源码和环境认定。
 
 ## 数据库启动所有权
+
 本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见[模块迁移与 Worker 启动顺序](../docs/spec/addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)。
 
 ## 相关文档
