@@ -41,6 +41,7 @@ Monitor 聚合任务执行事实，提供授权诊断、统计、健康观测、
 
 | 事项 | 保留的需求与决策边界 |
 | --- | --- |
+| bounded 恢复时间 | `started_at` 采用[当前 attempt 契约](../../docs/spec/tasks/执行记录与租约.md#bounded-execution-领取租约和恢复契约)。当前 Common [RetryExpired](../../common/execution/lease.go) 返回 `pending` 时未清空旧值，实现仍待修正；首次 claim、恢复排队、重新 claim、排队中终止及 Monitor 时间投影须分别验证，不能由已有恢复／页面证据外推通过。 |
 | 实时推送 | WebSocket 执行状态推送仅保留为候选；先明确刷新收益、授权撤销、连接范围和负载，不替换现有读取主路径。 |
 | 成功率与 stalled 规则 | 后续扩展须依赖 Owner 公共事实及明确 heartbeat/deadline 契约，不能以 created_at、updated_at 或全局固定时长猜测任务卡死。 |
 | 规模与分区 | 按实测索引、查询计划和维护成本评估是否需要分区；删除旧“超过一千万即分区”和手工按月建表步骤，不作为已批准的存储变更。 |
