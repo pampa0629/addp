@@ -1,15 +1,18 @@
 """
 数据操作算子模块
 
-提供高级数据操作算子：裁剪、泰森多边形、按面积分割、融合、批量缓冲、批量质心
+提供高级数据操作算子：裁剪、泰森多边形、按面积分割、多距缓冲
 """
 
 import geopandas as gpd
+import pandas as pd
+from math import isfinite
+from numbers import Integral, Real
 from typing import Dict, List, Any
 from .base import (
     OperatorMetadata, OperatorParam, OperatorType, OperatorCategory, register_operator, OutputPort
 )
-from .geometric_operators import buffer, centroid
+from .geometric_operators import buffer
 
 
 # ==================== 算子实现 ====================
@@ -81,32 +84,71 @@ def split_by_area(input_gdf: gpd.GeoDataFrame, threshold: float) -> Dict[str, gp
     }
 
 
-def batch_buffer(input_gdf: gpd.GeoDataFrame, distances: List[float], resolution: int = 16) -> List[gpd.GeoDataFrame]:
-    """
-    批量缓冲区分析（多个距离）
+class MultiBufferInputError(ValueError):
+    """Multi-distance buffer admission errors localized by the execution adapter."""
 
-    Args:
-        input_gdf: 输入 GeoDataFrame
-        distances: 距离列表
-        resolution: 圆弧段数
+    _messages = {
+        'zh-cn': {
+            'source': '多距缓冲要求具有活动几何列且列名唯一的 GeoDataFrame 输入。',
+            'distance_conflict': '源图层的列名 distance 与多距缓冲输出列冲突；请先手动重命名源列，再执行多距缓冲。',
+            'distances': '多距缓冲的距离列表必须是有限数值数组，不接受布尔值、字符串或空值。',
+            'resolution': '多距缓冲的圆弧段数必须是正整数。',
+        },
+        'en': {
+            'source': 'Multi-distance buffer requires a GeoDataFrame with an active geometry column and unique column names.',
+            'distance_conflict': 'Source column distance conflicts with the multi-distance buffer output column; '
+                                 'rename the source column before running multi-distance buffer.',
+            'distances': 'Multi-distance buffer distances must be an array of finite numbers; '
+                         'booleans, strings and null values are rejected.',
+            'resolution': 'Multi-distance buffer resolution must be a positive integer.',
+        },
+    }
 
-    Returns:
-        GeoDataFrame 列表
-    """
-    return [buffer(input_gdf, dist, resolution) for dist in distances]
+    def __init__(self, code):
+        self.code = code
+        super().__init__(self.message('zh-cn'))
+
+    def message(self, language):
+        return self._messages[language][self.code]
 
 
-def batch_centroid(gdf_list: List[gpd.GeoDataFrame]) -> List[gpd.GeoDataFrame]:
-    """
-    批量计算质心
+def batch_buffer(input_gdf: gpd.GeoDataFrame, distances: List[float], resolution: int = 16) -> gpd.GeoDataFrame:
+    """Expand full buffers into one layer, ordered by distance and original row."""
+    if not isinstance(input_gdf, gpd.GeoDataFrame) or not input_gdf.columns.is_unique:
+        raise MultiBufferInputError('source')
+    try:
+        input_gdf.geometry
+    except AttributeError as exc:
+        raise MultiBufferInputError('source') from exc
+    if 'distance' in input_gdf.columns:
+        raise MultiBufferInputError('distance_conflict')
+    if not isinstance(distances, list):
+        raise MultiBufferInputError('distances')
+    normalized = []
+    for value in distances:
+        if isinstance(value, bool) or not isinstance(value, Real):
+            raise MultiBufferInputError('distances')
+        try:
+            distance = float(value)
+        except (ValueError, OverflowError) as exc:
+            raise MultiBufferInputError('distances') from exc
+        if not isfinite(distance):
+            raise MultiBufferInputError('distances')
+        normalized.append(distance)
+    if isinstance(resolution, bool) or not isinstance(resolution, Integral) or resolution <= 0:
+        raise MultiBufferInputError('resolution')
 
-    Args:
-        gdf_list: GeoDataFrame 列表
+    if not normalized or input_gdf.empty:
+        result = input_gdf.iloc[:0].copy().reset_index(drop=True)
+        result['distance'] = pd.Series(dtype='float64')
+        return result
 
-    Returns:
-        质心 GeoDataFrame 列表
-    """
-    return [centroid(gdf) for gdf in gdf_list]
+    buffers = []
+    for distance in normalized:
+        result = buffer(input_gdf, distance, int(resolution))
+        result['distance'] = distance
+        buffers.append(result)
+    return pd.concat(buffers, ignore_index=True)
 
 
 # ==================== 元数据定义 ====================
@@ -288,11 +330,11 @@ BATCH_BUFFER_METADATA = OperatorMetadata(
     type=OperatorType.SPATIAL,
     category=OperatorCategory.VECTOR_CONSTRUCTION,
     description="多距缓冲",
-    brief_description="对同一图层使用多个缓冲距离批量生成缓冲区,常用于多级影响范围分析",
+    brief_description="对同一图层生成多个距离的完整缓冲区,汇总为带 distance 字段的单图层",
     execution_modes=["workflow"],
     effects=["read"],
 
-    overview="对输入GeoDataFrame使用多个缓冲距离批量生成缓冲区,返回包含多个缓冲结果的列表。适用于多级影响范围、服务等级划分等场景。",
+    overview="对输入图层按距离数组顺序逐一生成完整缓冲区,保留源属性和CRS,以单个GeoDataFrame返回并追加distance字段,可直接连接数据保存。",
 
     params=[
         OperatorParam(
@@ -305,16 +347,17 @@ BATCH_BUFFER_METADATA = OperatorMetadata(
         OperatorParam(
             name="distances",
             type="param",
-            data_type="List[float]",
+            data_type="list[float]",
             required=True,
             description="缓冲距离列表",
-            notes="如 [100, 300, 500] 表示生成100米、300米、500米三级缓冲区"
+            notes="如 [100, 300, 500]；单位沿用源CRS,不自动换算为米。保留顺序和重复距离,允许零、负值及空数组。"
         ),
         OperatorParam(
             name="resolution",
             type="param",
-            data_type="integer",
+            data_type="int",
             required=False,
+            default=16,
             description="缓冲区圆弧段数",
             notes="值越大越平滑,建议8-32"
         )
@@ -328,11 +371,13 @@ BATCH_BUFFER_METADATA = OperatorMetadata(
     ],
 
     notes=[
-        "返回list[GeoDataFrame],每个元素对应一个缓冲距离的结果",
-        "距离单位与坐标系一致",
-        "地理坐标系建议先转投影坐标系",
-        "批量处理比逐个调用buffer更高效"
+        "返回一个GeoDataFrame,依距离顺序再依源行顺序展开,保留原属性、类型、活动几何列和CRS",
+        "追加float64 distance列；任意源列重名时明确报错,须先在上游手动改名",
+        "生成完整缓冲区而非环带,不融合不同源要素；零和负距离沿用普通缓冲语义",
+        "距离单位与源CRS一致,不自动重投影；空数组或空源返回同Schema空图层"
     ],
+
+    output_ports=[OutputPort(name='default', type='geodataframe', description='带distance字段的单图层完整缓冲区', is_default=True)],
 
     workflow_example={
         'id': 'multi_level_buffer',
@@ -347,57 +392,6 @@ BATCH_BUFFER_METADATA = OperatorMetadata(
 )
 
 
-BATCH_CENTROID_METADATA = OperatorMetadata(
-    name="batch_centroid",
-    type=OperatorType.SPATIAL,
-    category=OperatorCategory.VECTOR_CONSTRUCTION,
-    description="多图质心",
-    brief_description="批量计算多个图层的质心,常用于多数据源的中心点提取",
-    execution_modes=["workflow"],
-    effects=["read"],
-
-    overview="对多个GeoDataFrame批量计算质心,返回质心结果列表。适用于多时相数据处理、多区域分析等场景,比逐个调用centroid更高效。",
-
-    params=[
-        OperatorParam(
-            name="gdf_list",
-            type="input",
-            data_type="List[GeoDataFrame]",
-            required=True,
-            description="GeoDataFrame列表,包含需要计算质心的多个图层",
-            notes="所有图层建议具有相同的坐标系"
-        )
-    ],
-
-    use_cases=[
-        "多时相中心点: 批量计算历年建成区的质心变化",
-        "多区域标注: 为多个行政区批量生成标注点",
-        "多数据源整合: 批量将多个面图层转为点图层用于聚合",
-        "变化监测: 对比不同时期同一要素的质心位移"
-    ],
-
-    notes=[
-        "返回list[GeoDataFrame],每个元素对应一个输入图层的质心结果",
-        "质心可能位于几何对象外部(如环形面)",
-        "批量处理比逐个调用centroid节省内存和时间",
-        "输出结果顺序与输入gdf_list一致"
-    ],
-
-    workflow_example={
-        'id': 'batch_calc_centroids',
-        'operator': 'batch_centroid',
-        'params': {
-            'gdf_list': [
-                {'$ref': 'load_area_2020'},
-                {'$ref': 'load_area_2021'},
-                {'$ref': 'load_area_2022'}
-            ]
-        },
-        'depends_on': ['load_area_2020', 'load_area_2021', 'load_area_2022']
-    }
-)
-
-
 # ==================== 注册算子 ====================
 
 OPERATORS = dict([
@@ -405,5 +399,4 @@ OPERATORS = dict([
     register_operator(VORONOI_METADATA, voronoi),
     register_operator(SPLIT_BY_AREA_METADATA, split_by_area),
     register_operator(BATCH_BUFFER_METADATA, batch_buffer),
-    register_operator(BATCH_CENTROID_METADATA, batch_centroid),
 ])

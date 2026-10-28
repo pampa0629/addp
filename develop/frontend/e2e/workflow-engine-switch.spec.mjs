@@ -123,6 +123,43 @@ for (const language of ['zh-cn', 'en']) {
   })
 }
 
+test('edits multi-distance arrays and preserves the single-layer downstream reference after reload', async ({ page }) => {
+  const backend = await installMockBackend(page, {
+    includeMultiDistance: true, includeInputConnections: true, includeConnectedEdge: true, portType: 'geodataframe'
+  })
+  await openSavedWorkflow(page)
+  const openMulti = async () => {
+    await page.getByRole('region', { name: '工作流 DAG 画布', exact: true }).focus()
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.right-panel')).toBeVisible()
+  }
+  await openMulti()
+  const distances = page.locator('[data-param-name="distances"]').getByRole('textbox')
+  const resolution = page.locator('[data-param-name="resolution"]').getByRole('spinbutton')
+  await expect(distances).toHaveValue('[100,300]')
+  await expect(resolution).toHaveValue('16')
+  await distances.fill('[200,100,200]')
+  await resolution.fill('8')
+  await primarySaveButton(page).click()
+  await expect.poll(() => backend.updates.length).toBe(1)
+  const tasks = backend.updates[0].payload.content.workflow_definition.tasks
+  expect(tasks[0].operator).toBe('batch_buffer')
+  expect(tasks[0].params.distances).toEqual([200, 100, 200])
+  expect(tasks[0].params.resolution).toBe(8)
+  expect(tasks[1].params.input_df).toEqual({ $ref: 'operator_a_1' })
+  expect(tasks[1].depends_on).toEqual(['operator_a_1'])
+  await page.reload()
+  await expect(primarySaveButton(page)).toBeEnabled()
+  await openMulti()
+  await expect(distances).toHaveValue('[200,100,200]')
+  await expect(resolution).toHaveValue('8')
+  await page.getByRole('region', { name: '工作流 DAG 画布', exact: true }).focus()
+  await page.keyboard.press('ArrowRight')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.right-panel .input-connection-field')).toContainText('多距缓冲 (operator_a_1)')
+})
+
 test('edits vector tile attributes and keeps the public file workflow after reload', async ({ page }) => {
   const backend = await installMockBackend(page, { includeVectorTiles: true })
   await openSavedWorkflow(page)
@@ -187,13 +224,13 @@ for (const width of [1280, 620]) {
     const header = path => category(path).locator('.el-collapse-item__header').first()
 
     await expect(header(['通用处理']).locator('.category-count')).toHaveText('2')
-    await expect(header(['矢量处理']).locator('.category-count')).toHaveText('25')
+    await expect(header(['矢量处理']).locator('.category-count')).toHaveText('24')
     await expect(header(['栅格处理']).locator('.category-count')).toHaveText('2')
     await expect(category(['通用处理', '数据读写']).getByRole('button', { name: '添加“Operator A”算子', exact: true })).toBeVisible()
     await expect(category(['栅格处理', '数据读写']).getByRole('button', { name: '添加“Raster Leaf”算子', exact: true })).not.toBeVisible()
 
     await header(['矢量处理']).click()
-    for (const [group, count] of [['几何构造', 7], ['几何整理', 5], ['拓扑检查', 8], ['线网处理', 5]]) {
+    for (const [group, count] of [['几何构造', 6], ['几何整理', 5], ['拓扑检查', 8], ['线网处理', 5]]) {
       await expect(header(['矢量处理', group]).locator('.category-count')).toHaveText(String(count))
     }
     expect(await category(['矢量处理']).locator('[data-category-path]').evaluateAll(elements => (
@@ -224,7 +261,7 @@ for (const width of [1280, 620]) {
     })
 
     const search = page.getByPlaceholder('搜索算子...')
-    for (const [id, label] of [['batch_buffer', '多距缓冲'], ['batch_centroid', '多图质心'], ['envelope', '外包矩形']]) {
+    for (const [id, label] of [['batch_buffer', '多距缓冲'], ['envelope', '外包矩形']]) {
       await search.fill(label)
       await expect(header(['矢量处理']).locator('.category-count')).toHaveText('1')
       await expect(header(['矢量处理', '几何构造'])).toHaveAttribute('aria-expanded', 'true')
@@ -238,6 +275,11 @@ for (const width of [1280, 620]) {
       expect(dragged.name).toBe(id)
       expect(dragged.output_ports).toEqual([{ name: 'default', type: 'geodataframe', is_default: true }])
     }
+
+    await search.fill('多图质心')
+    await expect(page.locator('.operator-item')).toHaveCount(0)
+    await search.fill('batch_centroid')
+    await expect(page.locator('.operator-item')).toHaveCount(0)
 
     await search.fill('raster_leaf')
     await expect(category(['通用处理'])).toHaveCount(0)
@@ -1203,6 +1245,7 @@ async function installMockBackend(page, {
   language = 'zh-cn',
   workflowEngines = [ENGINE_A, ENGINE_B],
   includeNestedCategories = false,
+  includeMultiDistance = false,
   includeStructuredParameters = false,
   includeVectorTiles = false,
   includeExecutionDependency = false,
@@ -1330,6 +1373,24 @@ async function installMockBackend(page, {
     }
   }
 
+  if (includeMultiDistance) {
+    const multi = operatorsByEngine[ENGINE_A.id][0]
+    multi.name = multi.id = 'batch_buffer'
+    multi.display_name = '多距缓冲'
+    multi.public_parameters = [
+      { name: 'input_gdf', type: 'object', param_type: 'input', required: true },
+      { name: 'distances', type: 'array', item_type: 'float', param_type: 'param', required: true },
+      { name: 'resolution', type: 'integer', param_type: 'param', required: false, default: 16 }
+    ]
+    const sink = operatorsByEngine[ENGINE_A.id][1]
+    sink.public_parameters = [{ name: 'input_df', type: 'object', param_type: 'input', required: true }]
+    task.content.workflow_definition.tasks[0].operator = 'batch_buffer'
+    task.content.workflow_definition.tasks[0].params = {
+      input_gdf: { type: 'FeatureCollection', features: [] }, distances: [100, 300], resolution: 16
+    }
+    task.content.workflow_definition.tasks[1].params = { input_df: { $ref: 'operator_a_1' } }
+  }
+
   if (includeVectorTiles) {
     const operator = operatorsByEngine[ENGINE_A.id][0]
     operator.id = operator.name = 'vector_to_pmtiles'
@@ -1354,7 +1415,7 @@ async function installMockBackend(page, {
     operatorsByEngine[ENGINE_A.id][0].category_path = ['通用处理', '数据读写']
     operatorsByEngine[ENGINE_A.id][0].category = '数据读写'
     const vectorGroups = [
-      ["几何构造", [["buffer", "缓冲区分析"], ["centroid", "计算质心"], ["convex_hull", "凸包"], ["envelope", "外包矩形"], ["voronoi", "泰森多边形"], ["batch_buffer", "多距缓冲"], ["batch_centroid", "多图质心"]]],
+      ["几何构造", [["buffer", "缓冲区分析"], ["centroid", "计算质心"], ["convex_hull", "凸包"], ["envelope", "外包矩形"], ["voronoi", "泰森多边形"], ["batch_buffer", "多距缓冲"]]],
       ["几何整理", [["simplify", "简化几何"], ["dissolve", "融合几何"], ["check_geometry", "几何检查"], ["repair_geometry", "几何修复"], ["snap_geometry", "参考吸附"]]],
       ["拓扑检查", [["check_polygon_overlap", "面叠检查"], ["check_polygon_gap", "面缝检查"], ["check_dangling_points", "悬点检查"], ["check_line_proximity", "近接检查"], ["check_line_overlap", "线叠检查"], ["check_line_self_overlap", "线内自叠"], ["check_line_intersection", "线交检查"], ["check_line_self_intersection", "线内自交"]]],
       ["线网处理", [["polygonize", "拓扑构面"], ["split_line_intersections", "交点打断"], ["group_line_components", "连通分组"], ["merge_line_chains", "链路合并"], ["normalize_line_network", "重合规整"]]],
@@ -1553,7 +1614,7 @@ async function installMockBackend(page, {
       const payload = request.postDataJSON()
       updates.push({ id: SAVED_TASK_ID, payload })
       if (updateGate) await updateGate
-      if (includeCollectionInputs || includeStructuredParameters || includeExecutionDependency || includeVectorTiles || includeNamedOutputPorts) Object.assign(task, payload)
+      if (includeCollectionInputs || includeStructuredParameters || includeExecutionDependency || includeVectorTiles || includeNamedOutputPorts || includeMultiDistance) Object.assign(task, payload)
       return fulfillJSON(route, { ...task, ...payload, id: SAVED_TASK_ID })
     }
     const executionMatch = path.match(/^\/api\/v1\/develop\/task-definitions\/(\d+)\/execute$/)

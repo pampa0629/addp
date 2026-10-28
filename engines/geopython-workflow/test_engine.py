@@ -847,3 +847,252 @@ def test_distance_to_crs_error_uses_submitted_workflow_language(
     assert failure.value.all_results == {} and failure.value.task_order == ['distance']
     result = runner.execute(workflow, {'source': source, 'target': good_target})
     assert [feature['properties']['distance'] for feature in json.loads(result.final_result)['features']] == [5., 10.]
+
+
+def _multi_distance_source():
+    import geopandas as gpd
+    import pandas as pd
+    from shapely.geometry import Point
+    source = pd.DataFrame({
+        'source_id': pd.array([9007199254740993, None], dtype='Int64'),
+        'enabled': pd.array([True, None], dtype='boolean'),
+        'label': pd.array(['甲', None], dtype='string'),
+        'geometry': ['ordinary attribute', 'not active geometry'],
+    })
+    source['shape'] = gpd.GeoSeries([Point(0, 0), Point(10, 0)], crs=3857)
+    source = gpd.GeoDataFrame(source, geometry='shape', crs=3857)
+    source.index = [8, 8]
+    return source
+
+
+def test_multi_distance_buffer_single_layer_order_types_and_source_unchanged():
+    import pandas as pd
+    from geopandas.testing import assert_geodataframe_equal
+    from operators.data_operations import batch_buffer
+    from operators.geometric_operators import buffer
+    source = _multi_distance_source()
+    before = source.copy(deep=True)
+    result = batch_buffer(source, [2, 1, 2], resolution=1)
+    assert result.geometry.name == 'shape' and result.crs == source.crs
+    assert result.index.equals(pd.RangeIndex(6))
+    assert result.columns.tolist() == [*source.columns, 'distance']
+    assert str(result['distance'].dtype) == 'float64'
+    assert result['distance'].tolist() == [2., 2., 1., 1., 2., 2.]
+    for offset, distance in enumerate([2, 1, 2]):
+        expected = buffer(source, distance, resolution=1).reset_index(drop=True)
+        actual = result.iloc[offset * 2:(offset + 1) * 2].drop(columns='distance').reset_index(drop=True)
+        assert_geodataframe_equal(actual, expected)
+    assert result.source_id.dtype == source.source_id.dtype
+    assert result.enabled.dtype == source.enabled.dtype
+    assert result.label.dtype == source.label.dtype
+    assert_geodataframe_equal(source, before)
+
+
+@pytest.mark.parametrize('empty_source,distances', [(False, []), (True, [1, 2]), (True, [])])
+def test_multi_distance_buffer_empty_schema(empty_source, distances):
+    import pandas as pd
+    from geopandas.testing import assert_geodataframe_equal
+    from operators.data_operations import batch_buffer
+    source = _multi_distance_source()
+    if empty_source:
+        source = source.iloc[:0].copy()
+    before = source.copy(deep=True)
+    result = batch_buffer(source, distances)
+    assert len(result) == 0 and result.crs == source.crs and result.geometry.name == 'shape'
+    assert result.columns.tolist() == [*source.columns, 'distance']
+    assert str(result['distance'].dtype) == 'float64' and result.index.equals(pd.RangeIndex(0))
+    assert result.drop(columns='distance').dtypes.equals(source.dtypes)
+    assert_geodataframe_equal(source, before)
+
+
+def test_multi_distance_buffer_zero_negative_and_full_buffers_not_rings():
+    import geopandas as gpd
+    from shapely.geometry import box
+    from operators.data_operations import batch_buffer
+    from operators.geometric_operators import buffer
+    source = gpd.GeoDataFrame({'id': [1]}, geometry=[box(0, 0, 4, 4)], crs=3857)
+    result = batch_buffer(source, [0, -1, -10, 1, 2], resolution=1)
+    assert len(result) == 5 and result['distance'].tolist() == [0., -1., -10., 1., 2.]
+    assert result.geometry.iloc[0].equals(source.geometry.iloc[0])
+    assert result.geometry.iloc[2].is_empty
+    for index, distance in enumerate(result['distance']):
+        assert result.geometry.iloc[index].equals_exact(buffer(source, distance, 1).geometry.iloc[0], 0)
+    assert result.geometry.iloc[4].contains(result.geometry.iloc[3])
+
+
+@pytest.mark.parametrize('distances', [None, '1,2', '[1,2]', 1, [True], [False], [None], ['1'], [float('nan')], [float('inf')], [-float('inf')], [10 ** 400], [1, {'value': 2}]])
+def test_multi_distance_buffer_rejects_invalid_distances_even_empty_source(distances):
+    from operators.data_operations import batch_buffer, MultiBufferInputError
+    source = _multi_distance_source().iloc[:0]
+    with pytest.raises(MultiBufferInputError) as failure:
+        batch_buffer(source, distances)
+    assert failure.value.code == 'distances'
+
+
+@pytest.mark.parametrize('resolution', [None, True, False, 0, -1, 1.5, '16', float('inf')])
+def test_multi_distance_buffer_rejects_invalid_resolution(resolution):
+    from operators.data_operations import batch_buffer, MultiBufferInputError
+    with pytest.raises(MultiBufferInputError) as failure:
+        batch_buffer(_multi_distance_source(), [1], resolution)
+    assert failure.value.code == 'resolution'
+
+
+@pytest.mark.parametrize('geometry_conflict', [True, False])
+@pytest.mark.parametrize('empty', [True, False])
+def test_multi_distance_buffer_conflicting_column_rejected_before_computation(geometry_conflict, empty):
+    from geopandas.testing import assert_geodataframe_equal
+    from operators.data_operations import batch_buffer, MultiBufferInputError
+    source = _multi_distance_source()
+    if geometry_conflict:
+        source = source.rename_geometry('distance')
+    else:
+        source['distance'] = [8., 9.]
+    if empty:
+        source = source.iloc[:0].copy()
+    before = source.copy(deep=True)
+    with pytest.raises(MultiBufferInputError) as failure:
+        batch_buffer(source, [])
+    assert failure.value.code == 'distance_conflict'
+    assert_geodataframe_equal(source, before)
+
+
+def test_multi_distance_buffer_requires_active_geometry_and_unique_columns():
+    import geopandas as gpd
+    import pandas as pd
+    from operators.data_operations import batch_buffer, MultiBufferInputError
+    duplicate = _multi_distance_source()
+    duplicate.columns = ['x', 'x', 'label', 'geometry', 'shape']
+    for source in (pd.DataFrame({'x': [1]}), gpd.GeoDataFrame({'x': [1]}), duplicate):
+        with pytest.raises(MultiBufferInputError) as failure:
+            batch_buffer(source, [1])
+        assert failure.value.code == 'source'
+
+
+@pytest.mark.parametrize('crs', [None, 'EPSG:2263'])
+def test_multi_distance_buffer_keeps_native_crs_policy_and_units(crs):
+    from operators.data_operations import batch_buffer
+    source = _multi_distance_source().set_crs(crs, allow_override=True)
+    result = batch_buffer(source, [2], resolution=1)
+    assert result.crs == source.crs
+    assert result.geometry.iloc[0].bounds == (-2., -2., 2., 2.)
+
+
+@pytest.mark.parametrize('port', [None, 'default'])
+@pytest.mark.parametrize('empty', [False, True])
+def test_multi_distance_buffer_workflow_save_and_independent_ogr_reload(tmp_path, port, empty):
+    import hashlib
+    import json
+    import geopandas as gpd
+    from osgeo import ogr
+    from geopandas.testing import assert_geodataframe_equal
+    from workflow_engine import GeoPythonWorkflowRunner
+    source = _multi_distance_source().drop(columns='geometry')
+    # Use nullable scalar columns in a real GeoPackage, without a list-saving adapter.
+    before = source.copy(deep=True)
+    ref = {'$ref': 'multi'}
+    if port:
+        ref['port'] = port
+    workflow = {'tasks': [
+        {'id': 'multi', 'operator': 'batch_buffer', 'params': {'input_gdf': {'$input': 'source'},
+         'distances': [] if empty else [2, 1, 2], 'resolution': 1}, 'depends_on': []},
+        {'id': 'saved', 'operator': 'save', 'params': {'input_df': ref,
+         'connection_info': {'engine_type': 'nfs', 'mount_path': str(tmp_path)},
+         'path': 'buffers.gpkg', 'mode': 'fail'}, 'depends_on': ['multi']},
+    ]}
+    outcome = GeoPythonWorkflowRunner().execute(workflow, {'source': source})
+    projected = json.loads(outcome.final_result)
+    assert projected['type'] == 'FeatureCollection'
+    path = tmp_path / 'buffers.gpkg'
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    dataset = ogr.Open(str(path))
+    assert dataset and dataset.GetLayerCount() == 1
+    layer = dataset.GetLayer(0)
+    assert layer.GetSpatialRef().GetAuthorityCode(None) == '3857'
+    assert layer.GetFeatureCount() == (0 if empty else 6)
+    definition = layer.GetLayerDefn()
+    assert definition.GetFieldDefn(definition.GetFieldIndex('source_id')).GetType() == ogr.OFTInteger64
+    assert definition.GetFieldDefn(definition.GetFieldIndex('distance')).GetType() == ogr.OFTReal
+    for index, feature in enumerate(layer):
+        source_row = index % 2
+        distance = [2., 1., 2.][index // 2]
+        assert feature.GetField('source_id') == (9007199254740993 if source_row == 0 else None)
+        assert feature.GetField('enabled') == (1 if source_row == 0 else None)
+        assert feature.GetField('label') == ('甲' if source_row == 0 else None)
+        assert feature.GetField('distance') == distance
+        expected_point = ogr.Geometry(ogr.wkbPoint)
+        expected_point.AddPoint_2D(source_row * 10., 0.)
+        expected = expected_point.Buffer(distance, 1)
+        assert feature.GetGeometryRef().ExportToWkb() == expected.ExportToWkb()
+    dataset = None
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
+    assert_geodataframe_equal(source, before)
+
+
+@pytest.mark.parametrize('language,fragment', [('zh-cn', 'distance 与'), ('en', 'distance conflicts')])
+def test_multi_distance_buffer_localized_error_does_not_publish_and_can_recover(tmp_path, language, fragment):
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    from workflow_engine import GeoPythonWorkflowRunner
+    source = _multi_distance_source()
+    source['distance'] = [4., 5.]
+    workflow = {'tasks': [
+        {'id': 'multi', 'operator': 'batch_buffer', 'params': {'input_gdf': {'$input': 'source'}, 'distances': [1]}, 'depends_on': []},
+        {'id': 'save', 'operator': 'save', 'params': {'input_df': {'$ref': 'multi'},
+         'connection_info': {'engine_type': 'nfs', 'mount_path': str(tmp_path)}, 'path': 'conflict.gpkg', 'mode': 'fail'}, 'depends_on': ['multi']},
+    ]}
+    runner = GeoPythonWorkflowRunner(language=language)
+    with pytest.raises(WorkflowExecutionError) as failure:
+        runner.execute(workflow, {'source': source})
+    assert fragment in str(failure.value)
+    assert failure.value.all_results == {} and failure.value.error_code == 'EXECUTION_FAILED'
+    assert not (tmp_path / 'conflict.gpkg').exists()
+    result = runner.execute(workflow, {'source': source.rename(columns={'distance': 'original_distance'})})
+    assert 'original_distance' in __import__('json').loads(result.final_result)['features'][0]['properties']
+
+
+def test_multi_distance_buffer_removes_multi_centroid_without_redirect():
+    import operators.data_operations as data
+    from operators import OPERATORS, get_operator, list_operators
+    from addp_common.workflow_runtime import WorkflowValidationError
+    from workflow_engine import GeoPythonWorkflowRunner
+    assert 'batch_centroid' not in OPERATORS
+    assert 'batch_centroid' not in __import__('operators').__all__
+    assert not hasattr(data, 'batch_centroid') and not hasattr(data, 'BATCH_CENTROID_METADATA')
+    assert all(item['id'] != 'batch_centroid' for item in list_operators())
+    with pytest.raises(ValueError, match='Unknown operator: batch_centroid'):
+        get_operator('batch_centroid')
+    workflow = {'tasks': [{'id': 'removed', 'operator': 'batch_centroid', 'params': {}, 'depends_on': []}]}
+    with pytest.raises(WorkflowValidationError):
+        GeoPythonWorkflowRunner().execute(workflow)
+
+
+@pytest.mark.parametrize('language,fragment', [('zh-cn', '多距缓冲的距离列表'), ('en', 'Multi-distance buffer distances')])
+def test_multi_distance_buffer_public_workflow_language_metadata_and_context(monkeypatch, language, fragment):
+    import json
+    import time
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    monkeypatch.setattr(api_server, 'executions', ExecutionRegistry())
+    source = _multi_distance_source().drop(columns='geometry')
+    params = {'input_gdf': json.loads(source.to_json()), 'distances': [True]}
+    with api_server.app.test_client() as client:
+        operators = client.get('/api/operators').get_json()['operators']
+        spec = next(item for item in operators if item['id'] == 'batch_buffer')
+        distances = next(item for item in spec['parameters'] if item['name'] == 'distances')
+        assert distances['type'] == 'array' and distances['item_type'] == 'float'
+        assert not any(item['id'] == 'batch_centroid' for item in operators)
+        assert client.post('/api/operators/batch_buffer/invoke', json={'params': params}).status_code == 403
+        workflow = {'tasks': [{'id': 'multi', 'operator': 'batch_buffer', 'params': params, 'depends_on': []}]}
+        assert client.post('/api/workflow', json={'workflow_def': workflow}).status_code == 400
+        response = client.post('/api/workflow', headers={'Accept-Language': language}, json={
+            'workflow_def': workflow,
+            'runtime': {'tenant_id': 7, 'execution_authorization': {'id': 1, 'effects': ['read']}},
+        })
+        assert response.status_code == 202
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            state = client.get('/api/executions/' + response.get_json()['execution_id']).get_json()
+            if state['status'] in {'success', 'failed'}:
+                break
+            time.sleep(.01)
+        assert state['status'] == 'failed' and state['error_code'] == 'EXECUTION_FAILED'
+        assert fragment in state['error']

@@ -28,7 +28,7 @@ from .gdal_vector_dataset import OPERATORS as GDAL_VECTOR_DATASET_OPERATORS
 from .orc_table import OPERATORS as ORC_TABLE_OPERATORS
 from .data_operations import (
     clip, voronoi, split_by_area,
-    batch_buffer, batch_centroid
+    batch_buffer
 )
 
 # 导入所有非空间算子实现
@@ -253,7 +253,6 @@ __all__ = [
     'split_by_area',
     'dissolve',
     'batch_buffer',
-    'batch_centroid',
 
     # 属性计算算子
     'add_field',

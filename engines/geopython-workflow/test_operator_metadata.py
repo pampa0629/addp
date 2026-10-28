@@ -1066,7 +1066,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("通用处理", "数据清洗"), "fill_null drop_duplicates"),
         (("通用处理", "数据筛选"), "filter_by_attribute sort_by_field select_top_n sample random_split"),
         (("通用处理", "数值统计"), "normalize_field encode_categorical bin_field aggregate"),
-        (("矢量处理", "几何构造"), "buffer centroid convex_hull envelope voronoi batch_buffer batch_centroid"),
+        (("矢量处理", "几何构造"), "buffer centroid convex_hull envelope voronoi batch_buffer"),
         (("矢量处理", "几何整理"), "simplify dissolve check_geometry repair_geometry snap_geometry"),
         (("矢量处理", "拓扑检查"), "check_polygon_overlap check_polygon_gap check_dangling_points check_line_proximity check_line_overlap check_line_self_overlap check_line_intersection check_line_self_intersection"),
         (("矢量处理", "线网处理"), "polygonize split_line_intersections group_line_components merge_line_chains normalize_line_network"),
@@ -1237,15 +1237,15 @@ def test_dem_tri_single_workflow_explicit_band_unit_metres_and_complete_window_m
 
 
 def test_vector_geometry_groups_have_expected_counts_and_clear_display_names():
-    expected = {'几何构造': 7, '几何整理': 5, '拓扑检查': 8, '线网处理': 5}
+    expected = {'几何构造': 6, '几何整理': 5, '拓扑检查': 8, '线网处理': 5}
     operators = list_operators()
     moved = [op for op in operators if op['category_path'][0] == '矢量处理' and op['category'] in expected]
-    assert len(moved) == len({op['id'] for op in moved}) == 25
+    assert len(moved) == len({op['id'] for op in moved}) == 24
     assert {group: sum(op['category'] == group for op in moved) for group in expected} == expected
     assert not any(op['category_path'] == ['矢量处理', '几何处理'] for op in operators)
     names = {op['id']: op['display_name'] for op in moved}
-    assert {key: names[key] for key in ('batch_buffer', 'batch_centroid', 'envelope')} == {
-        'batch_buffer': '多距缓冲', 'batch_centroid': '多图质心', 'envelope': '外包矩形',
+    assert {key: names[key] for key in ('batch_buffer', 'envelope')} == {
+        'batch_buffer': '多距缓冲', 'envelope': '外包矩形',
     }
 
 
@@ -1286,3 +1286,22 @@ def test_d8_flow_length_has_one_public_id_and_required_explicit_method():
     assert all(item['required'] for item in params.values())
     assert params['method']['enum'] == ['downstream', 'upstream_longest'] and 'default' not in params['method']
     assert spec['detailed_description']['workflow_example']['params']['method'] == 'downstream'
+
+
+def test_multi_distance_buffer_metadata_matches_single_layer_contract_and_removed_id():
+    specs = {item['id']: item for item in list_operators()}
+    assert 'batch_centroid' not in specs
+    spec = specs['batch_buffer']
+    assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
+    assert spec['category_path'] == ['矢量处理', '几何构造']
+    params = {item['name']: item for item in spec['parameters']}
+    assert set(params) == {'input_gdf', 'distances', 'resolution'}
+    assert params['input_gdf']['param_type'] == 'input'
+    assert params['distances']['type'] == 'array' and params['distances']['item_type'] == 'float'
+    assert params['distances']['required']
+    assert params['resolution']['type'] == 'integer' and params['resolution']['default'] == 16
+    assert [(port['name'], port['type'], port['is_default']) for port in spec['output_ports']] == [('default', 'geodataframe', True)]
+    notes = ' '.join(spec['detailed_description']['notes'])
+    assert 'distance' in notes and '重名' in notes and '完整缓冲区' in notes
+    assert 'list[GeoDataFrame]' not in str(spec['detailed_description'])
+    assert '更高效' not in str(spec['detailed_description'])
