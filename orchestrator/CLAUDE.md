@@ -1,18 +1,6 @@
 # Orchestrator 模块说明
 
-执行可靠性 T4 的外部故障工具位于 `scripts/test/orchestrator-execution-faults.py`，只允许本轮 Hosted 隔离部署使用。代理转交真实 Meta 请求后丢弃响应，或在步骤已记录 waiting 后暂缓状态读取；SIGKILL 必须用 pidfd 并核验 Backend 的 UID、可执行文件和部署 Secret 目录。替代进程由标准 `scripts/dev/start.sh -orchestrator` 启动。确定性入口 `make test-orchestrator-online-runner` 唯一聚合到 `make test-online-runner` / 平台 T0 / CI；两类故障已由提交 `f3d676f5a` 的 [Hosted T4 37122385397](https://github.com/pampa0629/addp/actions/runs/37122385397) 真实通过，确认单次派发、真实子执行、父失败后子执行正常完成、步骤最后记录及清理零残留。后续故障实现变更仍须在更新提交重新运行真实手动 T4；续租故障尚未包含。
-
-权限边界 T4 沿用同一套件：普通读者仅持有 Monitor 与 Orchestrator 读取的独立分配，验证父可读而 Meta 子不可读；正式 IAM 撤销 Owner 分配后旧令牌为 401，重新登录仍有 Monitor 权限时执行详情、树和事件为 404。独立管理员凭据只控制 IAM 生命周期。Monitor 与 Orchestrator 均经当次外部代理访问 Meta，代理仅断开读取范围 GET，真实 Monitor 必须返回无执行数据的 503 execution_owner_unavailable，恢复后完整树不变。权限扩展已由提交 `759ca7736` 的 [Hosted T4 37126213434](https://github.com/pampa0629/addp/actions/runs/37126213434) 完成 20 项真实检查，并核对五个服务构建身份、四个任务定义删除、Infra 零残留及凭据不归档。后续实现变更须重新运行真实手动 T4；该轮结果不包含续租故障、一次性执行及已删除任务历史。
-
-已删除任务历史扩展仍使用同一套件与既有身份：定义删除前后比较成功、失败执行的安全概览、步骤、错误、父子树和根事件，以及 Owner 保存的步骤事实；正式任务接口确认定义确实消失后，再核对跨 Tenant、缺少 Owner、父子不同读取权限和正式撤权后的历史不可见性。删除结果未知时不重试，历史断言失败仍使整套验收失败，报告不保存诊断快照。确定性入口及 CI 聚合沿用现有登记。扩展已由提交 `a5d8428ad` 的 [Hosted T4 37129222858](https://github.com/pampa0629/addp/actions/runs/37129222858) 完成 24 项真实检查：四个定义确认删除，成功与失败共七条执行记录的诊断事实保留，删除后的跨 Tenant、缺少 Owner、父子读取差异和正式撤权边界仍有效。五个服务构建身份一致，清理零残留，55 个归档文件未包含凭据环境文件或控制文件，未检出标准令牌和夹具密码模式。一次性执行权限见下述 28 项真实验收证据；续租故障仍待真实验收。
-
-一次性执行权限扩展沿用同一 `orchestrator-execution` 手动 Hosted T4。通过现有 Meta 手动扫描 API 创建无任务定义的真实执行，核对 `source_task_id` 为空、发起主体与当前普通 User 一致、执行收敛成功，Monitor 详情、树和过程事件可读且只含安全投影。System 正式 IAM 夹具增加同 Tenant 的另一普通 User，仅授予 Meta 扫描历史与 Monitor 执行读取权限；先证明该读者能读取已有任务定义的扫描执行，再确认其列表及总数不包含其他 User 的一次性执行，详情、树和事件返回无执行数据的 404。发起人的列表仅增加该执行；跨 Tenant 与缺少 Owner 权限时仍不可见。未知创建结果不重试，已知一次性执行必须收敛为终态，历史随 Hosted Infra 销毁。报告仅增加安全执行 UUID、事件数量、身份权限摘要和闭合检查名，不保存配置、主体编号或响应快照。复用既有 `make test-orchestrator-online-runner`、`make test-online-runner` 与 Platform CI 登记；公开 API、平台进程日志和审计路径不变，真实验收证据见下段。
-
-一次性执行权限扩展已在提交 `d2af33d7b` 的 [Hosted T4 37131353509](https://github.com/pampa0629/addp/actions/runs/37131353509) 真实通过，共 28 项检查。Meta 手动扫描创建无任务定义、主体与发起 User 一致的真实执行并收敛成功；发起人可读取安全详情、单节点树及七条过程事件，执行列表仅增加该记录。同 Tenant 另一普通 User 的 Meta 与 Monitor 读取权限经真实任务历史正向证明后，对该一次性执行的详情、树和事件仍返回无诊断数据的 404，列表及总数保持不变；跨 Tenant 和缺少 Owner 权限时同样不可见。此前的嵌套编排、业务源中断、响应丢失、Backend 崩溃、Owner 不可用、已删除任务历史及正式撤权检查同时通过。四个任务定义确认删除，两类派发故障仍各只有一次请求，无重放。五个服务构建身份均匹配该提交，生命周期清理通过，Infra 容器、网络和数据卷零残留；61 个归档文件未包含凭据环境或代理控制文件，未检出标准令牌及夹具密码模式。同一提交的 [Platform CI 37131346153](https://github.com/pampa0629/addp/actions/runs/37131346153) 全部 29 个任务通过，包括 53 项所有者测试、333 项 Online 聚合测试和正式身份夹具测试；Orchestrator PostgreSQL 可靠性门禁也已通过。[System IAM PostgreSQL 门禁 37131346068](https://github.com/pampa0629/addp/actions/runs/37131346068) 首轮及单独重跑均被共享 main 的后续推送取消，日志未显示测试断言失败，但该门禁尚未完成，不计为通过；需在无新推送的窗口重跑。本轮不包含续租故障。
-
-历史范围限制：上述 28 项验收时只证明 Monitor 通用诊断的一次性执行隔离，尚未证明 Meta 专业执行详情的模块归属与本人范围；不能据该轮结果推导专业入口隔离已完成。后续修复及真实复验见下段，TaskProvider 始终保留独立机器授权。
-
-专业读取收敛后，提交 `ff081824c` 的 [Hosted T4 38131353222](https://github.com/pampa0629/addp/actions/runs/38131353222) 通过 34 项检查，覆盖 Meta 专业历史与一次性执行隔离、父可读子不可读、已删除定义、撤权、Owner 不可用，以及 Orchestrator 显式安全步骤投影。新增续租失败实测确认状态请求被取消、Backend 退出和终态稳定；响应丢失、崩溃、续租失败三类故障各仅派发一次，没有重放。四个任务定义确认删除，五个服务构建提交一致；生命周期清理通过且 Infra 零残留。29 个归档文件未包含凭据环境或控制文件，标准令牌模式未检出。该轮结果不能代替 Quality、Manager 等其他专业入口的真实验收。
+模块职责与开发约束如下；稳定执行语义沿[编排与调度规范](../docs/spec/tasks/编排与调度.md#orchestrator-执行可靠性)，固定版本、失败／取消、清理及未覆盖范围见[历史证据导航](#历史证据导航)。
 
 ## 模块定位
 
@@ -81,6 +69,8 @@ Orchestrator 是 `orchestrator.workflow.*` 的 Permission owner；定义只存�
 
 `make test-orchestrator-backend` 独立执行后端 T1，用于无关平台 T0 失败时定位本模块；测试集与 `make test-module MODULE=orchestrator` 的 Go 自动发现及 Platform CI 相同。执行读取响应改动还需运行现有 `make test-orchestrator-frontend`、Swagger 覆盖和 `make test-orchestrator-online-runner`；真实链路通过同一 Hosted T4 验证，确定性测试不能代替真实验收。
 
+执行可靠性、读取权限、删除定义历史、一次性执行及故障准入统一沿[Hosted 场景](../docs/spec/testing/scenarios/部署与执行恢复.md#orchestrator-execution)。外部故障工具 `scripts/test/orchestrator-execution-faults.py` 仅限当次 Hosted 隔离部署，进程归属、pidfd、标准替代实例和清理边界由场景维护；`make test-orchestrator-online-runner` 由 `make test-online-runner` 与平台 T0／CI 唯一聚合，不操作个人服务。
+
 ```bash
 bash scripts/dev/start.sh -orchestrator
 bash scripts/dev/restart.sh -orchestrator
@@ -90,6 +80,19 @@ curl http://localhost:8084/health/ready
 常用日志：
 
 - `logs/orchestrator-backend.log`
+
+## 历史证据导航
+
+下表只定位已有记录；按各轮源码、运行尝试和实际覆盖认定，不在模块入口重复维护通过状态。取消不计通过，后续复验不倒改旧轮未覆盖项，历史结果不代表当前 HEAD、其他 Owner 或生产 T5 已通过。
+
+| 范围 | 权威记录 |
+| --- | --- |
+| 首轮与派发故障 | [首轮](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#orchestrator-首轮--t4)、[响应丢失与 Backend 退出](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#orchestrator-派发故障--t4) |
+| 权限与删除定义历史 | [父子读取与撤权](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#orchestrator-读取权限--t4)、[历史保留](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#orchestrator-删除定义后的历史--t4) |
+| 一次性执行及同期 CI／取消 | [Monitor 隔离、CI 与 IAM 取消记录](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#orchestrator-一次性执行--t4) |
+| 专业读取收敛 | [Meta 直接读取与 Orchestrator 安全步骤复验](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#orchestrator-专业读取收敛--t4) |
+| 续租拒绝 | [独立续租故障证据](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#orchestrator-续租拒绝--t4) |
+| 历史 IAM T2 缺口 | [取消之后的独立补验](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#历史-iam-postgresql-缺口--t2) |
 
 ## 相关文档
 
