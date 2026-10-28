@@ -222,12 +222,12 @@ func TestRecoverExpiredExecutionRetriesThenFailsAtAttemptLimit(t *testing.T) {
 	if err := db.Where("execution_id = ?", exec.ExecutionID).First(&stored).Error; err != nil {
 		t.Fatalf("load retried execution: %v", err)
 	}
-	if stored.Status != commonExecution.ExecutionStatusPending || stored.Attempt != 1 || stored.LeaseOwner != nil || stored.LeaseExpiresAt != nil {
+	if stored.Status != commonExecution.ExecutionStatusPending || stored.Attempt != 1 || stored.StartedAt != nil || stored.LeaseToken != nil || stored.LeaseOwner != nil || stored.LeaseExpiresAt != nil || !stored.CreatedAt.Equal(createdAt) {
 		t.Fatalf("retried execution = %#v", stored)
 	}
 
 	secondStart := firstStart.Add(3 * time.Minute)
-	if claimed, _, err := restartedRepo.ClaimPendingExecution(context.Background(), "worker-b", secondStart, time.Minute); err != nil || claimed == nil || claimed.Attempt != 2 {
+	if claimed, _, err := restartedRepo.ClaimPendingExecution(context.Background(), "worker-b", secondStart, time.Minute); err != nil || claimed == nil || claimed.Attempt != 2 || claimed.StartedAt == nil || !claimed.StartedAt.Equal(secondStart) {
 		t.Fatalf("second ClaimPendingExecution = %#v, %v", claimed, err)
 	}
 	failedAt := secondStart.Add(2 * time.Minute)
@@ -237,7 +237,7 @@ func TestRecoverExpiredExecutionRetriesThenFailsAtAttemptLimit(t *testing.T) {
 	if err := db.Where("execution_id = ?", exec.ExecutionID).First(&stored).Error; err != nil {
 		t.Fatalf("load failed execution: %v", err)
 	}
-	if stored.Status != commonExecution.ExecutionStatusFailed || stored.CompletedAt == nil || stored.ExecutionTimeMs == nil || stored.Attempt != 2 {
+	if stored.Status != commonExecution.ExecutionStatusFailed || stored.CompletedAt == nil || stored.ExecutionTimeMs == nil || *stored.ExecutionTimeMs != failedAt.Sub(secondStart).Milliseconds() || stored.Attempt != 2 {
 		t.Fatalf("failed execution = %#v", stored)
 	}
 	var storedTask models.QualityPlan

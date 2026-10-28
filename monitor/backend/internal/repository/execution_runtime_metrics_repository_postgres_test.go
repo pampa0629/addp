@@ -104,6 +104,94 @@ func TestIntegrationPostgresExecutionRuntimeMetrics(t *testing.T) {
 
 }
 
+// Exercise the persisted claim/recovery facts through the unchanged SQL formulas.
+func TestIntegrationPostgresExecutionRuntimeMetricsRecoveredAttemptTimes(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
+	}
+	db, err := gorm.Open(postgres.Open(runtimeMetricsIntegrationDSN()), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := commonExecution.EnsureStore(db); err != nil {
+		t.Fatal(err)
+	}
+	for _, outcome := range []string{"reclaim", "fail_pending"} {
+		t.Run(outcome, func(t *testing.T) {
+			ctx := t.Context()
+			now := time.Now().UTC().Truncate(time.Microsecond)
+			tenantID := int(now.UnixNano()%50000000 + 940000000)
+			item := commonExecution.TaskExecution{
+				TenantID: tenantID, ExecutionID: fmt.Sprintf("metrics-recovery-%s-%d", outcome, tenantID),
+				Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityPlan, Source: commonExecution.ModuleQuality,
+				Status: commonExecution.ExecutionStatusPending, ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
+				TriggerType: commonExecution.TriggerTypeManual, MaxAttempts: 3, CreatedAt: now.Add(-10 * time.Minute), UpdatedAt: now,
+			}
+			if err := db.Create(&item).Error; err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := db.Where("execution_id = ?", item.ExecutionID).Delete(&commonExecution.TaskExecution{}).Error; err != nil {
+					t.Error(err)
+				}
+			})
+			assertMetrics := func(queue, runtime time.Duration, pending, running, completed int64) {
+				t.Helper()
+				rows, err := NewExecutionRuntimeMetricsRepository(db).List(ctx, tenantID, commonExecution.ModuleQuality, now.Add(-time.Hour), now)
+				if err != nil || len(rows) != 1 {
+					t.Fatalf("List = %#v, %v", rows, err)
+				}
+				row := rows[0]
+				if row.AvgQueueDurationMs != float64(queue.Milliseconds()) || row.P95QueueDurationMs != float64(queue.Milliseconds()) || row.AvgExecutionDurationMs != float64(runtime.Milliseconds()) || row.P95ExecutionDurationMs != float64(runtime.Milliseconds()) || row.PendingCount != pending || row.RunningCount != running || row.CompletedCount != completed {
+					t.Fatalf("attempt time projection = %#v, want queue=%v runtime=%v states=%d/%d/%d", row, queue, runtime, pending, running, completed)
+				}
+			}
+			options := commonExecution.ClaimOptions{Module: item.Module, TaskType: item.TaskType, WorkerID: "metrics-worker", Now: now.Add(-8 * time.Minute), LeaseDuration: time.Minute}
+			var firstLease *commonExecution.Lease
+			if err := db.Transaction(func(tx *gorm.DB) error {
+				_, firstLease, err = commonExecution.ClaimNext(ctx, tx, options)
+				return err
+			}); err != nil || firstLease == nil {
+				t.Fatalf("first claim = %#v, %v", firstLease, err)
+			}
+			if err := db.Transaction(func(tx *gorm.DB) error {
+				return commonExecution.RetryExpired(ctx, tx, *firstLease, now.Add(-6*time.Minute), "worker lease expired; retry pending")
+			}); err != nil {
+				t.Fatal(err)
+			}
+			assertMetrics(10*time.Minute, 0, 1, 0, 0)
+			if outcome == "fail_pending" {
+				// The owner may reject a recovered queue item before a new claim.
+				completedAt := now.Add(-3 * time.Minute)
+				if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ? AND status = ?", item.ExecutionID, commonExecution.ExecutionStatusPending).Updates(map[string]interface{}{
+					"status": commonExecution.ExecutionStatusFailed, "completed_at": completedAt,
+					"error_details": models.JSONMap{"code": "quality.execution.authorization_failed"},
+				}).Error; err != nil {
+					t.Fatal(err)
+				}
+				assertMetrics(7*time.Minute, 0, 0, 0, 1)
+				return
+			}
+			options.Now, options.LeaseDuration = now.Add(-4*time.Minute), time.Hour
+			var secondLease *commonExecution.Lease
+			if err := db.Transaction(func(tx *gorm.DB) error {
+				_, secondLease, err = commonExecution.ClaimNext(ctx, tx, options)
+				return err
+			}); err != nil || secondLease == nil || secondLease.Attempt != 2 || secondLease.Token == firstLease.Token {
+				t.Fatalf("second claim = %#v, %v", secondLease, err)
+			}
+			assertMetrics(6*time.Minute, 4*time.Minute, 0, 1, 0)
+			completedAt := now.Add(-2 * time.Minute)
+			if err := commonExecution.CompleteWithLease(ctx, db, *secondLease, commonExecution.ExecutionStatusSuccess, completedAt, map[string]interface{}{
+				"execution_time_ms": completedAt.Sub(options.Now).Milliseconds(),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			assertMetrics(6*time.Minute, 2*time.Minute, 0, 0, 1)
+		})
+	}
+}
+
 func runtimeMetricsIntegrationDSN() string {
 	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		runtimeMetricsIntegrationEnv("ADDP_TEST_POSTGRES_HOST", "localhost"),

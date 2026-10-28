@@ -121,27 +121,80 @@ func TestClaimNextSelectsOldestExecutionAcrossTaskTypes(t *testing.T) {
 	}
 }
 
-func TestExpiredAttemptRejectsLateCompletionAfterRetry(t *testing.T) {
+func TestExpiredAttemptResetsStartTimeAndFencesOldLease(t *testing.T) {
 	db := newLeaseTestDB(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	item := execution.TaskExecution{TenantID: 7, ExecutionID: "expired", Module: execution.ModuleMeta, TaskType: execution.TaskTypeScan, Source: execution.ModuleMeta, Status: execution.ExecutionStatusPending, ExecutionBoundary: execution.ExecutionBoundaryBounded, TriggerType: execution.TriggerTypeManual, CreatedAt: now, UpdatedAt: now}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatalf("create execution: %v", err)
 	}
-	_, lease, err := execution.ClaimNext(context.Background(), db, execution.ClaimOptions{Module: execution.ModuleMeta, TaskType: execution.TaskTypeScan, WorkerID: "meta-worker-1", Now: now, LeaseDuration: time.Second})
-	if err != nil || lease == nil {
-		t.Fatalf("claim execution: %#v, %v", lease, err)
+	ctx := context.Background()
+	options := execution.ClaimOptions{Module: execution.ModuleMeta, TaskType: execution.TaskTypeScan, WorkerID: "meta-worker-1", Now: now, LeaseDuration: time.Second}
+	first, lease, err := execution.ClaimNext(ctx, db, options)
+	if err != nil || first == nil || lease == nil || first.StartedAt == nil || !first.StartedAt.Equal(now) || first.Attempt != 1 {
+		t.Fatalf("first claim = %#v %#v, %v", first, lease, err)
 	}
 	expiredAt := now.Add(2 * time.Second)
-	items, err := execution.FindExpiredForUpdate(context.Background(), db, execution.ExpiredOptions{Module: execution.ModuleMeta, TaskType: execution.TaskTypeScan, Now: expiredAt})
+	items, err := execution.FindExpiredForUpdate(ctx, db, execution.ExpiredOptions{Module: execution.ModuleMeta, TaskType: execution.TaskTypeScan, Now: expiredAt})
 	if err != nil || len(items) != 1 {
 		t.Fatalf("FindExpiredForUpdate = %#v, %v", items, err)
 	}
-	if err := execution.RetryExpired(context.Background(), db, *lease, expiredAt, "recovering"); err != nil {
+	wrong := *lease
+	wrong.Token = "00000000-0000-0000-0000-000000000000"
+	for name, rejected := range map[string]execution.Lease{"wrong token": wrong, "unexpired": *lease} {
+		recoveryAt := expiredAt
+		if name == "unexpired" {
+			recoveryAt = now
+		}
+		if err := execution.RetryExpired(ctx, db, rejected, recoveryAt, "recovering"); !errors.Is(err, commonapi.ErrConflict) {
+			t.Fatalf("%s recovery error = %v, want conflict", name, err)
+		}
+	}
+	if err := execution.RetryExpired(ctx, db, *lease, expiredAt, "recovering"); err != nil {
 		t.Fatalf("RetryExpired: %v", err)
 	}
-	if err := execution.CompleteWithLease(context.Background(), db, *lease, execution.ExecutionStatusSuccess, expiredAt, nil); !errors.Is(err, commonapi.ErrConflict) {
-		t.Fatalf("late completion error = %v, want conflict", err)
+	var pending execution.TaskExecution
+	if err := db.Where("execution_id = ?", item.ExecutionID).First(&pending).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pending.Status != execution.ExecutionStatusPending || pending.StartedAt != nil || pending.CompletedAt != nil || pending.ExecutionTimeMs != nil || pending.Attempt != 1 || pending.LeaseToken != nil || pending.LeaseOwner != nil || pending.LeaseExpiresAt != nil || !pending.CreatedAt.Equal(item.CreatedAt) {
+		t.Fatalf("recovered pending = %#v", pending)
+	}
+	assertStale := func() {
+		t.Helper()
+		if err := execution.UpdateWithLease(ctx, db, *lease, map[string]interface{}{"progress": 99}); !errors.Is(err, commonapi.ErrConflict) {
+			t.Fatalf("late progress = %v, want conflict", err)
+		}
+		if err := execution.RenewLease(ctx, db, *lease, now.Add(time.Hour)); !errors.Is(err, commonapi.ErrConflict) {
+			t.Fatalf("late renewal = %v, want conflict", err)
+		}
+		if err := execution.CompleteWithLease(ctx, db, *lease, execution.ExecutionStatusSuccess, expiredAt, nil); !errors.Is(err, commonapi.ErrConflict) {
+			t.Fatalf("late completion = %v, want conflict", err)
+		}
+	}
+	assertStale()
+	options.Now = now.Add(3 * time.Second)
+	options.LeaseDuration = time.Hour
+	second, secondLease, err := execution.ClaimNext(ctx, db, options)
+	if err != nil || second == nil || secondLease == nil {
+		t.Fatalf("second claim = %#v %#v, %v", second, secondLease, err)
+	}
+	if second.ExecutionID != item.ExecutionID || !second.CreatedAt.Equal(item.CreatedAt) || second.StartedAt == nil || !second.StartedAt.Equal(options.Now) || second.Attempt != 2 || secondLease.Token == "" || secondLease.Token == lease.Token {
+		t.Fatalf("second claim identity/time = %#v %#v", second, secondLease)
+	}
+	assertStale()
+	if err := execution.UpdateWithLease(ctx, db, *secondLease, map[string]interface{}{"progress": 50}); err != nil {
+		t.Fatal(err)
+	}
+	if err := execution.RenewLease(ctx, db, *secondLease, now.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	var running execution.TaskExecution
+	if err := db.Where("execution_id = ?", item.ExecutionID).First(&running).Error; err != nil {
+		t.Fatal(err)
+	}
+	if running.StartedAt == nil || !running.StartedAt.Equal(options.Now) || running.Progress != 50 {
+		t.Fatalf("heartbeat/progress changed attempt start: %#v", running)
 	}
 }
 

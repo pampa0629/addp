@@ -184,7 +184,7 @@ func testQualityExecutionEvents(t *testing.T, db *gorm.DB, tenantID int64) {
 		})
 	}
 	t.Run("retry_attempts", func(t *testing.T) {
-		now := time.Now().UTC()
+		now := time.Now().UTC().Truncate(time.Microsecond)
 		item := newQualityRepositoryTestExecution(uuid.NewString(), int(tenantID), now)
 		item.MaxAttempts = 2
 		if _, err := repo.CreateExecution(ctx, plan.ID, tenantID, item, models.PlanRunRequest{}); err != nil {
@@ -207,25 +207,40 @@ func testQualityExecutionEvents(t *testing.T, db *gorm.DB, tenantID int64) {
 		if err := repo.UpdateExecutionProgress(ctx, firstLease, 33); err != nil {
 			t.Fatal(err)
 		}
-		expire := func() {
+		expire := func(recoveryAt time.Time) {
 			t.Helper()
-			if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", item.ExecutionID).Update("lease_expires_at", now.Add(-time.Minute)).Error; err != nil {
+			if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", item.ExecutionID).Update("lease_expires_at", recoveryAt.Add(-time.Minute)).Error; err != nil {
 				t.Fatal(err)
 			}
-			if err := repo.RecoverExpiredExecutions(ctx, now); err != nil {
+			if err := repo.RecoverExpiredExecutions(ctx, recoveryAt); err != nil {
 				t.Fatal(err)
 			}
 		}
-		expire()
-		second, _, err := repo.ClaimPendingExecution(ctx, "replacement-worker", now, time.Hour)
-		if err != nil || second == nil || second.Attempt != 2 || second.Progress != 0 {
+		expire(now.Add(2 * time.Minute))
+		var pending commonExecution.TaskExecution
+		if err := db.Where("execution_id = ?", item.ExecutionID).First(&pending).Error; err != nil {
+			t.Fatal(err)
+		}
+		if pending.StartedAt != nil || pending.LeaseToken != nil || pending.Attempt != 1 || !pending.CreatedAt.Equal(now) {
+			t.Fatalf("recovered pending has stale attempt time or identity: %#v", pending)
+		}
+		var owner models.QualityPlan
+		if err := db.First(&owner, plan.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if owner.LastExecutionStatus != commonExecution.ExecutionStatusPending {
+			t.Fatalf("owner recovery status = %s", owner.LastExecutionStatus)
+		}
+		secondStart := now.Add(3 * time.Minute)
+		second, _, err := repo.ClaimPendingExecution(ctx, "replacement-worker", secondStart, time.Hour)
+		if err != nil || second == nil || second.Attempt != 2 || second.Progress != 0 || second.StartedAt == nil || !second.StartedAt.Equal(secondStart) || second.LeaseToken == nil || *second.LeaseToken == firstLease.Token {
 			t.Fatalf("replacement did not reset progress: %v, %v", second, err)
 		}
 		if err := repo.UpdateExecutionProgress(ctx, firstLease, 66); !errors.Is(err, commonAPI.ErrConflict) {
 			t.Fatalf("old attempt appended progress: %v", err)
 		}
-		expire()
-		if err := repo.RecoverExpiredExecutions(ctx, now); err != nil {
+		expire(now.Add(5 * time.Minute))
+		if err := repo.RecoverExpiredExecutions(ctx, now.Add(5*time.Minute)); err != nil {
 			t.Fatal(err)
 		}
 		assertQualityExecutionState(t, db, item.ExecutionID, "failed", 0)
@@ -238,6 +253,55 @@ func testQualityExecutionEvents(t *testing.T, db *gorm.DB, tenantID int64) {
 			if events[index].Attempt != attempt {
 				t.Fatalf("event %d lost attempt identity", index)
 			}
+		}
+	})
+	t.Run("recovered_pending_failure", func(t *testing.T) {
+		now := time.Now().UTC().Truncate(time.Microsecond)
+		item := newQualityRepositoryTestExecution(uuid.NewString(), int(tenantID), now)
+		item.MaxAttempts = 2
+		if _, err := repo.CreateExecution(ctx, plan.ID, tenantID, item, models.PlanRunRequest{}); err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.AttachPendingAuthorization(ctx, tenantID, item.ExecutionID, map[string]interface{}{
+			"actor_principal_id": int64(1), "actor_tenant_membership_id": int64(1), "issued_authorization_version": int64(1),
+			"execution_authorization_id": now.UnixNano(), "authorization_expires_at": now.Add(time.Hour),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		first, _, err := repo.ClaimPendingExecution(ctx, "pending-failure-worker", now, time.Hour)
+		if err != nil || first == nil {
+			t.Fatalf("claim before recovery: %v", err)
+		}
+		lease, err := commonExecution.LeaseFromExecution(*first)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", item.ExecutionID).Update("lease_expires_at", now.Add(-time.Minute)).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.RecoverExpiredExecutions(ctx, now); err != nil {
+			t.Fatal(err)
+		}
+		completedAt := now.Add(time.Minute)
+		if err := repo.FailPendingExecution(ctx, plan.ID, tenantID, item.ExecutionID, "quality.execution.authorization_failed", completedAt); err != nil {
+			t.Fatal(err)
+		}
+		var failed commonExecution.TaskExecution
+		if err := db.Where("execution_id = ?", item.ExecutionID).First(&failed).Error; err != nil {
+			t.Fatal(err)
+		}
+		if failed.Status != "failed" || failed.StartedAt != nil || failed.ExecutionTimeMs != nil || failed.CompletedAt == nil || !failed.CompletedAt.Equal(completedAt) || !failed.CreatedAt.Equal(now) || failed.Attempt != 1 {
+			t.Fatalf("pending failure borrowed previous attempt timing: %#v", failed)
+		}
+		if err := repo.CompleteExecutionWithLease(ctx, plan.ID, tenantID, lease, "success", nil, completedAt); !errors.Is(err, commonAPI.ErrConflict) {
+			t.Fatalf("late completion after pending failure = %v", err)
+		}
+		var owner models.QualityPlan
+		if err := db.First(&owner, plan.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if owner.LastExecutionStatus != "failed" {
+			t.Fatalf("pending failure owner status = %s", owner.LastExecutionStatus)
 		}
 	})
 }

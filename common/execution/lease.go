@@ -214,7 +214,7 @@ func applyTaskTypeSelector(query *gorm.DB, taskType string, taskTypes []string) 
 func RetryExpired(ctx context.Context, tx *gorm.DB, lease Lease, now time.Time, currentStep string) error {
 	fields := map[string]interface{}{
 		"status": ExecutionStatusPending, "lease_owner": nil, "lease_token": nil,
-		"lease_expires_at": nil, "updated_at": now.UTC(), "current_step": currentStep,
+		"lease_expires_at": nil, "started_at": nil, "updated_at": now.UTC(), "current_step": currentStep,
 	}
 	result := ownedExpiredExecution(tx.WithContext(ctx), lease, now).Updates(fields)
 	return requireOwnedRow(result, lease.ExecutionID, "retry expired attempt")
