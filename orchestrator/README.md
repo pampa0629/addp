@@ -46,7 +46,7 @@ docker-compose up -d
 定时调度:    PUT /api/v1/orchestrations/{id}/schedule
 ```
 
-完整 API 文档请查看 [CLAUDE.md#API端点](./CLAUDE.md#api-端点)
+完整 API 文档请查看 [核心 API](./CLAUDE.md#核心-api)
 
 ## 🏗️ 工作流编排流程
 
@@ -89,13 +89,13 @@ Orchestrator 不缓存 TaskProvider 运行可用性，每次使用都从 System 
 
 ### 更多问题？
 
-详见 [CLAUDE.md#常见开发场景](./CLAUDE.md#常见开发场景) 和 [CLAUDE.md#注意事项](./CLAUDE.md#注意事项)
+详见 [开发规则](./CLAUDE.md#开发规则)和[开发与验证](./CLAUDE.md#开发与验证)
 
 ## 📚 相关文档
 
 - **[CLAUDE.md](./CLAUDE.md)** - 完整技术文档（架构、场景、故障排查）
-- **[docs/DATA_STRUCTURES.md](./docs/DATA_STRUCTURES.md)** - 数据结构和 API 详解
-- **[docs/PARAMETER_TEMPLATING.md](./docs/PARAMETER_TEMPLATING.md)** - 参数模板化功能
+- **[数据库架构](./docs/数据库架构.md)** - 数据结构和 API 详解
+- **[参数化模板说明](./docs/参数化模板说明.md)** - 参数模板化功能
 - **[../system/CLAUDE.md](../system/CLAUDE.md)** - System 模块（引擎管理）
 - **[../meta/CLAUDE.md](../meta/CLAUDE.md)** - Meta 模块（元数据扫描）
 - **[../transfer/CLAUDE.md](../transfer/CLAUDE.md)** - Transfer 模块（数据传输）

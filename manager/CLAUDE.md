@@ -14,7 +14,7 @@ Manager 模块负责数据探查、数据预览、表格数据剖析、混合检
 
 Manager 导入使用持久 Transfer `sync` 任务并保持上传者私有来源；来源记录只保存成功上传的 Tenant、Uploader、UUID、精确 source locator 与一次绑定的 Transfer task ID，未绑定或主体／任务不符时拒绝，不从路径推断所有权。一次性导出使用 Common `exportartifact` 与 Transfer bounded `sync` ad-hoc execution，导出会话只保存 execution ID，不保存 Transfer task ID。两类操作不共用状态机；来源核验、进度与扫描完成、导航顺序见[预览与资源动作规范](docs/数据预览与资源树实现规范.md#4-与导入和导出)。
 
-成功执行的资源血缘由真实读写 owner 生成，清理执行不表达派生血缘；Manager 调用 Transfer 的导入导出不重复生成血缘。mosaic 必须在原 lease／超时内取得自动扫描的正式 whole DataItem 身份后才成功，失败保留物理产物和扫描关联，不自动重放或终态补写。执行事实、专业安全 DTO 和 Runtime 耗时投影见[任务体系规范](../docs/spec/addp任务体系规范.md)。
+成功执行的资源血缘由真实读写 owner 生成，清理执行不表达派生血缘；Manager 调用 Transfer 的导入导出不重复生成血缘。mosaic 必须在原 lease／超时内取得自动扫描的正式 whole DataItem 身份后才成功，失败保留物理产物和扫描关联，不自动重放或终态补写。执行事实见[Owner 血缘说明](docs/数据库架构.md#83-执行血缘事实)，专业安全 DTO 见[Manager 读取契约](../docs/spec/tasks/执行监控.md#manager-专业执行读取与响应)，Runtime 耗时见[独立投影口径](../docs/spec/tasks/执行监控.md#工作流-runtime-耗时投影)。
 
 快显能力与预览状态只解析 Engine／Meta／受管产物事实，不读取样本行；SRID 只核验目录类型声明，生成端保留 2D／Z／M／ZM。类型检查不能代替内容授权，未声明旧目标由用户显式重新生成；细则见[快显实现规范](docs/quick-view/共用契约.md#快显能力)。
 
@@ -87,7 +87,7 @@ manager/
 - CAD 预览：`data_type=cad + format=dwg|dxf + layout=single` 的源文件由普通 Preview API 返回受控 `storage-stream` URL；Manager 前端仅在进入 CAD 预览时加载 LibreDWG Worker/WASM 和 WebGL renderer，在浏览器内解析并绘制，不创建 Manager 快显任务或派生产物。
 - 分块三维模型瓦片：`GET /model3d_tiles` 查询 Manager 受管结果，`GET /model3d_tiles/:id/assets/*asset_path` 返回 ready 3D Tiles / S3M 目录资源；生成入口统一由 Quick View action 驱动，独立管理页只负责任务、结果、监控与预览入口。
 - 用户任务管理：`GET /tasks`、`GET /tasks/:task_type/:id`、`POST /tasks/:task_type/:id/execute`、`POST /tasks/:task_type/:id/rebind`（仅失效受管快显任务的来源驱动重绑，不自动执行）、`GET /executions/:execution_id`，继续使用 `manager.derived_artifact.*`。
-- 用户执行状态读取在 SQL 中限定可信 Tenant、Manager 派生产物或向量化任务；Owner 读取权限包含已删除定义的执行历史，无定义执行仅发起 User 可读，缺少主体拒绝。TaskProvider 独立保留机器认证，不套用本人条件，但同样拒绝跨模块、data_profiling、cleanup 与未声明任务类型。专业血缘和转换事实沿[Manager 显式安全 DTO](../docs/spec/tasks/执行监控.md#租户执行诊断)，不返回任意 metadata；事实写入、覆盖与委托范围见[执行血缘事实](docs/数据库架构.md#83-执行血缘事实)。权限回归由 `make test-manager-backend` 的 T1 和 `make test-manager-postgres` 的真实 PostgreSQL API 测试验证，模块门禁和 CI 沿用自动发现。
+- 用户与 TaskProvider 的专业读取及安全 DTO 字段范围沿[Manager 专业读取与响应](../docs/spec/tasks/执行监控.md#manager-专业执行读取与响应)，不返回任意 metadata；事实写入、覆盖与委托范围见[执行血缘事实](docs/数据库架构.md#83-执行血缘事实)。权限回归由 `make test-manager-backend` 的 T1 和 `make test-manager-postgres` 的真实 PostgreSQL API 测试验证，模块门禁和 CI 沿用自动发现。
 - TaskProvider：`GET /task-provider/tasks`、`GET /task-provider/tasks/:task_type/:id`、`POST /task-provider/tasks/:task_type/:id/execute`、`GET /task-provider/executions/:execution_id`；整组路由只允许 `addp-orchestrator` Service Client，并使用 `manager.task_provider.read|execute`，不得向 Manager 前端暴露。
 - 数据进出与向量化：`POST /uploads`、`POST /imports`、`POST /exports`、`GET /exports/:id/file`、`POST /embedding_executions`、`GET /embeddings`、`GET /items/:item_id/embedding`。
 - 平台配置管理：`GET /settings/embedding`、`PUT /settings/embedding`；只接受 Platform Context 和 `manager.configuration.read/update`。

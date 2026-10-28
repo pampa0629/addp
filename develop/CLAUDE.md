@@ -106,7 +106,7 @@ Model3D 的 DAE、3DS、MAX 转 GLB，SuperMap 的 SGM 转 OSGB，以及 Documen
 
 ### 专业执行结果读取
 
-Monitor 提供租户通用执行历史。Develop 专业详情、轮询、列表、日志与查询导出只读取当前 User 本人的 execution；Tenant、Principal、Membership 和授权版本必须与持久来源事实一致。query/workflow 额外要求当前 `develop.data_read.execute`，script 要求 `develop.notebook.read`，入口仍要求 `develop.task.read`。旧记录无可信主体或授权变化后返回不可见，不回查当前任务定义猜测历史权限；不增加结果分享或重授权路径。新 Script execution 从已验证 AuthContext 保存来源事实。专业响应不暴露执行授权引用；列表不混入同租户其他人的配置及结果。
+Monitor 的[通用安全诊断](../docs/spec/tasks/执行监控.md#执行详情与安全投影)与 Develop 本人专业结果分别授权。Develop 专业详情、轮询、列表、日志与查询导出只读取当前 User 本人的 execution；Tenant、Principal、Membership 和授权版本必须与持久来源事实一致。query/workflow 额外要求当前 `develop.data_read.execute`，script 要求 `develop.notebook.read`，入口仍要求 `develop.task.read`。旧记录无可信主体或授权变化后返回不可见，不回查当前任务定义猜测历史权限；不增加结果分享或重授权路径。新 Script execution 从已验证 AuthContext 保存来源事实。专业响应不暴露执行授权引用；列表不混入同租户其他人的配置及结果。
 
 TaskProvider 状态读取只接受 addp-orchestrator Service，限定 source=orchestrator 且父执行属于同 Tenant 的 Orchestrator。共享状态响应使用安全投影和稳定 outputs，不包含专业结果。标准验证使用 `make test-module MODULE=develop`；Common 变更另运行 `make test-go`，Swagger 生成与覆盖同步。真实认证/Gateway/Worker 联调属于 T4，未运行不能计为通过。
 
@@ -253,7 +253,7 @@ Develop 只对已持久化且可重复使用的 `dev_tasks.dev_type=query|workfl
 
 - [backend/internal/api/router.go](backend/internal/api/router.go) - HTTP 路由定义
 - [backend/internal/api/query_handler.go](backend/internal/api/query_handler.go) - 查询执行 API
-- [backend/internal/api/dev_execution_handler.go](backend/internal/api/dev_execution_handler.go) - 执行管理 API
+- [backend/internal/api/execution_handler.go](backend/internal/api/execution_handler.go) - 执行管理 API
 - [backend/internal/api/operator_handler.go](backend/internal/api/operator_handler.go) - 算子发现 API
 - [backend/internal/api/notebook_handler.go](backend/internal/api/notebook_handler.go) - Jupyter Notebook API
 

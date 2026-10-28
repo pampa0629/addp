@@ -67,7 +67,7 @@ Orchestrator 是 `orchestrator.workflow.*` 的 Permission owner；定义只存�
 - 上游输出绑定只能从直接依赖步骤声明的稳定输出中选择，相关说明见 `orchestrator/docs/参数化模板说明.md`。
 - Orchestrator 只负责调度和状态聚合，不在本模块实现 Meta 扫描、Transfer 传输或 Manager 瓦片生成的业务细节。
 - 编排定义和执行记录是租户资源。HTTP Handler 只能使用 System AuthContext 中的非零 `tenant_id`，Repository 的 Get/Update/Delete 和 Execution 查询必须带租户条件；Platform Context、Service Bearer 缺少 Tenant Context 或其他缺失 Tenant 的调用不得回退到租户 1、query 参数或全租户访问。
-- 用户读取在查询前安装 Owner SQL 范围：任务历史含已删除定义，NULL source_task_id 的一次性执行仅本人可读，无主体或空归属拒绝；列表与总数采用相同过滤，第一方与普通 OAuth User 使用既有 workflow.read 权限，委托和资源票据拒绝。用户与 TaskProvider 执行读取同时限定当前 Tenant、orchestrator 模块和 orchestration 类型，不能读取 cleanup 执行。用户执行详情和执行历史统一使用显式安全读取 DTO；保留步骤状态、阶段、时间、耗时、闭合错误消息及规范子执行 UUID，步骤 result 不返回子任务业务结果。禁止序列化内部 TaskExecution 的配置、任意 metadata 或执行授权引用，子结果由所属模块重新授权。无闭合 Owner 消息时，前端使用共享失败分类词条展示安全原因，不能将失败展示为空白。TaskProvider 继续使用独立安全状态 DTO。
+- 用户与 TaskProvider 的专业读取范围、权限和显式安全步骤 DTO 统一沿[Orchestrator 读取与响应契约](../docs/spec/tasks/执行监控.md#orchestrator-专业执行读取与响应)；委托和资源票据拒绝，子结果仍由所属模块重新授权。无闭合 Owner 消息时，前端使用共享失败分类词条展示安全原因，不能将失败展示为空白。TaskProvider 继续使用独立安全状态 DTO。
 - 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh orchestrator` 和 `bash scripts/swagger/check-route-coverage.sh orchestrator`。
 
 ## 前端公开路由
