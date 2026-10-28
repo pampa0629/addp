@@ -234,7 +234,7 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 - `scanruntime.ObjectStorageCatalogRuntime` 和 `FilesystemCatalogRuntime` 主文件只保留类型、构造和 `ScanPaths` 入口；对象 resource 持久化放在 `object_resources.go`，文件目录递归扫描放在 `file_directory_scan.go`。
 - `scanruntime.BranchLeafRuntime` 类型、构造和 `ScanBranch` 主入口保留在 `branch_leaf_runtime.go`；leaf 扫描循环、动态 schema 转换、清理 helper 分别放在 `branch_leaf_leaves.go`、`branch_leaf_dynamic_schema.go`、`branch_leaf_helpers.go`。
 - 空间元数据必须动态检测几何列、SRID、范围和几何类型，不要默认字段名。
-- 扫描去重使用 Redis 锁；调试异常扫描时先检查 `meta:scan_dedup:*`。
+- 扫描去重的 scope 粒度、owner 核验与释放沿[扫描去重锁规范](../docs/spec/addp元数据扫描机制规范.md#扫描去重锁)；提交冲突先核对已有 execution，不按旧 key 前缀或引擎 ID 推断锁归属。
 - 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh meta` 和 `bash scripts/swagger/check-route-coverage.sh meta`。
 
 ## 开发与验证
@@ -243,17 +243,24 @@ Manager 预览不会重新识别格式，只消费已落库 Meta attributes 中�
 
 专业扫描读取的标准入口、直接 HTTP 权限矩阵及 T1/T2 与真实链路的分工见[Meta 扫描与结果归属门禁](../docs/spec/testing/Owner补充门禁.md#meta-扫描与结果归属门禁)。固定源码 `60faf18da` 的 Hosted 结果与完整限制见[Meta 专业扫描读取历史证据](../docs/spec/testing/evidence/资源读取与预览历史证据.md#meta-专业扫描读取--t4)；其中 OAuth User／TaskProvider 完整矩阵只由直接 HTTP T1/T2 覆盖，不外推为本次或全部真实身份链路已验收。
 
+开发启停与失败边界沿[启动脚本指南](../scripts/docs/启动脚本使用指南.md#启动与重启边界)；需要重启时由用户在自己的终端执行 `./scripts/dev/restart.sh -meta`。标准测试与个人开发服务生命周期分离。
+
+从仓库根目录使用标准入口：
+
 ```bash
-bash scripts/dev/start.sh -meta
-bash scripts/dev/restart.sh -meta
-curl http://localhost:8082/health/ready
-cd meta/frontend && npm test && npm run build
+# 完整 Meta 模块门禁
+make test-module MODULE=meta
+
+# 单独定位前端测试与构建
+make test-meta-frontend
+
+# 单独运行真实 PostgreSQL 门禁
+make test-meta-postgres
 ```
 
-常用日志：
+测试分层与必要前提见[测试与验收规范](../docs/spec/addp测试与验收规范.md)，本地 PostgreSQL 实际端口和允许的测试库见 [Infra 指南](../scripts/infra/README.md)。前端或数据库独立门禁不代表完整模块通过，服务 Ready 也不替代真实认证、Worker 与业务链路验收；历史结果仍按上方固定版本和实际覆盖判定。
 
-- `logs/meta-backend.log`
-- `logs/meta-worker.log`
+Backend／Worker 服务正文使用[模块实例运行日志](../scripts/infra/docs/运行日志.md#模块实例运行日志)，扫描过程事件与专业结果仍通过 Monitor／Meta 的授权入口读取，不能用进程日志或空事件推断扫描已成功。
 
 ## 相关文档
 
