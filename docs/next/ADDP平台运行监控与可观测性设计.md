@@ -8,19 +8,19 @@
 | --- | --- | --- |
 | 可选观测基础设施 | 日志、指标按 Infra 生命周期组织，可分别关闭；故障与业务就绪隔离 | 已有标准生命周期及指标链路验证；生产安装、升级与容量 T5 未完成 |
 | 平台主机管理 | 主机登记、详情、编辑、纳管启停；名称/地址、类型、状态组合筛选及分页 | 组合筛选的本地门禁及个人复验见[组合筛选证据](../spec/testing/evidence/Monitor节点与主机资源历史证据.md#主机监控类型纳管状态筛选与分页回跳修正2026-10-25)；未提供批量运维 |
-| 管理员确认接入 | System 统一导入 v2 清单、确认原生或 VM 主机及允许服务模块，生成新进程部署参数；可选采集在 Monitor 单独保存 | Linux VM 单新 Monitor 绑定与覆盖限制见[主机绑定证据](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#清单接入与实例绑定)；Infra／Business 两个单容器 PostgreSQL 的自动接入 T4 见[自动接入证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#infra与business-postgresql-自动接入)。原生 macOS 绑定与多进程仍不足，自动接入不等于专业采集已验 |
+| 管理员确认接入 | System 确认主机与服务允许名单，生成新进程参数；Monitor 独立保存可选采集，见[清单契约][monitor-admission]。 | Linux VM 单新 Monitor 绑定与覆盖限制见[主机绑定证据](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#清单接入与实例绑定)；Infra／Business 两个单容器 PostgreSQL 的自动接入 T4 见[自动接入证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#infra与business-postgresql-自动接入)。原生 macOS 绑定与多进程仍不足，自动接入不等于专业采集已验 |
 | 采集配置 | 主机来源 CRUD、认证发现、独立采集启停、列表与详情采集结果 | 已接入；主机纳管状态、配置启停与实际采集结果分别表达 |
-| 主机资源与趋势 | 26 项固定指标（含 TCP 当前连接数），挂载/设备/网卡明细、自动刷新和缺值解释；同设备双向吞吐同图；网卡收发速率并排柱图；内存总量/可用量与使用率双 Y 轴；主机页全部既有趋势（含负载、运行时长、文件系统容量与 inode）共用本地时间缩放，刷新保留视口，采样明细与时段对比范围不变；运行时长轴与悬停按有效点量级共用秒／分钟／小时／天，明细保留复合时长；当前 26 项主机指标的图例显隐与悬停读数复用共享图表 | 指标链路、交互专项和 TCP 分层结果见[节点与主机资源证据][monitor-host]；原有 Linux Hosted 不覆盖全部新增交互，新增真实页面 Hosted 仍待回传。文件系统视口按完整挂载身份隔离；各环境仅展示来源确实支持的指标，不据此诊断内存泄漏 |
-| 主机列表资源视图 | 已实现按需行内展开一台主机的一类磁盘／网卡／文件系统明细，列表和详情复用唯一展示；容量五项与inode四项独立查询及错误，完整挂载身份对齐，沿原预算与公式；修复隐藏后恢复的行内重读。默认核心资源五项；新增负载与连接视图（三档系统负载、TCP 当前连接），URL 恢复并沿用同一当前页摘要；名称／地址、主机类型与纳管状态组合筛选及重置；CPU 核数／一分钟忙碌率、内存总量／使用率、复合运行时长；默认每页 20 台，按视图显式选择同一批量摘要的四项或五项指标；固定身份与操作列，标题可换行 | 五项、负载／连接、文件系统展开及个人复验见[节点证据][monitor-host]，固定 Linux 前端见[综合证据][monitor-summary]。负载视图实源摘要 T2 前置失败；个人已验三档负载及导航恢复，TCP 仅验缺样，新视图右侧截图／前台刷新未验。文件系统实源、个人 Safari 与正式身份 Hosted 不由前端门禁代替。五项 × 20 台／四项 × 20 台沿原 100 序列预算，超限整批提示减少每页数量，不逐行补查；TOP5／采集配置页保持两项 |
-| 主机资源热力面板 | 主机详情复用 CPU 忙碌率、内存及各挂载使用率，按 0～100% 连续主题色和进度条展示；百分比、状态、采样时间就近显示，可进入同一指标／完整挂载的趋势 | 本地交互见[节点证据][monitor-host]，固定 Linux 前端见[综合证据][monitor-summary]；真实来源正式页面 Hosted 待回传。不新增接口或查询，不计算健康分或告警阈值 |
-| 服务状态、资源与趋势 | 登记地址/端口、登记端点与承载 IP 分别精确筛选、按宿主名或运行环境名大小写不敏感精确筛选、登记／离线判定时间及预设／自定义时段查询、正常退出／租约超时原因筛选、一键重置、UP/DOWN 标签；Go 自身进程 CPU、RSS、时长，Backend/Worker 区分，当前实例 CPU/RSS 趋势及各图独立时间缩放、5 分钟／1 小时／24 小时相邻时段均值与原单位变化量比较；有效关联主机显示当前名称并直达主机资源 | 绑定、双 Worker 实源隔离、趋势及环比见[实例证据][monitor-instance]；新增真实页面 Hosted 待回传。原生 Meta、Quality 与 Transfer 两类 Worker 已实现各自默认单实例／可选双实例的标准启动、逐单元 PID 与缺失补回；Transfer 持续同步双实例拒绝固定 Owner 身份。`meta-workers`、`transfer-workers`、`quality-workers` 共用正式登记／主机绑定／页面专项，Transfer 验证一个 Backend 与四个 Worker，Quality 验证一个 Backend 与两个同类 Worker；真实 Hosted 尚未执行。原生 macOS 绑定、其他模块副本与全部语言覆盖仍不足，不开放退出实例历史 |
+| 主机资源与趋势 | 26 项固定主机指标（含 TCP）、设备／挂载明细及共享图表交互；目录与缺值口径见[规范 6.1][monitor-catalog]，缩放、单位、图例及组合图见[规范 6.3][monitor-presentation]。 | 指标链路、交互和 TCP 分层结果见[节点证据][monitor-host]；原 Linux Hosted 不覆盖全部新增交互，新增真实页面 Hosted 待回传。文件系统视口按完整挂载身份隔离；仅显示来源支持的指标，不据此诊断内存泄漏 |
+| 主机列表资源视图 | 核心资源／负载与连接两种列视图、[当前页摘要][monitor-core-summary]及按需[设备展开][monitor-device-expansion]／文件系统展开；筛选恢复、唯一展示、分组读取和预算沿[规范 6.3][monitor-presentation]。 | 五项摘要见[固定 `9bf8dddcb` Linux 前端][monitor-fixed-frontend]；[文件系统展开][monitor-filesystem-expansion]含固定 `e5391ca36`、首轮失败与修复，父 workflow 取消不计整体通过。[负载／连接证据][monitor-load-view]保留实源摘要 T2 前置失败；个人仅验三档负载与导航、TCP 缺样，右侧截图／前台刷新未验。设备／文件系统实源、个人 Safari 与正式身份 Hosted 不由前端门禁代替；列表扩展不扩大 TOP5／采集配置的两项读取 |
+| 主机资源热力面板 | 复用当前 CPU、内存和各完整挂载使用率，提供主题热力与趋势入口，见[规范 6.3][monitor-presentation]。 | 本地交互见[热力面板证据][monitor-heatmap]，固定 Linux 前端见[`9bf8dddcb` 证据][monitor-fixed-frontend]；真实来源正式页面 Hosted 待回传。不新增接口或查询，不计算健康分或告警阈值 |
+| 服务状态、资源与趋势 | 实例筛选／重置、租约状态、Go 进程资源与趋势及当前主机导航，沿[规范 6.3][monitor-presentation]；Meta、Quality 及 Transfer 两类 Worker 已支持默认单实例、可选双实例、独立 PID 与缺失补回，Transfer 持续同步双实例拒绝固定 Owner 身份。 | 绑定、双 Worker 实源隔离、趋势／环比见[实例证据][monitor-instance]，新增真实页面 Hosted 待回传。[Meta][monitor-meta-workers]／[Transfer][monitor-transfer-workers]／[Quality][monitor-quality-workers]专项的实例数量、登记／绑定、补回与页面断言由各专题维护；仅接通入口，真实 Hosted 未执行。原生 macOS 绑定、其他模块副本和全部语言覆盖仍不足，不开放退出实例历史 |
 | 资源总览与 TOP5 | 主机数量、纳管/采集状态、CPU 与内存 TOP5、覆盖率 | 单真实主机 Hosted 与受控多源 T2 见[跨主题证据](../spec/testing/evidence/Monitor综合验收历史证据.md#节点实例与资源告警)；不宣称多真实主机完整 T4，不提供全局物理容量合计 |
-| CPU/内存时段比较 | 主机以百分点、服务进程 CPU／RSS 以核／容量比较相邻等长时段的评估点均值；完整网格才给结论，服务启动裁剪与预热缺样不比较 | 主机完整样本／缺样保护见[主机比较证据](../spec/testing/evidence/Monitor综合验收历史证据.md#时段比较与资源告警)，服务进程本地验证见[进程比较证据](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#服务进程-cpurss-相邻时段比较本地)，测试修正后的 Linux 前端见[固定 `9bf8dddcb` Linux 前端复核](../spec/testing/evidence/Monitor综合验收历史证据.md#五项列表热力面板与服务环比的-linux-前端复核2026-10-24)。进程比较的正式身份真实运行待回传；1 小时／24 小时真实长窗与同比未覆盖 |
+| CPU/内存时段比较 | 主机与进程相邻等长时段的完整网格比较，单位和启动／预热保护沿[规范 6.3][monitor-presentation]。 | 主机完整样本／缺样见[主机比较证据](../spec/testing/evidence/Monitor综合验收历史证据.md#时段比较与资源告警)，进程本地结果见[进程比较证据](../spec/testing/evidence/Monitor实例与服务发现历史证据.md#服务进程-cpurss-相邻时段比较本地)，测试失败与修复后的 Linux 前端见[固定 `9bf8dddcb` 证据][monitor-fixed-frontend]。进程正式身份真实运行待回传；1 小时／24 小时真实长窗与同比未覆盖 |
 | 平台统一告警 | Monitor 唯一管理入口，事件、确认、抑制、通知目标、投递与重试 | 入口及限定权限已发布；System 保留日志诊断和上下文跳转 |
 | 主机资源规则 | CPU/内存规则 CRUD、CAS、后台连续窗口评估、未知保护和恢复 | 本地、受控来源／签名通知 T2、个人操作及 CPU／内存实压 T4 的独立范围见[主机规则证据](../spec/testing/evidence/Monitor综合验收历史证据.md#节点实例与资源告警)；仅覆盖测试阈值与单台 VM，生产 T5 未覆盖 |
 | 服务实例资源规则 | 当前运行实例 CPU 核消耗／RSS 规则、持续窗口、未知保护及原事件恢复，复用统一事件和通知链路 | 固定 `dfa4ad161` 的原生 Linux 实源 T2 已回传并独立复核，覆盖真实触发／释放／恢复、签名重试、对等进程隔离及退出清零，见[专项证据](../spec/testing/evidence/Monitor告警与规则历史证据.md#服务实例-cpurss-告警原生-linux-固定版本复核2026-10-23)；原失败保留，不外推当前 HEAD、正式身份页面 T4、长窗或生产 T5；不新增退出结束状态，不将 RSS 超限解释为泄漏诊断 |
 | 服务组失联规则 | 当前部署同模块／角色／用途全副本失联判定、当前运行确认持久化、规则四权限及默认停用CRUD，复用统一事件与显式通知订阅 | 规则与个人页面范围见[告警证据][monitor-alert]，真实租约故障、正式身份和 Hosted 未验。首次未确认保持等待，未知和计划停用不伪造恢复 |
-| 引擎与容器专业观测 | Infra/Business 持续只读发现、有界候选读取、单容器 PostgreSQL 批量确认及显式主机关联已实现，无需导出或导入文件；引擎监控显示当前承载主机并可按现有权限直达主机资源，见[正式规范 4.4](../spec/addp平台运行观测规范.md#44-平台引擎部署登记)及 4.5 | 自动接入、专业 T4 与来源 T2 按[引擎指标证据][monitor-engine]的各自固定版本认定，不外推当前 main。新增主机导航仅 T1/T3，个人环境未启用；其他引擎／集群未开放。容器详情与证明的实现／未验范围见[实例证据][monitor-instance]，不由 PostgreSQL 专业验收代替 |
+| 引擎与容器专业观测 | Infra／Business 只读发现、单容器 PostgreSQL 批量确认与显式主机关联，见[规范 4.4](../spec/addp平台运行观测规范.md#44-平台引擎部署登记)及[4.5](../spec/addp平台运行观测规范.md#45-部署侧自动发现来源)；当前主机导航沿[6.3][monitor-presentation]，无需导出／导入文件。 | 自动接入、专业 T4 与来源 T2 按[引擎指标证据][monitor-engine]的各自固定版本认定，不外推当前 main。新增主机导航仅 T1/T3，个人环境未启用；其他引擎／集群未开放。容器详情与证明的实现／未验范围见[实例证据][monitor-instance]，不由 PostgreSQL 专业验收代替 |
 | 平台 HTTP 接口质量与慢接口 | Common 统一全量采集，Monitor 固定窗口、实例/模板排行及趋势；HTTP 规则、持续慢接口标记、平台事件与 outbox | 公共 mTLS 前置失败、后续 Linux T2 及清理结果见[HTTP 证据][monitor-http]；旧失败不改判，也不代替个人本地实链、完整 Agent/Copilot 正式 backend 登录／页面、正式密码／MFA T4、Hosted、容量或长期保留。Tenant 发布服务质量仍归 Service 对象权限 |
 | Trace 与调用拓扑 | 可选 Go 平台 backend/ingress 与 Agent/Copilot Python backend 同步 HTTP Trace，经同一 Alloy 尾采样后进入 Tempo；Monitor 查询及实际 Client/Server 调用边，复用 System 精确日志关联 | 各批及正式身份本地第十窗口见[Trace 证据][monitor-trace]；本机隔离闭环已验，首次失败与 Link 目标未保留的 404 仍分别保留。`formal_runner_t4=false`，不代替 Hosted／专用 Runner T4 或 T5；真实 72 小时留存／删除、长期合并、其他 Runtime、continuous、Python 异步及 SQL Span 未覆盖，原 Go HTTP 容量外推不扩展至后续批次 |
 | 健康评分、功能热度、泄漏诊断 | 暂缓 | 先确定事实来源和可解释口径，不由资源阈值直接推导 |
@@ -160,6 +160,19 @@ Business 认证目录首次切换须由部署方沿标准生命周期重建容�
 规则、持久化和实源前置失败见[首期分层证据](../spec/testing/evidence/Monitor告警与规则历史证据.md#文件系统容量告警首期2026-10-27)；挂载行操作分别见[创建入口](../spec/testing/evidence/Monitor告警与规则历史证据.md#主机挂载行创建容量告警入口2026-10-27)和[查看入口](../spec/testing/evidence/Monitor告警与规则历史证据.md#主机挂载行查看已有容量规则入口2026-10-27)。缺样断言修复的固定 `7ebf98370` 受控 HTTP 前端 CI 及旧失败见[完整 CI 记录](../spec/testing/evidence/Monitor告警与规则历史证据.md#挂载缺样断言修复的完整ci闭环2026-10-28)，不据此宣布其他门禁、父 workflow 或当前 HEAD 全通过。
 
 实源告警的触发／缺样保留／恢复与签名通知闭环仍未验；前置失败不能计为告警验收通过。个人 Safari 的隐藏页、右侧列／前台刷新及真实 Linux 文件系统挂载行仍未覆盖，范围见[个人前置核对](../spec/testing/evidence/Monitor告警与规则历史证据.md#挂载规则入口的个人safari前置核对2026-10-27)及上述 CI 记录。T1／数据库 T2／受控 HTTP T3 不代替真实来源、正式身份 Hosted 或零残留验收；后续实链结果等专门会话回传，不设置定时任务。
+
+[monitor-admission]: ../spec/addp平台运行观测规范.md#42-管理员确认的部署清单接入
+[monitor-catalog]: ../spec/addp平台运行观测规范.md#61-固定指标目录
+[monitor-presentation]: ../spec/addp平台运行观测规范.md#63-趋势时段比较与总览
+[monitor-fixed-frontend]: ../spec/testing/evidence/Monitor综合验收历史证据.md#五项列表热力面板与服务环比的-linux-前端复核2026-10-24
+[monitor-core-summary]: ../spec/testing/evidence/Monitor节点与主机资源历史证据.md#主机列表五项核心摘要本地
+[monitor-device-expansion]: ../spec/testing/evidence/Monitor节点与主机资源历史证据.md#主机列表按设备展开2026-10-26
+[monitor-load-view]: ../spec/testing/evidence/Monitor节点与主机资源历史证据.md#主机列表负载与连接视图2026-10-26
+[monitor-filesystem-expansion]: ../spec/testing/evidence/Monitor节点与主机资源历史证据.md#主机列表文件系统容量与-inode-展开2026-10-26
+[monitor-heatmap]: ../spec/testing/evidence/Monitor节点与主机资源历史证据.md#主机资源热力面板本地
+[monitor-meta-workers]: ../spec/testing/evidence/Monitor实例与服务发现历史证据.md#meta-双-worker-标准启动与登记绑定专项
+[monitor-transfer-workers]: ../spec/testing/evidence/Monitor实例与服务发现历史证据.md#transfer-两类双-worker-标准启动与主机绑定验收入口2026-10-22
+[monitor-quality-workers]: ../spec/testing/evidence/Monitor实例与服务发现历史证据.md#quality-多-worker-标准启动登记与主机绑定入口2026-10-22
 
 [monitor-summary]: ../spec/testing/evidence/Monitor综合验收历史证据.md
 [monitor-host]: ../spec/testing/evidence/Monitor节点与主机资源历史证据.md
