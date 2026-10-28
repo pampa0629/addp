@@ -28,6 +28,65 @@ def compose(*args, timeout=None, stderr=None):
                                     *flags, *args], text=True, timeout=timeout, stderr=stderr).strip()
 
 
+def verify_limited_node_mounts(node, volume, work, root, project):
+    """Closed T2 mount proof; never return raw inspect data or host paths."""
+    expected_volume = project + '_block-capacity'
+    expected_labels = {'com.docker.compose.project': project,
+                       'com.docker.compose.service': 'node-exporter',
+                       'io.addp.node-metrics.owner': 't2'}
+    labels = node.get('Config', {}).get('Labels') or {}
+    if any(labels.get(k) != v for k, v in expected_labels.items()):
+        raise ValueError('limited_source_owner_mismatch')
+    commands = node.get('Config', {}).get('Cmd')
+    if (not isinstance(commands, list) or not all(isinstance(arg, str) for arg in commands)
+            or [arg for arg in commands if arg.startswith(('--collector.textfile', '--no-collector.textfile'))]
+               != ['--no-collector.textfile', '--collector.textfile.directory=/textfile']):
+        raise ValueError('limited_source_textfile_not_disabled')
+    volume_labels = volume.get('Labels') or {}
+    if (volume.get('Name') != expected_volume or volume.get('Driver') != 'local'
+            or volume_labels.get('com.docker.compose.project') != project
+            or volume_labels.get('com.docker.compose.volume') != 'block-capacity'
+            or volume_labels.get('io.addp.node-metrics.owner') != 't2'
+            or volume.get('Options') != {'type': 'tmpfs', 'device': 'tmpfs',
+                                        'o': 'size=1m,uid=65534,gid=65534,mode=0700'}):
+        raise ValueError('limited_source_volume_mismatch')
+    mountpoint = volume.get('Mountpoint')
+    if not isinstance(mountpoint, str) or not Path(mountpoint).is_absolute() or Path(mountpoint) == Path('/'):
+        raise ValueError('limited_source_volume_mountpoint_invalid')
+    binds = {'/etc/addp/node-metrics/web.yml': root / 'scripts/infra/node-metrics-web.yml',
+             **{'/etc/addp/node-metrics/tls/' + name: work / 'node-tls' / name
+                for name in ('ca.crt', 'server.crt', 'server.key')}}
+    mounts = node.get('Mounts')
+    destinations = set(binds) | {'/textfile'}
+    if (not isinstance(mounts, list) or len(mounts) != len(destinations)
+            or {m.get('Destination') for m in mounts} != destinations):
+        raise ValueError('limited_source_mount_set_mismatch')
+    for mount in mounts:
+        destination = mount['Destination']
+        if mount.get('RW') is not False:
+            raise ValueError('limited_source_writable_mount')
+        if destination in binds:
+            source = mount.get('Source')
+            if (mount.get('Type') != 'bind' or not isinstance(source, str)
+                    or not Path(source).is_absolute()
+                    or Path(source).resolve() != binds[destination].resolve()
+                    or mount.get('Propagation') != 'rprivate'):
+                raise ValueError('limited_source_bind_mismatch')
+        elif (mount.get('Type') != 'volume' or mount.get('Name') != expected_volume
+                or mount.get('Driver') != 'local' or mount.get('Source') != mountpoint):
+            raise ValueError('limited_source_volume_mount_mismatch')
+    return {'bind_count': len(binds), 'volume_count': 1, 'readonly': True,
+            'exact_sources': True, 'owned_tmpfs_volume': True, 'textfile_disabled': True}
+
+
+def inspect_limited_node_mounts(node):
+    volumes = json.loads(subprocess.check_output(
+        ['docker', 'volume', 'inspect', PROJECT + '_block-capacity'], text=True, timeout=5))
+    if len(volumes) != 1:
+        raise ValueError('limited_source_volume_count_mismatch')
+    return verify_limited_node_mounts(node, volumes[0], WORK, Path(__file__).resolve().parents[2], PROJECT)
+
+
 def port(service, internal):
     return compose('port', service, str(internal)).rsplit(':', 1)[1]
 
@@ -216,6 +275,14 @@ source_health.load_cert_chain(str(TLS / 'health.crt'), str(TLS / 'health.key'))
 rejected(source + '/metrics', source_anonymous)
 rejected(source + '/metrics', source_health)
 print('Metrics T2: anonymous, foreign client CA and plaintext rejected', flush=True)
+# Prove exact owned mounts before destructive fixture phases; later repeat on
+# the recreated limited source. A failure elsewhere cannot hide an unsafe mount.
+if os.environ.get('ADDP_METRICS_T2_CASE') == 'host-resources':
+    initial_node = json.loads(subprocess.check_output(
+        ['docker', 'inspect', compose('ps', '-q', 'node-exporter')], text=True, timeout=5))[0]
+    initial_mount_proof = inspect_limited_node_mounts(initial_node)
+    print('Metrics T2: initial source mount proof ' + json.dumps(initial_mount_proof, sort_keys=True), flush=True)
+
 # Evaluate fixed-counter semantics first, before the longer discovery/outage cycle.
 def check_resource_windows():
     backend = Path(__file__).resolve().parents[2] / 'monitor/backend'
@@ -956,6 +1023,7 @@ eventually(lambda: bool(query('up{job="addp_nodes",instance="' + node_instance +
 # history out of this limited-view check; this remains a T2 protocol fixture.
 FILES.append(str(Path(__file__).resolve().parents[1] / 'infra/node-metrics-desktop.yml'))
 os.environ.update(ADDP_NODE_METRICS_NAMESPACED_COLLECTOR_PREFIX='--no-collector',
+                  ADDP_NODE_METRICS_TEXTFILE='--no-collector.textfile',
                   ADDP_NODE_METRICS_PUBLISH_IP='127.0.0.1', ADDP_NODE_METRICS_PUBLISH_PORT=port('node-exporter', 9100))
 compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '30', 'node-exporter')
 limited = json.loads(subprocess.check_output(['docker', 'inspect', compose('ps', '-q', 'node-exporter')], text=True))[0]
@@ -963,7 +1031,11 @@ assert limited['HostConfig']['NetworkMode'] != 'host' and limited['HostConfig'][
 assert limited['HostConfig']['ReadonlyRootfs'] and limited['HostConfig']['CapDrop'] == ['ALL']
 assert limited['HostConfig']['SecurityOpt'] == ['no-new-privileges:true']
 assert not limited['HostConfig']['Privileged'] and limited['Config']['User'] == '65534:65534'
-assert len(limited['Mounts']) == 4 and all(not m['RW'] and m['Source'] != '/' for m in limited['Mounts'])
+# The T2 base mounts the managed capacity volume even when its collector is
+# disabled. Verify the exact four source files plus that owned read-only tmpfs;
+# a larger count alone would accept arbitrary host mounts or a foreign volume.
+mount_proof = inspect_limited_node_mounts(limited)
+print('Metrics T2: limited source mount proof ' + json.dumps(mount_proof, sort_keys=True), flush=True)
 assert limited['HostConfig']['Memory'] == 256 * 1024**2
 assert limited['HostConfig']['NanoCpus'] == 250_000_000
 assert len(limited['HostConfig']['PortBindings']['9100/tcp']) == 1

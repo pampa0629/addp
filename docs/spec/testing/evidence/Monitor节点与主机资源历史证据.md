@@ -366,3 +366,21 @@ Online 与受控 Console T3 共用 `readResourceHeatmap`，纯收据生成与拒
 容量 T2 曾在新分支变量初始化及退出 profile 清理失败，已修正并核验当次遗留容器／卷清零；后续两轮出现发现目标未切换到 node-exporter（来源已成功采样、原目标仍UP、证书IP匹配），尚未稳定复现根因。保留封闭文件／容器／HTTP／目标匹配诊断，未放宽TLS或增加等待预算；最终真实链路及清理通过只按当次结果认定，不宣称间歇性发现问题已经修复。标准脚本中受控生产停止测试另曾10秒超时，单项原条件复验及后续标准115项通过，未放宽时限或修改生产停止实现。
 
 本批没有应用个人节点开关、重启服务、读取个人业务数据、触发／轮询 CI／Hosted 或设置定时任务。CI／Hosted等专门会话回传；原生 Linux 容量扩展的受管来源证明、真实 Console／Safari 及正式身份 Hosted 仍未验，容量对应的原生证明和页面收据准备也仍需补齐。不得以默认关闭容量的旧文件系统 Hosted 或本机 VM T2 外推这些范围。
+
+
+## host-resources 受限来源挂载断言修复（2026-10-29）
+
+专门CI会话回传 [Release/T2 40701610871 的 host-resources 实际步骤](https://github.com/pampa0629/addp/actions/runs/40701610871/job/122862998720) 失败于旧 `len(limited['Mounts']) == 4`（原始日志 `/tmp/addp-ci-20261028-160001/job-122862998720.log` 第833—836行）。原生资源查询、来源停机／恢复已走到，受限来源重建后在该检查退出；原CI没有归档完整inspect，不能只凭数量认定当时没有权限回归。
+
+核对3f66f3521及当前两层Compose，真实 `docker compose config --format json` 渲染为四个只读文件绑定（固定Web配置、当次三份TLS文件），加一个只读 `/textfile` 容量专属卷，共五项；host-resources仍关闭Textfile且容量producer profile未启用。产品默认关闭容量时的四绑定部署没有改变。本次不改产品Compose、挂载、IAM或权限，也不以 `>=4` 代替旧断言。
+
+唯一 `verify_limited_node_mounts` 对运行容器与当次volume inspect逐项核对：目标集合唯一且恰好五项，四个绑定源精确匹配当前仓库固定Web文件和当次TLS目录、只读且rprivate；Textfile卷名／Compose项目／service／owner／volume标签、local驱动及1 MiB tmpfs的uid／gid／mode均精确匹配，其实际Source必须等于同一volume inspect的Mountpoint并只读。拒绝额外、缺少、重复、可写、根目录／Socket、错源、影子目标或外来卷；不保存原始inspect、宿主路径、环境或凭据。仅输出封闭布尔及4绑定／1卷计数。来源初次准备后即核验，后续原受限来源重建位置仍再次核验，不跳过预算、查询、重启或恢复阶段。
+
+受限阶段显式关闭Textfile，避免默认all在早先容量专项启用后把该采集器带入限定七采集器的视图；all先前容量验证及host-resources其他检查不删除。本批5项新增确定性回归包含真实Compose叠加和现有all／host-resources状态下的该关闭输入；27种错误对象／命令变体拒绝。新测试归入原 `metrics-deployment-config_test.py`，由现有根Metrics门禁、开发生命周期及原Release矩阵自动发现，无新增依赖、入口、CI Job或调度。
+
+本地验证：新增五项 `python3 -m unittest scripts.test.metrics-deployment-config_test.LimitedNodeMountEvidenceTest` 通过，日志 `/tmp/addp-limited-mount-unit.log`。此前新测试在旧代码因缺少精确证明函数失败，真实叠加配置也证实旧四项断言必失败；不是删除安全条件后的空回归。
+
+标准链路使用 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=host-resources`。首轮在更早的旧fixture“budget recovery”65秒等待超时，未到本次目标；当次清理执行，不能计整轮通过，日志 `/tmp/addp-limited-host-resources-t2.log`。未修改预算、TLS、采样标准或等待时限；随后新增首个来源准备检查点的同一精确证明，以实际inspect在前后两处覆盖挂载边界。最终结果待下述终态记录，不据局部通过外推完整门禁。
+
+
+最终同一标准命令通过（退出0），日志 `/tmp/addp-limited-host-resources-final.log`：120项脚本回归；初次来源与受限重建后的两份精确挂载证明均为4绑定／1卷、只读／精确源／受管tmpfs／Textfile关闭；既有固定窗口、mTLS、预算恢复、普通／受限资源查询、来源停机恢复、中心SIGKILL持久化、六来源总览及资源告警生命周期全部沿原链路运行。资源查询两阶段分别56.77／29.39秒，总览85.75秒，资源告警生命周期195.62秒；退出验证全部当次容器、网络、卷与临时文件清零。此次仅本机Docker Desktop Linux VM上的标准T2；[原Linux CI失败](https://github.com/pampa0629/addp/actions/runs/40701610871/job/122862998720)保持失败历史，替代提交的自然Linux host-resources Job实际步骤仍等专门会话回传，不据本地结果提前认定远端通过。原生Linux容量／Console／Hosted与完整前端缺口保持原记录。本轮没有API、Swagger或产品代码变更，无需重启业务；不调度／重跑／取消CI或Hosted、不设置定时任务、不向个人服务或共享数据卷施加操作。

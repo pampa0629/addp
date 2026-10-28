@@ -2408,3 +2408,121 @@ class BlockCapacitySamplerTest(unittest.TestCase):
                     else:
                         with self.assertRaises(ValueError): node_config.run('up', disabled)
                         execute.assert_not_called()
+
+class LimitedNodeMountEvidenceTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix='addp-limited-mount-evidence-')
+        self.addCleanup(self.temporary.cleanup)
+        self.work = Path(self.temporary.name)
+        self.project = 'addp-metrics-t2-owned'
+        self.volume_name = self.project + '_block-capacity'
+        probe = ROOT / 'scripts/test/monitor-metrics-probe.py'
+        tree = ast.parse(probe.read_text())
+        function = next(item for item in tree.body if isinstance(item, ast.FunctionDef)
+                        and item.name == 'verify_limited_node_mounts')
+        namespace = {'Path': Path}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), str(probe), 'exec'), namespace)
+        self.verify = namespace['verify_limited_node_mounts']
+        self.volume = {'Name': self.volume_name, 'Driver': 'local',
+                       'Mountpoint': '/var/lib/docker/volumes/' + self.volume_name + '/_data',
+                       'Labels': {'com.docker.compose.project': self.project,
+                                  'com.docker.compose.volume': 'block-capacity',
+                                  'io.addp.node-metrics.owner': 't2'},
+                       'Options': {'type': 'tmpfs', 'device': 'tmpfs',
+                                   'o': 'size=1m,uid=65534,gid=65534,mode=0700'}}
+        self.node = {'Config': {'Cmd': ['--no-collector.textfile', '--collector.textfile.directory=/textfile'],
+                                 'Labels': {'com.docker.compose.project': self.project,
+                                          'com.docker.compose.service': 'node-exporter',
+                                          'io.addp.node-metrics.owner': 't2'}}, 'Mounts': [
+            {'Type': 'bind', 'Source': str(ROOT / 'scripts/infra/node-metrics-web.yml'),
+             'Destination': '/etc/addp/node-metrics/web.yml', 'RW': False, 'Propagation': 'rprivate'},
+            *[{'Type': 'bind', 'Source': str(self.work / 'node-tls' / name),
+               'Destination': '/etc/addp/node-metrics/tls/' + name, 'RW': False, 'Propagation': 'rprivate'}
+              for name in ('ca.crt', 'server.crt', 'server.key')],
+            {'Type': 'volume', 'Name': self.volume_name, 'Driver': 'local',
+             'Source': self.volume['Mountpoint'], 'Destination': '/textfile', 'RW': False}]}
+
+    def test_owned_exact_five_mounts_are_accepted_without_exporting_paths(self):
+        proof = self.verify(self.node, self.volume, self.work, ROOT, self.project)
+        self.assertEqual(proof, {'bind_count': 4, 'volume_count': 1, 'readonly': True,
+                                 'exact_sources': True, 'owned_tmpfs_volume': True, 'textfile_disabled': True})
+        for secret in (str(self.work), str(ROOT), self.volume['Mountpoint']):
+            self.assertNotIn(secret, json.dumps(proof))
+        self.node['Mounts'].reverse()
+        self.assertEqual(proof, self.verify(self.node, self.volume, self.work, ROOT, self.project))
+
+    def test_extra_missing_duplicate_writable_shadow_and_foreign_sources_are_rejected(self):
+        changes = [lambda n: n['Mounts'].pop(),
+                   lambda n: n['Mounts'].append(dict(n['Mounts'][0])),
+                   lambda n: n['Mounts'].append({'Type': 'bind', 'Source': '/', 'Destination': '/host', 'RW': False}),
+                   lambda n: n['Mounts'].append({'Type': 'bind', 'Source': '/run/docker.sock', 'Destination': '/run/docker.sock', 'RW': False}),
+                   lambda n: n['Mounts'][0].update(Source='/'),
+                   lambda n: n['Mounts'][0].update(Source=str(self.work / 'unmanaged-web.yml')),
+                   lambda n: n['Mounts'][1].update(Source=str(self.work / 'foreign-tls/ca.crt')),
+                   lambda n: n['Mounts'][0].update(RW=True),
+                   lambda n: n['Mounts'][0].update(Propagation='rshared'),
+                   lambda n: n['Mounts'][-1].update(RW=True),
+                   lambda n: n['Mounts'][-1].update(Name='foreign_block-capacity'),
+                   lambda n: n['Mounts'][-1].update(Source='/foreign/_data'),
+                   lambda n: n['Mounts'][-1].update(Type='bind'),
+                   lambda n: n['Mounts'][-1].update(Destination='/etc/addp/node-metrics'),
+                   lambda n: n['Config']['Labels'].update({'com.docker.compose.project': 'foreign'}),
+                   lambda n: n['Config']['Labels'].update({'io.addp.node-metrics.owner': 'foreign'}),
+                   lambda n: n['Config']['Cmd'].append('--collector.textfile'),
+                   lambda n: n['Config']['Cmd'].append('--collector.textfile.directory=/foreign'),
+                   lambda n: n['Config']['Cmd'].remove('--no-collector.textfile')]
+        for index, change in enumerate(changes):
+            node = json.loads(json.dumps(self.node)); change(node)
+            with self.subTest(index=index), self.assertRaises(ValueError):
+                self.verify(node, self.volume, self.work, ROOT, self.project)
+
+    def test_volume_identity_owner_options_and_driver_are_all_required(self):
+        changes = [lambda v: v.update(Name='foreign'), lambda v: v.update(Driver='unmanaged'),
+                   lambda v: v.update(Mountpoint='/'), lambda v: v.update(Options={}),
+                   lambda v: v['Options'].update(o='size=1m,mode=0777'),
+                   lambda v: v['Labels'].update({'com.docker.compose.project': 'foreign'}),
+                   lambda v: v['Labels'].update({'com.docker.compose.volume': 'other'}),
+                   lambda v: v['Labels'].update({'io.addp.node-metrics.owner': 'foreign'})]
+        for index, change in enumerate(changes):
+            volume = json.loads(json.dumps(self.volume)); change(volume)
+            with self.subTest(index=index), self.assertRaises(ValueError):
+                self.verify(self.node, volume, self.work, ROOT, self.project)
+
+    def test_real_compose_layers_keep_exact_readonly_capacity_volume_and_disable_textfile(self):
+        env = dict(os.environ, METRICS_T2_WORK=str(self.work), ADDP_METRICS_TLS_DIR=str(self.work / 'tls'),
+                   ADDP_METRICS_DEPLOYMENT_DIR=str(self.work / 'deployment'), ADDP_METRICS_CONTROL_DIR=str(self.work / 'control'),
+                   ADDP_POSTGRES_METRICS_SOURCE_DIR=str(self.work / 'postgres-source'), ADDP_POSTGRES_METRICS_WEB_DIR=str(self.work / 'postgres-web'),
+                   ADDP_POSTGRES_METRICS_USER='65534:65534', ADDP_NODE_METRICS_TLS_DIR=str(self.work / 'node-tls'),
+                   ADDP_NODE_METRICS_OWNER='t2', ADDP_NODE_METRICS_LISTEN=':9100', ADDP_NODE_METRICS_ROOTFS='/',
+                   ADDP_NODE_METRICS_PROCFS='/proc', ADDP_NODE_METRICS_SYSFS='/sys', ADDP_NODE_METRICS_TEXTFILE='--no-collector.textfile',
+                   ADDP_NODE_METRICS_NAMESPACED_COLLECTOR_PREFIX='--no-collector', ADDP_NODE_METRICS_PUBLISH_IP='127.0.0.1',
+                   ADDP_NODE_METRICS_PUBLISH_PORT='19100', ADDP_NODE_METRICS_KERNEL='unused', ADDP_NODE_CAPACITY_SYSFS='/sys', ADDP_NODE_CAPACITY_PROCFS='/proc')
+        result = subprocess.run(['docker', 'compose', '--env-file', '/dev/null', '-p', self.project,
+                                 '-f', str(ROOT / 'scripts/test/docker-compose.monitor-metrics-t2.yml'),
+                                 '-f', str(ROOT / 'scripts/infra/node-metrics-desktop.yml'), 'config', '--format', 'json'],
+                                env=env, text=True, capture_output=True, check=True, timeout=15)
+        config = json.loads(result.stdout)
+        source = config['services']['node-exporter']
+        mounts = source['volumes']
+        self.assertEqual(len(mounts), 5)
+        self.assertTrue(all(m['read_only'] for m in mounts))
+        textfile = next(m for m in mounts if m['target'] == '/textfile')
+        self.assertEqual(textfile, {'type': 'volume', 'source': 'block-capacity', 'target': '/textfile', 'read_only': True, 'volume': {'nocopy': True}})
+        self.assertIn('--no-collector.textfile', source['command'])
+        self.assertNotIn('--collector.textfile', source['command'])
+        self.assertNotIn('block-capacity', config['services'])  # inactive profile must not start a producer
+        self.assertNotEqual(source.get('network_mode'), 'host')
+        self.assertNotEqual(source.get('pid'), 'host')
+
+    def test_limited_phase_disables_optional_textfile_after_all_case_capacity_checks(self):
+        probe = ROOT / 'scripts/test/monitor-metrics-probe.py'
+        tree = ast.parse(probe.read_text())
+        update = next(item.value for item in tree.body if isinstance(item, ast.Expr)
+                      and isinstance(item.value, ast.Call)
+                      and ast.unparse(item.value.func) == 'os.environ.update'
+                      and any(key.arg == 'ADDP_NODE_METRICS_NAMESPACED_COLLECTOR_PREFIX' for key in item.value.keywords))
+        for initial in ('--collector.textfile', '--no-collector.textfile'):
+            with mock.patch.dict(os.environ, {'ADDP_NODE_METRICS_TEXTFILE': initial}):
+                exec(compile(ast.Expression(body=update), str(probe), 'eval'),
+                     {'os': os, 'port': lambda *_: '19100'})
+                self.assertEqual(os.environ['ADDP_NODE_METRICS_TEXTFILE'], '--no-collector.textfile')
