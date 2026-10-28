@@ -375,6 +375,7 @@ test('CPU minute warmup stays empty while gauges work; recovery restores valid z
   await page.goto(`/node-resources/${node}?metric=node.cpu.busy_percent&refresh=off`)
   await expect(page.getByTestId('resource-cpuBusy')).toContainText('缺失')
   await expect(page.getByTestId('resource-cpuBusy').locator('strong')).toHaveText('—')
+  await expect(page.getByTestId('resource-cpu-idle')).toHaveText('CPU 空闲率：—')
   await page.getByTestId('resource-cpuBusy').getByText('采样说明', { exact: true }).click()
   await expect(page.getByTestId('resource-cpuBusy')).toContainText('最近一分钟')
   await expect(page.getByTestId('resource-cores')).toContainText('0 核')
@@ -383,6 +384,7 @@ test('CPU minute warmup stays empty while gauges work; recovery restores valid z
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   await expect(page.getByTestId('resource-cpuBusy')).toContainText('有效')
   await expect(page.getByTestId('resource-cpuBusy').locator('strong')).toHaveText('0.00 %')
+  await expect(page.getByTestId('resource-cpu-idle')).toHaveText('CPU 空闲率：100.00 %')
   await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
   await page.reload()
   await expect(page.getByTestId('resource-metric')).toContainText('CPU 忙碌率（1 分钟）')
@@ -1033,4 +1035,38 @@ for (const locale of ['zh-cn', 'en']) test(`memory capacity and usage share alig
   await expect(page.getByTestId('resource-error')).toBeVisible()
   await expect(page.getByTestId('resource-chart')).toHaveCount(0)
   await expect(page.getByTestId('resource-paired-values')).toHaveCount(0)
+})
+
+for (const locale of ['zh-cn', 'en']) test(`CPU idle companion preserves the source window, zero/full-scale and missing states (${locale})`, async ({ page }) => {
+  let busy = 13.37, dataState = 'valid'
+  const state = await resourceBackend(page, { locale, observationResponse: body => {
+    const line = body.series.find(line => line.metric_key === 'node.cpu.busy_percent')
+    if (line) Object.assign(line.points[0], { value: dataState === 'no_data' ? null : busy, data_state: dataState,
+      sampled_at: dataState === 'no_data' ? null : line.points[0].sampled_at })
+  } })
+  await page.setViewportSize({ width: 420, height: 900 })
+  await page.goto(`/node-resources/${node}?refresh=off`)
+  const button = page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true })
+  const idle = page.getByTestId('resource-cpu-idle')
+  for (const [index, [next, number, expected]] of [
+    ['valid', 13.37, '86.63 %'], ['valid', 0, '100.00 %'], ['valid', 100, '0.00 %'],
+    ['stale', 50, '—'], ['no_data', null, '—'], ['valid', 50, '50.00 %']
+  ].entries()) {
+    if (index) { dataState = next; busy = number; await button.click() }
+    await expect(button).toBeEnabled()
+    await expect(idle).toHaveText((locale === 'en' ? 'CPU idle: ' : 'CPU 空闲率：') + expected)
+    if (!index) {
+      await page.getByTestId('resource-cpuBusy').scrollIntoViewIfNeeded()
+      await expect(idle).toBeInViewport()
+      const { mkdtempSync } = await import('node:fs')
+      const { tmpdir } = await import('node:os')
+      const { join } = await import('node:path')
+      const directory = mkdtempSync(join(tmpdir(), 'addp-cpu-idle-'))
+      await page.getByTestId('resource-cpuBusy').screenshot({ path: join(directory, `${locale}.png`) })
+      console.log(`CPU idle screenshot: ${join(directory, `${locale}.png`)}`)
+    }
+  }
+  const observations = state.reads.filter(row => row.path.endsWith('/resource_observations'))
+  expect(observations).toHaveLength(30)
+  expect(observations.every(row => !row.query.metrics.includes('node.cpu.idle'))).toBe(true)
 })

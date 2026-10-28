@@ -461,6 +461,8 @@ test('platform node resources through real Console password MFA and Monitor ifra
       await expect(card).toContainText('有效')
       await expect(card.locator('strong')).not.toHaveText('—')
     }
+    const cpuBusy = instant.value.series.find(line => line.metric_key === 'node.cpu.busy_percent').points[0].value
+    await expect(monitor.getByTestId('resource-cpu-idle')).toHaveText(`CPU 空闲率：${formatFieldPresentationValue(100 - cpuBusy, { precision: 2, unit: '%' }, 'zh-cn')}`)
     for (const name of ['memoryTotal', 'memoryAvailable']) {
       await expect(monitor.getByTestId(`resource-${name}`).locator('strong')).toHaveText(/\d[\d,.]* (?:B|KiB|MiB|GiB|TiB|PiB)$/)
     }
@@ -470,7 +472,7 @@ test('platform node resources through real Console password MFA and Monitor ifra
       await expect(card.locator('strong')).toHaveText(/^约 [\d,]+\.\d{2} 个任务$/)
       await expect(card.getByText('平均正在运行或等待的任务数，非百分比。', { exact: true })).toBeVisible()
     }
-    report.presentation = { iec_capacity: true, elapsed_uptime: true, system_load_count: true, disk_rate_units: false, network_rate_units: false }
+    report.presentation = { cpu_idle_complement: true, iec_capacity: true, elapsed_uptime: true, system_load_count: true, disk_rate_units: false, network_rate_units: false }
     await page.screenshot({ path: resolve(artifact, 'node-resources-detail.png'), animations: 'disabled' })
     save('history-and-trend-restore')
     await page.goBack()

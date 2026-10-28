@@ -1025,7 +1025,7 @@ def validate_resource_browser(value, expected, artifacts):
     require(any(set(row["metric_key"] for row in item["series"]) == set(INODE_METRICS) for item in instants), "browser inode table evidence missing")
     require(any(set(row["metric_key"] for row in item["series"]) == set(DISK_METRICS) for item in instants), "browser disk table evidence missing")
     require(any(set(row["metric_key"] for row in item["series"]) == set(NETWORK_METRICS) for item in instants), "browser network table evidence missing")
-    require(value.get("presentation") == {"iec_capacity": True, "elapsed_uptime": True, "system_load_count": True, "disk_rate_units": True, "network_rate_units": True, "disk_timing_units": True}, "browser quantity display evidence missing")
+    require(value.get("presentation") == {"cpu_idle_complement": True, "iec_capacity": True, "elapsed_uptime": True, "system_load_count": True, "disk_rate_units": True, "network_rate_units": True, "disk_timing_units": True}, "browser quantity display evidence missing")
     require(len(instants) >= 2 and {("node.tcp.current_connections", 300), ("node.memory.used_percent", 3600), ("node.cpu.busy_percent", 300), ("node.filesystem.used_percent", 300), ("node.filesystem.inodes_used_percent", 300), *((key, 300) for key in ALL_METRICS if key in DISK_METRICS or key in NETWORK_METRICS)} <= set(trends), "browser restore evidence incomplete")
     mounted = validate_filesystem_mount_browser(value)
     mounted_list = validate_filesystem_list_browser(value)

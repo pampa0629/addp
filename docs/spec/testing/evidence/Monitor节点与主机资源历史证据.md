@@ -320,3 +320,15 @@ Online 与受控 Console T3 共用 `readResourceHeatmap`，纯收据生成与拒
 - Online Playwright `--list` 发现唯一既有场景并完成导入解析，仅计发现，不计执行。
 
 本批只改验收与既有证据，沿原 Online runner 和 Console frontend 的单元／浏览器自动发现；未改产品代码、Swagger或依赖，未重跑完整Monitor产品前端门禁。真实原生Linux、正式密码／MFA页面、Safari、Hosted及零残留仍待专门会话执行／回传；本地确定性与受控HTTP T3不计这些层级通过。未触发／轮询CI或Hosted、未设置定时任务、未修改个人配置或重启个人服务。
+
+
+## 主机 CPU 空闲率辅助展示（2026-10-28）
+
+原图硬件信息中的CPU空闲率补在详情原“CPU忙碌率（1分钟）”卡内，使用同一有效观测的 `100 - busy_percent` 并复用共享百分比格式化；非空闲率原本由各核idle计数的完整一分钟速率反推，因此不另加采集或新口径。预热缺样、陈旧和未接入显示“—”，合法忙碌0%／100%分别显示空闲100%／0%；中英文就近显示。不新增指标、独立卡片、列表列、趋势或规则，不改26项目录、五项列表摘要、API／权限／预算；前端只组合现有同源数据。
+
+- `make test-monitor-frontend` 退出0：130项单元测试、490项浏览器场景及Vite生产构建通过（保留原chunk大小提示），日志 `/tmp/addp-cpu-idle-monitor-frontend.log`。新增中英文场景覆盖13.37%忙碌对应86.63%空闲、合法零／满量程、陈旧／缺样及恢复，确认每轮仍仅五组原观测、没有idle查询；原CPU预热场景增加空闲占位及恢复断言。
+- 标准专项 `npm run test:e2e -- node-resources.spec.js --grep 'CPU idle companion'` 在Monitor frontend执行，两项通过；日志 `/tmp/addp-cpu-idle-focused-browser.log`。420px中英卡片截图已目视核对：`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-cpu-idle-onOjxY/zh-cn.png`、`addp-cpu-idle-FSL23E/en.png`（同一父临时目录），不另计独立实源验收。
+- Console 标准 `npm run test:e2e -- node-resource-navigation.spec.js` 六项受控iframe场景通过，核对主机空闲辅助值及陈旧／缺样不补零；日志 `/tmp/addp-cpu-idle-console-browser.log`。
+- `make test-node-metrics-online-runner`：153项确定性测试及System Go Metrics夹具通过，日志 `/tmp/addp-cpu-idle-online-runner.log`；既有真实Console脚本增加同一有效CPU响应的空闲文本核对与强制展示收据，不增加请求或身份用途。
+
+沿既有 Monitor／Console frontend 自动发现与 Online runner，未新增依赖、标准入口或CI路线。此次只改前端及验收，没有后端重启、IAM、个人配置或数据库操作；真实Linux、Safari及正式密码／MFA Hosted仍未据此通过，继续等专门会话回传。未触发／轮询CI或Hosted、未设置定时任务。磁盘分区容量继续按完整挂载展示，不把该补项外推为整机物理磁盘容量或整个硬件信息卡已完整验收。

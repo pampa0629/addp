@@ -153,6 +153,7 @@ test('heatmap DOM receipt keeps zero/full-scale, mount identities and neutral st
     expect(value.partitions[0].dimensions.device).not.toBe(value.partitions[1].dimensions.device)
     expect(value.scalars['node.cpu.busy_percent']).toMatchObject({ data_state: next, value: next === 'valid' ? 0 : null, neutral: next !== 'valid' })
     expect(value.scalars['node.memory.used_percent'].text).toBe(next === 'valid' ? '100.00 %' : '—')
+    await expect(monitor.getByTestId('resource-cpu-idle')).toHaveText(next === 'valid' ? 'CPU 空闲率：100.00 %' : 'CPU 空闲率：—')
     expect(resources).toHaveLength(before)
     expect(state.reads).toHaveLength(sourceReads)
   }

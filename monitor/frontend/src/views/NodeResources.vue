@@ -62,6 +62,7 @@
         <article v-for="metric in resourceMetrics" :key="metric.key" class="resource-card" :data-testid="`resource-${metric.name}`">
           <h4>{{ t(`monitor.resources.metrics.${metric.name}`) }}</h4>
           <strong>{{ formatValue(point(metric.key), metric) }}</strong>
+          <p v-if="metric.name === 'cpuBusy'" class="resource-hint" data-testid="resource-cpu-idle">{{ t('monitor.resources.cpuIdle', { value: cpuIdleValue() }) }}</p>
           <p v-if="metric.unit === 'load'" class="resource-hint">{{ t('monitor.resources.loadSummary') }}</p>
           <p v-if="metric.name === 'tcpConnections'" class="resource-hint">{{ t('monitor.resources.tcpSummary') }}</p>
           <p>{{ t(`monitor.resources.states.${point(metric.key).data_state}`) }}</p>
@@ -224,6 +225,10 @@ function formatValue(value, metric) {
   if (metric.unit === 'seconds') return formatDurationSeconds(numeric, locale.value)
   const formatted = formatFieldPresentationValue(numeric, presentation(metric), locale.value)
   return metric.unit === 'load' ? t('monitor.resources.loadValue', { value: formatted }) : formatted
+}
+function cpuIdleValue() {
+  const busy = currentResourceValue(point('node.cpu.busy_percent'))
+  return formatFieldPresentationValue(busy === null ? null : 100 - busy, { precision: 2, unit: t('monitor.resources.units.percent') }, locale.value)
 }
 function navigate(path, query, history = 'push') { return navigateMonitorRoute(router, { path, query }, { history }) }
 function viewCapacityRules(host, mount) {

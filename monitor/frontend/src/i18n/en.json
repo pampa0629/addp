@@ -697,6 +697,7 @@
       "networkAxis": "Network receive / transmit rate",
       "networkBars": "Receive and transmit rates of the same interface use grouped bars. Unit: {unit}. Each bar is the average rate over the complete minute before its evaluation, not cumulative traffic. The horizontal axis shows evaluation time. Hover for values; values below show the last evaluation in the period.",
       "pairedThroughput": "Compare both directions of the same device. Chart unit: {unit}. Each point is the average rate over the last complete minute, not cumulative traffic. Values below show the last evaluation in the period.",
+      "cpuIdle": "CPU idle: {value}",
       "cpuBusyHint": "Average non-idle time across cores over the last minute, including I/O wait and steal time; incomplete windows show no data.",
       "metrics": {
         "tcpConnections": "Current TCP connections",

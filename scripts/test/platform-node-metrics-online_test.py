@@ -1120,7 +1120,7 @@ for(const failBody of [false,true]){
                   "summaries": [{"path": ONLINE.SUMMARIES, "query": {"node_ids": "node-id", "metrics": ",".join(ONLINE.HOST_LIST_METRICS)}, "value": {"data": [self.resource_reply(ONLINE.HOST_LIST_METRICS)]}}],
                   "auto_refresh": {"natural_timer": True, "server_end_advanced": True, "unchanged_url": True, "off_restored": True, "off_no_requests": True},
                   "navigation": {"list_summary_batch": True, "iframe_preserved": True, "history": True, "metric_reload": True, "range_reload": True, "server_window": True, "filesystem_reload": True, "inode_reload": True, "disk_reload": True, "network_reload": True},
-                  "presentation": {"iec_capacity": True, "elapsed_uptime": True, "system_load_count": True, "disk_rate_units": True, "network_rate_units": True, "disk_timing_units": True}}
+                  "presentation": {"cpu_idle_complement": True, "iec_capacity": True, "elapsed_uptime": True, "system_load_count": True, "disk_rate_units": True, "network_rate_units": True, "disk_timing_units": True}}
         capacity_index = next(i for i, row in enumerate(rows) if row["path"] == ONLINE.OBSERVATIONS and set(row["query"]["metrics"].split(",")) == set(ONLINE.FILESYSTEM_METRICS))
         report["filesystem_mount"] = self.mount_reading_receipt(capacity_index, capacity_index+1)
         following = copy.deepcopy(report["summaries"][0])
@@ -1205,7 +1205,7 @@ for(const failBody of [false,true]){
                          lambda v: v["host_list_auto_refresh"].update(after_index=9),
                          lambda v: v["host_list_auto_refresh"].update(after_index=0),
                          lambda v: v["summaries"][1]["value"]["data"][0].update(end=v["summaries"][0]["value"]["data"][0]["end"]),
-                         lambda v: v["navigation"].pop("disk_reload"), lambda v: v["presentation"].update(disk_rate_units=False),
+                         lambda v: v["navigation"].pop("disk_reload"), lambda v: v["presentation"].update(cpu_idle_complement=False), lambda v: v["presentation"].update(disk_rate_units=False),
                          lambda v: v["navigation"].pop("network_reload"), lambda v: v["presentation"].update(network_rate_units=False),
                          lambda v: v["presentation"].update(disk_timing_units=False),
                          lambda v: v.update(resources=[row for row in v["resources"] if row["query"]["metrics"] != "node.disk.io_busy_percent"]),
