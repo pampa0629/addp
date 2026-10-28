@@ -44,7 +44,7 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 - 独立根入口在 AuthContext 加载后依次选择有权进入的平台节点资源、采集配置、仪表盘、执行记录、告警、通知；无可进入页时显示无权限，显式地址保持原样。
 - 执行详情唯一地址为 `/monitor/executions?execution_id={execution_uuid}`：打开用 push，关闭清除 execution_id 用 replace，前进/后退同步详情。默认 incidents/webhook 页签省略 tab，rules/email 等非默认值使用 replace。
 - 通知唯一入口 `/notifications`；平台事件、通知及主机/HTTP 规则唯一入口 `/platform-alerts`。System 保留主机与日志诊断、来源策略和带上下文跳转，不恢复旧日志管理或 webhooks 路由。
-- 执行步骤复用共享 `ExecutionSteps`，资源血缘复用 Basic 的唯一 lineage_facts 归一能力；业务 ResourceLocator 通过共享 Manager 路由打开，addp-infra 平台内部产物不推断为业务数据项或生命周期。详情清空、刷新与恢复字段见[诊断页面契约](../docs/spec/tasks/执行监控.md#执行诊断页面与授权失效)。
+- 执行步骤复用共享 `ExecutionSteps`；资源归一化、业务输入跳转和内部产物展示统一沿[执行血缘资源摘要](../common-frontend/docs/components/页面状态与导航.md#执行血缘资源摘要)，不扩展上游安全投影或专业结果权限。详情清空、刷新与恢复字段见[诊断页面契约](../docs/spec/tasks/执行监控.md#执行诊断页面与授权失效)。
 - 主机选择和清单校验复用共享 HostNodeSelect；System `/host-admission` 独占 v2 主机接入，Monitor 只接受同一内存导航草稿并独立校验已有主机及来源，草稿不进入 URL 或客户端持久存储，未知创建结果阻止重复提交。
 - 服务与引擎监控的主机引用使用唯一 [loadHostReferences](frontend/src/utils/hostReferences.js)，仅解析当前有权读取的一页，去重且最多四并发；无权/失败只显示已有 ID，未绑定显示未关联，迟到结果不得保留。当前 System node_id 是唯一绑定事实，不用主机名、IP 或部署别名补造。服务与引擎名称链接复用同一 MonitoredHostLink 领域组件；引擎关联失效不回用历史声明的主机，跳转保留原页面地址供浏览器返回恢复。
 - 服务登记端点复用 Basic `getRegisteredEndpoint`，只显示 HTTP(S) 主机与端口；Worker 用途只读 System metadata.runtime_name，未知值只显示正式角色，不据此判断任务正在运行。
