@@ -1,3 +1,4 @@
+import copy
 import importlib
 import json
 import os
@@ -22,6 +23,70 @@ class MetricsFixtureTest(unittest.TestCase):
         self.env = dict(GITHUB_ACTIONS="true", RUNNER_OS="Linux", ADDP_ONLINE_HOSTED="1", ADDP_ONLINE_HOST="1",
                         ONLINE_SUITE="platform-node-metrics", POSTGRES_DB="addp_online",
                         ADDP_ONLINE_SECRET_DIR=str(self.secret), ADDP_ONLINE_ARTIFACT_DIR=str(self.root / "artifacts"))
+
+    def native_exporter(self):
+        return {"Id": "a"*64, "State": {"Running": True},
+                "Config": {"User": "65534:65534", "Env": ["SECRET=not-for-artifacts"], "Labels": {
+                    "com.docker.compose.project": "addp-node-metrics", "com.docker.compose.service": "node-exporter",
+                    "io.addp.node-metrics.owner": str(FIXTURE.ROOT)},
+                    "Cmd": ["--path.rootfs=/host", "--path.procfs=/host/proc", "--path.sysfs=/host/sys",
+                            "--collector.disable-defaults", "--collector.filesystem"]},
+                "HostConfig": {"NetworkMode": "host", "PidMode": "host", "ReadonlyRootfs": True,
+                               "Privileged": False, "CapDrop": ["ALL"]},
+                "Mounts": [{"Type": "bind", "Source": "/", "Destination": "/host", "RW": False, "Propagation": "rslave"}]}
+
+    def prove_native(self, row=None, info=None, ids=None):
+        info = info if info is not None else {"OSType": "linux", "KernelVersion": "test-kernel", "OperatingSystem": "Ubuntu"}
+        with patch.object(FIXTURE, "boundary"), patch.object(FIXTURE.platform, "system", return_value="Linux"), \
+             patch.object(FIXTURE.platform, "release", return_value="test-kernel"), \
+             patch.object(FIXTURE, "command", side_effect=[json.dumps(info), ids if ids is not None else "a"*64,
+                                                         json.dumps([row if row is not None else self.native_exporter()])]) as command:
+            proof = FIXTURE.native_node_source_proof()
+            self.assertTrue(all(call.kwargs == {"timeout": 5} for call in command.call_args_list))
+            self.assertEqual(command.call_count, 3)
+            return proof
+
+    def test_native_source_proof_is_closed_and_does_not_export_docker_secrets(self):
+        proof = self.prove_native()
+        self.assertEqual(set(proof), {"schema_version", "native_linux", "source_id_sha256", "host_network_pid",
+                                     "readonly_host_root", "host_collector_paths", "filesystem_collector", "nonprivileged_exporter"})
+        self.assertEqual(proof["schema_version"], "addp.native-node-source/v1")
+        self.assertRegex(proof["source_id_sha256"], r"^[0-9a-f]{64}$")
+        self.assertTrue(all(value is True for key, value in proof.items() if key not in ("schema_version", "source_id_sha256")))
+        self.assertNotIn("not-for-artifacts", json.dumps(proof))
+        self.assertNotIn(str(FIXTURE.ROOT), json.dumps(proof))
+
+    def test_native_source_proof_rejects_non_host_sources_and_changed_ownership(self):
+        for info in ({"OSType": "windows"}, {"OSType": "linux", "KernelVersion": "other"},
+                     {"OSType": "linux", "KernelVersion": "test-kernel", "OperatingSystem": "Docker Desktop"}):
+            with self.subTest(info=info), self.assertRaises(ValueError): self.prove_native(info=info)
+        for ids in ("", "a"*64+"\n"+"b"*64, "short-id"):
+            with self.subTest(ids=ids), self.assertRaises(ValueError): self.prove_native(ids=ids)
+        changes = [lambda r: r.update(Id="b"*64), lambda r: r["State"].update(Running=False),
+                   lambda r: r["Config"]["Labels"].update({"io.addp.node-metrics.owner": "foreign"}),
+                   lambda r: r["Config"]["Labels"].update({"com.docker.compose.service": "other"}),
+                   lambda r: r["Config"].update(User="root")]
+        changes += [lambda r, key=key, value=value: r["HostConfig"].update({key: value}) for key, value in
+                    (("NetworkMode", "bridge"), ("PidMode", ""), ("ReadonlyRootfs", False), ("Privileged", True), ("CapDrop", []))]
+        changes += [lambda r, key=key, value=value: r["Mounts"][0].update({key: value}) for key, value in
+                    (("Type", "volume"), ("Source", "/container"), ("RW", True), ("Propagation", "rprivate"))]
+        changes += [lambda r: r.update(Mounts=[]), lambda r: r["Mounts"].append(copy.deepcopy(r["Mounts"][0])),
+                    lambda r: r["Mounts"].append({"Source": "/proc", "Destination": "/host/proc"}),
+                    lambda r: r["Config"]["Cmd"].append("--path.rootfs=/"),
+                    lambda r: r["Config"]["Cmd"].extend(["--path.rootfs", "/"]),
+                    lambda r: r["Config"]["Cmd"].remove("--path.procfs=/host/proc"),
+                    lambda r: r["Config"]["Cmd"].remove("--path.sysfs=/host/sys"),
+                    lambda r: r["Config"]["Cmd"].remove("--collector.filesystem"),
+                    lambda r: r["Config"]["Cmd"].append("--no-collector.filesystem"),
+                    lambda r: r["Config"]["Cmd"].append("--collector.filesystem=false"),
+                    lambda r: r["Config"]["Cmd"].append("--collector.disable-defaults=false"),
+                    lambda r: r["Config"]["Cmd"].append("--collector.textfile.directory=/fake")]
+        for index, change in enumerate(changes):
+            row = self.native_exporter(); change(row)
+            with self.subTest(change=index), self.assertRaises(ValueError): self.prove_native(row=row)
+        with patch.object(FIXTURE, "boundary", side_effect=ValueError("personal")), patch.object(FIXTURE, "command") as command:
+            with self.assertRaises(ValueError): FIXTURE.native_node_source_proof()
+            command.assert_not_called()
 
     def check_worker_sources(self, case):
         original = FIXTURE.command

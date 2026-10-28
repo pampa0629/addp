@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 from importlib.util import module_from_spec, spec_from_file_location
 import ipaddress
 import json
@@ -74,8 +75,61 @@ def boundary():
     return directory
 
 
-def command(args):
-    return subprocess.run(args, check=True, capture_output=True, text=True, timeout=120).stdout
+def command(args, *, timeout=120):
+    return subprocess.run(args, check=True, capture_output=True, text=True, timeout=timeout).stdout
+
+
+def native_node_source_proof():
+    """Verify the actual owned exporter, not only a rendered Compose declaration."""
+    boundary()
+    if platform.system() != "Linux":
+        raise ValueError("native node evidence requires Linux")
+    info = json.loads(command(["docker", "info", "--format", "{{json .}}"], timeout=5))
+    if (info.get("OSType") != "linux" or info.get("KernelVersion") != platform.release()
+            or "Docker Desktop" in info.get("OperatingSystem", "")):
+        raise ValueError("native node evidence requires the current host kernel")
+    ids = command(["docker", "ps", "-aq", "--no-trunc", "--filter",
+                   "label=com.docker.compose.project=addp-node-metrics", "--filter",
+                   "label=com.docker.compose.service=node-exporter"], timeout=5).split()
+    if len(ids) != 1 or not re.fullmatch(r"[0-9a-f]{64}", ids[0]):
+        raise ValueError("native node source ownership is ambiguous")
+    rows = json.loads(command(["docker", "inspect", ids[0]], timeout=5))
+    if len(rows) != 1:
+        raise ValueError("native node source inspection is incomplete")
+    row = rows[0]
+    labels = row.get("Config", {}).get("Labels", {})
+    expected = {"com.docker.compose.project": "addp-node-metrics",
+                "com.docker.compose.service": "node-exporter", "io.addp.node-metrics.owner": str(ROOT)}
+    if (row.get("Id") != ids[0] or any(labels.get(k) != v for k, v in expected.items())
+            or row.get("State", {}).get("Running") is not True):
+        raise ValueError("native node source is not the current owned exporter")
+    host, config = row.get("HostConfig", {}), row.get("Config", {})
+    if (host.get("NetworkMode") != "host" or host.get("PidMode") != "host"
+            or host.get("ReadonlyRootfs") is not True or host.get("Privileged") is not False
+            or host.get("CapDrop") != ["ALL"] or config.get("User") != "65534:65534"):
+        raise ValueError("native node source isolation does not match the standard deployment")
+    mounts = [m for m in row.get("Mounts", []) if m.get("Destination") == "/host"]
+    if (len(mounts) != 1 or mounts[0].get("Type") != "bind" or mounts[0].get("Source") != "/"
+            or mounts[0].get("RW") is not False or mounts[0].get("Propagation") != "rslave"
+            or any(m.get("Destination", "").startswith("/host/") for m in row.get("Mounts", []))):
+        raise ValueError("native node source lacks the read-only host root")
+    args = config.get("Cmd", [])
+    if not isinstance(args, list) or not all(isinstance(arg, str) for arg in args):
+        raise ValueError("native node collector arguments are invalid")
+    for key, path in (("rootfs", "/host"), ("procfs", "/host/proc"), ("sysfs", "/host/sys")):
+        option = "--path."+key
+        if [arg for arg in args if arg == option or arg.startswith(option+"=")] != [option+"="+path]:
+            raise ValueError("native node collector paths do not reference the host")
+    for option in ("--collector.filesystem", "--collector.disable-defaults"):
+        negative = option.replace("--", "--no-", 1)
+        if [arg for arg in args if arg in (option, negative) or arg.startswith((option+"=", negative+"="))] != [option]:
+            raise ValueError("native filesystem collector is not explicitly enabled")
+    if any(arg.startswith("--collector.textfile") for arg in args):
+        raise ValueError("native source cannot use a textfile substitute")
+    return {"schema_version": "addp.native-node-source/v1", "native_linux": True,
+            "source_id_sha256": hashlib.sha256(ids[0].encode()).hexdigest(),
+            "host_network_pid": True, "readonly_host_root": True, "host_collector_paths": True,
+            "filesystem_collector": True, "nonprivileged_exporter": True}
 
 
 def compose(directory, *args):

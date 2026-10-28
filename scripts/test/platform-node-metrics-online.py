@@ -849,6 +849,56 @@ def validate_resource_comparison_browser(value, expected, artifacts):
                      "single_query_each": True, "url_restore": True}
 
 
+def validate_filesystem_mount_browser(value):
+    receipt, rows = value.get("filesystem_mount", {}), value["resources"]
+    require(isinstance(receipt, dict) and set(receipt) == {"capacity_index", "inode_index", "row_index", "dimensions", "metrics"}, "browser mount readings missing")
+    sources = []
+    for field, family in (("capacity_index", FILESYSTEM_METRICS), ("inode_index", INODE_METRICS)):
+        index = receipt[field]
+        require(type(index) is int and 0 <= index < len(rows), "browser mount receipt reference invalid")
+        source = rows[index]
+        require(source["path"] == OBSERVATIONS and set(source["query"]["metrics"].split(",")) == set(family), "browser mount receipt family mismatch")
+        sources.append(source["value"])
+    mounts = {}
+    for source in sources:
+        for series in source["series"]:
+            dimensions = series["dimensions"]
+            if set(dimensions) != {"device", "mountpoint", "fstype"}: continue
+            key = tuple(dimensions[name] for name in ("device", "mountpoint", "fstype"))
+            mounts.setdefault(key, {})[series["metric_key"]] = series["points"][0]
+    index, dimensions = receipt["row_index"], receipt["dimensions"]
+    require(type(index) is int and 0 <= index < len(mounts) and isinstance(dimensions, dict)
+            and set(dimensions) == {"device", "mountpoint", "fstype"}, "browser mount row identity incomplete")
+    key = tuple(dimensions[name] for name in ("device", "mountpoint", "fstype"))
+    require(list(mounts)[index] == key, "browser displayed another mount row")
+    metrics = receipt["metrics"]
+    require(isinstance(metrics, dict) and set(metrics) == set(FILESYSTEM_METRICS) | set(INODE_METRICS), "browser mount displayed metric scope mismatch")
+    for metric, text in metrics.items():
+        point = mounts[key].get(metric, {})
+        require(point.get("data_state") == "valid" and type(point.get("value")) in (int, float), "browser mount lacked a valid reading")
+        require(isinstance(text, str) and len(text) <= 80, "browser mount display missing")
+        number = point["value"]
+        if metric.endswith("_bytes"):
+            units, scale = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"], 0
+            while number >= 1024 and scale < len(units)-1:
+                number /= 1024
+                scale += 1
+            suffix = units[scale]
+        elif metric.endswith("_percent"):
+            suffix = "%"
+        else:
+            require(text.replace(",", "") == str(int(number)) + " 个", "browser inode count differs from API")
+            continue
+        match = re.fullmatch(r"([0-9][0-9,]*\.[0-9]{2}) " + re.escape(suffix), text)
+        require(match is not None and abs(float(match[1].replace(",", ""))-number) <= 0.005000001, "browser mount value or unit differs from API")
+    # The same complete three-part identity must own both restored trends.
+    for metric in ("node.filesystem.used_percent", "node.filesystem.inodes_used_percent"):
+        require(any(row["path"] == TRENDS and row["query"].get("metrics") == metric
+                    and all(row["query"].get(name) == item for name, item in dimensions.items()) for row in rows),
+                "browser mount readings were not bound to restored trends")
+    return {"capacity_and_inodes": True, "complete_mount_identity": True, "same_mount_trends": True}
+
+
 def validate_resource_browser(value, expected, artifacts):
     require(value.get("schema_version") == "addp.node-resources-browser/v1" and value.get("result") == "passed"
             and value.get("stage") == "complete" and value.get("run_id") == expected["run_id"], "browser result mismatch")
@@ -916,6 +966,7 @@ def validate_resource_browser(value, expected, artifacts):
     require(any(set(row["metric_key"] for row in item["series"]) == set(NETWORK_METRICS) for item in instants), "browser network table evidence missing")
     require(value.get("presentation") == {"iec_capacity": True, "elapsed_uptime": True, "system_load_count": True, "disk_rate_units": True, "network_rate_units": True, "disk_timing_units": True}, "browser quantity display evidence missing")
     require(len(instants) >= 2 and {("node.tcp.current_connections", 300), ("node.memory.used_percent", 3600), ("node.cpu.busy_percent", 300), ("node.filesystem.used_percent", 300), ("node.filesystem.inodes_used_percent", 300), *((key, 300) for key in ALL_METRICS if key in DISK_METRICS or key in NETWORK_METRICS)} <= set(trends), "browser restore evidence incomplete")
+    mounted = validate_filesystem_mount_browser(value)
     for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "tcp"):
         screenshot = artifacts / ("node-resources-" + name + ".png")
         require(screenshot.is_file() and screenshot.stat().st_size > 1000
@@ -923,7 +974,7 @@ def validate_resource_browser(value, expected, artifacts):
     return {"result": "passed", "password_mfa": True, "same_platform_identity": True,
             "catalog_metric_count": len(ALL_METRICS), "trend_server_window": True, "navigation_restore": True, "host_list_auto_refresh": True,
             "security_administrator_denied": True, "auto_refresh": True, "disk_trends": True, "network_trends": True, "disk_timing_trends": True, "quantity_display": True,
-            "period_comparison": comparison}
+            "filesystem_mount": mounted, "period_comparison": comparison}
 
 
 def assert_process_trend_evidence(trend, owner, policy_version, *, require_valid=True):
@@ -1021,6 +1072,10 @@ def validate_process_browser(value, expected, artifacts):
 
 def run_resource_browser(node, target, policy, display_name, admin, security, processes):
     artifacts = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"])
+    for name in ("node-native-source.json", "node-resources-browser.json"):
+        (artifacts / name).unlink(missing_ok=True)
+    native_source = FIXTURE.native_node_source_proof()
+    (artifacts / "node-native-source.json").write_text(json.dumps(native_source))
     expected = {"run_id": os.environ["ADDP_ONLINE_TEST_RUN_ID"], "node": node, "target": {"id": target["id"], "version": target["version"]},
                 "display_name": display_name, "policy_version": policy["version"],
                 "admin_id": admin["principal"]["id"], "security_id": security["principal"]["id"],
@@ -1034,6 +1089,7 @@ def run_resource_browser(node, target, policy, display_name, admin, security, pr
     result = validate_resource_browser(value, expected, artifacts)
     result["services"] = validate_process_browser(value, expected, artifacts)
     result["overview"] = validate_overview_browser(value, expected, artifacts)
+    result["native_source"] = native_source
     return result
 
 

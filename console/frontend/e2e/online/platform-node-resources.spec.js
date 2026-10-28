@@ -7,7 +7,7 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import { processMetrics, validateProcessInstances, validateProcessSummaries, validateProcessTrend } from '../../../../monitor/frontend/src/utils/processResources.js'
 import { validateResourceOverview } from '../../../../monitor/frontend/src/utils/resourceOverview.js'
 import { json, matchesRedirectURL } from './transfer-browser-support.js'
-import { scalarResourceReceipts } from './node-resource-receipts.js'
+import { scalarResourceReceipts, filesystemMountReceipt } from './node-resource-receipts.js'
 import { engineMetrics, engineSummaryMetrics, validateEngineResources } from '../../../../monitor/frontend/src/utils/engineResources.js'
 
 // Login failures must never capture MFA input or credentials.
@@ -587,15 +587,24 @@ test('platform node resources through real Console password MFA and Monitor ifra
     save('filesystem-mount-trend-restore')
     const filesystemTable = monitor.getByTestId('resource-filesystem-table')
     await expect(filesystemTable.getByRole('button', { name: '查看趋势' }).first()).toBeVisible()
-    const mounts = resources.filter(item => item.path.endsWith('resource_observations') && item.query.metrics.split(',').includes('node.filesystem.total_bytes')).at(-1)
-    expect(mounts.query.metrics.split(',').sort()).toEqual(filesystemMetrics.map(item => item.key).sort())
-    expect(mounts.value.series.every(item => Object.keys(item.dimensions).length === 3)).toBe(true)
-    const mountInodes = resources.filter(item => item.path.endsWith('resource_observations') && item.query.metrics.split(',').includes('node.filesystem.inodes_total')).at(-1)
-    const observedMounts = resourceDimensionRows(mounts.value, mountInodes.value)
-    const supportedMountIndex = observedMounts.findIndex(row => [...filesystemMetrics, ...inodeMetrics].every(metric => row.metrics[metric.key]?.data_state === 'valid'))
-    expect(supportedMountIndex).toBeGreaterThanOrEqual(0)
-    const supportedMount = observedMounts[supportedMountIndex].dimensions
-    await filesystemTable.locator('.el-table__body tr').nth(supportedMountIndex).getByRole('button', { name: '查看趋势' }).click()
+    await Promise.all(pending)
+    const mountReceipt = filesystemMountReceipt(resources, expected.node.node_id)
+    const supportedMount = mountReceipt.dimensions
+    const mountRow = filesystemTable.locator('.el-table__body tr').nth(mountReceipt.row_index)
+    const dimensionCells = mountRow.locator('td .cell')
+    for (const [index, key] of ['device', 'mountpoint', 'fstype'].entries()) {
+      await expect(dimensionCells.nth(index)).toHaveText(supportedMount[key])
+    }
+    const mountValues = mountRow.locator('strong')
+    await expect(mountValues).toHaveCount(Object.keys(mountReceipt.metrics).length)
+    for (const [index, [key, text]] of Object.entries(mountReceipt.metrics).entries()) {
+      await mountValues.nth(index).scrollIntoViewIfNeeded()
+      await expect(mountValues.nth(index)).toBeVisible()
+      await expect(mountValues.nth(index)).toHaveText(text)
+      mountReceipt.metrics[key] = (await mountValues.nth(index).textContent()).trim()
+    }
+    report.filesystem_mount = mountReceipt
+    await mountRow.getByRole('button', { name: '查看趋势' }).click()
     await expect(page).toHaveURL(url => url.searchParams.get('metric') === 'node.filesystem.used_percent' && Boolean(url.searchParams.get('mountpoint')) && Boolean(url.searchParams.get('device')) && Boolean(url.searchParams.get('fstype')))
     await expect(monitor.getByTestId('resource-selected-mount')).toBeVisible()
     await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()

@@ -282,3 +282,18 @@ Node `v24.11.1`：新增八项受控浏览器场景与原设备九项合计17项
 2026-10-27 独立复核专门 CI 会话回传的 [Linux Monitor frontend Job](https://github.com/pampa0629/addp/actions/runs/40351996188/job/121674238730)：push／attempt 1，实际 checkout `e5391ca36843cd0d99233ea3f63949abb45d81d0`。GitHub Job 与实际 `Run Monitor frontend gate` 步骤均为 success，`make test-monitor-frontend` 原始日志确认 tests/pass 各127、fail 0、467 browser passed（23.3分钟），生产构建10.55秒完成。产品 `12d3eba1f6d9294ca16c2bfe9204e046e2d872e6` 至该实际提交的 `monitor/frontend`、`common-frontend`、根 Makefile、标准前端／浏览器入口、prepare-frontend-gate 与 Platform workflow 均无差异，因此覆盖本批实现。
 
 通过 `gh api repos/pampa0629/addp/actions/jobs/121674238730` 及对应 run 的只读请求核对终态，再独立下载原始日志至 `/tmp/addp-monitor-e539-independent-job.log`；与回传归档逐字节相同，SHA256 为 `2665d7996277041d5b79bf80c985e6f223a4b944f4b0b69130f1d170df985511`。回传审计 `/tmp/addp-ci-20261026-180018/Monitor_e539_actual_frontend_audit.json`。父 Platform run 的终态为 cancelled，不计整套 workflow 通过；旧超时保留，不能据此认定其根因已修。后继作业若实际跳过也不计第二轮复验。这一证据仅证明固定源码的 Linux 标准前端门禁，不替代 Safari、个人实源、正式身份 Hosted 或生产验收，不扩展文件系统告警范围；本轮未重跑或调度任何验收。
+
+
+## 真实 Linux 采集与挂载页面验收准备（2026-10-28）
+
+本批增强既有 `platform-node-metrics` 的资源 regression／complete-comparison 浏览器阶段，不新增 profile、权限、接口、读取轮次或超时预算。浏览器启动前只读核对当次标准 node-exporter：唯一项目／服务／仓库归属、运行态、Linux 同内核、host 网络与 PID、非特权只读运行、只读 `rslave` 宿主根挂载、宿主 proc／sys 路径和显式 filesystem collector。拒绝 Desktop、容器根、挂载覆盖、重复／反向参数和 textfile 替代。`node-native-source.json` 仅保存封闭布尔结果和容器 ID 摘要，不导出环境、凭据或完整 inspect；前置失败清除旧部署／浏览器成功收据，并阻止浏览器启动。
+
+真实 Console 脚本使用同一主机的精确五项容量与四项 inode 响应，按完整 `device／mountpoint／fstype` 定位有效挂载，逐列核对身份、横向滚动后的可见数值及单位；格式化复用既有共享函数和指标／翻译定义。`filesystem_mount` 收据保存响应索引、行索引、完整身份和实际 DOM 文本，中央校验再次核对指标、读数和单位，并要求容量／inode 恢复趋势属于同一挂载。并发响应乱序、同设备或挂载点的类型差异、合法零值、旧成功后新缺样／陈旧、错主机／请求范围、错误索引／单位／读数等都有拒绝回归。
+
+本地验证：
+
+- `make test-node-metrics-online-runner`：151 项确定性测试及 System 正式身份夹具 `go test ./cmd/online-test-fixture -run Metrics -count=1` 通过；日志 `/tmp/addp-native-node-runner-final.log`。Docker 部署检查使用受控 inspect 反例，不计真实 Linux 采集通过。
+- `npm --prefix console/frontend test`：30 个文件、202 项单元测试通过，其中收据专项 15 项；日志 `/tmp/addp-native-mount-console-unit-final.log`。前一轮全量为 201 通过／1 失败，失败在本批未改的 `devPorts.test.js` 临时 Vite 清理断言，残留名称为 `7102.pid`／`addp-system-vite-test-7102`；最终复跑通过，未修该路径，未确认首次失败根因，不能据此宣称其清理问题已修复。
+- 在 `console/frontend` 执行 `npm exec -- playwright test --config=playwright.online.config.js --list e2e/online/platform-node-resources.spec.js`：发现唯一既有场景，导入解析成功；仅发现，不计浏览器执行通过。
+
+继续由既有 Online runner、Console frontend 单元自动发现及手动 Hosted regression 接入，无新增依赖或 CI 路线。本轮不改产品前端／后端、Swagger、个人配置或服务，不重跑既有受控产品前端门禁。本机仍为 Darwin／Docker Desktop，真实原生 Linux、正式登录后的挂载读数及完整 Hosted 零残留尚未运行；CI 和 Hosted 由专门会话安排并回传，不在本会话调度或设定时任务。这是验收实现与本地准备证据，不能填为真实采集／正式页面已验收。

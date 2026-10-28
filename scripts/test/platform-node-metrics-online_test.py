@@ -1035,6 +1035,13 @@ for(const failBody of [false,true]){
                   "auto_refresh": {"natural_timer": True, "server_end_advanced": True, "unchanged_url": True, "off_restored": True, "off_no_requests": True},
                   "navigation": {"list_summary_batch": True, "iframe_preserved": True, "history": True, "metric_reload": True, "range_reload": True, "server_window": True, "filesystem_reload": True, "inode_reload": True, "disk_reload": True, "network_reload": True},
                   "presentation": {"iec_capacity": True, "elapsed_uptime": True, "system_load_count": True, "disk_rate_units": True, "network_rate_units": True, "disk_timing_units": True}}
+        capacity_index = next(i for i, row in enumerate(rows) if row["path"] == ONLINE.OBSERVATIONS and set(row["query"]["metrics"].split(",")) == set(ONLINE.FILESYSTEM_METRICS))
+        report["filesystem_mount"] = {"capacity_index": capacity_index, "inode_index": capacity_index+1, "row_index": 0,
+            "dimensions": {"device": "/dev/a", "mountpoint": "/data", "fstype": "ext4"}, "metrics": {
+                "node.filesystem.used_percent": "73.68 %", "node.filesystem.total_bytes": "100.00 B",
+                "node.filesystem.used_bytes": "70.00 B", "node.filesystem.available_bytes": "25.00 B",
+                "node.filesystem.free_bytes": "30.00 B", "node.filesystem.inodes_used_percent": "20.00 %",
+                "node.filesystem.inodes_total": "100 个", "node.filesystem.inodes_free": "80 个", "node.filesystem.inodes_used": "20 个"}}
         following = copy.deepcopy(report["summaries"][0])
         fresh = following["value"]["data"][0]
         at = "2026-10-06T00:01:15Z"
@@ -1051,6 +1058,22 @@ for(const failBody of [false,true]){
                 (artifacts / ("node-resources-" + name + ".png")).write_bytes(b"\x89PNG\r\n\x1a\n" + b"x"*1000)
             self.add_period_comparison_evidence(report, artifacts)
             self.assertEqual(ONLINE.validate_resource_browser(report, expected, artifacts)["result"], "passed")
+            for change in (lambda r: r.pop("filesystem_mount"),
+                           lambda r: r.update(filesystem_mount=None),
+                           lambda r: r["filesystem_mount"].update(capacity_index=True),
+                           lambda r: r["filesystem_mount"].update(capacity_index=-1),
+                           lambda r: r["filesystem_mount"].update(inode_index=capacity_index),
+                           lambda r: r["filesystem_mount"].update(row_index=1),
+                           lambda r: r["filesystem_mount"]["dimensions"].update(fstype="xfs"),
+                           lambda r: r["filesystem_mount"]["dimensions"].pop("device"),
+                           lambda r: r["filesystem_mount"]["metrics"].pop("node.filesystem.inodes_total"),
+                           lambda r: r["filesystem_mount"]["metrics"].update({"node.filesystem.total_bytes": "100.00 GiB"}),
+                           lambda r: r["filesystem_mount"]["metrics"].update({"node.filesystem.used_bytes": "71.00 B"}),
+                           lambda r: r["filesystem_mount"]["metrics"].update({"node.filesystem.used_percent": "70.00 %"}),
+                           lambda r: r["filesystem_mount"]["metrics"].update({"node.filesystem.inodes_total": "0 个"})):
+                malformed = copy.deepcopy(report); change(malformed)
+                with self.subTest(mount_change=change), self.assertRaises(ONLINE.SuiteError):
+                    ONLINE.validate_resource_browser(malformed, expected, artifacts)
             for mutate in (lambda row: row["query"].pop("metrics"),
                            lambda row: row["query"].update(metrics="node.cpu.busy_percent,node.memory.used_percent"),
                            lambda row: row["value"]["data"][0]["series"].pop()):
@@ -1115,12 +1138,27 @@ for(const failBody of [false,true]){
             with self.assertRaises(ONLINE.SuiteError):
                 ONLINE.validate_resource_browser(report, expected, artifacts)
 
+    def test_failed_native_preflight_cannot_launch_browser_or_reuse_old_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory)
+            for name in ("node-native-source.json", "node-resources-browser.json"):
+                (artifacts/name).write_text('{"result":"passed"}')
+            with patch.dict(ONLINE.os.environ, ADDP_ONLINE_ARTIFACT_DIR=directory), \
+                 patch.object(ONLINE.FIXTURE, "native_node_source_proof", side_effect=ValueError("not a native source")), \
+                 patch.object(ONLINE.subprocess, "run") as command:
+                with self.assertRaisesRegex(ValueError, "not a native source"):
+                    ONLINE.run_resource_browser({}, {}, {}, "", {}, {}, [])
+                command.assert_not_called()
+            self.assertFalse((artifacts/"node-native-source.json").exists())
+            self.assertFalse((artifacts/"node-resources-browser.json").exists())
+
     def test_browser_failure_cannot_reuse_report_or_leak_subprocess_output(self):
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
             evidence = artifacts / "node-resources-browser.json"
             evidence.write_text('{"result":"passed"}')
             with patch.dict(ONLINE.os.environ, ADDP_ONLINE_ARTIFACT_DIR=directory, ADDP_ONLINE_SECRET_DIR=directory+"/private", ADDP_ONLINE_TEST_RUN_ID="run"), \
+                 patch.object(ONLINE.FIXTURE, "native_node_source_proof", return_value={"native_linux": True}), \
                  patch.object(ONLINE.subprocess, "run", return_value=unittest.mock.Mock(returncode=1, stdout="sensitive", stderr="sensitive")), \
                  patch("sys.stdout", new_callable=io.StringIO) as output:
                 with self.assertRaises(ONLINE.SuiteError):
@@ -1136,6 +1174,7 @@ for(const failBody of [false,true]){
                                    ("page.goto: Test ended. secret-token", False)):
             with self.subTest(deadline=deadline), tempfile.TemporaryDirectory() as directory:
                 with patch.dict(ONLINE.os.environ, ADDP_ONLINE_ARTIFACT_DIR=directory, ADDP_ONLINE_SECRET_DIR=directory+"/private", ADDP_ONLINE_TEST_RUN_ID="run"), \
+                     patch.object(ONLINE.FIXTURE, "native_node_source_proof", return_value={"native_linux": True}), \
                      patch.object(ONLINE.subprocess, "run", return_value=unittest.mock.Mock(returncode=1, stdout=captured, stderr="private-credentials")) as command, \
                      patch("sys.stdout", new_callable=io.StringIO) as output:
                     with self.assertRaisesRegex(ONLINE.SuiteError, "resource browser failed"):
@@ -1156,6 +1195,7 @@ for(const failBody of [false,true]){
         with tempfile.TemporaryDirectory() as directory:
             expired = ONLINE.subprocess.TimeoutExpired(["npm", "secret-argument"], 300, output="secret-output", stderr="secret-error")
             with patch.dict(ONLINE.os.environ, ADDP_ONLINE_ARTIFACT_DIR=directory, ADDP_ONLINE_SECRET_DIR=directory+"/private", ADDP_ONLINE_TEST_RUN_ID="run"), \
+                 patch.object(ONLINE.FIXTURE, "native_node_source_proof", return_value={"native_linux": True}), \
                  patch.object(ONLINE.subprocess, "run", side_effect=expired):
                 with self.assertRaisesRegex(ONLINE.SuiteError, "resource browser subprocess exceeded existing deadline"):
                     ONLINE.run_resource_browser({"node_id": "node", "version": 1}, {"id": "target", "version": 2}, {"version": 0}, "node", {"principal": {"id": "admin"}}, {"principal": {"id": "security"}}, [])
