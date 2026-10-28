@@ -44,6 +44,7 @@ Monitor 聚合任务执行事实，提供授权诊断、统计、健康观测、
 | bounded 恢复时间 | `started_at` 采用[当前 attempt 契约](../../docs/spec/tasks/执行记录与租约.md#bounded-execution-领取租约和恢复契约)。Common [RetryExpired](../../common/execution/lease.go) 在过期租约围栏内恢复为 `pending` 时清空 `started_at`，保留 execution UUID 与 `created_at`；再次 claim 写入新开始时间并递增 attempt、生成新 token。Common Go 回归覆盖首次／再次 claim、恢复排队及旧运行体拒绝；Quality SQLite／PostgreSQL 回归覆盖恢复摘要和排队失败不借用旧开始时间／耗时，Monitor PostgreSQL 回归覆盖恢复排队、再次运行／完成和排队失败的时间聚合。沿 `make test-module MODULE=common GO_ONLY=1`、`make test-quality-postgres` 和 `make test-monitor-postgres` 自动发现；现有排队／运行时长 SQL 公式不变，确定性证据不代表 Hosted／生产重启恢复验收。 |
 | 实时推送 | WebSocket 执行状态推送仅保留为候选；先明确刷新收益、授权撤销、连接范围和负载，不替换现有读取主路径。 |
 | 成功率与 stalled 规则 | 后续扩展须依赖 Owner 公共事实及明确 heartbeat/deadline 契约，不能以 created_at、updated_at 或全局固定时长猜测任务卡死。 |
+| 统计展示扩展 | 保留成功率趋势图、执行耗时分布图、失败原因分析和热点任务 Top 10 的后续需求；当前 Dashboard 的日趋势是总数／成功数／失败数，不是成功率趋势或失败原因分布。已有平均／P95 和状态数量也不构成完整分布或任务排名；现行 API、口径与权限沿[正式统计契约](../../docs/spec/tasks/执行监控.md#执行统计与运行指标)，后续展示须单独明确维度、读取范围及实际验收，不能由现有页面或历史证据外推。 |
 | 规模与分区 | 按实测索引、查询计划和维护成本评估是否需要分区；删除旧“超过一千万即分区”和手工按月建表步骤，不作为已批准的存储变更。 |
 | 保留与归档 | 期限、引用保留与删除边界沿[执行留存与验收](#执行留存与验收)；专业运行时历史和其他 Owner 阶段事件仍须分别接入验收，对象存储归档尚非现行主路径。 |
 
