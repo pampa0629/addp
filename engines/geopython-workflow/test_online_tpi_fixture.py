@@ -20,7 +20,8 @@ def cache_for(module,root,request):
     scope={'schema':module.CACHE_SCHEMA,'run_id':(root/'.addp-online-owner').read_text(),'fixture_sha256':module.digest(Path(module.__file__))['sha256'],
            'source_root':str(root.resolve()),'sources':{n:module.digest(root/n)for n in module.SOURCES}}
     control=module.prepare_oracle(root,scope)
-    request.addfinalizer(lambda:shutil.rmtree(module.oracle_path(scope),ignore_errors=True))
+    directory=module.oracle_path(scope)
+    request.addfinalizer(lambda:shutil.rmtree(directory,ignore_errors=True))
     return control
 
 @pytest.fixture(scope='module')
@@ -201,3 +202,14 @@ def test_tpi_partial_oracle_preparation_always_has_an_owned_cleanup(tpi_persiste
     monkeypatch.setattr(module,'expected_pixels',fail)
     with pytest.raises(module.FixtureError):module.prepare_oracle(root,scope)
     assert module.cleanup_oracle(root,{'scope':scope})['oracle_cache_removed'];assert not module.oracle_path(scope).exists()
+
+
+def test_tpi_cache_test_cleanup_freezes_created_path_before_scope_mutation(tpi_persistence,tmp_path):
+    from types import SimpleNamespace
+    module,original,_,_=tpi_persistence;root=tmp_path/'owned';shutil.copytree(original,root);finalizers=[]
+    control=cache_for(module,root,SimpleNamespace(addfinalizer=finalizers.append));directory=module.oracle_path(control['scope'])
+    try:
+        control['scope']['sources']['dem.tif']['sha256']='b'*64
+        assert module.oracle_path(control['scope'])!=directory
+        finalizers[0]();assert not directory.exists()
+    finally:shutil.rmtree(directory,ignore_errors=True)
