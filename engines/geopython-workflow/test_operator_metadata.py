@@ -1078,7 +1078,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("栅格处理", "网格处理"), "raster_reproject raster_resample raster_align"),
         (("栅格处理", "范围处理"), "raster_clip raster_mosaic raster_update raster_tile raster_footprint raster_polygonize vector_rasterize raster_contour raster_stream_to_vector_d8"),
         (("栅格处理", "波段处理"), "raster_stack raster_select_bands"),
-        (("栅格处理", "像元计算"), "raster_band_math raster_reclassify raster_proximity raster_nibble raster_boundary_clean raster_thin raster_aggregate raster_fill_depressions raster_flow_direction_d8 raster_flow_accumulation_d8 raster_flow_accumulation_weighted_d8 raster_flow_length_d8 raster_flow_length_upstream_d8 raster_distance_to_stream_d8 raster_hand_d8 raster_drainage_basins_d8 raster_watershed_d8 raster_subcatchments_d8 raster_snap_pour_points raster_stream_order_d8 raster_stream_link_d8 raster_curvature raster_tpi raster_slope raster_aspect raster_hillshade"),
+        (("栅格处理", "像元计算"), "raster_band_math raster_reclassify raster_proximity raster_nibble raster_boundary_clean raster_thin raster_aggregate raster_fill_depressions raster_flow_direction_d8 raster_flow_accumulation_d8 raster_flow_accumulation_weighted_d8 raster_flow_length_d8 raster_flow_length_upstream_d8 raster_distance_to_stream_d8 raster_hand_d8 raster_drainage_basins_d8 raster_watershed_d8 raster_subcatchments_d8 raster_snap_pour_points raster_stream_order_d8 raster_stream_link_d8 raster_curvature raster_tpi raster_tri raster_slope raster_aspect raster_hillshade"),
         (("栅格处理", "栅格统计"), "raster_statistics raster_cut_fill raster_zonal_statistics raster_focal_statistics raster_vector_zonal_statistics raster_recommend_band_combination raster_histogram"),
         (("栅格处理", "栅格检查"), "raster_info validate_cog"),
         (("栅格处理", "成果生成"), "raster_to_cog raster_build_overviews build_raster_mosaic"),
@@ -1194,5 +1194,19 @@ def test_dem_tpi_single_workflow_explicit_band_unit_metres_and_complete_window_m
     assert params['input_raster']['param_type']=='input' and params['input_raster']['type']=='raster'
     assert params['band']['type']=='integer' and params['elevation_unit']['enum']==['metre','foot','us_survey_foot']
     assert '周围8点' in params['band']['description'] and '合法零保留' in params['elevation_unit']['description']
+    assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='raster'
+    assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'elevation_unit':'metre','band':1}
+
+
+def test_dem_tri_single_workflow_explicit_band_unit_metres_and_complete_window_metadata():
+    spec=next(item for item in list_operators() if item['id']=='raster_tri')
+    assert spec['description']=='DEM 地形崎岖度'
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    assert spec['attributes']['resource_groups']==['raster'] and spec['category_path']==['栅格处理','像元计算']
+    params={p['name']:p for p in spec['parameters']}
+    assert set(params)=={'input_raster','band','elevation_unit'} and all(p['required'] for p in params.values())
+    assert params['input_raster']['param_type']=='input' and params['input_raster']['type']=='raster'
+    assert params['band']['type']=='integer' and params['elevation_unit']['enum']==['metre','foot','us_survey_foot']
+    assert 'Riley' in params['band']['description'] and '不除以8' in params['band']['description'] and '合法零保留' in params['elevation_unit']['description']
     assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='raster'
     assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'elevation_unit':'metre','band':1}

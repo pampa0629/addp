@@ -176,3 +176,5 @@ make test-geopython-workflow
 `raster_curvature`：DEM曲率，`method=mean/profile/tangential/plan`默认mean保留平均曲率；同一完整有效3×3九点等权二次曲面，凸正凹负，单位`1/metre`。profile沿最大坡降方向，tangential沿等高线切向计算法向曲率；plan为等高线水平投影的几何曲率；三种方向方法九点严格等高平地为0、其他零梯度点NoData；无完整邻域NoData。显式波段与高程单位，复用原COG主路径，详见平台栅格算子契约。
 
 `raster_tpi`计算完整有效3×3窗口的中心高程减周围8点等权均值，统一米制，合法零不排除；复用DEM准入、带halo分块、已有raster端口及COG保存。边缘与无效邻域为NaN；原生高差与抵消保留至最终Float64转换，溢出／非零下溢严格失败。详见[栅格算子契约](../../../docs/spec/workflow/栅格算子契约.md#dem-地形位置指数tpi)。
+
+`raster_tri`提供固定3×3 Riley DEM地形崎岖度：中心与8邻居高差平方和开方、统一米制，完整九点有效才计算；水平平地合法0，倾斜平面通常为正。沿用DEM准入、带halo分块、原网格和COG保存，原始高差及平方和保留至最终开方舍入；范围和数值边界见[栅格算子契约](../../../docs/spec/workflow/栅格算子契约.md#dem-地形崎岖度tri)。
