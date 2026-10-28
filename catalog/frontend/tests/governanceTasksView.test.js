@@ -26,14 +26,17 @@ function mount() {
   app.directive('loading', {})
   app.component('el-table', { props: ['data'], setup(props, { slots }) {
     provide('tableRows', computed(() => props.data))
-    return () => h('div', slots.default?.())
+    return () => h('div', { 'data-table': '' }, [slots.default?.(),
+      !props.data.length ? (slots.empty?.() || h('span', 'Default table empty')) : null])
   } })
   app.component('el-table-column', { props: ['label', 'prop'], setup(props, { slots }) {
     const rows = inject('tableRows')
     return () => h('section', { 'data-column': props.label }, rows.value.map(row => h('div', { 'data-row': row.id },
       slots.default ? slots.default({ row }) : row[props.prop])))
   } })
-  for (const name of ['button', 'alert', 'card', 'form', 'form-item', 'select', 'option', 'tag', 'empty', 'pagination']) {
+  app.component('el-empty', { props: ['description', 'imageSize'], setup: props => () => h('div',
+    { 'data-empty': '', 'data-image-size': props.imageSize }, props.description) })
+  for (const name of ['button', 'alert', 'card', 'form', 'form-item', 'select', 'option', 'tag', 'pagination']) {
     app.component(`el-${name}`, { setup: (_, { slots }) => () => h('div', slots.default?.()) })
   }
   app.mount(root); mounted.push({ app, root })
@@ -50,6 +53,21 @@ beforeEach(async () => {
 afterEach(() => mounted.splice(0).forEach(({ app, root }) => { app.unmount(); root.remove() }))
 
 describe('Catalog responsibility governance task presentation', () => {
+  it('uses one compact table empty state in both languages', async () => {
+    api.response = { data: [], total: 0 }
+    const root = mount(); await settle()
+    expect(root.querySelectorAll('[data-empty]')).toHaveLength(1)
+    const empty = root.querySelector('[data-table] [data-empty]')
+    expect(empty).not.toBeNull()
+    expect(empty.getAttribute('data-image-size')).toBe('60')
+    expect(empty.textContent).toBe('当前条件下没有责任治理任务')
+    expect(root.textContent).not.toContain('Default table empty')
+    api.i18n.locale.value = 'en'; await settle()
+    expect(root.querySelectorAll('[data-empty]')).toHaveLength(1)
+    expect(empty.textContent).toBe('No responsibility governance tasks match the current filters')
+    expect(api.listGovernanceTasks).toHaveBeenCalledTimes(1)
+  })
+
   it('distinguishes restoration from replacement and shows both dates in Chinese and English', async () => {
     const root = mount(); await settle()
     const evidence = JSON.stringify(api.response)

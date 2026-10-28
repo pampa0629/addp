@@ -77,8 +77,10 @@
             <div v-if="row.status === 'resolved'" class="task-time"><span>{{ t('catalog.governanceTasks.resolvedAt') }}</span>{{ formatDate(row.resolved_at) }}</div>
           </template>
         </el-table-column>
+        <template #empty>
+          <el-empty v-if="!loading" :image-size="60" :description="t('catalog.governanceTasks.empty')" />
+        </template>
       </el-table>
-      <el-empty v-if="!loading && result.data.length === 0" :description="t('catalog.governanceTasks.empty')" />
       <div class="pagination-row">
         <el-pagination
           background
