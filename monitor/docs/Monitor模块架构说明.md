@@ -7,7 +7,7 @@ Monitor 聚合任务执行事实，提供授权诊断、统计、健康观测、
 | 范围 | 权威正文与实现 |
 | --- | --- |
 | 任务定义与执行事实 | 定义归各业务 Owner；统一执行模型、状态、租约、来源和父子关系见[执行记录与租约](../../docs/spec/tasks/执行记录与租约.md)及[Common execution](../../common/execution/)。Monitor 不保存第二套任务定义或执行主表。 |
-| 执行读取与诊断 | [执行监控规范](../../docs/spec/tasks/执行监控.md)定义同步 BFF / Owner 逐请求读取裁决、安全 DTO、稳定错误诊断及前端唯一所有权；可读父执行不自动授予子执行或业务结果权限。 |
+| 执行读取与诊断 | [Owner 读取与诊断](../../docs/spec/tasks/执行监控.md#租户执行诊断)维护逐请求裁决及专业 DTO；[详情安全投影](../../docs/spec/tasks/执行监控.md#执行详情与安全投影)集中维护通用字段、步骤／恢复、独立事件与动作边界；父可读不授予子执行或业务结果权限。 |
 | 执行统计与运行健康 | [正式统计契约](../../docs/spec/tasks/执行监控.md#执行统计与运行指标)维护统计 API、口径、Owner 读取范围和验收边界；[Provider 与后台心跳](../../docs/spec/tasks/执行监控.md#provider-与后台运行实例健康)分别维护即时探测与存活观测，不据此判定任务成功。 |
 | 租户告警与通知 | [概念说明](../../docs/concepts/monitoring/执行诊断与租户告警.md#执行信号与租户告警)及[术语表](../../docs/concepts/addp术语表.md)维护 incident / event / delivery、通用规则、Webhook、邮件和通知路由；各渠道消费同一生命周期事实，规则不改写 execution。 |
 | 平台观测与告警 | [平台运行观测规范](../../docs/spec/addp平台运行观测规范.md)和[运行日志规范](../../docs/spec/addp模块服务运行日志规范.md)维护主机身份、遥测、平台事件及通知；Platform 与 Tenant 分别授权。 |
