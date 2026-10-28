@@ -20,7 +20,7 @@ Monitor 聚合各 Owner 写入的执行事实，提供授权诊断、统计、�
 - 任务定义和执行事实归业务 Owner / Common；Monitor 不读取 Owner 私表或直连业务 Kafka、源数据库来补判状态，不成为第二个执行者。新增执行写入复用 `common/execution` 与 `EnsureStore`。
 - 用户身份沿 System opaque Token / AuthContext。Tenant AuthContext 和 Monitor Permission 仅为入口条件；执行列表、详情、树、统计和关联告警均通过同步 BFF 逐请求取得 Owner `execution-read-scope`，不可用时失败关闭。父可读不授予子结果权限，专业数据仍从 Owner 授权入口读取。
 - 通用响应仅含安全 DTO，不序列化完整 TaskExecution、原始配置/metadata/错误、业务样本或授权凭据；诊断 GET 复用现有 System 操作审计。
-- continuous evaluator 只读任务最新根 execution：pending/running 派生运行信号，最新 failed 且 schema_change.status=pending 才保留结构阻塞信号；新根执行取代旧信号，不回扫历史 pending。通用失败规则排除 ad-hoc、子 execution 和 continuous session，规则、路由与通知语义见正式规范。
+- continuous 信号、通用规则与恢复条件统一沿[执行信号与租户告警](../docs/concepts/monitoring/执行诊断与租户告警.md#执行信号与租户告警)及其正式契约；仅消费 Owner 公共事实，不以历史 pending 维持旧告警，不把 continuous session 计入通用失败规则。
 - evaluator 先收集 active signal，再由单一 reconciler 处理 incident。查询失败不能恢复告警；确认/抑制不改写 Owner 事实。生命周期 event 与各渠道 outbox 同事务，dispatcher 在事务外至少一次投递，独立测试不创建正式事件或 outbox。
 - Platform 与 Tenant 使用独立权限和事实。System 拥有主机、实例及当前绑定；Monitor 只消费授权投影，不复制租约或私有台账，后台身份不能替代当前用户的节点读取裁决。
 - 可选 Prometheus、日志或追踪设施不成为业务 Ready 的强依赖。System 租约 UP/DOWN、采集是否成功和资源压力分别解释，缺样、未知或暂停不能冒充健康/恢复，也不推导自动扩缩容。
