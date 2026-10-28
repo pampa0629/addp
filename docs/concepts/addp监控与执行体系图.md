@@ -10,7 +10,8 @@
 | --- | --- |
 | Owner / Common / Monitor 职责、执行存储与运行时角色 | [执行架构与存储](monitoring/执行架构与存储.md) |
 | 执行状态、生命周期和模块任务类型 | [执行状态与任务类型](monitoring/执行状态与任务类型.md) |
-| 跨模块读取、诊断、统计、租户告警与通知 | [执行诊断与租户告警](monitoring/执行诊断与租户告警.md) |
+| 跨模块读取、诊断、租户告警与通知 | [执行诊断与租户告警](monitoring/执行诊断与租户告警.md) |
+| 执行统计、趋势与运行指标 | [正式统计契约](../spec/tasks/执行监控.md#执行统计与运行指标)维护 API 分工、聚合口径、权限和验收边界 |
 | 运行日志、操作审计、平台观测及平台告警 | [平台日志与运行观测](monitoring/平台日志与运行观测.md) |
 | Platform 当前能力与剩余范围 | [后续事项能力表](../next/ADDP平台运行监控与可观测性设计.md#一当前实现与剩余工作)；来源、OS 与容器支持见[正式运行环境边界](../spec/addp平台运行观测规范.md#52-部署与运行环境) |
 | 固定版本、失败、清理与实际验收范围 | [引擎专业观测](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md)、[实例与容器证明](../spec/testing/evidence/Monitor实例与服务发现历史证据.md)、[Trace 与日志](../spec/testing/evidence/MonitorTrace与日志历史证据.md)；其他主题见[历史证据总入口](../spec/testing/evidence/Monitor历史证据.md#按主题查阅) |
