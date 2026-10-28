@@ -13,7 +13,7 @@
 | [实例与服务发现](Monitor实例与服务发现历史证据.md) | 多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期 | 25 |
 | [告警与规则](Monitor告警与规则历史证据.md) | CPU/RSS、告警检索与排序、服务失联、文件系统容量规则 | 27 |
 | [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与正式身份本地多窗口 | 16 |
-| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 18 |
+| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 19 |
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL 账号、来源准入、引擎身份与专业观测 | 12 |
 | [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存 | 7 |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时 | 6 |
@@ -623,3 +623,8 @@
 修正 `c15f8fa2aac3869c9f9f7237d3ffced0aa74790b`：显式选择既有两个profile，缺少所选产品服务时返回封闭错误；保留产品命名卷初始化选项，TLS输入卷继续沿既定受控复制／只读挂载。未新增服务或依赖，未改变配额、超时、身份／业务断言或产品行为。`make test-monitor-http-local-runner` 最终20项及相关HTTP／Trace／保护就绪System Go检查通过。离线调用两次真实Compose config，使用合成证书元数据且不启动服务／网络／卷，成功投影13个所需服务，Prometheus卷保留产品默认nocopy=false；这只证明配置渲染，不证明TLS、构建或运行通过。原Trace／Console前一阶段证据仍按原范围保存，未重跑或迁移为本正式实链通过。
 
 本轮归档：/private/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-p19-formal-python-http-20261027-s4xbp81b，evidence-manifest.json绑定469源码、修正提交、窗口／失败报告、红绿回归及离线投影证明的散列。runtime-report.json SHA256为`b996f0f7a9f41d275a7525a307517f5b9897e5484e3b659aeccae0321773f29a`。修正尚未在真实新窗口运行验证；下一步须由用户另行确认原上限的新窗口，本轮保持失败与清理通过的独立结论。
+
+
+### 2026-10-28 正式Python产品HTTP本地窗口：采样镜像匿名令牌失败
+
+[完整记录、失败与验收边界](MonitorHTTP质量与采样历史证据.md#formal-python-http-local-20261028-image-auth)

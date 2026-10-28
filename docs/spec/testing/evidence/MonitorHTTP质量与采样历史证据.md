@@ -226,3 +226,22 @@ ImportError 尚缺具体组件与版本事实，本批没有猜测升级／降�
 205次完整资源检查全部小于四秒，最长1.285895秒；采样锁等待最长0.000208秒，清理锁等待0.000446秒，未触发清理超期。本轮在原20分钟内同时完成业务、预算与退出清理；成功样本的容器硬配额峰值3.25 CPU／4026531840字节内存、私有可写预算上界1807532095字节，均未触线，这些不是CPU／RSS实际用量或容量基线。确定性门禁的135项配置／预算、123＋88项生命周期及登记结果沿前述固定修复有效。
 
 本轮仅为标准Linux HTTP T2：真实Go与两个ASGI SDK来源→mTLS／HTTP SD／Prometheus→Monitor查询／自然一分钟／告警与通知闭环及资源守卫清理通过；不冒充个人本地实链窗口、完整Agent/Copilot正式backend登录或页面、正式密码/MFA T4、Hosted、容量、72小时保留或全workflow通过。旧44230c5c8业务子链通过但整门禁失败的证据仍保留，历史inspect退出1缺少stderr及对象的唯一原因仍未知，不因本轮通过倒改历史归因。本次未手工触发／重跑／取消CI，未新增本地窗口、Hosted、容量或定时，也未重启个人服务。下一步建议先明确正式Agent/Copilot产品进程及页面的HTTP观测本地验收边界，再申请运行窗口。
+
+
+<a id="formal-python-http-local-20261028-image-auth"></a>
+
+## 2026-10-28 正式Python产品HTTP本地窗口：采样镜像匿名令牌失败
+
+用户按原上限仅授权本轮一次60分钟本地窗口，沿已确认的停源收窄边界：来源存活时验证历史，停源后Copilot为not_active／空观测，Agent保持新鲜；停源后历史读取仍列为另批产品缺口。专项11个构建输入与已验证c15f8fa2a修正一致，`make test-monitor-http-local-runner` 的20项及相关System Go夹具检查通过后，实际执行一次 `make test-monitor-http-local`。启动与源码快照固定为`bfdb7a34f1c8ea0ee57f341dffae37c8faf9e5b6`，不带入共享工作区未提交改动。
+
+2026-10-28 15:11:34至15:11:55（Asia/Shanghai），外层21.046秒、生命周期20.930秒，结果为**failed**，报告阶段owned_volume_preparation、error_code=command_failed_1。实际已越过前轮profile缺项，完成配置投影及当次卷准备；该阶段末尾的固定Nginx镜像拉取失败，封闭诊断包含failed to resolve、failed to authorize、failed to fetch anonymous token；原始输出SHA256为`52e772e82add3ea821f6bc7726a0d15765ab7552a0f1e7d0fbc80b1558e92c4f`。没有保留原始错误响应，不能进一步唯一归因为代理、TLS或远端限流，不把网络根因写成已查明。
+
+尚未启动构建器、完整资源守卫、产品构建、正式登录、采集查询、受控业务请求、页面或停源断言；resource_samples为空、assertions为空。8 CPU／12 GiB、4 GiB停止线和四秒口径均未放宽，但不能把这些配置值当作实际资源峰值或守卫通过。cleanup.zero_owned_resources=true、failures=[]，当次容器／网络／卷及私有材料清理至零残留。本轮失败后停止，不复用原剩余时间、不自动重试或续窗，不运行Hosted、容量、定时、模型／工具或告警重演。
+
+失败后仅只读核对镜像缓存：既定`nginx:1.28.0-alpine@sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284`已缓存，仓库摘要精确匹配，平台Linux ARM64，镜像ID为同一sha256。此为失败后的独立元数据证据，不倒写为本轮已进行缓存准入或运行镜像验证。
+
+修正`a5db60d9ae43556edeb4d3227c115cc79d22f3d9`删除该辅助镜像的无条件拉取，在创建当次网络／卷之前只读核验固定仓库摘要、不可变ID与平台；后续卷测量、TLS准备仅以已核验ID和--pull=never运行。缓存缺失、错配、检查失败均停止，无远端fallback、更换镜像或TLS放宽；sampler_image_admission单列阶段，回执只保存封闭元数据。未改变产品依赖来源、身份、请求、清理、四秒或资源上限，也未修改产品查询语义。
+
+修正后验证：新HTTP缓存准入回归先红；`make test-infra-runtime-log-lifecycle`通过，其中HTTP22项、原Trace123项、既有生命周期88项及相关Go／CI登记通过；随后补充当次TLS辅助容器使用确切ID和禁止隐式拉取的用例，`make test-monitor-http-local-runner`最终23项及相关Go检查通过。对失败后已保存的真实缓存元数据，离线验证器也通过；这些结果不代表新完整实链或采样镜像内进程已运行。新修正尚未启动真实新窗口，原Trace／Console／SDK Linux证据仍保持其原固定源码与覆盖范围。
+
+本机保留窗口记录、runtime-report.json、缓存只读回执、红绿门禁和evidence-manifest.json；临时归档可由本会话标准指针`/tmp/addp-p19-current-http-product-window`定位。runtime-report.json SHA256为`94e66706654ad24ecaa4d0c75821701c56c6a5588d16c688b3277b793f044733`。本轮结论独立保持“运行失败、清理通过”；构建、真实身份和页面等未运行项不得计通过，下一轮须用户另行授权。
