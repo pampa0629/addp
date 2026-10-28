@@ -178,3 +178,5 @@ make test-geopython-workflow
 `raster_tpi`计算完整有效3×3窗口的中心高程减周围8点等权均值，统一米制，合法零不排除；复用DEM准入、带halo分块、已有raster端口及COG保存。边缘与无效邻域为NaN；原生高差与抵消保留至最终Float64转换，溢出／非零下溢严格失败。详见[栅格算子契约](../../../docs/spec/workflow/栅格算子契约.md#dem-地形位置指数tpi)。
 
 `raster_tri`提供固定3×3 Riley DEM地形崎岖度：中心与8邻居高差平方和开方、统一米制，完整九点有效才计算；水平平地合法0，倾斜平面通常为正。沿用DEM准入、带halo分块、原网格和COG保存，原始高差及平方和保留至最终开方舍入；范围和数值边界见[栅格算子契约](../../../docs/spec/workflow/栅格算子契约.md#dem-地形崎岖度tri)。
+
+`raster_roughness`计算完整有效3×3九点的最大原始高程减最小原始高程，包含中心、统一米制。水平平地合法0、倾斜平面通常为正；保留原始64位高差及最终Float64范围校验，沿用DEM准入、带halo分块、原网格和COG保存。原TPI／TRI／曲率保持，详见[栅格算子契约](../../../docs/spec/workflow/栅格算子契约.md#dem-地形粗糙度roughness)。

@@ -3873,6 +3873,77 @@ def raster_tri(input_raster, band, elevation_unit):
             path.unlink(missing_ok=True)
 
 
+
+_ROUGHNESS_MESSAGES = {
+    key: (zh.replace('DEM 填洼', 'DEM 地形粗糙度'),
+          en.replace('DEM depression filling', 'DEM terrain roughness'))
+    for key, (zh, en) in _FILL_MESSAGES.items() if key != 'overflow'
+}
+_ROUGHNESS_MESSAGES['numeric'] = (
+    'DEM 地形粗糙度结果超出有限Float64范围，非零量不能下溢为零',
+    'DEM terrain roughness result exceeds finite Float64 range; a nonzero quantity must not underflow to zero')
+
+
+def _roughness_error(code):
+    return ValueError(_ROUGHNESS_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _roughness_block(values, valid, elevation_factor):
+    """Order native samples first; subtract and scale exactly before rounding."""
+    complete = np.logical_and.reduce(list(_boundary_neighbours(valid)))
+    result = np.full(complete.shape, np.nan)
+    if not complete.any():
+        return result
+    neighbours = iter(_boundary_neighbours(values))
+    minimum = next(neighbours)[complete].copy()
+    maximum = minimum.copy()
+    for samples in neighbours:
+        selected = samples[complete]
+        np.minimum(minimum, selected, out=minimum)
+        np.maximum(maximum, selected, out=maximum)
+    factor = Fraction(elevation_factor)
+    converted = []
+    for low, high in zip(minimum.tolist(), maximum.tolist()):
+        metres = (Fraction(high) - Fraction(low)) * factor
+        try:
+            number = float(metres)
+        except OverflowError as cause:
+            raise _roughness_error('numeric') from cause
+        if not math.isfinite(number) or (metres != 0 and number == 0):
+            raise _roughness_error('numeric')
+        converted.append(number)
+    result[complete] = converted
+    return result
+
+
+def raster_roughness(input_raster, band, elevation_unit):
+    """Maximum minus minimum of nine original elevations, in metres, on complete windows."""
+    source, _ = _dem_admission(input_raster, elevation_unit, band, 1, diagnostic=_roughness_error)
+    output = destination = None
+    path = None
+    completed = False
+    try:
+        output = _numeric_output(source, 1)
+        path = Path(output.GetDescription())
+        destination = output.GetRasterBand(1)
+        destination.SetUnitType('metre')
+        for x, y, array, mask, padding in _neighbourhood_windows(source, band, native=True):
+            result = _roughness_block(np.pad(array, padding, constant_values=0),
+                                np.pad(mask, padding, constant_values=False),
+                                _ELEVATION_METRES[elevation_unit])
+            destination.WriteArray(result, x, y)
+        destination = None
+        output.FlushCache()
+        output = None
+        result = _raster(path)
+        completed = True
+        return result
+    finally:
+        destination = output = source = None
+        if path is not None and not completed:
+            path.unlink(missing_ok=True)
+
+
 _CURVATURE_MESSAGES = {
     key: (zh.replace('DEM 填洼', 'DEM 平均曲率'),
           en.replace('DEM depression filling', 'DEM mean curvature'))
@@ -4190,6 +4261,7 @@ _SPECS = [
     (raster_stream_to_vector_d8, OperatorCategory.RASTER_EXTENT, 'D8 河网转矢量线', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜；孤立单像元失败，不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；连接像元中心，保留河段ID及米制长度')], 'GeoDataFrame', ['read']),
     (raster_tpi, OperatorCategory.RASTER_CELL, 'DEM 地形位置指数', [_INPUT(), _param('band', 'int', '显式高程数据波段；固定3×3中心减周围8点等权均值'), _param('elevation_unit', 'str', '显式高程单位；输出米，完整九点有效才计算，合法零保留', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_tri, OperatorCategory.RASTER_CELL, 'DEM 地形崎岖度', [_INPUT(), _param('band', 'int', '显式高程数据波段；固定3×3 Riley中心与8邻居高差平方和开方，不除以8'), _param('elevation_unit', 'str', '显式高程单位；输出米，完整九点有效才计算，合法零保留', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
+    (raster_roughness, OperatorCategory.RASTER_CELL, 'DEM 地形粗糙度', [_INPUT(), _param('band', 'int', '显式高程数据波段；固定3×3包含中心的九点最大高程减最小高程，不取半高差'), _param('elevation_unit', 'str', '显式高程单位；输出米，完整九点有效才计算，合法零保留', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_curvature, OperatorCategory.RASTER_CELL, 'DEM 曲率', [_INPUT(), _param('band', 'int', '显式高程数据波段；完整有效3×3九点等权二次曲面拟合，凸正凹负'), _param('elevation_unit', 'str', '显式高程单位；输出每米（1/metre），边缘及无效邻域NoData', enum=list(_ELEVATION_METRES)), _param('method', 'str', 'mean：平均曲率；profile：剖面曲率；tangential：切向曲率；plan：平面曲率；方向方法九点等高平地0、其他零梯度NoData', 'mean', False, enum=['mean', 'profile', 'tangential', 'plan'])], 'raster', ['read']),
     (raster_slope, OperatorCategory.RASTER_CELL, 'DEM 坡度', [*_DEM_PARAMS(), _param('slope_unit', 'str', '坡度输出单位', 'degree', False, enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_aspect, OperatorCategory.RASTER_CELL, 'DEM 坡向', _DEM_PARAMS(), 'raster', ['read']),
@@ -4258,7 +4330,7 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'factors': [2, 2], 'method': 'mean'})
     if name == 'raster_tile':
         examples.update({'tile_size': [1024, 1024]})
-    if name in ('raster_fill_depressions', 'raster_flow_direction_d8', 'raster_slope', 'raster_aspect', 'raster_hillshade', 'raster_contour', 'raster_curvature', 'raster_tpi', 'raster_tri'):
+    if name in ('raster_fill_depressions', 'raster_flow_direction_d8', 'raster_slope', 'raster_aspect', 'raster_hillshade', 'raster_contour', 'raster_curvature', 'raster_tpi', 'raster_tri', 'raster_roughness'):
         examples.update({'elevation_unit': 'metre', 'band': 1})
         if name == 'raster_contour':
             examples.update({'interval': 10.})
