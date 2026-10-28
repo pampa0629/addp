@@ -51,7 +51,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 通用处理 | 数据清洗 | 2 | `fill_null`、`drop_duplicates` |
 | 通用处理 | 数据筛选 | 5 | `filter_by_attribute`、`sort_by_field`、`select_top_n`、`sample`、`random_split` |
 | 通用处理 | 数值统计 | 4 | `normalize_field`、`encode_categorical`、`bin_field`、`aggregate` |
-| 矢量处理 | 几何处理 | 23 | `buffer`、`centroid`、`simplify`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer`、`batch_centroid`、`dissolve`、`polygonize`、`check_geometry`、`repair_geometry`、`snap_geometry`、`check_polygon_overlap`、`check_polygon_gap`、`check_dangling_points`、`check_line_overlap`、`check_line_self_overlap`、`check_line_intersection`、`check_line_self_intersection`、`split_line_intersections`、`group_line_components`、`merge_line_chains` |
+| 矢量处理 | 几何处理 | 24 | `buffer`、`centroid`、`simplify`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer`、`batch_centroid`、`dissolve`、`polygonize`、`check_geometry`、`repair_geometry`、`snap_geometry`、`check_polygon_overlap`、`check_polygon_gap`、`check_dangling_points`、`check_line_overlap`、`check_line_self_overlap`、`check_line_intersection`、`check_line_self_intersection`、`split_line_intersections`、`group_line_components`、`merge_line_chains`、`normalize_line_network` |
 | 矢量处理 | 叠加分析 | 4 | `intersection`、`union`、`difference`、`clip` |
 | 矢量处理 | 空间关系 | 3 | `contains`、`intersects`、`distance_to` |
 | 矢量处理 | 几何量测 | 3 | `get_area`、`get_length`、`get_bounds` |

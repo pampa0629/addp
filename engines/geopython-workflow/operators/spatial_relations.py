@@ -12,6 +12,22 @@ from .base import (
 
 # ==================== 算子实现 ====================
 
+class DistanceGeometryColumnConflict(ValueError):
+    """The distance result would overwrite the source's active geometry."""
+
+    _messages = {
+        'zh-cn': '源图层的活动几何列名 distance 与距离输出列冲突；请先手动重命名源几何列，再执行距离计算。',
+        'en': 'Source active geometry column distance conflicts with the distance output column; '
+              'rename the source geometry column before running distance calculation.',
+    }
+
+    def __init__(self):
+        super().__init__(self.message('zh-cn'))
+
+    def message(self, language):
+        return self._messages[language]
+
+
 def contains(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """
     包含关系判断（返回 A 中包含 B 的记录）
@@ -61,11 +77,14 @@ def distance_to(input_gdf: gpd.GeoDataFrame, target_geom: gpd.GeoDataFrame) -> g
     Returns:
         GeoDataFrame 添加 distance 列
     """
+    if input_gdf.geometry.name == 'distance':
+        raise DistanceGeometryColumnConflict()
+
     result = input_gdf.copy()
 
     # 计算到目标几何集合中最近点的距离
-    target_union = target_geom['geometry'].unary_union
-    result['distance'] = result['geometry'].apply(lambda g: g.distance(target_union))
+    target_union = target_geom.geometry.unary_union
+    result['distance'] = result.geometry.apply(lambda g: g.distance(target_union))
 
     return result
 

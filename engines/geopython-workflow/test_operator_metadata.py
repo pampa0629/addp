@@ -1210,3 +1210,13 @@ def test_dem_tri_single_workflow_explicit_band_unit_metres_and_complete_window_m
     assert 'Riley' in params['band']['description'] and '不除以8' in params['band']['description'] and '合法零保留' in params['elevation_unit']['description']
     assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='raster'
     assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'elevation_unit':'metre','band':1}
+
+
+def test_vector_geometry_readme_matches_registered_names_and_count():
+    import re
+    readme=(Path(__file__).parent/'operators/README.md').read_text()
+    row=next(line for line in readme.splitlines() if line.startswith('| 矢量处理 | 几何处理 |'))
+    documented=re.findall(r'`([^`]+)`',row)
+    registered=[item['name'] for item in list_operators() if item['category_path']==['矢量处理','几何处理'] and 'workflow' in item['execution_modes']]
+    assert len(documented)==len(set(documented))==int(row.split('|')[3].strip())==len(registered)
+    assert set(documented)==set(registered)

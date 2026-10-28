@@ -8,6 +8,7 @@ import pandas as pd
 from addp_common.workflow_runtime import WorkflowRunner, WorkflowExecutionError, WorkflowValidationError
 from operators import OPERATORS, get_operator
 from operators.orc_table import SourceChanged as OrcSourceChanged
+from operators.spatial_relations import DistanceGeometryColumnConflict
 from operators.raster_compute import RasterDataset, RasterTiles, raster_info, raster_tiles_info, raster_workspace, raster_error_language
 
 logger = logging.getLogger(__name__)
@@ -70,8 +71,14 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
     def __init__(self, *, language='zh-cn'):
         self.language = language
         super().__init__({name for name, meta in OPERATORS.items() if 'workflow' in meta['execution_modes']},
-                         _execute_workflow_operator,
+                         self._execute_operator,
                          result_projector=lambda value: json.dumps(_project(value), ensure_ascii=False, allow_nan=False))
+
+    def _execute_operator(self, operator, params):
+        try:
+            return _execute_workflow_operator(operator, params)
+        except DistanceGeometryColumnConflict as exc:
+            raise ValueError(exc.message(self.language)) from exc
 
     def execute(self, workflow_def, input_data=None, progress=None):
         with raster_error_language(self.language), raster_workspace():

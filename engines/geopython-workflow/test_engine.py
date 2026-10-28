@@ -611,3 +611,139 @@ def test_native_process_progress_error_terminates_and_reaps(tmp_path, monkeypatc
             if process.poll() is None: process.kill()
             process.wait(5)
             if process.stdout is not None: process.stdout.close()
+
+
+def _distance_to_frames(source_name='geometry', target_name='geometry', crs='EPSG:3857'):
+    import geopandas as gpd
+    import pandas as pd
+    from shapely.geometry import Point
+    source=gpd.GeoDataFrame({'source_key':['second','first'],
+        'grade':pd.Series([None,2**53+1],dtype='Int64'),
+        'enabled':pd.Series([True,None],dtype='boolean')},
+        geometry=[Point(0,0),Point(9,12)],crs=crs)
+    source.index=pd.Index([109,103],name='original_row')
+    target=gpd.GeoDataFrame({'target_key':['near','far']},geometry=[Point(3,4),Point(30,40)],crs=crs)
+    if source_name!='geometry':source=source.rename_geometry(source_name)
+    if target_name!='geometry':target=target.rename_geometry(target_name)
+    return source,target
+
+
+@pytest.mark.parametrize('source_name,target_name',[
+    ('geometry','geometry'),('route_shape','geometry'),('geometry','reference_shape'),('route_shape','reference_shape')])
+def test_distance_to_active_geometry_columns_keep_values_schema_and_both_sources(source_name,target_name):
+    from geopandas.testing import assert_geodataframe_equal
+    from operators import get_operator
+    source,target=_distance_to_frames(source_name,target_name)
+    source_before,target_before=source.copy(deep=True),target.copy(deep=True)
+    result=get_operator('distance_to')(source,target)
+    assert result['distance'].tolist()==[5.,10.]
+    assert result.geometry.name==source_name and result.crs==source.crs
+    assert result.index.equals(source.index) and result.index.name==source.index.name
+    assert_geodataframe_equal(result.drop(columns='distance'),source_before)
+    assert_geodataframe_equal(source,source_before);assert_geodataframe_equal(target,target_before)
+
+
+def test_distance_to_uses_active_geometry_not_decoy_named_geometry_columns():
+    import geopandas as gpd
+    from shapely.geometry import Point
+    from geopandas.testing import assert_geodataframe_equal
+    from operators import get_operator
+    source,target=_distance_to_frames('route_shape','reference_shape')
+    source['geometry']=gpd.GeoSeries([Point(100,100),Point(101,101)],index=source.index,crs=source.crs)
+    target['geometry']=gpd.GeoSeries([Point(100,100),Point(200,200)],index=target.index,crs=target.crs)
+    source_before,target_before=source.copy(deep=True),target.copy(deep=True)
+    result=get_operator('distance_to')(source,target)
+    assert result['distance'].tolist()==[5.,10.]
+    assert result.geometry.name=='route_shape'
+    assert_geodataframe_equal(result.drop(columns='distance'),source_before)
+    assert_geodataframe_equal(source,source_before);assert_geodataframe_equal(target,target_before)
+
+
+@pytest.mark.parametrize('crs',[None,'EPSG:4326','EPSG:3857'])
+def test_distance_to_keeps_existing_crs_policy_without_reprojection(crs):
+    from operators import get_operator
+    source,target=_distance_to_frames('route_shape','reference_shape',crs)
+    result=get_operator('distance_to')(source,target)
+    assert result['distance'].tolist()==[5.,10.]
+    assert result.crs==source.crs and source.crs==target.crs
+
+
+def test_distance_to_active_geometry_empty_batch_keeps_source_schema():
+    from geopandas.testing import assert_geodataframe_equal
+    from operators import get_operator
+    source,target=_distance_to_frames('route_shape','reference_shape');source=source.iloc[:0].copy()
+    result=get_operator('distance_to')(source,target)
+    assert result.empty and 'distance' in result.columns and result.geometry.name=='route_shape'
+    assert_geodataframe_equal(result.drop(columns='distance'),source)
+
+
+def test_distance_to_active_geometry_overwrites_distance_on_copy_only():
+    from geopandas.testing import assert_geodataframe_equal
+    from operators import get_operator
+    source,target=_distance_to_frames('route_shape','reference_shape');source['distance']=[-999.,-888.]
+    before=source.copy(deep=True);result=get_operator('distance_to')(source,target)
+    assert result['distance'].tolist()==[5.,10.] and source['distance'].tolist()==[-999.,-888.]
+    assert result.columns.equals(source.columns) and result.geometry.name=='route_shape'
+    assert_geodataframe_equal(result.drop(columns='distance'),source.drop(columns='distance'))
+    assert_geodataframe_equal(source,before)
+
+
+@pytest.mark.parametrize('empty', [False, True])
+def test_distance_to_active_geometry_distance_conflict_preserves_inputs_and_can_be_renamed(empty):
+    from geopandas.testing import assert_geodataframe_equal
+    from operators import get_operator
+    from operators.spatial_relations import DistanceGeometryColumnConflict
+
+    source, target = _distance_to_frames('distance', 'reference_shape')
+    if empty:
+        source = source.iloc[:0].copy()
+    source_before, target_before = source.copy(deep=True), target.copy(deep=True)
+    with pytest.raises(DistanceGeometryColumnConflict, match='请先手动重命名源几何列'):
+        get_operator('distance_to')(source, target)
+    assert_geodataframe_equal(source, source_before)
+    assert_geodataframe_equal(target, target_before)
+
+    renamed = source.rename_geometry('source_shape')
+    result = get_operator('distance_to')(renamed, target)
+    assert result.geometry.name == 'source_shape'
+    assert result['distance'].tolist() == ([] if empty else [5., 10.])
+    assert_geodataframe_equal(result.drop(columns='distance'), renamed)
+
+
+def test_distance_to_active_geometry_target_named_distance_is_allowed():
+    from geopandas.testing import assert_geodataframe_equal
+    from operators import get_operator
+
+    source, target = _distance_to_frames('source_shape', 'distance')
+    before = target.copy(deep=True)
+    result = get_operator('distance_to')(source, target)
+    assert result['distance'].tolist() == [5., 10.]
+    assert_geodataframe_equal(result.drop(columns='distance'), source)
+    assert_geodataframe_equal(target, before)
+
+
+@pytest.mark.parametrize('language,expected', [
+    ('zh-cn', '源图层的活动几何列名 distance 与距离输出列冲突；请先手动重命名源几何列，再执行距离计算。'),
+    ('en', 'Source active geometry column distance conflicts with the distance output column; '
+           'rename the source geometry column before running distance calculation.'),
+])
+def test_distance_to_active_geometry_conflict_uses_submitted_workflow_language(language, expected):
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    from workflow_engine import GeoPythonWorkflowRunner
+
+    source, target = _distance_to_frames('distance', 'target_shape')
+    workflow = {'tasks': [{'id': 'distance', 'operator': 'distance_to', 'params': {
+        'input_gdf': {'$input': 'source'}, 'target_geom': {'$input': 'target'},
+    }, 'depends_on': []}]}
+    runner = GeoPythonWorkflowRunner(language=language)
+    with pytest.raises(WorkflowExecutionError) as failure:
+        runner.execute(workflow, {'source': source, 'target': target})
+    assert str(failure.value).endswith(expected)
+    assert failure.value.error_code == 'EXECUTION_FAILED'
+    assert failure.value.all_results == {}
+    assert failure.value.task_order == ['distance']
+
+    # A failed execution does not poison a later renamed input on the same runner.
+    result = runner.execute(workflow, {'source': source.rename_geometry('shape'), 'target': target})
+    import json
+    assert [feature['properties']['distance'] for feature in json.loads(result.final_result)['features']] == [5., 10.]
