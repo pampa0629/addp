@@ -6,12 +6,13 @@ Monitor 聚合各 Owner 写入的执行事实，提供授权诊断、统计、�
 
 | 范围 | 权威正文 |
 | --- | --- |
-| 模块职责、实现入口与剩余范围 | [模块架构说明](docs/Monitor模块架构说明.md) |
+| 模块职责、实现入口与执行监控后续范围 | [模块架构说明](docs/Monitor模块架构说明.md) |
 | 执行存储、运行时角色、统计与租户告警 | [监控与执行体系](../docs/concepts/addp监控与执行体系图.md)及其专题 |
 | Owner 读取、安全诊断、过程事件、保留及前端所有权 | [执行监控规范](../docs/spec/tasks/执行监控.md) |
 | 节点、采集发现、资源查询、平台告警与权限 | [平台运行观测规范](../docs/spec/addp平台运行观测规范.md) |
 | 平台日志、可信来源、观测与通知 | [模块服务运行日志规范](../docs/spec/addp模块服务运行日志规范.md) |
-| 配置与后续范围 | [配置规范](../docs/spec/addp配置介绍.md)、[运行观测后续事项](../docs/next/ADDP平台运行监控与可观测性设计.md) |
+| 环境与部署配置 | [配置规范](../docs/spec/addp配置介绍.md) |
+| Platform 能力状态与验收缺口 | [后续事项能力表](../docs/next/ADDP平台运行监控与可观测性设计.md#一当前实现与剩余工作)统一维护实现状态和剩余覆盖；本入口保留模块规则及标准命令 |
 | 历史通过、失败与覆盖限制 | [主题证据导航](#历史证据导航)；固定版本及未覆盖范围由各专题维护 |
 
 ## 核心边界
@@ -56,8 +57,8 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 - `scripts/infra/node-metrics.py` 是独立来源部署入口；原生 Linux 与 Desktop VM 身份分别确认。Desktop 当前七采集器含 diskstats，只表示 VM 内核块设备视图，不代表 Mac 本机或单容器，也不提供 filesystem/inode/netdev/netstat。
 - [固定指标、单位及采样窗口](../docs/spec/addp平台运行观测规范.md#61-固定指标目录)与[资源查询预算](../docs/spec/addp平台运行观测规范.md#62-资源查询与预算)统一由 [resourcequery](backend/internal/resourcequery/) 实现；前端和规则复用这一目录与公式，不另算同名指标或绕过现有 mTLS、预算及期限。
 - 主机列表、TOP5 和采集配置页共用同一批量查询内核，`resource_summaries` 显式提交 `node_ids` 与各自所需 `metrics`，不省略指标或逐行补查。列视图、默认分页、指标选择及整批预算沿[列表与总览契约](../docs/spec/addp平台运行观测规范.md#63-趋势时段比较与总览)，不因页面扩列扩大其他消费者读取。
-- `/engine-resources` 提供 Infra／Business PostgreSQL 的十二项专业指标、当前页四项摘要和当前数据库容器段最长七天趋势。System 逐请求裁决当前 User 的引擎部署读取，私有投影只用于发现且查询后重核；同一 HTTP SD、mTLS、端点去重和资源预算，不增加手填目标或租户用量归算。SQL 快照不完整、过期、统计重置或权限变化均不保留旧值。来源/查询实链专项沿 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source`。
-- `/http-quality` 使用独立七项目录，统计及规则沿[HTTP 质量与规则契约](../docs/spec/addp平台运行观测规范.md#64-http-接口质量分阶段接入)；Go／Python 分别复用 Common `httpmetrics` 与 Common Python 唯一 ASGI 观测内核。统计读取与规则分别授权，当前 User 裁决不由后台投影代替，Tenant 发布服务质量归 Service。SDK 来源 Linux T2 不代表完整 Agent/Copilot 正式 backend 登录／页面或正式身份 T4，实际范围见[HTTP 证据](../docs/spec/testing/evidence/MonitorHTTP质量与采样历史证据.md)。
+- `/engine-resources` 的固定目录、有效性与历史范围沿[规范 6.1—6.3](../docs/spec/addp平台运行观测规范.md#61-固定指标目录)。模块通过 System 当前 User 裁决并在查询后重核，私有发现投影不授予读取权；不增加手填目标或租户用量归算，失败不保留旧值。来源/查询实链专项沿 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source`。
+- `/http-quality` 使用独立七项目录，统计及规则沿[HTTP 质量与规则契约](../docs/spec/addp平台运行观测规范.md#64-http-接口质量分阶段接入)；Go／Python 分别复用 Common `httpmetrics` 与 Common Python 唯一 ASGI 观测内核。统计读取与规则分别授权，当前 User 裁决不由后台投影代替，Tenant 发布服务质量归 Service。能力状态与缺口沿[能力表](../docs/next/ADDP平台运行监控与可观测性设计.md#一当前实现与剩余工作)，固定版本、失败和清理见[HTTP 证据](../docs/spec/testing/evidence/MonitorHTTP质量与采样历史证据.md)；来源 T2 不替代完整正式 backend 登录／页面或正式身份 T4。
 - 本地 HTTP 专项使用 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=http-quality`，复用专属指标链与规则/outbox 测试库，跳过 PostgreSQL 专业来源探针及后续主机回归；完整回归仍用默认入口。该分项不代表正式身份 T4。
 - `/traces` 的 scope、传播、采样预算及因果 Link 沿[Trace 与日志关联契约](../docs/spec/addp平台运行观测规范.md#65-分布式追踪与日志关联二期第一批)。Monitor 使用 `monitor.trace.read` 逐请求核验全部参与实例，关联日志另需 System 正文权限；Link 访问仍须当前实例授权且不递归。采样不能推算全量 QPS，策略由 Monitor 唯一拥有，不新增热编辑控制面。Python 同步 HTTP 复用 Common Python 唯一 ASGI/HTTPX 内核；同步 Trace 与全量 HTTP 质量分别验收，不外推至其他 Runtime、Python 异步或 SQL Span。
 - 资源查询策略是 Monitor 平台 CAS 单例，对新请求热生效；资源与规则后台只用最小身份投影，不保存管理员 Token。目标管理、用户观测读取和采集服务权限彼此独立。
@@ -83,7 +84,7 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 
 ## 历史证据导航
 
-[Monitor 历史证据总入口](../docs/spec/testing/evidence/Monitor历史证据.md)保留原记录及旧锚点。下表仅定位已有结果；固定源码、失败／修复、清理和未覆盖项以专题原记录为准，失败、取消、排队或未执行不计通过。本机隔离闭环、Linux T2、受控页面 T3 与正式身份 Hosted T4 分别认定，不合并为当前 HEAD 或生产 T5 通过。
+[Monitor 历史证据总入口](../docs/spec/testing/evidence/Monitor历史证据.md)保留原记录及旧锚点。能力表引用下列同一批专题，本入口只提供查阅导航，不另行汇总通过状态。下表仅定位已有结果；固定源码、失败／修复、清理和未覆盖项以专题原记录为准，失败、取消、排队或未执行不计通过。本机隔离闭环、Linux T2、受控页面 T3 与正式身份 Hosted T4 分别认定，不合并为当前 HEAD 或生产 T5 通过。
 
 | 主题 | 证据范围 |
 | --- | --- |
@@ -100,6 +101,6 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 ## 仍需独立证据的范围
 
 - 实际多主机 TOP5、独立 Owner 撤权与全平台容量，不能由六个受控指标来源 T2 或单主机 T4 外推。
-- 实例资源组的独立容器关联／完整限制层级／正式身份验收，以及 cAdvisor 节点部署与容器视图、其他专业引擎、Python 进程指标、Agent/Copilot 同步 HTTP 之外的追踪和采集生效回执，沿[运行环境边界](../docs/spec/addp平台运行观测规范.md#52-部署与运行环境)与[后续事项](../docs/next/ADDP平台运行监控与可观测性设计.md)分别推进；节点登记不自动证明承载关联。
+- Platform 各项实现状态与剩余覆盖统一由[后续事项能力表](../docs/next/ADDP平台运行监控与可观测性设计.md#一当前实现与剩余工作)维护，宿主、实例资源组和 cAdvisor 支持沿[运行环境边界](../docs/spec/addp平台运行观测规范.md#52-部署与运行环境)。Python 进程指标与采集生效回执仍需独立证据；节点登记不自动证明承载关联。
 - 180 天概览清理、专业运行时历史及其他 Owner 阶段事件沿任务规范；已落地的 30 天过程事件清理不代替这些范围。
 - 生产安装权限、物理身份、HA、规模和 T5 均需对应独立验收；历史记录的定位和判定统一见[主题证据导航](#历史证据导航)。
