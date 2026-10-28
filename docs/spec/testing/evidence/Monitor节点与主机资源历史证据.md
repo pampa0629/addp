@@ -306,3 +306,17 @@ Node `v24.11.1`：新增八项受控浏览器场景与原设备九项合计17项
 本地 `make test-node-metrics-online-runner`：152项确定性测试及 System Go Metrics 正式身份夹具通过，日志 `/tmp/addp-native-filesystem-list-runner-final.log`。`npm --prefix console/frontend test`：30文件202项单元测试通过，日志 `/tmp/addp-native-filesystem-list-console-unit.log`。在 `console/frontend` 执行标准 `npm run test:e2e -- node-resource-navigation.spec.js`：5项受控浏览器T3通过，日志 `/tmp/addp-native-filesystem-list-console-browser-final.log`；新增场景沿实际 Console／Monitor iframe，使用同一个 DOM 读数核对函数，刷新后将 inode 使用率20%改为30%、空闲量80改为70，核对值更新、完整身份、仅四次当前节点观测、收起、URL及原 iframe 文档保持。标准隔离浏览器入口退出0，未启动或接管个人服务。Online Playwright `--list` 发现唯一既有场景，导入解析通过，仅计测试发现。
 
 本批只改验收实现及证据，既有 Online runner、Console frontend 单元与浏览器自动发现覆盖，无新依赖、入口或 workflow。上述T3为受控HTTP数据，不计真实Linux来源、正式密码／MFA、Safari或Hosted通过；未触发／轮询CI及Hosted、未设置定时任务。正式运行仍等专门会话安排与回传，原失败及前一批验证范围保留。
+
+
+### 热力面板实源页面验收准备（2026-10-28）
+
+既有 `platform-node-metrics` 资源 regression 在挂载详情阶段复用该页已读取的十项标量与五项容量响应，逐格核对 CPU／内存使用率、所有完整挂载的使用率、0～100进度条及原数据状态，记录 `resource_heatmap` DOM 收据和 `node-resources-heatmap.png`。容量响应索引须与同页挂载表一致，设备／挂载点／文件系统类型均精确匹配；合法零值保留有效进度，陈旧／缺样／未接入保持中性占位，不补零或继续着色。只复用原始百分比与共享格式化，不引入健康分、阈值或第二条采集路径；不增加查询、等待、身份用途、原有190条收据上限或时限。
+
+Online 与受控 Console T3 共用 `readResourceHeatmap`，纯收据生成与拒绝反例覆盖并发顺序、错误主机／请求集合、同挂载点不同设备和类型、最新陈旧／缺样不得借用旧有效值。中央再核对两项标量、全部分区身份／状态、精确进度值、百分比文本及与挂载表的同响应绑定。
+
+- `make test-node-metrics-online-runner`：153项确定性测试与 System Go Metrics 夹具通过，日志 `/tmp/addp-native-heatmap-runner-final.log`。
+- `npm --prefix console/frontend test`：30文件207项通过，收据专项20项；日志 `/tmp/addp-native-heatmap-console-unit.log`。
+- Console 标准 `npm run test:e2e -- node-resource-navigation.spec.js`：6项受控浏览器T3通过，日志 `/tmp/addp-native-heatmap-console-browser.log`。新增场景在实际Console／Monitor iframe 用同一函数检查0%／100%、同挂载点不同设备／类型，随后刷新为陈旧和缺样，分别核对中性状态、无进度条、占位文本及核对过程无额外请求。原列表刷新场景保留。隔离浏览器入口退出0，不接管个人服务。
+- Online Playwright `--list` 发现唯一既有场景并完成导入解析，仅计发现，不计执行。
+
+本批只改验收与既有证据，沿原 Online runner 和 Console frontend 的单元／浏览器自动发现；未改产品代码、Swagger或依赖，未重跑完整Monitor产品前端门禁。真实原生Linux、正式密码／MFA页面、Safari、Hosted及零残留仍待专门会话执行／回传；本地确定性与受控HTTP T3不计这些层级通过。未触发／轮询CI或Hosted、未设置定时任务、未修改个人配置或重启个人服务。

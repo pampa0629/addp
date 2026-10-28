@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
-import { readFilesystemMountTable } from './online/node-resource-receipts.js'
-import { identity, node, resourceBackend, resourcePermissions } from '../../../monitor/frontend/e2e/node-resources.fixture'
+import { readFilesystemMountTable, readResourceHeatmap } from './online/node-resource-receipts.js'
+import { identity, mount, node, resourceBackend, resourcePermissions } from '../../../monitor/frontend/e2e/node-resources.fixture'
 
 test('node resource navigation preserves the real Monitor iframe and one Console history', async ({ page }) => {
   await resourceBackend(page)
@@ -122,4 +122,38 @@ test('filesystem list open, changed-value refresh and collapse preserve the Cons
   expect(state.reads.filter(row => row.path.endsWith('/resource_observations')).every(row => row.query.node_id === node)).toBe(true)
   expect(page.url()).toBe(url)
   expect(await frame.evaluate(() => performance.timeOrigin)).toBe(origin)
+})
+
+test('heatmap DOM receipt keeps zero/full-scale, mount identities and neutral stale or missing values in the Console iframe', async ({ page }) => {
+  let stateName = 'valid'
+  const state = await resourceBackend(page, { mounts: [mount, { ...mount, device: '/dev/other', fstype: 'xfs' }], observationResponse: body => {
+    for (const line of body.series) if (['node.cpu.busy_percent', 'node.memory.used_percent'].includes(line.metric_key) || line.metric_key.startsWith('node.filesystem.')) {
+      Object.assign(line.points[0], { data_state: stateName, value: stateName === 'no_data' ? null
+        : line.metric_key.startsWith('node.filesystem.') ? line.points[0].value : line.metric_key === 'node.cpu.busy_percent' ? 0 : 100,
+        sampled_at: stateName === 'no_data' ? null : line.points[0].sampled_at })
+    }
+  } })
+  const resources = [], pending = []
+  page.on('response', response => {
+    const url = new URL(response.url())
+    if (url.pathname === '/api/v1/monitor/platform/resource_observations') pending.push(response.json().then(value =>
+      resources.push({ path: url.pathname, query: Object.fromEntries(url.searchParams), value })))
+  })
+  await page.goto(`/monitor/node-resources/${node}?refresh=off`)
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  const panel = monitor.getByTestId('resource-heatmap')
+  for (const next of ['valid', 'stale', 'no_data']) {
+    if (next !== 'valid') { stateName = next; await monitor.getByRole('button', { name: '刷新', exact: true }).click() }
+    await expect(monitor.getByRole('button', { name: '刷新', exact: true })).toBeEnabled()
+    await Promise.all(pending)
+    const before = resources.length, sourceReads = state.reads.length
+    const value = await readResourceHeatmap(panel, resources, node, expect)
+    expect(value.partitions).toHaveLength(2)
+    expect(value.partitions[0].dimensions.mountpoint).toBe(value.partitions[1].dimensions.mountpoint)
+    expect(value.partitions[0].dimensions.device).not.toBe(value.partitions[1].dimensions.device)
+    expect(value.scalars['node.cpu.busy_percent']).toMatchObject({ data_state: next, value: next === 'valid' ? 0 : null, neutral: next !== 'valid' })
+    expect(value.scalars['node.memory.used_percent'].text).toBe(next === 'valid' ? '100.00 %' : '—')
+    expect(resources).toHaveLength(before)
+    expect(state.reads).toHaveLength(sourceReads)
+  }
 })

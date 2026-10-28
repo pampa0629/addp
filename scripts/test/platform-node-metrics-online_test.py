@@ -1051,6 +1051,46 @@ for(const failBody of [false,true]){
             report["filesystem_list"][phase].update(capacity_index=begin+1, inode_index=begin)
         self.assertTrue(ONLINE.validate_filesystem_list_browser(report)["complete_mount_readings"])
 
+    def add_heatmap_evidence(self, report):
+        rows = report["resources"]
+        scalar = next(i for i, row in enumerate(rows) if row["path"] == ONLINE.OBSERVATIONS and set(row["query"]["metrics"].split(",")) == set(ONLINE.METRICS))
+        capacity = next(i for i, row in enumerate(rows) if row["path"] == ONLINE.OBSERVATIONS and set(row["query"]["metrics"].split(",")) == set(ONLINE.FILESYSTEM_METRICS))
+        def cell(point):
+            number = point["value"] if point["data_state"] == "valid" else None
+            return {"data_state": point["data_state"], "value": number, "neutral": number is None,
+                    "text": "—" if number is None else f"{number:,.2f} %"}
+        mounts = ONLINE.filesystem_mount_groups([rows[capacity]["value"]])
+        report["resource_heatmap"] = {"scalar_index": scalar, "capacity_index": capacity,
+            "scalars": {line["metric_key"]: cell(line["points"][0]) for line in rows[scalar]["value"]["series"] if line["metric_key"] in ("node.cpu.busy_percent", "node.memory.used_percent")},
+            "partitions": [{"dimensions": dict(zip(("device", "mountpoint", "fstype"), key)), **cell(metrics["node.filesystem.used_percent"])} for key, metrics in mounts.items()]}
+
+    def test_heatmap_receipt_binds_percentage_progress_full_mount_identity_and_neutral_missing_data(self):
+        report = {"resources": [{"path": ONLINE.OBSERVATIONS, "query": {"node_id": "node-id", "metrics": ",".join(family)}, "value": self.resource_reply(family)} for family in (ONLINE.METRICS, ONLINE.FILESYSTEM_METRICS)]}
+        report["filesystem_mount"] = {"capacity_index": 1}
+        self.add_heatmap_evidence(report)
+        self.assertEqual(ONLINE.validate_resource_heatmap_browser(report)["mount_count"], 1)
+        for change in (lambda r: r.pop("resource_heatmap"), lambda r: r.update(resource_heatmap=None),
+                       lambda r: r["filesystem_mount"].update(capacity_index=0),
+                       lambda r: r["resource_heatmap"].update(scalar_index=True),
+                       lambda r: r["resource_heatmap"].update(capacity_index=0),
+                       lambda r: r["resource_heatmap"]["scalars"].pop("node.cpu.busy_percent"),
+                       lambda r: r["resource_heatmap"]["scalars"]["node.cpu.busy_percent"].update(value=10),
+                       lambda r: r["resource_heatmap"]["scalars"]["node.cpu.busy_percent"].update(text="10.00 %"),
+                       lambda r: r["resource_heatmap"]["partitions"].clear(),
+                       lambda r: r["resource_heatmap"]["partitions"][0]["dimensions"].update(fstype="xfs"),
+                       lambda r: r["resource_heatmap"]["partitions"][0].update(neutral=True)):
+            bad = copy.deepcopy(report); change(bad)
+            with self.subTest(change=change), self.assertRaises(ONLINE.SuiteError): ONLINE.validate_resource_heatmap_browser(bad)
+        for state in ("stale", "no_data", "not_connected"):
+            value = copy.deepcopy(report)
+            for row in value["resources"]:
+                for line in row["value"]["series"]:
+                    line["points"][0].update(data_state=state, value=10 if state == "stale" else None)
+            self.add_heatmap_evidence(value)
+            self.assertTrue(ONLINE.validate_resource_heatmap_browser(value)["values_and_progress"])
+            value["resource_heatmap"]["scalars"]["node.cpu.busy_percent"].update(value=0, text="0.00 %")
+            with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_resource_heatmap_browser(value)
+
     def test_browser_report_binds_real_identity_versions_server_time_and_screenshots(self):
         expected = {"run_id": "unique-run", "node": {"node_id": "node-id", "version": 1},
                     "target": {"id": "target-id", "version": 2}, "policy_version": 0,
@@ -1095,10 +1135,11 @@ for(const failBody of [false,true]){
             "iframe_preserved": True, "off_restored": True, "off_no_requests": True, "before_index": 0, "after_index": 1}
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
-            for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "tcp", "list-filesystem"):
+            for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "tcp", "list-filesystem", "heatmap"):
                 (artifacts / ("node-resources-" + name + ".png")).write_bytes(b"\x89PNG\r\n\x1a\n" + b"x"*1000)
             self.add_period_comparison_evidence(report, artifacts)
             self.add_filesystem_list_evidence(report)
+            self.add_heatmap_evidence(report)
             self.assertEqual(ONLINE.validate_resource_browser(report, expected, artifacts)["result"], "passed")
             for change in (lambda r: r.pop("filesystem_mount"),
                            lambda r: r.update(filesystem_mount=None),

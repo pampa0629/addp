@@ -7,7 +7,7 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import { processMetrics, validateProcessInstances, validateProcessSummaries, validateProcessTrend } from '../../../../monitor/frontend/src/utils/processResources.js'
 import { validateResourceOverview } from '../../../../monitor/frontend/src/utils/resourceOverview.js'
 import { json, matchesRedirectURL } from './transfer-browser-support.js'
-import { scalarResourceReceipts, readFilesystemMountTable } from './node-resource-receipts.js'
+import { scalarResourceReceipts, readFilesystemMountTable, readResourceHeatmap } from './node-resource-receipts.js'
 import { engineMetrics, engineSummaryMetrics, validateEngineResources } from '../../../../monitor/frontend/src/utils/engineResources.js'
 
 // Login failures must never capture MFA input or credentials.
@@ -588,6 +588,10 @@ test('platform node resources through real Console password MFA and Monitor ifra
     const filesystemTable = monitor.getByTestId('resource-filesystem-table')
     await expect(filesystemTable.getByRole('button', { name: '查看趋势' }).first()).toBeVisible()
     await Promise.all(pending)
+    const heatmapReadCount = resources.length
+    report.resource_heatmap = await readResourceHeatmap(monitor.getByTestId('resource-heatmap'), resources, expected.node.node_id, expect)
+    expect(resources).toHaveLength(heatmapReadCount)
+    await monitor.getByTestId('resource-heatmap').screenshot({ path: resolve(artifact, 'node-resources-heatmap.png'), animations: 'disabled' })
     const { receipt: mountReceipt, row: mountRow } = await readFilesystemMountTable(filesystemTable, resources, expected.node.node_id, expect)
     const supportedMount = mountReceipt.dimensions
     report.filesystem_mount = mountReceipt

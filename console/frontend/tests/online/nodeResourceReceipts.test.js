@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { scalarResourceReceipts, filesystemMountReceipt } from '../../e2e/online/node-resource-receipts.js'
+import { scalarResourceReceipts, filesystemMountReceipt, resourceHeatmapReceipt } from '../../e2e/online/node-resource-receipts.js'
 import { resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, networkMetrics } from '../../../../monitor/frontend/src/utils/nodeResources.js'
 
 const node = '10000000-0000-4000-8000-000000000001'
@@ -89,5 +89,38 @@ describe('Online real filesystem mount receipt', () => {
       { ...inodes, query: { ...inodes.query, metrics: inodeMetrics.slice(1).map(row => row.key).join(',') } }]) {
       expect(() => filesystemMountReceipt([capacity, invalid], node)).toThrow('receipts missing')
     }
+  })
+})
+
+const heatmapScalar = () => ({ ...receipt(), value: { series: resourceMetrics.map(metric => ({ metric_key: metric.key,
+  points: [{ data_state: 'valid', value: metric.key === 'node.memory.used_percent' ? 100 : 0 }] })) } })
+
+describe('Online heatmap receipt from existing observations', () => {
+  it('preserves zero, full scale and different identities sharing a mountpoint without extra reads', () => {
+    const capacity = mountedReceipt(filesystemMetrics, mount)
+    capacity.value.series.push(...mountedReceipt(filesystemMetrics, { ...mount, device: '/dev/other', fstype: 'xfs' }).value.series)
+    const rows = [capacity, heatmapScalar(), receipt(networkMetrics)], before = structuredClone(rows)
+    const value = resourceHeatmapReceipt(rows, node)
+    expect(value.scalar_index).toBe(1)
+    expect(value.capacity_index).toBe(0)
+    expect(value.scalars['node.cpu.busy_percent']).toEqual({ data_state: 'valid', value: 0, text: '0.00 %', neutral: false })
+    expect(value.scalars['node.memory.used_percent'].text).toBe('100.00 %')
+    expect(value.partitions.map(row => row.dimensions)).toEqual([mount, { ...mount, device: '/dev/other', fstype: 'xfs' }])
+    expect(value.partitions[0].text).toBe('12.35 %')
+    expect(rows).toEqual(before)
+  })
+  it.each(['stale', 'no_data', 'not_connected'])('keeps latest %s neutral instead of using earlier valid observations', state => {
+    const scalar = heatmapScalar(), capacity = mountedReceipt(filesystemMetrics, mount)
+    const laterScalar = structuredClone(scalar), laterCapacity = structuredClone(capacity)
+    for (const source of [laterScalar, laterCapacity]) for (const line of source.value.series) line.points[0] = { data_state: state, value: state === 'stale' ? 10 : null }
+    const value = resourceHeatmapReceipt([scalar, capacity, laterCapacity, laterScalar], node)
+    expect(value.scalar_index).toBe(3)
+    expect(value.capacity_index).toBe(2)
+    for (const cell of [...Object.values(value.scalars), ...value.partitions]) expect(cell).toMatchObject({ data_state: state, value: null, text: '—', neutral: true })
+  })
+  it('cannot borrow another host or incomplete request family', () => {
+    const scalar = heatmapScalar(), capacity = mountedReceipt(filesystemMetrics, mount)
+    expect(() => resourceHeatmapReceipt([capacity, { ...scalar, query: { ...scalar.query, node_id: 'other' } }], node)).toThrow('receipts missing')
+    expect(() => resourceHeatmapReceipt([scalar, { ...capacity, query: { ...capacity.query, metrics: filesystemMetrics.slice(1).map(row => row.key).join(',') } }], node)).toThrow('receipts missing')
   })
 })
