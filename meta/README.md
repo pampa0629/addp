@@ -86,7 +86,7 @@ Console 为 System engine 注册或编辑体验维护 Meta 扫描计划时，调
 执行详情:   GET /api/v1/meta/executions/:execution_id
 ```
 
-完整 API 文档请查看 [CLAUDE.md](./CLAUDE.md#常见开发场景)
+完整 API 入口见 [CLAUDE.md](./CLAUDE.md#核心-api)；扫描历史与详情的身份、权限和安全响应见[Meta 专业执行读取与响应](../docs/spec/tasks/执行监控.md#meta-专业执行读取与响应)，验证分工与固定版本证据从[开发与验证](./CLAUDE.md#开发与验证)进入。
 
 ## 🔧 文档提取器支持
 
@@ -123,6 +123,8 @@ META_EMBEDDING_SERVICE_API_KEY=your_api_key
 ## 📚 相关文档
 
 - **[CLAUDE.md](./CLAUDE.md)** - 完整技术文档（架构、开发指南、常见场景）
+- [专业扫描读取契约](../docs/spec/tasks/执行监控.md#meta-专业执行读取与响应) - 任务历史、本人一次性执行、机器身份与安全投影
+- [扫描读取门禁](../docs/spec/testing/Owner补充门禁.md#meta-扫描与结果归属门禁)、[历史验收证据](../docs/spec/testing/evidence/资源读取与预览历史证据.md#meta-专业扫描读取--t4) - 区分当前标准入口、固定版本结果及未覆盖范围
 - **[../docs/spec/addp元数据扫描机制规范.md](../docs/spec/addp元数据扫描机制规范.md)** - 扫描入口、ScanTask、Execution 和调度边界
 - **[../docs/spec/addp数据项探测器规范.md](../docs/spec/addp数据项探测器规范.md)** - data item 识别、refs 和 layout 规则
 - **[../docs/spec/addp元数据attributes规范.md](../docs/spec/addp元数据attributes规范.md)** - attributes 写入边界
