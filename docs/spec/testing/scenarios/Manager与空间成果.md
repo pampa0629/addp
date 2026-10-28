@@ -666,30 +666,28 @@ ORC 嵌套扩展复用同一 `native-table-orc` case、原 11 项权限与精确
 
 ### TPI验收计时与本轮独立期望值缓存
 
-按确认范围仅优化TPI验收夹具：为业务内准备、物理核验和负例增加固定安全耗时字段，在原600秒业务预算内首次生成本轮独立Decimal期望数组；缓存仅供期望值读取，绑定Run／夹具代码／源hash，篡改或跨轮复用严格失败。仍进行39次校验调用、429次实际成果全量检查，保持13成功／26次准确双语失败、全像元／mask／概览／COG／原件hash与内部／公开／Meta血缘全部断言，缓存收尾失败整套失败。仅测试夹具／回归／登记，无产品代码、权限、共享生命周期或其他套件改动；不并发业务、不改变轮询和资源策略，不提高预算，不把准备移出业务计时。原固定a26结果保持，新源码实际Hosted仍由CI会话协调。
+缓存仅保存本轮独立Decimal期望数组，绑定Run／夹具代码／源hash，私有锚点及数组hash每次必验，缺失／篡改／跨轮复用或清理失败均失败。首次生成和清理在原600秒业务内；不缓存实际成果、不并发业务、不改轮询／资源策略、产品、权限或其他套件。13成功／26准确中英失败、39调用／429次实际成果全检，以及完整像元／mask／概览／COG／三方大小／扫描／内部及公开血缘／Monitor／源旧不变／零残留保持。
 
-本地候选树 `292cfef00be9448c5ad967639b5b31b82df9c4e9` 已通过标准 `PYTEST_ADDOPTS='-k tpi' make test-geopython-workflow`（209 passed／7678筛除／31.37秒，0失败／跳过），以及 Node 24.11.1 下 `make test-raster-tpi-online-runner`（85项／25.643秒）；943项被跟踪输入前后无漂移，无新增Python崩溃报告。包含缓存命中禁止重算、缓存损坏／缺失／跨Run／源hash变化拒绝、原件篡改、部分准备清理、反例篡改scope后仍按创建时路径清理和首个失败保留等回归；原生stdin Worker仍不依赖仓库导入，实际成果检查和13份COG原字节归档不减少。完整Python／Online登记检查通过（56项＋10项，11模块；共享测试不累加为唯一数量），现有根Makefile／Native recipe与独立Hosted入口已覆盖，无需改编排。
+固定`189f5f8ce3219ba6257d055f975f9bd2154c0b1d`的[Hosted40645432302／122673041241](https://github.com/pampa0629/addp/actions/runs/40645432302/job/122673041241)已终审通过，业务259655毫秒，包含期望生成7703毫秒、整个准备阶段8432毫秒及清理325毫秒，嵌套计时不重复相加；39次现场物理调用／429次实际成果检查、13份COG原字节／manifest及独立离线Decimal全像元／mask／3级nearest概览复核通过，原件与较早a26一致。与a26单次535785毫秒相比减少276.13秒（约51.5%），仅为两个固定运行的观测，不承诺稳定吞吐或容量。数值极限继续单列Native，不计UI或任意影像。
 
-缓存仅在当前隔离Runtime的私有临时目录内保留约26.5MiB独立期望数组；宿主私有锚点绑定Run／夹具代码／源hash，每次验证校验锚点及所读数组hash，无缺失后重算或跨轮复用。首次生成和清理均在原600秒业务子进程内；超时由现有隔离Runtime／私有凭据目录生命周期清理，正常收尾必须给出缓存移除证据。固定字段细分提交等待、内部血缘取证、诊断、Monitor／反向语言查询、无发布检查、像元／mask／元数据、COG布局、概览、缓存读取与归档耗时，嵌套耗时不可重复相加。新源码Linux全量及真实Hosted尚待CI会话协调和回传，不据本地耗时宣称Hosted已提速；原a26的535785毫秒结果仍作为原版本固定证据。
+准备提交`2b7df04aa5fdd097f4a2fe1c11062f69c0c6cae3`的[Linux40644787773／122670954049](https://github.com/pampa0629/addp/actions/runs/40644787773/job/122670954049)实际标准`make test-geopython-workflow`全量7887通过／24 warnings／2119.73秒。原始ZIP、日志与实际步骤由CI会话核验，领域会话只读复核官方digest／CRC、原件／只读血缘回执字节、矩阵和清理记录；不重跑计算、不查询或派发CI，不外推后续源码通过。
 
 
 ### DEM 地形崎岖度（TRI）独立 Hosted 验收
 
-用户已批准独立手工`raster-tri-persistence`：复用Hosted／NFS、同源默认入口Runtime及普通User原12权限，600秒业务预算保持。固定13条COG成功链（普通凸凹、水平平地、倾斜平面、重复对称鞍面、三组水平／高程单位交叉、填洼接TRI、重分类接TRI、Int64／UInt64普通大基值微差、全无效和无完整有效九点），13类各中英文准确失败共26次；不将数值极限Native外推Hosted。显式第二高程波段，跨块、多波段、NoData／mask／alpha／非有限覆盖及合法零保留。
+独立手工`raster-tri-persistence`复用Hosted／NFS、同源默认入口Runtime、普通User原12权限及600秒预算。固定13条COG成功链覆盖凸凹、平地、倾斜平面、对称鞍面、三组单位交叉、填洼／重分类、Int64／UInt64大基值微差、全无效和无完整九点；13类错误各中英文共26次。显式第二波段、跨块／多波段／NoData／mask／alpha／非有限覆盖、合法零和非负均按完整像元核验；数值极限仅Native。
 
-独立2500位Decimal Riley平方和开方oracle，不导入产品计算函数，一ULP错误即拒绝；完整像元／mask、非负／平地零／倾斜平面和鞍面正值、米制／原网格／CRS、完整COG／最近邻概览、artifact／物理／Meta相等正整数大小、精确扫描身份、当前实际输入完整内部血缘／公开安全投影／Meta关系及Monitor严格保持。每条成功及负例后重读全部已有成果，39调用／429次实际成果全检；归档13份COG原字节及大小／SHA-256清单，原件或清单变化不得静默修复。源及旧成果不变、失败零发布／零新增扫描血缘及全部清理均须通过。
+独立2500位Decimal Riley平方和开方oracle不导入产品函数；每条成功和负例后重读全部已有成果，39调用／429次实际全检，保持一ULP拒绝、完整mask、米制／原网格／CRS、COG布局／3级最近邻概览、artifact／物理／Meta相等正整数大小、精确扫描身份、当前实际输入完整内部血缘／公开安全投影／Meta关系和Monitor。原件和清单不可静默修复，源／旧成果不变、失败零发布／新增扫描血缘及全部清理均为必要条件。只读取证限定本轮容器／用户／租户／执行；期望缓存绑定Run／夹具／源hash，不缓存实际成果，准备与收尾均纳入600秒。
 
-只为TRI增加现有内部血缘只读取证白名单，继续限定当前隔离Run／容器／用户／租户／执行和固定只读查询，不扩大权限或公开字段。本轮独立期望缓存绑定Run／夹具SHA／源hash，首次准备、读取及清理全部纳入600秒业务；缓存缺失／篡改／跨轮复用及清理失败严格失败，不缓存实际成果或跳过检查。保留安全细分计时，不改产品、共享生命周期、其他套件业务矩阵、并发或轮询。
+固定`db2638ac9d7dc2f11a1fc949d0be77b0a0f238de`的[Hosted40652107491／122694375654](https://github.com/pampa0629/addp/actions/runs/40652107491/job/122694375654)已按上述完整范围终审通过，实际业务368511毫秒。归档13份COG原字节及清单，CI会话以固定提交的确定性夹具独立Decimal复算全像元／mask／CRS／米制／3级nearest概览并核COG布局；源TIFF未归档，不称为从归档源重新生成。官方ZIP为4208788字节、SHA-256 `2bb8b8981c390d1b6e3636f4bfc1c2850e8eda9a0fbe3d3770a7d2737f9740bb`。领域会话只读复核digest／CRC、13原件和受控内部血缘回执字节、13扫描／Monitor、完整矩阵及零残留，不重跑Hosted。
 
-本地仅本会话改动的固定候选树`5967b65dd01bf29629b83098390240560ef23d5b`通过标准`PYTEST_ADDOPTS='-k "dem_tri or test_online_tri_fixture"' make test-geopython-workflow`：**231 passed／7903筛除／87.95秒**，0失败／跳过；包括159项产品TRI和72项真实GDAL独立夹具准备回归，数量包含、不累计。实际核完整13链保存、26次准确双语失败、原件字节与manifest不可篡改／修复、RMS／符号／单位错误和一ULP拒绝、缓存跨轮／源hash／形状／权限篡改、部分准备及清理、stdin Worker无仓库导入和原源不变。重复对称鞍面样本的所有接缝同样全量核验，中心零梯度仍有正TRI；此设计限制独立高精度开方的重复工作，不减少任何实际成果检查。
-
-合并同期共享登记改动后的候选树`61e117a544da0c2d71310edac64b9ca955a88cb7`在Node24.11.1下标准`make test-raster-tri-online-runner` **87项／31.578秒**通过，包含39次调用／429次实际成果全检计数、13／26固定矩阵、600秒原预算、当前User与只读取证、父执行精确扫描／Meta关系／Monitor、清理失败不得成功及手工Hosted隔离生命周期模拟。受共享取证边界影响的既有`make test-raster-tpi-online-runner` **87项／32.743秒**、`make test-raster-cut-fill-online-runner` **88项／30.964秒**均通过；原两套业务夹具和场景文件逐字节未改，SQL取证、投影、身份与归档函数AST保持。`make test-python-ci-registration`56项及10项、11模块／Online完整登记通过；共享测试不累加唯一数量。950项跟踪输入前后无漂移，无新增Python崩溃报告。相对Native固定候选仅两个CI登记文件合并其他会话改动，相关栅格校验函数AST、Native产品／夹具／recipe及其他自有输入均保持；三套Runner与完整登记已核合并后的实际源码，不声称两个整树相同。标准Native recipe、聚合Runner、变更选路／回归、独立suite／手工workflow及防遗漏校验同次登记，保持nightly关闭。
-
-原始Native日志`/tmp/addp-tri-hosted-native.log` SHA-256：`040b8327b4be3b43153d56f3908b8418ffd35509e443c66b81e255e48b667842`；独立Runner`/tmp/addp-tri-hosted-tri.log` SHA-256：`5c694409a8bac4ef5167eb2c2fafdf5cb89e42d97a0fd11cae1b3246d7b2ffaa`。对应JSON／JUnit与范围复核`/tmp/addp-tri-hosted-work/scope-review.json`保留。上述为本地准备证据，不是Native全量或真实Hosted通过；实际Linux全量和Hosted仍由CI会话协调及回传，本会话未触发／轮询／重跑／取消、设置定时或操作个人服务／Infra。UI、容量、任意影像及Hosted数值极限均未验。
+对应准备提交`872375a48da8150a86936f8c6ae67d293b007a62`的[Linux40650267385／122688461218](https://github.com/pampa0629/addp/actions/runs/40650267385/job/122688461218)实际标准Native全量8134通过／39 warnings／1967.59秒。此前本地231项专项及runner／登记仅为准备证据，不与全量累加。固定证据不覆盖后续源码、UI、容量、任意影像或Hosted数值极限；本会话不触发／轮询／重跑／取消或设置定时，不操作个人服务／Infra。
 
 ## D8流长统一入口的既有验收适配
 
-当前产品仅保留`raster_flow_length_d8`，`method`必填：既有`raster-flow-length-d8-persistence`显式提交`downstream`，既有`raster-flow-length-upstream-d8-persistence`显式提交`upstream_longest`。两套独立六条成功COG链、各14次准确中英失败、600秒预算、普通User原12权限及全部完整像元／mask／米制步长／零值／最长汇合／COG／三方大小／扫描／当前血缘／源及先前成果不变／清理断言均保持；仅更新DAG身份及必填方法，未新增suite或长期脚本。已通过的历史固定版本及原ID证据保持原样，不改写为当前统一入口验收；新源码Linux全量和真实Hosted仍由CI会话协调运行／回传。
+当前产品仅保留`raster_flow_length_d8`，`method`必填：既有`raster-flow-length-d8-persistence`显式提交`downstream`，既有`raster-flow-length-upstream-d8-persistence`显式提交`upstream_longest`。两套独立六条成功COG链、各14次准确中英失败、600秒预算、普通User原12权限及全部完整像元／mask／米制步长／零值／最长汇合／COG／三方大小／扫描／当前血缘／源及先前成果不变／清理断言均保持；仅更新DAG身份及必填方法，未新增suite或长期脚本。固定`fdbe2d58d55ab2b215a609bfbd58b5c34e7c27ed`的两套实际Hosted已通过：[下游40657243422／122711172418](https://github.com/pampa0629/addp/actions/runs/40657243422/job/122711172418)业务543430毫秒，[上游40657252005／122711199682](https://github.com/pampa0629/addp/actions/runs/40657252005/job/122711199682)业务414932毫秒，各6成功／14准确双语失败、各6次当前扫描／血缘／Monitor和零残留均核。原范围未归档COG，现场逐像元参考回执通过不等于额外离线复算；不计UI、容量、业务DELETE或已有DAG迁移。原独立ID证据保留为历史，不改写为统一入口证明。
+
+固定`093a685b8558b74ecbdccb6b95b026d33af603e9`的[Linux40658271835／122714572426](https://github.com/pampa0629/addp/actions/runs/40658271835/job/122714572426)实际标准Native全量8413通过／44 warnings／1878.67秒；D8另8个自有可执行输入相同，元数据测试仅矢量目录断言变化且相关D8函数AST一致。Hosted源码fdbe中实际条件跳过的Native Job不计通过，此固定093证据也不外推粗糙度或当前HEAD全量。
 
 
 ### DEM 地形粗糙度独立 Hosted 验收
