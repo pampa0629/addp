@@ -13,7 +13,7 @@ export function resolveProtectionEnrollmentWorkspaceRouteState(routeQuery = {}) 
   const reviewQueue = resolveFindingReviewQueueRouteState(routeQuery)
   const preservedQuery = requested.tab === 'review-queue'
     ? reviewQueue.query
-    : (String(routeQuery.action || '') === 'enroll' ? { action: 'enroll', locator: routeQuery.locator } : {})
+    : (typeof routeQuery.locator === 'string' && routeQuery.locator.trim() ? { locator: routeQuery.locator.trim() } : {})
   return {
     ...resolveCanonicalTabRouteState({
       allowedTabs: WORKSPACE_TABS,
@@ -81,16 +81,24 @@ export function useProtectionEnrollmentWorkspace({
     return isCurrent(request, 'review-queue')
   }
 
-  async function loadResourceWorkspace(request) {
+  async function loadResourceWorkspace(routeState, request) {
     await Promise.all([resources.load(), resources.loadAccessRequests()])
     if (!isCurrent(request, 'resources')) return false
+    if (routeState.query.locator) {
+      const result = await resources.openLocator(routeState.query.locator, { isCurrent: () => isCurrent(request, 'resources') })
+      if (!isCurrent(request, 'resources')) return false
+      if (result.status === 'not_enrolled') {
+        if (unref(creation.canCreate)) creation.open(routeState.query.locator)
+        else resources.onNotEnrolled()
+      }
+    }
     resources.scheduleAutoRefresh({ reset: true })
     return true
   }
 
   function loadWorkspace(routeState, request) {
     if (routeState.tab === 'review-queue') return loadReviewWorkspace(routeState, request)
-    return loadResourceWorkspace(request)
+    return loadResourceWorkspace(routeState, request)
   }
 
   async function handleRouteChange(routeQuery) {
@@ -106,9 +114,6 @@ export function useProtectionEnrollmentWorkspace({
 
     activeWorkspace.value = routeState.tab
     reviewQueue.applyRouteState(routeState.reviewQueue)
-    if (routeState.tab === 'resources' && String(routeQuery.action || '') === 'enroll' && unref(creation.canCreate)) {
-      creation.open(routeQuery.locator)
-    }
     if (!mounted) return true
     return loadWorkspace(routeState, request)
   }

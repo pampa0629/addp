@@ -496,7 +496,7 @@ let itemMetaRequestSeq = 0
 const itemMeta = computed(() => props.previewData?.item_meta || fallbackItemMeta.value)
 const itemFingerprint = computed(() => String(itemMeta.value?.fingerprint || '').trim())
 const canReadCatalog = computed(() => authStore.hasPermission('catalog.entry.read'))
-const canOpenSecurity = computed(() => authStore.hasPermission('security.enrollment.create'))
+const canOpenSecurity = computed(() => authStore.hasPermission('security.enrollment.read') && authStore.hasPermission('meta.catalog.read'))
 const canRequestPlaintext = computed(() => authStore.hasPermission('security.protection_access_request.create') && authStore.hasPermission('security.protection_access_request.read'))
 const accessTargets = ref([])
 const accessTargetsLoading = ref(false)

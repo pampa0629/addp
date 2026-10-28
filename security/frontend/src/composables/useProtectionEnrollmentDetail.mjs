@@ -1,9 +1,12 @@
 import { nextTick, ref } from 'vue'
+import { parseLocator } from '@common-ui'
 import { discoveryRefreshMarker } from '../utils/protectionEnrollment.mjs'
 
 export function useProtectionEnrollmentDetail({
   enrollment,
   getEnrollment,
+  getItem,
+  listEnrollments,
   loadGovernance,
   resetGovernance,
   loadDefinitions,
@@ -11,7 +14,8 @@ export function useProtectionEnrollmentDetail({
   listPendingFindings,
   onAuthorizationLoadError = () => {},
   onResourceLoadError = () => {},
-  onDefinitionsLoadError = () => {}
+  onDefinitionsLoadError = () => {},
+  onLocatorLoadError = () => {}
 }) {
   const drawer = ref(false)
   const focusedExemptionID = ref('')
@@ -63,6 +67,60 @@ export function useProtectionEnrollmentDetail({
     if (disposed || !row?.id) return false
     const request = ++sessionRequest
     return activate(row, exemptionID, request)
+  }
+
+  async function openLocator(locator, { isCurrent: routeCurrent = () => true } = {}) {
+    if (disposed) return { status: 'unavailable' }
+    const request = ++sessionRequest
+    const current = () => request === sessionRequest && !disposed && routeCurrent()
+    try {
+      const parsed = parseLocator(locator)
+      if (!Number.isSafeInteger(parsed.itemId) || parsed.itemId <= 0 || !Number.isSafeInteger(parsed.engineId) || parsed.engineId <= 0) {
+        throw new Error('DataItem locator required')
+      }
+      const item = await getItem(parsed.itemId)
+      if (!current()) return { status: 'stale' }
+      if (Number(item?.id) !== parsed.itemId || Number(item?.engine_id) !== parsed.engineId || item?.item_type !== parsed.type || !item?.fingerprint) {
+        throw new Error('Meta item identity differs from selected resource')
+      }
+      const matchesTarget = row => row?.target?.owner_module === 'meta'
+        && row.target.resource_type === 'data_item' && row.target.resource_identity === item.fingerprint
+        && Number(row.target_snapshot?.engine_id) === parsed.engineId && row.state !== 'released'
+      let found = null
+      let total = null
+      for (let page = 1; ; page += 1) {
+        const result = await listEnrollments({ scope: 'current', engine_id: parsed.engineId, page, page_size: 100 })
+        if (!current()) return { status: 'stale' }
+        if (!Array.isArray(result?.data) || !Number.isSafeInteger(result.total_pages) || result.total_pages < 0
+            || !Number.isSafeInteger(result.total) || result.total < 0 || result.page !== page
+            || result.page_size !== 100 || result.total_pages !== Math.ceil(result.total / 100)
+            || result.data.length !== Math.min(100, Math.max(0, result.total - (page - 1) * 100))
+            || (total !== null && result.total !== total)) {
+          throw new Error('Incomplete or changing protection lookup pages')
+        }
+        total = result.total
+        for (const row of result.data) {
+          if (row?.target?.resource_identity !== item.fingerprint || row.state === 'released') continue
+          if (!matchesTarget(row) || found || !row.id) throw new Error('Ambiguous current protection target')
+          found = row
+        }
+        if (page >= result.total_pages) break
+      }
+      if (!found) return { status: 'not_enrolled' }
+      const latest = await getEnrollment(found.id)
+      if (!current()) return { status: 'stale' }
+      if (latest?.id !== found.id || !matchesTarget(latest)) throw new Error('Protection target changed during lookup')
+      const result = await activate(latest, '', request)
+      if (!current()) {
+        if (request === sessionRequest && !disposed) requestClose()
+        return { status: 'stale' }
+      }
+      return result
+    } catch (error) {
+      if (!current()) return { status: 'stale' }
+      onLocatorLoadError(error)
+      return { status: 'failed', error }
+    }
   }
 
   async function openAuthorization(accessRequest) {
@@ -171,6 +229,7 @@ export function useProtectionEnrollmentDetail({
     drawerRef,
     load,
     open,
+    openLocator,
     openAuthorization,
     openFinding,
     requestClose,

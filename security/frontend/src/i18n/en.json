@@ -470,7 +470,9 @@
         "topic": "Topic",
         "graph": "Graph",
         "unknown": "Data item"
-      }
+      },
+      "locatorLookupFailed": "Unable to locate protection details for this resource. Check your access or refresh and try again.",
+      "locatorNotEnrolled": "This resource is not enrolled in data protection. Your account cannot create an enrollment."
     },
     "reviewQueue": {
       "title": "Current pending candidates",
@@ -580,7 +582,6 @@
       },
       "effectiveDefinition": "{type} · {classification} · {grade}",
       "noEffectiveDefinition": "No executable classification and grading decision",
-      "baselineMask": "Default protection: keep {prefix} prefix and {suffix} suffix characters; mask the middle",
       "baselineEffect": "Default protection: {effect}",
       "noEffectiveBaseline": "No executable default protection rule is currently matched",
       "actions": {
@@ -597,7 +598,8 @@
       "outletNoFieldRule": "No rule generated for this field",
       "outletUnavailable": "Outlet projection unavailable",
       "outletAcknowledged": "Synchronized",
-      "outletWaiting": "Pending sync"
+      "outletWaiting": "Pending sync",
+      "outletMaskRule": "{action}: {algorithm}"
     },
     "accessRequest": {
       "reviewTitle": "Plaintext access approvals",

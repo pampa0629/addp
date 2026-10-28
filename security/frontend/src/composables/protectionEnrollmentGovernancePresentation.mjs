@@ -1,3 +1,4 @@
+import { algorithmNameKey } from '../utils/protectionAlgorithm.mjs'
 import { createProtectionAssessmentPresentation } from './protectionAssessmentPresentation.mjs'
 import {
   findingDecisionState,
@@ -35,6 +36,7 @@ export function createProtectionEnrollmentGovernancePresentation({
     assessmentRowView,
     assessmentChangeDialogView,
     assessmentHistoryView,
+    policyRevisionSummary,
     baselineForAssessment,
     policyForAssessment,
     stricterPolicyEffects,
@@ -265,10 +267,7 @@ export function createProtectionEnrollmentGovernancePresentation({
   function baselineDescription(finding) {
     const baseline = finding?.explanation?.baseline
     if (!baseline) return t('security.finding.noEffectiveBaseline')
-    if (baseline.effect === 'mask' && baseline.algorithm === 'addp.mask.keep_prefix_suffix/v2') {
-      return t('security.finding.baselineMask', { prefix: baseline.parameters?.prefix_runes, suffix: baseline.parameters?.suffix_runes })
-    }
-    return t('security.finding.baselineEffect', { effect: effectLabel(baseline.effect) })
+    return t('security.finding.baselineEffect', { effect: policyRevisionSummary(baseline) })
   }
 
   function exemptionStatePresentation(exemption) {
@@ -312,9 +311,10 @@ export function createProtectionEnrollmentGovernancePresentation({
         ? t('security.finding.outletConservativeDeny')
         : t('security.finding.outletNoFieldRule')
     }
-    return outlet.rules.map(rule => t('security.finding.outletRule', {
-      action: actionLabel(rule.action), effect: effectLabel(rule.effect)
-    })).join('；')
+    return outlet.rules.map(rule => rule.effect === 'mask'
+      ? t('security.finding.outletMaskRule', { action: actionLabel(rule.action), algorithm: t(algorithmNameKey(rule.algorithm)) })
+      : t('security.finding.outletRule', { action: actionLabel(rule.action), effect: effectLabel(rule.effect) })
+    ).join(t('security.policy.scopeSeparator'))
   }
 
   function outletAcknowledgementPresentation(outlet) {
@@ -442,6 +442,7 @@ export function createProtectionEnrollmentGovernancePresentation({
     assessmentChangeDialogView,
     findingRowView,
     assessmentHistoryView,
+    policyRevisionSummary,
     baselineForAssessment,
     policyForAssessment,
     stricterPolicyEffects,

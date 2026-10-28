@@ -29,6 +29,8 @@ function createWorkspace(overrides = {}) {
   }
   const resources = {
     findingsPage: ref(1),
+    openLocator: vi.fn().mockResolvedValue({ status: 'opened' }),
+    onNotEnrolled: vi.fn(),
     load: vi.fn().mockResolvedValue(true),
     loadAccessRequests: vi.fn().mockResolvedValue(true),
     loadGovernance: vi.fn().mockResolvedValue(true),
@@ -65,8 +67,8 @@ describe('protected-resource workspace lifecycle', () => {
   it('canonicalizes workspace routes while preserving only their owned query', () => {
     expect(resolveProtectionEnrollmentWorkspaceRouteState({ action: 'enroll', locator: 'engine://7' })).toMatchObject({
       tab: 'resources',
-      query: { action: 'enroll', locator: 'engine://7' },
-      changed: false
+      query: { locator: 'engine://7' },
+      changed: true
     })
     expect(resolveProtectionEnrollmentWorkspaceRouteState({ tab: 'review-queue', page: '2', page_size: '50', action: 'enroll' })).toMatchObject({
       tab: 'review-queue',
@@ -77,10 +79,11 @@ describe('protected-resource workspace lifecycle', () => {
   it('applies a route before mount without starting workspace loads', async () => {
     const { dependencies, workspace } = createWorkspace()
 
-    await expect(workspace.handleRouteChange({ action: 'enroll', locator: 'engine://7' })).resolves.toBe(true)
+    await expect(workspace.handleRouteChange({ locator: 'engine://7' })).resolves.toBe(true)
 
     expect(dependencies.reviewQueue.applyRouteState).toHaveBeenCalledOnce()
-    expect(dependencies.creation.open).toHaveBeenCalledWith('engine://7')
+    expect(dependencies.creation.open).not.toHaveBeenCalled()
+    expect(dependencies.resources.openLocator).not.toHaveBeenCalled()
     expect(dependencies.resources.load).not.toHaveBeenCalled()
     expect(dependencies.reviewQueue.load).not.toHaveBeenCalled()
   })
@@ -182,5 +185,46 @@ describe('protected-resource workspace lifecycle', () => {
     await expect(workspace.handleRouteChange({ tab: 'review-queue' })).resolves.toBe(false)
     await expect(workspace.manualRefresh()).resolves.toBe(false)
     expect(workspace.manualRefreshing.value).toBe(false)
+  })
+})
+
+describe('resource deep link opens detail before offering enrollment', () => {
+  it('opens existing protection without creation permission', async () => {
+    const { workspace, dependencies } = createWorkspace()
+    dependencies.creation.canCreate.value = false
+    await workspace.handleRouteChange({ locator: 'resource-locator' })
+    await workspace.mount()
+    expect(dependencies.resources.openLocator).toHaveBeenCalledWith('resource-locator', { isCurrent: expect.any(Function) })
+    expect(dependencies.creation.open).not.toHaveBeenCalled()
+    expect(dependencies.resources.onNotEnrolled).not.toHaveBeenCalled()
+  })
+  it.each([true, false])('handles confirmed absence with creation permission %s', async canCreate => {
+    const { workspace, dependencies } = createWorkspace()
+    dependencies.creation.canCreate.value = canCreate
+    dependencies.resources.openLocator.mockResolvedValue({ status: 'not_enrolled' })
+    await workspace.handleRouteChange({ locator: 'resource-locator' })
+    await workspace.mount()
+    expect(dependencies.creation.open).toHaveBeenCalledTimes(canCreate ? 1 : 0)
+    expect(dependencies.resources.onNotEnrolled).toHaveBeenCalledTimes(canCreate ? 0 : 1)
+  })
+  it('does not open creation after a failed lookup', async () => {
+    const { workspace, dependencies } = createWorkspace()
+    dependencies.resources.openLocator.mockResolvedValue({ status: 'failed' })
+    await workspace.handleRouteChange({ locator: 'resource-locator' })
+    await workspace.mount()
+    expect(dependencies.creation.open).not.toHaveBeenCalled()
+  })
+  it.each(['route', 'dispose'])('does not create after a stale %s lookup', async kind => {
+    const pending = deferred()
+    const { workspace, dependencies } = createWorkspace()
+    dependencies.resources.openLocator.mockReturnValue(pending.promise)
+    await workspace.handleRouteChange({ locator: 'resource-locator' })
+    const mounting = workspace.mount()
+    await vi.waitFor(() => expect(dependencies.resources.openLocator).toHaveBeenCalledOnce())
+    if (kind === 'route') await workspace.handleRouteChange({ tab: 'review-queue' })
+    else workspace.dispose()
+    pending.resolve({ status: 'not_enrolled' })
+    await expect(mounting).resolves.toBe(false)
+    expect(dependencies.creation.open).not.toHaveBeenCalled()
   })
 })

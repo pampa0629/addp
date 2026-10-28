@@ -470,7 +470,9 @@
         "topic": "主题",
         "graph": "图",
         "unknown": "数据项"
-      }
+      },
+      "locatorLookupFailed": "无法定位该资源的保护详情，请检查访问权限或刷新后重试。",
+      "locatorNotEnrolled": "该资源尚未纳入数据保护，当前账号没有纳管创建权限。"
     },
     "reviewQueue": {
       "title": "当前待复核候选",
@@ -580,7 +582,6 @@
       },
       "effectiveDefinition": "{type} · {classification} · {grade}",
       "noEffectiveDefinition": "当前没有可执行的分类分级结论",
-      "baselineMask": "默认保护：保留前 {prefix} 位和后 {suffix} 位，中间遮盖",
       "baselineEffect": "默认保护：{effect}",
       "noEffectiveBaseline": "当前未匹配到可执行的默认保护规则",
       "actions": {
@@ -597,7 +598,8 @@
       "outletNoFieldRule": "未生成该字段规则",
       "outletUnavailable": "暂无出口投影",
       "outletAcknowledged": "已同步",
-      "outletWaiting": "待同步"
+      "outletWaiting": "待同步",
+      "outletMaskRule": "{action}：{algorithm}"
     },
     "accessRequest": {
       "reviewTitle": "原值访问审批",

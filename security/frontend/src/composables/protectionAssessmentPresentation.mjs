@@ -151,9 +151,9 @@ export function createProtectionAssessmentPresentation({
   function protectionSummaryFromContext(baseline, policy) {
     if (!baseline) return t('security.policy.baselineMissing')
     if (policy?.state === 'active' && (isProtectionEffectStricter(policy.current?.effect, baseline.effect) || policy.current?.effect === 'mask')) {
-      return t('security.policy.activeSummary', { baseline: effectLabel(baseline.effect), policy: effectLabel(policy.current?.effect) })
+      return t('security.policy.activeSummary', { baseline: policyRevisionSummary(baseline), policy: policyRevisionSummary(policy.current) })
     }
-    return t('security.policy.defaultSummary', { baseline: effectLabel(baseline.effect) })
+    return t('security.policy.defaultSummary', { baseline: policyRevisionSummary(baseline) })
   }
 
   function stricterPolicyEffects(assessment) {
@@ -275,6 +275,7 @@ export function createProtectionAssessmentPresentation({
     assessmentRowView,
     assessmentChangeDialogView,
     assessmentHistoryView,
+    policyRevisionSummary,
     baselineForAssessment,
     policyForAssessment,
     stricterPolicyEffects,

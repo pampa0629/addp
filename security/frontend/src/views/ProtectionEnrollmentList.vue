@@ -448,7 +448,7 @@ const {
   onCreated: () => ElMessage.success(t('security.enrollment.created')),
   onSubmitError: error => ElMessage.error(error.message || t('security.common.failed')),
   onClosed: async () => {
-    if (route.query.action === 'enroll' || route.query.locator) {
+    if (route.query.locator) {
       await navigateWorkspace('resources')
     }
   }
@@ -633,6 +633,7 @@ const {
   drawerRef: detailDrawerRef,
   load: loadGovernance,
   open: openDetail,
+  openLocator: openResourceLocator,
   openAuthorization: openAccessRequestAuthorization,
   openFinding: openReviewQueueResource,
   requestClose: closeDetail,
@@ -644,6 +645,8 @@ const {
 } = useProtectionEnrollmentDetail({
   enrollment: detailRow,
   getEnrollment: id => protectionEnrollmentAPI.get(id),
+  getItem: id => metaAPI.getItem(id),
+  listEnrollments: params => protectionEnrollmentAPI.list(params),
   loadGovernance: page => loadGovernanceData(page),
   resetGovernance,
   loadDefinitions: loadFindingDefinitions,
@@ -651,7 +654,8 @@ const {
   listPendingFindings: params => findingAPI.list(params),
   onAuthorizationLoadError: error => ElMessage.error(error.message || t('security.exemption.loadFailed')),
   onResourceLoadError: error => ElMessage.error(error.message || t('security.common.failed')),
-  onDefinitionsLoadError: error => ElMessage.error(error.message || t('security.finding.loadDefinitionsFailed'))
+  onDefinitionsLoadError: error => ElMessage.error(error.message || t('security.finding.loadDefinitionsFailed')),
+  onLocatorLoadError: () => ElMessage.error(t('security.enrollment.locatorLookupFailed'))
 })
 const {
   designationDialog: manualAssessmentDialog,
@@ -1020,6 +1024,8 @@ const {
     resetFilters: resetReviewQueueFilterState
   },
   resources: {
+    openLocator: openResourceLocator,
+    onNotEnrolled: () => ElMessage.info(t('security.enrollment.locatorNotEnrolled')),
     findingsPage,
     load,
     loadAccessRequests: loadAccessRequestQueue,

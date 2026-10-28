@@ -203,7 +203,7 @@ for (const [owner, action, label] of [['develop', 'query', '查询工作台'], [
     await expect.poll(() => backend.policyCreateRequests.length).toBe(1)
     expect(backend.policyCreateRequests[0]).toMatchObject({ consumer_owner: owner, action, algorithm: 'addp.mask.sm3/v1' })
     await expect(dialog).toHaveCount(0)
-    await expect(drawer.getByText(`${label}：默认 脱敏，字段规则配置为 脱敏；执行时遵守当前基线约束`, { exact: true })).toBeVisible()
+    await expect(drawer.getByText(new RegExp(`${label}：默认 前后保留掩码.*字段规则配置为 SM3 哈希.*执行时遵守当前基线约束`))).toBeVisible()
     await drawer.getByRole('button', { name: '恢复默认保护' }).click()
     const restore = page.getByRole('dialog', { name: '恢复默认保护' })
     await expect(formCombobox(restore, '生效出口')).toContainText(label)
@@ -967,7 +967,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   await page.getByRole('button', { name: '查看详情' }).click()
   const detailDrawer = page.locator('.el-drawer').filter({ hasText: '资源保护详情' })
   await expect(detailDrawer.getByText('customer.phone', { exact: true }).first()).toBeVisible()
-  await expect(detailDrawer.getByText('默认保护：脱敏', { exact: true })).toBeVisible()
+  await expect(detailDrawer.getByText(/^默认保护：前后保留掩码.*无法处理时：移除$/)).toBeVisible()
 
   await detailDrawer.getByRole('button', { name: '调整结论' }).click()
   const revisionDialog = page.getByRole('dialog', { name: '调整正式安全结论' })
@@ -1042,7 +1042,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
     effect: 'suppress', algorithm: '', parameters: {}, invalid_value_effect: 'suppress', role_options: [],
     rationale: '该客户表仅允许展示非联系方式字段'
   })
-  await expect(detailDrawer.getByText('数据预览：默认 脱敏，字段规则配置为 移除；执行时遵守当前基线约束', { exact: true })).toBeVisible()
+  await expect(detailDrawer.getByText(/^数据预览：默认 前后保留掩码.*字段规则配置为 移除；执行时遵守当前基线约束$/)).toBeVisible()
 
   await detailDrawer.getByRole('button', { name: '调整收紧策略' }).click()
   await policyDialog.getByText('拒绝', { exact: true }).click()
@@ -1076,7 +1076,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
     effect: 'deny', algorithm: '', parameters: {}, invalid_value_effect: 'deny', role_options: [],
     rationale: '重新加载后确认收紧为拒绝访问'
   })
-  await expect(detailDrawer.getByText('数据预览：默认 脱敏，字段规则配置为 拒绝；执行时遵守当前基线约束', { exact: true })).toBeVisible()
+  await expect(detailDrawer.getByText(/^数据预览：默认 前后保留掩码.*字段规则配置为 拒绝；执行时遵守当前基线约束$/)).toBeVisible()
 
   await detailDrawer.getByRole('button', { name: '恢复默认' }).click()
   const restoreDialog = page.getByRole('dialog', { name: '恢复默认保护' })
@@ -1099,7 +1099,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   await restoreDialog.getByRole('button', { name: '放弃当前输入并加载最新策略' }).click()
   await expect.poll(() => backend.policyDetailRequests).toBe(2)
   await expect(formTextbox(restoreDialog, '恢复依据')).toHaveValue('')
-  await expect(restoreDialog.getByText('数据预览：默认 脱敏，字段规则配置为 移除；执行时遵守当前基线约束', { exact: true })).toBeVisible()
+  await expect(restoreDialog.getByText(/^数据预览：默认 前后保留掩码.*字段规则配置为 移除；执行时遵守当前基线约束$/)).toBeVisible()
   await expect(restoreDialog.getByText('该资源级保护策略已被其他操作更新；当前恢复依据已保留，不会撤销最新修订。', { exact: true })).toHaveCount(0)
 
   await formTextbox(restoreDialog, '恢复依据').fill('重新加载后确认恢复平台默认规则')
@@ -1110,7 +1110,7 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
     version: 4,
     rationale: '重新加载后确认恢复平台默认规则'
   })
-  await expect(detailDrawer.getByText('默认保护：脱敏', { exact: true })).toBeVisible()
+  await expect(detailDrawer.getByText(/^默认保护：前后保留掩码.*无法处理时：移除$/)).toBeVisible()
 
   await detailDrawer.getByRole('button', { name: '提前撤销' }).click()
   const exemptionRevokeDialog = page.getByRole('dialog', { name: '提前撤销临时授权' })
@@ -1611,10 +1611,20 @@ async function installMockBackend(page, options = {}) {
     enrollment.discovery_summary = { status: 'completed', finding_count: 1, pending_review_count: 1, reviewed_count: 0 }
   }
 
-  await page.addInitScript(() => {
-    localStorage.setItem('addp-lang', 'zh-cn')
+  if (options.sm3Description) {
+    state.baselines[0].allowed_algorithms.push('addp.mask.sm3/v1')
+    state.policies.push({ id: policyID, assessment_id: assessmentID, consumer_owner: 'manager', action: 'preview', state: 'active', version: '3', current_revision: '3', current: { revision: '3', effect: 'mask', algorithm: 'addp.mask.sm3/v1', parameters: {}, invalid_value_effect: 'suppress' } })
+    governanceFinding.component_key = 'customer.phone'
+    governanceFinding.review = { decision: 'confirm' }
+    enrollment.discovery_summary = { status: 'completed', finding_count: 1, pending_review_count: 0, reviewed_count: 1 }
+    governanceFinding.explanation = { ...governanceFinding.explanation, decision_state: 'formal', assessment_id: assessmentID, baseline: state.baselines[0],
+      outlets: [{ consumer_owner: 'manager', projection_state: 'active', acknowledged: true, rules: [{ action: 'preview', effect: 'mask', algorithm: 'addp.mask.sm3/v1' }] }] }
+  }
+
+  await page.addInitScript(language => {
+    localStorage.setItem('addp-lang', language)
     localStorage.setItem('theme-mode', 'light')
-  })
+  }, options.language || 'zh-cn')
 
   await page.route('**/api/v1/**', async route => {
     const request = route.request()
@@ -1660,6 +1670,9 @@ async function installMockBackend(page, options = {}) {
           metadata: { item_id: 201, data_type: 'table' }
         }]
       })
+    }
+    if (method === 'GET' && path === '/api/v1/meta/items/200') {
+      return fulfillJSON(route, { id: 200, engine_id: 2, item_type: 'table', fingerprint: 'sha256:customer-table' })
     }
     if (method === 'GET' && path === '/api/v1/meta/items/201') {
       return fulfillJSON(route, {
@@ -1777,7 +1790,9 @@ async function installMockBackend(page, options = {}) {
       if (scope !== 'released' && enrollment.state !== 'released') rows.push(enrollment)
       if (scope !== 'released' && state.currentEnrollment) rows.push(state.currentEnrollment)
       const filtered = rows.filter(row => (!params.get('resource_name') || row.target_snapshot.full_name.toLowerCase().includes(params.get('resource_name').toLowerCase())) && (!params.get('engine_id') || String(row.target_snapshot.engine_id) === params.get('engine_id')) && (!params.get('state') || row.state === params.get('state')))
-      return fulfillJSON(route, { data: filtered, total: filtered.length, page: 1, page_size: 20, total_pages: filtered.length ? 1 : 0 })
+      const pageSize = Number(params.get('page_size') || 20)
+      const pageNumber = Number(params.get('page') || 1)
+      return fulfillJSON(route, { data: filtered.slice((pageNumber - 1) * pageSize, pageNumber * pageSize), total: filtered.length, page: pageNumber, page_size: pageSize, total_pages: Math.ceil(filtered.length / pageSize) })
     }
     if (method === 'POST' && path === '/api/v1/security/protection-enrollments') {
       state.enrollmentCreateRequests.push(request.postDataJSON())
@@ -2191,4 +2206,32 @@ async function installMockBackend(page, options = {}) {
 
 async function fulfillJSON(route, body, status = 200) {
   await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
+}
+
+for (const language of ['zh-cn', 'en']) {
+  test(`opens existing resource protection and distinguishes configured SM3 from its baseline (${language})`, async ({ page }, testInfo) => {
+    const backend = await installMockBackend(page, { governanceValidation: true, sm3Description: true, language,
+      permissions: ['security.enrollment.read', 'meta.catalog.read', 'security.finding.read', 'security.assessment.read', 'security.policy.read', 'security.sensitive_data_type.read', 'security.classification.read', 'security.grade.read', 'security.protection_baseline.read'] })
+    const writes = []
+    page.on('request', request => {
+      if (new URL(request.url()).pathname.startsWith('/api/v1/security/') && request.method() !== 'GET') writes.push(request.url())
+    })
+    const locator = 'addp://engine/2/path/business/customers?type=table&item_id=200'
+    await page.goto(`/protection-enrollments?locator=${encodeURIComponent(locator)}`)
+    const drawer = page.locator('.el-drawer').filter({ hasText: language === 'en' ? 'Resource protection details' : '资源保护详情' })
+    await expect(drawer).toBeVisible()
+    await expect(drawer.getByText('customer.phone', { exact: true }).first()).toBeVisible()
+    const finding = drawer.locator('.finding-card')
+    await expect(finding.getByText(language === 'en' ? /^Default protection: Prefix and suffix masking/ : /^默认保护：前后保留掩码/)).toContainText(language === 'en' ? 'Keep 2 prefix and 3 suffix' : '保留前 2 个和后 3 个')
+    await expect(finding.locator('.resource-policy-summary')).toContainText(language === 'en' ? 'SM3 hashing' : 'SM3 哈希')
+    await expect(finding.locator('.finding-outlets strong')).toHaveText(language === 'en' ? 'Preview: SM3 hashing' : '预览：SM3 哈希')
+    await expect(page.getByRole('dialog', { name: language === 'en' ? 'Protect data resource' : '纳入数据保护', exact: true })).toHaveCount(0)
+    await expect(page.locator('.el-drawer:visible')).toHaveCount(1)
+    await drawer.screenshot({ path: testInfo.outputPath('protection-details.png') })
+    expect(backend.enrollmentDetailRequests).toBeGreaterThan(0)
+    expect(backend.enrollmentListRequests.some(params => params.engine_id === '2' && params.page_size === '100')).toBe(true)
+    expect(backend.enrollmentCreateRequests).toEqual([])
+    expect(writes).toEqual([])
+    expect(backend.unhandledRequests).toEqual([])
+  })
 }

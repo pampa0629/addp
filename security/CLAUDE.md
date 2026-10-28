@@ -629,3 +629,13 @@ Transfer 任务选择／保存／执行与 Develop 全量导出尚未接通，�
 临时策略只在自己的Assessment和Transfer/export绑定下用当前版本变更。已有活动覆盖或并发他人变更时不接管；中断及PUT／POST／DELETE结果不确定时只读回、核对本次唯一原因和版本后撤销本次覆盖，不重试写操作，不覆盖他人事实。身份、基线和原查询快照保持。保留6会话／执行、策略审计及CSV，沿既有隔离Infra最终销毁；不新增权限、账号、授权、部署、清理接口或T4入口，保留原有各出口及物理清理边界。公共测试HTTP客户端仅增加Content-Type、Content-Disposition和X-Request-ID的保存及两种验收语言，禁止收集Cookie／Token；产品API及Swagger不变。
 
 验证：`make test-security-online-runner`退出0，含38／58／31／293项Python回归、System合成身份Go门禁和CI登记检查；新增6个领域测试覆盖完整6CSV／24拒绝、全部42边界分别缺失／public／矛盾缓存头（126个反例）、错误原因／原值或默认值误替代／发起人或读写数错误／旧文件复活、缺Meta标识、现有活动策略拒绝、首次创建／未知写结果恢复、中断恢复及并发清理拒绝。HTTP客户端的成功JSON／CSV／错误响应验证安全头保留、Cookie不留存及未知语言在发请求前拒绝。定向反例通过不计作真实HTTP；日志`/tmp/p145-default-export-runner-targeted.log`与`/tmp/p145-default-export-runner-full.log`。现有Make入口与固定Hosted suite自动发现本次变更，CI注册及其删除反例同步为v33，无新增workflow。此前Persons的本地42项实际验收保持有效；新增v33真实隔离Hosted尚未运行，由专门CI会话跟进，不自行触发、轮询或设置定时。清单155/B空和156/B155仍部分实现。
+
+### 保护算法摘要与已有资源定位（2026-10-28）
+
+针对 MongoDB Engine11 `Outdoor.Persons / userInfo.phone` 的界面疑问，只读核对当前未退出纳管记录、Assessment、Manager/preview 字段 Policy 与已安装投影：字段覆盖为 `addp.mask.sm3/v1`，Policy 修订3、Manager 投影修订7；默认基线仍是前3后4掩码。未读取源手机号，也未调整任何规则、原值授权或源授权。原界面只展示通用“脱敏”，且 Manager 强制携带 `action=enroll`，因此难以查到已有具体算法。
+
+本次先补充正式规范10.5，再修正唯一前端路径：配置摘要复用现有算法、参数和异常值说明；Finding 出口摘要消费后端已返回的规则算法，独立保留同步状态，缺少算法显示信息不可用，不在前端重算有效保护。Manager 的“查看/配置”沿标准 locator 打开现有 Security 页面。Security 用当前用户读取的 Meta item 指纹及既有 current/engine 分页精确定位未退出记录，刷新目标后复用已有详情会话；只有完整查找确认不存在且具备创建权限才打开既有纳管窗口。错误、重复身份、不完整分页、释放后变更和失效异步请求不解释为未纳管。入口采用既有 enrollment.read 与 Meta 目录读取约束，无需创建权限。没有新增 API、权限、保护决策或兼容 query；Swagger 无变更。
+
+T1/T3/构建验证：`make test-security-frontend` 退出0，260项单元、37项受控浏览器和构建通过，含默认参数／显式SM3／实际出口算法独立展示、中英文只读详情导航及无 Security 写请求；单元覆盖跨页目标、完整不存在、403／协议与身份异常、重复／释放记录、路由切换及销毁。`make test-manager-frontend` 退出0，391项单元、291项受控浏览器和构建通过；另通过既有标准脚本 `cd manager/frontend && node ../../scripts/test/frontend-browser-gate.mjs e2e/security-protection-navigation.spec.js` 验证新增3项 Manager 入口，覆盖只读可查看、仅创建／无读取权限不显示入口、精确 locator 且无 action、无 Security 写入。新用例由既有 testDir 自动发现，无需新增 Make／CI 登记。日志 `/tmp/p145-protection-clarity-security.log`、`/tmp/p145-protection-clarity-manager.log`、`/tmp/p145-protection-clarity-manager-navigation.log`；文档相对链接及限定路径 `git diff --check` 通过。
+
+本轮为前端修复，无需后端重启；未把受控浏览器计作个人环境的真实输出或 Hosted T4。未触发／跟踪 CI，仍由专门会话负责。后续待办记录于 `docs/sessions/数据脱敏与保护后续工作专题.md`，优先建议讨论 Service SQL 单表直接字段与别名的角色方式切片；不扩大源授权、栅格或静态加密范围。

@@ -60,6 +60,25 @@ describe('projection time validity presentation', () => {
 })
 
 describe('protected-resource presentation model', () => {
+  it('distinguishes baseline parameters, configured SM3 and the actual outlet algorithm', () => {
+    const baseline = { id: 15, enabled: true, sensitive_data_type_id: 11, security_grade_id: 13,
+      effect: 'mask', algorithm: 'addp.mask.keep_prefix_suffix/v2', parameters: { prefix_runes: 3, suffix_runes: 4, mask_rune: '*' }, invalid_value_effect: 'suppress' }
+    const { presentation } = createPresentation({ protectionBaselines: ref([baseline]), policies: ref([
+      { assessment_id: 'assessment-1', consumer_owner: 'manager', action: 'preview', state: 'active',
+        current: { effect: 'mask', algorithm: 'addp.mask.sm3/v1', parameters: {}, invalid_value_effect: 'suppress' } }
+    ]) })
+    const finding = { id: 'finding-1', component_key: 'phone', explanation: { assessment_id: 'assessment-1', baseline,
+      outlets: [{ consumer_owner: 'manager', projection_state: 'active', acknowledged: true,
+        rules: [{ action: 'preview', effect: 'mask', algorithm: 'addp.mask.sm3/v1' }] }] } }
+    const row = presentation.findingRowView(finding)
+    expect(row.governance.baseline).toContain('security.algorithms.prefix.name')
+    expect(row.governance.baseline).toContain('prefix')
+    expect(row.governance.protectionSummary).toContain('security.algorithms.sm3.name')
+    expect(row.outlets[0].rule).toContain('security.algorithms.sm3.name')
+    finding.explanation.outlets[0].rules[0].algorithm = 'addp.mask.constant/v1'
+    expect(presentation.findingRowView(finding).outlets[0].rule).toContain('security.algorithms.constant.name')
+    expect(presentation.findingRowView(finding).outlets[0].rule).not.toContain('security.algorithms.sm3.name')
+  })
   it('derives reactive refresh, review, and manual-assessment summaries', () => {
     const { dependencies, presentation } = createPresentation()
 
@@ -550,7 +569,7 @@ describe('protected-resource presentation model', () => {
     expect(dialog.basis.outlets[0]).toEqual({
       key: 'manager',
       owner: 'security.enrollment.owners.manager',
-      rule: 'security.finding.outletRule:{"action":"Preview","effect":"security.enrollment.effects.mask"}'
+      rule: 'security.finding.outletMaskRule:{"action":"Preview","algorithm":"security.common.notAvailable"}'
     })
   })
 

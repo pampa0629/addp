@@ -180,3 +180,82 @@ describe('protected resource detail session', () => {
     expect(detail.open(firstEnrollment)).toBe(false)
   })
 })
+
+const itemLocator = 'addp://engine/11/path/Outdoor/Persons?type=collection&item_id=106'
+const metaItem = { id: 106, engine_id: 11, item_type: 'collection', fingerprint: 'persons-fingerprint' }
+const locatedEnrollment = {
+  ...firstEnrollment, state: 'active',
+  target: { owner_module: 'meta', resource_type: 'data_item', resource_identity: metaItem.fingerprint },
+  target_snapshot: { engine_id: 11 }
+}
+function lookupPage(rows, total = rows.length, page = 1) {
+  return { data: rows, total, page, page_size: 100, total_pages: Math.ceil(total / 100) }
+}
+function createLocatorDetail(overrides = {}) {
+  return createDetail({
+    getItem: vi.fn().mockResolvedValue(metaItem),
+    listEnrollments: vi.fn().mockResolvedValue(lookupPage([locatedEnrollment])),
+    getEnrollment: vi.fn().mockResolvedValue(locatedEnrollment),
+    onLocatorLoadError: vi.fn(),
+    ...overrides
+  })
+}
+
+describe('resource locator resolves authoritative current protection', () => {
+  it('finds a target beyond the first page and refreshes it before opening', async () => {
+    const unrelated = Array.from({ length: 100 }, (_, i) => ({ ...locatedEnrollment, id: `other-${i}`, target: { ...locatedEnrollment.target, resource_identity: `other-${i}` } }))
+    const { detail, dependencies } = createLocatorDetail({ listEnrollments: vi.fn()
+      .mockResolvedValueOnce(lookupPage(unrelated, 101)).mockResolvedValueOnce(lookupPage([locatedEnrollment], 101, 2)) })
+    await expect(detail.openLocator(itemLocator)).resolves.toEqual({ status: 'opened', enrollment: locatedEnrollment })
+    expect(dependencies.getItem).toHaveBeenCalledWith(106)
+    expect(dependencies.listEnrollments).toHaveBeenNthCalledWith(2, { scope: 'current', engine_id: 11, page: 2, page_size: 100 })
+    expect(dependencies.getEnrollment).toHaveBeenCalledWith(locatedEnrollment.id)
+    expect(dependencies.loadGovernance).toHaveBeenCalledOnce()
+  })
+
+  it('reports absence only after a complete current-resource search', async () => {
+    const { detail, dependencies } = createLocatorDetail({ listEnrollments: vi.fn().mockResolvedValue(lookupPage([])) })
+    await expect(detail.openLocator(itemLocator)).resolves.toEqual({ status: 'not_enrolled' })
+    expect(dependencies.getEnrollment).not.toHaveBeenCalled()
+    expect(detail.drawer.value).toBe(false)
+  })
+
+  it.each([
+    ['invalid locator', { locator: 'invalid' }],
+    ['Meta identity differs', { getItem: vi.fn().mockResolvedValue({ ...metaItem, engine_id: 2 }) }],
+    ['Meta unavailable', { getItem: vi.fn().mockRejectedValue(new Error('403')) }],
+    ['list forbidden', { listEnrollments: vi.fn().mockRejectedValue(new Error('403')) }],
+    ['missing page data', { listEnrollments: vi.fn().mockResolvedValue(lookupPage([], 1)) }],
+    ['wrong page count', { listEnrollments: vi.fn().mockResolvedValue({ ...lookupPage([]), total_pages: 1 }) }],
+    ['duplicate targets', { listEnrollments: vi.fn().mockResolvedValue(lookupPage([locatedEnrollment, { ...locatedEnrollment, id: 8 }])) }],
+    ['inconsistent target', { listEnrollments: vi.fn().mockResolvedValue(lookupPage([{ ...locatedEnrollment, target_snapshot: { engine_id: 2 } }])) }],
+    ['released after lookup', { getEnrollment: vi.fn().mockResolvedValue({ ...locatedEnrollment, state: 'released' }) }],
+    ['different refreshed target', { getEnrollment: vi.fn().mockResolvedValue({ ...locatedEnrollment, target: { ...locatedEnrollment.target, resource_identity: 'other' } }) }]
+  ])('does not turn %s into absence', async (_, overrides) => {
+    const { detail, dependencies } = createLocatorDetail(overrides)
+    await expect(detail.openLocator(overrides.locator || itemLocator)).resolves.toMatchObject({ status: 'failed' })
+    expect(dependencies.onLocatorLoadError).toHaveBeenCalledOnce()
+    expect(detail.drawer.value).toBe(false)
+  })
+
+  it('ignores a released record and opens the current lifecycle', async () => {
+    const { detail } = createLocatorDetail({ listEnrollments: vi.fn().mockResolvedValue(lookupPage([{ ...locatedEnrollment, id: 8, state: 'released' }, locatedEnrollment])) })
+    await expect(detail.openLocator(itemLocator)).resolves.toMatchObject({ status: 'opened' })
+    expect(detail.enrollment.value.id).toBe(locatedEnrollment.id)
+  })
+
+  it.each(['route', 'dispose', 'newer detail'])('discards a delayed lookup after %s', async kind => {
+    let resolveItem
+    let current = true
+    const { detail, dependencies } = createLocatorDetail({ getItem: vi.fn(() => new Promise(resolve => { resolveItem = resolve })) })
+    const opening = detail.openLocator(itemLocator, { isCurrent: () => current })
+    if (kind === 'route') current = false
+    if (kind === 'dispose') detail.dispose()
+    if (kind === 'newer detail') await detail.open(secondEnrollment)
+    resolveItem(metaItem)
+    await expect(opening).resolves.toEqual({ status: 'stale' })
+    expect(dependencies.listEnrollments).not.toHaveBeenCalled()
+    expect(dependencies.onLocatorLoadError).not.toHaveBeenCalled()
+    if (kind === 'newer detail') expect(detail.enrollment.value.id).toBe(secondEnrollment.id)
+  })
+})
