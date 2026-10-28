@@ -8,7 +8,7 @@ Meta basic 采集资格由 System 唯一保存及裁决，首期限定 PG entire
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-直接授权许可（2026-10-28，实施与验证中）：System 使用精确 DataItem 的显式允许／禁止替代互斥批准模式。显式设置优先；无设置时 Catalog 持久启用默认不允许，明确未启用默认允许，未知状态拒绝新直接签发，临时故障不放开。许可管理要求独立 `.engine_access_direct_permission.update` 与当前引擎授权管理员资格，不授予普通办理员。Catalog 业务批准始终保留，关闭许可不撤销既有 Grant。独立 `direct-permissions` Tab 查询全部已识别 DataItem 的最终许可，先过滤再计数和分页；新增授权仅显示选中项许可。迁移 000248 映射旧配置、移除旧协议；000246 与 Catalog／Transfer 各自启动迁移清理已获准丢弃的全部旧授权历史并防止旧成果续办重签。开发环境迁移和本轮真实 T4 尚未验收；完整边界见《授权上下文规范》5.5.5 与《System IAM 数据模型与迁移规范》。
+直接授权许可（2026-10-28）：System 使用精确 DataItem 的显式允许／禁止替代互斥批准模式。显式设置优先；无设置时 Catalog 持久启用默认不允许，明确未启用默认允许，未知状态拒绝新直接签发，临时故障不放开。许可管理要求独立 `.engine_access_direct_permission.update` 与当前引擎授权管理员资格，不授予普通办理员。Catalog 业务批准始终保留，关闭许可不撤销既有 Grant。独立 `direct-permissions` Tab 查询全部已识别 DataItem 的最终许可，先过滤再计数和分页；新增授权仅显示选中项许可。迁移 000248 映射旧配置、移除旧协议；000246 与 Catalog／Transfer 各自启动迁移清理已获准丢弃的全部旧授权历史并防止旧成果续办重签。固定 `c8977cecb` 的 PG Hosted T4 已通过 93 项检查和三段浏览器，清理零残留；开发环境重启后的迁移 248 及旧授权历史归零已只读核实，本机页面的当前／历史归零、直接许可过滤及选中项许可展示已只读核实。完整证据见[验收记录](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#直接授权许可模型替换--pg-hosted-t4-与开发库迁移)，完整边界见《授权上下文规范》5.5.5 与《System IAM 数据模型与迁移规范》。
 
 > IAM 概念与平台契约以 `docs/concepts/addp账号与权限体系图.md`、`docs/spec/addp授权上下文规范.md`、`docs/spec/addp权限与角色发布规范.md` 和 `docs/spec/addp OAuth授权规范.md` 为准；System 数据与协议实现以 `system/docs/IAM数据模型与迁移规范.md` 和 `system/docs/OAuth与Fosite实现说明.md` 为准。当前实现已切换为 Principal、Tenant Membership、Role/Permission、Token Family 和 `addp.auth_context/v1`，不得恢复旧账号分级或平行认证路径。
 
@@ -24,7 +24,7 @@ Manager 剖析结果的固定同步源检查 `POST /engine-access/read-checks/ma
 
 Manager 正式剖析执行授权由 `iam.ManagerProfileAuthorizationService` 与同事务的 `engineaccess.VerifyExecutionSourceRead` 组合。000192 在既有 Execution Authorization 上加入不可变 `source_read_scope`，只接受精确 pending、普通 API User、单引擎只读的 `data-profile-config/v6`，冻结全配置摘要及完整 ReadSet；消费复核当前 Manager Runtime、真实 running claim、发起人功能及全部源规则，审计后再次检查到期。仅给内置 Manager Runtime 增加已有机器消费 Permission，不给用户或源资源补权。固定 HTTP 签发入口 `/auth/execution-authorizations/manager-profiles` 仅接受 execution UUID／有效期，核验两项 Manager 功能 Permission；消费入口 `/execution-authorizations/:id/manager-profile-accesses` 仅接受固定 `addp-manager` Tenant Service 和真实执行租约，返回不可缓存的当次观察时刻，不返回连接或访问租约。范围类型及纯值校验唯一归 `common/execution`，共享客户端不自动重试或跟随重定向。禁止通过 engine-accesses、Notebook 或服务定义绕过范围；Manager 生产采样仍未接通，继续明确拒绝无正式来源授权的剖析。
 
-> 正式受理归属：Catalog 管业务批准及当前责任核验，System 保存最小不可变正式受理回执，并沿唯一源 Grant 路径签发。新受理不读取直接授权许可，也不消费旧模式或批准要求版本；回执与同请求关闭、签发沿既有事务边界排序。原 5 分钟办理窗口不因重试刷新，责任变化前已受理的同次、同参办理可按原规则继续。既有 PG 业务签发与读取证据见验收索引；该证据不代替本次许可模型替换后的 T4，不推广到其他引擎或消费入口。
+> 正式受理归属：Catalog 管业务批准及当前责任核验，System 保存最小不可变正式受理回执，并沿唯一源 Grant 路径签发。新受理不读取直接授权许可，也不消费旧模式或批准要求版本；回执与同请求关闭、签发沿既有事务边界排序。原 5 分钟办理窗口不因重试刷新，责任变化前已受理的同次、同参办理可按原规则继续。PG 业务签发与读取在本次许可模型替换后的固定 `c8977cecb` T4 中已重新验证，见验收索引；不推广到其他引擎或消费入口。
 
 > 内部核清读取：`engineaccess.Repository.readFulfillment` 使用独立只读事务，与仲裁共用完整请求绑定匹配，不取仲裁锁；未找到不等于关闭，退出或过期不改写原回执。拒绝在受理写事务中暴露自身未提交结果。该仓储不替代可信跨模块核清接口、当前资格判断或实际 Grant 消费。
 
