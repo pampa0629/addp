@@ -116,5 +116,58 @@ addp_launch_model3d_workflow
         self.assertFalse(pidfile.exists())
 
 
+class Model3DSKPRepairLifecycleTests(unittest.TestCase):
+    shell = Model3DNativeLifecycleTests.shell
+    def setUp(self):
+        Model3DNativeLifecycleTests.setUp(self)
+        (self.runtime / 'api_server.py').write_text('')
+        (self.runtime / 'node_modules/@mkkellogg/gaussian-splats-3d').mkdir(parents=True)
+        (self.runtime / 'skp_dependency.py').write_text('''
+import os, sys
+from pathlib import Path
+operation = sys.argv[1]
+if operation == 'prepare' and os.environ.get('ADDP_TEST_LOCK') != '1':
+    raise RuntimeError('repair preparation requires dependency lock')
+with Path(os.environ['ROOT_DIR'], 'repair-calls').open('a') as stream:
+    stream.write(operation + '\\n')
+if operation == 'verify' and os.environ.get('REPAIR_DRIFT'):
+    raise RuntimeError('repair missing or changed')
+''')
+
+    def test_stopped_runtime_prepares_under_dependency_lock_then_verifies(self):
+        result = self.shell('''
+addp_dev_port_busy() { return 1; }
+docker() { return 1; }
+addp_model3d_native_environment() { :; }
+addp_model3d_python_current() { :; }
+addp_sync_python_dependencies() { :; }
+addp_with_python_dependency_lock() {
+  shift
+  if [ "$1" = bash ]; then return 0; fi
+  ADDP_TEST_LOCK=1 "$@"
+}
+addp_prepare_model3d_workflow
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.root / 'repair-calls').read_text(), 'prepare\nverify\n')
+
+    def test_active_runtime_only_verifies_and_refuses_drift(self):
+        result = self.shell('''
+addp_dev_port_busy() { return 0; }
+addp_dev_owned_listener() { return 0; }
+docker() { return 1; }
+addp_model3d_native_environment() { :; }
+addp_model3d_python_current() { :; }
+addp_python_dependency_fingerprint() { echo current; }
+addp_python_dependencies_current() { return 0; }
+addp_with_python_dependency_lock() { echo unexpected-install; return 99; }
+addp_prepare_model3d_workflow
+''', REPAIR_DRIFT='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('先停止', result.stderr)
+        self.assertNotIn('unexpected-install', result.stdout)
+        self.assertEqual((self.root / 'repair-calls').read_text(), 'verify\n')
+
+
 if __name__ == "__main__":
     unittest.main()

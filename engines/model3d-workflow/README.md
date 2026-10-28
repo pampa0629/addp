@@ -140,8 +140,11 @@ Manager 与 Develop 只通过 Common Engine 的 `WorkflowRuntimeProvider` 调用
 ```bash
 python3 -m venv engines/model3d-workflow/.venv
 engines/model3d-workflow/.venv/bin/python -m pip install -r engines/model3d-workflow/requirements-dev.txt -e ./common-python
+engines/model3d-workflow/.venv/bin/python engines/model3d-workflow/skp_dependency.py prepare
 make test-model3d-workflow
 ```
+
+SKP 继续使用固定 OpenSKP 1.3.0 的唯一实例化 GLB 路线；`skp_dependency.py prepare` 在停止态统一修正精确图片读取、完整内容去重、正背面材质绑定和未支持材质拒绝，并更新安装 RECORD。未知源码拒绝准备，Worker 和标准测试入口均校验当前修正哈希。开发脚本只在停止态持安装锁准备，活动依赖漂移要求先停止，不现场修包；Linux CI 和产品镜像执行同一准备。其边界见[SKP 规范](../../docs/spec/builtin-formats/三维模型与场景.md#固定-openskp-转换依赖修正)。这不开放 SKP 精确组成授权。
 
 标准目标通过 `MODEL3D_WORKFLOW_PYTHON` 指定测试解释器。已准备本页原生 Python 3.12 环境时，可显式传入 `MODEL3D_WORKFLOW_PYTHON=engines/model3d-workflow/venv/bin/python`；同一变量也可传给 `make test-module MODULE=engines`。
 

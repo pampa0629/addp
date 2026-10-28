@@ -16,6 +16,16 @@ SCRIPT = ROOT / 'engines/model3d-workflow/scripts/build-linux-images.sh'
 
 
 class Model3DLinuxImagesTest(unittest.TestCase):
+    def test_skp_repair_is_shared_by_ci_runtime_and_product_smoke(self):
+        runtime = (ROOT / 'engines/model3d-workflow/docker/runtime/Dockerfile').read_text()
+        ci = (ROOT / '.github/workflows/platform-ci.yml').read_text()
+        self.assertIn('skp_dependency.py engines/model3d-workflow/skp_materials.py /app/', runtime)
+        self.assertIn('RUN python skp_dependency.py prepare', runtime)
+        self.assertIn('run: engines/model3d-workflow/.venv/bin/python engines/model3d-workflow/skp_dependency.py prepare', ci)
+        smoke = SCRIPT.read_text()
+        self.assertIn('SKP distinct embedded pixels smoke passed', smoke)
+        self.assertIn('SKP missing and unsupported material smoke passed', smoke)
+
     def test_compose_inherits_image_owned_native_bindings(self):
         compose = (ROOT / 'docker-compose.runtimes.yml').read_text()
         block = re.search(r'^  model3d-workflow-engine:\n(.*?)(?=^  [a-zA-Z]|\Z)', compose, re.M | re.S).group(1)

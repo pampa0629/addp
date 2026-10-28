@@ -66,9 +66,13 @@ addp_prepare_model3d_workflow() (
       addp_model3d_python_current "$runtime_dir/venv/bin/python"
     ' _ "$ROOT_DIR" || return 1
     addp_sync_python_dependencies "$ROOT_DIR" "$runtime_dir" 'Model3D' "$ROOT_DIR/common-python" || return 1
+    addp_with_python_dependency_lock "$ROOT_DIR" "$python_bin" "$runtime_dir/skp_dependency.py" prepare || return 1
     "$python_bin" "$runtime_dir/native_setup.py" prepare "$ROOT_DIR/.dev-state/model3d-native" || return 1
     "$python_bin" "$runtime_dir/blender_setup.py" prepare "$ROOT_DIR/.dev-state/model3d-blender" || return 1
   fi
+  "$python_bin" "$runtime_dir/skp_dependency.py" verify || {
+    echo '✗ Model3D SKP 依赖修正缺失或漂移，请先停止该 Runtime 再启动' >&2; return 1;
+  }
   addp_model3d_python_current "$python_bin" || return 1
   if [ ! -d "$runtime_dir/node_modules/@mkkellogg/gaussian-splats-3d" ]; then
     [ "$active" = 0 ] || { echo '✗ Model3D Node 依赖缺失，请先停止该 Runtime 再启动' >&2; return 1; }

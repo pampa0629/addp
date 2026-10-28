@@ -1756,7 +1756,7 @@ elif args[:3] == ['-m', 'pip', 'check']:
     if os.environ.get('FAIL_CHECK') == '1': sys.exit(19)
 elif args[:1] == ['-']:
     os.execv(sys.executable, [sys.executable] + args)
-elif args and args[0].endswith(('native_setup.py', 'blender_setup.py')):
+elif args and args[0].endswith(('native_setup.py', 'blender_setup.py', 'skp_dependency.py')):
     pass
 elif args == ['--version']:
     print('Python 3.12')
@@ -1795,6 +1795,7 @@ def run(**flags):
 result, arguments = run()
 assert result.returncode == 0 and prepared.exists(), result.stdout+result.stderr
 assert any(args[:2] == ['-m', 'venv'] for args in arguments), arguments
+assert [args[1] for args in arguments if args and args[0].endswith('skp_dependency.py')] == ['prepare', 'verify'], arguments
 installs = [args for args in arguments if args[:3] == ['-m', 'pip', 'install']]
 assert len(installs) == 1, arguments
 assert installs[0] == ['-m', 'pip', 'install', '-r', str(requirements), '-e', str(workspace/'common-python'), '-i', environment['PIP_INDEX_URL'], '--trusted-host', environment['PIP_TRUSTED_HOST']], installs

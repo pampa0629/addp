@@ -48,6 +48,9 @@ COPY common-python/addp_common/ /common-python/addp_common/
 RUN python -m pip install --no-cache-dir --no-build-isolation --no-deps /common-python \
   && rm -rf /common-python
 
+COPY engines/model3d-workflow/skp_dependency.py engines/model3d-workflow/skp_materials.py /app/
+RUN python skp_dependency.py prepare
+
 COPY engines/model3d-workflow/package.json engines/model3d-workflow/package-lock.json /app/
 RUN npm ci --omit=dev
 

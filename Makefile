@@ -185,6 +185,7 @@ test-manager-sgm-local-runner: ## 验证 SGM 本机隔离准入、Compose 所有
 
 .PHONY: test-model3d-workflow
 test-model3d-workflow: ## 运行 Model3D Runtime 格式边界和 GLB 发布校验测试
+	@$(abspath $(MODEL3D_WORKFLOW_PYTHON)) engines/model3d-workflow/skp_dependency.py verify
 	@cd engines/model3d-workflow && $(abspath $(MODEL3D_WORKFLOW_PYTHON)) -m pytest -q tests
 
 SPARK_WORKFLOW_PYTHON ?= engines/spark-workflow/venv/bin/python

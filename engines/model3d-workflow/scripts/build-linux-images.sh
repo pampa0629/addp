@@ -344,6 +344,64 @@ with tempfile.TemporaryDirectory() as tmp:
         raise SystemExit("SKP smoke conversion has incorrect metre scale")
     print("SKP parser, GLB publication validation and metre scale smoke passed")
 
+    # Independent ADDP-authored legacy model: distinct images have identical
+    # lengths/headers, so only full-content texture identity is sufficient.
+    pair_source = Path(tmp) / 'skp-pair.skp'
+    pair_target = Path(tmp) / 'skp-pair.glb'
+    builder = create()
+    expected_pixels = {(220, 30, 60, 128), (20, 40, 230, 255)}
+    sources = []
+    skp_materials = []
+    for i, color in enumerate(sorted(expected_pixels)):
+        image_path = Path(tmp) / f'skp-texture-{i}.png'
+        Image.new('RGBA', (4, 4), color).save(image_path, compress_level=0)
+        sources.append(image_path.read_bytes())
+        skp_materials.append(builder.add_texture_material(f'Texture{i}', str(image_path)))
+    for i, material in enumerate(skp_materials):
+        builder.add_face([(i * 2, 0, 0), (i * 2 + 1, 0, 0), (i * 2, 1, 0)], material=material)
+    assert len(sources[0]) == len(sources[1]) and sources[0][:16] == sources[1][:16] and sources[0] != sources[1]
+    builder.save(str(pair_source))
+    for image_path in Path(tmp).glob('skp-texture-*.png'):
+        image_path.unlink()
+    convert(pair_source, pair_target)
+    from glb_validation import read_glb
+    pair_doc, pair_chunks = read_glb(pair_target)
+    binary = next(data for kind, data in pair_chunks if kind == b'BIN\x00')
+    actual_pixels = set()
+    for image in pair_doc['images']:
+        view = pair_doc['bufferViews'][image['bufferView']]
+        offset = view.get('byteOffset', 0)
+        with Image.open(io.BytesIO(binary[offset:offset + view['byteLength']])) as decoded:
+            assert decoded.size == (4, 4)
+            values = set(decoded.convert('RGBA').get_flattened_data())
+            assert len(values) == 1
+            actual_pixels.update(values)
+    assert actual_pixels == expected_pixels
+    print('SKP distinct embedded pixels smoke passed')
+
+    # Synthetic VFF material errors must fail before geometry/export. These
+    # inputs are rejection controls, not complete SketchUp profile fixtures.
+    import zipfile
+    for bad_material in (
+        '<material name="Bad" type="1" hasTexture="1"><texture textureFilename="missing.png"><images><image path="./missing.png"/></images></texture></material>',
+        '<material name="Bad" type="0"><pbrMR><enable_normal>1</enable_normal></pbrMR></material>',
+        '<broken',
+    ):
+        source = Path(tmp) / 'skp-bad.skp'
+        with source.open('wb') as stream:
+            stream.write(b'\xff\xfe\xff\x0e' + b'\x00' * 28)
+            with zipfile.ZipFile(stream, 'w') as archive:
+                archive.writestr('materials/Bad/material.xml',
+                    '<materialDocument xmlns="http://sketchup.google.com/schemas/sketchup/1.0/material">' + bad_material + '</materialDocument>')
+                archive.writestr('materials/Bad/decoy.png', sources[0])
+        try:
+            convert(source, Path(tmp) / 'skp-bad.glb')
+        except Exception as error:
+            assert 'material' in str(error).lower()
+        else:
+            raise AssertionError('SKP bad material was silently accepted')
+    print('SKP missing and unsupported material smoke passed')
+
     from operators import ConverterError
     fixture = Path('/app/max-fixture')
     max_source = fixture / 'horsewalk02.max'

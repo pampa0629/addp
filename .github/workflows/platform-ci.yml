@@ -446,6 +446,10 @@ jobs:
           requirements-file: engines/model3d-workflow/requirements-dev.txt
           editable-install: ./common-python
 
+      - name: Prepare pinned OpenSKP repair
+        if: steps.selection.outputs.run == 'true'
+        run: engines/model3d-workflow/.venv/bin/python engines/model3d-workflow/skp_dependency.py prepare
+
       - name: Run Model3D Workflow tests
         if: steps.selection.outputs.run == 'true'
         run: make test-model3d-workflow
