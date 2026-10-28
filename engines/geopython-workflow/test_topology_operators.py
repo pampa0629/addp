@@ -232,7 +232,7 @@ def test_merge_line_chains_preserves_nullable_schema_and_source_identity(empty):
 def test_merge_line_chains_metadata_workflow_only_two_geodataframe_ports(monkeypatch):
     import api_server
     op=next(o for o in list_operators() if o["id"]=="merge_line_chains")
-    assert op["display_name"]=="链路合并" and op["category_path"]==["矢量处理","几何处理"]
+    assert op["display_name"]=="链路合并" and op["category_path"]==["矢量处理","线网处理"]
     assert op["execution_modes"]==["workflow"] and op["effects"]==["read"]
     assert [(p["name"],p["required"]) for p in op["parameters"]]==[("input_gdf",True),("id_field",True),("match_fields",True)]
     assert [(p["name"],p["type"],p["is_default"]) for p in op["output_ports"]]==[("result","geodataframe",True),("members","geodataframe",False)]
@@ -499,7 +499,7 @@ def test_group_line_components_metadata_async_discovery_and_workflow_only(tmp_pa
     monkeypatch.setattr(api_server,"executions",ExecutionRegistry())
     with api_server.app.test_client() as client:
         op = next(o for o in client.get("/api/operators").get_json()["operators"] if o["id"] == "group_line_components")
-        assert op["display_name"] == "连通分组" and op["category_path"] == ["矢量处理","几何处理"]
+        assert op["display_name"] == "连通分组" and op["category_path"] == ["矢量处理","线网处理"]
         assert op["execution_modes"] == ["workflow"] and op["effects"] == ["read"]
         assert [(p["name"],p["required"]) for p in op["parameters"]] == [("input_gdf",True),("id_field",True)]
         assert len(op["output_ports"]) == 1 and op["output_ports"][0]["name"] == "result" and op["output_ports"][0]["is_default"] is True
@@ -757,7 +757,7 @@ def test_split_line_intersections_async_discovery_workflow_only_and_required_ide
     monkeypatch.setattr(api_server, "executions", ExecutionRegistry())
     with api_server.app.test_client() as client:
         op = next(o for o in client.get("/api/operators").get_json()["operators"] if o["id"] == "split_line_intersections")
-        assert op["display_name"] == "交点打断" and op["category_path"] == ["矢量处理", "几何处理"]
+        assert op["display_name"] == "交点打断" and op["category_path"] == ["矢量处理", "线网处理"]
         assert op["execution_modes"] == ["workflow"] and op["effects"] == ["read"]
         assert [(p["name"], p["required"]) for p in op["parameters"]] == [("input_gdf", True), ("id_field", True), ("scope", False)]
         assert client.post("/api/operators/split_line_intersections/invoke", json={"params": {}}).status_code == 403
@@ -942,7 +942,7 @@ def test_line_overlap_discovery_workflow_save_reload_and_native_coordinates(tmp_
     assert (tmp_path / "lines.gpkg").read_bytes() == before
     with api_server.app.test_client() as client:
         op = next(o for o in client.get("/api/operators").get_json()["operators"] if o["id"] == "check_line_overlap")
-        assert op["display_name"] == "线叠检查" and op["category_path"] == ["矢量处理", "几何处理"]
+        assert op["display_name"] == "线叠检查" and op["category_path"] == ["矢量处理", "拓扑检查"]
         assert op["execution_modes"] == ["workflow"] and op["effects"] == ["read"]
         assert [(p["name"], p["param_type"], p["required"]) for p in op["parameters"]] == [("input_gdf", "input", True), ("id_field", "param", True)]
         assert [(p["name"], p["type"], p["is_default"]) for p in op["output_ports"]] == [("result", "geodataframe", True)]
@@ -1270,7 +1270,7 @@ def test_line_self_overlap_workflow_native_save_reload_and_discovery(tmp_path, e
     assert (tmp_path / "source.gpkg").read_bytes() == original
     with api_server.app.test_client() as client:
         op = next(o for o in client.get("/api/operators").get_json()["operators"] if o["id"] == "check_line_self_overlap")
-        assert op["display_name"] == "线内自叠" and op["category_path"] == ["矢量处理", "几何处理"]
+        assert op["display_name"] == "线内自叠" and op["category_path"] == ["矢量处理", "拓扑检查"]
         assert op["execution_modes"] == ["workflow"] and op["effects"] == ["read"]
         assert [(p["name"], p["param_type"], p["required"]) for p in op["parameters"]] == [("input_gdf", "input", True), ("id_field", "param", True)]
         assert [(p["name"], p["type"], p["is_default"]) for p in op["output_ports"]] == [("result", "geodataframe", True)]
@@ -1377,7 +1377,7 @@ def test_polygonize_requires_an_active_geodataframe(frame):
 def test_polygonize_metadata_declares_existing_workflow_ports_only():
     operator = next(op for op in list_operators() if op["id"] == "polygonize")
     assert operator["display_name"] == "拓扑构面"
-    assert operator["category_path"] == ["矢量处理", "几何处理"]
+    assert operator["category_path"] == ["矢量处理", "线网处理"]
     assert operator["execution_modes"] == ["workflow"]
     assert operator["effects"] == ["read"]
     assert [(p["name"], p["param_type"]) for p in operator["parameters"]] == [("input_gdf", "input")]
@@ -2023,7 +2023,7 @@ def test_geometry_repair_workflow_check_recheck_save_reload_and_discovery(tmp_pa
         discovered = {op["id"]: op for op in client.get("/api/operators").get_json()["operators"]}
         for name in ["check_geometry", "repair_geometry"]:
             op = discovered[name]
-            assert op["category_path"] == ["矢量处理", "几何处理"]
+            assert op["category_path"] == ["矢量处理", "几何整理"]
             assert op["execution_modes"] == ["workflow"] and op["effects"] == ["read"]
             assert [(p["name"], p["type"], p["is_default"]) for p in op["output_ports"]] == [("result", "geodataframe", True)]
 
@@ -2255,7 +2255,7 @@ def test_reference_snap_runtime_discovery_and_two_input_workflow_save_reload(tmp
     monkeypatch.setattr(api_server, 'executions', ExecutionRegistry())
     with api_server.app.test_client() as client:
         op = next(o for o in client.get('/api/operators').get_json()['operators'] if o['id']=='snap_geometry')
-        assert op['display_name']=='参考吸附' and op['category_path']==['矢量处理', '几何处理']
+        assert op['display_name']=='参考吸附' and op['category_path']==['矢量处理', '几何整理']
         assert op['execution_modes']==['workflow'] and op['effects']==['read']
         assert [(x['name'],x['param_type']) for x in op['parameters']]==[('input_gdf','input'),('reference_gdf','input'),('tolerance','param')]
         assert [(x['name'],x['type'],x['is_default']) for x in op['output_ports']]==[('result','geodataframe',True)]
@@ -2461,7 +2461,7 @@ def test_polygon_overlap_runtime_discovery_workflow_save_reload_and_source_bytes
     monkeypatch.setattr(api_server, "executions", ExecutionRegistry())
     with api_server.app.test_client() as client:
         op = next(o for o in client.get("/api/operators").get_json()["operators"] if o["id"] == "check_polygon_overlap")
-        assert op["display_name"] == "面叠检查" and op["category_path"] == ["矢量处理", "几何处理"]
+        assert op["display_name"] == "面叠检查" and op["category_path"] == ["矢量处理", "拓扑检查"]
         assert op["execution_modes"] == ["workflow"] and op["effects"] == ["read"]
         assert [(p["name"], p["param_type"], p["required"]) for p in op["parameters"]] == [("input_gdf", "input", True), ("id_field", "param", True)]
         assert [(p["name"], p["type"], p["is_default"]) for p in op["output_ports"]] == [("result", "geodataframe", True)]
@@ -2698,7 +2698,7 @@ def test_polygon_gap_discovery_two_required_input_ports_async_workflow_and_direc
     monkeypatch.setattr(api_server, "executions", ExecutionRegistry())
     with api_server.app.test_client() as client:
         op = next(o for o in client.get("/api/operators").get_json()["operators"] if o["id"] == "check_polygon_gap")
-        assert op["display_name"] == "面缝检查" and op["category_path"] == ["矢量处理", "几何处理"]
+        assert op["display_name"] == "面缝检查" and op["category_path"] == ["矢量处理", "拓扑检查"]
         assert op["execution_modes"] == ["workflow"] and op["effects"] == ["read"]
         assert [(p["name"], p["param_type"], p["required"]) for p in op["parameters"]] == [("input_gdf", "input", True), ("coverage_gdf", "input", True)]
         assert [(p["name"], p["type"], p["is_default"]) for p in op["output_ports"]] == [("result", "geodataframe", True)]
@@ -2830,7 +2830,7 @@ def test_dangling_points_workflow_native_point_save_reload_and_source_unchanged(
 
 def test_dangling_points_discovery_workflow_only_and_required_explicit_id():
     op=next(o for o in list_operators() if o["id"]=="check_dangling_points")
-    assert op["display_name"]=="悬点检查" and op["category_path"]==["矢量处理","几何处理"]
+    assert op["display_name"]=="悬点检查" and op["category_path"]==["矢量处理","拓扑检查"]
     assert op["execution_modes"]==["workflow"] and op["effects"]==["read"]
     assert [(p["name"],p["param_type"],p["required"]) for p in op["parameters"]]==[("input_gdf","input",True),("id_field","param",True)]
     assert [(p["name"],p["type"],p["is_default"]) for p in op["output_ports"]]==[("result","geodataframe",True)]
@@ -3058,7 +3058,7 @@ def test_line_intersection_async_runtime_discovery_and_required_identity(tmp_pat
     monkeypatch.setattr(api_server,"executions",ExecutionRegistry())
     with api_server.app.test_client() as client:
         op=next(o for o in client.get("/api/operators").get_json()["operators"] if o["id"]=="check_line_intersection")
-        assert op["display_name"]=="线交检查" and op["category_path"]==["矢量处理","几何处理"]
+        assert op["display_name"]=="线交检查" and op["category_path"]==["矢量处理","拓扑检查"]
         assert op["execution_modes"]==["workflow"] and op["effects"]==["read"]
         assert [(p["name"],p["param_type"],p["required"]) for p in op["parameters"]]==[("input_gdf","input",True),("id_field","param",True)]
         assert [(p["name"],p["type"],p["is_default"]) for p in op["output_ports"]]==[("result","geodataframe",True)]
@@ -3239,7 +3239,7 @@ def test_line_self_intersection_workflow_native_point_save_reload_and_discovery(
     assert execute_workflow({'tasks':tasks})['status']=='failed' and not (tmp_path/'rejected.gpkg').exists()
     with api_server.app.test_client() as client:
         op=next(o for o in client.get('/api/operators').get_json()['operators'] if o['id']=='check_line_self_intersection')
-        assert op['display_name']=='线内自交' and op['category_path']==['矢量处理','几何处理']
+        assert op['display_name']=='线内自交' and op['category_path']==['矢量处理','拓扑检查']
         assert op['execution_modes']==['workflow'] and op['effects']==['read']
         assert [(p['name'],p['param_type'],p['required']) for p in op['parameters']]==[('input_gdf','input',True),('id_field','param',True)]
         assert [(p['name'],p['type'],p['is_default']) for p in op['output_ports']]==[('result','geodataframe',True)]
@@ -3599,7 +3599,7 @@ def test_normalize_line_network_metadata_two_ports_workflow_only(monkeypatch):
         operators=client.get('/api/operators').get_json()['operators']
         selected=[o for o in operators if o['id']=='normalize_line_network'];assert len(selected)==1
         op=selected[0]
-        assert op['display_name']=='重合规整' and op['category_path']==['矢量处理','几何处理']
+        assert op['display_name']=='重合规整' and op['category_path']==['矢量处理','线网处理']
         assert op['execution_modes']==['workflow'] and op['effects']==['read']
         assert [(p['name'],p['required']) for p in op['parameters']]==[('input_gdf',True),('id_field',True)]
         assert [(p['name'],p['type'],p['is_default']) for p in op['output_ports']]==[('result','geodataframe',True),('members','geodataframe',False)]
@@ -4288,7 +4288,7 @@ def test_near_line_runtime_discovery_workflow_only_context_and_localized_failure
               "id_field": "route_key", "reference_id_field": "ref_key", "tolerance": 0}
     with api_server.app.test_client() as client:
         spec = next(op for op in client.get("/api/operators").get_json()["operators"] if op["id"] == "check_line_proximity")
-        assert spec["description"] == "近接检查" and spec["category_path"] == ["矢量处理", "几何处理"]
+        assert spec["description"] == "近接检查" and spec["category_path"] == ["矢量处理", "拓扑检查"]
         assert spec["execution_modes"] == ["workflow"] and spec["effects"] == ["read"]
         assert [(port["name"], port["type"], port["is_default"]) for port in spec["output_ports"]] == [("result", "geodataframe", True)]
         assert {param["name"] for param in spec["parameters"]} == set(params)

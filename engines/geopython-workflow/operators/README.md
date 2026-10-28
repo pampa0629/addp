@@ -51,7 +51,10 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 通用处理 | 数据清洗 | 2 | `fill_null`、`drop_duplicates` |
 | 通用处理 | 数据筛选 | 5 | `filter_by_attribute`、`sort_by_field`、`select_top_n`、`sample`、`random_split` |
 | 通用处理 | 数值统计 | 4 | `normalize_field`、`encode_categorical`、`bin_field`、`aggregate` |
-| 矢量处理 | 几何处理 | 25 | `buffer`、`centroid`、`simplify`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer`、`batch_centroid`、`dissolve`、`polygonize`、`check_geometry`、`repair_geometry`、`snap_geometry`、`check_polygon_overlap`、`check_polygon_gap`、`check_dangling_points`、`check_line_proximity`、`check_line_overlap`、`check_line_self_overlap`、`check_line_intersection`、`check_line_self_intersection`、`split_line_intersections`、`group_line_components`、`merge_line_chains`、`normalize_line_network` |
+| 矢量处理 | 几何构造 | 7 | `buffer`、`centroid`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer`、`batch_centroid` |
+| 矢量处理 | 几何整理 | 5 | `simplify`、`dissolve`、`check_geometry`、`repair_geometry`、`snap_geometry` |
+| 矢量处理 | 拓扑检查 | 8 | `check_polygon_overlap`、`check_polygon_gap`、`check_dangling_points`、`check_line_proximity`、`check_line_overlap`、`check_line_self_overlap`、`check_line_intersection`、`check_line_self_intersection` |
+| 矢量处理 | 线网处理 | 5 | `polygonize`、`split_line_intersections`、`group_line_components`、`merge_line_chains`、`normalize_line_network` |
 | 矢量处理 | 叠加分析 | 4 | `intersection`、`union`、`difference`、`clip` |
 | 矢量处理 | 空间关系 | 3 | `contains`、`intersects`、`distance_to` |
 | 矢量处理 | 几何量测 | 3 | `get_area`、`get_length`、`get_bounds` |
@@ -77,6 +80,8 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 `raster_inspect`、`crs_to_projjson` 和 GDAL vector dataset 批协议算子仅供受控 direct 调用，不进入工作流面板计数。分类调整不改变算子身份、参数、端口和已有工作流定义；不增加第三级目录或前端名称映射。原像元计算拆为基础计算、分类处理、地形分析、水流分析、汇水分析和河网分析；转面／栅格化归格式转换，等值线归地形分析，河网转线归河网分析。
 
 D8流长只保留`raster_flow_length_d8`一个入口，必填`method=downstream`／`upstream_longest`分别计算下游／上游最长流长；原独立上游ID删除，旧DAG需显式改写，不保留兼容别名。两种模式的米制、中心步长、开放边界、无效覆盖和严格图校验保持。
+
+“多距缓冲”（`batch_buffer`）处理同一图层的多个距离，“多图质心”（`batch_centroid`）处理多个图层；普通缓冲和质心已对单图层逐要素执行。“外包矩形”（`envelope`）为轴对齐包络。本轮目录与显示名整理保留算子 ID、参数及输出，不合并不同输入输出的能力。
 
 ## 拓扑构面
 

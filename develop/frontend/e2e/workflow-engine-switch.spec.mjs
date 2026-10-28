@@ -187,10 +187,19 @@ for (const width of [1280, 620]) {
     const header = path => category(path).locator('.el-collapse-item__header').first()
 
     await expect(header(['通用处理']).locator('.category-count')).toHaveText('2')
-    await expect(header(['矢量处理']).locator('.category-count')).toHaveText('1')
+    await expect(header(['矢量处理']).locator('.category-count')).toHaveText('25')
     await expect(header(['栅格处理']).locator('.category-count')).toHaveText('2')
     await expect(category(['通用处理', '数据读写']).getByRole('button', { name: '添加“Operator A”算子', exact: true })).toBeVisible()
     await expect(category(['栅格处理', '数据读写']).getByRole('button', { name: '添加“Raster Leaf”算子', exact: true })).not.toBeVisible()
+
+    await header(['矢量处理']).click()
+    for (const [group, count] of [['几何构造', 7], ['几何整理', 5], ['拓扑检查', 8], ['线网处理', 5]]) {
+      await expect(header(['矢量处理', group]).locator('.category-count')).toHaveText(String(count))
+    }
+    expect(await category(['矢量处理']).locator('[data-category-path]').evaluateAll(elements => (
+      elements.map(element => JSON.parse(element.dataset.categoryPath))
+    ))).toEqual(['几何构造', '几何整理', '拓扑检查', '线网处理'].map(group => ['矢量处理', group]))
+    await expect(category(['矢量处理', '几何处理'])).toHaveCount(0)
 
     const parentName = header(['通用处理']).locator('.category-name')
     const childName = header(['通用处理', '数据读写']).locator('.category-name')
@@ -215,6 +224,21 @@ for (const width of [1280, 620]) {
     })
 
     const search = page.getByPlaceholder('搜索算子...')
+    for (const [id, label] of [['batch_buffer', '多距缓冲'], ['batch_centroid', '多图质心'], ['envelope', '外包矩形']]) {
+      await search.fill(label)
+      await expect(header(['矢量处理']).locator('.category-count')).toHaveText('1')
+      await expect(header(['矢量处理', '几何构造'])).toHaveAttribute('aria-expanded', 'true')
+      const renamed = page.locator('.operator-item').filter({ hasText: label })
+      await expect(renamed.getByRole('button', { name: `添加“${label}”算子`, exact: true })).toBeVisible()
+      const dragged = await renamed.evaluate(element => {
+        const dataTransfer = new DataTransfer()
+        element.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer }))
+        return JSON.parse(dataTransfer.getData('application/json'))
+      })
+      expect(dragged.name).toBe(id)
+      expect(dragged.output_ports).toEqual([{ name: 'default', type: 'geodataframe', is_default: true }])
+    }
+
     await search.fill('raster_leaf')
     await expect(category(['通用处理'])).toHaveCount(0)
     await expect(header(['栅格处理'])).toHaveAttribute('aria-expanded', 'true')
@@ -1329,8 +1353,17 @@ async function installMockBackend(page, {
   if (includeNestedCategories) {
     operatorsByEngine[ENGINE_A.id][0].category_path = ['通用处理', '数据读写']
     operatorsByEngine[ENGINE_A.id][0].category = '数据读写'
+    const vectorGroups = [
+      ["几何构造", [["buffer", "缓冲区分析"], ["centroid", "计算质心"], ["convex_hull", "凸包"], ["envelope", "外包矩形"], ["voronoi", "泰森多边形"], ["batch_buffer", "多距缓冲"], ["batch_centroid", "多图质心"]]],
+      ["几何整理", [["simplify", "简化几何"], ["dissolve", "融合几何"], ["check_geometry", "几何检查"], ["repair_geometry", "几何修复"], ["snap_geometry", "参考吸附"]]],
+      ["拓扑检查", [["check_polygon_overlap", "面叠检查"], ["check_polygon_gap", "面缝检查"], ["check_dangling_points", "悬点检查"], ["check_line_proximity", "近接检查"], ["check_line_overlap", "线叠检查"], ["check_line_self_overlap", "线内自叠"], ["check_line_intersection", "线交检查"], ["check_line_self_intersection", "线内自交"]]],
+      ["线网处理", [["polygonize", "拓扑构面"], ["split_line_intersections", "交点打断"], ["group_line_components", "连通分组"], ["merge_line_chains", "链路合并"], ["normalize_line_network", "重合规整"]]],
+    ]
     operatorsByEngine[ENGINE_A.id].push(
-      { ...createOperator('vector_leaf', 'Vector Leaf', '几何处理', ENGINE_A.engine_type), category_path: ['矢量处理', '几何处理'] },
+      ...vectorGroups.flatMap(([group, operators]) => operators.map(([id, label]) => ({
+        ...createOperator(id, label, group, ENGINE_A.engine_type), category_path: ['矢量处理', group],
+        output_ports: [{ name: 'default', type: 'geodataframe', is_default: true }]
+      }))),
       { ...createOperator('raster_leaf', 'Raster Leaf', '数据读写', ENGINE_A.engine_type), category_path: ['栅格处理', '数据读写'] },
       { ...createOperator('field_leaf', 'Field Leaf', '字段处理', ENGINE_A.engine_type), category_path: ['通用处理', '字段处理'] },
       { ...createOperator('raster_math', 'Raster Math', '基础计算', ENGINE_A.engine_type), category_path: ['栅格处理', '基础计算'] }

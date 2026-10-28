@@ -1066,7 +1066,10 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("通用处理", "数据清洗"), "fill_null drop_duplicates"),
         (("通用处理", "数据筛选"), "filter_by_attribute sort_by_field select_top_n sample random_split"),
         (("通用处理", "数值统计"), "normalize_field encode_categorical bin_field aggregate"),
-        (("矢量处理", "几何处理"), "buffer centroid simplify convex_hull envelope voronoi batch_buffer batch_centroid dissolve polygonize check_geometry repair_geometry snap_geometry check_polygon_overlap check_polygon_gap check_dangling_points check_line_proximity check_line_overlap check_line_self_overlap check_line_intersection check_line_self_intersection split_line_intersections group_line_components merge_line_chains normalize_line_network"),
+        (("矢量处理", "几何构造"), "buffer centroid convex_hull envelope voronoi batch_buffer batch_centroid"),
+        (("矢量处理", "几何整理"), "simplify dissolve check_geometry repair_geometry snap_geometry"),
+        (("矢量处理", "拓扑检查"), "check_polygon_overlap check_polygon_gap check_dangling_points check_line_proximity check_line_overlap check_line_self_overlap check_line_intersection check_line_self_intersection"),
+        (("矢量处理", "线网处理"), "polygonize split_line_intersections group_line_components merge_line_chains normalize_line_network"),
         (("矢量处理", "叠加分析"), "intersection union difference clip"),
         (("矢量处理", "空间关系"), "contains intersects distance_to"),
         (("矢量处理", "几何量测"), "get_area get_length get_bounds"),
@@ -1233,14 +1236,17 @@ def test_dem_tri_single_workflow_explicit_band_unit_metres_and_complete_window_m
     assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'elevation_unit':'metre','band':1}
 
 
-def test_vector_geometry_readme_matches_registered_names_and_count():
-    import re
-    readme=(Path(__file__).parent/'operators/README.md').read_text()
-    row=next(line for line in readme.splitlines() if line.startswith('| 矢量处理 | 几何处理 |'))
-    documented=re.findall(r'`([^`]+)`',row)
-    registered=[item['name'] for item in list_operators() if item['category_path']==['矢量处理','几何处理'] and 'workflow' in item['execution_modes']]
-    assert len(documented)==len(set(documented))==int(row.split('|')[3].strip())==len(registered)
-    assert set(documented)==set(registered)
+def test_vector_geometry_groups_have_expected_counts_and_clear_display_names():
+    expected = {'几何构造': 7, '几何整理': 5, '拓扑检查': 8, '线网处理': 5}
+    operators = list_operators()
+    moved = [op for op in operators if op['category_path'][0] == '矢量处理' and op['category'] in expected]
+    assert len(moved) == len({op['id'] for op in moved}) == 25
+    assert {group: sum(op['category'] == group for op in moved) for group in expected} == expected
+    assert not any(op['category_path'] == ['矢量处理', '几何处理'] for op in operators)
+    names = {op['id']: op['display_name'] for op in moved}
+    assert {key: names[key] for key in ('batch_buffer', 'batch_centroid', 'envelope')} == {
+        'batch_buffer': '多距缓冲', 'batch_centroid': '多图质心', 'envelope': '外包矩形',
+    }
 
 
 def test_distance_to_metadata_requires_shared_projected_crs_and_native_distance_units():

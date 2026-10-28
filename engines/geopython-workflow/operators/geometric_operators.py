@@ -1113,7 +1113,7 @@ def polygonize(input_gdf: gpd.GeoDataFrame) -> dict[str, gpd.GeoDataFrame]:
 # ==================== 元数据定义 ====================
 
 NORMALIZE_LINE_NETWORK_METADATA = OperatorMetadata(
-    name="normalize_line_network", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    name="normalize_line_network", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_NETWORK,
     description="重合规整", brief_description="精确细分并去重线网，共享边与完整来源经过双输出",
     execution_modes=["workflow"], effects=["read"],
     overview="按全部原顶点、精确点交会和重合端点细分，将正反等价直线段归为唯一边。"
@@ -1133,7 +1133,7 @@ NORMALIZE_LINE_NETWORK_METADATA = OperatorMetadata(
 
 
 MERGE_LINE_CHAINS_METADATA = OperatorMetadata(
-    name="merge_line_chains", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    name="merge_line_chains", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_NETWORK,
     description="链路合并", brief_description="按精确端点和显式一致字段串联非分支线，双输出保留完整来源明细",
     execution_modes=["workflow"], effects=["read"],
     overview="全图度二且显式字段同值时串联，分支或属性变化处停止，不选择主路。"
@@ -1154,7 +1154,7 @@ MERGE_LINE_CHAINS_METADATA = OperatorMetadata(
 
 
 GROUP_LINE_COMPONENTS_METADATA = OperatorMetadata(
-    name="group_line_components", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    name="group_line_components", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_NETWORK,
     description="连通分组", brief_description="按原始线部件的精确相交关系归组，保留来源、全部属性和原路径",
     execution_modes=["workflow"], effects=["read"],
     overview="端点、T形、十字及重合均按精确XY连通，传递相连部件归入同组。"
@@ -1170,7 +1170,7 @@ GROUP_LINE_COMPONENTS_METADATA = OperatorMetadata(
 )
 
 SPLIT_LINE_INTERSECTIONS_METADATA = OperatorMetadata(
-    name="split_line_intersections", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    name="split_line_intersections", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_NETWORK,
     description="交点打断", brief_description="按显式范围切分跨要素或全部精确点交会，保留来源、属性和原路径顺序",
     execution_modes=["workflow"], effects=["read"],
     overview="十字交叉切分双方，T形切分被接入的线，端点接触不生成零长度段。"
@@ -1188,7 +1188,7 @@ SPLIT_LINE_INTERSECTIONS_METADATA = OperatorMetadata(
 )
 
 CHECK_LINE_SELF_OVERLAP_METADATA = OperatorMetadata(
-    name="check_line_self_overlap", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    name="check_line_self_overlap", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_TOPOLOGY_CHECK,
     description="线内自叠", brief_description="检查单个线要素内部重复经过的线段，每源汇总去重，只检查不修复",
     execution_modes=["workflow"], effects=["read"],
     overview="提取原始路径折返、重复走线和同一多部件要素内部的正长度重合。"
@@ -1204,7 +1204,7 @@ CHECK_LINE_SELF_OVERLAP_METADATA = OperatorMetadata(
 )
 
 CHECK_LINE_OVERLAP_METADATA = OperatorMetadata(
-    name="check_line_overlap", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    name="check_line_overlap", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_TOPOLOGY_CHECK,
     description="线叠检查", brief_description="逐对提取不同线要素的精确重合段，保留双方来源和长度",
     execution_modes=["workflow"], effects=["read"],
     overview="检查单个线图层不同要素之间的正长度交集；包含、反向重复和不同顶点分段同样报告。"
@@ -1220,7 +1220,7 @@ CHECK_LINE_OVERLAP_METADATA = OperatorMetadata(
 )
 
 CHECK_LINE_SELF_INTERSECTION_METADATA = OperatorMetadata(
-    name="check_line_self_intersection", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    name="check_line_self_intersection", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_TOPOLOGY_CHECK,
     description="线内自交", brief_description="检查单个线要素内部孤立点交会，每源按 XY 去重，只检查不修复",
     execution_modes=["workflow"], effects=["read"],
     overview="报告非相邻段和不同部件的孤立点交会。排除正常折点、闭环首尾和正长度自叠线上的点，"
@@ -1236,7 +1236,7 @@ CHECK_LINE_SELF_INTERSECTION_METADATA = OperatorMetadata(
 )
 
 CHECK_LINE_INTERSECTION_METADATA = OperatorMetadata(
-    name="check_line_intersection", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    name="check_line_intersection", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_TOPOLOGY_CHECK,
     description="线交检查", brief_description="逐对报告不同线要素的精确点交会，保留双方来源，只检查不改线",
     execution_modes=["workflow"], effects=["read"],
     overview="提取不同线要素间的十字、T形和端点接触。每个要素对的同一 XY 仅输出一次，"
@@ -1252,7 +1252,7 @@ CHECK_LINE_INTERSECTION_METADATA = OperatorMetadata(
 )
 
 CHECK_DANGLING_POINTS_METADATA = OperatorMetadata(
-    name="check_dangling_points", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    name="check_dangling_points", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_TOPOLOGY_CHECK,
     description="悬点检查", brief_description="报告平面线网中度为一的端点及原始来源，不自动改线",
     execution_modes=["workflow"], effects=["read"],
     overview="按真实 XY 交点打断并去除重合段后计算节点度，将悬挂端点精确关联回原始要素。"
@@ -1268,7 +1268,7 @@ CHECK_DANGLING_POINTS_METADATA = OperatorMetadata(
 )
 
 CHECK_LINE_PROXIMITY_METADATA = OperatorMetadata(
-    name="check_line_proximity", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    name="check_line_proximity", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_TOPOLOGY_CHECK,
     description="近接检查", brief_description="报告未精确接上的源悬点与容差内全部参考线，只检查不移动几何",
     execution_modes=["workflow"], effects=["read"],
     overview="复用源线网悬点提取；已精确落在任一参考线上的点不再报告。"
@@ -1287,7 +1287,7 @@ CHECK_LINE_PROXIMITY_METADATA = OperatorMetadata(
 )
 
 CHECK_POLYGON_OVERLAP_METADATA = OperatorMetadata(
-    name="check_polygon_overlap", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    name="check_polygon_overlap", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_TOPOLOGY_CHECK,
     description="面叠检查", brief_description="逐对提取面图层正面积重叠，保留双方来源标识",
     execution_modes=["workflow"], effects=["read"],
     overview="检查单图层内有效二维面的重叠，每对要素输出一行重叠面、双方来源标识及面积。"
@@ -1303,7 +1303,7 @@ CHECK_POLYGON_OVERLAP_METADATA = OperatorMetadata(
 )
 
 CHECK_POLYGON_GAP_METADATA = OperatorMetadata(
-    name="check_polygon_gap", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    name="check_polygon_gap", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_TOPOLOGY_CHECK,
     description="面缝检查", brief_description="检查显式覆盖范围内未被面图层覆盖的区域，只报告不填补",
     execution_modes=["workflow"], effects=["read"],
     overview="将覆盖范围与待检查面分别整体融合，计算范围减覆盖，每个独立缺口输出一行面及面积。"
@@ -1319,7 +1319,7 @@ CHECK_POLYGON_GAP_METADATA = OperatorMetadata(
 )
 
 CHECK_GEOMETRY_METADATA = OperatorMetadata(
-    name="check_geometry", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    name="check_geometry", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_PREPARATION,
     description="几何检查", brief_description="逐要素检查平面几何有效性，保留原要素并标注原因",
     execution_modes=["workflow"], effects=["read"],
     overview="按 GEOS 平面有效性规则检查每个几何，在原数据副本中增加有效性和原因字段。"
@@ -1336,7 +1336,7 @@ CHECK_GEOMETRY_METADATA = OperatorMetadata(
 )
 
 REPAIR_GEOMETRY_METADATA = OperatorMetadata(
-    name="repair_geometry", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    name="repair_geometry", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_PREPARATION,
     description="几何修复", brief_description="修复单个无效几何，完整保留多部件及退化部分",
     execution_modes=["workflow"], effects=["read"],
     overview="以 linework 方法修复二维无效几何，保留原边线形成的多部件、几何集合和退化线点。"
@@ -1349,7 +1349,7 @@ REPAIR_GEOMETRY_METADATA = OperatorMetadata(
 )
 
 SNAP_GEOMETRY_METADATA = OperatorMetadata(
-    name="snap_geometry", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_GEOMETRY,
+    name="snap_geometry", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_PREPARATION,
     description="参考吸附", brief_description="按显式容差吸向固定参考顶点，保留输入属性和行数",
     execution_modes=["workflow"], effects=["read"],
     overview="每个输入原始顶点按原始位置一次匹配最近参考顶点，等距按参考 X、再 Y 升序决胜。参考保持固定，保留输入属性、行顺序和坐标系。"
@@ -1368,7 +1368,7 @@ SNAP_GEOMETRY_METADATA = OperatorMetadata(
 POLYGONIZE_METADATA = OperatorMetadata(
     name="polygonize",
     type=OperatorType.SPATIAL,
-    category=OperatorCategory.VECTOR_GEOMETRY,
+    category=OperatorCategory.VECTOR_NETWORK,
     description="拓扑构面",
     brief_description="从二维线网提取闭合面，并输出未参与构面的线诊断",
     execution_modes=["workflow"],
@@ -1401,7 +1401,7 @@ POLYGONIZE_METADATA = OperatorMetadata(
 BUFFER_METADATA = OperatorMetadata(
     name="buffer",
     type=OperatorType.SPATIAL,
-    category=OperatorCategory.VECTOR_GEOMETRY,
+    category=OperatorCategory.VECTOR_CONSTRUCTION,
     description="缓冲区分析",
     brief_description="在几何对象周围创建指定距离的缓冲区,常用于影响范围分析和邻域查询",
     execution_modes=["workflow"],
@@ -1571,7 +1571,7 @@ UNION_METADATA = OperatorMetadata(
 CENTROID_METADATA = OperatorMetadata(
     name="centroid",
     type=OperatorType.SPATIAL,
-    category=OperatorCategory.VECTOR_GEOMETRY,
+    category=OperatorCategory.VECTOR_CONSTRUCTION,
     description="计算质心",
     brief_description="计算几何对象的质心(中心点),常用于位置标注和点化处理",
     execution_modes=["workflow"],
@@ -1672,7 +1672,7 @@ DIFFERENCE_METADATA = OperatorMetadata(
 SIMPLIFY_METADATA = OperatorMetadata(
     name="simplify",
     type=OperatorType.SPATIAL,
-    category=OperatorCategory.VECTOR_GEOMETRY,
+    category=OperatorCategory.VECTOR_PREPARATION,
     description="简化几何",
     brief_description="简化几何对象的顶点数量,减小数据量,常用于地图制图和性能优化",
     execution_modes=["workflow"],
@@ -1736,7 +1736,7 @@ SIMPLIFY_METADATA = OperatorMetadata(
 CONVEX_HULL_METADATA = OperatorMetadata(
     name="convex_hull",
     type=OperatorType.SPATIAL,
-    category=OperatorCategory.VECTOR_GEOMETRY,
+    category=OperatorCategory.VECTOR_CONSTRUCTION,
     description="凸包",
     brief_description="计算几何对象的最小凸包(凸多边形),常用于范围分析和形状概括",
     execution_modes=["workflow"],
@@ -1782,7 +1782,7 @@ CONVEX_HULL_METADATA = OperatorMetadata(
 DISSOLVE_METADATA = OperatorMetadata(
     name="dissolve",
     type=OperatorType.SPATIAL,
-    category=OperatorCategory.VECTOR_GEOMETRY,
+    category=OperatorCategory.VECTOR_PREPARATION,
     description="融合几何",
     brief_description="将多个几何对象融合为一个（或按字段分组融合），消除重叠，常用于缓冲区合并后的去重",
     execution_modes=["workflow"],
@@ -1836,9 +1836,9 @@ DISSOLVE_METADATA = OperatorMetadata(
 ENVELOPE_METADATA = OperatorMetadata(
     name="envelope",
     type=OperatorType.SPATIAL,
-    category=OperatorCategory.VECTOR_GEOMETRY,
-    description="最小外接矩形",
-    brief_description="计算几何对象的最小外接矩形(MBR),常用于快速范围查询和空间索引",
+    category=OperatorCategory.VECTOR_CONSTRUCTION,
+    description="外包矩形",
+    brief_description="计算几何对象的轴对齐外包矩形(MBR),常用于快速范围查询和空间索引",
     execution_modes=["workflow"],
     effects=["read"],
 
