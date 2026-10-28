@@ -1,3 +1,4 @@
+import json
 import os
 import signal
 import shutil
@@ -70,6 +71,14 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
             """,
         )
         subprocess.run(["git", "init", "-q"], cwd=self.repository, check=True)
+        # This disposable repository is removed synchronously by tearDown.
+        # Detached maintenance must not write into it after a commit returns.
+        for key, value in (("maintenance.auto", "false"), ("gc.auto", "0")):
+            subprocess.run(
+                ["git", "config", "--local", key, value],
+                cwd=self.repository,
+                check=True,
+            )
         subprocess.run(
             ["git", "config", "user.email", "online@example.invalid"],
             cwd=self.repository,
@@ -100,6 +109,23 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
         path = self.bin / name
         path.write_text(textwrap.dedent(content).lstrip(), encoding="utf-8")
         path.chmod(0o755)
+
+    def test_fixture_commits_leave_no_background_git_writer(self) -> None:
+        trace = self.root / "git-processes.jsonl"
+        subprocess.run(
+            ["git", "commit", "--allow-empty", "-qm", "lifecycle probe"],
+            cwd=self.repository,
+            env=dict(os.environ, GIT_TRACE2_EVENT=str(trace)),
+            check=True,
+        )
+        events = [json.loads(line) for line in trace.read_text().splitlines()]
+        writers = [
+            event["argv"]
+            for event in events
+            if event.get("event") == "child_start"
+            and any(argument in ("maintenance", "gc") for argument in event.get("argv", []))
+        ]
+        self.assertEqual(writers, [], "temporary repositories must have no unowned Git maintenance writer")
 
     def run_check(self, **overrides: str) -> subprocess.CompletedProcess[str]:
         environment = dict(os.environ)
