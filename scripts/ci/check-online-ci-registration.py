@@ -2832,11 +2832,11 @@ def validate_raster_cut_fill(repository: Path, registered: set[str]) -> None:
                                                         'input.before',
                                                         'input.after',
                                                         'output.save',
-                                                        'cut/fill exact save/derive operation differs',
+                                                        'lineage_observer.validate(facts,expected,public=True)',
                                                         'record_lineage',
                                                         'verify_lineage_archive',
-                                                        'cut-fill-lineage',
-                                                        'frozen cut/fill lineage evidence changed',
+                                                        'lineage_observer.collect',
+                                                        'lineage_observer.verify_archive',
                                                         'validate_preview',
                                                         'validate_item',
                                                         'raster.wait_lineage',
@@ -2950,6 +2950,23 @@ def validate_raster_tangential_curvature(repository: Path, registered: set[str])
         path=repository/relative
         if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
             raise RegistrationError('DEM curvature persistence contract is incomplete: '+relative)
+
+
+def validate_raster_lineage_observer(repository: Path, registered: set[str]) -> None:
+    if not registered.intersection({'raster-cut-fill-persistence','raster-tpi-persistence'}):return
+    required={
+        'scripts/utils/online_raster_lineage.py': ('BEGIN READ ONLY;', 'statement_timeout', 'LIMIT 1', 'public observation must hide internal operations', 'actor_principal_id', 'workflow_matches', "public=True", "public=False", 'closed(public, expected)', 'closed(internal, expected)', 'validate_container', 'StartedAt', 'read_error', "'prepare'"),
+        'scripts/test/online-raster-lineage_test.py': ('test_public_null_and_complete_internal_are_both_required', 'test_public_cannot_expose_operations_or_omit_them', 'test_internal_null_empty_missing_extra_and_wrong_operation_rejected', 'test_current_execution_identity_and_workflow_are_required', 'test_container_identity_restart_labels_and_database_cannot_change'),
+    }
+    for path,fragments in required.items():
+        text=(repository/path).read_text()
+        if any(fragment not in text for fragment in fragments):raise RegistrationError('bounded raster internal lineage evidence incomplete: '+path)
+    make=(repository/'Makefile').read_text()
+    for prefix in ('cut-fill','tpi'):
+        gate=(repository/f'scripts/test/online-hosted-raster-{prefix}-gate.sh').read_text()
+        if 'run_logged python3 scripts/utils/online_raster_lineage.py prepare' not in gate:raise RegistrationError('raster owner receipt preparation omitted')
+        block=make.split(f'test-raster-{prefix}-online-runner:',1)[1].split('\n.PHONY:',1)[0]
+        if 'scripts/test/online-raster-lineage_test.py' not in block:raise RegistrationError('raster observer regression missing from standard gate')
 
 
 def validate_raster_tpi(repository: Path, registered: set[str]) -> None:
@@ -4427,6 +4444,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_tangential_curvature(repository, registered)
     validate_raster_plan_curvature(repository, registered)
     validate_raster_tpi(repository, registered)
+    validate_raster_lineage_observer(repository, registered)
     validate_raster_flow_length_upstream_d8_profile(repository, registered)
     validate_raster_stream_order_d8_profile(repository, registered)
     validate_raster_stream_shreve_d8_profile(repository, registered)

@@ -3,7 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 m=importlib.import_module('scripts.test.raster-cut-fill-persistence-online')
-ENV={'ADDP_ONLINE_TEST_TENANT_ID':'2','ADDP_ONLINE_CUT_FILL_NFS_ENGINE_ID':'3','ADDP_ONLINE_TEST_RUN_ID':'cut-fill-123-1','ADDP_ONLINE_TEST_TIMEOUT_SECONDS':'0.05'}
+ENV={'ONLINE_SUITE':'raster-cut-fill-persistence','ADDP_ONLINE_TEST_TENANT_ID':'2','ADDP_ONLINE_CUT_FILL_NFS_ENGINE_ID':'3','ADDP_ONLINE_TEST_RUN_ID':'cut-fill-123-1','ADDP_ONLINE_TEST_TIMEOUT_SECONDS':'0.05'}
 
 def preview(name):return {'type':'pandas_dataframe','schema':[{'name':n,'type':'int64' if i<6 else 'Float64'} for i,n in enumerate(m.fixture.COLUMNS)],'row_count':1,'preview_limit':50,'preview_rows':[m.fixture.expected_row(name)],'truncated':False}
 
@@ -79,14 +79,18 @@ class Client:
             data={'edges':edges}
         elif '/meta/scan/runs?' in path:data={'total':len(self.scans),'items':[{'execution_id':s} for s in self.scans]}
         else:raise AssertionError((method,path,body))
-        return SimpleNamespace(payload=copy.deepcopy(data))
+        result=copy.deepcopy(data)
+        if method=='GET' and ('/develop/executions/' in path or '/monitor/executions/' in path):
+            facts=result.get('metadata',{}).get('lineage_facts')
+            if isinstance(facts,dict):facts['operations']=None
+        return SimpleNamespace(payload=result)
 
 
 class CutFillPersistenceTest(unittest.TestCase):
     def run_scene(self,client=None,physical_runner=physical):
         with tempfile.TemporaryDirectory() as root:
             env={**ENV,'ADDP_ONLINE_ARTIFACT_DIR':root};client=client or Client()
-            report=m.run_scenario(Path('.'),env,client,physical_runner,diagnostic)
+            report=m.run_scenario(Path('.'),env,client,physical_runner,diagnostic,lambda e,i,t,p,w: copy.deepcopy(client.executions[i]['metadata']['lineage_facts']))
             self.assertEqual(len(list((Path(root)/'cut-fill-csv').glob('*.csv'))),12)
             self.assertEqual(len(list((Path(root)/'cut-fill-lineage').glob('*.json'))),12)
             return report,client
@@ -132,8 +136,10 @@ class CutFillPersistenceTest(unittest.TestCase):
                     for reorder in (False,True):
                         facts=execution['metadata']['lineage_facts']
                         if reorder:facts['inputs'].reverse();facts['operations'][0]['input_ports'].reverse()
-                        actual,scan,result=m.validate_success(execution,bindings,target)
-                        self.assertEqual(actual,facts);self.assertEqual(scan,'scan-'+name)
+                        m.lineage_observer.validate(facts,m.expected_lineage(bindings,target),public=False)
+                        public=copy.deepcopy(execution);public['metadata']['lineage_facts']['operations']=None
+                        actual,scan,result=m.validate_success(public,bindings,target)
+                        self.assertEqual(actual,{**facts,'operations':None});self.assertEqual(scan,'scan-'+name)
         ordinary,_,_=self.success_fixture();reversed_case,_,_=self.success_fixture('reversed.csv')
         self.assertNotEqual(ordinary['metadata']['lineage_facts']['inputs'],reversed_case['metadata']['lineage_facts']['inputs'])
 
@@ -167,7 +173,7 @@ class CutFillPersistenceTest(unittest.TestCase):
         faults=('swap-resources','swap-ports','missing-source','duplicate-port','extra-source','no-ports','wrong-source','wrong-schema','extra-envelope','missing-operations','extra-operation','operation-role','operation-extra-source','operation-duplicate','wrong-kind','wrong-operator','wrong-output-port','wrong-operation-output','wrong-mode','extra-output','wrong-target','execution-output','no-scan')
         for fault in faults:
             execution,bindings,target=self.success_fixture();mutate(execution,fault)
-            with self.subTest(fault=fault),self.assertRaises(m.SuiteError):m.validate_success(execution,bindings,target)
+            with self.subTest(fault=fault),self.assertRaises(m.SuiteError):m.lineage_observer.validate(execution['metadata']['lineage_facts'],m.expected_lineage(bindings,target),public=False);execution['metadata']['lineage_facts']['operations']=None;m.validate_success(execution,bindings,target)
 
     def test_failure_freezes_closed_actual_and_expected_facts_before_rejection(self):
         class Bad(Client):
@@ -180,18 +186,18 @@ class CutFillPersistenceTest(unittest.TestCase):
                 return result
         with tempfile.TemporaryDirectory() as root:
             env={**ENV,'ADDP_ONLINE_ARTIFACT_DIR':root}
-            with self.assertRaises(m.SuiteError):m.run_scenario(Path('.'),env,Bad(),physical,diagnostic)
+            with self.assertRaises(m.SuiteError):m.run_scenario(Path('.'),env,Bad(),physical,diagnostic,lambda *args: self.success_fixture()[0]['metadata']['lineage_facts'])
             path=Path(root)/'cut-fill-lineage'/'mixed.csv.json';data=json.loads(path.read_text())
             self.assertEqual(data['execution_id'],'exec-mixed.csv');self.assertEqual(data['case'],'mixed.csv')
-            self.assertEqual([v['port'] for v in data['expected']['inputs']],['input.after','input.before'])
-            self.assertNotEqual(data['actual']['inputs'][0]['locator'],data['expected']['inputs'][0]['locator'])
+            self.assertEqual([v['port'] for v in data['expected_internal']['inputs']],['input.after','input.before'])
+            self.assertNotEqual(data['actual_public']['inputs'][0]['locator'],data['expected_internal']['inputs'][0]['locator'])
             self.assertNotIn('NEVER_ARCHIVE',path.read_text());self.assertFalse((Path(root)/'cut-fill-csv').exists())
 
     def test_lineage_evidence_is_immutable_and_rejects_symlinks_or_extra_inventory(self):
         for fault in ('overwrite','extra','symlink'):
             execution,bindings,target=self.success_fixture()
             with tempfile.TemporaryDirectory() as root:
-                env={**ENV,'ADDP_ONLINE_ARTIFACT_DIR':root};proof=m.record_lineage(env,'owned','mixed.csv',bindings,target,execution)
+                env={**ENV,'ADDP_ONLINE_ARTIFACT_DIR':root};raw=copy.deepcopy(execution['metadata']['lineage_facts']);execution['metadata']['lineage_facts']['operations']=None;proof=m.record_lineage(env,'owned','mixed.csv',bindings,target,execution,2,33,{},lambda *args: raw)
                 path=Path(root)/proof['path'];cases=[{'name':'mixed.csv','lineage_evidence':proof}]
                 m.verify_lineage_archive(env,cases)
                 for field,bad in (('path','other.json'),('size_bytes',True),('sha256','bad')):

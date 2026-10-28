@@ -712,7 +712,7 @@ test-raster-profile-curvature-online-runner: ## 验证DEM 剖面曲率独立 T4�
 .PHONY: test-raster-cut-fill-online-runner
 test-raster-cut-fill-online-runner: ## 验证DEM 双DEM填挖方独立 T4、完整 CSV 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-cut-fill-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-cut-fill-persistence-online_test.py scripts/test/online-raster-cut-fill-fixture_test.py scripts/test/online-hosted-raster-cut-fill-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_cut_fill_requires_manual_nfs_complete_csv_archive_and_regressions
+	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_two_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-cut-fill-persistence-online_test.py scripts/test/online-raster-cut-fill-fixture_test.py scripts/test/online-hosted-raster-cut-fill-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_cut_fill_requires_manual_nfs_complete_csv_archive_and_regressions
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
 .PHONY: test-raster-tangential-curvature-online-runner
@@ -729,7 +729,7 @@ test-raster-plan-curvature-online-runner: ## 验证DEM 平面曲率独立 T4、�
 .PHONY: test-raster-tpi-online-runner
 test-raster-tpi-online-runner: ## 验证DEM 地形位置指数独立 T4、完整 COG 与隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-tpi-gate.sh
-	@python3 -m unittest scripts/test/changed-gate_test.py scripts/test/raster-tpi-persistence-online_test.py scripts/test/online-raster-tpi-fixture_test.py scripts/test/online-hosted-raster-tpi-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_tpi_requires_manual_nfs_exact_pixels_archive_and_regressions
+	@python3 -m unittest scripts/test/online-raster-lineage_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_two_raster_suites_require_bounded_internal_lineage_observer scripts/test/changed-gate_test.py scripts/test/raster-tpi-persistence-online_test.py scripts/test/online-raster-tpi-fixture_test.py scripts/test/online-hosted-raster-tpi-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_tpi_requires_manual_nfs_exact_pixels_archive_and_regressions
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
 .PHONY: test-raster-hand-d8-online-runner

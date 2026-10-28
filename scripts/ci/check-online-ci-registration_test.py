@@ -489,11 +489,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                                         'input.before',
                                                         'input.after',
                                                         'output.save',
-                                                        'cut/fill exact save/derive operation differs',
+                                                        'lineage_observer.validate(facts,expected,public=True)',
                                                         'record_lineage',
                                                         'verify_lineage_archive',
-                                                        'cut-fill-lineage',
-                                                        'frozen cut/fill lineage evidence changed',
+                                                        'lineage_observer.collect',
+                                                        'lineage_observer.verify_archive',
                                                         'validate_preview',
                                                         'validate_item',
                                                         'raster.wait_lineage',
@@ -594,6 +594,23 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 with self.subTest(relative=relative,fragment=fragment),self.assertRaises(CHECK.RegistrationError):
                     CHECK.validate_raster_tangential_curvature(self.repository,{'raster-tangential-curvature-persistence'})
                 target.write_text(original)
+
+    def test_two_raster_suites_require_bounded_internal_lineage_observer(self):
+        source=SCRIPT.parents[2]
+        paths=['scripts/utils/online_raster_lineage.py','scripts/test/online-raster-lineage_test.py','Makefile',
+               'scripts/test/online-hosted-raster-cut-fill-gate.sh','scripts/test/online-hosted-raster-tpi-gate.sh']
+        for relative in paths:
+            target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
+        CHECK.validate_raster_lineage_observer(self.repository,{'raster-tpi-persistence'})
+        mutations=[(paths[0],'BEGIN READ ONLY;'),(paths[0],'actor_principal_id'),(paths[0],'workflow_matches'),
+                   (paths[0],'closed(internal, expected)'),(paths[1],'test_public_cannot_expose_operations_or_omit_them'),
+                   (paths[3],'run_logged python3 scripts/utils/online_raster_lineage.py prepare'),
+                   (paths[4],'run_logged python3 scripts/utils/online_raster_lineage.py prepare'),
+                   ('Makefile','scripts/test/online-raster-lineage_test.py')]
+        for relative,fragment in mutations:
+            target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
+            with self.subTest(relative=relative,fragment=fragment),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_lineage_observer(self.repository,{'raster-tpi-persistence'})
+            target.write_text(original)
 
     def test_tpi_requires_manual_nfs_exact_pixels_archive_and_regressions(self):
         source=SCRIPT.parents[2]

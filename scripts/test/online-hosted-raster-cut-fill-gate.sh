@@ -44,6 +44,7 @@ run_logged docker tag python:3.11-slim localhost:5001/python:3.11-slim
 run_logged docker push localhost:5001/python:3.11-slim
 infra_owned=1
 run_logged bash scripts/infra/up.sh
+run_logged python3 scripts/utils/online_raster_lineage.py prepare
 run_logged python3 business/scripts/online-raster-cut-fill-fixture.py start
 CUT_FILL_ROOT=$(cat "$ADDP_ONLINE_SECRET_DIR/cut-fill-root")
 application_owned=1

@@ -2,7 +2,7 @@ import copy,hashlib,importlib,json,tempfile,unittest
 from pathlib import Path
 from types import SimpleNamespace
 m=importlib.import_module('scripts.test.raster-tpi-persistence-online')
-ENV={'ADDP_ONLINE_TEST_TENANT_ID':'2','ADDP_ONLINE_TPI_NFS_ENGINE_ID':'3','ADDP_ONLINE_TEST_RUN_ID':'tpi-123-1','ADDP_ONLINE_TEST_TIMEOUT_SECONDS':'0.05'}
+ENV={'ONLINE_SUITE':'raster-tpi-persistence','ADDP_ONLINE_TEST_TENANT_ID':'2','ADDP_ONLINE_TPI_NFS_ENGINE_ID':'3','ADDP_ONLINE_TEST_RUN_ID':'tpi-123-1','ADDP_ONLINE_TEST_TIMEOUT_SECONDS':'0.05'}
 
 def physical(repository,env,names):
     targets={};archive={};count=(m.fixture.HEIGHT-2)*(m.fixture.WIDTH-2)
@@ -84,11 +84,19 @@ class Client:
             data={'edges':edges}
         elif '/meta/scan/runs?' in path:data={'total':len(self.scans),'items':[{'execution_id':s} for s in self.scans]}
         else:raise AssertionError((method,path,body))
-        return SimpleNamespace(payload=copy.deepcopy(data))
+        result=copy.deepcopy(data)
+        if method=='GET' and ('/develop/executions/' in path or '/monitor/executions/' in path):
+            facts=result.get('metadata',{}).get('lineage_facts')
+            if isinstance(facts,dict):facts['operations']=None
+        return SimpleNamespace(payload=result)
 
 
 class TpiPersistenceTest(unittest.TestCase):
-    def run_scene(self,client=None,physical_runner=physical):return m.run_scenario(Path('.'),ENV,client or Client(),physical_runner,diagnostic)
+    def run_scene(self,client=None,physical_runner=physical):
+        with tempfile.TemporaryDirectory() as root:
+            client=client or Client();env={**ENV,'ADDP_ONLINE_ARTIFACT_DIR':root}
+            return m.run_scenario(Path('.'),env,client,physical_runner,diagnostic,
+                                 lambda e,i,t,p,w: copy.deepcopy(client.executions[i]['metadata']['lineage_facts']))
 
     def test_thirteen_exact_dags_required_band_unit_and_original_save(self):
         self.assertEqual(len(m.fixture.TARGETS),13);self.assertEqual(len(m.FAILURES),13)
@@ -161,6 +169,18 @@ class TpiPersistenceTest(unittest.TestCase):
             elif fault=='operation':changed['operations'][0]['input_ports']=[]
             else:changed['inputs'].append(copy.deepcopy(changed['inputs'][0]))
             with self.subTest(fault=fault),self.assertRaises(m.SuiteError):m.validate_lineage(changed,source,target)
+
+    def test_tpi_rejection_freezes_public_and_internal_difference_before_failure(self):
+        client=Client()
+        def reader(env,identifier,tenant,principal,workflow):
+            facts=copy.deepcopy(client.executions[identifier]['metadata']['lineage_facts']);facts['operations']=None;return facts
+        with tempfile.TemporaryDirectory() as root:
+            env={**ENV,'ADDP_ONLINE_ARTIFACT_DIR':root}
+            with self.assertRaises(m.SuiteError):m.run_scenario(Path('.'),env,client,physical,diagnostic,reader)
+            path=Path(root)/'tpi-lineage/tpi.cog.tif.json';value=json.loads(path.read_text())
+            self.assertEqual(value['actual_internal']['operations'],{'invalid_type':'NoneType'})
+            self.assertEqual(value['actual_public']['operations'],{'invalid_type':'NoneType'})
+            self.assertTrue(value['expected_internal']['operations']);self.assertEqual(len(client.executions),1)
 
     def test_failed_execution_cannot_add_active_derive_or_rewrite_language(self):
         for fault in ('lineage','language'):

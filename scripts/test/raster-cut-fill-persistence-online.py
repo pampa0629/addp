@@ -13,6 +13,7 @@ SubmittedLanguageClient=importlib.import_module('scripts.test.raster-disk-pressu
 support=raster.support
 obj,array,positive,SuiteError=raster.obj,raster.array,raster.positive,raster.SuiteError
 SUITE=fixture.SUITE
+lineage_observer=importlib.import_module('scripts.utils.online_raster_lineage')
 
 class DiagnosticClient(rasterize.DiagnosticClient):
     diagnostic_name='cut-fill-submission-error.json'
@@ -163,16 +164,7 @@ def validate_success(execution,bindings,target):
             actual[port]=ref
         if actual!={ref['port']:ref for ref in expected[side]}:
             raise SuiteError('cut/fill role-bound source/target lineage differs')
-    operations=[]
-    for raw in array(facts['operations'],'operations'):
-        operation=dict(obj(raw,'operation'))
-        for side in ('input_ports','output_ports'):
-            ports=array(operation.get(side),side)
-            if any(not isinstance(p,str) or not p for p in ports) or len(set(ports))!=len(ports):
-                raise SuiteError('duplicate or missing cut/fill operation port')
-            operation[side]=sorted(ports)
-        operations.append(operation)
-    if operations!=expected['operations']:raise SuiteError('cut/fill exact save/derive operation differs')
+    lineage_observer.validate(facts,expected,public=True)
     result=obj(metadata.get('result'),'result');scans=array(result.get('meta_scan_runs'),'scans')
     if (len(scans)!=1 or scans[0].get('status')!='submitted' or scans[0].get('target_locator')!=target
         or not isinstance(scans[0].get('execution_id'),str) or not scans[0]['execution_id']):
@@ -180,49 +172,13 @@ def validate_success(execution,bindings,target):
     return facts,scans[0]['execution_id'],result
 
 
-def record_lineage(env,identifier,name,bindings,target,execution):
-    """Freeze only public execution/lineage contract fields, including on rejection."""
-    if name not in fixture.TARGETS:raise SuiteError('unknown exact cut/fill lineage case')
-    def closed(value,fields):
-        if not isinstance(value,dict):return {'invalid_type':type(value).__name__}
-        def public(key,item):
-            if key in ('input_ports','output_ports'):
-                return item if isinstance(item,list) and all(isinstance(p,str) for p in item) else {'invalid_type':type(item).__name__}
-            if key=='item_id':return item if type(item) is int else {'invalid_type':type(item).__name__}
-            return item if isinstance(item,str) else {'invalid_type':type(item).__name__}
-        return {**{k:public(k,value[k]) for k in fields if k in value},
-                'unrecognized_fields':sorted(set(value)-set(fields))}
-    def refs(values):
-        return [closed(v,('port','locator','write_mode','item_id','item_fingerprint')) for v in values] if isinstance(values,list) else {'invalid_type':type(values).__name__}
-    metadata=execution.get('metadata');metadata=metadata if isinstance(metadata,dict) else {}
-    facts=metadata.get('lineage_facts');actual={'invalid_type':type(facts).__name__}
-    if isinstance(facts,dict):
-        actual={'schema_version':closed(facts,('schema_version',)).get('schema_version'),'inputs':refs(facts.get('inputs')),'outputs':refs(facts.get('outputs')),
-                'operations':[closed(v,('kind','operator','input_ports','output_ports')) for v in facts.get('operations',[])] if isinstance(facts.get('operations'),list) else {'invalid_type':type(facts.get('operations')).__name__},
-                'unrecognized_fields':sorted(set(facts)-{'schema_version','inputs','outputs','operations'})}
-    outputs=execution.get('outputs');public_outputs={'invalid_type':type(outputs).__name__}
-    if isinstance(outputs,dict):
-        public_outputs={key:closed(value.get('resource') if isinstance(value,dict) else value,('locator','type','write_mode','item_id')) for key,value in outputs.items()}
-    value={'schema_version':'addp.raster-cut-fill-lineage/v1','case':name,'execution_id':identifier,
-           'expected':expected_lineage(bindings,target),'actual':actual,'execution_outputs':public_outputs}
-    directory=Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'cut-fill-lineage'
-    if directory.is_symlink():raise SuiteError('lineage archive directory must not be symlink')
-    directory.mkdir(parents=True,exist_ok=True);path=directory/(name+'.json')
-    with path.open('xb') as stream:stream.write((json.dumps(value,ensure_ascii=False,sort_keys=True,indent=2)+'\n').encode())
-    return {'path':'cut-fill-lineage/'+path.name,'size_bytes':path.stat().st_size,'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
+def record_lineage(env,identifier,name,bindings,target,execution,tenant,principal,workflow,reader):
+    return lineage_observer.collect(env,SUITE,identifier,name,expected_lineage(bindings,target),execution,
+                                    tenant,principal,workflow,reader)
 
 
 def verify_lineage_archive(env,cases):
-    directory=Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'cut-fill-lineage'
-    if directory.is_symlink() or not directory.is_dir() or {p.name for p in directory.iterdir()}!={c['name']+'.json' for c in cases}:
-        raise SuiteError('lineage archive inventory differs')
-    for case in cases:
-        proof=case['lineage_evidence'];path=directory/(case['name']+'.json')
-        if (proof.get('path')!='cut-fill-lineage/'+path.name or type(proof.get('size_bytes')) is not int
-            or proof['size_bytes']<=0 or not isinstance(proof.get('sha256'),str) or not re.fullmatch('[0-9a-f]{64}',proof['sha256'])):
-            raise SuiteError('cut/fill lineage archive receipt differs')
-        if path.is_symlink() or not path.is_file() or path.stat().st_size!=proof['size_bytes'] or hashlib.sha256(path.read_bytes()).hexdigest()!=proof['sha256']:
-            raise SuiteError('frozen cut/fill lineage evidence changed')
+    lineage_observer.verify_archive(env,SUITE,cases)
 
 
 def validate_preview(result,name,geometry=None):
@@ -239,7 +195,7 @@ def validate_item(item,native,name):
     if item.get('item_type')!='file' or item.get('full_name')!='outputs/'+name or descriptor.get('format')!='csv':raise SuiteError('CSV item identity differs')
     return {'physical_size_bytes':physical_size,'meta_size_bytes':size}
 
-def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runner=invalid_diagnostic):
+def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runner=invalid_diagnostic,lineage_reader=lineage_observer.read_current):
     timeout=float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS','600'))
     tenant=positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'tenant')
     if tenant<=1:raise SuiteError('raster DEM cut/fill acceptance forbids the default tenant')
@@ -258,10 +214,11 @@ def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runne
     cases,names,previous,scans=[],[],{},[]
     for name in fixture.TARGETS:
         target=f'addp://engine/{engine}/path/outputs/{name}?type=file'
-        identifier=raster.submit(client,runtime,definition(sources,parent,name))
+        workflow=definition(sources,parent,name)
+        identifier=raster.submit(client,runtime,workflow)
         execution=raster.wait_execution(client,'develop',identifier,timeout)
         inputs=case_inputs(name);bindings={'input.before':sources[inputs[0]],'input.after':sources[inputs[1]]}
-        evidence=record_lineage(env,identifier,name,bindings,target,execution)
+        evidence=record_lineage(env,identifier,name,bindings,target,execution,tenant,int(identity['principal_id']),workflow,lineage_reader)
         facts,scan,result=validate_success(execution,bindings,target)
         if scan in scans:raise SuiteError('automatic output scans must be distinct')
         scans.append(scan)

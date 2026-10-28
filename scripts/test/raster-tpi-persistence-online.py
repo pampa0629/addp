@@ -19,6 +19,7 @@ source_edges=importlib.import_module('scripts.test.raster-disk-pressure-online')
 support=raster.support
 obj,array,positive,SuiteError=raster.obj,raster.array,raster.positive,raster.SuiteError
 SUITE=fixture.SUITE
+lineage_observer=importlib.import_module('scripts.utils.online_raster_lineage')
 class TpiProgress(importlib.import_module('scripts.test.raster-profile-curvature-persistence-online').CurvatureProgress):
     SUITES={SUITE:'tpi-progress.json'}
     def snapshot(self):
@@ -126,14 +127,18 @@ def check_physical(native,previous):
         if evidence!={'path':'tpi-cogs/'+name,'size_bytes':fact['size_bytes'],'sha256':fact['sha256']}:raise SuiteError('original COG archive byte identity differs')
 
 
-def validate_lineage(facts,source,target):
+def expected_lineage(source,target):
     expected={'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.source','locator':source}],
         'outputs':[{'port':'output.save','locator':target,'write_mode':'create'}],
         'operations':[{'kind':'derive','operator':'raster_save','input_ports':['input.source'],'output_ports':['output.save']}]}
-    if facts!=expected:raise SuiteError('TPI exact source-port/create/derive facts differ')
+    return expected
 
 
-def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runner=invalid_diagnostic):
+def validate_lineage(facts,source,target):
+    lineage_observer.validate(facts,expected_lineage(source,target),public=False)
+
+
+def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runner=invalid_diagnostic,lineage_reader=lineage_observer.read_current):
     timeout=float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS','600'))
     progress=TpiProgress(env,SUITE)
     tenant=positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'tenant')
@@ -157,11 +162,15 @@ def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runne
         expectation=fixture.artifact_expectation(name)
         target=f'addp://engine/{engine}/path/outputs/{name}?type=file'
         with progress.stage('execution',case_index):
-            identifier=raster.submit(client,runtime,definition(sources,parent,name))
+            workflow=definition(sources,parent,name)
+            identifier=raster.submit(client,runtime,workflow)
             execution=raster.wait_execution(client,'develop',identifier,timeout)
             inputs=case_inputs(name)
+            inputs=case_inputs(name)
+            evidence=lineage_observer.collect(env,SUITE,identifier,name,expected_lineage(sources[inputs[0]],target),execution,
+                                               tenant,int(identity['principal_id']),workflow,lineage_reader)
             facts,scan=raster.validate_success(execution,[sources[n] for n in inputs],target,'create',expectation,resource_type='file')
-            validate_lineage(facts,sources[inputs[0]],target)
+            lineage_observer.validate(facts,expected_lineage(sources[inputs[0]],target),public=True)
             if scan in scans:raise SuiteError('automatic output scans must be distinct')
             scans.append(scan)
         with progress.stage('automatic_scan',case_index):
@@ -179,7 +188,7 @@ def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runne
             sizes=raster.strict_sizes(artifact,native['targets'][name],item,name)
         cases.append({'name':name,'execution_id':identifier,'automatic_scan_execution_id':scan,'target_locator':target,
             'target_item_id':item['id'],'size_evidence':sizes,'physical':native['targets'][name],
-            'lineage':[],'scan_identity':scan_identity,'monitor_verified':True})
+            'lineage':[],'lineage_evidence':evidence,'scan_identity':scan_identity,'monitor_verified':True})
     # Preserve every exact relation check, but let the ordinary collector work
     # while the other independent success chains run, rather than one tick each.
     for case_index,case in enumerate(cases,1):
@@ -222,6 +231,7 @@ def run_scenario(repository,env,client,physical_runner=physical,diagnostic_runne
         for name,item in items.items():
             if client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload!=before[name]:
                 raise SuiteError('source metadata changed')
+    lineage_observer.verify_archive(env,SUITE,cases)
     return {'schema_version':'addp.'+SUITE+'/v1','suite':SUITE,'result':'passed','run_id':env['ADDP_ONLINE_TEST_RUN_ID'],
         'identity':identity,'sources':sources,'source_scan_execution_id':source_scan,'source_unchanged':True,
         'cases':cases,'failed_parameters':failures,'stage_progress':progress.finish(),
