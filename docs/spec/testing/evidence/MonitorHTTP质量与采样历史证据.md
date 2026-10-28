@@ -296,3 +296,17 @@ Go编译命令成功后，先做一次完整资源预检，锁等待、读取／
 cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网络／卷及私有材料零残留。失败即停，不复用剩余时间、不自动重试或续窗，不运行Hosted、容量、定时、模型／工具或告警重演。未因这次CLI等待证据不足而修改HTTP产品或已确认的四秒规则，也未改缓存回收实现；2ffd确定性结果仍仅属于其相应层级，不迁移为本轮产品通过。
 
 本机归档由稳定临时指针`/tmp/addp-p19-http-product-window-df82aed91964`定位，包含原始窗口报告、failed-inspect-summary.json和evidence-manifest.json。runtime-report.json SHA256=`2da4262a248811ecc94a012a9a551c08082373fdb9a131e2555566d6e48c4ac7`。当前前置阻塞是完整资源扫描中的CLI列表等待；下一步应先只读复核已有等待记录、明确可归因范围及保持原预算的最小方案，不直接再次开启真实窗口。正式后端至页面闭环、缓存回收实际覆盖以及停源后历史读取等未验／另批范围如实保留。
+
+<a id="http-linux-ci-20261028-private-directory-recurrence"></a>
+
+## 2026-10-28 Linux HTTP T2目录消失复发：独立入口离线核对
+
+只读核对既有[Release/T2 attempt 1日志](https://github.com/pampa0629/addp/actions/runs/40660674352/job/122734708027)，源码`cd0c537d57eb7c3a704ec6cbadfc3bb3d8a41b73`；没有派发／重跑CI，没有新建本地环境。原始日志第936行HTTP完整预算JSON与本机提取文件逐字段一致：result=failed，elapsed_seconds=185.364465198，error_code=http_budget_sample_command_failed，failure_detail.stage=private_directory_size、kind=command_failed、exit_code=1、directory_error=path_disappeared，stderr_bytes=212；du命令0.024313秒、完整采样0.729208秒，**不是四秒超时**。failure_during_cleanup=false、inputs_unchanged=true、cleanup_verified=true、private_directory_removed=true；记录请求Go=0、Python=[0,0]，不能计为HTTP业务闭环通过。聚合Job122763262513传播该失败，不另计一次独立产品故障；其他自然成功不关闭此间歇失败。
+
+当前`metrics-http-budget.py`与失败源码的文件SHA256同为`4056b0d679c10ebcf272a072a5d8539635c7ea7e979af64e1d96d20f6fcacbcf`。Linux入口为Make `test-monitor-metrics MONITOR_METRICS_TEST_ARGS="--case=http-quality"` → metrics-http-budget.py → monitor-metrics-gate.sh，按整个当次WORK_DIR执行du；其go-cache、go-tmp、tmp均纳入该根目录，并由标准脚本在原生`go test -c ./processmetrics`之前设置GOCACHE／GOTMPDIR／TMPDIR。现有跨进程锁只覆盖采样与退出清理，并未将编译器内部文件生命周期纳入锁协议。
+
+本地`2ffd8eb30`回收修正属于另一条入口：monitor-http-local-gate.py复用monitor-traces-local-gate.py的reclaim_go_build_cache，仅保护显式删除当次源码.cache/go-build。Linux预算入口没有调用该函数，故不能用本地136项共享内核检查宣称已覆盖Linux目录消失。相反，Linux失败源码与当前HEAD都已包含同一共享回收内核（文件SHA256=`b3a934a250034eafaff1359b5afd4cb019fec7ce9285e2a01b0ec476a936dfe6`），进一步说明“包含修正提交”不能替代“执行路径覆盖”。本节也不把独立Linux故障与上一节本地CLI列表等待合并。
+
+原始stderr及缺失路径未保存；现有记录只能确认du遇到路径消失，不能唯一确定根目录、Go缓存、Go临时构建对象、其他短命文件或实际删除者。尚未改采样／编译生命周期，不忽略du、不排除目录、不缩小统计或放宽Linux原4 CPU／4 GiB／私有可写小于2 GiB／完整四秒／1200秒预算。下一批最小建议是先讨论封闭的缺失对象类别／身份摘要、根目录存在性及编译阶段单调边界取证，再修改对应规范和确定性门禁；不先猜测互斥范围，也不盲目重跑。
+
+本机离线材料位于`/tmp/addp-ci-20261028-100049`，原始job-122734708027.log SHA256=`ffeaef3b619ac392218fa8b5079e68639b83408a36ef82a3f1f91b67a48b4767`，提取文件HTTP_cd0_sampler_recurrence_raw_result.json。该核对只证明上述固定源码／单次CI失败与路径覆盖关系；未新增产品实现或真实验收，不运行Hosted、容量或定时。
