@@ -38,8 +38,8 @@ export async function loadDomainReferenceGroup(group, { domainId, view, hasPermi
   group.items = rows.map(row => {
    const target = byKey.get(`${row.source_type}:${row.source_identity}`)
    return { ...row, target, ownership: referenceOwnership(target, domainId) }
-  }).filter(row => row.ownership !== 'local')
-  // The owner total paginates all explicit references, not an external-target total.
+  })
+  // Retain every owner target so displayed references and pagination use one scope.
   group.total = Number(result.total) || 0
   group.status = 'ready'
  } catch (error) {

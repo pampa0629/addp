@@ -25,7 +25,7 @@ describe('domain overview contract', () => {
   await loadDomainReferenceGroup(state, { domainId: '31', view: 'inventory', hasPermission: () => false, read })
   expect(state.status).toBe('forbidden'); expect(read).not.toHaveBeenCalled()
  })
- it('filters same-domain references while preserving evidence, unavailable targets, and owner pagination', async () => {
+ it('keeps local references alongside external, public and unavailable targets with owner pagination', async () => {
   const state = group()
   const refs = ['11', '12', '13'].map(source_identity => ({ source_type: 'element', source_identity, evidence: [{ resource_name: 'Orders', revision_id: '123' }] }))
   await loadDomainReferenceGroup(state, { domainId: '31', view: 'inventory', hasPermission: () => true,
@@ -34,9 +34,18 @@ describe('domain overview contract', () => {
     { source_type: 'element', source_identity: '12', found: true, scope_type: 'tenant_common', entry: { id: 'entry', display_name: 'Public ID' } },
     { source_type: 'element', source_identity: '13', found: false }
    ] }) })
-  expect(state.items.map(row => row.ownership)).toEqual(['public', 'unavailable'])
+  expect(state.items.map(row => row.ownership)).toEqual(['local', 'public', 'unavailable'])
   expect(state.items[0].evidence[0].revision_id).toBe('123')
   expect(state.total).toBe(7)
+ })
+ it('does not turn an all-local owner page into an empty reference page', async () => {
+  const state = group(), read = vi.fn(async () => ({ data: [{ source_type: 'element', source_identity: '11', evidence: [] }], total: 6 }))
+  await loadDomainReferenceGroup(state, { domainId: '31', view: 'inventory', hasPermission: () => true, read,
+   resolve: async () => ({ results: [{ source_type: 'element', source_identity: '11', found: true, owner_domain_id: '31', entry: { id: 'local' } }] }) })
+  expect(state.items).toHaveLength(1)
+  expect(state.items[0].ownership).toBe('local')
+  expect(state.total).toBe(6)
+  expect(read).toHaveBeenCalledTimes(1)
  })
  it('ignores stale results after switching domains', async () => {
   const state = group(); let release

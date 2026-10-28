@@ -38,6 +38,8 @@ onBeforeUnmount(() => sections.forEach(section => { section.requestVersion++ }))
 <style scoped>
 p,li { color:var(--el-text-color-secondary); }
 .quality-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;}
-section {border:1px solid var(--el-border-color);padding:16px;border-radius:var(--el-border-radius-base);}
+section {min-width:0;overflow-wrap:anywhere;border:1px solid var(--el-border-color);padding:16px;border-radius:var(--el-border-radius-base);}
+ul {padding-inline-start:20px;line-height:1.6;}
+section :deep(.el-button){max-width:100%;white-space:normal;text-align:start;}
 @media(max-width:900px){.quality-grid{grid-template-columns:1fr;}}
 </style>

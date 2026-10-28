@@ -69,7 +69,7 @@
 | Enterprise Catalog | 企业资源目录 | 在各专业模块事实之上，对数据项、标准、指标、模型、服务和数据应用等企业资源建立稳定目录身份、业务语义关联、责任、治理状态、跨模块关系和权限感知发现视图的能力。 | `Catalog` 表示系统化登记和发现，不表示树形分类；不是 Engine Catalog、引擎资源树或资产目录的副本。 |
 | Catalog module | Catalog 模块 | ADDP 中实现 Enterprise Catalog 的独立 owner 模块。 | 除 System 和自身必需 Infra 外，不把其他业务模块可达性作为启动或 Ready 强依赖。 |
 | CatalogEntry | 企业资源目录条目 | Catalog 模块中代表一项企业资源的稳定目录身份。 | 可以绑定 Meta DataItem、Standard 标准或指标、Model 模型、Service 服务、Workbench 数据应用等专业资源；业务语义、责任和治理历史随该身份延续。 |
-| domain overview | 业务域总览 | Catalog 按精确业务域组合展示当前用户可见资源、目录治理与有证据的外部标准引用的独立读视图。 | 与资源浏览分工；不复制专业事实、不承担跨模块审批，不把责任归属当作标准使用关系。 |
+| domain overview | 业务域总览 | Catalog 按精确业务域组合展示当前用户可见资源、目录治理与有证据的标准引用的独立读视图；引用标明本域、其他业务域、公共或未确认归属。 | 与资源浏览分工；不复制专业事实、不承担跨模块审批，不把责任归属当作标准使用关系。 |
 | recommended CatalogEntry successor | 企业目录推荐继任项 | Catalog 在弃用一个 CatalogEntry 时，可选指定的同 Tenant 推荐替代条目。 | 前后两个 CatalogEntry 是不同且继续有效的企业身份；旧条目保留详情和审计，不像 `merged` 一样重定向到规范身份。 |
 | CatalogComponent | 企业目录组件 | CatalogEntry 下用于承载字段或内部组件级语义关联的从属对象。 | 默认不是顶级企业目录条目，也不等同于独立 DataItem。 |
 | Catalog Source Binding | 企业目录来源绑定 | Catalog 模块中连接 CatalogEntry 与一个专业模块稳定资源身份的权威关系及历史。 | 第一阶段绑定 Meta DataItem fingerprint；Meta、Standard 等 owner 不保存 `catalog_entry_id` 反向投影。 |

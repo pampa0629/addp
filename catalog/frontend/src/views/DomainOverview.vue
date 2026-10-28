@@ -9,7 +9,7 @@
     </el-radio-group>
    </div>
    <el-alert v-if="domainsError" type="warning" :closable="false" :title="t('catalog.entries.domainContext.unavailable')" />
-   <template v-if="selectedDomain"><h3>{{ selectedDomain.name }}</h3><p>{{ selectedDomain.path.join(' / ') }} · {{ selectedDomain.code }}</p><p>{{ selectedDomain.description || t('catalog.entries.domainContext.noDefinition') }}</p></template>
+   <section v-if="selectedDomain" class="domain-definition"><h3>{{ selectedDomain.name }}</h3><p>{{ selectedDomain.path.join(' / ') }} · {{ selectedDomain.code }}</p><p>{{ selectedDomain.description || t('catalog.entries.domainContext.noDefinition') }}</p></section>
   </el-card>
   <el-empty v-if="!state.domainId" :description="t('catalog.domainOverview.selectDomain')" />
   <el-alert v-else-if="invalidDomain" type="warning" :closable="false" :title="t('catalog.entries.domainContext.invalid')" />
@@ -27,7 +27,7 @@
     </template>
    </el-card>
    <el-card shadow="never" data-testid="catalog-domain-reference-summary">
-    <template #header>{{ t('catalog.domainOverview.externalStandards') }}</template>
+    <template #header>{{ t('catalog.domainOverview.referencedStandards') }}</template>
     <p>{{ t('catalog.domainOverview.referencesScope') }}</p>
     <section v-for="group in groups" :key="group.key" class="reference-group" :data-testid="`catalog-domain-references-${group.key}`" :data-state="group.status">
      <h3>{{ t(`catalog.domainOverview.groups.${group.key}`) }}</h3>
@@ -113,10 +113,13 @@ onMounted(loadDomains)
 onBeforeUnmount(() => { version++; domainVersion++; groups.forEach(group => { group.version++ }) })
 </script>
 <style scoped>
-.domain-overview{padding:20px;display:grid;gap:16px;}
+.domain-overview{padding:20px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px;min-width:0;}
 header,.selectors,.resource-types,.statuses,.coverage-grid{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
 header{justify-content:space-between;} h2,h3{margin:0 0 12px;} p,li{color:var(--el-text-color-secondary);}
 .selectors>.el-select{width:min(100%,440px);} .resource-types,.statuses,.coverage-grid{margin:16px 0;}
+.domain-definition{display:grid;gap:12px;margin-top:24px;overflow-wrap:anywhere;}
+.domain-definition h3,.domain-definition p{margin:0;}
+.resource-types :deep(.el-button),.statuses :deep(.el-button),.coverage-grid :deep(.el-button){margin:0;}
 .reference-group{border-top:1px solid var(--el-border-color);padding:16px 0;}article{padding:12px 0;} article>.el-tag{margin-left:8px;}
 li{overflow-wrap:anywhere;} .el-link{max-width:100%;overflow-wrap:anywhere;} .el-pagination{margin-top:12px;}
 </style>
