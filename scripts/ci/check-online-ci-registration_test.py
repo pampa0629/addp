@@ -598,7 +598,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
     def test_approved_raster_suites_require_bounded_internal_lineage_observer(self):
         source=SCRIPT.parents[2]
         paths=['scripts/utils/online_raster_lineage.py','scripts/test/online-raster-lineage_test.py','Makefile',
-               'scripts/test/online-hosted-raster-cut-fill-gate.sh','scripts/test/online-hosted-raster-tpi-gate.sh','scripts/test/online-hosted-raster-tri-gate.sh']
+               'scripts/test/online-hosted-raster-cut-fill-gate.sh','scripts/test/online-hosted-raster-tpi-gate.sh','scripts/test/online-hosted-raster-tri-gate.sh','scripts/test/online-hosted-raster-roughness-gate.sh']
         for relative in paths:
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         CHECK.validate_raster_lineage_observer(self.repository,{'raster-tpi-persistence'})
@@ -607,6 +607,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                    (paths[3],'run_logged python3 scripts/utils/online_raster_lineage.py prepare'),
                    (paths[4],'run_logged python3 scripts/utils/online_raster_lineage.py prepare'),
                    (paths[5],'run_logged python3 scripts/utils/online_raster_lineage.py prepare'),
+                   (paths[6],'run_logged python3 scripts/utils/online_raster_lineage.py prepare'),
                    ('Makefile','scripts/test/online-raster-lineage_test.py')]
         for relative,fragment in mutations:
             target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
@@ -646,6 +647,25 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;original=target.read_text();self.assertIn(original_fragment,original);target.write_text(original.replace(original_fragment,'',1))
             with self.subTest(key=key),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_tri(self.repository,{'raster-tri-persistence'})
             target.write_text(original)
+
+
+    def test_roughness_requires_manual_nfs_exact_pixels_archive_and_regressions(self):
+        source=SCRIPT.parents[2]
+        required={'scripts/test/online-hosted-raster-roughness-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-roughness-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-roughness-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_roughness', 'unit_unknown', 'validate_lineage', 'input.source', 'output.save', 'archived_cogs', 'incomplete fixed ROUGHNESS matrix', 'oracle_prepare', 'oracle_cleanup', 'all 429 full target checks are required', 'physical_verification_calls', 'substage_ms', 'physical_profile_ms', 'ADDP_ONLINE_ROUGHNESS_ORACLE_ANCHOR_SHA256', 'nonnegative_verified', 'inclined plane or saddle must have strictly positive complete ROUGHNESS values'), 'business/scripts/online-raster-roughness-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_dem', 'context.prec=2500', '(max(samples)-min(samples))*factor', 'np.unique', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'metre', 'int64.cog.tif', 'uint64.cog.tif', 'saddle.cog.tif', 'sparse.cog.tif', 'archive_cogs', 'roughness-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'source_hash_ms', 'cache_load_ms', 'worker_transport_ms', 'negative nine-point roughness value', 'inclined plane or saddle ROUGHNESS must be positive', 'nonnegative_verified', 'centre extrema or opposite-neighbour full range differs', 'inclined plane full range must be ten metres'), 'engines/geopython-workflow/test_online_roughness_fixture.py': ('test_roughness_persistence_real_gdal_thirteen_chains_complete_exact_pixels_and_original_cogs', 'test_roughness_persistence_twenty_six_accurate_bilingual_failures_no_publication', 'test_roughness_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'half_range', 'test_roughness_original_cog_archive_cannot_change_or_silently_repair', 'test_roughness_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_roughness_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_roughness_oracle_cache_poison_or_cross_scope_fails', 'test_roughness_partial_oracle_preparation_always_has_an_owned_cleanup', 'test_roughness_independent_oracle_rejects_centre_omission_and_detrending', 'exclude_centre_max', 'exclude_centre_min', 'max_centre_difference', 'detrend_plane'), 'Makefile': ('@$(MAKE) test-raster-roughness-online-runner', 'test_online_roughness_fixture.py', 'scripts/test/raster-roughness-persistence-online_test.py', 'scripts/test/online-raster-roughness-fixture_test.py', 'scripts/test/online-hosted-raster-roughness-gate_test.py', 'test_roughness_requires_manual_nfs_exact_pixels_archive_and_regressions'), 'scripts/test/online-raster-roughness-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-roughness-persistence-online_test.py': ('test_oracle_preparation_and_cleanup_are_inside_progress_and_all_429_checks_remain', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
+        for relative in ('scripts/test/online-gate.py','.github/workflows/online-t4-gates.yml',*required):
+            target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
+        CHECK.validate_raster_roughness(self.repository,{'raster-roughness-persistence'})
+        for relative,fragments in required.items():
+            target=self.repository/relative;original=target.read_text()
+            for fragment in fragments:
+                self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
+                with self.subTest(relative=relative,fragment=fragment),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_roughness(self.repository,{'raster-roughness-persistence'})
+                target.write_text(original)
+        for relative,key,original_fragment in [('business/scripts/online-raster-roughness-fixture.py','CASES',"'flat.cog.tif':('flat.tif',2,'metre','direct'),"),('scripts/test/raster-roughness-persistence-online.py','FAILURES',"'offset',")]:
+            target=self.repository/relative;original=target.read_text();self.assertIn(original_fragment,original);target.write_text(original.replace(original_fragment,'',1))
+            with self.subTest(key=key),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_roughness(self.repository,{'raster-roughness-persistence'})
+            target.write_text(original)
+
 
     def test_plan_curvature_requires_manual_nfs_full_pixels_and_regressions(self):
         source=SCRIPT.parents[2]

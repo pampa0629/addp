@@ -690,3 +690,12 @@ ORC 嵌套扩展复用同一 `native-table-orc` case、原 11 项权限与精确
 ## D8流长统一入口的既有验收适配
 
 当前产品仅保留`raster_flow_length_d8`，`method`必填：既有`raster-flow-length-d8-persistence`显式提交`downstream`，既有`raster-flow-length-upstream-d8-persistence`显式提交`upstream_longest`。两套独立六条成功COG链、各14次准确中英失败、600秒预算、普通User原12权限及全部完整像元／mask／米制步长／零值／最长汇合／COG／三方大小／扫描／当前血缘／源及先前成果不变／清理断言均保持；仅更新DAG身份及必填方法，未新增suite或长期脚本。已通过的历史固定版本及原ID证据保持原样，不改写为当前统一入口验收；新源码Linux全量和真实Hosted仍由CI会话协调运行／回传。
+
+
+### DEM 地形粗糙度独立 Hosted 验收
+
+独立手工`raster-roughness-persistence`复用Hosted／NFS、同源默认入口Runtime、普通User原12权限及600秒预算。固定13条COG成功链：混合地形（中心极大／极小及正负邻居）、平地、倾斜平面、鞍面、三组单位交叉、填洼、重分类、Int64／UInt64大基值微差、全无效及无完整九点；13类错误各中英文共26次。独立2500位Decimal九点最大值减最小值oracle包含中心，不取半高差、不去趋势，不复用产品函数；数值极限单列Native。
+
+保留完整像元／mask、米制／原网格／CRS、COG／最近邻概览、三方相等正整数大小、精确扫描身份、当前实际输入完整内部血缘／公开安全投影／Meta关系及Monitor；39调用／429次实际成果全检，归档13份COG原字节及大小／hash清单，源与先前成果不变、失败零发布／新增扫描血缘及全部清理严格保持。仅扩展既有受控只读血缘取证的套件白名单；期望缓存绑定本轮／夹具／源hash，不缓存实际成果，所有准备与收尾均计入600秒。
+
+本地标准Native专项224通过／8308筛除（147项产品＋1项元数据＋76项真实GDAL夹具），0失败／跳过，30.94秒；独立runner 88项、受影响TRI／TPI各88项及填挖方89项、完整CI登记56＋10项／11模块通过。各runner共享测试不累加为唯一数量。Linux全量和真实Hosted由CI会话协调，本会话不触发／轮询／重跑／设置定时；不计UI、容量或任意影像。标准入口为`make test-raster-roughness-online-runner`，真实GDAL夹具纳入`make test-geopython-workflow`。

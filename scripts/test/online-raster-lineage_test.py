@@ -97,7 +97,7 @@ class RasterLineageTest(unittest.TestCase):
         with patch.dict(os.environ,self.env,clear=True),patch.object(m.BASE.HOSTED,'deployment_secret',return_value=self.secret):self.assertEqual(m.boundary(os.environ)[1:2],('raster-tpi-persistence',))
 
     def test_tri_is_only_an_additional_closed_suite_and_not_a_cross_suite_receipt(self):
-        for suite,prefix in [('raster-cut-fill-persistence','cut-fill'),('raster-tpi-persistence','tpi'),('raster-tri-persistence','tri')]:
+        for suite,prefix in [('raster-cut-fill-persistence','cut-fill'),('raster-tpi-persistence','tpi'),('raster-tri-persistence','tri'),('raster-roughness-persistence','roughness')]:
             env={**self.env,'ONLINE_SUITE':suite,'ADDP_ONLINE_TEST_RUN_ID':prefix+'-123-1'}
             with patch.dict(os.environ,env,clear=True),patch.object(m.BASE.HOSTED,'deployment_secret',return_value=self.secret):self.assertEqual(m.boundary(os.environ)[1:],(suite,prefix+'-123-1'))
             with patch.dict(os.environ,{**env,'ADDP_ONLINE_TEST_RUN_ID':'wrong-123-1'},clear=True),patch.object(m.BASE.HOSTED,'deployment_secret',return_value=self.secret),self.assertRaises(m.SuiteError):m.boundary(os.environ)
@@ -115,6 +115,21 @@ class RasterLineageTest(unittest.TestCase):
             proof=m.collect(env,'raster-tri-persistence',IDENTIFIER,'tri.cog.tif',expected,{'metadata':{'lineage_facts':public}},2,33,{'tasks':[]},lambda *args:actual)
             self.assertEqual(proof['path'],'tri-lineage/tri.cog.tif.json')
             m.verify_archive(env,'raster-tri-persistence',[{'name':'tri.cog.tif','lineage_evidence':proof}])
+
+    def test_roughness_read_and_closed_archive_require_its_own_receipt(self):
+        env={**self.env,'ONLINE_SUITE':'raster-roughness-persistence','ADDP_ONLINE_TEST_RUN_ID':'roughness-123-1'}
+        expected=copy.deepcopy(EXPECTED);expected['outputs'][0]['locator']=expected['outputs'][0]['locator'].replace('tpi.cog','roughness.cog')
+        public={**copy.deepcopy(expected),'operations':None};value={**self.value,'facts':expected}
+        with patch.dict(os.environ,env,clear=True),patch.object(m,'boundary',return_value=(self.secret,'raster-roughness-persistence','roughness-123-1')),patch.object(m,'inspect',return_value=self.container),patch.object(m.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=json.dumps(value)))as query:
+            with self.assertRaises(m.SuiteError):m.read_current(os.environ,IDENTIFIER,2,33,{'tasks':[]})
+            query.assert_not_called()
+            self.path.write_text(json.dumps({**self.owner,'suite':'raster-roughness-persistence','run_id':'roughness-123-1'}))
+            actual=m.read_current(os.environ,IDENTIFIER,2,33,{'tasks':[]});self.assertEqual(actual,expected)
+            self.assertIn('BEGIN READ ONLY;',query.call_args.kwargs['input'])
+            proof=m.collect(env,'raster-roughness-persistence',IDENTIFIER,'roughness.cog.tif',expected,{'metadata':{'lineage_facts':public}},2,33,{'tasks':[]},lambda *args:actual)
+            self.assertEqual(proof['path'],'roughness-lineage/roughness.cog.tif.json')
+            m.verify_archive(env,'raster-roughness-persistence',[{'name':'roughness.cog.tif','lineage_evidence':proof}])
+
 
     def test_personal_environment_rejected_before_docker(self):
         with patch.dict(os.environ,{},clear=True),patch.object(m,'inspect') as inspected,self.assertRaises(Exception):m.prepare()
