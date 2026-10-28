@@ -66,7 +66,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 栅格处理 | 基础计算 | 3 | `raster_band_math`、`raster_aggregate`、`raster_proximity` |
 | 栅格处理 | 分类处理 | 4 | `raster_reclassify`、`raster_nibble`、`raster_boundary_clean`、`raster_thin` |
 | 栅格处理 | 地形分析 | 8 | `raster_slope`、`raster_aspect`、`raster_hillshade`、`raster_curvature`、`raster_tpi`、`raster_tri`、`raster_roughness`、`raster_contour` |
-| 栅格处理 | 水流分析 | 6 | `raster_fill_depressions`、`raster_flow_direction_d8`、`raster_flow_accumulation_d8`、`raster_flow_accumulation_weighted_d8`、`raster_flow_length_d8`、`raster_flow_length_upstream_d8` |
+| 栅格处理 | 水流分析 | 5 | `raster_fill_depressions`、`raster_flow_direction_d8`、`raster_flow_accumulation_d8`、`raster_flow_accumulation_weighted_d8`、`raster_flow_length_d8` |
 | 栅格处理 | 汇水分析 | 4 | `raster_drainage_basins_d8`、`raster_snap_pour_points`、`raster_watershed_d8`、`raster_subcatchments_d8` |
 | 栅格处理 | 河网分析 | 5 | `raster_stream_order_d8`、`raster_stream_link_d8`、`raster_stream_to_vector_d8`、`raster_distance_to_stream_d8`、`raster_hand_d8` |
 | 栅格处理 | 格式转换 | 2 | `raster_polygonize`、`vector_rasterize` |
@@ -75,6 +75,8 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 栅格处理 | 成果生成 | 3 | `raster_to_cog`、`raster_build_overviews`、`build_raster_mosaic` |
 
 `raster_inspect`、`crs_to_projjson` 和 GDAL vector dataset 批协议算子仅供受控 direct 调用，不进入工作流面板计数。分类调整不改变算子身份、参数、端口和已有工作流定义；不增加第三级目录或前端名称映射。原像元计算拆为基础计算、分类处理、地形分析、水流分析、汇水分析和河网分析；转面／栅格化归格式转换，等值线归地形分析，河网转线归河网分析。
+
+D8流长只保留`raster_flow_length_d8`一个入口，必填`method=downstream`／`upstream_longest`分别计算下游／上游最长流长；原独立上游ID删除，旧DAG需显式改写，不保留兼容别名。两种模式的米制、中心步长、开放边界、无效覆盖和严格图校验保持。
 
 ## 拓扑构面
 

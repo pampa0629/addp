@@ -1081,7 +1081,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("栅格处理", "基础计算"), "raster_band_math raster_aggregate raster_proximity"),
         (("栅格处理", "分类处理"), "raster_reclassify raster_nibble raster_boundary_clean raster_thin"),
         (("栅格处理", "地形分析"), "raster_slope raster_aspect raster_hillshade raster_curvature raster_tpi raster_tri raster_roughness raster_contour"),
-        (("栅格处理", "水流分析"), "raster_fill_depressions raster_flow_direction_d8 raster_flow_accumulation_d8 raster_flow_accumulation_weighted_d8 raster_flow_length_d8 raster_flow_length_upstream_d8"),
+        (("栅格处理", "水流分析"), "raster_fill_depressions raster_flow_direction_d8 raster_flow_accumulation_d8 raster_flow_accumulation_weighted_d8 raster_flow_length_d8"),
         (("栅格处理", "汇水分析"), "raster_drainage_basins_d8 raster_snap_pour_points raster_watershed_d8 raster_subcatchments_d8"),
         (("栅格处理", "河网分析"), "raster_stream_order_d8 raster_stream_link_d8 raster_stream_to_vector_d8 raster_distance_to_stream_d8 raster_hand_d8"),
         (("栅格处理", "格式转换"), "raster_polygonize vector_rasterize"),
@@ -1266,3 +1266,17 @@ def test_dem_roughness_single_workflow_explicit_band_unit_metres_and_complete_wi
     assert '九点最大高程减最小高程' in params['band']['description'] and '不取半高差' in params['band']['description'] and '合法零保留' in params['elevation_unit']['description']
     assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='raster'
     assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'elevation_unit':'metre','band':1}
+
+
+def test_d8_flow_length_has_one_public_id_and_required_explicit_method():
+    operators = {item['id']: item for item in list_operators()}
+    assert 'raster_flow_length_upstream_d8' not in operators
+    spec = operators['raster_flow_length_d8']
+    assert spec['display_name'] == 'D8流长'
+    assert spec['category_path'] == ['栅格处理', '水流分析']
+    assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
+    params = {item['name']: item for item in spec['parameters']}
+    assert set(params) == {'input_raster', 'band', 'method'}
+    assert all(item['required'] for item in params.values())
+    assert params['method']['enum'] == ['downstream', 'upstream_longest'] and 'default' not in params['method']
+    assert spec['detailed_description']['workflow_example']['params']['method'] == 'downstream'

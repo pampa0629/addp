@@ -2627,7 +2627,7 @@ def validate_raster_flow_length_d8_profile(repository: Path, registered: set[str
         'scripts/test/raster-flow-length-d8-persistence-online.py': (
             'raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'fixture.SOURCES', 'scan_identity',
             'raster.strict_sizes', 'raster.validate_target_item', 'fixture.artifact_expectation(name)', 'raster.wait_lineage', 'scan_ids(client)!=before_scans',
-            'rasterize.check_physical(native,previous)', 'validate_scan(scanned,scan,identifier', 'source_edges(client', 'for name in fixture.TARGETS', "for problem in FAILURES", 'full_pixel_and_mask_verification', 'metre_unit_verified', 'terminals_zero', 'centre_steps_verified', 'SubmittedLanguageClient', "for language in ('zh-cn','en')", 'invalid_diagnostic', 'elevation_unit'),
+            'rasterize.check_physical(native,previous)', 'validate_scan(scanned,scan,identifier', 'source_edges(client', 'for name in fixture.TARGETS', "for problem in FAILURES", 'full_pixel_and_mask_verification', 'metre_unit_verified', 'terminals_zero', 'centre_steps_verified', 'SubmittedLanguageClient', "for language in ('zh-cn','en')", 'invalid_diagnostic', 'elevation_unit', "'operator':'raster_flow_length_d8'", "'method':'downstream'"),
         'business/scripts/online-raster-flow-length-d8-fixture.py': (
             'NFSExport', 'owned_root', 'expected_pixels', 'distance_evidence', 'empty-length.cog.tif', 'feet-length.cog.tif', 'survey-feet-length.cog.tif', 'SOURCE_UNITS', 'np.allclose(actual,expected,rtol=RTOL,atol=ATOL,equal_nan=True)', 'GDAL_TIFF_INTERNAL_MASK',
             'runtime_workspaces_removed', 'source file changed', 'full_check=True'),
@@ -3162,7 +3162,7 @@ def validate_raster_flow_length_upstream_d8_profile(repository: Path, registered
         'scripts/test/raster-flow-length-upstream-d8-persistence-online.py': (
             'raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'fixture.SOURCES', 'scan_identity',
             'raster.strict_sizes', 'raster.validate_target_item', 'fixture.artifact_expectation(name)', 'raster.wait_lineage', 'scan_ids(client)!=before_scans',
-            'rasterize.check_physical(native,previous)', 'validate_scan(scanned,scan,identifier', 'source_edges(client', 'for name in fixture.TARGETS', "for problem in FAILURES", 'full_pixel_and_mask_verification', 'metre_unit_verified', 'sources_zero', 'longest_path_verified', 'confluence_max_verified', 'outlets_receive_upstream', 'centre_steps_verified', 'SubmittedLanguageClient', "for language in ('zh-cn','en')", 'invalid_diagnostic', 'elevation_unit'),
+            'rasterize.check_physical(native,previous)', 'validate_scan(scanned,scan,identifier', 'source_edges(client', 'for name in fixture.TARGETS', "for problem in FAILURES", 'full_pixel_and_mask_verification', 'metre_unit_verified', 'sources_zero', 'longest_path_verified', 'confluence_max_verified', 'outlets_receive_upstream', 'centre_steps_verified', 'SubmittedLanguageClient', "for language in ('zh-cn','en')", 'invalid_diagnostic', 'elevation_unit', "'operator':'raster_flow_length_d8'", "'method':'upstream_longest'"),
         'business/scripts/online-raster-flow-length-upstream-d8-fixture.py': (
             'NFSExport', 'owned_root', 'expected_pixels', 'distance_evidence', 'empty-length.cog.tif', 'feet-length.cog.tif', 'survey-feet-length.cog.tif', 'SOURCE_UNITS', 'np.allclose(actual,expected,rtol=RTOL,atol=ATOL,equal_nan=True)', 'GDAL_TIFF_INTERNAL_MASK',
             'runtime_workspaces_removed', 'source file changed', 'full_check=True'),

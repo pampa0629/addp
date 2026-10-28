@@ -45,8 +45,8 @@ def definition(sources,parent,name,*,invalid=None,language='zh-cn'):
         tasks.append({'id':'direction','operator':'raster_flow_direction_d8','depends_on':[prior],
             'params':{'input_raster':{'$ref':prior},'band':band,'elevation_unit':'metre'}})
         prior='direction';band=1
-    tasks.append({'id':'length','operator':'raster_flow_length_upstream_d8','depends_on':[prior],
-        'params':{'input_raster':{'$ref':prior},'band':99 if invalid=='band' else band}})
+    tasks.append({'id':'length','operator':'raster_flow_length_d8','depends_on':[prior],
+        'params':{'input_raster':{'$ref':prior},'band':99 if invalid=='band' else band,'method':'upstream_longest'}})
     tasks.append({'id':'save','operator':'raster_save','depends_on':['length'],
         'params':{'input_raster':{'$ref':'length'},'target_parent_locator':parent,
             'target_name':f'failed-{invalid}-{language}.cog.tif' if invalid else name,

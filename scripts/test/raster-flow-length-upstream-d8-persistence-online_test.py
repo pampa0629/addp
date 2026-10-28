@@ -94,8 +94,9 @@ class FlowLengthUpstreamD8PersistenceTest(unittest.TestCase):
             tasks=m.definition(sources,'parent',name)['tasks']
             self.assertEqual(set(tasks[-1]['params']),set(canonical))
             self.assertEqual(tasks[-1]['params']['write_mode'],'create')
-            self.assertEqual(tasks[-2]['operator'],'raster_flow_length_upstream_d8')
-            self.assertEqual(set(tasks[-2]['params']),{'input_raster','band'})
+            self.assertEqual(tasks[-2]['operator'],'raster_flow_length_d8')
+            self.assertEqual(set(tasks[-2]['params']),{'input_raster','band','method'})
+            self.assertEqual(tasks[-2]['params']['method'],'upstream_longest')
             source,band,stage=m.fixture.CASES[name]
             self.assertEqual(tasks[0]['params']['locator'],source)
             self.assertEqual(tasks[-2]['params']['band'],band if stage=='direct' else 1)

@@ -2992,14 +2992,6 @@ def _d8_flow_length(directions, width_metres, height_metres):
     return values.reshape(directions.shape)
 
 
-def raster_flow_length_d8(input_raster, band):
-    """Measure projected downstream distance in metres to the supplied open outlet."""
-    source, directions, factor = _d8_direction_source(input_raster, band, _d8_length_error)
-    transform = source.GetGeoTransform()
-    values = _d8_flow_length(directions, transform[1] * factor, -transform[5] * factor)
-    return _d8_output(source, values, 'metre')
-
-
 _D8_UPSTREAM_LENGTH_MESSAGES = {
     key: (zh.replace('D8 下游流长', 'D8 上游最长流长'),
           en.replace('D8 downstream flow length', 'D8 longest upstream flow length'))
@@ -3032,11 +3024,17 @@ def _d8_upstream_flow_length(directions, width_metres, height_metres):
     return result
 
 
-def raster_flow_length_upstream_d8(input_raster, band):
-    """Measure the longest projected upstream route in metres to each cell."""
-    source, directions, factor = _d8_direction_source(input_raster, band, _d8_upstream_length_error)
+def raster_flow_length_d8(input_raster, band, method):
+    """Measure downstream or longest-upstream centre distances in metres."""
+    if type(method) is not str or method not in ('downstream', 'upstream_longest'):
+        messages = ('D8流长必须显式选择方法downstream或upstream_longest',
+                    'D8 flow length requires an explicit method: downstream or upstream_longest')
+        raise ValueError(messages[1 if _DISK_LANGUAGE.get() == 'en' else 0])
+    error = _d8_length_error if method == 'downstream' else _d8_upstream_length_error
+    calculate = _d8_flow_length if method == 'downstream' else _d8_upstream_flow_length
+    source, directions, factor = _d8_direction_source(input_raster, band, error)
     transform = source.GetGeoTransform()
-    values = _d8_upstream_flow_length(directions, transform[1] * factor, -transform[5] * factor)
+    values = calculate(directions, transform[1] * factor, -transform[5] * factor)
     return _d8_output(source, values, 'metre')
 
 
@@ -4248,8 +4246,7 @@ _SPECS = [
     (raster_flow_direction_d8, OperatorCategory.RASTER_FLOW, 'DEM D8 流向', [_INPUT(), _param('band', 'int', '显式高程数据波段；平坦区无环，封闭洼地失败'), _param('elevation_unit', 'str', '明确原高程单位，输出方向码与开放终点0', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_flow_accumulation_d8, OperatorCategory.RASTER_FLOW, 'D8 汇流累积', [_INPUT(), _param('band', 'int', '显式方向数据波段；非法方向或循环失败'), _param('measure', 'str', 'count：上游有效像元数、不计自身；area：包含自身的投影网格面积、统一平方米', 'count', False, enum=['count', 'area'])], 'raster', ['read']),
     (raster_flow_accumulation_weighted_d8, OperatorCategory.RASTER_FLOW, 'D8 加权汇流累积', [_INPUT(), _param('weights_raster', 'raster', '同网格、同有效覆盖的有限非负权重输入，不补零或自动对齐', role='input'), _param('band', 'int', '显式方向数据波段'), _param('weights_band', 'int', '显式权重数据波段；上游权重和、不计自身，沿用权重单位')], 'raster', ['read']),
-    (raster_flow_length_d8, OperatorCategory.RASTER_FLOW, 'D8 下游流长', [_INPUT(), _param('band', 'int', '显式方向数据波段；中心到中心的米制下游长度，开放终点为零，非法方向或循环失败')], 'raster', ['read']),
-    (raster_flow_length_upstream_d8, OperatorCategory.RASTER_FLOW, 'D8 上游最长流长', [_INPUT(), _param('band', 'int', '显式方向数据波段；米制最长上游中心间路径，汇合取最大，无入流为零，非法方向或循环失败')], 'raster', ['read']),
+    (raster_flow_length_d8, OperatorCategory.RASTER_FLOW, 'D8流长', [_INPUT(), _param('band', 'int', '显式方向数据波段；中心到中心的米制路径，非法方向或循环失败'), _param('method', 'str', 'downstream：到开放终点，终点0；upstream_longest：最长上游入流路径，汇合取最大、无入流0', enum=['downstream', 'upstream_longest'])], 'raster', ['read']),
     (raster_drainage_basins_d8, OperatorCategory.RASTER_CATCHMENT, 'D8 汇水分区', [_INPUT(), _param('band', 'int', '显式方向数据波段；每个开放终点独立分区，按出口行列顺序从1编号，非法方向或循环失败')], 'raster', ['read']),
     (raster_snap_pour_points, OperatorCategory.RASTER_CATCHMENT, '汇水点吸附', [_INPUT(), _param('points_raster', 'raster', '同网格、同有效覆盖的唯一正安全整数标记，零为未选；保留编号，碰撞失败', role='input'), _param('band', 'int', '显式未加权累积计数数据波段'), _param('points_band', 'int', '显式汇水点标记数据波段'), _param('radius_metres', 'float', '显式有限非负米制圆半径；允许跨分水岭，最大计数后按距离／行／列决胜')], 'raster', ['read']),
     (raster_watershed_d8, OperatorCategory.RASTER_CATCHMENT, 'D8 指定汇水点汇水区', [_INPUT(), _param('points_raster', 'raster', '同网格、同有效覆盖的汇水点标记，零为未选、正安全整数编号全图唯一，不自动吸附', role='input'), _param('band', 'int', '显式方向数据波段'), _param('points_band', 'int', '显式标记数据波段；保留编号并包含点自身，嵌套汇水点失败')], 'raster', ['read']),
@@ -4291,7 +4288,7 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'band': 1, 'target_values': [0, 1]})
     if name == 'raster_thin':
         examples.update({'band': 1, 'foreground_value': 1})
-    if name in ('raster_boundary_clean', 'raster_flow_accumulation_d8', 'raster_flow_length_d8', 'raster_flow_length_upstream_d8', 'raster_drainage_basins_d8'):
+    if name in ('raster_boundary_clean', 'raster_flow_accumulation_d8', 'raster_flow_length_d8', 'raster_drainage_basins_d8'):
         examples.update({'band': 1})
     if name == 'raster_flow_accumulation_d8':
         examples.update({'measure': 'count'})
@@ -4299,6 +4296,8 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'stream_raster': {'$ref': 'streams'}, 'band': 1, 'stream_band': 1})
     if name == 'raster_hand_d8':
         examples.update({'stream_raster': {'$ref': 'streams'}, 'elevation_raster': {'$ref': 'elevation'}, 'band': 1, 'stream_band': 1, 'elevation_band': 1, 'elevation_unit': 'metre'})
+    if name == 'raster_flow_length_d8':
+        examples.update({'method': 'downstream'})
     if name == 'raster_stream_order_d8':
         examples.update({'method': 'strahler'})
     if name == 'raster_snap_pour_points':

@@ -109,10 +109,10 @@ GeoTIFF 与 COG 是 TIFF 的布局 profile。COG 编码复用唯一实现，压�
 | DEM D8 流向 | raster_load → 可选显式 raster_fill_depressions → raster_flow_direction_d8 → raster_save；不改高程、平坦最短路无环、封闭洼地失败 |
 | D8 汇流累积 | raster_load → 可选显式填洼／D8流向 → raster_flow_accumulation_d8 → raster_save；count不计自身，area计入自身、统一平方米；非法方向／循环失败 |
 | D8 加权汇流累积 | 显式D8方向＋同网格同覆盖权重 → raster_flow_accumulation_weighted_d8 → raster_save；不计自身，权重有限非负，缺失权重／非法路线失败 |
-| D8 下游流长 | raster_load → 可选显式填洼／D8流向 → raster_flow_length_d8 → raster_save；沿给定中心间路线，统一米制，开放终点0，非法方向／循环失败 |
+| D8 下游流长 | raster_load → 可选显式填洼／D8流向 → raster_flow_length_d8(method=downstream) → raster_save；沿给定中心间路线，统一米制，开放终点0，非法方向／循环失败 |
 | D8 Strahler 河流分级 | 显式D8流向＋同网格0／1河网掩膜 → raster_stream_order_d8 → raster_save；最高同级入流至少两条才升级，断流失败不补线 |
 | D8 指定汇水点汇水区 | 显式D8方向＋同网格同覆盖的唯一正编号标记 → raster_watershed_d8 → raster_save；保留用户编号、包含点自身，嵌套点失败，未选范围有效0 |
-| D8 上游最长流长 | raster_load → 可选显式填洼／D8流向 → raster_flow_length_upstream_d8 → raster_save；汇合取最长中心间路径，统一米制，无入流0，非法方向／循环失败 |
+| D8 上游最长流长 | raster_load → 可选显式填洼／D8流向 → raster_flow_length_d8(method=upstream_longest) → raster_save；汇合取最长中心间路径，统一米制，无入流0，非法方向／循环失败 |
 | D8 汇水分区 | raster_load → 可选显式填洼／D8流向 → raster_drainage_basins_d8 → raster_save；每个开放终点独立分区，按出口行列顺序从1编号，非法方向／循环失败 |
 | DEM 地形栅格 | raster_load → raster_slope／raster_aspect／raster_hillshade（三选一）→ raster_save |
 | DEM 等值线 | raster_load → raster_contour → 既有矢量保存节点或 JSON 预览 |

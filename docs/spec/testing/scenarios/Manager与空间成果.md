@@ -686,3 +686,7 @@ ORC 嵌套扩展复用同一 `native-table-orc` case、原 11 项权限与精确
 合并同期共享登记改动后的候选树`61e117a544da0c2d71310edac64b9ca955a88cb7`在Node24.11.1下标准`make test-raster-tri-online-runner` **87项／31.578秒**通过，包含39次调用／429次实际成果全检计数、13／26固定矩阵、600秒原预算、当前User与只读取证、父执行精确扫描／Meta关系／Monitor、清理失败不得成功及手工Hosted隔离生命周期模拟。受共享取证边界影响的既有`make test-raster-tpi-online-runner` **87项／32.743秒**、`make test-raster-cut-fill-online-runner` **88项／30.964秒**均通过；原两套业务夹具和场景文件逐字节未改，SQL取证、投影、身份与归档函数AST保持。`make test-python-ci-registration`56项及10项、11模块／Online完整登记通过；共享测试不累加唯一数量。950项跟踪输入前后无漂移，无新增Python崩溃报告。相对Native固定候选仅两个CI登记文件合并其他会话改动，相关栅格校验函数AST、Native产品／夹具／recipe及其他自有输入均保持；三套Runner与完整登记已核合并后的实际源码，不声称两个整树相同。标准Native recipe、聚合Runner、变更选路／回归、独立suite／手工workflow及防遗漏校验同次登记，保持nightly关闭。
 
 原始Native日志`/tmp/addp-tri-hosted-native.log` SHA-256：`040b8327b4be3b43153d56f3908b8418ffd35509e443c66b81e255e48b667842`；独立Runner`/tmp/addp-tri-hosted-tri.log` SHA-256：`5c694409a8bac4ef5167eb2c2fafdf5cb89e42d97a0fd11cae1b3246d7b2ffaa`。对应JSON／JUnit与范围复核`/tmp/addp-tri-hosted-work/scope-review.json`保留。上述为本地准备证据，不是Native全量或真实Hosted通过；实际Linux全量和Hosted仍由CI会话协调及回传，本会话未触发／轮询／重跑／取消、设置定时或操作个人服务／Infra。UI、容量、任意影像及Hosted数值极限均未验。
+
+## D8流长统一入口的既有验收适配
+
+当前产品仅保留`raster_flow_length_d8`，`method`必填：既有`raster-flow-length-d8-persistence`显式提交`downstream`，既有`raster-flow-length-upstream-d8-persistence`显式提交`upstream_longest`。两套独立六条成功COG链、各14次准确中英失败、600秒预算、普通User原12权限及全部完整像元／mask／米制步长／零值／最长汇合／COG／三方大小／扫描／当前血缘／源及先前成果不变／清理断言均保持；仅更新DAG身份及必填方法，未新增suite或长期脚本。已通过的历史固定版本及原ID证据保持原样，不改写为当前统一入口验收；新源码Linux全量和真实Hosted仍由CI会话协调运行／回传。
