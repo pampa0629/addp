@@ -83,8 +83,11 @@ Orchestrator 不缓存 TaskProvider 运行可用性，每次使用都从 System 
 - [编排编辑器交互](./CLAUDE.md#编排编辑器交互) - 保存、画布和本次执行状态
 - [前端与编辑器验证](./CLAUDE.md#前端与编辑器验证) - 受控回归、像素组和实际验收边界
 - [历史证据导航](./CLAUDE.md#历史证据导航) - 固定版本、取消与未覆盖范围
-- **[数据库架构](./docs/数据库架构.md)** - 数据结构和 API 详解
-- **[参数化模板说明](./docs/参数化模板说明.md)** - 参数模板化功能
+- [编排与调度规范](../docs/spec/tasks/编排与调度.md) - DAG、执行可靠性和调度边界
+- [TaskProvider 默认值校验](../docs/spec/tasks/TaskProvider接口.md#orchestrator-默认值校验) - 保存与执行前的参数处理
+- **[数据库架构](./docs/数据库架构.md)** - 表关系、执行快照和迁移边界
+- [orchestrations 表与创建示例](./docs/tables/orchestrations表.md) - 定义字段、布局与创建前提
+- **[执行参数与上游输出绑定](./docs/参数化模板说明.md)** - 参数来源、画布连线与声明输出示例
 - **[../system/CLAUDE.md](../system/CLAUDE.md)** - System 模块（引擎管理）
 - **[../meta/CLAUDE.md](../meta/CLAUDE.md)** - Meta 模块（元数据扫描）
 - **[../transfer/CLAUDE.md](../transfer/CLAUDE.md)** - Transfer 模块（数据传输）

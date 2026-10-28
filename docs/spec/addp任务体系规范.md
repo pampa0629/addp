@@ -15,6 +15,7 @@
 | 业务 Kafka DLQ、重放与 Kafka 部署基线 | [Transfer Kafka 与 DLQ](tasks/Transfer-Kafka与DLQ.md) |
 | 任务发现、标准接口、参数契约与能力声明 | [TaskProvider 接口](tasks/TaskProvider接口.md) |
 | 任务编排、可靠派发、调度和执行边界 | [编排与调度](tasks/编排与调度.md) |
+| 编排参数来源、画布连线与绑定操作示例 | [Orchestrator 执行参数专题](../../orchestrator/docs/参数化模板说明.md)（模块操作说明） |
 | 安全诊断、过程事件、健康和执行监控页面 | [执行监控](tasks/执行监控.md) |
 
 ## 范围

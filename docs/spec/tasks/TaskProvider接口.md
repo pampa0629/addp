@@ -2,9 +2,9 @@
 
 [返回任务体系规范](../addp任务体系规范.md)
 
-定义模块级 Provider 声明、标准端点、任务列表与详情、执行参数契约和 capabilities。编排调用规则见[编排与调度](编排与调度.md)。
+定义模块级 Provider 声明、标准端点、任务列表与详情、执行参数契约和 capabilities。编排调用规则见[编排与调度](编排与调度.md)，参数来源、画布操作与绑定示例见[执行参数专题](../../../orchestrator/docs/参数化模板说明.md)。
 
-阅读导航：[TaskProvider 规范](#taskprovider-规范)、[Provider 基本字段](#provider-基本字段)、[标准 endpoint](#标准-endpoint)、[标准响应体](#标准响应体)、[执行请求体](#执行请求体)、[多任务类型 provider](#多任务类型-provider)、[capabilities.task_capabilities](#capabilitiestask_capabilities)。
+阅读导航：[TaskProvider 规范](#taskprovider-规范)、[Provider 基本字段](#provider-基本字段)、[标准 endpoint](#标准-endpoint)、[标准响应体](#标准响应体)、[执行请求体](#执行请求体)、[Orchestrator 默认值校验](#orchestrator-默认值校验)、[多任务类型 provider](#多任务类型-provider)、[capabilities.task_capabilities](#capabilitiestask_capabilities)。
 
 ## TaskProvider 规范
 
@@ -177,7 +177,7 @@ HTTP 状态码表达错误类型，响应体不得重复携带 `status=error`。
 
 Orchestrator 保存编排和执行前共用同一参数校验路径：用具体任务的 `input_defaults` 补齐 Step 未覆盖的顶层参数，再按 `input_schema` 严格校验。没有默认值的必填参数仍必须提供；显式参数（包括 `null`、`0`、`false`）优先，不能因校验失败回退默认值。显式对象按整体校验，不做深合并来补其内部缺失的必填字段。
 
-该补齐只用于 Orchestrator 校验，不写回 Step，也不扩充发给 owner 的部分覆盖 `parameters`；owner 保持任务配置的唯一事实源，并执行最终领域校验。保存时仅允许完整的声明输出绑定作为延迟值，执行时重取最新具体任务契约、解析绑定后严格校验真实值；完整保存与执行约束见[编排定义规范](编排与调度.md#orchestrator-规范)。
+该补齐只用于 Orchestrator 校验，不写回 Step，也不扩充发给 owner 的部分覆盖 `parameters`；owner 保持任务配置的唯一事实源，并执行最终领域校验。保存时仅允许完整的声明输出绑定作为延迟值，执行时重取最新具体任务契约、解析绑定后严格校验真实值；完整保存与执行约束见[编排定义规范](编排与调度.md#orchestrator-规范)，操作说明见[保存校验](../../../orchestrator/docs/参数化模板说明.md#保存校验)与[执行流程](../../../orchestrator/docs/参数化模板说明.md#执行流程)。
 
 ### 多任务类型 provider
 
