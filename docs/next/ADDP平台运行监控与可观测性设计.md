@@ -159,7 +159,7 @@ Business 认证目录首次切换须由部署方沿标准生命周期重建容�
 
 规则、持久化和实源前置失败见[首期分层证据](../spec/testing/evidence/Monitor告警与规则历史证据.md#文件系统容量告警首期2026-10-27)；挂载行操作分别见[创建入口](../spec/testing/evidence/Monitor告警与规则历史证据.md#主机挂载行创建容量告警入口2026-10-27)和[查看入口](../spec/testing/evidence/Monitor告警与规则历史证据.md#主机挂载行查看已有容量规则入口2026-10-27)。缺样断言修复的固定 `7ebf98370` 受控 HTTP 前端 CI 及旧失败见[完整 CI 记录](../spec/testing/evidence/Monitor告警与规则历史证据.md#挂载缺样断言修复的完整ci闭环2026-10-28)，不据此宣布其他门禁、父 workflow 或当前 HEAD 全通过。
 
-实源告警的触发／缺样保留／恢复与签名通知闭环仍未验；前置失败不能计为告警验收通过。个人 Safari 的隐藏页、右侧列／前台刷新及真实 Linux 文件系统挂载行仍未覆盖，范围见[个人前置核对](../spec/testing/evidence/Monitor告警与规则历史证据.md#挂载规则入口的个人safari前置核对2026-10-27)及上述 CI 记录。T1／数据库 T2／受控 HTTP T3 不代替真实来源、正式身份 Hosted 或零残留验收；后续实链结果等专门会话回传，不设置定时任务。
+2026-10-28已补本地受控源经真实Prometheus／SQL／签名HTTP的容量告警触发、缺样保留及同一事件恢复T2，范围及前置失败分别见[限定复验证据](../spec/testing/evidence/Monitor告警与规则历史证据.md#文件系统容量告警受控源实链t2复验2026-10-28)；未据此认定真实Collector、原生主机压力或正式身份通过。个人 Safari 的隐藏页、右侧列／前台刷新及真实 Linux 文件系统挂载行仍未覆盖，范围见[个人前置核对](../spec/testing/evidence/Monitor告警与规则历史证据.md#挂载规则入口的个人safari前置核对2026-10-27)及上述 CI 记录。T1／数据库 T2／受控 HTTP T3 不代替真实来源、正式身份 Hosted 或零残留验收；后续实链结果等专门会话回传，不设置定时任务。
 
 [monitor-admission]: ../spec/addp平台运行观测规范.md#42-管理员确认的部署清单接入
 [monitor-catalog]: ../spec/addp平台运行观测规范.md#61-固定指标目录

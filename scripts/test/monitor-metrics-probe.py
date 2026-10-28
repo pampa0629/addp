@@ -22,10 +22,10 @@ FILE = os.environ['METRICS_T2_COMPOSE']
 FILES = [FILE]
 
 
-def compose(*args):
+def compose(*args, timeout=None, stderr=None):
     flags = [flag for path in FILES for flag in ('-f', path)]
     return subprocess.check_output(['docker', 'compose', '--env-file', '/dev/null', '-p', PROJECT,
-                                    *flags, *args], text=True).strip()
+                                    *flags, *args], text=True, timeout=timeout, stderr=stderr).strip()
 
 
 def port(service, internal):
@@ -264,6 +264,36 @@ def valid_sample():
                         or key.startswith(('__meta_', '__tmp_')) for key in labels))
 
 
+def fixture_file_diagnostic(name):
+    # Closed test-owned names; no endpoints, labels, contents or stderr escape.
+    if name not in ('metrics', 'discovery.json'):
+        raise ValueError('unsupported_fixture_file')
+    host = {'state': 'read_error', 'read_bytes': None, 'prefix_sha256': None}
+    try:
+        with (WORK / 'source' / name).open('rb') as stream:
+            value = stream.read(65537)
+        host.update(state='oversized' if len(value) > 65536 else 'readable', read_bytes=len(value),
+                    prefix_sha256=hashlib.sha256(value).hexdigest())
+    except FileNotFoundError:
+        host['state'] = 'missing'
+    except PermissionError:
+        host['state'] = 'denied'
+    except OSError:
+        pass
+    source = {'state': 'unavailable', 'regular_file_visible': None, 'readable': None}
+    script = 'path="/source/$1"; if [ -f "$path" ]; then printf "1 "; else printf "0 "; fi; if [ -r "$path" ]; then printf "1"; else printf "0"; fi'
+    try:
+        raw = compose('exec', '-T', 'metrics-source', 'sh', '-ec', script, '_', name,
+                      timeout=5, stderr=subprocess.PIPE)
+        if raw in ('0 0', '0 1', '1 0', '1 1'):
+            source.update(state='observed', regular_file_visible=raw[0] == '1', readable=raw[2] == '1')
+    except subprocess.TimeoutExpired:
+        source['state'] = 'timeout'
+    except (subprocess.CalledProcessError, OSError):
+        pass
+    print('Metrics T2: owned fixture file ' + json.dumps({'file': name, 'host': host, 'source': source}, sort_keys=True), flush=True)
+
+
 def fixture_scrape_diagnostic():
     # Fixed shapes only: do not log target URLs, OAuth configuration or raw
     # scrape errors (which can contain endpoints or credentials).
@@ -308,20 +338,25 @@ source_text(''.join(f'addp_fixture_overflow{{index="{i}"}} {i}\n' for i in range
 try:
     eventually(exceeded, 'sample overflow is a visible scrape failure')
 except AssertionError:
-    # Fixed, bounded facts only; neither peer errors nor arbitrary labels are logged.
-    targets = api('targets')['activeTargets']
-    print('Metrics T2: overflow diagnostic ' + json.dumps({
-        'host_lines': len((WORK / 'source/metrics').read_text().splitlines()),
-        'served_lines': len(get(source + '/metrics', source_context).splitlines()),
-        'targets': [{'health': item.get('health'),
-                     'sample_limit_error': 'sample limit' in item.get('lastError', '').lower(),
-                     'error_kind': tls_failure_kind(item.get('lastError', ''))}
-                    for item in targets if item.get('labels', {}).get('job') == 'addp_nodes'],
-    }, sort_keys=True), flush=True)
+    fixture_file_diagnostic('metrics')
+    try:
+        targets = api('targets')['activeTargets']
+        print('Metrics T2: overflow diagnostic ' + json.dumps({
+            'targets': [{'health': item.get('health'),
+                         'sample_limit_error': 'sample limit' in item.get('lastError', '').lower(),
+                         'error_kind': tls_failure_kind(item.get('lastError', ''))}
+                        for item in targets if item.get('labels', {}).get('job') == 'addp_nodes'],
+        }, sort_keys=True), flush=True)
+    except Exception:
+        print('Metrics T2: overflow target diagnostic unavailable', flush=True)
     raise
 assert query('addp_fixture_overflow') == [], 'overflow must not admit a partial sample set'
 source_text(original_metrics)
-eventually(lambda: job_is_up('addp_nodes', '1'), 'budget recovery')
+try:
+    eventually(lambda: job_is_up('addp_nodes', '1'), 'budget recovery')
+except AssertionError:
+    fixture_file_diagnostic('metrics')
+    raise
 
 compose('stop', 'metrics-source')
 eventually(lambda: job_is_up('addp_nodes', '0'), 'source outage remains a collection failure')
@@ -335,6 +370,7 @@ def discovery_text(text):
     pending = WORK / 'source/discovery.pending'
     pending.write_text(text)
     pending.replace(WORK / 'source/discovery.json')
+
 
 def native_process_cpu_history_ready(records):
     # Fixture readiness only: preserve genuine zero counters and require both
@@ -701,6 +737,7 @@ def check_controlled_host_sources(filesystem_only=False):
         try:
             eventually(overview_sources_ready, f'{len(overview_groups)} controlled host inputs enter real HTTP SD')
         except AssertionError:
+            fixture_file_diagnostic('discovery.json')
             # Only owned scope/status evidence; no URL credentials, TLS keys or OAuth data.
             print('Metrics T2 overview readiness: up=', query('up{job="addp_nodes"}'),
                   'memory=', query('node_memory_MemTotal_bytes{job="addp_nodes"}'), flush=True)

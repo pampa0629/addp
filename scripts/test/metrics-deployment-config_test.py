@@ -422,6 +422,67 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                                  'targets': [{'health': 'down', 'error_kind': 'tls_unknown'}],
                                  'http_sd_failure_observed': True})
 
+    def test_owned_fixture_file_diagnostic_is_bounded_and_does_not_log_contents(self):
+        path = ROOT / 'scripts/test/monitor-metrics-probe.py'
+        function = next(node for node in ast.parse(path.read_text()).body
+                        if isinstance(node, ast.FunctionDef) and node.name == 'fixture_file_diagnostic')
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            (work / 'source').mkdir()
+            compose = mock.Mock(return_value='1 1')
+            namespace = {'WORK': work, 'hashlib': hashlib, 'json': json, 'subprocess': subprocess, 'compose': compose}
+            exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), 'exec'), namespace)
+            def diagnostic(name='discovery.json'):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    namespace['fixture_file_diagnostic'](name)
+                text = output.getvalue()
+                self.assertNotIn(directory, text)
+                self.assertNotIn('private-target-and-label', text)
+                return json.loads(text.split('owned fixture file ', 1)[1])
+            self.assertEqual(diagnostic()['host'], {'state': 'missing', 'read_bytes': None, 'prefix_sha256': None})
+            source = work / 'source/discovery.json'
+            value = b'private-target-and-label'
+            source.write_bytes(value)
+            observed = diagnostic()
+            self.assertEqual(observed['host'], {'state': 'readable', 'read_bytes': len(value),
+                                                'prefix_sha256': hashlib.sha256(value).hexdigest()})
+            self.assertEqual(observed['source'], {'state': 'observed', 'regular_file_visible': True, 'readable': True})
+            self.assertEqual(compose.call_args.kwargs, {'timeout': 5, 'stderr': subprocess.PIPE})
+            source.write_bytes(b'x' * 70000)
+            self.assertEqual(diagnostic()['host'], {'state': 'oversized', 'read_bytes': 65537,
+                                                    'prefix_sha256': hashlib.sha256(b'x' * 65537).hexdigest()})
+            with mock.patch.object(Path, 'open', side_effect=PermissionError('private-target-and-label')):
+                self.assertEqual(diagnostic()['host']['state'], 'denied')
+            with mock.patch.object(Path, 'open', side_effect=OSError('private-target-and-label')):
+                self.assertEqual(diagnostic()['host']['state'], 'read_error')
+            compose.return_value='0 0'
+            self.assertFalse(diagnostic('metrics')['source']['regular_file_visible'])
+            for error,state in [(subprocess.TimeoutExpired('private-target-and-label', 5), 'timeout'),
+                                (subprocess.CalledProcessError(1, 'private-target-and-label'), 'unavailable'),
+                                (OSError('private-target-and-label'), 'unavailable')]:
+                compose.side_effect=error
+                self.assertEqual(diagnostic()['source']['state'], state)
+            compose.side_effect=None;compose.return_value='private-target-and-label'
+            self.assertEqual(diagnostic()['source']['state'], 'unavailable')
+            compose.reset_mock()
+            with self.assertRaisesRegex(ValueError, '^unsupported_fixture_file$'):
+                namespace['fixture_file_diagnostic']('server.key')
+            compose.assert_not_called()
+
+    def test_overflow_diagnostic_failure_preserves_the_original_assertion(self):
+        path = ROOT / 'scripts/test/monitor-metrics-probe.py'
+        statement = next(node for node in ast.parse(path.read_text()).body
+                         if isinstance(node, ast.Try) and any(isinstance(call, ast.Call)
+                         and isinstance(call.func, ast.Name) and call.func.id == 'eventually'
+                         and any(isinstance(arg, ast.Name) and arg.id == 'exceeded' for arg in call.args)
+                         for call in ast.walk(node)))
+        namespace = {'eventually': mock.Mock(side_effect=AssertionError('original-overflow-failure')),
+                     'exceeded': lambda: False, 'api': mock.Mock(side_effect=OSError('private-secondary-error')),
+                     'fixture_file_diagnostic': mock.Mock(), 'json': json}
+        with redirect_stdout(io.StringIO()), self.assertRaisesRegex(AssertionError, '^original-overflow-failure$'):
+            exec(compile(ast.Module(body=[statement], type_ignores=[]), str(path), 'exec'), namespace)
+
     def source_tls_functions(self,work):
         path=ROOT/'scripts/test/monitor-metrics-probe.py';tree=ast.parse(path.read_text())
         functions=[node for node in tree.body if isinstance(node,ast.FunctionDef) and node.name in {'tls_failure_kind','source_certificate_readiness','finish_public_preflight'}]
