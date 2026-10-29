@@ -345,3 +345,54 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 归档身份：aa516的artifact12868648938为23553字节，ZIP SHA256=`fb62c5433416e4e3819ca6e4cc821ef7dc214b55e0fd3d1227edd0f1d1b19bb1`，报告SHA256=`d4ec9a804f06f876dbc86af4285c703212dff06f5d1d6414bb42894c06963ec5`；24d2的artifact12869049745为24432字节，ZIP SHA256=`06bde55ad5c0b9c930e489d2a3557acb8dca84225eba4819eb18e65d45ce9a2b`，报告SHA256=`cbcc12b7cd387e15dfb4f7f8902d940002fd27bf650925423277f58484bd0626`。本机/tmp/addp-p19-http-followup-verified-20261029.json保留独立核对摘要，另有同前缀Job快照和artifact元数据。
 
 快照中[40809646875／123236922601](https://github.com/pampa0629/addp/actions/runs/40809646875/job/123236922601)（ebdb5b82e721834c69eda8d3c1127580cb667583）运行中，[40810565372／123241061462](https://github.com/pampa0629/addp/actions/runs/40810565372/job/123241061462)（49ecae13ecc23bb9d626ab5617234ffdca57f043）排队，分别保留未完成状态，不计通过。此为一次手动核对，不建立后续监控；正式产品到页面闭环及停源历史读取的原有缺口不由本节替代。
+
+<a id="http-linux-followup-second-manual-20261029"></a>
+
+## 2026-10-29 后续自然Linux HTTP门禁第二次手动复核（首轮与重跑分列）
+
+本次沿用户“继续”仅进行一次只读核对：关闭上一节两条未完成状态，并核对其后main自然push中的HTTP质量子Job，不派发／重跑CI，不新开本地环境，不运行Hosted、容量或定时。2026-10-29 22:20（Asia/Shanghai）元数据快照中，上次两条已完成通过；之后44个push运行里筛出18条HTTP成功子Job，其中17条属于attempt 1。因此本次纳入的自然首轮HTTP状态共19条均success；无HTTP子Job的运行不计通过，不把其他专项的聚合失败归本专项。
+
+其中40880761833／123475011822虽状态success，但属于已有push运行的attempt 2，不能计为自然首轮；原attempt 1没有HTTP子Job。本轮未触发该重跑，也不推测操作者或重跑原因。该项仅作排除说明，不纳入以下自然门禁验收统计。
+
+深核三份自然attempt 1原始预算归档：
+
+| 固定源码 | 运行／HTTP Job | 结果 | 耗时（秒） | 完整样本／最长采样（秒） | 请求Go／Python／合计 |
+| --- | --- | --- | --- | --- | --- |
+| ebdb5b82e721834c69eda8d3c1127580cb667583 | [40809646875／123236922601](https://github.com/pampa0629/addp/actions/runs/40809646875/job/123236922601) | passed | 873.542461 | 215／1.312225 | 161／[67, 26]／254 |
+| 49ecae13ecc23bb9d626ab5617234ffdca57f043 | [40810565372／123241061462](https://github.com/pampa0629/addp/actions/runs/40810565372/job/123241061462) | passed | 881.329419 | 217／1.330465 | 161／[75, 28]／264 |
+| 944c4bcf74272a568045a8c066da34878f4c7fa6 | [40877071516／123458861015](https://github.com/pampa0629/addp/actions/runs/40877071516/job/123458861015) | passed | 815.618545 | 200／1.213109 | 148／[67, 26]／241 |
+
+三份ZIP大小／API登记SHA256／CRC及唯一JSON成员验证通过，各自353个输入均独立逐文件匹配其固定提交，预算／编译脚本与05c57272c无差异。result=passed／exit0／error null／无failure_detail，三源阶段及额度一致，编译边界finished／exit0，inputs_unchanged／cleanup_verified／private_directory_removed均为true。最大私有可写保守上界依次1808232511／1808252991／1809166399字节，硬配额最大均3.25 CPU／4026531840字节内存，所有完整样本小于四秒、总耗时小于1200秒。编译开始／观察结束的主机monotonic_ns分别86760929319／164596238320、71591822071／148776493965、82643647001／143610907868。
+
+其余16条只核对HTTP子Job状态success，未下载原始预算归档，不宣称已独立核验其请求／资源峰值或清理：
+
+| 固定源码 | 运行／HTTP Job（attempt 1） |
+| --- | --- |
+| 30d8754538607bb092f21af0055a537b2e74ad42 | [40855443616／123385434700](https://github.com/pampa0629/addp/actions/runs/40855443616/job/123385434700) |
+| efc577aa69fc0a190dddba2bc9bff4903fc99f88 | [40841858063／123340144201](https://github.com/pampa0629/addp/actions/runs/40841858063/job/123340144201) |
+| 0c8b006a3748d70d31db4775c9fed4f68422bae7 | [40832834357／123310943631](https://github.com/pampa0629/addp/actions/runs/40832834357/job/123310943631) |
+| a5b91dc689e294769479a187cfd192a63b47bb8b | [40827356196／123293546414](https://github.com/pampa0629/addp/actions/runs/40827356196/job/123293546414) |
+| 68ab3c56de2855dcdbd7132c1486ef0b2c6bd43e | [40823324214／123285345018](https://github.com/pampa0629/addp/actions/runs/40823324214/job/123285345018) |
+| d86049faf65f854d92f4f0a252da1ed0fb79a37b | [40821832077／123279408209](https://github.com/pampa0629/addp/actions/runs/40821832077/job/123279408209) |
+| cf02a0e9aa0bb26328f09cbc37bb5f0360ffd3f3 | [40820231458／123274702344](https://github.com/pampa0629/addp/actions/runs/40820231458/job/123274702344) |
+| b5a99831923efb02fd2cb4b0509c7eff29a5be4b | [40818878003／123271690024](https://github.com/pampa0629/addp/actions/runs/40818878003/job/123271690024) |
+| 8904cdd4011b02f6be255fcb7292d9065a54109b | [40816651860／123267185389](https://github.com/pampa0629/addp/actions/runs/40816651860/job/123267185389) |
+| b1866c55d88382c68ddb63c0afe57b4f8ca95d44 | [40815937095／123263409449](https://github.com/pampa0629/addp/actions/runs/40815937095/job/123263409449) |
+| a904b0de8ffd9eb8cf404b4650f7bf2f86a29fde | [40815855493／123262216602](https://github.com/pampa0629/addp/actions/runs/40815855493/job/123262216602) |
+| 1f76f9428bdc18b06c9df64bea771b5cf1811c98 | [40814375122／123258977414](https://github.com/pampa0629/addp/actions/runs/40814375122/job/123258977414) |
+| d0eb88434951e9fcb6a2067f786d53bd33e88882 | [40813833534／123256932880](https://github.com/pampa0629/addp/actions/runs/40813833534/job/123256932880) |
+| ba7453222ecac82500b42c84b3c722deeba4d502 | [40813548359／123256276127](https://github.com/pampa0629/addp/actions/runs/40813548359/job/123256276127) |
+| 19f05cd5e9c744eabf08941f381899d109894a7e | [40811786278／123247851294](https://github.com/pampa0629/addp/actions/runs/40811786278/job/123247851294) |
+| 9a151b2c367d08b4620aef042608624ed537de6a | [40811503592／123245523106](https://github.com/pampa0629/addp/actions/runs/40811503592/job/123245523106) |
+
+本次没有发现自然首轮HTTP失败，三份深核报告未复现目录消失；缺失对象现场分支仍未触发，历史删除者／根因仍未定位，不以多次成功关闭间歇故障。没有提出推测性修正或改变采样／编译生命周期；后续若自然复发，先以新增类别／身份与单调边界给出最小方案，再经讨论实施。本节不替代正式Agent/Copilot后端到页面、停源历史读取等原有缺口。
+
+三份原始归档身份：
+
+| artifact | ZIP字节数／SHA256 | 报告SHA256 |
+| --- | --- | --- |
+| 12870806065 | 24322／`45879083b619453b92c6026d4fd8cf50e77d5db320468a97dd81cb7010b65346` | `b419f1d8c34909d8e80edc50b3c2ad3c6d6e81d525dd2b06c0f08b1f397ff48b` |
+| 12870867972 | 24429／`354c8e8e1beda61da1aeef07bfa247b9ec608dd8f7417e62773dac66e0169c48` | `1d4fed702c8b6ff9882f76104ce6f3383c2ba4c502013086167110b4691e263b` |
+| 12900440023 | 23895／`41d4cce8c8be16ba443e6345110e34841f11923d73be1a5b8275bb8cc7921278` | `7276eee95febede05ef9668cdd2cc5e47688412b6b8f68fd1aad7cac6a30d837` |
+
+本机`/tmp/addp-p19-http-followup2-summary-20261029.json`保留深核／仅状态／排除项分类，`/tmp/addp-p19-http-followup2-verified-20261029.json`保留归档核验摘要，另有同前缀run、attempt及Job快照。本轮只做文档证据变更，校验主题计数／锚点／索引和diff，不重跑产品或代码门禁，不建立持续监控。
