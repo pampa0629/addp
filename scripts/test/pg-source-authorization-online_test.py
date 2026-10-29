@@ -1422,6 +1422,7 @@ class PGDependencyOutageTest(unittest.TestCase):
             'SYSTEM_URL': 'http://127.0.0.1:8180', 'GATEWAY_URL': 'http://127.0.0.1:8000',
             'CATALOG_URL': 'http://127.0.0.1:8192',
             'ADDP_ONLINE_SECRET_DIR': self.directory.name,
+            'ADDP_ONLINE_PG_SOURCE_PREFIX': 'pg_auth_0123456789abcdef',
             'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'must-not-inherit',
             'ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN': 'must-not-inherit',
             'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'must-not-inherit'}
@@ -1502,6 +1503,7 @@ class PGDependencyOutageTest(unittest.TestCase):
             self.assertEqual(ONLINE.socket.create_connection.call_args.args[0],
                              ('127.0.0.1', 8082 if self.module == 'meta' else 8192))
             for call in run.call_args_list:
+                self.assertEqual(call.kwargs['env']['PGAPPNAME'], 'pg_auth_0123456789abcdef_' + self.module)
                 self.assertFalse(any(key.startswith(('ADDP_ONLINE_TEST_USER_', 'ADDP_ONLINE_ADMIN_USER_',
                                                      'ADDP_ONLINE_FIXTURE_')) for key in call.kwargs['env']))
                 self.assertEqual(call.kwargs['timeout'], 120)
@@ -2230,7 +2232,7 @@ class MetaCollectionOnlineTest(unittest.TestCase):
         clock = self.collection_expiry_fixture(fault)
         self.report['meta_collection'] = {'qualification_commands': [], 'scheduled': {
             'executions': {'approved_repeat': {'items_scanned': 3}}}}
-        barrier = SimpleNamespace(baseline={'reset_at': 'stable', 'calls': {}, 'other_statement_count': 0, 'other_statements': []}, closed=False, released=False)
+        barrier = SimpleNamespace(connection_observation=lambda *args: {'verified': True}, baseline={'reset_at': 'stable', 'calls': {}, 'other_statement_count': 0, 'other_statements': []}, closed=False, released=False)
         selected = []
         def open_source():
             if fault == 'source_open': raise ONLINE.SuiteError('source preparation failed')
@@ -2331,6 +2333,25 @@ class MetaCollectionOnlineTest(unittest.TestCase):
             self.scenario.run_inflight_expiry(self.report)
         self.scenario.cleanup()
         self.assertFalse(self.tasks)
+
+    def test_connection_evidence_does_not_weaken_other_assertion_or_failure_cleanup(self):
+        for fault in ('other_sql', 'attribution_missing', 'log_read_failed'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                barrier = self.inflight_fixture('other_sql' if fault == 'other_sql' else None, natural_expiry=True)
+                connection = {'verified': fault == 'other_sql', 'events': [{'module': 'system', 'category': 'other'}]}
+                barrier.connection_observation = Mock(return_value=connection)
+                if fault == 'log_read_failed':
+                    barrier.connection_observation.side_effect = ONLINE.SuiteError('private source log unavailable')
+                with patch.object(ONLINE, 'PGCollectionReadBarrier', return_value=barrier), self.assertRaises(ONLINE.SuiteError):
+                    self.scenario.run_inflight_expiry(self.report)
+                evidence = self.report['meta_collection']['inflight_expiry']
+                if fault != 'log_read_failed': self.assertEqual(evidence['connection_observation'], connection)
+                self.assertFalse(self.report['checks'])
+                self.assertNotIn('next_catalog_denied', evidence)
+                self.scenario.cleanup()
+                self.assertTrue(barrier.closed and barrier.released)
+                self.assertFalse(self.tasks)
 
     def test_inflight_counter_failures_retain_bounded_diagnostics_without_marking_passed(self):
         for fault, stage in [('statistics_reset', 'reset_check'), ('another_catalog', 'delta_check'),
@@ -3073,6 +3094,112 @@ class InitialProductionOnlineTest(unittest.TestCase):
         self.assertFalse(self.output_revoked)
 
 
+class PGSourceConnectionEvidenceTest(unittest.TestCase):
+    def row(self, module='meta', category='tables', pid=185, kind='unclassified', query_id='12'):
+        return {'module': module, 'category': category, 'kind': kind, 'pid': pid,
+                'session_id': 'abcdef01.123', 'at': '2030-01-01T00:00:01+00:00', 'query_id': query_id}
+
+    def test_source_evidence_distinguishes_health_probe_without_subtracting_it(self):
+        rows = [self.row('system', 'other', 200, 'version_probe', '-123'), self.row()]
+        result = ONLINE.source_connection_summary(rows, {'tables': 1, 'other': 1}, {'pid': 185})
+        self.assertTrue(result['reconciled'])
+        self.assertTrue(result['blocked_pid_matched'])
+        self.assertEqual(result['by_module']['system']['other'], 1)
+        self.assertEqual(result['observed_calls']['other'], 1)
+        self.assertEqual(result['events'], rows)
+
+    def test_unknown_or_missing_records_and_second_enumeration_cannot_pass(self):
+        cases = [([self.row('unknown')], {'tables': 1}, {'pid': 185}),
+                 ([], {'tables': 1}, {'pid': 185}),
+                 ([self.row(pid=999)], {'tables': 1}, {'pid': 185}),
+                 ([self.row(), self.row(pid=999)], {'tables': 2}, {'pid': 185})]
+        for rows, delta, blocked in cases:
+            with self.subTest(rows=rows):
+                result = ONLINE.source_connection_summary(rows, delta, blocked)
+                self.assertFalse(result['verified'])
+
+    def test_rejects_raw_fields_truncation_and_untrusted_identifiers(self):
+        for row in [dict(self.row(), query='secret'), dict(self.row(), module='private token'),
+                    dict(self.row(), module=[]), dict(self.row(), kind={}), dict(self.row(), at=None),
+                    dict(self.row(), pid=True), dict(self.row(), session_id='secret/../path'),
+                    dict(self.row(), query_id='private query')]:
+            with self.subTest(row=row), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.source_connection_summary([row], {'tables': 1}, None)
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.source_connection_summary([self.row()] * 257, {'tables': 257}, None)
+
+    def test_zero_source_repeat_is_distinct_from_missing_query_snapshot(self):
+        result = ONLINE.source_connection_summary([], {}, None)
+        self.assertTrue(result['verified'])
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.source_connection_summary([], {'other': -1}, None)
+
+
+class PGSourceConnectionObservationTest(unittest.TestCase):
+    def setUp(self):
+        self.barrier = ONLINE.PGCollectionReadBarrier()
+        self.env = patch.dict(ONLINE.os.environ, {'ADDP_ONLINE_PG_SOURCE_PREFIX': 'pg_auth_0123456789abcdef'})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+
+    def test_checkpoint_requires_owned_complete_log_and_preserves_byte_offset(self):
+        base = {'path': 'pg_source_private/statements.json', 'size': 120, 'complete': True}
+        for value in (dict(base, path='/private/secret'), dict(base, size=True), dict(base, size=-1),
+                      dict(base, complete=False)):
+            with self.subTest(value=value), patch.object(self.barrier, 'query', return_value=value), self.assertRaises(ONLINE.SuiteError):
+                self.barrier.begin_observation()
+            self.assertIsNone(self.barrier.log_offset)
+        with patch.object(self.barrier, 'query', return_value=base) as query:
+            self.barrier.begin_observation()
+            self.assertEqual(self.barrier.log_offset, 120)
+            self.assertIn('pg_read_binary_file', query.call_args.args[0])
+        with patch.dict(ONLINE.os.environ, {'ADDP_ONLINE_PG_SOURCE_PREFIX': 'foreign'}), patch.object(self.barrier, 'query') as query:
+            with self.assertRaises(ONLINE.SuiteError): self.barrier.begin_observation()
+            query.assert_not_called()
+
+    def test_completed_projection_waits_for_collector_and_advances_only_complete_window(self):
+        self.barrier.log_offset = 120
+        empty = {'bytes': 0, 'complete': True, 'count': 0, 'events': []}
+        row = PGSourceConnectionEvidenceTest().row()
+        ready = {'bytes': 440, 'complete': True, 'count': 1, 'events': [row]}
+        with patch.object(self.barrier, 'query', side_effect=[empty, ready]) as query, \
+             patch.object(ONLINE.time, 'sleep') as sleep, patch.object(ONLINE.time, 'monotonic', return_value=0):
+            evidence = self.barrier.connection_observation({'calls': {}}, {'calls': {'tables': 1}}, {'pid': 185})
+        self.assertTrue(evidence['verified'])
+        self.assertEqual(evidence['events'], [row])
+        self.assertEqual(self.barrier.log_offset, 560)
+        self.assertEqual(query.call_count, 2)
+        sleep.assert_called_once_with(.05)
+        sql = query.call_args.args[0]
+        self.assertIn("j->>'user'='metric_reader'", sql)
+        self.assertIn("j->>'dbname'='metric_fixture'", sql)
+        self.assertIn('(statement|execute [^:]+)', sql)
+        self.assertIn('LIMIT 257', sql)
+        self.assertNotIn('parse [', sql)
+        self.assertNotIn('message', json.dumps(evidence))
+
+    def test_incomplete_oversized_or_unexpected_output_cannot_advance_cursor(self):
+        base = {'bytes': 100, 'complete': True, 'count': 0, 'events': []}
+        for value in (dict(base, bytes=262145), dict(base, count=1), dict(base, complete=False),
+                      dict(base, complete=1), dict(base, bytes=True), dict(base, raw='private SQL'),
+                      dict(base, count=257, events=[PGSourceConnectionEvidenceTest().row()] * 257)):
+            self.barrier.log_offset = 120
+            with self.subTest(value=value), patch.object(self.barrier, 'query', return_value=value), \
+                 patch.object(ONLINE.time, 'monotonic', side_effect=[0, 3]), self.assertRaises(ONLINE.SuiteError):
+                self.barrier.connection_observation({'calls': {}}, {'calls': {}})
+            self.assertEqual(self.barrier.log_offset, 120)
+
+    def test_missing_events_keep_counter_mismatch_visible_instead_of_returning_success(self):
+        self.barrier.log_offset = 120
+        sample = {'bytes': 0, 'complete': True, 'count': 0, 'events': []}
+        with patch.object(self.barrier, 'query', return_value=sample), \
+             patch.object(ONLINE.time, 'monotonic', side_effect=[0, 3]):
+            evidence = self.barrier.connection_observation({'calls': {}}, {'calls': {'other': 1}})
+        self.assertFalse(evidence['verified'])
+        self.assertFalse(evidence['reconciled'])
+        self.assertEqual(evidence['observed_calls']['other'], 0)
+
+
 class PGCollectionBarrierTest(unittest.TestCase):
     def setUp(self):
         self.barrier = ONLINE.PGCollectionReadBarrier()
@@ -3221,6 +3348,7 @@ class PGConnectionProbeControlTest(unittest.TestCase):
         self.scenario = ONLINE.MetaCollectionScenario(self.life, '31', 'probe-fixture')
         self.scenario.source_snapshot = Mock(return_value='unchanged source rules')
         self.barrier = Mock()
+        self.barrier.connection_observation.return_value = {'verified': True, 'by_module': {'system': {'other': 1}}}
         self.barrier.counts.side_effect = lambda: deepcopy(self.before if not self.calls else self.after)
         self.report = {'checks': [], 'principals': {'operator': '31', 'reader': '33'}, 'meta_collection': {}}
 

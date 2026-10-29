@@ -69,6 +69,17 @@ class HostedPGAuthorizationTest(unittest.TestCase):
         self.host.prepare_run_fixture()
         (self.host.repository / '.env.example').write_text('POSTGRES_USER=addp\n')
         shutil.copy2(SCRIPT, self.host.repository / 'scripts/test' / SCRIPT.name)
+        self.host._write_repository_script('scripts/dev/start.sh', '''
+            #!/usr/bin/env bash
+            module="${@: -1}"
+            [[ "$ADDP_ONLINE_PG_SOURCE_PREFIX" =~ ^pg_auth_[a-f0-9]{16}$ ]] || exit 20
+            [ "$PGAPPNAME" = "${ADDP_ONLINE_PG_SOURCE_PREFIX}_${module#-}" ] || exit 21
+            echo "start:$*" >> "$ADDP_TEST_GATE_TRACE"
+            echo "source:$PGAPPNAME" >> "$ADDP_TEST_GATE_TRACE"
+            sleep 30 &
+            echo "$!" >> "$ADDP_TEST_BACKGROUND_PIDS"
+            echo "started:$*"
+        ''')
         self.host._write_repository_script('business/scripts/online-metric-postgres-fixture.sh', '''
             #!/usr/bin/env bash
             echo "pg-fixture:$1" >> "$ADDP_TEST_GATE_TRACE"
@@ -128,6 +139,13 @@ class HostedPGAuthorizationTest(unittest.TestCase):
         trace = self.host.trace.read_text()
         self.assertLess(trace.index('start:-security'), trace.index('start:-manager'))
         self.assertLess(trace.index('start:-security'), trace.index('make:test-online'))
+        starts = [line.removeprefix('start:') for line in trace.splitlines() if line.startswith('start:')]
+        self.assertEqual(starts, ['--exact-process -system', '--exact-process -gateway', '-meta', '-security',
+                                  '-transfer', '-manager', '-catalog', '-system'])
+        labels = [line.removeprefix('source:') for line in trace.splitlines() if line.startswith('source:')]
+        self.assertEqual([label[25:] for label in labels],
+                         ['system', 'gateway', 'meta', 'security', 'transfer', 'manager', 'catalog', 'system'])
+        self.assertEqual(len({label[:24] for label in labels}), 1)
 
     def test_observation_only_changes_timing_before_application_start(self):
         source = SCRIPT.read_text()
@@ -264,6 +282,9 @@ class HostedPGAuthorizationTest(unittest.TestCase):
                 observing = os.environ['ADDP_TEST_CREATE_EXPECTED'] == '1'
                 assert ('shared_preload_libraries=pg_stat_statements' in args) == observing
                 assert ('pg_stat_statements.track=all' in args) == observing
+                for option in ('logging_collector=on', 'log_destination=jsonlog', 'log_directory=pg_source_private',
+                               'log_filename=statements.log', 'log_rotation_age=0', 'log_rotation_size=0', 'log_file_mode=0600'):
+                    assert (option in args) == observing
                 pathlib.Path(os.environ['ADDP_TEST_CREATED']).write_text('owned-container')
                 sys.exit(0)
             if args[0] == 'exec' and 'SELECT current_database()' in args:
@@ -276,7 +297,7 @@ class HostedPGAuthorizationTest(unittest.TestCase):
                 expected = os.environ['ADDP_TEST_CREATE_EXPECTED']
                 assert 'allow_output_create=' + expected in flags, 'missing bounded CREATE preparation'
                 sql = sys.stdin.read()
-                assert '\\n\\\\if :allow_output_create\\nGRANT CREATE ON SCHEMA public TO metric_reader;\\nCREATE SCHEMA addp_observer AUTHORIZATION postgres;\\nCREATE EXTENSION pg_stat_statements WITH SCHEMA addp_observer;\\n\\\\endif\\n' in sql
+                assert '\\n\\\\if :allow_output_create\\nGRANT CREATE ON SCHEMA public TO metric_reader;\\nCREATE SCHEMA addp_observer AUTHORIZATION postgres;\\nCREATE EXTENSION pg_stat_statements WITH SCHEMA addp_observer;\\nALTER ROLE metric_reader SET log_min_duration_statement = 0;\\nALTER ROLE metric_reader SET log_parameter_max_length = 0;\\nALTER ROLE metric_reader SET log_parameter_max_length_on_error = 0;\\n\\\\endif\\n' in sql
                 grants = [line.strip() for line in sql.splitlines() if line.startswith('GRANT ')]
                 assert grants == [
                     'GRANT CONNECT ON DATABASE metric_fixture TO metric_reader;',

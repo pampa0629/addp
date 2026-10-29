@@ -517,6 +517,7 @@ class DependencyOutage:
         environment = {key: value for key, value in os.environ.items() if not key.startswith((
             'ADDP_ONLINE_TEST_USER_', 'ADDP_ONLINE_FIXTURE_', 'ADDP_ONLINE_ADMIN_USER_'))}
         environment['SKIP_MODTIDY'] = '1'
+        environment['PGAPPNAME'] = source_application_name(self.module)
         with (self.secret / f'pg-{self.module}-lifecycle.log').open('a') as log:
             os.chmod(log.name, 0o600)
             try:
@@ -763,6 +764,45 @@ def same_collection_row(left, right):
     return left == right
 
 
+SOURCE_MODULES = {'system', 'gateway', 'meta', 'security', 'manager', 'catalog', 'transfer'}
+SOURCE_CATEGORIES = ('namespaces', 'tables', 'workspace_detection', 'other')
+
+
+def source_application_name(module):
+    prefix = os.environ.get('ADDP_ONLINE_PG_SOURCE_PREFIX', '')
+    require(re.fullmatch(r'pg_auth_[a-f0-9]{16}', prefix) and module in SOURCE_MODULES,
+            'invalid isolated source application identity')
+    return prefix + '_' + module
+
+
+def source_connection_summary(rows, delta, blocked):
+    """Public projection only. Labels are observations, never authorization identities."""
+    require(type(rows) is list and len(rows) <= 256 and type(delta) is dict
+            and all(k in SOURCE_CATEGORIES and type(v) is int and v >= 0 for k, v in delta.items()),
+            'invalid source connection observation')
+    totals = dict.fromkeys(SOURCE_CATEGORIES, 0)
+    by_module = {}
+    for row in rows:
+        require(type(row) is dict and set(row) == {'module', 'category', 'kind', 'pid', 'session_id', 'at', 'query_id'}
+                and type(row['module']) is str and row['module'] in SOURCE_MODULES | {'unknown'}
+                and type(row['category']) is str and row['category'] in SOURCE_CATEGORIES
+                and type(row['kind']) is str and row['kind'] in {'version_probe', 'unclassified'}
+                and type(row['pid']) is int and row['pid'] > 0
+                and type(row['session_id']) is str and re.fullmatch(r'[a-f0-9]+\.[a-f0-9]+', row['session_id'])
+                and type(row['query_id']) is str and re.fullmatch(r'-?[0-9]{1,20}', row['query_id']),
+                'invalid source connection event')
+        collection_instant(row['at'])
+        totals[row['category']] += 1
+        by_module.setdefault(row['module'], dict.fromkeys(SOURCE_CATEGORIES, 0))[row['category']] += 1
+    tables = [row for row in rows if row['category'] == 'tables']
+    matched = blocked is None or (len(tables) == 1 and tables[0]['module'] == 'meta'
+                                  and tables[0]['pid'] == blocked['pid'])
+    reconciled = totals == {key: delta.get(key, 0) for key in SOURCE_CATEGORIES}
+    return {'events': rows, 'observed_calls': totals, 'by_module': by_module,
+            'reconciled': reconciled, 'blocked_pid_matched': matched,
+            'verified': reconciled and matched and 'unknown' not in by_module}
+
+
 class PGCollectionReadBarrier:
     """Bounded source-owned lock + aggregate observations, only on disposable PG."""
     def __init__(self):
@@ -770,6 +810,66 @@ class PGCollectionReadBarrier:
         self.application = 'pg_collection_barrier_' + uuid.uuid4().hex[:16]
         self.container = self.process = self.pid = None
         self.schema_owned = self.released = self.closed = False
+        self.log_offset = None
+
+    def begin_observation(self):
+        # The log stays private inside the admitted disposable source container.
+        source_application_name('meta')
+        result = self.query("""WITH checkpoint AS MATERIALIZED (
+            SELECT (pg_stat_file('pg_source_private/statements.json')).size AS size)
+            SELECT json_build_object('path',pg_current_logfile('jsonlog'),'size',size,
+              'complete',size=0 OR pg_read_binary_file('pg_source_private/statements.json',greatest(size-1,0),1)=decode('0a','hex'))
+            FROM checkpoint;""")
+        require(result.get('path') == 'pg_source_private/statements.json'
+                and type(result.get('size')) is int and result['size'] >= 0 and result.get('complete') is True,
+                'private source log is unavailable')
+        self.log_offset = result['size']
+
+    def connection_observation(self, before, after, blocked=None):
+        require(type(self.log_offset) is int and self.log_offset >= 0, 'source observation was not started')
+        prefix = source_application_name('meta').removesuffix('_meta')
+        # Classification happens inside PostgreSQL. No raw SQL, parameter or
+        # untrusted application text leaves its private source log directory.
+        # Collector writes are asynchronous; bounded reads wait only for the
+        # already-completed statements included in the original counter sample.
+        delta = {key: after['calls'].get(key, 0) - before['calls'].get(key, 0) for key in SOURCE_CATEGORIES}
+        deadline = time.monotonic() + 2
+        while True:
+            sample = self.query(f"""WITH data AS MATERIALIZED (
+              SELECT pg_read_file('pg_source_private/statements.json',{self.log_offset},262145) AS raw),
+            lines AS MATERIALIZED (
+              SELECT line::jsonb AS j FROM data, LATERAL regexp_split_to_table(raw,E'\\n') line
+              WHERE octet_length(raw)<=262144 AND (raw='' OR right(raw,1)=E'\\n') AND line<>''),
+            completed AS MATERIALIZED (
+              SELECT j, regexp_replace(j->>'message','^duration: [0-9.]+ ms  (statement|execute [^:]+): ','') AS sql
+              FROM lines WHERE j->>'user'='metric_reader' AND j->>'dbname'='metric_fixture'
+                AND j->>'message' ~ '^duration: [0-9.]+ ms  (statement|execute [^:]+): ')
+            SELECT json_build_object('bytes',(SELECT octet_length(raw) FROM data),
+              'complete',(SELECT raw='' OR right(raw,1)=E'\\n' FROM data),
+              'count',(SELECT count(*) FROM completed),'events',COALESCE((SELECT json_agg(json_build_object(
+                'module',CASE WHEN j->>'application_name' IN ({','.join(chr(39)+source_application_name(m)+chr(39) for m in sorted(SOURCE_MODULES))})
+                  THEN substr(j->>'application_name',{len(prefix)+2}) ELSE 'unknown' END,
+                'pid',(j->>'pid')::integer,'session_id',j->>'session_id',
+                'at',to_char((j->>'timestamp')::timestamptz AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+                'query_id',COALESCE(j->>'query_id','0'),
+                'kind',CASE WHEN btrim(sql)='SELECT version()' THEN 'version_probe' ELSE 'unclassified' END,
+                'category',CASE WHEN sql LIKE '%FROM information_schema.tables t%' AND sql LIKE '%pg_total_relation_size%'
+                  THEN 'tables' WHEN sql LIKE '%pg_catalog.pg_namespace) s%' THEN 'namespaces'
+                  WHEN sql LIKE '%SELECT COUNT(*)%' AND sql LIKE '%lower(table_name) IN%' THEN 'workspace_detection'
+                  ELSE 'other' END)) FROM (SELECT * FROM completed LIMIT 257) bounded),'[]'::json));""")
+            require(type(sample) is dict and set(sample) == {'bytes', 'complete', 'count', 'events'}
+                    and type(sample.get('complete')) is bool
+                    and type(sample.get('bytes')) is int and 0 <= sample['bytes'] <= 262144
+                    and type(sample.get('events')) is list and type(sample.get('count')) is int
+                    and len(sample['events']) == sample['count'] <= 256,
+                    'source connection observation exceeded its complete bounded window')
+            if sample.get('complete') is True:
+                result = source_connection_summary(sample['events'], delta, blocked)
+                if result['reconciled'] or time.monotonic() >= deadline:
+                    self.log_offset += sample['bytes']
+                    return result
+            require(time.monotonic() < deadline, 'source connection log remained incomplete')
+            time.sleep(.05)
 
     def command(self):
         require(isinstance(self.container, str) and re.fullmatch('[a-f0-9]{64}', self.container),
@@ -811,6 +911,7 @@ class PGCollectionReadBarrier:
             GRANT USAGE ON SCHEMA {self.schema} TO metric_reader;
             GRANT SELECT ON {self.schema}.canary TO metric_reader; COMMIT;
             SELECT json_build_object('created',true);''', write=True)
+        self.begin_observation()
         self.baseline = self.counts()
         environment = dict(os.environ, PGOPTIONS='-c statement_timeout=3000 -c lock_timeout=1000'
             ' -c idle_in_transaction_session_timeout=30000 -c application_name=' + self.application)
@@ -1461,6 +1562,7 @@ class MetaCollectionScenario:
         barrier = PGCollectionReadBarrier()
         self.source_barriers.append(barrier)
         barrier.admit()  # Observe only: do not create a schema or hold a source lock.
+        barrier.begin_observation()
         baseline = evidence['source_counter_baseline'] = barrier.counts()
         evidence.update(stage='probe_request', started_at=datetime.now(timezone.utc).isoformat())
         try:
@@ -1469,6 +1571,7 @@ class MetaCollectionScenario:
         finally:
             evidence['completed_at'] = datetime.now(timezone.utc).isoformat()
             observed = evidence['source_counter_observed'] = barrier.counts()
+            evidence['connection_observation'] = barrier.connection_observation(baseline, observed)
         require(response.payload.get('success') is True, 'formal connection probe did not succeed')
         delta = {key: observed['calls'].get(key, 0) - baseline['calls'].get(key, 0)
                  for key in ('namespaces', 'tables', 'workspace_detection', 'other')}
@@ -1490,6 +1593,9 @@ class MetaCollectionScenario:
                 and len(increments) == 1 and increments[0]['kind'] == 'version_probe'
                 and increments[0]['top_level'] is True and increments[0]['calls'] == 1,
                 'connection probe did not uniquely produce one version-probe other increment')
+        require(evidence['connection_observation']['verified'] is True
+                and evidence['connection_observation']['by_module'].get('system', {}).get('other') == 1,
+                'connection probe source connection attribution is incomplete')
         current = controller.request('GET', path, (200,)).payload
         require({key: current.get(key) for key in fields} == binding
                 and controller.request('GET', '/api/v1/system/auth/context', (200,)).payload == context
@@ -1574,9 +1680,12 @@ class MetaCollectionScenario:
                  for key in ('namespaces', 'tables', 'workspace_detection', 'other')}
         evidence.update(source_counter_stage='reset_check', source_call_delta=delta)
         require(counts['reset_at'] == barrier.baseline['reset_at'], 'source statistics were reset during in-flight denial')
+        evidence['connection_observation'] = barrier.connection_observation(barrier.baseline, counts, evidence['blocked'])
         evidence['source_counter_stage'] = 'delta_check'
         require(delta == {'namespaces': 1, 'tables': 1, 'workspace_detection': 2, 'other': 0},
                 'source opened another Catalog read beyond the admitted enumeration')
+        require(evidence['connection_observation']['verified'] is True,
+                'in-flight source connection attribution is incomplete')
         evidence.update(source_counter_stage='verified', next_catalog_denied=True, admitted_enumeration_finished=True)
         report['checks'].append(checks[0])
         if natural_expiry:
@@ -1601,7 +1710,10 @@ class MetaCollectionScenario:
                            - (prior_rows[key]['calls'] if key in prior_rows else 0)}
             for key in sorted(prior_rows.keys() | repeated_rows.keys())
             if prior_rows.get(key) != repeated_rows.get(key)]
+        evidence['repeat_connection_observation'] = barrier.connection_observation(counts, repeated)
         require(repeated == counts, 'denied repeat touched source or altered statistics')
+        require(evidence['repeat_connection_observation']['verified'] is True,
+                'denied repeat source connection attribution is incomplete')
         evidence['repeat_source_counter_stage'] = 'verified'
         report['checks'].append(checks[1])
         barrier.close()

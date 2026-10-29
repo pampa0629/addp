@@ -1176,12 +1176,21 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[2], 'playwright install --with-deps chromium'),
                                    (paths[3], 'browser.finish()'), (paths[5], 'same_iframe_without_relogin'),
                                    (paths[3], 'self.meta_recovery_flow('), (paths[3], "with DependencyOutage('meta')"),
-                                   (paths[3], 'lifecycle.catalog_flow('), (paths[2], '-meta -security -manager -catalog'),
+                                   (paths[3], 'lifecycle.catalog_flow('),
+                                   (paths[2], 'for start_target in -meta -security -transfer -manager -catalog -system'),
                                    (paths[2], 'export SECURITY_URL='),
                                    (paths[2], 'export TRANSFER_SERVICE_CLIENT_SECRET='),
                                    (paths[2], 'export META_SERVICE_CLIENT_SECRET='),
                                    (paths[3], 'lifecycle.production_flow('),
-                                   (paths[2], '-system -meta'), (paths[3], 'lifecycle.workspace_flow('),
+                                   (paths[2], 'for start_target in -system -gateway'),
+                                   (paths[2], '--exact-process "$start_target"'),
+                                   (paths[2], 'export ADDP_ONLINE_PG_SOURCE_PREFIX='), (paths[2], 'PGAPPNAME='),
+                                   (paths[3], "environment['PGAPPNAME'] = source_application_name(self.module)"),
+                                   (paths[3], 'def source_connection_summary('),
+                                   (paths[3], "evidence['connection_observation'] = barrier.connection_observation("),
+                                   (paths[6], 'log_directory=pg_source_private'), (paths[6], 'log_destination=jsonlog'),
+                                   (paths[6], 'ALTER ROLE metric_reader SET log_min_duration_statement = 0;'),
+                                   (paths[3], 'lifecycle.workspace_flow('),
                                    (paths[5], 'browser_revocation_denies_manager_read'),
                                    (paths[5], 'integrated_create_picker_without_write'),
                                    (paths[5], 'direct_permission_tab_read_only_filters'),
@@ -1205,6 +1214,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                                    (paths[2], 'export CATALOG_SERVICE_CLIENT_SECRET=')):
             path = self.repository / relative
             original = path.read_text()
+            self.assertIn(fragment, original, 'PG profile mutation must remove an existing requirement')
             path.write_text(original.replace(fragment, 'removed'))
             with self.subTest(relative=relative), self.assertRaises(CHECK.RegistrationError):
                 CHECK.validate_pg_authorization_profile(self.repository, {'pg-source-authorization'})

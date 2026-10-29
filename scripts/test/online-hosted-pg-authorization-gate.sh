@@ -30,9 +30,17 @@ run_logged docker exec addp-postgres psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_US
 fixture_owned=1
 run_logged bash business/scripts/online-metric-postgres-fixture.sh start
 application_owned=1
+export ADDP_ONLINE_PG_SOURCE_PREFIX="pg_auth_$(python3 -c 'import uuid; print(uuid.uuid4().hex[:16])')"
+# Start shared dependencies separately so a module's PGAPPNAME never labels
+# another module's source connections. All launches use the standard lifecycle.
+for start_target in -system -gateway; do
+  run_daemon_launcher_logged env SKIP_MODTIDY=1 PGAPPNAME="${ADDP_ONLINE_PG_SOURCE_PREFIX}_${start_target#-}" \
+    bash scripts/dev/start.sh --exact-process "$start_target"
+done
 # Manager requires an initialized Security projection before any source read.
-for start_target in -system -meta -security -manager -catalog -transfer; do
-  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
+for start_target in -meta -security -transfer -manager -catalog -system; do
+  run_daemon_launcher_logged env SKIP_MODTIDY=1 PGAPPNAME="${ADDP_ONLINE_PG_SOURCE_PREFIX}_${start_target#-}" \
+    bash scripts/dev/start.sh "$start_target"
 done
 run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite pg-source-authorization --output "$1"' _ "$IDENTITY_ENV"

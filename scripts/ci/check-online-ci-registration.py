@@ -4044,7 +4044,9 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
             'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite pg-source-authorization',
             'playwright install --with-deps chromium', 'export CONSOLE_URL=',
             'export CATALOG_URL=', 'export CATALOG_SERVICE_CLIENT_SECRET=', 'export SECURITY_URL=',
-            '-system -meta -security -manager -catalog -transfer',
+            'for start_target in -system -gateway', '--exact-process "$start_target"',
+            'for start_target in -meta -security -transfer -manager -catalog -system',
+            'export ADDP_ONLINE_PG_SOURCE_PREFIX=', 'PGAPPNAME=',
             'export TRANSFER_SERVICE_CLIENT_SECRET=', 'export META_SERVICE_CLIENT_SECRET=',
             'online-metric-postgres-fixture.sh stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
         "scripts/test/pg-source-authorization-online.py": (
@@ -4066,10 +4068,15 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
             'browser withdrawal did not preserve its exact Grant history',
             'lifecycle.production_flow(', "'auto_scan_metadata': False", 'self.collect_production_grants()',
             'new_pg_output_initial_grant_issued', 'output_survives_source_withdrawal',
-            'output_withdrawal_denies_read'),
+            'output_withdrawal_denies_read', 'def source_connection_summary(',
+            "environment['PGAPPNAME'] = source_application_name(self.module)",
+            "evidence['connection_observation'] = barrier.connection_observation(",
+            "'pg_source_private/statements.json'"),
         "business/scripts/online-metric-postgres-fixture.sh": (
             'content-change|content-reset)', 'pg-source-authorization', 'container ownership mismatch',
-            'LOCK TABLE public.metric_people', 'pg-content:changed', 'pg-content:baseline'),
+            'LOCK TABLE public.metric_people', 'pg-content:changed', 'pg-content:baseline',
+            'log_directory=pg_source_private', 'log_destination=jsonlog',
+            'ALTER ROLE metric_reader SET log_min_duration_statement = 0;'),
         "console/frontend/e2e/online/pg-source-authorization.spec.js": (
             'sessionSnapshot', 'same_iframe_without_relogin', 'denied_preview_clears_old_rows',
             'isAnonymousRefreshResponse', 'beforeCookie.value !== afterCookie.value',

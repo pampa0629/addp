@@ -75,6 +75,11 @@ if [ "${ONLINE_SUITE:-}" = pg-source-authorization ]; then
     fail "PG output creation requires its isolated suite"
   allow_output_create=1
   source_command+=(-c shared_preload_libraries=pg_stat_statements -c pg_stat_statements.track=all)
+  # Private source-side diagnostics. Never send raw statements to docker logs
+  # or the Hosted Artifact; container/volume destruction owns their cleanup.
+  source_command+=(-c logging_collector=on -c log_destination=jsonlog
+    -c log_directory=pg_source_private -c log_filename=statements.log
+    -c log_rotation_age=0 -c log_rotation_size=0 -c log_file_mode=0600)
 fi
 ! docker container inspect "$container" >/dev/null 2>&1 || fail "refusing an existing source container"
 [ -d "${ADDP_ONLINE_SECRET_DIR:?}" ] || fail "Hosted secret directory is missing"
@@ -138,6 +143,9 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO metric_reader;
 GRANT CREATE ON SCHEMA public TO metric_reader;
 CREATE SCHEMA addp_observer AUTHORIZATION postgres;
 CREATE EXTENSION pg_stat_statements WITH SCHEMA addp_observer;
+ALTER ROLE metric_reader SET log_min_duration_statement = 0;
+ALTER ROLE metric_reader SET log_parameter_max_length = 0;
+ALTER ROLE metric_reader SET log_parameter_max_length_on_error = 0;
 \endif
 SQL
 fi
