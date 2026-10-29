@@ -395,3 +395,10 @@ Manager 索引已补持久 `cleanup_hold_id`、C／attempt 绑定操作及准确
 本地 `make test-platform` 最终失败于既有 raster runner 的 Node 主版本检查（25 != 24）；来源快照提交的 Platform consistency CI 已取消。保留平台总门禁未通过事实，已通过的来源核验、Go、构建、Swagger／权限、相关 PG 和前端分别计证，不扩展本轮去修改栅格门禁或预算。新 Hosted、真实 Gateway／Worker、旧记录删除及环境切换仍未运行。
 
 本地完整 migration 包标准门禁最终通过（`/tmp/addp-cleanup-iam-migration-v2.log`），覆盖完整空库迁移、重入／篡改拒绝、当前目录及历史前向迁移。此前触发器数量遗漏的失败日志 `/tmp/addp-cleanup-iam-migration-final.log` 保留；本次仅测试与证据文档变更。修正提交后的 IAM 自然 CI 尚待核验。
+
+
+2026-10-29 最终固定提交证据：测试修正提交 `af28a3fc750287d20ee9620ce2e0088b033b4db1` 的 [System IAM 完整 PostgreSQL 作业](https://github.com/pampa0629/addp/actions/runs/40885300963/job/123487644831) 及 IAM 汇总门禁均成功；日志核实主体角色、OAuth Client Credentials 和完整迁移 Runner 用例均实际通过，后续包及容器清理同作业成功。全仓 Go CI 亦成功。Monitor 修正的 [PostgreSQL 作业](https://github.com/pampa0629/addp/actions/runs/40880761833/job/123475011425) 成功，明确包含 CleanupObservationSnapshot。
+
+本轮 T2 工作流整体仍为 failure：Redis 原生门禁在拉取镜像时被注册表返回 `toomanyrequests: Data limit exceeded`，尚未执行测试，不记为本轮通过。此前包含同一产品实现的 `944c4bcf74272a568045a8c066da34878f4c7fa6` Redis 作业已成功；本次只修正 PG 测试断言，未修改 Redis 产品路径。不改变镜像来源、预算或测试范围，不因环境拉取失败覆盖原通过或原失败记录。待拉取额度恢复后，仅该门禁仍可补充新提交的 CI 证据。
+
+交付边界：首期十 Owner 接线、持久隔离、迟到写入阻断及专业结果读取已实现并提交；本地与固定提交专项结果以上述记录分别为准。本地全量 `test-changed` 未执行到测试、`test-platform`／全量 IAM／Monitor 前端各自的失败仍保留，不能称全仓本地门禁全绿。新的 Hosted、真实 Gateway／Worker 故障注入及旧环境切换未验收。清单汇报稿位于 `/tmp/addp-cleanup-p0-handoff-20261029.txt`，会话消息工具不可用，未送达维护会话、未由本会话回填工作簿。
