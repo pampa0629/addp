@@ -2,6 +2,7 @@ import importlib
 import io
 import itertools
 import json
+import sqlite3
 import tempfile
 import unittest
 import uuid
@@ -3153,9 +3154,21 @@ class PGSourceConnectionEvidenceTest(unittest.TestCase):
 
     def test_empty_query_classification_cannot_hide_sql_category_or_unknown_kind(self):
         for row in (self.row('system', 'other', kind='empty_query', query_id='0'),
+                    self.row('meta', 'other', kind='empty_comment_ping', query_id='0'),
                     self.row('system', 'protocol_empty', kind='unclassified', query_id='0')):
             with self.subTest(row=row), self.assertRaises(ONLINE.SuiteError):
                 ONLINE.source_connection_summary([row], {}, None)
+
+    def test_comment_ping_preserves_inflight_sql_delta_and_unknown_origin_rejection(self):
+        ping = self.row('meta', 'protocol_empty', 185, 'empty_comment_ping', '0')
+        table = self.row('meta', 'tables', 185)
+        result = ONLINE.source_connection_summary([ping, table], {'tables': 1}, {'pid': 185})
+        self.assertTrue(result['verified'])
+        self.assertEqual(result['events'], [ping, table])
+        self.assertEqual(result['observed_calls']['other'], 0)
+        self.assertEqual(result['protocol_empty_calls'], {'meta': 1})
+        self.assertFalse(ONLINE.source_connection_summary([dict(ping, module='unknown'), table],
+                                                         {'tables': 1}, {'pid': 185})['verified'])
 
 
 class PGSourceConnectionObservationTest(unittest.TestCase):
@@ -3221,6 +3234,31 @@ class PGSourceConnectionObservationTest(unittest.TestCase):
         self.assertFalse(evidence['verified'])
         self.assertFalse(evidence['reconciled'])
         self.assertEqual(evidence['observed_calls']['other'], 0)
+
+    def test_generated_sql_classifies_only_exact_driver_empty_pings(self):
+        self.barrier.log_offset = 0
+        sample = {'bytes': 0, 'complete': True, 'count': 0, 'events': []}
+        with patch.object(self.barrier, 'query', return_value=sample) as query:
+            self.barrier.connection_observation({'calls': {}}, {'calls': {}})
+        # Execute the actual generated portable CASE expressions, not a Python
+        # replica. Full JSON-log acquisition remains covered by Hosted PG T4.
+        match = ONLINE.re.search(r"'kind',(CASE.*?END),\s*'category',(CASE.*?END)\) ORDER BY ordinal",
+                                 query.call_args.args[0], ONLINE.re.S)
+        self.assertIsNotNone(match)
+        cases = {';': ('empty_query', 'protocol_empty'),
+                 '-- ping': ('empty_comment_ping', 'protocol_empty'),
+                 'SELECT version()': ('version_probe', 'other')}
+        for value in ('', ' ;', '; ', ' -- ping', '-- ping ', '-- ping\nSELECT 1',
+                      '-- ping\r\nSELECT 1', '; SELECT 1', '-- ping-other', '-- other', 'SELECT 1'):
+            cases[value] = ('unclassified', 'other')
+        db = sqlite3.connect(':memory:')
+        self.addCleanup(db.close)
+        db.create_function('btrim', 1, lambda value: value.strip(' '))
+        for value, expected in cases.items():
+            with self.subTest(value=value):
+                actual = db.execute('SELECT ' + match[1] + ',' + match[2] + ' FROM (SELECT ? AS sql)',
+                                    (value,)).fetchone()
+                self.assertEqual(actual, expected)
 
 
 class PGCollectionBarrierTest(unittest.TestCase):

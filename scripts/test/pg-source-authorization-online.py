@@ -786,8 +786,8 @@ def source_connection_summary(rows, delta, blocked):
         require(type(row) is dict and set(row) == {'module', 'category', 'kind', 'pid', 'session_id', 'at', 'query_id'}
                 and type(row['module']) is str and row['module'] in SOURCE_MODULES | {'unknown'}
                 and type(row['category']) is str and row['category'] in (*SOURCE_CATEGORIES, 'protocol_empty')
-                and type(row['kind']) is str and row['kind'] in {'version_probe', 'unclassified', 'empty_query'}
-                and (row['category'] == 'protocol_empty') == (row['kind'] == 'empty_query')
+                and type(row['kind']) is str and row['kind'] in {'version_probe', 'unclassified', 'empty_query', 'empty_comment_ping'}
+                and (row['category'] == 'protocol_empty') == (row['kind'] in {'empty_query', 'empty_comment_ping'})
                 and type(row['pid']) is int and row['pid'] > 0
                 and type(row['session_id']) is str and re.fullmatch(r'[a-f0-9]+\.[a-f0-9]+', row['session_id'])
                 and type(row['query_id']) is str and re.fullmatch(r'-?[0-9]{1,20}', row['query_id']),
@@ -858,9 +858,9 @@ class PGCollectionReadBarrier:
                 'pid',(j->>'pid')::integer,'session_id',j->>'session_id',
                 'at',to_char((j->>'timestamp')::timestamptz AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
                 'query_id',COALESCE(j->>'query_id','0'),
-                'kind',CASE WHEN sql=';' THEN 'empty_query'
+                'kind',CASE WHEN sql=';' THEN 'empty_query' WHEN sql='-- ping' THEN 'empty_comment_ping'
                   WHEN btrim(sql)='SELECT version()' THEN 'version_probe' ELSE 'unclassified' END,
-                'category',CASE WHEN sql=';' THEN 'protocol_empty'
+                'category',CASE WHEN sql IN (';','-- ping') THEN 'protocol_empty'
                   WHEN sql LIKE '%FROM information_schema.tables t%' AND sql LIKE '%pg_total_relation_size%'
                   THEN 'tables' WHEN sql LIKE '%pg_catalog.pg_namespace) s%' THEN 'namespaces'
                   WHEN sql LIKE '%SELECT COUNT(*)%' AND sql LIKE '%lower(table_name) IN%' THEN 'workspace_detection'
