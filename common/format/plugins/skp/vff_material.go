@@ -33,6 +33,7 @@ type vffXMLNode struct {
 type vffMaterialFact struct {
 	member, name, image string
 	imageSHA256         [32]byte
+	xmlSHA256           [32]byte
 }
 
 func readVFFMaterials(ctx context.Context, container *vffContainer, limits vffXMLLimits) ([]vffMaterialFact, error) {
@@ -296,7 +297,7 @@ func vffMaterialDeclaration(root *vffXMLNode, member string, members map[string]
 			}
 		}
 	}
-	fact := vffMaterialFact{member: member, name: m.attrs["name"]}
+	fact := vffMaterialFact{member: member, name: m.attrs["name"], xmlSHA256: sha256.Sum256(members[member])}
 	if texture == nil {
 		return fact, nil
 	}
