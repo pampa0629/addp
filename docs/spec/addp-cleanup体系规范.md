@@ -2,6 +2,8 @@
 
 > 状态：平台级规范。本文定义 ADDP 系统级资源回收体系的概念、职责边界、协议约束和演进顺序。
 
+> 2026-10-29设计确认：持久队列、创建职责及完成回执采用[持久队列与完成回执](#持久队列与完成回执)的唯一目标协议，Graph取消／核清沿[Graph构建契约](tasks/模块任务契约.md#graph-构建任务)。本次仅修订文档，代码、API与运行验收尚未迁移；下文显式标注“当前实现”的Redis／响应观察是待删除或待迁移的事实，不是可继续保留的兼容路线。
+
 阅读导航：
 
 | 阅读目的 | 正文入口 |
@@ -43,10 +45,10 @@ cleanup 从监控视角具有 execution 特征，必须纳入 Monitor；从编�
 
 | 术语 | 定义 |
 | --- | --- |
-| cleanup coordinator | 资源回收协调方。负责发起请求、记录任务元信息、发布事件、汇总结果和展示审计。当前唯一 coordinator 是 System。 |
+| cleanup coordinator | 资源回收协调方。负责受理持久请求、原子创建父子pending、汇总标准回执和展示审计；唯一coordinator是System，不代替Owner执行清理。 |
 | cleanup executor | 资源回收执行方。负责评估和回收本模块拥有的资源，并写入模块结果。Meta、Manager、Transfer 等模块均可成为 executor。 |
 | owner module | 资源、状态或产物的拥有模块。cleanup 责任跟随 owner module，不跟随触发事件来源。 |
-| cleanup request | 资源回收协调方发布的中性资源回收请求。只携带任务、租户、范围、动作和中性上下文，不携带模块私有表结构或存储路径。 |
+| cleanup request | System持久受理的中性资源回收请求。只携带身份、租户、范围、动作、确认依据和中性上下文，不携带模块私有表结构或存储路径，不依赖Redis投递作为唯一事实。 |
 | cleanup result | 资源回收执行方写回的模块级资源回收结果。包含统一状态字段和模块私有统计明细。 |
 | logical cleanup | 逻辑清理。把事实、产物状态或任务定义从活跃路径移除，或标记为 `deleted`、`missing_source`、`outdated`、`disabled` 等。 |
 | physical cleanup | 物理清理。删除实际存储资源，例如对象存储 key、PG 派生对象、向量行、缓存 key、临时文件。 |
@@ -62,9 +64,9 @@ System 是 cleanup coordinator，负责：
 
 - 提供 Console / Admin UI 入口。
 - 校验操作者权限和租户上下文。
-- 创建资源回收 scan / execute 请求。
-- 发布 `cleanup.request` 资源回收事件。
-- 保存任务元信息、等待模块结果、计算总体状态。
+- 校验并冻结资源回收 scan / execute 请求、确认依据和expected modules，同事务预建父子pending。
+- 沿公共execution队列持久投递，不再发布Redis `cleanup.request` 作为执行路线；真实生命周期来源事件保留。
+- 保存任务元信息、消费安全标准回执、计算并持久化总体状态；正常GET不得推进状态。
 - 展示各模块资源回收结果和审计摘要。
 - 为资源回收 scan / execute 写入系统运维 execution，并进入 Monitor。
 - 为资源回收创建、确认、完成和失败写入审计日志。
@@ -78,11 +80,12 @@ System 不负责：
 
 ### 2. common
 
-`common` 只承载跨模块协议模型和事件常量，负责：
+`common` 承载中性协议及公共执行原语，负责：
 
 - 定义 cleanup request / result（资源回收请求 / 结果）的通用字段。
 - 定义模块名、动作类型、结果状态等公共枚举。
 - 提供可复用的协议解析或序列化 helper。
+- 定义闭合、有界的标准完成回执；复用execution存储和当前lease围栏组合Owner事务，不新建回执表、专用结果队列或领域结果仓储。
 
 `common` 不得承载：
 
@@ -211,11 +214,12 @@ Graph 第一阶段资源回收执行方只治理 Graph-owned 图谱建模和构�
 
 - `engine.deleted` 时，扫描绑定该 engine 的 `graph.knowledge_graphs`，以及这些 graph 下的 `graph.build_tasks`、`graph.build_materials`、`graph.review_items`。
 - `tenant.deleted` 时，扫描该租户下 Graph-owned 本体、实体类型、关系类型、本体版本、知识图谱实例、构建任务、构建材料和审核项。
-- `logical_cleanup` 将命中的本体和知识图谱实例置为 `archived`，将未完成的构建任务置为 `cancelled`；实体类型、关系类型、本体版本、构建材料和审核项不单独改写状态，只随本体、任务和图谱离开活跃路径。
-- engine 生命周期 cleanup 无论使用何种 cleanup mode，都只归档知识图谱实例并取消未完成的构建任务；图谱、本体、构建材料和审核状态必须保留供用户后续重绑定或显式删除。
+- `logical_cleanup` 必须先按[Graph执行契约](tasks/模块任务契约.md#graph-与-cleanup-准入)关闭精确范围准入、在锁外真实取消并核清，再将命中的本体和知识图谱实例置为 `archived`；不能由Cleanup直接把任务摘要写成cancelled。实体类型、关系类型、本体版本、构建材料和审核项不单独改写状态，只随本体、任务和图谱离开活跃路径。
+- engine 生命周期 cleanup 无论使用何种 cleanup mode，都只归档知识图谱实例并通过同一取消协议处理未完成构建；图谱、本体、构建材料和审核状态必须保留供用户后续重绑定或显式删除。
 - tenant 生命周期 `physical_cleanup` 才允许删除 Graph-owned PostgreSQL 状态记录，删除顺序必须先子状态后父状态。
 - 没有明确 lifecycle context 的普通 scan 不应把全部 Graph 本体、图谱或构建状态视作待回收对象。
 - Graph cleanup 第一阶段不删除 Neo4j database 中的真实图数据，不删除 MinIO 中的构建材料文件，不删除 `common.task_executions` 历史执行记录；这些物理产物只有在后续被明确登记为 Graph-owned artifact state 后，才进入对应 owner executor。
+- pending／running、独立审核在途操作及外部待核清均阻断最终清理；BuildTask最近执行状态、lease过期、进程退出或TTL均不能证明外部操作已停止。等待超时／失联保留准入关闭及证据，不自动重放清理；核清后创建新的显式execute，不复活旧终态。完整状态转换与E→G→T／B锁顺序只在[Graph契约](tasks/模块任务契约.md#graph-事务与锁顺序)维护。
 
 #### Asset
 
@@ -264,7 +268,7 @@ Security 实施时必须同步接入资源回收执行方，只治理 Security-o
 ```mermaid
 flowchart TD
     Console[Console / Admin UI] --> System[System cleanup coordinator]
-    System --> Request[cleanup.request]
+    System --> Request[同事务持久请求与父子 pending]
 
     Request --> Meta[Meta 资源回收执行方]
     Request --> Manager[Manager 资源回收执行方]
@@ -276,7 +280,7 @@ flowchart TD
     Transfer --> TransferOwned[Transfer-owned artifacts]
     Other --> OtherOwned[Module-owned resources]
 
-    Meta --> Result[资源回收结果 cleanup result]
+    Meta --> Result[子 execution 中的标准完成回执]
     Manager --> Result
     Transfer --> Result
     Other --> Result
@@ -309,6 +313,99 @@ cleanup request（资源回收请求）必须保持中性。
 - Meta 表名、Manager 表名或模块私有字段。
 - 具体 artifact 删除 SQL。
 - executor 内部策略开关。
+
+### 持久队列与完成回执
+
+本节为2026-10-29已确认、尚未实施的目标协议；不是已通过的运行能力。执行状态／lease唯一来源为 `common.task_executions`，不新增dispatch、inbox、outbox、回调队列或共享回执表，不保留Redis与PG两套权威状态。
+
+| 事实 | 唯一来源与写入职责 | 准入／事务边界 |
+| --- | --- | --- |
+| 受理请求、确认、范围 | System持久请求及父execution冻结配置 | 请求ID、Tenant、actor、action/mode、scope、cause、based_on_scan、expected modules和确认摘要同事务固化；没有Owner私有路径或凭据 |
+| 父子执行意图 | Common execution；System预建，Owner执行 | 同一事务创建System cleanup父pending和每个Owner一个cleanup_executor子pending；子source=system，以parent_execution_id绑定。System创建权限仅限该闭合协议，不是任意业务execution创建权 |
+| 去重 | 受理身份及cleanup子唯一约束 | 同父／同module最多一个cleanup_executor；scan／execute使用不同父。重复来源事件按确定来源操作身份返回原请求，相同受理ID不同内容拒绝；同参数但不同合法用户动作不可误合并 |
+| 领取与运行 | 对应Owner监督器＋Common lease | 只领取自身module/type的合法请求；未创建或未合法领取不得执行。记录存在不授予删除权，Owner仍核对可信来源、Tenant、资源归属、模式和确认依据 |
+| 标准完成回执 | 子项 `metadata.cleanup_receipt` | 类型化、有界且闭合，绑定本子execution，不另建表；只有对应Owner的当前有效lease能与子终态一起提交 |
+| 专业结果和待核清 | Owner私有业务／控制事实 | 不把原始statistics、details、自由文本错误、SQL、对象路径、凭据或任意响应放入标准回执，不由System跨读私表 |
+| 协调结论 | System请求／父execution及审计 | 由System当前lease汇总标准结果并同事务收尾；父恢复只重新汇总，不重置或替换子项，不重放已开始的execute |
+
+标准回执只包含：协议版本、确定action/mode、请求／确认摘要、既有结果分类、安全稳定原因、标准summary计数和impact digest；保存与本子execution、Tenant、module、parent_execution_id及完成attempt的绑定，写入端和System消费端都从权威记录交叉核对，不接受调用方覆盖身份。字段类型、大小／数量上限及规范摘要算法须在同次实现的协议校验中固定；未知版本、未知字段、类型错误、越界、身份不符或摘要不匹配均失败关闭，不能截断专业正文后当作标准回执。回执随子终态冻结，终态后不得新增或改写；旧实例停止证据只能进入Owner窄控制事实。失败／超时缺少合法Owner回执时，System只记“未取得回执”及可核验公共事实，不伪造模块成功、专业统计或停止证明。回执落库不自动扩大Monitor白名单或读取权限。
+
+Graph本阶段的Owner PG清理、标准回执、子终态必须在同一当前lease事务提交，任一步失败整体回滚；提前关闭准入是独立短事务，不能等待清理完成才关闭。其他Owner的外部物理删除不在PG事务承诺内，必须用自身外部操作事实核清，不能因为本地终态成功而推断远端删除已停止。回执更新不得覆盖Common保留的观测namespace，也不得从标准回执恢复业务写权限。
+
+| 协调或执行事件 | 唯一处理规则 |
+| --- | --- |
+| 重复受理或父监督器恢复 | 使用原请求和原子项，重算安全汇总，不重复创建子执行或重发删除 |
+| 子项尚未领取 | 按[父关闭与子领取协议](#父关闭与子领取协议)在父P→子C锁下复核；永久关闭时仅由对应Owner拒绝收敛，临时无协调lease时等待。锁协议及未领取拒绝细则已获用户确认、尚未实施，不把Graph未启动取消例外推广到其他Owner |
+| 子项已开始后失联 | 默认失败／核清，不自动退回pending重放外部删除；只读scan是否可安全恢复须Owner另有明确证明，本次不默认开放 |
+| 父协调截止但结果未齐 | 父execution冻结为timeout，列明缺项；不伪造子终态／回执，不把父终态当作子停止证明，不推进Engine为deleted |
+| 父终态后子仍持合法lease完成 | 子保存自己的真实终态和回执，父原结论不变；当前子事实与截止时汇总分开读取，不能用GET改写父终态 |
+| 子已失权／终态后迟到返回 | 拒绝业务结果／事件／终态写回，走Owner窄停止证据和核清路径；不补“迟到成功”覆盖failed |
+| 用户显式重试 | 新父／子execution及前驱关联，重核确认依据和Owner核清；不复活旧执行或自动恢复Engine删除流程 |
+
+迁移必须整体删除Redis `cleanup.request` Stream、cleanup task/result hash协调状态、临时watcher及GET写状态；生命周期来源事件保留，按其受理身份创建唯一持久请求。不新增未批准的定时发现、自动重试或后台物理删除。已有数据库、共享模块及接口迁移由主责统一整合，不能让新旧两个消费者同时执行。
+
+### 父关闭与子领取协议
+
+状态：2026-10-29持久队列、创建职责、回执及本节父子锁／未领取拒绝细则均已获用户确认，**尚未实施**；[安全展示契约](#协调关闭与模块未开始的安全展示)为本轮新增待确认草案。仅适用于System创建的 `cleanup → cleanup_executor` 闭合协议；普通父子execution和Graph `kg_build` 不自动继承本节规则。不新增公共状态、独立准入表、另一套队列或System代写Owner子项的权限。
+
+#### 准入事实与时刻
+
+P为 `module=system + task_type=cleanup + source=system` 的父execution行，C为 `module=当前Owner + task_type=cleanup_executor + source=system` 的子行，均为bounded；二者以冻结请求、相同Tenant和 `parent_execution_id` 绑定，C的module必须属于P冻结的expected modules。父请求受理时冻结绝对协调截止 `deadline`，由System按受理时刻及既定预算确定；父等待领取、重启或恢复均不刷新。该截止是协调及新子领取预算，不是子lease，也不是远端删除的停止时刻。System维护冻结事实，Common只校验中性绑定、时间及执行状态，Graph不复制截止计算。
+
+| 父事实（锁后核验） | 对尚未领取C的裁决 | 对已合法领取C的含义 |
+| --- | --- | --- |
+| P为running、当前协调lease有效且当前时间严格早于deadline，冻结请求完整 | 允许继续核验C与Owner领域条件；全部通过才可claim | 不代替C自身lease、授权或领域准入 |
+| P尚在pending，或非终态但协调lease缺失／过期，且deadline未到 | 暂缓，C保持原样；不能据此认定永久关闭或拒绝终结 | 不撤销已授予的C所有权；失联父仅由System恢复汇总 |
+| P已为任一终态，或当前时间已到deadline | 永久关闭本请求的新领取；Owner走未领取拒绝路径 | 已领取子仍按自身合法lease收尾；父关闭不是全体停止命令 |
+| 父缺失、Tenant／来源／父子／请求摘要不符或deadline非法 | 失败关闭，不claim、不“修复”绑定、不使用本节拒绝原语改记录；报告完整性错误 | 不从坏绑定推导新的清理许可，沿Owner既有停止／核清规则处理 |
+
+仅在对应claim事务成功提交后才可启动子运行体；这也是本协议区分“未领取”和“已准入”的边界。候选被发现、拿到锁、在内存生成token或事务回滚均不算领取。父关闭先提交则后续claim失败；子claim先提交则父随后关闭不追溯撤销该次领取，不能声称从此不再有任何删除。已准入子发起每次效果仍须满足自身lease、授权、有效期及Owner领域条件，父窗口不授予额外权限。
+
+Owner依据deadline拒绝C不要求父当时在线，也不代替System写父timeout；System仍须合法取得／恢复自身协调lease后收口，恢复只做汇总、不重新开放已过deadline的准入。父永久关闭后不接受延期、重开或替换子集合；新的合法用户动作必须重新受理并复核原执行效果。
+
+#### 锁顺序与提交规则
+
+先普通读取候选C的固定身份和父引用，随后在同一短PG事务中**先锁P，再锁同一C**；候选读取不授予执行权。父、子均取行更新锁，父锁负责串行化关闭与领取，不是持有到清理结束的分布式锁。每次只处理一对P/C；候选或父锁忙时可跳过，但跳过不等于父关闭、子失败或队列为空。
+
+| 操作／主责 | 固定锁序 | 原子提交与禁止事项 |
+| --- | --- | --- |
+| System父claim／heartbeat／协调恢复 | P | 只沿公共父lease推进；原deadline、子集合和请求不变，不重发删除 |
+| Owner首次领取C | P → C → 必需Owner领域锁 | 锁后重核父准入、C精确身份、pending／attempt0及从未运行证明；Common同事务设置running、attempt、started_at和新lease，Owner摘要若有则一起提交。不能先claim C再回头锁P |
+| System父关闭／截止收口 | P | 核验当前父lease，按权威时间与完整子事实快照固化父结论／缺项／审计；只普通读取公共C与合法回执，不锁C、不写C、不读Owner私表，不持锁调用HTTP |
+| Owner拒绝尚未领取C | P → C | 父已永久关闭且从未运行证明完整，条件更新C为failed并记录固定“未开始”原因；不生成运行lease或清理回执 |
+| 已领取C的heartbeat／业务结果／终态 | C → 必需Owner领域锁 | 仅核本C当前lease及Owner条件，不反向锁P；合法终态与回执、可原子提交的领域事实一起提交 |
+| 已领取C失联收敛 | C → 必需Owner领域锁 | 按当前过期attempt的条件失败／核清，不回到pending，不借父关闭绕过围栏 |
+
+Common须提供可在调用方事务中组合的“精确候选领取”及“未领取拒绝”条件原语，统一生成token、推进attempt和核验权威时间；不得由Owner复制公共更新算法。现有 `ClaimNext` 会直接先锁候选子行，不能先调用它再补父锁，也不能持P后再让它选择另一个父的C。未来改造沿同一公共claim实现收敛，不为Cleanup另建lease路线；具体函数命名由Common主责实现时确定。本轮仅记录缺口，不更改代码。
+
+所有可能阻塞的必需行锁取得后，Common按数据库当前墙钟重新判定父deadline及需要的lease；不能使用候选查询、事务开始或等锁前的时间。Owner结果写入还须在取得领域锁后复核自身lease。最后条件更新后不插入外部调用或等待；提交失败整笔回滚。System收口采用父锁内一次完整公共子记录快照，保存实际观察时刻及缺项；快照以后才可见的子完成视作后续子事实，父不复活。deadline不证明存在跨进程完全同步的停止快照，GET也不补写历史结论。
+
+多父候选按稳定顺序发现，单事务不得持有一组P再跨父取C。Common／Owner不得出现C→P，System不得在P内等待子运行体；并发事务遇数据库锁超时或死锁回滚时，不得派发外部工作。未来PG验证必须覆盖实际候选SQL、关联查询及外键隐式锁，不能只凭文档箭头认定无死锁。
+
+#### 未领取子项的终结规则
+
+只有对应Owner可在启动及正常监督循环中发现已关闭请求的本模块C并执行拒绝；System关闭P时不代写子状态，Owner离线期间C可以仍为pending。Common的窄拒绝原语只接受**pending→failed**，不开放任意无lease更新或调用方指定终态；Owner先验证可信模块身份和Cleanup绑定，Common在同一P/C事务内强制条件。该例外只确认“没有运行”，不表示清理执行失败、删除成功或远端已停止。
+
+从未运行的证明来自新预建路径、不可变身份、公共约束和“claim提交后才启动”的唯一执行路线，以及没有Owner操作事实；不是仅凭空字段、进程扫描或调用方布尔值。旧Redis消费者所建记录、历史无lease记录或来源不明记录不得套用此例外。数据库查到合法pending0但实际发现运行效果时，按完整性异常阻断，不能先把记录标成未开始再忽略副作用。
+
+| C的真实事实 | 处理与写入 |
+| --- | --- |
+| pending、attempt=0、started_at／completed_at／execution_time_ms为空、lease字段全空，且没有运行体、操作登记、回执或已产生效果；P永久关闭 | Owner将C条件更新为failed；completed_at取本次权威时刻，attempt仍0，started_at／耗时／lease仍空，progress保持0；安全error_details区分父终态关闭与deadline已到，明确“协调已关闭，执行未开始” |
+| 同上但P只是暂时没有协调lease，deadline未到 | 不改C；等待System恢复或原deadline到达，不轮换父／子身份、不刷新期限 |
+| C已经running、attempt>0、曾启动／恢复排队、存在lease残留、操作事实或证据不完整 | 不走未领取例外；以实际所有权及失联核清契约处理，不能把它重写为“未开始” |
+| C已终态，或并发合法事务已经改变C | 不重写状态、时间、原因或回执；重复拒绝只读取既有结果，条件竞争失败不执行任何清理 |
+
+未领取拒绝没有清理执行attempt，不生成 `metadata.cleanup_receipt`，不伪造“扫描无对象”、成功统计、impact digest或停止证明；保留已有观测namespace和冻结身份。Owner的标准安全拒绝原因与终态原子提交，不能以通用 `UpdateFields` 绕过围栏，不能为事件或监控伪造attempt=1。System可识别该failed为“未开始的准入拒绝”，但不能把它补成模块执行回执或据此推进Engine为deleted。在父与对应子均可读、证据完整的前提下，Owner监督器尚未提交拒绝的pending须区分“协调已关闭、该模块未开始”，不得承诺它还会启动；Owner读取裁决不可用则失败关闭，不因该展示目标绕过授权。本轮[安全展示草案](#协调关闭与模块未开始的安全展示)细化字段与文案，不把所有普通父终态泛化为该标签。
+
+#### Common／System／Graph职责核对
+
+| 主责 | 负责 | 不承担 |
+| --- | --- | --- |
+| Common | 中性父子绑定约束、P→C可组合领取和窄拒绝、锁后权威时间／lease围栏、公共状态及观测namespace保护 | 不决定业务删除范围，不读取System／Graph私表，不推断远端效果，不把父子关系泛化为取消继承 |
+| System | 受理与固定deadline、原子预建父子、协调lease与父关闭、严格校验回执并保留截止快照、恢复只汇总 | 不claim或终结Owner子项，不持P跨HTTP等待，不伪造未响应Owner的结果 |
+| Graph（Cleanup Owner） | 验证本模块请求、P→C准入／拒绝；已领取后沿C→G→T/B关闭领域准入、锁外取消核清、最终PG清理与回执原子收尾 | 不实现第二套公共lease，不用Graph `kg_build`取消例外终结Cleanup子项，不以父关闭删除Graph控制证据或扩大清理范围 |
+
+Graph首次领取需要领域准入锁时，完整顺序为P→C→G→T/B；领取后所有领域阶段仍沿C→G→T/B，不再次获取P。未领取拒绝只改公共C，不关闭G、不取消构建、不改Graph表；Graph执行阶段提前关闭G的事实仍由合法C提交。Graph最终清理不得反锁构建execution，既有三阶段和外部效果待核清边界保持不变。具体安全详情API、历史保留和人工核清权限不在本次细则中决定。
 
 ### executor 参与范围
 
@@ -364,7 +461,7 @@ cleanup 分为两个动作，支持手动、事件驱动和定时触发：
 - `platform` 会话模式不得发起 Tenant 级手动资源回收；全局资源回收必须另行定义显式 Platform Scope、Permission 和审计语义。
 - execute 请求必须携带有权用户的显式确认。当前 HTTP API 使用 `confirmed=true` 表示已核对 scan 结果、影响范围和 cleanup mode；`physical_cleanup` 或 `risk_level=high` 的 execute 还必须提供确认文本 `CONFIRM`。
 - 手动 `physical_cleanup` 还必须显式选择 `external_artifact_policy=delete|abandon`，不允许由 System 或 owner 模块隐式推断。`delete` 表示删除已登记外部产物；`abandon` 仅在外部产物无法访问时放弃平台后续物理删除责任，由 owner 把登记记录终止为 `abandoned_external`，不表示外部对象已删除。
-- System 创建 execute 时必须复制 scan context 并把本次显式选择的 `external_artifact_policy` 写入 execute task、execution、event 和审计记录，不得回写原 scan context。`logical_cleanup` 不接受该策略。
+- System 创建 execute 时必须复制 scan context 并把本次显式选择的 `external_artifact_policy` 写入持久execute请求、父子execution冻结输入和审计记录，不得回写原scan context；不再依赖Redis执行事件传参。`logical_cleanup` 不接受该策略。
 - 确认文本只用于证明显式确认，不应作为业务密钥保存；审计日志只记录是否提供了确认文本、确认时间、风险等级和影响摘要。
 - executor 可以在 execute 前做幂等复查，但复查结果必须在 result 中报告。
 - scan result 与 execute result 的关联必须可审计。
@@ -445,7 +542,7 @@ System 只能依赖 `summary` 中的标准摘要字段计算全局视图，不�
 | `failed` / `partial_success` | `failed` | 计入已结束模块；全部结束后总体为 completed_with_errors，部分成功不能记为全部通过。 |
 | `timeout` | `timeout` | 计入已结束模块；全部结束后总体为 completed_with_errors，不要求总体一定同名为 timeout。 |
 
-当前总体合成先判断全部模块是否已结束：全部结束且没有 failed、partial_success、timeout 时为 `completed`，否则为 `completed_with_errors`；尚未全部结束且超过截止时间时为 `timeout`，未超时则按是否已有模块结束返回 `running` 或 `pending`。未响应模块在截止时间后会被计为模块 timeout，可能使总体进入 completed_with_errors；这不等于取得了该模块的 `results`。
+当前尚未迁移实现的总体合成先判断全部模块是否已结束：全部结束且没有 failed、partial_success、timeout 时为 `completed`，否则为 `completed_with_errors`；尚未全部结束且超过截止时间时为 `timeout`，未超时则按是否已有模块结束返回 `running` 或 `pending`。未响应模块在截止时间后会被计为模块 timeout，可能使总体进入 completed_with_errors；这不等于取得了该模块的 `results`。持久协议的目标改为：截止时缺必需回执则父协调timeout并冻结缺项，不合成假子回执后再当作结果齐全；[持久协议](#持久队列与完成回执)为迁移后的唯一判断路线，旧合成只作为现状与回归反例保留。
 
 System 父 execution 将 `completed` 映射为 `success`，`completed_with_errors` / `failed` 映射为 `failed`，`timeout` 映射为 `timeout`，`pending` / `running` 分别保留。父 execution 对已识别任务终态的进度会置为 100；这表示协调已结束，不表示全部动作成功。`error_count=0` 也不能代替逐模块结果核对。
 
@@ -455,10 +552,76 @@ System 父 execution 将 `completed` 映射为 `success`，`completed_with_error
 
 ### System 页面与任务 API
 
+以下为当前尚未迁移API／页面的观察。将原任意context／statistics／details／errors透传改为安全标准摘要与Owner专业详情入口，以及把一小时Redis详情改为PG持久查询，均有用户可见产品影响，须在整体确认后同次修订公开API、调用方、双语Swagger与读取／保留契约；本轮不把五项执行设计确认扩展为这些接口／保留策略的实施授权，不凭回执存储决定删除现有功能。
+
 - `GET /api/v1/system/admin/cleanup/tasks/:task_id` 按[手动入口权限](#六scan-与-execute)核验 Tenant User、`system.cleanup.read` 与任务 Tenant，返回 `task_id`、`action`、`status`、`progress`、`results`、`summary`、`task`。其中 `task.context` 和各模块 `CleanupResultData` 中实际提供的 `statistics`、`details`、`errors` 随响应返回，未经过 Monitor 的 Observation 安全投影；不能以 Tenant 隔离或读取权限推断这些内容已统一脱敏。
 - System 页面按标准 `summary` 展示发现项、状态变更、释放空间、异常与风险，也展示任务 context；详情的“原始 JSON”使用 `JSON.stringify(taskDetail)` 展示完整任务响应。折叠展示和 JSON 格式化不构成敏感字段过滤；具体是否含敏感值须按 Owner 产出、接口响应与页面分别核对，不仅检查摘要表格。
 - `GET /api/v1/system/admin/cleanup/history` 返回 `tasks` 和本次返回条数 `total`，任务中仍含 context；当前后端按 `limit` 读取，不实现 `page` / `page_size` 分页。页面虽然发送这两个分页参数，不能据此宣称已分页或已获得全部历史总数。模块结果仍需逐任务查询，历史列表不等于完整结果集；临时协调状态、执行历史和审计的区别见[保留边界](#3-协调状态与历史保留)。
 - “查看 Monitor”只导航到对应 execution 或 System cleanup 列表，Monitor 仍按[独立读取与安全投影规则](#1-monitor)裁决。System 详情可读不证明 Monitor 父子树或私有明细可读；域接口与 Monitor 的授权、敏感字段、响应范围及实际展示须分别验收。字段保护与返回量控制须按实际出口核对，未证实的能力保留为待核对项；统一验收规则与 suite 接入缺口见[运行态验收](#十三运行态验收)。
+
+### 协调关闭与模块未开始的安全展示
+
+状态：2026-10-29本轮待用户确认的展示契约；父子锁与拒绝规则已确认但代码尚未迁移，本节也未实施。只解释新持久Cleanup协议的已授权执行事实，不新增execution状态、权限、通用父子取消语义、队列或执行动作，不据此宣称当前System／Monitor页面已有该能力。整份Cleanup专业详情API、安全摘要、历史保留及分页的后续迁移仍需单独收敛，本节只确定准入说明的字段与读取边界。
+
+#### 读取与裁决边界
+
+System资源回收详情沿既有 `GET /api/v1/system/admin/cleanup/tasks/:task_id` 演进，不新增旁路详情端点或兼容query。父详情核验当前User的Tenant、`system.cleanup.read`及该请求归属；其中模块执行概览必须以同一User同步取得各Owner的 `execution-read-scope`，再按公共执行读取规则过滤C，不借System后台身份读取子项。Monitor沿既有execution详情／树接口，仍要求第一方Tenant User、`monitor.execution.read`及相同逐Owner裁决；不因为System页面可读而跳过Monitor入口权限。
+
+凭据边界须单独保留：System父详情当前使用 `UserAccessCredential`，而Owner范围协议仅支持第一方、unrestricted的Tenant User。本轮不把新增概览变成收窄原父入口凭据的理由，也不扩大Owner协议。对于原父入口合法但不在Owner协议身份集合内的请求，仍按原父读取裁决返回父自身安全事实，省略可选 `module_executions`和联合准入说明；该省略表示概览不适用于当前凭据，不能当作成功空清单、全模块已核验或零结果。对于协议支持的身份，一旦开始取得所需Owner范围，任何必需Owner失败均整份聚合读取失败；不得再降级为省略概览。这是明确的字段授权条件，不是旧接口解析或错误兜底路线。
+
+Graph当前声明 `kg_build` 读取使用 `graph.build_task.read`，`cleanup_executor` 使用 `system.cleanup.read`，两个类型互不代替；声明事实见[Graph Owner裁决](../../graph/backend/internal/api/execution_read_scope.go)。相同Permission名称不等于子项已可读，还须核对Owner返回的任务历史／本人一次性执行范围及可信主体。System不得用Graph构建／审核Permission推导Cleanup读取权；Graph Cleanup概览可读也不授予图数据、构建材料、审核结果、操作证据或专业诊断读取权。本轮不新设专业详情端点，不扩大任何Permission。
+
+| 本次读取裁决 | 允许的展示 | 禁止的推断或补查 |
+| --- | --- | --- |
+| P与C均可读，合法新协议绑定及准入证明完整 | 可为本C生成下述联合准入说明；父协调结论与C当前状态分别展示 | 不把父timeout改写成C timeout，不把C的迟到终态回写父 |
+| 仅P可读，Owner合法返回的范围不含C | 只展示P的协调结论；不返回该C概览、占位节点、准入标签、隐藏子数量或结果摘要 | 不从P的expected modules／缺项记录反推隐藏C身份或状态；System原有可读的冻结参与范围仍是父请求事实，不等于子执行结果 |
+| 仅C可读，P不在当前可读范围 | 仅展示C的公共安全概览；已证实的Owner未领取拒绝可说明“执行未开始，准入已拒绝” | 不补查P私表，不显示父状态、截止、关闭原因或联合“协调已关闭”标签；不增加父存在性说明 |
+| 必需Owner不可用、超时或裁决非法 | 沿既有失败关闭：整个本次聚合读取失败，按既有 `503 execution_owner_unavailable`处理 | 不返回部分授权拼出的模块清单，不回用旧范围，不把失败变成无子项／无待处理模块 |
+| 新协议绑定、从未运行证明或安全字段不完整 | 不生成相应准入说明；仅保留本次真正可读的公共状态，必要时显示未记录并记录服务侧完整性诊断 | 不从pending、空日志、零计数、旧Redis记录、父终态或进程离线猜测“未开始” |
+
+Owner“尚未处理未领取拒绝”和“Owner读取裁决不可用”必须分开：前者在本次P/C均已获授权且证据完整时可展示closed pending；后者不能显示联合标签。可读范围为空是成功的拒绝裁决，可过滤；网络失败或非法范围不是空范围。授权不缓存、不跨请求复用，遵守[执行读取5秒总预算／最多4并发](tasks/执行监控.md#通用执行读取与过程事件)。System模块概览同样失败关闭，不为新增标签另设调用预算或后台授权缓存。
+
+#### 唯一安全投影
+
+Common唯一定义纯值类型及纯投影规则，调用方先完成授权和同一只读快照的P/C读取；纯函数不查库、不发HTTP、不决定权限。System在详情的显式 `module_executions` 概览数组中复用公共安全执行概览，Monitor在既有 `ExecutionObservation` 中复用同一可选字段 `cleanup_admission`。它是响应DTO的显式扩展，不把 `execution_config`、原始metadata或Owner错误原文加入白名单，也不写回数据库。System不能把未响应模块塞成假 `results`／完成回执；新增概览按C读取范围过滤，数组与任何新增概览计数只覆盖可读C，不借expected集合泄露隐藏子。
+
+| `cleanup_admission`字段 | 闭合规则 |
+| --- | --- |
+| `schema` | 固定 `addp.cleanup-admission-view/v1`；未知版本不解析，不提供旧格式兼容分支 |
+| `state` | 仅 `closed_unclaimed`、`closed_rejected`、`rejected_unstarted`；是说明码，不是execution状态，不进入状态筛选／状态统计枚举 |
+| `basis` | 仅联合状态必需，取 `parent_terminal`或 `deadline_reached`；P已终态优先取前者，后者仅允许已提交未领取拒绝的C使用。表示当前可核验依据，不冒充原始拒绝原因；仅C可读的 `rejected_unstarted` 必须省略此字段 |
+| `observed_at` | 本次只读快照的数据库观察时刻，UTC RFC3339Nano；不是关闭时间、拒绝时间、精确提交时刻、权限有效期或未来执行许可 |
+
+不允许附加任意文本、动态URL、父私有请求context、expected／missing模块数组、原始回执、impact digest、材料路径、图查询、实体属性、运行体ID、凭据或授权引用。P与C的身份引用只沿各自原有安全概览字段，不在本对象重复扩展。字段类型／枚举／条件组合必须由双端闭合校验，前端不解析 `error_details`自由文本或按本地化文案分支；非法对象作为响应契约错误处理，清除本次详情／标签，不回显原JSON。服务端输入缺证据不输出说明，不能输出 `false`来暗示准入开放。
+
+| 说明码 | 必需事实 | 固定展示含义 |
+| --- | --- | --- |
+| `closed_unclaimed` | 本次P/C均可读；合法新协议绑定；P已有按P锁协议提交的终态；同一快照C仍pending、attempt0且具备正式契约的从未运行证明 | “协调已关闭，模块未开始”；补充“本次读取未见Owner拒绝记录；不会再领取本次执行” |
+| `closed_rejected` | 本次P/C均可读且P已终态或固定deadline已到；C为Owner已原子提交的未领取failed拒绝，attempt0／无开始及运行耗时，固定安全原因及其绑定合法 | “协调已关闭，模块未开始”；补充“Owner已拒绝，执行未开始” |
+| `rejected_unstarted` | C可读，P不可读；C自身足以证明Owner已原子提交未领取拒绝 | 只显示“执行未开始，准入已拒绝”，不显示父关闭依据 |
+
+生成联合说明时，P/C必须来自公共执行事实的同一只读一致快照，带当前Tenant及各自Owner范围；使用公共P冻结的类型化请求／deadline／身份与C绑定校验，不查询System或Graph私表，不以单个调用方布尔值或任意metadata声明代替证明。没有该新协议来源证明的旧记录不回填标签。读取不用P→C更新锁、不调用claim／拒绝原语，GET始终零状态推进。父临时无lease且未到deadline、C曾运行／恢复排队、存在操作不确定或绑定异常均不得生成closed-unclaimed说明；相关事实只有Owner能够核清，本投影不承担核清。
+
+仅“数据库当前时间已过deadline＋读取到C pending”不足以生成 `closed_unclaimed`：普通MVCC读取可能尚看不到此前已合法判定、仍持P锁且未提交的claim。必须等System取得P锁并提交父终态，使此前领取事务已经串行决出，或等Owner按P→C提交未领取拒绝；后者使用 `closed_rejected`。未取得任一提交证明时保留可读的真实状态，不展示“模块未开始”的肯定标签，也不在GET中加更新锁或终结父／子来补证明。这是读取证据的限制，不放松deadline对新领取的禁止。
+
+列表、详情、树若返回同一对象，必须复用相同规则及可读范围，不单靠树中已经出现父节点认定有权。树截断、子被过滤或未载入时，不按子数量／空数组生成联合说明；单独读取C也不额外返回不可读P。System保存的截止快照与合法子后续事实分开展示；原父timeout不被本次观察、刷新或Owner拒绝修改。
+
+#### 界面、失效与职责
+
+真实状态栏仍显示C的pending或failed，旁边增加准入说明；不得用“已取消”“已清理”“无待回收项”或新状态替代。未领取项开始时间／运行耗时显示未开始／无，不填0秒运行或100%完成；closed pending不继续展示暗示仍会领取的排队倒计时。既有状态统计不篡改，pending计数不被标签自动减为0，也不把它解释为仍可派发的工作量。父timeout和C的拒绝时间分别解释，不伪造父关闭时刻。
+
+文案与说明码分离，System和Monitor复用共享国际化词条及同一准入说明组件；中文／英文分别表达上述含义，不拼Owner返回文本。未领取拒绝不是运行中清理错误，不展示“重试删除”或自动恢复；仅沿原有授权链接打开模块／监控，不新增重试、取消、解锁或核清动作，不从该标签授予Graph写权限。
+
+切换Tenant、用户、execution或请求版本时清空旧说明；401／403／404及Owner裁决503按[诊断页失效规则](tasks/执行监控.md#执行诊断页面与授权失效)清空相应详情并停止刷新，迟到响应不得复活旧标签。每次重新读取都重新裁决权限和快照；本次方案不启动后台补读、定时协调、读时拒绝或自动清理。读取成功不代表运行验收或已核清外部效果。
+
+| 主责 | 安全展示职责 | 不承担 |
+| --- | --- | --- |
+| System | 校验本资源回收请求读取权，同User取得子Owner范围；在原详情中返回过滤后的公共模块概览；保留父协调截止结论及当前子事实差异 | 不以父权限代授子权，不直接读取Graph私表，不把Owner未响应当成未开始／无结果 |
+| Monitor | 继续逐Owner BFF授权，安全DTO和树过滤复用公共纯投影；隐藏子不产生节点／计数侧信道，授权失败清除旧视图 | 不维护Cleanup Permission映射，不调用System私有详情来补状态，不改变执行事实或核清效果 |
+| Graph | 独占本模块读取范围声明、未领取拒绝原因及业务证据真实性；专业数据按各自既有权限独立裁决 | 不让 `graph.build_task.read`代替Cleanup读取，不为该标签创建专业接口／宽权限，不向通用投影交付操作证据或图数据 |
+| Common／共享前端 | 闭合纯值DTO、唯一投影校验、同一国际化说明组件；不自动扩大既有Observation字段 | 不成为授权主体、协调器或执行者，不保留旧格式解析分支 |
+
+本轮仅文档设计，不生成声称已生效的Swagger或改动前后端代码。未来获准实施时，同次同步System／Monitor真实DTO与调用方、Common投影、共享词条和双语Swagger，并按[最小验证矩阵](testing/Owner补充门禁.md#c5协调关闭安全展示子矩阵)核对授权、状态真实性与响应失效；不得以受控页面替代真实身份／Gateway或Hosted证据，新的Hosted仍须单独确认。
 
 ## 九、监控与审计
 
@@ -468,10 +631,11 @@ cleanup 必须同时进入 Monitor 和审计体系。
 
 cleanup 不纳入 Orchestrator 编排或 TaskProvider，必须写入 `common.task_executions`；Monitor 的读取授权、安全 DTO、错误投影和截断规则统一遵循[执行监控规范](tasks/执行监控.md#租户执行诊断)。以下只补充 Cleanup 的记录归属与能力边界。
 
-内部执行记录模型：
+目标执行记录模型（已确认设计，实现未迁移）：
 
 - System 创建父 execution：`module=system`、`task_type=cleanup`、`source=system`，`trigger_type=manual|scheduled|event`；`execution_config` 保存 `action`、`cleanup_mode`、`expected_modules`、`based_on_scan`、`context`、`cause_event`，用于协调和审计，不作为 Monitor 公开响应。
-- executor 创建子 execution：`module=meta|manager|transfer|...`、`task_type=cleanup_executor`，以 `parent_execution_id` 关联 System 父 execution。模块结果和诊断由对应 Owner 管理；当前 Meta 将 `cleanup_result` 与 `summary` 写入子 execution 的 `metadata`，System 将 `cleanup_summary` 与 `cleanup_status` 写入父 execution 的 `metadata`。这些内部字段不构成 Monitor 展示契约，也不要求其他 Owner 复制相同私有结构。
+- System与父项同事务预建子pending：`module=meta|manager|transfer|...`、`task_type=cleanup_executor`、`source=system`，以 `parent_execution_id` 关联父项；Owner独占领取和推进，标准回执只用[持久协议](#持久队列与完成回执)的类型化metadata。专业结果和诊断由Owner管理，不要求复制同一私有结构。
+- 当前实现仍有Owner消费Redis后创建running子项、任意cleanup_result metadata及Redis结果hash分离写入，均属待替换路径，不是目标协议的兼容格式。迁移不得直接把这些旧字段开放给Monitor。
 
 读取与展示边界：
 
@@ -497,6 +661,10 @@ cleanup 必须写入 System 审计日志。审计回答“谁、何时、为什�
 手动触发的 actor 是当前用户；事件触发或定时触发的 actor 是 `system`，但必须记录 `cause_event` 或 schedule 信息。审计日志不随 cleanup physical cleanup 删除；各类记录的来源与保留边界见[协调状态与历史保留](#3-协调状态与历史保留)。
 
 ### 3. 协调状态与历史保留
+
+目标事实源为System持久请求、公共父子execution及标准回执，不再以Redis TTL或最近100项索引判断任务是否存在；GET只读。PG详情的返回范围、持久保留／分页及Owner专业详情入口属于上述待整体确认的产品契约；父可读、System cleanup.read或标准回执可读均不授予专业详情权限。待核清控制事实不能随普通任务清理或TTL删除；原execution的必要身份、证据引用与保留单元须由Common／System／Owner同次核对，不借此默认开放公共历史删除。
+
+下表仅记录当前尚未迁移实现的观察，不能作为目标保留策略或第二条查询路线：
 
 | 记录 | 来源与当前行为 | 保留及查询边界 |
 | --- | --- | --- |
@@ -604,6 +772,8 @@ cleanup 不纳入 TaskProvider，也不进入 Orchestrator 编排。
 
 ## 十三、运行态验收
 
+Graph／Cleanup持久队列、取消、锁序及核清的最小新增验证统一见[Owner验证矩阵](testing/Owner补充门禁.md#graphcleanup-执行管理最小验证矩阵)。矩阵是待实施断言，不是已经存在或已通过的门禁；本次文档修订没有授权运行测试、CI或Hosted。下述原场景保留原覆盖，新故障场景需另行确认固定源码、身份、预算和清理范围，不能重复仍有效的浏览／审核验收凑覆盖。
+
 本节定义租户级 `scope=["meta"]` 扫描闭环的验收要求；执行统一遵循[标准测试入口](addp测试与验收规范.md#三标准入口)和[T4 Online 隔离规范](testing/T4-Online验收规范.md)。当前 Online registry 尚未登记覆盖本节完整闭环的 Cleanup 专项 suite，须补齐正式场景、身份夹具、断言与清理后再验收。
 
 统一证据边界：规范、注册声明、源码、字段落库、状态或页面标签、单模块测试均不能独自证明完整跨模块验收通过。按实际场景记录产出、首次失败、修复后结果、未覆盖项及清理证据；其他 suite 的退出清理或部署销毁不替代本节业务断言及被测保留／删除策略的执行证据。未运行、失败或跳过不计为通过。
@@ -637,10 +807,12 @@ make test-online ONLINE_SUITE="$ONLINE_SUITE"
 
 ## 十四、迁移状态
 
-当前迁移遵循单一路线，不保留兼容分支。下表保留既有迁移状态；各 owner 的资源范围、未完成项及后续产物登记要求以[职责正文](#三职责边界)为准，不能仅凭 `physical_cleanup` 推断用户定义可删除。“已完成主路径”不等于所有生命周期与模式均已验收；实际覆盖与证据判定统一见[运行态验收](#十三运行态验收)。
+当前迁移遵循单一路线，不保留兼容分支。下表保留既有领域范围迁移状态，不代表2026-10-29持久队列／取消／核清协议已经实施；各owner的资源范围、未完成项及后续产物登记要求以[职责正文](#三职责边界)为准，不能仅凭 `physical_cleanup` 推断用户定义可删除。“已完成主路径”不等于所有生命周期与模式均已验收；实际覆盖与证据判定统一见[运行态验收](#十三运行态验收)。
 
 | 步骤 | 状态 |
 | --- | --- |
+| 公共持久队列、System预建父子pending、Owner lease及metadata标准回执；删除Redis协调旧路径。 | 设计已确认；代码／API／门禁未迁移，未运行验收 |
+| Graph持久取消、未启动pending例外、E→G→T／B锁序、待核清和Cleanup三阶段准入。 | 设计已确认；代码及最小验证矩阵未实施 |
 | 固化平台级规范，更新术语表和文档入口。 | 已完成 |
 | 调整 `common/events` cleanup request / result 模型，使用 `cleanup_mode`、`trigger_type`、`cause_event` 和标准 `summary`，去除模块私有统计汇总耦合。 | 已完成 |
 | System cleanup 写入 `common.task_executions` 和 `system.audit_logs`，形成父 execution 和审计主链路。 | 已完成 |
@@ -675,6 +847,6 @@ make test-online ONLINE_SUITE="$ONLINE_SUITE"
 | tenant 删除后如何处理 cleanup | 必须通过 system-owned cleanup execution 汇总各模块结果；业务资源可清理，System 审计日志保留或归档。 |
 | 源事实变化后如何处理派生产物 | 主路径是事件驱动标记 `outdated`；查询和执行时做惰性复查作为防线；不因 facts 变化直接物理删除派生产物。 |
 | 配置变化如何判断产物过期 | 按产物类型保存和比较 `source_version`、`config_version`；不使用一个粗粒度全局版本覆盖所有产物。 |
-| cleanup 是否进入 `common.task_executions` | 必须进入。System 创建父 execution，各 executor 创建子 execution，Monitor 展示父子树。 |
+| cleanup 是否进入 `common.task_executions` | 必须进入，作为唯一持久执行队列。System同事务预建父子pending，Owner独占子项领取／推进；标准完成回执复用子项类型化metadata，不另建表／队列。设计已确认，实现与Monitor覆盖仍分别验收。 |
 | cleanup 是否进入审计体系 | 必须进入。scan、execute、确认、完成、失败都写 System 审计日志。 |
 | Standard 文档文件和 PG 状态的删除边界 | `logical_cleanup` 不删除文件；`physical_cleanup` 删除 `standard.documents.file_key` 指向的 MinIO 文件和 Standard-owned PG 状态；用户显式删除单个文档时也可同步删除 PG+文件。 |

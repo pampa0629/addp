@@ -302,6 +302,9 @@
 | scan schedule inheritance | 扫描调度继承 | Meta 中粗粒度 ScanTask 为下级范围提供默认定时计划的关系。 | engine 级 ScanTask 可以作为默认计划；下级范围没有独立调度时继承该计划。 |
 | independent scan schedule | 独立扫描调度 | 更具体扫描范围上单独启用的 ScanTask。 | node / catalog path 等下级范围启用独立调度后，应从上级定时扫描范围中排除。 |
 | TaskExecution | 执行记录 | 某一次任务实际执行的运行态记录。 | 统一存储在 `common.task_executions`；Meta 扫描执行通过 `source_task_id` 关联 ScanTask。 |
+| cancellation intent | 取消意图 | Owner 持久受理、绑定确定 execution 的停止请求。 | 不等于 `cancelled`；真实运行体停止及在途效果核清后才可终结。Graph 未领取且能证明从未启动的 pending 例外见[执行契约](../spec/tasks/模块任务契约.md#graph-构建任务)。 |
+| effect reconciliation hold | 外部效果待核清 | Owner 对失联或结果不确定的运行体／外部操作保存的阻断事实。 | 不新增公共 execution 状态，不是持久队列；无未决操作才可解除，不靠 lease 过期、TTL 或确认布尔值放行。Graph 规则见[执行契约](../spec/tasks/模块任务契约.md#graph-构建任务)。 |
+| cleanup completion receipt | 资源回收完成回执 | 执行 Owner 对确定 cleanup 子 execution 提交的闭合、安全结果摘要。 | 已确认设计使用子 execution 的类型化有界 `metadata.cleanup_receipt`，不另建回执表／队列；与公共终态及可原子提交的 Owner PG 变更同事务，专业详情仍归 Owner。[正式契约](../spec/addp-cleanup体系规范.md#持久队列与完成回执)已确认，实现与验收未迁移。 |
 | execution display language | 执行显示语言 | 提交时冻结、用于生成该次执行文本的规范语言码。 | 唯一保存于 `execution_config.display_language`，取 `zh-cn` 或 `en`；编排子执行继承父执行，查看语言不改写已保存的执行文本。 |
 | module-wide execution list | 模块级执行列表 | 汇总某一模块多个任务定义或多个任务类型 execution 的列表视图。 | 属于 Monitor 的统一执行列表，不得由业务模块另设菜单、路由或页面；模块筛选通过 `module`、`task_type` 表达。 |
 | domain execution detail | 领域执行详情 | 业务模块围绕单次 execution 展示 owner 独有结果、日志、诊断和领域操作的详情视图。 | 可以保留在 owner 模块，但不复制 Monitor 的通用状态、统计和执行树；必须提供统一监控入口。 |
