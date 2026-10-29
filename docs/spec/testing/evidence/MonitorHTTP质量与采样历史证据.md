@@ -310,3 +310,19 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 原始stderr及缺失路径未保存；现有记录只能确认du遇到路径消失，不能唯一确定根目录、Go缓存、Go临时构建对象、其他短命文件或实际删除者。尚未改采样／编译生命周期，不忽略du、不排除目录、不缩小统计或放宽Linux原4 CPU／4 GiB／私有可写小于2 GiB／完整四秒／1200秒预算。下一批最小建议是先讨论封闭的缺失对象类别／身份摘要、根目录存在性及编译阶段单调边界取证，再修改对应规范和确定性门禁；不先猜测互斥范围，也不盲目重跑。
 
 本机离线材料位于`/tmp/addp-ci-20261028-100049`，原始job-122734708027.log SHA256=`ffeaef3b619ac392218fa8b5079e68639b83408a36ef82a3f1f91b67a48b4767`，提取文件HTTP_cd0_sampler_recurrence_raw_result.json。该核对只证明上述固定源码／单次CI失败与路径覆盖关系；未新增产品实现或真实验收，不运行Hosted、容量或定时。
+
+<a id="http-linux-minimal-forensics-20261029"></a>
+
+## 2026-10-29 Linux HTTP目录与编译最小取证（确定性及自然CI分列）
+
+用户确认先修规范／确定性门禁，再沿自然Linux CI验证；实现`05c57272c8116a19cc9ca955cf9f97bafdaf9b82`仅修改既有HTTP独立预算入口及其标准shell接入，不修改产品API、编译／采样互斥或资源上限。缺失对象只保留预定义目录类别与当次project域下的相对身份SHA256，严格解析至多4 KiB／八行的GNU/BSD诊断；越界、穿越、歧义引号／控制字符及重复斜杠不推测路径。根目录观察用lstat，不跟随链接；原四秒耗尽不追加读取，诊断费用计入完整采样。首du失败不改判、不重试、不排除缓存或临时目录，原4 CPU／4 GiB／私有可写小于2 GiB／1200秒仍保持。
+
+编译开始／观察返回以同一主机monotonic_ns原子写入原归属回执，保留非零退出码；中途取消只见开始时记incomplete，不补造结束。du失败另外保留采样／命令的原始单调秒端点、采样取得锁后读取回执时的编译状态，最终编译观察另列，不将两者混成失败当时状态。数值时序只证明观察关系，不唯一证明删除者；旧日志仍无实际缺失对象，不能反推。
+
+验证：既有生命周期Make入口先通过HTTP本地23项／共享内核136项及相关Go夹具，随后被共享工作区中另一专项surface-area持久化注册检查阻断，整条入口不得计通过，未改动该专项。继续执行该入口原有确定性子命令：`python3 -m unittest scripts/test/metrics-http-budget_test.py scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/trace-deployment-config_test.py scripts/test/trace-capacity_test.py scripts/test/postgres-metrics-lifecycle_test.py`合跑96项通过；最终预算取证单独35项通过；既有Metrics配置脚本120项、shell语法、T2 CI登记及diff检查通过。新增重复斜杠拒绝用例初次失败后修正，通过仅指当前取证契约。夹具只有小型临时文件、真实du缺失根读取和受控Go替身子进程（含进程组取消），没有Docker、本地服务或业务负载。
+
+现有Make生命周期、dev-lifecycle及自然Metrics矩阵已覆盖测试和脚本输入，既有HTTP预算JSON artifact自动保存新增字段，不新增入口／依赖／workflow。自然push运行[40799494798](https://github.com/pampa0629/addp/actions/runs/40799494798)、HTTP Job[123204132217](https://github.com/pampa0629/addp/actions/runs/40799494798/job/123204132217)，固定实现SHA如上，push／attempt 1已通过，HTTP生命周期及预算artifact上传步骤均成功；未手动dispatch或rerun。原始artifact `12865618656`共24238字节，ZIP SHA256=`ccac6dfe1557dec98cce5e19f912908e93f5f88dae37c59204ea1189877e681b`与API登记摘要一致，CRC完整；唯一monitor-http-budget.json SHA256=`bbb5008607a5310a26f639ca497d85ff650d745829a827d58ed9b4fc4a9f84a8`。独立逐文件核对报告353个输入全部匹配该提交，未以当前HEAD替代。
+
+真实Linux报告result=passed、exit_code=0、error_code=null，elapsed=854.099548秒；209次完整样本最长1.182123秒，私有可写保守上界最大1808158783字节，容器硬配额合计最大3.25 CPU／4026531840字节内存，均在原上限内。请求Go148（失败90／健康58）、Python Agent75（45／30）、Copilot28（15／13），总251次，三源阶段和计数契约一致。process_compile为finished／exit0，原始单调纳秒开始64979234562、观察结束138843033209；inputs_unchanged、cleanup_verified、private_directory_removed均为true。**本次没有复现目录消失，缺失对象及根目录失败诊断现场分支未触发**；编译边界实录和单次Linux功能门禁通过，不等于旧间歇故障已修复／删除者已定位，不用本次成功覆盖此前失败。
+
+本机准备散列清单`/tmp/addp-p19-http-minimal-forensics-20261029.json`记录源码／输入／门禁日志，Linux归档核对摘要`/tmp/addp-p19-http-minimal-forensics-linux-result-20261029.json`另记353输入核验与各项边界。没有新开本地窗口，不运行Hosted、容量或定时，不恢复此前失败窗口；正式产品到页面闭环仍未验收通过，本批取证不替代它。

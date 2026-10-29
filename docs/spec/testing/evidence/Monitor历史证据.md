@@ -13,7 +13,7 @@
 | [实例与服务发现](Monitor实例与服务发现历史证据.md) | 多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期 | 25 |
 | [告警与规则](Monitor告警与规则历史证据.md) | CPU/RSS、告警检索与排序、服务失联、文件系统容量规则 | 27 |
 | [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与正式身份本地多窗口 | 16 |
-| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 23 |
+| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 24 |
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL 账号、来源准入、引擎身份与专业观测 | 12 |
 | [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存 | 7 |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时 | 6 |
@@ -648,3 +648,8 @@
 ### 2026-10-28 Linux HTTP T2目录消失复发：独立入口离线核对
 
 [完整记录、失败与验收边界](MonitorHTTP质量与采样历史证据.md#http-linux-ci-20261028-private-directory-recurrence)
+
+
+### 2026-10-29 Linux HTTP目录与编译最小取证（确定性及自然CI分列）
+
+[完整记录、失败与验收边界](MonitorHTTP质量与采样历史证据.md#http-linux-minimal-forensics-20261029)
