@@ -365,7 +365,22 @@ if [[ "$metrics_case" != host-resources && "$metrics_case" != mtls-preflight && 
 # installing Go or mounting the workspace into it. The cleanup trap owns it.
 process_arch=$(docker info --format '{{.Architecture}}')
 case "$process_arch" in aarch64|arm64) process_arch=arm64 ;; x86_64|amd64) process_arch=amd64 ;; *) echo 'Unsupported metrics T2 architecture' >&2; exit 1 ;; esac
-(cd "$ROOT_DIR/common" && CGO_ENABLED=0 GOOS=linux GOARCH="$process_arch" GOWORK=off go test -c ./processmetrics -o "$WORK_DIR/source/process-source.test")
+record_process_compile_boundary(){
+  [[ -n "${ADDP_HTTP_BUDGET_RECEIPT:-}" ]] || return 0
+  python3 - "$ADDP_HTTP_BUDGET_RECEIPT" "$ROOT_DIR/scripts/test/metrics-http-budget.py" "$@" <<'COMPILE_BOUNDARY'
+import runpy,sys
+from pathlib import Path
+runpy.run_path(sys.argv[2])['record_compile_boundary'](Path(sys.argv[1]),sys.argv[3],int(sys.argv[4]) if len(sys.argv)==5 else None)
+COMPILE_BOUNDARY
+}
+record_process_compile_boundary start
+if (cd "$ROOT_DIR/common" && CGO_ENABLED=0 GOOS=linux GOARCH="$process_arch" GOWORK=off go test -c ./processmetrics -o "$WORK_DIR/source/process-source.test"); then
+  record_process_compile_boundary finish 0
+else
+  process_compile_status=$?
+  record_process_compile_boundary finish "$process_compile_status"
+  exit "$process_compile_status"
+fi
 mkdir -m 755 "$WORK_DIR/source/process-tls"
 # Native admission and SD use the inspected IP; Desktop rewrites only its
 # explicitly published loopback transport. The source validates its declaration.

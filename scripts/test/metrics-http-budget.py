@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -97,17 +98,81 @@ def resource_totals(rows, work_bytes, volume_bytes):
     return facts
 
 
-def directory_failure_diagnostic(stderr):
+def directory_failure_diagnostic(stderr, ownership=None, end=None):
     """Classify bounded CLI text, never infer errno or retain any raw prefix."""
     result={'directory_error':'empty','stderr_bytes':len(stderr),'stderr_over_budget':len(stderr)>4096}
     if result['stderr_over_budget']:
         result['directory_error']='over_budget'
-        return result
     suffixes={b'No such file or directory':'path_disappeared',b'Permission denied':'permission_denied',
               b'Operation not permitted':'permission_denied',b'Input/output error':'io_error'}
-    kinds={suffixes.get(line.rpartition(b': ')[2],'unclassified') for line in stderr.splitlines() if line.strip()}
-    if kinds:result['directory_error']=next(iter(kinds)) if len(kinds)==1 else 'mixed'
+    if not result['stderr_over_budget']:
+        kinds={suffixes.get(line.rpartition(b': ')[2],'unclassified') for line in stderr.splitlines() if line.strip()}
+        if kinds:result['directory_error']=next(iter(kinds)) if len(kinds)==1 else 'mixed'
+    if ownership is not None:
+        result.update(directory_objects=directory_objects(stderr,ownership),root_observation='deadline')
+        if time.monotonic()<end:
+            try:
+                mode=Path(ownership['work']).lstat().st_mode
+                result['root_observation']='directory' if stat.S_ISDIR(mode) else 'other'
+            except FileNotFoundError:result['root_observation']='missing'
+            except OSError:result['root_observation']='unavailable'
+            if time.monotonic()>=end:result['root_observation']='deadline'
     return result
+
+
+def directory_objects(stderr, ownership):
+    """No raw identifiers leave this parser; ambiguous CLI quoting is rejected."""
+    if len(stderr)>4096:return {'status':'over_budget','objects':[]}
+    lines=[line for line in stderr.splitlines() if line.strip()]
+    if len(lines)>8:return {'status':'over_budget','objects':[]}
+    root=os.fsencode(ownership['work']);objects=[];unparsed=False
+    for line in lines:
+        prefix,_,reason=line.rpartition(b': ')
+        if reason!=b'No such file or directory':unparsed=True;continue
+        if prefix.startswith(b"du: cannot access '") and prefix.endswith(b"'"):
+            path=prefix[len(b"du: cannot access '"):-1]
+        elif prefix.startswith(b'du: '):path=prefix[4:]
+        else:unparsed=True;continue
+        # Reject escape/quote ambiguity rather than invent a pathname.
+        if any(c<32 or c==127 for c in path) or any(c in path for c in (b"'",b'"',b'\\')):
+            unparsed=True;continue
+        if path!=root and not path.startswith(root+b'/'):
+            unparsed=True;continue
+        relative=b'' if path==root else path[len(root)+1:]
+        if path!=root and any(part in (b'.',b'..',b'') for part in relative.split(b'/')):
+            unparsed=True;continue
+        first=relative.split(b'/',1)[0]
+        category={b'':'root',b'go-cache':'go_cache',b'go-tmp':'go_tmp',b'tmp':'tmp',b'source':'source'}.get(first,'other')
+        identity=hashlib.sha256(ownership['project'].encode()+b'\0'+relative).hexdigest()
+        item={'category':category,'identity_sha256':identity}
+        if item not in objects:objects.append(item)
+    return {'status':'partial' if unparsed and objects else 'unparsed' if unparsed else 'parsed' if objects else 'none','objects':objects}
+
+
+def compile_observation(value):
+    if value is None:return {'status':'not_started'}
+    if not isinstance(value,dict):return {'status':'invalid'}
+    start=value.get('started_monotonic_ns');finish=value.get('finished_monotonic_ns');code=value.get('exit_code')
+    if type(start) is not int or start<0:return {'status':'invalid'}
+    if set(value)=={'started_monotonic_ns'}:return {'status':'incomplete','started_monotonic_ns':start}
+    if (set(value)!={'started_monotonic_ns','finished_monotonic_ns','exit_code'} or
+            type(finish) is not int or finish<start or type(code) is not int or not 0<=code<=255):
+        return {'status':'invalid'}
+    return {'status':'finished',**value}
+
+
+def record_compile_boundary(receipt, event, exit_code=None):
+    value=json.loads(receipt.read_text());previous=compile_observation(value.get('process_compile'))
+    now=time.monotonic_ns()
+    if event=='start' and previous['status']=='not_started' and exit_code is None:
+        proof={'started_monotonic_ns':now}
+    elif event=='finish' and previous['status']=='incomplete':
+        proof={'started_monotonic_ns':previous['started_monotonic_ns'],'finished_monotonic_ns':now,'exit_code':exit_code}
+        if compile_observation(proof)['status']!='finished':raise RuntimeError('http_compile_boundary_invalid')
+    else:raise RuntimeError('http_compile_boundary_invalid')
+    if value.get('cleanup_started'):raise RuntimeError('http_compile_boundary_during_cleanup')
+    value['process_compile']=proof
+    pending=receipt.with_suffix('.compile-pending');pending.write_text(json.dumps(value));pending.replace(receipt)
 
 
 def acquire_lock(fd, end, stage, stopped):
@@ -141,8 +206,9 @@ def begin_cleanup(receipt, fd):
 
 
 def owned_sample(ownership,receipt):
-    began=time.monotonic();end=began+4
+    began=time.monotonic();end=began+4;latest=ownership
     def stopped():
+        nonlocal latest
         latest=json.loads(receipt.read_text())
         if any(latest.get(k)!=ownership.get(k) for k in ('project','work')):
             raise RuntimeError('http_budget_ownership_invalid')
@@ -154,7 +220,7 @@ def owned_sample(ownership,receipt):
             if time.monotonic()>=end:raise BudgetFailure('http_budget_handoff_deadline','sample_handoff','deadline')
             if cleaning:return None
             waited=time.monotonic()-began
-            result=sample(ownership,end)
+            result=sample(latest,end)
             if time.monotonic()>=end:raise BudgetFailure('http_budget_sample_deadline','sample_handoff','deadline')
             result['lock_wait_seconds']=waited
             return result
@@ -169,8 +235,8 @@ def sample(ownership,end):
     began=end-4
     def command(stage,args):
         started=time.monotonic();remaining=end-started
-        def failed(code,kind,finished,**facts):
-            raise BudgetFailure(code,stage,kind,command_seconds=round(finished-started,6),
+        def failed(code,kind,finished,command_finished=None,**facts):
+            raise BudgetFailure(code,stage,kind,command_seconds=round((finished if command_finished is None else command_finished)-started,6),
                                 sample_seconds=round(finished-began,6),command_budget_seconds=round(max(0,remaining),6),**facts) from None
         if remaining<=0:failed('http_budget_sample_deadline','deadline',started)
         options={'timeout':remaining,'stderr':subprocess.PIPE}
@@ -182,9 +248,14 @@ def sample(ownership,end):
         except subprocess.CalledProcessError as failure:
             finished=time.monotonic()
             missing=stage in {'inspect','volume_size'} and b'No such container' in (failure.stderr or b'')
-            diagnostic=directory_failure_diagnostic(failure.stderr or b'') if stage=='private_directory_size' else {}
+            diagnostic=directory_failure_diagnostic(failure.stderr or b'',ownership,end) if stage=='private_directory_size' else {}
+            if stage=='private_directory_size':
+                diagnostic.update(process_compile_at_sample_read=compile_observation(ownership.get('process_compile')),
+                                  sample_started_monotonic_seconds=began,command_started_monotonic_seconds=started,
+                                  command_observed_exit_monotonic_seconds=finished)
             failed('http_budget_sample_command_failed','container_disappeared' if missing else 'command_failed',
-                   finished,exit_code=failure.returncode,**diagnostic)
+                   time.monotonic() if stage=='private_directory_size' else finished,command_finished=finished,
+                   exit_code=failure.returncode,**diagnostic)
         except OSError:
             failed('http_budget_sample_command_failed','command_unavailable',time.monotonic())
         finished=time.monotonic()
@@ -296,6 +367,7 @@ def main():
                 report['python_sources']=ownership.get('python_sources')
                 report['source_tls_proof']=ownership.get('source_tls_proof')
                 report['source_tls_publication']=ownership.get('source_tls_publication')
+                report['process_compile']=compile_observation(ownership.get('process_compile'))
                 report['cleanup_verified']=ownership.get('cleanup_verified',False)
                 report['private_directory_removed']=not Path(ownership['work']).exists()
             report['inputs_unchanged']=input_hashes()==inputs
@@ -306,7 +378,7 @@ def main():
                 report['result']='passed'
             output.write_text(json.dumps(report,indent=2))
     summary={key:report.get(key) for key in ('case','result','error_code','failure_detail','exit_code','elapsed_seconds','source_tls_proof','source_tls_publication',
-             'cleanup_verified','cleanup_overdue','cleanup_lock_wait_seconds','private_directory_removed','inputs_unchanged','request_counts','request_phases','request_traffic_error','python_sources','failure_during_cleanup')}
+             'cleanup_verified','cleanup_overdue','cleanup_lock_wait_seconds','private_directory_removed','inputs_unchanged','request_counts','request_phases','request_traffic_error','python_sources','failure_during_cleanup','process_compile')}
     print('HTTP functional budget result: '+json.dumps(summary,sort_keys=True),flush=True)
     print('HTTP functional budget report: '+str(output),flush=True)
     return 0 if report['result']=='passed' else 1

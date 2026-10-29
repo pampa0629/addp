@@ -3,8 +3,10 @@ import importlib.util
 import io
 import json
 import os
+import hashlib
 from pathlib import Path
 import shutil
+import select
 import subprocess
 import tempfile
 import threading
@@ -21,6 +23,135 @@ def row(cpu=1,memory=512*1024**2):
 
 
 class HTTPBudget(unittest.TestCase):
+    def test_directory_identity_is_relative_run_scoped_and_classifies_all_owned_locations(self):
+        owner={'work':'/tmp/addp-metrics-t2.private','project':'addp-metrics-t2-'+'a'*32}
+        for relative,category in [('', 'root'),('go-cache/hash','go_cache'),('go-tmp/go-build123/b1','go_tmp'),
+                                  ('tmp/native','tmp'),('source/test','source'),('tls/key','other')]:
+            with self.subTest(category=category):
+                path=(owner['work']+('/'+relative if relative else '')).encode()
+                for stderr in [b'du: '+path+b': No such file or directory\n',
+                               b"du: cannot access '"+path+b"': No such file or directory\n"]:
+                    proof=m.directory_objects(stderr,owner)
+                    self.assertEqual(proof,{'status':'parsed','objects':[{'category':category,'identity_sha256':
+                        hashlib.sha256(owner['project'].encode()+b'\0'+relative.encode()).hexdigest()}]})
+                    other={**owner,'work':'/different/addp-metrics-t2.private'}
+                    self.assertEqual(proof,m.directory_objects(stderr.replace(owner['work'].encode(),other['work'].encode()),other))
+                    self.assertNotEqual(proof,m.directory_objects(stderr,{**owner,'project':'addp-metrics-t2-'+'b'*32}))
+                    self.assertNotIn(owner['work'],json.dumps(proof))
+                    if relative:self.assertNotIn(relative+'"',json.dumps(proof))
+
+    def test_ambiguous_foreign_traversing_or_control_path_is_never_guessed(self):
+        owner={'work':'/tmp/addp-metrics-t2.private','project':'owned'};root=owner['work'].encode()
+        for path in [b'/foreign/key',root+b'-sibling/key',root+b'/../key',root+b'/./key',root+b'//key',
+                     root+b"/key'quote",root+b'/key"quote',root+b'/key\\escape',root+b'/key\x00',root+b'/key\nline']:
+            with self.subTest(path=path):
+                proof=m.directory_objects(b'du: '+path+b': No such file or directory\n',owner)
+                self.assertEqual(proof,{'status':'unparsed','objects':[]})
+        good=b'du: '+root+b'/go-tmp/private: No such file or directory\n'
+        self.assertEqual(m.directory_objects(good+b'unknown diagnostic\n',owner)['status'],'partial')
+        self.assertEqual(m.directory_objects(good*8,owner)['status'],'parsed')
+        self.assertEqual(m.directory_objects(good*9,owner),{'status':'over_budget','objects':[]})
+        self.assertEqual(m.directory_objects(b'x'*4097,owner),{'status':'over_budget','objects':[]})
+
+    def test_root_observation_never_follows_links_and_never_reads_after_deadline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/'root';owner={'work':str(root),'project':'owned'};stderr=b'du: unknown: No such file or directory\n'
+            with patch.object(m.time,'monotonic',return_value=0):
+                self.assertEqual(m.directory_failure_diagnostic(stderr,owner,4)['root_observation'],'missing')
+                root.mkdir();self.assertEqual(m.directory_failure_diagnostic(stderr,owner,4)['root_observation'],'directory')
+                root.rmdir();root.symlink_to(directory,target_is_directory=True)
+                self.assertEqual(m.directory_failure_diagnostic(stderr,owner,4)['root_observation'],'other')
+                with patch.object(Path,'lstat',side_effect=PermissionError('private-token')):
+                    self.assertEqual(m.directory_failure_diagnostic(stderr,owner,4)['root_observation'],'unavailable')
+            with patch.object(m.time,'monotonic',return_value=4),patch.object(Path,'lstat') as observe:
+                self.assertEqual(m.directory_failure_diagnostic(stderr,owner,4)['root_observation'],'deadline');observe.assert_not_called()
+            with patch.object(m.time,'monotonic',side_effect=[3.9,4.1]):
+                self.assertEqual(m.directory_failure_diagnostic(stderr,owner,4)['root_observation'],'deadline')
+
+    def test_actual_du_missing_owned_root_produces_only_closed_identity(self):
+        with tempfile.TemporaryDirectory(prefix='addp-metrics-t2.') as directory:
+            root=Path(directory)/'missing';owner={'work':str(root),'project':'owned'}
+            result=subprocess.run(['du','-sk',str(root)],capture_output=True,env=dict(os.environ,LC_ALL='C'),timeout=2)
+            self.assertNotEqual(result.returncode,0)
+            with patch.object(m.time,'monotonic',return_value=0):proof=m.directory_failure_diagnostic(result.stderr,owner,4)
+            self.assertEqual(proof['directory_error'],'path_disappeared');self.assertEqual(proof['root_observation'],'missing')
+            self.assertEqual(proof['directory_objects']['status'],'parsed')
+            self.assertEqual(proof['directory_objects']['objects'][0]['category'],'root')
+            self.assertNotIn(directory,json.dumps(proof))
+
+    def test_diagnostic_cost_is_counted_without_replacing_or_retrying_first_du_failure(self):
+        with tempfile.TemporaryDirectory(prefix='addp-metrics-t2.') as directory:
+            owner={'work':directory,'project':'addp-metrics-t2-'+'a'*32,'process_compile':{'started_monotonic_ns':123}}
+            stderr=b"du: cannot access '"+directory.encode()+b"/go-tmp/private': No such file or directory\n"
+            failure=subprocess.CalledProcessError(1,['du'],stderr=stderr)
+            with patch.object(m.time,'monotonic',side_effect=[0,.1,.2,3.8,3.9,4.01,4.02]),patch.object(m.subprocess,'check_output',side_effect=[b'',failure]) as execute:
+                with self.assertRaises(m.BudgetFailure) as caught:m.sample(owner,4)
+            self.assertEqual(str(caught.exception),'http_budget_sample_command_failed')
+            detail=caught.exception.detail
+            self.assertEqual(detail['root_observation'],'deadline');self.assertEqual(detail['sample_seconds'],4.02)
+            self.assertEqual(detail['command_seconds'],3.6);self.assertEqual(execute.call_count,2)
+            self.assertEqual(detail['process_compile_at_sample_read'],{'status':'incomplete','started_monotonic_ns':123})
+            self.assertEqual((detail['sample_started_monotonic_seconds'],detail['command_started_monotonic_seconds'],
+                              detail['command_observed_exit_monotonic_seconds']),(0,.2,3.8))
+            self.assertNotIn('private',json.dumps(detail['directory_objects']))
+
+    def test_compile_boundary_is_atomic_preserves_owner_and_rejects_invented_completion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt=Path(directory)/'owner.json';owner={'project':'owned','work':directory,'cleanup_verified':False}
+            receipt.write_text(json.dumps(owner))
+            self.assertEqual(m.compile_observation(None),{'status':'not_started'})
+            with patch.object(m.time,'monotonic_ns',side_effect=[100,150]):
+                m.record_compile_boundary(receipt,'start');self.assertEqual(m.compile_observation(json.loads(receipt.read_text())['process_compile'])['status'],'incomplete')
+                m.record_compile_boundary(receipt,'finish',17)
+            result=json.loads(receipt.read_text());self.assertEqual({key:result[key] for key in owner},owner)
+            self.assertEqual(m.compile_observation(result['process_compile']),{'status':'finished','started_monotonic_ns':100,'finished_monotonic_ns':150,'exit_code':17})
+            self.assertFalse(receipt.with_suffix('.compile-pending').exists())
+            for value in [{},'private',{'started_monotonic_ns':True},
+                          {'started_monotonic_ns':100,'finished_monotonic_ns':99,'exit_code':0},
+                          {**result['process_compile'],'secret':'private'},
+                          {**result['process_compile'],'exit_code':256}]:
+                self.assertEqual(m.compile_observation(value),{'status':'invalid'})
+            for event,code in [('start',None),('finish',0)]:
+                with self.assertRaisesRegex(RuntimeError,'boundary_invalid'):m.record_compile_boundary(receipt,event,code)
+            receipt.write_text(json.dumps({**owner,'cleanup_started':True}))
+            with self.assertRaisesRegex(RuntimeError,'during_cleanup'):m.record_compile_boundary(receipt,'start')
+
+    def test_standard_shell_records_real_success_and_nonzero_compile_without_starting_services(self):
+        gate=Path(__file__).with_name('monitor-metrics-gate.sh').read_text()
+        body=gate[gate.index('record_process_compile_boundary(){'):gate.index('mkdir -m 755 "$WORK_DIR/source/process-tls"')]
+        for code in (0,17):
+            with self.subTest(code=code),tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);(root/'common').mkdir();receipt=root/'owner.json';receipt.write_text(json.dumps({'project':'owned','work':directory}))
+                go=root/'go';go.write_text('#!/bin/sh\nexit '+str(code)+'\n');go.chmod(0o700)
+                # Only the existing shell fragment is executed, with a tiny Go stub.
+                env=dict(os.environ,ADDP_HTTP_BUDGET_RECEIPT=str(receipt),ROOT_DIR=directory,WORK_DIR=directory,
+                         PATH=directory+os.pathsep+os.environ['PATH'],process_arch='amd64')
+                # The helper itself remains the checked-out production implementation.
+                body_under_test=body.replace('$ROOT_DIR/scripts/test/metrics-http-budget.py',str(Path(m.__file__)))
+                result=subprocess.run(['bash','-ec',body_under_test],env=env,capture_output=True,timeout=5)
+                self.assertEqual(result.returncode,code,result.stderr)
+                proof=m.compile_observation(json.loads(receipt.read_text())['process_compile'])
+                self.assertEqual(proof['status'],'finished');self.assertEqual(proof['exit_code'],code)
+
+    def test_cancelled_shell_keeps_start_without_inventing_a_compile_finish(self):
+        gate=Path(__file__).with_name('monitor-metrics-gate.sh').read_text()
+        body=gate[gate.index('record_process_compile_boundary(){'):gate.index('mkdir -m 755 "$WORK_DIR/source/process-tls"')]
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);(root/'common').mkdir();receipt=root/'owner.json'
+            receipt.write_text(json.dumps({'project':'owned','work':directory}))
+            go=root/'go';go.write_text('#!/bin/sh\nprintf "compiling\\n"\nread line\n');go.chmod(0o700)
+            env=dict(os.environ,ADDP_HTTP_BUDGET_RECEIPT=str(receipt),ROOT_DIR=directory,WORK_DIR=directory,
+                     PATH=directory+os.pathsep+os.environ['PATH'],process_arch='amd64')
+            child=subprocess.Popen(['bash','-ec',body.replace('$ROOT_DIR/scripts/test/metrics-http-budget.py',str(Path(m.__file__)))],
+                                   env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
+            try:
+                self.assertTrue(select.select([child.stdout],[],[],3)[0]);self.assertEqual(child.stdout.readline(),b'compiling\n')
+                os.killpg(child.pid,m.signal.SIGTERM);child.communicate(timeout=3)
+                proof=m.compile_observation(json.loads(receipt.read_text())['process_compile'])
+                self.assertEqual(proof['status'],'incomplete');self.assertNotIn('finished_monotonic_ns',proof)
+            finally:
+                if child.poll() is None:os.killpg(child.pid,m.signal.SIGKILL);child.communicate(timeout=3)
+
     def test_cleanup_cannot_delete_during_an_active_sample(self):
         with tempfile.TemporaryDirectory() as directory:
             receipt=Path(directory)/'ownership.json';owner={'project':'owned','work':directory};receipt.write_text(json.dumps(owner))
@@ -152,14 +283,14 @@ read -r release
     def test_private_directory_failure_preserves_same_deadline_and_separate_timings(self):
         with tempfile.TemporaryDirectory(prefix='addp-metrics-t2.') as directory:
             failure=subprocess.CalledProcessError(1,['du','-sk','private-command'],stderr=b'du: private-token: No such file or directory\n')
-            with patch.object(m.time,'monotonic',side_effect=[10,10.2,10.5,11.25]),patch.object(m.subprocess,'check_output',side_effect=[b'',failure]) as command:
+            with patch.object(m.time,'monotonic',side_effect=[10,10.2,10.5,11.25,11.3,11.35,11.4]),patch.object(m.subprocess,'check_output',side_effect=[b'',failure]) as command:
                 with self.assertRaises(m.BudgetFailure) as caught:m.sample({'project':'addp-metrics-t2-'+'a'*32,'work':directory},14)
             facts=caught.exception.detail
             self.assertEqual(facts['stage'],'private_directory_size')
             self.assertEqual(facts['kind'],'command_failed')
             self.assertEqual(facts['exit_code'],1)
             self.assertEqual(facts['directory_error'],'path_disappeared')
-            self.assertEqual((facts['command_seconds'],facts['sample_seconds'],facts['command_budget_seconds']),(.75,1.25,3.5))
+            self.assertEqual((facts['command_seconds'],facts['sample_seconds'],facts['command_budget_seconds']),(.75,1.4,3.5))
             self.assertEqual([c.kwargs['timeout'] for c in command.call_args_list],[4,3.5])
             self.assertNotIn('env',command.call_args_list[0].kwargs)
             self.assertEqual(command.call_args_list[1].kwargs['env']['LC_ALL'],'C')
@@ -326,14 +457,15 @@ cleanup(){'''+body+'\nfalse\ncleanup\n'
     def test_guard_failure_remains_failed_after_cleanup_and_is_visible_in_log_and_file(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);work=root/'addp-metrics-t2.fixture';work.mkdir()
-            output=root/'report.json';ownership={'project':'addp-metrics-t2-'+'a'*32,'work':str(work)}
+            output=root/'report.json';ownership={'project':'addp-metrics-t2-'+'a'*32,'work':str(work),'process_compile':{'started_monotonic_ns':123}}
             child=Mock(pid=1234);child.poll.return_value=None
             def start(*args,**kwargs):
                 receipt=Path(kwargs['env']['ADDP_HTTP_BUDGET_RECEIPT'])
                 receipt.write_text(json.dumps(ownership))
                 def cleanup(**kwargs):
                     shutil.rmtree(work)
-                    receipt.write_text(json.dumps({**ownership,'cleanup_started':True,'cleanup_verified':True}))
+                    receipt.write_text(json.dumps({**ownership,'cleanup_started':True,'cleanup_verified':True,
+                        'process_compile':{'started_monotonic_ns':123,'finished_monotonic_ns':150,'exit_code':143}}))
                     return 143
                 child.wait.side_effect=cleanup
                 return child
@@ -350,6 +482,9 @@ cleanup(){'''+body+'\nfalse\ncleanup\n'
             summary=json.loads(stdout.getvalue().split('HTTP functional budget result: ',1)[1].splitlines()[0])
             self.assertEqual(summary['failure_detail'],failure.detail)
             self.assertEqual(summary['error_code'],'http_budget_sample_command_failed')
+            self.assertEqual(summary['process_compile'],report['process_compile'])
+            self.assertEqual(report['process_compile']['status'],'finished')
+            self.assertEqual(report['process_compile']['exit_code'],143)
             self.assertNotIn('input_sha256',summary)
             self.assertNotIn('private-token',stdout.getvalue()+output.read_text())
             self.assertEqual(launch.call_count,1);self.assertEqual(sample.call_count,1)
