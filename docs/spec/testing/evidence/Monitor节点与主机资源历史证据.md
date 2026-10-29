@@ -473,6 +473,7 @@ regression／complete-comparison 在当次私有部署显式开启原容量扩�
 新用例沿既有测试目录自动发现，Console原浏览器夹具已包含Monitor，模块Frontend标准入口与Platform矩阵继续覆盖，无需修改Make或Workflow。未运行未变的后端、数据库或Online runner；不重启个人服务、不操作个人身份或配置。上述仅为本地确定性T1／受控HTTP与时钟下的真实前端T3，不证明真实Safari登录、实际System筛选数据或Hosted。CI与Hosted仍等专门会话回传，未触发／重跑／轮询、不设置定时任务。
 
 日志：`/tmp/addp-host-engine-filters-{common,monitor-full,console-full,enter}.log`。上一批及本批共享失败分别保留，不将后续局部通过回填为旧失败通过；清单完整功能的原正式验收缺口不因这次交互统一而消失。
+
 ## 容量来源 T2 的固定查询时点交接修复（2026-10-29）
 
 专门 CI 会话回传 [Release block-capacity 失败](https://github.com/pampa0629/addp/actions/runs/40827356196/job/123293546488)。原始 `/tmp/addp-ci-20261029-063318/job-123293546488.log:817` 起记录固定公式 TestIntegrationMetricsBlockCapacity 通过，随后即时 up／success 探针通过，但 TestIntegrationMetricsBlockCapacitySource 得到 no_sample、Go 退出1；后续聚合失败由此矩阵项传递，不另计独立故障。原日志没有样本／查询时刻，不能据此认定本次发现的时间竞态已被证明为该远程失败的唯一根因。
@@ -484,3 +485,5 @@ regression／complete-comparison 在当次私有部署显式开启原容量扩�
 实际本地结果：`python3 -m unittest scripts/test/metrics-deployment-config_test.py` 最初122项中新增2项因尚无交接函数报错（`/tmp/addp-block-snapshot-red.log`），实现后122项通过（`/tmp/addp-block-snapshot-green.log`）；`make test-module MODULE=monitor GO_ONLY=1` 通过（`/tmp/addp-block-snapshot-go.log`）。最终 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=block-capacity` 退出0，含122项入口回归、原容量公式及新增四项时间边界、真实只读采集／Textfile／mTLS／Prometheus／Monitor查询和逐设备容量核对。查询时点1793261272（08:07:52Z）、同次抓取1793261271.757，Collection 为 collecting／available，两个当前可见设备容量完全匹配；日志 `/tmp/addp-block-snapshot-t2-final.log`。这仅为 Docker Desktop Linux VM 上的隔离来源 T2，不是原生 Linux 远程 CI、个人 Safari、Hosted 或整机物理容量总量通过。
 
 两轮项目均沿标准 trap 清理；随后按两个精确 Compose 项目 label 独立核对容器／网络／卷全部为0，回执 `/tmp/addp-block-snapshot-cleanup.json`，成功轮也确认临时目录删除。标准 `python3 scripts/ci/check-t2-ci-registration.py` 通过（`/tmp/addp-block-snapshot-registration.log`）；既有 metrics 输入声明、配置测试自动发现及 Release block-capacity 矩阵已覆盖，无新入口或workflow。限定文件 diff 检查通过，未处理共享工作区其他会话的改动。后续自然 CI 仍等专门会话回传，不自行查询、调度、重跑CI／Hosted或设置定时任务；个人服务、主机挂载与数据卷均未操作。
+
+2026-10-29 18:07 补充远程固定源码证据：专门 CI 会话回传 [Release run40841858063／block-capacity Job123340144076](https://github.com/pampa0629/addp/actions/runs/40841858063/job/123340144076)，源码为 efc577aa69fc0a190dddba2bc9bff4903fc99f88、push／attempt1、completed／success，实际 selected=true 的 Verify isolated metrics lifecycle 成功。已独立核对回传原始日志 `/tmp/addp-ci-20261029-100020/job-123340144076.log` 的 SHA256 为 f6a8f755a872ca3e3be400a5805b03873e8488907141df134925c29995b76335；803—816行显示原公式及 TestIntegrationMetricsBlockCapacitySource 实际通过、无跳过，固定查询08:31:31Z、抓取1793262690.69，collecting／available，当前一个设备完整核对，并确认自有容器／网络／卷／临时文件零残留。独立审计为同目录 `P12-efc-block-capacity-actual-Linux-pass-audit.json`。本次时点交接修复的固定源码 Linux T2 验收据此关闭，不重复运行有效门禁；不倒推原 no_sample 唯一根因，不外推为当前其他源码、Safari／UI／Hosted或整个Release通过。本轮仅补证据，未轮询远程、重跑或新增运行窗口。
