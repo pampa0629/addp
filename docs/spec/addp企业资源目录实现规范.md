@@ -249,7 +249,7 @@ Meta 和专业来源新建条目时显式写入 `false`；完整责任替换路�
 
 “我的目录”第一阶段由当前 User 动态查询形成，只提供 `responsible`、`favorite` 和 `following` 三种关系视图。`responsible` 来自 Catalog 责任关系，另外两种来自 `entry_marks`。治理队列继续使用 `/governance/tasks`，最近访问继续由 Console 最近访问事实提供；Catalog 不复制这两类事实。尚未建立独立草稿模型前，“我的草稿”不返回伪造结果，也不新增空壳实体。
 
-个人标记只允许 `principal.type=user` 操作，并复用 `catalog.entry.read`；Service Principal 不得建立个人标记。写入使用完整目标集合 `{favorite, following}` 原子替换当前 User 在该条目上的标记，不接受客户端提交 User ID 或 Tenant ID。
+个人标记只允许 `principal.type=user` 操作，并复用 `catalog.entry.read`；Service Principal 不得建立个人标记。写入使用完整目标集合 `{favorite, following}` 原子替换当前 User 在该条目上的标记，不接受客户端提交 User ID 或 Tenant ID。路由参数与不可见目标响应见[个人目录与集合路由](#个人目录与集合路由)。
 
 ### 3.4 Project Group 目录集合
 
@@ -257,9 +257,11 @@ Meta 和专业来源新建条目时显式写入 `false`；完整责任替换路�
 
 集合不是 CatalogEntry、Asset、Workspace 或目录可见性边界。加入集合不改变 CatalogEntry 聚合版本、治理状态和责任，也不向项目组成员授予目录可见性或底层数据访问权；列表必须再次应用 CatalogEntry 权威可见性规则。
 
-集合访问同时满足两层判断：调用者在当前 Tenant 中拥有对应 `catalog.collection.read` / `catalog.collection.update` 功能 Permission，且当前 AuthContext 中存在该 Project Group 的有效成员关系。角色分配不再使用 Department / Project Group Scope；项目组只作为集合资源及成员边界，不从成员关系推导功能 Permission，也不把 Tenant Permission 扩大为所有项目组可访问。Project Group ID 只来自集合事实或当前 AuthContext，不信任客户端自报成员资格。项目组关闭后不再出现在有效 AuthContext，集合与成员历史保留但不能继续读取或修改；Catalog 不建立 System 组织副本，也不通过项目组关闭删除 CatalogEntry。移除角色的组织 Scope 不删除或重置部门、项目组、层级、成员关系、源数据 Grant 或业务批准。
+集合访问在基础 `catalog.entry.read` 上核验：读取另需 `catalog.collection.read`；创建、更新和删除同时需要 `catalog.collection.read` 与 `catalog.collection.update`。所有操作还须当前 AuthContext 中存在目标 Project Group 的有效成员关系，功能权限不能扩大为全部项目组可访问。Project Group ID 只来自集合事实或当前 AuthContext，不信任客户端自报成员资格；条目仍单独核验同 Tenant 与目录可见性。功能 Permission 只用 Tenant Scope，不使用 Department / Project Group Role Scope，统一见[权限与审计](#八权限与审计)。成员关系不授予功能 Permission 或源数据读取权。
 
-集合创建、名称/说明更新、条目完整替换和删除均使用集合 `version` 作为乐观并发边界并写入 Catalog 领域审计。成员替换一次提交完整 CatalogEntry UUID 集合，不能提供逐条追加与完整替换两条并行写入路线。
+项目组关闭后不再出现在有效 AuthContext，集合与成员历史保留但不能继续读取或修改；Catalog 不建立 System 组织副本，也不通过项目组关闭删除 CatalogEntry。移除角色的组织 Scope 不删除或重置部门、项目组、层级、成员关系、源数据 Grant 或业务批准。
+
+集合创建、名称/说明更新、条目完整替换和删除均使用集合 `version` 作为乐观并发边界并写入 Catalog 领域审计。成员替换一次提交完整 CatalogEntry UUID 集合，不能提供逐条追加与完整替换两条并行写入路线。具体请求形状及项目组显示摘要见[个人目录与集合路由](#个人目录与集合路由)。
 
 ### 3.5 推荐继任关系
 
@@ -723,11 +725,13 @@ Catalog 资源列表、详情和业务域总览的专业源链接统一复用共
 
 Console 和 Catalog 的菜单、页面均称“责任治理队列”：只有既有关联的 Department 或 User 失效所派生的 `responsibility_transfer` 任务进入此页。未编目、未分配主域或责任等目录治理缺口仍通过治理覆盖率下钻到资源盘点，不自动生成任务；不得将此页标成泛化的“治理待办”。
 
-`GET /me/entries` 必须显式提交 `relation=responsible|favorite|following`，只接受 `page` 和 `page_size`，使用标准目录分页结构并再次应用当前调用者可见性。个人 marks 读写使用 `catalog.entry.read`，目标条目不可见时统一返回 `404`。
+### 个人目录与集合路由
 
-集合列表只返回当前 AuthContext 有效 Project Group membership 覆盖的集合；集合更新正文固定携带 `version`、`name`、`description` 和完整 `entry_ids`。创建正文携带当前 membership 中的 `project_group_id` 及同样的业务字段；服务端必须执行当前 Tenant 功能 Permission、成员资格、条目同 Tenant 与可见性校验。集合创建、更新和删除必须同时满足 `catalog.collection.read` 与 `catalog.collection.update`，并属于目标集合的当前有效 Project Group 成员。版本冲突返回 `409`，删除正文只携带 `version`，不存在不带版本的旁路写法。
+个人目录和 marks 的主体、权限及可见性沿[个人目录规则](#33-个人目录视图收藏与关注)。`GET /me/entries` 必须显式提交 `relation=responsible|favorite|following`，只接受 `page` 和 `page_size`，使用标准目录分页结构；marks 目标条目不可见时统一返回 `404`。
 
-`GET /me/project-groups` 以当前 Tenant 的集合功能 Permission 和 AuthContext 中有效 Project Group membership 的交集作为唯一 ID 集，再由 Catalog 使用 `addp-catalog` Tenant Service Token 调用 System `POST /api/v1/system/runtime/catalog-references/resolve` 动态解析名称、编码和状态。响应只包含当前 User 可访问的项目组、成员角色及 `can_read`、`can_update`，不得枚举 Tenant 全部 Project Group。前端列表和详情统一消费此响应中的可读／可维护状态，不再另行展开组织范围角色。Project Group 名称不写入 AuthContext、Access Token、Catalog 表或搜索索引；System 不可达时该请求返回 `503 catalog_reference_validation_unavailable`，Catalog Ready、集合权威事实和其他 API 不受影响。前端不得把稳定 ID 作为名称回退。
+集合路由沿[集合访问与成员规则](#34-project-group-目录集合)确定可参与范围和操作资格。更新正文固定携带 `version`、`name`、`description` 和完整 `entry_ids`；创建正文携带当前 membership 中的 `project_group_id` 及同样业务字段。请求中的条目仍须同 Tenant 且当前可见，不能以集合资格代替条目校验。版本冲突返回 `409`，删除正文只携带 `version`，不存在不带版本的旁路写法。
+
+`GET /me/project-groups` 的唯一 ID 集沿[集合访问与成员规则](#34-project-group-目录集合)计算，再由 Catalog 使用 `addp-catalog` Tenant Service Token 调用 System `POST /api/v1/system/runtime/catalog-references/resolve` 动态解析名称、编码和状态。响应只包含当前 User 可访问的项目组、成员角色及 `can_read`、`can_update`，不得枚举 Tenant 全部 Project Group。前端列表和详情统一消费此响应中的可读／可维护状态，不再另行展开组织范围角色。Project Group 名称不写入 AuthContext、Access Token、Catalog 表或搜索索引；System 不可达时该请求返回 `503 catalog_reference_validation_unavailable`，Catalog Ready、集合权威事实和其他 API 不受影响。前端不得把稳定 ID 作为名称回退。
 
 ### 6.1 Asset 精确引用解析
 
@@ -775,8 +779,8 @@ Catalog 是以下 Permission 的 owner，正式 Key 在 `catalog/authorization/p
 - `catalog.source.rebind`：显式来源重绑；
 - `catalog.audit.read`：读取目录审计。
 - `catalog.reference.read`：由 `addp-asset` 精确批量解析可组合和可发布状态；不授权用户列表或盘点视图。
-- `catalog.collection.read`：当前 Tenant 内的目录集合读取功能 Permission，实际资源范围仍限定为当前有效 Project Group membership 覆盖的集合；仅允许 Tenant Scope；
-- `catalog.collection.update`：当前 Tenant 内的目录集合创建、更新和删除功能 Permission，实际资源范围仍限定为当前有效 Project Group membership 覆盖的集合；仅允许 Tenant Scope。
+- `catalog.collection.read`：目录集合读取功能 Permission；实际准入见[集合访问规则](#34-project-group-目录集合)；
+- `catalog.collection.update`：目录集合创建、更新和删除功能 Permission；权限组合与成员边界见[集合访问规则](#34-project-group-目录集合)。
 
 Catalog 必须从 AuthContext 读取当前 Tenant、User、Department / Project Group membership 和 Permission，不接受调用方提交 Tenant、User、Role 或成员关系。目录写入、状态变更、责任移交、语义关联和来源重绑必须写入 Catalog 自身不可变领域审计，并通过公共审计中间件把平台审计摘要发送到 System；System 不保存 Catalog 业务详情副本。
 
