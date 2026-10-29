@@ -660,6 +660,7 @@ const exportDialogVisible = ref(false)
 const exporting = ref(false)
 let exportAbortController = null
 let quickViewRequestSeq = 0
+let previewModeSelectionVersion = 0
 let quickViewStateSaveTimer = 0
 let quickViewStatusLocator = ''
 
@@ -1130,6 +1131,7 @@ const loadSelectedItemEmbeddingState = async () => {
 watch(
   () => props.selectedNode?.id,
   () => {
+    previewModeSelectionVersion += 1
     markdownRawMode.value = false
     xmlRawMode.value = false
     activePreviewMode.value = 'basic_preview'
@@ -1231,6 +1233,41 @@ const refreshPreviewAfterArtifactReady = async (renderSource) => {
     await loadQuickViewStatus()
   }
   return result
+}
+
+const preferredModeWrites = new Map()
+const persistPreferredMode = (locator, mode, isCurrent = () => true) => {
+  // A failed earlier action is reported by its caller; the next choice can still save.
+  const previous = preferredModeWrites.get(locator) || Promise.resolve()
+  const write = previous.catch(() => {}).then(() => {
+    if (isCurrent()) return quickViewAPI.updatePreferredModeByLocator(locator, mode)
+  })
+  preferredModeWrites.set(locator, write)
+  const clear = () => {
+    if (preferredModeWrites.get(locator) === write) preferredModeWrites.delete(locator)
+  }
+  write.then(clear, clear)
+  return write
+}
+
+const generationSelectionIsCurrent = (locator, version) => (
+  locator === String(props.selectedNode?.locator || props.selectedNode?.id || '').trim() &&
+  version === previewModeSelectionVersion
+)
+
+const activateGeneratedQuickView = async (locator, version, renderSource) => {
+  if (!generationSelectionIsCurrent(locator, version) ||
+      !quickViewStatus.value?.can_use_quick_view || quickViewRenderSource.value !== renderSource) return
+  try {
+    await persistPreferredMode(locator, 'map_quick_view', () => generationSelectionIsCurrent(locator, version))
+  } catch (error) {
+    console.error('保存快显优先模式失败:', error)
+    if (generationSelectionIsCurrent(locator, version)) ElMessage.error(t('manager.spatialPreview.switchQuickViewFailed'))
+    return
+  }
+  if (!generationSelectionIsCurrent(locator, version)) return
+  await loadQuickViewStatus()
+  if (generationSelectionIsCurrent(locator, version)) activePreviewMode.value = 'map_quick_view'
 }
 
 const showDownloadControl = computed(() => {
@@ -1765,6 +1802,7 @@ const quickViewArtifactVersion = computed(() => {
 })
 
 const basicPreviewRendererStateKey = computed(() => {
+  if (previewPluginName.value === 'point-cloud') return 'scene_3d'
   if (previewPluginName.value === 'model-3d') return 'scene_3d'
   if (previewPluginName.value === 'gaussian-splat') return 'scene_3d'
   if (previewPluginName.value === 'tiles-3d') return 'scene_3d'
@@ -2063,15 +2101,17 @@ const loadPreviewState = async (locator) => {
 }
 
 const handleSwitchQuickView = async () => {
+  const selectionVersion = ++previewModeSelectionVersion
   const target = spatialPreviewTarget.value
   if (!target) return
   quickViewActionLoading.value = true
   try {
-    await quickViewAPI.updatePreferredModeByLocator(target.locator, 'map_quick_view')
+    await persistPreferredMode(target.locator, 'map_quick_view')
+    if (!generationSelectionIsCurrent(target.locator, selectionVersion)) return
     clearSelectedChildPreview()
     ElMessage.success(t('manager.spatialPreview.switchQuickViewSuccess'))
     await loadQuickViewStatus()
-    if (quickViewStatus.value?.can_use_quick_view) {
+    if (generationSelectionIsCurrent(target.locator, selectionVersion) && quickViewStatus.value?.can_use_quick_view) {
       activePreviewMode.value = 'map_quick_view'
     }
   } catch (error) {
@@ -2107,16 +2147,18 @@ const handleBasicPreviewStateChange = (state) => {
 }
 
 const handleBackToBasicPreview = async () => {
+  const selectionVersion = ++previewModeSelectionVersion
   const target = spatialPreviewTarget.value
   if (!target) return
   quickViewActionLoading.value = true
   try {
-    await quickViewAPI.updatePreferredModeByLocator(target.locator, 'basic_preview')
+    await persistPreferredMode(target.locator, 'basic_preview')
+    if (!generationSelectionIsCurrent(target.locator, selectionVersion)) return
     activePreviewMode.value = 'basic_preview'
     await loadQuickViewStatus()
   } catch (error) {
     console.error('返回基础预览失败:', error)
-    activePreviewMode.value = 'basic_preview'
+    if (generationSelectionIsCurrent(target.locator, selectionVersion)) activePreviewMode.value = 'basic_preview'
   } finally {
     quickViewActionLoading.value = false
   }
@@ -2203,6 +2245,7 @@ const handleGenerateModel3DGLB = async () => {
     ElMessage.warning(t('manager.explorer.model3DGLBMissingIdentity'))
     return
   }
+  const selectionVersion = previewModeSelectionVersion
   model3DGLBGenerationLoading.value = true
   try {
     const execution = await executeConfirmedQuickViewAction(locator, 'generate_model_3d_glb',
@@ -2210,24 +2253,22 @@ const handleGenerateModel3DGLB = async () => {
       { hasCurrentResult: quickViewStatus.value?.model_3d?.has_current_result === true })
     const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
     ElMessage.success(t('manager.explorer.generateModel3DGLBSubmitted'))
-    if (executionID) {
-      const result = await waitForRasterCOGExecution(
-        executionID,
-        (id) => quickViewAPI.getExecutionStatus(id),
-        { maxAttempts: 60, intervalMs: 2000 }
-      )
-      if (result.success) {
-        ElMessage.success(t('manager.explorer.generateModel3DGLBReady'))
-      } else if (result.failed) {
-        ElMessage.error(t('manager.explorer.generateModel3DGLBExecutionFailed'))
-      } else if (!result.completed) {
-        ElMessage.warning(t('manager.explorer.generateModel3DGLBTimeout'))
-      }
+    if (!executionID) return
+    const result = await waitForRasterCOGExecution(
+      executionID,
+      (id) => quickViewAPI.getExecutionStatus(id),
+      { maxAttempts: 60, intervalMs: 2000 }
+    )
+    if (result.success) {
+      ElMessage.success(t('manager.explorer.generateModel3DGLBReady'))
+    } else if (result.failed) {
+      ElMessage.error(t('manager.explorer.generateModel3DGLBExecutionFailed'))
+    } else if (!result.completed) {
+      ElMessage.warning(t('manager.explorer.generateModel3DGLBTimeout'))
     }
+    if (!result.success || !generationSelectionIsCurrent(locator, selectionVersion)) return
     await refreshPreviewAfterArtifactReady('model_3d_glb')
-    if (quickViewStatus.value?.can_use_quick_view && quickViewRenderSource.value === 'model_3d_glb') {
-      activePreviewMode.value = 'map_quick_view'
-    }
+    await activateGeneratedQuickView(locator, selectionVersion, 'model_3d_glb')
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
       console.error('提交三维模型 GLB 快显生成失败:', error)
@@ -2244,29 +2285,28 @@ const handleGenerateGaussianSplatKSplat = async () => {
     ElMessage.warning(t('manager.explorer.gaussianSplatKSplatMissingIdentity'))
     return
   }
+  const selectionVersion = previewModeSelectionVersion
   gaussianSplatKSplatGenerationLoading.value = true
   try {
     const execution = await executeConfirmedQuickViewAction(locator, 'generate_gaussian_splat_ksplat')
     const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
     ElMessage.success(t('manager.explorer.generateGaussianSplatKSplatSubmitted'))
-    if (executionID) {
-      const result = await waitForRasterCOGExecution(
-        executionID,
-        (id) => quickViewAPI.getExecutionStatus(id),
-        { maxAttempts: 60, intervalMs: 2000 }
-      )
-      if (result.success) {
-        ElMessage.success(t('manager.explorer.generateGaussianSplatKSplatReady'))
-      } else if (result.failed) {
-        ElMessage.error(t('manager.explorer.generateGaussianSplatKSplatExecutionFailed'))
-      } else if (!result.completed) {
-        ElMessage.warning(t('manager.explorer.generateGaussianSplatKSplatTimeout'))
-      }
+    if (!executionID) return
+    const result = await waitForRasterCOGExecution(
+      executionID,
+      (id) => quickViewAPI.getExecutionStatus(id),
+      { maxAttempts: 60, intervalMs: 2000 }
+    )
+    if (result.success) {
+      ElMessage.success(t('manager.explorer.generateGaussianSplatKSplatReady'))
+    } else if (result.failed) {
+      ElMessage.error(t('manager.explorer.generateGaussianSplatKSplatExecutionFailed'))
+    } else if (!result.completed) {
+      ElMessage.warning(t('manager.explorer.generateGaussianSplatKSplatTimeout'))
     }
+    if (!result.success || !generationSelectionIsCurrent(locator, selectionVersion)) return
     await refreshPreviewAfterArtifactReady('gaussian_splat_ksplat')
-    if (quickViewStatus.value?.can_use_quick_view && quickViewRenderSource.value === 'gaussian_splat_ksplat') {
-      activePreviewMode.value = 'map_quick_view'
-    }
+    await activateGeneratedQuickView(locator, selectionVersion, 'gaussian_splat_ksplat')
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
       console.error('提交 3DGS KSplat 快显生成失败:', error)
@@ -2283,29 +2323,28 @@ const handleGeneratePointCloudCOPC = async () => {
     ElMessage.warning(t('manager.explorer.pointCloudCOPCMissingIdentity'))
     return
   }
+  const selectionVersion = previewModeSelectionVersion
   pointCloudCOPCGenerationLoading.value = true
   try {
     const execution = await executeConfirmedQuickViewAction(locator, 'generate_point_cloud_copc')
     const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
     ElMessage.success(t('manager.explorer.generatePointCloudCOPCSubmitted'))
-    if (executionID) {
-      const result = await waitForRasterCOGExecution(
-        executionID,
-        (id) => quickViewAPI.getExecutionStatus(id),
-        { maxAttempts: 60, intervalMs: 2000 }
-      )
-      if (result.success) {
-        ElMessage.success(t('manager.explorer.generatePointCloudCOPCReady'))
-      } else if (result.failed) {
-        ElMessage.error(t('manager.explorer.generatePointCloudCOPCExecutionFailed'))
-      } else if (!result.completed) {
-        ElMessage.warning(t('manager.explorer.generatePointCloudCOPCTimeout'))
-      }
+    if (!executionID) return
+    const result = await waitForRasterCOGExecution(
+      executionID,
+      (id) => quickViewAPI.getExecutionStatus(id),
+      { maxAttempts: 60, intervalMs: 2000 }
+    )
+    if (result.success) {
+      ElMessage.success(t('manager.explorer.generatePointCloudCOPCReady'))
+    } else if (result.failed) {
+      ElMessage.error(t('manager.explorer.generatePointCloudCOPCExecutionFailed'))
+    } else if (!result.completed) {
+      ElMessage.warning(t('manager.explorer.generatePointCloudCOPCTimeout'))
     }
+    if (!result.success || !generationSelectionIsCurrent(locator, selectionVersion)) return
     await refreshPreviewAfterArtifactReady('point_cloud_copc')
-    if (quickViewStatus.value?.can_use_quick_view && quickViewRenderSource.value === 'point_cloud_copc') {
-      activePreviewMode.value = 'map_quick_view'
-    }
+    await activateGeneratedQuickView(locator, selectionVersion, 'point_cloud_copc')
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
       console.error('提交点云 COPC 快显生成失败:', error)
@@ -2324,19 +2363,20 @@ const handleGenerateModel3DTiles = async (targetFormat) => {
     ElMessage.warning(t('manager.explorer.model3DTilesMissingIdentity'))
     return
   }
+  const selectionVersion = previewModeSelectionVersion
   model3DTilesGenerationLoading.value = true
   try {
     const execution = await executeConfirmedQuickViewAction(locator, action)
     const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
     ElMessage.success(t('manager.explorer.generateModel3DTilesSubmitted'))
-    if (executionID) {
-      const result = await waitForRasterCOGExecution(executionID, (id) => quickViewAPI.getExecutionStatus(id), { maxAttempts: 180, intervalMs: 2000 })
-      if (result.failed) ElMessage.error(t('manager.explorer.generateModel3DTilesFailed'))
-    }
+    if (!executionID) return
+    const result = await waitForRasterCOGExecution(executionID, (id) => quickViewAPI.getExecutionStatus(id), { maxAttempts: 180, intervalMs: 2000 })
+    if (result.failed) ElMessage.error(t('manager.explorer.generateModel3DTilesFailed'))
+    if (!result.success || !generationSelectionIsCurrent(locator, selectionVersion)) return
     await loadQuickViewStatus()
-    if (readyModel3DTilesFormats.value.length) {
+    if (readyModel3DTilesFormats.value.some(item => item.target_format === format)) {
       selectedModel3DTilesFormat.value = format
-      activePreviewMode.value = 'map_quick_view'
+      await activateGeneratedQuickView(locator, selectionVersion, format === 's3m' ? 'model3d_s3m' : 'model3d_3d_tiles')
     }
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {

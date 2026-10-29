@@ -1,6 +1,19 @@
 <template>
   <div class="three-preview point-cloud-preview">
     <div ref="viewportRef" class="three-viewport" />
+    <div v-if="hasVisibleContent" class="point-cloud-toolbar">
+      <el-select
+        :model-value="effectiveColorMode"
+        :aria-label="t('manager.explorer.pointCloudPreview.colorMode')"
+        :disabled="loading || giroLoading"
+        size="small"
+        @change="changeColorMode"
+      >
+        <el-option v-for="mode in POINT_CLOUD_COLOR_MODES" :key="mode" :value="mode"
+          :label="t(`manager.explorer.pointCloudPreview.${mode}`)"
+          :disabled="mode !== 'elevation' && !hasRGB" />
+      </el-select>
+    </div>
     <div v-if="showStatusOverlay" class="three-status">
       <div class="point-cloud-status">
         <div>{{ emptyText }}</div>
@@ -19,10 +32,10 @@ import { getAccessToken } from '@common-ui'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import GiroInstance from '@giro3d/giro3d/core/Instance.js'
-import COPCSource from '@giro3d/giro3d/sources/COPCSource.js'
 import GiroPointCloud from '@giro3d/giro3d/entities/PointCloud.js'
 import { setLazPerfPath } from '@giro3d/giro3d/sources/las/config.js'
 import { cameraFitDistanceForBox } from '@/utils/scene3dCamera.js'
+import { ColorDisplayCOPCSource, POINT_CLOUD_COLOR_MODES, pointCloudColorMode, normalizedPointColor, elevationColor, elevationColors } from '@/utils/pointCloudColor.js'
 
 const props = defineProps({
   data: {
@@ -50,6 +63,9 @@ const giroInstance = shallowRef(null)
 const giroPointCloud = shallowRef(null)
 const giroControls = shallowRef(null)
 const giroLoading = ref(false)
+const giroHasRGB = ref(false)
+const colorMode = ref(pointCloudColorMode(props.viewState?.color_mode))
+let appliedColorMode = null
 const giroError = ref('')
 const giroDisplayedPointCount = ref(0)
 const giroTotalPointCount = ref(0)
@@ -104,6 +120,9 @@ const points = computed(() => {
     }))
     .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z))
 })
+
+const hasRGB = computed(() => shouldLoadCOPC.value ? giroHasRGB.value : points.value.some(pointHasRGB))
+const effectiveColorMode = computed(() => hasRGB.value ? colorMode.value : 'elevation')
 
 const pointCount = computed(() => Number(payload.value?.point_count || metadata.value?.point_count || giroTotalPointCount.value || points.value.length || 0))
 const sampleCount = computed(() => Number(payload.value?.sample_count || metadata.value?.sample_count || giroDisplayedPointCount.value || points.value.length || 0))
@@ -262,11 +281,10 @@ async function loadGiroCOPC(url) {
     await nextTick()
     const instance = ensureGiroInstance()
     if (!instance) return
-    const source = new COPCSource({
+    const source = new ColorDisplayCOPCSource({
       url: createRangeGetter(new URL(url, window.location.href).toString(), token),
-      enableWorkers: false,
-      compressColorsTo8Bit: true
-    })
+      enableWorkers: false
+    }, () => colorMode.value)
     const cloud = markRaw(new GiroPointCloud({
       source,
       cleanupDelay: GIRO_CLEANUP_DELAY_MS
@@ -279,6 +297,8 @@ async function loadGiroCOPC(url) {
       return
     }
     giroPointCloud.value = cloud
+    giroHasRGB.value = cloud.getSupportedAttributes().some(attribute => attribute.interpretation === 'color')
+    appliedColorMode = null
 
     cloud.pointBudget = GIRO_POINT_BUDGET
     cloud.subdivisionThreshold = GIRO_SUBDIVISION_THRESHOLD
@@ -294,6 +314,7 @@ async function loadGiroCOPC(url) {
       colorMap.max = attribute.max
     }
 
+    applyGiroColorMode()
     const bounds = getGiroCloudBounds()
     if (!applyGiroCameraViewState(props.viewState, bounds)) {
       fitGiroCamera(bounds)
@@ -309,6 +330,59 @@ async function loadGiroCOPC(url) {
       giroLoading.value = false
     }
   }
+}
+
+function applyGiroColorMode() {
+  const cloud = giroPointCloud.value
+  const instance = giroInstance.value
+  if (!cloud?.ready || !instance) return
+  const mode = effectiveColorMode.value
+  const attributes = cloud.getSupportedAttributes()
+  const attribute = attributes.find(a => mode === 'elevation' ? a.name === 'Z' : a.interpretation === 'color')
+  if (!attribute) return
+  if (mode === 'elevation') {
+    const bounds = getGiroCloudBounds()
+    const map = cloud.getAttributeColorMap(attribute.name)
+    map.colors = elevationColors
+    const padding = bounds.max.z > bounds.min.z ? 0 : Math.max(Math.abs(bounds.min.z) * Number.EPSILON, 1)
+    map.min = bounds.min.z - padding
+    map.max = bounds.max.z + padding
+  }
+  cloud.setActiveAttribute(attribute.name)
+  if (appliedColorMode && appliedColorMode !== mode && appliedColorMode !== 'elevation' && mode !== 'elevation') {
+    // Same attribute, different interpretation: force its cached node buffers to
+    // be decoded again from the unmodified source, without moving the camera.
+    cloud.clear()
+  }
+  appliedColorMode = mode
+  instance.notifyChange(cloud, { needsRedraw: true, immediate: true })
+}
+
+function changeColorMode(mode) {
+  colorMode.value = pointCloudColorMode(mode)
+  if (shouldLoadCOPC.value) {
+    applyGiroColorMode()
+    emitGiroCameraViewState()
+  } else {
+    updateSampleColors()
+    emit('view-state-change', { ...props.viewState, color_mode: effectiveColorMode.value })
+  }
+}
+
+function updateSampleColors() {
+  const attribute = samplePointsObject?.geometry?.getAttribute('color')
+  if (!attribute) return
+  const items = points.value
+  const bounds = pointBounds(items)
+  items.forEach((point, index) => {
+    if (effectiveColorMode.value !== 'elevation' && pointHasRGB(point)) {
+      attribute.setXYZ(index, ...[point.r, point.g, point.b].map(v => normalizedPointColor(v, effectiveColorMode.value)))
+    } else {
+      const color = elevationColor(point.z, bounds.min.z, bounds.max.z)
+      attribute.setXYZ(index, color.r, color.g, color.b)
+    }
+  })
+  attribute.needsUpdate = true
 }
 
 function getGiroCloudBounds() {
@@ -546,7 +620,8 @@ function emitGiroCameraViewState() {
   emit('view-state-change', {
     position: camera.position.toArray(),
     target: controls.target.toArray(),
-    up: [...GIRO_UP]
+    up: [...GIRO_UP],
+    color_mode: effectiveColorMode.value
   })
 }
 
@@ -684,22 +759,12 @@ function rebuildSamplePointCloud(items) {
   const maxDim = Math.max(size.x, size.y, size.z, 1)
   const positions = new Float32Array(items.length * 3)
   const colors = new Float32Array(items.length * 3)
-  const minZ = Number.isFinite(bounds.min.z) ? bounds.min.z : 0
-  const maxZ = Number.isFinite(bounds.max.z) ? bounds.max.z : minZ + 1
-  const zRange = Math.max(1, maxZ - minZ)
 
   items.forEach((point, index) => {
     const offset = index * 3
     positions[offset] = point.x - center.x
     positions[offset + 1] = point.z - center.z
     positions[offset + 2] = point.y - center.y
-    if (pointHasRGB(point)) {
-      colors[offset] = normalizedColorComponent(point.r)
-      colors[offset + 1] = normalizedColorComponent(point.g)
-      colors[offset + 2] = normalizedColorComponent(point.b)
-    } else {
-      writeElevationColor(colors, offset, point.z, minZ, zRange)
-    }
   })
 
   const geometry = new THREE.BufferGeometry()
@@ -712,6 +777,7 @@ function rebuildSamplePointCloud(items) {
   })
   samplePointsObject = new THREE.Points(geometry, material)
   sampleScene.add(samplePointsObject)
+  updateSampleColors()
   fitSampleCamera(bounds, center, maxDim)
 }
 
@@ -738,18 +804,6 @@ function pointHasRGB(point) {
   return Number.isFinite(point.r) && Number.isFinite(point.g) && Number.isFinite(point.b)
 }
 
-function normalizedColorComponent(value) {
-  if (!Number.isFinite(value)) return 0
-  return Math.max(0, Math.min(1, value > 255 ? value / 65535 : value / 255))
-}
-
-function writeElevationColor(colors, offset, z, minZ, zRange) {
-  const ratio = Math.max(0, Math.min(1, (z - minZ) / zRange))
-  colors[offset] = 0.1843137254901961 + (0.9490196078431372 - 0.1843137254901961) * ratio
-  colors[offset + 1] = 0.5019607843137255 + (0.788235294117647 - 0.5019607843137255) * ratio
-  colors[offset + 2] = 0.9294117647058824 + (0.2980392156862745 - 0.9294117647058824) * ratio
-}
-
 function disposeSamplePoints() {
   if (!sampleScene || !samplePointsObject) return
   sampleScene.remove(samplePointsObject)
@@ -774,6 +828,14 @@ function disposeSampleScene() {
   sampleLastSampleAt = 0
   if (!shouldLoadCOPC.value) renderFPS.value = 0
 }
+
+watch(() => props.viewState?.color_mode, mode => {
+  const next = pointCloudColorMode(mode)
+  if (next === colorMode.value) return
+  colorMode.value = next
+  if (shouldLoadCOPC.value) applyGiroColorMode()
+  else updateSampleColors()
+})
 
 watch(points, async (items) => {
   if (shouldLoadCOPC.value) return
@@ -820,6 +882,13 @@ onBeforeUnmount(() => {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.point-cloud-toolbar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: min(180px, calc(100% - 24px));
 }
 
 .three-status {

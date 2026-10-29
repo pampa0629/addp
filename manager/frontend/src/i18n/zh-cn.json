@@ -1212,6 +1212,10 @@
       "pointCloudCOPCMissingIdentity": "缺少点云数据项身份，无法生成 COPC 快显",
       "pointCloudCOPCTaskName": "生成 COPC 快显：{name}",
       "pointCloudPreview": {
+        "colorMode": "点云着色模式",
+        "rgb8": "RGB 8 位",
+        "rgb16": "RGB 16 位",
+        "elevation": "按高程着色",
         "loading": "正在加载点云...",
         "loadingCOPC": "正在加载 COPC 点云... {progress}%",
         "copcReady": "COPC 快显文件已就绪",

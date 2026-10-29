@@ -1212,6 +1212,10 @@
       "pointCloudCOPCMissingIdentity": "Missing point cloud item identity; cannot generate COPC quick view",
       "pointCloudCOPCTaskName": "Generate COPC quick view: {name}",
       "pointCloudPreview": {
+        "colorMode": "Point cloud coloring",
+        "rgb8": "RGB 8-bit",
+        "rgb16": "RGB 16-bit",
+        "elevation": "Elevation",
         "loading": "Loading point cloud...",
         "loadingCOPC": "Loading COPC point cloud... {progress}%",
         "copcReady": "COPC quick view file is ready",

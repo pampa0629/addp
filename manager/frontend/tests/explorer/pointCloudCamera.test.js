@@ -23,6 +23,8 @@ vi.mock('@giro3d/giro3d/entities/PointCloud.js', async () => {
     getActiveAttributes() {
       return [{ attribute: { name: 'Z', interpretation: 'unknown', min: -0.061873, max: 0.058799 } }]
     }
+    getSupportedAttributes() { return [{ name: 'Z', interpretation: 'unknown', min: -0.061873, max: 0.058799 }] }
+    setActiveAttribute() {}
     getAttributeColorMap() { return this.colorMap }
   } }
 })
@@ -201,7 +203,8 @@ describe('COPC camera clipping', () => {
     const { state } = preview()
     await state.loadGiroCOPC('/copc-content')
     const colorMap = state.giroPointCloud.value.getAttributeColorMap('Z')
-    expect(colorMap.sample(-0.061873).r).toBe(0)
-    expect(colorMap.sample(0.058799).r).toBe(1)
+    expect(colorMap.min).toBe(-0.061873)
+    expect(colorMap.max).toBe(0.058799)
+    expect(colorMap.sample(-0.061873).equals(colorMap.sample(0.058799))).toBe(false)
   })
 })
