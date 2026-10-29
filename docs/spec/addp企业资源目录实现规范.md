@@ -685,6 +685,8 @@ GET /api/v1/catalog/entries/{id}/data-dictionary/export?as_of={RFC3339}
 
 ## 六、Catalog API 契约
 
+所有用户可见错误使用 Catalog i18n；Swagger 使用中文在前、英文在后的双语注解，并为每个公开 Operation 声明 `x-addp-auth-mode` 和精确 Permission。
+
 BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 
 | Method | Path | 语义 |
@@ -695,15 +697,15 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 | POST | `/entries/resolve-sources` | 把专业关系节点的精确来源身份批量解析为当前可见 CatalogEntry，不复制 owner 关系 |
 | POST | `/entries/batch_governance` | 对显式选择的 CatalogEntry 原子批量分配主业务域或责任部门 |
 | GET | `/reference-candidates` | 按名称分页查询当前可建立语义或责任关联的 owner 候选 |
-| GET | `/entries/:id/sharing_recipient_candidates` | 当前业务负责人按本条目资格选择同 Tenant 的有效账号或项目组最小显示摘要 |
-| POST | `/entries/:id/sharing_decisions` | 显式确认普通只读共享，保存不可变业务决定；不授予源访问 |
-| GET | `/entries/:id/sharing_decisions` | 原确认人分页读取本人记录；当前业务负责人复核本条目全部历史 |
-| GET | `/entries/:id/sharing_decisions/:decision_id` | 在上述复核资格内读取原决定，不重新确认 |
-| GET | `/entries/:id/sharing_decisions/:decision_id/fulfillments` | 动态只读查询原办理及签发历史，不表达当前访问 Allow |
-| GET | `/entries/:id/sharing_decision_candidates` | 有源办理资格的当前 User 读取仍有效的决定摘要，精确解析其接收方名称 |
-| POST | `/entries/:id/sharing_fulfillments` | 根据持久决定正式准备并触发 System 首次受理；不等于 Grant 已生效 |
-| GET | `/entries/:id/sharing_fulfillments` | 按本人当前原引擎管理范围过滤、分页找回本人原办理请求；不提交或核清 |
-| GET | `/entries/:id/sharing_fulfillments/:request_id` | 按持久完整绑定只读查询本人原受理／关闭结果；不重试、延期或授予源访问 |
+| GET | `/entries/:id/sharing_recipient_candidates` | 当前业务负责人按[本条目资格](#接收方选择与办理候选)选择同 Tenant 的有效账号或项目组最小显示摘要 |
+| POST | `/entries/:id/sharing_decisions` | 显式确认普通只读共享，保存[不可变业务决定](#业务确认与不可变决定)；不授予源访问 |
+| GET | `/entries/:id/sharing_decisions` | [原确认人分页读取本人记录](#共享历史与签发结果)；当前业务负责人复核本条目全部历史 |
+| GET | `/entries/:id/sharing_decisions/:decision_id` | 在[上述复核资格](#共享历史与签发结果)内读取原决定，不重新确认 |
+| GET | `/entries/:id/sharing_decisions/:decision_id/fulfillments` | 动态只读查询[原办理及签发历史](#共享历史与签发结果)，不表达当前访问 Allow |
+| GET | `/entries/:id/sharing_decision_candidates` | 有源办理资格的当前 User 读取[仍有效的决定摘要](#接收方选择与办理候选)，精确解析其接收方名称 |
+| POST | `/entries/:id/sharing_fulfillments` | 根据持久决定[正式准备](#准备绑定与可信依据)并触发 System 首次受理；不等于 Grant 已生效 |
+| GET | `/entries/:id/sharing_fulfillments` | 按本人当前原引擎管理范围过滤、[分页找回本人原办理请求](#本人办理历史)；不提交或核清 |
+| GET | `/entries/:id/sharing_fulfillments/:request_id` | 按持久完整绑定只读查询[本人原受理／关闭结果](#本人办理历史)；不重试、延期或授予源访问 |
 | GET | `/entries/:id` | 读取聚合详情、来源、语义和责任 |
 | GET | `/entries/:id/data-dictionary` | 组合 Meta 当前物理字段、Catalog 已审核 StandardMapping 与其冻结的 Standard 修订 |
 | GET | `/entries/:id/data-dictionary/export` | 重新组合一次联邦数据字典并下载不可变 JSON 快照，不在服务端留存副本 |
@@ -792,9 +794,9 @@ Catalog 资源列表、详情和业务域总览的专业源链接统一复用共
 
 ### 共享确认与接收方显示
 
-共享确认创建响应、确认与办理历史、办理候选的接收方字段、失败语义及当前账号标识统一见[接收方名称解析](#接收方名称解析)；各入口当前读取资格仍按[责任与实际数据授权](#321-责任与实际数据授权)分别核验。
+共享确认创建响应、确认与办理历史、办理候选的接收方字段、失败语义及当前账号标识统一见[接收方名称解析](#接收方名称解析)。
 
-所有用户可见错误使用 Catalog i18n；Swagger 使用中文在前、英文在后的双语注解，并为每个公开 Operation 声明 `x-addp-auth-mode` 和精确 Permission。
+各入口的当前资格分别按[确认创建](#业务确认与不可变决定)、[接收方与办理候选](#接收方选择与办理候选)、[共享历史与签发结果](#共享历史与签发结果)、[本人办理历史](#本人办理历史)核验，名称解析不替代入口授权。
 
 ### 责任治理队列路由
 
