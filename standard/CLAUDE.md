@@ -287,7 +287,7 @@ API 使用现有 `/measurement-categories`、`/units` 资源路径，Platform �
 
 指标定义使用“稳定身份 + 不可变修订”模型。稳定身份保存 `code`、`scope_type`、`owner_domain_id`、分类、标签和并发 `version`；修订保存 `metric_type`、名称、业务定义、统计口径、非引擎可执行的语义公式、单位、生效区间与统一发布状态。
 
-`standard.metric_definition_revision_dependencies` 保存修订级语义依赖。草稿依赖 `dependency_definition_id`，发布时必须解析并冻结 `dependency_revision_id`；`atomic` 不允许依赖，`derived` 必须且只能有一个 `base`，`composite` 必须至少有一个 `component`。该表不保存模型表、字段、连接、过滤或可执行表达式。
+`standard.metric_definition_revision_dependencies` 保存修订级语义依赖。草稿依赖 `dependency_definition_id`，发布时必须解析并冻结 `dependency_revision_id`；依赖类型与基数见[指标三种类型关系](#指标三种类型关系)。该表不保存模型表、字段、连接、过滤或可执行表达式。
 
 公开路径继续以稳定产品资源名 `/metrics` 表示 MetricDefinition；修订使用 `/metrics/:id/revisions`，审核动作统一为 `submit`、`return`、`publish`、`withdraw`。旧 `approve`、`deprecate` 路径和扁平字段不保留。
 
@@ -298,17 +298,19 @@ API 使用现有 `/measurement-categories`、`/units` 资源路径，Platform �
 | `metric_definitions.code` | string | 稳定英文标识 |
 | `metric_definitions.tags` | StringArray | 标签 |
 | `metric_definitions.draft_revision_id / version` | int64? / int64 | 工作修订指针与聚合并发版本 |
+| `metric_definition_revisions.metric_definition_id / revision_no` | int64 / int | 所属指标稳定身份与业务修订号；不是聚合并发 `version` |
 | `metric_definition_revisions.metric_type` | string | `atomic` / `derived` / `composite` |
 | `metric_definition_revisions.name / definition / statistical_caliber` | string / text | 名称、业务定义与统计口径 |
 | `metric_definition_revisions.semantic_formula` | text | 非引擎可执行的语义公式 |
 | `metric_definition_revisions.unit_id` | int64? | 引用 `standard.units` |
 | `metric_definition_revisions.status` | string | `draft` / `in_review` / `published` / `withdrawn` |
 | `metric_definition_revisions.effective_from / effective_to` | timestamp? | 发布生效区间，数据库保证同一定义的已发布区间不重叠 |
-| `metric_definition_revision_dependencies.dependency_definition_id` | int64 | 依赖指标稳定身份 |
+| `metric_definition_revision_dependencies.metric_definition_revision_id` | int64 | 来源指标修订，依赖边的起点 |
+| `metric_definition_revision_dependencies.dependency_definition_id` | int64 | 被依赖指标的稳定身份 |
 | `metric_definition_revision_dependencies.dependency_revision_id` | int64? | 发布时冻结的依赖修订 |
 | `metric_definition_revision_dependencies.relation_kind` | string | `base` / `component` |
-| from_metric_id / to_metric_id | int64 | 依赖关系方向 |
-| coefficient | float? | 权重系数（可选） |
+| `metric_definition_revision_dependencies.coefficient` | float? | 权重系数（可选） |
+| `metric_definition_revision_dependencies.note` | text | 语义依赖备注 |
 
 ### `standard.documents` — 标准文档稳定身份
 
@@ -522,6 +524,8 @@ derived（派生指标）
 composite（复合指标）
   └─ 修订中包含一个或多个 component 依赖，发布时冻结各依赖修订
 ```
+
+稳定身份、业务修订号、并发版本与依赖字段见[指标定义表说明](#standardmetric_definitions--standardmetric_definition_revisions--指标定义)；图中的依赖是 Standard 语义关系，不包含 Model 的物理执行实现。
 
 ### 业务术语、数据元、码值集、指标定义与标准文档的修订状态流转
 
