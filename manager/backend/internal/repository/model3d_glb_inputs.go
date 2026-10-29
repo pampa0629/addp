@@ -102,6 +102,9 @@ func (r *Model3DGLBRepository) changeExecutionInputs(ctx context.Context, result
 		return commonAPI.ErrConflict
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockGLBExecutionSource(ctx, tx, lease, 0); err != nil {
+			return err
+		}
 		var item models.Model3DGLB
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ?", resultID, lease.TenantID).First(&item).Error; err != nil {
 			return err

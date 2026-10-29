@@ -402,3 +402,14 @@ Manager 索引已补持久 `cleanup_hold_id`、C／attempt 绑定操作及准确
 本轮 T2 工作流整体仍为 failure：Redis 原生门禁在拉取镜像时被注册表返回 `toomanyrequests: Data limit exceeded`，尚未执行测试，不记为本轮通过。此前包含同一产品实现的 `944c4bcf74272a568045a8c066da34878f4c7fa6` Redis 作业已成功；本次只修正 PG 测试断言，未修改 Redis 产品路径。不改变镜像来源、预算或测试范围，不因环境拉取失败覆盖原通过或原失败记录。待拉取额度恢复后，仅该门禁仍可补充新提交的 CI 证据。
 
 交付边界：首期十 Owner 接线、持久隔离、迟到写入阻断及专业结果读取已实现并提交；本地与固定提交专项结果以上述记录分别为准。本地全量 `test-changed` 未执行到测试、`test-platform`／全量 IAM／Monitor 前端各自的失败仍保留，不能称全仓本地门禁全绿。新的 Hosted、真实 Gateway／Worker 故障注入及旧环境切换未验收。清单汇报稿位于 `/tmp/addp-cleanup-p0-handoff-20261029.txt`，会话消息工具不可用，未送达维护会话、未由本会话回填工作簿。
+
+
+### 2026-10-29 Manager GLB 补充复核与修复
+
+CI 协调会话补充两条此前门禁未覆盖的源码缺口：Freeze 将保留的已清理输入审计一律视为未结工作；输出完成／输入登记存在产物 → execution／Task 的反向锁序。它们属于既定方案内的实现问题，不改变权限或模块职责。原通过证据仍有效，但不覆盖这两条新增边界。
+
+已先同步正式 Cleanup 契约，再复用 Manager GLB 生命周期解析及逐项输入身份校验，接受合法 Cleaned 审计清单，保持 pending／garbage／未释放／Watch／未清理／非法对象拒绝。scan 仍可只读展示未决操作事实；unknown hold 继续阻断执行准备和重复效果。生成准备、输入登记／结束、输出完成统一 execution → Task → 产物，并在领域锁后复核 lease；无 execution 的后台路径不反向获取 execution／Task。没有跨远程调用持锁、删除审计或新建公共协议。
+
+实际通过：`GOMAXPROCS=4 GOFLAGS=-p=2 make test-module MODULE=manager GO_ONLY=1`（`/tmp/addp-cleanup-glb-followup-go-final.log`）；完整 `make test-manager-postgres`（`/tmp/addp-cleanup-glb-followup-pg-final.log`）。新增九个 PG 场景覆盖准确物理目标删除及审计保留、未释放／Watch／未清理／非法清单、unknown 不重放、准备与完成／输入结束竞争，以及先 scan 后启动生成时的 Cleanup 与完成竞争。通过 pg_blocking_pids 建立真实锁等待，再执行竞争入口，未出现 40P01，正常终态与产物同事务提交，终态后输入写入拒绝。外部删除为受控回调；不宣称真实对象存储、Gateway／Worker 或 Hosted 验收。新测试由既有 Manager PG 名称前缀及 CI 路径自动发现，无新增入口／服务依赖。
+
+本轮未修改 Common、其他 Owner、API 或权限；其他 Owner 的有效门禁不重跑。首次 Go 编译发现测试可空状态字段比较错误，修正后重验通过；最终 PG 输入另补强审计保留与竞争时序断言后再次完整通过。补充修复提交后的固定 CI 待核对。当前仍无可用的会话发送工具，协调回报记录尚未送达。

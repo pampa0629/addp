@@ -900,3 +900,6 @@ make test-online ONLINE_SUITE="$ONLINE_SUITE"
 
 
 Manager 的产物操作事实保存冻结快照及准确目标的原始 JSON 字节（文本列），摘要绑定原 execution／attempt／lease 与这些字节；不得使用会重排 JSON 的存储表示再按原字符串比较摘要。PostgreSQL 查询需要取快照字段时仅在查询表达式中转换，不改写持久快照。原生成调用记录成功或未知结束事实后，即使当前 lease 尚有效，也不得用同一内存调用凭据再派发写入。
+
+
+Manager GLB 补充边界：合法 `Released=true`、`Watch=false`、`Cleaned=true` 的输入准备清单保留为审计事实；只有逐项通过准确 Tenant／execution／attempt／对象身份校验且没有 pending、garbage 或 input_cleanup_pending 时，才不再视为待结束工作。它既不替代持久操作 hold，也不构成新 Cleanup 的效果／完成回执。GLB 准备输出、登记／结束输入和提交输出统一按原执行 → Task → 产物获取所需行锁，领域锁后复核原租约；不得产物 → 执行／Task。无执行的后台清理只按产物 → 目标控制事实推进，不反向获取执行或 Task 锁；远程效果始终在锁外。新增验收须覆盖保留合法清单的准确删除、未结束／Watch／unknown 拒绝，以及同 Task／产物真实 PG 竞争不产生 40P01。

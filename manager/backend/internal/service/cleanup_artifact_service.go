@@ -180,21 +180,8 @@ func artifactRow(ctx context.Context, db *gorm.DB, taskType string, id, tenant u
 		return target, commonapi.ErrConflict
 	}
 	if taskType == execution.TaskTypeModel3DGLBGeneration {
-		glb := model.(*models.Model3DGLB)
-		// Unsettled original uploads can outlive their execution lease. Metadata is
-		// only a reason to block; it is never accepted as Cleanup completion proof.
-		if lifecycle, ok := glb.Metadata["model3d_output_lifecycle"]; ok {
-			b, _ := json.Marshal(lifecycle)
-			var facts map[string]json.RawMessage
-			if json.Unmarshal(b, &facts) != nil {
-				return target, commonapi.ErrConflict
-			}
-			for _, key := range []string{"pending", "garbage", "input_preparations", "input_cleanup_pending"} {
-				b := facts[key]
-				if len(b) > 0 && string(b) != "null" && string(b) != "[]" && string(b) != "{}" {
-					return target, commonapi.ErrConflict
-				}
-			}
+		if err := repository.ValidateModel3DGLBCleanupLifecycle(model.(*models.Model3DGLB)); err != nil {
+			return target, err
 		}
 	}
 	return target, nil

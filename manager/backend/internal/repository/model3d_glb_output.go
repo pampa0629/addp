@@ -65,6 +65,44 @@ func readModel3DGLBOutputState(metadata commonModels.JSONMap) (model3DGLBOutputS
 	return state, nil
 }
 
+// ValidateModel3DGLBCleanupLifecycle distinguishes retained, validated audit
+// manifests from unsettled work. Durable operation holds are checked separately.
+func ValidateModel3DGLBCleanupLifecycle(item *models.Model3DGLB) error {
+	if item == nil {
+		return commonAPI.ErrConflict
+	}
+	state, err := readModel3DGLBOutputState(item.Metadata)
+	if err != nil || state.Pending != nil || len(state.Garbage) != 0 || state.InputCleanupPending {
+		return commonAPI.ErrConflict
+	}
+	seen := make(map[string]bool, len(state.InputPreparations))
+	for _, input := range state.InputPreparations {
+		if input.Validate(item.TenantID) != nil || !input.Cleaned || seen[input.PreparationID] {
+			return commonAPI.ErrConflict
+		}
+		seen[input.PreparationID] = true
+	}
+	return nil
+}
+
+// lockGLBExecutionSource establishes execution -> Task before any artifact lock.
+// Callers recheck the lease after taking the remaining required domain locks.
+func lockGLBExecutionSource(ctx context.Context, tx *gorm.DB, lease commonExecution.Lease, expectedTaskID uint) error {
+	item, err := commonExecution.LockActiveLease(ctx, tx, lease)
+	if err != nil {
+		return err
+	}
+	if item.Module != commonExecution.ModuleManager || item.TaskType != commonExecution.TaskTypeModel3DGLBGeneration || item.SourceTaskID == nil {
+		return commonAPI.ErrConflict
+	}
+	taskID, err := strconv.ParseUint(*item.SourceTaskID, 10, 64)
+	if err != nil || taskID == 0 || strconv.FormatUint(taskID, 10) != *item.SourceTaskID || (expectedTaskID != 0 && taskID != uint64(expectedTaskID)) {
+		return commonAPI.ErrConflict
+	}
+	var task models.Model3DGLBTask
+	return tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ? AND task_type = ?", taskID, lease.TenantID, commonExecution.TaskTypeModel3DGLBGeneration).First(&task).Error
+}
+
 func model3DGLBOutputMetadata(metadata commonModels.JSONMap, state model3DGLBOutputState) commonModels.JSONMap {
 	// Only the private root keys change. A JSONMap.Clone round trip would
 	// silently turn exact scope identifiers into float64 values.
@@ -139,17 +177,16 @@ func (r *Model3DGLBRepository) PrepareExecutionOutput(ctx context.Context, desir
 	}
 	var result models.Model3DGLB
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var ownerCount int64
-		if err := tx.Model(&commonExecution.TaskExecution{}).Where("tenant_id = ? AND execution_id = ? AND module = ? AND task_type = ? AND source_task_id = ?", desired.TenantID, lease.ExecutionID, commonExecution.ModuleManager, commonExecution.TaskTypeModel3DGLBGeneration, strconv.FormatUint(uint64(*desired.TaskID), 10)).Count(&ownerCount).Error; err != nil {
-			return err
-		}
-		if ownerCount != 1 {
-			return commonAPI.ErrConflict
-		}
-		if err := commonExecution.UpdateWithLease(ctx, tx, lease, nil); err != nil {
+		if err := lockGLBExecutionSource(ctx, tx, lease, *desired.TaskID); err != nil {
 			return err
 		}
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id = ? AND item_fingerprint = ? AND status <> ?", desired.TenantID, desired.ItemFingerprint, models.Model3DGLBStatusDeleted).Order("updated_at DESC, id DESC").First(&result).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if leaseErr := commonExecution.UpdateWithLease(ctx, tx, lease, nil); leaseErr != nil {
+			return leaseErr
+		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			result = *desired
 			result.ID = 0
@@ -188,7 +225,14 @@ func (r *Model3DGLBRepository) PrepareExecutionOutput(ctx context.Context, desir
 // terminal facts in one transaction. Garbage ownership is retained in that same
 // record, so a crash after commit does not lose the old object to be reclaimed.
 func (r *Model3DGLBRepository) CompleteExecutionOutput(ctx context.Context, taskID, tenantID uint, executionID string, resultID uint, outputRef string, resultFields, executionFields map[string]interface{}, completedAt time.Time) error {
+	lease, ok := commonExecution.LeaseFromContext(ctx)
+	if !ok || lease.ExecutionID != executionID || lease.TenantID != int(tenantID) {
+		return commonAPI.ErrConflict
+	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockGLBExecutionSource(ctx, tx, lease, taskID); err != nil {
+			return err
+		}
 		var current models.Model3DGLB
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ?", resultID, tenantID).First(&current).Error; err != nil {
 			return err
