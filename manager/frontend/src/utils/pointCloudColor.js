@@ -21,9 +21,28 @@ export function elevationColor(z, min, max) {
 // Manager's COPC display adapter keeps the source's 16-bit values intact.
 // Each node uses the same explicitly selected full scale; never infer it per block.
 export class ColorDisplayCOPCSource extends COPCSource {
+  initialization = null
+  initialized = false
+
   constructor(options, readMode) {
     super({ ...options, compressColorsTo8Bit: false })
     this.readMode = readMode
+  }
+
+  get ready() {
+    return this.initialized
+  }
+
+  initialize() {
+    // Giro3D 1.0.1 forks an unobserved .then() from its initialization promise.
+    // Keep readiness and notification on the promise returned to the caller so
+    // both cancellation and real read failures have exactly one rejection owner.
+    this.initialization ??= this.initializeOnce().then(result => {
+      this.initialized = true
+      this.dispatchEvent({ type: 'initialized' })
+      return result
+    })
+    return this.initialization
   }
 
   async getNodeData(params) {

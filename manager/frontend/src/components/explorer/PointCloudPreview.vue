@@ -321,7 +321,7 @@ async function loadGiroCOPC(url) {
     }
     instance.notifyChange(cloud, { needsRedraw: true, immediate: true })
   } catch (error) {
-    if (token === giroLoadToken && error?.message !== 'aborted') {
+    if (token === giroLoadToken) {
       giroError.value = error?.message || t('manager.explorer.pointCloudPreview.loadCOPCFailed')
       console.error(error)
     }

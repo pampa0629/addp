@@ -26,6 +26,57 @@ async function inspect(page) {
   })
 }
 
+test('switching items during COPC initialization settles the obsolete read without a page error', async ({ page }) => {
+  const { unexpected } = await backend(page, 'en', 'quick_view')
+  const errors = []
+  page.on('pageerror', error => errors.push(error.stack || error.message))
+  let release, started
+  const held = new Promise(resolve => { release = resolve })
+  const requested = new Promise(resolve => { started = resolve })
+  let first = true
+  await page.route('**/point_cloud_copc/1/content', async route => {
+    if (first) {
+      first = false
+      started()
+      await held
+    }
+    return route.fallback()
+  })
+  await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
+  await requested
+  await page.locator('.point-cloud-preview').evaluate(element => {
+    const state = element.__vueParentComponent.setupState
+    const instance = state.giroInstance?.value || state.giroInstance
+    const source = instance.getObjects()[0].source
+    window.obsoleteCOPCRead = { settled: false }
+    source.initialize().then(
+      () => { window.obsoleteCOPCRead = { settled: true, ready: source.ready } },
+      error => { window.obsoleteCOPCRead = { settled: true, ready: source.ready, error: error.message } }
+    )
+  })
+  await page.getByRole('treeitem', { name: 'other.copc.laz', exact: true }).click()
+  await expect.poll(async () => (await inspect(page)).count).toBeGreaterThan(100)
+  release()
+  await expect.poll(() => page.evaluate(() => window.obsoleteCOPCRead)).toEqual({ settled: true, ready: false, error: 'aborted' })
+  expect(unexpected).toEqual([])
+  expect(errors).toEqual([])
+})
+
+test('a current COPC permission failure stays visible and has no unhandled initialization rejection', async ({ page }) => {
+  const { unexpected } = await backend(page, 'en', 'quick_view')
+  const errors = [], reported = []
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('console', message => {
+    if (message.type() === 'error') reported.push(message.text())
+  })
+  await page.route('**/point_cloud_copc/1/content', route => route.fulfill({ status: 403, body: 'Forbidden' }))
+  await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
+  await expect(page.locator('.point-cloud-preview')).toContainText('COPC range request failed: HTTP 403')
+  expect(reported.some(message => message.includes('COPC range request failed: HTTP 403'))).toBe(true)
+  expect(unexpected).toEqual([])
+  expect(errors).toEqual([])
+})
+
 async function backend(page, locale, domain) {
   const states = new Map(), writes = [], unexpected = []
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), locale)
