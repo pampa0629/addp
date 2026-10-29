@@ -38,11 +38,17 @@ while [ "$#" -gt 0 ]; do
             echo "Unified human data authorizer: --package migration --test unified-data-authorizer" >&2
             echo "Owned-container crash recovery: --test database-crash-recovery (no external DSN)" >&2
             echo "Execution subject roles: --package iam --test execution-subject-roles" >&2
+            echo "Cleanup execution authorization: --package iam --test cleanup-authorization" >&2
             echo "usage: $0 [--source-root checkout] [--package iam|oauth|api|migration|engineaccess|repository|online-fixture] [--test database-crash-recovery|oauth-client-credentials|prometheus-credential|credential-context|engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider|transfer-task-create|export-execution-provenance]" >&2
             exit 2
             ;;
     esac
 done
+
+if [ "$TEST_FILTER" = cleanup-authorization ] && [ "$PACKAGE_FILTER" != iam ]; then
+    echo "cleanup-authorization requires --package iam" >&2
+    exit 2
+fi
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-system-iam-postgres.XXXXXX")
@@ -150,6 +156,12 @@ run_without_skips() {
         echo "PostgreSQL release gate refuses skipped tests in $package" >&2
         exit 1
     fi
+    if [ "$TEST_FILTER" = cleanup-authorization ] && [ "$package" = ./internal/iam ]; then
+        grep -q -- '^--- PASS: TestCleanupAuthorizationAgainstPostgres ' "$log_path" || {
+            echo "PostgreSQL release gate requires the real Cleanup authorization test" >&2
+            exit 1
+        }
+    fi
 }
 
 if [ "$TEST_FILTER" = database-crash-recovery ] || { [ -z "$PACKAGE_FILTER" ] && [ -z "$TEST_FILTER" ]; }; then
@@ -177,6 +189,9 @@ case "$PACKAGE_FILTER" in
 esac
 test_pattern='AgainstPostgres$'
 case "$TEST_FILTER" in
+    cleanup-authorization)
+        test_pattern='^TestCleanupAuthorizationAgainstPostgres$'
+        ;;
     catalog-browser)
         [ "$PACKAGE_FILTER" = "online-fixture" ] || { echo "catalog-browser requires --package online-fixture" >&2; exit 2; }
         test_pattern='^TestCatalogBrowserIdentitiesAgainstPostgres$'

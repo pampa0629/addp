@@ -67,6 +67,20 @@ if os.environ.get("TEST_GO_ORPHAN") == "1":
     Path(os.environ["TEST_DOCKER_STATE"]).touch()
 if os.environ.get("TEST_GO_SKIP") == "1":
     print("--- SKIP: TestIAMDatabaseCrashRecovery")
+if "./internal/iam" in sys.argv:
+    import re
+    pattern = sys.argv[sys.argv.index("-run") + 1]
+    if re.search(pattern, "TestCleanupAuthorizationAgainstPostgres"):
+        result = os.environ.get("TEST_GO_CLEANUP_RESULT", "pass")
+        if result == "pass":
+            print("--- PASS: TestCleanupAuthorizationAgainstPostgres (0.01s)")
+        elif result == "skip":
+            print("--- SKIP: TestCleanupAuthorizationAgainstPostgres (0.00s)")
+        elif result == "wrong":
+            print("--- PASS: TestCleanupAuthorizationAgainstPostgresExtra (0.01s)")
+        elif result == "fail":
+            print("--- FAIL: TestCleanupAuthorizationAgainstPostgres (0.01s)")
+            sys.exit(37)
 sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
 ''')
         go.chmod(0o755)
@@ -183,6 +197,45 @@ elif args[:2] != ["volume", "ls"]:
         result = self.run_gate(arguments=("--package", "api", "--test", "execution-subject-roles"))
         self.assertEqual(result.returncode, 2)
         self.assertIn("requires --package iam", result.stderr)
+
+    def test_cleanup_authorization_focus_runs_only_reset_and_exact_iam_test(self):
+        result = self.run_gate(arguments=("--package", "iam", "--test", "cleanup-authorization"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        commands = (self.root / "trace-1").read_text().splitlines()
+        self.assertEqual(len(commands), 2, commands)
+        self.assertIn("./internal/testsupport -run ^TestResetDisposablePostgresForGate$", commands[0])
+        self.assertIn("./internal/iam -run ^TestCleanupAuthorizationAgainstPostgres$", commands[1])
+        self.assertNotIn("owned-crash-recovery-enabled", "\n".join(commands))
+
+    def test_cleanup_authorization_rejects_other_packages_before_database_commands(self):
+        for package in ("", "api", "migration"):
+            with self.subTest(package=package):
+                result = self.run_gate(arguments=("--package", package, "--test", "cleanup-authorization"))
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("cleanup-authorization requires --package iam", result.stderr)
+                self.assertFalse((self.root / "trace-1").exists())
+
+    def test_cleanup_authorization_requires_real_exact_test_pass(self):
+        for outcome in ("missing", "wrong", "skip", "fail"):
+            with self.subTest(outcome=outcome):
+                result = self.run_gate(arguments=("--package", "iam", "--test", "cleanup-authorization"),
+                                       TEST_GO_CLEANUP_RESULT=outcome)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                if outcome in ("missing", "wrong"):
+                    self.assertIn("requires the real Cleanup authorization test", result.stderr)
+                elif outcome == "skip":
+                    self.assertIn("refuses skipped tests", result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 37, result.stderr)
+
+    def test_default_iam_discovery_includes_cleanup_authorization(self):
+        result = self.run_gate(arguments=("--package", ""))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        commands = (self.root / "trace-1").read_text().splitlines()
+        iam = [shlex.split(line) for line in commands if line.startswith("test ./internal/iam ")]
+        self.assertEqual(len(iam), 1, commands)
+        self.assertEqual(iam[0][iam[0].index("-run") + 1], "AgainstPostgres$")
+        self.assertIn("--- PASS: TestCleanupAuthorizationAgainstPostgres ", result.stdout)
 
     def test_standard_unit_publication_filter_is_bound_to_migration(self):
         result = self.run_gate(arguments=("--package", "migration", "--test", "standard-platform-units"))
