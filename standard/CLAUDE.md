@@ -42,7 +42,7 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 - 指标定义（MetricDefinition）：指标业务含义、统计口径、单位、责任归属和适用范围；不保存模型粒度、连接、过滤或可执行表达式
 - 标准文档（Document）：标准来源及其不可变文档修订、提取证据和审核关系
 
-维度层级、公共/一致性维度和指标实现统一属于 Model。`standard.dimension_hierarchies` 旧表、API、权限和前端路由已经删除；Metric 中的实现型字段仍是待拆分旧实现，不得据此继续扩展 Standard。
+维度层级、公共/一致性维度和指标实现统一属于 Model。`standard.dimension_hierarchies` 旧表、API、权限和前端路由已经删除；Standard 指标以稳定身份和不可变语义修订维护，具体字段见[当前数据库表结构](#当前数据库表结构)，旧实现字段由[启动迁移](#数据库约束与启动收敛)清理，不得据此继续扩展 Standard。
 
 **端口**:
 - 后端: `8110`（环境变量 `STANDARD_BACKEND_PORT`）
@@ -54,7 +54,11 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 
 独立前端根路径在 AuthContext 加载后，按 Console 菜单顺序 `/domains`、`/glossaries`、`/elements`、`/code-sets`、`/units`、`/metrics`、`/documents` 选择第一个符合页面准入条件的地址；没有可访问页面时进入 `/forbidden`。登录后的默认返回地址为根路径。显式列表或详情地址继续只按自身权限判断，不改跳其他标准页面。
 
-## 已确认的目标边界与迁移顺序
+## 标准规则与迁移约束
+
+篇内导航：[稳定身份与修订规则](#稳定身份与修订规则)、[迁移与跨模块边界](#迁移与跨模块边界)、[文档文件生命周期](#文档文件生命周期)。
+
+### 稳定身份与修订规则
 
 - 业务域只表达业务语义与治理责任，不表达可见范围、审核容器或目录分类。标准对象独立维护修订和发布流程，不再建立标准成员清单的独立治理容器。
 - 业务域、业务术语、数据元、码值集、指标定义、标准文档和标准分类的稳定编码统一使用小写 `snake_case`，在对应 Tenant 和类型内唯一且创建后不可变；创建入口不自动转换非法编码。归属域和适用范围可以独立调整，所以业务域编码不是正式标准编码的强制前缀；该前缀只约束 Copilot 新候选。
@@ -62,9 +66,16 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 - 手工新建业务术语、数据元、码值集、指标定义和标准文档（含新建并关联文档）不提交 `change_summary`，后端按请求语言生成并保存“初始创建 / Initial creation”作为 R1 的说明；新建表单不展示该字段，后续修订仍必填变更说明。候选正式化继续保留其来源与处置说明。
 - 发布型标准采用“稳定身份 + 不可变修订”；统一状态为 `draft → in_review → published → withdrawn`，按半开生效区间动态解析当前修订。
 - 标准对象显式保存 `scope_type=platform|tenant_common|domain`；仅 `domain` 必须指定 `owner_domain_id`。码值集不得再以“租户自定义”为由强制归属业务域。
-- 范围模型只保留 `scope_type + owner_domain_id`；启动迁移遇到历史 `domain_id` 时必须一次性回填归属和范围并删除旧列，即使新旧列曾同时存在，也不得保留双轨字段。
 - Copilot 只生成标准候选，必须保留文档修订、页码/章节/行号/文本片段等来源证据。Standard 保存提炼批次、候选、人工处置和候选正式化事实；`retained` 只表示保留为后续建标输入。正式化由人工另行发起，只能创建 R1 草稿、为既有身份创建新草稿，或关联内容一致的既有修订，绝不能提交审核或发布。
-- Element、CodeSet、MetricDefinition、Glossary、Document 的 Scope、归属域和修订生命周期统一；DimensionHierarchy 已整体迁入 Model。下一批补齐 Catalog → Quality 落标闭环。
+
+### 迁移与跨模块边界
+
+- 范围模型只保留 `scope_type + owner_domain_id`；启动迁移遇到历史 `domain_id` 时必须一次性回填归属和范围并删除旧列，即使新旧列曾同时存在，也不得保留双轨字段。
+- Element、CodeSet、MetricDefinition、Glossary、Document 的 Scope、归属域和修订生命周期统一；DimensionHierarchy 已整体迁入 Model。
+
+映射审核以[StandardMapping 契约](../docs/spec/addp企业资源目录实现规范.md#standardmapping-候选与审核)为准；规则、方案和执行归属沿[Quality 目标与边界](../docs/spec/addp数据质量规范.md#1-目标与边界)，目录中的质量结果展示沿[Quality 当前摘要动态关联](../docs/spec/addp企业资源目录实现规范.md#58-quality-当前摘要动态关联)。未验收的人工候选、审核、字典与认证版本证据仍沿[企业目录与标准映射剩余工作](../docs/next/ADDP企业资源目录能力专题.md#31-企业目录与标准映射)维护，实际覆盖范围沿[Catalog 验证导航](../catalog/CLAUDE.md#验证导航)分别认定。
+
+### 文档文件生命周期
 
 文档文件采用“新对象上传、数据库切换引用、旧对象补偿清理”的顺序。失效对象记录在 `standard.document_file_cleanups`，该表仅用于物理清理重试，不作为文档当前文件引用。
 
