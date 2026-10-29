@@ -28,7 +28,7 @@ Catalog 映射的修订冻结与历史读取以[StandardMapping 正式契约](..
 
 ### 指标关系读取
 
-Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /metrics/:id/relations` 一跳图；它要求 `standard.metric.read`，只读 Standard 本地事实，不调用 Catalog 或 Model，也不使用 `standard.catalog.read` 机器权限替代用户权限。数据元、Domain、指标分类和单位继续留在 Metric 专业详情中，本阶段不伪造为企业目录节点。
+Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /metrics/:id/relations` 一跳图；它要求 `standard.metric.read`，只读 Standard 本地事实，不调用 Catalog 或 Model，也不使用 `standard.catalog.read` 机器权限替代用户权限。数据元、Domain、指标分类和单位继续留在 Metric 专业详情中，本阶段不伪造为企业目录节点。实际路由与修订入口见[指标 API 清单](#指标)。
 
 ## 模块概述
 
@@ -427,14 +427,27 @@ GET/POST /api/v1/standard/metric-categories
 PUT/DELETE /api/v1/standard/metric-categories/:id
 
 GET/POST /api/v1/standard/metrics
+GET /api/v1/standard/metrics/standard_references
 GET/PUT/DELETE /api/v1/standard/metrics/:id
+GET /api/v1/standard/metrics/:id/relations
 GET/POST /api/v1/standard/metrics/:id/revisions
 GET/PUT /api/v1/standard/metrics/:id/revisions/:revision_id
+GET /api/v1/standard/metrics/:id/revisions/:revision_id/published-reference
 POST /api/v1/standard/metrics/:id/revisions/:revision_id/submit
 POST /api/v1/standard/metrics/:id/revisions/:revision_id/return
 POST /api/v1/standard/metrics/:id/revisions/:revision_id/publish
 POST /api/v1/standard/metrics/:id/revisions/:revision_id/withdraw
+```
 
+稳定身份、修订号和依赖字段见[指标定义表说明](#standardmetric_definitions--standardmetric_definition_revisions--指标定义)；审核动作沿[修订状态流转](#业务术语数据元码值集指标定义与标准文档的修订状态流转)，关系图读取的权限与事实来源沿[指标关系读取](#指标关系读取)。域级标准引用沿[业务域总览契约](../docs/spec/addp企业资源目录实现规范.md#44-业务域总览与资源浏览)，不以关系图或机器摘要接口代替。
+
+`published-reference` 只返回指定 `published` 修订的发布引用，不据此认定该修订当前生效，也不替代精确历史修订读取。
+
+### 企业目录机器读取
+
+以下入口服务于五类标准的目录接入与最小摘要，不限于指标。均要求当前 `addp-catalog` Tenant Service 身份及 `standard.catalog.read`，与上述用户读取资格分别核验；来源版本、摘要与专业详情的分工统一见[五类专业资源变化与动态引用](../docs/spec/addp企业资源目录实现规范.md#55-standard-五类专业资源变化与动态引用)。
+
+```
 GET /api/v1/standard/catalog-resources/changes
 POST /api/v1/standard/runtime/catalog-references/resolve
 ```
