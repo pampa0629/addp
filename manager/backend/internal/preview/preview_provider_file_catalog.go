@@ -78,6 +78,12 @@ func (p *fileCatalogPreviewProvider) Preview(ctx context.Context, req *PreviewRe
 		},
 		GeometryColumns: []string{},
 	}
+	// A whole container is a directory-backed DataItem, not a regular file.
+	// Its parent preview consumes committed metadata only; child reads have
+	// their own runtime path and must not fall through to a directory listing.
+	if applyWholeContainerPreview(req, preview.Object) {
+		return preview, nil
+	}
 
 	// 目录预览：路径以 / 结尾，或 NodeType 表明是目录类节点。
 	// 根目录下的文件会被转换成 schema="" + table="file"，fullPath 为

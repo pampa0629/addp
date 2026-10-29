@@ -104,6 +104,9 @@
         return '子项'
       },
       emptyText() {
+        if (this.summary.index_available === false) {
+          return this.$t('manager.explorer.containerIndexUnavailable')
+        }
         if (this.formatName === 'udbx') {
           return 'SuperMap UDBX 已识别为容器文件，当前暂不解析内部数据集，请下载后使用 SuperMap 工具查看。'
         }
@@ -119,8 +122,8 @@
         const visibleCount = numberOrUndefined(summary.visible_child_count ?? summary.sampled_children)
         const filteredCount = numberOrUndefined(summary.filtered_child_count ?? summary.ignored_child_count)
         const groupedComponentCount = numberOrUndefined(summary.grouped_component_count)
-        items.push({ label: '原始条目', value: formatNumber(rawCount ?? this.children.length) })
-        items.push({ label: '可预览子项', value: formatNumber(visibleCount ?? this.children.length) })
+        items.push({ label: '原始条目', value: formatNumber(summary.index_available === false ? undefined : rawCount ?? this.children.length) })
+        items.push({ label: '可预览子项', value: formatNumber(summary.index_available === false ? undefined : visibleCount ?? this.children.length) })
         if (filteredCount !== undefined && filteredCount > 0) {
           items.push({ label: '已过滤', value: formatNumber(filteredCount) })
         }

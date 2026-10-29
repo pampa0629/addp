@@ -11,7 +11,7 @@ export function captureIndependentGrant(engineID, requirement, form, candidates,
   const id = String(safePickerEngineID(engineID)), path = requirement?.catalog_path
   const leaf = path?.segments?.at(-1)
   if (requirement?.state !== 'allowed' || !['explicit', 'deployment_default'].includes(requirement.source) || String(requirement.engine_id) !== id || String(path?.engine_id) !== id ||
-    !((leaf?.term === 'table' && leaf.kind === 'table') || (['file', 'object'].includes(leaf?.term) && leaf.kind === leaf.term))) throw new Error('invalidGrant')
+    !((leaf?.term === 'table' && leaf.kind === 'table') || (leaf?.term === 'directory' && leaf.kind === 'directory' && requirement.binding?.scope) || (['file', 'object'].includes(leaf?.term) && leaf.kind === leaf.term))) throw new Error('invalidGrant')
   const candidate = candidates.find(row => row.id === form.recipientID)
   const reason = form.reason?.trim()
   if (!['user', 'department', 'project_group'].includes(form.recipientType) || !candidate || !reason || Array.from(reason).length > 2000 ||
@@ -27,5 +27,6 @@ export function captureIndependentGrant(engineID, requirement, form, candidates,
   return Object.freeze({ requestID: fields.request_id, payload: `${encoded.slice(0, -1)},"catalog_path":${serializeEngineCatalogTarget({ ...path, engine_id: id })}}`,
     targetLabel: path.segments.filter(segment => segment.name).map(segment => segment.name).join(' / '), recipientLabel: candidate.name,
     recipientType: fields.recipient_type, recipientID: fields.recipient_id, expiresAt, expiryMode: form.expiryMode,
+    wholeScope: !!requirement.binding.scope,
     compositionPaths: Object.freeze((requirement.binding.file_composition?.refs || []).map(ref => ref.target.segments.filter(segment => segment.name).map(segment => segment.name).join(' / '))) })
 }

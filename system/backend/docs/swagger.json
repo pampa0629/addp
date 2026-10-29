@@ -3127,6 +3127,91 @@
                 ]
             }
         },
+        "/engines/{id}/data-items": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅返回 Meta 已识别的数据项及祖先节点。需当前租户用户、源授权读取功能及引擎管理资格；读取前后复核。无原生文件枚举、内容读取或签发 | Returns only Meta identities and ancestor nodes. Rechecks current tenant user and engine management qualification before and after the owner query. No native file enumeration, content reads or issuance.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源数据授权 | Source Data Grants"
+                ],
+                "summary": "查询授权候选数据项 | List authorization DataItem identities",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 100,
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "数据项身份清单 | DataItem identities",
+                        "schema": {
+                            "$ref": "#/definitions/authorizationfacts.IdentityPage"
+                        }
+                    },
+                    "400": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "查询失败 | Query failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_access_grant.read"
+                ]
+            }
+        },
         "/engines/{id}/data-items/{fingerprint}/authorization-facts": {
             "get": {
                 "security": [
@@ -16274,11 +16359,15 @@
                     "type": "string",
                     "enum": [
                         "single",
-                        "multi"
+                        "multi",
+                        "whole"
                     ]
                 },
                 "native_target": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "scope": {
+                    "$ref": "#/definitions/authorizationfacts.ScopeBoundary"
                 }
             }
         },
@@ -16321,6 +16410,32 @@
                     "type": "string"
                 },
                 "schema_version": {
+                    "type": "string"
+                }
+            }
+        },
+        "authorizationfacts.DataItemIdentity": {
+            "type": "object",
+            "properties": {
+                "ancestors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/authorizationfacts.IdentityNode"
+                    }
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "full_name": {
+                    "type": "string"
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_type": {
+                    "type": "string"
+                },
+                "name": {
                     "type": "string"
                 }
             }
@@ -16368,6 +16483,43 @@
                 },
                 "node_type": {
                     "type": "string"
+                }
+            }
+        },
+        "authorizationfacts.IdentityPage": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/authorizationfacts.DataItemIdentity"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "authorizationfacts.ScopeBoundary": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string"
+                },
+                "root": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "rule_version": {
+                    "type": "integer"
                 }
             }
         },
@@ -17943,6 +18095,9 @@
                 },
                 "revocation": {
                     "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.GrantRevocation"
+                },
+                "scope": {
+                    "type": "object"
                 }
             }
         },

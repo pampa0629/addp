@@ -30,6 +30,20 @@ describe('independent read-grant command capture', () => {
     expect(zh.system.engine.sourceGrants.confirmComposition).toContain('{files}')
     expect(en.system.engine.sourceGrants.confirmComposition).toContain('{files}')
   })
+  it('captures a FileGDB scope without accepting a caller-defined boundary or an ordinary directory', () => {
+    const root = { engine_id: '2', version: 'catalog.path/v1', segments: [{term:'root',kind:'root',name:''},{term:'directory',kind:'directory',name:'test.gdb'}] }
+    const scope = { format:'filegdb', rule_version:1, root }
+    const whole = { ...requirement, catalog_path:root, binding:{item_fingerprint:binding.item_fingerprint,boundary_hash:binding.boundary_hash,scope} }
+    const captured = captureIndependentGrant('2', whole, form, candidates)
+    expect(captured.wholeScope).toBe(true)
+    expect(captured.compositionPaths).toEqual([])
+    expect(JSON.parse(captured.payload).catalog_path).toEqual({...root,engine_id:2})
+    expect(JSON.parse(captured.payload)).not.toHaveProperty('scope')
+    expect(() => captureIndependentGrant('2',{...whole,binding:{...whole.binding,scope:undefined}},form,candidates)).toThrow()
+    expect(() => captureIndependentGrant('2',{...whole,binding:{...whole.binding,scope:{...scope,rule_version:2}}},form,candidates)).toThrow()
+    expect(zh.system.engine.sourceGrants.confirmWhole).toContain('以后新增')
+    expect(en.system.engine.sourceGrants.confirmWhole).toContain('future')
+  })
   it('labels production as its own authorization source in both locales', () => {
     expect(zh.system.engine.dataAuthorization.modes.task_production).toBe('任务产出初始授权')
     expect(en.system.engine.dataAuthorization.modes.task_production).toBe('Initial task output grant')

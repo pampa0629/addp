@@ -66,7 +66,7 @@ const canReadGrants = computed(() => auth.hasPermission('system.engine_access_gr
 const workspaceTab = ref('current')
 const workspaceView = computed(() => workspaceTab.value === 'create' ? 'create' : 'list')
 const currentTab = ref(null)
-const canBrowse = computed(() => auth.hasPermission('system.engine_catalog.read'))
+const canBrowse = computed(() => canReadGrants.value)
 const loading = ref(false), ready = ref(false), error = ref(''), selecting = ref(false), grantBusy = ref(false)
 const selection = ref(null), targets = ref([]), generation = ref(0), permits = ref({})
 const selectionText = ref('')
@@ -82,7 +82,7 @@ const operating = computed(() => selecting.value || grantBusy.value)
 const busy = computed(() => !props.authorizationReady || operating.value)
 const adapter = computed(() => {
   if (!canBrowse.value || props.engine.lifecycle_state !== 'active' || props.engine.connection_status !== 'online') return null
-  try { return createApprovalCatalogAdapter(props.engine, enginesAPI.listCatalogChildren) } catch { return null }
+  try { return createApprovalCatalogAdapter(props.engine, enginesAPI.listAuthorizationItems, enginesAPI.getAuthorizationFacts) } catch { return null }
 })
 const permit = path => permits.value[basisKey(path)]
 const directRequirementCandidates = computed(() => targets.value.map(path => ({ ...permit(path), engine_id: String(props.engine.id), catalog_path: path })))
@@ -109,6 +109,7 @@ async function reloadAfterGrant() {
 function catalogError(e) { if (!busy.value) error.value = message(e) }
 async function load() {
   if (busy.value) return
+  adapter.value?.invalidate(); generation.value++
   ready.value = true; error.value = ''
   loading.value = true
   try { await inspectTargets(targets.value) } finally { loading.value = false }

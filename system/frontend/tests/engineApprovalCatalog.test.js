@@ -1,108 +1,85 @@
-import { safePickerEngineID } from '@common-ui'
+import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
-import { approvalTargetFromSelection, approvalTargetsEqual, collectApprovalTargets, createApprovalCatalogAdapter, isApprovalTable, isApprovalSelection } from '../src/utils/engineApprovalCatalog'
-
-const rootPath = { engine_id: 2, version: 'catalog.path/v1', segments: [{ term: 'server', kind: 'server', name: '' }] }
-const root = { name: '', path: rootPath, role: 'branch', term: 'server', kind: 'server' }
-const namespace = { name: '户外', path: { ...rootPath, segments: [...rootPath.segments, { term: 'schema', kind: 'namespace', name: '户外' }] }, role: 'branch', term: 'schema', kind: 'namespace' }
-const table = { name: 'a/b', path: { ...rootPath, segments: [...namespace.path.segments, { term: 'table', kind: 'table', name: 'a/b' }] }, role: 'leaf', term: 'table', kind: 'table' }
-const engine = { id: '2', name: 'Database', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }
-describe('System live-catalog protocol adapter', () => {
-  it.each(['ftp', 'nfs'])('selects exact %s model candidates without authorizing directories, textures or other engines', async engineType => {
-    const path = { engine_id: 33, version: 'catalog.path/v1', segments: [{ term: 'root', kind: 'root', name: '' }] }
-    const directory = { name: 'Models', role: 'branch', term: 'directory', kind: 'directory', path: { ...path, segments: [...path.segments, { term: 'directory', kind: 'directory', name: 'Models' }] } }
-    const model = name => ({ name, role: 'leaf', term: 'file', kind: 'file', path: { ...path, segments: [...directory.path.segments, { term: 'file', kind: 'file', name }] } })
-    const api = vi.fn(async (_, path) => ({ nodes: path.segments.length === 0 ? [{ name: '', role: 'branch', term: 'root', kind: 'root', path: { ...path, engine_id: 33, version: 'catalog.path/v1', segments: [{ term: 'root', kind: 'root', name: '' }] } }] : path.segments.length === 1 ? [directory] : [model('Model.3DS'), model('TEST.PNG'), model('part.ifc'), model('part.obj'), model('scene.DAE'), model('scene.GLTF'), model('scene.FBX'), model('scene.skp')] }))
-    const adapter = createApprovalCatalogAdapter({ id: '33', name: engineType, engine_type: engineType }, api)
-    const root = await adapter.getTreeRoot(), dir = root.children[0]
-    expect(isApprovalSelection(dir)).toBe(false)
-    await expect(collectApprovalTargets({ raw: { node: dir } }, '33', adapter)).rejects.toThrow()
-    const children = await adapter.getNodeChildren(dir)
-    expect(children.map(isApprovalSelection)).toEqual([true, false, true, true, true, true, true, false])
-    expect(await collectApprovalTargets({ raw: { node: children[0] } }, '33', adapter)).toEqual([{ ...model('Model.3DS').path, engine_id: '33' }])
-    const nfs = { ...children[0], metadata: { ...children[0].metadata, engine_type: 'minio' } }
-    expect(isApprovalSelection(nfs)).toBe(false)
-    expect(() => approvalTargetFromSelection({ raw: { node: nfs } }, '33')).toThrow()
-    expect((await adapter.search('33', 'model.3ds')).map(node => node.label)).toEqual(['Model.3DS'])
+import { approvalTargetFromSelection, approvalTargetsEqual, collectApprovalTargets, createApprovalCatalogAdapter, isApprovalSelection } from '../src/utils/engineApprovalCatalog'
+const engine = { id: '2', name: 'NFS', engine_type: 'nfs' }
+const fingerprint = name => createHash('sha256').update(`2:${name}`).digest('hex')
+const ancestors = [{ id: '1', name: 'NFS', node_type: 'root' }, { id: '2', name: 'exports', node_type: 'dir' }]
+const item = { engine_id: 2, item_fingerprint: fingerprint('exports/test.gdb'), name: 'test.gdb', full_name: 'exports/test.gdb', item_type: 'file', ancestors: [...ancestors, { id: '3', name: 'test.gdb', node_type: 'dir' }] }
+const path = { engine_id: 2, version: 'catalog.path/v1', segments: [{ term: 'root', kind: 'root', name: '' }, { term: 'directory', kind: 'directory', name: 'exports' }, { term: 'directory', kind: 'directory', name: 'test.gdb' }] }
+const facts = { schema_version: 'meta.data_item_authorization_facts/v1', engine_id: 2, item_fingerprint: item.item_fingerprint, full_name: item.full_name, item_type: 'file', basis_state: 'complete', boundary_hash: 'a'.repeat(64), boundary: { layout: 'whole', scope: { format: 'filegdb', rule_version: 1, root: path } } }
+const selection = node => ({ raw: { node } })
+const page = data => ({ data, total: data.length, page: 1, page_size: 100, total_pages: data.length ? 1 : 0 })
+function fixture(rows = [item]) {
+  const list = vi.fn(async () => page(rows)), read = vi.fn(async () => structuredClone(facts))
+  return { list, read, adapter: createApprovalCatalogAdapter(engine, list, read) }
+}
+describe('Meta DataItem authorization picker', () => {
+  it('renders whole FileGDB once and resolves its owner boundary, with no native directory or fragments', async () => {
+    const { adapter, list, read } = fixture()
+    const root = await adapter.getTreeRoot(), directory = root.children[0], leaf = directory.children[0]
+    expect(directory.label).toBe('exports')
+    expect(leaf.label).toBe('test.gdb')
+    expect(leaf.hasChildren).toBe(false)
+    expect(leaf.children).toEqual([])
+    expect(leaf.locator).toBe('addp://engine/2/path/exports/test.gdb?type=file')
+    expect(read).not.toHaveBeenCalled()
+    expect(await approvalTargetFromSelection(selection(structuredClone(leaf)), '2', adapter)).toEqual({ ...path, engine_id: '2' })
+    expect(read).toHaveBeenCalledWith('2', item.item_fingerprint)
+    expect(list.mock.calls).toEqual([['2', { page: 1, page_size: 100 }]])
+    expect(isApprovalSelection(root)).toBe(false)
   })
-  it('selects MinIO IFC/3DS/DAE objects only, never a bucket, prefix or texture', () => {
-    const segments = [{ term: 'service', kind: 'service', name: '' }, { term: 'bucket', kind: 'bucket', name: 'models' }]
-    const node = (term, name, role = 'leaf') => ({ metadata: { engine_type: 'minio', catalog_entry: {
-      role, term, kind: term, path: { engine_id: 33, version: 'catalog.path/v1', segments: [...segments, { term, kind: term, name }] }
-    } } })
-    for (const name of ['part.ifc', 'model.3DS', 'scene.dae', 'model.obj', 'part.STL', 'scene.GLTF', 'scene.FBX']) expect(isApprovalSelection(node('object', name))).toBe(true)
-    for (const name of ['TEST.PNG', 'model.mtl', 'other.skp']) expect(isApprovalSelection(node('object', name))).toBe(false)
-    expect(isApprovalSelection(node('prefix', 'prefix', 'branch'))).toBe(false)
-    expect(isApprovalSelection(node('bucket', 'bucket', 'branch'))).toBe(false)
-    expect(isApprovalSelection(node('file', 'model.3ds'))).toBe(false)
+  it('expands current DataItems only, rereads exact facts and fails closed on incomplete facts', async () => {
+    const { adapter, read } = fixture()
+    const root = await adapter.getTreeRoot()
+    expect(await collectApprovalTargets(selection(root.children[0]), '2', adapter)).toEqual([{ ...path, engine_id: '2' }])
+    await expect(collectApprovalTargets(selection(root.children[0]), '2', adapter, 0)).rejects.toThrow('tooManyTargets')
+    read.mockResolvedValue({ ...facts, basis_state: 'needs_refresh', boundary: null, boundary_hash: null })
+    await expect(collectApprovalTargets(selection(root.children[0]), '2', adapter)).rejects.toThrow('invalidDataItemBoundary')
+    await expect(collectApprovalTargets(selection(root), '2', adapter)).rejects.toThrow()
   })
-  it('searches current native paths with the same adapter and preserves exact resource identity', async () => {
-    const api = vi.fn(async (_, path) => ({ nodes: path.segments.length === 0 ? [root] : path.segments.length === 1 ? [namespace] : [table, { ...table, kind: 'view', path: { ...table.path, segments: [...namespace.path.segments, { term: 'table', kind: 'view', name: 'view' }] } }] }))
-    const adapter = createApprovalCatalogAdapter(engine, api)
-    const result = await adapter.search('2', 'a/b')
-    expect(result).toHaveLength(1)
-    expect(approvalTargetFromSelection({ raw: { node: result[0] } }, '2')).toEqual({ ...table.path, engine_id: '2' })
-    expect(await adapter.search('2', '户外')).toHaveLength(2)
-    expect(await adapter.search('2', 'view')).toEqual([])
-    await expect(adapter.search('3', 'a')).rejects.toThrow()
-    await expect(adapter.search('2', 'a', { limit: 0 })).rejects.toThrow()
-    expect(api.mock.calls.every(([id]) => id === '2')).toBe(true)
+  it('rejects cross-engine, malformed ancestry and incomplete pages instead of exposing a partial tree', async () => {
+    for (const rows of [[{ ...item, engine_id: 3 }], [{ ...item, ancestors: [...ancestors, ancestors[0]] }]]) {
+      await expect(fixture(rows).adapter.getTreeRoot()).rejects.toThrow()
+    }
+    const { adapter, list } = fixture()
+    list.mockResolvedValue({ ...page([item]), total: 101 })
+    await expect(adapter.getTreeRoot()).rejects.toThrow('incompletePermissionTree')
+    list.mockResolvedValue({ ...page(Array(100).fill(item)), total: 20001 })
+    await expect(adapter.getTreeRoot()).rejects.toThrow('permissionTreeCapacity')
   })
-  it('does not return partial candidates after directory failure or an oversized search', async () => {
-    const api = vi.fn(async (_, path) => {
-      if (path.segments.length === 2) throw new Error('directory unavailable')
-      return { nodes: path.segments.length === 0 ? [root] : [namespace] }
-    })
-    const adapter = createApprovalCatalogAdapter(engine, api)
-    await expect(adapter.search('2', 'missing')).rejects.toThrow('directory unavailable')
-    api.mockResolvedValue({ nodes: Array.from({ length: 2001 }, () => root) })
-    await expect(adapter.search('2', 'missing')).rejects.toThrow()
+  it('refreshes identities and keeps searches read-only without fetching authorization facts', async () => {
+    const { adapter, read, list } = fixture()
+    const found = await adapter.search('2', 'test.gdb')
+    expect(found.map(node => node.label)).toEqual(['test.gdb'])
+    expect(read).not.toHaveBeenCalled()
+    await expect(adapter.search('3', 'test')).rejects.toThrow()
+    await expect(adapter.search('2', 'test', { limit: 0 })).rejects.toThrow()
+    adapter.invalidate(); list.mockResolvedValue(page([]))
+    expect(await adapter.search('2', 'test')).toEqual([])
+    await expect(adapter.resolveTarget(found[0])).rejects.toThrow()
   })
-  it('expands a namespace into existing tables, never the parent, views or future tables', async () => {
-    const api = vi.fn().mockResolvedValueOnce({ nodes: [root] }).mockResolvedValueOnce({ nodes: [namespace] }).mockResolvedValueOnce({ nodes: [table, { ...table, kind: 'view', path: { ...table.path, segments: [...namespace.path.segments, { term: 'table', kind: 'view', name: 'view' }] } }] })
-    const adapter = createApprovalCatalogAdapter(engine, api), node = await adapter.getTreeRoot()
-    const targets = await collectApprovalTargets({ raw: { node: node.children[0] } }, '2', adapter)
-    expect(targets).toEqual([{ ...table.path, engine_id: '2' }])
-    await expect(collectApprovalTargets({ raw: { node } }, '2', adapter)).rejects.toThrow()
+  it('never installs a stale identity snapshot after refresh', async () => {
+    const { adapter, list } = fixture()
+    let release
+    list.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    const old = adapter.getTreeRoot()
+    const rejection = expect(old).rejects.toThrow('stalePermissionTree')
+    adapter.invalidate()
+    list.mockResolvedValue(page([]))
+    expect((await adapter.getTreeRoot()).children).toEqual([])
+    release(page([item])); await rejection
+    expect(await adapter.search('2','test')).toEqual([])
+    expect(list).toHaveBeenCalledTimes(2)
   })
-  it('rejects over-limit or failed discovery without returning a partial list', async () => {
-    const wrap = entry => ({ metadata: { catalog_entry: entry } })
-    const selection = { raw: { node: wrap(namespace) } }
-    const adapter = { getNodeChildren: vi.fn().mockResolvedValue([wrap(table)]) }
-    await expect(collectApprovalTargets(selection, '2', adapter, 0)).rejects.toThrow('tooManyTargets')
-    adapter.getNodeChildren.mockRejectedValue(new Error('unavailable'))
-    await expect(collectApprovalTargets(selection, '2', adapter)).rejects.toThrow('unavailable')
-  })
-  it('compares target facts independently of JSON object key ordering', () => {
-    const reordered = { ...table.path, engine_id: '2', segments: table.path.segments.map(segment => ({ kind: segment.kind, name: segment.name, term: segment.term })) }
-    expect(approvalTargetsEqual(reordered, table.path)).toBe(true)
-    expect(approvalTargetsEqual({ ...reordered, engine_id: '3' }, table.path)).toBe(false)
-    expect(approvalTargetsEqual({ ...reordered, segments: [...reordered.segments].reverse() }, table.path)).toBe(false)
-    expect(approvalTargetsEqual({ ...reordered, segments: [null] }, table.path)).toBe(false)
-  })
-  it('browses root, namespace and leaf through System only, preserving the provider path', async () => {
-    const api = vi.fn().mockResolvedValueOnce({ nodes: [root] }).mockResolvedValueOnce({ nodes: [namespace] }).mockResolvedValueOnce({ nodes: [table] })
-    const adapter = createApprovalCatalogAdapter(engine, api)
-    const node = await adapter.getTreeRoot('2')
-    const [leaf] = await adapter.getNodeChildren(node.children[0])
-    expect(api.mock.calls).toEqual([['2', { segments: [] }], ['2', rootPath], ['2', namespace.path]])
-    expect(leaf.locator).toBe('addp://engine/2/path/%E6%88%B7%E5%A4%96/a%2Fb?type=table')
-    const target = approvalTargetFromSelection({ raw: { node: leaf } }, '2')
-    expect(target).toEqual({ ...table.path, engine_id: '2' })
-    target.segments[1].name = 'changed'
-    expect(table.path.segments[1].name).toBe('户外')
-    expect(isApprovalTable(node)).toBe(false)
-    expect(isApprovalTable(leaf)).toBe(true)
-    expect(isApprovalTable({ metadata: { catalog_entry: { ...table, kind: 'view' } } })).toBe(false)
-    expect(isApprovalTable({ metadata: { catalog_entry: { ...table, path: { ...table.path, version: 'v1' } } } })).toBe(false)
-    expect(isApprovalTable({ metadata: { catalog_entry: { ...table, path: { ...table.path, segments: namespace.path.segments } } } })).toBe(false)
-  })
-  it('rejects incomplete, cross-engine, rounded or non-leaf facts instead of fabricating candidates', async () => {
-    for (const id of ['9007199254740993', '01', '1x', 0]) expect(() => safePickerEngineID(id)).toThrow()
-    const api = vi.fn().mockResolvedValue({ nodes: [{ ...root, path: { ...rootPath, engine_id: 3 } }] })
-    await expect(createApprovalCatalogAdapter(engine, api).getTreeRoot('2')).rejects.toThrow()
-    api.mockResolvedValue({ data: [] })
-    await expect(createApprovalCatalogAdapter(engine, api).getTreeRoot('2')).rejects.toThrow()
-    expect(() => approvalTargetFromSelection({ raw: { node: { metadata: { catalog_entry: namespace } } } }, '2')).toThrow()
+  it('preserves schema and table names with separators, using Meta facts for the typed path', async () => {
+    const tablePath = { ...path, segments: [{ term: 'server', kind: 'server', name: '' }, { term: 'schema', kind: 'namespace', name: 'a.b' }, { term: 'table', kind: 'table', name: 'x/y' }] }
+    const row = { ...item, item_type: 'table', name: 'x/y', full_name: 'a.b.x/y', item_fingerprint: fingerprint('a.b.x/y'), ancestors: [{ id: '1', name: 'PG', node_type: 'database' }, { id: '2', name: 'a.b', node_type: 'schema' }] }
+    const { adapter, read } = fixture([row])
+    read.mockResolvedValue({ ...facts, item_fingerprint: row.item_fingerprint, item_type: 'table', full_name: row.full_name, boundary: { layout: 'single', native_target: tablePath } })
+    const leaf = (await adapter.getTreeRoot()).children[0].children[0]
+    expect(leaf.locator).toBe('addp://engine/2/path/a.b/x%2Fy?type=table')
+    expect(await adapter.resolveTarget(leaf)).toEqual({ ...tablePath, engine_id: '2' })
+    expect(approvalTargetsEqual({ ...tablePath, engine_id: '2' }, tablePath)).toBe(true)
+    expect(approvalTargetsEqual({ ...tablePath, engine_id: '3' }, tablePath)).toBe(false)
   })
 })

@@ -13,9 +13,10 @@ export function serializeEngineCatalogTarget(target) {
 // neither a browser candidate fingerprint nor a tree selection proves access.
 export function approvedBoundaryFields(target, binding) {
   const file = ['file', 'object'].includes(target?.segments?.at(-1)?.term)
-  const path = file ? fileCompositionPrimary(binding?.file_composition) : binding?.native_target
+  const whole = target?.segments?.at(-1)?.term === 'directory'
+  const path = whole ? wholeScopeRoot(binding?.scope) : file ? fileCompositionPrimary(binding?.file_composition) : binding?.native_target
   if (!/^[0-9a-f]{64}$/.test(binding?.item_fingerprint || '') || !/^[0-9a-f]{64}$/.test(binding?.boundary_hash || '') ||
-      (file ? binding?.native_target !== undefined : binding?.file_composition !== undefined) || !samePath(path, target)) {
+      (whole ? binding?.native_target !== undefined || binding?.file_composition !== undefined : binding?.scope !== undefined || (file ? binding?.native_target !== undefined : binding?.file_composition !== undefined)) || !samePath(path, target)) {
     throw new Error('invalidDataItemBoundary')
   }
   return { item_fingerprint: binding.item_fingerprint, expected_boundary_hash: binding.boundary_hash }
@@ -39,6 +40,14 @@ function modelPath(path) {
       (index === 0 ? part.name === '' : part.name && part.name !== '.' && part.name !== '..' &&
         part.name.isWellFormed() && !/[/\\\p{Cc}]/u.test(part.name) && new TextEncoder().encode(part.name).length <= 4096)
   }) && new TextEncoder().encode(path.segments.slice(1).map(part => part.name).join('/')).length <= 4096
+}
+function wholeScopeRoot(scope) {
+  if (!scope || Object.keys(scope).sort().join(',') !== 'format,root,rule_version' || scope.format !== 'filegdb' || scope.rule_version !== 1) return boundaryError()
+  const root = scope.root, last = root?.segments?.at(-1)
+  if (last?.term !== 'directory' || last.kind !== 'directory' || !last.name?.toLowerCase().endsWith('.gdb')) return boundaryError()
+  const file = { ...root, segments: root.segments.map((segment, index) => index === root.segments.length - 1 ? { ...segment, term: 'file', kind: 'file' } : segment) }
+  if (!modelPath(file)) return boundaryError()
+  return root
 }
 // Only validate the owner response for display/command binding. The server
 // independently rereads Meta and computes the approved boundary on submission.
@@ -77,10 +86,12 @@ export async function readNativeApprovalFacts(target, readFacts) {
   target = { ...target, engine_id: id }
   serializeEngineCatalogTarget(target)
   const file = ['file', 'object'].includes(target.segments.at(-1)?.term)
-  if (file ? !modelPath(target) : (target.segments.length !== 3 || target.segments[0].term !== 'server' || target.segments[0].kind !== 'server' ||
+  const whole = target.segments.at(-1)?.term === 'directory'
+  if (whole) wholeScopeRoot({format:'filegdb',rule_version:1,root:target})
+  if (!whole && (file ? !modelPath(target) : (target.segments.length !== 3 || target.segments[0].term !== 'server' || target.segments[0].kind !== 'server' ||
       target.segments[1].term !== 'schema' || target.segments[1].kind !== 'namespace' ||
-      target.segments[2].term !== 'table' || target.segments[2].kind !== 'table')) throw new Error('invalidDataItemBoundary')
-  const name = file ? target.segments.slice(1).map(part => part.name).join('/') : `${target.segments[1].name}.${target.segments[2].name}`
+      target.segments[2].term !== 'table' || target.segments[2].kind !== 'table'))) throw new Error('invalidDataItemBoundary')
+  const name = file || whole ? target.segments.slice(1).map(part => part.name).join('/') : `${target.segments[1].name}.${target.segments[2].name}`
   const key = `${target.engine_id}:${name}`
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key))
   const candidate = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
@@ -93,8 +104,9 @@ export async function readNativeApprovalFacts(target, readFacts) {
   }
   if (file && (String(facts.engine_id) !== target.engine_id || facts.item_type !== target.segments.at(-1).term || facts.boundary?.layout !== (facts.boundary?.file_composition?.format === 'gltf' ? 'multi' : 'single') ||
       facts.boundary?.native_target !== undefined)) throw new Error('invalidDataItemBoundary')
+  if (whole && (String(facts.engine_id) !== target.engine_id || facts.item_type !== 'file' || facts.full_name !== name || facts.boundary?.layout !== 'whole' || facts.boundary?.native_target !== undefined || facts.boundary?.file_composition !== undefined)) throw new Error('invalidDataItemBoundary')
   const binding = { item_fingerprint: facts.item_fingerprint, boundary_hash: facts.boundary_hash,
-    ...(file ? { file_composition: structuredClone(facts.boundary?.file_composition) } : { native_target: structuredClone(facts.boundary?.native_target) }) }
+    ...(whole ? {scope: structuredClone(facts.boundary?.scope)} : file ? { file_composition: structuredClone(facts.boundary?.file_composition) } : { native_target: structuredClone(facts.boundary?.native_target) }) }
   approvedBoundaryFields(target, binding)
   return Object.freeze({ state: 'complete', binding: freeze(binding) })
 }

@@ -172,6 +172,7 @@ const accountScope = computed(() => listMode.value === 'current' && appliedFilte
 const listProjection = computed(() => listMode.value === 'history' ? 'history' : accountScope.value ? 'account' : 'relations')
 const filterDraft = reactive({ tableSearch: '', recipientType: '', recipientID: '', state: '' })
 const filterPath = ref(null)
+let filterSelectionSequence = 0
 const tableFilterInput = ref(null)
 const appliedFilters = ref({})
 const filterMembers = ref([])
@@ -257,6 +258,7 @@ function captureFilters() {
 function applyFilters() { captureFilters(); load() }
 function changeRecipientType() { filterDraft.recipientID = ''; applyFilters() }
 function scheduleFilters() {
+  filterSelectionSequence++
   filterPath.value = null
   cancelFilterTimer()
   // Invalidate in-flight results as soon as input changes, before the debounce.
@@ -265,15 +267,17 @@ function scheduleFilters() {
   loading.value = true
   filterTimer = setTimeout(applyFilters, 300)
 }
-function selectFilterTarget(selection) {
+async function selectFilterTarget(selection) {
   if (!selection) return
+  const epoch = generation, seq = ++filterSelectionSequence
   try {
-    const path = approvalTargetFromSelection(selection, props.engine.id)
+    const path = await approvalTargetFromSelection(selection, props.engine.id, props.catalogAdapter)
+    if (epoch !== generation || seq !== filterSelectionSequence) return
     if (new TextEncoder().encode(serializeEngineCatalogTarget(path)).length > 4096) throw new Error('invalidCatalogTarget')
     filterPath.value = path; filterDraft.tableSearch = approvalPathLabel(path)
     applyFilters()
     nextTick(() => tableFilterInput.value?.focus())
-  } catch { error.value = t('system.engine.sourceGrants.treeFilterFailed') }
+  } catch { if (epoch === generation && seq === filterSelectionSequence) error.value = t('system.engine.sourceGrants.treeFilterFailed') }
 }
 async function loadCandidates({ preserveSelection = false } = {}) {
   const epoch = generation, seq = ++candidateSequence, kind = form.recipientType
@@ -311,7 +315,8 @@ async function create() {
     const first = captured[0]
     const composition = captured.filter(command => command.compositionPaths.length).map(command =>
       t('system.engine.sourceGrants.confirmComposition', { target: command.targetLabel, files: command.compositionPaths.join('；') })).join('\n')
-    await ElMessageBox.confirm(t('system.engine.sourceGrants.confirmBody', { target: captured.map(command => command.targetLabel).join('；'), recipient: first.recipientLabel, expiry: first.expiryMode === 'until_revoked' ? t('system.engine.sourceGrants.until_revoked') : formatTime(first.expiresAt) }) + (composition ? `\n${composition}` : ''), t('system.engine.sourceGrants.create'), { customClass: 'addp-message-box', confirmButtonText: t('common.confirm'), cancelButtonText: t('common.cancel') })
+    const whole = captured.filter(command => command.wholeScope).map(command => t('system.engine.sourceGrants.confirmWhole', { target: command.targetLabel })).join('\n')
+    await ElMessageBox.confirm(t('system.engine.sourceGrants.confirmBody', { target: captured.map(command => command.targetLabel).join('；'), recipient: first.recipientLabel, expiry: first.expiryMode === 'until_revoked' ? t('system.engine.sourceGrants.until_revoked') : formatTime(first.expiresAt) }) + (composition ? `\n${composition}` : '') + (whole ? `\n${whole}` : ''), t('system.engine.sourceGrants.create'), { customClass: 'addp-message-box', confirmButtonText: t('common.confirm'), cancelButtonText: t('common.cancel') })
     if (epoch !== generation || !props.authorizationReady || !canCreate.value) return
     if (!recovering) outcomes.value = []
     attempt.value = captured

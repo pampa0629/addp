@@ -1256,6 +1256,7 @@
       "model3DSourcePath": "Source Path",
       "uploadSuccessRefreshed": "Upload successful, tree refreshed",
       "importSuccessRefreshed": "Import successful, tree refreshed",
+      "containerIndexUnavailable": "The data container has been identified, but its child index has not been collected. Run a deep refresh to inspect its contents.",
       "itemRefreshRecommendedTitle": "Item refresh recommended",
       "itemRefreshRecommendedText": "This preview is reading from the stored basic metadata; refreshing the item can complete deep-scan metadata.",
       "accessIndexRefreshTitle": "Using regular read",

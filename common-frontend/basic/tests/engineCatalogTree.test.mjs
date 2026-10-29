@@ -68,12 +68,16 @@ test('invalid IDs, foreign facts, malformed responses and oversized searches nev
   await assert.rejects(large.search(12, 'absent'), /invalidCatalogTarget/)
 })
 
-test('System approval and Meta scanning share the native adapter and keep business policy outside it', () => {
+test('System authorization owns Meta identities; Meta scanning owns native discovery', () => {
   const system = fs.readFileSync(new URL('../../../system/frontend/src/utils/engineApprovalCatalog.js', import.meta.url), 'utf8')
   const meta = fs.readFileSync(new URL('../../../meta/frontend/src/components/ManualScanDialog.vue', import.meta.url), 'utf8')
-  assert.match(system, /createEngineCatalogTreeAdapter\(engine,/)
-  assert.match(system, /isSearchable: isApprovalSelection/)
-  assert.doesNotMatch(system, /buildLocator|searchSequence|function safePickerEngineID/)
+  assert.match(system, /readDataItemIdentityTree/)
+  assert.match(system, /buildDataItemIdentityTree/)
+  assert.doesNotMatch(system, /createEngineCatalogTreeAdapter|catalog_entry|listCatalogChildren/)
+  const permission = fs.readFileSync(new URL('../../../system/frontend/src/utils/directPermission.js', import.meta.url), 'utf8')
+  assert.match(permission, /buildDataItemIdentityTree/)
+  assert.doesNotMatch(permission, /const nodes = new Map/)
+
   assert.match(meta, /:adapter="catalogAdapter"/)
   assert.match(meta, /createEngineCatalogTreeAdapter\(props.context.engine,/)
   assert.doesNotMatch(meta, /getResourceTree|searchResourceTree|api-base-url/)

@@ -289,6 +289,15 @@ func (b *FileCompositionBoundary) UnmarshalJSON(encoded []byte) error {
 // MarshalJSON expresses exact native or file boundaries without a zero-value
 // native path beside file refs. Native canonical bytes remain unchanged.
 func (b AuthorizationBoundary) MarshalJSON() ([]byte, error) {
+	if b.Scope != nil {
+		if b.FileComposition != nil || !reflect.DeepEqual(b.NativeTarget, plugin.EngineCatalogPath{}) || b.Layout != "whole" || b.Scope.Validate(b.Scope.Root.EngineID) != nil {
+			return nil, errFileComposition
+		}
+		return json.Marshal(struct {
+			Layout string         `json:"layout"`
+			Scope  *ScopeBoundary `json:"scope"`
+		}{b.Layout, b.Scope})
+	}
 	if b.FileComposition != nil {
 		if !reflect.DeepEqual(b.NativeTarget, plugin.EngineCatalogPath{}) {
 			return nil, errFileComposition
@@ -308,7 +317,7 @@ func (b *AuthorizationBoundary) UnmarshalJSON(encoded []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.UseNumber()
 	keys, err := authorizationJSONValue(decoder, 0)
-	if err != nil || !keys["layout"] || len(keys) != 2 || keys["native_target"] == keys["file_composition"] {
+	if err != nil || !keys["layout"] || len(keys) != 2 || (!keys["native_target"] && !keys["file_composition"] && !keys["scope"]) {
 		return errFileComposition
 	}
 	if _, err := decoder.Token(); err != io.EOF {
@@ -319,10 +328,14 @@ func (b *AuthorizationBoundary) UnmarshalJSON(encoded []byte) error {
 	decoder = json.NewDecoder(bytes.NewReader(encoded))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&result) != nil ||
-		(keys["file_composition"] && result.FileComposition == nil) {
+		(keys["file_composition"] && result.FileComposition == nil) || (keys["scope"] && result.Scope == nil) {
 		return errFileComposition
 	}
-	if keys["native_target"] {
+	if keys["scope"] {
+		if result.Layout != "whole" || result.Scope.Validate(result.Scope.Root.EngineID) != nil {
+			return errFileComposition
+		}
+	} else if keys["native_target"] {
 		if _, _, err := nativeSingleIdentity(result.NativeTarget); err != nil || result.Layout != "single" {
 			return errFileComposition
 		}

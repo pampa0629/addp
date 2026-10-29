@@ -36,6 +36,7 @@ type sourceGrant struct {
 	ItemFingerprint              string
 	BoundaryHash                 string
 	FileComposition              json.RawMessage `gorm:"type:jsonb"`
+	ScopeBoundary                json.RawMessage `gorm:"type:jsonb"`
 	RecipientType                string
 	RecipientID                  int64
 	Action                       string
@@ -67,7 +68,17 @@ func (r *Repository) insertSourceGrant(ctx context.Context, grant *sourceGrant) 
 		return commonapi.ErrBadRequest
 	}
 	file := len(primary.Segments) > 0 && (primary.Segments[len(primary.Segments)-1].Term == plugin.EngineCatalogTermFile || primary.Segments[len(primary.Segments)-1].Term == plugin.EngineCatalogTermObject)
-	if file || len(grant.FileComposition) != 0 {
+	if len(grant.ScopeBoundary) != 0 || authorizationfacts.ValidWholeScopeRoot(primary) {
+		var scope authorizationfacts.ScopeBoundary
+		if grant.ApprovalMode != approvalModeIndependent || len(grant.FileComposition) != 0 || json.Unmarshal(grant.ScopeBoundary, &scope) != nil {
+			return commonapi.ErrBadRequest
+		}
+		binding := authorizationfacts.Binding{ItemFingerprint: grant.ItemFingerprint, BoundaryHash: grant.BoundaryHash, Scope: &scope}
+		target, err := binding.PrimaryTarget()
+		if err != nil || !reflect.DeepEqual(target, primary) {
+			return commonapi.ErrBadRequest
+		}
+	} else if file || len(grant.FileComposition) != 0 {
 		var composition authorizationfacts.FileCompositionBoundary
 		if !file || grant.ApprovalMode != approvalModeIndependent || json.Unmarshal(grant.FileComposition, &composition) != nil {
 			return commonapi.ErrBadRequest

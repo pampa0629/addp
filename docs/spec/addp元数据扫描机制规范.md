@@ -477,6 +477,8 @@ FTP、NFS 与 MinIO 的 IFC／3DS／DAE／OBJ 已沿精确组成执行授权接�
 
 查询成功返回 200 及上述状态，不等于授予权限。不存在、已删除或跨 Tenant 的目标返回 404；输入错误、凭据失效和功能拒绝分别为 400／401／403。数据库或服务依赖失败使用实际 5xx 与稳定 `error_code`，不得伪装 404 或识别未完成。System 将非 complete 状态作为对应授权办理／读取的阻断原因；首次扫描与刷新经 Meta 已有显式扫描编排完成，再重新查询，不在 GET 中自动补扫。
 
+**FileGDB whole 事实。** NFS 基础识别确认的 `file + container + whole + filegdb`，须具有 `scope_exclusive=true`、`claim_policy=whole_scope`，精确 `.gdb` 根目录节点、父链和 `storage.physical_path` 必须与 DataItem 身份一致，且不得附带范围外 refs。只投影 `boundary={layout:"whole",scope:{format:"filegdb",rule_version:1,root:EngineCatalogPath}}`；root 使用规范目录路径，内部表／要素类及以后合法新增成员均归同一 scope，不列举为授权边界。`scope` 与 `native_target`、`file_composition` 严格互斥。成员数量、内容、deep 索引和统计不改变边界摘要；根或格式规则变化不能继承原 Grant。基础识别即可证明授权边界，deep 仅用于内部子项索引与增强事实；未建立索引时不把空数组显示成“空容器”。当前仅接 NFS FileGDB 的 System 直接授权与 Manager 子表读取；Catalog whole 业务签发及真实源读取 T4 不因共享表示存在而计为完成。
+
 **边界比对。** 规范化集合排序、去重并校验一致性，路径按既有引擎语义比较，不能一律转小写、修剪名称或仅做字符串前缀判断。`boundary_hash` 为协议定义的规范身份与边界表示的 SHA-256；字段和序列化规则由同一共享实现拥有。它包含布局、规范入口、明确 refs 与 whole 成员约束，排除行数、大小、成员数量、内容哈希、mtime／ETag、扫描时间、Meta 行号及变化游标。whole 内 manifest 更新只按解析后的边界语义判断，不能把原始 manifest 字节变化直接当作授权扩大。
 
 | 变化 | 授权处理 |
@@ -489,7 +491,7 @@ FTP、NFS 与 MinIO 的 IFC／3DS／DAE／OBJ 已沿精确组成执行授权接�
 
 System 在本地权威写事务外取得这一事实，事务内核验当前管理资格、规则及批准边界。新增授权的显式确认须绑定展示时的预期边界摘要；服务端从 Meta 重取可信事实，比对不同返回 409，重新展示差异后确认，不能自动换成更大的最新边界继续签发。浏览器摘要只是并发期望值，不是可信资源事实。实际读取 owner 使用同一共享边界表示核验计划与 System 当次检查的绑定；边界不一致则重新计划／核验或拒绝，不执行旧检查对应之外的入口。原生 SQL／文件 URL 到 DataItem 的归属须由 Meta 已确认的身份与组成证明，不能由消费方按名称或路径前缀猜测；该归属解析与真实 I/O 约束仍须随读取消费者单独接入。
 
-**实施与验收。** 正式事实查询、严格共享 DTO、状态投影、摘要及 single 批准绑定已实现。支持持久化的 server → schema → 普通 table、server → database → 普通 table（MySQL）及 server → database → collection（MongoDB）三类 `single`；原生坐标取自父节点名称和独立 item 名称，不拆分 `full_name`。普通表沿用标准 `storage.schema_name`（关系型扫描对 schema/database 的统一存储字段），并与父节点核对；集合以持久化 database 父节点、collection 类型、名称、身份及 single 布局为依据，不要求 deep 采样字段。已有身份、布局、类型化父子节点及存储坐标须一致；缺失、矛盾或其他布局明确返回对应状态。摘要包含 namespace 与叶子类型，相同字符串坐标不能跨 schema/database 或 table/collection 继承批准。统计、basic/deep 深度及观察时间不改变边界摘要。System 与 Catalog 均通过共享 MetaClient 消费；Manager 的预览、手工剖析和结果读取按完整原生计划反查并核验同一数据项绑定。文件 single 与 MinIO object single 按上述五格式精确组成契约扩展投影；其他文件格式及 multi／whole 仍不支持。FTP IFC／3DS 已在固定格式 profile 下完成独立执行授权、真实读取、组成变化、撤权与清理验收，范围与限制见[验收证据索引](testing/验收证据索引.md)；此结果不扩展到其他文件来源或格式。Meta 事实本身不证明源对象仍存在，不代替 Provider 及 Security 核验，也不代表 Meta 自身的采集资格闭环已完成。
+**实施与验收。** 正式事实查询、严格共享 DTO、状态投影、摘要及 single 批准绑定已实现。支持持久化的 server → schema → 普通 table、server → database → 普通 table（MySQL）及 server → database → collection（MongoDB）三类 `single`；原生坐标取自父节点名称和独立 item 名称，不拆分 `full_name`。普通表沿用标准 `storage.schema_name`（关系型扫描对 schema/database 的统一存储字段），并与父节点核对；集合以持久化 database 父节点、collection 类型、名称、身份及 single 布局为依据，不要求 deep 采样字段。已有身份、布局、类型化父子节点及存储坐标须一致；缺失、矛盾或其他布局明确返回对应状态。摘要包含 namespace 与叶子类型，相同字符串坐标不能跨 schema/database 或 table/collection 继承批准。统计、basic/deep 深度及观察时间不改变边界摘要。System 与 Catalog 均通过共享 MetaClient 消费；Manager 的预览、手工剖析和结果读取按完整原生计划反查并核验同一数据项绑定。文件 single 与 MinIO object single 按上述五格式精确组成契约扩展投影；其他文件格式及未明确准入的 multi／whole 仍不支持；FileGDB whole 按上文单独约定接入。FTP IFC／3DS 已在固定格式 profile 下完成独立执行授权、真实读取、组成变化、撤权与清理验收，范围与限制见[验收证据索引](testing/验收证据索引.md)；此结果不扩展到其他文件来源或格式。Meta 事实本身不证明源对象仍存在，不代替 Provider 及 Security 核验，也不代表 Meta 自身的采集资格闭环已完成。
 
 System 的 `GET /api/v1/system/engines/{id}/data-items/{fingerprint}/authorization-facts` 供有当前 `system.engine_access_grant.read` 及引擎管理资格的 User 只读核对；服务端以独立 `addp-system` Tenant Service 调用 Meta，返回后再次检查 User 资格和目标 Engine。目标不存在或属于其他 Engine 时返回 404 `authorization_target_not_found`，不混同认证故障；缺少服务配置或依赖故障返回明确 503，不影响 System Ready，不回退到实时目录或浏览器自报事实。该入口不创建授权；新增批准及正式读取独立消费同一事实契约，不把前端展示结果当作凭据。
 

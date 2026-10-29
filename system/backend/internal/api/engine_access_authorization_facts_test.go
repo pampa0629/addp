@@ -36,6 +36,18 @@ type testAuthorizationFactsService struct {
 	err   error
 }
 
+func (s *testAuthorizationFactsService) ListAuthorizationItems(_ context.Context, _ engineaccess.Actor, id int64, page, size int) (*authorizationfacts.IdentityPage, error) {
+	s.calls++
+	if s.err != nil {
+		return nil, s.err
+	}
+	q := authorizationfacts.IdentityQuery{EngineID: uint(id), Page: page, PageSize: size}
+	if q.Validate() != nil {
+		return nil, commonapi.ErrBadRequest
+	}
+	return &authorizationfacts.IdentityPage{Data: []authorizationfacts.DataItemIdentity{}, Page: page, PageSize: size}, nil
+}
+
 func (s *testAuthorizationFactsService) GetAuthorizationFacts(_ context.Context, _ engineaccess.Actor, id int64, fingerprint string) (*authorizationfacts.AuthorizationFacts, error) {
 	s.calls++
 	if s.err != nil {
@@ -78,6 +90,7 @@ func TestAuthorizationFactsRequiresQualifiedTenantUser(t *testing.T) {
 		s := &testAuthorizationFactsService{}
 		router := authorizationFactsTestRouter(t, &projection, s)
 		authorizationFactsRequest(t, router, path, 403)
+		authorizationFactsRequest(t, router, "/api/v1/system/engines/2/data-items", 403)
 		if s.calls != 0 {
 			t.Fatal("unauthorized request reached resource consumer")
 		}
@@ -92,8 +105,21 @@ func TestAuthorizationFactsRequiresQualifiedTenantUser(t *testing.T) {
 	}
 	authorizationFactsRequest(t, router, path+"?tenant_id=99", 400)
 	authorizationFactsRequest(t, router, "/api/v1/system/engines/02/data-items/"+fingerprint+"/authorization-facts", 400)
+	listPath := "/api/v1/system/engines/2/data-items"
+	listResponse := authorizationFactsRequest(t, router, listPath, 200)
+	if listResponse.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("identity list cacheable")
+	}
+	var list authorizationfacts.IdentityPage
+	if json.Unmarshal(listResponse.Body.Bytes(), &list) != nil || list.Validate(authorizationfacts.IdentityQuery{EngineID: 2, Page: 1, PageSize: 100}) != nil {
+		t.Fatal("invalid identity list wire", listResponse.Body.String())
+	}
+	for _, query := range []string{"?page=0", "?page=01", "?page_size=101", "?page=1&page=2", "?tenant_id=99", "?native=true"} {
+		authorizationFactsRequest(t, router, listPath+query, 400)
+	}
 	s.err = engineaccess.ErrAuthorizationFactsUnavailable
 	authorizationFactsRequest(t, router, path, 503)
+	authorizationFactsRequest(t, router, listPath, 503)
 	s.err = commonapi.ErrNotFound
 	for language, expected := range map[string]string{
 		"zh-cn": "授权目标不存在或不属于当前引擎",

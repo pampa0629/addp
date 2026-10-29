@@ -70,3 +70,50 @@ func TestIndependentReadTargetVerifiesExactLeafAndEngineState(t *testing.T) {
 		})
 	}
 }
+
+func TestIndependentWholeFileGDBTargetRequiresExactNFSDirectory(t *testing.T) {
+	tenant := uint(7)
+	root := plugin.FileDirectoryPath(3, "exports/test.gdb")
+	for _, tc := range []struct {
+		name   string
+		change func(*models.Engine, *plugin.EngineCatalogEntry)
+		want   error
+	}{
+		{name: "whole root"},
+		{name: "other engine type", change: func(e *models.Engine, _ *plugin.EngineCatalogEntry) { e.EngineType = "ftp" }, want: commonapi.ErrForbidden},
+		{name: "not directory", change: func(_ *models.Engine, e *plugin.EngineCatalogEntry) {
+			e.Role = "leaf"
+			e.Kind = "file"
+			e.Term = "file"
+		}, want: commonapi.ErrBadRequest},
+		{name: "different scope", change: func(_ *models.Engine, e *plugin.EngineCatalogEntry) {
+			e.Path = plugin.FileDirectoryPath(3, "exports/other.gdb")
+		}, want: commonapi.ErrBadRequest},
+		{name: "fragment", change: func(_ *models.Engine, e *plugin.EngineCatalogEntry) {
+			e.Path = plugin.FileItemPath(3, "exports/test.gdb/a00000001.gdbtable")
+		}, want: commonapi.ErrBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			engine := &models.Engine{ID: 3, TenantID: &tenant, LifecycleState: models.EngineLifecycleActive, EngineType: "nfs", Version: 23}
+			entry := &plugin.EngineCatalogEntry{Path: root, Term: "directory", Kind: "directory", Role: "branch"}
+			if tc.change != nil {
+				tc.change(engine, entry)
+			}
+			calls := 0
+			verifier := &IndependentGrantTargetVerifier{engines: independentEngineLookup{engine: engine}, resolve: func(context.Context, *models.Engine, plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
+				calls++
+				return entry, nil
+			}}
+			version, err := verifier.VerifyIndependentReadTarget(context.Background(), 7, root)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("got version=%d err=%v want=%v", version, err, tc.want)
+			}
+			if err == nil && (version != 23 || calls != 1) {
+				t.Fatal("scope not verified")
+			}
+			if errors.Is(err, commonapi.ErrForbidden) && calls != 0 {
+				t.Fatal("unsupported engine queried")
+			}
+		})
+	}
+}

@@ -27,7 +27,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 	t.Run("file composition source grants", func(t *testing.T) {
 		t.Run("STL single-primary SQL contract", func(t *testing.T) { exerciseSTLCompositionSQL(t, db) })
 		t.Run("glTF multi SQL contract", func(t *testing.T) { exerciseGLTFCompositionSQL(t, db) })
-		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}, {"ftp", "stl"}, {"nfs", "stl"}, {"minio", "stl"}, {"ftp", "glb"}, {"nfs", "glb"}, {"minio", "glb"}, {"ftp", "gltf"}, {"nfs", "gltf"}, {"minio", "gltf"}, {"ftp", "fbx"}, {"nfs", "fbx"}, {"minio", "fbx"}} {
+		for _, fixture := range []struct{ kind, format string }{{"ftp", "3ds"}, {"nfs", "3ds"}, {"ftp", "dae"}, {"nfs", "dae"}, {"minio", "3ds"}, {"minio", "dae"}, {"ftp", "obj"}, {"nfs", "obj"}, {"minio", "obj"}, {"ftp", "stl"}, {"nfs", "stl"}, {"minio", "stl"}, {"ftp", "glb"}, {"nfs", "glb"}, {"minio", "glb"}, {"ftp", "gltf"}, {"nfs", "gltf"}, {"minio", "gltf"}, {"ftp", "fbx"}, {"nfs", "fbx"}, {"minio", "fbx"}, {"nfs", "filegdb"}} {
 			kind, format := fixture.kind, fixture.format
 			t.Run(kind+"/"+format, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
@@ -49,6 +49,9 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					itemType = "object"
 				}
 				primary := targetFor("scene." + format)
+				if format == "filegdb" {
+					primary = plugin.FileDirectoryPath(engine.ID, "models/scene.gdb")
+				}
 				factsFor := func(texture string) authorizationfacts.AuthorizationFacts {
 					refs := []authorizationfacts.FileCompositionRef{
 						{Target: primary, Role: "model", Required: true, Primary: true},
@@ -64,6 +67,15 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 						refs[0].Role = "manifest"
 						refs[1].Role = "image"
 						refs = append(refs, authorizationfacts.FileCompositionRef{Target: targetFor("buffers/mesh.bin"), Role: "buffer", Required: true})
+					}
+					if format == "filegdb" {
+						facts := authorizationfacts.AuthorizationFacts{SchemaVersion: authorizationfacts.AuthorizationFactsSchemaV1, EngineID: engine.ID, ItemType: "file", FullName: primary.StringPath(), ItemFingerprint: commonmodels.GenerateItemFingerprint(engine.ID, primary.StringPath()), BasisState: authorizationfacts.AuthorizationBasisComplete, ObservedAt: time.Now(), Boundary: &authorizationfacts.AuthorizationBoundary{Layout: "whole", Scope: &authorizationfacts.ScopeBoundary{Format: "filegdb", RuleVersion: 1, Root: primary}}}
+						hash, err := facts.ComputeBoundaryHash()
+						if err != nil {
+							t.Fatal(err)
+						}
+						facts.BoundaryHash = &hash
+						return facts
 					}
 					composition, err := authorizationfacts.NewFileCompositionBoundary(format, refs)
 					if err != nil {
@@ -149,7 +161,10 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				if err != nil || session == nil {
 					t.Fatal("real User session missing", err)
 				}
-				request := SourceReadCheckRequest{Targets: []plugin.EngineCatalogPath{primary}, ExpectedSource: &client.ManagerModel3DExpectedSource{EngineVersion: "1", FileComposition: *current.Boundary.FileComposition.Clone()}}
+				request := SourceReadCheckRequest{Targets: []plugin.EngineCatalogPath{primary}}
+				if current.Boundary.FileComposition != nil {
+					request.ExpectedSource = &client.ManagerModel3DExpectedSource{EngineVersion: "1", FileComposition: *current.Boundary.FileComposition.Clone()}
+				}
 				read := func(request SourceReadCheckRequest, want bool) {
 					t.Helper()
 					result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, request)
@@ -190,11 +205,16 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				if format == "obj" {
 					expectedRefs = 3
 				}
-				if json.Unmarshal(grantA.FileComposition, &stored) != nil || len(stored.Refs) != expectedRefs {
+				if format == "filegdb" {
+					var scope authorizationfacts.ScopeBoundary
+					if json.Unmarshal(grantA.ScopeBoundary, &scope) != nil || scope.Root.StringPath() != primary.StringPath() || len(grantA.FileComposition) > 0 {
+						t.Fatal("whole boundary not persisted exclusively")
+					}
+				} else if json.Unmarshal(grantA.FileComposition, &stored) != nil || len(stored.Refs) != expectedRefs {
 					t.Fatal("approved composition not persisted")
 				}
 				read(request, true)
-				if format != "glb" {
+				if format != "glb" && format != "filegdb" {
 					exerciseManagerModel3DAuthorization(t, db, service, tenantID, reader, session.AccessToken, actor, engine.ID, format+".file-composition.invalid", current)
 				}
 				// A primary-only row cannot become a full composition Grant.
@@ -206,7 +226,7 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				if err := repo.insertSourceGrant(ctx, bare); !errors.Is(err, commonapi.ErrBadRequest) {
 					t.Fatal("primary-only upgrade accepted", err)
 				}
-				if format == "stl" || format == "glb" || format == "fbx" {
+				if format == "stl" || format == "glb" || format == "fbx" || format == "filegdb" {
 					current.BasisState, current.Boundary, current.BoundaryHash = authorizationfacts.AuthorizationBasisIncomplete, nil, nil
 					if result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrConflict) {
 						t.Fatal("incomplete STL facts did not fail closed", err)
@@ -226,8 +246,10 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 					if err := db.Table("system.engines").Where("id=?", engine.ID).Update("version", 2).Error; err != nil {
 						t.Fatal(err)
 					}
-					read(request, false)
-					request.ExpectedSource.EngineVersion = "2"
+					if request.ExpectedSource != nil {
+						read(request, false)
+						request.ExpectedSource.EngineVersion = "2"
+					}
 					read(request, true)
 					offline = true
 					if result, err := service.CheckManagerPreviewRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, ErrAuthorizationFactsUnavailable) {
@@ -238,6 +260,21 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 						t.Fatal(err)
 					}
 					read(request, false)
+					if format == "filegdb" {
+						var expires time.Time
+						if err := db.Raw("SELECT clock_timestamp()+interval '2 seconds'").Scan(&expires).Error; err != nil {
+							t.Fatal(err)
+						}
+						input.RequestID, input.ExpiryMode, input.ExpiresAt = uuid.New(), shared.SharingExpiryAtTime, &expires
+						if _, err := service.CreateIndependentGrant(ctx, input); err != nil {
+							t.Fatal("expiring whole grant", err)
+						}
+						read(request, true)
+						if err := db.Exec("SELECT pg_sleep(GREATEST(0, EXTRACT(EPOCH FROM (?::timestamptz-clock_timestamp())))+0.03)", expires).Error; err != nil {
+							t.Fatal(err)
+						}
+						read(request, false)
+					}
 					return
 				}
 				current = factsFor("B.PNG")

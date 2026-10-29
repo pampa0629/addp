@@ -1136,6 +1136,7 @@
         "retry": "按原命令重试",
         "partialFailure": "部分数据表未签发，请核对下方逐表结果。已有授权不会重复发放；只有结果未知的原命令可重试。变更期限请先明确收回当前关系，再按批准方式重新授予。",
         "confirmBody": "即将授予 {recipient} 对 {target} 的只读权限。有效期：{expiry}。这不是管理委派，也不授予导出或修改数据的权限。",
+        "confirmWhole": "{target}：授权覆盖整个 FileGDB 内当前及以后新增的子表／要素类，不覆盖其他目录或外部引用。",
         "confirmComposition": "{target} 的完整文件组成：{files}。按整个数据项授权，不分别授予纹理或目录权限。",
         "created": "只读授权已签发。接收方实际读取仍须满足对应功能权限及当前访问条件。",
         "historyRecovered": "已找回原命令的签发历史；没有续期或重新授予。请核对记录状态。",
@@ -1252,7 +1253,7 @@
           "pending": "尚未核对"
         },
         "addSelection": "加入本次授权清单",
-        "snapshotOnly": "普通表可逐项选择或从 schema 展开，最多 200 项，不包含视图和未来新增表。FTP／NFS 支持 IFC／3DS／DAE／OBJ／STL／自包含 GLB／静态 glTF／Binary 7400 静态无贴图 FBX 模型主文件，MinIO 支持 IFC／3DS／DAE／OBJ／STL／自包含 GLB／静态 glTF／Binary 7400 静态无贴图 FBX 模型主对象。核对完整组成后整体授权；目录、桶和前缀仅供浏览，不单独授权材质和纹理。",
+        "snapshotOnly": "按 Meta 已识别的数据项选择，最多 200 项。选择节点只展开其中当前的数据项，不包含未来新增项；NFS FileGDB 按整个容器授权，包含容器内以后新增的子表。材料、纹理和容器碎片不单独授权。",
         "remove": "移除",
         "reviewCurrent": "刷新并核对当前许可",
         "selectionFailed": "未能取得完整的可授权数据项清单，或超过 200 项；本次未加入任何数据项。请缩小范围或重试。",
@@ -1260,9 +1261,9 @@
         "mode": "授权来源",
         "version": "版本",
         "reason": "配置原因",
-        "pickTable": "选择普通表或已支持的模型数据项",
+        "pickTable": "选择 Meta 已识别的数据项或节点",
         "readRequired": "核对直接授权许可需要相应功能权限及本引擎管理资格。",
-        "browseRequired": "选择数据项需要引擎目录浏览权限，请联系权限管理员配置。",
+        "browseRequired": "选择数据项需要源数据授权读取权限，请联系权限管理员配置。",
         "unsupported": "当前引擎不可浏览或编号无法安全表示；请先确认引擎处于启用、在线状态。",
         "failed": "未取得可靠结果。请刷新核对，页面不会自动重试或宣称配置已生效。",
         "modes": {

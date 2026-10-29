@@ -1,61 +1,30 @@
-import { createEngineCatalogTreeAdapter, safePickerEngineID } from '@common-ui'
+import { buildLocator, safePickerEngineID, readDataItemIdentityTree, buildDataItemIdentityTree } from '@common-ui'
+import { readPermissionTarget } from './directPermission'
 
-const isFileModelEngine = kind => kind === 'ftp' || kind === 'nfs' || kind === 'minio'
+export const isApprovalTarget = node => !!node?.metadata?.data_item
+export const isApprovalSelection = node => isApprovalTarget(node) || !!node?.metadata?.identity_node
 
-export function isApprovalTable(node) {
-  const entry = node?.metadata?.catalog_entry
-  const leaf = entry?.path?.segments?.at(-1)
-  return entry?.role === 'leaf' && entry.term === 'table' && entry.kind === 'table' &&
-    entry.path?.version === 'catalog.path/v1' && leaf?.term === 'table' && leaf.kind === 'table'
-}
-
-export function isApprovalSelection(node) {
-  const entry = node?.metadata?.catalog_entry
-  return isApprovalTarget(node) || (!isFileModelEngine(node?.metadata?.engine_type) && entry?.role === 'branch' && entry.path?.segments?.length > 1)
-}
-
-export const isApprovalTarget = node => isApprovalTable(node) || isApprovalModel(node)
-
-export function isApprovalModel(node) {
-  const entry = node?.metadata?.catalog_entry, leaf = entry?.path?.segments?.at(-1)
-  const engineType = node?.metadata?.engine_type
-  const term = engineType === 'minio' ? 'object' : 'file'
-  const suffix = /\.(ifc|3ds|dae|obj|stl|glb|gltf|fbx)$/i
-  return isFileModelEngine(engineType) && entry?.role === 'leaf' && entry.term === term && entry.kind === term &&
-    entry.path?.version === 'catalog.path/v1' && leaf?.term === term && leaf.kind === term && suffix.test(leaf.name)
-}
-
-// A namespace is a discovery shortcut, never an authorization target.
-// Return only a complete bounded snapshot; failures discard the whole selection.
+// Nodes expand the currently observed DataItems only. They never become ACLs.
 export async function collectApprovalTargets(selection, engineID, adapter, limit = 200) {
-  const targets = [], visited = new Set(), root = selection?.raw?.node
-  if (!isApprovalSelection(root)) throw new Error('invalidCatalogTarget')
-  async function visit(node, parent) {
-    const entry = node?.metadata?.catalog_entry, path = entry?.path
-    const key = JSON.stringify(path)
-    if (!path || String(path.engine_id) !== String(engineID) || visited.has(key) || path.segments.length > 64 ||
-      (parent && (path.segments.length !== parent.segments.length + 1 || !parent.segments.every((part, index) =>
-        ['term', 'kind', 'name'].every(field => part[field] === path.segments[index]?.[field]))))) throw new Error('invalidCatalogTarget')
-    visited.add(key)
+  const targets = [], visited = new Set()
+  async function visit(node) {
+    if (!isApprovalSelection(node) || visited.has(node.id)) throw new Error('invalidCatalogTarget')
+    visited.add(node.id)
     if (isApprovalTarget(node)) {
-      targets.push(approvalTargetFromSelection({ raw: { node } }, engineID))
-      if (targets.length > limit) throw new Error('tooManyTargets')
-    } else if (entry.role === 'branch') {
-      const children = await adapter.getNodeChildren(node)
-      for (const child of children) await visit(child, path)
+      if (targets.length >= limit) throw new Error('tooManyTargets')
+      targets.push(await approvalTargetFromSelection({ raw: { node } }, engineID, adapter))
+    } else {
+      for (const child of await adapter.getNodeChildren(node)) await visit(child)
     }
   }
-  await visit(root)
+  await visit(selection?.raw?.node)
   return targets
 }
 
-export function approvalTargetFromSelection(selection, engineID) {
-  const entry = selection?.raw?.node?.metadata?.catalog_entry
-  const id = safePickerEngineID(engineID)
-  if (!isApprovalTarget(selection?.raw?.node) || entry.path?.engine_id !== id || !Array.isArray(entry.path?.segments) || entry.path.segments.length < 2) {
-    throw new Error('invalidCatalogTarget')
-  }
-  return { version: entry.path.version, engine_id: String(id), segments: entry.path.segments.map(segment => ({ ...segment })) }
+export async function approvalTargetFromSelection(selection, engineID, adapter) {
+  const node = selection?.raw?.node
+  if (!isApprovalTarget(node) || String(node.metadata.data_item.engine_id) !== String(engineID)) throw new Error('invalidCatalogTarget')
+  return adapter.resolveTarget(node)
 }
 
 export function approvalPathLabel(path) {
@@ -69,11 +38,66 @@ export function approvalTargetsEqual(left, right) {
       typeof segment?.[key] === 'string' && segment[key] === right.segments[index]?.[key]))
 }
 
-// System keeps approval policy; native browsing and tree conversion have one owner.
-export function createApprovalCatalogAdapter(engine, listChildren) {
-  return createEngineCatalogTreeAdapter(engine, async (id, path) => {
-    const result = await listChildren(id, path)
-    if (!Array.isArray(result?.nodes)) throw new Error('invalidCatalogTarget')
-    return result.nodes
-  }, { isSearchable: isApprovalSelection })
+// System's adapter consumes the identity-only Meta projection through System.
+// ResourceTreeSelect owns the UI; exact signing boundaries still come from Meta.
+export function createApprovalCatalogAdapter(engine, listItems, readFacts) {
+  const id = safePickerEngineID(engine.id)
+  let snapshot, generation = 0, nodes = new Map()
+  function convert(current, index, parents = []) {
+    const path = current.item ? current.item.ancestors.slice(1).map(part => part.name) : [...parents, current.label]
+    if (current.item && path.join('/') !== current.item.full_name) path.push(current.item.name)
+    const children = current.children || []
+    // A whole container's scope node and its one DataItem have one display row.
+    if (!current.item && children.length === 1 && children[0].item?.full_name === path.join('/')) return convert(children[0], index, parents)
+    const locator = buildLocator({ engineId: id, path, type: current.type })
+    const node = { id: current.id, locator, label: current.label, type: current.type, hasChildren: !current.item,
+      metadata: { engine_id: id, engine_type: engine.engine_type, engine_name: engine.name, has_children: !current.item,
+        ...(current.item ? { data_item: current.item } : { identity_node: current.id }) } }
+    node.children = children.map(child => convert(child, index, path))
+    index.set(node.id, node)
+    return node
+  }
+  async function root() {
+    if (!snapshot) {
+      const epoch = generation, index = new Map()
+      snapshot = (async () => {
+      const rows = await readDataItemIdentityTree(String(id), listItems, () => epoch === generation)
+      const roots = buildDataItemIdentityTree(rows)
+      if (roots.length > 1) throw new Error('invalidCatalogTarget')
+      const result = { id: `engine:${id}`, label: engine.name, type: 'root', locator: buildLocator({ engineId: id, path: [], type: 'root' }), hasChildren: true,
+        metadata: { engine_id: id, engine_type: engine.engine_type, engine_name: engine.name, has_children: true },
+        children: (roots[0]?.children || []).map(node => convert(node, index)) }
+      index.set(result.id, result)
+      nodes = index
+      return result
+    })().catch(error => { if (epoch === generation) { snapshot = null; nodes = new Map() }; throw error })
+    }
+    return snapshot
+  }
+  async function owned(node) {
+    await root()
+    const current = nodes.get(node?.id)
+    if (!current || current.locator !== node.locator || current.metadata.data_item?.item_fingerprint !== node.metadata?.data_item?.item_fingerprint) throw new Error('invalidCatalogTarget')
+    return current
+  }
+  return {
+    listEngines: async () => [{ ...engine, id }],
+    getTreeRoot: root,
+    invalidate() { generation++; snapshot = null; nodes = new Map() },
+    async getNodeChildren(node) { return (await owned(node)).children },
+    async resolveTarget(node) {
+      const identity = (await owned(node)).metadata.data_item
+      if (!identity) throw new Error('invalidCatalogTarget')
+      const { path } = await readPermissionTarget(String(id), identity.item_fingerprint, readFacts)
+      return { ...path, engine_id: String(id), segments: path.segments.map(part => ({ ...part })) }
+    },
+    async search(engineID, keyword, { limit = 20 } = {}) {
+      if (String(engineID) !== String(id) || !Number.isSafeInteger(limit) || limit <= 0) throw new Error('invalidCatalogTarget')
+      await root()
+      const query = keyword.trim().toLocaleLowerCase()
+      if (!query) return []
+      return [...nodes.values()].filter(node => isApprovalSelection(node) &&
+        (node.metadata.data_item?.full_name || node.label).toLocaleLowerCase().includes(query)).slice(0, Math.min(limit, 20))
+    }
+  }
 }

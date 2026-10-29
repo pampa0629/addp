@@ -1,4 +1,4 @@
-import { approvedBoundaryFields, readNativeApprovalFacts, serializeEngineCatalogTarget } from '@common-ui'
+import { MAX_IDENTITY_TREE_ITEMS, readDataItemIdentityTree, buildDataItemIdentityTree, approvedBoundaryFields, readNativeApprovalFacts, serializeEngineCatalogTarget } from '@common-ui'
 
 export function validateDirectPermission(row, engineID, fingerprint) {
   const validVersion = typeof row?.version === 'string' && /^(0|[1-9]\d{0,18})$/.test(row.version) && BigInt(row.version) <= 9223372036854775807n
@@ -13,7 +13,7 @@ export function validateDirectPermission(row, engineID, fingerprint) {
 // The identity list is only navigation; it cannot supply a signing boundary.
 export async function readPermissionTarget(engineID, fingerprint, readFacts) {
   const facts = await readFacts(engineID, fingerprint)
-  const target = facts?.boundary?.native_target || facts?.boundary?.file_composition?.refs?.find(ref => ref.primary === true)?.target
+  const target = facts?.boundary?.scope?.root || facts?.boundary?.native_target || facts?.boundary?.file_composition?.refs?.find(ref => ref.primary === true)?.target
   if (String(target?.engine_id) !== String(engineID) || facts?.item_fingerprint !== fingerprint) throw new Error('invalidDataItemBoundary')
   const observed = await readNativeApprovalFacts(target, async (id, fp) => {
     if (String(id) !== String(engineID) || fp !== fingerprint) throw new Error('invalidDataItemBoundary')
@@ -31,53 +31,17 @@ export function captureDirectPermission(row, target, allowed, reason) {
   return `{"catalog_path":${serializeEngineCatalogTarget({ ...target.path, engine_id: String(row.engine_id) })},"expected_boundary_hash":${JSON.stringify(fields.expected_boundary_hash)},"allowed":${allowed},"expected_source":${JSON.stringify(row.source)},"expected_version":${JSON.stringify(row.version)},"reason":${JSON.stringify(reason)}}`
 }
 
-// The tree is a complete navigation observation, never a permission credential.
-export const MAX_PERMISSION_TREE_ITEMS = 20000
-export async function readDirectPermissionTree(engineID, readPage, isCurrent = () => true) {
-  const rows = [], size = 100
-  let total, previous = ''
-  for (let page = 1; ; page++) {
-    if (!isCurrent()) throw new Error('stalePermissionTree')
-    const result = await readPage(engineID, { page, page_size: size })
-    if (!isCurrent()) throw new Error('stalePermissionTree')
-    if (!Array.isArray(result?.data) || !Number.isSafeInteger(result.total) || result.total < 0 || result.page !== page || result.page_size !== size ||
-      result.data.length !== Math.max(0, Math.min(size, result.total - (page - 1) * size)) || (total !== undefined && total !== result.total)) throw new Error('incompletePermissionTree')
-    total = result.total
-    if (total > MAX_PERMISSION_TREE_ITEMS) throw new Error('permissionTreeCapacity')
-    for (const row of result.data) {
-      validateDirectPermission(row, engineID)
-      if (row.item_fingerprint <= previous) throw new Error('incompletePermissionTree')
-      previous = row.item_fingerprint; rows.push(row)
-    }
-    if (rows.length === total) break
-  }
-  buildDirectPermissionTree(rows) // Validate the complete ancestor graph before exposing any checkbox.
-  return rows
-}
-
+// Direct permission adds its domain state to the shared Meta identity tree.
+export const MAX_PERMISSION_TREE_ITEMS = MAX_IDENTITY_TREE_ITEMS
+export const readDirectPermissionTree = (engineID, readPage, isCurrent) =>
+  readDataItemIdentityTree(engineID, readPage, isCurrent, validateDirectPermission)
 export function buildDirectPermissionTree(rows) {
-  const nodes = new Map(), roots = [], fingerprints = new Set()
-  for (const row of rows) {
-    if (fingerprints.has(row.item_fingerprint) || !Array.isArray(row.ancestors) || !row.ancestors.length || row.ancestors.length > 128 || !row.name || !row.full_name) throw new Error('invalidPermissionTree')
-    fingerprints.add(row.item_fingerprint)
-    let parent = null
-    const seen = new Set()
-    for (const ancestor of row.ancestors) {
-      if (!/^[1-9]\d*$/.test(ancestor.id) || typeof ancestor.name !== 'string' || !ancestor.node_type || seen.has(ancestor.id)) throw new Error('invalidPermissionTree')
-      seen.add(ancestor.id)
-      const id = `node:${ancestor.id}`, parentID = parent?.id || ''
-      let node = nodes.get(id)
-      if (node) {
-        if (node.parentID !== parentID || node.label !== ancestor.name || node.type !== ancestor.node_type) throw new Error('invalidPermissionTree')
-      } else {
-        node = { id, label: ancestor.name, type: ancestor.node_type, parentID, children: [] }
-        nodes.set(id, node); (parent ? parent.children : roots).push(node)
-      }
-      parent = node
-    }
-    parent.children.push({ id: `item:${row.item_fingerprint}`, label: row.name, type: row.item_type, permission: row })
+  function permissionNode(node) {
+    if (node.item) { node.permission = node.item; delete node.item }
+    node.children?.forEach(permissionNode)
+    return node
   }
-  return roots
+  return buildDataItemIdentityTree(rows).map(permissionNode)
 }
 
 export function permissionNodeItems(node, recursive) {

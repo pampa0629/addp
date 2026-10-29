@@ -3,6 +3,7 @@ package preview
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 	"math"
 	"net/url"
@@ -119,9 +120,10 @@ func TestFileCatalogPreviewUsesMetaContainerAttributes(t *testing.T) {
 func TestFileCatalogPreviewUsesRuntimeContainerMetaBeforeContentHandler(t *testing.T) {
 	previous, previousErr := plugin.Get("nfs")
 	enginePlugin := &recordingFileCatalogPreviewPlugin{
-		engineType:   "nfs",
-		contentType:  "application/octet-stream",
-		expectedPath: "/arcgis/pgeo_roundtrip.gdb",
+		engineType:    "nfs",
+		contentType:   "application/octet-stream",
+		expectedPath:  "/arcgis/pgeo_roundtrip.gdb",
+		describeError: errors.New("directory cannot be described as a regular file"),
 	}
 	plugin.Register(enginePlugin)
 	defer func() {
@@ -171,8 +173,8 @@ func TestFileCatalogPreviewUsesRuntimeContainerMetaBeforeContentHandler(t *testi
 	if preview.Object == nil || preview.Object.Content == nil || preview.Object.Content.Kind != models.ObjectPreviewKindContainer {
 		t.Fatalf("object content = %#v, want container preview from Meta", preview.Object)
 	}
-	if enginePlugin.openContentCalls != 0 {
-		t.Fatalf("OpenContent calls = %d, want 0 for runtime container Meta preview", enginePlugin.openContentCalls)
+	if enginePlugin.openContentCalls != 0 || enginePlugin.describeCalls != 0 || enginePlugin.listChildrenCalls != 0 {
+		t.Fatalf("whole parent must consume Meta only: %#v", enginePlugin)
 	}
 	children, ok := preview.Object.Content.JSON.(map[string]interface{})["children"].([]map[string]interface{})
 	if !ok || len(children) != 1 || children[0]["name"] != "PGEO_WGS84_POINTS" {
@@ -758,6 +760,8 @@ func TestFileCatalogGaussianSplatPreviewKeepsSourceWhenKSplatReady(t *testing.T)
 }
 
 type recordingFileCatalogPreviewPlugin struct {
+	describeError     error
+	describeCalls     int
 	engineType        string
 	listChildrenCalls int
 	openContentCalls  int
@@ -794,6 +798,10 @@ func (p *recordingFileCatalogPreviewPlugin) ResolvePath(context.Context, plugin.
 	return nil, nil
 }
 func (p *recordingFileCatalogPreviewPlugin) DescribeEngineCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
+	p.describeCalls++
+	if p.describeError != nil {
+		return nil, p.describeError
+	}
 	p.describedItemPath = path
 	now := time.Now()
 	sizeBytes := int64(1024)

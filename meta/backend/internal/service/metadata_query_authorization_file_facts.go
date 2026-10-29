@@ -41,6 +41,9 @@ func projectFileAuthorizationFacts(tx *gorm.DB, item models.MetaItem, facts *aut
 	if layout == "" || dataType == "" || format == "" {
 		return finish(authorizationfacts.AuthorizationBasisIncomplete)
 	}
+	if layout == "whole" {
+		return projectWholeContainerAuthorizationFacts(tx, item, facts)
+	}
 	identity := authorizationfacts.FileCompositionBoundary{Format: format}
 	if layout != identity.Layout() || dataType != "model_3d" || !commonExecution.ManagerModel3DFileFormat(format) {
 		return finish(authorizationfacts.AuthorizationBasisUnsupported)

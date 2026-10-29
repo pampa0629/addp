@@ -32,12 +32,13 @@ const (
 	AuthorizationBasisUnsupported  AuthorizationBasisState = "unsupported"
 )
 
-// AuthorizationBoundary is one exact DataItem representation. NativeTarget
-// and FileComposition are mutually exclusive; neither is a permission decision.
+// AuthorizationBoundary is one exact DataItem representation. NativeTarget,
+// FileComposition and Scope are mutually exclusive; none is a permission decision.
 type AuthorizationBoundary struct {
-	Layout          string                   `json:"layout" enums:"single,multi"`
+	Layout          string                   `json:"layout" enums:"single,multi,whole"`
 	NativeTarget    plugin.EngineCatalogPath `json:"native_target"`
 	FileComposition *FileCompositionBoundary `json:"file_composition,omitempty"`
+	Scope           *ScopeBoundary           `json:"scope,omitempty"`
 }
 
 // AuthorizationFacts contains only Meta's current resource facts, never an Allow.
@@ -184,7 +185,12 @@ func (f AuthorizationFacts) ComputeBoundaryHash() (string, error) {
 	if f.Boundary == nil {
 		return "", errors.New("unsupported authorization boundary")
 	}
-	if f.Boundary.FileComposition != nil {
+	if f.Boundary.Scope != nil {
+		scope := f.Boundary.Scope
+		if f.Boundary.Layout != "whole" || f.Boundary.FileComposition != nil || !reflect.DeepEqual(f.Boundary.NativeTarget, plugin.EngineCatalogPath{}) || scope.Validate(f.EngineID) != nil || f.ItemType != "file" || f.FullName != scope.Root.StringPath() {
+			return "", errors.New("whole boundary does not match data item")
+		}
+	} else if f.Boundary.FileComposition != nil {
 		if f.Boundary.Layout != f.Boundary.FileComposition.Layout() || !reflect.DeepEqual(f.Boundary.NativeTarget, plugin.EngineCatalogPath{}) || f.Boundary.FileComposition.Validate(f.EngineID) != nil {
 			return "", errFileComposition
 		}

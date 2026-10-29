@@ -46,6 +46,7 @@ type SourceGrantView struct {
 	ItemFingerprint         string           `json:"item_fingerprint"`
 	BoundaryHash            string           `json:"boundary_hash"`
 	FileComposition         json.RawMessage  `json:"file_composition,omitempty" swaggertype:"object"`
+	ScopeBoundary           json.RawMessage  `json:"scope,omitempty" swaggertype:"object"`
 	RecipientType           string           `json:"recipient_type"`
 	RecipientID             int64            `json:"recipient_id,string" swaggertype:"string"`
 	Action                  string           `json:"action"`
@@ -66,7 +67,7 @@ type SourceGrantView struct {
 func sourceGrantView(row *sourceGrant) SourceGrantView {
 	return SourceGrantView{RequestID: row.RequestID, GrantedAt: row.GrantedAt, ApprovalMode: row.ApprovalMode,
 		CatalogRequestID: row.CatalogRequestID, EngineID: row.EngineID, CatalogPath: row.CatalogPath,
-		ItemFingerprint: row.ItemFingerprint, BoundaryHash: row.BoundaryHash, FileComposition: row.FileComposition,
+		ItemFingerprint: row.ItemFingerprint, BoundaryHash: row.BoundaryHash, FileComposition: row.FileComposition, ScopeBoundary: row.ScopeBoundary,
 		RecipientType: row.RecipientType, RecipientID: row.RecipientID, Action: row.Action,
 		ExpiryMode: row.ExpiryMode, ExpiresAt: row.ExpiresAt, DirectPermissionVersion: row.DirectPermissionVersion, DirectPermissionSource: row.DirectPermissionSource,
 		OperatorPrincipalID: row.OperatorPrincipalID, OperatorMembershipID: row.OperatorMembershipID, Reason: row.Reason,
@@ -114,7 +115,7 @@ func prepareIndependentGrant(input CreateIndependentGrantInput) (*sourceGrant, e
 }
 
 func independentReadTargetSegment(segment engineplugin.EngineCatalogSegment) bool {
-	return segment.Term == segment.Kind && (segment.Kind == engineplugin.EngineCatalogKindTable || segment.Kind == engineplugin.EngineCatalogKindCollection || segment.Kind == engineplugin.EngineCatalogKindFile || segment.Kind == engineplugin.EngineCatalogKindObject)
+	return segment.Term == segment.Kind && (segment.Kind == engineplugin.EngineCatalogKindTable || segment.Kind == engineplugin.EngineCatalogKindCollection || segment.Kind == engineplugin.EngineCatalogKindFile || segment.Kind == engineplugin.EngineCatalogKindObject || segment.Kind == engineplugin.EngineCatalogKindDirectory)
 }
 
 func sameIndependentGrant(a, b *sourceGrant) bool {
@@ -185,6 +186,12 @@ func (s *Service) CreateIndependentGrant(ctx context.Context, input CreateIndepe
 	binding, err := s.resolveApprovedBoundary(ctx, row.TenantID, input.CatalogPath, row.ItemFingerprint, row.BoundaryHash)
 	if err != nil {
 		return nil, err
+	}
+	if binding.Scope != nil {
+		row.ScopeBoundary, err = json.Marshal(binding.Scope)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if binding.FileComposition != nil {
 		row.FileComposition, err = json.Marshal(binding.FileComposition)

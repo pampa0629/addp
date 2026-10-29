@@ -1136,6 +1136,7 @@
         "retry": "Retry original command",
         "partialFailure": "Some Grants were not issued; review each outcome. Existing Grants are not duplicated. Only unconfirmed original commands can be retried. To change validity, explicitly withdraw the current relation and obtain approval again.",
         "confirmBody": "Grant {recipient} read-only access to {target}. Validity: {expiry}. This is not a management delegation and does not grant export or write access.",
+        "confirmWhole": "{target}: covers all current and future tables and feature classes inside this FileGDB, excluding other directories and external references.",
         "confirmComposition": "Complete file composition of {target}: {files}. Authorization covers the whole DataItem, not separate texture or directory permissions.",
         "created": "Read grant issued. Actual reading still requires the relevant function permission and current access conditions.",
         "historyRecovered": "Original issuance history recovered, without renewal or reissuance. Check its record status.",
@@ -1252,7 +1253,7 @@
           "pending": "Not checked"
         },
         "addSelection": "Add to this authorization",
-        "snapshotOnly": "Select ordinary tables individually or expand a schema, up to 200 items, excluding views and future tables. FTP/NFS supports IFC/3DS/DAE/OBJ/STL/self-contained GLB/static glTF/Binary 7400 static untextured FBX primary model files; MinIO supports IFC/3DS/DAE/OBJ/STL/self-contained GLB/static glTF/Binary 7400 static untextured FBX primary model objects. Review the complete composition as one DataItem. Directories, buckets and prefixes are for navigation; materials and textures are not granted separately.",
+        "snapshotOnly": "Select up to 200 DataItems identified by Meta. Nodes expand only their current DataItems, excluding future items. An NFS FileGDB is authorized as a whole container, including future child tables. Materials, textures and container fragments are not authorized separately.",
         "remove": "Remove",
         "reviewCurrent": "Refresh and review current permission",
         "selectionFailed": "A complete eligible DataItem list could not be obtained or exceeds 200 items. No DataItems were added. Narrow the selection or retry.",
@@ -1260,9 +1261,9 @@
         "mode": "Authorization source",
         "version": "Version",
         "reason": "Configuration reason",
-        "pickTable": "Select an ordinary table or supported model DataItem",
+        "pickTable": "Select Meta DataItems or nodes",
         "readRequired": "Reviewing direct authorization permission requires its read permission and management qualification for this engine.",
-        "browseRequired": "Selecting DataItems requires engine catalog read permission. Contact your permission administrator.",
+        "browseRequired": "Selecting DataItems requires source-grant read permission. Contact your permission administrator.",
         "unsupported": "The engine cannot be browsed or its ID cannot be safely represented. Confirm that the engine is active and online.",
         "failed": "No reliable result was obtained. Refresh to check; this page never automatically retries or claims configuration took effect.",
         "modes": {

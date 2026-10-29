@@ -94,3 +94,35 @@ test('switches workbook schemas and refreshes the container while preserving the
 function json(route, body) {
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
 }
+
+test('basic FileGDB index is unknown rather than empty and does not request a child read', async ({ page }) => {
+  const locator = 'addp://engine/14/path/exports/public_test.gdb?type=file&item_id=44740'
+  const rootLocator = 'addp://engine/14/path/?type=server&node_id=1'
+  const item = { id: locator, locator, label: 'public_test.gdb', type: 'file', hasChildren: false }
+  const root = { id: rootLocator, locator: rootLocator, label: 'FileGDB test engine', type: 'server', hasChildren: true, children: [item] }
+  const reads = [], writes = []
+  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+  await page.route('**/plugins/manifest.json', route => json(route, { scripts: ['/plugins/container-preview.js'] }))
+  await page.route('**/api/v1/**', route => {
+    const req = route.request(), url = new URL(req.url()), path = url.pathname
+    if (req.method() !== 'GET') writes.push(path)
+    if (path.endsWith('/system/refresh')) return json(route, {access_token:'filegdb-fixture',expires_in:3600})
+    if (path.endsWith('/system/users/me')) return json(route, {id:'1',display_name:'FileGDB fixture'})
+    if (path.endsWith('/system/auth/context')) return json(route,managerAuthContext)
+    if (path.endsWith('/manager/engines')) return json(route,{data:[{id:14,name:root.label,engine_type:'nfs',lifecycle_state:'active',connection_status:'online'}]})
+    if (path.endsWith('/ancestors')) return json(route,{target_locator:locator,ancestors:[{...root,children:[]},item]})
+    if (path.endsWith('/meta/resource-tree/14') || path.endsWith('/meta/resource-tree/14/node')) return json(route,root)
+    if (path.endsWith('/manager/preview')) {
+      reads.push(url.searchParams.get('child_name') || '')
+      return json(route,{preview_type:'object',data:{object:{path:'exports/public_test.gdb',content:{kind:'container',json:{format:'filegdb',children:[],summary:{index_available:false,size_bytes:24909470}}}}}})
+    }
+    return json(route,{})
+  })
+  await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
+  const container = page.locator('.container-preview')
+  await expect(container).toContainText('尚未采集内部子项索引')
+  await expect(container).toContainText('--')
+  await expect(container.locator('.child-select')).toHaveCount(0)
+  expect(reads).toEqual([''])
+  expect(writes.filter(path => !path.endsWith('/system/refresh'))).toEqual([])
+})

@@ -355,9 +355,12 @@ definitions:
         enum:
         - single
         - multi
+        - whole
         type: string
       native_target:
         $ref: '#/definitions/plugin.EngineCatalogPath'
+      scope:
+        $ref: '#/definitions/authorizationfacts.ScopeBoundary'
     type: object
   authorizationfacts.AuthorizationFacts:
     properties:
@@ -385,6 +388,23 @@ definitions:
       observed_at:
         type: string
       schema_version:
+        type: string
+    type: object
+  authorizationfacts.DataItemIdentity:
+    properties:
+      ancestors:
+        items:
+          $ref: '#/definitions/authorizationfacts.IdentityNode'
+        type: array
+      engine_id:
+        type: integer
+      full_name:
+        type: string
+      item_fingerprint:
+        type: string
+      item_type:
+        type: string
+      name:
         type: string
     type: object
   authorizationfacts.FileCompositionBoundary:
@@ -416,6 +436,30 @@ definitions:
         type: string
       node_type:
         type: string
+    type: object
+  authorizationfacts.IdentityPage:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/authorizationfacts.DataItemIdentity'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  authorizationfacts.ScopeBoundary:
+    properties:
+      format:
+        type: string
+      root:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+      rule_version:
+        type: integer
     type: object
   client.IssueManagerModel3DAuthorizationRequest:
     properties:
@@ -1478,6 +1522,8 @@ definitions:
         type: string
       revocation:
         $ref: '#/definitions/github_com_addp_system_internal_engineaccess.GrantRevocation'
+      scope:
+        type: object
     type: object
   github_com_addp_system_internal_engineaccess.SourceReadCheck:
     properties:
@@ -8337,6 +8383,66 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine_catalog.read
+  /engines/{id}/data-items:
+    get:
+      description: 仅返回 Meta 已识别的数据项及祖先节点。需当前租户用户、源授权读取功能及引擎管理资格；读取前后复核。无原生文件枚举、内容读取或签发
+        | Returns only Meta identities and ancestor nodes. Rechecks current tenant
+        user and engine management qualification before and after the owner query.
+        No native file enumeration, content reads or issuance.
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 1
+        description: 页码 | Page number
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - default: 100
+        description: 每页数量 | Page size
+        in: query
+        maximum: 100
+        minimum: 1
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 数据项身份清单 | DataItem identities
+          schema:
+            $ref: '#/definitions/authorizationfacts.IdentityPage'
+        "400":
+          description: 查询失败 | Query failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 查询失败 | Query failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 查询失败 | Query failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 查询失败 | Query failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "503":
+          description: 查询失败 | Query failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询授权候选数据项 | List authorization DataItem identities
+      tags:
+      - 源数据授权 | Source Data Grants
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_access_grant.read
   /engines/{id}/data-items/{fingerprint}/authorization-facts:
     get:
       description: 当前 Tenant User 需源授权读取功能及本引擎管理资格。System 用独立 addp-system 身份读取 Meta

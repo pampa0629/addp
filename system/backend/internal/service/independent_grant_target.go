@@ -8,6 +8,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	shared "github.com/addp/common/authorization"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/dbbridge"
 	engineplugin "github.com/addp/common/engine/plugin"
 	commonexecution "github.com/addp/common/execution"
@@ -36,6 +37,10 @@ func (v *IndependentGrantTargetVerifier) VerifyIndependentReadTarget(ctx context
 	if engine.ID != path.EngineID || engine.TenantID == nil || int64(*engine.TenantID) != tenantID || engine.LifecycleState != models.EngineLifecycleActive {
 		return 0, commonapi.ErrForbidden
 	}
+	whole := authorizationfacts.ValidWholeScopeRoot(path)
+	if whole && engine.EngineType != "nfs" {
+		return 0, commonapi.ErrForbidden
+	}
 	file := len(path.Segments) > 0 && (path.Segments[len(path.Segments)-1].Term == engineplugin.EngineCatalogTermFile || path.Segments[len(path.Segments)-1].Term == engineplugin.EngineCatalogTermObject)
 	if file && (!commonexecution.ManagerModel3DSourceFormat(engine.EngineType, strings.TrimPrefix(strings.ToLower(pathpkg.Ext(path.StringPath())), ".")) ||
 		(engine.EngineType == "minio") != (path.Segments[len(path.Segments)-1].Term == engineplugin.EngineCatalogTermObject)) {
@@ -49,7 +54,11 @@ func (v *IndependentGrantTargetVerifier) VerifyIndependentReadTarget(ctx context
 	if err != nil {
 		return 0, engineaccess.ErrIndependentGrantSourceUnavailable
 	}
-	if entry == nil || entry.Role != engineplugin.EngineCatalogRoleLeaf ||
+	if whole {
+		if entry == nil || entry.Role != engineplugin.EngineCatalogRoleBranch || entry.Kind != engineplugin.EngineCatalogKindDirectory || entry.Term != engineplugin.EngineCatalogTermDirectory {
+			return 0, commonapi.ErrBadRequest
+		}
+	} else if entry == nil || entry.Role != engineplugin.EngineCatalogRoleLeaf ||
 		(entry.Kind != engineplugin.EngineCatalogKindTable && entry.Kind != engineplugin.EngineCatalogKindCollection && !(file && (entry.Kind == engineplugin.EngineCatalogKindFile || entry.Kind == engineplugin.EngineCatalogKindObject))) || entry.Term != entry.Kind {
 		return 0, commonapi.ErrBadRequest
 	}

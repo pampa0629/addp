@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -217,6 +218,12 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 				protectionRequired(c)
 				return
 			}
+		}
+		req.CheckWholeContainerRead = func(ctx context.Context, root plugin.EngineCatalogPath) error {
+			if h.previewSourceChecker == nil || h.protectionStore == nil || tenant == 0 {
+				return managerprotection.ErrRequired
+			}
+			return h.previewSourceChecker.CheckManagerPreviewRead(ctx, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")), []plugin.EngineCatalogPath{root})
 		}
 		execute := managerprotection.PreviewQueryExecutor(h.previewSourceChecker, store, tenant, req.Engine.ID, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")), protectionSubject)
 		result, err = h.previewResolver.PreviewWithQueryExecutor(c.Request.Context(), req, execute)

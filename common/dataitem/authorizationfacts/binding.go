@@ -12,14 +12,15 @@ import (
 	"github.com/addp/common/models"
 )
 
-// Binding is the immutable minimal approved boundary. NativeTarget and
-// FileComposition are mutually exclusive representations, not separate ACLs.
+// Binding is the immutable minimal approved boundary. NativeTarget,
+// FileComposition and Scope are mutually exclusive representations, not separate ACLs.
 // Observation time and mutable metadata never belong to an approval binding.
 type Binding struct {
 	ItemFingerprint string                   `json:"item_fingerprint"`
 	BoundaryHash    string                   `json:"boundary_hash"`
 	NativeTarget    plugin.EngineCatalogPath `json:"native_target"`
 	FileComposition *FileCompositionBoundary `json:"file_composition,omitempty"`
+	Scope           *ScopeBoundary           `json:"scope,omitempty"`
 }
 
 func (b Binding) Validate() error {
@@ -29,7 +30,13 @@ func (b Binding) Validate() error {
 	p := b.NativeTarget
 	boundary := &AuthorizationBoundary{Layout: "single", NativeTarget: p}
 	itemType, fullName, err := nativeSingleIdentity(p)
-	if b.FileComposition != nil {
+	if b.Scope != nil {
+		if b.FileComposition != nil || !reflect.DeepEqual(p, plugin.EngineCatalogPath{}) || b.Scope.Validate(b.Scope.Root.EngineID) != nil {
+			return errors.New("ambiguous or invalid whole boundary")
+		}
+		p, itemType, fullName, err = b.Scope.Root, "file", b.Scope.Root.StringPath(), nil
+		boundary = &AuthorizationBoundary{Layout: "whole", Scope: b.Scope}
+	} else if b.FileComposition != nil {
 		if !reflect.DeepEqual(p, plugin.EngineCatalogPath{}) {
 			return errors.New("ambiguous DataItem authorization binding")
 		}
@@ -59,12 +66,16 @@ func (f AuthorizationFacts) ApprovedBinding() (Binding, error) {
 	b := Binding{ItemFingerprint: f.ItemFingerprint, BoundaryHash: *f.BoundaryHash, NativeTarget: f.Boundary.NativeTarget}
 	b.NativeTarget.Segments = append([]plugin.EngineCatalogSegment(nil), b.NativeTarget.Segments...)
 	b.FileComposition = f.Boundary.FileComposition.Clone()
+	b.Scope = f.Boundary.Scope.Clone()
 	return b, b.Validate()
 }
 
 func (b Binding) PrimaryTarget() (plugin.EngineCatalogPath, error) {
 	if err := b.Validate(); err != nil {
 		return plugin.EngineCatalogPath{}, err
+	}
+	if b.Scope != nil {
+		return b.Scope.Clone().Root, nil
 	}
 	if b.FileComposition != nil {
 		return b.FileComposition.PrimaryTarget()
@@ -77,6 +88,13 @@ func (b Binding) PrimaryTarget() (plugin.EngineCatalogPath, error) {
 func (b Binding) MarshalJSON() ([]byte, error) {
 	if err := b.Validate(); err != nil {
 		return nil, err
+	}
+	if b.Scope != nil {
+		return json.Marshal(struct {
+			ItemFingerprint string         `json:"item_fingerprint"`
+			BoundaryHash    string         `json:"boundary_hash"`
+			Scope           *ScopeBoundary `json:"scope"`
+		}{b.ItemFingerprint, b.BoundaryHash, b.Scope})
 	}
 	if b.FileComposition != nil {
 		return json.Marshal(struct {
@@ -97,7 +115,7 @@ func (b *Binding) UnmarshalJSON(raw []byte) error {
 	// immutable identity/hash envelope instead of truncating a valid snapshot.
 	fields, err := jsonmap.DecodeObjectStrict(raw, MaxAuthorizationFactsBytes, 64)
 	if err != nil || len(fields) != 3 || fields["item_fingerprint"] == nil || fields["boundary_hash"] == nil ||
-		(fields["native_target"] == nil && fields["file_composition"] == nil) {
+		(fields["native_target"] == nil && fields["file_composition"] == nil && fields["scope"] == nil) {
 		return errors.New("invalid approved boundary JSON")
 	}
 	type wire Binding
@@ -124,6 +142,9 @@ func PrimaryCandidateFingerprint(path plugin.EngineCatalogPath) (string, error) 
 		if len(path.StringPath()) > 4096 {
 			return "", errors.New("invalid primary candidate path")
 		}
+		return models.GenerateItemFingerprint(path.EngineID, path.StringPath()), nil
+	}
+	if ValidWholeScopeRoot(path) {
 		return models.GenerateItemFingerprint(path.EngineID, path.StringPath()), nil
 	}
 	return NativeCandidateFingerprint(path)
@@ -162,7 +183,7 @@ func NativeCandidateFingerprint(path plugin.EngineCatalogPath) (string, error) {
 // ProveNativeTarget must only consume facts read from the trusted Meta owner.
 // Complete identity and typed path equality are mandatory, not a name fallback.
 func (f AuthorizationFacts) ProveNativeTarget(path plugin.EngineCatalogPath) (Binding, error) {
-	if f.Boundary != nil && f.Boundary.FileComposition != nil {
+	if f.Boundary != nil && (f.Boundary.FileComposition != nil || f.Boundary.Scope != nil) {
 		return Binding{}, errors.New("file composition is not a native target proof")
 	}
 	b, err := f.ApprovedBinding()

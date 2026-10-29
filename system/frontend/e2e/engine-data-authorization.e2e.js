@@ -9,6 +9,7 @@ const tablePath = { ...rootPath, segments: [...schemaPath.segments, { term: 'tab
 const ftpRootPath = { engine_id: 2, version: 'catalog.path/v1', segments: [{ term: 'root', kind: 'root', name: '' }] }
 const ftpDirectoryPath = { ...ftpRootPath, segments: [...ftpRootPath.segments, { term: 'directory', kind: 'directory', name: 'Models' }] }
 const ftpFilePath = name => ({ ...ftpRootPath, segments: [...ftpDirectoryPath.segments, { term: 'file', kind: 'file', name }] })
+const gdbPath = name => ({ ...ftpRootPath, segments: [...ftpDirectoryPath.segments, { term: 'directory', kind: 'directory', name }] })
 const minioRootPath = { engine_id: 2, version: 'catalog.path/v1', segments: [{ term: 'service', kind: 'service', name: '' }] }
 const minioBucketPath = { ...minioRootPath, segments: [...minioRootPath.segments, { term: 'bucket', kind: 'bucket', name: 'Models' }] }
 const minioObjectPath = name => ({ ...minioRootPath, segments: [...minioBucketPath.segments, { term: 'object', kind: 'object', name }] })
@@ -57,13 +58,13 @@ test('all records state filter applies before pagination and survives current vi
 async function fixture(page, { allowed = permissions, conflict = false, denied = false, permit = 'deployment_default', permitRows = null, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, changeConflict = false, changeUnknown = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false, factsState = 'complete', denies = [], denyFailure = false, releaseFailure = false, ftp = '', sourceType = 'ftp', factsTarget = null } = {}) {
   const modelRoot = sourceType === 'minio' ? minioRootPath : ftpRootPath
   const modelBranch = sourceType === 'minio' ? minioBucketPath : ftpDirectoryPath
-  const modelPath = sourceType === 'minio' ? minioObjectPath : ftpFilePath
+  const modelPath = ftp === 'gdb' ? gdbPath : sourceType === 'minio' ? minioObjectPath : ftpFilePath
   const modelKind = sourceType === 'minio' ? 'object' : 'file'
   const writes = [], reads = []
   const fingerprintOf = target => createHash('sha256').update(`2:${target.segments.filter(s => s.name).map(s => s.name).join(ftp ? '/' : '.')}`).digest('hex')
-  const rowFor = target => ({ engine_id: '2', item_fingerprint: fingerprintOf(target), full_name: target.segments.filter(s => s.name).map(s => s.name).join('/'), name: target.segments.at(-1).name, item_type: ftp ? modelKind : 'table', state: permit === 'denied' ? 'denied' : permit === 'unknown' ? 'unknown' : 'allowed', source: ['allowed', 'denied'].includes(permit) ? 'explicit' : permit === 'unknown' ? 'deployment_unknown' : 'deployment_default', version: permit === 'unknown' ? '0' : '1' })
+  const rowFor = target => ({ engine_id: '2', item_fingerprint: fingerprintOf(target), full_name: target.segments.filter(s => s.name).map(s => s.name).join(ftp ? '/' : '.'), name: target.segments.at(-1).name, item_type: ftp ? modelKind : 'table', state: permit === 'denied' ? 'denied' : permit === 'unknown' ? 'unknown' : 'allowed', source: ['allowed', 'denied'].includes(permit) ? 'explicit' : permit === 'unknown' ? 'deployment_unknown' : 'deployment_default', version: permit === 'unknown' ? '0' : '1' })
   const items = ftp ? [modelPath(`model.${ftp}`)] : [tablePath, ...(secondTable ? [{ ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'persons' }] }] : [])]
-  let rows = (permitRows || items.map(rowFor)).map(row => ({ ...row, ancestors: row.ancestors || [{ id: '1', name: '', node_type: 'server' }, { id: '2', name: 'outdoor', node_type: 'schema' }] })).sort((a, b) => a.item_fingerprint.localeCompare(b.item_fingerprint))
+  let rows = (permitRows || items.map(rowFor)).map(row => ({ ...row, ancestors: row.ancestors || (ftp ? [{ id: '1', name: '', node_type: sourceType === 'minio' ? 'service' : 'root' }, { id: '2', name: 'Models', node_type: sourceType === 'minio' ? 'bucket' : 'dir' }, ...(ftp === 'gdb' ? [{ id: '3', name: 'model.gdb', node_type: 'dir' }] : [])] : [{ id: '1', name: '', node_type: 'server' }, { id: '2', name: 'outdoor', node_type: 'schema' }]) })).sort((a, b) => a.item_fingerprint.localeCompare(b.item_fingerprint))
   let grants = [...history], failedGrant = false, failedChange = false, failedDeny = false, failedRelease = false
   const restrictions = [...denies]
   await page.addInitScript(language => localStorage.setItem('addp-lang', language), language)
@@ -93,7 +94,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
         if (fingerprint !== candidate) return reply({ error: 'Not a model DataItem', error_code: 'authorization_target_not_found' }, 404)
         return reply({ schema_version: 'meta.data_item_authorization_facts/v1', engine_id: 2, item_fingerprint: fingerprint, item_type: modelKind,
           full_name: `Models/model.${ftp}`, basis_state: factsState, boundary_hash: factsState === 'complete' ? 'c'.repeat(64) : null,
-          boundary: factsState === 'complete' ? { layout: 'single', file_composition: { format: ftp, refs: [
+          boundary: factsState === 'complete' ? ftp === 'gdb' ? { layout: 'whole', scope: { format: 'filegdb', rule_version: 1, root: primary } } : { layout: 'single', file_composition: { format: ftp, refs: [
             ...(ftp === 'obj' ? [{ target: modelPath('model.mtl'), role: 'material_library', required: true, primary: false }] : []),
             ...(['3ds', 'dae', 'obj'].includes(ftp) ? [{ target: modelPath('TEST.PNG'), role: 'texture', required: true, primary: false }] : []),
             { target: primary, role: 'model', required: true, primary: true }
@@ -205,20 +206,11 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
       return reply({ data: filtered.slice((page - 1) * size, page * size), total: filtered.length, page, page_size: size })
     }
     if (path.endsWith('/catalog/entries')) return reply({ data: [], total: 0 })
-    if (path.endsWith('/catalog/children')) {
-      reads.push(path)
-      const segments = request.postDataJSON().path.segments
-      if (ftp) return reply({ nodes: !segments.length ? [{ name: '', path: modelRoot, term: modelRoot.segments.at(-1).term, kind: modelRoot.segments.at(-1).kind, role: 'branch' }] : segments.length === 1 ?
-        [{ name: 'Models', path: modelBranch, term: modelBranch.segments.at(-1).term, kind: modelBranch.segments.at(-1).kind, role: 'branch' }] :
-        [`model.${ftp}`, 'TEST.PNG', 'unrelated.obj'].map(name => ({ name, path: modelPath(name), term: modelKind, kind: modelKind, role: 'leaf' })) })
-      if (!segments.length) return reply({ nodes: [{ name: '', path: rootPath, term: 'server', kind: 'server', role: 'branch' }] })
-      if (segments.length === 1) return reply({ nodes: [{ name: 'outdoor', path: schemaPath, term: 'schema', kind: 'namespace', role: 'branch' }] })
-      if (segments.length === 2) return reply({ nodes: [
-        { name: 'activities', path: tablePath, term: 'table', kind: 'table', role: 'leaf' },
-        ...(secondTable ? [{ name: 'persons', path: { ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'persons' }] }, term: 'table', kind: 'table', role: 'leaf' }] : []),
-        { name: 'activities_view', path: { ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'view', name: 'activities_view' }] }, term: 'table', kind: 'view', role: 'leaf' }
-      ] })
-      throw new Error('Unexpected leaf browse')
+    if (path.endsWith('/data-items')) {
+      reads.push(request.url())
+      const query = new URL(request.url()).searchParams, page = Number(query.get('page')), size = Number(query.get('page_size'))
+      const data = rows.map(({ engine_id, item_fingerprint, name, full_name, item_type, ancestors }) => ({ engine_id, item_fingerprint, name, full_name, item_type, ancestors }))
+      return reply({ data: data.slice((page-1)*size,page*size), total:data.length,page,page_size:size,total_pages:Math.ceil(data.length/size) })
     }
     const engine = { id: '2', name: '授权验证 PostgreSQL', engine_type: ftp ? sourceType : 'postgresql', engine_origin: 'general', lifecycle_state: 'active', connection_status: 'online', is_builtin: false, capabilities: { schema_version: 'engine.capabilities/v1', storage: {} } }
     if (path.endsWith('/engine-types')) return reply([])
@@ -296,10 +288,13 @@ test('integrated table filter closes its tree without closing the authorization 
   expect(writes).toEqual([])
 })
 
-test('table text filtering remains available without resource tree permission', async ({ page }) => {
+test('Meta identity tree and text filtering do not require native catalog permission', async ({ page }) => {
   const { reads, writes } = await fixture(page, { allowed: grantPermissions.filter(key => key !== 'system.engine_catalog.read'), history: [historicalGrant()] })
   await page.goto('/engines/2?tab=data-authorization')
-  await expect(page.getByRole('button', { name: '资源树选择', exact: true })).toBeDisabled()
+  await page.getByRole('button', { name: '资源树选择', exact: true }).click()
+  await expect(page.locator('.resource-tree-select__panel')).toBeVisible()
+  await expect.poll(() => reads.some(url => /\/data-items\?/.test(url))).toBe(true)
+  await page.getByTestId('source-grant-table-filter').press('Escape')
   await page.getByTestId('source-grant-table-filter').fill('not-found')
   await expect.poll(() => reads.some(url => url.includes('table_search=not-found'))).toBe(true)
   expect(reads.some(url => url.endsWith('/catalog/children'))).toBe(false)
@@ -644,23 +639,23 @@ test('failed recipient name lookup does not erase grant history or imply deletio
   await expect(history).toContainText('已签发')
   expect(writes).toEqual([])
 })
-async function selectData(page, schema = false) {
+async function selectData(page, schema = false, incomplete = false) {
   const panel = page.getByTestId('engine-data-authorization')
   await expect(page.getByTestId('authorization-workspace-toolbar')).toBeVisible()
   if (await page.getByTestId('authorization-new').isVisible()) await page.getByTestId('authorization-new').click()
   await page.locator('.resource-tree-select__toggle').click()
   const picker = page.locator('.resource-tree-select__panel')
-  if (schema) await picker.locator('.picker-node-label').filter({ hasText: /^outdoor$/ }).click()
+  if (schema) await picker.getByRole('treeitem', { name: 'outdoor', exact: true }).click()
   else {
     const namespace = picker.getByRole('treeitem', { name: 'outdoor', exact: true })
     if (await namespace.getAttribute('aria-expanded') !== 'true') await namespace.locator(':scope > .el-tree-node__content .el-tree-node__expand-icon').click()
     await picker.getByRole('treeitem', { name: 'activities', exact: true }).click()
   }
   await page.getByTestId('approval-add-selection').click()
-  await expect(page.getByTestId('approval-targets')).toBeVisible()
+  if (!incomplete) await expect(page.getByTestId('approval-targets')).toBeVisible()
   return panel
 }
-test('new authorization unifies native search and tree selection without granting from free text', async ({ page }, testInfo) => {
+test('new authorization unifies Meta identity search and tree selection without granting from free text', async ({ page }, testInfo) => {
   await page.clock.install()
   const { reads, writes } = await fixture(page, { allowed: grantPermissions, permit: 'allowed' })
   await page.goto('/engines/2?tab=data-authorization')
@@ -739,15 +734,15 @@ async function selectFTPModel(page, format) {
   await page.locator('.resource-tree-select__panel').getByRole('button', { name: new RegExp(`model\\.${format}`) }).click()
   await page.getByTestId('approval-add-selection').click()
 }
-for (const [sourceType, format] of [['ftp','ifc'], ['ftp','3ds'], ['ftp','dae'], ['minio','ifc'], ['minio','3ds'], ['minio','dae'], ['ftp','obj'], ['minio','obj'], ['ftp','stl'], ['nfs','stl'], ['minio','stl'], ['ftp','glb'], ['nfs','glb'], ['minio','glb'], ['ftp','fbx'], ['nfs','fbx'], ['minio','fbx']]) test(`${sourceType} ${format} uses one full DataItem Grant, confirms constituents and supports exact filtering and revocation`, async ({ page }, testInfo) => {
+for (const [sourceType, format] of [['ftp','ifc'], ['ftp','3ds'], ['ftp','dae'], ['minio','ifc'], ['minio','3ds'], ['minio','dae'], ['ftp','obj'], ['minio','obj'], ['ftp','stl'], ['nfs','stl'], ['minio','stl'], ['ftp','glb'], ['nfs','glb'], ['minio','glb'], ['ftp','fbx'], ['nfs','fbx'], ['minio','fbx'], ['nfs','gdb']]) test(`${sourceType} ${format} uses one full DataItem Grant, confirms constituents and supports exact filtering and revocation`, async ({ page }, testInfo) => {
   const { reads, writes } = await fixture(page, { allowed: [...grantPermissions, 'catalog.entry.read'], ftp: format, sourceType })
-  const expectedPath = sourceType === 'minio' ? minioObjectPath : ftpFilePath
+  const expectedPath = format === 'gdb' ? gdbPath : sourceType === 'minio' ? minioObjectPath : ftpFilePath
   await selectFTPModel(page, format)
   await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别完整')
   await grantDraft(page)
   await page.getByTestId('source-grant-confirm').click()
   const confirmation = page.locator('.el-message-box')
-  await expect(confirmation).toContainText('完整文件组成')
+  await expect(confirmation).toContainText(format === 'gdb' ? '当前及以后新增的子表／要素类' : '完整文件组成')
   await expect(confirmation).toContainText(`Models / model.${format}`)
   if (format === 'stl' || format === 'glb' || format === 'fbx') {
     await expect(confirmation).not.toContainText('TEST.PNG')
@@ -762,6 +757,8 @@ for (const [sourceType, format] of [['ftp','ifc'], ['ftp','3ds'], ['ftp','dae'],
   expect(writes).toHaveLength(1)
   expect(writes[0].body).toMatchObject({ catalog_path: expectedPath(`model.${format}`), item_fingerprint: createHash('sha256').update(`2:Models/model.${format}`).digest('hex'), expected_boundary_hash: 'c'.repeat(64), direct_permission_source: 'deployment_default', direct_permission_version: '1', action: 'read', recipient_id: '33' })
   expect(writes[0].body.file_composition).toBeUndefined()
+  expect(writes[0].body.scope).toBeUndefined()
+  expect(writes[0].body.scope_boundary).toBeUndefined()
   const filter = page.getByTestId('source-grant-table-filter')
   await filter.press('ArrowDown')
   const picker = page.locator('.resource-tree-select__panel')
@@ -779,36 +776,38 @@ for (const [sourceType, format] of [['ftp','ifc'], ['ftp','3ds'], ['ftp','dae'],
   expect(writes[1].path).toMatch(/\/access_grants\/[^/]+\/revoke$/)
   await page.screenshot({ path: testInfo.outputPath(`${sourceType}-${format}-revoked.png`), fullPage: true })
 })
-for (const sourceType of ['ftp', 'minio']) test(`${sourceType} branch and texture navigation never becomes a selection or write`, async ({ page }) => {
-  const { writes } = await fixture(page, { allowed: grantPermissions, ftp: '3ds', sourceType })
+for (const sourceType of ['ftp', 'minio']) test(`${sourceType} Meta tree excludes composition fragments and node selection alone never writes`, async ({ page }) => {
+  const { writes, reads } = await fixture(page, { allowed: grantPermissions, ftp: '3ds', sourceType })
   await page.goto('/engines/2?tab=data-authorization'); await page.getByTestId('authorization-new').click()
-  const input = page.getByTestId('approval-resource-input')
-  await input.press('ArrowDown')
+  await page.getByTestId('approval-resource-input').press('ArrowDown')
   const picker = page.locator('.resource-tree-select__panel'), directory = picker.getByRole('treeitem', { name: 'Models', exact: true })
   await directory.locator(':scope > .el-tree-node__content .el-tree-node__expand-icon').click()
-  await picker.getByRole('treeitem', { name: 'TEST.PNG', exact: true }).click()
-  await expect(page.getByTestId('approval-add-selection')).toBeDisabled()
+  await expect(picker.getByRole('treeitem', { name: 'TEST.PNG', exact: true })).toHaveCount(0)
+  await expect(picker.getByRole('treeitem', { name: 'model.3ds', exact: true })).toBeVisible()
   await directory.locator(':scope > .el-tree-node__content').getByText('Models', { exact: true }).click()
-  await expect(page.getByTestId('approval-add-selection')).toBeDisabled()
+  await expect(page.getByTestId('approval-add-selection')).toBeEnabled()
+  expect(reads.some(url=>url.includes('/catalog/children'))).toBe(false)
   expect(writes).toEqual([])
 })
 for (const factsState of ['incomplete', 'needs_refresh']) test(`FTP ${factsState} cannot issue a whole-model Grant`, async ({ page }) => {
   const { writes } = await fixture(page, { allowed: grantPermissions, ftp: '3ds', factsState })
-  await selectFTPModel(page, '3ds'); await grantDraft(page)
-  await expect(page.getByTestId('source-grant-confirm')).toBeDisabled()
+  await selectFTPModel(page, '3ds')
+  await expect(page.getByTestId('engine-data-authorization').locator('.el-alert--error')).toBeVisible()
+  await expect(page.getByTestId('approval-targets')).toHaveCount(0)
+  await expect(page.getByTestId('source-grant-confirm')).toHaveCount(0)
   expect(writes).toEqual([])
 })
 for (const [factsState, label] of [
   ['missing', '未找到数据项'], ['incomplete', '基础识别不完整'], ['needs_refresh', '边界需要刷新'],
   ['unsupported', '当前类型暂不支持'], ['failed', '核对失败'], ['forbidden', '无数据项核对权限'], ['unknown404', '核对失败']
 ]) {
-  test(`native tree selection cannot issue without complete DataItem facts: ${factsState}`, async ({ page }) => {
+  test(`Meta identity selection cannot issue without complete DataItem facts: ${factsState}`, async ({ page }) => {
     const { reads, writes } = await fixture(page, { allowed: grantPermissions, permit: 'allowed', factsState })
     await page.goto('/engines/2?tab=data-authorization')
-    await selectData(page); await grantDraft(page)
-    await expect(page.getByTestId('approval-basis-status')).toContainText(label)
-    await expect(page.getByTestId('source-grant-confirm')).toBeDisabled()
-    await expect(page.getByTestId('source-grant-reason')).toHaveValue('Explicit read permission')
+    await selectData(page, false, true)
+    await expect(page.getByTestId('engine-data-authorization').locator('.el-alert--error')).toBeVisible()
+    await expect(page.getByTestId('approval-targets')).toHaveCount(0)
+    await expect(page.getByTestId('source-grant-confirm')).toHaveCount(0)
     expect(reads.some(url => url.includes('/authorization-facts'))).toBe(true)
     expect(writes).toEqual([])
   })
@@ -836,12 +835,14 @@ test('DataItem basis identity ignores PostgreSQL jsonb object key ordering', asy
   expect(writes[0].body.catalog_path).toEqual(tablePath)
   expect(writes[0].body.item_fingerprint).toBe(createHash('sha256').update('2:outdoor.activities').digest('hex'))
   expect(writes[0].body.expected_boundary_hash).toBe('b'.repeat(64))
-  expect(reads.filter(url => url.includes('/authorization-facts'))).toHaveLength(4)
+  expect(reads.filter(url => url.includes('/authorization-facts'))).toHaveLength(5)
 })
 test('DataItem basis recheck refreshes only facts and preserves the grant draft', async ({ page }) => {
-  const { reads, writes, setFactsState } = await fixture(page, { allowed: grantPermissions, permit: 'allowed', factsState: 'missing' })
+  const { reads, writes, setFactsState } = await fixture(page, { allowed: grantPermissions, permit: 'allowed', factsState: 'complete' })
   await page.goto('/engines/2?tab=data-authorization')
   await selectData(page); await grantDraft(page)
+  setFactsState('missing')
+  await page.getByTestId('approval-basis-refresh').click()
   await expect(page.getByTestId('approval-basis-status')).toContainText('未找到数据项')
   setFactsState('complete')
   const before = reads.filter(url => url.includes('/authorization-facts')).length
@@ -854,9 +855,9 @@ test('DataItem basis recheck refreshes only facts and preserves the grant draft'
 })
 test('DataItem facts observation is skipped without its function permission', async ({ page }) => {
   const { reads, writes } = await fixture(page, { allowed: permissions.filter(permission => permission !== 'system.engine_access_grant.read') })
-  await page.goto('/engines/2?tab=data-authorization'); await selectData(page)
-  await expect(page.getByTestId('approval-basis-status')).toContainText('无数据项核对权限')
-  await expect(page.getByTestId('approval-basis-refresh')).toBeDisabled()
+  await page.goto('/engines/2?tab=data-authorization'); await page.getByTestId('authorization-new').click()
+  await expect(page.getByTestId('approval-resource-input')).toHaveCount(0)
+  await expect(page.getByTestId('engine-data-authorization')).toContainText('源数据授权读取权限')
   expect(reads.some(url => url.includes('/authorization-facts'))).toBe(false)
   expect(writes).toEqual([])
 })
@@ -868,7 +869,7 @@ test('complete DataItem display cannot replace fresh facts verification at signi
   await page.getByTestId('source-grant-confirm').click()
   await expect(page.getByTestId('source-grant-form').locator('.el-alert--error')).toBeVisible()
   await expect(page.getByTestId('source-grant-reason')).toHaveValue('Explicit read permission')
-  expect(reads.filter(url => url.includes('/authorization-facts'))).toHaveLength(2)
+  expect(reads.filter(url => url.includes('/authorization-facts'))).toHaveLength(3)
   expect(writes).toEqual([])
   await page.getByTestId('approval-basis-refresh').click()
   await expect(page.getByTestId('approval-basis-status')).toContainText('基础识别不完整')
@@ -1121,11 +1122,14 @@ test('rotation cancels an open grant confirmation without submitting or losing i
   await expect(page.getByTestId('source-grant-reason')).toHaveValue('Explicit read permission')
   expect(writes).toEqual([])
 })
-test('missing engine catalog permission explains why source selection is unavailable', async ({ page }) => {
+test('new grants select Meta identities without native catalog permission', async ({ page }) => {
   const { reads, writes } = await fixture(page, { allowed: grantPermissions.filter(permission => permission !== 'system.engine_catalog.read') })
   await page.goto('/engines/2?tab=data-authorization')
   await page.getByTestId('authorization-new').click()
-  await expect(page.getByTestId('engine-data-authorization')).toContainText('选择数据项需要引擎目录浏览权限')
+  await expect(page.getByTestId('approval-resource-input')).toBeVisible()
+  await page.getByTestId('approval-resource-input').press('ArrowDown')
+  await expect(page.locator('.resource-tree-select__panel')).toBeVisible()
+  await expect.poll(() => reads.some(url => /\/data-items\?/.test(url))).toBe(true)
   expect(reads.some(path => path.includes('/catalog/'))).toBe(false); expect(writes).toEqual([])
 })
 test('conflicting permission observation retains the original command and does not fall back', async ({ page }) => {
@@ -1474,7 +1478,7 @@ test('direct-permission tree loads complete pages before filtering and preserves
 
 test('selected denied DataItem remains in the batch and blocks signing instead of silently skipping it', async ({ page }) => {
   const second = { ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'persons' }] }
-  const permitRows = [tablePath, second].map((path, index) => ({ engine_id: '2', item_fingerprint: createHash('sha256').update(`2:outdoor.${path.segments.at(-1).name}`).digest('hex'), full_name: `outdoor/${path.segments.at(-1).name}`, state: index ? 'denied' : 'allowed', source: 'explicit', version: '1' }))
+  const permitRows = [tablePath, second].map((path, index) => ({ engine_id: '2', item_fingerprint: createHash('sha256').update(`2:outdoor.${path.segments.at(-1).name}`).digest('hex'), name: path.segments.at(-1).name, item_type: 'table', full_name: `outdoor.${path.segments.at(-1).name}`, state: index ? 'denied' : 'allowed', source: 'explicit', version: '1' }))
   const { reads, writes } = await fixture(page, { allowed: grantPermissions, secondTable: true, permitRows })
   await page.goto('/engines/2?tab=data-authorization')
   expect(reads.some(url => url.includes('/direct-permission'))).toBe(false)

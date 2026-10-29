@@ -1256,6 +1256,7 @@
       "model3DSourcePath": "源路径",
       "uploadSuccessRefreshed": "上传成功，目录树已刷新",
       "importSuccessRefreshed": "导入成功，目录树已刷新",
+      "containerIndexUnavailable": "已识别为数据容器，尚未采集内部子项索引。请深度刷新数据项后查看。",
       "itemRefreshRecommendedTitle": "建议刷新数据项",
       "itemRefreshRecommendedText": "当前预览使用已落库的基础元数据读取；刷新数据项可补齐深度扫描元数据。",
       "accessIndexRefreshTitle": "当前使用普通读取",

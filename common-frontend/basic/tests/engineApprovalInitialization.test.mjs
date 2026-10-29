@@ -270,3 +270,18 @@ test('glTF multi approval retains manifest, buffer and image; rejects false layo
     assert.equal((await observeNativeApprovalBinding(target,async()=>embedded)).file_composition.refs.length,1)
   }
 })
+
+test('whole FileGDB keeps its root binding without freezing child membership', async () => {
+ const root = { engine_id: 14, version: 'catalog.path/v1', segments: [{term:'root',kind:'root',name:''},{term:'directory',kind:'directory',name:'exports'},{term:'directory',kind:'directory',name:'public_test.gdb'}] }
+ const scope = { format:'filegdb',rule_version:1,root }
+ const read = async (_,fp) => ({schema_version:'meta.data_item_authorization_facts/v1',item_fingerprint:fp,engine_id:14,item_type:'file',full_name:'exports/public_test.gdb',basis_state:'complete',boundary_hash:'c'.repeat(64),boundary:{layout:'whole',scope}})
+ const observed=await readNativeApprovalFacts(root,read)
+ assert.deepEqual(observed.binding.scope,scope)
+ assert.equal(observed.binding.native_target,undefined)
+ assert.equal(observed.binding.file_composition,undefined)
+ assert.deepEqual(approvedBoundaryFields(root,observed.binding),{item_fingerprint:observed.binding.item_fingerprint,expected_boundary_hash:'c'.repeat(64)})
+ for(const bad of [{...scope,rule_version:2},{...scope,children:['a']},{...scope,root:{...root,engine_id:15}}]) {
+   await assert.rejects(readNativeApprovalFacts(root,async(...args)=>({...await read(...args),boundary:{layout:'whole',scope:bad}})))
+ }
+ await assert.rejects(readNativeApprovalFacts(root,async(...args)=>({...await read(...args),boundary:{layout:'whole',scope,native_target:root}})))
+})

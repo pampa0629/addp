@@ -48,6 +48,15 @@ func (s *Service) resolveReadBindings(ctx context.Context, tenantID int64, paths
 		if err != nil {
 			return nil, ErrAuthorizationBoundaryChanged
 		}
+		if binding.Scope != nil {
+			engine, engineErr := s.repository.engine(ctx, tenantID, int64(path.EngineID), false)
+			if engineErr != nil {
+				return nil, engineErr
+			}
+			if engine.EngineType != "nfs" {
+				return nil, commonapi.ErrForbidden
+			}
+		}
 		result = append(result, binding)
 	}
 	return result, nil
@@ -74,7 +83,7 @@ func (s *Service) resolveApprovedBoundary(ctx context.Context, tenantID int64, p
 // Validate only the submitted identity/hash shape before owner facts are read.
 // A file hash cannot prove a composition until resolveApprovedBoundary succeeds.
 func validateExpectedPrimary(path plugin.EngineCatalogPath, fingerprint, hash string) error {
-	if len(path.Segments) > 0 && (path.Segments[len(path.Segments)-1].Term == plugin.EngineCatalogTermFile || path.Segments[len(path.Segments)-1].Term == plugin.EngineCatalogTermObject) {
+	if authorizationfacts.ValidWholeScopeRoot(path) || len(path.Segments) > 0 && (path.Segments[len(path.Segments)-1].Term == plugin.EngineCatalogTermFile || path.Segments[len(path.Segments)-1].Term == plugin.EngineCatalogTermObject) {
 		candidate, err := authorizationfacts.PrimaryCandidateFingerprint(path)
 		if err != nil || candidate != fingerprint || !authorizationfacts.ValidItemFingerprint(hash) {
 			return commonapi.ErrBadRequest
@@ -118,4 +127,31 @@ func (s *Service) GetAuthorizationFacts(ctx context.Context, actor Actor, engine
 		return nil, commonapi.ErrNotFound
 	}
 	return facts, nil
+}
+
+// Identity-only discovery for authorization candidates. No source enumeration,
+// permission settings or contents are returned by this route.
+func (s *Service) ListAuthorizationItems(ctx context.Context, actor Actor, engineID int64, page, size int) (*authorizationfacts.IdentityPage, error) {
+	query := authorizationfacts.IdentityQuery{EngineID: uint(engineID), Page: page, PageSize: size}
+	if engineID <= 0 || query.Validate() != nil {
+		return nil, commonapi.ErrBadRequest
+	}
+	qualify := func() error {
+		return s.withEngineManagementScope(ctx, actor, engineID, authorization.PermissionSystemEngineAccessGrantRead, false,
+			func(_ *Repository, check func() error) error { return check() })
+	}
+	if err := qualify(); err != nil {
+		return nil, err
+	}
+	if s.dataItemIdentities == nil {
+		return nil, ErrAuthorizationFactsUnavailable
+	}
+	result, err := s.dataItemIdentities.QueryDataItemIdentities(ctx, uint(actor.TenantID), query)
+	if qualificationErr := qualify(); qualificationErr != nil {
+		return nil, qualificationErr
+	}
+	if err != nil || result == nil || result.Validate(query) != nil {
+		return nil, ErrAuthorizationFactsUnavailable
+	}
+	return result, nil
 }

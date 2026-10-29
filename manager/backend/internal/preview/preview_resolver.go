@@ -115,29 +115,30 @@ func (r *PreviewResolver) runtimeDescriptorClientForTenant(tenantID *uint) insta
 
 // PreviewRequest 新的预览请求（基于 ResourceLocator）
 type PreviewResolverRequest struct {
-	TrajectorySelection *models.TrajectorySelection
-	CheckTrajectoryRead func() error
-	CheckTableSchema    func([]datatype.FieldInfo) error
-	Locator             *resourcetree.ResourceLocator // 资源定位符
-	Engine              *commonModels.Engine          // 引擎信息
-	Metadata            *commonModels.MetaNode        // 可选：Meta 节点数据
-	Pagination          *Pagination                   // 分页参数
-	TenantID            *uint                         // 租户 ID
-	MetaItemID          *uint                         // MetaItem ID，只有数据项预览存在
-	ItemName            string                        // MetaItem name，只有数据项预览存在
-	ItemFullName        string                        // MetaItem full_name，只有数据项预览存在
-	ItemFingerprint     string                        // 标准数据项指纹，GenerateItemFingerprint(engine_id, full_name)
-	ItemType            string                        // 数据项类型（如 "table"），来自 MetaItem
-	ItemRowCount        *int64                        // 表/集合行数，来自 MetaItem.RowCount
-	ItemScannedDepth    string                        // Meta item 当前扫描深度
-	PhysicalPath        string                        // 物理路径（来自 meta_item.attributes.storage.physical_path）
-	ScopePath           string                        // 范围路径（来自 meta_item.attributes.storage.physical_path）
-	ChildName           string                        // 容器内部 child 名称，例如 Excel sheet
-	RefPath             string                        // multi child 内的单个ref 路径，指向容器内原始对象
-	NestedChildPath     string                        // 当前 child 是容器时，继续寻址其内部 child 的相对路径
-	GraphSample         plugin.GraphSampleFilter      // 图预览样本过滤条件
-	DataScope           dataprofile.DataScope         // Manager 剖析内部使用的数据范围；公共预览不接受该参数
-	KeyValueOptions     plugin.KeyValueReadOptions
+	TrajectorySelection     *models.TrajectorySelection
+	CheckTrajectoryRead     func() error
+	CheckWholeContainerRead func(context.Context, plugin.EngineCatalogPath) error
+	CheckTableSchema        func([]datatype.FieldInfo) error
+	Locator                 *resourcetree.ResourceLocator // 资源定位符
+	Engine                  *commonModels.Engine          // 引擎信息
+	Metadata                *commonModels.MetaNode        // 可选：Meta 节点数据
+	Pagination              *Pagination                   // 分页参数
+	TenantID                *uint                         // 租户 ID
+	MetaItemID              *uint                         // MetaItem ID，只有数据项预览存在
+	ItemName                string                        // MetaItem name，只有数据项预览存在
+	ItemFullName            string                        // MetaItem full_name，只有数据项预览存在
+	ItemFingerprint         string                        // 标准数据项指纹，GenerateItemFingerprint(engine_id, full_name)
+	ItemType                string                        // 数据项类型（如 "table"），来自 MetaItem
+	ItemRowCount            *int64                        // 表/集合行数，来自 MetaItem.RowCount
+	ItemScannedDepth        string                        // Meta item 当前扫描深度
+	PhysicalPath            string                        // 物理路径（来自 meta_item.attributes.storage.physical_path）
+	ScopePath               string                        // 范围路径（来自 meta_item.attributes.storage.physical_path）
+	ChildName               string                        // 容器内部 child 名称，例如 Excel sheet
+	RefPath                 string                        // multi child 内的单个ref 路径，指向容器内原始对象
+	NestedChildPath         string                        // 当前 child 是容器时，继续寻址其内部 child 的相对路径
+	GraphSample             plugin.GraphSampleFilter      // 图预览样本过滤条件
+	DataScope               dataprofile.DataScope         // Manager 剖析内部使用的数据范围；公共预览不接受该参数
+	KeyValueOptions         plugin.KeyValueReadOptions
 }
 
 // Pagination 分页参数
@@ -218,6 +219,9 @@ func (r *PreviewResolver) PreviewWithQueryExecutor(ctx context.Context, req *Pre
 		return nil, err
 	}
 	providerReq.executePrepared = execute
+	if err := checkWholeContainerRead(ctx, req, providerReq); err != nil {
+		return nil, err
+	}
 
 	// 4. 按 Meta 标准属性确定性选择预览插件
 	if err := validateTrajectoryTarget(providerReq); err != nil {

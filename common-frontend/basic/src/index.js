@@ -182,3 +182,5 @@ export { default as CleanupAdmission } from './components/CleanupAdmission.vue'
 export { default as CleanupModuleResults } from './components/CleanupModuleResults.vue'
 export * from './utils/cleanupObservation.mjs'
 export { createLatestRequestScope } from './utils/latestRequestScope.mjs'
+
+export { MAX_IDENTITY_TREE_ITEMS, readDataItemIdentityTree, buildDataItemIdentityTree } from './utils/dataItemIdentityTree.mjs'
