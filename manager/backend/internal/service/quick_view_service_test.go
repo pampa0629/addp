@@ -3156,7 +3156,9 @@ func TestQuickViewServiceUpdatesPreviewState(t *testing.T) {
 		},
 	}
 
-	if err := svc.UpdateViewStateByIdentity(context.Background(), identity, viewState); err != nil {
+	if err := svc.UpdateViewStateByIdentity(context.Background(), identity, viewState, func(context.Context) (*QuickViewCapability, error) {
+		return &QuickViewCapability{PreferredMode: models.PreviewModeBasicPreview}, nil
+	}); err != nil {
 		t.Fatalf("update view state: %v", err)
 	}
 

@@ -357,7 +357,7 @@ func newTileCacheTaskServiceTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE manager.preview_state (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
 			locator TEXT, preferred_mode TEXT NOT NULL DEFAULT 'basic_preview', view_state JSON NOT NULL DEFAULT '{}',
-			created_at DATETIME, updated_at DATETIME)`,
+			created_at DATETIME, updated_at DATETIME, UNIQUE(tenant_id, item_fingerprint))`,
 		`CREATE TABLE manager.vector_materialized_view (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL, item_id INTEGER,
 			locator TEXT, task_id INTEGER, last_execution_id TEXT, source_engine_id INTEGER NOT NULL, source_schema TEXT NOT NULL,

@@ -1592,9 +1592,10 @@ func (s *QuickViewService) UpdatePreferredModeByIdentity(
 }
 
 func (s *QuickViewService) UpdateViewStateByIdentity(
-	_ context.Context,
+	ctx context.Context,
 	identity QuickViewIdentity,
 	viewState commonModels.JSONMap,
+	capabilityLoader func(context.Context) (*QuickViewCapability, error),
 ) error {
 	if identity.TenantID == 0 {
 		identity.TenantID = 1
@@ -1606,7 +1607,25 @@ func (s *QuickViewService) UpdateViewStateByIdentity(
 	if viewState == nil {
 		viewState = commonModels.JSONMap{}
 	}
-	return s.repo.UpdateViewState(identity.TenantID, identity.ItemFingerprint, identity.Locator, normalizePreviewViewStatePayload(viewState))
+	initialMode := ""
+	stored, err := s.repo.GetByIdentity(identity.TenantID, identity.ItemFingerprint, identity.Locator)
+	if err == nil {
+		initialMode = stored.PreferredMode
+	} else if errors.Is(err, commonapi.ErrNotFound) || errors.Is(err, gorm.ErrRecordNotFound) {
+		capability, loadErr := capabilityLoader(ctx)
+		if loadErr != nil {
+			return loadErr
+		}
+		if capability != nil {
+			initialMode = capability.PreferredMode
+		}
+	} else {
+		return err
+	}
+	if initialMode != models.PreviewModeBasicPreview && initialMode != models.PreviewModeMapQuickView {
+		return fmt.Errorf("%w: %s", ErrQuickViewInvalidPreferredMode, initialMode)
+	}
+	return s.repo.UpdateViewState(identity.TenantID, identity.ItemFingerprint, identity.Locator, initialMode, normalizePreviewViewStatePayload(viewState))
 }
 
 func normalizePreviewViewStatePayload(viewState commonModels.JSONMap) commonModels.JSONMap {

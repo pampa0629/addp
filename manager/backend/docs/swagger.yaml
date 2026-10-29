@@ -5269,10 +5269,12 @@ paths:
     patch:
       consumes:
       - application/json
-      description: 以 Resource Locator 为数据项身份更新预览交互状态。view_state 是统一 JSON 字段，顶层按 basic_preview
-        / quick_view 区分显示模式，模式内按 map / scene_3d / table 区分渲染域。 | Update preview interaction
-        state by Resource Locator. view_state is a unified JSON field grouped by display
-        mode basic_preview / quick_view, then by render domain map / scene_3d / table.
+      description: 以 Resource Locator 为数据项身份更新预览交互状态。首次保存沿用快显能力计算的默认模式；已有模式偏好不被交互状态覆盖。view_state
+        顶层按 basic_preview / quick_view 区分显示模式，模式内按 map / scene_3d / table 区分渲染域。 |
+        Update interaction state by Resource Locator. The initial mode follows Quick
+        View Capability; existing mode preferences are preserved. view_state is grouped
+        by display mode basic_preview / quick_view, then by render domain map / scene_3d
+        / table.
       parameters:
       - description: 预览交互状态 | Preview state
         in: body

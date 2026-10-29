@@ -10,6 +10,7 @@ import (
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // PreviewStateRepository 维护数据项预览模式偏好和交互视角状态。
@@ -41,26 +42,6 @@ func (r *PreviewStateRepository) GetByIdentity(tenantID uint, itemFingerprint st
 		return nil, commonrepo.WrapDBError(err)
 	}
 	return &state, nil
-}
-
-func (r *PreviewStateRepository) EnsurePreference(state *models.PreviewState) error {
-	if state == nil {
-		return nil
-	}
-	existing, err := r.GetByIdentity(state.TenantID, state.ItemFingerprint, state.Locator)
-	if err != nil {
-		if err == commonapi.ErrNotFound {
-			if strings.TrimSpace(state.PreferredMode) == "" {
-				state.PreferredMode = models.PreviewModeBasicPreview
-			}
-			return r.db.Create(state).Error
-		}
-		return err
-	}
-	if strings.TrimSpace(state.PreferredMode) == "" || strings.TrimSpace(state.PreferredMode) == existing.PreferredMode {
-		return nil
-	}
-	return r.db.Model(&models.PreviewState{}).Where("id = ?", existing.ID).Update("preferred_mode", state.PreferredMode).Error
 }
 
 func (r *PreviewStateRepository) GetByID(id uint) (*models.PreviewState, error) {
@@ -133,20 +114,10 @@ func (r *PreviewStateRepository) UpdatePreferredMode(
 	if itemFingerprint == "" {
 		return errors.New("preview state item_fingerprint is required")
 	}
-	updates := map[string]interface{}{
-		"preferred_mode": mode,
-		"locator":        strings.TrimSpace(locator),
-	}
-	result := r.db.Model(&models.PreviewState{}).
-		Where("tenant_id = ? AND item_fingerprint = ?", tenantID, itemFingerprint).
-		Updates(updates)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected > 0 {
-		return nil
-	}
-	return r.db.Create(&models.PreviewState{
+	return r.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "item_fingerprint"}},
+		DoUpdates: clause.AssignmentColumns([]string{"preferred_mode", "locator", "updated_at"}),
+	}).Create(&models.PreviewState{
 		TenantID:        tenantID,
 		ItemFingerprint: itemFingerprint,
 		Locator:         strings.TrimSpace(locator),
@@ -158,6 +129,7 @@ func (r *PreviewStateRepository) UpdateViewState(
 	tenantID uint,
 	itemFingerprint string,
 	locator string,
+	initialPreferredMode string,
 	viewState commonModels.JSONMap,
 ) error {
 	itemFingerprint = strings.TrimSpace(itemFingerprint)
@@ -167,24 +139,14 @@ func (r *PreviewStateRepository) UpdateViewState(
 	if viewState == nil {
 		viewState = commonModels.JSONMap{}
 	}
-	updates := map[string]interface{}{
-		"view_state": viewState,
-		"locator":    strings.TrimSpace(locator),
-	}
-	result := r.db.Model(&models.PreviewState{}).
-		Where("tenant_id = ? AND item_fingerprint = ?", tenantID, itemFingerprint).
-		Updates(updates)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected > 0 {
-		return nil
-	}
-	return r.db.Create(&models.PreviewState{
+	return r.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "item_fingerprint"}},
+		DoUpdates: clause.AssignmentColumns([]string{"view_state", "locator", "updated_at"}),
+	}).Create(&models.PreviewState{
 		TenantID:        tenantID,
 		ItemFingerprint: itemFingerprint,
 		Locator:         strings.TrimSpace(locator),
-		PreferredMode:   models.PreviewModeBasicPreview,
+		PreferredMode:   initialPreferredMode,
 		ViewState:       viewState,
 	}).Error
 }
