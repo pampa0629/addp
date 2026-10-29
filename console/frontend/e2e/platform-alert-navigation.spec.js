@@ -2,6 +2,38 @@ import { expect, test } from '@playwright/test'
 import { mockModuleQueryAPI } from '../../../system/frontend/e2e/module-query.fixture'
 import { backend, identity, localTimeInput } from '../../../monitor/frontend/e2e/monitoring-targets.fixture'
 
+// Hold only the active iframe's real time-filter publication, preserving its identity.
+async function installAlertTimePublicationGate(page) {
+  await page.addInitScript(() => {
+    if (window.parent !== window) return
+    const held = []
+    let armed = false
+    const handler = event => {
+      const message = event.data
+      const iframe = document.querySelector('iframe[data-testid="module-iframe"]')
+      if (!armed || event.source !== iframe?.contentWindow || event.origin !== new URL(iframe.src).origin ||
+          message?.type !== 'addp:console-bridge:request' || message.channel !== 'console-navigation' ||
+          message.payload?.synchronized !== true || !new URL(message.payload.route, location.origin).searchParams.has('time_from')) return
+      event.stopImmediatePropagation()
+      held.push(event)
+      // Match the existing bridge's pending acknowledgement while the scheduler is held.
+      event.source.postMessage({ type: 'addp:console-bridge:response', source: 'addp-console',
+        channel: message.channel, requestId: message.requestId, pending: true }, event.origin)
+    }
+    window.addEventListener('message', handler, true)
+    window.__alertTimePublication = {
+      arm: () => { armed = true },
+      routes: () => held.map(event => event.data.payload.route),
+      release: () => {
+        window.removeEventListener('message', handler, true)
+        for (const event of held.splice(0)) window.dispatchEvent(new MessageEvent('message', {
+          data: event.data, source: event.source, origin: event.origin
+        }))
+      }
+    }
+  })
+}
+
 for (const locale of ['zh-cn', 'en']) test(`automatic alert text and time filters preserve one Console iframe (${locale})`, async ({ page }) => {
   await backend(page, { locale, identity: identity(['monitor.platform_alert.read', 'monitor.platform_alert_notification.read', 'platform.host_node.read']) })
   const queries = []
@@ -29,18 +61,92 @@ for (const locale of ['zh-cn', 'en']) test(`automatic alert text and time filter
   await host.fill('Host'); await host.press('Enter')
   await expect.poll(() => queries.length).toBe(3)
   expect(queries.at(-1)).toMatchObject({ search: 'CPU', host_name: 'Host', category: 'resource', severity: 'warning' })
+  await expect(page).toHaveURL(url => url.searchParams.get('search') === 'CPU' && url.searchParams.get('host_name') === 'Host')
   await page.clock.fastForward(301); expect(queries).toHaveLength(3)
   await page.clock.resume()
   const from = monitor.getByPlaceholder(locale === 'en' ? 'Start time' : '起始时间')
   await from.fill(await localTimeInput(page, '2026-10-24T00:00:00Z')); await from.press('Tab')
   await expect.poll(() => queries.at(-1)?.time_from).toBe('2026-10-24T00:00:00.000Z')
   expect(queries.at(-1)).not.toHaveProperty('time_to')
+  // A module request can precede the asynchronous Console URL publication.
+  await expect.poll(() => new URL(frame.url()).searchParams.get('time_from')).toBe('2026-10-24T00:00:00.000Z')
+  await expect(page).toHaveURL(url => url.searchParams.get('time_from') === '2026-10-24T00:00:00.000Z' && url.searchParams.get('search') === 'CPU' && url.searchParams.get('host_name') === 'Host')
   await page.keyboard.press('Escape')
   expect(await frame.evaluate(() => performance.timeOrigin)).toBe(origin)
+  const beforeReload = queries.length
   await page.reload()
+  await expect.poll(() => queries.length).toBeGreaterThan(beforeReload)
+  await expect(from).toHaveValue(await localTimeInput(page, '2026-10-24T00:00:00Z'))
   await expect(host).toHaveValue('Host')
   await expect(name).toHaveValue('CPU')
   await expect.poll(() => queries.at(-1)).toMatchObject({ time_from: '2026-10-24T00:00:00.000Z', search: 'CPU', host_name: 'Host' })
+  await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
+})
+
+for (const locale of ['zh-cn', 'en']) test(`alert reload waits for the published Console route despite an earlier API result (${locale})`, async ({ page }) => {
+  await backend(page, { locale, identity: identity(['monitor.platform_alert.read', 'platform.host_node.read']) })
+  await installAlertTimePublicationGate(page)
+  const queries = []
+  let releaseOld, oldDelivered
+  const oldResponse = new Promise(resolve => { releaseOld = resolve })
+  const oldDelivery = new Promise(resolve => { oldDelivered = resolve })
+  const timeFrom = '2026-10-24T00:00:00.000Z'
+  await page.route('**/api/v1/monitor/platform/alerts?**', async route => {
+    const query = Object.fromEntries(new URL(route.request().url()).searchParams)
+    queries.push(query)
+    const first = queries.length === 1
+    if (first) await oldResponse
+    await route.fulfill({ json: { data: [{ id: 42, version: 1, category: 'resource', subject_kind: 'host_node', subject_id: 'f83e9874-2164-4411-a5c0-650d143006cf',
+      signal: 'node.cpu.busy_percent', severity: 'warning', name: first ? 'CPU old' : 'CPU current',
+      status: 'open', resolved_at: null, opened_at: '2026-10-25T00:00:00Z' }], total: 1, page: 1, page_size: 20 } })
+    if (first) oldDelivered()
+  })
+  await page.goto('/monitor/platform-alerts?category=resource&severity=warning&search=CPU&host_name=Host')
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  const table = monitor.getByTestId('pipeline-incidents')
+  await expect(table).toBeVisible()
+  await expect.poll(() => queries.length).toBe(1)
+  const frame = page.frames().find(frame => frame.parentFrame()), origin = await frame.evaluate(() => performance.timeOrigin)
+  await page.evaluate(() => window.__alertTimePublication.arm())
+  const from = monitor.getByPlaceholder(locale === 'en' ? 'Start time' : '起始时间')
+  await from.fill(await localTimeInput(page, timeFrom)); await from.press('Tab')
+  await page.keyboard.press('Escape')
+  await expect.poll(() => queries.at(-1)).toMatchObject({ time_from: timeFrom, search: 'CPU', host_name: 'Host' })
+  await expect.poll(() => page.evaluate(() => window.__alertTimePublication.routes().length)).toBe(1)
+  await expect.poll(() => new URL(frame.url()).searchParams.get('time_from')).toBe(timeFrom)
+  await expect(table.getByText('CPU current', { exact: true })).toBeVisible()
+  // This is the counterexample: neither an API result nor the iframe URL commits the public URL.
+  expect(new URL(page.url()).searchParams.has('time_from')).toBe(false)
+  await frame.evaluate(() => window.addEventListener('message', event => {
+    if (event.data?.requestId === 'unknown-alert-navigation') window.__unknownAlertReplyObserved = true
+  }))
+  await page.evaluate(() => {
+    const iframe = document.querySelector('iframe[data-testid="module-iframe"]')
+    iframe.contentWindow.postMessage({ type: 'addp:console-bridge:response', channel: 'console-navigation',
+      requestId: 'unknown-alert-navigation', ok: true, data: { route: '/monitor/platform-alerts' } }, new URL(iframe.src).origin)
+  })
+  await expect.poll(() => frame.evaluate(() => window.__unknownAlertReplyObserved)).toBe(true)
+  expect(new URL(frame.url()).searchParams.get('time_from')).toBe(timeFrom)
+  expect(new URL(page.url()).searchParams.has('time_from')).toBe(false)
+  releaseOld(); await oldDelivery
+  await expect(table.getByText('CPU current', { exact: true })).toBeVisible()
+  await expect(table.getByText('CPU old', { exact: true })).toHaveCount(0)
+  expect(new URL(page.url()).searchParams.has('time_from')).toBe(false)
+  await page.evaluate(() => window.__alertTimePublication.release())
+  await expect(page).toHaveURL(url => url.searchParams.get('time_from') === timeFrom && url.searchParams.get('search') === 'CPU' && url.searchParams.get('host_name') === 'Host')
+  expect(await frame.evaluate(() => performance.timeOrigin)).toBe(origin)
+  await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
+  const committed = new URL(page.url()).search
+  const beforeReload = queries.length
+  await page.reload()
+  await expect.poll(() => queries.length).toBeGreaterThan(beforeReload)
+  await expect.poll(() => queries.at(-1)).toMatchObject({ time_from: timeFrom, search: 'CPU', host_name: 'Host', category: 'resource', severity: 'warning' })
+  expect(new URL(page.url()).search).toBe(committed)
+  await expect(from).toHaveValue(await localTimeInput(page, timeFrom))
+  await expect(monitor.getByRole('textbox', { name: locale === 'en' ? 'Alert name' : '告警名称', exact: true })).toHaveValue('CPU')
+  await expect(monitor.getByRole('textbox', { name: locale === 'en' ? 'Host name' : '主机名称', exact: true })).toHaveValue('Host')
+  await expect(table.getByText('CPU current', { exact: true })).toBeVisible()
+  await expect(table.getByText('CPU old', { exact: true })).toHaveCount(0)
   await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
 })
 

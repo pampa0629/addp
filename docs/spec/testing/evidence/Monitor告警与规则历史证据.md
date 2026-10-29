@@ -422,3 +422,14 @@ Node24.11.1下标准`make test-common-frontend`先重现283项中282通过／1�
 - 引擎：输入infra自动同步search并得到一条infra-虚拟机；打开该部署监控，再点返回引擎列表，搜索值、URL与一条结果恢复；清空文本自动移除search。当前部署明确显示“未部署采集来源”，专业指标留空，只计交互／状态显示证据，不计PostgreSQL实源已恢复或专业指标实际通过。
 
 本轮只使用原生Safari输入、键盘、可访问性状态与截图，没有浏览器脚本注入、模拟接口、测试身份、配置写入或服务重启。四页均不再显示搜索按钮；本轮未覆盖全部筛选组合、真实IME、完整跨页排序或所有语言／尺寸，不外推为Hosted或全功能验收。原受控前端门禁保持独立有效记录，无产品代码变化，不重复运行测试；证据文档限定diff检查通过。当前旧资源导致的四页交互复验阻塞据本轮实际范围关闭；CI／Hosted仍只收专门会话回传，未调度、轮询或设置定时任务。
+
+
+## 告警筛选刷新测试的公开 URL 提交时序（2026-10-30）
+
+CI 专门会话回传 [Platform 40891592721／Job 123509561021](https://github.com/pampa0629/addp/actions/runs/40891592721/job/123509561021)：源码 `a62ef412ceff7539ba784184a65c8a8dca9bd268` 的英文自动筛选用例在 reload 后缺少 `time_from`，原精确断言五秒失败，264／265 通过。后继源码 `3f43b9bff04fdccb3d689c3efea8a9b9b783e44d` 的 [Platform 40903636698／Job 123552351917](https://github.com/pampa0629/addp/actions/runs/40903636698/job/123552351917) 实际通过 219 单元、265 浏览器和构建，中英文同一用例均执行。独立读取两份原始日志确认上述事实，未查询或重跑云端。对两版本、当前基线 `1353e06febaf67963dcc79c11bf25a3b79526c29` 和工作区的六个直接产品输入逐文件 SHA-256 比对，告警页、自动筛选、模块导航、导航请求、桥协议和 Console Portal 均一致；审计 `/tmp/addp-alert-publication-input-audit.json`。后继通过保留为其固定版本证据，不计为本次新测试已通过 CI。
+
+现行路由规范要求先在 iframe 内 replace，再异步同步 Console；告警请求由本地路由 watcher 发起，可以早于公开 URL 提交。原测试只等请求，随后立即 reload，缺少公开 URL 的完成断言。用 Console 初始化前安装的消息闸门，仅暂存活动 iframe 原始时间导航消息，沿现有 pending 回执协议保留其 source／origin；受控原用例在 API 和 iframe 已有精确时间、父 URL 尚无时间时刷新，明确复现同样缺失并在原五秒断言失败。日志 `/tmp/addp-alert-publication-red-early.log` 保存父 URL、iframe URL、实际查询和被暂存路由。首次较晚注册的诊断未形成有效隔离，不计为反例。原 CI 没有同一时刻的父子 URL，不能反推出其唯一调度过程；本次证明并关闭的是测试完成条件缺口。
+
+本轮仅补测试及规范：名称／主机／时间变化须先核对 iframe 和 Console canonical 查询提交，reload 后还须观察新请求，避免复用刷新前最后一次请求造成假通过；精确时间值、控件、URL、原请求及单 iframe 断言均保留。新增中英文受控顺序回归验证 API 结果先于公开导航、未知请求 ID 的导航回执不能改写状态、退役旧请求延迟返回不能替换当前结果、放行导航后同一 iframe 不重建，以及刷新恢复时间／名称／主机／类别／严重级别。没有改产品导航、API、权限、超时或引入 sleep，也不增加部署或服务重启。
+
+标准定向入口 `npm --prefix console/frontend run test:e2e -- e2e/platform-alert-navigation.spec.js` 先通过全部 9 项、无跳过、退出 0（2.2 分钟），日志 `/tmp/addp-alert-publication-green-final.log`。随后只在新增两场景补未知导航回执断言，沿同一入口加 `--grep 'earlier API result'`，中英文 2 项最终通过、无跳过、退出 0（1.9 分钟）；原七场景输入未变复用前次有效结果，不将两次运行合计为十一场景。最终补充日志 `/tmp/addp-alert-publication-unknown-final.log`。首次新夹具导入触发两个 Playwright 副本而停在收集阶段，未执行断言、不计通过；已改为本用例最小协议 DTO，没有改依赖或扩大共用夹具。既有 Playwright testDir、根 `test-console-frontend` 与 Platform 前端矩阵自动覆盖同一 spec，无新增入口、依赖或 workflow。产品输入未变，不重复原有效 Console／Monitor 完整本地门禁、PG、个人实链或 Hosted；本次为受控 T3 测试修复，新增输入的自然 CI 继续等专门会话回传，未轮询、调度或设置定时。

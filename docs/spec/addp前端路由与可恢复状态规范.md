@@ -197,6 +197,8 @@ Console iframe 模式下，一次用户导航只能产生一条公开历史记�
 6. standalone 模式使用相同模块内 URL 契约。
 7. URL 中不包含 Token、票据、凭据或未保存业务内容。
 
+Console iframe 的刷新恢复测试须先分别确认模块内路由和 Console 公开 URL 已提交相同的 canonical 查询，再刷新并核对控件、请求与单 iframe。模块内请求可能早于导航桥完成，仅等待 API 请求不能作为公开 URL 已提交的证据；异步顺序回归应受控延迟导航消息或响应，不使用固定 sleep 或放宽超时替代完成条件。
+
 Model ER 图的 `domain_id` 省略表示等待选择，`all` 表示显式全域总览，正整数表示业务域；`related=1` 只在指定域时展示一跳跨域关联。Model 默认入口为 `/modeling/entities`。Model 页内关联流程查询与执行直接消费 Orchestrator 公开 API，执行使用共享确认组件，完整步骤范围必须在执行前可见。
 
 ## Console 内存导航草稿
