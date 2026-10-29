@@ -396,3 +396,17 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 | 12900440023 | 23895／`41d4cce8c8be16ba443e6345110e34841f11923d73be1a5b8275bb8cc7921278` | `7276eee95febede05ef9668cdd2cc5e47688412b6b8f68fd1aad7cac6a30d837` |
 
 本机`/tmp/addp-p19-http-followup2-summary-20261029.json`保留深核／仅状态／排除项分类，`/tmp/addp-p19-http-followup2-verified-20261029.json`保留归档核验摘要，另有同前缀run、attempt及Job快照。本轮只做文档证据变更，校验主题计数／锚点／索引和diff，不重跑产品或代码门禁，不建立持续监控。
+
+<a id="http-linux-followup-third-manual-20261029"></a>
+
+## 2026-10-29 后续自然Linux HTTP门禁第三次手动复核（新增一通过、一未完成）
+
+本轮只读复核上次快照时未形成HTTP结果的两条push及后续自然运行。2026-10-29 23:07（Asia/Shanghai）快照中，13条候选push均为attempt 1，仅两条生成HTTP质量子Job：一条完成通过，另一条运行中；没有HTTP子Job的11条不计通过，也不由workflow聚合失败或取消推导本专项失败。没有手工dispatch／rerun、新建本地窗口、Hosted、容量或定时。本轮没有复查或合并上节已明确排除的attempt 2。
+
+新增通过：固定源码`a62ef412ceff7539ba784184a65c8a8dca9bd268`，[run40891592619／HTTP Job123510009973](https://github.com/pampa0629/addp/actions/runs/40891592619/job/123510009973)，自然push／attempt 1。原始artifact12907905105共24222字节，API登记摘要与实际ZIP SHA256=`c061ddd138545ff0cdf2e4d1a35b2254cd6a706717eb2eb92aeba2e3e07879bd`一致，CRC和唯一JSON成员通过；报告SHA256=`4f51c497dc7176d938cd27260d68fd4c989e1d006c40afff0a6a817d960583c8`。353个输入散列逐文件独立匹配固定提交，预算／编译脚本与05c57272c修正无差异。
+
+报告result=passed／exit0／error null／无failure_detail，elapsed=848.050459秒；209个完整样本，最长1.282374秒，私有可写保守上界最大1809186879字节，硬配额最大3.25 CPU／4026531840字节内存，均守原四秒／1200秒／资源上限。请求Go148、Python[75,28]、总251，三源阶段与计数额度一致；process_compile为finished／exit0，主机monotonic_ns开始72418214675、观察结束149527675593，inputs_unchanged／cleanup_verified／private_directory_removed均为true。**本次未复现目录消失**，对象类别／身份及根目录失败现场分支未覆盖；旧间歇根因及删除者保持未定位，不以新增成功关闭。
+
+未完成项：[run40891932904／HTTP Job123517711481](https://github.com/pampa0629/addp/actions/runs/40891932904/job/123517711481)，固定源码`1a721a53fec6fb7a0b95920ce89cba7b438a9cc9`，自然push／attempt 1，快照仍in_progress、Verify isolated metrics lifecycle在运行，预算上传未开始；不计通过或失败，不把尚无报告解释为缺失对象。
+
+本轮只更新证据，无产品／采样实现变更或推测性修正。若后续自然复发，先核验原始对象类别／身份和单调阶段边界，提出最小方案讨论后实施；正式产品后端到页面及停源历史读取等原有缺口继续单列。仅文档变更执行主题计数、锚点／索引及diff检查，无新代码门禁／运行验收或持续监控。本机`/tmp/addp-p19-http-followup3-verified-20261029.json`保存独立核对摘要，同前缀runs／candidates／jobs／artifact-meta保存此次只读快照。
