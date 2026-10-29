@@ -373,3 +373,8 @@ Manager 索引已补持久 `cleanup_hold_id`、C／attempt 绑定操作及准确
 2026-10-29 Manager 组合 PG 收口：`make test-manager-postgres` 最终通过（`/tmp/addp-cleanup-manager-combined-pg-v4.log`）。包括产物未知写入持久阻断、原调用结束后禁止再派发、结果回滚保留隔离、目录／对象并发互斥，以及 Owner 七场景（完成、效果前撤权、结果回滚、扫描目标改变、索引完成、索引成功但结果回滚、索引未知响应）。索引 HTTP 采用受控服务，既有内容快照用例使用门禁自有 Meilisearch；不将受控响应算作 Hosted。真实 PG 揭示并修复了 `jsonb` 重排导致操作快照摘要不一致的问题，持久快照改为原字节文本，查询解析仅在表达式中转换。旧 GLB 测试不再将失败终态视为停止证据，不再期待对未知上传重复删除。此前失败日志保留，未调整超时或放宽停止证明。
 
 本轮完整 Monitor 前端门禁为失败（493 个浏览器用例通过、20 个资源／告警等用例失败）；Cleanup admission 用例通过，131 项单元及随后独立构建通过。System 前端 255 项浏览器用例及构建通过，共享前端 298 项通过。工作区 `make test-changed` 在前置环境检查停止，尚未形成全量 T0-T3 通过证明；平台 Transfer 来源快照需在真实源码提交后更新修订。新的 Hosted 未运行。
+
+
+产品接线统一提交为 `138ef83ba657f5554576aed9594e17f88949336a`。平台来源核验的唯一漂移是 Transfer 委托创建测试增加独立 Cleanup Handler 构造参数，委托路由／权限／断言语义未变；经本体会话只读复核，将 Transfer 平台修订从 37 提升至 38，冻结该真实源码提交及文件摘要，未新增 Cleanup Tool 或扩大委托权限。来源快照必须引用已提交源码，因此该登记使用后续提交收口。
+
+来源快照更新后，全仓 `make test-go` 通过（`/tmp/addp-cleanup-all-go-postcommit.log`）；`make test-swagger test-authorization` 通过（`/tmp/addp-cleanup-api-last.log`）。

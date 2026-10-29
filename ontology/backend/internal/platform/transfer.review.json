@@ -47,8 +47,8 @@
       "kind": "test",
       "path": "transfer/backend/internal/api/delegated_task_test.go",
       "anchor": "func TestDelegatedCreatePersistsStoppedTaskWithoutExecution(",
-      "commit": "6a188526a38cccddb788f69751854df4fad812ca",
-      "sha256": "3fc4d752ca3cbc86be8bee179bf6e2072b8f3add4dcbc593ec6f2b4c3dc91cc2",
+      "commit": "138ef83ba657f5554576aed9594e17f88949336a",
+      "sha256": "2b2d78f9ff814637cd3a16ebe8ec05df31c88fece805a4de60f2b9145428dea7",
       "use": {
         "zh-cn": "正式委托路由覆盖创建停止态与拒绝错误范围、执行、计划、扫描；新增角色选择请求必须 409，且零本人角色请求、不增加定义或执行。",
         "en": "The formal delegated route covers stopped creation and rejects wrong scopes, execution, schedules and scanning; a role-choice request must return 409 with no current-user role lookup or additional definition/execution."
