@@ -1,3 +1,4 @@
+export { default as FieldHelp } from './components/FieldHelp.vue'
 // 注意：预览组件（MarkdownPreview、OfficePreview 等）包含重型依赖（marked、mammoth、jszip 等），
 // 已移至 ./previews 单独入口，避免不需要预览的模块引入这些依赖。
 // 如需预览组件，请从 '@common-ui/previews' 导入。

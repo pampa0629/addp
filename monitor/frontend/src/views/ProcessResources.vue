@@ -8,35 +8,34 @@
     <el-alert v-if="!canRead" :title="t('monitor.process.denied')" type="warning" :closable="false" />
     <template v-else>
       <form class="process-filters" @submit.prevent="filter">
-        <el-input v-model="moduleName" :placeholder="t('monitor.process.moduleFilter')" :aria-label="t('monitor.process.moduleFilter')" clearable />
+        <el-input v-model="moduleName" :placeholder="t('monitor.process.moduleFilter')" :aria-label="t('monitor.process.moduleFilter')" clearable @input="queueFilter" @clear="filter" />
         <div class="endpoint-filter">
-          <el-input v-model="registeredHost" :placeholder="t('monitor.process.addressFilter')" :aria-label="t('monitor.process.addressFilter')" aria-describedby="process-address-hint" maxlength="255" clearable />
-          <p id="process-address-hint" class="process-hint">{{ t('monitor.process.addressHint') }}</p>
+          <el-input v-model="registeredHost" :placeholder="t('monitor.process.addressFilter')" :aria-label="t('monitor.process.addressFilter')" maxlength="255" clearable @input="queueFilter" @clear="filter" />
+          <FieldHelp :content="t('monitor.process.addressHint')" />
         </div>
         <div class="host-name-filter">
-          <el-input v-model="nodeName" :placeholder="t('monitor.process.hostNameFilter')" :aria-label="t('monitor.process.hostNameFilter')" aria-describedby="process-host-name-hint" clearable />
-          <p id="process-host-name-hint" class="process-hint">{{ t('monitor.process.hostNameHint') }}</p>
+          <el-input v-model="nodeName" :placeholder="t('monitor.process.hostNameFilter')" :aria-label="t('monitor.process.hostNameFilter')" clearable @input="queueFilter" @clear="filter" />
+          <FieldHelp :content="t('monitor.process.hostNameHint')" />
         </div>
         <div class="host-ip-filter">
-          <el-input v-model="nodeIP" :placeholder="t('monitor.process.hostIPFilter')" :aria-label="t('monitor.process.hostIPFilter')" aria-describedby="process-host-ip-hint" clearable />
-          <p id="process-host-ip-hint" class="process-hint">{{ t('monitor.process.hostIPHint') }}</p>
+          <el-input v-model="nodeIP" :placeholder="t('monitor.process.hostIPFilter')" :aria-label="t('monitor.process.hostIPFilter')" clearable @input="queueFilter" @clear="filter" />
+          <FieldHelp :content="t('monitor.process.hostIPHint')" />
         </div>
-        <el-select v-model="role" :placeholder="t('monitor.process.role')" :aria-label="t('monitor.process.role')" clearable>
+        <el-select v-model="role" :placeholder="t('monitor.process.role')" :aria-label="t('monitor.process.role')" clearable @change="filter">
           <el-option v-for="item in processRoles" :key="item" :value="item" :label="t(`monitor.process.roles.${item}`)" />
         </el-select>
-        <el-select v-model="status" :aria-label="t('monitor.process.online')">
+        <el-select v-model="status" :aria-label="t('monitor.process.online')" @change="filter">
           <el-option value="all" :label="t('monitor.process.allStatuses')" />
           <el-option v-for="item in ['up', 'down']" :key="item" :value="item" :label="t(`monitor.process.status.${item}`)" />
         </el-select>
-        <RuntimeInstanceStopReasonSelect v-model="stopReason" />
+        <RuntimeInstanceStopReasonSelect v-model="stopReason" @change="filter" />
         <div class="collection-filter">
-          <el-select v-model="declared" :aria-label="t('monitor.process.collectionConfig')" aria-describedby="collection-config-hint">
+          <el-select v-model="declared" :aria-label="t('monitor.process.collectionConfig')" @change="filter">
             <el-option v-for="item in ['true', 'false', 'all']" :key="item" :value="item" :label="t(`monitor.process.declarations.${item}`)" />
           </el-select>
-          <p id="collection-config-hint" class="process-hint">{{ t('monitor.process.declarationHint') }}</p>
+          <FieldHelp :content="t('monitor.process.declarationHint')" />
         </div>
-        <RuntimeInstanceTimeFilter v-model:time-basis="timeBasis" v-model:period="period" v-model:custom-range="customRange" />
-        <el-button native-type="submit" :disabled="!validTimeDraft">{{ t('common.search') }}</el-button>
+        <RuntimeInstanceTimeFilter v-model:time-basis="timeBasis" v-model:period="period" v-model:custom-range="customRange" @change="filter" />
         <el-button @click="resetFilters">{{ t('common.reset') }}</el-button>
         <el-button :disabled="!validTimeDraft" @click="setScope('all')">{{ t('monitor.process.allInstances') }}</el-button>
         <el-button :disabled="!validTimeDraft" v-if="state.status !== 'up' || state.declared !== 'true'" @click="setScope('current')">{{ t('monitor.process.currentInstances') }}</el-button>
@@ -110,6 +109,8 @@ import RuntimeInstanceStopReasonSelect from '../../../../common-frontend/basic/s
 import { runtimeInstanceStopReasonLabelKey } from '../../../../common-frontend/basic/src/utils/runtimeInstanceStopReason.mjs'
 import RuntimeInstanceTimeFilter from '../../../../common-frontend/basic/src/components/RuntimeInstanceTimeFilter.vue'
 import { validRuntimeInstanceRange } from '../../../../common-frontend/basic/src/utils/runtimeInstanceTime.mjs'
+import FieldHelp from '../../../../common-frontend/basic/src/components/FieldHelp.vue'
+import { debounce } from '../../../../common-frontend/basic/src/utils/index.js'
 import AutoRefreshControl from '../../../../common-frontend/basic/src/components/AutoRefreshControl.vue'
 import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
@@ -186,7 +187,11 @@ function sampledAt(row) {
   const stamp = summaries.value.get(row.id)?.collection.sampled_at
   return stamp ? `${t('monitor.resources.sampledAt')}: ${formatFieldPresentationValue(stamp, { temporal_format: 'datetime' }, locale.value)}` : ''
 }
-const navigate = query => navigateMonitorRoute(router, { path: '/service-resources', query }, { history: 'replace' })
+const navigate = query => {
+  const target = { path: '/service-resources', query }
+  if (router.resolve(target).fullPath === route.fullPath) { refreshCycle.schedule(); return }
+  return navigateMonitorRoute(router, target, { history: 'replace' })
+}
 async function loadHosts(rows, ticket) {
   if (!canReadHost.value) return
   const current = () => requests.current(ticket) && canReadHost.value
@@ -197,8 +202,23 @@ function selectRefresh(refresh) { return navigate(resolveProcessRoute({ ...state
 function selectTrend(instanceID, range = '5m') { return navigate(resolveProcessRoute({ ...state.value.query, compare: instanceID === state.value.instanceID ? state.value.query.compare : undefined, instance_id: String(instanceID), range }).query) }
 function selectComparison(enabled) { return navigate(resolveProcessRoute({ ...state.value.query, compare: enabled ? 'previous' : undefined }).query) }
 function closeTrend() { if (!state.value.instanceID) return; const { instance_id, range, compare, ...query } = state.value.query; return navigate(query) }
-function filter() { if (!validTimeDraft.value) return; return navigate(resolveProcessRoute({ ...timeDraft(), refresh: state.value.refresh, module_name: moduleName.value.trim(), registered_host: registeredHost.value, node_name: nodeName.value, node_ip: nodeIP.value, role: role.value, stop_reason: stopReason.value, status: status.value, process_metrics_declared: declared.value }).query) }
-function setScope(scope) { if (!validTimeDraft.value) return; return navigate(resolveProcessRoute({ ...timeDraft(), refresh: state.value.refresh, module_name: moduleName.value.trim(), registered_host: registeredHost.value, node_name: nodeName.value, node_ip: nodeIP.value, role: role.value, stop_reason: stopReason.value, status: scope === 'all' ? 'all' : 'up', process_metrics_declared: scope === 'all' ? 'all' : 'true' }).query) }
+const pendingFilter = ref(false)
+const deferredFilter = debounce(() => filter())
+function cancelFilter() { deferredFilter.cancel(); pendingFilter.value = false }
+function queueFilter() {
+  cancelFilter()
+  if (!canRead.value || !validTimeDraft.value) return
+  pendingFilter.value = true; refreshCycle.stop()
+  if (pageVisible.value) deferredFilter()
+}
+function filter() {
+  cancelFilter()
+  if (disposed || route.name !== 'ProcessResources' || !canRead.value) return
+  if (!validTimeDraft.value) { refreshCycle.schedule(); return }
+  const query = resolveProcessRoute({ ...timeDraft(), refresh: state.value.refresh, module_name: moduleName.value.trim(), registered_host: registeredHost.value, node_name: nodeName.value, node_ip: nodeIP.value, role: role.value, stop_reason: stopReason.value, status: status.value, process_metrics_declared: declared.value }).query
+  return navigate(query)
+}
+function setScope(scope) { cancelFilter(); if (!validTimeDraft.value) return; return navigate(resolveProcessRoute({ ...timeDraft(), refresh: state.value.refresh, module_name: moduleName.value.trim(), registered_host: registeredHost.value, node_name: nodeName.value, node_ip: nodeIP.value, role: role.value, stop_reason: stopReason.value, status: scope === 'all' ? 'all' : 'up', process_metrics_declared: scope === 'all' ? 'all' : 'true' }).query) }
 function stopReasonLabel(row) {
   const key = row.status === 'down' ? runtimeInstanceStopReasonLabelKey(row.stop_reason) : ''
   return key ? t(key) : '—'
@@ -207,6 +227,7 @@ function timeDraft() {
   return { time_basis: timeBasis.value, time_period: period.value, ...(period.value === 'custom' && validTimeDraft.value ? { time_from: new Date(customRange.value[0]).toISOString(), time_to: new Date(customRange.value[1]).toISOString() } : {}) }
 }
 function resetFilters() {
+  cancelFilter()
   stopReason.value = ''
   timeBasis.value = 'registered'; period.value = 'all'; customRange.value = null
   moduleName.value = ''; registeredHost.value = ''; nodeName.value = ''; nodeIP.value = ''; role.value = ''; status.value = 'up'; declared.value = 'true'
@@ -220,10 +241,10 @@ function processErrorKey(error) {
 }
 const refreshCycle = createAutoRefresh({
   interval: () => state.value.refresh,
-  enabled: () => canRead.value && route.name === 'ProcessResources' && !state.value.changed && !refreshBlocked.value && !loading.value,
+  enabled: () => canRead.value && route.name === 'ProcessResources' && !state.value.changed && !refreshBlocked.value && !loading.value && !pendingFilter.value,
   refresh: () => reload({ automatic: true }),
   pause: () => { requests.invalidate(); loading.value = false },
-  visibilityChanged: visible => { pageVisible.value = visible }
+  visibilityChanged: visible => { pageVisible.value = visible; if (!visible) deferredFilter.cancel(); else if (pendingFilter.value) deferredFilter() }
 })
 async function reload({ automatic = false } = {}) {
   if (disposed || route.name !== 'ProcessResources') { refreshCycle.stop(); requests.invalidate(); return }
@@ -231,6 +252,7 @@ async function reload({ automatic = false } = {}) {
   refreshCycle.stop()
   const ticket = requests.invalidate()
   container.value = null; containerErrorKey.value = ''
+  if (!automatic) cancelFilter()
   if (!automatic) { instances.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0; trend.value = null; comparisons.value = null; refreshBlocked.value = false }
   errorKey.value = ''; summaryErrorKey.value = ''; trendErrorKey.value = ''; loading.value = false
   if (!canRead.value) return
@@ -297,7 +319,7 @@ async function reload({ automatic = false } = {}) {
 watch([() => JSON.stringify({ ...state.value.query, refresh: undefined }), identity], () => { trendZoom.value = {} }, { flush: 'sync' })
 watch([errorKey, trendErrorKey], ([error, trendError]) => { if (error || trendError) trendZoom.value = {} }, { flush: 'sync' })
 watch([() => route.fullPath, identity], reload, { immediate: true, flush: 'sync' })
-onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); requests.dispose() })
+onBeforeUnmount(() => { disposed = true; cancelFilter(); refreshCycle.dispose(); requests.dispose() })
 </script>
 
 <style scoped>
@@ -307,8 +329,9 @@ onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); requests.dispos
 .process-toolbar :deep(.el-checkbox__label) { white-space: normal; }
 .process-toolbar h2 { flex: 1; }
 .process-filters .el-input, .process-filters .el-select { width: 200px; max-width: 100%; }
-.collection-filter, .endpoint-filter, .host-name-filter, .host-ip-filter { max-width: 100%; }
+.collection-filter, .endpoint-filter, .host-name-filter, .host-ip-filter { display: flex; align-items: center; gap: 4px; max-width: 100%; }
 .process-hint { margin: 4px 0; font-size: 12px; line-height: 1.5; color: var(--addp-text-secondary); }
+@media (max-width: 600px) { .process-toolbar h2 { flex-basis: 100%; } .process-filters > .runtime-instance-time-filter { width: 100%; } }
 .el-pagination { margin-top: 16px; }
 .process-trend-chart { display: flex; min-width: 0; }
 .process-trend-subject { overflow-wrap: anywhere; color: var(--addp-text-primary); }

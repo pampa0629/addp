@@ -4,6 +4,7 @@
       <el-select v-model="basisModel" :aria-label="t('common.runtimeInstanceTime.timeBasis')" @change="emit('change')">
         <el-option v-for="basis in ['registered', 'offline']" :key="basis" :value="basis" :label="t(`common.runtimeInstanceTime.${basis}Time`)" />
       </el-select>
+      <FieldHelp :content="t(`common.runtimeInstanceTime.${timeBasis}Hint`)" />
       <el-select v-model="periodModel" :aria-label="t('common.runtimeInstanceTime.timeRange')" @change="emit('change')">
         <el-option value="all" :label="t('common.runtimeInstanceTime.allTime')" />
         <el-option v-for="item in runtimeInstancePeriods" :key="item.value" :value="item.value" :label="t(item.label)" />
@@ -12,13 +13,13 @@
       <el-date-picker v-if="period === 'custom'" v-model="rangeModel" type="datetimerange"
         :start-placeholder="t('common.runtimeInstanceTime.from')" :end-placeholder="t('common.runtimeInstanceTime.to')" @change="emit('change')" />
     </div>
-    <p class="runtime-instance-time-hint">{{ t(`common.runtimeInstanceTime.${timeBasis}Hint`) }}</p>
     <p v-if="period === 'custom' && !validRuntimeInstanceRange(customRange)" class="runtime-instance-time-hint" role="status">{{ t('common.runtimeInstanceTime.completeRange') }}</p>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import FieldHelp from './FieldHelp.vue'
 import { useI18n } from 'vue-i18n'
 import { runtimeInstancePeriods, validRuntimeInstanceRange } from '../utils/runtimeInstanceTime.mjs'
 const props = defineProps({ timeBasis: { type: String, default: 'registered' }, period: { type: String, default: 'all' }, customRange: { type: Array, default: null } })
@@ -35,5 +36,5 @@ const rangeModel = computed({ get: () => props.customRange, set: value => emit('
 .runtime-instance-time-controls .el-select { width: 200px; max-width: 100%; }
 .runtime-instance-time-controls :deep(.el-date-editor) { width: 380px; max-width: 100%; box-sizing: border-box; }
 .runtime-instance-time-hint { margin: 4px 0 0; color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; }
-@media (max-width: 600px) { .runtime-instance-time-controls .el-select { width: 100%; } }
+@media (max-width: 600px) { .runtime-instance-time-controls .el-select { width: calc((100% - 44px) / 2); min-width: 100px; } }
 </style>

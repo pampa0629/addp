@@ -731,7 +731,6 @@ test('platform node resources through real Console password MFA and Monitor ifra
     await monitor.getByRole('option', { name: '后端服务', exact: true }).click()
     await statusControl.click()
     await monitor.getByRole('option', { name: '在线', exact: true }).click()
-    await monitor.getByRole('button', { name: '搜索', exact: true }).click()
     await expect(page).toHaveURL(url => url.pathname === '/monitor/service-resources' && url.searchParams.get('role') === 'backend' && !url.searchParams.has('status') && !url.searchParams.has('process_metrics_declared'))
     expect(await documentOrigin()).toBe(serviceDocumentID)
     await expect(monitor.getByTestId('process-list').locator('strong').filter({ hasText: /MiB|GiB/ })).toHaveCount(2)

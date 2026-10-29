@@ -348,3 +348,23 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 修复后同一标准入口30项退出0，`git diff --check`通过；沿原Make／Platform T0自动发现，无需新增登记。日志 `/tmp/addp-service-availability-selector-{red,green}.log`，原CI证据 `/tmp/addp-ci-20261025-180006/job-121231972455.log`，Job为 https://github.com/pampa0629/addp/actions/runs/40214288480/job/121231972455 。未将原失败改写为整轮通过，未重跑已有有效实库／Hosted，未查询或重跑远程CI、设置定时任务或操作个人服务；修复后的自然CI等专门会话回传。
 
 后续专门CI会话回传，本会话只读复核原始日志 `/tmp/addp-ci-20261025-200006/job-121248639865.log`：固定源码 `1fb051a50e7c46975411542a0e9340f7fcb97929` 的 [Platform consistency](https://github.com/pampa0629/addp/actions/runs/40219785488/job/121248639865) 实际执行到末尾，`ADDP_CI_SELECTED=true`、`ADDP_CI_STATUS=success`；其中停止流程相关61项及迁移runner契约30项均Ran/OK。停止流程、发现挂载证明及精确迁移选择三项修复已具备该固定源码的Linux标准T0证据。旧失败与本地Dev聚合超时保留；本结论仅覆盖该Job，不代表整个workflow、当前共享HEAD、Safari弹窗与规则写入、真实失联触发／恢复／通知或Hosted通过。本次仅归档回传证据，未触发／重跑／轮询CI或操作个人服务，清单相关功能仍部分实现。
+
+## 服务监控自动筛选与就近提示（2026-10-29）
+
+按用户截图调整：Console运行监控菜单将主机监控移到服务监控之前；服务列表删除搜索按钮，下拉选项和完整时间范围立即查询，文本复用共享300毫秒防抖，Enter／清空立即提交。保留System原精确匹配、权限、分页、URL replace和单iframe；查询变更回第一页并关闭旧趋势。重置、离页和身份／路由变化取消待提交计时，隐藏暂停、前台恢复后提交，避免旧输入覆盖新范围；同URL重置仍恢复原自动刷新。未完成自定义时间继续就近提示，不查询无效时段。
+
+登记端点、宿主名、承载IP、采集声明及时间依据的补充说明统一使用Common Frontend的FieldHelp，支持悬停和键盘焦点，提示宽度受视口约束并允许换行；不保留常驻说明双轨，输入错误反馈仍在控件旁显示。共享时间控件的System消费方同步验证；无API、Swagger、权限或指标语义变更。
+
+本地实际验证：
+
+- `make test-monitor-frontend`：131项单元测试、497个浏览器场景及构建全部通过，含本批服务监控文件的46个场景，覆盖组合筛选、原分页与趋势边界、IME确认、重置取消及自动刷新恢复。
+- `make test-console-frontend`：219项单元测试、259个浏览器场景及构建全部通过。服务监控文件单独13项通过；最终新增场景另行1项通过，覆盖菜单顺序、一次防抖查询、下拉立即提交、悬停／键盘提示、同iframe和宽窄屏布局。截图在调整视口后推进受控时钟，等待加载完成再取证，避免把冻结中的过渡遮罩当作页面最终效果。
+- `npm --prefix system/frontend run test:e2e -- e2e/module-query-route.e2e.js`：受共享时间提示影响的4项全部通过。
+- `make test-node-metrics-online-runner`：162项runner契约及既有System身份Go夹具通过；仅删除原服务页面点击搜索的旧操作，沿自动查询继续原正式场景断言，不改变权限、预算或验收用途。不等于Hosted执行。
+- `make test-common-frontend`：287项中286项通过、1项失败。本批FieldHelp／防抖取消测试通过；唯一失败为ResourceTree直接组合所有权清单发现其他会话新增的`system/frontend/src/components/engines/EngineDirectPermissions.vue`，本批不修改该组件或放宽清单，不能将共享聚合计为通过。
+
+旧专项首次失败包含未适配的搜索／常驻说明断言；第二轮44项通过、2项失败，后者定位为真实长提示撑宽窄屏，已在共享组件限制提示宽度并允许换行。原日志保留，不把这些失败算作通过；修正后上述完整Monitor门禁通过，不以Console通过替代Monitor整体。
+
+本批沿既有Common Frontend、Monitor、Console、System时间控件及Online runner入口自动发现，无需新增Make或workflow；未运行后端、数据库或真实Safari正式登录验收，未重启个人服务、触发／轮询CI或Hosted、设置定时任务。CI与Hosted仍等专门会话回传。
+
+日志：`/tmp/addp-process-filters-{common-final,monitor-full,console-full,console-final,system-final,online-runner,visual-final}.log`；最终宽窄屏截图目录：`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-service-filters-KLmUkP/`。旧失败为同前缀`browser.log`与`browser-final.log`。本节为本地受控页面T3及确定性回归证据，不外推真实数据链路、Linux CI或T4。

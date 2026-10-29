@@ -178,14 +178,12 @@ export function deepClone(obj) {
  */
 export function debounce(func, wait = 300) {
   let timeout
-  return function executedFunction(...args) {
-    const later = () => {
-      clearTimeout(timeout)
-      func(...args)
-    }
+  function executedFunction(...args) {
     clearTimeout(timeout)
-    timeout = setTimeout(later, wait)
+    timeout = setTimeout(() => { timeout = undefined; func(...args) }, wait)
   }
+  executedFunction.cancel = () => { clearTimeout(timeout); timeout = undefined }
+  return executedFunction
 }
 
 /**
