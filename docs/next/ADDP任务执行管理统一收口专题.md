@@ -472,3 +472,29 @@ C 批次的具体 suite 归属、依赖清单、单场景超时及总预算须�
 | p0-hunan功能清单维护 | 接收实际实现／PG／CI 与 Hosted 未验收的分层回报，再核对清单 | 仅维护职责，无产品实施任务；汇报稿仍未送达，主责不代改工作簿 |
 
 Security、p19、p12 等未承担本轮核心实施，不应因本专题占用。上述安排仅针对本任务，不判定各会话在其他任务上的空闲状态。工具恢复后优先发送 CI 精确协作范围及 p0 实际进展；在无法确认共享编排文件归属前，主责继续独立场景准备，不假定消息已送达。
+
+### 8.5 专项 runner 实施与 CI 交接清单
+
+用户已继续授权主责补 runner 和相关门禁，CI 协调事项先整理，新的 Hosted 与环境切换仍单独确认。本轮后续已实际收到 Graph、租户日志、本体及 Security 会话的回报：均确认本任务无剩余产品实施项，可以安排其他工作；更新 8.4 中这四个会话“尚未确认”的时点状态。出站跨会话消息工具仍不可用，不能据此声称本会话已向 CI 或清单维护发送消息。
+
+**新增场景代码。** [Graph runner](../../scripts/test/graph-execution-online.py)复用现有 Graph 原生业务夹具及受控抽取器：先创建准确材料和两个实际运行，利用两条同步监督器占用证明第三条请求确实尚未领取；核对 pending 取消零 attempt／零运行事件；暂停拥有者后向另一个固定 Backend 提交取消，必须保持“running、取消请求已受理”；第二个运行体真实等待 30 秒 lease 到期，核对失联失败、不重放、旧进程准确 execution 的 lease 拒绝、终态未变、unknown 仍阻断 reconcile／reopen，并在准确容器进程崩溃补回后重验持久阻断。固定 Backend 的直接请求与普通 Gateway 读写分别记录，不能把随机 Gateway 分流推定为跨实例。抽取是受控传输，不能称真实模型推理。
+
+[Cleanup runner](../../scripts/test/cleanup-execution-online.py)覆盖十 Owner 的显式 scan＋logical execute、同 UUID 同参幂等／异参拒绝、父子准确绑定、回执与专业结果一致、同 Tenant 他人和无专业权限拒绝、父可读子不可读不输出隐藏节点／统计、终态 GET 不改公共执行／事件、Owner 暂停时聚合 503 而不是成功空集合；Meta-only execute 必须以 `cleanup_manager_scope_required` 拒绝且没有私有请求或公共执行。另暂停唯一 Asset Owner，等待原 30 秒 scan 截止，核对未领取子零开始时间／零过程事件，恢复后由 Owner 真实拒绝；单独的原用户撤权场景只撤销准确临时角色分配，必须在父截止前恢复 Owner，并观察 attempt 0 的 `cleanup_authorization_denied`，不能将截止拒绝冒充撤权拒绝。
+
+[共享控制](../../scripts/test/execution-online-support.py)仅允许本轮专属 Hosted 环境、loopback 地址、准确 checkout／run ID 和固定 Docker ID／镜像／启动时刻。只可暂停 Graph 主／副 Backend 与 Asset Backend，不可暂停 PG。暂停意图先写私有 0600 恢复文件，异常退出由外层生命周期调用 `python3 -m scripts.test.execution-online-support resume` 后销毁部署；不凭容器名称处置替换实例。私有 PG 查询强制 READ ONLY、5 秒 statement timeout，不修改业务状态或 lease；仅在内存比较安全状态摘要，不上传 token、原始日志或结果内容。Graph 的取消失败日志补入 execution UUID，以便准确证明旧实例遭 lease 拒绝；没有改变产品状态机或公开 API。
+
+临时身份由既有 `system/backend/cmd/online-test-fixture` 准备。Graph 新角色与原 protection preparer／reader 分离；Cleanup 请求用户、同权限他人、只读用户及被撤权用户分离，IAM 控制用户只处理本轮准确分配。权限集合在 [runner 身份契约](../../scripts/test/execution-online-contract.json) 与 Go 夹具间交叉校验，不更改默认角色。旧 Graph review runner 同时迁移到 202 入队、准确 execution／attempt 的取消，以及带当前 version 的 Graph 删除；不保留 200 同步构建兼容分支。
+
+**标准门禁覆盖。** 新增 Python 回归放入既有 `graph-review-online_test.py`，由 `make test-graph-online-runner` 实际执行，不新增游离测试入口；该入口已有 `test-security-online-runner` → `test-online-runner` 上层登记。身份夹具新增 Go 用例名称含 `GraphProtection`，同时命中该入口和夹具完整包测试。受影响最小命令为 `GOMAXPROCS=4 GOFLAGS=-p=2 make test-graph-online-runner`、`make test-module MODULE=graph GO_ONLY=1`；共享身份夹具完整包回归复用 `make test-quality-online-runner`，不触发 Quality Hosted。新公开接口／Swagger 没有变化，本轮无需重新生成产品 Swagger。
+
+**交给 CI 单一负责人的准确接入项（尚未实施／发送）。** 当前共享 Make／workflow／登记文件有其他会话 WIP，本轮不并改这些文件。
+
+1. Graph 既有 suite 增加 `execution-lifecycle` case，将该 case 分发给新 Graph runner；FalkorDB、Neo4j 分别运行。现有 `online-hosted-security-gate.sh`、`graph_case`、online dispatcher 和注册校验必须同次接入；当前仍拒绝该 case，不称已经可 dispatch。
+2. Graph 一次性 Compose profile 复用相同镜像，增加独立 `graph-backend-peer`，不同 module runtime instance identity、独立 loopback 端口和 readiness；两个进程均显式 `GRAPH_BUILD_LEASE_SECONDS=30`、`GRAPH_BUILD_HEARTBEAT_SECONDS=5`，不沿用默认 120 秒。副实例 URL 传入 `ADDP_ONLINE_GRAPH_PEER_URL`；抽取器传入 `ADDP_ONLINE_GRAPH_CASE=execution-lifecycle`。所有被控制容器必须含当次 `ADDP_ONLINE_TEST_RUN_ID`／`ADDP_ONLINE_HOSTED=1`，不能复用个人环境容器。
+3. Cleanup 以单独 `cleanup-execution` profile 接入原有 Hosted 生命周期；System／Gateway、十 Owner Backend、所需公共 Infra 和各自正式 runtime 授权必须齐全。该 profile 的 Graph 和 Asset 各只有一个 Owner 实例，否则暂停一个实例不能证明 Owner 不可用／子未领取。调用既有身份工具 `--suite cleanup-execution`，只把其私有输出传给新 runner；fixture 代码已识别此名称，Online dispatcher／workflow 尚未登记，不能直接使用 `make test-online ONLINE_SUITE=cleanup-execution`。
+4. 两个 profile 的失败／超时／信号退出均先恢复准确暂停实例，再停止应用并销毁本轮业务夹具／Infra／卷／凭据。Graph 故意保留的 unknown 证据不经 API 强删；由整套一次性部署销毁回收。场景 `result=passed` 与最终零残留必须同时成立，不能仅消费子 runner 结果。恢复记录异常、容器被替换、故障控制失败、场景失败、清理失败及缺报告均须有确定性失败反例。
+5. 既有 T1 自动入口已覆盖本轮代码；新增 T4 case／profile 的影响选择、身份／服务前置检查、CI 注册断言、报告消费和文档仍须 CI 同次完成。禁止静默跳过未实现场景、放宽预算或自动重跑。本轮不替 CI 负责人承诺这些登记已经完成。
+
+**仍待补齐的实际缺口。** 此批 runner 不证明 Manager 原生对象／Meilisearch 迟到投递、Transfer 原生 Capture／DLQ 的未知外部效果故障，也不证明真实浏览器刷新／翻页中撤权后的旧值和迟到响应清除；已有 PG／受控浏览器证据仍按原层级保留，后续需在对应自有业务夹具上补场景。Graph 的 unknown 来源是受控抽取调用，尚不证明原生写图请求已发出但回包丢失的场景；崩溃发生在终态后以检验持久阻断，不能替代“运行中终止进程”的独立证据。Graph `Reopen` 当前始终因 Provider 原物理目标无法核验而拒绝，positive reopen 不是已实现能力；unknown reconcile 也不会凭迟到本地返回放行。新 runner 对拒绝路径给出断言，并明确该能力缺口，不能据此将 8.2 全矩阵或整个执行体系判为结项。Security 会话补充的 `d86049faf` 后 PG 报告与固定提交关联待统一证据清单核对，不因缺索引重跑其有效门禁，也不扩大此批 Hosted 范围。
+
+本批实际本地验证通过：`make test-graph-online-runner` 的两组 Python 测试分别为 72／31 项，加 GraphProtection 身份夹具 Go 用例（`/tmp/addp-execution-runner-verified.log`）；`make test-module MODULE=graph GO_ONLY=1`（`/tmp/addp-execution-graph-go.log`）；共享夹具完整包及 Quality runner 48 项回归（`/tmp/addp-execution-fixture-final.log`）。命令均设置 `GOMAXPROCS=4 GOFLAGS=-p=2`。文档链接和差异检查通过。这些是工作区确定性门禁，不是实际容器故障、原生服务、固定提交 CI 或 Hosted 通过；本轮未运行 PG T2、Hosted 或环境切换，PG 状态机未改，仅新增只读验收探针。新场景的 Hosted 编排仍按上述清单由 CI 单一负责人接入。

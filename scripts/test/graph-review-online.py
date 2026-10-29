@@ -26,10 +26,10 @@ def target_path(suite, engine_id):
     return target["catalog_path"]
 
 
-def upload(client, path, suite):
+def upload(client, path, suite, material=MATERIAL):
     boundary = "addp-" + uuid.uuid4().hex
     body = (f'--{boundary}\r\nContent-Disposition: form-data; name="files"; filename="review.txt"\r\n'
-            f'Content-Type: text/plain\r\n\r\n{MATERIAL}\r\n--{boundary}--\r\n').encode()
+            f'Content-Type: text/plain\r\n\r\n{material}\r\n--{boundary}--\r\n').encode()
     request = urllib.request.Request(client.base_url + path, data=body, method="POST", headers={
         "Authorization": "Bearer " + client.token, "Content-Type": "multipart/form-data; boundary=" + boundary})
     try:
@@ -139,7 +139,9 @@ def run(suite, preparer, reader, engine_id, tenant_id, ontology_id, control_id, 
             "name": "Hosted controlled extraction", "confidence_threshold": 0.7}).payload.get("id"), "build task id")
         task_path = root + f"/build/tasks/{tid}"
         mid = upload(preparer, task_path + "/materials", suite)
-        preparer.request("POST", task_path + "/run", (200,))
+        queued = preparer.request("POST", task_path + "/run", (202,)).payload
+        suite.require(queued.get('status') == 'pending' and isinstance(queued.get('execution_id'), str)
+                      and str(uuid.UUID(queued['execution_id'])) == queued['execution_id'], 'Build was not durably enqueued')
         deadline = time.monotonic() + 120
         while True:
             task = preparer.request("GET", task_path, (200,)).payload
@@ -147,7 +149,7 @@ def run(suite, preparer, reader, engine_id, tenant_id, ontology_id, control_id, 
                 break
             suite.require(time.monotonic() < deadline, "Controlled build timed out")
             time.sleep(1)
-        suite.require(task["status"] == "success" and bool(task.get("execution_id")), "Controlled build did not succeed")
+        suite.require(task["status"] == "success" and task.get("execution_id") == queued['execution_id'], "Controlled build did not succeed")
         suite.require(task.get("stats", {}).get("auto_written") == 2 and task["stats"].get("pending_review") == 7, "Build did not create the expected real review queue")
         materials = preparer.request("GET", task_path + "/materials", (200,)).payload
         suite.require(len(materials) == 1 and materials[0]["id"] == mid and materials[0]["status"] == "completed" and
@@ -193,9 +195,18 @@ def run(suite, preparer, reader, engine_id, tenant_id, ontology_id, control_id, 
         errors = []
         if tid:
             try:
-                task_state = preparer.request("GET", f"/api/v1/graph/graphs/{gid}/build/tasks/{tid}", (200,)).payload.get("status")
-                if task_state in {"pending", "running"}:
-                    preparer.request("POST", f"/api/v1/graph/graphs/{gid}/build/tasks/{tid}/cancel", (200,))
+                task_path = f"/api/v1/graph/graphs/{gid}/build/tasks/{tid}"
+                current = preparer.request("GET", task_path, (200,)).payload
+                if current.get('execution_id') and current.get('status') in {"pending", "running"}:
+                    execution_id, attempt = current['execution_id'], current.get('execution_attempt')
+                    suite.require(type(attempt) is int and attempt >= 0, 'Cleanup cancellation lacks exact attempt')
+                    preparer.request("POST", task_path + '/cancel', (200, 202), {'execution_id': execution_id, 'attempt': attempt})
+                    deadline = time.monotonic() + 60
+                    while current.get('status') in {'pending', 'running'}:
+                        suite.require(time.monotonic() < deadline, 'Cancellation did not settle; preserve domain evidence')
+                        time.sleep(.2)
+                        current = preparer.request('GET', task_path, (200,)).payload
+                        suite.require(current.get('execution_id') == execution_id, 'Build identity changed during cancellation')
                 if mid:
                     preparer.request("DELETE", f"/api/v1/graph/graphs/{gid}/build/tasks/{tid}/materials/{mid}", (200,))
                 preparer.request("DELETE", f"/api/v1/graph/graphs/{gid}/build/tasks/{tid}", (200,))
@@ -205,7 +216,9 @@ def run(suite, preparer, reader, engine_id, tenant_id, ontology_id, control_id, 
                 errors.append("delete synthetic review task/material/queue")
         if gid:
             try:
-                preparer.request("DELETE", f"/api/v1/graph/graphs/{gid}", (200,))
+                current_graph = preparer.request('GET', f'/api/v1/graph/graphs/{gid}', (200,)).payload
+                version = suite.SUPPORT.positive_int(current_graph.get('version'), 'graph version')
+                preparer.request("DELETE", f"/api/v1/graph/graphs/{gid}", (200,), {'version': version})
                 preparer.request("GET", f"/api/v1/graph/graphs/{gid}", (404,))
             except Exception:
                 errors.append("delete synthetic review graph")

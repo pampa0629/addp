@@ -379,7 +379,7 @@ func (s *BuildService) finishCancelledIfRequested(ctx context.Context, task *mod
 		status = commonExecution.ExecutionStatusFailed
 	}
 	if err := s.finishTask(context.WithoutCancel(ctx), task, tenantID, executionID, status, "", nil, nil); err != nil {
-		log.Printf("graph cancellation remains unresolved: %v", err)
+		log.Printf("graph cancellation remains unresolved for execution %s: %v", executionID, err)
 	}
 	return true
 }

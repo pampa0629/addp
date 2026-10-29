@@ -285,6 +285,8 @@ func suitePermissions(suite string) ([]string, error) {
 		return []string{"monitor.execution.read"}, nil
 	case "graph-protection":
 		return graphProtectionReaderPermissions, nil
+	case "cleanup-execution":
+		return append([]string(nil), cleanupExecutionPermissions...), nil
 	case "pg-source-authorization":
 		return pgAuthorizationConsumerPermissions, nil
 	case "platform-node-metrics", "platform-administrator-governance":
@@ -819,7 +821,42 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_PARENT_USER_PASSWORD"] = password
 		values["ADDP_ONLINE_PARENT_ASSIGNMENT_ID"] = fmt.Sprintf("%d", ownerAssignmentID)
 	}
+	if *suite == "cleanup-execution" {
+		values["ADDP_ONLINE_CLEANUP_ACCESS_TOKEN"] = consumerSession.AccessToken
+		other, _, _, fixtureErr := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-cleanup-other", cleanupExecutionPermissions)
+		if fixtureErr != nil {
+			return fixtureErr
+		}
+		reader, _, _, fixtureErr := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-cleanup-reader", []string{"system.cleanup.read"})
+		if fixtureErr != nil {
+			return fixtureErr
+		}
+		values["ADDP_ONLINE_CLEANUP_OTHER_ACCESS_TOKEN"] = other.AccessToken
+		values["ADDP_ONLINE_CLEANUP_READ_ACCESS_TOKEN"] = reader.AccessToken
+		revokee, assignmentID, _, fixtureErr := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-cleanup-revokee", cleanupExecutionPermissions)
+		if fixtureErr != nil {
+			return fixtureErr
+		}
+		controller, fixtureErr := issueSession(ctx, repository, selectionService, administrator.PrincipalID, "external-online-cleanup-iam-session")
+		if fixtureErr != nil {
+			return fixtureErr
+		}
+		values["ADDP_ONLINE_CLEANUP_REVOKEE_ACCESS_TOKEN"] = revokee.AccessToken
+		values["ADDP_ONLINE_CLEANUP_ASSIGNMENT_ID"] = fmt.Sprintf("%d", assignmentID)
+		values["ADDP_ONLINE_CLEANUP_IAM_ACCESS_TOKEN"] = controller.AccessToken
+	}
 	if *suite == "graph-protection" {
+		if os.Getenv("ADDP_ONLINE_GRAPH_CASE") == "execution-lifecycle" {
+			lifecycle, _, _, fixtureErr := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+				tenant.ID, administrator.PrincipalID, "external-online-graph-lifecycle", graphExecutionPermissions)
+			if fixtureErr != nil {
+				return fixtureErr
+			}
+			values["ADDP_ONLINE_GRAPH_LIFECYCLE_ACCESS_TOKEN"] = lifecycle.AccessToken
+		}
 		preparer, _, _, fixtureErr := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-graph-preparer", graphProtectionPreparerPermissions)
 		if fixtureErr != nil {
