@@ -697,6 +697,7 @@
           "plan": "Quality plan",
           "rule": "Quality rule",
           "classification": "Data Classification",
+          "cleanup_authorization": "Cleanup Authorization",
           "cleanup": "Cleanup Task",
           "code_set": "Code Set",
           "collection": "Collection",

@@ -1,4 +1,4 @@
-package service
+package client
 
 import (
 	"context"
@@ -12,13 +12,12 @@ import (
 	"testing"
 	"time"
 
-	commonclient "github.com/addp/common/client"
 	"github.com/addp/common/execution"
 )
 
-type executionTestModuleLister struct{ modules []*commonclient.ModuleInfo }
+type executionTestModuleLister struct{ modules []*ModuleInfo }
 
-func (l executionTestModuleLister) ListActiveModules(context.Context) ([]*commonclient.ModuleInfo, error) {
+func (l executionTestModuleLister) ListActiveModules(context.Context) ([]*ModuleInfo, error) {
 	return l.modules, nil
 }
 
@@ -41,12 +40,21 @@ func TestExecutionReadAuthorizerBindsOwnerTenantSubjectAndNeverFollowsRedirect(t
 		if mode == "owner" {
 			scope.Module = "quality"
 		}
+
+		if mode == "extra" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"module": "transfer", "tenant_id": 7, "principal_id": 9, "grant_all": true})
+			return
+		}
+		if mode == "multiple" {
+			_, _ = w.Write([]byte(`{"module":"transfer","tenant_id":7,"principal_id":9} {}`))
+			return
+		}
 		_ = json.NewEncoder(w).Encode(scope)
 	}))
 	defer owner.Close()
-	registry := executionTestModuleLister{[]*commonclient.ModuleInfo{{ModuleName: "transfer", Enabled: true, Instances: []commonclient.ModuleRuntimeInstanceInfo{{Role: "backend", Status: "up", ModuleURL: owner.URL, LeaseExpiresAt: time.Now().Add(time.Hour)}}}}}
+	registry := executionTestModuleLister{[]*ModuleInfo{{ModuleName: "transfer", Enabled: true, Instances: []ModuleRuntimeInstanceInfo{{Role: "backend", Status: "up", ModuleURL: owner.URL, LeaseExpiresAt: time.Now().Add(time.Hour)}}}}}
 	auth := NewExecutionReadAuthorizer(registry)
-	for _, value := range []string{"ok", "tenant", "subject", "owner", "redirect"} {
+	for _, value := range []string{"ok", "tenant", "subject", "owner", "redirect", "extra", "multiple"} {
 		mode = value
 		scopes, err := auth.Resolve(context.Background(), []string{"transfer"}, 7, 9, "Bearer verified-user")
 		if value == "ok" {
@@ -82,11 +90,11 @@ func TestExecutionReadAuthorizerBoundsConcurrencyAndKeepsEveryScope(t *testing.T
 		_ = json.NewEncoder(w).Encode(execution.ReadScope{Module: module, TenantID: 7, PrincipalID: 9})
 	}))
 	defer owner.Close()
-	modules := make([]*commonclient.ModuleInfo, count)
+	modules := make([]*ModuleInfo, count)
 	owners := make([]string, count)
 	for i := range owners {
 		owners[i] = fmt.Sprintf("owner_%d", i)
-		modules[i] = &commonclient.ModuleInfo{ModuleName: owners[i], Enabled: true, Instances: []commonclient.ModuleRuntimeInstanceInfo{{Role: "backend", Status: "up", ModuleURL: owner.URL, LeaseExpiresAt: time.Now().Add(time.Hour)}}}
+		modules[i] = &ModuleInfo{ModuleName: owners[i], Enabled: true, Instances: []ModuleRuntimeInstanceInfo{{Role: "backend", Status: "up", ModuleURL: owner.URL, LeaseExpiresAt: time.Now().Add(time.Hour)}}}
 	}
 	auth := NewExecutionReadAuthorizer(executionTestModuleLister{modules})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -142,9 +150,9 @@ func TestExecutionReadAuthorizerFailureCancelsOtherOwnersAndReturnsNoPartialScop
 		http.Error(w, "private owner details", http.StatusServiceUnavailable)
 	}))
 	defer owner.Close()
-	modules := []*commonclient.ModuleInfo{}
+	modules := []*ModuleInfo{}
 	for _, name := range []string{"slow", "failed"} {
-		modules = append(modules, &commonclient.ModuleInfo{ModuleName: name, Enabled: true, Instances: []commonclient.ModuleRuntimeInstanceInfo{{Role: "backend", Status: "up", ModuleURL: owner.URL, LeaseExpiresAt: time.Now().Add(time.Hour)}}})
+		modules = append(modules, &ModuleInfo{ModuleName: name, Enabled: true, Instances: []ModuleRuntimeInstanceInfo{{Role: "backend", Status: "up", ModuleURL: owner.URL, LeaseExpiresAt: time.Now().Add(time.Hour)}}})
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

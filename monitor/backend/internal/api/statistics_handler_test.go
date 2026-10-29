@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	commonclient "github.com/addp/common/client"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -29,7 +30,7 @@ func (r *runtimeMetricsAPIRepository) List(
 	_, _ time.Time,
 ) ([]repository.ExecutionRuntimeMetricRow, error) {
 	if scopes, ok := execution.ReadScopesFromContext(ctx); !ok || len(scopes) != 1 || scopes[0].TenantID != tenantID {
-		return nil, service.ErrExecutionOwnerUnavailable
+		return nil, commonclient.ErrExecutionOwnerUnavailable
 	}
 	r.tenantID = tenantID
 	r.module = module

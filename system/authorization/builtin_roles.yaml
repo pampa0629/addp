@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 140
+manifest_version: 141
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -582,6 +582,7 @@ roles:
     allowed_principal_types: [service_principal]
     permissions:
       - catalog.reference.read
+      - system.cleanup_authorization.execute
       - workbench.resource_grant.create
       - workbench.resource_grant.revoke
   - key: tenant.auditor
@@ -764,6 +765,7 @@ roles:
       - meta.scan_task.execute
       - security.protection_projection.read
       - security.protection_projection.update
+      - system.cleanup_authorization.execute
       - system.engine_descriptor.read
       - system.execution_authorization.execute
       - system.notebook_session_authorization.execute
@@ -914,6 +916,7 @@ roles:
       - model.entity_relation.read
       - security.protection_projection.read
       - security.protection_projection.update
+      - system.cleanup_authorization.execute
       - system.engine.read
       - system.engine_catalog.read
   - key: tenant.infrastructure_administrator
@@ -947,6 +950,7 @@ roles:
       - meta.scan_task.execute
       - security.protection_projection.read
       - security.protection_projection.update
+      - system.cleanup_authorization.execute
       - system.engine.read
       - system.engine_catalog.read
       - system.engine_descriptor.read
@@ -965,6 +969,7 @@ roles:
     permissions:
       - audit.tenant_event.create
       - manager.content_index.update
+      - system.cleanup_authorization.execute
       - system.engine.read
       - system.engine_catalog.read
       - system.engine_descriptor.read
@@ -989,6 +994,7 @@ roles:
       - standard.domain.read
       - standard.element.read
       - standard.metric.read
+      - system.cleanup_authorization.execute
       - system.engine_descriptor.read
       - system.execution_authorization.execute
   - key: tenant.monitor_runtime
@@ -1083,6 +1089,7 @@ roles:
       - meta.catalog.read
       - standard.domain.read
       - standard.element.read
+      - system.cleanup_authorization.execute
       - system.engine.read
       - system.engine_catalog.read
       - system.execution_authorization.execute
@@ -1175,6 +1182,7 @@ roles:
       - model.metric_implementation.read
       - security.protection_projection.read
       - security.protection_projection.update
+      - system.cleanup_authorization.execute
       - system.engine.read
       - system.engine_catalog.read
       - system.engine_descriptor.read
@@ -1216,6 +1224,7 @@ roles:
       - copilot.standard_document.execute
       - model.standard_reference.update
       - quality.standard_reference.update
+      - system.cleanup_authorization.execute
   - key: tenant.system_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.system_runtime.name
@@ -1244,6 +1253,7 @@ roles:
       - meta.scan_task.execute
       - security.protection_projection.read
       - security.protection_projection.update
+      - system.cleanup_authorization.execute
       - system.engine.read
       - system.engine_access_initial_grant.execute
       - system.engine_catalog.read

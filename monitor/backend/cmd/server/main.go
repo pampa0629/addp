@@ -106,7 +106,7 @@ func main() {
 
 	// 创建 Services
 	queryService := service.NewExecutionQueryService(taskExecutionRepo)
-	queryService.SetReadResolver(service.NewExecutionReadAuthorizer(systemServiceClient))
+	queryService.SetReadResolver(commonClient.NewExecutionReadAuthorizer(systemServiceClient))
 	statisticsService := service.NewStatisticsServiceWithRuntimeMetrics(
 		taskExecutionRepo,
 		repository.NewExecutionRuntimeMetricsRepository(db),

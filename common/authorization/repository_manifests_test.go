@@ -45,8 +45,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 532 {
-		t.Fatalf("descriptor count = %d, want 532", len(descriptors))
+	if len(descriptors) != 533 {
+		t.Fatalf("descriptor count = %d, want 533", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if strings.HasPrefix(descriptor.Key, "system.meta_collection_qualification.") && (descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) || descriptor.TenantCustomizable == (descriptor.Action == "execute")) {
@@ -239,6 +239,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"meta.scan_task.execute",
 		"security.protection_projection.read",
 		"security.protection_projection.update",
+		"system.cleanup_authorization.execute",
 		"system.engine.read",
 		"system.engine_catalog.read",
 		"system.engine_descriptor.read",
@@ -252,6 +253,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "tenant.meta_runtime", []string{
 		"audit.tenant_event.create",
 		"manager.content_index.update",
+		"system.cleanup_authorization.execute",
 		"system.engine.read",
 		"system.engine_catalog.read",
 		"system.engine_descriptor.read",
@@ -264,6 +266,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"standard.domain.read",
 		"standard.element.read",
 		"standard.metric.read",
+		"system.cleanup_authorization.execute",
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
 	})
@@ -292,6 +295,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"copilot.standard_document.execute",
 		"model.standard_reference.update",
 		"quality.standard_reference.update",
+		"system.cleanup_authorization.execute",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.transfer_runtime", []string{
 		"audit.tenant_event.create",
@@ -303,6 +307,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"meta.scan_task.execute",
 		"security.protection_projection.read",
 		"security.protection_projection.update",
+		"system.cleanup_authorization.execute",
 		"system.engine.read",
 		"system.engine_access_initial_grant.execute",
 		"system.engine_catalog.read",
@@ -316,6 +321,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"model.entity_relation.read",
 		"security.protection_projection.read",
 		"security.protection_projection.update",
+		"system.cleanup_authorization.execute",
 		"system.engine.read",
 		"system.engine_catalog.read",
 	})
@@ -332,6 +338,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"meta.catalog.read",
 		"standard.domain.read",
 		"standard.element.read",
+		"system.cleanup_authorization.execute",
 		"system.engine.read",
 		"system.engine_catalog.read",
 		"system.execution_authorization.execute",
@@ -380,6 +387,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.asset_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "tenant.asset_runtime", []string{
 		"catalog.reference.read",
+		"system.cleanup_authorization.execute",
 		"workbench.resource_grant.create",
 		"workbench.resource_grant.revoke",
 	})
@@ -479,6 +487,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"meta.scan_task.execute",
 		"security.protection_projection.read",
 		"security.protection_projection.update",
+		"system.cleanup_authorization.execute",
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
 		"system.notebook_session_authorization.execute",
@@ -509,6 +518,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"model.metric_implementation.read",
 		"security.protection_projection.read",
 		"security.protection_projection.update",
+		"system.cleanup_authorization.execute",
 		"system.engine.read",
 		"system.engine_catalog.read",
 		"system.engine_descriptor.read",
@@ -758,6 +768,36 @@ func TestGraphReconcileIsNarrowAndNeverGrantedByDefault(t *testing.T) {
 			if key == "graph.graph.reconcile" {
 				t.Fatalf("role %s received reconcile by default", r.Key)
 			}
+		}
+	}
+}
+
+func TestCleanupRuntimePermissionHasOnlyExactOwnerRoles(t *testing.T) {
+	report, err := LoadRepositoryAuthorizationCatalog(testRepositoryRoot(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := map[string]bool{}
+	for _, owner := range []string{"asset", "develop", "graph", "manager", "meta", "model", "quality", "service", "standard", "transfer"} {
+		expected["tenant."+owner+"_runtime"] = true
+	}
+	for _, role := range report.Roles {
+		for _, key := range role.Permissions {
+			if key != "system.cleanup_authorization.execute" {
+				continue
+			}
+			if !expected[role.Key] || !reflect.DeepEqual(role.AllowedPrincipalTypes, []string{"service_principal"}) || !reflect.DeepEqual(role.AllowedScopeTypes, []string{"tenant"}) {
+				t.Fatal("cleanup authority escaped Owner runtime", role.Key)
+			}
+			delete(expected, role.Key)
+		}
+	}
+	if len(expected) != 0 {
+		t.Fatal("missing cleanup runtime authority", expected)
+	}
+	for _, permission := range report.Permissions {
+		if permission.Key == "system.cleanup_authorization.execute" && (permission.TenantCustomizable || permission.Delegable || !reflect.DeepEqual(permission.AllowedScopeTypes, []string{"tenant"})) {
+			t.Fatal("cleanup authorization may not be delegated or customized")
 		}
 	}
 }

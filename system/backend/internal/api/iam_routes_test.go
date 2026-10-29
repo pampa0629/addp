@@ -68,6 +68,7 @@ func TestRegisterIAMRoutesExposesOnlyTargetIAMSurface(t *testing.T) {
 		http.MethodPost + " /api/v1/system/refresh",
 		http.MethodPost + " /api/v1/system/execution-authorizations/:id/engine-accesses",
 		http.MethodPost + " /api/v1/system/execution-authorizations/:id/internal-task-accesses",
+		http.MethodPost + " /api/v1/system/execution-authorizations/:id/cleanup-accesses",
 		http.MethodPost + " /api/v1/system/execution-authorizations/:id/subject-roles",
 		http.MethodGet + " /api/v1/system/notebook-session-authorizations/:id/engine-descriptors",
 		http.MethodPost + " /api/v1/system/notebook-session-authorizations/:id/catalog/children",

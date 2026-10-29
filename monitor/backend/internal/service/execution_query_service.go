@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	commonclient "github.com/addp/common/client"
 	"strings"
 	"time"
 
@@ -20,7 +21,7 @@ func (s *ExecutionQueryService) GetExecutionEvents(ctx context.Context, executio
 type ExecutionQueryService struct {
 	repo         *commonExecution.TaskExecutionRepository
 	now          func() time.Time
-	readResolver ExecutionReadResolver
+	readResolver commonclient.ExecutionReadResolver
 }
 
 // NewExecutionQueryService 创建执行查询服务

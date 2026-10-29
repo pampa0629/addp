@@ -36,9 +36,12 @@ func TestExecutionLifecycleAgainstPostgres(t *testing.T) {
 	if err := EnsureStore(db); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("cleanup_protocol", func(t *testing.T) { testCleanupProtocolLifecycle(t, db) })
+	t.Run("cleanup_lock_order", func(t *testing.T) { testCleanupPostgresLockOrder(t, db) })
 	fixture := func(t *testing.T) TaskExecution {
 		t.Helper()
 		item := TaskExecution{TenantID: 7, ExecutionID: uuid.NewString(), Module: ModuleMeta, TaskType: TaskTypeScan, Source: uuid.NewString(), Status: ExecutionStatusPending, ExecutionBoundary: ExecutionBoundaryBounded, TriggerType: TriggerTypeManual}
+		item.CreatedAt = time.Now().UTC().Truncate(time.Second).Add(123456789 * time.Nanosecond)
 		if err := db.Create(&item).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -68,6 +71,13 @@ func TestExecutionLifecycleAgainstPostgres(t *testing.T) {
 	}
 	t.Run("single_claim_and_terminal_clock", func(t *testing.T) {
 		item := fixture(t)
+		// PostgreSQL timestamps have microsecond precision. Compare the stored
+		// value before and after claim; the Go insertion input is not that value.
+		beforeClaim := read(t, item.ExecutionID)
+		if beforeClaim.CreatedAt.Equal(item.CreatedAt) {
+			t.Fatal("fixture did not exercise sub-microsecond input precision")
+		}
+		t.Logf("created_at input=%s persisted=%s", item.CreatedAt.Format(time.RFC3339Nano), beforeClaim.CreatedAt.Format(time.RFC3339Nano))
 		var wg sync.WaitGroup
 		leases := make(chan *Lease, 8)
 		errs := make(chan error, 8)
@@ -100,8 +110,8 @@ func TestExecutionLifecycleAgainstPostgres(t *testing.T) {
 			t.Fatalf("claims=%d", count)
 		}
 		claimed := read(t, item.ExecutionID)
-		if claimed.Attempt != 1 || claimed.StartedAt == nil || !claimed.CreatedAt.Equal(item.CreatedAt) {
-			t.Fatalf("invalid claim: %+v", claimed)
+		if claimed.Attempt != 1 || claimed.StartedAt == nil || !claimed.CreatedAt.Equal(beforeClaim.CreatedAt) {
+			t.Fatalf("invalid claim: attempt=%d started=%v created_before=%s created_after=%s", claimed.Attempt, claimed.StartedAt != nil, beforeClaim.CreatedAt.Format(time.RFC3339Nano), claimed.CreatedAt.Format(time.RFC3339Nano))
 		}
 		protected := []string{"id", "execution_id", "tenant_id", "module", "task_type", "source", "source_task_id", "parent_execution_id", "execution_config", "execution_boundary", "retry_of_execution_id", "created_at", "started_at", "completed_at", "updated_at", "execution_time_ms", "attempt", "max_attempts", "lease_owner", "lease_token", "lease_expires_at", "status", "execution_authorization_id", "authorization_expires_at"}
 		for _, key := range protected {
@@ -118,7 +128,7 @@ func TestExecutionLifecycleAgainstPostgres(t *testing.T) {
 			t.Fatal("mutated caller fields")
 		}
 		done := read(t, item.ExecutionID)
-		if done.CompletedAt == nil || done.ExecutionTimeMs == nil || *done.ExecutionTimeMs != done.CompletedAt.Sub(*done.StartedAt).Milliseconds() || !done.StartedAt.Equal(*claimed.StartedAt) || done.LeaseToken != nil {
+		if done.CompletedAt == nil || done.ExecutionTimeMs == nil || *done.ExecutionTimeMs != done.CompletedAt.Sub(*done.StartedAt).Milliseconds() || !done.StartedAt.Equal(*claimed.StartedAt) || !done.CreatedAt.Equal(beforeClaim.CreatedAt) || done.LeaseToken != nil {
 			t.Fatalf("terminal timing/lease=%+v", done)
 		}
 		if err := CompleteWithLease(t.Context(), db, *owner, ExecutionStatusFailed, nil); !errors.Is(err, commonapi.ErrConflict) {

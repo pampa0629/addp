@@ -718,7 +718,7 @@ func moduleRegistryFailureLog(operation string, registration ModuleRegistrationR
 	return fmt.Sprintf("%s error=%q", prefix, err)
 }
 
-func (c *SystemServiceClient) doTenantJSON(ctx context.Context, method, path string, payload, result any) error {
+func (c *SystemServiceClient) doTenantJSON(ctx context.Context, method, path string, payload, result any, responseLimit ...int64) error {
 	if c == nil || c.tenantTokens == nil || c.tenantID == nil || *c.tenantID == 0 {
 		return errors.New("System service request requires a tenant context")
 	}
@@ -726,7 +726,7 @@ func (c *SystemServiceClient) doTenantJSON(ctx context.Context, method, path str
 	if err != nil {
 		return err
 	}
-	status, err := c.doJSON(ctx, method, path, token, payload, result)
+	status, err := c.doJSON(ctx, method, path, token, payload, result, responseLimit...)
 	if status != http.StatusUnauthorized {
 		return err
 	}
@@ -739,7 +739,7 @@ func (c *SystemServiceClient) doTenantJSON(ctx context.Context, method, path str
 	if tokenErr != nil {
 		return tokenErr
 	}
-	_, err = c.doJSON(ctx, method, path, token, payload, result)
+	_, err = c.doJSON(ctx, method, path, token, payload, result, responseLimit...)
 	return err
 }
 

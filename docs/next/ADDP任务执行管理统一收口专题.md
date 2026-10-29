@@ -286,3 +286,13 @@ Common 统一采用 PostgreSQL 锁后墙钟、严格未到期判定及封闭字�
 4. 新授权只约束既定Owner范围，不扩大可清理资源、不自动重试旧执行、不重跑Hosted。已确认的持久队列、P→C锁序、标准回执及安全读取投影可继续独立完成。
 
 此补充改变执行授权的目的绑定与Service Permission，根AGENTS.md最高优先级第0条要求确认；本项现已单独获得用户确认，历史Tenant仍另议。影响门禁为System IAM授权正反例、Cleanup实际领取／效果前拒绝、Owner固定client/audience/Tenant与撤权反例；由原System IAM及新增System Cleanup标准入口覆盖，不新增旁路授权机制。
+
+### 2026-10-29 公共准入与窄授权实施记录
+
+已实现公共 Cleanup 冻结请求、父子预建、同父同 Owner 唯一约束、P→C 准入／未领取拒绝、类型化完成回执和纯值安全投影。读取 Owner 裁决的 HTTP 实现从 Monitor 提取至 Common，仍采用当前请求内的 User Bearer、五秒总预算、最多四并发、禁止重定向和失败关闭；System 后续复用同一路径。
+
+System 的 Cleanup 目的授权复用既有 execution authorization，签发／附着／审计同事务，固定十个 Owner runtime；领取前和效果前分别复核，角色、成员、授权版本及租约变化均拒绝。数据库迁移同时发布先前 Graph `graph.graph.reconcile` 的权限目录事实，不给任何内置角色默认授予该权限。该阶段只提供公共原语和授权能力，**System 持久协调器、十个 Owner 的新消费路径及 System／Monitor 展示尚未接入，不计为 Cleanup 全链路完成**。
+
+实际通过的本地标准门禁：`make test-go`、`make test-authorization`、`make test-monitor-postgres`、Common `--test execution-lifecycle`，以及 System IAM 的 `cleanup-authorization`、`internal-task-authorization`、`execution-subject-roles` 和 migration 包的 `execution-authorization-lease-boundary`。System 前端另有 179 项单元测试、250 项受控浏览器测试及构建通过。这些分别是 Go、协议／权限、真实 PostgreSQL 与受控前端证据，不是 Hosted 或环境切换证据。
+
+Common CI 在 `single_claim_and_terminal_clock` 的创建时间断言曾失败。确定性复现表明旧测试比较的是纳秒精度 Go 插入输入和微秒精度 PG 值；现固定带亚微秒的夹具，以领取前独立读取的持久化值作为基线，领取与终态仍逐值严格相等，不放宽容差、不修改业务写路径。原失败与新本地通过分别保留，新 SHA 自然 CI 尚需核验。完整 `make test-platform` 的本地重跑仍在栅格 runner 的 Node 版本检查报 `25 != 24`，不计为通过；本阶段没有据此扩展栅格修改。

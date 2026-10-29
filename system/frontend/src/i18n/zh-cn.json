@@ -697,6 +697,7 @@
           "plan": "质量检查方案",
           "rule": "质量规则",
           "classification": "数据分级分类",
+          "cleanup_authorization": "清理执行授权",
           "cleanup": "清理任务",
           "code_set": "码表",
           "collection": "集合",

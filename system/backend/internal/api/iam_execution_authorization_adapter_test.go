@@ -16,6 +16,7 @@ import (
 )
 
 type fakeExecutionAuthorizationService struct {
+	cleanupInput               iam.AuthorizeCleanupInput
 	rolesInput                 iam.ResolveExecutionSubjectRolesInput
 	internalInput              iam.AuthorizeInternalTaskInput
 	issueInput                 iam.IssueExecutionAuthorizationInput
@@ -168,4 +169,9 @@ func TestIAMExecutionAuthorizationHandlerParsesCurrentLeaseBoundary(t *testing.T
 func (s *fakeExecutionAuthorizationService) ResolveSubjectRoles(_ context.Context, input iam.ResolveExecutionSubjectRolesInput) (*execution.SubjectRoles, error) {
 	s.rolesInput = input
 	return &execution.SubjectRoles{RoleKeys: []string{"tenant.data_engineer"}}, nil
+}
+
+func (s *fakeExecutionAuthorizationService) AuthorizeCleanup(_ context.Context, input iam.AuthorizeCleanupInput) (*iam.AuthorizedCleanup, error) {
+	s.cleanupInput = input
+	return &iam.AuthorizedCleanup{AuthorizationID: input.AuthorizationID, ExecutionID: input.ExecutionID, TenantID: input.TenantID, Stage: input.Stage, Attempt: input.Attempt, Scope: input.Scope, ExpiresAt: time.Now().Add(time.Minute)}, nil
 }

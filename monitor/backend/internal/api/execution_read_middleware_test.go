@@ -27,7 +27,7 @@ type requestScopeResolver struct{ revoked, unavailable bool }
 
 func (r *requestScopeResolver) Resolve(_ context.Context, _ []string, tenant int, principal int64, bearer string) ([]execution.ReadScope, error) {
 	if r.unavailable {
-		return nil, service.ErrExecutionOwnerUnavailable
+		return nil, commonclient.ErrExecutionOwnerUnavailable
 	}
 	if r.revoked {
 		return []execution.ReadScope{}, nil
@@ -108,7 +108,7 @@ func TestExecutionReadAPIReauthenticatesThroughOwnerForEveryRequest(t *testing.T
 		}
 	}
 	query := service.NewExecutionQueryService(repo)
-	query.SetReadResolver(service.NewExecutionReadAuthorizer(registry))
+	query.SetReadResolver(commonclient.NewExecutionReadAuthorizer(registry))
 	router := SetupRouter(query, service.NewStatisticsService(repo), nil, nil, nil, nil, nil, nil, nil, system.URL, nil, nil, modulelifecycle.NewStandalone("monitor"), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	get := func(path string, status int) []byte {
 		t.Helper()

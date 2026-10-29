@@ -4157,6 +4157,74 @@ const docTemplate = `{
                 ]
             }
         },
+        "/execution-authorizations/{id}/cleanup-accesses": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅对应 Owner 的 Tenant Runtime 可复核原用户当前清理权限、冻结请求及当前领取或效果边界，不返回引擎凭据 | Only the corresponding Owner tenant runtime may recheck the original user's current cleanup permission, frozen request and claim or effect boundary; no engine credentials are returned",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtime 执行授权 | Runtime Execution Authorization"
+                ],
+                "summary": "复核清理子执行授权 | Recheck cleanup child authorization",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行授权 ID | Execution authorization ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "清理与租约边界 | Cleanup and lease boundary",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCleanupAccessRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCleanupAccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.cleanup_authorization.execute"
+                ]
+            }
+        },
         "/execution-authorizations/{id}/engine-accesses": {
             "post": {
                 "security": [
@@ -16695,6 +16763,23 @@ const docTemplate = `{
                 }
             }
         },
+        "execution.CleanupAuthorizationScope": {
+            "type": "object",
+            "properties": {
+                "module": {
+                    "type": "string"
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                },
+                "request_digest": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                }
+            }
+        },
         "execution.InternalTaskScope": {
             "type": "object",
             "properties": {
@@ -20696,6 +20781,52 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMCleanupAccessRequest": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "lease_token": {
+                    "type": "string"
+                },
+                "scope": {
+                    "$ref": "#/definitions/execution.CleanupAuthorizationScope"
+                },
+                "stage": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMCleanupAccessResponse": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "authorization_id": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "scope": {
+                    "$ref": "#/definitions/execution.CleanupAuthorizationScope"
+                },
+                "stage": {
+                    "type": "string"
+                },
+                "tenant_id": {
                     "type": "string"
                 }
             }

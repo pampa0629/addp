@@ -410,8 +410,22 @@ func (r *Repository) CreateExecutionAuthorization(
 	authorization *ExecutionAuthorization,
 	accesses []ExecutionAuthorizationEngineAccess,
 ) error {
-	if authorization == nil || (authorization.InternalTask == nil) == (len(accesses) == 0) {
+	if authorization == nil {
 		return fmt.Errorf("%w: execution authorization is required", commonapi.ErrBadRequest)
+	}
+	purposes := 0
+	if len(accesses) > 0 {
+		purposes++
+	}
+	if authorization.InternalTask != nil {
+		purposes++
+	}
+	if authorization.CleanupScope != nil {
+		purposes++
+	}
+	if purposes != 1 || (authorization.Audience == "cleanup") != (authorization.CleanupScope != nil) ||
+		(authorization.CleanupScope != nil && (authorization.CleanupScope.Validate() != nil || authorization.SourceReadScope != nil)) {
+		return fmt.Errorf("%w: exactly one execution authorization purpose is required", commonapi.ErrBadRequest)
 	}
 	if authorization.Audience == "manager" || authorization.SourceReadScope != nil {
 		targets, scopeErr := authorization.SourceReadScope.Targets()

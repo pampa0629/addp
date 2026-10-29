@@ -42,6 +42,10 @@ func RegisterIAMRoutes(
 	if err != nil {
 		return err
 	}
+	cleanupAuthorizationExecute, err := middleware.NewIAMPermissionGuard("system.cleanup_authorization.execute")
+	if err != nil {
+		return err
+	}
 	notebookEngineCatalogIssue, err := middleware.NewIAMPermissionGuard("system.engine.read")
 	if err != nil {
 		return err
@@ -101,6 +105,7 @@ func RegisterIAMRoutes(
 	api.POST("/execution-authorizations/:id/engine-accesses", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, executionAuthorizationExecute, runtime.ExecutionAuthorizationHandler.AuthorizeEngineAccess)
 	api.POST("/execution-authorizations/:id/subject-roles", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, executionAuthorizationExecute, runtime.ExecutionAuthorizationHandler.ResolveSubjectRoles)
 	api.POST("/execution-authorizations/:id/internal-task-accesses", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, executionAuthorizationExecute, runtime.ExecutionAuthorizationHandler.AuthorizeInternalTask)
+	api.POST("/execution-authorizations/:id/cleanup-accesses", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, cleanupAuthorizationExecute, runtime.ExecutionAuthorizationHandler.AuthorizeCleanup)
 	api.GET("/notebook-session-authorizations/:id/engine-descriptors", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, developClient, notebookEngineCatalogExecute, runtime.NotebookSessionAuthorizationHandler.ListEngineDescriptors)
 	api.POST("/notebook-session-authorizations/:id/catalog/children", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, developClient, notebookEngineCatalogExecute, runtime.NotebookSessionAuthorizationHandler.ListEngineCatalogChildren)
 	api.POST("/notebook-session-authorizations/:id/execution-engine-accesses", runtime.Authentication, runtime.ServiceCredential, tenantServiceContext, developClient, notebookEngineCatalogExecute, runtime.NotebookSessionAuthorizationHandler.DeriveExecutionEngineAccess)

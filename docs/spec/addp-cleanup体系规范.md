@@ -415,6 +415,10 @@ Graph首次领取需要领域准入锁时，完整顺序为P→C→G→T/B；领
 
 首期仅支持active Tenant的用户来源请求及其已确认Engine删除派生流程。closed Tenant／`tenant.deleted`、没有可信用户来源或没有目的限定许可的事件保持阻断；不复活Membership、不使用PlatformToken替代Tenant权力。历史Tenant治理需另行确认。该权限不扩大Owner资源范围，不恢复旧执行、不重放删除。
 
+目的绑定存入既有`system.execution_authorizations`的`cleanup_scope`，使用独立`audience=cleanup`；scope包含request UUID、父execution UUID、完整请求digest和Owner。它与引擎access、Ontology internal task及Manager source scope互斥，签封后不可改写，不能经其他消费接口取得引擎访问。System在请求／父子／审计的受理事务中签发并附着子授权；授权最长一小时，不能因协调恢复刷新。
+
+对应Owner调用`POST /api/v1/system/execution-authorizations/{id}/cleanup-accesses`。`stage=claim`只允许未领取的pending子项（attempt=0、无token），且受请求deadline限制；这次HTTP核验在P→C领取事务之外完成，随后仍须按公共准入协议取得P→C。`stage=effect`必须提供准确running子项的attempt和lease token，在每次产生效果前重新调用；最终有效期取授权、用户／服务成员资格和当前lease的最早截止。已经合法领取的子项不因父协调关闭而失去记录事实的资格。两种响应都只返回绑定、阶段、attempt和有效期，不返回token或凭据；Owner在提交领域变更时仍须执行C围栏。HTTP响应限制16 KiB、统一五秒预算且禁止重定向；未知字段、多个JSON值或绑定不一致均拒绝。
+
 ### executor 参与范围
 
 `expected_modules` 是当次必须响应的模块集合，不是在线实例数量，也不由 System 或 UI 硬编码。三类选择规则如下：

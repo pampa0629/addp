@@ -21,6 +21,12 @@ import (
 	"gorm.io/gorm"
 )
 
+type executionTestModuleLister struct{ modules []*commonclient.ModuleInfo }
+
+func (l executionTestModuleLister) ListActiveModules(context.Context) ([]*commonclient.ModuleInfo, error) {
+	return l.modules, nil
+}
+
 // This is a Monitor query/Owner-protocol T2 test, not a real IAM/Gateway T4.
 func TestIntegrationPostgresExecutionEventVisibility(t *testing.T) {
 	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
@@ -140,7 +146,7 @@ func TestIntegrationPostgresExecutionEventVisibility(t *testing.T) {
 	}
 	repo := execution.NewTaskExecutionRepository(tx)
 	query := NewExecutionQueryService(repo)
-	query.SetReadResolver(NewExecutionReadAuthorizer(registry))
+	query.SetReadResolver(commonclient.NewExecutionReadAuthorizer(registry))
 	statistics := NewStatisticsService(repo)
 	authorize := func(t *testing.T, principal int64, bearer string) context.Context {
 		t.Helper()
@@ -255,7 +261,7 @@ func TestIntegrationPostgresExecutionEventVisibility(t *testing.T) {
 			mode.Store(true)
 			ctx, err := query.AuthorizeReadRequest(t.Context(), tenant, 9, "Bearer event-reader", "")
 			mode.Store(false)
-			if ctx != nil || !errors.Is(err, ErrExecutionOwnerUnavailable) || strings.Contains(err.Error(), "private-event-context") {
+			if ctx != nil || !errors.Is(err, commonclient.ErrExecutionOwnerUnavailable) || strings.Contains(err.Error(), "private-event-context") {
 				t.Fatal("invalid Owner response did not fail closed", err)
 			}
 		}
