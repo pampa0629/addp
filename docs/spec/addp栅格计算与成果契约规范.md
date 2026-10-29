@@ -382,4 +382,4 @@ DEM三维表面积统计`raster_surface_area`沿普通DataFrame契约返回面�
 
 ### 水流功率指数 SPI
 
-已确认固定(A/d)×tanβ、原始指数／metre、零坡度0、非零无阈值；显式面积与坡度两源，复用唯一准入／原生分块和现有COG路径，原TWI结果保持。定义和严格失败规则见[算子契约](workflow/栅格算子契约.md#水流功率指数-spi)。本地验证结果见专题；Linux全量和实际Hosted由CI会话协调，独立Hosted尚未新增。
+已确认固定(A/d)×tanβ、原始指数／metre、零坡度0、非零无阈值；显式面积与坡度两源，复用唯一准入／原生分块和现有COG路径，原TWI结果保持。定义和严格失败规则见[算子契约](workflow/栅格算子契约.md#水流功率指数-spi)。本地验证结果见专题；Linux全量和实际Hosted由CI会话协调，独立Hosted已批准14成功／52中英准确失败／833全检、14原COG与600秒，准备和运行证据见[测试场景](testing/scenarios/Manager与空间成果.md#水流功率指数-spi-独立-hosted-验收)。

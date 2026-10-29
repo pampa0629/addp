@@ -26,6 +26,18 @@ class RasterLineageTest(unittest.TestCase):
     def collect(self,raw=EXPECTED,public=PUBLIC,reader=None,name='tpi.cog.tif'):
         return m.collect(self.env,'raster-tpi-persistence',IDENTIFIER,name,EXPECTED,{'metadata':{'lineage_facts':copy.deepcopy(public)}},2,33,{'tasks':[]},reader or (lambda *args:copy.deepcopy(raw)))
 
+    def test_spi_approved_suite_keeps_two_source_internal_and_public_boundaries(self):
+        self.assertEqual(m.SUITES['raster-spi-persistence'],'spi-lineage')
+        expected=copy.deepcopy(EXPECTED)
+        expected['inputs'][0]['port']='input.area'
+        expected['inputs'].append({'port':'input.slope','locator':'addp://engine/3/path/slope.tif?type=file&item_id=11'})
+        expected['operations'][0]['input_ports']=['input.area','input.slope']
+        public={**expected,'operations':None}
+        m.validate(expected,expected,public=False);m.validate(public,expected,public=True)
+        missing=copy.deepcopy(expected);missing['inputs'].pop()
+        with self.assertRaises(m.SuiteError):m.validate(missing,expected,public=False)
+        with self.assertRaises(m.SuiteError):m.validate(public,expected,public=False)
+
     def test_public_null_and_complete_internal_are_both_required(self):
         receipt=self.collect();self.assertEqual(receipt['path'],'tpi-lineage/tpi.cog.tif.json')
         m.verify_archive(self.env,'raster-tpi-persistence',[{'name':'tpi.cog.tif','lineage_evidence':receipt}])

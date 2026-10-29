@@ -1,0 +1,225 @@
+"""Real GDAL preparation for independently archived SPI Hosted acceptance."""
+import importlib,json,os,shutil,subprocess,sys
+from pathlib import Path
+import numpy as np
+from osgeo import gdal
+import pytest
+
+def native_definition(scene,module,root,name,*,invalid=None,language='zh-cn',target=None):
+    definition=scene.definition({n:n for n in module.SOURCES},'parent',name,invalid=invalid,language=language)
+    for task in definition['tasks']:
+        params=task['params']
+        if task['operator']=='raster_load':
+            path=root/params.pop('locator');params['access_plan']={'schema_version':'addp.workflow.access-plan/v1','source':{'kind':'file','format':'tiff','access':{'method':'mounted_path','path':str(path)}}}
+        elif task['operator']=='raster_save':
+            params.pop('target_parent_locator');path=target or root/'outputs'/params['target_name'];params.pop('target_name');mode=params.pop('write_mode')
+            params['access_plan']={'schema_version':'addp.workflow.access-plan/v1','target':{'kind':'file','format':'tiff','name':path.name,'write_mode':mode,'access':{'method':'mounted_path','path':str(path)}}}
+    return definition
+
+def cache_for(module,root,request):
+    scope={'schema':module.CACHE_SCHEMA,'run_id':(root/'.addp-online-owner').read_text(),'fixture_sha256':module.digest(Path(module.__file__))['sha256'],
+           'source_root':str(root.resolve()),'sources':{n:module.digest(root/n)for n in module.SOURCES}}
+    control=module.prepare_oracle(root,scope)
+    directory=module.oracle_path(scope)
+    request.addfinalizer(lambda:shutil.rmtree(directory,ignore_errors=True))
+    return control
+
+@pytest.fixture(scope='module')
+def spi_persistence(tmp_path_factory,request):
+    module=importlib.import_module('business.scripts.online-raster-spi-fixture');scene=importlib.import_module('scripts.test.raster-spi-persistence-online')
+    from workflow_engine import execute_workflow
+    root=tmp_path_factory.mktemp('spi-export');(root/'outputs').mkdir();(root/'.addp-online-owner').write_text('spi-123-1');initial=module.seed(root)
+    for name in module.TARGETS:
+        result=execute_workflow(native_definition(scene,module,root,name));assert result['status']=='success',result
+        artifact=json.loads(result['final_result']);assert type(artifact['size_bytes']) is int and artifact['size_bytes']==(root/'outputs'/name).stat().st_size>0
+    control=cache_for(module,root,request)
+    return module,root,initial,control
+
+
+def test_spi_persistence_real_gdal_fourteen_chains_exact_pixels_mask_and_original_cogs(spi_persistence,tmp_path):
+    module,root,initial,control=spi_persistence;facts=module.verify(root,list(module.TARGETS),control)
+    assert facts['sources']==initial['sources'] and len(facts['targets'])==14
+    archived=module.archive_cogs(root,tmp_path,facts);assert len(archived)==14
+    for name,fact in facts['targets'].items():
+        assert all(fact[k]for k in ('full_pixel_and_mask_verification','cog_valid','independent_decimal_oracle_verified','joint_coverage_verified','fixed_area_over_width_verified','metre_unit_verified','nearest_overviews_verified','no_slope_threshold_verified','legal_zero_verified'))
+        assert fact['size_bytes']==(root/'outputs'/name).stat().st_size>0 and fact['overview_count']==3
+        assert(tmp_path/archived[name]['path']).read_bytes()==(root/'outputs'/name).read_bytes()
+        ds=gdal.Open(str(root/'outputs'/name));np.testing.assert_array_equal(ds.ReadAsArray(),module.expected_pixels(name,module.measurement_width(root,name)));ds=None
+        if name in('invalid.cog.tif','disjoint.cog.tif'):assert fact['valid_pixels']==0
+        else:assert fact['valid_pixels']>0
+    np.testing.assert_array_equal(module.expected_pixels('degree.cog.tif'),module.expected_pixels('percent.cog.tif'))
+    assert facts['targets']['degree.cog.tif']['zero_pixels']>0 and facts['targets']['degree.cog.tif']['negative_pixels']==0
+    for name in ('filled.cog.tif','zero-slope.cog.tif'):
+        assert facts['targets'][name]['zero_pixels']==facts['targets'][name]['valid_pixels']>0
+    assert np.isfinite(module.expected_pixels('tiny.cog.tif')[498,498])
+    assert module.expected_pixels('tiny.cog.tif')[498,498]>0
+
+
+@pytest.mark.parametrize('problem',('area_band', 'slope_band', 'area_unit_missing', 'area_unit_wrong', 'slope_unit', 'slope_unit_conflict', 'zero_area', 'negative_area', 'negative_slope', 'angle90', 'size', 'origin', 'crs', 'rectangular', 'rotated', 'south_up', 'geographic', 'no_crs', 'no_grid', 'area_alpha', 'slope_alpha', 'complex', 'area_scale', 'area_offset', 'slope_scale', 'slope_offset'))
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_spi_persistence_fifty_two_accurate_bilingual_failures_no_publication(spi_persistence,tmp_path,monkeypatch,problem,language):
+    import workflow_engine
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime.errors import WorkflowExecutionError
+    module,root,initial,control=spi_persistence;scene=importlib.import_module('scripts.test.raster-spi-persistence-online');target=tmp_path/'failed.cog.tif'
+    definition=native_definition(scene,module,root,'degree.cog.tif',invalid=problem,language=language,target=target)
+    workspaces=[];execute=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_spi':workspaces.append(params['input_raster'].workspace)
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture)
+    with pytest.raises(WorkflowExecutionError)as error:GeoPythonWorkflowRunner(language=language).execute(definition)
+    assert error.value.error_code=='EXECUTION_FAILED'and str(error.value)=='任务 spi 执行失败: '+scene.MESSAGES[problem][language=='en']
+    assert workspaces and all(not p.exists()for p in workspaces)and not target.exists()
+    assert{n:module.digest(root/n)for n in module.SOURCES}==initial['sources']
+
+
+@pytest.mark.parametrize('fault',['value','one_ulp','sign','edge_zero','hole_zero','mask','crs','grid','dtype','nodata','scale','unit','overviews','overview_value','sidecar','source_sidecar','missing_owner','missing','extra'])
+def test_spi_persistence_oracle_rejects_physical_corruption(spi_persistence,tmp_path,fault,request):
+    module,original,_,_=spi_persistence;root=tmp_path/'changed';shutil.copytree(original,root);control=cache_for(module,root,request);path=root/'outputs'/'degree.cog.tif'
+    if fault in ('value','one_ulp','sign','edge_zero','hole_zero','mask','crs','grid','nodata','scale','unit','overview_value'):
+        ds=gdal.OpenEx(str(path),gdal.OF_RASTER|gdal.OF_UPDATE,open_options=['IGNORE_COG_LAYOUT_BREAK=YES']);band=ds.GetRasterBand(1)
+        if fault in ('value','one_ulp','sign','edge_zero','hole_zero'):
+            row,col=(0,1) if fault=='edge_zero' else (510,511) if fault=='hole_zero' else (60,61)
+            wanted=module.expected_pixels('degree.cog.tif')[row,col]
+            value=0. if fault in ('edge_zero','hole_zero') else np.nextafter(wanted,np.inf) if fault=='one_ulp' else -wanted if fault=='sign' else 12345.
+            band.WriteRaster(col,row,1,1,np.array([value],np.float64).tobytes(),buf_type=gdal.GDT_Float64)
+        elif fault=='mask':
+            with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+            band.GetMaskBand().Fill(255)
+        elif fault=='crs':ds.SetProjection('')
+        elif fault=='grid':ds.SetGeoTransform((1,1,0,1,0,-1))
+        elif fault=='nodata':band.SetNoDataValue(-999.)
+        elif fault=='unit':band.SetUnitType('foot')
+        elif fault=='overview_value':band.GetOverview(0).Fill(1234.)
+        else:band.SetScale(2.)
+        band=ds=None
+    elif fault in ('dtype','overviews'):
+        alt=root/'replacement.tif';ds=gdal.Translate(str(alt),str(path),format='GTiff',outputType=gdal.GDT_Float32 if fault=='dtype' else gdal.GDT_Float64);ds=None;alt.replace(path)
+    elif fault=='sidecar':(root/'outputs'/'spi.cog.tif.aux.xml').write_text('unexpected')
+    elif fault=='source_sidecar':(root/'area.tif.msk').write_text('unexpected')
+    elif fault=='missing_owner':(root/'.addp-online-owner').unlink()
+    elif fault=='missing':path.unlink()
+    else:(root/'outputs'/'extra.tif').write_text('unexpected')
+    with pytest.raises(module.FixtureError):module.verify(root,list(module.TARGETS),control)
+
+
+@pytest.mark.parametrize('fault',['width_multiplied','count_as_area','logarithm','negative_index','zero_slope_nodata','tiny_threshold','percent_not_divided'])
+def test_spi_independent_oracle_rejects_wrong_semantics(spi_persistence,tmp_path,fault,request):
+    module,original,_,_=spi_persistence;root=tmp_path/'changed';shutil.copytree(original,root);control=cache_for(module,root,request)
+    name='tiny.cog.tif'if fault=='tiny_threshold'else'zero-slope.cog.tif'if fault=='zero_slope_nodata'else'percent.cog.tif'if fault=='percent_not_divided'else'degree.cog.tif'
+    bad=module.expected_pixels(name,module.measurement_width(root,name)).copy()
+    if fault=='width_multiplied':bad[np.isfinite(bad)]*=4
+    elif fault=='count_as_area':bad[np.isfinite(bad)]/=4
+    elif fault=='logarithm':
+        with np.errstate(divide='ignore'):bad=np.log(bad)
+    elif fault=='negative_index':bad=-bad
+    elif fault=='zero_slope_nodata':bad[:]=np.nan
+    elif fault=='tiny_threshold':bad[498,498]=np.nan
+    else:bad[np.isfinite(bad)]*=100
+    path=root/'outputs'/name;ds=gdal.OpenEx(str(path),gdal.OF_RASTER|gdal.OF_UPDATE,open_options=['IGNORE_COG_LAYOUT_BREAK=YES']);ds.GetRasterBand(1).WriteArray(bad);ds=None
+    with pytest.raises(module.FixtureError):module.verify(root,list(module.TARGETS),control)
+
+
+@pytest.mark.parametrize('fault',['bytes','size','hash','missing_entry','extra','symlink','manifest_symlink','missing_manifest'])
+def test_spi_original_cog_archive_cannot_change_or_silently_repair(spi_persistence,tmp_path,fault):
+    module,root,_,control=spi_persistence;facts=module.verify(root,list(module.TARGETS),control);module.archive_cogs(root,tmp_path,facts)
+    path=tmp_path/'spi-cogs'/'degree.cog.tif';manifest=tmp_path/'spi-cogs-manifest.json'
+    if fault=='bytes':path.write_bytes(b'changed')
+    elif fault in ('size','hash','missing_entry'):
+        value=json.loads(manifest.read_text())
+        if fault=='missing_entry':value.pop('degree.cog.tif')
+        else:value['degree.cog.tif']['size_bytes' if fault=='size' else 'sha256']=1 if fault=='size' else 'bad'
+        manifest.write_text(json.dumps(value))
+    elif fault=='extra':path.with_name('extra.tif').write_text('extra')
+    elif fault=='symlink':path.unlink();path.symlink_to(root/'outputs'/'degree.cog.tif')
+    elif fault=='missing_manifest':manifest.unlink()
+    else:manifest.unlink();manifest.symlink_to(tmp_path/'missing')
+    with pytest.raises(module.FixtureError):module.archive_cogs(root,tmp_path,facts)
+
+
+def test_spi_worker_stdin_is_repository_independent_and_sources_remain_immutable(spi_persistence,tmp_path,monkeypatch):
+    module,root,initial,control=spi_persistence;cwd=tmp_path/'empty';cwd.mkdir();scratch=tmp_path/'scratch';scratch.mkdir()
+    env={**os.environ,'PYTHONPATH':'','TMPDIR':str(scratch),'PYTHONDONTWRITEBYTECODE':'1'}
+    def invoke(action,payload,names=()):
+        done=subprocess.run([sys.executable,'-I','-c','import sys; exec(compile(sys.stdin.read(),"<fixture-worker>","exec"))','--worker',action,str(root),json.dumps(payload),*names],input=Path(module.__file__).read_text(),text=True,capture_output=True,cwd=cwd,env=env,timeout=150)
+        assert done.returncode==0,done.stderr;return json.loads(done.stdout)
+    child_control=invoke('prepare-oracle',control['scope'])
+    try:
+        facts=invoke('verify',child_control,module.TARGETS);assert facts['sources']==initial['sources']
+        assert facts['oracle_cache']['full_target_checks']==14
+        secret=tmp_path/'secret';secret.mkdir();(secret/'spi-source.json').write_text(json.dumps(initial));anchor=secret/module.CONTROL_NAME;anchor.write_bytes(module.encoded({'scope':child_control['scope'],'arrays':child_control['arrays']}));anchor.chmod(0o600)
+        # The host bridge models the same isolated Runtime TMPDIR used by stdin workers.
+        # Do not interpret unrelated host scratch directories as disposable Runtime residue.
+        monkeypatch.setattr(module.tempfile,'gettempdir',lambda:str(scratch))
+        monkeypatch.setattr(module,'guard',lambda:secret);monkeypatch.setattr(module,'owned_root',lambda _:root);monkeypatch.setattr(module,'runtime_worker',lambda action,owned,names:module.worker(action,owned,names));monkeypatch.setattr(module.sys,'argv',['fixture','verify',*module.TARGETS])
+        monkeypatch.setenv('ADDP_ONLINE_TEST_RUN_ID','spi-123-1');monkeypatch.setenv('ADDP_ONLINE_SPI_ORACLE_ANCHOR_SHA256',module.digest(anchor)['sha256'])
+        monkeypatch.setenv('ADDP_ONLINE_ARTIFACT_DIR',str(tmp_path/'artifacts'));assert module.main('verify')['sources']==initial['sources']
+        source=root/'dem.tif';original=source.read_bytes()
+        try:
+            source.write_bytes(b'changed source')
+            with pytest.raises(module.FixtureError,match='source file changed'):module.main('verify')
+        finally:source.write_bytes(original)
+    finally:assert invoke('cleanup-oracle',child_control)['oracle_cache_removed']
+    assert not list(scratch.glob('addp-spi-oracle-*'))
+
+
+def test_spi_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit(spi_persistence,monkeypatch):
+    module,root,_,control=spi_persistence
+    def forbidden(*args):raise AssertionError('warm verification must not rebuild the oracle')
+    monkeypatch.setattr(module,'expected_pixels',forbidden)
+    facts=module.verify(root,list(module.TARGETS),control);assert facts['oracle_cache']['full_target_checks']==14
+    directory=module.validate_cache(control);answer=module.load_expected(control,directory,'degree.cog.tif');assert not answer.flags.writeable
+
+
+@pytest.mark.parametrize('fault',['bytes','missing','symlink','mode','marker','extra','run','fixture','root','source_hash','shape'])
+def test_spi_oracle_cache_poison_or_cross_scope_fails(spi_persistence,tmp_path,request,fault):
+    import copy
+    module,original,_,_=spi_persistence;root=tmp_path/'owned';shutil.copytree(original,root);control=cache_for(module,root,request);directory=module.oracle_path(control['scope']);path=directory/'degree.cog.tif.npy'
+    if fault=='bytes':
+        raw=path.read_bytes();path.chmod(0o600);path.write_bytes(raw[:-1]+bytes([raw[-1]^1]));path.chmod(0o400)
+    elif fault=='missing':path.unlink()
+    elif fault=='symlink':path.unlink();path.symlink_to(root/'outputs/spi.cog.tif')
+    elif fault=='mode':path.chmod(0o600)
+    elif fault=='marker':
+        marker=directory/module.CACHE_MARKER;marker.chmod(0o600);marker.write_text('{}')
+    elif fault=='extra':(directory/'extra').touch()
+    elif fault in ('run','fixture','root'):
+        control=copy.deepcopy(control);key={'run':'run_id','fixture':'fixture_sha256','root':'source_root'}[fault];control['scope'][key]='spi-999-1'if fault=='run'else'b'*64 if fault=='fixture'else str(tmp_path)
+    elif fault=='source_hash':control['scope']['sources']['dem.tif']['sha256']='b'*64
+    else:
+        path.chmod(0o600)
+        with path.open('wb')as f:np.save(f,np.zeros((1,1)),allow_pickle=False)
+        path.chmod(0o400);control['arrays']['degree.cog.tif']=module.digest(path)
+    with pytest.raises(module.FixtureError):module.verify(root,list(module.TARGETS),control)
+
+
+def test_spi_oracle_cleanup_and_reuse_refusal(spi_persistence,tmp_path,request):
+    module,original,_,_=spi_persistence;root=tmp_path/'owned';shutil.copytree(original,root);control=cache_for(module,root,request)
+    with pytest.raises(FileExistsError):module.prepare_oracle(root,control['scope'])
+    assert module.cleanup_oracle(root,control)['oracle_cache_removed'];assert not module.oracle_path(control['scope']).exists()
+    with pytest.raises(module.FixtureError):module.verify(root,list(module.TARGETS),control)
+
+
+def test_spi_partial_oracle_preparation_always_has_an_owned_cleanup(spi_persistence,tmp_path,request,monkeypatch):
+    module,original,_,_=spi_persistence;root=tmp_path/'owned';shutil.copytree(original,root)
+    scope={'schema':module.CACHE_SCHEMA,'run_id':'spi-123-1','source_root':str(root.resolve()),'fixture_sha256':module.digest(Path(module.__file__))['sha256'],'sources':{n:module.digest(root/n)for n in module.SOURCES}}
+    request.addfinalizer(lambda:shutil.rmtree(module.oracle_path(scope),ignore_errors=True))
+    saved=module.expected_pixels
+    def fail(name,width):
+        if name=='percent.cog.tif':raise module.FixtureError('injected independent expectation failure')
+        return saved(name,width)
+    monkeypatch.setattr(module,'expected_pixels',fail)
+    with pytest.raises(module.FixtureError):module.prepare_oracle(root,scope)
+    assert module.cleanup_oracle(root,{'scope':scope})['oracle_cache_removed'];assert not module.oracle_path(scope).exists()
+
+
+def test_spi_cache_test_cleanup_freezes_created_path_before_scope_mutation(spi_persistence,tmp_path):
+    from types import SimpleNamespace
+    module,original,_,_=spi_persistence;root=tmp_path/'owned';shutil.copytree(original,root);finalizers=[]
+    control=cache_for(module,root,SimpleNamespace(addfinalizer=finalizers.append));directory=module.oracle_path(control['scope'])
+    try:
+        control['scope']['sources']['dem.tif']['sha256']='b'*64
+        assert module.oracle_path(control['scope'])!=directory
+        finalizers[0]();assert not directory.exists()
+    finally:shutil.rmtree(directory,ignore_errors=True)
