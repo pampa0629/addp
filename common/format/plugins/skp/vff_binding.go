@@ -221,44 +221,11 @@ func (r *vffBindingReader) walk(raw []byte, role, location string, depth, base i
 		return nil
 	})
 }
-func vffBindingID(raw []byte) (uint64, error) {
-	if len(raw) < 1 || len(raw) > 8 {
-		return 0, fmt.Errorf("invalid VFF binding ID size")
-	}
-	var value uint64
-	for i, b := range raw {
-		value |= uint64(b) << (8 * i)
-	}
-	if value == 0 {
-		return 0, fmt.Errorf("zero VFF binding ID")
-	}
-	return value, nil
-}
-func (r *vffBindingReader) entityID(raw []byte, depth, base int) (uint64, error) {
-	var id uint64
-	count := 0
-	err := r.each(raw, depth, base, func(tag string, data []byte, offset int) error {
-		count++
-		if tag != "DE05" || count != 1 {
-			return fmt.Errorf("ambiguous VFF binding entity ID")
-		}
-		var err error
-		id, err = vffBindingID(data)
-		return err
-	})
-	if err != nil {
-		return 0, err
-	}
-	if count != 1 {
-		return 0, fmt.Errorf("missing VFF binding entity ID")
-	}
-	return id, nil
-}
 func (r *vffBindingReader) reference(raw []byte, kind string, offset int) error {
 	if len(r.result.references) >= r.limits.references {
 		return fmt.Errorf("VFF binding reference budget exceeded")
 	}
-	id, err := vffBindingID(raw)
+	id, err := vffRecordID(raw)
 	if err != nil {
 		return err
 	}

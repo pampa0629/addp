@@ -51,3 +51,37 @@ func (r *vffRecords) each(raw []byte, depth, base int, consume func(string, []by
 	}
 	return r.ctx.Err()
 }
+
+func vffRecordID(raw []byte) (uint64, error) {
+	if len(raw) < 1 || len(raw) > 8 {
+		return 0, fmt.Errorf("invalid VFF record ID size")
+	}
+	var value uint64
+	for i, b := range raw {
+		value |= uint64(b) << (8 * i)
+	}
+	if value == 0 {
+		return 0, fmt.Errorf("zero VFF record ID")
+	}
+	return value, nil
+}
+func (r *vffRecords) entityID(raw []byte, depth, base int) (uint64, error) {
+	var id uint64
+	count := 0
+	err := r.each(raw, depth, base, func(tag string, data []byte, offset int) error {
+		count++
+		if tag != "DE05" || count != 1 {
+			return fmt.Errorf("ambiguous VFF record entity ID")
+		}
+		var err error
+		id, err = vffRecordID(data)
+		return err
+	})
+	if err != nil {
+		return 0, err
+	}
+	if count != 1 {
+		return 0, fmt.Errorf("missing VFF record entity ID")
+	}
+	return id, nil
+}
