@@ -10,7 +10,7 @@
       <el-alert v-if="errorKey" :title="t(errorKey)" type="warning" :closable="false" data-testid="engine-error" />
       <template v-if="!state.deploymentID">
         <form class="toolbar" @submit.prevent="filterInput.submit">
-          <el-input v-model="search" :placeholder="t('monitor.engines.search')" :aria-label="t('monitor.engines.search')" clearable @input="filterInput.queue" @clear="filterInput.submit" />
+          <el-input v-model="search" :placeholder="t('monitor.engines.search')" :aria-label="t('monitor.engines.search')" clearable @input="filterInput.queue" @keydown.enter="filterInput.enter" @clear="filterInput.submit" />
         </form>
         <el-table :data="owners" v-loading="loading" :empty-text="t('monitor.engines.empty')" data-testid="engine-list">
           <el-table-column prop="display_name" :label="t('monitor.engines.name')" min-width="190" show-overflow-tooltip />

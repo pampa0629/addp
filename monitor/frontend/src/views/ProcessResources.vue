@@ -8,17 +8,17 @@
     <el-alert v-if="!canRead" :title="t('monitor.process.denied')" type="warning" :closable="false" />
     <template v-else>
       <form class="process-filters" @submit.prevent="filter">
-        <el-input v-model="moduleName" :placeholder="t('monitor.process.moduleFilter')" :aria-label="t('monitor.process.moduleFilter')" clearable @input="queueFilter" @clear="filter" />
+        <el-input v-model="moduleName" :placeholder="t('monitor.process.moduleFilter')" :aria-label="t('monitor.process.moduleFilter')" clearable @input="queueFilter" @keydown.enter="filterInput.enter" @clear="filter" />
         <div class="endpoint-filter">
-          <el-input v-model="registeredHost" :placeholder="t('monitor.process.addressFilter')" :aria-label="t('monitor.process.addressFilter')" maxlength="255" clearable @input="queueFilter" @clear="filter" />
+          <el-input v-model="registeredHost" :placeholder="t('monitor.process.addressFilter')" :aria-label="t('monitor.process.addressFilter')" maxlength="255" clearable @input="queueFilter" @keydown.enter="filterInput.enter" @clear="filter" />
           <FieldHelp :content="t('monitor.process.addressHint')" />
         </div>
         <div class="host-name-filter">
-          <el-input v-model="nodeName" :placeholder="t('monitor.process.hostNameFilter')" :aria-label="t('monitor.process.hostNameFilter')" clearable @input="queueFilter" @clear="filter" />
+          <el-input v-model="nodeName" :placeholder="t('monitor.process.hostNameFilter')" :aria-label="t('monitor.process.hostNameFilter')" clearable @input="queueFilter" @keydown.enter="filterInput.enter" @clear="filter" />
           <FieldHelp :content="t('monitor.process.hostNameHint')" />
         </div>
         <div class="host-ip-filter">
-          <el-input v-model="nodeIP" :placeholder="t('monitor.process.hostIPFilter')" :aria-label="t('monitor.process.hostIPFilter')" clearable @input="queueFilter" @clear="filter" />
+          <el-input v-model="nodeIP" :placeholder="t('monitor.process.hostIPFilter')" :aria-label="t('monitor.process.hostIPFilter')" clearable @input="queueFilter" @keydown.enter="filterInput.enter" @clear="filter" />
           <FieldHelp :content="t('monitor.process.hostIPHint')" />
         </div>
         <el-select v-model="role" :placeholder="t('monitor.process.role')" :aria-label="t('monitor.process.role')" clearable @change="filter">

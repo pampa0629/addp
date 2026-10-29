@@ -1,6 +1,48 @@
 import { expect, test } from '@playwright/test'
 import { mockModuleQueryAPI } from '../../../system/frontend/e2e/module-query.fixture'
-import { backend, identity } from '../../../monitor/frontend/e2e/monitoring-targets.fixture'
+import { backend, identity, localTimeInput } from '../../../monitor/frontend/e2e/monitoring-targets.fixture'
+
+for (const locale of ['zh-cn', 'en']) test(`automatic alert text and time filters preserve one Console iframe (${locale})`, async ({ page }) => {
+  await backend(page, { locale, identity: identity(['monitor.platform_alert.read', 'monitor.platform_alert_notification.read', 'platform.host_node.read']) })
+  const queries = []
+  await page.route('**/api/v1/monitor/platform/**', route => {
+    const url = new URL(route.request().url())
+    if (url.pathname.endsWith('/alerts')) queries.push(Object.fromEntries(url.searchParams))
+    return route.fulfill({ json: { data: [], total: 0, page: Number(url.searchParams.get('page')), page_size: 20 } })
+  })
+  await page.clock.install()
+  await page.goto('/monitor/platform-alerts?page=2&category=resource&severity=warning')
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(monitor.getByTestId('pipeline-incidents')).toBeVisible()
+  await expect.poll(() => queries.length).toBe(1)
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000))
+  const frame = page.frames().find(frame => frame.parentFrame()), origin = await frame.evaluate(() => performance.timeOrigin)
+  const form = monitor.getByTestId('alert-filters')
+  await expect(form.getByRole('button', { name: locale === 'en' ? 'Search' : '搜索', exact: true })).toHaveCount(0)
+  const name = form.getByRole('textbox', { name: locale === 'en' ? 'Alert name' : '告警名称', exact: true })
+  await name.fill('C'); await name.fill('CPU')
+  expect(queries).toHaveLength(1)
+  await page.clock.fastForward(301)
+  await expect.poll(() => queries.length).toBe(2)
+  await expect(page).toHaveURL(url => url.searchParams.get('search') === 'CPU' && !url.searchParams.has('page'))
+  const host = form.getByRole('textbox', { name: locale === 'en' ? 'Host name' : '主机名称', exact: true })
+  await host.fill('Host'); await host.press('Enter')
+  await expect.poll(() => queries.length).toBe(3)
+  expect(queries.at(-1)).toMatchObject({ search: 'CPU', host_name: 'Host', category: 'resource', severity: 'warning' })
+  await page.clock.fastForward(301); expect(queries).toHaveLength(3)
+  await page.clock.resume()
+  const from = monitor.getByPlaceholder(locale === 'en' ? 'Start time' : '起始时间')
+  await from.fill(await localTimeInput(page, '2026-10-24T00:00:00Z')); await from.press('Tab')
+  await expect.poll(() => queries.at(-1)?.time_from).toBe('2026-10-24T00:00:00.000Z')
+  expect(queries.at(-1)).not.toHaveProperty('time_to')
+  await page.keyboard.press('Escape')
+  expect(await frame.evaluate(() => performance.timeOrigin)).toBe(origin)
+  await page.reload()
+  await expect(host).toHaveValue('Host')
+  await expect(name).toHaveValue('CPU')
+  await expect.poll(() => queries.at(-1)).toMatchObject({ time_from: '2026-10-24T00:00:00.000Z', search: 'CPU', host_name: 'Host' })
+  await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
+})
 
 test('platform alert filters and notifications preserve one Console iframe and restore on reload', async ({ page }) => {
   await backend(page, { identity: identity(['monitor.platform_alert.read', 'monitor.platform_alert_notification.read','platform.host_node.read']) })

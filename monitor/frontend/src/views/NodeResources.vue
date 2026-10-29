@@ -9,7 +9,7 @@
     <el-alert v-if="errorKey" :title="t(errorKey)" type="error" show-icon :closable="false" data-testid="resource-error" />
     <template v-if="!nodeID">
       <el-form class="resource-search" @submit.prevent="search">
-        <el-input v-model="searchText" :placeholder="t('monitor.resources.search')" :aria-label="t('monitor.resources.search')" maxlength="200" clearable data-testid="resource-search" @input="filterInput.queue" @clear="search" />
+        <el-input v-model="searchText" :placeholder="t('monitor.resources.search')" :aria-label="t('monitor.resources.search')" maxlength="200" clearable data-testid="resource-search" @input="filterInput.queue" @keydown.enter="filterInput.enter" @clear="search" />
         <HostNodeFilters :node-kind="state.nodeKind" :enabled="state.enabled" @change="changeFilter" />
         <el-button @click="resetFilters" data-testid="resource-reset">{{ t('common.reset') }}</el-button>
       </el-form>

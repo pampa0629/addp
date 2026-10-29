@@ -36,12 +36,27 @@ test('hidden filters preserve pending input and revoked or disposed owners never
   assert.equal(calls, 1); assert.equal(filter.pending, false)
 })
 
-test('host service and engine pages consume one automatic-filter lifecycle', () => {
-  for (const name of ['NodeResources', 'ProcessResources', 'EngineResources']) {
+test('Enter submits immediately and cancels the queued text without consuming IME confirmation', t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  let calls = 0, prevented = 0
+  const filter = createAutoFilter({ apply: () => calls++, enabled: () => true, visible: () => true, pause: () => {} })
+  const event = { preventDefault: () => prevented++ }
+  filter.queue()
+  filter.enter({ ...event, isComposing: true })
+  filter.enter({ ...event, keyCode: 229 })
+  assert.equal(calls, 0); assert.equal(prevented, 0); assert.equal(filter.pending, true)
+  filter.enter(event)
+  assert.equal(calls, 1); assert.equal(prevented, 1); assert.equal(filter.pending, false)
+  t.mock.timers.tick(300); assert.equal(calls, 1)
+})
+
+test('host service engine and alert pages consume one automatic-filter lifecycle', () => {
+  for (const name of ['NodeResources', 'ProcessResources', 'EngineResources', 'PlatformAlerts']) {
     const source = readFileSync(new URL(`../../../monitor/frontend/src/views/${name}.vue`, import.meta.url), 'utf8')
     assert.match(source, /import \{ createAutoFilter \} from .*autoFilter\.mjs/)
     assert.match(source, /filterInput\.visibilityChanged\(/)
     assert.match(source, /filterInput\.dispose\(/)
+    assert.match(source, /@keydown\.enter="filterInput.enter"/)
     assert.doesNotMatch(source, /debounce\(|pendingFilter|deferredFilter/)
     assert.doesNotMatch(source, /native-type="submit"[^>]*>\{\{ t\('common.search'\)/)
   }

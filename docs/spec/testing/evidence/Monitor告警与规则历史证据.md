@@ -380,3 +380,26 @@ Node24.11.1下标准`make test-common-frontend`先重现283项中282通过／1�
 最终独立110项确定性回归通过（/tmp/addp-filesystem-diagnostic-delivery-unit.log），覆盖有界读取、权限／缺失／超限／Docker命令失败及超时、秘密不泄漏和首异常保留；原反例红记录为/tmp/addp-filesystem-first-failure-red.log。标准T2登记检查、shell语法及限定diff通过，原输入声明和Release的filesystem-alerts矩阵已自动覆盖，无新入口或workflow。最终T2日志/tmp/addp-filesystem-discovery-metrics-v3.log的SHA256为0d6a7f97048664109410d8dcc63b40c032de50fd2f60f7f175d913f3b2d28698，输入快照/tmp/addp-filesystem-discovery-v3-inputs.json记录基底41024f0800a646ee613f53f518673de2c494527e及本批两份脚本修改；348项中347项前后不变，Makefile仅发生其他会话的两个栅格runner测试登记改动，已核对原文件与基底匹配及Monitor metrics完整target／recipe字节不变。不将整个共享HEAD写作全通过。
 
 成功项目addp-metrics-t2-032ce1c920ed484f8a84f9f9a4856244沿标准退出清理并核对临时文件删除，外部再按精确Compose项目label独立确认容器／网络／卷均0，回执/tmp/addp-filesystem-discovery-v3-receipt.json；前两轮对应清理回执分别为/tmp/addp-filesystem-discovery-cleanup.json与-v2-cleanup.json，三类对象均0。此为Docker Desktop上受控Linux指标源→真实Prometheus／SQL／签名HTTP的本地T2，不是原生Linux主机文件系统采集、个人Safari挂载行、真实MFA／Hosted或生产T5。未操作个人服务、数据库或采集配置，未触发／轮询CI、Hosted、容量或定时；后续CI仍等专门会话回传。
+
+
+## 平台告警自动筛选与字段提示（2026-10-29）
+
+事件列表删除时间搜索按钮，三个文本筛选复用共享createAutoFilter的300毫秒防抖；类别、状态、级别、确认后的有效时间与点击清空／Enter立即提交完整有效筛选并回第一页。时间继续允许单边界、使用首次发现时间与UTC半开区间，名称仍为首次触发名称、主机仍只查当前主机资源告警，不改变查询、计数或严重未恢复事件优先排序。通知、规则和投递写入行为不变，不新增定时刷新。
+
+主机名称与时间解释改用共享FieldHelp，支持悬停／键盘焦点；非法及反向时间保持就近校验，不发新查询。URL非法边界在未显式修改该边界或清除时间前保持拒绝，修改其他文本或另一个时间边界不能删除该限制。清除时间仅撤去已提交时间条件；手动刷新、翻页、页签／路由／身份／语言变化取消旧待提交输入，隐藏暂停、前台恢复后提交；已选范围、通知页返回与Console单iframe沿原URL恢复。
+
+本轮更正上一批Enter证明：`clock.install()`仍会推进时间，原三项通过不能证明Enter在防抖前提交。改为明确`pauseAt()`后，旧实现四项中仅引擎通过，主机、服务与告警三项失败；没有改变被测输入、放宽等待或推进300毫秒来掩盖失败。共享createAutoFilter新增唯一enter(event)，显式提交并preventDefault，忽略IME组合／229；四页文本框统一复用。修复后四项严格暂停场景通过，原3项与本次失败保留，节点证据已撤去原“冻结时钟”结论；该受控事件测试不代表macOS真实输入法验收。
+
+本地实际验证：
+
+- `npm --prefix monitor/frontend run test:e2e -- e2e/automatic-filter-enter.spec.js e2e/platform-alerts.spec.js`：40项通过，含严格Enter四页及原事件、时间、名称／主机检索、权限、分页与通知规则36项。
+- `npm --prefix console/frontend run test:e2e -- e2e/platform-alert-navigation.spec.js`：7项通过，新增中英文自动文本／单边界时间查询、严格暂停下Enter、URL及同iframe；保留原Tenant拒绝、System诊断跳转及规则弹窗。
+- `make test-common-frontend`：292项全部通过，含共享Enter／IME／取消与四页唯一所有权。本批未修改其他Owner的ResourceTree组件及清单；之前共享门禁失败不倒改为通过。
+- `make test-console-frontend`：219项单元、265个浏览器场景和构建通过。
+- `make test-monitor-frontend`：131项单元、512个浏览器场景及构建通过，包含新增5项告警交互及四页严格暂停Enter场景；全部在同一完整套件执行。
+
+新增页面用例覆盖一次防抖合并、选择合并尚未提交文本、清空、隐藏恢复、刷新／页签／撤权取消、非法URL保留、反向时间修正，以及中英文提示和窄屏布局。早期新用例错误定位到只读输入或嵌套相对locator导致失败，已改为正常选择框操作；Console首次误从含Monitor私有Playwright依赖的fixture导入纯日期函数造成双副本，已将同一函数移到既有纯fixture供两门禁复用。未强制点击、修改产品以绕过测试或放宽超时，旧失败日志保留。
+
+沿既有Common Frontend／Monitor／Console测试目录、Make与Platform前端矩阵自动发现，无新依赖、API、Swagger、权限或workflow。未重复运行未变的后端、数据库或Online runner；实际Safari、真实登录／MFA和Hosted未验。不重启个人服务、不修改个人账户或配置；CI／Hosted等专门会话回传，仅标准提交推送，不手动调度／重跑／轮询、不设置定时任务。
+
+日志：`/tmp/addp-alert-auto-filters-{enter,focused,focused-final,common-final,new,new-final,basic-check,console-focused,console-focused-final,monitor-full,console-full}.log`。严格暂停旧实现的三处失败不能计通过，最终门禁与正式运行分层认定。

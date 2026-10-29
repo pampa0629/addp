@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { fixture, deliveryView, resourceIncident } from './platform-alerts.fixture'
-import { identity, setIdentity } from './monitoring-targets.fixture'
+import { identity, setIdentity, localTimeInput } from './monitoring-targets.fixture'
 
 test('alert acknowledgement uses current version and failed refresh becomes unknown', async ({ page }) => {
   const state = await fixture(page)
@@ -395,22 +395,16 @@ test('invalid severity is rejected without broadening and failed refresh clears 
 })
 
 
-async function localTimeInput(page, iso) {
- return page.evaluate(value => {
-  const d = new Date(value), pad = n => String(n).padStart(2,'0')
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
- }, iso)
-}
 
 for (const locale of ['zh-cn','en']) {
- test(`opening time range submits drafts, resets pagination and restores through navigation ${locale}`, async ({page}) => {
+ test(`opening time range applies confirmed bounds, resets pagination and restores through navigation ${locale}`, async ({page}) => {
   if (locale === 'en') await page.setViewportSize({width:680,height:900})
   const start = '2026-10-01T00:00:10.000Z', end = '2026-10-01T00:00:20.000Z'
   const entries = Array.from({length:26},(_,i)=>({id:i+1,version:1,category:'log_pipeline',subject_kind:'log_observer',subject_id:`time-host-${i}`,signal:'collector_dropped',severity:i<25?'critical':'warning',status:'open',opened_at:new Date(Date.parse('2026-10-01T00:00:00Z')+i*1000).toISOString()}))
   const state = await fixture(page,{locale,entries,path:'/platform-alerts?severity=critical&page=2'})
   const table = page.getByTestId('pipeline-incidents'), form = page.getByTestId('alert-time-filter')
   const from = form.getByPlaceholder(locale==='en'?'Start time':'起始时间'), to = form.getByPlaceholder(locale==='en'?'End time':'结束时间')
-  const search = form.getByRole('button',{name:locale==='en'?'Search':'搜索',exact:true})
+  await expect(form.getByRole('button',{name:locale==='en'?'Search':'搜索',exact:true})).toHaveCount(0)
   await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(5)
   const previousReads = state.requests.filter(r=>r.path.endsWith('/alerts')).length
   const localStart = await localTimeInput(page,start), localEnd = await localTimeInput(page,end)
@@ -418,12 +412,8 @@ for (const locale of ['zh-cn','en']) {
   await to.fill(localEnd); await to.press('Tab'); await page.keyboard.press('Escape')
   await expect(from).toHaveValue(localStart); await expect(to).toHaveValue(localEnd)
   for (const input of [from,to]) {const b=await input.boundingBox();expect(b.x+b.width).toBeLessThanOrEqual(page.viewportSize().width)}
-  expect(state.requests.filter(r=>r.path.endsWith('/alerts'))).toHaveLength(previousReads)
-  await page.locator('.platform-alerts').getByRole('button',{name:locale==='en'?'Refresh':'刷新',exact:true}).click()
-  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(5)
-  expect(state.requests.filter(r=>r.path.endsWith('/alerts')).at(-1).query.time_from).toBeUndefined()
-  await expect(from).toHaveValue(localStart);await expect(to).toHaveValue(localEnd)
-  await search.click()
+  await expect.poll(()=>state.requests.filter(r=>r.path.endsWith('/alerts')).at(-1)?.query.time_to).toBe(end)
+  expect(state.requests.filter(r=>r.path.endsWith('/alerts')).length).toBeGreaterThan(previousReads)
   await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(10)
   const rows = await table.locator('tbody > tr.el-table__row').allTextContents()
   expect(rows.some(row=>row.includes('time-host-10'))).toBe(true)
@@ -442,7 +432,7 @@ for (const locale of ['zh-cn','en']) {
   const params = new URL(page.url()).searchParams
   expect(params.has('time_from')).toBe(false);expect(params.has('time_to')).toBe(false);expect(params.get('severity')).toBe('critical')
   const lowerOnly='2026-10-01T00:00:01.000Z'
-  await from.fill(await localTimeInput(page,lowerOnly));await from.press('Tab');await page.keyboard.press('Escape');await search.click()
+  await from.fill(await localTimeInput(page,lowerOnly));await from.press('Tab');await page.keyboard.press('Escape')
   await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(20)
   await page.locator('.platform-alerts .el-pagination .btn-next').click()
   await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(4)
@@ -459,10 +449,11 @@ test('opening time rejects invalid routes and reverse drafts without widening qu
  expect(state.requests.filter(r=>r.path.endsWith('/alerts')).at(-1).query.time_from).toBe('invalid')
  await page.goto('/platform-alerts?severity=critical')
  await expect(table.locator('tbody > tr.el-table__row')).toHaveCount(1)
- const count=state.requests.filter(r=>r.path.endsWith('/alerts')).length
  await form.getByPlaceholder('起始时间').fill(await localTimeInput(page,'2026-10-02T00:00:00Z'));await form.getByPlaceholder('起始时间').press('Tab')
+ await expect.poll(()=>state.requests.filter(r=>r.path.endsWith('/alerts')).at(-1)?.query.time_from).toBe('2026-10-02T00:00:00.000Z')
+ const count=state.requests.filter(r=>r.path.endsWith('/alerts')).length
  await form.getByPlaceholder('结束时间').fill(await localTimeInput(page,'2026-10-01T00:00:00Z'));await form.getByPlaceholder('结束时间').press('Tab');await page.keyboard.press('Escape')
- await expect(form.getByRole('button',{name:'搜索',exact:true})).toBeDisabled()
+ await expect(form.getByRole('button',{name:'搜索',exact:true})).toHaveCount(0)
  await expect(form.getByRole('status')).toContainText('起始时间须早于结束时间')
  expect(state.requests.filter(r=>r.path.endsWith('/alerts'))).toHaveLength(count)
 })
@@ -546,7 +537,10 @@ for (const locale of ['zh-cn','en']) {
   const state=await fixture(page,{locale,keys:['monitor.platform_alert.read','monitor.platform_alert_notification.read','platform.host_node.read'],entries:rows,hostNames:{[node]:hostName},path:'/platform-alerts?page=2&severity=warning&search=Memory'})
   const table=page.getByTestId('pipeline-incidents'),input=page.getByRole('textbox',{name:locale==='en'?'Host name':'主机名称',exact:true})
   await expect(input).toBeVisible()
-  await expect(page.getByText(locale==='en'?'Matches current names for host resource alerts only.':'按当前名称匹配，仅查询主机资源告警。',{exact:true})).toBeVisible()
+  const hint = locale==='en'?'Matches current names for host resource alerts only.':'按当前名称匹配，仅查询主机资源告警。'
+  await page.locator('.alert-host-filter .field-help').hover()
+  await expect(page.getByRole('tooltip',{name:hint,exact:true})).toBeVisible()
+  await page.mouse.move(0,0)
   await input.pressSequentially('hOsT')
   await expect(input).toHaveValue('hOsT')
   await input.press('Enter')

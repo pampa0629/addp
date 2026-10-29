@@ -91,3 +91,10 @@ export async function backend(page, options = {}) {
 export async function setIdentity(page, value) {
   await page.evaluate(next => { document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('monitor-auth').authContext = next }, value)
 }
+
+export async function localTimeInput(page, iso) {
+ return page.evaluate(value => {
+  const d = new Date(value), pad = n => String(n).padStart(2,'0')
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+ }, iso)
+}

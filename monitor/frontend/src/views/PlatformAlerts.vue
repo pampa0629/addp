@@ -13,32 +13,33 @@
     <el-alert v-if="!canRead && !canReadNotifications && !canReadRules && !canReadHTTPRules && !canReadAvailability" :title="t('monitor.platformAlerts.denied')" type="warning" :closable="false" />
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <section v-if="state.tab === 'incidents' && canRead">
+      <form data-testid="alert-filters" @submit.prevent="filterInput.submit">
       <div class="alert-toolbar">
-        <el-select :model-value="state.category" :empty-values="[null, undefined]" @update:model-value="value => change({ category: value, page: 1 })" :aria-label="t('monitor.platformAlerts.category')">
+        <el-select v-model="draftFilters.category" :empty-values="[null, undefined]" @change="filterInput.submit" :aria-label="t('monitor.platformAlerts.category')">
           <el-option :label="t('monitor.platformAlerts.allCategories')" value="" /><el-option v-for="category in ['log_pipeline','resource','http_quality','process_resource','service_availability']" :key="category" :label="categoryLabel(category)" :value="category" />
         </el-select>
-        <el-select :model-value="state.status" :empty-values="[null, undefined]" @update:model-value="value => change({ status: value, page: 1 })" :aria-label="t('monitor.platformAlerts.status')">
+        <el-select v-model="draftFilters.status" :empty-values="[null, undefined]" @change="filterInput.submit" :aria-label="t('monitor.platformAlerts.status')">
           <el-option :label="t('monitor.platformAlerts.active')" value="active" /><el-option :label="t('monitor.platformAlerts.allStatuses')" value="" /><el-option v-for="status in ['open','acknowledged','resolved']" :key="status" :label="t(`monitor.platformAlerts.statuses.${status}`)" :value="status" />
         </el-select>
-        <el-select :model-value="state.severity" :empty-values="[null, undefined]" @update:model-value="value => change({ severity: value, page: 1 })" :aria-label="t('monitor.platformAlerts.severity')">
+        <el-select v-model="draftFilters.severity" :empty-values="[null, undefined]" @change="filterInput.submit" :aria-label="t('monitor.platformAlerts.severity')">
           <el-option :label="t('monitor.platformAlerts.allSeverities')" value="" /><el-option v-for="severity in ['critical','warning']" :key="severity" :label="t(`monitor.platformAlerts.severities.${severity}`)" :value="severity" />
         </el-select>
-        <el-input v-model="draftSearch" @change="value => change({ search: value, page: 1 })" :aria-label="t('monitor.platformAlerts.alertName')" :placeholder="t('monitor.platformAlerts.searchName')" maxlength="100" clearable />
+        <el-input v-model="draftFilters.search" @input="filterInput.queue" @keydown.enter="filterInput.enter" @clear="filterInput.submit" :aria-label="t('monitor.platformAlerts.alertName')" :placeholder="t('monitor.platformAlerts.searchName')" maxlength="100" clearable />
         <div v-if="canReadHosts || state.host_name" class="alert-host-filter">
-          <el-input v-model="draftHostName" :disabled="!canReadHosts" @change="value => change({ host_name: value, page: 1 })" :aria-label="t('monitor.platformAlerts.hostName')" :placeholder="t('monitor.platformAlerts.searchHostName')" maxlength="100" clearable />
-          <small>{{ t('monitor.platformAlerts.hostNameHint') }}</small>
+          <el-input v-model="draftFilters.host_name" :disabled="!canReadHosts" @input="filterInput.queue" @keydown.enter="filterInput.enter" @clear="filterInput.submit" :aria-label="t('monitor.platformAlerts.hostName')" :placeholder="t('monitor.platformAlerts.searchHostName')" maxlength="100" clearable />
+          <FieldHelp :content="t('monitor.platformAlerts.hostNameHint')" />
         </div>
-        <el-input :model-value="state.subject_id" @change="value => change({ subject_id: value, page: 1 })" :placeholder="t('monitor.platformAlerts.subject')" maxlength="100" clearable />
+        <el-input v-model="draftFilters.subject_id" @input="filterInput.queue" @keydown.enter="filterInput.enter" @clear="filterInput.submit" :placeholder="t('monitor.platformAlerts.subject')" :aria-label="t('monitor.platformAlerts.subject')" maxlength="100" clearable />
       </div>
       <div class="alert-time-filter" data-testid="alert-time-filter" role="group" :aria-label="t('monitor.platformAlerts.openedAt')">
         <span>{{ t('monitor.platformAlerts.openedAt') }}</span>
-        <el-date-picker v-model="draftFrom" type="datetime" :placeholder="t('common.runtimeInstanceTime.from')" />
-        <el-date-picker v-model="draftTo" type="datetime" :placeholder="t('common.runtimeInstanceTime.to')" />
-        <el-button :disabled="!timeDraft.valid" @click="applyTimeFilter">{{ t('common.search') }}</el-button>
+        <FieldHelp :content="t('monitor.platformAlerts.timeHint')" />
+        <el-date-picker v-model="draftFrom" type="datetime" :placeholder="t('common.runtimeInstanceTime.from')" @change="changeTime('from')" />
+        <el-date-picker v-model="draftTo" type="datetime" :placeholder="t('common.runtimeInstanceTime.to')" @change="changeTime('to')" />
         <el-button @click="clearTimeFilter">{{ t('monitor.platformAlerts.clearTime') }}</el-button>
-        <p class="alert-time-hint">{{ t('monitor.platformAlerts.timeHint') }}</p>
         <p v-if="!timeDraft.valid" class="alert-time-hint" role="status">{{ t('monitor.platformAlerts.invalidTime') }}</p>
       </div>
+      </form>
       <el-table :data="incidents" data-testid="pipeline-incidents">
         <el-table-column :label="t('monitor.platformAlerts.category')" width="130"><template #default="{ row }">{{ categoryLabel(row.category) }}</template></el-table-column>
         <el-table-column :label="t('monitor.platformAlerts.alertName')" min-width="200" show-overflow-tooltip><template #default="{ row }">{{ row.name || t('monitor.platformAlerts.nameMissing') }}</template></el-table-column>
@@ -176,6 +177,8 @@
   </main>
 </template>
 <script setup>
+import FieldHelp from '../../../../common-frontend/basic/src/components/FieldHelp.vue'
+import { createAutoFilter } from '../../../../common-frontend/basic/src/utils/autoFilter.mjs'
 import { formatBytes } from '../../../../common-frontend/basic/src/utils/formatters.js'
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -197,11 +200,19 @@ import { availabilityEvidence } from '../utils/serviceAvailability'
 import { httpAlertEvidence, httpRuleMetrics } from '../utils/httpRules'
 const route = useRoute(), router = useRouter(), auth = useAuthStore(), { t, locale } = useI18n()
 const state = computed(() => platformAlertState(route.query))
-const draftSearch = ref(''), draftHostName = ref('')
+const draftFilters = ref({})
 const draftFrom = ref(null), draftTo = ref(null)
-const timeDraft = computed(() => platformAlertTimeDraft(draftFrom.value, draftTo.value))
-function applyTimeFilter() {
-  if (timeDraft.value.valid) change({ time_from: timeDraft.value.time_from, time_to: timeDraft.value.time_to, page: 1 })
+const editedTime = ref({ from: false, to: false })
+const timeDraft = computed(() => platformAlertTimeDraft(state.value.time_from === 'invalid' && !editedTime.value.from ? 'invalid' : draftFrom.value, state.value.time_to === 'invalid' && !editedTime.value.to ? 'invalid' : draftTo.value))
+function changeTime(bound) { editedTime.value[bound] = true; filterInput.submit() }
+function applyFilters() {
+  if (timeDraft.value.valid) change({ ...draftFilters.value, host_name: canReadHosts.value ? draftFilters.value.host_name : state.value.host_name, time_from: timeDraft.value.time_from, time_to: timeDraft.value.time_to, page: 1 })
+}
+function syncFilters() {
+  draftFilters.value = Object.fromEntries(['category','status','severity','search','host_name','subject_id'].map(key => [key, state.value[key]]))
+  draftFrom.value = state.value.time_from && state.value.time_from !== 'invalid' ? new Date(state.value.time_from) : null
+  draftTo.value = state.value.time_to && state.value.time_to !== 'invalid' ? new Date(state.value.time_to) : null
+  editedTime.value = { from: false, to: false }
 }
 function clearTimeFilter() { draftFrom.value = null; draftTo.value = null; change({ time_from: '', time_to: '', page: 1 }) }
 
@@ -230,7 +241,7 @@ const availabilityPanel = ref(null)
 const selectedAvailabilityEvidence = computed(() => availabilityEvidence(selectedIncident.value))
 function availabilitySubject(row) { const e = availabilityEvidence(row); return e ? `${e.module_name} · ${t(`monitor.process.roles.${e.role}`)}${e.runtime_name ? ` · ${t(`monitor.availability.purposes.${e.runtime_name}`, e.runtime_name)}` : ''}` : '' }
 const rulesPanel = ref(null), httpRulesPanel = ref(null), processRulesPanel = ref(null)
-function refresh() { if (state.value.tab === 'availability-rules') availabilityPanel.value?.load(); else if (state.value.tab === 'rules') rulesPanel.value?.load(); else if (state.value.tab === 'process-rules') processRulesPanel.value?.load(); else if (state.value.tab === 'http-rules') httpRulesPanel.value?.load(); else load() }
+function refresh() { filterInput.cancel(); syncFilters(); if (state.value.tab === 'availability-rules') availabilityPanel.value?.load(); else if (state.value.tab === 'rules') rulesPanel.value?.load(); else if (state.value.tab === 'process-rules') processRulesPanel.value?.load(); else if (state.value.tab === 'http-rules') httpRulesPanel.value?.load(); else load() }
 const selectedProcessEvidence = computed(() => processAlertEvidence(selectedIncident.value))
 const selectedThresholdEvidence = computed(() => selectedProcessEvidence.value || httpAlertEvidence(selectedIncident.value))
 const thresholdValue = value => selectedProcessEvidence.value ? processValue(value,selectedProcessEvidence.value.metric_key) : number(value)
@@ -256,16 +267,23 @@ const deliveryError = code => {
   return t(`monitor.platformAlerts.deliveryErrors.${known.includes(code) ? code : 'unknown'}`)
 }
 let epoch = 0, request = 0, controller, disposed = false
+const filterInput = createAutoFilter({ apply: applyFilters, enabled: () => !disposed && route.name === 'PlatformAlerts' && state.value.tab === 'incidents' && canRead.value, visible: () => !document.hidden, pause: () => {} })
+const filterVisibilityChanged = () => filterInput.visibilityChanged(!document.hidden)
+document.addEventListener('visibilitychange', filterVisibilityChanged)
 const abandoned = Symbol('abandoned platform operation')
 function check(lease) { if (lease !== epoch || disposed) throw abandoned }
 function clear() {
+  filterInput.cancel()
   epoch++; request++; controller?.abort(); incidents.value = []; total.value = 0; hosts.value = {}; selectedIncident.value = null
   destinations.value = []; deliveries.value = { data: [], total: 0 }; error.value = ''; notificationError.value = ''; loading.value = false
   busy.value = false; destinationOpen.value = false; secret.value = ''; destinationDraft.value = { categories: [], recipients: [], event_types: [] }; editError.value = ''
 }
 function change(patch) {
+  filterInput.cancel()
   const next = { ...state.value, ...patch }
-  navigateMonitorRoute(router, { path: '/platform-alerts', query: platformAlertQuery(next) }, { history: 'replace' })
+  const target = { path: '/platform-alerts', query: platformAlertQuery(next) }
+  if (router.resolve(target).fullPath === route.fullPath) { syncFilters(); return }
+  navigateMonitorRoute(router, target, { history: 'replace' })
 }
 function changeDeliveryPage(page) { change({ delivery_page: page }) }
 async function load() {
@@ -357,19 +375,14 @@ async function deleteDestination(row) {
   } catch (value) { if (lease === epoch && ![abandoned, 'cancel', 'close'].includes(value)) ElMessage.error(errorText(value)) }
   finally { if (lease === epoch) busy.value = false }
 }
-watch(() => [state.value.host_name, ruleIdentity.value], () => { draftHostName.value = state.value.host_name }, { immediate: true })
-watch(() => [state.value.search, ruleIdentity.value], () => { draftSearch.value = state.value.search }, { immediate: true })
-watch(() => [state.value.time_from, state.value.time_to, ruleIdentity.value], () => {
-  draftFrom.value = state.value.time_from && state.value.time_from !== 'invalid' ? new Date(state.value.time_from) : null
-  draftTo.value = state.value.time_to && state.value.time_to !== 'invalid' ? new Date(state.value.time_to) : null
-}, { immediate: true })
 watch(() => [route.fullPath, JSON.stringify(auth.authContext), JSON.stringify(auth.permissions), locale.value], () => {
   clear()
+  syncFilters()
   const next = platformAlertQuery({ ...state.value, ...((state.value.tab === 'incidents' && !canRead.value) || (state.value.tab === 'notifications' && !canReadNotifications.value) || (state.value.tab === 'availability-rules' && !canReadAvailability.value) || (state.value.tab === 'rules' && !canReadRules.value) || (state.value.tab === 'http-rules' && !canReadHTTPRules.value) ? { tab: canRead.value ? 'incidents' : canReadNotifications.value ? 'notifications' : canReadRules.value ? 'rules' : canReadHTTPRules.value ? 'http-rules' : canReadAvailability.value ? 'availability-rules' : 'incidents' } : {}) })
   if (JSON.stringify(route.query) !== JSON.stringify(next)) { navigateMonitorRoute(router, { path: '/platform-alerts', query: next }, { history: 'replace' }); return }
   load()
 }, { immediate: true })
-onUnmounted(() => { disposed = true; clear() })
+onUnmounted(() => { disposed = true; filterInput.dispose(); document.removeEventListener('visibilitychange', filterVisibilityChanged); clear() })
 watch(destinationOpen, value => { if (!value) secret.value = '' })
 </script>
 <style scoped>
@@ -381,7 +394,7 @@ watch(destinationOpen, value => { if (!value) secret.value = '' })
 .alert-time-hint { flex-basis: 100%; margin: 0; color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; }
 .alert-toolbar .el-select { width: 180px; }
 .alert-toolbar .el-input { width: 280px; max-width: 100%; }
-.alert-host-filter { max-width: 100%; width: 280px; }
+.alert-host-filter { display: flex; align-items: center; gap: 4px; max-width: 100%; width: 308px; }
 .delivery-diagnostics { margin: 12px; }
 small { display: block; color: var(--addp-text-secondary); margin-top: 6px; }
 </style>

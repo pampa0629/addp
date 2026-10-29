@@ -466,7 +466,7 @@ regression／complete-comparison 在当次私有部署显式开启原容量扩�
 本地实际验证：
 
 - `make test-monitor-frontend`：131项单元测试、503个浏览器场景及构建全部通过，含主机／引擎新增6项和服务原46项；原时间、分页、趋势与撤权边界保留。
-- `npm --prefix monitor/frontend run test:e2e -- e2e/automatic-filter-enter.spec.js`：三页独立3项通过（10.5秒），冻结防抖时钟后验证Enter立即提交及受控IME事件不提前提交。该文件在完整套件发现之后加入，单独执行，不把原聚合计数冒写为506项。
+- `npm --prefix monitor/frontend run test:e2e -- e2e/automatic-filter-enter.spec.js`：三页独立3项通过（10.5秒）；当时只安装受控时钟、未显式暂停，不能单独证明Enter在防抖前提交。后续显式暂停后的失败与共享修复见[告警自动筛选证据](Monitor告警与规则历史证据.md#平台告警自动筛选与字段提示2026-10-29)。原文件在完整套件发现之后加入，单独执行，不把原聚合计数冒写为506项。
 - `make test-console-frontend`：219项单元测试、263个浏览器场景及构建通过；新增主机／引擎中英文各两项，验证自动合并查询、清空／重置、System原参数、回第一页、URL replace与同iframe。
 - `make test-common-frontend`：290项中289项通过、1项失败；新增三项自动筛选／可取消调度／唯一归属测试通过。唯一失败仍是上一批ResourceTree直接组合所有权清单未登记其他会话的System组件，本批不修改该组件或清单，不能将共享聚合计为通过。
 

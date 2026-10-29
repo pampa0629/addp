@@ -16,10 +16,15 @@ export function createAutoFilter({ apply, enabled, visible, pause }) {
     pause()
     if (visible()) deferred()
   }
+  function enter(event) {
+    if (event.isComposing || event.keyCode === 229) return
+    event.preventDefault()
+    return submit()
+  }
   function visibilityChanged(isVisible) {
     if (!isVisible) deferred.cancel()
     else if (pending && !disposed) deferred()
   }
   function dispose() { disposed = true; cancel() }
-  return { queue, submit, cancel, visibilityChanged, dispose, get pending() { return pending } }
+  return { queue, submit, enter, cancel, visibilityChanged, dispose, get pending() { return pending } }
 }
