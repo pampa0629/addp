@@ -43,9 +43,9 @@ Catalog 是企业资源目录的唯一事实源，负责稳定目录身份、来
 
 - Quality 评分、Issue 和 execution 历史不是 CatalogEntry，不进入 Catalog 存储或搜索投影。只对 Meta PostgreSQL table DataItem 使用 owner 提供的 `engine_id + schema_name + table_name` 按需动态解析，不拆分 `full_name` 猜测定位。
 
-- `StandardMapping` 是 CatalogComponent 到确定 `Standard.ElementRevision` 的可审核、可追溯关系事实，拥有独立 UUID、并发版本、来源、置信度和审核状态。企业落标关系只归 Catalog；Quality 方案的物理目标与冻结标准来源仅表达检查意图，不构成第二套企业映射，也不以 Catalog 为前置。
+- [`StandardMapping`](../docs/spec/addp企业资源目录实现规范.md#standardmapping-候选与审核) 是 CatalogComponent 到确定 `Standard.ElementRevision` 的可审核、可追溯关系事实，拥有独立 UUID、并发版本、来源、置信度和审核状态。企业落标关系只归 Catalog；Quality 方案的物理目标与冻结标准来源仅表达检查意图，不构成第二套企业映射，也不以 Catalog 为前置。
 
-- 旧 `component_element_associations` 只在数据库迁移事务中读取：保留历史观察证据并转为未固定修订的 `legacy/proposed` 候选，随后删除旧表。业务 API 和 CatalogEntry 聚合更新只使用独立 StandardMapping；历史候选经人工固定发布修订并审核前，不得视为已落标。
+- 旧 [`component_element_associations`](../docs/spec/addp企业资源目录实现规范.md#旧映射迁移) 只在数据库迁移事务中读取：保留历史观察证据并转为未固定修订的 `legacy/proposed` 候选，随后删除旧表。业务 API 和 CatalogEntry 聚合更新只使用独立 StandardMapping；历史候选经人工固定发布修订并审核前，不得视为已落标。
 
 ### 责任与权限
 
@@ -141,6 +141,7 @@ Catalog 是企业资源目录的唯一事实源，负责稳定目录身份、来
 
 | 验证目的 | 方法与证据正文 |
 | --- | --- |
+| StandardMapping 审核与精确修订 | [生命周期与权限](../docs/spec/addp企业资源目录实现规范.md#standardmapping-候选与审核)、[展示与精确读取](../docs/spec/addp企业资源目录实现规范.md#standardmapping-展示与精确读取)；[Catalog 服务层测试](backend/internal/service/standard_mapping_test.go)使用 SQLite 和受控 Standard 解析器，[Common 客户端测试](../common/client/standard_test.go)使用受控 HTTP，不替代真实 PostgreSQL 并发或跨服务 T4。 |
 | 数据字典查询与同步导出 | [现有测试断言、标准入口与未覆盖范围](../docs/spec/addp企业资源目录实现规范.md#数据字典验证导航)：区分受控依赖、附件编码与真实联邦查询／下载验收。 |
 | 企业目录发布、生命周期与共享受理 | [场景方法](../docs/spec/testing/scenarios/授权与共享.md#发布生命周期与共享受理)、[OAuth 自动签发的只读观察](../docs/spec/testing/scenarios/授权与共享.md#oauth-自动签发的只读观察)：专用 macOS profile，区分受理、唯一签发与源数据实际读取。 |
 | PG 业务批准与实际读取 | [`pg-source-authorization` 的业务批准闭环](../docs/spec/testing/scenarios/授权与共享.md#catalog-业务批准闭环)、[Catalog 离线与恢复](../docs/spec/testing/scenarios/授权与共享.md#catalog-可选依赖离线与恢复)；[旧协议与新成果证据](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#pg-dataitem-源授权与-transfer-新成果初始授权--hosted-t4)、[直接许可模型切换后的固定版本证据](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#直接授权许可模型替换--pg-hosted-t4-与开发库迁移)。 |

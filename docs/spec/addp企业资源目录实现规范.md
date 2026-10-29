@@ -101,6 +101,8 @@
 
 `curated` 及以上 CatalogEntry 通常必须有一个有效 primary Domain。唯一例外是 Standard 五类标准的 `scope_type=platform|tenant_common` 且 owner 未声明 `domain_id`：其“公共且无专属归属域”是明确的专业事实，允许编目，不算待归类。`scope_type=domain` 的五类标准、Model Entity / LogicalTable 及其他条目仍须有主业务域。Meta DataItem 的 primary Domain 是 Catalog 关联；Model Entity / LogicalTable 和 Standard 五类标准的 primary Domain 是 owner 当前 `domain_id`。Catalog 不因缺少主域而给 owner 管理的对象另建人工主域。Catalog 对自身持有的 Domain、Glossary 和 StandardMapping 通过 Standard owner 契约验证同一 Tenant、对象存在且生命周期允许引用；Standard 名称可进入搜索投影，但不成为 Catalog 权威字段。
 
+#### StandardMapping 候选与审核
+
 StandardMapping 是独立、可审核、可并发编辑的关系事实，不是 CatalogEntry 聚合中的无身份数组项。至少保存 `id + tenant_id + catalog_entry_id + component_id + element_id + element_revision_id + source + confidence + evidence + review_status + version`：
 
 - 新建候选必须明确提交 `element_revision_id`；它必须属于 `element_id`，且在创建时为已发布修订。正式映射不得动态跟随数据元当前修订。仅迁移自无法证明历史采用修订的旧关联可暂时没有 `element_revision_id`，此类 `proposed` 候选只能由人工补选并验证确定修订后进入审核，不能计入覆盖率或数据字典。
@@ -110,9 +112,19 @@ StandardMapping 是独立、可审核、可并发编辑的关系事实，不是 
 - `evidence` 保存推荐依据和来源定位；置信度只辅助审核，不代替审核结论。
 - CatalogEntry 为 `certified` 时禁止直接创建、编辑、批准、拒绝或撤回映射；必须先走既有撤销认证动作。
 
+操作资格见[权限与审计](#八权限与审计)，已审核映射的字典组合与时态解释见[查询与修订解释](#查询与修订解释)。
+
+#### StandardMapping 展示与精确读取
+
+- Standard 提供只读 `POST /api/v1/standard/runtime/element-revisions/resolve-exact`，接受同 Tenant 最多 200 个互异的确定 `element_revision_id`，按请求顺序返回 `revision_id + found + snapshot`；仅 `published|withdrawn` 历史发布修订可返回快照，跨 Tenant、不存在或未发布统一 `found=false`。Catalog 创建/补选候选时还必须校验结果中的 `element_id` 与请求一致、修订当时为 `published`，查询已审核历史映射时可读取后来 `withdrawn` 的确定快照。此精确读取契约与 Model 的按 `element_id + as_of` 生效解析并列，但语义不同，不作彼此的兼容兜底。
+
 CatalogEntry 详情读取 StandardMapping 时，映射身份、审核状态和确定修订 ID 始终来自 Catalog；面向人的数据元名称、编码和修订号只通过 Standard 精确修订批量接口即时解析，作为可丢弃的响应展示摘要，不写入 Catalog 表或搜索投影，也不能按当前修订替换已固定的历史修订。无修订的迁移候选明确显示“待补选修订”；Standard 暂不可达或确定修订已不存在时，详情和映射事实仍可读取，但展示摘要必须标记不可用，不得把数据库修订 ID 伪装成 `R` 修订号或回退为另一修订。候选编辑仍只允许选择当前已发布修订。
 
+#### 旧映射迁移
+
 旧 `component_element_associations` 仅保存 `element_id` 并随 CatalogEntry 完整更新整体替换，无法冻结修订、承载审核和被 Quality 稳定引用。数据库迁移将无法证明历史采用修订的现有关联转为 `source=legacy`、`element_revision_id=null` 的 `proposed` 候选，保留原 Element 稳定身份与历史观察证据，不用迁移时当前修订伪造已审核历史；迁移事务随后删除旧表，业务 API、请求字段和聚合更新不再提供旧路线。
+
+#### 专业关系归属
 
 Model 自身保存的 Entity / LogicalTable `domain_id`、属性或字段冻结的 `element_revision_id`、MetricImplementation 及建模关系是参与审批、设计和物化的专业内生关系，仍由 Model 权威维护，不复制为 Catalog 人工语义关联。Catalog 动态读取并以“Model 声明的专业关系”展示；Model 已声明主业务域时，它构成该 Model 来源条目的有效 primary Domain，Catalog 不接受另一条冲突的人工 primary Domain。修改这类关系必须进入 Model 唯一写路径。
 
@@ -669,8 +681,7 @@ GET /api/v1/catalog/entries/{id}/data-dictionary?as_of={RFC3339}
 
 - `as_of` 可选，省略时由 Catalog 在一次请求中固定一个 UTC 服务器时点；显式值必须是带时区的 RFC3339 时间。
 - Catalog 先使用现有目录可见性规则校验条目，再使用 `addp-catalog` Tenant Service Access Token 调用 Meta `GET /api/v1/meta/items/{item_id}/fields?include_details=true` 读取当前物理字段。Catalog 不从已观察摘要伪造当前字段，也不解析路径猜测 Meta 身份。
-- Catalog 用自身权威且已审核的 StandardMapping 把 Meta 字段连接到确定的 `element_revision_id`，然后通过 Standard 的精确修订批量读取契约解析该不可变数据元修订及其固定引用的码值集修订；不得按稳定 `element_id` 和查询时点重新选择另一修订。
-- Standard 提供只读 `POST /api/v1/standard/runtime/element-revisions/resolve-exact`，接受同 Tenant 最多 200 个互异的确定 `element_revision_id`，按请求顺序返回 `revision_id + found + snapshot`；仅 `published|withdrawn` 历史发布修订可返回快照，跨 Tenant、不存在或未发布统一 `found=false`。Catalog 创建/补选候选时还必须校验结果中的 `element_id` 与请求一致、修订当时为 `published`，查询已审核历史映射时可读取后来 `withdrawn` 的确定快照。此精确读取契约与 Model 的按 `element_id + as_of` 生效解析并列，但语义不同，不作彼此的兼容兜底。
+- Catalog 用自身权威且已审核的 StandardMapping 把 Meta 字段连接到确定的 `element_revision_id`，然后通过 Standard 的[精确修订批量读取契约](#standardmapping-展示与精确读取)解析该不可变数据元修订及其固定引用的码值集修订；不得按稳定 `element_id` 和查询时点重新选择另一修订。
 - `as_of` 只用于说明映射所指修订在该业务时点是否处于生效区间，不改变 StandardMapping 的修订选择。Model 审批按统一审批时点解析“当前生效修订”，Catalog 对既有映射则按 `element_revision_id` 精确读取，两种契约不可合并或互相兜底。
 - 响应按 Meta 字段顺序返回物理名称、原生类型、通用类型、可空、主键、默认表达式、注释等物理事实，并可选组合数据元编码、名称、定义、数据类型、格式、值域、安全等级、生效区间及码项。未关联 Element 的物理字段仍必须返回，其标准解释为 `null`。
 - `as_of` 只回溯 Standard 修订语义；Meta 当前没有物理 Schema 时态版本，因此不得把本视图表述为历史物理结构快照。
@@ -731,12 +742,12 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 | PUT | `/entries/:id` | 使用聚合根 `version` 原子更新 `discovered|curated` 阶段的编目、语义、责任与可见性；`curated → discovered` 只接受完整撤销编目形状，不承担认证或弃用转换 |
 | PUT | `/entries/:id/governance` | 使用聚合根 `version` 原子执行认证、撤销认证、弃用、撤销弃用或弃用信息维护；只更新治理状态、推荐继任项和领域审计，不替换编目事实 |
 | PUT | `/entries/:id/responsibilities` | 使用聚合根 `version` 与原因，仅对已弃用条目完整替换责任关系；保持弃用状态和其他事实冻结 |
-| GET/POST | `/standard-mappings` | 分页读取或创建字段/组件标准映射候选；创建必须携带确定数据元修订和来源证据 |
-| GET | `/standard-mappings/revision-options` | Catalog 使用运行身份动态返回所选数据元可用的已发布修订，供候选映射下拉选择；不复制 Standard 修订事实 |
-| GET/PUT/DELETE | `/standard-mappings/:id` | 读取、完整更新或删除仍为 `proposed` 的映射，写操作使用映射自身 `version` |
-| POST | `/standard-mappings/:id/approve` | 审核通过候选；同一事务撤回该组件旧 approved 映射并推进版本 |
-| POST | `/standard-mappings/:id/reject` | 驳回候选并记录审核意见 |
-| POST | `/standard-mappings/:id/withdraw` | 撤回当前 approved 映射并记录原因 |
+| GET/POST | `/standard-mappings` | 分页读取或创建[字段/组件标准映射候选](#standardmapping-候选与审核)；创建必须携带确定数据元修订和来源证据 |
+| GET | `/standard-mappings/revision-options` | Catalog 使用运行身份动态返回所选数据元[可用的已发布修订](#standardmapping-展示与精确读取)，供候选映射下拉选择；不复制 Standard 修订事实 |
+| GET/PUT/DELETE | `/standard-mappings/:id` | 读取、完整更新或删除仍为 `proposed` 的映射，写操作使用[映射自身 `version`](#standardmapping-候选与审核) |
+| POST | `/standard-mappings/:id/approve` | [审核通过候选](#standardmapping-候选与审核)；同一事务撤回该组件旧 approved 映射并推进版本 |
+| POST | `/standard-mappings/:id/reject` | [驳回候选](#standardmapping-候选与审核)并记录审核意见 |
+| POST | `/standard-mappings/:id/withdraw` | [撤回当前 approved 映射](#standardmapping-候选与审核)并记录原因 |
 | POST | `/entries/:id/rebind-source` | 显式把新 DataItem 来源重绑到既有条目 |
 | GET | `/entries/:id/history` | 读取该条目的治理和重绑审计 |
 | GET | `/governance/tasks` | 分页读取责任失效治理队列；默认只返回 open 任务 |
