@@ -12482,3 +12482,344 @@ def test_dem_surface_area_explicit_band_validation(tmp_path,band,language):
     path=_curvature_file(tmp_path,np.ones((3,3)))
     with raster_workspace(),raster_error_language(language):
         with pytest.raises(ValueError,match='DEM'):compute.raster_surface_area(raster_load(source_plan(path)),band,'metre')
+
+
+def _twi_pair(tmp_path, areas, slopes, *, step=2., epsg=3857, slope_unit='degree', dtype=None):
+    crs=osr.SpatialReference();crs.ImportFromEPSG(epsg)
+    transform=(500000,step/crs.GetLinearUnits(),0,3000000,0,-step/crs.GetLinearUnits())
+    paths=[]
+    for role,values,unit in [('area',areas,'m2'),('slope',slopes,slope_unit)]:
+        path=tmp_path/(role+'.tif')
+        if dtype and role=='area':
+            ds=gdal.GetDriverByName('GTiff').Create(str(path),values.shape[1],values.shape[0],1,getattr(gdal,'GDT_'+dtype))
+            ds.SetGeoTransform(transform);ds.SetSpatialRef(crs);ds.GetRasterBand(1).WriteArray(values)
+        else:
+            create_raster(path,values,transform,'EPSG:'+str(epsg));ds=gdal.Open(str(path),gdal.GA_Update)
+        ds.GetRasterBand(1).SetUnitType(unit);ds=None;paths.append(path)
+    return paths
+
+
+def _twi_result(paths,unit='degree',band=1,slope_band=1):
+    from operators.raster_compute import raster_twi
+    return raster_twi(*(raster_load(source_plan(p))for p in paths),band,slope_band,unit)
+
+
+def _twi_read(result):
+    ds=gdal.Open(str(result.path));values=read_band_values(ds.GetRasterBand(1));ds=None
+    return values
+
+
+@pytest.mark.parametrize('unit,values',[
+    ('degree',[0.,1.,30.,45.,60.,89.,float(np.nextafter(90.,0.))]),
+    ('percent',[0.,.01,1.,100.,200.,1e200,float(np.finfo(float).max)]),
+])
+@pytest.mark.parametrize('step',[.5,2.,100.])
+def test_twi_independent_analytic_log_formula_signed_zero_and_open_edges(tmp_path,unit,values,step):
+    slopes=np.array([values]);areas=np.array([[step*.5,step,2*step,step,step/2,100*step,step]])
+    paths=_twi_pair(tmp_path,areas,slopes,step=step,slope_unit=unit);original=[p.read_bytes()for p in paths]
+    with raster_workspace():
+        result=_twi_result(paths,unit);actual=_twi_read(result)
+        for c,(a,b)in enumerate(zip(areas[0],slopes[0])):
+            if b==0:assert np.isnan(actual[0,c]);continue
+            # Complementary-angle reference avoids rounding a value next to 90°
+            # to an inaccurate binary64 radian at the vertical asymptote.
+            log_tangent=(math.log(b)-math.log(100) if unit=='percent' else
+                         -math.log(math.tan(math.radians(90-b))) if b>45 else
+                         math.log(math.tan(math.radians(b))))
+            expected=math.log(a/step)-log_tangent
+            assert actual[0,c]==pytest.approx(expected,rel=3e-14,abs=2e-13)
+        assert actual[0,3]==0 and np.any(actual<0)
+        ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        assert band.GetUnitType()=='1' and band.DataType==gdal.GDT_Float64 and math.isnan(band.GetNoDataValue())
+        assert band.GetScale()in(None,1)and band.GetOffset()in(None,0)and band.GetColorTable()is None
+        assert ds.GetGeoTransform()==gdal.Open(str(paths[0])).GetGeoTransform();band=ds=None
+    assert [p.read_bytes()for p in paths]==original
+
+
+@pytest.mark.parametrize('epsg',[3857,2263,2227])
+@pytest.mark.parametrize('unit',['degree','percent'])
+def test_twi_metric_width_units_and_equivalent_explicit_slopes(tmp_path,epsg,unit):
+    paths=_twi_pair(tmp_path,np.full((3,4),20.),np.full((3,4),45. if unit=='degree'else 100.),step=10.,epsg=epsg,slope_unit=unit)
+    with raster_workspace():np.testing.assert_allclose(_twi_read(_twi_result(paths,unit)),math.log(2),rtol=1e-14)
+
+
+@pytest.mark.parametrize('unit',['degree','percent'])
+@pytest.mark.parametrize('tiny',[float(np.nextafter(0.,1.)),1e-300,1e-100])
+def test_twi_no_small_slope_threshold_or_radian_underflow(tmp_path,unit,tiny):
+    from decimal import Decimal,localcontext
+    paths=_twi_pair(tmp_path,np.array([[2.]]),np.array([[tiny]]),slope_unit=unit)
+    with localcontext()as ctx:
+        ctx.prec=120
+        # At these values tan(x)/x differs from 1 by < 1e-200.
+        tangent=Decimal(tiny)/100 if unit=='percent'else Decimal(tiny)*Decimal('0.01745329251994329576923690768488612713442871888541725456097191440171009114603449')
+        expected=float(-tangent.ln())
+    with raster_workspace():
+        actual=_twi_read(_twi_result(paths,unit));assert np.isfinite(actual).all()
+        assert actual[0,0]==pytest.approx(expected,rel=2e-15)
+
+
+@pytest.mark.parametrize('unit',['degree','percent'])
+@pytest.mark.parametrize('area,step',[(1e308,1e-150),(1e-300,1e150)])
+def test_twi_finite_log_without_intermediate_ratio_overflow_underflow(tmp_path,unit,area,step):
+    slopes=np.array([[1e-300 if area>1 else 1e200 if unit=='percent'else 89.]])
+    paths=_twi_pair(tmp_path,np.array([[area]]),slopes,step=step,slope_unit=unit)
+    expected=math.log(area)-math.log(step)-(math.log(slopes[0,0])-math.log(100)if unit=='percent'else math.log(slopes[0,0])+math.log(math.pi/180)if slopes[0,0]<1e-200 else math.log(math.tan(math.radians(slopes[0,0]))))
+    with raster_workspace():assert _twi_read(_twi_result(paths,unit))[0,0]==pytest.approx(expected,rel=3e-15)
+
+
+@pytest.mark.parametrize('dtype,base',[('UInt64',2**64-4),('Int64',2**63-4)])
+def test_twi_native64_area_nodata_adjacent_values_before_float(tmp_path,dtype,base):
+    values=np.array([[base,base+1,base+2]],dtype=np.uint64 if dtype=='UInt64'else np.int64)
+    paths=_twi_pair(tmp_path,values,np.array([[100.,100.,100.]]),dtype=dtype,slope_unit='percent')
+    ds=gdal.Open(str(paths[0]),gdal.GA_Update);b=ds.GetRasterBand(1)
+    (b.SetNoDataValueAsUInt64 if dtype=='UInt64'else b.SetNoDataValueAsInt64)(base+1);b=ds=None
+    with raster_workspace():
+        actual=_twi_read(_twi_result(paths,'percent'));assert np.isfinite(actual[0,[0,2]]).all()and np.isnan(actual[0,1])
+        np.testing.assert_allclose(actual[0,[0,2]],[math.log(base/2),math.log((base+2)/2)],rtol=1e-15)
+
+
+@pytest.mark.parametrize('case',['all-invalid','disjoint','flat','different-nodata','alpha','mask','nonfinite'])
+def test_twi_joint_coverage_and_explicit_second_band_no_fill(tmp_path,case):
+    a=np.full((5,7),4.);s=np.full((5,7),100.);alpha=np.full(a.shape,128.);mask=np.full(a.shape,255,np.uint8)
+    valid=np.ones(a.shape,bool)
+    if case=='all-invalid':a[:]=np.nan;valid[:]=False
+    if case=='disjoint':a[:,:3]=np.nan;s[:,3:]=np.nan;valid[:]=False
+    if case=='flat':s[:]=0;valid[:]=False
+    if case=='different-nodata':a[1,1]=-9999;s[2,3]=-9999;valid[1,1]=valid[2,3]=False
+    if case=='alpha':alpha[1,1]=0;alpha[2,3]=np.nan;valid[1,1]=valid[2,3]=False
+    if case=='mask':mask[1,1]=0;valid[1,1]=False
+    if case=='nonfinite':a[1,1]=np.inf;s[2,3]=np.nan;valid[1,1]=valid[2,3]=False
+    arrays=[np.stack([np.full(a.shape,-20.),a,alpha]),np.stack([np.full(s.shape,-10.),s,alpha])]
+    paths=_twi_pair(tmp_path,*arrays,slope_unit='percent')
+    for role,p in enumerate(paths):
+        ds=gdal.Open(str(p),gdal.GA_Update);ds.GetRasterBand(2).SetUnitType('m2'if role==0 else'percent');ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+        ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None
+    with raster_workspace():
+        result=_twi_result(paths,'percent',2,2);actual=_twi_read(result)
+        np.testing.assert_array_equal(np.isfinite(actual),valid);np.testing.assert_allclose(actual[valid],math.log(2),rtol=1e-15)
+
+
+@pytest.mark.parametrize('role',[0,1])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('fault',['band','alpha','complex','complex-alpha','scale','offset','unit','negative','grid','rotated','south-up','geographic','no-crs','no-grid'])
+def test_twi_bilingual_role_admission_and_failure_no_private_output(tmp_path,role,language,fault):
+    import operators.raster_compute as compute
+    paths=_twi_pair(tmp_path,np.ones((2,3)),np.full((2,3),45.))
+    if fault in ('complex','complex-alpha'):
+        ds=gdal.Open(str(paths[role]));grid=ds.GetGeoTransform();projection=ds.GetProjection();ds=None
+        ds=gdal.GetDriverByName('GTiff').Create(str(paths[role]),3,2,2,gdal.GDT_CFloat64);ds.SetGeoTransform(grid);ds.SetProjection(projection)
+        ds.GetRasterBand(1).WriteArray(np.ones((2,3),complex));ds.GetRasterBand(1).SetUnitType('m2'if role==0 else'degree')
+        if fault=='complex-alpha':ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    else:ds=gdal.Open(str(paths[role]),gdal.GA_Update)
+    b=ds.GetRasterBand(1)
+    if fault=='alpha':b.SetColorInterpretation(gdal.GCI_AlphaBand)
+    if fault=='scale':b.SetScale(2)
+    if fault=='offset':b.SetOffset(1)
+    if fault=='unit':b.SetUnitType('foot'if role==0 else'percent')
+    if fault=='negative':b.WriteArray(np.full((2,3),-1.))
+    if fault=='grid':ds.SetGeoTransform((500000,2,0,3000000,0,-3))
+    if fault=='rotated':ds.SetGeoTransform((500000,2,.1,3000000,0,-2))
+    if fault=='south-up':ds.SetGeoTransform((500000,2,0,3000000,0,2))
+    if fault=='geographic':crs=osr.SpatialReference();crs.ImportFromEPSG(4326);ds.SetSpatialRef(crs)
+    if fault=='no-crs':ds.SetProjection('')
+    if fault=='no-grid':
+        ds.SetGeoTransform((0,1,0,0,0,1))
+    b=ds=None
+    key={'band':('area-band'if role==0 else'slope-band'),'complex-alpha':'complex','offset':'scale','unit':('area-unit'if role==0 else'unit-conflict'),'negative':('area'if role==0 else'slope'),'rotated':'grid','south-up':'grid','geographic':'grid','no-crs':'grid','no-grid':'grid'}.get(fault,fault)
+    # A rectangular slope grid is a mismatch with the square area grid.
+    if fault=='grid'and role==1:key='alignment'
+    with raster_workspace(),raster_error_language(language):
+        inputs=[raster_load(source_plan(p))for p in paths];before=set(inputs[0].workspace.iterdir());bands=[1,1]
+        if fault=='band':bands[role]=True
+        with pytest.raises(ValueError)as error:compute.raster_twi(*inputs,*bands,'degree')
+        assert str(error.value)==str(compute._twi_error(key))
+        assert set(inputs[0].workspace.iterdir())==before
+
+
+@pytest.mark.parametrize('bad',[None,'','Degree','radian',True,1,[],{}])
+def test_twi_explicit_unit_rejected_before_input_open(bad):
+    import operators.raster_compute as compute
+    with pytest.raises(ValueError,match='degree'):compute.raster_twi(None,None,1,1,bad)
+
+
+@pytest.mark.parametrize('role',[0,1])
+@pytest.mark.parametrize('band',[0,-1,1.0,'1',None,3])
+def test_twi_explicit_role_band_validation(tmp_path,role,band):
+    import operators.raster_compute as compute
+    paths=_twi_pair(tmp_path,np.ones((1,1)),np.ones((1,1)));bands=[1,1];bands[role]=band
+    with raster_workspace(),pytest.raises(ValueError):compute.raster_twi(*(raster_load(source_plan(p))for p in paths),*bands,'degree')
+
+
+@pytest.mark.parametrize('case',['zero-area','90','above90','invalid-outside-joint','unknown-slope-unit','missing-area-unit','size','origin','crs'])
+def test_twi_invalid_effective_values_not_masked_by_other_source_and_alignment(tmp_path,case):
+    import operators.raster_compute as compute
+    a=np.ones((2,3));s=np.ones((2,3));key='alignment'
+    if case=='zero-area':a[0,0]=0;key='area'
+    if case=='90':s[0,0]=90;key='slope'
+    if case=='above90':s[0,0]=91;key='slope'
+    if case=='invalid-outside-joint':a[0,0]=-1;s[0,0]=np.nan;key='area'
+    if case=='size':s=np.ones((3,3))
+    paths=_twi_pair(tmp_path,a,s)
+    if case in ('unknown-slope-unit','missing-area-unit','origin','crs'):
+        ds=gdal.Open(str(paths[0 if case=='missing-area-unit'else 1]),gdal.GA_Update)
+        if case.endswith('unit'):ds.GetRasterBand(1).SetUnitType(''if case=='missing-area-unit'else'radian');key='area-unit'if case=='missing-area-unit'else'unit-conflict'
+        if case=='origin':ds.SetGeoTransform((500001,2,0,3000000,0,-2))
+        if case=='crs':ref=osr.SpatialReference();ref.ImportFromEPSG(32617);ds.SetSpatialRef(ref)
+        ds=None
+    with raster_workspace(),pytest.raises(ValueError)as caught:_twi_result(paths)
+    with raster_error_language('zh-cn'):assert str(caught.value)==str(compute._twi_error(key))
+
+
+@pytest.mark.parametrize('unit',['degree','percent'])
+def test_twi_cross_512_blocks_bounded_native_reads_and_complete_cog(tmp_path,monkeypatch,unit):
+    import operators.raster_compute as compute
+    r,c=np.indices((515,519));areas=2.**((r+c)%6);slopes=np.full(areas.shape,45. if unit=='degree' else 100.);slopes[511,512]=0;areas[512,511]=np.nan
+    paths=_twi_pair(tmp_path,areas,slopes,slope_unit=unit);before=[p.read_bytes()for p in paths]
+    target=tmp_path/'twi.cog.tif';blocks=compute._blocks;reads=[]
+    def bounded(source,indices,**kwargs):
+        for x,y,arrays,masks in blocks(source,indices,**kwargs):
+            assert arrays[0].shape[0]<=512 and arrays[0].shape[1]<=512
+            if kwargs.get('native'):reads.append((x,y,arrays[0].shape))
+            yield x,y,arrays,masks
+    monkeypatch.setattr(compute,'_blocks',bounded)
+    with raster_workspace():
+        result=_twi_result(paths,unit);artifact=raster_save(result,target_plan(target),profile='cog');assert artifact['size_bytes']==target.stat().st_size>0
+        assert validate_cog(raster_load(source_plan(target)))['valid']
+        ds=gdal.Open(str(target));actual=read_band_values(ds.GetRasterBand(1));expected=np.log(areas/2);expected[slopes==0]=np.nan
+        np.testing.assert_allclose(actual,expected,rtol=2e-15,atol=1e-15,equal_nan=True)
+        np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray()!=0,np.isfinite(expected))
+        assert ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT']=='COG'and ds.GetRasterBand(1).GetUnitType()=='1';ds=None
+    assert len(reads)>=8 and [p.read_bytes()for p in paths]==before
+
+
+@pytest.mark.parametrize('unit',['degree','percent'])
+def test_twi_existing_dem_slope_and_d8_area_chain_no_other_product_changes(tmp_path,unit):
+    import operators.raster_compute as compute
+    rows,cols=np.indices((7,9));dem=20-cols*2.+rows*2.;path=create_raster(tmp_path/'dem.tif',dem,(500000,2,0,3000000,0,-2),'EPSG:3857')
+    with raster_workspace():
+        source=raster_load(source_plan(path));slope=raster_slope(source,'metre',slope_unit=unit)
+        directions=compute.raster_flow_direction_d8(source,1,'metre');area=compute.raster_flow_accumulation_d8(directions,1,measure='area')
+        result=compute.raster_twi(area,slope,1,1,unit);a=_twi_read(area);actual=_twi_read(result)
+        expected=np.log(a/2/math.sqrt(2));expected[[0,-1],:]=np.nan;expected[:,[0,-1]]=np.nan
+        np.testing.assert_allclose(actual,expected,rtol=2e-7,atol=2e-7,equal_nan=True)
+
+
+@pytest.mark.parametrize('case',['direct','flat','invalid','save-failure'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_twi_async_cog_save_exact_submission_language_and_cleanup(tmp_path,monkeypatch,case,language):
+    import api_server,workflow_engine
+    paths=_twi_pair(tmp_path,np.full((3,4),2.),np.full((3,4),0. if case=='flat'else -1. if case=='invalid' else 100.),slope_unit='percent')
+    original=[p.read_bytes()for p in paths];target=tmp_path/'twi.tif'
+    if case=='save-failure':target.write_bytes(b'previous artifact')
+    tasks=[{'id':name,'operator':'raster_load','params':{'access_plan':source_plan(path)},'depends_on':[]}for name,path in zip(('area','slope'),paths)]
+    tasks.extend([{'id':'twi','operator':'raster_twi','depends_on':['area','slope'],'params':{'input_raster':{'$ref':'area'},'slope_raster':{'$ref':'slope'},'band':1,'slope_band':1,'slope_unit':'percent'}},{'id':'save','operator':'raster_save','depends_on':['twi'],'params':{'input_raster':{'$ref':'twi'},'access_plan':target_plan(target),'profile':'cog'}}])
+    workspaces=[];execute=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_twi':workspaces.append(params['input_raster'].workspace)
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture)
+    client=api_server.app.test_client();assert client.post('/api/operators/raster_twi/invoke',json={'params':{}}).status_code==403
+    response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}});assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en'if language=='zh-cn'else'zh-cn'}).json
+        if status['status']in('success','failed'):break
+        time.sleep(.01)
+    assert status['status']==('failed'if case in('invalid','save-failure')else'success'),status
+    assert workspaces and all(not p.exists()for p in workspaces)and [p.read_bytes()for p in paths]==original
+    if case=='invalid':
+        assert not target.exists();assert ('不得为负'if language=='zh-cn'else'nonnegative')in status['error']
+        assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
+    elif case=='save-failure':assert target.read_bytes()==b'previous artifact'
+    else:
+        ds=gdal.Open(str(target));actual=read_band_values(ds.GetRasterBand(1))
+        if case=='flat':assert np.isnan(actual).all()
+        else:np.testing.assert_array_equal(actual,np.zeros((3,4)))
+        assert ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT']=='COG';ds=None
+
+
+@pytest.mark.parametrize('stage',['write','metadata'])
+def test_twi_injected_failure_removes_partial_private_output(tmp_path,monkeypatch,stage):
+    import operators.raster_compute as compute
+    paths=_twi_pair(tmp_path,np.full((2,3),2.),np.full((2,3),45.))
+    with raster_workspace():
+        inputs=[raster_load(source_plan(p))for p in paths];before=set(inputs[0].workspace.iterdir())
+        if stage=='metadata':monkeypatch.setattr(compute,'_raster',lambda p:(_ for _ in ()).throw(RuntimeError('metadata failed')))
+        else:
+            original=compute._blocks
+            def fail(*args,**kwargs):
+                yield from original(*args,**kwargs)
+                if args[0].GetDescription()==str(inputs[0].path):raise RuntimeError('after first write')
+            monkeypatch.setattr(compute,'_blocks',fail)
+        with pytest.raises(RuntimeError):compute.raster_twi(*inputs,1,1,'degree')
+        assert set(inputs[0].workspace.iterdir())==before
+
+
+@pytest.mark.parametrize('base',[2**53,2**63])
+def test_twi_native_area_small_nonzero_index_not_rounded_to_zero(tmp_path,base):
+    from decimal import Decimal,localcontext
+    values=np.array([[base-1,base,base+1]],dtype=np.uint64)
+    paths=_twi_pair(tmp_path,values,np.full(values.shape,float(100*base)),step=1.,dtype='UInt64',slope_unit='percent')
+    with localcontext()as ctx:
+        ctx.prec=120
+        expected=[float((Decimal(n)/Decimal(base)).ln())for n in (base-1,base,base+1)]
+    with raster_workspace():
+        actual=_twi_read(_twi_result(paths,'percent'))
+        np.testing.assert_allclose(actual,[expected],rtol=1e-15,atol=0)
+        assert actual[0,0]<0 and actual[0,1]==0 and actual[0,2]>0
+
+
+@pytest.mark.parametrize('factor,step',[(1e-200,1e-200),(1e200,1e200)])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_twi_unrepresentable_metric_width_is_explicit_bilingual_failure(tmp_path,factor,step,language):
+    import operators.raster_compute as compute
+    paths=_twi_pair(tmp_path,np.ones((2,3)),np.ones((2,3)))
+    for p in paths:
+        ds=gdal.Open(str(p),gdal.GA_Update);ref=ds.GetSpatialRef();ref.SetLinearUnits('custom-known-linear-unit',factor)
+        ds.SetSpatialRef(ref);ds.SetGeoTransform((0,step,0,0,0,-step));ds=None
+    with raster_workspace(),raster_error_language(language):
+        with pytest.raises(ValueError)as error:_twi_result(paths)
+        assert str(error.value)==str(compute._twi_error('numeric'))
+
+
+@pytest.mark.parametrize('degrees',[float(np.nextafter(0.,1.)),1e-200,.0001,1.,15.,30.,44.999999999,45.,45.000000001,60.,75.,89.,float(np.nextafter(90.,0.))])
+def test_twi_independent_continued_fraction_tangent_and_high_precision_log(tmp_path,degrees):
+    from decimal import Decimal,localcontext
+    # Lambert's continued fraction independently checks the product Taylor kernel.
+    with localcontext()as ctx:
+        ctx.prec=130
+        pi=Decimal('3.14159265358979323846264338327950288419716939937510582097494459230781640628620899862803482534211706798214808651328230664709384460955')
+        x=Decimal(degrees)*pi/180;denominator=Decimal(401)
+        for odd in range(399,0,-2):denominator=Decimal(odd)-x*x/denominator
+        tangent=x/denominator;expected=float((Decimal(7)/Decimal(3)/tangent).ln())
+    paths=_twi_pair(tmp_path,np.array([[7.]]),np.array([[degrees]]),step=3.)
+    with raster_workspace():assert _twi_read(_twi_result(paths))[0,0]==pytest.approx(expected,rel=2e-15,abs=2e-15)
+
+
+def test_twi_missing_slope_band_unit_uses_explicit_declaration_and_same_file_roles(tmp_path):
+    import operators.raster_compute as compute
+    values=np.stack([np.full((2,3),-10.),np.full((2,3),4.),np.full((2,3),100.)])
+    path=create_raster(tmp_path/'both.tif',values,(500000,2,0,3000000,0,-2),'EPSG:3857')
+    ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(2).SetUnitType('m2');ds.GetRasterBand(3).SetUnitType('');ds=None
+    before=path.read_bytes()
+    with raster_workspace():
+        source=raster_load(source_plan(path));result=compute.raster_twi(source,source,2,3,'percent')
+        np.testing.assert_allclose(_twi_read(result),math.log(2),rtol=1e-15)
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('role',[0,1])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_twi_later_block_invalid_value_cleans_partial_output_and_no_joint_mask_evasion(tmp_path,role,language):
+    import operators.raster_compute as compute
+    a=np.full((2,514),2.);s=np.full(a.shape,45.)
+    if role==0:a[0,513]=-1;s[0,513]=np.nan
+    else:s[0,513]=-1;a[0,513]=np.nan
+    paths=_twi_pair(tmp_path,a,s);original=[p.read_bytes()for p in paths]
+    with raster_workspace(),raster_error_language(language):
+        sources=[raster_load(source_plan(p))for p in paths];before=set(sources[0].workspace.iterdir())
+        with pytest.raises(ValueError)as error:compute.raster_twi(*sources,1,1,'degree')
+        assert str(error.value)==str(compute._twi_error('area'if role==0 else'slope'))
+        assert set(sources[0].workspace.iterdir())==before
+    assert [p.read_bytes()for p in paths]==original

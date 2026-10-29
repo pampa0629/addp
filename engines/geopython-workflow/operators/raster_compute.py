@@ -3835,6 +3835,149 @@ def _tpi_block(values, valid, elevation_factor):
     return result
 
 
+_TWI_MESSAGES = {
+    'grid': ('地形湿度指数需要已知线性单位的二维投影、北向无旋转方形网格', 'Topographic wetness index requires a projected north-up square grid with known linear units'),
+    'alignment': ('地形湿度指数的面积与坡度必须具有相同CRS、尺寸及完整网格，请先显式对齐', 'Topographic wetness index area and slope must have the same CRS, dimensions and complete grid; align explicitly first'),
+    'area-band': ('地形湿度指数必须显式选择有效的一基面积数据波段', 'Topographic wetness index requires an explicit valid one-based area data band'),
+    'slope-band': ('地形湿度指数必须显式选择有效的一基坡度数据波段', 'Topographic wetness index requires an explicit valid one-based slope data band'),
+    'complex': ('地形湿度指数不支持复数数据或复数alpha波段', 'Topographic wetness index does not support complex data or alpha bands'),
+    'alpha': ('地形湿度指数不能选择alpha作为数据波段', 'Topographic wetness index cannot use an alpha band as data'),
+    'area-unit': ('地形湿度指数面积波段必须声明m2单位，请显式提供计入自身的平方米汇流面积', 'Topographic wetness index area band must declare m2; explicitly supply contributing area including self in square metres'),
+    'slope-unit': ('地形湿度指数必须显式声明degree或percent坡度单位', 'Topographic wetness index requires explicit slope_unit degree or percent'),
+    'unit-conflict': ('地形湿度指数坡度波段单位未知或与声明冲突', 'Topographic wetness index slope band unit is unknown or conflicts with slope_unit'),
+    'scale': ('地形湿度指数前必须显式应用面积及坡度scale/offset', 'Topographic wetness index requires area and slope scale/offset to be applied first'),
+    'area': ('地形湿度指数的有效汇流面积必须严格大于零', 'Topographic wetness index valid contributing area must be strictly positive'),
+    'slope': ('地形湿度指数的有效坡度不得为负，角度必须小于90度', 'Topographic wetness index valid slope must be nonnegative and degrees must be below 90'),
+    'numeric': ('地形湿度指数米制边长或结果超出有限Float64范围，非零量不能下溢为零', 'Topographic wetness index metre cell width or result exceeds finite Float64 range; a nonzero quantity must not underflow to zero'),
+}
+
+
+def _twi_error(code):
+    return ValueError(_TWI_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _twi_tangent(degrees):
+    """Decimal tangent on [0, 90); caller owns the 80-digit context.
+
+    Reduce to [0, pi/4], then sum until neither series changes at this
+    precision. No slope cutoff or binary64 degree-to-radian conversion.
+    """
+    from decimal import Decimal
+    if degrees == 45:
+        return Decimal(1)
+    reciprocal = degrees > 45
+    angle = 90 - degrees if reciprocal else degrees
+    pi = Decimal('3.1415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679')
+    x = angle * pi / 180
+    squared = x * x
+    sine = sine_term = x
+    cosine = cosine_term = Decimal(1)
+    k = 1
+    while True:
+        sine_term *= -squared / ((2 * k) * (2 * k + 1))
+        cosine_term *= -squared / ((2 * k - 1) * (2 * k))
+        next_sine, next_cosine = sine + sine_term, cosine + cosine_term
+        if next_sine == sine and next_cosine == cosine:
+            break
+        sine, cosine = next_sine, next_cosine
+        k += 1
+    return cosine / sine if reciprocal else sine / cosine
+
+
+def raster_twi(input_raster, slope_raster, band, slope_band, slope_unit):
+    """Metric TWI from explicit contributing area and slope on one square grid."""
+    from decimal import Decimal, localcontext
+    if not isinstance(slope_unit, str) or slope_unit not in ('degree', 'percent'):
+        raise _twi_error('slope-unit')
+    area, slope = _open(input_raster), _open(slope_raster)
+    try:
+        horizontal = _projected_north_up_grid(area)
+        _projected_north_up_grid(slope)
+        transform = area.GetGeoTransform()
+        if transform[1] != -transform[5]:
+            raise _twi_error('grid')
+    except ValueError as cause:
+        raise _twi_error('grid') from cause
+    try:
+        _require_same_grid(area, slope)
+    except ValueError as cause:
+        raise _twi_error('alignment') from cause
+    for role, source, index in (('area', area, band), ('slope', slope, slope_band)):
+        if type(index) is not int or not 1 <= index <= source.RasterCount:
+            raise _twi_error(role + '-band')
+        selected = source.GetRasterBand(index)
+        if gdal.DataTypeIsComplex(selected.DataType):
+            raise _twi_error('complex')
+        if selected.GetColorInterpretation() == gdal.GCI_AlphaBand:
+            raise _twi_error('alpha')
+        if selected.GetScale() not in (None, 1) or selected.GetOffset() not in (None, 0):
+            raise _twi_error('scale')
+        unit = selected.GetUnitType()
+        if role == 'area' and unit != 'm2':
+            raise _twi_error('area-unit')
+        if role == 'slope' and unit and unit != slope_unit:
+            raise _twi_error('unit-conflict')
+        for index in range(1, source.RasterCount + 1):
+            candidate = source.GetRasterBand(index)
+            if candidate.GetColorInterpretation() == gdal.GCI_AlphaBand and gdal.DataTypeIsComplex(candidate.DataType):
+                raise _twi_error('complex')
+        selected = candidate = None
+    width = Fraction(transform[1]) * Fraction(horizontal)
+    try:
+        metres = float(width)
+    except OverflowError as cause:
+        raise _twi_error('numeric') from cause
+    if not math.isfinite(metres) or metres <= 0:
+        raise _twi_error('numeric')
+    output = destination = None
+    path = None
+    try:
+        output = _numeric_output(area, 1)
+        path = Path(output.GetDescription())
+        destination = output.GetRasterBand(1)
+        destination.SetUnitType('1')
+        with localcontext() as context:
+            context.prec = 80
+            decimal_width = Decimal(width.numerator) / Decimal(width.denominator)
+            for x, y, arrays, masks in _blocks(area, [band], native=True):
+                values, valid = arrays[0], masks[0]
+                height, columns = values.shape
+                _, _, slopes, slope_masks = next(_blocks(slope, [slope_band], window=(x, y, columns, height), native=True))
+                betas, slope_valid = slopes[0], slope_masks[0]
+                if np.any(values[valid] <= 0):
+                    raise _twi_error('area')
+                if np.any(betas[slope_valid] < 0) or (slope_unit == 'degree' and np.any(betas[slope_valid] >= 90)):
+                    raise _twi_error('slope')
+                complete = valid & slope_valid & (betas > 0)
+                result = np.full(values.shape, np.nan)
+                # Only bounded block-local deterministic values are deduplicated.
+                tangents, indices = {}, {}
+                converted = []
+                for a, b in zip(values[complete].tolist(), betas[complete].tolist()):
+                    key = (a, b)
+                    if key not in indices:
+                        if b not in tangents:
+                            tangents[b] = Decimal(b) / 100 if slope_unit == 'percent' else _twi_tangent(Decimal(b))
+                        ratio = Decimal(a) / decimal_width / tangents[b]
+                        exact = ratio.ln()
+                        number = float(exact)
+                        if not math.isfinite(number) or (exact != 0 and number == 0):
+                            raise _twi_error('numeric')
+                        indices[key] = number
+                    converted.append(indices[key])
+                result[complete] = converted
+                destination.WriteArray(result, x, y)
+        destination = None
+        output.FlushCache()
+        output = None
+        return _raster(path)
+    except Exception:
+        destination = output = None
+        if path is not None:
+            path.unlink(missing_ok=True)
+        raise
+
+
 def raster_tpi(input_raster, band, elevation_unit):
     """Centre minus the mean of eight neighbours, in metres, on complete windows."""
     source, _ = _dem_admission(input_raster, elevation_unit, band, 1, diagnostic=_tpi_error)
@@ -4344,6 +4487,7 @@ _SPECS = [
     (raster_hand_d8, OperatorCategory.RASTER_STREAM, 'D8 到河网相对高程（HAND）', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网；完整非法路线及断流失败', role='input'), _param('elevation_raster', 'raster', '同网格、同有效覆盖的DEM；全图下游不升高，允许平坦、逆坡失败', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式二值河网数据波段'), _param('elevation_band', 'int', '显式高程数据波段；相对首次河网高程差，河网0、未到达NoData'), _param('elevation_unit', 'str', '显式高程单位，结果统一米制', enum=['metre', 'foot', 'us_survey_foot'])], 'raster', ['read']),
     (raster_stream_link_d8, OperatorCategory.RASTER_STREAM, 'D8 河段编号', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；汇合点归下游段，按河段起点行列顺序从1编号')], 'raster', ['read']),
     (raster_stream_to_vector_d8, OperatorCategory.RASTER_STREAM, 'D8 河网转矢量线', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜；孤立单像元失败，不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；连接像元中心，保留河段ID及米制长度')], 'GeoDataFrame', ['read']),
+    (raster_twi, OperatorCategory.RASTER_TERRAIN, '地形湿度指数 TWI', [_INPUT(), _param('slope_raster', 'raster', '同完整网格的坡度栅格；零坡度NoData，非零无阈值', role='input'), _param('band', 'int', '显式m2汇流面积波段，计入自身，固定面积除以方形像元米制边长'), _param('slope_band', 'int', '显式坡度数据波段'), _param('slope_unit', 'str', '显式坡度单位；指数允许负数及合法零，不表示实际含水量', enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_tpi, OperatorCategory.RASTER_TERRAIN, 'DEM 地形位置指数', [_INPUT(), _param('band', 'int', '显式高程数据波段；固定3×3中心减周围8点等权均值'), _param('elevation_unit', 'str', '显式高程单位；输出米，完整九点有效才计算，合法零保留', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_tri, OperatorCategory.RASTER_TERRAIN, 'DEM 地形崎岖度', [_INPUT(), _param('band', 'int', '显式高程数据波段；固定3×3 Riley中心与8邻居高差平方和开方，不除以8'), _param('elevation_unit', 'str', '显式高程单位；输出米，完整九点有效才计算，合法零保留', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_roughness, OperatorCategory.RASTER_TERRAIN, 'DEM 地形粗糙度', [_INPUT(), _param('band', 'int', '显式高程数据波段；固定3×3包含中心的九点最大高程减最小高程，不取半高差'), _param('elevation_unit', 'str', '显式高程单位；输出米，完整九点有效才计算，合法零保留', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
@@ -4368,6 +4512,8 @@ for function, category, label, params, output, effects in _SPECS:
                      'raster_stack': {'other_raster': {'$ref': 'other'}},
                      'raster_update': {'update_raster': {'$ref': 'update'}},
                      'raster_select_bands': {'bands': [3, 2, 1], 'color_model': 'rgb'}}.get(name, {}))
+    if name == 'raster_twi':
+        examples.update({'slope_raster': {'$ref': 'slope'}, 'band': 1, 'slope_band': 1, 'slope_unit': 'degree'})
     if name == 'raster_cut_fill':
         examples.update({'after_raster': {'$ref': 'after'}, 'band': 1, 'after_band': 1, 'elevation_unit': 'metre', 'after_elevation_unit': 'metre'})
     if name == 'raster_zonal_statistics':

@@ -71,6 +71,7 @@ GeoTIFF 与 COG 是 TIFF 的布局 profile。COG 编码复用唯一实现，压�
 | `raster_boundary_clean` | raster、显式分类数据波段 | 原分类有效总数优先、并列较小分类；3×3 八邻域单轮扩张／收缩，同网格 Float64／NaN，保持无效覆盖；沿既有 COG。Native 与真实平台验收分别记账。 |
 | `raster_thin` | raster、显式分类波段与单个前景分类 | Guo–Hall 八邻域两子迭代全图同步收敛；同网格 Float64 骨架1／背景0／原无效NaN；复用 COG，Native／Linux／Hosted 分别记账。 |
 | `raster_histogram` | raster、band、bins、可选范围 | 按块全量计数，返回 edges/counts、有效/无效和范围外计数。 |
+| `raster_twi` | 汇流面积raster、坡度raster、显式两波段与degree/percent | 同网格Float64地形湿度指数；固定A/米制边长，零坡度NoData，复用COG。 |
 | `raster_slope` | raster、必填高程单位、band、degree/percent | 同网格单波段坡度，默认角度。 |
 | `raster_aspect` | raster、必填高程单位、band | 投影网格北起顺时针坡向；平坦区域为 NaN。 |
 | `raster_hillshade` | raster、必填高程单位、band、方位角／高度角 | 同网格地形晕渲，常规有效灰度 1–255；不表示三维场景。 |
@@ -373,3 +374,8 @@ D8增量子汇水区独立手工Hosted `raster-subcatchments-d8-persistence` 已
 
 
 DEM三维表面积统计`raster_surface_area`沿普通DataFrame契约返回面片计数、参与投影面积、双对角逐面片较小／较大／平均表面积及比值，面积统一平方米；只计算四角有效像元中心之间的区域，外缘不补面积，双对角平均是离散估算，不是实测面积或误差界。复用`save` CSV、普通表Schema／预览／授权和清理，不新增RasterArtifact。算法及精确失败边界以[栅格算子契约](workflow/栅格算子契约.md#dem-三维表面积统计)为准；本地标准Native专项114项及含其的受影响回归592项／2 warnings／24.88秒通过，0失败／跳过，8056项筛除不计通过；普通表Schema、独立向量叉积参考、单位／64位差值、完整覆盖、数值拒绝、异步CSV保存／反向查询语言和清理已核。Python／Online登记56＋10项／11模块通过，既有Native recipe与CI选路已覆盖，不新增门禁或Hosted脚本。Linux全量等CI回传，独立Hosted已批准12成功／36双语准确失败／510成果全检、12原CSV及600秒，夹具准备与实际验收分别记账，范围见[测试场景](testing/scenarios/Manager与空间成果.md#dem-三维表面积统计独立-hosted-验收)，不将本地CSV成功计作平台扫描／血缘通过。
+
+
+### 地形湿度指数 TWI
+
+`raster_twi`将计入自身的m2汇流面积与显式degree/percent坡度连接起来，固定A/方形像元米制边长，零坡度NoData，极小非零坡度无阈值，负指数与合法零保留。两源同完整网格，单位冲突及非法有效数值严格失败，原始类型无效判定和共同有效覆盖保留；输出沿既有COG路径，不新增权限、依赖或跨模块逻辑。完整语义见[算子契约](workflow/栅格算子契约.md#地形湿度指数-twi)，验证分层见[专题](../next/栅格算子体系后续专题.md#三后续工作)，本地标准Native受影响回归734项（含155项TWI专项）／2 warnings／40.52秒通过，8174筛除不计通过；完整登记通过。Linux全量等CI会话回传，独立Hosted尚未确认／准备，不把本地保存计作平台扫描／血缘。
