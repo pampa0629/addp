@@ -140,7 +140,7 @@ test('list search discards a late invalid old batch and keeps CPU warmup distinc
   state.summaryMode = 'cpu-warmup'
   state.listNodes = [{ node_id: secondNode, version: 1, display_name: '筛选后节点', enabled: true, addresses: ['127.0.0.2'] }]
   await page.getByTestId('resource-search').fill('筛选')
-  await page.getByRole('button', { name: '搜索', exact: true }).click()
+  await page.getByTestId('resource-search').press('Enter')
   await expect.poll(() => state.reads.filter(row => row.path.endsWith('/resource_summaries')).length).toBe(2)
   state.releaseSummary()
   await expect(page.getByTestId('resource-node-list')).toContainText('正在采集')
@@ -876,7 +876,7 @@ test('invalid section evidence clears previous network state and preserves indep
 
 
 const summaryReads = state => state.reads.filter(item => item.path.endsWith('/resource_summaries'))
-for (const locale of ['zh-cn', 'en']) test(`host list automatic refresh preserves search drafts and publishes only the authorized page (${locale})`, async ({ page }) => {
+for (const locale of ['zh-cn', 'en']) test(`host list automatic filters reset paging and refresh only the submitted scope (${locale})`, async ({ page }) => {
   const state = await resourceBackend(page, { locale })
   await page.clock.install()
   await page.setViewportSize({ width: 620, height: 900 })
@@ -884,14 +884,14 @@ for (const locale of ['zh-cn', 'en']) test(`host list automatic refresh preserve
   const list = page.getByTestId('resource-node-list')
   await expect(list).toContainText(locale === 'en' ? 'Collecting' : '正在采集')
   await expect(page.getByTestId('resource-refresh-status')).toContainText(locale === 'en' ? 'Auto refresh' : '自动刷新')
-  await page.getByTestId('resource-search').fill('未提交')
+  await page.getByTestId('resource-search').fill('新条件')
   state.summaryMode = 'unavailable'
-  await page.clock.fastForward(15001)
+  await page.clock.fastForward(301)
   await expect(page.getByTestId('resource-summary-error')).toBeVisible()
   expect(summaryReads(state)).toHaveLength(2)
   expect(await list.locator('strong').allTextContents()).toEqual(Array(10).fill('—'))
-  await expect(page.getByTestId('resource-search')).toHaveValue('未提交')
-  expect(state.reads.filter(item => item.path.endsWith('/host_nodes')).at(-1).query).toEqual({ page: '2', page_size: '20', search: '节点' })
+  await expect(page.getByTestId('resource-search')).toHaveValue('新条件')
+  expect(state.reads.filter(item => item.path.endsWith('/host_nodes')).at(-1).query).toEqual({ page: '1', page_size: '20', search: '新条件' })
   expect(summaryReads(state).at(-1).query).toEqual({ node_ids: `${node},${secondNode}`, metrics: hostListMetrics.map(metric => metric.key).join(',') })
   state.summaryMode = ''
   await page.clock.fastForward(15001)

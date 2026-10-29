@@ -44,6 +44,7 @@ for (const locale of ['zh-cn', 'en']) test(`twenty-host load and connection view
 
 test('view switching retains committed context, restores detail return and reload, and reset retains the view', async ({ page }) => {
   const state = await resourceBackend(page)
+  await page.clock.install()
   await page.goto('/node-resources?page=2&page_size=10&search=节点&node_kind=virtual&enabled=true&refresh=off')
   await expect(page.getByTestId('resource-summary-cores')).toHaveCount(2)
   await page.getByTestId('resource-search').fill('未提交草稿')

@@ -8,6 +8,50 @@ const rows = [
   { node_id: secondNode, display_name: 'Node B', node_kind: 'physical', addresses: [], enabled: false, version: 1 }
 ]
 
+for (const locale of ['zh-cn', 'en']) test(`host text filters debounce, clear immediately and cancel pending reset (${locale})`, async ({ page }) => {
+  const state = await resourceBackend(page, { locale, nodes: rows, filterNodes: true })
+  await page.clock.install()
+  await page.goto('/node-resources?page=2&page_size=10&refresh=off')
+  await expect.poll(() => hostReads(state).length).toBe(1)
+  const input = page.getByTestId('resource-search')
+  await expect(page.getByRole('button', { name: locale === 'en' ? 'Search' : '搜索', exact: true })).toHaveCount(0)
+  await input.fill('N'); await input.fill('Node B')
+  expect(hostReads(state)).toHaveLength(1)
+  await page.clock.fastForward(301)
+  await expect.poll(() => hostReads(state).length).toBe(2)
+  expect(hostReads(state).at(-1).query).toEqual({ page: '1', page_size: '10', search: 'Node B' })
+  await expect(page.getByTestId('resource-node-list')).toContainText('Node B')
+  await input.hover()
+  await page.locator('.resource-search .el-input__clear').click()
+  await expect.poll(() => hostReads(state).length).toBe(3)
+  await page.clock.fastForward(301)
+  expect(hostReads(state)).toHaveLength(3)
+  await input.fill('discarded')
+  await page.getByTestId('resource-reset').click()
+  await page.clock.fastForward(301)
+  expect(hostReads(state)).toHaveLength(3)
+  await expect(input).toHaveValue('')
+})
+
+test('hidden host pending input resumes once and identity removal cancels queued text', async ({ page }) => {
+  const state = await resourceBackend(page, { nodes: rows, filterNodes: true })
+  await page.clock.install()
+  await page.goto('/node-resources?refresh=off')
+  await expect(page.getByTestId('resource-node-list')).toContainText('Node A')
+  const input = page.getByTestId('resource-search')
+  await input.fill('Node B')
+  const visibility = hidden => page.evaluate(hidden => { Object.defineProperty(document, 'hidden', { configurable: true, value: hidden }); document.dispatchEvent(new Event('visibilitychange')) }, hidden)
+  await visibility(true); await page.clock.fastForward(1000)
+  expect(hostReads(state)).toHaveLength(1)
+  await visibility(false); await page.clock.fastForward(301)
+  await expect.poll(() => hostReads(state).length).toBe(2)
+  expect(hostReads(state).at(-1).query.search).toBe('Node B')
+  await input.fill('forbidden')
+  await setIdentity(page, identity([])); await page.clock.fastForward(1000)
+  expect(hostReads(state)).toHaveLength(2)
+  await expect(page.getByTestId('resource-search')).toHaveCount(0)
+})
+
 for (const locale of ['zh-cn', 'en']) test(`host filters use owner pagination and survive detail, refresh and reset (${locale})`, async ({ page }) => {
   const state = await resourceBackend(page, { locale, nodes: rows, filterNodes: true })
   const english = locale === 'en'
@@ -84,16 +128,19 @@ test('new host filters and identity changes discard the previous page summaries'
   await expect(page.getByTestId('node-resources')).toHaveCount(0)
 })
 
-test('automatic refresh keeps committed host filters and does not submit the name draft', async ({ page }) => {
+test('automatic host text filters retain selected owner filters and refresh the new scope', async ({ page }) => {
   const state = await resourceBackend(page, { nodes: rows, filterNodes: true })
   await page.clock.install()
   await page.goto('/node-resources?node_kind=physical&enabled=false&search=Node')
   await expect(page.getByTestId('resource-node-list')).toContainText('Node B')
-  await page.getByTestId('resource-search').fill('Unsubmitted')
-  await page.clock.fastForward(15001)
+  await page.getByTestId('resource-search').fill('Node B')
+  await page.clock.fastForward(301)
   await expect.poll(() => hostReads(state).length).toBe(2)
-  expect(hostReads(state).at(-1).query).toEqual({ page: '1', page_size: '20', search: 'Node', node_kind: 'physical', enabled: 'false' })
-  await expect(page.getByTestId('resource-search')).toHaveValue('Unsubmitted')
+  expect(hostReads(state).at(-1).query).toEqual({ page: '1', page_size: '20', search: 'Node B', node_kind: 'physical', enabled: 'false' })
+  await expect(page.getByTestId('resource-search')).toHaveValue('Node B')
+  await page.clock.fastForward(15001)
+  await expect.poll(() => hostReads(state).length).toBe(3)
+  expect(hostReads(state).at(-1).query.search).toBe('Node B')
   await expect(page.getByTestId('resource-node-list')).toContainText('Node B')
 })
 

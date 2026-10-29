@@ -9,9 +9,8 @@
     <template v-else>
       <el-alert v-if="errorKey" :title="t(errorKey)" type="warning" :closable="false" data-testid="engine-error" />
       <template v-if="!state.deploymentID">
-        <form class="toolbar" @submit.prevent="navigate({ search: search.trim(), refresh: state.refresh })">
-          <el-input v-model="search" :placeholder="t('monitor.engines.search')" :aria-label="t('monitor.engines.search')" clearable />
-          <el-button native-type="submit">{{ t('common.search') }}</el-button>
+        <form class="toolbar" @submit.prevent="filterInput.submit">
+          <el-input v-model="search" :placeholder="t('monitor.engines.search')" :aria-label="t('monitor.engines.search')" clearable @input="filterInput.queue" @clear="filterInput.submit" />
         </form>
         <el-table :data="owners" v-loading="loading" :empty-text="t('monitor.engines.empty')" data-testid="engine-list">
           <el-table-column prop="display_name" :label="t('monitor.engines.name')" min-width="190" show-overflow-tooltip />
@@ -63,6 +62,7 @@ import { useI18n } from 'vue-i18n'
 import AutoRefreshControl from '../../../../common-frontend/basic/src/components/AutoRefreshControl.vue'
 import ChartRenderer from '../../../../common-frontend/chart/src/ChartRenderer.vue'
 import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
+import { createAutoFilter } from '../../../../common-frontend/basic/src/utils/autoFilter.mjs'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
 import { formatBytes, scaleByteValue } from '../../../../common-frontend/basic/src/utils/formatters.js'
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
@@ -101,11 +101,18 @@ const chart = computed(() => {
   const scale = metric.unit === 'bytes' ? scaleByteValue(Math.max(0, ...series.points.map(point => currentResourceValue(point) ?? 0))) : null
   return { rows: resourceChartRows(series).map(row => ({ ...row, value: row.value === null ? null : row.value / (scale?.divisor || 1) })), config: { chart_type: 'line', dimension: 'evaluated_at', measures: ['value'], field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, { field: 'value', label: t(`monitor.engines.metrics.${metric.name}`), unit: scale?.unit || t(`monitor.engines.units.${metric.unit}`), precision: metric.windowSeconds ? 2 : 0 }] } }
 })
-const navigate = (query, history = 'replace') => navigateMonitorRoute(router, { path: '/engine-resources', query: resolveEngineRoute(query).query }, { history })
+const navigate = (query, history = 'replace') => {
+  filterInput.cancel()
+  const target = { path: '/engine-resources', query: resolveEngineRoute(query).query }
+  if (router.resolve(target).fullPath === route.fullPath) { refreshCycle.schedule(); return }
+  return navigateMonitorRoute(router, target, { history })
+}
+const filterInput = createAutoFilter({ apply: () => navigate({ search: search.value.trim(), refresh: state.value.refresh }), enabled: () => !disposed && route.name === 'EngineResources' && !state.value.deploymentID && canRead.value, visible: () => visible.value, pause: () => refreshCycle.stop() })
 function back() { const { deployment_id, metric, range, ...query } = state.value.query; return navigate(query) }
 function invalidChart() { history.value = null; trendError.value = 'monitor.resources.errors.invalidResponse' }
-const refreshCycle = createAutoRefresh({ interval: () => state.value.refresh, enabled: () => canRead.value && route.name === 'EngineResources' && !blocked.value && !loading.value && !state.value.changed, refresh: () => reload({ automatic: true }), pause: () => { requests.invalidate(); loading.value = false; observed.value = null; history.value = null; hostReferences.value = {} }, visibilityChanged: value => { visible.value = value } })
+const refreshCycle = createAutoRefresh({ interval: () => state.value.refresh, enabled: () => canRead.value && route.name === 'EngineResources' && !blocked.value && !loading.value && !state.value.changed && !filterInput.pending, refresh: () => reload({ automatic: true }), pause: () => { requests.invalidate(); loading.value = false; observed.value = null; history.value = null; hostReferences.value = {} }, visibilityChanged: value => { visible.value = value; filterInput.visibilityChanged(value) } })
 async function reload({ automatic = false } = {}) {
+  if (!automatic) filterInput.cancel()
   if (disposed || route.name !== 'EngineResources') return
   refreshCycle.stop()
   const ticket = requests.invalidate()
@@ -113,7 +120,8 @@ async function reload({ automatic = false } = {}) {
   if (!automatic) blocked.value = false
   if (!canRead.value || !visible.value) { loading.value = false; return }
   if (state.value.changed) { await navigate(state.value.query); return }
-  search.value = state.value.search; loading.value = true
+  if (!automatic) search.value = state.value.search
+  loading.value = true
   try {
     let rows, count
     if (state.value.deploymentID) {
@@ -158,7 +166,7 @@ async function loadHosts(rows, ticket) {
   if (current()) hostReferences.value = hosts
 }
 watch([() => route.fullPath, identity], () => reload(), { immediate: true, flush: 'sync' })
-onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); requests.dispose() })
+onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dispose(); requests.dispose() })
 </script>
 
 <style scoped>

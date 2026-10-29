@@ -9,9 +9,8 @@
     <el-alert v-if="errorKey" :title="t(errorKey)" type="error" show-icon :closable="false" data-testid="resource-error" />
     <template v-if="!nodeID">
       <el-form class="resource-search" @submit.prevent="search">
-        <el-input v-model="searchText" :placeholder="t('monitor.resources.search')" :aria-label="t('monitor.resources.search')" maxlength="200" clearable data-testid="resource-search" />
+        <el-input v-model="searchText" :placeholder="t('monitor.resources.search')" :aria-label="t('monitor.resources.search')" maxlength="200" clearable data-testid="resource-search" @input="filterInput.queue" @clear="search" />
         <HostNodeFilters :node-kind="state.nodeKind" :enabled="state.enabled" @change="changeFilter" />
-        <el-button native-type="submit">{{ t('common.search') }}</el-button>
         <el-button @click="resetFilters" data-testid="resource-reset">{{ t('common.reset') }}</el-button>
       </el-form>
       <el-radio-group :model-value="state.listView" :aria-label="t('monitor.resources.listView.label')" class="resource-list-views" data-testid="resource-list-view" @change="changeListView">
@@ -144,6 +143,7 @@
 import HostNodeFilters from '../../../../common-frontend/basic/src/components/HostNodeFilters.vue'
 import AutoRefreshControl from '../../../../common-frontend/basic/src/components/AutoRefreshControl.vue'
 import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
+import { createAutoFilter } from '../../../../common-frontend/basic/src/utils/autoFilter.mjs'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
 import ResourcePeriodComparison from '../components/ResourcePeriodComparison.vue'
 import HostResourceHeatmap from '../components/HostResourceHeatmap.vue'
@@ -236,7 +236,11 @@ function cpuIdleValue() {
   const busy = currentResourceValue(point('node.cpu.busy_percent'))
   return formatFieldPresentationValue(busy === null ? null : 100 - busy, { precision: 2, unit: t('monitor.resources.units.percent') }, locale.value)
 }
-function navigate(path, query, history = 'push') { return navigateMonitorRoute(router, { path, query }, { history }) }
+function navigate(path, query, history = 'push') {
+  filterInput.cancel()
+  if (router.resolve({ path, query }).fullPath === route.fullPath) { refreshCycle.schedule(); return }
+  return navigateMonitorRoute(router, { path, query }, { history })
+}
 function viewCapacityRules(host, mount) {
   if (!canViewCapacityRules.value || !host) return
   const target = resourceRuleMountRoute(host.node_id, mount.dimensions)
@@ -275,7 +279,8 @@ function detailAccessDenied(error) {
 }
 function changePage(page) { return navigate(route.path, { ...state.value.query, page: page === 1 ? undefined : String(page) }, 'replace') }
 function changeSize(size) { return navigate('/node-resources', { ...state.value.query, page: undefined, page_size: size === 20 ? undefined : String(size) }, 'replace') }
-function search() { return navigate('/node-resources', { ...state.value.query, search: searchText.value.trim() || undefined, page: undefined }, 'replace') }
+const filterInput = createAutoFilter({ apply: () => navigate('/node-resources', { ...state.value.query, search: searchText.value.trim() || undefined, page: undefined }, 'replace'), enabled: () => !disposed && route.name === 'NodeResources' && canRead.value, visible: () => pageVisible.value, pause: () => refreshCycle.stop() })
+const search = () => filterInput.submit()
 function changeFilter(key, value) { return navigate('/node-resources', { ...state.value.query, search: searchText.value.trim() || undefined, [key]: value || undefined, page: undefined }, 'replace') }
 function changeListView(value) { return navigate('/node-resources', { ...state.value.query, list_view: value === 'resources' ? undefined : value }, 'replace') }
 function resetFilters() { searchText.value = ''; return navigate('/node-resources', { page_size: state.value.query.page_size, refresh: state.value.query.refresh, list_view: state.value.query.list_view }, 'replace') }
@@ -289,14 +294,15 @@ function selectDeviceObservation(row, metric) { const { mountpoint, fstype, ...q
 function invalidChart() { trend.value = null; comparison.value = null; trendErrorKey.value = 'monitor.resources.errors.invalidResponse' }
 const refreshCycle = createAutoRefresh({
   interval: () => state.value.refresh,
-  enabled: () => canRead.value && (!nodeID.value || isTargetUUID(nodeID.value)) && !refreshBlocked.value && !state.value.changed && !loading.value,
+  enabled: () => canRead.value && (!nodeID.value || isTargetUUID(nodeID.value)) && !refreshBlocked.value && !state.value.changed && !loading.value && !filterInput.pending,
   refresh: () => reload({ automatic: true }),
   pause: () => { invalidate(); loading.value = false },
-  visibilityChanged: visible => { pageVisible.value = visible }
+  visibilityChanged: visible => { pageVisible.value = visible; filterInput.visibilityChanged(visible) }
 })
 function invalidate() { refreshCycle.stop(); epoch = requestScope.invalidate() }
 const request = work => requestScope.request(work)
 async function reload({ automatic = false } = {}) {
+  if (!automatic) filterInput.cancel()
   if (disposed || !['NodeResources', 'NodeResourceDetail'].includes(route.name)) { invalidate(); return }
   if (automatic && (loading.value || disposed || !canRead.value || !pageVisible.value || refreshBlocked.value)) return
   invalidate()
@@ -421,7 +427,7 @@ watch([errorKey, trendErrorKey], ([error, trendError]) => { if (error || trendEr
 watch(refreshBlocked, blocked => { if (blocked) capacityRuleEditor.value?.close() }, { flush: 'sync' })
 watch([nodeID, identity], () => { showAllDisks.value = false }, { flush: 'sync' })
 watch([() => route.fullPath, identity], () => { capacityRuleEditor.value?.close(); expandedDetail.value = null; reload() }, { immediate: true, flush: 'sync' })
-onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); invalidate(); requestScope.dispose() })
+onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dispose(); invalidate(); requestScope.dispose() })
 </script>
 
 <style scoped>

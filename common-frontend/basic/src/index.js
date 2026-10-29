@@ -5,6 +5,7 @@ export { default as FieldHelp } from './components/FieldHelp.vue'
 
 export { default as AutoRefreshControl } from './components/AutoRefreshControl.vue'
 export { createAutoRefresh, autoRefreshOptions } from './utils/autoRefresh.mjs'
+export { createAutoFilter } from './utils/autoFilter.mjs'
 export { default as RuntimeInstanceTimeFilter } from './components/RuntimeInstanceTimeFilter.vue'
 export * from './utils/runtimeInstanceTime.mjs'
 export { default as RuntimeInstanceStopReasonSelect } from './components/RuntimeInstanceStopReasonSelect.vue'

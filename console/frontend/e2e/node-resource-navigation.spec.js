@@ -7,6 +7,29 @@ const isCapacityRequest = request => {
   return url.pathname === '/api/v1/monitor/platform/resource_observations' && url.searchParams.get('metrics') === 'node.block.capacity_bytes'
 }
 
+for (const locale of ['zh-cn', 'en']) test(`host automatic filters retain one Console iframe and owner query (${locale})`, async ({ page }) => {
+  const state = await resourceBackend(page, { locale })
+  const reads = () => state.reads.filter(read => read.path.endsWith('/host_nodes'))
+  await page.clock.install()
+  await page.goto('/monitor/node-resources?page=2&page_size=10&refresh=off')
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(monitor.getByRole('button', { name: locale === 'en' ? 'View resources' : '查看资源' })).toHaveCount(2)
+  const frame = page.frames().find(frame => frame.parentFrame()), origin = await frame.evaluate(() => performance.timeOrigin)
+  const input = monitor.getByTestId('resource-search')
+  await expect(monitor.getByRole('button', { name: locale === 'en' ? 'Search' : '搜索', exact: true })).toHaveCount(0)
+  await input.fill('N'); await input.fill('Node')
+  expect(reads()).toHaveLength(1)
+  await page.clock.fastForward(301)
+  await expect(page).toHaveURL(url => url.pathname === '/monitor/node-resources' && url.searchParams.get('search') === 'Node' && !url.searchParams.has('page'))
+  await expect.poll(() => reads().length).toBe(2)
+  expect(reads().at(-1).query).toEqual({ page: '1', page_size: '10', search: 'Node' })
+  await monitor.getByTestId('resource-reset').click()
+  await expect.poll(() => reads().length).toBe(3)
+  await expect(page).toHaveURL('/monitor/node-resources?page_size=10&refresh=off')
+  expect(await frame.evaluate(() => performance.timeOrigin)).toBe(origin)
+  await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(1)
+})
+
 test('node resource navigation preserves the real Monitor iframe and one Console history', async ({ page }) => {
   await resourceBackend(page)
   await page.goto('/monitor/node-resources?page=2')

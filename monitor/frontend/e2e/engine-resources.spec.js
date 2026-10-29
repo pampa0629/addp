@@ -5,6 +5,57 @@ import { enginePermissions, engineOwner } from './engine-resources.fixture'
 
 const hostPermissions = [...enginePermissions, 'platform.host_node.read']
 
+for (const locale of ['zh-cn', 'en']) test(`engine text filters debounce and clear without a Search button (${locale})`, async ({ page }) => {
+  await engineBackend(page, { locale })
+  const queries = []
+  await page.route('**/api/v1/system/platform/engine_deployments?**', route => {
+    const query = Object.fromEntries(new URL(route.request().url()).searchParams)
+    queries.push(query)
+    return route.fulfill({ json: { data: [engineOwner], page: Number(query.page), page_size: 20, total: 21 } })
+  })
+  await page.clock.install()
+  await page.goto('/engine-resources?page=2&refresh=off')
+  await expect(page.getByTestId('engine-list')).toContainText('1.00 GiB')
+  const input = page.getByRole('textbox', { name: locale === 'en' ? 'Search deployment name' : '搜索部署名称', exact: true })
+  await expect(page.getByRole('button', { name: locale === 'en' ? 'Search' : '搜索', exact: true })).toHaveCount(0)
+  await input.fill('P'); await input.fill('PostgreSQL')
+  expect(queries).toHaveLength(1)
+  await page.clock.fastForward(301)
+  await expect.poll(() => queries.length).toBe(2)
+  expect(queries.at(-1)).toEqual({ page: '1', page_size: '20', search: 'PostgreSQL' })
+  await expect(page).toHaveURL(url => !url.searchParams.has('page') && url.searchParams.get('search') === 'PostgreSQL' && url.searchParams.get('refresh') === 'off')
+  await input.hover(); await page.locator('form .el-input__clear').click()
+  await expect.poll(() => queries.length).toBe(3)
+  await page.clock.fastForward(301)
+  expect(queries).toHaveLength(3)
+  expect(queries.at(-1)).not.toHaveProperty('search')
+  await input.fill('old draft')
+  await page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
+  await expect.poll(() => queries.length).toBe(4)
+  await page.clock.fastForward(301)
+  expect(queries).toHaveLength(4)
+  await expect(input).toHaveValue('')
+})
+
+test('hidden engine text resumes once and permission removal prevents its pending query', async ({ page }) => {
+  const state = await engineBackend(page)
+  const listReads = () => state.calls.filter(path => path.endsWith('/engine_deployments'))
+  await page.clock.install()
+  await page.goto('/engine-resources?refresh=off')
+  await expect(page.getByTestId('engine-list')).toContainText('1.00 GiB')
+  const input = page.getByRole('textbox', { name: '搜索部署名称', exact: true })
+  await input.fill('PostgreSQL')
+  const visibility = hidden => page.evaluate(hidden => { Object.defineProperty(document, 'hidden', { configurable: true, value: hidden }); document.dispatchEvent(new Event('visibilitychange')) }, hidden)
+  await visibility(true); await page.clock.fastForward(1000)
+  expect(listReads()).toHaveLength(1)
+  await visibility(false); await page.clock.fastForward(301)
+  await expect.poll(() => listReads().length).toBe(2)
+  await input.fill('forbidden')
+  await setIdentity(page, identity([])); await page.clock.fastForward(1000)
+  expect(listReads()).toHaveLength(2)
+  await expect(page.getByTestId('engine-denied')).toBeVisible()
+})
+
 for (const locale of ['zh-cn', 'en']) test(`engine host link preserves detail and trend URL on browser return (${locale})`, async ({ page }, info) => {
   const host = { node_id: engineOwner.node_id, display_name: 'Current managed PostgreSQL host', enabled: true, version: 1 }
   const state = await engineBackend(page, { locale, auth: identity(hostPermissions), hosts: [host] })

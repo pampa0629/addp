@@ -110,7 +110,7 @@ import { runtimeInstanceStopReasonLabelKey } from '../../../../common-frontend/b
 import RuntimeInstanceTimeFilter from '../../../../common-frontend/basic/src/components/RuntimeInstanceTimeFilter.vue'
 import { validRuntimeInstanceRange } from '../../../../common-frontend/basic/src/utils/runtimeInstanceTime.mjs'
 import FieldHelp from '../../../../common-frontend/basic/src/components/FieldHelp.vue'
-import { debounce } from '../../../../common-frontend/basic/src/utils/index.js'
+import { createAutoFilter } from '../../../../common-frontend/basic/src/utils/autoFilter.mjs'
 import AutoRefreshControl from '../../../../common-frontend/basic/src/components/AutoRefreshControl.vue'
 import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
@@ -202,18 +202,11 @@ function selectRefresh(refresh) { return navigate(resolveProcessRoute({ ...state
 function selectTrend(instanceID, range = '5m') { return navigate(resolveProcessRoute({ ...state.value.query, compare: instanceID === state.value.instanceID ? state.value.query.compare : undefined, instance_id: String(instanceID), range }).query) }
 function selectComparison(enabled) { return navigate(resolveProcessRoute({ ...state.value.query, compare: enabled ? 'previous' : undefined }).query) }
 function closeTrend() { if (!state.value.instanceID) return; const { instance_id, range, compare, ...query } = state.value.query; return navigate(query) }
-const pendingFilter = ref(false)
-const deferredFilter = debounce(() => filter())
-function cancelFilter() { deferredFilter.cancel(); pendingFilter.value = false }
-function queueFilter() {
-  cancelFilter()
-  if (!canRead.value || !validTimeDraft.value) return
-  pendingFilter.value = true; refreshCycle.stop()
-  if (pageVisible.value) deferredFilter()
-}
-function filter() {
-  cancelFilter()
-  if (disposed || route.name !== 'ProcessResources' || !canRead.value) return
+const filterInput = createAutoFilter({ apply: applyFilters, enabled: () => !disposed && route.name === 'ProcessResources' && canRead.value, visible: () => pageVisible.value, pause: () => refreshCycle.stop() })
+const cancelFilter = () => filterInput.cancel()
+const queueFilter = () => filterInput.queue()
+const filter = () => filterInput.submit()
+function applyFilters() {
   if (!validTimeDraft.value) { refreshCycle.schedule(); return }
   const query = resolveProcessRoute({ ...timeDraft(), refresh: state.value.refresh, module_name: moduleName.value.trim(), registered_host: registeredHost.value, node_name: nodeName.value, node_ip: nodeIP.value, role: role.value, stop_reason: stopReason.value, status: status.value, process_metrics_declared: declared.value }).query
   return navigate(query)
@@ -241,10 +234,10 @@ function processErrorKey(error) {
 }
 const refreshCycle = createAutoRefresh({
   interval: () => state.value.refresh,
-  enabled: () => canRead.value && route.name === 'ProcessResources' && !state.value.changed && !refreshBlocked.value && !loading.value && !pendingFilter.value,
+  enabled: () => canRead.value && route.name === 'ProcessResources' && !state.value.changed && !refreshBlocked.value && !loading.value && !filterInput.pending,
   refresh: () => reload({ automatic: true }),
   pause: () => { requests.invalidate(); loading.value = false },
-  visibilityChanged: visible => { pageVisible.value = visible; if (!visible) deferredFilter.cancel(); else if (pendingFilter.value) deferredFilter() }
+  visibilityChanged: visible => { pageVisible.value = visible; filterInput.visibilityChanged(visible) }
 })
 async function reload({ automatic = false } = {}) {
   if (disposed || route.name !== 'ProcessResources') { refreshCycle.stop(); requests.invalidate(); return }
@@ -319,7 +312,7 @@ async function reload({ automatic = false } = {}) {
 watch([() => JSON.stringify({ ...state.value.query, refresh: undefined }), identity], () => { trendZoom.value = {} }, { flush: 'sync' })
 watch([errorKey, trendErrorKey], ([error, trendError]) => { if (error || trendError) trendZoom.value = {} }, { flush: 'sync' })
 watch([() => route.fullPath, identity], reload, { immediate: true, flush: 'sync' })
-onBeforeUnmount(() => { disposed = true; cancelFilter(); refreshCycle.dispose(); requests.dispose() })
+onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dispose(); requests.dispose() })
 </script>
 
 <style scoped>

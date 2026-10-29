@@ -455,3 +455,21 @@ regression／complete-comparison 在当次私有部署显式开启原容量扩�
 本地验证：`npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js`退出0，25/25通过（1.4分钟），包含旧17项及新增8项，日志 `/tmp/addp-capacity-console-authority-browser.log`。`npm --prefix console/frontend run build`退出0（1.69秒），日志 `/tmp/addp-capacity-console-authority-build.log`；差异格式检查通过。原Console自动发现、标准浏览器入口及CI路径覆盖，无新增依赖、入口或Workflow。未改未变的Go、来源T2、共享内核或Online，不重复其既有验证；完整Console门禁本轮未重跑，上述开发端口清理断言失败仍未闭环，不计整批通过。
 
 本批只计受控HTTP／时钟下的真实Console和Monitor iframe T3，不是System真实权限发布、上下文选择／切换接口、真实登录/MFA或跨租户数据隔离T4。个人账户、采集器、数据库和配置未改动，不重启服务；CI／Hosted继续等专门会话回传，未触发／重跑／轮询CI或Hosted、不设置定时任务。原生Linux容量／Safari／Hosted与Monitor长回归的既有缺口保留。
+
+
+## 主机与引擎自动筛选统一（2026-10-29）
+
+主机、服务、引擎列表统一复用Common Frontend的createAutoFilter：文本300毫秒防抖，清空和Enter立即提交，删除主机／引擎搜索按钮；主机类型及纳管状态原本即选即查，继续合并当前名称条件。相同URL不重复读取并恢复刷新；筛选回第一页，主机保留页大小／列视图，引擎保留刷新间隔。原System匹配、授权、批量摘要、查询预算与服务趋势边界均保持，无API或Swagger变更。
+
+共享调度唯一负责等待／立即提交、待提交状态、取消与隐藏暂停／前台恢复；服务页原本地防抖生命周期删除，三页只保留领域查询、权限和路由组合。重置、清空、手动刷新、切换视图／页面及身份变化不被旧文本延迟覆盖；中文输入法继续沿原控件确认后提交。自动刷新只读已提交范围，待提交时暂停旧调度；不另建指标解释、错误或缺样提示路线。
+
+本地实际验证：
+
+- `make test-monitor-frontend`：131项单元测试、503个浏览器场景及构建全部通过，含主机／引擎新增6项和服务原46项；原时间、分页、趋势与撤权边界保留。
+- `npm --prefix monitor/frontend run test:e2e -- e2e/automatic-filter-enter.spec.js`：三页独立3项通过（10.5秒），冻结防抖时钟后验证Enter立即提交及受控IME事件不提前提交。该文件在完整套件发现之后加入，单独执行，不把原聚合计数冒写为506项。
+- `make test-console-frontend`：219项单元测试、263个浏览器场景及构建通过；新增主机／引擎中英文各两项，验证自动合并查询、清空／重置、System原参数、回第一页、URL replace与同iframe。
+- `make test-common-frontend`：290项中289项通过、1项失败；新增三项自动筛选／可取消调度／唯一归属测试通过。唯一失败仍是上一批ResourceTree直接组合所有权清单未登记其他会话的System组件，本批不修改该组件或清单，不能将共享聚合计为通过。
+
+新用例沿既有测试目录自动发现，Console原浏览器夹具已包含Monitor，模块Frontend标准入口与Platform矩阵继续覆盖，无需修改Make或Workflow。未运行未变的后端、数据库或Online runner；不重启个人服务、不操作个人身份或配置。上述仅为本地确定性T1／受控HTTP与时钟下的真实前端T3，不证明真实Safari登录、实际System筛选数据或Hosted。CI与Hosted仍等专门会话回传，未触发／重跑／轮询、不设置定时任务。
+
+日志：`/tmp/addp-host-engine-filters-{common,monitor-full,console-full,enter}.log`。上一批及本批共享失败分别保留，不将后续局部通过回填为旧失败通过；清单完整功能的原正式验收缺口不因这次交互统一而消失。
