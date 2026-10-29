@@ -1,3 +1,4 @@
+import asyncio
 import json
 import unittest
 from unittest.mock import patch
@@ -6,9 +7,24 @@ from addp_common.tools import get_tool
 
 from agents.checkpoint import capture_owner_facts, new_checkpoint
 from agents.main_agent import _build_routing_system_prompt
-from graph.factory import AgentFactory
+from graph.factory import AgentFactory, _PlatformBoundary
 from tests.harness_fixtures import HarnessTestModel, harness_tools
 from tests.test_platform_conditions import platform_fixture
+
+
+def _sibling_first_entry(first_id, sibling_id):
+    """Deterministically reverse arrival at the real Runtime boundary."""
+    sibling_entered = asyncio.Event()
+    original = _PlatformBoundary.awrap_tool_call
+
+    async def reordered_entry(boundary, request, handler):
+        if request.tool_call["id"] == first_id:
+            await sibling_entered.wait()
+        elif request.tool_call["id"] == sibling_id:
+            sibling_entered.set()
+        return await original(boundary, request, handler)
+
+    return patch.object(_PlatformBoundary, "awrap_tool_call", new=reordered_entry)
 
 
 class _FakeTool:
@@ -343,11 +359,14 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
                     _ScriptedResponse(content="不应执行的模型兜底"),
                 ]
                 llm = _ScriptedLLM(responses)
-                events = await self._run_workflow_events(
-                    tools=[ContextTool(), SearchTool(), ForbiddenTool("resource.children.list"), ForbiddenTool("transfer.task.create"), ForbiddenTool("transfer.task.config.check")],
-                    responses=responses, llm=llm,
-                    allowed_tool_names=["platform.capability.context", "data.search", "resource.children.list", "transfer.task.create", "transfer.task.config.check"],
-                )
+                # Force the scheduler order observed on Linux: the sibling
+                # reaches the Runtime boundary before the first model call.
+                with _sibling_first_entry("search", "enumeration"):
+                    events = await asyncio.wait_for(self._run_workflow_events(
+                        tools=[ContextTool(), SearchTool(), ForbiddenTool("resource.children.list"), ForbiddenTool("transfer.task.create"), ForbiddenTool("transfer.task.config.check")],
+                        responses=responses, llm=llm,
+                        allowed_tool_names=["platform.capability.context", "data.search", "resource.children.list", "transfer.task.create", "transfer.task.config.check"],
+                    ), timeout=5)
                 self.assertEqual(calls, [])
                 self.assertEqual(len(llm.messages), 1)
                 self.assertEqual([event.payload["tool_name"] for event in events if event.kind == "tool_start"], ["platform.capability.context", "data.search"])
@@ -356,6 +375,78 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(failure["error_code"], code)
                 self.assertEqual(failure["message"], "公开搜索失败")
                 self.assertEqual(failure["error_source"], "tool" if code == "delegation_rejected" else "owner")
+
+    async def test_sibling_first_arrival_preserves_successful_model_call_order(self):
+        calls = []
+
+        class ReadTool:
+            def __init__(self, name):
+                self.name = name.replace(".", "__")
+                self.metadata = {"addp_tool_name": name}
+
+            async def ainvoke(self, _args):
+                calls.append(self.name)
+                return "[]" if self.name == "engine__list" else '{"children":[]}'
+
+        responses = [_ScriptedResponse(tool_calls=[
+            {"id": "first", "name": "engine__list", "args": {}},
+            {"id": "sibling", "name": "resource__children__list", "args": {"engine_id": 11}},
+        ]), _ScriptedResponse(content="done")]
+        with _sibling_first_entry("first", "sibling"):
+            events = await asyncio.wait_for(self._run_workflow_events(
+                tools=[ReadTool("engine.list"), ReadTool("resource.children.list")],
+                responses=responses, allowed_tool_names=["engine.list", "resource.children.list"],
+            ), timeout=5)
+        self.assertEqual(calls, ["engine__list", "resource__children__list"])
+        self.assertEqual([e.payload["tool_call_id"] for e in events if e.kind == "tool_start"], ["first", "sibling"])
+        self.assertFalse(any(e.kind == "run_failed" for e in events))
+
+    async def test_cancelled_first_call_never_releases_queued_sibling_into_adapter(self):
+        from langgraph.errors import NodeCancelledError
+        started = asyncio.Event()
+        calls = []
+
+        class SearchTool(_DocumentSearchTool):
+            async def ainvoke(self, _args):
+                started.set()
+                await asyncio.Event().wait()
+
+        class SiblingTool:
+            name = "resource__children__list"
+            metadata = {"addp_tool_name": "resource.children.list"}
+
+            async def ainvoke(self, _args):
+                calls.append(self.name)
+                return '{"children":[]}'
+
+        responses = [_ScriptedResponse(tool_calls=[
+            {"id": "first", "name": "data__search", "args": {"query": "outdoor"}},
+            {"id": "sibling", "name": "resource__children__list", "args": {"engine_id": 11}},
+        ])]
+        with _sibling_first_entry("first", "sibling"):
+            task = asyncio.create_task(self._run_workflow_events(tools=[SearchTool(), SiblingTool()],
+                responses=responses, allowed_tool_names=["data.search", "resource.children.list"]))
+            try:
+                await asyncio.wait_for(started.wait(), timeout=5)
+            finally:
+                task.cancel()
+                with self.assertRaises((asyncio.CancelledError, NodeCancelledError)):
+                    await task
+        self.assertEqual(calls, [])
+
+    async def test_duplicate_batch_identity_fails_before_any_adapter_call(self):
+        calls = []
+
+        class ReadTool(_EngineListTool):
+            async def ainvoke(self, arguments):
+                calls.append(arguments)
+                return "[]"
+
+        first = {"id": "duplicate", "name": "engine__list", "args": {}}
+        with self.assertRaisesRegex(ValueError, "invalid_tool_batch"):
+            await asyncio.wait_for(self._run_workflow_events(tools=[ReadTool()],
+                responses=[_ScriptedResponse(tool_calls=[first, dict(first)])], allowed_tool_names=["engine.list"]), timeout=5)
+        self.assertEqual(calls, [])
 
     async def test_search_zero_results_and_input_errors_do_not_stop_runtime(self):
         for result in [{"total": 0, "results": []}, {"error": {"code": "invalid_arguments", "message": "参数错误"}}]:

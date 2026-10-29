@@ -99,8 +99,8 @@ class _PlatformBoundary(AgentMiddleware):
         self.resuming = resuming
         self.model_calls = 0
         self.halted = False
-        # LangGraph 并发调度同批工具；终态或 owner 暂停均禁止后续副作用。
-        self.tool_lock = asyncio.Lock()
+        # Request-local gates preserve model order across concurrent ToolNode tasks.
+        self.tool_turns = {}
 
     @hook_config(can_jump_to=["end"])
     async def abefore_model(self, state, runtime):
@@ -120,17 +120,37 @@ class _PlatformBoundary(AgentMiddleware):
         checks = [call for call in message.tool_calls if self.names.get(call["name"]) == CHECK_TOOL]
         if checks:
             # Filter before tool scheduling, including writes ordered before the check.
-            return {"messages": [message.model_copy(update={"tool_calls": checks[:1]})]}
-        clarifications = [call for call in message.tool_calls if call["name"] == "request_clarification"]
-        if clarifications:
+            selected = checks[:1]
+        else:
+            clarifications = [call for call in message.tool_calls if call["name"] == "request_clarification"]
             # 澄清优先，即使业务写入排在批次前面也不得执行。
-            return {"messages": [message.model_copy(update={"tool_calls": clarifications[:1]})]}
+            selected = clarifications[:1] if clarifications else message.tool_calls
+        # ToolNode starts siblings concurrently; a Lock alone cannot preserve
+        # model order when callbacks reach this boundary out of order.
+        self.tool_turns = {}
+        previous = None
+        for call in selected:
+            if not call["id"] or call["id"] in self.tool_turns:
+                raise ValueError("invalid_tool_batch")
+            completed = asyncio.Event()
+            self.tool_turns[call["id"]] = (previous, completed)
+            previous = completed
+        if selected != message.tool_calls:
+            return {"messages": [message.model_copy(update={"tool_calls": selected})]}
         if not message.tool_calls and message.content:
             get_stream_writer()(text_event(message.text))
 
     async def awrap_tool_call(self, request, handler):
-        async with self.tool_lock:
+        previous, completed = self.tool_turns[request.tool_call["id"]]
+        try:
+            if previous is not None:
+                await previous.wait()
             return await self._invoke(request.tool_call, lambda call: handler(request.override(tool_call=call)))
+        except BaseException:
+            self.halted = True
+            raise
+        finally:
+            completed.set()
 
     async def _invoke(self, call, handler, *, confirmed_resume=False):
         if self.halted:
