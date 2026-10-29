@@ -433,3 +433,10 @@ CI 专门会话回传 [Platform 40891592721／Job 123509561021](https://github.c
 本轮仅补测试及规范：名称／主机／时间变化须先核对 iframe 和 Console canonical 查询提交，reload 后还须观察新请求，避免复用刷新前最后一次请求造成假通过；精确时间值、控件、URL、原请求及单 iframe 断言均保留。新增中英文受控顺序回归验证 API 结果先于公开导航、未知请求 ID 的导航回执不能改写状态、退役旧请求延迟返回不能替换当前结果、放行导航后同一 iframe 不重建，以及刷新恢复时间／名称／主机／类别／严重级别。没有改产品导航、API、权限、超时或引入 sleep，也不增加部署或服务重启。
 
 标准定向入口 `npm --prefix console/frontend run test:e2e -- e2e/platform-alert-navigation.spec.js` 先通过全部 9 项、无跳过、退出 0（2.2 分钟），日志 `/tmp/addp-alert-publication-green-final.log`。随后只在新增两场景补未知导航回执断言，沿同一入口加 `--grep 'earlier API result'`，中英文 2 项最终通过、无跳过、退出 0（1.9 分钟）；原七场景输入未变复用前次有效结果，不将两次运行合计为十一场景。最终补充日志 `/tmp/addp-alert-publication-unknown-final.log`。首次新夹具导入触发两个 Playwright 副本而停在收集阶段，未执行断言、不计通过；已改为本用例最小协议 DTO，没有改依赖或扩大共用夹具。既有 Playwright testDir、根 `test-console-frontend` 与 Platform 前端矩阵自动覆盖同一 spec，无新增入口、依赖或 workflow。产品输入未变，不重复原有效 Console／Monitor 完整本地门禁、PG、个人实链或 Hosted；本次为受控 T3 测试修复，新增输入的自然 CI 继续等专门会话回传，未轮询、调度或设置定时。
+
+
+### 固定修复版本的自然 CI 复核（2026-10-30）
+
+专门 CI 会话回传修复源码 `226d1ad73564b9e681b9f0153f294132b92c2d3d` 的唯一自然 push 验证：[Platform 40959069552／Job 123746756104／attempt 1](https://github.com/pampa0629/addp/actions/runs/40959069552/job/123746756104)。本会话只读复核 checkout 与 CI head，原始日志 SHA-256 与独立审计一致（`620a0cfb04b79575b791a29f6960ca666b61ee329e3b550ae51bdd758688ef2b`）；219 项单元、270 项浏览器及生产构建均实际通过，无 FAIL／SKIP。原中英文自动筛选刷新用例见日志 859—860 行，新增受控发布时间竞态中英文见 861、863 行，总浏览器通过为 989 行，构建通过为 1020 行；精确时间／名称／主机、单 iframe、未知回执与迟到请求断言均属于该固定提交。原始日志 `/tmp/addp-ci-20261029-213834/job-123746756104.log`，审计 `Console-226d-fixed-actual-pass-audit.json`。
+
+据此关闭本次告警筛选刷新中英文旧 CI 故障及上述修复输入的 Console T3 缺口，原失败记录保留。此结论不扩展到 System 其他失败、Business 个人环境采集、产品采集能力新增或 Hosted；Release 条件跳过也不计业务验收。本轮仅补证据并做限定 diff 检查，没有重新执行本地门禁、查询／重跑／调度 CI 或设置定时。
