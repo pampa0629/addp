@@ -333,7 +333,18 @@ Catalog `GET /domains` 仅对 `catalog.entry.read` 开放，动态使用 `addp-c
 
 前端把业务域、责任部门和资源类型表达为三个独立、可搜索且带计数的浏览维度，不显示 `1/2/3` 层级编号或父子树外观；已选维度以可独立清除的当前范围展示。名称搜索保持常显，来源状态、治理状态、目录可见性和来源引擎属于高级筛选，默认折叠。详情页优先显示业务可理解的概览和编目信息，来源身份、owner 当前事实、联邦专业读模型、关系与审计分别进入“专业事实”和“关系与历史”；进入编辑模式时只显示完整编目表单，不在同一滚动页面下继续重复只读详情。
 
-资源盘点视图的业务域导航可以提供“待归类”虚拟入口，但它不是 Standard Domain、没有稳定 Domain ID，也不进入 `/entries/facets` 的 Domain 候选。该入口唯一映射到 `view=inventory&coverage_dimension=primary_domain&coverage_state=missing` 的权威治理缺口查询；进入时清除名称搜索、已选业务域及其下游责任部门和资源类型，退出后恢复普通目录导航。缺口视图不得继续把“待归类”表现为导航父节点，避免把治理状态误装成企业分类事实。
+#### 治理缺口入口
+
+“待归类”和“待分配部门”只在资源盘点视图中作为虚拟治理入口出现，权限沿本节 `inventory` 规则；两者均复用 `GET /entries`，不创建特殊分类、不另建列表 API，也不伪造计数。
+
+| 入口 | 唯一缺口查询 | 进入时的筛选处理 | 事实边界 |
+| --- | --- | --- | --- |
+| 业务域导航：待归类 | `view=inventory&coverage_dimension=primary_domain&coverage_state=missing` | 清除名称搜索、已选业务域、责任部门和资源类型 | 不是 Standard Domain，没有稳定 Domain ID，不进入 `/entries/facets` 的 Domain 候选 |
+| 责任部门导航：待分配部门 | `view=inventory&coverage_dimension=accountable_department&coverage_state=missing` | 保留已选 primary Domain，清除名称搜索、责任部门和下游 Entry Type | 不是 System Department，不进入 Department 分面候选，不用复合责任完整度代替部门缺失 |
+
+进入缺口视图后隐藏普通目录导航，不把虚拟入口表现为导航父节点。退出时清除 `coverage_dimension`、`coverage_state` 并回到第一页，恢复普通目录导航；普通 Domain、Department 或 Entry Type 导航选择也必须清除既有缺口状态，保证同一 URL 只有一种列表语义。
+
+适用分母、缺口 SQL、列表 `total` 和名称搜索互斥规则统一见[治理覆盖率动态聚合](#512-治理覆盖率动态聚合)，不把虚拟入口建成持久分类或新的计数来源。
 
 ### 4.4 业务域总览与资源浏览
 
@@ -583,7 +594,7 @@ Catalog 只为联邦导航提供自己拥有的来源绑定解析：前端把 ow
 
 治理状态分布与七个维度缺口是两种不同的下钻：点击状态数量进入 `view=inventory&governance_status=<该状态>`；其中 `discovered` 表示尚未完成业务编目，进入条目后按单项编目流程处理。点击维度的“未覆盖”数量则进入上述缺口视图，并按维度提示处理入口：主业务域和责任部门进入[批量分配](#批量分配路由)，操作权限、适用对象及写入边界以该契约为准；业务定义、人员责任和术语进入条目编目且遵守状态门禁；组件标准映射进入数据项的映射审核。任何下钻也不自动创建责任治理任务。
 
-缺口列表的 SQL 判定必须与本节覆盖率聚合复用同一组适用性和覆盖谓词，使列表 `total` 精确等于当前权限与其他结构化筛选共同约束后的缺口数量。名称全文搜索由 Meilisearch 投影负责，治理缺口由 PostgreSQL 当前事实负责；第一阶段二者互斥，避免按搜索分页候选再做数据库过滤导致漏项或虚假总数。前端从覆盖率页进入缺口列表时不得携带名称搜索，并在缺口视图中禁用名称搜索；退出缺口视图后恢复普通目录搜索。
+缺口列表的 SQL 判定必须与本节覆盖率聚合复用同一组适用性和覆盖谓词，使列表 `total` 精确等于当前权限与其他结构化筛选共同约束后的缺口数量。名称全文搜索由 Meilisearch 投影负责，治理缺口由 PostgreSQL 当前事实负责；第一阶段二者互斥，避免按搜索分页候选再做数据库过滤导致漏项或虚假总数。前端从覆盖率页进入缺口列表时不得携带名称搜索，并在缺口视图中禁用名称搜索；退出缺口视图后恢复普通目录搜索。两个虚拟治理入口的筛选转换见[治理缺口入口](#治理缺口入口)。
 
 ### 5.13 Workbench Data Application 专业资源变化与动态引用
 
@@ -711,9 +722,7 @@ Model `business_entity|logical_model` 与 Standard 五类标准的主业务域�
 
 前端以可键盘操作的名称与数量选项呈现 Domain、Department 和 Entry Type 导航；Domain 或 Department 数量过多时在各自区域内部滚动，不把全量 DataItem 改造成节点树。Engine Instance 继续使用可搜索选择器。所有稳定 ID 只用于提交和恢复 URL；裸 ID 输入框与列表中的裸 Engine ID 列都不是正式交互路径。
 
-“待归类”只在资源盘点视图的 Domain 导航中作为治理动作出现，并复用 5.12 节 `primary_domain=missing` 的动态缺口口径，不伪造计数、不创建特殊 Domain，也不增加另一条列表 API。普通 Domain、Department 或 Entry Type 导航选择必须清除既有治理缺口状态，保证同一 URL 只有一种列表语义。
-
-责任部门导航在资源盘点视图提供“待分配部门”虚拟治理入口，唯一映射到 `coverage_dimension=accountable_department&coverage_state=missing`。它不是 System Department，不进入 Department 分面候选，也不使用复合责任完整度代替部门缺失。进入时保留已选 primary Domain，清除名称搜索、责任部门和下游 Entry Type，使治理人员可以处置某业务域内尚未分配组织责任的条目；缺口视图继续沿用 4.3 节的导航隐藏与退出规则。
+“待归类／待分配部门”的虚拟入口、进入与退出筛选统一见[治理缺口入口](#治理缺口入口)；缺口参数及拒绝条件沿[治理覆盖率动态聚合](#512-治理覆盖率动态聚合)执行。
 
 `GET /reference-candidates` 是 Catalog 编目交互的唯一跨 owner 候选入口，使用 `catalog.entry.update` Permission。请求固定包含 `reference_type=domain|glossary|element|department|user`，可选 `search`，并使用 `page`、`page_size` 分页；`page_size` 最大 50。响应使用标准分页结构，候选 `id` 使用字符串，显示字段包含 `name`、可选 `code` 和 owner 当前 `status`；业务域候选额外返回 `domain_path`（从根到当前域的名称数组）。该接口只返回当前 Tenant 中允许建立新关联的对象，不返回完整专业 DTO。
 
