@@ -176,6 +176,7 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 			"meta.scan_task.execute",
 			"security.protection_projection.read",
 			"security.protection_projection.update",
+			"system.cleanup_authorization.execute",
 			"system.engine.read",
 			"system.engine_catalog.read",
 			"system.engine_descriptor.read",

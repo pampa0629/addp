@@ -22,7 +22,9 @@ func TestIntegrationPostgresCleanupObservationSnapshot(t *testing.T) {
 	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
 		t.Skip("requires PostgreSQL gate")
 	}
-	db, err := gorm.Open(postgres.Open(webhookIntegrationDSN()), &gorm.Config{})
+	// Exercise PostgreSQL's microsecond storage precision deterministically.
+	createdAt := time.Now().UTC().Truncate(time.Second).Add(123456789 * time.Nanosecond)
+	db, err := gorm.Open(postgres.Open(webhookIntegrationDSN()), &gorm.Config{NowFunc: func() time.Time { return createdAt }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,6 +59,16 @@ func TestIntegrationPostgresCleanupObservationSnapshot(t *testing.T) {
 			t.Errorf("remaining=%d err=%v", remaining, e)
 		}
 	})
+	// Compare persisted values before any observation, not the nanosecond
+	// insertion input, against an independent read after all GET variants.
+	var persistedBefore execution.TaskExecution
+	if err = db.Where("execution_id = ?", child.ExecutionID).First(&persistedBefore).Error; err != nil {
+		t.Fatal(err)
+	}
+	before, err := json.Marshal(persistedBefore)
+	if err != nil {
+		t.Fatal(err)
+	}
 	identity := func(e execution.TaskExecution) execution.PendingIdentity {
 		return execution.PendingIdentity{ExecutionID: e.ExecutionID, TenantID: tenant, Module: e.Module, TaskType: e.TaskType, Source: e.Source}
 	}
@@ -98,7 +110,6 @@ func TestIntegrationPostgresCleanupObservationSnapshot(t *testing.T) {
 	if err = db.Callback().Query().Remove(callback); err != nil {
 		t.Fatal(err)
 	}
-	before, _ := json.Marshal(child)
 	for _, read := range []func() (*ExecutionObservation, error){
 		func() (*ExecutionObservation, error) {
 			return query.GetExecutionByExecutionID(scope(true), child.ExecutionID, tenant)
@@ -130,12 +141,16 @@ func TestIntegrationPostgresCleanupObservationSnapshot(t *testing.T) {
 			t.Fatalf("invalid closed pending view=%+v err=%v", view, err)
 		}
 	}
-	if err = db.Where("execution_id = ?", child.ExecutionID).First(&child).Error; err != nil {
+	var persistedAfter execution.TaskExecution
+	if err = db.Where("execution_id = ?", child.ExecutionID).First(&persistedAfter).Error; err != nil {
 		t.Fatal(err)
 	}
-	after, _ := json.Marshal(child)
+	after, err := json.Marshal(persistedAfter)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if string(before) != string(after) {
-		t.Fatal("GET changed child state")
+		t.Fatalf("GET changed child state: before=%s after=%s", before, after)
 	}
 	view, err = query.GetExecutionByExecutionID(scope(false), child.ExecutionID, tenant)
 	if err != nil || view.CleanupAdmission != nil {

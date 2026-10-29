@@ -378,3 +378,11 @@ Manager 索引已补持久 `cleanup_hold_id`、C／attempt 绑定操作及准确
 产品接线统一提交为 `138ef83ba657f5554576aed9594e17f88949336a`。平台来源核验的唯一漂移是 Transfer 委托创建测试增加独立 Cleanup Handler 构造参数，委托路由／权限／断言语义未变；经本体会话只读复核，将 Transfer 平台修订从 37 提升至 38，冻结该真实源码提交及文件摘要，未新增 Cleanup Tool 或扩大委托权限。来源快照必须引用已提交源码，因此该登记使用后续提交收口。
 
 来源快照更新后，全仓 `make test-go` 通过（`/tmp/addp-cleanup-all-go-postcommit.log`）；`make test-swagger test-authorization` 通过（`/tmp/addp-cleanup-api-last.log`）。
+
+
+2026-10-29 自然 CI 首轮及测试断言收口：包含产品提交的 `944c4bcf74272a568045a8c066da34878f4c7fa6` 在 [Release and T2 gates 40877071516](https://github.com/pampa0629/addp/actions/runs/40877071516) 中，System Cleanup、Common PG、Manager PG/PostGIS/Meilisearch、Meta、Transfer、Asset、Develop、Model、Quality、Service、Standard PG 及 Graph 引擎契约通过；System IAM 和 Monitor PG 失败，整轮不计通过。
+
+- System IAM 的 OAuth 测试严格角色清单遗漏已确认的 `system.cleanup_authorization.execute`；补齐精确单项，保留完整列表相等断言。标准 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package api --test oauth-client-credentials"` 本地通过，日志 `/tmp/addp-cleanup-iam-ci-fix-pg.log`。
+- Monitor 新增 GET 零写入用例把内存纳秒插入值与 PG 微秒读回值直接序列化比较。用固定亚微秒创建时间确定性复现，仅 created_at/updated_at 的精度与时区表示不同。改为首次 GET 前读取完整持久化基线，与全部 GET 后独立读回严格相等；保留固定亚微秒夹具、并发父关闭快照及权限反例，不修改产品写入。完整 `make test-monitor-postgres` 本地通过，失败复现与修正日志分别为 `/tmp/addp-cleanup-monitor-precision-repro.log`、`/tmp/addp-cleanup-monitor-ci-fix-pg.log`。两项沿原有 T2 自动发现，无需新增入口。
+- 来源快照提交 `13bf7cd13b08eccc16af1a8bb79130a594af6426` 的 [Platform CI 40878025884](https://github.com/pampa0629/addp/actions/runs/40878025884) 中，Go、产品构建和受影响前端已通过，含 Monitor 全前端；本地 Monitor 的 20 个失败记录仍保留，不能倒写为本地通过。该提交的 T2 汇总虽绿，System IAM 实验作业及大部分 Owner 作业实际跳过，不能用汇总绿覆盖上一轮失败。上述两项修正提交后的自然 CI 仍待核验。
+- 本地完整 `make test-platform` 仍在执行；新 Hosted、真实 Gateway／Worker 验收和旧环境记录清理均未进行。最终清单汇报稿已准备，但会话消息工具当前不可用，未送达维护会话，也未据此更新工作簿。
