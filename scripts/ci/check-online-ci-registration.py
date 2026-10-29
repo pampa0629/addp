@@ -3005,7 +3005,7 @@ def validate_raster_tangential_curvature(repository: Path, registered: set[str])
 
 
 def validate_raster_lineage_observer(repository: Path, registered: set[str]) -> None:
-    if not registered.intersection({'raster-cut-fill-persistence','raster-tpi-persistence','raster-tri-persistence','raster-roughness-persistence','raster-surface-area-persistence','raster-twi-persistence', 'raster-spi-persistence'}):return
+    if not registered.intersection({'raster-cut-fill-persistence','raster-tpi-persistence','raster-tri-persistence','raster-roughness-persistence','raster-surface-area-persistence','raster-twi-persistence', 'raster-spi-persistence', 'raster-sieve-persistence'}):return
     required={
         'scripts/utils/online_raster_lineage.py': ('BEGIN READ ONLY;', 'statement_timeout', 'LIMIT 1', 'public observation must hide internal operations', 'actor_principal_id', 'workflow_matches', "public=True", "public=False", 'closed(public, expected)', 'closed(internal, expected)', 'validate_container', 'StartedAt', 'read_error', "'prepare'"),
         'scripts/test/online-raster-lineage_test.py': ('test_public_null_and_complete_internal_are_both_required', 'test_public_cannot_expose_operations_or_omit_them', 'test_internal_null_empty_missing_extra_and_wrong_operation_rejected', 'test_current_execution_identity_and_workflow_are_required', 'test_container_identity_restart_labels_and_database_cannot_change'),
@@ -3014,7 +3014,7 @@ def validate_raster_lineage_observer(repository: Path, registered: set[str]) -> 
         text=(repository/path).read_text()
         if any(fragment not in text for fragment in fragments):raise RegistrationError('bounded raster internal lineage evidence incomplete: '+path)
     make=(repository/'Makefile').read_text()
-    for prefix in ('cut-fill','tpi','tri','roughness','surface-area','twi', 'spi'):
+    for prefix in ('cut-fill','tpi','tri','roughness','surface-area','twi', 'spi', 'sieve'):
         gate=(repository/f'scripts/test/online-hosted-raster-{prefix}-gate.sh').read_text()
         if 'run_logged python3 scripts/utils/online_raster_lineage.py prepare' not in gate:raise RegistrationError('raster owner receipt preparation omitted')
         block=make.split(f'test-raster-{prefix}-online-runner:',1)[1].split('\n.PHONY:',1)[0]
@@ -3131,6 +3131,32 @@ def validate_raster_twi(repository: Path, registered: set[str]) -> None:
     for relative,key,expected in [('business/scripts/online-raster-twi-fixture.py','CASES',expected_targets),('scripts/test/raster-twi-persistence-online.py','FAILURES',expected_failures)]:
         tree=ast.parse((repository/relative).read_text());values=[n.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id==key for t in n.targets)]
         if len(values)!=1 or set(ast.literal_eval(values[0]))!=expected:raise RegistrationError('TWI exact first-phase matrix identity changed')
+
+
+def validate_raster_sieve(repository: Path, registered: set[str]) -> None:
+    import ast
+    suite='raster-sieve-persistence'
+    if suite not in registered:return
+    workflow=(repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job=re.search(r'(?ms)^  raster-sieve-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)',workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-sieve-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-sieve-persistence'" not in workflow
+        or 'cancel-in-progress: false' not in job.group('body') or 'nfs-kernel-server nfs-common' not in job.group('body')
+        or '${{ runner.temp }}/addp-online-${{ github.run_id }}/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('SIEVE requires a manual isolated Hosted NFS job and whole original-COG evidence upload')
+    make=(repository/'Makefile').read_text()
+    if 'test-geopython-workflow:' not in make or 'test_online_sieve_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('SIEVE Native fixture must run in the standard GeoPython recipe')
+    required={'scripts/test/online-hosted-raster-sieve-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-sieve-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare'), 'scripts/test/raster-sieve-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'validate_target_item(item,expectation', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_sieve', 'input.source', 'output.save', 'source_bindings', 'archived_cogs', 'incomplete fixed SIEVE matrix', 'oracle_prepare', 'oracle_cleanup', 'all 34 calls and 189 full target checks are required', 'physical_verification_calls', 'full_target_checks', 'ADDP_ONLINE_SIEVE_ORACLE_ANCHOR_SHA256', 'query language rewrote stored failure', "maximum=28 if name=='negative'", 'len(self.stages)>=57', 'Meta fabricated missing spatial facts'), 'business/scripts/online-raster-sieve-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_inputs', 'from collections import deque', 'len(pixels)<minimum', 'len(components[other][1])>=minimum', 'donor_ids=set()', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'archive_cogs', 'sieve-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'independent_bfs_oracle_verified', 'frozen_components_verified', 'explicit_connectivity_verified', 'classification_encoding_verified', 'missing source CRS was fabricated'), 'engines/geopython-workflow/test_online_sieve_fixture.py': ('test_sieve_persistence_real_gdal_six_chains_exact_pixels_mask_and_original_cogs', 'test_sieve_persistence_twenty_eight_accurate_bilingual_failures_no_publication', 'test_sieve_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'test_sieve_independent_oracle_rejects_wrong_semantics', 'wrong_connectivity', 'threshold_inclusive', 'class_global_count', 'small_transit', 'iterated_growth', 'nodata_fill', 'no_donor_replaced', 'implicit_scale', 'zero_discarded', 'test_sieve_original_cog_archive_cannot_change_or_silently_repair', 'test_sieve_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_sieve_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_sieve_oracle_cache_poison_or_cross_scope_fails', 'test_sieve_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('@$(MAKE) test-raster-sieve-online-runner', 'test_online_sieve_fixture.py', 'scripts/test/raster-sieve-persistence-online_test.py', 'scripts/test/online-raster-sieve-fixture_test.py', 'scripts/test/online-hosted-raster-sieve-gate_test.py', 'test_sieve_requires_manual_nfs_full_oracle_archive_and_regressions'), 'scripts/test/online-raster-sieve-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-sieve-persistence-online_test.py': ('test_complete_6_success_28_bilingual_failures_189_full_checks_and_archive', 'test_role_bound_lineage_rejects_swaps_missing_extra_duplicates_and_operations', 'test_signed_counts_empty_results_flags_and_original_cog_receipts_are_mandatory', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound', 'test_unlocated_artifact_and_meta_reject_fabricated_location')}
+    for relative,fragments in required.items():
+        path=repository/relative
+        if not path.is_file() or any(fragment not in path.read_text()for fragment in fragments):raise RegistrationError('Sieve persistence contract is incomplete: '+relative)
+    expected_cases={'four.cog.tif': ('classes.tif', 5, 4, 'direct'), 'eight.cog.tif': ('classes.tif', 5, 8, 'direct'), 'reclassified.cog.tif': ('classes.tif', 5, 4, 'reclassify'), 'identity.cog.tif': ('classes.tif', 1, 4, 'direct'), 'no-donor.cog.tif': ('unlocated.tif', 5, 4, 'direct'), 'invalid.cog.tif': ('invalid.tif', 5, 8, 'direct')}
+    expected_faults=('band', 'threshold_zero', 'threshold_negative', 'threshold_fractional', 'threshold_boolean', 'connectivity_value', 'connectivity_fractional', 'connectivity_boolean', 'fractional', 'unsafe', 'int64', 'uint64', 'alpha', 'complex')
+    for relative,key,expected in [('business/scripts/online-raster-sieve-fixture.py','CASES',expected_cases),('scripts/test/raster-sieve-persistence-online.py','FAILURES',expected_faults)]:
+        tree=ast.parse((repository/relative).read_text());values=[n.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id==key for t in n.targets)]
+        if len(values)!=1 or ast.literal_eval(values[0])!=expected:raise RegistrationError('Sieve exact six-success/twenty-eight-bilingual matrix changed')
 
 
 def validate_raster_spi(repository: Path, registered: set[str]) -> None:
@@ -4640,6 +4666,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_roughness(repository, registered)
     validate_raster_twi(repository, registered)
     validate_raster_spi(repository, registered)
+    validate_raster_sieve(repository, registered)
     validate_raster_lineage_observer(repository, registered)
     validate_raster_flow_length_upstream_d8_profile(repository, registered)
     validate_raster_stream_order_d8_profile(repository, registered)

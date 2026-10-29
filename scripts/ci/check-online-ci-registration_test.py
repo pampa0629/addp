@@ -618,7 +618,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
     def test_approved_raster_suites_require_bounded_internal_lineage_observer(self):
         source=SCRIPT.parents[2]
         paths=['scripts/utils/online_raster_lineage.py','scripts/test/online-raster-lineage_test.py','Makefile',
-               'scripts/test/online-hosted-raster-cut-fill-gate.sh','scripts/test/online-hosted-raster-tpi-gate.sh','scripts/test/online-hosted-raster-tri-gate.sh','scripts/test/online-hosted-raster-roughness-gate.sh','scripts/test/online-hosted-raster-surface-area-gate.sh','scripts/test/online-hosted-raster-twi-gate.sh', 'scripts/test/online-hosted-raster-spi-gate.sh']
+               'scripts/test/online-hosted-raster-cut-fill-gate.sh','scripts/test/online-hosted-raster-tpi-gate.sh','scripts/test/online-hosted-raster-tri-gate.sh','scripts/test/online-hosted-raster-roughness-gate.sh','scripts/test/online-hosted-raster-surface-area-gate.sh','scripts/test/online-hosted-raster-twi-gate.sh', 'scripts/test/online-hosted-raster-spi-gate.sh', 'scripts/test/online-hosted-raster-sieve-gate.sh']
         for relative in paths:
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         CHECK.validate_raster_lineage_observer(self.repository,{'raster-tpi-persistence'})
@@ -631,6 +631,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                    (paths[7],'run_logged python3 scripts/utils/online_raster_lineage.py prepare'),
                    (paths[8],'run_logged python3 scripts/utils/online_raster_lineage.py prepare'),
                    (paths[9],'run_logged python3 scripts/utils/online_raster_lineage.py prepare'),
+                   (paths[10],'run_logged python3 scripts/utils/online_raster_lineage.py prepare'),
                    ('Makefile','scripts/test/online-raster-lineage_test.py')]
         for relative,fragment in mutations:
             target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
@@ -710,6 +711,29 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         old="'degree.cog.tif':('area.tif','slope-degree.tif','degree','direct')"
         self.assertIn(old,original);target.write_text(original.replace(old,old.replace("'degree','direct'","'percent','direct'"),1))
         with self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_twi(self.repository,{'raster-twi-persistence'})
+        target.write_text(original)
+
+
+    def test_sieve_requires_manual_nfs_full_oracle_archive_and_regressions(self):
+        source=SCRIPT.parents[2]
+        required={'scripts/test/online-hosted-raster-sieve-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-sieve-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare'), 'scripts/test/raster-sieve-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'validate_target_item(item,expectation', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_sieve', 'input.source', 'output.save', 'source_bindings', 'archived_cogs', 'incomplete fixed SIEVE matrix', 'oracle_prepare', 'oracle_cleanup', 'all 34 calls and 189 full target checks are required', 'physical_verification_calls', 'full_target_checks', 'ADDP_ONLINE_SIEVE_ORACLE_ANCHOR_SHA256', 'query language rewrote stored failure', "maximum=28 if name=='negative'", 'len(self.stages)>=57', 'Meta fabricated missing spatial facts'), 'business/scripts/online-raster-sieve-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_inputs', 'from collections import deque', 'len(pixels)<minimum', 'len(components[other][1])>=minimum', 'donor_ids=set()', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'archive_cogs', 'sieve-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'independent_bfs_oracle_verified', 'frozen_components_verified', 'explicit_connectivity_verified', 'classification_encoding_verified', 'missing source CRS was fabricated'), 'engines/geopython-workflow/test_online_sieve_fixture.py': ('test_sieve_persistence_real_gdal_six_chains_exact_pixels_mask_and_original_cogs', 'test_sieve_persistence_twenty_eight_accurate_bilingual_failures_no_publication', 'test_sieve_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'test_sieve_independent_oracle_rejects_wrong_semantics', 'wrong_connectivity', 'threshold_inclusive', 'class_global_count', 'small_transit', 'iterated_growth', 'nodata_fill', 'no_donor_replaced', 'implicit_scale', 'zero_discarded', 'test_sieve_original_cog_archive_cannot_change_or_silently_repair', 'test_sieve_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_sieve_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_sieve_oracle_cache_poison_or_cross_scope_fails', 'test_sieve_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('@$(MAKE) test-raster-sieve-online-runner', 'test_online_sieve_fixture.py', 'scripts/test/raster-sieve-persistence-online_test.py', 'scripts/test/online-raster-sieve-fixture_test.py', 'scripts/test/online-hosted-raster-sieve-gate_test.py', 'test_sieve_requires_manual_nfs_full_oracle_archive_and_regressions'), 'scripts/test/online-raster-sieve-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-sieve-persistence-online_test.py': ('test_complete_6_success_28_bilingual_failures_189_full_checks_and_archive', 'test_role_bound_lineage_rejects_swaps_missing_extra_duplicates_and_operations', 'test_signed_counts_empty_results_flags_and_original_cog_receipts_are_mandatory', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound', 'test_unlocated_artifact_and_meta_reject_fabricated_location')}
+        for relative in ('scripts/test/online-gate.py','.github/workflows/online-t4-gates.yml',*required):
+            target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
+        CHECK.validate_raster_sieve(self.repository,{'raster-sieve-persistence'})
+        for relative,fragments in required.items():
+            target=self.repository/relative;original=target.read_text()
+            for fragment in fragments:
+                self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
+                with self.subTest(relative=relative,fragment=fragment),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_sieve(self.repository,{'raster-sieve-persistence'})
+                target.write_text(original)
+        for relative,fragment in [('business/scripts/online-raster-sieve-fixture.py',"'four.cog.tif':"),('scripts/test/raster-sieve-persistence-online.py',"'threshold_boolean'")]:
+            target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original);target.write_text(original.replace(fragment,"'removed.cog.tif':"if fragment.endswith(':')else"'removed'",1))
+            with self.subTest(matrix=relative),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_sieve(self.repository,{'raster-sieve-persistence'})
+            target.write_text(original)
+        target=self.repository/'business/scripts/online-raster-sieve-fixture.py';original=target.read_text()
+        old="'four.cog.tif':('classes.tif',5,4,'direct')"
+        self.assertIn(old,original);target.write_text(original.replace(old,old.replace(',5,4,',',5,8,'),1))
+        with self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_sieve(self.repository,{'raster-sieve-persistence'})
         target.write_text(original)
 
 

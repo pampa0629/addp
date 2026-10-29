@@ -142,6 +142,21 @@ class RasterLineageTest(unittest.TestCase):
             self.assertEqual(proof['path'],'roughness-lineage/roughness.cog.tif.json')
             m.verify_archive(env,'raster-roughness-persistence',[{'name':'roughness.cog.tif','lineage_evidence':proof}])
 
+
+    def test_sieve_read_and_closed_archive_require_its_own_receipt(self):
+        env={**self.env,'ONLINE_SUITE':'raster-sieve-persistence','ADDP_ONLINE_TEST_RUN_ID':'sieve-123-1'}
+        expected=copy.deepcopy(EXPECTED);expected['outputs'][0]['locator']=expected['outputs'][0]['locator'].replace('tpi.cog','sieve.cog')
+        public={**copy.deepcopy(expected),'operations':None};value={**self.value,'facts':expected}
+        with patch.dict(os.environ,env,clear=True),patch.object(m,'boundary',return_value=(self.secret,'raster-sieve-persistence','sieve-123-1')),patch.object(m,'inspect',return_value=self.container),patch.object(m.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout=json.dumps(value)))as query:
+            with self.assertRaises(m.SuiteError):m.read_current(os.environ,IDENTIFIER,2,33,{'tasks':[]})
+            query.assert_not_called()
+            self.path.write_text(json.dumps({**self.owner,'suite':'raster-sieve-persistence','run_id':'sieve-123-1'}))
+            actual=m.read_current(os.environ,IDENTIFIER,2,33,{'tasks':[]});self.assertEqual(actual,expected)
+            self.assertIn('BEGIN READ ONLY;',query.call_args.kwargs['input'])
+            proof=m.collect(env,'raster-sieve-persistence',IDENTIFIER,'sieve.cog.tif',expected,{'metadata':{'lineage_facts':public}},2,33,{'tasks':[]},lambda *args:actual)
+            self.assertEqual(proof['path'],'sieve-lineage/sieve.cog.tif.json')
+            m.verify_archive(env,'raster-sieve-persistence',[{'name':'sieve.cog.tif','lineage_evidence':proof}])
+
     def test_twi_read_and_closed_archive_require_its_own_receipt(self):
         env={**self.env,'ONLINE_SUITE':'raster-twi-persistence','ADDP_ONLINE_TEST_RUN_ID':'twi-123-1'}
         expected=copy.deepcopy(EXPECTED);expected['outputs'][0]['locator']=expected['outputs'][0]['locator'].replace('tpi.cog','twi.cog')
