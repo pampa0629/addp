@@ -13104,3 +13104,222 @@ def test_spi_smallest_nonzero_slope_can_be_recovered_by_large_area(tmp_path,unit
         tangent=Decimal(tiny)/100 if unit=='percent'else Decimal(tiny)*Decimal('0.01745329251994329576923690768488612713442871888541725456097191440171009114603449')
         expected=float(Decimal(1e308)/2*tangent)
     with raster_workspace():assert _twi_read(_spi_result(paths,unit))[0,0]==expected and expected>0
+
+
+def _sieve_oracle(values, valid, minimum, connectivity):
+    """Independent per-pixel BFS and exhaustive original component boundaries."""
+    from collections import deque
+    height,width=values.shape;identity=np.full(values.shape,-1,dtype=int);components=[]
+    offsets=[(dy,dx)for dy in(-1,0,1)for dx in(-1,0,1)if(dy or dx)and(connectivity==8 or abs(dy)+abs(dx)==1)]
+    for row in range(height):
+        for col in range(width):
+            if not valid[row,col]or identity[row,col]>=0:continue
+            number=len(components);queue=deque([(row,col)]);identity[row,col]=number;cells=[]
+            while queue:
+                y,x=queue.popleft();cells.append((y,x))
+                for dy,dx in offsets:
+                    yy,xx=y+dy,x+dx
+                    if 0<=yy<height and 0<=xx<width and valid[yy,xx]and identity[yy,xx]<0 and values[yy,xx]==values[y,x]:
+                        identity[yy,xx]=number;queue.append((yy,xx))
+            components.append(cells)
+    answer=np.full(values.shape,np.nan)
+    for number,cells in enumerate(components):
+        category=values[cells[0]]
+        if len(cells)<minimum:
+            neighbours=set()
+            for y,x in cells:
+                for dy,dx in offsets:
+                    yy,xx=y+dy,x+dx
+                    if 0<=yy<height and 0<=xx<width and identity[yy,xx]>=0 and identity[yy,xx]!=number:neighbours.add(int(identity[yy,xx]))
+            eligible=[n for n in neighbours if len(components[n])>=minimum]
+            if eligible:
+                donor=min(eligible,key=lambda n:(-len(components[n]),int(values[components[n][0]]),min(components[n])))
+                category=values[components[donor][0]]
+        for cell in cells:answer[cell]=category
+    return answer
+
+
+def _sieve_result(path,minimum=3,connectivity=4,band=1):
+    from operators.raster_compute import raster_sieve
+    return raster_sieve(raster_load(source_plan(path)),band,minimum,connectivity)
+
+
+@pytest.mark.parametrize('connectivity',[4,8])
+@pytest.mark.parametrize('minimum',[1,2,5,10000])
+@pytest.mark.parametrize('seed',range(4))
+def test_sieve_independent_bfs_random_components_frozen_donors(tmp_path,connectivity,minimum,seed):
+    rng=np.random.default_rng(seed);values=rng.choice([-7.,0.,2.,2**53-1],size=(13,17));valid=rng.random(values.shape)>.15
+    original=np.where(valid,values,-9999);path=create_raster(tmp_path/'source.tif',original);before=path.read_bytes()
+    expected=_sieve_oracle(values,valid,minimum,connectivity)
+    with raster_workspace():np.testing.assert_array_equal(_twi_read(_sieve_result(path,minimum,connectivity)),expected)
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('values,minimum,expected',[
+    ([[5,5,5,2,1,1,1]],3,[[5,5,5,1,1,1,1]]),
+    ([[1,1,2,3,3,3]],3,[[1,1,3,3,3,3]]),
+    ([[1,1,2,2]],3,[[1,1,2,2]]),
+    ([[1,1,2,2,2,3,3,3,3]],3,[[2,2,2,2,2,3,3,3,3]]),
+    ([[1,-9999,0,0,0]],2,[[1,np.nan,0,0,0]]),
+    ([[1,1,1,9,2,2,2,2,-9999,1,1,1,1,1,1]],3,[[1,1,1,2,2,2,2,2,np.nan,1,1,1,1,1,1]]),
+])
+def test_sieve_analytic_ties_threshold_no_donor_no_chain_or_nodata_crossing(tmp_path,values,minimum,expected):
+    path=create_raster(tmp_path/'input.tif',np.array(values,dtype=float))
+    with raster_workspace():np.testing.assert_array_equal(_twi_read(_sieve_result(path,minimum)),expected)
+
+
+@pytest.mark.parametrize('connectivity',[4,8])
+def test_sieve_diagonal_membership_and_donor_contact_are_explicit(tmp_path,connectivity):
+    values=np.zeros((3,3));values[0,0]=values[1,1]=1;path=create_raster(tmp_path/'diagonal.tif',values)
+    with raster_workspace():np.testing.assert_array_equal(_twi_read(_sieve_result(path,2,connectivity)),np.zeros((3,3))if connectivity==4 else values)
+
+
+@pytest.mark.parametrize('connectivity',[4,8])
+@pytest.mark.parametrize('located',[True,False])
+def test_sieve_cross_block_exact_count_cog_original_grid_and_private_cleanup(tmp_path,monkeypatch,connectivity,located):
+    import operators.raster_compute as compute
+    values=np.zeros((515,519));values[:,511:513]=1;values[511,510]=1;values[10,10]=7;valid=np.ones(values.shape,bool);valid[500,500]=False
+    transform=(100,2,.5,200,.25,-3);path=create_raster(tmp_path/'large.tif',np.where(valid,values,-9999),transform,'EPSG:3857'if located else None)
+    if not located:
+        ds=gdal.Open(str(path),gdal.GA_Update);ds.SetGeoTransform((0,1,0,0,0,1));ds=None
+    ds=gdal.Open(str(path));grid=ds.GetGeoTransform(can_return_null=True);projection=ds.GetProjection();ds=None;before=path.read_bytes();reads=[];blocks=compute._blocks
+    def bounded(*args,**kwargs):
+        for x,y,arrays,masks in blocks(*args,**kwargs):
+            assert kwargs.get('native')is True and arrays[0].shape[0]==1 and arrays[0].shape[1]<=512;reads.append((x,y));yield x,y,arrays,masks
+    monkeypatch.setattr(compute,'_blocks',bounded)
+    expected=_sieve_oracle(values,valid,1000,connectivity)
+    with raster_workspace():
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir());result=compute.raster_sieve(source,1,1000,connectivity)
+        assert set(source.workspace.iterdir())==prior|{result.path}
+        target=tmp_path/'saved.tif';artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128)
+        assert artifact['size_bytes']==target.stat().st_size>0 and validate_cog(raster_load(source_plan(target)))['valid']
+        ds=gdal.Open(str(target));b=ds.GetRasterBand(1);np.testing.assert_array_equal(b.ReadAsArray(),expected)
+        np.testing.assert_array_equal(b.GetMaskBand().ReadAsArray()!=0,valid)
+        assert ds.GetGeoTransform(can_return_null=True)==grid and ds.GetProjection()==projection and ds.RasterCount==1
+        assert b.DataType==gdal.GDT_Float64 and np.isnan(b.GetNoDataValue())and b.GetScale()is None and b.GetOffset()is None and b.GetColorTable()is None
+        assert b.GetOverviewCount()>0;b=ds=None
+    assert len(reads)==515*2 and path.read_bytes()==before
+
+
+@pytest.mark.parametrize('dtype,category,nodata',[('Int64',-(2**53-1),-2**63),('UInt64',2**53-1,2**64-1)])
+def test_sieve_native64_validity_before_class_validation(tmp_path,dtype,category,nodata):
+    path=tmp_path/'native.tif';values=np.array([[category,nodata,category]],dtype=np.int64 if dtype=='Int64'else np.uint64)
+    ds=gdal.GetDriverByName('GTiff').Create(str(path),3,1,1,getattr(gdal,'GDT_'+dtype));b=ds.GetRasterBand(1);b.WriteArray(values)
+    (b.SetNoDataValueAsInt64 if dtype=='Int64'else b.SetNoDataValueAsUInt64)(nodata);b=ds=None
+    with raster_workspace():np.testing.assert_array_equal(_twi_read(_sieve_result(path)),[[category,np.nan,category]])
+
+
+@pytest.mark.parametrize('case',['all-invalid','selected-alpha','complex','complex-alpha','mask-alpha','raw-scale'])
+def test_sieve_coverage_selected_band_and_raw_storage_contract(tmp_path,case):
+    import operators.raster_compute as compute
+    path=tmp_path/'coverage.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),5,3,3,gdal.GDT_CFloat64 if 'complex'in case else gdal.GDT_Float64)
+    values=np.full((3,5),2.);valid=np.ones(values.shape,bool)
+    if case=='all-invalid':values[:]=np.nan;valid[:]=False
+    ds.GetRasterBand(1).Fill(.25);ds.GetRasterBand(2).WriteArray(values);ds.GetRasterBand(3).Fill(128);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    if case=='complex-alpha':ds.GetRasterBand(1).SetColorInterpretation(gdal.GCI_AlphaBand)
+    if case=='mask-alpha':
+        ds.GetRasterBand(3).WriteArray(np.array([[0,128,255,255,255]]*3));valid[:,0]=False
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+        mask=np.full(values.shape,255,np.uint8);mask[1,3]=0;ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);valid[1,3]=False
+    if case=='raw-scale':ds.GetRasterBand(2).SetScale(2);ds.GetRasterBand(2).SetOffset(10)
+    ds=None
+    with raster_workspace():
+        if case in('selected-alpha','complex','complex-alpha'):
+            with pytest.raises(ValueError):_sieve_result(path,band=3 if case=='selected-alpha'else 2)
+        else:np.testing.assert_array_equal(_twi_read(_sieve_result(path,band=2)),np.where(valid,values,np.nan))
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('fault',['band','threshold','connectivity','classes'])
+def test_sieve_exact_bilingual_failures_cleanup_before_publication(tmp_path,language,fault):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'bad.tif',np.array([[1.,.5 if fault=='classes'else 1.]]));before=path.read_bytes()
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        with pytest.raises(ValueError)as error:compute.raster_sieve(source,True if fault=='band'else 1,0 if fault=='threshold'else 3,True if fault=='connectivity'else 4)
+        assert str(error.value)==str(compute._sieve_error(fault))and set(source.workspace.iterdir())==prior
+    assert before==path.read_bytes()
+
+
+@pytest.mark.parametrize('argument',['band','min_pixels','connectivity'])
+@pytest.mark.parametrize('value',[None,True,0,-1,1.,'4',[]])
+def test_sieve_required_integer_parameters_do_not_coerce(tmp_path,argument,value):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'input.tif',np.ones((1,1)));params={'band':1,'min_pixels':2,'connectivity':4};params[argument]=value
+    with raster_workspace(),pytest.raises(ValueError):compute.raster_sieve(raster_load(source_plan(path)),**params)
+
+
+@pytest.mark.parametrize('value',[.5,2**53,-2**53])
+def test_sieve_unsafe_classes_in_later_block_cleanup(tmp_path,value):
+    import operators.raster_compute as compute
+    values=np.ones((2,514));values[1,513]=value;path=create_raster(tmp_path/'bad.tif',values)
+    with raster_workspace():
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        with pytest.raises(ValueError):compute.raster_sieve(source,1,2,4)
+        assert set(source.workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('stage',['components','donors','output','metadata','write'])
+def test_sieve_partial_private_labels_and_output_removed_after_failure(tmp_path,monkeypatch,stage):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'source.tif',np.ones((3,4)))
+    target={'components':'_sieve_components','donors':'_sieve_donors','output':'_numeric_output','metadata':'_raster','write':'_numeric_output'}[stage]
+    original=getattr(compute,target)
+    def failure(*args,**kwargs):raise RuntimeError('injected sieve failure')
+    with raster_workspace():
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        if stage=='write':monkeypatch.setattr(gdal.Band,'WriteArray',failure)
+        else:monkeypatch.setattr(compute,target,failure)
+        with pytest.raises(RuntimeError,match='injected'):compute.raster_sieve(source,1,2,8)
+        assert set(source.workspace.iterdir())==prior
+
+
+def test_sieve_metadata_has_one_workflow_entry_required_parameters_and_example():
+    spec=next(item for item in list_operators()if item['id']=='raster_sieve');params={p['name']:p for p in spec['parameters']}
+    assert spec['category_path']==['栅格处理','分类处理']and spec['execution_modes']==['workflow']
+    assert all(params[k]['required']for k in ('band','min_pixels','connectivity'))
+    assert spec['detailed_description']['workflow_example']['params']['min_pixels']==10
+
+@pytest.mark.parametrize('case',['direct','reclassified','invalid','save-failure'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_sieve_async_cog_and_reclassification_exact_submitted_language_cleanup(tmp_path,monkeypatch,case,language):
+    import api_server,workflow_engine
+    values=np.array([[0.,0.,1.,2.,2.]]);path=create_raster(tmp_path/'source.tif',values);before=path.read_bytes();target=tmp_path/'sieved.tif'
+    if case=='save-failure':target.write_bytes(b'previous result')
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}}];prior='source'
+    if case=='reclassified':
+        tasks.append({'id':'classes','operator':'raster_reclassify','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'rules':[{'value':0,'class':10},{'value':1,'class':20},{'value':2,'class':30}]}});prior='classes'
+    tasks.extend([{'id':'sieve','operator':'raster_sieve','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'min_pixels':0 if case=='invalid'else 2,'connectivity':4}},{'id':'save','operator':'raster_save','depends_on':['sieve'],'params':{'input_raster':{'$ref':'sieve'},'access_plan':target_plan(target),'profile':'cog'}}])
+    workspaces=[];execute=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_sieve':workspaces.append(params['input_raster'].workspace)
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture)
+    client=api_server.app.test_client();assert client.post('/api/operators/raster_sieve/invoke',json={'params':{}}).status_code==403
+    response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}});assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en'if language=='zh-cn'else'zh-cn'}).json
+        if status['status']in('success','failed'):break
+        time.sleep(.01)
+    assert status['status']==('failed'if case in('invalid','save-failure')else'success'),status
+    assert workspaces and all(not p.exists()for p in workspaces)and path.read_bytes()==before
+    if case=='invalid':
+        assert not target.exists()and ('必须为正整数'if language=='zh-cn'else'must be a positive integer')in status['error']
+        assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
+    elif case=='save-failure':assert target.read_bytes()==b'previous result'
+    else:
+        ds=gdal.Open(str(target));expected=np.array([[10.,10.,10.,30.,30.]])if case=='reclassified'else np.array([[0.,0.,0.,2.,2.]])
+        np.testing.assert_array_equal(ds.ReadAsArray(),expected);assert ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT']=='COG';ds=None
+
+@pytest.mark.parametrize('dtype,invalid,nodata',[('UInt64',2**64-2,2**64-1),('Int64',-(2**63)+1,-(2**63))])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_sieve_native64_adjacent_to_nodata_unsafe_valid_class_is_not_hidden(tmp_path,dtype,invalid,nodata,language):
+    import operators.raster_compute as compute
+    path=tmp_path/'unsafe-native.tif';values=np.array([[invalid,nodata]],dtype=np.uint64 if dtype=='UInt64'else np.int64)
+    ds=gdal.GetDriverByName('GTiff').Create(str(path),2,1,1,getattr(gdal,'GDT_'+dtype));b=ds.GetRasterBand(1);b.WriteArray(values)
+    (b.SetNoDataValueAsUInt64 if dtype=='UInt64'else b.SetNoDataValueAsInt64)(nodata);b=ds=None
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));before=set(source.workspace.iterdir())
+        with pytest.raises(ValueError)as error:compute.raster_sieve(source,1,2,4)
+        assert str(error.value)==str(compute._sieve_error('classes'))and set(source.workspace.iterdir())==before

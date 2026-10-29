@@ -1666,6 +1666,174 @@ def _boundary_neighbours(values):
             yield values[dy:dy+height, dx:dx+width]
 
 
+_SIEVE_MESSAGES = {
+    'band': ('小斑块筛除必须显式选择有效的一基数据波段', 'Raster sieve requires an explicit valid one-based data band'),
+    'threshold': ('小斑块筛除的min_pixels必须为正整数', 'Raster sieve min_pixels must be a positive integer'),
+    'connectivity': ('小斑块筛除必须显式选择整数4或8邻接', 'Raster sieve requires explicit integer connectivity 4 or 8'),
+    'alpha': ('小斑块筛除不能选择alpha作为数据波段', 'Raster sieve cannot use an alpha band as data'),
+    'complex': ('小斑块筛除不支持复数数据或复数alpha', 'Raster sieve does not support complex data or alpha'),
+    'classes': ('小斑块筛除的有效分类必须为安全范围内的精确整数', 'Raster sieve valid classes must be exact integers within the safe range'),
+}
+
+
+def _sieve_error(code):
+    return ValueError(_SIEVE_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _sieve_rows(dataset, band):
+    """Native validity first; source reads are at most 512 by one pixel."""
+    width = dataset.RasterXSize
+    for row in range(dataset.RasterYSize):
+        values = np.zeros(width, dtype=np.int64)
+        valid = np.zeros(width, dtype=bool)
+        for x, _, arrays, masks in _blocks(dataset, [band], window=(0, row, width, 1), native=True):
+            mask = masks[0][0]
+            try:
+                checked = _safe_classification_values(arrays[0][0], mask)
+            except ValueError as cause:
+                raise _sieve_error('classes') from cause
+            span = slice(x, x + len(mask))
+            values[span][mask] = checked
+            valid[span] = mask
+        yield values, valid
+
+
+def _sieve_components(dataset, band, connectivity, labels):
+    """Scanline runs and union by size, with exact counts and first-cell anchors."""
+    parents, sizes, classes, anchors = [0], [0], [0], [0]
+
+    def find(identifier):
+        root = identifier
+        while parents[root] != root:
+            root = parents[root]
+        while parents[identifier] != identifier:
+            following = parents[identifier]
+            parents[identifier] = root
+            identifier = following
+        return root
+
+    def union(left, right):
+        left, right = find(left), find(right)
+        if left == right:
+            return
+        if sizes[left] < sizes[right]:
+            left, right = right, left
+        parents[right] = left
+        sizes[left] += sizes[right]
+        anchors[left] = min(anchors[left], anchors[right])
+
+    previous = []
+    padding = 1 if connectivity == 8 else 0
+    width = dataset.RasterXSize
+    for row, (values, valid) in enumerate(_sieve_rows(dataset, band)):
+        # False sentinels split invalid pixels as well as adjacent differing classes.
+        starts = np.flatnonzero(valid & np.r_[True, ~valid[:-1] | (values[1:] != values[:-1])])
+        ends = np.flatnonzero(valid & np.r_[~valid[1:] | (values[1:] != values[:-1]), True])
+        current = []
+        labels[row] = 0
+        position = 0
+        for start, end in zip(starts.tolist(), ends.tolist()):
+            value = int(values[start])
+            identifier = len(parents)
+            parents.append(identifier); sizes.append(end - start + 1)
+            classes.append(value); anchors.append(row * width + start)
+            labels[row, start:end + 1] = identifier
+            while position < len(previous) and previous[position][1] < start - padding:
+                position += 1
+            other = position
+            while other < len(previous) and previous[other][0] <= end + padding:
+                _, _, category, prior = previous[other]
+                if category == value:
+                    union(identifier, prior)
+                other += 1
+            current.append((start, end, value, identifier))
+        previous = current
+    roots = np.asarray([find(i) for i in range(len(parents))], dtype=np.int64)
+    return roots, sizes, classes, anchors
+
+
+def _sieve_donors(labels, roots, sizes, classes, anchors, min_pixels, connectivity):
+    """Only original roots above the threshold are donors; no chain propagation."""
+    chosen = {}
+
+    def consider(left, right):
+        different = (left != right) & (left != 0) & (right != 0)
+        if not different.any():
+            return
+        pairs = np.unique(np.column_stack((left[different], right[different])), axis=0)
+        for first, second in pairs.tolist():
+            for small, donor in ((first, second), (second, first)):
+                if sizes[small] >= min_pixels or sizes[donor] < min_pixels:
+                    continue
+                rank = (-sizes[donor], classes[donor], anchors[donor], donor)
+                if small not in chosen or rank < chosen[small]:
+                    chosen[small] = rank
+
+    previous = None
+    for row in range(labels.shape[0]):
+        current = roots[np.asarray(labels[row])]
+        consider(current[:-1], current[1:])
+        if previous is not None:
+            consider(previous, current)
+            if connectivity == 8:
+                consider(previous[:-1], current[1:])
+                consider(previous[1:], current[:-1])
+        previous = current
+    return {small: candidate[-1] for small, candidate in chosen.items()}
+
+
+def raster_sieve(input_raster, band, min_pixels, connectivity):
+    """One frozen connected-component sieve; invalid pixels are never donors."""
+    if type(min_pixels) is not int or min_pixels <= 0:
+        raise _sieve_error('threshold')
+    if type(connectivity) is not int or connectivity not in (4, 8):
+        raise _sieve_error('connectivity')
+    dataset = _open(input_raster)
+    if type(band) is not int or not 1 <= band <= dataset.RasterCount:
+        raise _sieve_error('band')
+    selected = dataset.GetRasterBand(band)
+    if selected.GetColorInterpretation() == gdal.GCI_AlphaBand:
+        raise _sieve_error('alpha')
+    for index in range(1, dataset.RasterCount + 1):
+        candidate = dataset.GetRasterBand(index)
+        if (index == band or candidate.GetColorInterpretation() == gdal.GCI_AlphaBand) and gdal.DataTypeIsComplex(candidate.DataType):
+            raise _sieve_error('complex')
+    selected = candidate = None
+    label_path = _path('.labels')
+    labels = output = destination = None
+    output_path = None
+    completed = False
+    try:
+        labels = np.memmap(label_path, dtype=np.int64, mode='w+', shape=(dataset.RasterYSize, dataset.RasterXSize))
+        roots, sizes, classes, anchors = _sieve_components(dataset, band, connectivity, labels)
+        donors = _sieve_donors(labels, roots, sizes, classes, anchors, min_pixels, connectivity)
+        replacement = np.asarray(classes, dtype=np.float64)
+        replacement[0] = np.nan
+        for small, donor in donors.items():
+            replacement[small] = classes[donor]
+        output = _numeric_output(dataset, 1)
+        output_path = Path(output.GetDescription())
+        destination = output.GetRasterBand(1)
+        for row in range(dataset.RasterYSize):
+            for x in range(0, dataset.RasterXSize, 512):
+                result = replacement[roots[np.asarray(labels[row, x:x + 512])]]
+                destination.WriteArray(result.reshape(1, -1), x, row)
+        destination = None
+        output.FlushCache()
+        output = None
+        result = _raster(output_path)
+        completed = True
+        return result
+    finally:
+        destination = output = dataset = None
+        if labels is not None:
+            labels._mmap.close()
+            labels = None
+        label_path.unlink(missing_ok=True)
+        if output_path is not None and not completed:
+            output_path.unlink(missing_ok=True)
+
+
 def raster_boundary_clean(input_raster, band):
     """Frozen global class priorities, followed by one synchronous expand/shrink."""
     dataset = _open(input_raster)
@@ -4487,6 +4655,7 @@ _SPECS = [
     (raster_proximity, OperatorCategory.RASTER_CALCULATION, '栅格邻近距离', [_INPUT(), _param('band', 'int', '显式选择不超过 32 位的整数数据波段'), _param('target_values', 'list[int]', '有效目标分类值集合，允许合法零，不能重复')], 'raster', ['read']),
     (raster_nibble, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格蚕食', [_INPUT(), _param('band', 'int', '显式选择精确安全整数分类数据波段，不能选择 alpha'), _param('target_values', 'list[int]', '待替换的安全整数分类，非空且不重复；取最近原始有效非目标供体，等距按源行列')], 'raster', ['read']),
     (raster_boundary_clean, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格边界清理', [_INPUT(), _param('band', 'int', '显式分类数据波段；原类别有效总数优先，八邻域单轮扩张和收缩，保留无效覆盖')], 'raster', ['read']),
+    (raster_sieve, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格小斑块筛除', [_INPUT(), _param('band', 'int', '显式分类数据波段，精确安全整数；原无效覆盖保留'), _param('min_pixels', 'int', '显式正整数像元数阈值；只处理严格小于阈值的原始连通斑块'), _param('connectivity', 'int', '显式4或8邻接；仅合并到原始达标的直接相邻大斑块，大小／较小分类／最前行列决胜；无供体保留，单轮冻结')], 'raster', ['read']),
     (raster_thin, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格细化', [_INPUT(), _param('band', 'int', '显式分类数据波段，不能选择 alpha'), _param('foreground_value', 'float', '单个精确安全整数前景分类；Guo–Hall 八邻域收敛，输出骨架1／背景0／原无效NaN')], 'raster', ['read']),
     (raster_aggregate, OperatorCategory.RASTER_CALCULATION, '栅格聚合', [_INPUT(), _param('factors', 'list[int]', '相邻像元的列、行聚合倍数，例如 [2,2]'), _param('method', 'str', '聚合方法；忽略无效像元并保留边缘组', enum=['sum', 'mean', 'min', 'max'])], 'raster', ['read']),
     (raster_footprint, OperatorCategory.RASTER_EXTENT, '栅格有效像元轮廓', [_INPUT(), _param('bands', 'list[int]', '选择互不重复的一基数据波段，省略时为所有数据波段', None, False), _param('validity', 'str', '有效范围并集或交集', 'any', False, enum=['any', 'all'])], 'GeoDataFrame', ['read']),
@@ -4549,6 +4718,8 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'band': 1, 'target_values': [0, 1]})
     if name == 'raster_thin':
         examples.update({'band': 1, 'foreground_value': 1})
+    if name == 'raster_sieve':
+        examples.update({'band': 1, 'min_pixels': 10, 'connectivity': 4})
     if name in ('raster_boundary_clean', 'raster_flow_accumulation_d8', 'raster_flow_length_d8', 'raster_drainage_basins_d8'):
         examples.update({'band': 1})
     if name == 'raster_flow_accumulation_d8':
