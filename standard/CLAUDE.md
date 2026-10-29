@@ -28,7 +28,7 @@ Catalog 映射的修订冻结与历史读取以[StandardMapping 正式契约](..
 
 ### 指标关系读取
 
-Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /metrics/:id/relations` 一跳图；它要求 `standard.metric.read`，只读 Standard 本地事实，不调用 Catalog 或 Model，也不使用 `standard.catalog.read` 机器权限替代用户权限。数据元、Domain、指标分类和单位继续留在 Metric 专业详情中，本阶段不伪造为企业目录节点。实际路由与修订入口见[指标 API 清单](#指标)。
+Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /metrics/:id/relations` 一跳图；它要求 `standard.metric.read`，只读 Standard 本地事实，不调用 Catalog 或 Model，也不使用 `standard.catalog.read` 机器权限替代用户权限。数据元、Domain、指标分类和单位继续留在 Metric 专业详情中，本阶段不伪造为企业目录节点。实际路由与修订入口见[指标 API 清单](#指标)。边类型的规范与显示差异沿[企业目录与标准映射剩余工作](../docs/next/ADDP企业资源目录能力专题.md#31-企业目录与标准映射)维护，命名统一须先确认。
 
 ## 模块概述
 

@@ -48,6 +48,7 @@
 [域级覆盖率与缺口下钻](../spec/addp企业资源目录实现规范.md#44-业务域总览与资源浏览)已纳入现行契约，不再列为未实现；仅在获准的盘点视图按当前用户权限和精确域计算，不将全局计数改名为域统计。
 
 - [ ] 在专用环境完成 StandardMapping“人工候选 → 审核 → 已审核字典 → 认证时映射版本证据”的真实业务闭环，不在共享开发库为填满页面制造业务事实。
+- [ ] **Standard／Catalog：**确认[指标一跳关系契约](../spec/addp企业资源目录实现规范.md#510-model--standard-专业关系查询契约)的边类型：规范为 `standard.metric.base_metric/dependency`，[当前生成器](../../standard/backend/internal/service/professional_relation_service.go)输出 `standard.metric.base/component`，[Catalog 详情](../../catalog/frontend/src/views/EntryDetail.vue)仍按旧名匹配，未匹配时原样显示机器类型。确认后先统一一跳图规范，再同步显示与回归，不保留兼容别名。域级标准引用使用 `standard.metric.dependency` 与 `position=base|component` 的独立契约，不跟随一跳图全局替换。现有 SQLite 用例只直接断言 `base` 边名，不能计为两类边显示、契约对齐或真实页面验收。
 - [ ] Copilot 提交候选尚未接入；先确定真实 Service Principal、候选权限与证据契约，AI 只能提交候选，不能直接审核为权威映射。
 - [ ] 使用普通读者、治理者及有 Project Group membership 的真实身份，核对默认入口、盘点权限、我的目录、项目集合名称与菜单优先级；不以管理员账号替代全部角色验收。
 - [ ] 补验至少两个业务域、零资源域、切域后的迟到响应，以及 Standard/Quality 权限不足或不可达时的独立区域状态；核对 Model/Quality 专业导航，不把局部只读点击记为完整验收。
