@@ -199,10 +199,21 @@ run_graph_postgres() {
         echo 'Graph PostgreSQL gate requires the real target contract test' >&2
         exit 1
     }
+    (cd "$SOURCE_ROOT/graph/backend" && ADDP_POSTGRES_INTEGRATION=1 GOWORK=off \
+        go test ./internal/service -run '^TestIntegrationPostgresGraphCleanupRuntime$' \
+        -count=1 -v) 2>&1 | tee "$WORK_DIR/graph-cleanup-postgres.log"
+    if grep -q -- '--- SKIP:' "$WORK_DIR/graph-cleanup-postgres.log"; then
+        echo 'Graph Cleanup PostgreSQL gate refuses skipped tests' >&2
+        exit 1
+    fi
+    grep -Eq -- '^--- PASS: TestIntegrationPostgresGraphCleanupRuntime \(' "$WORK_DIR/graph-cleanup-postgres.log" || {
+        echo 'Graph Cleanup PostgreSQL gate requires the real service runtime test' >&2
+        exit 1
+    }
 }
 if [ "$test_group" = graph ]; then
     run_graph_postgres
-    echo 'Graph PostgreSQL target, schema and execution contracts passed'
+    echo 'Graph PostgreSQL target, schema, execution and Cleanup runtime contracts passed'
     exit 0
 fi
 

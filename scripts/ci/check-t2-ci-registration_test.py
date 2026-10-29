@@ -861,12 +861,20 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
                 "    'TestExportExecutionSourceAgainstPostgres',\n"
                 "    'TestProjectionStoreSchemaContractAgainstPostgres',\n"
                 "    'TestTableResultAgainstPostgres', 'TestIntegrationPostgresGraphTargetContract',\n"
+                "    'TestIntegrationPostgresGraphCleanupRuntime',\n"
                 "]\n"
                 "mode = os.environ['FAKE_PG_OUTCOME']\n"
                 "failed = False\n"
                 "for name in names:\n"
                 "    if not re.search(pattern, name):\n"
                 "        continue\n"
+                "    if name == 'TestIntegrationPostgresGraphTargetContract' and args[1] != './internal/repository':\n"
+                "        continue\n"
+                "    if name == 'TestIntegrationPostgresGraphCleanupRuntime' and args[1] != './internal/service':\n"
+                "        continue\n"
+                "    if name.startswith('TestIntegrationPostgresGraph'):\n"
+                "        assert os.environ['ADDP_POSTGRES_INTEGRATION'] == '1'\n"
+                "        assert os.environ['GOWORK'] == 'off'\n"
                 "    selected = mode if name == os.environ['FAKE_PG_TEST_NAME'] else 'pass'\n"
                 "    if name.startswith('TestExecution') or name == 'TestPostgresCleanupProfessionalResultAtomicity':\n"
                 "        assert os.environ['ADDP_TEST_EXECUTION_POSTGRES_DSN'] == 'fixture-dsn'\n"
@@ -954,6 +962,48 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("group passed", result.stdout)
+
+    def test_graph_and_full_groups_preserve_repository_then_run_exact_cleanup_service(self) -> None:
+        for group in ("graph", "all"):
+            with self.subTest(group=group):
+                result, calls = self.run_gate_fixture("pass", group)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                graph_calls = [c for c in calls if c[1] in ("./internal/repository", "./internal/service")]
+                self.assertEqual(graph_calls, [
+                    ["test", "./internal/repository", "-run", "^TestIntegrationPostgresGraph", "-count=1", "-v"],
+                    ["test", "./internal/service", "-run", "^TestIntegrationPostgresGraphCleanupRuntime$", "-count=1", "-v"],
+                ])
+
+    def test_graph_cleanup_service_requires_exact_main_pass_and_refuses_all_skips(self) -> None:
+        for outcome in ("missing", "suffix", "child", "skip", "child-skip"):
+            with self.subTest(outcome=outcome):
+                result, _ = self.run_gate_fixture(outcome, "graph", "TestIntegrationPostgresGraphCleanupRuntime")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Graph Cleanup PostgreSQL gate", result.stderr)
+                self.assertNotIn("contracts passed", result.stdout)
+
+    def test_full_gate_requires_graph_cleanup_service(self) -> None:
+        result, _ = self.run_gate_fixture("missing", "all", "TestIntegrationPostgresGraphCleanupRuntime")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Graph Cleanup PostgreSQL gate", result.stderr)
+
+    def test_graph_gate_retains_repository_failure_checks(self) -> None:
+        for outcome in ("missing", "skip", "fail"):
+            with self.subTest(outcome=outcome):
+                result, calls = self.run_gate_fixture(outcome, "graph", "TestIntegrationPostgresGraphTargetContract")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(len(calls), 1)
+                self.assertNotIn("contracts passed", result.stdout)
+
+    def test_graph_service_failure_propagates_and_does_not_expand_execution_groups(self) -> None:
+        result, _ = self.run_gate_fixture("fail", "graph", "TestIntegrationPostgresGraphCleanupRuntime")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("contracts passed", result.stdout)
+        for group in ("execution-lifecycle", "execution-events"):
+            with self.subTest(group=group):
+                result, calls = self.run_gate_fixture("fail", group, "TestIntegrationPostgresGraphCleanupRuntime")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(any(c[1] in ("./internal/repository", "./internal/service") for c in calls))
 
     def test_focused_group_refuses_skipped_lifecycle_matrix(self) -> None:
         result, _ = self.run_gate_fixture("skip")
