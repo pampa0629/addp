@@ -581,7 +581,7 @@ Catalog 只为联邦导航提供自己拥有的来源绑定解析：前端把 ow
 
 覆盖率页面必须能够沿同一权威口径下钻到待治理条目，但不得为此新增覆盖率明细表、任务实体或搜索投影字段。`GET /entries` 通过成对参数 `coverage_dimension=<固定维度>&coverage_state=missing` 返回该维度当前适用且未覆盖的 active CatalogEntry；这两个参数只允许与 `view=inventory` 同时出现，缺少任一参数、使用其他状态或在治理目录视图提交均返回 `400`。第一阶段只实现 `missing`，不预建未形成处置价值的 `covered`、`not_applicable` 等并行状态。
 
-治理状态分布与七个维度缺口是两种不同的下钻：点击状态数量进入 `view=inventory&governance_status=<该状态>`；其中 `discovered` 表示尚未完成业务编目，进入条目后按单项编目流程处理。点击维度的“未覆盖”数量则进入上述缺口视图，并按维度提示处理入口：具有目录维护权限时，主业务域和责任部门可在适用条目上使用批量分配；业务定义、人员责任和术语进入条目编目且遵守状态门禁；组件标准映射进入数据项的映射审核。专业 owner 自有业务域不能由 Catalog 批量覆盖。分配主业务域或责任部门不推进 `discovered → curated`，任何下钻也不自动创建责任治理任务。
+治理状态分布与七个维度缺口是两种不同的下钻：点击状态数量进入 `view=inventory&governance_status=<该状态>`；其中 `discovered` 表示尚未完成业务编目，进入条目后按单项编目流程处理。点击维度的“未覆盖”数量则进入上述缺口视图，并按维度提示处理入口：主业务域和责任部门进入[批量分配](#批量分配路由)，操作权限、适用对象及写入边界以该契约为准；业务定义、人员责任和术语进入条目编目且遵守状态门禁；组件标准映射进入数据项的映射审核。任何下钻也不自动创建责任治理任务。
 
 缺口列表的 SQL 判定必须与本节覆盖率聚合复用同一组适用性和覆盖谓词，使列表 `total` 精确等于当前权限与其他结构化筛选共同约束后的缺口数量。名称全文搜索由 Meilisearch 投影负责，治理缺口由 PostgreSQL 当前事实负责；第一阶段二者互斥，避免按搜索分页候选再做数据库过滤导致漏项或虚假总数。前端从覆盖率页进入缺口列表时不得携带名称搜索，并在缺口视图中禁用名称搜索；退出缺口视图后恢复普通目录搜索。
 
@@ -693,13 +693,17 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 
 `PUT /entries/:id` 必须携带完整可编辑编目聚合和正整数 `version`，不接受 `recommended_successor_entry_id`。治理子资源 `PUT /entries/:id/governance` 中的推荐继任字段使用规范 UUID 或 `null`。成功写入返回新完整资源并递增版本；版本冲突返回 `409` 和 `catalog_entry_version_conflict`，不能自动重试或覆盖。推荐继任目标不满足同 Tenant、状态或来源约束时返回 `409` 和 `catalog_recommended_successor_invalid`。
 
+### 批量分配路由
+
 `POST /entries/batch_governance` 是资源盘点中的显式成员批量命令，只允许同时具有 `catalog.inventory.read` 与 `catalog.entry.update` 的治理人员调用。请求固定包含 1 到 200 个互不重复的 `{id, version}`、单一 `operation=assign_primary_domain|assign_accountable_department` 和 owner 稳定 `reference_id`；不接受筛选条件、查询结果全选或手工输入裸 ID。Catalog 在写事务前只向对应 owner 精确校验一次目标可引用性，在事务中按 CatalogEntry UUID 稳定排序加锁并校验全部成员，再只替换每个条目的主业务域或责任部门这一项关系，保留其他语义与责任事实。任一条目不存在、跨 Tenant、非 active、版本冲突、目标不可引用或不适用时整批回滚；成功后每个条目版本递增并按原请求顺序返回 `{id, version}`。
 
-资源盘点中的用户操作称“批量分配”，弹窗明确说明只支持主业务域或责任部门的单项分配。该命令不完成业务编目、不推进认证或弃用状态，也不自动生成责任治理任务；不得用泛化的“批量治理”文案暗示上述能力。
+资源盘点中的用户操作称“批量分配”，弹窗明确说明只支持主业务域或责任部门的单项分配。该命令不推进 `discovered → curated`、认证或弃用状态，也不自动生成责任治理任务；不得用泛化的“批量治理”文案暗示上述能力。
 
-Model `business_entity|logical_model` 与 Standard 五类标准的主业务域由专业 owner 维护，Catalog 批量命令不得覆盖；包含任一此类条目时整批返回 `409 catalog_batch_governance_unsupported_entry`。每个成功条目必须写入独立审计记录并共享同一个 `batch_id`，同时投递搜索投影任务。显式成员和逐条版本共同构成并发快照，因此本命令不创建 Tenant 级集合 `revision`；前端遇到冲突必须保留选择和输入供用户刷新后重新确认，不能自动覆盖。
+Model `business_entity|logical_model` 与 Standard 五类标准的主业务域由专业 owner 维护，Catalog 批量命令不得覆盖；包含任一此类条目时整批返回 `409 catalog_batch_governance_unsupported_entry`。每个成功条目必须写入独立审计记录并共享同一个 `batch_id`，同时投递搜索投影任务。显式成员和逐条版本共同构成并发快照，因此本命令不创建 Tenant 级集合 `revision`；前端遇到冲突必须保留选择和输入供用户刷新后重新确认，不能自动覆盖。发现缺口的只读查询口径见[治理覆盖率动态聚合](#512-治理覆盖率动态聚合)。
 
-列表使用标准 `{data,total,page,page_size,total_pages}` 响应；`view=governance|inventory` 是稳定目录视图，省略时唯一表示 `governance`。`search`、`entry_type`、`source_status`、`governance_status`、`visibility`、`primary_domain_id`、`accountable_department_id`、`source_engine_id`、`coverage_dimension`、`coverage_state` 等过滤参数必须在 Swagger 中逐项声明，排序字段使用白名单。显式请求 `view=inventory` 但缺少 `catalog.inventory.read` 时返回 `403`，不静默降级到治理目录；治理缺口参数组合不满足 5.12 节约束时返回 `400`。
+### 目录列表与分面路由
+
+列表使用标准 `{data,total,page,page_size,total_pages}` 响应；`view=governance|inventory` 是稳定目录视图，省略时唯一表示 `governance`。`search`、`entry_type`、`source_status`、`governance_status`、`visibility`、`primary_domain_id`、`accountable_department_id`、`source_engine_id`、`coverage_dimension`、`coverage_state` 等过滤参数必须在 Swagger 中逐项声明，排序字段使用白名单。显式请求 `view=inventory` 但缺少 `catalog.inventory.read` 时返回 `403`，不静默降级到治理目录；治理缺口的参数组合、`400` 拒绝和名称搜索互斥规则统一见[治理覆盖率动态聚合](#512-治理覆盖率动态聚合)。
 
 `GET /entries/facets` 接受同样的 `view`，以及可选 `primary_domain_id`、`accountable_department_id`、`entry_type` 上下文参数，并与 `/entries` 共用 Tenant、目录可见性和盘点权限过滤。响应是即时聚合的导航读模型，不是目录树事实：主业务域统计始终覆盖当前视图；责任部门统计受已选业务域约束；资源类型统计受已选业务域和责任部门约束；来源引擎统计受三项选择共同约束。Catalog 从权威库计算当前可见结果中实际出现的稳定 ID 及数量，再使用 `addp-catalog` Tenant Service Token 向 Standard / System 精确批量解析显示名、编码、类型和状态。它不返回 owner 未在当前可见 CatalogEntry 中被引用的对象，不授予额外 owner 管理权限，也不持久化 owner 完整列表。任一 owner 解析失败时，该分面返回 `unavailable` 状态，其他分面仍正常返回；不把动态解析变成 Catalog 启动或 Ready 依赖。
 
