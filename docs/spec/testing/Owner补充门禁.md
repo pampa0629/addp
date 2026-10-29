@@ -23,7 +23,7 @@
 | G4 | 另一Backend受理取消、重复请求、execution已换代、跨Tenant与缺权限均严格绑定；旧task取消不能伤及新执行 | T1、PG T2；Graph／System授权边界 | Graph标准模块与PG门禁；API改变时同次覆盖双语Swagger和授权校验，不借Service身份扩权 |
 | G5 | 等待G或业务行锁期间lease到期；旧heartbeat、材料Save、待审项、计数、事件、终态全部拒绝，私有写入不先提交 | PG T2；Common＋Graph | Common／Graph PG入口，真实行锁门闩验证；SQLite或只核execution更新不能代替 |
 | G6 | 外部写成功而PG回执丢失、取消超时或旧进程失联：执行失败但效果待核清；禁止自动重放／人工重跑／Cleanup；伪造、错attempt和不完整停止证据拒绝 | T1、PG与原生引擎T2；Graph／Common Provider | 受控Provider/HTTP夹具验证不确定窗口，并复用`make test-common-falkordb`／`make test-common-neo4j`补原生副作用交界；当前断言不充分须同次扩展。真实跨进程在途语义另需T4，不从mock或PG推断远端已停止 |
-| G7 | 旧实例只可追加已绑定的停止证据，不能补结果／改终态；TTL、清lease、进程退出和确认布尔值不能直接解除；核清后不自动继续 | T1、PG T2；Graph | 同Graph入口；人工核清入口的Permission、证据校验与审计须实现时明确，不增无条件解锁API |
+| G7 | 旧实例只可追加已绑定的停止证据，不能补结果／改终态；TTL、清lease、进程退出和确认布尔值不能直接解除；核清后不自动继续 | T1、PG T2；Graph | 同Graph入口；核清／重新开放按已确认的独立Permission、原目标和服务端证据契约验证，不增无条件解锁API |
 | G8 | 材料实际字节摘要、本体执行映射、目标身份变化被拒；活动材料不可删除／覆盖，快照不含秘密；不迁Ontology版本协议 | T1、PG T2；Graph | Graph标准入口；不将输入冻结测试外推为Ontology不可变发布验收 |
 | G9 | 构建终态后人工审核仍可用；并发批准／拒绝／修改唯一裁决；关闭准入拒新审核、在途结果不明阻清理，原审核结果／已提交图数据不隐式清空 | T1、PG T2；Graph | Graph模块／PG；涉及页面响应时才补相关Console T3；有效原生审核历史不重复运行 |
 | C1 | System创建请求／父／全部expected子pending同事务；同父同Owner唯一，重复来源事件去重，相同ID不同内容拒绝，同参独立合法动作不误合并 | T1、PG T2；System＋Common | `make test-module MODULE=system`及Common PG；System需沿统一主责方案新增Cleanup PG标准门禁，拟名`test-system-cleanup`，当前不存在且名称／登记待实施确认。现有`test-system-iam-postgres`默认不运行cleanup service，不能作为此协议的覆盖基线；不为旧Stream增加Redis协调门禁 |
@@ -53,7 +53,7 @@
 
 ### C5协调关闭安全展示子矩阵
 
-下列九项为本轮待确认文档设计，未实现或运行。唯一判据见[安全展示契约](../addp-cleanup体系规范.md#协调关闭与模块未开始的安全展示)；复用Common纯投影T1、System拟新增Cleanup PG入口、`make test-monitor-postgres`及System／Monitor／Graph对应模块标准入口。共享前端文案／组件按真实消费者扩散验证，不新增平行门禁，不重跑有效Hosted。服务跨身份与真实Gateway证据仍单独认定，受控T3不替代它们。
+下列九项已于 2026-10-29 获用户确认并纳入本轮实施，尚未实现或运行。唯一判据见[安全展示契约](../addp-cleanup体系规范.md#协调关闭与模块未开始的安全展示)；复用Common纯投影T1、System拟新增Cleanup PG入口、`make test-monitor-postgres`及System／Monitor／Graph对应模块标准入口。共享前端文案／组件按真实消费者扩散验证，不新增平行门禁，不重跑有效Hosted。服务跨身份与真实Gateway证据仍单独认定，受控T3不替代它们。
 
 | 编号 | 最小断言 | 层级／责任 |
 | --- | --- | --- |

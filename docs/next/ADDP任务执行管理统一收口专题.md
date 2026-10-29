@@ -2,7 +2,7 @@
 
 更新时间：2026-10-29
 
-状态：用户已于 2026-10-29 确认第七节方案和分工，授权主责先统一并提交正式契约，再依次推进 Common、Graph 和 Cleanup 实施及受影响门禁。新的 Hosted 验收、实际生产／共享环境切换，以及尚未明确的 Graph 人工核清权限与证据协议单独确认。各阶段的实现和验证结果分别记录，不将设计确认计为通过。
+状态：用户已于 2026-10-29 确认第七节方案和分工，授权主责先统一并提交正式契约，再依次推进 Common、Graph 和 Cleanup 实施及受影响门禁。新的 Hosted 验收、实际生产／共享环境切换，单独确认；Graph 人工核清权限、原目标重新开放及 Cleanup 安全展示已于同日补充确认。各阶段的实现和验证结果分别记录，不将设计确认计为通过。
 
 ## 一、范围与结论
 
@@ -132,7 +132,7 @@ Cleanup 分三阶段：先 Cleanup 子 E → G 排他关闭准入并提交；锁
 
 ### 4.2.2 Cleanup：单一持久队列与有界协调
 
-已确认的公共队列与回执原则以[Cleanup 规范](../spec/addp-cleanup体系规范.md)中的“持久队列与完成回执”草稿为准。本节进一步提出父子收口、API 和切换细则，尚待本轮整体确认的部分见第七节。正式条款草稿由 Graph 会话在工作区修订，本轮尚未提交，不能将远端旧正文误认成已更新实现。
+已确认的公共队列与回执原则以[Cleanup 规范](../spec/addp-cleanup体系规范.md)中的“持久队列与完成回执”为准。本节父子收口、API 和切换细则已随第七节确认，正式契约已提交；代码与各层验证仍须逐项记录实际结果。
 
 **当前事实。** [System 协调服务](../../system/backend/internal/service/cleanup_orchestrator_service.go)先创建 running 父 execution，再写 Redis task、发布 Stream 并启动临时 watcher；读取详情时还会重算并写入状态。各 Owner 的消费、创建 execution、业务处理、公共终态和 Redis result 是分离步骤。[Asset executor](../../asset/backend/internal/service/cleanup_service.go)可作为具体例子：新消息生成新 UUID，创建 execution 失败后仍继续进入业务处理；结果 hash 与终态不在一个事务中。本次不是断言全部 Owner 都有相同故障，实施前须逐个核对。
 
@@ -261,6 +261,14 @@ Common 确定性矩阵至少覆盖竞争领取、到期前后与锁等待、恢�
 4. 首期不新增自动物理保留清理、失败 Engine 删除重试或 Ontology 模型迁移。旧活动任务／外部未决操作只读盘点后排空切换，有无法核清项就保留阻断，不凭新协议改造授权修正历史或重跑删除。实际生产／共享环境切换命令和新的 Hosted 范围另行确认。
 
 Common 统一采用 PostgreSQL 锁后墙钟、严格未到期判定及封闭字段写入；细节在正式规范与 PG 反例矩阵中收口。若调查发现需要改变上述业务边界，先报告决定，不用 Owner 私有补丁绕过公共约束。已有确定性或 Hosted 成功证据只有输入与范围仍匹配时复用。
+
+### 实施中补充确认的两项边界
+
+用户于 2026-10-29 补充确认：在现有 Graph 主资源 version 规则下新增 `POST /api/v1/graph/graphs/{id}/reconcile`，只接收 version，由服务端逐项核验持久未决操作证据；新增窄 Permission `graph.graph.reconcile`，不默认授予角色。新增 `POST /api/v1/graph/graphs/{id}/reopen`，要求 `graph.graph.update` 与 `graph.graph.reconcile`，只允许已核清、无活动执行且生命周期合法的原物理目标重新开放；不自动重跑、不复活旧 Cleanup，也不允许 force／人工确认布尔值／任意 SQL 或上传日志放行。换 Engine／CatalogPath 的重绑定不纳入首期重新开放。
+
+有效证据限于可信持久事实证明尚未派发、原合法所有者已完整持久化结果，或绑定原操作／attempt／目标且能证明不会继续写入的可信 Provider／运行体终结证明。现有通用图 Provider 与 Copilot 同步抽取均未提供完整持久操作核验协议，因此首期不能保证全部失联场景可核清；缺证据必须保留阻断。
+
+上述新增 Permission 与原目标开放范围，以及[Cleanup 安全展示契约](../spec/addp-cleanup体系规范.md#协调关闭与模块未开始的安全展示)，均已获用户确认并纳入本轮实施；换目标另议，新的 Hosted 验收仍单独确认。
 
 完成时必须同时满足：运行路径有明确所有权；公共字段有唯一维护入口；旧路径删除；Owner 事务／副作用边界有证据；受影响标准门禁实际执行；真实验收按固定版本与范围通过，清理可核验。未运行、失败、跳过和未确认设计分别记录。
 

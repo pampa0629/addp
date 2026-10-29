@@ -22,7 +22,7 @@ Monitor 聚合各 Owner 写入的执行事实，提供授权诊断、统计、�
 - 任务定义和执行事实归业务 Owner / Common；Monitor 不读取 Owner 私表或直连业务 Kafka、源数据库来补判状态，不成为第二个执行者。新增执行写入复用 `common/execution` 与 `EnsureStore`。
 - 用户身份沿 System opaque Token / AuthContext。Tenant AuthContext 和 Monitor Permission 仅为入口条件；执行列表、详情、树、统计和关联告警均通过同步 BFF 逐请求取得 Owner `execution-read-scope`，不可用时失败关闭。父可读不授予子结果权限，专业数据仍从 Owner 授权入口读取。
 - 通用响应沿[执行详情与安全投影](../docs/spec/tasks/执行监控.md#执行详情与安全投影)，仅返回获授权的显式 DTO；新增内部模型字段不自动进入响应，专业结果仍由 Owner 独立授权。诊断 GET 复用现有 System 操作审计。
-- Cleanup“协调已关闭、模块未开始”的[安全展示草案](../docs/spec/addp-cleanup体系规范.md#协调关闭与模块未开始的安全展示)待本轮确认、未实施。未来仅复用Common的闭合纯投影；父子分别授权且有已提交证明才显示联合标签，子单独可读不泄露父关闭依据，隐藏子无节点／计数占位。Owner不可用仍失败关闭；不得读取System／Graph私表、按pending或deadline猜未开始、改写公共状态或提供重试／核清动作。
+- Cleanup“协调已关闭、模块未开始”的[安全展示契约](../docs/spec/addp-cleanup体系规范.md#协调关闭与模块未开始的安全展示)已于 2026-10-29 获准实施，当前尚未落地。实现仅复用Common的闭合纯投影；父子分别授权且有已提交证明才显示联合标签，子单独可读不泄露父关闭依据，隐藏子无节点／计数占位。Owner不可用仍失败关闭；不得读取System／Graph私表、按pending或deadline猜未开始、改写公共状态或提供重试／核清动作。
 - continuous 信号、通用规则与恢复条件统一沿[执行信号与租户告警](../docs/concepts/monitoring/执行诊断与租户告警.md#执行信号与租户告警)及其正式契约；仅消费 Owner 公共事实，不以历史 pending 维持旧告警，不把 continuous session 计入通用失败规则。
 - evaluator 先收集 active signal，再由单一 reconciler 处理 incident。查询失败不能恢复告警；确认/抑制不改写 Owner 事实。生命周期 event 与各渠道 outbox 同事务，dispatcher 在事务外至少一次投递，独立测试不创建正式事件或 outbox。
 - Platform 与 Tenant 使用独立权限和事实。System 拥有主机、实例及当前绑定；Monitor 只消费授权投影，不复制租约或私有台账，后台身份不能替代当前用户的节点读取裁决。
