@@ -1088,7 +1088,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("栅格处理", "汇水分析"), "raster_drainage_basins_d8 raster_snap_pour_points raster_watershed_d8 raster_subcatchments_d8"),
         (("栅格处理", "河网分析"), "raster_stream_order_d8 raster_stream_link_d8 raster_stream_to_vector_d8 raster_distance_to_stream_d8 raster_hand_d8"),
         (("栅格处理", "格式转换"), "raster_polygonize vector_rasterize"),
-        (("栅格处理", "栅格统计"), "raster_statistics raster_cut_fill raster_zonal_statistics raster_focal_statistics raster_vector_zonal_statistics raster_recommend_band_combination raster_histogram"),
+        (("栅格处理", "栅格统计"), "raster_statistics raster_cut_fill raster_surface_area raster_zonal_statistics raster_focal_statistics raster_vector_zonal_statistics raster_recommend_band_combination raster_histogram"),
         (("栅格处理", "栅格检查"), "raster_info validate_cog"),
         (("栅格处理", "成果生成"), "raster_to_cog raster_build_overviews build_raster_mosaic"),
     ]
@@ -1305,3 +1305,15 @@ def test_multi_distance_buffer_metadata_matches_single_layer_contract_and_remove
     assert 'distance' in notes and '重名' in notes and '完整缓冲区' in notes
     assert 'list[GeoDataFrame]' not in str(spec['detailed_description'])
     assert '更高效' not in str(spec['detailed_description'])
+
+
+def test_dem_surface_area_one_plain_table_explicit_input_no_raster_artifact():
+    spec=next(item for item in list_operators()if item['id']=='raster_surface_area')
+    assert spec['display_name']=='DEM 三维表面积统计'and spec['category_path']==['栅格处理','栅格统计']
+    assert spec['execution_modes']==['workflow']and spec['effects']==['read']and spec['attributes']['resource_groups']==['raster']
+    params={p['name']:p for p in spec['parameters']};assert set(params)=={'input_raster','band','elevation_unit'}and all(p['required']for p in params.values())
+    assert params['input_raster']['type']=='raster'and params['input_raster']['param_type']=='input'
+    assert params['elevation_unit']['enum']==['metre','foot','us_survey_foot']
+    assert spec['output_ports'][0]['type']=='DataFrame'and len(spec['output_ports'])==1
+    assert '外缘不补面积'in params['band']['description']and '双对角'in params['elevation_unit']['description']
+    assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'elevation_unit':'metre','band':1}

@@ -12247,3 +12247,238 @@ def test_d8_flow_length_method_failure_real_async_no_publication_frozen_language
         assert ('必须显式选择方法' if language == 'zh-cn' else 'requires an explicit method') in status['error']
     assert workspaces and all(not path.exists() for path in workspaces)
     assert source_path.read_bytes() == original and not target.exists()
+
+
+_SURFACE_COUNTS = ['total_quad_count','valid_quad_count','invalid_quad_count']
+_SURFACE_MEASURES = ['projected_area_m2','surface_area_low_m2','surface_area_high_m2','surface_area_mean_m2','surface_to_projected_ratio']
+
+
+def _surface_vector_oracle(values, dx=2., dy=3., factor=1.):
+    # Independent 3-D vertex construction, edge vectors and cross products.
+    from decimal import Decimal,localcontext
+    with localcontext() as ctx:
+        ctx.prec=2500
+        D=lambda v:Decimal(v) if isinstance(v,int) else Decimal.from_float(v)
+        X,Y,F=D(dx),D(dy),D(factor);lows=[];highs=[]
+        def triangle(a,b,c):
+            u=[b[i]-a[i] for i in range(3)];v=[c[i]-a[i] for i in range(3)]
+            cross=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]]
+            return sum(n*n for n in cross).sqrt()/2
+        for row in range(values.shape[0]-1):
+            for col in range(values.shape[1]-1):
+                raw=values[row:row+2,col:col+2]
+                if not np.isfinite(raw).all():continue
+                a,b,c,d=[D(v)*F for v in raw.reshape(-1).tolist()]
+                vertices=[(Decimal(0),Y,a),(X,Y,b),(Decimal(0),Decimal(0),c),(X,Decimal(0),d)]
+                A,B,C,Dd=vertices;ad=triangle(A,B,Dd)+triangle(A,Dd,C);bc=triangle(A,B,C)+triangle(B,Dd,C)
+                lows.append(min(ad,bc));highs.append(max(ad,bc))
+        count=len(lows);low=sum(lows);high=sum(highs);projected=count*X*Y;mean=(low+high)/2
+        return dict(zip(_SURFACE_COUNTS+_SURFACE_MEASURES,[(values.shape[0]-1)*(values.shape[1]-1),count,(values.shape[0]-1)*(values.shape[1]-1)-count,float(projected),float(low),float(high),float(mean),float(mean/projected)]))
+
+
+def _surface_result(path,band=1,unit='metre'):
+    from operators.raster_compute import raster_surface_area
+    return raster_surface_area(raster_load(source_plan(path)),band,unit)
+
+
+@pytest.mark.parametrize('dx,dy',[(1.,1.),(2.,3.),(.25,8.)])
+@pytest.mark.parametrize('p,q',[(0.,0.),(1.,0.),(0.,-2.),(2.,-3.)])
+def test_dem_surface_area_analytic_plane_true_slant_area_no_outer_half_cells(tmp_path,dx,dy,p,q):
+    row,col=np.indices((5,7));values=p*col*dx-q*row*dy-20.;path=_curvature_file(tmp_path,values,dx,dy);before=path.read_bytes()
+    with raster_workspace():frame=_surface_result(path)
+    actual=frame.iloc[0];count=24;plan=count*dx*dy;surface=plan*math.hypot(1,p,q)
+    assert actual.total_quad_count==actual.valid_quad_count==count and actual.invalid_quad_count==0
+    for key in _SURFACE_MEASURES[1:4]:assert actual[key]==pytest.approx(surface,rel=2e-15)
+    assert actual.projected_area_m2==plan and actual.projected_area_m2!=values.size*dx*dy
+    assert actual.surface_to_projected_ratio==pytest.approx(math.hypot(1,p,q),rel=2e-15)
+    assert list(frame)==_SURFACE_COUNTS+_SURFACE_MEASURES
+    assert all(str(frame[n].dtype)=='int64'for n in _SURFACE_COUNTS) and all(str(frame[n].dtype)=='Float64'for n in _SURFACE_MEASURES)
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('seed',range(6))
+def test_dem_surface_area_independent_full_vector_oracle_both_diagonals_local_minmax(tmp_path,seed):
+    values=np.random.default_rng(seed).integers(-8,9,size=(5,7)).astype(float);path=_curvature_file(tmp_path,values)
+    expected=_surface_vector_oracle(values)
+    with raster_workspace():actual=_surface_result(path).iloc[0]
+    for key,value in expected.items():assert actual[key]==pytest.approx(value,rel=2e-15,abs=0)
+    assert actual.surface_area_low_m2<actual.surface_area_mean_m2<actual.surface_area_high_m2
+    # Transpose/reflect swaps diagonals, but cannot change a per-quad mean or envelope.
+    for i,array in enumerate((values[::-1,:],values[:,::-1],values.T)):
+        root=tmp_path/str(i);root.mkdir();step=(3.,2.)if i==2 else(2.,3.);path=_curvature_file(root,array,*step)
+        with raster_workspace():reflected=_surface_result(path).iloc[0]
+        for key in _SURFACE_MEASURES:assert reflected[key]==pytest.approx(actual[key],rel=2e-15)
+
+
+@pytest.mark.parametrize('epsg,unit,factor',[(3857,'metre',1.),(3857,'foot',.3048),(2222,'us_survey_foot',1200/3937),(2277,'metre',1.)])
+def test_dem_surface_area_horizontal_vertical_units_independent(tmp_path,epsg,unit,factor):
+    values=np.array([[0.,4.,1.],[-2.,3.,6.],[1.,8.,-1.]])/factor;path=_curvature_file(tmp_path,values,epsg=epsg,unit=unit)
+    # Use stored binary64 grid times actual CRS conversion, not an assumed exact decimal spacing.
+    ds=gdal.Open(str(path));grid=ds.GetGeoTransform();horizontal=ds.GetSpatialRef().GetLinearUnits();ds=None
+    expected=_surface_vector_oracle(values,grid[1]*horizontal,-grid[5]*horizontal,factor)
+    with raster_workspace():actual=_surface_result(path,unit=unit).iloc[0]
+    for key,value in expected.items():assert actual[key]==pytest.approx(value,rel=3e-15,abs=0)
+
+
+@pytest.mark.parametrize('fault',['nodata','nan','inf','mask','alpha-zero','alpha-nan','partial-alpha'])
+def test_dem_surface_area_four_corners_selected_second_band_coverage_no_hole_bridges(tmp_path,fault):
+    rows,cols=np.indices((5,7));values=cols*cols-rows*rows-10.;cube=np.stack((np.full(values.shape,np.nan),values,np.full(values.shape,255.)))
+    if fault in ('nodata','nan','inf'):cube[1,2,3]={'nodata':-9999.,'nan':np.nan,'inf':np.inf}[fault]
+    if fault.startswith('alpha-'):cube[2,2,3]=0. if fault=='alpha-zero'else np.nan
+    if fault=='partial-alpha':cube[2,2,3]=128.
+    path=_curvature_file(tmp_path,cube,unit='');ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(2).SetUnitType('metre');ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    if fault=='mask':
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+        mask=np.full(values.shape,255,np.uint8);mask[2,3]=0;ds.GetRasterBand(1).GetMaskBand().WriteArray(mask)
+    ds=None;expected_values=values.copy()
+    if fault!='partial-alpha':expected_values[2,3]=np.nan
+    expected=_surface_vector_oracle(expected_values);before=path.read_bytes()
+    with raster_workspace():actual=_surface_result(path,2).iloc[0]
+    assert actual.invalid_quad_count==(0 if fault=='partial-alpha'else 4)
+    for key,value in expected.items():assert actual[key]==pytest.approx(value,rel=2e-15,abs=0)
+    assert before==path.read_bytes()
+
+
+@pytest.mark.parametrize('dtype,base,nodata',[(gdal.GDT_Int64,-2**63+16,-2**63),(gdal.GDT_UInt64,2**64-33,2**64-1)])
+def test_dem_surface_area_native64_adjacent_values_and_nodata_before_float(tmp_path,dtype,base,nodata):
+    values=np.array([[base+int(r+c)for c in range(4)]for r in range(4)],dtype=np.int64 if dtype==gdal.GDT_Int64 else np.uint64);values[0,0]=nodata
+    path,_=_cut_fill_pair(tmp_path,values,values,dtype=dtype);ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(1).SetNoDataValue(nodata);ds=None
+    oracle=np.array([[r+c for c in range(4)]for r in range(4)],float);oracle[0,0]=np.nan;expected=_surface_vector_oracle(oracle)
+    with raster_workspace():actual=_surface_result(path).iloc[0]
+    for key,value in expected.items():assert actual[key]==pytest.approx(value,rel=2e-15)
+    assert actual.surface_to_projected_ratio>1 and actual.invalid_quad_count==1
+
+
+@pytest.mark.parametrize('shape',[(1,1),(1,5),(4,1),(2,2),(5,7)])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_dem_surface_area_no_complete_quadrilateral_is_failure_not_zero(tmp_path,shape,language):
+    import operators.raster_compute as compute
+    values=np.full(shape,np.nan);values[::2,::2]=0.;path=_curvature_file(tmp_path,values)
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));before=set(source.workspace.iterdir())
+        with pytest.raises(ValueError)as error:compute.raster_surface_area(source,1,'metre')
+        assert str(error.value)==str(compute._surface_area_error('empty')) and set(source.workspace.iterdir())==before
+
+
+@pytest.mark.parametrize('case',['huge-base','opposite-finite','tiny-area','recovered-subnormal-area','large-area','invalid-extreme'])
+def test_dem_surface_area_scaled_intermediates_extreme_finite_samples(tmp_path,case):
+    values=np.zeros((2,2));step=(1.,1.)
+    if case=='huge-base':values[:]=np.finfo(float).max
+    if case=='opposite-finite':values[:,0]=-1e308;values[:,1]=1e308;step=(2.,.1)
+    if case=='tiny-area':step=(1e-160,1e-160)
+    if case=='recovered-subnormal-area':values=np.zeros((3,3));step=(1e-162,1e-162)
+    if case=='large-area':step=(1e150,1e150)
+    if case=='invalid-extreme':values=np.array([[0.,0.,np.nan],[0.,0.,np.finfo(float).max]])
+    path=_curvature_file(tmp_path,values,*step);expected=_surface_vector_oracle(values,*step)
+    with raster_workspace():actual=_surface_result(path).iloc[0]
+    for key,value in expected.items():assert actual[key]==pytest.approx(value,rel=3e-15,abs=5e-324)
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('case',['area-overflow','area-underflow','surface-overflow','sum-overflow','ratio-overflow'])
+def test_dem_surface_area_unrepresentable_final_fields_fail_bilingually(tmp_path,language,case):
+    import operators.raster_compute as compute
+    step={'area-overflow':(1e200,1e200),'area-underflow':(1e-200,1e-200),'sum-overflow':(1e308,1.),'ratio-overflow':(1e-100,1e-100)}.get(case,(1.,1.))
+    values=np.zeros((2,3 if case=='sum-overflow'else 2))
+    if case in ('surface-overflow','ratio-overflow'):values[:,1]=np.finfo(float).max
+    if case=='surface-overflow':values[:,0]=-np.finfo(float).max
+    path=_curvature_file(tmp_path,values,*step)
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));before=set(source.workspace.iterdir())
+        with pytest.raises(ValueError)as error:compute.raster_surface_area(source,1,'metre')
+        assert str(error.value)==str(compute._surface_area_error('numeric'))and set(source.workspace.iterdir())==before
+
+
+def test_dem_surface_area_cross_block_unique_ownership_bounded_native_reads(tmp_path,monkeypatch):
+    import operators.raster_compute as compute
+    rows,cols=np.indices((519,515));values=2.*cols-3.*rows;values[511,511]=np.nan;path=_curvature_file(tmp_path,values);original=path.read_bytes();reads=[];blocks=compute._blocks
+    def bounded(dataset,indices,**kwargs):
+        assert kwargs['native']is True;window=kwargs['window'];assert 1<window[2]<=512 and 1<window[3]<=512;reads.append(window)
+        yield from blocks(dataset,indices,**kwargs)
+    monkeypatch.setattr(compute,'_blocks',bounded)
+    with raster_workspace():row=_surface_result(path).iloc[0]
+    assert row.total_quad_count==518*514 and row.valid_quad_count==518*514-4 and row.invalid_quad_count==4
+    assert row.projected_area_m2==row.valid_quad_count*6
+    assert row.surface_area_mean_m2==pytest.approx(row.valid_quad_count*6*math.sqrt(3),rel=2e-15)
+    assert {(x,y)for x,y,w,h in reads}=={(0,0),(511,0),(0,511),(511,511)}and len(reads)==4
+    assert original==path.read_bytes()
+
+
+def test_dem_surface_area_metadata_example_plain_table_schema_preview(tmp_path):
+    spec=next(item for item in list_operators()if item['id']=='raster_surface_area');path=_curvature_file(tmp_path,np.zeros((3,4)))
+    tasks=[{'id':'source','operator':'raster_load','params':{'access_plan':source_plan(path)},'depends_on':[]},{'id':'stats',**spec['detailed_description']['workflow_example'],'depends_on':['source']}]
+    result=execute_workflow({'tasks':tasks});assert result['status']=='success',result
+    preview=json.loads(result['final_result']);assert preview['type']=='pandas_dataframe'and preview['row_count']==1 and preview['truncated']is False
+    assert [c['name']for c in preview['schema']]==_SURFACE_COUNTS+_SURFACE_MEASURES
+    assert preview['preview_rows'][0]['projected_area_m2']==preview['preview_rows'][0]['surface_area_mean_m2']==36.
+
+
+@pytest.mark.parametrize('case',['direct','filled','reclassified','empty','bad-band','save-failure'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_dem_surface_area_async_csv_save_submitted_language_failure_and_cleanup(tmp_path,monkeypatch,case,language):
+    import api_server,workflow_engine,pandas as pd
+    values=np.zeros((3,3))
+    if case=='filled':values[:]=2.;values[1,1]=0.
+    if case=='empty':values[:]=np.nan
+    path=_curvature_file(tmp_path,values);before=path.read_bytes();target=tmp_path/'area.csv'
+    if case=='save-failure':target.write_text('keep existing\n')
+    tasks=[{'id':'source','operator':'raster_load','params':{'access_plan':source_plan(path)},'depends_on':[]}];prior='source'
+    if case=='filled':tasks.append({'id':'processed','operator':'raster_fill_depressions','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'elevation_unit':'metre'}});prior='processed'
+    if case=='reclassified':tasks.append({'id':'processed','operator':'raster_reclassify','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'rules':[{'value':0,'class':-3}]}});prior='processed'
+    tasks.extend([{'id':'stats','operator':'raster_surface_area','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':9 if case=='bad-band'else 1,'elevation_unit':'metre'}},{'id':'save','operator':'save','depends_on':['stats'],'params':{'input_df':{'$ref':'stats'},'connection_info':{'mount_path':str(tmp_path)},'path':target.name,'mode':'fail'}}])
+    workspaces=[];execute=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_surface_area':workspaces.append(params['input_raster'].workspace)
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture)
+    client=api_server.app.test_client();assert client.post('/api/operators/raster_surface_area/invoke',json={'params':{}}).status_code==403
+    response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}});assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en'if language=='zh-cn'else'zh-cn'}).json
+        if status['status']in ('success','failed'):break
+        time.sleep(.01)
+    failed=case in ('empty','bad-band','save-failure');assert status['status']==('failed'if failed else'success'),status
+    assert workspaces and all(not p.exists()for p in workspaces)and before==path.read_bytes()
+    if failed:
+        if case=='save-failure':assert target.read_text()=='keep existing\n'
+        else:
+            assert not target.exists()
+            phrase=('没有四角完整有效'if case=='empty'else'必须显式选择')if language=='zh-cn'else('no complete valid quadrilaterals'if case=='empty'else'requires an explicit valid')
+            assert phrase in status['error']
+        assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
+    else:
+        saved=pd.read_csv(target);assert list(saved)==_SURFACE_COUNTS+_SURFACE_MEASURES and len(saved)==1 and target.stat().st_size>0
+        assert saved.loc[0,'valid_quad_count']==4 and saved.loc[0,'projected_area_m2']==saved.loc[0,'surface_area_mean_m2']==24.
+        assert saved.loc[0,'surface_to_projected_ratio']==1.
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('fault',['geographic','rotated','south-up','missing-crs','missing-grid','unit','unit-conflict','unit-unknown','scale','offset','alpha','band','complex','complex-alpha'])
+def test_dem_surface_area_bilingual_admission_and_no_private_output(tmp_path,language,fault):
+    import operators.raster_compute as compute
+    path=tmp_path/'bad-surface-area.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),5,5,2 if fault=='complex-alpha' else 1,gdal.GDT_CFloat64 if fault in ('complex','complex-alpha') else gdal.GDT_Float64)
+    if fault!='missing-grid':ds.SetGeoTransform((0,1,.2 if fault=='rotated' else 0,5,0,1 if fault=='south-up' else -1))
+    if fault!='missing-crs':crs=osr.SpatialReference();crs.ImportFromEPSG(4326 if fault=='geographic' else 3857);ds.SetSpatialRef(crs)
+    band=ds.GetRasterBand(1);band.Fill(1)
+    if fault in ('unit-conflict','unit-unknown'):band.SetUnitType('foot' if fault=='unit-conflict' else 'fathom')
+    if fault=='scale':band.SetScale(2)
+    if fault=='offset':band.SetOffset(10)
+    if fault=='alpha':band.SetColorInterpretation(gdal.GCI_AlphaBand)
+    if fault=='complex-alpha':ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    band=ds=None
+    key={'unit-unknown':'unit-conflict','offset':'scale','missing-grid':'grid','missing-crs':'grid','geographic':'grid','rotated':'grid','south-up':'grid','complex-alpha':'complex'}.get(fault,fault)
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        with pytest.raises(ValueError) as error:compute.raster_surface_area(source,True if fault=='band' else 1,'bad' if fault=='unit' else 'metre')
+        assert str(error.value)==str(compute._surface_area_error(key))
+        assert ('DEM surface area statistics' if language=='en' else 'DEM 三维表面积统计') in str(error.value)
+        assert set(source.workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('band',[0,-1,2,1.0,True,None,'1'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_dem_surface_area_explicit_band_validation(tmp_path,band,language):
+    import operators.raster_compute as compute
+    path=_curvature_file(tmp_path,np.ones((3,3)))
+    with raster_workspace(),raster_error_language(language):
+        with pytest.raises(ValueError,match='DEM'):compute.raster_surface_area(raster_load(source_plan(path)),band,'metre')

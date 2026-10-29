@@ -2510,6 +2510,93 @@ def raster_cut_fill(input_raster, after_raster, band, after_band, elevation_unit
                          **{name: pd.array([_cut_fill_float(value)], dtype='Float64') for name, value in measures.items()}})
 
 
+
+_SURFACE_AREA_MESSAGES = {
+    key: (zh.replace('DEM 填洼', 'DEM 三维表面积统计'),
+          en.replace('DEM depression filling', 'DEM surface area statistics'))
+    for key, (zh, en) in _FILL_MESSAGES.items() if key != 'overflow'
+}
+_SURFACE_AREA_MESSAGES.update({
+    'empty': ('DEM 三维表面积统计没有四角完整有效的面片，不能生成零面积结果',
+              'DEM surface area statistics has no complete valid quadrilaterals; a zero-area result cannot be produced'),
+    'numeric': ('DEM 三维表面积统计的米制步长、面积或比值超出有限Float64范围，非零量不能下溢为零',
+                'DEM surface area statistics metre spacing, area or ratio exceeds finite Float64 range; a nonzero quantity must not underflow to zero'),
+})
+
+
+def _surface_area_error(code):
+    return ValueError(_SURFACE_AREA_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _surface_area_float(value):
+    try:
+        number = float(value)
+    except (OverflowError, ValueError) as cause:
+        raise _surface_area_error('numeric') from cause
+    if not math.isfinite(number) or (value != 0 and number == 0):
+        raise _surface_area_error('numeric')
+    return number
+
+
+def raster_surface_area(input_raster, band, elevation_unit):
+    """Average both triangulations per complete centre-to-centre quadrilateral."""
+    from decimal import Decimal, localcontext
+    source, horizontal = _dem_admission(input_raster, elevation_unit, band, 1,
+                                        diagnostic=_surface_area_error)
+    transform = source.GetGeoTransform()
+    dx = Fraction(transform[1]) * Fraction(horizontal)
+    dy = Fraction(-transform[5]) * Fraction(horizontal)
+    _surface_area_float(dx)
+    _surface_area_float(dy)
+    area = dx * dy
+    factor = Fraction(_ELEVATION_METRES[elevation_unit])
+    valid_count = 0
+    # A Decimal context avoids unnecessary binary64 overflow in squared norms
+    # and diagonal sums. Native differences are exact before this conversion.
+    with localcontext() as context:
+        context.prec = 80
+        def decimal(value):
+            return Decimal(value.numerator) / Decimal(value.denominator)
+        def triangle(x_difference, y_difference):
+            squared = area * area + (dy * x_difference) ** 2 + (dx * y_difference) ** 2
+            return decimal(squared).sqrt() / 2
+        low = high = Decimal(0)
+        for y in range(0, source.RasterYSize - 1, 511):
+            for x in range(0, source.RasterXSize - 1, 511):
+                width = min(512, source.RasterXSize - x)
+                height = min(512, source.RasterYSize - y)
+                _, _, arrays, masks = next(_blocks(source, [band], window=(x, y, width, height), native=True))
+                values, valid = arrays[0], masks[0]
+                complete = valid[:-1, :-1] & valid[:-1, 1:] & valid[1:, :-1] & valid[1:, 1:]
+                if not complete.any():
+                    continue
+                # Group only this bounded block; no persistent cache or full DEM.
+                quads = np.stack((values[:-1, :-1][complete], values[:-1, 1:][complete],
+                                  values[1:, :-1][complete], values[1:, 1:][complete]), axis=1)
+                unique, counts = np.unique(quads, axis=0, return_counts=True)
+                for samples, count in zip(unique.tolist(), counts.tolist()):
+                    a, b, c, d = [Fraction(value) for value in samples]
+                    ab, ac = (b - a) * factor, (c - a) * factor
+                    cd, bd = (d - c) * factor, (d - b) * factor
+                    diagonal_ad = triangle(ab, bd) + triangle(cd, ac)
+                    diagonal_bc = triangle(ab, ac) + triangle(cd, bd)
+                    low += min(diagonal_ad, diagonal_bc) * count
+                    high += max(diagonal_ad, diagonal_bc) * count
+                    valid_count += count
+        if valid_count == 0:
+            raise _surface_area_error('empty')
+        projected = decimal(area * valid_count)
+        mean = (low + high) / 2
+        measures = {'projected_area_m2': projected, 'surface_area_low_m2': low,
+                    'surface_area_high_m2': high, 'surface_area_mean_m2': mean,
+                    'surface_to_projected_ratio': mean / projected}
+        total = max(source.RasterXSize - 1, 0) * max(source.RasterYSize - 1, 0)
+        counts = {'total_quad_count': total, 'valid_quad_count': valid_count,
+                  'invalid_quad_count': total - valid_count}
+        return pd.DataFrame({**{name: pd.array([value], dtype='int64') for name, value in counts.items()},
+                             **{name: pd.array([_surface_area_float(value)], dtype='Float64')
+                                for name, value in measures.items()}})
+
 def _dem_source(input_raster, elevation_unit, band, minimum_size, *, diagnostic=None):
     dataset, horizontal_metres = _dem_admission(input_raster, elevation_unit, band, minimum_size, diagnostic=diagnostic)
     def invalid(code, message):
@@ -4238,6 +4325,7 @@ _SPECS = [
     (vector_rasterize, OperatorCategory.RASTER_FORMAT, '矢量栅格化', [_param('input_gdf', 'GeoDataFrame', '有效二维面输入，后输入要素覆盖前者', role='input'), _param('reference_raster', 'raster', '仅提供同 CRS 的完整网格，不继承像元值或有效性', role='input'), _param('field', 'str', '数值属性字段，与常量二选一', None, False), _param('burn_value', 'float', '有限数值常量，与属性字段二选一', None, False), _param('all_touched', 'bool', '是否烧写所有触及像元；默认使用 GDAL 像元中心语义', False, False)], 'raster', ['read']),
     (raster_statistics, OperatorCategory.RASTER_STATISTICS, '栅格统计', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False)], 'object', ['read']),
     (raster_cut_fill, OperatorCategory.RASTER_STATISTICS, '双DEM填挖方统计', [_INPUT(), _param('after_raster', 'raster', '施工后DEM，须与施工前同CRS、尺寸和完整网格，由用户保证相同高程基准', role='input'), _param('band', 'int', '显式施工前高程数据波段'), _param('after_band', 'int', '显式施工后高程数据波段'), _param('elevation_unit', 'str', '显式施工前高程单位', enum=list(_ELEVATION_METRES)), _param('after_elevation_unit', 'str', '显式施工后高程单位；挖填体积各非负，净增加为填方减挖方，统一立方米', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
+    (raster_surface_area, OperatorCategory.RASTER_STATISTICS, 'DEM 三维表面积统计', [_INPUT(), _param('band', 'int', '显式高程数据波段；四角有效像元中心组成面片，外缘不补面积'), _param('elevation_unit', 'str', '显式高程单位；双对角三角剖分逐面片取平均，面积平方米，结果为普通表', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段')], 'DataFrame', ['read']),
     (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_size', 'int', '以像元为单位的正方形窗口边长：3 或 5'), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）')], 'raster', ['read']),
     (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False)], 'GeoDataFrame', ['read']),
@@ -4329,7 +4417,7 @@ for function, category, label, params, output, effects in _SPECS:
         examples.update({'factors': [2, 2], 'method': 'mean'})
     if name == 'raster_tile':
         examples.update({'tile_size': [1024, 1024]})
-    if name in ('raster_fill_depressions', 'raster_flow_direction_d8', 'raster_slope', 'raster_aspect', 'raster_hillshade', 'raster_contour', 'raster_curvature', 'raster_tpi', 'raster_tri', 'raster_roughness'):
+    if name in ('raster_fill_depressions', 'raster_flow_direction_d8', 'raster_slope', 'raster_aspect', 'raster_hillshade', 'raster_contour', 'raster_curvature', 'raster_tpi', 'raster_tri', 'raster_roughness', 'raster_surface_area'):
         examples.update({'elevation_unit': 'metre', 'band': 1})
         if name == 'raster_contour':
             examples.update({'interval': 10.})
