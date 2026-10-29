@@ -3005,7 +3005,7 @@ def validate_raster_tangential_curvature(repository: Path, registered: set[str])
 
 
 def validate_raster_lineage_observer(repository: Path, registered: set[str]) -> None:
-    if not registered.intersection({'raster-cut-fill-persistence','raster-tpi-persistence','raster-tri-persistence','raster-roughness-persistence','raster-surface-area-persistence'}):return
+    if not registered.intersection({'raster-cut-fill-persistence','raster-tpi-persistence','raster-tri-persistence','raster-roughness-persistence','raster-surface-area-persistence','raster-twi-persistence'}):return
     required={
         'scripts/utils/online_raster_lineage.py': ('BEGIN READ ONLY;', 'statement_timeout', 'LIMIT 1', 'public observation must hide internal operations', 'actor_principal_id', 'workflow_matches', "public=True", "public=False", 'closed(public, expected)', 'closed(internal, expected)', 'validate_container', 'StartedAt', 'read_error', "'prepare'"),
         'scripts/test/online-raster-lineage_test.py': ('test_public_null_and_complete_internal_are_both_required', 'test_public_cannot_expose_operations_or_omit_them', 'test_internal_null_empty_missing_extra_and_wrong_operation_rejected', 'test_current_execution_identity_and_workflow_are_required', 'test_container_identity_restart_labels_and_database_cannot_change'),
@@ -3014,7 +3014,7 @@ def validate_raster_lineage_observer(repository: Path, registered: set[str]) -> 
         text=(repository/path).read_text()
         if any(fragment not in text for fragment in fragments):raise RegistrationError('bounded raster internal lineage evidence incomplete: '+path)
     make=(repository/'Makefile').read_text()
-    for prefix in ('cut-fill','tpi','tri','roughness','surface-area'):
+    for prefix in ('cut-fill','tpi','tri','roughness','surface-area','twi'):
         gate=(repository/f'scripts/test/online-hosted-raster-{prefix}-gate.sh').read_text()
         if 'run_logged python3 scripts/utils/online_raster_lineage.py prepare' not in gate:raise RegistrationError('raster owner receipt preparation omitted')
         block=make.split(f'test-raster-{prefix}-online-runner:',1)[1].split('\n.PHONY:',1)[0]
@@ -3095,6 +3095,42 @@ def validate_raster_roughness(repository: Path, registered: set[str]) -> None:
         tree=ast.parse((repository/relative).read_text());values=[n.value for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id==key for t in n.targets)]
         if len(values)!=1 or len(ast.literal_eval(values[0]))!=size:raise RegistrationError('ROUGHNESS fixed 13-success/26-bilingual-failure matrix changed')
 
+
+def validate_raster_twi(repository: Path, registered: set[str]) -> None:
+    import ast
+    suite='raster-twi-persistence'
+    if suite not in registered:return
+    workflow=(repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job=re.search(r'(?ms)^  raster-twi-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)',workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-twi-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-twi-persistence'" not in workflow
+        or 'cancel-in-progress: false' not in job.group('body') or 'nfs-kernel-server nfs-common' not in job.group('body')
+        or '${{ runner.temp }}/addp-online-${{ github.run_id }}/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('TWI requires a manual isolated Hosted NFS job and whole original-COG evidence upload')
+    make=(repository/'Makefile').read_text()
+    if 'test-geopython-workflow:' not in make or 'test_online_twi_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('TWI Native fixture must run in the standard GeoPython recipe')
+    required={'scripts/test/online-hosted-raster-twi-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-twi-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare'), 'scripts/test/raster-twi-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_twi', 'input.area', 'input.slope', 'input.source', 'output.save', 'source_bindings', 'archived_cogs', 'incomplete fixed TWI matrix', 'oracle_prepare', 'oracle_cleanup', 'all 66 calls and 833 full target checks are required', 'physical_verification_calls', 'full_target_checks', 'ADDP_ONLINE_TWI_ORACLE_ANCHOR_SHA256', 'query language rewrote stored failure', 'fixed_area_over_width_verified', 'no_slope_threshold_verified',"maximum=52 if name=='negative'",'len(self.stages)>=113'), 'business/scripts/online-raster-twi-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_inputs', 'context.prec=200', 'for odd in range(599,0,-2)', 'denominator=Decimal(odd)-x*x/denominator', '(Decimal(a)/d/tangents[b]).ln()', 'measurement_width', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'int64.cog.tif', 'uint64.cog.tif', 'disjoint.cog.tif', 'zero-slope.cog.tif', 'archive_cogs', 'twi-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'joint_coverage_verified', 'dimensionless_unit_verified', 'fixed_area_over_width_verified', 'no_slope_threshold_verified', 'legal_signed_zero_verified'), 'engines/geopython-workflow/test_online_twi_fixture.py': ('test_twi_persistence_real_gdal_fourteen_chains_exact_pixels_mask_and_original_cogs', 'test_twi_persistence_fifty_two_accurate_bilingual_failures_no_publication', 'test_twi_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'test_twi_independent_oracle_rejects_wrong_semantics', 'width_multiplied', 'count_as_area', 'base10', 'tiny_threshold', 'test_twi_original_cog_archive_cannot_change_or_silently_repair', 'test_twi_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_twi_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_twi_oracle_cache_poison_or_cross_scope_fails', 'test_twi_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('@$(MAKE) test-raster-twi-online-runner', 'test_online_twi_fixture.py', 'scripts/test/raster-twi-persistence-online_test.py', 'scripts/test/online-raster-twi-fixture_test.py', 'scripts/test/online-hosted-raster-twi-gate_test.py', 'test_twi_requires_manual_nfs_full_oracle_archive_and_regressions'), 'scripts/test/online-raster-twi-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-twi-persistence-online_test.py': ('test_complete_14_success_52_bilingual_failures_833_full_checks_and_archive', 'test_role_bound_lineage_rejects_swaps_missing_extra_duplicates_and_operations', 'test_signed_counts_empty_results_flags_and_original_cog_receipts_are_mandatory', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
+    for relative,fragments in required.items():
+        path=repository/relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('TWI persistence contract is incomplete: '+relative)
+    for relative,key,size in [('business/scripts/online-raster-twi-fixture.py','CASES',14),('scripts/test/raster-twi-persistence-online.py','FAILURES',26)]:
+        tree=ast.parse((repository/relative).read_text());values=[n.value for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id==key for t in n.targets)]
+        if len(values)!=1 or len(ast.literal_eval(values[0]))!=size:raise RegistrationError('TWI fixed 14-success/52-bilingual-failure matrix changed')
+
+
+
+    expected_cases={'degree.cog.tif': ('area.tif', 'slope-degree.tif', 'degree', 'direct'), 'percent.cog.tif': ('area.tif', 'slope-percent.tif', 'percent', 'direct'), 'foot.cog.tif': ('area-foot.tif', 'slope-foot.tif', 'degree', 'direct'), 'us-foot.cog.tif': ('area-us.tif', 'slope-us.tif', 'percent', 'direct'), 'tiny.cog.tif': ('area.tif', 'slope-tiny.tif', 'degree', 'direct'), 'classes.cog.tif': ('area.tif', 'slope-classes.tif', 'percent', 'reclassify'), 'dem-degree.cog.tif': ('dem.tif', None, 'degree', 'dem'), 'dem-percent.cog.tif': ('dem.tif', None, 'percent', 'dem'), 'filled.cog.tif': ('bowl.tif', None, 'degree', 'fill'), 'int64.cog.tif': ('area-int64.tif', 'slope-degree.tif', 'degree', 'direct'), 'uint64.cog.tif': ('area-uint64.tif', 'slope-degree.tif', 'degree', 'direct'), 'invalid.cog.tif': ('area-invalid.tif', 'slope-degree.tif', 'degree', 'direct'), 'disjoint.cog.tif': ('area-disjoint.tif', 'slope-disjoint.tif', 'degree', 'direct'), 'zero-slope.cog.tif': ('area.tif', 'slope-zero.tif', 'degree', 'direct')}
+    fixture_tree=ast.parse((repository/'business/scripts/online-raster-twi-fixture.py').read_text())
+    actual_cases=next(ast.literal_eval(n.value)for n in fixture_tree.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id=='CASES'for t in n.targets))
+    if actual_cases!=expected_cases:raise RegistrationError('TWI exact source/unit/stage matrix changed')
+    expected_targets={'degree.cog.tif','percent.cog.tif','foot.cog.tif','us-foot.cog.tif','tiny.cog.tif','classes.cog.tif','dem-degree.cog.tif','dem-percent.cog.tif','filled.cog.tif','int64.cog.tif','uint64.cog.tif','invalid.cog.tif','disjoint.cog.tif','zero-slope.cog.tif'}
+    expected_failures={'area_band','slope_band','area_unit_missing','area_unit_wrong','slope_unit','slope_unit_conflict','zero_area','negative_area','negative_slope','angle90','size','origin','crs','rectangular','rotated','south_up','geographic','no_crs','no_grid','area_alpha','slope_alpha','complex','area_scale','area_offset','slope_scale','slope_offset'}
+    for relative,key,expected in [('business/scripts/online-raster-twi-fixture.py','CASES',expected_targets),('scripts/test/raster-twi-persistence-online.py','FAILURES',expected_failures)]:
+        tree=ast.parse((repository/relative).read_text());values=[n.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id==key for t in n.targets)]
+        if len(values)!=1 or set(ast.literal_eval(values[0]))!=expected:raise RegistrationError('TWI exact first-phase matrix identity changed')
 
 
 def validate_raster_plan_curvature(repository: Path, registered: set[str]) -> None:
@@ -4565,6 +4601,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_tpi(repository, registered)
     validate_raster_tri(repository, registered)
     validate_raster_roughness(repository, registered)
+    validate_raster_twi(repository, registered)
     validate_raster_lineage_observer(repository, registered)
     validate_raster_flow_length_upstream_d8_profile(repository, registered)
     validate_raster_stream_order_d8_profile(repository, registered)

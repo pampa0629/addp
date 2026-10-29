@@ -618,7 +618,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
     def test_approved_raster_suites_require_bounded_internal_lineage_observer(self):
         source=SCRIPT.parents[2]
         paths=['scripts/utils/online_raster_lineage.py','scripts/test/online-raster-lineage_test.py','Makefile',
-               'scripts/test/online-hosted-raster-cut-fill-gate.sh','scripts/test/online-hosted-raster-tpi-gate.sh','scripts/test/online-hosted-raster-tri-gate.sh','scripts/test/online-hosted-raster-roughness-gate.sh','scripts/test/online-hosted-raster-surface-area-gate.sh']
+               'scripts/test/online-hosted-raster-cut-fill-gate.sh','scripts/test/online-hosted-raster-tpi-gate.sh','scripts/test/online-hosted-raster-tri-gate.sh','scripts/test/online-hosted-raster-roughness-gate.sh','scripts/test/online-hosted-raster-surface-area-gate.sh','scripts/test/online-hosted-raster-twi-gate.sh']
         for relative in paths:
             target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
         CHECK.validate_raster_lineage_observer(self.repository,{'raster-tpi-persistence'})
@@ -629,6 +629,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                    (paths[5],'run_logged python3 scripts/utils/online_raster_lineage.py prepare'),
                    (paths[6],'run_logged python3 scripts/utils/online_raster_lineage.py prepare'),
                    (paths[7],'run_logged python3 scripts/utils/online_raster_lineage.py prepare'),
+                   (paths[8],'run_logged python3 scripts/utils/online_raster_lineage.py prepare'),
                    ('Makefile','scripts/test/online-raster-lineage_test.py')]
         for relative,fragment in mutations:
             target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
@@ -686,6 +687,29 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target=self.repository/relative;original=target.read_text();self.assertIn(original_fragment,original);target.write_text(original.replace(original_fragment,'',1))
             with self.subTest(key=key),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_roughness(self.repository,{'raster-roughness-persistence','raster-surface-area-persistence'})
             target.write_text(original)
+
+
+    def test_twi_requires_manual_nfs_full_oracle_archive_and_regressions(self):
+        source=SCRIPT.parents[2]
+        required={'scripts/test/online-hosted-raster-twi-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-twi-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare'), 'scripts/test/raster-twi-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'raster.validate_target_item', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_twi', 'input.area', 'input.slope', 'input.source', 'output.save', 'source_bindings', 'archived_cogs', 'incomplete fixed TWI matrix', 'oracle_prepare', 'oracle_cleanup', 'all 66 calls and 833 full target checks are required', 'physical_verification_calls', 'full_target_checks', 'ADDP_ONLINE_TWI_ORACLE_ANCHOR_SHA256', 'query language rewrote stored failure', 'fixed_area_over_width_verified', 'no_slope_threshold_verified',"maximum=52 if name=='negative'",'len(self.stages)>=113'), 'business/scripts/online-raster-twi-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_inputs', 'context.prec=200', 'for odd in range(599,0,-2)', 'denominator=Decimal(odd)-x*x/denominator', '(Decimal(a)/d/tangents[b]).ln()', 'measurement_width', 'np.array_equal(actual,expected,equal_nan=True)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'int64.cog.tif', 'uint64.cog.tif', 'disjoint.cog.tif', 'zero-slope.cog.tif', 'archive_cogs', 'twi-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'joint_coverage_verified', 'dimensionless_unit_verified', 'fixed_area_over_width_verified', 'no_slope_threshold_verified', 'legal_signed_zero_verified'), 'engines/geopython-workflow/test_online_twi_fixture.py': ('test_twi_persistence_real_gdal_fourteen_chains_exact_pixels_mask_and_original_cogs', 'test_twi_persistence_fifty_two_accurate_bilingual_failures_no_publication', 'test_twi_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'test_twi_independent_oracle_rejects_wrong_semantics', 'width_multiplied', 'count_as_area', 'base10', 'tiny_threshold', 'test_twi_original_cog_archive_cannot_change_or_silently_repair', 'test_twi_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_twi_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_twi_oracle_cache_poison_or_cross_scope_fails', 'test_twi_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('@$(MAKE) test-raster-twi-online-runner', 'test_online_twi_fixture.py', 'scripts/test/raster-twi-persistence-online_test.py', 'scripts/test/online-raster-twi-fixture_test.py', 'scripts/test/online-hosted-raster-twi-gate_test.py', 'test_twi_requires_manual_nfs_full_oracle_archive_and_regressions'), 'scripts/test/online-raster-twi-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-twi-persistence-online_test.py': ('test_complete_14_success_52_bilingual_failures_833_full_checks_and_archive', 'test_role_bound_lineage_rejects_swaps_missing_extra_duplicates_and_operations', 'test_signed_counts_empty_results_flags_and_original_cog_receipts_are_mandatory', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound')}
+        for relative in ('scripts/test/online-gate.py','.github/workflows/online-t4-gates.yml',*required):
+            target=self.repository/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source/relative,target)
+        CHECK.validate_raster_twi(self.repository,{'raster-twi-persistence'})
+        for relative,fragments in required.items():
+            target=self.repository/relative;original=target.read_text()
+            for fragment in fragments:
+                self.assertIn(fragment,original);target.write_text(original.replace(fragment,'omitted'))
+                with self.subTest(relative=relative,fragment=fragment),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_twi(self.repository,{'raster-twi-persistence'})
+                target.write_text(original)
+        for relative,fragment in [('business/scripts/online-raster-twi-fixture.py',"'degree.cog.tif':"),('scripts/test/raster-twi-persistence-online.py',"'slope_offset'")]:
+            target=self.repository/relative;original=target.read_text();self.assertIn(fragment,original);target.write_text(original.replace(fragment,"'removed.cog.tif':"if fragment.endswith(':')else"'removed'",1))
+            with self.subTest(matrix=relative),self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_twi(self.repository,{'raster-twi-persistence'})
+            target.write_text(original)
+        target=self.repository/'business/scripts/online-raster-twi-fixture.py';original=target.read_text()
+        old="'degree.cog.tif':('area.tif','slope-degree.tif','degree','direct')"
+        self.assertIn(old,original);target.write_text(original.replace(old,old.replace("'degree','direct'","'percent','direct'"),1))
+        with self.assertRaises(CHECK.RegistrationError):CHECK.validate_raster_twi(self.repository,{'raster-twi-persistence'})
+        target.write_text(original)
 
 
     def test_plan_curvature_requires_manual_nfs_full_pixels_and_regressions(self):
