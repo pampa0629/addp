@@ -71,6 +71,29 @@ test('manager keeps direct ResourceTree ownership only in the Data Explorer brow
   assert.doesNotMatch(explorerTree, /ResourceTreePicker/)
 })
 
+test('System permission editing composes the shared tree without becoming another resource picker', () => {
+  const editor = source('system/frontend/src/components/engines/EngineDirectPermissions.vue')
+  const treeTag = editor.match(/<ResourceTree\s[\s\S]*?>/)?.[0]
+
+  // The checkbox edits effective permission state, not a locator selection.
+  assert.match(editor, /import \{ ResourceTree, filterTree \} from '@common-ui'/)
+  assert.equal((editor.match(/<ResourceTree(?:\s|>)/g) || []).length, 1)
+  assert.match(editor, /<template #node="\{ data \}">/)
+  assert.match(editor, /:model-value="checked\(data\)"/)
+  assert.match(editor, /:indeterminate="mixed\(data\)"/)
+  assert.match(editor, /permissionNodeItems\(originalNodes\.value\.get\(node\.id\)/)
+  assert.match(editor, /filterTree\(tree\.value,/)
+  assert.match(treeTag, /:tree-data="visibleTree"/)
+  assert.match(treeTag, /:filter-text="query"/)
+  assert.match(treeTag, /:filter-method="matchesQuery"/)
+
+  // Rendering, search input, expansion and generic resource selection stay shared.
+  assert.doesNotMatch(editor, /<el-tree\b|ResourceTreePicker|ResourceTreeSelect|defineEmits\(/)
+  assert.doesNotMatch(editor, /<el-input\b[^>]*v-model="query"/)
+  assert.doesNotMatch(editor, /expandedKeys|@node-(?:expand|collapse|dblclick)|:lazy=|:load=/)
+  assert.doesNotMatch(editor, /dataExplorerAPI|getResourceTree|createEngineCatalogTreeAdapter/)
+})
+
 test('direct ResourceTree composition has an explicit repository-wide owner list', () => {
   const frontendSourceRoots = readdirSync(repositoryRoot, { withFileTypes: true })
     .filter(entry => entry.isDirectory())
@@ -87,7 +110,8 @@ test('direct ResourceTree composition has an explicit repository-wide owner list
   assert.deepEqual(directOwners, [
     'common-frontend/basic/src/components/ResourceTreePicker.vue',
     'manager/frontend/src/components/explorer/ExplorerTree.vue',
-    'orchestrator/frontend/src/components/TaskPanel.vue'
+    'orchestrator/frontend/src/components/TaskPanel.vue',
+    'system/frontend/src/components/engines/EngineDirectPermissions.vue'
   ])
 })
 
