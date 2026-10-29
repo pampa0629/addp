@@ -156,11 +156,13 @@ System 的 Department / Project Group 管理契约以 `system/docs/IAM数据模�
 
 普通只读允许当前有效业务负责人显式确认自用或本人当前项目组受益；每次显式选择“指定到期时间”或“长期有效（直至撤销）”。前者必须填写未来绝对到期时间，无全平台统一天数上限；后者无到期日期。遗漏模式不默认永久，矛盾参数拒绝。保存与重试统一截断为 UTC 微秒精度，不向后延长期限；长期有效仍受当前身份、组织成员关系、功能权限、撤销、Explicit Deny 及安全条件约束。不放宽临时接入、管理委派、敏感原值复核、写入或 DDL。业务确认和 System 正式受理、Grant 生效分别记录，不能以决定存在宣称已经授权。
 
-业务决定生产入口的首条范围是 Meta 已扫描数据库表，只读取 Meta 当前 item／祖先链和 System 当前引擎能力描述，不探测源库、不读取数据值。Meta Item ID 仅用于定位读取；必须核对当前指纹、Engine、完整父节点链及声明的 catalog model，构造保留节点原名的完整 EngineCatalogPath，不能拆 `full_name` 或仅凭已观察快照猜测目标。不支持的目录模型明确拒绝，不回退为整个引擎授权；后续其他类型按其真实路径契约扩展。
+业务决定生产入口当前限 Meta 已扫描数据库 table。目标事实唯一沿[授权资源描述契约](addp元数据扫描机制规范.md#授权资源描述契约)：Catalog 使用自身 `addp-catalog` Tenant Service 凭据，经 `common/client.MetaClient.ReadAuthorizationFacts` 按稳定指纹读取当前最小授权事实。必须为 complete，身份与边界须通过严格校验；保留 System 当前引擎状态及 catalog model 核验，但完整 EngineCatalogPath 来自 Meta 事实并保留节点原名。不得从祖先链、Meta 行号、完整详情、`full_name` 或已观察快照另造授权边界；不探测源库、不读取数据值。不支持的目录模型明确拒绝，不回退为整个引擎授权；后续类型须按各自真实路径契约扩展。
 
-`POST /entries/:id/sharing_decisions` 使用 `catalog.entry.read` 和独立 `catalog.sharing_decision.create`，仅接受已验证 Tenant User。请求包含调用方生成的 `decision_id` UUID（同参恢复身份）、条目 `version`、接收主体类型 `user | project_group`、字符串 ID、必填 `expiry_mode=at_time|until_revoked` 和用途原因。`at_time` 必须提供未来绝对 `expires_at`；`until_revoked` 的 `expires_at` 只能省略或为 null，响应统一为 null。固定动作 `read`，不接受自报确认人、源路径、权限或确认时间。当前业务负责人身份与独立功能权限取交集；当前源必须 active、条目不得合并或弃用，不要求先达到 `curated`。
+`POST /entries/:id/sharing_decisions` 使用 `catalog.entry.read` 和独立 `catalog.sharing_decision.create`，仅接受已验证 Tenant User。请求包含调用方生成的 `decision_id` UUID（同参恢复身份）、条目 `version`、接收主体类型 `user | project_group`、字符串 ID、必填 `expiry_mode=at_time|until_revoked`、用途原因及 `expected_boundary_hash`。`at_time` 必须提供未来绝对 `expires_at`；`until_revoked` 的 `expires_at` 只能省略或为 null，响应统一为 null。固定动作 `read`，不接受自报确认人、源路径、权限或确认时间。当前业务负责人身份与独立功能权限取交集；当前源必须 active、条目不得合并或弃用，不要求先达到 `curated`。
 
-新决定在 Catalog 自有事务按条目→当前来源→责任顺序核对版本与来源依据，写入不可变决定及审计并递增条目 version；依赖模块读取在本地事务前完成，不持本地锁进行网络调用。决定绑定完整源路径、当前来源绑定及版本、负责人关系 ID、确认人的 Principal／Tenant Membership／授权版本、接收主体、用途及期限；不保存 Token、Role 或可编辑责任副本。同编号、同确认人、同业务参数重试返回原决定，不再递增版本或审计；换参冲突。该记录不能替代后续正式受理时的当前责任与接收主体核验。
+确认前通过 `GET /entries/:id/sharing_boundary` 只读核验当前业务责任及 Meta 边界；观察成功不冻结权限或边界。创建新决定时 POST 独立复核当前事实，并将 `expected_boundary_hash` 与当前边界摘要比较，不接受自报边界替代服务端事实。同编号同参恢复只比对并返回原不可变记录，不重新批准、续期或以当前边界覆盖原绑定。
+
+新决定在 Catalog 自有事务按条目→当前来源→责任顺序核对版本与来源依据，写入不可变决定及审计并递增条目 version；依赖模块读取在本地事务前完成，不持本地锁进行网络调用。决定绑定数据项指纹与批准边界摘要、完整源路径、当前来源绑定及版本、负责人关系 ID、确认人的 Principal／Tenant Membership／授权版本、接收主体、用途及期限；不保存 Token、Role 或可编辑责任副本。同编号、同确认人、同业务参数重试返回原决定，不再递增版本或审计；换参冲突。该记录不能替代后续正式受理时的当前责任与接收主体核验。
 
 `GET /entries/:id/sharing_decisions/:decision_id` 使用相同功能权限，返回当前可见条目下的不可变原记录：原确认人可读取本人历史，当前有效业务负责人可复核本条目的全部历史。不进行再次确认、不延期、不返回 System Grant 或受理状态；办理及签发历史通过决定下的专用只读结果列表查询。原确认人的历史读取不要求仍为当前业务负责人；未找到、跨租户、超出复核范围或不可见统一 404。生产入口不创建待核清事实、不冻结责任；待核清只在后续真实办理准备时建立。已提交原请求的 System 核清／关闭、可信正式准备、首次受理和 Catalog 自动签发续办已接通；执行侧读取仍须另行贯通后才能宣称数据访问闭环。
 
