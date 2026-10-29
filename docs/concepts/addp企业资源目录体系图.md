@@ -139,11 +139,11 @@ stateDiagram-v2
 
 上述重绑维护企业目录身份与关联历史，不转移源数据授权。Catalog 编辑业务名称不修改来源表名，不提供来源表改名功能。源数据授权按 ADDP 中登记的逻辑资源处理：用户未在 ADDP 改变绑定或规则时，外部同名重建不自动改变原授权；不同路径或不同 Engine 的规则不自动跟随重绑。接入本身不授权修改源库，也不要求安装源端身份记录或触发器。具体访问仍须通过当前功能权限、有效资源规则及安全条件。
 
-治理人员把 `curated` 或 `certified` 条目推进为 `deprecated` 时，可以同时指定一个推荐继任 CatalogEntry。推荐继任项必须是同 Tenant、来源有效且当前为 `curated` 或 `certified` 的 active 条目。旧条目仍可独立读取并保留历史，不自动跳转；这与 `merged` 表达的“同一企业身份归并”严格区分。
+推荐继任表达弃用后的替代建议，同 Tenant 的旧条目与推荐项仍是两个企业身份；旧条目保留独立读取和历史，不自动跳转，不能按 `merged` 处理。目标资格、权限与维护规则见[推荐继任关系](../spec/addp企业资源目录实现规范.md#35-推荐继任关系)。
 
-认证针对 CatalogEntry 当前聚合版本，而不是一份可脱离条目存在的认证副本。`certified` 状态下业务名称、说明、条目级语义关联、责任和可见性冻结；字段 StandardMapping 作为独立版本化关系事实，也必须遵守已认证条目的写入门禁。需要修改时必须先由具有认证权限的治理人员填写原因并撤销认证，使同一 CatalogEntry 回到 `curated`，再完成编目编辑、映射审核和重新认证。该闭环只推进既有身份的版本序列并写入独立领域审计，不新增认证副本或第二个 CatalogEntry。
+认证确认同一 CatalogEntry 的当前聚合版本及已审核 StandardMapping；认证期间编目事实和映射写入冻结，修订必须经“撤销认证 → 编辑编目 → 重新认证”，不新增认证副本或企业身份。独立认证权限、原因、版本推进和领域审计见[治理状态转换](../spec/addp企业资源目录实现规范.md#41-治理状态转换)，映射冻结规则见[Standard 语义关联](../spec/addp企业资源目录实现规范.md#31-standard-语义关联)。
 
-已弃用条目可以由当前有权读取和维护条目的治理人员仅移交责任，保持弃用及其他编目事实冻结；责任部门变化会影响部门可发现范围，但不授予数据读取或共享批准权限。撤销弃用是另一项需要弃用权限及原因的操作，只回到 `curated`，清除当前推荐继任项并保留审计历史，不恢复认证、源数据访问或资产发布。两个操作都推进同一聚合版本，不能互相替代。
+已弃用条目仍可在当前读取与编目维护权限内仅移交责任，保持弃用及其他事实冻结；责任部门变化影响目录发现范围，不授予数据读取或共享批准权。撤销弃用另需弃用权限与原因，只回到 `curated`，清除当前推荐继任并保留审计，不恢复认证、源数据访问或资产发布。两项操作各自推进同一聚合版本，写入边界见[治理状态转换](../spec/addp企业资源目录实现规范.md#41-治理状态转换)。
 
 ## 五、组织、协作和 Workspace
 
@@ -156,7 +156,7 @@ Department 表达长期组织责任，Project Group 表达阶段性协作，User
 - “我的目录”由当前 User 的责任、任务、收藏、关注和最近访问动态形成；
 - 当前跨模块评估结论是不新增统一 Workspace 实体，不预建模块或 `workspace_id`。
 
-第一阶段实际落地时，“我的目录”由责任、收藏和关注三种 Catalog 关系查询组成；治理任务沿用责任治理队列，最近访问沿用 Console 最近访问，Catalog 不复制这两类 owner 事实。收藏和关注是当前 User 的个人标记，不改变 CatalogEntry；Project Group 目录集合是独立协作聚合，集合成员关系也不改变 CatalogEntry。集合访问必须同时满足当前 Tenant 功能 Permission、有效项目组成员关系和条目自身目录可见性；不使用项目组范围的角色分配，成员关系也不授予功能或源数据读取权限。Project Group 名称是 System 的可变组织事实，Catalog 只按 AuthContext 中已授权的 membership ID 动态精确解析；名称既不进入 Token，也不复制到 Catalog。
+“我的目录”当前由责任、收藏和关注动态形成；治理任务沿用责任治理队列，最近访问归 Console，Catalog 不复制 Console 的最近访问事实。个人标记和 Project Group 集合均不改变 CatalogEntry。集合访问取当前 Tenant 功能 Permission、有效项目组成员关系和条目可见性的交集，不使用组织范围角色分配，也不从成员关系取得功能或源数据读取权。个人关系见[个人目录视图](../spec/addp企业资源目录实现规范.md#33-个人目录视图收藏与关注)，集合事实见[Project Group 目录集合](../spec/addp企业资源目录实现规范.md#34-project-group-目录集合)；组织名称按[API 契约](../spec/addp企业资源目录实现规范.md#六catalog-api-契约)动态读取，不进入 Token 或 Catalog 副本。
 
 只有当 Catalog、Develop、Model、Quality 等多个 owner 模块在同一端到端用例中确实需要共享同一稳定身份、成员边界、创建/关闭生命周期、工具或运行环境和跨模块产物集合，且 System Project Group 加模块自有聚合无法在不复制事实的前提下表达时，才重新评估独立 Workspace 能力。引擎插件中的 `SpatialWorkspace` 是 Engine Instance 技术能力事实，与企业协作 Workspace 无关。
 
@@ -179,9 +179,9 @@ Catalog 提供三个权限感知视图：
 2. 资源盘点：只对同时具有 `catalog.entry.read` 和 `catalog.inventory.read` 的治理、技术人员开放，查看允许发现的 `discovered` 及以上条目；自动建档的 DataItem 全量可查，但只在该视图中默认进入结果集。
 3. 资产门户：消费者通过 Asset / Portal 的 AssetCategory 多级资产目录查看已发布资产，不直接浏览 Catalog 全量盘点。
 
-Catalog 列表中的 Domain、Department 和 Engine Instance 都是稳定引用：稳定 ID 留在 API、URL 和聚合内部，用户通过可搜索的名称选择器交互，列表不把裸 ID 当作业务文案。“当前可见 CatalogEntry 中出现了哪些引用”由 Catalog 计算，引用名称、编码、类型和状态由 Standard / System 动态解析。Catalog 不复制 owner 完整列表，owner 短时不可达也不能阻塞 Catalog 列表、启动或 Ready。
+目录引用使用稳定 ID，面向用户显示 owner 动态解析的名称，不把 ID 当作业务文案。Catalog 只计算当前可见条目所需的引用范围；名称、编码、类型与状态仍归 Standard / System，不复制 owner 全量事实。名称选择器和列表展示规则见[API 契约](../spec/addp企业资源目录实现规范.md#六catalog-api-契约)；owner 短时不可达不阻塞 Catalog 列表、启动或 Ready。
 
-Catalog 编目编辑器同样不要求用户识别稳定 ID。Domain、Glossary、Element、Department 和 User 通过 Catalog 的统一远程候选入口选择，Catalog 再以 `addp-catalog` 运行身份向事实 owner 查询当前可引用候选；候选按搜索分页返回且不在 Catalog 落库。推荐继任项和治理任务条目筛选直接复用 CatalogEntry 名称搜索。动态查询失败必须明确提示当前候选不可用，不能退回裸 ID 输入或 owner 全量副本。
+编目候选由 Catalog 唯一远程入口使用 `addp-catalog` 身份向事实 owner 搜索分页，候选不落库；推荐继任与治理任务筛选复用 CatalogEntry 搜索。失败必须明确显示不可用，不回退裸 ID 输入或 owner 全量副本。可选对象、Permission 和分页边界统一见[候选与展示契约](../spec/addp企业资源目录实现规范.md#六catalog-api-契约)，该机器身份不替代专业详情的当前 User 判权。
 
 资源盘点仍使用 Catalog 的分面与分页列表，不在 Catalog 重建 Engine—Node—DataItem 技术资源树；技术路径树继续归 Meta / Manager。
 
@@ -190,6 +190,10 @@ Catalog 编目编辑器同样不要求用户识别稳定 ID。Domain、Glossary�
 覆盖率下钻得到的目录治理缺口只是当前事实的查询结果，不自动形成待办。当前责任治理队列只处理既有关联的部门或人员失效所派生的责任移交任务，不是全部待治理资源的清单。
 
 目录详情中的影响分析采用联邦组合：Meta 提供血缘，Model / Standard 提供专业关系，Catalog 提供推荐继任和来源绑定解析。前端始终使用当前 User Token 查询事实 owner；Catalog 只把 owner 节点的稳定来源身份解析到当前可见 CatalogEntry，便于继续目录导航。三类关系保留各自 owner、方向、类型和证据，不合并为无来源的通用边，也不在 Catalog 复制专业关系。
+
+### 业务域总览与标准资源
+
+业务术语、数据元、码值集、标准文档和指标均按 Standard 稳定身份进入企业资源盘点；各修订不另建条目。Standard 唯一维护专业定义，Catalog 保留目录责任和治理。资源浏览仅提供业务域上下文及同一权威目录列表；独立“业务域总览”复用目录计数与下钻，并按事实 owner 分组展示明确的一跳标准引用，保留本域目标并标明归属，使展示与 owner 分页一致。Quality 区仅展示本域负责的规则、方案、待处理问题三项权威数量和专业入口，不列具体对象；其规则、方案、问题及评分不成为 Catalog 事实。展示与权限口径见[业务域总览与资源浏览](../spec/addp企业资源目录实现规范.md#44-业务域总览与资源浏览)，来源身份与修订见[五类标准接入](../spec/addp企业资源目录实现规范.md#55-standard-五类专业资源变化与动态引用)。
 
 ## 七、端到端主线
 
@@ -211,12 +215,10 @@ AssetCategory 的父子关系不是独立关联实体，而是目录节点聚合
 
 ## 八、相关文档
 
+本图说明能力与职责，不代表当前版本已验收。最低覆盖见[最小验收要求](../spec/addp企业资源目录实现规范.md#十二最小验收)，方法和分版本证据见[Catalog 验证导航](../../catalog/CLAUDE.md#验证导航)；未运行、失败和未覆盖项分别认定。
+
 - [ADDP 术语表](addp术语表.md)
 - [ADDP 核心概念关系图](addp核心概念关系图.md)
 - [ADDP 模块架构图](addp模块架构图.md)
 - [企业资源目录实现规范](../spec/addp企业资源目录实现规范.md)
 - [企业资源目录能力专题：剩余工作](../next/ADDP企业资源目录能力专题.md)
-
-## 业务域总览与标准资源
-
-业务术语、数据元、码值集、标准文档和指标均按 Standard 稳定身份进入企业资源盘点；各修订不另建条目。Standard 唯一维护专业定义，Catalog 保留目录责任和治理。资源浏览仅提供业务域上下文及同一权威目录列表；独立“业务域总览”复用目录计数与下钻，并按事实 owner 分组展示明确的一跳标准引用，保留本域目标并标明归属，使展示与 owner 分页一致。Quality 区仅展示本域负责的规则、方案、待处理问题三项权威数量和专业入口，不列具体对象；其规则、方案、问题及评分不成为 Catalog 事实。详见实现规范 4.4、5.5 节。

@@ -841,6 +841,8 @@ Asset 的正式组合模型固定为 `asset.asset_components`：`catalog_entry_i
 
 ## 十二、最小验收
 
+本节定义最低覆盖要求，不表示当前版本已验收。标准入口见[测试与验收规范](addp测试与验收规范.md#三标准入口)；方法、固定版本证据及失败／未覆盖范围沿[Catalog 验证导航](../../catalog/CLAUDE.md#验证导航)分别认定，局部页面或接口通过不替代完整链路。
+
 实现前必须登记 Catalog 到模块自动发现、Gateway、Console、开发脚本、Docker Compose、Swagger、授权 Manifest、根 Makefile 和 GitHub Actions。最小验收至少覆盖：
 
 - 相同变化重复消费只产生一个 CatalogEntry；
@@ -853,6 +855,6 @@ Asset 的正式组合模型固定为 `asset.asset_components`：`catalog_entry_i
 - 搜索索引可从 PostgreSQL 重建，索引不可用不改变权威事实；
 - Swagger 路由覆盖和授权覆盖报告通过；
 - 旧发现、旧索引和旧来源字段删除后不存在兼容路由、字段或 fallback query。
-- T4 `enterprise-catalog-publishing` 在真实 System、Gateway 和各 owner 中重复执行 Meta 扫描，验证 fingerprint / CatalogEntry 身份幂等、资源盘点与治理目录视图、治理覆盖率、精确来源身份解析、CatalogEntry 自动建档与编目、已弃用责任子资源更新及撤销弃用、AssetComponent 组合与发布、Portal 消费是唯一路线；同一专用 User 还必须通过真实浏览器验收 Console 覆盖率、目录详情和人类可读筛选器，最终通过正式 API 完成临时 Asset 和资产目录零残留清理，并重新读取核对永久 fixture 的完整编目聚合恢复。具体生命周期用例边界以测试与验收规范 5.2 节为准。
+- T4 `enterprise-catalog-publishing` 在真实 System、Gateway 和各 owner 中重复执行 Meta 扫描，验证 fingerprint / CatalogEntry 身份幂等、资源盘点与治理目录视图、治理覆盖率、精确来源身份解析、CatalogEntry 自动建档与编目、已弃用责任子资源更新及撤销弃用、AssetComponent 组合与发布、Portal 消费是唯一路线；同一专用 User 还必须通过真实浏览器验收 Console 覆盖率、目录详情和人类可读筛选器，最终通过正式 API 完成临时 Asset 和资产目录零残留清理，并重新读取核对永久 fixture 的完整编目聚合恢复。具体生命周期用例见[发布、生命周期与共享受理](testing/scenarios/授权与共享.md#发布生命周期与共享受理)。
 
 Asset 的删除生命周期固定为：`draft` 或 `offline` 可删除，`published` 必须先下架；不允许跳过下架直接删除已发布资产。
