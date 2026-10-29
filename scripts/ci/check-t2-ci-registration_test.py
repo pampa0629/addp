@@ -1287,5 +1287,84 @@ class SystemCleanupPostgresRunnerTest(unittest.TestCase):
                 self.assertEqual(commands.count(("make", "test-system-cleanup")), 1)
 
 
+class Neo4jStartupDiagnosticsTest(unittest.TestCase):
+    def run_fixture(self, mode: str) -> tuple[subprocess.CompletedProcess, list[list[str]], str]:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for directory in ("scripts/test", "common", "graph/backend", "bin"):
+                (root / directory).mkdir(parents=True, exist_ok=True)
+            source = SCRIPT.parents[1] / "test/common-neo4j-gate.sh"
+            runner = root / "scripts/test/common-neo4j-gate.sh"
+            runner.write_bytes(source.read_bytes())
+            docker = root / "bin/docker"
+            docker.write_text(f"#!{sys.executable}\n" + '''
+import json, os, sys
+from pathlib import Path
+args = sys.argv[1:]
+with open(os.environ['FIXTURE_TRACE'], 'a') as trace:
+    trace.write(json.dumps(args) + '\\n')
+mode = os.environ['FIXTURE_MODE']
+if args[0] == 'compose':
+    command = args[args.index('-f') + 2]
+    if command == 'up':
+        Path(os.environ['FIXTURE_SECRET']).write_text(os.environ['NEO4J_T2_PASSWORD'])
+        sys.exit(0 if mode == 'success' else 64)
+    if command == 'logs':
+        print('startup diagnostic password=' + os.environ['NEO4J_T2_PASSWORD'])
+        sys.exit(73 if mode == 'diagnostic-failure' else 0)
+    if command == 'ps':
+        print('owned-neo4j-container')
+    if command == 'port':
+        print('127.0.0.1:17687')
+elif args[0] == 'inspect':
+    print('{"status":"exited","exit_code":64,"oom_killed":false,"error":"fixture startup"}')
+''', encoding="utf-8")
+            docker.chmod(0o700)
+            go = root / "bin/go"
+            go.write_text(
+                '#!/usr/bin/env bash\n'
+                'echo "--- PASS: TestIntegrationNeo4jPreparedReadScope (0.01s)"\n'
+                'echo "--- PASS: TestIntegrationNeo4jGraphDomain (0.01s)"\n',
+                encoding="utf-8",
+            )
+            go.chmod(0o700)
+            trace = root / "trace"
+            secret = root / "generated-secret"
+            environment = dict(os.environ)
+            environment.update(PATH=f"{root / 'bin'}{os.pathsep}{environment['PATH']}",
+                               TMPDIR=str(root), FIXTURE_MODE=mode,
+                               FIXTURE_TRACE=str(trace), FIXTURE_SECRET=str(secret))
+            result = subprocess.run(["bash", str(runner)], env=environment, capture_output=True,
+                                    text=True, timeout=15)
+            return result, [json.loads(line) for line in trace.read_text().splitlines()], secret.read_text()
+
+    def test_startup_failure_preserves_bounded_redacted_evidence_before_cleanup(self) -> None:
+        result, calls, secret = self.run_fixture("startup")
+        self.assertEqual(result.returncode, 64, result.stdout + result.stderr)
+        output = result.stdout + result.stderr
+        self.assertIn("startup diagnostic password=[redacted]", output)
+        self.assertNotIn(secret, output)
+        self.assertIn('"exit_code":64', output)
+        commands = [c[c.index('-f') + 2] for c in calls if c[0] == "compose"]
+        self.assertLess(commands.index("logs"), commands.index("down"))
+        log_call = next(c for c in calls if c[0] == "compose" and "logs" in c)
+        self.assertEqual(log_call[-5:], ["logs", "--no-color", "--tail", "200", "neo4j"])
+        inspect = next(c for c in calls if c[0] == "inspect")
+        self.assertNotIn(".Config", " ".join(inspect))
+        self.assertNotIn("NEO4J_T2_PASS", output)
+
+    def test_diagnostic_failure_still_cleans_up_and_preserves_original_exit(self) -> None:
+        result, calls, secret = self.run_fixture("diagnostic-failure")
+        self.assertEqual(result.returncode, 64, result.stdout + result.stderr)
+        self.assertNotIn(secret, result.stdout + result.stderr)
+        self.assertTrue(any(c[0] == "compose" and "down" in c for c in calls))
+
+    def test_success_does_not_emit_startup_diagnostics(self) -> None:
+        result, calls, _ = self.run_fixture("success")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("NEO4J_T2_PASS", result.stdout)
+        self.assertFalse(any(c[0] == "inspect" or (c[0] == "compose" and "logs" in c) for c in calls))
+
+
 if __name__ == "__main__":
     unittest.main()

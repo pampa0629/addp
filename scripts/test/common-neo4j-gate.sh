@@ -23,7 +23,21 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-compose up -d --wait --wait-timeout 240
+if compose up -d --wait --wait-timeout 240; then
+    :
+else
+    startup_status=$?
+    # Inspect only this Compose service before cleanup removes the evidence.
+    # Emit no container environment; redact the generated fixture credential.
+    {
+        compose logs --no-color --tail 200 neo4j || true
+        container_id=$(compose ps -a -q neo4j) || container_id=""
+        if [ -n "$container_id" ]; then
+            docker inspect --format '{"status":{{json .State.Status}},"exit_code":{{.State.ExitCode}},"oom_killed":{{.State.OOMKilled}},"error":{{json .State.Error}}}' "$container_id" || true
+        fi
+    } 2>&1 | python3 -c 'import os,sys; value=sys.stdin.read(); secret=os.environ.get("NEO4J_T2_PASSWORD", ""); sys.stdout.write(value.replace(secret, "[redacted]") if secret else value)' >&2 || true
+    exit "$startup_status"
+fi
 export ADDP_NEO4J_INTEGRATION=1
 export NEO4J_T2_ENDPOINT="$(compose port neo4j 7687)"
 (cd "$ROOT_DIR/common" && GOWORK=off go test ./engine/plugins/neo4j -run '^TestIntegrationNeo4j' -count=1 -v) 2>&1 | tee "$WORK_DIR/tests.log"
