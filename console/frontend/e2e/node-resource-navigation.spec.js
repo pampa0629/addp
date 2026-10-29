@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { readFilesystemMountTable, readResourceHeatmap, readBlockCapacityTable } from './online/node-resource-receipts.js'
-import { identity, mount, node, resourceBackend, resourcePermissions } from '../../../monitor/frontend/e2e/node-resources.fixture'
+import { identity, mount, node, observations, resourceBackend, resourcePermissions } from '../../../monitor/frontend/e2e/node-resources.fixture'
 
 test('node resource navigation preserves the real Monitor iframe and one Console history', async ({ page }) => {
   await resourceBackend(page)
@@ -306,4 +306,142 @@ for (const entry of ['list', 'detail']) test(`capacity disabled, source/query fa
   expect(state.reads.every(row => !row.method || row.method === 'GET')).toBe(true)
   expect(page.url()).toBe(url)
   expect(await frame.evaluate(() => performance.timeOrigin)).toBe(origin)
+})
+
+for (const entry of ['list', 'detail']) test(`capacity automatic refresh pauses, cancels in-flight reads and resumes in the Console ${entry} iframe`, async ({ page }) => {
+  await page.clock.install()
+  let bytes = 2 ** 40
+  const capacityBody = body => {
+    body.collection.block_capacity = 'available'
+    body.series[0].dimensions = { device: 'vda', kind: 'device' }
+    body.series[0].points[0].value = bytes
+  }
+  const isCapacity = request => new URL(request.url()).pathname === '/api/v1/monitor/platform/resource_observations'
+    && new URL(request.url()).searchParams.get('metrics') === 'node.block.capacity_bytes'
+  const state = await resourceBackend(page, { observationResponse(body, query) {
+    if (query.get('metrics') === 'node.block.capacity_bytes') capacityBody(body)
+  } })
+  const requests = [], resources = [], pending = []
+  page.on('request', request => { if (isCapacity(request)) requests.push(request) })
+  page.on('response', response => {
+    if (isCapacity(response.request())) pending.push(response.json().then(value => {
+      const url = new URL(response.url())
+      resources.push({ path: url.pathname, query: Object.fromEntries(url.searchParams), value })
+    }))
+  })
+  let holdNext = false, releaseHeld, heldRequest, finishHeld
+  const held = new Promise(resolve => { releaseHeld = resolve })
+  const heldFinished = new Promise(resolve => { finishHeld = resolve })
+  await page.route('**/api/v1/monitor/platform/resource_observations?**', async route => {
+    if (!holdNext || !isCapacity(route.request())) return route.fallback()
+    holdNext = false; heldRequest = route.request()
+    const body = observations(node, ['node.block.capacity_bytes'], false, '', state.serverEnd)
+    capacityBody(body)
+    await held
+    try { await route.fulfill({ json: body }) } finally { finishHeld() }
+  })
+  try {
+    await page.goto(entry === 'list' ? '/monitor/node-resources?refresh=10' : `/monitor/node-resources/${node}?refresh=10`)
+    const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+    const toggle = monitor.getByTestId(entry === 'list' ? `resource-list-block-${node}` : 'resource-block-toggle')
+    const panel = monitor.getByTestId(entry === 'list' ? 'resource-detail-expansion' : 'block-capacity-section')
+    const table = panel.getByTestId('resource-block-table'), refresh = panel.getByTestId('resource-detail-refresh')
+    const pageRefresh = monitor.getByRole('button', { name: '刷新', exact: true })
+    await expect(toggle).toBeVisible()
+    await expect(pageRefresh).toBeEnabled()
+    const frame = page.frames().find(frame => frame.parentFrame()), origin = await frame.evaluate(() => performance.timeOrigin), url = page.url()
+    const visibility = async hidden => frame.evaluate(value => {
+      Object.defineProperty(document, 'hidden', { configurable: true, value })
+      document.dispatchEvent(new Event('visibilitychange'))
+    }, hidden)
+    const monitorReads = () => state.reads.filter(row => row.path.startsWith('/api/v1/monitor/platform/resource_')).length
+    const readCapacity = async (count, value) => {
+      await expect.poll(() => requests.length).toBe(count)
+      await expect(refresh).toBeEnabled()
+      await expect(table).toContainText('vda')
+      await Promise.all(pending)
+      const reading = await readBlockCapacityTable(table, resources, node, expect)
+      expect(reading.devices.map(row => row.bytes)).toEqual([value])
+      expect(resources.at(-1).value.end).toBe(state.serverEnd)
+      expect(await frame.evaluate(() => performance.timeOrigin)).toBe(origin)
+      return reading
+    }
+    expect(requests).toHaveLength(0)
+    await toggle.click()
+    const opened = await readCapacity(1, bytes)
+    bytes = 2 ** 39; state.serverEnd = '2026-10-07T00:00:10Z'
+    await page.clock.fastForward(10001)
+    const automatic = await readCapacity(2, bytes)
+    expect(automatic.resource_index).toBe(opened.resource_index + 1)
+    await expect(pageRefresh).toBeEnabled()
+
+    await visibility(true)
+    await expect(monitor.getByTestId('resource-refresh-status')).toHaveText('页面隐藏，自动刷新已暂停')
+    const hiddenReads = monitorReads()
+    await page.clock.fastForward(60001)
+    expect(requests).toHaveLength(2)
+    expect(monitorReads()).toBe(hiddenReads)
+    bytes = 2 ** 38; state.serverEnd = '2026-10-07T00:00:20Z'
+    await visibility(false)
+    const resumed = await readCapacity(3, bytes)
+    expect(resumed.resource_index).toBe(automatic.resource_index + 1)
+    await expect(monitor.getByTestId('resource-refresh-status')).toHaveText('自动刷新已开启')
+
+    // A slow automatic read must not overlap or survive a visibility pause.
+    bytes = 2 ** 43; state.serverEnd = '2026-10-07T00:00:30Z'; holdNext = true
+    await page.clock.fastForward(10001)
+    await expect.poll(() => Boolean(heldRequest)).toBe(true)
+    expect(requests).toHaveLength(4)
+    await expect(refresh).toBeDisabled()
+    await expect(table.locator('.el-table__body tr')).toHaveCount(0)
+    await page.clock.fastForward(60001)
+    expect(requests).toHaveLength(4)
+    const cancelled = page.waitForEvent('requestfailed', request => request === heldRequest)
+    await visibility(true)
+    const failed = await cancelled
+    expect(failed.failure()).not.toBeNull()
+    releaseHeld(); await heldFinished
+    const pausedReads = monitorReads()
+    await page.clock.fastForward(60001)
+    expect(requests).toHaveLength(4)
+    expect(monitorReads()).toBe(pausedReads)
+    await expect(table).not.toContainText('8.00 TiB')
+
+    bytes = 2 ** 37; state.serverEnd = '2026-10-07T00:00:40Z'
+    await visibility(false)
+    const recovered = await readCapacity(5, bytes)
+    expect(recovered.resource_index).toBe(resumed.resource_index + 1)
+    bytes = 2 ** 36; state.serverEnd = '2026-10-07T00:00:50Z'
+    await page.clock.fastForward(10001)
+    const nextAutomatic = await readCapacity(6, bytes)
+    expect(nextAutomatic.resource_index).toBe(recovered.resource_index + 1)
+    await expect(table).not.toContainText('8.00 TiB')
+    expect(page.url()).toBe(url)
+
+    // The shared URL preference owns off; a list route change closes its temporary expansion.
+    bytes = 2 ** 35; state.serverEnd = '2026-10-07T00:01:00Z'
+    await monitor.getByTestId('resource-refresh').click()
+    await monitor.getByRole('option', { name: '关闭自动刷新', exact: true }).click()
+    await expect(page).toHaveURL(current => current.searchParams.get('refresh') === 'off')
+    await expect(pageRefresh).toBeEnabled()
+    if (entry === 'list') { await expect(table).toHaveCount(0); await toggle.click() }
+    await readCapacity(7, bytes)
+    await expect(monitor.getByTestId('resource-refresh-status')).toHaveText('手工刷新')
+    await page.clock.fastForward(60001)
+    await visibility(true); await visibility(false)
+    await page.clock.fastForward(60001)
+    expect(requests).toHaveLength(7)
+    bytes = 2 ** 34; state.serverEnd = '2026-10-07T00:01:10Z'
+    await refresh.click()
+    await readCapacity(8, bytes)
+    await toggle.click()
+    await expect(table).toHaveCount(0)
+    await page.clock.fastForward(60001)
+    expect(requests).toHaveLength(8)
+    expect(requests.every(request => request.method() === 'GET'
+      && new URL(request.url()).searchParams.get('node_id') === node
+      && [...new URL(request.url()).searchParams.keys()].sort().join(',') === 'metrics,node_id')).toBe(true)
+    expect(new URL(page.url()).searchParams.get('refresh')).toBe('off')
+    expect(await frame.evaluate(() => performance.timeOrigin)).toBe(origin)
+  } finally { releaseHeld() }
 })

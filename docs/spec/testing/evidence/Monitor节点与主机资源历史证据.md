@@ -414,3 +414,16 @@ regression／complete-comparison 在当次私有部署显式开启原容量扩�
 验证记录：标准隔离浏览器入口 `npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js` 首轮9/9通过（1.1分钟），日志 `/tmp/addp-capacity-console-states-browser.log`；覆盖原7项及本次列表／详情两项。随后按最终文件运行根 `make test-console-frontend`，退出0：30文件219项单元测试、242项浏览器回归（7.0分钟）及Vite生产构建（1.93秒）全部通过，日志 `/tmp/addp-capacity-console-states-full.log`。源码仅改现有自动发现的Console浏览器文件；已有Console标准入口及CI路径覆盖，无新增依赖、Make入口或Workflow。未修改Monitor产品代码、共享读数函数或Online协议，不重跑未变的Go、来源T2及Online runner。
 
 本批只证明受控HTTP响应下的真实Console／Monitor iframe交互；没有关闭或破坏个人采集器，不读取个人数据、不重启服务，不运行真实Linux故障或正式身份Hosted。原生来源／Hosted与Linux CI结果仍等专门会话回传，未触发／重跑／轮询CI或Hosted，未设置定时任务。旧完整Monitor前端长回归失败保持原记录，不由本批Console结果代替。
+
+
+## 容量明细自动刷新与隐藏恢复的Console验收（2026-10-29）
+
+本批仅在既有Console浏览器文件增加列表展开／主机详情各一个状态序列，复用正式 `createAutoRefresh`、`createLatestRequestScope`、唯一容量组件与上一批DOM读数函数；没有修改共享内核、产品组件、API、权限或采集配置。既有10秒间隔由URL选择，Playwright受控时钟推进，iframe内派发受控visibilitychange；不缩短产品间隔或用手工调用刷新替代自动触发。此受控可见性不计真实Safari或操作系统后台标签页证据。
+
+各入口首次展开只读一次；自动计时后容量由1 TiB更新为512 GiB。隐藏后推进60秒，容量和其他Monitor资源读取均不增加；恢复可见不推进计时即重读256 GiB。后续自动请求在HTTP夹具处暂缓，保存当时8 TiB的独立旧响应；推进60秒仍无第二个容量请求，证明加载时不重叠。隐藏触发真实浏览器requestfailed，核对被取消对象就是该在途容量请求，再释放旧响应；隐藏期间继续推进60秒仍无新读取，8 TiB不能显示。恢复可见立即读取128 GiB，下一计时轮再更新64 GiB；新DOM与API索引核对沿唯一共享函数，不复用被取消的旧响应。
+
+通过正式刷新控件选择off，Console URL与同一iframe保持既有规则：列表路由变化关闭临时展开，重新展开仍只读一次；详情沿同一页面重新读取。关闭后推进两轮60秒并切换隐藏／可见，不产生自动请求；手工刷新仍更新16 GiB，收起后再推进60秒无容量读取。每入口总共8次当前主机固定容量GET，其中1次被隐藏取消；正常刷新、恢复及手工阶段逐次核对新IEC容量／源时间与同iframe，查询只含原node_id与固定指标，不增加写入、权限或采集范围。
+
+验证记录：`npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js` 退出0，11/11通过（59.5秒），日志 `/tmp/addp-capacity-console-auto-browser.log`；包含原9项和新增两个入口的自动刷新／取消／恢复／off场景。最终文件的根 `make test-console-frontend` 退出2、未通过：218项单元测试通过／1项失败，失败在本批未改的 `tests/devPorts.test.js:243` Vite临时目录清理断言，目录中仍列出 `50446.pid`、`50475.pid`、`addp-console-vite-test-50446`、`addp-system-vite-test-50475`；日志 `/tmp/addp-capacity-console-auto-full.log`。后续完整浏览器和该入口的构建阶段未运行，不计通过；未修改清理实现、放宽断言或盲目重跑，未确认此次清理时序根因。另行执行既有 `npm --prefix console/frontend run build` 退出0（1.57秒），日志 `/tmp/addp-capacity-console-auto-build.log`；专项与独立构建不替代完整Console门禁通过。现有Console浏览器自动发现、根Make入口及CI路径已覆盖，无新增依赖或Workflow；未改未变的Monitor产品／Go／来源T2／Online协议，不重复其既有验证。
+
+本批只证明受控HTTP和时钟下的真实Console／Monitor iframe交互，未操作个人采集器、真实来源或账号，不重启服务、不改变个人配置。CI／Hosted与真实Linux／正式身份验收继续等专门会话回传；未触发／重跑／轮询CI或Hosted、未设置定时任务。既有Monitor完整前端长回归失败保持原记录，不由Console结果代替。
