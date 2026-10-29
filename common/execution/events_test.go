@@ -21,11 +21,11 @@ func TestExpiredFailureEventFencesIdentityAndRollsBack(t *testing.T) {
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatal(err)
 	}
-	_, lease, err := execution.ClaimNext(t.Context(), db, execution.ClaimOptions{Module: "meta", TaskType: "scan", WorkerID: "owner", Now: now, LeaseDuration: time.Minute})
+	_, lease, err := execution.ClaimNext(t.Context(), db, execution.ClaimOptions{Module: "meta", TaskType: "scan", WorkerID: "owner", LeaseDuration: time.Minute})
 	if err != nil || lease == nil {
 		t.Fatalf("claim=%v err=%v", lease, err)
 	}
-	if err := execution.FailExpiredWithEvent(t.Context(), db, *lease, now, nil); !errors.Is(err, commonapi.ErrConflict) {
+	if err := execution.FailExpiredWithEvent(t.Context(), db, *lease, nil); !errors.Is(err, commonapi.ErrConflict) {
 		t.Fatalf("active recovery=%v", err)
 	}
 	if err := db.Model(&item).Update("lease_expires_at", now.Add(-time.Second)).Error; err != nil {
@@ -37,7 +37,7 @@ func TestExpiredFailureEventFencesIdentityAndRollsBack(t *testing.T) {
 	} {
 		wrong := *lease
 		mutate(&wrong)
-		if err := execution.FailExpiredWithEvent(t.Context(), db, wrong, now, nil); !errors.Is(err, commonapi.ErrConflict) {
+		if err := execution.FailExpiredWithEvent(t.Context(), db, wrong, nil); !errors.Is(err, commonapi.ErrConflict) {
 			t.Fatalf("wrong recovery identity=%v", err)
 		}
 	}
@@ -49,7 +49,7 @@ func TestExpiredFailureEventFencesIdentityAndRollsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Callback().Create().Remove("test:reject-recovery-event") })
-	if err := execution.FailExpiredWithEvent(t.Context(), db, *lease, now, nil); err == nil {
+	if err := execution.FailExpiredWithEvent(t.Context(), db, *lease, nil); err == nil {
 		t.Fatal("recovery ignored failed event storage")
 	}
 	var stored execution.TaskExecution
@@ -63,13 +63,13 @@ func TestExpiredFailureEventFencesIdentityAndRollsBack(t *testing.T) {
 	if err := db.Callback().Create().Remove("test:reject-recovery-event"); err != nil {
 		t.Fatal(err)
 	}
-	if err := execution.FailExpiredWithEvent(t.Context(), db, *lease, now, nil); err != nil {
+	if err := execution.FailExpiredWithEvent(t.Context(), db, *lease, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.First(&stored, item.ID).Error; err != nil || stored.Status != "failed" || stored.Progress != 50 {
 		t.Fatalf("failed state=%s progress=%d err=%v", stored.Status, stored.Progress, err)
 	}
-	if err := execution.FailExpiredWithEvent(t.Context(), db, *lease, now, nil); !errors.Is(err, commonapi.ErrConflict) {
+	if err := execution.FailExpiredWithEvent(t.Context(), db, *lease, nil); !errors.Is(err, commonapi.ErrConflict) {
 		t.Fatalf("duplicate recovery=%v", err)
 	}
 	if err := execution.AppendBoundedEvent(t.Context(), db, *lease, execution.EventInput{Kind: "failed"}); !errors.Is(err, commonapi.ErrConflict) {
@@ -93,7 +93,7 @@ func TestExpiredFailureEventRespectsSaturatedBudget(t *testing.T) {
 			if err := db.Create(&item).Error; err != nil {
 				t.Fatal(err)
 			}
-			_, lease, err := execution.ClaimNext(t.Context(), db, execution.ClaimOptions{Module: "meta", TaskType: "scan", WorkerID: "owner", Now: now, LeaseDuration: time.Minute})
+			_, lease, err := execution.ClaimNext(t.Context(), db, execution.ClaimOptions{Module: "meta", TaskType: "scan", WorkerID: "owner", LeaseDuration: time.Minute})
 			if err != nil || lease == nil {
 				t.Fatalf("claim=%v err=%v", lease, err)
 			}
@@ -110,7 +110,7 @@ func TestExpiredFailureEventRespectsSaturatedBudget(t *testing.T) {
 			if err := db.Model(&item).Update("lease_expires_at", now.Add(-time.Second)).Error; err != nil {
 				t.Fatal(err)
 			}
-			if err := execution.FailExpiredWithEvent(t.Context(), db, *lease, now, nil); err != nil {
+			if err := execution.FailExpiredWithEvent(t.Context(), db, *lease, nil); err != nil {
 				t.Fatal(err)
 			}
 			var count int64
@@ -130,12 +130,11 @@ func TestExpiredFailureEventRespectsSaturatedBudget(t *testing.T) {
 
 func TestEventsRequireCurrentLeaseAndNeverCarryPrivatePayload(t *testing.T) {
 	db := newLeaseTestDB(t)
-	now := time.Now().UTC()
 	item := execution.TaskExecution{TenantID: 7, ExecutionID: "event-lease", Module: execution.ModuleMeta, TaskType: execution.TaskTypeScan, Source: execution.ModuleMeta, Status: execution.ExecutionStatusPending, TriggerType: execution.TriggerTypeManual, ExecutionBoundary: execution.ExecutionBoundaryBounded}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatal(err)
 	}
-	_, lease, err := execution.ClaimNext(t.Context(), db, execution.ClaimOptions{Module: execution.ModuleMeta, TaskType: execution.TaskTypeScan, WorkerID: "owner", Now: now, LeaseDuration: time.Minute})
+	_, lease, err := execution.ClaimNext(t.Context(), db, execution.ClaimOptions{Module: execution.ModuleMeta, TaskType: execution.TaskTypeScan, WorkerID: "owner", LeaseDuration: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +174,7 @@ func TestEventsRequireCurrentLeaseAndNeverCarryPrivatePayload(t *testing.T) {
 	if err != nil || len(page.Items) != 1 || page.Items[0].TenantID != 7 || page.Items[0].Attempt != 1 {
 		t.Fatalf("page=%#v err=%v", page, err)
 	}
-	if err := execution.CompleteWithEvent(t.Context(), db, *lease, execution.ExecutionStatusSuccess, now, nil); err != nil {
+	if err := execution.CompleteWithEvent(t.Context(), db, *lease, execution.ExecutionStatusSuccess, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := execution.AppendBoundedEvent(t.Context(), db, *lease, input); !errors.Is(err, commonapi.ErrConflict) {
@@ -220,7 +219,7 @@ func TestEventBudgetAndRetentionKeepExecutionHistory(t *testing.T) {
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatal(err)
 	}
-	_, lease, err := execution.ClaimNext(t.Context(), db, execution.ClaimOptions{Module: "meta", TaskType: "scan", WorkerID: "owner", Now: now, LeaseDuration: time.Minute})
+	_, lease, err := execution.ClaimNext(t.Context(), db, execution.ClaimOptions{Module: "meta", TaskType: "scan", WorkerID: "owner", LeaseDuration: time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}

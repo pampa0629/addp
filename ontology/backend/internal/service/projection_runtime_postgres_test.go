@@ -120,6 +120,15 @@ func testProjectionRuntime(t *testing.T, db *gorm.DB, s *RevisionService, actor 
 		if p.Status != projection || job.Status != status || (active == nil) != (head.ActiveRevision == nil) || (active != nil && *active != *head.ActiveRevision) {
 			t.Fatalf("states projection=%s job=%s head=%#v", p.Status, job.Status, head)
 		}
+		if status == execution.ExecutionStatusSuccess || status == execution.ExecutionStatusFailed {
+			if job.StartedAt == nil || job.CompletedAt == nil || job.ExecutionTimeMs == nil ||
+				job.CompletedAt.Before(*job.StartedAt) || *job.ExecutionTimeMs != job.CompletedAt.Sub(*job.StartedAt).Milliseconds() {
+				t.Fatalf("terminal timing must come from the persisted attempt: started=%v completed=%v duration=%v", job.StartedAt, job.CompletedAt, job.ExecutionTimeMs)
+			}
+			if job.LeaseToken != nil || job.LeaseOwner != nil || job.LeaseExpiresAt != nil {
+				t.Fatal("terminal attempt retained its lease")
+			}
+		}
 	}
 	auth := testProjectionAuthorizer(testProjectionReceipt)
 	t.Run("activate_and_withdraw", func(t *testing.T) {

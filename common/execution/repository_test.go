@@ -152,7 +152,7 @@ func TestUpdateFieldsUsesLeaseFromContextForBoundedExecution(t *testing.T) {
 	}
 	_, lease, err := ClaimNext(context.Background(), db, ClaimOptions{
 		Module: ModuleManager, TaskType: TaskTypeVectorTileSetGeneration,
-		WorkerID: "manager-backend-1", Now: now, LeaseDuration: time.Minute,
+		WorkerID: "manager-backend-1", LeaseDuration: time.Minute,
 	})
 	if err != nil || lease == nil {
 		t.Fatalf("claim execution lease = %#v error = %v", lease, err)

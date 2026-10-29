@@ -48,7 +48,11 @@ func continuousEventIdentity(task models.TransferTask, item commonExecution.Task
 
 // All arguments are read with UPDATE locks in the enclosing owner transaction.
 func appendContinuousRuntimeEvent(tx *gorm.DB, task models.TransferTask, execution commonExecution.TaskExecution, lease models.RuntimeLease, input commonExecution.EventInput, requireRunning bool) error {
-	return commonExecution.AppendContinuousEvent(tx.Statement.Context, tx, execution.ExecutionID, input, func(item commonExecution.TaskExecution, now time.Time) error {
+	return commonExecution.AppendContinuousEvent(tx.Statement.Context, tx, execution.ExecutionID, input, continuousRuntimeAdmission(task, execution, lease, requireRunning))
+}
+
+func continuousRuntimeAdmission(task models.TransferTask, execution commonExecution.TaskExecution, lease models.RuntimeLease, requireRunning bool) commonExecution.ContinuousAdmission {
+	return func(item commonExecution.TaskExecution, now time.Time) error {
 		if !continuousEventIdentity(task, item) || item.ID != execution.ID ||
 			lease.TaskID != task.ID || lease.ExecutionID != item.ExecutionID ||
 			lease.OwnerInstanceID == "" || lease.FencingToken == 0 || !lease.LeaseUntil.After(now) ||
@@ -56,26 +60,39 @@ func appendContinuousRuntimeEvent(tx *gorm.DB, task models.TransferTask, executi
 			return ErrRuntimeLeaseLost
 		}
 		return nil
-	})
+	}
 }
 
 // Only the owner supervisor / stop transaction may close an unowned execution.
 // The task and execution are locked before reading/locking its private lease.
 func appendContinuousUnownedEvent(tx *gorm.DB, task models.TransferTask, execution commonExecution.TaskExecution, kind string, stopping bool) error {
+	admit, err := continuousUnownedAdmission(tx, task, execution, stopping)
+	if err != nil {
+		return err
+	}
+	return commonExecution.AppendContinuousEvent(tx.Statement.Context, tx, execution.ExecutionID, commonExecution.EventInput{Kind: kind, Counters: continuousExecutionCounters(execution)}, admit)
+}
+
+func continuousUnownedAdmission(tx *gorm.DB, task models.TransferTask, execution commonExecution.TaskExecution, stopping bool) (commonExecution.ContinuousAdmission, error) {
 	var lease models.RuntimeLease
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("task_id = ?", task.ID).First(&lease).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
+		return nil, err
 	}
-	return commonExecution.AppendContinuousEvent(tx.Statement.Context, tx, execution.ExecutionID, commonExecution.EventInput{Kind: kind, Counters: continuousExecutionCounters(execution)}, func(item commonExecution.TaskExecution, now time.Time) error {
-		if !continuousEventIdentity(task, item) || item.ID != execution.ID ||
-			(lease.ID != 0 && lease.OwnerInstanceID != "" && lease.LeaseUntil.After(now)) ||
-			(stopping && task.DesiredState == models.TaskDesiredStateRunning) ||
-			(!stopping && task.DesiredState != models.TaskDesiredStateRunning) {
+	return func(item commonExecution.TaskExecution, now time.Time) error {
+		if !continuousEventIdentity(task, item) || item.ID != execution.ID || (lease.ID != 0 && lease.OwnerInstanceID != "" && lease.LeaseUntil.After(now)) || (stopping && task.DesiredState == models.TaskDesiredStateRunning) || (!stopping && task.DesiredState != models.TaskDesiredStateRunning) {
 			return ErrRuntimeLeaseLost
 		}
 		return nil
-	})
+	}, nil
+}
+
+func completeUnownedContinuous(tx *gorm.DB, task models.TransferTask, execution commonExecution.TaskExecution, status string, fields map[string]interface{}, stopping bool) error {
+	admit, err := continuousUnownedAdmission(tx, task, execution, stopping)
+	if err != nil {
+		return err
+	}
+	return commonExecution.CompleteContinuous(tx.Statement.Context, tx, execution.ExecutionID, execution.Status, status, fields, admit)
 }
 
 func continuousTerminalEventKind(status string) (string, error) {

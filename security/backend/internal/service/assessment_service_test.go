@@ -210,7 +210,7 @@ func TestManualAssessmentUsesCurrentMetaComponentAndCanBeRevoked(t *testing.T) {
 	}
 	factsFor := func(uint) SecurityFactsReader { return staticSecurityFactsReader{facts: facts} }
 	discoveries := NewDiscoveryService(db, factsFor)
-	execution, lease, err := discoveries.ClaimNext(context.Background(), "security-manual-assessment-test", time.Now().UTC(), time.Minute)
+	execution, lease, err := discoveries.ClaimNext(context.Background(), "security-manual-assessment-test", time.Minute)
 	if err != nil || execution == nil || lease == nil {
 		t.Fatalf("claim = %#v/%#v, err=%v", execution, lease, err)
 	}
@@ -378,7 +378,7 @@ func prepareReviewablePhoneFindingOnDB(t *testing.T, db *gorm.DB) (*gorm.DB, *En
 	}
 	facts := &dataprotection.DataItemSecurityFacts{SchemaVersion: dataprotection.DataItemSecurityFactsSchemaV1, ItemFingerprint: created.Target.ResourceIdentity, ItemType: "collection", Fields: fields, SourceSnapshotHash: hash, ObservedAt: time.Now().UTC()}
 	discoveries := NewDiscoveryService(db, func(uint) SecurityFactsReader { return staticSecurityFactsReader{facts: facts} })
-	execution, lease, err := discoveries.ClaimNext(context.Background(), "security-review-test", time.Now().UTC(), time.Minute)
+	execution, lease, err := discoveries.ClaimNext(context.Background(), "security-review-test", time.Minute)
 	if err != nil || execution == nil || lease == nil {
 		t.Fatalf("claim = %#v/%#v, err=%v", execution, lease, err)
 	}

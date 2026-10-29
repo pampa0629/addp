@@ -151,7 +151,7 @@ func TestCreateAdHocExecutionPersistsNoTransferTaskDefinition(t *testing.T) {
 	if execution.SourceTaskID != nil || execution.Source != "asset" || execution.MaxAttempts != 1 || execution.TriggeredBy != nil {
 		t.Fatalf("ad-hoc execution = %#v", execution)
 	}
-	claimed, lease, err := taskService.taskRepo.ClaimNextBoundedExecution(context.Background(), "transfer-test-worker", time.Now(), time.Minute)
+	claimed, lease, err := taskService.taskRepo.ClaimNextBoundedExecution(context.Background(), "transfer-test-worker", time.Minute)
 	if err != nil || claimed == nil || lease == nil || claimed.ExecutionID != result.ExecutionID {
 		t.Fatalf("claim = %#v lease = %#v error = %v", claimed, lease, err)
 	}

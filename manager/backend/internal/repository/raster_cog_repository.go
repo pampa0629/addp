@@ -105,11 +105,11 @@ func (r *RasterCOGRepository) ClaimExecution(
 	return &task, nil
 }
 
-func (r *RasterCOGRepository) StartExecution(
-	ctx context.Context, taskID, tenantID uint, executionID string, startedAt time.Time,
+func (r *RasterCOGRepository) ValidateClaim(
+	ctx context.Context, taskID, tenantID uint, executionID string,
 ) error {
-	return newTaskExecutionLifecycle(r.db).Start(
-		ctx, taskID, tenantID, executionID, startedAt, &models.RasterCOGTask{}, "raster COG",
+	return newTaskExecutionLifecycle(r.db).ValidateClaim(
+		ctx, taskID, tenantID, executionID, &models.RasterCOGTask{}, "raster COG",
 	)
 }
 

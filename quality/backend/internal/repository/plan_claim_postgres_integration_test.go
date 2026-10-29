@@ -44,11 +44,7 @@ func TestIntegrationPostgresQualityConcurrentPendingClaim(t *testing.T) {
 	if _, err := repo.CreateExecution(context.Background(), task.ID, tenantID, execution, models.PlanRunRequest{}); err != nil {
 		t.Fatalf("create pending execution: %v", err)
 	}
-	if err := repo.AttachPendingAuthorization(context.Background(), tenantID, execution.ExecutionID, map[string]interface{}{
-		"actor_principal_id": int64(1), "actor_tenant_membership_id": int64(1), "issued_authorization_version": int64(1),
-		"execution_authorization_id": int64(1),
-		"authorization_expires_at":   createdAt.Add(time.Hour),
-	}); err != nil {
+	if err := repo.AttachPendingAuthorization(context.Background(), tenantID, execution.ExecutionID, qualityTestAuthorization(int64(1), createdAt.Add(time.Hour))); err != nil {
 		t.Fatalf("attach authorization: %v", err)
 	}
 	start := make(chan struct{})
@@ -61,7 +57,7 @@ func TestIntegrationPostgresQualityConcurrentPendingClaim(t *testing.T) {
 		workerID := workerID
 		go func() {
 			<-start
-			claimed, _, claimErr := repo.ClaimPendingExecution(context.Background(), workerID, createdAt, 10*time.Minute)
+			claimed, _, claimErr := repo.ClaimPendingExecution(context.Background(), workerID, 10*time.Minute)
 			results <- claimResult{execution: claimed, err: claimErr}
 		}()
 	}

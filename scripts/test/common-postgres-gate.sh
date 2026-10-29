@@ -13,15 +13,15 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --test)
             case "${2:-}" in
-                all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention|kml-export) test_group="$2"; shift 2 ;;
-                *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention|kml-export] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
+                all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention|execution-lifecycle|execution-events|kml-export) test_group="$2"; shift 2 ;;
+                *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention|execution-lifecycle|execution-events|kml-export] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
             esac
             ;;
         --highgo-native) highgo_native=true; shift ;;
         --source-root)
             [ -n "${2:-}" ] || { echo '--source-root requires a checkout path' >&2; exit 2; }
             source_root="$2"; shift 2 ;;
-        *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention|kml-export] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
+        *) echo "usage: $0 [--test all|query-read-set|typed-write|highgo-write|graph|projection-store|execution-retention|execution-lifecycle|execution-events|kml-export] [--highgo-native] [--source-root checkout]" >&2; exit 2 ;;
     esac
 done
 
@@ -138,6 +138,47 @@ if [ "$test_group" = projection-store ]; then
     exit 0
 fi
 
+run_execution_postgres() {
+    local execution_pattern='^TestExecution(AuthorizationFactsMigration|Events|EventRetention|RetentionAssessment|Lifecycle)AgainstPostgres$'
+    if [ "$test_group" = execution-lifecycle ]; then
+        execution_pattern='^TestExecutionLifecycleAgainstPostgres$'
+    elif [ "$test_group" = execution-events ]; then
+        execution_pattern='^TestExecution(Events|EventRetention)AgainstPostgres$'
+    fi
+    (cd "$SOURCE_ROOT/common" && ADDP_TEST_EXECUTION_POSTGRES_DSN="$execution_dsn" \
+        go test ./execution -run "$execution_pattern" -count=1 -v) \
+        2>&1 | tee "$WORK_DIR/common-execution-postgres.log"
+    if grep -q -- '--- SKIP:' "$WORK_DIR/common-execution-postgres.log"; then
+        echo "Common execution PostgreSQL gate refuses skipped tests" >&2
+        exit 1
+    fi
+    if [ "$test_group" = execution-events ]; then
+        local execution_test
+        for execution_test in TestExecutionEventsAgainstPostgres TestExecutionEventRetentionAgainstPostgres; do
+            grep -q -- "--- PASS: $execution_test " "$WORK_DIR/common-execution-postgres.log" || {
+                echo "Common execution PostgreSQL gate requires $execution_test" >&2
+                exit 1
+            }
+        done
+    else
+        grep -q -- '--- PASS: TestExecutionLifecycleAgainstPostgres ' "$WORK_DIR/common-execution-postgres.log" || {
+            echo 'Common execution PostgreSQL gate requires the real lifecycle matrix test' >&2
+            exit 1
+        }
+    fi
+    if [ "$test_group" = all ]; then
+        grep -q -- '--- PASS: TestExecutionRetentionAssessmentAgainstPostgres ' "$WORK_DIR/common-execution-postgres.log" || {
+            echo 'Common execution PostgreSQL gate requires the read-only retention assessment test' >&2
+            exit 1
+        }
+    fi
+}
+if [ "$test_group" = execution-lifecycle ] || [ "$test_group" = execution-events ]; then
+    run_execution_postgres
+    echo "Common $test_group PostgreSQL group passed (not the full gate)"
+    exit 0
+fi
+
 run_graph_postgres() {
     (cd "$SOURCE_ROOT/graph/backend" && ADDP_POSTGRES_INTEGRATION=1 GOWORK=off go test ./internal/repository -run '^TestIntegrationPostgresGraph' -count=1 -v) 2>&1 | tee "$WORK_DIR/graph-postgres.log"
     if grep -q -- '--- SKIP:' "$WORK_DIR/graph-postgres.log"; then echo 'Graph PostgreSQL gate refuses skipped tests' >&2; exit 1; fi
@@ -216,19 +257,7 @@ if [ "$test_group" != all ]; then
 fi
 
 
-ADDP_TEST_EXECUTION_POSTGRES_DSN="$execution_dsn" \
-    go test ./execution \
-    -run '^TestExecution(AuthorizationFactsMigration|Events|EventRetention|RetentionAssessment)AgainstPostgres$' \
-    -count=1 -v 2>&1 | tee "$WORK_DIR/common-execution-postgres.log"
-
-if grep -q -- '--- SKIP:' "$WORK_DIR/common-execution-postgres.log"; then
-    echo "Common execution PostgreSQL gate refuses skipped tests" >&2
-    exit 1
-fi
-grep -q -- '--- PASS: TestExecutionRetentionAssessmentAgainstPostgres ' "$WORK_DIR/common-execution-postgres.log" || {
-    echo 'Common execution PostgreSQL gate requires the read-only retention assessment test' >&2
-    exit 1
-}
+run_execution_postgres
 
 ADDP_TEST_EXECUTION_POSTGRES_DSN="$execution_dsn" \
     go test ./exportartifact -run '^TestExportExecutionSourceAgainstPostgres$' \

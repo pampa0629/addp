@@ -106,11 +106,11 @@ func (r *PointCloudCOPCRepository) ClaimExecution(
 	return &task, nil
 }
 
-func (r *PointCloudCOPCRepository) StartExecution(
-	ctx context.Context, taskID, tenantID uint, executionID string, startedAt time.Time,
+func (r *PointCloudCOPCRepository) ValidateClaim(
+	ctx context.Context, taskID, tenantID uint, executionID string,
 ) error {
-	return newTaskExecutionLifecycle(r.db).Start(
-		ctx, taskID, tenantID, executionID, startedAt, &models.PointCloudCOPCTask{}, "point cloud COPC",
+	return newTaskExecutionLifecycle(r.db).ValidateClaim(
+		ctx, taskID, tenantID, executionID, &models.PointCloudCOPCTask{}, "point cloud COPC",
 	)
 }
 

@@ -174,7 +174,7 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 		return err
 	}
 
-	if err := s.executionService.UpdateStatus(ctx, executionID, models.ExecutionStatusRunning); err != nil {
+	if err := s.executionService.ValidateClaim(ctx, executionID); err != nil {
 		return fmt.Errorf("assert bounded execution ownership: %w", err)
 	}
 

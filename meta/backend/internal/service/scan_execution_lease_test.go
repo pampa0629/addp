@@ -40,6 +40,9 @@ func TestMetaBoundedClaimAndExpiredRecoveryAreLeaseFenced(t *testing.T) {
 		t.Fatalf("claimed execution = %#v, lease = %#v", claimed, lease)
 	}
 
+	if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", execution.ExecutionID).Update("lease_expires_at", time.Now().UTC().Add(-time.Second)).Error; err != nil {
+		t.Fatal(err)
+	}
 	recovered, err := service.FailExpiredBoundedExecutions(context.Background(), now.Add(2*time.Minute), 100)
 	if err != nil || recovered != 1 {
 		t.Fatalf("expired recovery = %d, %v", recovered, err)

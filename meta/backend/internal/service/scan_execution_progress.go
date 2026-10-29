@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"time"
 
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
@@ -10,7 +9,6 @@ import (
 )
 
 func (s *ScanExecutionService) updateExecutionProgress(executionID string, tenantID int, fields map[string]interface{}) {
-	fields["updated_at"] = time.Now()
 	lease, ok := s.boundedLease(context.Background(), executionID)
 	if !ok || lease.TenantID != tenantID {
 		s.log.Warn("拒绝无租约的执行进度写入", "execution_id", executionID)

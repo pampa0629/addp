@@ -286,15 +286,15 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 		t.Fatalf("start continuous execution: %v", err)
 	}
 	leaseRepo := NewRuntimeLeaseRepository(db, testContinuousRecoveryPolicy())
-	claim, err := leaseRepo.ClaimNext(context.Background(), "worker-a", now, 30*time.Second)
+	claim, err := leaseRepo.ClaimNext(context.Background(), "worker-a", 30*time.Second)
 	if err != nil || claim == nil {
 		t.Fatalf("ClaimNext() claim=%#v error=%v", claim, err)
 	}
 	if claim.Lease.FencingToken != 1 || claim.Execution.Status != commonExecution.ExecutionStatusRunning {
 		t.Fatalf("first claim = %#v", claim)
 	}
-	if claim.Execution.StartedAt == nil || !claim.Execution.StartedAt.Equal(now) {
-		t.Fatalf("first claim started_at = %v, want %v", claim.Execution.StartedAt, now)
+	if claim.Execution.StartedAt == nil || claim.Execution.StartedAt.Before(claim.Lease.ClaimedAt) || !claim.Execution.StartedAt.Before(claim.Lease.LeaseUntil) {
+		t.Fatalf("claim start %v is outside its database-clock lease [%v,%v)", claim.Execution.StartedAt, claim.Lease.ClaimedAt, claim.Lease.LeaseUntil)
 	}
 	continuousMetadata, ok := claim.Execution.Metadata["continuous"].(map[string]interface{})
 	if !ok || continuousMetadata["owner_instance_id"] != "worker-a" || fmt.Sprint(continuousMetadata["fencing_token"]) != "1" || continuousMetadata["heartbeat_at"] == nil {
@@ -325,7 +325,7 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 	if err := syncRepo.CommitContinuousPosition(context.Background(), partitionState.ID, task.ID, 0, 1, "worker-a", position5, execution.ExecutionID); err != nil {
 		t.Fatalf("CommitContinuousPosition() error = %v", err)
 	}
-	if err := leaseRepo.Renew(context.Background(), task.ID, "worker-a", 1, now.Add(time.Second), 30*time.Second); err != nil {
+	if err := leaseRepo.Renew(context.Background(), task.ID, "worker-a", 1, 30*time.Second); err != nil {
 		t.Fatalf("Renew() error = %v", err)
 	}
 	var renewedExecution commonExecution.TaskExecution
@@ -342,13 +342,13 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 	if err := leaseRepo.RecordDiagnostics(context.Background(), *claim, diagnostics, nil); !errors.Is(err, ErrRuntimeLeaseLost) {
 		t.Fatalf("diagnostics after pause error = %v, want ErrRuntimeLeaseLost", err)
 	}
-	if err := leaseRepo.Renew(context.Background(), task.ID, "worker-a", 1, now.Add(2*time.Second), 30*time.Second); !errors.Is(err, ErrRuntimeLeaseLost) {
+	if err := leaseRepo.Renew(context.Background(), task.ID, "worker-a", 1, 30*time.Second); !errors.Is(err, ErrRuntimeLeaseLost) {
 		t.Fatalf("renew after pause error = %v, want ErrRuntimeLeaseLost", err)
 	}
 	if err := syncRepo.CommitContinuousPosition(context.Background(), partitionState.ID, task.ID, 1, 1, "worker-a", position5, execution.ExecutionID); !errors.Is(err, ErrSyncStateFenced) {
 		t.Fatalf("stale continuous position commit error = %v, want ErrSyncStateFenced", err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *claim, commonExecution.ExecutionStatusCancelled, "paused", "", "", now.Add(2*time.Second)); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *claim, commonExecution.ExecutionStatusCancelled, "paused", "", ""); err != nil {
 		t.Fatalf("Finish() error = %v", err)
 	}
 
@@ -356,7 +356,7 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 	if _, err := taskRepo.StartContinuousExecution(context.Background(), task.ID, task.TenantID, &second); err != nil {
 		t.Fatalf("resume continuous execution: %v", err)
 	}
-	secondClaim, err := leaseRepo.ClaimNext(context.Background(), "worker-b", now.Add(3*time.Second), 30*time.Second)
+	secondClaim, err := leaseRepo.ClaimNext(context.Background(), "worker-b", 30*time.Second)
 	if err != nil || secondClaim == nil {
 		t.Fatalf("second ClaimNext() claim=%#v error=%v", secondClaim, err)
 	}
@@ -385,10 +385,10 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 	if partitionState.FencingToken != 2 || partitionState.StateVersion != 1 {
 		t.Fatalf("reclaimed partition state = %#v", partitionState)
 	}
-	if err := leaseRepo.Renew(context.Background(), task.ID, "worker-a", 1, now.Add(4*time.Second), 30*time.Second); !errors.Is(err, ErrRuntimeLeaseLost) {
+	if err := leaseRepo.Renew(context.Background(), task.ID, "worker-a", 1, 30*time.Second); !errors.Is(err, ErrRuntimeLeaseLost) {
 		t.Fatalf("stale worker renew error = %v, want ErrRuntimeLeaseLost", err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *secondClaim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", "schema_change_blocked", "schema changed", now.Add(5*time.Second)); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *secondClaim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", "schema_change_blocked", "schema changed"); err != nil {
 		t.Fatalf("finish schema-blocked execution: %v", err)
 	}
 	var blockedTask models.TransferTask
@@ -498,7 +498,7 @@ func TestIntegrationPostgresSchemaChangeStopWinsWorkerFinishRace(t *testing.T) {
 	task.DesiredState = models.TaskDesiredStateStopped
 	claim := RuntimeLeaseClaim{Task: task, Execution: execution, Lease: lease}
 	leaseRepo := NewRuntimeLeaseRepository(db, testContinuousRecoveryPolicy())
-	if err := leaseRepo.Finish(context.Background(), claim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", "schema_change_blocked", "schema changed", now.Add(time.Second)); err != nil {
+	if err := leaseRepo.Finish(context.Background(), claim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", "schema_change_blocked", "schema changed"); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.First(&task, task.ID).Error; err != nil {
@@ -543,7 +543,7 @@ func TestIntegrationPostgresPendingSchemaChangePreventsLeaseExpiryRecovery(t *te
 	now := time.Now().UTC()
 	task, execution, lease := seedPendingSchemaChangeRuntime(t, db, 999997, now, now.Add(-time.Minute))
 	leaseRepo := NewRuntimeLeaseRepository(db, testContinuousRecoveryPolicy())
-	claim, err := leaseRepo.ClaimNext(context.Background(), "recovery-worker", now, time.Minute)
+	claim, err := leaseRepo.ClaimNext(context.Background(), "recovery-worker", time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -695,18 +695,16 @@ func TestIntegrationPostgresContinuousAutomaticRecoveryCreatesNewExecution(t *te
 
 	taskRepo := NewTaskRepository(db)
 	leaseRepo := NewRuntimeLeaseRepository(db, testContinuousRecoveryPolicy())
-	// PostgreSQL binds timestamps at microsecond precision; JSON RFC3339 must share that clock.
-	now := time.Now().Truncate(time.Microsecond)
 	firstExecution := claimTestExecution(task, uuid.NewString())
 	firstExecution.ExecutionConfig = task.Config
 	if _, err := taskRepo.StartContinuousExecution(context.Background(), task.ID, task.TenantID, &firstExecution); err != nil {
 		t.Fatalf("start continuous execution: %v", err)
 	}
-	firstClaim, err := leaseRepo.ClaimNext(context.Background(), "worker-a", now, 30*time.Second)
+	firstClaim, err := leaseRepo.ClaimNext(context.Background(), "worker-a", 30*time.Second)
 	if err != nil || firstClaim == nil {
 		t.Fatalf("first ClaimNext() claim=%#v error=%v", firstClaim, err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *firstClaim, commonExecution.ExecutionStatusCancelled, "worker_shutdown", "", "", now.Add(time.Second)); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *firstClaim, commonExecution.ExecutionStatusCancelled, "worker_shutdown", "", ""); err != nil {
 		t.Fatalf("finish worker shutdown execution: %v", err)
 	}
 
@@ -719,7 +717,7 @@ func TestIntegrationPostgresContinuousAutomaticRecoveryCreatesNewExecution(t *te
 	for _, owner := range []string{"worker-b", "worker-c"} {
 		go func(owner string) {
 			<-recoveryStart
-			claim, claimErr := leaseRepo.ClaimNext(context.Background(), owner, now.Add(2*time.Second), 30*time.Second)
+			claim, claimErr := leaseRepo.ClaimNext(context.Background(), owner, 30*time.Second)
 			recoveryResults <- claimResult{claim: claim, err: claimErr}
 		}(owner)
 	}
@@ -762,11 +760,12 @@ func TestIntegrationPostgresContinuousAutomaticRecoveryCreatesNewExecution(t *te
 	if err := db.Model(&models.RuntimeLease{}).Where("task_id = ?", task.ID).Update("lease_until", time.Now().Add(-time.Second)).Error; err != nil {
 		t.Fatal(err)
 	}
-	leaseExpiryDetection, err := leaseRepo.ClaimNext(context.Background(), "worker-d", now.Add(33*time.Second), 30*time.Second)
+	leaseExpiryDetection, err := leaseRepo.ClaimNext(context.Background(), "worker-d", 30*time.Second)
 	if err != nil || leaseExpiryDetection != nil {
 		t.Fatalf("lease-expiry detection ClaimNext() claim=%#v error=%v, want backoff", leaseExpiryDetection, err)
 	}
-	thirdClaim, err := leaseRepo.ClaimNext(context.Background(), "worker-d", now.Add(34*time.Second), 30*time.Second)
+	testpg.MakeContinuousRecoveryEligible(t, db, task.ID, task.TenantID)
+	thirdClaim, err := leaseRepo.ClaimNext(context.Background(), "worker-d", 30*time.Second)
 	if err != nil || thirdClaim == nil {
 		t.Fatalf("lease-expiry recovery after backoff ClaimNext() claim=%#v error=%v", thirdClaim, err)
 	}
@@ -849,52 +848,56 @@ func TestIntegrationPostgresContinuousRecoveryBackoffAndCircuitBreaker(t *testin
 	if _, err := taskRepo.StartContinuousExecution(context.Background(), task.ID, task.TenantID, &initial); err != nil {
 		t.Fatalf("start continuous execution: %v", err)
 	}
-	first, err := leaseRepo.ClaimNext(context.Background(), "worker-a", now, 30*time.Second)
+	first, err := leaseRepo.ClaimNext(context.Background(), "worker-a", 30*time.Second)
 	if err != nil || first == nil {
 		t.Fatalf("first ClaimNext() claim=%#v error=%v", first, err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *first, commonExecution.ExecutionStatusFailed, "", "", "source failed", now.Add(time.Second)); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *first, commonExecution.ExecutionStatusFailed, "", "", "source failed"); err != nil {
 		t.Fatalf("finish first failure: %v", err)
 	}
-	assertPendingRecoveryMetadata(t, db, task.ID, 1, recoveryCircuitClosed, now.Add(2*time.Second))
-	if claim, err := leaseRepo.ClaimNext(context.Background(), "worker-b", now.Add(1500*time.Millisecond), 30*time.Second); err != nil || claim != nil {
+	assertPendingRecoveryMetadata(t, db, task.ID, 1, recoveryCircuitClosed, time.Second)
+	if claim, err := leaseRepo.ClaimNext(context.Background(), "worker-b", 30*time.Second); err != nil || claim != nil {
 		t.Fatalf("claim before first backoff claim=%#v error=%v", claim, err)
 	}
-	second, err := leaseRepo.ClaimNext(context.Background(), "worker-b", now.Add(2*time.Second), 30*time.Second)
+	testpg.MakeContinuousRecoveryEligible(t, db, task.ID, task.TenantID)
+	second, err := leaseRepo.ClaimNext(context.Background(), "worker-b", 30*time.Second)
 	if err != nil || second == nil {
 		t.Fatalf("second ClaimNext() claim=%#v error=%v", second, err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *second, commonExecution.ExecutionStatusFailed, "", "", "target failed", now.Add(3*time.Second)); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *second, commonExecution.ExecutionStatusFailed, "", "", "target failed"); err != nil {
 		t.Fatalf("finish second failure: %v", err)
 	}
-	assertPendingRecoveryMetadata(t, db, task.ID, 2, recoveryCircuitClosed, now.Add(5*time.Second))
-	if claim, err := leaseRepo.ClaimNext(context.Background(), "worker-c", now.Add(4*time.Second), 30*time.Second); err != nil || claim != nil {
+	assertPendingRecoveryMetadata(t, db, task.ID, 2, recoveryCircuitClosed, 2*time.Second)
+	if claim, err := leaseRepo.ClaimNext(context.Background(), "worker-c", 30*time.Second); err != nil || claim != nil {
 		t.Fatalf("claim before second backoff claim=%#v error=%v", claim, err)
 	}
-	third, err := leaseRepo.ClaimNext(context.Background(), "worker-c", now.Add(5*time.Second), 30*time.Second)
+	testpg.MakeContinuousRecoveryEligible(t, db, task.ID, task.TenantID)
+	third, err := leaseRepo.ClaimNext(context.Background(), "worker-c", 30*time.Second)
 	if err != nil || third == nil {
 		t.Fatalf("third ClaimNext() claim=%#v error=%v", third, err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *third, commonExecution.ExecutionStatusFailed, "", "", "apply failed", now.Add(6*time.Second)); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *third, commonExecution.ExecutionStatusFailed, "", "", "apply failed"); err != nil {
 		t.Fatalf("finish third failure: %v", err)
 	}
-	assertPendingRecoveryMetadata(t, db, task.ID, 3, recoveryCircuitOpen, now.Add(16*time.Second))
-	if claim, err := leaseRepo.ClaimNext(context.Background(), "worker-d", now.Add(15*time.Second), 30*time.Second); err != nil || claim != nil {
+	assertPendingRecoveryMetadata(t, db, task.ID, 3, recoveryCircuitOpen, 10*time.Second)
+	if claim, err := leaseRepo.ClaimNext(context.Background(), "worker-d", 30*time.Second); err != nil || claim != nil {
 		t.Fatalf("claim while circuit open claim=%#v error=%v", claim, err)
 	}
-	halfOpen, err := leaseRepo.ClaimNext(context.Background(), "worker-d", now.Add(16*time.Second), 30*time.Second)
+	testpg.MakeContinuousRecoveryEligible(t, db, task.ID, task.TenantID)
+	halfOpen, err := leaseRepo.ClaimNext(context.Background(), "worker-d", 30*time.Second)
 	if err != nil || halfOpen == nil {
 		t.Fatalf("half-open ClaimNext() claim=%#v error=%v", halfOpen, err)
 	}
 	if halfOpen.Execution.Metadata["recovery_circuit_state"] != recoveryCircuitHalfOpen {
 		t.Fatalf("half-open execution metadata=%#v", halfOpen.Execution.Metadata)
 	}
-	if err := leaseRepo.Finish(context.Background(), *halfOpen, commonExecution.ExecutionStatusFailed, "", "", "half-open failed", now.Add(17*time.Second)); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *halfOpen, commonExecution.ExecutionStatusFailed, "", "", "half-open failed"); err != nil {
 		t.Fatalf("finish half-open failure: %v", err)
 	}
-	assertPendingRecoveryMetadata(t, db, task.ID, 3, recoveryCircuitOpen, now.Add(27*time.Second))
+	assertPendingRecoveryMetadata(t, db, task.ID, 3, recoveryCircuitOpen, 10*time.Second)
 
-	probe, err := leaseRepo.ClaimNext(context.Background(), "worker-e", now.Add(27*time.Second), 30*time.Second)
+	testpg.MakeContinuousRecoveryEligible(t, db, task.ID, task.TenantID)
+	probe, err := leaseRepo.ClaimNext(context.Background(), "worker-e", 30*time.Second)
 	if err != nil || probe == nil {
 		t.Fatalf("second half-open ClaimNext() claim=%#v error=%v", probe, err)
 	}
@@ -915,13 +918,13 @@ func TestIntegrationPostgresContinuousRecoveryBackoffAndCircuitBreaker(t *testin
 		progressedProbe.Metadata["recovery_circuit_state"] != recoveryCircuitClosed {
 		t.Fatalf("progressed probe recovery metadata=%#v", progressedProbe.Metadata)
 	}
-	if err := leaseRepo.Finish(context.Background(), *probe, commonExecution.ExecutionStatusFailed, "", "", "failure after progress", now.Add(28*time.Second)); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *probe, commonExecution.ExecutionStatusFailed, "", "", "failure after progress"); err != nil {
 		t.Fatalf("finish failure after progress: %v", err)
 	}
-	assertPendingRecoveryMetadata(t, db, task.ID, 1, recoveryCircuitClosed, now.Add(29*time.Second))
+	assertPendingRecoveryMetadata(t, db, task.ID, 1, recoveryCircuitClosed, time.Second)
 }
 
-func assertPendingRecoveryMetadata(t *testing.T, db *gorm.DB, taskID uint, wantAttempt int, wantCircuit string, wantNotBefore time.Time) {
+func assertPendingRecoveryMetadata(t *testing.T, db *gorm.DB, taskID uint, wantAttempt int, wantCircuit string, wantBackoff time.Duration) {
 	t.Helper()
 	var execution commonExecution.TaskExecution
 	if err := db.Where("module = ? AND source_task_id = ? AND status = ?", commonExecution.ModuleTransfer, fmt.Sprint(taskID), commonExecution.ExecutionStatusPending).
@@ -941,6 +944,7 @@ func assertPendingRecoveryMetadata(t *testing.T, db *gorm.DB, taskID uint, wantA
 		t.Fatalf("pending recovery_not_before=%#v", execution.Metadata["recovery_not_before"])
 	}
 	parsed, err := time.Parse(time.RFC3339Nano, storedNotBefore)
+	wantNotBefore := execution.CreatedAt.Add(wantBackoff)
 	if err != nil || !parsed.Equal(wantNotBefore) {
 		t.Fatalf("pending recovery_not_before=%q parsed=%v error=%v, want %v", storedNotBefore, parsed, err, wantNotBefore)
 	}

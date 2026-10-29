@@ -32,7 +32,7 @@ func (r *DiscoveryRunner) Run(ctx context.Context, canClaim func() bool) {
 	for {
 		worked := false
 		if canClaim == nil || canClaim() {
-			if count, err := r.discoveries.RecoverExpired(ctx, time.Now().UTC(), 100); err != nil {
+			if count, err := r.discoveries.RecoverExpired(ctx, 100); err != nil {
 				if ctx.Err() == nil {
 					log.Printf("Security discovery recovery failed: %v", err)
 				}
@@ -56,7 +56,7 @@ func (r *DiscoveryRunner) Run(ctx context.Context, canClaim func() bool) {
 }
 
 func (r *DiscoveryRunner) processNext(ctx context.Context) bool {
-	item, lease, err := r.discoveries.ClaimNext(ctx, r.workerID, time.Now().UTC(), 2*time.Minute)
+	item, lease, err := r.discoveries.ClaimNext(ctx, r.workerID, 2*time.Minute)
 	if err != nil {
 		if ctx.Err() == nil {
 			log.Printf("Security discovery claim failed: %v", err)
@@ -90,8 +90,8 @@ func (r *DiscoveryRunner) heartbeat(ctx context.Context, cancel context.CancelFu
 		case <-ctx.Done():
 			done <- nil
 			return
-		case now := <-ticker.C:
-			if err := r.discoveries.Renew(ctx, lease, now.UTC().Add(2*time.Minute)); err != nil {
+		case <-ticker.C:
+			if err := r.discoveries.Renew(ctx, lease, 2*time.Minute); err != nil {
 				terminal, stateErr := r.discoveries.AttemptIsTerminal(ctx, lease)
 				if stateErr == nil && terminal {
 					done <- nil

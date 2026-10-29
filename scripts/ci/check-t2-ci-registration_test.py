@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
+import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -775,6 +779,220 @@ class T2CIRegistrationTest(unittest.TestCase):
             "scripts/test/new-postgres-gate.sh: Makefile target test-new-postgres is missing",
             errors,
         )
+
+
+class CommonPostgresExecutionSelectionTest(unittest.TestCase):
+    def setUp(self) -> None:
+        runner = SCRIPT.parents[1] / "test/common-postgres-gate.sh"
+        self.runner_source = runner.read_text(encoding="utf-8")
+        commands = re.findall(r"(?m)^\s*local execution_pattern='([^']+)'$", self.runner_source)
+        self.assertEqual(len(commands), 1, "expected one full execution PG test selection")
+        self.selection = re.compile(commands[0])
+
+    def test_lifecycle_matrix_is_selected_by_the_real_pg_runner(self) -> None:
+        self.assertIsNotNone(
+            self.selection.fullmatch("TestExecutionLifecycleAgainstPostgres"),
+            "the Common PG gate must select the Owner's real lifecycle matrix",
+        )
+
+    def test_existing_execution_pg_contracts_remain_selected(self) -> None:
+        for contract in (
+            "AuthorizationFactsMigration", "Events", "EventRetention", "RetentionAssessment"
+        ):
+            with self.subTest(contract=contract):
+                self.assertIsNotNone(
+                    self.selection.fullmatch(f"TestExecution{contract}AgainstPostgres")
+                )
+
+    def test_sqlite_units_and_other_test_names_do_not_substitute_for_pg(self) -> None:
+        for name in (
+            "TestClaimNextUsesAttemptScopedLeaseToken",
+            "TestExpiredAttemptResetsStartTimeAndFencesOldLease",
+            "TestExecutionLifecycle",
+            "TestExecutionLifecycleAgainstPostgresExtra",
+            "TestExecutionUnregisteredAgainstPostgres",
+        ):
+            with self.subTest(name=name):
+                self.assertIsNone(self.selection.fullmatch(name))
+
+    def run_gate_fixture(
+        self,
+        outcome: str,
+        group: str = "execution-lifecycle",
+        affected_test: str = "TestExecutionLifecycleAgainstPostgres",
+    ) -> tuple[subprocess.CompletedProcess, list[list[str]]]:
+        # Run the real shell selector with disposable command stubs. No Go
+        # process, PostgreSQL connection or shared infrastructure is used.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for directory in (
+                "scripts/test", "scripts/infra", "common", "graph/backend", "bin"
+            ):
+                (root / directory).mkdir(parents=True, exist_ok=True)
+            runner = root / "scripts/test/common-postgres-gate.sh"
+            runner.write_text(
+                self.runner_source.replace(
+                    "/tmp/addp-common-postgres-gate.lock", str(root / "fixture.lock")
+                ),
+                encoding="utf-8",
+            )
+            (root / "scripts/infra/ports.sh").write_text(
+                'addp_infra_verify_test_postgres_target() { return 0; }\n'
+                'addp_infra_verify_test_postgres_dsn() { return 0; }\n',
+                encoding="utf-8",
+            )
+            fake_go = root / "bin/go"
+            fake_go.write_text(
+                f"#!{sys.executable}\n"
+                "import json, os, re, sys\n"
+                "with open(os.environ['ARGS_TRACE'], 'a') as trace:\n"
+                "    trace.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+                "args = sys.argv[1:]\n"
+                "pattern = args[args.index('-run') + 1]\n"
+                "names = [\n"
+                "    'TestIntegrationResolvePostgresQueryOutputRewrite',\n"
+                "    'TestIntegrationHighGoTableWrite', 'TestIntegrationPostgresKMLWriter',\n"
+                "    'TestExecutionAuthorizationFactsMigrationAgainstPostgres',\n"
+                "    'TestExecutionEventsAgainstPostgres', 'TestExecutionEventRetentionAgainstPostgres',\n"
+                "    'TestExecutionRetentionAssessmentAgainstPostgres', 'TestExecutionLifecycleAgainstPostgres',\n"
+                "    'TestExportExecutionSourceAgainstPostgres',\n"
+                "    'TestProjectionStoreSchemaContractAgainstPostgres',\n"
+                "    'TestTableResultAgainstPostgres', 'TestIntegrationPostgresGraphTargetContract',\n"
+                "]\n"
+                "mode = os.environ['FAKE_PG_OUTCOME']\n"
+                "failed = False\n"
+                "for name in names:\n"
+                "    if not re.search(pattern, name):\n"
+                "        continue\n"
+                "    selected = mode if name == os.environ['FAKE_PG_TEST_NAME'] else 'pass'\n"
+                "    if name.startswith('TestExecution'):\n"
+                "        assert os.environ['ADDP_TEST_EXECUTION_POSTGRES_DSN'] == 'fixture-dsn'\n"
+                "    if selected == 'missing':\n"
+                "        print('testing: warning: no matching test to run\\nPASS')\n"
+                "        continue\n"
+                "    status = {'pass': 'PASS', 'skip': 'SKIP', 'fail': 'FAIL'}[selected]\n"
+                "    print(f'--- {status}: {name} (0.00s)')\n"
+                "    failed |= selected == 'fail'\n"
+                "sys.exit(int(failed))\n",
+                encoding="utf-8",
+            )
+            fake_go.chmod(0o700)
+            trace = root / "go-arguments.json"
+            environment = dict(os.environ)
+            environment.update(
+                PATH=f"{root / 'bin'}{os.pathsep}{environment['PATH']}",
+                TMPDIR=str(root),
+                ADDP_TEST_POSTGRES_PORT="5432",
+                ADDP_TEST_POSTGRES_PASSWORD="fixture-password",
+                ADDP_TEST_EXECUTION_POSTGRES_DSN="fixture-dsn",
+                ARGS_TRACE=str(trace),
+                FAKE_PG_OUTCOME=outcome,
+                FAKE_PG_TEST_NAME=affected_test,
+            )
+            result = subprocess.run(
+                ["bash", str(runner), "--test", group],
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            self.assertTrue(trace.is_file(), result.stdout + result.stderr)
+            return result, [json.loads(line) for line in trace.read_text().splitlines()]
+
+    def test_focused_group_executes_only_the_exact_pg_lifecycle_case(self) -> None:
+        result, calls = self.run_gate_fixture("pass")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        expected = [
+            "test", "./execution", "-run", "^TestExecutionLifecycleAgainstPostgres$",
+            "-count=1", "-v",
+        ]
+        self.assertEqual(calls, [expected])
+        self.assertIn("not the full gate", result.stdout)
+
+    def test_focused_group_refuses_skipped_lifecycle_matrix(self) -> None:
+        result, _ = self.run_gate_fixture("skip")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refuses skipped tests", result.stderr)
+
+    def test_focused_group_refuses_success_when_the_owner_test_is_missing(self) -> None:
+        result, _ = self.run_gate_fixture("missing")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires the real lifecycle matrix test", result.stderr)
+
+    def test_focused_group_propagates_test_failure(self) -> None:
+        result, _ = self.run_gate_fixture("fail")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("group passed", result.stdout)
+
+    def test_full_gate_includes_the_lifecycle_matrix(self) -> None:
+        result, calls = self.run_gate_fixture("pass", "all")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        execution = [call for call in calls if call[:2] == ["test", "./execution"]]
+        self.assertEqual(len(execution), 1)
+        self.assertIsNotNone(
+            re.fullmatch(execution[0][3], "TestExecutionLifecycleAgainstPostgres")
+        )
+
+    def test_full_gate_cannot_pass_using_only_the_previous_execution_cases(self) -> None:
+        result, _ = self.run_gate_fixture("missing", "all")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires the real lifecycle matrix test", result.stderr)
+
+    def test_event_group_executes_only_the_two_exact_pg_event_cases(self) -> None:
+        result, calls = self.run_gate_fixture("pass", "execution-events")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(calls, [[
+            "test", "./execution", "-run",
+            "^TestExecution(Events|EventRetention)AgainstPostgres$",
+            "-count=1", "-v",
+        ]])
+        self.assertIn("not the full gate", result.stdout)
+        pattern = re.compile(calls[0][3])
+        for name in (
+            "TestExecutionLifecycleAgainstPostgres",
+            "TestExecutionRetentionAssessmentAgainstPostgres",
+            "TestExecutionEventsAgainstPostgresExtra",
+            "TestExecutionEventRetentionAgainstPostgresExtra",
+            "TestExecutionEvents",
+        ):
+            with self.subTest(name=name):
+                self.assertIsNone(pattern.search(name))
+
+    def test_event_group_requires_both_main_test_passes(self) -> None:
+        for name in (
+            "TestExecutionEventsAgainstPostgres",
+            "TestExecutionEventRetentionAgainstPostgres",
+        ):
+            with self.subTest(name=name):
+                result, _ = self.run_gate_fixture("missing", "execution-events", name)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"requires {name}", result.stderr)
+                self.assertNotIn("group passed", result.stdout)
+
+    def test_event_group_refuses_either_skipped_main_test(self) -> None:
+        for name in (
+            "TestExecutionEventsAgainstPostgres",
+            "TestExecutionEventRetentionAgainstPostgres",
+        ):
+            with self.subTest(name=name):
+                result, _ = self.run_gate_fixture("skip", "execution-events", name)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("refuses skipped tests", result.stderr)
+
+    def test_event_group_propagates_either_test_failure(self) -> None:
+        for name in (
+            "TestExecutionEventsAgainstPostgres",
+            "TestExecutionEventRetentionAgainstPostgres",
+        ):
+            with self.subTest(name=name):
+                result, _ = self.run_gate_fixture("fail", "execution-events", name)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("group passed", result.stdout)
+
+    def test_event_group_does_not_execute_the_lifecycle_matrix(self) -> None:
+        result, _ = self.run_gate_fixture("fail", "execution-events")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("TestExecutionLifecycleAgainstPostgres", result.stdout)
 
 
 if __name__ == "__main__":

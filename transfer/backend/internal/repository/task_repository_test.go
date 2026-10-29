@@ -103,8 +103,7 @@ func TestBoundedExecutionClaimUsesDatabaseLeaseAndRecoveryFailsClosed(t *testing
 		t.Fatalf("create pending execution: %v", err)
 	}
 
-	now := time.Now().UTC()
-	claimed, lease, err := repo.ClaimNextBoundedExecution(context.Background(), "transfer-bounded-worker-1", now, time.Minute)
+	claimed, lease, err := repo.ClaimNextBoundedExecution(context.Background(), "transfer-bounded-worker-1", time.Minute)
 	if err != nil || claimed == nil || lease == nil {
 		t.Fatalf("ClaimNextBoundedExecution = %#v %#v, %v", claimed, lease, err)
 	}
@@ -112,7 +111,10 @@ func TestBoundedExecutionClaimUsesDatabaseLeaseAndRecoveryFailsClosed(t *testing
 		t.Fatalf("claim = %#v lease = %#v", claimed, lease)
 	}
 
-	count, err := repo.FailExpiredBoundedExecutions(context.Background(), now.Add(2*time.Minute), 10)
+	if err := db.Model(&execution).Update("lease_expires_at", time.Now().UTC().Add(-time.Second)).Error; err != nil {
+		t.Fatal(err)
+	}
+	count, err := repo.FailExpiredBoundedExecutions(context.Background(), 10)
 	if err != nil || count != 1 {
 		t.Fatalf("FailExpiredBoundedExecutions count=%d error=%v", count, err)
 	}
@@ -151,20 +153,23 @@ func TestTargetOverrideExecutionExpiredLeaseFailsClosed(t *testing.T) {
 		t.Fatalf("create pending execution: %v", err)
 	}
 
-	now := time.Now().UTC()
-	claimed, lease, err := repo.ClaimNextBoundedExecution(context.Background(), "transfer-bounded-worker-1", now, time.Minute)
+	claimed, lease, err := repo.ClaimNextBoundedExecution(context.Background(), "transfer-bounded-worker-1", time.Minute)
 	if err != nil || claimed == nil || lease == nil || lease.Attempt != 1 {
 		t.Fatalf("first claim execution=%#v lease=%#v error=%v", claimed, lease, err)
 	}
 	authorizationID := int64(91)
 	if err := repo.AttachBoundedExecutionAuthorization(context.Background(), *lease, map[string]interface{}{
-		"execution_authorization_id": authorizationID,
-		"authorization_expires_at":   now.Add(time.Hour),
+		"execution_authorization_id": &authorizationID,
+		"actor_principal_id":         &principalID, "actor_tenant_membership_id": &membershipID, "issued_authorization_version": &version,
+		"authorization_expires_at": time.Now().UTC().Add(time.Hour),
 	}); err != nil {
 		t.Fatalf("attach attempt authorization: %v", err)
 	}
 
-	count, err := repo.FailExpiredBoundedExecutions(context.Background(), now.Add(2*time.Minute), 10)
+	if err := db.Model(&execution).Update("lease_expires_at", time.Now().UTC().Add(-time.Second)).Error; err != nil {
+		t.Fatal(err)
+	}
+	count, err := repo.FailExpiredBoundedExecutions(context.Background(), 10)
 	if err != nil || count != 1 {
 		t.Fatalf("FailExpiredBoundedExecutions count=%d error=%v", count, err)
 	}
@@ -176,7 +181,7 @@ func TestTargetOverrideExecutionExpiredLeaseFailsClosed(t *testing.T) {
 		failed.ActorPrincipalID == nil || *failed.ActorPrincipalID != principalID {
 		t.Fatalf("failed execution = %#v", failed)
 	}
-	claimedAgain, leaseAgain, err := repo.ClaimNextBoundedExecution(context.Background(), "transfer-bounded-worker-2", now.Add(3*time.Minute), time.Minute)
+	claimedAgain, leaseAgain, err := repo.ClaimNextBoundedExecution(context.Background(), "transfer-bounded-worker-2", time.Minute)
 	if err != nil || claimedAgain != nil || leaseAgain != nil {
 		t.Fatalf("second claim execution=%#v lease=%#v error=%v", claimedAgain, leaseAgain, err)
 	}

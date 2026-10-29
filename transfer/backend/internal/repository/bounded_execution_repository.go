@@ -13,14 +13,14 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func (r *TaskRepository) ClaimNextBoundedExecution(ctx context.Context, workerID string, now time.Time, leaseDuration time.Duration) (*commonExecution.TaskExecution, *commonExecution.Lease, error) {
+func (r *TaskRepository) ClaimNextBoundedExecution(ctx context.Context, workerID string, leaseDuration time.Duration) (*commonExecution.TaskExecution, *commonExecution.Lease, error) {
 	var execution *commonExecution.TaskExecution
 	var lease *commonExecution.Lease
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
 		execution, lease, err = commonExecution.ClaimNext(ctx, tx, commonExecution.ClaimOptions{
 			Module: commonExecution.ModuleTransfer, TaskType: commonExecution.TaskTypeSync,
-			WorkerID: workerID, Now: now, LeaseDuration: leaseDuration,
+			WorkerID: workerID, LeaseDuration: leaseDuration,
 		})
 		if err != nil || execution == nil {
 			return err
@@ -40,12 +40,12 @@ func (r *TaskRepository) ClaimNextBoundedExecution(ctx context.Context, workerID
 			return err
 		}
 		if isReplayExecution(execution) {
-			return nil
+			return commonExecution.UpdateWithLease(ctx, tx, *lease, nil)
 		}
 		result := tx.Model(&task).
 			Where("last_execution_id = ? AND last_execution_status = ?", execution.ExecutionID, commonExecution.ExecutionStatusPending).
 			Updates(map[string]interface{}{
-				"status": models.TaskStatusRunning, "last_run_at": now,
+				"status": models.TaskStatusRunning, "last_run_at": execution.StartedAt,
 				"last_execution_status": commonExecution.ExecutionStatusRunning,
 			})
 		if result.Error != nil {
@@ -54,7 +54,7 @@ func (r *TaskRepository) ClaimNextBoundedExecution(ctx context.Context, workerID
 		if result.RowsAffected != 1 {
 			return fmt.Errorf("transfer task %d summary no longer matches execution %s", task.ID, execution.ExecutionID)
 		}
-		return nil
+		return commonExecution.UpdateWithLease(ctx, tx, *lease, nil)
 	})
 	if err != nil {
 		return nil, nil, err
@@ -68,11 +68,11 @@ func (r *TaskRepository) ClaimNextBoundedExecution(ctx context.Context, workerID
 // FailExpiredBoundedExecutions fails closed. A runtime-bound existing table may
 // already contain partial writes, so a fresh orchestration execution must bind
 // a fresh target instead of replaying the same lease.
-func (r *TaskRepository) FailExpiredBoundedExecutions(ctx context.Context, now time.Time, limit int) (int, error) {
+func (r *TaskRepository) FailExpiredBoundedExecutions(ctx context.Context, limit int) (int, error) {
 	count := 0
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		items, err := commonExecution.FindExpiredForUpdate(ctx, tx, commonExecution.ExpiredOptions{
-			Module: commonExecution.ModuleTransfer, TaskType: commonExecution.TaskTypeSync, Now: now, Limit: limit,
+			Module: commonExecution.ModuleTransfer, TaskType: commonExecution.TaskTypeSync, Limit: limit,
 		})
 		if err != nil {
 			return err
@@ -89,10 +89,7 @@ func (r *TaskRepository) FailExpiredBoundedExecutions(ctx context.Context, now t
 					"message": "transfer bounded execution lease expired; inspect the target state before retrying",
 				},
 			}
-			if item.StartedAt != nil {
-				fields["execution_time_ms"] = now.Sub(*item.StartedAt).Milliseconds()
-			}
-			if err := commonExecution.FailExpired(ctx, tx, lease, now, fields); err != nil {
+			if err := commonExecution.FailExpired(ctx, tx, lease, fields); err != nil {
 				return err
 			}
 			if item.SourceTaskID != nil && !isReplayExecution(&item) {
@@ -120,8 +117,8 @@ func (r *TaskRepository) FailExpiredBoundedExecutions(ctx context.Context, now t
 	return count, err
 }
 
-func (r *TaskRepository) RenewBoundedExecutionLease(ctx context.Context, lease commonExecution.Lease, expiresAt time.Time) error {
-	return commonExecution.RenewLease(ctx, r.db, lease, expiresAt)
+func (r *TaskRepository) RenewBoundedExecutionLease(ctx context.Context, lease commonExecution.Lease, duration time.Duration) error {
+	return commonExecution.RenewLease(ctx, r.db, lease, duration)
 }
 
 func (r *TaskRepository) BoundedExecutionAttemptIsTerminal(ctx context.Context, lease commonExecution.Lease) (bool, error) {

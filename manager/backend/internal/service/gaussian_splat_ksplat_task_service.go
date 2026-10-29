@@ -251,8 +251,7 @@ func (s *GaussianSplatKSplatTaskService) Execute(ctx context.Context, taskID uin
 }
 
 func (s *GaussianSplatKSplatTaskService) runGaussianSplatKSplatGeneration(ctx context.Context, task *models.GaussianSplatKSplatTask, executionID string) {
-	startedAt := time.Now()
-	if err := s.repo.StartExecution(ctx, task.ID, task.TenantID, executionID, startedAt); err != nil {
+	if err := s.repo.ValidateClaim(ctx, task.ID, task.TenantID, executionID); err != nil {
 		logger.L().Warn("领取 3DGS KSplat execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 		return
 	}
@@ -314,19 +313,15 @@ func (s *GaussianSplatKSplatTaskService) runGaussianSplatKSplatGeneration(ctx co
 	if status != commonExecution.ExecutionStatusSuccess {
 		progress = 0
 	}
-	durationMs := completedAt.Sub(startedAt).Milliseconds()
 	resultID := uint(0)
 	if result != nil {
 		resultID = result.ID
 	}
 	if err := s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, resultID, resultFields, map[string]interface{}{
-		"status":            status,
-		"progress":          progress,
-		"metadata":          metadata,
-		"error_details":     errDetails,
-		"completed_at":      completedAt,
-		"execution_time_ms": durationMs,
-		"updated_at":        completedAt,
+		"status":        status,
+		"progress":      progress,
+		"metadata":      metadata,
+		"error_details": errDetails,
 	}, completedAt); err != nil {
 		logger.L().Warn("提交 3DGS KSplat execution 终态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 	}

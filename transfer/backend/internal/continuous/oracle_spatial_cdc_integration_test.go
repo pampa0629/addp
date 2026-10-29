@@ -201,7 +201,7 @@ func TestIntegrationOracleSpatialCDCSchemaDriftBlocksAndStops(t *testing.T) {
 			_ = captureSupervisor.Stop(context.Background(), &task)
 		}
 	}()
-	claim, err := leaseRepo.ClaimNext(ctx, "oracle-schema-drift-worker", time.Now(), 30*time.Second)
+	claim, err := leaseRepo.ClaimNext(ctx, "oracle-schema-drift-worker", 30*time.Second)
 	if err != nil || claim == nil || claim.Execution.ExecutionID != execution.ExecutionID {
 		t.Fatalf("Oracle schema drift claim=%#v err=%v", claim, err)
 	}
@@ -248,7 +248,7 @@ func TestIntegrationOracleSpatialCDCSchemaDriftBlocksAndStops(t *testing.T) {
 		t.Fatalf("Oracle schema drift advanced offset: before=%d after=%d err=%v", committed, after, err)
 	}
 	target.AssertRowAbsent(t, ctx, 2)
-	if err := leaseRepo.Finish(context.Background(), *claim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", "schema_change_blocked", runnerErr.Error(), time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *claim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", "schema_change_blocked", runnerErr.Error()); err != nil {
 		t.Fatal(err)
 	}
 	var blockedTask models.TransferTask
@@ -416,7 +416,7 @@ func runIntegrationOracleCDCNativeTypeMatrix(t *testing.T, targetType string) {
 			_ = captureSupervisor.Stop(context.Background(), &task)
 		}
 	}()
-	claim, err := leaseRepo.ClaimNext(ctx, "oracle-native-worker", time.Now(), 5*time.Minute)
+	claim, err := leaseRepo.ClaimNext(ctx, "oracle-native-worker", 5*time.Minute)
 	if err != nil || claim == nil || claim.Execution.ExecutionID != execution.ExecutionID {
 		t.Fatalf("ordinary Oracle claim=%#v err=%v", claim, err)
 	}
@@ -491,7 +491,7 @@ func runIntegrationOracleCDCNativeTypeMatrix(t *testing.T, targetType string) {
 	if err := <-runnerDone; !errors.Is(err, context.Canceled) {
 		t.Fatalf("ordinary Oracle final runner error=%v", err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *claim, commonExecution.ExecutionStatusCancelled, "test_complete", "", "", time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *claim, commonExecution.ExecutionStatusCancelled, "test_complete", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	cdcDataStopTaskViaAPI(t, apiRouter, task.ID, task.Name)
@@ -632,7 +632,7 @@ func runIntegrationOracleSpatialCDCGeometryCase(t *testing.T, geometryCase oracl
 		}
 	}()
 
-	claim, err := leaseRepo.ClaimNext(ctx, "oracle-spatial-worker-a", time.Now(), 30*time.Second)
+	claim, err := leaseRepo.ClaimNext(ctx, "oracle-spatial-worker-a", 30*time.Second)
 	if err != nil || claim == nil || claim.Execution.ExecutionID != execution.ExecutionID {
 		t.Fatalf("first Oracle Spatial claim=%#v err=%v", claim, err)
 	}
@@ -695,11 +695,11 @@ func runIntegrationOracleSpatialCDCGeometryCase(t *testing.T, geometryCase oracl
 		}).Error; err != nil {
 			t.Fatal(err)
 		}
-		recoveryDetectedAt := time.Now()
-		if recoveryClaim, claimErr := leaseRepo.ClaimNext(ctx, "oracle-spatial-worker-b", recoveryDetectedAt, 30*time.Second); claimErr != nil || recoveryClaim != nil {
+		if recoveryClaim, claimErr := leaseRepo.ClaimNext(ctx, "oracle-spatial-worker-b", 30*time.Second); claimErr != nil || recoveryClaim != nil {
 			t.Fatalf("Oracle Spatial recovery backoff claim=%#v err=%v", recoveryClaim, claimErr)
 		}
-		activeClaim, err = leaseRepo.ClaimNext(ctx, "oracle-spatial-worker-b", recoveryDetectedAt.Add(time.Second), 30*time.Second)
+		testpg.MakeContinuousRecoveryEligible(t, infraDB, task.ID, task.TenantID)
+		activeClaim, err = leaseRepo.ClaimNext(ctx, "oracle-spatial-worker-b", 30*time.Second)
 		if err != nil || activeClaim == nil || activeClaim.Lease.FencingToken <= claim.Lease.FencingToken {
 			t.Fatalf("Oracle Spatial recovery claim=%#v err=%v", activeClaim, err)
 		}
@@ -763,7 +763,7 @@ func runIntegrationOracleSpatialCDCGeometryCase(t *testing.T, geometryCase oracl
 	if err := <-runnerDone; !errors.Is(err, context.Canceled) {
 		t.Fatalf("Oracle Spatial final runner error=%v", err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *activeClaim, commonExecution.ExecutionStatusCancelled, "test_complete", "", "", time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *activeClaim, commonExecution.ExecutionStatusCancelled, "test_complete", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	cdcDataStopTaskViaAPI(t, apiRouter, task.ID, task.Name)

@@ -19,6 +19,7 @@ import (
 	"github.com/addp/model/internal/repository"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const MaterializationTaskType = "logical_table_materialization"
@@ -118,7 +119,7 @@ func (s *MaterializationService) EnqueueMaterialization(ctx context.Context, id,
 				return apperrors.Forbidden("materialization_parent_invalid", modeli18n.MsgMaterializationConflict)
 			}
 		}
-		return tx.Create(item).Error
+		return execution.CreatePending(ctx, tx, item)
 	})
 	if err != nil {
 		return nil, err
@@ -134,20 +135,18 @@ func (s *MaterializationService) EnqueueMaterialization(ctx context.Context, id,
 	if err == nil {
 		fields, err = commonClient.TaskExecutionAuthorizationFields(issued)
 	}
+	identity := execution.PendingIdentity{ExecutionID: item.ExecutionID, TenantID: item.TenantID, Module: item.Module, TaskType: item.TaskType, Source: item.Source}
 	if err == nil {
-		fields["triggered_by"] = fields["actor_principal_id"]
-		result := db.WithContext(ctx).Model(&execution.TaskExecution{}).Where("execution_id = ? AND tenant_id = ? AND status = ?", item.ExecutionID, tenantID, "pending").Updates(fields)
-		err = result.Error
-		if err == nil && result.RowsAffected != 1 {
-			err = fmt.Errorf("execution no longer pending")
-		}
+		principal := fields["actor_principal_id"].(*int64)
+		membership := fields["actor_tenant_membership_id"].(*int64)
+		version := fields["issued_authorization_version"].(*int64)
+		err = execution.AttachPendingAuthorization(ctx, db, identity, execution.PendingAuthorization{ID: *fields["execution_authorization_id"].(*int64), ExpiresAt: fields["authorization_expires_at"].(time.Time), ActorPrincipalID: *principal, ActorTenantMembershipID: *membership, IssuedAuthorizationVersion: *version})
 	}
 	if err != nil {
-		now := time.Now().UTC()
 		persist, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
-		db.WithContext(persist).Model(&execution.TaskExecution{}).Where("execution_id = ? AND status = ?", item.ExecutionID, "pending").Updates(map[string]interface{}{"status": "failed", "completed_at": now, "error_details": commonModels.JSONMap{"code": "materialization_authorization_failed", "message_key": modeli18n.MsgMaterializationInvalid}})
-		return nil, materializedTargetAuthorizationError(err)
+		failErr := execution.FailPending(persist, db, identity, map[string]interface{}{"error_details": commonModels.JSONMap{"code": "materialization_authorization_failed", "message_key": modeli18n.MsgMaterializationInvalid}})
+		return nil, errors.Join(materializedTargetAuthorizationError(err), failErr)
 	}
 	return item, nil
 }
@@ -219,20 +218,16 @@ func (s *MaterializationService) runMaterialization(ctx context.Context, item *e
 		fields = map[string]interface{}{"error_details": commonModels.JSONMap{"code": code, "message_key": message}}
 		log.Printf("model materialization %s failed: %v", item.ExecutionID, err)
 	}
-	if item.StartedAt != nil {
-		fields["execution_time_ms"] = time.Since(*item.StartedAt).Milliseconds()
-	}
 	completeCtx, completeCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer completeCancel()
-	if err = execution.CompleteWithLease(completeCtx, s.logicalTableRepo.DB(), lease, status, time.Now().UTC(), fields); err != nil {
+	if err = execution.CompleteWithLease(completeCtx, s.logicalTableRepo.DB(), lease, status, fields); err != nil {
 		log.Printf("model materialization completion %s: %v", item.ExecutionID, err)
 	}
 }
 func (s *MaterializationService) recoverMaterializationExecutions(ctx context.Context) {
 	db := s.logicalTableRepo.DB()
-	now := time.Now().UTC()
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		items, e := execution.FindExpiredForUpdate(ctx, tx, execution.ExpiredOptions{Module: execution.ModuleModel, TaskType: MaterializationTaskType, Now: now, Limit: 50})
+		items, e := execution.FindExpiredForUpdate(ctx, tx, execution.ExpiredOptions{Module: execution.ModuleModel, TaskType: MaterializationTaskType, Limit: 50})
 		if e != nil {
 			return e
 		}
@@ -241,15 +236,24 @@ func (s *MaterializationService) recoverMaterializationExecutions(ctx context.Co
 			if e != nil {
 				return e
 			}
-			duration := int64(0)
-			if item.StartedAt != nil {
-				duration = now.Sub(*item.StartedAt).Milliseconds()
-			}
-			if e = execution.FailExpired(ctx, tx, lease, now, map[string]interface{}{"execution_time_ms": duration, "error_details": commonModels.JSONMap{"code": "materialization_lease_expired", "message_key": modeli18n.MsgMaterializationConflict}}); e != nil {
+			if e = execution.FailExpired(ctx, tx, lease, map[string]interface{}{"error_details": commonModels.JSONMap{"code": "materialization_lease_expired", "message_key": modeli18n.MsgMaterializationConflict}}); e != nil {
 				return e
 			}
 		}
-		return tx.Model(&execution.TaskExecution{}).Where("module = ? AND task_type = ? AND status = ? AND execution_authorization_id IS NULL AND created_at < ?", execution.ModuleModel, MaterializationTaskType, "pending", now.Add(-2*time.Minute)).Updates(map[string]interface{}{"status": "failed", "completed_at": now, "error_details": commonModels.JSONMap{"code": "materialization_authorization_incomplete", "message_key": modeli18n.MsgMaterializationInvalid}}).Error
+		now, err := execution.DatabaseNow(tx)
+		if err != nil {
+			return err
+		}
+		var pending []execution.TaskExecution
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).Where("module = ? AND task_type = ? AND status = ? AND execution_authorization_id IS NULL AND created_at < ?", execution.ModuleModel, MaterializationTaskType, "pending", now.Add(-2*time.Minute)).Find(&pending).Error; err != nil {
+			return err
+		}
+		for _, item := range pending {
+			if err := execution.FailPending(ctx, tx, execution.PendingIdentity{ExecutionID: item.ExecutionID, TenantID: item.TenantID, Module: execution.ModuleModel, TaskType: MaterializationTaskType, Source: item.Source}, map[string]interface{}{"error_details": commonModels.JSONMap{"code": "materialization_authorization_incomplete", "message_key": modeli18n.MsgMaterializationInvalid}}); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil && ctx.Err() == nil {
 		log.Printf("model materialization recovery: %v", err)

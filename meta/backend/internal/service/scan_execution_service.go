@@ -68,8 +68,8 @@ func (s *ScanExecutionService) boundedLease(ctx context.Context, executionID str
 	return lease, ok
 }
 
-func (s *ScanExecutionService) RenewBoundedExecutionLease(ctx context.Context, lease commonExecution.Lease, expiresAt time.Time) error {
-	return commonExecution.RenewLease(ctx, s.db, lease, expiresAt)
+func (s *ScanExecutionService) RenewBoundedExecutionLease(ctx context.Context, lease commonExecution.Lease, duration time.Duration) error {
+	return commonExecution.RenewLease(ctx, s.db, lease, duration)
 }
 
 func (s *ScanExecutionService) BoundedExecutionAttemptIsTerminal(ctx context.Context, lease commonExecution.Lease) (bool, error) {

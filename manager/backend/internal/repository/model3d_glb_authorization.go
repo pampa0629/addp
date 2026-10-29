@@ -58,14 +58,7 @@ func (r *Model3DGLBRepository) BindSourceAuthorization(ctx context.Context, expe
 		if err != nil || id <= 0 || strconv.FormatInt(id, 10) != issued.ID {
 			return commonAPI.ErrConflict
 		}
-		result := tx.Model(&commonExecution.TaskExecution{}).Where("id = ? AND status = ? AND attempt = 0 AND execution_authorization_id IS NULL AND authorization_expires_at IS NULL", current.ID, commonExecution.ExecutionStatusPending).Updates(map[string]interface{}{"execution_authorization_id": id, "authorization_expires_at": issued.ExpiresAt, "updated_at": time.Now().UTC()})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return commonAPI.ErrConflict
-		}
-		return nil
+		return commonExecution.AttachPendingAuthorization(ctx, tx, commonExecution.PendingIdentity{ExecutionID: current.ExecutionID, TenantID: current.TenantID, Module: current.Module, TaskType: current.TaskType, Source: current.Source}, commonExecution.PendingAuthorization{ID: id, ExpiresAt: issued.ExpiresAt, ActorPrincipalID: *current.ActorPrincipalID, ActorTenantMembershipID: *current.ActorTenantMembershipID, IssuedAuthorizationVersion: *current.IssuedAuthorizationVersion})
 	})
 }
 
@@ -189,13 +182,8 @@ func failPendingModel3DGLB(tx *gorm.DB, item *commonExecution.TaskExecution, now
 	if item == nil || item.TaskType != commonExecution.TaskTypeModel3DGLBGeneration || item.Module != commonExecution.ModuleManager {
 		return commonAPI.ErrConflict
 	}
-	result := tx.Model(&commonExecution.TaskExecution{}).Where("id = ? AND tenant_id = ? AND status = ? AND attempt = 0 AND lease_token IS NULL AND lease_owner IS NULL AND lease_expires_at IS NULL", item.ID, item.TenantID, commonExecution.ExecutionStatusPending).
-		Updates(map[string]interface{}{"status": commonExecution.ExecutionStatusFailed, "completed_at": now, "updated_at": now, "error_details": commonModels.JSONMap{"code": "source_authorization_required", "message": "model GLB source authorization preparation unavailable"}})
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return commonAPI.ErrConflict
+	if err := commonExecution.FailPending(tx.Statement.Context, tx.Where("attempt = 0"), commonExecution.PendingIdentity{ExecutionID: item.ExecutionID, TenantID: item.TenantID, Module: item.Module, TaskType: item.TaskType, Source: item.Source}, map[string]interface{}{"error_details": commonModels.JSONMap{"code": "source_authorization_required", "message": "model GLB source authorization preparation unavailable"}}); err != nil {
+		return err
 	}
 	if item.SourceTaskID == nil {
 		return nil

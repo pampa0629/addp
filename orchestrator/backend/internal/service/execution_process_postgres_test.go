@@ -294,7 +294,7 @@ func TestIntegrationPostgresSupervisorAbruptExit(t *testing.T) {
 			if err := s.UpdateStepResults(t.Context(), stale, models.StepResults{}, "first"); !errors.Is(err, commonapi.ErrConflict) {
 				t.Fatalf("stale process can still write: %v", err)
 			}
-			if count, err := s.RecoverExpired(t.Context(), time.Now().UTC(), 100); err != nil || count != 0 {
+			if count, err := s.RecoverExpired(t.Context(), 100); err != nil || count != 0 {
 				t.Fatalf("duplicate recovery: count=%d err=%v", count, err)
 			}
 			var events []execution.Event

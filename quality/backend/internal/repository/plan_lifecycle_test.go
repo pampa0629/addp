@@ -47,11 +47,10 @@ func TestPlanExecutionLifecycleIsAtomic(t *testing.T) {
 		t.Fatalf("duplicate ClaimExecution error = %v, want conflict", err)
 	}
 
-	startedAt := createdAt.Add(time.Minute)
-	if err := repo.AttachPendingAuthorization(context.Background(), task.TenantID, exec.ExecutionID, map[string]interface{}{"execution_authorization_id": int64(1)}); err != nil {
+	if err := repo.AttachPendingAuthorization(context.Background(), task.TenantID, exec.ExecutionID, qualityTestAuthorization(int64(1), time.Now().UTC().Add(time.Hour))); err != nil {
 		t.Fatalf("AttachExecutionAuthorization: %v", err)
 	}
-	runningExecution, _, err := repo.ClaimPendingExecution(context.Background(), "worker-lifecycle", startedAt, 10*time.Minute)
+	runningExecution, _, err := repo.ClaimPendingExecution(context.Background(), "worker-lifecycle", 10*time.Minute)
 	if err != nil || runningExecution == nil {
 		t.Fatalf("ClaimPendingExecution: %v", err)
 	}
@@ -59,20 +58,19 @@ func TestPlanExecutionLifecycleIsAtomic(t *testing.T) {
 	if err := db.First(&runningTask, task.ID).Error; err != nil {
 		t.Fatalf("load running task: %v", err)
 	}
-	if runningTask.LastExecutionStatus != commonExecution.ExecutionStatusRunning || runningTask.LastRunAt == nil || !runningTask.LastRunAt.Equal(startedAt) {
+	if runningTask.LastExecutionStatus != commonExecution.ExecutionStatusRunning || runningTask.LastRunAt == nil || !runningTask.LastRunAt.Equal(*runningExecution.StartedAt) {
 		t.Fatalf("running task summary status=%s last_run_at=%v", runningTask.LastExecutionStatus, runningTask.LastRunAt)
 	}
 	assertQualityEventKinds(t, db, exec.ExecutionID, "started")
 
-	completedAt := startedAt.Add(2 * time.Minute)
 	lease, err := commonExecution.LeaseFromExecution(*runningExecution)
 	if err != nil {
 		t.Fatalf("LeaseFromExecution: %v", err)
 	}
 	if err := repo.CompleteExecutionWithLease(context.Background(), task.ID, task.TenantID, lease, commonExecution.ExecutionStatusSuccess, map[string]interface{}{
 
-		"execution_time_ms": completedAt.Sub(startedAt).Milliseconds(), "progress": 100,
-	}, completedAt); err != nil {
+		"progress": 100,
+	}); err != nil {
 		t.Fatalf("CompleteExecution: %v", err)
 	}
 	if err := db.Where("execution_id = ?", exec.ExecutionID).First(&storedExecution).Error; err != nil {
@@ -103,7 +101,7 @@ func TestPlanStartRollsBackWhenOwnerSummaryCannotAdvance(t *testing.T) {
 		t.Fatalf("delete owner task: %v", err)
 	}
 
-	_, _, err := repo.ClaimPendingExecution(context.Background(), "worker-rollback", createdAt.Add(time.Minute), time.Minute)
+	_, _, err := repo.ClaimPendingExecution(context.Background(), "worker-rollback", time.Minute)
 	if err != nil {
 		t.Fatalf("ClaimPendingExecution error = %v", err)
 	}
@@ -126,7 +124,7 @@ func TestClaimPendingExecutionRequiresAuthorizationAndLeaseOwner(t *testing.T) {
 		t.Fatalf("ClaimExecution: %v", err)
 	}
 
-	claimed, claimedTask, err := repo.ClaimPendingExecution(context.Background(), "worker-a", createdAt.Add(time.Minute), 10*time.Minute)
+	claimed, claimedTask, err := repo.ClaimPendingExecution(context.Background(), "worker-a", 10*time.Minute)
 	if err != nil {
 		t.Fatalf("ClaimPendingExecution without authorization: %v", err)
 	}
@@ -134,28 +132,23 @@ func TestClaimPendingExecutionRequiresAuthorizationAndLeaseOwner(t *testing.T) {
 		t.Fatalf("unauthorized execution was claimed: execution=%#v task=%#v", claimed, claimedTask)
 	}
 
-	if err := repo.AttachPendingAuthorization(context.Background(), task.TenantID, exec.ExecutionID, map[string]interface{}{
-		"execution_authorization_id": int64(41),
-	}); err != nil {
+	if err := repo.AttachPendingAuthorization(context.Background(), task.TenantID, exec.ExecutionID, qualityTestAuthorization(int64(41), time.Now().UTC().Add(time.Hour))); err != nil {
 		t.Fatalf("AttachExecutionAuthorization: %v", err)
 	}
-	if err := repo.AttachPendingAuthorization(context.Background(), task.TenantID, exec.ExecutionID, map[string]interface{}{
-		"execution_authorization_id": int64(99),
-	}); !errors.Is(err, commonAPI.ErrConflict) {
+	if err := repo.AttachPendingAuthorization(context.Background(), task.TenantID, exec.ExecutionID, qualityTestAuthorization(int64(99), time.Now().UTC().Add(time.Hour))); !errors.Is(err, commonAPI.ErrConflict) {
 		t.Fatalf("second AttachExecutionAuthorization error = %v, want conflict", err)
 	}
-	startedAt := createdAt.Add(2 * time.Minute)
-	claimed, claimedTask, err = repo.ClaimPendingExecution(context.Background(), "worker-a", startedAt, 10*time.Minute)
+	claimed, claimedTask, err = repo.ClaimPendingExecution(context.Background(), "worker-a", 10*time.Minute)
 	if err != nil {
 		t.Fatalf("ClaimPendingExecution: %v", err)
 	}
 	if claimed == nil || claimedTask == nil {
 		t.Fatal("authorized execution was not claimed")
 	}
-	if claimed.Status != commonExecution.ExecutionStatusRunning || claimed.Attempt != 1 || claimed.StartedAt == nil || !claimed.StartedAt.Equal(startedAt) {
+	if claimed.Status != commonExecution.ExecutionStatusRunning || claimed.Attempt != 1 || claimed.StartedAt == nil || claimed.StartedAt.Before(createdAt) {
 		t.Fatalf("claimed execution = %#v", claimed)
 	}
-	if claimed.LeaseOwner == nil || *claimed.LeaseOwner != "worker-a" || claimed.LeaseExpiresAt == nil || !claimed.LeaseExpiresAt.Equal(startedAt.Add(10*time.Minute)) {
+	if claimed.LeaseOwner == nil || *claimed.LeaseOwner != "worker-a" || claimed.LeaseExpiresAt == nil || !claimed.LeaseExpiresAt.Equal(claimed.StartedAt.Add(10*time.Minute)) {
 		t.Fatalf("claimed lease = owner %v expires %v", claimed.LeaseOwner, claimed.LeaseExpiresAt)
 	}
 	lease, err := commonExecution.LeaseFromExecution(*claimed)
@@ -164,7 +157,7 @@ func TestClaimPendingExecutionRequiresAuthorizationAndLeaseOwner(t *testing.T) {
 	}
 	wrongLease := lease
 	wrongLease.Token = "00000000-0000-0000-0000-000000000000"
-	renewedUntil := startedAt.Add(20 * time.Minute)
+	renewedUntil := 20 * time.Minute
 	if err := repo.RenewLease(context.Background(), wrongLease, renewedUntil); !errors.Is(err, commonAPI.ErrConflict) {
 		t.Fatalf("wrong-owner RenewLease error = %v, want conflict", err)
 	}
@@ -172,22 +165,20 @@ func TestClaimPendingExecutionRequiresAuthorizationAndLeaseOwner(t *testing.T) {
 		t.Fatalf("RenewLease: %v", err)
 	}
 
-	completedAt := startedAt.Add(time.Minute)
 	fields := map[string]interface{}{
-		"progress":          100,
-		"execution_time_ms": completedAt.Sub(startedAt).Milliseconds(),
+		"progress": 100,
 	}
-	if err := repo.CompleteExecutionWithLease(context.Background(), task.ID, task.TenantID, wrongLease, commonExecution.ExecutionStatusSuccess, fields, completedAt); !errors.Is(err, commonAPI.ErrConflict) {
+	if err := repo.CompleteExecutionWithLease(context.Background(), task.ID, task.TenantID, wrongLease, commonExecution.ExecutionStatusSuccess, fields); !errors.Is(err, commonAPI.ErrConflict) {
 		t.Fatalf("wrong-owner completion error = %v, want conflict", err)
 	}
-	if err := repo.CompleteExecutionWithLease(context.Background(), task.ID, task.TenantID, lease, commonExecution.ExecutionStatusSuccess, fields, completedAt); err != nil {
+	if err := repo.CompleteExecutionWithLease(context.Background(), task.ID, task.TenantID, lease, commonExecution.ExecutionStatusSuccess, fields); err != nil {
 		t.Fatalf("CompleteExecutionWithLease: %v", err)
 	}
 	var stored commonExecution.TaskExecution
 	if err := db.Where("execution_id = ?", exec.ExecutionID).First(&stored).Error; err != nil {
 		t.Fatalf("load completed execution: %v", err)
 	}
-	if stored.Status != commonExecution.ExecutionStatusSuccess || stored.ExecutionTimeMs == nil || *stored.ExecutionTimeMs != 60000 || stored.LeaseOwner != nil || stored.LeaseExpiresAt != nil {
+	if stored.Status != commonExecution.ExecutionStatusSuccess || stored.ExecutionTimeMs == nil || *stored.ExecutionTimeMs != stored.CompletedAt.Sub(*stored.StartedAt).Milliseconds() || stored.LeaseOwner != nil || stored.LeaseExpiresAt != nil {
 		t.Fatalf("completed execution = %#v", stored)
 	}
 }
@@ -202,20 +193,20 @@ func TestRecoverExpiredExecutionRetriesThenFailsAtAttemptLimit(t *testing.T) {
 	if _, err := repo.CreateExecution(context.Background(), task.ID, task.TenantID, exec, models.PlanRunRequest{}); err != nil {
 		t.Fatalf("ClaimExecution: %v", err)
 	}
-	if err := repo.AttachPendingAuthorization(context.Background(), task.TenantID, exec.ExecutionID, map[string]interface{}{
-		"execution_authorization_id": int64(42),
-	}); err != nil {
+	if err := repo.AttachPendingAuthorization(context.Background(), task.TenantID, exec.ExecutionID, qualityTestAuthorization(int64(42), time.Now().UTC().Add(time.Hour))); err != nil {
 		t.Fatalf("AttachExecutionAuthorization: %v", err)
 	}
 
-	firstStart := createdAt.Add(time.Minute)
-	if claimed, _, err := repo.ClaimPendingExecution(context.Background(), "worker-a", firstStart, time.Minute); err != nil || claimed == nil {
+	if claimed, _, err := repo.ClaimPendingExecution(context.Background(), "worker-a", time.Minute); err != nil || claimed == nil {
 		t.Fatalf("first ClaimPendingExecution = %#v, %v", claimed, err)
 	}
 	// A restarted process owns a new repository instance and must recover the
 	// expired database lease without any in-memory state from worker-a.
 	restartedRepo := NewPlanRepository(db)
-	if err := restartedRepo.RecoverExpiredExecutions(context.Background(), firstStart.Add(2*time.Minute)); err != nil {
+	if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", exec.ExecutionID).Update("lease_expires_at", time.Now().UTC().Add(-time.Second)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := restartedRepo.RecoverExpiredExecutions(context.Background()); err != nil {
 		t.Fatalf("first RecoverExpiredExecutions: %v", err)
 	}
 	var stored commonExecution.TaskExecution
@@ -226,18 +217,19 @@ func TestRecoverExpiredExecutionRetriesThenFailsAtAttemptLimit(t *testing.T) {
 		t.Fatalf("retried execution = %#v", stored)
 	}
 
-	secondStart := firstStart.Add(3 * time.Minute)
-	if claimed, _, err := restartedRepo.ClaimPendingExecution(context.Background(), "worker-b", secondStart, time.Minute); err != nil || claimed == nil || claimed.Attempt != 2 || claimed.StartedAt == nil || !claimed.StartedAt.Equal(secondStart) {
+	if claimed, _, err := restartedRepo.ClaimPendingExecution(context.Background(), "worker-b", time.Minute); err != nil || claimed == nil || claimed.Attempt != 2 || claimed.StartedAt == nil || claimed.StartedAt.Before(createdAt) {
 		t.Fatalf("second ClaimPendingExecution = %#v, %v", claimed, err)
 	}
-	failedAt := secondStart.Add(2 * time.Minute)
-	if err := restartedRepo.RecoverExpiredExecutions(context.Background(), failedAt); err != nil {
+	if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", exec.ExecutionID).Update("lease_expires_at", time.Now().UTC().Add(-time.Second)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := restartedRepo.RecoverExpiredExecutions(context.Background()); err != nil {
 		t.Fatalf("second RecoverExpiredExecutions: %v", err)
 	}
 	if err := db.Where("execution_id = ?", exec.ExecutionID).First(&stored).Error; err != nil {
 		t.Fatalf("load failed execution: %v", err)
 	}
-	if stored.Status != commonExecution.ExecutionStatusFailed || stored.CompletedAt == nil || stored.ExecutionTimeMs == nil || *stored.ExecutionTimeMs != failedAt.Sub(secondStart).Milliseconds() || stored.Attempt != 2 {
+	if stored.Status != commonExecution.ExecutionStatusFailed || stored.CompletedAt == nil || stored.ExecutionTimeMs == nil || *stored.ExecutionTimeMs != stored.CompletedAt.Sub(*stored.StartedAt).Milliseconds() || stored.Attempt != 2 {
 		t.Fatalf("failed execution = %#v", stored)
 	}
 	var storedTask models.QualityPlan
@@ -319,7 +311,9 @@ func createPlanRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID int64) mod
 }
 
 func newQualityRepositoryTestExecution(executionID string, tenantID int, createdAt time.Time) *commonExecution.TaskExecution {
+	actor, by := int64(1), 1
 	return &commonExecution.TaskExecution{
+		ActorPrincipalID: &actor, ActorTenantMembershipID: &actor, IssuedAuthorizationVersion: &actor, TriggeredBy: &by,
 		ExecutionID: executionID, TenantID: tenantID, Module: commonExecution.ModuleQuality,
 		TaskType: commonExecution.TaskTypeQualityPlan, Source: commonExecution.ModuleQuality,
 		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
@@ -330,4 +324,9 @@ func newQualityRepositoryTestExecution(executionID string, tenantID int, created
 			"check_timeout_ms": int64((30 * time.Minute).Milliseconds()),
 		},
 	}
+}
+
+func qualityTestAuthorization(id int64, expiresAt time.Time) map[string]interface{} {
+	actor := int64(1)
+	return map[string]interface{}{"execution_authorization_id": &id, "actor_principal_id": &actor, "actor_tenant_membership_id": &actor, "issued_authorization_version": &actor, "authorization_expires_at": expiresAt}
 }

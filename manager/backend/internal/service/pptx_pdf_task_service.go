@@ -210,10 +210,6 @@ func (s *PPTXPDFTaskService) RunClaimedExecution(ctx context.Context, execution 
 		return errors.New("claimed PPTX PDF execution, lease and task are required")
 	}
 	executionID := execution.ExecutionID
-	startedAt := time.Now()
-	if execution.StartedAt != nil {
-		startedAt = *execution.StartedAt
-	}
 	result, err := s.prepareResult(ctx, task, executionID)
 	config, configErr := decodePPTXPDFTaskConfig(task)
 	if err == nil {
@@ -244,14 +240,13 @@ func (s *PPTXPDFTaskService) RunClaimedExecution(ctx context.Context, execution 
 		fields = map[string]interface{}{"status": models.PPTXPDFStatusReady, "error_message": "", "storage_ref": built.StorageRef, "file_name": built.FileName, "size_bytes": built.SizeBytes, "page_count": built.PageCount, "content_url": pptxPDFContentURL(result.ID), "metadata": metadata, "last_execution_id": executionID}
 	}
 	completedAt := time.Now()
-	duration := completedAt.Sub(startedAt).Milliseconds()
 	resultID := uint(0)
 	if result != nil {
 		resultID = result.ID
 	} else {
 		fields = nil
 	}
-	if completeErr := s.repo.CompleteExecutionWithLease(ctx, task.ID, task.TenantID, lease, resultID, fields, map[string]interface{}{"status": status, "progress": progress, "metadata": metadata, "error_details": errorDetails, "execution_time_ms": duration}, completedAt); completeErr != nil {
+	if completeErr := s.repo.CompleteExecutionWithLease(ctx, task.ID, task.TenantID, lease, resultID, fields, map[string]interface{}{"status": status, "progress": progress, "metadata": metadata, "error_details": errorDetails}, completedAt); completeErr != nil {
 		return completeErr
 	}
 	return nil

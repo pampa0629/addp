@@ -139,7 +139,7 @@ func TestQueryFailureDiagnosticsAgainstPostgres(t *testing.T) {
 				t.Fatal(err)
 			}
 			lease := commonExecution.Lease{ExecutionID: item.ExecutionID, TenantID: 7, Token: token, Owner: owner, Attempt: 1}
-			if err := service.completeQueryError(ctx, item, lease, now, nil, nil, queryErr); err != nil {
+			if err := service.completeQueryError(ctx, item, lease, nil, nil, queryErr); err != nil {
 				t.Fatal(err)
 			}
 			var stored commonExecution.TaskExecution

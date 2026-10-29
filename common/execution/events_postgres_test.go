@@ -124,7 +124,7 @@ func TestExecutionEventsAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Delete(&TaskExecution{}, item.ID).Error })
-	_, lease, err := ClaimNext(t.Context(), db, ClaimOptions{Module: ModuleMeta, TaskType: TaskTypeScan, WorkerID: "event-pg", Now: time.Now().UTC(), LeaseDuration: time.Minute})
+	_, lease, err := ClaimNext(t.Context(), db, ClaimOptions{Module: ModuleMeta, TaskType: TaskTypeScan, WorkerID: "event-pg", LeaseDuration: time.Minute})
 	if err != nil || lease == nil || lease.ExecutionID != item.ExecutionID {
 		t.Fatalf("claim=%#v err=%v", lease, err)
 	}
@@ -249,7 +249,7 @@ func TestExecutionEventsAgainstPostgres(t *testing.T) {
 			workers.Add(1)
 			go func() {
 				defer workers.Done()
-				outcomes <- FailExpiredWithEvent(t.Context(), db, *recoveringLease, now, nil)
+				outcomes <- FailExpiredWithEvent(t.Context(), db, *recoveringLease, nil)
 			}()
 		}
 		workers.Wait()

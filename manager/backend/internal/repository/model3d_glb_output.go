@@ -201,7 +201,7 @@ func (r *Model3DGLBRepository) PrepareExecutionOutput(ctx context.Context, desir
 		if ownerCount != 1 {
 			return commonAPI.ErrConflict
 		}
-		if err := commonExecution.UpdateWithLease(ctx, tx, lease, map[string]interface{}{"updated_at": time.Now().UTC()}); err != nil {
+		if err := commonExecution.UpdateWithLease(ctx, tx, lease, nil); err != nil {
 			return err
 		}
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id = ? AND item_fingerprint = ? AND status <> ?", desired.TenantID, desired.ItemFingerprint, models.Model3DGLBStatusDeleted).Order("updated_at DESC, id DESC").First(&result).Error

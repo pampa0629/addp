@@ -25,21 +25,12 @@ func (w *ProjectionWork) Boundary() execution.InternalTaskScope {
 		Revision: strconv.FormatUint(w.Revision.Revision, 10), Digest: w.Revision.Digest, Generation: w.Projection.Generation}
 }
 
-func databaseNow(tx *gorm.DB) (time.Time, error) {
-	var now time.Time
-	err := tx.Raw("SELECT clock_timestamp()").Scan(&now).Error
-	return now, err
-}
-
 func (r *RevisionRepository) ClaimProjection(ctx context.Context, owner string, duration time.Duration) (*execution.Lease, error) {
 	var lease *execution.Lease
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		now, err := databaseNow(tx)
-		if err != nil {
-			return err
-		}
+		var err error
 		_, lease, err = execution.ClaimNext(ctx, tx.Where("EXISTS (SELECT 1 FROM ontology.projections p WHERE p.execution_id::text=common.task_executions.execution_id AND p.status='pending')"), execution.ClaimOptions{Module: models.Module, Source: models.Module,
-			TaskType: models.ProjectionTaskType, WorkerID: owner, LeaseDuration: duration, Now: now, RequireAuthorization: true})
+			TaskType: models.ProjectionTaskType, WorkerID: owner, LeaseDuration: duration, RequireAuthorization: true})
 		return err
 	})
 	return lease, err
@@ -80,14 +71,20 @@ func lockProjectionWork(tx *gorm.DB, lease execution.Lease, expired bool) (*Proj
 		boundary.Generation, scope.TenantID, scope.OntologyID, scope.Revision, lease.ExecutionID, boundary.Digest).First(&w.Projection).Error; err != nil {
 		return nil, nil, normalizeError(err)
 	}
-	owned := queue.Clauses(clause.Locking{Strength: "UPDATE"}).Where("status='running' AND attempt=? AND lease_token=? AND lease_owner=?", lease.Attempt, lease.Token, lease.Owner)
 	if expired {
-		owned = owned.Where("lease_expires_at < clock_timestamp()")
+		owned := queue.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("status='running' AND attempt=? AND lease_token=? AND lease_owner=? AND lease_expires_at <= clock_timestamp()", lease.Attempt, lease.Token, lease.Owner)
+		if err := owned.First(&w.Execution).Error; err != nil {
+			return nil, nil, normalizeError(err)
+		}
 	} else {
-		owned = owned.Where("lease_expires_at > clock_timestamp()")
-	}
-	if err := owned.First(&w.Execution).Error; err != nil {
-		return nil, nil, normalizeError(err)
+		// Owner locks are already held. Common acquires execution last and
+		// rechecks its lease against the database clock after any lock wait.
+		current, err := execution.LockActiveLease(tx.Statement.Context, queue, lease)
+		if err != nil {
+			return nil, nil, normalizeError(err)
+		}
+		w.Execution = *current
 	}
 	if w.Revision.Digest != boundary.Digest ||
 		w.Execution.ActorPrincipalID == nil || w.Execution.ActorTenantMembershipID == nil || w.Execution.IssuedAuthorizationVersion == nil ||
@@ -125,7 +122,7 @@ func validateReceipt(tx *gorm.DB, w *ProjectionWork, receipt *client.InternalTas
 		receipt.Attempt != w.Execution.Attempt || receipt.InternalTask != w.Boundary() || receipt.ExpiresAt.After(*w.Execution.AuthorizationExpiresAt) {
 		return ErrInvalid
 	}
-	now, err := databaseNow(tx)
+	now, err := execution.DatabaseNow(tx)
 	if err != nil {
 		return err
 	}
@@ -178,13 +175,9 @@ func (r *RevisionRepository) ActivateProjection(ctx context.Context, lease execu
 		if err := projectionEvent(tx, w, "activated"); err != nil {
 			return err
 		}
-		now, err := databaseNow(tx)
-		if err != nil {
-			return err
-		}
 		// This last write fences even a deadline that elapsed while waiting on
 		// audit/trigger work; failure rolls back ready, pointer and audit together.
-		return execution.CompleteWithLease(ctx, tx.Where("lease_expires_at > clock_timestamp() AND ?::timestamptz > clock_timestamp()", receipt.ExpiresAt), lease, execution.ExecutionStatusSuccess, now, nil)
+		return execution.CompleteWithLease(ctx, tx.Where("lease_expires_at > clock_timestamp() AND ?::timestamptz > clock_timestamp()", receipt.ExpiresAt), lease, execution.ExecutionStatusSuccess, nil)
 	})
 }
 
@@ -205,24 +198,16 @@ func (r *RevisionRepository) FailProjection(ctx context.Context, lease execution
 				return err
 			}
 		}
-		now, err := databaseNow(tx)
-		if err != nil {
-			return err
-		}
 		fields := map[string]any{"error_details": commonmodels.JSONMap{"code": "ontology_projection_failed"}}
 		if expired {
-			return execution.FailExpired(ctx, tx, lease, now, fields)
+			return execution.FailExpired(ctx, tx, lease, fields)
 		}
-		return execution.CompleteWithLease(ctx, tx.Where("lease_expires_at > clock_timestamp()"), lease, execution.ExecutionStatusFailed, now, fields)
+		return execution.CompleteWithLease(ctx, tx.Where("lease_expires_at > clock_timestamp()"), lease, execution.ExecutionStatusFailed, fields)
 	})
 }
 
 func (r *RevisionRepository) RenewProjection(ctx context.Context, lease execution.Lease, duration time.Duration) error {
-	now, err := databaseNow(r.db.WithContext(ctx))
-	if err != nil {
-		return err
-	}
-	return execution.RenewLease(ctx, r.db.Where("lease_expires_at > clock_timestamp()"), lease, now.Add(duration))
+	return execution.RenewLease(ctx, r.db, lease, duration)
 }
 
 func (r *RevisionRepository) ProjectionTerminal(ctx context.Context, lease execution.Lease) (bool, error) {
@@ -233,7 +218,7 @@ func (r *RevisionRepository) RecoverProjections(ctx context.Context) error {
 	// Discovery takes no row lock. Each candidate is revalidated with the
 	// normal owner lock order; no side effects are retried on lease expiry.
 	var items []execution.TaskExecution
-	if err := r.db.WithContext(ctx).Where("module=? AND source=? AND task_type=? AND status='running' AND lease_expires_at < clock_timestamp()", models.Module, models.Module, models.ProjectionTaskType).
+	if err := r.db.WithContext(ctx).Where("module=? AND source=? AND task_type=? AND status='running' AND lease_expires_at <= clock_timestamp()", models.Module, models.Module, models.ProjectionTaskType).
 		Where("EXISTS (SELECT 1 FROM ontology.projections p WHERE p.execution_id::text=common.task_executions.execution_id)").
 		Order("lease_expires_at, id").Limit(16).Find(&items).Error; err != nil {
 		return err

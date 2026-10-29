@@ -126,11 +126,11 @@ func (r *VectorMaterializedViewRepository) ClaimExecution(
 	return &task, nil
 }
 
-func (r *VectorMaterializedViewRepository) StartExecution(
-	ctx context.Context, taskID, tenantID uint, executionID string, startedAt time.Time,
+func (r *VectorMaterializedViewRepository) ValidateClaim(
+	ctx context.Context, taskID, tenantID uint, executionID string,
 ) error {
-	return newTaskExecutionLifecycle(r.db).Start(
-		ctx, taskID, tenantID, executionID, startedAt, &models.VectorMaterializedViewTask{}, "vector materialized view",
+	return newTaskExecutionLifecycle(r.db).ValidateClaim(
+		ctx, taskID, tenantID, executionID, &models.VectorMaterializedViewTask{}, "vector materialized view",
 	)
 }
 

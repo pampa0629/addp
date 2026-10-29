@@ -164,11 +164,11 @@ func (r *Model3DGLBRepository) ClaimExecution(
 	return &task, nil
 }
 
-func (r *Model3DGLBRepository) StartExecution(
-	ctx context.Context, taskID, tenantID uint, executionID string, startedAt time.Time,
+func (r *Model3DGLBRepository) ValidateClaim(
+	ctx context.Context, taskID, tenantID uint, executionID string,
 ) error {
-	return newTaskExecutionLifecycle(r.db).Start(
-		ctx, taskID, tenantID, executionID, startedAt, &models.Model3DGLBTask{}, "model 3d GLB",
+	return newTaskExecutionLifecycle(r.db).ValidateClaim(
+		ctx, taskID, tenantID, executionID, &models.Model3DGLBTask{}, "model 3d GLB",
 	)
 }
 

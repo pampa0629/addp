@@ -781,7 +781,12 @@ func (e *DevExecutor) createWorkflowProducedTargetScanRuns(
 		}
 		result["produced_targets"] = targets
 		parent.Metadata["result"] = result
-		err = e.taskExecutionRepo.UpdateFields(ctx, executionID, int(tenantID), map[string]interface{}{"metadata": parent.Metadata})
+		lease, ok := commonExecution.LeaseFromContext(ctx)
+		if !ok || lease.ExecutionID != executionID || lease.TenantID != int(tenantID) {
+			err = fmt.Errorf("workflow output provenance requires its active lease")
+		} else {
+			err = e.taskExecutionRepo.UpdateWithLease(ctx, lease, map[string]interface{}{"metadata": parent.Metadata})
+		}
 	} else if err == nil {
 		err = fmt.Errorf("workflow output provenance is unavailable")
 	}

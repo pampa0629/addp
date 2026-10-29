@@ -90,8 +90,8 @@ func (r *TaskExecutionRepository) UpdateWithEvent(ctx context.Context, lease Lea
 
 // CompleteWithLease writes a terminal state only while the exact bounded
 // execution attempt still owns its lease.
-func (r *TaskExecutionRepository) CompleteWithLease(ctx context.Context, lease Lease, status string, completedAt time.Time, fields map[string]interface{}) error {
-	return CompleteWithLease(ctx, r.db, lease, status, completedAt, fields)
+func (r *TaskExecutionRepository) CompleteWithLease(ctx context.Context, lease Lease, status string, fields map[string]interface{}) error {
+	return CompleteWithLease(ctx, r.db, lease, status, fields)
 }
 
 // GetByID 根据 ID 查询

@@ -433,7 +433,7 @@ func TestRasterMosaicGenerationSubmitsMetaScanForDatasetRoot(t *testing.T) {
 			t.Fatalf("wrong durable scan target=%+v err=%v", target, err)
 		}
 	}
-	taskSvc.executeRasterMosaicGeneration(executionCtx, task, "mosaic-exec-scan", startedAt)
+	taskSvc.executeRasterMosaicGeneration(executionCtx, task, "mosaic-exec-scan")
 
 	if scanSubmitter.tenantID == nil || *scanSubmitter.tenantID != 7 {
 		t.Fatalf("scan tenant id = %#v, want 7", scanSubmitter.tenantID)
@@ -503,7 +503,7 @@ func TestRasterMosaicGenerationFailsWhenMetaScanSubmitFails(t *testing.T) {
 	}
 	startedAt := time.Now().Add(-time.Minute)
 	executionCtx := startRasterMosaicTestExecution(t, db, mosaicRepo, task, "mosaic-exec-scan-failed", startedAt)
-	taskSvc.executeRasterMosaicGeneration(executionCtx, task, "mosaic-exec-scan-failed", startedAt)
+	taskSvc.executeRasterMosaicGeneration(executionCtx, task, "mosaic-exec-scan-failed")
 
 	got, err := taskExecRepo.GetByExecutionID(context.Background(), "mosaic-exec-scan-failed", 7)
 	if err != nil {
@@ -599,7 +599,7 @@ func TestRasterMosaicGenerationTimeoutKeepsLastProgress(t *testing.T) {
 		t.Fatalf("seed execution progress: %v", err)
 	}
 
-	taskSvc.executeRasterMosaicGeneration(executionCtx, task, "mosaic-exec-timeout", startedAt)
+	taskSvc.executeRasterMosaicGeneration(executionCtx, task, "mosaic-exec-timeout")
 
 	got, err := taskExecRepo.GetByExecutionID(context.Background(), "mosaic-exec-timeout", 7)
 	if err != nil {

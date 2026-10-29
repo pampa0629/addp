@@ -47,22 +47,9 @@ func (r *ExecutionRepository) RecoverUnleased(ctx context.Context, now time.Time
 		}
 		for index := range items {
 			item := &items[index]
-			fields := map[string]interface{}{
-				"status": commonExecution.ExecutionStatusFailed, "completed_at": now.UTC(), "updated_at": now.UTC(),
-				"lease_owner": nil, "lease_token": nil, "lease_expires_at": nil, "progress": 100, "current_step": nil,
-				"error_details": commonModels.JSONMap{"code": "develop." + item.TaskType + ".lease_missing", "message": "Develop execution has no valid lease; remote effects are not replayed"},
-			}
-			if item.StartedAt != nil {
-				fields["execution_time_ms"] = now.Sub(*item.StartedAt).Milliseconds()
-			}
-			result := tx.Model(&commonExecution.TaskExecution{}).
-				Where("execution_id = ? AND tenant_id = ? AND status = ? AND (attempt <= 0 OR lease_token IS NULL OR lease_owner IS NULL OR lease_expires_at IS NULL)", item.ExecutionID, item.TenantID, commonExecution.ExecutionStatusRunning).
-				Updates(fields)
-			if result.Error != nil {
-				return result.Error
-			}
-			if result.RowsAffected != 1 {
-				return fmt.Errorf("Develop execution %s changed during unleased recovery", item.ExecutionID)
+			fields := map[string]interface{}{"progress": 100, "current_step": nil, "error_details": commonModels.JSONMap{"code": "develop." + item.TaskType + ".lease_missing", "message": "Develop execution has no valid lease; remote effects are not replayed"}}
+			if err := commonExecution.FailUnleased(ctx, tx, item.ExecutionID, item.TenantID, item.Module, item.TaskType, fields); err != nil {
+				return err
 			}
 			if err := updateDevTaskExecutionSummary(tx, item, commonExecution.ExecutionStatusFailed, now); err != nil {
 				return err
@@ -103,7 +90,7 @@ func (r *ExecutionRepository) ClaimNext(
 		var err error
 		execution, lease, err = commonExecution.ClaimNext(ctx, claimDB, commonExecution.ClaimOptions{
 			Module: commonExecution.ModuleDevelop, TaskType: taskType,
-			WorkerID: workerID, Now: now, LeaseDuration: leaseDuration,
+			WorkerID: workerID, LeaseDuration: leaseDuration,
 		})
 		if err != nil || execution == nil {
 			return err
@@ -169,14 +156,11 @@ func (r *ExecutionRepository) FailClaimed(
 			"code": code, "message": message,
 		},
 	}
-	if execution != nil && execution.StartedAt != nil {
-		fields["execution_time_ms"] = completedAt.Sub(*execution.StartedAt).Milliseconds()
-	}
 	return r.CompleteWithLease(ctx, execution, lease, commonExecution.ExecutionStatusFailed, completedAt, fields)
 }
 
-func (r *ExecutionRepository) Renew(ctx context.Context, lease commonExecution.Lease, expiresAt time.Time) error {
-	return commonExecution.RenewLease(ctx, r.scoped(), lease, expiresAt)
+func (r *ExecutionRepository) Renew(ctx context.Context, lease commonExecution.Lease, duration time.Duration) error {
+	return commonExecution.RenewLease(ctx, r.scoped(), lease, duration)
 }
 
 func (r *ExecutionRepository) AttemptIsTerminal(ctx context.Context, lease commonExecution.Lease) (bool, error) {
@@ -184,10 +168,7 @@ func (r *ExecutionRepository) AttemptIsTerminal(ctx context.Context, lease commo
 }
 
 func (r *ExecutionRepository) AttachAuthorizationWithLease(ctx context.Context, lease commonExecution.Lease, authorizationID int64, expiresAt time.Time) error {
-	return commonExecution.UpdateWithLease(ctx, r.scoped(), lease, map[string]interface{}{
-		"execution_authorization_id": authorizationID,
-		"authorization_expires_at":   expiresAt.UTC(),
-	})
+	return commonExecution.AttachAuthorizationWithLease(ctx, r.scoped(), lease, authorizationID, expiresAt)
 }
 
 func (r *ExecutionRepository) UpdateProgressWithLease(ctx context.Context, lease commonExecution.Lease, progress int, currentStep string) error {
@@ -213,6 +194,9 @@ func (r *ExecutionRepository) CompleteWithLease(
 	}
 	var stage *httptrace.ExecutionStage
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := commonExecution.LockActiveLease(ctx, tx, lease); err != nil {
+			return err
+		}
 		stageCtx := ctx
 		if execution.TaskType == commonExecution.TaskTypeQuery {
 			current, err := ownedQueryExecution(ctx, tx, lease)
@@ -225,10 +209,10 @@ func (r *ExecutionRepository) CompleteWithLease(
 				return err
 			}
 		}
-		if err := commonExecution.CompleteWithEvent(stageCtx, tx.Where("module = ? AND task_type = ?", commonExecution.ModuleDevelop, execution.TaskType), lease, status, completedAt, fields); err != nil {
+		if err := updateDevTaskExecutionSummary(tx, execution, status, completedAt); err != nil {
 			return err
 		}
-		return updateDevTaskExecutionSummary(tx, execution, status, completedAt)
+		return commonExecution.CompleteWithEvent(stageCtx, tx.Where("module = ? AND task_type = ?", commonExecution.ModuleDevelop, execution.TaskType), lease, status, fields)
 	})
 	endQueryExecutionStage(stage, execution.ExecutionID, status, err)
 	return err
@@ -245,8 +229,7 @@ func (r *ExecutionRepository) RecoverExpired(ctx context.Context, now time.Time,
 	}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		items, err := commonExecution.FindExpiredForUpdate(ctx, tx, commonExecution.ExpiredOptions{
-			Module: commonExecution.ModuleDevelop, TaskTypes: executionTaskTypes,
-			Now: now, Limit: limit,
+			Module: commonExecution.ModuleDevelop, TaskTypes: executionTaskTypes, Limit: limit,
 		})
 		if err != nil {
 			return err
@@ -271,10 +254,7 @@ func (r *ExecutionRepository) RecoverExpired(ctx context.Context, now time.Time,
 			if stage.Reference() != nil {
 				fields["metadata"] = queryStageMetadata(item.Metadata, stage)
 			}
-			if item.StartedAt != nil {
-				fields["execution_time_ms"] = now.Sub(*item.StartedAt).Milliseconds()
-			}
-			if err := commonExecution.FailExpiredWithEvent(stageCtx, tx, lease, now, fields); err != nil {
+			if err := commonExecution.FailExpiredWithEvent(stageCtx, tx, lease, fields); err != nil {
 				return err
 			}
 			if err := updateDevTaskExecutionSummary(tx, &item, commonExecution.ExecutionStatusFailed, now); err != nil {

@@ -91,7 +91,7 @@ func (s *ExecutionService) Execute(ctx context.Context, item *commonExecution.Ta
 		metadata["outputs"] = outputs
 	}
 	status := commonExecution.ExecutionStatusSuccess
-	fields := terminalQueryFields(startedAt, metadata, nil)
+	fields := terminalQueryFields(metadata, nil)
 	if message != "" {
 		status = commonExecution.ExecutionStatusFailed
 		suffix := "execution_failed"

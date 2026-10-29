@@ -20,7 +20,7 @@ func (s *ScanExecutionService) ClaimNextBoundedExecution(ctx context.Context, wo
 		var err error
 		execution, lease, err = commonExecution.ClaimNext(ctx, tx, commonExecution.ClaimOptions{
 			Module: commonExecution.ModuleMeta, TaskType: commonExecution.TaskTypeScan,
-			WorkerID: workerID, Now: now, LeaseDuration: leaseDuration,
+			WorkerID: workerID, LeaseDuration: leaseDuration,
 		})
 		if err == nil && execution != nil {
 			err = commonExecution.AppendBoundedEvent(ctx, tx, *lease, commonExecution.EventInput{Kind: "started"})
@@ -34,7 +34,7 @@ func (s *ScanExecutionService) ClaimNextBoundedExecution(ctx context.Context, wo
 		}
 		result := tx.Model(&models.ScanTask{}).
 			Where("id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?", taskID, execution.TenantID, execution.ExecutionID, commonExecution.ExecutionStatusPending).
-			Updates(map[string]interface{}{"last_run_at": now, "last_execution_status": commonExecution.ExecutionStatusRunning, "updated_at": now})
+			Updates(map[string]interface{}{"last_run_at": execution.StartedAt, "last_execution_status": commonExecution.ExecutionStatusRunning, "updated_at": now})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -45,11 +45,11 @@ func (s *ScanExecutionService) ClaimNextBoundedExecution(ctx context.Context, wo
 				// A deleted definition must not strand its pending execution.
 				// The owner check will deny it before source dispatch and record
 				// the failed attempt without recreating a task summary.
-				return nil
+				return commonExecution.UpdateWithLease(ctx, tx, *lease, nil)
 			}
 			return fmt.Errorf("meta task %d summary no longer matches execution %s", taskID, execution.ExecutionID)
 		}
-		return nil
+		return commonExecution.UpdateWithLease(ctx, tx, *lease, nil)
 	})
 	if err != nil {
 		return nil, nil, err
@@ -67,7 +67,7 @@ func (s *ScanExecutionService) FailExpiredBoundedExecutions(ctx context.Context,
 	count := 0
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		items, err := commonExecution.FindExpiredForUpdate(ctx, tx, commonExecution.ExpiredOptions{
-			Module: commonExecution.ModuleMeta, TaskType: commonExecution.TaskTypeScan, Now: now, Limit: limit,
+			Module: commonExecution.ModuleMeta, TaskType: commonExecution.TaskTypeScan, Limit: limit,
 		})
 		if err != nil {
 			return err
@@ -85,10 +85,7 @@ func (s *ScanExecutionService) FailExpiredBoundedExecutions(ctx context.Context,
 					"message": "meta scan execution lease expired; inspect partial metadata before retrying",
 				},
 			}
-			if item.StartedAt != nil {
-				fields["execution_time_ms"] = now.Sub(*item.StartedAt).Milliseconds()
-			}
-			if err := commonExecution.FailExpired(ctx, tx, lease, now, fields); err != nil {
+			if err := commonExecution.FailExpired(ctx, tx, lease, fields); err != nil {
 				return err
 			}
 			if err := updateScanTaskSummary(tx, &item, commonExecution.ExecutionStatusFailed, now); err != nil {
@@ -125,8 +122,8 @@ func (s *ScanExecutionService) completeBoundedExecution(ctx context.Context, exe
 	delete(fields, "updated_at")
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Completion owns summary counters; preserve the final typed progress snapshot.
-		var current commonExecution.TaskExecution
-		if err := tx.Select("metadata").Where("execution_id = ? AND tenant_id = ?", execution.ExecutionID, execution.TenantID).Take(&current).Error; err != nil {
+		current, err := commonExecution.LockActiveLease(ctx, tx, lease)
+		if err != nil {
 			return err
 		}
 		if progress := models.ObserveScanProgress(current.Metadata); progress != nil {
@@ -144,10 +141,10 @@ func (s *ScanExecutionService) completeBoundedExecution(ctx context.Context, exe
 				metadata["produced_target"] = current.Metadata["produced_target"]
 			}
 		}
-		if err := commonExecution.CompleteWithEvent(ctx, tx, lease, status, completedAt, fields); err != nil {
+		if err := updateScanTaskSummary(tx, execution, status, completedAt); err != nil {
 			return err
 		}
-		return updateScanTaskSummary(tx, execution, status, completedAt)
+		return commonExecution.CompleteWithEvent(ctx, tx, lease, status, fields)
 	})
 }
 
@@ -161,7 +158,7 @@ func updateScanTaskSummary(tx *gorm.DB, execution *commonExecution.TaskExecution
 	}
 	result := tx.Model(&models.ScanTask{}).
 		Where("id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?", taskID, execution.TenantID, execution.ExecutionID, commonExecution.ExecutionStatusRunning).
-		Updates(scantask.TaskStatusBackfillFields(execution.ExecutionID, status, completedAt, completedAt))
+		Updates(scantask.TaskStatusBackfillFields(execution.ExecutionID, status, completedAt))
 	if result.Error != nil {
 		return result.Error
 	}

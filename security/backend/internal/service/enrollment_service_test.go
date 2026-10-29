@@ -349,7 +349,7 @@ func assertExplicitRediscoveryRenewal(t *testing.T, changedSchema bool) {
 	if _, err := enrollments.CreateDiscoveryExecution(context.Background(), 7, 41, current.ID, models.CreateProtectionDiscoveryExecutionRequest{Version: afterCreate.Version}); !errors.Is(err, ErrDiscoveryExecutionInProgress) {
 		t.Fatalf("duplicate rediscovery error = %v", err)
 	}
-	execution, lease, err := discoveries.ClaimNext(context.Background(), "security-rediscovery-test", time.Now().UTC(), time.Minute)
+	execution, lease, err := discoveries.ClaimNext(context.Background(), "security-rediscovery-test", time.Minute)
 	if err != nil || execution == nil || lease == nil || execution.ExecutionID != created.ExecutionID {
 		t.Fatalf("claim = %#v/%#v, err=%v", execution, lease, err)
 	}
@@ -651,7 +651,7 @@ func prepareZeroFindingEnrollment(t *testing.T) (*gorm.DB, *EnrollmentService, *
 		ItemType:        "table", Fields: fields, SourceSnapshotHash: hash, ObservedAt: time.Now().UTC(),
 	}
 	discoveries := NewDiscoveryService(db, func(uint) SecurityFactsReader { return staticSecurityFactsReader{facts: facts} })
-	execution, lease, err := discoveries.ClaimNext(context.Background(), "security-zero-finding-test", time.Now().UTC(), time.Minute)
+	execution, lease, err := discoveries.ClaimNext(context.Background(), "security-zero-finding-test", time.Minute)
 	if err != nil || execution == nil || lease == nil {
 		t.Fatalf("claim = %#v/%#v, err=%v", execution, lease, err)
 	}

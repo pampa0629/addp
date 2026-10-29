@@ -101,7 +101,7 @@ func TestIntegrationPostgresManagerTileCacheConcurrentClaimAndStart(t *testing.T
 		t.Fatalf("claimed executions = %#v", executions)
 	}
 	startedAt := createdAt.Add(time.Second)
-	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, executions[0].ExecutionID, int(tenantID), startedAt), task.ID, tenantID, executions[0].ExecutionID, startedAt); err != nil {
+	if err := repo.ValidateClaim(managerExecutionLeaseContextForTest(t, db, executions[0].ExecutionID, int(tenantID), startedAt), task.ID, tenantID, executions[0].ExecutionID); err != nil {
 		t.Fatalf("start claimed execution: %v", err)
 	}
 	var storedTask models.TileCacheTask
@@ -198,7 +198,7 @@ func TestIntegrationPostgresManagerVectorMaterializedViewConcurrentClaimAndStart
 		t.Fatalf("claimed executions = %#v", executions)
 	}
 	startedAt := createdAt.Add(time.Second)
-	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, executions[0].ExecutionID, int(tenantID), startedAt), task.ID, tenantID, executions[0].ExecutionID, startedAt); err != nil {
+	if err := repo.ValidateClaim(managerExecutionLeaseContextForTest(t, db, executions[0].ExecutionID, int(tenantID), startedAt), task.ID, tenantID, executions[0].ExecutionID); err != nil {
 		t.Fatalf("start claimed execution: %v", err)
 	}
 	var storedTask models.VectorMaterializedViewTask
@@ -295,7 +295,7 @@ func TestIntegrationPostgresManagerRasterCOGConcurrentClaimAndStart(t *testing.T
 		t.Fatalf("claimed executions = %#v", executions)
 	}
 	startedAt := createdAt.Add(time.Second)
-	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, executions[0].ExecutionID, int(tenantID), startedAt), task.ID, tenantID, executions[0].ExecutionID, startedAt); err != nil {
+	if err := repo.ValidateClaim(managerExecutionLeaseContextForTest(t, db, executions[0].ExecutionID, int(tenantID), startedAt), task.ID, tenantID, executions[0].ExecutionID); err != nil {
 		t.Fatalf("start claimed execution: %v", err)
 	}
 	var storedTask models.RasterCOGTask
@@ -390,7 +390,7 @@ func TestIntegrationPostgresManagerRasterMosaicConcurrentClaimAndStart(t *testin
 		t.Fatalf("claimed executions = %#v", executions)
 	}
 	startedAt := createdAt.Add(time.Second)
-	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, executions[0].ExecutionID, int(tenantID), startedAt), task.ID, tenantID, executions[0].ExecutionID, startedAt); err != nil {
+	if err := repo.ValidateClaim(managerExecutionLeaseContextForTest(t, db, executions[0].ExecutionID, int(tenantID), startedAt), task.ID, tenantID, executions[0].ExecutionID); err != nil {
 		t.Fatalf("start claimed execution: %v", err)
 	}
 	var storedTask models.RasterMosaicTask
@@ -498,7 +498,7 @@ func TestIntegrationPostgresManagerModel3DGLBConcurrentClaimAndStart(t *testing.
 		t.Fatalf("GLB actor origin was lost or treated as source authorization: %#v", executions[0])
 	}
 	startedAt := createdAt.Add(time.Second)
-	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, executions[0].ExecutionID, int(tenantID), startedAt), task.ID, tenantID, executions[0].ExecutionID, startedAt); err != nil {
+	if err := repo.ValidateClaim(managerExecutionLeaseContextForTest(t, db, executions[0].ExecutionID, int(tenantID), startedAt), task.ID, tenantID, executions[0].ExecutionID); err != nil {
 		t.Fatalf("start claimed execution: %v", err)
 	}
 	var storedTask models.Model3DGLBTask
@@ -595,7 +595,7 @@ func TestIntegrationPostgresManagerGaussianSplatKSplatConcurrentClaimAndStart(t 
 		t.Fatalf("claimed executions = %#v", executions)
 	}
 	startedAt := createdAt.Add(time.Second)
-	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, executions[0].ExecutionID, int(tenantID), startedAt), task.ID, tenantID, executions[0].ExecutionID, startedAt); err != nil {
+	if err := repo.ValidateClaim(managerExecutionLeaseContextForTest(t, db, executions[0].ExecutionID, int(tenantID), startedAt), task.ID, tenantID, executions[0].ExecutionID); err != nil {
 		t.Fatalf("start claimed execution: %v", err)
 	}
 	var storedTask models.GaussianSplatKSplatTask
@@ -678,7 +678,7 @@ func TestIntegrationPostgresManagerPointCloudCOPCConcurrentClaimAndStart(t *test
 	}
 	startedAt := createdAt.Add(time.Second)
 	leaseCtx := managerExecutionLeaseContextForTest(t, db, executions[0].ExecutionID, int(tenantID), startedAt)
-	if err := repo.StartExecution(leaseCtx, task.ID, tenantID, executions[0].ExecutionID, startedAt); err != nil {
+	if err := repo.ValidateClaim(leaseCtx, task.ID, tenantID, executions[0].ExecutionID); err != nil {
 		t.Fatalf("start claimed execution: %v", err)
 	}
 	if err := repo.UpdateRunningExecutionProgress(leaseCtx, tenantID, executions[0].ExecutionID, map[string]interface{}{"progress": 30}); err != nil {
@@ -756,7 +756,7 @@ func TestIntegrationPostgresManagerModel3DTilesConcurrentClaimAndStart(t *testin
 	if len(executions) != 1 || executions[0].Status != commonExecution.ExecutionStatusPending || executions[0].StartedAt != nil {
 		t.Fatalf("claimed executions = %#v", executions)
 	}
-	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, executions[0].ExecutionID, int(tenantID), createdAt.Add(time.Second)), task.ID, tenantID, executions[0].ExecutionID, createdAt.Add(time.Second)); err != nil {
+	if err := repo.ValidateClaim(managerExecutionLeaseContextForTest(t, db, executions[0].ExecutionID, int(tenantID), createdAt.Add(time.Second)), task.ID, tenantID, executions[0].ExecutionID); err != nil {
 		t.Fatalf("start claimed execution: %v", err)
 	}
 }

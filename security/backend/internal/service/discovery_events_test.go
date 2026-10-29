@@ -74,7 +74,7 @@ func TestDiscoveryExecutionEventsAgainstPostgres(t *testing.T) {
 func discoveryExecutionEventCases(t *testing.T, open func(*testing.T) *gorm.DB) {
 	t.Run("empty_queue_has_no_events", func(t *testing.T) {
 		db := open(t)
-		item, lease, err := NewDiscoveryService(db, nil).ClaimNext(t.Context(), "events-worker", time.Now().UTC(), time.Minute)
+		item, lease, err := NewDiscoveryService(db, nil).ClaimNext(t.Context(), "events-worker", time.Minute)
 		if err != nil || item != nil || lease != nil {
 			t.Fatal("empty queue claimed work", err)
 		}
@@ -87,7 +87,7 @@ func discoveryExecutionEventCases(t *testing.T, open func(*testing.T) *gorm.DB) 
 		db := open(t)
 		item := seedDiscoveryEventExecution(t, db, 1)
 		rejectDiscoveryEvents(t, db)
-		claimed, lease, err := NewDiscoveryService(db, nil).ClaimNext(t.Context(), "events-worker", time.Now().UTC(), time.Minute)
+		claimed, lease, err := NewDiscoveryService(db, nil).ClaimNext(t.Context(), "events-worker", time.Minute)
 		if err == nil || claimed != nil || lease != nil {
 			t.Fatal("claim ignored failed event storage")
 		}
@@ -102,18 +102,28 @@ func discoveryExecutionEventCases(t *testing.T, open func(*testing.T) *gorm.DB) 
 		seedDiscoveryEventExecution(t, db, 1)
 		svc := NewDiscoveryService(db, nil)
 		item, lease := claimDiscoveryEventExecution(t, svc)
-		if err := svc.Renew(t.Context(), lease, time.Now().UTC().Add(2*time.Minute)); err != nil {
+		// The worker's in-memory start is not lifecycle authority. Only the
+		// persisted claim fact determines the terminal duration.
+		started := time.Now().UTC().Add(-3 * time.Second).Truncate(time.Microsecond)
+		if err := db.Model(&execution.TaskExecution{}).Where("execution_id = ?", item.ExecutionID).Update("started_at", started).Error; err != nil {
+			t.Fatal(err)
+		}
+		workerStart := time.Now().UTC().Add(time.Hour)
+		item.StartedAt = &workerStart
+		if err := svc.Renew(t.Context(), lease, 2*time.Minute); err != nil {
 			t.Fatal(err)
 		}
 		assertDiscoveryEventKinds(t, db, item.ExecutionID, []string{"started"}, []int{1})
 		if err := svc.Execute(t.Context(), item, lease); err == nil {
 			t.Fatal("missing facts unexpectedly succeeded")
 		}
-		if storedDiscoveryEventExecution(t, db, item.ExecutionID).Status != execution.ExecutionStatusFailed {
+		stored := storedDiscoveryEventExecution(t, db, item.ExecutionID)
+		if stored.Status != execution.ExecutionStatusFailed {
 			t.Fatal("failure state was not saved")
 		}
+		assertDiscoveryLifecycleDuration(t, stored, started)
 		assertDiscoveryEventKinds(t, db, item.ExecutionID, []string{"started", "failed"}, []int{1, 1})
-		if err := svc.completeFailure(t.Context(), lease, time.Now().UTC(), "duplicate_failure"); !errors.Is(err, commonapi.ErrConflict) {
+		if err := svc.completeFailure(t.Context(), lease, "duplicate_failure"); !errors.Is(err, commonapi.ErrConflict) {
 			t.Fatal("terminal execution accepted a duplicate", err)
 		}
 		assertDiscoveryEventKinds(t, db, item.ExecutionID, []string{"started", "failed"}, []int{1, 1})
@@ -132,7 +142,7 @@ func discoveryExecutionEventCases(t *testing.T, open func(*testing.T) *gorm.DB) 
 		} {
 			wrong := lease
 			mutate(&wrong)
-			if err := svc.completeFailure(t.Context(), wrong, time.Now().UTC(), "stale"); !errors.Is(err, commonapi.ErrConflict) {
+			if err := svc.completeFailure(t.Context(), wrong, "stale"); !errors.Is(err, commonapi.ErrConflict) {
 				t.Fatal("mismatched lease was not rejected", err)
 			}
 		}
@@ -147,32 +157,34 @@ func discoveryExecutionEventCases(t *testing.T, open func(*testing.T) *gorm.DB) 
 		svc := NewDiscoveryService(db, nil)
 		first, firstLease := claimDiscoveryEventExecution(t, svc)
 		expireDiscoveryEventLease(t, db, first.ExecutionID)
-		if err := svc.completeFailure(t.Context(), firstLease, time.Now().UTC(), "expired_worker"); !errors.Is(err, commonapi.ErrConflict) {
+		if err := svc.completeFailure(t.Context(), firstLease, "expired_worker"); !errors.Is(err, commonapi.ErrConflict) {
 			t.Fatal("expired worker completed", err)
 		}
-		if count, err := svc.RecoverExpired(t.Context(), time.Now().UTC(), 100); err != nil || count != 1 {
+		if count, err := svc.RecoverExpired(t.Context(), 100); err != nil || count != 1 {
 			t.Fatal("retry failed", count, err)
 		}
 		if row := storedDiscoveryEventExecution(t, db, first.ExecutionID); row.Status != execution.ExecutionStatusPending || row.Attempt != 1 || row.MaxAttempts != 2 {
 			t.Fatal("retry policy changed")
+		} else if row.StartedAt != nil || row.CompletedAt != nil || row.ExecutionTimeMs != nil || row.LeaseOwner != nil || row.LeaseToken != nil || row.LeaseExpiresAt != nil {
+			t.Fatal("retry retained prior attempt lifecycle facts")
 		}
 		assertDiscoveryEventKinds(t, db, first.ExecutionID, []string{"started"}, []int{1})
 		second, _ := claimDiscoveryEventExecution(t, svc)
 		if second.Attempt != 2 {
 			t.Fatal("retry did not claim a new attempt")
 		}
-		if err := svc.completeFailure(t.Context(), firstLease, time.Now().UTC(), "old_attempt"); !errors.Is(err, commonapi.ErrConflict) {
+		if err := svc.completeFailure(t.Context(), firstLease, "old_attempt"); !errors.Is(err, commonapi.ErrConflict) {
 			t.Fatal("old attempt wrote after new claim", err)
 		}
 		expireDiscoveryEventLease(t, db, second.ExecutionID)
-		if count, err := svc.RecoverExpired(t.Context(), time.Now().UTC(), 100); err != nil || count != 1 {
+		if count, err := svc.RecoverExpired(t.Context(), 100); err != nil || count != 1 {
 			t.Fatal("exhausted recovery failed", count, err)
 		}
 		if row := storedDiscoveryEventExecution(t, db, second.ExecutionID); row.Status != execution.ExecutionStatusFailed || row.ErrorDetails["error_code"] != "worker_lease_expired" {
 			t.Fatal("exhausted recovery did not retain its failure code")
 		}
 		assertDiscoveryEventKinds(t, db, second.ExecutionID, []string{"started", "started", "failed"}, []int{1, 2, 2})
-		if count, err := svc.RecoverExpired(t.Context(), time.Now().UTC(), 100); err != nil || count != 0 {
+		if count, err := svc.RecoverExpired(t.Context(), 100); err != nil || count != 0 {
 			t.Fatal("terminal execution recovered twice", count, err)
 		}
 	})
@@ -183,7 +195,7 @@ func discoveryExecutionEventCases(t *testing.T, open func(*testing.T) *gorm.DB) 
 		item, _ := claimDiscoveryEventExecution(t, svc)
 		expireDiscoveryEventLease(t, db, item.ExecutionID)
 		rejectDiscoveryEvents(t, db)
-		if _, err := svc.RecoverExpired(t.Context(), time.Now().UTC(), 100); err == nil {
+		if _, err := svc.RecoverExpired(t.Context(), 100); err == nil {
 			t.Fatal("recovery ignored failed event storage")
 		}
 		if row := storedDiscoveryEventExecution(t, db, item.ExecutionID); row.Status != execution.ExecutionStatusRunning || row.CompletedAt != nil {
@@ -234,8 +246,52 @@ func discoveryExecutionEventCases(t *testing.T, open func(*testing.T) *gorm.DB) 
 					t.Fatal("discovery and completion did not commit together", err)
 				}
 				assertDiscoveryEventKinds(t, db, item.ExecutionID, []string{"started", "completed"}, []int{1, 1})
+				assertDiscoveryLifecycleDuration(t, stored, *item.StartedAt)
 			}
 		})
+	}
+	t.Run("expired_lease_cannot_write_findings_source_or_projection", func(t *testing.T) {
+		db := open(t)
+		svc, enrollmentID := prepareDiscoveryEventFinding(t, db)
+		item, lease := claimDiscoveryEventExecution(t, svc)
+		var before models.ProtectionEnrollment
+		if err := db.First(&before, "id = ?", enrollmentID).Error; err != nil {
+			t.Fatal(err)
+		}
+		var beforeChanges int64
+		if err := db.Model(&models.ProtectionProjectionChange{}).Count(&beforeChanges).Error; err != nil {
+			t.Fatal(err)
+		}
+		expireDiscoveryEventLease(t, db, item.ExecutionID)
+		if err := svc.Execute(t.Context(), item, lease); !errors.Is(err, commonapi.ErrConflict) {
+			t.Fatal("expired discovery was not fenced", err)
+		}
+		var after models.ProtectionEnrollment
+		if err := db.First(&after, "id = ?", enrollmentID).Error; err != nil {
+			t.Fatal(err)
+		}
+		var findings, changes int64
+		if err := db.Model(&models.SensitiveFinding{}).Count(&findings).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&models.ProtectionProjectionChange{}).Count(&changes).Error; err != nil {
+			t.Fatal(err)
+		}
+		stored := storedDiscoveryEventExecution(t, db, item.ExecutionID)
+		if findings != 0 || changes != beforeChanges || after.LatestSourceSnapshotHash != before.LatestSourceSnapshotHash || after.LatestDiscoveryExecutionID != before.LatestDiscoveryExecutionID || after.Version != before.Version || stored.Status != execution.ExecutionStatusRunning || stored.CompletedAt != nil {
+			t.Fatal("expired worker committed owner facts or terminal state")
+		}
+		assertDiscoveryEventKinds(t, db, item.ExecutionID, []string{"started"}, []int{1})
+	})
+}
+
+func assertDiscoveryLifecycleDuration(t *testing.T, item execution.TaskExecution, started time.Time) {
+	t.Helper()
+	if item.StartedAt == nil || !item.StartedAt.Equal(started) || item.CompletedAt == nil || item.ExecutionTimeMs == nil || item.CompletedAt.Before(started) {
+		t.Fatal("missing or inconsistent persisted attempt timing")
+	}
+	if *item.ExecutionTimeMs != item.CompletedAt.Sub(started).Milliseconds() || item.LeaseOwner != nil || item.LeaseToken != nil || item.LeaseExpiresAt != nil {
+		t.Fatal("completion did not derive duration and clear the lease")
 	}
 }
 
@@ -255,7 +311,7 @@ func seedDiscoveryEventExecution(t *testing.T, db *gorm.DB, attempts int) execut
 
 func claimDiscoveryEventExecution(t *testing.T, svc *DiscoveryService) (*execution.TaskExecution, execution.Lease) {
 	t.Helper()
-	item, lease, err := svc.ClaimNext(t.Context(), "private-event-sentinel-worker", time.Now().UTC(), time.Minute)
+	item, lease, err := svc.ClaimNext(t.Context(), "private-event-sentinel-worker", time.Minute)
 	if err != nil || item == nil || lease == nil {
 		t.Fatal("claim failed", err)
 	}

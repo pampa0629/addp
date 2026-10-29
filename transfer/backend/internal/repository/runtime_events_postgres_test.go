@@ -56,7 +56,7 @@ func TestIntegrationPostgresContinuousExecutionEvents(t *testing.T) {
 				if err := db.Model(&claim.Task).Update("desired_state", models.TaskDesiredStateStopped).Error; err != nil {
 					t.Fatal(err)
 				}
-				if err := repo.Finish(t.Context(), claim, commonExecution.ExecutionStatusFailed, "", code, "record validation failed", time.Now()); err != nil {
+				if err := repo.Finish(t.Context(), claim, commonExecution.ExecutionStatusFailed, "", code, "record validation failed"); err != nil {
 					t.Fatal(err)
 				}
 				var stored commonExecution.TaskExecution
@@ -80,7 +80,7 @@ func TestIntegrationPostgresContinuousExecutionEvents(t *testing.T) {
 
 	t.Run("claim_progress_pause_terminal_and_closed_payload", func(t *testing.T) {
 		claim := continuousEventFixture(t, db, false)
-		started, err := repo.ClaimNext(t.Context(), claim.Lease.OwnerInstanceID, time.Now(), time.Minute)
+		started, err := repo.ClaimNext(t.Context(), claim.Lease.OwnerInstanceID, time.Minute)
 		if err != nil || started == nil || started.Execution.ExecutionID != claim.Execution.ExecutionID || started.Execution.Attempt != 1 {
 			t.Fatalf("claim=%#v err=%v", started, err)
 		}
@@ -89,7 +89,7 @@ func TestIntegrationPostgresContinuousExecutionEvents(t *testing.T) {
 		if err := repo.RecordProgress(t.Context(), claim, progress); err != nil {
 			t.Fatal(err)
 		}
-		if err := repo.Renew(t.Context(), claim.Task.ID, claim.Lease.OwnerInstanceID, claim.Lease.FencingToken, time.Now(), time.Minute); err != nil {
+		if err := repo.Renew(t.Context(), claim.Task.ID, claim.Lease.OwnerInstanceID, claim.Lease.FencingToken, time.Minute); err != nil {
 			t.Fatal(err)
 		}
 		if err := NewTaskRepository(db).SetContinuousDesiredState(t.Context(), claim.Task.ID, claim.Task.TenantID, models.TaskDesiredStatePaused, "paused"); err != nil {
@@ -98,10 +98,10 @@ func TestIntegrationPostgresContinuousExecutionEvents(t *testing.T) {
 		if err := repo.RecordProgress(t.Context(), claim, progress); !errors.Is(err, ErrRuntimeLeaseLost) {
 			t.Fatalf("paused progress=%v", err)
 		}
-		if err := repo.Finish(t.Context(), claim, commonExecution.ExecutionStatusCancelled, "paused", "", "private-runtime-response", time.Now()); err != nil {
+		if err := repo.Finish(t.Context(), claim, commonExecution.ExecutionStatusCancelled, "paused", "", "private-runtime-response"); err != nil {
 			t.Fatal(err)
 		}
-		if err := repo.Finish(t.Context(), claim, commonExecution.ExecutionStatusCancelled, "paused", "", "", time.Now()); !errors.Is(err, ErrRuntimeLeaseLost) {
+		if err := repo.Finish(t.Context(), claim, commonExecution.ExecutionStatusCancelled, "paused", "", ""); !errors.Is(err, ErrRuntimeLeaseLost) {
 			t.Fatalf("duplicate terminal=%v", err)
 		}
 		events := continuousStoredEvents(t, db, claim.Execution.ExecutionID)
@@ -149,7 +149,7 @@ func TestIntegrationPostgresContinuousExecutionEvents(t *testing.T) {
 			if err := repo.RecordProgress(t.Context(), bad, continuousEventProgress(9)); !errors.Is(err, ErrRuntimeLeaseLost) {
 				t.Fatalf("progress case %d=%v", i, err)
 			}
-			if err := repo.Finish(t.Context(), bad, "success", "", "", "", time.Now()); !errors.Is(err, ErrRuntimeLeaseLost) {
+			if err := repo.Finish(t.Context(), bad, "success", "", "", ""); !errors.Is(err, ErrRuntimeLeaseLost) {
 				t.Fatalf("finish case %d=%v", i, err)
 			}
 		}
@@ -174,8 +174,8 @@ func TestIntegrationPostgresContinuousExecutionEvents(t *testing.T) {
 		}
 		for name, err := range map[string]error{
 			"progress": repo.RecordProgress(t.Context(), claim, continuousEventProgress(9)),
-			"finish":   repo.Finish(t.Context(), claim, "success", "", "", "", time.Now()),
-			"renew":    repo.Renew(t.Context(), claim.Task.ID, claim.Lease.OwnerInstanceID, claim.Lease.FencingToken, time.Now(), time.Minute),
+			"finish":   repo.Finish(t.Context(), claim, "success", "", "", ""),
+			"renew":    repo.Renew(t.Context(), claim.Task.ID, claim.Lease.OwnerInstanceID, claim.Lease.FencingToken, time.Minute),
 		} {
 			if !errors.Is(err, ErrRuntimeLeaseLost) {
 				t.Fatalf("expired %s=%v", name, err)
@@ -201,10 +201,10 @@ func TestIntegrationPostgresContinuousExecutionEvents(t *testing.T) {
 		if err := repo.RecordProgress(t.Context(), active, continuousEventProgress(3)); err == nil {
 			t.Fatal("progress ignored event failure")
 		}
-		if err := repo.Finish(t.Context(), active, "success", "", "", "", time.Now()); err == nil {
+		if err := repo.Finish(t.Context(), active, "success", "", "", ""); err == nil {
 			t.Fatal("finish ignored event failure")
 		}
-		if _, err := repo.ClaimNext(t.Context(), pending.Lease.OwnerInstanceID, time.Now(), time.Minute); err == nil {
+		if _, err := repo.ClaimNext(t.Context(), pending.Lease.OwnerInstanceID, time.Minute); err == nil {
 			t.Fatal("claim ignored event failure")
 		}
 		var stored commonExecution.TaskExecution
@@ -270,7 +270,7 @@ func TestIntegrationPostgresContinuousExecutionEvents(t *testing.T) {
 		if err := db.CreateInBatches(full, 100).Error; err != nil {
 			t.Fatal(err)
 		}
-		if err := repo.Finish(t.Context(), terminal, "success", "", "", "", time.Now()); err != nil {
+		if err := repo.Finish(t.Context(), terminal, "success", "", "", ""); err != nil {
 			t.Fatal(err)
 		}
 		var completed commonExecution.TaskExecution
@@ -287,7 +287,7 @@ func TestIntegrationPostgresContinuousExecutionEvents(t *testing.T) {
 		if err := repo.RecordProgress(t.Context(), claim, continuousEventProgress(7)); err != nil {
 			t.Fatal(err)
 		}
-		if err := repo.Finish(t.Context(), claim, "success", "", "", "", time.Now()); err != nil {
+		if err := repo.Finish(t.Context(), claim, "success", "", "", ""); err != nil {
 			t.Fatal(err)
 		}
 		events = continuousStoredEvents(t, db, claim.Execution.ExecutionID)
@@ -330,9 +330,9 @@ func TestIntegrationPostgresContinuousExecutionEvents(t *testing.T) {
 					case "progress":
 						result <- repo.RecordProgress(ctx, claim, continuousEventProgress(99))
 					case "finish":
-						result <- repo.Finish(ctx, claim, "success", "", "", "", time.Now())
+						result <- repo.Finish(ctx, claim, "success", "", "", "")
 					case "renew":
-						result <- repo.Renew(ctx, claim.Task.ID, claim.Lease.OwnerInstanceID, claim.Lease.FencingToken, time.Now(), time.Minute)
+						result <- repo.Renew(ctx, claim.Task.ID, claim.Lease.OwnerInstanceID, claim.Lease.FencingToken, time.Minute)
 					}
 				}()
 				select {
@@ -403,7 +403,7 @@ func TestIntegrationPostgresContinuousExecutionEvents(t *testing.T) {
 			t.Fatal(err)
 		}
 		for range 2 {
-			if recovered, err := repo.ClaimNext(t.Context(), "supervisor", time.Now(), time.Minute); err != nil || recovered != nil {
+			if recovered, err := repo.ClaimNext(t.Context(), "supervisor", time.Minute); err != nil || recovered != nil {
 				t.Fatalf("paused recovery=%#v err=%v", recovered, err)
 			}
 		}

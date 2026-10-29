@@ -122,8 +122,8 @@ func (r *BoundedRunner) heartbeat(ctx context.Context, cancel context.CancelFunc
 		case <-ctx.Done():
 			done <- nil
 			return
-		case now := <-ticker.C:
-			if err := r.executions.RenewBoundedExecutionLease(ctx, lease, now.UTC().Add(r.config.LeaseDuration)); err != nil {
+		case <-ticker.C:
+			if err := r.executions.RenewBoundedExecutionLease(ctx, lease, r.config.LeaseDuration); err != nil {
 				if ctx.Err() != nil {
 					done <- nil
 					return

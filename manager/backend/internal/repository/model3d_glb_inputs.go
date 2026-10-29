@@ -7,7 +7,6 @@ import (
 	"path"
 	"reflect"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	commonAPI "github.com/addp/common/api"
@@ -111,7 +110,7 @@ func (r *Model3DGLBRepository) changeExecutionInputs(ctx context.Context, result
 		if !Model3DGLBUsesExecutionOutput(&item) {
 			return commonAPI.ErrConflict
 		}
-		if err := commonExecution.UpdateWithLease(ctx, tx, lease, map[string]interface{}{"updated_at": time.Now().UTC()}); err != nil {
+		if err := commonExecution.UpdateWithLease(ctx, tx, lease, nil); err != nil {
 			return err
 		}
 		if err := hydrateModel3DGLBOutputMetadata(ctx, tx, &item); err != nil {

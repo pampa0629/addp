@@ -60,7 +60,7 @@ type PlanResult struct {
 }
 
 func (e *CheckExecutor) processPendingPlan(ctx context.Context, workerID string) bool {
-	execution, task, err := e.planRepo.ClaimPendingExecution(ctx, workerID, time.Now().UTC(), e.workerLease)
+	execution, task, err := e.planRepo.ClaimPendingExecution(ctx, workerID, e.workerLease)
 	if err != nil {
 		if ctx.Err() == nil {
 			log.Printf("quality plan claim failed: %v", err)
@@ -170,8 +170,8 @@ func (e *CheckExecutor) renewPlanLease(ctx context.Context, cancel context.Cance
 		case <-ctx.Done():
 			done <- nil
 			return
-		case now := <-ticker.C:
-			if err := e.planRepo.RenewLease(ctx, lease, now.UTC().Add(e.workerLease)); err != nil {
+		case <-ticker.C:
+			if err := e.planRepo.RenewLease(ctx, lease, e.workerLease); err != nil {
 				if ctx.Err() != nil {
 					done <- nil
 					return
@@ -185,14 +185,10 @@ func (e *CheckExecutor) renewPlanLease(ctx context.Context, cancel context.Cance
 }
 
 func (e *CheckExecutor) completePlan(ctx context.Context, task *models.QualityPlan, execution *commonExecution.TaskExecution, lease commonExecution.Lease, result *PlanResult, execErr error, timedOut bool) {
-	completedAt := time.Now().UTC()
 	status := commonExecution.ExecutionStatusSuccess
 	fields := map[string]interface{}{}
 	if execErr == nil && !timedOut {
 		fields["progress"] = 100
-	}
-	if execution.StartedAt != nil {
-		fields["execution_time_ms"] = completedAt.Sub(*execution.StartedAt).Milliseconds()
 	}
 	if result != nil {
 		passedRules := 0
@@ -226,7 +222,7 @@ func (e *CheckExecutor) completePlan(ctx context.Context, task *models.QualityPl
 			fields["error_details"] = commonModels.JSONMap{"code": planResultInvalidCode, "message": "quality issue projection failed"}
 		}
 	}
-	if err := e.planRepo.CompleteExecutionWithLease(ctx, task.ID, task.TenantID, lease, status, fields, completedAt, observations...); err != nil {
+	if err := e.planRepo.CompleteExecutionWithLease(ctx, task.ID, task.TenantID, lease, status, fields, observations...); err != nil {
 		log.Printf("quality plan %s completion failed: %v", execution.ExecutionID, err)
 	}
 }

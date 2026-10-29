@@ -66,7 +66,7 @@ func (s *ExecutionSupervisor) Run(ctx context.Context, canClaim func() bool) {
 }
 
 func (s *ExecutionSupervisor) pass(ctx context.Context) {
-	if _, err := s.service.RecoverExpired(ctx, time.Now().UTC(), s.config.BatchSize); err != nil {
+	if _, err := s.service.RecoverExpired(ctx, s.config.BatchSize); err != nil {
 		s.logger.Warn("编排失联执行收敛失败")
 		return
 	}
@@ -147,7 +147,7 @@ func (s *ExecutionSupervisor) heartbeatLoop(ctx context.Context, stop context.Ca
 			for _, item := range items {
 				lease, err := execution.LeaseFromExecution(item)
 				if err == nil {
-					err = execution.RenewLease(ctx, s.service.db, lease, time.Now().UTC().Add(s.config.LeaseDuration))
+					err = execution.RenewLease(ctx, s.service.db, lease, s.config.LeaseDuration)
 				}
 				if err != nil && ctx.Err() == nil {
 					// Completion may race renewal. A proven terminal row needs no lease.

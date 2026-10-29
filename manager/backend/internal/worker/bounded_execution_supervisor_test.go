@@ -110,7 +110,7 @@ func TestBoundedExecutionSupervisorWakeInterruptsIdleBackoff(t *testing.T) {
 	cancel()
 	<-done
 }
-func (q *supervisorTestQueue) RenewLease(context.Context, commonExecution.Lease, time.Time) error {
+func (q *supervisorTestQueue) RenewLease(context.Context, commonExecution.Lease, time.Duration) error {
 	return nil
 }
 func (q *supervisorTestQueue) AttemptIsTerminal(context.Context, commonExecution.Lease) (bool, error) {

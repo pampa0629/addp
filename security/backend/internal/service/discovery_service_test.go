@@ -213,7 +213,7 @@ func TestStructuredMetadataFindingCompilesGenericSuppressionForEveryStructuredOu
 				ItemType: string(resourcetree.TypeTable), Fields: fields, SourceSnapshotHash: hash, ObservedAt: time.Now().UTC(),
 			}
 			discoveries := NewDiscoveryService(db, func(uint) SecurityFactsReader { return staticSecurityFactsReader{facts: facts} })
-			execution, lease, err := discoveries.ClaimNext(context.Background(), "security-email-test", time.Now().UTC(), time.Minute)
+			execution, lease, err := discoveries.ClaimNext(context.Background(), "security-email-test", time.Minute)
 			if err != nil || execution == nil || lease == nil {
 				t.Fatalf("claim = %#v/%#v, err=%v", execution, lease, err)
 			}
@@ -327,7 +327,7 @@ func TestDiscoveryCreatesValueFreeFindingAndManagerActiveProjection(t *testing.T
 	}
 	facts := &dataprotection.DataItemSecurityFacts{SchemaVersion: dataprotection.DataItemSecurityFactsSchemaV1, ItemFingerprint: created.Target.ResourceIdentity, ItemType: "collection", Fields: fields, SourceSnapshotHash: hash, ObservedAt: time.Now().UTC()}
 	discoveries := NewDiscoveryService(db, func(uint) SecurityFactsReader { return staticSecurityFactsReader{facts: facts} })
-	execution, lease, err := discoveries.ClaimNext(context.Background(), "security-test", time.Now().UTC(), time.Minute)
+	execution, lease, err := discoveries.ClaimNext(context.Background(), "security-test", time.Minute)
 	if err != nil || execution == nil || lease == nil {
 		var queued []commonexecution.TaskExecution
 		_ = db.Find(&queued).Error
@@ -636,7 +636,7 @@ func TestDocumentDiscoveryCreatesSearchIndexProjectionWithoutPersistingSampleTex
 		Text: sampleText, Truncated: false, SourceSnapshotHash: sampleHash, ObservedAt: observedAt,
 	}
 	discoveries := NewDiscoveryService(db, func(uint) SecurityFactsReader { return staticSecurityFactsReader{facts: facts, sample: sample} })
-	execution, lease, err := discoveries.ClaimNext(context.Background(), "security-document-test", time.Now().UTC(), time.Minute)
+	execution, lease, err := discoveries.ClaimNext(context.Background(), "security-document-test", time.Minute)
 	if err != nil || execution == nil || lease == nil {
 		t.Fatalf("claim = %#v/%#v, err=%v", execution, lease, err)
 	}
@@ -743,7 +743,7 @@ func TestDetectorBindingControlsDiscoveryWithoutSensitiveTypeCodeFallback(t *tes
 	facts := &dataprotection.DataItemSecurityFacts{SchemaVersion: dataprotection.DataItemSecurityFactsSchemaV1, ItemFingerprint: created.Target.ResourceIdentity, ItemType: "collection", Fields: fields, SourceSnapshotHash: hash, ObservedAt: time.Now().UTC()}
 	discoveries := NewDiscoveryService(db, func(uint) SecurityFactsReader { return staticSecurityFactsReader{facts: facts} })
 
-	withoutBinding, lease, err := discoveries.ClaimNext(context.Background(), "security-binding-test", time.Now().UTC(), time.Minute)
+	withoutBinding, lease, err := discoveries.ClaimNext(context.Background(), "security-binding-test", time.Minute)
 	if err != nil || withoutBinding == nil || lease == nil {
 		t.Fatalf("claim without binding = %#v/%#v, err=%v", withoutBinding, lease, err)
 	}
@@ -758,7 +758,7 @@ func TestDetectorBindingControlsDiscoveryWithoutSensitiveTypeCodeFallback(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	withBinding, lease, err := discoveries.ClaimNext(context.Background(), "security-binding-test", time.Now().UTC(), time.Minute)
+	withBinding, lease, err := discoveries.ClaimNext(context.Background(), "security-binding-test", time.Minute)
 	if err != nil || withBinding == nil || lease == nil {
 		t.Fatalf("claim with binding = %#v/%#v, err=%v", withBinding, lease, err)
 	}
@@ -776,7 +776,7 @@ func TestDetectorBindingControlsDiscoveryWithoutSensitiveTypeCodeFallback(t *tes
 	if err != nil || binding.Enabled {
 		t.Fatalf("disable binding = %#v, err=%v", binding, err)
 	}
-	withoutBindingAgain, lease, err := discoveries.ClaimNext(context.Background(), "security-binding-test", time.Now().UTC(), time.Minute)
+	withoutBindingAgain, lease, err := discoveries.ClaimNext(context.Background(), "security-binding-test", time.Minute)
 	if err != nil || withoutBindingAgain == nil || lease == nil {
 		t.Fatalf("claim after disable = %#v/%#v, err=%v", withoutBindingAgain, lease, err)
 	}
@@ -810,14 +810,14 @@ func TestDiscoveryRecoveryRetriesThenFailsAtAttemptLimit(t *testing.T) {
 	}
 	discoveries := NewDiscoveryService(db, nil)
 
-	first, _, err := discoveries.ClaimNext(context.Background(), "worker-a", now, time.Minute)
+	first, _, err := discoveries.ClaimNext(context.Background(), "worker-a", time.Minute)
 	if err != nil || first == nil || first.Attempt != 1 {
 		t.Fatalf("first claim = %#v, err=%v", first, err)
 	}
 	if err := db.Model(&commonexecution.TaskExecution{}).Where("execution_id = ?", execution.ExecutionID).Update("lease_expires_at", now.Add(-time.Minute)).Error; err != nil {
 		t.Fatal(err)
 	}
-	if count, err := discoveries.RecoverExpired(context.Background(), time.Now().UTC(), 100); err != nil || count != 1 {
+	if count, err := discoveries.RecoverExpired(context.Background(), 100); err != nil || count != 1 {
 		t.Fatalf("first recovery = %d, %v", count, err)
 	}
 	var stored commonexecution.TaskExecution
@@ -828,7 +828,7 @@ func TestDiscoveryRecoveryRetriesThenFailsAtAttemptLimit(t *testing.T) {
 		t.Fatalf("retried execution = %#v", stored)
 	}
 
-	second, _, err := discoveries.ClaimNext(context.Background(), "worker-b", time.Now().UTC(), time.Minute)
+	second, _, err := discoveries.ClaimNext(context.Background(), "worker-b", time.Minute)
 	if err != nil || second == nil || second.Attempt != 2 {
 		t.Fatalf("second claim = %#v, err=%v", second, err)
 	}
@@ -836,7 +836,7 @@ func TestDiscoveryRecoveryRetriesThenFailsAtAttemptLimit(t *testing.T) {
 	if err := db.Model(&commonexecution.TaskExecution{}).Where("execution_id = ?", execution.ExecutionID).Update("lease_expires_at", failedAt.Add(-time.Minute)).Error; err != nil {
 		t.Fatal(err)
 	}
-	if count, err := discoveries.RecoverExpired(context.Background(), failedAt, 100); err != nil || count != 1 {
+	if count, err := discoveries.RecoverExpired(context.Background(), 100); err != nil || count != 1 {
 		t.Fatalf("second recovery = %d, %v", count, err)
 	}
 	if err := db.Where("execution_id = ?", execution.ExecutionID).First(&stored).Error; err != nil {

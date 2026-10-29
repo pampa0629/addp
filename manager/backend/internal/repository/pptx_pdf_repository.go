@@ -89,7 +89,7 @@ func (r *PPTXPDFRepository) CompleteExecutionWithLease(ctx context.Context, task
 	delete(fields, "completed_at")
 	delete(fields, "updated_at")
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := commonExecution.CompleteWithEvent(ctx, tx, lease, status, completedAt, fields); err != nil {
+		if _, err := commonExecution.LockActiveLease(ctx, tx, lease); err != nil {
 			return err
 		}
 		if resultID > 0 && len(resultFields) > 0 {
@@ -112,7 +112,7 @@ func (r *PPTXPDFRepository) CompleteExecutionWithLease(ctx context.Context, task
 		if result.RowsAffected != 1 {
 			return fmt.Errorf("%w: PPTX PDF task %d is not owned by execution %s", commonAPI.ErrConflict, taskID, lease.ExecutionID)
 		}
-		return nil
+		return commonExecution.CompleteWithEvent(ctx, tx, lease, status, fields)
 	})
 }
 

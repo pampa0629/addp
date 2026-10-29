@@ -221,8 +221,7 @@ func (s *Model3DTilesTaskService) Execute(
 }
 
 func (s *Model3DTilesTaskService) runModel3DTilesGeneration(ctx context.Context, task *models.Model3DTilesTask, executionID string) {
-	startedAt := time.Now()
-	if err := s.repo.StartExecution(ctx, task.ID, task.TenantID, executionID, startedAt); err != nil {
+	if err := s.repo.ValidateClaim(ctx, task.ID, task.TenantID, executionID); err != nil {
 		logger.L().Warn("领取分块三维模型瓦片 execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 		return
 	}
@@ -286,19 +285,15 @@ func (s *Model3DTilesTaskService) runModel3DTilesGeneration(ctx context.Context,
 	metadata = s.mergeModel3DTilesExistingExecutionMetadata(ctx, executionID, task.TenantID, metadata)
 
 	completedAt := time.Now()
-	durationMs := completedAt.Sub(startedAt).Milliseconds()
 	artifactID := uint(0)
 	if artifact != nil {
 		artifactID = artifact.ID
 	}
 	if err := s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, artifactID, artifactFields, map[string]interface{}{
-		"status":            status,
-		"progress":          progress,
-		"metadata":          metadata,
-		"error_details":     errDetails,
-		"completed_at":      completedAt,
-		"execution_time_ms": durationMs,
-		"updated_at":        completedAt,
+		"status":        status,
+		"progress":      progress,
+		"metadata":      metadata,
+		"error_details": errDetails,
 	}, completedAt); err != nil {
 		logger.L().Warn("提交分块三维模型瓦片 execution 终态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 	}

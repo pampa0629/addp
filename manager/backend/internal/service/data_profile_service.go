@@ -82,10 +82,10 @@ type dataProfileExecutionStore interface {
 	GetActive(context.Context, int, string) (*commonExecution.TaskExecution, error)
 	GetLatest(context.Context, int, string) (*commonExecution.TaskExecution, error)
 	GetByExecutionID(context.Context, int, string) (*commonExecution.TaskExecution, error)
-	Start(context.Context, int, string, time.Time) error
-	Complete(context.Context, int, string, time.Time, int64, map[string]interface{}) error
-	Fail(context.Context, int, string, time.Time, string, string) error
-	Timeout(context.Context, int, string, time.Time, string, string) error
+	ValidateClaim(context.Context, int, string) error
+	Complete(context.Context, int, string, int64, map[string]interface{}) error
+	Fail(context.Context, int, string, string, string) error
+	Timeout(context.Context, int, string, string, string) error
 	GetRawExecutionConfig(context.Context, int, string) (json.RawMessage, error)
 	BindSourceAuthorization(context.Context, *commonExecution.TaskExecution, commonExecution.ManagerProfileReadScope, *commonClient.IssuedManagerProfileAuthorization) error
 	FailUnbound(context.Context, *commonExecution.TaskExecution) error
@@ -482,10 +482,9 @@ func (s *DataProfileService) runExecution(
 	plan *DataProfileSamplePlan,
 	checkSource func(context.Context) error,
 ) {
-	startedAt := time.Now().UTC()
 	ctx, cancel := context.WithTimeout(parent, budget.Timeout)
 	defer cancel()
-	if err := s.executions.Start(ctx, execution.TenantID, execution.ExecutionID, startedAt); err != nil {
+	if err := s.executions.ValidateClaim(ctx, execution.TenantID, execution.ExecutionID); err != nil {
 		logger.L().Error("启动数据剖析 execution 失败", "execution_id", execution.ExecutionID, "error", err)
 		return
 	}
@@ -495,9 +494,9 @@ func (s *DataProfileService) runExecution(
 		defer finishCancel()
 		var updateErr error
 		if code == "timeout" {
-			updateErr = s.executions.Timeout(finishCtx, execution.TenantID, execution.ExecutionID, startedAt, code, "data profiling execution timed out")
+			updateErr = s.executions.Timeout(finishCtx, execution.TenantID, execution.ExecutionID, code, "data profiling execution timed out")
 		} else {
-			updateErr = s.executions.Fail(finishCtx, execution.TenantID, execution.ExecutionID, startedAt, code, "data profiling execution failed")
+			updateErr = s.executions.Fail(finishCtx, execution.TenantID, execution.ExecutionID, code, "data profiling execution failed")
 		}
 		if updateErr != nil {
 			logger.L().Error("更新数据剖析失败状态失败", "execution_id", execution.ExecutionID, "error", updateErr)
@@ -649,7 +648,7 @@ func (s *DataProfileService) runExecution(
 	}, nil)
 	finishCtx, finishCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer finishCancel()
-	if err := s.executions.Complete(finishCtx, execution.TenantID, execution.ExecutionID, startedAt, sample.RowsScanned, metadata); err != nil {
+	if err := s.executions.Complete(finishCtx, execution.TenantID, execution.ExecutionID, sample.RowsScanned, metadata); err != nil {
 		logger.L().Error("更新数据剖析成功状态失败", "execution_id", execution.ExecutionID, "error", err)
 	}
 }

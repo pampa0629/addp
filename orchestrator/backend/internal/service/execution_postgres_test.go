@@ -138,7 +138,7 @@ func TestIntegrationPostgresExecutionReliability(t *testing.T) {
 		if err := db.Model(&execution.TaskExecution{}).Where("id=?", item.ID).Update("lease_expires_at", time.Now().UTC().Add(-time.Second)).Error; err != nil {
 			t.Fatal(err)
 		}
-		count, err := s.RecoverExpired(ctx, time.Now().UTC(), 100)
+		count, err := s.RecoverExpired(ctx, 100)
 		if err != nil || count != 1 {
 			t.Fatalf("recovery count=%d err=%v", count, err)
 		}

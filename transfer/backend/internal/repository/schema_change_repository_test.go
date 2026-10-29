@@ -156,6 +156,7 @@ func newSchemaChangeRepositoryTestDB(t *testing.T) *gorm.DB {
 		metadata_scan_execution_id TEXT NOT NULL DEFAULT '',
 			metadata_scan_error TEXT NOT NULL DEFAULT '',
 			detected_at DATETIME NOT NULL,
+			applied_at DATETIME,
 			updated_at DATETIME
 		)`).Error; err != nil {
 		t.Fatal(err)
@@ -167,10 +168,10 @@ func seedSchemaChangeMetadataScanRequest(t *testing.T, db *gorm.DB, id uint) {
 	t.Helper()
 	executionID := fmt.Sprintf("schema-exec-%d", id)
 	if err := db.Exec(`INSERT INTO common.task_executions
-		(tenant_id, execution_id, module, task_type, source, status, trigger_type, metadata, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 7, executionID, commonExecution.ModuleTransfer,
+		(tenant_id, execution_id, module, task_type, source, status, trigger_type, metadata, created_at, updated_at, execution_boundary, source_task_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 7, executionID, commonExecution.ModuleTransfer,
 		commonExecution.TaskTypeSync, commonExecution.ModuleTransfer, commonExecution.ExecutionStatusRunning,
-		commonExecution.TriggerTypeManual, `{"continuous":{}}`, time.Now(), time.Now()).Error; err != nil {
+		commonExecution.TriggerTypeManual, `{"continuous":{}}`, time.Now(), time.Now(), commonExecution.ExecutionBoundaryContinuous, fmt.Sprint(id)).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`INSERT INTO transfer.schema_change_requests
@@ -212,10 +213,12 @@ func assertAppliedScanOriginClaimRoundTrip(t *testing.T, db *gorm.DB, request mo
 	t.Helper()
 	request.Status = models.SchemaChangeRequestApplied
 	request.MetadataScanStatus = models.SchemaChangeMetadataScanPending
-	if err := db.Model(&request).Updates(map[string]interface{}{"status": request.Status, "metadata_scan_status": request.MetadataScanStatus}).Error; err != nil {
+	appliedAt := time.Now().UTC().Truncate(time.Microsecond)
+	request.AppliedAt = &appliedAt
+	if err := db.Model(&request).Updates(map[string]interface{}{"status": request.Status, "metadata_scan_status": request.MetadataScanStatus, "applied_at": appliedAt}).Error; err != nil {
 		t.Fatal(err)
 	}
-	origin := commonExecution.AppliedSchemaChangeScanOrigin{RequestID: request.ID, TaskID: request.TaskID, Generation: request.Generation, FromRevision: request.FromRevision, ToRevision: request.ToRevision, TargetLocator: "addp://engine/9/path/public/changed?type=table", AppliedAt: time.Now(), TriggeredBy: 83, ActorPrincipalID: 83, ActorTenantMembershipID: 84, IssuedAuthorizationVersion: 7}
+	origin := commonExecution.AppliedSchemaChangeScanOrigin{RequestID: request.ID, TaskID: request.TaskID, Generation: request.Generation, FromRevision: request.FromRevision, ToRevision: request.ToRevision, TargetLocator: "addp://engine/9/path/public/changed?type=table", AppliedAt: appliedAt, TriggeredBy: 83, ActorPrincipalID: 83, ActorTenantMembershipID: 84, IssuedAuthorizationVersion: 7}
 	publish := func(tx *gorm.DB) error {
 		if err := UpdateSchemaChangeExecutionProjectionTx(tx, &request); err != nil {
 			return err

@@ -95,7 +95,7 @@ func TestExecutionStatusFields(t *testing.T) {
 		Extraction:          &models.ExtractionScanStats{Documents: 1, Extracted: 1, Indexed: 1},
 	}
 
-	success := SuccessfulExecutionFields(resp, "postgres", now, 123, now)
+	success := SuccessfulExecutionFields(resp, "postgres")
 	if success["status"] != commonExecution.ExecutionStatusSuccess || success["progress"] != 100 {
 		t.Fatalf("success fields = %#v", success)
 	}
@@ -110,7 +110,7 @@ func TestExecutionStatusFields(t *testing.T) {
 
 	failures := &scanflow.FailedTargetCollector{}
 	failures.Add("cad/broken.dwg", errors.New("permission denied"))
-	failed := FailedExecutionFields(resp, "nfs", failures.Err(), now, 456, now)
+	failed := FailedExecutionFields(resp, "nfs", failures.Err())
 	if failed["status"] != commonExecution.ExecutionStatusFailed {
 		t.Fatalf("failed fields = %#v", failed)
 	}
@@ -127,7 +127,7 @@ func TestExecutionStatusFields(t *testing.T) {
 		t.Fatalf("failure samples = %#v", samples)
 	}
 
-	backfill := TaskStatusBackfillFields("exec-1", commonExecution.ExecutionStatusSuccess, now, now)
+	backfill := TaskStatusBackfillFields("exec-1", commonExecution.ExecutionStatusSuccess, now)
 	if _, ok := backfill["next_run_at"]; ok {
 		t.Fatalf("backfill fields = %#v", backfill)
 	}
@@ -145,7 +145,7 @@ func TestTypedDenialRetainsSafeObservationCategory(t *testing.T) {
 		{"transport unavailable", "connection_failed", errors.New("connection refused")},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
-			fields := FailedExecutionFields(nil, "postgresql", scenario.err, time.Now(), 1, time.Now())
+			fields := FailedExecutionFields(nil, "postgresql", scenario.err)
 			details := fields["error_details"].(commonModels.JSONMap)
 			observed := commonExecution.Observe(&commonExecution.TaskExecution{Status: "failed", ErrorDetails: details})
 			if observed.ErrorDetails["category"] != scenario.category {

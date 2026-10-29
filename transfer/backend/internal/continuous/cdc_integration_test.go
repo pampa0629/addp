@@ -236,7 +236,7 @@ func runIntegrationPostgreSQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T,
 			_ = captureSupervisor.Stop(context.Background(), &task)
 		}
 	}()
-	claim, err := leaseRepo.ClaimNext(ctx, "cdc-worker-a", time.Now(), 30*time.Second)
+	claim, err := leaseRepo.ClaimNext(ctx, "cdc-worker-a", 30*time.Second)
 	if err != nil || claim == nil {
 		t.Fatalf("first claim=%#v err=%v", claim, err)
 	}
@@ -288,11 +288,11 @@ func runIntegrationPostgreSQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T,
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	recoveryDetectedAt := time.Now()
-	if recoveryClaim, err := leaseRepo.ClaimNext(ctx, "cdc-worker-b", recoveryDetectedAt, 30*time.Second); err != nil || recoveryClaim != nil {
+	if recoveryClaim, err := leaseRepo.ClaimNext(ctx, "cdc-worker-b", 30*time.Second); err != nil || recoveryClaim != nil {
 		t.Fatalf("lease-expiry detection claim=%#v err=%v, want persisted backoff", recoveryClaim, err)
 	}
-	secondClaim, err := leaseRepo.ClaimNext(ctx, "cdc-worker-b", recoveryDetectedAt.Add(time.Second), 30*time.Second)
+	testpg.MakeContinuousRecoveryEligible(t, infraDB, task.ID, task.TenantID)
+	secondClaim, err := leaseRepo.ClaimNext(ctx, "cdc-worker-b", 30*time.Second)
 	if err != nil || secondClaim == nil || secondClaim.Lease.FencingToken <= claim.Lease.FencingToken {
 		t.Fatalf("second claim=%#v err=%v", secondClaim, err)
 	}
@@ -359,7 +359,7 @@ func runIntegrationPostgreSQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T,
 		t.Fatalf("schema drift advanced committed position: before=%d after=%d err=%v", committed, afterDriftCommitted, err)
 	}
 	target.AssertRowAbsent(t, ctx, 2)
-	if err := leaseRepo.Finish(context.Background(), *secondClaim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", "schema_change_blocked", runnerErr.Error(), time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *secondClaim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", "schema_change_blocked", runnerErr.Error()); err != nil {
 		t.Fatal(err)
 	}
 	var blockedTask models.TransferTask
@@ -562,7 +562,7 @@ func runIntegrationPostgreSQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T,
 	}
 
 	resumeExecution := mysqlCDCResumeTaskViaAPI(t, apiRouter, task.ID)
-	resumeClaim, err := leaseRepo.ClaimNext(ctx, "cdc-worker-c", time.Now(), 30*time.Second)
+	resumeClaim, err := leaseRepo.ClaimNext(ctx, "cdc-worker-c", 30*time.Second)
 	if err != nil || resumeClaim == nil || resumeClaim.Execution.ExecutionID != resumeExecution.ExecutionID {
 		t.Fatalf("schema resume claim=%#v err=%v", resumeClaim, err)
 	}
@@ -589,7 +589,7 @@ func runIntegrationPostgreSQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T,
 	if err := <-resumeDone; !errors.Is(err, context.Canceled) {
 		t.Fatalf("schema resumed runner error=%v", err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *resumeClaim, commonExecution.ExecutionStatusCancelled, "paused", "", "", time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *resumeClaim, commonExecution.ExecutionStatusCancelled, "paused", "", ""); err != nil {
 		t.Fatal(err)
 	}
 

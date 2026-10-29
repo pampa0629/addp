@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 	"time"
 
@@ -183,13 +182,9 @@ func (s *VectorTileSetTaskService) RecordProgressEvent(ctx context.Context, tena
 		currentStep = fmt.Sprintf("生成业务矢量瓦片集 z%d/%d：%d/%d", event.CurrentZoom, event.MaxZoom, event.TilesProcessed, event.TilesTotalEstimate)
 	}
 
-	now := time.Now()
 	fields := map[string]interface{}{
 		"progress": nextProgress, "current_step": currentStep,
-		"metadata": tileCacheProgressEventMetadata(exec.Metadata, event, nextProgress), "updated_at": now,
-	}
-	if exec.StartedAt != nil {
-		fields["execution_time_ms"] = int64(math.Max(0, float64(now.Sub(*exec.StartedAt).Milliseconds())))
+		"metadata": tileCacheProgressEventMetadata(exec.Metadata, event, nextProgress),
 	}
 	return updateManagerExecutionProgress(ctx, s.taskExecRepo, tenantID, executionID, nextProgress, fields)
 }
@@ -227,8 +222,7 @@ func (s *VectorTileSetTaskService) Execute(ctx context.Context, taskID, tenantID
 }
 
 func (s *VectorTileSetTaskService) run(ctx context.Context, task *models.VectorTileSetTask, executionID string) {
-	startedAt := time.Now()
-	if err := s.repo.StartExecution(ctx, task.ID, task.TenantID, executionID, startedAt); err != nil {
+	if err := s.repo.ValidateClaim(ctx, task.ID, task.TenantID, executionID); err != nil {
 		return
 	}
 	status, progress := commonExecution.ExecutionStatusSuccess, 100
@@ -264,7 +258,7 @@ func (s *VectorTileSetTaskService) run(ctx context.Context, task *models.VectorT
 		lease, leaseErr := requireManagerExecutionLease(ctx, task.TenantID, executionID)
 		if leaseErr == nil {
 			metadata["produced_target"] = commonClient.MetaScanProducedTarget{EngineID: cfg.TargetEngineID, CatalogPath: result.EngineCatalogPath, Attempt: lease.Attempt}
-			leaseErr = s.taskExecRepo.UpdateFields(ctx, executionID, int(task.TenantID), map[string]interface{}{"metadata": metadata})
+			leaseErr = s.taskExecRepo.UpdateWithLease(ctx, lease, map[string]interface{}{"metadata": metadata})
 		}
 		if leaseErr != nil {
 			err = leaseErr
@@ -292,7 +286,6 @@ func (s *VectorTileSetTaskService) run(ctx context.Context, task *models.VectorT
 	completedAt := time.Now()
 	if completeErr := s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, map[string]interface{}{
 		"status": status, "progress": progress, "metadata": metadata, "error_details": errDetails,
-		"completed_at": completedAt, "execution_time_ms": completedAt.Sub(startedAt).Milliseconds(), "updated_at": completedAt,
 	}, completedAt); completeErr != nil {
 		logger.L().Warn("提交业务矢量瓦片集 execution 终态失败", "error", completeErr)
 	}

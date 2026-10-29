@@ -405,8 +405,6 @@ func (s *ExecutionService) updateLockedExecution(ctx context.Context, tx *gorm.D
 
 	for key, value := range updates {
 		switch key {
-		case "status":
-			unifiedUpdates["status"] = value
 		case "records_read":
 			unifiedUpdates["records_read"] = value
 		case "records_written":
@@ -425,8 +423,8 @@ func (s *ExecutionService) updateLockedExecution(ctx context.Context, tx *gorm.D
 			unifiedUpdates["error_details"] = commonModels.JSONMap{
 				"message": value,
 			}
-		case "end_time":
-			unifiedUpdates["completed_at"] = value
+		default:
+			return fmt.Errorf("unsupported execution progress field %q", key)
 		}
 	}
 
@@ -499,12 +497,11 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status 
 }
 
 func (s *ExecutionService) finishLockedExecution(ctx context.Context, db *gorm.DB, execution *commonExecution.TaskExecution, status models.ExecutionStatus, execErr error, resultMetadata commonModels.JSONMap) error {
-	now := time.Now()
-	updates := map[string]interface{}{
-		"status":       string(status),
-		"completed_at": now,
-		"progress":     100,
+	now, err := commonExecution.DatabaseNow(db)
+	if err != nil {
+		return err
 	}
+	updates := map[string]interface{}{"progress": 100}
 
 	if len(resultMetadata) > 0 {
 		metadata := execution.Metadata
@@ -523,22 +520,13 @@ func (s *ExecutionService) finishLockedExecution(ctx context.Context, db *gorm.D
 		setInitialProductionAuthorization(execution, updates, now)
 	}
 
-	// 计算执行时间
-	if execution.StartedAt != nil {
-		duration := now.Sub(*execution.StartedAt)
-		executionTimeMs := duration.Milliseconds()
-		updates["execution_time_ms"] = executionTimeMs
-	}
-
 	if lease, ok := s.leaseForExecution(ctx, uint(execution.ID), execution.ExecutionID); ok {
-		delete(updates, "status")
-		delete(updates, "completed_at")
 		return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if err := commonExecution.CompleteWithEvent(ctx, tx, lease, string(status), now, updates); err != nil {
+			if _, err := commonExecution.LockActiveLease(ctx, tx, lease); err != nil {
 				return err
 			}
 			if execution.SourceTaskID == nil || isReplayExecutionConfig(execution.ExecutionConfig) {
-				return nil
+				return commonExecution.CompleteWithEvent(ctx, tx, lease, string(status), updates)
 			}
 			taskID, err := commonExecution.ParseSourceTaskIDUint(execution.SourceTaskID)
 			if err != nil {
@@ -560,13 +548,10 @@ func (s *ExecutionService) finishLockedExecution(ctx context.Context, db *gorm.D
 			if result.RowsAffected != 1 {
 				return fmt.Errorf("transfer task %d summary no longer matches execution %s", taskID, execution.ExecutionID)
 			}
-			return nil
+			return commonExecution.CompleteWithEvent(ctx, tx, lease, string(status), updates)
 		})
 	}
-	if execution.ExecutionBoundary == commonExecution.ExecutionBoundaryBounded {
-		return fmt.Errorf("bounded execution %s completion requires the active lease", execution.ExecutionID)
-	}
-	return commonExecution.NewTaskExecutionRepository(db).UpdateFields(ctx, execution.ExecutionID, execution.TenantID, updates)
+	return fmt.Errorf("transfer bounded completion requires its active lease; continuous runtime owns its separate adapter")
 }
 
 func (s *ExecutionService) FinishIfRunning(ctx context.Context, id uint, execErr error) error {
@@ -779,27 +764,17 @@ func (s *ExecutionService) UpdateMetrics(ctx context.Context, id uint, metrics m
 	return s.updateExecutionFields(ctx, execution, metrics)
 }
 
-// UpdateStatus 更新执行状态（用于状态变更）
-func (s *ExecutionService) UpdateStatus(ctx context.Context, id uint, status models.ExecutionStatus) error {
-	// 获取执行记录
+// ValidateClaim verifies the claim committed by the bounded supervisor before dispatch.
+func (s *ExecutionService) ValidateClaim(ctx context.Context, id uint) error {
 	execution, err := s.taskExecutionRepo.GetByID(ctx, int64(id), 0)
 	if err != nil {
 		return err
 	}
-
-	if status == models.ExecutionStatusRunning {
-		if lease, ok := s.leaseForExecution(ctx, id, execution.ExecutionID); ok {
-			if execution.Status != commonExecution.ExecutionStatusRunning {
-				return fmt.Errorf("claimed execution %s is not running", execution.ExecutionID)
-			}
-			return commonExecution.UpdateWithLease(ctx, s.db, lease, map[string]interface{}{"updated_at": time.Now().UTC()})
-		}
-		return s.taskExecutionRepo.StartExecution(ctx, execution.ExecutionID, execution.TenantID, time.Now())
+	lease, ok := s.leaseForExecution(ctx, id, execution.ExecutionID)
+	if !ok || execution.Module != commonExecution.ModuleTransfer || execution.TaskType != commonExecution.TaskTypeSync || execution.ExecutionBoundary != commonExecution.ExecutionBoundaryBounded {
+		return fmt.Errorf("transfer dispatch requires its active bounded lease")
 	}
-
-	return s.taskExecutionRepo.UpdateFields(ctx, execution.ExecutionID, execution.TenantID, map[string]interface{}{
-		"status": string(status),
-	})
+	return commonExecution.UpdateWithLease(ctx, s.db, lease, nil)
 }
 
 func (s *ExecutionService) updateExecutionFields(ctx context.Context, execution *commonExecution.TaskExecution, fields map[string]interface{}) error {
@@ -810,10 +785,7 @@ func (s *ExecutionService) updateExecutionFieldsInDB(ctx context.Context, db *go
 	if lease, ok := s.leaseForExecution(ctx, uint(execution.ID), execution.ExecutionID); ok {
 		return commonExecution.UpdateWithLease(ctx, db, lease, fields)
 	}
-	if execution.ExecutionBoundary == commonExecution.ExecutionBoundaryBounded && execution.Status == commonExecution.ExecutionStatusRunning {
-		return fmt.Errorf("bounded execution %s update requires the active lease", execution.ExecutionID)
-	}
-	return commonExecution.NewTaskExecutionRepository(db).UpdateFields(ctx, execution.ExecutionID, execution.TenantID, fields)
+	return fmt.Errorf("transfer progress requires its active bounded lease")
 }
 
 func (s *ExecutionService) leaseForExecution(ctx context.Context, id uint, executionID string) (commonExecution.Lease, bool) {

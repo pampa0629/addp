@@ -259,7 +259,7 @@ type fakeLeaseStore struct {
 	claimCalled  chan struct{}
 }
 
-func (f *fakeLeaseStore) ClaimNext(context.Context, string, time.Time, time.Duration) (*repository.RuntimeLeaseClaim, error) {
+func (f *fakeLeaseStore) ClaimNext(context.Context, string, time.Duration) (*repository.RuntimeLeaseClaim, error) {
 	if f.claimCalled != nil {
 		select {
 		case f.claimCalled <- struct{}{}:
@@ -273,11 +273,11 @@ func (f *fakeLeaseStore) ClaimNext(context.Context, string, time.Time, time.Dura
 	return claim, nil
 }
 
-func (f *fakeLeaseStore) Renew(context.Context, uint, string, uint64, time.Time, time.Duration) error {
+func (f *fakeLeaseStore) Renew(context.Context, uint, string, uint64, time.Duration) error {
 	return repository.ErrRuntimeLeaseLost
 }
 
-func (f *fakeLeaseStore) Finish(_ context.Context, _ repository.RuntimeLeaseClaim, status, reason, code, message string, _ time.Time) error {
+func (f *fakeLeaseStore) Finish(_ context.Context, _ repository.RuntimeLeaseClaim, status, reason, code, message string) error {
 	f.finished <- finishCall{status: status, reason: reason, code: code, message: message}
 	return nil
 }

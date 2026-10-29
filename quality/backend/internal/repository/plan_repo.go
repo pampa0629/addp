@@ -226,7 +226,7 @@ func (r *PlanRepository) CreateExecution(ctx context.Context, taskID, tenantID i
 	return &task, commonRepository.WrapDBError(err)
 }
 
-func (r *PlanRepository) ClaimPendingExecution(ctx context.Context, workerID string, now time.Time, leaseDuration time.Duration) (*commonExecution.TaskExecution, *models.QualityPlan, error) {
+func (r *PlanRepository) ClaimPendingExecution(ctx context.Context, workerID string, leaseDuration time.Duration) (*commonExecution.TaskExecution, *models.QualityPlan, error) {
 	var execution *commonExecution.TaskExecution
 	var lease *commonExecution.Lease
 	var task models.QualityPlan
@@ -234,10 +234,10 @@ func (r *PlanRepository) ClaimPendingExecution(ctx context.Context, workerID str
 		var err error
 		execution, lease, err = commonExecution.ClaimNext(ctx, tx, commonExecution.ClaimOptions{
 			Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityPlan, Source: commonExecution.ModuleQuality,
-			WorkerID: workerID, Now: now, LeaseDuration: leaseDuration, RequireAuthorization: true,
+			WorkerID: workerID, LeaseDuration: leaseDuration, RequireAuthorization: true,
 		})
 		if err == nil && execution == nil {
-			execution, lease, err = commonExecution.ClaimNext(ctx, tx, commonExecution.ClaimOptions{Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityPlan, Source: commonExecution.ModuleOrchestrator, WorkerID: workerID, Now: now, LeaseDuration: leaseDuration})
+			execution, lease, err = commonExecution.ClaimNext(ctx, tx, commonExecution.ClaimOptions{Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityPlan, Source: commonExecution.ModuleOrchestrator, WorkerID: workerID, LeaseDuration: leaseDuration})
 		}
 		if err != nil || execution == nil {
 			return err
@@ -261,13 +261,13 @@ func (r *PlanRepository) ClaimPendingExecution(ctx context.Context, workerID str
 			return err
 		}
 		result := tx.Model(&task).Where("last_execution_id = ? AND last_execution_status = ?", execution.ExecutionID, commonExecution.ExecutionStatusPending).Updates(map[string]interface{}{
-			"last_run_at": now, "last_execution_status": commonExecution.ExecutionStatusRunning,
+			"last_run_at": execution.StartedAt, "last_execution_status": commonExecution.ExecutionStatusRunning,
 		})
 		if result.Error != nil {
 			return result.Error
 		}
 		// Another target scope may already be the plan's latest attempt.
-		return nil
+		return commonExecution.UpdateWithLease(ctx, tx, *lease, nil)
 	})
 	if err != nil || execution == nil {
 		return nil, nil, commonRepository.WrapDBError(err)
@@ -276,27 +276,33 @@ func (r *PlanRepository) ClaimPendingExecution(ctx context.Context, workerID str
 }
 
 func (r *PlanRepository) AttachExecutionAuthorization(ctx context.Context, lease commonExecution.Lease, fields map[string]interface{}) error {
-	fields["updated_at"] = time.Now().UTC()
-	result := r.db.WithContext(ctx).Model(&commonExecution.TaskExecution{}).Where(
-		"tenant_id = ? AND execution_id = ? AND status = ? AND attempt = ? AND lease_owner = ? AND lease_token = ? AND lease_expires_at > ? AND execution_authorization_id IS NULL",
-		lease.TenantID, lease.ExecutionID, commonExecution.ExecutionStatusRunning, lease.Attempt, lease.Owner, lease.Token, time.Now().UTC(),
-	).Updates(fields)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return fmt.Errorf("%w: quality plan cannot attach authorization", commonAPI.ErrConflict)
-	}
-	return nil
-}
-
-func (r *PlanRepository) CompleteExecutionWithLease(ctx context.Context, taskID, tenantID int64, lease commonExecution.Lease, status string, fields map[string]interface{}, completedAt time.Time, observations ...models.IssueObservation) error {
-	copied := make(map[string]interface{}, len(fields))
-	for key, value := range fields {
-		copied[key] = value
+	id, idOK := fields["execution_authorization_id"].(*int64)
+	principal, principalOK := fields["actor_principal_id"].(*int64)
+	membership, membershipOK := fields["actor_tenant_membership_id"].(*int64)
+	version, versionOK := fields["issued_authorization_version"].(*int64)
+	expiresAt, expiryOK := fields["authorization_expires_at"].(time.Time)
+	if len(fields) != 5 || !idOK || id == nil || !principalOK || principal == nil || !membershipOK || membership == nil || !versionOK || version == nil || !expiryOK {
+		return fmt.Errorf("quality execution authorization fields are invalid")
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := commonExecution.CompleteWithEvent(ctx, tx, lease, status, completedAt, copied); err != nil {
+		item, err := commonExecution.LockActiveLease(ctx, tx, lease)
+		if err != nil {
+			return err
+		}
+		if item.ActorPrincipalID == nil || *item.ActorPrincipalID != *principal || item.ActorTenantMembershipID == nil || *item.ActorTenantMembershipID != *membership || item.IssuedAuthorizationVersion == nil || *item.IssuedAuthorizationVersion != *version {
+			return fmt.Errorf("%w: quality execution actor cannot change", commonAPI.ErrConflict)
+		}
+		return commonExecution.AttachAuthorizationWithLease(ctx, tx, lease, *id, expiresAt)
+	})
+}
+
+func (r *PlanRepository) CompleteExecutionWithLease(ctx context.Context, taskID, tenantID int64, lease commonExecution.Lease, status string, fields map[string]interface{}, observations ...models.IssueObservation) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := commonExecution.LockActiveLease(ctx, tx, lease); err != nil {
+			return err
+		}
+		completedAt, err := commonExecution.DatabaseNow(tx)
+		if err != nil {
 			return err
 		}
 		if len(observations) > 0 {
@@ -304,15 +310,11 @@ func (r *PlanRepository) CompleteExecutionWithLease(ctx context.Context, taskID,
 				return err
 			}
 		}
-		result := tx.Model(&models.QualityPlan{}).Where(
-			"tenant_id = ? AND id = ? AND last_execution_id = ? AND last_execution_status = ?",
-			tenantID, taskID, lease.ExecutionID, commonExecution.ExecutionStatusRunning,
-		).Updates(map[string]interface{}{"last_run_at": completedAt, "last_execution_status": status})
+		result := tx.Model(&models.QualityPlan{}).Where("tenant_id = ? AND id = ? AND last_execution_id = ? AND last_execution_status = ?", tenantID, taskID, lease.ExecutionID, commonExecution.ExecutionStatusRunning).Updates(map[string]interface{}{"last_run_at": completedAt, "last_execution_status": status})
 		if result.Error != nil {
 			return result.Error
 		}
-		// Lease fencing, not this latest-attempt projection, determines completion.
-		return nil
+		return commonExecution.CompleteWithEvent(ctx, tx, lease, status, fields)
 	})
 }
 
@@ -324,14 +326,14 @@ func (r *PlanRepository) UpdateExecutionProgress(ctx context.Context, lease comm
 		commonExecution.EventInput{Kind: "progress", Counters: map[string]int64{"progress": int64(progress)}})
 }
 
-func (r *PlanRepository) RenewLease(ctx context.Context, lease commonExecution.Lease, expiresAt time.Time) error {
-	return commonExecution.RenewLease(ctx, r.db, lease, expiresAt)
+func (r *PlanRepository) RenewLease(ctx context.Context, lease commonExecution.Lease, duration time.Duration) error {
+	return commonExecution.RenewLease(ctx, r.db, lease, duration)
 }
 
-func (r *PlanRepository) RecoverExpiredExecutions(ctx context.Context, now time.Time) error {
+func (r *PlanRepository) RecoverExpiredExecutions(ctx context.Context) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		executions, err := commonExecution.FindExpiredForUpdate(ctx, tx, commonExecution.ExpiredOptions{
-			Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityPlan, Now: now, Limit: 100,
+			Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityPlan, Limit: 100,
 		})
 		if err != nil {
 			return err
@@ -347,20 +349,13 @@ func (r *PlanRepository) RecoverExpiredExecutions(ctx context.Context, now time.
 				fields := map[string]interface{}{
 					"error_details": commonModels.JSONMap{"code": "quality.execution.lease_expired", "message": "quality execution worker lease expired"},
 				}
-				if execution.StartedAt != nil {
-					fields["execution_time_ms"] = now.Sub(*execution.StartedAt).Milliseconds()
-				}
-				if err := commonExecution.FailExpiredWithEvent(ctx, tx, lease, now, fields); err != nil {
+				if err := commonExecution.FailExpiredWithEvent(ctx, tx, lease, fields); err != nil {
 					return err
 				}
-			} else if err := commonExecution.RetryExpired(ctx, tx, lease, now, "worker lease expired; retry pending"); err != nil {
+			} else if err := commonExecution.RetryExpired(ctx, tx, lease, "worker lease expired; retry pending"); err != nil {
 				return err
 			}
-			if status == commonExecution.ExecutionStatusPending && execution.Source == commonExecution.ModuleOrchestrator {
-				if err := tx.Model(&commonExecution.TaskExecution{}).Where("tenant_id=? AND execution_id=?", execution.TenantID, execution.ExecutionID).Updates(map[string]interface{}{"execution_authorization_id": nil, "authorization_expires_at": nil}).Error; err != nil {
-					return err
-				}
-			}
+
 			if execution.SourceTaskID != nil {
 				taskID, parseErr := strconv.ParseInt(*execution.SourceTaskID, 10, 64)
 				if parseErr == nil {

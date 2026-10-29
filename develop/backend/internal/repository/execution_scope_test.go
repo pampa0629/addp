@@ -53,7 +53,7 @@ func TestExecutionRepositoryRejectsForeignLeasesAndReceipts(t *testing.T) {
 				if err := repo.UpdateProgressWithLease(t.Context(), *lease, 30, "private"); err == nil {
 					t.Fatal("foreign lease updated progress")
 				}
-				if err := repo.Renew(t.Context(), *lease, time.Now().Add(time.Minute)); err == nil {
+				if err := repo.Renew(t.Context(), *lease, time.Minute); err == nil {
 					t.Fatal("foreign lease renewed")
 				}
 				if err := repo.AttachAuthorizationWithLease(t.Context(), *lease, 9, time.Now().Add(time.Minute)); err == nil {

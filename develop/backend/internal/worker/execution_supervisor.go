@@ -233,8 +233,8 @@ func (s *ExecutionSupervisor) heartbeat(ctx context.Context, cancel context.Canc
 		case <-ctx.Done():
 			done <- nil
 			return
-		case now := <-ticker.C:
-			if err := s.queue.Renew(ctx, lease, now.UTC().Add(s.config.LeaseDuration)); err != nil {
+		case <-ticker.C:
+			if err := s.queue.Renew(ctx, lease, s.config.LeaseDuration); err != nil {
 				terminal, stateErr := s.queue.AttemptIsTerminal(context.Background(), lease)
 				if stateErr == nil && terminal {
 					done <- nil

@@ -629,10 +629,15 @@ func TestProducedScanFreezesOutputsBeforeSubmittingParent(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := commonExecution.NewTaskExecutionRepository(db)
-	parent := &commonExecution.TaskExecution{TenantID: 7, ExecutionID: uuid.New().String(), Module: "develop", TaskType: "workflow", Status: "running", TriggerType: "manual", Metadata: commonModels.JSONMap{"preserved": true, "result": map[string]interface{}{"preserved_result": true}}}
+	parent := &commonExecution.TaskExecution{TenantID: 7, ExecutionID: uuid.New().String(), Module: "develop", TaskType: "workflow", Status: "pending", Source: "develop", ExecutionBoundary: commonExecution.ExecutionBoundaryBounded, TriggerType: "manual", Metadata: commonModels.JSONMap{"preserved": true, "result": map[string]interface{}{"preserved_result": true}}}
 	if err := repo.Create(context.Background(), parent); err != nil {
 		t.Fatal(err)
 	}
+	claimed, lease, err := commonExecution.ClaimPending(t.Context(), db, commonExecution.PendingIdentity{ExecutionID: parent.ExecutionID, TenantID: 7, Module: "develop", TaskType: "workflow", Source: "develop"}, commonExecution.ClaimOptions{Module: "develop", TaskType: "workflow", WorkerID: "workflow-test", LeaseDuration: time.Minute}, nil)
+	if err != nil || claimed == nil {
+		t.Fatalf("claim workflow fixture: %v", err)
+	}
+	ctx := commonExecution.ContextWithLease(t.Context(), *lease)
 	locator := "addp://engine/9/path/result/results/parquet-run?type=object"
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -665,24 +670,24 @@ func TestProducedScanFreezesOutputsBeforeSubmittingParent(t *testing.T) {
 	defer server.Close()
 	executor := &DevExecutor{taskExecutionRepo: repo, metaClient: commonClient.NewMetaClient(server.URL, staticServiceTokenSource("test-scan-service"))}
 	targets := []WorkflowProducedTarget{{TaskID: "save", EngineID: 9, Type: "object", Path: []string{"result", "results", "parquet-run"}, Locator: locator, Layout: "whole", WriteMode: "create"}}
-	runs := executor.createWorkflowProducedTargetScanRuns(context.Background(), 7, parent.ExecutionID, targets)
+	runs := executor.createWorkflowProducedTargetScanRuns(ctx, 7, parent.ExecutionID, targets)
 	if calls != 1 || len(runs) != 1 || runs[0]["execution_id"] != "scan-child" {
 		t.Fatalf("scan submissions: %d %#v", calls, runs)
 	}
-	if err := repo.UpdateFields(context.Background(), parent.ExecutionID, 7, map[string]interface{}{"status": "success"}); err != nil {
+	if err := commonExecution.CompleteWithLease(ctx, db, *lease, commonExecution.ExecutionStatusSuccess, nil); err != nil {
 		t.Fatal(err)
 	}
-	runs = executor.createWorkflowProducedTargetScanRuns(context.Background(), 7, parent.ExecutionID, targets)
+	runs = executor.createWorkflowProducedTargetScanRuns(ctx, 7, parent.ExecutionID, targets)
 	if calls != 1 || len(runs) != 1 || runs[0]["status"] != "failed" {
 		t.Fatal("invalid provenance submitted a scan")
 	}
-	if err := repo.UpdateFields(context.Background(), parent.ExecutionID, 7, map[string]interface{}{"status": "running"}); err != nil {
+	if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", parent.ExecutionID).Updates(map[string]interface{}{"status": "running", "completed_at": nil, "execution_time_ms": nil, "lease_owner": lease.Owner, "lease_token": lease.Token, "lease_expires_at": time.Now().UTC().Add(time.Minute)}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE TRIGGER common.reject_output_save BEFORE UPDATE OF metadata ON task_executions BEGIN SELECT RAISE(ABORT, 'output persistence fixture failure'); END`).Error; err != nil {
 		t.Fatal(err)
 	}
-	runs = executor.createWorkflowProducedTargetScanRuns(context.Background(), 7, parent.ExecutionID, targets)
+	runs = executor.createWorkflowProducedTargetScanRuns(ctx, 7, parent.ExecutionID, targets)
 	if calls != 1 || len(runs) != 1 || runs[0]["error_code"] != "develop.workflow.scan_provenance_unavailable" {
 		t.Fatal("failed output persistence submitted a scan")
 	}

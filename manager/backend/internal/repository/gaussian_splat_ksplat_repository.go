@@ -105,11 +105,11 @@ func (r *GaussianSplatKSplatRepository) ClaimExecution(
 	return &task, nil
 }
 
-func (r *GaussianSplatKSplatRepository) StartExecution(
-	ctx context.Context, taskID, tenantID uint, executionID string, startedAt time.Time,
+func (r *GaussianSplatKSplatRepository) ValidateClaim(
+	ctx context.Context, taskID, tenantID uint, executionID string,
 ) error {
-	return newTaskExecutionLifecycle(r.db).Start(
-		ctx, taskID, tenantID, executionID, startedAt, &models.GaussianSplatKSplatTask{}, "gaussian splat KSplat",
+	return newTaskExecutionLifecycle(r.db).ValidateClaim(
+		ctx, taskID, tenantID, executionID, &models.GaussianSplatKSplatTask{}, "gaussian splat KSplat",
 	)
 }
 

@@ -109,7 +109,7 @@ func (s *ScanTaskScheduler) claimDueScheduledTask(ctx context.Context, taskID ui
 			next := s.taskService.nextTimeFromSpec(task.Schedule, now)
 			return tx.Model(&models.ScanTask{}).
 				Where("id = ?", task.ID).
-				Updates(scantask.ScheduledTaskTriggerFields(now, next, time.Now())).Error
+				Updates(scantask.ScheduledTaskTriggerFields(now, next)).Error
 		}
 
 		targets := s.computeInheritedTargets(&task)
@@ -118,7 +118,7 @@ func (s *ScanTaskScheduler) claimDueScheduledTask(ctx context.Context, taskID ui
 			next := s.taskService.nextTimeFromSpec(task.Schedule, now)
 			return tx.Model(&models.ScanTask{}).
 				Where("id = ?", task.ID).
-				Updates(scantask.ScheduledTaskTriggerFields(now, next, time.Now())).Error
+				Updates(scantask.ScheduledTaskTriggerFields(now, next)).Error
 		}
 
 		resource := s.executionService.lookupScanEngine(task.EngineID, task.TenantID)
@@ -152,7 +152,7 @@ func (s *ScanTaskScheduler) claimDueScheduledTask(ctx context.Context, taskID ui
 		}
 
 		next := s.taskService.nextTimeFromSpec(task.Schedule, now)
-		taskFields := scantask.ScheduledTaskTriggerFields(now, next, time.Now())
+		taskFields := scantask.ScheduledTaskTriggerFields(now, next)
 		taskFields["last_execution_id"] = execution.ExecutionID
 		taskFields["last_execution_status"] = commonExecution.ExecutionStatusPending
 		if err := tx.Model(&models.ScanTask{}).

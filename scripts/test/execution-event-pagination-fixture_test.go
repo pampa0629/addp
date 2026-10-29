@@ -185,7 +185,7 @@ func TestHostedExecutionEventPaginationFixture(t *testing.T) {
 			if e := tx.Create(&item).Error; e != nil {
 				return e
 			}
-			_, l, e := execution.ClaimNext(context.Background(), tx.Where("execution_id = ?", id), execution.ClaimOptions{Module: "meta", TaskType: "scan", WorkerID: "online-events-fixture", Now: time.Now(), LeaseDuration: 10 * time.Minute})
+			_, l, e := execution.ClaimNext(context.Background(), tx.Where("execution_id = ?", id), execution.ClaimOptions{Module: "meta", TaskType: "scan", WorkerID: "online-events-fixture", LeaseDuration: 10 * time.Minute})
 			lease = l
 			return e
 		})
@@ -205,7 +205,7 @@ func TestHostedExecutionEventPaginationFixture(t *testing.T) {
 		for i := 1; i <= limit; i++ {
 			need(t, execution.UpdateWithEvent(context.Background(), db, *lease, map[string]interface{}{"progress": 50}, execution.EventInput{Kind: "progress", Counters: map[string]int64{"records_read": int64(i)}}) == nil, "fixture_progress_write")
 		}
-		need(t, execution.CompleteWithEvent(context.Background(), db, *lease, "success", time.Now(), map[string]interface{}{"progress": 100}) == nil, "fixture_completion")
+		need(t, execution.CompleteWithEvent(context.Background(), db, *lease, "success", map[string]interface{}{"progress": 100}) == nil, "fixture_completion")
 		var events []execution.Event
 		need(t, db.Where("execution_id = ?", id).Order("id").Find(&events).Error == nil, "fixture_events_read")
 		want := 1000

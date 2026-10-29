@@ -400,8 +400,9 @@ func TestUpdateMetadataScanExecutionPersistsScanExecutionID(t *testing.T) {
 	ctx := context.Background()
 	db := newExecutionServiceTestDB(t)
 	task := createExecutionServiceTestTask(t, db)
-	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusSuccess)
+	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusRunning)
 	executionService := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+	bindExecutionServiceTestLease(t, db, executionService, &execution)
 	service := &ExecutionEngineService{
 		executionService: executionService,
 		logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),

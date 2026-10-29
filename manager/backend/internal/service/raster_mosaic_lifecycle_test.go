@@ -136,7 +136,7 @@ func testRasterMosaicWholeLifecycle(t *testing.T, db *gorm.DB) {
 				return result, nil
 			}
 			svc.SetMetaScanSubmitter(scan)
-			svc.executeRasterMosaicGeneration(deadlineCtx, task, parentID, started)
+			svc.executeRasterMosaicGeneration(deadlineCtx, task, parentID)
 			got, err := store.GetByExecutionID(t.Context(), parentID, int(tenantID))
 			if err != nil {
 				t.Fatal(err)

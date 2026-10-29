@@ -217,7 +217,7 @@ func runQueryTraceCases(t *testing.T, database func(*testing.T) *gorm.DB) {
 				if result.Error != nil || result.RowsAffected != 1 {
 					t.Fatalf("expire exact query fixture: rows=%d err=%v", result.RowsAffected, result.Error)
 				}
-				expired, err := execution.FindExpiredForUpdate(t.Context(), db, execution.ExpiredOptions{Module: "develop", TaskType: "query", Now: time.Now().UTC(), Limit: 1})
+				expired, err := execution.FindExpiredForUpdate(t.Context(), db, execution.ExpiredOptions{Module: "develop", TaskType: "query", Limit: 1})
 				if err != nil || len(expired) != 1 || expired[0].ExecutionID != item.ExecutionID {
 					t.Fatalf("recovery fixture must be genuinely expired: count=%d err=%v", len(expired), err)
 				}

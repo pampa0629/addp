@@ -69,7 +69,7 @@ func TestPlanExecutionClaimsBeforeDynamicAuthorization(t *testing.T) {
 	if !reflect.DeepEqual(storedExecution.ExecutionConfig["rules"], expectedRules) || storedExecution.ExecutionConfig["task_version"] != float64(task.Version) {
 		t.Fatalf("execution did not freeze the complete plan: %#v", storedExecution.ExecutionConfig)
 	}
-	claimed, claimedTask, err := repo.ClaimPendingExecution(context.Background(), "quality-worker", now.Add(time.Second), time.Minute)
+	claimed, claimedTask, err := repo.ClaimPendingExecution(context.Background(), "quality-worker", time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,11 +80,17 @@ func TestPlanExecutionClaimsBeforeDynamicAuthorization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.AttachExecutionAuthorization(context.Background(), lease, map[string]interface{}{"execution_authorization_id": int64(41)}); err != nil {
+	if err := repo.AttachExecutionAuthorization(context.Background(), lease, func() map[string]interface{} {
+		id := int64(41)
+		return map[string]interface{}{"execution_authorization_id": &id, "actor_principal_id": &principalID, "actor_tenant_membership_id": &membershipID, "issued_authorization_version": &authorizationVersion, "authorization_expires_at": time.Now().Add(time.Hour)}
+	}()); err != nil {
 		t.Fatal(err)
 	}
 	// A derived authorization belongs to one attempt/lease, not the whole execution.
-	if err := repo.RecoverExpiredExecutions(context.Background(), now.Add(2*time.Minute)); err != nil {
+	if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", execution.ExecutionID).Update("lease_expires_at", time.Now().UTC().Add(-time.Second)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RecoverExpiredExecutions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	storedExecution = commonExecution.TaskExecution{}
@@ -94,22 +100,27 @@ func TestPlanExecutionClaimsBeforeDynamicAuthorization(t *testing.T) {
 	if storedExecution.ExecutionAuthorizationID != nil || storedExecution.AuthorizationExpiresAt != nil || storedExecution.Status != commonExecution.ExecutionStatusPending {
 		t.Fatalf("retry retained derived authorization: %#v", storedExecution)
 	}
-	retried, _, err := repo.ClaimPendingExecution(context.Background(), "replacement-worker", now.Add(3*time.Minute), time.Minute)
+	retried, _, err := repo.ClaimPendingExecution(context.Background(), "replacement-worker", time.Minute)
 	if err != nil || retried == nil || retried.Attempt != 2 {
 		t.Fatalf("retry claim: %#v, %v", retried, err)
 	}
-	if err := repo.AttachExecutionAuthorization(context.Background(), lease, map[string]interface{}{"execution_authorization_id": int64(42)}); err == nil {
+	if err := repo.AttachExecutionAuthorization(context.Background(), lease, func() map[string]interface{} {
+		id := int64(42)
+		return map[string]interface{}{"execution_authorization_id": &id, "actor_principal_id": &principalID, "actor_tenant_membership_id": &membershipID, "issued_authorization_version": &authorizationVersion, "authorization_expires_at": time.Now().Add(time.Hour)}
+	}()); err == nil {
 		t.Fatal("expired attempt attached authorization")
 	}
 	lease, err = commonExecution.LeaseFromExecution(*retried)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.AttachExecutionAuthorization(context.Background(), lease, map[string]interface{}{"execution_authorization_id": int64(43)}); err != nil {
+	if err := repo.AttachExecutionAuthorization(context.Background(), lease, func() map[string]interface{} {
+		id := int64(43)
+		return map[string]interface{}{"execution_authorization_id": &id, "actor_principal_id": &principalID, "actor_tenant_membership_id": &membershipID, "issued_authorization_version": &authorizationVersion, "authorization_expires_at": time.Now().Add(time.Hour)}
+	}()); err != nil {
 		t.Fatal(err)
 	}
-	completedAt := now.Add(3*time.Minute + time.Second)
-	if err := repo.CompleteExecutionWithLease(context.Background(), task.ID, task.TenantID, lease, commonExecution.ExecutionStatusSuccess, map[string]interface{}{"progress": 100}, completedAt); err != nil {
+	if err := repo.CompleteExecutionWithLease(context.Background(), task.ID, task.TenantID, lease, commonExecution.ExecutionStatusSuccess, map[string]interface{}{"progress": 100}); err != nil {
 		t.Fatal(err)
 	}
 	stored, err := repo.Get(context.Background(), task.TenantID, task.ID)
@@ -127,10 +138,10 @@ func TestPlanCompletionFencesIssuesAndRollsBackTogether(t *testing.T) {
 	if _, err := repo.CreateExecution(ctx, task.ID, 7, execution, models.PlanRunRequest{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.AttachPendingAuthorization(ctx, 7, execution.ExecutionID, map[string]interface{}{"execution_authorization_id": int64(1)}); err != nil {
+	if err := repo.AttachPendingAuthorization(ctx, 7, execution.ExecutionID, qualityTestAuthorization(int64(1), time.Now().UTC().Add(time.Hour))); err != nil {
 		t.Fatal(err)
 	}
-	running, _, err := repo.ClaimPendingExecution(ctx, "worker", now, time.Minute)
+	running, _, err := repo.ClaimPendingExecution(ctx, "worker", time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,10 +149,10 @@ func TestPlanCompletionFencesIssuesAndRollsBackTogether(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	observation := models.IssueObservation{TargetKey: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",PlanID: task.ID, RuleKey: "00000000-0000-4000-8000-000000000001", RuleType: "not_null", Severity: "error", Table: "customers", SchemaName: "public", ColumnName: "id", EngineID: 1, FailedCount: 1, TotalCount: 2, PassRate: 50}
+	observation := models.IssueObservation{TargetKey: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", PlanID: task.ID, RuleKey: "00000000-0000-4000-8000-000000000001", RuleType: "not_null", Severity: "error", Table: "customers", SchemaName: "public", ColumnName: "id", EngineID: 1, FailedCount: 1, TotalCount: 2, PassRate: 50}
 	stale := lease
 	stale.Token = "other-worker"
-	if err := repo.CompleteExecutionWithLease(ctx, task.ID, 7, stale, "failed", nil, now, observation); err == nil {
+	if err := repo.CompleteExecutionWithLease(ctx, task.ID, 7, stale, "failed", nil, observation); err == nil {
 		t.Fatal("stale lease wrote terminal state")
 	}
 	var count int64
@@ -153,7 +164,7 @@ func TestPlanCompletionFencesIssuesAndRollsBackTogether(t *testing.T) {
 	if err := db.Exec(`CREATE TRIGGER quality.fail_summary BEFORE UPDATE ON plans BEGIN SELECT RAISE(FAIL, 'summary write failed'); END`).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.CompleteExecutionWithLease(ctx, task.ID, 7, lease, "failed", nil, now, observation); err == nil {
+	if err := repo.CompleteExecutionWithLease(ctx, task.ID, 7, lease, "failed", nil, observation); err == nil {
 		t.Fatal("summary conflict accepted")
 	}
 	db.Model(&models.Issue{}).Count(&count)
@@ -170,7 +181,7 @@ func TestPlanCompletionFencesIssuesAndRollsBackTogether(t *testing.T) {
 	if err := db.Exec(`DROP TRIGGER quality.fail_summary`).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.CompleteExecutionWithLease(ctx, task.ID, 7, lease, "failed", nil, now, observation); err != nil {
+	if err := repo.CompleteExecutionWithLease(ctx, task.ID, 7, lease, "failed", nil, observation); err != nil {
 		t.Fatal(err)
 	}
 	db.Model(&models.Issue{}).Count(&count)

@@ -22,7 +22,7 @@ func TestPlanScopesCanRunTogetherWithoutOverwritingLatestSummary(t *testing.T) {
 		if _, err := repo.CreateExecution(ctx, plan.ID, 7, e, req); err != nil {
 			t.Fatal(err)
 		}
-		if err := repo.AttachPendingAuthorization(ctx, 7, e.ExecutionID, map[string]interface{}{"execution_authorization_id": int64(1)}); err != nil {
+		if err := repo.AttachPendingAuthorization(ctx, 7, e.ExecutionID, qualityTestAuthorization(int64(1), time.Now().UTC().Add(time.Hour))); err != nil {
 			t.Fatal(err)
 		}
 		duplicate := newQualityRepositoryTestExecution(region+"-duplicate", 7, now)
@@ -30,11 +30,11 @@ func TestPlanScopesCanRunTogetherWithoutOverwritingLatestSummary(t *testing.T) {
 			t.Fatalf("duplicate scope accepted: %v", err)
 		}
 	}
-	first, _, err := repo.ClaimPendingExecution(ctx, "worker-a", now.Add(time.Second), time.Minute)
+	first, _, err := repo.ClaimPendingExecution(ctx, "worker-a", time.Minute)
 	if err != nil || first == nil {
 		t.Fatalf("first claim %v", err)
 	}
-	second, _, err := repo.ClaimPendingExecution(ctx, "worker-b", now.Add(time.Second), time.Minute)
+	second, _, err := repo.ClaimPendingExecution(ctx, "worker-b", time.Minute)
 	if err != nil || second == nil || first.ExecutionID == second.ExecutionID {
 		t.Fatalf("second claim %v", err)
 	}
@@ -43,7 +43,7 @@ func TestPlanScopesCanRunTogetherWithoutOverwritingLatestSummary(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := repo.CompleteExecutionWithLease(ctx, plan.ID, 7, lease, "success", nil, now.Add(2*time.Second)); err != nil {
+		if err := repo.CompleteExecutionWithLease(ctx, plan.ID, 7, lease, "success", nil); err != nil {
 			t.Fatal(err)
 		}
 	}

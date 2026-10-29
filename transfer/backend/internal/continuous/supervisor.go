@@ -24,9 +24,9 @@ func (f SessionRunnerFunc) Run(ctx context.Context, claim repository.RuntimeLeas
 }
 
 type LeaseStore interface {
-	ClaimNext(ctx context.Context, owner string, now time.Time, duration time.Duration) (*repository.RuntimeLeaseClaim, error)
-	Renew(ctx context.Context, taskID uint, owner string, token uint64, now time.Time, duration time.Duration) error
-	Finish(ctx context.Context, claim repository.RuntimeLeaseClaim, status, stopReason, errorCode, errorMessage string, now time.Time) error
+	ClaimNext(ctx context.Context, owner string, duration time.Duration) (*repository.RuntimeLeaseClaim, error)
+	Renew(ctx context.Context, taskID uint, owner string, token uint64, duration time.Duration) error
+	Finish(ctx context.Context, claim repository.RuntimeLeaseClaim, status, stopReason, errorCode, errorMessage string) error
 	DesiredState(ctx context.Context, taskID uint) (models.TaskDesiredState, error)
 }
 
@@ -105,7 +105,7 @@ func (s *Supervisor) claimAvailable(ctx context.Context) error {
 		return nil
 	}
 	for s.activeCount() < s.cfg.Capacity {
-		claim, err := s.repo.ClaimNext(ctx, s.cfg.OwnerInstanceID, time.Now(), s.cfg.LeaseDuration)
+		claim, err := s.repo.ClaimNext(ctx, s.cfg.OwnerInstanceID, s.cfg.LeaseDuration)
 		if err != nil {
 			return err
 		}
@@ -173,8 +173,8 @@ func (s *Supervisor) runSession(ctx context.Context, claim repository.RuntimeLea
 			<-runnerDone
 			status, stopReason = commonExecution.ExecutionStatusCancelled, "worker_shutdown"
 			goto finish
-		case now := <-ticker.C:
-			if err := s.repo.Renew(ctx, claim.Task.ID, claim.Lease.OwnerInstanceID, claim.Lease.FencingToken, now, s.cfg.LeaseDuration); err != nil {
+		case <-ticker.C:
+			if err := s.repo.Renew(ctx, claim.Task.ID, claim.Lease.OwnerInstanceID, claim.Lease.FencingToken, s.cfg.LeaseDuration); err != nil {
 				cancelRunner()
 				<-runnerDone
 				if reason, cancelled := s.desiredStateCancellationReason(claim.Task.ID); cancelled {
@@ -189,7 +189,7 @@ func (s *Supervisor) runSession(ctx context.Context, claim repository.RuntimeLea
 	}
 
 finish:
-	if err := s.repo.Finish(context.Background(), claim, status, stopReason, errorCode, errorMessage, time.Now()); err != nil && !errors.Is(err, repository.ErrRuntimeLeaseLost) {
+	if err := s.repo.Finish(context.Background(), claim, status, stopReason, errorCode, errorMessage); err != nil && !errors.Is(err, repository.ErrRuntimeLeaseLost) {
 		s.logger.Error("continuous session finish failed", "task_id", claim.Task.ID, "error", err)
 	}
 }

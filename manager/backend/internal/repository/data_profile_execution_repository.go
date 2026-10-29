@@ -209,15 +209,7 @@ func (r *DataProfileExecutionRepository) BindSourceAuthorization(ctx context.Con
 		if err != nil {
 			return commonAPI.ErrConflict
 		}
-		result := tx.Model(&commonExecution.TaskExecution{}).Where("id = ? AND status = ? AND attempt = 0 AND execution_authorization_id IS NULL AND authorization_expires_at IS NULL", current.ID, commonExecution.ExecutionStatusPending).
-			Updates(map[string]interface{}{"execution_authorization_id": authorizationID, "authorization_expires_at": issued.ExpiresAt, "updated_at": time.Now().UTC()})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return commonAPI.ErrConflict
-		}
-		return nil
+		return commonExecution.AttachPendingAuthorization(ctx, tx, commonExecution.PendingIdentity{ExecutionID: current.ExecutionID, TenantID: current.TenantID, Module: current.Module, TaskType: current.TaskType, Source: current.Source}, commonExecution.PendingAuthorization{ID: authorizationID, ExpiresAt: issued.ExpiresAt, ActorPrincipalID: *current.ActorPrincipalID, ActorTenantMembershipID: *current.ActorTenantMembershipID, IssuedAuthorizationVersion: *current.IssuedAuthorizationVersion})
 	})
 }
 
@@ -230,49 +222,38 @@ func (r *DataProfileExecutionRepository) FailUnbound(ctx context.Context, expect
 	if expected == nil || expected.TenantID <= 0 || expected.ActorPrincipalID == nil || *expected.ActorPrincipalID <= 0 || expected.ActorTenantMembershipID == nil || *expected.ActorTenantMembershipID <= 0 || expected.IssuedAuthorizationVersion == nil || *expected.IssuedAuthorizationVersion <= 0 {
 		return commonAPI.ErrConflict
 	}
-	now := time.Now().UTC()
-	result := r.db.WithContext(ctx).Model(&commonExecution.TaskExecution{}).
+	query := r.db.WithContext(ctx).Model(&commonExecution.TaskExecution{}).
 		Where("source = ? AND trigger_type = ? AND execution_boundary = ? AND source_task_id IS NULL AND parent_execution_id IS NULL AND lease_token IS NULL AND lease_owner IS NULL AND lease_expires_at IS NULL", commonExecution.ModuleManager, commonExecution.TriggerTypeManual, commonExecution.ExecutionBoundaryBounded).
-		Where("tenant_id = ? AND execution_id = ? AND module = ? AND task_type = ? AND status = ? AND attempt = 0 AND execution_authorization_id IS NULL AND authorization_expires_at IS NULL AND actor_principal_id = ? AND actor_tenant_membership_id = ? AND issued_authorization_version = ?", expected.TenantID, expected.ExecutionID, commonExecution.ModuleManager, commonExecution.TaskTypeDataProfiling, commonExecution.ExecutionStatusPending, *expected.ActorPrincipalID, *expected.ActorTenantMembershipID, *expected.IssuedAuthorizationVersion).
-		Updates(map[string]interface{}{"status": commonExecution.ExecutionStatusFailed, "completed_at": now, "updated_at": now, "error_details": commonModels.JSONMap{"code": "source_authorization_required", "message": "data profiling execution source authorization unavailable"}})
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return commonAPI.ErrConflict
-	}
-	return nil
+		Where("tenant_id = ? AND execution_id = ? AND module = ? AND task_type = ? AND status = ? AND attempt = 0 AND execution_authorization_id IS NULL AND authorization_expires_at IS NULL AND actor_principal_id = ? AND actor_tenant_membership_id = ? AND issued_authorization_version = ?", expected.TenantID, expected.ExecutionID, commonExecution.ModuleManager, commonExecution.TaskTypeDataProfiling, commonExecution.ExecutionStatusPending, *expected.ActorPrincipalID, *expected.ActorTenantMembershipID, *expected.IssuedAuthorizationVersion)
+	return commonExecution.FailPending(ctx, query, commonExecution.PendingIdentity{ExecutionID: expected.ExecutionID, TenantID: expected.TenantID, Module: commonExecution.ModuleManager, TaskType: commonExecution.TaskTypeDataProfiling, Source: commonExecution.ModuleManager}, map[string]interface{}{"error_details": commonModels.JSONMap{"code": "source_authorization_required", "message": "data profiling execution source authorization unavailable"}})
 }
 
-func (r *DataProfileExecutionRepository) Start(
+func (r *DataProfileExecutionRepository) ValidateClaim(
 	ctx context.Context,
 	tenantID int,
 	executionID string,
-	startedAt time.Time,
 ) error {
 	lease, ok := commonExecution.LeaseFromContext(ctx)
 	if !ok || lease.ExecutionID != executionID || lease.TenantID != tenantID {
 		return errors.New("data profile execution requires its claimed lease")
 	}
-	return commonExecution.UpdateWithLease(ctx, r.db, lease, map[string]interface{}{"updated_at": startedAt.UTC()})
+	return commonExecution.UpdateWithLease(ctx, r.db, lease, nil)
 }
 
 func (r *DataProfileExecutionRepository) Complete(
 	ctx context.Context,
 	tenantID int,
 	executionID string,
-	startedAt time.Time,
 	rowsRead int64,
 	metadata map[string]interface{},
 ) error {
 	completedAt := time.Now().UTC()
 	return r.updateTerminal(ctx, tenantID, executionID, commonExecution.ExecutionStatusSuccess, map[string]interface{}{
-		"completed_at":      completedAt,
-		"updated_at":        completedAt,
-		"execution_time_ms": completedAt.Sub(startedAt).Milliseconds(),
-		"records_read":      rowsRead,
-		"metadata":          commonModels.JSONMap(metadata),
-		"progress":          100,
+		"completed_at": completedAt,
+		"updated_at":   completedAt,
+		"records_read": rowsRead,
+		"metadata":     commonModels.JSONMap(metadata),
+		"progress":     100,
 	})
 }
 
@@ -280,38 +261,34 @@ func (r *DataProfileExecutionRepository) Fail(
 	ctx context.Context,
 	tenantID int,
 	executionID string,
-	startedAt time.Time,
 	errorCode string,
 	errorMessage string,
 ) error {
-	return r.failWithStatus(ctx, tenantID, executionID, startedAt, commonExecution.ExecutionStatusFailed, errorCode, errorMessage)
+	return r.failWithStatus(ctx, tenantID, executionID, commonExecution.ExecutionStatusFailed, errorCode, errorMessage)
 }
 
 func (r *DataProfileExecutionRepository) Timeout(
 	ctx context.Context,
 	tenantID int,
 	executionID string,
-	startedAt time.Time,
 	errorCode string,
 	errorMessage string,
 ) error {
-	return r.failWithStatus(ctx, tenantID, executionID, startedAt, commonExecution.ExecutionStatusTimeout, errorCode, errorMessage)
+	return r.failWithStatus(ctx, tenantID, executionID, commonExecution.ExecutionStatusTimeout, errorCode, errorMessage)
 }
 
 func (r *DataProfileExecutionRepository) failWithStatus(
 	ctx context.Context,
 	tenantID int,
 	executionID string,
-	startedAt time.Time,
 	status string,
 	errorCode string,
 	errorMessage string,
 ) error {
 	completedAt := time.Now().UTC()
 	return r.updateTerminal(ctx, tenantID, executionID, status, map[string]interface{}{
-		"completed_at":      completedAt,
-		"updated_at":        completedAt,
-		"execution_time_ms": completedAt.Sub(startedAt).Milliseconds(),
+		"completed_at": completedAt,
+		"updated_at":   completedAt,
 		"error_details": commonModels.JSONMap{
 			"code":    errorCode,
 			"message": errorMessage,
@@ -330,14 +307,13 @@ func (r *DataProfileExecutionRepository) updateTerminal(
 	if !ok || lease.ExecutionID != executionID || lease.TenantID != tenantID {
 		return errors.New("data profile execution requires its claimed lease")
 	}
-	completedAt, _ := fields["completed_at"].(time.Time)
 	ownedFields := make(map[string]interface{}, len(fields))
 	for key, value := range fields {
 		if key != "status" && key != "completed_at" && key != "updated_at" {
 			ownedFields[key] = value
 		}
 	}
-	return commonExecution.CompleteWithEvent(ctx, r.db, lease, status, completedAt, ownedFields)
+	return commonExecution.CompleteWithEvent(ctx, r.db, lease, status, ownedFields)
 }
 
 func findActiveDataProfileExecution(db *gorm.DB, tenantID int, targetKey string) (*commonExecution.TaskExecution, error) {

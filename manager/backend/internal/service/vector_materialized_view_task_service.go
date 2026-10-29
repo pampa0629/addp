@@ -263,8 +263,7 @@ func (s *VectorMaterializedViewTaskService) Execute(ctx context.Context, taskID 
 }
 
 func (s *VectorMaterializedViewTaskService) runVectorMaterializedView(ctx context.Context, task *models.VectorMaterializedViewTask, executionID string) {
-	startedAt := time.Now()
-	if err := s.repo.StartExecution(ctx, task.ID, task.TenantID, executionID, startedAt); err != nil {
+	if err := s.repo.ValidateClaim(ctx, task.ID, task.TenantID, executionID); err != nil {
 		logger.L().Warn("领取矢量物化视图 execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 		return
 	}
@@ -319,8 +318,6 @@ func (s *VectorMaterializedViewTaskService) runVectorMaterializedView(ctx contex
 			resultFields["row_count_estimate"] = rowCount
 		}
 	}
-
-	durationMs := completedAt.Sub(startedAt).Milliseconds()
 	progress := 100
 	if status != commonExecution.ExecutionStatusSuccess {
 		progress = 0
@@ -330,13 +327,10 @@ func (s *VectorMaterializedViewTaskService) runVectorMaterializedView(ctx contex
 		resultID = result.ID
 	}
 	if err := s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, resultID, resultFields, map[string]interface{}{
-		"status":            status,
-		"progress":          progress,
-		"metadata":          metadata,
-		"error_details":     errDetails,
-		"completed_at":      completedAt,
-		"execution_time_ms": durationMs,
-		"updated_at":        completedAt,
+		"status":        status,
+		"progress":      progress,
+		"metadata":      metadata,
+		"error_details": errDetails,
 	}, completedAt); err != nil {
 		logger.L().Warn("提交矢量物化视图 execution 终态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 	}

@@ -145,7 +145,7 @@ func (e *CheckExecutor) executionWorkerLoop(ctx context.Context, workerID string
 }
 
 func (e *CheckExecutor) processExpired(ctx context.Context) {
-	if err := e.planRepo.RecoverExpiredExecutions(ctx, time.Now().UTC()); err != nil && ctx.Err() == nil {
+	if err := e.planRepo.RecoverExpiredExecutions(ctx); err != nil && ctx.Err() == nil {
 		log.Printf("quality lease recovery: %v", err)
 	}
 }

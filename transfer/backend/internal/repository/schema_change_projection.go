@@ -3,6 +3,7 @@ package repository
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
@@ -65,7 +66,7 @@ func updateSchemaChangeExecutionProjectionTx(tx *gorm.DB, request *models.Schema
 		origin.LeaseUntil = request.MetadataScanLeaseUntil
 		metadata[commonExecution.SchemaChangeScanOriginKey] = origin
 	}
-	return tx.Model(&execution).Updates(map[string]interface{}{"metadata": metadata, "updated_at": now}).Error
+	return publishSchemaChangeProjection(tx, request, metadata, nil)
 }
 
 func pendingSchemaChangeRequestTx(tx *gorm.DB, taskID, tenantID uint) (*models.SchemaChangeRequest, error) {
@@ -121,13 +122,45 @@ func schemaChangeProjectionMetadata(metadata commonModels.JSONMap, request *mode
 // PublishAppliedSchemaChangeScanOriginTx is called only after target DDL and the
 // applied request/projection have been saved in this approval transaction.
 func PublishAppliedSchemaChangeScanOriginTx(tx *gorm.DB, request *models.SchemaChangeRequest, origin commonExecution.AppliedSchemaChangeScanOrigin) error {
-	var record commonExecution.TaskExecution
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("execution_id = ? AND tenant_id = ? AND module = ? AND task_type = ?", request.ExecutionID, request.TenantID, commonExecution.ModuleTransfer, commonExecution.TaskTypeSync).First(&record).Error; err != nil {
+	if request == nil || request.Status != models.SchemaChangeRequestApplied {
+		return ErrSchemaChangeRequestConflict
+	}
+	metadata := schemaChangeProjectionMetadata(nil, request, schemaChangeProjectionApplied, request.UpdatedAt)
+	metadata[commonExecution.SchemaChangeScanOriginKey] = origin
+	return publishSchemaChangeProjection(tx, request, metadata, &origin)
+}
+
+func publishSchemaChangeProjection(tx *gorm.DB, request *models.SchemaChangeRequest, metadata commonModels.JSONMap, origin *commonExecution.AppliedSchemaChangeScanOrigin) error {
+	continuous, _ := metadata["continuous"].(map[string]interface{})
+	var projection commonExecution.ContinuousSchemaChangeProjection
+	data, err := json.Marshal(continuous["schema_change"])
+	if err != nil {
 		return err
 	}
-	if record.Metadata == nil {
-		record.Metadata = commonModels.JSONMap{}
+	if err := json.Unmarshal(data, &projection); err != nil {
+		return err
 	}
-	record.Metadata[commonExecution.SchemaChangeScanOriginKey] = origin
-	return tx.Model(&record).Update("metadata", record.Metadata).Error
+	if value, ok := metadata[commonExecution.SchemaChangeScanOriginKey]; ok && origin == nil {
+		var stored commonExecution.AppliedSchemaChangeScanOrigin
+		data, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(data, &stored); err != nil {
+			return err
+		}
+		origin = &stored
+	}
+	return commonExecution.PublishContinuousSchemaChange(tx.Statement.Context, tx, request.ExecutionID, int(request.TenantID), request.TaskID, projection, origin, func(item commonExecution.TaskExecution, _ time.Time) error {
+		if request.ID == 0 || item.ExecutionID != request.ExecutionID || item.TenantID != int(request.TenantID) || item.SourceTaskID == nil || *item.SourceTaskID != fmt.Sprint(request.TaskID) || projection.RequestID != request.ID {
+			return ErrSchemaChangeRequestConflict
+		}
+		if projection.Status == schemaChangeProjectionApplied && request.Status != models.SchemaChangeRequestApplied {
+			return ErrSchemaChangeRequestConflict
+		}
+		if origin != nil && (request.AppliedAt == nil || !origin.AppliedAt.Equal(*request.AppliedAt) || origin.ClaimToken != request.MetadataScanClaimToken || origin.Attempt != request.MetadataScanAttempt) {
+			return ErrSchemaChangeRequestConflict
+		}
+		return nil
+	})
 }

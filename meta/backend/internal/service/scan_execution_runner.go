@@ -61,7 +61,7 @@ func (s *ScanExecutionService) executeRun(ctx context.Context, executionID strin
 	if exec.StartedAt != nil {
 		start = *exec.StartedAt
 	}
-	if err := commonExecution.UpdateWithLease(ctx, s.db, lease, scantask.RunningExecutionFields(time.Now())); err != nil {
+	if err := commonExecution.UpdateWithLease(ctx, s.db, lease, scantask.RunningExecutionFields()); err != nil {
 		return err
 	}
 

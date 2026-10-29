@@ -44,7 +44,7 @@ func runTaskEventCases(t *testing.T, database func(*testing.T) *gorm.DB, taskTyp
 			if err := repo.AttachAuthorizationWithLease(t.Context(), *lease, 73, time.Now().Add(time.Minute)); err != nil {
 				t.Fatal(err)
 			}
-			if err := repo.Renew(t.Context(), *lease, time.Now().Add(time.Minute)); err != nil {
+			if err := repo.Renew(t.Context(), *lease, time.Minute); err != nil {
 				t.Fatal(err)
 			}
 			assertExecutionEvents(t, db, taskType, item.ExecutionID, "started")

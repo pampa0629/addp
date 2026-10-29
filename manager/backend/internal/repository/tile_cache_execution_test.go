@@ -54,18 +54,21 @@ func TestTileCacheExecutionLifecycleIsAtomic(t *testing.T) {
 	}
 
 	startedAt := createdAt.Add(time.Minute)
-	if err := repo.StartExecution(context.Background(), task.ID, task.TenantID, exec.ExecutionID, startedAt); !errors.Is(err, commonAPI.ErrConflict) {
+	if err := repo.ValidateClaim(context.Background(), task.ID, task.TenantID, exec.ExecutionID); !errors.Is(err, commonAPI.ErrConflict) {
 		t.Fatalf("unleased StartExecution error = %v, want conflict", err)
 	}
-	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID, startedAt); err != nil {
+	if err := repo.ValidateClaim(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID); err != nil {
 		t.Fatalf("StartExecution: %v", err)
+	}
+	if err := db.Where("execution_id = ?", exec.ExecutionID).First(&storedExecution).Error; err != nil {
+		t.Fatal(err)
 	}
 	var runningTask models.TileCacheTask
 	if err := db.First(&runningTask, task.ID).Error; err != nil {
 		t.Fatalf("load running task: %v", err)
 	}
 	if runningTask.LastExecutionStatus == nil || *runningTask.LastExecutionStatus != commonExecution.ExecutionStatusRunning ||
-		runningTask.LastRunAt == nil || !runningTask.LastRunAt.Equal(startedAt) {
+		runningTask.LastRunAt == nil || storedExecution.StartedAt == nil || !runningTask.LastRunAt.Equal(*storedExecution.StartedAt) {
 		t.Fatalf("running task summary status=%v last_run_at=%v", runningTask.LastExecutionStatus, runningTask.LastRunAt)
 	}
 
@@ -83,7 +86,7 @@ func TestTileCacheExecutionLifecycleIsAtomic(t *testing.T) {
 		},
 		map[string]interface{}{
 			"status": commonExecution.ExecutionStatusSuccess, "completed_at": completedAt,
-			"execution_time_ms": completedAt.Sub(startedAt).Milliseconds(), "progress": 100,
+			"progress": 100,
 		}, completedAt); err != nil {
 		t.Fatalf("CompleteExecution: %v", err)
 	}
@@ -160,9 +163,17 @@ func TestTileCacheQueueClaimRollsBackWhenOwnerSummaryCannotAdvance(t *testing.T)
 	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, exec, false); err != nil {
 		t.Fatalf("ClaimExecution: %v", err)
 	}
-	if err := db.Unscoped().Delete(&models.TileCacheTask{}, task.ID).Error; err != nil {
-		t.Fatalf("delete owner task: %v", err)
+	// Fail the owner write itself. A missing owner has a separate terminal
+	// rejection policy; an old fabricated claim clock did not test rollback.
+	callback := "test:reject_owner_running_summary"
+	if err := db.Callback().Update().Before("gorm:update").Register(callback, func(tx *gorm.DB) {
+		if tx.Statement.Table == "task_definitions" {
+			tx.AddError(commonAPI.ErrConflict)
+		}
+	}); err != nil {
+		t.Fatal(err)
 	}
+	t.Cleanup(func() { db.Callback().Update().Remove(callback) })
 
 	claimed, lease, err := NewBoundedExecutionQueueRepository(db).ClaimNext(
 		context.Background(), []string{commonExecution.TaskTypeVectorTileCacheGeneration},
@@ -193,7 +204,7 @@ func TestTileCacheCompleteRollsBackWhenArtifactCannotAdvance(t *testing.T) {
 		t.Fatalf("ClaimExecution: %v", err)
 	}
 	startedAt := createdAt.Add(time.Minute)
-	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID, startedAt); err != nil {
+	if err := repo.ValidateClaim(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID); err != nil {
 		t.Fatalf("StartExecution: %v", err)
 	}
 	completedAt := startedAt.Add(time.Minute)
@@ -245,7 +256,7 @@ func TestVectorMaterializedViewExecutionLifecycleIsAtomic(t *testing.T) {
 	}
 
 	startedAt := createdAt.Add(time.Minute)
-	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID, startedAt); err != nil {
+	if err := repo.ValidateClaim(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID); err != nil {
 		t.Fatalf("StartExecution: %v", err)
 	}
 	result := createVectorMaterializedViewExecutionRepositoryTestResult(t, db, task, exec.ExecutionID)
@@ -255,7 +266,7 @@ func TestVectorMaterializedViewExecutionLifecycleIsAtomic(t *testing.T) {
 		map[string]interface{}{"status": models.VectorMaterializedViewStatusReady, "error_message": ""},
 		map[string]interface{}{
 			"status": commonExecution.ExecutionStatusSuccess, "completed_at": completedAt,
-			"execution_time_ms": completedAt.Sub(startedAt).Milliseconds(), "progress": 100,
+			"progress": 100,
 		}, completedAt,
 	); err != nil {
 		t.Fatalf("CompleteExecution: %v", err)
@@ -294,7 +305,7 @@ func TestVectorMaterializedViewCompleteRollsBackWhenResultCannotAdvance(t *testi
 		t.Fatalf("ClaimExecution: %v", err)
 	}
 	startedAt := createdAt.Add(time.Minute)
-	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID, startedAt); err != nil {
+	if err := repo.ValidateClaim(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID); err != nil {
 		t.Fatalf("StartExecution: %v", err)
 	}
 	completedAt := startedAt.Add(time.Minute)
@@ -348,7 +359,7 @@ func TestRasterCOGExecutionLifecycleIsAtomic(t *testing.T) {
 	}
 
 	startedAt := createdAt.Add(time.Minute)
-	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID, startedAt); err != nil {
+	if err := repo.ValidateClaim(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID); err != nil {
 		t.Fatalf("StartExecution: %v", err)
 	}
 	result := createRasterCOGExecutionRepositoryTestResult(t, db, task, exec.ExecutionID)
@@ -358,7 +369,7 @@ func TestRasterCOGExecutionLifecycleIsAtomic(t *testing.T) {
 		map[string]interface{}{"status": models.RasterCOGStatusReady, "error_message": ""},
 		map[string]interface{}{
 			"status": commonExecution.ExecutionStatusSuccess, "completed_at": completedAt,
-			"execution_time_ms": completedAt.Sub(startedAt).Milliseconds(), "progress": 100,
+			"progress": 100,
 		}, completedAt,
 	); err != nil {
 		t.Fatalf("CompleteExecution: %v", err)
@@ -418,7 +429,7 @@ func TestRasterMosaicExecutionLifecycleIsAtomic(t *testing.T) {
 	}
 
 	startedAt := createdAt.Add(time.Minute)
-	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID, startedAt); err != nil {
+	if err := repo.ValidateClaim(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID); err != nil {
 		t.Fatalf("StartExecution: %v", err)
 	}
 	completedAt := startedAt.Add(2 * time.Minute)
@@ -426,7 +437,7 @@ func TestRasterMosaicExecutionLifecycleIsAtomic(t *testing.T) {
 		managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID,
 		map[string]interface{}{
 			"status": commonExecution.ExecutionStatusSuccess, "completed_at": completedAt,
-			"execution_time_ms": completedAt.Sub(startedAt).Milliseconds(), "progress": 100,
+			"progress": 100,
 		}, completedAt,
 	); err != nil {
 		t.Fatalf("CompleteExecution: %v", err)
@@ -483,7 +494,7 @@ func TestModel3DGLBExecutionLifecycleIsAtomic(t *testing.T) {
 	}
 
 	startedAt := createdAt.Add(time.Minute)
-	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID, startedAt); err != nil {
+	if err := repo.ValidateClaim(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID); err != nil {
 		t.Fatalf("StartExecution: %v", err)
 	}
 	result := createModel3DGLBExecutionRepositoryTestResult(t, db, task, exec.ExecutionID)
@@ -493,7 +504,7 @@ func TestModel3DGLBExecutionLifecycleIsAtomic(t *testing.T) {
 		map[string]interface{}{"status": models.Model3DGLBStatusReady, "error_message": ""},
 		map[string]interface{}{
 			"status": commonExecution.ExecutionStatusSuccess, "completed_at": completedAt,
-			"execution_time_ms": completedAt.Sub(startedAt).Milliseconds(), "progress": 100,
+			"progress": 100,
 		}, completedAt,
 	); err != nil {
 		t.Fatalf("CompleteExecution: %v", err)
@@ -536,7 +547,7 @@ func TestModel3DGLBCompleteRollsBackWhenResultLosesOwnership(t *testing.T) {
 		t.Fatalf("ClaimExecution: %v", err)
 	}
 	startedAt := createdAt.Add(time.Minute)
-	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID, startedAt); err != nil {
+	if err := repo.ValidateClaim(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID); err != nil {
 		t.Fatalf("StartExecution: %v", err)
 	}
 	result := createModel3DGLBExecutionRepositoryTestResult(t, db, task, "newer-execution")
@@ -601,7 +612,7 @@ func TestGaussianSplatKSplatExecutionLifecycleIsAtomic(t *testing.T) {
 	}
 
 	startedAt := createdAt.Add(time.Minute)
-	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID, startedAt); err != nil {
+	if err := repo.ValidateClaim(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID); err != nil {
 		t.Fatalf("StartExecution: %v", err)
 	}
 	result := createGaussianSplatKSplatExecutionRepositoryTestResult(t, db, task, exec.ExecutionID)
@@ -611,7 +622,7 @@ func TestGaussianSplatKSplatExecutionLifecycleIsAtomic(t *testing.T) {
 		map[string]interface{}{"status": models.GaussianSplatKSplatStatusReady, "error_message": ""},
 		map[string]interface{}{
 			"status": commonExecution.ExecutionStatusSuccess, "completed_at": completedAt,
-			"execution_time_ms": completedAt.Sub(startedAt).Milliseconds(), "progress": 100,
+			"progress": 100,
 		}, completedAt,
 	); err != nil {
 		t.Fatalf("CompleteExecution: %v", err)
@@ -650,7 +661,7 @@ func TestGaussianSplatKSplatCompleteRollsBackWhenResultLosesOwnership(t *testing
 		t.Fatalf("ClaimExecution: %v", err)
 	}
 	startedAt := createdAt.Add(time.Minute)
-	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID, startedAt); err != nil {
+	if err := repo.ValidateClaim(managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt), task.ID, task.TenantID, exec.ExecutionID); err != nil {
 		t.Fatalf("StartExecution: %v", err)
 	}
 	result := createGaussianSplatKSplatExecutionRepositoryTestResult(t, db, task, "newer-execution")
@@ -695,11 +706,11 @@ func TestPointCloudCOPCExecutionLifecycleIsAtomic(t *testing.T) {
 	}
 	startedAt := createdAt.Add(time.Minute)
 	leaseCtx := managerExecutionLeaseContextForTest(t, db, exec.ExecutionID, int(task.TenantID), startedAt)
-	if err := repo.StartExecution(leaseCtx, task.ID, task.TenantID, exec.ExecutionID, startedAt); err != nil {
+	if err := repo.ValidateClaim(leaseCtx, task.ID, task.TenantID, exec.ExecutionID); err != nil {
 		t.Fatalf("StartExecution: %v", err)
 	}
 	if err := repo.UpdateRunningExecutionProgress(leaseCtx, task.TenantID, exec.ExecutionID, map[string]interface{}{
-		"progress": 42, "updated_at": startedAt.Add(time.Second),
+		"progress": 42,
 	}); err != nil {
 		t.Fatalf("UpdateRunningExecutionProgress: %v", err)
 	}
@@ -710,7 +721,7 @@ func TestPointCloudCOPCExecutionLifecycleIsAtomic(t *testing.T) {
 		map[string]interface{}{"status": models.PointCloudCOPCStatusReady, "error_message": ""},
 		map[string]interface{}{
 			"status": commonExecution.ExecutionStatusSuccess, "completed_at": completedAt,
-			"execution_time_ms": completedAt.Sub(startedAt).Milliseconds(), "progress": 100,
+			"progress": 100,
 		}, completedAt,
 	); err != nil {
 		t.Fatalf("CompleteExecution: %v", err)
@@ -743,7 +754,7 @@ func TestModel3DTilesExecutionRequiresConfirmationAndFencesResult(t *testing.T) 
 	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, first, false); err != nil {
 		t.Fatalf("first ClaimExecution: %v", err)
 	}
-	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, first.ExecutionID, int(task.TenantID), createdAt.Add(time.Minute)), task.ID, task.TenantID, first.ExecutionID, createdAt.Add(time.Minute)); err != nil {
+	if err := repo.ValidateClaim(managerExecutionLeaseContextForTest(t, db, first.ExecutionID, int(task.TenantID), createdAt.Add(time.Minute)), task.ID, task.TenantID, first.ExecutionID); err != nil {
 		t.Fatalf("first StartExecution: %v", err)
 	}
 	result := createModel3DTilesExecutionRepositoryTestResult(t, db, task, first.ExecutionID)
@@ -778,7 +789,7 @@ func TestModel3DTilesExecutionRequiresConfirmationAndFencesResult(t *testing.T) 
 	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, activeUnconfirmed, false); !errors.Is(err, commonAPI.ErrConflict) {
 		t.Fatalf("active unconfirmed ClaimExecution error = %v, want active conflict", err)
 	}
-	if err := repo.StartExecution(managerExecutionLeaseContextForTest(t, db, confirmed.ExecutionID, int(task.TenantID), completedAt.Add(time.Minute)), task.ID, task.TenantID, confirmed.ExecutionID, completedAt.Add(time.Minute)); err != nil {
+	if err := repo.ValidateClaim(managerExecutionLeaseContextForTest(t, db, confirmed.ExecutionID, int(task.TenantID), completedAt.Add(time.Minute)), task.ID, task.TenantID, confirmed.ExecutionID); err != nil {
 		t.Fatalf("confirmed StartExecution: %v", err)
 	}
 	if err := db.Model(&models.Model3DTiles{}).Where("id = ?", result.ID).Update("last_execution_id", confirmed.ExecutionID).Error; err != nil {

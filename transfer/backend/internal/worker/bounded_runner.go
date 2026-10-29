@@ -86,8 +86,7 @@ func (r *BoundedRunner) workerLoop(ctx context.Context, workerID string, canClai
 }
 
 func (r *BoundedRunner) processNext(ctx context.Context, workerID string) bool {
-	now := time.Now().UTC()
-	execution, lease, err := r.tasks.ClaimNextBoundedExecution(ctx, workerID, now, r.config.LeaseDuration)
+	execution, lease, err := r.tasks.ClaimNextBoundedExecution(ctx, workerID, r.config.LeaseDuration)
 	if err != nil {
 		if ctx.Err() == nil {
 			r.logger.Error("claim bounded execution failed", "worker_id", workerID, "error", err)
@@ -129,8 +128,8 @@ func (r *BoundedRunner) heartbeat(ctx context.Context, cancel context.CancelFunc
 		case <-ctx.Done():
 			done <- nil
 			return
-		case now := <-ticker.C:
-			if err := r.tasks.RenewBoundedExecutionLease(ctx, lease, now.UTC().Add(r.config.LeaseDuration)); err != nil {
+		case <-ticker.C:
+			if err := r.tasks.RenewBoundedExecutionLease(ctx, lease, r.config.LeaseDuration); err != nil {
 				if ctx.Err() != nil {
 					done <- nil
 					return
@@ -155,7 +154,7 @@ func (r *BoundedRunner) recoveryLoop(ctx context.Context) {
 	ticker := time.NewTicker(r.config.ClaimInterval)
 	defer ticker.Stop()
 	for {
-		if count, err := r.tasks.FailExpiredBoundedExecutions(ctx, time.Now().UTC(), 100); err != nil {
+		if count, err := r.tasks.FailExpiredBoundedExecutions(ctx, 100); err != nil {
 			if ctx.Err() == nil {
 				r.logger.Error("bounded execution recovery failed", "error", err)
 			}

@@ -79,11 +79,11 @@ func runManagerExecutionEvents(t *testing.T, database func(*testing.T) *gorm.DB)
 				}
 				assertManagerEvents(t, db, item, "started")
 				if taskType == commonExecution.TaskTypeEmbedding {
-					if err := NewEmbeddingRepository(db).CompleteAdHocExecution(t.Context(), *lease, status, time.Now().UTC(), nil); err == nil {
+					if err := NewEmbeddingRepository(db).CompleteAdHocExecution(t.Context(), *lease, status, nil); err == nil {
 						t.Fatal("ad-hoc completion bypassed task summary ownership")
 					}
 				}
-				if err := queue.RenewLease(t.Context(), *lease, time.Now().UTC().Add(time.Minute)); err != nil {
+				if err := queue.RenewLease(t.Context(), *lease, time.Minute); err != nil {
 					t.Fatal(err)
 				}
 				ctx := commonExecution.ContextWithLease(t.Context(), *lease)
@@ -283,7 +283,7 @@ func runManagerExecutionEvents(t *testing.T, database func(*testing.T) *gorm.DB)
 				}
 				return
 			case "ad_hoc_embedding":
-				err = NewEmbeddingRepository(db).CompleteAdHocExecution(t.Context(), *lease, "success", time.Now().UTC(), nil)
+				err = NewEmbeddingRepository(db).CompleteAdHocExecution(t.Context(), *lease, "success", nil)
 				if err != nil {
 					t.Fatal(err)
 				}

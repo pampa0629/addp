@@ -195,7 +195,7 @@ func runIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T, targ
 		}
 	}()
 
-	claim, err := leaseRepo.ClaimNext(ctx, "mysql-cdc-worker-a", time.Now(), 30*time.Second)
+	claim, err := leaseRepo.ClaimNext(ctx, "mysql-cdc-worker-a", 30*time.Second)
 	if err != nil || claim == nil || claim.Execution.ExecutionID != execution.ExecutionID {
 		t.Fatalf("first claim=%#v err=%v", claim, err)
 	}
@@ -247,11 +247,11 @@ func runIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T, targ
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	recoveryDetectedAt := time.Now()
-	if recoveryClaim, err := leaseRepo.ClaimNext(ctx, "mysql-cdc-worker-b", recoveryDetectedAt, 30*time.Second); err != nil || recoveryClaim != nil {
+	if recoveryClaim, err := leaseRepo.ClaimNext(ctx, "mysql-cdc-worker-b", 30*time.Second); err != nil || recoveryClaim != nil {
 		t.Fatalf("recovery backoff claim=%#v err=%v", recoveryClaim, err)
 	}
-	secondClaim, err := leaseRepo.ClaimNext(ctx, "mysql-cdc-worker-b", recoveryDetectedAt.Add(time.Second), 30*time.Second)
+	testpg.MakeContinuousRecoveryEligible(t, infraDB, task.ID, task.TenantID)
+	secondClaim, err := leaseRepo.ClaimNext(ctx, "mysql-cdc-worker-b", 30*time.Second)
 	if err != nil || secondClaim == nil || secondClaim.Lease.FencingToken <= claim.Lease.FencingToken {
 		t.Fatalf("recovery claim=%#v err=%v", secondClaim, err)
 	}
@@ -267,7 +267,7 @@ func runIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T, targ
 	if pauseErr == nil {
 		t.Fatal("paused MySQL CDC runner exited without fencing error")
 	}
-	if err := leaseRepo.Finish(context.Background(), *secondClaim, commonExecution.ExecutionStatusCancelled, "paused", "", "", time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *secondClaim, commonExecution.ExecutionStatusCancelled, "paused", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := rootDB.ExecContext(ctx, "INSERT INTO "+mysqlCDCQuoteIdentifier(sourceDatabase)+"."+mysqlCDCQuoteIdentifier(sourceTable)+` VALUES (
@@ -280,7 +280,7 @@ func runIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T, targ
 	target.AssertRowAbsent(t, ctx, 3)
 
 	resumeExecution := mysqlCDCResumeTaskViaAPI(t, apiRouter, task.ID)
-	thirdClaim, err := leaseRepo.ClaimNext(ctx, "mysql-cdc-worker-c", time.Now(), 30*time.Second)
+	thirdClaim, err := leaseRepo.ClaimNext(ctx, "mysql-cdc-worker-c", 30*time.Second)
 	if err != nil || thirdClaim == nil || thirdClaim.Execution.ExecutionID != resumeExecution.ExecutionID {
 		t.Fatalf("resume claim=%#v err=%v", thirdClaim, err)
 	}
@@ -311,7 +311,7 @@ func runIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T, targ
 		t.Fatalf("schema drift advanced committed position: before=%d after=%d", committedBeforeDrift, got)
 	}
 	target.AssertRowAbsent(t, ctx, 4)
-	if err := leaseRepo.Finish(context.Background(), *thirdClaim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", "schema_change_blocked", runnerErr.Error(), time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *thirdClaim, commonExecution.ExecutionStatusFailed, "schema_change_blocked", "schema_change_blocked", runnerErr.Error()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -334,7 +334,7 @@ func runIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T, targ
 		t.Fatalf("failed Meta scan was retried by repeated approval: first=%#v repeated=%#v", change, repeatedChange)
 	}
 	fourthExecution := mysqlCDCResumeTaskViaAPI(t, apiRouter, task.ID)
-	fourthClaim, err := leaseRepo.ClaimNext(ctx, "mysql-cdc-worker-d", time.Now(), 30*time.Second)
+	fourthClaim, err := leaseRepo.ClaimNext(ctx, "mysql-cdc-worker-d", 30*time.Second)
 	if err != nil || fourthClaim == nil || fourthClaim.Execution.ExecutionID != fourthExecution.ExecutionID {
 		t.Fatalf("schema resume claim=%#v err=%v", fourthClaim, err)
 	}
@@ -358,7 +358,7 @@ func runIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T, targ
 	if err := <-fourthDone; !errors.Is(err, context.Canceled) {
 		t.Fatalf("MySQL additive runner error=%v", err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *fourthClaim, commonExecution.ExecutionStatusCancelled, "paused", "", "", time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *fourthClaim, commonExecution.ExecutionStatusCancelled, "paused", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	committedAfterAdditive := mysqlCDCCommittedOffset(t, ctx, stateRepo, task.ID, resource.SourceIdentity)
@@ -377,7 +377,7 @@ func runIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T, targ
 	admin := kadm.NewClient(adminClient)
 	mysqlCDCExpireCommittedPosition(t, ctx, admin, resource.TopicName, committedAfterAdditive)
 	fifthExecution := mysqlCDCResumeTaskViaAPI(t, apiRouter, task.ID)
-	fifthClaim, err := leaseRepo.ClaimNext(ctx, "mysql-cdc-worker-e", time.Now(), 30*time.Second)
+	fifthClaim, err := leaseRepo.ClaimNext(ctx, "mysql-cdc-worker-e", 30*time.Second)
 	if err != nil || fifthClaim == nil || fifthClaim.Execution.ExecutionID != fifthExecution.ExecutionID {
 		t.Fatalf("retention claim=%#v err=%v", fifthClaim, err)
 	}
@@ -386,7 +386,7 @@ func runIntegrationMySQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T, targ
 		t.Fatalf("expired MySQL CDC committed position error=%v", retentionErr)
 	}
 	mysqlCDCPauseTaskViaAPI(t, apiRouter, task.ID)
-	if err := leaseRepo.Finish(context.Background(), *fifthClaim, commonExecution.ExecutionStatusFailed, "retention_unavailable", "", retentionErr.Error(), time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *fifthClaim, commonExecution.ExecutionStatusFailed, "retention_unavailable", "", retentionErr.Error()); err != nil {
 		t.Fatal(err)
 	}
 

@@ -127,8 +127,7 @@ func (r *BoundedExecutionQueueRepository) ClaimNext(ctx context.Context, taskTyp
 		claimDB := tx.Where("(task_type <> ? OR (execution_authorization_id IS NOT NULL AND authorization_expires_at IS NOT NULL))", commonExecution.TaskTypeDataProfiling)
 		claimDB = claimDB.Where("(task_type <> ? OR COALESCE(execution_config->>'config_version','') <> ? OR (execution_authorization_id > 0 AND authorization_expires_at > ? AND source = ? AND trigger_type = ? AND parent_execution_id IS NULL AND source_task_id IS NOT NULL AND actor_principal_id > 0 AND actor_tenant_membership_id > 0 AND issued_authorization_version > 0 AND triggered_by = actor_principal_id))", commonExecution.TaskTypeModel3DGLBGeneration, models.Model3DGLBFileConfigVersion, now.UTC(), commonExecution.ModuleManager, commonExecution.TriggerTypeManual)
 		execution, lease, err = commonExecution.ClaimNext(ctx, claimDB, commonExecution.ClaimOptions{
-			Module: commonExecution.ModuleManager, TaskTypes: taskTypes, WorkerID: owner,
-			Now: now, LeaseDuration: leaseDuration,
+			Module: commonExecution.ModuleManager, TaskTypes: taskTypes, WorkerID: owner, LeaseDuration: leaseDuration,
 		})
 		if err != nil || execution == nil {
 			return err
@@ -145,7 +144,7 @@ func (r *BoundedExecutionQueueRepository) ClaimNext(ctx context.Context, taskTyp
 			return nil
 		}
 		if execution.SourceTaskID == nil {
-			if err := failUnclaimableManagerExecution(ctx, tx, execution, *lease, now, "Manager bounded execution has no task owner"); err != nil {
+			if err := failUnclaimableManagerExecution(ctx, tx, execution, *lease, "Manager bounded execution has no task owner"); err != nil {
 				return err
 			}
 			execution, lease = nil, nil
@@ -153,7 +152,7 @@ func (r *BoundedExecutionQueueRepository) ClaimNext(ctx context.Context, taskTyp
 		}
 		taskID, err := commonExecution.ParseSourceTaskIDUint(execution.SourceTaskID)
 		if err != nil {
-			if failErr := failUnclaimableManagerExecution(ctx, tx, execution, *lease, now, "Manager bounded execution has an invalid task owner"); failErr != nil {
+			if failErr := failUnclaimableManagerExecution(ctx, tx, execution, *lease, "Manager bounded execution has an invalid task owner"); failErr != nil {
 				return failErr
 			}
 			execution, lease = nil, nil
@@ -165,17 +164,20 @@ func (r *BoundedExecutionQueueRepository) ClaimNext(ctx context.Context, taskTyp
 			query = query.Where("task_type = ?", execution.TaskType)
 		}
 		result := query.
-			Updates(map[string]interface{}{"last_run_at": now.UTC(), "last_execution_status": commonExecution.ExecutionStatusRunning, "updated_at": now.UTC()})
+			Updates(map[string]interface{}{"last_run_at": execution.StartedAt, "last_execution_status": commonExecution.ExecutionStatusRunning, "updated_at": now.UTC()})
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
-			if err := failUnclaimableManagerExecution(ctx, tx, execution, *lease, now, "Manager bounded execution task owner is unavailable"); err != nil {
+			if err := failUnclaimableManagerExecution(ctx, tx, execution, *lease, "Manager bounded execution task owner is unavailable"); err != nil {
 				return err
 			}
 			execution, lease = nil, nil
 		}
-		return nil
+		if lease == nil {
+			return nil
+		}
+		return commonExecution.UpdateWithLease(ctx, tx, *lease, nil)
 	})
 	if err != nil {
 		return nil, nil, err
@@ -188,18 +190,16 @@ func failUnclaimableManagerExecution(
 	tx *gorm.DB,
 	execution *commonExecution.TaskExecution,
 	lease commonExecution.Lease,
-	now time.Time,
 	message string,
 ) error {
 	fields := map[string]interface{}{
-		"error_details":     commonModels.JSONMap{"code": managerOwnerUnavailableCode, "message": message},
-		"execution_time_ms": int64(0),
+		"error_details": commonModels.JSONMap{"code": managerOwnerUnavailableCode, "message": message},
 	}
-	return commonExecution.CompleteWithEvent(ctx, tx, lease, commonExecution.ExecutionStatusFailed, now.UTC(), fields)
+	return commonExecution.CompleteWithEvent(ctx, tx, lease, commonExecution.ExecutionStatusFailed, fields)
 }
 
-func (r *BoundedExecutionQueueRepository) RenewLease(ctx context.Context, lease commonExecution.Lease, expiresAt time.Time) error {
-	return commonExecution.RenewLease(ctx, r.db, lease, expiresAt)
+func (r *BoundedExecutionQueueRepository) RenewLease(ctx context.Context, lease commonExecution.Lease, duration time.Duration) error {
+	return commonExecution.RenewLease(ctx, r.db, lease, duration)
 }
 
 func (r *BoundedExecutionQueueRepository) AttemptIsTerminal(ctx context.Context, lease commonExecution.Lease) (bool, error) {
@@ -216,13 +216,13 @@ func (r *BoundedExecutionQueueRepository) FailClaimed(ctx context.Context, execu
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		fields := map[string]interface{}{"error_details": commonModels.JSONMap{"code": code, "message": message}}
-		if execution.StartedAt != nil {
-			fields["execution_time_ms"] = now.Sub(*execution.StartedAt).Milliseconds()
-		}
-		if err := commonExecution.CompleteWithEvent(ctx, tx, lease, commonExecution.ExecutionStatusFailed, now, fields); err != nil {
+		if _, err := commonExecution.LockActiveLease(ctx, tx, lease); err != nil {
 			return err
 		}
-		return updateManagerOwnershipFailure(tx, ownership, execution, now, message)
+		if err := updateManagerOwnershipFailure(tx, ownership, execution, now, message); err != nil {
+			return err
+		}
+		return commonExecution.CompleteWithEvent(ctx, tx, lease, commonExecution.ExecutionStatusFailed, fields)
 	})
 }
 
@@ -248,13 +248,9 @@ func (r *BoundedExecutionQueueRepository) RecoverUnleased(ctx context.Context, n
 			return err
 		}
 		for _, item := range abandoned {
-			result := tx.Model(&commonExecution.TaskExecution{}).Where("id = ? AND status = ? AND attempt = 0 AND execution_authorization_id IS NULL AND authorization_expires_at IS NULL", item.ID, commonExecution.ExecutionStatusPending).
-				Updates(map[string]interface{}{"status": commonExecution.ExecutionStatusFailed, "completed_at": now.UTC(), "updated_at": now.UTC(), "error_details": commonModels.JSONMap{"code": "source_authorization_required", "message": "data profiling source authorization preparation expired"}})
-			if result.Error != nil {
-				return result.Error
-			}
-			if result.RowsAffected != 1 {
-				return commonAPI.ErrConflict
+			query := tx.Where("attempt = 0 AND execution_authorization_id IS NULL AND authorization_expires_at IS NULL")
+			if err := commonExecution.FailPending(ctx, query, commonExecution.PendingIdentity{ExecutionID: item.ExecutionID, TenantID: item.TenantID, Module: item.Module, TaskType: item.TaskType, Source: item.Source}, map[string]interface{}{"error_details": commonModels.JSONMap{"code": "source_authorization_required", "message": "data profiling source authorization preparation expired"}}); err != nil {
+				return err
 			}
 			recovered++
 		}
@@ -290,22 +286,9 @@ func (r *BoundedExecutionQueueRepository) RecoverUnleased(ctx context.Context, n
 				return fmt.Errorf("unsupported Manager bounded task type %q", item.TaskType)
 			}
 			message := "Manager bounded execution has no valid lease"
-			fields := map[string]interface{}{
-				"status": commonExecution.ExecutionStatusFailed, "completed_at": now.UTC(), "updated_at": now.UTC(),
-				"lease_owner": nil, "lease_token": nil, "lease_expires_at": nil,
-				"error_details": commonModels.JSONMap{"code": managerLeaseMissingCode, "message": message},
-			}
-			if item.StartedAt != nil {
-				fields["execution_time_ms"] = now.Sub(*item.StartedAt).Milliseconds()
-			}
-			result := tx.Model(&commonExecution.TaskExecution{}).
-				Where("execution_id = ? AND tenant_id = ? AND status = ? AND (attempt <= 0 OR lease_token IS NULL OR lease_owner IS NULL OR lease_expires_at IS NULL)", item.ExecutionID, item.TenantID, commonExecution.ExecutionStatusRunning).
-				Updates(fields)
-			if result.Error != nil {
-				return result.Error
-			}
-			if result.RowsAffected != 1 {
-				return fmt.Errorf("%w: unleased Manager execution %s changed concurrently", commonAPI.ErrConflict, item.ExecutionID)
+			fields := map[string]interface{}{"error_details": commonModels.JSONMap{"code": managerLeaseMissingCode, "message": message}}
+			if err := commonExecution.FailUnleased(ctx, tx, item.ExecutionID, item.TenantID, item.Module, item.TaskType, fields); err != nil {
+				return err
 			}
 			if err := updateManagerOwnershipFailure(tx, ownership, item, now, message); err != nil {
 				return err
@@ -324,7 +307,7 @@ func (r *BoundedExecutionQueueRepository) RecoverExpired(ctx context.Context, no
 	recovered := 0
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		items, err := commonExecution.FindExpiredForUpdate(ctx, tx, commonExecution.ExpiredOptions{
-			Module: commonExecution.ModuleManager, TaskTypes: ManagerBoundedTaskTypes(), Now: now, Limit: limit,
+			Module: commonExecution.ModuleManager, TaskTypes: ManagerBoundedTaskTypes(), Limit: limit,
 		})
 		if err != nil {
 			return err
@@ -341,10 +324,7 @@ func (r *BoundedExecutionQueueRepository) RecoverExpired(ctx context.Context, no
 			}
 			details := commonModels.JSONMap{"code": managerLeaseExpiredCode, "message": "Manager bounded execution lease expired"}
 			fields := map[string]interface{}{"error_details": details}
-			if item.StartedAt != nil {
-				fields["execution_time_ms"] = now.Sub(*item.StartedAt).Milliseconds()
-			}
-			if err := commonExecution.FailExpiredWithEvent(ctx, tx, lease, now, fields); err != nil {
+			if err := commonExecution.FailExpiredWithEvent(ctx, tx, lease, fields); err != nil {
 				return err
 			}
 			if err := updateManagerOwnershipFailure(tx, ownership, &item, now, "Manager bounded execution lease expired"); err != nil {

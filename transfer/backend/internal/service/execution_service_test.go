@@ -64,22 +64,30 @@ func TestRetryExecutionCreatesDurablePendingExecution(t *testing.T) {
 	}
 }
 
-func TestUpdateStatusStartsPendingExecution(t *testing.T) {
+func TestDispatchRequiresCommittedBoundedClaim(t *testing.T) {
 	ctx := context.Background()
 	db := newExecutionServiceTestDB(t)
 	task := createExecutionServiceTestTask(t, db)
 	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusPending)
 	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
 
-	if err := service.UpdateStatus(ctx, uint(execution.ID), models.ExecutionStatusRunning); err != nil {
-		t.Fatalf("UpdateStatus(running): %v", err)
+	if err := service.ValidateClaim(ctx, uint(execution.ID)); err == nil {
+		t.Fatal("unclaimed dispatch accepted")
 	}
 	var stored commonExecution.TaskExecution
 	if err := db.First(&stored, execution.ID).Error; err != nil {
-		t.Fatalf("load started execution: %v", err)
+		t.Fatal(err)
 	}
-	if stored.Status != commonExecution.ExecutionStatusRunning || stored.StartedAt == nil {
-		t.Fatalf("started execution status=%s started_at=%v", stored.Status, stored.StartedAt)
+	if stored.Status != commonExecution.ExecutionStatusPending || stored.StartedAt != nil {
+		t.Fatal("validation started an unclaimed execution")
+	}
+	claimed, lease, err := commonExecution.ClaimPending(ctx, db, commonExecution.PendingIdentity{ExecutionID: execution.ExecutionID, TenantID: execution.TenantID, Module: commonExecution.ModuleTransfer, TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleTransfer}, commonExecution.ClaimOptions{Module: commonExecution.ModuleTransfer, TaskTypes: []string{commonExecution.TaskTypeSync}, WorkerID: "test-worker", LeaseDuration: time.Minute}, nil)
+	if err != nil || claimed == nil {
+		t.Fatalf("claim: %v", err)
+	}
+	service.BindBoundedLease(uint(execution.ID), *lease)
+	if err := service.ValidateClaim(ctx, uint(execution.ID)); err != nil {
+		t.Fatal(err)
 	}
 }
 

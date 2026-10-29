@@ -142,9 +142,9 @@ func (r *TileCacheRepository) ClaimExecution(ctx context.Context, taskID, tenant
 	return &task, nil
 }
 
-func (r *TileCacheRepository) StartExecution(ctx context.Context, taskID, tenantID uint, executionID string, startedAt time.Time) error {
-	return newTaskExecutionLifecycle(r.db).Start(
-		ctx, taskID, tenantID, executionID, startedAt, &models.TileCacheTask{}, "vector tile cache",
+func (r *TileCacheRepository) ValidateClaim(ctx context.Context, taskID, tenantID uint, executionID string) error {
+	return newTaskExecutionLifecycle(r.db).ValidateClaim(
+		ctx, taskID, tenantID, executionID, &models.TileCacheTask{}, "vector tile cache",
 	)
 }
 

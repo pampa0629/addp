@@ -86,11 +86,11 @@ func (r *RasterMosaicRepository) ClaimExecution(
 	return &task, nil
 }
 
-func (r *RasterMosaicRepository) StartExecution(
-	ctx context.Context, taskID, tenantID uint, executionID string, startedAt time.Time,
+func (r *RasterMosaicRepository) ValidateClaim(
+	ctx context.Context, taskID, tenantID uint, executionID string,
 ) error {
-	return newTaskExecutionLifecycle(r.db).Start(
-		ctx, taskID, tenantID, executionID, startedAt, &models.RasterMosaicTask{}, "raster mosaic",
+	return newTaskExecutionLifecycle(r.db).ValidateClaim(
+		ctx, taskID, tenantID, executionID, &models.RasterMosaicTask{}, "raster mosaic",
 	)
 }
 

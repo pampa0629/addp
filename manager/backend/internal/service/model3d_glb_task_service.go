@@ -259,8 +259,7 @@ func (s *Model3DGLBTaskService) Execute(ctx context.Context, taskID uint, tenant
 }
 
 func (s *Model3DGLBTaskService) runModel3DGLBGeneration(ctx context.Context, task *models.Model3DGLBTask, executionID string, plan *model3DGLBClaimPlan) {
-	startedAt := time.Now()
-	if err := s.repo.StartExecution(ctx, task.ID, task.TenantID, executionID, startedAt); err != nil {
+	if err := s.repo.ValidateClaim(ctx, task.ID, task.TenantID, executionID); err != nil {
 		logger.L().Warn("领取三维模型 GLB execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 		return
 	}
@@ -352,19 +351,15 @@ func (s *Model3DGLBTaskService) runModel3DGLBGeneration(ctx context.Context, tas
 	if status != commonExecution.ExecutionStatusSuccess {
 		progress = 0
 	}
-	durationMs := completedAt.Sub(startedAt).Milliseconds()
 	resultID := uint(0)
 	if result != nil {
 		resultID = result.ID
 	}
 	executionFields := map[string]interface{}{
-		"status":            status,
-		"progress":          progress,
-		"metadata":          metadata,
-		"error_details":     errDetails,
-		"completed_at":      completedAt,
-		"execution_time_ms": durationMs,
-		"updated_at":        completedAt,
+		"status":        status,
+		"progress":      progress,
+		"metadata":      metadata,
+		"error_details": errDetails,
 	}
 	var completionErr error
 	if plan != nil && result != nil {

@@ -151,7 +151,7 @@ func runIntegrationDatabaseCDCToOracleTargetLifecycle(t *testing.T, sourceType s
 			_ = captureSupervisor.Stop(context.Background(), &task)
 		}
 	}()
-	claim, err := leaseRepo.ClaimNext(ctx, sourceType+"-oracle-target-worker", time.Now(), 2*time.Minute)
+	claim, err := leaseRepo.ClaimNext(ctx, sourceType+"-oracle-target-worker", 2*time.Minute)
 	if err != nil || claim == nil || claim.Execution.ExecutionID != execution.ExecutionID {
 		t.Fatalf("%s CDC claim=%#v err=%v", sourceType, claim, err)
 	}
@@ -198,7 +198,7 @@ func runIntegrationDatabaseCDCToOracleTargetLifecycle(t *testing.T, sourceType s
 	if err := <-runnerDone; !errors.Is(err, context.Canceled) {
 		t.Fatalf("%s CDC Oracle target runner error=%v", sourceType, err)
 	}
-	if err := leaseRepo.Finish(context.Background(), *claim, commonExecution.ExecutionStatusCancelled, "test_complete", "", "", time.Now()); err != nil {
+	if err := leaseRepo.Finish(context.Background(), *claim, commonExecution.ExecutionStatusCancelled, "test_complete", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	cdcDataStopTaskViaAPI(t, apiRouter, task.ID, task.Name)

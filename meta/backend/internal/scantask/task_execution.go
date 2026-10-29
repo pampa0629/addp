@@ -93,14 +93,13 @@ func NewScheduledExecution(task *metaModels.ScanTask, storageType string, target
 	}
 }
 
-func RunningExecutionFields(now time.Time) map[string]interface{} {
+func RunningExecutionFields() map[string]interface{} {
 	return map[string]interface{}{
 		"current_step": "任务开始执行",
-		"updated_at":   now,
 	}
 }
 
-func FailedExecutionFields(resp *metaModels.ScanResponse, storageType string, scanErr error, completedAt time.Time, durationMs int64, now time.Time) map[string]interface{} {
+func FailedExecutionFields(resp *metaModels.ScanResponse, storageType string, scanErr error) map[string]interface{} {
 	errorDetails := commonModels.JSONMap{
 		"message": scanErr.Error(),
 	}
@@ -114,13 +113,10 @@ func FailedExecutionFields(resp *metaModels.ScanResponse, storageType string, sc
 		errorDetails["failed_target_samples"] = samples
 	}
 	return map[string]interface{}{
-		"status":            commonExecution.ExecutionStatusFailed,
-		"completed_at":      completedAt,
-		"execution_time_ms": durationMs,
-		"current_step":      boundedExecutionStep(fmt.Sprintf("执行失败: %v", scanErr)),
-		"error_details":     errorDetails,
-		"metadata":          scanExecutionMetadata(resp, storageType),
-		"updated_at":        now,
+		"status":        commonExecution.ExecutionStatusFailed,
+		"current_step":  boundedExecutionStep(fmt.Sprintf("执行失败: %v", scanErr)),
+		"error_details": errorDetails,
+		"metadata":      scanExecutionMetadata(resp, storageType),
 	}
 }
 
@@ -133,16 +129,13 @@ func boundedExecutionStep(value string) string {
 	return string(runes[:maxRunes])
 }
 
-func SuccessfulExecutionFields(resp *metaModels.ScanResponse, storageType string, completedAt time.Time, durationMs int64, now time.Time) map[string]interface{} {
+func SuccessfulExecutionFields(resp *metaModels.ScanResponse, storageType string) map[string]interface{} {
 	metadata := scanExecutionMetadata(resp, storageType)
 	return map[string]interface{}{
-		"status":            commonExecution.ExecutionStatusSuccess,
-		"completed_at":      completedAt,
-		"execution_time_ms": durationMs,
-		"progress":          100,
-		"current_step":      "执行完成",
-		"metadata":          metadata,
-		"updated_at":        now,
+		"status":       commonExecution.ExecutionStatusSuccess,
+		"progress":     100,
+		"current_step": "执行完成",
+		"metadata":     metadata,
 	}
 }
 
@@ -168,19 +161,17 @@ func scanExecutionMetadata(resp *metaModels.ScanResponse, storageType string) co
 	return metadata
 }
 
-func TaskStatusBackfillFields(executionID string, status string, completedAt time.Time, now time.Time) map[string]interface{} {
+func TaskStatusBackfillFields(executionID string, status string, completedAt time.Time) map[string]interface{} {
 	return map[string]interface{}{
 		"last_run_at":           completedAt,
 		"last_execution_id":     executionID,
 		"last_execution_status": status,
-		"updated_at":            now,
 	}
 }
 
-func ScheduledTaskTriggerFields(lastRunAt time.Time, nextRunAt *time.Time, now time.Time) map[string]interface{} {
+func ScheduledTaskTriggerFields(lastRunAt time.Time, nextRunAt *time.Time) map[string]interface{} {
 	fields := map[string]interface{}{
 		"last_run_at": lastRunAt,
-		"updated_at":  now,
 	}
 	if nextRunAt != nil {
 		fields["next_run_at"] = *nextRunAt

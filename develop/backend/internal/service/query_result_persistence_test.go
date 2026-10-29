@@ -81,7 +81,7 @@ func assertQueryResultPersistence(t *testing.T, db *gorm.DB) {
 			if encodeErr != nil {
 				t.Fatal(encodeErr)
 			}
-			err := svc.completeQueryResult(t.Context(), execution, lease, now, preview, nil, &protection.QueryCapture{Subject: raw.Subject, Result: raw}, 1)
+			err := svc.completeQueryResult(t.Context(), execution, lease, preview, nil, &protection.QueryCapture{Subject: raw.Subject, Result: raw}, 1)
 			if (err != nil) != stale {
 				t.Fatal("completion did not enforce lease")
 			}

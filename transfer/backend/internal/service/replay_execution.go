@@ -108,7 +108,7 @@ func (s *ExecutionEngineService) executeBoundedReplay(ctx context.Context, task 
 	if config.Replay.ApplyIdentity == task.ApplyIdentity {
 		return s.failReplayExecution(executionID, fmt.Errorf("bounded replay apply identity must differ from owner task apply identity"))
 	}
-	if err := s.executionService.UpdateStatus(ctx, executionID, models.ExecutionStatusRunning); err != nil {
+	if err := s.executionService.ValidateClaim(ctx, executionID); err != nil {
 		return err
 	}
 	spec, err := planner.ParseContinuousTaskSpec(config.TaskConfig)

@@ -277,29 +277,19 @@ func (s *PointCloudCOPCTaskService) RecordProgressEvent(ctx context.Context, ten
 		return err
 	}
 
-	now := time.Now()
 	nextProgress := pointCloudCOPCProgressPercent(event, exec.Progress)
 	metadata := pointCloudCOPCProgressMetadata(exec.Metadata, event)
-	elapsedMs := int64(0)
-	if exec.StartedAt != nil {
-		elapsedMs = now.Sub(*exec.StartedAt).Milliseconds()
-	}
 
 	fields := map[string]interface{}{
 		"progress":     nextProgress,
 		"current_step": nil,
 		"metadata":     metadata,
-		"updated_at":   now,
-	}
-	if elapsedMs >= 0 {
-		fields["execution_time_ms"] = elapsedMs
 	}
 	return s.repo.UpdateRunningExecutionProgress(ctx, tenantID, executionID, fields)
 }
 
 func (s *PointCloudCOPCTaskService) runPointCloudCOPCGeneration(ctx context.Context, task *models.PointCloudCOPCTask, executionID string) {
-	startedAt := time.Now()
-	if err := s.repo.StartExecution(ctx, task.ID, task.TenantID, executionID, startedAt); err != nil {
+	if err := s.repo.ValidateClaim(ctx, task.ID, task.TenantID, executionID); err != nil {
 		logger.L().Warn("领取点云 COPC execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 		return
 	}
@@ -361,19 +351,15 @@ func (s *PointCloudCOPCTaskService) runPointCloudCOPCGeneration(ctx context.Cont
 	if status != commonExecution.ExecutionStatusSuccess {
 		progress = 0
 	}
-	durationMs := completedAt.Sub(startedAt).Milliseconds()
 	resultID := uint(0)
 	if result != nil {
 		resultID = result.ID
 	}
 	if err := s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, resultID, resultFields, map[string]interface{}{
-		"status":            status,
-		"progress":          progress,
-		"metadata":          metadata,
-		"error_details":     errDetails,
-		"completed_at":      completedAt,
-		"execution_time_ms": durationMs,
-		"updated_at":        completedAt,
+		"status":        status,
+		"progress":      progress,
+		"metadata":      metadata,
+		"error_details": errDetails,
 	}, completedAt); err != nil {
 		logger.L().Warn("提交点云 COPC execution 终态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 	}

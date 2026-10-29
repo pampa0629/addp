@@ -192,7 +192,7 @@ func TestExpiredIntentFailsWithoutResubmission(t *testing.T) {
 	if err := e.Advance(t.Context(), lease); !errors.Is(err, commonapi.ErrConflict) {
 		t.Fatalf("expired advance=%v", err)
 	}
-	n, err := s.RecoverExpired(t.Context(), time.Now().UTC(), 100)
+	n, err := s.RecoverExpired(t.Context(), 100)
 	if err != nil || n != 1 {
 		t.Fatalf("recover %d %v", n, err)
 	}

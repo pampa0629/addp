@@ -138,7 +138,7 @@ func TestDataProfileExecutionRepositoryReusesOnlyActiveTarget(t *testing.T) {
 	}
 	firstLeaseCtx := managerExecutionLeaseContextForTest(t, db, "execution-1", 7, now.Add(3*time.Second))
 	otherLeaseCtx := managerExecutionLeaseContextForTest(t, db, "execution-3", 7, now.Add(2*time.Second))
-	if err := repo.Timeout(otherLeaseCtx, 7, "execution-3", now.Add(2*time.Second), "timeout", "timed out"); err != nil {
+	if err := repo.Timeout(otherLeaseCtx, 7, "execution-3", "timeout", "timed out"); err != nil {
 		t.Fatalf("Timeout() error = %v", err)
 	}
 	timedOut, err := repo.GetByExecutionID(context.Background(), 7, "execution-3")
@@ -146,10 +146,10 @@ func TestDataProfileExecutionRepositoryReusesOnlyActiveTarget(t *testing.T) {
 		t.Fatalf("timed out execution = (%#v, %v)", timedOut, err)
 	}
 
-	if err := repo.Start(firstLeaseCtx, 7, "execution-1", now.Add(3*time.Second)); err != nil {
+	if err := repo.ValidateClaim(firstLeaseCtx, 7, "execution-1"); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	if err := repo.Complete(firstLeaseCtx, 7, "execution-1", now.Add(3*time.Second), 10, map[string]interface{}{"result_id": 1}); err != nil {
+	if err := repo.Complete(firstLeaseCtx, 7, "execution-1", 10, map[string]interface{}{"result_id": 1}); err != nil {
 		t.Fatalf("Complete() error = %v", err)
 	}
 	completed, err := repo.GetByExecutionID(context.Background(), 7, "execution-1")

@@ -86,7 +86,7 @@ func TestExecutionEngineRunsReplayWithoutUpdatingOwnerTask(t *testing.T) {
 	server := replaySystemEngineServer(t)
 	defer server.Close()
 	executionService := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
-	claimed, lease, err := repository.NewTaskRepository(db).ClaimNextBoundedExecution(context.Background(), "replay-test-worker", time.Now(), time.Minute)
+	claimed, lease, err := repository.NewTaskRepository(db).ClaimNextBoundedExecution(context.Background(), "replay-test-worker", time.Minute)
 	if err != nil || claimed == nil || lease == nil {
 		t.Fatalf("claim replay execution = %#v %#v, %v", claimed, lease, err)
 	}

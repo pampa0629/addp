@@ -155,8 +155,8 @@ func (r *Model3DTilesRepository) ClaimExecution(
 	return &task, nil
 }
 
-func (r *Model3DTilesRepository) StartExecution(ctx context.Context, taskID, tenantID uint, executionID string, startedAt time.Time) error {
-	return newTaskExecutionLifecycle(r.db).Start(ctx, taskID, tenantID, executionID, startedAt, &models.Model3DTilesTask{}, "model3d tiles")
+func (r *Model3DTilesRepository) ValidateClaim(ctx context.Context, taskID, tenantID uint, executionID string) error {
+	return newTaskExecutionLifecycle(r.db).ValidateClaim(ctx, taskID, tenantID, executionID, &models.Model3DTilesTask{}, "model3d tiles")
 }
 
 func (r *Model3DTilesRepository) CompleteExecution(

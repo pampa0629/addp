@@ -187,7 +187,6 @@ func (s *tileCacheExecutionProgressSink) UpdateProgress(ctx context.Context, pro
 	s.mu.Unlock()
 
 	currentStep := tileCacheProgressStep(progress)
-	elapsedMs := now.Sub(s.startedAt).Milliseconds()
 	metadata := commonModels.JSONMap{
 		"tiles_processed":         progress.TilesProcessed,
 		"tiles_total_estimate":    progress.TilesTotalEstimate,
@@ -204,11 +203,9 @@ func (s *tileCacheExecutionProgressSink) UpdateProgress(ctx context.Context, pro
 	s.lastMetadata = metadata.Clone()
 	s.mu.Unlock()
 	return updateManagerExecutionProgress(ctx, s.repo, s.tenantID, s.executionID, nextProgress, map[string]interface{}{
-		"progress":          nextProgress,
-		"current_step":      currentStep,
-		"metadata":          metadata,
-		"execution_time_ms": elapsedMs,
-		"updated_at":        now,
+		"progress":     nextProgress,
+		"current_step": currentStep,
+		"metadata":     metadata,
 	})
 }
 
@@ -315,7 +312,6 @@ func (s *TileCacheTaskService) RecordProgressEvent(ctx context.Context, tenantID
 		return err
 	}
 
-	now := time.Now()
 	nextProgress := tileCacheEventProgressPercent(event, exec.Progress)
 	progress := &mvt.QuickViewProgress{
 		Status:                commonExecution.ExecutionStatusRunning,
@@ -329,19 +325,11 @@ func (s *TileCacheTaskService) RecordProgressEvent(ctx context.Context, tenantID
 	}
 	currentStep := tileCacheProgressStep(progress)
 	metadata := tileCacheProgressEventMetadata(exec.Metadata, event, nextProgress)
-	elapsedMs := int64(0)
-	if exec.StartedAt != nil {
-		elapsedMs = now.Sub(*exec.StartedAt).Milliseconds()
-	}
 
 	fields := map[string]interface{}{
 		"progress":     nextProgress,
 		"current_step": currentStep,
 		"metadata":     metadata,
-		"updated_at":   now,
-	}
-	if elapsedMs >= 0 {
-		fields["execution_time_ms"] = elapsedMs
 	}
 	return updateManagerExecutionProgress(ctx, s.taskExecRepo, tenantID, executionID, nextProgress, fields)
 }
@@ -560,7 +548,7 @@ func (s *TileCacheTaskService) Execute(ctx context.Context, taskID uint, tenantI
 
 func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task *models.TileCacheTask, executionID string) {
 	startedAt := time.Now()
-	if err := s.tileCacheRepo.StartExecution(ctx, task.ID, task.TenantID, executionID, startedAt); err != nil {
+	if err := s.tileCacheRepo.ValidateClaim(ctx, task.ID, task.TenantID, executionID); err != nil {
 		logger.L().Warn("领取瓦片缓存 execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 		return
 	}
@@ -658,7 +646,6 @@ func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task 
 	}
 
 	completedAt = time.Now()
-	durationMs := completedAt.Sub(startedAt).Milliseconds()
 	finalProgress := progressSink.LastProgress()
 	if status == commonExecution.ExecutionStatusSuccess {
 		finalProgress = 100
@@ -677,13 +664,10 @@ func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task 
 		tileCacheID = tileCache.ID
 	}
 	if err := s.tileCacheRepo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, tileCacheID, tileCacheFields, map[string]interface{}{
-		"status":            status,
-		"progress":          finalProgress,
-		"metadata":          metadata,
-		"error_details":     errDetails,
-		"completed_at":      completedAt,
-		"execution_time_ms": durationMs,
-		"updated_at":        completedAt,
+		"status":        status,
+		"progress":      finalProgress,
+		"metadata":      metadata,
+		"error_details": errDetails,
 	}, completedAt); err != nil {
 		logger.L().Warn("提交瓦片缓存 execution 终态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 	}

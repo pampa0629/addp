@@ -73,8 +73,8 @@ func (r *VectorTileSetRepository) ClaimExecution(ctx context.Context, taskID, te
 	}
 	return &task, nil
 }
-func (r *VectorTileSetRepository) StartExecution(ctx context.Context, taskID, tenantID uint, executionID string, startedAt time.Time) error {
-	return newTaskExecutionLifecycle(r.db).Start(ctx, taskID, tenantID, executionID, startedAt, &models.VectorTileSetTask{}, "vector tile set")
+func (r *VectorTileSetRepository) ValidateClaim(ctx context.Context, taskID, tenantID uint, executionID string) error {
+	return newTaskExecutionLifecycle(r.db).ValidateClaim(ctx, taskID, tenantID, executionID, &models.VectorTileSetTask{}, "vector tile set")
 }
 func (r *VectorTileSetRepository) CompleteExecution(ctx context.Context, taskID, tenantID uint, executionID string, fields map[string]interface{}, completedAt time.Time) error {
 	return newTaskExecutionLifecycle(r.db).Complete(ctx, taskID, tenantID, executionID, completedAt, taskExecutionCompletionSpec{TaskModel: &models.VectorTileSetTask{}, ExecutionFields: fields}, "vector tile set")

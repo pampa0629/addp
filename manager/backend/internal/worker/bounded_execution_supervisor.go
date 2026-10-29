@@ -23,7 +23,7 @@ type BoundedExecutionSupervisorConfig struct {
 
 type BoundedExecutionQueue interface {
 	ClaimNext(context.Context, []string, string, time.Time, time.Duration) (*commonExecution.TaskExecution, *commonExecution.Lease, error)
-	RenewLease(context.Context, commonExecution.Lease, time.Time) error
+	RenewLease(context.Context, commonExecution.Lease, time.Duration) error
 	AttemptIsTerminal(context.Context, commonExecution.Lease) (bool, error)
 	FailClaimed(context.Context, *commonExecution.TaskExecution, commonExecution.Lease, string, string, time.Time) error
 	RecoverUnleased(context.Context, time.Time, int) (int, error)
@@ -195,8 +195,8 @@ func (s *BoundedExecutionSupervisor) heartbeat(ctx context.Context, cancel conte
 		case <-ctx.Done():
 			done <- nil
 			return
-		case now := <-ticker.C:
-			if err := s.queue.RenewLease(ctx, lease, now.UTC().Add(s.config.LeaseDuration)); err != nil {
+		case <-ticker.C:
+			if err := s.queue.RenewLease(ctx, lease, s.config.LeaseDuration); err != nil {
 				terminal, stateErr := s.queue.AttemptIsTerminal(context.Background(), lease)
 				if stateErr == nil && terminal {
 					done <- nil

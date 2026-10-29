@@ -268,37 +268,27 @@ func (s *RasterMosaicTaskService) RecordProgressEvent(ctx context.Context, tenan
 		return err
 	}
 
-	now := time.Now()
 	nextProgress := rasterMosaicProgressPercent(event, exec.Progress)
 	metadata := rasterMosaicProgressMetadata(exec.Metadata, event)
-	elapsedMs := int64(0)
-	if exec.StartedAt != nil {
-		elapsedMs = now.Sub(*exec.StartedAt).Milliseconds()
-	}
 
 	fields := map[string]interface{}{
 		"progress":     nextProgress,
 		"current_step": nil,
 		"metadata":     metadata,
-		"updated_at":   now,
-	}
-	if elapsedMs >= 0 {
-		fields["execution_time_ms"] = elapsedMs
 	}
 	return updateManagerExecutionProgress(ctx, s.taskExecRepo, tenantID, executionID, nextProgress, fields)
 }
 
 func (s *RasterMosaicTaskService) runRasterMosaicGeneration(ctx context.Context, task *models.RasterMosaicTask, executionID string) {
-	startedAt := time.Now()
-	if err := s.repo.StartExecution(ctx, task.ID, task.TenantID, executionID, startedAt); err != nil {
+	if err := s.repo.ValidateClaim(ctx, task.ID, task.TenantID, executionID); err != nil {
 		logger.L().Warn("领取栅格 mosaic execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 		return
 	}
-	s.executeRasterMosaicGeneration(ctx, task, executionID, startedAt)
+	s.executeRasterMosaicGeneration(ctx, task, executionID)
 }
 
 func (s *RasterMosaicTaskService) executeRasterMosaicGeneration(
-	ctx context.Context, task *models.RasterMosaicTask, executionID string, startedAt time.Time,
+	ctx context.Context, task *models.RasterMosaicTask, executionID string,
 ) {
 	status := commonExecution.ExecutionStatusSuccess
 	progress := 100
@@ -380,20 +370,16 @@ func (s *RasterMosaicTaskService) executeRasterMosaicGeneration(
 	metadata = s.mergeRasterMosaicExistingExecutionMetadata(finishCtx, executionID, int(task.TenantID), metadata)
 
 	completedAt := time.Now()
-	durationMs := completedAt.Sub(startedAt).Milliseconds()
 	currentStep := "执行完成"
 	if status != commonExecution.ExecutionStatusSuccess {
 		currentStep = "成果生成或登记未完成"
 	}
 	if err := s.repo.CompleteExecution(finishCtx, task.ID, task.TenantID, executionID, map[string]interface{}{
-		"status":            status,
-		"progress":          progress,
-		"current_step":      currentStep,
-		"metadata":          metadata,
-		"error_details":     errDetails,
-		"completed_at":      completedAt,
-		"execution_time_ms": durationMs,
-		"updated_at":        completedAt,
+		"status":        status,
+		"progress":      progress,
+		"current_step":  currentStep,
+		"metadata":      metadata,
+		"error_details": errDetails,
 	}, completedAt); err != nil {
 		logger.L().Warn("提交栅格 mosaic execution 终态失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 	}

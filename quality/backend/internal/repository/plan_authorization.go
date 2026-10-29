@@ -3,44 +3,47 @@ package repository
 import (
 	"context"
 	"fmt"
-	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/quality/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"time"
 )
 
 func (r *PlanRepository) AttachPendingAuthorization(ctx context.Context, tenantID int64, executionID string, fields map[string]interface{}) error {
-	fields["updated_at"] = time.Now().UTC()
-	result := r.db.WithContext(ctx).Model(&commonExecution.TaskExecution{}).
-		Where("tenant_id = ? AND execution_id = ? AND status = ? AND execution_authorization_id IS NULL", tenantID, executionID, commonExecution.ExecutionStatusPending).
-		Updates(fields)
-	if result.Error != nil {
-		return result.Error
+	id, idOK := fields["execution_authorization_id"].(*int64)
+	principal, principalOK := fields["actor_principal_id"].(*int64)
+	membership, membershipOK := fields["actor_tenant_membership_id"].(*int64)
+	version, versionOK := fields["issued_authorization_version"].(*int64)
+	expiresAt, expiryOK := fields["authorization_expires_at"].(time.Time)
+	if len(fields) != 5 || !idOK || id == nil || !principalOK || principal == nil || !membershipOK || membership == nil || !versionOK || version == nil || !expiryOK {
+		return fmt.Errorf("quality execution authorization fields are invalid")
 	}
-	if result.RowsAffected != 1 {
-		return fmt.Errorf("%w: quality execution %s cannot attach authorization", commonAPI.ErrConflict, executionID)
-	}
-	return nil
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var item commonExecution.TaskExecution
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id = ? AND execution_id = ? AND module = ? AND task_type = ?", tenantID, executionID, commonExecution.ModuleQuality, commonExecution.TaskTypeQualityPlan).First(&item).Error
+		if err != nil {
+			return err
+		}
+
+		return commonExecution.AttachPendingAuthorization(ctx, tx, commonExecution.PendingIdentity{ExecutionID: item.ExecutionID, TenantID: item.TenantID, Module: item.Module, TaskType: item.TaskType, Source: item.Source}, commonExecution.PendingAuthorization{ID: *id, ExpiresAt: expiresAt, ActorPrincipalID: *principal, ActorTenantMembershipID: *membership, IssuedAuthorizationVersion: *version})
+	})
 }
 
-func (r *PlanRepository) FailPendingExecution(ctx context.Context, taskID, tenantID int64, executionID, errorCode string, completedAt time.Time) error {
+func (r *PlanRepository) FailPendingExecution(ctx context.Context, taskID, tenantID int64, executionID, errorCode string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&commonExecution.TaskExecution{}).
-			Where("tenant_id = ? AND execution_id = ? AND status = ?", tenantID, executionID, commonExecution.ExecutionStatusPending).
-			Updates(map[string]interface{}{
-				"status": commonExecution.ExecutionStatusFailed, "completed_at": completedAt, "updated_at": completedAt,
-				"error_details": commonModels.JSONMap{"code": errorCode, "message": "quality execution authorization could not be prepared"},
-			})
-		if result.Error != nil {
-			return result.Error
+		var item commonExecution.TaskExecution
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id = ? AND execution_id = ? AND module = ? AND task_type = ? AND status = ?", tenantID, executionID, commonExecution.ModuleQuality, commonExecution.TaskTypeQualityPlan, commonExecution.ExecutionStatusPending).First(&item).Error; err != nil {
+			return err
 		}
-		if result.RowsAffected != 1 {
-			return fmt.Errorf("%w: quality execution %s is not pending", commonAPI.ErrConflict, executionID)
+		now, err := commonExecution.DatabaseNow(tx)
+		if err != nil {
+			return err
 		}
-		return tx.Model(&models.QualityPlan{}).
-			Where("id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?", taskID, tenantID, executionID, commonExecution.ExecutionStatusPending).
-			Updates(map[string]interface{}{"last_run_at": completedAt, "last_execution_status": commonExecution.ExecutionStatusFailed}).Error
+		if err := tx.Model(&models.QualityPlan{}).Where("id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?", taskID, tenantID, executionID, commonExecution.ExecutionStatusPending).Updates(map[string]interface{}{"last_run_at": now, "last_execution_status": commonExecution.ExecutionStatusFailed}).Error; err != nil {
+			return err
+		}
+		return commonExecution.FailPending(ctx, tx, commonExecution.PendingIdentity{ExecutionID: item.ExecutionID, TenantID: item.TenantID, Module: item.Module, TaskType: item.TaskType, Source: item.Source}, map[string]interface{}{"error_details": commonModels.JSONMap{"code": errorCode, "message": "quality execution authorization could not be prepared"}})
 	})
 }

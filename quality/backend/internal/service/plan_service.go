@@ -236,7 +236,7 @@ func (s *PlanService) execute(ctx context.Context, tenantID, taskID int64, trigg
 		if err != nil {
 			finalizeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
-			if failureErr := s.repo.FailPendingExecution(finalizeCtx, taskID, tenantID, execution.ExecutionID, "quality.authorization.issue_failed", time.Now().UTC()); failureErr != nil {
+			if failureErr := s.repo.FailPendingExecution(finalizeCtx, taskID, tenantID, execution.ExecutionID, "quality.authorization.issue_failed"); failureErr != nil {
 				return "", fmt.Errorf("authorization: %v; finalize: %w", err, failureErr)
 			}
 			return "", err

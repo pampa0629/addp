@@ -43,43 +43,42 @@ func (s *QueryExecutionService) Execute(
 	execution *commonExecution.TaskExecution,
 	lease commonExecution.Lease,
 ) error {
-	startedAt := time.Now().UTC()
 	if execution == nil || execution.ExecutionID != lease.ExecutionID || execution.TenantID != lease.TenantID ||
 		execution.Module != commonExecution.ModuleDevelop || execution.TaskType != commonExecution.TaskTypeQuery {
 		return fmt.Errorf("claimed Develop query execution is invalid")
 	}
 	if execution.Source != commonExecution.ModuleDevelop && execution.Source != commonExecution.ModuleOrchestrator {
-		return s.completeFailure(ctx, execution, lease, startedAt, fmt.Errorf("unsupported query source %q", execution.Source), "develop.query.source_invalid")
+		return s.completeFailure(ctx, execution, lease, fmt.Errorf("unsupported query source %q", execution.Source), "develop.query.source_invalid")
 	}
 	devTask, err := devQueryTaskFromExecution(execution)
 	if err != nil {
-		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.snapshot_invalid")
+		return s.completeFailure(ctx, execution, lease, err, "develop.query.snapshot_invalid")
 	}
 	ctx = contextWithQuerySnapshot(ctx, devTask)
 	executionID, err := uuid.Parse(execution.ExecutionID)
 	if err != nil {
-		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.execution_invalid")
+		return s.completeFailure(ctx, execution, lease, err, "develop.query.execution_invalid")
 	}
 
 	_, relationResult, err := relationParameterBindingsFromContent(devTask.Content)
 	if err != nil {
-		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.relation_parameters_invalid")
+		return s.completeFailure(ctx, execution, lease, err, "develop.query.relation_parameters_invalid")
 	}
 	choices, choiceErr := models.QueryProtectionChoices(devTask.Content)
 	if choiceErr != nil || len(choices) > 0 && (s.executor.isFederatedQuery(ctx, devTask, uint(execution.TenantID)) || relationResult && execution.Source == commonExecution.ModuleOrchestrator) {
-		return s.completeQueryError(ctx, execution, lease, startedAt, nil, nil, fmt.Errorf("%w: %w", protection.ErrRequired, dataprotection.ErrRoleOptionUnavailable))
+		return s.completeQueryError(ctx, execution, lease, nil, nil, fmt.Errorf("%w: %w", protection.ErrRequired, dataprotection.ErrRoleOptionUnavailable))
 	}
 	if relationResult && execution.Source == commonExecution.ModuleOrchestrator {
 		if execution.ParentExecutionID == nil {
-			return s.completeFailure(ctx, execution, lease, startedAt, fmt.Errorf("orchestrator query has no parent execution"), "develop.query.parent_invalid")
+			return s.completeFailure(ctx, execution, lease, fmt.Errorf("orchestrator query has no parent execution"), "develop.query.parent_invalid")
 		}
 		parentExecutionID, parseErr := uuid.Parse(strings.TrimSpace(*execution.ParentExecutionID))
 		if parseErr != nil {
-			return s.completeFailure(ctx, execution, lease, startedAt, parseErr, "develop.query.parent_invalid")
+			return s.completeFailure(ctx, execution, lease, parseErr, "develop.query.parent_invalid")
 		}
-		return s.executeExistingTableResult(ctx, execution, lease, devTask, parentExecutionID, executionID, startedAt)
+		return s.executeExistingTableResult(ctx, execution, lease, devTask, parentExecutionID, executionID)
 	}
-	return s.executeOrdinary(ctx, execution, lease, devTask, executionID, startedAt)
+	return s.executeOrdinary(ctx, execution, lease, devTask, executionID)
 }
 
 func (s *QueryExecutionService) executeOrdinary(
@@ -88,18 +87,17 @@ func (s *QueryExecutionService) executeOrdinary(
 	lease commonExecution.Lease,
 	devTask *models.DevTask,
 	executionID uuid.UUID,
-	startedAt time.Time,
 ) error {
 	authorization, attach, err := s.ordinaryAuthorization(ctx, execution, lease, devTask, executionID)
 	if err != nil {
-		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.authorization_failed")
+		return s.completeFailure(ctx, execution, lease, err, "develop.query.authorization_failed")
 	}
 	if attach {
 		if err := s.attachAuthorization(ctx, execution, lease, authorization); err != nil {
 			return err
 		}
 	}
-	return s.executeAndComplete(ctx, execution, lease, devTask, authorization, startedAt)
+	return s.executeAndComplete(ctx, execution, lease, devTask, authorization)
 }
 
 func (s *QueryExecutionService) ordinaryAuthorization(
@@ -197,26 +195,25 @@ func (s *QueryExecutionService) executeExistingTableResult(
 	lease commonExecution.Lease,
 	devTask *models.DevTask,
 	parentExecutionID, executionID uuid.UUID,
-	startedAt time.Time,
 ) error {
 	relationLocators, targetLocator, err := relationRuntimeInputs(devTask.Content, devTask.ExecutionConfig)
 	if err != nil {
-		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.runtime_inputs_invalid")
+		return s.completeFailure(ctx, execution, lease, err, "develop.query.runtime_inputs_invalid")
 	}
 	engineID := devTask.GetEngineID()
 	if engineID == nil || *engineID == 0 {
-		return s.completeFailure(ctx, execution, lease, startedAt, fmt.Errorf("relation result query has no engine"), "develop.query.engine_invalid")
+		return s.completeFailure(ctx, execution, lease, fmt.Errorf("relation result query has no engine"), "develop.query.engine_invalid")
 	}
 	target, _ := resourcetree.ParseURI(targetLocator)
 	if target == nil || target.EngineID != *engineID {
-		return s.completeFailure(ctx, execution, lease, startedAt, fmt.Errorf("target_locator engine does not match execution_config.engine_id"), "develop.query.engine_mismatch")
+		return s.completeFailure(ctx, execution, lease, fmt.Errorf("target_locator engine does not match execution_config.engine_id"), "develop.query.engine_mismatch")
 	}
 	authorization, err := s.executor.sqlEngine.IssueExistingTableWriteAuthorizationFromExecution(
 		ctx, uint(execution.TenantID), parentExecutionID, executionID, *engineID,
 		lease.Attempt, lease.Token, devTask.Timeout,
 	)
 	if err != nil {
-		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.authorization_failed")
+		return s.completeFailure(ctx, execution, lease, err, "develop.query.authorization_failed")
 	}
 	if err := s.attachAuthorization(ctx, execution, lease, authorization); err != nil {
 		return err
@@ -226,16 +223,16 @@ func (s *QueryExecutionService) executeExistingTableResult(
 	}
 	engine, err := s.executor.sqlEngine.executionEngine(ctx, uint(execution.TenantID), executionID, *engineID, authorization)
 	if err != nil {
-		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.engine_access_failed")
+		return s.completeFailure(ctx, execution, lease, err, "develop.query.engine_access_failed")
 	}
 	compiled, err := compileExistingTableResultQuery(devTask, relationLocators, targetLocator, engine.EngineType)
 	if err != nil {
-		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.relation_compile_failed")
+		return s.completeFailure(ctx, execution, lease, err, "develop.query.relation_compile_failed")
 	}
 	rawInputs, _ := mapValue(devTask.ExecutionConfig["runtime_inputs"])
 	mode, _ := rawInputs["write_mode"].(string)
 	if mode != "append" && mode != "overwrite" {
-		return s.completeFailure(ctx, execution, lease, startedAt, fmt.Errorf("write_mode must be append or overwrite"), "develop.query.runtime_inputs_invalid")
+		return s.completeFailure(ctx, execution, lease, fmt.Errorf("write_mode must be append or overwrite"), "develop.query.runtime_inputs_invalid")
 	}
 	if err := s.queries.RecordQueryDispatch(ctx, execution, lease); err != nil {
 		return err
@@ -246,14 +243,14 @@ func (s *QueryExecutionService) executeExistingTableResult(
 	statement, _ := compiled.Content["query"].(string)
 	result, err := s.executor.sqlEngine.executeTableResult(writeCtx, uint(execution.TenantID), engine, target, statement, compiled.RuntimeParameters, mode)
 	if err != nil {
-		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.write_failed")
+		return s.completeFailure(ctx, execution, lease, err, "develop.query.write_failed")
 	}
 	rowsAffected := &result.RowsAffected
 	metadata, err := tableResultExecutionMetadata(execution.ExecutionID, relationLocators, targetLocator, mode, result)
 	if err != nil {
-		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.write_failed")
+		return s.completeFailure(ctx, execution, lease, err, "develop.query.write_failed")
 	}
-	return s.completeSuccess(ctx, execution, lease, startedAt, metadata, rowsAffected)
+	return s.completeSuccess(ctx, execution, lease, metadata, rowsAffected)
 }
 
 // Called only after the relation contract is compiled and the write commits.
@@ -333,7 +330,6 @@ func (s *QueryExecutionService) executeAndComplete(
 	lease commonExecution.Lease,
 	devTask *models.DevTask,
 	authorization *IssuedSQLExecutionAuthorization,
-	startedAt time.Time,
 ) error {
 	if err := s.queries.UpdateProgressWithLease(ctx, lease, 30, "执行查询"); err != nil {
 		return err
@@ -343,7 +339,7 @@ func (s *QueryExecutionService) executeAndComplete(
 	}
 	roles, roleErr := s.executor.sqlEngine.executionQueryRoles(ctx, execution, lease, authorization, devTask)
 	if roleErr != nil {
-		return s.completeQueryError(ctx, execution, lease, startedAt, nil, nil, fmt.Errorf("%w: %w", protection.ErrRequired, roleErr))
+		return s.completeQueryError(ctx, execution, lease, nil, nil, fmt.Errorf("%w: %w", protection.ErrRequired, roleErr))
 	}
 	if err := s.queries.RecordQueryDispatch(ctx, execution, lease); err != nil {
 		return err
@@ -354,22 +350,22 @@ func (s *QueryExecutionService) executeAndComplete(
 		queryCtx, devTask, execution.ExecutionID, execution.TenantID, authorization,
 	)
 	if queryErr != nil {
-		return s.completeQueryError(ctx, execution, lease, startedAt, result, rowsAffected, queryErr)
+		return s.completeQueryError(ctx, execution, lease, result, rowsAffected, queryErr)
 	}
 	if capture.Roles != nil {
 		current, err := s.executor.sqlEngine.executionQueryRoles(ctx, execution, lease, authorization, devTask)
 		if err != nil {
-			return s.completeQueryError(ctx, execution, lease, startedAt, nil, nil, err)
+			return s.completeQueryError(ctx, execution, lease, nil, nil, err)
 		}
 		capture.Roles = current
 	}
-	return s.completeQueryResult(ctx, execution, lease, startedAt, result, rowsAffected, capture, devTask.QueryResultLimit)
+	return s.completeQueryResult(ctx, execution, lease, result, rowsAffected, capture, devTask.QueryResultLimit)
 }
 
-func (s *QueryExecutionService) completeQueryResult(ctx context.Context, execution *commonExecution.TaskExecution, lease commonExecution.Lease, startedAt time.Time, result commonModels.JSONMap, rowsAffected *int64, capture *protection.QueryCapture, limit int) error {
+func (s *QueryExecutionService) completeQueryResult(ctx context.Context, execution *commonExecution.TaskExecution, lease commonExecution.Lease, result commonModels.JSONMap, rowsAffected *int64, capture *protection.QueryCapture, limit int) error {
 	if capture.Result != nil && len(capture.Result.RoleChoices) > 0 {
 		if result == nil {
-			return s.completeQueryError(ctx, execution, lease, startedAt, nil, nil, protection.ErrResultRequired)
+			return s.completeQueryError(ctx, execution, lease, nil, nil, protection.ErrResultRequired)
 		}
 		result["role_choice_delivery"] = true
 	}
@@ -381,11 +377,11 @@ func (s *QueryExecutionService) completeQueryResult(ctx context.Context, executi
 		}
 		reader, ok := s.executor.sqlEngine.protectionGate.(queryResultReader)
 		if !ok {
-			return s.completeQueryError(ctx, execution, lease, startedAt, result, rowsAffected, protection.ErrResultRequired)
+			return s.completeQueryError(ctx, execution, lease, result, rowsAffected, protection.ErrResultRequired)
 		}
 		current, err := reader.ReadQueryResult(ctx, int64(execution.TenantID), capture.Result, capture.Subject, capture.Roles)
 		if err != nil {
-			return s.completeQueryError(ctx, execution, lease, startedAt, result, rowsAffected, fmt.Errorf("%w: %w", protection.ErrResultRequired, err))
+			return s.completeQueryError(ctx, execution, lease, result, rowsAffected, fmt.Errorf("%w: %w", protection.ErrResultRequired, err))
 		}
 		if current.PlaintextExpiresAt != nil || len(capture.Result.RoleChoices) > 0 {
 			retained := capture.Result
@@ -393,11 +389,11 @@ func (s *QueryExecutionService) completeQueryResult(ctx context.Context, executi
 				retained = current.Retained
 			}
 			if err := s.executor.queryResults.put(execution.ExecutionID, lease.Attempt, lease.Token, retained, current.PlaintextExpiresAt); err != nil {
-				return s.completeQueryError(ctx, execution, lease, startedAt, result, rowsAffected, protection.ErrResultRequired)
+				return s.completeQueryError(ctx, execution, lease, result, rowsAffected, protection.ErrResultRequired)
 			}
 		}
 	}
-	err := s.completeSuccess(ctx, execution, lease, startedAt, metadata, rowsAffected)
+	err := s.completeSuccess(ctx, execution, lease, metadata, rowsAffected)
 	if err != nil && s.executor.queryResults != nil {
 		s.executor.queryResults.remove(execution.ExecutionID, lease.Token)
 	}
@@ -429,7 +425,6 @@ func (s *QueryExecutionService) completeQueryError(
 	ctx context.Context,
 	execution *commonExecution.TaskExecution,
 	lease commonExecution.Lease,
-	startedAt time.Time,
 	result commonModels.JSONMap,
 	rowsAffected *int64,
 	cause error,
@@ -442,7 +437,7 @@ func (s *QueryExecutionService) completeQueryError(
 	if errorCode == "cancelled" {
 		status = commonExecution.ExecutionStatusCancelled
 	}
-	fields := terminalQueryFields(startedAt, queryExecutionMetadata(result), rowsAffected)
+	fields := terminalQueryFields(queryExecutionMetadata(result), rowsAffected)
 	if errorCode == "" {
 		errorCode = "develop.query.execution_failed"
 	}
@@ -454,11 +449,10 @@ func (s *QueryExecutionService) completeFailure(
 	ctx context.Context,
 	execution *commonExecution.TaskExecution,
 	lease commonExecution.Lease,
-	startedAt time.Time,
 	cause error,
 	code string,
 ) error {
-	fields := terminalQueryFields(startedAt, nil, nil)
+	fields := terminalQueryFields(nil, nil)
 	fields["error_details"] = commonModels.JSONMap{"code": code, "message": cause.Error(), "diagnostic": queryExecutionFailureDiagnostic(execution, code, cause)}
 	if err := s.queries.CompleteWithLease(ctx, execution, lease, commonExecution.ExecutionStatusFailed, time.Now().UTC(), fields); err != nil {
 		return fmt.Errorf("%v; complete Develop query failure: %w", cause, err)
@@ -470,13 +464,12 @@ func (s *QueryExecutionService) completeSuccess(
 	ctx context.Context,
 	execution *commonExecution.TaskExecution,
 	lease commonExecution.Lease,
-	startedAt time.Time,
 	metadata commonModels.JSONMap,
 	rowsAffected *int64,
 ) error {
 	if err := s.queries.CompleteWithLease(
 		ctx, execution, lease, commonExecution.ExecutionStatusSuccess, time.Now().UTC(),
-		terminalQueryFields(startedAt, metadata, rowsAffected),
+		terminalQueryFields(metadata, rowsAffected),
 	); err != nil {
 		return err
 	}
@@ -524,11 +517,10 @@ func devQueryTaskFromExecution(execution *commonExecution.TaskExecution) (*model
 	return task, nil
 }
 
-func terminalQueryFields(startedAt time.Time, metadata commonModels.JSONMap, rowsAffected *int64) map[string]interface{} {
+func terminalQueryFields(metadata commonModels.JSONMap, rowsAffected *int64) map[string]interface{} {
 	fields := map[string]interface{}{
 		"progress": 100, "current_step": nil,
-		"execution_time_ms": time.Since(startedAt).Milliseconds(),
-		"rows_affected":     rowsAffected,
+		"rows_affected": rowsAffected,
 	}
 	if metadata != nil {
 		fields["metadata"] = metadata

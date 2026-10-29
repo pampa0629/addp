@@ -3,11 +3,11 @@ package execution
 import (
 	"context"
 	"fmt"
+	commonapi "github.com/addp/common/api"
 	"time"
 	"unicode"
 	"unicode/utf8"
 
-	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -86,7 +86,7 @@ func UpdateWithEvent(ctx context.Context, db *gorm.DB, lease Lease, fields map[s
 	})
 }
 
-func CompleteWithEvent(ctx context.Context, db *gorm.DB, lease Lease, status string, at time.Time, fields map[string]interface{}) error {
+func CompleteWithEvent(ctx context.Context, db *gorm.DB, lease Lease, status string, fields map[string]interface{}) error {
 	kind := status
 	if status == ExecutionStatusSuccess {
 		kind = "completed"
@@ -95,32 +95,18 @@ func CompleteWithEvent(ctx context.Context, db *gorm.DB, lease Lease, status str
 		if err := AppendBoundedEvent(ctx, tx, lease, EventInput{Kind: kind}); err != nil {
 			return err
 		}
-		return CompleteWithLease(ctx, tx, lease, status, at, fields)
+		return CompleteWithLease(ctx, tx, lease, status, fields)
 	})
 }
 
 // FailExpiredWithEvent records recovery evidence without granting the expired
 // worker permission to append. The expired row lock fences renewal and recovery.
-func FailExpiredWithEvent(ctx context.Context, db *gorm.DB, lease Lease, at time.Time, fields map[string]interface{}) error {
-	if err := validateEventLease(db, lease); err != nil {
-		return err
-	}
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var item TaskExecution
-		query := ownedExpiredExecution(tx, lease, at).Where("execution_boundary = ? AND lease_owner = ?", ExecutionBoundaryBounded, lease.Owner)
-		if tx.Dialector.Name() == "postgres" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-		}
-		if err := query.First(&item).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return fmt.Errorf("%w: execution recovery lease is no longer current", commonapi.ErrConflict)
-			}
+func FailExpiredWithEvent(ctx context.Context, db *gorm.DB, lease Lease, fields map[string]interface{}) error {
+	return withLockedAttempt(ctx, db, lease, true, func(tx *gorm.DB, item TaskExecution, now time.Time) error {
+		if err := appendLockedEvent(tx, item, EventInput{Kind: "failed"}, now); err != nil {
 			return err
 		}
-		if err := appendLockedEvent(tx, item, EventInput{Kind: "failed"}, at.UTC()); err != nil {
-			return err
-		}
-		return FailExpired(ctx, tx, lease, at, fields)
+		return FailExpired(ctx, tx, lease, fields)
 	})
 }
 
@@ -140,24 +126,22 @@ func AppendBoundedEvent(ctx context.Context, db *gorm.DB, lease Lease, input Eve
 	if err := validateEventLease(db, lease); err != nil {
 		return err
 	}
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		now := time.Now().UTC()
-		var item TaskExecution
-		query := ownedActiveExecution(tx, lease, now).Where("execution_boundary = ? AND lease_owner = ?", ExecutionBoundaryBounded, lease.Owner)
-		if tx.Dialector.Name() == "postgres" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-		}
-		if err := query.First(&item).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return fmt.Errorf("%w: execution event lease is no longer current", commonapi.ErrConflict)
-			}
+	return withLockedAttempt(ctx, db, lease, false, func(tx *gorm.DB, item TaskExecution, now time.Time) error {
+		if err := appendLockedEvent(tx, item, input, now); err != nil {
 			return err
 		}
-		now = time.Now().UTC()
-		if item.LeaseExpiresAt == nil || item.LeaseExpiresAt.Before(now) {
-			return fmt.Errorf("%w: execution event lease expired while acquiring ownership", commonapi.ErrConflict)
+		checkedAt, err := DatabaseNow(tx)
+		if err != nil {
+			return err
 		}
-		return appendLockedEvent(tx, item, input, now)
+		var count int64
+		if err := ownedActiveExecution(tx, lease, checkedAt).Count(&count).Error; err != nil {
+			return err
+		}
+		if count != 1 {
+			return fmt.Errorf("%w: lease expired during event persistence", commonapi.ErrConflict)
+		}
+		return nil
 	})
 }
 
@@ -189,10 +173,17 @@ func AppendContinuousEvent(ctx context.Context, db *gorm.DB, executionID string,
 			}
 			now = now.UTC()
 		}
-		if err := authorize(item, now); err != nil {
+		if err := authorize(cloneAdmissionExecution(item), now); err != nil {
 			return err
 		}
-		return appendLockedEvent(tx, item, input, now)
+		if err := appendLockedEvent(tx, item, input, now); err != nil {
+			return err
+		}
+		checkedAt, err := DatabaseNow(tx)
+		if err != nil {
+			return err
+		}
+		return authorize(cloneAdmissionExecution(item), checkedAt)
 	})
 }
 

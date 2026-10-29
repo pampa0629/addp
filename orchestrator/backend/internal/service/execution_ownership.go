@@ -21,7 +21,7 @@ func (s *ExecutionService) ClaimNext(ctx context.Context, owner string, duration
 	var stage *httptrace.ExecutionStage
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
-		item, lease, err = execution.ClaimNext(ctx, tx, execution.ClaimOptions{Module: execution.ModuleOrchestrator, TaskType: execution.TaskTypeOrchestration, WorkerID: owner, Now: time.Now().UTC(), LeaseDuration: duration})
+		item, lease, err = execution.ClaimNext(ctx, tx, execution.ClaimOptions{Module: execution.ModuleOrchestrator, TaskType: execution.TaskTypeOrchestration, WorkerID: owner, LeaseDuration: duration})
 		if err != nil || item == nil {
 			return err
 		}
@@ -113,7 +113,6 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, lease execution.
 // finishExecution is transaction-local; only the caller that owns the outermost
 // transaction may end its phase after the state and events have committed.
 func (s *ExecutionService) finishExecution(ctx context.Context, item *execution.TaskExecution, lease execution.Lease, status, code string, ref *observability.TraceReference) error {
-	now := time.Now().UTC()
 	fields := map[string]interface{}{"current_step": nil}
 	if ref != nil {
 		fields["metadata"] = stageMetadata(item.Metadata, ref)
@@ -124,21 +123,18 @@ func (s *ExecutionService) finishExecution(ctx context.Context, item *execution.
 	} else {
 		fields["error_details"] = executionFailureDetails(code)
 	}
-	if item.StartedAt != nil {
-		fields["execution_time_ms"] = now.Sub(*item.StartedAt).Milliseconds()
-	}
-	return execution.CompleteWithEvent(ctx, s.db, lease, status, now, fields)
+	return execution.CompleteWithEvent(ctx, s.db, lease, status, fields)
 }
 
 // RecoverExpired never requeues a dispatched orchestration. Child execution facts remain intact.
-func (s *ExecutionService) RecoverExpired(ctx context.Context, now time.Time, limit int) (int, error) {
+func (s *ExecutionService) RecoverExpired(ctx context.Context, limit int) (int, error) {
 	count := 0
 	var stages []struct {
 		stage       *httptrace.ExecutionStage
 		executionID string
 	}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		items, err := execution.FindExpiredForUpdate(ctx, tx, execution.ExpiredOptions{Module: execution.ModuleOrchestrator, TaskType: execution.TaskTypeOrchestration, Now: now, Limit: limit})
+		items, err := execution.FindExpiredForUpdate(ctx, tx, execution.ExpiredOptions{Module: execution.ModuleOrchestrator, TaskType: execution.TaskTypeOrchestration, Limit: limit})
 		if err != nil {
 			return err
 		}
@@ -163,10 +159,7 @@ func (s *ExecutionService) RecoverExpired(ctx context.Context, now time.Time, li
 			if ref := stage.Reference(); ref != nil {
 				fields["metadata"] = stageMetadata(item.Metadata, ref)
 			}
-			if item.StartedAt != nil {
-				fields["execution_time_ms"] = now.Sub(*item.StartedAt).Milliseconds()
-			}
-			if err := execution.FailExpiredWithEvent(stageCtx, tx, lease, now, fields); err != nil {
+			if err := execution.FailExpiredWithEvent(stageCtx, tx, lease, fields); err != nil {
 				return err
 			}
 			count++

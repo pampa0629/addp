@@ -177,9 +177,9 @@ func TestQueryCompletionCollectsOnlyCommittedLineage(t *testing.T) {
 				if scenario == "cancelled" {
 					cause = context.Canceled
 				}
-				err = worker.completeFailure(context.Background(), execution, lease, now, cause, "develop.query.write_failed")
+				err = worker.completeFailure(context.Background(), execution, lease, cause, "develop.query.write_failed")
 			} else {
-				err = worker.completeSuccess(context.Background(), execution, lease, now, metadata, nil)
+				err = worker.completeSuccess(context.Background(), execution, lease, metadata, nil)
 			}
 			if (err != nil) != (scenario == "stale_lease") {
 				t.Fatalf("completion error: %v", err)
@@ -192,7 +192,7 @@ func TestQueryCompletionCollectsOnlyCommittedLineage(t *testing.T) {
 				t.Fatalf("collector calls = %d, want %d", calls, wantCalls)
 			}
 			if wantCalls == 1 {
-				if err := worker.completeSuccess(context.Background(), execution, lease, now, metadata, nil); err == nil {
+				if err := worker.completeSuccess(context.Background(), execution, lease, metadata, nil); err == nil {
 					t.Fatal("repeated completion accepted a released lease")
 				}
 				if calls != wantCalls {
@@ -431,7 +431,7 @@ func TestQueryFailurePersistsControlledDiagnosticsThroughLeaseCompletion(t *test
 					}
 					cause = fmt.Errorf("%w: runtime private-value password=credential-sentinel", boundary)
 				}
-				err = service.completeQueryError(t.Context(), item, lease, now, nil, nil, cause)
+				err = service.completeQueryError(t.Context(), item, lease, nil, nil, cause)
 			}
 			if err != nil {
 				t.Fatal(err)

@@ -40,7 +40,7 @@ func (r *EmbeddingRepository) CompleteTaskExecution(ctx context.Context, taskID,
 }
 
 // CompleteAdHocExecution keeps the terminal event atomic with the no-definition execution.
-func (r *EmbeddingRepository) CompleteAdHocExecution(ctx context.Context, lease commonExecution.Lease, status string, completedAt time.Time, fields map[string]interface{}) error {
+func (r *EmbeddingRepository) CompleteAdHocExecution(ctx context.Context, lease commonExecution.Lease, status string, fields map[string]interface{}) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var item commonExecution.TaskExecution
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -50,7 +50,7 @@ func (r *EmbeddingRepository) CompleteAdHocExecution(ctx context.Context, lease 
 		if item.Module != commonExecution.ModuleManager || item.TaskType != commonExecution.TaskTypeEmbedding || item.SourceTaskID != nil {
 			return fmt.Errorf("%w: execution is not an ad-hoc Manager embedding", commonAPI.ErrConflict)
 		}
-		return commonExecution.CompleteWithEvent(ctx, tx, lease, status, completedAt, fields)
+		return commonExecution.CompleteWithEvent(ctx, tx, lease, status, fields)
 	})
 }
 
@@ -164,7 +164,7 @@ func (r *EmbeddingRepository) UpsertEmbeddingState(ctx context.Context, embeddin
 	}
 	if lease, ok := commonExecution.LeaseFromContext(ctx); ok {
 		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if err := commonExecution.UpdateWithLease(ctx, tx, lease, map[string]interface{}{"updated_at": now.UTC()}); err != nil {
+			if err := commonExecution.UpdateWithLease(ctx, tx, lease, nil); err != nil {
 				return err
 			}
 			return write(tx)

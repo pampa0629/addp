@@ -841,19 +841,19 @@ func (s *dataProfileServiceTestExecutionStore) GetLatest(_ context.Context, _ in
 func (s *dataProfileServiceTestExecutionStore) GetByExecutionID(context.Context, int, string) (*commonExecution.TaskExecution, error) {
 	return s.byID, nil
 }
-func (s *dataProfileServiceTestExecutionStore) Start(context.Context, int, string, time.Time) error {
+func (s *dataProfileServiceTestExecutionStore) ValidateClaim(context.Context, int, string) error {
 	return nil
 }
-func (s *dataProfileServiceTestExecutionStore) Complete(_ context.Context, _ int, _ string, _ time.Time, _ int64, metadata map[string]interface{}) error {
+func (s *dataProfileServiceTestExecutionStore) Complete(_ context.Context, _ int, _ string, _ int64, metadata map[string]interface{}) error {
 	s.completed = true
 	s.completedMetadata = metadata
 	return nil
 }
-func (s *dataProfileServiceTestExecutionStore) Fail(_ context.Context, _ int, _ string, _ time.Time, code string, _ string) error {
+func (s *dataProfileServiceTestExecutionStore) Fail(_ context.Context, _ int, _ string, code string, _ string) error {
 	s.failedCode = code
 	return nil
 }
-func (s *dataProfileServiceTestExecutionStore) Timeout(_ context.Context, _ int, _ string, _ time.Time, code string, _ string) error {
+func (s *dataProfileServiceTestExecutionStore) Timeout(_ context.Context, _ int, _ string, code string, _ string) error {
 	s.failedCode = code
 	return nil
 }

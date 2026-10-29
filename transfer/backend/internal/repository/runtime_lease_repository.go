@@ -85,25 +85,25 @@ func NewRuntimeLeaseRepository(db *gorm.DB, recoveryPolicy ContinuousRecoveryPol
 
 // ClaimNext 使用 SKIP LOCKED 领取一个 pending continuous execution，并递增 fencing token。
 // worker shutdown 或 lease 过期时先创建新的 recovery execution，不复用已结束或失联的 execution。
-func (r *RuntimeLeaseRepository) ClaimNext(ctx context.Context, owner string, now time.Time, duration time.Duration) (*RuntimeLeaseClaim, error) {
+func (r *RuntimeLeaseRepository) ClaimNext(ctx context.Context, owner string, duration time.Duration) (*RuntimeLeaseClaim, error) {
 	if owner == "" || duration <= 0 {
 		return nil, fmt.Errorf("continuous claim requires an owner and positive lease duration")
 	}
 	var claim *RuntimeLeaseClaim
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var execution commonExecution.TaskExecution
-		if err := selectPendingContinuousExecution(tx, now, &execution); err != nil {
+		if err := selectPendingContinuousExecution(tx, &execution); err != nil {
 			return err
 		}
 		if execution.ID == 0 {
-			recovered, err := reconcileNextContinuousExecution(tx, now, r.recoveryPolicy)
+			recovered, err := reconcileNextContinuousExecution(tx, r.recoveryPolicy)
 			if err != nil {
 				return err
 			}
 			if !recovered {
 				return nil
 			}
-			if err := selectPendingContinuousExecution(tx, now, &execution); err != nil {
+			if err := selectPendingContinuousExecution(tx, &execution); err != nil {
 				return err
 			}
 			if execution.ID == 0 {
@@ -125,6 +125,10 @@ func (r *RuntimeLeaseRepository) ClaimNext(ctx context.Context, owner string, no
 		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("task_id = ?", taskID).First(&existing).Error
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
+		}
+		now, clockErr := commonExecution.DatabaseNow(tx)
+		if clockErr != nil {
+			return clockErr
 		}
 		if err == nil && existing.LeaseUntil.After(now) {
 			return nil
@@ -155,36 +159,26 @@ func (r *RuntimeLeaseRepository) ClaimNext(ctx context.Context, owner string, no
 		if metadata["recovery_circuit_state"] == recoveryCircuitOpen {
 			metadata["recovery_circuit_state"] = recoveryCircuitHalfOpen
 		}
-		result := tx.Model(&execution).
-			Where("status = ?", commonExecution.ExecutionStatusPending).
-			Updates(map[string]interface{}{
-				"status": commonExecution.ExecutionStatusRunning, "metadata": metadata,
-				"started_at": now, "updated_at": now, "attempt": 1,
-			})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return ErrRuntimeLeaseLost
-		}
-		if err := appendContinuousRuntimeEvent(tx, task, execution, lease, commonExecution.EventInput{Kind: "started"}, true); err != nil {
+		if err := tx.Model(&task).Updates(map[string]interface{}{"status": models.TaskStatusRunning, "last_execution_status": commonExecution.ExecutionStatusRunning}).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&task).Updates(map[string]interface{}{
-			"status": models.TaskStatusRunning, "last_execution_status": commonExecution.ExecutionStatusRunning,
-		}).Error; err != nil {
+		started, err := commonExecution.StartContinuous(ctx, tx, execution.ExecutionID, map[string]interface{}{"metadata": metadata}, continuousRuntimeAdmission(task, execution, lease, true))
+		if err != nil {
+			return err
+		}
+		execution = *started
+		if err := appendContinuousRuntimeEvent(tx, task, execution, lease, commonExecution.EventInput{Kind: "started"}, true); err != nil {
 			return err
 		}
 		claim = &RuntimeLeaseClaim{Task: task, Execution: execution, Lease: lease}
 		claim.Execution.Status = commonExecution.ExecutionStatusRunning
 		claim.Execution.Metadata = metadata
-		claim.Execution.StartedAt = &now
 		return nil
 	})
 	return claim, err
 }
 
-func selectPendingContinuousExecution(tx *gorm.DB, now time.Time, execution *commonExecution.TaskExecution) error {
+func selectPendingContinuousExecution(tx *gorm.DB, execution *commonExecution.TaskExecution) error {
 	return tx.Table("common.task_executions AS e").
 		Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED", Table: clause.Table{Name: "e, t", Raw: true}}).
 		Select("e.*").
@@ -197,13 +191,13 @@ func selectPendingContinuousExecution(tx *gorm.DB, now time.Time, execution *com
 				SELECT 1 FROM transfer.schema_change_requests AS scr
 				WHERE scr.task_id = t.id AND scr.tenant_id = t.tenant_id AND scr.status = ?
 			)`, models.SchemaChangeRequestPending).
-		Where("l.id IS NULL OR l.lease_until <= ?", now).
-		Where("e.metadata->>'recovery_not_before' IS NULL OR (e.metadata->>'recovery_not_before')::timestamptz <= ?", now).
+		Where("l.id IS NULL OR l.lease_until <= clock_timestamp()").
+		Where("e.metadata->>'recovery_not_before' IS NULL OR (e.metadata->>'recovery_not_before')::timestamptz <= clock_timestamp()").
 		Order("e.created_at ASC, e.id ASC").Limit(1).
 		Scan(execution).Error
 }
 
-func reconcileNextContinuousExecution(tx *gorm.DB, now time.Time, policy ContinuousRecoveryPolicy) (bool, error) {
+func reconcileNextContinuousExecution(tx *gorm.DB, policy ContinuousRecoveryPolicy) (bool, error) {
 	var task models.TransferTask
 	err := tx.Table("transfer.transfer_tasks AS t").
 		Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED", Table: clause.Table{Name: "t"}}).
@@ -225,10 +219,10 @@ func reconcileNextContinuousExecution(tx *gorm.DB, now time.Time, policy Continu
 			  AND active.status = ?
 		)`, commonExecution.ModuleTransfer, commonExecution.TaskTypeSync, commonExecution.ExecutionStatusPending).
 		Where(`(
-			(last_execution.status = ? AND (l.id IS NULL OR l.lease_until <= ?))
+			(last_execution.status = ? AND (l.id IS NULL OR l.lease_until <= clock_timestamp()))
 			OR
 			(last_execution.status = ? AND last_execution.metadata->>'stop_reason' = ? AND t.desired_state = ?)
-		)`, commonExecution.ExecutionStatusRunning, now, commonExecution.ExecutionStatusCancelled, "worker_shutdown", models.TaskDesiredStateRunning).
+		)`, commonExecution.ExecutionStatusRunning, commonExecution.ExecutionStatusCancelled, "worker_shutdown", models.TaskDesiredStateRunning).
 		Order("last_execution.created_at ASC, last_execution.id ASC").
 		Limit(1).
 		Scan(&task).Error
@@ -250,6 +244,10 @@ func reconcileNextContinuousExecution(tx *gorm.DB, now time.Time, policy Continu
 		Order("created_at DESC, id DESC").First(&previous).Error; err != nil {
 		return false, err
 	}
+	now, clockErr := commonExecution.DatabaseNow(tx)
+	if clockErr != nil {
+		return false, clockErr
+	}
 	if task.DesiredState != models.TaskDesiredStateRunning {
 		if err := appendContinuousUnownedEvent(tx, task, previous, "cancelled", true); err != nil {
 			return false, err
@@ -259,19 +257,15 @@ func reconcileNextContinuousExecution(tx *gorm.DB, now time.Time, policy Continu
 			metadata = commonModels.JSONMap{}
 		}
 		metadata["stop_reason"] = string(task.DesiredState)
-		if err := tx.Model(&previous).Updates(map[string]interface{}{
-			"status": commonExecution.ExecutionStatusCancelled, "metadata": metadata, "completed_at": now, "updated_at": now,
-		}).Error; err != nil {
-			return false, err
-		}
 		if err := tx.Model(&models.RuntimeLease{}).Where("task_id = ?", task.ID).Updates(map[string]interface{}{
 			"owner_instance_id": "", "lease_until": now, "heartbeat_at": now,
 		}).Error; err != nil {
 			return false, err
 		}
-		return false, tx.Model(&task).Updates(map[string]interface{}{
-			"status": models.TaskStatusIdle, "last_execution_status": commonExecution.ExecutionStatusCancelled,
-		}).Error
+		if err := tx.Model(&task).Updates(map[string]interface{}{"status": models.TaskStatusIdle, "last_execution_status": commonExecution.ExecutionStatusCancelled}).Error; err != nil {
+			return false, err
+		}
+		return false, completeUnownedContinuous(tx, task, previous, commonExecution.ExecutionStatusCancelled, map[string]interface{}{"metadata": metadata}, true)
 	}
 	if pendingSchemaChange != nil {
 		if pendingSchemaChange.ExecutionID != previous.ExecutionID {
@@ -284,26 +278,23 @@ func reconcileNextContinuousExecution(tx *gorm.DB, now time.Time, policy Continu
 		}
 		metadata := schemaChangeProjectionMetadata(previous.Metadata, pendingSchemaChange, schemaChangeProjectionPending, now)
 		metadata["stop_reason"] = "schema_change_blocked"
-		result := tx.Model(&previous).Where("status IN ?", []string{commonExecution.ExecutionStatusRunning, commonExecution.ExecutionStatusCancelled}).Updates(map[string]interface{}{
-			"status": commonExecution.ExecutionStatusFailed, "metadata": metadata,
-			"error_details": commonModels.JSONMap{"code": "schema_change_blocked", "message": "continuous runtime stopped by a pending schema change"},
-			"completed_at":  now, "updated_at": now,
-		})
-		if result.Error != nil {
-			return false, result.Error
-		}
-		if result.RowsAffected != 1 {
-			return false, ErrRuntimeLeaseLost
-		}
 		if err := tx.Model(&models.RuntimeLease{}).Where("task_id = ?", task.ID).Updates(map[string]interface{}{
 			"owner_instance_id": "", "lease_until": now, "heartbeat_at": now,
 		}).Error; err != nil {
 			return false, err
 		}
 		if err := tx.Model(&task).Updates(map[string]interface{}{
-			"status": models.TaskStatusBlocked, "last_execution_status": commonExecution.ExecutionStatusFailed,
+			"status": models.TaskStatusBlocked, "last_execution_status": func() string {
+				if previous.Status == commonExecution.ExecutionStatusRunning {
+					return commonExecution.ExecutionStatusFailed
+				}
+				return previous.Status
+			}(),
 		}).Error; err != nil {
 			return false, err
+		}
+		if previous.Status == commonExecution.ExecutionStatusRunning {
+			return false, completeUnownedContinuous(tx, task, previous, commonExecution.ExecutionStatusFailed, map[string]interface{}{"metadata": metadata, "error_details": commonModels.JSONMap{"code": "schema_change_blocked", "message": "continuous runtime stopped by a pending schema change"}}, false)
 		}
 		return false, nil
 	}
@@ -315,6 +306,10 @@ func reconcileNextContinuousExecution(tx *gorm.DB, now time.Time, policy Continu
 		var lease models.RuntimeLease
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("task_id = ?", task.ID).First(&lease).Error
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, err
+		}
+		now, err = commonExecution.DatabaseNow(tx)
+		if err != nil {
 			return false, err
 		}
 		if err == nil && lease.LeaseUntil.After(now) {
@@ -332,16 +327,8 @@ func reconcileNextContinuousExecution(tx *gorm.DB, now time.Time, policy Continu
 			metadata = commonModels.JSONMap{}
 		}
 		metadata["stop_reason"] = recoveryReason
-		result := tx.Model(&previous).Where("status = ?", commonExecution.ExecutionStatusRunning).Updates(map[string]interface{}{
-			"status": commonExecution.ExecutionStatusFailed, "metadata": metadata,
-			"error_details": commonModels.JSONMap{"code": "lease_expired", "message": "continuous runtime lease expired"},
-			"completed_at":  now, "updated_at": now,
-		})
-		if result.Error != nil {
-			return false, result.Error
-		}
-		if result.RowsAffected != 1 {
-			return false, ErrRuntimeLeaseLost
+		if err := completeUnownedContinuous(tx, task, previous, commonExecution.ExecutionStatusFailed, map[string]interface{}{"metadata": metadata, "error_details": commonModels.JSONMap{"code": "lease_expired", "message": "continuous runtime lease expired"}}, false); err != nil {
+			return false, err
 		}
 	case commonExecution.ExecutionStatusCancelled:
 		if previous.Metadata["stop_reason"] != continuousRecoveryReasonWorkerShutdown {
@@ -418,7 +405,7 @@ func executionSessionStartedAt(execution commonExecution.TaskExecution, fallback
 	return time.Time{}
 }
 
-func (r *RuntimeLeaseRepository) Renew(ctx context.Context, taskID uint, owner string, token uint64, now time.Time, duration time.Duration) error {
+func (r *RuntimeLeaseRepository) Renew(ctx context.Context, taskID uint, owner string, token uint64, duration time.Duration) error {
 	if owner == "" || token == 0 || duration <= 0 {
 		return ErrRuntimeLeaseLost
 	}
@@ -441,6 +428,10 @@ func (r *RuntimeLeaseRepository) Renew(ctx context.Context, taskID uint, owner s
 		if err != nil {
 			return err
 		}
+		now, err := commonExecution.DatabaseNow(tx)
+		if err != nil {
+			return err
+		}
 		leaseUntil := now.Add(duration)
 		query := tx.Model(&lease)
 		if tx.Dialector.Name() == "postgres" {
@@ -455,8 +446,9 @@ func (r *RuntimeLeaseRepository) Renew(ctx context.Context, taskID uint, owner s
 		if result.RowsAffected != 1 {
 			return ErrRuntimeLeaseLost
 		}
+		lease.LeaseUntil, lease.HeartbeatAt = leaseUntil, now
 		metadata := mergeContinuousRuntimeMetadata(execution.Metadata, owner, token, now, leaseUntil)
-		return tx.Model(&execution).Updates(map[string]interface{}{"metadata": metadata, "updated_at": now}).Error
+		return commonExecution.UpdateContinuous(ctx, tx, execution.ExecutionID, map[string]interface{}{"metadata": metadata}, continuousRuntimeAdmission(task, execution, lease, true))
 	})
 }
 
@@ -476,9 +468,13 @@ func mergeContinuousRuntimeMetadata(metadata commonModels.JSONMap, owner string,
 	return metadata
 }
 
-func (r *RuntimeLeaseRepository) Finish(ctx context.Context, claim RuntimeLeaseClaim, status, stopReason, errorCode, errorMessage string, now time.Time) error {
+func (r *RuntimeLeaseRepository) Finish(ctx context.Context, claim RuntimeLeaseClaim, status, stopReason, errorCode, errorMessage string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		task, execution, lease, err := lockContinuousClaim(tx, claim)
+		if err != nil {
+			return err
+		}
+		now, err := commonExecution.DatabaseNow(tx)
 		if err != nil {
 			return err
 		}
@@ -491,6 +487,7 @@ func (r *RuntimeLeaseRepository) Finish(ctx context.Context, claim RuntimeLeaseC
 		}, false); err != nil {
 			return err
 		}
+		admission := continuousRuntimeAdmission(task, execution, lease, false)
 		result := tx.Model(&lease).Updates(map[string]interface{}{"owner_instance_id": "", "lease_until": now, "heartbeat_at": now})
 		if result.Error != nil {
 			return result.Error
@@ -514,7 +511,7 @@ func (r *RuntimeLeaseRepository) Finish(ctx context.Context, claim RuntimeLeaseC
 			metadata = schemaChangeProjectionMetadata(metadata, stoppedSchemaChange, schemaChangeProjectionStopped, now)
 		}
 		updates := map[string]interface{}{
-			"status": status, "metadata": metadata, "completed_at": now, "updated_at": now,
+			"metadata": metadata,
 		}
 		if errorMessage != "" || errorCode != "" {
 			details := commonModels.JSONMap{"message": errorMessage}
@@ -523,14 +520,8 @@ func (r *RuntimeLeaseRepository) Finish(ctx context.Context, claim RuntimeLeaseC
 			}
 			updates["error_details"] = details
 		}
-		result = tx.Model(&execution).
-			Where("execution_id = ? AND status = ?", claim.Execution.ExecutionID, commonExecution.ExecutionStatusRunning).
-			Updates(updates)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return fmt.Errorf("finish continuous execution %s: current status is not running", claim.Execution.ExecutionID)
+		complete := func() error {
+			return commonExecution.CompleteContinuous(ctx, tx, execution.ExecutionID, commonExecution.ExecutionStatusRunning, status, updates, admission)
 		}
 		taskStatus := models.TaskStatusIdle
 		if stopReason == "schema_change_blocked" {
@@ -548,12 +539,16 @@ func (r *RuntimeLeaseRepository) Finish(ctx context.Context, claim RuntimeLeaseC
 			}
 			if recoveryReason != "" {
 				_, err := createRecoveryExecution(tx, task, execution, recoveryReason, executionSessionStartedAt(execution, claim.Lease.ClaimedAt), now, r.recoveryPolicy)
-				return err
+				if err != nil {
+					return err
+				}
+				return complete()
 			}
 		}
-		return tx.Model(&task).Updates(map[string]interface{}{
-			"status": taskStatus, "last_execution_status": status,
-		}).Error
+		if err := tx.Model(&task).Updates(map[string]interface{}{"status": taskStatus, "last_execution_status": status}).Error; err != nil {
+			return err
+		}
+		return complete()
 	})
 }
 
@@ -589,10 +584,7 @@ func (r *RuntimeLeaseRepository) RecordProgress(ctx context.Context, claim Runti
 		metadata["continuous"] = continuousMeta
 		metadata["recovery_consecutive_failures"] = 0
 		metadata["recovery_circuit_state"] = recoveryCircuitClosed
-		return tx.Model(&execution).Updates(map[string]interface{}{
-			"records_read": progress.RecordsRead, "records_written": progress.RecordsWritten,
-			"metadata": metadata, "updated_at": progress.CommittedAt,
-		}).Error
+		return commonExecution.UpdateContinuous(ctx, tx, execution.ExecutionID, map[string]interface{}{"records_read": progress.RecordsRead, "records_written": progress.RecordsWritten, "metadata": metadata}, continuousRuntimeAdmission(task, execution, lease, true))
 	})
 }
 
@@ -661,15 +653,9 @@ func (r *RuntimeLeaseRepository) ClaimInitialMetadataScan(
 		if err := tx.Where("id = ?", task.ID).First(&task).Error; err != nil {
 			return err
 		}
-		metadata := parent.Metadata.Clone()
-		if metadata == nil {
-			metadata = commonModels.JSONMap{}
-		}
-		metadata["outputs"] = commonModels.JSONMap{"execution_id": parent.ExecutionID, "target_locator": targetLocator, "continuous_prepared": true}
-		if err := tx.Model(&parent).Update("metadata", metadata).Error; err != nil {
-			return err
-		}
-		if err := updateInitialMetadataScanExecutionTx(tx, claim.Execution.ExecutionID, task, ""); err != nil {
+		if err := commonExecution.PublishContinuousMetadataScan(ctx, tx, parent.ExecutionID, int(task.TenantID), task.ID,
+			commonExecution.ContinuousScanProjection{Status: string(task.InitialMetadataScanStatus), Attempt: task.InitialMetadataScanAttempt}, targetLocator,
+			continuousRuntimeAdmission(task, parent, lease, true)); err != nil {
 			return err
 		}
 		owned = true
@@ -726,58 +712,24 @@ func (r *RuntimeLeaseRepository) CompleteInitialMetadataScan(
 }
 
 func updateInitialMetadataScanExecutionTx(tx *gorm.DB, executionID string, task models.TransferTask, errorMessage string) error {
-	var execution commonExecution.TaskExecution
-	if err := tx.Where("execution_id = ?", executionID).First(&execution).Error; err != nil {
-		return err
-	}
-	metadata := execution.Metadata
-	if metadata == nil {
-		metadata = commonModels.JSONMap{}
-	}
-	continuousMeta, _ := metadata["continuous"].(map[string]interface{})
-	if continuousMeta == nil {
-		continuousMeta = map[string]interface{}{}
-	}
-	scan := map[string]interface{}{
-		"status":  string(task.InitialMetadataScanStatus),
-		"attempt": task.InitialMetadataScanAttempt,
-	}
-	if task.InitialMetadataScanExecutionID != "" {
-		scan["execution_id"] = task.InitialMetadataScanExecutionID
-	}
-	if errorMessage != "" {
-		scan["error"] = errorMessage
-	}
-	continuousMeta["metadata_scan"] = scan
-	metadata["continuous"] = continuousMeta
-	return tx.Model(&execution).Updates(map[string]interface{}{"metadata": metadata, "updated_at": task.UpdatedAt}).Error
+	return commonExecution.PublishContinuousMetadataScan(tx.Statement.Context, tx, executionID, int(task.TenantID), task.ID,
+		commonExecution.ContinuousScanProjection{Status: string(task.InitialMetadataScanStatus), Attempt: task.InitialMetadataScanAttempt, ExecutionID: task.InitialMetadataScanExecutionID, Error: errorMessage}, "",
+		func(item commonExecution.TaskExecution, _ time.Time) error {
+			if task.ID == 0 || task.InitialMetadataScanAttempt == 0 || item.SourceTaskID == nil || *item.SourceTaskID != fmt.Sprint(task.ID) || item.TenantID != int(task.TenantID) {
+				return ErrRuntimeLeaseLost
+			}
+			return nil
+		})
 }
 
 func (r *RuntimeLeaseRepository) RecordDiagnostics(ctx context.Context, claim RuntimeLeaseClaim, diagnostics ContinuousDiagnostics, capture *ContinuousCaptureFacts) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var leaseCount int64
-		if err := tx.Model(&models.RuntimeLease{}).
-			Where("task_id = ? AND owner_instance_id = ? AND fencing_token = ? AND lease_until > CURRENT_TIMESTAMP", claim.Task.ID, claim.Lease.OwnerInstanceID, claim.Lease.FencingToken).
-			Where("EXISTS (SELECT 1 FROM transfer.transfer_tasks t WHERE t.id = ? AND t.desired_state = ?)", claim.Task.ID, models.TaskDesiredStateRunning).
-			Count(&leaseCount).Error; err != nil {
-			return err
-		}
-		if leaseCount != 1 {
-			return ErrRuntimeLeaseLost
-		}
-		var execution commonExecution.TaskExecution
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("execution_id = ? AND status = ?", claim.Execution.ExecutionID, commonExecution.ExecutionStatusRunning).
-			First(&execution).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrRuntimeLeaseLost
-			}
+		task, execution, lease, err := lockContinuousClaim(tx, claim)
+		if err != nil {
 			return err
 		}
 		metadata := mergeContinuousDiagnosticsMetadata(execution.Metadata, diagnostics, capture)
-		return tx.Model(&execution).Updates(map[string]interface{}{
-			"metadata": metadata, "updated_at": diagnostics.SampledAt,
-		}).Error
+		return commonExecution.UpdateContinuous(ctx, tx, execution.ExecutionID, map[string]interface{}{"metadata": metadata}, continuousRuntimeAdmission(task, execution, lease, true))
 	})
 }
 
@@ -801,24 +753,15 @@ func mergeContinuousDiagnosticsMetadata(metadata commonModels.JSONMap, diagnosti
 
 func (r *RuntimeLeaseRepository) RecordSchemaChange(ctx context.Context, claim RuntimeLeaseClaim, change ContinuousSchemaChange) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var leaseCount int64
-		if err := tx.Model(&models.RuntimeLease{}).
-			Where("task_id = ? AND owner_instance_id = ? AND fencing_token = ? AND lease_until > CURRENT_TIMESTAMP", claim.Task.ID, claim.Lease.OwnerInstanceID, claim.Lease.FencingToken).
-			Where("EXISTS (SELECT 1 FROM transfer.transfer_tasks t WHERE t.id = ? AND t.desired_state = ?)", claim.Task.ID, models.TaskDesiredStateRunning).
-			Count(&leaseCount).Error; err != nil {
+		task, execution, lease, err := lockContinuousClaim(tx, claim)
+		if err != nil {
 			return err
 		}
-		if leaseCount != 1 {
-			return ErrRuntimeLeaseLost
-		}
-		var execution commonExecution.TaskExecution
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("execution_id = ? AND status = ?", claim.Execution.ExecutionID, commonExecution.ExecutionStatusRunning).
-			First(&execution).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrRuntimeLeaseLost
+		finish := func(request *models.SchemaChangeRequest) error {
+			if err := UpdateSchemaChangeExecutionProjectionTx(tx, request); err != nil {
+				return err
 			}
-			return err
+			return commonExecution.UpdateContinuous(ctx, tx, execution.ExecutionID, nil, continuousRuntimeAdmission(task, execution, lease, true))
 		}
 		var resource models.CaptureResource
 		if err := tx.Where("task_id = ? AND tenant_id = ?", claim.Task.ID, claim.Task.TenantID).
@@ -826,12 +769,12 @@ func (r *RuntimeLeaseRepository) RecordSchemaChange(ctx context.Context, claim R
 			return fmt.Errorf("load capture generation for schema change: %w", err)
 		}
 		var pending models.SchemaChangeRequest
-		err := tx.Where("capture_resource_id = ? AND status = ?", resource.ID, models.SchemaChangeRequestPending).
+		err = tx.Where("capture_resource_id = ? AND status = ?", resource.ID, models.SchemaChangeRequestPending).
 			First(&pending).Error
 		if err == nil {
 			if pending.ExecutionID == claim.Execution.ExecutionID &&
 				pending.SourcePartition == change.SourcePartition && pending.SourceOffset == change.SourceOffset {
-				return UpdateSchemaChangeExecutionProjectionTx(tx, &pending)
+				return finish(&pending)
 			}
 			return ErrSchemaChangeRequestConflict
 		}
@@ -849,7 +792,7 @@ func (r *RuntimeLeaseRepository) RecordSchemaChange(ctx context.Context, claim R
 		if err := tx.Create(&request).Error; err != nil {
 			return err
 		}
-		return UpdateSchemaChangeExecutionProjectionTx(tx, &request)
+		return finish(&request)
 	})
 }
 

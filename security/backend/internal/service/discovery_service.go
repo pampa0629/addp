@@ -44,14 +44,14 @@ func NewDiscoveryService(db *gorm.DB, factsFor TenantSecurityFactsReader) *Disco
 	return &DiscoveryService{db: db, factsFor: factsFor, executions: commonexecution.NewTaskExecutionRepository(db), now: time.Now}
 }
 
-func (s *DiscoveryService) ClaimNext(ctx context.Context, workerID string, now time.Time, leaseDuration time.Duration) (*commonexecution.TaskExecution, *commonexecution.Lease, error) {
+func (s *DiscoveryService) ClaimNext(ctx context.Context, workerID string, leaseDuration time.Duration) (*commonexecution.TaskExecution, *commonexecution.Lease, error) {
 	var item *commonexecution.TaskExecution
 	var lease *commonexecution.Lease
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
 		item, lease, err = commonexecution.ClaimNext(ctx, tx, commonexecution.ClaimOptions{
 			Module: commonexecution.ModuleSecurity, TaskType: commonexecution.TaskTypeSensitiveDataDiscovery,
-			Source: commonexecution.ModuleSecurity, WorkerID: workerID, Now: now, LeaseDuration: leaseDuration,
+			Source: commonexecution.ModuleSecurity, WorkerID: workerID, LeaseDuration: leaseDuration,
 		})
 		if err != nil || item == nil {
 			return err
@@ -64,8 +64,8 @@ func (s *DiscoveryService) ClaimNext(ctx context.Context, workerID string, now t
 	return item, lease, nil
 }
 
-func (s *DiscoveryService) Renew(ctx context.Context, lease commonexecution.Lease, expiresAt time.Time) error {
-	return commonexecution.RenewLease(ctx, s.db, lease, expiresAt)
+func (s *DiscoveryService) Renew(ctx context.Context, lease commonexecution.Lease, duration time.Duration) error {
+	return commonexecution.RenewLease(ctx, s.db, lease, duration)
 }
 
 func (s *DiscoveryService) AttemptIsTerminal(ctx context.Context, lease commonexecution.Lease) (bool, error) {
@@ -74,12 +74,12 @@ func (s *DiscoveryService) AttemptIsTerminal(ctx context.Context, lease commonex
 
 // RecoverExpired returns abandoned discovery attempts to the bounded queue and
 // fails them closed once their configured attempt limit is exhausted.
-func (s *DiscoveryService) RecoverExpired(ctx context.Context, now time.Time, limit int) (int, error) {
+func (s *DiscoveryService) RecoverExpired(ctx context.Context, limit int) (int, error) {
 	recovered := 0
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		items, err := commonexecution.FindExpiredForUpdate(ctx, tx, commonexecution.ExpiredOptions{
 			Module: commonexecution.ModuleSecurity, TaskType: commonexecution.TaskTypeSensitiveDataDiscovery,
-			Source: commonexecution.ModuleSecurity, Now: now, Limit: limit,
+			Source: commonexecution.ModuleSecurity, Limit: limit,
 		})
 		if err != nil {
 			return err
@@ -90,7 +90,7 @@ func (s *DiscoveryService) RecoverExpired(ctx context.Context, now time.Time, li
 				return err
 			}
 			if item.Attempt < item.MaxAttempts {
-				if err := commonexecution.RetryExpired(ctx, tx, lease, now, "worker lease expired; retry pending"); err != nil {
+				if err := commonexecution.RetryExpired(ctx, tx, lease, "worker lease expired; retry pending"); err != nil {
 					return err
 				}
 			} else {
@@ -98,10 +98,7 @@ func (s *DiscoveryService) RecoverExpired(ctx context.Context, now time.Time, li
 					"progress":      100,
 					"error_details": commonmodels.JSONMap{"error_code": "worker_lease_expired"},
 				}
-				if item.StartedAt != nil {
-					fields["execution_time_ms"] = now.UTC().Sub(item.StartedAt.UTC()).Milliseconds()
-				}
-				if err := commonexecution.FailExpiredWithEvent(ctx, tx, lease, now, fields); err != nil {
+				if err := commonexecution.FailExpiredWithEvent(ctx, tx, lease, fields); err != nil {
 					return err
 				}
 			}
@@ -113,25 +110,24 @@ func (s *DiscoveryService) RecoverExpired(ctx context.Context, now time.Time, li
 }
 
 func (s *DiscoveryService) Execute(ctx context.Context, item *commonexecution.TaskExecution, lease commonexecution.Lease) error {
-	started := s.now().UTC()
 	if item == nil || item.SourceTaskID == nil || item.TenantID <= 0 || strings.TrimSpace(item.ExecutionID) == "" || s.factsFor == nil {
-		return s.completeFailure(ctx, lease, started, "invalid_discovery_execution")
+		return s.completeFailure(ctx, lease, "invalid_discovery_execution")
 	}
 	enrollmentID := strings.TrimSpace(*item.SourceTaskID)
 	var enrollment models.ProtectionEnrollment
 	if err := s.db.WithContext(ctx).Where("tenant_id = ? AND id = ? AND state IN ?", item.TenantID, enrollmentID, []string{models.EnrollmentStateEnrolling, models.EnrollmentStateActive}).First(&enrollment).Error; err != nil {
-		return s.completeFailure(ctx, lease, started, "enrollment_not_discoverable")
+		return s.completeFailure(ctx, lease, "enrollment_not_discoverable")
 	}
 	facts, err := s.factsFor(uint(item.TenantID)).GetDataItemSecurityFacts(ctx, enrollment.TargetIdentity)
 	if err != nil {
-		return s.completeFailure(ctx, lease, started, "owner_facts_unavailable")
+		return s.completeFailure(ctx, lease, "owner_facts_unavailable")
 	}
 	if err := facts.Validate(); err != nil || facts.ItemFingerprint != enrollment.TargetIdentity {
-		return s.completeFailure(ctx, lease, started, "owner_facts_invalid")
+		return s.completeFailure(ctx, lease, "owner_facts_invalid")
 	}
 	detectors, err := s.enabledDetectors(ctx, int64(item.TenantID), facts.ItemType)
 	if err != nil {
-		return s.completeFailure(ctx, lease, started, "detector_configuration_invalid")
+		return s.completeFailure(ctx, lease, "detector_configuration_invalid")
 	}
 	findings := []models.SensitiveFinding{}
 	sourceSnapshotHash := facts.SourceSnapshotHash
@@ -179,10 +175,13 @@ func (s *DiscoveryService) Execute(ctx context.Context, item *commonexecution.Ta
 		}
 	}
 	if err != nil {
-		return s.completeFailure(ctx, lease, started, "detector_failed")
+		return s.completeFailure(ctx, lease, "detector_failed")
 	}
 	now := s.now().UTC()
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := commonexecution.LockActiveLease(ctx, tx, lease); err != nil {
+			return err
+		}
 		for index := range findings {
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&findings[index]).Error; err != nil {
 				return err
@@ -202,15 +201,14 @@ func (s *DiscoveryService) Execute(ctx context.Context, item *commonexecution.Ta
 		}).Error; err != nil {
 			return err
 		}
-		duration := now.Sub(started).Milliseconds()
 		count := int64(len(findings))
-		return commonexecution.CompleteWithEvent(ctx, tx, lease, commonexecution.ExecutionStatusSuccess, now, map[string]interface{}{
-			"progress": 100, "execution_time_ms": duration, "rows_affected": count,
+		return commonexecution.CompleteWithEvent(ctx, tx, lease, commonexecution.ExecutionStatusSuccess, map[string]interface{}{
+			"progress": 100, "rows_affected": count,
 			"metadata": commonmodels.JSONMap{"finding_count": len(findings), "source_snapshot_hash": sourceSnapshotHash, "observed_at": observedAt},
 		})
 	})
 	if err != nil {
-		return s.completeFailure(ctx, lease, started, "persistence_or_compile_failed")
+		return s.completeFailure(ctx, lease, "persistence_or_compile_failed")
 	}
 	return nil
 }
@@ -295,10 +293,9 @@ func countExactASCIIDigitRuns(text string, exact int) int {
 	return count
 }
 
-func (s *DiscoveryService) completeFailure(ctx context.Context, lease commonexecution.Lease, started time.Time, code string) error {
-	now := s.now().UTC()
-	err := commonexecution.CompleteWithEvent(ctx, s.db, lease, commonexecution.ExecutionStatusFailed, now, map[string]interface{}{
-		"progress": 100, "execution_time_ms": now.Sub(started).Milliseconds(),
+func (s *DiscoveryService) completeFailure(ctx context.Context, lease commonexecution.Lease, code string) error {
+	err := commonexecution.CompleteWithEvent(ctx, s.db, lease, commonexecution.ExecutionStatusFailed, map[string]interface{}{
+		"progress":      100,
 		"error_details": commonmodels.JSONMap{"error_code": code},
 	})
 	if err != nil {

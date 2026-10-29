@@ -133,11 +133,10 @@ func (l taskExecutionLifecycle) Claim(
 	return err
 }
 
-func (l taskExecutionLifecycle) Start(
+func (l taskExecutionLifecycle) ValidateClaim(
 	ctx context.Context,
 	taskID, tenantID uint,
 	executionID string,
-	startedAt time.Time,
 	taskModel interface{},
 	taskLabel string,
 ) error {
@@ -148,7 +147,7 @@ func (l taskExecutionLifecycle) Start(
 	// ClaimNext already advances both the execution and its owning task to
 	// running atomically. Start remains only as a fenced ownership check at the
 	// existing executor boundary.
-	return commonExecution.UpdateWithLease(ctx, l.db, lease, map[string]interface{}{"updated_at": startedAt.UTC()})
+	return commonExecution.UpdateWithLease(ctx, l.db, lease, nil)
 }
 
 func (l taskExecutionLifecycle) Complete(
@@ -169,6 +168,9 @@ func (l taskExecutionLifecycle) Complete(
 	}
 
 	return l.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := commonExecution.LockActiveLease(ctx, tx, lease); err != nil {
+			return err
+		}
 		if spec.ResultID > 0 && len(spec.ResultFields) > 0 {
 			result := tx.Model(spec.ResultModel).
 				Where("id = ? AND tenant_id = ? AND last_execution_id = ?", spec.ResultID, tenantID, executionID).
@@ -187,9 +189,6 @@ func (l taskExecutionLifecycle) Complete(
 				fields[key] = value
 			}
 		}
-		if err := commonExecution.CompleteWithEvent(ctx, tx, lease, status, completedAt, fields); err != nil {
-			return err
-		}
 
 		result := tx.Model(spec.TaskModel).
 			Where(
@@ -205,6 +204,6 @@ func (l taskExecutionLifecycle) Complete(
 		if result.RowsAffected != 1 {
 			return fmt.Errorf("%w: %s task %d is not running for execution %s", commonAPI.ErrConflict, taskLabel, taskID, executionID)
 		}
-		return nil
+		return commonExecution.CompleteWithEvent(ctx, tx, lease, status, fields)
 	})
 }

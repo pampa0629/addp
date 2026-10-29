@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	commonapi "github.com/addp/common/api"
 	"strings"
 	"time"
 
@@ -98,7 +99,24 @@ func (r *TaskRepository) ClaimExecution(ctx context.Context, taskID, tenantID ui
 }
 
 func (r *TaskRepository) AttachBoundedExecutionAuthorization(ctx context.Context, lease commonExecution.Lease, fields map[string]interface{}) error {
-	return commonExecution.UpdateWithLease(ctx, r.db, lease, fields)
+	id, idOK := fields["execution_authorization_id"].(*int64)
+	principal, principalOK := fields["actor_principal_id"].(*int64)
+	membership, membershipOK := fields["actor_tenant_membership_id"].(*int64)
+	version, versionOK := fields["issued_authorization_version"].(*int64)
+	expiresAt, expiryOK := fields["authorization_expires_at"].(time.Time)
+	if len(fields) != 5 || !idOK || id == nil || !principalOK || principal == nil || !membershipOK || membership == nil || !versionOK || version == nil || !expiryOK {
+		return fmt.Errorf("transfer execution authorization fields are invalid")
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		item, err := commonExecution.LockActiveLease(ctx, tx, lease)
+		if err != nil {
+			return err
+		}
+		if item.ActorPrincipalID == nil || *item.ActorPrincipalID != *principal || item.ActorTenantMembershipID == nil || *item.ActorTenantMembershipID != *membership || item.IssuedAuthorizationVersion == nil || *item.IssuedAuthorizationVersion != *version {
+			return fmt.Errorf("%w: transfer execution actor cannot change", commonapi.ErrConflict)
+		}
+		return commonExecution.AttachAuthorizationWithLease(ctx, tx, lease, *id, expiresAt)
+	})
 }
 
 // StartContinuousExecution 原子写入用户期望状态与 pending execution。
