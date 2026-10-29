@@ -173,6 +173,17 @@ NFS export/owned root、Runtime/registry、部署与 Infra 全部清理并核零
 源生成的字节／大小／下载对象登记、两次生成一致、三格式等价、3000／48／24 点计数和报告拒绝归 `make test-manager-online-runner`／`make test-online-runner`。浏览器像素取证只读复制到独立离屏画布，不修改地图或过滤警告。真实运行沿用原手动 Hosted 入口；最终源码、报告与不覆盖范围见[静态轨迹历史证据](../验收证据索引.md#manager-静态轨迹历史证据)。
 
 
+### 多距缓冲独立场景
+
+用户确认新增 `topology_case=multi-distance-buffer`，复用 `vector-topology-persistence` 原Hosted生命周期、非默认Tenant普通User精确11权限及600秒预算。仅生成两个EPSG:3857点图层：成功源含两个不同业务ID、非标准活动几何列及可空Integer64/Boolean/String；冲突源另含 `distance` 属性列。成功DAG只执行 `load → batch_buffer(distances=[2,1,2], resolution=1) → save(mode=fail)`，保存单个六行GPKG，完整缓冲而非环带，顺序按距离再源行，重复距离保留。原 full、重合规整和组合case不变，不运行旧业务T4、容量矩阵或受控对照。
+
+独立OGR按原生点核六个闭合菱形的精确坐标/方向/顺序、包络、面积、顶点半径、二维有效性、源CRS、Integer64/Boolean/NULL与Real distance；不调用不同版本GEOS重新buffer构造期望，不增加epsilon、舍入或精度网格。原始源及成果字节全量归档，物理大小与Meta为相等严格正整数。成功成果恰有一次同User/Tenant自动扫描、源到成果的一条当前execution active derive，outputs/facts均create且Monitor一致。两源各做一次初始扫描，不把冲突源写入成功执行输入血缘。
+
+同User另运行冲突源的DAG，必须在batch_buffer节点以准确distance字段冲突原因失败，下游无文件、无新增扫描或输出facts；两源Meta、源文件和成功成果均不变。不宣称保存跨文件事务。真实Console核成功页、六面地图、重名失败页共三截图，标准EWKB/业务ID与FID区别/全部属性/OL投影数组/像素均须通过；每次导航读取页面自身响应绑定原User/Tenant/11权限，不沿用旧Token。Owner/browser报告为 `addp.topology-buffer/v1` / `addp.topology-buffer-browser/v1`，绑定case/run/身份/当前执行/完整预期；原始预览和血缘图保留，incomplete阶段不代替通过。最终源及成果未变、领域/NFS/export/owned root/Runtime/registry/部署/Infra完整清理零残留；清理不认证业务DELETE。
+
+同次沿既有标准runner、Native、Console和workflow登记及mutation回归覆盖新增case，无新suite、权限、产品路径或永久脚本。Native/CI通过不替代这一新增普通用户T4；超JSON安全整数、零负距离、空图层与其他参数边界复用已有确定性证据，不外推为本case新增真实认证。
+
+
 ### 重合规整独立场景
 
 用户已确认 P0＋P1：`vector-topology-persistence` 新增显式 `topology_case=line-network-normalize`，保留原 `full` 的原业务含义。新场景只生成一个 EPSG:3857 GPKG 源，执行 `load → normalize_line_network(id_field=route_key) → result/members 各自 save(mode=fail)`；不 seed 或执行旧十五源／十五成果场景，不调用旧塌缩负例或容量矩阵。未知 case 在副作用前拒绝；现有根入口、Hosted 生命周期、同源默认入口 Runtime、非默认 Tenant、普通 User 精确11权限与600秒预算不变。Case 由 workflow 输入贯穿 owner、物理夹具、浏览器和报告，不能把本场景成功记为旧整包已重验。Playwright 筛选针对包含文件名前缀的完整标题，按完整用例名的末尾精确匹配；标准 runner 使用真实 `--list` 分别证明 normalize／full 各只选中目标一项，列表验证不执行业务；平台 CI 通过现有前端准备 action 安装 Console／Manager 的已锁定 npm 依赖，不需要安装浏览器或启动服务。

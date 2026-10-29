@@ -13,6 +13,11 @@ RUNTIME = 'addp-topology-runtime'
 TARGETS = ('faces.geojson', 'diagnostics.geojson', 'repaired.geojson', 'snapped.gpkg', 'overlaps.gpkg', 'gaps.gpkg', 'dangling.gpkg', 'line-overlaps.gpkg', 'line-self-overlaps.gpkg', 'line-intersections.gpkg', 'line-self-intersections.gpkg', 'split-lines.gpkg', 'line-components.gpkg', 'line-chains.gpkg', 'line-chain-members.gpkg')
 SOURCES = ('source.geojson', 'invalid.geojson', 'snap-input.gpkg', 'snap-reference.gpkg', 'overlap-input.gpkg', 'gap-input.gpkg', 'gap-coverage.gpkg', 'dangling-input.gpkg', 'line-overlap-input.gpkg', 'line-self-overlap-input.gpkg', 'line-intersection-input.gpkg', 'line-self-intersection-input.gpkg', 'split-line-input.gpkg', 'line-component-input.gpkg', 'line-chain-input.gpkg')
 PORTS = ('faces', 'diagnostics', 'repaired', 'snapped', 'overlaps', 'gaps', 'dangling', 'line_overlaps', 'line_self_overlaps', 'line_intersections', 'line_self_intersections', 'split_lines', 'line_components', 'line_chains', 'line_chain_members')
+BUFFER_CASE = 'multi-distance-buffer'
+BUFFER_SOURCES = ('buffer-input.gpkg', 'buffer-conflict.gpkg')
+BUFFER_TARGETS = ('buffers.gpkg',)
+INDEPENDENT_CASES = (BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
+
 NORMALIZE_CASE = 'line-network-normalize'
 NORMALIZE_SOURCE = 'normalize-input.gpkg'
 NORMALIZE_TARGETS = ('normalized-edges.gpkg', 'normalized-members.gpkg')
@@ -25,6 +30,9 @@ COMPOSITION_TARGETS = ('chains.gpkg','chain-edges.gpkg','edge-sources.gpkg')
 
 
 def network_profile(case):
+    if case==BUFFER_CASE:
+        return {'source':BUFFER_SOURCES[0],'ports':('result',),'targets':BUFFER_TARGETS,
+                'schema':'addp.topology-buffer','title':'多距缓冲独立普通User单成果与重名拒绝'}
     if case==NORMALIZE_CASE:
         return {'source':NORMALIZE_SOURCE,'ports':NORMALIZE_PORTS,'targets':NORMALIZE_TARGETS,
                 'schema':'addp.topology-normalize','title':'重合规整独立普通User双成果与字段拒绝'}
@@ -32,6 +40,83 @@ def network_profile(case):
         return {'source':COMPOSITION_SOURCE,'ports':COMPOSITION_PORTS,'targets':COMPOSITION_TARGETS,
                 'schema':'addp.topology-normalize-chains','title':'重合规整链路合并独立普通User三成果与字段拒绝'}
     raise FixtureError('unknown network case')
+
+
+def buffer_features(kind):
+    sources=[{'properties':{'route_key':2**40+i+1,'note':'甲' if i==0 else None,'grade':7 if i==0 else None,'enabled':True if i==0 else None},
+              'geometry':{'type':'Point','coordinates':[i*10,0]}} for i in range(2)]
+    if kind=='source':return sources
+    if kind=='conflict':return [{**r,'properties':{**r['properties'],'distance':99.}} for r in sources]
+    if kind!='result':raise FixtureError('unknown buffer table')
+    return [{'properties':{**row['properties'],'distance':float(d)},
+             'geometry':{'type':'Polygon','coordinates':[[[x+d,y],[x,y-d],[x-d,y],[x,y+d],[x+d,y]]]}}
+            for d in (2,1,2) for row in sources for x,y in [row['geometry']['coordinates']]]
+
+
+def seed_buffer(path,kind):
+    from osgeo import ogr,osr
+    crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
+    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
+    layer=ds.CreateLayer(path.stem,crs,ogr.wkbPoint,options=['GEOMETRY_NAME=buffer_shape'])
+    for name,native in [('route_key',ogr.OFTInteger64),('note',ogr.OFTString),('grade',ogr.OFTInteger64),('enabled',ogr.OFTInteger),*([('distance',ogr.OFTReal)] if kind=='conflict' else [])]:
+        field=ogr.FieldDefn(name,native)
+        if name=='enabled':field.SetSubType(ogr.OFSTBoolean)
+        if layer.CreateField(field)!=0:raise FixtureError('cannot seed buffer field')
+    for row in buffer_features(kind):
+        feature=ogr.Feature(layer.GetLayerDefn())
+        for name,value in row['properties'].items():
+            if value is not None:feature.SetField(name,value)
+        feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps(row['geometry'])))
+        if layer.CreateFeature(feature)!=0:raise FixtureError('cannot seed buffer feature')
+    ds=None
+
+
+def verify_buffer(path,kind):
+    from osgeo import ogr,osr
+    ds=ogr.Open(str(path),0)
+    if ds is None or ds.GetLayerCount()!=1:raise FixtureError('buffer requires one physical layer')
+    layer=ds.GetLayer(0);schema=layer.GetLayerDefn();crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
+    if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs):raise FixtureError('buffer CRS differs')
+    expected=buffer_features(kind);fields=list(expected[0]['properties'])
+    if [schema.GetFieldDefn(i).GetName() for i in range(schema.GetFieldCount())]!=fields:raise FixtureError('buffer physical fields differ')
+    for name in fields:
+        field=schema.GetFieldDefn(schema.GetFieldIndex(name))
+        native=ogr.OFTString if name=='note' else ogr.OFTReal if name=='distance' else ogr.OFTInteger if name=='enabled' else ogr.OFTInteger64
+        if field.GetType()!=native or (name=='enabled' and field.GetSubType()!=ogr.OFSTBoolean):raise FixtureError('buffer physical field type differs')
+    rows=[]
+    for i,feature in enumerate(layer,1):
+        shape=feature.GetGeometryRef()
+        if feature.GetFID()!=i or shape is None or shape.GetCoordinateDimension()!=2 or shape.IsMeasured() or not shape.IsValid():raise FixtureError('buffer physical row or geometry differs')
+        if kind=='result':
+            if shape.GetGeometryName()!='POLYGON' or shape.GetGeometryCount()!=1:raise FixtureError('buffer must contain single-ring Polygon')
+            points=[list(p) for p in shape.GetGeometryRef(0).GetPoints()]
+            d=(2,1,2)[(i-1)//2] if i<=6 else 0;x=((i-1)%2)*10
+            if shape.GetEnvelope()!=(x-d,x+d,-d,d) or shape.GetArea()!=2*d*d or any(math.hypot(px-x,py)!=d for px,py in points):raise FixtureError('buffer exact envelope area or radius differs')
+            geometry={'type':'Polygon','coordinates':[points]}
+        else:
+            if shape.GetGeometryName()!='POINT':raise FixtureError('buffer source must be Point')
+            geometry={'type':'Point','coordinates':list(shape.GetPoints()[0])}
+        props={name:feature.GetField(name) for name in fields}
+        if props['enabled'] is not None:
+            if props['enabled'] not in (0,1):raise FixtureError('buffer boolean differs')
+            props['enabled']=bool(props['enabled'])
+        rows.append({'properties':props,'geometry':geometry})
+    if rows!=expected or any(type(row['properties'][key]) is not type(ref['properties'][key]) for row,ref in zip(rows,expected) for key in fields):raise FixtureError('buffer exact coordinates order attributes or types differ')
+    if not schema.GetGeomFieldDefn(0).GetName() or (kind!='result' and schema.GetGeomFieldDefn(0).GetName()!='buffer_shape'):raise FixtureError('buffer registered geometry name differs')
+    return {**digest(path),'feature_count':len(rows),'crs':'EPSG:3857','layer_name':layer.GetName(),
+            'geometry_column':schema.GetGeomFieldDefn(0).GetName(),'fid_column':layer.GetFIDColumn(),'fields':fields}
+
+
+def buffer_worker(action,root):
+    if action=='seed':
+        if any((root/n).exists() for n in BUFFER_SOURCES) or list((root/'outputs').iterdir()):raise FixtureError('refusing existing buffer data')
+        for name,kind in zip(BUFFER_SOURCES,('source','conflict')):seed_buffer(root/name,kind)
+        return {'sources':{name:digest(root/name) for name in BUFFER_SOURCES}}
+    if action!='verify':raise FixtureError('unknown buffer action')
+    if sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',*BUFFER_SOURCES]) or sorted(p.name for p in (root/'outputs').iterdir())!=list(BUFFER_TARGETS):raise FixtureError('buffer physical inventory differs')
+    for name,kind in zip(BUFFER_SOURCES,('source','conflict')):verify_buffer(root/name,kind)
+    sources={name:digest(root/name) for name in BUFFER_SOURCES}
+    return {'sources':sources,'targets':{BUFFER_TARGETS[0]:verify_buffer(root/'outputs'/BUFFER_TARGETS[0],'result')},'exact_inventory_verified':True}
 
 
 def composition_source_features():
@@ -82,6 +167,7 @@ def composition_expected_features(port):
 
 
 def network_features(case,kind):
+    if case==BUFFER_CASE:return buffer_features(kind)
     if case==COMPOSITION_CASE:
         return composition_source_features() if kind=='source' else composition_expected_features(kind)
     return normalize_source_features() if kind=='source' else normalize_expected_features(kind)
@@ -110,7 +196,7 @@ def verify_composition_relations(tables):
 
 def topology_case(environment=None):
     value = (os.environ if environment is None else environment).get('ADDP_ONLINE_TOPOLOGY_CASE', 'full')
-    if value not in ('full', NORMALIZE_CASE, COMPOSITION_CASE):
+    if value not in ('full', *INDEPENDENT_CASES):
         raise FixtureError('unknown topology case')
     return value
 
@@ -1134,6 +1220,7 @@ def validate_features(name, features):
 
 def worker(action, root, case=None):
     case=topology_case() if case is None else topology_case({"ADDP_ONLINE_TOPOLOGY_CASE":case})
+    if case==BUFFER_CASE:return buffer_worker(action,root)
     if case in (NORMALIZE_CASE,COMPOSITION_CASE):return normalize_worker(action,root,case)
     if action == 'seed':
         if any((root / name).exists() for name in SOURCES) or list((root / 'outputs').iterdir()):
@@ -1239,7 +1326,7 @@ def runtime_worker(action, root):
 def archive_physical_evidence(root, directory, result, case=None):
     """Retain only this synthetic fixture's verified bytes for offline audit."""
     case=topology_case() if case is None else topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':case})
-    sources,targets=((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
+    sources,targets=(BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
     archive = directory / 'topology-physical'
     if archive.is_symlink() or (archive/'outputs').is_symlink():
         raise FixtureError('physical archive must not follow symlinks')

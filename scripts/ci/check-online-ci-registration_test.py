@@ -1068,6 +1068,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[4], "'depends_on':['normal','chains'] if composition and port=='edge_sources' else ['chains'] if composition else ['normal']"), (paths[4], 'invalid_chain_id_field'),
             (paths[7], 'if(expected.length>20)'), (paths[7], 'chains:9,chain_edges:15,edge_sources:22'),
             (paths[9], 'test_hosted_normalize_chains_case_three_save_independent_physical_oracle'),
+            (paths[0], '          - multi-distance-buffer'), (paths[3], 'line-network-normalize-chains|multi-distance-buffer'),
+            (paths[5], 'def buffer_worker('), (paths[5], 'def verify_buffer('),
+            (paths[4], "'operator':'batch_buffer'"), (paths[4], "cause='distance_conflict'"),
+            (paths[7], '多距缓冲独立普通User单成果与重名拒绝'),
+            (paths[9], 'test_hosted_buffer_case_real_save_and_independent_oracle'),
             (paths[14], 'frontend-directory: console/frontend'), (paths[14], 'frontend-directory: manager/frontend')
         ):
             target = self.repository / relative; original = target.read_text(); target.write_text(original.replace(fragment, 'omitted'))

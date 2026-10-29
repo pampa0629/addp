@@ -4322,3 +4322,53 @@ def test_near_line_nearest_calculation_failure_does_not_return_partial_results(m
     monkeypatch.setattr(shapely, "shortest_line", faulty)
     with pytest.raises(NearLineInputError) as error: near_lines(source, reference)
     assert error.value.code == "calculation" and len(calls) == 2
+
+
+@pytest.mark.parametrize('problem',[None,'count','distance','id','null','bool_type','int_type','crs','coordinate','direction','geometry_column'])
+def test_hosted_buffer_case_real_save_and_independent_oracle(tmp_path,problem):
+    import importlib
+    from osgeo import ogr
+    fixture=importlib.import_module('business.scripts.online-vector-topology-fixture')
+    (tmp_path/'outputs').mkdir();(tmp_path/'.addp-online-owner').touch()
+    seeded=fixture.worker('seed',tmp_path,fixture.BUFFER_CASE)
+    originals={name:(tmp_path/name).read_bytes() for name in fixture.BUFFER_SOURCES}
+    conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':'normal_input','operator':'load','params':{'connection_info':conn,'path':fixture.BUFFER_SOURCES[0]},'depends_on':[]},
+        {'id':'normal','operator':'batch_buffer','params':{'input_gdf':{'$ref':'normal_input'},'distances':[2,1,2],'resolution':1},'depends_on':['normal_input']},
+        {'id':'save_result','operator':'save','params':{'input_df':{'$ref':'normal'},'connection_info':conn,'path':'outputs/buffers.gpkg','mode':'fail'},'depends_on':['normal']}]
+    result=execute_workflow({'tasks':tasks});assert result['status']=='success',result
+    evidence=fixture.worker('verify',tmp_path,fixture.BUFFER_CASE)
+    assert evidence['targets']['buffers.gpkg']['feature_count']==6
+    assert evidence['sources']==seeded['sources']
+    path=tmp_path/'outputs/buffers.gpkg'
+    if problem is None:
+        archive=tmp_path.parent/(tmp_path.name+'-archive');archive.mkdir()
+        fixture.archive_physical_evidence(tmp_path,archive,evidence,fixture.BUFFER_CASE)
+        assert (archive/'topology-physical'/fixture.BUFFER_SOURCES[1]).read_bytes()==originals[fixture.BUFFER_SOURCES[1]]
+        tasks[0]['params']['path']=fixture.BUFFER_SOURCES[1];tasks[2]['params']['path']='outputs/failed-buffers.gpkg'
+        failed=execute_workflow({'tasks':tasks});assert failed['status']=='failed'
+        assert 'distance 与多距缓冲输出列冲突' in failed['error']
+        assert not (tmp_path/'outputs/failed-buffers.gpkg').exists()
+        assert fixture.worker('verify',tmp_path,fixture.BUFFER_CASE)==evidence
+    else:
+        ds=ogr.Open(str(path),1);layer=ds.GetLayer(0)
+        if problem=='count':layer.DeleteFeature(1)
+        elif problem=='crs':ds.ExecuteSQL('UPDATE gpkg_geometry_columns SET srs_id=4326')
+        elif problem in ('bool_type','int_type'):
+            name='enabled' if problem=='bool_type' else 'grade'
+            assert layer.AlterFieldDefn(layer.GetLayerDefn().GetFieldIndex(name),ogr.FieldDefn(name,ogr.OFTReal),ogr.ALTER_TYPE_FLAG)==0
+        elif problem=='geometry_column':ds.ExecuteSQL('UPDATE gpkg_geometry_columns SET column_name=\'foreign\'')
+        else:
+            feature=layer.GetFeature(2 if problem=='null' else 1)
+            if problem=='distance':feature.SetField('distance',1.)
+            elif problem=='id':feature.SetField('route_key',1)
+            elif problem=='null':feature.SetField('grade',0)
+            else:
+                points=[list(p) for p in feature.GetGeometryRef().GetGeometryRef(0).GetPoints()]
+                if problem=='direction':points.reverse()
+                else:points[1][0]=.25
+                feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps({'type':'Polygon','coordinates':[points]})))
+            assert layer.SetFeature(feature)==0
+        ds=None
+        with pytest.raises((fixture.FixtureError,RuntimeError) if problem=='geometry_column' else fixture.FixtureError):fixture.verify_buffer(path,'result')
+    assert all((tmp_path/name).read_bytes()==raw for name,raw in originals.items())

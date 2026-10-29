@@ -88,6 +88,13 @@ class HostedTopologyGateTest(unittest.TestCase):
             self.assertFalse(self.host.secrets.exists())
             self.assertNotIn('topology:start', self.host.trace.read_text() if self.host.trace.exists() else '')
 
+    def test_buffer_case_is_bound_without_old_case_execution(self):
+        result=self.run_gate(ADDP_ONLINE_TOPOLOGY_CASE='multi-distance-buffer')
+        self.assertEqual(result.returncode,0,result.stderr+result.stdout)
+        import json
+        self.assertEqual(json.loads((self.host.artifacts/'topology-case.json').read_text()),{'suite':'vector-topology-persistence','case':'multi-distance-buffer'})
+        self.assertFalse(self.host.secrets.exists())
+
     def test_composition_case_is_bound_without_old_case_execution(self):
         result=self.run_gate(ADDP_ONLINE_TOPOLOGY_CASE='line-network-normalize-chains')
         self.assertEqual(result.returncode,0,result.stderr+result.stdout)

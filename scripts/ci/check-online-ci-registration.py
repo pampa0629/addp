@@ -2050,6 +2050,18 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     for relative,fragments in normalize_required.items():
         if any(fragment not in (repository/relative).read_text() for fragment in fragments):
             raise RegistrationError('topology normalization case contract incomplete: '+relative)
+    buffer_required = {
+        '.github/workflows/online-t4-gates.yml': ('          - multi-distance-buffer',),
+        'scripts/test/online-hosted-topology-gate.sh': ('line-network-normalize-chains|multi-distance-buffer',),
+        'business/scripts/online-vector-topology-fixture.py': ('def buffer_worker(', 'def verify_buffer(', 'def buffer_features(', 'BUFFER_SOURCES', 'buffer exact coordinates order attributes or types differ'),
+        'scripts/test/vector-topology-persistence-online.py': ("'operator':'batch_buffer'", 'conflict_source', "cause='distance_conflict'"),
+        'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('多距缓冲独立普通User单成果与重名拒绝', "'multi-distance-buffer',{result:6},'addp.topology-buffer'", 'conflict_source:conflictSource'),
+        'engines/geopython-workflow/test_topology_operators.py': ('test_hosted_buffer_case_real_save_and_independent_oracle',),
+        'scripts/test/vector-topology-persistence-online_test.py': ('test_buffer_uses_only_selected_sources_one_output_and_exact_conflict_diagnostic',),
+    }
+    for relative,fragments in buffer_required.items():
+        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+            raise RegistrationError('topology buffer case contract incomplete: '+relative)
     composition_required = {
         'business/scripts/online-vector-topology-fixture.py': ('line-network-normalize-chains', 'composition_source_features',
             'composition_expected_features', 'verify_composition_relations', '2**40', 'original direction or business fields differ'),

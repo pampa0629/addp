@@ -958,21 +958,24 @@ assert.ok(start>0&&end>start)
 const check=new (Object.getPrototypeOf(async function(){}).constructor)('renderer','expect','fields','expected','normalizedMapExpectation','let rendered;'+source.slice(start,end))
 const expect={poll:fn=>({async toEqual(value){assert.deepEqual(await fn(),value)}})}
 async function run(rows,projection='EPSG:3857'){
- const features=rows.map(row=>({get:k=>row.properties[k],getGeometry:()=>({getType:()=>row.geometry.type,getCoordinates:()=>row.geometry.coordinates.map(webMercatorPreviewCoordinate)})}))
+ const features=rows.map(row=>({get:k=>row.properties[k],getGeometry:()=>({getType:()=>row.geometry.type,getCoordinates:()=>row.geometry.type==='Polygon'?row.geometry.coordinates.map(r=>r.map(webMercatorPreviewCoordinate)):row.geometry.coordinates.map(webMercatorPreviewCoordinate)})}))
  const map={getView:()=>({getAnimating:()=>false,getProjection:()=>({getCode:()=>projection})}),getLayers:()=>({getArray:()=>[{getSource:()=>({getFeatures:()=>features})}]})}
  const renderer={evaluate:async(fn,args)=>fn({__vueParentComponent:{setupState:{mapInstance:map}}},args)}
  await check(renderer,expect,Object.keys(expected[0].properties),expected,normalizedMapExpectation)
 }
 await run(expected);await run([...expected].reverse())
-const changes=[rows=>rows.pop(),rows=>rows.push(structuredClone(rows[0])),rows=>rows[0].properties['edge_id' in rows[0].properties?'edge_id':'chain_id']++,
+const buffer=expected[0].geometry.type==='Polygon'
+const changes=buffer?[rows=>rows.pop(),rows=>rows.push(structuredClone(rows[0])),rows=>rows[0].properties.distance++,rows=>rows[0].properties.route_key=1,
+ rows=>rows[1].properties.grade=0,rows=>rows[0].geometry.coordinates[0].reverse(),rows=>rows[0].geometry.coordinates[0][1][0]+=.25]:[rows=>rows.pop(),rows=>rows.push(structuredClone(rows[0])),rows=>rows[0].properties['edge_id' in rows[0].properties?'edge_id':'chain_id']++,
  rows=>rows[0].geometry.coordinates.reverse(),rows=>rows[0].geometry.coordinates[0][0]+=1]
-if('source_id' in expected[0].properties)changes.push(rows=>rows[0].properties.source_id='wrong',
+if(buffer){}
+else if('source_id' in expected[0].properties)changes.push(rows=>rows[0].properties.source_id='wrong',
  rows=>rows[0].properties.source_segment_no++,rows=>rows[0].properties.is_reversed=0,rows=>rows[5].properties.grade=0)
 else changes.push(rows=>rows[0].properties['occurrence_count' in rows[0].properties?'occurrence_count':'member_count']++)
 for(const change of changes){const rows=structuredClone(expected);change(rows);await assert.rejects(run(rows),{code:'ERR_ASSERTION'})}
 await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
 '''
-        for case,port in [(case,port) for case in (m.fixture.NORMALIZE_CASE,m.fixture.COMPOSITION_CASE) for port in m.fixture.network_profile(case)['ports']]:
+        for case,port in [(case,port) for case in m.fixture.INDEPENDENT_CASES for port in m.fixture.network_profile(case)['ports']]:
             result=subprocess.run(['node','--input-type=module','-e',script,
                 str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),json.dumps(m.fixture.network_features(case,port)),
                 (repository/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri()],capture_output=True,text=True)
@@ -983,7 +986,7 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
         import os
         repository=Path(__file__).resolve().parents[2]
         run=m.subprocess.run
-        titles={m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
+        titles={m.fixture.BUFFER_CASE:'多距缓冲独立普通User单成果与重名拒绝',m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
             m.fixture.COMPOSITION_CASE:'重合规整链路合并独立普通User三成果与字段拒绝',
             'full':'同一普通User核对构面、修复、严格吸附、面叠面缝悬点线叠自叠线交自交及打断连通分组链路合并地图及塌缩失败'}
         for case,title in titles.items():
@@ -1087,3 +1090,80 @@ class CompositionOnlineTest(unittest.TestCase):
                 if wrong:
                     with self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
                 else:m.browser(Path('.'),self.env,evidence)
+
+
+class BufferClient(NormalizeClient):
+    def __init__(self):
+        super().__init__();self.source_name=m.fixture.BUFFER_SOURCES[0];self.source['full_name']=self.source_name
+        self.conflict={**self.source,'id':11,'full_name':m.fixture.BUFFER_SOURCES[1],'fingerprint':'conflict'}
+        self.targets={20:base.item('buffers.gpkg',20)}
+        value=normalize_execution();target='addp://engine/3/path/outputs/buffers.gpkg?type=file'
+        value['outputs']={'save_result':{'resource':{'locator':target,'type':'file','write_mode':'create'}}}
+        value['metadata']['lineage_facts']['inputs']=[{'port':'input.normal_input','locator':f'addp://engine/3/path/{self.source_name}?type=file&item_id=10'}]
+        value['metadata']['lineage_facts']['outputs']=[{'locator':target,'write_mode':'create'}]
+        value['metadata']['result']['meta_scan_runs']=[{'execution_id':'scan-result','target_locator':target,'status':'submitted'}]
+        self.executions['normalize-execution']=value
+    def request(self,method,path,expected,body=None):
+        if path.endswith('/scan/run/manual'):
+            self.calls.append((method,path,body));name=body['targets'][0].split('/path/')[1].split('?')[0]
+            assert name in m.fixture.BUFFER_SOURCES
+            data={'execution_id':'source-scan' if name==self.source_name else 'conflict-scan'}
+        elif path.endswith('/engines/3/items'):data=[self.source,self.conflict,*self.targets.values()]
+        elif path=='/api/v1/meta/items/11':data=self.conflict
+        elif path.startswith('/api/v1/meta/scan/runs?'):
+            data={'total':3,'items':[{'execution_id':x} for x in ['source-scan','conflict-scan','scan-result']]}
+        elif path=='/api/v1/develop/executions' and method=='POST':
+            self.calls.append((method,path,body));tasks=body['content']['workflow_definition']['tasks']
+            assert [t['operator'] for t in tasks]==['load','batch_buffer','save']
+            assert tasks[1]['params']['distances']==[2,1,2] and tasks[1]['params']['resolution']==1
+            data={'execution_id':'normalize-failed' if m.fixture.BUFFER_SOURCES[1] in tasks[0]['params']['locator'] else 'normalize-execution'}
+        else:return super().request(method,path,expected,body)
+        return SimpleNamespace(payload=copy.deepcopy(data))
+
+
+def buffer_physical(*args):
+    return {'exact_inventory_verified':True,'sources':{name:{'sha256':name,'size_bytes':500} for name in m.fixture.BUFFER_SOURCES},
+            'targets':{'buffers.gpkg':{'sha256':'buffers','size_bytes':98304,'layer_name':'buffers','geometry_column':'buffer_shape','fid_column':'fid','feature_count':6}}}
+
+
+class BufferOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
+        self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.BUFFER_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
+    def run_case(self,client=None,physical=buffer_physical,browser=lambda r,e,v:v):
+        return m.run_scenario(Path('.'),self.env,client or BufferClient(),physical,browser,
+            diagnostic_runner=lambda *args,**kw:{'cause':kw['cause'],'reason':kw['reason']})
+    def test_buffer_uses_only_selected_sources_one_output_and_exact_conflict_diagnostic(self):
+        client=BufferClient()
+        with patch.object(m,'definition',side_effect=AssertionError('old full must not run')):
+            value=self.run_case(client)
+        self.assertEqual(value['schema_version'],'addp.topology-buffer/v1')
+        self.assertEqual(value['failed_normalize']['diagnostic']['cause'],'distance_conflict')
+        self.assertIn('distance 与多距缓冲输出列冲突',value['failed_normalize']['diagnostic']['reason'])
+        self.assertEqual(len(value['outputs']),1);self.assertEqual(len(value['browser']['expected']['result']),6)
+        manual=[c[2]['targets'][0] for c in client.calls if c[1].endswith('/scan/run/manual')]
+        self.assertEqual(manual,[f'addp://engine/3/path/{n}?type=file' for n in m.fixture.BUFFER_SOURCES])
+        self.assertEqual(value['conflict_source']['id'],11)
+    def test_buffer_rejects_wrong_public_identity_input_facts_scans_and_published_failure(self):
+        for attr,value in [('actor',True),('actor',34),('scan_tenant','2'),('permissions',sorted(m.PERMISSIONS|{'extra.read'}))]:
+            client=BufferClient();setattr(client,attr,value)
+            with self.subTest(attr=attr),self.assertRaises(m.SuiteError):self.run_case(client)
+        for mutate in [lambda c:c.executions['normalize-execution']['metadata']['lineage_facts']['inputs'][0].update(locator='conflict'),
+                       lambda c:c.executions['normalize-execution']['metadata']['result']['meta_scan_runs'].clear(),
+                       lambda c:c.executions['normalize-failed'].update(outputs={'bad':{}}),
+                       lambda c:c.targets[20].update(size_bytes=0)]:
+            client=BufferClient();mutate(client)
+            with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):self.run_case(client)
+    def test_buffer_rejects_changed_source_and_failed_browser_preserves_checkpoint(self):
+        def changed(repo,env,evidence):
+            raise m.SuiteError('map failed')
+        with self.assertRaises(m.SuiteError):self.run_case(browser=changed)
+        evidence=json.loads((Path(self.directory.name)/'topology-normalize-failure.json').read_text())
+        self.assertEqual(evidence['result'],'incomplete');self.assertEqual(evidence['conflict_source']['id'],11)
+        count=0
+        def physical(*args):
+            nonlocal count
+            count+=1;value=buffer_physical()
+            if count==3:value['sources'][m.fixture.BUFFER_SOURCES[1]]['sha256']='mutated'
+            return value
+        with self.assertRaises(m.SuiteError):self.run_case(physical=physical)

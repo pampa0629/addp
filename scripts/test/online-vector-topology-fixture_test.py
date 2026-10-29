@@ -431,3 +431,16 @@ class CompositionFixtureTest(unittest.TestCase):
         for mutate in mutations:
             tables={p:m.composition_expected_features(p) for p in m.COMPOSITION_PORTS};mutate(tables)
             with self.subTest(mutate=mutate),self.assertRaises(m.FixtureError):m.verify_composition_relations(tables)
+
+
+class BufferFixtureTest(unittest.TestCase):
+    def test_case_routes_only_to_two_source_buffer_fixture_and_keeps_exact_distance_order(self):
+        self.assertEqual(m.topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':m.BUFFER_CASE}),m.BUFFER_CASE)
+        with patch.object(m,'buffer_worker',return_value={'case':'buffer'}) as selected,patch.object(m,'normalize_worker',side_effect=AssertionError('old case must not run')):
+            self.assertEqual(m.worker('seed',Path('/unused'),m.BUFFER_CASE),{'case':'buffer'})
+            selected.assert_called_once_with('seed',Path('/unused'))
+        expected=m.buffer_features('result')
+        self.assertEqual([r['properties']['distance'] for r in expected],[2.,2.,1.,1.,2.,2.])
+        self.assertEqual([r['properties']['route_key'] for r in expected],[2**40+1,2**40+2]*3)
+        self.assertEqual(expected[0],expected[4]);self.assertEqual(expected[1],expected[5])
+        self.assertEqual([r['properties']['distance'] for r in m.buffer_features('conflict')],[99.,99.])

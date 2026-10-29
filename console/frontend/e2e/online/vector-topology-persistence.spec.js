@@ -375,7 +375,7 @@ test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点�
 
 function normalizedMapExpectation(features) {
   return features.map(row => JSON.stringify({ properties:row.properties,
-    coordinates:row.geometry.coordinates.map(webMercatorPreviewCoordinate) })).sort()
+    coordinates:row.geometry.type==='Polygon' ? row.geometry.coordinates.map(ring=>ring.map(webMercatorPreviewCoordinate)) : row.geometry.coordinates.map(webMercatorPreviewCoordinate) })).sort()
 }
 
 async function verifyNetworkCase(page,caseName,counts,schema) {
@@ -418,10 +418,14 @@ async function verifyNetworkCase(page,caseName,counts,schema) {
     }
     const preview=await json(previewResponse,'normalized preview')
     const api=await browserAPIFromResponse(previewResponse,process.env.GATEWAY_URL,expectedIdentity)
-    let graph,source
+    let graph,source,conflictSource
     try {
       source=await json(await api.get(`/api/v1/meta/items/${evidence.source.id}`),'unchanged normalization source')
       expect(source).toEqual(evidence.source.before)
+      if(evidence.conflict_source){
+        conflictSource=await json(await api.get(`/api/v1/meta/items/${evidence.conflict_source.id}`),'unchanged buffer conflict source')
+        expect(conflictSource).toEqual(evidence.conflict_source.before)
+      }
       graph=await json(await api.get(`/api/v1/meta/lineage/graph?subject_kind=data_item&item_id=${output.item_id}&direction=upstream`),'normalization lineage')
       expect(graph.truncated).not.toBe(true)
       const edges=graph.edges.filter(edge=>edge.target?.item_id===output.item_id && edge.evidence?.execution_id===evidence.execution_id && edge.status==='active' && edge.relation_kind==='derive')
@@ -448,7 +452,7 @@ async function verifyNetworkCase(page,caseName,counts,schema) {
         return {projection:map.getView().getProjection().getCode(),features:map.getLayers().getArray().flatMap(layer=>layer.getSource?.()?.getFeatures?.()||[])
           .map(feature=>({type:feature.getGeometry().getType(),properties:Object.fromEntries(fields.map(k=>[k,feature.get(k)])),coordinates:feature.getGeometry().getCoordinates()}))}
       },fields)
-      if(!rendered||rendered.projection!=='EPSG:3857'||rendered.features.some(f=>f.type!=='LineString'))return []
+      if(!rendered||rendered.projection!=='EPSG:3857'||rendered.features.some(f=>f.type!==expected[0].geometry.type))return []
       return rendered.features.map(({properties,coordinates})=>JSON.stringify({properties,coordinates})).sort()
     }).toEqual(normalizedMapExpectation(expected))
     let greenPixels=0
@@ -457,7 +461,7 @@ async function verifyNetworkCase(page,caseName,counts,schema) {
       for(let i=0;i<pixels.length;i+=4)if(pixels[i+3]>0&&pixels[i+1]>pixels[i]*1.1&&pixels[i+1]>pixels[i+2]*1.1)n++
       return n
     },0))).toBeGreaterThan(30)
-    raw.observations.push({output_item_id:output.item_id,source,graph,preview,rendered:{...rendered,green_pixels:greenPixels}})
+    raw.observations.push({output_item_id:output.item_id,source,...(evidence.conflict_source?{conflict_source:conflictSource}:{}),graph,preview,rendered:{...rendered,green_pixels:greenPixels}})
     writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,'topology-source-lineage-raw.json'),JSON.stringify(raw,null,2))
     await page.screenshot({path:resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,`${caseName}-${output.port}-map.png`)})
   }
@@ -468,6 +472,7 @@ async function verifyNetworkCase(page,caseName,counts,schema) {
     const failed=await json(failedResponse,'failed normalization execution')
     expect(failed.status).toBe('failed');expect(failed.outputs||{}).toEqual({})
     expect(await json(await api.get(`/api/v1/meta/items/${evidence.source.id}`),'unchanged source')).toEqual(evidence.source.before)
+    if(evidence.conflict_source)expect(await json(await api.get(`/api/v1/meta/items/${evidence.conflict_source.id}`),'unchanged conflict source')).toEqual(evidence.conflict_source.before)
   } finally {await api.dispose()}
   await expect(frame.getByText('失败',{exact:true})).toBeVisible()
   await page.screenshot({path:resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,`${caseName}-failed.png`)})
@@ -480,4 +485,8 @@ test('重合规整独立普通User双成果与字段拒绝', async ({page}) => {
 
 test('重合规整链路合并独立普通User三成果与字段拒绝', async ({page}) => {
   await verifyNetworkCase(page,'line-network-normalize-chains',{chains:9,chain_edges:15,edge_sources:22},'addp.topology-normalize-chains')
+})
+
+test('多距缓冲独立普通User单成果与重名拒绝', async ({page}) => {
+  await verifyNetworkCase(page,'multi-distance-buffer',{result:6},'addp.topology-buffer')
 })

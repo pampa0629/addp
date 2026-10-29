@@ -8,8 +8,8 @@ ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=vector-topology-persistence
 export ADDP_ONLINE_TOPOLOGY_CASE=${ADDP_ONLINE_TOPOLOGY_CASE-full}
 case "$ADDP_ONLINE_TOPOLOGY_CASE" in
-  full|line-network-normalize|line-network-normalize-chains) ;;
-  *) echo 'ADDP_ONLINE_TOPOLOGY_CASE must be full, line-network-normalize or line-network-normalize-chains' >&2; exit 1 ;;
+  full|line-network-normalize|line-network-normalize-chains|multi-distance-buffer) ;;
+  *) echo 'ADDP_ONLINE_TOPOLOGY_CASE must be full, line-network-normalize, line-network-normalize-chains or multi-distance-buffer' >&2; exit 1 ;;
 esac
 RUNTIME_CONTAINER=addp-topology-runtime
 RUNTIME_TAG=topology

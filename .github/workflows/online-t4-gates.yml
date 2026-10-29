@@ -114,6 +114,7 @@ on:
           - full
           - line-network-normalize
           - line-network-normalize-chains
+          - multi-distance-buffer
       manager_case:
         description: Manager acceptance case (full preserves all model assertions)
         required: true
