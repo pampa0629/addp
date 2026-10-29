@@ -716,7 +716,20 @@ Model `business_entity|logical_model` 与 Standard 五类标准的主业务域�
 
 列表使用标准 `{data,total,page,page_size,total_pages}` 响应；`view=governance|inventory` 是稳定目录视图，省略时唯一表示 `governance`。`search`、`entry_type`、`source_status`、`governance_status`、`visibility`、`primary_domain_id`、`accountable_department_id`、`source_engine_id`、`coverage_dimension`、`coverage_state` 等过滤参数必须在 Swagger 中逐项声明，排序字段使用白名单。显式请求 `view=inventory` 但缺少 `catalog.inventory.read` 时返回 `403`，不静默降级到治理目录；治理缺口的参数组合、`400` 拒绝和名称搜索互斥规则统一见[治理覆盖率动态聚合](#512-治理覆盖率动态聚合)。
 
-`GET /entries/facets` 接受同样的 `view`，以及可选 `primary_domain_id`、`accountable_department_id`、`entry_type` 上下文参数，并与 `/entries` 共用 Tenant、目录可见性和盘点权限过滤。响应是即时聚合的导航读模型，不是目录树事实：主业务域统计始终覆盖当前视图；责任部门统计受已选业务域约束；资源类型统计受已选业务域和责任部门约束；来源引擎统计受三项选择共同约束。Catalog 从权威库计算当前可见结果中实际出现的稳定 ID 及数量，再使用 `addp-catalog` Tenant Service Token 向 Standard / System 精确批量解析显示名、编码、类型和状态。它不返回 owner 未在当前可见 CatalogEntry 中被引用的对象，不授予额外 owner 管理权限，也不持久化 owner 完整列表。任一 owner 解析失败时，该分面返回 `unavailable` 状态，其他分面仍正常返回；不把动态解析变成 Catalog 启动或 Ready 依赖。
+#### 动态名称解析与失败边界
+
+分面与编目候选均由 Catalog 使用自身 `addp-catalog` Tenant Service Token 向事实 owner 查询，不保存 owner 完整列表、候选列表或全表投影，也不授予调用者额外 owner 管理权限。两类接口的本地功能权限和查询范围分别按下述路由契约核验。
+
+| 接口的 Owner 失败 | 结果 |
+| --- | --- |
+| 分面 `/entries/facets` 解析失败 | 该分面返回 `unavailable`，其他分面仍正常返回 |
+| 编目候选 `/reference-candidates` 查询不可达 | 当前请求返回 `503 catalog_reference_validation_unavailable` |
+
+上述动态依赖不进入 Catalog 启动或 Ready 条件；失败只影响对应分面或候选请求，条目列表和已保存关联仍可读取。裸 ID 不作为名称回退，候选失败也不得改用手工 ID 输入或 owner 全量副本。
+
+#### 分面与导航
+
+`GET /entries/facets` 接受同样的 `view`，以及可选 `primary_domain_id`、`accountable_department_id`、`entry_type` 上下文参数，并与 `/entries` 共用 Tenant、目录可见性和盘点权限过滤。响应是即时聚合的导航读模型，不是目录树事实：主业务域统计始终覆盖当前视图；责任部门统计受已选业务域约束；资源类型统计受已选业务域和责任部门约束；来源引擎统计受三项选择共同约束。Catalog 从权威库计算当前可见结果中实际出现的稳定 ID 及数量，再按这些 ID 向 Standard / System 精确批量解析显示名、编码、类型和状态；不返回未在当前可见 CatalogEntry 中被引用的 owner 对象。解析身份、存储与失败处理统一见[动态名称解析与失败边界](#动态名称解析与失败边界)。
 
 主业务域分面通过 Standard 精确解析取得 `domain_path`，只用作当前响应的层级展示，不落库。父域没有可见条目时不为补树而增加可选分面，子域仍保留完整路径。业务域候选、导航与归属编辑统一复用共享 `BusinessDomainSelect`，每层缩进 16px，搜索或缺少父选项时显示完整路径，选中框显示名称。
 
@@ -724,11 +737,15 @@ Model `business_entity|logical_model` 与 Standard 五类标准的主业务域�
 
 “待归类／待分配部门”的虚拟入口、进入与退出筛选统一见[治理缺口入口](#治理缺口入口)；缺口参数及拒绝条件沿[治理覆盖率动态聚合](#512-治理覆盖率动态聚合)执行。
 
+### 编目候选路由
+
 `GET /reference-candidates` 是 Catalog 编目交互的唯一跨 owner 候选入口，使用 `catalog.entry.update` Permission。请求固定包含 `reference_type=domain|glossary|element|department|user`，可选 `search`，并使用 `page`、`page_size` 分页；`page_size` 最大 50。响应使用标准分页结构，候选 `id` 使用字符串，显示字段包含 `name`、可选 `code` 和 owner 当前 `status`；业务域候选额外返回 `domain_path`（从根到当前域的名称数组）。该接口只返回当前 Tenant 中允许建立新关联的对象，不返回完整专业 DTO。
 
-候选事实仍由 owner 动态提供：Catalog 使用 `addp-catalog` Tenant Service Token 分别调用 Standard `GET /api/v1/standard/references/candidates` 和 System `GET /api/v1/system/runtime/catalog-references/candidates`。两个 owner 路由均按名称或编码搜索、稳定排序和分页；业务域还支持名称路径搜索，在父域优先的层级顺序上过滤和分页，分页边界不截断 `domain_path`，只允许 `addp-catalog`，并复用建立关联时已经要求的 owner read Permission。Catalog 不保存候选列表、不建立 owner 全表投影，也不把候选响应写入搜索索引；owner 不可达只使当前候选请求返回 `503 catalog_reference_validation_unavailable`，不影响 Catalog 启动、Ready、列表和已保存关联展示。
+候选查询分别调用 Standard `GET /api/v1/standard/references/candidates` 和 System `GET /api/v1/system/runtime/catalog-references/candidates`。两个 owner 路由均按名称或编码搜索、稳定排序和分页；业务域还支持名称路径搜索，在父域优先的层级顺序上过滤和分页，分页边界不截断 `domain_path`，只允许 `addp-catalog`，并复用建立关联时已经要求的 owner read Permission。候选响应不写入搜索索引；运行身份、存储与不可达语义统一见[动态名称解析与失败边界](#动态名称解析与失败边界)。
 
-推荐继任项与治理任务条目筛选属于 Catalog 自有对象选择，复用 `/entries` 的权限感知名称搜索，不另建候选事实源。编辑器加载既有关联时可以使用聚合中已保存的 `observed_snapshot` 作为“最近确认的显示摘要”，但不得把裸 ID 当作名称回退，也不得在动态候选失败时恢复手工 ID 输入。技术来源详情中的 fingerprint、Meta Item ID 等只可出现在明确的技术溯源区域，不能成为业务编目主交互。
+推荐继任项与治理任务条目筛选属于 Catalog 自有对象选择，复用 `/entries` 的权限感知名称搜索，不另建候选事实源。编辑器加载既有关联时可以使用聚合中已保存的 `observed_snapshot` 作为“最近确认的显示摘要”；名称回退与候选失败沿[动态名称解析与失败边界](#动态名称解析与失败边界)处理。技术来源详情中的 fingerprint、Meta Item ID 等只可出现在明确的技术溯源区域，不能成为业务编目主交互。
+
+### 专业来源与动态展示
 
 技术来源展示须以可读信息为主：Meta 数据项展示来源快照的名称、类型与 `full_name` 完整路径，条目 ID 仅作为辅助溯源信息，不将企业业务名称冒充物理名称。`GET /entries/:id` 的 `source_engine` 由已有 System 引擎引用解析能力按当前来源的 `engine_id` 动态组合名称、类型和生命周期状态，不落库；`status=current|missing|unavailable` 分别表示已解析、不存在与暂不可用，解析失败不影响目录详情读取，不以裸 ID 代替名称。
 
