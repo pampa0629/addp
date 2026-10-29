@@ -857,6 +857,7 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
                 "    'TestExecutionAuthorizationFactsMigrationAgainstPostgres',\n"
                 "    'TestExecutionEventsAgainstPostgres', 'TestExecutionEventRetentionAgainstPostgres',\n"
                 "    'TestExecutionRetentionAssessmentAgainstPostgres', 'TestExecutionLifecycleAgainstPostgres',\n"
+                "    'TestPostgresCleanupProfessionalResultAtomicity',\n"
                 "    'TestExportExecutionSourceAgainstPostgres',\n"
                 "    'TestProjectionStoreSchemaContractAgainstPostgres',\n"
                 "    'TestTableResultAgainstPostgres', 'TestIntegrationPostgresGraphTargetContract',\n"
@@ -867,11 +868,18 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
                 "    if not re.search(pattern, name):\n"
                 "        continue\n"
                 "    selected = mode if name == os.environ['FAKE_PG_TEST_NAME'] else 'pass'\n"
-                "    if name.startswith('TestExecution'):\n"
+                "    if name.startswith('TestExecution') or name == 'TestPostgresCleanupProfessionalResultAtomicity':\n"
                 "        assert os.environ['ADDP_TEST_EXECUTION_POSTGRES_DSN'] == 'fixture-dsn'\n"
                 "    if selected == 'missing':\n"
                 "        print('testing: warning: no matching test to run\\nPASS')\n"
                 "        continue\n"
+                "    if selected in ['suffix', 'child']:\n"
+                "        extra = 'Extra' if selected == 'suffix' else '/child'\n"
+                "        print(f'--- PASS: {name}{extra} (0.00s)')\n"
+                "        continue\n"
+                "    if selected == 'child-skip':\n"
+                "        print(f'    --- SKIP: {name}/child (0.00s)')\n"
+                "        selected = 'pass'\n"
                 "    status = {'pass': 'PASS', 'skip': 'SKIP', 'fail': 'FAIL'}[selected]\n"
                 "    print(f'--- {status}: {name} (0.00s)')\n"
                 "    failed |= selected == 'fail'\n"
@@ -908,8 +916,44 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
             "test", "./execution", "-run", "^TestExecutionLifecycleAgainstPostgres$",
             "-count=1", "-v",
         ]
-        self.assertEqual(calls, [expected])
+        self.assertEqual(calls, [expected, [
+            "test", "./cleanup", "-run", "^TestPostgresCleanupProfessionalResultAtomicity$",
+            "-count=1", "-v",
+        ]])
         self.assertIn("not the full gate", result.stdout)
+
+    def test_cleanup_atomicity_runs_once_with_the_same_dsn_in_full_and_lifecycle_groups(self) -> None:
+        for group in ("all", "execution-lifecycle"):
+            with self.subTest(group=group):
+                result, calls = self.run_gate_fixture("pass", group)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual([c for c in calls if c[:2] == ["test", "./cleanup"]], [[
+                    "test", "./cleanup", "-run", "^TestPostgresCleanupProfessionalResultAtomicity$",
+                    "-count=1", "-v",
+                ]])
+
+    def test_cleanup_atomicity_requires_exact_main_pass_and_refuses_any_skip(self) -> None:
+        name = "TestPostgresCleanupProfessionalResultAtomicity"
+        for outcome in ("missing", "suffix", "child", "skip", "child-skip"):
+            with self.subTest(outcome=outcome):
+                result, _ = self.run_gate_fixture(outcome, affected_test=name)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Common Cleanup PostgreSQL gate", result.stderr)
+                self.assertNotIn("group passed", result.stdout)
+
+    def test_full_gate_requires_cleanup_atomicity(self) -> None:
+        result, _ = self.run_gate_fixture(
+            "missing", "all", "TestPostgresCleanupProfessionalResultAtomicity"
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Common Cleanup PostgreSQL gate", result.stderr)
+
+    def test_cleanup_atomicity_propagates_owner_test_failure(self) -> None:
+        result, _ = self.run_gate_fixture(
+            "fail", affected_test="TestPostgresCleanupProfessionalResultAtomicity"
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("group passed", result.stdout)
 
     def test_focused_group_refuses_skipped_lifecycle_matrix(self) -> None:
         result, _ = self.run_gate_fixture("skip")

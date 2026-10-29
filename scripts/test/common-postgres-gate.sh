@@ -172,6 +172,19 @@ run_execution_postgres() {
             exit 1
         }
     fi
+    if [ "$test_group" = all ] || [ "$test_group" = execution-lifecycle ]; then
+        (cd "$SOURCE_ROOT/common" && ADDP_TEST_EXECUTION_POSTGRES_DSN="$execution_dsn" \
+            go test ./cleanup -run '^TestPostgresCleanupProfessionalResultAtomicity$' \
+            -count=1 -v) 2>&1 | tee "$WORK_DIR/common-cleanup-postgres.log"
+        if grep -q -- '--- SKIP:' "$WORK_DIR/common-cleanup-postgres.log"; then
+            echo 'Common Cleanup PostgreSQL gate refuses skipped tests' >&2
+            exit 1
+        fi
+        grep -Eq -- '^--- PASS: TestPostgresCleanupProfessionalResultAtomicity \(' "$WORK_DIR/common-cleanup-postgres.log" || {
+            echo 'Common Cleanup PostgreSQL gate requires the real professional result atomicity test' >&2
+            exit 1
+        }
+    fi
 }
 if [ "$test_group" = execution-lifecycle ] || [ "$test_group" = execution-events ]; then
     run_execution_postgres

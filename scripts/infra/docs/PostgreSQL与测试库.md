@@ -35,6 +35,8 @@ Meta 的授权资源事实可以通过 `make test-meta-postgres META_POSTGRES_TE
 
 System IAM 标准门禁在首次重置 Schema 前获取宿主机级文件锁 `/tmp/addp-system-iam-postgres-gate.lock`，覆盖完整运行及其子进程，跨 checkout 和 `--package` 选择互斥。另一轮仍在运行时立即失败，不开始数据库操作；进程退出后由操作系统释放锁，锁文件保持原位，不能通过删除锁文件解除占用。该边界同样用于独占 CI Runner；分包验证也必须串行运行。
 
+Common Cleanup 私有结果的真实 PostgreSQL 原子性用例 `TestPostgresCleanupProfessionalResultAtomicity` 接入既有 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS='--test execution-lifecycle'`，默认 Common 全集也执行。两组在生命周期用例后串行运行 `./cleanup` 的该精确主测试，沿用 `ADDP_TEST_EXECUTION_POSTGRES_DSN` 和 Common 文件锁；`execution-events` 分组不扩散。缺少精确主测试 PASS、无测试、任何主／子测试跳过或失败均阻断。既有 Common PG CI 和影响选择已覆盖，不增加 Job、测试库或新 DSN；入口接入本身不代表真实 PG 或 Hosted 已验收。
+
 Cleanup 执行授权聚焦入口为 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS='--package iam --test cleanup-authorization'`，精确选择 `system/backend/internal/iam` 的 `TestCleanupAuthorizationAgainstPostgres`；默认 IAM 全集仍按 `AgainstPostgres$` 自动包含该用例。聚焦入口继续使用 `ADDP_SYSTEM_POSTGRES_TEST_DSN`、同一互斥锁及标准 Schema 重置，本地只能连接 `addp_iam_test`，不会执行独占容器崩溃恢复分组。缺少主测试 PASS、无测试、跳过或失败均阻断，业务测试未落地时不得把入口存在计为授权验收通过。该入口仅验证 IAM 授权。
 
 System Cleanup 准入与协调的独立入口是 `make test-system-cleanup`，连接变量为 `ADDP_SYSTEM_CLEANUP_POSTGRES_TEST_DSN`。本地只接受经上述容器归属、实际映射核验的回环 `addp_test` URL；不创建 database、不使用 `addp_iam_test`。它与 Common／Graph 共用 `/tmp/addp-common-postgres-gate.lock`，必须串行运行。辅助 `make local-ci` 清除继承的该变量，再仅向集成阶段注入专属测试库连接。
