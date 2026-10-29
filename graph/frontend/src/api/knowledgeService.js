@@ -2,9 +2,6 @@ import client from './client'
 import { knowledgeGraphAPI } from './ontology'
 
 export const knowledgeServiceApi = {
-  // 更新图谱（含 is_public 状态）
-  updateGraph: (graphId, data) =>
-    client.put(`/graph/graphs/${graphId}`, data),
 
   // 获取本体（接口文档展示用）
   getOntology: (graphId) =>

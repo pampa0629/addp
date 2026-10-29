@@ -2,102 +2,138 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	commonAPI "github.com/addp/common/api"
+	"github.com/addp/common/authorization/authtest"
+	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
-	commonModels "github.com/addp/common/models"
 	"github.com/addp/graph/internal/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
+func graphRepositoryUserContext(tenant uint) context.Context {
+	return commonExecution.WithUserOrigin(context.Background(), authtest.NewTenantUserAuthContext(strconv.FormatUint(uint64(tenant), 10), "7", nil))
+}
+
+func newBuildRepositoryTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, _ := db.DB()
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateGraphTables(db); err != nil {
+		t.Fatal(err)
+	}
+	return db
+}
+
+func createBuildRepositoryTestTask(t *testing.T, db *gorm.DB, tenant uint, status string) (models.BuildTask, models.BuildMaterial) {
+	t.Helper()
+	ontology := models.Ontology{TenantID: tenant, Name: "immutable"}
+	if err := db.Create(&ontology).Error; err != nil {
+		t.Fatal(err)
+	}
+	kg := models.KnowledgeGraph{TenantID: tenant, OntologyID: ontology.ID, EngineID: 1, Name: "fixture", IndexManagement: models.GraphIndexesExternal, CatalogPath: plugin.EngineCatalogPath{Version: plugin.EngineCatalogPathVersion, EngineID: 1, Segments: []plugin.EngineCatalogSegment{{Term: "server", Kind: "server"}, {Term: "graph", Kind: "graph", Name: t.Name()}}}}
+	if err := db.Create(&kg).Error; err != nil {
+		t.Fatal(err)
+	}
+	task := models.BuildTask{TenantID: tenant, GraphID: kg.ID, Name: "fixture", Status: status, ConfidenceThreshold: .7, ChunkSize: 1000, ChunkOverlap: 200, DocContextSize: 200, Stats: []byte(`{}`)}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	m := models.BuildMaterial{TenantID: tenant, GraphID: kg.ID, TaskID: task.ID, Type: "document", FileName: "source.txt", FilePath: "build/source.txt", Status: models.BuildMaterialStatusPending, Stats: []byte(`{}`)}
+	if err := db.Create(&m).Error; err != nil {
+		t.Fatal(err)
+	}
+	return task, m
+}
+
+func newGraphRepositoryTestExecution(id string, tenant int, _ time.Time) *commonExecution.TaskExecution {
+	return &commonExecution.TaskExecution{ExecutionID: id, TenantID: tenant, Module: commonExecution.ModuleGraph, TaskType: commonExecution.TaskTypeKGBuild, Source: commonExecution.ModuleGraph, Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual}
+}
+
+func enqueueRepositoryFixture(ctx context.Context, repo *BuildRepository, task models.BuildTask, e *commonExecution.TaskExecution, mode BuildExecutionClaimMode) (*models.BuildTask, []models.BuildMaterial, error) {
+	materials, err := repo.ListMaterials(task.ID, task.TenantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	var kg models.KnowledgeGraph
+	if err := repo.db.Where("id = ? AND tenant_id = ?", task.GraphID, task.TenantID).First(&kg).Error; err != nil {
+		return nil, nil, err
+	}
+	frozen := make([]models.FrozenBuildMaterial, len(materials))
+	for i, m := range materials {
+		frozen[i] = models.FrozenBuildMaterial{Material: m, SHA256: strings.Repeat("a", 64), Size: 10}
+	}
+	return repo.EnqueueExecution(ctx, task.ID, task.GraphID, task.TenantID, e, mode, frozen, 1, kg)
+}
+
 func TestBuildExecutionLifecycleAndRerunClaimAreAtomic(t *testing.T) {
 	db := newBuildRepositoryTestDB(t)
 	repo := NewBuildRepository(db)
 	task, material := createBuildRepositoryTestTask(t, db, 7, models.BuildStatusPending)
-	createdAt := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
-	exec := newGraphRepositoryTestExecution("graph-run-1", 7, createdAt)
-
-	claimed, materials, err := repo.ClaimExecution(context.Background(), task.ID, task.GraphID, task.TenantID, exec, BuildExecutionClaimRun)
+	ctx := graphRepositoryUserContext(7)
+	e := newGraphRepositoryTestExecution("graph-run", 7, time.Time{})
+	queued, mats, err := enqueueRepositoryFixture(ctx, repo, task, e, BuildExecutionClaimRun)
 	if err != nil {
-		t.Fatalf("ClaimExecution: %v", err)
+		t.Fatal(err)
 	}
-	if claimed.Status != models.BuildStatusPending || claimed.ExecutionID != exec.ExecutionID || claimed.StartedAt != nil {
-		t.Fatalf("claimed task status=%s execution_id=%s started_at=%v", claimed.Status, claimed.ExecutionID, claimed.StartedAt)
+	if queued.Status != models.BuildStatusPending || queued.StartedAt != nil || len(mats) != 1 || e.Attempt != 0 || e.LeaseToken != nil {
+		t.Fatalf("enqueue created runtime facts: %+v %+v", queued, e)
 	}
-	if len(materials) != 1 || materials[0].ID != material.ID {
-		t.Fatalf("claimed materials = %#v", materials)
+	if _, _, err := enqueueRepositoryFixture(ctx, repo, task, newGraphRepositoryTestExecution("duplicate", 7, time.Time{}), BuildExecutionClaimRun); !errors.Is(err, commonAPI.ErrConflict) {
+		t.Fatalf("duplicate=%v", err)
 	}
-	var storedExecution commonExecution.TaskExecution
-	if err := db.Where("execution_id = ?", exec.ExecutionID).First(&storedExecution).Error; err != nil {
-		t.Fatalf("load pending execution: %v", err)
-	}
-	if storedExecution.Status != commonExecution.ExecutionStatusPending || storedExecution.StartedAt != nil {
-		t.Fatalf("pending execution status=%s started_at=%v", storedExecution.Status, storedExecution.StartedAt)
-	}
-
-	duplicate := newGraphRepositoryTestExecution("graph-run-duplicate", 7, createdAt)
-	if _, _, err := repo.ClaimExecution(context.Background(), task.ID, task.GraphID, task.TenantID, duplicate, BuildExecutionClaimRun); !errors.Is(err, commonAPI.ErrConflict) {
-		t.Fatalf("duplicate ClaimExecution error = %v, want conflict", err)
-	}
-
-	startedAt := createdAt.Add(time.Minute)
-	if err := repo.StartExecution(context.Background(), task.ID, task.TenantID, exec.ExecutionID, startedAt); err != nil {
-		t.Fatalf("StartExecution: %v", err)
-	}
-	completedAt := startedAt.Add(time.Minute)
-	if err := repo.FinishExecution(context.Background(), task.ID, task.TenantID, exec.ExecutionID,
-		map[string]interface{}{"status": models.BuildStatusSuccess, "completed_at": completedAt},
-		map[string]interface{}{
-			"status": commonExecution.ExecutionStatusSuccess, "completed_at": completedAt,
-			"execution_time_ms": completedAt.Sub(startedAt).Milliseconds(), "progress": 100,
-		}); err != nil {
-		t.Fatalf("FinishExecution: %v", err)
-	}
-
-	pendingReview := models.ReviewItem{
-		TaskID: task.ID, MaterialID: material.ID, TenantID: task.TenantID, GraphID: task.GraphID,
-		ItemType: models.ReviewItemEntity, Content: []byte(`{}`), Confidence: 0.5, Status: models.ReviewStatusPending,
-	}
-	approvedReview := pendingReview
-	approvedReview.Status = models.ReviewStatusApproved
-	if err := db.Create(&pendingReview).Error; err != nil {
-		t.Fatalf("create pending review: %v", err)
-	}
-	if err := db.Create(&approvedReview).Error; err != nil {
-		t.Fatalf("create approved review: %v", err)
-	}
-	if err := db.Model(&models.BuildMaterial{}).Where("id = ?", material.ID).Updates(map[string]interface{}{
-		"status": models.BuildMaterialStatusCompleted, "processed_chunks": 4, "total_chunks": 4,
-	}).Error; err != nil {
-		t.Fatalf("prepare completed material: %v", err)
-	}
-
-	rerun := newGraphRepositoryTestExecution("graph-rerun-1", 7, completedAt.Add(time.Minute))
-	rerunTask, rerunMaterials, err := repo.ClaimExecution(context.Background(), task.ID, task.GraphID, task.TenantID, rerun, BuildExecutionClaimRerun)
+	claimed, lease, runtime, control, err := repo.ClaimBuild(ctx, *e, "backend-a", time.Minute)
 	if err != nil {
-		t.Fatalf("rerun ClaimExecution: %v", err)
+		t.Fatal(err)
 	}
-	if rerunTask.ExecutionID != rerun.ExecutionID || rerunTask.Status != models.BuildStatusPending || rerunTask.StartedAt != nil {
-		t.Fatalf("rerun task = %#v", rerunTask)
+	if claimed.Attempt != 1 || runtime.StartedAt == nil || len(control.Snapshot) == 0 {
+		t.Fatal("claim did not freeze ownership/input")
 	}
-	if len(rerunMaterials) != 1 || rerunMaterials[0].Status != models.BuildMaterialStatusPending ||
-		rerunMaterials[0].ProcessedChunks != 0 || rerunMaterials[0].TotalChunks != 0 {
-		t.Fatalf("rerun materials = %#v", rerunMaterials)
+	if err := repo.CompleteBuild(commonExecution.ContextWithLease(ctx, *lease), runtime, models.BuildStatusSuccess, "", nil, nil); err != nil {
+		t.Fatal(err)
 	}
-	var pendingCount, approvedCount int64
-	if err := db.Model(&models.ReviewItem{}).Where("task_id = ? AND status = ?", task.ID, models.ReviewStatusPending).Count(&pendingCount).Error; err != nil {
-		t.Fatalf("count pending reviews: %v", err)
+	if err := db.Model(&material).Updates(map[string]interface{}{"processed_chunks": 3, "total_chunks": 3, "status": models.BuildMaterialStatusCompleted}).Error; err != nil {
+		t.Fatal(err)
 	}
-	if err := db.Model(&models.ReviewItem{}).Where("task_id = ? AND status = ?", task.ID, models.ReviewStatusApproved).Count(&approvedCount).Error; err != nil {
-		t.Fatalf("count approved reviews: %v", err)
+	for _, status := range []string{models.ReviewStatusPending, models.ReviewStatusApproved} {
+		if err := db.Create(&models.ReviewItem{TenantID: 7, GraphID: task.GraphID, TaskID: task.ID, Content: []byte(`{}`), Status: status}).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
-	if pendingCount != 0 || approvedCount != 1 {
-		t.Fatalf("review counts pending=%d approved=%d, want 0/1", pendingCount, approvedCount)
+	run := newGraphRepositoryTestExecution("rerun", 7, time.Time{})
+	if _, _, err := enqueueRepositoryFixture(ctx, repo, task, run, BuildExecutionClaimRerun); err != nil {
+		t.Fatal(err)
+	}
+	var reset models.BuildMaterial
+	if err := db.First(&reset, material.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	var pending, approved int64
+	db.Model(&models.ReviewItem{}).Where("task_id = ? AND status = ?", task.ID, models.ReviewStatusPending).Count(&pending)
+	db.Model(&models.ReviewItem{}).Where("task_id = ? AND status = ?", task.ID, models.ReviewStatusApproved).Count(&approved)
+	if reset.ProcessedChunks != 0 || reset.TotalChunks != 0 || pending != 0 || approved != 1 {
+		t.Fatalf("reset lost reviewed facts: %+v pending=%d approved=%d", reset, pending, approved)
+	}
+	if _, _, _, _, err := repo.ClaimBuild(ctx, *e, "old", time.Minute); !errors.Is(err, commonAPI.ErrConflict) {
+		t.Fatalf("old claim=%v", err)
 	}
 }
 
@@ -105,103 +141,95 @@ func TestBuildExecutionInheritsOrchestratorParentActor(t *testing.T) {
 	db := newBuildRepositoryTestDB(t)
 	repo := NewBuildRepository(db)
 	task, _ := createBuildRepositoryTestTask(t, db, 7, models.BuildStatusPending)
-	principalID, membershipID, authorizationVersion := int64(41), int64(51), int64(6)
-	parent := &commonExecution.TaskExecution{
-		TenantID: 7, ExecutionID: "66666666-6666-4666-8666-666666666666",
-		Module: commonExecution.ModuleOrchestrator, TaskType: commonExecution.TaskTypeOrchestration,
-		Source: commonExecution.ModuleOrchestrator, Status: commonExecution.ExecutionStatusRunning,
-		TriggerType: commonExecution.TriggerTypeManual,
-		TriggeredBy: func() *int { v := int(principalID); return &v }(), ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
-		IssuedAuthorizationVersion: &authorizationVersion,
+	principal, membership, version := int64(41), int64(51), int64(6)
+	by := 41
+	parent := commonExecution.TaskExecution{ExecutionID: "66666666-6666-4666-8666-666666666666", TenantID: 7, Module: commonExecution.ModuleOrchestrator, TaskType: commonExecution.TaskTypeOrchestration, Source: commonExecution.ModuleOrchestrator, Status: commonExecution.ExecutionStatusRunning, TriggerType: commonExecution.TriggerTypeManual, TriggeredBy: &by, ActorPrincipalID: &principal, ActorTenantMembershipID: &membership, IssuedAuthorizationVersion: &version}
+	if err := commonExecution.FreezeDisplayLanguage(&parent, "en"); err != nil {
+		t.Fatal(err)
 	}
-	if err := commonExecution.NewTaskExecutionRepository(db).Create(context.Background(), parent); err != nil {
-		t.Fatalf("create parent: %v", err)
+	if err := db.Create(&parent).Error; err != nil {
+		t.Fatal(err)
 	}
-	child := newGraphRepositoryTestExecution("graph-child", 7, time.Now().UTC())
+	child := newGraphRepositoryTestExecution("graph-child", 7, time.Time{})
 	child.Source = commonExecution.ModuleOrchestrator
 	child.ParentExecutionID = &parent.ExecutionID
-	if _, _, err := repo.ClaimExecution(context.Background(), task.ID, task.GraphID, task.TenantID, child, BuildExecutionClaimRun); err != nil {
-		t.Fatalf("claim child execution: %v", err)
+	if _, _, err := enqueueRepositoryFixture(context.Background(), repo, task, child, BuildExecutionClaimRun); err != nil {
+		t.Fatal(err)
 	}
-	if child.ActorPrincipalID == nil || *child.ActorPrincipalID != principalID ||
-		child.ActorTenantMembershipID == nil || *child.ActorTenantMembershipID != membershipID ||
-		child.IssuedAuthorizationVersion == nil || *child.IssuedAuthorizationVersion != authorizationVersion {
-		t.Fatalf("child actor facts were not inherited: %#v", child)
+	if child.ActorPrincipalID == nil || *child.ActorPrincipalID != principal || *child.ActorTenantMembershipID != membership || *child.IssuedAuthorizationVersion != version {
+		t.Fatal("parent identity was not inherited")
 	}
 }
 
 func TestBuildStartRollsBackWhenTaskCannotAdvance(t *testing.T) {
 	db := newBuildRepositoryTestDB(t)
 	repo := NewBuildRepository(db)
-	task, _ := createBuildRepositoryTestTask(t, db, 8, models.BuildStatusPending)
-	createdAt := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
-	exec := newGraphRepositoryTestExecution("graph-start-rollback", 8, createdAt)
-	if _, _, err := repo.ClaimExecution(context.Background(), task.ID, task.GraphID, task.TenantID, exec, BuildExecutionClaimRun); err != nil {
-		t.Fatalf("ClaimExecution: %v", err)
+	task, _ := createBuildRepositoryTestTask(t, db, 7, models.BuildStatusPending)
+	ctx := graphRepositoryUserContext(7)
+	e := newGraphRepositoryTestExecution("roll-back", 7, time.Time{})
+	if _, _, err := enqueueRepositoryFixture(ctx, repo, task, e, BuildExecutionClaimRun); err != nil {
+		t.Fatal(err)
 	}
-	if err := db.Model(&models.BuildTask{}).Where("id = ?", task.ID).Update("execution_id", "other").Error; err != nil {
-		t.Fatalf("change task execution id: %v", err)
+	if err := db.Model(&task).Update("execution_id", "replacement").Error; err != nil {
+		t.Fatal(err)
 	}
-
-	err := repo.StartExecution(context.Background(), task.ID, task.TenantID, exec.ExecutionID, createdAt.Add(time.Minute))
-	if !errors.Is(err, commonAPI.ErrConflict) {
-		t.Fatalf("StartExecution error = %v, want conflict", err)
+	if _, _, _, _, err := repo.ClaimBuild(ctx, *e, "backend", time.Minute); !errors.Is(err, commonAPI.ErrConflict) {
+		t.Fatalf("claim=%v", err)
 	}
-	var stored commonExecution.TaskExecution
-	if err := db.Where("execution_id = ?", exec.ExecutionID).First(&stored).Error; err != nil {
-		t.Fatalf("load execution after rollback: %v", err)
-	}
-	if stored.Status != commonExecution.ExecutionStatusPending || stored.StartedAt != nil {
-		t.Fatalf("execution changed despite task rollback: status=%s started_at=%v", stored.Status, stored.StartedAt)
+	var row commonExecution.TaskExecution
+	db.Where("execution_id = ?", e.ExecutionID).First(&row)
+	if row.Status != commonExecution.ExecutionStatusPending || row.Attempt != 0 || row.StartedAt != nil {
+		t.Fatal("failed claim advanced E")
 	}
 }
 
-func newBuildRepositoryTestDB(t *testing.T) *gorm.DB {
-	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+func TestExpiredGraphLeaseRejectsPrivateWritesAndPreservesEvidence(t *testing.T) {
+	db := newBuildRepositoryTestDB(t)
+	repo := NewBuildRepository(db)
+	task, m := createBuildRepositoryTestTask(t, db, 7, models.BuildStatusPending)
+	ctx := graphRepositoryUserContext(7)
+	e := newGraphRepositoryTestExecution("expire", 7, time.Time{})
+	if _, _, err := enqueueRepositoryFixture(ctx, repo, task, e, BuildExecutionClaimRun); err != nil {
+		t.Fatal(err)
+	}
+	_, lease, _, _, err := repo.ClaimBuild(ctx, *e, "backend", time.Minute)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatal(err)
 	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("get sql db: %v", err)
+	owned := commonExecution.ContextWithLease(ctx, *lease)
+	var kg models.KnowledgeGraph
+	if err := db.First(&kg, task.GraphID).Error; err != nil {
+		t.Fatal(err)
 	}
-	sqlDB.SetMaxOpenConns(1)
-	if err := executiontest.EnsureSQLiteStore(db); err != nil {
-		t.Fatalf("ensure SQLite execution store: %v", err)
+	descriptor, _ := json.Marshal(models.GraphOperationTarget{EngineID: kg.EngineID, EngineVersion: 1, CatalogPath: kg.CatalogPath, IndexManagement: kg.IndexManagement})
+	targetHash := sha256.Sum256(descriptor)
+	op := models.GraphOperation{ID: "op", TenantID: 7, GraphID: task.GraphID, ExecutionID: e.ExecutionID, Attempt: lease.Attempt, Kind: "graph", TargetDigest: hex.EncodeToString(targetHash[:]), TargetDescriptor: string(descriptor), RequestDigest: strings.Repeat("b", 64)}
+	if err := repo.BeginBuildOperation(owned, &op); err != nil {
+		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.BuildTask{}, &models.BuildMaterial{}, &models.ReviewItem{}); err != nil {
-		t.Fatalf("migrate graph execution test tables: %v", err)
+	if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", e.ExecutionID).Update("lease_expires_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
+		t.Fatal(err)
 	}
-	return db
-}
-
-func createBuildRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID uint, status string) (models.BuildTask, models.BuildMaterial) {
-	t.Helper()
-	task := models.BuildTask{
-		TenantID: tenantID, GraphID: 42, Name: "kg-build", Status: status,
-		ConfidenceThreshold: 0.7, ChunkSize: 1000, ChunkOverlap: 200, DocContextSize: 200,
-		Stats: []byte(`{}`),
+	m.ProcessedChunks = 99
+	if err := repo.UpdateMaterial(owned, &m); !errors.Is(err, commonAPI.ErrConflict) {
+		t.Fatalf("stale material write=%v", err)
 	}
-	if err := db.Create(&task).Error; err != nil {
-		t.Fatalf("create build task: %v", err)
+	if err := repo.FailExpiredBuilds(ctx); err != nil {
+		t.Fatal(err)
 	}
-	material := models.BuildMaterial{
-		TaskID: task.ID, TenantID: tenantID, GraphID: task.GraphID, Type: "document",
-		FileName: "source.txt", FilePath: "build/source.txt", Status: models.BuildMaterialStatusPending,
-		Stats: []byte(`{}`),
+	if err := repo.AppendLateEvidence(owned, op, strings.Repeat("c", 64)); err != nil {
+		t.Fatal(err)
 	}
-	if err := db.Create(&material).Error; err != nil {
-		t.Fatalf("create build material: %v", err)
+	var actual models.BuildMaterial
+	db.First(&actual, m.ID)
+	var result commonExecution.TaskExecution
+	db.Where("execution_id = ?", e.ExecutionID).First(&result)
+	var operation models.GraphOperation
+	db.First(&operation, "id = ?", op.ID)
+	if actual.ProcessedChunks != 0 || result.Status != commonExecution.ExecutionStatusFailed || operation.State != models.GraphOperationUncertain || operation.LateEvidenceDigest != strings.Repeat("c", 64) {
+		t.Fatalf("stale writes escaped fence: %+v %+v %+v", actual, result, operation)
 	}
-	return task, material
-}
-
-func newGraphRepositoryTestExecution(executionID string, tenantID int, createdAt time.Time) *commonExecution.TaskExecution {
-	return &commonExecution.TaskExecution{
-		ExecutionID: executionID, TenantID: tenantID, Module: commonExecution.ModuleGraph,
-		TaskType: commonExecution.TaskTypeKGBuild, Source: commonExecution.ModuleGraph,
-		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
-		ExecutionConfig: commonModels.JSONMap{}, CreatedAt: createdAt, UpdatedAt: createdAt,
+	if err := CheckGraphOpen(db, task.GraphID, 7); !errors.Is(err, ErrGraphAdmissionClosed) {
+		t.Fatalf("unknown effects reopened: %v", err)
 	}
 }

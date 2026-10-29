@@ -44,7 +44,7 @@ func TestGraphProtectionHTTPDeniesOrdinaryUserAndPublicKnowledge(t *testing.T) {
 	}
 	sqlDB, _ := db.DB()
 	defer sqlDB.Close()
-	if err = db.AutoMigrate(&models.Ontology{}, &models.EntityType{}, &models.RelationType{}, &models.OntologyVersion{}, &models.KnowledgeGraph{}); err != nil {
+	if err = db.AutoMigrate(&models.Ontology{}, &models.EntityType{}, &models.RelationType{}, &models.OntologyVersion{}, &models.TenantAdmissionLock{}, &models.GraphOperation{}, &models.BuildExecutionControl{}, &models.KnowledgeGraph{}); err != nil {
 		t.Fatal(err)
 	}
 	if err = db.Exec("ATTACH DATABASE ':memory:' AS graph").Error; err != nil {
@@ -69,7 +69,7 @@ func TestGraphProtectionHTTPDeniesOrdinaryUserAndPublicKnowledge(t *testing.T) {
 	}
 	capabilities := commonmodels.JSONString(caps)
 	// No graph server exists here: a denied read must never reach the native connection.
-	engine := commonmodels.Engine{ID: 13, EngineType: provider.Type(), LifecycleState: commonmodels.EngineLifecycleActive, ConnectionStatus: commonmodels.EngineConnectionOnline, Capabilities: &capabilities, ConnectionInfo: commonmodels.ConnectionInfo{"host": "127.0.0.1", "port": 1, "password": "private-source-password"}}
+	engine := commonmodels.Engine{Version:1,ID: 13, EngineType: provider.Type(), LifecycleState: commonmodels.EngineLifecycleActive, ConnectionStatus: commonmodels.EngineConnectionOnline, Capabilities: &capabilities, ConnectionInfo: commonmodels.ConnectionInfo{"host": "127.0.0.1", "port": 1, "password": "private-source-password"}}
 	var engineReads atomic.Int64
 	system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/system/engines/13" || r.Header.Get("Authorization") != "Bearer addp_at_graph" {
@@ -141,7 +141,7 @@ func TestGraphProtectionHTTPDeniesOrdinaryUserAndPublicKnowledge(t *testing.T) {
 		t.Fatal("invalid credentials fell back to anonymous access", invalidResponse.Code)
 	}
 	graph.IsPublic = false
-	if err := graphRepo.Update(&graph); err != nil {
+	if err := graphRepo.DB().Save(&graph).Error; err != nil {
 		t.Fatal(err)
 	}
 	for _, route := range []struct{ method, path, body string }{

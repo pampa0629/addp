@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/propertygraph"
@@ -25,6 +26,9 @@ func (s *GraphDataService) resolveTarget(ctx context.Context, tenantID, engineID
 	engine, err := s.systemClient.WithTenantID(tenantID).GetEngine(ctx, engineID)
 	if err != nil {
 		return nil, err
+	}
+	if input, ok := buildInputFromContext(ctx); ok && (input.EngineID != engineID || input.EngineVersion != engine.Version || !sameCatalogTarget(input.CatalogPath, path)) {
+		return nil, ErrGraphTargetInvalid
 	}
 	if !engineselection.IsAvailableForComputeEntrypoint(engine, "query") {
 		return nil, fmt.Errorf("graph engine is unavailable")
@@ -67,7 +71,20 @@ func bindGraphTarget(engine *commonmodels.Engine, path plugin.EngineCatalogPath)
 	return &graphTarget{Engine: engine, provider: provider, conn: conn, path: path}, nil
 }
 func (t *graphTarget) query(ctx context.Context, query string, params map[string]interface{}) (*plugin.GraphQueryResult, error) {
-	return t.provider.ExecuteGraphQueryAtPath(ctx, t.conn, t.path, query, plugin.QueryOptions{Parameters: params})
+	request, err := json.Marshal(struct {
+		Query      string
+		Parameters map[string]interface{}
+	}{query, params})
+	if err != nil {
+		return nil, err
+	}
+	return recordExternalCall(ctx, "graph", request, func() (*plugin.GraphQueryResult, error) {
+		result, err := t.provider.ExecuteGraphQueryAtPath(ctx, t.conn, t.path, query, plugin.QueryOptions{Parameters: params})
+		if err == nil && result == nil {
+			err = fmt.Errorf("graph provider returned no completion result")
+		}
+		return result, err
+	})
 }
 func executeGraphQuery(ctx context.Context, target *graphTarget, query string) (*plugin.GraphQueryResult, error) {
 	return target.query(ctx, query, nil)

@@ -45,8 +45,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 531 {
-		t.Fatalf("descriptor count = %d, want 531", len(descriptors))
+	if len(descriptors) != 532 {
+		t.Fatalf("descriptor count = %d, want 532", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if strings.HasPrefix(descriptor.Key, "system.meta_collection_qualification.") && (descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) || descriptor.TenantCustomizable == (descriptor.Action == "execute")) {
@@ -734,4 +734,30 @@ func testRepositoryRoot(t *testing.T) string {
 		t.Fatal("resolve current test file")
 	}
 	return filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", ".."))
+}
+
+func TestGraphReconcileIsNarrowAndNeverGrantedByDefault(t *testing.T) {
+	report, err := LoadRepositoryAuthorizationCatalog(testRepositoryRoot(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, p := range report.Permissions {
+		if p.Key == "graph.graph.reconcile" {
+			found = true
+			if p.Delegable || p.RiskLevel != "high" || !reflect.DeepEqual(p.AllowedScopeTypes, []string{"tenant"}) {
+				t.Fatalf("reconcile authority widened: %+v", p)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("reconcile permission missing")
+	}
+	for _, r := range report.Roles {
+		for _, key := range r.Permissions {
+			if key == "graph.graph.reconcile" {
+				t.Fatalf("role %s received reconcile by default", r.Key)
+			}
+		}
+	}
 }

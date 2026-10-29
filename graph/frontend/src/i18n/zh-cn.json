@@ -176,7 +176,14 @@
       "indexManaged": "由 Graph 维护",
       "indexExternal": "保留外部索引",
       "indexManagedHelp": "按本体维护目标图的全文索引，字段变化时可能重建索引。",
-      "indexExternalHelp": "只复用匹配的已有索引，缺失或冲突时提示，不自动修改。"
+      "indexExternalHelp": "只复用匹配的已有索引，缺失或冲突时提示，不自动修改。",
+      "admission": "写入准入",
+      "admissionBlocked": "写入受阻",
+      "admissionClosed": "已关闭",
+      "admissionOpen": "已开放",
+      "unresolvedOperations": "仍有待核清操作",
+      "reconcile": "核验证据",
+      "reopen": "重新开放原目标"
     },
     "browser": {
       "recentVisitTitle": "图谱浏览",
@@ -245,9 +252,9 @@
       "statusSuccess": "成功",
       "statusFailed": "失败",
       "statusCancelled": "已取消",
-      "taskStarted": "任务已启动",
+      "taskStarted": "任务已入队，等待领取",
       "taskCancelled": "任务已取消",
-      "taskRestarted": "任务已重新启动",
+      "taskRestarted": "新的执行已入队",
       "startFailed": "启动失败",
       "cancelFailed": "取消失败",
       "confirmRerun": "重新运行将清空本次待审核队列并从头重新处理所有材料，确认？",
@@ -273,7 +280,9 @@
       "matStatusPending": "待处理",
       "matStatusProcessing": "处理中",
       "matStatusCompleted": "已完成",
-      "matStatusFailed": "失败"
+      "matStatusFailed": "失败",
+      "cancelAccepted": "取消已受理，正在等待运行停止",
+      "cancelAlreadyTerminal": "执行已结束，请查看当前结果"
     },
     "review": {
       "recentVisitTitle": "图谱审核",

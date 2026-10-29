@@ -64,8 +64,6 @@ other = "Task restarted"
 [graph.build.task_active]
 other = "The graph build task already has a pending or running execution"
 
-[graph.build.task_runtime_not_owned]
-other = "This service instance does not own the task runtime, so it cannot cancel it; the task state was not changed"
 
 [graph.build.task_run_failed]
 other = "Graph build task operation failed"
@@ -117,3 +115,18 @@ other = "The review item has already been processed. Refresh before retrying."
 
 [graph.review.batch_failed]
 other = "Some review items failed. Successful results were preserved; refresh to check their status."
+
+[graph.err.invalid_request]
+other = "Invalid request. Supply the current version or exact execution identity."
+
+[graph.kg.version_conflict]
+other = "The graph has changed. Refresh and review before submitting again."
+
+[graph.kg.physical_target_unverified]
+other = "The current engine cannot prove the original physical graph identity; admission remains closed."
+
+[graph.kg.reconciliation_incomplete]
+other = "Active executions or unresolved operations remain; the graph stays closed."
+
+[graph.kg.admission_closed]
+other = "Graph admission is closed or external operations remain unresolved."

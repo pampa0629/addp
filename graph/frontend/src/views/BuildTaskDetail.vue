@@ -11,7 +11,7 @@
           scope="task"
         />
         <el-button v-if="canRun" type="primary" :loading="running" @click="handleRun">{{ t('graph.build.runTask') }}</el-button>
-        <el-button v-if="task?.status === 'running' && authStore.hasPermission('graph.build_task.cancel')" type="warning" @click="handleCancel">{{ t('graph.build.cancel') }}</el-button>
+        <el-button v-if="canCancelBuild(task) && authStore.hasPermission('graph.build_task.cancel')" type="warning" @click="handleCancel">{{ t('graph.build.cancel') }}</el-button>
         <el-button v-if="authStore.hasPermission('graph.review.read')" @click="openReview">
           {{ t('graph.build.reviewQueue') }}
           <el-badge v-if="pendingCount > 0" :value="pendingCount" style="margin-left:6px" />
@@ -98,6 +98,7 @@
 </template>
 
 <script setup>
+import { hasActiveBuild, canCancelBuild, canRunBuild, buildCancellationIdentity } from '../utils/buildExecution'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -130,8 +131,8 @@ const running = ref(false)
 const uploadingFiles = ref([])
 let pollTimer = null
 
-const canRun = computed(() => authStore.hasPermission('graph.build_task.execute') && task.value && ['pending', 'failed', 'cancelled'].includes(task.value.status))
-const canUpload = computed(() => authStore.hasPermission('graph.build_task.update') && task.value && task.value.status !== 'running')
+const canRun = computed(() => authStore.hasPermission('graph.build_task.execute') && canRunBuild(task.value))
+const canUpload = computed(() => authStore.hasPermission('graph.build_task.update') && task.value && !hasActiveBuild(task.value))
 
 async function loadTask() {
   try {
@@ -163,10 +164,11 @@ async function handleRun() {
 
 async function handleCancel() {
   try {
-    await buildAPI.cancelTask(graphId, taskId)
-    ElMessage.success(t('graph.build.taskCancelled'))
-    stopPolling()
+    const result = await buildAPI.cancelTask(graphId, taskId, buildCancellationIdentity(task.value))
+    ElMessage.success(t(result.status === 'running' ? 'graph.build.cancelAccepted' : result.status === 'cancelled' ? 'graph.build.taskCancelled' : 'graph.build.cancelAlreadyTerminal'))
     await loadTask()
+    if (hasActiveBuild(task.value)) startPolling()
+    else stopPolling()
   } catch (e) {
     ElMessage.error(e.response?.data?.error || t('graph.build.cancelFailed'))
   }
@@ -210,7 +212,7 @@ async function pollTask() {
   pollTimer = null
   if (document.hidden) return
   await loadTask()
-  if (task.value?.status === 'running') startPolling()
+  if (hasActiveBuild(task.value)) startPolling()
 }
 
 function stopPolling() {
@@ -223,7 +225,7 @@ function stopPolling() {
 function handleVisibilityChange() {
   if (document.hidden) {
     stopPolling()
-  } else if (task.value?.status === 'running') {
+  } else if (hasActiveBuild(task.value)) {
     startPolling()
   }
 }
@@ -261,7 +263,7 @@ function formatSize(bytes) {
 onMounted(async () => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
   await loadTask()
-  if (task.value?.status === 'running') startPolling()
+  if (hasActiveBuild(task.value)) startPolling()
 })
 onUnmounted(() => {
   stopPolling()

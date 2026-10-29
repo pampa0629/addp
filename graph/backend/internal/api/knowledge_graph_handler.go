@@ -1,6 +1,10 @@
 package api
 
 import (
+	commonapi "github.com/addp/common/api"
+	commonauth "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
+	graphi18n "github.com/addp/graph/i18n"
 	"net/http"
 
 	"github.com/addp/graph/internal/models"
@@ -54,7 +58,7 @@ func (h *KnowledgeGraphHandler) Get(c *gin.Context) {
 	tenantID := getTenantID(c)
 	kg, err := h.svc.GetByID(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "knowledge graph not found"})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, kg)
@@ -114,11 +118,11 @@ func (h *KnowledgeGraphHandler) Update(c *gin.Context) {
 	id := parseUintParam(c, "id")
 	tenantID := getTenantID(c)
 	var req models.UpdateKnowledgeGraphRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := commonapi.BindOptionalJSONStrict(c, &req); err != nil || req.Version <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, graphi18n.MsgInvalidRequest)})
 		return
 	}
-	kg, err := h.svc.Update(id, tenantID, &req)
+	kg, err := h.svc.Update(c.Request.Context(), id, tenantID, &req)
 	if err != nil {
 		graphOperationError(c, err)
 		return
@@ -130,9 +134,14 @@ func (h *KnowledgeGraphHandler) Update(c *gin.Context) {
 // @Summary      删除知识图谱 | Delete knowledge graph
 // @Description  删除知识图谱实例 | Delete a knowledge graph instance
 // @Tags         知识图谱 | Knowledge Graph
+// @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id path int true "知识图谱 ID | Knowledge graph ID"
+// @Param        request body models.GraphControlRequest true "当前版本 | Current version"
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
 // @Success      200 {object} models.SuccessResponse
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
@@ -141,9 +150,84 @@ func (h *KnowledgeGraphHandler) Update(c *gin.Context) {
 func (h *KnowledgeGraphHandler) Delete(c *gin.Context) {
 	id := parseUintParam(c, "id")
 	tenantID := getTenantID(c)
-	if err := h.svc.Delete(id, tenantID); err != nil {
+	var req models.GraphControlRequest
+	if err := commonapi.BindOptionalJSONStrict(c, &req); err != nil || req.Version <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, graphi18n.MsgInvalidRequest)})
+		return
+	}
+	if err := h.svc.Delete(c.Request.Context(), id, tenantID, req.Version); err != nil {
 		graphOperationError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, graphi18n.MsgGraphDeleted)})
+}
+
+// Reconcile godoc
+// @Summary      核验关闭图谱的持久证据 | Reconcile durable evidence of a closed graph
+// @Description  仅接受当前版本；证据不足保持阻断，不自动重跑 | Accept only the current version; insufficient evidence remains blocked without automatic rerun
+// @Tags         知识图谱 | Knowledge Graph
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "知识图谱 ID | Knowledge graph ID"
+// @Param        request body models.GraphControlRequest true "当前版本 | Current version"
+// @Success      200 {object} models.KnowledgeGraph
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      401 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.graph.reconcile"]
+// @Router       /graphs/{id}/reconcile [post]
+func (h *KnowledgeGraphHandler) Reconcile(c *gin.Context) {
+	var req models.GraphControlRequest
+	if err := commonapi.BindOptionalJSONStrict(c, &req); err != nil || req.Version <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, graphi18n.MsgInvalidRequest)})
+		return
+	}
+	kg, err := h.svc.Reconcile(c.Request.Context(), parseUintParam(c, "id"), getTenantID(c), commonauth.GetUserID(c), req.Version)
+	if err != nil {
+		graphOperationError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, kg)
+}
+
+// Reopen godoc
+// @Summary      重新开放原物理图谱 | Reopen the original physical graph
+// @Description  仅接受当前版本；证据不足保持阻断，不自动重跑 | Accept only the current version; insufficient evidence remains blocked without automatic rerun
+// @Tags         知识图谱 | Knowledge Graph
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "知识图谱 ID | Knowledge graph ID"
+// @Param        request body models.GraphControlRequest true "当前版本 | Current version"
+// @Success      200 {object} models.KnowledgeGraph
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      401 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.graph.update", "graph.graph.reconcile"]
+// @Router       /graphs/{id}/reopen [post]
+func (h *KnowledgeGraphHandler) Reopen(c *gin.Context) {
+	if commonauth.GetUserID(c) == 0 {
+		graphOperationError(c, commonapi.ErrForbidden)
+		return
+	}
+	var req models.GraphControlRequest
+	if err := commonapi.BindOptionalJSONStrict(c, &req); err != nil || req.Version <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, graphi18n.MsgInvalidRequest)})
+		return
+	}
+	kg, err := h.svc.Reopen(c.Request.Context(), parseUintParam(c, "id"), getTenantID(c), req.Version)
+	if err != nil {
+		graphOperationError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, kg)
 }

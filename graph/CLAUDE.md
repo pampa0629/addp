@@ -192,15 +192,21 @@ Graph 调用 Copilot 图谱抽取时必须从当前构建任务取得 `tenant_id
 
 ### 图谱构建 execution 语义
 
-- 唯一正式契约为[Graph构建任务](../docs/spec/tasks/模块任务契约.md#graph-构建任务)，2026-10-29已确认的持久队列、取消／待核清与锁序尚未实施。当前仍由API入队后启动goroutine、本进程map定位取消句柄；材料取消重置和Cleanup直接改状态／删除仍是待替换实现，不计为新协议通过。
-- 目标API沿正式准入与任务锁协议创建pending并冻结确定输入；Backend内嵌监督器复用Common lease领取。采用E→G→T／B组合事务、跨Backend持久取消意图和外部效果核清，进程内句柄不作为所有权事实。未启动pending直接取消的证明、运行体确认、迟到停止证据和人工重跑条件按正式契约，不增加公共状态或第二套队列。
+- 唯一正式契约为[Graph构建任务](../docs/spec/tasks/模块任务契约.md#graph-构建任务)，构建已采用持久pending、单槽Backend监督器、租约事务和持久取消意图；删除了API启动运行体和进程内取消map。外部调用先登记操作，未知结果阻断后续写入。Cleanup仍待整体迁移，不能将构建门禁当作Cleanup通过。
+- API沿正式准入与任务锁协议创建pending并冻结确定输入；Backend内嵌监督器复用Common lease领取。采用E→G→T／B组合事务、跨Backend持久取消意图和外部效果核清，进程内句柄不作为所有权事实。未启动pending直接取消的证明、运行体确认、迟到停止证据和人工重跑条件按正式契约，不增加公共状态或第二套队列。
 - 取消／失联不自动重放图写入，不无差别清零已发生效果；材料检查点、生成待审项、计数及摘要受同一lease事务保护。人工审核为独立命令，不要求旧构建仍running；Cleanup关闭准入后必须释放锁，再逐项真实取消／核清，最终PG清理才与回执／子终态同事务。
 - Cleanup首次领取按[父P→子C契约](../docs/spec/addp-cleanup体系规范.md#父关闭与子领取协议)与Graph领域锁组合，已领取后C→G→T/B不反向锁P；父永久关闭的未领取拒绝只由Graph Owner把本C收敛为failed，无运行attempt或清理回执，不执行Graph领域清理。该细则已获用户确认、尚未实施，不套用kg_build未启动取消例外。
 - [协调关闭安全展示契约](../docs/spec/addp-cleanup体系规范.md#协调关闭与模块未开始的安全展示)已获用户确认、由牵头统一实施：Cleanup读取仍由Graph逐请求Owner范围独立裁决，kg_build与cleanup_executor的Permission不互代。未开始标签只公开已授权的闭合公共概览，不交付Graph私有操作／审核证据或图数据；父可读不授予子权，单凭deadline已到与pending不能证明没有未提交claim。不新增Graph专业端点或写操作，源码及页面尚未实施该投影。
 - 已确认的展示细则：未开始仅指当前Cleanup子execution；不代表G关闭／开放、构建或审核停止、业务图为空、远端效果已核清。Graph不为System／Monitor标签新增私表查询接口或输出原始操作证据；未领取拒绝仍不改变领域事实。读取顺序、标签随快照失效及矛盾事实处理沿同一正式契约，实现与验证由牵头统一推进，新的Hosted另行确认。
 - 冻结Graph当前本体执行映射、材料实际字节身份和目标配置，不扩展Ontology修订／发布职责；当前Graph版本记录不视为已经具备不可变发布能力。职责、最小验证和未有门禁缺口见[Graph／Cleanup矩阵](../docs/spec/testing/Owner补充门禁.md#graphcleanup-执行管理最小验证矩阵)。
-- 自动实体／关系写入、审核项入库或材料处理失败必须向上传播原始错误，失败分块不推进已处理进度。继续处理后续材料；任一材料失败，任务和 execution 最终同为 `failed`。已成功写入的数据、写入／待审统计和逐份材料错误保留，不新增部分成功状态，不回滚业务图。两类引擎共用此流程，最小验证为 Graph Go T1 和既有 Common FalkorDB／Neo4j T2。
+- 自动实体／关系写入、审核项入库或材料处理失败必须向上传播原始错误，失败分块不推进已处理进度。无未决外部效果时继续后续材料；原生效果不确定时阻断后续新增效果。任一材料失败，任务和 execution 最终同为 `failed`。已成功写入的数据、写入／待审统计和逐份材料错误保留，不新增部分成功状态，不回滚业务图。两类引擎共用此流程，最小验证为 Graph Go T1 和既有 Common FalkorDB／Neo4j T2。
 - 抽取结果进入写图或审核队列前，实体类型必须在当前本体中存在，并且只能确定一个显式 `Unique` 属性，值必须非空；无键、多键、空值或未知实体／关系类型使当前材料失败。数字零和布尔假不作为空值；不默认按 name 合并，不自动生成 UUID，也不按属性顺序猜合并键。此规则用于构建，不改变现有业务图的浏览和查询。
+
+构建监督器默认每Backend一个槽位；`GRAPH_BUILD_LEASE_SECONDS=120`、`GRAPH_BUILD_HEARTBEAT_SECONDS=20`、`GRAPH_BUILD_POLL_SECONDS=1`控制租约、心跳和发现周期，非法值拒绝启动。旧执行缺少私有冻结输入／控制记录时只保留历史，不由新监督器接管或补造事实。
+
+Graph控制API只接受当前version，reconcile要求`graph.graph.reconcile`，reopen同时要求update与reconcile；该Permission不默认授予角色。现有Provider缺少原物理目标身份和完整失联核清协议，reopen失败关闭，不承诺全部失联场景可以恢复。
+
+本轮最小验证：`make test-module MODULE=graph GO_ONLY=1`、`make test-graph-frontend`、`make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"`、`make test-common-falkordb`、`make test-common-neo4j`和`make test-authorization`。PG覆盖双实例精确领取、取消竞争、真实G锁等待跨租约、旧运行体拒绝／迟到证据与未决阻断；原生门禁覆盖部分写入及成功后回执丢失。HTTP 202只表示入队／取消受理，运行验收和新的Hosted须另行取得证据。
 
 ## 七、开发与调试
 

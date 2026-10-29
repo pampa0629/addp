@@ -120,6 +120,7 @@
 </template>
 
 <script setup>
+import { knowledgeGraphAPI } from '../api/ontology'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -326,14 +327,14 @@ async function handlePublicToggle(val) {
   const previous = selectedGraph.value.is_public
   saving.value = true
   try {
-    const saved = await knowledgeServiceApi.updateGraph(graphId, { is_public: val })
+    const saved = await knowledgeGraphAPI.update(graphId, { version: selectedGraph.value.version, is_public: val })
     const g = graphs.value.find(g => g.id === graphId)
-    if (g) g.is_public = saved.is_public
+    if (g) { g.is_public = saved.is_public; g.version = saved.version }
     if (selectedGraphId.value === graphId) isPublic.value = saved.is_public
     ElMessage.success(saved.is_public ? t('graph.service.setPublic') : t('graph.service.setPrivate'))
   } catch (e) {
     if (selectedGraphId.value === graphId) isPublic.value = previous
-    ElMessage.error(t('graph.service.setFailed'))
+    ElMessage.error(e.response?.data?.error || t('graph.service.setFailed'))
   } finally {
     saving.value = false
   }

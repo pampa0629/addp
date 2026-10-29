@@ -12,6 +12,7 @@ type BuildTask struct {
 	TenantID            uint           `gorm:"not null;index" json:"tenant_id"`
 	GraphID             uint           `gorm:"not null;index" json:"graph_id"`
 	ExecutionID         string         `gorm:"size:64" json:"execution_id"` // 关联 common.task_executions.execution_id
+	ExecutionAttempt    *int           `gorm:"-" json:"execution_attempt"`
 	Name                string         `gorm:"not null" json:"name"`
 	Description         string         `json:"description"`
 	Status              string         `gorm:"not null;default:'pending'" json:"status"` // pending/running/success/failed/timeout/cancelled
@@ -32,14 +33,15 @@ type BuildTask struct {
 
 // BuildMaterial 构建材料（一个构建任务关联的原始文件）
 type BuildMaterial struct {
-	ID       uint   `gorm:"primaryKey" json:"id"`
-	TaskID   uint   `gorm:"not null;index" json:"task_id"`
-	TenantID uint   `gorm:"not null;index" json:"tenant_id"`
-	GraphID  uint   `gorm:"not null;index" json:"graph_id"`
-	Type     string `gorm:"not null" json:"type"` // document/url
-	FileName string `json:"file_name"`
-	FilePath string `json:"file_path"` // MinIO path (graph/build/ 前缀)
-	FileSize int64  `json:"file_size"`
+	ID            uint   `gorm:"primaryKey" json:"id"`
+	TaskID        uint   `gorm:"not null;index" json:"task_id"`
+	TenantID      uint   `gorm:"not null;index" json:"tenant_id"`
+	GraphID       uint   `gorm:"not null;index" json:"graph_id"`
+	Type          string `gorm:"not null" json:"type"` // document/url
+	FileName      string `json:"file_name"`
+	FilePath      string `json:"file_path"` // MinIO path (graph/build/ 前缀)
+	FileSize      int64  `json:"file_size"`
+	ContentSHA256 string `gorm:"size:64" json:"-"`
 	// 分块进度（支持断点续传）
 	TotalChunks     int            `gorm:"default:0" json:"total_chunks"`            // 总 chunk 数（首次分块时写入）
 	ProcessedChunks int            `gorm:"default:0" json:"processed_chunks"`        // 已处理 chunk 数
@@ -52,12 +54,15 @@ type BuildMaterial struct {
 
 // ReviewItem 待审核项（低置信度抽取结果，等待人工确认）
 type ReviewItem struct {
-	ID         uint   `gorm:"primaryKey" json:"id"`
-	TaskID     uint   `gorm:"not null;index" json:"task_id"`
-	MaterialID uint   `gorm:"index" json:"material_id"`
-	TenantID   uint   `gorm:"not null;index" json:"tenant_id"`
-	GraphID    uint   `gorm:"not null;index" json:"graph_id"`
-	ItemType   string `gorm:"not null" json:"item_type"` // entity/relation
+	ID              uint   `gorm:"primaryKey" json:"id"`
+	TaskID          uint   `gorm:"not null;index" json:"task_id"`
+	MaterialID      uint   `gorm:"index" json:"material_id"`
+	TenantID        uint   `gorm:"not null;index" json:"tenant_id"`
+	GraphID         uint   `gorm:"not null;index" json:"graph_id"`
+	ExecutionID     string `gorm:"size:64;index" json:"-"`
+	ActiveCommandID string `gorm:"size:64" json:"-"`
+	CommandActor    uint   `json:"-"`
+	ItemType        string `gorm:"not null" json:"item_type"` // entity/relation
 	// entity content: {type, unique_key_field, unique_key_value, properties}
 	// relation content: {type, source_type, source_unique_field, source_unique_value, target_type, target_unique_field, target_unique_value, properties}
 	Content      datatypes.JSON `gorm:"type:jsonb;not null" json:"content"`

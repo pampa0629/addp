@@ -176,7 +176,14 @@
       "indexManaged": "Managed by Graph",
       "indexExternal": "Preserve external indexes",
       "indexManagedHelp": "Maintain fulltext indexes from the ontology; field changes may rebuild indexes.",
-      "indexExternalHelp": "Reuse matching existing indexes; report missing or conflicting indexes without changing them."
+      "indexExternalHelp": "Reuse matching existing indexes; report missing or conflicting indexes without changing them.",
+      "admission": "Write admission",
+      "admissionBlocked": "Writes blocked",
+      "admissionClosed": "Closed",
+      "admissionOpen": "Open",
+      "unresolvedOperations": "Unresolved operations remain",
+      "reconcile": "Reconcile evidence",
+      "reopen": "Reopen original target"
     },
     "browser": {
       "recentVisitTitle": "Graph Browser",
@@ -245,9 +252,9 @@
       "statusSuccess": "Success",
       "statusFailed": "Failed",
       "statusCancelled": "Cancelled",
-      "taskStarted": "Task started",
+      "taskStarted": "Task queued, awaiting claim",
       "taskCancelled": "Task cancelled",
-      "taskRestarted": "Task restarted",
+      "taskRestarted": "New execution queued",
       "startFailed": "Start failed",
       "cancelFailed": "Cancel failed",
       "confirmRerun": "Re-running will clear the pending review queue and reprocess all materials. Confirm?",
@@ -273,7 +280,9 @@
       "matStatusPending": "Pending",
       "matStatusProcessing": "Processing",
       "matStatusCompleted": "Completed",
-      "matStatusFailed": "Failed"
+      "matStatusFailed": "Failed",
+      "cancelAccepted": "Cancellation accepted; waiting for execution to stop",
+      "cancelAlreadyTerminal": "Execution already ended; review the current result"
     },
     "review": {
       "recentVisitTitle": "Graph Review",

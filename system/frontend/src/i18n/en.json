@@ -663,6 +663,7 @@
           "offline": "Take Offline",
           "publish": "Publish",
           "read": "Read",
+          "reconcile": "Reconcile operations",
           "rebind": "Rebind",
           "reactivate": "Reactivate",
           "reject": "Reject",

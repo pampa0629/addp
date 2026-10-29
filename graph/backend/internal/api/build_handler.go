@@ -1,12 +1,14 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"mime/multipart"
 	"net/http"
 	"strconv"
 
 	commonAPI "github.com/addp/common/api"
+	commonExecution "github.com/addp/common/execution"
 	commonMiddleware "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	graphi18n "github.com/addp/graph/i18n"
@@ -14,7 +16,16 @@ import (
 	"github.com/addp/graph/internal/repository"
 	"github.com/addp/graph/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 )
+
+func graphBuildUserContext(c *gin.Context) context.Context {
+	ctx := c.Request.Context()
+	if facts, ok := commonMiddleware.AuthContextFromGin(c); ok {
+		return commonExecution.WithUserOrigin(ctx, facts)
+	}
+	return ctx
+}
 
 type BuildHandler struct {
 	buildSvc *service.BuildService
@@ -60,6 +71,8 @@ func (h *BuildHandler) ListTasks(c *gin.Context) {
 // @Param        id path int true "知识图谱 ID | Knowledge graph ID"
 // @Success      201 {object} models.BuildTask
 // @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.build_task.create"]
@@ -77,7 +90,7 @@ func (h *BuildHandler) CreateTask(c *gin.Context) {
 		DocContextSize      int     `json:"doc_context_size"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, graphi18n.MsgInvalidRequest)})
 		return
 	}
 
@@ -106,7 +119,7 @@ func (h *BuildHandler) CreateTask(c *gin.Context) {
 	}
 
 	if err := h.buildSvc.CreateTask(task); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, task)
@@ -144,6 +157,8 @@ func (h *BuildHandler) GetTask(c *gin.Context) {
 // @Param        id  path int true "知识图谱 ID | Knowledge graph ID"
 // @Param        tid path int true "任务 ID | Task ID"
 // @Success      200 {object} models.SuccessResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.build_task.delete"]
@@ -152,8 +167,8 @@ func (h *BuildHandler) DeleteTask(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
 	tid, _ := strconv.ParseUint(c.Param("tid"), 10, 64)
 
-	if err := h.buildSvc.DeleteTask(uint(tid), uint(tenantID)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := h.buildSvc.DeleteTask(c.Request.Context(), uint(tid), parseUintParam(c, "id"), uint(tenantID)); err != nil {
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
@@ -167,7 +182,7 @@ func (h *BuildHandler) DeleteTask(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        id  path int true "知识图谱 ID | Knowledge graph ID"
 // @Param        tid path int true "任务 ID | Task ID"
-// @Success      200 {object} models.SuccessResponse
+// @Success      202 {object} models.BuildEnqueueResponse "已持久入队，尚未开始 | Durably queued, not yet started"
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      409 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
@@ -179,23 +194,27 @@ func (h *BuildHandler) RunTask(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
 	userID := commonMiddleware.GetUserID(c)
 
-	if err := h.buildSvc.RunTask(c.Request.Context(), uint(tid), uint(graphID), uint(tenantID), uint(userID)); err != nil {
+	executionID, err := h.buildSvc.RunTaskWithContext(graphBuildUserContext(c), uint(tid), uint(graphID), uint(tenantID), uint(userID), commonExecution.TriggerTypeManual, commonExecution.ModuleGraph, nil)
+	if err != nil {
 		respondBuildActionError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "任务已启动"})
+	c.JSON(http.StatusAccepted, models.BuildEnqueueResponse{ExecutionID: executionID, Status: commonExecution.ExecutionStatusPending})
 }
 
 // CancelTask godoc
 // @Summary      取消构建任务 | Cancel build task
 // @Tags         图谱构建 | Graph Build
+// @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id  path int true "知识图谱 ID | Knowledge graph ID"
 // @Param        tid path int true "任务 ID | Task ID"
-// @Success      200 {object} models.SuccessResponse
+// @Param        request body models.CancelBuildRequest true "准确执行及观察到的 attempt | Exact execution and observed attempt"
+// @Success      200 {object} models.CancelBuildResponse "未启动取消或已终态 | Cancelled before start or already terminal"
+// @Success      202 {object} models.CancelBuildResponse "取消意图已持久受理，运行尚未停止 | Cancellation durably accepted; execution has not yet stopped"
 // @Failure      400 {object} models.ErrorResponse
-// @Failure      409 {object} models.ErrorResponse "任务冲突或当前进程不持有运行实例 | Task conflict or runtime not owned by current process"
+// @Failure      409 {object} models.ErrorResponse "执行身份已变化 | Execution identity has changed"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.build_task.cancel"]
 // @Router       /graphs/{id}/build/tasks/{tid}/cancel [post]
@@ -204,11 +223,21 @@ func (h *BuildHandler) CancelTask(c *gin.Context) {
 	tid, _ := strconv.ParseUint(c.Param("tid"), 10, 64)
 	tenantID := commonMiddleware.GetTenantID(c)
 
-	if err := h.buildSvc.CancelTask(uint(tid), uint(graphID), uint(tenantID)); err != nil {
+	var req models.CancelBuildRequest
+	if err := commonAPI.BindOptionalJSONStrict(c, &req); err != nil || binding.Validator.ValidateStruct(&req) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error_code": "invalid_cancel_identity", "error": commoni18n.T(c, graphi18n.MsgInvalidRequest)})
+		return
+	}
+	e, err := h.buildSvc.CancelTask(c.Request.Context(), uint(tid), uint(graphID), uint(tenantID), commonMiddleware.GetUserID(c), req.ExecutionID, *req.Attempt)
+	if err != nil {
 		respondBuildActionError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "任务已取消"})
+	status := http.StatusOK
+	if e.Status == commonExecution.ExecutionStatusRunning {
+		status = http.StatusAccepted
+	}
+	c.JSON(status, models.CancelBuildResponse{ExecutionID: e.ExecutionID, Attempt: e.Attempt, Status: e.Status, CancellationRequested: e.Status == commonExecution.ExecutionStatusRunning || e.Status == commonExecution.ExecutionStatusCancelled})
 }
 
 // RerunTask godoc
@@ -218,7 +247,7 @@ func (h *BuildHandler) CancelTask(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        id  path int true "知识图谱 ID | Knowledge graph ID"
 // @Param        tid path int true "任务 ID | Task ID"
-// @Success      200 {object} models.SuccessResponse
+// @Success      202 {object} models.BuildEnqueueResponse "已持久入队，尚未开始 | Durably queued, not yet started"
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      409 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
@@ -230,16 +259,17 @@ func (h *BuildHandler) RerunTask(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
 	userID := commonMiddleware.GetUserID(c)
 
-	if err := h.buildSvc.RerunTask(c.Request.Context(), uint(tid), uint(graphID), uint(tenantID), uint(userID)); err != nil {
+	executionID, err := h.buildSvc.RerunTask(graphBuildUserContext(c), uint(tid), uint(graphID), uint(tenantID), uint(userID))
+	if err != nil {
 		respondBuildActionError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "任务已重新启动"})
+	c.JSON(http.StatusAccepted, models.BuildEnqueueResponse{ExecutionID: executionID, Status: commonExecution.ExecutionStatusPending})
 }
 
 func respondBuildActionError(c *gin.Context, err error) {
-	if errors.Is(err, service.ErrBuildRuntimeNotOwned) {
-		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, graphi18n.MsgTaskRuntimeNotOwned)})
+	if errors.Is(err, repository.ErrGraphAdmissionClosed) {
+		graphOperationError(c, err)
 		return
 	}
 	if errors.Is(err, commonAPI.ErrConflict) {
@@ -286,6 +316,8 @@ func (h *BuildHandler) ListMaterials(c *gin.Context) {
 // @Param        files formData file true "材料文件 | Material files"
 // @Success      201 {array} models.BuildMaterial
 // @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.build_task.update"]
@@ -297,13 +329,13 @@ func (h *BuildHandler) UploadMaterial(c *gin.Context) {
 
 	form, err := c.MultipartForm()
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 multipart 表单"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, graphi18n.MsgInvalidRequest)})
 		return
 	}
 
 	files := form.File["files"]
 	if len(files) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "未上传文件"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, graphi18n.MsgInvalidRequest)})
 		return
 	}
 
@@ -311,7 +343,7 @@ func (h *BuildHandler) UploadMaterial(c *gin.Context) {
 	for _, fh := range files {
 		mat, err := h.uploadSingleFile(c, fh, uint(tid), uint(graphID), uint(tenantID))
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			graphOperationError(c, err)
 			return
 		}
 		created = append(created, *mat)
@@ -325,7 +357,7 @@ func (h *BuildHandler) uploadSingleFile(c *gin.Context, fh *multipart.FileHeader
 		return nil, err
 	}
 	defer f.Close()
-	return h.buildSvc.UploadMaterial(taskID, tenantID, graphID, fh.Filename, f, fh.Size)
+	return h.buildSvc.UploadMaterial(c.Request.Context(), taskID, tenantID, graphID, fh.Filename, f, fh.Size)
 }
 
 // DeleteMaterial godoc
@@ -337,6 +369,8 @@ func (h *BuildHandler) uploadSingleFile(c *gin.Context, fh *multipart.FileHeader
 // @Param        tid path int true "任务 ID | Task ID"
 // @Param        mid path int true "材料 ID | Material ID"
 // @Success      200 {object} models.SuccessResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Failure      409 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.build_task.update"]
@@ -345,8 +379,8 @@ func (h *BuildHandler) DeleteMaterial(c *gin.Context) {
 	tenantID := commonMiddleware.GetTenantID(c)
 	mid, _ := strconv.ParseUint(c.Param("mid"), 10, 64)
 
-	if err := h.buildSvc.DeleteMaterial(uint(mid), uint(tenantID)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := h.buildSvc.DeleteMaterial(c.Request.Context(), uint(mid), parseUintParam(c, "tid"), parseUintParam(c, "id"), uint(tenantID)); err != nil {
+		graphOperationError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})

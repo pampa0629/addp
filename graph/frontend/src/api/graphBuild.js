@@ -17,8 +17,8 @@ export const buildAPI = {
   runTask(graphId, taskId) {
     return client.post(`/graph/graphs/${graphId}/build/tasks/${taskId}/run`)
   },
-  cancelTask(graphId, taskId) {
-    return client.post(`/graph/graphs/${graphId}/build/tasks/${taskId}/cancel`)
+  cancelTask(graphId, taskId, identity) {
+    return client.post(`/graph/graphs/${graphId}/build/tasks/${taskId}/cancel`, identity)
   },
   rerunTask(graphId, taskId) {
     return client.post(`/graph/graphs/${graphId}/build/tasks/${taskId}/rerun`)

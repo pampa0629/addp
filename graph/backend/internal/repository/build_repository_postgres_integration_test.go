@@ -37,6 +37,11 @@ func TestIntegrationPostgresGraphConcurrentClaimAndStart(t *testing.T) {
 
 	tenantID := uint(time.Now().UnixNano()%100000000 + 920000000)
 	t.Cleanup(func() {
+		for _, model := range []interface{}{&models.GraphOperation{}, &models.BuildExecutionControl{}, &models.TenantAdmissionLock{}} {
+			if err := db.Where("tenant_id = ?", tenantID).Delete(model).Error; err != nil {
+				t.Error(err)
+			}
+		}
 		_ = db.Where("tenant_id = ?", tenantID).Delete(&commonExecution.TaskExecution{}).Error
 		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.ReviewItem{}).Error
 		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.BuildMaterial{}).Error
@@ -80,8 +85,8 @@ func TestIntegrationPostgresGraphConcurrentClaimAndStart(t *testing.T) {
 		executionID := executionID
 		go func() {
 			<-start
-			_, _, claimErr := repo.ClaimExecution(
-				context.Background(), task.ID, task.GraphID, tenantID,
+			_, _, claimErr := enqueueRepositoryFixture(
+				graphRepositoryUserContext(tenantID), repo, task,
 				newGraphRepositoryTestExecution(executionID, int(tenantID), createdAt), BuildExecutionClaimRun,
 			)
 			results <- claimErr
@@ -113,10 +118,11 @@ func TestIntegrationPostgresGraphConcurrentClaimAndStart(t *testing.T) {
 	if len(executions) != 1 || executions[0].Status != commonExecution.ExecutionStatusPending || executions[0].StartedAt != nil {
 		t.Fatalf("claimed executions = %#v", executions)
 	}
-	startedAt := createdAt.Add(time.Second)
-	if err := repo.StartExecution(context.Background(), task.ID, tenantID, executions[0].ExecutionID, startedAt); err != nil {
-		t.Fatalf("start claimed execution: %v", err)
+	_, lease, runtime, _, err := repo.ClaimBuild(graphRepositoryUserContext(tenantID), executions[0], "graph-pg", time.Minute)
+	if err != nil {
+		t.Fatal(err)
 	}
+
 	var storedTask models.BuildTask
 	if err := db.First(&storedTask, task.ID).Error; err != nil {
 		t.Fatalf("load started task: %v", err)
@@ -124,15 +130,11 @@ func TestIntegrationPostgresGraphConcurrentClaimAndStart(t *testing.T) {
 	if storedTask.ExecutionID != executions[0].ExecutionID || storedTask.Status != models.BuildStatusRunning || storedTask.StartedAt == nil {
 		t.Fatalf("started graph task = %#v", storedTask)
 	}
-	completedAt := startedAt.Add(time.Second)
-	if err := repo.FinishExecution(context.Background(), task.ID, tenantID, executions[0].ExecutionID,
-		map[string]interface{}{"status": models.BuildStatusSuccess, "completed_at": completedAt},
-		map[string]interface{}{
-			"status": commonExecution.ExecutionStatusSuccess, "completed_at": completedAt,
-			"execution_time_ms": completedAt.Sub(startedAt).Milliseconds(), "progress": 100,
-		}); err != nil {
-		t.Fatalf("finish initial execution: %v", err)
+	completedAt := time.Now()
+	if err := repo.CompleteBuild(commonExecution.ContextWithLease(context.Background(), *lease), runtime, models.BuildStatusSuccess, "", nil, nil); err != nil {
+		t.Fatal(err)
 	}
+
 	if err := db.Model(&models.BuildMaterial{}).Where("id = ?", material.ID).Updates(map[string]interface{}{
 		"status": models.BuildMaterialStatusCompleted, "processed_chunks": 3, "total_chunks": 3,
 	}).Error; err != nil {
@@ -166,8 +168,8 @@ func TestIntegrationPostgresGraphConcurrentClaimAndStart(t *testing.T) {
 		executionID := executionID
 		go func() {
 			<-rerunStart
-			_, _, claimErr := repo.ClaimExecution(
-				context.Background(), task.ID, task.GraphID, tenantID,
+			_, _, claimErr := enqueueRepositoryFixture(
+				graphRepositoryUserContext(tenantID), repo, task,
 				newGraphRepositoryTestExecution(executionID, int(tenantID), completedAt.Add(time.Second)), BuildExecutionClaimRerun,
 			)
 			rerunResults <- claimErr

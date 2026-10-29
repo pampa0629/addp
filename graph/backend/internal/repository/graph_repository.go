@@ -13,6 +13,8 @@ func NewKnowledgeGraphRepository(db *gorm.DB) *KnowledgeGraphRepository {
 	return &KnowledgeGraphRepository{db: db}
 }
 
+func (r *KnowledgeGraphRepository) DB() *gorm.DB { return r.db }
+
 func (r *KnowledgeGraphRepository) List(tenantID uint) ([]models.KnowledgeGraph, error) {
 	var graphs []models.KnowledgeGraph
 	err := r.db.Where("tenant_id = ?", tenantID).
@@ -43,14 +45,6 @@ func (r *KnowledgeGraphRepository) Create(kg *models.KnowledgeGraph) error {
 		}
 	}
 	return err
-}
-
-func (r *KnowledgeGraphRepository) Update(kg *models.KnowledgeGraph) error {
-	return r.db.Save(kg).Error
-}
-
-func (r *KnowledgeGraphRepository) Delete(id, tenantID uint) error {
-	return r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.KnowledgeGraph{}).Error
 }
 
 type OntologyVersionRepository struct {

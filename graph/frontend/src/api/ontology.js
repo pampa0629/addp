@@ -93,8 +93,14 @@ export const knowledgeGraphAPI = {
   update(id, data) {
     return client.put(`/graph/graphs/${id}`, data)
   },
-  delete(id) {
-    return client.delete(`/graph/graphs/${id}`)
+  delete(id, version) {
+    return client.delete(`/graph/graphs/${id}`, { data: { version } })
+  },
+  reconcile(id, version) {
+    return client.post(`/graph/graphs/${id}/reconcile`, { version })
+  },
+  reopen(id, version) {
+    return client.post(`/graph/graphs/${id}/reopen`, { version })
   }
 }
 

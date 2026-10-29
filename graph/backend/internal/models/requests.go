@@ -110,10 +110,19 @@ type CreateKnowledgeGraphRequest struct {
 
 // UpdateKnowledgeGraphRequest 更新知识图谱实例请求
 type UpdateKnowledgeGraphRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Status      string `json:"status"`
-	IsPublic    *bool  `json:"is_public,omitempty"` // 省略时保留现值，false 显式关闭公开 | Omit to retain; false disables public access
+	Version     int64   `json:"version" binding:"required,gt=0"`
+	Name        string  `json:"name"`
+	Description *string `json:"description"`
+	IsPublic    *bool   `json:"is_public,omitempty"` // 省略时保留现值，false 显式关闭公开 | Omit to retain; false disables public access
+}
+
+type CancelBuildRequest struct {
+	ExecutionID string `json:"execution_id" binding:"required,uuid"`
+	Attempt     *int   `json:"attempt" binding:"required,gte=0"`
+}
+
+type GraphControlRequest struct {
+	Version int64 `json:"version" binding:"required,gt=0"`
 }
 
 // CreateOntologyVersionRequest 创建版本快照请求
@@ -145,4 +154,18 @@ type ConstraintInfo struct {
 	Type       string `json:"type"`
 	EntityType string `json:"entity_type"`
 	Field      string `json:"field"`
+}
+
+// CancelBuildResponse separates durable acceptance from an observed terminal state.
+type CancelBuildResponse struct {
+	ExecutionID           string `json:"execution_id"`
+	Attempt               int    `json:"attempt"`
+	Status                string `json:"status"`
+	CancellationRequested bool   `json:"cancellation_requested"`
+}
+
+// BuildEnqueueResponse acknowledges durable admission before a worker claims it.
+type BuildEnqueueResponse struct {
+	ExecutionID string `json:"execution_id"`
+	Status      string `json:"status"`
 }

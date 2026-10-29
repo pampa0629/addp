@@ -89,6 +89,7 @@ Permission Key 固定为：
 | `delete` | 删除资源 |
 | `execute` | 执行查询、任务、工作流或计算 |
 | `cancel` | 取消执行 |
+| `reconcile` | 由资源 Owner 根据持久证据核清外部操作；不授予强制放行、重跑或换目标权限 |
 | `approve` / `reject` | 作出业务审批决定 |
 | `revoke` | 撤销授权、邀请或凭据 |
 | `release` | 解除显式拒绝，仅移除指定禁止依据，不创建或恢复授权 |

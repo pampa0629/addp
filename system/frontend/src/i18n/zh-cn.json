@@ -663,6 +663,7 @@
           "offline": "下线",
           "publish": "发布",
           "read": "查看",
+          "reconcile": "核清操作",
           "rebind": "重新绑定",
           "reactivate": "重新启用",
           "reject": "拒绝",

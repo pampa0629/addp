@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/addp/graph/internal/models"
@@ -20,11 +19,24 @@ func NewKnowledgeGraphService(graphRepo *repository.KnowledgeGraphRepository, gr
 }
 
 func (s *KnowledgeGraphService) List(tenantID uint) ([]models.KnowledgeGraph, error) {
-	return s.graphRepo.List(tenantID)
+	graphs, err := s.graphRepo.List(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range graphs {
+		if err = s.graphRepo.FillAdmissionView(context.Background(), &graphs[i]); err != nil {
+			return nil, err
+		}
+	}
+	return graphs, nil
 }
 
 func (s *KnowledgeGraphService) GetByID(id, tenantID uint) (*models.KnowledgeGraph, error) {
-	return s.graphRepo.GetByID(id, tenantID)
+	kg, err := s.graphRepo.GetByID(id, tenantID)
+	if err == nil {
+		err = s.graphRepo.FillAdmissionView(context.Background(), kg)
+	}
+	return kg, err
 }
 
 func (s *KnowledgeGraphService) Create(ctx context.Context, tenantID uint, req *models.CreateKnowledgeGraphRequest) (*models.KnowledgeGraph, error) {
@@ -59,39 +71,21 @@ func (s *KnowledgeGraphService) Create(ctx context.Context, tenantID uint, req *
 	return kg, nil
 }
 
-func (s *KnowledgeGraphService) Update(id, tenantID uint, req *models.UpdateKnowledgeGraphRequest) (*models.KnowledgeGraph, error) {
-	kg, err := s.graphRepo.GetByID(id, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	if req.Name != "" {
-		kg.Name = req.Name
-	}
-	if req.Description != "" {
-		kg.Description = req.Description
-	}
-	if req.Status != "" {
-		kg.Status = req.Status
-	}
-	if req.IsPublic != nil {
-		kg.IsPublic = *req.IsPublic
-	}
-	return kg, s.graphRepo.Update(kg)
+func (s *KnowledgeGraphService) Update(ctx context.Context, id, tenantID uint, req *models.UpdateKnowledgeGraphRequest) (*models.KnowledgeGraph, error) {
+	return s.graphRepo.UpdateDefinition(ctx, id, tenantID, req)
 }
-
-func (s *KnowledgeGraphService) Delete(id, tenantID uint) error {
-	return s.graphRepo.Delete(id, tenantID)
+func (s *KnowledgeGraphService) Delete(ctx context.Context, id, tenantID uint, version int64) error {
+	return s.graphRepo.DeleteDefinition(ctx, id, tenantID, version)
 }
-
-// UpdateStats 更新图谱统计信息
-func (s *KnowledgeGraphService) UpdateStats(id, tenantID uint, stats map[string]interface{}) error {
-	kg, err := s.graphRepo.GetByID(id, tenantID)
-	if err != nil {
-		return err
+func (s *KnowledgeGraphService) Reconcile(ctx context.Context, id, tenantID, actor uint, version int64) (*models.KnowledgeGraph, error) {
+	kg, err := s.graphRepo.Reconcile(ctx, id, tenantID, actor, version)
+	if err == nil {
+		err = s.graphRepo.FillAdmissionView(ctx, kg)
 	}
-	statsJSON, _ := json.Marshal(stats)
-	kg.Stats = datatypes.JSON(statsJSON)
-	return s.graphRepo.Update(kg)
+	return kg, err
+}
+func (s *KnowledgeGraphService) Reopen(ctx context.Context, id, tenantID uint, version int64) (*models.KnowledgeGraph, error) {
+	return s.graphRepo.Reopen(ctx, id, tenantID, version)
 }
 
 var ErrGraphTargetInvalid = fmt.Errorf("invalid graph target")

@@ -168,19 +168,28 @@ type OntologyVersion struct {
 
 // KnowledgeGraph 知识图谱实例
 type KnowledgeGraph struct {
-	ID              uint                     `gorm:"primaryKey" json:"id"`
-	TenantID        uint                     `gorm:"not null;index;uniqueIndex:idx_graph_target" json:"tenant_id"`
-	OntologyID      uint                     `gorm:"not null;index" json:"ontology_id"`
-	EngineID        uint                     `gorm:"not null;uniqueIndex:idx_graph_target" json:"engine_id"`
-	CatalogPath     plugin.EngineCatalogPath `gorm:"serializer:json;type:jsonb;not null;uniqueIndex:idx_graph_target" json:"catalog_path"`
-	IndexManagement string                   `gorm:"not null" json:"index_management"`
-	Name            string                   `gorm:"not null" json:"name"`
-	Description     string                   `json:"description"`
-	Status          string                   `gorm:"default:'active'" json:"status"` // active, building, error, archived
-	IsPublic        bool                     `gorm:"column:is_public;default:false" json:"is_public"`
-	Stats           datatypes.JSON           `gorm:"type:jsonb;default:'{}'" json:"stats"` // 统计信息缓存
-	CreatedAt       time.Time                `json:"created_at"`
-	UpdatedAt       time.Time                `json:"updated_at"`
+	AdmissionReconciledBy         uint                     `json:"-"`
+	AdmissionReconciliationDigest string                   `gorm:"size:64" json:"-"`
+	ID                            uint                     `gorm:"primaryKey" json:"id"`
+	Version                       int64                    `gorm:"type:bigint;not null;default:1" json:"version"`
+	AdmissionClosed               bool                     `gorm:"not null;default:false" json:"-"`
+	AdmissionCause                string                   `json:"-"`
+	AdmissionExecutionID          string                   `gorm:"size:64" json:"-"`
+	AdmissionReconciledAt         *time.Time               `json:"-"`
+	PhysicalTargetIdentity        string                   `json:"-"`
+	Admission                     *GraphAdmissionView      `gorm:"-" json:"admission,omitempty"`
+	TenantID                      uint                     `gorm:"not null;index;uniqueIndex:idx_graph_target" json:"tenant_id"`
+	OntologyID                    uint                     `gorm:"not null;index" json:"ontology_id"`
+	EngineID                      uint                     `gorm:"not null;uniqueIndex:idx_graph_target" json:"engine_id"`
+	CatalogPath                   plugin.EngineCatalogPath `gorm:"serializer:json;type:jsonb;not null;uniqueIndex:idx_graph_target" json:"catalog_path"`
+	IndexManagement               string                   `gorm:"not null" json:"index_management"`
+	Name                          string                   `gorm:"not null" json:"name"`
+	Description                   string                   `json:"description"`
+	Status                        string                   `gorm:"default:'active'" json:"status"` // active, building, error, archived
+	IsPublic                      bool                     `gorm:"column:is_public;default:false" json:"is_public"`
+	Stats                         datatypes.JSON           `gorm:"type:jsonb;default:'{}'" json:"stats"` // 统计信息缓存
+	CreatedAt                     time.Time                `json:"created_at"`
+	UpdatedAt                     time.Time                `json:"updated_at"`
 
 	Ontology *Ontology `gorm:"foreignKey:OntologyID" json:"ontology,omitempty"`
 }

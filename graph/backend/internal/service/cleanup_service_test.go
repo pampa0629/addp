@@ -21,7 +21,7 @@ func setupGraphCleanupTestDB(t *testing.T) *gorm.DB {
 		&models.EntityType{},
 		&models.RelationType{},
 		&models.OntologyVersion{},
-		&models.KnowledgeGraph{},
+		&models.TenantAdmissionLock{}, &models.GraphOperation{}, &models.BuildExecutionControl{}, &models.KnowledgeGraph{},
 		&models.BuildTask{},
 		&models.BuildMaterial{},
 		&models.ReviewItem{},

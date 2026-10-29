@@ -97,6 +97,8 @@ func SetupRouter(
 			graphs.GET("/:id", permission(graphauthorization.PermissionGraphGraphRead), graphHandler.Get)
 			graphs.PUT("/:id", permission(graphauthorization.PermissionGraphGraphUpdate), graphHandler.Update)
 			graphs.DELETE("/:id", permission(graphauthorization.PermissionGraphGraphDelete), graphHandler.Delete)
+			graphs.POST("/:id/reconcile", permission(graphauthorization.PermissionGraphGraphReconcile), graphHandler.Reconcile)
+			graphs.POST("/:id/reopen", permission(graphauthorization.PermissionGraphGraphUpdate), permission(graphauthorization.PermissionGraphGraphReconcile), graphHandler.Reopen)
 
 			// 图谱浏览 API
 			graph := graphs.Group("/:id")

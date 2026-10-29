@@ -10,8 +10,10 @@ vi.mock('@common-ui', () => ({ useConsolePageDescriptor: vi.fn() }))
 vi.mock('../src/store/auth', () => ({ useAuthStore: () => ({ hasPermission: () => state.canUpdate }) }))
 vi.mock('../src/utils/moduleNavigation', () => ({ navigateGraphRoute: vi.fn() }))
 vi.mock('../src/api/knowledgeService', () => ({ knowledgeServiceApi: {
-  listGraphs: state.list, updateGraph: state.update, getOntology: async () => ({ entity_types: [] }),
+  listGraphs: state.list, getOntology: async () => ({ entity_types: [] }),
 } }))
+
+vi.mock('../src/api/ontology', () => ({ knowledgeGraphAPI: { update: state.update } }))
 
 const Switch = { name: 'ElSwitch', props: ['modelValue', 'disabled', 'loading'], emits: ['update:modelValue', 'change'], template: '<button role="switch" :disabled="disabled || loading" :aria-checked="modelValue" @click="$emit(\'update:modelValue\', !modelValue); $emit(\'change\', !modelValue)" />' }
 let wrapper
@@ -24,7 +26,7 @@ function mountService() {
 beforeEach(() => {
   state.canUpdate = true
   state.update.mockReset()
-  state.list.mockResolvedValue([{ id: 2, name: 'test graph', is_public: false }, { id: 3, name: 'other graph', is_public: false }])
+  state.list.mockResolvedValue([{ id: 2, version: 1, name: 'test graph', is_public: false }, { id: 3, version: 1, name: 'other graph', is_public: false }])
 })
 afterEach(() => wrapper?.unmount())
 
@@ -38,12 +40,12 @@ it('disables publication changes for a read-only user', async () => {
 })
 
 it('uses the saved server state rather than the requested toggle value', async () => {
-  state.update.mockResolvedValue({ id: 2, is_public: false })
+  state.update.mockResolvedValue({ id: 2, version: 2, is_public: false })
   wrapper = mountService()
   await flushPromises()
   await wrapper.get('button[role="switch"]').trigger('click')
   await flushPromises()
-  expect(state.update).toHaveBeenCalledWith(2, { is_public: true })
+  expect(state.update).toHaveBeenCalledWith(2, { version: 1, is_public: true })
   expect(wrapper.get('button[role="switch"]').attributes('aria-checked')).toBe('false')
   expect(wrapper.get('[data-testid="visibility"]').text()).toBe('graph.service.private')
 })
@@ -66,7 +68,7 @@ it('applies a delayed update to its original graph after the user changes select
   await wrapper.get('button[role="switch"]').trigger('click')
   wrapper.findComponent({ name: 'ElMenu' }).vm.$emit('select', '3')
   await flushPromises()
-  finish({ id: 2, is_public: true })
+  finish({ id: 2, version: 2, is_public: true })
   await flushPromises()
   expect(wrapper.get('[data-testid="visibility"]').text()).toBe('graph.service.private')
   wrapper.findComponent({ name: 'ElMenu' }).vm.$emit('select', '2')

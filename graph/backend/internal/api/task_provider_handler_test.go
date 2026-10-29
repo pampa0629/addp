@@ -11,7 +11,7 @@ import (
 	commoni18n "github.com/addp/common/middleware/i18n"
 	graphi18n "github.com/addp/graph/i18n"
 	"github.com/addp/graph/internal/models"
-	"github.com/addp/graph/internal/service"
+	"github.com/addp/graph/internal/repository"
 	"github.com/gin-gonic/gin"
 )
 
@@ -69,12 +69,12 @@ func TestExecuteProviderTaskRejectsUnknownFields(t *testing.T) {
 	}
 }
 
-func TestRespondBuildActionErrorReturnsRuntimeOwnershipConflict(t *testing.T) {
+func TestRespondBuildActionErrorReturnsAdmissionConflict(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.Use(commoni18n.I18nMiddleware())
 	router.GET("/test", func(c *gin.Context) {
-		respondBuildActionError(c, service.ErrBuildRuntimeNotOwned)
+		respondBuildActionError(c, repository.ErrGraphAdmissionClosed)
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
@@ -85,9 +85,9 @@ func TestRespondBuildActionErrorReturnsRuntimeOwnershipConflict(t *testing.T) {
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusConflict, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), graphi18n.MsgTaskRuntimeNotOwned) &&
-		!strings.Contains(w.Body.String(), "does not own the task runtime") {
-		t.Fatalf("body = %s, want runtime ownership error", w.Body.String())
+	if !strings.Contains(w.Body.String(), graphi18n.MsgAdmissionClosed) &&
+		!strings.Contains(w.Body.String(), "Graph admission is closed") {
+		t.Fatalf("body = %s, want admission closure error", w.Body.String())
 	}
 }
 

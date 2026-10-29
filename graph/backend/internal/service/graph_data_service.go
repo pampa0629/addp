@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -51,7 +52,13 @@ func NewGraphDataService(
 
 // getGraphAndEngine binds a domain operation to its explicit catalog target.
 func (s *GraphDataService) getGraphAndEngine(ctx context.Context, graphID, tenantID uint) (*models.KnowledgeGraph, *graphTarget, error) {
-	kg, err := s.graphRepo.GetByID(graphID, tenantID)
+	kg, err := frozenGraph(ctx, graphID, tenantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if kg == nil {
+		kg, err = s.graphRepo.GetByID(graphID, tenantID)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -63,6 +70,10 @@ func (s *GraphDataService) getGraphAndEngine(ctx context.Context, graphID, tenan
 		return nil, nil, err
 	}
 	target.managed = kg.IndexManagement == models.GraphIndexesManaged
+	if err := bindEffectTarget(ctx, kg, target.Engine.Version); err != nil {
+		target.close()
+		return nil, nil, err
+	}
 	return kg, target, nil
 }
 
@@ -271,7 +282,7 @@ func (s *GraphDataService) SearchNodes(ctx context.Context, graphID, tenantID ui
 	if strings.TrimSpace(query) == "" {
 		return &models.SubgraphResult{Nodes: []models.GraphNodeDTO{}, Edges: []models.GraphEdgeDTO{}}, nil
 	}
-	indexes, err := syncSearchIndexes(ctx, engine, graphID, definitions)
+	indexes, err := s.syncSearchIndexes(ctx, engine, kg, definitions)
 	if err != nil {
 		return nil, err
 	}
@@ -291,12 +302,26 @@ func searchIndexName(graphID uint, entityType string) string {
 	return fmt.Sprintf("%s%x", searchIndexPrefix(graphID), sum[:8])
 }
 
-func syncSearchIndexes(ctx context.Context, target *graphTarget, graphID uint, definitions []searchIndexDefinition) ([]plugin.GraphSearchIndex, error) {
+func (s *GraphDataService) syncSearchIndexes(ctx context.Context, target *graphTarget, kg *models.KnowledgeGraph, definitions []searchIndexDefinition) ([]plugin.GraphSearchIndex, error) {
 	indexes := make([]plugin.GraphSearchIndex, 0, len(definitions))
 	for _, d := range definitions {
 		indexes = append(indexes, plugin.GraphSearchIndex{Name: d.Name, Labels: d.Labels, Properties: d.Properties})
 	}
-	return target.provider.SyncGraphSearchIndexes(ctx, target.conn, target.path, plugin.GraphSearchSchema{OwnerPrefix: searchIndexPrefix(graphID), Managed: target.managed, Indexes: indexes})
+	schema := plugin.GraphSearchSchema{OwnerPrefix: searchIndexPrefix(kg.ID), Managed: target.managed, Indexes: indexes}
+	if !target.managed {
+		return target.provider.SyncGraphSearchIndexes(ctx, target.conn, target.path, schema)
+	}
+	ctx = s.mutationContext(ctx, kg.ID, kg.TenantID)
+	if err := bindEffectTarget(ctx, kg, target.Engine.Version); err != nil {
+		return nil, err
+	}
+	request, err := json.Marshal(schema)
+	if err != nil {
+		return nil, err
+	}
+	return recordExternalCall(ctx, "graph_indexes", request, func() ([]plugin.GraphSearchIndex, error) {
+		return target.provider.SyncGraphSearchIndexes(ctx, target.conn, target.path, schema)
+	})
 }
 
 // Expand 使用节点/关系双预算展开聚合桶或真实实体。
@@ -482,6 +507,7 @@ func (s *GraphDataService) FindPath(ctx context.Context, graphID, tenantID uint,
 
 // SyncConstraints applies native uniqueness constraints; creation must be operational before success.
 func (s *GraphDataService) SyncConstraints(ctx context.Context, graphID, tenantID uint, entityTypeName string, nodeLabels []string, props []models.PropertyDefinition) error {
+	ctx = s.mutationContext(ctx, graphID, tenantID)
 	_, target, err := s.getGraphAndEngine(ctx, graphID, tenantID)
 	if err != nil {
 		return err
@@ -494,7 +520,15 @@ func (s *GraphDataService) SyncConstraints(ctx context.Context, graphID, tenantI
 		if !prop.Unique {
 			continue
 		}
-		if err := target.provider.EnsureGraphUniqueConstraint(ctx, target.conn, target.path, plugin.GraphConstraint{Name: fmt.Sprintf("graph_%d_%s_%s_unique", graphID, entityTypeName, prop.Name), Type: "UNIQUE", Label: nodeLabels[0], Properties: []string{prop.Name}}); err != nil {
+		constraint := plugin.GraphConstraint{Name: fmt.Sprintf("graph_%d_%s_%s_unique", graphID, entityTypeName, prop.Name), Type: "UNIQUE", Label: nodeLabels[0], Properties: []string{prop.Name}}
+		request, err := json.Marshal(constraint)
+		if err != nil {
+			return err
+		}
+		if _, err := recordExternalCall(ctx, "graph_constraint", request, func() (bool, error) {
+			err := target.provider.EnsureGraphUniqueConstraint(ctx, target.conn, target.path, constraint)
+			return err == nil, err
+		}); err != nil {
 			return err
 		}
 	}
@@ -702,6 +736,7 @@ func addInt64Ptr(value *int64, delta int64) *int64 {
 // properties: 所有属性
 // 返回 elementId
 func (s *GraphDataService) MergeEntity(ctx context.Context, graphID, tenantID uint, entityLabels []string, uniqueField string, uniqueValue interface{}, properties map[string]interface{}) (string, error) {
+	ctx = s.mutationContext(ctx, graphID, tenantID)
 	_, engine, err := s.getGraphAndEngine(ctx, graphID, tenantID)
 	if err != nil {
 		return "", err
@@ -742,6 +777,7 @@ func (s *GraphDataService) MergeRelation(
 	tgtLabels []string, tgtUniqueField string, tgtUniqueVal interface{},
 	properties map[string]interface{},
 ) (string, error) {
+	ctx = s.mutationContext(ctx, graphID, tenantID)
 	_, engine, err := s.getGraphAndEngine(ctx, graphID, tenantID)
 	if err != nil {
 		return "", err
@@ -768,6 +804,7 @@ func (s *GraphDataService) MergeRelation(
 
 // SyncSpatialLayer 将 EntityType 的空间图层同步到 Neo4j（仅对 is_spatial_layer=true 的类型操作，幂等）
 func (s *GraphDataService) SyncSpatialLayer(ctx context.Context, graphID, tenantID uint, et models.EntityType) error {
+	ctx = s.mutationContext(ctx, graphID, tenantID)
 	if !et.IsSpatialLayer {
 		return fmt.Errorf("entity type %q is not a spatial layer type", et.Name)
 	}
@@ -791,7 +828,10 @@ func (s *GraphDataService) SyncSpatialLayer(ctx context.Context, graphID, tenant
 	layerName := cfg.LayerName
 
 	// 查询已有图层
-	layersResult, _ := executeGraphQuery(ctx, engine, "CALL spatial.layers() YIELD name")
+	layersResult, err := executeGraphQuery(ctx, engine, "CALL spatial.layers() YIELD name")
+	if err != nil {
+		return err
+	}
 	existingLayers := make(map[string]bool)
 	if layersResult != nil {
 		for _, row := range layersResult.Rows {
@@ -830,6 +870,7 @@ func (s *GraphDataService) SyncSpatialLayer(ctx context.Context, graphID, tenant
 
 // SyncSpatialLayerByConfig 根据 SpatialLayerConfig 在 Neo4j 中创建空间图层（幂等，不要求 IsSpatialLayer=true）
 func (s *GraphDataService) SyncSpatialLayerByConfig(ctx context.Context, graphID, tenantID uint, cfg *models.SpatialLayerConfig) error {
+	ctx = s.mutationContext(ctx, graphID, tenantID)
 	if cfg == nil || cfg.LayerName == "" {
 		return nil
 	}
@@ -843,7 +884,10 @@ func (s *GraphDataService) SyncSpatialLayerByConfig(ctx context.Context, graphID
 		return fmt.Errorf("target graph does not support spatial layers")
 	}
 	// 查询已有图层，幂等
-	layersResult, _ := executeGraphQuery(ctx, engine, "CALL spatial.layers() YIELD name")
+	layersResult, err := executeGraphQuery(ctx, engine, "CALL spatial.layers() YIELD name")
+	if err != nil {
+		return err
+	}
 	if layersResult != nil {
 		for _, row := range layersResult.Rows {
 			if name, ok := row["name"].(string); ok && name == cfg.LayerName {
@@ -873,6 +917,7 @@ func (s *GraphDataService) SyncSpatialLayerByConfig(ctx context.Context, graphID
 
 // AddNodeToSpatialLayer 将已写入的节点注册到空间图层（通过 elementId 定位节点）
 func (s *GraphDataService) AddNodeToSpatialLayer(ctx context.Context, graphID, tenantID uint, elementId, layerName string) error {
+	ctx = s.mutationContext(ctx, graphID, tenantID)
 	_, engine, err := s.getGraphAndEngine(ctx, graphID, tenantID)
 	if err != nil {
 		return err

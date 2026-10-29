@@ -64,8 +64,6 @@ other = "任务已重新启动"
 [graph.build.task_active]
 other = "图谱构建任务已有待执行或运行中的执行记录"
 
-[graph.build.task_runtime_not_owned]
-other = "当前服务实例未持有该任务的运行实例，无法取消；任务状态未改变"
 
 [graph.build.task_run_failed]
 other = "图谱构建任务操作失败"
@@ -117,3 +115,18 @@ other = "审核项已被处理，请刷新后重试"
 
 [graph.review.batch_failed]
 other = "部分审核项处理失败；已成功的结果已保留，请刷新查看"
+
+[graph.err.invalid_request]
+other = "请求参数无效，必须提交当前版本或准确的执行身份。"
+
+[graph.kg.version_conflict]
+other = "图谱已发生变化，请刷新并核对后重新提交。"
+
+[graph.kg.physical_target_unverified]
+other = "当前引擎尚不能证明这是原物理图谱，继续保持关闭。"
+
+[graph.kg.reconciliation_incomplete]
+other = "仍有活动执行或待核清操作，图谱继续保持关闭。"
+
+[graph.kg.admission_closed]
+other = "图谱准入已关闭或外部操作尚未核清。"

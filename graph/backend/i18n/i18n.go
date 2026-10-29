@@ -25,6 +25,11 @@ const (
 	MsgDisplayPropertyNotFound  = "graph.ontology.display_property_not_found"
 	MsgDisplayPropertyNotString = "graph.ontology.display_property_not_string"
 
+	MsgInvalidRequest           = "graph.err.invalid_request"
+	MsgVersionConflict          = "graph.kg.version_conflict"
+	MsgPhysicalTargetUnverified = "graph.kg.physical_target_unverified"
+	MsgReconciliationIncomplete = "graph.kg.reconciliation_incomplete"
+	MsgAdmissionClosed          = "graph.kg.admission_closed"
 	// 图谱
 	MsgProtectionRequired   = "graph.kg.protection_required"
 	MsgTargetInvalid        = "graph.kg.target_invalid"
@@ -47,7 +52,6 @@ const (
 	MsgTaskCancelled            = "graph.build.task_cancelled"
 	MsgTaskRestarted            = "graph.build.task_restarted"
 	MsgTaskActive               = "graph.build.task_active"
-	MsgTaskRuntimeNotOwned      = "graph.build.task_runtime_not_owned"
 	MsgTaskRunFailed            = "graph.build.task_run_failed"
 
 	// 审核

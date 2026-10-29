@@ -112,9 +112,12 @@ func TestBatchReviewReportsFailuresAndContinues(t *testing.T) {
 			db := setupGraphCleanupTestDB(t)
 			sqlDB, _ := db.DB()
 			defer sqlDB.Close()
+            if err:=db.Create(&models.KnowledgeGraph{ID:11,TenantID:7,EngineID:1,Name:"batch",IndexManagement:models.GraphIndexesExternal}).Error;err!=nil{t.Fatal(err)}
+            if err:=db.Create(&models.BuildTask{ID:1,TenantID:7,GraphID:11,Name:"batch",Status:models.BuildStatusSuccess}).Error;err!=nil{t.Fatal(err)}
+
 			items := make([]models.ReviewItem, 3)
 			for i := range items {
-				items[i] = models.ReviewItem{TenantID: 7, GraphID: 11, Content: []byte(`{}`), Status: models.ReviewStatusPending}
+				items[i] = models.ReviewItem{TaskID:1,TenantID: 7, GraphID: 11, Content: []byte(`{}`), Status: models.ReviewStatusPending}
 				if i == 1 && failure == "processed" {
 					items[i].Status = models.ReviewStatusApproved
 				}
@@ -125,7 +128,7 @@ func TestBatchReviewReportsFailuresAndContinues(t *testing.T) {
 			sentinel := errors.New("fixture review persistence failure")
 			if failure == "save" {
 				if err := db.Callback().Update().Before("gorm:update").Register("fixture:review-failure", func(tx *gorm.DB) {
-					if item, ok := tx.Statement.Dest.(*models.ReviewItem); ok && item.ID == items[1].ID {
+					if item, ok := tx.Statement.Model.(*models.ReviewItem); ok && item.ID == items[1].ID && tx.Statement.Dest.(map[string]interface{})["status"]!=nil {
 						tx.AddError(sentinel)
 					}
 				}); err != nil {

@@ -12,16 +12,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/authorization/authtest"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	commoni18n "github.com/addp/common/middleware/i18n"
+	commonmodels "github.com/addp/common/models"
 	graphi18n "github.com/addp/graph/i18n"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/repository"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -43,6 +45,31 @@ func runBuildFailureFixture(t *testing.T, db *gorm.DB, graphID uint, data *Graph
 	}
 	server := httptest.NewServer(extract)
 	defer server.Close()
+	sqlDB, _ := db.DB()
+	sqlDB.SetMaxOpenConns(1)
+	if data == nil {
+		provider, err := plugin.Get("falkordb")
+		if err != nil {
+			t.Fatal(err)
+		}
+		caps, err := plugin.MarshalEngineCapabilities(provider.Capabilities())
+		if err != nil {
+			t.Fatal(err)
+		}
+		capValue := commonmodels.JSONString(caps)
+		engine := commonmodels.Engine{Version: 1, ID: 13, Name: "fixture", EngineType: "falkordb", Capabilities: &capValue, LifecycleState: commonmodels.EngineLifecycleActive, ConnectionStatus: commonmodels.EngineConnectionOnline}
+		system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _ = json.NewEncoder(w).Encode(engine) }))
+		t.Cleanup(system.Close)
+		if err := db.Exec("ATTACH DATABASE ':memory:' AS graph").Error; err != nil {
+			t.Fatal(err)
+		}
+		store, err := projectionstore.Migrate(db, "graph", "graph", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		syncGraphProtection(t, store, 7, "")
+		data = NewGraphDataService(repository.NewKnowledgeGraphRepository(db), repository.NewOntologyRepository(db), commonClient.NewSystemServiceClient(system.URL, graphServiceToken{}, system.Client()), NewGraphProtectionGate(store))
+	}
 	buildRepo := repository.NewBuildRepository(db)
 	ontologyRepo := repository.NewOntologyRepository(db)
 	service := &BuildService{
@@ -63,29 +90,28 @@ func runBuildFailureFixture(t *testing.T, db *gorm.DB, graphID uint, data *Graph
 	}
 	for _, name := range []string{"bad", "good"} {
 		material := models.BuildMaterial{TenantID: 7, TaskID: task.ID, GraphID: graphID, Type: "document", FileName: name, FilePath: "build/" + name, Stats: []byte(`{}`)}
-		if err := buildRepo.CreateMaterial(&material); err != nil {
+		if err := buildRepo.CreateMaterial(context.Background(), &material); err != nil {
 			t.Fatal(err)
 		}
 	}
-	execution := commonExecution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: 7, Module: commonExecution.ModuleGraph, TaskType: commonExecution.TaskTypeKGBuild, Source: commonExecution.ModuleGraph, Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual}
-	claimed, materials, err := buildRepo.ClaimExecution(t.Context(), task.ID, graphID, 7, &execution, repository.BuildExecutionClaimRun)
+	ctx := commonExecution.WithUserOrigin(t.Context(), authtest.NewTenantUserAuthContext("7", "7", nil))
+	executionID, err := service.RunTaskWithContext(ctx, task.ID, graphID, 7, 7, commonExecution.TriggerTypeManual, commonExecution.ModuleGraph, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	started := time.Now()
-	if err := buildRepo.StartExecution(t.Context(), task.ID, 7, execution.ExecutionID, started); err != nil {
+	if err := service.superviseOnce(ctx, "fixture", BuildSupervisorOptions{LeaseDuration: 2 * time.Minute, Heartbeat: 20 * time.Second, Poll: time.Second}); err != nil {
 		t.Fatal(err)
 	}
-	claimed.StartedAt = &started
-	service.executeTask(t.Context(), claimed, materials, 7, execution.ExecutionID)
+	var execution commonExecution.TaskExecution
+
 	stored, err := buildRepo.GetTask(task.ID, 7)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Where("execution_id = ?", execution.ExecutionID).First(&execution).Error; err != nil {
+	if err := db.Where("execution_id = ?", executionID).First(&execution).Error; err != nil {
 		t.Fatal(err)
 	}
-	materials, err = buildRepo.ListMaterials(task.ID, 7)
+	materials, err := buildRepo.ListMaterials(task.ID, 7)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,8 +187,13 @@ func TestBuildExecutionPreservesMaterialFailuresAndContinues(t *testing.T) {
 			if task.Status != wantStatus || execution.Status != wantStatus || task.CompletedAt == nil || execution.CompletedAt == nil {
 				t.Fatalf("material failure was reported as success or left active: task=%s execution=%s", task.Status, execution.Status)
 			}
-			if strings.Join(calls, ",") != "bad,good" || len(materials) != 2 || materials[1].Status != models.BuildMaterialStatusCompleted || materials[1].ProcessedChunks != 1 {
-				t.Fatalf("later material was not processed: calls=%v materials=%+v", calls, materials)
+			if failure == "extraction" {
+				wantQueued = 0
+				if strings.Join(calls, ",") != "bad" || len(materials) != 2 || materials[1].Status != models.BuildMaterialStatusFailed || materials[1].ProcessedChunks != 0 {
+					t.Fatalf("unknown external outcome allowed another request: calls=%v materials=%+v", calls, materials)
+				}
+			} else if strings.Join(calls, ",") != "bad,good" || len(materials) != 2 || materials[1].Status != models.BuildMaterialStatusCompleted || materials[1].ProcessedChunks != 1 {
+				t.Fatalf("known local failure blocked later material: calls=%v materials=%+v", calls, materials)
 			}
 			var stats models.BuildTaskStats
 			if err := json.Unmarshal(task.Stats, &stats); err != nil || stats.Processed != 2 || stats.PendingReview != wantQueued || execution.RecordsWritten == nil || *execution.RecordsWritten != 0 {

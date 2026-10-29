@@ -28,14 +28,24 @@ func TestReviewHTTPScopesAndBatchFailure(t *testing.T) {
 	}
 	sqlDB, _ := db.DB()
 	defer sqlDB.Close()
-	if err = db.AutoMigrate(&models.ReviewItem{}); err != nil {
+	if err = db.AutoMigrate(&models.TenantAdmissionLock{}, &models.GraphOperation{}, &models.BuildExecutionControl{}, &models.KnowledgeGraph{}, &models.BuildTask{}, &models.ReviewItem{}); err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Create(&models.TenantAdmissionLock{TenantID: 7}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.KnowledgeGraph{ID: 11, TenantID: 7, EngineID: 1, Name: "review", IndexManagement: models.GraphIndexesExternal}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.BuildTask{ID: 1, TenantID: 7, GraphID: 11, Name: "review", Status: models.BuildStatusSuccess}).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	for _, item := range []models.ReviewItem{
-		{ID: 1, TenantID: 7, GraphID: 11, Content: []byte(`{}`), Status: models.ReviewStatusPending},
+		{ID: 1, TaskID: 1, TenantID: 7, GraphID: 11, Content: []byte(`{}`), Status: models.ReviewStatusPending},
 		{ID: 2, TenantID: 7, GraphID: 12, Content: []byte(`{}`), Status: models.ReviewStatusPending},
 		{ID: 3, TenantID: 8, GraphID: 11, Content: []byte(`{}`), Status: models.ReviewStatusPending},
-		{ID: 4, TenantID: 7, GraphID: 11, Content: []byte(`{}`), Status: models.ReviewStatusApproved},
+		{ID: 4, TaskID: 1, TenantID: 7, GraphID: 11, Content: []byte(`{}`), Status: models.ReviewStatusApproved},
 	} {
 		if err = db.Create(&item).Error; err != nil {
 			t.Fatal(err)

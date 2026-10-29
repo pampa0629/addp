@@ -29,14 +29,14 @@
         <div class="task-footer">
           <span class="task-date">{{ formatDate(task.created_at) }}</span>
           <div class="task-actions" @click.stop>
-            <el-button v-if="authStore.hasPermission('graph.build_task.execute') && (task.status === 'pending' || task.status === 'failed')" size="small" type="primary" @click="handleRun(task)">{{ t('graph.build.run') }}</el-button>
-            <el-button v-if="authStore.hasPermission('graph.build_task.cancel') && task.status === 'running'" size="small" type="warning" @click="handleCancel(task)">{{ t('graph.build.cancel') }}</el-button>
+            <el-button v-if="authStore.hasPermission('graph.build_task.execute') && canRunBuild(task)" size="small" type="primary" @click="handleRun(task)">{{ t('graph.build.run') }}</el-button>
+            <el-button v-if="authStore.hasPermission('graph.build_task.cancel') && canCancelBuild(task)" size="small" type="warning" @click="handleCancel(task)">{{ t('graph.build.cancel') }}</el-button>
             <el-button v-if="authStore.hasPermission('graph.build_task.execute') && (task.status === 'success' || task.status === 'cancelled')" size="small" type="primary" plain @click="handleRerun(task)">{{ t('graph.build.rerun') }}</el-button>
             <el-button v-if="authStore.hasPermission('graph.review.read')" size="small" @click="goReview(task)">
               {{ t('graph.build.reviewBtn') }}
               <el-badge v-if="pendingCounts[task.id]" :value="pendingCounts[task.id]" class="review-badge" />
             </el-button>
-            <el-button v-if="authStore.hasPermission('graph.build_task.delete')" size="small" type="danger" @click="handleDelete(task.id)">{{ t('graph.common.delete') }}</el-button>
+            <el-button v-if="authStore.hasPermission('graph.build_task.delete') && !hasActiveBuild(task)" size="small" type="danger" @click="handleDelete(task.id)">{{ t('graph.common.delete') }}</el-button>
           </div>
         </div>
       </div>
@@ -80,6 +80,7 @@
 </template>
 
 <script setup>
+import { hasActiveBuild, canCancelBuild, canRunBuild, buildCancellationIdentity } from '../utils/buildExecution'
 import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -167,8 +168,8 @@ async function handleRun(task) {
 
 async function handleCancel(task) {
   try {
-    await buildAPI.cancelTask(props.graphId, task.id)
-    ElMessage.success(t('graph.build.taskCancelled'))
+    const result = await buildAPI.cancelTask(props.graphId, task.id, buildCancellationIdentity(task))
+    ElMessage.success(t(result.status === 'running' ? 'graph.build.cancelAccepted' : result.status === 'cancelled' ? 'graph.build.taskCancelled' : 'graph.build.cancelAlreadyTerminal'))
     await loadTasks()
   } catch (e) {
     ElMessage.error(e.response?.data?.error || t('graph.build.cancelFailed'))

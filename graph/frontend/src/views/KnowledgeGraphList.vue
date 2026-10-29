@@ -18,6 +18,16 @@
           <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
         </template>
       </el-table-column>
+      <el-table-column :label="t('graph.knowledgeGraph.admission')" min-width="170">
+        <template #default="{ row }">
+          <span>{{ t(row.admission?.has_unresolved_operations ? 'graph.knowledgeGraph.admissionBlocked' : row.admission?.closed ? 'graph.knowledgeGraph.admissionClosed' : 'graph.knowledgeGraph.admissionOpen') }}</span>
+          <div v-if="row.admission?.has_unresolved_operations">{{ t('graph.knowledgeGraph.unresolvedOperations') }}</div>
+          <template v-if="row.admission?.closed && authStore.hasPermission('graph.graph.reconcile')">
+            <el-button link @click="handleControl(row, 'reconcile')">{{ t('graph.knowledgeGraph.reconcile') }}</el-button>
+            <el-button v-if="authStore.hasPermission('graph.graph.update')" link @click="handleControl(row, 'reopen')">{{ t('graph.knowledgeGraph.reopen') }}</el-button>
+          </template>
+        </template>
+      </el-table-column>
       <el-table-column prop="description" :label="t('graph.common.description')" show-overflow-tooltip />
       <el-table-column prop="created_at" :label="t('graph.common.createdAt')" width="180">
         <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
@@ -168,11 +178,20 @@ const handleCreate = async () => {
 const handleDelete = async (row) => {
   await ElMessageBox.confirm(t('graph.knowledgeGraph.confirmDelete', { name: row.name }), t('graph.common.confirmDelete'), { type: 'warning' })
   try {
-    await knowledgeGraphAPI.delete(row.id)
+    await knowledgeGraphAPI.delete(row.id, row.version)
     ElMessage.success(t('graph.common.deleteSuccess'))
     load()
-  } catch {
-    ElMessage.error(t('graph.common.deleteFailed'))
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || t('graph.common.deleteFailed'))
+  }
+}
+
+const handleControl = async (row, action) => {
+  try {
+    await knowledgeGraphAPI[action](row.id, row.version)
+    await load()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.error || t('graph.common.saveFailed'))
   }
 }
 
@@ -189,7 +208,7 @@ const handleReview = (row) => {
 }
 
 const handleEdit = (row) => {
-  editForm.value = { id: row.id, name: row.name, description: row.description || '' }
+  editForm.value = { id: row.id, version: row.version, name: row.name, description: row.description || '' }
   showEditDialog.value = true
 }
 
@@ -197,7 +216,7 @@ const handleUpdate = async () => {
   await editFormRef.value.validate()
   saving.value = true
   try {
-    await knowledgeGraphAPI.update(editForm.value.id, { name: editForm.value.name, description: editForm.value.description })
+    await knowledgeGraphAPI.update(editForm.value.id, { version: editForm.value.version, name: editForm.value.name, description: editForm.value.description })
     ElMessage.success(t('graph.common.saveSuccess'))
     showEditDialog.value = false
     load()

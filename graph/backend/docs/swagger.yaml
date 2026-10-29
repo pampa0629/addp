@@ -320,6 +320,13 @@ definitions:
         description: 总关系数
         type: integer
     type: object
+  github_com_addp_graph_internal_models.BuildEnqueueResponse:
+    properties:
+      execution_id:
+        type: string
+      status:
+        type: string
+    type: object
   github_com_addp_graph_internal_models.BuildMaterial:
     properties:
       created_at:
@@ -382,6 +389,8 @@ definitions:
         type: integer
       error_message:
         type: string
+      execution_attempt:
+        type: integer
       execution_id:
         description: 关联 common.task_executions.execution_id
         type: string
@@ -410,6 +419,28 @@ definitions:
       tenant_id:
         type: integer
       updated_at:
+        type: string
+    type: object
+  github_com_addp_graph_internal_models.CancelBuildRequest:
+    properties:
+      attempt:
+        minimum: 0
+        type: integer
+      execution_id:
+        type: string
+    required:
+    - attempt
+    - execution_id
+    type: object
+  github_com_addp_graph_internal_models.CancelBuildResponse:
+    properties:
+      attempt:
+        type: integer
+      cancellation_requested:
+        type: boolean
+      execution_id:
+        type: string
+      status:
         type: string
     type: object
   github_com_addp_graph_internal_models.ConstraintDefinition:
@@ -633,6 +664,20 @@ definitions:
     required:
     - kind
     type: object
+  github_com_addp_graph_internal_models.GraphAdmissionView:
+    properties:
+      closed:
+        type: boolean
+      has_unresolved_operations:
+        type: boolean
+    type: object
+  github_com_addp_graph_internal_models.GraphControlRequest:
+    properties:
+      version:
+        type: integer
+    required:
+    - version
+    type: object
   github_com_addp_graph_internal_models.GraphEdgeDTO:
     properties:
       color:
@@ -716,6 +761,8 @@ definitions:
     type: object
   github_com_addp_graph_internal_models.KnowledgeGraph:
     properties:
+      admission:
+        $ref: '#/definitions/github_com_addp_graph_internal_models.GraphAdmissionView'
       catalog_path:
         $ref: '#/definitions/plugin.EngineCatalogPath'
       created_at:
@@ -748,6 +795,8 @@ definitions:
         type: integer
       updated_at:
         type: string
+      version:
+        type: integer
     type: object
   github_com_addp_graph_internal_models.NodeScore:
     properties:
@@ -1095,8 +1144,10 @@ definitions:
         type: boolean
       name:
         type: string
-      status:
-        type: string
+      version:
+        type: integer
+    required:
+    - version
     type: object
   github_com_addp_graph_internal_models.UpdateOntologyRequest:
     properties:
@@ -1456,6 +1507,8 @@ paths:
       - graph.graph.create
   /graphs/{id}:
     delete:
+      consumes:
+      - application/json
       description: 删除知识图谱实例 | Delete a knowledge graph instance
       parameters:
       - description: 知识图谱 ID | Knowledge graph ID
@@ -1463,6 +1516,12 @@ paths:
         name: id
         required: true
         type: integer
+      - description: 当前版本 | Current version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_graph_internal_models.GraphControlRequest'
       produces:
       - application/json
       responses:
@@ -1470,6 +1529,18 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.SuccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1759,6 +1830,14 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1791,6 +1870,14 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.SuccessResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1836,6 +1923,8 @@ paths:
       - graph.build_task.read
   /graphs/{id}/build/tasks/{tid}/cancel:
     post:
+      consumes:
+      - application/json
       parameters:
       - description: 知识图谱 ID | Knowledge graph ID
         in: path
@@ -1847,20 +1936,30 @@ paths:
         name: tid
         required: true
         type: integer
+      - description: 准确执行及观察到的 attempt | Exact execution and observed attempt
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_graph_internal_models.CancelBuildRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: 未启动取消或已终态 | Cancelled before start or already terminal
           schema:
-            $ref: '#/definitions/github_com_addp_graph_internal_models.SuccessResponse'
+            $ref: '#/definitions/github_com_addp_graph_internal_models.CancelBuildResponse'
+        "202":
+          description: 取消意图已持久受理，运行尚未停止 | Cancellation durably accepted; execution
+            has not yet stopped
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.CancelBuildResponse'
         "400":
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "409":
-          description: 任务冲突或当前进程不持有运行实例 | Task conflict or runtime not owned by current
-            process
+          description: 执行身份已变化 | Execution identity has changed
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
       security:
@@ -1937,6 +2036,14 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1974,6 +2081,14 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.SuccessResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -2002,10 +2117,10 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "202":
+          description: 已持久入队，尚未开始 | Durably queued, not yet started
           schema:
-            $ref: '#/definitions/github_com_addp_graph_internal_models.SuccessResponse'
+            $ref: '#/definitions/github_com_addp_graph_internal_models.BuildEnqueueResponse'
         "400":
           description: Bad Request
           schema:
@@ -2039,10 +2154,10 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "202":
+          description: 已持久入队，尚未开始 | Durably queued, not yet started
           schema:
-            $ref: '#/definitions/github_com_addp_graph_internal_models.SuccessResponse'
+            $ref: '#/definitions/github_com_addp_graph_internal_models.BuildEnqueueResponse'
         "400":
           description: Bad Request
           schema:
@@ -2276,6 +2391,121 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - graph.graph.read
+  /graphs/{id}/reconcile:
+    post:
+      consumes:
+      - application/json
+      description: 仅接受当前版本；证据不足保持阻断，不自动重跑 | Accept only the current version; insufficient
+        evidence remains blocked without automatic rerun
+      parameters:
+      - description: 知识图谱 ID | Knowledge graph ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 当前版本 | Current version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_graph_internal_models.GraphControlRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.KnowledgeGraph'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 核验关闭图谱的持久证据 | Reconcile durable evidence of a closed graph
+      tags:
+      - 知识图谱 | Knowledge Graph
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.graph.reconcile
+  /graphs/{id}/reopen:
+    post:
+      consumes:
+      - application/json
+      description: 仅接受当前版本；证据不足保持阻断，不自动重跑 | Accept only the current version; insufficient
+        evidence remains blocked without automatic rerun
+      parameters:
+      - description: 知识图谱 ID | Knowledge graph ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 当前版本 | Current version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_graph_internal_models.GraphControlRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.KnowledgeGraph'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 重新开放原物理图谱 | Reopen the original physical graph
+      tags:
+      - 知识图谱 | Knowledge Graph
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - graph.graph.update
+      - graph.graph.reconcile
   /graphs/{id}/review:
     get:
       parameters:

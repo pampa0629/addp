@@ -242,7 +242,7 @@ func (s *KnowledgeService) SearchEntities(
 	if strings.TrimSpace(query) == "" {
 		return []models.KSEntity{}, 0, nil
 	}
-	indexes, err := syncSearchIndexes(ctx, engine, graphID, allDefinitions)
+	indexes, err := s.graphDataSvc.syncSearchIndexes(ctx, engine, kg, allDefinitions)
 	if err != nil {
 		return nil, 0, err
 	}

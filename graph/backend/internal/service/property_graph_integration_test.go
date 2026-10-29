@@ -24,6 +24,7 @@ import (
 	"github.com/addp/graph/internal/repository"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 type graphServiceToken struct{}
@@ -81,7 +82,7 @@ func testPropertyGraphDomain(t *testing.T, kind, endpoint, password string) {
 		conn["user"] = "neo4j"
 		path.Segments = append(path.Segments, plugin.EngineCatalogSegment{Term: "database", Kind: "namespace", Name: "neo4j"}, plugin.EngineCatalogSegment{Term: "graph", Kind: "graph", Name: "graph"})
 	}
-	engine := &commonmodels.Engine{ID: 13, Name: "domain", EngineType: kind, ConnectionInfo: conn, LifecycleState: commonmodels.EngineLifecycleActive, ConnectionStatus: commonmodels.EngineConnectionOnline}
+	engine := &commonmodels.Engine{Version: 1, ID: 13, Name: "domain", EngineType: kind, ConnectionInfo: conn, LifecycleState: commonmodels.EngineLifecycleActive, ConnectionStatus: commonmodels.EngineConnectionOnline}
 	capsJSON, err := plugin.MarshalEngineCapabilities(registered.Capabilities())
 	if err != nil {
 		t.Fatal(err)
@@ -243,7 +244,11 @@ func testPropertyGraphDomain(t *testing.T, kind, endpoint, password string) {
 	// Actual review service commits the graph element ID only after native success.
 	buildRepo := repository.NewBuildRepository(db)
 	reviewContent, _ := json.Marshal(map[string]interface{}{"type": "Person", "node_labels": []string{"ADDPDomainPerson"}, "unique_key_field": "key", "unique_key_value": "review", "properties": map[string]interface{}{"key": "review", "name": "Reviewed"}})
-	review := models.ReviewItem{TenantID: 7, GraphID: kg.ID, ItemType: "entity", Content: reviewContent, Status: models.ReviewStatusPending}
+	reviewTask := models.BuildTask{TenantID: 7, GraphID: kg.ID, Name: "historical review", Status: models.BuildStatusSuccess}
+	if err = buildRepo.CreateTask(&reviewTask); err != nil {
+		t.Fatal(err)
+	}
+	review := models.ReviewItem{TaskID: reviewTask.ID, TenantID: 7, GraphID: kg.ID, ItemType: "entity", Content: reviewContent, Status: models.ReviewStatusPending}
 	if err = db.Create(&review).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -254,27 +259,6 @@ func testPropertyGraphDomain(t *testing.T, kind, endpoint, password string) {
 	approved, err := buildRepo.GetReviewItem(review.ID, kg.ID, 7)
 	if err != nil || approved.ElementID == "" || approved.Status != models.ReviewStatusApproved {
 		t.Fatalf("review=%+v %v", approved, err)
-	}
-	// Batch errors must remain failures while a later item still reaches the native graph.
-	invalidReviewContent, _ := json.Marshal(map[string]interface{}{"type": "Person", "node_labels": []string{"ADDPDomainPerson"}, "unique_key_field": "key", "unique_key_value": "review", "properties": map[string]interface{}{"invalid": map[string]interface{}{"nested": "not a native graph property"}}})
-	bad := models.ReviewItem{TenantID: 7, GraphID: kg.ID, ItemType: "entity", Content: invalidReviewContent, Status: models.ReviewStatusPending}
-	valid := models.ReviewItem{TenantID: 7, GraphID: kg.ID, ItemType: "entity", Content: reviewContent, Status: models.ReviewStatusPending}
-	for _, item := range []*models.ReviewItem{&bad, &valid} {
-		if err = db.Create(item).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err = build.BatchReview(ctx, kg.ID, 7, 9, []uint{bad.ID, valid.ID}, "approve"); !errors.Is(err, ErrReviewBatchFailed) {
-		t.Fatalf("batch swallowed write error: %v", err)
-	}
-	for _, check := range []struct {
-		id     uint
-		status string
-	}{{bad.ID, models.ReviewStatusPending}, {valid.ID, models.ReviewStatusApproved}} {
-		stored, e := buildRepo.GetReviewItem(check.id, kg.ID, 7)
-		if e != nil || stored.Status != check.status || (check.status == models.ReviewStatusApproved && stored.ElementID != approved.ElementID) {
-			t.Fatalf("batch review result=%+v error=%v", stored, e)
-		}
 	}
 
 	if _, err = data.GetBrowseSnapshot(ctx, kg.ID, 8); err == nil {
@@ -294,7 +278,7 @@ func testPropertyGraphDomain(t *testing.T, kind, endpoint, password string) {
 	}
 	// External targets may reuse existing matching indexes, but never rebuild them.
 	kg.IndexManagement = models.GraphIndexesExternal
-	if err = graphRepo.Update(kg); err != nil {
+	if err = graphRepo.DB().Save(kg).Error; err != nil {
 		t.Fatal(err)
 	}
 	if _, err = data.SearchNodes(ctx, kg.ID, 7, "Ada", 10); err != nil {
@@ -327,7 +311,7 @@ func testPropertyGraphDomain(t *testing.T, kind, endpoint, password string) {
 		t.Fatalf("external index was modified: %v", err)
 	}
 	kg.IndexManagement = models.GraphIndexesManaged
-	if err = graphRepo.Update(kg); err != nil {
+	if err = graphRepo.DB().Save(kg).Error; err != nil {
 		t.Fatal(err)
 	}
 	props[2].Searchable = false
@@ -422,7 +406,8 @@ func testPropertyGraphDomain(t *testing.T, kind, endpoint, password string) {
 				keys = append(keys, "build-relation-target")
 			}
 			invalid := map[string]interface{}{"nested": "not a native graph property"}
-			task, execution, materials := runBuildFailureFixture(t, db, kg.ID, data, func(w http.ResponseWriter, r *http.Request) {
+			fixtureDB, fixtureData := isolatedNativeGraphOwner(t, data, kg)
+			task, execution, materials := runBuildFailureFixture(t, fixtureDB, kg.ID, fixtureData, func(w http.ResponseWriter, r *http.Request) {
 				var req copilotExtractRequest
 				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 					t.Error(err)
@@ -444,10 +429,24 @@ func testPropertyGraphDomain(t *testing.T, kind, endpoint, password string) {
 				}
 				_ = json.NewEncoder(w).Encode(response)
 			})
+			laterStatus := models.BuildMaterialStatusFailed
 			if failedItem == "identity" {
 				keys = keys[1:]
+				laterStatus = models.BuildMaterialStatusCompleted
+			} else {
+				// The first confirmed entity (and relation endpoint, where applicable)
+				// remains. The later material cannot cross an unresolved native call.
+				if failedItem == "entity" {
+					keys = keys[:1]
+				} else {
+					keys = []string{keys[0], keys[2]}
+				}
+				var unresolved int64
+				if err := fixtureDB.Model(&models.GraphOperation{}).Where("tenant_id = ? AND state = ?", 7, models.GraphOperationUncertain).Count(&unresolved).Error; err != nil || unresolved == 0 {
+					t.Fatalf("native uncertainty missing: %d %v", unresolved, err)
+				}
 			}
-			if task.Status != models.BuildStatusFailed || execution.Status != models.BuildStatusFailed || len(materials) != 2 || materials[0].Status != models.BuildMaterialStatusFailed || materials[0].ProcessedChunks != 0 || materials[1].Status != models.BuildMaterialStatusCompleted {
+			if task.Status != models.BuildStatusFailed || execution.Status != models.BuildStatusFailed || len(materials) != 2 || materials[0].Status != models.BuildMaterialStatusFailed || materials[0].ProcessedChunks != 0 || materials[1].Status != laterStatus {
 				t.Fatalf("native write failure did not propagate through material/task/execution: task=%+v execution=%+v materials=%+v", task, execution, materials)
 			}
 			if task.ErrorMessage == "" || materials[0].ErrorMessage == "" || execution.ErrorDetails["message"] != task.ErrorMessage {
@@ -459,7 +458,7 @@ func testPropertyGraphDomain(t *testing.T, kind, endpoint, password string) {
 			}
 			result, err := provider.ExecuteGraphQueryAtPath(ctx, plugin.ConnectionInfo(conn), path, "MATCH (n:ADDPDomainPerson) WHERE n.key IN $keys RETURN n.key AS key", plugin.QueryOptions{ReadOnly: true, Limit: 10, Parameters: map[string]interface{}{"keys": keys}})
 			if err != nil || len(result.Rows) != len(keys) {
-				t.Fatalf("successful native writes were rolled back or later material was skipped: %+v %v", result, err)
+				t.Fatalf("confirmed native writes disappeared after an unresolved call: %+v %v", result, err)
 			}
 			if failedItem == "identity" {
 				empty, err := provider.ExecuteGraphQueryAtPath(ctx, plugin.ConnectionInfo(conn), path, "MATCH (n:ADDPDomainPerson) WHERE n.key = '' RETURN count(n) AS count", plugin.QueryOptions{ReadOnly: true, Limit: 1})
@@ -469,6 +468,66 @@ func testPropertyGraphDomain(t *testing.T, kind, endpoint, password string) {
 			}
 		})
 	}
+	// A native error without operation proof keeps the first command unresolved.
+	// Later commands must not write through that hold; prior approved results remain.
+	invalidReviewContent, _ := json.Marshal(map[string]interface{}{"type": "Person", "node_labels": []string{"ADDPDomainPerson"}, "unique_key_field": "key", "unique_key_value": "review", "properties": map[string]interface{}{"invalid": map[string]interface{}{"nested": "not a native graph property"}}})
+	bad := models.ReviewItem{TaskID: reviewTask.ID, TenantID: 7, GraphID: kg.ID, ItemType: "entity", Content: invalidReviewContent, Status: models.ReviewStatusPending}
+	valid := models.ReviewItem{TaskID: reviewTask.ID, TenantID: 7, GraphID: kg.ID, ItemType: "entity", Content: reviewContent, Status: models.ReviewStatusPending}
+	for _, item := range []*models.ReviewItem{&bad, &valid} {
+		if err = db.Create(item).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = build.BatchReview(ctx, kg.ID, 7, 9, []uint{bad.ID, valid.ID}, "approve"); !errors.Is(err, ErrReviewBatchFailed) {
+		t.Fatalf("batch swallowed write error: %v", err)
+	}
+	for _, check := range []struct {
+		id     uint
+		status string
+	}{{bad.ID, models.ReviewStatusPending}, {valid.ID, models.ReviewStatusPending}} {
+		stored, e := buildRepo.GetReviewItem(check.id, kg.ID, 7)
+		if e != nil || stored.Status != check.status || (check.status == models.ReviewStatusApproved && stored.ElementID != approved.ElementID) {
+			t.Fatalf("batch review result=%+v error=%v", stored, e)
+		}
+	}
+
+	var unresolved int64
+	if err = db.Model(&models.GraphOperation{}).Where("graph_id = ? AND tenant_id = ? AND state = ?", kg.ID, 7, models.GraphOperationUncertain).Count(&unresolved).Error; err != nil || unresolved == 0 {
+		t.Fatalf("native failure lost unresolved evidence: %d %v", unresolved, err)
+	}
+
+	t.Run("native_success_with_lost_receipt_stays_blocked", func(t *testing.T) {
+		fixtureDB, fixtureData := isolatedNativeGraphOwner(t, data, kg)
+		const failReceipt = "graph-native-receipt-loss"
+		if err := fixtureDB.Callback().Update().Before("gorm:update").Register(failReceipt, func(tx *gorm.DB) {
+			if tx.Statement.Table == "graph_operations" {
+				tx.AddError(errors.New("controlled receipt loss"))
+			}
+		}); err != nil {
+			t.Fatal(err)
+		}
+		_, writeErr := fixtureData.MergeEntity(ctx, kg.ID, 7, []string{"ADDPDomainPerson"}, "key", "receipt-lost", map[string]interface{}{"key": "receipt-lost", "name": "Native success"})
+		if err := fixtureDB.Callback().Update().Remove(failReceipt); err != nil {
+			t.Fatal(err)
+		}
+		if writeErr == nil {
+			t.Fatal("lost receipt reported successful domain completion")
+		}
+		result, err := provider.ExecuteGraphQueryAtPath(ctx, plugin.ConnectionInfo(conn), path, "MATCH (n:ADDPDomainPerson) WHERE n.key = $key RETURN n.key AS key", plugin.QueryOptions{ReadOnly: true, Parameters: map[string]interface{}{"key": "receipt-lost"}})
+		if err != nil || len(result.Rows) != 1 {
+			t.Fatalf("original native success missing: %+v %v", result, err)
+		}
+		if _, err := fixtureData.MergeEntity(ctx, kg.ID, 7, []string{"ADDPDomainPerson"}, "key", "blocked-next", map[string]interface{}{"key": "blocked-next"}); !errors.Is(err, repository.ErrGraphAdmissionClosed) {
+			t.Fatalf("unresolved command admitted next write: %v", err)
+		}
+		var op models.GraphOperation
+		if err := fixtureDB.First(&op).Error; err != nil {
+			t.Fatal(err)
+		}
+		if op.State != models.GraphOperationInFlight || op.EvidenceDigest != "" || op.RunnerID == "" {
+			t.Fatalf("uncertain receipt was rewritten: %+v", op)
+		}
+	})
 
 	protected := graphProtectionProjection(t, registered.(plugin.PropertyGraphProvider), path, "managed-graph")
 	syncGraphProtection(t, store, 7, "managed", dataprotection.ProjectionChange{ChangeID: "managed", Operation: dataprotection.ChangeOperationUpsert, Projection: &protected})
@@ -516,4 +575,37 @@ func testPropertyGraphDomain(t *testing.T, kind, endpoint, password string) {
 		t.Fatal(err)
 	}
 	t.Log(fmt.Sprintf("%s domain target, writes, indexes, review, browse and knowledge service passed", kind))
+}
+
+// Each failure scenario has independent Owner state. Native side effects remain
+// visible for the explicit readback assertions; no failed record is cleared to
+// permit a later scenario to run.
+func isolatedNativeGraphOwner(t *testing.T, source *GraphDataService, kg *models.KnowledgeGraph) (*gorm.DB, *GraphDataService) {
+	t.Helper()
+	db := setupGraphCleanupTestDB(t)
+	sqlDB, _ := db.DB()
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	ontology, err := source.ontologyRepo.GetDetail(kg.OntologyID, kg.TenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Create(ontology).Error; err != nil {
+		t.Fatal(err)
+	}
+	graph := *kg
+	graph.Ontology = nil
+	if err = db.Create(&graph).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Exec("ATTACH DATABASE ':memory:' AS graph").Error; err != nil {
+		t.Fatal(err)
+	}
+	store, err := projectionstore.Migrate(db, "graph", "graph", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	syncGraphProtection(t, store, int64(kg.TenantID), "")
+	data := NewGraphDataService(repository.NewKnowledgeGraphRepository(db), repository.NewOntologyRepository(db), source.systemClient, NewGraphProtectionGate(store))
+	return db, data
 }

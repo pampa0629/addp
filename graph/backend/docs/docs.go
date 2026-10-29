@@ -330,6 +330,9 @@ const docTemplate = `{
                     }
                 ],
                 "description": "删除知识图谱实例 | Delete a knowledge graph instance",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -344,6 +347,15 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "当前版本 | Current version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.GraphControlRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -351,6 +363,24 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     },
                     "500": {
@@ -670,6 +700,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -768,6 +810,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.SuccessResponse"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -787,6 +841,9 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
+                ],
+                "consumes": [
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -809,13 +866,28 @@ const docTemplate = `{
                         "name": "tid",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "准确执行及观察到的 attempt | Exact execution and observed attempt",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.CancelBuildRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "未启动取消或已终态 | Cancelled before start or already terminal",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_graph_internal_models.SuccessResponse"
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.CancelBuildResponse"
+                        }
+                    },
+                    "202": {
+                        "description": "取消意图已持久受理，运行尚未停止 | Cancellation durably accepted; execution has not yet stopped",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.CancelBuildResponse"
                         }
                     },
                     "400": {
@@ -825,7 +897,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "任务冲突或当前进程不持有运行实例 | Task conflict or runtime not owned by current process",
+                        "description": "执行身份已变化 | Execution identity has changed",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
@@ -944,6 +1016,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -1001,6 +1085,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.SuccessResponse"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -1045,10 +1141,10 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "202": {
+                        "description": "已持久入队，尚未开始 | Durably queued, not yet started",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_graph_internal_models.SuccessResponse"
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.BuildEnqueueResponse"
                         }
                     },
                     "400": {
@@ -1102,10 +1198,10 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "202": {
+                        "description": "已持久入队，尚未开始 | Durably queued, not yet started",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_graph_internal_models.SuccessResponse"
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.BuildEnqueueResponse"
                         }
                     },
                     "400": {
@@ -1456,6 +1552,179 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "graph.graph.read"
+                ]
+            }
+        },
+        "/graphs/{id}/reconcile": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅接受当前版本；证据不足保持阻断，不自动重跑 | Accept only the current version; insufficient evidence remains blocked without automatic rerun",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "知识图谱 | Knowledge Graph"
+                ],
+                "summary": "核验关闭图谱的持久证据 | Reconcile durable evidence of a closed graph",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "当前版本 | Current version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.GraphControlRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.KnowledgeGraph"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.graph.reconcile"
+                ]
+            }
+        },
+        "/graphs/{id}/reopen": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅接受当前版本；证据不足保持阻断，不自动重跑 | Accept only the current version; insufficient evidence remains blocked without automatic rerun",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "知识图谱 | Knowledge Graph"
+                ],
+                "summary": "重新开放原物理图谱 | Reopen the original physical graph",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "知识图谱 ID | Knowledge graph ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "当前版本 | Current version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.GraphControlRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.KnowledgeGraph"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.graph.update",
+                    "graph.graph.reconcile"
                 ]
             }
         },
@@ -4189,6 +4458,17 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_graph_internal_models.BuildEnqueueResponse": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_graph_internal_models.BuildMaterial": {
             "type": "object",
             "properties": {
@@ -4278,6 +4558,9 @@ const docTemplate = `{
                 "error_message": {
                     "type": "string"
                 },
+                "execution_attempt": {
+                    "type": "integer"
+                },
                 "execution_id": {
                     "description": "关联 common.task_executions.execution_id",
                     "type": "string"
@@ -4318,6 +4601,39 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_graph_internal_models.CancelBuildRequest": {
+            "type": "object",
+            "required": [
+                "attempt",
+                "execution_id"
+            ],
+            "properties": {
+                "attempt": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "execution_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_graph_internal_models.CancelBuildResponse": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "cancellation_requested": {
+                    "type": "boolean"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 }
             }
@@ -4648,6 +4964,28 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_graph_internal_models.GraphAdmissionView": {
+            "type": "object",
+            "properties": {
+                "closed": {
+                    "type": "boolean"
+                },
+                "has_unresolved_operations": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_addp_graph_internal_models.GraphControlRequest": {
+            "type": "object",
+            "required": [
+                "version"
+            ],
+            "properties": {
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_graph_internal_models.GraphEdgeDTO": {
             "type": "object",
             "properties": {
@@ -4766,6 +5104,9 @@ const docTemplate = `{
         "github_com_addp_graph_internal_models.KnowledgeGraph": {
             "type": "object",
             "properties": {
+                "admission": {
+                    "$ref": "#/definitions/github_com_addp_graph_internal_models.GraphAdmissionView"
+                },
                 "catalog_path": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
                 },
@@ -4812,6 +5153,9 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -5320,6 +5664,9 @@ const docTemplate = `{
         },
         "github_com_addp_graph_internal_models.UpdateKnowledgeGraphRequest": {
             "type": "object",
+            "required": [
+                "version"
+            ],
             "properties": {
                 "description": {
                     "type": "string"
@@ -5331,8 +5678,8 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
-                "status": {
-                    "type": "string"
+                "version": {
+                    "type": "integer"
                 }
             }
         },

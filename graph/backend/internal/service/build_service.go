@@ -3,6 +3,8 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,8 +36,6 @@ const (
 
 var ErrReviewBatchFailed = errors.New("one or more review items failed")
 
-var ErrBuildRuntimeNotOwned = fmt.Errorf("%w: graph build runtime is not owned by this process", commonAPI.ErrConflict)
-
 // BuildService 图谱构建业务逻辑
 type BuildService struct {
 	buildRepo          *repository.BuildRepository
@@ -50,14 +50,9 @@ type BuildService struct {
 	serviceTokenSource commonClient.ServiceTokenProvider
 	httpClient         *http.Client
 
-	// 取消令牌（graphID+taskID → cancel func）
-	cancelMu sync.Mutex
-	cancels  map[string]*activeBuildRun
-}
-
-type activeBuildRun struct {
-	cancel context.CancelFunc
-	done   chan struct{}
+	supervisorMu     sync.Mutex
+	supervisorCancel context.CancelFunc
+	supervisorDone   chan struct{}
 }
 
 func NewBuildService(
@@ -84,7 +79,6 @@ func NewBuildService(
 		copilotURL:         copilotURL,
 		serviceTokenSource: serviceTokenSource,
 		httpClient:         &http.Client{Timeout: 120 * time.Second},
-		cancels:            make(map[string]*activeBuildRun),
 	}
 }
 
@@ -115,8 +109,8 @@ func (s *BuildService) CreateTask(task *models.BuildTask) error {
 	return s.buildRepo.CreateTask(task)
 }
 
-func (s *BuildService) DeleteTask(id, tenantID uint) error {
-	return s.buildRepo.DeleteTask(id, tenantID)
+func (s *BuildService) DeleteTask(ctx context.Context, id, graphID, tenantID uint) error {
+	return s.buildRepo.DeleteTask(ctx, id, graphID, tenantID)
 }
 
 // ============ 材料管理 ============
@@ -126,50 +120,54 @@ func (s *BuildService) ListMaterials(taskID, tenantID uint) ([]models.BuildMater
 }
 
 // UploadMaterial 上传材料到 MinIO，创建数据库记录
-func (s *BuildService) UploadMaterial(taskID, tenantID, graphID uint, fileName string, reader io.Reader, fileSize int64) (*models.BuildMaterial, error) {
-	key := fmt.Sprintf("%s%d/%d/%d/%s", buildMaterialsDir, tenantID, graphID, taskID, fileName)
+func (s *BuildService) UploadMaterial(ctx context.Context, taskID, tenantID, graphID uint, fileName string, reader io.Reader, fileSize int64) (*models.BuildMaterial, error) {
+	if err := s.buildRepo.CheckMaterialAdmission(ctx, taskID, graphID, tenantID); err != nil {
+		return nil, err
+	}
+	key := fmt.Sprintf("%s%d/%d/%d/%s", buildMaterialsDir, tenantID, graphID, taskID, uuid.NewString())
 	if s.materialWriter == nil {
 		return nil, fmt.Errorf("材料写入器未初始化")
 	}
-	wc, err := s.materialWriter.Create(context.Background(), contentio.NewRef(minioBucket+"/"+key, contentio.RoleMain))
+	wc, err := s.materialWriter.Create(ctx, contentio.NewRef(minioBucket+"/"+key, contentio.RoleMain))
 	if err != nil {
 		return nil, fmt.Errorf("创建材料文件失败: %w", err)
 	}
-	if _, err := io.Copy(wc, reader); err != nil {
+	hash := sha256.New()
+	size, copyErr := io.Copy(io.MultiWriter(wc, hash), reader)
+	if copyErr != nil {
 		_ = wc.Close()
-		return nil, fmt.Errorf("上传文件失败: %w", err)
+		return nil, fmt.Errorf("upload material: %w", copyErr)
 	}
 	if err := wc.Close(); err != nil {
 		return nil, fmt.Errorf("上传文件失败: %w", err)
 	}
-	mat := &models.BuildMaterial{
-		TaskID:   taskID,
-		TenantID: tenantID,
-		GraphID:  graphID,
-		Type:     "document",
-		FileName: fileName,
-		FilePath: key,
-		FileSize: fileSize,
-		Status:   models.BuildMaterialStatusPending,
+	if size != fileSize {
+		return nil, fmt.Errorf("material size changed during upload")
 	}
-	if err := s.buildRepo.CreateMaterial(mat); err != nil {
+	mat := &models.BuildMaterial{
+		TaskID:        taskID,
+		TenantID:      tenantID,
+		GraphID:       graphID,
+		Type:          "document",
+		FileName:      fileName,
+		FilePath:      key,
+		FileSize:      size,
+		ContentSHA256: hex.EncodeToString(hash.Sum(nil)),
+		Status:        models.BuildMaterialStatusPending,
+	}
+	if err := s.buildRepo.CreateMaterial(ctx, mat); err != nil {
 		return nil, err
 	}
 	return mat, nil
 }
 
-func (s *BuildService) DeleteMaterial(id, tenantID uint) error {
-	return s.buildRepo.DeleteMaterial(id, tenantID)
+func (s *BuildService) DeleteMaterial(ctx context.Context, id, taskID, graphID, tenantID uint) error {
+	return s.buildRepo.DeleteMaterial(ctx, id, taskID, graphID, tenantID)
 }
 
 // ============ 任务执行 ============
 
 // RunTask 异步启动构建任务
-func (s *BuildService) RunTask(ctx context.Context, taskID, graphID, tenantID, userID uint) error {
-	_, err := s.RunTaskWithContext(ctx, taskID, graphID, tenantID, userID, commonExecution.TriggerTypeManual, commonExecution.ModuleGraph, nil)
-	return err
-}
-
 func (s *BuildService) RunTaskWithContext(
 	ctx context.Context,
 	taskID, graphID, tenantID, userID uint,
@@ -177,10 +175,10 @@ func (s *BuildService) RunTaskWithContext(
 	source string,
 	parentExecutionID *string,
 ) (string, error) {
-	return s.claimAndLaunchTask(ctx, taskID, graphID, tenantID, userID, triggerType, source, parentExecutionID, repository.BuildExecutionClaimRun)
+	return s.enqueueTask(ctx, taskID, graphID, tenantID, userID, triggerType, source, parentExecutionID, repository.BuildExecutionClaimRun)
 }
 
-func (s *BuildService) claimAndLaunchTask(
+func (s *BuildService) enqueueTask(
 	ctx context.Context,
 	taskID, graphID, tenantID, userID uint,
 	triggerType string,
@@ -197,56 +195,42 @@ func (s *BuildService) claimAndLaunchTask(
 		normalizedSource = commonExecution.ModuleGraph
 	}
 
-	// 任务定义 claim 与 pending execution 创建必须位于同一事务。
-	now := time.Now()
-	executionID := uuid.New().String()
-	uid := int(userID)
-	execution := &commonExecution.TaskExecution{
-		TenantID:          int(tenantID),
-		ExecutionID:       executionID,
-		Module:            commonExecution.ModuleGraph,
-		TaskType:          commonExecution.TaskTypeKGBuild,
-		Source:            normalizedSource,
-		ParentExecutionID: parentExecutionID,
-		Status:            commonExecution.ExecutionStatusPending,
-		Progress:          0,
-		TriggerType:       normalizedTriggerType,
-		TriggeredBy:       &uid,
-		CreatedAt:         now,
-		UpdatedAt:         now,
-	}
-	task, materials, err := s.buildRepo.ClaimExecution(ctx, taskID, graphID, tenantID, execution, claimMode)
+	materials, err := s.buildRepo.ListMaterials(taskID, tenantID)
 	if err != nil {
-		return "", fmt.Errorf("claim graph build execution: %w", err)
+		return "", err
 	}
-
-	// 异步执行
-	runCtx, cancel := context.WithCancel(context.Background())
-	key := fmt.Sprintf("%d-%d", graphID, taskID)
-	run := &activeBuildRun{cancel: cancel, done: make(chan struct{})}
-	s.cancelMu.Lock()
-	s.cancels[key] = run
-	s.cancelMu.Unlock()
-
-	go func() {
-		defer func() {
-			s.cancelMu.Lock()
-			if s.cancels[key] == run {
-				delete(s.cancels, key)
-			}
-			s.cancelMu.Unlock()
-			close(run.done)
-			cancel()
-		}()
-		startedAt := time.Now()
-		if err := s.buildRepo.StartExecution(context.Background(), taskID, tenantID, executionID, startedAt); err != nil {
-			s.failTask(context.Background(), task, int(tenantID), executionID, fmt.Sprintf("启动图谱构建执行失败: %v", err))
-			return
+	verified := make([]models.FrozenBuildMaterial, 0, len(materials))
+	for _, mat := range materials {
+		if s.materialReader == nil {
+			return "", fmt.Errorf("material reader is required")
 		}
-		task.Status = models.BuildStatusRunning
-		task.StartedAt = &startedAt
-		s.executeTask(runCtx, task, materials, int(tenantID), executionID)
-	}()
+		rc, err := s.materialReader.Open(ctx, contentio.NewRef(minioBucket+"/"+mat.FilePath, contentio.RoleMain))
+		if err != nil {
+			return "", err
+		}
+		hash := sha256.New()
+		size, readErr := io.Copy(hash, rc)
+		closeErr := rc.Close()
+		if err := errors.Join(readErr, closeErr); err != nil {
+			return "", err
+		}
+		digest := hex.EncodeToString(hash.Sum(nil))
+		if mat.ContentSHA256 != "" && mat.ContentSHA256 != digest {
+			return "", fmt.Errorf("material content identity changed")
+		}
+		verified = append(verified, models.FrozenBuildMaterial{Material: mat, SHA256: digest, Size: size})
+	}
+	kg, target, err := s.graphDataSvc.getGraphAndEngine(ctx, graphID, tenantID)
+	if err != nil {
+		return "", err
+	}
+	target.close()
+	executionID := uuid.NewString()
+	uid := int(userID)
+	execution := &commonExecution.TaskExecution{TenantID: int(tenantID), ExecutionID: executionID, Module: commonExecution.ModuleGraph, TaskType: commonExecution.TaskTypeKGBuild, Source: normalizedSource, ParentExecutionID: parentExecutionID, Status: commonExecution.ExecutionStatusPending, Progress: 0, TriggerType: normalizedTriggerType, TriggeredBy: &uid}
+	if _, _, err := s.buildRepo.EnqueueExecution(ctx, taskID, graphID, tenantID, execution, claimMode, verified, target.Engine.Version, *kg); err != nil {
+		return "", err
+	}
 
 	return executionID, nil
 }
@@ -265,47 +249,18 @@ func (s *BuildService) RunTaskByIDWithContext(
 	return s.RunTaskWithContext(ctx, taskID, task.GraphID, tenantID, userID, triggerType, source, parentExecutionID)
 }
 
-// CancelTask 取消运行中的任务
-func (s *BuildService) CancelTask(taskID, graphID, tenantID uint) error {
-	task, err := s.buildRepo.GetTask(taskID, tenantID)
-	if err != nil {
-		return err
-	}
-	if task.GraphID != graphID {
-		return fmt.Errorf("任务不属于指定图谱")
-	}
-	if task.Status != models.BuildStatusRunning && !(task.Status == models.BuildStatusPending && task.ExecutionID != "") {
-		return fmt.Errorf("任务未在运行中")
-	}
-
-	key := fmt.Sprintf("%d-%d", graphID, taskID)
-	s.cancelMu.Lock()
-	run, ok := s.cancels[key]
-	s.cancelMu.Unlock()
-	if !ok {
-		return ErrBuildRuntimeNotOwned
-	}
-	run.cancel()
-	<-run.done
-
-	finished, err := s.buildRepo.GetTask(taskID, tenantID)
-	if err != nil {
-		return err
-	}
-	if finished.Status != models.BuildStatusCancelled {
-		return fmt.Errorf("%w: graph build task finished as %s before cancellation", commonAPI.ErrConflict, finished.Status)
-	}
-	return nil
+// CancelTask durably addresses the exact observed execution and attempt.
+func (s *BuildService) CancelTask(ctx context.Context, taskID, graphID, tenantID, userID uint, executionID string, attempt int) (*commonExecution.TaskExecution, error) {
+	return s.buildRepo.CancelExecution(ctx, taskID, graphID, tenantID, userID, executionID, attempt)
 }
 
 // RerunTask 重置任务状态并重新执行（对 success/failed/cancelled 任务适用）
-func (s *BuildService) RerunTask(ctx context.Context, taskID, graphID, tenantID, userID uint) error {
-	_, err := s.claimAndLaunchTask(
+func (s *BuildService) RerunTask(ctx context.Context, taskID, graphID, tenantID, userID uint) (string, error) {
+	return s.enqueueTask(
 		ctx, taskID, graphID, tenantID, userID,
 		commonExecution.TriggerTypeManual, commonExecution.ModuleGraph, nil,
 		repository.BuildExecutionClaimRerun,
 	)
-	return err
 }
 
 // ============ 核心执行逻辑 ============
@@ -319,28 +274,18 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 		return
 	}
 
-	// 加载本体快照
-	kg, err := s.graphRepo.GetByID(task.GraphID, uint(tenantID))
-	if err != nil {
-		s.failTask(ctx, task, tenantID, executionID, fmt.Sprintf("获取图谱失败: %v", err))
+	input, ok := buildInputFromContext(ctx)
+	if !ok {
+		s.failTask(ctx, task, tenantID, executionID, "immutable build input is required")
 		return
 	}
-	ontology, err := s.ontologyRepo.GetDetail(kg.OntologyID, uint(tenantID))
-	if err != nil {
-		s.failTask(ctx, task, tenantID, executionID, fmt.Sprintf("获取本体失败: %v", err))
+	ontologySchema := buildOntologySchema(&input.Ontology)
+	ancestorChains := buildAncestorChains(&input.Ontology)
+	spatialLayerLookup := buildSpatialLayerMappingsByEntityType(input.Ontology.EntityTypes)
+	if err := s.syncSpatialLayersBeforeBuild(ctx, task.GraphID, uint(tenantID), spatialLayerLookup); err != nil {
+		s.failTask(ctx, task, tenantID, executionID, err.Error())
 		return
 	}
-	ontologySchema := buildOntologySchema(ontology)
-	ancestorChains := buildAncestorChains(ontology)
-	if s.finishCancelledIfRequested(ctx, task, tenantID, executionID) {
-		return
-	}
-
-	// 构建空间图层查找表（实体类型名 → 空间映射，含继承关系）
-	spatialLayerLookup, _ := s.ontologySvc.BuildSpatialLayerLookup(kg.OntologyID, uint(tenantID))
-
-	// 构建前自动同步空间图层（幂等，含继承类型）
-	s.syncSpatialLayersBeforeBuild(ctx, task.GraphID, uint(tenantID), spatialLayerLookup)
 
 	total := len(materials)
 	for i, mat := range materials {
@@ -349,18 +294,16 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 		}
 
 		mat.Status = models.BuildMaterialStatusProcessing
-		err := s.buildRepo.UpdateMaterial(&mat)
+		err := s.buildRepo.UpdateMaterial(ctx, &mat)
 		written, queued := 0, 0
 		if err == nil {
 			written, queued, err = s.processMaterial(ctx, task, &mat, ontologySchema, spatialLayerLookup, ancestorChains, uint(tenantID))
 		}
 		if ctx.Err() != nil {
-			if resetErr := s.resetCancelledMaterial(&mat); resetErr != nil {
-				log.Printf("failed to reset graph build material %d after cancellation: %v", mat.ID, resetErr)
-			}
 			s.finishCancelledIfRequested(ctx, task, tenantID, executionID)
 			return
 		}
+
 		if err != nil {
 			mat.Status = models.BuildMaterialStatusFailed
 			mat.ErrorMessage = err.Error()
@@ -370,7 +313,7 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 			mat.Status = models.BuildMaterialStatusCompleted
 			mat.ProcessedAt = &now
 		}
-		err = errors.Join(err, s.buildRepo.UpdateMaterial(&mat))
+		err = errors.Join(err, s.buildRepo.UpdateMaterial(ctx, &mat))
 		if err != nil {
 			materialErrors = append(materialErrors, err)
 		}
@@ -381,16 +324,14 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 
 		// 更新 Monitor 进度
 		progress := int(float64(i+1) / float64(total) * 100)
-		_ = s.taskExecutionRepo.UpdateFields(ctx, executionID, tenantID, map[string]interface{}{
-			"status":   commonExecution.ExecutionStatusRunning,
-			"progress": progress,
-			"metadata": commonModels.JSONMap{
-				"processed_materials": processed,
-				"total_materials":     total,
-				"auto_written":        autoWritten,
-				"pending_review":      pendingReview,
-			},
-		})
+		if err := s.buildRepo.ProgressBuild(ctx, progress, commonModels.JSONMap{
+			"processed_materials": processed,
+			"total_materials":     total,
+			"auto_written":        autoWritten,
+			"pending_review":      pendingReview,
+		}); err != nil {
+			return
+		}
 	}
 	if s.finishCancelledIfRequested(ctx, task, tenantID, executionID) {
 		return
@@ -429,61 +370,33 @@ func (s *BuildService) failTask(ctx context.Context, task *models.BuildTask, ten
 }
 
 func (s *BuildService) finishCancelledIfRequested(ctx context.Context, task *models.BuildTask, tenantID int, executionID string) bool {
-	if ctx.Err() == nil {
+	requested, err := s.buildRepo.CancellationRequested(context.WithoutCancel(ctx), executionID, tenantID)
+	if err != nil || (!requested && ctx.Err() == nil) {
 		return false
 	}
-	if err := s.finishTask(context.Background(), task, tenantID, executionID, commonExecution.ExecutionStatusCancelled, "", commonModels.JSONMap{
-		"stop_reason": "user_cancelled",
-	}, nil); err != nil {
-		log.Printf("failed to persist graph execution %s cancellation: %v", executionID, err)
+	status := commonExecution.ExecutionStatusCancelled
+	if !requested {
+		status = commonExecution.ExecutionStatusFailed
+	}
+	if err := s.finishTask(context.WithoutCancel(ctx), task, tenantID, executionID, status, "", nil, nil); err != nil {
+		log.Printf("graph cancellation remains unresolved: %v", err)
 	}
 	return true
 }
 
-func (s *BuildService) resetCancelledMaterial(material *models.BuildMaterial) error {
-	material.Status = models.BuildMaterialStatusPending
-	material.ProcessedChunks = 0
-	material.TotalChunks = 0
-	material.ErrorMessage = ""
-	material.ProcessedAt = nil
-	material.Stats = []byte("{}")
-	return s.buildRepo.UpdateMaterial(material)
-}
-
 func (s *BuildService) finishTask(ctx context.Context, task *models.BuildTask, tenantID int, executionID, status, errorMessage string, metadata commonModels.JSONMap, recordsWritten *int64) error {
-	now := time.Now()
-	taskFields := map[string]interface{}{
-		"status": status, "completed_at": now, "error_message": errorMessage,
-	}
-	if task.Stats != nil {
-		taskFields["stats"] = task.Stats
-	}
-	executionFields := map[string]interface{}{
-		"status": status, "completed_at": now, "updated_at": now,
-	}
-	if status == commonExecution.ExecutionStatusSuccess {
-		executionFields["progress"] = 100
-	}
-	if task.StartedAt != nil {
-		executionFields["execution_time_ms"] = now.Sub(*task.StartedAt).Milliseconds()
-	}
-	if errorMessage != "" {
-		executionFields["error_details"] = commonModels.JSONMap{"message": errorMessage}
-	}
-	if metadata != nil {
-		executionFields["metadata"] = metadata
-	}
-	if recordsWritten != nil {
-		executionFields["records_written"] = *recordsWritten
-	}
-	return s.buildRepo.FinishExecution(ctx, task.ID, uint(tenantID), executionID, taskFields, executionFields)
+	return s.buildRepo.CompleteBuild(ctx, task, status, errorMessage, metadata, recordsWritten)
 }
 
 // syncSpatialLayersBeforeBuild 在构建前自动同步所有空间图层（幂等，含继承类型）
-func (s *BuildService) syncSpatialLayersBeforeBuild(ctx context.Context, graphID, tenantID uint, spatialLayerLookup map[string]SpatialLayerMapping) {
+func (s *BuildService) syncSpatialLayersBeforeBuild(ctx context.Context, graphID, tenantID uint, spatialLayerLookup map[string]SpatialLayerMapping) error {
 	for _, mapping := range spatialLayerLookup {
-		_ = s.graphDataSvc.SyncSpatialLayerByConfig(ctx, graphID, tenantID, mapping.Config)
+		err := s.graphDataSvc.SyncSpatialLayerByConfig(ctx, graphID, tenantID, mapping.Config)
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // processMaterial 处理单份材料（分块 + 调 Copilot + 写入/审核）
@@ -499,6 +412,21 @@ func (s *BuildService) processMaterial(ctx context.Context, task *models.BuildTa
 	if err != nil {
 		return 0, 0, fmt.Errorf("读取文件失败: %w", err)
 	}
+	input, ok := buildInputFromContext(ctx)
+	if !ok {
+		return 0, 0, fmt.Errorf("immutable material input is required")
+	}
+	var frozen *models.FrozenBuildMaterial
+	for i := range input.Materials {
+		if input.Materials[i].Material.ID == mat.ID {
+			frozen = &input.Materials[i]
+			break
+		}
+	}
+	digest := sha256.Sum256(data)
+	if frozen == nil || frozen.Material.FilePath != mat.FilePath || frozen.Size != int64(len(data)) || frozen.SHA256 != hex.EncodeToString(digest[:]) {
+		return 0, 0, fmt.Errorf("material content identity changed")
+	}
 	text := string(data)
 
 	// 分块
@@ -507,7 +435,7 @@ func (s *BuildService) processMaterial(ctx context.Context, task *models.BuildTa
 
 	if mat.TotalChunks == 0 {
 		mat.TotalChunks = len(chunks)
-		if err := s.buildRepo.UpdateMaterial(mat); err != nil {
+		if err := s.buildRepo.UpdateMaterial(ctx, mat); err != nil {
 			return 0, 0, err
 		}
 	}
@@ -529,7 +457,7 @@ func (s *BuildService) processMaterial(ctx context.Context, task *models.BuildTa
 		if err != nil {
 			mat.ProcessedChunks = i
 			mat.ErrorMessage = err.Error()
-			return autoWritten, pendingReview, errors.Join(err, s.buildRepo.UpdateMaterial(mat))
+			return autoWritten, pendingReview, errors.Join(err, s.buildRepo.UpdateMaterial(ctx, mat))
 		}
 
 		aw, pv, err := s.processChunkResult(ctx, task, mat, result, ontology, spatialLayerLookup, ancestorChains, seenEntities, tenantID)
@@ -537,11 +465,11 @@ func (s *BuildService) processMaterial(ctx context.Context, task *models.BuildTa
 		pendingReview += pv
 		if err != nil {
 			mat.ErrorMessage = err.Error()
-			return autoWritten, pendingReview, errors.Join(err, s.buildRepo.UpdateMaterial(mat))
+			return autoWritten, pendingReview, errors.Join(err, s.buildRepo.UpdateMaterial(ctx, mat))
 		}
 
 		mat.ProcessedChunks = i + 1
-		if err := s.buildRepo.UpdateMaterial(mat); err != nil {
+		if err := s.buildRepo.UpdateMaterial(ctx, mat); err != nil {
 			return autoWritten, pendingReview, err
 		}
 	}
@@ -590,7 +518,9 @@ func (s *BuildService) processChunkResult(
 			// 注册到空间图层（若该 label 或其祖先有空间图层配置）
 			if elementID != "" && spatialLayerLookup != nil {
 				if mapping, ok := spatialLayerLookup[entity.Type]; ok && mapping.Config != nil {
-					_ = s.graphDataSvc.AddNodeToSpatialLayer(ctx, task.GraphID, tenantID, elementID, mapping.Config.LayerName)
+					if err := s.graphDataSvc.AddNodeToSpatialLayer(ctx, task.GraphID, tenantID, elementID, mapping.Config.LayerName); err != nil {
+						return autoWritten, pendingReview, err
+					}
 				}
 			}
 		} else {
@@ -609,7 +539,7 @@ func (s *BuildService) processChunkResult(
 				SourceText: entity.SourceText,
 				Status:     models.ReviewStatusPending,
 			}
-			if err := s.buildRepo.CreateReviewItem(item); err != nil {
+			if err := s.buildRepo.CreateReviewItem(ctx, item); err != nil {
 				return autoWritten, pendingReview, err
 			}
 			seenEntities[key] = "queued"
@@ -690,7 +620,7 @@ func (s *BuildService) processChunkResult(
 				SourceText: rel.SourceText,
 				Status:     models.ReviewStatusPending,
 			}
-			if err := s.buildRepo.CreateReviewItem(item); err != nil {
+			if err := s.buildRepo.CreateReviewItem(ctx, item); err != nil {
 				return autoWritten, pendingReview, err
 			}
 			pendingReview++
@@ -706,68 +636,35 @@ func (s *BuildService) ListReviewItems(filter repository.ReviewFilter) ([]models
 	return s.buildRepo.ListReviewItems(filter)
 }
 
+func (s *BuildService) executeReview(ctx context.Context, graphID, itemID, tenantID, userID uint, status string, content map[string]interface{}) error {
+	item, err := s.buildRepo.BeginReview(ctx, graphID, itemID, tenantID, userID)
+	if err != nil {
+		return err
+	}
+	var elementID string
+	var finalBytes []byte
+	if status != models.ReviewStatusRejected {
+		scope := &effectScope{repo: s.buildRepo, graphID: graphID, tenantID: tenantID, reviewItemID: item.ID, commandID: item.ActiveCommandID}
+		callCtx := context.WithValue(ctx, effectScopeKey{}, scope)
+		if content == nil {
+			elementID, err = s.writeReviewItemToGraph(callCtx, item)
+		} else {
+			finalBytes = mustMarshalJSON(content)
+			elementID, err = s.writeReviewItemToGraphWithContent(callCtx, item, content)
+		}
+	}
+	finishErr := s.buildRepo.EndReview(context.WithoutCancel(ctx), item, status, elementID, finalBytes, err)
+	return errors.Join(err, finishErr)
+}
+
 func (s *BuildService) ApproveReviewItem(ctx context.Context, graphID, itemID, tenantID, userID uint) error {
-	item, err := s.buildRepo.GetReviewItem(itemID, graphID, tenantID)
-	if err != nil {
-		return err
-	}
-	if item.Status != models.ReviewStatusPending {
-		return fmt.Errorf("%w: review item already processed", commonAPI.ErrConflict)
-	}
-
-	elementID, err := s.writeReviewItemToGraph(ctx, item)
-	if err != nil {
-		return fmt.Errorf("写入图数据库 失败: %w", err)
-	}
-
-	now := time.Now()
-	item.Status = models.ReviewStatusApproved
-	item.ElementID = elementID
-	item.ReviewedBy = &userID
-	item.ReviewedAt = &now
-	return s.buildRepo.UpdateReviewItem(item)
+	return s.executeReview(ctx, graphID, itemID, tenantID, userID, models.ReviewStatusApproved, nil)
 }
-
 func (s *BuildService) RejectReviewItem(ctx context.Context, graphID, itemID, tenantID, userID uint) error {
-	item, err := s.buildRepo.GetReviewItem(itemID, graphID, tenantID)
-	if err != nil {
-		return err
-	}
-	if item.Status != models.ReviewStatusPending {
-		return fmt.Errorf("%w: review item already processed", commonAPI.ErrConflict)
-	}
-
-	now := time.Now()
-	item.Status = models.ReviewStatusRejected
-	item.ReviewedBy = &userID
-	item.ReviewedAt = &now
-	return s.buildRepo.UpdateReviewItem(item)
+	return s.executeReview(ctx, graphID, itemID, tenantID, userID, models.ReviewStatusRejected, nil)
 }
-
-func (s *BuildService) ModifyAndApproveReviewItem(ctx context.Context, graphID, itemID, tenantID, userID uint, finalContent map[string]interface{}) error {
-	item, err := s.buildRepo.GetReviewItem(itemID, graphID, tenantID)
-	if err != nil {
-		return err
-	}
-	if item.Status != models.ReviewStatusPending {
-		return fmt.Errorf("%w: review item already processed", commonAPI.ErrConflict)
-	}
-
-	finalBytes := mustMarshalJSON(finalContent)
-	item.FinalContent = finalBytes
-
-	// 用修改后的内容覆盖写入图数据库
-	elementID, err := s.writeReviewItemToGraphWithContent(ctx, item, finalContent)
-	if err != nil {
-		return fmt.Errorf("写入图数据库 失败: %w", err)
-	}
-
-	now := time.Now()
-	item.Status = models.ReviewStatusModified
-	item.ElementID = elementID
-	item.ReviewedBy = &userID
-	item.ReviewedAt = &now
-	return s.buildRepo.UpdateReviewItem(item)
+func (s *BuildService) ModifyAndApproveReviewItem(ctx context.Context, graphID, itemID, tenantID, userID uint, content map[string]interface{}) error {
+	return s.executeReview(ctx, graphID, itemID, tenantID, userID, models.ReviewStatusModified, content)
 }
 
 func (s *BuildService) BatchReview(ctx context.Context, graphID, tenantID, userID uint, ids []uint, action string) error {
@@ -921,29 +818,35 @@ func (s *BuildService) callCopilotExtract(ctx context.Context, tenantID uint, te
 		httpReq.Header.Set("Content-Type", "application/json")
 		httpReq.Header.Set("Authorization", "Bearer "+token)
 
-		resp, err := s.httpClient.Do(httpReq)
-		if err != nil {
-			return nil, fmt.Errorf("Copilot 请求失败: %w", err)
-		}
-		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
-			_ = resp.Body.Close()
+		result, callErr := recordExternalCall(ctx, "copilot", body, func() (*copilotExtractResponse, error) {
+			resp, err := s.httpClient.Do(httpReq)
+			if err != nil {
+				return nil, err
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusUnauthorized {
+				return nil, errCopilotUnauthorized
+			}
+			if resp.StatusCode != http.StatusOK {
+				body, readErr := io.ReadAll(resp.Body)
+				if readErr != nil {
+					return nil, readErr
+				}
+				return nil, fmt.Errorf("Copilot request rejected with status %d: %s", resp.StatusCode, string(body))
+			}
+			var result copilotExtractResponse
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return nil, err
+			}
+			return &result, nil
+		})
+		if errors.Is(callErr, errCopilotUnauthorized) && attempt == 0 {
 			if invalidator, ok := s.serviceTokenSource.(commonClient.ServiceTokenInvalidator); ok {
 				invalidator.InvalidateToken(tenantID, token)
-				continue
 			}
+			continue
 		}
-		if resp.StatusCode != http.StatusOK {
-			respBody, _ := io.ReadAll(resp.Body)
-			_ = resp.Body.Close()
-			return nil, fmt.Errorf("Copilot 返回错误 %d: %s", resp.StatusCode, string(respBody))
-		}
-		var result copilotExtractResponse
-		err = json.NewDecoder(resp.Body).Decode(&result)
-		_ = resp.Body.Close()
-		if err != nil {
-			return nil, fmt.Errorf("解析 Copilot 响应失败: %w", err)
-		}
-		return &result, nil
+		return result, callErr
 	}
 	return nil, fmt.Errorf("Copilot Service Access Token 被拒绝")
 }

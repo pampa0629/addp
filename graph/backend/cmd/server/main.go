@@ -117,6 +117,11 @@ func main() {
 	knowledgeSvc := service.NewKnowledgeService(graphDataSvc, ontologyRepo, graphRepo)
 	schemaInferenceSvc := service.NewSchemaInferenceService(graphRepo, ontologyRepo, graphDataSvc, ontologySvc)
 	buildSvc := service.NewBuildService(buildRepo, ontologyRepo, ontologySvc, graphRepo, taskExecutionRepo, graphDataSvc, materialReader, materialWriter, cfg.CopilotServiceURL, graphTokenSource)
+	if err := buildSvc.StartSupervisor(runtimeContext, service.BuildSupervisorOptions{LeaseDuration: time.Duration(cfg.BuildLeaseSeconds) * time.Second, Heartbeat: time.Duration(cfg.BuildHeartbeatSeconds) * time.Second, Poll: time.Duration(cfg.BuildPollSeconds) * time.Second}); err != nil {
+		logger.Error("Graph build supervisor initialization failed", "error", err)
+		return
+	}
+	defer buildSvc.StopSupervisor()
 	analysisSvc := service.NewAnalysisService(graphRepo, ontologyRepo, graphDataSvc)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
 	if err := cleanupSvc.Start(runtimeContext); err != nil {

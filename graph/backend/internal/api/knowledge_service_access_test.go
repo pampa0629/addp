@@ -26,7 +26,7 @@ func TestKnowledgeGraphPublicStateUsesCanonicalUpdate(t *testing.T) {
 	}
 	sqlDB, _ := db.DB()
 	defer sqlDB.Close()
-	if err = db.AutoMigrate(&models.Ontology{}, &models.KnowledgeGraph{}); err != nil {
+	if err = db.AutoMigrate(&models.Ontology{}, &models.TenantAdmissionLock{}, &models.GraphOperation{}, &models.BuildExecutionControl{}, &models.KnowledgeGraph{}); err != nil {
 		t.Fatal(err)
 	}
 	ontology := models.Ontology{ID: 1, TenantID: 7, Name: "test ontology"}
@@ -63,7 +63,24 @@ func TestKnowledgeGraphPublicStateUsesCanonicalUpdate(t *testing.T) {
 		{"reload sees private state", "GET", "reader", "", 200, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			req := httptest.NewRequest(test.method, "/api/v1/graph/graphs/1", strings.NewReader(test.body))
+			body := test.body
+			if test.method == "PUT" {
+				var data map[string]interface{}
+				if err := json.Unmarshal([]byte(body), &data); err != nil {
+					t.Fatal(err)
+				}
+				var current models.KnowledgeGraph
+				if err := db.First(&current, graph.ID).Error; err != nil {
+					t.Fatal(err)
+				}
+				data["version"] = current.Version
+				encoded, err := json.Marshal(data)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body = string(encoded)
+			}
+			req := httptest.NewRequest(test.method, "/api/v1/graph/graphs/1", strings.NewReader(body))
 			req.Header.Set("Authorization", "Bearer "+test.token)
 			req.Header.Set("Content-Type", "application/json")
 			response := httptest.NewRecorder()
@@ -86,7 +103,7 @@ func TestKnowledgeGraphPublicStateUsesCanonicalUpdate(t *testing.T) {
 	foreignAuth := authtest.NewTenantUserAuthContextServer(t, "8", map[string][]string{"Bearer editor": {"graph.graph.update"}})
 	defer foreignAuth.Close()
 	foreignRouter := SetupRouter(&config.Config{SystemServiceURL: foreignAuth.URL}, nil, handler, nil, nil, nil, nil, nil, modulelifecycle.NewStandalone("graph"))
-	request := httptest.NewRequest(http.MethodPut, "/api/v1/graph/graphs/1", strings.NewReader(`{"is_public":true}`))
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/graph/graphs/1", strings.NewReader(`{"version":1,"is_public":true}`))
 	request.Header.Set("Authorization", "Bearer editor")
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
