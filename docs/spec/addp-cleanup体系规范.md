@@ -571,9 +571,19 @@ System 父 execution 将 `completed` 映射为 `success`，`completed_with_error
 - `GET /api/v1/system/admin/cleanup/history` 返回 `tasks` 和本次返回条数 `total`，任务中仍含 context；当前后端按 `limit` 读取，不实现 `page` / `page_size` 分页。页面虽然发送这两个分页参数，不能据此宣称已分页或已获得全部历史总数。模块结果仍需逐任务查询，历史列表不等于完整结果集；临时协调状态、执行历史和审计的区别见[保留边界](#3-协调状态与历史保留)。
 - “查看 Monitor”只导航到对应 execution 或 System cleanup 列表，Monitor 仍按[独立读取与安全投影规则](#1-monitor)裁决。System 详情可读不证明 Monitor 父子树或私有明细可读；域接口与 Monitor 的授权、敏感字段、响应范围及实际展示须分别验收。字段保护与返回量控制须按实际出口核对，未证实的能力保留为待核对项；统一验收规则与 suite 接入缺口见[运行态验收](#十三运行态验收)。
 
+### Owner 专业结果读取
+
+2026-10-29 用户补充确认：删除旧 Redis 结果路线后，十个现有 Owner 各自保存专业 Cleanup 结果，并提供 `GET /api/v1/{owner}/cleanup-executions/{execution_id}/result`。该接口新增 `<owner>.cleanup_result.read`，不默认授予角色；同时核验第一方 unrestricted Tenant User、公共 Cleanup 子读取范围、同 Tenant 与本人一次性执行归属。Graph 构建读取 Permission 和 System 后台身份不能代替该授权。
+
+专业记录绑定准确子 execution、Tenant、attempt 与请求 digest，和标准回执、合法子终态及可原子提交的领域效果同事务保存。System 仅展示已获授权的标准摘要，专业详情由浏览器通过 Gateway 使用当前 User 按需向对应 Owner 读取；Common 前端统一处理请求代际、失效、错误和容器，Owner 只定义自身闭合统计字段。读取不推进状态，不读取其他 Owner 私表，不把正文塞入公共回执或 Monitor metadata。
+
+保留现有模块统计计数；自由文本错误改为稳定安全类别和计数。SQL、对象路径、凭据及供应商原始错误不公开。当前十个 executor 均未实际填充任意 `details`，不为该空扩展口建立新公开协议；结果为单个有界统计对象，逐对象列表／分页另议。无新结果时返回明确未就绪，不合成零结果。新专业结果首期没有自动物理保留清理，不套用执行事件或概览评估的期限。
+
+用户另已允许清理本次改造相关的旧执行、旧 Cleanup 协调及旧协议记录。旧数据不导入为新可信记录，不为它保留兼容路线；一次性清理先盘点精确引用和运行状态，不从删除记录推断外部效果已停止，不触发自动重试。新的 Hosted 与服务重启仍各按原授权边界执行。
+
 ### 协调关闭与模块未开始的安全展示
 
-状态：2026-10-29用户已确认展示契约、读取顺序、视图失效和Graph领域含义，由牵头会话统一实施及验证；Graph文档会话保持交接，不再并改。代码与门禁尚未完成，新的Hosted仍须单独确认。只解释新持久Cleanup协议的已授权执行事实，不新增execution状态、权限、通用父子取消语义、队列或执行动作，不据此宣称当前System／Monitor页面已有该能力。整份Cleanup专业详情API、安全摘要、历史保留及分页的后续迁移仍需单独收敛，本节只确定准入说明的字段与读取边界。
+状态：2026-10-29用户已确认展示契约、读取顺序、视图失效和Graph领域含义，由牵头会话统一实施及验证；Graph文档会话保持交接，不再并改。代码与门禁尚未完成，新的Hosted仍须单独确认。只解释新持久Cleanup协议的已授权执行事实，不新增execution状态、权限、通用父子取消语义、队列或执行动作，不据此宣称当前System／Monitor页面已有该能力。本节只确定准入说明的字段与读取边界；后续补充确认的专业读取边界见[Owner 专业结果读取](#owner-专业结果读取)。
 
 #### 读取与裁决边界
 
@@ -581,7 +591,7 @@ System资源回收详情沿既有 `GET /api/v1/system/admin/cleanup/tasks/:task_
 
 凭据边界须单独保留：System父详情当前使用 `UserAccessCredential`，而Owner范围协议仅支持第一方、unrestricted的Tenant User。本轮不把新增概览变成收窄原父入口凭据的理由，也不扩大Owner协议。对于原父入口合法但不在Owner协议身份集合内的请求，仍按原父读取裁决返回父自身安全事实，省略可选 `module_executions`和联合准入说明；该省略表示概览不适用于当前凭据，不能当作成功空清单、全模块已核验或零结果。对于协议支持的身份，一旦开始取得所需Owner范围，任何必需Owner失败均整份聚合读取失败；不得再降级为省略概览。这是明确的字段授权条件，不是旧接口解析或错误兜底路线。
 
-Graph当前声明 `kg_build` 读取使用 `graph.build_task.read`，`cleanup_executor` 使用 `system.cleanup.read`，两个类型互不代替；声明事实见[Graph Owner裁决](../../graph/backend/internal/api/execution_read_scope.go)。相同Permission名称不等于子项已可读，还须核对Owner返回的任务历史／本人一次性执行范围及可信主体。System不得用Graph构建／审核Permission推导Cleanup读取权；Graph Cleanup概览可读也不授予图数据、构建材料、审核结果、操作证据或专业诊断读取权。本轮不新设专业详情端点，不扩大任何Permission。
+Graph当前声明 `kg_build` 读取使用 `graph.build_task.read`，`cleanup_executor` 使用 `system.cleanup.read`，两个类型互不代替；声明事实见[Graph Owner裁决](../../graph/backend/internal/api/execution_read_scope.go)。相同Permission名称不等于子项已可读，还须核对Owner返回的任务历史／本人一次性执行范围及可信主体。System不得用Graph构建／审核Permission推导Cleanup读取权；Graph Cleanup概览可读也不授予图数据、构建材料、审核结果、操作证据或专业诊断读取权。本节的概览授权不包含专业正文；用户后续确认的独立专业端点与窄 Permission 见[Owner 专业结果读取](#owner-专业结果读取)。
 
 | 本次读取裁决 | 允许的展示 | 禁止的推断或补查 |
 | --- | --- | --- |

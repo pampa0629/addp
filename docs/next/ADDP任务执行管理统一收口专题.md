@@ -296,3 +296,19 @@ System 的 Cleanup 目的授权复用既有 execution authorization，签发／�
 实际通过的本地标准门禁：`make test-go`、`make test-authorization`、`make test-monitor-postgres`、Common `--test execution-lifecycle`，以及 System IAM 的 `cleanup-authorization`、`internal-task-authorization`、`execution-subject-roles` 和 migration 包的 `execution-authorization-lease-boundary`。System 前端另有 179 项单元测试、250 项受控浏览器测试及构建通过。这些分别是 Go、协议／权限、真实 PostgreSQL 与受控前端证据，不是 Hosted 或环境切换证据。
 
 Common CI 在 `single_claim_and_terminal_clock` 的创建时间断言曾失败。确定性复现表明旧测试比较的是纳秒精度 Go 插入输入和微秒精度 PG 值；现固定带亚微秒的夹具，以领取前独立读取的持久化值作为基线，领取与终态仍逐值严格相等，不放宽容差、不修改业务写路径。原失败与新本地通过分别保留，新 SHA 自然 CI 尚需核验。完整 `make test-platform` 的本地重跑仍在栅格 runner 的 Node 版本检查报 `25 != 24`，不计为通过；本阶段没有据此扩展栅格修改。
+
+### Cleanup 专业结果读取出口的补充决定（已确认）
+
+2026-10-29 主责与“租户日志改造”会话完成十个 Owner 的只读核对：现有 `execution-read-scope` 都只裁决公共概览；Asset、Develop、Manager、Meta、Model、Quality、Service、Standard、Transfer 没有可复用的 Cleanup 专业结果接口。Graph 的旧构建执行详情只按 module 过滤，会误包含 Cleanup，属于需要修复的范围缺口，不能视为合法专业出口。System 现有页面会直接展示 Redis 中 `statistics` 与自由文本 `errors` 的原始 JSON；十个生产 executor 当前没有填写独立 `details` 对象。
+
+因此，删除旧 Redis、专业结果归 Owner、System 不跨读私表、保留用户可见专业统计这四项要求，无法仅靠已批准的公共概览协议同时实现。本轮安全展示确认明确没有新设专业端点或扩大权限，不能把它解释为专业读取授权。用户已于 2026-10-29 确认以下唯一路线；接口／权限与页面同步实施，持久受理／协调、PG 门禁及 Graph 读取范围修复继续：
+
+1. 十个 Owner 各自持久保存本模块 Cleanup 专业结果，绑定准确子 execution、Tenant、attempt 和请求 digest，与合法子终态／公共回执同事务提交；数据库效果也在该事务边界内。外部未决操作证据仍属于各自窄控制事实，不被结果接口或成功状态替代。
+2. 增加 `GET /api/v1/{owner}/cleanup-executions/{execution_id}/result`，只接受准确 ID，不接受任意表、路径或存储参数。增加各 Owner 的 `<owner>.cleanup_result.read` 窄 Permission，不默认授予任何角色。读取同时要求该 Permission、当前 Tenant User、公共 Cleanup 子读取范围及本人一次性执行归属；不能用 Graph 构建权限或 System 后台身份替代。首期与 Owner 范围协议一致，仅第一方 unrestricted User 可读专业结果；其他合法父入口凭据仍可读取原已授权父事实。
+3. System 页面保留标准摘要，并为当前可读子提供按需“模块专业结果”入口，由浏览器经 Gateway 使用当前 User 直接向该 Owner 请求，不由 System 聚合专业正文。Common 前端统一承载请求失效、错误处理和结果容器；每个 Owner 只提供闭合专业字段。切换身份、租户、任务或新请求失败时立即清除旧结果。
+4. 保留现有实际使用的模块统计计数；错误改为 Owner 定义的安全稳定类别和计数。删除任意原始 JSON／SQL／对象路径／凭据／供应商错误透传；没有已有实际用途的任意 `details` 字段不迁移为公开扩展口。当前结果是单个有界统计对象，无明细列表，不新增假分页；将来需要逐对象清单时另定授权字段和分页合同。
+5. 私有专业结果首期不启用自动物理删除，不套用执行事件 30 天或概览 180 天只读评估期限；旧 Redis 结果不导入为新可信记录。受影响门禁包括十 Owner 的权限／同租户他人／错误 task_type／未知 ID／私有字段泄露反例、结果与终态原子性、System 按需访问及请求代际失效。新的 Hosted 仍单独确认。
+
+新增专业 API、窄 Permission 及可见错误从原文改为安全类别这三项产品／权限边界均已获确认；不默认授予新权限，专业字段迁移与页面同次实施。
+
+用户进一步明确 ADDP 仍处于研发阶段，本次改造涉及的旧执行、Cleanup 协调及旧协议记录允许清理，不要求兼容或迁移为新可信记录。实施时先盘点引用关系、活动运行体及外部未决效果，再按准确范围提供一次性清理入口；删除记录不构成外部运行已停止的证明，不自动重放删除。该授权不扩展为新记录的周期保留清理，也不替代新的 Hosted 或服务重启授权。
