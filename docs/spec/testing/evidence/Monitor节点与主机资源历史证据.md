@@ -440,3 +440,18 @@ regression／complete-comparison 在当次私有部署显式开启原容量扩�
 本地验证：`npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js` 退出0，17/17通过（1.4分钟），日志 `/tmp/addp-capacity-console-isolation-browser.log`；包含原11项及新增6项，覆盖提取后的请求识别函数和原刷新路径。`npm --prefix console/frontend run build` 退出0（4.05秒），日志 `/tmp/addp-capacity-console-isolation-build.log`。差异格式检查通过；现有标准浏览器入口、Console自动发现与CI路径覆盖，无新增入口、依赖或Workflow。
 
 本批不盲目重跑上节已记录的完整Console门禁清理断言失败，不修改无关devPorts清理实现；该门禁本轮未运行，不能由专项／构建计通过。未改未变的Go、来源T2、共享内核或Online协议，不重复其既有验证。当前只计受控HTTP／时钟下真实Console和Monitor iframe的T3，不计真实Safari、Linux来源或正式密码/MFA Hosted；旧403是废弃请求的模拟响应，不是当前身份撤权验收。CI／Hosted继续等专门会话回传；未调度／重跑／轮询CI或Hosted、不设置定时任务、不修改个人配置或重启服务。
+
+
+## 容量读取撤权与身份切换的Console验收（2026-10-29）
+
+本批只补Console受控浏览器验收，不修改IAM、权限发布、账户、组件、API或授权共享内核。先读取可见有效容量，再把第二次自动容量请求固定为独立8 TiB旧帧；沿原HTTP夹具验证当前读取拒绝与AuthContext刷新两个不同边界。原暂缓响应夹具支持在首次／第二次请求暂停，旧17场景仍走同一夹具与产品路径，没有备用产品实现。
+
+列表／详情各一项当前403场景：第二次容量读取返回permission_denied，清除容量及当前页资源观测，显示无权错误与停止自动刷新；推进60秒不再读取资源。显式刷新重新读取当前主机及资源后，容量仍须展开再读，有效值与局部错误恢复，URL、间隔偏好及同iframe保持。该403是受控服务端拒绝，不更改真实权限或数据库。
+
+两入口各覆盖权限撤销、同权限下Principal变化、带相同权限字符串的Tenant上下文，共6项。通过正式Console store的强制Token刷新动作和受控AuthContext响应验证消费链，不直接赋值业务模块AuthContext；每次刷新返回不同的测试Token。权威结果尚未返回时，Console隐藏并保留原iframe，容量在途请求出现精确requestfailed、旧表消失；确认权限撤销或Tenant上下文后拒绝当前平台页面并卸载旧Frame，同权限的新Principal也创建新Frame。此后释放旧8 TiB帧，推进60秒不产生容量读取或恢复旧表。
+
+被拒绝的上下文后续得到权威平台授权时，新建iframe而非复用已撤销实例；新Principal路径也只在显式展开后读取容量。核对Console当前Principal／Context及已有读取权限，新容量请求使用不同于旧读取的测试Token、属于新响应索引；各场景只有最初有效、被取消、重新展开三次容量请求和两份有效响应。分页、刷新偏好及原URL保持，不让Tenant进入平台主机页，不把宿主资源归为Tenant数据。
+
+本地验证：`npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js`退出0，25/25通过（1.4分钟），包含旧17项及新增8项，日志 `/tmp/addp-capacity-console-authority-browser.log`。`npm --prefix console/frontend run build`退出0（1.69秒），日志 `/tmp/addp-capacity-console-authority-build.log`；差异格式检查通过。原Console自动发现、标准浏览器入口及CI路径覆盖，无新增依赖、入口或Workflow。未改未变的Go、来源T2、共享内核或Online，不重复其既有验证；完整Console门禁本轮未重跑，上述开发端口清理断言失败仍未闭环，不计整批通过。
+
+本批只计受控HTTP／时钟下的真实Console和Monitor iframe T3，不是System真实权限发布、上下文选择／切换接口、真实登录/MFA或跨租户数据隔离T4。个人账户、采集器、数据库和配置未改动，不重启服务；CI／Hosted继续等专门会话回传，未触发／重跑／轮询CI或Hosted、不设置定时任务。原生Linux容量／Safari／Hosted与Monitor长回归的既有缺口保留。

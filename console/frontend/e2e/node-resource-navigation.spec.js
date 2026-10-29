@@ -450,9 +450,9 @@ for (const entry of ['list', 'detail']) test(`capacity automatic refresh pauses,
 })
 
 // Hold one immutable old frame at the HTTP boundary; later requests use the existing fixture.
-async function heldCapacityFixture(page, lateStatus = 200) {
+async function heldCapacityFixture(page, lateStatus = 200, holdAt = 1) {
   await page.clock.install()
-  await resourceBackend(page, { observationResponse(body, query) {
+  const state = await resourceBackend(page, { observationResponse(body, query) {
     if (query.get('metrics') !== 'node.block.capacity_bytes') return
     const first = query.get('node_id') === node
     body.collection.block_capacity = 'available'
@@ -467,10 +467,12 @@ async function heldCapacityFixture(page, lateStatus = 200) {
       resources.push({ path: url.pathname, query: Object.fromEntries(url.searchParams), value })
     }))
   })
-  let heldRequest, release, finished
+  let heldRequest, release, finished, capacityCalls = 0
   const gate = new Promise(resolve => { release = resolve }), settled = new Promise(resolve => { finished = resolve })
   await page.route('**/api/v1/monitor/platform/resource_observations?**', async route => {
-    if (!isCapacityRequest(route.request()) || heldRequest) return route.fallback()
+    if (!isCapacityRequest(route.request())) return route.fallback()
+    capacityCalls += 1
+    if (capacityCalls !== holdAt) return route.fallback()
     heldRequest = route.request()
     const body = observations(node, ['node.block.capacity_bytes'])
     body.collection.block_capacity = 'available'
@@ -482,7 +484,7 @@ async function heldCapacityFixture(page, lateStatus = 200) {
     } finally { finished() }
   })
   return {
-    requests, resources, release,
+    state, requests, resources, release,
     waitHeld: () => expect.poll(() => Boolean(heldRequest)).toBe(true),
     async cancelThrough(action) {
       const cancelled = page.waitForEvent('requestfailed', request => request === heldRequest)
@@ -592,4 +594,127 @@ for (const entry of ['list', 'detail']) test(`leaving Console ${entry} capacity 
     expect(source.resources).toHaveLength(1)
     expect(new URL(page.url()).searchParams.get('refresh')).toBe('10')
   } finally { source.release() }
+})
+
+for (const entry of ['list', 'detail']) test(`current capacity denial clears Console ${entry} observations and stops polling until explicit reload`, async ({ page }) => {
+  const source = await heldCapacityFixture(page, 403, 2)
+  try {
+    await page.goto(entry === 'list' ? '/monitor/node-resources?refresh=10' : `/monitor/node-resources/${node}?refresh=10`)
+    const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+    const toggle = monitor.getByTestId(entry === 'list' ? `resource-list-block-${node}` : 'resource-block-toggle')
+    const table = monitor.getByTestId('resource-block-table')
+    await expect(toggle).toBeVisible()
+    const frame = page.frames().find(item => item.parentFrame()), origin = await frame.evaluate(() => performance.timeOrigin), url = page.url()
+    await toggle.click()
+    const initial = await source.read(table, node)
+    await page.clock.fastForward(10001)
+    await source.waitHeld()
+    await source.releaseOld()
+    await expect(monitor.getByTestId('resource-error')).toHaveText('当前身份无权查看主机监控。')
+    await expect(table).toHaveCount(0)
+    await expect(monitor.getByTestId(entry === 'list' ? 'resource-summary-cores' : 'resource-cores')).toHaveCount(0)
+    await expect(monitor.getByTestId('resource-refresh-status')).toHaveText('自动刷新已停止，请重新加载')
+    const reads = source.state.reads.length
+    await page.clock.fastForward(60001)
+    expect(source.requests).toHaveLength(2)
+    expect(source.state.reads).toHaveLength(reads)
+    await monitor.getByRole('button', { name: '刷新', exact: true }).click()
+    await expect(toggle).toBeVisible()
+    await expect(table).toHaveCount(0)
+    await toggle.click()
+    const recovered = await source.read(table, node)
+    expect(recovered.resource_index).toBeGreaterThan(initial.resource_index)
+    await expect(monitor.getByTestId('resource-error')).toHaveCount(0)
+    await expect(monitor.getByTestId('resource-refresh-status')).toHaveText('自动刷新已开启')
+    expect(source.requests).toHaveLength(3)
+    expect(page.url()).toBe(url)
+    expect(await frame.evaluate(() => performance.timeOrigin)).toBe(origin)
+  } finally { source.release() }
+})
+
+async function capacityAuthorityFixture(page) {
+  const source = await heldCapacityFixture(page, 200, 2)
+  let generation = 0, gate = null, release, waiting = 0
+  await page.route('**/api/v1/system/refresh', route => route.fulfill({ json: { access_token: `capacity-authority-${++generation}`, expires_in: 3600 } }))
+  await page.route('**/api/v1/system/auth/context', async route => {
+    if (gate) { waiting += 1; await gate }
+    await route.fulfill({ json: source.state.identity })
+  })
+  return { ...source,
+    async begin(value) {
+      source.state.identity = value
+      waiting = 0; gate = new Promise(resolve => { release = resolve })
+      // Use the same real refresh action as the Console authorization acceptance.
+      await page.evaluate(async () => {
+        const { useAuthStore } = await import('/src/store/auth.js')
+        await useAuthStore().refreshAccessToken({ force: true })
+      })
+      await expect.poll(() => waiting).toBeGreaterThan(0)
+    },
+    finish() { gate = null; release?.() }
+  }
+}
+
+for (const entry of ['list', 'detail']) for (const change of ['permission', 'principal', 'tenant']) test(`Console ${entry} capacity cannot cross a confirmed ${change} authority change`, async ({ page }) => {
+  const source = await capacityAuthorityFixture(page)
+  try {
+    await page.goto(entry === 'list' ? '/monitor/node-resources?page=2&refresh=10' : `/monitor/node-resources/${node}?page=2&refresh=10`)
+    const iframe = page.locator('iframe[data-testid="module-iframe"]'), monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+    const toggle = monitor.getByTestId(entry === 'list' ? `resource-list-block-${node}` : 'resource-block-toggle')
+    const table = monitor.getByTestId('resource-block-table')
+    await expect(toggle).toBeVisible()
+    const frame = page.frames().find(item => item.parentFrame()), url = page.url()
+    await toggle.click()
+    await source.read(table, node)
+    await page.clock.fastForward(10001)
+    await source.waitHeld()
+    const next = identity(change === 'permission' ? ['platform.host_node.read'] : resourcePermissions,
+      change === 'tenant' ? { type: 'tenant', tenant_id: '7', tenant_membership_id: '9' } : { type: 'platform' })
+    if (change === 'principal') next.principal.id = 'another-platform-user'
+    await source.cancelThrough(() => source.begin(next))
+    await expect(iframe).toHaveCount(1)
+    await expect(iframe).toBeHidden()
+    expect(frame.isDetached()).toBe(false)
+    await expect(table).toHaveCount(0)
+    source.finish()
+    if (change !== 'principal') {
+      await expect(page.getByText('无权访问此页面', { exact: true })).toBeVisible()
+      await expect(iframe).toHaveCount(0)
+    } else {
+      await expect(iframe).toBeVisible()
+      await expect(toggle).toBeVisible()
+      await expect(table).toHaveCount(0)
+    }
+    expect(frame.isDetached()).toBe(true)
+    await source.releaseOld()
+    await page.clock.fastForward(60001)
+    expect(source.requests).toHaveLength(2)
+    if (change !== 'principal') {
+      // A later authoritative grant starts a new view; it cannot restore the revoked one.
+      await source.begin(identity(resourcePermissions))
+      await expect(iframe).toHaveCount(0)
+      source.finish()
+      await expect(iframe).toBeVisible()
+      await expect(toggle).toBeVisible()
+    }
+    const currentFrame = page.frames().find(item => item.parentFrame())
+    expect(currentFrame).not.toBe(frame)
+    await expect(table).toHaveCount(0)
+    const current = await page.evaluate(async () => {
+      const { useAuthStore } = await import('/src/store/auth.js')
+      const store = useAuthStore()
+      return { principal: store.authContext.principal.id, context: store.authContext.context.type, permissions: store.permissions }
+    })
+    expect(current.principal).toBe(change === 'principal' ? 'another-platform-user' : 'fixture-user')
+    expect(current.context).toBe('platform')
+    expect(current.permissions).toEqual(expect.arrayContaining(resourcePermissions))
+    await toggle.click()
+    const fresh = await source.read(table, node)
+    expect(fresh.resource_index).toBe(1)
+    expect(source.requests).toHaveLength(3)
+    expect(source.resources).toHaveLength(2)
+    expect(source.requests[2].headers().authorization).not.toBe(source.requests[0].headers().authorization)
+    await expect(monitor.getByTestId('resource-error')).toHaveCount(0)
+    expect(page.url()).toBe(url)
+  } finally { source.finish(); source.release() }
 })
