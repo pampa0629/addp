@@ -3885,57 +3885,78 @@ def _twi_tangent(degrees):
 
 
 def raster_twi(input_raster, slope_raster, band, slope_band, slope_unit):
-    """Metric TWI from explicit contributing area and slope on one square grid."""
+    """Metric TWI; zero slopes remain NoData."""
+    return _area_slope_index(input_raster, slope_raster, band, slope_band, slope_unit,
+                             kind='twi', error=_twi_error)
+
+
+_SPI_MESSAGES = {key: (zh.replace('地形湿度指数', '水流功率指数'),
+                       en.replace('Topographic wetness index', 'Stream power index'))
+                 for key, (zh, en) in _TWI_MESSAGES.items()}
+
+
+def _spi_error(code):
+    return ValueError(_SPI_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def raster_spi(input_raster, slope_raster, band, slope_band, slope_unit):
+    """Raw metric stream power index; zero slopes are valid zero."""
+    return _area_slope_index(input_raster, slope_raster, band, slope_band, slope_unit,
+                             kind='spi', error=_spi_error)
+
+
+def _area_slope_index(input_raster, slope_raster, band, slope_band, slope_unit, *, kind, error):
+    """Shared metric area/slope admission and bounded native pixel processing."""
     from decimal import Decimal, localcontext
     if not isinstance(slope_unit, str) or slope_unit not in ('degree', 'percent'):
-        raise _twi_error('slope-unit')
+        raise error('slope-unit')
     area, slope = _open(input_raster), _open(slope_raster)
     try:
         horizontal = _projected_north_up_grid(area)
         _projected_north_up_grid(slope)
         transform = area.GetGeoTransform()
         if transform[1] != -transform[5]:
-            raise _twi_error('grid')
+            raise error('grid')
     except ValueError as cause:
-        raise _twi_error('grid') from cause
+        raise error('grid') from cause
     try:
         _require_same_grid(area, slope)
     except ValueError as cause:
-        raise _twi_error('alignment') from cause
+        raise error('alignment') from cause
     for role, source, index in (('area', area, band), ('slope', slope, slope_band)):
         if type(index) is not int or not 1 <= index <= source.RasterCount:
-            raise _twi_error(role + '-band')
+            raise error(role + '-band')
         selected = source.GetRasterBand(index)
         if gdal.DataTypeIsComplex(selected.DataType):
-            raise _twi_error('complex')
+            raise error('complex')
         if selected.GetColorInterpretation() == gdal.GCI_AlphaBand:
-            raise _twi_error('alpha')
+            raise error('alpha')
         if selected.GetScale() not in (None, 1) or selected.GetOffset() not in (None, 0):
-            raise _twi_error('scale')
+            raise error('scale')
         unit = selected.GetUnitType()
         if role == 'area' and unit != 'm2':
-            raise _twi_error('area-unit')
+            raise error('area-unit')
         if role == 'slope' and unit and unit != slope_unit:
-            raise _twi_error('unit-conflict')
+            raise error('unit-conflict')
         for index in range(1, source.RasterCount + 1):
             candidate = source.GetRasterBand(index)
             if candidate.GetColorInterpretation() == gdal.GCI_AlphaBand and gdal.DataTypeIsComplex(candidate.DataType):
-                raise _twi_error('complex')
+                raise error('complex')
         selected = candidate = None
     width = Fraction(transform[1]) * Fraction(horizontal)
     try:
         metres = float(width)
     except OverflowError as cause:
-        raise _twi_error('numeric') from cause
+        raise error('numeric') from cause
     if not math.isfinite(metres) or metres <= 0:
-        raise _twi_error('numeric')
+        raise error('numeric')
     output = destination = None
     path = None
     try:
         output = _numeric_output(area, 1)
         path = Path(output.GetDescription())
         destination = output.GetRasterBand(1)
-        destination.SetUnitType('1')
+        destination.SetUnitType('1' if kind == 'twi' else 'metre')
         with localcontext() as context:
             context.prec = 80
             decimal_width = Decimal(width.numerator) / Decimal(width.denominator)
@@ -3945,10 +3966,12 @@ def raster_twi(input_raster, slope_raster, band, slope_band, slope_unit):
                 _, _, slopes, slope_masks = next(_blocks(slope, [slope_band], window=(x, y, columns, height), native=True))
                 betas, slope_valid = slopes[0], slope_masks[0]
                 if np.any(values[valid] <= 0):
-                    raise _twi_error('area')
+                    raise error('area')
                 if np.any(betas[slope_valid] < 0) or (slope_unit == 'degree' and np.any(betas[slope_valid] >= 90)):
-                    raise _twi_error('slope')
-                complete = valid & slope_valid & (betas > 0)
+                    raise error('slope')
+                complete = valid & slope_valid
+                if kind == 'twi':
+                    complete &= betas > 0
                 result = np.full(values.shape, np.nan)
                 # Only bounded block-local deterministic values are deduplicated.
                 tangents, indices = {}, {}
@@ -3958,11 +3981,14 @@ def raster_twi(input_raster, slope_raster, band, slope_band, slope_unit):
                     if key not in indices:
                         if b not in tangents:
                             tangents[b] = Decimal(b) / 100 if slope_unit == 'percent' else _twi_tangent(Decimal(b))
-                        ratio = Decimal(a) / decimal_width / tangents[b]
-                        exact = ratio.ln()
+                        if kind == 'twi':
+                            ratio = Decimal(a) / decimal_width / tangents[b]
+                            exact = ratio.ln()
+                        else:
+                            exact = Decimal(a) / decimal_width * tangents[b]
                         number = float(exact)
                         if not math.isfinite(number) or (exact != 0 and number == 0):
-                            raise _twi_error('numeric')
+                            raise error('numeric')
                         indices[key] = number
                     converted.append(indices[key])
                 result[complete] = converted
@@ -4488,6 +4514,7 @@ _SPECS = [
     (raster_stream_link_d8, OperatorCategory.RASTER_STREAM, 'D8 河段编号', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜，断流失败、不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；汇合点归下游段，按河段起点行列顺序从1编号')], 'raster', ['read']),
     (raster_stream_to_vector_d8, OperatorCategory.RASTER_STREAM, 'D8 河网转矢量线', [_INPUT(), _param('stream_raster', 'raster', '同网格、同有效覆盖的0／1河网掩膜；孤立单像元失败，不自动补线', role='input'), _param('band', 'int', '显式方向数据波段'), _param('stream_band', 'int', '显式河网数据波段；连接像元中心，保留河段ID及米制长度')], 'GeoDataFrame', ['read']),
     (raster_twi, OperatorCategory.RASTER_TERRAIN, '地形湿度指数 TWI', [_INPUT(), _param('slope_raster', 'raster', '同完整网格的坡度栅格；零坡度NoData，非零无阈值', role='input'), _param('band', 'int', '显式m2汇流面积波段，计入自身，固定面积除以方形像元米制边长'), _param('slope_band', 'int', '显式坡度数据波段'), _param('slope_unit', 'str', '显式坡度单位；指数允许负数及合法零，不表示实际含水量', enum=['degree', 'percent'])], 'raster', ['read']),
+    (raster_spi, OperatorCategory.RASTER_TERRAIN, '水流功率指数 SPI', [_INPUT(), _param('slope_raster', 'raster', '同完整网格的坡度栅格；零坡度0，非零无阈值', role='input'), _param('band', 'int', '显式m2汇流面积波段，计入自身，固定面积除以方形像元米制边长'), _param('slope_band', 'int', '显式坡度数据波段'), _param('slope_unit', 'str', '显式坡度单位；原始非负SPI、单位metre，不表示实际功率或侵蚀量', enum=['degree', 'percent'])], 'raster', ['read']),
     (raster_tpi, OperatorCategory.RASTER_TERRAIN, 'DEM 地形位置指数', [_INPUT(), _param('band', 'int', '显式高程数据波段；固定3×3中心减周围8点等权均值'), _param('elevation_unit', 'str', '显式高程单位；输出米，完整九点有效才计算，合法零保留', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_tri, OperatorCategory.RASTER_TERRAIN, 'DEM 地形崎岖度', [_INPUT(), _param('band', 'int', '显式高程数据波段；固定3×3 Riley中心与8邻居高差平方和开方，不除以8'), _param('elevation_unit', 'str', '显式高程单位；输出米，完整九点有效才计算，合法零保留', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_roughness, OperatorCategory.RASTER_TERRAIN, 'DEM 地形粗糙度', [_INPUT(), _param('band', 'int', '显式高程数据波段；固定3×3包含中心的九点最大高程减最小高程，不取半高差'), _param('elevation_unit', 'str', '显式高程单位；输出米，完整九点有效才计算，合法零保留', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
@@ -4512,7 +4539,7 @@ for function, category, label, params, output, effects in _SPECS:
                      'raster_stack': {'other_raster': {'$ref': 'other'}},
                      'raster_update': {'update_raster': {'$ref': 'update'}},
                      'raster_select_bands': {'bands': [3, 2, 1], 'color_model': 'rgb'}}.get(name, {}))
-    if name == 'raster_twi':
+    if name in ('raster_twi', 'raster_spi'):
         examples.update({'slope_raster': {'$ref': 'slope'}, 'band': 1, 'slope_band': 1, 'slope_unit': 'degree'})
     if name == 'raster_cut_fill':
         examples.update({'after_raster': {'$ref': 'after'}, 'band': 1, 'after_band': 1, 'elevation_unit': 'metre', 'after_elevation_unit': 'metre'})

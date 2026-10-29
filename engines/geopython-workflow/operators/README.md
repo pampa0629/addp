@@ -68,7 +68,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 栅格处理 | 波段处理 | 2 | `raster_stack`、`raster_select_bands` |
 | 栅格处理 | 基础计算 | 3 | `raster_band_math`、`raster_aggregate`、`raster_proximity` |
 | 栅格处理 | 分类处理 | 4 | `raster_reclassify`、`raster_nibble`、`raster_boundary_clean`、`raster_thin` |
-| 栅格处理 | 地形分析 | 9 | `raster_slope`、`raster_aspect`、`raster_hillshade`、`raster_curvature`、`raster_tpi`、`raster_tri`、`raster_roughness`、`raster_twi`、`raster_contour` |
+| 栅格处理 | 地形分析 | 10 | `raster_slope`、`raster_aspect`、`raster_hillshade`、`raster_curvature`、`raster_tpi`、`raster_tri`、`raster_roughness`、`raster_twi`、`raster_spi`、`raster_contour` |
 | 栅格处理 | 水流分析 | 5 | `raster_fill_depressions`、`raster_flow_direction_d8`、`raster_flow_accumulation_d8`、`raster_flow_accumulation_weighted_d8`、`raster_flow_length_d8` |
 | 栅格处理 | 汇水分析 | 4 | `raster_drainage_basins_d8`、`raster_snap_pour_points`、`raster_watershed_d8`、`raster_subcatchments_d8` |
 | 栅格处理 | 河网分析 | 5 | `raster_stream_order_d8`、`raster_stream_link_d8`、`raster_stream_to_vector_d8`、`raster_distance_to_stream_d8`、`raster_hand_d8` |
@@ -199,3 +199,5 @@ make test-geopython-workflow
 `raster_roughness`计算完整有效3×3九点的最大原始高程减最小原始高程，包含中心、统一米制。水平平地合法0、倾斜平面通常为正；保留原始64位高差及最终Float64范围校验，沿用DEM准入、带halo分块、原网格和COG保存。原TPI／TRI／曲率保持，详见[栅格算子契约](../../../docs/spec/workflow/栅格算子契约.md#dem-地形粗糙度roughness)。
 
 TWI只有`raster_twi`一个工作流入口：显式面积m2与degree/percent坡度两源，固定A/方形像元米制边长，零坡度NoData、非零无阈值；既有坡度与D8面积可直接连接，结果是潜在湿润倾向指标，不代表含水量。
+
+SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度，固定(A/米制方形像元边长)×tanβ，零坡度0，非零无阈值，输出metre；不取对数或表示实际侵蚀量，原TWI结果保持。

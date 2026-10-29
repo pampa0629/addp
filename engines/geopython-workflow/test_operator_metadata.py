@@ -1083,7 +1083,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("栅格处理", "波段处理"), "raster_stack raster_select_bands"),
         (("栅格处理", "基础计算"), "raster_band_math raster_aggregate raster_proximity"),
         (("栅格处理", "分类处理"), "raster_reclassify raster_nibble raster_boundary_clean raster_thin"),
-        (("栅格处理", "地形分析"), "raster_slope raster_aspect raster_hillshade raster_curvature raster_tpi raster_tri raster_roughness raster_twi raster_contour"),
+        (("栅格处理", "地形分析"), "raster_slope raster_aspect raster_hillshade raster_curvature raster_tpi raster_tri raster_roughness raster_twi raster_spi raster_contour"),
         (("栅格处理", "水流分析"), "raster_fill_depressions raster_flow_direction_d8 raster_flow_accumulation_d8 raster_flow_accumulation_weighted_d8 raster_flow_length_d8"),
         (("栅格处理", "汇水分析"), "raster_drainage_basins_d8 raster_snap_pour_points raster_watershed_d8 raster_subcatchments_d8"),
         (("栅格处理", "河网分析"), "raster_stream_order_d8 raster_stream_link_d8 raster_stream_to_vector_d8 raster_distance_to_stream_d8 raster_hand_d8"),
