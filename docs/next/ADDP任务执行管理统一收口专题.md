@@ -386,3 +386,12 @@ Manager 索引已补持久 `cleanup_hold_id`、C／attempt 绑定操作及准确
 - Monitor 新增 GET 零写入用例把内存纳秒插入值与 PG 微秒读回值直接序列化比较。用固定亚微秒创建时间确定性复现，仅 created_at/updated_at 的精度与时区表示不同。改为首次 GET 前读取完整持久化基线，与全部 GET 后独立读回严格相等；保留固定亚微秒夹具、并发父关闭快照及权限反例，不修改产品写入。完整 `make test-monitor-postgres` 本地通过，失败复现与修正日志分别为 `/tmp/addp-cleanup-monitor-precision-repro.log`、`/tmp/addp-cleanup-monitor-ci-fix-pg.log`。两项沿原有 T2 自动发现，无需新增入口。
 - 来源快照提交 `13bf7cd13b08eccc16af1a8bb79130a594af6426` 的 [Platform CI 40878025884](https://github.com/pampa0629/addp/actions/runs/40878025884) 中，Go、产品构建和受影响前端已通过，含 Monitor 全前端；本地 Monitor 的 20 个失败记录仍保留，不能倒写为本地通过。该提交的 T2 汇总虽绿，System IAM 实验作业及大部分 Owner 作业实际跳过，不能用汇总绿覆盖上一轮失败。上述两项修正提交后的自然 CI 仍待核验。
 - 本地完整 `make test-platform` 仍在执行；新 Hosted、真实 Gateway／Worker 验收和旧环境记录清理均未进行。最终清单汇报稿已准备，但会话消息工具当前不可用，未送达维护会话，也未据此更新工作簿。
+
+
+2026-10-29 IAM 迁移目录断言继续收口：`66d0321de4a19afbc9e8c1474a563931f58f129c` 的 [T2 作业 40880761833](https://github.com/pampa0629/addp/actions/runs/40880761833) 第一次在仓库检出阶段达到既有 5 分钟上限而取消；仅重试选择作业后，Monitor PG 通过，具体 CleanupObservationSnapshot 用例实际通过，未跳过。IAM 的 OAuth 权限清单修正通过，但完整 IAM 在后续迁移总测试失败。现按已确认契约补齐 Standard 专业结果权限数量（35→36）、六个已有严格 Runtime 列表中的 Cleanup 窄权限、目的绑定触发器数量（5→6）及 Cleanup audience 检查；不修改产品授权或放宽精确断言。
+
+本地完整 IAM 标准入口另在主体角色用例报“authenticated time must not be in the future”，尚未进入迁移包；该组在上述 CI 中已通过。本地失败日志 `/tmp/addp-cleanup-iam-full-final.log` 保留，不计本地全量通过，不调整认证时间规则。迁移包使用同一标准入口 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration"` 单独验证。
+
+本地 `make test-platform` 最终失败于既有 raster runner 的 Node 主版本检查（25 != 24）；来源快照提交的 Platform consistency CI 已取消。保留平台总门禁未通过事实，已通过的来源核验、Go、构建、Swagger／权限、相关 PG 和前端分别计证，不扩展本轮去修改栅格门禁或预算。新 Hosted、真实 Gateway／Worker、旧记录删除及环境切换仍未运行。
+
+本地完整 migration 包标准门禁最终通过（`/tmp/addp-cleanup-iam-migration-v2.log`），覆盖完整空库迁移、重入／篡改拒绝、当前目录及历史前向迁移。此前触发器数量遗漏的失败日志 `/tmp/addp-cleanup-iam-migration-final.log` 保留；本次仅测试与证据文档变更。修正提交后的 IAM 自然 CI 尚待核验。
