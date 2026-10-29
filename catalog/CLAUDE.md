@@ -47,7 +47,7 @@ Catalog 是企业资源目录的唯一事实源，负责稳定目录身份、来
 
 - 前台和 `SharingFulfillmentReconciliationRunner` 共用 `continueSharingFulfillment`，受理核清且原结果为 accepted 时，先按原参查 System 签发历史，明确未找到才签发；丢响应保留恢复。仅 closed、已有签发历史或 System 明确原窗口到期／关闭可终结自动处理，其余失败保留待续办。Runtime 核清／关闭／签发只使用 `addp-catalog` 当前 Tenant Service 身份及独立 `system.engine_access_fulfillment.execute`。
 
-- 恢复沿来源同步周期扫描创建满一分钟、自动处理尚未核清的记录，每批 100 条按游标推进，单项续办限时 30 秒，不门控 Ready。调度等待与原受理的五分钟签发窗口分别认定；重试不刷新原窗口。实际覆盖与未验项沿[验证导航](#验证导航)按固定源码认定，内部核清或签发测试不替代真实 OAuth 与实际读取验收。
+- 恢复沿来源同步周期扫描创建满一分钟、自动处理尚未核清的记录，每批 100 条按游标推进，单项续办限时 30 秒，不门控 Ready。调度等待与受理后的办理窗口分别认定。实际覆盖与未验项沿[验证导航](#验证导航)按固定源码认定，内部核清或签发测试不替代真实 OAuth 与实际读取验收。
 - 待核清目标的有效叶子、正 int64 Engine ID、64 个 segment 和完整 JSON 16 KiB 边界只由 `common/authorization.EncodeSharingTarget` 校验，与 System 仲裁复用；首次登记前拒绝不满足该边界的目标，不先冻结条目。节点身份完整保留，无效 UTF-8 不允许被 JSON 替换字符静默修正。该纯值校验不代替真实来源、认证和办理资格，也不改变现有业务确认 API。
 - 跨模块只走公开 API 和 Tenant Service Access Token，不跨 Schema 查询。
 - Meta 目标事实的唯一读取路线、完整性与拒绝边界见[授权资源描述契约](../docs/spec/addp元数据扫描机制规范.md#授权资源描述契约)。`common/client.MetaClient.ReadAuthorizationFacts` 只使用 Catalog 自身 `addp-catalog` Tenant Service 凭据，不冒用 System；非 complete、畸形或身份不一致的事实拒绝办理，不回退旧路线。数据项指纹与批准边界摘要随决定及办理冻结，System Grant 独立核验同一绑定。旧 native 测试确认及办理沿 owner 事务迁移清理，其他目录及通用审计保留。
@@ -56,8 +56,12 @@ Catalog 是企业资源目录的唯一事实源，负责稳定目录身份、来
 - 除 System 注册和本模块必需基础设施外，任何业务模块不可达都不能阻止进程启动；Meta / Model / Standard / Service / Develop 同步失败只产生滞后并后台重试，各 owner 使用独立 checkpoint。
 - `CatalogEntry` UUID 是企业稳定身份；Meta fingerprint 只是来源身份。
 - 首次保存有效 `business_owner` 即建立过业务责任，不等待完成编目。内部 nullable `business_responsibility_established` 只表达历史依据：新建为 false，责任写入同事务置 true，旧历史不足为 NULL；不得因撤销编目、移交、失效或来源变化重置，也不接受请求方编辑。保存责任不改变 System 直接授权许可，不把历史依据单独当作精确源资源的授权依据。业务批准不依赖直接许可；System 直接签发按显式许可优先、持久 Catalog 部署声明兜底的规则判断，未登记或读取失败均拒绝，进程失联不推导允许。
-- Catalog 最终核验业务责任及精确业务决定，System 持久提交正式受理回执并唯一写入 Grant；Catalog 不另存第二份可编辑接受状态，也不复制业务决定到 System。接受前移交须重新确认，接受后只允许同一次、同参数办理继续。自动办理窗口使用 System 原受理时间，为 5 分钟；指定到期时间时另受该日期截断，长期有效仍只有 5 分钟；不限制人员操作，重试不得刷新。到期未生效须重新核验并接受，已生效同次重试只返回原结果。仅持本地锁调用 System 无法证明进程故障后的先后；`fulfillment_checks` 是发送前持久待核清事实，数据库保护受影响条目的依据写入，不保存 System 受理时间／截止时间。正式准备、首次受理、受理核清及自动签发续办已接通；同参恢复不重复签发或复活撤销。PG 普通表 single 的业务批准、Manager 真实预览、Deny、解除及撤销，按下文[验证导航](#验证导航)定位场景方法和新旧协议的固定版本证据，不合并为当前 HEAD 或完整链路通过。此范围不代表其他引擎或消费入口已贯通；编目更新、受理及签发历史都不能替代当前实际访问裁决。
-- 已弃用条目禁止新的共享确认与办理接受；弃用前已接受的同次办理仍按原窗口继续，已有访问规则单独撤销。来源同步先按 UUID 稳定顺序锁定本批既有条目，再锁 current 来源绑定，与人工维护保持同一锁顺序，不以来源重新出现撤销弃用或清除责任历史。
+- 受理分界与责任变化以[源规则生命周期](../docs/spec/addp授权上下文规范.md#553-责任变化与访问规则生命周期)为准。Catalog 核验当前责任与精确业务决定；受理以 System 事务提交回执为界，Grant 仍由 System 独立签发。责任变更、来源重绑或弃用先完成时旧依据不得支持新受理，移交须由新负责人重新确认；受理先完成只允许原同次、同参数继续，仍复核办理人、管理范围与接收主体。Catalog 不保存第二份可编辑接受状态，也不复制业务决定到 System。
+
+- 自动办理窗口从 System 原受理数据库时间起 5 分钟，并受拟授权绝对到期时间截断；长期有效仍只有 5 分钟。它不是人员操作时限或数据访问期限，重试不刷新窗口。未签发且过窗须重新取得依据并受理；已签发原请求仅恢复原结果，不重复签发，不复活已撤销或过期 Grant。
+
+- `fulfillment_checks` 是发送前持久待核清事实，用数据库保护受影响条目的依据写入，不保存 System 受理时间／截止时间。仅持 Catalog 本地锁调用 System 不能证明故障后的先后；顺序以权威受理事实核清。PG 普通表 single 的业务批准、Manager 真实预览、Deny、解除及撤销，按下文[验证导航](#验证导航)定位场景方法和新旧协议的固定版本证据，不合并为当前 HEAD 或完整链路通过。此范围不代表其他引擎或消费入口已贯通；编目更新、受理及签发历史都不能替代当前实际访问裁决。
+- 已弃用条目禁止新的共享确认与办理接受；已有访问规则单独撤销。来源同步先按 UUID 稳定顺序锁定本批既有条目，再锁 current 来源绑定，与人工维护保持同一锁顺序，不以来源重新出现撤销弃用或清除责任历史。
 - `StandardMapping` 是 CatalogComponent 到确定 `Standard.ElementRevision` 的可审核、可追溯关系事实，拥有独立 UUID、并发版本、来源、置信度和审核状态。企业落标关系只归 Catalog；Quality 方案的物理目标与冻结标准来源仅表达检查意图，不构成第二套企业映射，也不以 Catalog 为前置。
 - 旧 `component_element_associations` 只在数据库迁移事务中读取：保留历史观察证据并转为未固定修订的 `legacy/proposed` 候选，随后删除旧表。业务 API 和 CatalogEntry 聚合更新只使用独立 StandardMapping；历史候选经人工固定发布修订并审核前，不得视为已落标。
 - 不提供 DataItem CatalogEntry 的手工创建和删除 API。
