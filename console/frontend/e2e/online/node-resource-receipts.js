@@ -1,4 +1,4 @@
-import { resourceMetrics, pressureMetrics, filesystemMetrics, inodeMetrics, mountMetrics, resourceDimensionRows, currentResourceValue } from '../../../../monitor/frontend/src/utils/nodeResources.js'
+import { resourceMetrics, pressureMetrics, filesystemMetrics, inodeMetrics, mountMetrics, resourceDimensionRows, currentResourceValue, blockCapacityMetrics, validateResourceResponse } from '../../../../monitor/frontend/src/utils/nodeResources.js'
 import { formatBytes } from '../../../../common-frontend/basic/src/utils/formatters.js'
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 import zhCN from '../../../../monitor/frontend/src/i18n/zh-cn.json'
@@ -102,6 +102,41 @@ export async function readResourceHeatmap(panel, receipts, nodeId, expect) {
     await expect(tile.locator('h4')).toHaveText(cell.dimensions.mountpoint)
     await expect(tile.locator('.heatmap-mount')).toHaveText(`${cell.dimensions.device} · ${cell.dimensions.fstype}`)
     await readCell(tile, cell)
+  }
+  return receipt
+}
+
+// The complete current device frame is captured, never a sum or a selected row.
+export function blockCapacityReceipt(receipts, nodeId) {
+  const source = resourceReceipts(receipts, nodeId, blockCapacityMetrics).at(-1)
+  if (!source) throw new Error('block capacity receipt missing')
+  validateResourceResponse(source.value, nodeId, blockCapacityMetrics.map(metric => metric.key))
+  if (source.value.collection?.state !== 'collecting' || source.value.collection.block_capacity !== 'available') throw new Error('block capacity frame unavailable')
+  const rows = resourceDimensionRows(source.value)
+  if (!rows.length || rows.length !== source.value.series.length || new Set(rows.map(row => row.dimensions.device)).size !== rows.length) throw new Error('block capacity frame incomplete')
+  return { resource_index: receipts.indexOf(source), devices: rows.map(row => {
+    const bytes = currentResourceValue(row.metrics['node.block.capacity_bytes'])
+    if (!Number.isSafeInteger(bytes) || bytes <= 0) throw new Error('block capacity device unavailable')
+    return { dimensions: { ...row.dimensions }, bytes, capacity_text: formatBytes(bytes, 2, 'zh-CN'),
+      kind_text: zhCN.monitor.resources.block.kinds[row.dimensions.kind], state_text: zhCN.monitor.resources.states.valid }
+  }) }
+}
+
+export async function readBlockCapacityTable(table, receipts, nodeId, expect) {
+  const receipt = blockCapacityReceipt(receipts, nodeId)
+  const rows = table.locator('.el-table__body tr')
+  await expect(rows).toHaveCount(receipt.devices.length)
+  for (const [index, device] of receipt.devices.entries()) {
+    const row = rows.nth(index)
+    await row.scrollIntoViewIfNeeded()
+    const cells = row.locator('td .cell')
+    for (const [column, value] of [device.dimensions.device, device.kind_text, device.capacity_text, device.state_text].entries()) {
+      await expect(cells.nth(column)).toBeVisible()
+      await expect(cells.nth(column)).toHaveText(value)
+    }
+    device.kind_text = (await cells.nth(1).textContent()).trim()
+    device.capacity_text = (await cells.nth(2).textContent()).trim()
+    device.state_text = (await cells.nth(3).textContent()).trim()
   }
   return receipt
 }

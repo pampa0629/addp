@@ -30,9 +30,9 @@ class MetricsFixtureTest(unittest.TestCase):
                     "com.docker.compose.project": "addp-node-metrics", "com.docker.compose.service": "node-exporter",
                     "io.addp.node-metrics.owner": str(FIXTURE.ROOT)},
                     "Cmd": ["--path.rootfs=/host", "--path.procfs=/host/proc", "--path.sysfs=/host/sys",
-                            "--collector.disable-defaults", "--collector.filesystem"]},
+                            "--collector.disable-defaults", "--collector.filesystem", "--collector.textfile", "--collector.textfile.directory=/textfile"]},
                 "HostConfig": {"NetworkMode": "host", "PidMode": "host", "ReadonlyRootfs": True,
-                               "Privileged": False, "CapDrop": ["ALL"]},
+                               "Privileged": False, "CapDrop": ["ALL"], "SecurityOpt": ["no-new-privileges:true"]},
                 "Mounts": [{"Type": "bind", "Source": "/", "Destination": "/host", "RW": False, "Propagation": "rslave"}]}
 
     def prove_native(self, row=None, info=None, ids=None):
@@ -40,7 +40,8 @@ class MetricsFixtureTest(unittest.TestCase):
         with patch.object(FIXTURE, "boundary"), patch.object(FIXTURE.platform, "system", return_value="Linux"), \
              patch.object(FIXTURE.platform, "release", return_value="test-kernel"), \
              patch.object(FIXTURE, "command", side_effect=[json.dumps(info), ids if ids is not None else "a"*64,
-                                                         json.dumps([row if row is not None else self.native_exporter()])]) as command:
+                                                         json.dumps([row if row is not None else self.native_exporter()])]) as command, \
+             patch.object(FIXTURE, "native_block_capacity_proof", return_value={"fresh_frame": True}) as capacity:
             proof = FIXTURE.native_node_source_proof()
             self.assertTrue(all(call.kwargs == {"timeout": 5} for call in command.call_args_list))
             self.assertEqual(command.call_count, 3)
@@ -49,23 +50,21 @@ class MetricsFixtureTest(unittest.TestCase):
     def test_native_source_proof_is_closed_and_does_not_export_docker_secrets(self):
         proof = self.prove_native()
         self.assertEqual(set(proof), {"schema_version", "native_linux", "source_id_sha256", "host_network_pid",
-                                     "readonly_host_root", "host_collector_paths", "filesystem_collector", "nonprivileged_exporter"})
-        self.assertEqual(proof["schema_version"], "addp.native-node-source/v1")
+                                     "readonly_host_root", "host_collector_paths", "filesystem_collector", "nonprivileged_exporter", "block_capacity"})
+        self.assertEqual(proof["schema_version"], "addp.native-node-source/v2")
         self.assertRegex(proof["source_id_sha256"], r"^[0-9a-f]{64}$")
-        self.assertTrue(all(value is True for key, value in proof.items() if key not in ("schema_version", "source_id_sha256")))
+        self.assertTrue(all(value is True for key, value in proof.items() if key not in ("schema_version", "source_id_sha256", "block_capacity")))
         self.assertNotIn("not-for-artifacts", json.dumps(proof))
         self.assertNotIn(str(FIXTURE.ROOT), json.dumps(proof))
 
-    def test_fixed_textfile_directory_is_inert_only_when_collector_is_explicitly_disabled(self):
-        row = self.native_exporter()
-        row['Config']['Cmd'].extend(['--no-collector.textfile', '--collector.textfile.directory=/textfile'])
-        self.assertTrue(self.prove_native(row=row)['filesystem_collector'])
-        for change in ('enabled', 'duplicate', 'no-disable'):
-            bad = copy.deepcopy(row)
-            if change == 'enabled': bad['Config']['Cmd'].append('--collector.textfile')
-            if change == 'duplicate': bad['Config']['Cmd'].append('--collector.textfile.directory=/textfile')
-            if change == 'no-disable': bad['Config']['Cmd'].remove('--no-collector.textfile')
-            with self.subTest(change=change), self.assertRaises(ValueError): self.prove_native(row=bad)
+    def test_native_capacity_requires_one_enabled_managed_textfile_directory(self):
+        self.assertTrue(self.prove_native()['filesystem_collector'])
+        for change in ('disabled', 'duplicate', 'foreign-directory'):
+            row = self.native_exporter()
+            if change == 'disabled': row['Config']['Cmd'].append('--no-collector.textfile')
+            if change == 'duplicate': row['Config']['Cmd'].append('--collector.textfile')
+            if change == 'foreign-directory': row['Config']['Cmd'].append('--collector.textfile.directory=/foreign')
+            with self.subTest(change=change), self.assertRaises(ValueError): self.prove_native(row=row)
 
     def test_native_source_proof_rejects_non_host_sources_and_changed_ownership(self):
         for info in ({"OSType": "windows"}, {"OSType": "linux", "KernelVersion": "other"},
@@ -109,6 +108,7 @@ class MetricsFixtureTest(unittest.TestCase):
             FIXTURE.prepare(self.secret)
         import shlex
         values = {key: shlex.split(value)[0] for key, value in (line.removeprefix('export ').split('=',1) for line in (self.secret/'metrics.env').read_text().splitlines())}
+        self.assertEqual(values['ADDP_NODE_BLOCK_CAPACITY_ENABLED'], 'false')
         profile = FIXTURE.WORKER_PROFILES[case]
         for key, value in profile['env'].items():
             self.assertEqual(values[key], value)
@@ -134,6 +134,18 @@ class MetricsFixtureTest(unittest.TestCase):
 
     def test_transfer_worker_sources_have_distinct_tls_ports_and_one_deployment_per_unit(self):
         self.check_worker_sources('transfer-workers')
+
+    def test_complete_comparison_prepares_explicit_capacity_source(self):
+        original = FIXTURE.command
+        def command(args):
+            if args[:4] == ["docker", "network", "inspect", "bridge"]:
+                return '[{"IPAM":{"Config":[{"Gateway":"172.17.0.1"}]}}]'
+            return original(args)
+        with patch.dict(os.environ, dict(self.env, ADDP_ONLINE_NODE_METRICS_CASE="complete-comparison")), patch.object(FIXTURE, "command", side_effect=command), patch.object(FIXTURE.socket, "socket"):
+            FIXTURE.prepare(self.secret)
+        import shlex
+        values = dict(line.removeprefix("export ").split("=", 1) for line in (self.secret / "metrics.env").read_text().splitlines())
+        self.assertEqual(shlex.split(values["ADDP_NODE_BLOCK_CAPACITY_ENABLED"]), ["true"])
 
     def test_boundary_refuses_personal_hosts_databases_and_public_secrets(self):
         with patch.dict(os.environ, self.env, clear=True), patch.object(FIXTURE, "ROOT", self.root / "repository"), patch.object(FIXTURE.platform, "system", return_value="Linux"), patch.object(FIXTURE.platform, "machine", return_value="x86_64"):
@@ -190,6 +202,7 @@ class MetricsFixtureTest(unittest.TestCase):
         import shlex
         values = dict(line.removeprefix("export ").split("=", 1) for line in env.splitlines())
         self.assertEqual(shlex.split(values["MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS"]), ["true"])
+        self.assertEqual(shlex.split(values["ADDP_NODE_BLOCK_CAPACITY_ENABLED"]), ["true"])
         self.assertEqual(shlex.split(values["SSL_CERT_FILE"]), [str(self.secret / "center-tls/ca.crt")])
         subprocess.run(["openssl", "verify", "-verify_ip", "127.0.0.1", "-purpose", "sslserver",
                         "-CAfile", str(self.secret / "center-tls/ca.crt"), str(self.secret / "center-tls/server.crt")], check=True, capture_output=True)
@@ -647,6 +660,92 @@ class AvailabilityProcessRecordTest(unittest.TestCase):
                 with self.assertRaises(ValueError):FIXTURE.worker_process_record('system')
                 (root/'.dev-pids/meta-worker-1.pid').write_text('1')
                 with self.assertRaises(ValueError):FIXTURE.worker_process_record('meta-worker-1')
+
+
+
+class NativeBlockCapacityProofTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='addp-native-capacity-proof-')
+        self.addCleanup(self.temp.cleanup)
+        self.secret = Path(self.temp.name)
+        self.program = FIXTURE.hashlib.sha256((FIXTURE.ROOT / 'scripts/infra/block-capacity.py').read_bytes()).hexdigest()
+        self.cid = 'b'*64
+        self.volume_name = 'addp-node-metrics_block-capacity'
+        self.volume = {'Name':self.volume_name, 'Driver':'local', 'Mountpoint':'/var/lib/docker/volumes/'+self.volume_name+'/_data',
+                       'Labels':{'com.docker.compose.project':'addp-node-metrics','com.docker.compose.volume':'block-capacity','io.addp.node-metrics.owner':str(FIXTURE.ROOT)},
+                       'Options':{'type':'tmpfs','device':'tmpfs','o':'size=1m,uid=65534,gid=65534,mode=0700'}}
+        def bind(source, destination, propagation='rprivate'):
+            return {'Type':'bind','Source':source,'Destination':destination,'Propagation':propagation,'RW':False}
+        def volume(writable):
+            return {'Type':'volume','Name':self.volume_name,'Driver':'local','Source':self.volume['Mountpoint'],'Destination':'/textfile','RW':writable}
+        self.exporter = {'Mounts':[bind('/', '/host', 'rslave'),bind(str(FIXTURE.ROOT/'scripts/infra/node-metrics-web.yml'),'/etc/addp/node-metrics/web.yml'),
+            *[bind(str(self.secret/'node-tls'/name),'/etc/addp/node-metrics/tls/'+name) for name in ('ca.crt','server.crt','server.key')],volume(False)]}
+        self.sampler = {'Id':self.cid,'State':{'Running':True},'Config':{'User':'65534:65534',
+            'Labels':{'com.docker.compose.project':'addp-node-metrics','com.docker.compose.service':'block-capacity','io.addp.node-metrics.owner':str(FIXTURE.ROOT)},
+            'Image':'python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254',
+            'Cmd':['python3','-B','/sampler.py','--kernel','test-kernel','--sysfs','/source-sys','--proc','/source-proc']},
+            'HostConfig':{'ReadonlyRootfs':True,'Privileged':False,'CapDrop':['ALL'],'SecurityOpt':['no-new-privileges:true'],
+                          'NetworkMode':'none','PidMode':'','NanoCpus':250000000,'Memory':64*1024**2,'PidsLimit':16},
+            'Mounts':[bind('/sys','/source-sys'),bind(str(FIXTURE.ROOT/'scripts/infra/block-capacity.py'),'/sampler.py'),
+                      *[bind('/proc/'+name,'/source-proc/'+name) for name in ('stat','devices','diskstats','sys/kernel/osrelease')],volume(True)]}
+        self.observed = {'program_sha256':self.program,'boot':1,'observed_at':120,'devices':[['vda','device',1073741824],['dm-0','mapped',536870912]],
+            'frame':'\n'.join(['addp_block_capacity_success 1','addp_block_capacity_supported 1','addp_block_capacity_sample_time_seconds 100',
+                            'addp_block_capacity_boot_time_seconds 1','addp_block_capacity_device_count 2',
+                            'addp_block_capacity_bytes{device="vda",kind="device"} 1073741824',
+                            'addp_block_capacity_bytes{device="dm-0",kind="mapped"} 536870912'])}
+
+    def prove(self, sampler=None, volume=None, exporter=None, observed=None):
+        with patch.object(FIXTURE.time,'time',return_value=120), patch.object(FIXTURE,'boundary',return_value=self.secret), patch.object(FIXTURE,'command',side_effect=[self.cid,json.dumps([sampler or self.sampler]),json.dumps([volume or self.volume]),json.dumps(observed or self.observed)]) as command:
+            result=FIXTURE.native_block_capacity_proof(exporter or self.exporter,'test-kernel')
+            self.assertEqual(command.call_count,4)
+            self.assertTrue(all(call.kwargs == {'timeout':5} for call in command.call_args_list))
+            self.assertEqual(command.call_args.args[0][:5],['docker','exec','--user','65534:65534',self.cid])
+            return result
+
+    def test_native_managed_snapshot_returns_closed_public_devices_without_raw_frame(self):
+        proof=self.prove()
+        self.assertEqual(proof['device_count'],2)
+        self.assertEqual(proof['devices'],[{'device':'vda','kind':'device','bytes':1073741824},{'device':'dm-0','kind':'mapped','bytes':536870912}])
+        self.assertEqual(set(proof),{'program_sha256','fresh_frame','device_count','devices','sampler_id_sha256','readonly_host_metadata','nonprivileged_sampler','owned_textfile_volume'})
+        for private in ('frame',str(self.secret),str(FIXTURE.ROOT),self.volume['Mountpoint']): self.assertNotIn(private,json.dumps(proof).replace('fresh_frame','fresh_sample'))
+
+    def test_sampler_privilege_identity_mount_and_program_changes_fail_closed(self):
+        changes=[lambda s:s['State'].update(Running=False),lambda s:s.update(Id='c'*64),
+                 lambda s:s['Config'].update(User='0:0'),lambda s:s['Config'].update(Image='untrusted'),
+                 lambda s:s['Config']['Cmd'].append('--extra'),lambda s:s['Config']['Labels'].update({'io.addp.node-metrics.owner':'foreign'}),
+                 lambda s:s['HostConfig'].update(Privileged=True),lambda s:s['HostConfig'].update(ReadonlyRootfs=False),
+                 lambda s:s['HostConfig'].update(NetworkMode='host'),lambda s:s['HostConfig'].update(PidMode='host'),
+                 lambda s:s['HostConfig'].update(Devices=[{}]),lambda s:s['HostConfig'].update(CapAdd=['SYS_ADMIN']),lambda s:s['HostConfig'].update(CapDrop=[]),
+                 lambda s:s['HostConfig'].update(Memory=2**30),lambda s:s['HostConfig'].update(PidsLimit=0),
+                 lambda s:s['Mounts'][0].update(RW=True),lambda s:s['Mounts'][0].update(Source='/'),
+                 lambda s:s['Mounts'].append({'Type':'bind','Source':'/run/docker.sock','Destination':'/run/docker.sock','RW':False}),
+                 lambda s:s['Mounts'][-1].update(Name='foreign'),lambda s:s['Mounts'][-1].update(RW=False)]
+        for index,change in enumerate(changes):
+            sampler=copy.deepcopy(self.sampler);change(sampler)
+            with self.subTest(index=index),self.assertRaises(ValueError):self.prove(sampler=sampler)
+        for change in (lambda v:v['Labels'].update({'com.docker.compose.project':'foreign'}),lambda v:v['Options'].update(o='mode=0777'),lambda v:v.update(Driver='foreign')):
+            volume=copy.deepcopy(self.volume);change(volume)
+            with self.assertRaises(ValueError):self.prove(volume=volume)
+        for change in (lambda s:s['Mounts'][-1].update(RW=True),lambda s:s['Mounts'][-1].update(Source='/foreign'),lambda s:s['Mounts'][0].update(Propagation='rprivate'),lambda s:s['Mounts'].pop()):
+            exporter=copy.deepcopy(self.exporter);change(exporter)
+            with self.assertRaises(ValueError):self.prove(exporter=exporter)
+
+    def test_source_frame_requires_complete_fresh_same_boot_exact_devices(self):
+        changes=[lambda o:o.update(program_sha256='not-the-program'),lambda o:o.update(observed_at=161),
+                 lambda o:o.update(observed_at=114),lambda o:o.update(observed_at=121),lambda o:o.update(boot=101),lambda o:o.update(observed_at=True),lambda o:o.update(devices=[]),
+                 lambda o:o['devices'].append(o['devices'][0]),lambda o:o['devices'][0].__setitem__(1,'physical'),
+                 lambda o:o['devices'][0].__setitem__(2,1),lambda o:o['devices'][0].__setitem__(2,False),
+                 lambda o:o.update(frame=o['frame']+'\nnode_filesystem_size_bytes 1'),
+                 lambda o:o.update(frame=o['frame']+'\naddp_block_capacity_success 1'),
+                 lambda o:o.update(frame=o['frame'].replace('device_count 2','device_count 1')),
+                 lambda o:o.update(frame=o['frame'].replace('bytes{device="vda"','bytes{device="foreign"')),
+                 lambda o:o.update(frame=o['frame'].replace('success 1','success 0')),
+                 lambda o:o.update(frame=o['frame'].replace('boot_time_seconds 1','boot_time_seconds 2')),
+                 lambda o:o.update(frame=o['frame'].replace('sample_time_seconds 100','sample_time_seconds 121')),
+                 lambda o:o.update(frame=o['frame'].replace(' 536870912',' 536870912 100'))]
+        for index,change in enumerate(changes):
+            observed=copy.deepcopy(self.observed);change(observed)
+            with self.subTest(index=index),self.assertRaises(ValueError):self.prove(observed=observed)
 
 
 if __name__ == "__main__":

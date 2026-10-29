@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { scalarResourceReceipts, filesystemMountReceipt, resourceHeatmapReceipt } from '../../e2e/online/node-resource-receipts.js'
-import { resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, networkMetrics } from '../../../../monitor/frontend/src/utils/nodeResources.js'
+import { scalarResourceReceipts, filesystemMountReceipt, resourceHeatmapReceipt, blockCapacityReceipt } from '../../e2e/online/node-resource-receipts.js'
+import { resourceMetrics, filesystemMetrics, inodeMetrics, mountMetrics, networkMetrics, blockCapacityMetrics } from '../../../../monitor/frontend/src/utils/nodeResources.js'
 
 const node = '10000000-0000-4000-8000-000000000001'
 const receipt = (metrics = resourceMetrics, query = {}) => ({ path: '/api/v1/monitor/platform/resource_observations',
@@ -122,5 +122,41 @@ describe('Online heatmap receipt from existing observations', () => {
     const scalar = heatmapScalar(), capacity = mountedReceipt(filesystemMetrics, mount)
     expect(() => resourceHeatmapReceipt([capacity, { ...scalar, query: { ...scalar.query, node_id: 'other' } }], node)).toThrow('receipts missing')
     expect(() => resourceHeatmapReceipt([scalar, { ...capacity, query: { ...capacity.query, metrics: filesystemMetrics.slice(1).map(row => row.key).join(',') } }], node)).toThrow('receipts missing')
+  })
+})
+
+
+describe('Online block capacity complete-frame DOM receipt', () => {
+  const capacity = () => ({ ...receipt(blockCapacityMetrics), value: {
+    subject: { kind: 'node', node_id: node }, end: '2026-10-29T00:00:00Z', queried_at: '2026-10-29T00:00:00Z',
+    collection: { state: 'collecting', block_capacity: 'available' },
+    series: ['device', 'mapped'].map((kind, index) => ({ metric_key: 'node.block.capacity_bytes', dimensions: { device: index ? 'dm-0' : 'vda', kind },
+      unit: 'bytes', window_seconds: 0, points: [{ data_state: 'valid', value: 2 ** 40, sampled_at: '2026-10-29T00:00:00Z', evaluated_at: '2026-10-29T00:00:00Z' }] }))
+  } })
+  it('keeps every device and its own IEC value, without adding mapped capacity to the base', () => {
+    const first = capacity(), last = capacity(), receipts = [first, receipt(), last]
+    const actual = blockCapacityReceipt(receipts, node)
+    expect(actual.resource_index).toBe(2)
+    expect(actual.devices).toEqual([
+      { dimensions: { device: 'vda', kind: 'device' }, bytes: 2 ** 40, capacity_text: '1.00 TiB', kind_text: '块设备', state_text: '有效' },
+      { dimensions: { device: 'dm-0', kind: 'mapped' }, bytes: 2 ** 40, capacity_text: '1.00 TiB', kind_text: '映射卷', state_text: '有效' }
+    ])
+    expect(actual).not.toHaveProperty('total')
+    expect(receipts).toHaveLength(3)
+  })
+  it.each(['stale', 'no_data', 'not_connected'])('rejects %s rather than reusing previous valid rows', state => {
+    const value = capacity()
+    value.value.series[0].points[0].data_state = state
+    if (state !== 'stale') Object.assign(value.value.series[0].points[0], { value: null, sampled_at: null })
+    expect(() => blockCapacityReceipt([capacity(), value], node)).toThrow()
+  })
+  it.each([
+    row => { row.query.node_id = 'other' }, row => { row.query.query = 'unapproved' },
+    row => { row.value.collection.block_capacity = 'failed' }, row => { row.value.series[0].dimensions.kind = 'physical' },
+    row => { row.value.series[1].dimensions.device = 'vda' }, row => { row.value.series[0].points[0].value = 0 },
+    row => { row.value.series[0].points[0].value = 2 ** 53 }, row => { row.value.series[0].unit = 'percent' }
+  ])('rejects invalid scope, structure, duplicated device or capacity', mutate => {
+    const row = capacity(); mutate(row)
+    expect(() => blockCapacityReceipt([row], node)).toThrow()
   })
 })

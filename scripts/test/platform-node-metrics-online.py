@@ -52,7 +52,8 @@ INODE_METRICS = {"node.filesystem."+key: unit for key, unit in (("inodes_total",
 DISK_METRICS = {"node.disk."+key: unit for key, unit in (("read_bytes_per_second", "bytes_per_second"), ("write_bytes_per_second", "bytes_per_second"), ("io_busy_percent", "percent"), ("read_mean_duration_milliseconds", "milliseconds"), ("write_mean_duration_milliseconds", "milliseconds"))}
 NETWORK_METRICS = {"node.network."+key: "bytes_per_second" for key in ("receive_bytes_per_second", "transmit_bytes_per_second")}
 DEVICE_RATE_FAMILIES = (DISK_METRICS, NETWORK_METRICS)
-ALL_METRICS = dict(METRICS, **FILESYSTEM_METRICS, **INODE_METRICS, **DISK_METRICS, **NETWORK_METRICS)
+BLOCK_CAPACITY_METRICS = {"node.block.capacity_bytes": "bytes"}
+ALL_METRICS = dict(BLOCK_CAPACITY_METRICS, **METRICS, **FILESYSTEM_METRICS, **INODE_METRICS, **DISK_METRICS, **NETWORK_METRICS)
 REQUIRED = {"platform.host_node.create", "platform.host_node.read", "platform.host_node.update",
             "monitor.monitoring_target.create", "monitor.monitoring_target.read",
             "monitor.monitoring_target.update", "monitor.monitoring_target.delete",
@@ -233,10 +234,16 @@ def owned_action(service, action):
 
 def source_action(action):
     require(action in {"stop", "start"}, "invalid source action")
-    ids = FIXTURE.command(["docker", "ps", "-aq", "--filter", "label=com.docker.compose.project=addp-node-metrics"]).split()
-    require(len(ids) == 1, "expected exactly one owned node source")
-    container = json.loads(FIXTURE.command(["docker", "inspect", ids[0]]))[0]
-    require(container["Config"].get("Labels", {}).get("io.addp.node-metrics.owner") == str(FIXTURE.ROOT), "refusing an unowned node source")
+    FIXTURE.boundary()
+    ids = FIXTURE.command(["docker", "ps", "-aq", "--no-trunc", "--filter", "label=com.docker.compose.project=addp-node-metrics",
+                           "--filter", "label=com.docker.compose.service=node-exporter"]).split()
+    require(len(ids) == 1 and re.fullmatch(r"[0-9a-f]{64}", ids[0]), "expected exactly one owned node exporter")
+    rows = json.loads(FIXTURE.command(["docker", "inspect", ids[0]]))
+    require(len(rows) == 1 and rows[0].get("Id") == ids[0], "node exporter inspection mismatch")
+    labels = rows[0].get("Config", {}).get("Labels", {})
+    require(labels.get("io.addp.node-metrics.owner") == str(FIXTURE.ROOT)
+            and labels.get("com.docker.compose.project") == "addp-node-metrics"
+            and labels.get("com.docker.compose.service") == "node-exporter", "refusing an unowned node exporter")
     FIXTURE.command(["docker", action, ids[0]])
 
 
@@ -268,6 +275,7 @@ def utc_timestamp(value):
 
 def assert_resources(value, node, target=None, trend=False, keys=None, disconnected=False, range_seconds=60, require_fresh=True, dimensions=None):
     expected = METRICS if keys is None else {key: ALL_METRICS[key] for key in keys}
+    require(not trend or not set(expected) & set(BLOCK_CAPACITY_METRICS), "capacity trend is not supported")
     require(value.get("subject") == {"kind": "node", "node_id": node["node_id"]}, "query node identity mismatch")
     require(value.get("node_version") == node["version"], "query node version mismatch")
     require(type(value.get("policy_version")) is int and value["policy_version"] >= 0, "missing query budget version")
@@ -298,13 +306,16 @@ def assert_resources(value, node, target=None, trend=False, keys=None, disconnec
         key = row.get("metric_key")
         require(key in expected and row.get("unit") == expected[key] and row.get("window_seconds") == (60 if key == "node.cpu.busy_percent" or key in DISK_METRICS or key in NETWORK_METRICS else 0), "resource catalog mismatch")
         dims = row.get("dimensions")
+        block = key in BLOCK_CAPACITY_METRICS
         filesystem = key.startswith("node.filesystem.")
         device_rate = key in DISK_METRICS or key in NETWORK_METRICS
         require(type(dims) is dict, "missing resource dimensions")
         require(all(type(v) is str and 0 < len(v) <= 4096 and "\0" not in v for v in dims.values()), "invalid dimension value")
-        require((not dims) or (filesystem and set(dims) == {"device", "mountpoint", "fstype"} and dims["mountpoint"].startswith("/")) or (device_rate and set(dims) == {"device"}), "invalid resource dimensions")
+        require((not dims) or (filesystem and set(dims) == {"device", "mountpoint", "fstype"} and dims["mountpoint"].startswith("/")) or (device_rate and set(dims) == {"device"}) or (block and set(dims) == {"device", "kind"}), "invalid resource dimensions")
         require(not dimensions or dims == dimensions, "query device or mount mismatch")
-        require(filesystem or device_rate or not dims, "scalar dimensions leaked")
+        require(not block or (isinstance(dims, dict) and (not dims or set(dims) == {"device", "kind"})
+                and (not dims or dims["kind"] in {"device", "mapped", "raid", "unknown"})), "invalid block dimensions")
+        require(filesystem or device_rate or block or not dims, "scalar dimensions leaked")
         identity = (key, tuple(sorted(dims.items())))
         require(identity not in seen, "duplicate resource dimensions")
         seen.add(identity)
@@ -316,13 +327,14 @@ def assert_resources(value, node, target=None, trend=False, keys=None, disconnec
             require(abs(evaluated-(start+index*step)) < 0.001, "misaligned resource point")
             state, sample, number = point.get("data_state"), point.get("sampled_at"), point.get("value")
             require(state in {"valid", "no_data", "stale", "not_connected"}, "invalid data state")
-            require(not ((filesystem or device_rate) and not dims) or state in {"no_data", "not_connected"}, "unknown mount became valid")
+            require(not ((filesystem or device_rate or block) and not dims) or state in {"no_data", "not_connected"}, "unknown mount became valid")
             if disconnected:
                 require(state == "not_connected" and sample is None and number is None, "disconnected query reused history")
             elif state in {"valid", "stale"}:
                 sampled = utc_timestamp(sample)
                 require(type(number) in {int, float} and math.isfinite(number) and number >= 0 and sampled <= evaluated, "invalid resource evidence")
                 require(expected[key] != "percent" or number <= 100, "invalid resource percentage")
+                require(not block or (number > 0 and number <= 2**53-1 and number == math.floor(number)), "invalid block capacity integer")
                 require(expected[key] not in {"inodes", "connections"} or (number <= 2**53-1 and number == math.floor(number)), "invalid resource integer")
                 age = (evaluated if trend else queried)-sampled
                 require((state == "valid" and age <= 60) or (state == "stale" and age > 60), "freshness state lacks evidence")
@@ -960,6 +972,58 @@ def validate_resource_heatmap_browser(value):
     return {"existing_observations": True, "scalar_count": len(keys), "mount_count": len(mounts), "values_and_progress": True}
 
 
+def validate_block_capacity_browser(value, expected_devices):
+    receipt, rows = value.get("block_capacity"), value["resources"]
+    require(isinstance(receipt, dict) and set(receipt) == {"opened", "refreshed", "closed", "same_iframe"}
+            and receipt["closed"] is True and receipt["same_iframe"] is True, "browser capacity lifecycle missing")
+    require(isinstance(expected_devices, list) and 1 <= len(expected_devices) <= 100, "native capacity device proof missing")
+    require(all(isinstance(r, dict) and set(r) == {"device", "kind", "bytes"}
+                and isinstance(r["device"], str) and 0 < len(r["device"]) <= 255
+                and r["kind"] in {"device", "mapped", "raid", "unknown"}
+                and type(r["bytes"]) is int and 0 < r["bytes"] <= 2**53-1 for r in expected_devices), "native capacity device proof invalid")
+    require(len({r["device"] for r in expected_devices}) == len(expected_devices), "native device proof duplicated device")
+    expected = {(r["device"], r["kind"]): r["bytes"] for r in expected_devices}
+    require(len(expected) == len(expected_devices), "native capacity device proof duplicate")
+    indices = []
+    for phase in ("opened", "refreshed"):
+        frame = receipt[phase]
+        require(isinstance(frame, dict) and set(frame) == {"resource_index", "devices"}, "browser capacity receipt malformed")
+        index = frame["resource_index"]
+        require(type(index) is int and 0 <= index < len(rows), "browser capacity response index invalid")
+        source = rows[index]
+        require(source["path"] == OBSERVATIONS and source["query"].get("metrics") == "node.block.capacity_bytes", "browser capacity receipt scope invalid")
+        require(source["value"]["collection"].get("state") == "collecting"
+                and source["value"]["collection"].get("block_capacity") == "available", "browser capacity frame unavailable")
+        series, displayed = source["value"]["series"], frame["devices"]
+        require(isinstance(displayed, list) and len(displayed) == len(series) == len(expected), "browser capacity devices incomplete")
+        actual = {}
+        for row, reading in zip(series, displayed):
+            dims, point = row["dimensions"], row["points"][0]
+            require(isinstance(reading, dict) and set(reading) == {"dimensions", "bytes", "capacity_text", "kind_text", "state_text"}
+                    and reading["dimensions"] == dims and set(dims) == {"device", "kind"}, "browser capacity row identity mismatch")
+            key = (dims["device"], dims["kind"])
+            require(key in expected and key not in actual and point["data_state"] == "valid"
+                    and type(reading["bytes"]) in (int, float) and reading["bytes"] == point["value"] == expected[key], "browser capacity differs from native source")
+            require(reading["kind_text"] == {"device":"块设备", "mapped":"映射卷", "raid":"RAID 设备", "unknown":"未知结构"}[dims["kind"]]
+                    and reading["state_text"] == "有效", "browser capacity type or status invalid")
+            number, unit = point["value"], 0
+            units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"]
+            while number >= 1024 and unit < len(units)-1:
+                number /= 1024; unit += 1
+            text = reading["capacity_text"]
+            require(isinstance(text, str) and len(text) <= 80, "browser capacity text missing")
+            match = re.fullmatch(r"([0-9][0-9,]*\.[0-9]{2}) " + re.escape(units[unit]), text)
+            require(match is not None and abs(float(match[1].replace(",", ""))-number) <= 0.005000001, "browser capacity unit or value differs")
+            actual[key] = point["value"]
+        require(actual == expected, "browser capacity set differs from native source")
+        indices.append(index)
+    require(indices[1] == indices[0]+1, "browser capacity refresh reused an old response")
+    require([i for i,row in enumerate(rows) if row.get("query",{}).get("metrics") == "node.block.capacity_bytes"] == indices,
+            "browser capacity used extra or replayed reads")
+    return {"devices": len(expected), "native_frame_matched": True, "iec_units": True,
+            "refresh_new_receipt": True, "same_iframe": True, "closed": True}
+
+
 def validate_resource_browser(value, expected, artifacts):
     require(value.get("schema_version") == "addp.node-resources-browser/v1" and value.get("result") == "passed"
             and value.get("stage") == "complete" and value.get("run_id") == expected["run_id"], "browser result mismatch")
@@ -988,8 +1052,8 @@ def validate_resource_browser(value, expected, artifacts):
             and after == before + 1, "host list auto refresh batch references invalid")
     require(utc_timestamp(summaries[after]["value"]["data"][0]["end"]) > utc_timestamp(summaries[before]["value"]["data"][0]["end"]), "host list automatic server window did not advance")
     rows = value.get("resources")
-    # Original 31 six-read rounds plus four list observations: capacity/inodes on open and refresh.
-    require(isinstance(rows, list) and 8 <= len(rows) <= 190, "browser resource evidence missing or unbounded")
+    # Original 31 six-read rounds, four filesystem list reads and two block capacity reads.
+    require(isinstance(rows, list) and 8 <= len(rows) <= 192, "browser resource evidence missing or unbounded")
     comparison_indices, comparison = validate_resource_comparison_browser(value, expected, artifacts)
     instants, trends = [], []
     for row_index, row in enumerate(rows):
@@ -1001,7 +1065,7 @@ def validate_resource_browser(value, expected, artifacts):
         require(trend or row.get("path") == OBSERVATIONS, "browser resource path mismatch")
         keys = query.get("metrics", "").split(",")
         require((trend and len(keys) == 1 and keys[0] in {"node.tcp.current_connections", "node.memory.used_percent", "node.cpu.busy_percent", "node.filesystem.used_percent", "node.filesystem.inodes_used_percent", *DISK_METRICS, *NETWORK_METRICS})
-                or (not trend and set(keys) in (set(METRICS), set(FILESYSTEM_METRICS), set(INODE_METRICS), set(DISK_METRICS), set(NETWORK_METRICS)) and len(keys) == len(set(keys))), "browser metric request mismatch")
+                or (not trend and set(keys) in (set(METRICS), set(FILESYSTEM_METRICS), set(INODE_METRICS), set(DISK_METRICS), set(NETWORK_METRICS), set(BLOCK_CAPACITY_METRICS)) and len(keys) == len(set(keys))), "browser metric request mismatch")
         duration = utc_timestamp(query.get("end")) - utc_timestamp(query.get("start")) if trend else 0
         require(not trend or duration in ({600} if row_index in comparison_indices else {300, 3600}), "browser range mismatch")
         dims = {key: query[key] for key in ("device", "mountpoint", "fstype") if key in query}
@@ -1030,14 +1094,15 @@ def validate_resource_browser(value, expected, artifacts):
     mounted = validate_filesystem_mount_browser(value)
     mounted_list = validate_filesystem_list_browser(value)
     heatmap = validate_resource_heatmap_browser(value)
-    for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "tcp", "list-filesystem", "heatmap"):
+    block_capacity = validate_block_capacity_browser(value, expected.get("block_devices"))
+    for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "tcp", "list-filesystem", "heatmap", "block-capacity"):
         screenshot = artifacts / ("node-resources-" + name + ".png")
         require(screenshot.is_file() and screenshot.stat().st_size > 1000
                 and screenshot.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "browser screenshot missing or invalid")
     return {"result": "passed", "password_mfa": True, "same_platform_identity": True,
             "catalog_metric_count": len(ALL_METRICS), "trend_server_window": True, "navigation_restore": True, "host_list_auto_refresh": True,
             "security_administrator_denied": True, "auto_refresh": True, "disk_trends": True, "network_trends": True, "disk_timing_trends": True, "quantity_display": True,
-            "filesystem_mount": mounted, "filesystem_list": mounted_list, "heatmap": heatmap, "period_comparison": comparison}
+            "filesystem_mount": mounted, "filesystem_list": mounted_list, "heatmap": heatmap, "block_capacity": block_capacity, "period_comparison": comparison}
 
 
 def assert_process_trend_evidence(trend, owner, policy_version, *, require_valid=True):
@@ -1142,11 +1207,12 @@ def run_resource_browser(node, target, policy, display_name, admin, security, pr
     expected = {"run_id": os.environ["ADDP_ONLINE_TEST_RUN_ID"], "node": node, "target": {"id": target["id"], "version": target["version"]},
                 "display_name": display_name, "policy_version": policy["version"],
                 "admin_id": admin["principal"]["id"], "security_id": security["principal"]["id"],
+                "block_devices": native_source["block_capacity"]["devices"],
                 "processes": [{k: r[k] for k in ("id", "instance_id", "module_name", "role", "node_id", "process_started_at")} for r in processes]}
     # Store only the subject/version facts needed by the page, never target TLS/credentials.
     expected["node"] = {"node_id": node["node_id"], "version": node["version"]}
     (artifacts / "node-resources-browser-input.json").write_text(json.dumps(expected))
-    for name in ("list", "detail", "restored", "filesystem", "list-filesystem", "heatmap", "inodes", "disks", "networks", "services", "overview", "comparison-cpu", "comparison-memory", "comparison-restored"):
+    for name in ("list", "detail", "restored", "filesystem", "list-filesystem", "heatmap", "block-capacity", "inodes", "disks", "networks", "services", "overview", "comparison-cpu", "comparison-memory", "comparison-restored"):
         (artifacts / ("node-resources-" + name + ".png")).unlink(missing_ok=True)
     value = execute_resource_browser(artifacts)
     result = validate_resource_browser(value, expected, artifacts)

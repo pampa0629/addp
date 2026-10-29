@@ -106,7 +106,8 @@ def native_node_source_proof():
     host, config = row.get("HostConfig", {}), row.get("Config", {})
     if (host.get("NetworkMode") != "host" or host.get("PidMode") != "host"
             or host.get("ReadonlyRootfs") is not True or host.get("Privileged") is not False
-            or host.get("CapDrop") != ["ALL"] or config.get("User") != "65534:65534"):
+            or host.get("CapDrop") != ["ALL"] or host.get("CapAdd") or host.get("Devices") or host.get("DeviceRequests")
+            or host.get("SecurityOpt") != ["no-new-privileges:true"] or config.get("User") != "65534:65534"):
         raise ValueError("native node source isolation does not match the standard deployment")
     mounts = [m for m in row.get("Mounts", []) if m.get("Destination") == "/host"]
     if (len(mounts) != 1 or mounts[0].get("Type") != "bind" or mounts[0].get("Source") != "/"
@@ -124,15 +125,129 @@ def native_node_source_proof():
         negative = option.replace("--", "--no-", 1)
         if [arg for arg in args if arg in (option, negative) or arg.startswith((option+"=", negative+"="))] != [option]:
             raise ValueError("native filesystem collector is not explicitly enabled")
-    textfile_paths = [arg for arg in args if arg.startswith("--collector.textfile.directory")]
-    if (any(arg.startswith("--collector.textfile") and arg != "--collector.textfile.directory=/textfile" for arg in args)
-            or textfile_paths and (textfile_paths != ["--collector.textfile.directory=/textfile"]
-                                  or [arg for arg in args if arg.startswith("--no-collector.textfile")] != ["--no-collector.textfile"])):
-        raise ValueError("native source cannot use a textfile substitute")
-    return {"schema_version": "addp.native-node-source/v1", "native_linux": True,
+    textfile = [arg for arg in args if arg.startswith(("--collector.textfile", "--no-collector.textfile"))]
+    if textfile != ["--collector.textfile", "--collector.textfile.directory=/textfile"]:
+        raise ValueError("native capacity source requires its sole managed Textfile directory")
+    capacity = native_block_capacity_proof(row, info["KernelVersion"])
+    return {"schema_version": "addp.native-node-source/v2", "native_linux": True,
             "source_id_sha256": hashlib.sha256(ids[0].encode()).hexdigest(),
             "host_network_pid": True, "readonly_host_root": True, "host_collector_paths": True,
-            "filesystem_collector": True, "nonprivileged_exporter": True}
+            "filesystem_collector": True, "nonprivileged_exporter": True, "block_capacity": capacity}
+
+
+BLOCK_CAPACITY_PROOF_PROGRAM = """
+import hashlib,json,platform,runpy,time
+from pathlib import Path
+source=Path('/sampler.py')
+m=runpy.run_path(str(source))
+boot,devices=m['snapshot'](Path('/source-sys'),Path('/source-proc'),platform.release())
+files=list(Path('/textfile').glob('*.prom'))
+if files!=[Path('/textfile/block-capacity.prom')]: raise ValueError('unmanaged_textfile')
+p=files[0]
+if p.is_symlink() or not p.is_file() or p.stat().st_mode & 0o777!=0o600: raise ValueError('unmanaged_frame')
+print(json.dumps({'program_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
+ 'boot':boot,'observed_at':int(time.time()),'devices':devices,'frame':m['read'](p,65536)}))
+"""
+
+
+def validate_block_capacity_frame(value, expected_program, checked_at):
+    if (not isinstance(value, dict) or set(value) != {"program_sha256", "boot", "observed_at", "devices", "frame"}
+            or value["program_sha256"] != expected_program or type(value["boot"]) is not int
+            or type(value["observed_at"]) is not int or not 0 <= checked_at-value["observed_at"] <= 5
+            or not 0 < value["boot"] <= value["observed_at"]
+            or not isinstance(value["devices"], list) or not 1 <= len(value["devices"]) <= 100
+            or not isinstance(value["frame"], str) or len(value["frame"].encode()) > 65536):
+        raise ValueError("invalid managed capacity proof")
+    devices = []
+    for row in value["devices"]:
+        if (not isinstance(row, list) or len(row) != 3 or not isinstance(row[0], str)
+                or not re.fullmatch(r"[A-Za-z0-9_.!+-]{1,255}", row[0])
+                or row[1] not in ("device", "mapped", "raid", "unknown")
+                or type(row[2]) is not int or not 0 < row[2] <= 2**53-1 or row[2] % 512):
+            raise ValueError("invalid managed device")
+        devices.append({"device": row[0], "kind": row[1], "bytes": row[2]})
+    if len({row["device"] for row in devices}) != len(devices):
+        raise ValueError("duplicate managed device")
+    lines = value["frame"].splitlines()
+    sampled = [line.removeprefix("addp_block_capacity_sample_time_seconds ") for line in lines
+               if line.startswith("addp_block_capacity_sample_time_seconds ")]
+    if len(sampled) != 1 or not re.fullmatch(r"[0-9]+", sampled[0]):
+        raise ValueError("missing managed source time")
+    sampled_at = int(sampled[0])
+    if not value["boot"] <= sampled_at <= value["observed_at"] or value["observed_at"]-sampled_at > 60:
+        raise ValueError("managed capacity proof stale")
+    expected = {"addp_block_capacity_success 1", "addp_block_capacity_supported 1",
+                "addp_block_capacity_sample_time_seconds " + str(sampled_at),
+                "addp_block_capacity_boot_time_seconds " + str(value["boot"]),
+                "addp_block_capacity_device_count " + str(len(devices)),
+                *('addp_block_capacity_bytes{device="'+r['device']+'",kind="'+r['kind']+'"} '+str(r['bytes']) for r in devices)}
+    if len(lines) != len(expected) or set(lines) != expected:
+        raise ValueError("managed frame differs from current native devices")
+    return {"program_sha256": expected_program, "fresh_frame": True,
+            "device_count": len(devices), "devices": devices}
+
+
+def native_block_capacity_proof(exporter, kernel):
+    ids = command(["docker", "ps", "-aq", "--no-trunc", "--filter",
+                   "label=com.docker.compose.project=addp-node-metrics", "--filter",
+                   "label=com.docker.compose.service=block-capacity"], timeout=5).split()
+    if len(ids) != 1 or not re.fullmatch(r"[0-9a-f]{64}", ids[0]):
+        raise ValueError("native capacity sampler ownership ambiguous")
+    inspected = json.loads(command(["docker", "inspect", ids[0]], timeout=5))
+    if len(inspected) != 1:
+        raise ValueError("native capacity sampler missing")
+    row = inspected[0]; config = row.get("Config", {}); host = row.get("HostConfig", {})
+    labels = config.get("Labels") or {}
+    if (row.get("Id") != ids[0] or row.get("State", {}).get("Running") is not True
+            or labels.get("com.docker.compose.project") != "addp-node-metrics"
+            or labels.get("com.docker.compose.service") != "block-capacity"
+            or labels.get("io.addp.node-metrics.owner") != str(ROOT)
+            or config.get("User") != "65534:65534"
+            or config.get("Image") != "python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254"
+            or config.get("Cmd") != ["python3", "-B", "/sampler.py", "--kernel", kernel, "--sysfs", "/source-sys", "--proc", "/source-proc"]
+            or host.get("ReadonlyRootfs") is not True or host.get("Privileged") is not False
+            or host.get("CapDrop") != ["ALL"] or host.get("SecurityOpt") != ["no-new-privileges:true"]
+            or host.get("NetworkMode") != "none" or host.get("PidMode") not in ("", "private")
+            or host.get("NanoCpus") != 250000000 or host.get("Memory") != 64*1024**2
+            or host.get("PidsLimit") != 16 or host.get("Devices") or host.get("DeviceRequests") or host.get("CapAdd")):
+        raise ValueError("native capacity sampler deployment mismatch")
+    volume_name = "addp-node-metrics_block-capacity"
+    volumes = json.loads(command(["docker", "volume", "inspect", volume_name], timeout=5))
+    if len(volumes) != 1:
+        raise ValueError("native capacity volume missing")
+    volume = volumes[0]; vl = volume.get("Labels") or {}
+    if (volume.get("Name") != volume_name or volume.get("Driver") != "local"
+            or not isinstance(volume.get("Mountpoint"), str) or not volume["Mountpoint"].startswith("/") or volume["Mountpoint"] == "/"
+            or vl.get("com.docker.compose.project") != "addp-node-metrics"
+            or vl.get("com.docker.compose.volume") != "block-capacity"
+            or vl.get("io.addp.node-metrics.owner") != str(ROOT)
+            or volume.get("Options") != {"type": "tmpfs", "device": "tmpfs", "o": "size=1m,uid=65534,gid=65534,mode=0700"}):
+        raise ValueError("native capacity volume ownership mismatch")
+    def mounts(actual, binds, writable):
+        if (not isinstance(actual, list) or len(actual) != len(binds)+1
+                or {m.get("Destination") for m in actual} != set(binds) | {"/textfile"}):
+            raise ValueError("native capacity mount set mismatch")
+        for mount in actual:
+            destination = mount["Destination"]
+            if destination == "/textfile":
+                if (mount.get("Type") != "volume" or mount.get("Name") != volume_name
+                        or mount.get("Driver") != "local" or mount.get("Source") != volume["Mountpoint"]
+                        or mount.get("RW") is not writable):
+                    raise ValueError("native capacity volume endpoints mismatch")
+            elif (mount.get("Type") != "bind" or mount.get("Source") != binds[destination]
+                  or mount.get("RW") is not False or mount.get("Propagation") != ("rslave" if destination == "/host" else "rprivate")):
+                raise ValueError("native capacity readonly source mismatch")
+    binds = {"/source-sys": "/sys", "/sampler.py": str(ROOT / "scripts/infra/block-capacity.py"),
+             **{"/source-proc/"+name: "/proc/"+name for name in ("stat", "devices", "diskstats", "sys/kernel/osrelease")}}
+    mounts(row.get("Mounts"), binds, True)
+    secret = boundary()
+    mounts(exporter.get("Mounts"), {"/host": "/", "/etc/addp/node-metrics/web.yml": str(ROOT / "scripts/infra/node-metrics-web.yml"),
+           **{"/etc/addp/node-metrics/tls/"+name: str(secret / "node-tls" / name) for name in ("ca.crt", "server.crt", "server.key")}}, False)
+    observed = json.loads(command(["docker", "exec", "--user", "65534:65534", ids[0],
+                                   "python3", "-B", "-c", BLOCK_CAPACITY_PROOF_PROGRAM], timeout=5))
+    frame = validate_block_capacity_frame(observed, hashlib.sha256((ROOT / "scripts/infra/block-capacity.py").read_bytes()).hexdigest(), int(time.time()))
+    return {**frame, "sampler_id_sha256": hashlib.sha256(ids[0].encode()).hexdigest(),
+            "readonly_host_metadata": True, "nonprivileged_sampler": True, "owned_textfile_volume": True}
 
 
 def compose(directory, *args):
@@ -214,6 +329,7 @@ def prepare(directory):
         "ADDP_ONLINE_METRICS_NODE_IP": address,
         "ADDP_NODE_METRICS_ENABLED": "true", "ADDP_NODE_METRICS_LISTEN": address+":19100",
         "ADDP_NODE_METRICS_TLS_DIR": str(directory / "node-tls"),
+        "ADDP_NODE_BLOCK_CAPACITY_ENABLED": "true" if os.environ.get("ADDP_ONLINE_NODE_METRICS_CASE", "regression") in ("regression", "complete-comparison") else "false",
         "MONITOR_PROMETHEUS_CA_FILE": str(directory / "query/ca.crt"),
         "MONITOR_PROMETHEUS_CLIENT_CERT_FILE": str(directory / "query/client.crt"),
         "MONITOR_PROMETHEUS_CLIENT_KEY_FILE": str(directory / "query/client.key"),

@@ -384,3 +384,20 @@ Online 与受控 Console T3 共用 `readResourceHeatmap`，纯收据生成与拒
 
 
 最终同一标准命令通过（退出0），日志 `/tmp/addp-limited-host-resources-final.log`：120项脚本回归；初次来源与受限重建后的两份精确挂载证明均为4绑定／1卷、只读／精确源／受管tmpfs／Textfile关闭；既有固定窗口、mTLS、预算恢复、普通／受限资源查询、来源停机恢复、中心SIGKILL持久化、六来源总览及资源告警生命周期全部沿原链路运行。资源查询两阶段分别56.77／29.39秒，总览85.75秒，资源告警生命周期195.62秒；退出验证全部当次容器、网络、卷与临时文件清零。此次仅本机Docker Desktop Linux VM上的标准T2；[原Linux CI失败](https://github.com/pampa0629/addp/actions/runs/40701610871/job/122862998720)保持失败历史，替代提交的自然Linux host-resources Job实际步骤仍等专门会话回传，不据本地结果提前认定远端通过。原生Linux容量／Console／Hosted与完整前端缺口保持原记录。本轮没有API、Swagger或产品代码变更，无需重启业务；不调度／重跑／取消CI或Hosted、不设置定时任务、不向个人服务或共享数据卷施加操作。
+
+
+## 磁盘与卷容量原生来源证明与Console收据准备（2026-10-29）
+
+承接已确认的容量只读用途，本批只完善既有隔离验收准备及本地回归，不修改产品 API、IAM、来源默认开关或个人部署。先同步正式观测规范与场景，再将原生来源证明升级为唯一 v2：必须是当次同内核原生 Linux exporter 与唯一受管容量采集器；精确核验双方非特权、容量采集器资源上限及无网络／Socket／设备、sysfs及四个proc白名单只读绑定、受管程序摘要、两端同一专属1 MiB tmpfs及写／读权限。只读命令核对当前sysfs快照和唯一原子容量帧的全部设备、结构、整数容量、启动及源时间，拒绝陈旧、外来前缀、缺帧、重复与不一致。封闭收据仅保留公共设备容量、摘要及边界布尔，不保存原始inspect／环境／帧正文。
+
+regression／complete-comparison 在当次私有部署显式开启原容量扩展，Worker等其他profile保持关闭。来源故障入口改为精确核验后只停／启 node-exporter，不再按整个节点项目必须单容器作判断；容量采集器不成为故障目标，不扩大到个人来源。全部操作仍受原一次性Hosted边界保护。
+
+同一真实Console脚本新增打开／手工刷新／收起容量的收据流程，由受控Console测试复用唯一DOM读数函数。逐行核对完整device／kind集合、IEC容量与状态，页面／API与上述原生来源证明一致；刷新必须是紧接的新响应，保持iframe并收起，不以旧数据或截图存在代替读数。不要求两次源采样时间递增，也不虚称刷新已取得下一轮采样。只增加两次既有容量GET，验收资源收据上限190改192，原身份、产品查询预算、并发、240秒页面／300秒子进程和总时限均不变。
+
+本地验证分层记录：
+
+- 标准 `make test-node-metrics-online-runner` 退出0：162项确定性测试及System Go Metrics身份夹具通过（42.585秒／0.777秒）；日志 `/tmp/addp-capacity-online-runner.log`。覆盖精确来源归属与挂载／卷／程序／帧拒绝、profile选择、Exporter限定故障对象、全设备页面收据、旧响应／错单位／缺行／重复／容量趋势拒绝，以及既有身份／生命周期回归。仅为确定性验收代码与身份夹具验证，不是原生Linux来源运行。
+- `npm --prefix console/frontend test`：30文件219项通过，日志 `/tmp/addp-capacity-console-unit.log`；新增12项容量收据回归核对IEC、完整性、最后一次响应与无效状态拒绝。
+- `npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js`：7/7受控iframe场景通过（50.9秒），日志 `/tmp/addp-capacity-console-browser.log`。新增容量场景覆盖两设备逐项1 TiB、刷新后512 GiB、完整DOM读数、仅两个容量请求、收起、URL与同iframe不变；使用受控API，不是正式密码／MFA或真实主机证据。
+
+上述脚本及测试由原根Online runner、Console frontend自动发现和已登记的标准CI路径覆盖，不新增入口、依赖、Workflow或调度。未重跑未变的Monitor产品门禁，原完整前端长回归失败仍保留，稳定环境复验未完成。原生Linux容量实源、正式身份Console／Safari、Hosted与该层零残留尚未实际执行／回传，不计通过；旧关闭Textfile的文件系统通过也不补作容量通过。未触发／轮询CI或Hosted、未设置定时任务、未修改个人开关或重启服务；当前仅可将“验收准备缺口”更新为已补，不能更新“真实运行验收”为完成。

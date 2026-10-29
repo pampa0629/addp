@@ -1091,6 +1091,19 @@ for(const failBody of [false,true]){
             value["resource_heatmap"]["scalars"]["node.cpu.busy_percent"].update(value=0, text="0.00 %")
             with self.assertRaises(ONLINE.SuiteError): ONLINE.validate_resource_heatmap_browser(value)
 
+    def add_block_capacity_evidence(self, report):
+        indices = []
+        for phase in ("opened", "refreshed"):
+            source = self.resource_reply(["node.block.capacity_bytes"])
+            source["collection"]["block_capacity"] = "available"
+            source["series"][0]["dimensions"] = {"device":"vda", "kind":"device"}
+            source["series"][0]["points"][0]["value"] = 1073741824
+            index = len(report["resources"])
+            report["resources"].append({"path":ONLINE.OBSERVATIONS, "query":{"node_id":"node-id", "metrics":"node.block.capacity_bytes"}, "value":source})
+            indices.append({"resource_index":index, "devices":[{"dimensions":{"device":"vda", "kind":"device"}, "bytes":1073741824,
+                "kind_text":"块设备", "state_text":"有效", "capacity_text":"1.00 GiB"}]})
+        report["block_capacity"] = {"opened":indices[0], "refreshed":indices[1], "closed":True, "same_iframe":True}
+
     def test_browser_report_binds_real_identity_versions_server_time_and_screenshots(self):
         expected = {"run_id": "unique-run", "node": {"node_id": "node-id", "version": 1},
                     "target": {"id": "target-id", "version": 2}, "policy_version": 0,
@@ -1133,9 +1146,11 @@ for(const failBody of [false,true]){
         report["summaries"].append(following)
         report["host_list_auto_refresh"] = {"natural_timer": True, "server_end_advanced": True, "unchanged_url": True,
             "iframe_preserved": True, "off_restored": True, "off_no_requests": True, "before_index": 0, "after_index": 1}
+        expected["block_devices"] = [{"device":"vda", "kind":"device", "bytes":1073741824}]
+        self.add_block_capacity_evidence(report)
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory)
-            for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "tcp", "list-filesystem", "heatmap"):
+            for name in ("list", "detail", "restored", "filesystem", "inodes", "disks", "networks", "tcp", "list-filesystem", "heatmap", "block-capacity"):
                 (artifacts / ("node-resources-" + name + ".png")).write_bytes(b"\x89PNG\r\n\x1a\n" + b"x"*1000)
             self.add_period_comparison_evidence(report, artifacts)
             self.add_filesystem_list_evidence(report)
@@ -1241,7 +1256,7 @@ for(const failBody of [false,true]){
             evidence = artifacts / "node-resources-browser.json"
             evidence.write_text('{"result":"passed"}')
             with patch.dict(ONLINE.os.environ, ADDP_ONLINE_ARTIFACT_DIR=directory, ADDP_ONLINE_SECRET_DIR=directory+"/private", ADDP_ONLINE_TEST_RUN_ID="run"), \
-                 patch.object(ONLINE.FIXTURE, "native_node_source_proof", return_value={"native_linux": True}), \
+                 patch.object(ONLINE.FIXTURE, "native_node_source_proof", return_value={"native_linux": True, "block_capacity": {"devices": [{"device":"vda", "kind":"device", "bytes":1073741824}]}}), \
                  patch.object(ONLINE.subprocess, "run", return_value=unittest.mock.Mock(returncode=1, stdout="sensitive", stderr="sensitive")), \
                  patch("sys.stdout", new_callable=io.StringIO) as output:
                 with self.assertRaises(ONLINE.SuiteError):
@@ -1257,7 +1272,7 @@ for(const failBody of [false,true]){
                                    ("page.goto: Test ended. secret-token", False)):
             with self.subTest(deadline=deadline), tempfile.TemporaryDirectory() as directory:
                 with patch.dict(ONLINE.os.environ, ADDP_ONLINE_ARTIFACT_DIR=directory, ADDP_ONLINE_SECRET_DIR=directory+"/private", ADDP_ONLINE_TEST_RUN_ID="run"), \
-                     patch.object(ONLINE.FIXTURE, "native_node_source_proof", return_value={"native_linux": True}), \
+                     patch.object(ONLINE.FIXTURE, "native_node_source_proof", return_value={"native_linux": True, "block_capacity": {"devices": [{"device":"vda", "kind":"device", "bytes":1073741824}]}}), \
                      patch.object(ONLINE.subprocess, "run", return_value=unittest.mock.Mock(returncode=1, stdout=captured, stderr="private-credentials")) as command, \
                      patch("sys.stdout", new_callable=io.StringIO) as output:
                     with self.assertRaisesRegex(ONLINE.SuiteError, "resource browser failed"):
@@ -1278,7 +1293,7 @@ for(const failBody of [false,true]){
         with tempfile.TemporaryDirectory() as directory:
             expired = ONLINE.subprocess.TimeoutExpired(["npm", "secret-argument"], 300, output="secret-output", stderr="secret-error")
             with patch.dict(ONLINE.os.environ, ADDP_ONLINE_ARTIFACT_DIR=directory, ADDP_ONLINE_SECRET_DIR=directory+"/private", ADDP_ONLINE_TEST_RUN_ID="run"), \
-                 patch.object(ONLINE.FIXTURE, "native_node_source_proof", return_value={"native_linux": True}), \
+                 patch.object(ONLINE.FIXTURE, "native_node_source_proof", return_value={"native_linux": True, "block_capacity": {"devices": [{"device":"vda", "kind":"device", "bytes":1073741824}]}}), \
                  patch.object(ONLINE.subprocess, "run", side_effect=expired):
                 with self.assertRaisesRegex(ONLINE.SuiteError, "resource browser subprocess exceeded existing deadline"):
                     ONLINE.run_resource_browser({"node_id": "node", "version": 1}, {"id": "target", "version": 2}, {"version": 0}, "node", {"principal": {"id": "admin"}}, {"principal": {"id": "security"}}, [])
@@ -1300,7 +1315,7 @@ for(const failBody of [false,true]){
             command.assert_not_called()
 
     def test_faults_reject_unowned_resources_before_mutation(self):
-        with patch.object(ONLINE.FIXTURE, "command", side_effect=["node-container", '[{"Config":{"Labels":{"io.addp.node-metrics.owner":"foreign"}}}]']) as command:
+        with patch.object(ONLINE.FIXTURE, "boundary"), patch.object(ONLINE.FIXTURE, "command", side_effect=["a"*64, json.dumps([{"Id":"a"*64,"Config":{"Labels":{"io.addp.node-metrics.owner":"foreign"}}}])]) as command:
             with self.assertRaises(ONLINE.SuiteError):
                 ONLINE.source_action("stop")
             self.assertEqual(command.call_count, 2)
@@ -2357,6 +2372,66 @@ class AvailabilityProtocolTest(unittest.TestCase):
                        lambda v:v['service_availability']['incident'].update(status='open')):
             bad=copy.deepcopy(valid);mutate(bad)
             with self.assertRaises(ONLINE.SuiteError):ONLINE.validate_availability_browser(bad,expected)
+
+
+
+class BlockCapacityBrowserContractTest(unittest.TestCase):
+    def setUp(self):
+        self.protocol = MetricsProtocolTest()
+        self.report = {'resources':[]}
+        self.protocol.add_block_capacity_evidence(self.report)
+        self.devices=[{'device':'vda','kind':'device','bytes':1073741824}]
+
+    def test_complete_rows_match_the_native_source_without_a_capacity_sum(self):
+        self.assertEqual(ONLINE.validate_block_capacity_browser(self.report,self.devices),
+            {'devices':1,'native_frame_matched':True,'iec_units':True,'refresh_new_receipt':True,'same_iframe':True,'closed':True})
+
+    def test_scope_full_device_set_and_new_response_receipts_are_required(self):
+        changes=[lambda r:r.pop('block_capacity'),lambda r:r['block_capacity'].update(closed=False),
+                 lambda r:r['block_capacity'].update(same_iframe=False),
+                 lambda r:r['block_capacity']['opened'].update(resource_index=True),
+                 lambda r:r['block_capacity']['refreshed'].update(resource_index=0),
+                 lambda r:r['block_capacity']['opened']['devices'].clear(),
+                 lambda r:r['block_capacity']['opened']['devices'][0]['dimensions'].update(kind='mapped'),
+                 lambda r:r['block_capacity']['opened']['devices'][0].update(capacity_text='2.00 GiB'),
+                 lambda r:r['block_capacity']['opened']['devices'][0].update(capacity_text='1.00 GB'),
+                 lambda r:r['block_capacity']['opened']['devices'][0].update(kind_text='物理磁盘'),
+                 lambda r:r['block_capacity']['opened']['devices'][0].update(state_text='有效缓存'),
+                 lambda r:r['resources'][0]['value']['collection'].update(block_capacity='stale'),
+                 lambda r:r['resources'][0]['value']['series'][0]['points'][0].update(data_state='no_data'),
+                 lambda r:r['resources'][0]['value']['series'].append(copy.deepcopy(r['resources'][0]['value']['series'][0])),
+                 lambda r:r['resources'][0]['query'].update(metrics='node.filesystem.total_bytes'),
+                 lambda r:r['resources'].append(copy.deepcopy(r['resources'][1]))]
+        for index,change in enumerate(changes):
+            report=copy.deepcopy(self.report);change(report)
+            with self.subTest(index=index),self.assertRaises(ONLINE.SuiteError):ONLINE.validate_block_capacity_browser(report,self.devices)
+        for devices in ([],[{'device':'vda','kind':'physical','bytes':1073741824}],self.devices*2,[{**self.devices[0],'bytes':False}]):
+            with self.assertRaises(ONLINE.SuiteError):ONLINE.validate_block_capacity_browser(self.report,devices)
+
+    def test_capacity_is_instant_only_and_uses_closed_device_kind_dimensions(self):
+        response=self.report['resources'][0]['value']
+        ONLINE.assert_resources(response,{'node_id':'node-id','version':1},{'id':'target-id','version':2},keys=ONLINE.BLOCK_CAPACITY_METRICS)
+        for mutate in (lambda r:r['series'][0]['dimensions'].update(kind='physical'),
+                       lambda r:r['series'][0]['dimensions'].update(private='unexpected'),
+                       lambda r:r['series'][0]['points'][0].update(value=0),
+                       lambda r:r['series'][0]['points'][0].update(value=1.5)):
+            value=copy.deepcopy(response);mutate(value)
+            with self.assertRaises(ONLINE.SuiteError):ONLINE.assert_resources(value,{'node_id':'node-id','version':1},{'id':'target-id','version':2},keys=ONLINE.BLOCK_CAPACITY_METRICS)
+        with self.assertRaises(ONLINE.SuiteError):ONLINE.assert_resources(response,{'node_id':'node-id','version':1},{'id':'target-id','version':2},trend=True,keys=ONLINE.BLOCK_CAPACITY_METRICS)
+
+
+class CapacitySourceLifecycleTest(unittest.TestCase):
+    def test_only_the_exact_owned_exporter_is_stopped_when_a_sampler_also_exists(self):
+        cid="a"*64
+        labels={"io.addp.node-metrics.owner":str(ONLINE.FIXTURE.ROOT),"com.docker.compose.project":"addp-node-metrics","com.docker.compose.service":"node-exporter"}
+        with patch.object(ONLINE.FIXTURE,"boundary"), patch.object(ONLINE.FIXTURE,"command",side_effect=[cid,json.dumps([{"Id":cid,"Config":{"Labels":labels}}]),""]) as command:
+            ONLINE.source_action("stop")
+            self.assertIn("label=com.docker.compose.service=node-exporter",command.call_args_list[0].args[0])
+            self.assertEqual(command.call_args_list[-1].args[0],["docker","stop",cid])
+            self.assertEqual(command.call_count,3)
+        with patch.object(ONLINE.FIXTURE,"boundary",side_effect=ValueError("personal")),patch.object(ONLINE.FIXTURE,"command") as command:
+            with self.assertRaises(ValueError):ONLINE.source_action("stop")
+            command.assert_not_called()
 
 
 if __name__ == "__main__":

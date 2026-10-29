@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { readFilesystemMountTable, readResourceHeatmap } from './online/node-resource-receipts.js'
+import { readFilesystemMountTable, readResourceHeatmap, readBlockCapacityTable } from './online/node-resource-receipts.js'
 import { identity, mount, node, resourceBackend, resourcePermissions } from '../../../monitor/frontend/e2e/node-resources.fixture'
 
 test('node resource navigation preserves the real Monitor iframe and one Console history', async ({ page }) => {
@@ -157,4 +157,41 @@ test('heatmap DOM receipt keeps zero/full-scale, mount identities and neutral st
     expect(resources).toHaveLength(before)
     expect(state.reads).toHaveLength(sourceReads)
   }
+})
+
+
+test('capacity DOM receipt binds all actual device cells and new refresh to the same Console iframe', async ({ page }) => {
+  let bytes = 2 ** 40
+  await resourceBackend(page, { observationResponse(body, query) {
+    if (query.get('metrics') !== 'node.block.capacity_bytes') return
+    body.collection.block_capacity = 'available'
+    body.series = ['device', 'mapped'].map((kind, index) => ({ ...body.series[0], dimensions: { device: index ? 'dm-0' : 'vda', kind }, points: body.series[0].points.map(point => ({ ...point, value: bytes })) }))
+  } })
+  const resources = [], pending = []
+  page.on('response', response => {
+    const url = new URL(response.url())
+    if (url.pathname === '/api/v1/monitor/platform/resource_observations') pending.push(response.json().then(value => resources.push({ path: url.pathname, query: Object.fromEntries(url.searchParams), value })))
+  })
+  await page.goto(`/monitor/node-resources/${node}?refresh=off`)
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(monitor.getByTestId('resource-memoryTotal')).toBeVisible()
+  const iframe = page.frames().find(frame => frame.parentFrame()), origin = await iframe.evaluate(() => performance.timeOrigin)
+  const url = page.url()
+  await monitor.getByTestId('resource-block-toggle').click()
+  const panel = monitor.getByTestId('block-capacity-section'), table = panel.getByTestId('resource-block-table')
+  await expect(table).toContainText('1.00 TiB')
+  await Promise.all(pending)
+  const opened = await readBlockCapacityTable(table, resources, node, expect)
+  expect(opened.devices.map(row => row.bytes)).toEqual([2 ** 40, 2 ** 40])
+  bytes = 2 ** 39
+  await panel.getByTestId('resource-detail-refresh').click()
+  await expect(table).toContainText('512.00 GiB')
+  await Promise.all(pending)
+  const refreshed = await readBlockCapacityTable(table, resources, node, expect)
+  expect(refreshed.resource_index).toBe(opened.resource_index + 1)
+  expect(refreshed.devices.map(row => row.bytes)).toEqual([2 ** 39, 2 ** 39])
+  await monitor.getByTestId('resource-block-toggle').click()
+  await expect(table).toHaveCount(0)
+  expect(page.url()).toBe(url)
+  expect(await iframe.evaluate(() => performance.timeOrigin)).toBe(origin)
 })

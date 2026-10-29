@@ -7,7 +7,7 @@ import { formatFieldPresentationValue } from '../../../../common-frontend/basic/
 import { processMetrics, validateProcessInstances, validateProcessSummaries, validateProcessTrend } from '../../../../monitor/frontend/src/utils/processResources.js'
 import { validateResourceOverview } from '../../../../monitor/frontend/src/utils/resourceOverview.js'
 import { json, matchesRedirectURL } from './transfer-browser-support.js'
-import { scalarResourceReceipts, readFilesystemMountTable, readResourceHeatmap } from './node-resource-receipts.js'
+import { scalarResourceReceipts, readFilesystemMountTable, readResourceHeatmap, readBlockCapacityTable } from './node-resource-receipts.js'
 import { engineMetrics, engineSummaryMetrics, validateEngineResources } from '../../../../monitor/frontend/src/utils/engineResources.js'
 
 // Login failures must never capture MFA input or credentials.
@@ -586,6 +586,28 @@ test('platform node resources through real Console password MFA and Monitor ifra
     })
     await comparePeriod('restored', 'node.memory.used_percent', () => page.reload())
     expect(report.period_comparisons[2].page_query).toEqual(report.period_comparisons[1].page_query)
+    save('block-capacity-open-refresh-collapse')
+    await Promise.all(pending)
+    const blockBefore = resources.length
+    const iframeDocument = await page.frames().find(frame => frame.parentFrame()).evaluate(() => performance.timeOrigin)
+    await monitor.getByTestId('resource-block-toggle').click()
+    const blockPanel = monitor.getByTestId('block-capacity-section')
+    const blockTable = blockPanel.getByTestId('resource-block-table')
+    await expect(blockTable.locator('.el-table__body tr').first()).toBeVisible()
+    await Promise.all(pending)
+    expect(resources).toHaveLength(blockBefore + 1)
+    const openedCapacity = await readBlockCapacityTable(blockTable, resources, expected.node.node_id, expect)
+    await page.screenshot({ path: resolve(artifact, 'node-resources-block-capacity.png'), animations: 'disabled' })
+    await blockPanel.getByTestId('resource-detail-refresh').click()
+    await expect(blockPanel.getByTestId('resource-detail-refresh')).toBeEnabled()
+    await Promise.all(pending)
+    expect(resources).toHaveLength(blockBefore + 2)
+    const refreshedCapacity = await readBlockCapacityTable(blockTable, resources, expected.node.node_id, expect)
+    expect(refreshedCapacity.resource_index).toBe(openedCapacity.resource_index + 1)
+    expect(await page.frames().find(frame => frame.parentFrame()).evaluate(() => performance.timeOrigin)).toBe(iframeDocument)
+    await monitor.getByTestId('resource-block-toggle').click()
+    await expect(blockTable).toHaveCount(0)
+    report.block_capacity = { opened: openedCapacity, refreshed: refreshedCapacity, closed: true, same_iframe: true }
     save('filesystem-mount-trend-restore')
     const filesystemTable = monitor.getByTestId('resource-filesystem-table')
     await expect(filesystemTable.getByRole('button', { name: '查看趋势' }).first()).toBeVisible()
