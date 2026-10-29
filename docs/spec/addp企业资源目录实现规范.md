@@ -657,6 +657,10 @@ Catalog 提供给 Asset 的 `POST /api/v1/catalog/runtime/references/resolve` �
 
 数据字典是当前物理字段事实与指定查询时点标准解释的组合视图，不是 Catalog、Meta 或 Standard 的新持久化实体。第一阶段只适用于当前来源为 `meta/data_item`、来源状态为 `active` 且具有规范正整数 `item_id` 的 CatalogEntry。
 
+篇内导航：[查询与修订解释](#查询与修订解释)、[同步导出与不可变快照](#同步导出与不可变快照)、[依赖失败与适用范围](#依赖失败与适用范围)、[数据字典验证导航](#数据字典验证导航)。
+
+#### 查询与修订解释
+
 Catalog 提供唯一查询路径：
 
 ```http
@@ -671,6 +675,8 @@ GET /api/v1/catalog/entries/{id}/data-dictionary?as_of={RFC3339}
 - 响应按 Meta 字段顺序返回物理名称、原生类型、通用类型、可空、主键、默认表达式、注释等物理事实，并可选组合数据元编码、名称、定义、数据类型、格式、值域、安全等级、生效区间及码项。未关联 Element 的物理字段仍必须返回，其标准解释为 `null`。
 - `as_of` 只回溯 Standard 修订语义；Meta 当前没有物理 Schema 时态版本，因此不得把本视图表述为历史物理结构快照。
 
+#### 同步导出与不可变快照
+
 数据字典导出使用唯一同步路径：
 
 ```http
@@ -681,7 +687,20 @@ GET /api/v1/catalog/entries/{id}/data-dictionary/export?as_of={RFC3339}
 - 导出在请求时重新组合一次联邦数据字典，以 UTF-8 JSON 附件返回 `catalog.data_dictionary/v1` 完整响应；文件中的 `generated_at` 是本次当前物理结构捕获时点，`as_of` 是 Standard 解释时点，两者不得混淆。
 - 响应使用 `Content-Disposition: attachment`，并以强 ETag 提供响应字节的 SHA-256 摘要。下载文件一经产生即是不可变快照；Catalog 不保存导出文件、导出任务或第二份数据字典事实，不提供修改、覆盖或服务端重放接口。
 - 同步导出只面向单个 DataItem 的有界字段集合。未来若出现批量发布、长期托管、审批或外部分发需求，应另行定义 Asset 发布物及保留策略，不能把本同步下载接口扩展成隐式发布流程。
+
+#### 依赖失败与适用范围
+
 - Meta 或 Standard 不可达时返回 `503 catalog_data_dictionary_dependency_unavailable`，仅影响本次字典查询，不影响 Catalog 详情、Alive 或 Ready。条目来源不适用时返回 `409 catalog_data_dictionary_not_applicable`，不返回空数据伪装成功。
+
+#### 数据字典验证导航
+
+以下仅定位现有测试断言，不表示当前版本已执行通过。标准入口沿[测试与验收规范](addp测试与验收规范.md#三标准入口)，Catalog Go T1 可使用 `make test-module MODULE=catalog GO_ONLY=1`；前端测试与构建使用 `make test-catalog-frontend`，均不计为完整模块或真实链路验收。
+
+- [服务层组合测试](../../catalog/backend/internal/service/data_dictionary_test.go)：受控 Meta／Standard 解析器验证当前字段顺序、仅组合已审核的固定修订、未映射字段保留、`as_of` 不换修订及生效区间解释，并含不适用来源和 Meta 依赖失败用例；这些夹具不证明真实 owner 调用或 PostgreSQL 行为。
+- [错误映射与导出编码测试](../../catalog/backend/internal/api/handler_test.go)：验证上述 409／503 稳定码、JSON 附件字节及 SHA-256 ETag、生成时点文件名、同一快照编码稳定和缺失快照身份的拒绝；编码单测不证明完整 HTTP 响应头、代理传输或客户端下载完整性。
+- 前端的 [API 路径测试](../../catalog/frontend/tests/catalogApiPath.test.js)核对查询参数、导出路径与 Blob 响应模式；[导出辅助测试](../../catalog/frontend/tests/dataDictionaryExport.test.js)核对生成时点文件名及 Blob 错误还原，不证明真实浏览器下载。
+
+真实验收须分别核对当前目录可见性、Meta 当前字段与 Standard 精确修订、依赖失败语义，以及下载附件的响应头、完整字节和 ETag。现有发布／共享场景或页面夹具返回空字段不能代替这些断言；没有数据字典专属的固定版本运行证据时，不将其计为已通过的联邦查询、下载或 T4。
 
 ## 六、Catalog API 契约
 
@@ -707,8 +726,8 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 | GET | `/entries/:id/sharing_fulfillments` | 按本人当前原引擎管理范围过滤、[分页找回本人原办理请求](#本人办理历史)；不提交或核清 |
 | GET | `/entries/:id/sharing_fulfillments/:request_id` | 按持久完整绑定只读查询[本人原受理／关闭结果](#本人办理历史)；不重试、延期或授予源访问 |
 | GET | `/entries/:id` | 读取聚合详情、来源、语义和责任 |
-| GET | `/entries/:id/data-dictionary` | 组合 Meta 当前物理字段、Catalog 已审核 StandardMapping 与其冻结的 Standard 修订 |
-| GET | `/entries/:id/data-dictionary/export` | 重新组合一次联邦数据字典并下载不可变 JSON 快照，不在服务端留存副本 |
+| GET | `/entries/:id/data-dictionary` | [组合 Meta 当前物理字段、Catalog 已审核 StandardMapping 与其冻结的 Standard 修订](#查询与修订解释) |
+| GET | `/entries/:id/data-dictionary/export` | [重新组合一次联邦数据字典并下载不可变 JSON 快照](#同步导出与不可变快照)，不在服务端留存副本 |
 | PUT | `/entries/:id` | 使用聚合根 `version` 原子更新 `discovered|curated` 阶段的编目、语义、责任与可见性；`curated → discovered` 只接受完整撤销编目形状，不承担认证或弃用转换 |
 | PUT | `/entries/:id/governance` | 使用聚合根 `version` 原子执行认证、撤销认证、弃用、撤销弃用或弃用信息维护；只更新治理状态、推荐继任项和领域审计，不替换编目事实 |
 | PUT | `/entries/:id/responsibilities` | 使用聚合根 `version` 与原因，仅对已弃用条目完整替换责任关系；保持弃用状态和其他事实冻结 |

@@ -123,9 +123,9 @@ Catalog 是企业资源目录的唯一事实源，负责稳定目录身份、来
 
 - Meta 数据血缘只在 Catalog Frontend 中以当前 User Access Token 动态查询 Meta 唯一图接口，并复用 `common-frontend/graph`；Catalog Backend 不代理、不复制血缘边，Meta 不可达不影响 Catalog 详情和 Ready。
 
-- 数据字典是 Catalog 联邦读模型：只对 active Meta DataItem 组合 Meta 当前物理字段、Catalog 权威且已审核的 StandardMapping 与其中冻结的 Standard ElementRevision，不落表、不使用已观察摘要或动态“当前版本”伪造标准事实。
+- [数据字典](../docs/spec/addp企业资源目录实现规范.md#查询与修订解释)是 Catalog 联邦读模型：只对 active Meta DataItem 组合 Meta 当前物理字段、Catalog 权威且已审核的 StandardMapping 与其中冻结的 Standard ElementRevision，不落表、不使用已观察摘要或动态“当前版本”伪造标准事实。
 
-- 数据字典导出是上述联邦读模型的一次同步 JSON 捕获：服务端重新解析并返回带生成时点和 SHA-256 ETag 的附件，不保存导出任务、文件或第二份事实；批量发布与长期托管不属于该接口。
+- [数据字典导出](../docs/spec/addp企业资源目录实现规范.md#同步导出与不可变快照)是上述联邦读模型的一次同步 JSON 捕获：服务端重新解析并返回带生成时点和 SHA-256 ETag 的附件，不保存导出任务、文件或第二份事实；批量发布与长期托管不属于该接口。
 
 ## 业务域总览与五类标准接入
 
@@ -141,6 +141,7 @@ Catalog 是企业资源目录的唯一事实源，负责稳定目录身份、来
 
 | 验证目的 | 方法与证据正文 |
 | --- | --- |
+| 数据字典查询与同步导出 | [现有测试断言、标准入口与未覆盖范围](../docs/spec/addp企业资源目录实现规范.md#数据字典验证导航)：区分受控依赖、附件编码与真实联邦查询／下载验收。 |
 | 企业目录发布、生命周期与共享受理 | [场景方法](../docs/spec/testing/scenarios/授权与共享.md#发布生命周期与共享受理)、[OAuth 自动签发的只读观察](../docs/spec/testing/scenarios/授权与共享.md#oauth-自动签发的只读观察)：专用 macOS profile，区分受理、唯一签发与源数据实际读取。 |
 | PG 业务批准与实际读取 | [`pg-source-authorization` 的业务批准闭环](../docs/spec/testing/scenarios/授权与共享.md#catalog-业务批准闭环)、[Catalog 离线与恢复](../docs/spec/testing/scenarios/授权与共享.md#catalog-可选依赖离线与恢复)；[旧协议与新成果证据](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#pg-dataitem-源授权与-transfer-新成果初始授权--hosted-t4)、[直接许可模型切换后的固定版本证据](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#直接授权许可模型替换--pg-hosted-t4-与开发库迁移)。 |
 | 后续 PG 浏览器扩展的局部结果 | [许可提交与冲突恢复记录](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#直接许可浏览器提交与冲突恢复--pg-hosted-t4-局部通过)：页面局部通过、后续在途到期检查导致整轮失败；保留未执行项与清理证据。 |
