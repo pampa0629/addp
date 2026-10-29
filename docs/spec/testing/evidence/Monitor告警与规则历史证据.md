@@ -403,3 +403,11 @@ Node24.11.1下标准`make test-common-frontend`先重现283项中282通过／1�
 沿既有Common Frontend／Monitor／Console测试目录、Make与Platform前端矩阵自动发现，无新依赖、API、Swagger、权限或workflow。未重复运行未变的后端、数据库或Online runner；实际Safari、真实登录／MFA和Hosted未验。不重启个人服务、不修改个人账户或配置；CI／Hosted等专门会话回传，仅标准提交推送，不手动调度／重跑／轮询、不设置定时任务。
 
 日志：`/tmp/addp-alert-auto-filters-{enter,focused,focused-final,common-final,new,new-final,basic-check,console-focused,console-focused-final,monitor-full,console-full}.log`。严格暂停旧实现的三处失败不能计通过，最终门禁与正式运行分层认定。
+
+### Safari 真实页面复验阻塞（2026-10-29 13:04）
+
+本轮使用 macOS Safari 原有已登录的平台管理员会话，只做页面导航、筛选输入与只读网页检查器诊断。服务页实际读到五个在线后端及当前 CPU／RSS，但文本输入、Enter 均未更新筛选 URL；进入平台告警后 iframe 空白。检查器明确记录 `TypeError: deferred.cancel is not a function`，发生于共享 autoFilter 的取消／可见性路径，告警页同时报 watcher／setup 错误。因此本轮筛选、提示及返回恢复均未获得新版 Safari 通过证据，不能用之前受控 T3 结果替代。
+
+已核对两个真实资源版本不一致：Safari 打开的 `/src/config/portalConfig.js` 仍将主机监控排在服务、引擎、调用链和接口质量之后，磁盘源码已将其前置；Safari 打开的 `/module-ui/monitor/@fs/Users/pampa/code/addp/common-frontend/basic/src/utils/index.js` 中 debounce 仍直接返回旧函数，缺少 cancel，而磁盘同文件已包含 executedFunction.cancel。对该源码页执行 Safari 从源站重新加载后仍看到旧函数。Console 监听进程的工作目录为当前仓库 console/frontend，命令为 Vite 开发服务，并非已确认的旧 worktree 或 dist 服务。
+
+以上证据确认当前页面混用了不一致的资源版本，尚未确定旧响应持续存在于浏览器缓存还是开发服务转换缓存的唯一根因；没有据此添加兼容分支、吞掉 cancel 异常、改源文件触发重载或清空浏览器缓存。本轮未改产品代码，既有提交 b5a99831923efb02fd2cb4b0509c7eff29a5be4b 的本地门禁保持独立证据。临时源码标签页和只读检查器均已关闭，没有修改规则、绑定、账号、数据库或配置。已告知用户通过标准 `./scripts/dev/restart.sh -all` 刷新开发服务，再先核对实际返回源码，随后继续四页筛选／提示／返回恢复；未由 AI 重启或执行 keepalive。CI／Hosted 仍等专门会话回传，未调度、轮询或设置定时任务。
