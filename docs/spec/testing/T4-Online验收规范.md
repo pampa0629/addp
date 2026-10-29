@@ -37,10 +37,14 @@ T4 只在隔离的 ADDP 测试部署执行，并按运行条件选择唯一部�
 
 - 本机 Docker、每轮唯一运行 ID、容器／网络／数据卷和回环端口；独立 PostgreSQL 容器仅使用 `addp_test`，不连接共享 `addp-postgres`。配置只从模板生成，拒绝外部数据库连接和 GitHub／其他验收 profile，不加载日常 `.env`。只读记录日常容器身份，验收后核对未修改。
 - 浏览器入口使用每轮唯一 `*.localhost` 主机名与精确允许的 Origin，隔离 Cookie、Storage 和跨标签页通信；不以不同端口冒充 Cookie 隔离，不修改系统 hosts 或日常浏览器登录状态。
-- System-owned `catalog-browser-local` 夹具在任何身份写入前核验数据库名、运行 ID 对应的 PostgreSQL `cluster_name`、私密输出目录及空 User 状态。通过正式 IAM 服务创建租户、准备身份和限时普通用户，不写 IAM 表、不直接签发浏览器 Token。账号使用正常密码登录，业务样本通过 Owner API 创建。
+- System-owned `catalog-browser-local` 夹具在任何身份写入前核验数据库名、运行 ID 对应的 PostgreSQL `cluster_name`、私密输出目录及空 User 状态。通过正式 IAM 服务创建租户、准备身份和限时普通用户，不写 IAM 表、不直接签发浏览器 Token。业务样本通过 Owner API 创建，准备身份只供样本初始化并在页面就绪前回收。普通用户通过正常密码登录和 AuthContext 证明身份，禁止 Mock API、注入 Token 或复用个人管理员会话。
 - 主入口负责准备、就绪等待和清理；默认页面租约 60 分钟，最长 120 分钟。独立看护进程处理父进程退出和总时限；正常结束、失败、超时及信号均清理。`make clean-catalog-browser-local CATALOG_BROWSER_RUN_ID=<id>` 只恢复清理该运行 ID 的资源。宿主机／Docker 故障导致未清理时必须报告失败，恢复后使用相同入口清理，不能宣称零残留。
-- 回收准备身份；退出销毁本轮数据库及已发布历史、服务、网络、数据卷、镜像标签、凭据与临时副本，核对逐项零残留。不得全局 prune、重启或停止个人开发服务。
+- 退出销毁本轮数据库及已发布历史、服务、网络、数据卷、镜像标签、凭据与临时副本，核对逐项零残留。不得全局 prune、重启或停止个人开发服务。
 - `make test-catalog-browser-local-runner` 验证准入、权限、生命周期、清理和 CI 登记，加入现有 Catalog runner；System 夹具测试由 System 标准测试发现。真实 Opera 验收不加入 GitHub workflow／schedule。报告保留提交、身份权限摘要、样本关系、页面断言和清理结果，不归档凭据、Token 或原始认证响应。
+
+页面完成后，使用已有 `make finish-catalog-browser-local CATALOG_BROWSER_RUN_ID=<id> CATALOG_BROWSER_EVIDENCE=<证据文件绝对路径>` 提交真实观察。证据必须匹配本轮 `run_id`、`commit` 和 Opera，且包含[标准入口要求的全部页面检查](../../../scripts/test/catalog-browser-local-gate.py)，每项均为布尔 `true`；缺项、错版本、错运行或其他浏览器不得计通过。
+
+结束命令成功仅表示证据已获接收。主入口随后复核源标准摘要不变并执行清理，以主入口退出和最终报告判定结果；就绪回执或结束命令返回成功均不能单独证明页面和生命周期全部通过。该报告属于本机技术证据，不升级为 Hosted API T4 或全量跨域关系验收。
 
 ## 开关、身份与拓扑预检
 
