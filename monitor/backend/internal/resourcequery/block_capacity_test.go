@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -119,7 +120,49 @@ func TestIntegrationMetricsBlockCapacity(t *testing.T) {
 		}
 		tests = append(tests, map[string]any{"name": s.name, "interval": "15s", "input_series": inputs, "promql_expr_test": []any{map[string]any{"expr": expression, "eval_time": eval, "exp_samples": expected}}})
 	}
+	// The first scrape at 0.9s is visible to a current query at 0.95s, but
+	// correctly absent from a consumer's whole-second query at 0s.
+	fractionalChecks := []any{}
+	for _, instant := range []struct {
+		at      string
+		visible bool
+	}{{"0s", false}, {"950ms", true}, {"1s", true}, {"15s", true}} {
+		expected := []any{}
+		if instant.visible {
+			expected = append(expected, map[string]any{"labels": strings.Replace(scope.selector("up"), "up{", "{", 1), "value": 0.9})
+		}
+		fractionalChecks = append(fractionalChecks, map[string]any{"expr": "timestamp(" + scope.selector("up") + ")", "eval_time": instant.at, "exp_samples": expected})
+	}
+	// Include the shared 15s evaluation tick so promtool loads the fractional
+	// input before running all four historical instant assertions in this group.
+	tests = append(tests, map[string]any{"name": "first-fractional-scrape", "interval": "100ms",
+		"input_series": []any{map[string]any{"series": scope.selector("up"), "values": "_ _ _ _ _ _ _ _ _ 1"}}, "promql_expr_test": fractionalChecks})
 	runPromtoolCases(t, "block-capacity", tests, false)
+}
+
+func blockCapacityQueryAt(raw string, current time.Time) (time.Time, error) {
+	seconds, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || seconds <= 0 {
+		return time.Time{}, fmt.Errorf("missing or invalid fixed block query instant")
+	}
+	at := time.Unix(seconds, 0).UTC()
+	if at.After(current) || current.Sub(at) > time.Duration(FreshnessSeconds)*time.Second {
+		return time.Time{}, fmt.Errorf("fixed block query instant is future or expired")
+	}
+	return at, nil
+}
+
+func TestBlockCapacitySourceRequiresFixedRecentWholeSecond(t *testing.T) {
+	current := time.Unix(200, 900000000).UTC()
+	for _, raw := range []string{"", "invalid", "200.9", "0", "-1", "201", "140"} {
+		if _, err := blockCapacityQueryAt(raw, current); err == nil {
+			t.Fatal("invalid query instant admitted", raw)
+		}
+	}
+	at, err := blockCapacityQueryAt("200", current)
+	if err != nil || at.Unix() != 200 || at.Nanosecond() != 0 {
+		t.Fatal(at, err)
+	}
 }
 
 func TestIntegrationMetricsBlockCapacitySource(t *testing.T) {
@@ -146,7 +189,10 @@ func TestIntegrationMetricsBlockCapacitySource(t *testing.T) {
 	if e = json.Unmarshal([]byte(os.Getenv("ADDP_BLOCK_CAPACITY_EXPECTED")), &expected); e != nil {
 		t.Fatal(e)
 	}
-	now := time.Now().UTC().Truncate(time.Second)
+	now, e := blockCapacityQueryAt(os.Getenv("ADDP_BLOCK_CAPACITY_QUERY_AT"), time.Now().UTC())
+	if e != nil {
+		t.Fatal(e)
+	}
 	b := DefaultBudget()
 	scope := Scope{NodeID: os.Getenv("ADDP_METRICS_QUERY_NODE_ID"), Instance: os.Getenv("ADDP_METRICS_QUERY_INSTANCE")}
 	p, e := NewPlan([]string{"node.block.capacity_bytes"}, now, now, now, false, nil, b)
@@ -154,6 +200,7 @@ func TestIntegrationMetricsBlockCapacitySource(t *testing.T) {
 		t.Fatal(e)
 	}
 	collection, e := client.Collection(context.Background(), scope, now, b, true)
+	t.Logf("fixed_query_at=%s collection_state=%s block_state=%s sampled_at=%v expected_devices=%d", now.Format(time.RFC3339), collection.State, collection.BlockCapacity, collection.SampledAt, len(expected))
 	if e != nil || collection.State != "collecting" || (collection.BlockCapacity != "available" && !(len(expected) == 0 && collection.BlockCapacity == "empty")) {
 		t.Fatal(collection, e)
 	}

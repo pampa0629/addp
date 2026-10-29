@@ -2409,6 +2409,43 @@ class BlockCapacitySamplerTest(unittest.TestCase):
                         with self.assertRaises(ValueError): node_config.run('up', disabled)
                         execute.assert_not_called()
 
+class BlockSourceSnapshotTest(unittest.TestCase):
+    def setUp(self):
+        probe = ROOT / 'scripts/test/monitor-metrics-probe.py'
+        tree = ast.parse(probe.read_text())
+        function = next(item for item in tree.body if isinstance(item, ast.FunctionDef)
+                        and item.name == 'block_source_snapshot')
+        namespace = {'json': json, 'math': __import__('math')}
+        exec(compile(ast.Module(body=[function], type_ignores=[]), str(probe), 'exec'), namespace)
+        self.snapshot = namespace['block_source_snapshot']
+
+    def test_first_fractional_scrape_is_not_ready_in_the_previous_whole_second(self):
+        calls = []
+        def query(expression, *, at=None):
+            calls.append((expression, at))
+            wall = 100.95 if at is None else at
+            return [] if wall < 100.9 else [{'metric': {}, 'value': [wall, '100.9']}]
+        self.assertTrue(query('old current-time readiness'))
+        self.assertIsNone(self.snapshot(query, '192.0.2.1:9100', 'owned-node', 100))
+        self.assertEqual(self.snapshot(query, '192.0.2.1:9100', 'owned-node', 101),
+                         {'query_at': 101, 'scrape_at': 100.9})
+        for expression, at in calls[1:]:
+            self.assertIn('addp_node_id="owned-node"', expression)
+            self.assertIn('instance="192.0.2.1:9100"', expression)
+            self.assertIn('timestamp(up{', expression)
+            self.assertIn('timestamp(addp_block_capacity_success{', expression)
+            self.assertIn(' == 1', expression)
+            self.assertIn(at, (100, 101))
+
+    def test_duplicate_future_or_malformed_evidence_never_becomes_ready(self):
+        for rows in ([{'value': [101, '100.9']}] * 2,
+                     [{'value': [100, '100.9']}], [{'value': [101, '101.1']}],
+                     [{'value': [101, 'NaN']}], [{'value': [101, '-1']}],
+                     [{'value': [101, 'invalid']}]):
+            with self.subTest(rows=rows):
+                self.assertIsNone(self.snapshot(lambda *_args, **_kwargs: rows, '192.0.2.1:9100', 'owned-node', 101))
+
+
 class LimitedNodeMountEvidenceTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix='addp-limited-mount-evidence-')

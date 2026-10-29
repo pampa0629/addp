@@ -131,6 +131,25 @@ def query(expression, *, at=None):
     return api('query?' + urllib.parse.urlencode(params))['result']
 
 
+def block_source_snapshot(query_fn, instance, node_id, at):
+    """Prove one owned successful scrape at the exact whole-second Go query time."""
+    labels = '{job="addp_nodes",addp_node_id=' + json.dumps(node_id) + ',instance=' + json.dumps(instance) + '}'
+    up = 'up' + labels
+    success = 'addp_block_capacity_success' + labels
+    expression = ('timestamp(' + up + ') and (' + up + ' == 1) and (' + success + ' == 1)'
+                  ' and (timestamp(' + up + ') == timestamp(' + success + '))')
+    rows = query_fn(expression, at=at)
+    if len(rows) != 1:
+        return None
+    try:
+        evaluated, sampled = map(float, rows[0]['value'])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if evaluated != at or not math.isfinite(sampled) or not 0 < sampled <= at:
+        return None
+    return {'query_at': at, 'scrape_at': sampled}
+
+
 def job_is_up(job, expected):
     rows = query('up{job="' + job + '"}')
     return len(rows) == 1 and rows[0]['value'][1] == expected
@@ -359,12 +378,20 @@ if os.environ.get('ADDP_METRICS_T2_CASE') in ('all', 'block-capacity'):
         except (OSError,ValueError,ssl.SSLError): pass
         print('Metrics T2: bounded block readiness diagnostic ' + json.dumps(report, sort_keys=True), flush=True)
         raise
-    # First UP must be the scrape containing the managed frame, not an old file.
-    eventually(lambda: bool(query('addp_block_capacity_success{job="addp_nodes",instance="' + instance + '"} == 1')), 'managed capacity frame reaches Prometheus')
+    # Readiness and the Go consumer must use the same whole-second instant.
+    # A current-time query can see the first fractional scrape while floor(now) cannot.
+    snapshot = None
+    def block_snapshot_ready():
+        global snapshot
+        snapshot = block_source_snapshot(query, instance, block_projection[0]['labels']['addp_node_id'], int(time.time()))
+        return snapshot is not None
+    eventually(block_snapshot_ready, 'managed capacity frame reaches the fixed query instant')
+    print('Metrics T2: bounded block snapshot ' + json.dumps(snapshot, sort_keys=True), flush=True)
     query_env = dict(os.environ, GOWORK='off', ADDP_METRICS_QUERY_INTEGRATION='1',
         MONITOR_PROMETHEUS_URL=base, MONITOR_PROMETHEUS_CA_FILE=str(TLS / 'ca.crt'),
         MONITOR_PROMETHEUS_CLIENT_CERT_FILE=str(WORK / 'query-tls/client.crt'), MONITOR_PROMETHEUS_CLIENT_KEY_FILE=str(WORK / 'query-tls/client.key'),
-        ADDP_METRICS_QUERY_NODE_ID=block_projection[0]['labels']['addp_node_id'], ADDP_METRICS_QUERY_INSTANCE=instance, ADDP_BLOCK_CAPACITY_EXPECTED=json.dumps(proof))
+        ADDP_METRICS_QUERY_NODE_ID=block_projection[0]['labels']['addp_node_id'], ADDP_METRICS_QUERY_INSTANCE=instance,
+        ADDP_BLOCK_CAPACITY_QUERY_AT=str(snapshot['query_at']), ADDP_BLOCK_CAPACITY_EXPECTED=json.dumps(proof))
     subprocess.run(['go', 'test', './internal/resourcequery', '-run', '^TestIntegrationMetricsBlockCapacitySource$', '-count=1', '-v'],
         cwd=Path(__file__).resolve().parents[2] / 'monitor/backend', env=query_env, check=True, timeout=120)
     discovery_text(original_discovery)
