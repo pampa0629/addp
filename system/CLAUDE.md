@@ -527,6 +527,8 @@ execute 必须引用本租户已 `completed` 的 scan 并提交 `confirmed=true`
 
 能力范围见[executor 参与范围](../docs/spec/addp-cleanup体系规范.md#executor-参与范围)、[结果与状态](../docs/spec/addp-cleanup体系规范.md#八结果模型)及[System 页面与 API](../docs/spec/addp-cleanup体系规范.md#system-页面与任务-api)。[Monitor](../docs/spec/addp-cleanup体系规范.md#1-monitor)独立执行 Owner 读取裁决与安全投影；引擎删除须走[专用工作流](../docs/spec/addp-cleanup体系规范.md#engine-删除工作流)，不能用通用 execute 替代。
 
+Cleanup“协调已关闭、模块未开始”的[安全展示细则](../docs/spec/addp-cleanup体系规范.md#协调关闭与模块未开始的安全展示)已获用户确认，牵头负责实施和验证。System沿原父详情入口核验本请求权限与Tenant，同一User取得子Owner范围后读取公共一致快照；不持事务等待HTTP、不代授子权限、不查Graph私表、不将未响应模块填成timeout／零结果。现有 `GetTaskStatus` 仍会重算并调用状态更新，尚不符合目标纯GET契约，不能因文档存在认定已迁移。新读取顺序、空集合／省略区别及视图失效要求以正式契约为准，本轮需完成实际改造与相关门禁，新的Hosted另行确认。
+
 验证要求与未覆盖项统一见[运行态验收](../docs/spec/addp-cleanup体系规范.md#十三运行态验收)：完整 Cleanup suite 尚未接入，接口存在、任务终态或页面可展示均不代表完整验收通过；未运行、失败或跳过不计为通过。
 
 ### 前端公开路由
