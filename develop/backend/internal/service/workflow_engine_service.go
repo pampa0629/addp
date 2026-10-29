@@ -440,6 +440,9 @@ func workflowRuntimeStatusSummary(status *plugin.WorkflowExecutionStatus) map[st
 	if status.ErrorCode != "" {
 		summary["error_code"] = status.ErrorCode
 	}
+	if status.Diagnostic != nil {
+		summary["diagnostic"] = status.Diagnostic
+	}
 	if status.Details != "" {
 		summary["details"] = status.Details
 	}

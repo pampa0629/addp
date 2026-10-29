@@ -739,7 +739,7 @@ def test_distance_to_active_geometry_conflict_uses_submitted_workflow_language(l
     with pytest.raises(WorkflowExecutionError) as failure:
         runner.execute(workflow, {'source': source, 'target': target})
     assert str(failure.value).endswith(expected)
-    assert failure.value.error_code == 'EXECUTION_FAILED'
+    assert failure.value.error_code == 'INVALID_PARAMS'
     assert failure.value.all_results == {}
     assert failure.value.task_order == ['distance']
 
@@ -843,7 +843,7 @@ def test_distance_to_crs_error_uses_submitted_workflow_language(
     with pytest.raises(WorkflowExecutionError) as failure:
         runner.execute(workflow, {'source': source, 'target': bad_target})
     assert (projected_message if code == 'projected_crs' else mismatch_message) in str(failure.value)
-    assert failure.value.error_code == 'EXECUTION_FAILED'
+    assert failure.value.error_code == 'INVALID_PARAMS'
     assert failure.value.all_results == {} and failure.value.task_order == ['distance']
     result = runner.execute(workflow, {'source': source, 'target': good_target})
     assert [feature['properties']['distance'] for feature in json.loads(result.final_result)['features']] == [5., 10.]
@@ -1089,7 +1089,7 @@ def test_multi_distance_buffer_localized_error_does_not_publish_and_can_recover(
     with pytest.raises(WorkflowExecutionError) as failure:
         runner.execute(workflow, {'source': source})
     assert fragment in str(failure.value)
-    assert failure.value.all_results == {} and failure.value.error_code == 'EXECUTION_FAILED'
+    assert failure.value.all_results == {} and failure.value.error_code == 'INVALID_PARAMS'
     assert not (tmp_path / 'conflict.gpkg').exists()
     result = runner.execute(workflow, {'source': source.rename(columns={'distance': 'original_distance'})})
     assert 'original_distance' in __import__('json').loads(result.final_result)['features'][0]['properties']
@@ -1140,5 +1140,89 @@ def test_multi_distance_buffer_public_workflow_language_metadata_and_context(mon
             if state['status'] in {'success', 'failed'}:
                 break
             time.sleep(.01)
-        assert state['status'] == 'failed' and state['error_code'] == 'EXECUTION_FAILED'
+        assert state['status'] == 'failed' and state['error_code'] == 'INVALID_PARAMS'
         assert fragment in state['error']
+
+
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+@pytest.mark.parametrize('operator,code,reason,parameter,field', [
+    ('batch_buffer','source','operator_input_invalid','input_gdf',''),
+    ('batch_buffer','distance_conflict','operator_field_conflict','input_gdf','distance'),
+    ('batch_buffer','distances','operator_number_array_invalid','distances',''),
+    ('batch_buffer','resolution','operator_positive_integer_required','resolution',''),
+    ('distance_to','geometry_column_conflict','operator_geometry_field_conflict','input_gdf','distance'),
+    ('distance_to','projected_crs','operator_projected_crs_required','',''),
+    ('distance_to','crs_mismatch','operator_crs_mismatch','',''),
+    ('check_line_proximity','tolerance','operator_positive_number_required','tolerance',''),
+    ('check_line_proximity','source','operator_input_invalid','input_gdf',''),
+    ('check_line_proximity','reference','operator_reference_invalid','reference_gdf',''),
+    ('check_line_proximity','crs','operator_crs_invalid','',''),
+])
+def test_operator_input_diagnostic_survives_async_http_snapshot(monkeypatch, language, operator, code, reason, parameter, field):
+    import json
+    import time
+    import geopandas as gpd
+    from shapely.geometry import Point, LineString
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    from workflow_engine import GeoPythonWorkflowRunner
+    monkeypatch.setattr(api_server, 'executions', ExecutionRegistry())
+    source = gpd.GeoDataFrame({'key':['source']}, geometry=[Point(0,0)],crs=3857)
+    target = gpd.GeoDataFrame({'key':['target']}, geometry=[Point(1,0)],crs=3857)
+    if operator == 'batch_buffer':
+        params = {'input_gdf':source, 'distances':[1], 'resolution':1}
+        if code == 'source': source.insert(0,'key',['duplicate'],allow_duplicates=True)
+        if code == 'distance_conflict': source['distance'] = [7]
+        if code == 'distances': params['distances'] = [True]
+        if code == 'resolution': params['resolution'] = 0
+    elif operator == 'distance_to':
+        params = {'input_gdf':source,'target_geom':target}
+        if code == 'geometry_column_conflict': params['input_gdf'] = source.rename_geometry('distance')
+        if code == 'projected_crs': params['input_gdf'] = source.set_crs(4326,allow_override=True)
+        if code == 'crs_mismatch': params['target_geom'] = target.set_crs(3395,allow_override=True)
+    else:
+        source = gpd.GeoDataFrame({'key':['s']},geometry=[LineString([(0,0),(1,0)])],crs=3857)
+        target = gpd.GeoDataFrame({'key':['r']},geometry=[LineString([(0,1),(1,1)])],crs=3857)
+        params = {'input_gdf':source,'reference_gdf':target,'id_field':'key','reference_id_field':'key','tolerance':.5}
+        if code == 'tolerance':params['tolerance'] = 0
+        if code == 'source':params['id_field'] = 'private_missing'
+        if code == 'reference':params['reference_id_field'] = 'private_missing'
+        if code == 'crs':params['reference_gdf'] = target.set_crs(3395,allow_override=True)
+    # The HTTP route still performs admission/auth/context and runs the actual operator.
+    # Inject only the transport's in-memory input conversion, which cannot carry a GDF in JSON.
+    original = GeoPythonWorkflowRunner._execute_operator
+    calls = []
+    def execute(self, actual, submitted):
+        calls.append(actual)
+        return original(self,actual,params)
+    monkeypatch.setattr(GeoPythonWorkflowRunner,'_execute_operator',execute)
+    definition = {'tasks':[{'id':'private-node-password','operator':operator,'params':{},'depends_on':[]}]}
+    with api_server.app.test_client() as client:
+        response = client.post('/api/workflow',headers={'Accept-Language':language},json={
+            'workflow_def':definition,'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read']}}})
+        assert response.status_code == 202
+        deadline = time.monotonic()+5
+        while time.monotonic()<deadline:
+            snapshot_response = client.get('/api/executions/'+response.get_json()['execution_id'])
+            state = snapshot_response.get_json()
+            if state['status']=='failed':break
+            time.sleep(.01)
+        assert snapshot_response.status_code == 200 and calls == [operator]
+        assert state['status']=='failed' and state['error_code']=='INVALID_PARAMS'
+        expected={'node_index':1,'operator_id':operator}
+        if parameter: expected['parameter']=parameter
+        if field: expected['field']=field
+        assert state['diagnostic']=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,'operator':expected}
+        assert 'private' not in json.dumps(state['diagnostic'])
+        assert not state.get('results')
+
+
+def test_operator_numerical_failure_remains_execution_failure(monkeypatch):
+    import workflow_engine
+    from operators.geometric_operators import NearLineInputError
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    def numerical_failure(*args): raise NearLineInputError('calculation')
+    monkeypatch.setattr(workflow_engine,'_execute_workflow_operator',numerical_failure)
+    with pytest.raises(WorkflowExecutionError) as caught:
+        workflow_engine.GeoPythonWorkflowRunner().execute({'tasks':[{'id':'check','operator':'check_line_proximity','params':{},'depends_on':[]}]})
+    assert caught.value.error_code=='EXECUTION_FAILED' and caught.value.diagnostic is None

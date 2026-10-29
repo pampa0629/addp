@@ -17,12 +17,13 @@ const FailureDiagnosticSchemaVersion = "addp.execution-failure/v3"
 // corresponding localized explanation and action. Optional SQL facts contain
 // only provider-confirmed identifiers and an original-source location.
 type FailureDiagnostic struct {
-	SchemaVersion        string                    `json:"schema_version"`
-	Stage                string                    `json:"stage"`
-	Reason               string                    `json:"reason"`
-	SQL                  *commonquery.ErrorContext `json:"sql,omitempty"`
-	Write                *plugin.TableWriteField   `json:"write,omitempty"`
-	TargetChangePossible *bool                     `json:"target_change_possible,omitempty"`
+	SchemaVersion        string                          `json:"schema_version"`
+	Stage                string                          `json:"stage"`
+	Reason               string                          `json:"reason"`
+	Operator             *plugin.WorkflowOperatorFailure `json:"operator,omitempty"`
+	SQL                  *commonquery.ErrorContext       `json:"sql,omitempty"`
+	Write                *plugin.TableWriteField         `json:"write,omitempty"`
+	TargetChangePossible *bool                           `json:"target_change_possible,omitempty"`
 }
 
 var failureStages = map[string]bool{
@@ -46,7 +47,11 @@ var failureReasons = map[string]bool{
 	"protection_schema_mismatch": true, "protection_operation_unsupported": true,
 	"json_invalid": true, "array_invalid": true, "bytes_invalid": true,
 	"table_write_failed": true, "execution_failed": true,
-	"target_exists": true,
+	"target_exists":          true,
+	"operator_input_invalid": true, "operator_reference_invalid": true, "operator_field_conflict": true,
+	"operator_geometry_field_conflict": true, "operator_number_array_invalid": true,
+	"operator_positive_integer_required": true, "operator_positive_number_required": true,
+	"operator_projected_crs_required": true, "operator_crs_mismatch": true, "operator_crs_invalid": true,
 }
 
 // ProtectionFailureReason is called only at a known protection boundary.
@@ -135,17 +140,29 @@ func projectFailureDiagnostic(value interface{}) *FailureDiagnostic {
 	if decoder.Decode(&diagnostic) != nil || diagnostic.SchemaVersion != FailureDiagnosticSchemaVersion {
 		return nil
 	}
-	if NewFailureDiagnostic(diagnostic.Stage, diagnostic.Reason) == nil || !validSQLFailureContext(&diagnostic) || !validWriteFailureContext(&diagnostic) {
+	if NewFailureDiagnostic(diagnostic.Stage, diagnostic.Reason) == nil || !validSQLFailureContext(&diagnostic) || !validWriteFailureContext(&diagnostic) || !validOperatorFailureContext(&diagnostic) {
 		return nil
 	}
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(payload, &fields) != nil {
 		return nil
 	}
-	for _, name := range []string{"sql", "write", "target_change_possible"} {
+	if diagnostic.Operator != nil && plugin.ParseWorkflowInputDiagnostic(map[string]interface{}{
+		"schema_version": diagnostic.SchemaVersion, "stage": diagnostic.Stage, "reason": diagnostic.Reason, "operator": fields["operator"],
+	}) == nil {
+		return nil
+	}
+	for _, name := range []string{"sql", "write", "target_change_possible", "operator"} {
 		if value, ok := fields[name]; ok && bytes.Equal(value, []byte("null")) {
 			return nil
 		}
 	}
 	return &diagnostic
+}
+
+func validOperatorFailureContext(d *FailureDiagnostic) bool {
+	if len(d.Reason) >= 9 && d.Reason[:9] == "operator_" {
+		return d.Stage == "execution" && d.SQL == nil && d.Write == nil && d.Operator.Valid(d.Reason)
+	}
+	return d.Operator == nil
 }

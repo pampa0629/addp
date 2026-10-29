@@ -1101,3 +1101,44 @@ for (const locale of ['zh-cn', 'en']) for (const cause of ['roles', 'choice', 'r
     if (chinese && boundary === 'download') await page.screenshot({ path: testInfo.outputPath(`export-${cause}-refusal.png`) })
   })
 }
+
+
+for (const locale of ['zh-cn','en']) {
+  for (const [operator_id,reason,parameter,field,name] of [
+    ['batch_buffer','operator_field_conflict','input_gdf','distance', locale === 'zh-cn' ? '多距缓冲' : 'Multi-distance buffer'],
+    ['distance_to','operator_geometry_field_conflict','input_gdf','distance', locale === 'zh-cn' ? '距离计算' : 'Distance calculation'],
+    ['check_line_proximity','operator_positive_number_required','tolerance','', locale === 'zh-cn' ? '近接检查' : 'Line proximity check']
+  ]) test(`operator input diagnostics show controlled context and copy it (${operator_id}, ${locale})`, async ({ page }) => {
+    await page.addInitScript(() => { window.copiedDiagnostic=''; Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedDiagnostic=text}},configurable:true}) })
+    await installMockBackend(page,{ resultKind:'table',executionType:'workflow',locale,errorDetails:{
+      category:'execution_failed',code:'develop.workflow.invalid_params',message:'private-password /private/input.gpkg',
+      diagnostic:{schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:2,operator_id,parameter,...(field?{field}:{})}}
+    }})
+    await page.goto(`/executions/${EXECUTION_ID}`)
+    const panel=page.locator('.execution-failure')
+    await expect(panel).toContainText(name)
+    await expect(panel).toContainText(locale==='zh-cn'?'定义中的第 2 个节点':'Node 2 in the workflow definition')
+    await expect(panel).toContainText(locale==='zh-cn'?'执行操作':'Execute operation')
+    if(field) await expect(panel).toContainText('distance')
+    else await expect(panel).toContainText(locale==='zh-cn'?'有限正数':'finite positive')
+    await expect(panel).not.toContainText('private-password')
+    await panel.getByRole('button',{name:locale==='zh-cn'?'复制诊断信息':'Copy diagnostics',exact:true}).click()
+    const copied=await page.evaluate(()=>window.copiedDiagnostic)
+    expect(copied).toContain(name)
+    expect(copied).toContain(EXECUTION_ID)
+    expect(copied).not.toContain('private-password')
+    await page.setViewportSize({width:390,height:844})
+    expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBeTruthy()
+  })
+}
+
+test('an unproven operator diagnostic remains generic without leaking input names',async({page})=>{
+  await installMockBackend(page,{resultKind:'table',executionType:'workflow',errorDetails:{category:'execution_failed',code:'develop.workflow.execution_failed',
+    message:'private-password',diagnostic:{schema_version:'addp.execution-failure/v3',stage:'execution',reason:'operator_field_conflict',
+      operator:{node_index:1,operator_id:'batch_buffer',parameter:'input_gdf',field:'private-password'}}}})
+  await page.goto(`/executions/${EXECUTION_ID}`)
+  const panel=page.locator('.execution-failure')
+  await expect(panel).toContainText('未记录')
+  await expect(panel).not.toContainText('private-password')
+  await expect(panel).not.toContainText('多距缓冲')
+})

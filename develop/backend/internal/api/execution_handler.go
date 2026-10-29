@@ -468,6 +468,7 @@ func writeToolApprovalError(c *gin.Context, err error) {
 // @Summary 获取执行详情 | Get execution details
 // @Description 专业读取仅本人执行，当前租户成员身份和授权版本须匹配；query/workflow 要求 data_read.execute，script 要求 notebook.read。| Professional reads require own execution, matching current membership and authorization version; query/workflow require data_read.execute and script require notebook.read.
 // @Description 查询失败的 error_details.diagnostic 使用 schema_version=addp.execution-failure/v3、stage 和 reason 闭合码；可选 sql.object(kind/name) 与 sql.position(line/column) 仅含 Provider 确认的对象名及原查询位置，不返回原始错误正文。| Query failure error_details.diagnostic uses schema_version=addp.execution-failure/v3 and closed stage/reason codes; optional sql.object(kind/name) and sql.position(line/column) contain only provider-confirmed identifiers and original-source positions, without raw error text.
+// @Description 工作流类型化参数错误使用同一受控诊断及operator上下文，仅含经冻结定义确认的节点序号、登记算子/参数和固定冲突字段；不回显原始Runtime错误。| Typed workflow input failures use the same controlled diagnostic with an operator context containing only a frozen-definition node index, registered operator/parameter and fixed conflicting field, without raw runtime errors.
 // @Tags Execution
 // @Produce json
 // @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"

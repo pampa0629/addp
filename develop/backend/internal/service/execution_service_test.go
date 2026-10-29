@@ -27,7 +27,7 @@ import (
 )
 
 func TestClaimedWorkflowPersistsReceiptBeforePollingAndClosesSafely(t *testing.T) {
-	testClaimedWorkflowLanguage(t, "", []string{"success", "success_zh", "runtime_failed", "target_exists", "revoked", "authorization_expired", "lease_lost", "language_missing", "language_invalid"})
+	testClaimedWorkflowLanguage(t, "", []string{"success", "success_zh", "runtime_failed", "target_exists", "invalid_params", "invalid_params_zh", "revoked", "authorization_expired", "lease_lost", "language_missing", "language_invalid"})
 }
 
 // The standard Develop PostgreSQL gate exercises durable JSONB reload, a fresh
@@ -37,7 +37,7 @@ func TestWorkflowDisplayLanguageAgainstPostgres(t *testing.T) {
 	if dsn == "" {
 		t.Skip("DEVELOP_POSTGRES_TEST_DSN is not set")
 	}
-	testClaimedWorkflowLanguage(t, dsn, []string{"success", "success_zh", "runtime_failed", "language_missing", "language_invalid"})
+	testClaimedWorkflowLanguage(t, dsn, []string{"success", "success_zh", "runtime_failed", "invalid_params", "invalid_params_zh", "language_missing", "language_invalid"})
 }
 
 func testClaimedWorkflowLanguage(t *testing.T, dsn string, scenarios []string) {
@@ -45,7 +45,7 @@ func testClaimedWorkflowLanguage(t *testing.T, dsn string, scenarios []string) {
 	for _, scenario := range scenarios {
 		t.Run(scenario, func(t *testing.T) {
 			language, workerLanguage := "en", "zh-cn"
-			if scenario == "success_zh" {
+			if scenario == "success_zh" || scenario == "invalid_params_zh" {
 				language, workerLanguage = "zh-cn", "en"
 			}
 			var db *gorm.DB
@@ -84,10 +84,14 @@ func testClaimedWorkflowLanguage(t *testing.T, dsn string, scenarios []string) {
 			plugin.Register(plugin.NewHTTPWorkflowRuntimeProvider(engineType, "Leased Workflow"))
 			executionID := uuid.NewString()
 			runtimeCalls, statusCalls := 0, 0
+			operatorID := "contract_op"
+			if strings.HasPrefix(scenario, "invalid_params") {
+				operatorID = "batch_buffer"
+			}
 			runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/api/operators":
-					json.NewEncoder(w).Encode(map[string]interface{}{"status": "success", "operators": []map[string]interface{}{{"id": "contract_op", "name": "contract_op", "display_name": "Contract", "engine_type": engineType, "category": "test", "category_path": []string{"test"}, "description": "contract", "execution_modes": []string{"workflow"}, "effects": []string{"read"}, "parameters": []interface{}{}, "output_ports": []map[string]interface{}{{"name": "default", "type": "object", "is_default": true}}}}})
+					json.NewEncoder(w).Encode(map[string]interface{}{"status": "success", "operators": []map[string]interface{}{{"id": operatorID, "name": operatorID, "display_name": "Contract", "engine_type": engineType, "category": "test", "category_path": []string{"test"}, "description": "contract", "execution_modes": []string{"workflow"}, "effects": []string{"read"}, "parameters": []interface{}{}, "output_ports": []map[string]interface{}{{"name": "default", "type": "object", "is_default": true}}}}})
 				case "/api/workflow":
 					runtimeCalls++
 					if got := r.Header.Get("Accept-Language"); got != language {
@@ -105,14 +109,19 @@ func testClaimedWorkflowLanguage(t *testing.T, dsn string, scenarios []string) {
 						t.Error("runtime was polled before its receipt committed")
 					}
 					status := "success"
-					if scenario == "runtime_failed" || scenario == "target_exists" {
+					if scenario == "runtime_failed" || scenario == "target_exists" || strings.HasPrefix(scenario, "invalid_params") {
 						status = "failed"
 					}
 					code := "EXECUTION_FAILED"
 					if scenario == "target_exists" {
 						code = "TARGET_ALREADY_EXISTS"
 					}
-					json.NewEncoder(w).Encode(map[string]interface{}{"status": status, "execution_id": "remote-private-sentinel", "progress": 100, "error": "runtime-private-sentinel", "error_code": code})
+					response := map[string]interface{}{"status": status, "execution_id": "remote-private-sentinel", "progress": 100, "error": "runtime-private-sentinel", "error_code": code}
+					if strings.HasPrefix(scenario, "invalid_params") {
+						response["error_code"] = "INVALID_PARAMS"
+						response["diagnostic"] = map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": "operator_field_conflict", "operator": map[string]interface{}{"node_index": 1, "operator_id": operatorID, "parameter": "input_gdf", "field": "distance"}}
+					}
+					json.NewEncoder(w).Encode(response)
 				default:
 					http.NotFound(w, r)
 				}
@@ -143,7 +152,7 @@ func testClaimedWorkflowLanguage(t *testing.T, dsn string, scenarios []string) {
 					return &commonModels.EngineRuntimeDescriptor{ID: 91, Name: engine.Name, EngineType: engineType, LifecycleState: "active", ConnectionStatus: "online", Capabilities: capabilities, RuntimeEndpoint: &commonModels.EngineRuntimeEndpoint{Protocol: "http", Host: endpoint.Hostname(), Port: port}}, nil
 				},
 				listWorkflowOperators: func(context.Context, *commonModels.Engine) ([]commonModels.OperatorDescriptor, error) {
-					return []commonModels.OperatorDescriptor{{ID: "contract_op", Name: "contract_op", EngineType: engineType, ExecutionModes: []string{"workflow"}, Effects: []string{"read"}, Parameters: []commonModels.ParameterDescriptor{}}}, nil
+					return []commonModels.OperatorDescriptor{{ID: operatorID, Name: operatorID, EngineType: engineType, ExecutionModes: []string{"workflow"}, Effects: []string{"read"}, Parameters: []commonModels.ParameterDescriptor{}}}, nil
 				},
 			}
 			executor := NewDevExecutor(nil, commonExecution.NewTaskExecutionRepository(db), NewWorkflowEngineService(client), discovery, nil, NewSQLEngineService(&config.Config{}, client, nil), nil, nil)
@@ -157,7 +166,7 @@ func testClaimedWorkflowLanguage(t *testing.T, dsn string, scenarios []string) {
 				expires = time.Now().Add(-time.Minute)
 			}
 			item := &commonExecution.TaskExecution{TenantID: 7, ExecutionID: executionID, Module: "develop", TaskType: "workflow", Source: "develop", Status: "pending", ExecutionBoundary: "bounded", TriggerType: "manual", MaxAttempts: 1, CreatedAt: time.Now(), UpdatedAt: time.Now(), ActorPrincipalID: &principal, ActorTenantMembershipID: &membership, IssuedAuthorizationVersion: &version, ExecutionAuthorizationID: &authorization, AuthorizationExpiresAt: &expires,
-				ExecutionConfig: commonModels.JSONMap{"engine_id": 91, "timeout": 30, "content": map[string]interface{}{"workflow_definition": map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "contract", "operator": "contract_op", "params": map[string]interface{}{}, "depends_on": []interface{}{}}}}}},
+				ExecutionConfig: commonModels.JSONMap{"engine_id": 91, "timeout": 30, "content": map[string]interface{}{"workflow_definition": map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "contract", "operator": operatorID, "params": map[string]interface{}{}, "depends_on": []interface{}{}}}}}},
 			}
 			item.ExecutionConfig[commonExecution.DisplayLanguageKey] = language
 			if scenario == "language_missing" {
@@ -215,6 +224,18 @@ func testClaimedWorkflowLanguage(t *testing.T, dsn string, scenarios []string) {
 				}
 				if strings.Contains(string(encoded), "private-sentinel") {
 					t.Fatal("runtime text leaked into conflict diagnostic")
+				}
+			}
+			if strings.HasPrefix(scenario, "invalid_params") {
+				observed := commonExecution.Observe(&stored)
+				encoded, _ := json.Marshal(observed.ErrorDetails)
+				for _, expected := range []string{`"code":"develop.workflow.invalid_params"`, `"reason":"operator_field_conflict"`, `"node_index":1`, `"operator_id":"batch_buffer"`, `"field":"distance"`} {
+					if !strings.Contains(string(encoded), expected) {
+						t.Fatalf("lost controlled input fact %s after persistence: %s", expected, encoded)
+					}
+				}
+				if strings.Contains(string(encoded), "private-sentinel") {
+					t.Fatal("private runtime error leaked")
 				}
 			}
 			var events []commonExecution.Event

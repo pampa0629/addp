@@ -1,14 +1,14 @@
 {
   "fieldMaskingChoices": {
-  "title": "脱敏方式",
-  "hint": "未选择的字段沿用默认保护；选择将随查询保存，后续执行自动复用。",
-  "default": "默认方式",
-  "refresh": "刷新方式",
-  "empty": "当前来源没有可用的角色专用方式。",
-  "stale": "已保存的选择当前不可用，请移除或重新选择。",
-  "remove": "移除选择",
-  "sourceRequired": "请先在资源树中选择一个数据表或集合。"
-},
+    "title": "脱敏方式",
+    "hint": "未选择的字段沿用默认保护；选择将随查询保存，后续执行自动复用。",
+    "default": "默认方式",
+    "refresh": "刷新方式",
+    "empty": "当前来源没有可用的角色专用方式。",
+    "stale": "已保存的选择当前不可用，请移除或重新选择。",
+    "remove": "移除选择",
+    "sourceRequired": "请先在资源树中选择一个数据表或集合。"
+  },
   "autoRefresh": {
     "interval": "刷新间隔",
     "off": "关闭自动刷新",
@@ -226,7 +226,17 @@
         "bytes_invalid": "二进制值编码失败",
         "table_write_failed": "目标表写入失败",
         "execution_failed": "执行失败，未记录具体原因",
-        "target_exists": "输出目标已存在，create 模式已拒绝覆盖。"
+        "target_exists": "输出目标已存在，create 模式已拒绝覆盖。",
+        "operator_input_invalid": "输入图层不符合算子的类型、字段、几何或标识要求。",
+        "operator_reference_invalid": "参考图层不符合算子的类型、几何或标识要求。",
+        "operator_field_conflict": "源图层字段 {field} 与算子的固定输出字段重名。",
+        "operator_geometry_field_conflict": "源图层活动几何列 {field} 与距离输出字段重名。",
+        "operator_number_array_invalid": "距离列表必须为有限数值数组，不能包含布尔值、字符串或空值。",
+        "operator_positive_integer_required": "参数必须是大于零的整数。",
+        "operator_positive_number_required": "容差必须为以源坐标系水平单位表示的有限正数。",
+        "operator_projected_crs_required": "两个输入均须具有已知投影坐标系及匹配的有限正水平线性单位。",
+        "operator_crs_mismatch": "两个输入的投影坐标系不同。",
+        "operator_crs_invalid": "两个图层须使用相同的已知投影坐标系和匹配的水平单位。"
       },
       "actions": {
         "configuration_missing": "重新发起执行；若仍失败，请联系管理员检查执行配置生成过程。",
@@ -268,12 +278,39 @@
         "bytes_invalid": "核对二进制列的输入是否为字节值。",
         "table_write_failed": "核对目标约束、连接和写入权限，并根据执行编号排查。",
         "execution_failed": "根据执行编号检查运行记录和相关资源状态。",
-        "target_exists": "请更换输出文件名或输出位置后重新执行。"
+        "target_exists": "请更换输出文件名或输出位置后重新执行。",
+        "operator_input_invalid": "按算子说明检查源图层的类型、活动几何列、字段及标识；修正后重新执行。",
+        "operator_reference_invalid": "按算子说明检查参考图层的几何、坐标系和非空唯一标识后重新执行。",
+        "operator_field_conflict": "先在上游手动重命名源字段 {field}，再重新执行；不会自动改名或覆盖。",
+        "operator_geometry_field_conflict": "先在上游手动重命名源活动几何列 {field}，再重新执行。",
+        "operator_number_array_invalid": "检查 distances 数组中的全部元素；保留合法的零值、负值和重复距离。",
+        "operator_positive_integer_required": "将该参数设为大于零的整数后重新执行。",
+        "operator_positive_number_required": "按源坐标系单位设置有限且大于零的容差后重新执行，不自动换算为米。",
+        "operator_projected_crs_required": "先显式重投影到符合要求的同一投影坐标系，再重新执行。",
+        "operator_crs_mismatch": "先显式统一两个输入的投影坐标系；不能仅因单位相同就直接计算。",
+        "operator_crs_invalid": "先显式统一两个图层的投影坐标系与水平单位，再重新执行。"
       },
       "write": "写入字段",
       "writeColumn": "本次写入第 {column_index} 列（声明类型：{declared_type}）",
       "targetState": "目标状态",
-      "targetChangePossible": "目标数据或表结构可能已改变；写入计数为 0 不表示没有副作用。请核对目标后再决定是否重试。"
+      "targetChangePossible": "目标数据或表结构可能已改变；写入计数为 0 不表示没有副作用。请核对目标后再决定是否重试。",
+      "operator": "失败算子",
+      "node": "节点位置",
+      "parameter": "参数或输入",
+      "field": "冲突字段",
+      "operatorNodeIndex": "定义中的第 {index} 个节点",
+      "operatorNames": {
+        "batch_buffer": "多距缓冲",
+        "distance_to": "距离计算",
+        "check_line_proximity": "近接检查"
+      },
+      "operatorParameters": {
+        "input_gdf": "源图层（input_gdf）",
+        "reference_gdf": "参考图层（reference_gdf）",
+        "distances": "距离列表（distances）",
+        "resolution": "圆弧段数（resolution）",
+        "tolerance": "容差（tolerance）"
+      }
     },
     "executionSteps": {
       "lastRecorded": "最后记录：{status}",

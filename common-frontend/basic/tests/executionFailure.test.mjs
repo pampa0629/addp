@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import test from 'node:test'
-import { buildDevelopQueryExecutionRoute, executionFailurePresentation, failureStages, failureReasons } from '../src/utils/executionFailure.mjs'
+import { buildDevelopQueryExecutionRoute, executionFailurePresentation, failureStages, failureReasons, operatorInputRules } from '../src/utils/executionFailure.mjs'
 
 const read = path => fs.readFileSync(new URL(path, import.meta.url), 'utf8')
 
@@ -128,5 +128,55 @@ test('protection refusals remain distinct from data permissions without exposing
     }, key => key)
     assert.equal(presentation.reason, `common.executionFailure.reasons.${reason}`)
     assert.equal(presentation.action, `common.executionFailure.actions.${reason}`)
+  }
+})
+
+
+test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
+  const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
+  const canonical = [...source.matchAll(/\('([^']+)', '([^']+)'\): \('([^']*)', '([^']*)'\)/g)].map(match => match.slice(1))
+  assert.equal(canonical.length, 11)
+  const actual = Object.entries(operatorInputRules).flatMap(([op, rules]) => Object.entries(rules).map(([reason, rule]) => [op, reason, ...rule]))
+  assert.deepEqual(actual.sort(), canonical.sort())
+  for (const [operator_id, reason, parameter, field] of canonical) {
+    const operator = { node_index: 2, operator_id, ...(parameter ? { parameter } : {}), ...(field ? { field } : {}) }
+    const diagnostic = { schema_version: 'addp.execution-failure/v3', stage: 'execution', reason, operator }
+    const result = executionFailurePresentation({ diagnostic, message: 'private' }, key => key)
+    assert.equal(result.reason, `common.executionFailure.reasons.${reason}`)
+    assert.ok(result.node)
+    assert.equal(result.field, field)
+    for (const bad of [
+      { ...diagnostic, stage: 'validation' }, { ...diagnostic, operator: null },
+      { ...diagnostic, operator: { ...operator, node_index: true } },
+      { ...diagnostic, operator: { ...operator, node_index: 65536 } },
+      { ...diagnostic, operator: { ...operator, node_id: 'private' } },
+      { ...diagnostic, operator: { ...operator, parameter: null } },
+      { ...diagnostic, operator: { ...operator, field: 'password' } },
+      { ...diagnostic, sql: { position: { line: 1, column: 1 } } },
+      { ...diagnostic, reason: 'execution_failed' }
+    ]) {
+      const rejected = executionFailurePresentation({ diagnostic: bad, message: 'private' }, key => key)
+      assert.equal(rejected.operator, '')
+      assert.equal(rejected.stage, '')
+      assert.doesNotMatch(JSON.stringify(rejected), /private|password/)
+    }
+  }
+})
+
+test('controlled input messages distinguish ordinary and active geometry conflicts in both languages', () => {
+  for (const locale of ['zh-cn', 'en']) {
+    const messages = JSON.parse(read(`../src/i18n/${locale}.json`)).common.executionFailure
+    const translate = (key, params = {}) => key.replace('common.executionFailure.', '').split('.').reduce((node, part) => node[part], messages)
+      .replace(/\{(\w+)\}/g, (_, key) => params[key])
+    for (const [operator_id, reason] of [['batch_buffer','operator_field_conflict'], ['distance_to','operator_geometry_field_conflict']]) {
+      const presentation = executionFailurePresentation({ diagnostic: { schema_version:'addp.execution-failure/v3',stage:'execution',reason,
+        operator:{node_index:2, operator_id,parameter:'input_gdf',field:'distance'} },message:'private' }, translate)
+      assert.match(presentation.reason, /distance/)
+      assert.doesNotMatch(presentation.reason, /distances/)
+      assert.match(presentation.node, /2/)
+      assert.match(presentation.action, locale === 'zh-cn' ? /重命名/ : /[Rr]ename/)
+      assert.doesNotMatch(JSON.stringify(presentation), /private/)
+    }
+    assert.notEqual(messages.reasons.operator_field_conflict, messages.reasons.operator_geometry_field_conflict)
   }
 })

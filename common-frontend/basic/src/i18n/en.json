@@ -1,14 +1,14 @@
 {
   "fieldMaskingChoices": {
-  "title": "Masking methods",
-  "hint": "Unselected fields use default protection. Choices are saved with the query and reused on later executions.",
-  "default": "Default method",
-  "refresh": "Refresh methods",
-  "empty": "No role-specific masking methods are available for this source.",
-  "stale": "A saved choice is unavailable. Remove it or select again.",
-  "remove": "Remove choice",
-  "sourceRequired": "Select a table or collection in the resource tree first."
-},
+    "title": "Masking methods",
+    "hint": "Unselected fields use default protection. Choices are saved with the query and reused on later executions.",
+    "default": "Default method",
+    "refresh": "Refresh methods",
+    "empty": "No role-specific masking methods are available for this source.",
+    "stale": "A saved choice is unavailable. Remove it or select again.",
+    "remove": "Remove choice",
+    "sourceRequired": "Select a table or collection in the resource tree first."
+  },
   "autoRefresh": {
     "interval": "Refresh interval",
     "off": "Turn off auto refresh",
@@ -226,7 +226,17 @@
         "bytes_invalid": "Binary value encoding failed",
         "table_write_failed": "Target table write failed",
         "execution_failed": "Execution failed without a specific recorded cause",
-        "target_exists": "The output target already exists; create mode refused to overwrite it."
+        "target_exists": "The output target already exists; create mode refused to overwrite it.",
+        "operator_input_invalid": "The input layer does not meet the operator type, field, geometry or identifier requirements.",
+        "operator_reference_invalid": "The reference layer does not meet the operator type, geometry or identifier requirements.",
+        "operator_field_conflict": "Source field {field} conflicts with a fixed operator output field.",
+        "operator_geometry_field_conflict": "The source active geometry column {field} conflicts with the distance output field.",
+        "operator_number_array_invalid": "Distances must be an array of finite numbers without booleans, strings or nulls.",
+        "operator_positive_integer_required": "The parameter must be a positive integer.",
+        "operator_positive_number_required": "Tolerance must be a finite positive number in the source CRS horizontal units.",
+        "operator_projected_crs_required": "Both inputs require known projected CRSs with matching finite positive horizontal linear units.",
+        "operator_crs_mismatch": "The input projected CRSs differ.",
+        "operator_crs_invalid": "Both layers require the same known projected CRS and matching horizontal units."
       },
       "actions": {
         "configuration_missing": "Start a new execution. If it fails again, ask an administrator to check configuration preparation.",
@@ -268,12 +278,39 @@
         "bytes_invalid": "Check that binary columns receive byte values.",
         "table_write_failed": "Check target constraints, connectivity and write permissions, and investigate using the execution ID.",
         "execution_failed": "Use the execution ID to check execution records and relevant resources.",
-        "target_exists": "Choose another output file name or location, then run again."
+        "target_exists": "Choose another output file name or location, then run again.",
+        "operator_input_invalid": "Check the source layer type, active geometry, fields and identifiers against the operator requirements, then submit a new execution.",
+        "operator_reference_invalid": "Check the reference geometry, CRS and unique non-null identifiers before submitting a new execution.",
+        "operator_field_conflict": "Manually rename source field {field} upstream before submitting a new execution; it is not renamed or overwritten automatically.",
+        "operator_geometry_field_conflict": "Manually rename source active geometry column {field} upstream before submitting a new execution.",
+        "operator_number_array_invalid": "Check every distances array element; valid zero, negative and duplicate distances remain allowed.",
+        "operator_positive_integer_required": "Set the parameter to an integer greater than zero before submitting a new execution.",
+        "operator_positive_number_required": "Set a finite positive tolerance in source CRS units; it is not converted to metres automatically.",
+        "operator_projected_crs_required": "Explicitly reproject both inputs to the same suitable projected CRS before submitting a new execution.",
+        "operator_crs_mismatch": "Explicitly align the projected CRSs; equal units alone do not make the CRSs equivalent.",
+        "operator_crs_invalid": "Explicitly align both projected CRSs and horizontal units before submitting a new execution."
       },
       "write": "Write column",
       "writeColumn": "Write column {column_index} (declared type: {declared_type})",
       "targetState": "Target state",
-      "targetChangePossible": "Target data or table structure may have changed. A write count of 0 does not prove there were no effects. Verify the target before retrying."
+      "targetChangePossible": "Target data or table structure may have changed. A write count of 0 does not prove there were no effects. Verify the target before retrying.",
+      "operator": "Operator",
+      "node": "Node",
+      "parameter": "Parameter or input",
+      "field": "Conflicting field",
+      "operatorNodeIndex": "Node {index} in the workflow definition",
+      "operatorNames": {
+        "batch_buffer": "Multi-distance buffer",
+        "distance_to": "Distance calculation",
+        "check_line_proximity": "Line proximity check"
+      },
+      "operatorParameters": {
+        "input_gdf": "Source layer (input_gdf)",
+        "reference_gdf": "Reference layer (reference_gdf)",
+        "distances": "Distances (distances)",
+        "resolution": "Arc segments (resolution)",
+        "tolerance": "Tolerance (tolerance)"
+      }
     },
     "executionSteps": {
       "lastRecorded": "Last recorded: {status}",

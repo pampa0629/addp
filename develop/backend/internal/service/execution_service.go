@@ -99,7 +99,7 @@ func (s *ExecutionService) Execute(ctx context.Context, item *commonExecution.Ta
 			status = commonExecution.ExecutionStatusTimeout
 			suffix = "execution_timeout"
 		}
-		fields["error_details"] = executionFailureDetails(item.TaskType, suffix, message, result)
+		fields["error_details"] = executionFailureDetails(item.TaskType, suffix, message, result, workflowDefinition(task))
 	} else if facts := developLineageFacts(task, outputs); facts != nil {
 		metadata["lineage_facts"] = facts
 	}
@@ -194,3 +194,11 @@ func devRuntimeTaskFromExecution(item *commonExecution.TaskExecution) (*models.D
 
 type workflowReceiptKey struct{}
 type workflowReceiptRecorder func(context.Context, string) error
+
+func workflowDefinition(task *models.DevTask) map[string]interface{} {
+	if task == nil {
+		return nil
+	}
+	definition, _ := task.Content["workflow_definition"].(map[string]interface{})
+	return definition
+}

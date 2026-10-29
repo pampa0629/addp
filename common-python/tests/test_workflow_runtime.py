@@ -189,3 +189,46 @@ def test_projected_runner_keeps_completed_results_when_later_node_preparation_fa
         ]})
     assert caught.value.all_results == {'a':json.dumps({'saved':True})}
     assert caught.value.task_order == ['a','b']
+
+
+def test_typed_operator_diagnostic_preserves_definition_position_and_prior_results():
+    from addp_common.workflow_runtime import OperatorInputError
+    workflow={'tasks':[
+        {'id':'private/password=hidden','operator':'batch_buffer','params':{},'depends_on':['earlier']},
+        {'id':'earlier','operator':'load','params':{},'depends_on':[]},
+        {'id':'save','operator':'save','params':{},'depends_on':['private/password=hidden']}]}
+    calls=[]
+    def execute(op,params):
+        calls.append(op)
+        if op=='batch_buffer':raise OperatorInputError('operator_field_conflict','private password=secret')
+        return {'previous':'kept'}
+    registry=ExecutionRegistry();accepted=registry.submit(WorkflowRunner({'load','batch_buffer','save'},execute),workflow)
+    import time,json
+    for _ in range(100):
+        snapshot=registry.get(accepted.execution_id)
+        if snapshot.status=='failed':break
+        time.sleep(.01)
+    assert snapshot.error_code=='INVALID_PARAMS' and calls==['load','batch_buffer']
+    assert snapshot.all_results=={'earlier':{'previous':'kept'}}
+    assert snapshot.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution',
+        'reason':'operator_field_conflict','operator':{'node_index':1,'operator_id':'batch_buffer','parameter':'input_gdf','field':'distance'}}
+    assert 'private' not in json.dumps(snapshot.diagnostic) and 'secret' not in json.dumps(snapshot.diagnostic)
+    snapshot.diagnostic['operator']['field']='private'
+    assert registry.get(accepted.execution_id).diagnostic['operator']['field']=='distance'
+
+
+def test_parameter_diagnostic_refuses_untyped_messages_and_malformed_context():
+    from addp_common.workflow_runtime import OperatorInputError
+    from addp_common.workflow_runtime.errors import validated_operator_diagnostic,OPERATOR_INPUT_RULES
+    import copy
+    for (op,reason),_ in OPERATOR_INPUT_RULES.items():
+        value=OperatorInputError(reason,'internal text').diagnostic(op,2)
+        assert validated_operator_diagnostic(value)==value
+        for patch in [lambda x:x.update(message='private'),lambda x:x.update(stage='validation'),
+            lambda x:x['operator'].update(node_index=True),lambda x:x['operator'].update(field='private'),
+            lambda x:x['operator'].update(parameter=None),lambda x:x['operator'].update(node_id='private')]:
+            altered=copy.deepcopy(value);patch(altered);assert validated_operator_diagnostic(altered) is None
+    workflow={'tasks':[{'id':'one','operator':'batch_buffer','params':{},'depends_on':[]}]}
+    def raw(op,p):raise ValueError('INVALID_PARAMS distance conflicts password=secret')
+    with pytest.raises(WorkflowExecutionError) as failed:WorkflowRunner({'batch_buffer'},raw).execute(workflow)
+    assert failed.value.error_code=='EXECUTION_FAILED' and failed.value.diagnostic is None

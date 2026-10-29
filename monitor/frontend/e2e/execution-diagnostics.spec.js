@@ -394,3 +394,17 @@ for (const locale of ['zh-cn', 'en']) test(`shows actionable create conflict in 
   await page.setViewportSize({ width: 620, height: 700 })
   expect(await diagnostic.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBeTruthy()
 })
+
+
+for (const locale of ['zh-cn','en']) test(`workflow operator diagnostic uses the shared panel in Monitor (${locale})`,async({page})=>{
+  await installBackend(page,{locale,empty:true,targetExists:true,errorDetails:{category:'execution_failed',code:'develop.workflow.invalid_params',message:'private-password',
+    diagnostic:{schema_version:'addp.execution-failure/v3',stage:'execution',reason:'operator_field_conflict',
+      operator:{node_index:2,operator_id:'batch_buffer',parameter:'input_gdf',field:'distance'}}}})
+  await page.goto('/executions?execution_id=diagnostic-run')
+  const panel=page.locator('.execution-detail-content > .execution-failure')
+  await expect(panel).toContainText(locale==='zh-cn'?'多距缓冲':'Multi-distance buffer')
+  await expect(panel).toContainText('distance')
+  await expect(panel).toContainText(locale==='zh-cn'?'定义中的第 2 个节点':'Node 2 in the workflow definition')
+  await expect(panel).toContainText('develop.workflow.invalid_params')
+  await expect(panel).not.toContainText('private-password')
+})

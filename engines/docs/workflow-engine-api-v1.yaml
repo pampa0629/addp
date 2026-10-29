@@ -828,6 +828,11 @@ components:
         error:
           type: string
           description: 错误信息(失败时)
+        error_code:
+          type: string
+          enum: [INVALID_PARAMS, WORKFLOW_INVALID, EXECUTION_FAILED, TARGET_ALREADY_EXISTS, INTERNAL_ERROR]
+        diagnostic:
+          $ref: '#/components/schemas/WorkflowInputDiagnostic'
         progress:
           type: integer
           minimum: 0
@@ -843,6 +848,56 @@ components:
           type: number
           description: 执行耗时(毫秒)
           example: 1234.56
+
+    WorkflowInputDiagnostic:
+      type: object
+      additionalProperties: false
+      required: [schema_version, stage, reason, operator]
+      description: 仅类型化算子参数错误；Owner须与冻结定义核对，禁止自由文本、参数值及自定义节点名。
+      properties:
+        schema_version:
+          type: string
+          enum: [addp.execution-failure/v3]
+        stage:
+          type: string
+          enum: [execution]
+        reason:
+          type: string
+          enum: [operator_input_invalid, operator_reference_invalid, operator_field_conflict, operator_geometry_field_conflict, operator_number_array_invalid, operator_positive_integer_required, operator_positive_number_required, operator_projected_crs_required, operator_crs_mismatch, operator_crs_invalid]
+        operator:
+          type: object
+          additionalProperties: false
+          required: [node_index, operator_id]
+          properties:
+            node_index:
+              type: integer
+              minimum: 1
+              maximum: 65535
+              description: 原workflow_def.tasks的1起始位置，不是拓扑调度顺序。
+            operator_id:
+              type: string
+              enum: [batch_buffer, distance_to, check_line_proximity]
+            parameter:
+              type: string
+              enum: [input_gdf, reference_gdf, distances, resolution, tolerance]
+            field:
+              type: string
+              enum: [distance]
+      x-addp-operator-input-rules:
+        - ["batch_buffer", "operator_input_invalid", "input_gdf", ""]
+        - ["batch_buffer", "operator_field_conflict", "input_gdf", "distance"]
+        - ["batch_buffer", "operator_number_array_invalid", "distances", ""]
+        - ["batch_buffer", "operator_positive_integer_required", "resolution", ""]
+        - ["distance_to", "operator_geometry_field_conflict", "input_gdf", "distance"]
+        - ["distance_to", "operator_projected_crs_required", "", ""]
+        - ["distance_to", "operator_crs_mismatch", "", ""]
+        - ["check_line_proximity", "operator_positive_number_required", "tolerance", ""]
+        - ["check_line_proximity", "operator_input_invalid", "input_gdf", ""]
+        - ["check_line_proximity", "operator_reference_invalid", "reference_gdf", ""]
+        - ["check_line_proximity", "operator_crs_invalid", "", ""]
+      x-addp-constraints:
+        - 只允许共享算子/原因/参数白名单组合；field仅两类冲突原因允许。
+        - 未定位一侧的CRS错误不提供parameter；不推断整个DAG无输出或无副作用。
 
     # 错误响应
     ErrorResponse:

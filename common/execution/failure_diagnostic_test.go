@@ -184,3 +184,23 @@ func TestWriteFailureObservationRoundTripAndClosedContext(t *testing.T) {
 		}
 	}
 }
+
+func TestOperatorFailureObservationRoundTripRejectsRawContext(t *testing.T) {
+	source := `{"schema_version":"addp.execution-failure/v3","stage":"execution","reason":"operator_field_conflict","operator":{"node_index":2,"operator_id":"batch_buffer","parameter":"input_gdf","field":"distance"}}`
+	for _, raw := range []string{source, strings.Replace(source, `"distance"`, `"password=secret"`, 1),
+		strings.Replace(source, `"node_index":2`, `"node_index":true`, 1), strings.Replace(source, `"parameter":"input_gdf"`, `"parameter":null`, 1),
+		strings.Replace(source, `"node_index":2`, `"node_index":2,"node_id":"private"`, 1),
+		strings.Replace(source, `"stage":"execution"`, `"stage":"validation"`, 1),
+		strings.Replace(source, `"operator_field_conflict"`, `"execution_failed"`, 1)} {
+		var value interface{}
+		json.Unmarshal([]byte(raw), &value)
+		item := &execution.TaskExecution{Status: "failed", ErrorDetails: models.JSONMap{"message": "password=secret", "diagnostic": value}}
+		encoded, _ := json.Marshal(execution.Observe(item).ErrorDetails)
+		if strings.Contains(string(encoded), "secret") || strings.Contains(string(encoded), "private") {
+			t.Fatal("raw context leaked")
+		}
+		if (execution.Observe(item).ErrorDetails["diagnostic"] != nil) != (raw == source) {
+			t.Fatalf("invalid projection: %s", raw)
+		}
+	}
+}

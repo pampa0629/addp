@@ -144,3 +144,24 @@ def test_execution_status_example_uses_single_status_field():
     assert payload["status"] == "success"
     assert "task_status" not in payload
     assert "execution_time_ms" in payload
+
+
+def test_typed_operator_diagnostic_spec_matches_the_single_runtime_contract():
+    from addp_common.workflow_runtime.errors import OPERATOR_INPUT_RULES
+    spec = load_spec()['components']['schemas']
+    diagnostic = spec['WorkflowInputDiagnostic']
+    assert diagnostic['additionalProperties'] is False
+    assert set(diagnostic['required']) == {'schema_version', 'stage', 'reason', 'operator'}
+    props = diagnostic['properties']
+    assert props['schema_version']['enum'] == ['addp.execution-failure/v3']
+    assert props['stage']['enum'] == ['execution']
+    assert set(props['reason']['enum']) == {reason for _, reason in OPERATOR_INPUT_RULES}
+    assert diagnostic['x-addp-operator-input-rules'] == [[op, reason, *value] for (op, reason), value in OPERATOR_INPUT_RULES.items()]
+    context = props['operator']
+    assert context['additionalProperties'] is False
+    assert context['required'] == ['node_index', 'operator_id']
+    assert context['properties']['field']['enum'] == ['distance']
+    assert context['properties']['node_index']['minimum'] == 1
+    assert context['properties']['node_index']['maximum'] == 65535
+    assert spec['ExecutionStatusResponse']['properties']['diagnostic'] == {'$ref':'#/components/schemas/WorkflowInputDiagnostic'}
+    assert 'INVALID_PARAMS' in spec['ExecutionStatusResponse']['properties']['error_code']['enum']

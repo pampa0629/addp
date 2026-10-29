@@ -887,19 +887,20 @@ type BinaryPayload struct {
 }
 
 type WorkflowExecutionStatus struct {
-	Status          string                 `json:"status"`
-	ExecutionID     string                 `json:"execution_id,omitempty"`
-	Result          interface{}            `json:"result,omitempty"`
-	AllResults      map[string]interface{} `json:"all_results,omitempty"`
-	Message         string                 `json:"message,omitempty"`
-	TaskOrder       []string               `json:"task_order,omitempty"`
-	Error           string                 `json:"error,omitempty"`
-	ErrorCode       string                 `json:"error_code,omitempty"`
-	Details         string                 `json:"details,omitempty"`
-	Progress        int                    `json:"progress,omitempty"`
-	StartedAt       string                 `json:"started_at,omitempty"`
-	ExecutionTimeMs *float64               `json:"execution_time_ms,omitempty"`
-	Raw             map[string]interface{} `json:"raw,omitempty"`
+	Status          string                   `json:"status"`
+	ExecutionID     string                   `json:"execution_id,omitempty"`
+	Result          interface{}              `json:"result,omitempty"`
+	AllResults      map[string]interface{}   `json:"all_results,omitempty"`
+	Message         string                   `json:"message,omitempty"`
+	TaskOrder       []string                 `json:"task_order,omitempty"`
+	Error           string                   `json:"error,omitempty"`
+	Diagnostic      *WorkflowInputDiagnostic `json:"diagnostic,omitempty"`
+	ErrorCode       string                   `json:"error_code,omitempty"`
+	Details         string                   `json:"details,omitempty"`
+	Progress        int                      `json:"progress,omitempty"`
+	StartedAt       string                   `json:"started_at,omitempty"`
+	ExecutionTimeMs *float64                 `json:"execution_time_ms,omitempty"`
+	Raw             map[string]interface{}   `json:"raw,omitempty"`
 }
 
 type ScriptSessionRequest struct {

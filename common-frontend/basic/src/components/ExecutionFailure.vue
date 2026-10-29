@@ -5,6 +5,16 @@
       <template v-if="presentation.stage">
         <dt>{{ t('common.executionFailure.stage') }}</dt><dd>{{ presentation.stage }}</dd>
       </template>
+      <template v-if="presentation.operator">
+        <dt>{{ t('common.executionFailure.operator') }}</dt><dd>{{ presentation.operator }}</dd>
+        <dt>{{ t('common.executionFailure.node') }}</dt><dd>{{ presentation.node }}</dd>
+      </template>
+      <template v-if="presentation.parameter">
+        <dt>{{ t('common.executionFailure.parameter') }}</dt><dd>{{ presentation.parameter }}</dd>
+      </template>
+      <template v-if="presentation.field">
+        <dt>{{ t('common.executionFailure.field') }}</dt><dd>{{ presentation.field }}</dd>
+      </template>
       <template v-if="presentation.object">
         <dt>{{ t('common.executionFailure.object') }}</dt><dd>{{ presentation.object }}</dd>
       </template>
@@ -58,9 +68,9 @@ const { t } = useI18n()
 const failed = computed(() => ['failed', 'timeout', 'cancelled'].includes(props.status))
 const presentation = computed(() => executionFailurePresentation(props.errorDetails, t))
 async function copyDetails() {
-  const { stage, reason, action, code, object, position, write, targetWarning } = presentation.value
+  const { stage, reason, action, code, object, position, write, targetWarning, operator, node, parameter, field } = presentation.value
   try {
-    await navigator.clipboard.writeText([props.fallbackMessage || reason, stage, object, position, write, targetWarning, action, code, props.executionId].filter(Boolean).join('\n'))
+    await navigator.clipboard.writeText([props.fallbackMessage || reason, stage, operator, node, parameter, field, object, position, write, targetWarning, action, code, props.executionId].filter(Boolean).join('\n'))
     ElMessage.success(t('common.executionFailure.copied'))
   } catch {
     ElMessage.error(t('common.executionFailure.copyFailed'))

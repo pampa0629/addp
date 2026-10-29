@@ -324,6 +324,9 @@ func workflowExecutionStatusFromRaw(raw map[string]interface{}) *WorkflowExecuti
 	if value, _ := raw["error_code"].(string); value != "" {
 		status.ErrorCode = value
 	}
+	if (status.Status == "failed" || status.Status == "error") && status.ErrorCode == "INVALID_PARAMS" {
+		status.Diagnostic = ParseWorkflowInputDiagnostic(raw["diagnostic"])
+	}
 	if value, _ := raw["details"].(string); value != "" {
 		status.Details = value
 	}

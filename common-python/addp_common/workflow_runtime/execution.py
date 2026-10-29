@@ -23,12 +23,15 @@ class ExecutionSnapshot:
     current_task: str = ""
     error: str = ""
     error_code: str = ""
+    diagnostic: dict[str, Any] | None = None
     details: str = ""
     started_at: str = ""
     execution_time_ms: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        value = asdict(self)
+        if self.diagnostic is None: value.pop("diagnostic")
+        return value
 
 
 class ExecutionRegistry:
@@ -116,18 +119,19 @@ class ExecutionRegistry:
             self._fail(execution_id, "WORKFLOW_INVALID", str(exc), started)
         except WorkflowExecutionError as exc:
             self._fail(execution_id, exc.error_code, str(exc), started,
-                       all_results=exc.all_results, task_order=exc.task_order)
+                       all_results=exc.all_results, task_order=exc.task_order, diagnostic=exc.diagnostic)
         except Exception as exc:
             self._fail(execution_id, "INTERNAL_ERROR", "工作流运行时内部错误", started, details=str(exc))
 
     def _fail(self, execution_id: str, code: str, error: str, started: float, *, details: str = "",
-              all_results=None, task_order=None) -> None:
+              all_results=None, task_order=None, diagnostic=None) -> None:
         self._update(
             execution_id,
             status="failed",
             current_task="",
             error=error,
             error_code=code,
+            diagnostic=diagnostic,
             details=details,
             all_results=all_results,
             task_order=task_order or [],

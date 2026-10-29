@@ -155,6 +155,10 @@ GET /api/executions/uuid-1234-5678
 
 `POST /api/workflow` 可以同步完成并返回 `status="success"` / `status="failed"`，也可以仅完成受理并返回 `status="running"` / `status="pending"`。只要返回了 `running` 或 `pending`，运行时必须已经创建可查询的本地 `execution_id`，并保证 `GET /api/executions/{execution_id}` 能持续返回该执行的最新状态，直到进入 `success`、`failed` 或 `cancelled` 等终态。进入 ADDP 任务体系的调用方不得把 `running` / `pending` 当作成功；Develop 后端必须通过 `WorkflowRuntimeProvider.GetExecutionStatus()` 轮询到终态后，才更新 `common.task_executions` 的最终状态。
 
+## 受控算子参数诊断
+
+异步 `GET /api/executions/{execution_id}` 的失败快照可附 `diagnostic`，仅用于已类型化的参数错误且要求 `status=failed`、`error_code=INVALID_PARAMS`。结构沿唯一 `addp.execution-failure/v3`：`stage=execution`、受控 `reason` 及 `operator={node_index,operator_id,parameter?,field?}`；严格拒绝未知字段、自由文本、值及非法组合。节点序号对应原 workflow_def.tasks 的1起始位置而非拓扑调度顺序，算子必须来自该节点。字段限制、首批组合和展示边界见[执行监控规范](../tasks/执行监控.md#租户执行诊断)。后端Owner须再次与冻结定义绑定，不因错误字符串包含“参数”或“distance”推断诊断。成功、未知异常、目标冲突与定义错误不携带本参数诊断；查询已失败记录HTTP200不表示业务成功。
+
 ## 标准错误码
 
 扩展工作流引擎返回失败时应使用对应的 HTTP 4xx/5xx 状态码，并在响应体中提供 `status="failed"`、`error_code` 和 `error`。调用方仍必须把标准响应体中的 `status="failed"` 或 `status="error"` 视为失败，即使运行时错误地返回了 HTTP 2xx；不得仅凭 HTTP 2xx 将工作流或 direct 调用标记为成功。

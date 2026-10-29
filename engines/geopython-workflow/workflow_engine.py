@@ -5,7 +5,7 @@ import json
 import logging
 import geopandas as gpd
 import pandas as pd
-from addp_common.workflow_runtime import WorkflowRunner, WorkflowExecutionError, WorkflowValidationError
+from addp_common.workflow_runtime import OperatorInputError, WorkflowRunner, WorkflowExecutionError, WorkflowValidationError
 from operators import OPERATORS, get_operator
 from operators.orc_table import SourceChanged as OrcSourceChanged
 from operators.spatial_relations import DistanceInputError
@@ -80,6 +80,18 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
         try:
             return _execute_workflow_operator(operator, params)
         except (DistanceInputError, NearLineInputError, MultiBufferInputError) as exc:
+            reasons = {
+                MultiBufferInputError: {'source': 'operator_input_invalid', 'distance_conflict': 'operator_field_conflict',
+                                       'distances': 'operator_number_array_invalid', 'resolution': 'operator_positive_integer_required'},
+                DistanceInputError: {'geometry_column_conflict': 'operator_geometry_field_conflict',
+                                     'projected_crs': 'operator_projected_crs_required', 'crs_mismatch': 'operator_crs_mismatch'},
+                NearLineInputError: {'tolerance': 'operator_positive_number_required', 'source': 'operator_input_invalid',
+                                    'reference': 'operator_reference_invalid', 'crs': 'operator_crs_invalid'},
+            }
+            reason = reasons[type(exc)].get(exc.code)
+            if reason is not None:
+                raise OperatorInputError(reason, exc.message(self.language)) from exc
+            # A numerical calculation failure is not a parameter admission failure.
             raise ValueError(exc.message(self.language)) from exc
 
     def execute(self, workflow_def, input_data=None, progress=None):
@@ -97,7 +109,8 @@ def execute_workflow(workflow_def, input_data=None):
     except WorkflowExecutionError as exc:
         logger.exception('Workflow execution failed')
         return {'status': 'failed', 'error_code': exc.error_code, 'error': str(exc),
-                'all_results': exc.all_results or {}, 'logs': logs}
+                'all_results': exc.all_results or {}, 'logs': logs,
+                **({'diagnostic': exc.diagnostic} if exc.diagnostic is not None else {})}
     except Exception as exc:
         logger.exception('Workflow execution failed')
         return {'status': 'failed', 'error_code': 'EXECUTION_FAILED', 'error': str(exc), 'logs': logs}
