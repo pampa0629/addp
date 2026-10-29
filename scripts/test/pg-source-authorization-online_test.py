@@ -3134,6 +3134,29 @@ class PGSourceConnectionEvidenceTest(unittest.TestCase):
         with self.assertRaises(ONLINE.SuiteError):
             ONLINE.source_connection_summary([], {'other': -1}, None)
 
+    def test_empty_protocol_is_retained_separately_and_zero_query_id_is_not_an_exemption(self):
+        ping = self.row('system', 'protocol_empty', 299, 'empty_query', '0')
+        version = self.row('system', 'other', 299, 'version_probe', '-123')
+        result = ONLINE.source_connection_summary([ping, version], {'other': 1}, None)
+        self.assertTrue(result['verified'])
+        self.assertEqual(result['events'], [ping, version])
+        self.assertEqual(result['protocol_empty_calls'], {'system': 1})
+        self.assertEqual(result['observed_calls']['other'], 1)
+        self.assertEqual(result['record_count'], 2)
+        unknown_zero = self.row('system', 'other', 299, 'unclassified', '0')
+        result = ONLINE.source_connection_summary([unknown_zero, version], {'other': 1}, None)
+        self.assertFalse(result['verified'])
+        self.assertEqual(result['observed_calls']['other'], 2)
+        self.assertEqual(result['protocol_empty_calls'], {})
+        result = ONLINE.source_connection_summary([dict(ping, module='unknown')], {}, None)
+        self.assertFalse(result['verified'])
+
+    def test_empty_query_classification_cannot_hide_sql_category_or_unknown_kind(self):
+        for row in (self.row('system', 'other', kind='empty_query', query_id='0'),
+                    self.row('system', 'protocol_empty', kind='unclassified', query_id='0')):
+            with self.subTest(row=row), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.source_connection_summary([row], {}, None)
+
 
 class PGSourceConnectionObservationTest(unittest.TestCase):
     def setUp(self):
@@ -3348,7 +3371,9 @@ class PGConnectionProbeControlTest(unittest.TestCase):
         self.scenario = ONLINE.MetaCollectionScenario(self.life, '31', 'probe-fixture')
         self.scenario.source_snapshot = Mock(return_value='unchanged source rules')
         self.barrier = Mock()
-        self.barrier.connection_observation.return_value = {'verified': True, 'by_module': {'system': {'other': 1}}}
+        self.connection_events = [PGSourceConnectionEvidenceTest().row('system', 'protocol_empty', 299, 'empty_query', '0'),
+                                  PGSourceConnectionEvidenceTest().row('system', 'other', 299, 'version_probe', '-123')]
+        self.barrier.connection_observation.return_value = ONLINE.source_connection_summary(self.connection_events, {'other': 1}, None)
         self.barrier.counts.side_effect = lambda: deepcopy(self.before if not self.calls else self.after)
         self.report = {'checks': [], 'principals': {'operator': '31', 'reader': '33'}, 'meta_collection': {}}
 
@@ -3380,6 +3405,27 @@ class PGConnectionProbeControlTest(unittest.TestCase):
         self.assertTrue(evidence['source_rules_unchanged'] and evidence['identity_unchanged'])
         self.assertNotIn('private-token', json.dumps(self.report))
         self.assertNotIn('connection_info', json.dumps(self.report))
+
+    def test_probe_requires_exact_empty_ping_and_version_pair_without_discarding_records(self):
+        for fault in ('duplicate_ping', 'missing_ping', 'different_pid', 'different_session', 'wrong_query_id',
+                      'unclassified_zero', 'unknown_module', 'wrong_order'):
+            with self.subTest(fault=fault):
+                self.setUp()
+                events = deepcopy(self.connection_events)
+                if fault == 'duplicate_ping': events.insert(0, deepcopy(events[0]))
+                elif fault == 'missing_ping': events.pop(0)
+                elif fault == 'different_pid': events[0]['pid'] += 1
+                elif fault == 'different_session': events[0]['session_id'] = 'abcdef01.456'
+                elif fault == 'wrong_query_id': events[1]['query_id'] = '-999'
+                elif fault == 'unclassified_zero': events[0].update(category='other', kind='unclassified')
+                elif fault == 'unknown_module': events[0]['module'] = 'unknown'
+                elif fault == 'wrong_order': events.reverse()
+                self.barrier.connection_observation.return_value = ONLINE.source_connection_summary(events, {'other': 1}, None)
+                with self.assertRaises(ONLINE.SuiteError): self.run_control()
+                self.assertFalse(self.report['checks'])
+                self.assertEqual(self.report['meta_collection']['connection_probe_control']['connection_observation']['events'], events)
+                self.assertIn(self.barrier, self.scenario.source_barriers, 'failed probe must remain owned for finally cleanup')
+                self.assertEqual(self.calls, [('POST', '/api/v1/system/engines/2/test', None)])
 
     def test_wrong_identity_or_engine_refused_before_probe_and_statistics(self):
         mutations = [lambda: self.context['context'].update(tenant_id='9'),

@@ -781,26 +781,31 @@ def source_connection_summary(rows, delta, blocked):
             and all(k in SOURCE_CATEGORIES and type(v) is int and v >= 0 for k, v in delta.items()),
             'invalid source connection observation')
     totals = dict.fromkeys(SOURCE_CATEGORIES, 0)
-    by_module = {}
+    by_module, protocol_empty_calls = {}, {}
     for row in rows:
         require(type(row) is dict and set(row) == {'module', 'category', 'kind', 'pid', 'session_id', 'at', 'query_id'}
                 and type(row['module']) is str and row['module'] in SOURCE_MODULES | {'unknown'}
-                and type(row['category']) is str and row['category'] in SOURCE_CATEGORIES
-                and type(row['kind']) is str and row['kind'] in {'version_probe', 'unclassified'}
+                and type(row['category']) is str and row['category'] in (*SOURCE_CATEGORIES, 'protocol_empty')
+                and type(row['kind']) is str and row['kind'] in {'version_probe', 'unclassified', 'empty_query'}
+                and (row['category'] == 'protocol_empty') == (row['kind'] == 'empty_query')
                 and type(row['pid']) is int and row['pid'] > 0
                 and type(row['session_id']) is str and re.fullmatch(r'[a-f0-9]+\.[a-f0-9]+', row['session_id'])
                 and type(row['query_id']) is str and re.fullmatch(r'-?[0-9]{1,20}', row['query_id']),
                 'invalid source connection event')
         collection_instant(row['at'])
+        if row['category'] == 'protocol_empty':
+            protocol_empty_calls[row['module']] = protocol_empty_calls.get(row['module'], 0) + 1
+            continue
         totals[row['category']] += 1
         by_module.setdefault(row['module'], dict.fromkeys(SOURCE_CATEGORIES, 0))[row['category']] += 1
     tables = [row for row in rows if row['category'] == 'tables']
     matched = blocked is None or (len(tables) == 1 and tables[0]['module'] == 'meta'
                                   and tables[0]['pid'] == blocked['pid'])
     reconciled = totals == {key: delta.get(key, 0) for key in SOURCE_CATEGORIES}
-    return {'events': rows, 'observed_calls': totals, 'by_module': by_module,
+    return {'events': rows, 'record_count': len(rows), 'observed_calls': totals, 'by_module': by_module,
+            'protocol_empty_calls': protocol_empty_calls,
             'reconciled': reconciled, 'blocked_pid_matched': matched,
-            'verified': reconciled and matched and 'unknown' not in by_module}
+            'verified': reconciled and matched and 'unknown' not in by_module and 'unknown' not in protocol_empty_calls}
 
 
 class PGCollectionReadBarrier:
@@ -838,10 +843,11 @@ class PGCollectionReadBarrier:
             sample = self.query(f"""WITH data AS MATERIALIZED (
               SELECT pg_read_file('pg_source_private/statements.json',{self.log_offset},262145) AS raw),
             lines AS MATERIALIZED (
-              SELECT line::jsonb AS j FROM data, LATERAL regexp_split_to_table(raw,E'\\n') line
+              SELECT line::jsonb AS j, ordinal FROM data,
+                LATERAL regexp_split_to_table(raw,E'\\n') WITH ORDINALITY parts(line,ordinal)
               WHERE octet_length(raw)<=262144 AND (raw='' OR right(raw,1)=E'\\n') AND line<>''),
             completed AS MATERIALIZED (
-              SELECT j, regexp_replace(j->>'message','^duration: [0-9.]+ ms  (statement|execute [^:]+): ','') AS sql
+              SELECT j, ordinal, regexp_replace(j->>'message','^duration: [0-9.]+ ms  (statement|execute [^:]+): ','') AS sql
               FROM lines WHERE j->>'user'='metric_reader' AND j->>'dbname'='metric_fixture'
                 AND j->>'message' ~ '^duration: [0-9.]+ ms  (statement|execute [^:]+): ')
             SELECT json_build_object('bytes',(SELECT octet_length(raw) FROM data),
@@ -852,11 +858,13 @@ class PGCollectionReadBarrier:
                 'pid',(j->>'pid')::integer,'session_id',j->>'session_id',
                 'at',to_char((j->>'timestamp')::timestamptz AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
                 'query_id',COALESCE(j->>'query_id','0'),
-                'kind',CASE WHEN btrim(sql)='SELECT version()' THEN 'version_probe' ELSE 'unclassified' END,
-                'category',CASE WHEN sql LIKE '%FROM information_schema.tables t%' AND sql LIKE '%pg_total_relation_size%'
+                'kind',CASE WHEN sql=';' THEN 'empty_query'
+                  WHEN btrim(sql)='SELECT version()' THEN 'version_probe' ELSE 'unclassified' END,
+                'category',CASE WHEN sql=';' THEN 'protocol_empty'
+                  WHEN sql LIKE '%FROM information_schema.tables t%' AND sql LIKE '%pg_total_relation_size%'
                   THEN 'tables' WHEN sql LIKE '%pg_catalog.pg_namespace) s%' THEN 'namespaces'
                   WHEN sql LIKE '%SELECT COUNT(*)%' AND sql LIKE '%lower(table_name) IN%' THEN 'workspace_detection'
-                  ELSE 'other' END)) FROM (SELECT * FROM completed LIMIT 257) bounded),'[]'::json));""")
+                  ELSE 'other' END) ORDER BY ordinal) FROM (SELECT * FROM completed ORDER BY ordinal LIMIT 257) bounded),'[]'::json));""")
             require(type(sample) is dict and set(sample) == {'bytes', 'complete', 'count', 'events'}
                     and type(sample.get('complete')) is bool
                     and type(sample.get('bytes')) is int and 0 <= sample['bytes'] <= 262144
@@ -1596,6 +1604,14 @@ class MetaCollectionScenario:
         require(evidence['connection_observation']['verified'] is True
                 and evidence['connection_observation']['by_module'].get('system', {}).get('other') == 1,
                 'connection probe source connection attribution is incomplete')
+        connection = evidence['connection_observation']
+        events = connection['events']
+        require(connection['protocol_empty_calls'] == {'system': 1} and len(events) == 2
+                and events[0]['kind'] == 'empty_query' and events[1]['kind'] == 'version_probe'
+                and all(row['module'] == 'system' for row in events)
+                and (events[0]['pid'], events[0]['session_id']) == (events[1]['pid'], events[1]['session_id'])
+                and events[1]['query_id'] == increments[0]['query_id'],
+                'connection probe must contain one empty Ping and one version SQL from the same connection')
         current = controller.request('GET', path, (200,)).payload
         require({key: current.get(key) for key in fields} == binding
                 and controller.request('GET', '/api/v1/system/auth/context', (200,)).payload == context
