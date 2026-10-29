@@ -312,3 +312,40 @@ Common CI 在 `single_claim_and_terminal_clock` 的创建时间断言曾失败�
 新增专业 API、窄 Permission 及可见错误从原文改为安全类别这三项产品／权限边界均已获确认；不默认授予新权限，专业字段迁移与页面同次实施。
 
 用户进一步明确 ADDP 仍处于研发阶段，本次改造涉及的旧执行、Cleanup 协调及旧协议记录允许清理，不要求兼容或迁移为新可信记录。实施时先盘点引用关系、活动运行体及外部未决效果，再按准确范围提供一次性清理入口；删除记录不构成外部运行已停止的证明，不自动重放删除。该授权不扩展为新记录的周期保留清理，也不替代新的 Hosted 或服务重启授权。
+
+### 2026-10-29 接线、验证与剩余范围
+
+当前工作区已接入 System 的 PG 持久协调器、原请求幂等、固定截止快照和 Engine 删除续办；Asset、Develop、Graph、Model、Quality、Service、Standard 共七个 Owner 已切换公共 runner 与私有专业结果。System／Monitor 复用 Common 展示组件，保留真实 pending／failed、父子分别授权、读取一致快照、身份及请求代际失效。十个 Owner 的专业 GET／Permission／Swagger 已接入，不默认授予角色。Manager、Meta、Transfer 的外部效果主路径尚未收口，整组产品接线仍未提交，不能部署半套消费者。
+
+当前输入实际通过的本地门禁：`make test-go`、`make test-swagger test-authorization`；Common `execution-lifecycle` 真实 PG（专业结果／回执／终态原子性）；`make test-system-cleanup`（持久受理、协调及 Engine 工作流）；System IAM `cleanup-authorization`（十个专业 Permission 无角色默认授权、原用户当前 Engine 删除权限及锁等待过期）；Common `graph` 真 PG（原 repository 覆盖及两个 Owner 实例竞争、未领取拒绝、未知外部效果阻断、最终事务回滚）；`make test-monitor-postgres`（同一只读快照与零写入）；`make test-standard-postgres`（现有 PG 与临时 MinIO 门禁通过、门禁自有容器／网络／卷／镜像零残留；不据此宣称历史 Tenant 进入新执行路径）。Standard 移除 Redis 直接使用后首次 `test-go` 的 tidy 检查失败，修正依赖为 indirect 后全 Go 入口通过，未跳过依赖检查。
+
+前端证据分层：Common 298 项单元通过；Monitor 131 项单元、512 项受控浏览器及构建通过，另新增 Cleanup 关闭说明／读取拒绝清除测试通过；System 原全套 179 项单元、250 项受控浏览器及构建通过，随后重跑的 180 项 System 单元及构建通过，新增的五项 Cleanup 浏览器测试通过，覆盖真实 pending 无开始时间、分页、Owner 不可用／非法证据清除、专业结果按需读取／迟到响应失效、同 UUID 重试及身份切换。新增测试首次发现翻译键层级和分页总数提前清零问题，均已修复并重验。以上不是固定 SHA 的 CI、真实 Gateway 或新的 Hosted 证据。
+
+只读盘点本地共享 `addp`：`cleanup`、`cleanup_executor`、`kg_build` 三种类型中查到旧 Cleanup 父记录 9 条、子记录 63 条，均为 success，均没有新协议字段或有效 lease；该次查询未查到 kg_build。生产 schema 尚无新 `system.cleanup_requests`。后续同日只读复核仍为上述 72 条 success；Engine 删除 scan／execute 字段对这批 execution 的引用数为 0，数据库声明的关联外键来自 common.execution_events。Redis 有 11 个 cleanup 相关键（9 hash、1 stream、1 list），request stream 有 9 项，十个 Owner 消费组 pending=0、lag=0。未输出事件正文、令牌或凭据。这些均是盘点时点事实，不证明仍存活的旧消费者不会再受理或所有外部请求已经终止。尚未删除记录、修改共享服务或运行新的 Hosted；旧记录直接清理而不兼容，清理执行须和停止旧受理／运行体、精确引用核验及单次切换相衔接。
+
+### 外部效果剩余方案：已确认机制与索引治理边界
+
+主责与“租户日志改造”会话只读核对确认：Manager 的对象／物化表删除、Meta 的索引删除委托、Transfer 的连续任务停止和 CDC／DLQ 删除，都把外部请求与独立 PG 提交混在旧函数中。外部成功后 PG 失败不能当作“没有删除”，lease 过期也不能当作“旧运行体已停止”。旧记录可清理不改变这些新执行的正确性要求。
+
+**按既有授权继续实施的机制：**
+
+- Manager：复用产物的准确 ID、Tenant、Task、原 execution 和 StorageRef／物理表目标，补本域操作事实并在短事务内登记；锁外调用，再凭当前 lease 提交结果。GLB 生成回收的 pending／garbage 状态不充当 Cleanup 完成凭据；手动删除、重新生成和后台回收必须遵守同一目标的未决操作围栏，不能另起一次删除绕过未知结果。
+- Transfer：复用 CaptureResource 的 generation、source fingerprint、Connector／Topic／Group 和 ResourceVersion，精确记录每个删除操作；实际停止后才释放任务私有状态。新增绑定原 runtime instance／generation 的停止确认，由运行体退出并等待在途操作结束后持久提交；没有确认的失联状态保留阻断，不能仅由 lease TTL 放行。Kafka DeleteTopics／DeleteGroups 缺少准确目标响应的漏洞已修复并通过 Go 测试；明确 ACK 仍不等于生产者已停或物理删除已最终完成。
+- 各 Owner：外部调用不持有 PG 锁；效果前复核原用户授权；结果未知不自动重发；失权旧实例至多记录绑定原操作的可信结束事实，不能修改 execution 终态或业务结果。纯 PG 改动和私有结果／回执／终态保持原子提交。专业 GET 不承担核清或状态推进。
+
+**Meta／Manager 范围调整（用户已确认，实施中）：**
+
+当前 Meta 的 execute 在本域 PG 删除后调用 Manager 的内容索引删除接口。接口只有完成响应，没有可供 Cleanup 绑定的 operation ID；Manager 后台投递也未绑定 Meta 请求的原用户和子 lease。Manager 已有 `content_index_deliveries` 的 endpoint／epoch、correlation、TaskUID 和 unknown 状态，但不能凭现有通用机器权限获得另一 Owner 的 Cleanup 执行权。
+
+建议删除 Cleanup 内 Meta→Manager 的隐式效果委托：Meta 只处理本域 PG；索引清理由 Manager 自己的 C 负责，使用 Manager runtime 的既有窄授权。复用 Manager 投递事实并增加 C／attempt／精确目标绑定，Cleanup 来源禁止自动创建新操作重试；以可信原 TaskUID 和目标证据核验结果。Manager 独立治理“自己索引中失效 Engine 的投影”，从本域索引目标及 System 权威 Engine 状态确定范围，不跨读 Meta 私表，不复制 Meta 内部规则。这是明确的 Owner 治理语义调整，**不是原 Meta 候选集合的等价搬迁**：旧 Meta 以本域节点／ScanTask 的 Engine 并集为来源；Manager 会覆盖索引中仍残留、但 Meta 已无节点／任务的投影，也不会伪造一次针对空索引的已删除统计。
+
+相关会话已完成只读复核，补充了以下实施约束：
+
+- Manager 当前的持久 delivery 只保留 DocumentID、过滤条件和任务凭据，不能直接作为完整 Engine 索引账本；已有普通搜索／单文档读取也不保证全量枚举。必须新增有界、完整性可判定的本 Tenant 索引身份发现，仅取 ID／Tenant／Engine 等必要字段；分页截断、代次漂移、服务不可用都失败关闭，不能用第一页、估计命中数或默认 facet 上限声称完整。
+- scan 仍只读，必须明确给出索引候选事实与安全计数；execute 在效果前核对同一确认范围及出口代次。已存在 submitting／unknown 写入可能在枚举之后落入索引，必须等待原操作的可信结束证据或保留阻断；保留现有“有未决写入则不派发 DELETE”的约束，不能用空枚举或 C 终结制造安全证明。目标范围变化继续拒绝，不能自动扩大删除。
+- System 的默认 Engine 列表只返回 active，列表缺失不等于已删除。必须通过既有合法读取获取准确生命周期；401／403／超时均不是不存在证明。Engine 删除流程已有精确 Tenant＋Engine，可直接限定本域索引目标，仍须处理未决投递。
+- 当前 Manager scan 尚无索引候选统计，必须同次补齐。仅在 expected_modules 中出现 Manager 不足以构成索引已评估或已清理的证据。
+
+产品侧建议要求 manual execute 包含 Meta 时，同一次 scan 和确认必须显式同时包含 Manager；仅 Meta 的 scan 仍可评估，但不能据其结果隐式删除 Manager 索引，应提示按 Meta＋Manager 重评估。Engine 删除本已冻结全部十个 Owner，无需扩大其 scope。System 不创建隐藏子项、不替用户勾选、不把“已排队”计作已清除。
+
+用户已明确同意独立治理与显式配对，本项职责和手动范围调整现已授权；不重复征求确认。按正式契约继续 Meta／Manager 接线及其余 Owner 外部效果围栏。所需最小验证为：Meta-only execute 拒绝且零效果；显式双 Owner、原用户撤权及固定 runtime；未知外部结果不重放；Manager 候选范围完整／范围变化拒绝；索引投递成功而结果事务失败时保留可核验事实。测试通过后仍需整体固定 SHA CI；新的 Hosted 单独确认。
