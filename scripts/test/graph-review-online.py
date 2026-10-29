@@ -216,9 +216,7 @@ def run(suite, preparer, reader, engine_id, tenant_id, ontology_id, control_id, 
                 errors.append("delete synthetic review task/material/queue")
         if gid:
             try:
-                current_graph = preparer.request('GET', f'/api/v1/graph/graphs/{gid}', (200,)).payload
-                version = suite.SUPPORT.positive_int(current_graph.get('version'), 'graph version')
-                preparer.request("DELETE", f"/api/v1/graph/graphs/{gid}", (200,), {'version': version})
+                suite.delete_graph(preparer, gid)
                 preparer.request("GET", f"/api/v1/graph/graphs/{gid}", (404,))
             except Exception:
                 errors.append("delete synthetic review graph")

@@ -225,6 +225,43 @@ class GraphProtectionOnlineTest(unittest.TestCase):
         environment.start()
         self.addCleanup(environment.stop)
 
+    def test_graph_mutations_read_current_version_and_never_retry_conflicts(self):
+        calls = []
+        class Client:
+            version = 7
+            public = False
+            conflict = False
+            def request(self, method, path, expected, body=None):
+                calls.append((method, path, body))
+                if method == 'GET':
+                    return SUITE.SUPPORT.Response(200, dict(version=self.version, is_public=self.public))
+                if body.get('version') != self.version or self.conflict:
+                    raise SUITE.SuiteError('resource_version_conflict')
+                if method == 'PUT':
+                    self.public = body['is_public']; self.version += 1
+                return SUITE.SUPPORT.Response(200, dict(version=self.version, is_public=self.public))
+        client = Client()
+        SUITE.set_public(client, 2, True)
+        SUITE.delete_graph(client, 2)
+        self.assertEqual([(m, b) for m, _, b in calls if m != 'GET'],
+                         [('PUT', dict(is_public=True, version=7)), ('DELETE', dict(version=8))])
+        for mutation in (lambda: SUITE.set_public(client, 2, False), lambda: SUITE.delete_graph(client, 2)):
+            calls.clear(); client.conflict = True
+            with self.assertRaisesRegex(SUITE.SuiteError, 'resource_version_conflict'): mutation()
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(calls[0][0], 'GET')
+
+    def test_graph_mutations_reject_missing_or_noncanonical_versions_before_write(self):
+        for version in (None, 0, -1, True, '7', 7.0):
+            for mutation in (lambda c: SUITE.set_public(c, 2, True), lambda c: SUITE.delete_graph(c, 2)):
+                calls = []
+                class Client:
+                    def request(self, method, path, expected, body=None):
+                        calls.append(method)
+                        return SUITE.SUPPORT.Response(200, dict(version=version))
+                with self.subTest(version=version), self.assertRaises(SUITE.SuiteError): mutation(Client())
+                self.assertEqual(calls, ['GET'])
+
     def test_endpoint_fixed_geometry_requires_drawn_circles_real_drags_and_both_old_errors(self):
         expected,raw=endpoint_evidence()
         SUITE.verify_endpoint_geometry(raw,expected)
@@ -292,7 +329,10 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                         self_outer.assertEqual(self.role,'reader');self_outer.assertFalse(deleted)
                         indexed=True
                         return SUITE.SUPPORT.Response(200,dict(total=3,data=[dict(properties=dict(id='p'+str(i),name='Fixture '+name)) for i,name in enumerate(('one','two','three'),1)]))
-                    if method=='DELETE' and path=='/api/v1/graph/graphs/2': deleted=True
+                    if method=='GET' and status==(200,) and path=='/api/v1/graph/graphs/2':
+                        return SUITE.SUPPORT.Response(200,dict(version=7))
+                    if method=='DELETE' and path=='/api/v1/graph/graphs/2':
+                        self_outer.assertEqual(body,dict(version=7));deleted=True
                     return SUITE.SUPPORT.Response(status[0],dict(id=2,is_public=False) if method=='POST' else {})
             def dense_phase(*args,**kwargs):
                 # The independent native fixture tests reject a missing Neo4j index.
@@ -319,6 +359,7 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 def request(self,method,path,status,body=None):
                     calls.append((method,path))
                     if '/search?' in path:return SUITE.SUPPORT.Response(200,payload)
+                    if method=='GET' and status==(200,) and path=='/api/v1/graph/graphs/2':return SUITE.SUPPORT.Response(200,dict(version=7))
                     return SUITE.SUPPORT.Response(status[0],dict(id=2,is_public=False) if method=='POST' else {})
             report={}
             with self.subTest(payload=payload),patch.object(SUITE,'identity',side_effect=[dict(principal_id='4'),dict(principal_id='5')]),patch.object(SUITE,'create_ontology',return_value=9),patch.object(SUITE,'create_schema'),patch.object(SUITE,'run_dense') as dense:
@@ -632,6 +673,8 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                     return SUITE.SUPPORT.Response(200, {'data': [{'id': str(i), 'properties': {'id': 'p'+str(i+1)}} for i in range(3)]})
                 if method == 'POST' and path.endswith('/paths'):
                     return SUITE.SUPPORT.Response(200, {'nodes': [{'id': str(i), 'properties': {'id': 'p'+str(i+1)}} for i in range(3)], 'edges': native_edges({'p1':'0','p2':'1','p3':'2'})})
+                if method == 'GET' and expected == (200,) and path.startswith('/api/v1/graph/graphs/') and path.rsplit('/', 1)[1].isdigit():
+                    return SUITE.SUPPORT.Response(200, dict(version=7))
                 if method == 'DELETE': deleted.append(path)
                 return SUITE.SUPPORT.Response(expected[0], {'id': 31} if path == '/api/v1/service/graph' else {})
         report = {}
@@ -684,6 +727,8 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 deleted = []
                 class Client:
                     def request(self, method, path, status, body=None):
+                        if method == 'GET' and status == (200,) and path.startswith('/api/v1/graph/graphs/') and path.rsplit('/', 1)[1].isdigit():
+                            return SUITE.SUPPORT.Response(200, dict(version=7))
                         if method == 'DELETE': deleted.append(path)
                         if method == 'POST' and path == '/api/v1/graph/ontologies': value = {'id': 9}
                         elif method == 'POST' and path == '/api/v1/graph/graphs': value = {'id': 8, 'is_public': False}
@@ -983,6 +1028,8 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 if method == 'POST' and path.endswith('/paths'):
                     return SUITE.SUPPORT.Response(200, {'nodes': [{'id': str(i), 'properties': {'id': 'p'+str(i+1)}} for i in range(3)],
                         'edges': native_edges({'p1': '0', 'p2': '1', 'p3': '2'})})
+                if method == 'GET' and expected == (200,) and path.startswith('/api/v1/graph/graphs/') and path.rsplit('/', 1)[1].isdigit():
+                    return SUITE.SUPPORT.Response(200, dict(version=7))
                 if method == 'DELETE': deleted.append(path)
                 return SUITE.SUPPORT.Response(expected[0], {})
         report = {}
@@ -1011,6 +1058,8 @@ class GraphProtectionOnlineTest(unittest.TestCase):
                 if method == 'POST' and path.endswith('/paths'):
                     return SUITE.SUPPORT.Response(200, {'nodes': [{'id': str(i), 'properties': {'id': 'p'+str(i+1)}} for i in range(3)],
                         'edges': native_edges({'p1': '0', 'p2': '1', 'p3': '2'})})
+                if method == 'GET' and expected == (200,) and path.startswith('/api/v1/graph/graphs/') and path.rsplit('/', 1)[1].isdigit():
+                    return SUITE.SUPPORT.Response(200, dict(version=7))
                 if method == 'DELETE': deleted.append(path)
                 return SUITE.SUPPORT.Response(expected[0], {})
         report = {}

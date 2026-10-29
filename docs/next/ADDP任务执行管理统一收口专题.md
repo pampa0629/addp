@@ -487,7 +487,7 @@ Security、p19、p12 等未承担本轮核心实施，不应因本专题占用�
 
 **标准门禁覆盖。** 新增 Python 回归放入既有 `graph-review-online_test.py`，由 `make test-graph-online-runner` 实际执行，不新增游离测试入口；该入口已有 `test-security-online-runner` → `test-online-runner` 上层登记。身份夹具新增 Go 用例名称含 `GraphProtection`，同时命中该入口和夹具完整包测试。受影响最小命令为 `GOMAXPROCS=4 GOFLAGS=-p=2 make test-graph-online-runner`、`make test-module MODULE=graph GO_ONLY=1`；共享身份夹具完整包回归复用 `make test-quality-online-runner`，不触发 Quality Hosted。新公开接口／Swagger 没有变化，本轮无需重新生成产品 Swagger。
 
-**交给 CI 单一负责人的准确接入项（尚未实施／发送）。** 当前共享 Make／workflow／登记文件有其他会话 WIP，本轮不并改这些文件。
+**交给 CI 单一负责人的准确接入项（尚未实施／发送）。** 开始实施时共享 Make／workflow／登记文件有其他会话 WIP，后续已由原会话提交；职责仍由 CI 单一负责人持有，本轮不并改这些文件。
 
 1. Graph 既有 suite 增加 `execution-lifecycle` case，将该 case 分发给新 Graph runner；FalkorDB、Neo4j 分别运行。现有 `online-hosted-security-gate.sh`、`graph_case`、online dispatcher 和注册校验必须同次接入；当前仍拒绝该 case，不称已经可 dispatch。
 2. Graph 一次性 Compose profile 复用相同镜像，增加独立 `graph-backend-peer`，不同 module runtime instance identity、独立 loopback 端口和 readiness；两个进程均显式 `GRAPH_BUILD_LEASE_SECONDS=30`、`GRAPH_BUILD_HEARTBEAT_SECONDS=5`，不沿用默认 120 秒。副实例 URL 传入 `ADDP_ONLINE_GRAPH_PEER_URL`；抽取器传入 `ADDP_ONLINE_GRAPH_CASE=execution-lifecycle`。所有被控制容器必须含当次 `ADDP_ONLINE_TEST_RUN_ID`／`ADDP_ONLINE_HOSTED=1`，不能复用个人环境容器。
@@ -498,3 +498,7 @@ Security、p19、p12 等未承担本轮核心实施，不应因本专题占用�
 **仍待补齐的实际缺口。** 此批 runner 不证明 Manager 原生对象／Meilisearch 迟到投递、Transfer 原生 Capture／DLQ 的未知外部效果故障，也不证明真实浏览器刷新／翻页中撤权后的旧值和迟到响应清除；已有 PG／受控浏览器证据仍按原层级保留，后续需在对应自有业务夹具上补场景。Graph 的 unknown 来源是受控抽取调用，尚不证明原生写图请求已发出但回包丢失的场景；崩溃发生在终态后以检验持久阻断，不能替代“运行中终止进程”的独立证据。Graph `Reopen` 当前始终因 Provider 原物理目标无法核验而拒绝，positive reopen 不是已实现能力；unknown reconcile 也不会凭迟到本地返回放行。新 runner 对拒绝路径给出断言，并明确该能力缺口，不能据此将 8.2 全矩阵或整个执行体系判为结项。Security 会话补充的 `d86049faf` 后 PG 报告与固定提交关联待统一证据清单核对，不因缺索引重跑其有效门禁，也不扩大此批 Hosted 范围。
 
 本批实际本地验证通过：`make test-graph-online-runner` 的两组 Python 测试分别为 72／31 项，加 GraphProtection 身份夹具 Go 用例（`/tmp/addp-execution-runner-verified.log`）；`make test-module MODULE=graph GO_ONLY=1`（`/tmp/addp-execution-graph-go.log`）；共享夹具完整包及 Quality runner 48 项回归（`/tmp/addp-execution-fixture-final.log`）。命令均设置 `GOMAXPROCS=4 GOFLAGS=-p=2`。文档链接和差异检查通过。这些是工作区确定性门禁，不是实际容器故障、原生服务、固定提交 CI 或 Hosted 通过；本轮未运行 PG T2、Hosted 或环境切换，PG 状态机未改，仅新增只读验收探针。新场景的 Hosted 编排仍按上述清单由 CI 单一负责人接入。
+
+首批场景及身份夹具已提交推送 `410a5d253030555e89e21f0ea2b1da90fbc32d72`。继续检索受影响调用后，修正既有 Graph protection／dense／endpoint runner 的公开状态修改及退出删除：每次从准确 Graph 的 GET 读取当前正整数 version，再提交变更；版本冲突直接失败，不刷新重试掩盖并发。review 删除复用同一函数，删除无版本旧路径。新增缺失／非法 version 和冲突不重试反例；最终 `GOMAXPROCS=4 GOFLAGS=-p=2 make test-graph-online-runner` 通过 74／31 项 Python 测试及 GraphProtection 身份夹具 Go 用例（`/tmp/addp-execution-runner-versioned-final.log`）。中间测试替身曾错误匹配 browse-snapshot 请求，已收窄到 Graph 详情路径并重验；不更改产品或验收断言。
+
+Security 证据索引已补：固定源码 `0c8b006a3748d70d31db4775c9fed4f68422bae7` 的 [Security PostgreSQL 作业](https://github.com/pampa0629/addp/actions/runs/40832834357/job/123310943654) 实际成功，重新只读核验 job 和执行步骤均为 success；日志明确包含 `TestDiscoveryExecutionEventsAgainstPostgres` 的 claim 回滚、旧 lease 拒绝、retry 的真实 attempt、结果／事件事务及 expired lease 写入阻断。`git diff --quiet d86049faf 0c8b006a3 -- <六个 Security 文件>` 确认六个交接文件完全相同，日志保存在 `/tmp/addp-execution-security-pg-index.log`。这关闭上段的既有 PG 证据索引待核对项；本轮没有重跑 PG，也不证明真实 Worker／Hosted 故障场景。首批新 runner 的固定提交 CI 截至本次查询仍 queued，不记作通过，不触发重跑。

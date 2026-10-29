@@ -260,8 +260,20 @@ def probe(client, graph_id, ids, expected, reason=None):
     return results
 
 
+def graph_version(preparer, graph_id):
+    current = preparer.request("GET", f"/api/v1/graph/graphs/{graph_id}", (200,)).payload
+    version = current.get("version")
+    require(type(version) is int and version > 0, "Graph mutation requires a current positive version")
+    return version
+
+
+def delete_graph(preparer, graph_id):
+    preparer.request("DELETE", f"/api/v1/graph/graphs/{graph_id}", (200,), {"version": graph_version(preparer, graph_id)})
+
+
 def set_public(preparer, graph_id, public):
-    result = preparer.request("PUT", f"/api/v1/graph/graphs/{graph_id}", (200,), {"is_public": public}).payload
+    result = preparer.request("PUT", f"/api/v1/graph/graphs/{graph_id}", (200,),
+                              {"is_public": public, "version": graph_version(preparer, graph_id)}).payload
     require(result.get("is_public") is public, "Public state was not persisted canonically")
     require(preparer.request("GET", f"/api/v1/graph/graphs/{graph_id}", (200,)).payload.get("is_public") is public, "Public state read-back mismatch")
 
@@ -733,7 +745,10 @@ def run_dense(preparer, reader, tenant_id, target_path, report, previous_control
         for kind, identifier in (("graphs", graph_id), ("ontologies", ontology_id)):
             if identifier:
                 try:
-                    preparer.request("DELETE", f"/api/v1/graph/{kind}/{identifier}", (200,))
+                    if kind == "graphs":
+                        delete_graph(preparer, identifier)
+                    else:
+                        preparer.request("DELETE", f"/api/v1/graph/{kind}/{identifier}", (200,))
                     preparer.request("GET", f"/api/v1/graph/{kind}/{identifier}", (404,))
                 except Exception: errors.append("delete dense " + kind)
         report["dense_cleanup"] = {"errors": errors, "domain_resources_remaining": 0 if not errors else None}
@@ -861,7 +876,7 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
         report["private_protected_anonymous"] = probe(anonymous, target, ids, 401)
         report["private_protected_reader"] = probe(reader, target, ids, 403, "protection")
         run_review(preparer, reader, engine_id, tenant_id, ontology_id, control, report)
-        preparer.request("DELETE", f"/api/v1/graph/graphs/{control}", (200,))
+        delete_graph(preparer, control)
         preparer.request("GET", f"/api/v1/graph/graphs/{control}", (404,))
         graph_ids.remove(control)
         run_dense(preparer, reader, tenant_id, targets[1], report, control)
@@ -891,7 +906,7 @@ def run(preparer, reader, outsider, anonymous, direct_reader, direct_outsider, d
                 cleanup_errors.append("release five-Owner enrollment")
         for gid in graph_ids:
             try:
-                preparer.request("DELETE", f"/api/v1/graph/graphs/{gid}", (200,))
+                delete_graph(preparer, gid)
                 preparer.request("GET", f"/api/v1/graph/graphs/{gid}", (404,))
             except Exception:
                 cleanup_errors.append("delete synthetic graph configuration")
@@ -1166,7 +1181,7 @@ def run_endpoint_case(preparer, reader, engine_id, tenant_id, report, *, case="e
                 {(item.get("properties", {}).get("id"), item.get("properties", {}).get("name")) for item in found["data"]} ==
                 {("p1", "Fixture one"), ("p2", "Fixture two"), ("p3", "Fixture three")}, "Endpoint managed control search differs")
         previous = control_id
-        preparer.request("DELETE", f"/api/v1/graph/graphs/{control_id}", (200,))
+        delete_graph(preparer, control_id)
         preparer.request("GET", f"/api/v1/graph/graphs/{control_id}", (404,))
         control_id = None
         run_dense(preparer, reader, tenant_id, target, report, previous, case=case)
@@ -1178,7 +1193,10 @@ def run_endpoint_case(preparer, reader, engine_id, tenant_id, report, *, case="e
         for kind, identifier in (("graphs", control_id), ("ontologies", ontology_id)):
             if identifier:
                 try:
-                    preparer.request("DELETE", f"/api/v1/graph/{kind}/{identifier}", (200,))
+                    if kind == "graphs":
+                        delete_graph(preparer, identifier)
+                    else:
+                        preparer.request("DELETE", f"/api/v1/graph/{kind}/{identifier}", (200,))
                     preparer.request("GET", f"/api/v1/graph/{kind}/{identifier}", (404,))
                 except Exception: errors.append("delete endpoint " + kind)
         report["cleanup"] = {"errors": errors, "domain_resources_remaining": 0 if not errors else None}
