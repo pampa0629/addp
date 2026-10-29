@@ -330,6 +330,8 @@ cleanup request（资源回收请求）必须保持中性。
 
 标准回执只包含：协议版本、确定action/mode、请求／确认摘要、既有结果分类、安全稳定原因、标准summary计数和impact digest；保存与本子execution、Tenant、module、parent_execution_id及完成attempt的绑定，写入端和System消费端都从权威记录交叉核对，不接受调用方覆盖身份。字段类型、大小／数量上限及规范摘要算法须在同次实现的协议校验中固定；未知版本、未知字段、类型错误、越界、身份不符或摘要不匹配均失败关闭，不能截断专业正文后当作标准回执。回执随子终态冻结，终态后不得新增或改写；旧实例停止证据只能进入Owner窄控制事实。失败／超时缺少合法Owner回执时，System只记“未取得回执”及可核验公共事实，不伪造模块成功、专业统计或停止证明。回执落库不自动扩大Monitor白名单或读取权限。
 
+实现使用`addp.cleanup-request/v1`冻结中性请求、`addp.cleanup-receipt/v1`绑定完成回执，严格拒绝未知字段；单对象最多16 KiB，计数为0至10^12的整数，参与模块沿现有十个Owner的注册集合校验、排序并去重。请求仅允许engine_id、tenant_id及显式external_artifact_policy中性上下文；摘要为确定结构JSON的SHA-256，不包含原始确认文本、凭据或专业正文。冻结deadline不可超过受理后24小时，现行scan／execute的30秒／5分钟预算保持不变。正式领取、回执与读取投影共用此闭合校验，旧Redis记录不补造该来源证明。
+
 Graph本阶段的Owner PG清理、标准回执、子终态必须在同一当前lease事务提交，任一步失败整体回滚；提前关闭准入是独立短事务，不能等待清理完成才关闭。其他Owner的外部物理删除不在PG事务承诺内，必须用自身外部操作事实核清，不能因为本地终态成功而推断远端删除已停止。回执更新不得覆盖Common保留的观测namespace，也不得从标准回执恢复业务写权限。
 
 | 协调或执行事件 | 唯一处理规则 |
@@ -406,6 +408,12 @@ Common须提供可在调用方事务中组合的“精确候选领取”及“�
 | Graph（Cleanup Owner） | 验证本模块请求、P→C准入／拒绝；已领取后沿C→G→T/B关闭领域准入、锁外取消核清、最终PG清理与回执原子收尾 | 不实现第二套公共lease，不用Graph `kg_build`取消例外终结Cleanup子项，不以父关闭删除Graph控制证据或扩大清理范围 |
 
 Graph首次领取需要领域准入锁时，完整顺序为P→C→G→T/B；领取后所有领域阶段仍沿C→G→T/B，不再次获取P。未领取拒绝只改公共C，不关闭G、不取消构建、不改Graph表；Graph执行阶段提前关闭G的事实仍由合法C提交。Graph最终清理不得反锁构建execution，既有三阶段和外部效果待核清边界保持不变。具体安全详情API、历史保留和人工核清权限不在本次细则中决定。
+
+### Cleanup执行授权
+
+2026-10-29补充确认：复用System执行授权框架，新增Cleanup目的绑定和`system.cleanup_authorization.execute` Tenant Service Permission。仅十个已登记Owner的runtime角色持有，固定Service客户端与Owner对应；不授予用户角色或通用数据读写权限。普通用户受理仍核验现有`system.cleanup.execute`。授权绑定原User／Tenant／Membership、请求及确认摘要、准确父子execution、Owner、action／mode、scope和当前attempt／lease，实际效果前由System重新核验用户当前资格、授权版本和权限；任何授权失败不得派发清理，临时不可用与已撤权分别保留事实。不保存User Bearer，不把父子记录或lease当授权。
+
+首期仅支持active Tenant的用户来源请求及其已确认Engine删除派生流程。closed Tenant／`tenant.deleted`、没有可信用户来源或没有目的限定许可的事件保持阻断；不复活Membership、不使用PlatformToken替代Tenant权力。历史Tenant治理需另行确认。该权限不扩大Owner资源范围，不恢复旧执行、不重放删除。
 
 ### executor 参与范围
 

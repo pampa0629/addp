@@ -273,3 +273,16 @@ Common 统一采用 PostgreSQL 锁后墙钟、严格未到期判定及封闭字�
 完成时必须同时满足：运行路径有明确所有权；公共字段有唯一维护入口；旧路径删除；Owner 事务／副作用边界有证据；受影响标准门禁实际执行；真实验收按固定版本与范围通过，清理可核验。未运行、失败、跳过和未确认设计分别记录。
 
 已实施的稳定规则迁入现有 concepts／spec 与模块文档；本专题只保留剩余决定和缺口，全部关闭后删除，不再积累逐轮运行流水。
+
+### Cleanup实施中新发现的执行授权缺口（已确认）
+
+只读核对确认：现有HTTP入口核验当前User的`system.cleanup.execute`，但Owner消费原Redis请求时没有排队后的原用户权限复核。既有任务授权主体只支持Orchestrator／Transfer；execution authorization的audience及派生来源也没有Cleanup。Tenant Service Token要求Tenant active，IAM的closed Tenant不能按自报`tenant.deleted`上下文取得历史租户清理权。父子持久记录、lease和读取Owner scope均不能替代这项权限。
+
+用户已确认以下首期窄方案；先同步正式IAM契约，再实施：
+
+1. 复用System现有执行授权框架，新增明确的Cleanup目的绑定，不复用数据读写或Ontology内部任务授权。受理时绑定当前User／Tenant／Membership、请求与确认摘要、准确父子UUID、Owner、action／mode和原范围；不保存User Bearer，普通用户入口仍只要求现有Cleanup权限。
+2. 为已登记Cleanup Owner增加仅可调用Cleanup授权复核的Tenant Service权限`system.cleanup_authorization.execute`，固定客户端与Owner对应关系，只授予这十个Owner的内置runtime角色，不授予用户角色。该Permission仅允许核验自己的准确子执行，不授予任意资源删除或跨Tenant权；服务端复核原用户当前成员资格、授权版本及Cleanup权限、请求未被替换、当前attempt／lease和有效期。实际效果前复核，任何失败不派发删除；临时授权不可用与已撤权分别记录。
+3. 首期限定active Tenant的用户来源请求及其已确认Engine删除派生流程。`tenant.deleted`／closed Tenant和没有可信原用户来源的生命周期请求继续失败关闭，不复活Membership、不使用Platform Token跨域执行。历史Tenant需要独立的目的限定治理授权，另议。
+4. 新授权只约束既定Owner范围，不扩大可清理资源、不自动重试旧执行、不重跑Hosted。已确认的持久队列、P→C锁序、标准回执及安全读取投影可继续独立完成。
+
+此补充改变执行授权的目的绑定与Service Permission，根AGENTS.md最高优先级第0条要求确认；本项现已单独获得用户确认，历史Tenant仍另议。影响门禁为System IAM授权正反例、Cleanup实际领取／效果前拒绝、Owner固定client/audience/Tenant与撤权反例；由原System IAM及新增System Cleanup标准入口覆盖，不新增旁路授权机制。
