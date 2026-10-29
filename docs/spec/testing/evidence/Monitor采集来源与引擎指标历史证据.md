@@ -131,3 +131,25 @@ CI `39775896930`／System IAM Job `119824550350` 的原始失败是 `private fie
 已先运行 `bash scripts/infra/status.sh` 核对当前共享 PostgreSQL 为 `25432`。在 `addp_iam_test` 使用标准 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package repository"`：旧断言加固定 UUID 的红色复现失败；修正结构预期后通过；随后仅在当次测试输入临时注入嵌套 `source_key.published_ports=[5433]`，同一入口按完整结构断言明确失败，证明泄露仍被拒绝；删除临时注入后最终重新执行，7 项 Repository 顶层 T2 与测试库重置均通过、退出 0，无跳过。最终文件与注入前通过版本逐字节一致。原始日志 `/tmp/addp-observability-projection-red.log`、`/tmp/addp-observability-projection-mutation.log`、`/tmp/addp-observability-projection-final.log`；中间首次结构预期遗漏已有指标状态且错误强制启动时刻为 UTC 的失败已修正，不计产品故障。
 
 本轮仅修改既有测试和此证据，现有 Release/T2 System IAM Job 自动发现，无新增测试入口、依赖或 CI 编排。完整 System IAM CI 等专门会话回传，不把本地 Repository 分包 T2 计为全批 CI；未调度或查询 CI／Hosted、未设置定时、未重启个人服务。Safari 实际弹窗可见性问题仍未解决。
+
+
+## 个人环境 Infra PostgreSQL 接通与跨模块入口修复（2026-10-29）
+
+用户限定批准先启用 Infra，并在本人终端执行 `bash scripts/infra/up.sh --metrics` 和 `./scripts/dev/restart.sh -monitor`。本会话随后只读核对实际来源与发现快照，未自行启停服务。独立采集账号和固定汇总函数、专属认证规则、SQL Exporter 与 mTLS 入口已由标准生命周期接通；Monitor 独立客户端读取 `https://127.0.0.1:19109/metrics` 返回 200、16 条固定采样，Infra 快照为 available。证书及个人配置只保留仓库外／忽略文件，不进入提交；Business 仍为 not_deployed，未启用其采集。
+
+已有显示名“infra-虚拟机”的部署，其完整数据库容器 ID 实际匹配 Business 发现清单，不能按别名判定 Infra。本轮保留原记录不变，使用 System 正式自动发现只勾选 Infra PostgreSQL，确认绑定既有 Docker Desktop Linux VM 后接入为 `6b262aad-da10-4f00-8fd2-421465e84189`。Prometheus 来源由 6 增至 7，唯一 engine 来源与新部署及当前数据库容器身份精确对应，health=up 且无 lastError。脱敏只读回执 `/tmp/addp-pg-infra-runtime-receipt.json`。
+
+Safari 使用真实平台管理员，前台详情实际显示十二项专业指标、有效零和单位：连接总数约 45—46、最大连接数 200、数据库容量 5.96 GiB；完整一分钟形成后事务提交约 140—150 次/秒、回滚 1.00 次/秒、死锁 0.00 次/秒。五分钟事务趋势有实际曲线，悬停显示时间及 144.07 次/秒；这些为本地真实运行证据，不代表业务表读取、业务吞吐或新增 Hosted 通过。
+
+实际点击 System“查看监控”复现了模块内导航误用：System Router 将 Monitor 路径解析到 forbidden，Console 地址仍停在 System。本轮改为 `openConsoleRoute()`，由唯一共享引擎路由构造器同时服务 System 跨模块入口和 Monitor 页内切换；不改权限、后台接口或采集语义。Safari 修后点击已进入正确 Monitor 部署地址；中间窗口再次报告隐藏，未将隐藏后的空态误计为来源故障。用户重新激活前台后，再从 System 的 `search=Infra` 列表进入：十二项即时值和趋势恢复、自动刷新开启，连接数 47、事务提交 148.87 次/秒、容量 5.97 GiB；观察到趋势评估结束时间从 23:37:26 自然推进至 23:37:41。点击 Safari 工具栏的浏览器返回，地址、搜索框 Infra 与两条原部署记录实际恢复，未出现 forbidden。
+
+本轮验证沿现有标准入口，使用共享开发工作区，不声称冻结 SHA 或全量干净环境：
+
+- 修前 `npm --prefix console/frontend run test:e2e -- e2e/engine-monitor-navigation.spec.js --grep zh-cn` 在正确跨模块地址断言失败；日志 `/tmp/addp-pg-engine-navigation-red.log`。修后同文件三场景通过，覆盖中英文真实 Console／System／Monitor iframe、专业 API 读取、Back 搜索恢复、无权限不显示入口；只允许既有刷新会话 POST，不发生管理写入。首次绿阶段将刷新会话错误算作管理写入，修正测试分类后通过，未改变产品认证。最终日志 `/tmp/addp-pg-engine-navigation-green-final.log`。
+- `make test-common-frontend`：302 项通过、无跳过，含共享路径、编码、查询拷贝、非法形状和唯一所有权；日志 `/tmp/addp-pg-common-frontend.log`。
+- `make test-console-frontend`：219 项单元、268 项浏览器及构建通过；日志 `/tmp/addp-pg-console-frontend.log`。
+- `make test-system-frontend`：177 项单元通过，浏览器 255 通过、1 失败（`engine-data-authorization.e2e.js` 的权限批量操作场景），因此完整门禁失败且其后构建未执行；本轮没有修改该场景及权限实现，不扩展修复范围。另沿标准 `npm --prefix system/frontend run test:e2e -- e2e/engine-deployments.e2e.js` 通过全部 13 项；`npm --prefix system/frontend run build` 独立通过。日志 `/tmp/addp-pg-system-frontend.log`、`/tmp/addp-pg-system-deployments.log`、`/tmp/addp-pg-system-build.log`，不把专项通过记作完整门禁通过。
+- `make test-monitor-frontend`：131 项单元、513 项浏览器及构建通过、无跳过；日志 `/tmp/addp-pg-monitor-frontend.log`。
+- `make test-frontend-ci-registration`：27 项登记回归和 21 个前端登记检查通过；原入口和 CI 自动发现已覆盖，没有新增并行路线。日志 `/tmp/addp-pg-navigation-registration.log`。
+
+本轮未调度、查询或重跑 CI／Hosted，未设置定时任务。云端证据仍等待专门会话回传；本地真实环境接通不替代新输入的 Hosted 或生产验收。

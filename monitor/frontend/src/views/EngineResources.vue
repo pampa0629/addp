@@ -64,6 +64,7 @@ import ChartRenderer from '../../../../common-frontend/chart/src/ChartRenderer.v
 import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { createAutoFilter } from '../../../../common-frontend/basic/src/utils/autoFilter.mjs'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
+import { buildMonitorEngineResourcesLocation } from '../../../../common-frontend/basic/src/utils/engineResourceRoute.mjs'
 import { formatBytes, scaleByteValue } from '../../../../common-frontend/basic/src/utils/formatters.js'
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 import { useAuthStore } from '../store/auth'
@@ -103,7 +104,7 @@ const chart = computed(() => {
 })
 const navigate = (query, history = 'replace') => {
   filterInput.cancel()
-  const target = { path: '/engine-resources', query: resolveEngineRoute(query).query }
+  const target = buildMonitorEngineResourcesLocation(resolveEngineRoute(query).query)
   if (router.resolve(target).fullPath === route.fullPath) { refreshCycle.schedule(); return }
   return navigateMonitorRoute(router, target, { history })
 }

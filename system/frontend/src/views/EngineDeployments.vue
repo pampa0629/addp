@@ -90,7 +90,7 @@ import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { HostNodeSelect, StatusAnnouncer, useConsolePageDescriptor, navigateConsoleModuleRoute } from '@common-ui'
+import { HostNodeSelect, StatusAnnouncer, useConsolePageDescriptor, openConsoleRoute, buildMonitorEngineResourcesRoute } from '@common-ui'
 import { formatDateTime } from '../../../../common-frontend/basic/src/utils/formatters'
 import { createLatestRequestScope } from '../../../../common-frontend/basic/src/utils/latestRequestScope.mjs'
 import { useAuthStore } from '../store/auth'
@@ -104,7 +104,7 @@ const identity=computed(()=>JSON.stringify([auth.authContext?.principal,auth.aut
 const canRead=computed(()=>auth.contextType==='platform' && auth.authContext?.principal?.type==='user' && !auth.authContext?.delegation && auth.hasPermission('platform.engine_deployment.read'))
 const canReadHosts=computed(()=>canRead.value && auth.hasPermission('platform.host_node.read'))
 const canObserve=computed(()=>canRead.value && auth.hasPermission('monitor.resource_observation.read'))
-const openMonitoring=id=>navigateConsoleModuleRoute(router,'monitor',{path:'/engine-resources',query:{deployment_id:id}},{history:'push'})
+const openMonitoring=id=>openConsoleRoute(buildMonitorEngineResourcesRoute({deployment_id:id}))
 const canCreate=computed(()=>canReadHosts.value && auth.hasPermission('platform.engine_deployment.create'))
 const canUpdate=computed(()=>canReadHosts.value && auth.hasPermission('platform.engine_deployment.update'))
 const deploymentID=computed(()=>typeof route.params.deployment_id==='string'?route.params.deployment_id:'')
