@@ -413,3 +413,5 @@ CI 协调会话补充两条此前门禁未覆盖的源码缺口：Freeze 将保�
 实际通过：`GOMAXPROCS=4 GOFLAGS=-p=2 make test-module MODULE=manager GO_ONLY=1`（`/tmp/addp-cleanup-glb-followup-go-final.log`）；完整 `make test-manager-postgres`（`/tmp/addp-cleanup-glb-followup-pg-final.log`）。新增九个 PG 场景覆盖准确物理目标删除及审计保留、未释放／Watch／未清理／非法清单、unknown 不重放、准备与完成／输入结束竞争，以及先 scan 后启动生成时的 Cleanup 与完成竞争。通过 pg_blocking_pids 建立真实锁等待，再执行竞争入口，未出现 40P01，正常终态与产物同事务提交，终态后输入写入拒绝。外部删除为受控回调；不宣称真实对象存储、Gateway／Worker 或 Hosted 验收。新测试由既有 Manager PG 名称前缀及 CI 路径自动发现，无新增入口／服务依赖。
 
 本轮未修改 Common、其他 Owner、API 或权限；其他 Owner 的有效门禁不重跑。首次 Go 编译发现测试可空状态字段比较错误，修正后重验通过；最终 PG 输入另补强审计保留与竞争时序断言后再次完整通过。补充修复提交后的固定 CI 待核对。当前仍无可用的会话发送工具，协调回报记录尚未送达。
+
+GLB 补充修复固定提交 `0fc6299d8150ec5e5cf3ae4cd72657cd759ea969` 的 [Manager PostgreSQL／PostGIS／Meilisearch CI](https://github.com/pampa0629/addp/actions/runs/40889932763/job/123503994261) 已成功，日志逐项确认上述九个新增场景实际执行并通过，没有跳过；同提交全仓 Go CI 已成功。日志 `/tmp/addp-cleanup-glb-followup-ci.log`，本地及 CI 摘要 `/tmp/addp-cleanup-glb-followup-evidence.json`。这两条新增源码缺口及对应确定性／PG 门禁现已收口；新的 Hosted 和真实外部系统故障注入边界不变。
