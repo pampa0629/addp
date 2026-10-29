@@ -747,13 +747,21 @@ Model `business_entity|logical_model` 与 Standard 五类标准的主业务域�
 
 ### 专业来源与动态展示
 
-技术来源展示须以可读信息为主：Meta 数据项展示来源快照的名称、类型与 `full_name` 完整路径，条目 ID 仅作为辅助溯源信息，不将企业业务名称冒充物理名称。`GET /entries/:id` 的 `source_engine` 由已有 System 引擎引用解析能力按当前来源的 `engine_id` 动态组合名称、类型和生命周期状态，不落库；`status=current|missing|unavailable` 分别表示已解析、不存在与暂不可用，解析失败不影响目录详情读取，不以裸 ID 代替名称。
+#### 来源快照与引擎显示
 
-共享确认的创建响应、历史列表和详情按可见记录中的精确接收方身份，通过既有 System 引用解析动态返回 `recipient_name`、`recipient_code` 和 `recipient_label_status=resolved|not_found|unavailable`。名称不可用不丢弃历史、不伪造名称、不回退裸 ID；历史读取在远端解析后重新核验当前权限及条目可见性。办理候选继续使用已有名称解析和资格门禁。前端统一显示名称、账号名或编码，并按当前 User Principal 的精确身份标记“当前账号”；项目组不按同号账号标记，不由名称推断本人，不改变接收方选择与授权参数。专业事实中的来源指纹须省略展示并可悬停查看全文，不能撑大单列。其他专业引用优先展示 owner 名称；专业定义仍通过当前 User 的 owner 公开接口判权，技术 ID 仅作为辅助信息。
+来源快照的最小字段、观察时间与离线展示边界见[SourceBinding](#22-sourcebinding)，当前最小目录摘要见[Owner 读取契约](#53-其他-owner-读取契约)及各来源小节。Meta 数据项展示来源快照的名称、类型与 `full_name` 完整路径，不将企业业务名称冒充物理名称；条目及其他技术 ID 只作辅助溯源，专业引用优先展示 owner 名称。来源指纹须省略展示并可悬停查看全文，不能撑大单列。
 
-专业来源摘要中的 `engine_id`、`runtime_engine_id` 使用同一 System 引擎引用解析能力，在详情 `source_resolution.engine_references` 中按原字段名返回动态名称、类型及解析状态，不改写 owner 摘要或来源快照。业务域复用当前 Standard 层级名称；指标分类与计量单位分别通过当前 User 的 `standard.metric.read`、`standard.unit.read` 读取 Standard 公开接口，无权限或读取失败显示名称不可用，不扩权代查。
+System 引擎显示引用统一由已有解析能力提供当前名称、类型、生命周期及 `status=current|missing|unavailable`：`GET /entries/:id` 的 `source_engine` 取当前 Meta 来源的 `engine_id`；`source_resolution.engine_references` 取专业摘要的 `engine_id`、`runtime_engine_id`，并按原字段名返回。三种状态分别表示已解析、不存在和暂不可用；解析失败不影响目录详情读取，不以裸 ID 代替名称。动态引用不落库，不改写 owner 摘要或来源快照。
 
-Catalog 资源列表、详情和业务域总览的专业源链接统一复用共享 `allowsConsoleRoute`，按目标 Console 路由、当前身份上下文和完整入口权限判断可用性；不得用单个对象读取权限替代页面入口规则。详情与确定修订链接遵循相同规则，权限变化后响应式更新，程序化跳转时再次判断；未登记路由关闭入口。专业摘要的读取仍按 owner API 的对象读取权限独立判断，缺少页面依赖权限不隐藏已获准读取的摘要，也不授予额外权限。
+#### 专业读取与页面入口
+
+目录最小摘要沿上述 Owner 契约读取，专业定义和详情仍通过当前 User 的 owner 公开接口判权。业务域复用当前 Standard 层级名称；指标分类与计量单位分别通过当前 User 的 `standard.metric.read`、`standard.unit.read` 读取 Standard 公开接口，无权限或读取失败显示名称不可用，不扩权代查。专业摘要的读取仍按 owner API 的对象读取权限独立判断，缺少页面依赖权限不隐藏已获准读取的摘要，也不授予额外权限。
+
+Catalog 资源列表、详情和业务域总览的专业源链接统一复用共享 `allowsConsoleRoute`，按目标 Console 路由、当前身份上下文和完整入口权限判断可用性；不得用单个对象读取权限替代页面入口规则。详情与确定修订链接遵循相同规则，权限变化后响应式更新，程序化跳转时再次判断；未登记路由关闭入口。
+
+### 共享确认与接收方显示
+
+共享确认的创建响应、历史列表和详情按可见记录中的精确接收方身份，通过既有 System 引用解析动态返回 `recipient_name`、`recipient_code` 和 `recipient_label_status=resolved|not_found|unavailable`。名称不可用不丢弃历史、不伪造名称、不回退裸 ID；历史读取在远端解析后重新核验当前权限及条目可见性。办理候选继续使用已有名称解析和资格门禁。前端统一显示名称、账号名或编码，并按当前 User Principal 的精确身份标记“当前账号”；项目组不按同号账号标记，不由名称推断本人，不改变接收方选择与授权参数。确认与办理历史的当前读取资格见[责任与实际数据授权](#321-责任与实际数据授权)。
 
 所有用户可见错误使用 Catalog i18n；Swagger 使用中文在前、英文在后的双语注解，并为每个公开 Operation 声明 `x-addp-auth-mode` 和精确 Permission。
 
