@@ -326,3 +326,22 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 真实Linux报告result=passed、exit_code=0、error_code=null，elapsed=854.099548秒；209次完整样本最长1.182123秒，私有可写保守上界最大1808158783字节，容器硬配额合计最大3.25 CPU／4026531840字节内存，均在原上限内。请求Go148（失败90／健康58）、Python Agent75（45／30）、Copilot28（15／13），总251次，三源阶段和计数契约一致。process_compile为finished／exit0，原始单调纳秒开始64979234562、观察结束138843033209；inputs_unchanged、cleanup_verified、private_directory_removed均为true。**本次没有复现目录消失，缺失对象及根目录失败诊断现场分支未触发**；编译边界实录和单次Linux功能门禁通过，不等于旧间歇故障已修复／删除者已定位，不用本次成功覆盖此前失败。
 
 本机准备散列清单`/tmp/addp-p19-http-minimal-forensics-20261029.json`记录源码／输入／门禁日志，Linux归档核对摘要`/tmp/addp-p19-http-minimal-forensics-linux-result-20261029.json`另记353输入核验与各项边界。没有新开本地窗口，不运行Hosted、容量或定时，不恢复此前失败窗口；正式产品到页面闭环仍未验收通过，本批取证不替代它。
+
+<a id="http-linux-followup-manual-20261029"></a>
+
+## 2026-10-29 后续自然Linux HTTP门禁手动复核（未复发）
+
+本轮仅按用户要求只读核对后续main自然push中的HTTP质量子Job，不手工dispatch／rerun，不新开本地窗口，不运行Hosted、容量或定时。截至2026-10-29 11:19（Asia/Shanghai），修正后的两条后续HTTP子门禁完成且通过，另有一条运行中、一条排队；没有生成HTTP Job的其他运行不计通过。所有结论绑定各自源码和HTTP子Job，不由workflow聚合状态推定。
+
+| 固定源码 | 自然运行／HTTP Job（attempt 1） | 结果 | 总耗时（秒） | 完整样本／最大耗时（秒） | 请求Go／Python／合计 | 清理 |
+| --- | --- | --- | --- | --- | --- | --- |
+| aa516137d437ac6de8e5c61df8cfc08305e6b08b | [40806389627／123226471740](https://github.com/pampa0629/addp/actions/runs/40806389627/job/123226471740) | passed | 773.609527 | 189／0.916333 | 148／[81,30]／259 | verified／私有目录已删除 |
+| 24d2f15648494054627c36dfa01f61885e41fddd | [40807277727／123229384045](https://github.com/pampa0629/addp/actions/runs/40807277727/job/123229384045) | passed | 872.804636 | 215／1.216953 | 163／[75,28]／266 | verified／私有目录已删除 |
+
+两份原始artifact均逐项验证ZIP大小／API登记SHA256／CRC及唯一JSON成员，并独立将各自353个输入散列与固定提交逐文件比对；两版均包含05c57272c修正，metrics-http-budget.py／monitor-metrics-gate.sh与该修正没有差异。result=passed、exit_code=0、error_code=null、无failure_detail；三源均具备健康阶段且阶段计数和原额度一致，inputs_unchanged／cleanup_verified／private_directory_removed均为true。最大私有可写保守上界分别1808130111／1808166975字节，硬配额最大均为3.25 CPU／4026531840字节内存，低于原停止线和资源上限。
+
+编译观察真实落盘：aa516的monotonic_ns开始63274922475、观察结束111259740505；24d2为191068652420／266955472635，两者finished／exit0。两次都**没有复现目录消失**，因此缺失对象类别／身份散列／根目录失败诊断现场分支仍未触发，不能由编译成功及门禁通过反推旧失败删除者或宣布间歇根因已修复。本轮没有形成新的修正方案或改采样／编译生命周期；若后续自然复发，先对照新增对象和单调边界提出最小方案，再经讨论实施。
+
+归档身份：aa516的artifact12868648938为23553字节，ZIP SHA256=`fb62c5433416e4e3819ca6e4cc821ef7dc214b55e0fd3d1227edd0f1d1b19bb1`，报告SHA256=`d4ec9a804f06f876dbc86af4285c703212dff06f5d1d6414bb42894c06963ec5`；24d2的artifact12869049745为24432字节，ZIP SHA256=`06bde55ad5c0b9c930e489d2a3557acb8dca84225eba4819eb18e65d45ce9a2b`，报告SHA256=`cbcc12b7cd387e15dfb4f7f8902d940002fd27bf650925423277f58484bd0626`。本机/tmp/addp-p19-http-followup-verified-20261029.json保留独立核对摘要，另有同前缀Job快照和artifact元数据。
+
+快照中[40809646875／123236922601](https://github.com/pampa0629/addp/actions/runs/40809646875/job/123236922601)（ebdb5b82e721834c69eda8d3c1127580cb667583）运行中，[40810565372／123241061462](https://github.com/pampa0629/addp/actions/runs/40810565372/job/123241061462)（49ecae13ecc23bb9d626ab5617234ffdca57f043）排队，分别保留未完成状态，不计通过。此为一次手动核对，不建立后续监控；正式产品到页面闭环及停源历史读取的原有缺口不由本节替代。
