@@ -2915,6 +2915,41 @@ def validate_raster_cut_fill(repository: Path, registered: set[str]) -> None:
         raise RegistrationError('cut/fill requires exactly twelve saves and thirty-six bilingual failures')
 
 
+def validate_raster_surface_area(repository: Path, registered: set[str]) -> None:
+    suite='raster-surface-area-persistence'
+    if suite not in registered:return
+    workflow=(repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job=re.search(r'(?ms)^  raster-surface-area-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)',workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-surface-area-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-surface-area-persistence'" not in workflow
+        or 'cancel-in-progress: false' not in job.group('body') or 'nfs-kernel-server nfs-common' not in job.group('body')
+        or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('DEM surface area requires a manual isolated Hosted NFS job')
+    make=(repository/'Makefile').read_text()
+    if 'test-geopython-workflow:' not in make or 'test_online_surface_area_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('surface area Native fixture must run in the standard GeoPython recipe')
+    required={'scripts/test/online-hosted-raster-surface-area-gate.sh': ('source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-surface-area-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), 'scripts/test/raster-surface-area-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_surface_area', 'input.source', 'output.save', 'archived_csv', 'query language rewrote stored failure', 'CSV physical/Meta sizes must be equal positive integers', 'all 48 calls and 510 full actual CSV checks are required', 'physical_verification_calls', 'full_target_checks', 'previous CSV manifest changed', 'previous CSV manifest inventory differs', 'archived CSV has no original manifest', 'exact contracted serialized preview row differs', 'preview_serialized_row'), 'business/scripts/online-raster-surface-area-fixture.py': ('NFSExport', 'owned_root', 'expected_row', 'context.prec=200', 'cross=[u[1]*v[2]-u[2]*v[1]', 'min(ad,bc)', 'max(ad,bc)', 'low+=', 'high+=', 'mean=(low+high)/2', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'csv_base64', 'complete_table_verified', 'dual_diagonal_and_centre_domain_verified', 'source_measurement_geometry_verified', 'value!=target', 'float(value)', 'int64.csv', 'uint64.csv', 'single.csv', "(spec['width']-1)*(spec['height']-1)", 'double_precision=15', 'preview_serialized_row', 'quads=Counter()', 'anchors='), 'engines/geopython-workflow/test_online_surface_area_fixture.py': ('test_surface_area_persistence_real_gdal_twelve_csv_chains_complete_oracle_and_original_bytes', 'test_surface_area_persistence_thirty_six_exact_failures_no_publication', 'test_surface_area_persistence_oracle_rejects_csv_corruption', 'one_ulp', 'test_surface_area_persistence_independent_full_scalar_four_corner_count', 'test_surface_area_persistence_worker_runs_from_stdin_without_repository_imports', 'test_surface_area_independent_csv_oracle_rejects_wrong_semantics', 'half', 'one_diagonal', 'frame_area', 'test_surface_area_original_csv_manifest_never_silently_repaired', 'scene.validate_preview', 'test_surface_area_host_oracle_requires_no_numpy_pandas_or_gdal'), 'Makefile': ('@$(MAKE) test-raster-surface-area-online-runner', 'scripts/test/raster-surface-area-persistence-online_test.py', 'scripts/test/online-raster-surface-area-fixture_test.py', 'scripts/test/online-hosted-raster-surface-area-gate_test.py', 'test_surface_area_requires_manual_nfs_complete_csv_archive_and_regressions'), 'scripts/test/raster-surface-area-persistence-online_test.py': ('test_twelve_exact_dags_one_actual_source_bands_units_and_existing_save', 'test_complete_matrix_exact_current_scan_lineage_and_original_csv_archive', 'physical_verification_calls', 'full_target_checks', 'test_identity_size_and_failure_publication_are_fail_closed', 'test_previous_physical_or_archive_bytes_cannot_change')}
+    for relative,fragments in required.items():
+        path=repository/relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('surface area persistence contract is incomplete: '+relative)
+    # Fixed first-phase matrix is executable data, not a comment claiming coverage.
+    import ast
+    fixture=ast.parse((repository/'business/scripts/online-raster-surface-area-fixture.py').read_text())
+    scene=ast.parse((repository/'scripts/test/raster-surface-area-persistence-online.py').read_text())
+    def literal(tree,name):
+        return next(ast.literal_eval(node.value) for node in tree.body if isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id==name for t in node.targets))
+    if len(literal(fixture,'CASES'))!=12 or len(literal(scene,'FAILURES'))!=18:
+        raise RegistrationError('surface area requires exactly twelve saves and thirty-six bilingual failures')
+
+    expected_targets={'flat.csv','plane.csv','diagonals.csv','mixed.csv','feet.csv','survey-feet.csv','us-grid.csv','filled.csv','reclassified.csv','int64.csv','uint64.csv','single.csv'}
+    if set(literal(fixture,'CASES'))!=expected_targets:raise RegistrationError('surface area fixed target identities changed')
+    expected_failures=('band','alpha','complex','complex_alpha','rotated','south_up','geographic','no_crs','no_grid','unit','unit_conflict','unit_unknown','scale','offset','all_invalid','no_quad','width_one','height_one')
+    if literal(scene,'FAILURES')!=expected_failures:raise RegistrationError('surface area fixed bilingual failure categories changed')
+
+
+
 def validate_raster_profile_curvature(repository: Path, registered: set[str]) -> None:
     suite='raster-profile-curvature-persistence'
     if suite not in registered:return
@@ -2970,7 +3005,7 @@ def validate_raster_tangential_curvature(repository: Path, registered: set[str])
 
 
 def validate_raster_lineage_observer(repository: Path, registered: set[str]) -> None:
-    if not registered.intersection({'raster-cut-fill-persistence','raster-tpi-persistence','raster-tri-persistence','raster-roughness-persistence'}):return
+    if not registered.intersection({'raster-cut-fill-persistence','raster-tpi-persistence','raster-tri-persistence','raster-roughness-persistence','raster-surface-area-persistence'}):return
     required={
         'scripts/utils/online_raster_lineage.py': ('BEGIN READ ONLY;', 'statement_timeout', 'LIMIT 1', 'public observation must hide internal operations', 'actor_principal_id', 'workflow_matches', "public=True", "public=False", 'closed(public, expected)', 'closed(internal, expected)', 'validate_container', 'StartedAt', 'read_error', "'prepare'"),
         'scripts/test/online-raster-lineage_test.py': ('test_public_null_and_complete_internal_are_both_required', 'test_public_cannot_expose_operations_or_omit_them', 'test_internal_null_empty_missing_extra_and_wrong_operation_rejected', 'test_current_execution_identity_and_workflow_are_required', 'test_container_identity_restart_labels_and_database_cannot_change'),
@@ -2979,7 +3014,7 @@ def validate_raster_lineage_observer(repository: Path, registered: set[str]) -> 
         text=(repository/path).read_text()
         if any(fragment not in text for fragment in fragments):raise RegistrationError('bounded raster internal lineage evidence incomplete: '+path)
     make=(repository/'Makefile').read_text()
-    for prefix in ('cut-fill','tpi','tri','roughness'):
+    for prefix in ('cut-fill','tpi','tri','roughness','surface-area'):
         gate=(repository/f'scripts/test/online-hosted-raster-{prefix}-gate.sh').read_text()
         if 'run_logged python3 scripts/utils/online_raster_lineage.py prepare' not in gate:raise RegistrationError('raster owner receipt preparation omitted')
         block=make.split(f'test-raster-{prefix}-online-runner:',1)[1].split('\n.PHONY:',1)[0]
@@ -4524,6 +4559,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_curvature_profile(repository, registered)
     validate_raster_profile_curvature(repository, registered)
     validate_raster_cut_fill(repository, registered)
+    validate_raster_surface_area(repository, registered)
     validate_raster_tangential_curvature(repository, registered)
     validate_raster_plan_curvature(repository, registered)
     validate_raster_tpi(repository, registered)
