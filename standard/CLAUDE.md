@@ -6,7 +6,7 @@
 
 数据元精确修订 GET 返回 ElementRevisionDetail：在原修订内容上提供稳定 element_code 和按 code_set_revision_id 解析的码值集完整只读快照。历史已撤回码值集仍按确定 ID 展示，不改用当前生效修订；权限仍为 standard.element.read，跨租户及不匹配的数据元/修订拒绝。Quality 管理界面可读取该投影追溯来源，worker 不依赖它。
 
-Catalog 的已审核字段标准映射按确定 `element_revision_id` 冻结。Standard 的 `/runtime/element-revisions/resolve-exact` 只为 Catalog 批量读取同 Tenant 的已发布及已撤回历史修订与固定码值集快照；它不按 `as_of` 重新选版，与 Model 使用的 `/runtime/element-revisions/resolve` 按当前生效修订解析是不同契约。
+Catalog 映射的修订冻结与历史读取以[StandardMapping 正式契约](../docs/spec/addp企业资源目录实现规范.md#standardmapping-展示与精确读取)为准；Standard 的两类机器批量入口、调用权限与验证边界统一见[数据字典边界](#数据字典边界)。
 
 数据元详情无论默认打开还是通过 `revision_id` 定位，均读取选中修订的精确详情。关联码值集的名称、编码、版次和状态来自该修订快照，不以可选候选反推历史引用；绑定快照缺失或身份不匹配时明确报错。只读状态不请求码值集候选，查看历史不额外要求 `standard.code_set.read`；可编辑草稿仍按类型与生效时间提供已发布候选，已绑定但不再可选的修订仅保留显示，不允许重新选入。选择其他候选后不显示旧快照的状态。
 
@@ -373,6 +373,8 @@ POST /api/v1/standard/elements/:id/revisions/:revision_id/withdraw
 GET /api/v1/standard/elements/:id/quality-rules # 只返回当前发布修订的编译规则
 ```
 
+机器批量修订解析另见[数据字典边界](#数据字典边界)，不复用上述用户详情读取资格。
+
 ### 码值集
 ```
 GET/POST /api/v1/standard/code-sets
@@ -523,9 +525,18 @@ draft → in_review → published → withdrawn
 
 ### 数据字典边界
 
-数据字典不是 Standard 内的持久化主资源。它由 Meta 的物理结构事实、Catalog 的语义关联和 Standard 在查询时点生效的数据元/码值解释组合形成。Standard 只提供标准数据元目录和按时点解析已发布修订的能力。
+数据字典的组合、查询时态、同步导出和验收边界统一见[Catalog 联邦读模型](../docs/spec/addp企业资源目录实现规范.md#514-数据字典联邦读模型)。Standard 提供数据元及其固定码值集修订快照，不保存数据字典主资源或 Catalog 映射；Catalog 按已审核映射读取固定修订，不能按查询时点另选版本，也不能把 Meta 当前字段表述为历史物理结构。
 
-Standard 通过唯一 `POST /api/v1/standard/runtime/element-revisions/resolve` 契约按同一 `as_of` 批量返回精确数据元修订和可选的精确码值集修订；Catalog 数据字典与 Model 审批冻结必须共用该契约，不得分别通过列表接口猜测当前修订。
+机器批量入口分别遵循下表，两者均要求当前 Tenant Service 身份及 `standard.element.read`，不以 `standard.catalog.read` 或用户页面读取资格代替。
+
+| 路由（前缀 `/api/v1/standard`） | 输入与选版语义 | 当前允许调用方 |
+| --- | --- | --- |
+| `POST /runtime/element-revisions/resolve` | `element_ids + as_of`：按统一时点解析生效修订，供 Model 审批冻结；不从列表猜测版本 | `addp-model`、`addp-catalog` |
+| `POST /runtime/element-revisions/resolve-exact` | `revision_ids`：读取已固定的 `published` 或 `withdrawn` 历史发布修订与固定码值集快照，不按 `as_of` 重选 | 仅 `addp-catalog` |
+
+精确读取的批量范围、`found=false` 语义及候选必须选择已发布修订的规则，统一见[StandardMapping 展示与精确读取](../docs/spec/addp企业资源目录实现规范.md#standardmapping-展示与精确读取)；历史快照可读不代表可重新选择或发布，也不授予目录或源数据访问权。
+
+现有[路由资格与参数测试](backend/internal/api/element_revision_resolution_handler_test.go)使用 SQLite 和受控 System AuthContext，覆盖两类调用方守卫、缺少权限／身份的拒绝、跨 Tenant／不存在结果及精确 ID 参数校验；不证明真实 OAuth、PostgreSQL 并发或 Catalog 联邦链路。标准入口见[测试与验收规范](../docs/spec/addp测试与验收规范.md#三标准入口)，Go T1 使用 `make test-module MODULE=standard GO_ONLY=1`，不计为完整模块或 T4 验收。
 
 ### 文档关联的多维设计
 
