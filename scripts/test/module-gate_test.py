@@ -28,6 +28,7 @@ COMMON_POSTGRES_SUCCESS_OUTPUT = (
     "--- PASS: TestIntegrationPostgresGraphTargetContract (0.01s)\n"
     "--- PASS: TestIntegrationResolvePostgresQueryOutputRewrite (0.01s)\n"
     "--- PASS: TestExecutionRetentionAssessmentAgainstPostgres (0.01s)\n"
+    "--- PASS: TestExecutionLifecycleAgainstPostgres (0.01s)\n"
     "PASS"
 )
 
@@ -250,7 +251,7 @@ class ModuleGateTest(unittest.TestCase):
         self.assertIn("TestIntegrationPostgresKMLWriter", calls[0])
         self.assertIn("TestIntegrationHighGoTableWrite", calls[0])
         self.assertIn("./execution", calls[1])
-        self.assertEqual("test ./execution -run ^TestExecution(AuthorizationFactsMigration|Events|EventRetention|RetentionAssessment)AgainstPostgres$ -count=1 -v", calls[1])
+        self.assertEqual("test ./execution -run ^TestExecution(AuthorizationFactsMigration|Events|EventRetention|RetentionAssessment|Lifecycle)AgainstPostgres$ -count=1 -v", calls[1])
         self.assertIn("./exportartifact", calls[2])
         self.assertIn("TestExportExecutionSourceAgainstPostgres", calls[2])
         self.assertIn("./dataprotection/projectionstore", calls[3])
