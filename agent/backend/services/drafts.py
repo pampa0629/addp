@@ -11,7 +11,7 @@ from jsonschema import Draft202012Validator
 from sqlalchemy import select
 
 from addp_common.tools import get_tool
-from agents.platform_conditions import CHECK_TOOL, config_arguments_digest
+from agents.platform_conditions import CHECK_TOOL, CREATE_TOOL, REVIEW_REASON, config_arguments_digest, validate_create
 from models.run import AgentRun
 from models.run_step import AgentRunStep
 from protocol.a2ui import transfer_config_check_presentation
@@ -128,4 +128,40 @@ async def read_session_draft(db, reference: str, *, session_id: int, user_id: in
     snapshot = await read_checked_draft_step(db, UUID(match[1]), session_id=session_id, user_id=user_id, tenant_id=tenant_id)
     if snapshot["reference"] != reference:
         raise DraftReferenceError("draft_reference_unavailable")
+    return snapshot
+
+
+async def read_review_draft(db, *, agent_run_id: UUID, tool_call_id: str,
+                            checkpoint: dict, session_id: int, user_id: int, tenant_id: int) -> dict:
+    """Resolve this review's automatic check, never select a recent draft."""
+    result = await db.execute(select(AgentRunStep).join(AgentRun).where(
+        AgentRun.id == agent_run_id, AgentRun.session_id == session_id,
+        AgentRun.user_id == user_id, AgentRun.tenant_id == tenant_id,
+        AgentRunStep.tool_call_id == tool_call_id,
+        AgentRunStep.tool_name == "request_clarification", AgentRunStep.status == "completed",
+    ).limit(2))
+    reviews = result.scalars().all()
+    if len(reviews) != 1:
+        raise DraftReferenceError("draft_reference_unavailable")
+    review = reviews[0]
+    request = review.input_data
+    if not isinstance(request, dict):
+        raise DraftReferenceError("draft_snapshot_invalid")
+    operation = request.get("operation_review", {})
+    if (request.get("reason") != REVIEW_REASON or not isinstance(operation, dict) or operation.get("tool") != CREATE_TOOL
+            or set(operation) != {"tool", "arguments"}):
+        raise DraftReferenceError("draft_snapshot_invalid")
+    result = await db.execute(_owned_steps(session_id, user_id, tenant_id).where(
+        AgentRun.id == agent_run_id,
+        AgentRunStep.protocol_invocation_id == review.protocol_invocation_id,
+        AgentRunStep.sequence > review.sequence,
+    ).limit(2))
+    checks = result.scalars().all()
+    if len(checks) != 1:
+        raise DraftReferenceError("draft_reference_unavailable")
+    snapshot = draft_snapshot(checks[0])
+    if (snapshot["arguments"] != operation["arguments"]
+            or checks[0].facts["config_checks"][0] != checkpoint["observed"]["config_checks"].get(CREATE_TOOL)):
+        raise DraftReferenceError("draft_snapshot_invalid")
+    validate_create(snapshot["arguments"], checkpoint)
     return snapshot

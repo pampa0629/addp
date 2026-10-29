@@ -8,6 +8,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.checkpoint import confirm_selection, new_checkpoint, normalize_checkpoint, validate_checkpoint_size
+from agents.platform_conditions import CREATE_TOOL
+from services.drafts import read_review_draft
 from models.interaction import Interaction
 from models.run import AgentRun
 from models.run_event import AgentRunEvent
@@ -151,6 +153,12 @@ async def resume_agent_run(
             checkpoint["confirmed"]["operation_reviews"].clear()
         else:
             confirm_selection(checkpoint, interaction.answer)
+            if checkpoint["confirmed"]["operation_reviews"].get(CREATE_TOOL) and checkpoint["draft_ref"] is None:
+                snapshot = await read_review_draft(
+                    db, agent_run_id=run.id, tool_call_id=interaction.tool_call_id,
+                    checkpoint=checkpoint, session_id=session_id, user_id=user_id, tenant_id=tenant_id,
+                )
+                checkpoint["draft_ref"] = snapshot["reference"]
     validate_checkpoint_size(checkpoint)
     run.checkpoint = checkpoint
     run.status = "running"

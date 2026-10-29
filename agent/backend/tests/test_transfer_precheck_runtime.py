@@ -15,7 +15,7 @@ from unittest.mock import patch
 import httpx
 from addp_common.client import Message
 
-from agents.checkpoint import confirm_selection
+from agents.checkpoint import capture_owner_facts, confirm_selection
 from agents.main_agent import _load_skill_registry
 from agents.platform_conditions import CHECK_TOOL, CREATE_TOOL, REVIEW_REASON, config_arguments_digest, prepare_review
 from graph.factory import AgentFactory
@@ -38,6 +38,8 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.check_status = 200
         self.cancel_check = False
         self.check_started = asyncio.Event()
+        self.formal_facts = {}
+        self.facts_status = self.context_status = self.create_status = 200
 
     async def transport(self, owner, method, path, **kwargs):
         self.requests.append((method, path, copy.deepcopy(kwargs)))
@@ -49,7 +51,11 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, request=request, json={**body, "access_token": "addp_dat_fixture"})
         self.assertEqual(owner._client.headers["Authorization"], "Bearer addp_dat_fixture")
         if path == "/api/v1/ontology/platform/capabilities/transfer.task.create":
-            return httpx.Response(200, request=request, json=self.definition)
+            return httpx.Response(self.context_status, request=request, json=self.definition)
+        if path == "/api/v1/manager/resource-facts":
+            return httpx.Response(self.facts_status, request=request, json=self.formal_facts[kwargs["params"]["locator"]])
+        if path == "/api/v1/meta/resource-tree/12/node":
+            return httpx.Response(self.facts_status, request=request, json=self.target_parent)
         if path == "/api/v1/transfer/task-config-checks":
             if self.cancel_check:
                 self.check_started.set()
@@ -57,12 +63,12 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
             result = self.check_results.pop(0) if self.check_results else self.check_result
             return httpx.Response(self.check_status, request=request, json=result)
         self.assertEqual(path, "/api/v1/transfer/task-definitions")
-        return httpx.Response(201, request=request, json={
+        return httpx.Response(self.create_status if self.create_status != 200 else 201, request=request, json={
             "id": 101, "name": self.arguments["name"], "task_type": "sync", "status": "idle",
             "desired_state": "stopped", "schedule": "", "enabled": False,
         })
 
-    async def run_factory(self, responses, allowed=None, accept_language="zh-cn", user_request="先建任务，不要运行", skill_body="fixture", draft_arguments=None):
+    async def run_factory(self, responses, allowed=None, accept_language="zh-cn", user_request="先建任务，不要运行", skill_body="fixture", draft_arguments=None, resuming=False, commit=True):
         client = _InferenceFixture(responses)
         events = []
         async def transport(owner, method, path, **kwargs):
@@ -73,13 +79,17 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
                     "skill_name": "transfer-generation", "user_request": user_request, "context_summary": "",
                     "user_id": 1, "tenant_id": 1, "token": "private-user-token", "agent_run_id": "precheck-run",
                     "checkpoint": self.checkpoint, "accept_language": accept_language,
+                    "resuming": resuming,
                     **({"draft_arguments": draft_arguments} if draft_arguments is not None else {}),
                 }, skill_body=skill_body, allowed_tool_names=allowed or ["platform.capability.context", CHECK_TOOL, CREATE_TOOL],
                 max_iterations=3, llm=_model(client),
             ):
                 events.append(event)
                 if event.checkpoint_committed is not None:
-                    event.checkpoint_committed.set_result(None)
+                    if commit:
+                        event.checkpoint_committed.set_result(None)
+                    else:
+                        event.checkpoint_committed.set_exception(RuntimeError("fixture_commit_failed"))
         return events, client
 
     def review_call(self, arguments=None):
@@ -101,6 +111,116 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
         reference = f"draft:{uuid.uuid4()}:{config_arguments_digest(self.arguments)}"
         self.checkpoint["draft_ref"] = reference
         return reference
+
+    async def test_confirmed_resume_creates_once_without_model_or_second_review(self):
+        self.prepare_resume()
+        events, client = await self.run_resume([self.review_call()])
+        self.assertEqual(len(client.calls), 0)
+        self.assertEqual(len(self.writes()), 1, [e.payload for e in events if e.kind in {"tool_result", "run_failed"}])
+        self.assertEqual(next(e.payload["args"] for e in events if e.kind == "tool_start" and e.payload["tool_name"] == CREATE_TOOL), self.arguments)
+        self.assertEqual(self.writes()[0][2]["json"]["config"], self.arguments["config"])
+        self.assertFalse(any(e.kind in {"interaction_required", "run_failed"} for e in events))
+        self.assertIn("101", next(e.payload["delta"] for e in events if e.kind == "text"))
+        self.assertEqual([e.payload["tool_name"] for e in events if e.kind == "tool_start"],
+                         ["platform.capability.context", "resource.facts.get", "resource.children.list", CREATE_TOOL, CHECK_TOOL])
+        committed = next(e for e in events if e.checkpoint_committed is not None)
+        self.assertEqual(committed.payload["checkpoint"]["confirmed"]["operation_reviews"], {})
+
+    def prepare_resume(self):
+        self.bind_draft()
+        _, source, target, _, _ = platform_fixture()
+        self.target_parent = target
+        fact = {**source, "item_id": 42, "data_type": "table", "full_name": "demo.events",
+                "item_fingerprint": "source-fingerprint", "scanned_depth": "table"}
+        self.formal_facts[fact["locator"]] = fact
+        capture_owner_facts("resource.facts.get", fact, self.checkpoint)
+        self.confirm()
+
+    async def run_resume(self, responses=None, **kwargs):
+        return await self.run_factory(responses or [],
+            allowed=["platform.capability.context", "resource.facts.get", "resource.children.list", CHECK_TOOL, CREATE_TOOL],
+            draft_arguments=self.arguments, resuming=True, **kwargs)
+
+    async def test_resume_changed_definition_facts_or_report_requires_new_confirmation(self):
+        for changed in ("definition", "facts", "report"):
+            with self.subTest(changed=changed):
+                self.setUp()
+                self.prepare_resume()
+                if changed == "definition": self.definition = {**self.definition, "revision": self.definition["revision"] + 1}
+                if changed == "facts": next(iter(self.formal_facts.values()))["fields"][0]["nullable"] = True
+                if changed == "report": self.check_result = {**self.report, "not_checked": ["changed"]}
+                events, client = await self.run_resume()
+                self.assertEqual(len(client.calls), 0)
+                self.assertEqual(self.writes(), [])
+                interaction = next(e.payload for e in events if e.kind == "interaction_required")
+                self.assertIn(json.dumps(self.arguments, ensure_ascii=False, sort_keys=True, separators=(",", ":")), interaction["prompt"])
+                checkpoint = [e.payload["checkpoint"] for e in events if e.kind == "checkpoint"][-1]
+                self.assertEqual(checkpoint["confirmed"]["operation_reviews"], {})
+                self.checkpoint = checkpoint
+                confirm_selection(self.checkpoint, interaction["candidates"][0])
+                events, client = await self.run_resume()
+                self.assertEqual(len(client.calls), 0)
+                self.assertEqual(len(self.writes()), 1)
+                self.assertFalse(any(e.kind in {"interaction_required", "run_failed"} for e in events))
+
+    async def test_resume_dependency_denial_and_unsupported_stop_without_model_or_write(self):
+        for failure in ("context", "facts", "check", "unsupported", "missing_fields"):
+            with self.subTest(failure=failure):
+                self.setUp()
+                self.prepare_resume()
+                if failure == "context": self.context_status = 403
+                if failure == "facts": self.facts_status = 403
+                if failure == "check": self.check_status = 403
+                if failure == "unsupported": self.check_result = {**self.report, "status": "unsupported"}
+                if failure == "missing_fields": next(iter(self.formal_facts.values())).pop("fields")
+                events, client = await self.run_resume()
+                self.assertEqual(len(client.calls), 0)
+                self.assertEqual(self.writes(), [])
+                self.assertTrue(any(e.kind == "run_failed" for e in events))
+                self.assertFalse(any(e.kind == "interaction_required" for e in events))
+
+    async def test_resume_commit_failure_and_uncertain_write_never_retry(self):
+        self.prepare_resume()
+        with self.assertRaisesRegex(RuntimeError, "fixture_commit_failed"):
+            await self.run_resume(commit=False)
+        self.assertEqual(self.writes(), [])
+        self.create_status = 503
+        events, client = await self.run_resume()
+        self.assertEqual(len(client.calls), 0)
+        self.assertEqual(len(self.writes()), 1)
+        self.assertTrue(any(e.kind == "run_failed" for e in events))
+        self.assertFalse(any(e.kind == "text" for e in events))
+        checkpoint = [e.payload["checkpoint"] for e in events if e.kind == "checkpoint"][-1]
+        self.assertEqual(checkpoint["confirmed"]["operation_reviews"], {})
+
+    async def test_resume_clock_change_is_not_a_new_review_and_completion_is_localized(self):
+        self.prepare_resume()
+        self.check_result = {**self.report, "observed_at": "2026-10-29T00:00:00Z", "binding_hash": "f" * 64}
+        events, client = await self.run_resume(accept_language="en-US")
+        self.assertEqual(len(client.calls), 0)
+        self.assertEqual(len(self.writes()), 1)
+        self.assertIn("Task created: ID 101", next(e.payload["delta"] for e in events if e.kind == "text"))
+
+    async def test_cancelled_review_does_not_trigger_runtime_creation(self):
+        self.prepare_resume()
+        identity = self.checkpoint["observed"]["operation_reviews"][CREATE_TOOL]
+        confirm_selection(self.checkpoint, {"value": "cancel", "candidate": {"operation_review": identity}})
+        events, _ = await self.run_resume([Message(role="assistant", content="已取消")])
+        self.assertEqual(self.writes(), [])
+        self.assertFalse(any(e.kind == "tool_start" and e.payload["tool_name"] in {CREATE_TOOL, CHECK_TOOL, "resource.facts.get"} for e in events))
+
+    async def test_cancel_during_resume_check_never_creates(self):
+        from langgraph.errors import NodeCancelledError
+        self.prepare_resume()
+        self.cancel_check = True
+        task = asyncio.create_task(self.run_resume())
+        try:
+            await asyncio.wait_for(self.check_started.wait(), timeout=5)
+        finally:
+            task.cancel()
+            with self.assertRaises((asyncio.CancelledError, NodeCancelledError)):
+                await task
+        self.assertEqual(self.writes(), [])
 
     async def test_bound_review_uses_exact_candidate_and_current_report(self):
         reference = self.bind_draft()

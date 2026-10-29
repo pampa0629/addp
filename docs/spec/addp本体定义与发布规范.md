@@ -190,7 +190,7 @@ Skill Runtime 装配用 `platform_routed=true` 声明该任务领域必须经平
 
 当前平台能力只覆盖创建 bounded/snapshot/native table、无计划、未启用且不自动扫描的任务定义，写入策略为 replace/append；创建不等于运行。输入 Schema、目标类型词汇由 Manifest 唯一声明，Ontology 不复制 Provider 物理规则。
 
-Agent 在当前 Harness 调用内成功读取 `platform.capability.context` 后才允许复核或创建。具有 Transfer 创建 Tool 的 Harness 每次进入（包括 Interaction 恢复）时，由 Runtime 经白名单内的正式 Tool 主动读取当前能力，记录同一 AgentRun 的调用审计和检查点，再交给模型；不依赖模型记住刷新，不复用 checkpoint 中的旧定义。读取失败终止该次调用，不调用模型或写 Tool；新修订仍使旧复核指纹失效。Runtime 按返回的条件身份调用有限的条件适配器；未知条件明确拒绝，不交给模型自行忽略。核验源有正式结构事实、目标父节点由 owner 返回、边界/装载/写入策略符合条件，以及直接字段映射有依据。当前查询整形适配仅覆盖 Skill 已有的 MQL 显式直接投影和可选单次数组展开，拒绝复杂表达式或其他查询语言；它不替代 Provider 的正式查询分析和 Transfer 后端校验，不执行查询、不读取样本、不声称扫描结构完整覆盖业务值。
+Agent 在当前 Harness 调用内成功读取 `platform.capability.context` 后才允许复核或创建。具有 Transfer 创建 Tool 的 Harness 每次进入（包括 Interaction 恢复）时，由 Runtime 经白名单内的正式 Tool 主动读取当前能力，记录同一 AgentRun 的调用审计和检查点；不依赖模型记住刷新，不复用 checkpoint 中的旧定义。没有正式创建确认时再交给模型；确认恢复由 Runtime 按交互协议重读原参数、刷新源和目标事实并重新预检，匹配原指纹后沿原创建 Tool 提交，不再请求模型决策或收尾。稳定报告或事实变化要求同参数重新复核；条件不满足、读取失败或结果不明终止，不自动重试；新修订仍使旧复核指纹失效。Runtime 按返回的条件身份调用有限的条件适配器；未知条件明确拒绝，不交给模型自行忽略。核验源有正式结构事实、目标父节点由 owner 返回、边界/装载/写入策略符合条件，以及直接字段映射有依据。当前查询整形适配仅覆盖 Skill 已有的 MQL 显式直接投影和可选单次数组展开，拒绝复杂表达式或其他查询语言；它不替代 Provider 的正式查询分析和 Transfer 后端校验，不执行查询、不读取样本、不声称扫描结构完整覆盖业务值。
 
 `request_clarification` 的 `transfer_create_review` 原因要求 `operation_review={tool,arguments}` 和 confirm/cancel 两个选项。Runtime 先校验条件及 Manifest，再追加确切参数的规范化 JSON 到复核提示中；仅保存参数与能力修订/摘要绑定的指纹，选项身份由服务端生成，模型不能通过普通候选伪造已复核状态。正式 Interaction 回答才写入 confirmed；创建前重新核验全部条件和指纹。任务参数、语义摘要或 owner 结构事实变化都要求重新复核。提交前消费确认并持久化检查点，响应丢失或失败不自动重用确认。此复核是配置确认，不是新的 Owner 审批或权限授予。
 

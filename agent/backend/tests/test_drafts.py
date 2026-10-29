@@ -23,6 +23,9 @@ from models.run import AgentRun
 from models.run_step import AgentRunStep
 from models.session import Session
 from services.drafts import draft_snapshot, draft_presentation, list_session_drafts, read_session_draft, DraftReferenceError
+from services.runs import resume_agent_run
+from agents.platform_conditions import prepare_review
+from models.interaction import Interaction
 from tests.test_platform_conditions import platform_fixture, precheck_fixture
 from tests.test_platform_routing import ScriptedRouter, catalog_fixture, registry_fixture
 
@@ -109,6 +112,62 @@ class DraftScopeTests(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         self.database.close()
         self.engine.dispose()
+
+    def review_pipeline(self):
+        _, _, _, arguments, checkpoint = platform_fixture()
+        identity = prepare_review(arguments, checkpoint)
+        run = self.database.query(AgentRun).filter_by(session_id=self.sessions[0]).one()
+        run.status, run.checkpoint = "waiting", checkpoint
+        review = AgentRunStep(id=uuid.uuid4(), agent_run_id=run.id, sequence=2, step_type="tool_call",
+            protocol_invocation_id="review-invocation", tool_call_id="this-review", status="completed",
+            tool_name="request_clarification", input_data={"reason": "transfer_create_review",
+                "operation_review": {"tool": "transfer.task.create", "arguments": copy.deepcopy(arguments)}})
+        check = AgentRunStep(id=uuid.uuid4(), agent_run_id=run.id, sequence=3, step_type="tool_call",
+            protocol_invocation_id="review-invocation", tool_call_id="automatic-check", status="completed",
+            tool_name="transfer.task.config.check", input_data=copy.deepcopy(arguments),
+            facts={"config_checks": [checkpoint["observed"]["config_checks"]["transfer.task.create"]]})
+        self.database.add_all([review, check])
+        self.database.commit()
+        self.db.flush = AsyncMock(side_effect=self.database.flush)
+        answer = {"value": identity["fingerprint"], "candidate": {"operation_review": identity}}
+        interaction = Interaction(agent_run_id=run.id, tool_call_id=review.tool_call_id, answer=answer)
+        return run, review, check, interaction
+
+    async def test_ordinary_confirmation_binds_this_review_check_and_restores_exact_parameters(self):
+        run, _, check, interaction = self.review_pipeline()
+        resumed = await resume_agent_run(self.db, interactions=[interaction], session_id=self.sessions[0], user_id=1, tenant_id=1)
+        self.assertEqual(resumed.checkpoint["draft_ref"], draft_snapshot(check)["reference"])
+        snapshot = await read_session_draft(self.db, resumed.checkpoint["draft_ref"], session_id=self.sessions[0], user_id=1, tenant_id=1)
+        self.assertEqual(snapshot["arguments"], check.input_data)
+        self.assertNotIn("arguments", resumed.checkpoint)
+        self.assertEqual(resumed.id, run.id)
+        self.assertEqual(resumed.status, "running")
+
+    async def test_confirmation_does_not_fall_back_to_another_invocation_check(self):
+        run, _, check, interaction = self.review_pipeline()
+        check.protocol_invocation_id = "other-invocation"
+        self.database.commit()
+        with self.assertRaises(DraftReferenceError):
+            await resume_agent_run(self.db, interactions=[interaction], session_id=self.sessions[0], user_id=1, tenant_id=1)
+        self.assertIsNone(run.checkpoint["draft_ref"])
+        self.assertEqual(run.status, "waiting")
+
+    async def test_confirmation_rejects_ambiguous_check_and_changed_review_arguments(self):
+        run, review, check, interaction = self.review_pipeline()
+        duplicate = AgentRunStep(id=uuid.uuid4(), agent_run_id=run.id, sequence=4, step_type="tool_call",
+            protocol_invocation_id=check.protocol_invocation_id, status="completed", tool_name=check.tool_name,
+            input_data=copy.deepcopy(check.input_data), facts=copy.deepcopy(check.facts))
+        self.database.add(duplicate)
+        self.database.commit()
+        with self.assertRaises(DraftReferenceError):
+            await resume_agent_run(self.db, interactions=[interaction], session_id=self.sessions[0], user_id=1, tenant_id=1)
+        self.database.delete(duplicate)
+        review.input_data = {**review.input_data, "operation_review": {
+            "tool": "transfer.task.create", "arguments": {**check.input_data, "name": "different"}}}
+        self.database.commit()
+        with self.assertRaises(DraftReferenceError):
+            await resume_agent_run(self.db, interactions=[interaction], session_id=self.sessions[0], user_id=1, tenant_id=1)
+        self.assertEqual(run.status, "waiting")
 
     async def test_query_enforces_user_tenant_session_and_exact_version(self):
         scope = dict(session_id=self.sessions[0], user_id=1, tenant_id=1)

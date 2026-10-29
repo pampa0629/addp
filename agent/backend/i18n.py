@@ -136,3 +136,14 @@ def transfer_config_check_completed(accept_language: str, report: dict) -> str:
 def invocation_stopped(accept_language: str) -> str:
     return ("This invocation has stopped; this tool was not executed." if _language(accept_language) == "en"
             else "本次调用已停止，未执行此工具。")
+
+
+def transfer_creation_completed(accept_language: str, result: dict) -> str:
+    if _language(accept_language) == "en":
+        return f"Task created: ID {result['id']}. Status: {result['status']} / {result['desired_state']}; disabled, no schedule. The task was not run."
+    return f"任务已创建，ID：{result['id']}。状态：{result['status']} / {result['desired_state']}，未启用、无计划。任务尚未运行。"
+
+
+def transfer_creation_stopped(accept_language: str) -> str:
+    return ("Creation stopped. See the audited tool results; no automatic retry was performed." if _language(accept_language) == "en"
+            else "创建流程已终止，请查看工具审计结果；未自动重试。")

@@ -14,7 +14,7 @@ Agent 模块是 ADDP 平台的**自然语言交互入口**，用户通过对话�
 
 平台语义选择：`platform_routed=true` 的任务领域先识别是否需查询目录，再用 `platform.capabilities.list` 读取 Ontology 已激活定义，LLM 根据概念/条件/效果选择 capability，Runtime 核验 owner、Skill 与 Tool 白名单后才进入领域 Harness。不接受模型直接选择该 Skill，不从空目录选择首项，目录失败终止相关 run；普通对话及其他 Skill 不依赖 Ontology。当前仅 Transfer 创建切片启用。`tests/test_platform_routing.py` 用短业务输入验证消费与拒绝边界，是脚本化模型 T1，不宣称真实 LLM 或 T4 已验收。
 
-Transfer 创建条件以运行时 `platform.capability.context` 返回的定义为准，`agents/platform_conditions.py` 只实现有限条件适配，不读取代码 JSON 或复制另一套条件清单。每次具有创建 Tool 的 Harness 调用（包括澄清恢复），Runtime 先通过白名单内的正式 Tool 读取当前能力并保存调用审计与检查点，再交给模型；读取失败终止，不依赖模型记住刷新。模型后续主动刷新也先清空旧上下文，失败不能沿用旧结果。正式 ResourceFacts 刷新替换原结构快照，不保留新响应缺失的旧字段。完整配置复核通过 Runtime 私有 `request_clarification` 的 `transfer_create_review` 完成，指纹绑定确切参数、本体修订/摘要与 owner 事实；变化后重新确认。创建前消费确认，checkpoint 经 AG-UI 消费者事务提交并内部回执后才调用 owner；提交失败或回执前取消不调用 owner，已经发出的调用不承诺撤销。仍只创建 idle/stopped 任务，不执行。详见设计契约 1.13；脚本化门禁覆盖条件、复核绑定和提交屏障，不代替真实对话验收。
+Transfer 创建条件以运行时 `platform.capability.context` 返回的定义为准，`agents/platform_conditions.py` 只实现有限条件适配，不读取代码 JSON 或复制另一套条件清单。每次具有创建 Tool 的 Harness 调用（包括澄清恢复），Runtime 先通过白名单内的正式 Tool 读取当前能力并保存调用审计与检查点；没有正式创建确认时再交给模型，正式确认恢复由 Runtime 重读精确草稿、刷新源结构与目标父节点并重新预检，匹配指纹后沿同一创建 Tool 推进；读取失败终止，不依赖模型记住刷新。模型后续主动刷新也先清空旧上下文，失败不能沿用旧结果。正式 ResourceFacts 刷新替换原结构快照，不保留新响应缺失的旧字段。完整配置复核通过 Runtime 私有 `request_clarification` 的 `transfer_create_review` 完成，指纹绑定确切参数、本体修订/摘要与 owner 事实；变化后重新确认。创建前消费确认，checkpoint 经 AG-UI 消费者事务提交并内部回执后才调用 owner；提交失败或回执前取消不调用 owner，已经发出的调用不承诺撤销。仍只创建 idle/stopped 任务，不执行。详见设计契约 1.13；脚本化门禁覆盖条件、复核绑定和提交屏障，不代替真实对话验收。
 
 Transfer 创建的正式只读预检由 Runtime 在最终复核前及创建前自动通过白名单 `transfer.task.config.check` 执行，使用唯一 Manifest Adapter/SDK，记录同一 Run 的审计。unsupported 阻止创建，unknown 的未检查项与运行要求由固定本地化提示展示并绑定知情确认；supported 不保证执行成功。报告绑定完整 Tool 参数与当前能力/结构事实；仅排除报告自然前进的 observed_at 及其 binding_hash，其他事实变化要求重新确认。失败先清除旧报告、终止当前运行，不吞成 unknown。运行报告保存在受限 checkpoint，不进入平台静态本体图。Copilot 仍只通过可选的 `transfer.draft.generate` 提供草稿，不承担预检、确认或创建职责。
 
@@ -35,6 +35,8 @@ Transfer 的行粒度和字段保留范围分开处理：不展开数组不授�
 本轮 `make test-agent-eval`、`make test-agent-frontend`（69 项单测、7 项受控浏览器及构建）、`make test-platform-review`、`make test-go-dependency-policy`、`make test-ontology-postgres` 和 `make test-ontology-falkor` 通过。回归覆盖原参数复核、模型漂移、恢复重读、引用损坏、歧义、未确认、当前权限拒绝、缺少资源事实及 unsupported 阻止创建；真实 Harness/Manifest/SDK 的受控 HTTP 夹具不创建个人业务任务。Ontology 同步 Common 已引入的 MinIO 间接依赖，版本沿用规约；已提交 Parquet 读取说明经审查属该 native-table 切片之外，只更新来源冻结。完整 Agent 模块门禁首次在公共 T0 因 Meta 权限常量未定义失败；该常量生成后串行复跑越过编译，最终因 System/Meta 新 authorization-facts 接口被 Swagger 覆盖检查判为 stale 而失败，后续 owner 阶段未执行。Ontology 整套模块尝试在公共 Spark 启动夹具 15 秒超时处失败，后续 Agent 串行复跑同项通过，未放宽超时或宣称修复偶发原因；专项通过不替代整套通过。`make test-changed` 因其他 owner 的 T2 连接配置缺失执行前阻断。修订 21 的真实部署创建验收和 Hosted T4 未运行；本轮未运行 Transfer、创建目标表或写入 Outdoor 数据。待公共 Swagger 登记完成并重跑门禁后，由用户重启 Agent/Ontology，再验证原参数创建。
 
 ## 目录结构
+
+2026-10-29 按用户确认的职责调整，正式 Transfer 创建确认恢复由 Runtime 确定性推进。普通创建确认在同一 Run、同一协议调用内核对复核参数、唯一自动预检及确认指纹后，建立既有 AgentDraftRef；已绑定原稿沿用原引用，检查点不复制参数。恢复重读精确参数及当前本体、源结构和目标父节点，再经原创建条件、预检、确认消费与持久屏障调用同一 Adapter；没有模型决定是否再次复核或生成成功收尾。稳定事实变化重新确认同参数，条件失败和结果不明终止，不自动重试。`make test-agent-eval` 已通过，受控 HTTP/推理夹具覆盖 SQL 身份与步骤关联、零模型创建、变化后重新确认、取消及失败边界；来源冻结、完整模块门禁和 PG/FalkorDB 联动待本轮后续记录。未重启服务、运行 Transfer 或写入业务数据，真实模型和 Hosted T4 未验收。
 
 正式 Transfer 配置预检的固定报告由 Runtime 从已验证 owner 响应产生 `TransferConfigCheckReport` Presentation，显式草稿检查与自动检查共用路径。只投影状态、检查时间、范围和完整诊断，不带主体、绑定哈希或业务数据，不发 action。消息 parts 与安全回放保存同一快照；历史报告不代表当前权限或执行成功。LLM 只解释/修正，服务失败不能生成 unknown 卡片。共享实现与 Transfer 向导共用，现有 Agent eval、共享组件、Agent/Transfer 浏览器与构建门禁覆盖；本次非破坏性 Catalog 扩充不改变既有 props、创建条件或权限。
 

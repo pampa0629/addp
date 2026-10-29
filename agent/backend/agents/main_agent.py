@@ -465,6 +465,7 @@ async def stream_agent_response(
             "token": token,
             "agent_run_id": agent_run_id,
             "checkpoint": checkpoint or {},
+            "resuming": bool(forced_skill_name),
             "accept_language": accept_language,
             **({"draft_arguments": draft_arguments} if draft_arguments is not None else {}),
         }
