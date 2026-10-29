@@ -2,6 +2,7 @@ package repository
 
 import (
 	"fmt"
+	"github.com/addp/common/cleanup"
 	"strings"
 
 	"github.com/addp/standard/internal/models"
@@ -24,6 +25,9 @@ func Migrate(db *gorm.DB) error {
 			if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS standard").Error; err != nil {
 				return fmt.Errorf("create standard schema: %w", err)
 			}
+		}
+		if err := cleanup.MigrateResults(tx, "standard"); err != nil {
+			return err
 		}
 		if err := removeRetiredCollectionTables(tx); err != nil {
 			return err

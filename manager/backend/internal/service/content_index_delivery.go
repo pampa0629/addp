@@ -62,6 +62,7 @@ func (s *HybridSearchService) UpsertContentDocuments(ctx context.Context, tenant
 			}
 			payload = append(payload, contentSnapshotPayload(tenantID, document))
 			op.DocumentIDs = append(op.DocumentIDs, document.DocumentID)
+			op.EngineIDs = append(op.EngineIDs, document.EngineID)
 		}
 		sort.Strings(op.DocumentIDs)
 		return s.deliveries.Register(ctx, tx, s.epoch, op)
@@ -233,6 +234,9 @@ func (s *HybridSearchService) reconcileContentDeliveries(ctx context.Context) er
 		return err
 	}
 	if !s.initialized.Load() {
+		if err := s.deliveries.RequireNoCleanupHold(ctx, s.epoch); err != nil {
+			return err
+		}
 		if err := s.initIndexes(ctx); err != nil {
 			return ErrSearchDisabled
 		}

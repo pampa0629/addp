@@ -63,7 +63,7 @@ func TestBuildCancellationHTTPKeepsAcceptedSeparateFromStopped(t *testing.T) {
 	svc := service.NewBuildService(repo, nil, nil, nil, nil, nil, nil, nil, "", nil)
 	auth := authtest.NewTenantUserAuthContextServer(t, "7", map[string][]string{"Bearer canceller": {"graph.build_task.cancel"}})
 	defer auth.Close()
-	router := SetupRouter(&config.Config{SystemServiceURL: auth.URL}, nil, nil, nil, NewBuildHandler(svc), nil, nil, nil, modulelifecycle.NewStandalone("graph"))
+	router := SetupRouter(NewCleanupResultHandler(nil), &config.Config{SystemServiceURL: auth.URL}, nil, nil, nil, NewBuildHandler(svc), nil, nil, nil, modulelifecycle.NewStandalone("graph"))
 	send := func(body string, expected int, state string) {
 		t.Helper()
 		req := httptest.NewRequest("POST", fmt.Sprintf("/api/v1/graph/graphs/%d/build/tasks/%d/cancel", kg.ID, task.ID), strings.NewReader(body))

@@ -697,6 +697,7 @@
           "plan": "质量检查方案",
           "rule": "质量规则",
           "classification": "数据分级分类",
+          "cleanup_result": "资源回收专业结果",
           "cleanup_authorization": "清理执行授权",
           "cleanup": "清理任务",
           "code_set": "码表",
@@ -1166,7 +1167,12 @@
         "retry": "按原命令恢复结果",
         "saved": "已取得批准记录；未续期或授予普通数据读取权。当前是否可执行仍由 Worker 核验。",
         "state": "记录状态",
-        "states": { "unexpired": "期限内、未撤销", "expired": "已到期", "revoked": "已撤销", "unknown": "状态未确认" },
+        "states": {
+          "unexpired": "期限内、未撤销",
+          "expired": "已到期",
+          "revoked": "已撤销",
+          "unknown": "状态未确认"
+        },
         "revoke": "撤销资格",
         "revokeBoundary": "撤销后不得开始新的采集读取。保留资格历史和已采集结果，不改变任何账号的数据授权。",
         "reason": "撤销原因",
@@ -1197,7 +1203,14 @@
         "after": "设置为",
         "result": "办理结果",
         "capacity": "数据项超过单次资源树容量（20,000 项），未加载部分清单，也未进行任何设置。",
-        "results": {"pending": "未执行", "saving": "提交中", "succeeded": "已成功", "unchanged": "无需变更", "failed": "失败，待核对", "unknown": "结果未知，待核对"},
+        "results": {
+          "pending": "未执行",
+          "saving": "提交中",
+          "succeeded": "已成功",
+          "unchanged": "无需变更",
+          "failed": "失败，待核对",
+          "unknown": "结果未知，待核对"
+        },
         "title": "直接授权许可",
         "boundary": "此处控制是否允许新增直接授权。Catalog 业务批准始终保留；已有授权、拒绝和撤销不因许可设置而改变。未单独配置的数据项按 Catalog 的持久部署状态决定默认值。",
         "search": "数据项名称或路径",
@@ -1977,7 +1990,7 @@
       },
       "scanResult": {
         "title": "评估结果",
-        "bannerTitle": "评估已完成",
+        "bannerTitle": "资源评估协调结果",
         "bannerDesc": "发现 {items} 个待处理项，涉及 {modules} 个模块。",
         "scanTime": "评估时间",
         "scanScope": "评估范围",
@@ -1991,7 +2004,7 @@
       },
       "executeResult": {
         "title": "回收结果",
-        "bannerTitle": "资源回收已完成",
+        "bannerTitle": "资源回收协调结果",
         "bannerDesc": "本次影响 {records} 条状态记录，释放 {space}。",
         "affectedRecords": "影响记录"
       },
@@ -2150,7 +2163,8 @@
         "scanCreated": "资源评估任务已创建",
         "scanFailed": "创建资源评估任务失败: {error}",
         "cleanupCreated": "资源回收任务已创建",
-        "cleanupFailed": "创建资源回收任务失败: {error}",
+        "managerScopeRequired": "请显式选择 Meta 和 Manager 重新评估，再执行 Meta 清理。",
+      "cleanupFailed": "创建资源回收任务失败: {error}",
         "taskFailed": "任务执行失败",
         "noScanFirst": "请先执行资源评估",
         "confirmRequired": "请先完成确认",

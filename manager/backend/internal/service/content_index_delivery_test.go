@@ -265,7 +265,7 @@ func TestContentDeliveryCanceledCallerStillPersistsReceipt(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	svc, db := contentDeliveryServiceFixture(t, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) { t.Error("receipt persistence called upstream") }))
-	op := &models.ContentIndexDelivery{TenantID: 7, DocumentIDs: []string{"item"}, Kind: repository.IndexDeliveryWrite}
+	op := &models.ContentIndexDelivery{TenantID: 7, DocumentIDs: []string{"item"}, EngineIDs: []uint{9}, Kind: repository.IndexDeliveryWrite}
 	if err := db.Transaction(func(tx *gorm.DB) error { return svc.deliveries.Register(t.Context(), tx, svc.epoch, op) }); err != nil {
 		t.Fatal(err)
 	}
@@ -492,7 +492,7 @@ func TestContentDeliveryRecoveryRejectsInsufficientOrConflictingHistory(t *testi
 				}
 				_ = json.NewEncoder(w).Encode(page)
 			}))
-			op := &models.ContentIndexDelivery{TenantID: 7, DocumentIDs: []string{"item"}, Kind: repository.IndexDeliveryWrite}
+			op := &models.ContentIndexDelivery{TenantID: 7, DocumentIDs: []string{"item"}, EngineIDs: []uint{9}, Kind: repository.IndexDeliveryWrite}
 			if err := db.Transaction(func(tx *gorm.DB) error { return svc.deliveries.Register(t.Context(), tx, svc.epoch, op) }); err != nil {
 				t.Fatal(err)
 			}
@@ -596,7 +596,7 @@ func TestContentDeliveryRecoveryPaginatesThroughUIDZero(t *testing.T) {
 		task.CustomMetadata = "other"
 		_ = json.NewEncoder(w).Encode(meilisearch.TaskResult{Total: 3, Next: 0, Results: []meilisearch.Task{task}})
 	}))
-	op := &models.ContentIndexDelivery{TenantID: 7, DocumentIDs: []string{"item"}, Kind: repository.IndexDeliveryWrite}
+	op := &models.ContentIndexDelivery{TenantID: 7, DocumentIDs: []string{"item"}, EngineIDs: []uint{9}, Kind: repository.IndexDeliveryWrite}
 	if err := db.Transaction(func(tx *gorm.DB) error { return svc.deliveries.Register(t.Context(), tx, svc.epoch, op) }); err != nil {
 		t.Fatal(err)
 	}

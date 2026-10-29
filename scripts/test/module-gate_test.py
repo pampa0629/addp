@@ -395,7 +395,7 @@ package = args[1]
 pattern = args[args.index('-run')+1]
 catalog = {
     './internal/repository':['TestClaimedComponentsAgainstPostgres'],
-    './internal/service':['TestDataItemAuthorizationFactsAgainstPostgres','TestScanPlanFactsAgainstPostgres','TestProductionBasicScanAgainstPostgres'],
+    './internal/service':['TestDataItemAuthorizationFactsAgainstPostgres','TestScanPlanFactsAgainstPostgres','TestProductionBasicScanAgainstPostgres','TestCleanupRuntimeAtomicityAgainstPostgres'],
     './internal/scanadapter':['TestPreciseCatalogScanAgainstPostgres'],
     './internal/scanprocessor':['TestDelimitedEncodingRefreshAgainstPostgres'],
     './internal/scanruntime':['TestObjectModelRelatedRefsAgainstPostgres','TestFTPBasicCompositionAgainstPostgres'],
@@ -437,8 +437,11 @@ else:
                 self.assertEqual(0,result.returncode,result.stderr)
                 self.assertEqual([f'./internal/{name}' for name in packages],[call['args'][1] for call in calls])
                 self.assertEqual('postgres://fixture/addp_test',owner)
+                if packages == all_packages:
+                    self.assertIn('--- PASS: TestCleanupRuntimeAtomicityAgainstPostgres ',result.stdout)
                 if packages == ['service']:
                     self.assertNotIn('TestProductionBasicScanAgainstPostgres',result.stdout)
+                    self.assertNotIn('TestCleanupRuntimeAtomicityAgainstPostgres',result.stdout)
                     self.assertIn('--- PASS: TestDataItemAuthorizationFactsAgainstPostgres ',result.stdout)
                     self.assertIn('--- PASS: TestScanPlanFactsAgainstPostgres ',result.stdout)
                 if packages == ['scanruntime']:
@@ -449,6 +452,8 @@ else:
     def test_meta_postgres_each_group_rejects_missing_required_proofs_skips_zero_matches_and_go_failure(self) -> None:
         for group in ('all','authorization-facts','file-composition'):
             required = ('TestObjectModelRelatedRefsAgainstPostgres','TestFTPBasicCompositionAgainstPostgres') if group == 'file-composition' else ('TestDataItemAuthorizationFactsAgainstPostgres','TestScanPlanFactsAgainstPostgres')
+            if group == 'all':
+                required += ('TestCleanupRuntimeAtomicityAgainstPostgres',)
             for mode in ('skip','empty','failure',*('omit:'+name for name in required)):
                 with self.subTest(group=group,mode=mode):
                     result, calls, owner = self._run_meta_postgres_group(['--test',group],mode)

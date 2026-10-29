@@ -13,6 +13,7 @@ import (
 	_ "github.com/addp/common/format/plugins/csv"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/repository"
+	"github.com/addp/transfer/internal/testpg"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -21,7 +22,7 @@ func TestTransferCleanupScanFindsTaskDefinitionsByEngineContext(t *testing.T) {
 	t.Parallel()
 
 	db := newTransferCleanupTestDB(t)
-	svc := NewTransferCleanupService(db, nil, nil, transferCleanupTestConfig())
+	svc := NewTransferCleanupService(db, nil, transferCleanupTestConfig())
 	createTransferCleanupTestTask(t, db, 7, "match-source", 1, 2, true)
 	createTransferCleanupTestTask(t, db, 7, "match-target", 3, 1, true)
 	createTransferCleanupTestTask(t, db, 7, "other", 3, 4, true)
@@ -47,7 +48,7 @@ func TestTransferCleanupLogicalDisablesTaskDefinitions(t *testing.T) {
 	t.Parallel()
 
 	db := newTransferCleanupTestDB(t)
-	svc := NewTransferCleanupService(db, nil, nil, transferCleanupTestConfig())
+	svc := NewTransferCleanupService(db, nil, transferCleanupTestConfig())
 	task := createTransferCleanupTestTask(t, db, 7, "match", 1, 2, true)
 	createTransferCleanupTestTask(t, db, 7, "other", 3, 4, true)
 	if err := db.Model(&models.TransferTask{}).Where("id = ?", task.ID).Update("status", models.TaskStatusIdle).Error; err != nil {
@@ -75,7 +76,7 @@ func TestTransferCleanupPhysicalDisablesEngineBoundTaskDefinitions(t *testing.T)
 	t.Parallel()
 
 	db := newTransferCleanupTestDB(t)
-	svc := NewTransferCleanupService(db, nil, nil, transferCleanupTestConfig())
+	svc := NewTransferCleanupService(db, nil, transferCleanupTestConfig())
 	task := createTransferCleanupTestTask(t, db, 7, "match", 1, 2, true)
 	other := createTransferCleanupTestTask(t, db, 7, "other", 3, 4, true)
 	if err := db.Model(&models.TransferTask{}).Where("id = ?", task.ID).Update("status", models.TaskStatusIdle).Error; err != nil {
@@ -108,15 +109,12 @@ func TestTransferCleanupPhysicalRejectsRunningBoundedTask(t *testing.T) {
 	t.Parallel()
 
 	db := newTransferCleanupTestDB(t)
-	svc := NewTransferCleanupService(db, nil, nil, transferCleanupTestConfig())
+	svc := NewTransferCleanupService(db, nil, transferCleanupTestConfig())
 	task := createTransferCleanupTestTask(t, db, 7, "running-bounded", 1, 2, true)
 
 	stats, err := svc.ExecuteCleanup(context.Background(), 7, events.CleanupModePhysical, map[string]interface{}{"engine_id": 1})
-	if err != nil {
-		t.Fatalf("ExecuteCleanup() error = %v", err)
-	}
-	if stats.DeletedTaskDefinitions != 0 || len(stats.Errors) != 1 {
-		t.Fatalf("stats = %#v, want one runtime-active cleanup error", stats)
+	if !errors.Is(err, repository.ErrTaskDeletionRuntimeActive) || stats.DeletedTaskDefinitions != 0 {
+		t.Fatalf("runtime was not rejected: %+v %v", stats, err)
 	}
 	var count int64
 	if err := db.Unscoped().Model(&models.TransferTask{}).Where("id = ?", task.ID).Count(&count).Error; err != nil {
@@ -137,7 +135,7 @@ func TestTransferCleanupUsesCaptureOwnerForPostgreSQLCDC(t *testing.T) {
 		t.Fatal(err)
 	}
 	control := &fakeCaptureControl{}
-	cleanup := NewTransferCleanupService(db, nil, nil, transferCleanupTestConfig())
+	cleanup := NewTransferCleanupService(db, nil, transferCleanupTestConfig())
 	cleanup.SetCaptureControl(control)
 	stats, err := cleanup.ExecuteCleanup(context.Background(), 7, events.CleanupModePhysical, map[string]interface{}{"engine_id": 12})
 	if err != nil {
@@ -160,7 +158,7 @@ func TestTransferCleanupPhysicalDeletesDLQTopicBeforeIndexAndTask(t *testing.T) 
 	}
 	createTransferCleanupDeadLetter(t, db, task)
 	cleaner := &fakeDeadLetterTopicCleaner{db: db}
-	svc := NewTransferCleanupService(db, nil, nil, transferCleanupTestConfig())
+	svc := NewTransferCleanupService(db, nil, transferCleanupTestConfig())
 	svc.SetDeadLetterTopicCleaner(cleaner)
 
 	stats, err := svc.ExecuteCleanup(context.Background(), 7, events.CleanupModePhysical, map[string]interface{}{"tenant_id": 7})
@@ -191,15 +189,12 @@ func TestTransferCleanupKeepsIndexAndTaskWhenDLQTopicDeleteFails(t *testing.T) {
 	}
 	createTransferCleanupDeadLetter(t, db, task)
 	cleaner := &fakeDeadLetterTopicCleaner{db: db, err: errors.New("Kafka admin unavailable")}
-	svc := NewTransferCleanupService(db, nil, nil, transferCleanupTestConfig())
+	svc := NewTransferCleanupService(db, nil, transferCleanupTestConfig())
 	svc.SetDeadLetterTopicCleaner(cleaner)
 
 	stats, err := svc.ExecuteCleanup(context.Background(), 7, events.CleanupModePhysical, map[string]interface{}{"tenant_id": 7})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(stats.Errors) != 1 || stats.DeletedTaskDefinitions != 0 || stats.DeletedDeadLetterRecords != 0 {
-		t.Fatalf("cleanup failure stats = %#v", stats)
+	if err == nil || stats.DeletedTaskDefinitions != 0 || stats.DeletedDeadLetterRecords != 0 {
+		t.Fatalf("unknown external effect committed PG facts: %+v %v", stats, err)
 	}
 	var taskCount, deadLetterCount int64
 	_ = db.Model(&models.TransferTask{}).Where("id = ?", task.ID).Count(&taskCount).Error
@@ -221,7 +216,7 @@ func TestTransferCleanupLogicalKeepsDLQTopicAndIndex(t *testing.T) {
 	}
 	createTransferCleanupDeadLetter(t, db, task)
 	cleaner := &fakeDeadLetterTopicCleaner{db: db}
-	svc := NewTransferCleanupService(db, nil, nil, transferCleanupTestConfig())
+	svc := NewTransferCleanupService(db, nil, transferCleanupTestConfig())
 	svc.SetDeadLetterTopicCleaner(cleaner)
 
 	stats, err := svc.ExecuteCleanup(context.Background(), 7, events.CleanupModeLogical, map[string]interface{}{"tenant_id": 7})
@@ -246,7 +241,7 @@ func TestTransferCleanupUsesRetainedDLQIndexAfterTaskConfigChanged(t *testing.T)
 	}
 	createTransferCleanupDeadLetter(t, db, task)
 	cleaner := &fakeDeadLetterTopicCleaner{db: db}
-	svc := NewTransferCleanupService(db, nil, nil, transferCleanupTestConfig())
+	svc := NewTransferCleanupService(db, nil, transferCleanupTestConfig())
 	svc.SetDeadLetterTopicCleaner(cleaner)
 	if _, err := svc.DeleteTaskAndOwnedResources(context.Background(), &task, repository.TaskDefinitionDeleteSoft); err != nil {
 		t.Fatal(err)
@@ -268,7 +263,7 @@ func TestTaskServiceDeleteUsesTaskOwnedResourceCleanup(t *testing.T) {
 	}
 	createTransferCleanupDeadLetter(t, db, task)
 	cleaner := &fakeDeadLetterTopicCleaner{db: db}
-	cleanup := NewTransferCleanupService(db, nil, nil, transferCleanupTestConfig())
+	cleanup := NewTransferCleanupService(db, nil, transferCleanupTestConfig())
 	cleanup.SetDeadLetterTopicCleaner(cleaner)
 	tasks := NewTaskService(db, nil, nil)
 	tasks.SetTaskOwnedResourceCleanup(cleanup)
@@ -402,6 +397,7 @@ func newTransferCleanupTestDB(t *testing.T) *gorm.DB {
 	if err := executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
+	testpg.EnsureCleanupSQLite(t, db)
 	return db
 }
 

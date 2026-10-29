@@ -21,7 +21,7 @@ func TestApplyInferredSchemaRequiresGraphReadAndOntologyUpdate(t *testing.T) {
 	})
 	defer authServer.Close()
 
-	router := SetupRouter(
+	router := SetupRouter(NewCleanupResultHandler(nil),
 		&config.Config{SystemServiceURL: authServer.URL},
 		nil, nil, &BrowseHandler{}, nil, nil, nil, nil,
 		modulelifecycle.NewStandalone("graph"),
@@ -59,7 +59,7 @@ func TestEngineSchemaInferenceRequiresCatalogAndOntologyPermissions(t *testing.T
 	})
 	defer authServer.Close()
 
-	router := SetupRouter(
+	router := SetupRouter(NewCleanupResultHandler(nil),
 		&config.Config{SystemServiceURL: authServer.URL},
 		&OntologyHandler{}, nil, nil, nil, nil, nil, nil,
 		modulelifecycle.NewStandalone("graph"),
@@ -99,7 +99,7 @@ func TestGraphSchemaPreviewRequiresOntologyReadWhenComparingTarget(t *testing.T)
 	})
 	defer authServer.Close()
 
-	router := SetupRouter(
+	router := SetupRouter(NewCleanupResultHandler(nil),
 		&config.Config{SystemServiceURL: authServer.URL},
 		nil, nil, &BrowseHandler{}, nil, nil, nil, nil,
 		modulelifecycle.NewStandalone("graph"),

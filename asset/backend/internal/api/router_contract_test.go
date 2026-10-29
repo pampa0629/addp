@@ -158,13 +158,17 @@ func TestRouterPublishesOnlyImplementedTypeDefinitionOperations(t *testing.T) {
 		t.Fatal("execution read scope route missing")
 	}
 
+	if _, exists := routes["GET /api/v1/asset/cleanup-executions/:execution_id/result"]; !exists {
+		t.Fatal("professional cleanup result route missing")
+	}
+
 	publicBusinessRoutes := 0
 	for _, route := range router.Routes() {
 		if len(route.Path) >= len("/api/v1/asset") && route.Path[:len("/api/v1/asset")] == "/api/v1/asset" {
 			publicBusinessRoutes++
 		}
 	}
-	if publicBusinessRoutes != 44 {
-		t.Fatalf("public business route count = %d, want 44", publicBusinessRoutes)
+	if publicBusinessRoutes != 45 {
+		t.Fatalf("public business route count = %d, want 45", publicBusinessRoutes)
 	}
 }

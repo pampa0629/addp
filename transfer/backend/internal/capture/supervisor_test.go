@@ -436,3 +436,7 @@ func (f *fakeSourceResources) Observe(context.Context, *CapturePlan, *models.Cap
 		Transactions: f.transactions, TransactionsError: f.transactionsErr,
 	}, nil
 }
+
+func (f *fakeCaptureStore) RunCleanupOperation(ctx context.Context, _ *models.CaptureResource, _ string, _ any, invoke func(context.Context) error) error {
+	return invoke(ctx)
+}

@@ -534,3 +534,6 @@ other = "管理直接授权许可"
 
 [permissions.system.engine_access_direct_permission.update.description]
 other = "引擎授权管理员设置数据项是否允许直接授权，不影响 Catalog 业务批准及已有授权"
+
+[system.cleanup.manager_scope_required]
+other = "执行 Meta 清理前，请显式选择 Meta 和 Manager 重新评估。"

@@ -149,7 +149,7 @@ func TestAssetCleanupScanWithoutTenantLifecycleContextReturnsNoCandidates(t *tes
 	db := setupAssetCleanupTestDB(t)
 	seedAssetCleanupTenantState(t, db, 1)
 
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, nil)
 	if err != nil {
 		t.Fatalf("ScanReclaimCandidates: %v", err)
@@ -163,7 +163,7 @@ func TestAssetCleanupTenantDeletedLogicalOfflinesAssetsAndRevokesAuthorizations(
 	db := setupAssetCleanupTestDB(t)
 	assetID, authID := seedAssetCleanupTenantState(t, db, 1)
 
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	stats, err := svc.ExecuteCleanup(context.Background(), 1, events.CleanupModeLogical, map[string]interface{}{"tenant_id": 1})
 	if err != nil {
 		t.Fatalf("ExecuteCleanup: %v", err)
@@ -193,7 +193,7 @@ func TestAssetCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 	seedAssetCleanupTenantState(t, db, 1)
 	seedAssetCleanupTenantState(t, db, 2)
 
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, map[string]interface{}{"tenant_id": 1})
 	if err != nil {
 		t.Fatalf("ScanReclaimCandidates: %v", err)

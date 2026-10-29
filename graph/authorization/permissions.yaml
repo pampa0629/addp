@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: graph
-manifest_version: 4
+manifest_version: 5
 permissions:
   - key: graph.analysis.execute
     allowed_scope_types: [tenant]
@@ -66,6 +66,14 @@ permissions:
     status: active
     name_i18n_key: permissions.graph.build_task.update.name
     description_i18n_key: permissions.graph.build_task.update.description
+  - key: graph.cleanup_result.read
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.graph.cleanup_result.read.name
+    description_i18n_key: permissions.graph.cleanup_result.read.description
   - key: graph.graph.create
     allowed_scope_types: [tenant]
     risk_level: medium

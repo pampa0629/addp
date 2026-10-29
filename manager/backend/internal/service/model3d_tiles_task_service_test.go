@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"github.com/addp/manager/internal/cog"
+	"github.com/addp/manager/internal/testfixture"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +20,7 @@ func TestModel3DTilesTaskServiceReusesSemanticTaskIdentity(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	repo := repository.NewModel3DTilesRepository(db)
 	svc := NewModel3DTilesTaskService(repo)
+	svc.SetBucket("manager")
 	svc.SetBucket("manager")
 
 	first := newModel3DTilesTaskForTest("S3M 快显", "fp-reuse", models.Model3DTilesTargetFormatS3M)
@@ -58,6 +61,7 @@ func TestModel3DTilesTaskServiceRepeatedExecutionRefreshesCurrentResult(t *testi
 	repo := repository.NewModel3DTilesRepository(db)
 	execRepo := commonExecution.NewTaskExecutionRepository(db)
 	svc := NewModel3DTilesTaskService(repo)
+	svc.SetBucket("manager")
 	svc.SetBucket("manager")
 	svc.SetExecutor(staticModel3DTilesExecutor{})
 	task := newModel3DTilesTaskForTest("S3M 快显", "fp-repeat", models.Model3DTilesTargetFormatS3M)
@@ -118,6 +122,7 @@ func TestModel3DTilesTaskServiceRejectsConcurrentExecution(t *testing.T) {
 	repo := repository.NewModel3DTilesRepository(db)
 	execRepo := commonExecution.NewTaskExecutionRepository(db)
 	svc := NewModel3DTilesTaskService(repo)
+	svc.SetBucket("manager")
 	svc.SetBucket("manager")
 	executor := &blockingModel3DTilesExecutor{started: make(chan struct{}), release: make(chan struct{})}
 	t.Cleanup(func() {
@@ -257,7 +262,7 @@ func TestModel3DTilesTaskServiceDeletesManagedResultAndArtifact(t *testing.T) {
 	result := &models.Model3DTiles{
 		TenantID: 7, ItemFingerprint: "fp-delete", Locator: "addp://engine/26/path/3d/site?type=item&item_id=77",
 		SourceEngineID: 26, SourceFormat: "osgb_scene", TargetFormat: "s3m",
-		StorageRef: "storage-ref-to-delete", ManifestRef: "config/scene.scp", Status: models.Model3DTilesStatusReady,
+		StorageRef: cog.ObjectStorageRef("manager", "tenant_7/model3d-tiles/fp-delete/s3m"), ManifestRef: "config/scene.scp", Status: models.Model3DTilesStatusReady,
 		Metadata: commonModels.JSONMap{},
 	}
 	if err := repo.CreateResult(context.Background(), result); err != nil {
@@ -265,8 +270,10 @@ func TestModel3DTilesTaskServiceDeletesManagedResultAndArtifact(t *testing.T) {
 	}
 	cleaner := &recordingModel3DTilesCleaner{}
 	svc := NewModel3DTilesTaskService(repo)
+	svc.SetBucket("manager")
 	svc.SetCleaner(cleaner)
 
+	testfixture.ArtifactReferenceSQLite(t, db)
 	if err := svc.DeleteResult(context.Background(), result.ID, result.TenantID); err != nil {
 		t.Fatalf("DeleteResult() error = %v", err)
 	}
@@ -291,7 +298,7 @@ func TestModel3DTilesTaskServiceKeepsResultWhenArtifactCleanupFails(t *testing.T
 	repo := repository.NewModel3DTilesRepository(db)
 	result := &models.Model3DTiles{
 		TenantID: 7, ItemFingerprint: "fp-cleanup-fail", SourceEngineID: 26, SourceFormat: "osgb_scene",
-		TargetFormat: "3d_tiles", StorageRef: "storage-ref-cleanup-fail", ManifestRef: "tileset.json",
+		TargetFormat: "3d_tiles", StorageRef: cog.ObjectStorageRef("manager", "tenant_7/model3d-tiles/fp-cleanup-fail/3d_tiles"), ManifestRef: "tileset.json",
 		Status: models.Model3DTilesStatusReady, Metadata: commonModels.JSONMap{},
 	}
 	if err := repo.CreateResult(context.Background(), result); err != nil {
@@ -299,8 +306,10 @@ func TestModel3DTilesTaskServiceKeepsResultWhenArtifactCleanupFails(t *testing.T
 	}
 	cleanupErr := errors.New("cleanup failed")
 	svc := NewModel3DTilesTaskService(repo)
+	svc.SetBucket("manager")
 	svc.SetCleaner(&recordingModel3DTilesCleaner{err: cleanupErr})
 
+	testfixture.ArtifactReferenceSQLite(t, db)
 	if err := svc.DeleteResult(context.Background(), result.ID, result.TenantID); !errors.Is(err, cleanupErr) {
 		t.Fatalf("DeleteResult() error = %v, want cleanup failure", err)
 	}

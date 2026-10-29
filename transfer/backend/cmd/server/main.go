@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/addp/common/cleanup"
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	commonconfiguration "github.com/addp/common/configuration"
@@ -160,7 +161,7 @@ func main() {
 	taskService.SetRoleProtection(service.NewRoleProtectionService(systemRuntimeClient, commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil), protectionGate))
 	taskService.SetExecutionService(executionService) // 注入执行服务（避免循环依赖）
 	taskService.SetExportExecutionSourceResolver(commonClient.NewExportExecutionSourceClient(systemRuntimeClient, serviceTokenSource))
-	cleanupService := service.NewTransferCleanupService(db, redisClient, taskExecutionRepo, service.TaskOwnedCleanupConfig{
+	cleanupService := service.NewTransferCleanupService(db, systemRuntimeClient, service.TaskOwnedCleanupConfig{
 		RuntimeStopTimeout: cfg.ContinuousRuntimeStopTimeout, RuntimeStopPollInterval: cfg.ContinuousRuntimeStopPollInterval,
 	})
 	infraKafkaAdminConnection, err := cfg.InfraKafkaAdminConnectionInfo()
@@ -234,7 +235,7 @@ func main() {
 	// 设置路由
 	lifecycleController := modulelifecycle.NewBusiness("transfer", commonClient.ModuleRuntimeRoleBackend)
 	fieldDefinitionRecommendationService := service.NewFieldDefinitionRecommendationService(systemClient, protectionGate)
-	router := api.SetupRouter(taskService, executionService, continuousPolicyService, fieldDefinitionRecommendationService, cfg.SystemServiceURL, cfg.MetaServiceURL, redisClient, systemClient, systemRuntimeClient, lifecycleController)
+	router := api.SetupRouter(api.NewCleanupResultHandler(db), taskService, executionService, continuousPolicyService, fieldDefinitionRecommendationService, cfg.SystemServiceURL, cfg.MetaServiceURL, redisClient, systemClient, systemRuntimeClient, lifecycleController)
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -330,6 +331,9 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 			return fmt.Errorf("auto-migrate transfer models: %w", err)
 		}
 
+		if err := cleanup.MigrateResults(tx, "transfer"); err != nil {
+			return err
+		}
 		_, err := projectionstore.Migrate(tx, cfg.DBSchema, "transfer", nil)
 		return err
 	}); err != nil {
@@ -344,6 +348,8 @@ func transferSchemaModels() []interface{} {
 		&models.TransferTask{},
 		&models.SyncState{},
 		&models.RuntimeLease{},
+		&models.RuntimeSession{},
+		&models.CleanupOperation{},
 		&models.CaptureResource{},
 		&models.PostgreSQLCaptureResource{},
 		&models.MySQLCaptureResource{},

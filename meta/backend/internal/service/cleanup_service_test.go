@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"testing"
 	"time"
 
@@ -28,7 +27,7 @@ func TestCleanupScanReportsInvalidEngineScanTaskDefinitions(t *testing.T) {
 		t.Fatalf("create scan task: %v", err)
 	}
 
-	svc := NewCleanupService(db, nil, nil, nil, CleanupConfig{Enabled: true})
+	svc := NewCleanupService(db, nil, CleanupConfig{Enabled: true})
 	stats, err := svc.ScanReclaimCandidates(context.Background(), tenantID, map[string]interface{}{"engine_id": engineID})
 	if err != nil {
 		t.Fatalf("ScanReclaimCandidates() error = %v", err)
@@ -51,7 +50,7 @@ func TestCleanupScanReportsTaskOnlyInvalidEngineForAnyOwner(t *testing.T) {
 		t.Fatalf("create scan task: %v", err)
 	}
 
-	svc := NewCleanupService(db, nil, systemClient, nil, CleanupConfig{Enabled: true})
+	svc := NewCleanupService(db, systemClient, CleanupConfig{Enabled: true})
 	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, nil)
 	if err != nil {
 		t.Fatalf("ScanReclaimCandidates() error = %v", err)
@@ -77,7 +76,7 @@ func TestCleanupLogicalDisablesInvalidEngineScanTaskDefinitions(t *testing.T) {
 		t.Fatalf("create scan task: %v", err)
 	}
 
-	svc := NewCleanupService(db, nil, nil, nil, CleanupConfig{Enabled: true})
+	svc := NewCleanupService(db, nil, CleanupConfig{Enabled: true})
 	result, err := svc.ExecuteCleanup(context.Background(), tenantID, events.CleanupModeLogical, map[string]interface{}{"engine_id": engineID})
 	if err != nil {
 		t.Fatalf("ExecuteCleanup() error = %v", err)
@@ -110,7 +109,7 @@ func TestCleanupEngineScopedPhysicalDisablesInvalidEngineScanTaskDefinitions(t *
 		t.Fatalf("create scan task: %v", err)
 	}
 
-	svc := NewCleanupService(db, nil, nil, nil, CleanupConfig{Enabled: true})
+	svc := NewCleanupService(db, nil, CleanupConfig{Enabled: true})
 	result, err := svc.ExecuteCleanup(context.Background(), tenantID, events.CleanupModePhysical, map[string]interface{}{"engine_id": engineID})
 	if err != nil {
 		t.Fatalf("ExecuteCleanup() error = %v", err)
@@ -128,37 +127,21 @@ func TestCleanupEngineScopedPhysicalDisablesInvalidEngineScanTaskDefinitions(t *
 	}
 }
 
-func TestCleanupLogicalDeletesManagerContentProjection(t *testing.T) {
+func TestCleanupLogicalOnlyChangesMetaFacts(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
-	systemClient := newEmptyEngineSystemClient(t)
-
-	const tenantID = uint(1)
-	const engineID = uint(91)
-	node := models.MetaNode{TenantID: tenantID, EngineID: engineID, NodeType: "root", Name: "Deleted Engine", Depth: 0}
+	createScanTaskTable(t, db)
+	node := models.MetaNode{TenantID: 1, EngineID: 91, NodeType: "root", Name: "Deleted Engine", Depth: 0}
 	if err := db.Create(&node).Error; err != nil {
-		t.Fatalf("create meta node: %v", err)
+		t.Fatal(err)
 	}
-
-	var deletedEngineID uint64
-	manager := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodDelete || request.URL.Path != "/api/v1/manager/runtime/content-documents" || request.Header.Get("Authorization") != "Bearer manager-token" {
-			t.Fatalf("unexpected Manager request: %s %s", request.Method, request.URL.String())
-		}
-		deletedEngineID, _ = strconv.ParseUint(request.URL.Query().Get("engine_id"), 10, 64)
-		response.WriteHeader(http.StatusNoContent)
-	}))
-	defer manager.Close()
-	contentIndex := commonClient.NewManagerContentClient(manager.URL, commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
-		return "manager-token", nil
-	}), manager.Client())
-	svc := NewCleanupService(db, nil, systemClient, contentIndex, CleanupConfig{Enabled: true})
-
-	result, err := svc.ExecuteCleanup(context.Background(), tenantID, events.CleanupModeLogical, map[string]interface{}{"engine_id": engineID})
-	if err != nil {
-		t.Fatalf("ExecuteCleanup() error = %v", err)
+	svc := NewCleanupService(db, newEmptyEngineSystemClient(t), CleanupConfig{Enabled: true})
+	result, err := svc.ExecuteCleanup(context.Background(), 1, events.CleanupModeLogical, map[string]interface{}{"engine_id": uint(91)})
+	if err != nil || len(result.Errors) != 0 {
+		t.Fatalf("cleanup: %+v %v", result, err)
 	}
-	if deletedEngineID != uint64(engineID) {
-		t.Fatalf("deleted engine ID = %d errors=%v, want %d", deletedEngineID, result.Errors, engineID)
+	var count int64
+	if err := db.Model(&models.MetaNode{}).Where("id = ?", node.ID).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("active Meta fact remains: %d %v", count, err)
 	}
 }
 
@@ -181,7 +164,7 @@ func TestCleanupPhysicalKeepsInvalidEngineSnapshotForTaskDefinitionCleanup(t *te
 		t.Fatalf("soft delete meta node: %v", err)
 	}
 
-	svc := NewCleanupService(db, nil, systemClient, nil, CleanupConfig{Enabled: true})
+	svc := NewCleanupService(db, systemClient, CleanupConfig{Enabled: true})
 	result, err := svc.ExecuteCleanup(context.Background(), tenantID, events.CleanupModePhysical, nil)
 	if err != nil {
 		t.Fatalf("ExecuteCleanup() error = %v", err)

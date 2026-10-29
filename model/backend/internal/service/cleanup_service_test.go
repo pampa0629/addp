@@ -157,7 +157,7 @@ func TestModelCleanupScanWithoutTenantLifecycleContextReturnsNoCandidates(t *tes
 	db := setupModelCleanupTestDB(t)
 	seedModelCleanupTenantState(t, db, 1)
 
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, nil)
 	if err != nil {
 		t.Fatalf("ScanReclaimCandidates: %v", err)
@@ -171,7 +171,7 @@ func TestModelCleanupTenantDeletedLogicalDraftsActiveDefinitions(t *testing.T) {
 	db := setupModelCleanupTestDB(t)
 	entityID, tableID := seedModelCleanupTenantState(t, db, 1)
 
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	stats, err := svc.ExecuteCleanup(context.Background(), 1, events.CleanupModeLogical, map[string]interface{}{"tenant_id": 1})
 	if err != nil {
 		t.Fatalf("ExecuteCleanup: %v", err)
@@ -213,7 +213,7 @@ func TestModelCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 	seedModelCleanupTenantState(t, db, 1)
 	seedModelCleanupTenantState(t, db, 2)
 
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, map[string]interface{}{"tenant_id": 1})
 	if err != nil {
 		t.Fatalf("ScanReclaimCandidates: %v", err)

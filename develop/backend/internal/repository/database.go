@@ -2,6 +2,7 @@ package repository
 
 import (
 	"fmt"
+	"github.com/addp/common/cleanup"
 	"log"
 
 	commonlogger "github.com/addp/common/logger"
@@ -58,6 +59,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		return nil, err
 	}
 
+	if err := cleanup.MigrateResults(db, "develop"); err != nil {
+		return nil, err
+	}
 	log.Println("✅ Database connected successfully (AutoMigrate 完成)")
 
 	return db, nil

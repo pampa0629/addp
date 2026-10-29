@@ -5,19 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	engineplugin "github.com/addp/common/engine/plugin"
 	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
 	"github.com/addp/common/events"
+	"github.com/addp/common/execution"
 	secretcipher "github.com/addp/common/secretcipher"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
@@ -1286,31 +1287,19 @@ func TestBeginDeletionWaitsForCleanupBeforeDeletingEngine(t *testing.T) {
 	impact := deletionTestImpact(t, events.CleanupImpactRebindable, "dev_task:12")
 	cleanup := &engineDeletionCleanupStub{
 		assessmentTaskIDs:  []string{"assessment-1", "validation-1"},
-		assessmentStatuses: []string{"completed", "completed"},
+		assessmentStatuses: []string{"success", "success"},
 		assessmentImpacts:  []events.CleanupImpactData{impact, impact},
 		executeTaskID:      "execute-1",
-		executeStatus:      "completed",
-		validationGate:     make(chan struct{}),
+		executeStatus:      "success",
 	}
 	service := NewEngineService(repo, nil, nil)
 	service.cleanup = cleanup
-	waitForDeletion := observeBackgroundUpdate(t, db, "engine_deletion", func(tx *gorm.DB) bool {
-		stored, ok := tx.Statement.Dest.(*models.Engine)
-		// A failed tombstone write is followed by setDeletionError; await that
-		// final error write rather than closing the pool after the first failure.
-		return tx.Statement.Table == "engines" && ok && (stored.DeletionError != "" ||
-			(stored.LifecycleState == models.EngineLifecycleDeleted && tx.Error == nil && tx.RowsAffected == 1))
-	})
-
-	var releaseOnce sync.Once
-	releaseValidation := func() { releaseOnce.Do(func() { close(cleanup.validationGate) }) }
-	t.Cleanup(releaseValidation)
-
-	assessmentID, err := service.CreateDeletionAssessment(engine.ID, tenantID, actorID, models.ExternalArtifactPolicyAbandon)
+	cleanup.repo = repo
+	assessmentID, err := service.CreateDeletionAssessment(context.Background(), uuid.NewString(), engine.ID, tenantID, actorID, models.ExternalArtifactPolicyAbandon)
 	if err != nil {
 		t.Fatalf("CreateDeletionAssessment() error = %v", err)
 	}
-	started, err := service.BeginDeletion(engine.ID, tenantID, actorID, &models.EngineDeleteRequest{
+	started, err := service.BeginDeletion(context.Background(), engine.ID, tenantID, actorID, &models.EngineDeleteRequest{
 		Version:                engine.Version,
 		AssessmentID:           assessmentID,
 		ConfirmationToken:      engine.Name,
@@ -1333,8 +1322,7 @@ func TestBeginDeletionWaitsForCleanupBeforeDeletingEngine(t *testing.T) {
 		t.Fatalf("assessment contexts = %#v", cleanup.assessmentContexts)
 	}
 
-	releaseValidation()
-	waitForDeletion()
+	service.continueDeletion(context.Background(), engine.ID, "validation-1")
 	stored, err = repo.GetByID(engine.ID)
 	if err != nil || stored.LifecycleState != models.EngineLifecycleDeleted {
 		t.Fatalf("deletion tombstone was not persisted: engine=%#v err=%v", stored, err)
@@ -1352,24 +1340,17 @@ func TestBeginDeletionKeepsEngineWhenCleanupFails(t *testing.T) {
 	impact := deletionTestImpact(t, events.CleanupImpactWillDisable, "transfer_task:9")
 	cleanup := &engineDeletionCleanupStub{
 		assessmentTaskIDs:  []string{"assessment-1", "validation-failed"},
-		assessmentStatuses: []string{"completed", "completed_with_errors"},
+		assessmentStatuses: []string{"success", "failed"},
 		assessmentImpacts:  []events.CleanupImpactData{impact, impact},
 	}
 	service := NewEngineService(repo, nil, nil)
 	service.cleanup = cleanup
-	waitForDeletion := observeBackgroundUpdate(t, db, "engine_deletion", func(tx *gorm.DB) bool {
-		stored, ok := tx.Statement.Dest.(*models.Engine)
-		// A failed tombstone write is followed by setDeletionError; await that
-		// final error write rather than closing the pool after the first failure.
-		return tx.Statement.Table == "engines" && ok && (stored.DeletionError != "" ||
-			(stored.LifecycleState == models.EngineLifecycleDeleted && tx.Error == nil && tx.RowsAffected == 1))
-	})
-
-	assessmentID, err := service.CreateDeletionAssessment(engine.ID, tenantID, 42, models.ExternalArtifactPolicyDelete)
+	cleanup.repo = repo
+	assessmentID, err := service.CreateDeletionAssessment(context.Background(), uuid.NewString(), engine.ID, tenantID, 42, models.ExternalArtifactPolicyDelete)
 	if err != nil {
 		t.Fatalf("CreateDeletionAssessment() error = %v", err)
 	}
-	if _, err := service.BeginDeletion(engine.ID, tenantID, 42, &models.EngineDeleteRequest{
+	if _, err := service.BeginDeletion(context.Background(), engine.ID, tenantID, 42, &models.EngineDeleteRequest{
 		Version:                engine.Version,
 		AssessmentID:           assessmentID,
 		ConfirmationToken:      engine.Name,
@@ -1377,23 +1358,23 @@ func TestBeginDeletionKeepsEngineWhenCleanupFails(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("BeginDeletion() error = %v", err)
 	}
-	waitForDeletion()
+	service.continueDeletion(context.Background(), engine.ID, "validation-failed")
 	stored, err := repo.GetByID(engine.ID)
 	if err != nil {
 		t.Fatalf("engine deleted after failed cleanup: %v", err)
 	}
-	if !strings.Contains(stored.DeletionError, "completed_with_errors") || stored.LifecycleState != models.EngineLifecycleDeleting {
+	if stored.DeletionError != "cleanup_scan_incomplete_or_failed" || stored.LifecycleState != models.EngineLifecycleDeleting {
 		t.Fatalf("cleanup failure was not persisted: %#v", stored)
 	}
 }
 
 type engineDeletionCleanupStub struct {
+	repo               *repository.EngineRepository
 	assessmentTaskIDs  []string
 	assessmentStatuses []string
 	assessmentImpacts  []events.CleanupImpactData
 	assessmentContexts []map[string]interface{}
-	assessmentTasks    map[string]*models.TaskStatusResponse
-	validationGate     chan struct{}
+	assessmentTasks    map[string]*engineCleanupState
 	executeTaskID      string
 	executeStatus      string
 	executeMode        string
@@ -1401,54 +1382,58 @@ type engineDeletionCleanupStub struct {
 	confirmation       CleanupExecuteConfirmation
 }
 
-func (s *engineDeletionCleanupStub) CreateEngineDeletionAssessment(_ context.Context, tenantID, _ uint, cleanupContext map[string]interface{}) (string, error) {
+func (s *engineDeletionCleanupStub) CreateEngineDeletionAssessment(_ context.Context, _ string, tenant, actor, engine uint, policy string) (string, error) {
+	return s.addAssessment(tenant, actor, engine, models.CleanupEngineConfirmation{Phase: "preflight", ExternalArtifactPolicy: policy})
+}
+func (s *engineDeletionCleanupStub) addAssessment(tenant, actor, engine uint, confirmation models.CleanupEngineConfirmation) (string, error) {
 	index := len(s.assessmentContexts)
-	if index >= len(s.assessmentTaskIDs) || index >= len(s.assessmentStatuses) || index >= len(s.assessmentImpacts) {
-		return "", errors.New("unexpected deletion assessment")
+	if index >= len(s.assessmentTaskIDs) {
+		return "", errors.New("unexpected assessment")
 	}
-	contextCopy := make(map[string]interface{}, len(cleanupContext))
-	for key, value := range cleanupContext {
-		contextCopy[key] = value
-	}
-	s.assessmentContexts = append(s.assessmentContexts, contextCopy)
+	s.assessmentContexts = append(s.assessmentContexts, map[string]interface{}{"assessment_phase": confirmation.Phase})
 	if s.assessmentTasks == nil {
-		s.assessmentTasks = make(map[string]*models.TaskStatusResponse)
+		s.assessmentTasks = map[string]*engineCleanupState{}
 	}
-	taskID := s.assessmentTaskIDs[index]
-	result := events.CleanupResultData{
-		Module: "develop", Status: events.CleanupResultSuccess, Action: events.CleanupActionScan,
-		TenantID: tenantID, TaskID: taskID, Impact: &s.assessmentImpacts[index],
-	}
-	s.assessmentTasks[taskID] = &models.TaskStatusResponse{
-		TaskID:  taskID,
-		Action:  events.CleanupActionScan,
-		Status:  s.assessmentStatuses[index],
-		Results: map[string]interface{}{"develop": result},
-		Task: models.CleanupTask{
-			TaskID: taskID, Action: events.CleanupActionScan, TenantID: tenantID,
-			CauseEvent: events.CleanupCauseEngineDeleting, Status: s.assessmentStatuses[index],
-			ExpectedModules: []string{"develop"}, Context: contextCopy,
-			StartedAt: time.Now().UTC().Format(time.RFC3339),
-		},
-	}
-	return taskID, nil
+	id := s.assessmentTaskIDs[index]
+	impact := s.assessmentImpacts[index]
+	status := s.assessmentStatuses[index]
+	s.assessmentTasks[id] = &engineCleanupState{Task: models.CleanupTask{TaskID: id, Action: events.CleanupActionScan, TenantID: tenant, RequestedBy: actor, CauseEvent: events.CleanupCauseEngineDeleting, Context: events.CleanupContext{EngineID: engine}, ExpectedModules: []string{"develop"}, CreatedAt: time.Now(), Status: status}, Confirmation: confirmation, Cutoff: &models.CleanupCutoff{Status: status, Receipts: []execution.CleanupReceipt{{Module: "develop", Status: events.CleanupResultSuccess, Impact: impact.Summary, ImpactDigest: impact.Digest, Summary: events.CleanupResultSummary{RiskLevel: "low"}}}}}
+	return id, nil
 }
-
-func (s *engineDeletionCleanupStub) CreateExecuteTask(_ context.Context, _ string, mode string, actorID uint, confirmation CleanupExecuteConfirmation) (string, error) {
-	s.executeMode = mode
-	s.executeActorID = actorID
-	s.confirmation = confirmation
+func (s *engineDeletionCleanupStub) BeginEngineCleanup(_ context.Context, engine *models.Engine, assessment, digest string) error {
+	id, err := s.addAssessment(*engine.TenantID, *engine.DeletionRequestedBy, engine.ID, models.CleanupEngineConfirmation{Phase: "validation", ExternalArtifactPolicy: engine.ExternalArtifactPolicy, AssessmentID: assessment, ImpactDigest: digest})
+	if err != nil {
+		return err
+	}
+	engine.DeletionScanTaskID = &id
+	return s.repo.Update(engine)
+}
+func (s *engineDeletionCleanupStub) engineStatus(_ context.Context, id string, _, _, _ uint) (*engineCleanupState, error) {
+	if status, ok := s.assessmentTasks[id]; ok {
+		return status, nil
+	}
+	base := s.assessmentTasks[s.assessmentTaskIDs[1]]
+	copy := *base
+	copy.Task.Status = s.executeStatus
+	copy.Cutoff = &models.CleanupCutoff{Status: s.executeStatus, Receipts: base.Cutoff.Receipts}
+	return &copy, nil
+}
+func (s *engineDeletionCleanupStub) GetTaskStatus(context.Context, string, CleanupReader) (*models.TaskStatusResponse, error) {
+	return nil, errors.New("public read is not an internal workflow read")
+}
+func (s *engineDeletionCleanupStub) createEngineExecute(_ context.Context, engineID uint, scan string) (string, error) {
+	engine, err := s.repo.GetByID(engineID)
+	if err != nil {
+		return "", err
+	}
+	s.executeMode = events.CleanupModePhysical
+	s.executeActorID = *engine.DeletionRequestedBy
+	s.confirmation = CleanupExecuteConfirmation{Confirmed: true, ConfirmationToken: "CONFIRM", ExternalArtifactPolicy: engine.ExternalArtifactPolicy}
+	engine.DeletionExecuteTaskID = &s.executeTaskID
+	if err := s.repo.Update(engine); err != nil {
+		return "", err
+	}
 	return s.executeTaskID, nil
-}
-
-func (s *engineDeletionCleanupStub) GetTaskStatus(_ context.Context, taskID string) (*models.TaskStatusResponse, error) {
-	if task, ok := s.assessmentTasks[taskID]; ok {
-		if len(s.assessmentTaskIDs) > 1 && taskID == s.assessmentTaskIDs[1] && s.validationGate != nil {
-			<-s.validationGate
-		}
-		return task, nil
-	}
-	return &models.TaskStatusResponse{Status: s.executeStatus}, nil
 }
 
 func deletionTestImpact(t *testing.T, disposition, stableRef string) events.CleanupImpactData {

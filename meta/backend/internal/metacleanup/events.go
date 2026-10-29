@@ -3,13 +3,7 @@ package metacleanup
 import (
 	"encoding/json"
 	"fmt"
-
-	"github.com/addp/common/events"
 )
-
-func ParseCleanupRequest(values map[string]interface{}) (events.CleanupRequestEvent, error) {
-	return events.ParseCleanupRequest(values)
-}
 
 func ToMap(v interface{}) map[string]interface{} {
 	data, _ := json.Marshal(v)

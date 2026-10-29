@@ -16,6 +16,7 @@ import (
 )
 
 type ResourceStore interface {
+	RunCleanupOperation(context.Context, *models.CaptureResource, string, any, func(context.Context) error) error
 	BeginGeneration(ctx context.Context, identity repository.CaptureIdentity) (*models.CaptureResource, error)
 	GetLatest(ctx context.Context, taskID, tenantID uint) (*models.CaptureResource, error)
 	ListObservable(ctx context.Context, limit int) ([]models.CaptureResource, error)
@@ -228,23 +229,57 @@ func (s *Supervisor) Stop(ctx context.Context, task *models.TransferTask) error 
 		return err
 	}
 	plan, planErr := s.plans.ResolveForCleanup(ctx, task)
-	connectorErr := s.connect.Delete(ctx, resource.ConnectorName)
-	if connectorErr == nil {
-		connectorErr = s.waitDeleted(ctx, resource.ConnectorName)
+	identity := struct {
+		ResourceID                                 uint
+		Generation                                 uint64
+		SourceFingerprint, Connector, Topic, Group string
+		PostgreSQL                                 *models.PostgreSQLCaptureResource
+		MySQL                                      *models.MySQLCaptureResource
+		Oracle                                     *models.OracleCaptureResource
+	}{resource.ID, resource.Generation, resource.SourceConnectionFingerprint, resource.ConnectorName, resource.TopicName, resource.ConsumerGroup, resource.PostgreSQL, resource.MySQL, resource.Oracle}
+	step := func(kind string, invoke func(context.Context) error) error {
+		return s.store.RunCleanupOperation(ctx, resource, kind, identity, invoke)
+	}
+	connectorErr := step("capture_connector", func(callCtx context.Context) error {
+		if err := s.connect.Delete(callCtx, resource.ConnectorName); err != nil {
+			return err
+		}
+		return s.waitDeleted(callCtx, resource.ConnectorName)
+	})
+	// Do not tear down a source while its connector may still produce.
+	if connectorErr != nil {
+		s.cleanupFail(ctx, resource, connectorErr)
+		return connectorErr
 	}
 	var sourceErr error
 	if planErr == nil {
-		sourceErr = s.dropSourceResources(ctx, plan, resource)
+		sourceErr = step("capture_source", func(callCtx context.Context) error { return s.dropSourceResources(callCtx, plan, resource) })
 	} else {
 		sourceErr = planErr
 	}
-	groupErr := s.topics.DeleteConsumerGroup(ctx, resource.ConsumerGroup)
-	topicErr := s.topics.DeleteTopic(ctx, resource.TopicName)
-	aclErr := s.topics.DeleteAccess(ctx, resource.TopicName, resource.ConsumerGroup)
+	if sourceErr != nil {
+		s.cleanupFail(ctx, resource, sourceErr)
+		return sourceErr
+	}
+	groupErr := step("capture_group", func(callCtx context.Context) error {
+		return s.topics.DeleteConsumerGroup(callCtx, resource.ConsumerGroup)
+	})
+	if groupErr != nil {
+		s.cleanupFail(ctx, resource, groupErr)
+		return groupErr
+	}
+	topicErr := step("capture_topic", func(callCtx context.Context) error { return s.topics.DeleteTopic(callCtx, resource.TopicName) })
+	if topicErr != nil {
+		s.cleanupFail(ctx, resource, topicErr)
+		return topicErr
+	}
+	aclErr := step("capture_acl", func(callCtx context.Context) error {
+		return s.topics.DeleteAccess(callCtx, resource.TopicName, resource.ConsumerGroup)
+	})
 	var historyTopicErr, historyACLErr error
 	if historyTopic, owned := captureSchemaHistoryTopic(resource); owned && strings.TrimSpace(historyTopic) != "" {
-		historyTopicErr = s.topics.DeleteTopic(ctx, historyTopic)
-		historyACLErr = s.topics.DeleteSchemaHistoryAccess(ctx, historyTopic)
+		historyTopicErr = step("capture_history_topic", func(callCtx context.Context) error { return s.topics.DeleteTopic(callCtx, historyTopic) })
+		historyACLErr = step("capture_history_acl", func(callCtx context.Context) error { return s.topics.DeleteSchemaHistoryAccess(callCtx, historyTopic) })
 	}
 	cleanupErr := errors.Join(connectorErr, sourceErr, groupErr, topicErr, aclErr, historyTopicErr, historyACLErr)
 	if cleanupErr != nil {

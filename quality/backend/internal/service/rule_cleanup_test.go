@@ -19,7 +19,7 @@ func TestTenantCleanupOwnsRulesButEngineCleanupDoesNot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	engine, err := svc.ExecuteCleanup(ctx, 7, events.CleanupModePhysical, map[string]interface{}{"engine_id": int64(12)})
 	if err != nil || engine.DeletedRules != 0 {
 		t.Fatalf("engine removed neutral rules: %+v %v", engine, err)

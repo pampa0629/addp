@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/addp/common/cleanup"
 	"github.com/addp/service/internal/config"
 	"github.com/addp/service/internal/models"
 	"gorm.io/driver/postgres"
@@ -67,6 +68,9 @@ func AutoMigrate(db *gorm.DB) error {
 		return err
 	}
 
+	if err := cleanup.MigrateResults(db, "service"); err != nil {
+		return err
+	}
 	log.Println("✅ Database migration completed")
 	return nil
 }

@@ -44,7 +44,7 @@ func TestIntegrationPostgresContinuousExecutionEvents(t *testing.T) {
 	if err := commonExecution.EnsureStore(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}, &models.SchemaChangeRequest{}, &models.CaptureResource{}); err != nil {
+	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}, &models.RuntimeSession{}, &models.CleanupOperation{}, &models.SchemaChangeRequest{}, &models.CaptureResource{}); err != nil {
 		t.Fatal(err)
 	}
 	repo := NewRuntimeLeaseRepository(db, testContinuousRecoveryPolicy())
@@ -428,6 +428,14 @@ func TestIntegrationPostgresContinuousExecutionEvents(t *testing.T) {
 		if err := db.Model(&claim.Lease).Update("lease_until", time.Now().Add(-time.Second)).Error; err != nil {
 			t.Fatal(err)
 		}
+		// Expiry alone is insufficient; the original invocation must attest
+		// actual runner completion before private state can be removed.
+		if _, err := NewTaskResourceRepository(db).DeleteTaskAndPrivateState(t.Context(), claim.Task.TenantID, claim.Task.ID, true, TaskDefinitionDeletePhysical, time.Now()); !errors.Is(err, ErrTaskDeletionRuntimeActive) {
+			t.Fatalf("expired owner cleanup=%v", err)
+		}
+		if err := NewRuntimeLeaseRepository(db, testContinuousRecoveryPolicy()).AcknowledgeStopped(t.Context(), claim); err != nil {
+			t.Fatal(err)
+		}
 		stats, err := NewTaskResourceRepository(db).DeleteTaskAndPrivateState(t.Context(), claim.Task.TenantID, claim.Task.ID, true, TaskDefinitionDeletePhysical, time.Now())
 		if err != nil || stats.CancelledExecutions != 1 || stats.RuntimeLeases != 1 {
 			t.Fatalf("cleanup=%#v err=%v", stats, err)
@@ -468,10 +476,13 @@ func continuousEventFixture(t *testing.T, db *gorm.DB, active bool) RuntimeLease
 		if err := db.Create(&lease).Error; err != nil {
 			t.Fatal(err)
 		}
+		if err := db.Create(&models.RuntimeSession{TaskID: task.ID, TenantID: task.TenantID, ExecutionID: item.ExecutionID, OwnerInstanceID: lease.OwnerInstanceID, FencingToken: lease.FencingToken, StartedAt: lease.ClaimedAt}).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 	t.Cleanup(func() {
 		cleanupTaskExecutionEvents(t, db, task.ID)
-		for _, model := range []interface{}{&models.RuntimeLease{}, &models.SchemaChangeRequest{}} {
+		for _, model := range []interface{}{&models.RuntimeLease{}, &models.RuntimeSession{}, &models.CleanupOperation{}, &models.SchemaChangeRequest{}} {
 			if err := db.Where("task_id = ?", task.ID).Delete(model).Error; err != nil {
 				t.Error(err)
 			}

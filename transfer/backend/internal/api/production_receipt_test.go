@@ -37,7 +37,7 @@ func TestProductionReceiptRouteRequiresFixedSystemServiceAndPermission(t *testin
 		"Bearer catalog":      {ClientID: "addp-catalog", Permissions: []string{permission}},
 	})
 	defer auth.Close()
-	router := SetupRouter(nil, nil, nil, nil, auth.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
+	router := SetupRouter(NewCleanupResultHandler(nil), nil, nil, nil, nil, auth.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
 	path := "/api/v1/transfer/runtime/executions/" + uuid.NewString() + "/production-receipt"
 	for _, tc := range []struct {
 		token, query string
@@ -58,7 +58,7 @@ func TestProductionReceiptRouteRequiresFixedSystemServiceAndPermission(t *testin
 func TestProductionReceiptRejectsHumanEvenWithPermission(t *testing.T) {
 	auth := authtest.NewTenantUserAuthContextServer(t, "7", map[string][]string{"Bearer user": {"transfer.production_receipt.read"}})
 	defer auth.Close()
-	router := SetupRouter(nil, nil, nil, nil, auth.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
+	router := SetupRouter(NewCleanupResultHandler(nil), nil, nil, nil, nil, auth.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
 	req := httptest.NewRequest("GET", "/api/v1/transfer/runtime/executions/"+uuid.NewString()+"/production-receipt", nil)
 	req.Header.Set("Authorization", "Bearer user")
 	response := httptest.NewRecorder()
@@ -137,7 +137,7 @@ func testProductionReceiptRead(t *testing.T, db *gorm.DB) {
 	auth := authtest.NewTenantServiceAuthContextServer(t, "7", map[string]authtest.TenantServiceIdentity{"Bearer system": {ClientID: "addp-system", Permissions: []string{"transfer.production_receipt.read"}}})
 	defer auth.Close()
 	svc := service.NewExecutionService(db, execution.NewTaskExecutionRepository(db))
-	router := SetupRouter(nil, svc, nil, nil, auth.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
+	router := SetupRouter(NewCleanupResultHandler(nil), nil, svc, nil, nil, auth.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
 	server := httptest.NewServer(router)
 	defer server.Close()
 	consumer := client.NewTransferClient(server.URL, productionReceiptToken("system"))

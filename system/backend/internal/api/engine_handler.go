@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	commonapi "github.com/addp/common/api"
+	commonClient "github.com/addp/common/client"
 	engineplugin "github.com/addp/common/engine/plugin"
 	engineselection "github.com/addp/common/engine/selection"
 	commoni18n "github.com/addp/common/middleware/i18n"
@@ -432,7 +433,7 @@ func (h *EngineHandler) EnableSpatialWorkspace(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id path int true "引擎ID | Engine ID"
-// @Param        request body models.EngineDeletionAssessmentRequest false "外部产物策略 | External artifact policy"
+// @Param        request body models.EngineDeletionAssessmentRequest true "幂等请求标识和外部产物策略 | Idempotency request ID and external artifact policy"
 // @Success      202 {object} models.EngineDeletionAssessmentResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
@@ -452,13 +453,11 @@ func (h *EngineHandler) CreateDeletionAssessment(c *gin.Context) {
 		return
 	}
 	var req models.EngineDeletionAssessmentRequest
-	if c.Request.Body != nil && c.Request.ContentLength > 0 {
-		if err := c.ShouldBindJSON(&req); err != nil {
-			commonapi.RespondError(c, http.StatusBadRequest, err.Error())
-			return
-		}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, commoni18n.MsgInvalidParams))
+		return
 	}
-	assessmentID, err := h.engineService.CreateDeletionAssessment(id, tenantID, actorID, req.ExternalArtifactPolicy)
+	assessmentID, err := h.engineService.CreateDeletionAssessment(cleanupUserContext(c), req.RequestID, id, tenantID, actorID, req.ExternalArtifactPolicy)
 	if err != nil {
 		h.respondWithResourceError(c, err)
 		return
@@ -484,12 +483,12 @@ func (h *EngineHandler) GetDeletionAssessment(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	_, tenantID, err := iamTenantUserActor(c)
+	reader, err := cleanupReader(c)
 	if err != nil {
 		respondIAMError(c, err)
 		return
 	}
-	assessment, err := h.engineService.GetDeletionAssessment(id, tenantID, c.Param("assessment_id"))
+	assessment, err := h.engineService.GetDeletionAssessment(c.Request.Context(), id, c.Param("assessment_id"), reader)
 	if err != nil {
 		h.respondWithResourceError(c, err)
 		return
@@ -528,7 +527,7 @@ func (h *EngineHandler) Delete(c *gin.Context) {
 		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	engine, err := h.engineService.BeginDeletion(id, tenantID, actorID, &req)
+	engine, err := h.engineService.BeginDeletion(cleanupUserContext(c), id, tenantID, actorID, &req)
 	if err != nil {
 		h.respondWithResourceError(c, err)
 		return
@@ -581,6 +580,8 @@ func (h *EngineHandler) Restore(c *gin.Context) {
 
 func (h *EngineHandler) respondWithResourceError(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, commonClient.ErrExecutionOwnerUnavailable):
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error_code": "execution_owner_unavailable", "error": commoni18n.T(c, commoni18n.MsgAuthorizationServiceUnavailable)})
 	case errors.Is(err, service.ErrResourceNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 	case errors.Is(err, service.ErrResourceForbidden):

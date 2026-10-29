@@ -15,7 +15,6 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
-	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/modulelifecycle"
 	_ "github.com/addp/quality/i18n"
 	"github.com/addp/quality/internal/api"
@@ -88,7 +87,7 @@ func main() {
 	issueSvc := service.NewIssueService(issueRepo)
 	catalogSummarySvc := service.NewCatalogSummaryService(catalogSummaryRepo)
 	standardReferenceGuardSvc := service.NewStandardReferenceGuardService(repository.NewStandardReferenceGuardRepository(db))
-	cleanupService := service.NewCleanupService(db, redisClient, commonExecution.NewTaskExecutionRepository(db))
+	cleanupService := service.NewCleanupService(db, systemServiceClient)
 	if err := cleanupService.Start(runtimeContext); err != nil {
 		log.Printf("Quality 资源回收服务启动失败: %v", err)
 	}

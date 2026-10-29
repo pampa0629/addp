@@ -116,7 +116,7 @@ func main() {
 	catalogResourceSvc := service.NewCatalogResourceService(catalogResourceRepo)
 	materializationDone := materializationSvc.StartMaterializationRunner(runtimeContext)
 	defer func() { stopRuntime(); <-materializationDone }()
-	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
+	cleanupSvc := service.NewCleanupService(db, systemClient)
 	if err := cleanupSvc.Start(runtimeContext); err != nil {
 		log.Printf("Model 资源回收执行方启动失败: %v", err)
 	}
@@ -124,7 +124,7 @@ func main() {
 
 	// 设置路由
 	lifecycleController := modulelifecycle.NewBusiness("model", commonClient.ModuleRuntimeRoleBackend)
-	router := api.SetupRouter(
+	router := api.SetupRouter(api.NewCleanupResultHandler(db),
 		entitySvc,
 		entityRelationSvc,
 		logicalTableSvc,

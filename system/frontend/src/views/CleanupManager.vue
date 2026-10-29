@@ -61,11 +61,7 @@
         >
           {{ t('system.cleanup.actions.viewMonitor') }}
         </el-button>
-        <el-progress
-          v-if="currentTask.progress"
-          :percentage="Math.round((currentTask.progress.completed / currentTask.progress.total) * 100)"
-          :status="currentTask.status === 'completed' ? 'success' : undefined"
-        />
+
       </el-alert>
 
       <el-empty
@@ -87,8 +83,8 @@
       <!-- 扫描结果 -->
       <div v-if="latestResult" class="scan-result">
         <el-alert
-          :title="resultBannerTitle"
-          :type="latestResult.action === 'execute' ? 'success' : 'info'"
+          :title="`${resultBannerTitle} · ${getStatusText(latestResult.status)}`"
+          :type="latestResult.status === 'success' ? 'success' : 'warning'"
           :closable="false"
           class="result-banner"
         >
@@ -134,8 +130,8 @@
             {{ formatContext(latestResult.task.context) }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('system.cleanup.scanResult.riskLevel')">
-            <el-tag :type="getRiskLevelType(latestResult.summary.risk_level)">
-              {{ getRiskLevelText(latestResult.summary.risk_level) }}
+            <el-tag :type="getRiskLevelType(latestResult.summary?.risk_level || 'unknown')">
+              {{ getRiskLevelText(latestResult.summary?.risk_level || 'unknown') }}
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item :label="latestResult.action === 'execute' ? t('system.cleanup.executeResult.affectedRecords') : t('system.cleanup.scanResult.itemsToClean')">
@@ -148,54 +144,7 @@
           </el-descriptions-item>
         </el-descriptions>
 
-        <!-- 模块扫描详情 -->
-        <div v-if="latestModuleResults.length > 0" class="module-result">
-          <h3>{{ t('system.cleanup.modules.title') }}</h3>
-          <el-table :data="latestModuleResults" border>
-            <el-table-column :label="t('system.cleanup.modules.columns.module')" width="130">
-              <template #default="{ row }">
-                {{ getModuleName(row.module) }}
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('system.cleanup.modules.columns.status')" width="120">
-              <template #default="{ row }">
-                <el-tag :type="getModuleStatusType(row.status)">
-                  {{ getModuleStatusText(row.status) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-			<el-table-column v-if="latestResult.action === 'scan'" prop="summary.scanned_items" :label="t('system.cleanup.modules.columns.scannedItems')" width="120" />
-			<el-table-column v-else prop="summary.affected_records" :label="t('system.cleanup.modules.columns.affectedRecords')" width="130" />
-            <el-table-column :label="t('system.cleanup.modules.columns.stateChanges')" min-width="180">
-              <template #default="{ row }">
-                {{ formatStateChanges(row.summary) }}
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('system.cleanup.modules.columns.releasedStorage')" min-width="160">
-              <template #default="{ row }">
-                {{ t('system.cleanup.modules.releasedStorageValue', {
-                  artifacts: row.summary.deleted_physical_artifacts || 0,
-                  bytes: formatBytes(row.summary.freed_bytes)
-                }) }}
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('system.cleanup.modules.columns.exceptions')" min-width="150">
-              <template #default="{ row }">
-                {{ t('system.cleanup.modules.exceptionsValue', {
-                  skipped: row.summary.skipped_items || 0,
-                  errors: row.summary.error_count || 0
-                }) }}
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('system.cleanup.modules.columns.riskLevel')" width="100">
-              <template #default="{ row }">
-                <el-tag :type="getRiskLevelType(row.summary.risk_level)">
-                  {{ getRiskLevelText(row.summary.risk_level || 'low') }}
-                </el-tag>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
+        <CleanupModuleResults :executions="latestResult.module_executions" :request-id="latestResult.task_id" :identity-generation="identityGeneration" :can-read-result="canReadResult" :read-result="cleanupApi.readProfessionalResult" />
 
         <!-- 清理操作 -->
         <div class="cleanup-actions">
@@ -356,6 +305,7 @@
             </template>
           </el-table-column>
         </el-table>
+        <el-pagination v-model:current-page="historyPage" :disabled="historyLoading" :page-size="10" :total="historyTotal" layout="prev, pager, next, total" @current-change="loadHistory" />
       </div>
     </el-card>
 
@@ -395,7 +345,7 @@
           </el-descriptions-item>
           <el-descriptions-item :label="t('system.cleanup.detail.riskLevel')">
             <el-tag :type="getRiskLevelType(taskDetailSummary.risk_level)">
-              {{ getRiskLevelText(taskDetailSummary.risk_level || 'low') }}
+              {{ getRiskLevelText(taskDetailSummary.risk_level || 'unknown') }}
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item :label="t('system.cleanup.detail.releasedStorage')">
@@ -419,53 +369,11 @@
           </el-descriptions-item>
         </el-descriptions>
 
-        <div v-if="taskDetailModuleResults.length > 0" class="detail-section">
-          <h3>{{ t('system.cleanup.detail.moduleTitle') }}</h3>
-          <el-table :data="taskDetailModuleResults" border>
-            <el-table-column :label="t('system.cleanup.modules.columns.module')" width="130">
-              <template #default="{ row }">
-                {{ getModuleName(row.module) }}
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('system.cleanup.modules.columns.status')" width="120">
-              <template #default="{ row }">
-                <el-tag :type="getModuleStatusType(row.status)">
-                  {{ getModuleStatusText(row.status) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-			<el-table-column v-if="taskDetail.action === 'scan'" prop="summary.scanned_items" :label="t('system.cleanup.modules.columns.scannedItems')" width="120" />
-			<el-table-column v-else prop="summary.affected_records" :label="t('system.cleanup.modules.columns.affectedRecords')" width="130" />
-            <el-table-column :label="t('system.cleanup.modules.columns.stateChanges')" min-width="180">
-              <template #default="{ row }">
-                {{ formatStateChanges(row.summary) }}
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('system.cleanup.modules.columns.releasedStorage')" min-width="160">
-              <template #default="{ row }">
-                {{ t('system.cleanup.modules.releasedStorageValue', {
-                  artifacts: row.summary.deleted_physical_artifacts || 0,
-                  bytes: formatBytes(row.summary.freed_bytes)
-                }) }}
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('system.cleanup.modules.columns.exceptions')" min-width="150">
-              <template #default="{ row }">
-                {{ t('system.cleanup.modules.exceptionsValue', {
-                  skipped: row.summary.skipped_items || 0,
-                  errors: row.summary.error_count || 0
-                }) }}
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
+        <CleanupModuleResults :executions="taskDetail.module_executions" :request-id="taskDetail.task_id" :identity-generation="identityGeneration" :can-read-result="canReadResult" :read-result="cleanupApi.readProfessionalResult" />
 
-        <el-collapse class="detail-section">
-          <el-collapse-item :title="t('system.cleanup.detail.rawJson')" name="raw">
-            <pre class="raw-json">{{ JSON.stringify(taskDetail, null, 2) }}</pre>
-          </el-collapse-item>
-        </el-collapse>
+
       </div>
+      <el-alert v-else-if="detailFailed" :title="t('common.cleanupObservation.errors.unavailable')" type="error" :closable="false" />
       <el-skeleton v-else :rows="10" animated />
     </el-dialog>
 
@@ -557,12 +465,12 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh, Delete, WarningFilled, Monitor } from '@element-plus/icons-vue'
-import { openMonitorExecution, openMonitorExecutions } from '@common-ui'
+import { openMonitorExecution, openMonitorExecutions, CleanupModuleResults, parseCleanupExecutions, createLatestRequestScope } from '@common-ui'
 import { cleanupApi } from '../api/cleanup'
 import { useAuthStore } from '../store/auth'
 import {
@@ -584,6 +492,7 @@ const latestResult = ref(null)
 const taskHistory = ref([])
 const detailDialogVisible = ref(false)
 const taskDetail = ref(null)
+const detailFailed = ref(false)
 const executeConfirmVisible = ref(false)
 const executeConfirmMode = ref('')
 const executeConfirmChecked = ref(false)
@@ -598,52 +507,22 @@ const isTenantScopeRequired = computed(() => {
   return authStore.contextType !== 'tenant'
 })
 
-const emptySummary = {
-  scanned_items: 0,
-  affected_records: 0,
-  deleted_physical_artifacts: 0,
-  freed_bytes: 0,
-  marked_missing_source: 0,
-  marked_outdated: 0,
-  disabled_task_definitions: 0,
-  deleted_task_definitions: 0,
-  skipped_items: 0,
-  error_count: 0,
-  risk_level: 'low'
+const identityGeneration = ref(0)
+const historyPage = ref(1), historyTotal = ref(0)
+const historyRequests = createLatestRequestScope(), detailRequests = createLatestRequestScope(), polling = createLatestRequestScope()
+let pollTimer, scanRequestId = '', executeAcceptance = null
+const canReadResult = owner => authStore.hasPermission('system.cleanup.read') && authStore.hasPermission(`${owner}.cleanup_result.read`)
+function checkedResponse(response) { parseCleanupExecutions(response); return response }
+const overview = result => {
+  const summary = result?.summary
+  return { items: summary ? (summary.scanned_items ?? 0) : null, affectedRecords: summary ? (summary.affected_records ?? 0) : null,
+    primaryCount: summary ? (result.action === 'execute' ? summary.affected_records ?? 0 : summary.scanned_items ?? 0) : '—',
+    risk: summary?.risk_level || 'unknown', freedBytes: summary ? (summary.freed_bytes ?? 0) : null,
+    modules: result?.module_executions?.length ?? '—' }
 }
-
-const moduleResults = computed(() => {
-  const results = scanResult.value?.results || {}
-  return normalizeModuleResults(results)
-})
-
-const latestModuleResults = computed(() => normalizeModuleResults(latestResult.value?.results || {}))
-
-const reclaimOverview = computed(() => {
-  const summary = scanResult.value?.summary || {}
-  return {
-    items: Number(summary.scanned_items ?? summary.total_items_to_clean ?? 0),
-    affectedRecords: Number(summary.affected_records || 0),
-    risk: summary.risk_level || 'low',
-    freedBytes: Number(summary.freed_bytes || 0),
-    modules: scanResult.value?.task?.expected_modules?.length || moduleResults.value.length || 0
-  }
-})
-
-const latestResultOverview = computed(() => {
-  const summary = latestResult.value?.summary || {}
-  const modules = latestResult.value?.task?.expected_modules?.length || latestModuleResults.value.length || 0
-  const scannedItems = Number(summary.scanned_items ?? summary.total_items_to_clean ?? 0)
-  const affectedRecords = Number(summary.affected_records || 0)
-  return {
-    primaryCount: latestResult.value?.action === 'execute' ? affectedRecords : scannedItems,
-    affectedRecords,
-    items: scannedItems,
-    risk: summary.risk_level || 'low',
-    freedBytes: Number(summary.freed_bytes || 0),
-    modules
-  }
-})
+const reclaimOverview = computed(() => overview(scanResult.value))
+const latestResultOverview = computed(() => overview(latestResult.value))
+const taskDetailSummary = computed(() => taskDetail.value?.summary || {})
 
 const resultBannerTitle = computed(() => {
   if (!latestResult.value) return ''
@@ -656,12 +535,12 @@ const resultBannerDescription = computed(() => {
   if (!latestResult.value) return ''
   if (latestResult.value.action === 'execute') {
     return t('system.cleanup.executeResult.bannerDesc', {
-      records: latestResultOverview.value.affectedRecords,
+      records: latestResultOverview.value.affectedRecords ?? '—',
       space: formatBytes(latestResultOverview.value.freedBytes)
     })
   }
   return t('system.cleanup.scanResult.bannerDesc', {
-    items: latestResultOverview.value.items,
+    items: latestResultOverview.value.items ?? '—',
     modules: latestResultOverview.value.modules
   })
 })
@@ -696,26 +575,6 @@ const executeConfirmButtonText = computed(() => {
     : t('system.cleanup.actions.logicalCleanup')
 })
 
-const taskDetailSummary = computed(() => ({
-  ...emptySummary,
-  ...(taskDetail.value?.summary || {})
-}))
-
-const taskDetailModuleResults = computed(() => normalizeModuleResults(taskDetail.value?.results || {}))
-
-const normalizeModuleResults = (results) => {
-  return Object.entries(results)
-    .map(([module, result]) => ({
-      module,
-      status: result?.status || 'unknown',
-      summary: {
-        ...emptySummary,
-        ...(result?.summary || {})
-      }
-    }))
-    .sort((left, right) => left.module.localeCompare(right.module))
-}
-
 const warnTenantScopeRequired = () => {
   ElMessage.warning(t('system.cleanup.msg.tenantScopeRequired'))
 }
@@ -727,9 +586,13 @@ const startScan = async () => {
     return
   }
 
+  const generation = identityGeneration.value
   try {
     scanLoading.value = true
-    const response = await cleanupApi.createScanTask({})
+    scanRequestId ||= crypto.randomUUID()
+    const response = await cleanupApi.createScanTask({ request_id: scanRequestId })
+    if (generation !== identityGeneration.value) return
+    scanRequestId = ''
     const taskId = response.task_id
     latestResult.value = null
 
@@ -738,9 +601,9 @@ const startScan = async () => {
     // 轮询任务状态
     await pollTaskStatus(taskId)
   } catch (error) {
-    ElMessage.error(t('system.cleanup.msg.scanFailed', { error: error.message || '' }))
+    if (generation === identityGeneration.value) ElMessage.error(t('system.cleanup.msg.scanFailed', { error: '' }))
   } finally {
-    scanLoading.value = false
+    if (generation === identityGeneration.value) scanLoading.value = false
   }
 }
 
@@ -749,7 +612,7 @@ const openExecuteConfirm = (cleanupMode) => {
     warnTenantScopeRequired()
     return
   }
-  if (!scanResult.value) {
+  if (!scanResult.value || scanResult.value.task?.cause_event || scanResult.value.status !== 'success') {
     ElMessage.warning(t('system.cleanup.msg.noScanFirst'))
     return
   }
@@ -785,20 +648,26 @@ const executeCleanup = async (cleanupMode, confirmation) => {
     return
   }
 
-  if (!scanResult.value) {
+  if (!scanResult.value || scanResult.value.task?.cause_event || scanResult.value.status !== 'success') {
     ElMessage.warning(t('system.cleanup.msg.noScanFirst'))
     return
   }
 
+  const generation = identityGeneration.value
   try {
     executeLoading.value = true
-    const response = await cleanupApi.createExecuteTask({
+    const payload = {
       based_on_scan: scanResult.value.task_id,
       cleanup_mode: cleanupMode,
       confirmed: confirmation?.confirmed === true,
       confirmation_token: confirmation?.confirmation_token || '',
       external_artifact_policy: confirmation?.external_artifact_policy
-    })
+    }
+    const intent = JSON.stringify(payload)
+    if (executeAcceptance?.intent !== intent) executeAcceptance = { intent, request_id: crypto.randomUUID() }
+    const response = await cleanupApi.createExecuteTask({ ...payload, request_id: executeAcceptance.request_id })
+    if (generation !== identityGeneration.value) return
+    executeAcceptance = null
 
     ElMessage.success(t('system.cleanup.msg.cleanupCreated'))
     executeConfirmVisible.value = false
@@ -806,96 +675,88 @@ const executeCleanup = async (cleanupMode, confirmation) => {
     // 轮询任务状态
     await pollTaskStatus(response.task_id)
   } catch (error) {
-    ElMessage.error(t('system.cleanup.msg.cleanupFailed', { error: error.message || '' }))
+    if (generation === identityGeneration.value) ElMessage.error(error?.response?.data?.error_code === 'cleanup_manager_scope_required' ? t('system.cleanup.msg.managerScopeRequired') : t('system.cleanup.msg.cleanupFailed', { error: '' }))
   } finally {
-    executeLoading.value = false
+    if (generation === identityGeneration.value) executeLoading.value = false
   }
 }
 
-// 轮询任务状态
-const pollTaskStatus = async (taskId) => {
-  const maxAttempts = 20
+// 每次观察都重新读取已授权事实，失败即清除本次视图。
+const pollTaskStatus = async taskId => {
+  clearTimeout(pollTimer)
+  const ticket = polling.invalidate()
+  currentTask.value = null
   let attempts = 0
-
   const poll = async () => {
     try {
-      const status = await cleanupApi.getTaskStatus(taskId)
+      const status = checkedResponse(await polling.request(options => cleanupApi.getTaskStatus(taskId, options)))
+      if (!polling.current(ticket)) return
       currentTask.value = status
-
-      if (status.status === 'completed' || status.status === 'completed_with_errors') {
-        // 评估完成，显示结果
-        if (status.action === 'scan') {
-          scanResult.value = status
-        }
+      if (['success', 'failed', 'timeout', 'cancelled'].includes(status.status)) {
         latestResult.value = status
-        // 刷新历史
+        if (status.action === 'scan' && status.status === 'success' && !status.task.cause_event) scanResult.value = status
         await loadHistory()
         return
       }
-
-      if (status.status === 'failed') {
-        ElMessage.error(t('system.cleanup.msg.taskFailed'))
-        return
-      }
-
-      // 继续轮询
-      if (attempts < maxAttempts) {
-        attempts++
-        setTimeout(poll, 2000)
-      }
-    } catch (error) {
-      console.error('查询任务状态失败:', error)
+      if (++attempts < 160) pollTimer = setTimeout(poll, 2000)
+    } catch {
+      if (!polling.current(ticket)) return
+      currentTask.value = null; latestResult.value = null; scanResult.value = null
+      ElMessage.error(t('common.cleanupObservation.errors.unavailable'))
     }
   }
-
-  poll()
+  await poll()
 }
 
-// 加载任务历史
 const loadHistory = async () => {
-  if (isTenantScopeRequired.value) {
-    taskHistory.value = []
-    latestScanTaskId.value = ''
-    latestExecuteTaskId.value = ''
-    return
-  }
-
+  const ticket = historyRequests.invalidate()
+  taskHistory.value = []; latestResult.value = null; scanResult.value = null
+  latestScanTaskId.value = ''; latestExecuteTaskId.value = ''
+  if (isTenantScopeRequired.value) return
+  historyLoading.value = true
   try {
-    historyLoading.value = true
-    const response = await cleanupApi.getTaskHistory({ page: 1, page_size: 10 })
-    taskHistory.value = response.tasks || []
-    const historyResults = selectCleanupHistoryResults(taskHistory.value)
-    latestScanTaskId.value = historyResults.latestScanTaskId
-    latestExecuteTaskId.value = historyResults.latestExecuteTaskId
-
-    const resultTaskIds = [...new Set([
-      historyResults.latestCompletedScanTaskId,
-      historyResults.latestCompletedResultTaskId
-    ].filter(Boolean))]
-    const resultEntries = await Promise.all(resultTaskIds.map(async taskId => (
-      [taskId, await cleanupApi.getTaskStatus(taskId)]
-    )))
-    const resultsByTaskId = new Map(resultEntries)
-    scanResult.value = resultsByTaskId.get(historyResults.latestCompletedScanTaskId) || null
-    latestResult.value = resultsByTaskId.get(historyResults.latestCompletedResultTaskId) || null
-  } catch (error) {
-    console.error('加载任务历史失败:', error)
-  } finally {
-    historyLoading.value = false
+    const response = await historyRequests.request(options => cleanupApi.getTaskHistory({ page: historyPage.value, page_size: 10 }, options))
+    if (!historyRequests.current(ticket)) return
+    if (!Array.isArray(response.tasks) || !Number.isSafeInteger(response.total) || response.total < 0) throw new Error('cleanup_history_invalid')
+    taskHistory.value = response.tasks; historyTotal.value = response.total
+    if (historyPage.value !== 1) return
+    const selected = selectCleanupHistoryResults(response.tasks)
+    latestScanTaskId.value = selected.latestScanTaskId; latestExecuteTaskId.value = selected.latestExecuteTaskId
+    const ids = [...new Set([selected.latestCompletedScanTaskId, selected.latestCompletedResultTaskId].filter(Boolean))]
+    const entries = await Promise.all(ids.map(async id => [id, checkedResponse(await historyRequests.request(options => cleanupApi.getTaskStatus(id, options)))]))
+    if (!historyRequests.current(ticket)) return
+    const results = new Map(entries)
+    scanResult.value = results.get(selected.latestCompletedScanTaskId) || null
+    latestResult.value = results.get(selected.latestCompletedResultTaskId) || null
+  } catch {
+    if (!historyRequests.current(ticket)) return
+    taskHistory.value = []; latestResult.value = null; scanResult.value = null; historyTotal.value = 0
+    ElMessage.error(t('common.cleanupObservation.errors.unavailable'))
+  } finally { if (historyRequests.current(ticket)) historyLoading.value = false }
+}
+const viewTaskDetail = async taskId => {
+  const ticket = detailRequests.invalidate()
+  detailDialogVisible.value = true; taskDetail.value = null; detailFailed.value = false
+  try {
+    const detail = checkedResponse(await detailRequests.request(options => cleanupApi.getTaskStatus(taskId, options)))
+    if (detailRequests.current(ticket)) taskDetail.value = detail
+  } catch {
+    if (detailRequests.current(ticket)) { taskDetail.value = null; detailFailed.value = true; ElMessage.error(t('system.cleanup.msg.detailFailed')) }
   }
 }
-
-// 查看任务详情
-const viewTaskDetail = async (taskId) => {
-  try {
-    detailDialogVisible.value = true
-    taskDetail.value = null
-    const detail = await cleanupApi.getTaskStatus(taskId)
-    taskDetail.value = detail
-  } catch (error) {
-    ElMessage.error(t('system.cleanup.msg.detailFailed'))
-  }
+const invalidateViews = () => {
+  identityGeneration.value++
+  historyRequests.invalidate(); detailRequests.invalidate(); polling.invalidate(); clearTimeout(pollTimer)
+  currentTask.value = null; scanResult.value = null; latestResult.value = null; taskDetail.value = null; taskHistory.value = []
+  detailDialogVisible.value = false; executeConfirmVisible.value = false
+  historyTotal.value = 0; historyPage.value = 1
+  scanRequestId = ''; executeAcceptance = null
+  scanLoading.value = false; executeLoading.value = false; historyLoading.value = false
 }
+watch(() => [authStore.token, authStore.authContext, authStore.permissions.join('|')], invalidateViews, { flush: 'sync' })
+watch(detailDialogVisible, open => { if (!open) { detailRequests.invalidate(); taskDetail.value = null } })
+onBeforeRouteLeave(invalidateViews)
+onBeforeUnmount(() => { invalidateViews(); historyRequests.dispose(); detailRequests.dispose(); polling.dispose() })
 
 const openMonitor = async (executionId) => {
   if (!executionId) return
@@ -933,8 +794,9 @@ const getStatusText = (status) => {
   const statusMap = {
     pending: t('system.cleanup.status.pending'),
     running: t('system.cleanup.status.running'),
-    completed: t('system.cleanup.status.completed'),
-    completed_with_errors: t('system.cleanup.status.completedWithErrors'),
+    success: t('system.cleanup.status.completed'),
+    timeout: t('common.cleanupObservation.status.timeout'),
+    cancelled: t('common.cleanupObservation.status.cancelled'),
     failed: t('system.cleanup.status.failed')
   }
   return statusMap[status] || status
@@ -944,8 +806,9 @@ const getTaskStatusType = (status) => {
   const typeMap = {
     pending: 'info',
     running: 'warning',
-    completed: 'success',
-    completed_with_errors: 'warning',
+    success: 'success',
+    timeout: 'danger',
+    cancelled: 'info',
     failed: 'danger'
   }
   return typeMap[status] || 'info'
@@ -965,6 +828,7 @@ const getCleanupModeText = (cleanupMode) => {
 
 const getRiskLevelText = (level) => {
   const levelMap = {
+    unknown: '—',
     low: t('system.cleanup.risk.low'),
     medium: t('system.cleanup.risk.medium'),
     high: t('system.cleanup.risk.high')
@@ -1042,7 +906,8 @@ const formatModules = (modules) => {
 }
 
 const formatBytes = (value) => {
-  const bytes = Number(value || 0)
+  if (value == null) return '—'
+  const bytes = Number(value)
   if (bytes <= 0) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
   const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)

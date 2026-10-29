@@ -28,8 +28,8 @@ type model3DGLBOutputRef struct {
 	TaskID      string `json:"task_id,omitempty"`
 	StorageRef  string `json:"storage_ref"`
 	// An interrupted remote invocation may write after its caller has failed.
-	// Keep its exact tombstone for repeated cleanup rather than infer termination
-	// from a successful DELETE of an object that might not exist yet.
+	// Retain its exact tombstone as a block; only a known writer outcome can
+	// authorize cleanup. Repeated DELETEs cannot prove late uploads stopped.
 	Watch bool `json:"watch,omitempty"`
 }
 
@@ -107,61 +107,6 @@ func hydrateModel3DGLBOutputMetadata(ctx context.Context, tx *gorm.DB, item *mod
 		return err
 	}
 	return nil
-}
-
-// DeleteExecutionOutputResult serializes with pending creation on the task row
-// before touching the published object. The retained tombstones remain visible
-// to background cleanup after this result is soft-deleted.
-func (r *Model3DGLBRepository) DeleteExecutionOutputResult(ctx context.Context, expected *models.Model3DGLB, deleteExact func(context.Context, uint, string) error) error {
-	if !Model3DGLBUsesExecutionOutput(expected) || expected.TaskID == nil || deleteExact == nil {
-		return commonAPI.ErrConflict
-	}
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var task models.Model3DGLBTask
-		if err := tx.Unscoped().Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ? AND task_type = ?", *expected.TaskID, expected.TenantID, commonExecution.TaskTypeModel3DGLBGeneration).First(&task).Error; err != nil {
-			return err
-		}
-		active, err := activeModel3DGLBSourceExecutions(tx, expected.TenantID, expected.ItemFingerprint)
-		if err != nil {
-			return err
-		}
-		if active != 0 {
-			return commonAPI.ErrConflict
-		}
-		var current models.Model3DGLB
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ?", expected.ID, expected.TenantID).First(&current).Error; err != nil {
-			return err
-		}
-		if !Model3DGLBUsesExecutionOutput(&current) || current.TaskID == nil || *current.TaskID != task.ID {
-			return commonAPI.ErrConflict
-		}
-		if err := hydrateModel3DGLBOutputMetadata(ctx, tx, &current); err != nil {
-			return err
-		}
-		state, err := readModel3DGLBOutputState(current.Metadata)
-		if err != nil || state.Pending != nil {
-			return commonAPI.ErrConflict
-		}
-		active, err = activeModel3DGLBSourceExecutions(tx, current.TenantID, current.ItemFingerprint)
-		if err != nil {
-			return err
-		}
-		if active != 0 {
-			return commonAPI.ErrConflict
-		}
-		if current.StorageRef != "" {
-			var references int64
-			if err := tx.Model(&models.Model3DGLB{}).Where("tenant_id = ? AND storage_ref = ? AND id <> ?", current.TenantID, current.StorageRef, current.ID).Count(&references).Error; err != nil {
-				return err
-			}
-			if references == 0 {
-				if err := deleteExact(ctx, current.TenantID, current.StorageRef); err != nil {
-					return err
-				}
-			}
-		}
-		return NewModel3DGLBRepository(tx).Delete(ctx, current.ID, current.TenantID)
-	})
 }
 
 func activeModel3DGLBSourceExecutions(tx *gorm.DB, tenantID uint, fingerprint string) (int64, error) {
@@ -301,76 +246,24 @@ func (r *Model3DGLBRepository) CleanupExecutionOutputs(ctx context.Context, limi
 		return 0, commonAPI.ErrConflict
 	}
 	var ids []uint
-	if err := r.db.WithContext(ctx).Unscoped().Model(&models.Model3DGLB{}).Where("(metadata -> ? -> 'pending') IS NOT NULL OR (metadata -> ? -> 'garbage') IS NOT NULL OR (metadata -> ? -> 'input_cleanup_pending') IS NOT NULL", model3DGLBOutputStateKey, model3DGLBOutputStateKey, model3DGLBOutputStateKey).Order("COALESCE(metadata->'"+model3DGLBOutputStateKey+"'->>'checked_at',''), id").Limit(limit).Pluck("id", &ids).Error; err != nil {
+	operationSnapshot := "operation.snapshot"
+	if r.db.Dialector.Name() == "postgres" {
+		operationSnapshot = "CAST(operation.snapshot AS jsonb)"
+	}
+	if err := r.db.WithContext(ctx).Unscoped().Model(&models.Model3DGLB{}).Where("NOT EXISTS (SELECT 1 FROM manager.cleanup_artifact_operations AS operation WHERE operation.origin = ? AND operation.state IN ? AND operation.tenant_id = model_3d_glb.tenant_id AND CAST("+operationSnapshot+" ->> 'ID' AS BIGINT) = model_3d_glb.id)", "background", []string{"prepared", "submitting", "unknown"}).Where("(metadata -> ? -> 'pending') IS NOT NULL OR (metadata -> ? -> 'garbage') IS NOT NULL OR (metadata -> ? -> 'input_cleanup_pending') IS NOT NULL", model3DGLBOutputStateKey, model3DGLBOutputStateKey, model3DGLBOutputStateKey).Order("COALESCE(metadata->'"+model3DGLBOutputStateKey+"'->>'checked_at',''), id").Limit(limit).Pluck("id", &ids).Error; err != nil {
 		return 0, err
 	}
 	deleted := 0
 	var cleanupErr error
 	for _, id := range ids {
-		var objectErr error
-		err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			var item models.Model3DGLB
-			if err := tx.Unscoped().Clauses(clause.Locking{Strength: "UPDATE"}).First(&item, id).Error; err != nil {
-				return err
-			}
-			if err := hydrateModel3DGLBOutputMetadata(ctx, tx, &item); err != nil {
-				return err
-			}
-			state, err := readModel3DGLBOutputState(item.Metadata)
-			if err != nil {
-				return err
-			}
-			if state.Pending != nil {
-				var execution commonExecution.TaskExecution
-				err := tx.Where("tenant_id = ? AND execution_id = ? AND module = ? AND task_type = ?", item.TenantID, state.Pending.ExecutionID, commonExecution.ModuleManager, commonExecution.TaskTypeModel3DGLBGeneration).First(&execution).Error
-				if err != nil {
-					return err
-				} // Missing evidence never means the invocation stopped.
-				switch execution.Status {
-				case commonExecution.ExecutionStatusFailed, commonExecution.ExecutionStatusTimeout, commonExecution.ExecutionStatusCancelled:
-					ref := *state.Pending
-					ref.Watch = true
-					appendModel3DGLBGarbage(&state, ref)
-					state.Pending = nil
-				}
-			}
-			remaining := make([]model3DGLBOutputRef, 0, len(state.Garbage))
-			for _, ref := range state.Garbage {
-				if ref.StorageRef == item.StorageRef {
-					objectErr = errors.Join(objectErr, commonAPI.ErrConflict)
-					remaining = append(remaining, ref)
-					continue
-				}
-				var references int64
-				if err := tx.Model(&models.Model3DGLB{}).Where("tenant_id = ? AND storage_ref = ?", item.TenantID, ref.StorageRef).Count(&references).Error; err != nil {
-					return err
-				}
-				if references != 0 {
-					remaining = append(remaining, ref)
-					continue
-				}
-				if err := deleteExact(ctx, item.TenantID, ref.StorageRef); err != nil {
-					objectErr = errors.Join(objectErr, err)
-					remaining = append(remaining, ref)
-					continue
-				}
-				deleted++
-				if ref.Watch {
-					remaining = append(remaining, ref)
-				}
-			}
-			state.Garbage = remaining
-			inputCount, inputErr := cleanupModel3DGLBInputs(ctx, tx, &item, &state, deleteInput)
-			deleted += inputCount
-			objectErr = errors.Join(objectErr, inputErr)
-			state.CheckedAt = time.Now().UTC().Format("2006-01-02T15:04:05.000000000Z")
-			// Housekeeping cannot promote a historical artifact in the current
-			// result selector, whose ordering is updated_at then id.
-			return tx.Unscoped().Model(&item).UpdateColumn("metadata", model3DGLBOutputMetadata(item.Metadata, state)).Error
-		})
-		if err != nil || objectErr != nil {
-			cleanupErr = errors.Join(cleanupErr, err, objectErr)
+		op, err := r.prepareGLBHousekeeping(ctx, id)
+		if err != nil {
+			cleanupErr = errors.Join(cleanupErr, err)
+			continue
 		}
+		count, err := r.runGLBHousekeeping(ctx, op, deleteInput, deleteExact)
+		deleted += count
+		cleanupErr = errors.Join(cleanupErr, err)
 	}
 	return deleted, cleanupErr
 }

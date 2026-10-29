@@ -16,6 +16,7 @@ import (
 )
 
 func SetupRouter(
+	cleanupResults *CleanupResultHandler,
 	cfg *config.Config,
 	ontologyHandler *OntologyHandler,
 	graphHandler *KnowledgeGraphHandler,
@@ -49,6 +50,7 @@ func SetupRouter(
 		commonAuth.MustNewContextGuard("tenant"),
 	)
 	auth.GET("/execution-read-scope", GetExecutionReadScope)
+	auth.GET("/cleanup-executions/:execution_id/result", commonAuth.MustNewPermissionGuard("graph.cleanup_result.read", "system.cleanup.read"), cleanupResults.Get)
 	permission := func(keys ...string) gin.HandlerFunc {
 		return commonAuth.MustNewPermissionGuard(keys...)
 	}

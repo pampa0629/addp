@@ -189,23 +189,9 @@ func (s *RasterCOGTaskService) GetResult(ctx context.Context, id uint, tenantID 
 	return s.repo.GetByID(ctx, id, tenantID)
 }
 
-func (s *RasterCOGTaskService) DeleteResult(ctx context.Context, id uint, tenantID uint) error {
-	result, err := s.repo.GetByID(ctx, id, tenantID)
-	if err != nil {
-		return err
-	}
-	if result == nil {
-		return errors.New("raster COG result not found")
-	}
-	if strings.TrimSpace(result.StorageRef) != "" {
-		if s.cleaner == nil {
-			return errors.New("raster COG result cleaner is required")
-		}
-		if err := s.cleaner.DeleteByStorageRef(ctx, result.StorageRef); err != nil {
-			return err
-		}
-	}
-	return s.repo.Delete(ctx, id, tenantID)
+func (s *RasterCOGTaskService) DeleteResult(ctx context.Context, id, tenantID uint) error {
+	err := NewCleanupArtifactService(s.repo.GetDB(), CleanupArtifactEffects{Bucket: s.bucket, Objects: s.cleaner}).DeleteManual(ctx, commonExecution.TaskTypeRasterCOGGeneration, id, tenantID)
+	return err
 }
 
 func (s *RasterCOGTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string, overwriteExistingResult bool) (string, error) {
@@ -253,6 +239,7 @@ func (s *RasterCOGTaskService) Execute(ctx context.Context, taskID uint, tenantI
 }
 
 func (s *RasterCOGTaskService) runRasterCOGGeneration(ctx context.Context, task *models.RasterCOGTask, executionID string) {
+	ctx = repository.ArtifactWriterContext(ctx)
 	if err := s.repo.ValidateClaim(ctx, task.ID, task.TenantID, executionID); err != nil {
 		logger.L().Warn("领取栅格 COG execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 		return
@@ -268,7 +255,9 @@ func (s *RasterCOGTaskService) runRasterCOGGeneration(ctx context.Context, task 
 		if s.executor == nil {
 			err = errors.New("raster COG generation executor is not configured")
 		} else {
-			buildResult, err = s.executor.BuildRasterCOG(ctx, RasterCOGExecutionRequest{Task: task, Config: execCfg})
+			if err = repository.BeginArtifactWrite(ctx, s.repo.GetDB()); err == nil {
+				buildResult, err = s.executor.BuildRasterCOG(ctx, RasterCOGExecutionRequest{Task: task, Config: execCfg})
+			}
 		}
 	}
 	if err == nil && buildResult != nil {
@@ -312,6 +301,10 @@ func (s *RasterCOGTaskService) runRasterCOGGeneration(ctx context.Context, task 
 	resultID := uint(0)
 	if rasterCOG != nil {
 		resultID = rasterCOG.ID
+	}
+	if factErr := repository.RecordArtifactWrite(ctx, s.repo.GetDB(), status == commonExecution.ExecutionStatusSuccess); factErr != nil {
+		logger.L().Warn("persist artifact write fact failed", "error", factErr)
+		return
 	}
 	if err := s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, resultID, resultFields, map[string]interface{}{
 		"status":        status,

@@ -37,9 +37,9 @@ describe('formatCleanupStateChanges', () => {
 describe('selectCleanupHistoryResults', () => {
   it('从按时间倒序的历史中恢复最近结果和最近可执行评估', () => {
     expect(selectCleanupHistoryResults([
-      { task_id: 'execute-2', action: 'execute', status: 'completed' },
+      { task_id: 'execute-2', action: 'execute', status: 'success' },
       { task_id: 'scan-running', action: 'scan', status: 'running' },
-      { task_id: 'scan-1', action: 'scan', status: 'completed_with_errors' }
+      { task_id: 'scan-1', action: 'scan', status: 'success' }
     ])).toEqual({
       latestScanTaskId: 'scan-running',
       latestExecuteTaskId: 'execute-2',
@@ -48,14 +48,18 @@ describe('selectCleanupHistoryResults', () => {
     })
   })
 
-  it('没有已完成任务时不恢复结果', () => {
+  it('失败结果可见但不能作为执行依据', () => {
     expect(selectCleanupHistoryResults([
       { task_id: 'scan-failed', action: 'scan', status: 'failed' }
     ])).toEqual({
       latestScanTaskId: 'scan-failed',
       latestExecuteTaskId: '',
       latestCompletedScanTaskId: '',
-      latestCompletedResultTaskId: ''
+      latestCompletedResultTaskId: 'scan-failed'
     })
   })
+})
+
+it('Engine 专用预评估不能作为通用 execute 依据', () => {
+ expect(selectCleanupHistoryResults([{task_id:'engine-scan',action:'scan',status:'success',cause_event:'engine.deleting',context:{engine_id:1}}]).latestCompletedScanTaskId).toBe('')
 })

@@ -105,9 +105,9 @@ func (r *EngineRepository) ListVisibleByTenant(tenantID uint, engineType string,
 	return engines, err
 }
 
-func (r *EngineRepository) ListDeleting() ([]models.Engine, error) {
+func (r *EngineRepository) ListDeleting(ctx context.Context, after uint) ([]models.Engine, error) {
 	var engines []models.Engine
-	err := r.db.Where("lifecycle_state = ?", models.EngineLifecycleDeleting).Order("id ASC").Find(&engines).Error
+	err := r.db.WithContext(ctx).Where("lifecycle_state = ? AND id > ? AND deletion_error = ?", models.EngineLifecycleDeleting, after, "").Order("id ASC").Limit(64).Find(&engines).Error
 	return engines, err
 }
 

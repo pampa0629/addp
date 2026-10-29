@@ -11,11 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/cog"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
+	"github.com/addp/manager/internal/testfixture"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -43,6 +45,11 @@ func TestPPTXPDFDeleteManagedObjectLifecycle(t *testing.T) {
  storage_ref TEXT NOT NULL, file_name TEXT NOT NULL, size_bytes INTEGER NOT NULL,
  page_count INTEGER NOT NULL, content_url TEXT, status TEXT NOT NULL, metadata JSON,
  error_message TEXT, created_by INTEGER, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	testfixture.ArtifactReferenceSQLite(t, db)
+	ensureDerivedTaskDefinitionTestTables(t, db)
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatal(err)
 	}
 	var objectMu sync.Mutex
@@ -85,6 +92,7 @@ func TestPPTXPDFDeleteManagedObjectLifecycle(t *testing.T) {
 	client := model3DTilesMinIOClient(t, server.URL)
 	repo := repository.NewPPTXPDFRepository(db)
 	svc := service.NewPPTXPDFTaskService(repo)
+	svc.SetBucket("manager")
 	svc.SetCleaner(service.NewMinIOManagedObjectCleaner(client, "manager"))
 	handler := NewPPTXPDFHandler(svc, client, "manager")
 	router := gin.New()

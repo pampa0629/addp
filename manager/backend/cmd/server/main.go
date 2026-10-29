@@ -326,10 +326,10 @@ func main() {
 	var registration *commonClient.ModuleRegistrationLifecycle
 	embeddingTaskScheduler := service.NewEmbeddingTaskScheduler(embeddingTaskSvc)
 	cleanupSvc := service.NewCleanupService(
-		redisClient,
+		db,
+		searchService,
 		metaClient,
 		systemServiceClient,
-		taskExecRepo,
 		quickViewService.Repository(),
 		tileCacheTaskSvc,
 		embeddingRepo,
@@ -414,7 +414,7 @@ func main() {
 
 	lifecycleController := modulelifecycle.NewBusiness("manager", commonClient.ModuleRuntimeRoleBackend)
 	var notifyExecutionEnqueued func()
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, baseMapProviderService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, model3DTilesHandler, dataProfileHandler, protectionStore, protectionReadBoundary, lifecycleController, pptxPDFHandler, func() {
+	router := api.SetupRouter(api.NewCleanupResultHandler(db), cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, baseMapProviderService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, model3DTilesHandler, dataProfileHandler, protectionStore, protectionReadBoundary, lifecycleController, pptxPDFHandler, func() {
 		if notifyExecutionEnqueued != nil {
 			notifyExecutionEnqueued()
 		}

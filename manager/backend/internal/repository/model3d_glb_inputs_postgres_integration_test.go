@@ -111,14 +111,14 @@ func TestIntegrationPostgresManagerGLBInputOwnership(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if removed != 2 {
-		t.Fatalf("crash tombstone forgotten after first DELETE: %d", removed)
+	if removed != 0 {
+		t.Fatalf("unknown writer was deleted without stop proof: %d", removed)
 	}
 	if err := db.Unscoped().First(result, result.ID).Error; err != nil {
 		t.Fatal(err)
 	}
 	state, err = readModel3DGLBOutputState(result.Metadata)
-	if err != nil || len(state.InputPreparations) != 1 || !state.InputPreparations[0].Released || !state.InputPreparations[0].Watch || state.InputPreparations[0].Cleaned {
+	if err != nil || len(state.InputPreparations) != 1 || state.InputPreparations[0].Released || state.InputPreparations[0].Watch || state.InputPreparations[0].Cleaned {
 		t.Fatalf("lost durable crash evidence: %+v %v", state, err)
 	}
 }

@@ -154,6 +154,10 @@ func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.Embedding
 	client := meilisearch.New(cfg.MeilisearchURL, meilisearch.WithAPIKey(cfg.MeilisearchMasterKey), meilisearch.WithCustomClient(&http.Client{Timeout: 5 * time.Second}), meilisearch.DisableRetries())
 	svc.client = client
 
+	if err := deliveries.RequireNoCleanupHold(context.Background(), epoch); err != nil {
+		return svc, nil
+	}
+
 	// 初始化索引配置
 	initCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

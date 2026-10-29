@@ -87,7 +87,7 @@ func (r *ContentIndexDeliveryRepository) RequireActive(ctx context.Context, epoc
 	}
 	var active int64
 	if err := r.db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM manager.content_index_outlets o
- WHERE o.index_name = ? AND o.epoch = ? AND o.configured = TRUE AND o.isolated = FALSE
+ WHERE o.index_name = ? AND o.epoch = ? AND o.configured = TRUE AND o.isolated = FALSE AND o.cleanup_hold_id = ''
  AND NOT EXISTS (SELECT 1 FROM manager.content_index_deliveries d WHERE d.index_name = o.index_name AND d.status IN ('submitting','unknown'))`, r.index, epoch).Scan(&active).Error; err != nil {
 		return err
 	}
@@ -117,11 +117,23 @@ func (r *ContentIndexDeliveryRepository) Register(ctx context.Context, tx *gorm.
 	if err != nil {
 		return err
 	}
-	if state.Epoch != epoch || !state.Configured || state.Isolated || op == nil || op.TenantID <= 0 || op.Kind != IndexDeliveryWrite {
+	if state.Epoch != epoch || !state.Configured || state.Isolated || state.CleanupHoldID != "" || op == nil || op.TenantID <= 0 || op.Kind != IndexDeliveryWrite {
 		return ErrContentIndexIsolated
 	}
-	if op.DocumentID != "" || len(op.DocumentIDs) == 0 {
+	if op.DocumentID != "" || len(op.DocumentIDs) == 0 || len(op.EngineIDs) == 0 {
 		return ErrContentIndexDeliveryConflict
+	}
+	for _, engineID := range op.EngineIDs {
+		if engineID == 0 {
+			return ErrContentIndexDeliveryConflict
+		}
+		var blocked int64
+		if err := tx.Model(&models.CleanupIndexTarget{}).Where("index_name=? AND tenant_id=? AND engine_id=?", r.index, op.TenantID, engineID).Count(&blocked).Error; err != nil {
+			return err
+		}
+		if blocked != 0 {
+			return ErrContentIndexIsolated
+		}
 	}
 	members := make(map[string]bool, len(op.DocumentIDs))
 	for _, id := range op.DocumentIDs {
@@ -198,7 +210,7 @@ func (r *ContentIndexDeliveryRepository) QueueDelete(ctx context.Context, epoch 
 		if err != nil {
 			return err
 		}
-		if state.Epoch != epoch || !state.Configured || tenantID <= 0 || filter == "" {
+		if state.Epoch != epoch || !state.Configured || state.CleanupHoldID != "" || tenantID <= 0 || filter == "" {
 			return ErrContentIndexIsolated
 		}
 		if err := tx.Create(op).Error; err != nil {
@@ -226,7 +238,7 @@ func (r *ContentIndexDeliveryRepository) ClaimMaintenance(ctx context.Context, e
 		if err != nil {
 			return err
 		}
-		if state.Epoch != epoch || !state.Configured {
+		if state.Epoch != epoch || !state.Configured || state.CleanupHoldID != "" || op.CleanupOperationID != "" {
 			return ErrContentIndexIsolated
 		}
 		var pending int64
@@ -236,7 +248,7 @@ func (r *ContentIndexDeliveryRepository) ClaimMaintenance(ctx context.Context, e
 		if pending > 0 {
 			return nil
 		}
-		result := tx.Model(&models.ContentIndexDelivery{}).Where("id = ? AND index_name = ? AND kind IN ? AND status = ?", op.ID, r.index, []string{IndexDeliveryDelete, IndexDeliveryPurge}, IndexDeliveryQueued).Updates(map[string]any{"status": IndexDeliverySubmitting, "endpoint_id": state.EndpointID, "task_correlation": op.ID})
+		result := tx.Model(&models.ContentIndexDelivery{}).Where("id = ? AND index_name = ? AND cleanup_operation_id = '' AND kind IN ? AND status = ?", op.ID, r.index, []string{IndexDeliveryDelete, IndexDeliveryPurge}, IndexDeliveryQueued).Updates(map[string]any{"status": IndexDeliverySubmitting, "endpoint_id": state.EndpointID, "task_correlation": op.ID})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -290,7 +302,7 @@ func (r *ContentIndexDeliveryRepository) Finish(ctx context.Context, op *models.
 		if err := tx.Where("id = ? AND index_name = ? AND tenant_id = ?", op.ID, r.index, op.TenantID).First(&actual).Error; err != nil {
 			return err
 		}
-		if actual.Kind != op.Kind || actual.Filter != op.Filter || actual.EndpointID != op.EndpointID || actual.TaskEnqueuedAt != op.TaskEnqueuedAt || actual.TaskCorrelation != op.TaskCorrelation || !slices.Equal(actual.DocumentIDs, op.DocumentIDs) {
+		if actual.CleanupOperationID != op.CleanupOperationID || !slices.Equal(actual.EngineIDs, op.EngineIDs) || actual.Kind != op.Kind || actual.Filter != op.Filter || actual.EndpointID != op.EndpointID || actual.TaskEnqueuedAt != op.TaskEnqueuedAt || actual.TaskCorrelation != op.TaskCorrelation || !slices.Equal(actual.DocumentIDs, op.DocumentIDs) {
 			return ErrContentIndexDeliveryConflict
 		}
 		result := tx.Model(&models.ContentIndexDelivery{}).Where("id = ? AND index_name = ? AND tenant_id = ? AND status = ? AND task_uid = ?", op.ID, r.index, op.TenantID, IndexDeliverySubmitted, *op.TaskUID).Update("status", status)
@@ -300,7 +312,7 @@ func (r *ContentIndexDeliveryRepository) Finish(ctx context.Context, op *models.
 		if result.RowsAffected != 1 {
 			return ErrContentIndexDeliveryConflict
 		}
-		if op.Kind != IndexDeliveryWrite && status != IndexDeliverySucceeded {
+		if op.Kind != IndexDeliveryWrite && actual.CleanupOperationID == "" && status != IndexDeliverySucceeded {
 			retry := models.ContentIndexDelivery{ID: uuid.NewString(), IndexName: r.index, TenantID: op.TenantID, DocumentID: op.DocumentID, Kind: op.Kind, Filter: op.Filter, Status: IndexDeliveryQueued}
 			return tx.Create(&retry).Error
 		}
@@ -314,7 +326,7 @@ func (r *ContentIndexDeliveryRepository) ActivateIfSettled(ctx context.Context, 
 		if err != nil {
 			return err
 		}
-		if state.Epoch != epoch || !state.Configured {
+		if state.Epoch != epoch || !state.Configured || state.CleanupHoldID != "" {
 			return ErrContentIndexIsolated
 		}
 		var pending int64

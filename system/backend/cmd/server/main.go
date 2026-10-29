@@ -138,22 +138,23 @@ func main() {
 		moduleRegistryService.StartCleanupTask(runtimeContext)
 	}()
 
+	cleanupCoordinator := service.NewCleanupOrchestratorService(db, moduleRegistryService)
+	var engineRedis *redis.Client
+	if cfg.RedisHost != "" {
+		engineRedis = redis.NewClient(&redis.Options{Addr: cfg.RedisHost + ":" + cfg.RedisPort, Password: cfg.RedisPassword, DB: cfg.RedisDB})
+		defer engineRedis.Close()
+	}
+	engineService := service.NewEngineService(repository.NewEngineRepository(db), cfg.EncryptionKey, engineRedis).WithCleanupOrchestrator(cleanupCoordinator)
+	cleanupCoordinatorDone := make(chan struct{})
+	go func() { defer close(cleanupCoordinatorDone); cleanupCoordinator.Run(runtimeContext) }()
+	deletionSupervisorDone := make(chan struct{})
+	go func() {
+		defer close(deletionSupervisorDone)
+		engineService.RunDeletionSupervisor(runtimeContext)
+	}()
+
 	// 启动健康检查（在后台 goroutine 中持续更新最近连接状态）
 	go func() {
-		// 初始化 Redis 客户端（用于 EngineService）
-		var redisClient *redis.Client
-		if cfg.RedisHost != "" {
-			redisClient = redis.NewClient(&redis.Options{
-				Addr:     cfg.RedisHost + ":" + cfg.RedisPort,
-				Password: cfg.RedisPassword,
-				DB:       cfg.RedisDB,
-			})
-		}
-
-		// 创建 EngineService
-		engineRepo := repository.NewEngineRepository(db)
-		engineService := service.NewEngineService(engineRepo, cfg.EncryptionKey, redisClient)
-
 		// 创建并运行健康检查器
 		healthChecker := service.NewHealthChecker(engineService)
 		healthChecker.Run(runtimeContext, service.DefaultHealthCheckInterval)
@@ -166,6 +167,8 @@ func main() {
 	}
 	<-cleanupDone
 	<-executionMaintenanceDone
+	<-cleanupCoordinatorDone
+	<-deletionSupervisorDone
 
 	// 关闭 HTTP 服务器，设置 5 秒超时
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

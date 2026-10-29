@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"sort"
 	"time"
 
@@ -15,9 +16,13 @@ import (
 )
 
 type DatabaseCleaner struct {
-	db           *gorm.DB
-	systemClient *commonClient.SystemServiceClient
-	log          *slog.Logger
+	db               *gorm.DB
+	systemClient     *commonClient.SystemServiceClient
+	log              *slog.Logger
+	snapshotTenant   uint
+	snapshotEngines  []commonModels.Engine
+	snapshotReady    bool
+	snapshotObserved map[uint]bool
 }
 
 type metaEngineEligibility struct {
@@ -51,16 +56,10 @@ func (c *DatabaseCleaner) ScanInvalidEngines(ctx context.Context, tenantID uint)
 
 func (c *DatabaseCleaner) ScanInvalidEnginesWithScope(ctx context.Context, tenantID uint, scope CleanupScope) ([]models.InvalidEngineDetail, error) {
 	var details []models.InvalidEngineDetail
-	if c.systemClient == nil && scope.EngineID == 0 {
-		if c.log != nil {
-			c.log.Warn("SystemClient 未配置，跳过无效引擎检查")
-		}
-		return details, nil
-	}
 
 	var eligibilityByID map[uint]metaEngineEligibility
 	if scope.EngineID == 0 {
-		allEngines, err := c.systemClient.WithTenantID(tenantID).ListEngines(ctx)
+		allEngines, err := c.engineFacts(ctx, tenantID)
 		if err != nil {
 			return nil, fmt.Errorf("获取引擎列表失败: %w", err)
 		}
@@ -123,7 +122,7 @@ func (c *DatabaseCleaner) ScanInvalidEnginesWithScope(ctx context.Context, tenan
 	return details, nil
 }
 
-func (c *DatabaseCleaner) ScanOrphanItems(ctx context.Context, tenantID uint) ([]models.OrphanItemDetail, error) {
+func (c *DatabaseCleaner) ScanOrphanItems(ctx context.Context, tenantID uint, scope CleanupScope) ([]models.OrphanItemDetail, error) {
 	var items []models.OrphanItemDetail
 
 	query := c.db.WithContext(ctx).
@@ -135,6 +134,9 @@ func (c *DatabaseCleaner) ScanOrphanItems(ctx context.Context, tenantID uint) ([
 	if tenantID > 0 {
 		query = query.Where("mi.tenant_id = ?", tenantID)
 	}
+	if scope.EngineID > 0 {
+		query = query.Where("mi.engine_id = ?", scope.EngineID)
+	}
 	if err := query.Limit(100).Scan(&items).Error; err != nil {
 		return nil, err
 	}
@@ -144,13 +146,16 @@ func (c *DatabaseCleaner) ScanOrphanItems(ctx context.Context, tenantID uint) ([
 	return items, nil
 }
 
-func (c *DatabaseCleaner) ScanExpiredData(ctx context.Context, tenantID uint, thresholdDays int) (int, error) {
+func (c *DatabaseCleaner) ScanExpiredData(ctx context.Context, tenantID uint, thresholdDays int, scope CleanupScope) (int, error) {
 	var count int64
 
 	query := c.db.Model(&models.MetaItem{}).
 		Where("scanned_at < ?", time.Now().AddDate(0, 0, -thresholdDays))
 	if tenantID > 0 {
 		query = query.Where("tenant_id = ?", tenantID)
+	}
+	if scope.EngineID > 0 {
+		query = query.Where("engine_id = ?", scope.EngineID)
 	}
 	if err := query.Count(&count).Error; err != nil {
 		return 0, err
@@ -196,7 +201,7 @@ func (c *DatabaseCleaner) ScanRetainedLineageReferencesWithScope(ctx context.Con
 	return baseNodes - eligibleNodes, baseItems - eligibleItems, nil
 }
 
-func (c *DatabaseCleaner) ScanDuplicateFingerprints(ctx context.Context, tenantID uint) (int, error) {
+func (c *DatabaseCleaner) ScanDuplicateFingerprints(ctx context.Context, tenantID uint, scope CleanupScope) (int, error) {
 	var count int64
 
 	query := `
@@ -207,6 +212,9 @@ func (c *DatabaseCleaner) ScanDuplicateFingerprints(ctx context.Context, tenantI
 	`
 	if tenantID > 0 {
 		query += fmt.Sprintf(" AND tenant_id = %d", tenantID)
+	}
+	if scope.EngineID > 0 {
+		query += fmt.Sprintf(" AND engine_id = %d", scope.EngineID)
 	}
 	query += `
 			GROUP BY fingerprint
@@ -220,13 +228,16 @@ func (c *DatabaseCleaner) ScanDuplicateFingerprints(ctx context.Context, tenantI
 	return int(count), nil
 }
 
-func (c *DatabaseCleaner) ExecuteSoftDelete(ctx context.Context, tenantID uint, invalidEngineIDs []uint) (*models.MetaCleanupExecuteResult, error) {
+func (c *DatabaseCleaner) ExecuteSoftDelete(ctx context.Context, tenantID uint, invalidEngineIDs []uint, scope CleanupScope) (*models.MetaCleanupExecuteResult, error) {
 	result := &models.MetaCleanupExecuteResult{}
 
 	if len(invalidEngineIDs) > 0 {
 		nodeResult := c.db.Model(&models.MetaNode{}).Where("engine_id IN ?", invalidEngineIDs)
 		if tenantID > 0 {
 			nodeResult = nodeResult.Where("tenant_id = ?", tenantID)
+		}
+		if scope.EngineID > 0 {
+			nodeResult = nodeResult.Where("engine_id = ?", scope.EngineID)
 		}
 		if err := nodeResult.Delete(&models.MetaNode{}).Error; err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("软删除节点失败: %v", err))
@@ -237,6 +248,9 @@ func (c *DatabaseCleaner) ExecuteSoftDelete(ctx context.Context, tenantID uint, 
 		itemResult := c.db.Model(&models.MetaItem{}).Where("engine_id IN ?", invalidEngineIDs)
 		if tenantID > 0 {
 			itemResult = itemResult.Where("tenant_id = ?", tenantID)
+		}
+		if scope.EngineID > 0 {
+			itemResult = itemResult.Where("engine_id = ?", scope.EngineID)
 		}
 		if err := itemResult.Delete(&models.MetaItem{}).Error; err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("软删除项失败: %v", err))
@@ -254,6 +268,9 @@ func (c *DatabaseCleaner) ExecuteSoftDelete(ctx context.Context, tenantID uint, 
 		orphanIDs = orphanIDs.Where("mi.tenant_id = ?", tenantID)
 	}
 
+	if scope.EngineID > 0 {
+		orphanIDs = orphanIDs.Where("mi.engine_id = ?", scope.EngineID)
+	}
 	orphanResult := c.db.WithContext(ctx).
 		Where("id IN (?)", orphanIDs).
 		Delete(&models.MetaItem{})
@@ -266,7 +283,7 @@ func (c *DatabaseCleaner) ExecuteSoftDelete(ctx context.Context, tenantID uint, 
 }
 
 func (c *DatabaseCleaner) ExecuteSoftDeleteByEngine(ctx context.Context, tenantID uint, engineID uint) (*models.MetaCleanupExecuteResult, error) {
-	return c.ExecuteSoftDelete(ctx, tenantID, []uint{engineID})
+	return c.ExecuteSoftDelete(ctx, tenantID, []uint{engineID}, CleanupScope{EngineID: engineID})
 }
 
 func (c *DatabaseCleaner) ExecuteHardDelete(ctx context.Context, tenantID uint) (*models.MetaCleanupExecuteResult, error) {
@@ -396,73 +413,30 @@ func (c *DatabaseCleaner) countCandidateIDs(ctx context.Context, query *gorm.DB)
 	return int(count), nil
 }
 
-func (c *DatabaseCleaner) InvalidEngineIDs(ctx context.Context, tenantID uint) []uint {
+func (c *DatabaseCleaner) InvalidEngineIDs(ctx context.Context, tenantID uint) ([]uint, error) {
 	return c.InvalidEngineIDsWithScope(ctx, tenantID, CleanupScope{})
 }
 
-func (c *DatabaseCleaner) InvalidEngineIDsWithScope(ctx context.Context, tenantID uint, scope CleanupScope) []uint {
+func (c *DatabaseCleaner) InvalidEngineIDsWithScope(ctx context.Context, tenantID uint, scope CleanupScope) ([]uint, error) {
 	var ids []uint
 	if scope.EngineID > 0 {
-		return []uint{scope.EngineID}
-	}
-	if c.systemClient == nil {
-		if c.log != nil {
-			c.log.Warn("SystemClient 未配置，无法获取无效引擎列表")
-		}
-		return ids
+		return []uint{scope.EngineID}, nil
 	}
 
-	allEngines, err := c.systemClient.WithTenantID(tenantID).ListEngines(ctx)
+	allEngines, err := c.engineFacts(ctx, tenantID)
 	if err != nil {
 		if c.log != nil {
 			c.log.Error("获取引擎列表失败", "error", err)
 		}
-		return ids
+		return nil, err
 	}
 
 	eligibilityByID := metaEngineEligibilityByID(allEngines)
 
-	var nodeEngineIDs []uint
-	query := c.db.Table("meta.meta_node").
-		Select("DISTINCT engine_id").
-		Order("engine_id")
-	if tenantID > 0 {
-		query = query.Where("tenant_id = ?", tenantID)
+	allEngineIDsInDB, err := c.referencedEngineIDs(ctx, tenantID)
+	if err != nil {
+		return nil, err
 	}
-	if scope.EngineID > 0 {
-		query = query.Where("engine_id = ?", scope.EngineID)
-	}
-	if err := query.Scan(&nodeEngineIDs).Error; err != nil {
-		if c.log != nil {
-			c.log.Error("查询数据库引擎ID失败", "error", err)
-		}
-		return ids
-	}
-	referencedEngineIDs := make(map[uint]struct{}, len(nodeEngineIDs))
-	for _, engineID := range nodeEngineIDs {
-		referencedEngineIDs[engineID] = struct{}{}
-	}
-	if metaScanTaskTableExists(c.db) {
-		var taskEngineIDs []uint
-		taskQuery := c.db.Model(&models.ScanTask{}).Distinct("engine_id")
-		if tenantID > 0 {
-			taskQuery = taskQuery.Where("tenant_id = ?", tenantID)
-		}
-		if err := taskQuery.Pluck("engine_id", &taskEngineIDs).Error; err != nil {
-			if c.log != nil {
-				c.log.Error("查询扫描任务引擎ID失败", "error", err)
-			}
-			return ids
-		}
-		for _, engineID := range taskEngineIDs {
-			referencedEngineIDs[engineID] = struct{}{}
-		}
-	}
-	allEngineIDsInDB := make([]uint, 0, len(referencedEngineIDs))
-	for engineID := range referencedEngineIDs {
-		allEngineIDsInDB = append(allEngineIDsInDB, engineID)
-	}
-	sort.Slice(allEngineIDsInDB, func(i, j int) bool { return allEngineIDsInDB[i] < allEngineIDsInDB[j] })
 
 	for _, engineID := range allEngineIDsInDB {
 		eligibility, exists := eligibilityByID[engineID]
@@ -470,7 +444,7 @@ func (c *DatabaseCleaner) InvalidEngineIDsWithScope(ctx context.Context, tenantI
 			ids = append(ids, engineID)
 		}
 	}
-	return ids
+	return ids, nil
 }
 
 func metaScanTaskTableExists(db *gorm.DB) bool {
@@ -485,4 +459,108 @@ func metaScanTaskTableExists(db *gorm.DB) bool {
 		return count > 0
 	}
 	return db.Migrator().HasTable(&models.ScanTask{})
+}
+
+// PrepareEngineFacts freezes exact, authoritative observations before Owner locks.
+func (c *DatabaseCleaner) PrepareEngineFacts(ctx context.Context, tenant uint, scope CleanupScope) (*DatabaseCleaner, error) {
+	copy := *c
+	if scope.EngineID == 0 {
+		ids, err := c.referencedEngineIDs(ctx, tenant)
+		if err != nil {
+			return nil, err
+		}
+		values, err := c.readEngineFacts(ctx, tenant, ids)
+		if err != nil {
+			return nil, err
+		}
+		copy.snapshotTenant = tenant
+		copy.snapshotEngines = values
+		copy.snapshotReady = true
+		copy.snapshotObserved = map[uint]bool{}
+		for _, id := range ids {
+			copy.snapshotObserved[id] = true
+		}
+	}
+	return &copy, nil
+}
+func (c *DatabaseCleaner) WithDB(db *gorm.DB) *DatabaseCleaner {
+	copy := *c
+	copy.db = db
+	return &copy
+}
+func (c *DatabaseCleaner) referencedEngineIDs(ctx context.Context, tenant uint) ([]uint, error) {
+	if tenant == 0 {
+		return nil, fmt.Errorf("cleanup Tenant required")
+	}
+	seen := map[uint]bool{}
+	tables := []string{"meta.meta_node", "meta.meta_item"}
+	if metaScanTaskTableExists(c.db) {
+		tables = append(tables, "meta.scan_tasks")
+	}
+	for _, table := range tables {
+		var ids []uint
+		if err := c.db.WithContext(ctx).Table(table).Where("tenant_id=?", tenant).Distinct("engine_id").Pluck("engine_id", &ids).Error; err != nil {
+			return nil, err
+		}
+		for _, id := range ids {
+			if id == 0 {
+				return nil, fmt.Errorf("cleanup Engine identity missing")
+			}
+			seen[id] = true
+		}
+	}
+	ids := make([]uint, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids, nil
+}
+func (c *DatabaseCleaner) readEngineFacts(ctx context.Context, tenant uint, ids []uint) ([]commonModels.Engine, error) {
+	if c.systemClient == nil {
+		return nil, fmt.Errorf("cleanup Engine authority unavailable")
+	}
+	values := make([]commonModels.Engine, 0, len(ids))
+	for _, id := range ids {
+		engine, err := c.systemClient.WithTenantID(tenant).GetEngine(ctx, id)
+		if err != nil {
+			if code, ok := commonClient.SystemAPIStatusCode(err); ok && code == http.StatusNotFound {
+				continue
+			}
+			return nil, err
+		}
+		if engine == nil || engine.ID != id || engine.TenantID != nil && *engine.TenantID != tenant {
+			return nil, fmt.Errorf("cleanup Engine identity mismatch")
+		}
+		switch engine.LifecycleState {
+		case commonModels.EngineLifecycleActive:
+			capabilities, err := engineselection.ParseCapabilities(engine.Capabilities)
+			if err != nil || capabilities == nil {
+				return nil, fmt.Errorf("cleanup Engine capabilities unavailable")
+			}
+		case commonModels.EngineLifecycleDisabled, commonModels.EngineLifecycleDeleting, commonModels.EngineLifecycleDeleted:
+		default:
+			return nil, fmt.Errorf("cleanup Engine lifecycle unavailable")
+		}
+		values = append(values, *engine)
+	}
+	return values, nil
+}
+func (c *DatabaseCleaner) engineFacts(ctx context.Context, tenant uint) ([]commonModels.Engine, error) {
+	ids, err := c.referencedEngineIDs(ctx, tenant)
+	if err != nil {
+		return nil, err
+	}
+	if c.snapshotReady {
+		if c.snapshotTenant != tenant {
+			return nil, fmt.Errorf("cleanup Tenant snapshot mismatch")
+		}
+		for _, id := range ids {
+			if !c.snapshotObserved[id] {
+				return nil, fmt.Errorf("cleanup Engine scope changed")
+			}
+		}
+		return c.snapshotEngines, nil
+	}
+	return c.readEngineFacts(ctx, tenant, ids)
 }

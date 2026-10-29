@@ -105,7 +105,7 @@ func (s *EmbeddingTaskService) Execute(ctx context.Context, taskID uint, tenantI
 	executionID := uuid.New().String()
 	now := time.Now()
 
-	executionConfig, _, err := s.embeddingTaskExecutionConfig(ctx, task)
+	executionConfig, req, err := s.embeddingTaskExecutionConfig(ctx, task)
 	if err != nil {
 		if createErr := s.createFailedEmbeddingTaskExecution(ctx, task, executionID, normalizedTriggerType, normalizedSource, parentExecutionID, now, nil, err); createErr != nil {
 			return "", createErr
@@ -114,6 +114,11 @@ func (s *EmbeddingTaskService) Execute(ctx context.Context, taskID uint, tenantI
 	}
 	var binding ResolvedInferenceScenarioBinding
 	var profile *commonInference.ResolveProfileResponse
+	if s.embeddingService != nil {
+		if err := s.embeddingService.captureCleanupTargets(ctx, tenantID, req, executionConfig); err != nil {
+			return "", err
+		}
+	}
 	if s.embeddingService != nil {
 		_, binding, profile, err = s.embeddingService.runtimeSnapshot(ctx, tenantID)
 		if err != nil {

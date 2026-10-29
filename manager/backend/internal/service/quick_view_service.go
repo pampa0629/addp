@@ -1572,6 +1572,10 @@ func (s *QuickViewService) UpdatePreferredModeByIdentity(
 	if strings.TrimSpace(identity.ItemFingerprint) == "" {
 		return fmt.Errorf("%w: item identity is missing", ErrQuickViewInvalidPreferredMode)
 	}
+	token, err := repository.ObserveCleanupTarget(ctx, s.repo.GetDB(), repository.CleanupTargetKey{TenantID: identity.TenantID, Kind: repository.CleanupTargetPreviewState, Identity: identity.ItemFingerprint})
+	if err != nil {
+		return err
+	}
 	if preferredMode == models.PreviewModeMapQuickView {
 		capability, err := capabilityLoader(ctx)
 		if err != nil {
@@ -1588,7 +1592,7 @@ func (s *QuickViewService) UpdatePreferredModeByIdentity(
 			return fmt.Errorf("%w: %s", ErrQuickViewInvalidPreferredMode, reason)
 		}
 	}
-	return s.repo.UpdatePreferredMode(identity.TenantID, identity.ItemFingerprint, identity.Locator, preferredMode)
+	return s.repo.UpdatePreferredMode(ctx, token, identity.TenantID, identity.ItemFingerprint, identity.Locator, preferredMode)
 }
 
 func (s *QuickViewService) UpdateViewStateByIdentity(
@@ -1603,6 +1607,10 @@ func (s *QuickViewService) UpdateViewStateByIdentity(
 	identity.Locator = strings.TrimSpace(identity.Locator)
 	if strings.TrimSpace(identity.ItemFingerprint) == "" {
 		return fmt.Errorf("%w: item identity is missing", ErrQuickViewInvalidPreferredMode)
+	}
+	token, err := repository.ObserveCleanupTarget(ctx, s.repo.GetDB(), repository.CleanupTargetKey{TenantID: identity.TenantID, Kind: repository.CleanupTargetPreviewState, Identity: identity.ItemFingerprint})
+	if err != nil {
+		return err
 	}
 	if viewState == nil {
 		viewState = commonModels.JSONMap{}
@@ -1625,7 +1633,7 @@ func (s *QuickViewService) UpdateViewStateByIdentity(
 	if initialMode != models.PreviewModeBasicPreview && initialMode != models.PreviewModeMapQuickView {
 		return fmt.Errorf("%w: %s", ErrQuickViewInvalidPreferredMode, initialMode)
 	}
-	return s.repo.UpdateViewState(identity.TenantID, identity.ItemFingerprint, identity.Locator, initialMode, normalizePreviewViewStatePayload(viewState))
+	return s.repo.UpdateViewState(ctx, token, identity.TenantID, identity.ItemFingerprint, identity.Locator, initialMode, normalizePreviewViewStatePayload(viewState))
 }
 
 func normalizePreviewViewStatePayload(viewState commonModels.JSONMap) commonModels.JSONMap {

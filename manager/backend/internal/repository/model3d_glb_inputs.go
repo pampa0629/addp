@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path"
 	"reflect"
@@ -125,51 +124,4 @@ func (r *Model3DGLBRepository) changeExecutionInputs(ctx context.Context, result
 		}
 		return tx.Model(&item).UpdateColumn("metadata", model3DGLBOutputMetadata(item.Metadata, state)).Error
 	})
-}
-
-func cleanupModel3DGLBInputs(ctx context.Context, tx *gorm.DB, item *models.Model3DGLB, state *model3DGLBOutputState, deleteExact func(context.Context, uint, Model3DGLBInputObject) error) (int, error) {
-	removed := 0
-	var cleanupErr error
-	for i := range state.InputPreparations {
-		preparation := &state.InputPreparations[i]
-		if preparation.Validate(item.TenantID) != nil {
-			return removed, commonAPI.ErrConflict
-		}
-		if preparation.Cleaned {
-			continue
-		}
-		if !preparation.Released {
-			var execution commonExecution.TaskExecution
-			if err := tx.Where("tenant_id = ? AND execution_id = ? AND module = ? AND task_type = ?", item.TenantID, preparation.ExecutionID, commonExecution.ModuleManager, commonExecution.TaskTypeModel3DGLBGeneration).First(&execution).Error; err != nil {
-				return removed, err
-			}
-			if execution.Attempt < preparation.Attempt {
-				return removed, commonAPI.ErrConflict
-			}
-			if execution.Attempt == preparation.Attempt && (execution.Status == commonExecution.ExecutionStatusPending || execution.Status == commonExecution.ExecutionStatusRunning) {
-				continue
-			}
-			switch execution.Status {
-			case commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning, commonExecution.ExecutionStatusSuccess, commonExecution.ExecutionStatusFailed, commonExecution.ExecutionStatusTimeout, commonExecution.ExecutionStatusCancelled:
-				preparation.Released, preparation.Watch = true, true
-			default:
-				return removed, commonAPI.ErrConflict
-			}
-		}
-		if deleteExact == nil {
-			cleanupErr = errors.Join(cleanupErr, commonAPI.ErrConflict)
-			continue
-		}
-		allRemoved := true
-		for _, object := range preparation.Objects {
-			if err := deleteExact(ctx, item.TenantID, object); err != nil {
-				cleanupErr = errors.Join(cleanupErr, err)
-				allRemoved = false
-				continue
-			}
-			removed++
-		}
-		preparation.Cleaned = allRemoved && !preparation.Watch
-	}
-	return removed, cleanupErr
 }

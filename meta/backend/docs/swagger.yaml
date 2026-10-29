@@ -134,6 +134,33 @@ definitions:
       search:
         type: string
     type: object
+  cleanup.Result:
+    properties:
+      action:
+        type: string
+      attempt:
+        type: integer
+      cleanup_mode:
+        type: string
+      execution_id:
+        type: string
+      module:
+        type: string
+      reason:
+        type: string
+      request_id:
+        type: string
+      schema:
+        type: string
+      statistics:
+        additionalProperties:
+          type: integer
+        type: object
+      status:
+        type: string
+      summary:
+        $ref: '#/definitions/events.CleanupResultSummary'
+    type: object
   client.MetaMosaicOutput:
     properties:
       fingerprint:
@@ -287,6 +314,31 @@ definitions:
     - FieldTypeArray
     - FieldTypeUUID
     - FieldTypeGeometry
+  events.CleanupResultSummary:
+    properties:
+      affected_records:
+        type: integer
+      deleted_physical_artifacts:
+        type: integer
+      deleted_task_definitions:
+        type: integer
+      disabled_task_definitions:
+        type: integer
+      error_count:
+        type: integer
+      freed_bytes:
+        type: integer
+      marked_missing_source:
+        type: integer
+      marked_outdated:
+        type: integer
+      risk_level:
+        type: string
+      scanned_items:
+        type: integer
+      skipped_items:
+        type: integer
+    type: object
   execution.DiagnosticStep:
     properties:
       duration:
@@ -1450,6 +1502,70 @@ info:
   title: ADDP Meta API
   version: "1.0"
 paths:
+  /cleanup-executions/{execution_id}/result:
+    get:
+      description: 仅第一方 unrestricted 租户用户；同时要求本模块专业结果权限、Cleanup公共读取权限及本人子执行归属。不返回SQL、凭据、对象路径或原始错误。
+        | First-party unrestricted tenant Users only; requires both professional and
+        public Cleanup read permissions and ownership of the child execution. No SQL,
+        credentials, object paths or raw errors.
+      parameters:
+      - description: 子执行UUID | Child execution UUID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/cleanup.Result'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取本模块资源回收专业结果 | Get module cleanup professional result
+      tags:
+      - Cleanup
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - meta.cleanup_result.read
+      - system.cleanup.read
   /data-items/changes:
     get:
       description: 按不透明游标顺序返回当前租户的 DataItem 创建、摘要更新和失效变化，仅供 Catalog 模块消费 | Return

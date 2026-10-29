@@ -22,7 +22,7 @@ func TestQualityCleanupScanFindsEngineBoundState(t *testing.T) {
 	t.Parallel()
 
 	db := newQualityCleanupTestDB(t)
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	createQualityCleanupPlan(t, db, 7, 13, "task_other")
 	createQualityCleanupPlan(t, db, 7, 12, "task-match")
 	unbound := createQualityCleanupPlan(t, db, 7, 13, "task-unbound")
@@ -53,7 +53,7 @@ func TestQualityCleanupLogicalDisablesEngineBoundState(t *testing.T) {
 	t.Parallel()
 
 	db := newQualityCleanupTestDB(t)
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	task := createQualityCleanupPlan(t, db, 7, 12, "task-match")
 	issue := createQualityCleanupIssue(t, db, 7, 12, "issue-match", "open")
 	resolvedIssue := createQualityCleanupIssue(t, db, 7, 12, "issue-resolved", "resolved")
@@ -110,7 +110,7 @@ func TestQualityEngineDeletionImpactKeepsPlanRebindable(t *testing.T) {
 
 func TestQualityEngineDeletionImpactUsesExecutionFacts(t *testing.T) {
 	db := newQualityCleanupTestDB(t)
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	task := createQualityCleanupPlan(t, db, 7, 12, "task-match")
 	createQualityCleanupExecution(t, db, task, commonExecution.ExecutionStatusRunning)
 
@@ -129,7 +129,7 @@ func TestQualityEngineDeletionImpactUsesExecutionFacts(t *testing.T) {
 
 func TestQualityCleanupLogicalRollsBackWhenIssueUpdateFails(t *testing.T) {
 	db := newQualityCleanupTestDB(t)
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	issue := createQualityCleanupIssue(t, db, 7, 12, "issue-match", "open")
 	if err := db.Exec(`CREATE TRIGGER quality.fail_quality_issue_ignore
 		BEFORE UPDATE OF status ON quality.issues
@@ -156,7 +156,7 @@ func TestQualityCleanupLogicalRollsBackWhenIssueUpdateFails(t *testing.T) {
 
 func TestQualityCleanupLogicalRejectsActiveExecutionWhenSummaryIsStale(t *testing.T) {
 	db := newQualityCleanupTestDB(t)
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	task := createQualityCleanupPlan(t, db, 7, 12, "task-match")
 	createQualityCleanupExecution(t, db, task, commonExecution.ExecutionStatusPending)
 
@@ -172,7 +172,7 @@ func TestQualityCleanupLogicalRejectsActiveExecutionWhenSummaryIsStale(t *testin
 
 func TestQualityCleanupLogicalIgnoresStaleRunningSummary(t *testing.T) {
 	db := newQualityCleanupTestDB(t)
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	task := createQualityCleanupPlan(t, db, 7, 12, "task-match")
 	if err := db.Model(&models.QualityPlan{}).Where("id = ?", task.ID).Update("last_execution_status", "running").Error; err != nil {
 		t.Fatalf("mark task summary running: %v", err)
@@ -192,7 +192,7 @@ func TestQualityCleanupPhysicalDeletesTenantOwnedState(t *testing.T) {
 	t.Parallel()
 
 	db := newQualityCleanupTestDB(t)
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	task := createQualityCleanupPlan(t, db, 7, 12, "tenant-task")
 	issue := createQualityCleanupIssue(t, db, 7, 12, "tenant-issue", "open")
 	otherTenantRule := createQualityCleanupPlan(t, db, 8, 12, "other-rule")
@@ -230,7 +230,7 @@ func TestQualityCleanupPhysicalDeletesTenantOwnedState(t *testing.T) {
 
 func TestQualityCleanupPhysicalRollsBackWhenTaskDeleteFails(t *testing.T) {
 	db := newQualityCleanupTestDB(t)
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	task := createQualityCleanupPlan(t, db, 7, 12, "tenant-task")
 	issue := createQualityCleanupIssue(t, db, 7, 12, "tenant-issue", "open")
 	if err := db.Exec(`CREATE TRIGGER quality.fail_quality_task_delete

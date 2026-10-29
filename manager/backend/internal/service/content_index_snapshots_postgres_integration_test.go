@@ -123,6 +123,23 @@ func TestIntegrationPostgresManagerContentSnapshots(t *testing.T) {
 		if err := db.Where("index_name = ? AND kind = ?", index, repository.IndexDeliveryWrite).Find(&ops).Error; err != nil || len(ops) != 1 || len(ops[0].DocumentIDs) != len(documents) || ops[0].Status != repository.IndexDeliverySucceeded {
 			t.Fatalf("batch receipt: count=%d error=%v", len(ops), err)
 		}
+		inventory, err := svc.ReadContentIndexInventory(ctx, 7)
+		if err != nil || len(inventory.Documents) != len(documents) {
+			t.Fatalf("native inventory: %+v %v", inventory, err)
+		}
+		for _, identity := range inventory.Documents {
+			if identity.TenantID != 7 || identity.EngineID != 9 {
+				t.Fatal("native inventory crossed scope", identity)
+			}
+		}
+		empty, err := svc.ReadContentIndexInventory(ctx, 8)
+		if err != nil || len(empty.Documents) != 0 || empty.Digest == inventory.Digest {
+			t.Fatal("native inventory Tenant binding", empty, err)
+		}
+		var afterInventory int64
+		if err := db.Model(&models.ContentIndexDelivery{}).Where("index_name = ?", index).Count(&afterInventory).Error; err != nil || afterInventory != int64(len(ops)) {
+			t.Fatal("inventory mutated delivery ledger", afterInventory, err)
+		}
 		for _, document := range documents {
 			if actual := read(t, document.DocumentID); actual["name"] != document.Name {
 				t.Fatalf("missing batch member %s", document.DocumentID)

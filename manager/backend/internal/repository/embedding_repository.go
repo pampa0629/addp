@@ -162,15 +162,21 @@ func (r *EmbeddingRepository) UpsertEmbeddingState(ctx context.Context, embeddin
 			now,
 		).Error
 	}
-	if lease, ok := commonExecution.LeaseFromContext(ctx); ok {
-		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	token, ok := ctx.Value(embeddingCleanupContextKey{}).(CleanupTargetToken)
+	if !ok || token.Key != (CleanupTargetKey{TenantID: embedding.TenantID, Kind: CleanupTargetEmbedding, Identity: embedding.ItemFingerprint}) {
+		return commonAPI.ErrConflict
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if lease, ok := commonExecution.LeaseFromContext(ctx); ok {
 			if err := commonExecution.UpdateWithLease(ctx, tx, lease, nil); err != nil {
 				return err
 			}
-			return write(tx)
-		})
-	}
-	return write(r.db)
+		}
+		if err := GuardCleanupTargetWrite(ctx, tx, token); err != nil {
+			return err
+		}
+		return write(tx)
+	})
 }
 
 func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID uint, engineID *uint, queryVector []float32, modelProfileID string, profileVersion int64, dimension int, topK int, maxDistance float64) ([]EmbeddingSimilarityResult, error) {

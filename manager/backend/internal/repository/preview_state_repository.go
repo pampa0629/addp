@@ -27,10 +27,6 @@ func (r *PreviewStateRepository) GetDB() *gorm.DB {
 	return r.db
 }
 
-func (r *PreviewStateRepository) Create(state *models.PreviewState) error {
-	return r.db.Create(state).Error
-}
-
 func (r *PreviewStateRepository) GetByIdentity(tenantID uint, itemFingerprint string, locator string) (*models.PreviewState, error) {
 	itemFingerprint = strings.TrimSpace(itemFingerprint)
 	if itemFingerprint == "" {
@@ -53,19 +49,6 @@ func (r *PreviewStateRepository) GetByID(id uint) (*models.PreviewState, error) 
 	return &state, nil
 }
 
-func (r *PreviewStateRepository) Update(state *models.PreviewState) error {
-	return r.db.Save(state).Error
-}
-
-// ListParams 列表参数
-type ListParams struct {
-	Status   string
-	EngineID uint
-	Page     int
-	PageSize int
-}
-
-// GetStatistics 获取统计信息
 func (r *PreviewStateRepository) GetStatistics(tenantID uint) (*Statistics, error) {
 	var stats Statistics
 
@@ -105,6 +88,7 @@ func (r *PreviewStateRepository) DeleteByTenantAndFingerprint(ctx context.Contex
 
 // UpdatePreferredMode 更新用户偏好的显示模式
 func (r *PreviewStateRepository) UpdatePreferredMode(
+	ctx context.Context, token CleanupTargetToken,
 	tenantID uint,
 	itemFingerprint string,
 	locator string,
@@ -114,18 +98,27 @@ func (r *PreviewStateRepository) UpdatePreferredMode(
 	if itemFingerprint == "" {
 		return errors.New("preview state item_fingerprint is required")
 	}
-	return r.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "item_fingerprint"}},
-		DoUpdates: clause.AssignmentColumns([]string{"preferred_mode", "locator", "updated_at"}),
-	}).Create(&models.PreviewState{
-		TenantID:        tenantID,
-		ItemFingerprint: itemFingerprint,
-		Locator:         strings.TrimSpace(locator),
-		PreferredMode:   mode,
-	}).Error
+	if token.Key != (CleanupTargetKey{TenantID: tenantID, Kind: CleanupTargetPreviewState, Identity: itemFingerprint}) {
+		return commonapi.ErrConflict
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := GuardCleanupTargetWrite(ctx, tx, token); err != nil {
+			return err
+		}
+		return tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "item_fingerprint"}},
+			DoUpdates: clause.AssignmentColumns([]string{"preferred_mode", "locator", "updated_at"}),
+		}).Create(&models.PreviewState{
+			TenantID:        tenantID,
+			ItemFingerprint: itemFingerprint,
+			Locator:         strings.TrimSpace(locator),
+			PreferredMode:   mode,
+		}).Error
+	})
 }
 
 func (r *PreviewStateRepository) UpdateViewState(
+	ctx context.Context, token CleanupTargetToken,
 	tenantID uint,
 	itemFingerprint string,
 	locator string,
@@ -139,14 +132,22 @@ func (r *PreviewStateRepository) UpdateViewState(
 	if viewState == nil {
 		viewState = commonModels.JSONMap{}
 	}
-	return r.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "item_fingerprint"}},
-		DoUpdates: clause.AssignmentColumns([]string{"view_state", "locator", "updated_at"}),
-	}).Create(&models.PreviewState{
-		TenantID:        tenantID,
-		ItemFingerprint: itemFingerprint,
-		Locator:         strings.TrimSpace(locator),
-		PreferredMode:   initialPreferredMode,
-		ViewState:       viewState,
-	}).Error
+	if token.Key != (CleanupTargetKey{TenantID: tenantID, Kind: CleanupTargetPreviewState, Identity: itemFingerprint}) {
+		return commonapi.ErrConflict
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := GuardCleanupTargetWrite(ctx, tx, token); err != nil {
+			return err
+		}
+		return tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "item_fingerprint"}},
+			DoUpdates: clause.AssignmentColumns([]string{"view_state", "locator", "updated_at"}),
+		}).Create(&models.PreviewState{
+			TenantID:        tenantID,
+			ItemFingerprint: itemFingerprint,
+			Locator:         strings.TrimSpace(locator),
+			PreferredMode:   initialPreferredMode,
+			ViewState:       viewState,
+		}).Error
+	})
 }

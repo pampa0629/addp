@@ -630,6 +630,7 @@ func newPointCloudCOPCTaskServiceTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create point_cloud_copc table: %v", err)
 	}
+	artifactTestSchema(t, db)
 	return db
 }
 

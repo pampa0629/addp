@@ -252,6 +252,7 @@ type finishCall struct {
 }
 
 type fakeLeaseStore struct {
+	acknowledged chan struct{}
 	mu           sync.Mutex
 	claim        *repository.RuntimeLeaseClaim
 	desiredState models.TaskDesiredState
@@ -287,4 +288,58 @@ func (f *fakeLeaseStore) DesiredState(context.Context, uint) (models.TaskDesired
 		return models.TaskDesiredStatePaused, nil
 	}
 	return f.desiredState, nil
+}
+
+func (f *fakeLeaseStore) AcknowledgeStopped(context.Context, repository.RuntimeLeaseClaim) error {
+	if f.acknowledged != nil {
+		f.acknowledged <- struct{}{}
+	}
+	return nil
+}
+
+func TestSupervisorStopProofWaitsForRunnerReturn(t *testing.T) {
+	store := &fakeLeaseStore{claim: &repository.RuntimeLeaseClaim{Task: models.TransferTask{ID: 45, DesiredState: models.TaskDesiredStateRunning}, Execution: commonExecution.TaskExecution{ExecutionID: "exec-45", Status: commonExecution.ExecutionStatusRunning}, Lease: models.RuntimeLease{TaskID: 45, OwnerInstanceID: "worker-a", FencingToken: 10}}, desiredState: models.TaskDesiredStateRunning, finished: make(chan finishCall, 1), acknowledged: make(chan struct{}, 1)}
+	started, cancelSeen, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	runner := SessionRunnerFunc(func(ctx context.Context, _ repository.RuntimeLeaseClaim) error {
+		close(started)
+		<-ctx.Done()
+		close(cancelSeen)
+		<-release
+		return ctx.Err()
+	})
+	supervisor, err := NewSupervisor(store, runner, Config{OwnerInstanceID: "worker-a", Capacity: 1, LeaseDuration: time.Second, HeartbeatInterval: 100 * time.Millisecond, ClaimInterval: 5 * time.Millisecond}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- supervisor.Run(ctx) }()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("runner not started")
+	}
+	cancel()
+	select {
+	case <-cancelSeen:
+	case <-time.After(time.Second):
+		t.Fatal("runner cancellation missing")
+	}
+	select {
+	case <-store.acknowledged:
+		t.Fatal("cancellation fabricated a stopped proof")
+	default:
+	}
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("supervisor did not finish")
+	}
+	select {
+	case <-store.acknowledged:
+	default:
+		t.Fatal("actual runner return has no stopped proof")
+	}
 }

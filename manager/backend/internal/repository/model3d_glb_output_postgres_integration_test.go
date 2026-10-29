@@ -64,26 +64,26 @@ func exerciseManagerGLBIsolatedOutputPublication(t *testing.T, sourceFormat stri
 		t.Fatal(err)
 	}
 	oldID := uuid.NewString()
-	old := &models.Model3DGLB{TenantID: tenantID, ItemFingerprint: "glb-fp", TaskID: &task.ID, LastExecutionID: &oldID, SourceEngineID: 33, SourceFormat: sourceFormat, StorageRef: "published.glb", Status: models.Model3DGLBStatusReady, Metadata: commonModels.JSONMap{}}
+	old := &models.Model3DGLB{TenantID: tenantID, ItemFingerprint: "glb-fp", TaskID: &task.ID, LastExecutionID: &oldID, SourceEngineID: 33, SourceFormat: sourceFormat, StorageRef: glbCleanupTestRef("published.glb"), Status: models.Model3DGLBStatusReady, Metadata: commonModels.JSONMap{}}
 	if err := db.Create(old).Error; err != nil {
 		t.Fatal(err)
 	}
 	ctx = managerExecutionLeaseContextForTest(t, db, item.ExecutionID, int(tenantID), time.Now())
 	desired := *old
 	desired.LastExecutionID = &item.ExecutionID
-	prepared, err := repo.PrepareExecutionOutput(ctx, &desired, "execution-owned.glb")
-	if err != nil || prepared.StorageRef != "published.glb" {
+	prepared, err := repo.PrepareExecutionOutput(ctx, &desired, glbCleanupTestRef("execution-owned.glb"))
+	if err != nil || prepared.StorageRef != glbCleanupTestRef("published.glb") {
 		t.Fatalf("prepare=%+v %v", prepared, err)
 	}
-	if err := repo.CompleteExecutionOutput(ctx, task.ID, tenantID, item.ExecutionID, old.ID, "execution-owned.glb", map[string]interface{}{"status": models.Model3DGLBStatusReady, "storage_ref": "execution-owned.glb", "last_execution_id": item.ExecutionID}, map[string]interface{}{"status": commonExecution.ExecutionStatusSuccess, "progress": 100, "completed_at": time.Now()}, time.Now()); err != nil {
+	if err := repo.CompleteExecutionOutput(ctx, task.ID, tenantID, item.ExecutionID, old.ID, glbCleanupTestRef("execution-owned.glb"), map[string]interface{}{"status": models.Model3DGLBStatusReady, "storage_ref": glbCleanupTestRef("execution-owned.glb"), "last_execution_id": item.ExecutionID}, map[string]interface{}{"status": commonExecution.ExecutionStatusSuccess, "progress": 100, "completed_at": time.Now()}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	current, err := repo.GetByID(context.Background(), old.ID, tenantID)
-	if err != nil || current.StorageRef != "execution-owned.glb" {
+	if err != nil || current.StorageRef != glbCleanupTestRef("execution-owned.glb") {
 		t.Fatalf("published=%+v %v", current, err)
 	}
 	if n, err := repo.CleanupExecutionOutputs(context.Background(), 100, nil, func(_ context.Context, tenant uint, ref string) error {
-		if tenant != tenantID || ref != "published.glb" {
+		if tenant != tenantID || ref != glbCleanupTestRef("published.glb") {
 			t.Fatalf("cleanup escaped owner: %d %s", tenant, ref)
 		}
 		return nil
@@ -128,14 +128,14 @@ func exerciseManagerGLBIsolatedOutputPublication(t *testing.T, sourceFormat stri
 	next.TaskID = &replacement.ID
 	next.LastExecutionID = &replacementExecution.ExecutionID
 	prepared, err = repo.PrepareExecutionOutput(replacementCtx, &next, "failed-replacement.glb")
-	if err != nil || *prepared.TaskID != task.ID || prepared.StorageRef != "execution-owned.glb" {
+	if err != nil || *prepared.TaskID != task.ID || prepared.StorageRef != glbCleanupTestRef("execution-owned.glb") {
 		t.Fatalf("replacement preparation=%+v %v", prepared, err)
 	}
 	if err := repo.CompleteExecutionOutput(replacementCtx, replacement.ID, tenantID, replacementExecution.ExecutionID, current.ID, "failed-replacement.glb", map[string]interface{}{"error_message": "conversion failed"}, map[string]interface{}{"status": commonExecution.ExecutionStatusFailed, "progress": 0, "completed_at": time.Now()}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	preserved, err := repo.GetByID(t.Context(), current.ID, tenantID)
-	if err != nil || *preserved.TaskID != task.ID || preserved.StorageRef != "execution-owned.glb" || preserved.Status != models.Model3DGLBStatusReady {
+	if err != nil || *preserved.TaskID != task.ID || preserved.StorageRef != glbCleanupTestRef("execution-owned.glb") || preserved.Status != models.Model3DGLBStatusReady {
 		t.Fatalf("failure changed current artifact: %+v %v", preserved, err)
 	}
 }

@@ -49,7 +49,7 @@ func TestIntegrationPostgresManagerExecutionEvents(t *testing.T) {
 	if err := commonExecution.EnsureStore(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.TileCacheTask{}, &models.TileCache{}, &models.EmbeddingTask{}); err != nil {
+	if err := db.AutoMigrate(&models.TileCacheTask{}, &models.TileCache{}, &models.EmbeddingTask{}, &models.CleanupTarget{}, &models.CleanupArtifactOperation{}); err != nil {
 		t.Fatal(err)
 	}
 	runManagerExecutionEvents(t, func(t *testing.T) *gorm.DB {
@@ -340,6 +340,11 @@ func seedManagerEventExecution(t *testing.T, db *gorm.DB, taskType string) (*com
 	}
 	if taskID != 0 {
 		item.SourceTaskID = commonExecution.NewSourceTaskIDFromUint(taskID)
+	}
+	if artifactGenerationType(taskType) {
+		if err := db.Transaction(func(tx *gorm.DB) error { return holdArtifactGeneration(t.Context(), tx, item, commonModels.JSONMap{}) }); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := db.Create(item).Error; err != nil {
 		t.Fatal(err)

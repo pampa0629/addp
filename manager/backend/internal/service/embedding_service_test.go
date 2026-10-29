@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -164,7 +165,9 @@ func TestProcessItemSkipsCurrentReadyStateBeforeReadingSource(t *testing.T) {
 		t.Fatalf("seed embedding state: %v", err)
 	}
 
+	targetsJSON, _ := json.Marshal([]repository.EmbeddingCleanupTarget{{ItemID: item.ID, EngineID: item.EngineID, Fingerprint: itemFingerprint, Token: repository.CleanupTargetToken{Key: repository.CleanupTargetKey{TenantID: 1, Kind: repository.CleanupTargetEmbedding, Identity: itemFingerprint}}}})
 	outcome := svc.processItem(context.Background(), 1, item, &EmbeddingExecutionContext{
+		Config:      commonModels.JSONMap{repository.EmbeddingCleanupTargetsKey: string(targetsJSON)},
 		ExecutionID: "exec-repeat", TenantID: 1, StartedAt: time.Now(), Runtime: runtime,
 		Binding: ResolvedInferenceScenarioBinding{ModelProfileID: "11111111-1111-1111-1111-111111111111"},
 		Profile: commonInference.ResolveProfileResponse{ProfileVersion: 2, DeploymentID: "22222222-2222-2222-2222-222222222222"},
@@ -291,6 +294,7 @@ func newEmbeddingServiceTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create embeddings table: %v", err)
 	}
+	artifactTestSchema(t, db)
 	return db
 }
 

@@ -11,6 +11,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	"github.com/addp/transfer/internal/models"
+	"github.com/addp/transfer/internal/testpg"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -133,7 +134,7 @@ func newTaskResourceRepositoryTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE transfer.sync_states (id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL)`,
 		`CREATE TABLE transfer.runtime_leases (
 			id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL, owner_instance_id TEXT NOT NULL,
-			lease_until DATETIME NOT NULL
+			lease_until DATETIME NOT NULL, execution_id TEXT NOT NULL DEFAULT '', fencing_token INTEGER NOT NULL DEFAULT 0
 		)`,
 		`CREATE TABLE transfer.capture_resources (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, task_id INTEGER NOT NULL)`,
 		`CREATE TABLE transfer.schema_change_requests (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, task_id INTEGER NOT NULL)`,
@@ -143,6 +144,7 @@ func newTaskResourceRepositoryTestDB(t *testing.T) *gorm.DB {
 			t.Fatal(err)
 		}
 	}
+	testpg.EnsureCleanupSQLite(t, db)
 	return db
 }
 

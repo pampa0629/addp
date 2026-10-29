@@ -45,8 +45,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 533 {
-		t.Fatalf("descriptor count = %d, want 533", len(descriptors))
+	if len(descriptors) != 543 {
+		t.Fatalf("descriptor count = %d, want 543", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if strings.HasPrefix(descriptor.Key, "system.meta_collection_qualification.") && (descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) || descriptor.TenantCustomizable == (descriptor.Action == "execute")) {
@@ -798,6 +798,36 @@ func TestCleanupRuntimePermissionHasOnlyExactOwnerRoles(t *testing.T) {
 	for _, permission := range report.Permissions {
 		if permission.Key == "system.cleanup_authorization.execute" && (permission.TenantCustomizable || permission.Delegable || !reflect.DeepEqual(permission.AllowedScopeTypes, []string{"tenant"})) {
 			t.Fatal("cleanup authorization may not be delegated or customized")
+		}
+	}
+}
+
+func TestCleanupProfessionalPermissionsAreNarrowAndNeverGrantedByDefault(t *testing.T) {
+	report, err := LoadRepositoryAuthorizationCatalog(testRepositoryRoot(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := map[string]bool{}
+	for _, owner := range []string{"asset", "develop", "graph", "manager", "meta", "model", "quality", "service", "standard", "transfer"} {
+		expected[owner+".cleanup_result.read"] = true
+	}
+	for _, p := range report.Permissions {
+		if !expected[p.Key] {
+			continue
+		}
+		if p.Delegable || !p.TenantCustomizable || p.RiskLevel != "medium" || !reflect.DeepEqual(p.AllowedScopeTypes, []string{"tenant"}) {
+			t.Fatal("professional result authority widened", p.Key)
+		}
+		delete(expected, p.Key)
+	}
+	if len(expected) != 0 {
+		t.Fatal("missing result permission", expected)
+	}
+	for _, r := range report.Roles {
+		for _, key := range r.Permissions {
+			if strings.HasSuffix(key, ".cleanup_result.read") {
+				t.Fatal("result permission granted by default", r.Key, key)
+			}
 		}
 	}
 }

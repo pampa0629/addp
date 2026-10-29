@@ -75,6 +75,11 @@ func (r *TaskResourceRepository) DeleteTaskAndPrivateState(
 		if activeLeases > 0 {
 			return ErrTaskDeletionRuntimeActive
 		}
+		if continuous {
+			if err := RequireRuntimeStopped(ctx, tx, tenantID, taskID); err != nil {
+				return err
+			}
+		}
 		cancelled, err := cancelTaskExecutionsForCleanup(tx, task, now)
 		if err != nil {
 			return err

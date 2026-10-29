@@ -21,7 +21,7 @@ func TestGraphTaskProviderRoutesRequireOrchestratorRuntimeIdentity(t *testing.T)
 
 	cfg := &config.Config{}
 	cfg.SystemServiceURL = authServer.URL
-	router := SetupRouter(cfg, nil, nil, nil, nil, NewTaskProviderHandler(nil, nil), nil, nil, modulelifecycle.NewStandalone("graph"))
+	router := SetupRouter(NewCleanupResultHandler(nil), cfg, nil, nil, nil, nil, NewTaskProviderHandler(nil, nil), nil, nil, modulelifecycle.NewStandalone("graph"))
 
 	for _, test := range []struct {
 		name, path, token string

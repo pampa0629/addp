@@ -20,6 +20,12 @@ var ErrGraphReconciliationIncomplete = fmt.Errorf("%w: graph reconciliation evid
 var ErrGraphPhysicalTargetUnverified = fmt.Errorf("%w: original physical graph target is not verifiable", commonapi.ErrConflict)
 
 func graphQuiescent(tx *gorm.DB, kg *models.KnowledgeGraph) error {
+	return CheckCleanupQuiescence(tx, kg, "")
+}
+
+// CheckCleanupQuiescence uses ordinary reads while the caller holds G. It never
+// takes another execution lock; only this Cleanup C may be excluded.
+func CheckCleanupQuiescence(tx *gorm.DB, kg *models.KnowledgeGraph, cleanupExecutionID string) error {
 	var count int64
 	tasks := tx.Model(&models.BuildTask{}).Select("CAST(id AS TEXT)").Where("tenant_id = ? AND graph_id = ?", kg.TenantID, kg.ID)
 	if err := tx.Model(&execution.TaskExecution{}).Where("tenant_id = ? AND module = ? AND task_type = ? AND source_task_id IN (?) AND status IN ?", kg.TenantID, execution.ModuleGraph, execution.TaskTypeKGBuild, tasks, []string{execution.ExecutionStatusPending, execution.ExecutionStatusRunning}).Count(&count).Error; err != nil {
@@ -28,7 +34,7 @@ func graphQuiescent(tx *gorm.DB, kg *models.KnowledgeGraph) error {
 	if count != 0 {
 		return ErrGraphReconciliationIncomplete
 	}
-	if kg.AdmissionExecutionID != "" {
+	if kg.AdmissionExecutionID != "" && kg.AdmissionExecutionID != cleanupExecutionID {
 		if err := tx.Model(&execution.TaskExecution{}).Where("tenant_id = ? AND execution_id = ? AND status IN ?", kg.TenantID, kg.AdmissionExecutionID, []string{execution.ExecutionStatusPending, execution.ExecutionStatusRunning}).Count(&count).Error; err != nil {
 			return err
 		}

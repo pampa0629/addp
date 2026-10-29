@@ -216,3 +216,5 @@ make test-manager-online-runner
 - [Manager Online 场景](../docs/spec/testing/scenarios/Manager与空间成果.md)
 - [Transfer 私有导入场景](../docs/spec/testing/scenarios/同步与引擎消费.md#manager-私有导入)
 - [验收证据索引](../docs/spec/testing/验收证据索引.md#manager-预览与私有导入历史证据)
+
+Cleanup 使用 Common 持久 Runner，专业结果由 Manager 独占读取。Manager 直接核验并治理自有索引中的失效 Engine 投影，包括 Meta 已无记录的残留；Meta Cleanup 不替 Manager 删除索引。索引与派生产物外部效果先登记准确目标与持久隔离，未知回执、重启和最终事务失败都不自动释放。原请求的 PreviewState／Embedding／生成写入使用准备或入队前捕获的目标代际，禁止迟到返回后重新取代际。范围及证据详见[资源回收规范](../docs/spec/addp-cleanup体系规范.md)。验证沿 `make test-manager-backend`、`make test-manager-postgres`，新增 Owner 原子性场景自动由 `TestIntegrationPostgresManager` 前缀命中；环境切换与新的 Hosted 分开验收。

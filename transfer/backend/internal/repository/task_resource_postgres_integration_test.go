@@ -103,6 +103,8 @@ func createPostgresTaskResourceFixture(t *testing.T, db *gorm.DB, now, leaseUnti
 		_ = db.Where("module = ? AND source_task_id = ?", commonExecution.ModuleTransfer, sourceTaskID).Delete(&commonExecution.TaskExecution{}).Error
 		_ = db.Where("tenant_id = ? AND task_id = ?", task.TenantID, task.ID).Delete(&models.DeadLetter{}).Error
 		_ = db.Where("task_id = ?", task.ID).Delete(&models.SyncState{}).Error
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.RuntimeSession{}).Error
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.CleanupOperation{}).Error
 		_ = db.Where("task_id = ?", task.ID).Delete(&models.RuntimeLease{}).Error
 		_ = db.Where("tenant_id = ? AND task_id = ?", task.TenantID, task.ID).Delete(&models.CaptureResource{}).Error
 		_ = db.Unscoped().Delete(&models.TransferTask{}, task.ID).Error

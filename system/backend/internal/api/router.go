@@ -6,7 +6,6 @@ import (
 	commonClient "github.com/addp/common/client"
 	"time"
 
-	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 
@@ -91,17 +90,8 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	moduleRegistryService.SetDeploymentDiscovery(&service.DeploymentDiscoveryService{Directory: cfg.DeploymentDiscoveryDirectory})
 	taskProviderService := service.NewTaskProviderService(moduleRegistryService)
 	moduleRegistryHandler := NewModuleRegistryHandler(moduleRegistryService, cfg.EncryptionKey)
-	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
-	cleanupService := service.NewCleanupOrchestratorService(
-		redisClient, taskExecutionRepo, auditWriter, moduleRegistryService,
-	)
+	cleanupService := service.NewCleanupOrchestratorService(db, moduleRegistryService)
 	engineService = engineService.WithCleanupOrchestrator(cleanupService)
-	go func() {
-		time.Sleep(5 * time.Second)
-		if err := engineService.ResumeDeletingEngines(); err != nil {
-			logger.L().Error("恢复未完成的引擎删除工作流失败", "error", err)
-		}
-	}()
 
 	router.Use(corsMiddleware(cfg))
 

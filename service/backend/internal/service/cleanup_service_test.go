@@ -14,7 +14,7 @@ func TestServiceCleanupScanFindsEngineBoundServices(t *testing.T) {
 	t.Parallel()
 
 	db := newServiceCleanupTestDB(t)
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	engineID := uint(12)
 	otherEngineID := uint(13)
 	createServiceCleanupQueryService(t, db, 7, "query-match", &engineID)
@@ -46,7 +46,7 @@ func TestServiceCleanupLogicalDisablesEngineBoundServices(t *testing.T) {
 	t.Parallel()
 
 	db := newServiceCleanupTestDB(t)
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	engineID := uint(12)
 	query := createServiceCleanupQueryService(t, db, 7, "query-match", &engineID)
 	graph := createServiceCleanupGraphService(t, db, 7, "graph-match", engineID)
@@ -95,7 +95,7 @@ func TestServiceCleanupPhysicalDisablesEngineBoundServices(t *testing.T) {
 	t.Parallel()
 
 	db := newServiceCleanupTestDB(t)
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	engineID := uint(12)
 	query := createServiceCleanupQueryService(t, db, 7, "query-match", &engineID)
 	otherEngineID := uint(13)
@@ -124,7 +124,7 @@ func TestServiceCleanupTenantDeletedContextScopesTenantOwnedServices(t *testing.
 	t.Parallel()
 
 	db := newServiceCleanupTestDB(t)
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	engineID := uint(12)
 	query := createServiceCleanupQueryService(t, db, 7, "tenant-query", &engineID)
 	otherTenantQuery := createServiceCleanupQueryService(t, db, 8, "other-query", &engineID)

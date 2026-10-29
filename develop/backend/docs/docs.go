@@ -202,6 +202,99 @@ const docTemplate = `{
                 ]
             }
         },
+        "/cleanup-executions/{execution_id}/result": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅第一方 unrestricted 租户用户；同时要求本模块专业结果权限、Cleanup公共读取权限及本人子执行归属。不返回SQL、凭据、对象路径或原始错误。 | First-party unrestricted tenant Users only; requires both professional and public Cleanup read permissions and ownership of the child execution. No SQL, credentials, object paths or raw errors.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Cleanup"
+                ],
+                "summary": "获取本模块资源回收专业结果 | Get module cleanup professional result",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "子执行UUID | Child execution UUID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/cleanup.Result"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.cleanup_result.read",
+                    "system.cleanup.read"
+                ]
+            }
+        },
         "/engines": {
             "get": {
                 "description": "返回 active 且声明 compute.query 能力的注册引擎；非 online 项由前端展示并禁选 | Return active registered engines declaring compute.query capability; clients must show but disable non-online options",
@@ -3792,6 +3885,47 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "cleanup.Result": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "attempt": {
+                    "type": "integer"
+                },
+                "cleanup_mode": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "schema": {
+                    "type": "string"
+                },
+                "statistics": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                },
+                "summary": {
+                    "$ref": "#/definitions/events.CleanupResultSummary"
+                }
+            }
+        },
         "client.EngineCatalogEntry": {
             "type": "object",
             "properties": {
@@ -4136,6 +4270,44 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "events.CleanupResultSummary": {
+            "type": "object",
+            "properties": {
+                "affected_records": {
+                    "type": "integer"
+                },
+                "deleted_physical_artifacts": {
+                    "type": "integer"
+                },
+                "deleted_task_definitions": {
+                    "type": "integer"
+                },
+                "disabled_task_definitions": {
+                    "type": "integer"
+                },
+                "error_count": {
+                    "type": "integer"
+                },
+                "freed_bytes": {
+                    "type": "integer"
+                },
+                "marked_missing_source": {
+                    "type": "integer"
+                },
+                "marked_outdated": {
+                    "type": "integer"
+                },
+                "risk_level": {
+                    "type": "string"
+                },
+                "scanned_items": {
+                    "type": "integer"
+                },
+                "skipped_items": {
+                    "type": "integer"
                 }
             }
         },

@@ -50,6 +50,9 @@ func (r *CaptureRepository) BeginGeneration(ctx context.Context, identity Captur
 			Where("id = ? AND tenant_id = ?", identity.TaskID, identity.TenantID).First(&task).Error; err != nil {
 			return err
 		}
+		if err := RequireNoCleanupOperations(ctx, tx, identity.TenantID, identity.TaskID); err != nil {
+			return err
+		}
 		err := tx.Preload("PostgreSQL").Preload("MySQL").Preload("Oracle").Where("task_id = ?", identity.TaskID).Order("generation DESC").First(&resource).Error
 		if err == nil {
 			if captureStopInitiated(resource.Status) {
@@ -159,15 +162,17 @@ func (r *CaptureRepository) Update(ctx context.Context, id uint, expectedVersion
 	}
 	fields["resource_version"] = gorm.Expr("resource_version + 1")
 	fields["updated_at"] = time.Now()
-	result := r.db.WithContext(ctx).Model(&models.CaptureResource{}).
-		Where("id = ? AND resource_version = ?", id, expectedVersion).Updates(fields)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return fmt.Errorf("capture resource %d version conflict", id)
-	}
-	return nil
+	return MutateCleanup(ctx, r.db, func(tx *gorm.DB) error {
+		result := tx.WithContext(ctx).Model(&models.CaptureResource{}).
+			Where("id = ? AND resource_version = ?", id, expectedVersion).Updates(fields)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("capture resource %d version conflict", id)
+		}
+		return nil
+	})
 }
 
 func (r *CaptureRepository) ForceUpdate(ctx context.Context, id uint, fields map[string]interface{}) error {

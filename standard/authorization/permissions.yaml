@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: standard
-manifest_version: 12
+manifest_version: 13
 permissions:
   - key: standard.catalog.read
     allowed_scope_types: [tenant]
@@ -10,6 +10,14 @@ permissions:
     status: active
     name_i18n_key: permissions.standard.catalog.read.name
     description_i18n_key: permissions.standard.catalog.read.description
+  - key: standard.cleanup_result.read
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.standard.cleanup_result.read.name
+    description_i18n_key: permissions.standard.cleanup_result.read.description
   - key: standard.code_set.create
     allowed_scope_types: [tenant]
     risk_level: medium

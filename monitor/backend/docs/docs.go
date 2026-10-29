@@ -6834,6 +6834,23 @@ const docTemplate = `{
                 }
             }
         },
+        "execution.CleanupAdmissionView": {
+            "type": "object",
+            "properties": {
+                "basis": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "schema": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
         "execution.DiagnosticStep": {
             "type": "object",
             "properties": {
@@ -8159,6 +8176,9 @@ const docTemplate = `{
                 },
                 "bytes_written": {
                     "type": "integer"
+                },
+                "cleanup_admission": {
+                    "$ref": "#/definitions/execution.CleanupAdmissionView"
                 },
                 "completed_at": {
                     "type": "string"

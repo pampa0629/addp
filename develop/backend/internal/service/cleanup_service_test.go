@@ -14,7 +14,7 @@ func TestDevelopCleanupEngineContextReportsRebindableTasksWithoutMutatingThem(t 
 	t.Parallel()
 
 	db := newDevelopCleanupTestDB(t)
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	task := createDevelopCleanupTask(t, db, 7, "query-match", "query", map[string]interface{}{"engine_id": float64(12)})
 	contentTask := createDevelopCleanupTask(t, db, 7, "content-locator", "workflow", nil)
 	contentTask.Content = models.DevTaskContent{"source": "addp://engine/12/path/public/orders?type=table"}
@@ -59,7 +59,7 @@ func TestDevelopCleanupPhysicalDeletesTenantOwnedTasks(t *testing.T) {
 	t.Parallel()
 
 	db := newDevelopCleanupTestDB(t)
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	task := createDevelopCleanupTask(t, db, 7, "tenant-query", "query", map[string]interface{}{"engine_id": float64(12)})
 	otherTenantTask := createDevelopCleanupTask(t, db, 8, "other-query", "query", map[string]interface{}{"engine_id": float64(12)})
 

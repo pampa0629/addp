@@ -114,22 +114,11 @@ func (s *PPTXPDFTaskService) DeleteTask(ctx context.Context, id, tenantID uint) 
 }
 
 func (s *PPTXPDFTaskService) DeleteResult(ctx context.Context, id, tenantID uint) error {
-	result, err := s.repo.GetResult(ctx, id, tenantID)
-	if err != nil {
-		return err
-	}
-	if result == nil {
+	err := NewCleanupArtifactService(s.repo.GetDB(), CleanupArtifactEffects{Bucket: s.bucket, Objects: s.cleaner}).DeleteManual(ctx, commonExecution.TaskTypePPTXPDFGeneration, id, tenantID)
+	if errors.Is(err, commonAPI.ErrNotFound) {
 		return ErrPPTXPDFResultNotFound
 	}
-	if strings.TrimSpace(result.StorageRef) != "" {
-		if s.cleaner == nil {
-			return errors.New("PPTX PDF cleaner is not configured")
-		}
-		if err := s.cleaner.DeleteByStorageRef(ctx, result.StorageRef); err != nil {
-			return err
-		}
-	}
-	return s.repo.DeleteResult(ctx, id, tenantID)
+	return err
 }
 
 func (s *PPTXPDFTaskService) EnsureTask(ctx context.Context, task *models.PPTXPDFTask) error {
@@ -206,6 +195,7 @@ func (s *PPTXPDFTaskService) Execute(ctx context.Context, taskID, tenantID uint,
 }
 
 func (s *PPTXPDFTaskService) RunClaimedExecution(ctx context.Context, execution *commonExecution.TaskExecution, lease commonExecution.Lease, task *models.PPTXPDFTask) error {
+	ctx = repository.ArtifactWriterContext(commonExecution.ContextWithLease(ctx, lease))
 	if execution == nil || task == nil || execution.ExecutionID != lease.ExecutionID {
 		return errors.New("claimed PPTX PDF execution, lease and task are required")
 	}
@@ -220,7 +210,9 @@ func (s *PPTXPDFTaskService) RunClaimedExecution(ctx context.Context, execution 
 		if s.executor == nil {
 			err = errors.New("PPTX PDF executor is not configured")
 		} else {
-			built, err = s.executor.BuildPPTXPDF(ctx, PPTXPDFExecutionRequest{TenantID: task.TenantID, SourceEngineID: config.Source.SourceEngineID, ItemID: config.Source.ItemID, ItemFingerprint: config.Source.ItemFingerprint, Locator: config.Source.ItemLocator, SourceVersion: config.Source.SourceVersion, SourceSizeBytes: config.Source.SourceSizeBytes, StorageRef: result.StorageRef, FileName: result.FileName})
+			if err = repository.BeginArtifactWrite(ctx, s.repo.GetDB()); err == nil {
+				built, err = s.executor.BuildPPTXPDF(ctx, PPTXPDFExecutionRequest{TenantID: task.TenantID, SourceEngineID: config.Source.SourceEngineID, ItemID: config.Source.ItemID, ItemFingerprint: config.Source.ItemFingerprint, Locator: config.Source.ItemLocator, SourceVersion: config.Source.SourceVersion, SourceSizeBytes: config.Source.SourceSizeBytes, StorageRef: result.StorageRef, FileName: result.FileName})
+			}
 		}
 	}
 	metadata := commonModels.JSONMap{}
@@ -245,6 +237,9 @@ func (s *PPTXPDFTaskService) RunClaimedExecution(ctx context.Context, execution 
 		resultID = result.ID
 	} else {
 		fields = nil
+	}
+	if factErr := repository.RecordArtifactWrite(ctx, s.repo.GetDB(), status == commonExecution.ExecutionStatusSuccess); factErr != nil {
+		return factErr
 	}
 	if completeErr := s.repo.CompleteExecutionWithLease(ctx, task.ID, task.TenantID, lease, resultID, fields, map[string]interface{}{"status": status, "progress": progress, "metadata": metadata, "error_details": errorDetails}, completedAt); completeErr != nil {
 		return completeErr

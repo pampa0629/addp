@@ -45,9 +45,15 @@ func TestIntegrationPostgresManagerPreviewStateIndependentWrites(t *testing.T) {
  created_at timestamptz, updated_at timestamptz, UNIQUE(tenant_id, item_fingerprint))`).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS manager").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateCleanupArtifactSchema(db); err != nil {
+		t.Fatal(err)
+	}
 	repo := NewPreviewStateRepository(db.Table(schema + ".preview_state").Session(&gorm.Session{}))
 	view := commonModels.JSONMap{"quick_view": map[string]interface{}{"scene_3d": map[string]interface{}{"color_mode": "rgb16"}}}
-	if err := repo.UpdateViewState(7, "default-quick", "addp://default", models.PreviewModeMapQuickView, view); err != nil {
+	if err := repo.UpdateViewState(t.Context(), CleanupTargetToken{Key: CleanupTargetKey{TenantID: 7, Kind: CleanupTargetPreviewState, Identity: "default-quick"}}, 7, "default-quick", "addp://default", models.PreviewModeMapQuickView, view); err != nil {
 		t.Fatal(err)
 	}
 	state, err := repo.GetByIdentity(7, "default-quick", "")
@@ -55,10 +61,10 @@ func TestIntegrationPostgresManagerPreviewStateIndependentWrites(t *testing.T) {
 		t.Fatalf("initial default lost: %#v %v", state, err)
 	}
 	createdAt := state.CreatedAt
-	if err := repo.UpdatePreferredMode(7, "default-quick", "addp://default", models.PreviewModeBasicPreview); err != nil {
+	if err := repo.UpdatePreferredMode(t.Context(), CleanupTargetToken{Key: CleanupTargetKey{TenantID: 7, Kind: CleanupTargetPreviewState, Identity: "default-quick"}}, 7, "default-quick", "addp://default", models.PreviewModeBasicPreview); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.UpdateViewState(7, "default-quick", "addp://updated-locator", models.PreviewModeMapQuickView, view); err != nil {
+	if err := repo.UpdateViewState(t.Context(), CleanupTargetToken{Key: CleanupTargetKey{TenantID: 7, Kind: CleanupTargetPreviewState, Identity: "default-quick"}}, 7, "default-quick", "addp://updated-locator", models.PreviewModeMapQuickView, view); err != nil {
 		t.Fatal(err)
 	}
 	state, err = repo.GetByIdentity(7, "default-quick", "")
@@ -73,11 +79,11 @@ func TestIntegrationPostgresManagerPreviewStateIndependentWrites(t *testing.T) {
 		errors := make(chan error, 2)
 		go func() {
 			<-start
-			errors <- repo.UpdateViewState(7, fingerprint, "addp://race", models.PreviewModeMapQuickView, view)
+			errors <- repo.UpdateViewState(t.Context(), CleanupTargetToken{Key: CleanupTargetKey{TenantID: 7, Kind: CleanupTargetPreviewState, Identity: fingerprint}}, 7, fingerprint, "addp://race", models.PreviewModeMapQuickView, view)
 		}()
 		go func() {
 			<-start
-			errors <- repo.UpdatePreferredMode(7, fingerprint, "addp://race", models.PreviewModeBasicPreview)
+			errors <- repo.UpdatePreferredMode(t.Context(), CleanupTargetToken{Key: CleanupTargetKey{TenantID: 7, Kind: CleanupTargetPreviewState, Identity: fingerprint}}, 7, fingerprint, "addp://race", models.PreviewModeBasicPreview)
 		}()
 		close(start)
 		for i := 0; i < 2; i++ {
@@ -90,7 +96,7 @@ func TestIntegrationPostgresManagerPreviewStateIndependentWrites(t *testing.T) {
 			t.Fatalf("concurrent writes lost fields: %#v %v", state, err)
 		}
 	}
-	if err := repo.UpdateViewState(8, "default-quick", "addp://other-tenant", models.PreviewModeMapQuickView, nil); err != nil {
+	if err := repo.UpdateViewState(t.Context(), CleanupTargetToken{Key: CleanupTargetKey{TenantID: 8, Kind: CleanupTargetPreviewState, Identity: "default-quick"}}, 8, "default-quick", "addp://other-tenant", models.PreviewModeMapQuickView, nil); err != nil {
 		t.Fatal(err)
 	}
 	state, err = repo.GetByIdentity(7, "default-quick", "")

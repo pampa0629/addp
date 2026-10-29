@@ -161,6 +161,7 @@
         </template>
       </el-result>
       <div v-else-if="currentExecution" class="execution-detail-content">
+        <CleanupAdmission :execution="currentExecution" />
         <ExecutionFailure
           :status="currentExecution.status"
           :error-details="currentExecution.error_details"
@@ -476,7 +477,7 @@
 
 <script setup>
 import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
-import { ExecutionSteps, ExecutionEvents, ExecutionFailure, buildDevelopQueryExecutionRoute } from '@common-ui'
+import { CleanupAdmission, parseCleanupAdmission, ExecutionSteps, ExecutionEvents, ExecutionFailure, buildDevelopQueryExecutionRoute } from '@common-ui'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
@@ -860,14 +861,13 @@ async function loadExecutions(options = {}) {
     }
     const data = await listExecutions(params)
     if (requestToken !== executionListRequestToken) return
+    for (const item of data.executions || []) parseCleanupAdmission(item.cleanup_admission, item)
     executions.value = data.executions || []
     pagination.value.total = data.total || 0
   } catch (error) {
     if (requestToken !== executionListRequestToken) return
-    if (isExecutionReadBlocked(error)) {
-      executions.value = []
-      pagination.value.total = 0
-    }
+    executions.value = []
+    pagination.value.total = 0
     if (!silent) {
       ElMessage.error(t('monitor.execution.load_failed'))
     }
@@ -1025,6 +1025,7 @@ function normalizeExecutionTree(node) {
   if (!node || !node.execution) {
     return null
   }
+  parseCleanupAdmission(node.execution.cleanup_admission, node.execution)
   return {
     ...node,
     node_key: node.execution.execution_id,

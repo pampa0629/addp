@@ -127,6 +127,9 @@ func (r *TaskRepository) StartContinuousExecution(ctx context.Context, taskID, t
 			Where("id = ? AND tenant_id = ?", taskID, tenantID).First(&task).Error; err != nil {
 			return commonrepo.WrapDBError(err)
 		}
+		if err := RequireNoCleanupOperations(ctx, tx, tenantID, taskID); err != nil {
+			return err
+		}
 		if task.Status == models.TaskStatusBlocked {
 			return ErrContinuousTaskBlocked
 		}
@@ -162,6 +165,11 @@ func (r *TaskRepository) SetContinuousDesiredState(ctx context.Context, taskID, 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND tenant_id = ?", taskID, tenantID).First(&task).Error; err != nil {
 			return commonrepo.WrapDBError(err)
+		}
+		if desired == models.TaskDesiredStateRunning {
+			if err := RequireNoCleanupOperations(ctx, tx, tenantID, taskID); err != nil {
+				return err
+			}
 		}
 		updates := map[string]interface{}{"desired_state": desired}
 		if desired == models.TaskDesiredStateStopped && task.Status == models.TaskStatusBlocked {
@@ -199,7 +207,7 @@ func (r *TaskRepository) SetContinuousDesiredState(ctx context.Context, taskID, 
 	})
 }
 
-// WaitContinuousRuntimeStopped 等待 active owner 释放或 lease 过期。
+// WaitContinuousRuntimeStopped waits for every admitted runtime invocation to acknowledge completion.
 // capture cleanup 必须在此之后删除 CDC topic，避免仍在运行的 worker 读取已删除资源。
 func (r *TaskRepository) WaitContinuousRuntimeStopped(ctx context.Context, taskID uint, timeout, pollInterval time.Duration) error {
 	if timeout <= 0 || pollInterval <= 0 {
@@ -210,14 +218,18 @@ func (r *TaskRepository) WaitContinuousRuntimeStopped(ctx context.Context, taskI
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 	for {
-		var active int64
-		if err := r.db.WithContext(ctx).Model(&models.RuntimeLease{}).
-			Where("task_id = ? AND owner_instance_id <> '' AND lease_until > ?", taskID, time.Now()).Count(&active).Error; err != nil {
+		var task models.TransferTask
+		if err := r.db.WithContext(ctx).Select("id", "tenant_id").Where("id = ?", taskID).First(&task).Error; err != nil {
 			return err
 		}
-		if active == 0 {
+		err := RequireRuntimeStopped(ctx, r.db, task.TenantID, taskID)
+		if err == nil {
 			return nil
 		}
+		if !errors.Is(err, ErrTaskDeletionRuntimeActive) {
+			return err
+		}
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

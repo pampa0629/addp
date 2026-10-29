@@ -25,7 +25,7 @@ func TestManagerTaskProviderRoutesRequireOrchestratorRuntimeIdentity(t *testing.
 	cfg.SystemServiceURL = authServer.URL
 	taskHandler := NewTaskProviderHandler(nil, nil, nil, nil, nil)
 	metadataService := service.NewMetadataService(nil, nil, nil, nil, nil)
-	router := SetupRouter(
+	router := SetupRouter(NewCleanupResultHandler(nil),
 		cfg, metadataService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil, nil, nil, nil, nil, taskHandler, nil, nil, nil, nil,
 		nil, nil, nil, nil, nil, nil, nil, managerprotection.NewReadBoundary(&readBoundaryTestStore{}), modulelifecycle.NewStandalone("manager"), nil, nil,

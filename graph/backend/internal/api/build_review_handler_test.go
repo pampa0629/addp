@@ -57,7 +57,7 @@ func TestReviewHTTPScopesAndBatchFailure(t *testing.T) {
 		"Bearer reader":   {"graph.review.read"},
 	})
 	defer auth.Close()
-	router := SetupRouter(&config.Config{SystemServiceURL: auth.URL}, nil, nil, nil, NewBuildHandler(svc), nil, nil, nil, modulelifecycle.NewStandalone("graph"))
+	router := SetupRouter(NewCleanupResultHandler(nil), &config.Config{SystemServiceURL: auth.URL}, nil, nil, nil, NewBuildHandler(svc), nil, nil, nil, modulelifecycle.NewStandalone("graph"))
 	tests := []struct {
 		name, method, path, body, token string
 		status                          int

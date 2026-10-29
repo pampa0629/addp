@@ -1,9 +1,12 @@
 package api
 
 import (
+	"context"
 	"errors"
+	"github.com/addp/common/client"
+	"github.com/addp/common/execution"
+	commonauth "github.com/addp/common/middleware/auth"
 	"net/http"
-	"strconv"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/events"
@@ -37,7 +40,8 @@ func cleanupTenantID(c *gin.Context) (uint, bool) {
 
 // CreateScanTaskRequest 创建扫描任务请求
 type CreateScanTaskRequest struct {
-	Scope []string `json:"scope"` // 评估范围：已注册且启用资源回收执行方的模块；为空则由 System 按模块注册能力生成
+	RequestID string   `json:"request_id" binding:"required,uuid"`
+	Scope     []string `json:"scope"` // 评估范围：已注册且启用资源回收执行方的模块；为空则由 System 按模块注册能力生成
 }
 
 // CreateScanTaskResponse 创建扫描任务响应
@@ -56,6 +60,9 @@ type CreateScanTaskResponse struct {
 // @Success 200 {object} CreateScanTaskResponse
 // @Failure 400 {string} string "错误信息 | Error message"
 // @Failure 401 {string} string "错误信息 | Error message"
+// @Failure 403 {string} string "错误信息 | Error message"
+// @Failure 409 {string} string "错误信息 | Error message"
+// @Failure 503 {string} string "错误信息 | Error message"
 // @Failure 500 {string} string "错误信息 | Error message"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.cleanup.execute"]
@@ -77,13 +84,14 @@ func (h *CleanupHandler) CreateScanTask(c *gin.Context) {
 
 	// 创建扫描任务
 	taskID, err := h.orchestrator.CreateScanTask(
-		c.Request.Context(),
+		cleanupUserContext(c),
+		req.RequestID,
 		tenantID,
 		req.Scope,
 		actorID,
 	)
 	if err != nil {
-		commonapi.RespondError(c, http.StatusInternalServerError, commoni18n.TWithDetail(c, sysi18n.MsgCleanupCreateScanFailed, err.Error()))
+		respondCleanupError(c, err)
 		return
 	}
 
@@ -91,15 +99,7 @@ func (h *CleanupHandler) CreateScanTask(c *gin.Context) {
 }
 
 // GetTaskStatusResponse 任务状态响应
-type GetTaskStatusResponse struct {
-	TaskID   string                 `json:"task_id"`
-	Action   string                 `json:"action"`
-	Status   string                 `json:"status"`
-	Progress models.TaskProgress    `json:"progress"`
-	Results  map[string]interface{} `json:"results"`
-	Summary  interface{}            `json:"summary"`
-	Task     models.CleanupTask     `json:"task"`
-}
+type GetTaskStatusResponse = models.TaskStatusResponse
 
 // GetTaskStatus 查询任务状态
 // @Summary 查询资源回收任务状态 | Get resource reclaim task status
@@ -111,6 +111,9 @@ type GetTaskStatusResponse struct {
 // @Success 200 {object} GetTaskStatusResponse
 // @Failure 400 {string} string "错误信息 | Error message"
 // @Failure 401 {string} string "错误信息 | Error message"
+// @Failure 403 {string} string "错误信息 | Error message"
+// @Failure 409 {string} string "错误信息 | Error message"
+// @Failure 503 {string} string "错误信息 | Error message"
 // @Failure 404 {string} string "错误信息 | Error message"
 // @Failure 500 {string} string "错误信息 | Error message"
 // @x-addp-auth-mode "permission"
@@ -123,41 +126,22 @@ func (h *CleanupHandler) GetTaskStatus(c *gin.Context) {
 		return
 	}
 
-	// 查询任务状态
-	status, err := h.orchestrator.GetTaskStatus(c.Request.Context(), taskID)
+	reader, err := cleanupReader(c)
 	if err != nil {
-		if err.Error() == "task not found" {
-			commonapi.RespondError(c, http.StatusNotFound, commoni18n.T(c, sysi18n.MsgCleanupTaskNotFound))
-		} else {
-			commonapi.RespondError(c, http.StatusInternalServerError, commoni18n.TWithDetail(c, sysi18n.MsgCleanupGetTaskFailed, err.Error()))
-		}
+		respondCleanupError(c, err)
 		return
 	}
-
-	// 权限检查：只能查看自己租户的任务
-	tenantID, ok := cleanupTenantID(c)
-	if !ok {
+	status, err := h.orchestrator.GetTaskStatus(c.Request.Context(), taskID, reader)
+	if err != nil {
+		respondCleanupError(c, err)
 		return
 	}
-
-	if status.Task.TenantID != tenantID {
-		commonapi.RespondError(c, http.StatusForbidden, commoni18n.T(c, sysi18n.MsgCleanupTaskForbidden))
-		return
-	}
-
-	commonapi.RespondSuccess(c, GetTaskStatusResponse{
-		TaskID:   status.TaskID,
-		Action:   status.Action,
-		Status:   status.Status,
-		Progress: status.Progress,
-		Results:  status.Results,
-		Summary:  status.Summary,
-		Task:     status.Task,
-	})
+	commonapi.RespondSuccess(c, status)
 }
 
 // CreateExecuteTaskRequest 创建执行任务请求
 type CreateExecuteTaskRequest struct {
+	RequestID              string `json:"request_id" binding:"required,uuid"`
 	BasedOnScan            string `json:"based_on_scan" binding:"required"`                          // 基于哪次扫描
 	CleanupMode            string `json:"cleanup_mode" binding:"required"`                           // logical_cleanup/physical_cleanup
 	Confirmed              bool   `json:"confirmed"`                                                 // 管理员已确认评估结果和影响范围
@@ -177,10 +161,14 @@ type CreateExecuteTaskResponse struct {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
+// @Description Meta清理须在同一次评估中显式包含Manager，否则409，范围不自动扩展。 | Meta cleanup requires Manager in the same assessment; otherwise 409, without automatic scope expansion.
 // @Param request body CreateExecuteTaskRequest true "执行请求 | Execute request"
 // @Success 200 {object} CreateExecuteTaskResponse
 // @Failure 400 {string} string "错误信息 | Error message"
 // @Failure 401 {string} string "错误信息 | Error message"
+// @Failure 403 {string} string "错误信息 | Error message"
+// @Failure 409 {string} string "错误信息 | Error message"
+// @Failure 503 {string} string "错误信息 | Error message"
 // @Failure 500 {string} string "错误信息 | Error message"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.cleanup.execute"]
@@ -205,33 +193,13 @@ func (h *CleanupHandler) CreateExecuteTask(c *gin.Context) {
 		return
 	}
 
-	scanStatus, err := h.orchestrator.GetTaskStatus(c.Request.Context(), req.BasedOnScan)
-	if err != nil {
-		if err.Error() == "task not found" {
-			commonapi.RespondError(c, http.StatusNotFound, commoni18n.T(c, sysi18n.MsgCleanupScanNotFound))
-		} else {
-			commonapi.RespondError(c, http.StatusInternalServerError, commoni18n.TWithDetail(c, sysi18n.MsgCleanupGetScanFailed, err.Error()))
-		}
-		return
-	}
-	if scanStatus.Task.TenantID != tenantID {
-		commonapi.RespondError(c, http.StatusForbidden, commoni18n.T(c, sysi18n.MsgCleanupExecuteForbidden))
-		return
-	}
-	if scanStatus.Task.Action != events.CleanupActionScan {
-		commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgCleanupBasedOnScanRequired))
-		return
-	}
-	if scanStatus.Status != "completed" {
-		commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgCleanupScanNotCompleted))
-		return
-	}
-
 	// 创建执行任务
 	taskID, err := h.orchestrator.CreateExecuteTask(
-		c.Request.Context(),
+		cleanupUserContext(c),
+		req.RequestID,
 		req.BasedOnScan,
 		req.CleanupMode,
+		tenantID,
 		actorID,
 		service.CleanupExecuteConfirmation{
 			Confirmed:              req.Confirmed,
@@ -240,6 +208,10 @@ func (h *CleanupHandler) CreateExecuteTask(c *gin.Context) {
 		},
 	)
 	if err != nil {
+		if errors.Is(err, service.ErrCleanupManagerScopeRequired) {
+			c.AbortWithStatusJSON(http.StatusConflict, gin.H{"error_code": "cleanup_manager_scope_required", "error": commoni18n.T(c, sysi18n.MsgCleanupManagerScopeRequired)})
+			return
+		}
 		if errors.Is(err, service.ErrCleanupExecuteConfirmRequired) {
 			commonapi.RespondError(c, 400, commoni18n.T(c, sysi18n.MsgCleanupConfirmRequired))
 			return
@@ -256,7 +228,7 @@ func (h *CleanupHandler) CreateExecuteTask(c *gin.Context) {
 			commonapi.RespondError(c, 400, commoni18n.T(c, sysi18n.MsgCleanupArtifactPolicyInvalid))
 			return
 		}
-		commonapi.RespondError(c, http.StatusInternalServerError, commoni18n.TWithDetail(c, sysi18n.MsgCleanupCreateExecuteFailed, err.Error()))
+		respondCleanupError(c, err)
 		return
 	}
 
@@ -265,8 +237,10 @@ func (h *CleanupHandler) CreateExecuteTask(c *gin.Context) {
 
 // GetTaskHistoryResponse 任务历史响应
 type GetTaskHistoryResponse struct {
-	Tasks []models.CleanupTask `json:"tasks"`
-	Total int                  `json:"total"`
+	Tasks    []models.CleanupTask `json:"tasks"`
+	Total    int64                `json:"total"`
+	Page     int                  `json:"page"`
+	PageSize int                  `json:"page_size"`
 }
 
 // GetTaskHistory 获取任务历史
@@ -275,42 +249,52 @@ type GetTaskHistoryResponse struct {
 // @Tags Resource Reclaim
 // @Produce json
 // @Security BearerAuth
-// @Param limit query int false "返回记录数 | Limit" default(20)
+// @Param page query int false "页码 | Page" default(1)
+// @Param page_size query int false "每页记录数 | Page size" default(20)
 // @Success 200 {object} GetTaskHistoryResponse
 // @Failure 400 {string} string "错误信息 | Error message"
 // @Failure 401 {string} string "错误信息 | Error message"
+// @Failure 403 {string} string "错误信息 | Error message"
+// @Failure 409 {string} string "错误信息 | Error message"
+// @Failure 503 {string} string "错误信息 | Error message"
 // @Failure 500 {string} string "错误信息 | Error message"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.cleanup.read"]
 // @Router /admin/cleanup/history [get]
 func (h *CleanupHandler) GetTaskHistory(c *gin.Context) {
-	// 获取租户信息
-	tenantID, ok := cleanupTenantID(c)
-	if !ok {
-		return
-	}
-
-	// 获取 limit 参数
-	limit := 20
-	if limitStr := c.Query("limit"); limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
-		}
-	}
-
-	// 查询任务历史
-	tasks, err := h.orchestrator.GetTaskHistory(
-		c.Request.Context(),
-		tenantID,
-		limit,
-	)
+	actor, tenant, err := iamTenantUserActor(c)
 	if err != nil {
-		commonapi.RespondError(c, http.StatusInternalServerError, commoni18n.TWithDetail(c, sysi18n.MsgCleanupGetHistoryFailed, err.Error()))
+		respondCleanupError(c, err)
 		return
 	}
+	page, size := commonapi.ParsePagination(c)
+	tasks, total, err := h.orchestrator.GetTaskHistory(c.Request.Context(), tenant, actor, page, size)
+	if err != nil {
+		respondCleanupError(c, err)
+		return
+	}
+	commonapi.RespondSuccess(c, GetTaskHistoryResponse{Tasks: tasks, Total: total, Page: page, PageSize: size})
+}
 
-	commonapi.RespondSuccess(c, GetTaskHistoryResponse{
-		Tasks: tasks,
-		Total: len(tasks),
-	})
+func cleanupUserContext(c *gin.Context) context.Context {
+	facts, _ := commonauth.AuthContextFromGin(c)
+	return execution.WithUserOrigin(c.Request.Context(), facts)
+}
+func cleanupReader(c *gin.Context) (service.CleanupReader, error) {
+	actor, tenant, err := iamTenantUserActor(c)
+	if err != nil {
+		return service.CleanupReader{}, err
+	}
+	facts, ok := commonauth.AuthContextFromGin(c)
+	if !ok {
+		return service.CleanupReader{}, commonapi.ErrUnauthorized
+	}
+	return service.CleanupReader{TenantID: tenant, UserID: actor, OwnerProtocol: facts.Token.Type == "first_party_access_token" && facts.Client.ScopeMode == "unrestricted", Bearer: c.GetHeader("Authorization")}, nil
+}
+func respondCleanupError(c *gin.Context, err error) {
+	if errors.Is(err, client.ErrExecutionOwnerUnavailable) {
+		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error_code": "execution_owner_unavailable", "error": commoni18n.T(c, commoni18n.MsgAuthorizationServiceUnavailable)})
+		return
+	}
+	respondIAMError(c, err)
 }

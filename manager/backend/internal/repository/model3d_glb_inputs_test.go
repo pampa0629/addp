@@ -22,7 +22,7 @@ func glbInputOwnershipFixture(t *testing.T, db *gorm.DB) (*Model3DGLBRepository,
 	taskID, _ := commonExecution.ParseSourceTaskIDUint(execution.SourceTaskID)
 	ctx := managerExecutionLeaseContextForTest(t, db, execution.ExecutionID, 7, time.Now())
 	lease, _ := commonExecution.LeaseFromContext(ctx)
-	item, err := repo.PrepareExecutionOutput(ctx, &models.Model3DGLB{TenantID: 7, TaskID: &taskID, ItemFingerprint: "glb-fp", SourceEngineID: 33, SourceFormat: "3ds", LastExecutionID: &execution.ExecutionID}, "published.glb")
+	item, err := repo.PrepareExecutionOutput(ctx, &models.Model3DGLB{TenantID: 7, TaskID: &taskID, ItemFingerprint: "glb-fp", SourceEngineID: 33, SourceFormat: "3ds", LastExecutionID: &execution.ExecutionID}, glbCleanupTestRef("published.glb"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,43 +88,48 @@ func TestGLBInputOwnershipKeepsExactManifestAfterCleanup(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			if scenario == "settled" || scenario == "delete failure" {
+				if err := repo.CompleteExecutionOutput(ctx, *item.TaskID, 7, p.ExecutionID, item.ID, glbCleanupTestRef("published.glb"), map[string]interface{}{"status": models.Model3DGLBStatusReady, "storage_ref": glbCleanupTestRef("published.glb"), "metadata": commonModels.JSONMap{"new_render_fact": true}}, map[string]interface{}{"status": commonExecution.ExecutionStatusSuccess, "progress": 100, "completed_at": time.Now()}, time.Now()); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if scenario == "delete failure" {
 				if _, err := repo.CleanupExecutionOutputs(t.Context(), 100, func(context.Context, uint, Model3DGLBInputObject) error { return errors.New("store offline") }, deleteOutput); err == nil {
 					t.Fatal("storage failure hidden")
 				}
-				if readInputPreparation(t, db, item.ID).Cleaned {
-					t.Fatal("failed deletion marked clean")
-				}
 			}
 			if _, err := repo.CleanupExecutionOutputs(t.Context(), 100, deleteInput, deleteOutput); err != nil {
 				t.Fatal(err)
-			}
-			if scenario == "settled" {
-				if err := repo.CompleteExecutionOutput(ctx, *item.TaskID, 7, p.ExecutionID, item.ID, "published.glb", map[string]interface{}{"status": models.Model3DGLBStatusReady, "storage_ref": "published.glb", "metadata": commonModels.JSONMap{"new_render_fact": true}}, map[string]interface{}{"status": commonExecution.ExecutionStatusSuccess, "progress": 100, "completed_at": time.Now()}, time.Now()); err != nil {
-					t.Fatal(err)
-				}
 			}
 			current := readInputPreparation(t, db, item.ID)
 			if len(current.Objects) != 2 || !strings.HasSuffix(current.Objects[1].Object, "Color.PNG ") {
 				t.Fatal("cleanup lost raw manifest")
 			}
-			watching := scenario == "unknown upload" || scenario == "crash" || scenario == "superseded attempt"
-			if !current.Released || current.Watch != watching || current.Cleaned == watching {
-				t.Fatalf("wrong acknowledged state %+v", current)
+			switch scenario {
+			case "settled":
+				if !current.Released || current.Watch || !current.Cleaned || removed != 2 {
+					t.Fatal("known input cleanup missing", current, removed)
+				}
+			case "delete failure":
+				if !current.Released || current.Watch || current.Cleaned || removed != 0 {
+					t.Fatal("unknown deletion was replayed", current, removed)
+				}
+			case "unknown upload":
+				if !current.Released || !current.Watch || current.Cleaned || removed != 0 {
+					t.Fatal("unknown upload was reclaimed", current, removed)
+				}
+			default:
+				if current.Released || current.Cleaned || removed != 0 {
+					t.Fatal("lease/terminal fabricated a stopped writer", current, removed)
+				}
 			}
 			if _, err := repo.CleanupExecutionOutputs(t.Context(), 100, deleteInput, deleteOutput); err != nil {
 				t.Fatal(err)
 			}
-			want := 2
-			if watching {
-				want = 4
+			if scenario != "settled" && removed != 0 {
+				t.Fatal("unresolved input cleanup replayed", removed)
 			}
-			if removed != want {
-				t.Fatalf("removed=%d want=%d; uncertain tombstones must survive first deletion", removed, want)
-			}
-			if scenario == "settled" && len(outputDeletes) != 0 {
-				t.Fatal("input cleanup deleted published output")
-			}
+
 		})
 	}
 }
@@ -179,14 +184,14 @@ func TestGLBInputClosedHistoryDoesNotConsumeCleanupLimit(t *testing.T) {
 	if err := repo.FinishExecutionInputs(ctx, item.ID, p, true, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.CompleteExecutionOutput(ctx, *item.TaskID, 7, p.ExecutionID, item.ID, "published.glb", map[string]interface{}{"status": models.Model3DGLBStatusReady, "storage_ref": "published.glb"}, map[string]interface{}{"status": commonExecution.ExecutionStatusSuccess, "progress": 100, "completed_at": time.Now()}, time.Now()); err != nil {
+	if err := repo.CompleteExecutionOutput(ctx, *item.TaskID, 7, p.ExecutionID, item.ID, glbCleanupTestRef("published.glb"), map[string]interface{}{"status": models.Model3DGLBStatusReady, "storage_ref": glbCleanupTestRef("published.glb")}, map[string]interface{}{"status": commonExecution.ExecutionStatusSuccess, "progress": 100, "completed_at": time.Now()}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	closed := readInputPreparation(t, db, item.ID)
 	if !closed.Cleaned || len(closed.Objects) != 2 {
 		t.Fatal("closed history missing")
 	}
-	waiting := &models.Model3DGLB{TenantID: 7, ItemFingerprint: "waiting-for-cleanup", SourceEngineID: 33, SourceFormat: "ifc", StorageRef: "another-current.glb", Status: models.Model3DGLBStatusReady, Metadata: model3DGLBOutputMetadata(nil, model3DGLBOutputState{Garbage: []model3DGLBOutputRef{{StorageRef: "waiting.glb"}}})}
+	waiting := &models.Model3DGLB{TenantID: 7, ItemFingerprint: "waiting-for-cleanup", SourceEngineID: 33, SourceFormat: "ifc", StorageRef: glbCleanupTestRef("another-current.glb"), Status: models.Model3DGLBStatusReady, Metadata: model3DGLBOutputMetadata(nil, model3DGLBOutputState{Garbage: []model3DGLBOutputRef{{StorageRef: glbCleanupTestRef("waiting.glb")}}})}
 	if err := db.Create(waiting).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +200,7 @@ func TestGLBInputClosedHistoryDoesNotConsumeCleanupLimit(t *testing.T) {
 		t.Fatal("cleaned history retried")
 		return nil
 	}, func(_ context.Context, _ uint, ref string) error {
-		if ref != "waiting.glb" {
+		if ref != glbCleanupTestRef("waiting.glb") {
 			t.Fatal("wrong output")
 		}
 		removed++

@@ -50,7 +50,7 @@ func TestImportRouteChecksUserAndAllPermissionsBeforeReadingFiles(t *testing.T) 
 	defer authServer.Close()
 	cfg := &config.Config{}
 	cfg.SystemServiceURL = authServer.URL
-	router := SetupRouter(cfg, service.NewMetadataService(nil, nil, nil, nil, nil), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+	router := SetupRouter(NewCleanupResultHandler(nil), cfg, service.NewMetadataService(nil, nil, nil, nil, nil), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil, nil, nil, nil, nil, NewTaskProviderHandler(nil, nil, nil, nil, nil), NewImportHandler(nil), nil, nil, nil,
 		nil, nil, nil, nil, nil, nil, nil, managerprotection.NewReadBoundary(&readBoundaryTestStore{}), modulelifecycle.NewStandalone("manager"), nil, nil)
 	for token := range identities {
@@ -126,7 +126,7 @@ func TestImportSourceProductionRouteRequiresTransferAndPrivateExactBinding(t *te
 	store := &apiImportSourceStore{source: client.ManagerImportSource{TenantID: 7, UploaderID: 31, TaskID: 42, SourceLocator: "addp-infra://minio/manager/tenant_7/import/day/upload/roads.shp?type=object"}}
 	cfg := &config.Config{}
 	cfg.SystemServiceURL = system.URL
-	router := SetupRouter(cfg, service.NewMetadataService(nil, nil, nil, nil, nil), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+	router := SetupRouter(NewCleanupResultHandler(nil), cfg, service.NewMetadataService(nil, nil, nil, nil, nil), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil, nil, nil, nil, nil, NewTaskProviderHandler(nil, nil, nil, nil, nil), NewImportHandler(service.NewImportService(nil, "manager", nil, nil, store)), nil, nil, nil,
 		nil, nil, nil, nil, nil, nil, nil, managerprotection.NewReadBoundary(&readBoundaryTestStore{}), modulelifecycle.NewStandalone("manager"), nil, nil)
 	request := client.ManagerImportSourceRequest{ExecutionID: uuid.NewString(), TaskID: 42, PrincipalID: 31, SourceLocator: store.source.SourceLocator}

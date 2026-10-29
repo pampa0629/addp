@@ -48,7 +48,7 @@ func TestKnowledgeGraphPublicStateUsesCanonicalUpdate(t *testing.T) {
 		"Bearer reader": {"graph.graph.read"}, "Bearer editor": {"graph.graph.update"},
 	})
 	defer auth.Close()
-	router := SetupRouter(&config.Config{SystemServiceURL: auth.URL}, nil, handler, nil, nil, nil, nil, nil, modulelifecycle.NewStandalone("graph"))
+	router := SetupRouter(NewCleanupResultHandler(nil), &config.Config{SystemServiceURL: auth.URL}, nil, handler, nil, nil, nil, nil, nil, modulelifecycle.NewStandalone("graph"))
 	for _, test := range []struct {
 		name, method, token, body string
 		status                    int
@@ -102,7 +102,7 @@ func TestKnowledgeGraphPublicStateUsesCanonicalUpdate(t *testing.T) {
 	}
 	foreignAuth := authtest.NewTenantUserAuthContextServer(t, "8", map[string][]string{"Bearer editor": {"graph.graph.update"}})
 	defer foreignAuth.Close()
-	foreignRouter := SetupRouter(&config.Config{SystemServiceURL: foreignAuth.URL}, nil, handler, nil, nil, nil, nil, nil, modulelifecycle.NewStandalone("graph"))
+	foreignRouter := SetupRouter(NewCleanupResultHandler(nil), &config.Config{SystemServiceURL: foreignAuth.URL}, nil, handler, nil, nil, nil, nil, nil, modulelifecycle.NewStandalone("graph"))
 	request := httptest.NewRequest(http.MethodPut, "/api/v1/graph/graphs/1", strings.NewReader(`{"version":1,"is_public":true}`))
 	request.Header.Set("Authorization", "Bearer editor")
 	request.Header.Set("Content-Type", "application/json")

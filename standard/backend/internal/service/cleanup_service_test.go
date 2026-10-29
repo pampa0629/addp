@@ -268,7 +268,7 @@ func TestStandardCleanupScanWithoutTenantLifecycleContextReturnsNoCandidates(t *
 	db := setupStandardCleanupTestDB(t)
 	seedStandardCleanupTenantState(t, db, 1, false)
 
-	svc := NewCleanupService(db, nil, nil, nil)
+	svc := NewCleanupService(db, nil, nil)
 	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, nil)
 	if err != nil {
 		t.Fatalf("ScanReclaimCandidates: %v", err)
@@ -282,7 +282,7 @@ func TestStandardCleanupEngineDeletedReturnsNoCandidates(t *testing.T) {
 	db := setupStandardCleanupTestDB(t)
 	seedStandardCleanupTenantState(t, db, 1, false)
 
-	svc := NewCleanupService(db, nil, nil, nil)
+	svc := NewCleanupService(db, nil, nil)
 	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, map[string]interface{}{"engine_id": 7})
 	if err != nil {
 		t.Fatalf("ScanReclaimCandidates: %v", err)
@@ -296,7 +296,7 @@ func TestStandardCleanupTenantDeletedLogicalDeprecatesStatefulDefinitions(t *tes
 	db := setupStandardCleanupTestDB(t)
 	ids := seedStandardCleanupTenantState(t, db, 1, false)
 
-	svc := NewCleanupService(db, nil, nil, nil)
+	svc := NewCleanupService(db, nil, nil)
 	stats, err := svc.ExecuteCleanup(context.Background(), 1, events.CleanupModeLogical, map[string]interface{}{"tenant_id": 1})
 	if err != nil {
 		t.Fatalf("ExecuteCleanup: %v", err)
@@ -348,7 +348,7 @@ func TestStandardCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 	seedStandardCleanupTenantState(t, db, 1, false)
 	seedStandardCleanupTenantState(t, db, 2, false)
 
-	svc := NewCleanupService(db, nil, nil, nil)
+	svc := NewCleanupService(db, nil, nil)
 	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, map[string]interface{}{"tenant_id": 1})
 	if err != nil {
 		t.Fatalf("ScanReclaimCandidates: %v", err)
@@ -390,7 +390,7 @@ func TestStandardCleanupPhysicalPreservesDocumentWhenMinIOUnavailable(t *testing
 	db := setupStandardCleanupTestDB(t)
 	ids := seedStandardCleanupTenantState(t, db, 1, true)
 
-	svc := NewCleanupService(db, nil, nil, nil)
+	svc := NewCleanupService(db, nil, nil)
 	stats, err := svc.ExecuteCleanup(context.Background(), 1, events.CleanupModePhysical, map[string]interface{}{"tenant_id": 1})
 	if err != nil {
 		t.Fatalf("ExecuteCleanup: %v", err)

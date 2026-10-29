@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: quality
-manifest_version: 8
+manifest_version: 9
 permissions:
   - key: quality.catalog.read
     allowed_scope_types: [tenant]
@@ -10,6 +10,14 @@ permissions:
     status: active
     name_i18n_key: permissions.quality.catalog.read.name
     description_i18n_key: permissions.quality.catalog.read.description
+  - key: quality.cleanup_result.read
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.quality.cleanup_result.read.name
+    description_i18n_key: permissions.quality.cleanup_result.read.description
   - key: quality.issue.read
     allowed_scope_types: [tenant]
     risk_level: low

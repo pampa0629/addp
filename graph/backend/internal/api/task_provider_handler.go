@@ -232,7 +232,7 @@ func (h *TaskProviderHandler) GetProviderExecution(c *gin.Context) {
 // @Tags 图谱构建 | Graph Build
 // @Produce json
 // @Param execution_id path string true "执行UUID | Execution UUID"
-// @Success 200 {object} execution.TaskExecution "执行记录 | Execution"
+// @Success 200 {object} execution.Observation "安全执行概览 | Safe execution observation"
 // @Failure 404 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.build_task.read"]
@@ -243,12 +243,18 @@ func (h *TaskProviderHandler) GetExecution(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, execution)
+	principal, hasPrincipal := commonAuth.PrincipalIDFromGin(c)
+	identity, hasIdentity := commonAuth.AuthContextFromGin(c)
+	if !hasIdentity || !hasPrincipal || identity.Principal.Type != "user" || (execution.SourceTaskID == nil && (execution.TriggeredBy == nil || int64(*execution.TriggeredBy) != principal)) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "execution not found"})
+		return
+	}
+	c.JSON(http.StatusOK, commonExecution.Observe(execution))
 }
 
 func (h *TaskProviderHandler) loadExecution(c *gin.Context) (*commonExecution.TaskExecution, bool) {
 	execution, err := h.executionRepo.GetByExecutionID(c.Request.Context(), c.Param("execution_id"), int(commonAuth.GetTenantID(c)))
-	if err != nil || execution.Module != commonExecution.ModuleGraph {
+	if err != nil || execution.Module != commonExecution.ModuleGraph || execution.TaskType != commonExecution.TaskTypeKGBuild {
 		c.JSON(http.StatusNotFound, gin.H{"error": "execution not found"})
 		return nil, false
 	}

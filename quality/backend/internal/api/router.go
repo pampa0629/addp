@@ -67,6 +67,7 @@ func SetupRouter(
 		commonAuth.MustNewContextGuard("tenant"),
 	)
 	api.GET("/execution-read-scope", GetExecutionReadScope)
+	api.GET("/cleanup-executions/:execution_id/result", commonAuth.MustNewPermissionGuard("quality.cleanup_result.read", "system.cleanup.read"), NewCleanupResultHandler(db).Get)
 	permission := func(keys ...string) gin.HandlerFunc {
 		return commonAuth.MustNewPermissionGuard(keys...)
 	}

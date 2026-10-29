@@ -30,3 +30,12 @@ other = "暂时无法核验导出执行来源，请稍后重试"
 
 [export.protection_changed]
 other = "保护规则已更新或原导出保护状态已失效，请重新导出。"
+
+[cleanup.result.unavailable]
+other = "模块资源回收结果当前不可用。"
+
+[cleanup.result.not_found]
+other = "资源回收结果不存在。"
+
+[cleanup.result.not_ready]
+other = "模块尚未提交资源回收结果。"

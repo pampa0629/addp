@@ -261,9 +261,10 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 	if err := commonExecution.EnsureStore(db); err != nil {
 		t.Fatalf("ensure execution store: %v", err)
 	}
-	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}, &models.SyncState{}, &models.CaptureResource{}, &models.SchemaChangeRequest{}); err != nil {
+	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}, &models.RuntimeSession{}, &models.CleanupOperation{}, &models.SyncState{}, &models.CaptureResource{}, &models.SchemaChangeRequest{}); err != nil {
 		t.Fatalf("migrate continuous models: %v", err)
 	}
+	t.Run("cleanup_control", func(t *testing.T) { testCleanupControlPostgres(t, db) })
 	task := models.TransferTask{
 		TenantID: 999999, Name: fmt.Sprintf("continuous-lease-%d", time.Now().UnixNano()), TaskType: commonExecution.TaskTypeSync,
 		Config: models.JSONMap{"runtime": map[string]interface{}{"boundary": "continuous", "record_failure": map[string]interface{}{"mode": "block"}}}, BatchSize: 100,
@@ -274,6 +275,8 @@ func TestIntegrationPostgresContinuousLeaseFencingAndCancellation(t *testing.T) 
 	}
 	t.Cleanup(func() {
 		cleanupTaskExecutionEvents(t, db, task.ID)
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.RuntimeSession{}).Error
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.CleanupOperation{}).Error
 		_ = db.Where("task_id = ?", task.ID).Delete(&models.RuntimeLease{}).Error
 		_ = db.Where("task_id = ?", task.ID).Delete(&models.SyncState{}).Error
 		_ = db.Where("module = ? AND source_task_id = ?", commonExecution.ModuleTransfer, fmt.Sprint(task.ID)).Delete(&commonExecution.TaskExecution{}).Error
@@ -432,7 +435,7 @@ func TestIntegrationPostgresSchemaChangeStopWinsWorkerFinishRace(t *testing.T) {
 	if err := commonExecution.EnsureStore(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}, &models.SyncState{}, &models.CaptureResource{}, &models.SchemaChangeRequest{}); err != nil {
+	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}, &models.RuntimeSession{}, &models.CleanupOperation{}, &models.SyncState{}, &models.CaptureResource{}, &models.SchemaChangeRequest{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -487,6 +490,8 @@ func TestIntegrationPostgresSchemaChangeStopWinsWorkerFinishRace(t *testing.T) {
 		cleanupTaskExecutionEvents(t, db, task.ID)
 		_ = db.Where("task_id = ?", task.ID).Delete(&models.SchemaChangeRequest{}).Error
 		_ = db.Where("task_id = ?", task.ID).Delete(&models.CaptureResource{}).Error
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.RuntimeSession{}).Error
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.CleanupOperation{}).Error
 		_ = db.Where("task_id = ?", task.ID).Delete(&models.RuntimeLease{}).Error
 		_ = db.Where("execution_id = ?", execution.ExecutionID).Delete(&commonExecution.TaskExecution{}).Error
 		_ = db.Unscoped().Delete(&models.TransferTask{}, task.ID).Error
@@ -536,7 +541,7 @@ func TestIntegrationPostgresPendingSchemaChangePreventsLeaseExpiryRecovery(t *te
 	if err := commonExecution.EnsureStore(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}, &models.SyncState{}, &models.CaptureResource{}, &models.SchemaChangeRequest{}); err != nil {
+	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}, &models.RuntimeSession{}, &models.CleanupOperation{}, &models.SyncState{}, &models.CaptureResource{}, &models.SchemaChangeRequest{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -648,6 +653,8 @@ func seedPendingSchemaChangeRuntime(t *testing.T, db *gorm.DB, tenantID uint, no
 		cleanupTaskExecutionEvents(t, db, task.ID)
 		_ = db.Where("task_id = ?", task.ID).Delete(&models.SchemaChangeRequest{}).Error
 		_ = db.Where("task_id = ?", task.ID).Delete(&models.CaptureResource{}).Error
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.RuntimeSession{}).Error
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.CleanupOperation{}).Error
 		_ = db.Where("task_id = ?", task.ID).Delete(&models.RuntimeLease{}).Error
 		_ = db.Where("module = ? AND source_task_id = ?", commonExecution.ModuleTransfer, fmt.Sprint(task.ID)).Delete(&commonExecution.TaskExecution{}).Error
 		_ = db.Unscoped().Delete(&models.TransferTask{}, task.ID).Error
@@ -674,7 +681,7 @@ func TestIntegrationPostgresContinuousAutomaticRecoveryCreatesNewExecution(t *te
 	if err := commonExecution.EnsureStore(db); err != nil {
 		t.Fatalf("ensure execution store: %v", err)
 	}
-	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}, &models.SyncState{}, &models.CaptureResource{}, &models.SchemaChangeRequest{}); err != nil {
+	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}, &models.RuntimeSession{}, &models.CleanupOperation{}, &models.SyncState{}, &models.CaptureResource{}, &models.SchemaChangeRequest{}); err != nil {
 		t.Fatalf("migrate continuous models: %v", err)
 	}
 
@@ -688,6 +695,8 @@ func TestIntegrationPostgresContinuousAutomaticRecoveryCreatesNewExecution(t *te
 	}
 	t.Cleanup(func() {
 		cleanupTaskExecutionEvents(t, db, task.ID)
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.RuntimeSession{}).Error
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.CleanupOperation{}).Error
 		_ = db.Where("task_id = ?", task.ID).Delete(&models.RuntimeLease{}).Error
 		_ = db.Where("module = ? AND source_task_id = ?", commonExecution.ModuleTransfer, fmt.Sprint(task.ID)).Delete(&commonExecution.TaskExecution{}).Error
 		_ = db.Unscoped().Delete(&models.TransferTask{}, task.ID).Error
@@ -820,7 +829,7 @@ func TestIntegrationPostgresContinuousRecoveryBackoffAndCircuitBreaker(t *testin
 	if err := commonExecution.EnsureStore(db); err != nil {
 		t.Fatalf("ensure execution store: %v", err)
 	}
-	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}, &models.SyncState{}, &models.CaptureResource{}, &models.SchemaChangeRequest{}); err != nil {
+	if err := db.AutoMigrate(&models.TransferTask{}, &models.RuntimeLease{}, &models.RuntimeSession{}, &models.CleanupOperation{}, &models.SyncState{}, &models.CaptureResource{}, &models.SchemaChangeRequest{}); err != nil {
 		t.Fatalf("migrate continuous models: %v", err)
 	}
 
@@ -834,6 +843,8 @@ func TestIntegrationPostgresContinuousRecoveryBackoffAndCircuitBreaker(t *testin
 	}
 	t.Cleanup(func() {
 		cleanupTaskExecutionEvents(t, db, task.ID)
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.RuntimeSession{}).Error
+		_ = db.Where("task_id = ?", task.ID).Delete(&models.CleanupOperation{}).Error
 		_ = db.Where("task_id = ?", task.ID).Delete(&models.RuntimeLease{}).Error
 		_ = db.Where("module = ? AND source_task_id = ?", commonExecution.ModuleTransfer, fmt.Sprint(task.ID)).Delete(&commonExecution.TaskExecution{}).Error
 		_ = db.Unscoped().Delete(&models.TransferTask{}, task.ID).Error

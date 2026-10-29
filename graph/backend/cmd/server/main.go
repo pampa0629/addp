@@ -123,7 +123,7 @@ func main() {
 	}
 	defer buildSvc.StopSupervisor()
 	analysisSvc := service.NewAnalysisService(graphRepo, ontologyRepo, graphDataSvc)
-	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
+	cleanupSvc := service.NewCleanupService(db, systemServiceClient)
 	if err := cleanupSvc.Start(runtimeContext); err != nil {
 		logger.Warn("Graph 资源回收执行方启动失败", "error", err)
 	}
@@ -147,7 +147,7 @@ func main() {
 
 	// 设置路由
 	lifecycleController := modulelifecycle.NewBusiness("graph", commonClient.ModuleRuntimeRoleBackend)
-	router := api.SetupRouter(cfg, ontologyHandler, graphHandler, browseHandler, buildHandler, taskProviderHandler, analysisHandler, serviceHandler, lifecycleController)
+	router := api.SetupRouter(api.NewCleanupResultHandler(db), cfg, ontologyHandler, graphHandler, browseHandler, buildHandler, taskProviderHandler, analysisHandler, serviceHandler, lifecycleController)
 	addr := ":" + cfg.Port
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {

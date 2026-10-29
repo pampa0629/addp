@@ -43,7 +43,7 @@ func openActiveContentIndex(t *testing.T, repo *ContentIndexDeliveryRepository) 
 
 func registerContentWrite(t *testing.T, db *gorm.DB, repo *ContentIndexDeliveryRepository, epoch string, tenant int64, document string) *models.ContentIndexDelivery {
 	t.Helper()
-	op := &models.ContentIndexDelivery{TenantID: tenant, DocumentIDs: []string{document}, Kind: IndexDeliveryWrite}
+	op := &models.ContentIndexDelivery{TenantID: tenant, DocumentIDs: []string{document}, EngineIDs: []uint{9}, Kind: IndexDeliveryWrite}
 	if err := db.Transaction(func(tx *gorm.DB) error { return repo.Register(t.Context(), tx, epoch, op) }); err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestContentBatchChecksEveryPendingMemberAndKeepsTenantBoundary(t *testing.T
 	db := newContentDeliveryTestDB(t)
 	repo := NewContentIndexDeliveryRepository(db, "content")
 	epoch := openActiveContentIndex(t, repo)
-	first := &models.ContentIndexDelivery{TenantID: 7, DocumentIDs: []string{"first", "last"}, Kind: IndexDeliveryWrite}
+	first := &models.ContentIndexDelivery{TenantID: 7, DocumentIDs: []string{"first", "last"}, EngineIDs: []uint{9}, Kind: IndexDeliveryWrite}
 	if err := db.Transaction(func(tx *gorm.DB) error { return repo.Register(t.Context(), tx, epoch, first) }); err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestContentBatchChecksEveryPendingMemberAndKeepsTenantBoundary(t *testing.T
 		{7, []string{"unrelated"}, false},
 		{8, []string{"last"}, false},
 	} {
-		op := &models.ContentIndexDelivery{TenantID: tc.tenant, DocumentIDs: tc.ids, Kind: IndexDeliveryWrite}
+		op := &models.ContentIndexDelivery{TenantID: tc.tenant, DocumentIDs: tc.ids, EngineIDs: []uint{9}, Kind: IndexDeliveryWrite}
 		err := db.Transaction(func(tx *gorm.DB) error { return repo.Register(t.Context(), tx, epoch, op) })
 		if tc.blocked {
 			if !errors.Is(err, ErrContentIndexIsolated) {
@@ -260,7 +260,7 @@ func TestContentDeliveryRequiresTransactionAndValidTerminal(t *testing.T) {
 	db := newContentDeliveryTestDB(t)
 	repo := NewContentIndexDeliveryRepository(db, "content")
 	epoch := openActiveContentIndex(t, repo)
-	op := &models.ContentIndexDelivery{TenantID: 7, DocumentIDs: []string{"item"}, Kind: IndexDeliveryWrite}
+	op := &models.ContentIndexDelivery{TenantID: 7, DocumentIDs: []string{"item"}, EngineIDs: []uint{9}, Kind: IndexDeliveryWrite}
 	for _, tx := range []*gorm.DB{nil, db} {
 		if err := repo.Register(context.Background(), tx, epoch, op); err == nil {
 			t.Fatal("independent registration accepted")

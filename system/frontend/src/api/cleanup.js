@@ -12,12 +12,14 @@ export const cleanupApi = {
   },
 
   // 获取任务状态
-  getTaskStatus: (taskId) => {
-    return client.get(`/system/admin/cleanup/tasks/${taskId}`)
+  getTaskStatus: (taskId, options = {}) => {
+    return client.get(`/system/admin/cleanup/tasks/${encodeURIComponent(taskId)}`, options)
   },
 
+  readProfessionalResult: (owner, executionID, options = {}) => client.get(`/${owner}/cleanup-executions/${encodeURIComponent(executionID)}/result`, options),
+
   // 获取任务历史
-  getTaskHistory: (params) => {
-    return client.get('/system/admin/cleanup/history', { params })
+  getTaskHistory: (params, options = {}) => {
+    return client.get('/system/admin/cleanup/history', { ...options, params })
   }
 }

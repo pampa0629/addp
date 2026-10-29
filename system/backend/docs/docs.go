@@ -22,7 +22,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "基于评估结果执行系统级资源回收；所有执行请求都必须确认，高风险或释放存储操作必须提供确认文本 CONFIRM，物理回收必须显式选择外部产物策略 delete 或 abandon | Execute system resource reclaim based on an assessment; every execution must be confirmed, high-risk or storage release operations require confirmation token CONFIRM, and physical reclaim requires an explicit external artifact policy of delete or abandon",
+                "description": "基于评估结果执行系统级资源回收；所有执行请求都必须确认，高风险或释放存储操作必须提供确认文本 CONFIRM，物理回收必须显式选择外部产物策略 delete 或 abandon | Execute system resource reclaim based on an assessment; every execution must be confirmed, high-risk or storage release operations require confirmation token CONFIRM, and physical reclaim requires an explicit external artifact policy of delete or abandon\nMeta清理须在同一次评估中显式包含Manager，否则409，范围不自动扩展。 | Meta cleanup requires Manager in the same assessment; otherwise 409, without automatic scope expansion.",
                 "consumes": [
                     "application/json"
                 ],
@@ -63,7 +63,25 @@ const docTemplate = `{
                             "type": "string"
                         }
                     },
+                    "403": {
+                        "description": "错误信息 | Error message",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "409": {
+                        "description": "错误信息 | Error message",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
                     "500": {
+                        "description": "错误信息 | Error message",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
                         "description": "错误信息 | Error message",
                         "schema": {
                             "type": "string"
@@ -94,9 +112,16 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
                         "default": 20,
-                        "description": "返回记录数 | Limit",
-                        "name": "limit",
+                        "description": "每页记录数 | Page size",
+                        "name": "page_size",
                         "in": "query"
                     }
                 ],
@@ -119,7 +144,25 @@ const docTemplate = `{
                             "type": "string"
                         }
                     },
+                    "403": {
+                        "description": "错误信息 | Error message",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "409": {
+                        "description": "错误信息 | Error message",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
                     "500": {
+                        "description": "错误信息 | Error message",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
                         "description": "错误信息 | Error message",
                         "schema": {
                             "type": "string"
@@ -180,7 +223,25 @@ const docTemplate = `{
                             "type": "string"
                         }
                     },
+                    "403": {
+                        "description": "错误信息 | Error message",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "409": {
+                        "description": "错误信息 | Error message",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
                     "500": {
+                        "description": "错误信息 | Error message",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
                         "description": "错误信息 | Error message",
                         "schema": {
                             "type": "string"
@@ -236,13 +297,31 @@ const docTemplate = `{
                             "type": "string"
                         }
                     },
+                    "403": {
+                        "description": "错误信息 | Error message",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
                     "404": {
                         "description": "错误信息 | Error message",
                         "schema": {
                             "type": "string"
                         }
                     },
+                    "409": {
+                        "description": "错误信息 | Error message",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
                     "500": {
+                        "description": "错误信息 | Error message",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
                         "description": "错误信息 | Error message",
                         "schema": {
                             "type": "string"
@@ -3347,9 +3426,10 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "外部产物策略 | External artifact policy",
+                        "description": "幂等请求标识和外部产物策略 | Idempotency request ID and external artifact policy",
                         "name": "request",
                         "in": "body",
+                        "required": true,
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.EngineDeletionAssessmentRequest"
                         }
@@ -16763,6 +16843,95 @@ const docTemplate = `{
                 }
             }
         },
+        "events.CleanupContext": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "external_artifact_policy": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "events.CleanupImpactSummary": {
+            "type": "object",
+            "properties": {
+                "external_artifact": {
+                    "type": "integer"
+                },
+                "rebindable": {
+                    "type": "integer"
+                },
+                "running": {
+                    "type": "integer"
+                },
+                "will_delete": {
+                    "type": "integer"
+                },
+                "will_disable": {
+                    "type": "integer"
+                }
+            }
+        },
+        "events.CleanupResultSummary": {
+            "type": "object",
+            "properties": {
+                "affected_records": {
+                    "type": "integer"
+                },
+                "deleted_physical_artifacts": {
+                    "type": "integer"
+                },
+                "deleted_task_definitions": {
+                    "type": "integer"
+                },
+                "disabled_task_definitions": {
+                    "type": "integer"
+                },
+                "error_count": {
+                    "type": "integer"
+                },
+                "freed_bytes": {
+                    "type": "integer"
+                },
+                "marked_missing_source": {
+                    "type": "integer"
+                },
+                "marked_outdated": {
+                    "type": "integer"
+                },
+                "risk_level": {
+                    "type": "string"
+                },
+                "scanned_items": {
+                    "type": "integer"
+                },
+                "skipped_items": {
+                    "type": "integer"
+                }
+            }
+        },
+        "execution.CleanupAdmissionView": {
+            "type": "object",
+            "properties": {
+                "basis": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "schema": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
         "execution.CleanupAuthorizationScope": {
             "type": "object",
             "properties": {
@@ -16776,6 +16945,82 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "request_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "execution.CleanupReceipt": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "attempt": {
+                    "type": "integer"
+                },
+                "cleanup_mode": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "impact": {
+                    "$ref": "#/definitions/events.CleanupImpactSummary"
+                },
+                "impact_digest": {
+                    "type": "string"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "request_digest": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "schema": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "summary": {
+                    "$ref": "#/definitions/events.CleanupResultSummary"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "execution.DiagnosticStep": {
+            "type": "object",
+            "properties": {
+                "duration": {
+                    "type": "integer"
+                },
+                "ended_at": {
+                    "type": "string"
+                },
+                "error_code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "phase": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 }
             }
@@ -18293,30 +18538,142 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_system_internal_models.CleanupModuleExecution": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "bytes_read": {
+                    "type": "integer"
+                },
+                "bytes_written": {
+                    "type": "integer"
+                },
+                "cleanup_admission": {
+                    "$ref": "#/definitions/execution.CleanupAdmissionView"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "type": "string"
+                },
+                "diagnostics_truncated": {
+                    "type": "boolean"
+                },
+                "error_details": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "execution_boundary": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "execution_time_ms": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                },
+                "progress": {
+                    "type": "integer"
+                },
+                "receipt": {
+                    "$ref": "#/definitions/execution.CleanupReceipt"
+                },
+                "records_read": {
+                    "type": "integer"
+                },
+                "records_written": {
+                    "type": "integer"
+                },
+                "retry_of_execution_id": {
+                    "type": "string"
+                },
+                "rows_affected": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "type": "string"
+                },
+                "source_task_name": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.DiagnosticStep"
+                    }
+                },
+                "steps_attempt_unverified": {
+                    "type": "boolean"
+                },
+                "steps_truncated": {
+                    "type": "boolean"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "trigger_type": {
+                    "type": "string"
+                },
+                "triggered_by": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_system_internal_models.CleanupTask": {
             "type": "object",
             "properties": {
                 "action": {
-                    "description": "scan/execute",
                     "type": "string"
                 },
                 "based_on_scan": {
                     "type": "string"
                 },
                 "cause_event": {
-                    "description": "生命周期触发事件",
                     "type": "string"
                 },
                 "cleanup_mode": {
-                    "description": "logical_cleanup/physical_cleanup",
                     "type": "string"
                 },
                 "completed_at": {
                     "type": "string"
                 },
                 "context": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/definitions/events.CleanupContext"
+                },
+                "created_at": {
+                    "type": "string"
                 },
                 "execution_id": {
                     "type": "string"
@@ -18334,7 +18691,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
-                    "description": "pending/running/completed/timeout/failed",
                     "type": "string"
                 },
                 "task_id": {
@@ -18347,7 +18703,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "trigger_type": {
-                    "description": "manual/scheduled/event",
                     "type": "string"
                 }
             }
@@ -18872,8 +19227,14 @@ const docTemplate = `{
         },
         "github_com_addp_system_internal_models.EngineDeletionAssessmentRequest": {
             "type": "object",
+            "required": [
+                "request_id"
+            ],
             "properties": {
                 "external_artifact_policy": {
+                    "type": "string"
+                },
+                "request_id": {
                     "type": "string"
                 }
             }
@@ -19984,49 +20345,79 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_system_internal_models.TaskProgress": {
-            "type": "object",
-            "properties": {
-                "completed": {
-                    "description": "已完成模块数",
-                    "type": "integer"
-                },
-                "modules": {
-                    "description": "key=module, value=status",
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "total": {
-                    "description": "期望模块数",
-                    "type": "integer"
-                }
-            }
-        },
         "github_com_addp_system_internal_models.TaskStatusResponse": {
             "type": "object",
             "properties": {
                 "action": {
                     "type": "string"
                 },
-                "progress": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_models.TaskProgress"
+                "cutoff_at": {
+                    "type": "string"
                 },
-                "results": {
-                    "description": "key=module, value=CleanupResultData",
-                    "type": "object",
-                    "additionalProperties": true
+                "module_executions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.CleanupModuleExecution"
+                    }
+                },
+                "observed_at": {
+                    "type": "string"
                 },
                 "status": {
                     "type": "string"
                 },
-                "summary": {},
+                "summary": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.TaskSummary"
+                },
                 "task": {
                     "$ref": "#/definitions/github_com_addp_system_internal_models.CleanupTask"
                 },
                 "task_id": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.TaskSummary": {
+            "type": "object",
+            "properties": {
+                "affected_records": {
+                    "type": "integer"
+                },
+                "deleted_physical_artifacts": {
+                    "type": "integer"
+                },
+                "deleted_task_definitions": {
+                    "type": "integer"
+                },
+                "disabled_task_definitions": {
+                    "type": "integer"
+                },
+                "error_count": {
+                    "type": "integer"
+                },
+                "freed_bytes": {
+                    "type": "integer"
+                },
+                "impact": {
+                    "$ref": "#/definitions/events.CleanupImpactSummary"
+                },
+                "impact_digest": {
+                    "type": "string"
+                },
+                "marked_missing_source": {
+                    "type": "integer"
+                },
+                "marked_outdated": {
+                    "type": "integer"
+                },
+                "risk_level": {
+                    "type": "string"
+                },
+                "scanned_items": {
+                    "type": "integer"
+                },
+                "skipped_items": {
+                    "type": "integer"
                 }
             }
         },
@@ -20212,7 +20603,8 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "based_on_scan",
-                "cleanup_mode"
+                "cleanup_mode",
+                "request_id"
             ],
             "properties": {
                 "based_on_scan": {
@@ -20238,6 +20630,9 @@ const docTemplate = `{
                         "delete",
                         "abandon"
                     ]
+                },
+                "request_id": {
+                    "type": "string"
                 }
             }
         },
@@ -20312,7 +20707,13 @@ const docTemplate = `{
         },
         "internal_api.CreateScanTaskRequest": {
             "type": "object",
+            "required": [
+                "request_id"
+            ],
             "properties": {
+                "request_id": {
+                    "type": "string"
+                },
                 "scope": {
                     "description": "评估范围：已注册且启用资源回收执行方的模块；为空则由 System 按模块注册能力生成",
                     "type": "array",
@@ -20386,6 +20787,12 @@ const docTemplate = `{
         "internal_api.GetTaskHistoryResponse": {
             "type": "object",
             "properties": {
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
                 "tasks": {
                     "type": "array",
                     "items": {
@@ -20403,17 +20810,24 @@ const docTemplate = `{
                 "action": {
                     "type": "string"
                 },
-                "progress": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_models.TaskProgress"
+                "cutoff_at": {
+                    "type": "string"
                 },
-                "results": {
-                    "type": "object",
-                    "additionalProperties": true
+                "module_executions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.CleanupModuleExecution"
+                    }
+                },
+                "observed_at": {
+                    "type": "string"
                 },
                 "status": {
                     "type": "string"
                 },
-                "summary": {},
+                "summary": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.TaskSummary"
+                },
                 "task": {
                     "$ref": "#/definitions/github_com_addp_system_internal_models.CleanupTask"
                 },
@@ -23265,6 +23679,10 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "models.JSONMap": {
+            "type": "object",
+            "additionalProperties": true
         },
         "models.ObservabilityEngineIdentity": {
             "type": "object",

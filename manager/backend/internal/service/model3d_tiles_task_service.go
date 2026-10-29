@@ -127,23 +127,9 @@ func (s *Model3DTilesTaskService) ListResults(ctx context.Context, filter reposi
 	return s.repo.ListResults(ctx, filter)
 }
 
-func (s *Model3DTilesTaskService) DeleteResult(ctx context.Context, id uint, tenantID uint) error {
-	result, err := s.repo.GetResult(ctx, id, tenantID)
-	if err != nil {
-		return err
-	}
-	if result == nil {
-		return ErrModel3DTilesResultNotFound
-	}
-	if strings.TrimSpace(result.StorageRef) != "" {
-		if s.cleaner == nil {
-			return errors.New("model3d tiles artifact cleaner is not configured")
-		}
-		if err := s.cleaner.DeleteByStorageRef(ctx, result.StorageRef); err != nil {
-			return err
-		}
-	}
-	return s.repo.DeleteResult(ctx, id, tenantID)
+func (s *Model3DTilesTaskService) DeleteResult(ctx context.Context, id, tenantID uint) error {
+	err := NewCleanupArtifactService(s.repo.GetDB(), CleanupArtifactEffects{Bucket: s.bucket, Directories: s.cleaner}).DeleteManual(ctx, commonExecution.TaskTypeModel3DTilesGeneration, id, tenantID)
+	return err
 }
 
 func (s *Model3DTilesTaskService) Update(ctx context.Context, task *models.Model3DTilesTask) error {
@@ -221,6 +207,7 @@ func (s *Model3DTilesTaskService) Execute(
 }
 
 func (s *Model3DTilesTaskService) runModel3DTilesGeneration(ctx context.Context, task *models.Model3DTilesTask, executionID string) {
+	ctx = repository.ArtifactWriterContext(ctx)
 	if err := s.repo.ValidateClaim(ctx, task.ID, task.TenantID, executionID); err != nil {
 		logger.L().Warn("领取分块三维模型瓦片 execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 		return
@@ -236,7 +223,9 @@ func (s *Model3DTilesTaskService) runModel3DTilesGeneration(ctx context.Context,
 		if s.executor == nil {
 			err = errors.New("model 3d tiles generation executor is not configured")
 		} else {
-			result, err = s.executor.BuildModel3DTiles(ctx, Model3DTilesExecutionRequest{Task: task, ExecutionID: executionID, Config: cfg})
+			if err = repository.BeginArtifactWrite(ctx, s.repo.GetDB()); err == nil {
+				result, err = s.executor.BuildModel3DTiles(ctx, Model3DTilesExecutionRequest{Task: task, ExecutionID: executionID, Config: cfg})
+			}
 		}
 	}
 	if err == nil && result == nil {
@@ -288,6 +277,10 @@ func (s *Model3DTilesTaskService) runModel3DTilesGeneration(ctx context.Context,
 	artifactID := uint(0)
 	if artifact != nil {
 		artifactID = artifact.ID
+	}
+	if factErr := repository.RecordArtifactWrite(ctx, s.repo.GetDB(), status == commonExecution.ExecutionStatusSuccess); factErr != nil {
+		logger.L().Warn("persist artifact write fact failed", "error", factErr)
+		return
 	}
 	if err := s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, artifactID, artifactFields, map[string]interface{}{
 		"status":        status,

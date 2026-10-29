@@ -1,6 +1,7 @@
 package service
 
 import (
+	"github.com/addp/manager/internal/testfixture"
 	"testing"
 
 	"gorm.io/gorm"
@@ -8,6 +9,7 @@ import (
 
 func ensureDerivedTaskDefinitionTestTables(t *testing.T, db *gorm.DB) {
 	t.Helper()
+	testfixture.CleanupArtifactSQLite(t, db)
 	statements := []string{
 		`CREATE TABLE manager.task_definitions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, task_type TEXT NOT NULL,

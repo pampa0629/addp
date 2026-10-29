@@ -742,6 +742,7 @@ func newRasterCOGTaskServiceTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create raster_cog table: %v", err)
 	}
+	artifactTestSchema(t, db)
 	return db
 }
 

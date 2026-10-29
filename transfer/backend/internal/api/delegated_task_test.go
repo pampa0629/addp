@@ -96,7 +96,7 @@ func TestDelegatedCreatePersistsStoppedTaskWithoutExecution(t *testing.T) {
 			svc := service.NewTaskService(db, nil, nil)
 			svc.SetRoleProtection(service.NewRoleProtectionService(commonClient.NewSystemServiceClient(system.URL, nil, system.Client()), nil, nil))
 			svc.SetEngineResolver(planner.StaticEngineResolver{1: {Type: "mongodb"}})
-			router := SetupRouter(svc, nil, nil, nil, system.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
+			router := SetupRouter(NewCleanupResultHandler(nil), svc, nil, nil, nil, system.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
 			method := tc.method
 			if method == "" {
 				method = "POST"

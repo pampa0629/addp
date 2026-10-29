@@ -9,12 +9,6 @@ import (
 	"time"
 )
 
-// 事件类型常量
-const (
-	// EventCleanupRequest - 资源回收请求事件
-	EventCleanupRequest = "cleanup.request"
-)
-
 // 资源回收生命周期事件名称。
 const (
 	CleanupCauseEngineDeleting = "engine.deleting"
@@ -79,22 +73,6 @@ type TenantDeletedEvent struct {
 	TenantID  uint      `json:"tenant_id"`
 	DeletedAt time.Time `json:"deleted_at"`
 	DeletedBy uint      `json:"deleted_by"`
-}
-
-// CleanupRequestEvent - 资源回收请求事件
-type CleanupRequestEvent struct {
-	TaskID            string                 `json:"task_id"`                       // 任务ID
-	Action            string                 `json:"action"`                        // scan/execute
-	TenantID          uint                   `json:"tenant_id"`                     // 租户ID（0=全局）
-	CleanupMode       string                 `json:"cleanup_mode,omitempty"`        // logical_cleanup/physical_cleanup
-	TriggerType       string                 `json:"trigger_type"`                  // manual/scheduled/event
-	CauseEvent        string                 `json:"cause_event,omitempty"`         // 生命周期触发事件
-	ExpectedModules   []string               `json:"expected_modules"`              // 期望响应的模块列表
-	BasedOnScan       string                 `json:"based_on_scan,omitempty"`       // 基于哪次扫描（execute时使用）
-	ParentExecutionID string                 `json:"parent_execution_id,omitempty"` // System 父 execution
-	Context           map[string]interface{} `json:"context,omitempty"`             // 中性上下文
-	RequestedBy       uint                   `json:"requested_by"`                  // 请求用户ID
-	RequestedAt       time.Time              `json:"requested_at"`                  // 请求时间
 }
 
 // CleanupResultSummary - 资源回收结果标准摘要
@@ -195,11 +173,8 @@ type CleanupResultData struct {
 }
 
 func CleanupExpectedForModule(expected []string, module string) bool {
-	if len(expected) == 0 {
-		return true
-	}
 	for _, item := range expected {
-		if strings.TrimSpace(item) == module {
+		if item == module {
 			return true
 		}
 	}

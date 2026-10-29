@@ -74,7 +74,6 @@ func TestTargetSystemCompositionAgainstPostgres(t *testing.T) {
 	assertOfflineTimeQueryAgainstPostgres(t, db)
 
 	cfg := testIAMRuntimeConfig()
-	waitForRouterDeletionRecovery(t, db)
 	router := SetupRouter(db, cfg)
 	routes := router.Routes()
 	var runtimeEngineRegistration bool

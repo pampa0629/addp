@@ -43,7 +43,7 @@ func TestIntegrationPostgresQualityCleanupUsesExecutionFacts(t *testing.T) {
 		t.Fatalf("create issue: %v", err)
 	}
 	execution := createQualityCleanupExecution(t, db, task, commonExecution.ExecutionStatusPending)
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 
 	stats, err := svc.ExecuteCleanup(context.Background(), uint(tenantID), events.CleanupModeLogical, map[string]interface{}{"engine_id": int64(12)})
 	if err != nil {

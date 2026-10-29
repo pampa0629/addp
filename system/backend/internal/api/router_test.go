@@ -2,7 +2,6 @@ package api
 
 import (
 	"testing"
-	"time"
 
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
@@ -37,7 +36,6 @@ func TestSetupRouterUsesOnlyTargetIAMSurface(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := testIAMRuntimeConfig()
-	waitForRouterDeletionRecovery(t, db)
 	router := SetupRouter(db, cfg)
 	routes := make(map[string]struct{})
 	for _, route := range router.Routes() {
@@ -77,28 +75,4 @@ func TestSetupRouterUsesOnlyTargetIAMSurface(t *testing.T) {
 			t.Fatalf("legacy route %q is still registered", forbidden)
 		}
 	}
-}
-
-// SetupRouter starts a delayed recovery scan. These fixtures have no deleting
-// engines, so this query is its final database operation.
-func waitForRouterDeletionRecovery(t *testing.T, db *gorm.DB) {
-	t.Helper()
-	done := make(chan error, 1)
-	if err := db.Callback().Query().After("gorm:query").Register("test:router_deletion_recovery", func(tx *gorm.DB) {
-		if tx.Statement.Table == "engines" {
-			done <- tx.Error
-		}
-	}); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Errorf("router deletion recovery: %v", err)
-			}
-		case <-time.After(10 * time.Second):
-			t.Error("router deletion recovery did not finish")
-		}
-	})
 }

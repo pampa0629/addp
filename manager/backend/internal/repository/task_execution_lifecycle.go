@@ -108,6 +108,17 @@ func (l taskExecutionLifecycle) Claim(
 				return err
 			}
 		}
+		if execution.ExecutionConfig == nil {
+			execution.ExecutionConfig = commonModels.JSONMap{}
+		}
+		if err := holdArtifactGeneration(ctx, tx, execution, spec.TaskConfig()); err != nil {
+			return err
+		}
+		if spec.TaskType == commonExecution.TaskTypeEmbedding {
+			if err := GuardEmbeddingAdmission(ctx, tx, tenantID, execution.ExecutionConfig); err != nil {
+				return err
+			}
+		}
 		if err := tx.Create(execution).Error; err != nil {
 			return err
 		}
@@ -168,7 +179,11 @@ func (l taskExecutionLifecycle) Complete(
 	}
 
 	return l.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if _, err := commonExecution.LockActiveLease(ctx, tx, lease); err != nil {
+		item, err := commonExecution.LockActiveLease(ctx, tx, lease)
+		if err != nil {
+			return err
+		}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ?", taskID, tenantID).First(spec.TaskModel).Error; err != nil {
 			return err
 		}
 		if spec.ResultID > 0 && len(spec.ResultFields) > 0 {
@@ -203,6 +218,9 @@ func (l taskExecutionLifecycle) Complete(
 		}
 		if result.RowsAffected != 1 {
 			return fmt.Errorf("%w: %s task %d is not running for execution %s", commonAPI.ErrConflict, taskLabel, taskID, executionID)
+		}
+		if err := finishArtifactGeneration(ctx, tx, *item, status); err != nil {
+			return err
 		}
 		return commonExecution.CompleteWithEvent(ctx, tx, lease, status, fields)
 	})

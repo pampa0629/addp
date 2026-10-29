@@ -177,3 +177,8 @@ export { default as HostNodeSelect } from './components/HostNodeSelect.vue'
 export { resolveRoleName, resolveRoleDescription } from './utils/rolePresentation.mjs'
 
 export { default as FieldMaskingChoices } from './components/FieldMaskingChoices.vue'
+
+export { default as CleanupAdmission } from './components/CleanupAdmission.vue'
+export { default as CleanupModuleResults } from './components/CleanupModuleResults.vue'
+export * from './utils/cleanupObservation.mjs'
+export { createLatestRequestScope } from './utils/latestRequestScope.mjs'

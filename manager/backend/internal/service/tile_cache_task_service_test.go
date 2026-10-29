@@ -347,6 +347,7 @@ func newTileCacheTaskServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
 	ensureDerivedTaskDefinitionTestTables(t, db)
+	artifactTestSchema(t, db)
 	statements := []string{
 		`CREATE TABLE manager.vector_tile_cache (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL, item_id INTEGER,

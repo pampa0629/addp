@@ -46,7 +46,7 @@ func TestGraphControlRequiresExactVersionAndNarrowPermissions(t *testing.T) {
 		"Bearer reader": {"graph.graph.read"}, "Bearer editor": {"graph.graph.update"}, "Bearer reconciler": {"graph.graph.reconcile"}, "Bearer both": {"graph.graph.update", "graph.graph.reconcile"},
 	})
 	defer auth.Close()
-	router := SetupRouter(&config.Config{SystemServiceURL: auth.URL}, nil, handler, nil, nil, nil, nil, nil, modulelifecycle.NewStandalone("graph"))
+	router := SetupRouter(NewCleanupResultHandler(nil), &config.Config{SystemServiceURL: auth.URL}, nil, handler, nil, nil, nil, nil, nil, modulelifecycle.NewStandalone("graph"))
 	for _, tc := range []struct {
 		path, token, body string
 		status            int

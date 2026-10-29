@@ -25,6 +25,7 @@ import (
 )
 
 func SetupRouter(
+	cleanupResults *CleanupResultHandler,
 	cfg *config.Config,
 	metadataService *service.MetadataService,
 	searchService *service.HybridSearchService,
@@ -144,6 +145,7 @@ func SetupRouter(
 		protectionReadBoundary(readBoundary),
 	)
 	api.GET("/execution-read-scope", GetExecutionReadScope)
+	api.GET("/cleanup-executions/:execution_id/result", auth.MustNewPermissionGuard("manager.cleanup_result.read", "system.cleanup.read"), cleanupResults.Get)
 	permission := func(keys ...string) gin.HandlerFunc {
 		return auth.MustNewPermissionGuard(keys...)
 	}

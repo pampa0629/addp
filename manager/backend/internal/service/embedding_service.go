@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
 	enginePlugin "github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
@@ -135,6 +136,9 @@ func (s *EmbeddingService) CreateAdhocExecution(ctx context.Context, tenantID, u
 	if err != nil {
 		return nil, err
 	}
+	if err := s.captureCleanupTargets(ctx, tenantID, req, executionConfig); err != nil {
+		return nil, err
+	}
 	_, binding, profile, err := s.runtimeSnapshot(ctx, tenantID)
 	if err != nil {
 		return nil, err
@@ -160,7 +164,7 @@ func (s *EmbeddingService) CreateAdhocExecution(ctx context.Context, tenantID, u
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
-	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
+	if err := s.vectorRepo.CreateAdhocExecution(ctx, exec); err != nil {
 		return nil, err
 	}
 
@@ -191,6 +195,23 @@ func (s *EmbeddingService) RunEmbeddingExecution(ctx context.Context, tenantID u
 	items, err := s.resolveExecutionItems(ctx, tenantID, req)
 	if err != nil {
 		return stats, err
+	}
+	targets, err := repository.DecodeEmbeddingCleanupTargets(execCtx.Config, tenantID)
+	if err != nil {
+		return stats, err
+	}
+	if len(targets) != len(items) {
+		return stats, commonapi.ErrConflict
+	}
+	byID := map[uint]repository.EmbeddingCleanupTarget{}
+	for _, t := range targets {
+		byID[t.ItemID] = t
+	}
+	for _, item := range items {
+		t, ok := byID[item.ID]
+		if !ok || t.EngineID != item.EngineID || t.Fingerprint != commonModels.GenerateItemFingerprint(item.EngineID, item.FullName) {
+			return stats, commonapi.ErrConflict
+		}
 	}
 	stats.Total = len(items)
 
@@ -331,6 +352,21 @@ func (s *EmbeddingService) collectNodeItems(ctx context.Context, client *commonC
 
 func (s *EmbeddingService) processItem(ctx context.Context, tenantID uint, item commonModels.MetaItem, execCtx *EmbeddingExecutionContext) string {
 	itemFingerprint := commonModels.GenerateItemFingerprint(item.EngineID, item.FullName)
+	targets, err := repository.DecodeEmbeddingCleanupTargets(execCtx.Config, tenantID)
+	if err != nil {
+		return "failed"
+	}
+	found := false
+	for _, target := range targets {
+		if target.ItemID == item.ID && target.EngineID == item.EngineID && target.Fingerprint == itemFingerprint {
+			ctx = repository.ContextWithEmbeddingCleanupToken(ctx, target.Token)
+			found = true
+			break
+		}
+	}
+	if !found {
+		return "failed"
+	}
 	sourceVersion := sourceVersionForItem(itemFingerprint, item)
 	modelProfileID := execCtx.Binding.ModelProfileID
 	profileVersion := execCtx.Profile.ProfileVersion

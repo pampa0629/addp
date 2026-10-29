@@ -1,4 +1,4 @@
 package repository
 
 // SchemaVersion increases with every module schema or startup migration change.
-const SchemaVersion int64 = 7
+const SchemaVersion int64 = 8

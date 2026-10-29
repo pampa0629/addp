@@ -25,14 +25,19 @@ import (
 
 type requestScopeResolver struct{ revoked, unavailable bool }
 
-func (r *requestScopeResolver) Resolve(_ context.Context, _ []string, tenant int, principal int64, bearer string) ([]execution.ReadScope, error) {
+func (r *requestScopeResolver) Resolve(_ context.Context, owners []string, tenant int, principal int64, bearer string) ([]execution.ReadScope, error) {
 	if r.unavailable {
 		return nil, commonclient.ErrExecutionOwnerUnavailable
 	}
-	if r.revoked {
-		return []execution.ReadScope{}, nil
+	scopes := []execution.ReadScope{}
+	for _, owner := range owners {
+		scope := execution.ReadScope{TenantID: tenant, PrincipalID: principal, Module: owner, Grants: []execution.ReadGrant{}}
+		if owner == "orchestrator" && !r.revoked {
+			scope.Grants = []execution.ReadGrant{{TaskType: "orchestration", TaskHistory: true}}
+		}
+		scopes = append(scopes, scope)
 	}
-	return []execution.ReadScope{{TenantID: tenant, PrincipalID: principal, Module: "orchestrator", Grants: []execution.ReadGrant{{TaskType: "orchestration", TaskHistory: true}}}}, nil
+	return scopes, nil
 }
 
 type executionReadModuleRegistry struct{ modules []*commonclient.ModuleInfo }

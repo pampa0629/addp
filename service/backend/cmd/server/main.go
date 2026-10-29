@@ -15,7 +15,6 @@ import (
 	"github.com/addp/common/dataprotection/projectionstore"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
 	"github.com/addp/common/events"
-	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/modulelifecycle"
 	commonScheduler "github.com/addp/common/scheduler"
@@ -74,7 +73,6 @@ func main() {
 		logger.L().Error("服务运行策略加载失败", "error", err)
 		os.Exit(1)
 	}
-	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 
 	logger.L().Info("Service 配置加载完成")
 
@@ -156,7 +154,7 @@ func main() {
 	dynamicTileService := serviceInternal.NewDynamicTileService(systemClient)
 	dynamicTileService.SetProtectionGate(protectionGate)
 	tileCacheService := serviceInternal.NewTileCacheService(minioClient, minioBucket, "tiles")
-	cleanupService := serviceInternal.NewCleanupService(db, redisClient, taskExecutionRepo)
+	cleanupService := serviceInternal.NewCleanupService(db, systemServiceClient)
 	if err := cleanupService.Start(context.Background()); err != nil {
 		logger.L().Warn("Service 资源回收服务启动失败", "error", err)
 	}

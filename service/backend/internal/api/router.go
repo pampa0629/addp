@@ -107,6 +107,7 @@ func SetupRouter(
 		authMiddleware.MustNewContextGuard("tenant"),
 	)
 	api.GET("/execution-read-scope", GetExecutionReadScope)
+	api.GET("/cleanup-executions/:execution_id/result", authMiddleware.MustNewPermissionGuard("service.cleanup_result.read", "system.cleanup.read"), NewCleanupResultHandler(db).Get)
 	permission := func(keys ...string) gin.HandlerFunc {
 		return authMiddleware.MustNewPermissionGuard(keys...)
 	}

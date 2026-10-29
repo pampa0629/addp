@@ -163,7 +163,7 @@ func main() {
 	exportService := exportartifact.NewService(transferClient, exportStore, minioClient, "manager", "develop", "/api/v1/develop/exports")
 	queryExportService := service.NewQueryExportService(devExecutor, exportService)
 
-	cleanupService := service.NewCleanupService(db, redisClient, taskExecutionRepo)
+	cleanupService := service.NewCleanupService(db, systemServiceClient)
 	cleanupService.SetExportArtifacts(exportStore, minioClient, "manager", exportartifact.CleanupOptions{})
 	if err := cleanupService.Start(context.Background()); err != nil {
 		log.Printf("Develop 资源回收服务启动失败: %v", err)

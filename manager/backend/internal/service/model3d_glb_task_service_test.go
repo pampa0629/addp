@@ -449,5 +449,6 @@ func newModel3DGLBTaskServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("attach manager schema: %v", err)
 	}
 	ensureDerivedTaskDefinitionTestTables(t, db)
+	artifactTestSchema(t, db)
 	return db
 }

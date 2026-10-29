@@ -76,7 +76,7 @@ func TestCreateTaskSQLSourceRequiresDeclaredReadSession(t *testing.T) {
 				}
 				caps.Compute.Query.ReadSession = readSession
 				svc.SetEngineResolver(planner.StaticEngineResolver{1: {Type: engineType, EngineID: 1, Capabilities: &caps}})
-				router := SetupRouter(svc, nil, nil, nil, system.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
+				router := SetupRouter(NewCleanupResultHandler(nil), svc, nil, nil, nil, system.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
 				request := httptest.NewRequest(http.MethodPost, "/api/v1/transfer/task-definitions", strings.NewReader(string(body)))
 				request.Header.Set("Content-Type", "application/json")
 				request.Header.Set("Authorization", "Bearer addp_at_fixture")

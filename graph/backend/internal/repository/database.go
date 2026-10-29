@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/addp/common/cleanup"
 	"github.com/addp/common/schema"
 
 	"github.com/addp/graph/internal/config"
@@ -34,6 +35,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
 
+	if err := cleanup.MigrateResults(db, "graph"); err != nil {
+		return nil, err
+	}
 	log.Println("✅ Graph 数据库初始化完成")
 	return db, nil
 }

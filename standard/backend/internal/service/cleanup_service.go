@@ -4,28 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strconv"
-	"time"
 
+	"github.com/addp/common/cleanup"
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
-	commonModels "github.com/addp/common/models"
 	"github.com/addp/standard/internal/models"
-	"github.com/google/uuid"
 	minio "github.com/minio/minio-go/v7"
-	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
 type CleanupService struct {
-	db           *gorm.DB
-	redis        *redis.Client
-	taskExecRepo *commonExecution.TaskExecutionRepository
-	minioClient  *minio.Client
-	log          *slog.Logger
-	stopCh       chan struct{}
+	db          *gorm.DB
+	runtime     *cleanup.Runner
+	minioClient *minio.Client
 }
 
 type StandardCleanupStats struct {
@@ -57,132 +51,49 @@ type StandardCleanupStats struct {
 	Errors                   []string `json:"errors,omitempty"`
 }
 
-func NewCleanupService(db *gorm.DB, redisClient *redis.Client, taskExecRepo *commonExecution.TaskExecutionRepository, minioClient *minio.Client) *CleanupService {
-	return &CleanupService{
-		db:           db,
-		redis:        redisClient,
-		taskExecRepo: taskExecRepo,
-		minioClient:  minioClient,
-		log:          logger.With("component", "standard_cleanup_service"),
-		stopCh:       make(chan struct{}),
-	}
+func NewCleanupService(db *gorm.DB, systemClient *commonClient.SystemServiceClient, minioClient *minio.Client) *CleanupService {
+	s := &CleanupService{db: db, minioClient: minioClient}
+	s.runtime = &cleanup.Runner{DB: db, Owner: events.ModuleStandard, System: systemClient, Log: logger.With("component", "standard_cleanup_service"), Handle: s.runCleanup}
+	return s
 }
-
-func (s *CleanupService) Start(ctx context.Context) error {
-	if s == nil || s.redis == nil {
-		return nil
+func (s *CleanupService) Start(ctx context.Context) error { return s.runtime.Start(ctx) }
+func (s *CleanupService) Stop()                           { s.runtime.Stop() }
+func (s *CleanupService) runCleanup(ctx context.Context, run *cleanup.Run) error {
+	// Historical Tenant cleanup has no approved execution authority. Never enter
+	// its document/MinIO path through the active-Tenant User runtime.
+	if run.Input.Context.TenantID != 0 {
+		return fmt.Errorf("historical tenant cleanup is unsupported")
 	}
-	go s.consumeCleanupRequests(ctx)
-	s.log.Info("Standard 资源回收事件订阅已启动")
-	return nil
-}
-
-func (s *CleanupService) Stop() {
-	if s == nil || s.stopCh == nil {
-		return
-	}
-	close(s.stopCh)
-}
-
-func (s *CleanupService) consumeCleanupRequests(ctx context.Context) {
-	groupName := "standard-cleanup-consumer"
-	consumerName := "standard-worker"
-	_ = s.redis.XGroupCreateMkStream(ctx, events.EventCleanupRequest, groupName, "$").Err()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-s.stopCh:
-			return
-		default:
-			streams, err := s.redis.XReadGroup(ctx, &redis.XReadGroupArgs{
-				Group:    groupName,
-				Consumer: consumerName,
-				Streams:  []string{events.EventCleanupRequest, ">"},
-				Count:    1,
-				Block:    5 * time.Second,
-			}).Result()
-			if err != nil {
-				if err != redis.Nil {
-					s.log.Error("读取资源回收请求失败", "error", err)
-				}
-				continue
-			}
-			for _, stream := range streams {
-				for _, message := range stream.Messages {
-					s.handleCleanupRequest(ctx, message)
-					_ = s.redis.XAck(ctx, events.EventCleanupRequest, groupName, message.ID).Err()
-				}
-			}
+	return run.Effect(ctx, func(tx *gorm.DB) error {
+		scoped := &CleanupService{db: tx, minioClient: s.minioClient}
+		var stats *StandardCleanupStats
+		var err error
+		if run.Input.Action == events.CleanupActionScan {
+			stats, err = scoped.ScanReclaimCandidates(ctx, run.Input.TenantID, run.Input.Context.Map())
+		} else {
+			stats, err = scoped.ExecuteCleanup(ctx, run.Input.TenantID, run.Input.CleanupMode, run.Input.Context.Map())
 		}
-	}
-}
-
-func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis.XMessage) {
-	event, err := events.ParseCleanupRequest(message.Values)
-	if err != nil {
-		s.log.Error("解析资源回收请求失败", "error", err, "message_id", message.ID)
-		return
-	}
-	if !events.CleanupExpectedForModule(event.ExpectedModules, events.ModuleStandard) {
-		return
-	}
-
-	result := events.CleanupResultData{
-		Module:      events.ModuleStandard,
-		Action:      event.Action,
-		TenantID:    event.TenantID,
-		TaskID:      event.TaskID,
-		CleanupMode: event.CleanupMode,
-		TriggerType: event.TriggerType,
-		Timestamp:   time.Now(),
-	}
-
-	exec, startedAt, execErr := s.createExecutorExecution(ctx, event)
-	if execErr != nil {
-		s.log.Error("创建 Standard 资源回收执行记录失败", "error", execErr, "task_id", event.TaskID)
-	}
-	defer func() {
-		if exec != nil {
-			s.finishExecutorExecution(ctx, exec.ExecutionID, event.TenantID, startedAt, result)
-		}
-		s.writeResult(ctx, event.TaskID, result)
-	}()
-
-	switch event.Action {
-	case events.CleanupActionScan:
-		stats, err := s.ScanReclaimCandidates(ctx, event.TenantID, event.Context)
 		if err != nil {
-			result.Status = events.CleanupResultFailed
-			result.Errors = []string{err.Error()}
-			result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
-			return
-		}
-		result.Status = events.CleanupResultSuccess
-		result.Statistics = standardCleanupStatsToMap(stats)
-		result.Summary = standardScanSummary(stats)
-	case events.CleanupActionExecute:
-		stats, err := s.ExecuteCleanup(ctx, event.TenantID, event.CleanupMode, event.Context)
-		if err != nil {
-			result.Status = events.CleanupResultFailed
-			result.Errors = []string{err.Error()}
-			result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
-			return
+			return err
 		}
 		if len(stats.Errors) > 0 {
-			result.Status = events.CleanupResultPartialSuccess
-			result.Errors = stats.Errors
-		} else {
-			result.Status = events.CleanupResultSuccess
+			return fmt.Errorf("standard cleanup domain transaction failed")
 		}
-		result.Statistics = standardCleanupStatsToMap(stats)
-		result.Summary = standardExecuteSummary(stats)
-	default:
-		result.Status = events.CleanupResultFailed
-		result.Errors = []string{"unknown resource reclaim action: " + event.Action}
-		result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
-	}
+		summary := standardScanSummary(stats)
+		if run.Input.Action == events.CleanupActionExecute {
+			summary = standardExecuteSummary(stats)
+		}
+		impact, err := events.BuildCleanupImpactData(nil, "")
+		if err != nil {
+			return err
+		}
+		result := events.CleanupResultData{TaskID: run.Input.RequestID, TenantID: run.Input.TenantID, Module: events.ModuleStandard, Action: run.Input.Action, CleanupMode: run.Input.CleanupMode, Status: events.CleanupResultSuccess, Summary: summary, Impact: &impact}
+		receipt, err := commonExecution.NewCleanupReceipt(run.Execution, result, "")
+		if err != nil {
+			return err
+		}
+		return cleanup.Complete(ctx, tx, run.Lease, receipt, standardCleanupCounters(stats))
+	})
 }
 
 func (s *CleanupService) ScanReclaimCandidates(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}) (*StandardCleanupStats, error) {
@@ -577,92 +488,8 @@ func standardCleanupContextUint(cleanupContext map[string]interface{}, key strin
 	return 0, false
 }
 
-func (s *CleanupService) createExecutorExecution(ctx context.Context, event events.CleanupRequestEvent) (*commonExecution.TaskExecution, time.Time, error) {
-	if s.taskExecRepo == nil || event.ParentExecutionID == "" {
-		return nil, time.Time{}, nil
-	}
-	startedAt := time.Now()
-	currentStep := fmt.Sprintf("Standard 资源回收 %s", event.Action)
-	triggerType, err := commonExecution.NormalizeTriggerType(event.TriggerType)
-	if err != nil {
-		triggerType = commonExecution.TriggerTypeManual
-	}
-	exec := &commonExecution.TaskExecution{
-		TenantID:          int(event.TenantID),
-		ExecutionID:       uuid.NewString(),
-		Module:            commonExecution.ModuleStandard,
-		TaskType:          commonExecution.TaskTypeCleanupExecutor,
-		Source:            commonExecution.ModuleSystem,
-		ParentExecutionID: &event.ParentExecutionID,
-		Status:            commonExecution.ExecutionStatusRunning,
-		Progress:          0,
-		CurrentStep:       &currentStep,
-		TriggerType:       triggerType,
-		TriggeredBy:       standardIntPtr(int(event.RequestedBy)),
-		ExecutionConfig: commonModels.JSONMap{
-			"task_id":       event.TaskID,
-			"action":        event.Action,
-			"cleanup_mode":  event.CleanupMode,
-			"based_on_scan": event.BasedOnScan,
-			"cause_event":   event.CauseEvent,
-			"context":       event.Context,
-		},
-		StartedAt: &startedAt,
-		CreatedAt: startedAt,
-		UpdatedAt: startedAt,
-	}
-	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
-		return nil, startedAt, err
-	}
-	return exec, startedAt, nil
-}
-
-func (s *CleanupService) finishExecutorExecution(ctx context.Context, executionID string, tenantID uint, startedAt time.Time, result events.CleanupResultData) {
-	if s.taskExecRepo == nil || executionID == "" {
-		return
-	}
-	now := time.Now()
-	status := commonExecution.StatusFromCleanupResult(result.Status)
-	var errDetails commonModels.JSONMap
-	if len(result.Errors) > 0 {
-		errDetails = commonModels.JSONMap{"errors": result.Errors}
-	}
-	if err := s.taskExecRepo.UpdateFields(ctx, executionID, int(tenantID), map[string]interface{}{
-		"status":            status,
-		"progress":          100,
-		"metadata":          commonModels.JSONMap{"cleanup_result": result, "summary": result.Summary},
-		"error_details":     errDetails,
-		"completed_at":      now,
-		"execution_time_ms": now.Sub(startedAt).Milliseconds(),
-		"updated_at":        now,
-	}); err != nil {
-		s.log.Warn("更新 Standard 资源回收执行记录失败", "execution_id", executionID, "error", err)
-	}
-}
-
-func (s *CleanupService) writeResult(ctx context.Context, taskID string, result events.CleanupResultData) {
-	if s.redis == nil || taskID == "" {
-		return
-	}
-	resultJSON, err := json.Marshal(result)
-	if err != nil {
-		s.log.Error("序列化 Standard 资源回收结果失败", "error", err, "task_id", taskID)
-		return
-	}
-	key := fmt.Sprintf("cleanup:results:%s", taskID)
-	if err := s.redis.HSet(ctx, key, events.ModuleStandard, string(resultJSON)).Err(); err != nil {
-		s.log.Error("写入 Standard 资源回收结果失败", "error", err, "task_id", taskID)
-	}
-}
-
-func standardCleanupStatsToMap(stats *StandardCleanupStats) map[string]interface{} {
-	if stats == nil {
-		return nil
-	}
-	data, _ := json.Marshal(stats)
-	var result map[string]interface{}
-	_ = json.Unmarshal(data, &result)
-	return result
+func standardCleanupCounters(stats *StandardCleanupStats) map[string]int64 {
+	return map[string]int64{"domains": int64(stats.Domains), "glossaries": int64(stats.Glossaries), "glossary_element_mappings": int64(stats.GlossaryElementMappings), "elements": int64(stats.Elements), "code_sets": int64(stats.CodeSets), "code_items": int64(stats.CodeItems), "measurement_categories": int64(stats.MeasurementCategories), "units": int64(stats.Units), "metric_categories": int64(stats.MetricCategories), "metrics": int64(stats.Metrics), "metric_revisions": int64(stats.MetricRevisions), "metric_dependencies": int64(stats.MetricDependencies), "documents": int64(stats.Documents), "document_element_mappings": int64(stats.DocumentElementMappings), "document_glossary_mappings": int64(stats.DocumentGlossaryMappings), "document_metric_mappings": int64(stats.DocumentMetricMappings), "reference_deletions": int64(stats.ReferenceDeletions), "deprecated_glossaries": int64(stats.DeprecatedGlossaries), "deprecated_elements": int64(stats.DeprecatedElements), "deprecated_metrics": int64(stats.DeprecatedMetrics), "deprecated_documents": int64(stats.DeprecatedDocuments), "deleted_records": int64(stats.DeletedRecords), "deleted_physical_artifacts": int64(stats.DeletedPhysicalArtifacts), "freed_bytes": int64(stats.FreedBytes), "skipped_items": int64(stats.SkippedItems), "error_count": int64(len(stats.Errors))}
 }
 
 func standardScanSummary(stats *StandardCleanupStats) events.CleanupResultSummary {

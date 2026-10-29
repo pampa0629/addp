@@ -2,6 +2,7 @@ package repository
 
 import (
 	"fmt"
+	"github.com/addp/common/cleanup"
 
 	"github.com/addp/asset/internal/models"
 	"gorm.io/gorm"
@@ -31,6 +32,9 @@ func Migrate(db *gorm.DB) error {
 			&models.Authorization{}, &models.Rating{},
 		); err != nil {
 			return fmt.Errorf("auto migrate asset schema: %w", err)
+		}
+		if err := cleanup.MigrateResults(tx, "asset"); err != nil {
+			return err
 		}
 		if tx.Dialector.Name() != "postgres" {
 			return nil

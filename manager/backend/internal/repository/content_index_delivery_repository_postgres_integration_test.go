@@ -3,6 +3,7 @@ package repository
 import (
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,12 +49,19 @@ func TestIntegrationPostgresManagerContentDeliveryReceiptCASAndRestart(t *testin
 	})
 	repo := NewContentIndexDeliveryRepository(db, index)
 	epoch := openActiveContentIndex(t, repo)
+	guard, err := repo.ObserveInventoryGuard(t.Context(), epoch)
+	if err != nil || guard.Registered != 0 {
+		t.Fatal("initial inventory guard", guard, err)
+	}
 	op := registerContentWrite(t, db, repo, epoch, 7, "item")
 	if op.TaskCorrelation != op.ID {
 		t.Fatal("new write did not bind correlation before submission")
 	}
 	if err := repo.Unknown(t.Context(), op); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := repo.ObserveInventoryGuard(t.Context(), epoch); !errors.Is(err, ErrContentIndexIsolated) {
+		t.Fatal("unknown write allowed inventory", err)
 	}
 	recoverable, err := repo.Recoverable(t.Context())
 	if err != nil || len(recoverable) != 1 || recoverable[0].TaskCorrelation != op.ID {
@@ -111,6 +119,10 @@ func TestIntegrationPostgresManagerContentDeliveryReceiptCASAndRestart(t *testin
 		t.Fatal("stale instance reopened index")
 	}
 
+	settledGuard, err := restarted.ObserveInventoryGuard(t.Context(), next)
+	if err != nil || settledGuard.Registered != 1 || settledGuard.Epoch == guard.Epoch {
+		t.Fatal("settled/restarted observation", settledGuard, err)
+	}
 	rollback := errors.New("rollback purge")
 	if err := restartedDB.Transaction(func(tx *gorm.DB) error {
 		if err := restarted.QueueProtectionPurges(t.Context(), tx, 7, []string{"item"}); err != nil {
@@ -190,6 +202,96 @@ func TestIntegrationPostgresManagerContentDeliveryReceiptCASAndRestart(t *testin
 			t.Fatalf("database accepted invalid or duplicate task receipt: %#v", invalid)
 		}
 	}
+
+	t.Run("cleanup_hold_survives_restart_and_result_rollback", func(t *testing.T) {
+		ctx, lease := indexCleanupLease(t, db)
+		observed, err := restarted.ObserveInventoryGuard(ctx, next)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var operation *models.CleanupIndexOperation
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			var e error
+			operation, e = restarted.BeginCleanupIndex(ctx, tx, lease, observed, strings.Repeat("a", 64), []uint{9})
+			return e
+		}); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			for _, model := range []any{&models.CleanupIndexTarget{}, &models.CleanupIndexOperation{}} {
+				if e := db.Where("index_name=?", index).Delete(model).Error; e != nil {
+					t.Error(e)
+				}
+			}
+		})
+		// A separate process generation cannot reopen or dispatch a generic delete.
+		reopened, err := repo.Open(ctx, "endpoint", true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !errors.Is(repo.ActivateIfSettled(ctx, reopened), ErrContentIndexIsolated) {
+			t.Fatal("restart removed Cleanup hold")
+		}
+		if !errors.Is(repo.RequireNoCleanupHold(ctx, reopened), ErrContentIndexIsolated) {
+			t.Fatal("restart allowed index reinitialization")
+		}
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			_, e := restarted.QueueCleanupDelete(ctx, tx, lease, operation.ID, 9)
+			return e
+		}); !errors.Is(err, ErrContentIndexIsolated) {
+			t.Fatal("previous generation dispatched", err)
+		}
+		// Restore this test's original outlet generation to exercise final-result
+		// rollback independently; production has no such recovery/reset operation.
+		if err := db.Model(&models.ContentIndexOutlet{}).Where("index_name=?", index).Update("epoch", next).Error; err != nil {
+			t.Fatal(err)
+		}
+		var deletion *models.ContentIndexDelivery
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			var e error
+			deletion, e = restarted.QueueCleanupDelete(ctx, tx, lease, operation.ID, 9)
+			return e
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := restarted.Receipt(ctx, deletion, 2, at.Add(2*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		deletion, err = restarted.Get(ctx, 7, deletion.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := restarted.Finish(ctx, deletion, IndexDeliverySucceeded); err != nil {
+			t.Fatal(err)
+		}
+		sentinel := errors.New("professional result write failed")
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			if e := restarted.CompleteCleanupIndex(ctx, tx, lease, operation.ID); e != nil {
+				return e
+			}
+			return sentinel
+		}); !errors.Is(err, sentinel) {
+			t.Fatal(err)
+		}
+		if !errors.Is(restarted.ActivateIfSettled(ctx, next), ErrContentIndexIsolated) {
+			t.Fatal("failed result commit released hold")
+		}
+		stale := lease
+		stale.Token = "stale"
+		if err := db.Transaction(func(tx *gorm.DB) error { return restarted.CompleteCleanupIndex(ctx, tx, stale, operation.ID) }); err == nil {
+			t.Fatal("stale lease finalized")
+		}
+		if err := db.Transaction(func(tx *gorm.DB) error { return restarted.CompleteCleanupIndex(ctx, tx, lease, operation.ID) }); err != nil {
+			t.Fatal(err)
+		}
+		if err := restarted.ActivateIfSettled(ctx, next); err != nil {
+			t.Fatal(err)
+		}
+		late := &models.ContentIndexDelivery{TenantID: 7, EngineIDs: []uint{9}, DocumentIDs: []string{"late"}, Kind: IndexDeliveryWrite}
+		if err := db.Transaction(func(tx *gorm.DB) error { return restarted.Register(ctx, tx, next, late) }); !errors.Is(err, ErrContentIndexIsolated) {
+			t.Fatal("late write was accepted", err)
+		}
+	})
 
 	// A historical submission never sent a marker. The schema default and
 	// subsequent migrations must preserve that missing evidence, not invent it.

@@ -16,14 +16,14 @@ export function formatCleanupStateChanges(summary, translate) {
   return parts.length > 0 ? parts.join(' / ') : '-'
 }
 
-const cleanupResultStatuses = new Set(['completed', 'completed_with_errors'])
+const cleanupResultStatuses = new Set(['success', 'failed', 'timeout', 'cancelled'])
 
 export function selectCleanupHistoryResults(tasks) {
   const orderedTasks = Array.isArray(tasks) ? tasks : []
   const latestScan = orderedTasks.find(task => task?.action === 'scan')
   const latestExecute = orderedTasks.find(task => task?.action === 'execute')
   const latestCompletedScan = orderedTasks.find(task => (
-    task?.action === 'scan' && cleanupResultStatuses.has(task?.status)
+    task?.action === 'scan' && task?.status === 'success' && !task?.cause_event && !task?.context?.engine_id && !task?.context?.tenant_id
   ))
   const latestCompletedResult = orderedTasks.find(task => cleanupResultStatuses.has(task?.status))
 

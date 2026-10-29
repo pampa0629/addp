@@ -113,6 +113,7 @@ func SetupRouter(
 	)
 	api.Use(executionAuthContextMiddleware)
 	api.GET("/execution-read-scope", GetExecutionReadScope)
+	api.GET("/cleanup-executions/:execution_id/result", commonAuth.MustNewPermissionGuard("develop.cleanup_result.read", "system.cleanup.read"), NewCleanupResultHandler(db).Get)
 	permission := func(keys ...string) gin.HandlerFunc {
 		return commonAuth.MustNewPermissionGuard(keys...)
 	}
@@ -198,7 +199,7 @@ func SetupRouter(
 		api.GET("/spark-runtimes", permission(developauthorization.PermissionDevelopTaskRead), engineHandler.ListSparkRuntimes)
 
 		// ========== 查询开发 ==========
- api.GET("/query-protection-options",permission(developauthorization.PermissionDevelopTaskExecute,developauthorization.PermissionDevelopDataReadExecute),queryHandler.QueryProtectionOptions)
+		api.GET("/query-protection-options", permission(developauthorization.PermissionDevelopTaskExecute, developauthorization.PermissionDevelopDataReadExecute), queryHandler.QueryProtectionOptions)
 		api.POST(
 			"/query-preflight",
 			permission(developauthorization.PermissionDevelopTaskExecute),

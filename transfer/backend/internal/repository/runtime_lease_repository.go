@@ -118,6 +118,9 @@ func (r *RuntimeLeaseRepository) ClaimNext(ctx context.Context, owner string, du
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ?", taskID, execution.TenantID).First(&task).Error; err != nil {
 			return err
 		}
+		if err := RequireNoCleanupOperations(ctx, tx, task.TenantID, task.ID); err != nil {
+			return err
+		}
 		if task.DesiredState != models.TaskDesiredStateRunning {
 			return nil
 		}
@@ -154,6 +157,9 @@ func (r *RuntimeLeaseRepository) ClaimNext(ctx context.Context, owner string, du
 		} else if err := tx.Create(&lease).Error; err != nil {
 			return err
 		}
+		if err := tx.Create(&models.RuntimeSession{ExecutionID: execution.ExecutionID, OwnerInstanceID: owner, FencingToken: token, TaskID: taskID, TenantID: task.TenantID, StartedAt: now}).Error; err != nil {
+			return err
+		}
 		metadata := mergeContinuousRuntimeMetadata(execution.Metadata, owner, token, now, lease.LeaseUntil)
 		metadata["recovery_claimed_at"] = now
 		if metadata["recovery_circuit_state"] == recoveryCircuitOpen {
@@ -184,6 +190,7 @@ func selectPendingContinuousExecution(tx *gorm.DB, execution *commonExecution.Ta
 		Select("e.*").
 		Joins("JOIN transfer.transfer_tasks AS t ON CAST(t.id AS TEXT) = e.source_task_id AND t.tenant_id = e.tenant_id").
 		Joins("LEFT JOIN transfer.runtime_leases AS l ON l.task_id = t.id").
+		Where("NOT EXISTS (SELECT 1 FROM transfer.cleanup_operations cleanup WHERE cleanup.task_id=t.id AND cleanup.tenant_id=t.tenant_id)").
 		Where("e.module = ? AND e.task_type = ? AND e.status = ?", commonExecution.ModuleTransfer, commonExecution.TaskTypeSync, commonExecution.ExecutionStatusPending).
 		Where("e.execution_boundary = ?", commonExecution.ExecutionBoundaryContinuous).
 		Where("t.desired_state = ? AND t.status <> ? AND t.deleted_at IS NULL", models.TaskDesiredStateRunning, models.TaskStatusBlocked).
@@ -211,6 +218,7 @@ func reconcileNextContinuousExecution(tx *gorm.DB, policy ContinuousRecoveryPoli
 			LIMIT 1
 		) AS last_execution ON TRUE`, commonExecution.ModuleTransfer, commonExecution.TaskTypeSync).
 		Joins("LEFT JOIN transfer.runtime_leases AS l ON l.task_id = t.id").
+		Where("NOT EXISTS (SELECT 1 FROM transfer.cleanup_operations cleanup WHERE cleanup.task_id=t.id AND cleanup.tenant_id=t.tenant_id)").
 		Where("t.status <> ? AND t.deleted_at IS NULL", models.TaskStatusBlocked).
 		Where(`NOT EXISTS (
 			SELECT 1 FROM common.task_executions AS active

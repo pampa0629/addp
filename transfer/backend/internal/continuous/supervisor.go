@@ -27,6 +27,7 @@ type LeaseStore interface {
 	ClaimNext(ctx context.Context, owner string, duration time.Duration) (*repository.RuntimeLeaseClaim, error)
 	Renew(ctx context.Context, taskID uint, owner string, token uint64, duration time.Duration) error
 	Finish(ctx context.Context, claim repository.RuntimeLeaseClaim, status, stopReason, errorCode, errorMessage string) error
+	AcknowledgeStopped(ctx context.Context, claim repository.RuntimeLeaseClaim) error
 	DesiredState(ctx context.Context, taskID uint) (models.TaskDesiredState, error)
 }
 
@@ -117,6 +118,12 @@ func (s *Supervisor) claimAvailable(ctx context.Context) error {
 		if _, exists := s.active[claim.Task.ID]; exists {
 			s.mu.Unlock()
 			cancel()
+			ackCtx, stopAck := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			ackErr := s.repo.AcknowledgeStopped(ackCtx, *claim)
+			stopAck()
+			if ackErr != nil {
+				return ackErr
+			}
 			return fmt.Errorf("task %d already active in this supervisor", claim.Task.ID)
 		}
 		s.active[claim.Task.ID] = cancel
@@ -189,6 +196,13 @@ func (s *Supervisor) runSession(ctx context.Context, claim repository.RuntimeLea
 	}
 
 finish:
+	// runnerDone is observed only after Run has returned and closed its readers.
+	// This evidence remains valid after lease loss; it never changes business state.
+	ackCtx, cancelAck := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := s.repo.AcknowledgeStopped(ackCtx, claim); err != nil {
+		s.logger.Error("continuous runtime stop acknowledgement failed", "task_id", claim.Task.ID, "error_code", "runtime_stop_acknowledgement_failed")
+	}
+	cancelAck()
 	if err := s.repo.Finish(context.Background(), claim, status, stopReason, errorCode, errorMessage); err != nil && !errors.Is(err, repository.ErrRuntimeLeaseLost) {
 		s.logger.Error("continuous session finish failed", "task_id", claim.Task.ID, "error", err)
 	}

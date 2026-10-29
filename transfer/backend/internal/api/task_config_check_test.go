@@ -110,7 +110,7 @@ func TestTaskConfigCheckRoutePermissionsAndDelegatedIsolation(t *testing.T) {
 			} else {
 				svc.SetTaskConfigChecker(service.NewTaskConfigCheckService(facts, facts))
 			}
-			router := SetupRouter(svc, nil, nil, nil, system.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
+			router := SetupRouter(NewCleanupResultHandler(nil), svc, nil, nil, nil, system.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
 			config := validTransferTaskHandlerConfig()
 			config["source"].(map[string]interface{})["locator"] = "addp://engine/1/path/synthetic/source?type=table"
 			config["source"].(map[string]interface{})["query"] = map[string]interface{}{"language": "sql", "statement": "SELECT private_expression FROM synthetic.source"}

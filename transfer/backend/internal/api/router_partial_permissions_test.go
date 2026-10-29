@@ -27,7 +27,7 @@ func TestCreateOnlyTenantCanReadStaticCapabilitiesWithoutTaskRead(t *testing.T) 
 	})
 	defer authServer.Close()
 
-	router := SetupRouter(nil, nil, nil, nil, authServer.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
+	router := SetupRouter(NewCleanupResultHandler(nil), nil, nil, nil, nil, authServer.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
 	for _, test := range []struct {
 		name  string
 		path  string
@@ -97,7 +97,7 @@ func TestTenantTaskRoutesRespectPartialPermissionsAndTenantBoundary(t *testing.T
 	}))
 	defer authServer.Close()
 
-	router := SetupRouter(service.NewTaskService(db, nil, nil), nil, nil, nil,
+	router := SetupRouter(NewCleanupResultHandler(nil), service.NewTaskService(db, nil, nil), nil, nil, nil,
 		authServer.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
 	for _, tc := range []struct {
 		name, method, path, token, body string

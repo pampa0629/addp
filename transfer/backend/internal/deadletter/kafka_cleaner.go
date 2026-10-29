@@ -5,8 +5,9 @@ import (
 	"fmt"
 
 	engineplugin "github.com/addp/common/engine/plugin"
+	kafkaplugin "github.com/addp/common/engine/plugins/kafka"
+	"github.com/addp/transfer/internal/kafkacleanup"
 	"github.com/twmb/franz-go/pkg/kadm"
-	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -40,11 +41,10 @@ func (c *KafkaTopicCleaner) DeleteTaskTopic(ctx context.Context, tenantID, taskI
 	if err != nil {
 		return fmt.Errorf("delete Infra Kafka dead-letter topic %q: %w", topic, err)
 	}
-	response, ok := responses[topic]
-	if !ok || response.Err == nil || response.Err == kerr.UnknownTopicOrPartition {
-		return nil
+	if err := kafkaplugin.ValidateTopicDeletionResponse(topic, responses); err != nil {
+		return err
 	}
-	return fmt.Errorf("delete Infra Kafka dead-letter topic %q: %w", topic, response.Err)
+	return kafkacleanup.WaitTopicAbsent(ctx, c.admin, topic)
 }
 
 func (c *KafkaTopicCleaner) Close() {

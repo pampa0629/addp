@@ -183,6 +183,7 @@ func TestExecutionTreeFiltersHiddenChildrenBeforeBudgetAndKeepsDirectParents(t *
 	// child or truncation hint. An empty scope cannot read even that root.
 	parentOnly := commonExecution.WithReadScopes(context.Background(), []commonExecution.ReadScope{
 		{Module: commonExecution.ModuleTransfer, TenantID: 7, PrincipalID: 36, Grants: []commonExecution.ReadGrant{{TaskType: commonExecution.TaskTypeSync, TaskHistory: true}}},
+		{Module: commonExecution.ModuleMeta, TenantID: 7, PrincipalID: 36, Grants: []commonExecution.ReadGrant{}},
 	})
 	tree, err := query.GetExecutionTreeByExecutionID(parentOnly, root, 7)
 	if err != nil || len(tree.Children) != 0 || tree.Truncated {

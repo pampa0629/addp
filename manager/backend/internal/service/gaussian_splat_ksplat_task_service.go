@@ -174,23 +174,9 @@ func (s *GaussianSplatKSplatTaskService) GetResult(ctx context.Context, id uint,
 	return s.repo.GetByID(ctx, id, tenantID)
 }
 
-func (s *GaussianSplatKSplatTaskService) DeleteResult(ctx context.Context, id uint, tenantID uint) error {
-	result, err := s.repo.GetByID(ctx, id, tenantID)
-	if err != nil {
-		return err
-	}
-	if result == nil {
-		return errors.New("gaussian splat KSplat result not found")
-	}
-	if strings.TrimSpace(result.StorageRef) != "" {
-		if s.cleaner == nil {
-			return errors.New("gaussian splat KSplat cleaner is not configured")
-		}
-		if err := s.cleaner.DeleteByStorageRef(ctx, result.StorageRef); err != nil {
-			return err
-		}
-	}
-	return s.repo.Delete(ctx, id, tenantID)
+func (s *GaussianSplatKSplatTaskService) DeleteResult(ctx context.Context, id, tenantID uint) error {
+	err := NewCleanupArtifactService(s.repo.GetDB(), CleanupArtifactEffects{Bucket: s.bucket, Objects: s.cleaner}).DeleteManual(ctx, commonExecution.TaskTypeGaussianSplatKSplatGeneration, id, tenantID)
+	return err
 }
 
 func (s *GaussianSplatKSplatTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string, overwriteExistingResult bool) (string, error) {
@@ -251,6 +237,7 @@ func (s *GaussianSplatKSplatTaskService) Execute(ctx context.Context, taskID uin
 }
 
 func (s *GaussianSplatKSplatTaskService) runGaussianSplatKSplatGeneration(ctx context.Context, task *models.GaussianSplatKSplatTask, executionID string) {
+	ctx = repository.ArtifactWriterContext(ctx)
 	if err := s.repo.ValidateClaim(ctx, task.ID, task.TenantID, executionID); err != nil {
 		logger.L().Warn("领取 3DGS KSplat execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 		return
@@ -266,7 +253,9 @@ func (s *GaussianSplatKSplatTaskService) runGaussianSplatKSplatGeneration(ctx co
 		if s.executor == nil {
 			err = errors.New("gaussian splat KSplat generation executor is not configured")
 		} else {
-			buildResult, err = s.executor.BuildGaussianSplatKSplat(ctx, GaussianSplatKSplatExecutionRequest{Task: task, ExecutionID: executionID, Config: execCfg})
+			if err = repository.BeginArtifactWrite(ctx, s.repo.GetDB()); err == nil {
+				buildResult, err = s.executor.BuildGaussianSplatKSplat(ctx, GaussianSplatKSplatExecutionRequest{Task: task, ExecutionID: executionID, Config: execCfg})
+			}
 		}
 	}
 	if err == nil && buildResult == nil {
@@ -316,6 +305,10 @@ func (s *GaussianSplatKSplatTaskService) runGaussianSplatKSplatGeneration(ctx co
 	resultID := uint(0)
 	if result != nil {
 		resultID = result.ID
+	}
+	if factErr := repository.RecordArtifactWrite(ctx, s.repo.GetDB(), status == commonExecution.ExecutionStatusSuccess); factErr != nil {
+		logger.L().Warn("persist artifact write fact failed", "error", factErr)
+		return
 	}
 	if err := s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, resultID, resultFields, map[string]interface{}{
 		"status":        status,

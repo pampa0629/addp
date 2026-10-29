@@ -2,7 +2,10 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	commonExecution "github.com/addp/common/execution"
+	"gorm.io/gorm/clause"
 	"strings"
 	"time"
 
@@ -19,6 +22,8 @@ type CleanupTaskDefinitionSpec struct {
 
 // CleanupTaskDefinition is the common projection used by cleanup across Manager task tables.
 type CleanupTaskDefinition struct {
+	Version             uint64
+	UpdatedAt           time.Time
 	ID                  uint
 	TenantID            uint
 	TaskType            string
@@ -225,4 +230,73 @@ func (r *CleanupTaskDefinitionRepository) specForTaskType(taskType string) (Clea
 		}
 	}
 	return CleanupTaskDefinitionSpec{}, fmt.Errorf("manager cleanup task type %q is not registered", taskType)
+}
+
+// VerifyFrozen locks the exact definition and compares its full registered
+// projection, including resource bindings. External authority was read earlier.
+func (r *CleanupTaskDefinitionRepository) VerifyFrozen(ctx context.Context, tx *gorm.DB, expected CleanupTaskDefinition) error {
+	spec, err := r.specForTaskType(expected.TaskType)
+	if err != nil {
+		return err
+	}
+	var locked CleanupTaskDefinition
+	q := tx.WithContext(ctx).Table(spec.Table).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND tenant_id=? AND deleted_at IS NULL", expected.ID, expected.TenantID)
+	if spec.Table == "manager.task_definitions" {
+		q = q.Where("task_type=?", expected.TaskType)
+	}
+	if err := q.Take(&locked).Error; err != nil {
+		return err
+	}
+	rows, err := NewCleanupTaskDefinitionRepository(tx, []CleanupTaskDefinitionSpec{spec}).List(ctx, expected.TenantID)
+	if err != nil {
+		return err
+	}
+	expected.CleanupReason = ""
+	for _, current := range rows {
+		if current.ID == expected.ID {
+			a, e := json.Marshal(expected)
+			if e != nil {
+				return e
+			}
+			b, e := json.Marshal(current)
+			if e != nil {
+				return e
+			}
+			if string(a) != string(b) {
+				return ErrTaskDefinitionVersionConflict
+			}
+			return nil
+		}
+	}
+	return gorm.ErrRecordNotFound
+}
+
+// ApplyFrozen is part of the caller's C lease/result transaction. Admission for
+// task runs uses the same task row; queued or running executions block cleanup.
+func (r *CleanupTaskDefinitionRepository) ApplyFrozen(ctx context.Context, tx *gorm.DB, expected CleanupTaskDefinition, physical bool) error {
+	if err := r.VerifyFrozen(ctx, tx, expected); err != nil {
+		return err
+	}
+	var active int64
+	if err := tx.WithContext(ctx).Model(&commonExecution.TaskExecution{}).Where("tenant_id=? AND module='manager' AND task_type=? AND source_task_id=? AND status IN ?", expected.TenantID, expected.TaskType, fmt.Sprint(expected.ID), []string{"pending", "running"}).Count(&active).Error; err != nil {
+		return err
+	}
+	if active != 0 {
+		return fmt.Errorf("Manager cleanup task still active")
+	}
+	scoped := NewCleanupTaskDefinitionRepository(tx, r.specs)
+	if physical {
+		return scoped.HardDelete(ctx, expected)
+	}
+	spec, err := r.specForTaskType(expected.TaskType)
+	if err != nil {
+		return err
+	}
+	if spec.Table != "manager.task_definitions" {
+		return tx.WithContext(ctx).Table(spec.Table).Where("id=? AND tenant_id=?", expected.ID, expected.TenantID).Updates(map[string]interface{}{"enabled": false, "next_run_at": nil, "updated_at": time.Now().UTC()}).Error
+	}
+	if err := scoped.MarkBindingMissing(ctx, expected, expected.CleanupReason); err != nil {
+		return err
+	}
+	return tx.WithContext(ctx).Table(spec.Table).Where("id=? AND tenant_id=?", expected.ID, expected.TenantID).UpdateColumn("version", gorm.Expr("version + 1")).Error
 }

@@ -697,6 +697,7 @@
           "plan": "Quality plan",
           "rule": "Quality rule",
           "classification": "Data Classification",
+          "cleanup_result": "Cleanup Professional Result",
           "cleanup_authorization": "Cleanup Authorization",
           "cleanup": "Cleanup Task",
           "code_set": "Code Set",
@@ -1166,7 +1167,12 @@
         "retry": "Recover original command",
         "saved": "Approval record received; no renewal or ordinary data access was granted. Workers still check current execution eligibility.",
         "state": "Record state",
-        "states": { "unexpired": "Unexpired, not revoked", "expired": "Expired", "revoked": "Revoked", "unknown": "Unconfirmed" },
+        "states": {
+          "unexpired": "Unexpired, not revoked",
+          "expired": "Expired",
+          "revoked": "Revoked",
+          "unknown": "Unconfirmed"
+        },
         "revoke": "Revoke qualification",
         "revokeBoundary": "Revocation prevents new collection reads. History and collected results remain; account data Grants are unchanged.",
         "reason": "Revocation reason",
@@ -1197,7 +1203,14 @@
         "after": "Set to",
         "result": "Result",
         "capacity": "The tree exceeds the 20,000-item capacity. No partial list or permission changes were applied.",
-        "results": {"pending": "Not submitted", "saving": "Submitting", "succeeded": "Succeeded", "unchanged": "No change needed", "failed": "Failed; review required", "unknown": "Unknown; review required"},
+        "results": {
+          "pending": "Not submitted",
+          "saving": "Submitting",
+          "succeeded": "Succeeded",
+          "unchanged": "No change needed",
+          "failed": "Failed; review required",
+          "unknown": "Unknown; review required"
+        },
         "title": "Direct authorization permissions",
         "boundary": "Controls new direct Grants. Catalog business approval remains available; existing Grants, Denies and revocations are unchanged. Unconfigured items use the persistent Catalog deployment declaration.",
         "search": "DataItem name or path",
@@ -1977,7 +1990,7 @@
       },
       "scanResult": {
         "title": "Assessment Results",
-        "bannerTitle": "Assessment Completed",
+        "bannerTitle": "Resource assessment coordination result",
         "bannerDesc": "Found {items} items across {modules} modules.",
         "scanTime": "Assessment Time",
         "scanScope": "Assessment Scope",
@@ -1991,7 +2004,7 @@
       },
       "executeResult": {
         "title": "Reclaim Results",
-        "bannerTitle": "Resource Reclaim Completed",
+        "bannerTitle": "Resource cleanup coordination result",
         "bannerDesc": "This reclaim affected {records} state records and released {space}.",
         "affectedRecords": "Affected Records"
       },
@@ -2150,7 +2163,8 @@
         "scanCreated": "Resource assessment task created",
         "scanFailed": "Failed to create resource assessment task: {error}",
         "cleanupCreated": "Resource reclaim task created",
-        "cleanupFailed": "Failed to create resource reclaim task: {error}",
+        "managerScopeRequired": "Select both Meta and Manager and run a new assessment before executing Meta cleanup.",
+      "cleanupFailed": "Failed to create resource reclaim task: {error}",
         "taskFailed": "Task execution failed",
         "noScanFirst": "Please run a resource assessment first",
         "confirmRequired": "Complete the confirmation first",

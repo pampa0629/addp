@@ -404,6 +404,7 @@ func newEmbeddingTaskServiceTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create embedding_tasks table: %v", err)
 	}
+	artifactTestSchema(t, db)
 	return db
 }
 

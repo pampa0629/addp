@@ -534,3 +534,6 @@ other = "Manage direct authorization permissions"
 
 [permissions.system.engine_access_direct_permission.update.description]
 other = "Engine authorization administrators configure direct issuance permission without affecting Catalog business approvals or existing Grants"
+
+[system.cleanup.manager_scope_required]
+other = "Meta cleanup requires a new assessment explicitly including both Meta and Manager."

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 
+	"github.com/addp/common/cleanup"
 	"gorm.io/gorm"
 )
 
@@ -76,6 +77,11 @@ func (r *Runner) Run(ctx context.Context) error {
 			if file.Version == 14 {
 				if err := backfillIssueTargetScopes(tx); err != nil {
 					return fmt.Errorf("backfill issue target scopes: %w", err)
+				}
+			}
+			if file.Version == 17 {
+				if err := cleanup.MigrateResults(tx, "quality"); err != nil {
+					return err
 				}
 			}
 			if err := tx.Table("quality.schema_migrations").Create(&appliedMigration{

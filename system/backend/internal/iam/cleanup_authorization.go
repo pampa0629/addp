@@ -7,6 +7,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/events"
 	"github.com/addp/common/execution"
 	"github.com/google/uuid"
 	"gorm.io/gorm/clause"
@@ -37,7 +38,7 @@ func (s *ExecutionAuthorizationService) IssueCleanup(ctx context.Context, childI
 		if err != nil {
 			return err
 		}
-		if !hasCleanupPermission(permissions) {
+		if !hasCleanupActorPermissions(permissions, child) {
 			return ErrExecutionAuthorizationPermissionDenied
 		}
 		// This ceiling bounds valid children independently of the shorter coordinator
@@ -219,7 +220,7 @@ func (s *ExecutionAuthorizationService) AuthorizeCleanup(ctx context.Context, in
 		if err != nil {
 			return err
 		}
-		if !hasCleanupPermission(permissions) {
+		if !hasCleanupActorPermissions(permissions, child) {
 			return ErrExecutionAuthorizationPermissionDenied
 		}
 		runtimePermissions, err = tx.ListEffectiveRoleAssignmentPermissions(ctx, input.ServicePrincipalID, PrincipalTypeServicePrincipal, ContextTypeTenant, &input.TenantID, &runtime.MembershipID, now)
@@ -242,4 +243,22 @@ func (s *ExecutionAuthorizationService) AuthorizeCleanup(ctx context.Context, in
 		return nil
 	})
 	return result, err
+}
+
+// An Engine-purpose request never turns cleanup.execute into engine.delete.
+// Current role facts are rechecked after the exact child lock at claim/effect.
+func hasCleanupActorPermissions(rows []RoleAssignmentPermissionProjection, child execution.TaskExecution) bool {
+	input, err := execution.CleanupRequestFromExecution(child)
+	if err != nil || !hasCleanupPermission(rows) {
+		return false
+	}
+	if input.CauseEvent != events.CleanupCauseEngineDeleting && input.CauseEvent != events.CleanupCauseEngineDeleted {
+		return true
+	}
+	for _, row := range rows {
+		if row.PermissionKey == "system.engine.delete" {
+			return true
+		}
+	}
+	return false
 }

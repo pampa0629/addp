@@ -126,31 +126,14 @@ func (s *VectorMaterializedViewTaskService) GetLatestReadyByFingerprint(ctx cont
 	return s.repo.GetLatestReadyByFingerprint(ctx, tenantID, itemFingerprint)
 }
 
-func (s *VectorMaterializedViewTaskService) DeleteResult(ctx context.Context, id uint, tenantID uint) error {
-	result, err := s.repo.GetResult(ctx, id, tenantID)
+func (s *VectorMaterializedViewTaskService) DeleteResult(ctx context.Context, id, tenantID uint) error {
+	err := NewCleanupArtifactService(s.repo.GetDB(), CleanupArtifactEffects{Tables: s.dbProvider}).DeleteManual(ctx, commonExecution.TaskTypeVectorMaterializedViewGeneration, id, tenantID)
 	if err != nil {
-		return err
+		if result, readErr := s.repo.GetResult(ctx, id, tenantID); readErr == nil && result != nil {
+			s.recordVectorMaterializedViewCleanupFailure(ctx, result, err)
+		}
 	}
-	if result == nil {
-		return commonapi.ErrNotFound
-	}
-	if result.TargetKind != models.VectorMaterializedViewTargetKindSourceSchemaMaterializedView {
-		return fmt.Errorf("unsupported vector materialized view target_kind %q", result.TargetKind)
-	}
-	if s.dbProvider == nil {
-		return errors.New("vector materialized view db provider is required")
-	}
-	tid := tenantID
-	db, err := s.dbProvider.GetPostGISDB(ctx, &tid, result.SourceEngineID)
-	if err != nil {
-		return err
-	}
-	dropSQL := "DROP MATERIALIZED VIEW IF EXISTS " + spatial.QualifiedPostGISTable(result.TargetSchema, result.TargetTable)
-	if _, err := db.ExecContext(ctx, dropSQL); err != nil {
-		s.recordVectorMaterializedViewCleanupFailure(ctx, result, err)
-		return fmt.Errorf("drop vector materialized view target: %w", err)
-	}
-	return s.repo.DeleteResult(ctx, id, tenantID)
+	return err
 }
 
 func (s *VectorMaterializedViewTaskService) DeleteResultsForSourceTable(ctx context.Context, tenantID uint, engineID uint, schema string, table string) error {
@@ -263,6 +246,7 @@ func (s *VectorMaterializedViewTaskService) Execute(ctx context.Context, taskID 
 }
 
 func (s *VectorMaterializedViewTaskService) runVectorMaterializedView(ctx context.Context, task *models.VectorMaterializedViewTask, executionID string) {
+	ctx = repository.ArtifactWriterContext(ctx)
 	if err := s.repo.ValidateClaim(ctx, task.ID, task.TenantID, executionID); err != nil {
 		logger.L().Warn("领取矢量物化视图 execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 		return
@@ -281,7 +265,9 @@ func (s *VectorMaterializedViewTaskService) runVectorMaterializedView(ctx contex
 			var db *sql.DB
 			db, err = s.dbProvider.GetPostGISDB(ctx, &tid, execCfg.Identity.EngineID)
 			if err == nil {
-				metadata, err = executeVectorMaterializedViewPlan(ctx, db, execCfg, plan)
+				if err = repository.BeginArtifactWrite(ctx, s.repo.GetDB()); err == nil {
+					metadata, err = executeVectorMaterializedViewPlan(ctx, db, execCfg, plan)
+				}
 			}
 		}
 	}
@@ -326,6 +312,10 @@ func (s *VectorMaterializedViewTaskService) runVectorMaterializedView(ctx contex
 	if result != nil {
 		resultID = result.ID
 	}
+	if factErr := repository.RecordArtifactWrite(ctx, s.repo.GetDB(), status == commonExecution.ExecutionStatusSuccess); factErr != nil {
+		logger.L().Warn("persist artifact write fact failed", "error", factErr)
+		return
+	}
 	if err := s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, resultID, resultFields, map[string]interface{}{
 		"status":        status,
 		"progress":      progress,
@@ -341,7 +331,7 @@ func (s *VectorMaterializedViewTaskService) prepareOptimizationResult(ctx contex
 	if err != nil {
 		return nil, execCfg, vectorMaterializedViewBuildPlan{}, err
 	}
-	targetTable := vectorMaterializedViewTargetTable(task.TenantID, execCfg.Identity.ItemFingerprint, execCfg.Geometry.GeometryColumn, execCfg.Geometry.TargetSRID)
+	targetTable := repository.VectorMaterializedViewTargetTable(task.TenantID, execCfg.Identity.ItemFingerprint, execCfg.Geometry.GeometryColumn, execCfg.Geometry.TargetSRID)
 	nowSuffix := fmt.Sprintf("%d", time.Now().UnixNano())
 	plan := buildVectorMaterializedViewPlan(execCfg, targetTable, nowSuffix)
 
@@ -780,11 +770,6 @@ func vectorMaterializedViewSourceIdentity(sourceKeyColumns []string) string {
 		return "reduced"
 	}
 	return "primary_key"
-}
-
-func vectorMaterializedViewTargetTable(tenantID uint, itemFingerprint, geometryColumn string, targetSRID int) string {
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%d:%s:%s:%d", tenantID, itemFingerprint, geometryColumn, targetSRID)))
-	return "addp_vmv_" + hex.EncodeToString(sum[:])[:24]
 }
 
 func vectorMaterializedViewIndexName(table string) string {

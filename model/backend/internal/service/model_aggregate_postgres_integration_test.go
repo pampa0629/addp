@@ -572,7 +572,7 @@ func TestPostgresLogicalCleanupAdvancesVersionsAndEntityModelRevision(t *testing
 	tx, tenantID := beginModelAggregatePostgresTransaction(t)
 	entityID, tableID := seedModelCleanupTenantState(t, tx, tenantID)
 
-	stats, err := NewCleanupService(tx, nil, nil).ExecuteCleanup(
+	stats, err := NewCleanupService(tx, nil).ExecuteCleanup(
 		context.Background(), uint(tenantID), events.CleanupModeLogical,
 		map[string]interface{}{"tenant_id": uint(tenantID)},
 	)
@@ -612,7 +612,7 @@ func TestPostgresPhysicalCleanupDeletesOnlyTargetTenantAtomically(t *testing.T) 
 	seedModelCleanupTenantState(t, tx, tenantID)
 	seedModelCleanupTenantState(t, tx, otherTenantID)
 
-	stats, err := NewCleanupService(tx, nil, nil).ExecuteCleanup(
+	stats, err := NewCleanupService(tx, nil).ExecuteCleanup(
 		context.Background(), uint(tenantID), events.CleanupModePhysical,
 		map[string]interface{}{"tenant_id": uint(tenantID)},
 	)

@@ -30,3 +30,12 @@ other = "Export execution source could not be verified; try again later"
 
 [export.protection_changed]
 other = "Protection rules have changed or the original export protection is no longer valid. Export again."
+
+[cleanup.result.unavailable]
+other = "The module cleanup result is currently unavailable."
+
+[cleanup.result.not_found]
+other = "The cleanup result was not found."
+
+[cleanup.result.not_ready]
+other = "The module has not committed a cleanup result yet."

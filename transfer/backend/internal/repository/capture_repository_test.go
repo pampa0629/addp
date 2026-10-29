@@ -7,6 +7,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/transfer/internal/models"
+	"github.com/addp/transfer/internal/testpg"
 	"gorm.io/gorm"
 )
 
@@ -76,6 +77,7 @@ func TestCaptureRepositoryReusesGenerationAndRejectsStoppedRestart(t *testing.T)
 }
 
 func createCaptureRepositoryTestTables(t *testing.T, db *gorm.DB) {
+	testpg.EnsureCleanupSQLite(t, db)
 	t.Helper()
 	if err := db.Exec(`
 		CREATE TABLE transfer.capture_resources (

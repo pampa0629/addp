@@ -5,7 +5,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
@@ -80,7 +83,11 @@ func TestDatabaseCleanerClassifiesInvalidMetaEngines(t *testing.T) {
 		}
 	}
 
-	if got, want := cleaner.InvalidEngineIDs(t.Context(), 7), []uint{2, 3, 4, 5}; !reflect.DeepEqual(got, want) {
+	got, err := cleaner.InvalidEngineIDs(t.Context(), 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []uint{2, 3, 4, 5}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("InvalidEngineIDs() = %v, want %v", got, want)
 	}
 }
@@ -106,10 +113,18 @@ func TestDatabaseCleanerScopedInvalidEngineIDsTrustsDeletionContext(t *testing.T
 	}
 
 	cleaner := NewDatabaseCleaner(db, newMetaCleanupSystemClient(t, server), nil)
-	if got, want := cleaner.InvalidEngineIDsWithScope(t.Context(), 7, CleanupScope{EngineID: 1}), []uint{1}; !reflect.DeepEqual(got, want) {
+	got, err := cleaner.InvalidEngineIDsWithScope(t.Context(), 7, CleanupScope{EngineID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []uint{1}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("scoped engine IDs = %v, want %v", got, want)
 	}
-	if got, want := cleaner.InvalidEngineIDsWithScope(t.Context(), 7, CleanupScope{EngineID: 2}), []uint{2}; !reflect.DeepEqual(got, want) {
+	got, err = cleaner.InvalidEngineIDsWithScope(t.Context(), 7, CleanupScope{EngineID: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []uint{2}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("invalid scoped engine IDs = %v, want %v", got, want)
 	}
 }
@@ -133,7 +148,7 @@ func TestDatabaseCleanerLogicalCleanupSoftDeletesOrphanItems(t *testing.T) {
 	}
 
 	cleaner := NewDatabaseCleaner(db, nil, nil)
-	result, err := cleaner.ExecuteSoftDelete(t.Context(), 7, nil)
+	result, err := cleaner.ExecuteSoftDelete(t.Context(), 7, nil, CleanupScope{})
 	if err != nil {
 		t.Fatalf("ExecuteSoftDelete() error = %v", err)
 	}
@@ -157,7 +172,7 @@ func TestDatabaseCleanerLogicalCleanupSoftDeletesOrphanItems(t *testing.T) {
 		t.Fatal("orphan item was not marked deleted")
 	}
 
-	orphans, err := cleaner.ScanOrphanItems(t.Context(), 7)
+	orphans, err := cleaner.ScanOrphanItems(t.Context(), 7, CleanupScope{})
 	if err != nil {
 		t.Fatalf("ScanOrphanItems() error = %v", err)
 	}
@@ -290,7 +305,7 @@ func newMetaCleanupSystemServer(t *testing.T, engines []commonModels.Engine) *ht
 			})
 			return
 		}
-		if r.URL.Path != "/api/v1/system/engines" {
+		if !strings.HasPrefix(r.URL.Path, "/api/v1/system/engines/") {
 			t.Errorf("request path = %q, want /api/v1/system/engines", r.URL.Path)
 			http.NotFound(w, r)
 			return
@@ -302,9 +317,14 @@ func newMetaCleanupSystemServer(t *testing.T, engines []commonModels.Engine) *ht
 			t.Error("legacy authentication header was sent")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(engines); err != nil {
-			t.Errorf("encode engines: %v", err)
+		id, _ := strconv.ParseUint(strings.TrimPrefix(r.URL.Path, "/api/v1/system/engines/"), 10, 64)
+		for _, engine := range engines {
+			if uint64(engine.ID) == id {
+				_ = json.NewEncoder(w).Encode(engine)
+				return
+			}
 		}
+		http.NotFound(w, r)
 	}))
 }
 
@@ -317,4 +337,107 @@ func newMetaCleanupSystemClient(t *testing.T, server *httptest.Server) *commonCl
 		t.Fatalf("create service token source: %v", err)
 	}
 	return commonClient.NewSystemServiceClient(server.URL, source, server.Client())
+}
+
+func TestEngineScopedCleanupExcludesOtherEngineOrphans(t *testing.T) {
+	db := metatest.OpenMetadataDB(t)
+	old := time.Now().AddDate(0, 0, -100)
+	for _, item := range []models.MetaItem{
+		{TenantID: 7, EngineID: 1, NodeID: 99, ItemType: "table", Name: "A", Fingerprint: "A", ScannedAt: &old},
+		{TenantID: 7, EngineID: 2, NodeID: 99, ItemType: "table", Name: "B", Fingerprint: "B", ScannedAt: &old},
+		{TenantID: 8, EngineID: 1, NodeID: 99, ItemType: "table", Name: "other", Fingerprint: "other", ScannedAt: &old},
+	} {
+		if err := db.Create(&item).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	cleaner := NewDatabaseCleaner(db, nil, nil)
+	for _, engine := range []uint{1, 3} {
+		scope := CleanupScope{EngineID: engine}
+		orphan, err := cleaner.ScanOrphanItems(t.Context(), 7, scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expired, err := cleaner.ScanExpiredData(t.Context(), 7, 90, scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expected := 0
+		if engine == 1 {
+			expected = 1
+		}
+		if len(orphan) != expected || expired != expected {
+			t.Fatal("scoped scan mixed Engine facts", orphan, expired)
+		}
+		result, err := cleaner.ExecuteSoftDelete(t.Context(), 7, []uint{engine}, scope)
+		if err != nil || len(result.Errors) > 0 {
+			t.Fatal(result, err)
+		}
+		if result.DeletedItems != expected {
+			t.Fatal("scoped cleanup deleted unrelated orphan", result)
+		}
+	}
+	var left []models.MetaItem
+	if err := db.Find(&left).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 2 || left[0].EngineID != 2 || left[1].TenantID != 8 {
+		t.Fatal("other Engine or Tenant removed", left)
+	}
+}
+
+func TestPreparedEngineFactsRejectsNewReferencesAndAuthorityErrors(t *testing.T) {
+	for _, mode := range []string{"changed", "denied", "unavailable"} {
+		t.Run(mode, func(t *testing.T) {
+			db := metatest.OpenMetadataDB(t)
+			item := models.MetaItem{TenantID: 7, EngineID: 9, NodeID: 99, ItemType: "table", Name: "item-only", Fingerprint: "item-only"}
+			if err := db.Create(&item).Error; err != nil {
+				t.Fatal(err)
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/api/v1/system/oauth/token" {
+					_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "addp_at_fixture", "token_type": "bearer", "expires_in": 300, "scope": "addp.api"})
+					return
+				}
+				if r.URL.Path != "/api/v1/system/engines/9" {
+					t.Error("expected precise item-only Engine")
+					w.WriteHeader(500)
+					return
+				}
+				switch mode {
+				case "denied":
+					w.WriteHeader(403)
+				case "unavailable":
+					w.WriteHeader(503)
+				default:
+					w.WriteHeader(404)
+				}
+			}))
+			defer server.Close()
+			cleaner := NewDatabaseCleaner(db, newMetaCleanupSystemClient(t, server), nil)
+			frozen, err := cleaner.PrepareEngineFacts(t.Context(), 7, CleanupScope{})
+			if mode != "changed" {
+				if err == nil {
+					t.Fatal("authority failure treated as deletion")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids, err := frozen.InvalidEngineIDs(t.Context(), 7)
+			if err != nil || !reflect.DeepEqual(ids, []uint{9}) {
+				t.Fatal("item-only missing Engine not observed", ids, err)
+			}
+			item.ID = 0
+			item.EngineID = 10
+			item.Fingerprint = "new-ref"
+			if err := db.Create(&item).Error; err != nil {
+				t.Fatal(err)
+			}
+			if _, err := frozen.InvalidEngineIDs(t.Context(), 7); err == nil {
+				t.Fatal("unobserved Engine entered transaction")
+			}
+		})
+	}
 }

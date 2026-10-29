@@ -22,7 +22,6 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
-	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
@@ -89,7 +88,6 @@ func main() {
 	} else if indexer != nil && indexer.Enabled() {
 		log.Printf("✅ 已上架资产搜索投影已重建")
 	}
-	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 
 	var redisClient *redis.Client
 	if cfg.RedisHost != "" {
@@ -104,7 +102,7 @@ func main() {
 	authSvc := service.NewAuthorizationService(db)
 	grantFulfillmentSvc := service.NewGrantFulfillmentService(db, catalogClient, workbenchGrantClient)
 	grantFulfillmentSvc.Start(runtimeContext)
-	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
+	cleanupSvc := service.NewCleanupService(db, systemClient)
 	if err := cleanupSvc.Start(runtimeContext); err != nil {
 		log.Printf("Asset 资源回收执行方启动失败: %v", err)
 	}

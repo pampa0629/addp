@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/addp/common/cleanup"
 	"gorm.io/gorm"
 )
 
@@ -46,6 +47,11 @@ func Run(db *gorm.DB) error {
 			}
 			if err := tx.Exec(string(content)).Error; err != nil {
 				return fmt.Errorf("apply model migration %s: %w", name, err)
+			}
+			if name == "027_cleanup_results.up.sql" {
+				if err := cleanup.MigrateResults(tx, "model"); err != nil {
+					return err
+				}
 			}
 			if err := tx.Exec("INSERT INTO model.schema_migrations(version) VALUES (?)", name).Error; err != nil {
 				return fmt.Errorf("record model migration %s: %w", name, err)

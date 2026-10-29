@@ -11,6 +11,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	"github.com/addp/common/exportartifact"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
@@ -28,10 +29,10 @@ func TestCleanupExpectedForModuleProtocolHelper(t *testing.T) {
 		module   string
 		want     bool
 	}{
-		{name: "empty means all modules", expected: nil, module: events.ModuleManager, want: true},
+		{name: "empty grants no module", expected: nil, module: events.ModuleManager, want: false},
 		{name: "includes module", expected: []string{events.ModuleMeta, events.ModuleManager}, module: events.ModuleManager, want: true},
 		{name: "does not include module", expected: []string{events.ModuleMeta}, module: events.ModuleManager, want: false},
-		{name: "trims stream values", expected: []string{" manager "}, module: events.ModuleManager, want: true},
+		{name: "rejects old stream value", expected: []string{" manager "}, module: events.ModuleManager, want: false},
 	}
 
 	for _, tt := range tests {
@@ -65,7 +66,7 @@ func TestManagerCleanupSummaries(t *testing.T) {
 	}
 
 	scanSummary := managerScanSummary(stats)
-	if scanSummary.ScannedItems != 25 || scanSummary.FreedBytes != 1024 || scanSummary.DisabledTaskDefinitions != 0 || scanSummary.SkippedItems != 1 || scanSummary.ErrorCount != 2 {
+	if scanSummary.ScannedItems != 25 || scanSummary.FreedBytes != 0 || scanSummary.DisabledTaskDefinitions != 0 || scanSummary.SkippedItems != 1 || scanSummary.ErrorCount != 2 {
 		t.Fatalf("scan summary = %#v", scanSummary)
 	}
 	if scanSummary.RiskLevel != "low" {
@@ -190,7 +191,7 @@ func TestManagerCleanupRiskLevelForCount(t *testing.T) {
 func TestCleanupTaskTargetFromConfig(t *testing.T) {
 	t.Parallel()
 
-	targets := cleanupTaskTargetsFromDefinition(repository.CleanupTaskDefinition{Config: commonModels.JSONMap{
+	targets := cleanupTaskTargetsFromDefinition(repository.CleanupTaskDefinition{TaskType: commonExecution.TaskTypeEmbedding, Config: commonModels.JSONMap{
 		"source": commonModels.JSONMap{
 			"source_engine_id": float64(26),
 			"item_locator":     "addp://engine/26/path/3d/model.glb?type=file&item_id=88",
@@ -241,19 +242,21 @@ func TestManagerCleanupTaskRegistryCoversTaskProviderDeclaration(t *testing.T) {
 	}
 }
 
-func TestCleanupTaskTargetSourceExistsTreatsDeletedEngineAsMissing(t *testing.T) {
-	t.Parallel()
-
-	service := &CleanupService{}
-	target := cleanupTaskTarget{EngineID: 12, ItemID: 99, Locator: "addp://engine/12/path/public/roads?type=table&item_id=99", VerifySource: true}
-	if got := service.taskTargetSourceExists(nil, 1, target, map[string]interface{}{"engine_id": 12}, nil); got {
-		t.Fatal("taskTargetSourceExists() = true, want false for engine deleted context")
-	}
-	if got := service.taskTargetSourceExists(nil, 1, cleanupTaskTarget{}, nil, nil); !got {
-		t.Fatal("empty task target should be treated as existing to avoid broad cleanup")
-	}
-	if got := service.taskTargetSourceExists(nil, 1, cleanupTaskTarget{EngineID: 26}, nil, map[uint]struct{}{12: {}}); got {
-		t.Fatal("missing tenant engine should be treated as missing")
+func TestCleanupTaskTargetReasonUsesExactEngineEvidence(t *testing.T) {
+	svc := &CleanupService{systemClient: newManagerCleanupEmptySystemClient(t)}
+	for _, tc := range []struct {
+		target cleanupTaskTarget
+		scope  map[string]interface{}
+		want   string
+	}{
+		{cleanupTaskTarget{EngineID: 12, VerifySource: true}, map[string]interface{}{"engine_id": 12}, models.TaskBindingIssueMissingEngine},
+		{cleanupTaskTarget{}, nil, ""},
+		{cleanupTaskTarget{EngineID: 26}, nil, models.TaskBindingIssueMissingEngine},
+	} {
+		got, err := svc.cleanupTargetReason(t.Context(), 1, tc.target, tc.scope, map[uint]bool{})
+		if err != nil || got != tc.want {
+			t.Fatalf("reason=%s err=%v", got, err)
+		}
 	}
 }
 
@@ -288,9 +291,15 @@ func TestManagerCleanupFindsAndPhysicallyDeletesPreviouslyDisabledUnknownEngineT
 	if scan.TaskDefinitions != 1 {
 		t.Fatalf("task definitions = %d, want 1", scan.TaskDefinitions)
 	}
-	logical, err := svc.ExecuteCleanup(context.Background(), 1, events.CleanupModeLogical, nil)
-	if err != nil || logical.DisabledTaskDefinitions != 1 {
-		t.Fatalf("logical cleanup = %#v, error = %v", logical, err)
+	if err := executiontest.EnsureSQLiteStore(db); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := svc.buildCleanupPlan(t.Context(), 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error { return repo.ApplyFrozen(t.Context(), tx, plan.Tasks[0], false) }); err != nil {
+		t.Fatal(err)
 	}
 	var marked models.TaskDefinition
 	if err := db.Table("manager.task_definitions").Where("id = ?", 1).Take(&marked).Error; err != nil {
@@ -299,9 +308,12 @@ func TestManagerCleanupFindsAndPhysicallyDeletesPreviouslyDisabledUnknownEngineT
 	if marked.Enabled || marked.BindingStatus != models.TaskBindingStatusMissing || marked.BindingIssue != models.TaskBindingIssueMissingEngine {
 		t.Fatalf("logically cleaned task = %#v", marked)
 	}
-	physical, err := svc.ExecuteCleanup(context.Background(), 1, events.CleanupModePhysical, nil)
-	if err != nil || physical.DeletedTaskDefinitions != 1 {
-		t.Fatalf("physical cleanup = %#v, error = %v", physical, err)
+	plan, err = svc.buildCleanupPlan(t.Context(), 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error { return repo.ApplyFrozen(t.Context(), tx, plan.Tasks[0], true) }); err != nil {
+		t.Fatal(err)
 	}
 	remaining, err := repo.List(context.Background(), 1)
 	if err != nil || len(remaining) != 0 {
@@ -351,9 +363,12 @@ func TestManagerCleanupFindsUnknownEngineManagedQuickViewArtifacts(t *testing.T)
 	if scan.ManagedArtifacts != 4 || scan.FreedBytes != 8192 {
 		t.Fatalf("managed artifact scan = %#v, want 4 artifacts and 8192 bytes", scan)
 	}
-	logical, err := svc.ExecuteCleanup(context.Background(), 1, events.CleanupModeLogical, nil)
-	if err != nil || logical.ManagedArtifacts != 4 || logical.MarkedMissingSource != 4 {
-		t.Fatalf("logical cleanup = %#v, error = %v", logical, err)
+	// Scan is read-only: even a missing Engine must not mark or delete an artifact.
+	for _, spec := range specs {
+		var count int64
+		if err := db.Table(spec.Table).Where("status='ready'").Count(&count).Error; err != nil || count != 1 {
+			t.Fatalf("scan mutated %s: %d %v", spec.Table, count, err)
+		}
 	}
 }
 
@@ -381,128 +396,32 @@ func newManagerCleanupEmptySystemClient(t *testing.T) *commonClient.SystemServic
 	return commonClient.NewSystemServiceClient(server.URL, tokenSource, server.Client())
 }
 
-func TestFilterMissingVectorMaterializedViewsTreatsDeletingEngineAsMissing(t *testing.T) {
-	t.Parallel()
-
-	service := &CleanupService{}
-	item := &models.VectorMaterializedView{
-		ID:              1,
-		TenantID:        7,
-		ItemFingerprint: "fp-1",
-		Locator:         "addp://engine/8/path/public/roads?type=table&item_id=99",
-		SourceEngineID:  8,
-		Status:          models.VectorMaterializedViewStatusReady,
-	}
-	got := service.filterMissingVectorMaterializedViews(
-		context.Background(),
-		7,
-		[]*models.VectorMaterializedView{item},
-		map[string]interface{}{"engine_id": 8},
-	)
-	if len(got) != 1 || got[0] != item {
-		t.Fatalf("filterMissingVectorMaterializedViews() = %#v, want deleting engine candidate", got)
-	}
-}
-
-func TestFilterMissingVectorMaterializedViewsSkipsAbandonedExternal(t *testing.T) {
-	t.Parallel()
-
-	service := &CleanupService{}
-	item := &models.VectorMaterializedView{
-		ID:              1,
-		TenantID:        7,
-		ItemFingerprint: "fp-1",
-		Locator:         "addp://engine/8/path/public/roads?type=table&item_id=99",
-		SourceEngineID:  8,
-		Status:          models.VectorMaterializedViewStatusAbandonedExternal,
-	}
-	got := service.filterMissingVectorMaterializedViews(
-		context.Background(),
-		7,
-		[]*models.VectorMaterializedView{item},
-		map[string]interface{}{"engine_id": 8},
-	)
-	if len(got) != 0 {
-		t.Fatalf("filterMissingVectorMaterializedViews() = %#v, want abandoned result skipped", got)
-	}
-}
-
-func TestExecuteCleanupAbandonsExternalMaterializedViewWithoutDroppingIt(t *testing.T) {
+func TestCleanupPlanIncludesDeletingEngineMaterializedView(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	repo := repository.NewVectorMaterializedViewRepository(db)
-	optimizationSvc := NewVectorMaterializedViewTaskService(repo, nil)
-	service := &CleanupService{optimizationSvc: optimizationSvc}
 	item := cleanupTestVectorMaterializedView()
-	item.ErrorMessage = "dial tcp: connection refused"
-	if err := repo.CreateResult(context.Background(), item); err != nil {
-		t.Fatalf("create vector materialized view: %v", err)
+	if err := repo.CreateResult(t.Context(), item); err != nil {
+		t.Fatal(err)
 	}
-
-	stats, err := service.ExecuteCleanup(context.Background(), item.TenantID, events.CleanupModePhysical, map[string]interface{}{
-		"engine_id":                item.SourceEngineID,
-		"external_artifact_policy": commonModels.ExternalArtifactPolicyAbandon,
-		"requested_by":             uint(42),
-	})
-	if err != nil {
-		t.Fatalf("ExecuteCleanup() error = %v", err)
-	}
-	if len(stats.Errors) != 0 || stats.AbandonedExternal != 1 || stats.VectorMaterializedViews != 1 {
-		t.Fatalf("cleanup stats = %#v", stats)
-	}
-
-	stored, err := repo.GetResult(context.Background(), item.ID, item.TenantID)
-	if err != nil {
-		t.Fatalf("get abandoned result: %v", err)
-	}
-	if stored == nil || stored.Status != models.VectorMaterializedViewStatusAbandonedExternal {
-		t.Fatalf("stored result = %#v, want abandoned_external", stored)
-	}
-	if stored.TargetSchema != item.TargetSchema || stored.TargetTable != item.TargetTable {
-		t.Fatalf("external target identity changed: %#v", stored)
-	}
-	if stored.Metadata["external_artifact_policy"] != commonModels.ExternalArtifactPolicyAbandon {
-		t.Fatalf("metadata = %#v, want abandon policy", stored.Metadata)
-	}
-	if stored.Metadata["abandoned_external_by"] != float64(42) && stored.Metadata["abandoned_external_by"] != uint(42) {
-		t.Fatalf("abandoned_external_by = %#v, want 42", stored.Metadata["abandoned_external_by"])
-	}
-	if stored.Metadata["abandoned_external_at"] == nil || stored.Metadata["last_cleanup_error"] != item.ErrorMessage {
-		t.Fatalf("metadata = %#v, want audit time and last cleanup error", stored.Metadata)
-	}
-	current, err := repo.GetCurrentResult(context.Background(), item.TenantID, item.ItemFingerprint, item.SourceGeometryColumn, item.TargetSRID)
-	if err != nil {
-		t.Fatalf("get current result after abandon: %v", err)
-	}
-	if current != nil {
-		t.Fatalf("abandoned result still participates as current result: %#v", current)
+	svc := &CleanupService{optimizationSvc: NewVectorMaterializedViewTaskService(repo, nil)}
+	plan, err := svc.buildCleanupPlan(t.Context(), 7, map[string]interface{}{"engine_id": uint(8)})
+	if err != nil || len(plan.Vectors) != 1 || plan.Vectors[0].ID != item.ID {
+		t.Fatal("exact deleting Engine not selected", plan, err)
 	}
 }
 
-func TestExecuteCleanupDeletePolicyKeepsExternalRecordOnDropFailure(t *testing.T) {
+func TestCleanupPlanExcludesAbandonedExternalMaterializedView(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	repo := repository.NewVectorMaterializedViewRepository(db)
-	service := &CleanupService{optimizationSvc: NewVectorMaterializedViewTaskService(repo, nil)}
 	item := cleanupTestVectorMaterializedView()
-	if err := repo.CreateResult(context.Background(), item); err != nil {
-		t.Fatalf("create vector materialized view: %v", err)
+	item.Status = models.VectorMaterializedViewStatusAbandonedExternal
+	if err := repo.CreateResult(t.Context(), item); err != nil {
+		t.Fatal(err)
 	}
-
-	stats, err := service.ExecuteCleanup(context.Background(), item.TenantID, events.CleanupModePhysical, map[string]interface{}{
-		"engine_id":                item.SourceEngineID,
-		"external_artifact_policy": commonModels.ExternalArtifactPolicyDelete,
-	})
-	if err != nil {
-		t.Fatalf("ExecuteCleanup() error = %v", err)
-	}
-	if len(stats.Errors) != 1 || stats.AbandonedExternal != 0 || stats.DeletedPhysicalArtifacts != 0 {
-		t.Fatalf("cleanup stats = %#v, want one drop error and retained record", stats)
-	}
-	stored, err := repo.GetResult(context.Background(), item.ID, item.TenantID)
-	if err != nil || stored == nil {
-		t.Fatalf("external record should remain after drop failure: result=%#v err=%v", stored, err)
-	}
-	if stored.Status == models.VectorMaterializedViewStatusAbandonedExternal {
-		t.Fatalf("delete policy unexpectedly abandoned external target: %#v", stored)
+	svc := &CleanupService{optimizationSvc: NewVectorMaterializedViewTaskService(repo, nil)}
+	plan, err := svc.buildCleanupPlan(t.Context(), 7, map[string]interface{}{"engine_id": uint(8)})
+	if err != nil || len(plan.Vectors) != 0 {
+		t.Fatal("abandoned target selected again", plan, err)
 	}
 }
 

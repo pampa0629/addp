@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/addp/manager/internal/testfixture"
 	"strings"
 	"testing"
 	"time"
@@ -253,10 +254,12 @@ func TestVectorMaterializedViewDeleteResultRecordsCleanupFailure(t *testing.T) {
 	svc.SetDBProvider(vectorMaterializedViewTestDBProvider{db: sqlDB})
 
 	result := newVectorMaterializedViewResult()
+	result.LastExecutionID = nil
 	if err := repo.CreateResult(context.Background(), result); err != nil {
 		t.Fatalf("create vector materialized view result: %v", err)
 	}
 
+	testfixture.ArtifactReferenceSQLite(t, db)
 	err = svc.DeleteResult(context.Background(), result.ID, result.TenantID)
 	if err == nil || !strings.Contains(err.Error(), "drop vector materialized view target") {
 		t.Fatalf("delete result error = %v, want drop failure", err)
@@ -292,7 +295,7 @@ func TestVectorMaterializedViewDeleteResultsForSourceTableDeletesPreference(t *t
 	if err := repo.CreateResult(context.Background(), result); err != nil {
 		t.Fatalf("create vector materialized view result: %v", err)
 	}
-	if err := previewStateRepo.UpdatePreferredMode(result.TenantID, result.ItemFingerprint, result.Locator, models.PreviewModeMapQuickView); err != nil {
+	if err := previewStateRepo.UpdatePreferredMode(t.Context(), repository.CleanupTargetToken{Key: repository.CleanupTargetKey{TenantID: result.TenantID, Kind: repository.CleanupTargetPreviewState, Identity: result.ItemFingerprint}}, result.TenantID, result.ItemFingerprint, result.Locator, models.PreviewModeMapQuickView); err != nil {
 		t.Fatalf("create preview state: %v", err)
 	}
 

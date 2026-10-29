@@ -20,6 +20,7 @@ import (
 
 // SetupRouter 设置路由
 func SetupRouter(
+	cleanupResults *CleanupResultHandler,
 	taskService *service.TaskService,
 	executionService *service.ExecutionService,
 	continuousPolicyService *service.ContinuousPolicyService,
@@ -74,6 +75,7 @@ func SetupRouter(
 		commonAuth.MustNewDelegatedPolicyGuard("transfer", transferDelegatedToolPolicies()),
 	)
 	protected.GET("/execution-read-scope", GetExecutionReadScope)
+	protected.GET("/cleanup-executions/:execution_id/result", commonAuth.MustNewPermissionGuard("transfer.cleanup_result.read", "system.cleanup.read"), cleanupResults.Get)
 	permission := func(keys ...string) gin.HandlerFunc {
 		return commonAuth.MustNewPermissionGuard(keys...)
 	}

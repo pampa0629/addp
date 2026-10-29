@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: asset
-manifest_version: 4
+manifest_version: 5
 permissions:
   - key: asset.application.approve
     allowed_scope_types: [tenant]
@@ -90,6 +90,14 @@ permissions:
     status: active
     name_i18n_key: permissions.asset.category.update.name
     description_i18n_key: permissions.asset.category.update.description
+  - key: asset.cleanup_result.read
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.asset.cleanup_result.read.name
+    description_i18n_key: permissions.asset.cleanup_result.read.description
   - key: asset.entry.delete
     allowed_scope_types: [tenant]
     risk_level: high

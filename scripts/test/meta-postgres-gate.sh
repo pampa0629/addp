@@ -70,7 +70,7 @@ if [ "$test_group" = all ]; then
 fi
 service_tests='^(TestDataItemAuthorizationFactsAgainstPostgres|TestScanPlanFactsAgainstPostgres)$'
 if [ "$test_group" = all ]; then
-    service_tests='^(TestProductionBasicScanAgainstPostgres|TestMosaicScanWholeResultAgainstPostgres|TestDataItemAuthorizationFactsAgainstPostgres|TestScanPlanFactsAgainstPostgres|TestFieldLineage(Evidence|MultiSourceWriteFacts|WideOverview)AgainstPostgres|TestLineageCollector(RetriesUnresolvedTarget|ContinuesAfterInvalidFacts|DefersNewExecutions|PreservesClosedFieldRelations)AgainstPostgres)$'
+    service_tests='^(TestProductionBasicScanAgainstPostgres|TestMosaicScanWholeResultAgainstPostgres|TestDataItemAuthorizationFactsAgainstPostgres|TestScanPlanFactsAgainstPostgres|TestCleanupRuntimeAtomicityAgainstPostgres|TestFieldLineage(Evidence|MultiSourceWriteFacts|WideOverview)AgainstPostgres|TestLineageCollector(RetriesUnresolvedTarget|ContinuesAfterInvalidFacts|DefersNewExecutions|PreservesClosedFieldRelations)AgainstPostgres)$'
 fi
 if [ "$test_group" != file-composition ]; then
     go test ./internal/service -run "$service_tests" -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
@@ -103,4 +103,10 @@ else
             exit 1
         }
     done
+fi
+if [ "$test_group" = all ]; then
+    grep -Eq -- '^--- PASS: TestCleanupRuntimeAtomicityAgainstPostgres \(' "$WORK_DIR/meta.log" || {
+        echo 'Meta PostgreSQL gate requires the real TestCleanupRuntimeAtomicityAgainstPostgres test' >&2
+        exit 1
+    }
 fi

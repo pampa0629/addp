@@ -702,5 +702,6 @@ func newRasterMosaicTaskServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
 	ensureDerivedTaskDefinitionTestTables(t, db)
+	artifactTestSchema(t, db)
 	return db
 }

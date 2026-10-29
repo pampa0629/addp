@@ -2,7 +2,7 @@
 
 > 状态：平台级规范。本文定义 ADDP 系统级资源回收体系的概念、职责边界、协议约束和演进顺序。
 
-> 2026-10-29设计确认：持久队列、创建职责及完成回执采用[持久队列与完成回执](#持久队列与完成回执)的唯一目标协议，Graph取消／核清沿[Graph构建契约](tasks/模块任务契约.md#graph-构建任务)。本次仅修订文档，代码、API与运行验收尚未迁移；下文显式标注“当前实现”的Redis／响应观察是待删除或待迁移的事实，不是可继续保留的兼容路线。
+> 2026-10-29设计确认：持久队列、创建职责及完成回执采用[持久队列与完成回执](#持久队列与完成回执)的唯一目标协议，Graph取消／核清沿[Graph构建契约](tasks/模块任务契约.md#graph-构建任务)。实现与验证进度见本文的实施状态表；持久公共队列是唯一执行路线。工作区代码、本地门禁、环境切换和 Hosted 验收分别记录，不互相替代。
 
 阅读导航：
 
@@ -159,16 +159,16 @@ Transfer、Develop、Service、Asset、Portal 等模块按同一原则处理：
 
 Transfer 已实现的资源回收执行方当前治理 Transfer-owned 任务定义和受管运行资源：
 
-- `engine.deleted` 时，扫描 source / target endpoint locator 引用该 engine 的 `transfer.transfer_tasks`。
+- 已确认的 Engine 删除流程按固定 Engine 范围扫描 source / target endpoint locator 引用该 Engine 的 `transfer.transfer_tasks`；缺少可信原用户的独立 `engine.deleted` 事件不启动清理。
 - engine 生命周期 cleanup 无论使用何种 cleanup mode，都只禁用命中的用户任务定义、清空下一次调度并恢复 idle 状态；任务定义必须保留供用户后续重绑定或显式删除。
-- tenant 生命周期 `logical_cleanup` 禁用任务定义；tenant 生命周期 `physical_cleanup` 才允许删除 Transfer 任务定义本身。
+- 历史／closed Tenant 生命周期清理首期阻断。用户直接删除任务的既有入口沿独立当前用户授权，不借用 Cleanup 子执行权限。
 - 没有明确 lifecycle context 的普通 scan 不应把全部 Transfer 任务定义视作待回收对象。
 - Transfer 不拥有目标引擎中的表、文件或对象生命周期；这些资源只有在被其他 owner 模块登记为 artifact state 时，才由对应 owner executor 清理。
 
 PostgreSQL CDC v1 capture control plane 已实现，Transfer cleanup executor 必须治理由 capture supervisor 明确登记的任务级捕获资源：
 
 - ADDP-created Kafka Connect connector、replication slot、publication、Infra Kafka CDC topic 和 consumer group 归 Transfer owner；按 `task_id + capture_generation` 精确定位，不按 topic prefix 或数据库名称猜测。
-- CDC stop 先执行同一套幂等 task-level cleanup；System cleanup 负责补偿残留，不建立第二套删除实现。
+- CDC stop 与 System Cleanup 使用同一套准确目标操作登记。外部结果未知不重发；明确成功的原操作回执可用于后续收口，不能据此重新删除或自动重新开放任务。
 - Kafka Connect config/offset/status 等共享内部 topic、Kafka broker 数据目录和 ACL 基础配置归 Infra 部署 owner，不得由单个 Transfer task cleanup 删除。
 - cleanup 不删除目标业务表、目标业务行、目标 `addp_transfer.apply_positions`、`common.task_executions` 或 System 审计日志。
 - slot/publication 只允许删除资源登记中标记为 ADDP-created 且 identity 完全匹配的对象，不得按同名规则删除用户已有资源。
@@ -684,11 +684,11 @@ cleanup 必须同时进入 Monitor 和审计体系。
 
 cleanup 不纳入 Orchestrator 编排或 TaskProvider，必须写入 `common.task_executions`；Monitor 的读取授权、安全 DTO、错误投影和截断规则统一遵循[执行监控规范](tasks/执行监控.md#租户执行诊断)。以下只补充 Cleanup 的记录归属与能力边界。
 
-目标执行记录模型（已确认设计，实现未迁移）：
+执行记录模型：
 
 - System 创建父 execution：`module=system`、`task_type=cleanup`、`source=system`，`trigger_type=manual|scheduled|event`；`execution_config` 保存 `action`、`cleanup_mode`、`expected_modules`、`based_on_scan`、`context`、`cause_event`，用于协调和审计，不作为 Monitor 公开响应。
 - System与父项同事务预建子pending：`module=meta|manager|transfer|...`、`task_type=cleanup_executor`、`source=system`，以 `parent_execution_id` 关联父项；Owner独占领取和推进，标准回执只用[持久协议](#持久队列与完成回执)的类型化metadata。专业结果和诊断由Owner管理，不要求复制同一私有结构。
-- 当前实现仍有Owner消费Redis后创建running子项、任意cleanup_result metadata及Redis结果hash分离写入，均属待替换路径，不是目标协议的兼容格式。迁移不得直接把这些旧字段开放给Monitor。
+- Owner 不消费旧 Redis Cleanup 请求，也不自行创建 running 子项。旧请求解析器和结果 hash 写入已删除；历史任意 `cleanup_result` metadata 不进入新协议、安全 DTO 或可信回执。
 
 读取与展示边界：
 
@@ -860,7 +860,8 @@ make test-online ONLINE_SUITE="$ONLINE_SUITE"
 | System 持久协调与 Engine 删除 | PG 请求／预建父子／固定截止结论、原请求幂等及 Engine 流程接线已写入工作区，System Cleanup 与 IAM 真 PG 门禁通过；其余 Owner 接齐前不能切换整套生产路径。 |
 | Graph | 持久取消／准入／待核清基础已提交；Cleanup 三阶段接线在工作区，双实例竞争及结果写入失败回滚的真实 PG 门禁通过。Provider 无可核验证据时仍阻断，未完成新的 Hosted。 |
 | Asset、Develop、Model、Quality、Service、Standard | 当前获准范围已接入公共 runner 和 Owner 私有结果，删除各自旧 Cleanup Redis 消费入口。历史 Tenant 路径保持阻断；不能由本地测试外推所有物理资源删除均已验收。 |
-| Manager、Meta、Transfer | 专业读取入口已接入；旧 Cleanup 消费和混合外部删除仍待收口，禁止与新协调器拼装部署。外部操作身份、真实停止及 Meta→Manager 索引委托的边界正在专题中细化。 |
+| Meta | 已移除旧 Redis 消费与隐式 Manager 索引删除，接入公共 runner；准确 Engine 范围、原用户撤权和结果事务回滚的本地 Go／真实 PG 门禁通过。 |
+| Manager、Transfer | 公共 Runner、专业读取和外部操作持久隔离已接线；Manager、Transfer 标准 PostgreSQL 门禁通过，覆盖 Owner 最终事务、未知效果不重发及迟到写入阻断。该结果属于本地 T1/T2，真实 Gateway／外部 Runtime／Hosted 仍未验收。 |
 | 十个 Owner 专业结果 | 窄 GET、独立 Permission 和双语 Swagger 已写入工作区；不默认授予角色的 IAM 真 PG 反例通过。真实 Gateway 调用和 Hosted 未验收。 |
 | System／Monitor 展示 | 公共组件、独立授权与一致只读快照、真实状态、请求代际失效已写入工作区；单元、受控浏览器及 Monitor 真 PG 门禁通过。没有增加原始 JSON 透传或 GET 状态推进。 |
 | 旧记录与切换 | 用户允许清理相关旧记录，不导入为新可信事实。仅完成部分只读盘点，尚未删除；活动运行体、Redis 和外部未决证据必须核清，服务重启及新 Hosted 仍按已约定边界处理。 |
@@ -883,3 +884,19 @@ make test-online ONLINE_SUITE="$ONLINE_SUITE"
 | cleanup 是否进入 `common.task_executions` | 必须进入，作为唯一持久执行队列。System同事务预建父子pending，Owner独占子项领取／推进；标准完成回执复用子项类型化metadata，不另建表／队列。设计已确认，实现与Monitor覆盖仍分别验收。 |
 | cleanup 是否进入审计体系 | 必须进入。scan、execute、确认、完成、失败都写 System 审计日志。 |
 | Standard 文档文件和 PG 状态的删除边界 | `logical_cleanup` 不删除文件；`physical_cleanup` 删除 `standard.documents.file_key` 指向的 MinIO 文件和 Standard-owned PG 状态；用户显式删除单个文档时也可同步删除 PG+文件。 |
+
+外部效果准入统一使用 `common/cleanup.Run.PrepareExternal`：先锁外复核原用户，再在短事务内绑定 C 与准确 Owner 操作并拒绝重发，提交后才返回受本次授权决定截止时间约束的调用 context。HTTP／Provider 调用不得放入该事务；调用超时、context 取消或 C 失权均不证明外部操作已停止，Owner 仍须保留持久隔离及准确操作证据。最终结果使用当前 lease 的独立 `Effect` 事务提交。
+
+
+持久隔离的 Owner 实现约束：
+
+- Manager 将索引完整身份摘要及本域冻结候选摘要绑定到原 scan、Tenant、User。execute 发现目标、版本或索引出口改变时拒绝，不能沿过期评估扩大清理范围。任务身份使用规范化 resource bindings，Embedding 只适配自己的配置契约。
+- Manager 索引操作登记准确 C／attempt、物理索引、出口代次及 Tenant＋Engine。未知投递、进程重启、lease 过期及最终结果事务回滚均保持 hold；普通维护队列不得派发 Cleanup 删除。索引目标记录继续阻断迟到投递。
+- Manager PG 投影写入必须携带原请求在远程准备／入队前观察的目标代际。清理与代际推进、专业结果和标准回执共享最终事务；旧请求返回后不得重新观察代际绕过阻断。产物外部删除先持久登记目标，再锁外执行；未核清的操作保留隔离。
+- Transfer 为每次真实 continuous claim 保存 invocation 身份。只有该运行体的 Run 实际返回后才写停止证明；超时、cancel、lease 过期、进程不在线均不算停止。迟到停止证明只更新原 invocation 的控制事实，不更新当前 lease 或业务结果。
+- Transfer 外部清理登记固定 task、捕获 generation、资源版本和准确对象，未知结果不能再次发送。存在清理操作的任务不得准入新 producer；Kafka 删除须取得准确目标响应及不存在证据，空响应、遗漏目标和授权错误均失败关闭。最终任务状态、专业结果及回执同事务提交，正在运行／排队的 bounded 执行阻断清理。
+
+这些控制事实首期不自动过期或删除。恢复开放、历史 Tenant 治理和新的 Hosted 验收不包含在本批实施授权内。
+
+
+Manager 的产物操作事实保存冻结快照及准确目标的原始 JSON 字节（文本列），摘要绑定原 execution／attempt／lease 与这些字节；不得使用会重排 JSON 的存储表示再按原字符串比较摘要。PostgreSQL 查询需要取快照字段时仅在查询表达式中转换，不改写持久快照。原生成调用记录成功或未知结束事实后，即使当前 lease 尚有效，也不得用同一内存调用凭据再派发写入。

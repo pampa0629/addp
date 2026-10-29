@@ -1,6 +1,9 @@
 package api
 
 import (
+	"errors"
+	commonapi "github.com/addp/common/api"
+	commonclient "github.com/addp/common/client"
 	"net/http"
 	"strconv"
 
@@ -70,7 +73,7 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 	// 查询执行记录
 	resp, err := h.queryService.ListExecutions(c.Request.Context(), req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error_code": "internal_error", "error": commoni18n.T(c, moni18n.MsgDiagnosticQueryFailed)})
+		respondExecutionReadError(c, err)
 		return
 	}
 
@@ -110,7 +113,7 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 	// 查询执行记录
 	execution, err := h.queryService.GetExecution(c.Request.Context(), id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, moni18n.MsgExecutionNotFound)})
+		respondExecutionReadError(c, err)
 		return
 	}
 
@@ -141,7 +144,7 @@ func (h *ExecutionHandler) GetExecutionByExecutionID(c *gin.Context) {
 
 	execution, err := h.queryService.GetExecutionByExecutionID(c.Request.Context(), executionID, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, moni18n.MsgExecutionNotFound)})
+		respondExecutionReadError(c, err)
 		return
 	}
 
@@ -172,7 +175,7 @@ func (h *ExecutionHandler) GetExecutionTree(c *gin.Context) {
 
 	tree, err := h.queryService.GetExecutionTree(c.Request.Context(), id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, moni18n.MsgExecutionNotFound)})
+		respondExecutionReadError(c, err)
 		return
 	}
 
@@ -205,9 +208,20 @@ func (h *ExecutionHandler) GetExecutionTreeByExecutionID(c *gin.Context) {
 
 	tree, err := h.queryService.GetExecutionTreeByExecutionID(c.Request.Context(), executionID, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, moni18n.MsgExecutionNotFound)})
+		respondExecutionReadError(c, err)
 		return
 	}
 
 	c.JSON(http.StatusOK, tree)
+}
+
+func respondExecutionReadError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, commonclient.ErrExecutionOwnerUnavailable):
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error_code": "execution_owner_unavailable", "error": commoni18n.T(c, moni18n.MsgExecutionOwnerUnavailable)})
+	case errors.Is(err, commonapi.ErrNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, moni18n.MsgExecutionNotFound)})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error_code": "internal_error", "error": commoni18n.T(c, moni18n.MsgDiagnosticQueryFailed)})
+	}
 }

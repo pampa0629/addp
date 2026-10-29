@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/addp/common/cleanup"
 	"github.com/addp/common/schema"
 
 	"github.com/addp/common/logger"
@@ -44,7 +45,10 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		if err := tx.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}, &models.ScanTask{}); err != nil {
 			return err
 		}
-		return applySQLMigrations(tx)
+		if err := applySQLMigrations(tx); err != nil {
+			return err
+		}
+		return cleanup.MigrateResults(tx, "meta")
 	}); err != nil {
 		return nil, err
 	}

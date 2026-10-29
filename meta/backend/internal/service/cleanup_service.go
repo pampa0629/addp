@@ -2,31 +2,25 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/addp/common/cleanup"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/events"
-	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
-	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metacleanup"
 	"github.com/addp/meta/internal/models"
-	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
 // CleanupService 负责定期清理已逻辑删除的记录和处理资源回收事件
 type CleanupService struct {
 	db              *gorm.DB
-	redis           *redis.Client
 	dbCleaner       *metacleanup.DatabaseCleaner
-	contentIndex    *commonClient.ManagerContentClient
-	taskExecRepo    *commonExecution.TaskExecutionRepository
+	runtime         *cleanup.Runner
 	log             *slog.Logger
 	retentionDays   int
 	cleanupInterval time.Duration
@@ -53,9 +47,7 @@ func DefaultCleanupConfig() CleanupConfig {
 // NewCleanupService 创建 Meta 资源回收服务
 func NewCleanupService(
 	db *gorm.DB,
-	redisClient *redis.Client,
 	systemClient *commonClient.SystemServiceClient,
-	contentIndex *commonClient.ManagerContentClient,
 	config CleanupConfig,
 ) *CleanupService {
 	if config.RetentionDays == 0 {
@@ -65,22 +57,24 @@ func NewCleanupService(
 		config.CleanupInterval = 24 * time.Hour
 	}
 
-	return &CleanupService{
+	s := &CleanupService{
 		db:              db,
-		redis:           redisClient,
 		dbCleaner:       metacleanup.NewDatabaseCleaner(db, systemClient, logger.With("component", "cleanup_database")),
-		contentIndex:    contentIndex,
-		taskExecRepo:    commonExecution.NewTaskExecutionRepository(db),
 		log:             logger.With("component", "cleanup_service"),
 		retentionDays:   config.RetentionDays,
 		cleanupInterval: config.CleanupInterval,
 		enabled:         config.Enabled,
 		stopCh:          make(chan struct{}),
 	}
+	s.runtime = &cleanup.Runner{DB: db, Owner: events.ModuleMeta, System: systemClient, Log: s.log, Handle: s.runCleanupExecution}
+	return s
 }
 
 // Start 启动 Meta 资源回收服务
 func (s *CleanupService) Start(ctx context.Context) error {
+	if err := s.runtime.Start(ctx); err != nil {
+		return err
+	}
 	if !s.enabled {
 		s.log.Info("Meta 资源回收服务已禁用")
 		return nil
@@ -96,6 +90,7 @@ func (s *CleanupService) Start(ctx context.Context) error {
 
 // Stop 停止 Meta 资源回收服务
 func (s *CleanupService) Stop(ctx context.Context) error {
+	s.runtime.Stop()
 	if !s.enabled {
 		return nil
 	}
@@ -172,155 +167,6 @@ func (s *CleanupService) ManualCleanup(ctx context.Context, retentionDays int) (
 	}, nil
 }
 
-// ========== 资源回收事件处理 ==========
-
-// SubscribeCleanupEvents 订阅资源回收事件
-func (s *CleanupService) SubscribeCleanupEvents(ctx context.Context) error {
-	if s.redis == nil {
-		s.log.Warn("Redis 未配置，跳过资源回收事件订阅")
-		return nil
-	}
-
-	// 使用 Redis Stream 订阅资源回收请求
-	go s.consumeCleanupRequests(ctx)
-	s.log.Info("资源回收事件订阅已启动")
-	return nil
-}
-
-// consumeCleanupRequests 消费资源回收请求事件
-func (s *CleanupService) consumeCleanupRequests(ctx context.Context) {
-	groupName := "meta-cleanup-consumer"
-	consumerName := "meta-cleanup"
-
-	// 创建 Consumer Group（如果不存在）
-	s.redis.XGroupCreateMkStream(ctx, events.EventCleanupRequest, groupName, "$")
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-s.stopCh:
-			return
-		default:
-			// 读取事件
-			streams, err := s.redis.XReadGroup(ctx, &redis.XReadGroupArgs{
-				Group:    groupName,
-				Consumer: consumerName,
-				Streams:  []string{events.EventCleanupRequest, ">"},
-				Count:    1,
-				Block:    5 * time.Second,
-			}).Result()
-
-			if err != nil {
-				if err != redis.Nil {
-					s.log.Error("读取资源回收事件失败", "error", err)
-				}
-				continue
-			}
-
-			// 处理事件
-			for _, stream := range streams {
-				for _, message := range stream.Messages {
-					s.handleCleanupRequest(ctx, message)
-					// 确认消息
-					s.redis.XAck(ctx, events.EventCleanupRequest, groupName, message.ID)
-				}
-			}
-		}
-	}
-}
-
-// handleCleanupRequest 处理资源回收请求
-func (s *CleanupService) handleCleanupRequest(ctx context.Context, message redis.XMessage) {
-	event, err := metacleanup.ParseCleanupRequest(message.Values)
-	if err != nil {
-		s.log.Error("解析资源回收请求失败", "error", err, "message_id", message.ID, "values", message.Values)
-		return
-	}
-	if !events.CleanupExpectedForModule(event.ExpectedModules, events.ModuleMeta) {
-		return
-	}
-
-	s.log.Info("收到资源回收请求",
-		"task_id", event.TaskID,
-		"action", event.Action,
-		"tenant_id", event.TenantID,
-		"cleanup_mode", event.CleanupMode,
-		"expected_modules", event.ExpectedModules)
-
-	result := events.CleanupResultData{
-		Module:      events.ModuleMeta,
-		Action:      event.Action,
-		TenantID:    event.TenantID,
-		TaskID:      event.TaskID,
-		CleanupMode: event.CleanupMode,
-		TriggerType: event.TriggerType,
-		Timestamp:   time.Now(),
-	}
-
-	exec, startedAt, execErr := s.createExecutorExecution(ctx, event)
-	if execErr != nil {
-		s.log.Error("创建 Meta 资源回收执行记录失败", "error", execErr, "task_id", event.TaskID)
-	}
-
-	// 无论成功失败都写入响应
-	defer func() {
-		if exec != nil {
-			s.finishExecutorExecution(ctx, exec.ExecutionID, event.TenantID, startedAt, result)
-		}
-		s.writeResult(ctx, event.TaskID, result)
-	}()
-
-	// 根据动作类型处理
-	switch event.Action {
-	case events.CleanupActionScan:
-		stats, err := s.ScanReclaimCandidates(ctx, event.TenantID, event.Context)
-		if err != nil {
-			result.Status = events.CleanupResultFailed
-			result.Errors = []string{err.Error()}
-			s.log.Error("扫描资源回收候选失败", "error", err, "tenant_id", event.TenantID)
-			return
-		}
-		result.Status = events.CleanupResultSuccess
-		result.Statistics = metacleanup.ToMap(stats)
-		result.Summary = metaScanSummary(stats)
-		if event.CauseEvent == events.CleanupCauseEngineDeleting {
-			impact, err := s.metaEngineDeletionImpact(ctx, event.TenantID, event.Context, stats)
-			if err != nil {
-				result.Status = events.CleanupResultFailed
-				result.Errors = []string{err.Error()}
-				result.Summary = events.CleanupResultSummary{ErrorCount: 1, RiskLevel: "low"}
-				return
-			}
-			result.Impact = &impact
-		}
-		s.log.Info("扫描资源回收候选完成", "tenant_id", event.TenantID, "task_id", event.TaskID)
-
-	case events.CleanupActionExecute:
-		execResult, err := s.ExecuteCleanup(ctx, event.TenantID, event.CleanupMode, event.Context)
-		if err != nil {
-			result.Status = events.CleanupResultFailed
-			result.Errors = []string{err.Error()}
-			s.log.Error("执行资源回收失败", "error", err, "tenant_id", event.TenantID)
-			return
-		}
-		if len(execResult.Errors) > 0 {
-			result.Status = events.CleanupResultPartialSuccess
-			result.Errors = execResult.Errors
-		} else {
-			result.Status = events.CleanupResultSuccess
-		}
-		result.Statistics = metacleanup.ToMap(execResult)
-		result.Summary = metaExecuteSummary(execResult)
-		s.log.Info("执行资源回收完成", "tenant_id", event.TenantID, "task_id", event.TaskID)
-
-	default:
-		result.Status = events.CleanupResultFailed
-		result.Errors = []string{"unknown action: " + event.Action}
-		s.log.Error("未知的清理动作", "action", event.Action)
-	}
-}
-
 func (s *CleanupService) metaEngineDeletionImpact(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}, _ *models.MetaCleanupStatistics) (events.CleanupImpactData, error) {
 	scope := metacleanup.ScopeFromContext(cleanupContext)
 	if scope.EngineID == 0 {
@@ -358,7 +204,10 @@ func (s *CleanupService) metaEngineDeletionImpact(ctx context.Context, tenantID 
 func (s *CleanupService) ScanReclaimCandidates(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}) (*models.MetaCleanupStatistics, error) {
 	stats := &models.MetaCleanupStatistics{}
 	scope := metacleanup.ScopeFromContext(cleanupContext)
-	invalidEngineIDs := s.dbCleaner.InvalidEngineIDsWithScope(ctx, tenantID, scope)
+	invalidEngineIDs, err := s.dbCleaner.InvalidEngineIDsWithScope(ctx, tenantID, scope)
+	if err != nil {
+		return nil, err
+	}
 
 	// 1. 扫描无效引擎的数据
 	invalidEngines, err := s.dbCleaner.ScanInvalidEnginesWithScope(ctx, tenantID, scope)
@@ -369,7 +218,7 @@ func (s *CleanupService) ScanReclaimCandidates(ctx context.Context, tenantID uin
 	stats.InvalidEngines.Details = invalidEngines
 
 	// 2. 扫描孤儿数据项
-	orphanItems, err := s.dbCleaner.ScanOrphanItems(ctx, tenantID)
+	orphanItems, err := s.dbCleaner.ScanOrphanItems(ctx, tenantID, scope)
 	if err != nil {
 		return nil, fmt.Errorf("扫描孤儿数据失败: %w", err)
 	}
@@ -381,7 +230,7 @@ func (s *CleanupService) ScanReclaimCandidates(ctx context.Context, tenantID uin
 	}
 
 	// 3. 扫描过期数据（90天未扫描）
-	expiredCount, err := s.dbCleaner.ScanExpiredData(ctx, tenantID, 90)
+	expiredCount, err := s.dbCleaner.ScanExpiredData(ctx, tenantID, 90, scope)
 	if err != nil {
 		return nil, fmt.Errorf("扫描过期数据失败: %w", err)
 	}
@@ -404,7 +253,7 @@ func (s *CleanupService) ScanReclaimCandidates(ctx context.Context, tenantID uin
 	stats.RetainedLineageReferences.Items = retainedItems
 
 	// 5. 扫描重复fingerprint
-	duplicateCount, err := s.dbCleaner.ScanDuplicateFingerprints(ctx, tenantID)
+	duplicateCount, err := s.dbCleaner.ScanDuplicateFingerprints(ctx, tenantID, scope)
 	if err != nil {
 		return nil, fmt.Errorf("扫描重复fingerprint失败: %w", err)
 	}
@@ -424,15 +273,17 @@ func (s *CleanupService) ScanReclaimCandidates(ctx context.Context, tenantID uin
 func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, cleanupMode string, cleanupContext map[string]interface{}) (*models.MetaCleanupExecuteResult, error) {
 	result := &models.MetaCleanupExecuteResult{}
 	scope := metacleanup.ScopeFromContext(cleanupContext)
-	invalidEngineIDs := s.dbCleaner.InvalidEngineIDsWithScope(ctx, tenantID, scope)
+	invalidEngineIDs, err := s.dbCleaner.InvalidEngineIDsWithScope(ctx, tenantID, scope)
+	if err != nil {
+		return nil, err
+	}
 
 	// 根据清理模式执行数据库清理
 	var dbResult *models.MetaCleanupExecuteResult
-	var err error
 
 	switch cleanupMode {
 	case events.CleanupModeLogical:
-		dbResult, err = s.dbCleaner.ExecuteSoftDelete(ctx, tenantID, invalidEngineIDs)
+		dbResult, err = s.dbCleaner.ExecuteSoftDelete(ctx, tenantID, invalidEngineIDs, scope)
 	case events.CleanupModePhysical:
 		dbResult, err = s.dbCleaner.ExecuteHardDeleteWithScope(ctx, tenantID, scope)
 	default:
@@ -450,15 +301,6 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 	result.RetainedLineageItems = dbResult.RetainedLineageItems
 	result.RetainedReferencedNodes = dbResult.RetainedReferencedNodes
 	result.Errors = append(result.Errors, dbResult.Errors...)
-
-	if s.contentIndex != nil {
-		for _, engineID := range invalidEngineIDs {
-			if err := s.contentIndex.WithTenantID(tenantID).DeleteDocuments(ctx, commonClient.ManagerContentDeleteScope{EngineID: engineID}); err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("清理 Manager 内容投影失败: %v", err))
-				s.log.Error("清理 Manager 内容投影失败", "engine_id", engineID, "error", err)
-			}
-		}
-	}
 
 	switch cleanupMode {
 	case events.CleanupModeLogical:
@@ -534,87 +376,6 @@ func (s *CleanupService) invalidEngineScanTaskDefinitionsQuery(ctx context.Conte
 }
 
 // writeResult 写入资源回收结果到 Redis
-func (s *CleanupService) writeResult(ctx context.Context, taskID string, result events.CleanupResultData) {
-	if s.redis == nil {
-		return
-	}
-
-	resultJSON, err := json.Marshal(result)
-	if err != nil {
-		s.log.Error("序列化资源回收结果失败", "error", err)
-		return
-	}
-
-	key := fmt.Sprintf("cleanup:results:%s", taskID)
-	if err := s.redis.HSet(ctx, key, events.ModuleMeta, string(resultJSON)).Err(); err != nil {
-		s.log.Error("写入资源回收结果失败", "error", err, "task_id", taskID)
-	}
-}
-
-func (s *CleanupService) createExecutorExecution(ctx context.Context, event events.CleanupRequestEvent) (*commonExecution.TaskExecution, time.Time, error) {
-	if s.taskExecRepo == nil || event.ParentExecutionID == "" {
-		return nil, time.Time{}, nil
-	}
-	startedAt := time.Now()
-	currentStep := fmt.Sprintf("Meta 资源回收 %s", event.Action)
-	triggerType, err := commonExecution.NormalizeTriggerType(event.TriggerType)
-	if err != nil {
-		triggerType = commonExecution.TriggerTypeManual
-	}
-	exec := &commonExecution.TaskExecution{
-		TenantID:          int(event.TenantID),
-		ExecutionID:       uuid.NewString(),
-		Module:            commonExecution.ModuleMeta,
-		TaskType:          commonExecution.TaskTypeCleanupExecutor,
-		Source:            commonExecution.ModuleSystem,
-		ParentExecutionID: &event.ParentExecutionID,
-		Status:            commonExecution.ExecutionStatusRunning,
-		Progress:          0,
-		CurrentStep:       &currentStep,
-		TriggerType:       triggerType,
-		TriggeredBy:       ptrInt(int(event.RequestedBy)),
-		ExecutionConfig: commonModels.JSONMap{
-			"task_id":        event.TaskID,
-			"action":         event.Action,
-			"cleanup_mode":   event.CleanupMode,
-			"based_on_scan":  event.BasedOnScan,
-			"cause_event":    event.CauseEvent,
-			"context":        event.Context,
-			"request_module": commonExecution.ModuleSystem,
-		},
-		StartedAt: &startedAt,
-		CreatedAt: startedAt,
-		UpdatedAt: startedAt,
-	}
-	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
-		return nil, startedAt, err
-	}
-	return exec, startedAt, nil
-}
-
-func (s *CleanupService) finishExecutorExecution(ctx context.Context, executionID string, tenantID uint, startedAt time.Time, result events.CleanupResultData) {
-	if s.taskExecRepo == nil || executionID == "" {
-		return
-	}
-	now := time.Now()
-	status := commonExecution.StatusFromCleanupResult(result.Status)
-	var errDetails commonModels.JSONMap
-	if len(result.Errors) > 0 {
-		errDetails = commonModels.JSONMap{"errors": result.Errors}
-	}
-	if err := s.taskExecRepo.UpdateFields(ctx, executionID, int(tenantID), map[string]interface{}{
-		"status":            status,
-		"progress":          100,
-		"metadata":          commonModels.JSONMap{"cleanup_result": result, "summary": result.Summary},
-		"error_details":     errDetails,
-		"completed_at":      now,
-		"execution_time_ms": now.Sub(startedAt).Milliseconds(),
-		"updated_at":        now,
-	}); err != nil {
-		s.log.Warn("更新 Meta 资源回收执行记录失败", "execution_id", executionID, "error", err)
-	}
-}
-
 func metaScanSummary(stats *models.MetaCleanupStatistics) events.CleanupResultSummary {
 	if stats == nil {
 		return events.CleanupResultSummary{RiskLevel: "low"}

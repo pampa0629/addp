@@ -122,7 +122,7 @@ func main() {
 	scheduler := service.NewScanTaskScheduler(taskService, executionService)
 
 	// ========== 启动 Meta 资源回收服务 ==========
-	cleanupService := service.NewCleanupService(db, redisClient, systemClient, contentIndexClient, service.CleanupConfig{
+	cleanupService := service.NewCleanupService(db, systemClient, service.CleanupConfig{
 		Enabled:         true,
 		RetentionDays:   90,
 		CleanupInterval: 24 * time.Hour,
@@ -134,14 +134,6 @@ func main() {
 	defer cleanupService.Stop(context.Background())
 	logger.L().Info("Meta 资源回收服务已启动", "retention_days", 90)
 
-	// 订阅资源回收事件（如果 Redis 可用）
-	if redisClient != nil {
-		if err := cleanupService.SubscribeCleanupEvents(runtimeContext); err != nil {
-			logger.L().Warn("订阅资源回收事件失败", "error", err)
-		} else {
-			logger.L().Info("已订阅资源回收事件")
-		}
-	}
 	// ===================================
 
 	engineSyncService := service.NewEngineSyncService(redisClient, engineService)

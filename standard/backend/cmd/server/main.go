@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net"
 	"os"
@@ -14,7 +13,6 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
-	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/standard/internal/api"
 	"github.com/addp/standard/internal/config"
@@ -22,7 +20,6 @@ import (
 	"github.com/addp/standard/internal/service"
 	minio "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -54,16 +51,6 @@ func main() {
 
 	if err := repository.Migrate(db); err != nil {
 		log.Fatalf("Failed to migrate database: %v", err)
-	}
-
-	var redisClient *redis.Client
-	if cfg.RedisHost != "" {
-		redisClient = redis.NewClient(&redis.Options{
-			Addr:     fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
-			Password: cfg.RedisPassword,
-			DB:       cfg.RedisDB,
-		})
-		defer redisClient.Close()
 	}
 
 	serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(
@@ -129,8 +116,7 @@ func main() {
 	referenceResolutionSvc := service.NewReferenceResolutionService(referenceResolutionRepo)
 	elementRevisionResolutionSvc := service.NewElementRevisionResolutionService(elementRepo, codeSetRepo)
 	catalogResourceSvc := service.NewCatalogResourceService(catalogResourceRepo)
-	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
-	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo, minioClient)
+	cleanupSvc := service.NewCleanupService(db, systemClient, minioClient)
 	if err := cleanupSvc.Start(runtimeContext); err != nil {
 		log.Printf("Standard 资源回收执行方启动失败: %v", err)
 	}

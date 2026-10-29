@@ -26,6 +26,7 @@ func getUserID(c *gin.Context) int64 {
 
 // SetupRouter 设置路由（仅 Model 相关）
 func SetupRouter(
+	cleanupResults *CleanupResultHandler,
 	entitySvc *service.EntityService,
 	entityRelationSvc *service.EntityRelationService,
 	logicalTableSvc *service.LogicalTableService,
@@ -89,6 +90,7 @@ func SetupRouter(
 		commonAuth.MustNewContextGuard("tenant"),
 	)
 	api.GET("/execution-read-scope", GetExecutionReadScope)
+	api.GET("/cleanup-executions/:execution_id/result", commonAuth.MustNewPermissionGuard("model.cleanup_result.read", "system.cleanup.read"), cleanupResults.Get)
 	permission := func(keys ...string) gin.HandlerFunc {
 		return commonAuth.MustNewPermissionGuard(keys...)
 	}

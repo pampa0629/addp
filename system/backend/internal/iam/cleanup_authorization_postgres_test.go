@@ -77,15 +77,19 @@ func TestCleanupAuthorizationAgainstPostgres(t *testing.T) {
 	}
 	serviceType, tenantType := PrincipalTypeServicePrincipal, ContextTypeTenant
 	runtimeAudit := AuditMetadata{PrincipalID: &runtimeID, PrincipalType: &serviceType, ContextType: &tenantType, TenantID: &tenant.ID}
-	fixture := func(t *testing.T) (execution.TaskExecution, execution.TaskExecution) {
+	originFixture := func(t *testing.T, cause string, actorID, membershipID, authorizationVersion int64) (execution.TaskExecution, execution.TaskExecution) {
 		t.Helper()
 		now, err := execution.DatabaseNow(db)
 		if err != nil {
 			t.Fatal(err)
 		}
-		by := int(user.PrincipalID)
-		parent := execution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: int(tenant.ID), Module: "system", Source: "system", TaskType: "cleanup", Status: execution.ExecutionStatusPending, ExecutionBoundary: execution.ExecutionBoundaryBounded, TriggerType: "manual", TriggeredBy: &by, ActorPrincipalID: &user.PrincipalID, ActorTenantMembershipID: &member.Membership.ID, IssuedAuthorizationVersion: &principal.AuthorizationVersion, MaxAttempts: 3, ExecutionConfig: commonmodels.JSONMap{execution.DisplayLanguageKey: "en"}}
-		request := events.CleanupRequest{RequestID: uuid.NewString(), ParentExecutionID: parent.ExecutionID, TenantID: uint(tenant.ID), RequestedBy: uint(user.PrincipalID), Action: "scan", TriggerType: "manual", ExpectedModules: []string{"meta"}, RequestedAt: now, Deadline: now.Add(time.Minute)}
+		by := int(actorID)
+		parent := execution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: int(tenant.ID), Module: "system", Source: "system", TaskType: "cleanup", Status: execution.ExecutionStatusPending, ExecutionBoundary: execution.ExecutionBoundaryBounded, TriggerType: "manual", TriggeredBy: &by, ActorPrincipalID: &actorID, ActorTenantMembershipID: &membershipID, IssuedAuthorizationVersion: &authorizationVersion, MaxAttempts: 3, ExecutionConfig: commonmodels.JSONMap{execution.DisplayLanguageKey: "en"}}
+		request := events.CleanupRequest{RequestID: uuid.NewString(), ParentExecutionID: parent.ExecutionID, TenantID: uint(tenant.ID), RequestedBy: uint(actorID), Action: "scan", TriggerType: "manual", ExpectedModules: []string{"meta"}, RequestedAt: now, Deadline: now.Add(time.Minute)}
+		if cause != "" {
+			request.CauseEvent = cause
+			request.Context.EngineID = 1
+		}
 		if err := request.Seal(); err != nil {
 			t.Fatal(err)
 		}
@@ -94,6 +98,10 @@ func TestCleanupAuthorizationAgainstPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		return parent, children[0]
+	}
+
+	fixture := func(t *testing.T) (execution.TaskExecution, execution.TaskExecution) {
+		return originFixture(t, "", user.PrincipalID, member.Membership.ID, principal.AuthorizationVersion)
 	}
 
 	t.Run("catalog_grants_only_reviewed_runtimes", func(t *testing.T) {
@@ -109,7 +117,100 @@ func TestCleanupAuthorizationAgainstPostgres(t *testing.T) {
 		if err := db.Raw("SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id WHERE p.permission_key='graph.graph.reconcile'").Scan(&count).Error; err != nil || count != 0 {
 			t.Fatal("Graph reconciliation granted implicitly", count, err)
 		}
+		for _, owner := range []string{"asset", "develop", "graph", "manager", "meta", "model", "quality", "service", "standard", "transfer"} {
+			key := owner + ".cleanup_result.read"
+			if err := db.Raw("SELECT count(*) FROM system.permissions WHERE permission_key = ? AND tenant_customizable = true AND delegable = false", key).Scan(&count).Error; err != nil || count != 1 {
+				t.Fatal("professional result permission missing or widened", key, count, err)
+			}
+			if err := db.Raw("SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id WHERE p.permission_key = ?", key).Scan(&count).Error; err != nil || count != 0 {
+				t.Fatal("professional result permission granted implicitly", key, count, err)
+			}
+		}
 	})
+
+	t.Run("engine_purpose_keeps_current_delete_permission", func(t *testing.T) {
+		actor := createContextSelectionUser(t, ctx, NewIdentityService(repo, nil), "cleanup-engine-user", audit)
+		membership := establishContextSelectionMembership(t, ctx, members, tenant.ID, actor.PrincipalID, audit)
+		// These two fixture-only builtin roles separate permissions that the
+		// shipped infrastructure role groups together. The real role/assignment
+		// constraints and clocks still apply; no production role or manifest changes.
+		fixtureRole := func(key, permission string) string {
+			t.Helper()
+			var id int64
+			if err := db.Raw(`INSERT INTO system.roles (role_key,name_i18n_key,description_i18n_key,role_type,allowed_scope_types,allowed_principal_types,immutable,status) VALUES (?,?,?,'tenant_builtin',ARRAY['tenant'],ARRAY['user'],true,'active') RETURNING id`, key, key+".name", key+".description").Scan(&id).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Exec("INSERT INTO system.role_permissions(role_id,permission_id,source_type) SELECT ?,id,'product' FROM system.permissions WHERE permission_key=?", id, permission).Error; err != nil {
+				t.Fatal(err)
+			}
+			return key
+		}
+		cleanupRole := fixtureRole("tenant.cleanup_test_only", "system.cleanup.execute")
+		engineRole := fixtureRole("tenant.cleanup_engine_test", "system.engine.delete")
+		now, err := execution.DatabaseNow(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expires := now.Add(2 * time.Second)
+		insertRoleAssignment(t, db, actor.PrincipalID, cleanupRole, "tenant", &tenant.ID, nil, nil, now.Add(-time.Minute), nil, "manual")
+		insertRoleAssignment(t, db, actor.PrincipalID, engineRole, "tenant", &tenant.ID, nil, nil, now.Add(-time.Minute), &expires, "manual")
+		var origin Principal
+		if err := db.First(&origin, actor.PrincipalID).Error; err != nil {
+			t.Fatal(err)
+		}
+		p, c := originFixture(t, events.CleanupCauseEngineDeleting, actor.PrincipalID, membership.Membership.ID, origin.AuthorizationVersion)
+		grant, err := service.IssueCleanup(ctx, uuid.MustParse(c.ExecutionID), audit)
+		if err != nil {
+			t.Fatal("Engine issue", err)
+		}
+		in := AuthorizeCleanupInput{AuthorizationID: grant.ID, ExecutionID: grant.ExecutionID, Stage: "claim", Scope: *grant.CleanupScope, ServicePrincipalID: runtimeID, ServiceClientID: "addp-meta", TenantID: tenant.ID, Audit: runtimeAudit}
+		if _, err := service.AuthorizeCleanup(ctx, in); err != nil {
+			t.Fatal("Engine claim auth", err)
+		}
+		identity := func(e execution.TaskExecution) execution.PendingIdentity {
+			return execution.PendingIdentity{ExecutionID: e.ExecutionID, TenantID: e.TenantID, Module: e.Module, TaskType: e.TaskType, Source: e.Source}
+		}
+		options := func(e execution.TaskExecution) execution.ClaimOptions {
+			return execution.ClaimOptions{Module: e.Module, TaskType: e.TaskType, Source: e.Source, WorkerID: "engine-auth", LeaseDuration: time.Minute}
+		}
+		if _, lease, err := execution.ClaimPending(ctx, db, identity(p), options(p), nil); err != nil || lease == nil {
+			t.Fatal("parent", err)
+		}
+		opts := options(c)
+		opts.RequireAuthorization = true
+		_, lease, err := execution.ClaimCleanupChild(ctx, db, identity(c), opts, nil)
+		if err != nil || lease == nil {
+			t.Fatal("child", err)
+		}
+		in.Stage, in.Attempt, in.LeaseToken = "effect", lease.Attempt, uuid.MustParse(lease.Token)
+		if _, err := service.AuthorizeCleanup(ctx, in); err != nil {
+			t.Fatal("Engine effect", err)
+		}
+		_, unissued := originFixture(t, events.CleanupCauseEngineDeleting, actor.PrincipalID, membership.Membership.ID, origin.AuthorizationVersion)
+		// Wait on the real database clock: no permission mutation or actor-version
+		// change can accidentally make the negative oracle pass for another reason.
+		if err := db.Exec("SELECT pg_sleep(GREATEST(0,EXTRACT(EPOCH FROM ?::timestamptz-clock_timestamp()))+0.02)", expires).Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, err := service.IssueCleanup(ctx, uuid.MustParse(unissued.ExecutionID), audit); !errors.Is(err, commonapi.ErrForbidden) {
+			t.Fatalf("new Engine grant after delete permission expired: %v", err)
+		}
+		if _, err := service.AuthorizeCleanup(ctx, in); !errors.Is(err, commonapi.ErrForbidden) {
+			t.Fatalf("Engine effect after delete permission expired: %v", err)
+		}
+		var current Principal
+		if err := db.First(&current, actor.PrincipalID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if current.AuthorizationVersion != origin.AuthorizationVersion {
+			t.Fatal("fixture changed actor version")
+		}
+		_, ordinary := originFixture(t, "", actor.PrincipalID, membership.Membership.ID, origin.AuthorizationVersion)
+		if _, err := service.IssueCleanup(ctx, uuid.MustParse(ordinary.ExecutionID), audit); err != nil {
+			t.Fatal("ordinary cleanup authority should remain valid", err)
+		}
+	})
+
 	parent, child := fixture(t)
 	grant, err := service.IssueCleanup(ctx, uuid.MustParse(child.ExecutionID), audit)
 	if err != nil || grant == nil || grant.CleanupScope == nil || grant.SealedAt == nil {

@@ -194,6 +194,13 @@ func ClaimCleanupChild(ctx context.Context, db *gorm.DB, identity PendingIdentit
 			if err = json.Unmarshal(data, &details); err != nil {
 				return err
 			}
+			for _, code := range []string{"cleanup_authorization_denied", "cleanup_authorization_unavailable"} {
+				if observed, ok := child.ErrorDetails[code].(string); ok {
+					if _, e := time.Parse(time.RFC3339Nano, observed); e == nil {
+						details[code] = observed
+					}
+				}
+			}
 			if err = RejectUnstarted(ctx, tx, identity, map[string]interface{}{"error_details": details}); err != nil {
 				return err
 			}
@@ -389,4 +396,36 @@ func ProjectCleanupAdmission(child TaskExecution, parent *TaskExecution, observe
 		return nil
 	}
 	return view
+}
+
+// NoteCleanupAuthorizationFailure records an Owner's bounded authorization
+// diagnostic without claiming or terminating C. It never takes P or touches
+// domain state. A concurrent claim/rejection wins and cannot be overwritten.
+func NoteCleanupAuthorizationFailure(ctx context.Context, db *gorm.DB, identity PendingIdentity, code string) error {
+	if code != "cleanup_authorization_denied" && code != "cleanup_authorization_unavailable" {
+		return commonapi.ErrBadRequest
+	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var child TaskExecution
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("execution_id = ? AND tenant_id = ? AND module = ? AND task_type = ? AND source = ?", identity.ExecutionID, identity.TenantID, identity.Module, TaskTypeCleanupExecutor, ModuleSystem).First(&child).Error; err != nil {
+			return err
+		}
+		if child.Status != ExecutionStatusPending || !cleanupUnstarted(child) || child.CompletedAt != nil {
+			return nil
+		}
+		if _, err := CleanupRequestFromExecution(child); err != nil {
+			return err
+		}
+		now, err := DatabaseNow(tx)
+		if err != nil {
+			return err
+		}
+		details := child.ErrorDetails
+		if details == nil {
+			details = models.JSONMap{}
+		}
+		// The latest fact of each class survives later unstarted rejection.
+		details[code] = now.UTC().Format(time.RFC3339Nano)
+		return tx.Model(&TaskExecution{}).Where("execution_id = ? AND tenant_id = ? AND status = ?", child.ExecutionID, child.TenantID, ExecutionStatusPending).Updates(map[string]interface{}{"error_details": details, "updated_at": now}).Error
+	})
 }

@@ -770,7 +770,7 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { enginesAPI } from '../api/engines'
 import { Plus, Edit, Delete, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { StorageEngineForm, EngineTypeIcon, requestConsoleBridge, hasDeclaredStorageCapability } from '@common-ui'
+import { StorageEngineForm, EngineTypeIcon, requestConsoleBridge, hasDeclaredStorageCapability, parseCleanupExecutions } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useConsolePageDescriptor } from '@common-ui'
@@ -1855,9 +1855,11 @@ const waitForDeletionAssessment = async (engineID, assessmentID, generation) => 
 		if (generation !== deletionAssessmentGeneration || !deletionDialogVisible.value) return
 		const response = await enginesAPI.getDeletionAssessment(engineID, assessmentID)
 		const assessment = unwrapAPIData(response)
+    if (generation !== deletionAssessmentGeneration || !deletionDialogVisible.value) return
+    parseCleanupExecutions(assessment)
 		deletionAssessment.value = assessment
-		if (['completed', 'completed_with_errors', 'failed', 'timeout'].includes(assessment?.status)) {
-			if (assessment.status !== 'completed') {
+		if (['success', 'failed', 'timeout', 'cancelled'].includes(assessment?.status)) {
+			if (assessment.status !== 'success') {
 				deletionAssessmentError.value = t('system.engine.deletionAssessment.failedStatus', { status: assessment.status })
 			}
 			return
@@ -1877,66 +1879,49 @@ const runDeletionAssessment = async () => {
 	deletionConfirmation.value = ''
 	try {
 		const response = await enginesAPI.createDeletionAssessment(deletionEngine.value.id, {
-			external_artifact_policy: deletionExternalPolicy.value
+			request_id: crypto.randomUUID(),
+      external_artifact_policy: deletionExternalPolicy.value
 		})
+    if (generation !== deletionAssessmentGeneration || !deletionDialogVisible.value) return
 		const assessmentID = unwrapAPIData(response)?.assessment_id
 		if (!assessmentID) throw new Error(t('system.engine.deletionAssessment.invalidResponse'))
 		deletionAssessmentID.value = assessmentID
 		await waitForDeletionAssessment(deletionEngine.value.id, assessmentID, generation)
 	} catch (error) {
 		if (generation !== deletionAssessmentGeneration) return
+    deletionAssessment.value = null
 		deletionAssessmentError.value = error.response?.data?.error || error.message || t('system.engine.msg.opFailed')
 	} finally {
 		if (generation === deletionAssessmentGeneration) deletionAssessing.value = false
 	}
 }
 
-const deletionImpact = computed(() => {
-	const summary = deletionAssessment.value?.summary?.impact
-	if (summary) return summary
-	return deletionModuleRows.value.reduce((total, row) => ({
-		rebindable: total.rebindable + row.rebindable,
-		will_disable: total.will_disable + row.willDisable,
-		will_delete: total.will_delete + row.willDelete,
-		running: total.running + row.running,
-		external_artifact: total.external_artifact + row.externalArtifact
-	}), { rebindable: 0, will_disable: 0, will_delete: 0, running: 0, external_artifact: 0 })
-})
-
-const deletionModuleRows = computed(() => {
-	const assessment = deletionAssessment.value
-	const expectedModules = assessment?.task?.expected_modules || []
-	const results = assessment?.results || {}
-	return expectedModules.map(module => {
-		const result = results[module] || {}
-		const summary = result.impact?.summary || {}
-		return {
-			module,
-			status: result.status || assessment?.progress?.modules?.[module] || 'pending',
-			rebindable: summary.rebindable || 0,
-			willDisable: summary.will_disable || 0,
-			willDelete: summary.will_delete || 0,
-			running: summary.running || 0,
-			externalArtifact: summary.external_artifact || 0,
-			managementPath: result.impact?.management_path || ''
-		}
-	})
-})
+const deletionImpact = computed(() => deletionAssessment.value?.summary?.impact || {})
+const deletionModuleRows = computed(() => (deletionAssessment.value?.module_executions || []).map(row => ({
+  module: row.module, status: row.status,
+  rebindable: row.receipt ? row.receipt.impact?.rebindable ?? 0 : '—',
+  willDisable: row.receipt ? row.receipt.impact?.will_disable ?? 0 : '—',
+  willDelete: row.receipt ? row.receipt.impact?.will_delete ?? 0 : '—',
+  running: row.receipt ? row.receipt.impact?.running ?? 0 : '—',
+  externalArtifact: row.receipt ? row.receipt.impact?.external_artifact ?? 0 : '—',
+  managementPath: ''
+})))
 
 const deletionImpactCards = computed(() => ([
-	{ key: 'rebindable', label: t('system.engine.deletionAssessment.rebindable'), value: deletionImpact.value.rebindable || 0 },
-	{ key: 'willDisable', label: t('system.engine.deletionAssessment.willDisable'), value: deletionImpact.value.will_disable || 0 },
-	{ key: 'willDelete', label: t('system.engine.deletionAssessment.willDelete'), value: deletionImpact.value.will_delete || 0 },
-	{ key: 'running', label: t('system.engine.deletionAssessment.running'), value: deletionImpact.value.running || 0 },
-	{ key: 'externalArtifact', label: t('system.engine.deletionAssessment.externalArtifact'), value: deletionImpact.value.external_artifact || 0 }
+	{ key: 'rebindable', label: t('system.engine.deletionAssessment.rebindable'), value: deletionImpact.value.rebindable ?? '—' },
+	{ key: 'willDisable', label: t('system.engine.deletionAssessment.willDisable'), value: deletionImpact.value.will_disable ?? '—' },
+	{ key: 'willDelete', label: t('system.engine.deletionAssessment.willDelete'), value: deletionImpact.value.will_delete ?? '—' },
+	{ key: 'running', label: t('system.engine.deletionAssessment.running'), value: deletionImpact.value.running ?? '—' },
+	{ key: 'externalArtifact', label: t('system.engine.deletionAssessment.externalArtifact'), value: deletionImpact.value.external_artifact ?? '—' }
 ]))
 
-const deletionAssessmentReady = computed(() => (
-	deletionAssessment.value?.status === 'completed' &&
-	!deletionAssessmentError.value &&
-	(deletionImpact.value.running || 0) === 0 &&
-	deletionModuleRows.value.every(row => row.status === 'success')
-))
+const deletionAssessmentReady = computed(() => {
+ const value=deletionAssessment.value
+ const rows=value?.module_executions
+ return value?.status === 'success' && !deletionAssessmentError.value && Array.isArray(rows) && rows.length > 0 &&
+  rows.length === value.task?.expected_modules?.length && value.task.expected_modules.every(owner => rows.some(row => row.module===owner)) &&
+  Boolean(value.summary?.impact_digest) && rows.every(row => row.status==='success' && row.receipt?.status==='success' && row.receipt?.impact && (row.receipt.impact.running ?? 0)===0)
+})
 
 const canConfirmEngineDeletion = computed(() => (
 	deletionAssessmentReady.value &&
@@ -1995,6 +1980,12 @@ const resetDeletionDialog = () => {
 	deletionConfirmation.value = ''
 	deletionAssessing.value = false
 }
+
+watch(() => [authStore.token, authStore.authContext, authStore.permissions.join('|')], () => {
+ deletionDialogVisible.value = false; resetDeletionDialog()
+}, { flush: 'sync' })
+watch(deletionDialogVisible, visible => { if (!visible) resetDeletionDialog() }, { flush: 'sync' })
+onUnmounted(resetDeletionDialog)
 
 const availableAuthorizationTabs = computed(() => {
   const tabs = []

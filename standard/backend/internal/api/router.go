@@ -71,6 +71,7 @@ func SetupRouter(
 		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemURL}),
 	)
 	api.GET("/execution-read-scope", GetExecutionReadScope)
+	api.GET("/cleanup-executions/:execution_id/result", commonAuth.MustNewPermissionGuard("standard.cleanup_result.read", "system.cleanup.read"), NewCleanupResultHandler(db).Get)
 	permission := func(keys ...string) gin.HandlerFunc {
 		return commonAuth.MustNewPermissionGuard(keys...)
 	}

@@ -549,6 +549,60 @@
         "lease_expired": "Lease expired; possible unexpected exit"
       },
       "leaseExpiredHint": "Lease expiration only indicates lost contact; it does not prove that the process exited."
+    },
+    "cleanupObservation": {
+      "invalid": "The cleanup response is invalid. Reload to obtain current authorized facts.",
+      "notApplicable": "Module observations are unavailable for this credential. Parent facts remain visible.",
+      "noReadableChildren": "There are no readable module executions in this response.",
+      "observedAt": "Observed at",
+      "execution": "Execution",
+      "startedAt": "Attempt started at",
+      "professional": "Module result",
+      "noCounters": "The module returned no additional counters.",
+      "status": {
+        "pending": "Pending",
+        "running": "Running",
+        "success": "Succeeded",
+        "failed": "Failed",
+        "timeout": "Timed out",
+        "cancelled": "Cancelled"
+      },
+      "states": {
+        "closed_unclaimed": "Coordination closed; module not started",
+        "closed_rejected": "Coordination closed; module not started",
+        "rejected_unstarted": "Not started; admission rejected"
+      },
+      "explanations": {
+        "closed_unclaimed": "No Owner rejection was observed. This execution can no longer be claimed.",
+        "closed_rejected": "The Owner rejected this execution before it started.",
+        "rejected_unstarted": "The Owner committed a rejection before execution started."
+      },
+      "errors": {
+        "forbidden": "You do not have permission to read this module result.",
+        "notReady": "The module result is not ready.",
+        "unavailable": "The module result could not be read. Reload to retry."
+      },
+      "reasons": {
+        "owner_failed": "The module operation failed.",
+        "owner_unavailable": "The module was unavailable.",
+        "authorization_denied": "Execution authorization was denied.",
+        "active_execution": "An active execution prevents cleanup.",
+        "external_effect_uncertain": "An external effect requires reconciliation.",
+        "scope_changed": "The cleanup scope changed.",
+        "unsupported_scope": "This cleanup scope is not supported."
+      },
+      "summary": {
+        "scanned_items": "Scanned items",
+        "affected_records": "Affected records",
+        "deleted_physical_artifacts": "Deleted physical artifacts",
+        "freed_bytes": "Freed bytes",
+        "marked_missing_source": "Marked missing source",
+        "marked_outdated": "Marked outdated",
+        "disabled_task_definitions": "Disabled task definitions",
+        "deleted_task_definitions": "Deleted task definitions",
+        "skipped_items": "Skipped items",
+        "error_count": "Error count"
+      }
     }
   },
   "auth": {

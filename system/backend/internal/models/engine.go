@@ -65,6 +65,7 @@ type EngineRestoreRequest struct {
 }
 
 type EngineDeletionAssessmentRequest struct {
+	RequestID              string `json:"request_id" binding:"required,uuid"`
 	ExternalArtifactPolicy string `json:"external_artifact_policy"`
 }
 

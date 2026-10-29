@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/addp/manager/internal/testfixture"
 	"strings"
 	"testing"
 	"time"
@@ -171,6 +172,7 @@ func TestPPTXPDFTaskServiceDeletesManagedResultBeforeTask(t *testing.T) {
 	repo := repository.NewPPTXPDFRepository(db)
 	cleaner := &recordingPPTXPDFCleaner{}
 	svc := NewPPTXPDFTaskService(repo)
+	svc.SetBucket("manager")
 	svc.SetCleaner(cleaner)
 	task := &models.PPTXPDFTask{
 		TenantID: 7, Name: "slides.pptx", Enabled: true,
@@ -193,6 +195,7 @@ func TestPPTXPDFTaskServiceDeletesManagedResultBeforeTask(t *testing.T) {
 		t.Fatalf("CreateResult() error = %v", err)
 	}
 
+	testfixture.ArtifactReferenceSQLite(t, db)
 	if err := svc.DeleteResult(context.Background(), result.ID, task.TenantID); err != nil {
 		t.Fatalf("DeleteResult() error = %v", err)
 	}
@@ -208,6 +211,7 @@ func TestPPTXPDFTaskServiceDeletesManagedResultBeforeTask(t *testing.T) {
 	if current, err := repo.GetTask(context.Background(), task.ID, task.TenantID); err != nil || current != nil {
 		t.Fatalf("deleted task = %#v, %v", current, err)
 	}
+	testfixture.ArtifactReferenceSQLite(t, db)
 	if err := svc.DeleteResult(context.Background(), result.ID, task.TenantID); !errors.Is(err, ErrPPTXPDFResultNotFound) {
 		t.Fatalf("second DeleteResult() error = %v", err)
 	}

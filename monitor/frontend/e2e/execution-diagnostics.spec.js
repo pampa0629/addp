@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-async function installBackend(page, { empty = false, unavailable = false, eventsDenied = false, waiting = false, executionStatus = 'failed', locale = 'zh-cn', children = [], metadata = {}, queryFailure = false, errorDetails, targetExists = false, executionID = 'diagnostic-run' } = {}) {
+async function installBackend(page, { empty = false, unavailable = false, eventsDenied = false, waiting = false, executionStatus = 'failed', locale = 'zh-cn', children = [], metadata = {}, queryFailure = false, errorDetails, targetExists = false, executionID = 'diagnostic-run', cleanup = false } = {}) {
   const execution = { id: 1, execution_id: 'diagnostic-run', module: 'orchestrator', task_type: 'orchestration', source: 'orchestrator', source_task_id: 'deleted-task', source_task_name: '历史任务', status: 'failed', progress: 50, current_step: 'transform', metadata: {}, error_details: { code: 'STEP_FAILED', category: 'connection_failed' }, steps: waiting ? [{ id: 'child', status: 'running', phase: 'waiting' }, { id: 'submit', status: 'running', phase: 'dispatching' }, { id: 'uncertain', status: 'failed', error_code: 'submission_uncertain' }] : empty ? [] : [{ id: 'read', status: 'success', started_at: '2026-10-01T01:00:00Z', duration: 120 }, { id: 'transform', status: 'failed', duration: 8, error_code: 'connection_failed' }], steps_truncated: false }
   execution.status = executionStatus
   execution.execution_id = executionID
@@ -20,6 +20,11 @@ async function installBackend(page, { empty = false, unavailable = false, events
       diagnostic: { schema_version: 'addp.execution-failure/v3', stage: 'result', reason: 'target_exists' } }
   })
   if (errorDetails) execution.error_details = errorDetails
+  if (cleanup) Object.assign(execution, {
+    module: 'graph', task_type: 'cleanup_executor', source: 'system', source_task_id: null,
+    status: 'pending', attempt: 0, progress: 0, started_at: null, error_details: null, steps: [],
+    cleanup_admission: { schema: 'addp.cleanup-admission-view/v1', state: 'closed_unclaimed', basis: 'parent_terminal', observed_at: '2026-10-29T01:00:00Z' }
+  })
   let treeRequests = 0
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), locale)
   await page.route('**/api/v1/**', async route => {
@@ -42,6 +47,18 @@ async function installBackend(page, { empty = false, unavailable = false, events
   })
   return { getTreeRequests: () => treeRequests }
 }
+
+test('Cleanup admission preserves the real pending state and clears on authorization loss', async ({ page }) => {
+  await installBackend(page, { cleanup: true, empty: true })
+  await page.goto('/executions?execution_id=diagnostic-run')
+  const admission = page.locator('.execution-detail-content > .cleanup-admission')
+  await expect(admission).toContainText('协调已关闭，模块未开始')
+  await expect(page.locator('.execution-tree-node-main .el-tag').last()).toHaveText('等待中')
+  await page.route('**/api/v1/monitor/**/events*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error_code: 'execution_owner_unavailable' }) }))
+  await page.locator('.execution-events').getByRole('button', { name: '刷新过程', exact: true }).click()
+  await expect(admission).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '重新加载', exact: true })).toBeVisible()
+})
 
 for (const status of [403, 503]) test(`list read failure ${status} clears rows and total until an authorized retry`, async ({ page }) => {
   await installBackend(page)

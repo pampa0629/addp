@@ -509,7 +509,7 @@ func TestQuickViewCapabilityRespectsExistingBasicPreviewPreferenceForRasterItem(
 	})
 	locator := "addp://engine/26/path/rasters/small.tif?type=file&item_id=99"
 	itemFingerprint := commonModels.GenerateItemFingerprint(26, "rasters/small.tif")
-	if err := svc.repo.UpdatePreferredMode(7, itemFingerprint, locator, models.PreviewModeBasicPreview); err != nil {
+	if err := svc.repo.UpdatePreferredMode(t.Context(), repository.CleanupTargetToken{Key: repository.CleanupTargetKey{TenantID: 7, Kind: repository.CleanupTargetPreviewState, Identity: itemFingerprint}}, 7, itemFingerprint, locator, models.PreviewModeBasicPreview); err != nil {
 		t.Fatalf("save existing preference: %v", err)
 	}
 
@@ -1025,7 +1025,7 @@ func TestQuickViewCapabilityAvailableActions(t *testing.T) {
 		svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: 2000})
 		fingerprint := commonModels.GenerateItemFingerprint(26, "shp/farmland.shp")
 		locator := "addp://engine/26/path/shp/farmland.shp?type=file"
-		if err := svc.repo.UpdatePreferredMode(7, fingerprint, locator, models.PreviewModeBasicPreview); err != nil {
+		if err := svc.repo.UpdatePreferredMode(t.Context(), repository.CleanupTargetToken{Key: repository.CleanupTargetKey{TenantID: 7, Kind: repository.CleanupTargetPreviewState, Identity: fingerprint}}, 7, fingerprint, locator, models.PreviewModeBasicPreview); err != nil {
 			t.Fatalf("save preview preference: %v", err)
 		}
 
@@ -1059,7 +1059,7 @@ func TestQuickViewCapabilityAvailableActions(t *testing.T) {
 		svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: 2000})
 		fingerprint := commonModels.GenerateItemFingerprint(26, "shp/farmland.shp")
 		locator := "addp://engine/26/path/shp/farmland.shp?type=file"
-		if err := svc.repo.UpdatePreferredMode(7, fingerprint, locator, models.PreviewModeMapQuickView); err != nil {
+		if err := svc.repo.UpdatePreferredMode(t.Context(), repository.CleanupTargetToken{Key: repository.CleanupTargetKey{TenantID: 7, Kind: repository.CleanupTargetPreviewState, Identity: fingerprint}}, 7, fingerprint, locator, models.PreviewModeMapQuickView); err != nil {
 			t.Fatalf("save preview preference: %v", err)
 		}
 

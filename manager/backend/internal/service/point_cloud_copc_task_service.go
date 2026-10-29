@@ -172,23 +172,9 @@ func (s *PointCloudCOPCTaskService) GetResult(ctx context.Context, id uint, tena
 	return s.repo.GetByID(ctx, id, tenantID)
 }
 
-func (s *PointCloudCOPCTaskService) DeleteResult(ctx context.Context, id uint, tenantID uint) error {
-	result, err := s.repo.GetByID(ctx, id, tenantID)
-	if err != nil {
-		return err
-	}
-	if result == nil {
-		return errors.New("point cloud COPC result not found")
-	}
-	if strings.TrimSpace(result.StorageRef) != "" {
-		if s.cleaner == nil {
-			return errors.New("point cloud COPC cleaner is not configured")
-		}
-		if err := s.cleaner.DeleteByStorageRef(ctx, result.StorageRef); err != nil {
-			return err
-		}
-	}
-	return s.repo.Delete(ctx, id, tenantID)
+func (s *PointCloudCOPCTaskService) DeleteResult(ctx context.Context, id, tenantID uint) error {
+	err := NewCleanupArtifactService(s.repo.GetDB(), CleanupArtifactEffects{Bucket: s.bucket, Objects: s.cleaner}).DeleteManual(ctx, commonExecution.TaskTypePointCloudCOPCGeneration, id, tenantID)
+	return err
 }
 
 func (s *PointCloudCOPCTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string, overwriteExistingResult bool) (string, error) {
@@ -289,6 +275,7 @@ func (s *PointCloudCOPCTaskService) RecordProgressEvent(ctx context.Context, ten
 }
 
 func (s *PointCloudCOPCTaskService) runPointCloudCOPCGeneration(ctx context.Context, task *models.PointCloudCOPCTask, executionID string) {
+	ctx = repository.ArtifactWriterContext(ctx)
 	if err := s.repo.ValidateClaim(ctx, task.ID, task.TenantID, executionID); err != nil {
 		logger.L().Warn("领取点云 COPC execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 		return
@@ -304,7 +291,9 @@ func (s *PointCloudCOPCTaskService) runPointCloudCOPCGeneration(ctx context.Cont
 		if s.executor == nil {
 			err = errors.New("point cloud COPC generation executor is not configured")
 		} else {
-			buildResult, err = s.executor.BuildPointCloudCOPC(ctx, PointCloudCOPCExecutionRequest{Task: task, ExecutionID: executionID, Config: execCfg})
+			if err = repository.BeginArtifactWrite(ctx, s.repo.GetDB()); err == nil {
+				buildResult, err = s.executor.BuildPointCloudCOPC(ctx, PointCloudCOPCExecutionRequest{Task: task, ExecutionID: executionID, Config: execCfg})
+			}
 		}
 	}
 	if err == nil && buildResult == nil {
@@ -354,6 +343,10 @@ func (s *PointCloudCOPCTaskService) runPointCloudCOPCGeneration(ctx context.Cont
 	resultID := uint(0)
 	if result != nil {
 		resultID = result.ID
+	}
+	if factErr := repository.RecordArtifactWrite(ctx, s.repo.GetDB(), status == commonExecution.ExecutionStatusSuccess); factErr != nil {
+		logger.L().Warn("persist artifact write fact failed", "error", factErr)
+		return
 	}
 	if err := s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, resultID, resultFields, map[string]interface{}{
 		"status":        status,

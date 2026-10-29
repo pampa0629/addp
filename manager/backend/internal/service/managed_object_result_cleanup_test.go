@@ -10,8 +10,11 @@ import (
 	"sync"
 	"testing"
 
+	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/execution/executiontest"
 	"github.com/addp/manager/internal/cog"
 	"github.com/addp/manager/internal/repository"
+	"github.com/addp/manager/internal/testfixture"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"gorm.io/driver/sqlite"
@@ -29,6 +32,7 @@ func TestManagedObjectResultCleanup(t *testing.T) {
 	}{
 		{"point_cloud_copc", "cloud.copc.laz", func(db *gorm.DB, cleaner *MinIOManagedObjectCleaner) managedObjectResultDeleter {
 			svc := NewPointCloudCOPCTaskService(repository.NewPointCloudCOPCRepository(db))
+			svc.SetBucket("manager")
 			if cleaner != nil {
 				svc.SetCleaner(cleaner)
 			}
@@ -36,6 +40,7 @@ func TestManagedObjectResultCleanup(t *testing.T) {
 		}},
 		{"model_3d_glb", "model.glb", func(db *gorm.DB, cleaner *MinIOManagedObjectCleaner) managedObjectResultDeleter {
 			svc := NewModel3DGLBTaskService(repository.NewModel3DGLBRepository(db))
+			svc.SetBucket("manager")
 			if cleaner != nil {
 				svc.SetCleaner(cleaner)
 			}
@@ -43,6 +48,7 @@ func TestManagedObjectResultCleanup(t *testing.T) {
 		}},
 		{"gaussian_splat_ksplat", "scene.ksplat", func(db *gorm.DB, cleaner *MinIOManagedObjectCleaner) managedObjectResultDeleter {
 			svc := NewGaussianSplatKSplatTaskService(repository.NewGaussianSplatKSplatRepository(db))
+			svc.SetBucket("manager")
 			if cleaner != nil {
 				svc.SetCleaner(cleaner)
 			}
@@ -67,9 +73,14 @@ func TestManagedObjectResultCleanup(t *testing.T) {
 			table := "manager." + tc.table
 			if err := db.Exec("CREATE TABLE " + table + ` (
 				id INTEGER PRIMARY KEY, tenant_id INTEGER, task_id INTEGER, storage_ref TEXT,
-				status TEXT, error_message TEXT, metadata TEXT, last_execution_id TEXT, updated_at DATETIME, deleted_at DATETIME)`).Error; err != nil {
+				item_fingerprint TEXT, status TEXT, error_message TEXT, metadata TEXT, last_execution_id TEXT, updated_at DATETIME, deleted_at DATETIME)`).Error; err != nil {
 				t.Fatal(err)
 			}
+			testfixture.CleanupArtifactSQLite(t, db)
+			if err := executiontest.EnsureSQLiteStore(db); err != nil {
+				t.Fatal(err)
+			}
+			ensureDerivedTaskDefinitionTestTables(t, db)
 			object := "/manager/tenant_7/preview/" + tc.object
 			objects := map[string]string{
 				object: "managed bytes", object + ".other-task": "other task",
@@ -123,11 +134,22 @@ func TestManagedObjectResultCleanup(t *testing.T) {
 				{4, 7, 103, "", "failed"},
 				{5, 7, 104, "{invalid", "ready"},
 			} {
-				if err := db.Exec("INSERT INTO "+table+` (id, tenant_id, task_id, storage_ref, status, error_message, metadata, last_execution_id)
-					VALUES (?, ?, ?, ?, ?, 'original detail', '{"kept":true}', 'execution-history')`, row.id, row.tenant, row.task, row.ref, row.status).Error; err != nil {
+				if err := db.Exec("INSERT INTO "+table+` (id, tenant_id, task_id, storage_ref, status, item_fingerprint, error_message, metadata, last_execution_id)
+					VALUES (?, ?, ?, ?, ?, ?, 'original detail', '{"kept":true}', ?)`, row.id, row.tenant, row.task, row.ref, row.status, fmt.Sprintf("fingerprint-%d", row.id), fmt.Sprintf("execution-%d", row.id)).Error; err != nil {
 					t.Fatal(err)
 				}
 			}
+			for id := uint(1); id <= 5; id++ {
+				tenant := 7
+				if id == 3 {
+					tenant = 8
+				}
+				item := commonExecution.TaskExecution{ExecutionID: fmt.Sprintf("execution-%d", id), TenantID: tenant, Module: "manager", TaskType: tc.table + "_generation", Status: "success", ExecutionBoundary: "bounded", Source: "manager"}
+				if err := db.Create(&item).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			testfixture.ArtifactReferenceSQLite(t, db)
 			type resultState struct {
 				Status, StorageRef, ErrorMessage, Metadata, LastExecutionID string
 				TenantID, TaskID                                            uint

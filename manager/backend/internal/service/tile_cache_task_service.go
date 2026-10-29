@@ -478,28 +478,9 @@ func (s *TileCacheTaskService) GetTileCache(ctx context.Context, id uint, tenant
 	return s.tileCacheRepo.GetTileCache(ctx, id, tenantID)
 }
 
-func (s *TileCacheTaskService) DeleteTileCache(ctx context.Context, id uint, tenantID uint) error {
-	result, err := s.tileCacheRepo.GetTileCache(ctx, id, tenantID)
-	if err != nil || result == nil {
-		return err
-	}
-	if s.tileCacheRuntimeInvalidator != nil {
-		if err := s.tileCacheRuntimeInvalidator.InvalidateTileCacheRuntimeCache(ctx, tenantID, result.ID); err != nil {
-			return err
-		}
-	}
-	if strings.TrimSpace(result.StorageRef) != "" {
-		if s.tileCacheCleaner == nil {
-			return errors.New("tile cache cleaner is required")
-		}
-		if err := s.tileCacheCleaner.DeleteByStorageRef(ctx, result.StorageRef); err != nil {
-			return err
-		}
-	}
-	if err := s.tileCacheRepo.DeleteTileCache(ctx, id, tenantID); err != nil {
-		return err
-	}
-	return nil
+func (s *TileCacheTaskService) DeleteTileCache(ctx context.Context, id, tenantID uint) error {
+	err := NewCleanupArtifactService(s.tileCacheRepo.GetDB(), CleanupArtifactEffects{Bucket: "manager", Objects: s.tileCacheCleaner, TileInvalidator: s.tileCacheRuntimeInvalidator}).DeleteManual(ctx, commonExecution.TaskTypeVectorTileCacheGeneration, id, tenantID)
+	return err
 }
 
 func (s *TileCacheTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string, overwriteExistingResult bool) (string, error) {
@@ -547,6 +528,7 @@ func (s *TileCacheTaskService) Execute(ctx context.Context, taskID uint, tenantI
 }
 
 func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task *models.TileCacheTask, executionID string) {
+	ctx = repository.ArtifactWriterContext(ctx)
 	startedAt := time.Now()
 	if err := s.tileCacheRepo.ValidateClaim(ctx, task.ID, task.TenantID, executionID); err != nil {
 		logger.L().Warn("领取瓦片缓存 execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
@@ -574,7 +556,9 @@ func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task 
 		var result *mvt.GenerateResult
 		var workflowMetadata commonModels.JSONMap
 		var genErr error
-		if workflowReq != nil {
+		if genErr = repository.BeginArtifactWrite(ctx, s.tileCacheRepo.GetDB()); genErr != nil {
+			err = genErr
+		} else if workflowReq != nil {
 			workflowReq.ProgressSink = progressSink
 			result, workflowMetadata, genErr = s.workflowTileGenerator.GenerateVectorTileCache(ctx, *workflowReq)
 			if workflowMetadata != nil {
@@ -662,6 +646,10 @@ func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task 
 	tileCacheID := uint(0)
 	if tileCache != nil {
 		tileCacheID = tileCache.ID
+	}
+	if factErr := repository.RecordArtifactWrite(ctx, s.tileCacheRepo.GetDB(), status == commonExecution.ExecutionStatusSuccess); factErr != nil {
+		logger.L().Warn("persist artifact write fact failed", "error", factErr)
+		return
 	}
 	if err := s.tileCacheRepo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, tileCacheID, tileCacheFields, map[string]interface{}{
 		"status":        status,
@@ -907,6 +895,9 @@ func (s *TileCacheTaskService) prepareExecutionTileCache(ctx context.Context, ta
 		return nil, execCfg, mvt.QuickViewConfig{}, nil, false, err
 	}
 	if existingTileCache != nil {
+		if err := repository.BeginArtifactWrite(ctx, s.tileCacheRepo.GetDB()); err != nil {
+			return nil, execCfg, mvt.QuickViewConfig{}, nil, false, err
+		}
 		if s.tileCacheRuntimeInvalidator != nil {
 			if err := s.tileCacheRuntimeInvalidator.InvalidateTileCacheRuntimeCache(ctx, task.TenantID, existingTileCache.ID); err != nil {
 				return nil, execCfg, mvt.QuickViewConfig{}, nil, false, fmt.Errorf("invalidate existing tile cache runtime cache: %w", err)

@@ -168,26 +168,9 @@ func (s *Model3DGLBTaskService) GetResult(ctx context.Context, id uint, tenantID
 	return s.repo.GetByID(ctx, id, tenantID)
 }
 
-func (s *Model3DGLBTaskService) DeleteResult(ctx context.Context, id uint, tenantID uint) error {
-	result, err := s.repo.GetByID(ctx, id, tenantID)
-	if err != nil {
-		return err
-	}
-	if result == nil {
-		return errors.New("model 3d GLB result not found")
-	}
-	if repository.Model3DGLBUsesExecutionOutput(result) {
-		return s.repo.DeleteExecutionOutputResult(ctx, result, s.deleteOwnedExecutionOutput)
-	}
-	if strings.TrimSpace(result.StorageRef) != "" {
-		if s.cleaner == nil {
-			return errors.New("model3d GLB cleaner is not configured")
-		}
-		if err := s.cleaner.DeleteByStorageRef(ctx, result.StorageRef); err != nil {
-			return err
-		}
-	}
-	return s.repo.Delete(ctx, id, tenantID)
+func (s *Model3DGLBTaskService) DeleteResult(ctx context.Context, id, tenantID uint) error {
+	err := NewCleanupArtifactService(s.repo.GetDB(), CleanupArtifactEffects{Bucket: s.bucket, Objects: s.cleaner}).DeleteManual(ctx, commonExecution.TaskTypeModel3DGLBGeneration, id, tenantID)
+	return err
 }
 
 func (s *Model3DGLBTaskService) Execute(ctx context.Context, taskID uint, tenantID uint, triggerType string, source string, parentExecutionID *string, overwriteExistingResult bool, credential string) (string, error) {
@@ -259,6 +242,7 @@ func (s *Model3DGLBTaskService) Execute(ctx context.Context, taskID uint, tenant
 }
 
 func (s *Model3DGLBTaskService) runModel3DGLBGeneration(ctx context.Context, task *models.Model3DGLBTask, executionID string, plan *model3DGLBClaimPlan) {
+	ctx = repository.ArtifactWriterContext(ctx)
 	if err := s.repo.ValidateClaim(ctx, task.ID, task.TenantID, executionID); err != nil {
 		logger.L().Warn("领取三维模型 GLB execution 失败", "execution_id", executionID, "task_id", task.ID, "error", err)
 		return
@@ -279,7 +263,9 @@ func (s *Model3DGLBTaskService) runModel3DGLBGeneration(ctx context.Context, tas
 				request.SourceAuthorization = plan.authorization
 				request.inputOwner = &model3DGLBInputOwner{repo: s.repo, resultID: result.ID, tenantID: task.TenantID, executionID: executionID, bucket: s.bucket}
 			}
-			buildResult, err = s.executor.BuildModel3DGLB(ctx, request)
+			if err = repository.BeginArtifactWrite(ctx, s.repo.GetDB()); err == nil {
+				buildResult, err = s.executor.BuildModel3DGLB(ctx, request)
+			}
 		}
 	}
 	if err == nil && buildResult == nil {
@@ -360,6 +346,10 @@ func (s *Model3DGLBTaskService) runModel3DGLBGeneration(ctx context.Context, tas
 		"progress":      progress,
 		"metadata":      metadata,
 		"error_details": errDetails,
+	}
+	if factErr := repository.RecordArtifactWrite(ctx, s.repo.GetDB(), status == commonExecution.ExecutionStatusSuccess); factErr != nil {
+		logger.L().Warn("persist artifact write fact failed", "error", factErr)
+		return
 	}
 	var completionErr error
 	if plan != nil && result != nil {

@@ -22,6 +22,18 @@ func NewTaskExecutionRepository(db *gorm.DB) *TaskExecutionRepository {
 	return &TaskExecutionRepository{db: db}
 }
 
+// ReadSnapshot composes authorized observation reads without lifecycle locks.
+// Owner HTTP decisions must already be present in ctx before opening it.
+func (r *TaskExecutionRepository) ReadSnapshot(ctx context.Context, read func(*TaskExecutionRepository, time.Time) error) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		now, err := DatabaseNow(tx)
+		if err != nil {
+			return err
+		}
+		return read(NewTaskExecutionRepository(tx), now)
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+}
+
 // ForCurrentActor restricts every read, including list totals and statistics,
 // to immutable execution origin facts matched against the current identity.
 // Invalid or missing facts produce an empty scope, never an internal read.

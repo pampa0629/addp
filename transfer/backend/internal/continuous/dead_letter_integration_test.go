@@ -46,7 +46,7 @@ func TestIntegrationContinuousKafkaDeadLetterSkipAndCAS(t *testing.T) {
 	if err := commonExecution.EnsureStore(infraDB); err != nil {
 		t.Fatal(err)
 	}
-	if err := infraDB.AutoMigrate(&models.TransferTask{}, &models.SyncState{}, &models.RuntimeLease{}, &models.DeadLetter{}); err != nil {
+	if err := infraDB.AutoMigrate(&models.TransferTask{}, &models.SyncState{}, &models.RuntimeLease{}, &models.RuntimeSession{}, &models.CleanupOperation{}, &models.DeadLetter{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -106,6 +106,8 @@ func TestIntegrationContinuousKafkaDeadLetterSkipAndCAS(t *testing.T) {
 	defer func() {
 		cleanupContinuousEventFacts(t, infraDB, task.ID)
 		_ = infraDB.Where("task_id = ?", task.ID).Delete(&models.DeadLetter{}).Error
+		_ = infraDB.Where("task_id = ?", task.ID).Delete(&models.RuntimeSession{}).Error
+		_ = infraDB.Where("task_id = ?", task.ID).Delete(&models.CleanupOperation{}).Error
 		_ = infraDB.Where("task_id = ?", task.ID).Delete(&models.RuntimeLease{}).Error
 		_ = infraDB.Where("task_id = ?", task.ID).Delete(&models.SyncState{}).Error
 		_ = infraDB.Where("module = ? AND source_task_id = ?", commonExecution.ModuleTransfer, fmt.Sprint(task.ID)).Delete(&commonExecution.TaskExecution{}).Error

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	commonapi "github.com/addp/common/api"
 	commonclient "github.com/addp/common/client"
 	"strings"
 	"time"
@@ -36,12 +37,13 @@ func NewExecutionQueryService(repo *commonExecution.TaskExecutionRepository) *Ex
 // LeaseToken remains owner-internal and is never part of this DTO.
 type ExecutionObservation struct {
 	*commonExecution.Observation
-	QueueDurationMs int64      `json:"queue_duration_ms"`
-	RunDurationMs   int64      `json:"run_duration_ms"`
-	LeaseOwner      *string    `json:"lease_owner,omitempty"`
-	LeaseExpiresAt  *time.Time `json:"lease_expires_at,omitempty"`
-	LeaseState      string     `json:"lease_state"`
-	RecoveryReason  string     `json:"recovery_reason,omitempty"`
+	CleanupAdmission *commonExecution.CleanupAdmissionView `json:"cleanup_admission,omitempty"`
+	QueueDurationMs  int64                                 `json:"queue_duration_ms"`
+	RunDurationMs    int64                                 `json:"run_duration_ms"`
+	LeaseOwner       *string                               `json:"lease_owner,omitempty"`
+	LeaseExpiresAt   *time.Time                            `json:"lease_expires_at,omitempty"`
+	LeaseState       string                                `json:"lease_state"`
+	RecoveryReason   string                                `json:"recovery_reason,omitempty"`
 }
 
 // ListExecutionsRequest 查询请求
@@ -75,7 +77,7 @@ type ExecutionTreeNode struct {
 }
 
 // ListExecutions 分页查询执行记录
-func (s *ExecutionQueryService) ListExecutions(ctx context.Context, req *ListExecutionsRequest) (*ListExecutionsResponse, error) {
+func (s *ExecutionQueryService) readListExecutions(ctx context.Context, req *ListExecutionsRequest) (*ListExecutionsResponse, error) {
 	normalized := *req
 	req = &normalized
 	if req.Page <= 0 {
@@ -112,7 +114,11 @@ func (s *ExecutionQueryService) ListExecutions(ctx context.Context, req *ListExe
 
 	observed := make([]*ExecutionObservation, 0, len(executions))
 	for _, execution := range executions {
-		observed = append(observed, observeExecution(execution, s.now().UTC()))
+		view, err := s.observe(ctx, execution, s.now().UTC())
+		if err != nil {
+			return nil, err
+		}
+		observed = append(observed, view)
 	}
 	return &ListExecutionsResponse{
 		Executions: observed,
@@ -123,25 +129,25 @@ func (s *ExecutionQueryService) ListExecutions(ctx context.Context, req *ListExe
 }
 
 // GetExecution 获取单条执行记录
-func (s *ExecutionQueryService) GetExecution(ctx context.Context, id int64, tenantID int) (*ExecutionObservation, error) {
+func (s *ExecutionQueryService) readGetExecution(ctx context.Context, id int64, tenantID int) (*ExecutionObservation, error) {
 	execution, err := s.repo.GetByID(ctx, id, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	return observeExecution(execution, s.now().UTC()), nil
+	return s.observe(ctx, execution, s.now().UTC())
 }
 
 // GetExecutionByExecutionID 根据全局 execution_id 查询执行记录。
-func (s *ExecutionQueryService) GetExecutionByExecutionID(ctx context.Context, executionID string, tenantID int) (*ExecutionObservation, error) {
+func (s *ExecutionQueryService) readGetExecutionByExecutionID(ctx context.Context, executionID string, tenantID int) (*ExecutionObservation, error) {
 	execution, err := s.repo.GetByExecutionID(ctx, executionID, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	return observeExecution(execution, s.now().UTC()), nil
+	return s.observe(ctx, execution, s.now().UTC())
 }
 
 // GetExecutionTree 获取执行记录及其子执行树
-func (s *ExecutionQueryService) GetExecutionTree(ctx context.Context, id int64, tenantID int) (*ExecutionTreeNode, error) {
+func (s *ExecutionQueryService) readGetExecutionTree(ctx context.Context, id int64, tenantID int) (*ExecutionTreeNode, error) {
 	root, err := s.repo.GetByID(ctx, id, tenantID)
 	if err != nil {
 		return nil, err
@@ -151,7 +157,7 @@ func (s *ExecutionQueryService) GetExecutionTree(ctx context.Context, id int64, 
 }
 
 // GetExecutionTreeByExecutionID 根据全局 execution_id 获取执行记录及其子执行树。
-func (s *ExecutionQueryService) GetExecutionTreeByExecutionID(ctx context.Context, executionID string, tenantID int) (*ExecutionTreeNode, error) {
+func (s *ExecutionQueryService) readGetExecutionTreeByExecutionID(ctx context.Context, executionID string, tenantID int) (*ExecutionTreeNode, error) {
 	root, err := s.repo.GetByExecutionID(ctx, executionID, tenantID)
 	if err != nil {
 		return nil, err
@@ -176,8 +182,12 @@ func (s *ExecutionQueryService) buildExecutionTree(
 	}
 	visited[exec.ExecutionID] = struct{}{}
 
+	view, err := s.observe(ctx, exec, observedAt)
+	if err != nil {
+		return nil, err
+	}
 	node := &ExecutionTreeNode{
-		Execution: observeExecution(exec, observedAt),
+		Execution: view,
 		Children:  []*ExecutionTreeNode{},
 	}
 	limit := 201 - len(visited)
@@ -273,4 +283,69 @@ func executionRecoveryReason(execution *commonExecution.TaskExecution) string {
 		return "lease_expired"
 	}
 	return ""
+}
+
+// Each response uses one short read-only snapshot. No Owner call happens here.
+func executionSnapshot[T any](s *ExecutionQueryService, ctx context.Context, tenantID int, module string, read func(*ExecutionQueryService) (T, error)) (value T, err error) {
+	err = s.repo.ReadSnapshot(ctx, func(repo *commonExecution.TaskExecutionRepository, now time.Time) error {
+		if scopes, checked := commonExecution.ReadScopesFromContext(ctx); checked {
+			owners, e := repo.ListOwnerModules(ctx, tenantID)
+			if e != nil {
+				return e
+			}
+			known := map[string]bool{}
+			for _, scope := range scopes {
+				if scope.TenantID == tenantID {
+					known[scope.Module] = true
+				}
+			}
+			for _, owner := range owners {
+				if (module == "" || module == owner) && !known[owner] {
+					return commonclient.ErrExecutionOwnerUnavailable
+				}
+			}
+		}
+		snapshot := &ExecutionQueryService{repo: repo, now: func() time.Time { return now }}
+		var e error
+		value, e = read(snapshot)
+		return e
+	})
+	return
+}
+func (s *ExecutionQueryService) ListExecutions(ctx context.Context, req *ListExecutionsRequest) (*ListExecutionsResponse, error) {
+	return executionSnapshot(s, ctx, req.TenantID, req.Module, func(q *ExecutionQueryService) (*ListExecutionsResponse, error) { return q.readListExecutions(ctx, req) })
+}
+func (s *ExecutionQueryService) GetExecution(ctx context.Context, id int64, tenantID int) (*ExecutionObservation, error) {
+	return executionSnapshot(s, ctx, tenantID, "", func(q *ExecutionQueryService) (*ExecutionObservation, error) {
+		return q.readGetExecution(ctx, id, tenantID)
+	})
+}
+func (s *ExecutionQueryService) GetExecutionByExecutionID(ctx context.Context, id string, tenantID int) (*ExecutionObservation, error) {
+	return executionSnapshot(s, ctx, tenantID, "", func(q *ExecutionQueryService) (*ExecutionObservation, error) {
+		return q.readGetExecutionByExecutionID(ctx, id, tenantID)
+	})
+}
+func (s *ExecutionQueryService) GetExecutionTree(ctx context.Context, id int64, tenantID int) (*ExecutionTreeNode, error) {
+	return executionSnapshot(s, ctx, tenantID, "", func(q *ExecutionQueryService) (*ExecutionTreeNode, error) {
+		return q.readGetExecutionTree(ctx, id, tenantID)
+	})
+}
+func (s *ExecutionQueryService) GetExecutionTreeByExecutionID(ctx context.Context, id string, tenantID int) (*ExecutionTreeNode, error) {
+	return executionSnapshot(s, ctx, tenantID, "", func(q *ExecutionQueryService) (*ExecutionTreeNode, error) {
+		return q.readGetExecutionTreeByExecutionID(ctx, id, tenantID)
+	})
+}
+func (s *ExecutionQueryService) observe(ctx context.Context, item *commonExecution.TaskExecution, at time.Time) (*ExecutionObservation, error) {
+	view := observeExecution(item, at)
+	if item.TaskType != commonExecution.TaskTypeCleanupExecutor || item.ParentExecutionID == nil {
+		return view, nil
+	}
+	parent, err := s.repo.GetByExecutionID(ctx, *item.ParentExecutionID, item.TenantID)
+	if errors.Is(err, commonapi.ErrNotFound) {
+		parent = nil
+	} else if err != nil {
+		return nil, err
+	}
+	view.CleanupAdmission = commonExecution.ProjectCleanupAdmission(*item, parent, at)
+	return view, nil
 }

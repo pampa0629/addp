@@ -109,6 +109,7 @@ const (
 	MsgEngineCatalogEngineUnavailable    = "system.engine_catalog.engine_unavailable"
 	MsgEngineCatalogTimeout              = "system.engine_catalog.timeout"
 
+	MsgCleanupManagerScopeRequired   = "system.cleanup.manager_scope_required"
 	MsgCleanupConfirmRequired        = "system.cleanup.confirm_required"
 	MsgCleanupConfirmTokenRequired   = "system.cleanup.confirm_token_required"
 	MsgCleanupArtifactPolicyRequired = "system.cleanup.artifact_policy_required"

@@ -48,7 +48,7 @@ func TestUploadRouteChecksUserAndAllPermissionsBeforeReadingFiles(t *testing.T) 
 	defer authServer.Close()
 	cfg := &config.Config{}
 	cfg.SystemServiceURL = authServer.URL
-	router := SetupRouter(cfg, service.NewMetadataService(nil, nil, nil, nil, nil), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+	router := SetupRouter(NewCleanupResultHandler(nil), cfg, service.NewMetadataService(nil, nil, nil, nil, nil), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil, nil, nil, nil, nil, NewTaskProviderHandler(nil, nil, nil, nil, nil), nil, NewUploadHandler(nil), nil, nil,
 		nil, nil, nil, nil, nil, nil, nil, managerprotection.NewReadBoundary(&readBoundaryTestStore{}), modulelifecycle.NewStandalone("manager"), nil, nil)
 	for token := range identities {

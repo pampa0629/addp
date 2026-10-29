@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/testfixture"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -910,6 +911,7 @@ func newTileCacheExecutionRepositoryTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create model3d tiles result table: %v", err)
 	}
+	testfixture.CleanupArtifactSQLite(t, db)
 	return db
 }
 

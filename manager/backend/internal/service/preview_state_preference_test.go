@@ -7,6 +7,7 @@ import (
 
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/repository"
 )
 
 func TestPreviewStateInitialModeFollowsCapability(t *testing.T) {
@@ -72,7 +73,7 @@ func TestPreviewStatePreservesExplicitModeDuringFirstStateWrite(t *testing.T) {
 	view := commonModels.JSONMap{"quick_view": map[string]interface{}{"scene_3d": map[string]interface{}{"color_mode": "rgb8"}}}
 	err := svc.UpdateViewStateByIdentity(context.Background(), identity, view, func(context.Context) (*QuickViewCapability, error) {
 		// A user's explicit choice arrives after the missing-state lookup, before insertion.
-		if err := svc.repo.UpdatePreferredMode(7, identity.ItemFingerprint, identity.Locator, models.PreviewModeBasicPreview); err != nil {
+		if err := svc.repo.UpdatePreferredMode(t.Context(), repository.CleanupTargetToken{Key: repository.CleanupTargetKey{TenantID: 7, Kind: repository.CleanupTargetPreviewState, Identity: identity.ItemFingerprint}}, 7, identity.ItemFingerprint, identity.Locator, models.PreviewModeBasicPreview); err != nil {
 			return nil, err
 		}
 		return &QuickViewCapability{PreferredMode: models.PreviewModeMapQuickView}, nil
@@ -90,7 +91,7 @@ func TestPreviewStatePreservesExplicitModeDuringFirstStateWrite(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.repo.UpdatePreferredMode(7, identity.ItemFingerprint, identity.Locator, models.PreviewModeMapQuickView); err != nil {
+	if err := svc.repo.UpdatePreferredMode(t.Context(), repository.CleanupTargetToken{Key: repository.CleanupTargetKey{TenantID: 7, Kind: repository.CleanupTargetPreviewState, Identity: identity.ItemFingerprint}}, 7, identity.ItemFingerprint, identity.Locator, models.PreviewModeMapQuickView); err != nil {
 		t.Fatal(err)
 	}
 	stored, err = svc.repo.GetByIdentity(7, identity.ItemFingerprint, identity.Locator)

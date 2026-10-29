@@ -46,7 +46,7 @@ func TestIntegrationContinuousKafkaToPostgresMultiWorkerFailoverPauseResumeStop(
 	if err := commonExecution.EnsureStore(infraDB); err != nil {
 		t.Fatalf("ensure execution store: %v", err)
 	}
-	if err := infraDB.AutoMigrate(&models.TransferTask{}, &models.SyncState{}, &models.RuntimeLease{}); err != nil {
+	if err := infraDB.AutoMigrate(&models.TransferTask{}, &models.SyncState{}, &models.RuntimeLease{}, &models.RuntimeSession{}); err != nil {
 		t.Fatalf("migrate continuous Infra models: %v", err)
 	}
 
@@ -96,6 +96,8 @@ func TestIntegrationContinuousKafkaToPostgresMultiWorkerFailoverPauseResumeStop(
 	}
 	defer func() {
 		cleanupContinuousEventFacts(t, infraDB, task.ID)
+		_ = infraDB.Where("task_id = ?", task.ID).Delete(&models.RuntimeSession{}).Error
+		_ = infraDB.Where("task_id = ?", task.ID).Delete(&models.CleanupOperation{}).Error
 		_ = infraDB.Where("task_id = ?", task.ID).Delete(&models.RuntimeLease{}).Error
 		_ = infraDB.Where("task_id = ?", task.ID).Delete(&models.SyncState{}).Error
 		_ = infraDB.Where("module = ? AND source_task_id = ?", commonExecution.ModuleTransfer, fmt.Sprint(task.ID)).Delete(&commonExecution.TaskExecution{}).Error

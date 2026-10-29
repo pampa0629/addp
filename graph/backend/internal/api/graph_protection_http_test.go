@@ -69,7 +69,7 @@ func TestGraphProtectionHTTPDeniesOrdinaryUserAndPublicKnowledge(t *testing.T) {
 	}
 	capabilities := commonmodels.JSONString(caps)
 	// No graph server exists here: a denied read must never reach the native connection.
-	engine := commonmodels.Engine{Version:1,ID: 13, EngineType: provider.Type(), LifecycleState: commonmodels.EngineLifecycleActive, ConnectionStatus: commonmodels.EngineConnectionOnline, Capabilities: &capabilities, ConnectionInfo: commonmodels.ConnectionInfo{"host": "127.0.0.1", "port": 1, "password": "private-source-password"}}
+	engine := commonmodels.Engine{Version: 1, ID: 13, EngineType: provider.Type(), LifecycleState: commonmodels.EngineLifecycleActive, ConnectionStatus: commonmodels.EngineConnectionOnline, Capabilities: &capabilities, ConnectionInfo: commonmodels.ConnectionInfo{"host": "127.0.0.1", "port": 1, "password": "private-source-password"}}
 	var engineReads atomic.Int64
 	system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/system/engines/13" || r.Header.Get("Authorization") != "Bearer addp_at_graph" {
@@ -90,7 +90,7 @@ func TestGraphProtectionHTTPDeniesOrdinaryUserAndPublicKnowledge(t *testing.T) {
 	data := service.NewGraphDataService(graphRepo, ontologyRepo, commonclient.NewSystemServiceClient(system.URL, graphProtectionHTTPToken{}, system.Client()), gate)
 	auth := authtest.NewTenantUserAuthContextServer(t, "7", map[string][]string{"Bearer viewer": {"graph.graph.read"}, "Bearer no-permission": {"graph.ontology.read"}})
 	defer auth.Close()
-	router := SetupRouter(&config.Config{SystemServiceURL: auth.URL}, nil, nil, NewBrowseHandler(data, nil), nil, nil, nil, NewServiceHandler(service.NewKnowledgeService(data, ontologyRepo, graphRepo)), modulelifecycle.NewStandalone("graph"))
+	router := SetupRouter(NewCleanupResultHandler(nil), &config.Config{SystemServiceURL: auth.URL}, nil, nil, NewBrowseHandler(data, nil), nil, nil, nil, NewServiceHandler(service.NewKnowledgeService(data, ontologyRepo, graphRepo)), modulelifecycle.NewStandalone("graph"))
 	target, err := dataprotection.DataItemTargetFromCatalogPath(provider.EngineCatalogModel(), path)
 	if err != nil {
 		t.Fatal(err)
@@ -183,7 +183,7 @@ func TestGraphProtectionHTTPDeniesOrdinaryUserAndPublicKnowledge(t *testing.T) {
 	}
 	otherTenant := authtest.NewTenantUserAuthContextServer(t, "8", map[string][]string{"Bearer viewer": {"graph.graph.read"}})
 	defer otherTenant.Close()
-	otherRouter := SetupRouter(&config.Config{SystemServiceURL: otherTenant.URL}, nil, nil, NewBrowseHandler(data, nil), nil, nil, nil, NewServiceHandler(service.NewKnowledgeService(data, ontologyRepo, graphRepo)), modulelifecycle.NewStandalone("graph"))
+	otherRouter := SetupRouter(NewCleanupResultHandler(nil), &config.Config{SystemServiceURL: otherTenant.URL}, nil, nil, NewBrowseHandler(data, nil), nil, nil, nil, NewServiceHandler(service.NewKnowledgeService(data, ontologyRepo, graphRepo)), modulelifecycle.NewStandalone("graph"))
 	before := engineReads.Load()
 	for _, path := range []string{"/api/v1/graph/graphs/1/browse-snapshot", "/api/v1/graph/kg/1/entities/Person"} {
 		request := httptest.NewRequest(http.MethodGet, path, nil)

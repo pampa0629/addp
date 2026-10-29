@@ -549,6 +549,60 @@
         "lease_expired": "租约超时，疑似异常退出"
       },
       "leaseExpiredHint": "租约超时仅表示实例失联，不能据此断定进程已经退出。"
+    },
+    "cleanupObservation": {
+      "invalid": "清理响应不符合契约，请刷新以获取当前已授权事实。",
+      "notApplicable": "当前凭据不适用模块执行概览，父任务事实仍可查看。",
+      "noReadableChildren": "本次响应中没有可读取的模块执行。",
+      "observedAt": "观察时刻",
+      "execution": "执行 ID",
+      "startedAt": "本次尝试开始时间",
+      "professional": "模块专业结果",
+      "noCounters": "该模块没有返回其他统计计数。",
+      "status": {
+        "pending": "待领取",
+        "running": "运行中",
+        "success": "成功",
+        "failed": "失败",
+        "timeout": "超时",
+        "cancelled": "已取消"
+      },
+      "states": {
+        "closed_unclaimed": "协调已关闭，模块未开始",
+        "closed_rejected": "协调已关闭，模块未开始",
+        "rejected_unstarted": "执行未开始，准入已拒绝"
+      },
+      "explanations": {
+        "closed_unclaimed": "本次读取未见 Owner 拒绝记录；不会再领取本次执行。",
+        "closed_rejected": "Owner 已拒绝，执行未开始。",
+        "rejected_unstarted": "Owner 已提交未领取拒绝。"
+      },
+      "errors": {
+        "forbidden": "当前用户无权读取该模块专业结果。",
+        "notReady": "模块专业结果尚未就绪。",
+        "unavailable": "模块专业结果读取失败，请刷新后重试。"
+      },
+      "reasons": {
+        "owner_failed": "模块操作失败。",
+        "owner_unavailable": "模块不可用。",
+        "authorization_denied": "执行授权被拒绝。",
+        "active_execution": "仍有活动执行，清理已阻断。",
+        "external_effect_uncertain": "外部效果尚待核清。",
+        "scope_changed": "清理范围已变化。",
+        "unsupported_scope": "当前清理范围不受支持。"
+      },
+      "summary": {
+        "scanned_items": "发现项目",
+        "affected_records": "影响记录",
+        "deleted_physical_artifacts": "删除物理产物",
+        "freed_bytes": "释放字节",
+        "marked_missing_source": "标记来源缺失",
+        "marked_outdated": "标记过期",
+        "disabled_task_definitions": "停用任务定义",
+        "deleted_task_definitions": "删除任务定义",
+        "skipped_items": "跳过项目",
+        "error_count": "异常数量"
+      }
     }
   },
   "auth": {

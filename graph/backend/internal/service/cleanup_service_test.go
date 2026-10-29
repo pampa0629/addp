@@ -35,7 +35,7 @@ func TestGraphCleanupScanWithoutLifecycleContextReturnsNoCandidates(t *testing.T
 	db := setupGraphCleanupTestDB(t)
 	seedGraphCleanupEngineCandidate(t, db, 1, 7)
 
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, nil)
 	if err != nil {
 		t.Fatalf("ScanReclaimCandidates: %v", err)
@@ -50,7 +50,7 @@ func TestGraphCleanupEngineDeletedOnlyTargetsBoundKnowledgeGraphs(t *testing.T) 
 	matchedGraphID, matchedTaskID := seedGraphCleanupEngineCandidate(t, db, 1, 7)
 	otherGraphID, _ := seedGraphCleanupEngineCandidate(t, db, 1, 8)
 
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, map[string]interface{}{"engine_id": 7})
 	if err != nil {
 		t.Fatalf("ScanReclaimCandidates: %v", err)
@@ -65,11 +65,11 @@ func TestGraphCleanupEngineDeletedOnlyTargetsBoundKnowledgeGraphs(t *testing.T) 
 		t.Fatalf("mark build task pending: %v", err)
 	}
 
-	stats, err = svc.ExecuteCleanup(context.Background(), 1, events.CleanupModePhysical, map[string]interface{}{"engine_id": 7})
+	stats, err = svc.applyCleanup(context.Background(), 1, events.CleanupModePhysical, map[string]interface{}{"engine_id": 7})
 	if err != nil {
 		t.Fatalf("ExecuteCleanup: %v", err)
 	}
-	if stats.ArchivedGraphs != 1 || stats.CancelledBuildTasks != 1 {
+	if stats.ArchivedGraphs != 1 || stats.CancelledBuildTasks != 0 {
 		t.Fatalf("unexpected logical cleanup stats: %+v", stats)
 	}
 
@@ -84,8 +84,8 @@ func TestGraphCleanupEngineDeletedOnlyTargetsBoundKnowledgeGraphs(t *testing.T) 
 	if err := db.First(&matchedTask, matchedTaskID).Error; err != nil {
 		t.Fatalf("load matched task: %v", err)
 	}
-	if matchedTask.Status != models.BuildStatusCancelled {
-		t.Fatalf("expected matched task cancelled, got %s", matchedTask.Status)
+	if matchedTask.Status != models.BuildStatusPending {
+		t.Fatalf("definition without execution must retain its state, got %s", matchedTask.Status)
 	}
 	var otherGraph models.KnowledgeGraph
 	if err := db.First(&otherGraph, otherGraphID).Error; err != nil {
@@ -101,7 +101,7 @@ func TestGraphCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 	seedGraphCleanupTenantState(t, db, 1)
 	seedGraphCleanupTenantState(t, db, 2)
 
-	svc := NewCleanupService(db, nil, nil)
+	svc := NewCleanupService(db, nil)
 	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, map[string]interface{}{"tenant_id": 1})
 	if err != nil {
 		t.Fatalf("ScanReclaimCandidates: %v", err)
@@ -111,7 +111,7 @@ func TestGraphCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 		t.Fatalf("unexpected tenant scan stats: %+v", stats)
 	}
 
-	stats, err = svc.ExecuteCleanup(context.Background(), 1, events.CleanupModePhysical, map[string]interface{}{"tenant_id": 1})
+	stats, err = svc.applyCleanup(context.Background(), 1, events.CleanupModePhysical, map[string]interface{}{"tenant_id": 1})
 	if err != nil {
 		t.Fatalf("ExecuteCleanup: %v", err)
 	}
@@ -126,8 +126,8 @@ func TestGraphCleanupTenantDeletedLogicalArchivesDefinitionsAndGraphs(t *testing
 	db := setupGraphCleanupTestDB(t)
 	seedGraphCleanupTenantState(t, db, 1)
 
-	svc := NewCleanupService(db, nil, nil)
-	stats, err := svc.ExecuteCleanup(context.Background(), 1, events.CleanupModeLogical, map[string]interface{}{"tenant_id": 1})
+	svc := NewCleanupService(db, nil)
+	stats, err := svc.applyCleanup(context.Background(), 1, events.CleanupModeLogical, map[string]interface{}{"tenant_id": 1})
 	if err != nil {
 		t.Fatalf("ExecuteCleanup: %v", err)
 	}

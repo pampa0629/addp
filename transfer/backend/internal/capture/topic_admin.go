@@ -9,6 +9,7 @@ import (
 
 	engineplugin "github.com/addp/common/engine/plugin"
 	kafkaplugin "github.com/addp/common/engine/plugins/kafka"
+	"github.com/addp/transfer/internal/kafkacleanup"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -215,11 +216,10 @@ func (a *KafkaTopicAdmin) DeleteTopic(ctx context.Context, topic string) error {
 	if err != nil {
 		return err
 	}
-	response, ok := responses[topic]
-	if !ok || response.Err == kerr.UnknownTopicOrPartition {
-		return nil
+	if err := kafkaplugin.ValidateTopicDeletionResponse(topic, responses); err != nil {
+		return err
 	}
-	return response.Err
+	return kafkacleanup.WaitTopicAbsent(ctx, a.admin, topic)
 }
 
 func (a *KafkaTopicAdmin) DeleteConsumerGroup(ctx context.Context, group string) error {
@@ -227,11 +227,10 @@ func (a *KafkaTopicAdmin) DeleteConsumerGroup(ctx context.Context, group string)
 	if err != nil {
 		return err
 	}
-	response, ok := responses[group]
-	if !ok || response.Err == kerr.GroupIDNotFound {
-		return nil
+	if err := kafkaplugin.ValidateGroupDeletionResponse(group, responses); err != nil {
+		return err
 	}
-	return response.Err
+	return kafkacleanup.WaitGroupAbsent(ctx, a.admin, group)
 }
 
 func (a *KafkaTopicAdmin) DeleteAccess(ctx context.Context, topic, group string) error {
