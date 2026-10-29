@@ -4,11 +4,11 @@ Catalog 是企业资源目录的唯一事实源，负责稳定目录身份、来
 
 ## 必读文档
 
-- `docs/concepts/addp企业资源目录体系图.md`
-- `docs/spec/addp企业资源目录实现规范.md`
-- `docs/concepts/addp术语表.md`
-- `docs/spec/addp-API设计规范.md`
-- `docs/spec/addp新模块开发指南.md`
+- [企业资源目录体系图](../docs/concepts/addp企业资源目录体系图.md)
+- [企业资源目录实现规范](../docs/spec/addp企业资源目录实现规范.md)
+- [术语表](../docs/concepts/addp术语表.md)
+- [API 设计规范](../docs/spec/addp-API设计规范.md)
+- [新模块开发指南](../docs/spec/addp新模块开发指南.md)
 
 ## 边界
 
@@ -46,7 +46,7 @@ Catalog 是企业资源目录的唯一事实源，负责稳定目录身份、来
 - 除 System 注册和本模块必需基础设施外，任何业务模块不可达都不能阻止进程启动；Meta / Model / Standard / Service / Develop 同步失败只产生滞后并后台重试，各 owner 使用独立 checkpoint。
 - `CatalogEntry` UUID 是企业稳定身份；Meta fingerprint 只是来源身份。
 - 首次保存有效 `business_owner` 即建立过业务责任，不等待完成编目。内部 nullable `business_responsibility_established` 只表达历史依据：新建为 false，责任写入同事务置 true，旧历史不足为 NULL；不得因撤销编目、移交、失效或来源变化重置，也不接受请求方编辑。保存责任不改变 System 直接授权许可，不把历史依据单独当作精确源资源的授权依据。业务批准不依赖直接许可；System 直接签发按显式许可优先、持久 Catalog 部署声明兜底的规则判断，未登记或读取失败均拒绝，进程失联不推导允许。
-- Catalog 最终核验业务责任及精确业务决定，System 持久提交正式受理回执并唯一写入 Grant；Catalog 不另存第二份可编辑接受状态，也不复制业务决定到 System。接受前移交须重新确认，接受后只允许同一次、同参数办理继续。自动办理窗口使用 System 原受理时间，为 5 分钟；指定到期时间时另受该日期截断，长期有效仍只有 5 分钟；不限制人员操作，重试不得刷新。到期未生效须重新核验并接受，已生效同次重试只返回原结果。仅持本地锁调用 System 无法证明进程故障后的先后；`fulfillment_checks` 是发送前持久待核清事实，数据库保护受影响条目的依据写入，不保存 System 受理时间／截止时间。正式准备、首次受理、受理核清及自动签发续办已接通；PG 普通表 single 的业务批准、Manager 真实预览、Deny、解除及撤销已有历史 `pg-source-authorization` Hosted T4 证据，同参恢复不重复签发或复活撤销；本轮删除互斥批准模型后的新协议仍待真实 T4，不沿用旧版本结果作为通过。此范围不代表其他引擎或消费入口已贯通；编目更新、受理及签发历史都不能替代当前实际访问裁决。
+- Catalog 最终核验业务责任及精确业务决定，System 持久提交正式受理回执并唯一写入 Grant；Catalog 不另存第二份可编辑接受状态，也不复制业务决定到 System。接受前移交须重新确认，接受后只允许同一次、同参数办理继续。自动办理窗口使用 System 原受理时间，为 5 分钟；指定到期时间时另受该日期截断，长期有效仍只有 5 分钟；不限制人员操作，重试不得刷新。到期未生效须重新核验并接受，已生效同次重试只返回原结果。仅持本地锁调用 System 无法证明进程故障后的先后；`fulfillment_checks` 是发送前持久待核清事实，数据库保护受影响条目的依据写入，不保存 System 受理时间／截止时间。正式准备、首次受理、受理核清及自动签发续办已接通；同参恢复不重复签发或复活撤销。PG 普通表 single 的业务批准、Manager 真实预览、Deny、解除及撤销，按下文[验证导航](#验证导航)定位场景方法和新旧协议的固定版本证据，不合并为当前 HEAD 或完整链路通过。此范围不代表其他引擎或消费入口已贯通；编目更新、受理及签发历史都不能替代当前实际访问裁决。
 - 已弃用条目禁止新的共享确认与办理接受；弃用前已接受的同次办理仍按原窗口继续，已有访问规则单独撤销。来源同步先按 UUID 稳定顺序锁定本批既有条目，再锁 current 来源绑定，与人工维护保持同一锁顺序，不以来源重新出现撤销弃用或清除责任历史。
 - `StandardMapping` 是 CatalogComponent 到确定 `Standard.ElementRevision` 的可审核、可追溯关系事实，拥有独立 UUID、并发版本、来源、置信度和审核状态。企业落标关系只归 Catalog；Quality 方案的物理目标与冻结标准来源仅表达检查意图，不构成第二套企业映射，也不以 Catalog 为前置。
 - 旧 `component_element_associations` 只在数据库迁移事务中读取：保留历史观察证据并转为未固定修订的 `legacy/proposed` 候选，随后删除旧表。业务 API 和 CatalogEntry 聚合更新只使用独立 StandardMapping；历史候选经人工固定发布修订并审核前，不得视为已落标。
@@ -63,4 +63,16 @@ Catalog 是企业资源目录的唯一事实源，负责稳定目录身份、来
 
 ## 业务域总览与五类标准接入
 
-2026-10-22 确认：Standard 五类标准统一按稳定身份进入企业目录，专业定义和修订唯一归 Standard，Catalog 不维护可编辑名称/定义副本。Catalog 业务域总览独立于资源浏览；Catalog、Model、Standard 的域级标准引用只读接口使用各自本地事实，精确域、一跳、按目标去重并保留证据；当前 User 权限判定，不复制专业关系或改写冻结修订。2026-10-28 展示调整为“本域使用的标准”，保留本域、其他业务域、公共及无法确认归属的目标，不在分页后隐藏本域目标。完整契约以 `docs/spec/addp企业资源目录实现规范.md` 4.4、5.5 节为准。
+2026-10-22 确认：Standard 五类标准统一按稳定身份进入企业目录，专业定义和修订唯一归 Standard，Catalog 不维护可编辑名称/定义副本。Catalog 业务域总览独立于资源浏览；Catalog、Model、Standard 的域级标准引用只读接口使用各自本地事实，精确域、一跳、按目标去重并保留证据；当前 User 权限判定，不复制专业关系或改写冻结修订。2026-10-28 展示调整为“本域使用的标准”，保留本域、其他业务域、公共及无法确认归属的目标，不在分页后隐藏本域目标。完整契约以[业务域总览与资源浏览](../docs/spec/addp企业资源目录实现规范.md#44-业务域总览与资源浏览)、[Standard 五类专业资源变化与动态引用](../docs/spec/addp企业资源目录实现规范.md#55-standard-五类专业资源变化与动态引用)为准。
+
+## 验证导航
+
+确定性门禁沿[测试与验收标准入口](../docs/spec/addp测试与验收规范.md#三标准入口)执行；Catalog owner 使用 `make test-module MODULE=catalog`。下表仅定位已有方法和记录，不表示当前 HEAD 已运行通过；失败、未执行和未覆盖项按各记录保留，部分页面或接口通过不能替代整轮结果。
+
+| 验证目的 | 方法与证据正文 |
+| --- | --- |
+| 企业目录发布、生命周期与共享受理 | [场景方法](../docs/spec/testing/scenarios/授权与共享.md#发布生命周期与共享受理)、[OAuth 自动签发的只读观察](../docs/spec/testing/scenarios/授权与共享.md#oauth-自动签发的只读观察)：专用 macOS profile，区分受理、唯一签发与源数据实际读取。 |
+| PG 业务批准与实际读取 | [`pg-source-authorization` 的业务批准闭环](../docs/spec/testing/scenarios/授权与共享.md#catalog-业务批准闭环)、[Catalog 离线与恢复](../docs/spec/testing/scenarios/授权与共享.md#catalog-可选依赖离线与恢复)；[旧协议与新成果证据](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#pg-dataitem-源授权与-transfer-新成果初始授权--hosted-t4)、[直接许可模型切换后的固定版本证据](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#直接授权许可模型替换--pg-hosted-t4-与开发库迁移)。 |
+| 后续 PG 浏览器扩展的局部结果 | [许可提交与冲突恢复记录](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#直接许可浏览器提交与冲突恢复--pg-hosted-t4-局部通过)：页面局部通过、后续在途到期检查导致整轮失败；保留未执行项与清理证据。 |
+| 业务域总览 Hosted API | [三类身份、跨域引用与清理方法](../docs/spec/testing/scenarios/授权与共享.md#catalog-domain-overview)、[固定源码成功记录](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#catalog-业务域总览--hosted-api-t4)、[首次失败与修复](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#catalog-业务域总览--首次失败与修复)；不含浏览器 UI T4 或全量跨域关系。 |
+| 本地 Opera 普通用户复验 | [账号、跨域样本与页面断言](../docs/spec/testing/scenarios/授权与共享.md#catalog-本地普通用户浏览器复验)、[隔离入口、租约及结束判定](../docs/spec/testing/T4-Online验收规范.md#catalog-本地隔离浏览器验收)：本机技术证据，与 Hosted API 分别认定，页面证据接收后仍须源标准复核及清理。 |
