@@ -36,7 +36,7 @@ Transfer 的行粒度和字段保留范围分开处理：不展开数组不授�
 
 ## 目录结构
 
-2026-10-29 按用户确认的职责调整，正式 Transfer 创建确认恢复由 Runtime 确定性推进。普通创建确认在同一 Run、同一协议调用内核对复核参数、唯一自动预检及确认指纹后，建立既有 AgentDraftRef；已绑定原稿沿用原引用，检查点不复制参数。恢复重读精确参数及当前本体、源结构和目标父节点，再经原创建条件、预检、确认消费与持久屏障调用同一 Adapter；没有模型决定是否再次复核或生成成功收尾。稳定事实变化重新确认同参数，条件失败和结果不明终止，不自动重试。`make test-agent-eval` 已通过，受控 HTTP/推理夹具覆盖 SQL 身份与步骤关联、零模型创建、变化后重新确认、取消及失败边界；来源冻结、完整模块门禁和 PG/FalkorDB 联动待本轮后续记录。未重启服务、运行 Transfer 或写入业务数据，真实模型和 Hosted T4 未验收。
+2026-10-29 按用户确认的职责调整，正式 Transfer 创建确认恢复由 Runtime 确定性推进。普通创建确认在同一 Run、同一协议调用内核对复核参数、唯一自动预检及确认指纹后，建立既有 AgentDraftRef；已绑定原稿沿用原引用，检查点不复制参数。恢复重读精确参数及当前本体、源结构和目标父节点，再经原创建条件、预检、确认消费与持久屏障调用同一 Adapter；没有模型决定是否再次复核或生成成功收尾。稳定事实变化重新确认同参数，条件失败和结果不明终止，不自动重试。`make test-agent-eval` 已通过，受控 HTTP/推理夹具覆盖 SQL 身份与步骤关联、零模型创建、变化后重新确认、取消及失败边界；来源冻结为平台修订 36（实现 `68c687a49`，冻结 `b9e326955`）。`make test-agent-frontend`（69 项单测、9 项受控浏览器及构建）、`make test-module MODULE=ontology GO_ONLY=1`、串行 `make test-ontology-postgres` → `make test-ontology-falkor` 通过；1581 项 Common/Ontology/Agent/Skill 输入摘要在两次集成门禁前后相同，测试 Schema 及专属图容器、网络、卷清理通过，证据 `/tmp/addp-agent-confirmation-validation.iqwtFg`。`make test-module MODULE=agent` 首次因漏同步固定修订断言失败，更新为 36 后来源检查通过；随后整套在公共 T0 的 `module-gate_test.py` 两项 Common PostgreSQL 夹具测试失败（`requires the real lifecycle matrix test`），后续 Agent 阶段未运行，已回交执行体系主责；独立专项通过不替代整套通过。既有 Agent/Ontology 路径与 CI 登记覆盖本轮，没有新增接口、权限、迁移或 CI Job。未重启服务、运行 Transfer 或写入业务数据，真实模型和 Hosted T4 未验收。
 
 正式 Transfer 配置预检的固定报告由 Runtime 从已验证 owner 响应产生 `TransferConfigCheckReport` Presentation，显式草稿检查与自动检查共用路径。只投影状态、检查时间、范围和完整诊断，不带主体、绑定哈希或业务数据，不发 action。消息 parts 与安全回放保存同一快照；历史报告不代表当前权限或执行成功。LLM 只解释/修正，服务失败不能生成 unknown 卡片。共享实现与 Transfer 向导共用，现有 Agent eval、共享组件、Agent/Transfer 浏览器与构建门禁覆盖；本次非破坏性 Catalog 扩充不改变既有 props、创建条件或权限。
 
