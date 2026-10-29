@@ -26,7 +26,7 @@ Catalog 是企业资源目录的唯一事实源，负责稳定目录身份、来
 
 - 数据项详情的“业务授权”使用同排互斥的“批准数据使用、办理访问授权、批准与办理记录”，引擎授权跳转置于最右侧。批准区只填写业务批准，办理区只选择有效批准并显式提交；记录区区分业务批准与本人办理，列表和只读详情分开，返回列表不写入。批准成功后在进度说明旁提供显式继续办理入口；当前确认仅在正式候选本页出现时自动选中并只读观察，不自动提交或初始化、不从确认详情补造候选。复用原确认、办理和历史 API，不新增授权路线。
 
-- 自动签发续办复用现有办理记录，`grant_reconciled_at` 仅表示自动处理已核清，不是 Grant 或签发成功状态；受理核清 `resolved_at` 仍独立解除责任／来源保护。前台与后台共用一个续办命令，原参先查 System 签发历史、明确未找到才签发，丢响应保留恢复；仅 closed、已有签发历史或 System 明确的原窗口到期／关闭可终结。旧记录不回填已处理；历史 GET 不触发续办，不改变受理响应契约，不以该标记裁决数据访问。
+- 受理核清和自动签发续办以[目录恢复契约](../docs/spec/addp企业资源目录实现规范.md#321-责任与实际数据授权)、[源规则生命周期](../docs/spec/addp授权上下文规范.md#553-责任变化与访问规则生命周期)为准。`resolved_at` 核清受理并解除责任／来源保护；`grant_reconciled_at` 仅核清自动处理，不是 Grant 或签发成功状态，不延长保护。旧记录不回填已处理；历史 GET 不触发续办、不改变受理响应，不以核清标记裁决访问。
 
 - 业务批准要求独立确认 Permission 及当前业务负责人资格；正式准备和只读原办理请求要求独立办理 Permission。接收方使用本条目专用候选下拉，期限显式选择、不默认永久。业务批准不受 System 直接授权许可开启或关闭影响，不查询、初始化或改写直接许可，不携带旧批准要求版本。界面不提供 System 直接授权或直接许可管理；具有引擎及 Grant 读取权限且来源引擎引用已解析时，才可经 Console 前往 System 引擎授权。
 
@@ -41,7 +41,11 @@ Catalog 是企业资源目录的唯一事实源，负责稳定目录身份、来
 - `GET /entries/:id/sharing_decision_candidates` 的条目可见性、`catalog.entry.read`、独立 `system.engine_access_fulfillment.create` 和有效引擎管理委派守卫按正式契约执行，使用本次 User Bearer。跨模块核验不持 Catalog 锁，返回后在只读快照复查可见性、来源、原责任及期限。共享 Tab 只消费分页摘要，不含用途正文、不创建待核清保护、受理或 Grant；摘要不是正式准备／新受理依据，也不授予共享历史读取资格。
 - `prepareSharingFulfillment` 是内部事务登记原语：首次登记复用当前决定依据核验，从持久决定派生业务参数，并不可变绑定本次调用主体、原操作账号来源、业务决定和完整目标。同参重试返回原待核清记录；已核清记录不重新打开，不建立 System 结果副本。正式消费者 `PrepareSharingFulfillment` 从可信 User AuthContext 派生原操作身份，通过 System 核验当前独立办理权限和引擎管理委派，并读取当前 Catalog 服务身份；提交本地事务后才发送，通信不确定时保留待核清保护。内部原语本身不证明输入可信或办理资格。
 - `POST /entries/:id/sharing_fulfillments` 只接收请求编号和决定编号，不接受操作者、目标或接收方覆盖。`POST /runtime/sharing-fulfillments/:request_id/basis` 只允许 `addp-system` 当前 Tenant Service 身份及独立 `catalog.sharing_fulfillment.read`；精确匹配已提交待核清绑定，重新核验当前来源及原业务负责人责任，返回最小依据和原确认身份，不提供用途正文或通用决定枚举。System 在本地受理锁外反查，不跨 Schema。正式准备、首次受理及前端显式办理入口已接通，受理核清后调用唯一自动签发续办；POST 响应仍只表达受理结果，不声明数据访问已生效。
-- `reconcileSharingFulfillment` 是唯一续办命令的受理核清阶段：只消费已提交的原待核清记录，事务外先查询，明确未找到才关闭原请求；关闭可能返回已受理结果。完整绑定一致且结果为 accepted／closed 后，条目→待核清记录锁内填写一次本地数据库核清时间。错误或未知结果保留保护，历史恢复不要求原责任／操作人／期限仍有效，不恢复新办理资格。生产恢复通过 `SharingFulfillmentReconciliationRunner` 调用 `continueSharingFulfillment`，受理核清后继续原参签发阶段；仅 `addp-catalog` 当前 Tenant Service 身份及独立 `system.engine_access_fulfillment.execute` 可消费 System Runtime 核清／关闭／签发。至少等待一分钟后扫描自动处理尚未核清的记录，沿用来源同步周期，每批 100 条游标推进、单项续办限时 30 秒，不门控 Ready。普通 404、鉴权、通信及解析失败不得当作未找到；恢复不创建准备记录或新受理，正式准备仍由人类入口显式发起。
+- `reconcileSharingFulfillment` 只消费已提交的原待核清记录，在 Catalog 事务外先查 System 原结果，明确未找到才关闭同一请求；关闭也可能返回已受理结果。完整绑定一致且结果为 accepted／closed 后，按条目→待核清记录锁顺序填写一次数据库核清时间。普通 404、鉴权、通信、解析失败及未知结果不等于未找到，不得解除保护。历史核清不要求原责任／操作人／期限仍有效，不恢复新办理资格；不创建准备记录或新受理，正式准备仍由人类入口显式发起。
+
+- 前台和 `SharingFulfillmentReconciliationRunner` 共用 `continueSharingFulfillment`，受理核清且原结果为 accepted 时，先按原参查 System 签发历史，明确未找到才签发；丢响应保留恢复。仅 closed、已有签发历史或 System 明确原窗口到期／关闭可终结自动处理，其余失败保留待续办。Runtime 核清／关闭／签发只使用 `addp-catalog` 当前 Tenant Service 身份及独立 `system.engine_access_fulfillment.execute`。
+
+- 恢复沿来源同步周期扫描创建满一分钟、自动处理尚未核清的记录，每批 100 条按游标推进，单项续办限时 30 秒，不门控 Ready。调度等待与原受理的五分钟签发窗口分别认定；重试不刷新原窗口。实际覆盖与未验项沿[验证导航](#验证导航)按固定源码认定，内部核清或签发测试不替代真实 OAuth 与实际读取验收。
 - 待核清目标的有效叶子、正 int64 Engine ID、64 个 segment 和完整 JSON 16 KiB 边界只由 `common/authorization.EncodeSharingTarget` 校验，与 System 仲裁复用；首次登记前拒绝不满足该边界的目标，不先冻结条目。节点身份完整保留，无效 UTF-8 不允许被 JSON 替换字符静默修正。该纯值校验不代替真实来源、认证和办理资格，也不改变现有业务确认 API。
 - 跨模块只走公开 API 和 Tenant Service Access Token，不跨 Schema 查询。
 - 共享目标只通过 `common/client.MetaClient.ReadAuthorizationFacts` 按稳定指纹读取 Meta 最小授权事实；Catalog 使用自身 `addp-catalog` Tenant Service 凭据，不冒用 System 身份。不再用祖先链、Meta 行号或完整详情重建授权边界；非 complete、畸形或身份不一致的事实拒绝办理，不回退旧路线。当前仍保留 System 引擎状态核验；业务决定与办理绑定持久保存数据项指纹及批准边界摘要，System 的 Grant 独立核验并引用同一绑定。旧 native 测试确认及办理通过 owner 事务迁移清理，其他目录及通用审计保留。
