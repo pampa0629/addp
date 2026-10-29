@@ -986,7 +986,7 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
         import os
         repository=Path(__file__).resolve().parents[2]
         run=m.subprocess.run
-        titles={m.fixture.BUFFER_CASE:'多距缓冲独立普通User单成果与重名拒绝',m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
+        titles={m.fixture.DIAGNOSTIC_CASE:m.fixture.DIAGNOSTIC_TITLE,m.fixture.BUFFER_CASE:'多距缓冲独立普通User单成果与重名拒绝',m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
             m.fixture.COMPOSITION_CASE:'重合规整链路合并独立普通User三成果与字段拒绝',
             'full':'同一普通User核对构面、修复、严格吸附、面叠面缝悬点线叠自叠线交自交及打断连通分组链路合并地图及塌缩失败'}
         for case,title in titles.items():
@@ -1167,3 +1167,122 @@ class BufferOnlineTest(unittest.TestCase):
             if count==3:value['sources'][m.fixture.BUFFER_SOURCES[1]]['sha256']='mutated'
             return value
         with self.assertRaises(m.SuiteError):self.run_case(physical=physical)
+
+
+class InputDiagnosticClient:
+    def __init__(self):
+        self.calls=[];self.executions={};self.scans=['scan-'+name for name in m.fixture.DIAGNOSTIC_SOURCES]
+        self.sources=[{'id':10+i,'full_name':name,'size_bytes':98304,'item_type':'file','fingerprint':name} for i,name in enumerate(m.fixture.DIAGNOSTIC_SOURCES)]
+        self.mutate=None
+    def request(self,method,path,expected,body=None):
+        self.calls.append((method,path,body))
+        if path.endswith('/auth/context'):
+            data={'principal':{'id':33,'type':'user'},'context':{'type':'tenant','tenant_id':'2'},'token':{'type':'first_party_access_token'},
+                  'authorization':{'role_assignments':[{'role_key':'topology-consumer','permissions':sorted(m.PERMISSIONS)}]}}
+        elif path.endswith('/scan/run/manual'):
+            data={'execution_id':'scan-'+body['targets'][0].split('/path/')[1].split('?')[0]}
+        elif '/meta/executions/' in path:data={'status':'success','tenant_id':2,'triggered_by':33}
+        elif path.endswith('/engines/3/items'):data=self.sources
+        elif '/meta/scan/runs?' in path:data={'total':len(self.scans),'items':[{'execution_id':value} for value in self.scans]}
+        elif '/meta/items/' in path:data=self.sources[int(path.rsplit('/',1)[1])-10]
+        elif path.endswith('/workflow-engines'):data=[{'id':7,'engine_type':'geopython_workflow','connection_status':'online'}]
+        elif method=='POST' and path.endswith('/develop/executions'):
+            spec=m.DIAGNOSTIC_SPECS[len(self.executions)];identifier='diagnostic-'+spec[0]
+            data={'execution_id':identifier}
+            self.executions[identifier]={'execution_id':identifier,'triggered_by':33,'status':'failed','outputs':{},'metadata':{},
+                'error_details':{'code':'develop.workflow.invalid_params','category':'execution_failed','message':'controlled', 'diagnostic':m.expected_input_diagnostic(spec)}}
+            if self.mutate:self.mutate(self.executions[identifier])
+        elif '/develop/executions/' in path:data=self.executions[path.rsplit('/',1)[1]]
+        elif '/monitor/executions/by-execution-id/' in path:data={**self.executions[path.rsplit('/',1)[1]],'module':'develop'}
+        elif '/meta/lineage/graph?' in path:data={'truncated':False,'nodes':[],'edges':[]}
+        else:raise AssertionError((method,path,body))
+        return SimpleNamespace(payload=copy.deepcopy(data))
+
+
+def diagnostic_physical(*args):
+    return {'sources':{name:{'size_bytes':98304,'sha256':name} for name in m.fixture.DIAGNOSTIC_SOURCES},'targets':{},'exact_inventory_verified':True}
+
+
+class InputDiagnosticOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
+        self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.DIAGNOSTIC_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
+    def run_case(self,client=None,physical=diagnostic_physical,browser=lambda repo,env,evidence:evidence):
+        return m.run_scenario(Path('.'),self.env,client or InputDiagnosticClient(),physical,browser,diagnostic_runner=lambda *a:self.fail('no private log oracle'))
+    def test_diagnostic_case_four_real_dags_keep_original_node_position_and_never_old_business(self):
+        client=InputDiagnosticClient();report=self.run_case(client)
+        self.assertEqual(report['schema_version'],'addp.operator-input-diagnostics/v1')
+        self.assertEqual(report['physical']['targets'],{})
+        self.assertEqual(len(report['executions']),4)
+        for spec,run in zip(m.DIAGNOSTIC_SPECS,report['executions']):
+            tasks=run['definition']['tasks']
+            self.assertEqual(tasks[0]['operator'],spec[1]);self.assertEqual(tasks[1]['operator'],'load')
+            self.assertEqual(tasks[0]['depends_on'][0],'source');self.assertEqual(tasks[-1]['operator'],'save')
+            self.assertEqual(run['execution']['error_details']['diagnostic']['operator']['node_index'],1)
+        self.assertIs(report['executions'][1]['definition']['tasks'][0]['params']['distances'][0],True)
+        self.assertEqual(report['initial_scan_inventory'],report['final_scan_inventory'])
+        self.assertEqual(sum(method=='POST' and path.endswith('/develop/executions') for method,path,_ in client.calls),4)
+        self.assertFalse(any('/manager/preview' in path for _,path,_ in client.calls))
+    def test_diagnostic_rejects_wrong_tuple_private_context_and_any_publication(self):
+        for mutate in [lambda e:e.update(status='success'),lambda e:e.update(execution_id='foreign'),lambda e:e.update(triggered_by=True),lambda e:e.update(triggered_by=99),lambda e:e.update(outputs={'save':{}}),
+            lambda e:e['error_details'].update(code='develop.workflow.execution_failed'),
+            lambda e:e['error_details']['diagnostic']['operator'].update(node_index=True),
+            lambda e:e['error_details']['diagnostic']['operator'].update(node_index=2),
+            lambda e:e['error_details']['diagnostic']['operator'].update(operator_id='distance_to'),
+            lambda e:e['error_details']['diagnostic']['operator'].update(field='PRIVATE_DIAGNOSTIC_SOURCE_VALUE'),
+            lambda e:e['error_details'].update(message='Traceback /tmp/private'),
+            lambda e:e['metadata'].update(lineage_facts={'outputs':[{'locator':'bad'}]}),
+            lambda e:e['metadata'].update(result={'meta_scan_runs':[{'execution_id':'bad'}]})]:
+            client=InputDiagnosticClient();client.mutate=mutate
+            with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):self.run_case(client)
+    def test_diagnostic_failure_keeps_incomplete_checkpoint_and_browser_cannot_change_source(self):
+        with self.assertRaisesRegex(m.SuiteError,'browser failed'):
+            self.run_case(browser=lambda *a:(_ for _ in ()).throw(m.SuiteError('browser failed')))
+        checkpoint=json.loads((Path(self.directory.name)/'topology-input-diagnostics-checkpoint.json').read_text())
+        self.assertEqual(checkpoint['result'],'incomplete');self.assertEqual(len(checkpoint['executions']),4)
+        count=0
+        def changed(*args):
+            nonlocal count
+            count+=1;value=diagnostic_physical()
+            if count==6:value['sources'][m.fixture.DIAGNOSTIC_SOURCES[0]]['sha256']='changed'
+            return value
+        with self.assertRaisesRegex(m.SuiteError,'browser changed'):self.run_case(physical=changed)
+    def test_diagnostic_browser_requires_exact_sixteen_uuid_locale_owner_bindings(self):
+        evidence=self.run_case()['browser'];output=Path(self.directory.name)/'topology-browser.json'
+        observations=[{'key':run['key'],'execution_id':run['execution_id'],'owner':owner,'locale':locale,'raw':run['execution'] if owner=='develop' else {'execution':run['execution']},
+                      'clipboard':'safe'} for run in evidence['executions'] for owner in ('develop','monitor') for locale in ('zh-cn','en')]
+        report={**evidence,'schema_version':m.fixture.DIAGNOSTIC_SCHEMA+'-browser/v1','result':'passed','observations':observations}
+        def invoke(*args,**kwargs):output.write_text(json.dumps(report));return SimpleNamespace(returncode=0)
+        with patch.object(m.subprocess,'run',side_effect=invoke):
+            m.browser(Path('.'),self.env,evidence)
+            for mutate in [lambda r:r['observations'].pop(),lambda r:r['observations'][0].update(locale='en'),
+                           lambda r:r['observations'][0].update(execution_id='old'),lambda r:r['observations'][0].update(clipboard='Traceback')]:
+                saved=copy.deepcopy(report);mutate(report)
+                with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
+                report=saved
+
+    def test_diagnostic_browser_literals_match_current_shared_contract_without_running_old_business(self):
+        import subprocess
+        repository=Path(__file__).resolve().parents[2]
+        program=r'''
+const fs=require('node:fs'),vm=require('node:vm');
+const source=fs.readFileSync(process.argv[1],'utf8');
+const start=source.indexOf('const inputDiagnosticText ='),end=source.indexOf('async function assertInputDiagnosticPanel(',start);
+const sandbox={};vm.createContext(sandbox);vm.runInContext(source.slice(start,end)+';this.present=inputDiagnosticPageExpectation;',sandbox);
+for(const locale of ['zh-cn','en']){
+ const text=JSON.parse(fs.readFileSync(process.argv[2]+'/'+locale+'.json','utf8')).common.executionFailure;
+ for(const [key,reason,op,param,field] of [
+ ['field-conflict','operator_field_conflict','batch_buffer','input_gdf','distance'],
+ ['number-array','operator_number_array_invalid','batch_buffer','distances',''],
+ ['crs-mismatch','operator_crs_mismatch','distance_to','',''],
+ ['positive-number','operator_positive_number_required','check_line_proximity','tolerance','']]){
+ const reasonText=text.reasons[reason].replace('{field}',field),action=text.actions[reason].replace('{field}',field);
+ const values=[text.stages.execution,text.operatorNames[op],text.operatorNodeIndex.replace('{index}','1'),param?text.operatorParameters[param]:'',field,action,'develop.workflow.invalid_params','run-uuid'].filter(Boolean);
+ const actual=sandbox.present(key,locale,'run-uuid');
+ if(actual.reason!==reasonText || JSON.stringify(actual.values)!==JSON.stringify(values) || actual.clipboard!==[reasonText,...values].join('\n'))throw Error('literal UI/clipboard contract differs '+locale+' '+key);
+ }
+}
+'''
+        result=subprocess.run(['node','-e',program,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),
+                               str(repository/'common-frontend/basic/src/i18n')],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)

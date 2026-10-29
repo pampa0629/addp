@@ -16,7 +16,11 @@ PORTS = ('faces', 'diagnostics', 'repaired', 'snapped', 'overlaps', 'gaps', 'dan
 BUFFER_CASE = 'multi-distance-buffer'
 BUFFER_SOURCES = ('buffer-input.gpkg', 'buffer-conflict.gpkg')
 BUFFER_TARGETS = ('buffers.gpkg',)
-INDEPENDENT_CASES = (BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
+DIAGNOSTIC_CASE = 'operator-input-diagnostics'
+DIAGNOSTIC_SOURCES = ('diagnostic-line.gpkg','diagnostic-reference.gpkg','diagnostic-crs.gpkg','diagnostic-conflict.gpkg')
+DIAGNOSTIC_TITLE = '算子参数诊断独立普通User双语失败页'
+DIAGNOSTIC_SCHEMA = 'addp.operator-input-diagnostics'
+INDEPENDENT_CASES = (DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
 
 NORMALIZE_CASE = 'line-network-normalize'
 NORMALIZE_SOURCE = 'normalize-input.gpkg'
@@ -30,6 +34,8 @@ COMPOSITION_TARGETS = ('chains.gpkg','chain-edges.gpkg','edge-sources.gpkg')
 
 
 def network_profile(case):
+    if case==DIAGNOSTIC_CASE:
+        return {'schema':DIAGNOSTIC_SCHEMA,'title':DIAGNOSTIC_TITLE,'ports':(),'targets':()}
     if case==BUFFER_CASE:
         return {'source':BUFFER_SOURCES[0],'ports':('result',),'targets':BUFFER_TARGETS,
                 'schema':'addp.topology-buffer','title':'多距缓冲独立普通User单成果与重名拒绝'}
@@ -40,6 +46,45 @@ def network_profile(case):
         return {'source':COMPOSITION_SOURCE,'ports':COMPOSITION_PORTS,'targets':COMPOSITION_TARGETS,
                 'schema':'addp.topology-normalize-chains','title':'重合规整链路合并独立普通User三成果与字段拒绝'}
     raise FixtureError('unknown network case')
+
+
+def diagnostic_worker(action, root):
+    """Four tiny valid physical sources; no output is permitted by this case."""
+    from osgeo import ogr, osr
+    if action == 'seed':
+        if any((root/name).exists() for name in DIAGNOSTIC_SOURCES) or list((root/'outputs').iterdir()):
+            raise FixtureError('refusing existing diagnostic data')
+        for i, name in enumerate(DIAGNOSTIC_SOURCES):
+            crs=osr.SpatialReference();crs.ImportFromEPSG(3395 if i==2 else 3857)
+            ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(root/name))
+            layer=ds.CreateLayer(Path(name).stem,crs,ogr.wkbLineString,options=['GEOMETRY_NAME=source_shape'])
+            for field,kind in [('route_key',ogr.OFTString),('note',ogr.OFTString),*([('distance',ogr.OFTReal)] if i==3 else [])]:
+                if layer.CreateField(ogr.FieldDefn(field,kind))!=0:raise FixtureError('cannot seed diagnostic field')
+            row=ogr.Feature(layer.GetLayerDefn());row.SetField('route_key','route-'+str(i))
+            row.SetField('note','PRIVATE_DIAGNOSTIC_SOURCE_VALUE')
+            if i==3:row.SetField('distance',99.)
+            row.SetGeometry(ogr.CreateGeometryFromWkt(f'LINESTRING (0 {i}, 10 {i})'))
+            if layer.CreateFeature(row)!=0:raise FixtureError('cannot seed diagnostic source')
+            row=None;layer=None;ds=None
+    elif action!='verify':raise FixtureError('unknown diagnostic action')
+    if sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',*DIAGNOSTIC_SOURCES]) or list((root/'outputs').iterdir()):
+        raise FixtureError('diagnostic must have exact sources and no physical publication')
+    sources={}
+    for i,name in enumerate(DIAGNOSTIC_SOURCES):
+        ds=ogr.Open(str(root/name),0)
+        if ds is None or ds.GetLayerCount()!=1:raise FixtureError('diagnostic requires one source layer')
+        layer=ds.GetLayer(0);crs=osr.SpatialReference();crs.ImportFromEPSG(3395 if i==2 else 3857)
+        if layer.GetFeatureCount()!=1 or not layer.GetSpatialRef().IsSame(crs):raise FixtureError('diagnostic source count or CRS differs')
+        fields=['route_key','note',*(['distance'] if i==3 else [])]
+        if [layer.GetLayerDefn().GetFieldDefn(j).GetName() for j in range(layer.GetLayerDefn().GetFieldCount())]!=fields or layer.GetGeometryColumn()!='source_shape':
+            raise FixtureError('diagnostic source schema differs')
+        row=layer.GetNextFeature();shape=row.GetGeometryRef()
+        expected={'route_key':'route-'+str(i),'note':'PRIVATE_DIAGNOSTIC_SOURCE_VALUE',**({'distance':99.} if i==3 else {})}
+        if row.items()!=expected or shape.GetGeometryName()!='LINESTRING' or shape.GetCoordinateDimension()!=2 or shape.GetPoints()!=[(0.,float(i)),(10.,float(i))]:
+            raise FixtureError('diagnostic source values or coordinates differ')
+        sources[name]=digest(root/name)
+        row=None;layer=None;ds=None
+    return {'sources':sources,'targets':{},'exact_inventory_verified':True}
 
 
 def buffer_features(kind):
@@ -1220,6 +1265,7 @@ def validate_features(name, features):
 
 def worker(action, root, case=None):
     case=topology_case() if case is None else topology_case({"ADDP_ONLINE_TOPOLOGY_CASE":case})
+    if case==DIAGNOSTIC_CASE:return diagnostic_worker(action,root)
     if case==BUFFER_CASE:return buffer_worker(action,root)
     if case in (NORMALIZE_CASE,COMPOSITION_CASE):return normalize_worker(action,root,case)
     if action == 'seed':
@@ -1326,7 +1372,7 @@ def runtime_worker(action, root):
 def archive_physical_evidence(root, directory, result, case=None):
     """Retain only this synthetic fixture's verified bytes for offline audit."""
     case=topology_case() if case is None else topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':case})
-    sources,targets=(BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
+    sources,targets=(DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
     archive = directory / 'topology-physical'
     if archive.is_symlink() or (archive/'outputs').is_symlink():
         raise FixtureError('physical archive must not follow symlinks')

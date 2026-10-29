@@ -490,3 +490,101 @@ test('重合规整链路合并独立普通User三成果与字段拒绝', async (
 test('多距缓冲独立普通User单成果与重名拒绝', async ({page}) => {
   await verifyNetworkCase(page,'multi-distance-buffer',{result:6},'addp.topology-buffer')
 })
+
+// Literal acceptance expectations: do not derive these from the production formatter.
+const inputDiagnosticText = {
+  'field-conflict': {
+    'zh-cn':['源图层字段 distance 与算子的固定输出字段重名。','多距缓冲','源图层（input_gdf）','distance','先在上游手动重命名源字段 distance，再重新执行；不会自动改名或覆盖。'],
+    en:['Source field distance conflicts with a fixed operator output field.','Multi-distance buffer','Source layer (input_gdf)','distance','Manually rename source field distance upstream before submitting a new execution; it is not renamed or overwritten automatically.']
+  },
+  'number-array': {
+    'zh-cn':['距离列表必须为有限数值数组，不能包含布尔值、字符串或空值。','多距缓冲','距离列表（distances）','','检查 distances 数组中的全部元素；保留合法的零值、负值和重复距离。'],
+    en:['Distances must be an array of finite numbers without booleans, strings or nulls.','Multi-distance buffer','Distances (distances)','','Check every distances array element; valid zero, negative and duplicate distances remain allowed.']
+  },
+  'crs-mismatch': {
+    'zh-cn':['两个输入的投影坐标系不同。','距离计算','','','先显式统一两个输入的投影坐标系；不能仅因单位相同就直接计算。'],
+    en:['The input projected CRSs differ.','Distance calculation','','','Explicitly align the projected CRSs; equal units alone do not make the CRSs equivalent.']
+  },
+  'positive-number': {
+    'zh-cn':['容差必须为以源坐标系水平单位表示的有限正数。','近接检查','容差（tolerance）','','按源坐标系单位设置有限且大于零的容差后重新执行，不自动换算为米。'],
+    en:['Tolerance must be a finite positive number in the source CRS horizontal units.','Line proximity check','Tolerance (tolerance)','','Set a finite positive tolerance in source CRS units; it is not converted to metres automatically.']
+  }
+}
+
+function inputDiagnosticPageExpectation(key,locale,executionID) {
+  const [reason,operator,parameter,field,action]=inputDiagnosticText[key][locale]
+  const stage=locale==='zh-cn'?'执行操作':'Execute operation'
+  const node=locale==='zh-cn'?'定义中的第 1 个节点':'Node 1 in the workflow definition'
+  return {reason,values:[stage,operator,node,parameter,field,action,'develop.workflow.invalid_params',executionID].filter(Boolean),
+    clipboard:[reason,stage,operator,node,parameter,field,action,'develop.workflow.invalid_params',executionID].filter(Boolean).join('\n')}
+}
+
+async function assertInputDiagnosticPanel(panel,key,locale,executionID) {
+  const expected=inputDiagnosticPageExpectation(key,locale,executionID)
+  await expect(panel).toBeVisible()
+  await expect(panel.locator('h4')).toHaveText(expected.reason)
+  await expect(panel.locator('dd')).toHaveText(expected.values)
+  await expect(panel).not.toContainText(/PRIVATE_DIAGNOSTIC|Traceback|site-packages|\/tmp\/|99\.0/)
+  return expected
+}
+
+test('算子参数诊断独立普通User双语失败页',async({page})=>{
+  const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}')
+  expect(evidence.case).toBe('operator-input-diagnostics')
+  expect(evidence.executions.map(run=>run.key)).toEqual(Object.keys(inputDiagnosticText))
+  expect(new Set(evidence.executions.map(run=>run.execution_id)).size).toBe(4)
+  const expectedIdentity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
+  await page.context().grantPermissions(['clipboard-read','clipboard-write'],{origin:process.env.CONSOLE_URL})
+  let loggedIn=false
+  const observations=[],publicationRequests=[]
+  page.on('request',request=>{
+    const path=new URL(request.url()).pathname
+    if(!['GET','HEAD','OPTIONS'].includes(request.method()) &&
+      (path.startsWith('/api/v1/develop/executions')||path.startsWith('/api/v1/meta/scan')||path.startsWith('/api/v1/meta/lineage')))
+      publicationRequests.push({method:request.method(),path})
+  })
+  for(const run of evidence.executions)for(const owner of ['develop','monitor']){
+    const path=owner==='develop'?`/develop/executions/${run.execution_id}`:`/monitor/executions?execution_id=${run.execution_id}`
+    const matches=response=>response.request().method()==='GET'&&new URL(response.url()).pathname===
+      (owner==='develop'?`/api/v1/develop/executions/${run.execution_id}`:`/api/v1/monitor/executions/by-execution-id/${run.execution_id}/tree`)
+    const observed=page.waitForResponse(matches)
+    if(!loggedIn){await login(page,process.env.ADDP_ONLINE_TEST_USER_USERNAME,process.env.ADDP_ONLINE_TEST_USER_PASSWORD,path);loggedIn=true}
+    else await page.goto(`${process.env.CONSOLE_URL}${path}`)
+    const first=await observed
+    const bound=await browserAPIFromResponse(first,process.env.GATEWAY_URL,expectedIdentity)
+    await bound.dispose()
+    const frame=page.frameLocator('iframe[data-testid="module-iframe"]')
+    const panel=frame.locator(owner==='develop'?'.execution-detail-page > .execution-failure':'.execution-detail-content > .execution-failure')
+    for(const locale of ['zh-cn','en']){
+      await page.locator('.header-language button').click()
+      await page.getByRole('menuitem',{name:locale==='zh-cn'?'中文':'English',exact:true}).click()
+      await assertInputDiagnosticPanel(panel,run.key,locale,run.execution_id)
+      // Refresh the same UUID. Never retry the failed workflow or reuse a pre-navigation token.
+      const reread=page.waitForResponse(matches)
+      await page.reload()
+      const response=await reread
+      const api=await browserAPIFromResponse(response,process.env.GATEWAY_URL,expectedIdentity)
+      let raw
+      try{raw=await json(response,'operator diagnostic owner page')}finally{await api.dispose()}
+      const execution=owner==='develop'?raw:raw.execution
+      expect(execution.execution_id).toBe(run.execution_id)
+      expect(Number.isInteger(execution.triggered_by)).toBe(true)
+      expect(execution.triggered_by).toBe(Number(evidence.principal_id))
+      expect(execution.status).toBe('failed')
+      expect(execution.error_details).toEqual(run.execution.error_details)
+      expect(execution.error_details.diagnostic).toEqual(run.expected_diagnostic)
+      const expected=await assertInputDiagnosticPanel(panel,run.key,locale,run.execution_id)
+      await page.evaluate(()=>navigator.clipboard.writeText('DIAGNOSTIC_CLIPBOARD_NOT_WRITTEN'))
+      await panel.getByRole('button',{name:locale==='zh-cn'?'复制诊断信息':'Copy diagnostics',exact:true}).click()
+      await expect.poll(()=>page.evaluate(()=>navigator.clipboard.readText())).toBe(expected.clipboard)
+      const clipboard=await page.evaluate(()=>navigator.clipboard.readText())
+      const screenshot=`operator-input-${run.key}-${owner}-${locale}.png`
+      await page.screenshot({path:resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,screenshot)})
+      observations.push({key:run.key,owner,locale,execution_id:run.execution_id,raw,clipboard,screenshot})
+    }
+  }
+  expect(observations).toHaveLength(16)
+  expect(publicationRequests).toEqual([])
+  writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,'topology-browser.json'),JSON.stringify({
+    ...evidence,schema_version:'addp.operator-input-diagnostics-browser/v1',result:'passed',observations},null,2)+'\n')
+})

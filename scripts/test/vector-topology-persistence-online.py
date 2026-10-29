@@ -18,6 +18,122 @@ vector = importlib.import_module('scripts.utils.online_vector_persistence')
 scan_ids = importlib.import_module('scripts.test.vector-pmtiles-workflow-online').scan_ids
 
 
+DIAGNOSTIC_SPECS = (
+    ('field-conflict','batch_buffer','operator_field_conflict','input_gdf','distance'),
+    ('number-array','batch_buffer','operator_number_array_invalid','distances',''),
+    ('crs-mismatch','distance_to','operator_crs_mismatch','',''),
+    ('positive-number','check_line_proximity','operator_positive_number_required','tolerance',''),
+)
+DIAGNOSTIC_PRIVATE = ('PRIVATE_DIAGNOSTIC_NODE','PRIVATE_DIAGNOSTIC_SOURCE_VALUE','Traceback','site-packages','/tmp/')
+
+
+def diagnostic_definition(key, sources, parent):
+    spec=next((value for value in DIAGNOSTIC_SPECS if value[0]==key),None)
+    if spec is None:raise SuiteError('unknown operator diagnostic example')
+    node='PRIVATE_DIAGNOSTIC_NODE'
+    primary=sources[3] if key=='field-conflict' else sources[0]
+    tasks=[{'id':node,'operator':spec[1],'depends_on':['source'], 'params':{'input_gdf':{'$ref':'source'}}},
+           {'id':'source','operator':'load','depends_on':[],'params':{'locator':primary}}]
+    params=tasks[0]['params']
+    if spec[1]=='batch_buffer':params.update(distances=[True] if key=='number-array' else [1],resolution=1)
+    else:
+        tasks[0]['depends_on'].append('reference')
+        tasks.append({'id':'reference','operator':'load','depends_on':[], 'params':{'locator':sources[2] if key=='crs-mismatch' else sources[1]}})
+        params['target_geom' if key=='crs-mismatch' else 'reference_gdf']={'$ref':'reference'}
+        if key=='positive-number':params.update(tolerance=0,id_field='route_key',reference_id_field='route_key')
+    tasks.append({'id':'save','operator':'save','depends_on':[node],'params':{'input_df':{'$ref':node},
+                  'target_parent_locator':parent,'target_name':key+'.gpkg','mode':'fail'}})
+    return {'tasks':tasks}
+
+
+def expected_input_diagnostic(spec):
+    _,operator,reason,parameter,field=spec
+    return {'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,
+            'operator':{'node_index':1,'operator_id':operator,**({'parameter':parameter} if parameter else {}),**({'field':field} if field else {})}}
+
+
+def validate_input_failure(execution, spec, identifier):
+    if execution.get('execution_id')!=identifier or execution.get('status')!='failed' or execution.get('outputs'):
+        raise SuiteError('operator parameter failure identity/status/output differs')
+    details=obj(execution.get('error_details'),'operator error details')
+    if (details.get('code')!='develop.workflow.invalid_params' or details.get('diagnostic')!=expected_input_diagnostic(spec)
+        or type(details.get('diagnostic',{}).get('operator',{}).get('node_index')) is not int
+        or set(details)-{'code','category','message','diagnostic'}):
+        raise SuiteError('operator parameter failure controlled public diagnostic differs')
+    if any(value in json.dumps(details,ensure_ascii=False) for value in DIAGNOSTIC_PRIVATE):
+        raise SuiteError('operator public diagnostic leaked private runtime context')
+    metadata=obj(execution.get('metadata'),'operator failure metadata')
+    facts=metadata.get('lineage_facts') or {}
+    result=metadata.get('result') or {}
+    if facts.get('outputs') or result.get('meta_scan_runs'):
+        raise SuiteError('operator parameter failure published facts or automatic scans')
+    return details
+
+
+def run_diagnostic_scenario(repository, env, client, physical_runner, browser_runner):
+    tenant=positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'tenant')
+    if tenant<=1:raise SuiteError('operator diagnostics forbid default Tenant')
+    identity=raster.validate_identity(client,tenant,required_permissions=PERMISSIONS)
+    timeout=float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS','600'));deadline=time.monotonic()+timeout
+    def remaining():
+        seconds=deadline-time.monotonic()
+        if seconds<=0:raise SuiteError('operator diagnostic business budget exhausted')
+        return seconds
+    engine=positive(env['ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID'],'NFS engine')
+    sources=[]
+    for name in fixture.DIAGNOSTIC_SOURCES:
+        scope=f'addp://engine/{engine}/path/{name}?type=file'
+        scan=support.wait_for_meta_scan(client,engine,time.monotonic()+remaining(),scope={'targets':[scope]})
+        item=support.find_fixture_item(client,engine,name,'operator diagnostic source')
+        before=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
+        sources.append({'name':name,'id':item['id'],'locator':scope+f'&item_id={item["id"]}', 'before':before,'scan_execution_id':scan})
+    inventory=scan_ids(client)
+    if inventory!=sorted(value['scan_execution_id'] for value in sources):raise SuiteError('operator diagnostic initial scan inventory differs')
+    runtimes=[value for value in array(client.request('GET','/api/v1/develop/workflow-engines',(200,)).payload,'runtimes')
+              if value.get('engine_type')=='geopython_workflow' and value.get('connection_status')=='online']
+    if len(runtimes)!=1:raise SuiteError('operator diagnostic requires one online product Runtime')
+    native=physical_runner(repository,env)
+    if native.get('exact_inventory_verified') is not True or set(native.get('sources',{}))!=set(fixture.DIAGNOSTIC_SOURCES) or native.get('targets')!={}:raise SuiteError('operator diagnostic source physical inventory differs')
+    runs=[];directory=Path(env['ADDP_ONLINE_ARTIFACT_DIR'])
+    def checkpoint():
+        (directory/'topology-input-diagnostics-checkpoint.json').write_text(json.dumps({'schema_version':fixture.DIAGNOSTIC_SCHEMA+'-checkpoint/v1',
+            'result':'incomplete','case':fixture.DIAGNOSTIC_CASE,'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],'identity':identity,'sources':sources,
+            'initial_scan_inventory':inventory,'physical':native,'executions':runs},ensure_ascii=False,indent=2)+'\n')
+    checkpoint()
+    for spec in DIAGNOSTIC_SPECS:
+        definition=diagnostic_definition(spec[0],[value['locator'] for value in sources],f'addp://engine/{engine}/path/outputs?type=directory')
+        identifier=raster.submit(client,positive(runtimes[0]['id'],'Runtime'),definition)
+        execution=raster.wait_execution(client,'develop',identifier,remaining(),expected='failed')
+        details=validate_input_failure(execution,spec,identifier)
+        if type(execution.get('triggered_by')) is not int or execution['triggered_by']!=int(identity['principal_id']):
+            raise SuiteError('operator diagnostic public execution actor differs')
+        monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'operator Monitor')
+        if monitor.get('execution_id')!=identifier or monitor.get('module')!='develop' or monitor.get('status')!='failed' or monitor.get('error_details')!=details or type(monitor.get('triggered_by')) is not int or monitor['triggered_by']!=int(identity['principal_id']):
+            raise SuiteError('operator Monitor differs from public Develop diagnostic')
+        graphs=[]
+        for source in sources:
+            graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={source["id"]}&direction=downstream',(200,)).payload,'failure lineage')
+            if graph.get('truncated') is True or any(edge.get('relation_kind')=='derive' and edge.get('evidence',{}).get('execution_id')==identifier for edge in array(graph.get('edges'),'failure edges')):
+                raise SuiteError('operator failure published derive or incomplete graph')
+            graphs.append({'source_item_id':source['id'],'graph':graph})
+        runs.append({'key':spec[0],'execution_id':identifier,'definition':definition,'expected_diagnostic':expected_input_diagnostic(spec),
+                     'execution':execution,'monitor':monitor,'source_lineage':graphs})
+        if scan_ids(client)!=inventory or physical_runner(repository,env)!=native:raise SuiteError('operator failure changed scans or files')
+        checkpoint()
+    if len({value['execution_id'] for value in runs})!=4:raise SuiteError('operator diagnostics require four distinct executions')
+    evidence={'case':fixture.DIAGNOSTIC_CASE,'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],**identity,'executions':runs}
+    remaining();report=browser_runner(repository,env,evidence);remaining()
+    final=physical_runner(repository,env)
+    if final!=native or scan_ids(client)!=inventory:raise SuiteError('operator diagnostic browser changed physical files or scans')
+    for source in sources:
+        if client.request('GET',f'/api/v1/meta/items/{source["id"]}',(200,)).payload!=source['before']:raise SuiteError('operator diagnostic source Meta changed')
+    return {'schema_version':fixture.DIAGNOSTIC_SCHEMA+'/v1','suite':SUITE,'case':fixture.DIAGNOSTIC_CASE,'result':'passed',
+            'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],'identity':identity,'sources':sources,'executions':runs,'physical':native,
+            'post_browser_physical':final,'initial_scan_inventory':inventory,'final_scan_inventory':scan_ids(client),'browser':report,
+            'source_unchanged':True,'no_publication_or_scan_or_derive':True,
+            'cleanup_boundary':'owned disposable deployment; no business DELETE acceptance'}
+
+
 def normalize_definition(source,parent,failed=False,case=fixture.NORMALIZE_CASE):
     profile=fixture.network_profile(case);composition=case==fixture.COMPOSITION_CASE
     if case==fixture.BUFFER_CASE:
@@ -305,13 +421,28 @@ def browser(repository, env, evidence):
         raise SuiteError('topology Console evidence missing or failed')
     report = obj(json.loads(path.read_text()), 'browser evidence')
     schema=fixture.network_profile(case)['schema']+'-browser/v1' if case in fixture.INDEPENDENT_CASES else 'addp.topology-browser/v14'
-    if report != {**evidence, 'schema_version': schema, 'result': 'passed'}:
+    if case==fixture.DIAGNOSTIC_CASE:
+        observations=array(report.get('observations'),'diagnostic browser observations')
+        if len(observations)!=16 or {(v.get('key'),v.get('owner'),v.get('locale'),v.get('execution_id')) for v in observations}!={
+            (run['key'],owner,locale,run['execution_id']) for run in evidence['executions'] for owner in ('develop','monitor') for locale in ('zh-cn','en')}:
+            raise SuiteError('diagnostic browser requires exact sixteen same-UUID observations')
+        for value in observations:
+            spec=next(spec for spec in DIAGNOSTIC_SPECS if spec[0]==value['key'])
+            raw=obj(value.get('raw'),'raw browser owner response')
+            validate_input_failure(raw if value['owner']=='develop' else obj(raw.get('execution'),'raw Monitor execution'),spec,value['execution_id'])
+            if not isinstance(value.get('clipboard'),str) or not value['clipboard'] or any(token in value['clipboard'] for token in DIAGNOSTIC_PRIVATE):
+                raise SuiteError('diagnostic browser clipboard is missing or unsafe')
+        binding={key:value for key,value in report.items() if key!='observations'}
+    else:binding=report
+    if binding != {**evidence, 'schema_version': schema, 'result': 'passed'}:
         raise SuiteError('browser report does not bind the exact run, User and outputs')
     return report
 
 
 def run_scenario(repository, env, client, physical_runner=physical, browser_runner=browser,
                  diagnostic_runner=collapsed_snap_diagnostic):
+    if fixture.topology_case(env)==fixture.DIAGNOSTIC_CASE:
+        return run_diagnostic_scenario(repository,env,client,physical_runner,browser_runner)
     if fixture.topology_case(env) in fixture.INDEPENDENT_CASES:
         return run_normalize_scenario(repository,env,client,physical_runner,browser_runner,diagnostic_runner)
     tenant = positive(env['ADDP_ONLINE_TEST_TENANT_ID'], 'tenant')

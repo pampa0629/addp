@@ -4378,3 +4378,36 @@ def test_hosted_buffer_case_real_save_and_independent_oracle(tmp_path,problem):
         ds=None
         with pytest.raises((fixture.FixtureError,RuntimeError) if problem=='geometry_column' else fixture.FixtureError):fixture.verify_buffer(path,'result')
     assert all((tmp_path/name).read_bytes()==raw for name,raw in originals.items())
+
+
+@pytest.mark.parametrize('key',['field-conflict','number-array','crs-mismatch','positive-number'])
+def test_hosted_input_diagnostic_sources_reach_exact_typed_failure_without_save(tmp_path,key,monkeypatch):
+    """Native proof of the approved real-file triggers, not ordinary User T4."""
+    import importlib
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    fixture=importlib.import_module('business.scripts.online-vector-topology-fixture')
+    acceptance=importlib.import_module('scripts.test.vector-topology-persistence-online')
+    (tmp_path/'outputs').mkdir();(tmp_path/'.addp-online-owner').touch()
+    original=fixture.worker('seed',tmp_path,fixture.DIAGNOSTIC_CASE)
+    workflow=acceptance.diagnostic_definition(key,list(fixture.DIAGNOSTIC_SOURCES),'unused-parent')
+    for task in workflow['tasks']:
+        if task['operator']=='load':task['params']={'connection_info':{'engine_type':'nfs','mount_path':str(tmp_path)},'path':task['params']['locator']}
+        elif task['operator']=='save':
+            task['params'].pop('target_parent_locator');task['params'].pop('target_name')
+            task['params'].update(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)},path='outputs/forbidden.gpkg')
+    monkeypatch.setattr(api_server,'executions',ExecutionRegistry())
+    with api_server.app.test_client() as client:
+        response=client.post('/api/workflow',json={'workflow_def':workflow,'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+        assert response.status_code==202
+        deadline=time.monotonic()+10
+        while time.monotonic()<deadline:
+            state=client.get('/api/executions/'+response.get_json()['execution_id']).get_json()
+            if state['status'] in ('failed','success'):break
+            time.sleep(.01)
+    assert state['status']=='failed' and state['error_code']=='INVALID_PARAMS',state
+    spec=next(spec for spec in acceptance.DIAGNOSTIC_SPECS if spec[0]==key)
+    assert state['diagnostic']==acceptance.expected_input_diagnostic(spec)
+    assert fixture.worker('verify',tmp_path,fixture.DIAGNOSTIC_CASE)==original
+    fixture.archive_physical_evidence(tmp_path,tmp_path.parent/(key+'-evidence'),original,fixture.DIAGNOSTIC_CASE)
+    assert not list((tmp_path/'outputs').iterdir())

@@ -2062,6 +2062,18 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     for relative,fragments in buffer_required.items():
         if any(fragment not in (repository/relative).read_text() for fragment in fragments):
             raise RegistrationError('topology buffer case contract incomplete: '+relative)
+    diagnostics_required = {
+        '.github/workflows/online-t4-gates.yml': ('          - operator-input-diagnostics',),
+        'scripts/test/online-hosted-topology-gate.sh': ('multi-distance-buffer|operator-input-diagnostics',),
+        'business/scripts/online-vector-topology-fixture.py': ('def diagnostic_worker(', 'DIAGNOSTIC_SOURCES', 'no physical publication'),
+        'scripts/test/vector-topology-persistence-online.py': ('def run_diagnostic_scenario(', 'def validate_input_failure(', 'sixteen same-UUID observations', 'expected_input_diagnostic'),
+        'engines/geopython-workflow/test_topology_operators.py': ('test_hosted_input_diagnostic_sources_reach_exact_typed_failure_without_save',),
+        'scripts/test/vector-topology-persistence-online_test.py': ('class InputDiagnosticOnlineTest', 'test_diagnostic_rejects_wrong_tuple_private_context_and_any_publication'),
+        'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('算子参数诊断独立普通User双语失败页', 'assertInputDiagnosticPanel', 'navigator.clipboard.readText()', 'await page.reload()', 'browserAPIFromResponse(response', 'observations).toHaveLength(16)'),
+    }
+    for relative,fragments in diagnostics_required.items():
+        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+            raise RegistrationError('topology operator input diagnostics contract incomplete: '+relative)
     composition_required = {
         'business/scripts/online-vector-topology-fixture.py': ('line-network-normalize-chains', 'composition_source_features',
             'composition_expected_features', 'verify_composition_relations', '2**40', 'original direction or business fields differ'),

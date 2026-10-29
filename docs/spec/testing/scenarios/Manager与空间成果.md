@@ -752,3 +752,14 @@ ORC 嵌套扩展复用同一 `native-table-orc` case、原 11 项权限与精确
 独立逐像元BFS连通与原始邻界搜索不调用产品游程算法或GDAL Sieve，完整分类／mask／原网格／CRS及定位缺失、COG布局和3级nearest概览逐项核验。缺失定位成果在Meta的plain_tiff提示与无spatial事实按真实契约核验，不伪造CRS／网格；实际COG由GDAL全量布局检查证明。6成功累计21次、28失败各重读6成果168次，共34次物理调用／189次实际全量成果检查。只缓存绑定本轮／夹具／全部源hash的独立期望，实际成果每次重读；6份COG原字节及大小／SHA-256清单归档，缺失／篡改／额外项／符号链接／静默修复拒绝。
 
 artifact／物理／Meta相等正整数大小、精确scan父执行／用户／租户／引擎、当前实际input.source内部血缘／公开安全投影／Meta关系／Monitor、源和旧成果不变、失败零发布／新增扫描派生血缘及所有清理严格保持。只扩展既有受控只读取证套件白名单，不改SQL／产品安全投影／权限／算法或原套件。期望准备／首次BFS构建／业务／期望清理计入600秒；构建部署／源准备／部署拆除沿原外层生命周期分别取证。标准`make test-raster-sieve-online-runner`、Native recipe、影响选路和独立手工CI同次登记；本地准备、Linux与实际Hosted分别记账，实际运行由CI会话协调，不计UI／容量或任意影像认证。
+
+
+### 算子参数错误独立普通 User 实页
+
+`vector-topology-persistence` 的 `operator-input-diagnostics` case 仅验证新诊断，不执行原成功业务、地图或容量矩阵。沿用一次性 Hosted、非默认 Tenant、普通 User 精确11权限和600秒业务预算。四次真实执行分别触发：多距缓冲普通属性 `distance` 重名、`distances=[true]`、距离计算两份已知投影 CRS 不同、近接检查零容差。每份冻结 DAG 均带下游保存；至少一份将失败节点置于 tasks 数组首位并通过 depends_on 在 load 后调度，严格核节点序号来自冻结数组而非调度顺序。
+
+核 Develop 与 Monitor 实际公开响应的 `develop.workflow.invalid_params`、唯一 v3 execution 阶段及闭合 reason/operator 上下文，不以错误文本推断。四个 UUID 各在 Console 的 Develop 和 Monitor 实页用正常语言菜单切换中英文并刷新，16组展示核受控原因、算子、节点、可选参数/字段、处理建议、UUID和真实剪贴板；同次浏览器读取须绑定同普通 User/Tenant/11权限。无 mock 替换或绕过真实 Worker。仅诊断区域与复制内容按安全字段白名单核对，诊断公开响应不得泄露原生异常、自定义节点名、源值或私有路径；合法源 locator 不作为整份领域响应的泄露判断。
+
+四次预期失败均须无稳定成果、输出 facts、自动成果扫描或当前执行 derive，源文件 SHA/size 和 Meta 前后不变；初始源扫描单独登记，不与成果扫描混同。归档四份冻结定义、原始公开执行/Monitor响应、源 Meta/字节、各语言页面截图及剪贴板文本，最终报告与阶段 incomplete 分开；最后核 owned NFS、Runtime/registry、部署/Infra 清理零残留，清理不认证业务 DELETE。
+
+不覆盖 `distance_to` 活动几何列名为 `distance` 的特殊冲突：当前正式文件读取会规范化内存几何列名，既有 Native/T3 证据保留，不注入内存对象、改 load 或新增数据库来制造实页覆盖。四例是代表性端到端验证，不外推全部11种组合或算子成功计算能力。
