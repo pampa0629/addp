@@ -29,6 +29,8 @@ COMMON_POSTGRES_SUCCESS_OUTPUT = (
     "--- PASS: TestIntegrationResolvePostgresQueryOutputRewrite (0.01s)\n"
     "--- PASS: TestExecutionRetentionAssessmentAgainstPostgres (0.01s)\n"
     "--- PASS: TestExecutionLifecycleAgainstPostgres (0.01s)\n"
+    "--- PASS: TestPostgresCleanupProfessionalResultAtomicity (0.01s)\n"
+    "--- PASS: TestIntegrationPostgresGraphCleanupRuntime (0.01s)\n"
     "PASS"
 )
 
@@ -241,7 +243,7 @@ class ModuleGateTest(unittest.TestCase):
     def test_common_postgres_group_preserves_full_default_and_scopes_explicitly(self) -> None:
         result, calls = self._run_common_postgres_group([])
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(6, len(calls))
+        self.assertEqual(8, len(calls))
         self.assertIn("TestIntegrationPostgresCatalogPreciseReadOnly", calls[0])
         self.assertIn("TestIntegrationPostgresAnalyticalArithmetic", calls[0])
         self.assertIn("TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage|OutputRewrite)", calls[0])
@@ -252,11 +254,13 @@ class ModuleGateTest(unittest.TestCase):
         self.assertIn("TestIntegrationHighGoTableWrite", calls[0])
         self.assertIn("./execution", calls[1])
         self.assertEqual("test ./execution -run ^TestExecution(AuthorizationFactsMigration|Events|EventRetention|RetentionAssessment|Lifecycle)AgainstPostgres$ -count=1 -v", calls[1])
-        self.assertIn("./exportartifact", calls[2])
-        self.assertIn("TestExportExecutionSourceAgainstPostgres", calls[2])
-        self.assertIn("./dataprotection/projectionstore", calls[3])
-        self.assertIn("./dbbridge", calls[4])
-        self.assertIn("./internal/repository -run ^TestIntegrationPostgresGraph", calls[5])
+        self.assertEqual("test ./cleanup -run ^TestPostgresCleanupProfessionalResultAtomicity$ -count=1 -v", calls[2])
+        self.assertIn("./exportartifact", calls[3])
+        self.assertIn("TestExportExecutionSourceAgainstPostgres", calls[3])
+        self.assertIn("./dataprotection/projectionstore", calls[4])
+        self.assertIn("./dbbridge", calls[5])
+        self.assertIn("./internal/repository -run ^TestIntegrationPostgresGraph", calls[6])
+        self.assertEqual("test ./internal/service -run ^TestIntegrationPostgresGraphCleanupRuntime$ -count=1 -v", calls[7])
 
 
         result, calls = self._run_common_postgres_group(["--test", "query-read-set"])
@@ -271,7 +275,7 @@ class ModuleGateTest(unittest.TestCase):
         explicit, explicit_calls = self._run_common_postgres_group(["--test", "all"])
         self.assertEqual(0, default.returncode, default.stderr)
         self.assertEqual(0, explicit.returncode, explicit.stderr)
-        self.assertEqual(6, len(explicit_calls))
+        self.assertEqual(8, len(explicit_calls))
         self.assertEqual(default_calls, explicit_calls)
 
     def test_common_postgres_retention_group_is_exactly_scoped(self) -> None:
@@ -548,8 +552,9 @@ print("--- PASS: TestScanPlanFactsAgainstPostgres (0.01s)")
     def test_common_postgres_graph_scope_requires_real_target_contract_and_rejects_skips(self) -> None:
         result, calls = self._run_common_postgres_group(["--test", "graph"])
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(1, len(calls))
+        self.assertEqual(2, len(calls))
         self.assertIn("./internal/repository -run ^TestIntegrationPostgresGraph", calls[0])
+        self.assertEqual("test ./internal/service -run ^TestIntegrationPostgresGraphCleanupRuntime$ -count=1 -v", calls[1])
         self.assertNotIn("engine/plugins", calls[0])
         self.assertIn("Graph PostgreSQL target", result.stdout)
         result, _ = self._run_common_postgres_group(["--test", "graph"], "--- SKIP: fixture")
