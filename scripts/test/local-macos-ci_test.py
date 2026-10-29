@@ -117,6 +117,7 @@ class LocalMacOSCiTest(unittest.TestCase):
             printf '%s\n' "$*" >> "$MAKE_LOG"
             printf '%s|%s\n' "$*" "${DEVELOP_POSTGRES_TEST_DSN-UNSET}" >> "$MAKE_ENVIRONMENT_LOG"
             printf 'postgres-marker:%s|%s\n' "$*" "${ADDP_LOCAL_CI_POSTGRES-UNSET}" >> "$MAKE_ENVIRONMENT_LOG"
+            printf 'cleanup-dsn:%s|%s\n' "$*" "${ADDP_SYSTEM_CLEANUP_POSTGRES_TEST_DSN-UNSET}" >> "$MAKE_ENVIRONMENT_LOG"
             printf '%s|%s|%s|%s|%s|%s\n' "$*" \
               "${ADDP_LOCAL_CI_MYSQL-UNSET}" \
               "${ADDP_TEST_MYSQL_HOST-UNSET}" \
@@ -275,6 +276,7 @@ class LocalMacOSCiTest(unittest.TestCase):
         oceanbase_start_failure: bool = False,
         node_version: str = "v24.20.0",
         develop_postgres_test_dsn: str | None = None,
+        cleanup_postgres_test_dsn: str | None = None,
         inherited_oceanbase_environment: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
@@ -315,6 +317,8 @@ class LocalMacOSCiTest(unittest.TestCase):
             )
         if develop_postgres_test_dsn is not None:
             environment["DEVELOP_POSTGRES_TEST_DSN"] = develop_postgres_test_dsn
+        if cleanup_postgres_test_dsn is not None:
+            environment["ADDP_SYSTEM_CLEANUP_POSTGRES_TEST_DSN"] = cleanup_postgres_test_dsn
         return subprocess.run(
             ["bash", "scripts/test/local-macos-ci.sh", *arguments],
             cwd=self.repository,
@@ -645,12 +649,15 @@ class LocalMacOSCiTest(unittest.TestCase):
         result = self._run(
             "--no-fetch",
             develop_postgres_test_dsn="postgres://external/unsafe_database",
+            cleanup_postgres_test_dsn="postgres://external/unsafe_cleanup_database",
         )
 
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertIn("test|UNSET", self._make_environments())
         self.assertIn("postgres-marker:test|UNSET", self._make_environments())
         self.assertIn("postgres-marker:test-integration|1", self._make_environments())
+        self.assertIn("cleanup-dsn:test|UNSET", self._make_environments())
+        self.assertIn("cleanup-dsn:test-integration|postgres://addp:addp_password@127.0.0.1:15432/addp_test?sslmode=disable", self._make_environments())
         self.assertIn(
             "test-integration|postgres://addp:addp_password@127.0.0.1:15432/addp_test?sslmode=disable",
             self._make_environments(),

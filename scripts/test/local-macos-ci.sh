@@ -193,6 +193,7 @@ validate_host() {
 
 clear_integration_gate_environment() {
   unset ADDP_SYSTEM_POSTGRES_TEST_DSN
+  unset ADDP_SYSTEM_CLEANUP_POSTGRES_TEST_DSN
   unset ASSET_POSTGRES_TEST_DSN
   unset SECURITY_POSTGRES_TEST_DSN
   unset META_POSTGRES_TEST_DSN
@@ -309,6 +310,7 @@ run_integration_gates() {
   iam_dsn='postgres://addp:addp_password@127.0.0.1:15432/addp_iam_test?sslmode=disable'
   env \
     ADDP_SYSTEM_POSTGRES_TEST_DSN="$iam_dsn" \
+    ADDP_SYSTEM_CLEANUP_POSTGRES_TEST_DSN="$shared_dsn" \
     ASSET_POSTGRES_TEST_DSN="$shared_dsn" \
     SECURITY_POSTGRES_TEST_DSN="$shared_dsn" \
     META_POSTGRES_TEST_DSN="$shared_dsn" \

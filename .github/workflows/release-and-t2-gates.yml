@@ -467,6 +467,51 @@ jobs:
           gate: System IAM verification (PostgreSQL 15)
           status: ${{ job.status }}
 
+  system-cleanup-postgres:
+    name: System Cleanup admission and coordination (PostgreSQL 15)
+    needs: selection
+    if: needs.selection.outputs.system == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+        env:
+          POSTGRES_USER: addp_ci
+          POSTGRES_PASSWORD: addp_ci_password
+          POSTGRES_DB: addp_system_cleanup_disposable
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U addp_ci -d addp_system_cleanup_disposable"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: system/backend/go.mod
+          cache: false
+
+      - name: Run System Cleanup PostgreSQL gate
+        env:
+          ADDP_SYSTEM_CLEANUP_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_system_cleanup_disposable?sslmode=disable
+        run: make test-system-cleanup
+
+      - name: Summarize System Cleanup PostgreSQL gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: System Cleanup admission and coordination (PostgreSQL 15)
+          selected: ${{ needs.selection.outputs.system }}
+          status: ${{ job.status }}
+
   meta-postgres:
     name: Meta integration (PostgreSQL 15)
     needs: selection

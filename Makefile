@@ -384,6 +384,7 @@ test-integration: ## 严格串行运行所有本地可执行的 disposable 基�
 	@$(MAKE) test-manager-postgres
 	@$(MAKE) test-manager-mongodb-security
 	@$(MAKE) test-system-iam-postgres
+	@$(MAKE) test-system-cleanup
 	@$(MAKE) test-system-runtime-log
 	@$(MAKE) test-monitor-metrics
 	@$(MAKE) test-monitor-traces
@@ -525,6 +526,14 @@ test-system-iam-postgres: ## 使用一次性 PostgreSQL 数据库运行 System I
 .PHONY: test-system-iam-runner
 test-system-iam-runner: ## 验证 System IAM PostgreSQL 门禁跨进程互斥
 	@python3 -m unittest scripts/test/system-iam-postgres-gate_test.py
+
+.PHONY: test-system-cleanup test-t2-ci-registration
+test-system-cleanup: ## 验证 System Cleanup 准入、父子协调与只读快照的 PostgreSQL 契约
+	@bash scripts/test/system-cleanup-gate.sh
+
+test-t2-ci-registration: ## 验证 T2 入口、选择、服务登记及 PostgreSQL runner 契约
+	@python3 scripts/ci/check-t2-ci-registration_test.py
+	@python3 scripts/ci/check-t2-ci-registration.py --repository "$(CURDIR)"
 
 test-asset-postgres: ## 使用一次性 PostgreSQL 数据库运行 Asset 授权履约迁移门禁
 	@bash scripts/test/asset-postgres-gate.sh
@@ -1075,8 +1084,7 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@$(MAKE) test-build-registration
 	@$(MAKE) test-frontend-ci-registration
 	@$(MAKE) test-python-ci-registration
-	@python3 scripts/ci/check-t2-ci-registration_test.py
-	@python3 scripts/ci/check-t2-ci-registration.py --repository "$(CURDIR)"
+	@$(MAKE) test-t2-ci-registration
 	@python3 scripts/ci/check-release-eligibility_test.py
 	@$(MAKE) test-release-runner
 	@$(MAKE) test-workflow-security

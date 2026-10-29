@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import importlib.util
+import fcntl
 import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -993,6 +995,202 @@ class CommonPostgresExecutionSelectionTest(unittest.TestCase):
         result, _ = self.run_gate_fixture("fail", "execution-events")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn("TestExecutionLifecycleAgainstPostgres", result.stdout)
+
+
+class SystemCleanupPostgresRunnerTest(unittest.TestCase):
+    CASES = (
+        "TestIntegrationPostgresCleanupAcceptanceAtomicity",
+        "TestIntegrationPostgresCleanupIdempotence",
+        "TestIntegrationPostgresCleanupCoordinatorRecovery",
+        "TestIntegrationPostgresCleanupAdmissionRace",
+        "TestIntegrationPostgresCleanupReadOnlySnapshot",
+    )
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.repository = SCRIPT.parents[2]
+        for directory in ("scripts/test", "scripts/infra", "scripts/utils", "system/backend", "bin"):
+            (self.root / directory).mkdir(parents=True, exist_ok=True)
+        self.lock = self.root / "common-pg.lock"
+        source = (self.repository / "scripts/test/system-cleanup-gate.sh").read_text()
+        self.runner = self.root / "scripts/test/system-cleanup-gate.sh"
+        self.runner.write_text(source.replace("/tmp/addp-common-postgres-gate.lock", str(self.lock)))
+        for relative in ("scripts/infra/ports.sh", "scripts/utils/observability-env.sh"):
+            (self.root / relative).write_text((self.repository / relative).read_text())
+        go = self.root / "bin/go"
+        go.write_text(
+            f"#!{sys.executable}\n"
+            "import json, os, sys, time\nfrom pathlib import Path\n"
+            "args = sys.argv[1:]\n"
+            "Path(os.environ['TRACE']).write_text(json.dumps({'args':args,'cwd':str(Path.cwd()),'GOWORK':os.environ.get('GOWORK')}))\n"
+            "mode = os.environ.get('OUTCOME', 'pass')\n"
+            "if mode == 'hold':\n"
+            "    Path(os.environ['STARTED']).touch()\n"
+            "    deadline = time.monotonic() + 10\n"
+            "    while not Path(os.environ['RELEASE']).exists():\n"
+            "        if time.monotonic() > deadline: sys.exit(38)\n"
+            "        time.sleep(0.01)\n"
+            f"names = {self.CASES!r}\n"
+            "if mode == 'fail': sys.exit(37)\n"
+            "for name in names:\n"
+            "    affected = name == os.environ.get('AFFECTED', names[0])\n"
+            "    if mode == 'no-tests' or (mode == 'missing' and affected): continue\n"
+            "    if mode == 'skip' and affected: print('--- SKIP: ' + name + ' (0.00s)'); continue\n"
+            "    suffix = 'Extra' if mode == 'wrong' and affected else '/child' if mode == 'child' and affected else ''\n"
+            "    print('--- PASS: ' + name + suffix + ' (0.01s)')\n"
+            "if mode == 'no-tests': print('testing: warning: no tests to run\\nPASS')\n"
+            "if mode == 'skip-child': print('    --- SKIP: ' + names[0] + '/child (0.00s)')\n"
+        )
+        go.chmod(0o700)
+        docker = self.root / "bin/docker"
+        docker.write_text(
+            f"#!{sys.executable}\n"
+            "import os, sys\n"
+            "args = sys.argv[1:]\n"
+            "if args[:2] == ['port', 'addp-postgres']: print('127.0.0.1:25432')\n"
+            "elif args[:1] == ['inspect'] and args[2] == '{{.State.Running}}': print('true')\n"
+            "elif args[:1] == ['inspect']:\n"
+            "    owner = 'foreign' if os.environ.get('FOREIGN') == '1' else os.environ['FIXTURE_ROOT']\n"
+            "    print('addp-infra|postgres|' + owner)\n"
+            "else: sys.exit(99)\n"
+        )
+        docker.chmod(0o700)
+        self.environment = dict(
+            os.environ, PATH=str(self.root / "bin") + os.pathsep + os.environ["PATH"],
+            TMPDIR=str(self.root), FIXTURE_ROOT=str(self.root), TRACE=str(self.root / "trace"),
+            STARTED=str(self.root / "started"), RELEASE=str(self.root / "release"),
+            GITHUB_ACTIONS="true", ADDP_LOCAL_CI_POSTGRES="",
+            ADDP_SYSTEM_CLEANUP_POSTGRES_TEST_DSN="postgres://fixture:private@127.0.0.1:25432/addp_cleanup_disposable?sslmode=disable",
+        )
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def run_gate(self, arguments=(), **environment):
+        trace = self.root / "trace"
+        trace.unlink(missing_ok=True)
+        result = subprocess.run(
+            ["bash", str(self.runner), *arguments], env=dict(self.environment, **environment),
+            capture_output=True, text=True, timeout=15,
+        )
+        self.assertEqual(list(self.root.glob("addp-system-cleanup.*")), [], result.stderr)
+        return result, json.loads(trace.read_text()) if trace.exists() else None
+
+    def test_runs_only_service_prefix_with_bounded_uncached_go_and_all_five_passes(self):
+        result, trace = self.run_gate()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(trace, {
+            "args": ["test", "./internal/service", "-run", "^TestIntegrationPostgresCleanup", "-count=1", "-timeout=3m", "-v"],
+            "cwd": str((self.root / "system/backend").resolve()), "GOWORK": "off",
+        })
+        for case in self.CASES:
+            self.assertIn("--- PASS: " + case + " ", result.stdout)
+
+    def test_every_required_case_rejects_missing_skip_wrong_name_or_only_child_pass(self):
+        for case in self.CASES:
+            for mode in ("missing", "skip", "wrong", "child"):
+                with self.subTest(case=case, mode=mode):
+                    result, _ = self.run_gate(OUTCOME=mode, AFFECTED=case)
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    self.assertNotIn("contracts passed", result.stdout)
+
+    def test_rejects_no_tests_and_any_skipped_child(self):
+        for mode in ("no-tests", "skip-child"):
+            with self.subTest(mode=mode):
+                result, _ = self.run_gate(OUTCOME=mode)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+
+    def test_owner_failure_including_residue_assertion_propagates(self):
+        result, _ = self.run_gate(OUTCOME="fail")
+        self.assertEqual(result.returncode, 37, result.stdout + result.stderr)
+
+    def test_rejects_unsafe_or_missing_dsn_before_go_without_exposing_credentials(self):
+        for dsn in (
+            "", "postgres://fixture:private@127.0.0.1:25432/addp",
+            "postgres://fixture:private@127.0.0.1:25432/addp_iam_test",
+            "postgres://fixture:private@127.0.0.1:25432/other_test",
+            "postgres://fixture:private@127.0.0.1/addp_test",
+            "host=localhost port=25432 dbname=addp_test password=private",
+            "postgres://fixture:private@127.0.0.1:25432/addp_test?host=foreign",
+        ):
+            with self.subTest(dsn=dsn.split("@")[0]):
+                result, trace = self.run_gate(ADDP_SYSTEM_CLEANUP_POSTGRES_TEST_DSN=dsn)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIsNone(trace)
+                self.assertNotIn("private", result.stdout + result.stderr)
+
+    def test_local_requires_verified_addp_test_actual_mapping_and_container_owner(self):
+        local = "postgres://fixture:private@127.0.0.1:25432/addp_test?sslmode=disable"
+        result, _ = self.run_gate(GITHUB_ACTIONS="", ADDP_SYSTEM_CLEANUP_POSTGRES_TEST_DSN=local)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for dsn, foreign in (
+            (local.replace("25432", "15432"), ""), (local, "1"),
+            (local.replace("127.0.0.1", "external.example.test"), ""),
+            (local.replace("addp_test", "addp_cleanup_disposable"), ""),
+        ):
+            with self.subTest(foreign=foreign, target=dsn.split("@")[-1]):
+                result, trace = self.run_gate(GITHUB_ACTIONS="", ADDP_SYSTEM_CLEANUP_POSTGRES_TEST_DSN=dsn, FOREIGN=foreign)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIsNone(trace)
+
+    def test_does_not_offer_case_filters_that_can_omit_required_owner_contracts(self):
+        result, trace = self.run_gate(arguments=("--test", "read-only"))
+        self.assertEqual(result.returncode, 2)
+        self.assertIsNone(trace)
+
+    def test_lock_is_shared_with_common_and_not_unlinked(self):
+        common = (self.repository / "scripts/test/common-postgres-gate.sh").read_text()
+        self.assertIn("exec 9>>/tmp/addp-common-postgres-gate.lock", common)
+        with self.lock.open("a") as held:
+            inode = self.lock.stat().st_ino
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            result, trace = self.run_gate()
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("already running", result.stderr)
+            self.assertIsNone(trace)
+            self.assertEqual(self.lock.stat().st_ino, inode)
+        result, _ = self.run_gate()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.lock.stat().st_ino, inode)
+
+    def test_gate_holds_lock_while_go_child_runs(self):
+        started = self.root / "started"
+        release = self.root / "release"
+        process = subprocess.Popen(["bash", str(self.runner)], env=dict(self.environment, OUTCOME="hold"),
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            deadline = time.monotonic() + 10
+            while not started.exists() and process.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(started.exists(), "Go child did not start")
+            with self.lock.open("a") as lock:
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            release.touch()
+            stdout, stderr = process.communicate(timeout=10)
+            self.assertEqual(process.returncode, 0, stdout + stderr)
+        finally:
+            release.touch()
+            if process.poll() is None:
+                process.kill()
+            process.communicate(timeout=10)
+
+    def test_real_registration_and_automatic_owner_selection_cover_cleanup(self):
+        self.assertEqual(MODULE.validate_registration(self.repository), [])
+        spec = importlib.util.spec_from_file_location("cleanup_changed_gate", self.repository / "scripts/test/changed-gate.py")
+        changed = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(changed)
+        for path in (
+            "scripts/test/system-cleanup-gate.sh",
+            "system/backend/internal/service/cleanup_durable_postgres_test.go",
+            "system/backend/internal/migration/sql/000250_cleanup_requests.up.sql",
+            "common/execution/cleanup.go", "common/events/cleanup_protocol.go",
+        ):
+            with self.subTest(path=path):
+                self.assertIn("system", changed.affected_modules(self.repository, [path]))
+                commands = [s.command for s in changed.plan_changed(self.repository, [path])]
+                self.assertEqual(commands.count(("make", "test-system-cleanup")), 1)
 
 
 if __name__ == "__main__":
