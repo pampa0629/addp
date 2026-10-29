@@ -195,3 +195,115 @@ test('capacity DOM receipt binds all actual device cells and new refresh to the 
   expect(page.url()).toBe(url)
   expect(await iframe.evaluate(() => performance.timeOrigin)).toBe(origin)
 })
+
+for (const entry of ['list', 'detail']) test(`capacity disabled, source/query failure and recovery clear old values in the Console ${entry} iframe`, async ({ page }) => {
+  let capacityState = 'available', bytes = 2 ** 40, generation = 0
+  const state = await resourceBackend(page, { observationResponse(body, query) {
+    if (query.get('metrics') !== 'node.block.capacity_bytes') return
+    body.collection.block_capacity = ['http-error', 'invalid-frame'].includes(capacityState) ? 'available' : capacityState
+    const template = body.series[0]
+    body.series = ['available', 'stale', 'invalid-frame'].includes(capacityState)
+      ? ['device', 'mapped'].map((kind, index) => ({ ...template,
+        dimensions: { device: index ? `dm-${generation}` : `disk-${generation}`, kind: capacityState === 'invalid-frame' ? 'physical' : kind },
+        points: template.points.map(point => ({ ...point, value: bytes, data_state: capacityState === 'stale' ? 'stale' : 'valid',
+          sampled_at: capacityState === 'stale' ? new Date(Date.parse(point.evaluated_at) - 61000).toISOString() : point.evaluated_at })) }))
+      : [{ ...template, dimensions: {}, points: template.points.map(point => ({ ...point, value: null, sampled_at: null, data_state: 'no_data' })) }]
+  } })
+  let releaseFailure
+  const failureGate = new Promise(resolve => { releaseFailure = resolve })
+  await page.route('**/api/v1/monitor/platform/resource_observations?**', async route => {
+    const query = new URL(route.request().url()).searchParams
+    if (capacityState !== 'http-error' || query.get('metrics') !== 'node.block.capacity_bytes') return route.fallback()
+    await failureGate
+    await route.fulfill({ status: 503, json: { error_code: 'observability_backend_unavailable', error: 'fixture unavailable' } })
+  })
+  const resources = [], pending = [], requests = []
+  page.on('request', request => {
+    const url = new URL(request.url())
+    if (url.pathname.startsWith('/api/v1/monitor/platform/resource_')) requests.push({ path: url.pathname, method: request.method(), query: Object.fromEntries(url.searchParams) })
+  })
+  page.on('response', response => {
+    const url = new URL(response.url())
+    if (url.pathname === '/api/v1/monitor/platform/resource_observations' && url.searchParams.get('metrics') === 'node.block.capacity_bytes') {
+      pending.push(response.json().then(value => resources.push({ path: url.pathname, query: Object.fromEntries(url.searchParams), value })))
+    }
+  })
+  await page.goto(entry === 'list' ? '/monitor/node-resources?refresh=off' : `/monitor/node-resources/${node}?refresh=off`)
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  const toggle = monitor.getByTestId(entry === 'list' ? `resource-list-block-${node}` : 'resource-block-toggle')
+  const panel = monitor.getByTestId(entry === 'list' ? 'resource-detail-expansion' : 'block-capacity-section')
+  const table = panel.getByTestId('resource-block-table'), refresh = panel.getByTestId('resource-detail-refresh')
+  await expect(toggle).toBeVisible()
+  if (entry === 'detail') await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  const healthyValue = entry === 'list' ? monitor.getByTestId('resource-summary-cores').first()
+    : monitor.getByTestId('resource-cores').locator('strong')
+  await expect(healthyValue).toHaveText('0 核')
+  const frame = page.frames().find(frame => frame.parentFrame()), origin = await frame.evaluate(() => performance.timeOrigin), url = page.url()
+  const nonCapacityReads = () => requests.filter(row => row.query.metrics !== 'node.block.capacity_bytes').length
+  const unrelatedReads = nonCapacityReads()
+  expect(resources).toHaveLength(0)
+  await toggle.click()
+  await expect(table).toContainText('1.00 TiB')
+  await expect.poll(() => resources.length).toBe(1)
+  const opened = await readBlockCapacityTable(table, resources, node, expect)
+  expect(opened.devices.map(row => row.bytes)).toEqual([bytes, bytes])
+
+  for (const failure of [
+    { state: 'not_collected', text: '未启用设备容量采集' },
+    { state: 'failed', text: '设备容量采集失败或证据不完整' },
+    { state: 'stale', text: '设备容量采样已过期' },
+    { state: 'http-error', text: '无法读取资源观测，请稍后刷新。', error: true },
+    { state: 'invalid-frame', text: '资源响应不完整，无法展示，请重新刷新。', error: true }
+  ]) {
+    capacityState = failure.state
+    const before = resources.length
+    const previousDevices = (await readBlockCapacityTable(table, resources, node, expect)).devices
+    await refresh.click()
+    if (failure.state === 'http-error') {
+      // The request is held at the transport boundary: old values must disappear before failure arrives.
+      try {
+        await expect.poll(() => requests.filter(row => row.query.metrics === 'node.block.capacity_bytes').length).toBe(before + 1)
+        await expect(table.locator('.el-table__body tr')).toHaveCount(0)
+        await expect(refresh).toBeDisabled()
+      } finally { releaseFailure() }
+    }
+    await expect.poll(() => resources.length).toBe(before + 1)
+    await expect(refresh).toBeEnabled()
+    await expect(panel.getByTestId(failure.error ? 'resource-block-error' : 'resource-block-status')).toHaveText(failure.text)
+    await expect(panel.getByTestId(failure.error ? 'resource-block-status' : 'resource-block-error')).toHaveCount(0)
+    await expect(table.locator('.el-table__body tr')).toHaveCount(0)
+    await expect(table).toContainText('暂无有效设备容量')
+    for (const row of previousDevices) await expect(table).not.toContainText(row.dimensions.device)
+    await expect(table).not.toContainText('0.00 B')
+    await expect(healthyValue).toHaveText('0 核')
+    await expect(monitor.getByTestId('resource-error')).toHaveCount(0)
+    await expect(monitor.getByTestId('resource-summary-error')).toHaveCount(0)
+
+    capacityState = 'available'; bytes /= 2; generation += 1
+    await refresh.click()
+    await expect.poll(() => resources.length).toBe(before + 2)
+    await expect(refresh).toBeEnabled()
+    const recovered = await readBlockCapacityTable(table, resources, node, expect)
+    expect(recovered.resource_index).toBe(before + 1)
+    expect(recovered.devices.map(row => row.bytes)).toEqual([bytes, bytes])
+    expect(recovered.devices.map(row => row.dimensions.device)).toEqual([`disk-${generation}`, `dm-${generation}`])
+    for (const row of previousDevices) await expect(table).not.toContainText(row.dimensions.device)
+    await expect(panel.getByTestId('resource-block-status')).toHaveCount(0)
+    await expect(panel.getByTestId('resource-block-error')).toHaveCount(0)
+    expect(page.url()).toBe(url)
+    expect(await frame.evaluate(() => performance.timeOrigin)).toBe(origin)
+    expect(nonCapacityReads()).toBe(unrelatedReads)
+  }
+  await toggle.click()
+  await expect(panel).toHaveCount(entry === 'list' ? 0 : 1)
+  await expect(table).toHaveCount(0)
+  await Promise.all(pending)
+  expect(resources).toHaveLength(11)
+  expect(requests.filter(row => row.query.metrics === 'node.block.capacity_bytes')).toHaveLength(11)
+  expect(requests.filter(row => row.query.metrics === 'node.block.capacity_bytes').every(row => row.method === 'GET'
+    && row.path === '/api/v1/monitor/platform/resource_observations'
+    && JSON.stringify(Object.keys(row.query).sort()) === JSON.stringify(['metrics', 'node_id']) && row.query.node_id === node)).toBe(true)
+  expect(state.reads.every(row => !row.method || row.method === 'GET')).toBe(true)
+  expect(page.url()).toBe(url)
+  expect(await frame.evaluate(() => performance.timeOrigin)).toBe(origin)
+})

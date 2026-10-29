@@ -401,3 +401,16 @@ regression／complete-comparison 在当次私有部署显式开启原容量扩�
 - `npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js`：7/7受控iframe场景通过（50.9秒），日志 `/tmp/addp-capacity-console-browser.log`。新增容量场景覆盖两设备逐项1 TiB、刷新后512 GiB、完整DOM读数、仅两个容量请求、收起、URL与同iframe不变；使用受控API，不是正式密码／MFA或真实主机证据。
 
 上述脚本及测试由原根Online runner、Console frontend自动发现和已登记的标准CI路径覆盖，不新增入口、依赖、Workflow或调度。未重跑未变的Monitor产品门禁，原完整前端长回归失败仍保留，稳定环境复验未完成。原生Linux容量实源、正式身份Console／Safari、Hosted与该层零残留尚未实际执行／回传，不计通过；旧关闭Textfile的文件系统通过也不补作容量通过。未触发／轮询CI或Hosted、未设置定时任务、未修改个人开关或重启服务；当前仅可将“验收准备缺口”更新为已补，不能更新“真实运行验收”为完成。
+
+
+## 容量关闭故障与恢复的Console状态验收（2026-10-29）
+
+本批沿现有容量状态口径、唯一 `HostBlockCapacity`／请求内核和共享DOM读数函数，仅新增 Console 受控iframe验收；没有产品、API、权限、采集开关或Hosted用途变更。列表行“磁盘与卷容量”展开和主机详情“查看设备容量”分别走同一场景：有效两设备容量后，依次验证未启用、采集失败、样本过期、HTTP查询失败和不完整响应，每次都恢复为新设备名／新容量。
+
+关闭／来源失败保持各自提示，查询失败与非法结构类型显示对应局部错误。每个异常阶段确认设备表无数据行、显示“暂无有效设备容量”，不残留旧设备、不补0 B；过期响应即使携带旧容量也不能显示。HTTP失败使用受控门闩暂缓响应，确认请求尚在进行时旧行已清除、按钮处于加载禁用状态，再返回503；门闩失败也在finally释放，不用固定睡眠或加大超时。五次恢复都通过上一批同一共享DOM函数逐行核对完整新device／kind、IEC容量、有效状态及新响应索引，同时确认错误提示清除。
+
+两入口各恰好11次容量GET（首次一次、五组失败／恢复各两次），查询仅当前node_id及固定容量指标，不新增其他资源读取、写操作或轮询。CPU核数摘要保持原值；Console URL、同一iframe的timeOrigin及手工刷新选择保持。结束收起设备表，不把局部来源问题扩为主机页整体错误。
+
+验证记录：标准隔离浏览器入口 `npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js` 首轮9/9通过（1.1分钟），日志 `/tmp/addp-capacity-console-states-browser.log`；覆盖原7项及本次列表／详情两项。随后按最终文件运行根 `make test-console-frontend`，退出0：30文件219项单元测试、242项浏览器回归（7.0分钟）及Vite生产构建（1.93秒）全部通过，日志 `/tmp/addp-capacity-console-states-full.log`。源码仅改现有自动发现的Console浏览器文件；已有Console标准入口及CI路径覆盖，无新增依赖、Make入口或Workflow。未修改Monitor产品代码、共享读数函数或Online协议，不重跑未变的Go、来源T2及Online runner。
+
+本批只证明受控HTTP响应下的真实Console／Monitor iframe交互；没有关闭或破坏个人采集器，不读取个人数据、不重启服务，不运行真实Linux故障或正式身份Hosted。原生来源／Hosted与Linux CI结果仍等专门会话回传，未触发／重跑／轮询CI或Hosted，未设置定时任务。旧完整Monitor前端长回归失败保持原记录，不由本批Console结果代替。
