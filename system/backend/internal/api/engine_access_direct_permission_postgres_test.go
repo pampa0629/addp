@@ -108,7 +108,7 @@ func exerciseDirectPermissionAPI(t *testing.T, db *gorm.DB, identity *iam.Reposi
 				if q.FingerprintFilter == "include" && !set[fp] || q.FingerprintFilter == "exclude" && set[fp] || q.Search != "" && !strings.Contains(name, q.Search) {
 					continue
 				}
-				all = append(all, authorizationfacts.DataItemIdentity{EngineID: engine.ID, ItemFingerprint: fp, Name: name, FullName: "public/" + name, ItemType: "table"})
+				all = append(all, authorizationfacts.DataItemIdentity{EngineID: engine.ID, ItemFingerprint: fp, Name: name, FullName: "public/" + name, ItemType: "table", Ancestors: []authorizationfacts.IdentityNode{{ID: 1, Name: "outdoor", NodeType: "schema"}}})
 			}
 			sort.Slice(all, func(i, j int) bool { return all[i].ItemFingerprint < all[j].ItemFingerprint })
 			total := len(all)
@@ -159,6 +159,11 @@ func exerciseDirectPermissionAPI(t *testing.T, db *gorm.DB, identity *iam.Reposi
 		all, allTotal, err := service.ListDirectPermissions(ctx, actor, int64(engine.ID), 1, 20, engineaccess.DirectPermissionFilter{})
 		if err != nil || allTotal != 4 || len(all) != 4 {
 			t.Fatal(allTotal, all, err)
+		}
+		for _, item := range all {
+			if len(item.Ancestors) != 1 || item.Ancestors[0].ID != 1 || item.Ancestors[0].Name != "outdoor" || item.Ancestors[0].NodeType != "schema" {
+				t.Fatalf("identity ancestry was not preserved: %+v", item)
+			}
 		}
 		wrong := input
 		wrong.CatalogPath.EngineID++

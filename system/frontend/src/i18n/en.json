@@ -1182,6 +1182,20 @@
         "invalidReason": "Enter a revocation reason (up to 2000 characters) and review the current revocable version."
       },
       "directPermission": {
+        "recursive": "Include descendant nodes",
+        "selectionHint": "Node operations include items hidden by filters, but never future items.",
+        "empty": "No matching DataItems",
+        "modified": "Pending change",
+        "itemCount": "{count} DataItems",
+        "count": "{count} DataItems; {changed} pending changes",
+        "discard": "Discard changes",
+        "batchReview": "Review permission changes",
+        "batchHint": "Review the exact items below. Each item is submitted independently; a failure stops subsequent writes. No automatic retries.",
+        "current": "Current permission",
+        "after": "Set to",
+        "result": "Result",
+        "capacity": "The tree exceeds the 20,000-item capacity. No partial list or permission changes were applied.",
+        "results": {"pending": "Not submitted", "saving": "Submitting", "succeeded": "Succeeded", "unchanged": "No change needed", "failed": "Failed; review required", "unknown": "Unknown; review required"},
         "title": "Direct authorization permissions",
         "boundary": "Controls new direct Grants. Catalog business approval remains available; existing Grants, Denies and revocations are unchanged. Unconfigured items use the persistent Catalog deployment declaration.",
         "search": "DataItem name or path",
@@ -1201,7 +1215,7 @@
         },
         "edit": "Set permission",
         "selectedHint": "Only the selected DataItems are shown. An engine authorization administrator may enable direct authorization in its separate tab; Catalog business fulfillment remains available.",
-        "changeBoundary": "Sets future direct authorization permission for this DataItem only. Does not issue reading access, revoke existing Grants or affect Catalog business fulfillment."
+        "changeBoundary": "Sets future direct authorization permission for the listed DataItems only. Does not issue reading access, revoke existing Grants or affect Catalog business fulfillment."
       },
       "dataAuthorization": {
         "newAuthorization": "New authorization",

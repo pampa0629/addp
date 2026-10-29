@@ -1182,6 +1182,20 @@
         "invalidReason": "请填写撤销原因（最多 2000 字），并核对当前可撤销版本。"
       },
       "directPermission": {
+        "recursive": "包含下级节点",
+        "selectionHint": "节点操作包含被筛选隐藏的项，仅处理本次清单，不包含未来新增项。",
+        "empty": "没有匹配的数据项",
+        "modified": "待确认",
+        "itemCount": "{count} 个数据项",
+        "count": "共 {count} 个数据项，待变更 {changed} 项",
+        "discard": "放弃变更",
+        "batchReview": "确认批量许可变更",
+        "batchHint": "核对以下具体数据项。逐项提交，遇到失败即停止并保留结果；不会自动重新提交。",
+        "current": "当前许可",
+        "after": "设置为",
+        "result": "办理结果",
+        "capacity": "数据项超过单次资源树容量（20,000 项），未加载部分清单，也未进行任何设置。",
+        "results": {"pending": "未执行", "saving": "提交中", "succeeded": "已成功", "unchanged": "无需变更", "failed": "失败，待核对", "unknown": "结果未知，待核对"},
         "title": "直接授权许可",
         "boundary": "此处控制是否允许新增直接授权。Catalog 业务批准始终保留；已有授权、拒绝和撤销不因许可设置而改变。未单独配置的数据项按 Catalog 的持久部署状态决定默认值。",
         "search": "数据项名称或路径",
@@ -1201,7 +1215,7 @@
         },
         "edit": "设置许可",
         "selectedHint": "仅显示本次选中数据项的有效许可。未允许时，请由引擎授权管理员在“直接授权许可”中设置，或在 Catalog 中按业务批准办理。",
-        "changeBoundary": "此次只设置该数据项后续的直接授权许可，不签发读取权限，不撤销已有授权，也不影响 Catalog 业务办理。"
+        "changeBoundary": "此次只设置清单中数据项后续的直接授权许可，不签发读取权限，不撤销已有授权，也不影响 Catalog 业务办理。"
       },
       "dataAuthorization": {
         "newAuthorization": "新增授权",

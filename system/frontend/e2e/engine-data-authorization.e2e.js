@@ -63,7 +63,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
   const fingerprintOf = target => createHash('sha256').update(`2:${target.segments.filter(s => s.name).map(s => s.name).join(ftp ? '/' : '.')}`).digest('hex')
   const rowFor = target => ({ engine_id: '2', item_fingerprint: fingerprintOf(target), full_name: target.segments.filter(s => s.name).map(s => s.name).join('/'), name: target.segments.at(-1).name, item_type: ftp ? modelKind : 'table', state: permit === 'denied' ? 'denied' : permit === 'unknown' ? 'unknown' : 'allowed', source: ['allowed', 'denied'].includes(permit) ? 'explicit' : permit === 'unknown' ? 'deployment_unknown' : 'deployment_default', version: permit === 'unknown' ? '0' : '1' })
   const items = ftp ? [modelPath(`model.${ftp}`)] : [tablePath, ...(secondTable ? [{ ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'persons' }] }] : [])]
-  let rows = permitRows || items.map(rowFor)
+  let rows = (permitRows || items.map(rowFor)).map(row => ({ ...row, ancestors: row.ancestors || [{ id: '1', name: '', node_type: 'server' }, { id: '2', name: 'outdoor', node_type: 'schema' }] })).sort((a, b) => a.item_fingerprint.localeCompare(b.item_fingerprint))
   let grants = [...history], failedGrant = false, failedChange = false, failedDeny = false, failedRelease = false
   const restrictions = [...denies]
   await page.addInitScript(language => localStorage.setItem('addp-lang', language), language)
@@ -1385,8 +1385,10 @@ test('unauthorized recipient type never loads candidates or issues grants', asyn
 
 async function startPermissionChange(page) {
   await page.goto('/engines/2?tab=direct-permissions')
-  await page.getByTestId('direct-permission-edit').first().click()
-  const dialog = page.getByRole('dialog', { name: '设置许可', exact: true })
+  await page.getByPlaceholder('数据项名称或路径', { exact: true }).fill('activities')
+  await page.getByTestId('direct-permission-check').first().check()
+  await page.getByTestId('direct-permission-review').click()
+  const dialog = page.getByRole('dialog', { name: '确认批量许可变更', exact: true })
   await expect(dialog).toBeVisible()
   return dialog
 }
@@ -1400,7 +1402,7 @@ test('administrator sets explicit permission from the dedicated tab without touc
   const { writes } = await fixture(page, { allowed: permitAdminPermissions, permit: 'denied', history: [historicalGrant()] })
   const dialog = await startPermissionChange(page)
   await expect(dialog).toContainText('不影响 Catalog 业务办理')
-  await page.getByTestId('direct-permission-value').getByText('允许直接授权', { exact: true }).click()
+  await page.getByTestId('direct-permission-value').getByRole('checkbox').check()
   await page.getByTestId('direct-permission-reason').fill('允许经授权办理员直接授权')
   await page.getByTestId('direct-permission-save').click()
   await page.locator('.el-message-box').getByRole('button', { name: '取消', exact: true }).click()
@@ -1418,7 +1420,7 @@ test('administrator sets explicit permission from the dedicated tab without touc
 test('permission conflict preserves input until explicit read-only review and reconfirmation', async ({ page }) => {
   const { writes } = await fixture(page, { allowed: permitAdminPermissions, permit: 'denied', changeConflict: true })
   await startPermissionChange(page)
-  await page.getByTestId('direct-permission-value').getByText('允许直接授权', { exact: true }).click()
+  await page.getByTestId('direct-permission-value').getByRole('checkbox').check()
   await page.getByTestId('direct-permission-reason').fill('保留原原因')
   await confirmPermission(page)
   await expect(page.getByTestId('direct-permission-save')).toBeDisabled()
@@ -1435,7 +1437,7 @@ test('permission conflict preserves input until explicit read-only review and re
 test('unknown permission write outcome is observed without silently replaying it', async ({ page }) => {
   const { writes } = await fixture(page, { allowed: permitAdminPermissions, permit: 'denied', changeUnknown: true })
   const dialog = await startPermissionChange(page)
-  await page.getByTestId('direct-permission-value').getByText('允许直接授权', { exact: true }).click()
+  await page.getByTestId('direct-permission-value').getByRole('checkbox').check()
   await page.getByTestId('direct-permission-reason').fill('确认未知写入')
   await confirmPermission(page)
   await expect(page.getByTestId('direct-permission-save')).toBeDisabled()
@@ -1449,32 +1451,27 @@ test('unknown permission write outcome is observed without silently replaying it
 test('direct-permission readers can list effective defaults but cannot set permission or issue Grants', async ({ page }) => {
   const { writes, reads } = await fixture(page, { allowed: ['system.engine.read', 'system.engine_access_direct_permission.read'] })
   await page.goto('/engines/2?tab=direct-permissions')
+  await page.getByPlaceholder('数据项名称或路径', { exact: true }).fill('activities')
   await expect(page.getByTestId('direct-permission-list')).toContainText('部署默认')
-  await expect(page.getByTestId('direct-permission-edit')).toHaveCount(0)
+  await expect(page.getByTestId('direct-permission-check')).toHaveCount(0)
   await expect(page.getByRole('tab', { name: '数据授权', exact: true })).toHaveCount(0)
   expect(reads.some(path => path.includes('/catalog/') || path.includes('/authorization-facts'))).toBe(false)
   expect(writes).toEqual([])
 })
-test('direct-permission filter uses server totals and pages including deployment defaults', async ({ page }) => {
-  const rows = Array.from({ length: 44 }, (_, index) => ({ engine_id: '2', item_fingerprint: createHash('sha256').update(`item-${index}`).digest('hex'), full_name: `outdoor/item_${index}`, name: `item_${index}`, item_type: 'table', state: index < 23 ? 'allowed' : 'denied', source: index % 2 ? 'explicit' : 'deployment_default', version: '1' }))
+test('direct-permission tree loads complete pages before filtering and preserves defaults', async ({ page }) => {
+  const rows = Array.from({ length: 144 }, (_, index) => ({ engine_id: '2', item_fingerprint: createHash('sha256').update(`item-${index}`).digest('hex'), full_name: `outdoor/item_${index}`, name: `item_${index}`, item_type: 'table', state: index < 23 ? 'allowed' : 'denied', source: index % 2 ? 'explicit' : 'deployment_default', version: '1' }))
   const { reads, writes } = await fixture(page, { allowed: permissions, permitRows: rows })
   await page.goto('/engines/2?tab=direct-permissions')
-  const panel = page.getByTestId('direct-permissions')
-  await expect(panel.locator('.el-pagination')).toContainText('共 44 条')
+  await expect(page.getByTestId('direct-permission-count')).toContainText('共 144 个数据项')
   await page.getByTestId('direct-permission-state').click()
   await page.getByRole('option', { name: '允许直接授权', exact: true }).click()
-  await panel.getByRole('button', { name: '刷新', exact: true }).click()
-  await expect(panel.locator('.el-pagination')).toContainText('共 23 条')
-  await panel.locator('.el-pager').getByText('2', { exact: true }).click()
+  await page.getByPlaceholder('数据项名称或路径', { exact: true }).fill('item_22')
   await expect(page.getByTestId('direct-permission-list')).toContainText('item_22')
-  expect(new URL(reads.filter(url => url.includes('/direct-permissions?')).at(-1)).searchParams.get('state')).toBe('allowed')
-  await page.getByTestId('direct-permission-search').fill('item_22')
-  await panel.getByRole('button', { name: '刷新', exact: true }).click()
-  await expect(panel.locator('.el-pagination')).toContainText('共 1 条')
   await expect(page.getByTestId('direct-permission-list')).toContainText('部署默认')
-  expect(new URL(reads.filter(url => url.includes('/direct-permissions?')).at(-1)).searchParams.get('page')).toBe('1')
+  expect(reads.filter(url => url.includes('/direct-permissions?'))).toHaveLength(2)
   expect(writes).toEqual([])
 })
+
 test('selected denied DataItem remains in the batch and blocks signing instead of silently skipping it', async ({ page }) => {
   const second = { ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'persons' }] }
   const permitRows = [tablePath, second].map((path, index) => ({ engine_id: '2', item_fingerprint: createHash('sha256').update(`2:outdoor.${path.segments.at(-1).name}`).digest('hex'), full_name: `outdoor/${path.segments.at(-1).name}`, state: index ? 'denied' : 'allowed', source: 'explicit', version: '1' }))
@@ -1511,7 +1508,7 @@ test('permission draft and confirmation are discarded when the administrator los
   })
   await expect(page.locator('.el-message-box')).toBeHidden()
   await expect(page.getByTestId('direct-permission-save')).toHaveCount(0)
-  await expect(page.getByTestId('direct-permission-edit')).toHaveCount(0)
+  await expect(page.getByTestId('direct-permission-check')).toHaveCount(0)
   expect(writes).toEqual([])
 })
 
@@ -1535,7 +1532,7 @@ test('late signing facts cannot reopen confirmation after leaving the authorizat
 test('same-identity rotation preserves permission input but requires a fresh review before submission', async ({ page }) => {
   const { writes, reads } = await fixture(page, { allowed: permitAdminPermissions, permit: 'denied' })
   await startPermissionChange(page)
-  await page.getByTestId('direct-permission-value').getByText('允许直接授权', { exact: true }).click()
+  await page.getByTestId('direct-permission-value').getByRole('checkbox').check()
   await page.getByTestId('direct-permission-reason').fill('令牌刷新后仍需核对')
   await page.getByTestId('direct-permission-save').click()
   await expect(page.locator('.el-message-box')).toBeVisible()
@@ -1550,7 +1547,7 @@ test('same-identity rotation preserves permission input but requires a fresh rev
     expect(writes).toEqual([])
   } finally { release() }
   await expect(page.getByTestId('direct-permission-reason')).toHaveValue('令牌刷新后仍需核对')
-  await expect(page.getByTestId('direct-permission-value').getByRole('radio', { name: '允许直接授权', exact: true })).toBeChecked()
+  await expect(page.getByTestId('direct-permission-value').getByRole('checkbox')).toBeChecked()
   await expect(page.getByTestId('direct-permission-save')).toBeDisabled()
   const factsBefore = reads.filter(url => url.includes('/authorization-facts')).length
   await page.getByRole('button', { name: '刷新并核对当前许可', exact: true }).click()
@@ -1561,4 +1558,130 @@ test('same-identity rotation preserves permission input but requires a fresh rev
   await expect(page.getByTestId('direct-permission-save')).toHaveCount(0)
   expect(writes).toHaveLength(1)
   expect(writes[0].body).toMatchObject({ allowed: true, reason: '令牌刷新后仍需核对' })
+})
+
+
+function treePermissionRows(names = ['activities', 'persons']) {
+  return names.map(name => ({ engine_id: '2', item_fingerprint: createHash('sha256').update(`2:outdoor.${name}`).digest('hex'),
+    full_name: `outdoor/${name}`, name, item_type: 'table', state: 'denied', source: 'explicit', version: '1',
+    ancestors: [{ id: '1', name: '', node_type: 'server' }, { id: '2', name: 'outdoor', node_type: 'schema' }] }))
+    .sort((a, b) => a.item_fingerprint.localeCompare(b.item_fingerprint))
+}
+test('permission node selection distinguishes direct children and recursion, including filtered and collapsed items', async ({ page }, testInfo) => {
+  const permitRows = treePermissionRows()
+  permitRows.find(row => row.name === 'persons').ancestors.push({ id: '3', name: 'nested.with/slash', node_type: 'directory' })
+  const { writes } = await fixture(page, { allowed: permitAdminPermissions, permitRows, history: [historicalGrant()] })
+  await page.goto('/engines/2?tab=direct-permissions')
+  const node = page.locator('[data-permission-node="node:2"]').getByTestId('direct-permission-node-check')
+  await node.check()
+  await expect(page.getByTestId('direct-permission-count')).toContainText('待变更 1 项')
+  await page.getByTestId('direct-permission-recursive').check()
+  await node.check()
+  await expect(page.getByTestId('direct-permission-count')).toContainText('待变更 2 项')
+  await page.getByPlaceholder('数据项名称或路径', { exact: true }).fill('activities')
+  await expect(page.getByTestId('direct-permission-check')).toHaveCount(1)
+  await node.uncheck()
+  await expect(page.getByTestId('direct-permission-count')).toContainText('待变更 0 项')
+  await node.check()
+  await expect(page.getByTestId('direct-permission-count')).toContainText('待变更 2 项')
+  await page.getByTestId('direct-permission-review').click()
+  await expect(page.getByTestId('direct-permission-review-list').locator('tbody tr')).toHaveCount(2)
+  await page.screenshot({ path: testInfo.outputPath('permission-batch-review.png'), animations: 'disabled' })
+  expect(writes).toEqual([])
+  await page.getByTestId('direct-permission-reason').fill('核对当前两项，不包含未来新增项')
+  await confirmPermission(page)
+  await expect(page.getByTestId('direct-permission-save')).toHaveCount(0)
+  expect(writes).toHaveLength(2)
+  expect(writes.map(write => write.path.split('/').at(-2))).toEqual(permitRows.map(row => row.item_fingerprint))
+  expect(writes.every(write => write.path.endsWith('/direct-permission') && write.body.allowed === true)).toBe(true)
+})
+
+test('permission batch stops on failure, reviews remaining items, and never resubmits successful items', async ({ page }) => {
+  const permitRows = treePermissionRows(['activities', 'persons', 'third'])
+  const { writes } = await fixture(page, { allowed: permitAdminPermissions, permitRows })
+  await page.route('**/authorization-facts', route => {
+    const fp = new URL(route.request().url()).pathname.split('/').at(-2), row = permitRows.find(item => item.item_fingerprint === fp)
+    const native = { ...tablePath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: row.name }] }
+    return route.fulfill({ json: { schema_version: 'meta.data_item_authorization_facts/v1', engine_id: 2, item_fingerprint: fp,
+      item_type: 'table', full_name: `outdoor.${row.name}`, basis_state: 'complete', boundary_hash: 'b'.repeat(64), boundary: { layout: 'single', native_target: native } } })
+  })
+  let failed = false
+  const attempts = []
+  await page.route('**/direct-permission', async route => {
+    if (route.request().method() !== 'PUT') return route.fallback()
+    const fp = new URL(route.request().url()).pathname.split('/').at(-2)
+    attempts.push(fp)
+    if (fp === permitRows[1].item_fingerprint && !failed) {
+      failed = true
+      return route.fulfill({ status: 409, json: { error: 'Concurrent update; explicit review required', error_code: 'resource_version_conflict' } })
+    }
+    return route.fallback()
+  })
+  await page.goto('/engines/2?tab=direct-permissions')
+  await page.locator('[data-permission-node="node:2"]').getByTestId('direct-permission-node-check').check()
+  await page.getByTestId('direct-permission-review').click()
+  await page.getByTestId('direct-permission-reason').fill('部分失败保留成功项')
+  await confirmPermission(page)
+  await expect(page.getByTestId('direct-permission-save')).toBeDisabled()
+  expect(attempts).toEqual(permitRows.slice(0, 2).map(row => row.item_fingerprint))
+  await expect(page.getByTestId('direct-permission-review-list')).toContainText('已成功')
+  await page.getByRole('button', { name: '刷新并核对当前许可', exact: true }).click()
+  await expect(page.getByTestId('direct-permission-save')).toBeEnabled()
+  expect(attempts).toHaveLength(2)
+  await confirmPermission(page)
+  await expect(page.getByTestId('direct-permission-save')).toHaveCount(0)
+  expect(attempts).toEqual([permitRows[0], permitRows[1], permitRows[1], permitRows[2]].map(row => row.item_fingerprint))
+  expect(writes).toHaveLength(3)
+})
+
+test('incomplete permission identity pages expose no partial tree or batch action', async ({ page }) => {
+  const permitRows = Array.from({ length: 101 }, (_, i) => ({ ...treePermissionRows()[0], item_fingerprint: i.toString(16).padStart(64, '0') }))
+  const { writes } = await fixture(page, { allowed: permitAdminPermissions, permitRows })
+  await page.route('**/direct-permissions?**', route => new URL(route.request().url()).searchParams.get('page') === '2'
+    ? route.fulfill({ status: 503, json: { error: 'Second page unavailable' } }) : route.fallback())
+  await page.goto('/engines/2?tab=direct-permissions')
+  await expect(page.getByTestId('direct-permissions')).toContainText('Second page unavailable')
+  await expect(page.getByTestId('direct-permission-check')).toHaveCount(0)
+  await expect(page.getByTestId('direct-permission-node-check')).toHaveCount(0)
+  await expect(page.getByTestId('direct-permission-review')).toBeDisabled()
+  expect(writes).toEqual([])
+})
+
+test('permission batch preflight rejects an incomplete DataItem before any write', async ({ page }) => {
+  const { writes, setFactsState } = await fixture(page, { allowed: permitAdminPermissions, permit: 'denied', secondTable: true })
+  await page.goto('/engines/2?tab=direct-permissions')
+  await page.locator('[data-permission-node="node:2"]').getByTestId('direct-permission-node-check').check()
+  setFactsState('incomplete')
+  await page.getByTestId('direct-permission-review').click()
+  await expect(page.getByTestId('direct-permissions').locator('.el-alert--error')).toBeVisible()
+  await expect(page.getByTestId('direct-permission-save')).toHaveCount(0)
+  await expect(page.getByTestId('direct-permission-count')).toContainText('待变更 2 项')
+  expect(writes).toEqual([])
+})
+
+test('permission node writes only changed items and supports bulk cancellation without materializing unchanged defaults', async ({ page }) => {
+  const permitRows = treePermissionRows()
+  permitRows[1] = { ...permitRows[1], state: 'allowed', source: 'deployment_default' }
+  const { writes } = await fixture(page, { allowed: permitAdminPermissions, permitRows })
+  await page.goto('/engines/2?tab=direct-permissions')
+  const node = page.locator('[data-permission-node="node:2"]').getByTestId('direct-permission-node-check')
+  await node.check()
+  await expect(page.getByTestId('direct-permission-count')).toContainText('待变更 1 项')
+  await page.getByTestId('direct-permission-review').click()
+  await page.getByTestId('direct-permission-reason').fill('只开启尚未允许的项')
+  await confirmPermission(page)
+  await expect(page.getByTestId('direct-permission-save')).toHaveCount(0)
+  expect(writes).toHaveLength(1)
+  expect(writes[0].path.split('/').at(-2)).toBe(permitRows[0].item_fingerprint)
+  expect(writes[0].body).toMatchObject({ allowed: true, expected_source: 'explicit', expected_version: '1' })
+  await node.uncheck()
+  await expect(page.getByTestId('direct-permission-count')).toContainText('待变更 2 项')
+  await page.getByTestId('direct-permission-review').click()
+  await page.getByTestId('direct-permission-reason').fill('明确取消当前两项的直接许可')
+  await confirmPermission(page)
+  await expect(page.getByTestId('direct-permission-save')).toHaveCount(0)
+  expect(writes).toHaveLength(3)
+  expect(writes[1].body).toMatchObject({ allowed: false, expected_source: 'explicit', expected_version: '2' })
+  expect(writes[2].body).toMatchObject({ allowed: false, expected_source: 'deployment_default', expected_version: '1' })
+  expect(writes.every(write => write.path.endsWith('/direct-permission'))).toBe(true)
 })

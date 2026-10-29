@@ -20,9 +20,17 @@ func TestDataItemIdentityQuery(t *testing.T) {
 func exerciseDataItemIdentityQuery(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	const engine = 119
+	root := models.MetaNode{TenantID: 7, EngineID: engine, NodeType: "server", Name: ""}
+	if err := db.Create(&root).Error; err != nil {
+		t.Fatal(err)
+	}
+	parent := models.MetaNode{TenantID: 7, EngineID: engine, ParentNodeID: &root.ID, NodeType: "schema", Name: "schema.with.dot"}
+	if err := db.Create(&parent).Error; err != nil {
+		t.Fatal(err)
+	}
 	var items []models.MetaItem
 	for i, name := range []string{"A_100%", "B", "C", "other-tenant", "other-engine", "deleted"} {
-		item := models.MetaItem{TenantID: 7, EngineID: engine, NodeID: 1, Name: name, FullName: "schema." + name, ItemType: "table", Attributes: models.JSONMap{"secret": "must-not-leak"}}
+		item := models.MetaItem{TenantID: 7, EngineID: engine, NodeID: parent.ID, Name: name, FullName: "schema." + name, ItemType: "table", Attributes: models.JSONMap{"secret": "must-not-leak"}}
 		if i == 3 {
 			item.TenantID = 8
 		}
@@ -45,6 +53,9 @@ func exerciseDataItemIdentityQuery(t *testing.T, db *gorm.DB) {
 	first, err := s.QueryDataItemIdentities(context.Background(), 7, query)
 	if err != nil || first.Total != 3 || len(first.Data) != 2 || first.TotalPages != 2 {
 		t.Fatalf("first=%+v err=%v", first, err)
+	}
+	if len(first.Data[0].Ancestors) != 2 || first.Data[0].Ancestors[1].Name != "schema.with.dot" || first.Data[0].Ancestors[1].ID != parent.ID {
+		t.Fatalf("lost authoritative ancestry: %+v", first.Data)
 	}
 	encoded, _ := json.Marshal(first)
 	if strings.Contains(string(encoded), "secret") || strings.Contains(string(encoded), "attributes") {
@@ -89,4 +100,24 @@ func exerciseDataItemIdentityQuery(t *testing.T, db *gorm.DB) {
 	if err := db.Unscoped().Model(&models.MetaItem{}).Where("engine_id IN ?", []uint{engine, engine + 1}).Count(&count).Error; err != nil || count != 6 {
 		t.Fatalf("query changed metadata: %d %v", count, err)
 	}
+	// Reject broken, foreign and cyclic parent edges instead of inventing paths.
+	query.Page, query.Search = 1, ""
+	for _, update := range []map[string]interface{}{{"tenant_id": 8}, {"tenant_id": 7, "engine_id": engine + 1}, {"engine_id": engine, "parent_node_id": parent.ID}} {
+		if err := db.Model(&models.MetaNode{}).Where("id=?", parent.ID).Updates(update).Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.QueryDataItemIdentities(context.Background(), 7, query); err == nil {
+			t.Fatal("invalid ancestry accepted")
+		}
+	}
+	if err := db.Model(&models.MetaNode{}).Where("id=?", parent.ID).Update("parent_node_id", root.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Delete(&parent).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.QueryDataItemIdentities(context.Background(), 7, query); err == nil {
+		t.Fatal("deleted ancestry accepted")
+	}
+
 }

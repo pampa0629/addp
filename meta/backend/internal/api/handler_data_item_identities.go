@@ -16,7 +16,7 @@ import (
 
 // QueryDataItemIdentities godoc
 // @Summary 查询数据项身份清单 | Query DataItem identities
-// @Description 仅供 addp-system Tenant Service 查询当前租户精确引擎内已识别数据项；返回最小身份，不读取源内容、不扫描、不裁决权限。先过滤再计数分页；最多 20000 个不重复指纹、每页最多 100 项，正文最多 2 MiB。include 空集合返回空结果 | Restricted to addp-system Tenant Service. Reads minimal identified DataItem identities for one engine in the current tenant, without source reads, scans or access decisions. Filters precede counting and pagination. At most 20000 unique fingerprints, 100 rows per page and 2 MiB body. Empty include means no matches
+// @Description 仅供 addp-system Tenant Service 查询当前租户精确引擎内已识别数据项；返回最小身份及同快照的完整父节点链（最多128级），缺失或循环父链失败，不读取源内容、不扫描、不裁决权限。先过滤再计数分页；最多 20000 个不重复指纹、每页最多 100 项，正文最多 2 MiB。include 空集合返回空结果 | Restricted to addp-system Tenant Service. Reads minimal identified DataItem identities with complete same-snapshot ancestry (at most 128 levels; missing or cyclic parents fail) for one engine in the current tenant, without source reads, scans or access decisions. Filters precede counting and pagination. At most 20000 unique fingerprints, 100 rows per page and 2 MiB body. Empty include means no matches
 // @Tags Meta Runtime
 // @Accept json
 // @Produce json

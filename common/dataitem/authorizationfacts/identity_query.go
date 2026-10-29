@@ -44,11 +44,34 @@ func (q IdentityQuery) Validate() error {
 }
 
 type DataItemIdentity struct {
-	ItemFingerprint string `json:"item_fingerprint"`
-	EngineID        uint   `json:"engine_id"`
-	Name            string `json:"name"`
-	FullName        string `json:"full_name"`
-	ItemType        string `json:"item_type"`
+	ItemFingerprint string         `json:"item_fingerprint"`
+	EngineID        uint           `json:"engine_id"`
+	Name            string         `json:"name"`
+	FullName        string         `json:"full_name"`
+	ItemType        string         `json:"item_type"`
+	Ancestors       []IdentityNode `json:"ancestors" gorm:"-"`
+}
+
+// IdentityNode is navigation only; it is never an authorization target.
+// The owner returns the complete root-to-parent chain in its item snapshot.
+type IdentityNode struct {
+	ID       uint   `json:"id,string"`
+	Name     string `json:"name"`
+	NodeType string `json:"node_type"`
+}
+
+func ValidateIdentityAncestors(nodes []IdentityNode) error {
+	if len(nodes) == 0 || len(nodes) > 128 {
+		return errors.New("invalid DataItem ancestors")
+	}
+	seen := make(map[uint]bool, len(nodes))
+	for _, node := range nodes {
+		if node.ID == 0 || seen[node.ID] || node.NodeType == "" || !utf8.ValidString(node.Name) || strings.ContainsRune(node.Name, 0) {
+			return errors.New("invalid DataItem ancestor")
+		}
+		seen[node.ID] = true
+	}
+	return nil
 }
 
 type IdentityPage struct {
@@ -81,7 +104,7 @@ func (p IdentityPage) Validate(q IdentityQuery) error {
 	previous := ""
 	for _, item := range p.Data {
 		if !ValidItemFingerprint(item.ItemFingerprint) || item.ItemFingerprint <= previous || item.EngineID != q.EngineID ||
-			item.Name == "" || item.FullName == "" || item.ItemType == "" ||
+			item.Name == "" || item.FullName == "" || item.ItemType == "" || ValidateIdentityAncestors(item.Ancestors) != nil ||
 			(q.FingerprintFilter == "include" && !set[item.ItemFingerprint]) || (q.FingerprintFilter == "exclude" && set[item.ItemFingerprint]) {
 			return errors.New("invalid DataItem identity")
 		}

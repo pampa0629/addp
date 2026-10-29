@@ -4128,7 +4128,7 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
             'sessionSnapshot', 'same_iframe_without_relogin', 'denied_preview_clears_old_rows',
             'isAnonymousRefreshResponse', 'beforeCookie.value !== afterCookie.value',
             'exclusive_workspace_tabs', 'integrated_create_picker_without_write',
-            'direct_permission_tab_read_only_filters', "name: '直接授权许可'", "getByTestId('direct-permission-search')",
+            'direct_permission_tab_read_only_filters', "name: '直接授权许可'", "getByPlaceholder('数据项名称或路径', { exact: true })",
             "option('direct-permission-state', label)", 'directPermissionObservations.push(',
             'table_text_and_tree_filters', 'recipient_type_and_account_filters',
             'browser_revocation_updates_current_and_history', 'browser_revocation_denies_manager_read',

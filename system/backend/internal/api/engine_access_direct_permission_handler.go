@@ -107,7 +107,7 @@ func (h *EngineAccessDirectPermissionHandler) Get(c *gin.Context) {
 
 // List godoc
 // @Summary 按有效状态查询数据项直接授权许可 | List DataItems by effective direct permission
-// @Description 包含未显式配置的数据项；由Meta按身份筛选后计数分页，System组合许可来源。跨服务查询不持有IAM锁；配置变化返回冲突，故障不返回空清单 | Includes unconfigured items. Meta filters identities before counting and pagination; System combines permission provenance. No IAM lock crosses the owner request; configuration changes return conflict, and failures never become empty lists
+// @Description 包含未显式配置的数据项；由Meta按身份筛选后计数分页，System组合许可来源及Meta权威父节点链；树仅作导航，不建立节点许可。跨服务查询不持有IAM锁；配置变化返回冲突，故障不返回空清单 | Includes unconfigured items. Meta filters identities before counting and pagination; System combines permission provenance and Meta-owned ancestry for navigation, never node-level permission. No IAM lock crosses the owner request; configuration changes return conflict, and failures never become empty lists
 // @Tags 直接授权许可 | Direct Authorization Permissions
 // @Produce json
 // @Security BearerAuth

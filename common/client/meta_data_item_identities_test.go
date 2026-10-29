@@ -45,7 +45,7 @@ func TestMetaDataItemIdentityQueryDoesNotReplayAfterUnauthorized(t *testing.T) {
 
 func TestMetaDataItemIdentityClient(t *testing.T) {
 	query := authorizationfacts.IdentityQuery{EngineID: 2, Page: 1, PageSize: 20}
-	page := authorizationfacts.IdentityPage{Data: []authorizationfacts.DataItemIdentity{{ItemFingerprint: strings.Repeat("a", 64), EngineID: 2, Name: "people", FullName: "outdoor.people", ItemType: "table"}}, Total: 1, Page: 1, PageSize: 20, TotalPages: 1}
+	page := authorizationfacts.IdentityPage{Data: []authorizationfacts.DataItemIdentity{{ItemFingerprint: strings.Repeat("a", 64), EngineID: 2, Name: "people", FullName: "outdoor.people", ItemType: "table", Ancestors: []authorizationfacts.IdentityNode{{ID: 1, Name: "outdoor", NodeType: "schema"}}}}, Total: 1, Page: 1, PageSize: 20, TotalPages: 1}
 	encoded, _ := json.Marshal(page)
 	for _, tc := range []struct {
 		name   string

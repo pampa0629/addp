@@ -59,7 +59,7 @@ func TestIdentityQueryRejectsAmbiguousOrUnboundedFilters(t *testing.T) {
 func TestIdentityPageBindsMembershipAndOrdering(t *testing.T) {
 	a, b := strings.Repeat("a", 64), strings.Repeat("b", 64)
 	query := IdentityQuery{EngineID: 2, Page: 1, PageSize: 20, FingerprintFilter: "include", Fingerprints: []string{a}}
-	page := IdentityPage{Data: []DataItemIdentity{{ItemFingerprint: a, EngineID: 2, Name: "n", FullName: "s.n", ItemType: "table"}}, Total: 1, Page: 1, PageSize: 20, TotalPages: 1}
+	page := IdentityPage{Data: []DataItemIdentity{{ItemFingerprint: a, EngineID: 2, Name: "n", FullName: "s.n", ItemType: "table", Ancestors: []IdentityNode{{ID: 1, Name: "outdoor", NodeType: "schema"}}}}, Total: 1, Page: 1, PageSize: 20, TotalPages: 1}
 	if err := page.Validate(query); err != nil {
 		t.Fatal(err)
 	}
@@ -82,5 +82,16 @@ func TestIdentityPageBindsMembershipAndOrdering(t *testing.T) {
 	page.Data[0].ItemFingerprint = b
 	if page.Validate(query) == nil {
 		t.Fatal("unordered identities accepted")
+	}
+}
+
+func TestIdentityAncestorsRejectIncompleteOrCyclicChains(t *testing.T) {
+	for _, nodes := range [][]IdentityNode{nil, {}, {{ID: 0, NodeType: "schema"}}, {{ID: 1}}, {{ID: 1, NodeType: "schema"}, {ID: 1, NodeType: "schema"}}} {
+		if ValidateIdentityAncestors(nodes) == nil {
+			t.Fatalf("invalid ancestors accepted: %+v", nodes)
+		}
+	}
+	if err := ValidateIdentityAncestors([]IdentityNode{{ID: 1, NodeType: "server"}, {ID: 2, NodeType: "schema", Name: "A.b/slash"}}); err != nil {
+		t.Fatal(err)
 	}
 }

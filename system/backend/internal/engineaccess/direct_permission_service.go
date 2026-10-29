@@ -30,9 +30,10 @@ type DirectPermissionView struct {
 }
 type DirectPermissionIdentityView struct {
 	DirectPermissionView
-	Name     string `json:"name"`
-	FullName string `json:"full_name"`
-	ItemType string `json:"item_type"`
+	Name      string                            `json:"name"`
+	FullName  string                            `json:"full_name"`
+	ItemType  string                            `json:"item_type"`
+	Ancestors []authorizationfacts.IdentityNode `json:"ancestors"`
 }
 type DirectPermissionFilter struct{ Search, State, ItemFingerprint string }
 type SetDirectPermissionInput struct {
@@ -162,7 +163,7 @@ func (s *Service) ListDirectPermissions(ctx context.Context, actor Actor, engine
 		if err != nil {
 			return nil, 0, err
 		}
-		rows = append(rows, DirectPermissionIdentityView{DirectPermissionView: directPermissionView(engineID, item.ItemFingerprint, decision), Name: item.Name, FullName: item.FullName, ItemType: item.ItemType})
+		rows = append(rows, DirectPermissionIdentityView{DirectPermissionView: directPermissionView(engineID, item.ItemFingerprint, decision), Name: item.Name, FullName: item.FullName, ItemType: item.ItemType, Ancestors: item.Ancestors})
 	}
 	return rows, identities.Total, nil
 }

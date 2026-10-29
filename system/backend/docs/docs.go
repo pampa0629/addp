@@ -3456,7 +3456,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "包含未显式配置的数据项；由Meta按身份筛选后计数分页，System组合许可来源。跨服务查询不持有IAM锁；配置变化返回冲突，故障不返回空清单 | Includes unconfigured items. Meta filters identities before counting and pagination; System combines permission provenance. No IAM lock crosses the owner request; configuration changes return conflict, and failures never become empty lists",
+                "description": "包含未显式配置的数据项；由Meta按身份筛选后计数分页，System组合许可来源及Meta权威父节点链；树仅作导航，不建立节点许可。跨服务查询不持有IAM锁；配置变化返回冲突，故障不返回空清单 | Includes unconfigured items. Meta filters identities before counting and pagination; System combines permission provenance and Meta-owned ancestry for navigation, never node-level permission. No IAM lock crosses the owner request; configuration changes return conflict, and failures never become empty lists",
                 "produces": [
                     "application/json"
                 ],
@@ -16215,6 +16215,21 @@ const docTemplate = `{
                 }
             }
         },
+        "authorizationfacts.IdentityNode": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "node_type": {
+                    "type": "string"
+                }
+            }
+        },
         "client.IssueManagerModel3DAuthorizationRequest": {
             "type": "object",
             "properties": {
@@ -17180,6 +17195,12 @@ const docTemplate = `{
         "github_com_addp_system_internal_engineaccess.DirectPermissionIdentityView": {
             "type": "object",
             "properties": {
+                "ancestors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/authorizationfacts.IdentityNode"
+                    }
+                },
                 "engine_id": {
                     "type": "string",
                     "example": ""
