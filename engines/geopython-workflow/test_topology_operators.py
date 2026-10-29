@@ -4304,7 +4304,13 @@ def test_near_line_runtime_discovery_workflow_only_context_and_localized_failure
             state = client.get("/api/executions/" + response.get_json()["execution_id"]).get_json()
             if state["status"] in {"success", "failed"}: break
             time.sleep(.01)
-        assert state["status"] == "failed" and state["error_code"] == "EXECUTION_FAILED"
+        assert state["status"] == "failed" and state["error_code"] == "INVALID_PARAMS"
+        assert state["diagnostic"] == {
+            "schema_version": "addp.execution-failure/v3",
+            "stage": "execution",
+            "reason": "operator_positive_number_required",
+            "operator": {"node_index": 1, "operator_id": "check_line_proximity", "parameter": "tolerance"},
+        }
         assert expected in state["error"]
 
 
