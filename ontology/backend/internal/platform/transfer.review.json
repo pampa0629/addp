@@ -138,11 +138,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _run_config_check(",
-      "commit": "68c687a4926cf034aa0702d7fb0ccb583b05e737",
-      "sha256": "38564595c91fad274a2b627a6bd976e4bccb62afe96985dcca221ae50f230f80",
+      "commit": "01435b1554120d1c00c6d092681ddec0979af93f",
+      "sha256": "52dc1efebe44178c660c23727e2a34d6b4cc5993b9487d9c5a97c499ed2051d9",
       "use": {
-        "zh-cn": "正式创建确认恢复由 Runtime 读取同参数候选、刷新本体/源结构/目标父节点及正式预检；匹配指纹后沿唯一创建校验、确认消费和提交屏障调用原 Adapter 一次，变化重新复核，失败或结果不明不自动重试。显式草稿检查仍固定展示并结束，不放宽权限。",
-        "en": "Runtime resumes formal creation confirmation with exact arguments, current semantics, source/target-parent evidence and a formal check. Matching fingerprints reach the same guarded adapter once after confirmation consumption and commit acknowledgement; changes require review, and failure or uncertainty is not retried. Explicit draft checks still display and stop without widening authorization."
+        "zh-cn": "确认恢复重读原参数、本体及源/目标父节点事实，正式复检匹配指纹后沿唯一Adapter、确认消费与提交屏障创建一次。稳定内容变化重新确认，失败不重试。同批用前序完成屏障按模型顺序执行，搜索失败或取消阻断排队调用；显式检查仍固定展示并结束，不放宽权限。",
+        "en": "Runtime resumes exact arguments with fresh semantics, source/target-parent evidence and formal checks, creating once through the same guarded adapter after confirmation consumption and commit acknowledgement. Changed stable content requires review; failures are not retried. Predecessor gates preserve model order and block queued calls after search failure or cancellation. Explicit checks still display and stop without widening permissions."
       }
     },
     {
@@ -391,6 +391,32 @@
         "zh-cn": "只接受已持久化的正式 Interaction 确认，普通创建绑定本次唯一预检引用后恢复原 Run；文字回答清除复核，不构成批准，不复制第二份参数。",
         "en": "Accepts persisted formal Interaction confirmation, binding the exact check reference before resuming the same run; text clears review rather than approving, with no duplicate argument store."
       }
+    },
+    {
+      "id": "batch_boundary_test",
+      "owner": "agent",
+      "kind": "test",
+      "path": "agent/backend/tests/test_agent_factory_events.py",
+      "anchor": "async def test_search_failure_stops_without_retry_enumeration_or_write(",
+      "commit": "01435b1554120d1c00c6d092681ddec0979af93f",
+      "sha256": "954534fca89929013b615c63a6cecda9f1509a810f0b9d2b301b92461c7389e8",
+      "use": {
+        "zh-cn": "真实Harness受控倒序到达稳定复现五类搜索错误的同批枚举竞态；严格断言无备用调用、无下一轮模型，另验证成功顺序、取消阻断与重复身份执行前拒绝。",
+        "en": "Real-Harness controlled reverse arrival reproduces same-batch enumeration for five search errors; strict assertions forbid fallback calls or another model turn, with successful-order, cancellation and duplicate-identity rejection regressions."
+      }
+    },
+    {
+      "id": "batch_contract",
+      "owner": "agent",
+      "kind": "normative",
+      "path": "docs/spec/addp智能体Tool开放规范.md",
+      "anchor": "同批 Tool 按模型返回顺序进入唯一 Runtime 调用路径",
+      "commit": "01435b1554120d1c00c6d092681ddec0979af93f",
+      "sha256": "340dbf77446028d3ee0324c8659419cc7fc8b5d68ab2d382fe0f16df049e556b",
+      "use": {
+        "zh-cn": "搜索失败立即终止；同批按模型顺序执行，前序使Runtime失败/暂停/终止或取消后，后续不得进入Adapter，不以锁到达顺序或目录枚举替代。",
+        "en": "Search failures terminate immediately; batches execute in model order and queued calls never enter adapters after Runtime failure, pause, termination or cancellation, without lock-arrival ordering or directory fallback."
+      }
     }
   ],
   "bindings": [
@@ -400,7 +426,18 @@
     {"subject": "relation/transfer_task/requires/readonly_config_check", "sources": ["conditions", "condition_test", "skill", "runtime", "runtime_test"]},
     {"subject": "relation/readonly_config_check/reads_via/config_precheck", "sources": ["config", "manifest", "skill", "runtime", "runtime_test"]},
     {"subject": "requirement/config_precheck", "sources": ["config", "manifest", "skill", "runtime", "runtime_test"]},
-    {"subject": "concept/source_discovery", "sources": ["skill", "conditions", "condition_test", "manifest"]},
+    {
+      "subject": "concept/source_discovery",
+      "sources": [
+        "skill",
+        "conditions",
+        "condition_test",
+        "manifest",
+        "runtime",
+        "batch_contract",
+        "batch_boundary_test"
+      ]
+    },
     {"subject": "concept/target_parent_discovery", "sources": ["skill", "conditions", "condition_test", "manifest"]},
     {"subject": "concept/user_confirmation", "sources": ["skill", "conditions", "condition_test", "runtime", "runtime_test", "draft_routing", "draft_snapshot", "draft_snapshot_test", "draft_state", "draft_checkpoint", "confirmation_resume"]},
     {"subject": "relation/confirmed_source/reads_via/source_discovery", "sources": ["skill", "conditions", "condition_test"]},
@@ -491,7 +528,10 @@
       "sources": [
         "conditions",
         "condition_test",
-        "skill"
+        "skill",
+        "runtime",
+        "batch_contract",
+        "batch_boundary_test"
       ]
     },
     {
@@ -785,7 +825,10 @@
       "sources": [
         "manifest",
         "skill",
-        "tool_test"
+        "tool_test",
+        "runtime",
+        "batch_contract",
+        "batch_boundary_test"
       ]
     },
     {
