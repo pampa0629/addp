@@ -427,3 +427,16 @@ regression／complete-comparison 在当次私有部署显式开启原容量扩�
 验证记录：`npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js` 退出0，11/11通过（59.5秒），日志 `/tmp/addp-capacity-console-auto-browser.log`；包含原9项和新增两个入口的自动刷新／取消／恢复／off场景。最终文件的根 `make test-console-frontend` 退出2、未通过：218项单元测试通过／1项失败，失败在本批未改的 `tests/devPorts.test.js:243` Vite临时目录清理断言，目录中仍列出 `50446.pid`、`50475.pid`、`addp-console-vite-test-50446`、`addp-system-vite-test-50475`；日志 `/tmp/addp-capacity-console-auto-full.log`。后续完整浏览器和该入口的构建阶段未运行，不计通过；未修改清理实现、放宽断言或盲目重跑，未确认此次清理时序根因。另行执行既有 `npm --prefix console/frontend run build` 退出0（1.57秒），日志 `/tmp/addp-capacity-console-auto-build.log`；专项与独立构建不替代完整Console门禁通过。现有Console浏览器自动发现、根Make入口及CI路径已覆盖，无新增依赖或Workflow；未改未变的Monitor产品／Go／来源T2／Online协议，不重复其既有验证。
 
 本批只证明受控HTTP和时钟下的真实Console／Monitor iframe交互，未操作个人采集器、真实来源或账号，不重启服务、不改变个人配置。CI／Hosted与真实Linux／正式身份验收继续等专门会话回传；未触发／重跑／轮询CI或Hosted、未设置定时任务。既有Monitor完整前端长回归失败保持原记录，不由Console结果代替。
+
+
+## 容量迟到响应的Console范围隔离验收（2026-10-29）
+
+本批只在既有Console浏览器文件补6个受控场景，沿唯一容量组件、请求取消／代数隔离与共享DOM读数；没有产品、API、权限或来源配置变更。请求识别函数在同一文件内复用，旧自动刷新场景同步走该函数，未保留重复识别路线。HTTP边界固定保存旧主机8 TiB／discarded-capacity的独立响应，正常新读取按当前主机分别返回32／64 GiB和current-a／current-b，避免旧夹具在释放时读取新变量而掩盖污染。
+
+列表切换主机分别覆盖旧成功200与旧403：A的容量尚未返回时切换到B，核对requestfailed精确对应A的请求，B仅有一个展开与当前容量；B读数有效后才释放旧响应。释放后B的共享DOM收据索引、值和设备不变，旧拒绝不能触发新主机整体无权或局部错误；推进60秒仍只有A／B两次容量读取，Console地址与同一iframe保持。
+
+列表／详情分别覆盖收起重开及离页返回。收起取消在途请求，重新展开从同主机的新请求取得容量，再释放旧403；不恢复旧设备、旧错误或旧观测。离页使用正式Console Logo返回首页，核对旧iframe卸载及原Frame detached，释放旧403并推进60秒不再读容量；浏览器Back回原URL创建新iframe，临时容量保持收起，重新展开才发第二次读取。恢复保留原分页与刷新偏好，不把旧页面内存或请求带入新Frame。各场景只有旧／新两次容量读取及一份有效响应收据，不写业务数据或修改真实授权。
+
+本地验证：`npm --prefix console/frontend run test:e2e -- e2e/node-resource-navigation.spec.js` 退出0，17/17通过（1.4分钟），日志 `/tmp/addp-capacity-console-isolation-browser.log`；包含原11项及新增6项，覆盖提取后的请求识别函数和原刷新路径。`npm --prefix console/frontend run build` 退出0（4.05秒），日志 `/tmp/addp-capacity-console-isolation-build.log`。差异格式检查通过；现有标准浏览器入口、Console自动发现与CI路径覆盖，无新增入口、依赖或Workflow。
+
+本批不盲目重跑上节已记录的完整Console门禁清理断言失败，不修改无关devPorts清理实现；该门禁本轮未运行，不能由专项／构建计通过。未改未变的Go、来源T2、共享内核或Online协议，不重复其既有验证。当前只计受控HTTP／时钟下真实Console和Monitor iframe的T3，不计真实Safari、Linux来源或正式密码/MFA Hosted；旧403是废弃请求的模拟响应，不是当前身份撤权验收。CI／Hosted继续等专门会话回传；未调度／重跑／轮询CI或Hosted、不设置定时任务、不修改个人配置或重启服务。

@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test'
 import { readFilesystemMountTable, readResourceHeatmap, readBlockCapacityTable } from './online/node-resource-receipts.js'
-import { identity, mount, node, observations, resourceBackend, resourcePermissions } from '../../../monitor/frontend/e2e/node-resources.fixture'
+import { identity, mount, node, observations, resourceBackend, resourcePermissions, secondNode } from '../../../monitor/frontend/e2e/node-resources.fixture'
+
+const isCapacityRequest = request => {
+  const url = new URL(request.url())
+  return url.pathname === '/api/v1/monitor/platform/resource_observations' && url.searchParams.get('metrics') === 'node.block.capacity_bytes'
+}
 
 test('node resource navigation preserves the real Monitor iframe and one Console history', async ({ page }) => {
   await resourceBackend(page)
@@ -316,15 +321,13 @@ for (const entry of ['list', 'detail']) test(`capacity automatic refresh pauses,
     body.series[0].dimensions = { device: 'vda', kind: 'device' }
     body.series[0].points[0].value = bytes
   }
-  const isCapacity = request => new URL(request.url()).pathname === '/api/v1/monitor/platform/resource_observations'
-    && new URL(request.url()).searchParams.get('metrics') === 'node.block.capacity_bytes'
   const state = await resourceBackend(page, { observationResponse(body, query) {
     if (query.get('metrics') === 'node.block.capacity_bytes') capacityBody(body)
   } })
   const requests = [], resources = [], pending = []
-  page.on('request', request => { if (isCapacity(request)) requests.push(request) })
+  page.on('request', request => { if (isCapacityRequest(request)) requests.push(request) })
   page.on('response', response => {
-    if (isCapacity(response.request())) pending.push(response.json().then(value => {
+    if (isCapacityRequest(response.request())) pending.push(response.json().then(value => {
       const url = new URL(response.url())
       resources.push({ path: url.pathname, query: Object.fromEntries(url.searchParams), value })
     }))
@@ -333,7 +336,7 @@ for (const entry of ['list', 'detail']) test(`capacity automatic refresh pauses,
   const held = new Promise(resolve => { releaseHeld = resolve })
   const heldFinished = new Promise(resolve => { finishHeld = resolve })
   await page.route('**/api/v1/monitor/platform/resource_observations?**', async route => {
-    if (!holdNext || !isCapacity(route.request())) return route.fallback()
+    if (!holdNext || !isCapacityRequest(route.request())) return route.fallback()
     holdNext = false; heldRequest = route.request()
     const body = observations(node, ['node.block.capacity_bytes'], false, '', state.serverEnd)
     capacityBody(body)
@@ -444,4 +447,149 @@ for (const entry of ['list', 'detail']) test(`capacity automatic refresh pauses,
     expect(new URL(page.url()).searchParams.get('refresh')).toBe('off')
     expect(await frame.evaluate(() => performance.timeOrigin)).toBe(origin)
   } finally { releaseHeld() }
+})
+
+// Hold one immutable old frame at the HTTP boundary; later requests use the existing fixture.
+async function heldCapacityFixture(page, lateStatus = 200) {
+  await page.clock.install()
+  await resourceBackend(page, { observationResponse(body, query) {
+    if (query.get('metrics') !== 'node.block.capacity_bytes') return
+    const first = query.get('node_id') === node
+    body.collection.block_capacity = 'available'
+    body.series[0].dimensions = { device: first ? 'current-a' : 'current-b', kind: 'device' }
+    body.series[0].points[0].value = 2 ** (first ? 35 : 36)
+  } })
+  const requests = [], resources = [], pending = []
+  page.on('request', request => { if (isCapacityRequest(request)) requests.push(request) })
+  page.on('response', response => {
+    if (isCapacityRequest(response.request())) pending.push(response.json().then(value => {
+      const url = new URL(response.url())
+      resources.push({ path: url.pathname, query: Object.fromEntries(url.searchParams), value })
+    }))
+  })
+  let heldRequest, release, finished
+  const gate = new Promise(resolve => { release = resolve }), settled = new Promise(resolve => { finished = resolve })
+  await page.route('**/api/v1/monitor/platform/resource_observations?**', async route => {
+    if (!isCapacityRequest(route.request()) || heldRequest) return route.fallback()
+    heldRequest = route.request()
+    const body = observations(node, ['node.block.capacity_bytes'])
+    body.collection.block_capacity = 'available'
+    body.series[0].dimensions = { device: 'discarded-capacity', kind: 'mapped' }
+    body.series[0].points[0].value = 2 ** 43
+    await gate
+    try {
+      await route.fulfill({ status: lateStatus, json: lateStatus === 200 ? body : { error_code: 'permission_denied', error: 'fixture denied' } })
+    } finally { finished() }
+  })
+  return {
+    requests, resources, release,
+    waitHeld: () => expect.poll(() => Boolean(heldRequest)).toBe(true),
+    async cancelThrough(action) {
+      const cancelled = page.waitForEvent('requestfailed', request => request === heldRequest)
+      await action()
+      expect((await cancelled).failure()).not.toBeNull()
+    },
+    async releaseOld() { release(); await settled; await Promise.all(pending) },
+    async read(table, id) {
+      await expect(table).toContainText(id === node ? 'current-a' : 'current-b')
+      await Promise.all(pending)
+      const value = await readBlockCapacityTable(table, resources, id, expect)
+      expect(value.devices).toHaveLength(1)
+      expect(value.devices[0].bytes).toBe(2 ** (id === node ? 35 : 36))
+      await expect(table).not.toContainText('discarded-capacity')
+      await expect(table).not.toContainText('8.00 TiB')
+      return value
+    }
+  }
+}
+
+for (const lateStatus of [200, 403]) test(`Console capacity host switch cancels an old ${lateStatus} response without poisoning the new host`, async ({ page }) => {
+  const source = await heldCapacityFixture(page, lateStatus)
+  try {
+    await page.goto('/monitor/node-resources?page=2&refresh=off')
+    const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+    const first = monitor.getByTestId(`resource-list-block-${node}`), second = monitor.getByTestId(`resource-list-block-${secondNode}`)
+    await expect(first).toBeVisible()
+    const frame = page.frames().find(frame => frame.parentFrame()), origin = await frame.evaluate(() => performance.timeOrigin), url = page.url()
+    await first.click(); await source.waitHeld()
+    await source.cancelThrough(() => second.click())
+    const panel = monitor.getByTestId('resource-detail-expansion'), table = panel.getByTestId('resource-block-table')
+    await expect(panel).toHaveCount(1)
+    await expect(first).toHaveAttribute('aria-expanded', 'false')
+    await expect(second).toHaveAttribute('aria-expanded', 'true')
+    const current = await source.read(table, secondNode)
+    await source.releaseOld()
+    const after = await source.read(table, secondNode)
+    expect(after.resource_index).toBe(current.resource_index)
+    await expect(monitor.getByTestId('resource-error')).toHaveCount(0)
+    await expect(panel.getByTestId('resource-block-error')).toHaveCount(0)
+    await page.clock.fastForward(60001)
+    expect(source.requests.map(request => new URL(request.url()).searchParams.get('node_id'))).toEqual([node, secondNode])
+    expect(source.resources).toHaveLength(1)
+    expect(page.url()).toBe(url)
+    expect(await frame.evaluate(() => performance.timeOrigin)).toBe(origin)
+  } finally { source.release() }
+})
+
+for (const entry of ['list', 'detail']) test(`Console ${entry} capacity collapse cancels a delayed denial and reopening starts a clean view`, async ({ page }) => {
+  const source = await heldCapacityFixture(page, 403)
+  try {
+    await page.goto(entry === 'list' ? '/monitor/node-resources?page=2&refresh=off' : `/monitor/node-resources/${node}?page=2&refresh=off`)
+    const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+    const toggle = monitor.getByTestId(entry === 'list' ? `resource-list-block-${node}` : 'resource-block-toggle')
+    const panel = monitor.getByTestId(entry === 'list' ? 'resource-detail-expansion' : 'block-capacity-section')
+    const table = panel.getByTestId('resource-block-table')
+    await expect(toggle).toBeVisible()
+    const frame = page.frames().find(frame => frame.parentFrame()), origin = await frame.evaluate(() => performance.timeOrigin), url = page.url()
+    await toggle.click(); await source.waitHeld()
+    await source.cancelThrough(() => toggle.click())
+    await expect(table).toHaveCount(0)
+    expect(source.requests).toHaveLength(1)
+    await toggle.click()
+    const current = await source.read(table, node)
+    await source.releaseOld()
+    const after = await source.read(table, node)
+    expect(after.resource_index).toBe(current.resource_index)
+    await expect(panel.getByTestId('resource-block-error')).toHaveCount(0)
+    await expect(monitor.getByTestId('resource-error')).toHaveCount(0)
+    await page.clock.fastForward(60001)
+    expect(source.requests).toHaveLength(2)
+    expect(source.resources).toHaveLength(1)
+    expect(page.url()).toBe(url)
+    expect(await frame.evaluate(() => performance.timeOrigin)).toBe(origin)
+  } finally { source.release() }
+})
+
+for (const entry of ['list', 'detail']) test(`leaving Console ${entry} capacity unloads its pending owner and history return creates a fresh iframe`, async ({ page }) => {
+  const source = await heldCapacityFixture(page, 403)
+  try {
+    await page.goto(entry === 'list' ? '/monitor/node-resources?page=2&refresh=10' : `/monitor/node-resources/${node}?page=2&refresh=10`)
+    const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+    const toggle = monitor.getByTestId(entry === 'list' ? `resource-list-block-${node}` : 'resource-block-toggle')
+    const table = monitor.getByTestId('resource-block-table')
+    await expect(toggle).toBeVisible()
+    const frame = page.frames().find(frame => frame.parentFrame()), url = page.url()
+    await toggle.click(); await source.waitHeld()
+    await source.cancelThrough(() => page.locator('.logo-area').click())
+    await expect(page).toHaveURL('/')
+    await expect(page.locator('.home-view')).toBeVisible()
+    await expect(page.locator('iframe[data-testid="module-iframe"]')).toHaveCount(0)
+    expect(frame.isDetached()).toBe(true)
+    await source.releaseOld()
+    await page.clock.fastForward(60001)
+    expect(source.requests).toHaveLength(1)
+    expect(page.url()).toMatch(/\/$/)
+    await page.goBack()
+    await expect(page).toHaveURL(url)
+    await expect(toggle).toBeVisible()
+    const next = page.frames().find(item => item.parentFrame())
+    expect(next).not.toBe(frame)
+    await expect(table).toHaveCount(0)
+    await toggle.click()
+    await source.read(table, node)
+    await expect(monitor.getByTestId('resource-error')).toHaveCount(0)
+    expect(source.requests).toHaveLength(2)
+    expect(source.resources).toHaveLength(1)
+    expect(new URL(page.url()).searchParams.get('refresh')).toBe('10')
+  } finally { source.release() }
 })
