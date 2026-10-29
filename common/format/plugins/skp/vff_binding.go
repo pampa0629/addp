@@ -24,12 +24,6 @@ type vffBindingReference struct {
 	kind   string
 	offset int
 }
-type vffOpaqueRecord struct {
-	location string
-	bytes    int
-	offset   int
-	sha256   [32]byte
-}
 type vffBindingFacts struct {
 	materials  map[uint64]vffBinding
 	layers     map[uint64]uint64
@@ -37,9 +31,8 @@ type vffBindingFacts struct {
 	opaque     []vffOpaqueRecord
 }
 type vffBindingReader struct {
-	ctx            context.Context
+	*vffRecords
 	limits         vffBindingLimits
-	records        int
 	members, names map[string]string
 	claimed        map[string]bool
 	result         *vffBindingFacts
@@ -56,7 +49,7 @@ func readVFFMaterialBindings(ctx context.Context, container *vffContainer, mater
 	if len(raw) == 0 || len(raw) > limits.bytes {
 		return nil, fmt.Errorf("VFF model byte budget exceeded or empty")
 	}
-	reader := &vffBindingReader{ctx: ctx, limits: limits, members: map[string]string{}, names: map[string]string{}, claimed: map[string]bool{}, result: &vffBindingFacts{materials: map[uint64]vffBinding{}, layers: map[uint64]uint64{}}}
+	reader := &vffBindingReader{vffRecords: &vffRecords{ctx: ctx, maxRecords: limits.records, maxDepth: limits.depth}, limits: limits, members: map[string]string{}, names: map[string]string{}, claimed: map[string]bool{}, result: &vffBindingFacts{materials: map[uint64]vffBinding{}, layers: map[uint64]uint64{}}}
 	for _, m := range materials {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -108,39 +101,8 @@ func readVFFMaterialBindings(ctx context.Context, container *vffContainer, mater
 	return reader.result, nil
 }
 
-// each checks the entire byte range without copying payloads or searching for
-// tags inside arbitrary strings/attributes. Recursion is role-directed below.
-func (r *vffBindingReader) each(raw []byte, depth, base int, consume func(string, []byte, int) error) error {
-	if depth > r.limits.depth {
-		return fmt.Errorf("VFF binding depth budget exceeded")
-	}
-	for len(raw) > 0 {
-		if err := r.ctx.Err(); err != nil {
-			return err
-		}
-		r.records++
-		if r.records > r.limits.records {
-			return fmt.Errorf("VFF binding record budget exceeded")
-		}
-		if len(raw) < 6 {
-			return fmt.Errorf("truncated VFF binding record")
-		}
-		size := uint64(binary.LittleEndian.Uint32(raw[2:6]))
-		if size > uint64(len(raw)-6) {
-			return fmt.Errorf("truncated VFF binding payload")
-		}
-		tag := fmt.Sprintf("%02X%02X", raw[0], raw[1])
-		payload := raw[6 : 6+int(size)]
-		if err := consume(tag, payload, base+6); err != nil {
-			return err
-		}
-		base += 6 + int(size)
-		raw = raw[6+int(size):]
-	}
-	return r.ctx.Err()
-}
 func (r *vffBindingReader) opaque(data []byte, location string, offset int) {
-	r.result.opaque = append(r.result.opaque, vffOpaqueRecord{location: location, bytes: len(data), offset: offset, sha256: sha256.Sum256(data)})
+	r.result.opaque = append(r.result.opaque, vffOpaque("model.dat", location, data, offset))
 }
 func (r *vffBindingReader) walk(raw []byte, role, location string, depth, base int) error {
 	wrappers := map[string]bool{}

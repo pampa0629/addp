@@ -69,7 +69,7 @@ func TestVFFKnownMaterialRolesBindDeclarationsAndRetainOpaqueRanges(t *testing.T
 	if len(got.materials) != 2 || got.materials[1].member != "materials/Front/material.xml" || got.materials[2].role != "layer" || got.layers[10] != 2 || len(got.references) != 5 {
 		t.Fatalf("binding facts: %#v", got)
 	}
-	if len(got.opaque) != 1 || got.opaque[0].location != "F401/0902" || got.opaque[0].bytes == 0 {
+	if len(got.opaque) != 1 || got.opaque[0].member != "model.dat" || got.opaque[0].location != "F401/0902" || got.opaque[0].bytes == 0 {
 		t.Fatal("unproved model content disappeared")
 	}
 	if _, ok := got.materials[99]; ok {
