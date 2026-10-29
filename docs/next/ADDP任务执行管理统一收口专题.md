@@ -2,7 +2,7 @@
 
 更新时间：2026-10-29
 
-状态：诊断与实施方案待确认。已完成范围梳理和文档记录，尚未启动整体重构，也未向协作会话派发实施任务。
+状态：用户已确认由本会话统一牵头，并在“全面支持falkordb”会话确认公共队列、取消语义、Graph 私有准入／核清、锁顺序及类型化 metadata 回执五项原则，授权先修订正式文档。当前仍为文档评审，整体方案汇总后再确认实施；未启动代码、测试、CI 或运行验收。
 
 ## 一、范围与结论
 
@@ -12,7 +12,7 @@
 
 任务定义、Cron、触发去重和 DAG 依赖属于相邻范围。[调度与任务编排统一改造专题](ADDP调度与任务编排统一改造专题.md)讨论“何时、为什么创建执行”；本专题讨论“创建之后如何可靠管理执行”。两个专题分别确认和实施，本次不引入统一 Trigger，不迁移 owner scheduler。
 
-正式契约继续以以下文档为准；本专题的建议尚不替代现行规范：
+正式契约继续以以下文档为准；其中标注“已确认目标、待实施”的条款不代表当前代码行为，本专题也不以建议替代正式规范：
 
 - [任务体系规范](../spec/addp任务体系规范.md)、[术语表](../concepts/addp术语表.md)。
 - [执行记录与租约](../spec/tasks/执行记录与租约.md)、[模块任务契约](../spec/tasks/模块任务契约.md)。
@@ -70,7 +70,7 @@ Common 唯一维护公共状态与时间、attempt／租约及公共更新准入
 | heartbeat／progress | 核对当前有效所有权；禁止修改身份、开始时间或终态字段 | 当前进度和允许的业务计数／摘要 |
 | 过期 → pending | 只允许尚未终态的合法过期 attempt；保持 UUID／created_at，清除本 attempt 的租约与时间 | 安全重放证明、attempt 上限、领域重置和按契约处理授权 |
 | running → 终态 | 核对所有权，统一生成完成时间与当前 attempt 耗时，清除租约；拒绝复活 | 业务提交结果、安全错误和需要同事务提交的摘要／事件 |
-| pending → 拒绝或其他合法终态 | 明确 pending 条件；不伪造开始时间、运行耗时或领取次数 | 执行前拒绝原因；取消须满足现行真实运行体契约 |
+| pending → 拒绝或其他合法终态 | 明确 pending 条件；不伪造开始时间、运行耗时或领取次数 | 执行前拒绝原因；从未启动的取消例外须按 Graph 已确认目标提供事务证明，不能放宽恢复或历史不明记录 |
 | 人工重试 | 新 execution，保留原执行终态和前驱关联 | 当前权限及新的冻结输入；不复用旧授权 |
 
 同一 attempt 的 `started_at` 不可变。终态耗时由已持久化的开始时间计算，不能由 Owner 重新取起点；无开始时间的终态耗时为空。恢复后原创建时间至当前开始时间的差值不等于纯排队耗时之和，不在本次引入 attempt 历史表或累计时长实体。
@@ -91,11 +91,91 @@ Common 唯一维护公共状态与时间、attempt／租约及公共更新准入
 
 先迁移已使用公共 claim 的 9 个 Owner，保持各自的恢复资格不变。优先修正 Security 和 Ontology 的公共时间字段，再检查其他 Owner 的 pending 失败、过期收敛、摘要事务、授权和专业回执。
 
-Graph 推荐改为 Backend 内嵌监督器，API 只持久入队，由公共 claim 取得唯一所有权；保留材料、审核和图写入规则，失联默认失败收敛，不自动重放已发生的图写入。该运行机制调整须先确认并修订 Graph 契约。
-
-Cleanup 必须先确认持久执行身份、协调事实与结果事实的唯一来源。建议保留 System coordinator 和各 Owner executor 的职责，把重复事件准入、执行领取、结果写回和失联终结做成可核验的持久协议。Redis 协调状态与 PostgreSQL execution 不能假装处于同一数据库事务；需要明确唯一权威状态和幂等消费／结果收敛协议后再实现。不默认自动重试物理删除，不在本轮擅自扩大清理范围。
+Graph 与 Cleanup 的具体建议见下文。建议使用同一公共执行队列，但保留各自领域控制事实；不能把跨系统副作用交给公共租约推断。
 
 Transfer continuous 保持独立 runtime 所有权，公共字段通过明确的受控适配写入。禁止用“没有 bounded lease 就直接写”的方式识别 continuous，也不能在消费者未迁移完时破坏其取消、恢复和 position 提交。
+
+### 4.2.1 Graph：持久入队、受控取消与失联核清
+
+已确认目标的状态转换与锁序以[Graph 构建契约](../spec/tasks/模块任务契约.md#graph-构建任务)为准。本节汇总根因、迁移范围和实施交界，不作为第二份独立状态机。
+
+**当前事实。** [构建仓储](../../graph/backend/internal/repository/build_repository.go)已经在任务行锁下创建唯一 pending execution，并在重跑时重置材料和待审项；但 [BuildService](../../graph/backend/internal/service/build_service.go)随后直接创建 goroutine，以进程内 map 保存取消句柄。开始与终态缺少公共 lease，材料 `Save`、待审项创建和进度更新也未共同核对运行所有权。构建开始时还会读取可变的图谱、本体和空间映射。上述是源码核对结果，不能称为已经复现的线上故障。
+
+[Graph Cleanup](../../graph/backend/internal/service/cleanup_service.go)的引擎路径只检查任务摘要为 running；logical 路径可直接把未完成任务摘要改为 cancelled，physical 路径可删除任务、材料和审核记录。这些操作没有停止构建运行体，也没有同步对应 execution，是本次必须一并封闭的入口。
+
+**推荐路线。** Graph Backend 内嵌有界监督器，复用 Common claim／heartbeat／终态原语；不新增独立 Graph Worker 部署，不把 Graph 业务逻辑放入 Common。API 事务提交即表示入队，进程重启仍可发现尚未领取的 pending；已经开始的执行失联默认失败，不自动恢复为 pending。
+
+| 阶段 | 必须落地的约束 |
+| --- | --- |
+| 入队 | 当前权限与目标可用性校验后，在 Graph 任务锁下固定 execution UUID、输入和最近执行摘要；重跑重置与新 pending 同事务，存在活动执行或待核清外部操作则拒绝 |
+| 输入冻结 | 保存本轮分块／置信度／文档上下文配置、材料有序清单和不可变内容身份、本体实体／关系／继承／唯一键与空间映射、目标 Engine／Graph 身份；凭据不进快照，执行时仍复核当前访问许可 |
+| 材料与图目标 | 仅文件路径和数量不足以冻结内容。使用不可变对象版本或内容摘要并在读取时验证，活动执行引用期间禁止删除／覆盖；执行使用固定目标，不逐次从可变图谱定义重新解析去另一个 Engine |
+| 领取 | 只有真实可用槽位才能领取；pending → running、开始时间、attempt/token 和任务摘要同事务；拒绝凭进程句柄推断所有权 |
+| PG 写入 | 材料进度、待审项生成、统计及任务摘要写入都先核对本 execution 当前有效 lease；原子提交公共状态及相关私有事实，失败一起回滚；不允许先修改材料再发现 lease 已失效 |
+| 外部调用 | 每次 Copilot／图引擎／空间图层操作前复核当前所有权和取消请求，传递有界 context；外部请求不放在长 PG 事务内。返回后重新核对 lease，失权则拒绝进度、结果、终态和事件写回 |
+| 正常结束 | 保留既有“部分图写入保留、材料失败仍继续其他材料、任一材料失败则整体 failed”的规则；当前 attempt 终态时间统一由 Common 生成 |
+| 失联 | 过期收敛 failed，与任务摘要同事务；本次不自动重放图写入，不用 MERGE 推断整个构建幂等；将无法确认的运行／外部效果记录为 Owner 私有待核清事实 |
+
+快照与控制事实建议由 Graph 私有执行记录承载，按 execution UUID 唯一，保存输入摘要、取消请求和停止／待核清证据。Common 只保留定位和安全配置摘要。该记录不是第二个执行状态机，也不是通用 attempt 历史；具体表名在正式契约修订时确定。现有材料和审核项须能识别产生它们的 execution，不能让旧执行修改新执行的材料进度或待审项。
+
+**锁顺序。** 采用 Graph 会话已细化并经用户确认的 E → G → T／B：E 是既有 execution，G 是 Graph 私有 Tenant 级准入协调行，T／B 是任务／材料／审核等业务行；同类多行按 ID 排序。普通动作共享锁 G，关闭准入和最终清理排他锁 G，持久关闭范围仍精确到受影响图谱。新入队 G → T → 插入新 E，不反向锁已有 E；已有执行 claim、进度、终态、取消都按 E → G → T／B。人工审核是独立命令，走 G → T／审核行及本身的操作事实，不要求原构建 execution 仍 running。
+
+Cleanup 分三阶段：先 Cleanup 子 E → G 排他关闭准入并提交；锁外逐项按目标 E → G → T 请求取消和等待核清；最后 Cleanup 子 E → G 排他 → 业务行核验并清理。最终检查其他 execution 使用受 G 保护的普通读取，不持 G 再反锁那些 E。所有影响静止性判定的删除、重绑定、材料变更和审核路径都要遵守 G；取得锁后由 Common 复核租约有效性，不在 Graph 复制算法。外部调用与等待停止均在数据库锁外。
+
+**取消。** 保留一个取消入口，改为持久取消请求，支持请求落到非运行实例的 Backend。请求绑定准确 execution 和观察到的 attempt，幂等登记请求人、原因和时间；运行中响应显式表示“取消请求已受理”，不能显示“已取消”。持有 lease 的监督器发现请求后停止发起新外部操作，等待实际运行体与在途调用收敛，再以当前 lease 写 cancelled。终态竞争由事务判定：先成功结束就保持 success，不追改 cancelled。找不到运行体或无法确认外部请求停止时，保持待确认／失联核清，不靠等待超时制造 cancelled。首次 pending 且 attempt=0、事务内证明从未产生运行体／外部操作时可直接取消，不伪造领取与时长；此为用户已确认、待实施的现行取消契约补充，不能用于历史不完整记录或恢复后的 pending。
+
+**核清与再次操作。** execution 失败与“旧运行体和外部操作已停止”是不同事实。所有可能产生外部效果的操作先在短 PG 事务登记精确身份和目标，再释放锁调用；返回后由有效所有者确认结果。待核清由尚未关闭的操作事实推导，不能靠可随意清除的布尔值。私有控制记录保留原实例、attempt 与外部请求关联。失权旧实例仅可追加绑定原身份的停止确认，不能续租、改终态或补写业务结果；本地函数返回不等于远端提交已确定。仍有不确定操作时，人工重跑、材料删除、审核写图及涉及同一图目标的 Cleanup 均拒绝。解除必须由 Graph 的核清命令验证停止／外部完成证据、记录操作人及依据；不能仅提供一个“我已确认”的布尔开关，不能把清租约、等 TTL 或后台心跳失效当作证据。无法提供可核验证据的 Provider 保持阻塞，另列能力缺口。
+
+**与 Cleanup 的交界。** Graph Owner 先冻结本域新构建／审核写入，再通过同一取消协议停止当前工作；未停止或待核清时返回明确失败／影响信息，保留定义与材料。对 pending、running 及待核清记录均检查，不能只检查任务摘要的 running。只有安全收敛后才能按原有逻辑／物理规则清理。System 不直接取消 Graph execution、不删 Graph 表；引擎删除仍保留用户定义，不把本次改造扩大为删除业务图数据。
+
+**删除旧路径。** 删除 API 直接启动 goroutine、无 lease 的 Start／Finish、运行材料无条件 Save、Cleanup 直接改 cancelled 和绕过运行检查的删除路径。进程内句柄只作为持有当前 lease 的运行体控制工具，不能继续作为领取或跨实例取消的事实源。
+
+### 4.2.2 Cleanup：单一持久队列与有界协调
+
+已确认的公共队列与回执原则以[Cleanup 持久协议](../spec/addp-cleanup体系规范.md#持久队列与完成回执)为准。本节进一步提出父子收口、API 和切换细则，尚待本轮整体确认的部分见第七节。
+
+**当前事实。** [System 协调服务](../../system/backend/internal/service/cleanup_orchestrator_service.go)先创建 running 父 execution，再写 Redis task、发布 Stream 并启动临时 watcher；读取详情时还会重算并写入状态。各 Owner 的消费、创建 execution、业务处理、公共终态和 Redis result 是分离步骤。[Asset executor](../../asset/backend/internal/service/cleanup_service.go)可作为具体例子：新消息生成新 UUID，创建 execution 失败后仍继续进入业务处理；结果 hash 与终态不在一个事务中。本次不是断言全部 Owner 都有相同故障，实施前须逐个核对。
+
+**推荐唯一技术路线。** 直接以 `common.task_executions` 作为 Cleanup 的持久领取队列。System 保留协调权，各 Owner 保留执行权；不再新增 dispatch／inbox／outbox 队列，也不保留 Redis 作为另一套权威状态。`cleanup.request` Stream、task/result hash、临时 watcher 和 GET 写状态路径整体移除。Engine／Tenant 等领域生命周期事件保留，其受理方转成持久 cleanup 请求；这不把所有生命周期通知都改成 System 同步任务。
+
+| 事实 | 唯一所有者与拟定存储 | 约束 |
+| --- | --- | --- |
+| 请求、确认和范围 | System 私有 cleanup 请求记录 | 固定 task ID、原始 actor／历史 Tenant、action/mode、cause、based_on_scan、参与模块、确认／影响摘要、绝对 deadline 与父 execution；没有模块私有路径和凭据 |
+| 执行所有权与时间 | Common execution | System 事务创建父 pending 及每个参与模块一个 pending 子 execution；子 module=Owner、type=cleanup_executor、source=system；只有该 Owner 领取和推进 |
+| 模块完成回执 | 子 execution 的 `metadata.cleanup_receipt`，由执行 Owner 写入 | 与子 execution 唯一绑定；保存闭合、有界结果状态、安全标准摘要、impact digest 与完成身份，不存原始专业数据、token、SQL、对象路径或任意详情 |
+| 专业结果与外部操作事实 | 各 Owner 私有存储 | 使用已有领域结果承载；没有持久承载且确需保留的 Owner 才补本域记录。System 不跨读私表，Common 不解释物理删除规则 |
+| 父协调结论与审计 | System 请求、父 execution 和 System 审计 | 同一事务提交终态和安全汇总；GET 只读。父终态冻结，不随之后到达的结果改写 |
+
+回执复用现有子 execution 存储，不新增共享回执表或 `common/cleanup` 持久化包。使用独立稳定字段和明确 schema，不复用泛化 `result`；Common 提供字段、数量、字符串和整体尺寸校验及受控事务写入。Owner 写入、System 类型化读取都核对 Tenant、module、父子 UUID、action 和 attempt；未知版本、非法内容或绑定不符一律拒绝，不能退回原始 map。当前安全 summary／impact 含义可复用，但含任意 statistics/details/errors 的原始 result 不能直接作为回执。终态后回执不可新增或改写，普通 progress／metadata 更新不能改写该区域；Monitor 通用 metadata 白名单不因此自动扩大。这样可与 Owner PG 结果和子终态原子提交，又不把专业结果变成公共日志或另一套状态表。
+
+**受理与去重。** System 在一次 PG 事务中完成权限／确认复核、冻结请求、父子 pending、创建审计。每个 `(parent_execution_id, owner_module)` 最多一个子记录，唯一约束只作用于 cleanup_executor，数据库兜住多实例竞争；未创建或未领取成功一律不得执行。生命周期重复请求沿来源持久操作 ID 去重，HTTP 同参恢复使用首次提交前生成并保存的请求 ID，绑定经认证的 Tenant／actor 与规范摘要；相同 ID 不同内容拒绝，新的人工动作必须用新 ID。请求 ID 不是授权凭据，返回原结果也须经过当前读取裁决。不能拿“Tenant 相同、参数一样”去合并两次合法 scan，也不能在超时后静默新建 execute。该请求 ID 必须进入创建 API 和前端恢复流程，同次删除旧自动重发路径。
+
+System 预建 pending 子记录仅表示一项已授权、待 Owner 受理的中性工作要求，不表示 Owner 已开始，更不等于数据访问授权。创建权与运行权分开：System 不为子记录写 started_at／attempt／租约，不伪造 Owner 结果；Owner 领取前校验 action/mode、上下文、父请求绑定、参与身份和当前允许消费的授权事实。不满足时留下无开始时间的执行前失败。System 不得把“有一条子记录”作为绕过 Owner 数据权限的凭据。Cleanup 没有可编排任务定义，task ID 不写入 `source_task_id`，避免改变现有“有定义历史／本人一次性执行”的读取分界；事件来源不得伪造人类身份。
+
+**协调运行。** System 内嵌监督器领取父 execution 后只做结果汇总和截止判断，可在安全、未终态且未超过原 deadline／attempt 上限时恢复同一父 execution。恢复只重读持久事实，不重新建子、不发布重复删除命令、不刷新原 deadline。达到上限或原截止则留下明确失败／超时结论；启动恢复由持久扫描完成，不依赖原 HTTP 请求和 watcher 仍活着。父 attempt 的运行时间按 Common 当前 attempt 口径，端到端协调窗口单独使用请求的创建时间和 deadline，不能复用 started_at 混算。
+
+**子执行准入。** 复用各 Owner Backend 内嵌监督器，独立有界 cleanup 槽位；业务 Worker 与 Cleanup 不混用无限并发。领取采用父 execution → 本模块子 execution 的锁序，锁后复核父未终态、原 deadline 未过、请求完整。System 以父锁串行化收口与领取，只关闭准入，不推进子 execution；Owner 启动及正常监督循环先发现已关闭协调下的本模块 pending，走明确拒绝入口收敛为 failed，不 claim、不增加 attempt，started_at 仍为空，原因是“协调已关闭、执行未开始”，不是删除失败。Owner 离线期间子可暂存 pending，但父详情必须显示“协调已关闭、该模块未开始”，不把它表达为仍会启动的工作。Monitor 若需同样标签须另有 Cleanup 安全投影，不跨读 System 私表、不从所有父终态泛化推断。子业务和终态路径不反向取得父锁，仍核验当前授权及领域条件，不能把自身 lease 当作全部许可；System 不能在父锁内调用 Owner HTTP 或读取私表。以此解决“协调已经结束，离线 Owner 恢复后才开始删除”的竞态。
+
+**结果与失败。** Owner 业务中的 PG 变更必须在每个提交边界检查自己的 lease；可原子完成的私有最终结果、安全回执、子 execution 终态及已接入的过程事件在同一 PG 事务提交。回执不可变，绑定请求、父子 UUID、模块、action 与 attempt；相同已提交回执只可按完整身份和摘要幂等读回，冲突内容拒绝，不能绕过 lease 重新生成结果。scan 的预计数量／空间与 execute 的实际数量／空间分开，不能相加冒充实际释放。外部资源删除无法与 PG 事务合一，必须复用 Owner 产物登记／操作凭据，记录已提交、未提交或待核清事实；不能把结果落库失败解释为“删除未发生”。执行开始后默认不自动重放，scan 也先按这一保守规则运行，后续仅在明确安全证明和单独确认下开放恢复。过期收敛不能伪造模块完成回执；只有真正确认的结果进入释放空间和删除数量。
+
+| 情况 | 父协调结论 | 子 execution／回执与下一步 |
+| --- | --- | --- |
+| 原截止前收到所有合法结果 | 按现行 completed／completed_with_errors 规则终结；严格删除另按全 success 判定 | 保存各 Owner 真实结果；partial_success、skipped 不能自动当作严格删除成功 |
+| 原截止到达仍缺结果 | timeout，明确列出未收到结果的模块 | 不伪造 Owner timeout 回执；关闭未领取子的准入，由 Owner 拒绝收敛；已运行子保留其真实状态 |
+| 父已超时，子仍有有效 lease 后完成 | 父终态及原汇总不变 | 允许子保存真实终态和回执，详情明确属于协调截止后完成；不据此自动把 Engine 变为 deleted |
+| 子 lease 已过期、token 不符或已经终态 | 不能影响已冻结父结论 | 拒绝旧运行体的结果／事件／终态，Owner 走独立待核清；不得回写“迟到成功”覆盖 failed |
+| 父进程重启但请求仍在窗口内 | 原请求恢复汇总 | 同一父 UUID、同一子集合，父可增加 attempt；已经开始的子不重新领取 |
+| 外部删除结果不确定 | 保持失败／超时及核清缺口 | Owner 证明最终效果后，通过经授权的新操作处理剩余项，不重用原终态、不自动重试物理删除 |
+
+父详情中的“当前子事实”与“截止时协调结论”分开表达；正常查询不能触发状态推进。Monitor 保持公共状态、时间、父子关系和经过允许的安全诊断投影，不自动开放 cleanup 原始 metadata。父可读不授予子读取权，System cleanup.read 也不自动授予 Owner 专业详情读取权。System 页面需要的标准结果直接来自回执；推荐将现有任意 `statistics/details/errors` 透传改为标准安全摘要与 Owner 专业详情入口，详情由 Owner 当前授权裁决。该变化须在用户确认后同次迁移全部消费方，不暗中删除现有功能，也不在 Monitor 增加透传补回。
+
+过程事件仍是闭合 kind／step、有限计数的诊断事实，不承载专业结果、影响摘要 digest 或原始错误。现行 30 天事件保留、每 execution＋attempt 每 UTC 日 1000 条预算、API 单页至多 100 条分别保持；不把完成回执当作事件预算的一部分，也不因父可读放宽子事件读取。
+
+**保持的业务边界。** 普通 scan 的参与集合与 Engine 删除必须完整参与集合仍按现有能力注册规则冻结，离线不等于无需执行；空集合拒绝。execute 必须基于可执行 scan、原确认和影响摘要，Engine deleting 继续权威复扫、全模块严格成功才可成墓碑。重启续办只恢复原任务身份，不把失败／partial／timeout 重解释为删除许可；失败重试入口当前尚未实现，本次若要提供须显式纳入后续确认范围。Tenant 删除后的历史 tenant_id 仍用于资源归属和审计，但不复活已删除 Membership、不用普通用户已失效 Token 访问数据；必要的生命周期执行权限由 System 沿既有目的限定契约裁决，缺少明确授权能力的 Owner 阻断并报告。
+
+**保留与切换。** PG 请求详情替代 Redis 一小时临时详情，任务历史改为持久事实的分页读取；这是对外契约变化。首期不新增自动物理删除策略，现有执行概览、过程事件和审计保留规则分别沿用；请求／回执／私有结果的引用释放须单独登记，不能顺便启用 180 天概览删除。切换前只读盘点旧 Redis 活动任务、公共无租约执行与外部未决操作；停止受理并安全排空后一次切换，仍未核清则阻断切换。旧记录仅保留可证实的历史，不能反推已丢失的私有结果，也不能同时运行旧消费者与新监督器。
+
+**正式契约修订。** Graph 会话按用户授权先修订术语表、Cleanup 规范、模块任务契约和执行租约规范中的已确认目标，再由本会话核对整体：Owner 创建子记录改为 System 预建意图／Owner 独占领取；类型化 metadata 回执与专业结果分开；Redis TTL 详情改为 PG 事实；取消受理、从未启动的撤销和真实运行终态分开；父协调超时与子运行结果分开。公开 API 变动在实施时同次更新调用方、双语 Swagger 及标准 API 门禁，不保留双格式响应。
 
 ### 4.3 存储约束与存量
 
@@ -123,40 +203,62 @@ Hosted 只抽取已重复的受控进程身份核验、暂停恢复、清理和�
 
 Common 确定性矩阵至少覆盖竞争领取、到期前后与锁等待、恢复 pending、再次 claim、上限失败、旧 heartbeat／进度／终态／事件拒绝、公共字段不可改写、终态不可复活，以及 Owner 事务失败全部回滚。Owner 增加自身重放、授权、结果和副作用断言，不重复实现公共算法。
 
-涉及的现有 PostgreSQL 入口包括 `test-common-postgres`、`test-quality-postgres`、`test-security-postgres`、`test-meta-postgres`、`test-transfer-postgres`、`test-develop-postgres`、`test-manager-postgres`、`test-model-postgres`、`test-orchestrator-postgres`、`test-ontology-postgres`、`test-monitor-postgres`；具体按实施影响与当前注册选择。Ontology 投影激活与图联动还须覆盖 `test-ontology-falkor`，不能只验 PG 修订。Graph／Cleanup 如新增依赖或测试入口，须同次完成 Make、影响选择、CI 和文档，不能沿用旧 Go 通过记录冒充新协议 T2。
+涉及的现有 PostgreSQL 入口包括 `test-common-postgres`、`test-quality-postgres`、`test-security-postgres`、`test-meta-postgres`、`test-transfer-postgres`、`test-develop-postgres`、`test-manager-postgres`、`test-model-postgres`、`test-orchestrator-postgres`、`test-ontology-postgres`、`test-monitor-postgres`；具体按实施影响与当前注册选择。Ontology 投影激活与图联动还须覆盖 `test-ontology-falkor`，不能只验 PG 修订。Graph 的具体既有入口和 Cleanup 需要新增的入口见下表；不能沿用旧 Go 通过记录冒充新协议 T2。
 
 阶段 B 可在接口实现之前独立推进，但共享 Make／workflow 变更由单一负责人整合。C、D 的提交需维持每个已迁移调用方只有一条主路径；整体接口收口必须等待全部调用方闭环。阶段 E 不为“全覆盖”重复仍有效的场景；输入发生变化时才按影响复验，并逐 Owner 记录尚未验证项。
 
+### 5.1 Graph／Cleanup 的实施拆分与门禁
+
+顺序为：确认本专题 → 正式契约 → Common 受控原语和完整 PG 矩阵 → Graph 构建／取消／Cleanup 交界 → Cleanup 协调和全部现有 executor → 删除旧通用入口／存储约束 → 经另行批准的真实故障验收。已经迁移部分 Owner 时，不提前删除剩余真实调用方；也不增加临时兼容生产分支。
+
+| 范围 | 现有入口与必须补齐内容 |
+| --- | --- |
+| Common PG | `make test-common-postgres`；补真实 PG 下的竞争、锁等待期间到期、当前时间、事务回滚及旧写拒绝。当前 runner 的 execution PG 名称为闭合选择，新增测试必须检查实际被选中，不能假定 `*AgainstPostgres` 自动发现 |
+| Graph PG | 复用 `make test-common-postgres COMMON_POSTGRES_TEST_ARGS="--test graph"`；当前运行 `internal/repository` 的 `TestIntegrationPostgresGraph*`。监督器测试若在 service 包，须同次扩展 runner；新增冻结输入、精确领取、任务／材料／待审项事务、取消竞争、失联核清和 Cleanup 删除准入 |
+| Graph 原生图 | 复用 `make test-common-falkordb` 和 `make test-common-neo4j`；核外部提交已发生但平台失权、取消仍有在途调用、失败保留部分图写入、旧实例不能再发新操作。PG 通过不替代这层 |
+| System Cleanup PG | 新增 System 所属标准 T2，建议名 `test-system-cleanup`（尚不存在）；同入口覆盖请求／审计原子受理、唯一父子、重复请求、协调重启、父关闭与子领取竞争、迟到真实结果及旧子拒绝。`test-system-iam-postgres` 默认不执行 cleanup service，不能直接冒充该覆盖 |
+| 各 Cleanup executor | 逐 Owner 覆盖“未创建／未领取禁止执行、每个 PG 提交围栏、结果回执与终态原子提交、外部副作用不确定时不重放”；复用其标准模块／T2 入口。Asset、Develop、Graph、Manager、Meta、Model、Quality、Service、Standard、Transfer 为本次检索到的消费者，实施时重新发现；不凭模块名推断其全部物理清理已验收 |
+| API／前端 | 取消仅受理、真实终态刷新、协调超时与迟到结果区分、PG 历史分页、私有详情转 Owner、跨租户／父子读取隔离；同步 Swagger、路由覆盖、模块前端与受影响 Console T3 |
+| CI 登记 | 新入口同次接入根 Make、串行 `test-integration`、服务依赖元数据、影响选择、Release/T2 Job、必需汇总和漏登记反例；Graph 后端现已被 Common PG／FalkorDB／Neo4j 路径声明命中。`test-module MODULE=graph` 不替代 Common 所属 T2 |
+| T4 | Graph 扩展既有 `graph-protection` 的独立执行生命周期 case；Cleanup 需先新增正式 suite、普通身份夹具、固定范围和清理断言。首批建议只做 scope=[meta] scan 的重启／失联／迟到／重复受理，物理删除必须另定自有产物及操作计数场景，不能从 scan 结果外推 |
+
+新 Cleanup 协调路线的必需存储是 PG。Redis 仅在仍实际依赖它的 Owner 或生命周期来源事件场景使用，不为了覆盖已删除的旧 Stream 路线再增加并行协议。Owner 的原生数据库、对象存储等依赖按实际行为声明，不能用模拟计数证明真实物理删除。
+
+本轮仅方案和源码复核，以上产品测试、CI、T4 均未运行。文档交付仅检查链接／锚点、入口是否存在及 `git diff --check`；未来测试名称明确标注“拟新增”，不计为已覆盖。
+
 ## 六、会话协作建议
 
-采用“一个主责会话统一设计与整合，少量领域会话核对或承担独立文件范围”的方式。下表来自 2026-10-29 的会话状态与最近工作核对，是建议分工，尚未派发，也不改变各会话原授权。
+采用“一个主责会话统一设计与整合，少量领域会话核对或承担独立文件范围”的方式。用户已于 2026-10-29 确认本会话牵头并授权与相关会话核对；已发送的消息均限定只读方案评审。下表的后续代码分工仍以本专题确认和实际文件边界为前提，不授权现在开始实现。
 
 | 会话原名与 threadId | 已核对的工作范围 | 建议职责 |
 | --- | --- | --- |
 | 修复 RetryExpired 的 attempt 开始时间清理；`01a1811b-d160-77c0-817c-286daeb9fca8` | 本次公共时间修复、Quality 恢复验收和整体审查 | 主责：规范、Common、调用方清单、核心迁移和最终整合；`common/execution/**` 只由本会话修改 |
-| CI修复-持续进行；`01a115b5-90bc-7d11-9a68-ffd2af505611` | 当前持续核对 CI、去重和协调修复 | 核对独立 Job／required 汇总、路径选择及验证计划；若承担实施，Make／CI 编排由该会话单一整合，本会话不并改 |
+| CI修复-持续进行；`01a115b5-90bc-7d11-9a68-ffd2af505611` | 已完成本轮入口、路径选择和 CI 缺口核对，确认职责无冲突 | 后续统一整合 Make／workflow／影响选择／平台登记与入口包装；本会话提供公共库、Owner 用例和业务夹具，不并改共享编排 |
 | p145-security；`01a10003-a16c-76c3-b047-237c2317425d` | 最近完成保护算法展示与入口修正 | 核对 discovery 重放、Finding／保护投影事务与授权边界；公共接口稳定后可承担 Security 私有适配，不能改公共租约 |
-| 租户日志改造；`01a0f7e1-50f2-7063-9df2-dd918416b75a` | 执行事件、安全诊断、分页／保留；后续关注持续写入 | 核对事件与状态同事务、attempt 展示和读取权限；Monitor／事件验收边界由其复核，公共事件代码仍由主责整合 |
+| 租户日志改造；`01a0f7e1-50f2-7063-9df2-dd918416b75a` | 已完成本轮父子状态、完成回执、事件／权限／保留复核 | 继续只读复核 Monitor／诊断和读取边界；公共事件代码、状态转换及本轮专题由主责整合 |
 | p19-接口质量与调用链；`01a1585e-ae3c-7e60-a4b6-4ecaadb2bc17` | HTTP 质量、调用链及采样证据 | 按需复核 execution 短阶段 trace 的事务提交语义，不承担本次生命周期主改造 |
 | ontology模块-系统本体；`01a04725-c1d4-7261-b90c-f55c3849ec63` | Ontology 投影、PG 发布与 FalkorDB 联动 | 按需复核投影锁顺序、激活指针和授权／租约双重条件，避免公共抽象破坏既有提交协议 |
-| 全面支持falkordb；`01a1476a-4a03-7fa2-99f2-cca6aa13a857` | Graph／图引擎相关工作；最近工作转为 Console 门禁 | Graph 运行机制确认时提供历史业务边界；不因会话名称直接派发监督器重构 |
-| 文档清理；`01a148c8-5547-7810-b108-bbfbcd185654` | 概念／规范去重与职责表述整理 | 实施落地后复核规范唯一事实源和删除过期方案；不重复维护本专题 |
+| 全面支持falkordb；`01a1476a-4a03-7fa2-99f2-cca6aa13a857` | 已完成 Graph 全路径审查、状态／锁序表；用户另已确认五项原则，授权仅修订正式文档 | 本轮维护 Graph／Cleanup 正式契约与最小验证矩阵，本会话只维护总专题；后续可承担 Graph 私有实现，仍须等整体实施确认，不改 Common／System／Ontology |
+| 文档清理；`01a148c8-5547-7810-b108-bbfbcd185654` | 当前正整理 Catalog；已请求只读 Cleanup 概念复核，尚待回复 | 仅做规范一致性核对，不作为 Cleanup 产品 Owner，不重复编辑本专题或 Graph 会话正在修订的正式文档 |
 
 `p12-服务与主机监控` 正在处理主机／服务页面交互，执行实例观测不等于任务所有权，本批不要求其参与核心修改。栅格、拓扑、格式、数据权限等会话按实际受影响路径协作，不因共用 Common 就全部派发产品改造。`p0-hunan功能清单维护` 只接收实际实现和验证结果，方案确认不能记成功能完成。
 
-不按“一个模块一个会话”拆散公共状态机。优先只请 CI、Security、租户日志三方核对契约；其他会话在出现其独有业务边界时介入。没有清晰活跃负责会话的 Owner 适配由主责承接，不能猜测归属或擅自新建任务。
+不按“一个模块一个会话”拆散公共状态机。本轮实际请 Graph 历史负责会话、租户日志、CI 和文档清理核对，没有向 Security、Ontology、p19、p12 或 p0 派发实施。没有清晰活跃负责会话的 Cleanup 协调与各 Owner 适配由主责承接；不能把“文档清理”当作 Cleanup 产品 Owner，也不能因其他会话标题含 System 就指定其承担该重构。
 
 共享工作区内，派发前必须再次读取最新进展，明确文件、接口版本、验收和合入顺序；已在处理的不重复派发。各会话只提交自有改动，实施前再次核对未经提交的同文件修改。消息、并行实施和运行验收分别以用户确认的范围为准。
 
-## 七、待确认决定与关闭条件
+## 七、确认状态与实施前决定
 
-下一步优先确认本专题的主责／协作方式和以下架构决定，再修订正式契约并实施：
+已确认且不重复征求的内容：本会话统一牵头；公共 PG 单一队列，System 预建 Cleanup 父子 pending、Owner 独占子运行；Graph 取消意图与终态分离、从未启动 pending 的有证据撤销；Graph 私有准入／待核清与 E → G → T／B 锁序及三阶段清理；子 execution 类型化 metadata 回执、Graph 执行快照不扩大 Ontology 迁移。确认这些原则和修订文档，不等于已授权实现或真实运行验收。
 
-1. Common 独占公共生命周期字段，Owner 保留业务提交和安全重放裁决；移除通用无条件写入口。
-2. Graph 采用内嵌监督器和公共 lease；失联失败收敛，不自动重放图写入。
-3. Cleanup 的唯一协调事实、持久执行身份、重复事件处理及结果收敛协议；该项需要专门设计，不将本专题的方向当作已完成方案。
-4. 公共生产时钟、锁后到期判定、字段恢复规则和存量迁移范围；不新增 attempt 历史实体。
-5. CI 独立结果与必需汇总保持覆盖，新的 Hosted 场景逐项明确范围。
+以下具体产品与操作边界随本次整合稿提交用户确认：
+
+1. 按 5.1 的顺序实施，由本会话负责 Common、System 协调、其余 Owner 适配及整合；Graph 会话负责 Graph 私有路径，CI 会话单一负责标准入口和登记，日志会话复核权限／事件。
+2. Cleanup 采用 4.2.2 的父子收口细则：父冻结截止结论；有效子迟到可以记录事实，失权子写回拒绝；父只关闭准入，未领取子由 Owner 拒绝收敛。父协调恢复不刷新期限，不重放子删除。
+3. 对外接口同时调整：取消受理与完成分开；Cleanup 同参受理 ID、PG 持久详情／分页、标准安全摘要与 Owner 专业详情分开。既有调用方同次迁移，不能只改后端或悄悄删私有统计显示。
+4. 首期不新增自动物理保留清理、失败 Engine 删除重试或 Ontology 模型迁移。旧活动任务／外部未决操作只读盘点后排空切换，有无法核清项就保留阻断，不凭新协议改造授权修正历史或重跑删除。实际生产／共享环境切换命令和新的 Hosted 范围另行确认。
+
+公共时钟、锁后复核和字段恢复细节由主责在正式规范与 PG 反例矩阵中收口；若调查发现需要改变上述业务边界，先报告决定，不用 Owner 私有补丁绕过公共约束。已有确定性或 Hosted 成功证据只有输入与范围仍匹配时复用。
 
 完成时必须同时满足：运行路径有明确所有权；公共字段有唯一维护入口；旧路径删除；Owner 事务／副作用边界有证据；受影响标准门禁实际执行；真实验收按固定版本与范围通过，清理可核验。未运行、失败、跳过和未确认设计分别记录。
 
