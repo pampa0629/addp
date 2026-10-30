@@ -55,3 +55,81 @@ func TestGraphProtectionExecutionRunnerIdentityContractsMatchFixture(t *testing.
 		}
 	}
 }
+
+func TestGraphProtectionExecutionPrivateEnvironmentActuallyExportsEveryIdentity(t *testing.T) {
+	_, source, _, _ := runtime.Caller(0)
+	root := filepath.Clean(filepath.Join(filepath.Dir(source), "../../../.."))
+	data, err := os.ReadFile(filepath.Join(root, "scripts/test/execution-online-contract.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contract struct {
+		Keys []string `json:"fixture_environment_keys"`
+	}
+	if err := json.Unmarshal(data, &contract); err != nil {
+		t.Fatal(err)
+	}
+	if len(contract.Keys) < 20 {
+		t.Fatal("execution identity export contract is incomplete")
+	}
+	values := map[string]string{"UNRELATED_SECRET": "must-not-export"}
+	for _, key := range contract.Keys {
+		values[key] = "private-'" + key
+	}
+	output := filepath.Join(t.TempDir(), "identity.env")
+	if err := writeEnvironmentFile(output, values); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(output)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatal("identity output is not private")
+	}
+	body, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(body)), "\n")
+	if len(lines) != len(contract.Keys) {
+		t.Fatal("identity export silently omitted or added fields")
+	}
+	for _, key := range contract.Keys {
+		expected := "export " + key + "='private-'\"'\"'" + key + "'"
+		if !slices.Contains(lines, expected) {
+			t.Fatalf("private identity not exported safely: %s", key)
+		}
+	}
+	if strings.Contains(string(body), "must-not-export") {
+		t.Fatal("unregistered secret escaped the allowlist")
+	}
+}
+
+func TestGraphProtectionNativeCleanupUsersKeepApprovedRolesSeparate(t *testing.T) {
+	permissions, err := suitePermissions("cleanup-native-effects")
+	if err != nil || !slices.Equal(permissions, managerArtifactPermissions) || needsEngineProvisioner("cleanup-native-effects") {
+		t.Fatal("native preparation must reuse Manager's ordinary role, without broad Engine provisioner")
+	}
+	want := []string{"system.engine.create", "system.engine.read", "system.engine.delete", "system.cleanup.read", "manager.cleanup_result.read", "transfer.cleanup_result.read"}
+	if !slices.Equal(cleanupNativeEnginePermissions, want) {
+		t.Fatal("Engine lifecycle User permissions changed")
+	}
+	if !slices.Equal(suiteSourceInitializerPermissions("cleanup-native-effects"), sourceInitializerPermissions) {
+		t.Fatal("native source preparation must reuse existing precise authorization initializer")
+	}
+	_, source, _, _ := runtime.Caller(0)
+	root := filepath.Clean(filepath.Join(filepath.Dir(source), "../../../.."))
+	data, err := os.ReadFile(filepath.Join(root, "scripts/test/execution-online-contract.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contract struct {
+		Permissions map[string][]string `json:"native_permissions"`
+	}
+	if err := json.Unmarshal(data, &contract); err != nil {
+		t.Fatal(err)
+	}
+	for name, expected := range map[string][]string{"manager": managerArtifactPermissions, "transfer": transferContinuousPermissions, "engine": cleanupNativeEnginePermissions} {
+		if !slices.Equal(contract.Permissions[name], expected) {
+			t.Fatalf("%s Python/Go identity contract differs", name)
+		}
+	}
+}

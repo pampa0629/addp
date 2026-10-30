@@ -1,14 +1,159 @@
 {
   "schema": "addp.execution-online-contract/v1",
   "graph_permissions": [
-    "graph.graph.read", "graph.graph.create", "graph.graph.update", "graph.graph.reconcile",
-    "graph.ontology.create", "graph.ontology.read", "graph.build_task.create", "graph.build_task.read",
-    "graph.build_task.update", "graph.build_task.execute", "graph.build_task.cancel"
+    "graph.graph.read",
+    "graph.graph.create",
+    "graph.graph.update",
+    "graph.graph.reconcile",
+    "graph.ontology.create",
+    "graph.ontology.read",
+    "graph.build_task.create",
+    "graph.build_task.read",
+    "graph.build_task.update",
+    "graph.build_task.execute",
+    "graph.build_task.cancel"
   ],
   "cleanup_permissions": [
-    "system.cleanup.read", "system.cleanup.execute",
-    "asset.cleanup_result.read", "develop.cleanup_result.read", "graph.cleanup_result.read",
-    "manager.cleanup_result.read", "meta.cleanup_result.read", "model.cleanup_result.read",
-    "quality.cleanup_result.read", "service.cleanup_result.read", "standard.cleanup_result.read", "transfer.cleanup_result.read"
-  ]
+    "system.cleanup.read",
+    "system.cleanup.execute",
+    "asset.cleanup_result.read",
+    "develop.cleanup_result.read",
+    "graph.cleanup_result.read",
+    "manager.cleanup_result.read",
+    "meta.cleanup_result.read",
+    "model.cleanup_result.read",
+    "quality.cleanup_result.read",
+    "service.cleanup_result.read",
+    "standard.cleanup_result.read",
+    "transfer.cleanup_result.read"
+  ],
+  "native_permissions": {
+    "manager": [
+      "manager.content.read",
+      "manager.data_item.update",
+      "manager.data_item.read",
+      "manager.derived_artifact.create",
+      "manager.derived_artifact.delete",
+      "manager.derived_artifact.read",
+      "meta.catalog.read",
+      "meta.scan_task.execute",
+      "meta.scan_task.read",
+      "monitor.execution.read"
+    ],
+    "transfer": [
+      "transfer.task.create",
+      "transfer.task.delete",
+      "transfer.task.execute",
+      "transfer.task.read",
+      "transfer.task.update",
+      "monitor.execution.read",
+      "meta.catalog.read",
+      "meta.scan_task.execute",
+      "meta.scan_task.read",
+      "system.execution_authorization.create"
+    ],
+    "engine": [
+      "system.engine.create",
+      "system.engine.read",
+      "system.engine.delete",
+      "system.cleanup.read",
+      "manager.cleanup_result.read",
+      "transfer.cleanup_result.read"
+    ]
+  },
+  "fixture_environment_keys": [
+    "ADDP_ONLINE_CLEANUP_ACCESS_TOKEN",
+    "ADDP_ONLINE_CLEANUP_ASSIGNMENT_ID",
+    "ADDP_ONLINE_CLEANUP_IAM_ACCESS_TOKEN",
+    "ADDP_ONLINE_CLEANUP_NATIVE_ENGINE_ACCESS_TOKEN",
+    "ADDP_ONLINE_CLEANUP_NATIVE_MANAGER_ACCESS_TOKEN",
+    "ADDP_ONLINE_CLEANUP_NATIVE_TRANSFER_ACCESS_TOKEN",
+    "ADDP_ONLINE_CLEANUP_OTHER_ACCESS_TOKEN",
+    "ADDP_ONLINE_CLEANUP_OTHER_ASSIGNMENT_ID",
+    "ADDP_ONLINE_CLEANUP_OTHER_PASSWORD",
+    "ADDP_ONLINE_CLEANUP_OTHER_USERNAME",
+    "ADDP_ONLINE_CLEANUP_READ_ACCESS_TOKEN",
+    "ADDP_ONLINE_CLEANUP_REVOKEE_ACCESS_TOKEN",
+    "ADDP_ONLINE_GRAPH_DEVELOP_ACCESS_TOKEN",
+    "ADDP_ONLINE_GRAPH_DEVELOP_PASSWORD",
+    "ADDP_ONLINE_GRAPH_DEVELOP_USERNAME",
+    "ADDP_ONLINE_GRAPH_LIFECYCLE_ACCESS_TOKEN",
+    "ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN",
+    "ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN",
+    "ADDP_ONLINE_GRAPH_REVIEW_ACCESS_TOKEN",
+    "ADDP_ONLINE_GRAPH_REVIEW_PASSWORD",
+    "ADDP_ONLINE_GRAPH_REVIEW_USERNAME",
+    "ADDP_ONLINE_GRAPH_SERVICE_ACCESS_TOKEN",
+    "ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_ACCESS_TOKEN",
+    "ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_TENANT_ID",
+    "ADDP_ONLINE_GRAPH_SERVICE_PASSWORD",
+    "ADDP_ONLINE_GRAPH_SERVICE_USERNAME"
+  ],
+  "native_case_checks": {
+    "manager-success": [
+      "real_glb_generated",
+      "native_object_observed",
+      "real_index_projection_observed",
+      "engine_deletion_confirmed",
+      "native_object_absent",
+      "source_objects_unchanged",
+      "native_index_absent",
+      "professional_receipt_equal",
+      "cleaned_input_audit_retained"
+    ],
+    "manager-object-unknown": [
+      "real_glb_generated",
+      "native_object_observed",
+      "real_index_projection_observed",
+      "engine_deletion_confirmed",
+      "native_object_absent",
+      "source_objects_unchanged",
+      "native_mutation_sent_response_lost",
+      "unknown_effect_hold_retained",
+      "engine_remains_deleting",
+      "repeated_delete_not_resent",
+      "new_generation_rejected"
+    ],
+    "manager-index-unknown": [
+      "real_glb_generated",
+      "native_object_observed",
+      "real_index_projection_observed",
+      "engine_deletion_confirmed",
+      "native_object_absent",
+      "source_objects_unchanged",
+      "native_mutation_sent_response_lost",
+      "unknown_effect_hold_retained",
+      "engine_remains_deleting",
+      "repeated_delete_not_resent",
+      "new_generation_rejected"
+    ],
+    "transfer-engine": [
+      "real_capture_created",
+      "actual_invocations_returned",
+      "native_capture_absent",
+      "engine_retains_task_and_dlq",
+      "professional_receipt_equal",
+      "explicit_task_delete_removes_dlq",
+      "target_business_rows_preserved"
+    ],
+    "transfer-dlq-unknown": [
+      "real_dlq_created",
+      "direct_task_delete_sent_response_lost",
+      "native_topic_absent",
+      "unknown_preserves_task_and_index",
+      "unknown_delete_not_resent",
+      "new_producer_rejected",
+      "target_business_rows_preserved"
+    ],
+    "transfer-capture-unknown": [
+      "real_capture_created",
+      "actual_invocations_returned",
+      "native_connector_absent",
+      "native_mutation_sent_response_lost",
+      "unknown_effect_hold_retained",
+      "engine_remains_deleting",
+      "new_producer_rejected",
+      "target_business_rows_preserved"
+    ]
+  }
 }

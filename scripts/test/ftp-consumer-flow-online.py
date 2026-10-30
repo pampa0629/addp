@@ -559,12 +559,12 @@ def exact_user_principal(client, tenant, permissions):
 class ModelSourceAuthorization:
     """Use the formal User APIs; receipts are history, never a cached Allow."""
 
-    def __init__(self, issuer, consumer, report, *, source_type=None, consumer_permissions=None):
+    def __init__(self, issuer, consumer, report, *, source_type=None, consumer_permissions=None, issuer_permissions=None):
         self.source_type = source_type or report.get("source_engine_type", model_source_type())
         self.target = lambda name: file_target(self.engine_id, name, self.source_type)
         tenant = report['tenant_id']
         require(type(tenant) is int and tenant > 1, 'FTP grants require the disposable nondefault Tenant')
-        self.operator = exact_user_principal(issuer, tenant, ISSUER_PERMISSIONS)
+        self.operator = exact_user_principal(issuer, tenant, issuer_permissions if issuer_permissions is not None else ISSUER_PERMISSIONS)
         self.recipient = exact_user_principal(consumer, tenant, consumer_permissions or PERMISSIONS)
         require(self.recipient == report['principal_id'] and self.operator != self.recipient,
                 'FTP source issuer must be distinct from the actual browser consumer')

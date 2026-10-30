@@ -524,14 +524,39 @@ Cleanup 浏览器增量复用现有同权限 other User，不新增用户、角�
 请求发出但回包丢失由本轮专属连接故障控制实现，独立原生只读探针确认对象／索引／Capture／DLQ 的真实状态；没有真实发送和原生效果证据时必须失败，不能由客户端超时推定成功或 unknown 已成立。控制不增加产品测试端点，不修改公共 execution/lease，不扩现有场景预算。用户已确认上述临时窄身份及目的绑定，不再重复申请；这不授权新的 Hosted 或环境切换。Graph positive reopen 还需要单独完成 Provider 原物理身份的规范方案，不能把名称／端口／晚到本地回包当作证明，此处不申请变更。
 
 
-**原生场景入口复核及待确认的操作范围修订。** 已批准身份不等于 Engine 工作流会删除所有 Transfer 资源。正式 Cleanup 规范的 Transfer 节要求 Engine 生命周期保留、禁用用户任务，直接删除任务使用独立当前用户授权；`transfer/backend/internal/service/cleanup_service.go:executeCleanup` 明确以 `physical := mode == physical_cleanup && !engineDeletion` 区分，因此 Engine execute 保留 DLQ 与私有任务事实。`docs/spec/tasks/Transfer-Kafka与DLQ.md` 第 19 条规定用户直接删除任务才走 Capture／DLQ 与私有状态的删除入口。先前计划把 Engine 清理当作 DLQ 删除证明，覆盖范围判断有误，不能据此改产品删除语义或伪造历史 Tenant context。
+**原生场景入口复核及已确认的操作范围修订（2026-10-30）。** 已批准身份不等于 Engine 工作流会删除所有 Transfer 资源。正式 Cleanup 规范的 Transfer 节要求 Engine 生命周期保留、禁用用户任务，直接删除任务使用独立当前用户授权；`transfer/backend/internal/service/cleanup_service.go:executeCleanup` 明确以 `physical := mode == physical_cleanup && !engineDeletion` 区分，因此 Engine execute 保留 DLQ 与私有任务事实。`docs/spec/tasks/Transfer-Kafka与DLQ.md` 第 19 条规定用户直接删除任务才走 Capture／DLQ 与私有状态的删除入口。先前计划把 Engine 清理当作 DLQ 删除证明，覆盖范围判断有误，不能据此改产品删除语义或伪造历史 Tenant context。
 
-建议保留现行业务契约，将原生验收明确分为两个入口：
+用户确认保留现行业务契约，将原生验收明确分为两个入口：
 
 1. Engine 生命周期 case 由已批准的六项权限 User 评估／确认本轮准确 Engine，验证 Manager 自有产物／索引清理和 Transfer 任务禁用、定义与 DLQ 保留；Capture 的准确代际清理由该工作流既有路径验证。CDC 先通过已有 pause 停止数据运行体并保留 capture，再检查停止证明，不能先调用会删除 capture 的 Stop 把测试对象清空。
 2. DLQ 删除及未知响应 case 由已批准的 Transfer 普通业务 User 使用其已有 `transfer.task.delete`，显式删除本轮自有任务；验证准确 DLQ topic、外部响应未知后保留任务与索引、不重发及新 producer 被隔离。该证据标明是 Transfer 直接删除入口，不能冒充 System Cleanup 父子闭环；不扩大六项 Engine User、不使用 IAM 管理员、不启用历史 Tenant。
 
-此修订改变原计划的删除触发入口与操作范围，依根 AGENTS.md 第 0 条待用户确认；相关原生 case 暂不接入冻结的两个 profile。Graph 运行中崩溃、Cleanup 浏览器及已冻结 CI 接入继续完成。Graph positive reopen 的 Provider 原物理身份方案仍是独立缺口。
+用户已确认此修订，两个入口的身份权限保持不变；另以独立原生 case 接入，不静默扩大已冻结的两个 profile。Graph 运行中崩溃、Cleanup 浏览器及已冻结 CI 接入继续完成。Graph positive reopen 的 Provider 原物理身份方案仍是独立缺口。
 
 
 **本轮实际验证与提交边界。** 合并 CI 的 `577aca240` 后，`GOMAXPROCS=4 GOFLAGS=-p=2 make test-graph-online-runner` 实际退出 0，80 项场景测试、142 项接入／预检／报告消费测试及 GraphProtection 身份夹具 Go 测试通过；日志 `/tmp/addp-execution-runner-final-20261030.log`。共享身份夹具的完整包另由 `GOMAXPROCS=4 GOFLAGS=-p=2 make test-quality-online-runner` 验证，48 项 Python 及 Go 完整包通过，日志 `/tmp/addp-execution-fixture-incremental-20261030.log`，其后该 Go 输入未再改变。早先两次 Graph 入口遭遇共享接入中间态失败，保留原日志；最终未跳过用例、未放宽断言。JS 仅完成语法与 runner 报告契约验证，尚无真实浏览器执行结果。没有新的 Hosted、PG、容器故障运行或环境切换；原生未知效果及 positive reopen 仍未完成，不把本地 runner 测试当作运行验收。
+
+用户同时授权：在既定大方向、原则和模块功能边界内，实施细节由主责自行推进并动态报告；新的 Hosted 和环境切换仍单独确认。原生 case 采用独立 suite `cleanup-native-effects`，避免把原生效果证据混入已冻结协议／浏览器 profile。
+
+### 8.7 双入口原生故障验收接线（2026-10-30，实施中）
+
+用户已确认 8.6 的两个入口，且允许主责在既定方向、原则和模块边界内自行推进实现细节。保留现有 Engine 删除语义；不增加产品权限、不启用历史 Tenant，不启动新的 Hosted 或切换环境。
+
+独立 `cleanup-native-effects` suite 每次显式选择一个 `ADDP_ONLINE_NATIVE_CASE`，不一次复用已被 unknown 隔离的物理索引或运行环境。六个有限 case 为 `manager-success`、`manager-object-unknown`、`manager-index-unknown`、`transfer-engine`、`transfer-dlq-unknown`、`transfer-capture-unknown`；准确必需断言唯一存于 `scripts/test/execution-online-contract.json:native_case_checks`，Owner 和 CI 同读，不各维护另一份成功条件。
+
+- Manager 由现有 10 项普通业务权限 User 沿正式 Meta 扫描、准确组成源 Grant、OBJ→GLB Model3D Runtime 生成真实产物；Engine User 沿原评估、名称／版本确认、权威复扫与十 Owner 流程清理。以直连 Infra MinIO 和 Meilisearch 原生读取核验效果，保留 Cleaned 输入审计与目标隔离；清理前后都按现有固定哈希核对 Business MinIO 的 OBJ／MTL／纹理未变。Manager 普通来源授权复用既有 `ModelSourceAuthorization`，显式传入已有 16 项初始化 Permission；该身份不需要 Deny 创建／释放权，其他已有调用仍使用其既有 Permission 集合。
+- Transfer 由独立现有 10 项普通业务权限 User 创建真实 CDC／Kafka continuous 任务。首先观察真实目标业务行提交，再 pause 并取得 `runtime_sessions.stopped_at`，保留 capture 供 Engine 工作流清理。准确 generation 的 connector／slot／publication 由原生探针读取，不能以 lease 过期代替运行体停止。Engine case 验证任务与 DLQ 保留，再以普通用户显式 task DELETE 验证独立删除入口；DLQ unknown case 在 active Engine 上独立执行，核对外部 topic 已消失而任务／控制索引／原操作仍保留，重复 DELETE 不重发，新 producer 不准入，目标业务行保留。
+- 请求及实际回包丢失由独占容器中的 `native-effect-proxy.py` 实现。每实例固定 upstream，控制仅容器 loopback；准确 run／UUID key 只可绑定一次。HTTP 以方法、路径、body SHA 绑定，Meili 另限定 canonical UUID `customMetadata`；Kafka 按当前固定 kmsg v0–v6 DeleteTopics 解码准确 task-owned DLQ 名并匹配 response correlation。收到真实 upstream 响应后才丢 downstream 回包，后续准确同目标重发只阻断、不再转发。独立 native probe 继续直达原生服务；仅修改 Kafka seed 地址不够，部署启动前必须固定 advertised listener 经 proxy。请求发送一次、实际 upstream 响应、原生效果与持久隔离缺一不可，不能用客户端超时推断成功。
+- 临时业务／Engine 三用户准确 Permission 集合及私有环境导出键在同一机器契约中登记。修复了先前 `writeEnvironmentFile` 漏导出 Cleanup 新字段及 Graph lifecycle token 的问题；新增真正写出文件的 0600、字段完整性、shell 引号和任意 secret 拒绝反例。既有 Graph 其他专用字段原本已登记，不重复导出。
+
+主责拥有 Owner runner、proxy、身份夹具与专业断言；CI 会话拥有独立一次性 profile、最小真实 Runtime／业务夹具、私有 manifest、标准 Make、选择／预检／报告消费／恢复销毁／登记与 workflow。同次完成接线和标准门禁后再提交。原生探针用的 `cleanup-native-fixture.json` 必须位于当次私有目录且为 0600，绑定 run／case、准确容器 ID／image／StartedAt、真实源描述与直达 native 连接；只读 PG 使用当次独占 `addp_online`，不操作本地共享生产库。所有 raw native／浏览器内容、凭据和私有运行信息不归档。
+
+**已发现的既有产品表现及证据边界。** `StartContinuousExecution` 遇到 `ErrCleanupOperationUnresolved` 会阻断准入，但当前 Transfer handler 没有该错误的专门映射，返回 HTTP 500，安全错误为 `start continuous execution: transfer external cleanup operation is unresolved`。DLQ unknown case 只接受这个准确原因，并同时要求原 task／DLQ 计数、准确 operation 摘要及待执行／运行数量不变、真实发送数仍为 1；报告显式保存 `producer_refusal_http_status=500`。它验证安全围栏，不把现有 API 错误分类缺口掩盖成合理的冲突响应。此次不为适配测试而改变产品返回语义。
+
+六 case 报告显式保留 `native_late_writer_acceptance=not_run`、`graph_native_write_acceptance=not_run`、`positive_reopen_acceptance=not_run`：并发旧 writer 真正迟到写入、Graph 原生写图回包丢失和正向 reopen 仍需自己的独立场景／物理证据，不能被本批结果覆盖。当前只有代码及确定性开发检查，真实 Hosted 未运行，尚不记作原生效果验收通过。最终标准门禁及固定提交 CI 结果在完成后补记。
+
+**本批实际门禁。** CI 接线与 Owner 输入合并后的 `GOMAXPROCS=4 GOFLAGS=-p=2 make test-execution-online-ci-runner` 实际通过：59 项 native／transport／业务夹具／Hosted 生命周期测试，以及 143 项共享预检、报告消费与登记测试；日志 `/tmp/addp-native-ci-final-20261030.log`。其中 Owner 的 14 项测试实际覆盖 Engine 确认身份／版本／十 Owner 完整性、Grant 先于源下载、Manager native 效果缺失与审计／hold 损坏、双入口顺序及 DLQ 保留、原生存储授权失败不能当作对象不存在、实际停止证明、精确 HTTP／Kafka 传输与回包丢失及拒绝重发。此前独立标准 `make test-cleanup-native-online-runner` 57 项通过；新增两个 Owner 反例已包含在上述最终 59 项中，不把旧计数当作最终覆盖。
+
+共享身份夹具 `GOMAXPROCS=4 GOFLAGS=-p=2 make test-quality-online-runner` 48 项 Python 与完整 Go 包通过（`/tmp/addp-native-identity-final-20261030.log`）；源 Grant helper 的既有 `make test-ftp-online-runner` 98 项、JS／Shell／登记和完整身份 Go 包通过（`/tmp/addp-native-grant-helper-20261030.log`）。CI 负责人另完成 workflow security 标准门禁及实际 Compose 只读合成，准确十三个 Backend loopback、Graph／Asset 单例及代理出口的证据位于 `/tmp/addp-native-actual-compose-proof.json`。这些都是确定性／配置证据，未启动容器故障场景或新的 Hosted。
+
+上一批 `5f7876931` 的自然 Platform CI 原始失败为接入测试把 secret 放在临时 checkout 内；CI 负责人以 `117d7f892` 修正测试目录与规范化，未放宽生产准入。修复后的自然 Platform Job `123835886996` 中 142 项与登记实际通过，关联 Run `40985638920`，不据此将整轮或新原生 Hosted 计为通过。本批 Owner／CI 按依赖顺序分别提交，再统一推送和跟进本次影响门禁。

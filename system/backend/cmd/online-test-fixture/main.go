@@ -130,7 +130,7 @@ func suiteSourceInitializerPermissions(suite string) []string {
 		}
 		return append(append([]string{}, sourceInitializerPermissions...),
 			"system.engine_access_deny.create", "system.engine_access_deny.release")
-	case "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow":
+	case "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow", "cleanup-native-effects":
 		return append([]string{}, sourceInitializerPermissions...)
 	default:
 		return nil
@@ -224,6 +224,13 @@ var transferContinuousPeerPermissions = []string{
 	"monitor.execution.read", "transfer.task.read", "transfer.task.update", "meta.scan_task.read",
 }
 
+// This User confirms only this run's exact Engine lifecycle operations. It
+// cannot update Engines, execute generic Cleanup or administer authorization.
+var cleanupNativeEnginePermissions = []string{
+	"system.engine.create", "system.engine.read", "system.engine.delete",
+	"system.cleanup.read", "manager.cleanup_result.read", "transfer.cleanup_result.read",
+}
+
 var managerArtifactPermissions = []string{
 	"manager.content.read",
 	"manager.data_item.update",
@@ -287,6 +294,8 @@ func suitePermissions(suite string) ([]string, error) {
 		return graphProtectionReaderPermissions, nil
 	case "cleanup-execution":
 		return append([]string(nil), cleanupExecutionPermissions...), nil
+	case "cleanup-native-effects":
+		return append([]string(nil), managerArtifactPermissions...), nil
 	case "pg-source-authorization":
 		return pgAuthorizationConsumerPermissions, nil
 	case "platform-node-metrics", "platform-administrator-governance":
@@ -820,6 +829,23 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_PARENT_USER_USERNAME"] = readerName
 		values["ADDP_ONLINE_PARENT_USER_PASSWORD"] = password
 		values["ADDP_ONLINE_PARENT_ASSIGNMENT_ID"] = fmt.Sprintf("%d", ownerAssignmentID)
+	}
+	if *suite == "cleanup-native-effects" {
+		values["ADDP_ONLINE_CLEANUP_NATIVE_MANAGER_ACCESS_TOKEN"] = consumerSession.AccessToken
+		for _, subject := range []struct {
+			name, environment string
+			permissions       []string
+		}{
+			{"external-online-cleanup-native-transfer", "ADDP_ONLINE_CLEANUP_NATIVE_TRANSFER_ACCESS_TOKEN", transferContinuousPermissions},
+			{"external-online-cleanup-native-engine", "ADDP_ONLINE_CLEANUP_NATIVE_ENGINE_ACCESS_TOKEN", cleanupNativeEnginePermissions},
+		} {
+			prepared, _, _, fixtureErr := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+				tenant.ID, administrator.PrincipalID, subject.name, subject.permissions)
+			if fixtureErr != nil {
+				return fixtureErr
+			}
+			values[subject.environment] = prepared.AccessToken
+		}
 	}
 	if *suite == "cleanup-execution" {
 		values["ADDP_ONLINE_CLEANUP_ACCESS_TOKEN"] = consumerSession.AccessToken
@@ -1360,6 +1386,32 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		return fmt.Errorf("protect fixture environment: %w", err)
 	}
 	for _, key := range []string{
+		"ADDP_ONLINE_CLEANUP_ACCESS_TOKEN",
+		"ADDP_ONLINE_CLEANUP_ASSIGNMENT_ID",
+		"ADDP_ONLINE_CLEANUP_IAM_ACCESS_TOKEN",
+		"ADDP_ONLINE_CLEANUP_NATIVE_ENGINE_ACCESS_TOKEN",
+		"ADDP_ONLINE_CLEANUP_NATIVE_MANAGER_ACCESS_TOKEN",
+		"ADDP_ONLINE_CLEANUP_NATIVE_TRANSFER_ACCESS_TOKEN",
+		"ADDP_ONLINE_CLEANUP_OTHER_ACCESS_TOKEN",
+		"ADDP_ONLINE_CLEANUP_OTHER_ASSIGNMENT_ID",
+		"ADDP_ONLINE_CLEANUP_OTHER_PASSWORD",
+		"ADDP_ONLINE_CLEANUP_OTHER_USERNAME",
+		"ADDP_ONLINE_CLEANUP_READ_ACCESS_TOKEN",
+		"ADDP_ONLINE_CLEANUP_REVOKEE_ACCESS_TOKEN",
+		"ADDP_ONLINE_GRAPH_DEVELOP_ACCESS_TOKEN",
+		"ADDP_ONLINE_GRAPH_DEVELOP_PASSWORD",
+		"ADDP_ONLINE_GRAPH_DEVELOP_USERNAME",
+		"ADDP_ONLINE_GRAPH_LIFECYCLE_ACCESS_TOKEN",
+		"ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN",
+		"ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN",
+		"ADDP_ONLINE_GRAPH_REVIEW_ACCESS_TOKEN",
+		"ADDP_ONLINE_GRAPH_REVIEW_PASSWORD",
+		"ADDP_ONLINE_GRAPH_REVIEW_USERNAME",
+		"ADDP_ONLINE_GRAPH_SERVICE_ACCESS_TOKEN",
+		"ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_ACCESS_TOKEN",
+		"ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_TENANT_ID",
+		"ADDP_ONLINE_GRAPH_SERVICE_PASSWORD",
+		"ADDP_ONLINE_GRAPH_SERVICE_USERNAME",
 		"ADDP_ONLINE_GOV_TARGET_FAMILY_ID",
 		"ADDP_ONLINE_GOV_TARGET_ACCESS_TOKEN",
 		"ADDP_ONLINE_GOV_TARGET_OTHER_ACCESS_TOKEN",
@@ -1414,19 +1466,6 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_FIXTURE_DEPARTMENT_ID",
 		"ADDP_ONLINE_FIXTURE_PROJECT_GROUP_ID",
 		"ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN",
-		"ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN",
-		"ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN",
-		"ADDP_ONLINE_GRAPH_DEVELOP_ACCESS_TOKEN",
-		"ADDP_ONLINE_GRAPH_DEVELOP_USERNAME",
-		"ADDP_ONLINE_GRAPH_DEVELOP_PASSWORD",
-		"ADDP_ONLINE_GRAPH_SERVICE_ACCESS_TOKEN",
-		"ADDP_ONLINE_GRAPH_SERVICE_USERNAME",
-		"ADDP_ONLINE_GRAPH_SERVICE_PASSWORD",
-		"ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_ACCESS_TOKEN",
-		"ADDP_ONLINE_GRAPH_SERVICE_FOREIGN_TENANT_ID",
-		"ADDP_ONLINE_GRAPH_REVIEW_ACCESS_TOKEN",
-		"ADDP_ONLINE_GRAPH_REVIEW_USERNAME",
-		"ADDP_ONLINE_GRAPH_REVIEW_PASSWORD",
 		"ADDP_ONLINE_IMPORT_OUTSIDER_ACCESS_TOKEN",
 		"ADDP_ONLINE_OWN_ASSIGNMENT_ID",
 		"ADDP_ONLINE_PARENT_ASSIGNMENT_ID",
