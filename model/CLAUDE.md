@@ -181,7 +181,9 @@ model/
 
 ### `model.metric_implementations` / `model.metric_implementation_revisions`
 
-指标实现是独立版本主体；稳定身份保存 `fact_table_id`、`metric_definition_id`、名称和 `version`。修订保存 `revision_no`、`metric_definition_revision_id`、类型化 `contract`、依赖快照与 hash，以及 `draft|published|withdrawn` 状态。同一实现最多一个草稿，发布内容不可变；事实表只是来源引用，不拥有实现生命周期。API 与完整契约以正式规范为准。
+稳定身份保存 `fact_table_id`、`metric_definition_id`、名称和独立 `version`；修订保存 `revision_no`、`metric_definition_revision_id`、类型化 `contract`、`dependency_snapshot`、`dependency_hash` 与 `status`。
+
+事实表仅作来源引用，修订写入使用实现版本。修订状态、草稿唯一性及发布／撤回／删除规则统一见[指标实现独立修订](docs/model概念与数据约束规范.md#指标实现独立修订)；权限见[IAM Permission 所有权](#iam-permission-所有权)，实际验收范围见[开发与验证](#开发与验证)。
 
 ### `model.dw_layers` — 数仓分层
 
