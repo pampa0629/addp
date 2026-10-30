@@ -138,11 +138,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _run_config_check(",
-      "commit": "da8794a89cddf4d8ef9d890e56ec1bf7c450b7a7",
-      "sha256": "6d58eecb78916711996a1eec9cb8229889de2909addaa591e3166f5e6db29fd1",
+      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
+      "sha256": "8a88884f5636b814b860abfa0bddb0e5459046d3a8c59e27813a253517616cd4",
       "use": {
-        "zh-cn": "确认恢复重读原参数、本体及源/目标父节点事实，正式复检匹配指纹后沿唯一Adapter、确认消费与提交屏障创建一次。稳定内容变化重新确认，失败不重试。同批用前序完成屏障按模型顺序执行，搜索失败或取消阻断排队调用；显式检查仍固定展示并结束，不放宽权限。 计划/工作区展示不改变创建条件、确认或权限。",
-        "en": "Runtime resumes exact arguments with fresh semantics, source/target-parent evidence and formal checks, creating once through the same guarded adapter after confirmation consumption and commit acknowledgement. Changed stable content requires review; failures are not retried. Predecessor gates preserve model order and block queued calls after search failure or cancellation. Explicit checks still display and stop without widening permissions. Workspace plans confer no creation authority."
+        "zh-cn": "确认恢复重读原参数、本体及源/目标父节点事实，正式复检匹配指纹后沿唯一Adapter、确认消费与提交屏障创建一次。稳定内容变化重新确认，失败不重试。同批用前序完成屏障按模型顺序执行，搜索失败或取消阻断排队调用；显式检查仍固定展示并结束，不放宽权限。 计划/工作区展示不改变创建条件、确认或权限。 回复详略仅补充模型表达，固定预检、复核与创建提示不改写。",
+        "en": "Confirmed resume rereads exact parameters, ontology and source/target facts; checks and fingerprint precede one Adapter call with consumed confirmation and commit barrier. Changed facts require review; failures do not retry. Ordered batch barriers stop queued calls after search failure, pause or cancel. Explicit checks show fixed results and end. Expression preferences change only model wording, never fixed checks, reviews, creation messages, parameters or permissions."
       }
     },
     {
@@ -151,11 +151,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_transfer_precheck_runtime.py",
       "anchor": "class TransferPrecheckRuntimeTests(",
-      "commit": "68c687a4926cf034aa0702d7fb0ccb583b05e737",
-      "sha256": "496b6d49a4862d1d249700e38c135486a03c850977a73d3db9145df9b0281708",
+      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
+      "sha256": "a33fb461797e53c48c0f03e6c43fb5922eeccb667f6f0b4a23d49ae7b00a5750",
       "use": {
-        "zh-cn": "真实 Harness/Manifest/SDK 受控回归覆盖确认恢复零模型调用、精确参数创建一次、修订/事实/报告变化重确认后继续、取消、权限拒绝、unsupported、提交失败与结果不明不重试；不代表真实部署或 Hosted 验收。",
-        "en": "Controlled real Harness/Manifest/SDK tests cover zero model calls and one exact-argument creation on confirmed resume, re-review after revision/fact/report changes, cancellation, denial, unsupported definitions, commit failure and uncertain writes without retry; not live-deployment or Hosted acceptance."
+        "zh-cn": "真实 Harness/Manifest/SDK 受控回归覆盖确认恢复零模型调用、精确参数创建一次、修订/事实/报告变化重确认后继续、取消、权限拒绝、unsupported、提交失败与结果不明不重试；不代表真实部署或 Hosted 验收。 简洁偏好下正式三态预检与固定提示保持原样。",
+        "en": "Controlled real Harness/Manifest/SDK tests cover zero model calls and one exact-argument creation on confirmed resume, re-review after revision/fact/report changes, cancellation, denial, unsupported definitions, commit failure and uncertain writes without retry; not live-deployment or Hosted acceptance. Formal tri-state checks and fixed messages remain exact with concise preferences."
       }
     },
     {
@@ -164,11 +164,11 @@
       "kind": "implementation",
       "path": "agent/backend/i18n.py",
       "anchor": "def transfer_config_check_completed(",
-      "commit": "da8794a89cddf4d8ef9d890e56ec1bf7c450b7a7",
-      "sha256": "a94e0c0a40d9b19a8e73a92f78fada2751a599e5cbf8ec425b6398d9432516a9",
+      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
+      "sha256": "9cc6567713e5f3ebe819378c1901bb96292d518dd8ab0e8fb8910a03e0176615",
       "use": {
-        "zh-cn": "显式预检的双语三态完成提示，以及确认恢复后仅基于正式创建响应的固定成功提示；失败不宣称已创建，unknown 不标为通过。 计划/工作区展示不改变创建条件、确认或权限。",
-        "en": "Localized tri-state explicit-check completion and fixed confirmed-resume completion based only on the formal creation response; failure never claims creation, and unknown is not passed. Workspace plans confer no creation authority."
+        "zh-cn": "显式预检的双语三态完成提示，以及确认恢复后仅基于正式创建响应的固定成功提示；失败不宣称已创建，unknown 不标为通过。 计划/工作区展示不改变创建条件、确认或权限。 仅新增回复偏好不能覆盖恢复中运行的双语输入错误。",
+        "en": "Localized tri-state explicit-check completion and fixed confirmed-resume completion based only on the formal creation response; failure never claims creation, and unknown is not passed. Workspace plans confer no creation authority. Adds only a localized input error forbidding reply preference overrides on resume."
       }
     },
     {
@@ -203,11 +203,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/main_agent.py",
       "anchor": "async def _route_node(",
-      "commit": "4d970f63298bcf2f465e07ca3609a11665638300",
-      "sha256": "930b2721067a3fa9111fc4a4eb71593aa87d9fda7ae08cd79d6a6c00fc3caf79",
+      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
+      "sha256": "84ff804a94c2f6ecdf17cf3824c30a3be241686bab559b3f380a3d93cf1d663c",
       "use": {
-        "zh-cn": "纯解释与原参数创建分离，恢复只重读同身份草稿，不继承历史授权；正式确认由 Runtime 推进。普通引擎/算子查询按本轮目标走普通 Skill，不以平台目录为前置条件，不新增目录失败回退或创建权限。",
-        "en": "Separate explanation from exact-draft creation, re-read scoped references without historical authorization and advance confirmed creation in Runtime. Route ordinary engine/operator queries by the current goal without a platform-catalog prerequisite, catalog-failure fallback or new creation authority."
+        "zh-cn": "纯解释与原参数创建分离，恢复只重读同身份草稿，不继承历史授权；正式确认由 Runtime 推进。普通引擎/算子查询按本轮目标走普通 Skill，不以平台目录为前置条件，不新增目录失败回退或创建权限。 运行冻结的表达偏好不改用户原文、路由与工具权限。",
+        "en": "Separate explanation from exact-draft creation, re-read scoped references without historical authorization and advance confirmed creation in Runtime. Route ordinary engine/operator queries by the current goal without a platform-catalog prerequisite, catalog-failure fallback or new creation authority. Run-frozen expression preferences leave user text, routing and Tool permissions unchanged."
       }
     },
     {
@@ -216,11 +216,11 @@
       "kind": "implementation",
       "path": "agent/backend/api/chat.py",
       "anchor": "async def draft_reader(",
-      "commit": "77442db2420a8b73f1e530f8078cc16e454ea8c6",
-      "sha256": "cc2aaf2037c945867f5d733ba6118efc8c64e6f79be74935ec3db97a516d7afd",
+      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
+      "sha256": "128eeb188c6df8c1a88506222511ab4e90fe36cbcac1afce839e9d679e69746e",
       "use": {
-        "zh-cn": "同身份读取原草稿并经唯一 A2UI 路径展示，文字与成果保持原事件顺序。计划在同回复按稳定身份替换当前投影，不改变正式预检、确认、创建权限或业务效果。",
-        "en": "Read exact scoped drafts through one A2UI path, retaining text and result order. Replace the current plan within one reply under a stable activity identity; prechecks, reviews, creation permissions and business effects are unchanged."
+        "zh-cn": "同身份读取原草稿并经唯一 A2UI 路径展示，文字与成果保持原事件顺序。计划在同回复按稳定身份替换当前投影，不改变正式预检、确认、创建权限或业务效果。 AG-UI forwardedProps只接收封闭回复详略，新Run冻结到既有checkpoint，resume不得覆盖。",
+        "en": "Read exact scoped drafts through one A2UI path, retaining text and result order. Replace the current plan within one reply under a stable activity identity; prechecks, reviews, creation permissions and business effects are unchanged. AG-UI forwardedProps accepts only closed reply detail, frozen in the existing new Run checkpoint; resume cannot override it."
       }
     },
     {
@@ -307,11 +307,11 @@
       "kind": "implementation",
       "path": "agent/frontend/src/views/ChatView.vue",
       "anchor": "function ensureLiveTextPart(",
-      "commit": "4d970f63298bcf2f465e07ca3609a11665638300",
-      "sha256": "03455921eb59906cdce65a3f874d4c666a54b9e3cd270aced6592b8495f489b7",
+      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
+      "sha256": "38928716d82ea8b1235e3524f7b61e8b1c7a58bdfbb091ed9ad433bea0fdce1c",
       "use": {
-        "zh-cn": "实时和安全回放保留文字及 A2UI 顺序，计划只替换同消息中同身份投影，保留历史快照；不改变创建条件、确认或权限。",
-        "en": "Live rendering and safe replay retain text and A2UI order. Replace only the same plan activity within the current message, preserving historical snapshots and all creation conditions, reviews and permissions."
+        "zh-cn": "实时和安全回放保留文字及 A2UI 顺序，计划只替换同消息中同身份投影，保留历史快照；不改变创建条件、确认或权限。 设置复用现有配置；复制、导出与另开会话仅投影文字，另开会话只填可编辑草稿，不重放确认、预检或引用。",
+        "en": "Live rendering and safe replay retain text and A2UI order. Replace only the same plan activity within the current message, preserving historical snapshots and all creation conditions, reviews and permissions. Settings reuses existing configuration. Copy, export and new-conversation drafts project text only; no confirmation, precheck or draft reference is replayed."
       }
     },
     {
@@ -320,11 +320,11 @@
       "kind": "contract",
       "path": "agent/backend/graph/state.py",
       "anchor": "class RouteDecision(",
-      "commit": "da8794a89cddf4d8ef9d890e56ec1bf7c450b7a7",
-      "sha256": "e091cb05be7eab10ef86d8cc7e8a64fcb458f2a737c69739fc036d5e488d8c34",
+      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
+      "sha256": "69628fe0b510e29451bb968773a85170fc62b92187d466c39be299cf40f445ab",
       "use": {
-        "zh-cn": "请求级 TaskContext 携带服务端 Interaction 恢复标志与临时原参数；语义 checkpoint 仅保存引用，不保存第二份参数或模型状态。 计划/工作区展示不改变创建条件、确认或权限。",
-        "en": "Request-local TaskContext carries the server-owned Interaction resume flag and temporary exact arguments; semantic checkpoints retain only the reference, not duplicate arguments or model state. Workspace plans confer no creation authority."
+        "zh-cn": "请求级 TaskContext 携带服务端 Interaction 恢复标志与临时原参数；语义 checkpoint 仅保存引用，不保存第二份参数或模型状态。 计划/工作区展示不改变创建条件、确认或权限。 仅增加表达偏好类型，不扩展业务参数或批准。",
+        "en": "Request-local TaskContext carries the server-owned Interaction resume flag and temporary exact arguments; semantic checkpoints retain only the reference, not duplicate arguments or model state. Workspace plans confer no creation authority. Adds only an expression preference type, without business arguments or approval."
       }
     },
     {
@@ -333,11 +333,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/checkpoint.py",
       "anchor": "def normalize_checkpoint(",
-      "commit": "1c07a4282b906f8e7b189b7b3f7d9ed9a984a4dd",
-      "sha256": "de1da0a8d26533b4880466a15f8cc8a3f00056db795179478e1d33675800cc5e",
+      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
+      "sha256": "db3d457994c5f06f46fe87c0cfa7e4a7602f5b7d5b7018d60b13fa0bdc92e967",
       "use": {
-        "zh-cn": "检查点只保存原草稿控制引用，不持久化第二份参数；恢复拒绝错误引用类型，仍保留当前 Run 原有事实与复核边界，不导入旧 Run",
-        "en": "Checkpoint stores only the draft control reference, not a duplicate payload; restoration rejects wrong reference types and retains current-run evidence and review boundaries without importing an old run"
+        "zh-cn": "检查点只保存原草稿控制引用，不持久化第二份参数；恢复拒绝错误引用类型，仍保留当前 Run 原有事实与复核边界，不导入旧 Run 新增封闭reply_detail表达偏好；不改变observed/confirmed或原稿引用，非法值拒绝。",
+        "en": "Checkpoint stores only the draft control reference, not a duplicate payload; restoration rejects wrong reference types and retains current-run evidence and review boundaries without importing an old run Adds closed reply_detail expression preference without changing observed/confirmed or draft references; invalid values are rejected."
       }
     },
     {
@@ -346,11 +346,11 @@
       "kind": "test",
       "path": "agent/frontend/e2e/clarification-resume.spec.js",
       "anchor": "test('exact checked draft streams and reloads",
-      "commit": "4d970f63298bcf2f465e07ca3609a11665638300",
-      "sha256": "b2146ee5f41bea08da9d50af42b74b2f1a8770092f3dd696b771670bf824539f",
+      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
+      "sha256": "4828baea84192d2c78270af9ec6558d6ed4ca766344927454ec14e69c481a66b",
       "use": {
-        "zh-cn": "T3 使用生产 UI/协议客户端与受控 HTTP/SSE 核对文字、卡片顺序、刷新后的原参数与引用；长草稿名在窄屏不溢出。禁止夹具访问个人服务，不作为真实模型或 Hosted T4 验收。",
-        "en": "T3 uses production UI/client with controlled HTTP/SSE to verify content order and reloaded exact arguments/references, including narrow long-name layout. Fixtures forbid personal service calls and do not prove live-model or Hosted T4 acceptance."
+        "zh-cn": "T3 使用生产 UI/协议客户端与受控 HTTP/SSE 核对文字、卡片顺序、刷新后的原参数与引用；长草稿名在窄屏不溢出。禁止夹具访问个人服务，不作为真实模型或 Hosted T4 验收。 受控浏览器验证IME和快捷键、新消息携带偏好、澄清仍恢复原身份且不覆盖偏好。",
+        "en": "T3 uses production UI/client with controlled HTTP/SSE to verify content order and reloaded exact arguments/references, including narrow long-name layout. Fixtures forbid personal service calls and do not prove live-model or Hosted T4 acceptance. Controlled browser checks IME/shortcuts and preferences on new messages; clarification preserves its identity without overriding the preference."
       }
     },
     {
@@ -385,11 +385,11 @@
       "kind": "implementation",
       "path": "agent/backend/services/runs.py",
       "anchor": "async def resume_agent_run(",
-      "commit": "68c687a4926cf034aa0702d7fb0ccb583b05e737",
-      "sha256": "709f1a567f224d7eaba324d5b5154f648c48d36203f52887b7983e872a56704f",
+      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
+      "sha256": "6a2e71f1b45315b6d043d896808fd834e63cf3ece71d1fbd6a9c90e6a944a0d5",
       "use": {
-        "zh-cn": "只接受已持久化的正式 Interaction 确认，普通创建绑定本次唯一预检引用后恢复原 Run；文字回答清除复核，不构成批准，不复制第二份参数。",
-        "en": "Accepts persisted formal Interaction confirmation, binding the exact check reference before resuming the same run; text clears review rather than approving, with no duplicate argument store."
+        "zh-cn": "只接受已持久化的正式 Interaction 确认，普通创建绑定本次唯一预检引用后恢复原 Run；文字回答清除复核，不构成批准，不复制第二份参数。 新Run持久表达偏好；恢复与重试不覆盖，不新增确认来源。",
+        "en": "Accepts persisted formal Interaction confirmation, binding the exact check reference before resuming the same run; text clears review rather than approving, with no duplicate argument store. New Runs persist expression preferences, preserved on resume/retry without a new confirmation source."
       }
     },
     {
