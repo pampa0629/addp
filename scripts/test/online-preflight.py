@@ -128,6 +128,7 @@ def validate_online_environment(*, require_run_id: bool, execution: bool = False
 
 
 def validate_execution_environment(profile: str, repository: Path, services: list[Service]) -> None:
+    repository = repository.resolve(strict=True)
     if (sys.platform != "linux" or os.environ.get("GITHUB_ACTIONS") != "true"
             or os.environ.get("RUNNER_OS") != "Linux" or os.environ.get("ADDP_ONLINE_HOSTED") != "1"
             or os.environ.get("ADDP_ONLINE_HOST") != "1"

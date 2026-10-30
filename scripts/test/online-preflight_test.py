@@ -202,12 +202,15 @@ class OnlinePreflightTest(unittest.TestCase):
         self.assertEqual(report["tenant_id"], "42")
 
     def test_execution_preflight_rejects_wrong_owner_identity_and_peer(self):
-        secret = Path(self.temp.name) / 'addp-online-secret-profile'
+        execution_temp = tempfile.TemporaryDirectory(prefix='addp-execution-preflight-')
+        self.addCleanup(execution_temp.cleanup)
+        runner = Path(execution_temp.name).resolve()
+        secret = runner / 'addp-online-secret-profile'
         secret.mkdir(mode=0o700)
         env = dict(GITHUB_ACTIONS='true', RUNNER_OS='Linux', ADDP_ONLINE_HOSTED='1', ADDP_ONLINE_HOST='1',
                    ADDP_ONLINE_TEST_RUN_ID='execution-test', ADDP_ONLINE_GRAPH_ENGINE='falkordb', ADDP_ONLINE_TEST_ENGINE_ID='42',
-                   ADDP_ONLINE_ARTIFACT_DIR=str(Path(self.temp.name) / 'artifacts'),
-                   RUNNER_TEMP=self.temp.name, ADDP_ONLINE_SECRET_DIR=str(secret),
+                   ADDP_ONLINE_ARTIFACT_DIR=str(runner / 'artifacts'),
+                   RUNNER_TEMP=str(runner), ADDP_ONLINE_SECRET_DIR=str(secret),
                    ADDP_ONLINE_GRAPH_LIFECYCLE_ACCESS_TOKEN='private-lifecycle', ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='private-reader')
         services = [ONLINE_PREFLIGHT.Service(name, f'http://127.0.0.1:{port}') for name, port in
                     (('gateway', 8000), ('system', 8180), ('graph', 8186), ('graph-peer', 18186))]
@@ -221,6 +224,16 @@ class OnlinePreflightTest(unittest.TestCase):
                             services[:-1] + [ONLINE_PREFLIGHT.Service('graph-peer','https://127.0.0.1:18186')]):
                 with self.assertRaises(ONLINE_PREFLIGHT.PreflightError):
                     ONLINE_PREFLIGHT.validate_execution_environment('graph', self.repository, invalid)
+            checkout_secret = self.repository / 'addp-online-secret-inside'
+            checkout_secret.mkdir(mode=0o700)
+            for repository in (self.repository, self.repository.resolve()):
+                with patch.dict(ONLINE_PREFLIGHT.os.environ, {
+                        'RUNNER_TEMP': str(self.repository.resolve()),
+                        'ADDP_ONLINE_SECRET_DIR': str(checkout_secret)}), self.assertRaises(ONLINE_PREFLIGHT.PreflightError):
+                    ONLINE_PREFLIGHT.validate_execution_environment('graph', repository, services)
+            with patch.dict(ONLINE_PREFLIGHT.os.environ, {'ADDP_ONLINE_ARTIFACT_DIR':str(secret / 'reports')}), \
+                    self.assertRaises(ONLINE_PREFLIGHT.PreflightError):
+                ONLINE_PREFLIGHT.validate_execution_environment('graph', self.repository, services)
             secret.chmod(0o755)
             with self.assertRaises(ONLINE_PREFLIGHT.PreflightError):
                 ONLINE_PREFLIGHT.validate_execution_environment('graph', self.repository, services)
