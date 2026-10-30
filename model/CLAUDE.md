@@ -345,7 +345,7 @@ Model 和 Standard 使用不同的 PostgreSQL Schema，**无数据库外键约�
 
 ## IAM Permission 所有权
 
-Model 是 `model.logical_model.*` 第一批 Permission 的唯一 owner，机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Model 服务启动时不向 System 动态注册 Permission。
+Model 是 `model.*` Permission 的唯一 owner，完整声明以 [authorization/permissions.yaml](authorization/permissions.yaml)（`owner_module: model`）为准。该 Manifest 由 `common/authorization` 在构建／发布期统一发现、校验和聚合，Model 服务启动时不向 System 动态注册 Permission。事实源与生成产物归属见[唯一事实源](../docs/spec/addp权限与角色发布规范.md#二唯一事实源)，发布聚合与 System migration 职责见[发布期聚合](../docs/spec/addp权限与角色发布规范.md#九发布期聚合)。
 
 Entity、EntityRelation、DWLayer 和 LogicalModel 分别使用 `model.entity.*`、`model.entity_relation.*`、`model.dw_layer.*`、`model.logical_model.*`。EntityAttribute 是 Entity 聚合内子资源；LogicalField、TableRelation、DimensionHierarchy 是 LogicalModel 聚合内子资源；MetricImplementation 是独立聚合，使用 model.metric_implementation 精确权限。Mermaid 导入预览和确认均按 Entity 与 EntityRelation 的 create 执行 all-of 校验；导出按两者的 read 执行 all-of 校验。导入只创建缺失成员，不要求全租户已审批实体退回草稿；新关系仍不得绕过两端实体的生命周期约束。
 
