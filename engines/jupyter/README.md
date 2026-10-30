@@ -1,24 +1,28 @@
 # Jupyter Engine
 
-ADDP 的 Notebook 运行时。Develop 通过统一任务执行链调用 8097 API，运行时使用 Papermill 执行保存在 MinIO 中的 Notebook；交互编辑由 Develop 创建并代理短期隔离 JupyterLab 会话，浏览器不直连 Runtime。
+ADDP 的 Notebook 运行时，提供读取 MinIO、校验内容摘要、通过 Papermill 执行并写回结果的无头接口，以及由 Develop 创建和代理的短期隔离 JupyterLab 会话。
+
+当前一次性 Notebook（`script`）仍按[Develop 执行监督与授权规范](../../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)拒绝实际派发，已有 Runtime 接口不表示平台已开放该能力。交互 Session 不进入此队列；当前接线与未完成项见 [Develop 执行架构](../../develop/CLAUDE.md#统一执行架构)。
 
 ## 架构设计
 
-```
-Develop TaskExecution
-  -> Notebook Runtime API (8097)
-     -> MinIO 输入 Notebook
-     -> Papermill 无头执行
-     -> MinIO 执行结果
-
-Develop Notebook Session
-  -> Runtime 控制面 (8097，Service Access Token)
-     -> 隔离 JupyterLab process + 临时 workspace
-     -> Develop 同源 HTTP/WebSocket 代理
-     -> 关闭或过期时保存回 MinIO 并清理
+```mermaid
+flowchart TD
+    subgraph queued["一次性 Notebook（script）"]
+        Submit["Develop 提交与内容摘要冻结"] --> Queue["pending / claim"]
+        Queue --> Deny["拒绝派发，不调用 Runtime"]
+    end
+    subgraph interactive["Notebook 交互会话"]
+        Browser["浏览器"] --> Proxy["Develop 同源 HTTP / WebSocket 代理"]
+        Proxy --> Control["Runtime 会话控制面"]
+        Control --> Lab["隔离 JupyterLab process / 临时 workspace"]
+        Lab --> Save["关闭或到期：保存原 MinIO 对象并清理"]
+    end
 ```
 
 ## API 接口
+
+除 `/health` 外，下列端点均仅接受 `addp-develop` 的 Tenant Service Access Token；请求体携带的租户必须与认证上下文一致。以下示例为 Runtime 内部契约；浏览器仍经 Develop 同源会话代理访问。
 
 ### 1. 健康检查
 ```bash
@@ -42,7 +46,7 @@ Content-Type: application/json
 }
 ```
 
-提交时由 Develop 固定源文件摘要，Runtime 对下载到的实际字节核验后才执行；缺失或非法摘要返回 400，文件变化返回 409 和 `error_code=notebook_content_changed`，不调用 Papermill，也不写输出对象。路径只能是当前租户 Notebook 根下的规范相对路径，不保留缺失摘要时执行的旧路径。该契约不授予数据源访问能力，也不承诺客户端失联后远端已停止。
+内容冻结与变更拒绝的规则见[任务契约](../../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)。Runtime 对实际下载字节校验：缺失或非法摘要返回 400，内容变化返回 409 和 `error_code=notebook_content_changed`，不调用 Papermill，也不写输出对象。路径仅允许当前租户 Notebook 根下的规范相对路径；当前 Kernel 仅支持 `python3`，拒绝 `ds_` 前缀参数注入。
 
 响应：
 ```json
@@ -62,9 +66,11 @@ GET http://jupyter-engine:8097/api/kernels
 
 ### 4. 交互会话控制面
 
-`POST /api/interactive-sessions` 和 `DELETE /api/interactive-sessions/{id}` 只接受 `addp-develop` 的 Tenant Service Access Token。创建请求必须携带 Tenant、User、Task、Notebook 路径、Kernel、外部 base path、TTL，以及 Develop 为当前 Session 签发的 owner API endpoint 和 Notebook Kernel Capability Token；响应中的内部端口与 Jupyter Token 只供 Develop 代理使用，不得返回浏览器。
+`POST /api/interactive-sessions` 创建、`DELETE /api/interactive-sessions/{id}` 关闭隔离会话。创建请求须携带 Tenant、User、Task、Notebook 路径、Kernel、外部 base path、TTL，以及当前 Session 的 owner API endpoint 和 Notebook Kernel Capability Token；响应中的内部端口与 Jupyter Token 只供 Develop 代理使用，不得返回浏览器。
 
-每个会话使用独立临时目录和 JupyterLab process。Runtime 只把 owner endpoint 和对应短期 Capability 注入该 process，供 `addp_common.notebook.engines.list()` 读取脱敏查询 Engine 描述；公开会话响应、Notebook 内容和日志均不保存 Capability。正常关闭与 TTL 清理都会先把 Notebook 保存回原 MinIO 对象，再终止 process；Runtime 退出时统一清理全部会话。共享 Lab、固定 8088 入口、URL Token、用户 Token、服务 Token 和长期 Engine 连接注入均不属于支持路径。
+Session 授权与每次只读数据访问的 Execution Authorization 分工统一见[会话授权规范](../../docs/spec/addp授权上下文规范.md#53-notebook-会话授权)。
+
+每个会话使用独立临时目录和 JupyterLab process。Runtime 仅向该 process 注入 owner endpoint 和短期 Capability，供 `addp_common.notebook.engines.list()` 等受控调用使用；凭据的公开响应、存储与失效边界统一见[认证规范](../../docs/spec/addp登录认证的统一要求.md#七前端共享能力要求)，不提供共享 Lab、固定 8088 或 URL Token 入口。正常关闭与 TTL 清理先保存回原 MinIO 对象，再终止 process；Runtime 退出时统一清理全部会话。
 
 镜像内预装 `@addp/notebook-bridge` JupyterLab 扩展。它只接受同源父页面、当前 Session ID 匹配的 `postMessage`，在当前 Notebook 中插入一个代码单元并保持未执行状态；不提供执行、文件覆盖或跨 Session 操作。
 
@@ -90,6 +96,6 @@ bash scripts/dev/start.sh -jupyter
 
 ## 依赖库
 
-详见 requirements.txt
+依赖见 [requirements.txt](requirements.txt)。
 
-确定性回归统一运行 `make test-jupyter`；根 `make test`、Engines 自动发现和 Platform CI 的 Jupyter Runtime job 均调用此入口。该门禁 mock 存储与 Papermill，不接管开发服务，不代表真实 Notebook T4 已通过。
+确定性回归统一运行 `make test-jupyter`；根 `make test`、Engines 自动发现和 Platform CI 的 Jupyter Runtime job 均调用此入口。该门禁以 mock 验证 Runtime 身份、内容摘要及隔离会话等行为，不接管开发服务。Develop Owner 验证使用 `make test-module MODULE=develop`；两者均不能作为真实队列派发、撤权闭环或跨模块 Notebook T4 通过的证据，未运行、失败与未覆盖项分别记录。
