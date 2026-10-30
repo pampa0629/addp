@@ -3042,7 +3042,7 @@ def validate_raster_tangential_curvature(repository: Path, registered: set[str])
 
 
 def validate_raster_lineage_observer(repository: Path, registered: set[str]) -> None:
-    if not registered.intersection({'raster-cut-fill-persistence','raster-tpi-persistence','raster-tri-persistence','raster-roughness-persistence','raster-surface-area-persistence','raster-twi-persistence', 'raster-spi-persistence', 'raster-sieve-persistence'}):return
+    if not registered.intersection({'raster-cut-fill-persistence','raster-tpi-persistence','raster-tri-persistence','raster-roughness-persistence','raster-surface-area-persistence','raster-twi-persistence', 'raster-spi-persistence', 'raster-sieve-persistence', 'raster-focal-percentile-persistence'}):return
     required={
         'scripts/utils/online_raster_lineage.py': ('BEGIN READ ONLY;', 'statement_timeout', 'LIMIT 1', 'public observation must hide internal operations', 'actor_principal_id', 'workflow_matches', "public=True", "public=False", 'closed(public, expected)', 'closed(internal, expected)', 'validate_container', 'StartedAt', 'read_error', "'prepare'"),
         'scripts/test/online-raster-lineage_test.py': ('test_public_null_and_complete_internal_are_both_required', 'test_public_cannot_expose_operations_or_omit_them', 'test_internal_null_empty_missing_extra_and_wrong_operation_rejected', 'test_current_execution_identity_and_workflow_are_required', 'test_container_identity_restart_labels_and_database_cannot_change'),
@@ -3051,7 +3051,7 @@ def validate_raster_lineage_observer(repository: Path, registered: set[str]) -> 
         text=(repository/path).read_text()
         if any(fragment not in text for fragment in fragments):raise RegistrationError('bounded raster internal lineage evidence incomplete: '+path)
     make=(repository/'Makefile').read_text()
-    for prefix in ('cut-fill','tpi','tri','roughness','surface-area','twi', 'spi', 'sieve'):
+    for prefix in ('cut-fill','tpi','tri','roughness','surface-area','twi', 'spi', 'sieve', 'focal-percentile'):
         gate=(repository/f'scripts/test/online-hosted-raster-{prefix}-gate.sh').read_text()
         if 'run_logged python3 scripts/utils/online_raster_lineage.py prepare' not in gate:raise RegistrationError('raster owner receipt preparation omitted')
         block=make.split(f'test-raster-{prefix}-online-runner:',1)[1].split('\n.PHONY:',1)[0]
@@ -3168,6 +3168,36 @@ def validate_raster_twi(repository: Path, registered: set[str]) -> None:
     for relative,key,expected in [('business/scripts/online-raster-twi-fixture.py','CASES',expected_targets),('scripts/test/raster-twi-persistence-online.py','FAILURES',expected_failures)]:
         tree=ast.parse((repository/relative).read_text());values=[n.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id==key for t in n.targets)]
         if len(values)!=1 or set(ast.literal_eval(values[0]))!=expected:raise RegistrationError('TWI exact first-phase matrix identity changed')
+
+
+def validate_raster_focal_percentile(repository: Path, registered: set[str]) -> None:
+    import ast
+    suite='raster-focal-percentile-persistence'
+    if suite not in registered:return
+    workflow=(repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job=re.search(r'(?ms)^  raster-focal-percentile-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)',workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-focal-percentile-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-focal-percentile-persistence'" not in workflow
+        or 'cancel-in-progress: false' not in job.group('body') or 'nfs-kernel-server nfs-common' not in job.group('body')
+        or '${{ runner.temp }}/addp-online-${{ github.run_id }}/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('Focal percentile requires an independent manual Hosted NFS job and complete archive upload')
+    make=(repository/'Makefile').read_text()
+    if 'test_online_focal_percentile_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('Focal percentile Native fixture omitted from standard GeoPython recipe')
+    required={'scripts/test/online-hosted-raster-focal-percentile-gate.sh': ('start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'online-raster-focal-percentile-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare'), 'scripts/test/raster-focal-percentile-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'validate_scan(scanned,scan,identifier', 'raster.strict_sizes', 'validate_target_item(item,expectation', 'raster.wait_lineage', 'scan_ids(client)!=before_scans', 'source_edges(client', 'rasterize.check_physical(native,previous)', 'for name in fixture.TARGETS', 'for problem in FAILURES', "for language in ('zh-cn','en')", 'SubmittedLanguageClient', 'invalid_diagnostic', 'raster_focal_statistics', 'input.source', 'output.save', 'source_bindings', 'archived_cogs', 'incomplete fixed PERCENTILE matrix', 'oracle_prepare', 'oracle_cleanup', 'all 52 calls and 712 full target checks are required', 'ADDP_ONLINE_FOCAL_PERCENTILE_ORACLE_ANCHOR_SHA256', 'query language rewrote stored failure', "maximum=36 if name=='negative'", 'len(self.stages)>=105', 'Meta fabricated missing spatial facts', 'actual endpoint/median comparison evidence differs'), 'business/scripts/online-raster-focal-percentile-fixture.py': ('NFSExport', 'owned_root', 'expected_pixels', 'expected_inputs', 'from fractions import Fraction', 'position=(len(ordered)-1)*Fraction(float(percentile))/100', 'scalar_value(sample,percentile)', 'source file changed', 'runtime_workspaces_removed', 'GDAL_TIFF_INTERNAL_MASK', 'full_check=True', 'nearest_overviews', 'archive_cogs', 'percentile-cogs-manifest.json', 'previous archived COG changed', 'previous COG manifest inventory differs', 'archived COG byte identity differs', 'def prepare_oracle', 'def load_expected', 'def cleanup_oracle', 'oracle anchor is required', 'oracle cache hash changed', 'allow_pickle=False', 'independent_fraction_oracle_verified', 'linear_position_verified', 'explicit_selected_band_verified', 'percentile_encoding_verified', 'missing source CRS was fabricated', 'actual percentile endpoint or median control differs', 'RTOL=4e-15', 'ATOL=0.'), 'engines/geopython-workflow/test_online_focal_percentile_fixture.py': ('test_percentile_persistence_real_gdal_sixteen_chains_complete_controls_pixels_masks_and_cogs', 'test_percentile_persistence_thirty_six_accurate_submitted_language_failures_no_publication', 'test_percentile_complex_alpha_is_separate_native_mixed_mem_evidence_only', 'test_percentile_persistence_oracle_rejects_physical_corruption', 'one_ulp', 'test_percentile_oracle_rejects_wrong_rank_precision_scale_and_coverage', 'nearest_rank', 'median_instead', 'implicit_scale', 'zero_discarded', 'hole_filled', 'test_percentile_original_cog_archive_cannot_change_or_silently_repair', 'test_percentile_worker_stdin_is_repository_independent_and_sources_remain_immutable', 'test_percentile_cached_expectation_never_caches_actual_pixels_or_rebuilds_on_hit', 'test_percentile_oracle_cache_poison_or_cross_scope_fails', 'test_percentile_partial_oracle_preparation_always_has_an_owned_cleanup'), 'Makefile': ('@$(MAKE) test-raster-focal-percentile-online-runner', 'test_online_focal_percentile_fixture.py', 'scripts/test/raster-focal-percentile-persistence-online_test.py', 'scripts/test/online-raster-focal-percentile-fixture_test.py', 'scripts/test/online-hosted-raster-focal-percentile-gate_test.py', 'test_focal_percentile_requires_manual_nfs_full_oracle_archive_and_regressions'), 'scripts/test/online-raster-focal-percentile-fixture_test.py': ('test_private_anchor_rejects_omission_tampering_and_cross_run_before_runtime', 'test_partial_host_preparation_cleanup_is_mandatory_and_bound'), 'scripts/test/raster-focal-percentile-persistence-online_test.py': ('test_complete_16_success_36_submitted_language_failures_712_full_checks_and_archive', 'test_role_bound_lineage_rejects_swaps_missing_extra_duplicates_and_operations', 'test_signed_counts_empty_results_flags_and_original_cog_receipts_are_mandatory', 'test_oracle_failures_cleanup_and_preserve_first_failure', 'test_cache_and_timing_proofs_cannot_be_omitted_or_rebound', 'test_unlocated_artifact_and_meta_reject_fabricated_location')}
+    for relative,fragments in required.items():
+        path=repository/relative
+        if not path.is_file() or any(fragment not in path.read_text()for fragment in fragments):
+            raise RegistrationError('Focal percentile acceptance contract incomplete: '+relative)
+    for relative,key,expected in [('business/scripts/online-raster-focal-percentile-fixture.py','CASES',{'p0-3.cog.tif': ('values.tif', 3, 'percentile', 0, 'direct'), 'min-3.cog.tif': ('values.tif', 3, 'min', None, 'direct'), 'p100-5.cog.tif': ('values.tif', 5, 'percentile', 100, 'direct'), 'max-5.cog.tif': ('values.tif', 5, 'max', None, 'direct'), 'p50-3.cog.tif': ('values.tif', 3, 'percentile', 50, 'direct'), 'median-3.cog.tif': ('values.tif', 3, 'median', None, 'direct'), 'p50-5.cog.tif': ('values.tif', 5, 'percentile', 50, 'direct'), 'median-5.cog.tif': ('values.tif', 5, 'median', None, 'direct'), 'p25-3.cog.tif': ('values.tif', 3, 'percentile', 25, 'direct'), 'p75-5.cog.tif': ('values.tif', 5, 'percentile', 75, 'direct'), 'p33-5.cog.tif': ('values.tif', 5, 'percentile', 33.3, 'direct'), 'reclassified.cog.tif': ('values.tif', 3, 'percentile', 90, 'reclassify'), 'int64.cog.tif': ('int64.tif', 3, 'percentile', 25, 'direct'), 'uint64.cog.tif': ('uint64.tif', 5, 'percentile', 75, 'direct'), 'unlocated.cog.tif': ('unlocated.tif', 5, 'percentile', 25, 'direct'), 'invalid.cog.tif': ('invalid.tif', 3, 'percentile', 50, 'direct')}),
+                                  ('business/scripts/online-raster-focal-percentile-fixture.py','COMPARISONS',(('p0-3.cog.tif', 'min-3.cog.tif'), ('p100-5.cog.tif', 'max-5.cog.tif'), ('p50-3.cog.tif', 'median-3.cog.tif'), ('p50-5.cog.tif', 'median-5.cog.tif'))),
+                                  ('scripts/test/raster-focal-percentile-persistence-online.py','FAILURES',('percentile_missing', 'percentile_null', 'percentile_boolean', 'percentile_string', 'percentile_array', 'percentile_low', 'percentile_high', 'unused', 'method', 'window_value', 'window_boolean', 'window_string', 'band', 'band_zero', 'band_boolean', 'band_string', 'alpha', 'complex'))]:
+        tree=ast.parse((repository/relative).read_text())
+        values=[n.value for n in tree.body if isinstance(n,ast.Assign)and any(isinstance(t,ast.Name)and t.id==key for t in n.targets)]
+        if len(values)!=1 or ast.literal_eval(values[0])!=expected:
+            raise RegistrationError('Focal percentile fixed 16-success/36-failure matrix changed')
+
 
 
 def validate_raster_sieve(repository: Path, registered: set[str]) -> None:
@@ -4850,6 +4880,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_twi(repository, registered)
     validate_raster_spi(repository, registered)
     validate_raster_sieve(repository, registered)
+    validate_raster_focal_percentile(repository, registered)
     validate_raster_lineage_observer(repository, registered)
     validate_raster_flow_length_upstream_d8_profile(repository, registered)
     validate_raster_stream_order_d8_profile(repository, registered)
