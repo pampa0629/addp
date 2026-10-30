@@ -836,8 +836,20 @@ def check_native_process_sources(*, process_alerts=False, cgroup_only=False):
 
 def prepare_http_test_binaries():
     # Compilation cannot consume the finite producers' request budget/history.
-    for package,name in (('./internal/resourcequery','http-query.test'),('./internal/service','http-alert.test')):
-        subprocess.run(['go','test','-c',package,'-o',str(WORK/name)],cwd=Path(__file__).resolve().parents[2]/'monitor/backend',env=dict(os.environ,GOWORK='off'),check=True,timeout=180)
+    import runpy
+    receipt=os.environ.get('ADDP_HTTP_BUDGET_RECEIPT')
+    record=runpy.run_path(str(Path(__file__).with_name('metrics-http-budget.py')))['record_compile_boundary']
+    def boundary(stage,event,code=None):
+        if receipt:record(Path(receipt),stage,event,code)
+    for stage,package,name in (('http_query','./internal/resourcequery','http-query.test'),('http_alert','./internal/service','http-alert.test')):
+        boundary(stage,'start')
+        try:
+            subprocess.run(['go','test','-c',package,'-o',str(WORK/name)],cwd=Path(__file__).resolve().parents[2]/'monitor/backend',env=dict(os.environ,GOWORK='off'),check=True,timeout=180)
+        except subprocess.CalledProcessError as failure:
+            try:boundary(stage,'finish',failure.returncode)
+            except (OSError,ValueError,RuntimeError):pass  # Preserve the original compile failure.
+            raise
+        boundary(stage,'finish',0)
 
 
 def check_python_http_sources():

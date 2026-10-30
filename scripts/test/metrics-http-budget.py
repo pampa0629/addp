@@ -149,6 +149,9 @@ def directory_objects(stderr, ownership):
     return {'status':'partial' if unparsed and objects else 'unparsed' if unparsed else 'parsed' if objects else 'none','objects':objects}
 
 
+COMPILE_STAGES=('process_source','http_query','http_alert')
+
+
 def compile_observation(value):
     if value is None:return {'status':'not_started'}
     if not isinstance(value,dict):return {'status':'invalid'}
@@ -156,13 +159,32 @@ def compile_observation(value):
     if type(start) is not int or start<0:return {'status':'invalid'}
     if set(value)=={'started_monotonic_ns'}:return {'status':'incomplete','started_monotonic_ns':start}
     if (set(value)!={'started_monotonic_ns','finished_monotonic_ns','exit_code'} or
-            type(finish) is not int or finish<start or type(code) is not int or not 0<=code<=255):
+            type(finish) is not int or finish<start or type(code) is not int or not -127<=code<=255):
         return {'status':'invalid'}
     return {'status':'finished',**value}
 
 
-def record_compile_boundary(receipt, event, exit_code=None):
-    value=json.loads(receipt.read_text());previous=compile_observation(value.get('process_compile'))
+def compile_stages_observation(value):
+    if value is None:value={}
+    if not isinstance(value,dict) or not set(value)<=set(COMPILE_STAGES):return {'status':'invalid','stages':{}}
+    stages={};previous_end=0;can_start=True
+    for stage in COMPILE_STAGES:
+        proof=compile_observation(value.get(stage));status=proof['status']
+        if status=='invalid' or (status!='not_started' and (not can_start or proof['started_monotonic_ns']<previous_end)):
+            return {'status':'invalid','stages':{}}
+        stages[stage]=proof
+        can_start=status=='finished' and proof['exit_code']==0
+        if status=='finished':previous_end=proof['finished_monotonic_ns']
+    return {'status':'valid','stages':stages}
+
+
+def record_compile_boundary(receipt, stage, event, exit_code=None):
+    value=json.loads(receipt.read_text());stages=value.get('compile_stages')
+    if stages is None:stages={}
+    observed=compile_stages_observation(stages)
+    if stage not in COMPILE_STAGES or observed['status']!='valid' or 'process_compile' in value:
+        raise RuntimeError('http_compile_boundary_invalid')
+    previous=observed['stages'][stage]
     now=time.monotonic_ns()
     if event=='start' and previous['status']=='not_started' and exit_code is None:
         proof={'started_monotonic_ns':now}
@@ -171,7 +193,9 @@ def record_compile_boundary(receipt, event, exit_code=None):
         if compile_observation(proof)['status']!='finished':raise RuntimeError('http_compile_boundary_invalid')
     else:raise RuntimeError('http_compile_boundary_invalid')
     if value.get('cleanup_started'):raise RuntimeError('http_compile_boundary_during_cleanup')
-    value['process_compile']=proof
+    stages={**stages,stage:proof}
+    if compile_stages_observation(stages)['status']!='valid':raise RuntimeError('http_compile_boundary_invalid')
+    value['compile_stages']=stages
     pending=receipt.with_suffix('.compile-pending');pending.write_text(json.dumps(value));pending.replace(receipt)
 
 
@@ -250,7 +274,7 @@ def sample(ownership,end):
             missing=stage in {'inspect','volume_size'} and b'No such container' in (failure.stderr or b'')
             diagnostic=directory_failure_diagnostic(failure.stderr or b'',ownership,end) if stage=='private_directory_size' else {}
             if stage=='private_directory_size':
-                diagnostic.update(process_compile_at_sample_read=compile_observation(ownership.get('process_compile')),
+                diagnostic.update(compile_stages_at_sample_read=compile_stages_observation(ownership.get('compile_stages')),
                                   sample_started_monotonic_seconds=began,command_started_monotonic_seconds=started,
                                   command_observed_exit_monotonic_seconds=finished)
             failed('http_budget_sample_command_failed','container_disappeared' if missing else 'command_failed',
@@ -367,18 +391,21 @@ def main():
                 report['python_sources']=ownership.get('python_sources')
                 report['source_tls_proof']=ownership.get('source_tls_proof')
                 report['source_tls_publication']=ownership.get('source_tls_publication')
-                report['process_compile']=compile_observation(ownership.get('process_compile'))
+                report['compile_stages']=compile_stages_observation(ownership.get('compile_stages'))
                 report['cleanup_verified']=ownership.get('cleanup_verified',False)
                 report['private_directory_removed']=not Path(ownership['work']).exists()
             report['inputs_unchanged']=input_hashes()==inputs
             preflight=report['case']=='mtls-preflight'
             tls_proven=(report.get('source_tls_proof') or {}).get('passed') is True if preflight else True
             counts_proven=report.get('request_counts')=={'go':0,'python':[0,0],'total':0} if preflight else complete_request_traffic(report.get('request_counts'),report.get('request_phases'))
-            if result==0 and error is None and not report.get('cleanup_overdue') and tls_proven and counts_proven and report['inputs_unchanged'] and report.get('cleanup_verified') and report['elapsed_seconds']<1200 and report.get('private_directory_removed') and report['samples']:
+            compiles=report.get('compile_stages',{})
+            compiles_proven=compiles.get('status')=='valid' and all(p['status']=='finished' and p['exit_code']==0 for p in compiles['stages'].values())
+            if result==0 and error is None and not preflight and not compiles_proven:report['error_code']='http_compile_stages_unproven'
+            if result==0 and error is None and (preflight or compiles_proven) and not report.get('cleanup_overdue') and tls_proven and counts_proven and report['inputs_unchanged'] and report.get('cleanup_verified') and report['elapsed_seconds']<1200 and report.get('private_directory_removed') and report['samples']:
                 report['result']='passed'
             output.write_text(json.dumps(report,indent=2))
     summary={key:report.get(key) for key in ('case','result','error_code','failure_detail','exit_code','elapsed_seconds','source_tls_proof','source_tls_publication',
-             'cleanup_verified','cleanup_overdue','cleanup_lock_wait_seconds','private_directory_removed','inputs_unchanged','request_counts','request_phases','request_traffic_error','python_sources','failure_during_cleanup','process_compile')}
+             'cleanup_verified','cleanup_overdue','cleanup_lock_wait_seconds','private_directory_removed','inputs_unchanged','request_counts','request_phases','request_traffic_error','python_sources','failure_during_cleanup','compile_stages')}
     print('HTTP functional budget result: '+json.dumps(summary,sort_keys=True),flush=True)
     print('HTTP functional budget report: '+str(output),flush=True)
     return 0 if report['result']=='passed' else 1

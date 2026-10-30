@@ -1,4 +1,5 @@
 """Pure functional-budget contract. Never starts Docker or a workload."""
+import ast
 import importlib.util
 import io
 import json
@@ -22,7 +23,84 @@ def row(cpu=1,memory=512*1024**2):
     return {'HostConfig':{'NanoCpus':int(cpu*1e9),'Memory':memory,'Tmpfs':{'/tmp':'size=16m,mode=1777'}},'State':{'Status':'running','OOMKilled':False},'SizeRw':100}
 
 
+def compile_history():
+    return {stage:{'started_monotonic_ns':100+i*100,'finished_monotonic_ns':150+i*100,'exit_code':0}
+            for i,stage in enumerate(m.COMPILE_STAGES)}
+
+
+def prepare_function(work):
+    path=Path(m.__file__).with_name('monitor-metrics-probe.py')
+    node=next(n for n in ast.parse(path.read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='prepare_http_test_binaries')
+    namespace={'os':os,'Path':Path,'subprocess':subprocess,'__file__':str(path),'WORK':work}
+    exec(compile(ast.Module(body=[node],type_ignores=[]),str(path),'exec'),namespace)
+    return namespace['prepare_http_test_binaries']
+
+
 class HTTPBudget(unittest.TestCase):
+    def test_three_stages_keep_order_history_and_no_dual_receipt_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt=Path(directory)/'receipt.json';receipt.write_text(json.dumps({'project':'owned','work':directory}))
+            with patch.object(m.time,'monotonic_ns',side_effect=[100,150,200,250,300,350]):
+                for stage in m.COMPILE_STAGES:
+                    m.record_compile_boundary(receipt,stage,'start');m.record_compile_boundary(receipt,stage,'finish',0)
+            raw=json.loads(receipt.read_text());self.assertEqual(raw['compile_stages'],compile_history())
+            self.assertNotIn('process_compile',raw)
+            observed=m.compile_stages_observation(raw['compile_stages'])
+            self.assertEqual(observed['status'],'valid');self.assertEqual(list(observed['stages']),list(m.COMPILE_STAGES))
+            self.assertTrue(all(p['status']=='finished' for p in observed['stages'].values()))
+            for invalid in [False,[],{'unknown':{}},{'http_query':compile_history()['http_query']},
+                            {**compile_history(),'process_source':{'started_monotonic_ns':100}},
+                            {**compile_history(),'http_query':{**compile_history()['http_query'],'started_monotonic_ns':149}},
+                            {**compile_history(),'process_source':{**compile_history()['process_source'],'exit_code':17}}]:
+                self.assertEqual(m.compile_stages_observation(invalid),{'status':'invalid','stages':{}})
+            for stage in (*m.COMPILE_STAGES,'unknown'):
+                with self.assertRaisesRegex(RuntimeError,'boundary_invalid'):m.record_compile_boundary(receipt,stage,'start')
+            receipt.write_text(json.dumps({'compile_stages':False}))
+            with self.assertRaisesRegex(RuntimeError,'boundary_invalid'):m.record_compile_boundary(receipt,'process_source','start')
+            receipt.write_text(json.dumps({'process_compile':{'started_monotonic_ns':1}}))
+            with self.assertRaisesRegex(RuntimeError,'boundary_invalid'):m.record_compile_boundary(receipt,'process_source','start')
+
+    def test_both_formal_http_compile_calls_use_the_same_atomic_recorder(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work=Path(directory);receipt=work/'receipt.json';initial={'project':'owned','work':directory,'compile_stages':{'process_source':compile_history()['process_source']}}
+            receipt.write_text(json.dumps(initial))
+            with patch.dict(os.environ,{'ADDP_HTTP_BUDGET_RECEIPT':str(receipt)}),patch.object(subprocess,'run') as run:
+                prepare_function(work)()
+            raw=json.loads(receipt.read_text());self.assertEqual(raw['compile_stages']['process_source'],initial['compile_stages']['process_source'])
+            observed=m.compile_stages_observation(raw['compile_stages'])
+            self.assertEqual(observed['status'],'valid')
+            self.assertTrue(all(proof['status']=='finished' and proof['exit_code']==0 for proof in observed['stages'].values()))
+            self.assertEqual([c.args[0][3] for c in run.call_args_list],['./internal/resourcequery','./internal/service'])
+            self.assertTrue(all(c.kwargs['check'] and c.kwargs['timeout']==180 for c in run.call_args_list))
+            self.assertNotIn('process_compile',raw)
+
+    def test_probe_failure_signal_or_timeout_preserves_stage_and_stops_following_compile(self):
+        for index in (0,1):
+            for failure in (subprocess.CalledProcessError(17,['private']),subprocess.CalledProcessError(-15,['private']),subprocess.TimeoutExpired('private',180)):
+                with self.subTest(index=index,kind=type(failure).__name__),tempfile.TemporaryDirectory() as directory:
+                    work=Path(directory);receipt=work/'receipt.json';receipt.write_text(json.dumps({'compile_stages':{'process_source':compile_history()['process_source']}}))
+                    with patch.dict(os.environ,{'ADDP_HTTP_BUDGET_RECEIPT':str(receipt)}),patch.object(subprocess,'run',side_effect=[None]*index+[failure]) as run:
+                        with self.assertRaises(type(failure)) as caught:prepare_function(work)()
+                    self.assertIs(caught.exception,failure);self.assertEqual(run.call_count,index+1)
+                    stages=m.compile_stages_observation(json.loads(receipt.read_text())['compile_stages'])['stages']
+                    current=stages[('http_query','http_alert')[index]]
+                    self.assertEqual(current['status'],'incomplete' if isinstance(failure,subprocess.TimeoutExpired) else 'finished')
+                    if isinstance(failure,subprocess.CalledProcessError):self.assertEqual(current['exit_code'],failure.returncode)
+                    if index==0:self.assertEqual(stages['http_alert']['status'],'not_started')
+
+    def test_probe_boundary_write_error_cannot_replace_original_compile_failure(self):
+        import runpy
+        with tempfile.TemporaryDirectory() as directory:
+            receipt=Path(directory)/'receipt.json';receipt.write_text(json.dumps({'compile_stages':{'process_source':compile_history()['process_source']}}))
+            failure=subprocess.CalledProcessError(17,['private'])
+            def record(p,stage,event,code=None):
+                if event=='finish':raise RuntimeError('observer_failed')
+                m.record_compile_boundary(p,stage,event,code)
+            with patch.dict(os.environ,{'ADDP_HTTP_BUDGET_RECEIPT':str(receipt)}),patch.object(runpy,'run_path',return_value={'record_compile_boundary':record}),patch.object(subprocess,'run',side_effect=failure):
+                with self.assertRaises(subprocess.CalledProcessError) as caught:prepare_function(Path(directory))()
+            self.assertIs(caught.exception,failure)
+            self.assertEqual(m.compile_stages_observation(json.loads(receipt.read_text())['compile_stages'])['stages']['http_query']['status'],'incomplete')
+
     def test_directory_identity_is_relative_run_scoped_and_classifies_all_owned_locations(self):
         owner={'work':'/tmp/addp-metrics-t2.private','project':'addp-metrics-t2-'+'a'*32}
         for relative,category in [('', 'root'),('go-cache/hash','go_cache'),('go-tmp/go-build123/b1','go_tmp'),
@@ -81,7 +159,7 @@ class HTTPBudget(unittest.TestCase):
 
     def test_diagnostic_cost_is_counted_without_replacing_or_retrying_first_du_failure(self):
         with tempfile.TemporaryDirectory(prefix='addp-metrics-t2.') as directory:
-            owner={'work':directory,'project':'addp-metrics-t2-'+'a'*32,'process_compile':{'started_monotonic_ns':123}}
+            owner={'work':directory,'project':'addp-metrics-t2-'+'a'*32,'compile_stages':{'process_source':{'started_monotonic_ns':123}}}
             stderr=b"du: cannot access '"+directory.encode()+b"/go-tmp/private': No such file or directory\n"
             failure=subprocess.CalledProcessError(1,['du'],stderr=stderr)
             with patch.object(m.time,'monotonic',side_effect=[0,.1,.2,3.8,3.9,4.01,4.02]),patch.object(m.subprocess,'check_output',side_effect=[b'',failure]) as execute:
@@ -90,7 +168,7 @@ class HTTPBudget(unittest.TestCase):
             detail=caught.exception.detail
             self.assertEqual(detail['root_observation'],'deadline');self.assertEqual(detail['sample_seconds'],4.02)
             self.assertEqual(detail['command_seconds'],3.6);self.assertEqual(execute.call_count,2)
-            self.assertEqual(detail['process_compile_at_sample_read'],{'status':'incomplete','started_monotonic_ns':123})
+            self.assertEqual(detail['compile_stages_at_sample_read']['stages']['process_source'],{'status':'incomplete','started_monotonic_ns':123})
             self.assertEqual((detail['sample_started_monotonic_seconds'],detail['command_started_monotonic_seconds'],
                               detail['command_observed_exit_monotonic_seconds']),(0,.2,3.8))
             self.assertNotIn('private',json.dumps(detail['directory_objects']))
@@ -101,24 +179,24 @@ class HTTPBudget(unittest.TestCase):
             receipt.write_text(json.dumps(owner))
             self.assertEqual(m.compile_observation(None),{'status':'not_started'})
             with patch.object(m.time,'monotonic_ns',side_effect=[100,150]):
-                m.record_compile_boundary(receipt,'start');self.assertEqual(m.compile_observation(json.loads(receipt.read_text())['process_compile'])['status'],'incomplete')
-                m.record_compile_boundary(receipt,'finish',17)
+                m.record_compile_boundary(receipt,'process_source','start');self.assertEqual(m.compile_observation(json.loads(receipt.read_text())['compile_stages']['process_source'])['status'],'incomplete')
+                m.record_compile_boundary(receipt,'process_source','finish',17)
             result=json.loads(receipt.read_text());self.assertEqual({key:result[key] for key in owner},owner)
-            self.assertEqual(m.compile_observation(result['process_compile']),{'status':'finished','started_monotonic_ns':100,'finished_monotonic_ns':150,'exit_code':17})
+            self.assertEqual(m.compile_observation(result['compile_stages']['process_source']),{'status':'finished','started_monotonic_ns':100,'finished_monotonic_ns':150,'exit_code':17})
             self.assertFalse(receipt.with_suffix('.compile-pending').exists())
             for value in [{},'private',{'started_monotonic_ns':True},
                           {'started_monotonic_ns':100,'finished_monotonic_ns':99,'exit_code':0},
-                          {**result['process_compile'],'secret':'private'},
-                          {**result['process_compile'],'exit_code':256}]:
+                          {**result['compile_stages']['process_source'],'secret':'private'},
+                          {**result['compile_stages']['process_source'],'exit_code':256}]:
                 self.assertEqual(m.compile_observation(value),{'status':'invalid'})
             for event,code in [('start',None),('finish',0)]:
-                with self.assertRaisesRegex(RuntimeError,'boundary_invalid'):m.record_compile_boundary(receipt,event,code)
+                with self.assertRaisesRegex(RuntimeError,'boundary_invalid'):m.record_compile_boundary(receipt,'process_source',event,code)
             receipt.write_text(json.dumps({**owner,'cleanup_started':True}))
-            with self.assertRaisesRegex(RuntimeError,'during_cleanup'):m.record_compile_boundary(receipt,'start')
+            with self.assertRaisesRegex(RuntimeError,'during_cleanup'):m.record_compile_boundary(receipt,'process_source','start')
 
     def test_standard_shell_records_real_success_and_nonzero_compile_without_starting_services(self):
         gate=Path(__file__).with_name('monitor-metrics-gate.sh').read_text()
-        body=gate[gate.index('record_process_compile_boundary(){'):gate.index('mkdir -m 755 "$WORK_DIR/source/process-tls"')]
+        body=gate[gate.index('record_http_compile_boundary(){'):gate.index('mkdir -m 755 "$WORK_DIR/source/process-tls"')]
         for code in (0,17):
             with self.subTest(code=code),tempfile.TemporaryDirectory() as directory:
                 root=Path(directory);(root/'common').mkdir();receipt=root/'owner.json';receipt.write_text(json.dumps({'project':'owned','work':directory}))
@@ -130,12 +208,12 @@ class HTTPBudget(unittest.TestCase):
                 body_under_test=body.replace('$ROOT_DIR/scripts/test/metrics-http-budget.py',str(Path(m.__file__)))
                 result=subprocess.run(['bash','-ec',body_under_test],env=env,capture_output=True,timeout=5)
                 self.assertEqual(result.returncode,code,result.stderr)
-                proof=m.compile_observation(json.loads(receipt.read_text())['process_compile'])
+                proof=m.compile_observation(json.loads(receipt.read_text())['compile_stages']['process_source'])
                 self.assertEqual(proof['status'],'finished');self.assertEqual(proof['exit_code'],code)
 
     def test_cancelled_shell_keeps_start_without_inventing_a_compile_finish(self):
         gate=Path(__file__).with_name('monitor-metrics-gate.sh').read_text()
-        body=gate[gate.index('record_process_compile_boundary(){'):gate.index('mkdir -m 755 "$WORK_DIR/source/process-tls"')]
+        body=gate[gate.index('record_http_compile_boundary(){'):gate.index('mkdir -m 755 "$WORK_DIR/source/process-tls"')]
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);(root/'common').mkdir();receipt=root/'owner.json'
             receipt.write_text(json.dumps({'project':'owned','work':directory}))
@@ -147,7 +225,7 @@ class HTTPBudget(unittest.TestCase):
             try:
                 self.assertTrue(select.select([child.stdout],[],[],3)[0]);self.assertEqual(child.stdout.readline(),b'compiling\n')
                 os.killpg(child.pid,m.signal.SIGTERM);child.communicate(timeout=3)
-                proof=m.compile_observation(json.loads(receipt.read_text())['process_compile'])
+                proof=m.compile_observation(json.loads(receipt.read_text())['compile_stages']['process_source'])
                 self.assertEqual(proof['status'],'incomplete');self.assertNotIn('finished_monotonic_ns',proof)
             finally:
                 if child.poll() is None:os.killpg(child.pid,m.signal.SIGKILL);child.communicate(timeout=3)
@@ -457,7 +535,7 @@ cleanup(){'''+body+'\nfalse\ncleanup\n'
     def test_guard_failure_remains_failed_after_cleanup_and_is_visible_in_log_and_file(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);work=root/'addp-metrics-t2.fixture';work.mkdir()
-            output=root/'report.json';ownership={'project':'addp-metrics-t2-'+'a'*32,'work':str(work),'process_compile':{'started_monotonic_ns':123}}
+            output=root/'report.json';ownership={'project':'addp-metrics-t2-'+'a'*32,'work':str(work),'compile_stages':{'process_source':{'started_monotonic_ns':123}}}
             child=Mock(pid=1234);child.poll.return_value=None
             def start(*args,**kwargs):
                 receipt=Path(kwargs['env']['ADDP_HTTP_BUDGET_RECEIPT'])
@@ -465,12 +543,13 @@ cleanup(){'''+body+'\nfalse\ncleanup\n'
                 def cleanup(**kwargs):
                     shutil.rmtree(work)
                     receipt.write_text(json.dumps({**ownership,'cleanup_started':True,'cleanup_verified':True,
-                        'process_compile':{'started_monotonic_ns':123,'finished_monotonic_ns':150,'exit_code':143}}))
+                        'compile_stages':{'process_source':{'started_monotonic_ns':123,'finished_monotonic_ns':150,'exit_code':143}}}))
                     return 143
                 child.wait.side_effect=cleanup
                 return child
             failure=m.BudgetFailure('http_budget_sample_command_failed','private_directory_size','command_failed',exit_code=1,
                                     command_seconds=.75,sample_seconds=1.25,command_budget_seconds=3.5,
+                                    compile_stages_at_sample_read=m.compile_stages_observation(ownership['compile_stages']),
                                     **m.directory_failure_diagnostic(b'du: private-token: No such file or directory\n'))
             stdout=io.StringIO()
             with patch.object(m.sys,'argv',['budget','bash','scripts/test/monitor-metrics-gate.sh','--case=http-quality']),patch.dict(os.environ,{'ADDP_HTTP_BUDGET_REPORT':str(output)}),patch.object(m,'input_hashes',return_value={}),patch.object(m.subprocess,'Popen',side_effect=start) as launch,patch.object(m,'sample',side_effect=failure) as sample,patch.object(m.os,'killpg') as stop,redirect_stdout(stdout):
@@ -482,9 +561,11 @@ cleanup(){'''+body+'\nfalse\ncleanup\n'
             summary=json.loads(stdout.getvalue().split('HTTP functional budget result: ',1)[1].splitlines()[0])
             self.assertEqual(summary['failure_detail'],failure.detail)
             self.assertEqual(summary['error_code'],'http_budget_sample_command_failed')
-            self.assertEqual(summary['process_compile'],report['process_compile'])
-            self.assertEqual(report['process_compile']['status'],'finished')
-            self.assertEqual(report['process_compile']['exit_code'],143)
+            self.assertEqual(summary['compile_stages'],report['compile_stages'])
+            self.assertEqual(report['compile_stages']['stages']['process_source']['status'],'finished')
+            self.assertEqual(report['compile_stages']['stages']['process_source']['exit_code'],143)
+            self.assertEqual(report['failure_detail']['compile_stages_at_sample_read']['stages']['process_source']['status'],'incomplete')
+            self.assertNotIn('process_compile',report);self.assertNotIn('process_compile_at_sample_read',report['failure_detail'])
             self.assertNotIn('input_sha256',summary)
             self.assertNotIn('private-token',stdout.getvalue()+output.read_text())
             self.assertEqual(launch.call_count,1);self.assertEqual(sample.call_count,1)
@@ -535,7 +616,10 @@ cleanup(){'''+body+'\nfalse\ncleanup\n'
     def test_full_http_zero_exit_needs_three_valid_reserved_recovery_receipts(self):
         phases={key:self.phase_record(limit) for key,limit in (('go',90),('python_1',45),('python_2',15))}
         counts={'go':180,'python':[90,30],'total':300}
-        for proof,overdue,expected in ((phases,False,0),(None,False,1),({**phases,'go':self.phase_record(90,False)},False,1),(phases,True,1)):
+        for proof,overdue,compiles,expected in ((phases,False,compile_history(),0),(None,False,compile_history(),1),
+                ({**phases,'go':self.phase_record(90,False)},False,compile_history(),1),(phases,True,compile_history(),1),
+                (phases,False,None,1),(phases,False,{'process_source':compile_history()['process_source']},1),
+                (phases,False,{'unknown':{}},1)):
             with self.subTest(expected=expected,missing=proof is None),tempfile.TemporaryDirectory() as directory:
                 root=Path(directory);work=root/'addp-metrics-t2.fixture';work.mkdir();output=root/'report.json'
                 ownership={'project':'addp-metrics-t2-'+'a'*32,'work':str(work)}
@@ -544,13 +628,14 @@ cleanup(){'''+body+'\nfalse\ncleanup\n'
                     receipt=Path(kwargs['env']['ADDP_HTTP_BUDGET_RECEIPT']);receipt.write_text(json.dumps(ownership))
                     def cleanup(**kwargs):
                         shutil.rmtree(work)
-                        receipt.write_text(json.dumps({**ownership,'cleanup_verified':True,'request_counts':counts,'request_phases':proof,**({'cleanup_deadline_monotonic':0} if overdue else {})}))
+                        receipt.write_text(json.dumps({**ownership,'compile_stages':compiles,'cleanup_verified':True,'request_counts':counts,'request_phases':proof,**({'cleanup_deadline_monotonic':0} if overdue else {})}))
                         return 0
                     child.wait.side_effect=cleanup
                     return child
                 with patch.object(m.sys,'argv',['budget','bash','scripts/test/monitor-metrics-gate.sh','--case=http-quality']),patch.dict(os.environ,{'ADDP_HTTP_BUDGET_REPORT':str(output)}),patch.object(m,'input_hashes',return_value={}),patch.object(m.subprocess,'Popen',side_effect=start),patch.object(m,'sample',return_value={'duration_seconds':0}),patch.object(m.time,'sleep'),redirect_stdout(io.StringIO()):
                     self.assertEqual(m.main(),expected)
                 self.assertEqual(json.loads(output.read_text())['result'],'passed' if expected==0 else 'failed')
+                if compiles!=compile_history():self.assertEqual(json.loads(output.read_text())['error_code'],'http_compile_stages_unproven')
                 if overdue:self.assertTrue(json.loads(output.read_text())['cleanup_overdue'])
 
     def test_existing_standard_case_is_wrapped_and_registered(self):
