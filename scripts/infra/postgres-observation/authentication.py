@@ -116,6 +116,8 @@ def _atomic(path, value, mode, *, previous=None):
         current, metadata = _read(path, mode)
         if current != previous:
             raise AuthenticationError('PostgreSQL authentication input version changed')
+        if current == value:
+            return
     fd, temporary = tempfile.mkstemp(prefix='.pg-auth-', dir=path.parent)
     try:
         with os.fdopen(fd, 'wb') as stream:

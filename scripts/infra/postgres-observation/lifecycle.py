@@ -32,6 +32,9 @@ SQL = Path(__file__).with_name('000002_lifecycle.sql')
 OWNER = 'io.addp.postgres-metrics.owner'
 SCOPE = 'io.addp.postgres-metrics.scope'
 SERVICES = {'postgres-metrics', 'postgres-metrics-web'}
+ACTIVATION_STAGES = frozenset({'session-check', 'transport-check', 'private-state', 'authentication-read',
+    'account-install', 'authentication-update', 'account-enable', 'connection-check',
+    'source-files', 'identity-recheck', 'source-start', 'source-health'})
 FACT = ('{"id":{{json .Id}},"running":{{json .State.Running}},'
         '"started_at":{{json .State.StartedAt}},'
         '"labels":{{json .Config.Labels}},"networks":{{json .NetworkSettings.Networks}},'
@@ -186,16 +189,18 @@ class Database:
                 'observation-unlock', lock, token])
 
     def read_hba(self):
-        result = self.docker.run(['exec', self.identity, 'sh', '-c', '''set -eu
+        result = self.docker.run(['exec', '-e', 'LC_ALL=C', self.identity, 'sh', '-c', '''set -eu
 test ! -L "$1" || exit 41
-test -f "$1" || exit 42
-size=$(wc -c < "$1") || exit 43
-test "$size" -le 262144 || exit 44
-cat "$1" || exit 45''', 'observation-hba', self.settings['hba']], check=False)
+if test -e "$1"; then test -f "$1" || exit 42; fi
+head -c 262145 "$1" || exit 45''', 'observation-hba', self.settings['hba']], check=False)
         if result.returncode:
-            reason = {41: 'symbolic link', 42: 'not a regular file', 43: 'size read failed',
-                      44: 'size budget exceeded', 45: 'content read failed'}.get(result.returncode, 'container command failed')
+            reason = {41: 'symbolic link', 42: 'not a regular file',
+                      45: 'content read failed'}.get(result.returncode, 'container command failed')
+            if result.returncode == 45 and 'No such file' in result.stderr:
+                reason = 'not visible'
             raise LifecycleError('PostgreSQL authentication read rejected: ' + reason)
+        if len(result.stdout.encode('utf-8')) > source.HBA_LIMIT:
+            raise LifecycleError('PostgreSQL authentication read rejected: size budget exceeded')
         return result.stdout
 
     def write_hba(self, expected, value):
@@ -342,10 +347,13 @@ class SourceLifecycle:
             with database.locked():
                 original = replacement = None
                 installed = False
+                stage = 'session-check'
                 try:
                     database.no_sessions()
                     database.disable()
+                    stage = 'transport-check'
                     tls, ip, port = transport(env)
+                    stage = 'private-state'
                     owner = {'schema': 'addp.postgres-metrics/v1', 'workspace': str(ROOT), 'scope': self.scope,
                              'source_key': {'docker_engine_id': self.docker.info['id'], 'project': database.project, 'service': 'postgres'}}
                     owner_file = self.state / 'owner.json'
@@ -363,14 +371,20 @@ class SourceLifecycle:
                         file_write(password_file, secrets.token_hex(32), 0o600)
                     password = auth._read(password_file, 0o600)[0]
                     verifier(password)
+                    stage = 'authentication-read'
                     original = database.read_hba()
                     replacement = source.authentication_configuration(original, self.scope, database.networks, database=database.maintenance)
+                    stage = 'account-install'
                     database.sql(install_input(self.scope, password, False))
+                    stage = 'authentication-update'
                     database.write_hba(original, replacement)
                     database.no_sessions()
+                    stage = 'account-enable'
                     database.sql(install_input(self.scope, password, True))
                     installed = True
+                    stage = 'connection-check'
                     database.authenticate(password)
+                    stage = 'source-files'
                     runtime = self.state / 'runtime'
                     auth._directory(runtime, 0o755)
                     for name in ('source', 'web'):
@@ -391,25 +405,34 @@ class SourceLifecycle:
                         'networks': {'database': {'external': True, 'name': database.network}}}
                     compose_file = self.state / 'compose.json'
                     file_write(compose_file, json.dumps(compose), 0o600)
+                    stage = 'identity-recheck'
                     if self.docker.fact(database.identity) != database.facts:
                         raise LifecycleError('PostgreSQL source facts changed during installation')
                     uid, gid = (os.getuid(), os.getgid()) if os.getuid() else (65534, 65534)
+                    stage = 'source-start'
                     self.docker.run(['compose', '--env-file', '/dev/null', '-p', self.project, '-f', str(compose_file),
                                      'up', '-d', '--force-recreate', '--no-deps', 'postgres-metrics', 'postgres-metrics-web'],
                                     timeout=180, extra_env={'ADDP_POSTGRES_METRICS_USER': f'{uid}:{gid}',
                                     'ADDP_POSTGRES_METRICS_SOURCE_DIR': str(runtime/'source'),
                                     'ADDP_POSTGRES_METRICS_WEB_DIR': str(runtime/'web')})
                     # A running source is not evidence of a successful scrape.
+                    stage = 'source-health'
                     time.sleep(.5)
                     sources = self.docker.run(['ps', '-q', '--filter', 'label=com.docker.compose.project='+self.project,
                                                '--filter', 'label='+OWNER+'='+str(ROOT), '--filter', 'label='+SCOPE+'='+self.scope]).split()
                     if len(sources) != 2 or any(not self.docker.fact(identity)['running'] for identity in sources):
                         raise LifecycleError('PostgreSQL source containers did not stay running')
-                except Exception:
-                    self.stop_sources()
-                    database.disable()
-                    if not installed and original is not None and replacement is not None and database.read_hba() == replacement:
-                        database.write_hba(replacement, original)
+                except Exception as error:
+                    # Retain the original failure for callers; publish only a
+                    # closed stage, never raw SQL, HBA, paths or subprocess output.
+                    error.observation_stage = stage
+                    try:
+                        self.stop_sources()
+                        database.disable()
+                        if not installed and original is not None and replacement is not None and database.read_hba() == replacement:
+                            database.write_hba(replacement, original)
+                    except Exception:
+                        error.observation_cleanup_failed = True
                     raise
 
 
@@ -446,8 +469,15 @@ def main():
     args = parser.parse_args()
     try:
         run(args.action, args.scope, os.environ)
-    except (ValueError, OSError, KeyError, TypeError):
-        print('PostgreSQL metrics unavailable: deployment ownership, authentication or source configuration failed; core services remain independent', file=sys.stderr)
+    except (ValueError, OSError, KeyError, TypeError) as error:
+        reason = str(error) if isinstance(error, (LifecycleError, auth.AuthenticationError)) else 'deployment ownership, authentication or source configuration failed'
+        stage = getattr(error, 'observation_stage', None)
+        detail = ' [stage=' + stage + ']' if stage in ACTIVATION_STAGES else ''
+        if isinstance(error, OSError) and type(error.errno) is int:
+            detail += ' [errno=' + str(error.errno) + ']'
+        if getattr(error, 'observation_cleanup_failed', False) is True:
+            detail += ' [cleanup=failed]'
+        print('PostgreSQL metrics unavailable' + detail + ': ' + reason + '; core services remain independent', file=sys.stderr)
         return 1
     return 0
 

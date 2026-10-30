@@ -88,7 +88,7 @@ try:
             # Down does not need usable TLS inputs, does not remove history/DDL.
             manager.down()
             assert probe.sql(f"SELECT rolcanlogin FROM pg_roles WHERE rolname='{user}';") == 'f'
-            assert not docker.run(['ps', '-q', '--filter', 'label='+module.OWNER+'='+str(ROOT), '--filter', 'label='+module.SCOPE+'='+scope]).strip()
+            assert not manager.source_containers(), 'Owned test project retained observation sources'
             refused = subprocess.run(probe.command(user), input='SELECT 1;', capture_output=True, text=True, timeout=10)
             assert refused.returncode != 0 and 'not permitted to log in' in refused.stderr
             manager.up(environment)

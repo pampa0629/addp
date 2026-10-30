@@ -153,3 +153,19 @@ Safari 使用真实平台管理员，前台详情实际显示十二项专业指�
 - `make test-frontend-ci-registration`：27 项登记回归和 21 个前端登记检查通过；原入口和 CI 自动发现已覆盖，没有新增并行路线。日志 `/tmp/addp-pg-navigation-registration.log`。
 
 本轮未调度、查询或重跑 CI／Hosted，未设置定时任务。云端证据仍等待专门会话回传；本地真实环境接通不替代新输入的 Hosted 或生产验收。
+
+## Business PostgreSQL 认证文件幂等发布与 Desktop 挂载故障（2026-10-30）
+
+用户授权 Business 专业采集后，在本人终端沿标准入口重建 PostgreSQL，保留 `business_postgres_data`，并应用仓库外只读认证目录。数据库健康，固定汇总函数可在只读事务内以采集角色调用；来源安装失败后采集角色为 NOLOGIN，尚无 Business 采集容器，不能记为采集接通。
+
+实际故障位于宿主认证文件原子替换后的容器读取：宿主文件存在且内容正确，容器 `stat` 能返回大小，但 `head`／原 `wc` 打开同一路径返回 ENOENT。同字节原子重发亦可复现，15.144 秒的有界观察仍不可读，不能以“短暂延迟”认定重试足以修复。最终不保留等待／重试，也不改变目录挂载、权限、认证基线或服务启动边界。
+
+修正同一发布器的幂等性：已有内容与拟写内容相同时，先完成所有者、权限、基线及预期版本核验，再保留原文件和 inode；真实变化仍用唯一原子替换。原代码运行新增契约时明确失败于“不应重新发布未变策略”，修正后验证同内容保留 inode／mtime、旧版本与错误权限仍拒绝。当前个人认证文件执行同内容核验后，inode、mtime 未变，容器完整读取与宿主字节一致；此证据只证明幂等更新，不证明真实变更后的 Desktop 挂载一致性。读取另改为有界流式读取，保留 256 KiB 上限及符号链接／非普通文件拒绝。诊断只发布固定阶段、封闭原因及清理失败标识，清理错误不覆盖首个失败，不输出 HBA、SQL、密码或原始子进程错误。
+
+验证与边界：
+
+- `make test-infra-runtime-log-lifecycle` 退出 0，最终 108 项中包含 17 项 PostgreSQL 生命周期回归；涵盖真实临时文件／FIFO／符号链接、读取上限、幂等更新的版本／权限检查及诊断脱敏。日志 `/tmp/addp-business-pg-lifecycle-final.log`，幂等契约红色复现 `/tmp/addp-business-pg-noop-red.log`。
+- `make test-t2-ci-registration` 退出 0，74 项回归及既有服务登记检查通过。现有标准入口、Release 的 Monitor metrics infrastructure 与 Platform 生命周期检查已覆盖修改路径，没有新增 CI 编排或旁路入口。日志 `/tmp/addp-business-pg-registration-final.log`。
+- 完整 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source` 首轮失败于测试按工作区统计来源时误纳入个人 Infra，已改为只核对本轮项目；第二轮失败于当次 `discovery.json` 的共享挂载 ENOENT，无法确认目标退出发现，未计通过。日志分别为 `/tmp/addp-business-pg-source-diagnostic-gate.log`、`/tmp/addp-business-pg-source-fixed-gate.log`。
+- `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-observation` 也在真实修改认证内容后的容器文件读取失败，后续版本保护拒绝覆盖，未计通过；日志 `/tmp/addp-business-pg-authentication-final.log`。本地两项 T2 的 Desktop 共享挂载缺口仍保留，不用 T1 或当前同内容读取代替。
+- 三轮专属测试项目的容器、网络、卷独立查询均为零，个人 Infra 来源未停止。摘要 `/tmp/addp-business-pg-atomic-diagnosis.json`。未自行重启个人数据库或启动采集服务；真实 Business mTLS 快照、自动发现及页面仍待用户标准入口应用后复验。CI／Hosted 等专门会话回传，不设置定时任务。
