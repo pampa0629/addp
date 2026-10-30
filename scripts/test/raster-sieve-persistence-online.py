@@ -140,7 +140,8 @@ def validate_target_item(item,expectation,physical):
     if physical.get('cog_valid')is not True or physical.get('has_overviews')is not True:raise SuiteError('unlocated physical COG evidence missing')
     attrs=obj(item.get('attributes'),'attributes');media=obj(obj(attrs.get('type_info'),'type info').get('media'),'media');tiff=obj(obj(attrs.get('format_info'),'format info').get('tiff'),'TIFF')
     if (obj(attrs.get('item'),'item').get('format')!='tiff' or (media.get('width'),media.get('height'))!=(fixture.WIDTH,fixture.HEIGHT)
-        or tiff.get('profile')!='plain_tiff' or tiff.get('is_tiled')is not True or tiff.get('has_overviews')is not True):raise SuiteError('unlocated TIFF structure differs')
+        or tiff.get('profile')!='cog' or tiff.get('is_cloud_optimized')is not True or tiff.get('cog_check_level')!='heuristic'
+        or tiff.get('is_tiled')is not True or tiff.get('has_overviews')is not True):raise SuiteError('unlocated TIFF structure differs')
     capabilities=obj(attrs.get('capabilities'),'capabilities')
     if capabilities.get('spatial')is not None:raise SuiteError('Meta fabricated missing spatial facts')
 

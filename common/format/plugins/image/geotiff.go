@@ -134,21 +134,19 @@ func extractTIFFFormatInfo(data tiffMetadata, spatialInfo *datatype.SpatialInfo)
 		return info
 	}
 	isTiled := ifd.hasTag(tagTileWidth) && ifd.hasTag(tagTileLength) && ifd.hasTag(tagTileOffsets) && ifd.hasTag(tagTileByteCounts)
-	hasOverviews := hasReducedResolutionSubIFD(ifd) || hasReducedResolutionNextIFD(ifd)
+	hasOverviews := hasReducedResolutionIFD(ifd)
 	hasSpatial := spatialInfo != nil
 	profile := "plain_tiff"
-	isCloudOptimized := false
 	if hasSpatial {
 		profile = "geotiff"
 	}
-	if hasSpatial && isTiled && hasOverviews {
+	if isTiled && hasTIFFCOGLayout(data) {
 		profile = "cog"
-		isCloudOptimized = true
+		info["is_cloud_optimized"] = true
 		info["cog_check_level"] = "heuristic"
 	}
 	info["profile"] = profile
 	info["big_tiff"] = false
-	info["is_cloud_optimized"] = isCloudOptimized
 	info["is_tiled"] = isTiled
 	info["has_overviews"] = hasOverviews
 	for key, value := range tiffRenderStats(ifd) {
@@ -269,45 +267,51 @@ func isBigTIFF(data tiffMetadata) bool {
 	}
 }
 
-func hasReducedResolutionNextIFD(ifd *tiffIFD) bool {
-	if ifd == nil || ifd.nextOffset == 0 {
-		return false
-	}
-	nextIFD, ok := parseIFDAt(ifd.payload, ifd.order, uint64(ifd.nextOffset))
-	if !ok {
-		return false
-	}
-	value, ok := nextIFD.firstLong(tagNewSubfileType)
-	return ok && value&1 == 1
-}
-
-func hasReducedResolutionSubIFD(ifd *tiffIFD) bool {
+func hasReducedResolutionIFD(ifd *tiffIFD) bool {
 	if ifd == nil {
 		return false
 	}
-	entry, ok := ifd.tags[tagSubIFDs]
-	if !ok || entry.count == 0 || (entry.typ != tiffTypeLong && entry.typ != tiffTypeIFD) {
-		return false
-	}
-	raw, ok := ifd.tagBytes(entry)
-	if !ok || len(raw) < int(entry.count)*4 {
-		return false
-	}
-	for i := 0; i < int(entry.count); i++ {
-		offset := ifd.order.Uint32(raw[i*4 : i*4+4])
-		if offset == 0 {
-			continue
+	queue, valid := tiffDirectoryLinks(ifd)
+	seen := map[uint64]bool{}
+	for valid && len(queue) > 0 && len(seen) < tiffPageIFDLimit {
+		offset := queue[0]
+		queue = queue[1:]
+		if offset < 8 || seen[offset] {
+			return false
 		}
-		subIFD, ok := parseIFDAt(ifd.payload, ifd.order, uint64(offset))
+		seen[offset] = true
+		subIFD, ok := parseIFDAt(ifd.payload, ifd.order, offset)
 		if !ok {
-			continue
+			return false
 		}
 		value, ok := subIFD.firstLong(tagNewSubfileType)
 		if ok && value&1 == 1 {
 			return true
 		}
+		links, ok := tiffDirectoryLinks(subIFD)
+		valid = ok && len(links)+len(queue)+len(seen) <= tiffPageIFDLimit
+		queue = append(queue, links...)
 	}
 	return false
+}
+
+func tiffDirectoryLinks(ifd *tiffIFD) ([]uint64, bool) {
+	var links []uint64
+	if ifd.nextOffset != 0 {
+		links = append(links, uint64(ifd.nextOffset))
+	}
+	if ifd.hasTag(tagSubIFDs) {
+		entry := ifd.tags[tagSubIFDs]
+		if entry.count > tiffPageIFDLimit {
+			return nil, false
+		}
+		values, ok := tiffCOGArray(ifd, tagSubIFDs)
+		if !ok {
+			return nil, false
+		}
+		links = append(links, values...)
+	}
+	return links, true
 }
 
 func parseFirstIFD(data tiffMetadata) (*tiffIFD, bool) {

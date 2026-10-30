@@ -1558,6 +1558,42 @@ func TestRasterQuickViewSourceFromAttributesUsesMetaFacts(t *testing.T) {
 	}
 }
 
+func TestRasterQuickViewPreservesUnknownCloudLayoutAndMissingSpatial(t *testing.T) {
+	for _, cloud := range []interface{}{nil, true, false} {
+		tiff := map[string]interface{}{"profile": "plain_tiff", "is_tiled": true, "has_overviews": false}
+		if cloud != nil {
+			tiff["is_cloud_optimized"] = cloud
+		}
+		if cloud == true {
+			tiff["profile"], tiff["cog_check_level"] = "cog", "heuristic"
+		}
+		attrs := map[string]interface{}{
+			"item":        map[string]interface{}{"data_type": "media", "format": "tiff"},
+			"type_info":   map[string]interface{}{"media": map[string]interface{}{"width": 240, "height": 120}},
+			"format_info": map[string]interface{}{"tiff": tiff},
+		}
+		raster := RasterQuickViewSourceFromAttributes(attrs, "addp://engine/14/path/unlocated.tif?type=file", 14)
+		if raster == nil || raster.IsCloudOptimized != cloud || raster.SourceSRID != 0 || raster.SourceCRS != "" || len(raster.Extent) != 0 || raster.ExtentSRID != 0 {
+			t.Fatalf("metadata facts changed: %#v", raster)
+		}
+		if reason := rasterUnavailableReason(raster, 0, 0); reason != RasterUnavailableReasonMissingSpatialExtent {
+			t.Fatalf("cloud layout must not enable an unlocated map: %s", reason)
+		}
+		raw, err := json.Marshal(rasterInfoFromSource(raster))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var response map[string]interface{}
+		if err := json.Unmarshal(raw, &response); err != nil {
+			t.Fatal(err)
+		}
+		value, exists := response["is_cloud_optimized"]
+		if exists != (cloud != nil) || value != cloud {
+			t.Fatalf("cloud layout wire state changed: %s", raw)
+		}
+	}
+}
+
 func TestRasterQuickViewSourceFromObjectLocatorUsesStorageStream(t *testing.T) {
 	attrs := map[string]interface{}{
 		"item": map[string]interface{}{

@@ -323,7 +323,9 @@ func readTIFFMetadata(input io.Reader, limit int64) (tiffMetadata, error) {
 	if err != nil {
 		return tiffMetadata{}, err
 	}
-	return newTIFFMetadata(head, nil), nil
+	result := newTIFFMetadata(head, nil)
+	result.sizeKnown = int64(len(head)) < limit
+	return result, nil
 }
 
 func readSeekableTIFFMetadata(input io.ReadSeeker, limit int64) (tiffMetadata, error) {
@@ -338,7 +340,9 @@ func readSeekableTIFFMetadata(input io.ReadSeeker, limit int64) (tiffMetadata, e
 		return newTIFFMetadata(head, nil), nil
 	}
 	if size <= int64(len(head)) {
-		return newTIFFMetadata(head, nil), nil
+		result := newTIFFMetadata(head, nil)
+		result.sizeKnown = size == int64(len(head))
+		return result, nil
 	}
 	tailSize := limit
 	if size < tailSize {
@@ -353,7 +357,9 @@ func readSeekableTIFFMetadata(input io.ReadSeeker, limit int64) (tiffMetadata, e
 		return tiffMetadata{}, err
 	}
 	tail = tail[:n]
-	return newTIFFMetadata(head, &tiffWindow{offset: uint64(size - tailSize), data: tail}), nil
+	result := newTIFFMetadata(head, &tiffWindow{offset: uint64(size - tailSize), data: tail})
+	result.sizeKnown = int64(n) == tailSize
+	return result, nil
 }
 
 type tiffWindow struct {
@@ -362,13 +368,15 @@ type tiffWindow struct {
 }
 
 type tiffMetadata struct {
-	head []byte
-	tail *tiffWindow
+	head      []byte
+	tail      *tiffWindow
+	sizeKnown bool // EOF or a successful seek establishes size, not a full prefix
 }
 
 func newTIFFMetadata(head []byte, tail *tiffWindow) tiffMetadata {
+	sizeKnown := len(head) < tiffMetadataReadLimit || tail != nil && len(tail.data) > 0
 	if tail == nil || tail.offset == 0 || len(tail.data) == 0 {
-		return tiffMetadata{head: head}
+		return tiffMetadata{head: head, sizeKnown: sizeKnown}
 	}
 	if tail.offset <= uint64(len(head)) {
 		merged := append([]byte(nil), head...)
@@ -376,9 +384,9 @@ func newTIFFMetadata(head []byte, tail *tiffWindow) tiffMetadata {
 		if overlap < len(tail.data) {
 			merged = append(merged, tail.data[overlap:]...)
 		}
-		return tiffMetadata{head: merged}
+		return tiffMetadata{head: merged, sizeKnown: sizeKnown}
 	}
-	return tiffMetadata{head: head, tail: tail}
+	return tiffMetadata{head: head, tail: tail, sizeKnown: sizeKnown}
 }
 
 func (m tiffMetadata) Len() int {

@@ -30,7 +30,7 @@ def target_item(name,identifier):
     expected=m.fixture.artifact_expectation(name)
     return {'id':identifier,'item_type':'file','full_name':'outputs/'+name,'fingerprint':name,'size_bytes':2048,'scanned_at':'2026-10-19T00:00:00Z',
         'attributes':{'item':{'format':'tiff'},'type_info':{'media':{'width':expected['width'],'height':expected['height']}},
-            'format_info':{'tiff':{'profile':'plain_tiff'if name=='no-donor.cog.tif'else'cog','is_tiled':True,'has_overviews':name not in ('small.cog.tif','stationary.cog.tif')}},
+            'format_info':{'tiff':{'profile':'cog','is_cloud_optimized':True,'cog_check_level':'heuristic','is_tiled':True,'has_overviews':name not in ('small.cog.tif','stationary.cog.tif')}},
             'capabilities':{'spatial':{'srid':expected['extent_srid'],'extent':expected['extent']}}if expected['extent_srid']else{}}}
 
 
@@ -278,6 +278,9 @@ class SievePersistenceTest(unittest.TestCase):
             with self.subTest(key=key),self.assertRaises(m.SuiteError):m.validate_success(changed,[original['metadata']['lineage_facts']['inputs'][0]['locator']],target,'create',expectation)
         item=target_item('no-donor.cog.tif',1);item['attributes']['capabilities']['spatial']={'srid':3857,'extent':[0,0,1,1]}
         with self.assertRaises(m.SuiteError):m.validate_target_item(item,expectation,physical(None,ENV,['no-donor.cog.tif'])['targets']['no-donor.cog.tif'])
+        for key,value in [('profile','plain_tiff'),('is_cloud_optimized',False),('is_cloud_optimized',None),('cog_check_level','')]:
+            item=target_item('no-donor.cog.tif',1);item['attributes']['format_info']['tiff'][key]=value
+            with self.subTest(key=key,value=value),self.assertRaises(m.SuiteError):m.validate_target_item(item,expectation,physical(None,ENV,['no-donor.cog.tif'])['targets']['no-donor.cog.tif'])
     def test_progress_has_exact_sieve_bounds_without_widening_other_suites(self):
         progress=m.SieveProgress({},m.SUITE)
         with progress.stage('negative',28):pass

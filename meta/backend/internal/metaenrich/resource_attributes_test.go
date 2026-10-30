@@ -205,6 +205,37 @@ func TestEnrichResourceAttributesWritesMediaFormatInfo(t *testing.T) {
 	if tiffInfo["big_tiff"] != false {
 		t.Fatalf("format_info.tiff.big_tiff = %#v, want false", tiffInfo["big_tiff"])
 	}
+	if _, exists := tiffInfo["is_cloud_optimized"]; exists {
+		t.Fatalf("unproved TIFF cloud layout must remain unknown: %#v", tiffInfo)
+	}
+}
+
+func TestEnrichUnlocatedCOGPreservesLayoutWithoutInventingSpatial(t *testing.T) {
+	content, err := os.ReadFile("../../../../common/format/plugins/image/testdata/unlocated-cog.tif")
+	if err != nil {
+		t.Fatal(err)
+	}
+	size := int64(len(content))
+	item := &metaitem.DetectedItem{ResolvedItem: dataitem.ResolvedItem{
+		Layout: format.LayoutSingle, DataType: datatype.Media, Format: string(format.FormatTIFF),
+		PrimaryContentPath: "images/unlocated-cog.tif", SizeBytes: &size,
+	}, PhysicalPath: "images/unlocated-cog.tif"}
+	attrs := metaattr.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(item)))
+	_, _, err = EnrichResourceAttributes(context.Background(), attrs, ResourceAttributesInput{
+		ContentReader: bytesContentReader{content: content}, Item: item, PhysicalPath: item.PhysicalPath,
+		SizeBytes: size, EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath { return plugin.FileItemPath(1, path) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tiffInfo := commonJSON.Section(attrs, "format_info.tiff")
+	media := commonJSON.Section(attrs, "type_info.media")
+	if tiffInfo["profile"] != "cog" || tiffInfo["is_cloud_optimized"] != true || tiffInfo["cog_check_level"] != "heuristic" || tiffInfo["has_overviews"] != false || commonJSON.InterfaceInt64(media["width"]) != 240 || commonJSON.InterfaceInt64(media["height"]) != 120 {
+		t.Fatalf("COG format facts lost during enrichment: %#v %#v", tiffInfo, media)
+	}
+	if spatial := commonJSON.Section(attrs, "capabilities.spatial"); len(spatial) != 0 {
+		t.Fatalf("unlocated source acquired spatial facts: %#v", spatial)
+	}
 }
 
 func TestEnrichResourceAttributesWritesMediaInfoForMultiTIFF(t *testing.T) {

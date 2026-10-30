@@ -324,7 +324,6 @@ JPEG EXIF GPS 的 `date_stamp` 与 `time_hms` 分别保存源 UTC 日期和时�
 ```json
 {
   "profile": "geotiff",
-  "is_cloud_optimized": false,
   "is_tiled": true,
   "has_overviews": true,
   "big_tiff": false,
@@ -345,7 +344,7 @@ JPEG EXIF GPS 的 `date_stamp` 与 `time_hms` 分别保存源 UTC 日期和时�
 | 字段 | 规则 |
 |---|---|
 | `profile` | 取值为 `plain_tiff`、`geotiff`、`cog`、`unknown`。只表示格式 profile，不改变 `attributes.item.format=tiff`。 |
-| `is_cloud_optimized` | Go / Meta 轻量判断结果。第一阶段只作为 profile hint，不表示完整 COG 合规验证。无法判断时省略，不得硬置为 `false`。 |
+| `is_cloud_optimized` | Go / Meta 有界物理布局判断结果。只作为 profile hint，不表示完整 COG 合规验证；不以CRS或overview缺失推断false。能够证明布局时为true并配合 `profile=cog` / `cog_check_level=heuristic`；无法判断时省略，不得硬置为 `false`。具体预算和结构边界见[TIFF布局提示](builtin-formats/媒体与地图数据集.md#tiff-云优化布局提示)。 |
 | `is_tiled` / `has_overviews` / `big_tiff` | 从 TIFF tag / IFD / overview 信息可轻量读取时写入。 |
 | `compression` / `photometric_interpretation` / `sample_format` | 格式私有事实，用于展示和默认渲染判断。 |
 | `nodata` | 从 TIFF / GDAL metadata 可轻量读取时写入。 |

@@ -163,13 +163,13 @@ func TestExtractTIFFFormatInfoProfiles(t *testing.T) {
 		t.Fatalf("geo profile = %#v, want geotiff; info=%#v", geoInfo["profile"], geoInfo)
 	}
 
-	cogCandidate := newTIFFMetadata(testCOGCandidateTIFF(t), nil)
+	cogCandidate := newTIFFMetadata(testCOGLayout(t, binary.LittleEndian, true), nil)
 	cogSpatial := extractGeoTIFFSpatial(cogCandidate, 2, 2)
 	cogInfo := extractTIFFFormatInfo(cogCandidate, cogSpatial)
 	if cogInfo["profile"] != "cog" || cogInfo["cog_check_level"] != "heuristic" {
 		t.Fatalf("cog info = %#v, want heuristic cog", cogInfo)
 	}
-	if cogInfo["is_cloud_optimized"] != true || cogInfo["is_tiled"] != true || cogInfo["has_overviews"] != true {
+	if cogInfo["is_cloud_optimized"] != true || cogInfo["is_tiled"] != true || cogInfo["has_overviews"] != false {
 		t.Fatalf("cog structure flags = %#v", cogInfo)
 	}
 }
@@ -451,7 +451,7 @@ func testIFDAtOffset(t *testing.T, ifdOffset int, tags []tiffTestTag, nextOffset
 	return buf.Bytes()
 }
 
-func testCOGCandidateTIFF(t *testing.T) []byte {
+func testUnresolvedCOGTagsTIFF(t *testing.T) []byte {
 	t.Helper()
 
 	var buf bytes.Buffer
