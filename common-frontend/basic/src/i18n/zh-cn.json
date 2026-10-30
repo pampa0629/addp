@@ -1163,6 +1163,10 @@
         "name": "引擎授权管理员",
         "description": "在租户范围内直接办理数据读取授权，或委托其他账号办理；不需要委托自己，不自动取得数据读取权，也不代替业务批准。"
       },
+      "engine_lifecycle_operator": {
+        "name": "引擎生命周期操作员",
+        "description": "仅办理当前租户的引擎创建、读取、删除及清理结果读取，不默认分配或授予数据访问"
+      },
       "infrastructure_administrator": {
         "name": "租户基础设施管理员",
         "description": "管理引擎、应用、API Key 和资源回收，并查看健康状态。"

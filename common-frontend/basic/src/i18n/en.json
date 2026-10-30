@@ -1163,6 +1163,10 @@
         "name": "Engine Authorization Administrator",
         "description": "Handles direct approval or delegates authorization within the current tenant, without self-delegation. This role grants no data read access and does not replace business approval."
       },
+      "engine_lifecycle_operator": {
+        "name": "Engine lifecycle operator",
+        "description": "Create, read and delete tenant Engines and read Cleanup results; no default assignments or data access"
+      },
       "infrastructure_administrator": {
         "name": "Tenant Infrastructure Administrator",
         "description": "Manages engines, applications, API keys, and resource reclaim, and reads health status."
