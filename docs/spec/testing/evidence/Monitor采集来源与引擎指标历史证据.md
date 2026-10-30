@@ -186,6 +186,8 @@ CI 专门会话回传 [Actions 40984761423／Job 123833070594](https://github.co
 
 在当前共享工作区，以已有 Node 24.20.0 的 bin 临时加入测试命令 PATH 后，`make test-module MODULE=system GO_ONLY=1` 红阶段仅该碰撞断言失败，绿阶段完整 System Go T1 退出 0。最初使用默认 Node 25 的调用被仓库新版 Node 24 前置检查拒绝，未进入 Go、不能记为碰撞复现；没有改全局 Node 或依赖。红／绿日志 `/tmp/addp-engine-metrics-privacy-red.log`、`/tmp/addp-engine-metrics-privacy-green.log`。另用 Go overlay 在 OS 临时目录单独向测试结果注入第二作用域私有指针、私有 JSON 字段和完整私有端点，三次同一标准入口均命中各自拒绝断言；共享测试文件及生产文件未改写，记录 `/tmp/addp-engine-metrics-privacy-audit.json`。现有 Go T1 自动发现及自然 CI 已覆盖，无需新增入口；未运行 T2／Hosted、未操作个人服务、未轮询 CI 或设置定时，自然 CI 结果继续等待专门会话回传。
 
+CI 专门会话随后回传源码 `cf39ab99fc6dd1e5a022d87dd3c81230a88c9add` 的自然 [Platform CI Go 作业 123880180441](https://github.com/pampa0629/addp/actions/runs/40999452791/job/123880180441) 为 success。本会话只读核对其原始日志 `/tmp/addp-ci-20261030-043005/job-123880180441.log`：检出 SHA 与上述修复一致，第 799 行为 `ok github.com/addp/system/internal/service 1.502s`。据此关闭本项确定性投影误报的自然 Go T1 缺口；原失败记录保留，不据此推定整个 Platform CI、Desktop 真实认证变更 T2 或 Hosted 已通过。未查询或重跑 CI，未操作个人服务。
+
 ## 个人环境 Business PostgreSQL 专业页面与趋势复验（2026-10-30）
 
 用户恢复 Monitor 后，本机直连核对 Console 的 Monitor 模块页面为 HTTP 200、Monitor Ready 为 200；Business 来源仍有全部 16 项固定原生样本，读取时距采样约 0.004 秒。本轮通过原生 macOS Safari、真实已登录平台系统管理员，进入原部署 `9e4fd2b0-3b45-473e-b070-cc6f92e40e11`，没有新增或修改主机、部署、规则或采集配置。该部署旧显示名称仍为 `infra-虚拟机`，实际 Business 身份沿前述精确来源关联，不按名称猜测；本轮未改名。
