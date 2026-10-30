@@ -13,6 +13,7 @@ import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
+from contextlib import contextmanager
 
 ROOT=Path(__file__).resolve().parents[2]
 
@@ -150,6 +151,268 @@ def directory_objects(stderr, ownership):
 
 
 COMPILE_STAGES=('process_source','http_query','http_alert')
+RESUME_RESERVE=.05
+
+
+def bounded(end, stage):
+    remaining=end-time.monotonic()
+    if remaining<=0:raise BudgetFailure('http_compile_coordination_deadline',stage,'deadline')
+    return remaining
+
+
+def process_rows(end, pid=None):
+    """Native process identity only, never command lines or environments."""
+    rows=[]
+    if sys.platform=='linux':
+        paths=[]
+        if pid is not None:paths=[Path('/proc')/str(pid)]
+        else:
+            with os.scandir('/proc') as entries:
+                for entry in entries:
+                    bounded(end,'compile_inventory')
+                    if entry.name.isdigit():paths.append(Path(entry.path))
+                    if len(paths)>4096:raise BudgetFailure('http_compile_inventory_limit','compile_inventory','limit')
+        for path in paths:
+            bounded(end,'compile_inventory')
+            try:
+                with (path/'stat').open('rb') as stream:raw=stream.read(4097)
+                if len(raw)>4096:raise ValueError()
+                fields=raw.rpartition(b') ')[2].split()
+                rows.append({'pid':int(path.name),'ppid':int(fields[1]),'pgid':int(fields[2]),'sid':int(fields[3]),
+                             'birth':fields[19].decode('ascii'),'state':fields[0].decode('ascii'),'uid':path.stat().st_uid})
+            except (FileNotFoundError,ProcessLookupError):continue  # A vanished process cannot keep writing.
+            except (OSError,ValueError,IndexError,UnicodeError):
+                raise BudgetFailure('http_compile_inventory_invalid','compile_inventory','invalid') from None
+    elif sys.platform=='darwin':
+        args=['ps','-p',str(pid)] if pid is not None else ['ps','-A']
+        try:
+            result=subprocess.run([*args,'-o','pid=,ppid=,pgid=,uid=,stat=,lstart='],env=dict(os.environ,LC_ALL='C'),
+                                  stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=bounded(end,'compile_inventory'))
+            if result.returncode not in (0,1) or len(result.stdout)>1024**2:raise ValueError()
+            lines=result.stdout.splitlines()
+            if len(lines)>4096:raise ValueError()
+            for line in lines:
+                bounded(end,'compile_inventory');f=line.split()
+                if len(f)!=10:raise ValueError()
+                identity=int(f[0])
+                try:sid=os.getsid(identity)
+                except ProcessLookupError:
+                    if f[4][:1] in (b'Z',b'X'):sid=None
+                    else:continue
+                except PermissionError:sid=None
+                rows.append({'pid':identity,'ppid':int(f[1]),'pgid':int(f[2]),'sid':sid,'uid':int(f[3]),
+                             'state':f[4][:1].decode('ascii'),'birth':hashlib.sha256(b' '.join(f[5:])).hexdigest()})
+        except (OSError,ValueError,UnicodeError,subprocess.TimeoutExpired):
+            raise BudgetFailure('http_compile_inventory_invalid','compile_inventory','invalid') from None
+    else:raise BudgetFailure('http_compile_platform_unsupported','compile_inventory','unsupported')
+    bounded(end,'compile_inventory')
+    return rows
+
+
+def process_identity(pid,end):
+    rows=process_rows(end,pid)
+    if len(rows)!=1:raise BudgetFailure('http_compile_owner_missing','compile_owner','missing')
+    return rows[0]
+
+
+def verify_group_owner(proof,end):
+    keys={'stage','pid','pgid','sid','birth','uid','caller_pid','caller_birth','caller_group','state'}
+    if (not isinstance(proof,dict) or set(proof)!=keys or proof['stage'] not in COMPILE_STAGES or proof['state']!='active' or
+            any(type(proof[k]) is not int or proof[k]<=0 for k in ('pid','pgid','sid','caller_pid','caller_group')) or
+            type(proof['uid']) is not int or proof['uid']!=os.geteuid() or
+            any(not isinstance(proof[k],str) or not re.fullmatch(r'(?:[0-9]{1,20}|[0-9a-f]{64})',proof[k]) for k in ('birth','caller_birth')) or
+            proof['pid']!=proof['pgid'] or proof['pid']!=proof['sid'] or
+            proof['pid'] in (os.getpid(),os.getpgrp())):
+        raise BudgetFailure('http_compile_owner_invalid','compile_owner','invalid')
+    owner=process_identity(proof['pid'],end);caller=process_identity(proof['caller_pid'],end)
+    keys=('pid','pgid','birth') if owner['state'] in ('Z','X') else ('pid','pgid','sid','birth','uid')
+    if (any(owner[k]!=proof[k] for k in keys) or owner['ppid']!=proof['caller_pid'] or
+            caller['birth']!=proof['caller_birth'] or caller['pgid']!=proof['caller_group'] or caller['uid']!=proof['uid']):
+        raise BudgetFailure('http_compile_owner_invalid','compile_owner','identity_changed')
+    return owner
+
+
+def checked_group(proof,end):
+    verify_group_owner(proof,end)
+    inventory=process_rows(end)
+    if any(r['sid']==proof['sid'] and r['pgid']!=proof['pgid'] and r['state'] not in ('Z','X') for r in inventory):
+        raise BudgetFailure('http_compile_owner_invalid','compile_owner','escaped_group')
+    rows=[r for r in inventory if r['pgid']==proof['pgid']]
+    if not rows or len(rows)>64 or any((r['sid']!=proof['sid'] or r['uid']!=proof['uid']) and r['state'] not in ('Z','X') for r in rows):
+        raise BudgetFailure('http_compile_owner_invalid','compile_owner','members_invalid')
+    return rows
+
+
+def group_signal(proof, sig, end):
+    verify_group_owner(proof,end)
+    try:os.killpg(proof['pgid'],sig)
+    except OSError:raise BudgetFailure('http_compile_signal_failed','compile_signal','signal_failed') from None
+
+
+def quiescent(rows):return all(r['state'] in ('T','t','Z','X') for r in rows)
+
+
+def terminate_group(proof,end):
+    rows=checked_group(proof,end)
+    if all(r['state'] in ('Z','X') for r in rows):return
+    group_signal(proof,signal.SIGCONT,end)
+    group_signal(proof,signal.SIGTERM,end)
+    grace=min(end,time.monotonic()+.2)
+    while time.monotonic()<grace:
+        if all(r['state'] in ('Z','X') for r in checked_group(proof,end)):return
+        time.sleep(min(.01,bounded(end,'compile_termination')))
+    group_signal(proof,signal.SIGKILL,end)
+    while not all(r['state'] in ('Z','X') for r in checked_group(proof,end)):
+        time.sleep(min(.01,bounded(end,'compile_termination')))
+
+
+@contextmanager
+def receipt_lock(receipt,end,stage='compile_handoff',stopped=lambda:False):
+    with open(str(receipt)+'.lock','a') as lock:
+        acquired=acquire_lock(lock.fileno(),end,stage,stopped)
+        try:yield acquired
+        finally:
+            if acquired:fcntl.flock(lock.fileno(),fcntl.LOCK_UN)
+
+
+def update_receipt(receipt, mutate, end=None):
+    if end is None:end=time.monotonic()+4
+    with open(str(receipt)+'.meta.lock','a') as lock:
+        acquire_lock(lock.fileno(),end,'receipt_publication',lambda:False)
+        try:
+            value=json.loads(receipt.read_text());mutate(value)
+            pending=receipt.with_suffix('.pending');pending.write_text(json.dumps(value));pending.replace(receipt)
+            return value
+        finally:fcntl.flock(lock.fileno(),fcntl.LOCK_UN)
+
+
+@contextmanager
+def paused_compile(proof,end,facts):
+    stopped=False;primary=None
+    facts['started_monotonic_ns']=time.monotonic_ns()
+    try:
+        rows=checked_group(proof,end);facts.update(stage=proof['stage'],members=len(rows),stop_sent=False,resumed=False)
+        if not all(r['state'] in ('Z','X') for r in rows):
+            stopped=True;group_signal(proof,signal.SIGSTOP,end);facts['stop_sent']=True
+            previous=None
+            while True:
+                rows=checked_group(proof,end)
+                identities={(r['pid'],r['birth']) for r in rows}
+                if quiescent(rows) and identities==previous:break
+                previous=identities
+                time.sleep(min(.005,bounded(end,'compile_pause')))
+        facts['confirmed']=True
+        facts['confirmed_monotonic_ns']=time.monotonic_ns()
+        yield
+    except BaseException as failure:
+        primary=failure;raise
+    finally:
+        if stopped:
+            facts['resume_started_monotonic_ns']=time.monotonic_ns()
+            try:
+                # Restoration is mandatory even after the success budget expires.
+                resume_end=max(end,time.monotonic()+.2)
+                group_signal(proof,signal.SIGCONT,resume_end)
+                while any(r['state'] in ('T','t') for r in checked_group(proof,resume_end)):
+                    time.sleep(min(.005,bounded(resume_end,'compile_resume')))
+                facts['resumed']=True
+            except BaseException:
+                facts['resume_error']='resume_failed'
+                if primary is None:raise
+        facts['finished_monotonic_ns']=time.monotonic_ns()
+
+
+def cleanup_compile(receipt,value,end):
+    proof=value.get('compile_group')
+    if proof is None:return
+    if proof['state']=='active':
+        terminate_group(proof,end)
+        update_receipt(receipt,lambda v:v['compile_group'].update(state='terminated'),end)
+    elif proof['state']!='terminated':raise RuntimeError('http_compile_cleanup_unproven')
+    # The direct caller retains the unreaped leader until this termination ack.
+    while True:
+        rows=process_rows(end,proof['caller_pid'])
+        if not rows or rows[0]['birth']!=proof['caller_birth'] or rows[0]['state'] in ('Z','X'):break
+        time.sleep(min(.01,bounded(end,'compile_caller_exit')))
+
+
+def run_owned_compile(receipt,stage,args,cwd,env,timeout=180):
+    """One caller owns the unreaped Go group leader across sampling handoffs."""
+    if receipt is None:
+        return subprocess.run(args,cwd=cwd,env=env,check=True,timeout=timeout)
+    if stage not in COMPILE_STAGES or args[:3]!=['go','test','-c']:raise RuntimeError('http_compile_command_invalid')
+    cancelled=[];handlers={s:signal.getsignal(s) for s in (signal.SIGTERM,signal.SIGINT)}
+    for sig in handlers:signal.signal(sig,lambda s,f:cancelled.append(s))
+    child=None;proof=None;registered=False;deadline=min(time.monotonic()+timeout,float(os.environ.get('ADDP_HTTP_BUDGET_WORK_DEADLINE','inf')))
+    def cleaning():return json.loads(receipt.read_text()).get('cleanup_started') is True
+    def await_cleanup():
+        value=json.loads(receipt.read_text());end=value['cleanup_deadline_monotonic']
+        while (json.loads(receipt.read_text()).get('compile_group') or {}).get('state')!='terminated':
+            time.sleep(min(.01,bounded(end,'compile_cleanup_ack')))
+        child.wait(timeout=bounded(end,'compile_reap'))
+    try:
+        end=min(deadline,time.monotonic()+4)
+        with receipt_lock(receipt,end,stopped=cleaning) as acquired:
+            if not acquired:raise RuntimeError('http_compile_during_cleanup')
+            record_compile_boundary(receipt,stage,'start',end=end)
+            bootstrap='import os,signal,sys;os.kill(os.getpid(),signal.SIGSTOP);os.execvpe(sys.argv[1],sys.argv[1:],os.environ)'
+            child=subprocess.Popen([sys.executable,'-I','-c',bootstrap,*args],cwd=cwd,env=env,start_new_session=True)
+            while True:
+                row=process_identity(child.pid,end)
+                if row['state']=='T':break
+                if row['state'] in ('Z','X'):raise RuntimeError('http_compile_bootstrap_failed')
+                time.sleep(min(.005,bounded(end,'compile_bootstrap')))
+            caller=process_identity(os.getpid(),end)
+            proof={k:row[k] for k in ('pid','pgid','sid','birth','uid')}
+            proof.update(stage=stage,caller_pid=os.getpid(),caller_birth=caller['birth'],caller_group=caller['pgid'],state='active')
+            update_receipt(receipt,lambda v:v.update(compile_group=proof),end)
+            registered=True
+            if not cleaning():group_signal(proof,signal.SIGCONT,end)
+        while True:
+            if cleaning():await_cleanup();child=None;raise SystemExit(143)
+            if cancelled:raise SystemExit(128+cancelled[0])
+            if time.monotonic()>=deadline:raise subprocess.TimeoutExpired('owned_go_compile',timeout)
+            exited=os.waitid(os.P_PID,child.pid,os.WEXITED|os.WNOHANG|os.WNOWAIT)
+            if exited is not None and exited.si_code in (os.CLD_EXITED,os.CLD_KILLED,os.CLD_DUMPED):
+                end=min(deadline,time.monotonic()+4)
+                with receipt_lock(receipt,end,stopped=cleaning) as acquired:
+                    if not acquired:continue
+                    if any(r['state'] not in ('Z','X') for r in checked_group(proof,end)):
+                        raise RuntimeError('http_compile_live_descendants')
+                    code=child.wait(timeout=bounded(end,'compile_reap'));child=None
+                    update_receipt(receipt,lambda v:v.pop('compile_group',None),end)
+                    record_compile_boundary(receipt,stage,'finish',code,end=end)
+                if code:raise subprocess.CalledProcessError(code,['owned_go_compile'])
+                return
+            time.sleep(.01)
+    finally:
+        primary_failure=sys.exc_info()[1];primary=primary_failure is not None
+        try:
+            if child is not None:
+                if not registered:
+                    # This is our unreaped bootstrap, never released to exec Go.
+                    os.killpg(child.pid,signal.SIGKILL);child.wait(timeout=4)
+                elif cleaning():await_cleanup()
+                else:
+                    end=time.monotonic()+4
+                    with receipt_lock(receipt,end,stopped=cleaning) as acquired:
+                        if not acquired:await_cleanup()
+                        elif proof is not None:
+                            terminate_group(proof,end);child.wait(timeout=bounded(end,'compile_reap'))
+                            update_receipt(receipt,lambda v:v.pop('compile_group',None),end)
+        except BaseException:
+            # The lifecycle owner must finish cleanup before private files go.
+            try:
+                update_receipt(receipt,lambda v:v.update(compile_cleanup_error='group_reap_unproven'))
+                ack_end=time.monotonic()+4
+                while not cleaning():time.sleep(min(.01,bounded(ack_end,'compile_cleanup_publication')))
+                if child is not None:await_cleanup()
+            except BaseException:
+                if primary:raise primary_failure from None
+                raise
+            if not primary:raise
+        finally:
+            for sig,handler in handlers.items():signal.signal(sig,handler)
 
 
 def compile_observation(value):
@@ -178,25 +441,25 @@ def compile_stages_observation(value):
     return {'status':'valid','stages':stages}
 
 
-def record_compile_boundary(receipt, stage, event, exit_code=None):
-    value=json.loads(receipt.read_text());stages=value.get('compile_stages')
-    if stages is None:stages={}
-    observed=compile_stages_observation(stages)
-    if stage not in COMPILE_STAGES or observed['status']!='valid' or 'process_compile' in value:
-        raise RuntimeError('http_compile_boundary_invalid')
-    previous=observed['stages'][stage]
-    now=time.monotonic_ns()
-    if event=='start' and previous['status']=='not_started' and exit_code is None:
-        proof={'started_monotonic_ns':now}
-    elif event=='finish' and previous['status']=='incomplete':
-        proof={'started_monotonic_ns':previous['started_monotonic_ns'],'finished_monotonic_ns':now,'exit_code':exit_code}
-        if compile_observation(proof)['status']!='finished':raise RuntimeError('http_compile_boundary_invalid')
-    else:raise RuntimeError('http_compile_boundary_invalid')
-    if value.get('cleanup_started'):raise RuntimeError('http_compile_boundary_during_cleanup')
-    stages={**stages,stage:proof}
-    if compile_stages_observation(stages)['status']!='valid':raise RuntimeError('http_compile_boundary_invalid')
-    value['compile_stages']=stages
-    pending=receipt.with_suffix('.compile-pending');pending.write_text(json.dumps(value));pending.replace(receipt)
+def record_compile_boundary(receipt, stage, event, exit_code=None, *, end=None):
+    def mutate(value):
+        stages=value.get('compile_stages')
+        if stages is None:stages={}
+        observed=compile_stages_observation(stages)
+        if stage not in COMPILE_STAGES or observed['status']!='valid' or 'process_compile' in value:
+            raise RuntimeError('http_compile_boundary_invalid')
+        previous=observed['stages'][stage];now=time.monotonic_ns()
+        if event=='start' and previous['status']=='not_started' and exit_code is None:
+            proof={'started_monotonic_ns':now}
+        elif event=='finish' and previous['status']=='incomplete':
+            proof={'started_monotonic_ns':previous['started_monotonic_ns'],'finished_monotonic_ns':now,'exit_code':exit_code}
+            if compile_observation(proof)['status']!='finished':raise RuntimeError('http_compile_boundary_invalid')
+        else:raise RuntimeError('http_compile_boundary_invalid')
+        if value.get('cleanup_started'):raise RuntimeError('http_compile_boundary_during_cleanup')
+        stages={**stages,stage:proof}
+        if compile_stages_observation(stages)['status']!='valid':raise RuntimeError('http_compile_boundary_invalid')
+        value['compile_stages']=stages
+    update_receipt(receipt,mutate,end)
 
 
 def acquire_lock(fd, end, stage, stopped):
@@ -214,18 +477,18 @@ def acquire_lock(fd, end, stage, stopped):
 
 def begin_cleanup(receipt, fd):
     began=time.monotonic()
-    value=json.loads(receipt.read_text())
-    value['cleanup_started']=True
-    value['cleanup_deadline_monotonic']=began+120
-    pending=receipt.with_suffix('.pending');pending.write_text(json.dumps(value));pending.replace(receipt)
+    def publish(v):v.update(cleanup_started=True,cleanup_deadline_monotonic=v.get('cleanup_deadline_monotonic',began+120))
+    value=update_receipt(receipt,publish,began+120)
     try:acquire_lock(fd,value['cleanup_deadline_monotonic'],'cleanup_handoff',lambda:False)
     except BaseException:
         finished=time.monotonic()
         value.update(cleanup_verified=False,cleanup_overdue=finished>=value['cleanup_deadline_monotonic'],cleanup_lock_wait_seconds=finished-began)
-        pending.write_text(json.dumps(value));pending.replace(receipt)
+        update_receipt(receipt,lambda v:v.update(value),value['cleanup_deadline_monotonic']+.05)
         raise
+    value=json.loads(receipt.read_text())
     value['cleanup_lock_wait_seconds']=time.monotonic()-began
-    pending.write_text(json.dumps(value));pending.replace(receipt)
+    cleanup_compile(receipt,value,value['cleanup_deadline_monotonic'])
+    value=update_receipt(receipt,lambda v:v.update(cleanup_lock_wait_seconds=value['cleanup_lock_wait_seconds']),value['cleanup_deadline_monotonic'])
     return value
 
 
@@ -244,9 +507,20 @@ def owned_sample(ownership,receipt):
             if time.monotonic()>=end:raise BudgetFailure('http_budget_handoff_deadline','sample_handoff','deadline')
             if cleaning:return None
             waited=time.monotonic()-began
-            result=sample(latest,end)
-            if time.monotonic()>=end:raise BudgetFailure('http_budget_sample_deadline','sample_handoff','deadline')
+            proof=latest.get('compile_group');coordination={}
+            if proof is not None:
+                try:
+                    with paused_compile(proof,end,coordination):
+                        result=sample(latest,end,reserve_seconds=RESUME_RESERVE)
+                except BudgetFailure as failure:
+                    failure.detail['compile_coordination']=coordination
+                    raise
+                result['compile_coordination']=coordination
+            else:result=sample(latest,end)
             result['lock_wait_seconds']=waited
+            finished=time.monotonic()
+            if finished>=end:raise BudgetFailure('http_budget_sample_deadline','sample_handoff','deadline',compile_coordination=coordination)
+            result['duration_seconds']=finished-began
             return result
         finally:
             primary=sys.exc_info()[0] is not None
@@ -255,10 +529,10 @@ def owned_sample(ownership,receipt):
                 if not primary:raise BudgetFailure('http_budget_handoff_failed','sample_handoff','unlock_failed') from None
 
 
-def sample(ownership,end):
+def sample(ownership,end,*,reserve_seconds=0):
     began=end-4
     def command(stage,args):
-        started=time.monotonic();remaining=end-started
+        started=time.monotonic();remaining=end-started-reserve_seconds
         def failed(code,kind,finished,command_finished=None,**facts):
             raise BudgetFailure(code,stage,kind,command_seconds=round((finished if command_finished is None else command_finished)-started,6),
                                 sample_seconds=round(finished-began,6),command_budget_seconds=round(max(0,remaining),6),**facts) from None
@@ -283,7 +557,7 @@ def sample(ownership,end):
         except OSError:
             failed('http_budget_sample_command_failed','command_unavailable',time.monotonic())
         finished=time.monotonic()
-        if finished>=end:failed('http_budget_sample_deadline','deadline',finished)
+        if finished>=end-reserve_seconds:failed('http_budget_sample_deadline','deadline',finished)
         try:
             return value.decode()
         except UnicodeError:
@@ -308,7 +582,7 @@ def sample(ownership,end):
     for row in rows:
         if row.get('Config',{}).get('Labels',{}).get('com.docker.compose.service')=='prometheus' and row['State'].get('Running'):
             volume=size('volume_size',['docker','exec',row['Id'],'du','-sk','/prometheus'])
-    disk=size('private_directory_size',['du','-sk',str(work)]) if work.exists() else 0
+    disk=size('private_directory_size',['du','-sk',str(work)])
     return {**resource_totals(rows,disk,volume),'duration_seconds':time.monotonic()-began}
 
 
@@ -337,7 +611,8 @@ def main():
         json.dump({'started_monotonic':started,'attempt_limit':1},receipt)
     with tempfile.TemporaryDirectory(prefix='addp-http-budget-') as directory:
         ownership_path=Path(directory)/'ownership.json'
-        child=subprocess.Popen(command,env=dict(os.environ,ADDP_HTTP_BUDGET_RECEIPT=str(ownership_path)),start_new_session=True)
+        child=subprocess.Popen(command,env=dict(os.environ,ADDP_HTTP_BUDGET_RECEIPT=str(ownership_path),
+                               ADDP_HTTP_BUDGET_WORK_DEADLINE=str(started+1080)),start_new_session=True)
         error=None;last_sample=None;ownership=None
         try:
             while child.poll() is None:
@@ -345,6 +620,7 @@ def main():
                 if now-started>=1080:raise RuntimeError('http_budget_work_deadline')
                 if ownership_path.exists():
                     ownership=json.loads(ownership_path.read_text())
+                    if ownership.get('compile_cleanup_error'):raise RuntimeError('http_compile_cleanup_failed')
                     if not ownership.get("cleanup_started") and (last_sample is None or now-last_sample>=4):
                         if last_sample is not None and now-last_sample>5:raise RuntimeError('http_budget_sample_cadence')
                         last_sample=now
@@ -392,6 +668,7 @@ def main():
                 report['source_tls_proof']=ownership.get('source_tls_proof')
                 report['source_tls_publication']=ownership.get('source_tls_publication')
                 report['compile_stages']=compile_stages_observation(ownership.get('compile_stages'))
+                report['compile_cleanup_error']=ownership.get('compile_cleanup_error')
                 report['cleanup_verified']=ownership.get('cleanup_verified',False)
                 report['private_directory_removed']=not Path(ownership['work']).exists()
             report['inputs_unchanged']=input_hashes()==inputs
@@ -400,12 +677,13 @@ def main():
             counts_proven=report.get('request_counts')=={'go':0,'python':[0,0],'total':0} if preflight else complete_request_traffic(report.get('request_counts'),report.get('request_phases'))
             compiles=report.get('compile_stages',{})
             compiles_proven=compiles.get('status')=='valid' and all(p['status']=='finished' and p['exit_code']==0 for p in compiles['stages'].values())
-            if result==0 and error is None and not preflight and not compiles_proven:report['error_code']='http_compile_stages_unproven'
-            if result==0 and error is None and (preflight or compiles_proven) and not report.get('cleanup_overdue') and tls_proven and counts_proven and report['inputs_unchanged'] and report.get('cleanup_verified') and report['elapsed_seconds']<1200 and report.get('private_directory_removed') and report['samples']:
+            if report.get('compile_cleanup_error') and report['error_code'] is None:report['error_code']='http_compile_cleanup_failed'
+            if result==0 and report['error_code'] is None and not preflight and not compiles_proven:report['error_code']='http_compile_stages_unproven'
+            if result==0 and error is None and (preflight or compiles_proven) and not report.get('compile_cleanup_error') and not report.get('cleanup_overdue') and tls_proven and counts_proven and report['inputs_unchanged'] and report.get('cleanup_verified') and report['elapsed_seconds']<1200 and report.get('private_directory_removed') and report['samples']:
                 report['result']='passed'
             output.write_text(json.dumps(report,indent=2))
     summary={key:report.get(key) for key in ('case','result','error_code','failure_detail','exit_code','elapsed_seconds','source_tls_proof','source_tls_publication',
-             'cleanup_verified','cleanup_overdue','cleanup_lock_wait_seconds','private_directory_removed','inputs_unchanged','request_counts','request_phases','request_traffic_error','python_sources','failure_during_cleanup','compile_stages')}
+             'cleanup_verified','cleanup_overdue','cleanup_lock_wait_seconds','private_directory_removed','inputs_unchanged','request_counts','request_phases','request_traffic_error','python_sources','failure_during_cleanup','compile_stages','compile_cleanup_error')}
     print('HTTP functional budget result: '+json.dumps(summary,sort_keys=True),flush=True)
     print('HTTP functional budget report: '+str(output),flush=True)
     return 0 if report['result']=='passed' else 1

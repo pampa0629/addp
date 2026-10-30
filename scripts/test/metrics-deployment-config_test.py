@@ -876,7 +876,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         self.assertIn('check_controlled_host_sources(filesystem_only=True)', (ROOT / 'scripts/test/monitor-metrics-probe.py').read_text())
         self.assertIn('--case=process-alerts) metrics_case=process-alerts ;;', gate)
         self.assertIn('--case=cgroup-source) metrics_case=cgroup-source ;;', gate)
-        self.assertRegex(gate, r'(?s)if \[\[ "\$metrics_case" != host-resources && "\$metrics_case" != mtls-preflight && "\$metrics_case" != filesystem-alerts && "\$metrics_case" != block-capacity \]\]; then.*?go test -c ./processmetrics.*?\nfi\npython3 "\$ROOT_DIR/scripts/test/monitor-metrics-probe.py"')
+        self.assertRegex(gate, r"(?s)if \[\[ \"\$metrics_case\" != host-resources && \"\$metrics_case\" != mtls-preflight && \"\$metrics_case\" != filesystem-alerts && \"\$metrics_case\" != block-capacity \]\]; then.*?run_owned_compile.*?'process_source'.*?'./processmetrics'.*?\nfi\npython3 \"\$ROOT_DIR/scripts/test/monitor-metrics-probe.py\"")
 
     def test_controlled_host_scope_checks_exact_sources_and_restores_discovery(self):
         path = ROOT / 'scripts/test/monitor-metrics-probe.py'
