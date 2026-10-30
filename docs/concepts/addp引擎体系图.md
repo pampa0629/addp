@@ -16,7 +16,7 @@
 | Item | 可被描述、预览、读取或写入的叶子数据项。 |
 | AI Inference Runtime | 对 ADDP 调用方提供统一 `addp.inference/v1` 数据面的计算 Runtime；Provider、模型和凭据是 Runtime 内部强类型资源。 |
 
-`inference/` 是拥有 Provider Connection、Model Deployment、Model Profile、凭据和配置管理入口的业务 owner 模块，不是引擎插件目录。`common/engine/plugins/inference_runtime` 是 System 和调用方消费统一引擎契约的编译期插件，`system.engines` 中的 `inference_runtime` Engine Instance 只登记该模块数据面 Runtime 的确定端点。仓库目录、插件位置和 Engine Instance 登记是三个不同维度；不得因为 Runtime 被 System 登记就把整个 owner 模块移动到 `engines/`，也不得在 `engines/` 下复制第二套 Inference 控制面。
+`inference/`（[专题导航](../../inference/CLAUDE.md#专题导航)）是拥有 Provider Connection、Model Deployment、Model Profile、凭据和配置管理入口的业务 owner 模块，不是引擎插件目录。`common/engine/plugins/inference_runtime` 是 System 和调用方消费统一引擎契约的编译期插件，`system.engines` 中的 `inference_runtime` Engine Instance 只登记该模块数据面 Runtime 的确定端点。仓库目录、插件位置和 Engine Instance 登记是三个不同维度；不得因为 Runtime 被 System 登记就把整个 owner 模块移动到 `engines/`，也不得在 `engines/` 下复制第二套 Inference 控制面。
 
 ### Engine Instance 身份与生命周期
 

@@ -4,7 +4,7 @@
 
 `engines/` 集中管理不拥有 ADDP 业务配置事实的独立计算与 Notebook 运行时。GeoPython Workflow、Spark Workflow、DuckDB 和 Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范；Model3D Workflow 是三维模型转换专用运行时；PointCloud Workflow 是点云处理专用运行时；Document Workflow 是文档转换专用运行时；SuperMap Workflow 是面向超图 iObjects C++ 的工作流运行时。Develop 和业务模块通过引擎能力声明和 HTTP API 消费对应 Runtime；Jupyter 的接口、排队派发限制与交互会话范围统一见[引擎总入口的 Notebook 摘要](README.md#脚本--notebook-运行时)。
 
-本目录不是 `system.engines` 的源码镜像。拥有独立业务资源、数据库事实、权限、控制面和前端的 owner 模块继续位于仓库根目录；例如 `inference/` 拥有 Provider、Deployment、Profile 和凭据，其数据面以 `inference_runtime` Engine Instance 登记到 System，但不得因此把整个模块移动到本目录或复制第二套控制面。
+本目录不是 `system.engines` 的源码镜像。拥有独立业务资源、数据库事实、权限、控制面和前端的 owner 模块继续位于仓库根目录；例如 `inference/`（[专题导航](../inference/CLAUDE.md#专题导航)）拥有 Provider、Deployment、Profile 和凭据，其数据面以 `inference_runtime` Engine Instance 登记到 System，但不得因此把整个模块移动到本目录或复制第二套控制面。
 
 ## 重要目录与端口
 

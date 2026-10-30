@@ -2,7 +2,7 @@
 
 本目录集中管理不拥有 ADDP 业务配置事实的独立计算和 Notebook 运行时。GeoPython Workflow、Spark Workflow、DuckDB、Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范；Model3D Workflow 是三维模型转换专用运行时；PointCloud Workflow 是点云处理运行时；Document Workflow 是文档转换运行时；SuperMap Workflow 是面向超图 iObjects C++ 的空间计算运行时。
 
-`engines/` 不是 `system.engines` 的源码镜像，也不是所有 Engine Type 的目录。数据库、对象存储等插件位于 `common/engine/plugins/`；Inference 因拥有 Provider Connection、Model Deployment、Model Profile、凭据、控制面 API 和前端，保留为根目录 `inference/` 业务模块，其数据面端点另以 `engine_type=inference_runtime` 登记到 System。只有未来将不拥有这些业务事实的独立推理执行面拆为单独服务时，才在本目录新增 `inference-runtime/`，且不得复制 Inference 控制面。
+`engines/` 不是 `system.engines` 的源码镜像，也不是所有 Engine Type 的目录。数据库、对象存储等插件位于 `common/engine/plugins/`；Inference 因拥有 Provider Connection、Model Deployment、Model Profile、凭据、控制面 API 和前端，保留为根目录 `inference/` 业务模块（[专题导航](../inference/CLAUDE.md#专题导航)），其数据面端点另以 `engine_type=inference_runtime` 登记到 System。只有未来将不拥有这些业务事实的独立推理执行面拆为单独服务时，才在本目录新增 `inference-runtime/`，且不得复制 Inference 控制面。
 
 协议、元数据校验和扩展要求见[工作流运行时文档入口](docs/README.md)；各 Runtime 的运行说明及专题见[参考实现](#参考实现)。
 
