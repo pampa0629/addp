@@ -7,9 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/xml"
 	"fmt"
-	"io"
 	"math"
 	"path"
 	"sort"
@@ -19,17 +17,6 @@ import (
 
 const vffMaterialNS = "http://sketchup.google.com/schemas/sketchup/1.0/material"
 
-type vffXMLLimits struct{ bytes, nodes, depth, attributes, text int }
-type vffXMLBudget struct {
-	limits                         vffXMLLimits
-	bytes, nodes, attributes, text int
-}
-type vffXMLNode struct {
-	name     xml.Name
-	attrs    map[string]string
-	children []*vffXMLNode
-	text     string
-}
 type vffMaterialFact struct {
 	member, name, image string
 	imageSHA256         [32]byte
@@ -58,7 +45,7 @@ func readVFFMaterials(ctx context.Context, container *vffContainer, limits vffXM
 		if len(parts) != 3 || parts[2] != "material.xml" {
 			return nil, fmt.Errorf("unsupported VFF material member layout")
 		}
-		root, err := readVFFMaterialXML(ctx, container.members[member], budget)
+		root, err := readVFFXML(ctx, container.members[member], budget, map[string]bool{vffMaterialNS: true})
 		if err != nil {
 			return nil, err
 		}
@@ -76,97 +63,6 @@ func readVFFMaterials(ctx context.Context, container *vffContainer, limits vffXM
 		return nil, err
 	}
 	return facts, nil
-}
-
-func readVFFMaterialXML(ctx context.Context, raw []byte, budget *vffXMLBudget) (*vffXMLNode, error) {
-	if len(raw) > budget.limits.bytes-budget.bytes {
-		return nil, fmt.Errorf("VFF cumulative XML byte budget exceeded")
-	}
-	budget.bytes += len(raw)
-	decoder := xml.NewDecoder(bytes.NewReader(raw))
-	var stack []*vffXMLNode
-	var root *vffXMLNode
-	declared := false
-	for {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		position := decoder.InputOffset()
-		token, err := decoder.Token()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("invalid VFF material XML: %w", err)
-		}
-		switch t := token.(type) {
-		case xml.StartElement:
-			budget.nodes++
-			budget.attributes += len(t.Attr)
-			if budget.nodes > budget.limits.nodes || budget.attributes > budget.limits.attributes || len(stack) >= budget.limits.depth {
-				return nil, fmt.Errorf("VFF XML structure budget exceeded")
-			}
-			if t.Name.Space != vffMaterialNS {
-				return nil, fmt.Errorf("unsupported VFF material namespace")
-			}
-			node := &vffXMLNode{name: t.Name, attrs: map[string]string{}}
-			seen := map[xml.Name]bool{}
-			for _, attr := range t.Attr {
-				if seen[attr.Name] {
-					return nil, fmt.Errorf("duplicate VFF XML attribute")
-				}
-				seen[attr.Name] = true
-				budget.text += len(attr.Value)
-				if attr.Name.Space == "xmlns" || attr.Name.Space == "" && attr.Name.Local == "xmlns" {
-					continue
-				}
-				if attr.Name.Space != "" {
-					return nil, fmt.Errorf("unsupported VFF namespaced attribute")
-				}
-				node.attrs[attr.Name.Local] = attr.Value
-			}
-			if len(stack) == 0 {
-				if root != nil {
-					return nil, fmt.Errorf("multiple VFF XML roots")
-				}
-				root = node
-			} else {
-				parent := stack[len(stack)-1]
-				parent.children = append(parent.children, node)
-			}
-			stack = append(stack, node)
-		case xml.EndElement:
-			if len(stack) == 0 {
-				return nil, fmt.Errorf("unmatched VFF XML end")
-			}
-			stack = stack[:len(stack)-1]
-		case xml.CharData:
-			budget.text += len(t)
-			if len(stack) == 0 {
-				if strings.TrimSpace(string(t)) != "" {
-					return nil, fmt.Errorf("unclaimed VFF XML text")
-				}
-			} else {
-				stack[len(stack)-1].text += string(t)
-			}
-		case xml.Directive:
-			return nil, fmt.Errorf("VFF XML directives and DTD are unsupported")
-		case xml.ProcInst:
-			if t.Target != "xml" || position != 0 || root != nil || declared {
-				return nil, fmt.Errorf("unsupported VFF XML processing instruction")
-			}
-			declared = true
-		case xml.Comment:
-			// Comments have no resource semantics; source bytes remain budgeted.
-		}
-		if budget.text > budget.limits.text {
-			return nil, fmt.Errorf("VFF cumulative XML text budget exceeded")
-		}
-	}
-	if root == nil || len(stack) != 0 {
-		return nil, fmt.Errorf("incomplete VFF XML document")
-	}
-	return root, nil
 }
 
 func vffXMLShape(n *vffXMLNode, tag, attributes, children string, numericText bool) error {
