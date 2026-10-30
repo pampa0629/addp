@@ -284,7 +284,7 @@ bash scripts/build/push-images.sh --registry harbor.example.com:5001/addp --tag 
 | --- | --- |
 | 源镜像不存在 | 核对源 Registry、标签和本机镜像；按上文先编译所需 Go 产物，再构建镜像 |
 | `denied` | 核对目标 namespace、账号权限及 `docker login` 主机 |
-| 推送超时 | 核对网络和目标 Registry，可用 `--services` 缩小本次范围 |
+| 推送超时 | 按[代理指南的分层验证](../docs/Docker镜像推送代理配置指南.md#验证范围与实际操作)区分宿主机、daemon、拉取与上传；可用 `--services` 缩小本次范围，不能以 pull 成功代替 push 验收 |
 | `insufficient_storage` | 由目标 Registry 管理员核对配额和保留策略 |
 
 ## package.sh
