@@ -817,3 +817,16 @@ artifact／物理／Meta相等正整数大小、精确scan父执行／用户／�
 成功稳定outputs及facts均两份create，两个load端口与locator精确绑定；恰两次成果自动扫描，公开严格整数tenant_id／triggered_by同主体。每成果均有两源的本execution active derive共四边；五份失败输入不混入成功图。七源与双成果原字节归档，独立OGR核逐原坐标、完整字段类型／空值、部件／方向／顺序及3857；物理与Meta大小严格正整数相等，父文件／唯一子层边界明确，原源及成果／Meta前后不变。期望不调用生产吸附算法、不epsilon／舍入。
 
 真实Console核成功及四失败执行页、线与Point双地图、两属性页和实际血缘tab／G6来源边标签；原始EWKB、全部OL几何／属性、线端明确移动见证及原Point像素归档，共11截图。Point在原端点，目标由字段与线成果对照；微距保物理／API／OL，不声明亚像素单独可见。每次导航绑定页面实际请求的同一普通身份。最终Owner／browser／raw报告唯一case/run/execution且passed；阶段incomplete仅保留阶段意义。末轮扫描库存、文件与Meta不变，NFS/export/ownedroot、Runtime/registry、部署／Infra清0，不认证业务DELETE、内存中间资源血缘、空批／英尺／超JS整数或容量。夹具／runner／浏览器／Hosted选择及CI登记mutation同次更新，经新增范围最小标准门禁后仅单次派发此case。
+
+
+## 整幅栅格百分位统计独立 Hosted 验收
+
+`raster-statistics-percentile-workflow`为独立手工Hosted只读套件，复用NFS、同源产品默认入口Runtime及普通User原12权限，业务预算固定600秒；不改原Raster/OIF/邻域套件，不计UI、容量或任意影像认证。实现与本地夹具通过不计实际Hosted成功，实际Linux／Hosted仍由CI会话协调。
+
+固定16条成功链：原统计不带百分位1条，0／100端点2条，奇偶总体50百分位2条，25／75插值2条，33.3跨六块及像元逆序2条，重分类接90百分位1条，Int64／UInt64 NoData邻接值2条，显式第二波段的mask／alpha／scale-offset覆盖1条，单有效／全无效2条，缺失定位1条；跨块源保留旋转网格。固定12类非法参数各按中英文提交，共24次准确失败：百分位null／布尔／字符串／数组／对象／低于0／高于100，波段0／越界／布尔／字符串及所选复数数据。新增百分位原因按提交语言准确核验，既有波段／复数原因按当前英文契约核验，不将两种提交冒充全部诊断已翻译；反向查询不能改写冻结失败。NaN／Infinity、复数alpha混合类型、极端插值／原统计矩范围、IO注入及真实低盘边界分别沿Native或既有独立套件记账。
+
+独立oracle按源原生有效性取完整总体，使用Python标量排序与Fraction的确切二进制百分位位置；不调用产品函数或NumPy百分位。原统计全字段、计数／null／合法零、端点及中位数严格核对，其他插值固定rtol=4e-15／atol=0，原mean／stddev采用rtol=1e-10／atol=1e-12；同源带／不带百分位的原字段逐值相等。oracle首次计算计入预算，只缓存独立期望，实际源文件、像元与mask每次重新全读。
+
+源初始化扫描须核当前执行、无父执行、同租户／普通User／引擎；随后40条业务执行全部零资源发布、零新增扫描和零派生血缘，专业详情与Monitor核当前身份、状态和提交DAG／语言快照。共41次完整物理检查，每次覆盖11份源原件／全像元／mask／类型／NoData／网格／CRS／scale-offset及Runtime执行工作区零残留；每步重新读取此前成功结果，共504次先前结果检查。归档11份源原字节、独立期望、80份专业／Monitor终态原始响应及大小／hash清单（响应文件名相对于`statistics-responses/`目录），所有旧原件／响应／期望禁止覆盖、重建或静默修复。业务计时覆盖源初始化、oracle、40执行、查询、原件复核和执行工作区清理；Hosted部署／NFS／Infra退出清理由既有生命周期单独严格核验，清理失败不得通过。
+
+本地入口为`make test-raster-statistics-percentile-online-runner`及标准`make test-geopython-workflow`中的`test_online_statistics_percentile_fixture.py`；已同步Online registry、changed gate、独立workflow与固定矩阵／删除断言变异检查，仅登记不代表已运行Hosted。
