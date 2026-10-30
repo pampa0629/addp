@@ -81,13 +81,29 @@ erDiagram
 | Scenario Binding | 调用方 owner | Agent、Copilot、Manager 分别保存自己的业务场景绑定。 |
 | Provider credential | Inference | 专用加密字段，不进入普通配置、响应、日志或审计详情。 |
 
+### 模型适配与调用参数
+
+[适配器](#适配器选择) · [输出上限](#chat-输出上限) · [温度](#chat-温度) · [思考模式](#chat-思考模式) · [快速接入](#21-provider-template-与快速接入) · [验证要求](#九验证要求)
+
+#### 适配器选择
+
 `adapter_type` 第一阶段允许 `openai_compatible` 和 `dashscope_multimodal`。DashScope compatible mode、OpenAI、vLLM、Ollama 的 OpenAI-compatible endpoint 通过前者接入；DashScope 多模态向量接口因使用 `input.contents` 而通过后者接入。适配器由 Provider 创建时显式选择，不根据 endpoint 或模型名称猜测协议；只有协议语义确实不同且无法由标准字段表达时才新增适配器类型。
+
+#### Chat 输出上限
 
 OpenAI-compatible Chat 的最大输出 token 参数由 Model Deployment 的 `chat_max_output_tokens_parameter` 显式声明，当前只允许 `max_tokens` 和 `max_completion_tokens`。Inference Runtime 把统一契约中的 `max_output_tokens` 单次映射到该字段指定的上游参数；不得按模型名称、Endpoint 或响应文案猜测，不得在失败后改用另一个参数重试。非 Chat Deployment 仍保存该字段，以便后续启用 Chat 时配置事实完整。
 
+#### Chat 温度
+
 Chat 的温度参数由 Model Deployment 的 `chat_temperature_mode` 显式声明，当前只允许 `configurable` 和 `default_only`。`configurable` 才向上游发送调用方提供的 `temperature`；`default_only` 使用上游默认值且不得发送该字段。Inference Runtime 不根据模型名称猜测，也不因上游拒绝后重试另一种请求。
 
-Chat 的思考模式控制由 Model Deployment 的 `chat_thinking_mode` 显式声明，当前只允许 `upstream_default` 和 `disabled`。创建或完整更新时省略该字段默认保存 `upstream_default`；启动时由 Inference 的既有模型迁移为存量部署补齐同一非空默认值。`upstream_default` 不发送思考控制字段，并不代表上游关闭思考；`disabled` 在 OpenAI-compatible Chat 请求中单次发送 `thinking={"type":"disabled"}`。管理员只有确认上游支持该字段及语义时才能选择 `disabled`；非 OpenAI-compatible Provider 不接受该选择。不得按厂商、模型名称或 Endpoint 自动选择，不接受任意扩展参数，也不根据失败响应切换模式。
+#### Chat 思考模式
+
+Chat 的思考模式控制由 Model Deployment 的 `chat_thinking_mode` 显式声明，当前只允许 `upstream_default` 和 `disabled`。创建或完整更新时省略该字段默认保存 `upstream_default`；启动时由 Inference 的既有模型迁移为存量部署补齐同一非空默认值。
+
+`upstream_default` 不发送思考控制字段，并不代表上游关闭思考；`disabled` 在 OpenAI-compatible Chat 请求中单次发送 `thinking={"type":"disabled"}`。管理员只有确认上游支持该字段及语义时才能选择 `disabled`；非 OpenAI-compatible Provider 不接受该选择。
+
+不得按厂商、模型名称或 Endpoint 自动选择，不接受任意扩展参数，也不根据失败响应切换模式。
 
 当前统一消息契约不传递 `reasoning_content`，因此不开放显式开启思考或思考内容多轮回传能力。需要思考历史参与 Tool Calling 的部署不能被当作已支持该场景；管理员必须按上游契约显式关闭思考，或选择满足现有消息契约的部署。调用方的 `tool_choice=required` 保持不变，不能静默退化为 `auto`。`disabled` 映射依据支持该字段的 [Chat Completions 协议](https://api-docs.deepseek.com/api/create-chat-completion/)，不是所有 OpenAI-compatible 服务都支持的通用能力。
 
@@ -168,7 +184,7 @@ Provider credential 使用部署级 `ENCRYPTION_KEY` 进行认证加密。数据
 | `PUT/DELETE /provider-connections/{id}/credential` | 设置、轮换或删除加密凭据。 |
 | `GET /provider-templates` | 查询 Inference 内置的只读模型服务接入模板。 |
 | `POST /provider-connections/{id}/discover-models` | 使用该 Provider 的服务端 Endpoint 和加密凭据发现 OpenAI-compatible 模型。 |
-| `GET/POST /model-deployments` | 列表或创建 Deployment；Chat 参数能力通过 `chat_max_output_tokens_parameter`、`chat_temperature_mode` 和 `chat_thinking_mode` 显式声明。 |
+| `GET/POST /model-deployments` | 列表或创建 Deployment；Chat 参数能力通过 `chat_max_output_tokens_parameter`、`chat_temperature_mode` 和 `chat_thinking_mode` 显式声明，映射与限制见[模型调用参数](#模型适配与调用参数)。 |
 | `GET/PUT/DELETE /model-deployments/{id}` | 读取、更新或删除 Deployment，包括显式的 Chat 参数能力映射。 |
 | `POST /model-deployments/{id}/probe` | 显式执行无副作用可达性和能力探测。 |
 | `GET/POST /model-profiles` | 列表或创建 Profile。 |

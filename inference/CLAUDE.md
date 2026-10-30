@@ -15,6 +15,7 @@ Inference 是 ADDP 统一 AI 推理 owner。正式契约见 [AI 推理接口规�
 | --- | --- |
 | 唯一技术路线、Runtime 发现与多实例前提 | [目标与唯一技术路线](<../docs/spec/addp AI推理接口规范.md#一目标与唯一技术路线>) |
 | Provider、Deployment、Profile 与场景绑定的归属 | [资源模型与 owner](<../docs/spec/addp AI推理接口规范.md#二资源模型与-owner>) |
+| 适配器、Chat 输出上限、温度与思考模式 | [模型适配与调用参数](<../docs/spec/addp AI推理接口规范.md#模型适配与调用参数>) |
 | 只读模板、服务端检测与模型发现 | [Provider Template 与快速接入](<../docs/spec/addp AI推理接口规范.md#21-provider-template-与快速接入>) |
 | Platform／Tenant 范围、场景解析与数据面身份 | [范围和授权](<../docs/spec/addp AI推理接口规范.md#三范围和授权>) |
 | 凭据设置、轮换、删除、加密与响应边界 | [凭据](<../docs/spec/addp AI推理接口规范.md#四凭据>) |
