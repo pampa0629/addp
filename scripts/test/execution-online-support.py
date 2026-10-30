@@ -159,6 +159,8 @@ class OwnedDeployment:
         row = self.inspect(name)
         require(name not in self.paused and row['State'].get('Health', {}).get('Status') == 'healthy',
                 'Graph peer must be healthy and not paused before crash')
+        require(row.get('HostConfig', {}).get('RestartPolicy', {}).get('Name') == 'no',
+                'Graph crash requires an explicitly disabled automatic restart policy')
         old = self.pins[name]
         try:
             self.command(['docker', 'kill', '--signal=KILL', old[0]])

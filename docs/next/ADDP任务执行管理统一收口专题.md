@@ -487,13 +487,13 @@ Security、p19、p12 等未承担本轮核心实施，不应因本专题占用�
 
 **标准门禁覆盖。** 新增 Python 回归放入既有 `graph-review-online_test.py`，由 `make test-graph-online-runner` 实际执行，不新增游离测试入口；该入口已有 `test-security-online-runner` → `test-online-runner` 上层登记。身份夹具新增 Go 用例名称含 `GraphProtection`，同时命中该入口和夹具完整包测试。受影响最小命令为 `GOMAXPROCS=4 GOFLAGS=-p=2 make test-graph-online-runner`、`make test-module MODULE=graph GO_ONLY=1`；共享身份夹具完整包回归复用 `make test-quality-online-runner`，不触发 Quality Hosted。新公开接口／Swagger 没有变化，本轮无需重新生成产品 Swagger。
 
-**交给 CI 单一负责人的准确接入项（尚未实施／发送）。** 开始实施时共享 Make／workflow／登记文件有其他会话 WIP，后续已由原会话提交；职责仍由 CI 单一负责人持有，本轮不并改这些文件。
+**CI 单一负责人的接入状态。** CI 已接收并核对两个有限 profile 的输入、报告和恢复协议；用户已确认按有限方案实施共享编排、选择、登记及确定性反例。共享接入已提交 `577aca240`，合并主责 runner 后标准门禁通过，实际命令与结果见 8.6；未运行新的 Hosted。Owner runner／公共控制由主责独占，共享 Make／workflow／登记由 CI 单一负责人维护，本专题按双方约定由主责统一提交。
 
-1. Graph 既有 suite 增加 `execution-lifecycle` case，将该 case 分发给新 Graph runner；FalkorDB、Neo4j 分别运行。现有 `online-hosted-security-gate.sh`、`graph_case`、online dispatcher 和注册校验必须同次接入；当前仍拒绝该 case，不称已经可 dispatch。
+1. Graph 既有 suite 增加 `execution-lifecycle` case，将该 case 分发给新 Graph runner；FalkorDB、Neo4j 分别运行。现有 `online-hosted-security-gate.sh`、`graph_case`、online dispatcher 和注册校验必须同次接入；共享分发已接入该 case，并保持两个引擎分别选择；确定性结果与实际 Hosted 结果分别记录，本轮没有发起 Hosted。
 2. Graph 一次性 Compose profile 复用相同镜像，增加独立 `graph-backend-peer`，不同 module runtime instance identity、独立 loopback 端口和 readiness；两个进程均显式 `GRAPH_BUILD_LEASE_SECONDS=30`、`GRAPH_BUILD_HEARTBEAT_SECONDS=5`，不沿用默认 120 秒。副实例 URL 传入 `ADDP_ONLINE_GRAPH_PEER_URL`；抽取器传入 `ADDP_ONLINE_GRAPH_CASE=execution-lifecycle`。所有被控制容器必须含当次 `ADDP_ONLINE_TEST_RUN_ID`／`ADDP_ONLINE_HOSTED=1`，不能复用个人环境容器。
-3. Cleanup 以单独 `cleanup-execution` profile 接入原有 Hosted 生命周期；System／Gateway、十 Owner Backend、所需公共 Infra 和各自正式 runtime 授权必须齐全。该 profile 的 Graph 和 Asset 各只有一个 Owner 实例，否则暂停一个实例不能证明 Owner 不可用／子未领取。调用既有身份工具 `--suite cleanup-execution`，只把其私有输出传给新 runner；fixture 代码已识别此名称，Online dispatcher／workflow 尚未登记，不能直接使用 `make test-online ONLINE_SUITE=cleanup-execution`。
+3. Cleanup 以单独 `cleanup-execution` profile 接入原有 Hosted 生命周期；System／Gateway、十 Owner Backend、所需公共 Infra 和各自正式 runtime 授权必须齐全。该 profile 的 Graph 和 Asset 各只有一个 Owner 实例，否则暂停一个实例不能证明 Owner 不可用／子未领取。调用既有身份工具 `--suite cleanup-execution`，只把其私有输出传给新 runner；fixture 代码已识别此名称，Online dispatcher／workflow 已按有限协议登记，入口仍要求准确 Hosted 部署、私有身份和全部 Owner 预检；登记本身不构成实际运行授权。
 4. 两个 profile 的失败／超时／信号退出均先恢复准确暂停实例，再停止应用并销毁本轮业务夹具／Infra／卷／凭据。Graph 故意保留的 unknown 证据不经 API 强删；由整套一次性部署销毁回收。场景 `result=passed` 与最终零残留必须同时成立，不能仅消费子 runner 结果。恢复记录异常、容器被替换、故障控制失败、场景失败、清理失败及缺报告均须有确定性失败反例。
-5. 既有 T1 自动入口已覆盖本轮代码；新增 T4 case／profile 的影响选择、身份／服务前置检查、CI 注册断言、报告消费和文档仍须 CI 同次完成。禁止静默跳过未实现场景、放宽预算或自动重跑。本轮不替 CI 负责人承诺这些登记已经完成。
+5. 既有 T1 自动入口已覆盖本轮代码；新增 T4 case／profile 的影响选择、身份／服务前置检查、CI 注册断言、报告消费和文档由 CI 同次接入；使用 `make test-execution-online-ci-runner` 验证共享编排，既有 `test-graph-online-runner` → `test-security-online-runner` → `test-online-runner` 包含该子门禁。禁止静默跳过未实现场景、放宽预算或自动重跑。具体提交和自然 CI 结果由 CI 负责人核验后回报，不把代码登记算成专项 T4 通过。
 
 **仍待补齐的实际缺口。** 此批 runner 不证明 Manager 原生对象／Meilisearch 迟到投递、Transfer 原生 Capture／DLQ 的未知外部效果故障，也不证明真实浏览器刷新／翻页中撤权后的旧值和迟到响应清除；已有 PG／受控浏览器证据仍按原层级保留，后续需在对应自有业务夹具上补场景。Graph 的 unknown 来源是受控抽取调用，尚不证明原生写图请求已发出但回包丢失的场景；崩溃发生在终态后以检验持久阻断，不能替代“运行中终止进程”的独立证据。Graph `Reopen` 当前始终因 Provider 原物理目标无法核验而拒绝，positive reopen 不是已实现能力；unknown reconcile 也不会凭迟到本地返回放行。新 runner 对拒绝路径给出断言，并明确该能力缺口，不能据此将 8.2 全矩阵或整个执行体系判为结项。Security 会话补充的 `d86049faf` 后 PG 报告与固定提交关联待统一证据清单核对，不因缺索引重跑其有效门禁，也不扩大此批 Hosted 范围。
 
@@ -502,3 +502,36 @@ Security、p19、p12 等未承担本轮核心实施，不应因本专题占用�
 首批场景及身份夹具已提交推送 `410a5d253030555e89e21f0ea2b1da90fbc32d72`。继续检索受影响调用后，修正既有 Graph protection／dense／endpoint runner 的公开状态修改及退出删除：每次从准确 Graph 的 GET 读取当前正整数 version，再提交变更；版本冲突直接失败，不刷新重试掩盖并发。review 删除复用同一函数，删除无版本旧路径。新增缺失／非法 version 和冲突不重试反例；最终 `GOMAXPROCS=4 GOFLAGS=-p=2 make test-graph-online-runner` 通过 74／31 项 Python 测试及 GraphProtection 身份夹具 Go 用例（`/tmp/addp-execution-runner-versioned-final.log`）。中间测试替身曾错误匹配 browse-snapshot 请求，已收窄到 Graph 详情路径并重验；不更改产品或验收断言。
 
 Security 证据索引已补：固定源码 `0c8b006a3748d70d31db4775c9fed4f68422bae7` 的 [Security PostgreSQL 作业](https://github.com/pampa0629/addp/actions/runs/40832834357/job/123310943654) 实际成功，重新只读核验 job 和执行步骤均为 success；日志明确包含 `TestDiscoveryExecutionEventsAgainstPostgres` 的 claim 回滚、旧 lease 拒绝、retry 的真实 attempt、结果／事件事务及 expired lease 写入阻断。`git diff --quiet d86049faf 0c8b006a3 -- <六个 Security 文件>` 确认六个交接文件完全相同，日志保存在 `/tmp/addp-execution-security-pg-index.log`。这关闭上段的既有 PG 证据索引待核对项；本轮没有重跑 PG，也不证明真实 Worker／Hosted 故障场景。首批新 runner 的固定提交 CI 截至本次查询仍 queued，不记作通过，不触发重跑。
+
+
+### 8.6 剩余故障场景的增量实现（2026-10-30）
+
+用户要求继续补齐主责 runner 并协调 CI 接入；新的 Hosted、环境切换和模块／权限边界变化仍单独确认。CI 单一负责人继续编辑共享编排／登记，主责维护场景与控制。以下是实施范围，验证结果在实施后单独补记，不能据此视为已经运行通过。
+
+Graph 增加独立的运行中进程终止断言，复用现有原生夹具的主图目标（与原 lifecycle 的 review 图目标分离）、已有普通用户和固定 peer；不新增 Engine、产品权限或故障控制入口。在主实例暂停时，只将新任务交给固定 peer，看到准确材料已进入受控抽取且公共 execution 为 attempt 1 running 后，恢复主实例，再对该 peer 的固定 Docker ID 执行既有 kill/start 控制。等待真实 lease 过期，由监督器失败收口；核验未决 operation、closed admission、相同 execution/attempt、拒绝 rerun 及受控抽取只进入一次。随后释放远端抽取返回，重验终态不变与不重放。抽取器最大独立 barrier 从 3 个调整为 4 个，仍不允许同 key 重放。新增报告 running_crash 及必需 check running_process_crash_without_replay，须与 CI 消费断言同次协调；不把该证据标为原生写图回包丢失。
+
+最小门禁为既有 `GOMAXPROCS=4 GOFLAGS=-p=2 make test-graph-online-runner`，包含抽取器上限、准确 running 身份、失联失败／不重放、未知效果及退出恢复反例。仅修改 runner 时不重复产品 PG 或已有效的 Go 门禁；涉及共享编排的确定性门禁由 CI 负责人按实际差异执行。
+
+Cleanup 浏览器增量复用现有同权限 other User，不新增用户、角色权限或产品接口；身份夹具仅补导出该用户已有口令及准确角色分配 ID（全部私有）。完成原协议与 queued revokee 场景后，由 other User 通过正式 API 创建 11 条 Asset scan 历史，保证真实第二页和本人专业结果可读。两个独立浏览器上下文均通过 Console 登录，先读取真实分页，再分别通过“刷新历史”和“下一页”触发撤权后的读取。专业结果仅使用 route.fetch 获得的真实 200 原响应延迟交付，不构造响应或修改产品状态；测试控制进程通过准确 IAM 分配执行一次撤权，先观察真实 401 和旧内容清除，再释放原响应并核对不能恢复显示。IAM 凭据不得进入页面或产品 runtime；浏览器原始日志、截图／trace／失败附件留在临时私有目录，不归档。对请求用户、Tenant、12 项权限、准确角色分配、请求／子执行、真实分页、两种刷新路径和迟到响应分别给断言。
+
+此增量需要 Cleanup profile 的 Console/System frontend、Chromium 和三个私有环境输出 `ADDP_ONLINE_CLEANUP_OTHER_USERNAME`／`OTHER_PASSWORD`／`OTHER_ASSIGNMENT_ID`，复用已有 IAM 控制 token。外层必须消费 `cleanup-browser.json` 的精确身份及两个阶段通过报告，新增 check `browser_revocation_refresh_pagination_late_response`；不得将缺浏览器、缺报告或未执行记为跳过成功。这里只准备代码，不启动 Hosted。新增 Go 导出涉及共享夹具，使用既有 Graph runner 入口及 Quality runner 完整夹具包回归；CI 同步 JS 语法和报告反例登记。
+
+
+**原生效果场景的新增身份／目的边界（2026-10-30 用户已确认）。** 现有 Cleanup 临时角色严格只有 12 项清理及专业结果读取 Permission，不能创建真实 Manager 产物或 Transfer Capture／DLQ；现有 IAM 控制会话只用于撤销本轮准确角色分配，不能扩大为业务准备管理员。Transfer 普通手动 scan 没有 Engine 生命周期 context 时明确返回空候选（`transfer/backend/internal/service/cleanup_service.go:listCandidateTaskDefinitions`），所以往空 Tenant 填任务再执行普通 Cleanup 仍不能证明 Capture／DLQ 删除。Engine 生命周期部分必须从已确认的 System Engine 删除评估／确认链路进入，不能给普通 scan 新增隐藏 context，也不能 SQL 伪造执行状态；DLQ 删除入口的进一步核对见下文。
+
+已确认身份方案：在独立原生效果 case 中复用现有 Manager artifact 及 Transfer continuous 两组准确普通业务准备 Permission（以 `system/backend/cmd/online-test-fixture/main.go` 的 `managerArtifactPermissions`、`transferContinuousPermissions` 为唯一来源，各 10 项，身份彼此分离），沿已有真实扫描、产物生成／同步任务和显式源数据授权夹具创建自有数据；另建仅供本轮临时 Tenant 的 Engine 生命周期 User，只授予 `system.engine.create`／`system.engine.read`／`system.engine.delete`、`system.cleanup.read`、`manager.cleanup_result.read`、`transfer.cleanup_result.read` 共 6 项，不授 tenant.administrator，不改变现有 12 项 Cleanup 角色或默认角色。该 User 只可在 runner 的准确本轮 Engine ID 清单上执行 deletion-assessments／确认删除（含原确认 digest 和物理产物 delete 策略）；原生 Manager／Transfer 结果仍走已确认的本人专业结果窄权限方案，两项专业读取 Permission 与 Engine 删除操作 User 绑定，不能代读他人的私有结果。只处理 active Tenant 和本轮 Engine，历史 Tenant 不进入。
+
+请求发出但回包丢失由本轮专属连接故障控制实现，独立原生只读探针确认对象／索引／Capture／DLQ 的真实状态；没有真实发送和原生效果证据时必须失败，不能由客户端超时推定成功或 unknown 已成立。控制不增加产品测试端点，不修改公共 execution/lease，不扩现有场景预算。用户已确认上述临时窄身份及目的绑定，不再重复申请；这不授权新的 Hosted 或环境切换。Graph positive reopen 还需要单独完成 Provider 原物理身份的规范方案，不能把名称／端口／晚到本地回包当作证明，此处不申请变更。
+
+
+**原生场景入口复核及待确认的操作范围修订。** 已批准身份不等于 Engine 工作流会删除所有 Transfer 资源。正式 Cleanup 规范的 Transfer 节要求 Engine 生命周期保留、禁用用户任务，直接删除任务使用独立当前用户授权；`transfer/backend/internal/service/cleanup_service.go:executeCleanup` 明确以 `physical := mode == physical_cleanup && !engineDeletion` 区分，因此 Engine execute 保留 DLQ 与私有任务事实。`docs/spec/tasks/Transfer-Kafka与DLQ.md` 第 19 条规定用户直接删除任务才走 Capture／DLQ 与私有状态的删除入口。先前计划把 Engine 清理当作 DLQ 删除证明，覆盖范围判断有误，不能据此改产品删除语义或伪造历史 Tenant context。
+
+建议保留现行业务契约，将原生验收明确分为两个入口：
+
+1. Engine 生命周期 case 由已批准的六项权限 User 评估／确认本轮准确 Engine，验证 Manager 自有产物／索引清理和 Transfer 任务禁用、定义与 DLQ 保留；Capture 的准确代际清理由该工作流既有路径验证。CDC 先通过已有 pause 停止数据运行体并保留 capture，再检查停止证明，不能先调用会删除 capture 的 Stop 把测试对象清空。
+2. DLQ 删除及未知响应 case 由已批准的 Transfer 普通业务 User 使用其已有 `transfer.task.delete`，显式删除本轮自有任务；验证准确 DLQ topic、外部响应未知后保留任务与索引、不重发及新 producer 被隔离。该证据标明是 Transfer 直接删除入口，不能冒充 System Cleanup 父子闭环；不扩大六项 Engine User、不使用 IAM 管理员、不启用历史 Tenant。
+
+此修订改变原计划的删除触发入口与操作范围，依根 AGENTS.md 第 0 条待用户确认；相关原生 case 暂不接入冻结的两个 profile。Graph 运行中崩溃、Cleanup 浏览器及已冻结 CI 接入继续完成。Graph positive reopen 的 Provider 原物理身份方案仍是独立缺口。
+
+
+**本轮实际验证与提交边界。** 合并 CI 的 `577aca240` 后，`GOMAXPROCS=4 GOFLAGS=-p=2 make test-graph-online-runner` 实际退出 0，80 项场景测试、142 项接入／预检／报告消费测试及 GraphProtection 身份夹具 Go 测试通过；日志 `/tmp/addp-execution-runner-final-20261030.log`。共享身份夹具的完整包另由 `GOMAXPROCS=4 GOFLAGS=-p=2 make test-quality-online-runner` 验证，48 项 Python 及 Go 完整包通过，日志 `/tmp/addp-execution-fixture-incremental-20261030.log`，其后该 Go 输入未再改变。早先两次 Graph 入口遭遇共享接入中间态失败，保留原日志；最终未跳过用例、未放宽断言。JS 仅完成语法与 runner 报告契约验证，尚无真实浏览器执行结果。没有新的 Hosted、PG、容器故障运行或环境切换；原生未知效果及 positive reopen 仍未完成，不把本地 runner 测试当作运行验收。

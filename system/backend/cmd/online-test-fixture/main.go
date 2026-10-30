@@ -823,7 +823,7 @@ func run(args []string, environment []string) error {
 	}
 	if *suite == "cleanup-execution" {
 		values["ADDP_ONLINE_CLEANUP_ACCESS_TOKEN"] = consumerSession.AccessToken
-		other, _, _, fixtureErr := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+		other, otherAssignmentID, otherPassword, fixtureErr := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-cleanup-other", cleanupExecutionPermissions)
 		if fixtureErr != nil {
 			return fixtureErr
@@ -834,6 +834,9 @@ func run(args []string, environment []string) error {
 			return fixtureErr
 		}
 		values["ADDP_ONLINE_CLEANUP_OTHER_ACCESS_TOKEN"] = other.AccessToken
+		values["ADDP_ONLINE_CLEANUP_OTHER_USERNAME"] = "external-online-cleanup-other"
+		values["ADDP_ONLINE_CLEANUP_OTHER_PASSWORD"] = otherPassword
+		values["ADDP_ONLINE_CLEANUP_OTHER_ASSIGNMENT_ID"] = fmt.Sprintf("%d", otherAssignmentID)
 		values["ADDP_ONLINE_CLEANUP_READ_ACCESS_TOKEN"] = reader.AccessToken
 		revokee, assignmentID, _, fixtureErr := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-cleanup-revokee", cleanupExecutionPermissions)

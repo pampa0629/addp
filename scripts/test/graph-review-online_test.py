@@ -9,6 +9,7 @@ import re
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 REVIEW = importlib.import_module('scripts.test.graph-review-online')
@@ -242,6 +243,174 @@ class ExecutionRunnerContractTest(unittest.TestCase):
         self.assertEqual(calls.control('read', key), dict(entered=1, returned=1, released=True))
         with self.assertRaises(ValueError): calls.extract(key)
 
+    def test_lifecycle_barriers_allow_exactly_four_distinct_calls(self):
+        calls = EXTRACTOR.LifecycleCalls()
+        keys = [str(uuid.uuid4()) for _ in range(5)]
+        for key in keys[:4]: calls.control('arm', key)
+        with self.assertRaises(ValueError): calls.control('arm', keys[4])
+        for key in keys[:4]: calls.control('release', key)
+        with self.assertRaises(ValueError): calls.control('arm', keys[0])
+
+    def test_cleanup_browser_report_requires_both_real_phases_and_exact_identity(self):
+        binding = dict(run_id='run-1', tenant_id='7', principal_id='9', request_id=str(uuid.uuid4()), execution_id=str(uuid.uuid4()))
+        valid = CLEANUP.browser_expected(binding)
+        CLEANUP.validate_browser_report(valid, binding)
+        changes = [lambda x: x.update(principal_id='another'), lambda x: x.update(result='failed'),
+                   lambda x: x.update(execution_id=str(uuid.uuid4())), lambda x: x['phases'].pop(),
+                   lambda x: x['phases'][1].update(phase='refresh'),
+                   lambda x: x['phases'][0].update(late_result_rejected=False),
+                   lambda x: x['phases'][0].update(real_denial=1),
+                   lambda x: x.update(access_token='private')]
+        for change in changes:
+            candidate = copy.deepcopy(valid); change(candidate)
+            with self.assertRaises(CONTROLS.SuiteError): CLEANUP.validate_browser_report(candidate, binding)
+
+    def test_cleanup_browser_process_never_inherits_other_users_or_database_secrets(self):
+        environment = dict(PATH='/bin', HOME='/home/test', CONSOLE_URL='http://127.0.0.1:5170',
+                           GATEWAY_URL='http://127.0.0.1:8000', POSTGRES_PASSWORD='private-pg',
+                           ADDP_ONLINE_CLEANUP_OTHER_USERNAME='external-online-cleanup-other',
+                           ADDP_ONLINE_CLEANUP_OTHER_PASSWORD='private-user',
+                           ADDP_ONLINE_CLEANUP_IAM_ACCESS_TOKEN='private-controller',
+                           ADDP_ONLINE_CLEANUP_REVOKEE_ACCESS_TOKEN='private-other-token',
+                           ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='private-consumer')
+        with patch.dict(CLEANUP.os.environ, environment, clear=True):
+            result = CLEANUP.browser_environment('/private/input.json', '/private/report.json')
+        self.assertEqual(result['ADDP_CLEANUP_BROWSER_USERNAME'], 'external-online-cleanup-other')
+        self.assertEqual(result['ADDP_CLEANUP_BROWSER_IAM_TOKEN'], 'private-controller')
+        self.assertFalse(any(key.startswith('ADDP_ONLINE_CLEANUP_') for key in result))
+        self.assertNotIn('POSTGRES_PASSWORD', result)
+        self.assertNotIn('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN', result)
+
+    def test_cleanup_browser_javascript_has_valid_module_syntax(self):
+        source = CONTROLS.ROOT / 'console/frontend/e2e/online/cleanup-execution.spec.js'
+        result = CLEANUP.subprocess.run(['node', '--check', '--input-type=module'], input=source.read_text(),
+                                        capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_cleanup_browser_prepares_real_scans_and_publishes_only_valid_bound_report(self):
+        for failure in ('none', 'failed_history', 'missing_report', 'corrupt_report', 'process_failure'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                private, public = Path(directory) / 'private', Path(directory) / 'public'
+                private.mkdir(mode=0o700); public.mkdir()
+                report = dict(requests=[], checks=[])
+                rows = {}
+                class Client:
+                    def request(self, method, path, expected, body=None):
+                        if path.endswith('/auth/context'):
+                            value = dict(context=dict(tenant_membership_id='11'))
+                        elif path.endswith('/scan'):
+                            rid, eid, parent = body['request_id'], str(uuid.uuid4()), str(uuid.uuid4())
+                            receipt = dict(schema='addp.cleanup-receipt/v1', tenant_id=7, request_id=rid, execution_id=eid,
+                                           parent_execution_id=parent, module='asset', action='scan', attempt=1, status='success', summary={})
+                            row = dict(execution_id=eid, parent_execution_id=parent, module='asset', task_type='cleanup_executor',
+                                       execution_boundary='bounded', max_attempts=1, attempt=1, status='success', receipt=receipt)
+                            rows[rid] = dict(task_id=rid, task=dict(task_id=rid, execution_id=parent),
+                                             status='failed' if failure == 'failed_history' else 'success', module_executions=[row])
+                            value = dict(task_id=rid)
+                        elif '/tasks/' in path: value = rows[path.rsplit('/', 1)[-1]]
+                        elif '/cleanup-executions/' in path:
+                            row = next(x['module_executions'][0] for x in rows.values() if x['module_executions'][0]['execution_id'] == path.split('/')[-2])
+                            value = {k: v for k, v in row['receipt'].items() if k not in {'tenant_id', 'parent_execution_id'}}
+                            value.update(schema='addp.cleanup-professional-result/v1', statistics={})
+                        else: raise AssertionError(path)
+                        return CONTROLS.HTTP.Response(expected[0], value)
+                def launch(args, **kwargs):
+                    env = kwargs['env']
+                    binding = json.loads(Path(env['ADDP_CLEANUP_BROWSER_INPUT']).read_text())
+                    self.assertEqual(binding['principal_id'], '9')
+                    self.assertEqual(binding['assignment_id'], '17')
+                    self.assertEqual(len(rows), 11)
+                    self.assertEqual(set(binding['permissions']), CLEANUP.PERMISSIONS)
+                    if failure != 'missing_report':
+                        value = CLEANUP.browser_expected(binding)
+                        if failure == 'corrupt_report': value['phases'][1]['late_result_rejected'] = False
+                        Path(env['ADDP_CLEANUP_BROWSER_REPORT']).write_text(json.dumps(value))
+                    return SimpleNamespace(wait=lambda **kw: 1 if failure == 'process_failure' else 0, poll=lambda: 0)
+                environment = dict(ADDP_ONLINE_ARTIFACT_DIR=str(public), ADDP_ONLINE_CLEANUP_OTHER_ASSIGNMENT_ID='17',
+                                   ADDP_ONLINE_CLEANUP_OTHER_USERNAME='external-online-cleanup-other',
+                                   ADDP_ONLINE_CLEANUP_OTHER_PASSWORD='private', ADDP_ONLINE_CLEANUP_IAM_ACCESS_TOKEN='private')
+                with patch.dict(CLEANUP.os.environ, environment), patch.object(CONTROLS, 'user_identity', return_value='9'), \
+                     patch.object(CONTROLS, 'wait_for', side_effect=lambda read, *_a, **_kw: read()), \
+                     patch.object(CLEANUP.subprocess, 'Popen', side_effect=launch) as process:
+                    deployment = SimpleNamespace(secret=private, run_id='run-1')
+                    if failure == 'none':
+                        CLEANUP.run_browser_revocation(Client(), 7, deployment, report, lambda: None)
+                        self.assertEqual(report['result'], 'passed')
+                        self.assertEqual(json.loads((public / 'cleanup-browser.json').read_text()), report['browser'])
+                        self.assertEqual(report['checks'], ['browser_revocation_refresh_pagination_late_response'])
+                    else:
+                        with self.assertRaises(CONTROLS.SuiteError):
+                            CLEANUP.run_browser_revocation(Client(), 7, deployment, report, lambda: None)
+                        self.assertEqual(report['result'], 'failed')
+                        self.assertEqual(report['checks'], [])
+                        self.assertEqual(list(public.iterdir()), [])
+                    self.assertEqual(process.call_count, 0 if failure == 'failed_history' else 1)
+                    self.assertEqual(list(private.iterdir()), [])
+
+    def test_running_crash_requires_live_attempt_and_retains_unknown_effect(self):
+        for failure in ('none', 'terminal_before_kill', 'second_attempt', 'replayed', 'start_changed',
+                        'missing_operation', 'known_operation', 'open_admission', 'repeat_extraction', 'changed_terminal', 'wrong_conflict'):
+            eid = str(uuid.uuid4())
+            before = dict(execution_id=eid, status='running', attempt=1, started_at='start', completed_at=None)
+            terminal = dict(before, status='failed', completed_at='end')
+            if failure == 'second_attempt': before['attempt'] = 2
+            if failure == 'replayed': terminal['attempt'] = 2
+            if failure == 'start_changed': terminal['started_at'] = 'new-start'
+            class Deployment:
+                run_id = 'test'
+                killed = False
+                snapshots = 0
+                @contextmanager
+                def paused_owner(self, name):
+                    self_outer.assertEqual(name, 'graph-backend')
+                    yield
+                def execution(self, *args):
+                    self.snapshots += 1
+                    if self.killed:
+                        if failure == 'changed_terminal' and self.snapshots > 3:
+                            return dict(terminal, status='success')
+                        return terminal.copy()
+                    return dict(before, status='failed') if failure == 'terminal_before_kill' and self.snapshots == 2 else before.copy()
+                def crash_and_start_graph_peer(self): self.killed = True
+                def graph_operations(self, *args):
+                    if failure == 'missing_operation': return []
+                    return [dict(state='known' if failure == 'known_operation' else 'uncertain', id='op')]
+            class Faults:
+                released = False
+                reads = 0
+                def control(self, action, key):
+                    if action == 'release': self.released = True
+                    if action == 'read': self.reads += 1
+                    return dict(entered=2 if failure == 'repeat_extraction' and self.reads >= 3 else 1,
+                                returned=int(self.released), released=self.released)
+            class Client:
+                def request(self, method, path, status, body=None):
+                    if path.endswith('/graphs'): value = dict(id=8)
+                    elif path.endswith('/build/tasks'): value = dict(id=4)
+                    elif path.endswith('/run'): value = dict(execution_id=eid, status='pending')
+                    elif method == 'GET': value = dict(admission=dict(closed=failure != 'open_admission', has_unresolved_operations=True))
+                    elif path.endswith('/rerun'): value = dict(error_code='resource_version_conflict' if failure == 'wrong_conflict' else 'graph_admission_closed')
+                    else: raise AssertionError('unplanned mutation')
+                    return CONTROLS.HTTP.Response(status[0], value)
+            def wait(read, predicate, *args, **kwargs):
+                value = read()
+                if not predicate(value): raise CONTROLS.SuiteError('predicate failed')
+                return value
+            self_outer = self
+            deployment, report = Deployment(), dict(graph_id=7, checks=[])
+            with self.subTest(failure=failure), patch.object(EXECUTION.GRAPH, 'target_paths', return_value=[dict(catalog_path=dict(engine_id=13))]), \
+                 patch.object(EXECUTION.REVIEW, 'upload'), patch.object(CONTROLS, 'wait_for', side_effect=wait):
+                if failure == 'none':
+                    EXECUTION.run_running_crash(Client(), Client(), 7, 13, 1, deployment, Faults(), report, lambda: None)
+                    self.assertEqual(report['running_crash']['result'], 'passed')
+                    self.assertEqual(report['checks'], ['running_process_crash_without_replay'])
+                else:
+                    with self.assertRaises(CONTROLS.SuiteError):
+                        EXECUTION.run_running_crash(Client(), Client(), 7, 13, 1, deployment, Faults(), report, lambda: None)
+                    self.assertEqual(report['running_crash']['result'], 'failed')
+                    self.assertEqual(report['checks'], [])
+                self.assertEqual(deployment.killed, failure not in {'terminal_before_kill', 'second_attempt'})
+
     def test_public_response_rejects_nested_private_execution_facts(self):
         for key in ('lease_token', 'execution_config', 'raw_response', 'access_token', 'target_descriptor'):
             with self.subTest(key=key), self.assertRaises(CONTROLS.SuiteError):
@@ -278,7 +447,8 @@ class ExecutionRunnerContractTest(unittest.TestCase):
         deployment = object.__new__(CONTROLS.OwnedDeployment)
         deployment.paused = set()
         deployment.pins = {'graph-backend-peer': ('exact-id', 'image', 'old')}
-        before = dict(Id='exact-id', Image='image', State={'Running': True, 'StartedAt': 'old', 'Health': {'Status': 'healthy'}})
+        before = dict(Id='exact-id', Image='image', HostConfig={'RestartPolicy': {'Name': 'no'}},
+                      State={'Running': True, 'StartedAt': 'old', 'Health': {'Status': 'healthy'}})
         after = dict(Id='exact-id', Image='image', State={'Running': True, 'StartedAt': 'new', 'Health': {'Status': 'healthy'}})
         stopped = dict(Id='exact-id', Image='image', State={'Running': False, 'ExitCode': 137})
         with patch.object(deployment, 'inspect', side_effect=[before, after, after]), \
@@ -286,6 +456,11 @@ class ExecutionRunnerContractTest(unittest.TestCase):
             deployment.crash_and_start_graph_peer()
         self.assertEqual([c.args[0] for c in command.call_args_list], [
             ['docker', 'kill', '--signal=KILL', 'exact-id'], ['docker', 'inspect', 'exact-id'], ['docker', 'start', 'exact-id']])
+        for policy in ('always', 'unless-stopped', ''):
+            before['HostConfig']['RestartPolicy']['Name'] = policy
+            with patch.object(deployment, 'inspect', return_value=before), patch.object(deployment, 'command') as command:
+                with self.assertRaises(CONTROLS.SuiteError): deployment.crash_and_start_graph_peer()
+                command.assert_not_called()
 
     def test_cleanup_no_start_projection_does_not_fabricate_duration_or_receipt(self):
         pending = dict(status='pending', attempt=0, started_at=None, completed_at=None, execution_time_ms=None)

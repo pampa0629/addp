@@ -98,6 +98,71 @@ def assert_cancel(value, execution_id, attempt, running):
             'Graph cancellation confused request acceptance with runtime termination')
 
 
+def refused(client, path, code, body=None):
+    value = client.request('POST', path, (409,), body).payload
+    S.safe_public(value)
+    require(value.get('error_code') == code, 'Graph refusal has an unrelated cause')
+
+
+def run_running_crash(client, peer_client, tenant, engine_id, ontology_id, deployment, faults, report, checkpoint):
+    """A live build dies after entering an external call, on a separate owned graph."""
+    report['stage'] = 'running_crash_prepare'
+    target = GRAPH.target_paths(engine_id)[0]['catalog_path']
+    graph = client.request('POST', '/api/v1/graph/graphs', (201,), {
+        'name': 'Hosted running crash ' + deployment.run_id, 'ontology_id': ontology_id,
+        'engine_id': target['engine_id'], 'catalog_path': target, 'index_management': 'managed'}).payload
+    gid = S.positive(graph['id'])
+    require(gid != report['graph_id'], 'running crash reused the unresolved graph')
+    root = f'/api/v1/graph/graphs/{gid}'
+    task = client.request('POST', root + '/build/tasks', (201,), {'name': 'Hosted running crash'}).payload
+    path = root + f"/build/tasks/{S.positive(task['id'])}"
+    key = str(uuid.uuid4())
+    facts = report['running_crash'] = {'graph_id': gid, 'task_id': task['id'], 'result': 'failed'}
+    checkpoint()
+    faults.control('arm', key)
+    REVIEW.upload(client, path + '/materials', GRAPH, EXTRACTOR.LIFECYCLE_MATERIAL + key)
+    def snapshot():
+        return deployment.execution(tenant, facts['execution_id'], 'graph', 'kg_build')
+    with deployment.paused_owner('graph-backend'):
+        facts['execution_id'] = assert_enqueued(peer_client.request('POST', path + '/run', (202,)).payload)
+        checkpoint()
+        S.wait_for(lambda: faults.control('read', key), lambda x: x['entered'] == 1 and x['returned'] == 0,
+                   'running crash did not reach the external call')
+        before = snapshot()
+        require(before['status'] == 'running' and before['attempt'] == 1 and before['started_at']
+                and before['completed_at'] is None, 'crash target is not the first running attempt')
+    report['stage'] = 'running_process_crash'
+    # Recheck immediately before signalling: terminal-process restarts cannot
+    # stand in for killing a live attempt. The controlled call remains blocked.
+    current = snapshot()
+    require(all(current.get(k) == before.get(k) for k in ('execution_id', 'status', 'attempt', 'started_at', 'completed_at')),
+            'crash target changed before the process fault')
+    deployment.crash_and_start_graph_peer()
+    terminal = S.wait_for(snapshot, lambda x: x['status'] == 'failed',
+                          'crashed running build did not fail after real lease expiry', timeout=60)
+    require(terminal['execution_id'] == before['execution_id'] and terminal['attempt'] == 1
+            and terminal['started_at'] == before['started_at'] and terminal['completed_at'],
+            'crashed execution was replayed or lost its original start')
+    operations = deployment.graph_operations(tenant, gid, facts['execution_id'])
+    require(operations and any(x['state'] == 'uncertain' for x in operations),
+            'running crash erased unresolved external operations')
+    faults.control('release', key)
+    S.wait_for(lambda: faults.control('read', key), lambda x: x['returned'] == 1,
+               'crashed runtime external call did not finish in the fixture')
+    current = client.request('GET', root, (200,)).payload
+    S.safe_public(current)
+    require(current.get('admission', {}).get('closed') is True
+            and current['admission'].get('has_unresolved_operations') is True, 'crash lost persistent admission hold')
+    refused(client, path + '/rerun', 'graph_admission_closed')
+    require(faults.control('read', key)['entered'] == 1 and snapshot() == terminal
+            and deployment.graph_operations(tenant, gid, facts['execution_id']) == operations,
+            'crash recovery or remote return replayed work or erased holding evidence')
+    facts.update(result='passed', attempt=1, live_attempt_observed=True, no_replay=True,
+                 unresolved_hold=True, remote_return_terminal_unchanged=True)
+    report['checks'].append('running_process_crash_without_replay')
+    checkpoint()
+
+
 def run(client, primary_client, peer_client, reader, tenant, engine_id, deployment, report, checkpoint=lambda: None):
     principal = S.user_identity(client, tenant, PERMISSIONS)
     require(primary_client.token == peer_client.token == client.token, 'pinned Backends changed the request credential')
@@ -208,11 +273,12 @@ def run(client, primary_client, peer_client, reader, tenant, engine_id, deployme
             version = S.positive(current_graph['version'])
             for action in ('reconcile', 'reopen'):
                 reader.request('POST', root + '/' + action, (403,), {'version': version})
-                client.request('POST', root + '/' + action, (409,), {'version': version})
-            client.request('POST', paths[1] + '/rerun', (409,))
+                refused(client, root + '/' + action, 'graph_reconciliation_incomplete', {'version': version})
+            refused(client, paths[1] + '/rerun', 'graph_admission_closed')
             require(faults.control('read', keys[1])['entered'] == 1, 'unknown Graph effect replayed')
         report['checks'].extend(['real_expiry_without_replay', 'old_runtime_terminal_fenced',
                                  'unknown_reconcile_reopen_denied', 'unknown_hold_survives_process_crash'])
+        run_running_crash(client, peer_client, tenant, engine_id, ontology_id, deployment, faults, report, checkpoint)
         report['result'] = 'passed'
     except Exception as error:
         report.update(result='failed', failure_stage=report.get('stage'), error_type=type(error).__name__)

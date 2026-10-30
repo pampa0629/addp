@@ -22,7 +22,7 @@ class LifecycleCalls:
             raise ValueError('invalid fixture call')
         with self.lock:
             if action == 'arm':
-                if key in self.calls or len(self.calls) >= 3:
+                if key in self.calls or len(self.calls) >= 4:
                     raise ValueError('duplicate or excessive fixture barrier')
                 self.calls[key] = {'release': threading.Event(), 'entered': 0, 'returned': 0}
             elif action == 'release':

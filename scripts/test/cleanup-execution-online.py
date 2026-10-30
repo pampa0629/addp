@@ -9,7 +9,11 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
+import subprocess
 import sys
+import tempfile
+import time
 import uuid
 
 S = import_module('scripts.test.execution-online-support')
@@ -281,6 +285,91 @@ def run_revocation(user, controller, tenant, assignment_id, deployment, report, 
     checkpoint()
 
 
+def browser_expected(binding):
+    return {'schema_version': 'addp.cleanup-execution-browser/v1', 'result': 'passed',
+            **{k: binding[k] for k in ('run_id', 'tenant_id', 'principal_id', 'request_id', 'execution_id')},
+            'phases': [dict(phase=phase, real_pagination=True, result_read_before_revoke=True,
+                           real_denial=True, previous_view_cleared=True, late_result_rejected=True)
+                       for phase in ('refresh', 'pagination')]}
+
+
+def validate_browser_report(value, binding):
+    # Exact types matter: bool is not an integer count or identity.
+    require(json.dumps(value, sort_keys=True) == json.dumps(browser_expected(binding), sort_keys=True),
+            'Cleanup browser did not prove every bound revocation and late-response assertion')
+
+
+def browser_environment(binding_file, report_file):
+    # Only the dedicated browser identity and exact IAM controller may enter
+    # this private test process. Never inherit PG, other Users or runtime tokens.
+    env = {k: v for k, v in os.environ.items() if k in {
+        'PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'CI', 'PLAYWRIGHT_BROWSERS_PATH', 'XDG_CACHE_HOME',
+        'CONSOLE_URL', 'GATEWAY_URL', 'ADDP_ONLINE_HOSTED', 'ADDP_ONLINE_TEST'}}
+    env.update(ADDP_CLEANUP_BROWSER_INPUT=str(binding_file), ADDP_CLEANUP_BROWSER_REPORT=str(report_file),
+               ADDP_CLEANUP_BROWSER_USERNAME=os.environ['ADDP_ONLINE_CLEANUP_OTHER_USERNAME'],
+               ADDP_CLEANUP_BROWSER_PASSWORD=os.environ['ADDP_ONLINE_CLEANUP_OTHER_PASSWORD'],
+               ADDP_CLEANUP_BROWSER_IAM_TOKEN=os.environ['ADDP_ONLINE_CLEANUP_IAM_ACCESS_TOKEN'])
+    return env
+
+
+def run_browser_revocation(user, tenant, deployment, report, checkpoint):
+    report.update(stage='browser_history_prepare', result='failed')
+    principal = S.user_identity(user, tenant, PERMISSIONS)
+    context = user.request('GET', '/api/v1/system/auth/context', (200,)).payload
+    # The history view has a real fixed page size of ten. Prepare only eleven
+    # empty Asset assessments, in this disposable Tenant, through public APIs.
+    deadline = time.monotonic() + 120
+    for _ in range(11):
+        request_id = str(uuid.uuid4())
+        report['requests'].append(request_id)
+        checkpoint()
+        accepted(user, 'scan', {'request_id': request_id, 'scope': ['asset']})
+        remaining = int(deadline - time.monotonic())
+        require(remaining > 0, 'browser history preparation exceeded its total budget')
+        completed = S.wait_for(lambda: task(user, request_id), lambda x: x.get('status') in S.TERMINAL,
+                              'browser Asset assessment did not settle', timeout=remaining)
+        require(completed['status'] == 'success', 'browser history contains a failed assessment')
+        child, = children(completed, ['asset'])
+        value = user.request('GET', f"/api/v1/asset/cleanup-executions/{child['execution_id']}/result", (200,)).payload
+        assert_result(value, child, request_id, tenant)
+    assignment = os.environ['ADDP_ONLINE_CLEANUP_OTHER_ASSIGNMENT_ID']
+    require(bool(re.fullmatch(r'[1-9][0-9]*', assignment)), 'invalid browser role assignment')
+    binding = dict(run_id=deployment.run_id, tenant_id=str(tenant), principal_id=principal,
+                   membership_id=str(context['context']['tenant_membership_id']), request_id=request_id,
+                   execution_id=child['execution_id'], assignment_id=assignment, permissions=sorted(PERMISSIONS))
+    report['stage'] = 'browser_revocation_refresh_pagination'
+    checkpoint()
+    with tempfile.TemporaryDirectory(prefix='cleanup-browser-', dir=deployment.secret) as directory:
+        private = Path(directory)
+        input_file, output_file = private / 'input.json', private / 'report.json'
+        S.HOSTED.write_json(input_file, binding)
+        env = browser_environment(input_file, output_file)
+        with (private / 'output.log').open('w') as output:
+            process = subprocess.Popen(['npm', 'exec', '--', 'playwright', 'test',
+                       '--config=playwright.online.config.js', '--output=' + str(private / 'playwright'),
+                       'e2e/online/cleanup-execution.spec.js'], cwd=S.ROOT / 'console/frontend',
+                       env=env, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+            try:
+                require(process.wait(timeout=210) == 0, 'Cleanup browser process failed')
+            finally:
+                if process.poll() is None:
+                    os.killpg(process.pid, signal.SIGTERM)
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(process.pid, signal.SIGKILL)
+                        process.wait(timeout=5)
+        require(output_file.is_file() and not output_file.is_symlink() and output_file.stat().st_size < 16384,
+                'Cleanup browser report missing or invalid')
+        browser = json.loads(output_file.read_text())
+        validate_browser_report(browser, binding)
+    (Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']) / 'cleanup-browser.json').write_text(json.dumps(browser, indent=2) + '\n')
+    report['browser'] = browser
+    report['checks'].append('browser_revocation_refresh_pagination_late_response')
+    report['result'] = 'passed'
+    checkpoint()
+
+
 def main():
     report = {'result': 'failed', 'hosted_destruction': 'required'}
     deployment, exit_code = None, 1
@@ -297,6 +386,7 @@ def main():
                        S.local_client(gateway, os.environ['ADDP_ONLINE_CLEANUP_IAM_ACCESS_TOKEN']),
                        int(os.environ['ADDP_ONLINE_TEST_TENANT_ID']), os.environ['ADDP_ONLINE_CLEANUP_ASSIGNMENT_ID'],
                        deployment, report, checkpoint)
+        run_browser_revocation(clients[1], int(os.environ['ADDP_ONLINE_TEST_TENANT_ID']), deployment, report, checkpoint)
         exit_code = 0
     except Exception as error:
         report.update(result='failed', error_type=type(error).__name__)
