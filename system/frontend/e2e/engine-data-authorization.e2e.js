@@ -1102,14 +1102,21 @@ for (const change of ['permission', 'membership', 'failure']) test(`token rotati
   expect(writes).toEqual([])
 })
 test('authorization version change clears the selected snapshot', async ({ page }) => {
-  await fixture(page, { allowed: grantPermissions })
-  await page.goto('/engines/2?tab=data-authorization'); await selectData(page)
-  await page.evaluate(async () => {
-    const store = (await import('/src/store/auth.js')).useAuthStore()
+  const { writes } = await fixture(page, { allowed: grantPermissions })
+  await page.goto('/engines/2?tab=data-authorization')
+  await expect(page.getByTestId('authorization-workspace-toolbar')).toBeVisible()
+  // Resolve the existing store before selecting data. The version mutation is
+  // synchronous, and a real document navigation still invalidates this handle.
+  const store = await page.evaluateHandle(async () => (await import('/src/store/auth.js')).useAuthStore())
+  await selectData(page)
+  await store.evaluate(store => {
     store.authContext = { ...store.authContext, authorization: { ...store.authContext.authorization, authorization_version: '2' } }
   })
   await expect(page.getByTestId('approval-targets')).toHaveCount(0)
   await expect(page.getByTestId('source-grant-form')).toHaveCount(0)
+  expect(await store.evaluate(store => store.authContext.authorization.authorization_version)).toBe('2')
+  expect(writes).toEqual([])
+  await store.dispose()
 })
 test('rotation cancels an open grant confirmation without submitting or losing its draft', async ({ page }) => {
   const { writes } = await fixture(page, { allowed: grantPermissions, permit: 'allowed' })
