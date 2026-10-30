@@ -16,7 +16,19 @@
 - **查询生成**：用户输入自然语言，AI 按当前 Query Engine capability 生成 SQL、MQL、Cypher 等候选查询
 - **工作流生成**：用户描述需求，AI 生成 GIS 工作流 DAG
 - **领域上下文**：由功能页面提供受限、已验证的业务事实
-- **场景绑定**：按 Tenant 显式绑定 > 平台默认绑定解析 Model Profile
+- **场景绑定**：维护 Copilot 领域场景的 Model Profile 引用
+
+## 推理契约导航
+
+| 阅读目的 | 权威正文 |
+| --- | --- |
+| Copilot 场景归属、资源解析与领域生成的分工 | [Copilot 场景与领域职责](<../docs/spec/addp AI推理接口规范.md#copilot-场景与领域职责>) |
+| 场景绑定优先级、未配置错误与历史快照 | [场景绑定解析与历史快照](<../docs/spec/addp AI推理接口规范.md#场景绑定解析与历史快照>) |
+| 推理数据面的服务身份与 Tenant Context | [管理权限与数据面身份](<../docs/spec/addp AI推理接口规范.md#管理权限与数据面身份>)；Copilot 的身份见[多租户支持](#多租户支持) |
+| 调用方配置范围与上游凭据保护 | [本模块绑定表](docs/tables/inference_scenario_bindings表.md)、[调用方共同边界](<../docs/spec/addp AI推理接口规范.md#调用方与-inference-的共同边界>)、[凭据规则](<../docs/spec/addp AI推理接口规范.md#四凭据>) |
+| 授权、场景解析、凭据与真实厂商调用的验证 | [验证要求](<../docs/spec/addp AI推理接口规范.md#九验证要求>) |
+
+验证清单不代表已通过验收；实际结果按[测试与验收规范](../docs/spec/addp测试与验收规范.md)分层记录。受控上游测试不代替新代码部署后的真实厂商调用，未运行、失败和未覆盖项不计为通过。
 
 ## Standard 文档候选提炼契约
 
@@ -208,8 +220,8 @@ DEBUG=true
 
 ## 多租户支持
 
-- **推理场景绑定**：Copilot 只保存 Model Profile ID，不保存 Provider、endpoint、上游模型或 API Key
-- **配置优先级**：Tenant 显式场景绑定 > 平台默认场景绑定 > 明确未配置错误
+推理场景解析与配置边界见[推理契约导航](#推理契约导航)。本模块的调用身份：
+
 - **推理服务身份**：Copilot 使用 `addp-copilot` Client Credentials 获取 Tenant Service Access Token
 - **Develop 算子读取**：复用同一 `addp-copilot` Tenant Service Access Token，`tenant.copilot_runtime` 只额外持有 `develop.task.read`
 
