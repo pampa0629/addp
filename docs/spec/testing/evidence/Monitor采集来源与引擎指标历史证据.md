@@ -169,3 +169,11 @@ Safari 使用真实平台管理员，前台详情实际显示十二项专业指�
 - 完整 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-source` 首轮失败于测试按工作区统计来源时误纳入个人 Infra，已改为只核对本轮项目；第二轮失败于当次 `discovery.json` 的共享挂载 ENOENT，无法确认目标退出发现，未计通过。日志分别为 `/tmp/addp-business-pg-source-diagnostic-gate.log`、`/tmp/addp-business-pg-source-fixed-gate.log`。
 - `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-observation` 也在真实修改认证内容后的容器文件读取失败，后续版本保护拒绝覆盖，未计通过；日志 `/tmp/addp-business-pg-authentication-final.log`。本地两项 T2 的 Desktop 共享挂载缺口仍保留，不用 T1 或当前同内容读取代替。
 - 三轮专属测试项目的容器、网络、卷独立查询均为零，个人 Infra 来源未停止。摘要 `/tmp/addp-business-pg-atomic-diagnosis.json`。未自行重启个人数据库或启动采集服务；真实 Business mTLS 快照、自动发现及页面仍待用户标准入口应用后复验。CI／Hosted 等专门会话回传，不设置定时任务。
+
+### 用户标准启动后的 Business 实源接通
+
+用户在本人终端再次执行 `bash business/scripts/start.sh -postgres`，报告 `source deployed`。随后只读核验数据库仍为同一容器 `e2c3d4d1cc9f9e8b11a5b504b28e65a1ac27446464474fbc6fa2a493c0e3425c`，启动时刻 `2026-10-30T02:10:45.211369878Z`、原数据卷及只读认证目录保留，未再重建数据库。Business 独立来源两容器运行，唯一回环端口 `19110`；独立准入客户端 mTLS GET 返回 HTTP 200，固定 16 项原生样本齐全，采样时间距读取约 0.005 秒。总连接数 0、最大连接数 200、数据库容量约 78.33 GiB，累计回滚 1、死锁 0；这些是整体数据库指标，不读取业务表或将用量归算租户。无客户端证书的同地址请求返回 403；采集角色为 LOGIN、非超级用户、无角色成员关系，认证解析错误为零，原有业务认证基线字节保持一致。
+
+Business 部署发现 v2 自动变为 available，专业来源端点、当前数据库容器 ID／启动时刻与真实容器精确一致。Prometheus mTLS API 显示该目标 UP、抓取错误为空，自动沿原平台部署 `9e4fd2b0-3b45-473e-b070-cc6f92e40e11` 接入，没有重复创建部署；当前外部目标 8 个、加中心自身共 9 个，未增加目标预算。受限到该部署／容器身份的原始时序读取显示最近一分钟已有 4 个采样，提交／回滚／死锁累计量均可读。摘要为 `/tmp/addp-pg-business-runtime-receipt.json`，这只计个人环境来源及发现实链，不替代此前失败的 T2、当前 User 专业 API 页面或新的 Hosted。
+
+Safari 单独打开 Business 验证标签后内容区空白。进一步以禁用环境代理的直接本机 HTTP 核对：Monitor 后端 `/health/ready` 为 200，前端 `5179` 无监听、Console 模块代理为 500；`logs/monitor-frontend.log` 保存 Node `read EIO`／TTY 退出，因此尚未认定页面通过。已请用户通过 `bash scripts/dev/start.sh -monitor` 恢复缺失前端，已有服务复用；本会话未自行启动／重启个人服务，仍待页面复验。未运行新的 CI／Hosted 或设置定时。
