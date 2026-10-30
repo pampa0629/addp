@@ -85,7 +85,11 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 
 文档文件采用“新对象上传、数据库切换引用、旧对象补偿清理”的顺序。失效对象记录在 `standard.document_file_cleanups`，该表仅用于物理清理重试，不作为文档当前文件引用。
 
-文档上传大小和 MinIO 操作超时由部署配置 `STANDARD_DOCUMENT_MAX_FILE_SIZE`、`STANDARD_DOCUMENT_STORAGE_TIMEOUT` 控制。
+文件写入 MinIO 的 `standard` bucket，`file_key` 格式为 `tenant_{tenant_id}/documents/{id}/revisions/{revision_id}/{uuid}{extension}`，下载时按确定修订的 `file_key` 从 MinIO 读取流。
+
+上传要求 `standard.document.update`，以 multipart 提交 `file` 和当前文档并发 `version`，只允许替换草稿修订文件；修订 ID 与文档版本分别表达目标和写入并发条件。下载要求 `standard.document.read`，按同租户的文档与确定修订读取文件；浏览器原生资源票据沿[统一认证规范](../docs/spec/addp登录认证的统一要求.md#23-browser-resource-access-ticket)执行，不替代上传或普通业务 API 的认证。
+
+文档上传大小和 MinIO 操作超时由部署配置 `STANDARD_DOCUMENT_MAX_FILE_SIZE`、`STANDARD_DOCUMENT_STORAGE_TIMEOUT` 控制。路径见[标准文档 API 清单](#标准文档)，用例与未覆盖范围见[文档文件验证范围](#文档文件验证范围)。
 
 ## 目录结构
 
@@ -339,7 +343,7 @@ API 使用现有 `/measurement-categories`、`/units` 资源路径，Platform �
 | status | string | `draft` / `in_review` / `published` / `withdrawn` |
 | name / version_label | string | 本修订文档名 / 来源文档标注版次 |
 | publish_date / description | date? / text | 来源发布日期与说明 |
-| file_key / file_name / file_size | mixed | 本修订不可变文件快照；对象存储 bucket 为 `standard` |
+| file_key / file_name / file_size | mixed | 本修订文件快照，草稿可替换，发布后保留历史内容；对象存储 bucket 为 `standard` |
 | media_type / content_sha256 | string | 文件媒体类型与内容摘要 |
 | change_summary | text | 本次修订说明 |
 | effective_from / effective_to | timestamp? | 半开生效区间 `[from,to)` |
@@ -479,6 +483,8 @@ POST /api/v1/standard/document-extraction-candidates/:candidate_id/formalization
 GET/PUT /api/v1/standard/documents/:id/mappings # 多维关联（数据元/术语/指标）
 ```
 
+文件上传、确定修订下载及对象补偿沿[文档文件生命周期](#文档文件生命周期)，测试覆盖与隔离清理沿[文档文件验证范围](#文档文件验证范围)。
+
 ## 前端路由
 
 下列为 Console 公开路径清单；模块内路径、修订定位与页面状态保护见[前端公开路由](#前端公开路由)。
@@ -613,7 +619,7 @@ Standard 当前使用单一启动迁移入口 `repository.Migrate`：在同一�
 
 1. **新增资源**: `models` → `repository` → `service` → `handler` → `router.go` → `main.go`
 
-2. **文档上传**: 文件写入 MinIO 的 `standard` bucket，`file_key` 格式为 `tenant_{tenant_id}/documents/{id}/revisions/{revision_id}/{uuid}{extension}`，下载时按确定修订的 `file_key` 从 MinIO 读取流。
+2. **文档上传与下载**: 文件身份、存储路径、权限及替换补偿统一见[文档文件生命周期](#文档文件生命周期)，验证沿[标准测试入口与范围](#标准测试入口与范围)。
 
 3. **重启服务**:
    ```bash
@@ -673,7 +679,13 @@ Standard 当前使用单一启动迁移入口 `repository.Migrate`：在同一�
 
 Standard 浏览器门禁使用独立的 Vite 依赖缓存，测试模式关闭 HMR，测试端口由共享启动器按轮次分配，不占用或连接开发端口 5181。日常开发模式继续保留热更新；验证沿用[Standard 前端门禁](#标准测试入口与范围)。
 
-文档文件 T2 沿[PostgreSQL／MinIO 标准入口](#标准测试入口与范围)执行：复用 Infra 的 MinIO Dockerfile 构建独立临时实例，验证真实上传、替换、下载、草稿删除，以及发布后撤回仍可按历史修订下载。测试对自身对象执行清理并验证空前缀，数据库夹具随事务回滚且检查零残留；门禁在正常、失败及中断退出时仅销毁自己的 Compose 项目、临时卷与构建镜像，不操作现有 Infra / Business MinIO。
+#### 文档文件验证范围
+
+[存储服务单测](backend/internal/service/document_service_test.go)使用 SQLite 与受控对象存储验证草稿替换、文件大小拒绝及清理失败保留重试；不计为真实 MinIO 验收。
+
+文档文件 T2 沿[PostgreSQL／MinIO 标准入口](#标准测试入口与范围)执行，由[现有生命周期用例](backend/internal/service/document_service_integration_test.go)直接调用服务层：复用 Infra 的 MinIO Dockerfile 构建独立临时实例，验证真实上传、替换、下载、草稿删除，以及发布后撤回仍可按历史修订下载。测试对自身对象执行清理并验证空前缀，数据库夹具随事务回滚且检查零残留；门禁在正常、失败及中断退出时仅销毁自己的 Compose 项目、临时卷与构建镜像，不操作现有 Infra / Business MinIO。
+
+该 T2 核对服务层下载字节，不证明真实 HTTP 身份与 Permission、资源票据、multipart 请求、响应头、代理传输或浏览器下载。真实入口验收还须核对认证、当前权限、客户端响应完整性和中断结果；HTTP 成功状态不能代替这些断言。
 
 ## 业务域总览与五类标准接入
 
