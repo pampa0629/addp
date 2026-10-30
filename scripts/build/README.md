@@ -104,6 +104,16 @@ make select-image-services
 
 多架构构建需要 Docker Buildx 和可写 Registry。Model3D 当前每次只构建一个原生 Linux 平台；SuperMap 依赖私有 Linux ARM64 基础镜像，不能把全量 `--multi-arch` 当作所有 Runtime 已支持双架构的承诺。
 
+### Docker daemon 配置边界
+
+普通构建在镜像操作前执行 [build-images.sh](build-images.sh) 的 `check_docker_config`：任一 `~/.docker/daemon.json` 或 `/etc/docker/daemon.json` 存在即继续，不解析其内容，也不证明当前 daemon 已使用这些配置。两者均不存在时进入交互选择：
+
+- 选择自动配置：macOS 写入 `~/.docker/daemon.json` 并尝试退出、重开 Docker Desktop；Linux 要求当前进程为 root，写入 `/etc/docker/daemon.json`，再执行 daemon-reload 和 Docker 重启。函数按固定模板整体写文件，已有目标会先生成时间戳备份，不做字段合并或失败后的自动恢复。
+- 选择继续：不配置镜像源，直接进入后续构建准备。
+- 选择手工配置并退出，或输入非法选项：当前入口非零结束。自动配置函数失败却会被调用方打印后继续，不能把构建流程继续执行视为配置成功。
+
+自动配置会影响主机 Docker，须由操作者确认其运行范围；它与[独立 Registry 信任配置脚本](../registry/README.md#外部-registry-信任配置)的参数、文件分支和确认方式不同。`--verify` 跳过此 daemon 配置阶段，但仍执行 Registry 检查及基础镜像预热／推送；它只禁止产品镜像推送，不代表整个入口只读或不访问 Registry。
+
 ### 构建与 CI 边界
 
 前端基础镜像版本统一读取根 `.node-version`，通过 `NODE_VERSION` 构建参数传入。所有前端使用 `npm ci`，包含 Linux musl 平台包的锁文件是不可变构建输入。基础镜像预热完成后才调度产品镜像；每个任务保留独立日志，完成后统一输出，并在摘要中记录耗时与失败服务。任何一个任务失败均使整个构建失败；中断时终止并回收本次构建进程，清理临时日志，不停止开发服务或删除已有镜像和数据卷。
@@ -115,7 +125,7 @@ make select-image-services
 
 Platform CI 通过 `make select-image-services` 保留 System Backend、Agent Backend、Console 和 Nginx 四类构建基线，再自动追加本次改动影响的模块镜像。`common/`、`common-frontend/`、`common-python/` 按实际消费者扩散，`.dockerignore` 变更扩散到全部 Hosted Runner 可构建镜像。Model3D 统一 Linux 构建支持 amd64/arm64，Model3D 或其 common-python 依赖变化会进入 Hosted amd64 镜像验证。只有 SuperMap 私有 arm64 基础镜像不在 GitHub amd64 Runner 范围内。
 
-`--verify` 仍需要可访问的 Registry：基础镜像会预热并推送到所选 Registry，它只禁止推送产品镜像。普通构建可能检查 Docker daemon 配置；环境准备与 Registry 管理见 [Registry 指南](../registry/README.md)。镜像构建通过不代替真实服务、分布式 Worker 或产品发布验收。
+配置文件存在、daemon 重启或 Docker API 就绪均不能证明所选镜像实际构建与推送成功；镜像构建通过也不代替真实服务、分布式 Worker 或产品发布验收。
 
 ## build-supermap-workflow-base.sh
 
