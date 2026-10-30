@@ -4289,6 +4289,9 @@
                 },
                 "native_target": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "scope": {
+                    "$ref": "#/definitions/authorizationfacts.ScopeBoundary"
                 }
             }
         },
@@ -4320,6 +4323,20 @@
                 },
                 "target": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "authorizationfacts.ScopeBoundary": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string"
+                },
+                "root": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "rule_version": {
+                    "type": "integer"
                 }
             }
         },

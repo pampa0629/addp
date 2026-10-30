@@ -4296,6 +4296,9 @@ const docTemplate = `{
                 },
                 "native_target": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "scope": {
+                    "$ref": "#/definitions/authorizationfacts.ScopeBoundary"
                 }
             }
         },
@@ -4327,6 +4330,20 @@ const docTemplate = `{
                 },
                 "target": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
+                }
+            }
+        },
+        "authorizationfacts.ScopeBoundary": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string"
+                },
+                "root": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "rule_version": {
+                    "type": "integer"
                 }
             }
         },

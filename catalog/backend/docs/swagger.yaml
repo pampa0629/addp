@@ -77,6 +77,8 @@ definitions:
         type: string
       native_target:
         $ref: '#/definitions/plugin.EngineCatalogPath'
+      scope:
+        $ref: '#/definitions/authorizationfacts.ScopeBoundary'
     type: object
   authorizationfacts.FileCompositionBoundary:
     properties:
@@ -97,6 +99,15 @@ definitions:
         type: string
       target:
         $ref: '#/definitions/plugin.EngineCatalogPath'
+    type: object
+  authorizationfacts.ScopeBoundary:
+    properties:
+      format:
+        type: string
+      root:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+      rule_version:
+        type: integer
     type: object
   client.StandardCodeItemSnapshot:
     properties:

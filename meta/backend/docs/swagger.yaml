@@ -20,9 +20,12 @@ definitions:
         enum:
         - single
         - multi
+        - whole
         type: string
       native_target:
         $ref: '#/definitions/plugin.EngineCatalogPath'
+      scope:
+        $ref: '#/definitions/authorizationfacts.ScopeBoundary'
     type: object
   authorizationfacts.AuthorizationFacts:
     properties:
@@ -133,6 +136,15 @@ definitions:
         type: integer
       search:
         type: string
+    type: object
+  authorizationfacts.ScopeBoundary:
+    properties:
+      format:
+        type: string
+      root:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+      rule_version:
+        type: integer
     type: object
   cleanup.Result:
     properties:

@@ -3391,11 +3391,15 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "single",
-                        "multi"
+                        "multi",
+                        "whole"
                     ]
                 },
                 "native_target": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "scope": {
+                    "$ref": "#/definitions/authorizationfacts.ScopeBoundary"
                 }
             }
         },
@@ -3564,6 +3568,20 @@ const docTemplate = `{
                 },
                 "search": {
                     "type": "string"
+                }
+            }
+        },
+        "authorizationfacts.ScopeBoundary": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string"
+                },
+                "root": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "rule_version": {
+                    "type": "integer"
                 }
             }
         },
