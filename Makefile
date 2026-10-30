@@ -1426,11 +1426,11 @@ test-monitor-metrics: ## 隔离验证 Prometheus mTLS、真实采样、限额、
 
 .PHONY: test-manager-online-runner
 test-manager-online-runner: ## 验证 Manager 私有成果 Online 场景、物理夹具与 Hosted 生命周期
-	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 	@node --check --input-type=module < console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-kml-export.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-img.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/manager-orc.spec.js
+	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 	@python3 -m unittest scripts/test/manager-filegdb-online_test.py
 	@python3 -m unittest scripts/test/manager-orc-online_test.py
 	@python3 -m unittest scripts/test/manager-kml-export-online_test.py
