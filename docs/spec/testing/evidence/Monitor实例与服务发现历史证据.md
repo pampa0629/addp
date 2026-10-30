@@ -368,3 +368,20 @@ CI：`cgroup-source` 作为现有 Release 指标矩阵第五个真实分项，�
 本批沿既有Common Frontend、Monitor、Console、System时间控件及Online runner入口自动发现，无需新增Make或workflow；未运行后端、数据库或真实Safari正式登录验收，未重启个人服务、触发／轮询CI或Hosted、设置定时任务。CI与Hosted仍等专门会话回传。
 
 日志：`/tmp/addp-process-filters-{common-final,monitor-full,console-full,console-final,system-final,online-runner,visual-final}.log`；最终宽窄屏截图目录：`/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-service-filters-KLmUkP/`。旧失败为同前缀`browser.log`与`browser-final.log`。本节为本地受控页面T3及确定性回归证据，不外推真实数据链路、Linux CI或T4。
+
+## 服务趋势弹窗就近提示（2026-10-31）
+
+服务趋势弹窗复用共享 FieldHelp：进程启动范围放在时段控件旁；CPU／RSS含义、断点、缩放及不完整比较的启动边界放在对应指标标题旁。资源组整体口径及各项指标解释同样就近收起，证明改为中英文短状态并保留详细提示；原生未接入时不再同时铺开无证明长说明。共享提示支持悬停与键盘焦点，不复制另一套tooltip实现。缺样／无法计算、读取失败、样本不足、七天比较不可用的当前反馈仍直接可见，查询窗口、数值、硬上界和核验时间保留；资源含义、状态裁决、查询、权限、刷新与当前进程历史边界未改。
+
+沿原服务、趋势缩放、比较及原位刷新T3验证组合行为，补齐中英文已核验／未核验四种组合和原生未接入两种语言。实际聚焦／悬停后读取tooltip，核对正文不再常驻相同说明；保留核数、RSS、硬上界、无证明不可算利用率、图表缩放／图例／刷新及撤权清空断言。Console语言切换回归同步改为读取同一iframe里的实际提示，不再等待已移走的正文。
+
+本地实际验证与失败保留：
+
+- `npm --prefix monitor/frontend test`：131项T1通过，日志 `/tmp/addp-service-trend-tips-unit.log`。
+- `npm --prefix monitor/frontend run test:e2e -- process-resources.spec.js process-trend-zoom.spec.js process-comparison.spec.js resource-inplace-refresh.spec.js`：82项通过／2项失败（3.3分钟），日志 `/tmp/addp-service-trend-tips-browser.log`。两项同因：中英文旧范围断言仍在等待正文“曲线保留断点”。改为聚焦范围旁提示并核对实际内容，图表布局、范围／刷新／返回和375像素宽度检查不变；沿原入口 `--grep 'current process trends restore their scope'` 复验两项全部通过（11.8秒），日志 `/tmp/addp-service-trend-tips-scope.log`。原失败保留，不将初轮整批写成退出0；其他82项的产品及相关测试输入未变，复用有效结果。
+- `npm --prefix console/frontend run test:e2e -- process-resource-navigation.spec.js`：13项T3全部通过（1.2分钟），日志 `/tmp/addp-service-trend-tips-console.log`，包含同iframe内语言更新、实际提示、刷新、导航与筛选恢复。
+- `npm --prefix monitor/frontend run build`：退出0（4.90秒），日志 `/tmp/addp-service-trend-tips-build.log`；既有大chunk提示保留。差异格式检查通过。以上均使用仓库要求的Node24及现有标准测试入口。
+
+个人Safari第二个标签页沿真实Console打开当前Monitor进程，初始AuthContext无法确认后点击原“重试”恢复；无需重启。新版正文已直接生效，实际截图可见短状态“未接入资源组采集”、查询窗口、CPU曲线与标题旁问号；点击CPU问号实际显示核占用／非百分比／断点／缩放解释。该个人环境为原生macOS，不计容器限额或来源支持通过；当前页面提示自动刷新开启，但本轮只记布局及提示可见，不把一次截图计为新的刷新或Hosted验收。
+
+本批只改Monitor领域组合／中英文词条及相应Monitor／Console测试，未改共享组件、API、Swagger、后端、部署或IAM。现有Make前端门禁、浏览器目录自动发现和Monitor变更扩散至Console的路径登记已覆盖，无新入口、依赖或Workflow。局部标准T1／T3及Monitor构建是本次显示变更的最小充分验证，未重跑整套Monitor／Console聚合、未变的Go、来源T2或Online，不能记为本轮整套通过。CI和Hosted仍等专门会话回传，未自行查询、触发或重跑，也未设置定时任务、重启个人服务或修改账户／数据库／配置。

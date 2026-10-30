@@ -26,7 +26,18 @@ for (const locale of ['zh-cn', 'en']) test(`process CPU and RSS zoom independent
   await page.setViewportSize({ width: 620, height: 900 })
   await page.goto('/service-resources?instance_id=1&refresh=off')
   const cpu = await readyChart(page, 'cpu'), memory = await readyChart(page, 'memory')
-  await expect(page.getByTestId('process-zoom-hint')).toHaveText(Array(2).fill(locale === 'en' ? 'Drag the slider below the chart to focus on a time range.' : '拖动图下滑块，查看局部时间范围。'))
+  const dialog = page.getByTestId('process-trend')
+  const zoomHint = locale === 'en' ? 'Drag the slider below the chart to focus on a time range.' : '拖动图下滑块，查看局部时间范围。'
+  await expect(dialog).not.toContainText(zoomHint)
+  for (const metric of ['cpu', 'memory']) {
+    const help = page.getByTestId(`process-heading-${metric}`).getByRole('button')
+    await expect(help).toHaveAccessibleName(new RegExp(metric === 'cpu' ? locale === 'en' ? 'not a percentage' : '不是百分比' : 'RSS'))
+    await help.focus()
+    await expect(page.getByRole('tooltip')).toContainText(zoomHint)
+    await expect(page.getByRole('tooltip')).toContainText(locale === 'en' ? 'gaps' : '断点')
+    await help.blur()
+    await expect(page.getByRole('tooltip')).not.toBeVisible()
+  }
   const initial = [await resourceChartProps(page, cpu), await resourceChartProps(page, memory)]
   for (const props of initial) {
     expect(props.zoomable).toBe(true)

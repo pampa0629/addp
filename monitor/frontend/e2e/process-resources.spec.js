@@ -245,7 +245,10 @@ for (const locale of ['zh-cn', 'en']) test(`current process trends restore their
   await expect(dialog).toContainText('native-1')
   for (const metric of ['cpu', 'memory']) await expect(page.getByTestId(`process-trend-${metric}`).locator('canvas')).toBeVisible()
   await expectTrendChartLayout(page)
-  await expect(dialog).toContainText(locale === 'en' ? 'missing valid samples remain gaps' : '曲线保留断点')
+  const scopeHelp = dialog.getByRole('button', { name: locale === 'en' ? /CPU and memory since this process started/ : /只显示本次进程启动后/ })
+  await scopeHelp.focus()
+  await expect(page.getByRole('tooltip')).toContainText(locale === 'en' ? 'missing valid samples remain gaps' : '曲线保留断点')
+  await scopeHelp.blur()
   expect(state.trendCalls.at(-1)).toMatchObject({ instance_id: '1', start: '2026-10-09T23:55:00Z', end: '2026-10-10T00:00:00Z' })
   const range = dialog.locator('.el-select').first()
   await range.click()
@@ -881,8 +884,8 @@ test('name auto refresh retains the applied value and intersects host IP, endpoi
   expect(state.listCalls.at(-1)).not.toHaveProperty('node_name')
 })
 
-for (const [locale, verified] of [['zh-cn', true], ['en', false]]) {
-  test(`container values, bounds and local explanations stay separate from process RSS (${locale})`, async ({ page }, testInfo) => {
+for (const [locale, verified] of [['zh-cn', true], ['zh-cn', false], ['en', true], ['en', false]]) {
+  test(`container values, bounds and local explanations stay separate from process RSS (${locale}, verified=${verified})`, async ({ page }, testInfo) => {
     await backend(page, { locale, containerVerified: verified })
     await page.goto('/service-resources?instance_id=1&refresh=off')
     const section = page.getByTestId('container-resources')
@@ -892,24 +895,37 @@ for (const [locale, verified] of [['zh-cn', true], ['en', false]]) {
     if (verified) {
       await expect(section.getByTestId('container-cpuRatio')).toContainText('50.00')
       await expect(section.getByTestId('container-memoryRatio')).toContainText('128')
-      await expect(section.getByTestId('container-proof-state')).toContainText('已核验')
+      await expect(section.getByTestId('container-proof-state')).toHaveText(locale === 'en' ? 'Container identity and limits verified' : '容器身份与限额已核验')
     } else {
       await expect(section.getByTestId('container-cpuRatio')).toContainText('—')
-      await expect(section.getByTestId('container-missing').first()).toContainText('cannot be verified')
+      await expect(section.getByTestId('container-missing').first()).toContainText(locale === 'en' ? 'cannot be verified' : '尚不可核验')
     }
-    await expect(section).toContainText('RSS')
+    await expect(section).not.toContainText(locale === 'en' ? 'including helper processes' : '含容器内辅助进程')
+    const scopeHelp = section.getByRole('heading', { level: 3 }).getByRole('button')
+    await scopeHelp.hover()
+    await expect(page.getByRole('tooltip')).toContainText(locale === 'en' ? 'including helper processes' : '含容器内辅助进程')
+    const memoryHelp = section.getByTestId('container-memory').getByRole('button')
+    await memoryHelp.focus()
+    await expect(page.getByRole('tooltip').filter({ hasText: 'memory.current' })).toContainText('RSS')
+    await memoryHelp.blur()
+    await section.getByTestId('container-proof-state').getByRole('button').focus()
+    await expect(page.getByRole('tooltip').filter({ hasText: verified ? locale === 'en' ? 'guaranteed capacity' : '保证可用容量' : locale === 'en' ? 'No valid container proof' : '尚无有效容器证明' })).toBeVisible()
     await expect(section).not.toContainText('native-1')
     await page.screenshot({ path: testInfo.outputPath(`container-usage-${locale}.png`), fullPage: true })
   })
 }
 
-test('native instances explain unavailable cgroup sampling without four empty cards', async ({ page }) => {
-  await backend(page, { containerResponse: body => {
+for (const locale of ['zh-cn', 'en']) test(`native instances explain unavailable cgroup sampling without four empty cards (${locale})`, async ({ page }) => {
+  await backend(page, { locale, containerResponse: body => {
     body.observation.collection = { state: 'not_connected', sampled_at: null }
     for (const row of body.observation.series) Object.assign(row.points[0], { value: null, sampled_at: null, data_state: 'not_connected' })
   } })
   await page.goto('/service-resources?instance_id=1&refresh=off')
-  await expect(page.getByTestId('container-not-connected')).toContainText('原生 macOS')
+  const status = page.getByTestId('container-not-connected')
+  await expect(status).toHaveText(locale === 'en' ? 'Cgroup sampling not connected' : '未接入资源组采集')
+  await status.getByRole('button').focus()
+  await expect(page.getByRole('tooltip')).toContainText(locale === 'en' ? 'Native macOS' : '原生 macOS')
+  await expect(page.getByTestId('container-proof-state')).toHaveCount(0)
   await expect(page.getByTestId('container-cpu')).toHaveCount(0)
   await expect(page.getByTestId('process-trend-memory').locator('canvas')).toBeVisible()
 })

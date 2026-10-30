@@ -69,26 +69,19 @@
         <div v-loading="loading && !trend" :aria-busy="loading" data-testid="process-trend">
           <p v-if="selectedInstance" class="process-trend-subject">{{ selectedInstance.module_name }} · {{ t(processRoleLabelKey(selectedInstance)) }} · {{ selectedInstance.instance_id }}</p>
           <div class="process-toolbar">
-            <el-select :model-value="state.range" :aria-label="t('monitor.resources.range')" @update:model-value="range => selectTrend(state.instanceID, range)"><el-option v-for="(_, key) in resourceRanges" :key="key" :value="key" :label="t(`monitor.resources.ranges.${key}`)" /></el-select>
+            <div class="process-trend-range"><el-select :model-value="state.range" :aria-label="t('monitor.resources.range')" @update:model-value="range => selectTrend(state.instanceID, range)"><el-option v-for="(_, key) in resourceRanges" :key="key" :value="key" :label="t(`monitor.resources.ranges.${key}`)" /></el-select><FieldHelp :content="t('monitor.process.trend.scope')" /></div>
             <el-checkbox :model-value="state.compare" :disabled="!supportsProcessComparison(state.range)" data-testid="process-compare" @change="selectComparison">{{ t('monitor.resources.comparison.enable') }}</el-checkbox>
             <AutoRefreshControl :model-value="state.refresh" :status="refreshStatus" test-id="process-trend-refresh" @update:model-value="selectRefresh" />
             <el-button :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
           </div>
           <p v-if="state.range === '7d'" class="process-hint" data-testid="process-compare-retention">{{ t('monitor.resources.comparison.retention') }}</p>
-          <p class="process-hint">{{ t('monitor.process.trend.scope') }}</p>
           <ContainerResources :value="container" :error-key="containerErrorKey" />
           <el-alert v-if="trendErrorKey" :title="t(trendErrorKey)" type="warning" :closable="false" data-testid="process-trend-error" />
           <template v-if="trend">
             <p class="process-hint">{{ t('monitor.resources.window', { start: date(comparisons?.[processMetrics[0].key]?.current.start || trend.start), end: date(trend.end), step: trend.step_seconds }) }}</p>
-            <p class="process-hint">{{ t('monitor.resources.gaps') }}</p>
             <section v-for="chart in trendCharts" :key="chart.metric.key">
-              <h3>{{ t(`monitor.process.metrics.${chart.metric.name}`) }}</h3>
-              <p class="process-hint">{{ t(`monitor.process.hints.${chart.metric.name}`) }}</p>
-              <ResourcePeriodComparison v-if="chart.comparison" :comparison="chart.comparison" :title="t(`monitor.process.comparison.${chart.metric.name}`)" :format-value="numeric => comparisonValue(numeric, chart.metric)" :change="comparisonChange(chart.comparison, chart.metric)" :prefix="`process-compare-${chart.metric.name}`" :test-id="`process-comparison-${chart.metric.name}`">
-                <p v-if="chart.metric.windowSeconds" class="process-hint">{{ t('monitor.process.comparison.cpuWindow') }}</p>
-                <p v-if="!chart.comparison.complete" class="process-hint">{{ t('monitor.process.comparison.launch') }}</p>
-              </ResourcePeriodComparison>
-              <p class="process-hint" data-testid="process-zoom-hint">{{ t('monitor.process.trend.zoomHint') }}</p>
+              <h3 class="process-metric-heading" :data-testid="`process-heading-${chart.metric.name}`"><span>{{ t(`monitor.process.metrics.${chart.metric.name}`) }}</span><FieldHelp :content="trendHelp(chart)" /></h3>
+              <ResourcePeriodComparison v-if="chart.comparison" :comparison="chart.comparison" :title="t(`monitor.process.comparison.${chart.metric.name}`)" :format-value="numeric => comparisonValue(numeric, chart.metric)" :change="comparisonChange(chart.comparison, chart.metric)" :prefix="`process-compare-${chart.metric.name}`" :test-id="`process-comparison-${chart.metric.name}`" />
               <div class="process-trend-chart" role="img" :aria-label="t(`monitor.process.metrics.${chart.metric.name}`)" :data-testid="`process-trend-${chart.metric.name}`"><ChartRenderer :rows="chart.rows" :config="chart.config" zoomable :initial-zoom="trendZoom[chart.metric.key] || null" @zoom-change="trendZoom[chart.metric.key] = $event" @invalid="invalidTrend" /></div>
             </section>
           </template>
@@ -154,6 +147,9 @@ const trendCharts = computed(() => !trend.value ? [] : processMetrics.slice(0, 2
   return { metric, comparison, rows: resourceChartRows({ points }).map(row => ({ ...row, value: row.value === null ? null : row.value / (scale?.divisor || 1) })), config: { chart_type: 'line', dimension: 'evaluated_at', measures: ['value'], field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, { field: 'value', label: t(`monitor.process.metrics.${metric.name}`), unit: scale?.unit || t('monitor.resources.units.cores'), precision: 2 }] } }
 }))
 function invalidTrend() { trend.value = null; comparisons.value = null; trendErrorKey.value = 'monitor.resources.errors.invalidResponse' }
+function trendHelp(chart) {
+  return [t(`monitor.process.hints.${chart.metric.name}`), chart.metric.windowSeconds ? t('monitor.process.comparison.cpuWindow') : '', t('monitor.resources.gaps'), t('monitor.process.trend.zoomHint'), chart.comparison && !chart.comparison.complete ? t('monitor.process.comparison.launch') : ''].filter(Boolean).join(' ')
+}
 const moduleName = ref(''), registeredHost = ref(''), nodeName = ref(''), nodeIP = ref(''), role = ref(''), status = ref('up'), declared = ref('true'), requests = createLatestRequestScope()
 const point = (row, metric) => summaries.value.get(row.id)?.series.find(item => item.metric_key === metric.key)?.points[0]
 function value(row, metric) {
@@ -333,5 +329,8 @@ onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dis
 @media (max-width: 600px) { .process-toolbar h2 { flex-basis: 100%; } .process-filters > .runtime-instance-time-filter { width: 100%; } }
 .el-pagination { margin-top: 16px; }
 .process-trend-chart { display: flex; min-width: 0; }
+.process-trend-range, .process-metric-heading { display: flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; }
+.process-trend-range { flex: 1 1 200px; }
+.process-metric-heading { overflow-wrap: anywhere; }
 .process-trend-subject { overflow-wrap: anywhere; color: var(--addp-text-primary); }
 </style>

@@ -1426,6 +1426,11 @@
     },
     "container": {
       "title": "Container and cgroup usage",
+      "proofStatus": {
+        "verified": "Container identity and limits verified",
+        "unverified": "Container proof unverified"
+      },
+      "notConnectedStatus": "Cgroup sampling not connected",
       "scope": "Usage covers the whole cgroup, including helper processes. It differs from the individual process CPU and RSS.",
       "verified": "Container identity and the complete limit hierarchy are verified. Hard upper bounds are not exclusive or guaranteed capacity.",
       "unverified": "No valid container proof. Only absolute usage of this process cgroup is shown. Native macOS and sources without cgroup sampling have no cgroup data.",

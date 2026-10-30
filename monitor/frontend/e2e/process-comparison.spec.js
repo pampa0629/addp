@@ -27,7 +27,9 @@ for (const locale of ['zh-cn', 'en']) test(`process comparison shows local means
   await expect(page.getByTestId('process-compare-memory-change')).toHaveText(locale === 'en' ? 'Down 1.00 GiB from the previous period' : '较上期减少 1.00 GiB')
   await expect(page.getByTestId('process-compare-memory-current').locator('strong')).toHaveText('1.00 GiB')
   await expect(cpu).toContainText(locale === 'en' ? 'Valid evaluation points: 20 / 20' : '有效评估点：20 / 20')
-  await expect(cpu).toContainText(locale === 'en' ? 'not a percentage' : '不是百分比')
+  const cpuHelp = page.getByTestId('process-heading-cpu').getByRole('button')
+  await cpuHelp.hover()
+  await expect(page.getByRole('tooltip')).toContainText(locale === 'en' ? 'not a percentage' : '不是百分比')
   expect(state.trendCalls).toEqual([{ instance_id: '1', start: '2026-10-09T23:50:00Z', end: '2026-10-10T00:00:00Z' }])
   expect(state.listCalls[0]).not.toHaveProperty('compare')
   for (const metric of ['cpu', 'memory']) {
@@ -124,7 +126,7 @@ test('launch-clipped history shows expected missing coverage and no partial-wind
   for (const metric of ['cpu', 'memory']) {
     await expect(page.getByTestId(`process-compare-${metric}-incomplete`)).toContainText('样本不足')
     await expect(page.getByTestId(`process-compare-${metric}-previous`)).toContainText('0 / 20')
-    await expect(page.getByTestId(`process-comparison-${metric}`)).toContainText('本次进程启动后')
+    await expect(page.getByTestId(`process-heading-${metric}`).getByRole('button')).toHaveAccessibleName(/本次进程启动后/)
   }
   await expect(chartFor(page, 'cpu').locator('canvas')).toBeVisible()
 })
