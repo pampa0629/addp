@@ -20,7 +20,12 @@ DIAGNOSTIC_CASE = 'operator-input-diagnostics'
 DIAGNOSTIC_SOURCES = ('diagnostic-line.gpkg','diagnostic-reference.gpkg','diagnostic-crs.gpkg','diagnostic-conflict.gpkg')
 DIAGNOSTIC_TITLE = '算子参数诊断独立普通User双语失败页'
 DIAGNOSTIC_SCHEMA = 'addp.operator-input-diagnostics'
-INDEPENDENT_CASES = (DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
+PROXIMITY_CASE = 'line-proximity'
+PROXIMITY_SOURCES = ('proximity-source.gpkg','proximity-reference.gpkg')
+PROXIMITY_TARGET = 'proximity-points.gpkg'
+PROXIMITY_SCHEMA = 'addp.line-proximity'
+PROXIMITY_TITLE = '近接检查独立普通User双源Point成果'
+INDEPENDENT_CASES = (PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
 
 NORMALIZE_CASE = 'line-network-normalize'
 NORMALIZE_SOURCE = 'normalize-input.gpkg'
@@ -34,6 +39,8 @@ COMPOSITION_TARGETS = ('chains.gpkg','chain-edges.gpkg','edge-sources.gpkg')
 
 
 def network_profile(case):
+    if case==PROXIMITY_CASE:
+        return {'ports':('result',),'targets':(PROXIMITY_TARGET,),'schema':PROXIMITY_SCHEMA,'title':PROXIMITY_TITLE}
     if case==DIAGNOSTIC_CASE:
         return {'schema':DIAGNOSTIC_SCHEMA,'title':DIAGNOSTIC_TITLE,'ports':(),'targets':()}
     if case==BUFFER_CASE:
@@ -46,6 +53,107 @@ def network_profile(case):
         return {'source':COMPOSITION_SOURCE,'ports':COMPOSITION_PORTS,'targets':COMPOSITION_TARGETS,
                 'schema':'addp.topology-normalize-chains','title':'重合规整链路合并独立普通User三成果与字段拒绝'}
     raise FixtureError('unknown network case')
+
+
+def proximity_features(kind):
+    """Handwritten coordinates and expected rows; never calls the production algorithm."""
+    if kind=='source':
+        return [{'properties':{'route_key':2**40+key,'note':'source-'+str(i)},'geometry':{'type':'LineString','coordinates':points}}
+                for i,(key,points) in enumerate([(9,[[0,0],[0,10]]),(7,[[20,0],[20,10]]),
+                    (3,[[40,20],[40,30]]),(5,[[60,0],[60,10]]),(1,[[60,10],[60,0]])])]
+    if kind=='reference':
+        lines=[('z-east','LineString',[[.5,-1],[.5,1]]),('a-west','LineString',[[-.5,-1],[-.5,1]]),
+            ('m-parts','MultiLineString',[[[.25,-1],[.25,1]],[[-.25,1],[-.25,-1]],[[.25,1],[.25,-1]]]),
+            ('b-east-copy','LineString',[[.5,1],[.5,-1]]),('touch','LineString',[[19,0],[21,0]]),
+            ('near-touch','LineString',[[20.5,-1],[20.5,1]]),('boundary','LineString',[[41,19],[41,21]]),
+            ('micro','LineString',[[40+2**-20,19],[40+2**-20,21]]),('shared','LineString',[[60.5,-1],[60.5,1]])]
+        return [{'properties':{'ref_key':key,'note':'reference-'+str(i)},'geometry':{'type':shape,'coordinates':points}}
+                for i,(key,shape,points) in enumerate(lines)]
+    if kind!='result':raise FixtureError('unknown proximity table')
+    return [{'properties':{'source_id':2**40+key,'reference_id':ref,'distance':float(distance),'nearest_x':float(nx),'nearest_y':float(ny)},
+             'geometry':{'type':'Point','coordinates':point}}
+            for key,ref,distance,nx,ny,point in [
+                (9,'z-east',.5,.5,0,[0,0]),(9,'a-west',.5,-.5,0,[0,0]),(9,'m-parts',.25,-.25,0,[0,0]),
+                (9,'b-east-copy',.5,.5,0,[0,0]),(3,'micro',2**-20,40+2**-20,20,[40,20]),
+                (5,'shared',.5,60.5,0,[60,0]),(1,'shared',.5,60.5,0,[60,0])]]
+
+
+def proximity_field_types(kind):
+    from osgeo import ogr
+    return ({'route_key':ogr.OFTInteger64,'note':ogr.OFTString} if kind=='source' else
+            {'ref_key':ogr.OFTString,'note':ogr.OFTString} if kind=='reference' else
+            {'source_id':ogr.OFTInteger64,'reference_id':ogr.OFTString,'distance':ogr.OFTReal,'nearest_x':ogr.OFTReal,'nearest_y':ogr.OFTReal})
+
+
+def seed_proximity(path,kind):
+    from osgeo import ogr,osr
+    crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
+    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
+    layer=ds.CreateLayer(path.stem,crs,ogr.wkbUnknown,options=['GEOMETRY_NAME='+('source_shape' if kind=='source' else 'reference_shape')])
+    for name,native in proximity_field_types(kind).items():
+        if layer.CreateField(ogr.FieldDefn(name,native))!=0:raise FixtureError('cannot seed proximity field')
+    for row in proximity_features(kind):
+        item=ogr.Feature(layer.GetLayerDefn())
+        for key,value in row['properties'].items():item.SetField(key,value)
+        item.SetGeometry(ogr.CreateGeometryFromJson(json.dumps(row['geometry'])))
+        if layer.CreateFeature(item)!=0:raise FixtureError('cannot seed proximity source')
+        item=None
+    layer=None;ds=None
+
+
+def proximity_geometry(geometry):
+    if geometry is None or geometry.GetCoordinateDimension()!=2 or geometry.IsMeasured() or not geometry.IsValid():
+        raise FixtureError('proximity geometry must be valid finite XY')
+    name=geometry.GetGeometryName()
+    if name=='POINT':value={'type':'Point','coordinates':list(geometry.GetPoint_2D())}
+    elif name=='LINESTRING':value={'type':'LineString','coordinates':[list(point) for point in geometry.GetPoints()]}
+    elif name=='MULTILINESTRING':value={'type':'MultiLineString','coordinates':[
+        [list(point) for point in geometry.GetGeometryRef(i).GetPoints()] for i in range(geometry.GetGeometryCount())]}
+    else:raise FixtureError('unexpected proximity geometry type')
+    return value
+
+
+def validate_proximity_features(rows,kind='result'):
+    expected=proximity_features(kind)
+    if rows!=expected or any(type(row['properties'][key]) is not type(ref['properties'][key])
+        for row,ref in zip(rows,expected) for key in ref['properties']):
+        raise FixtureError('proximity exact coordinates IDs values types or row order differ')
+
+
+def verify_proximity(path,kind):
+    from osgeo import ogr,osr
+    ds=ogr.Open(str(path),0)
+    if ds is None or ds.GetLayerCount()!=1:raise FixtureError('proximity requires one physical layer')
+    layer=ds.GetLayer(0);crs=osr.SpatialReference();crs.ImportFromEPSG(3857);schema=layer.GetLayerDefn()
+    if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs):raise FixtureError('proximity CRS differs')
+    types=proximity_field_types(kind)
+    if [schema.GetFieldDefn(i).GetName() for i in range(schema.GetFieldCount())]!=list(types):raise FixtureError('proximity fields differ')
+    if any(schema.GetFieldDefn(schema.GetFieldIndex(name)).GetType()!=native or schema.GetFieldDefn(schema.GetFieldIndex(name)).GetSubType()!=ogr.OFSTNone for name,native in types.items()):raise FixtureError('proximity physical field types differ')
+    rows=[]
+    for i,item in enumerate(layer,1):
+        if item.GetFID()!=i:raise FixtureError('proximity physical FID order differs')
+        rows.append({'properties':item.items(),'geometry':proximity_geometry(item.GetGeometryRef())})
+    validate_proximity_features(rows,kind)
+    if kind=='result' and layer.GetGeomType()!=ogr.wkbPoint:raise FixtureError('proximity result must declare Point')
+    geometry=layer.GetGeometryColumn()
+    if not geometry or (kind!='result' and geometry!=('source_shape' if kind=='source' else 'reference_shape')):raise FixtureError('proximity geometry column differs')
+    result={**digest(path),'feature_count':len(rows),'layer_name':layer.GetName(),'geometry_column':geometry,'fid_column':layer.GetFIDColumn(),
+            'source_crs':'EPSG:3857','features':rows,'field_types':{name:ogr.GetFieldTypeName(native) for name,native in types.items()}}
+    ds=None
+    return result
+
+
+def proximity_worker(action,root):
+    if action=='seed':
+        if any((root/name).exists() for name in PROXIMITY_SOURCES) or list((root/'outputs').iterdir()):raise FixtureError('refusing existing proximity data')
+        for name,kind in zip(PROXIMITY_SOURCES,('source','reference')):seed_proximity(root/name,kind)
+        return {'sources':{name:digest(root/name) for name in PROXIMITY_SOURCES}}
+    if action!='verify':raise FixtureError('unknown proximity action')
+    if sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',*PROXIMITY_SOURCES]) or [p.name for p in (root/'outputs').iterdir()]!=[PROXIMITY_TARGET]:
+        raise FixtureError('proximity requires exactly two sources and one output')
+    tables={name:verify_proximity(root/name,kind) for name,kind in zip(PROXIMITY_SOURCES,('source','reference'))}
+    return {'sources':{name:digest(root/name) for name in PROXIMITY_SOURCES},'source_tables':tables,
+            'targets':{PROXIMITY_TARGET:verify_proximity(root/'outputs'/PROXIMITY_TARGET,'result')},'exact_inventory_verified':True}
 
 
 def diagnostic_worker(action, root):
@@ -212,6 +320,7 @@ def composition_expected_features(port):
 
 
 def network_features(case,kind):
+    if case==PROXIMITY_CASE:return proximity_features(kind)
     if case==BUFFER_CASE:return buffer_features(kind)
     if case==COMPOSITION_CASE:
         return composition_source_features() if kind=='source' else composition_expected_features(kind)
@@ -1265,6 +1374,7 @@ def validate_features(name, features):
 
 def worker(action, root, case=None):
     case=topology_case() if case is None else topology_case({"ADDP_ONLINE_TOPOLOGY_CASE":case})
+    if case==PROXIMITY_CASE:return proximity_worker(action,root)
     if case==DIAGNOSTIC_CASE:return diagnostic_worker(action,root)
     if case==BUFFER_CASE:return buffer_worker(action,root)
     if case in (NORMALIZE_CASE,COMPOSITION_CASE):return normalize_worker(action,root,case)
@@ -1372,7 +1482,7 @@ def runtime_worker(action, root):
 def archive_physical_evidence(root, directory, result, case=None):
     """Retain only this synthetic fixture's verified bytes for offline audit."""
     case=topology_case() if case is None else topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':case})
-    sources,targets=(DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
+    sources,targets=(PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
     archive = directory / 'topology-physical'
     if archive.is_symlink() or (archive/'outputs').is_symlink():
         raise FixtureError('physical archive must not follow symlinks')

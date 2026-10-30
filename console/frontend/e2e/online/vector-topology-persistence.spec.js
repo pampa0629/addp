@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { observeLineageCanvas, lineageCanvasSnapshot } from '../../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { decodePreviewEWKB } from '../../../../manager/frontend/e2e/geometry-preview-support.js'
@@ -587,4 +588,135 @@ test('算子参数诊断独立普通User双语失败页',async({page})=>{
   expect(publicationRequests).toEqual([])
   writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,'topology-browser.json'),JSON.stringify({
     ...evidence,schema_version:'addp.operator-input-diagnostics-browser/v1',result:'passed',observations},null,2)+'\n')
+})
+
+function proximityPointExpectation(features) {
+  return features.map(row=>JSON.stringify({type:'Point',properties:row.properties,coordinates:webMercatorPreviewCoordinate(row.geometry.coordinates)})).sort()
+}
+
+async function assertProximityPointMap(renderer,expected) {
+  const fields=Object.keys(expected[0].properties)
+  let observed
+  await expect.poll(async()=>{
+    observed=await renderer.evaluate((element,fields)=>{
+      const ref=element.__vueParentComponent?.setupState?.mapInstance,map=ref?.value||ref
+      if(!map||map.getView().getAnimating())return null
+      return {projection:map.getView().getProjection().getCode(),features:map.getLayers().getArray().flatMap(layer=>layer.getSource?.()?.getFeatures?.()||[])
+        .map(feature=>({type:feature.getGeometry().getType(),coordinates:feature.getGeometry().getCoordinates(),properties:Object.fromEntries(fields.map(field=>[field,feature.get(field)]))}))}
+    },fields)
+    if(!observed||observed.projection!=='EPSG:3857'||observed.features.some(feature=>feature.type!=='Point'))return []
+    return observed.features.map(({type,properties,coordinates})=>JSON.stringify({type,properties,coordinates})).sort()
+  }).toEqual(proximityPointExpectation(expected))
+  expect(observed.features).toHaveLength(7)
+  expect(new Set(observed.features.map(feature=>JSON.stringify(feature.coordinates))).size).toBe(3)
+  let greenPixels=0
+  await expect.poll(async()=>greenPixels=await renderer.locator('canvas').evaluateAll(canvases=>canvases.reduce((n,canvas)=>{
+    const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data
+    for(let i=0;i<pixels.length;i+=4)if(pixels[i+3]>0&&pixels[i+1]>pixels[i]*1.1&&pixels[i+1]>pixels[i+2]*1.1)n++
+    return n
+  },0))).toBeGreaterThan(30)
+  return {...observed,green_pixels:greenPixels}
+}
+
+function assertProximityLineage(graph,evidence) {
+  expect(graph.truncated).toBe(false)
+  const edges=graph.edges.filter(edge=>edge.relation_kind==='derive'&&edge.status==='active'&&edge.evidence?.execution_id===evidence.execution_id)
+  expect(edges).toHaveLength(2)
+  expect(edges.map(edge=>[edge.source.item_id,edge.target.item_id]).sort((a,b)=>a[0]-b[0]))
+    .toEqual(evidence.sources.map(source=>[source.id,evidence.output.item_id]).sort((a,b)=>a[0]-b[0]))
+}
+
+function persistProximityEvidence(directory,raw,stage,result='incomplete') {
+  writeFileSync(resolve(directory,'topology-proximity-browser-raw.json'),JSON.stringify({...raw,stage,result},null,2)+'\n')
+}
+
+test('近接检查独立普通User双源Point成果',async({page})=>{
+  const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}')
+  expect(evidence.case).toBe('line-proximity')
+  expect(evidence.sources).toHaveLength(2);expect(evidence.expected).toHaveLength(7)
+  const output=evidence.output,fields=Object.keys(evidence.expected[0].properties)
+  const identity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
+  const directory=process.env.ADDP_ONLINE_ARTIFACT_DIR
+  await observeLineageCanvas(page)
+  const writes=[]
+  page.on('request',request=>{
+    if(request.method()==='POST'&&new URL(request.url()).pathname.startsWith('/api/v1/develop/executions'))writes.push(request.url())
+  })
+  const executionRead=page.waitForResponse(response=>response.request().method()==='GET'&&new URL(response.url()).pathname===`/api/v1/develop/executions/${evidence.execution_id}`)
+  await login(page,process.env.ADDP_ONLINE_TEST_USER_USERNAME,process.env.ADDP_ONLINE_TEST_USER_PASSWORD,`/develop/executions/${evidence.execution_id}`)
+  const response=await executionRead,executionAPI=await browserAPIFromResponse(response,process.env.GATEWAY_URL,identity)
+  const raw={schema_version:'addp.line-proximity-browser-raw/v1',case:evidence.case,run_id:evidence.run_id,execution_id:evidence.execution_id}
+  try{
+    raw.execution=await json(response,'proximity execution page')
+    expect(raw.execution.status).toBe('success');expect(raw.execution.execution_id).toBe(evidence.execution_id)
+    expect(raw.execution.triggered_by).toBe(Number(evidence.principal_id))
+    expect(raw.execution.outputs).toEqual({save_result:{resource:{locator:output.locator,type:'file',write_mode:'create'}}})
+  }finally{await executionAPI.dispose()}
+  const frame=page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(frame.getByText('成功',{exact:true})).toBeVisible()
+  await expect(frame.locator('.workflow-result')).toContainText(output.name)
+  await page.screenshot({path:resolve(directory,'line-proximity-execution.png')})
+  persistProximityEvidence(directory,raw,'execution_verified')
+  const locator=`${output.locator}&item_id=${output.item_id}`
+  const previewRead=page.waitForResponse(response=>{
+    const url=new URL(response.url())
+    return response.request().method()==='GET'&&url.pathname==='/api/v1/manager/preview'&&url.searchParams.get('locator')===locator&&url.searchParams.get('child_name')===output.layer_name
+  })
+  await page.goto(`${process.env.CONSOLE_URL}/manager/data-explorer?locator=${encodeURIComponent(locator)}`)
+  const previewResponse=await previewRead,api=await browserAPIFromResponse(previewResponse,process.env.GATEWAY_URL,identity)
+  try{
+    raw.preview=await json(previewResponse,'proximity Point preview')
+    raw.sources=[]
+    for(const source of evidence.sources){
+      const item=await json(await api.get(`/api/v1/meta/items/${source.id}`),'unchanged proximity source')
+      expect(item).toEqual(source.before);raw.sources.push({item_id:source.id,item})
+    }
+    raw.output=await json(await api.get(`/api/v1/meta/items/${output.item_id}`),'proximity Meta')
+    expect(raw.output).toEqual(output.before)
+  }finally{await api.dispose()}
+  const preview=raw.preview,data=preview.data
+  expect(preview.preview_type).toBe('table')
+  expect([data.total,data.source_srid,data.source_crs,data.transform_status,data.preview_hint]).toEqual([7,3857,'EPSG:3857','not_transformed','frontend_transform_required'])
+  expect(data.geometry_columns).toEqual([output.geometry_column])
+  expect([...data.columns].sort()).toEqual([output.fid_column,output.geometry_column,...fields].sort())
+  expect(data.rows.map(row=>row[output.fid_column])).toEqual([1,2,3,4,5,6,7])
+  expect(data.rows.map(row=>({properties:Object.fromEntries(fields.map(key=>[key,row[key]])),geometry:decodePreviewEWKB(row[output.geometry_column])}))).toEqual(evidence.expected)
+  persistProximityEvidence(directory,raw,'preview_api_verified')
+  const table=frame.locator('.table-preview')
+  await expect(table).toBeVisible();await expect(table.locator('.map-placeholder')).toHaveCount(0)
+  raw.rendered=await assertProximityPointMap(table.locator('.openlayers-map-renderer'),evidence.expected)
+  await page.screenshot({path:resolve(directory,'line-proximity-point-map.png')})
+  persistProximityEvidence(directory,raw,'point_map_verified')
+  await frame.getByRole('tab',{name:'属性',exact:true}).click()
+  await expect(frame.locator('.attributes-tab-pane')).toBeVisible()
+  await expect(frame.locator('.attributes-tab-pane')).toContainText(output.layer_name)
+  await page.screenshot({path:resolve(directory,'line-proximity-attributes.png')})
+  persistProximityEvidence(directory,raw,'attributes_verified')
+  const lineageRead=page.waitForResponse(response=>{
+    const url=new URL(response.url())
+    return response.request().method()==='GET'&&url.pathname==='/api/v1/meta/lineage/graph'&&url.searchParams.get('item_id')===String(output.item_id)&&url.searchParams.get('direction')==='both'
+  })
+  await frame.getByRole('tab',{name:'血缘',exact:true}).click()
+  const lineageResponse=await lineageRead,lineageAPI=await browserAPIFromResponse(lineageResponse,process.env.GATEWAY_URL,identity)
+  try{raw.graph=await json(lineageResponse,'proximity actual lineage tab')}finally{await lineageAPI.dispose()}
+  assertProximityLineage(raw.graph,evidence)
+  const viewer=frame.locator('.lineage-viewer'),canvas=viewer.locator('.lineage-canvas canvas').first()
+  await expect(canvas).toBeVisible()
+  await expect.poll(async()=>{
+    raw.lineage_rendered=await viewer.evaluate(element=>{
+      const ref=element.__vueParentComponent?.setupState?.graphInstance,graph=ref?.value||ref
+      return graph?{nodes:graph.getNodes().map(item=>item.getModel()._node),edges:graph.getEdges().map(item=>item.getModel()._edge)}:null
+    })
+    return raw.lineage_rendered?.edges?.length||0
+  }).toBe(2)
+  assertProximityLineage({...raw.graph,edges:raw.lineage_rendered.edges},evidence)
+  await expect.poll(async()=>{
+    raw.lineage_canvas=await lineageCanvasSnapshot(canvas)
+    return [...evidence.sources.map(source=>source.name),output.name].every(name=>raw.lineage_canvas.rows.some(row=>row.text.includes(name)))
+  }).toBe(true)
+  expect(raw.lineage_canvas.paths.length).toBeGreaterThanOrEqual(2)
+  await page.screenshot({path:resolve(directory,'line-proximity-lineage.png')})
+  expect(writes).toEqual([])
+  persistProximityEvidence(directory,raw,'complete','passed')
+  writeFileSync(resolve(directory,'topology-browser.json'),JSON.stringify({...evidence,schema_version:'addp.line-proximity-browser/v1',result:'passed'},null,2)+'\n')
 })

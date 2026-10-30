@@ -2077,6 +2077,18 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     for relative,fragments in diagnostics_required.items():
         if any(fragment not in (repository/relative).read_text() for fragment in fragments):
             raise RegistrationError('topology operator input diagnostics contract incomplete: '+relative)
+    proximity_required = {
+        '.github/workflows/online-t4-gates.yml': ('          - line-proximity',),
+        'scripts/test/online-hosted-topology-gate.sh': ('operator-input-diagnostics|line-proximity',),
+        'business/scripts/online-vector-topology-fixture.py': ('def proximity_worker(', 'def verify_proximity(', 'proximity exact coordinates IDs values types or row order differ'),
+        'scripts/test/vector-topology-persistence-online.py': ('def run_proximity_scenario(', 'def validate_proximity_success(', 'def validate_proximity_graph(', 'exactly two current-execution active source edges', 'meta_after'),
+        'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('近接检查独立普通User双源Point成果', 'assertProximityPointMap', 'assertProximityLineage', 'lineageCanvasSnapshot(canvas)', 'topology-proximity-browser-raw.json'),
+        'engines/geopython-workflow/test_topology_operators.py': ('test_hosted_line_proximity_case_exact_seven_points_and_independent_oracle',),
+        'scripts/test/vector-topology-persistence-online_test.py': ('class ProximityOnlineTest',),
+    }
+    for relative,fragments in proximity_required.items():
+        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+            raise RegistrationError('topology proximity case contract incomplete: '+relative)
     composition_required = {
         'business/scripts/online-vector-topology-fixture.py': ('line-network-normalize-chains', 'composition_source_features',
             'composition_expected_features', 'verify_composition_relations', '2**40', 'original direction or business fields differ'),

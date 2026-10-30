@@ -4411,3 +4411,47 @@ def test_hosted_input_diagnostic_sources_reach_exact_typed_failure_without_save(
     assert fixture.worker('verify',tmp_path,fixture.DIAGNOSTIC_CASE)==original
     fixture.archive_physical_evidence(tmp_path,tmp_path.parent/(key+'-evidence'),original,fixture.DIAGNOSTIC_CASE)
     assert not list((tmp_path/'outputs').iterdir())
+
+
+@pytest.mark.parametrize('problem',[None,'missing','source_id','reference_id','distance','nearest','point','row_order','crs','source_changed','extra_output'])
+def test_hosted_line_proximity_case_exact_seven_points_and_independent_oracle(tmp_path,problem):
+    import importlib
+    from osgeo import ogr,osr
+    fixture=importlib.import_module('business.scripts.online-vector-topology-fixture')
+    acceptance=importlib.import_module('scripts.test.vector-topology-persistence-online')
+    (tmp_path/'outputs').mkdir();(tmp_path/'.addp-online-owner').touch()
+    seeded=fixture.worker('seed',tmp_path,fixture.PROXIMITY_CASE)
+    before={name:(tmp_path/name).read_bytes() for name in fixture.PROXIMITY_SOURCES}
+    workflow=acceptance.proximity_definition(list(fixture.PROXIMITY_SOURCES),'unused')
+    for task in workflow['tasks']:
+        if task['operator']=='load':task['params']={'connection_info':{'engine_type':'nfs','mount_path':str(tmp_path)},'path':task['params']['locator']}
+        elif task['operator']=='save':
+            task['params'].pop('target_parent_locator');task['params'].pop('target_name')
+            task['params'].update(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)},path='outputs/'+fixture.PROXIMITY_TARGET)
+    execution=execute_workflow(workflow);assert execution['status']=='success',execution
+    native=fixture.worker('verify',tmp_path,fixture.PROXIMITY_CASE)
+    assert native['sources']==seeded['sources'] and native['targets'][fixture.PROXIMITY_TARGET]['feature_count']==7
+    assert len({tuple(row['geometry']['coordinates']) for row in native['targets'][fixture.PROXIMITY_TARGET]['features']})==3
+    assert all((tmp_path/name).read_bytes()==data for name,data in before.items())
+    output=tmp_path/'outputs'/fixture.PROXIMITY_TARGET
+    if problem in ('missing','source_id','reference_id','distance','nearest','point','row_order'):
+        ds=ogr.Open(str(output),1);layer=ds.GetLayer(0);feature=layer.GetFeature(1)
+        if problem=='missing':layer.DeleteFeature(7)
+        elif problem=='point':feature.SetGeometry(ogr.CreateGeometryFromWkt('POINT (0.5 0)'));layer.SetFeature(feature)
+        elif problem=='row_order':feature.SetField('source_id',2**40+1);layer.SetFeature(feature)
+        else:
+            field,value={'source_id':('source_id',1),'reference_id':('reference_id','wrong'),'distance':('distance',1.),'nearest':('nearest_x',.25)}[problem]
+            feature.SetField(field,value);layer.SetFeature(feature)
+        feature=None;layer=None;ds=None
+    elif problem=='crs':
+        import sqlite3
+        with sqlite3.connect(output) as db:
+            db.execute('UPDATE gpkg_geometry_columns SET srs_id=3395');db.execute('UPDATE gpkg_contents SET srs_id=3395')
+    elif problem=='source_changed':
+        ds=ogr.Open(str(tmp_path/fixture.PROXIMITY_SOURCES[0]),1);layer=ds.GetLayer(0);feature=layer.GetFeature(1);feature.SetField('note','changed');layer.SetFeature(feature);feature=None;layer=None;ds=None
+    elif problem=='extra_output':(tmp_path/'outputs'/'extra.gpkg').write_bytes(b'not allowed')
+    if problem is None:
+        fixture.archive_physical_evidence(tmp_path,tmp_path.parent/'proximity-archive',native,fixture.PROXIMITY_CASE)
+        assert len(list((tmp_path.parent/'proximity-archive/topology-physical').rglob('*.gpkg')))==3
+    else:
+        with pytest.raises(fixture.FixtureError):fixture.worker('verify',tmp_path,fixture.PROXIMITY_CASE)

@@ -975,7 +975,7 @@ else changes.push(rows=>rows[0].properties['occurrence_count' in rows[0].propert
 for(const change of changes){const rows=structuredClone(expected);change(rows);await assert.rejects(run(rows),{code:'ERR_ASSERTION'})}
 await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
 '''
-        for case,port in [(case,port) for case in m.fixture.INDEPENDENT_CASES for port in m.fixture.network_profile(case)['ports']]:
+        for case,port in [(case,port) for case in (m.fixture.BUFFER_CASE,m.fixture.NORMALIZE_CASE,m.fixture.COMPOSITION_CASE) for port in m.fixture.network_profile(case)['ports']]:
             result=subprocess.run(['node','--input-type=module','-e',script,
                 str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),json.dumps(m.fixture.network_features(case,port)),
                 (repository/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri()],capture_output=True,text=True)
@@ -986,7 +986,7 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
         import os
         repository=Path(__file__).resolve().parents[2]
         run=m.subprocess.run
-        titles={m.fixture.DIAGNOSTIC_CASE:m.fixture.DIAGNOSTIC_TITLE,m.fixture.BUFFER_CASE:'多距缓冲独立普通User单成果与重名拒绝',m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
+        titles={m.fixture.PROXIMITY_CASE:m.fixture.PROXIMITY_TITLE,m.fixture.DIAGNOSTIC_CASE:m.fixture.DIAGNOSTIC_TITLE,m.fixture.BUFFER_CASE:'多距缓冲独立普通User单成果与重名拒绝',m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
             m.fixture.COMPOSITION_CASE:'重合规整链路合并独立普通User三成果与字段拒绝',
             'full':'同一普通User核对构面、修复、严格吸附、面叠面缝悬点线叠自叠线交自交及打断连通分组链路合并地图及塌缩失败'}
         for case,title in titles.items():
@@ -1285,4 +1285,143 @@ for(const locale of ['zh-cn','en']){
 '''
         result=subprocess.run(['node','-e',program,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),
                                str(repository/'common-frontend/basic/src/i18n')],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
+
+def proximity_physical(*args):
+    return {'exact_inventory_verified':True,'sources':{name:{'size_bytes':98304,'sha256':name} for name in m.fixture.PROXIMITY_SOURCES},
+            'targets':{m.fixture.PROXIMITY_TARGET:{'size_bytes':98304,'sha256':'output','feature_count':7,'layer_name':'proximity-points','geometry_column':'geom','fid_column':'fid','features':m.fixture.proximity_features('result')}}}
+
+
+class ProximityClient(InputDiagnosticClient):
+    def __init__(self):
+        super().__init__()
+        self.sources=[]
+        for i,(name,count) in enumerate(zip(m.fixture.PROXIMITY_SOURCES,[5,9])):
+            item=base.item(name,10+i);item.update(full_name=name,size_bytes=98304)
+            item['attributes']['type_info']['container']['children'][0].update(row_count=count,column_count=4)
+            self.sources.append(item)
+        self.output=base.item(m.fixture.PROXIMITY_TARGET,20);self.output['size_bytes']=98304
+        self.output['attributes']['type_info']['container']['children'][0].update(row_count=7,column_count=7)
+        self.scans=['scan-'+name for name in m.fixture.PROXIMITY_SOURCES]
+        locators=[f'addp://engine/3/path/{name}?type=file&item_id={10+i}' for i,name in enumerate(m.fixture.PROXIMITY_SOURCES)]
+        target='addp://engine/3/path/outputs/'+m.fixture.PROXIMITY_TARGET+'?type=file'
+        facts={'schema_version':'addp.lineage-facts/v1','inputs':[{'port':port,'locator':locator} for port,locator in zip(['input.load_source','input.load_reference'],locators)],'outputs':[{'locator':target,'write_mode':'create'}]}
+        self.success={'execution_id':'proximity-run','status':'success','triggered_by':33,'outputs':{'save_result':{'resource':{'locator':target,'type':'file','write_mode':'create'}}},
+            'metadata':{'lineage_facts':facts,'result':{'meta_scan_runs':[{'execution_id':'output-scan','target_locator':target,'status':'submitted'}]}},
+            'execution_config':{'content':{'workflow_definition':m.proximity_definition(locators,'addp://engine/3/path/outputs?type=directory')}}}
+        self.scan_tenant=2;self.scan_actor=33
+        self.graph={'truncated':False,'nodes':[],'edges':[{'source':{'item_id':source},'target':{'item_id':20},'relation_kind':'derive','status':'active','evidence':{'execution_id':'proximity-run'}} for source in [10,11]]}
+    def request(self,method,path,expected,body=None):
+        if method=='POST' and path.endswith('/develop/executions'):
+            self.calls.append((method,path,body));self.executions['proximity-run']=self.success;self.scans.append('output-scan');data={'execution_id':'proximity-run'}
+        elif path.endswith('/engines/3/items'):data=[*self.sources,self.output]
+        elif path=='/api/v1/meta/items/20':data=self.output
+        elif path.startswith('/api/v1/meta/lineage/graph?'):data=self.graph
+        elif '/meta/executions/' in path:data={'status':'success','tenant_id':self.scan_tenant,'triggered_by':self.scan_actor}
+        else:return super().request(method,path,expected,body)
+        return SimpleNamespace(payload=copy.deepcopy(data))
+
+
+class ProximityOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
+        self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.PROXIMITY_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
+    def run_case(self,client=None,physical=proximity_physical,browser=lambda repo,env,evidence:evidence):
+        return m.run_scenario(Path('.'),self.env,client or ProximityClient(),physical,browser,diagnostic_runner=lambda *a:self.fail('no old failure scenario'))
+    def test_proximity_only_one_success_execution_two_sources_one_scan_and_exact_current_edges(self):
+        client=ProximityClient();report=self.run_case(client)
+        self.assertEqual(report['schema_version'],'addp.line-proximity/v1');self.assertEqual(report['result'],'passed')
+        self.assertEqual(len(report['browser']['expected']),7);self.assertEqual(len(report['raw_lineage']['edges']),2)
+        self.assertEqual(set(report['meta_after']),{*m.fixture.PROXIMITY_SOURCES,m.fixture.PROXIMITY_TARGET})
+        self.assertEqual(report['final_scan_inventory'],sorted([*report['initial_scan_inventory'],'output-scan']))
+        self.assertEqual(sum(method=='POST' and path.endswith('/develop/executions') for method,path,_ in client.calls),1)
+        self.assertEqual(report['definition']['tasks'][2]['params']['reference_id_field'],'ref_key')
+    def test_proximity_read_ports_are_order_independent_but_wrong_binding_or_extra_publication_rejected(self):
+        client=ProximityClient();client.success['metadata']['lineage_facts']['inputs'].reverse();self.run_case(client)
+        mutations=[lambda c:c.success['metadata']['lineage_facts']['inputs'][0].update(locator='wrong'),
+            lambda c:c.success['metadata']['lineage_facts']['inputs'][1].update(port='input.load_source'),
+            lambda c:c.success['metadata']['lineage_facts']['inputs'].append(copy.deepcopy(c.success['metadata']['lineage_facts']['inputs'][0])),
+            lambda c:c.success['metadata']['lineage_facts']['outputs'][0].update(write_mode='fail'),
+            lambda c:c.success['outputs'].update(extra={}),lambda c:c.success['metadata']['result']['meta_scan_runs'].append({'execution_id':'extra'}),
+            lambda c:c.success.update(triggered_by=True),lambda c:c.success.update(execution_config={'content':{'workflow_definition':{}}}),
+            lambda c:c.output.update(size_bytes=0),lambda c:c.sources[0].update(size_bytes='98304'),
+            lambda c:c.output['attributes']['type_info']['container']['children'][0].update(row_count=3),
+            lambda c:setattr(c,'scan_tenant','2'),lambda c:setattr(c,'scan_actor',99)]
+        for mutate in mutations:
+            client=ProximityClient();mutate(client)
+            with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):self.run_case(client)
+    def test_proximity_rejects_missing_duplicate_extra_or_wrong_current_lineage(self):
+        for mutate in [lambda g:g['edges'].pop(),lambda g:g['edges'].append(copy.deepcopy(g['edges'][0])),
+            lambda g:g['edges'][0]['source'].update(item_id=99),lambda g:g['edges'][1]['evidence'].update(execution_id='old'),
+            lambda g:g['edges'][0].update(status='inactive'),lambda g:g.update(truncated=True)]:
+            client=ProximityClient();mutate(client.graph)
+            # The waiter would otherwise wait its real timeout for a deliberately absent edge.
+            with patch.object(m.raster,'wait_lineage',return_value={}):
+                with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):self.run_case(client)
+    def test_proximity_browser_failure_keeps_incomplete_and_cannot_relabel_partial_evidence(self):
+        with self.assertRaisesRegex(m.SuiteError,'Point failed'):
+            self.run_case(browser=lambda *a:(_ for _ in ()).throw(m.SuiteError('Point failed')))
+        checkpoint=json.loads((Path(self.directory.name)/'topology-proximity-checkpoint.json').read_text())
+        self.assertEqual(checkpoint['result'],'incomplete');self.assertEqual(checkpoint['stage'],'before_lineage')
+        def changed(repo,env,evidence):
+            client.sources[0]['size_bytes']=999;return evidence
+        client=ProximityClient()
+        with self.assertRaisesRegex(m.SuiteError,'source Meta changed'):self.run_case(client,browser=changed)
+        calls=0
+        def physical(*a):
+            nonlocal calls
+            calls+=1;value=proximity_physical()
+            if calls==2:value['targets'][m.fixture.PROXIMITY_TARGET]['sha256']='changed'
+            return value
+        with self.assertRaisesRegex(m.SuiteError,'physical files'):self.run_case(physical=physical)
+
+    def test_proximity_actual_point_map_assertion_rejects_dedup_wrong_position_type_id_and_pixels(self):
+        import subprocess
+        repository=Path(__file__).resolve().parents[2]
+        script=r'''
+import assert from 'node:assert/strict'
+import {readFileSync} from 'node:fs'
+const source=readFileSync(process.argv[1],'utf8'),expected=JSON.parse(process.argv[2]);
+const {webMercatorPreviewCoordinate}=await import(process.argv[3]);
+const start=source.indexOf('function proximityPointExpectation('),end=source.indexOf('function assertProximityLineage(',start);
+const expect=value=>({toHaveLength:n=>assert.equal(value.length,n),toBe:n=>assert.equal(value,n)});
+expect.poll=fn=>({async toEqual(value){assert.deepEqual(await fn(),value)},async toBeGreaterThan(value){assert.ok(await fn()>value)}});
+const check=new Function('webMercatorPreviewCoordinate','expect',source.slice(start,end)+';return assertProximityPointMap')(webMercatorPreviewCoordinate,expect);
+async function run(rows,projection='EPSG:3857',pixels=40){
+ const features=rows.map(row=>({get:k=>row.properties[k],getGeometry:()=>({getType:()=>row.geometry.type,getCoordinates:()=>webMercatorPreviewCoordinate(row.geometry.coordinates)})}));
+ const map={getView:()=>({getAnimating:()=>false,getProjection:()=>({getCode:()=>projection})}),getLayers:()=>({getArray:()=>[{getSource:()=>({getFeatures:()=>features})}]})};
+ const renderer={evaluate:async(fn,fields)=>fn({__vueParentComponent:{setupState:{mapInstance:map}}},fields),locator:()=>({evaluateAll:async()=>pixels})};
+ return check(renderer,expected);
+}
+await run(expected);await run([...expected].reverse());
+for(const mutate of [r=>r.pop(),r=>r.push(structuredClone(r[0])),r=>r[0].properties.source_id=1,r=>r[0].properties.reference_id='other',
+ r=>r[0].properties.distance=1,r=>r[2].properties.nearest_x=.25,r=>r[0].geometry.coordinates=[.5,0],r=>r[0].geometry.type='LineString']){
+ const rows=structuredClone(expected);mutate(rows);await assert.rejects(run(rows),{code:'ERR_ASSERTION'});
+}
+await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'});await assert.rejects(run(expected,'EPSG:3857',0),{code:'ERR_ASSERTION'});
+'''
+        result=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),
+            json.dumps(m.fixture.proximity_features('result')),(repository/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri()],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
+    def test_proximity_browser_stage_evidence_cannot_mistake_partial_for_passed(self):
+        import subprocess
+        repository=Path(__file__).resolve().parents[2]
+        script=r'''
+import assert from 'node:assert/strict'
+import {readFileSync,writeFileSync} from 'node:fs'
+import {resolve} from 'node:path'
+const source=readFileSync(process.argv[1],'utf8');
+const start=source.indexOf('function persistProximityEvidence('),end=source.indexOf("test('近接检查独立普通User双源Point成果'",start);
+const persist=new Function('writeFileSync','resolve',source.slice(start,end)+';return persistProximityEvidence')(writeFileSync,resolve);
+const raw={case:'line-proximity',run_id:'run',execution_id:'same-uuid',result:'passed'};
+persist(process.argv[2],raw,'preview_api_verified');
+let evidence=JSON.parse(readFileSync(resolve(process.argv[2],'topology-proximity-browser-raw.json'),'utf8'));
+assert.equal(evidence.result,'incomplete');assert.equal(evidence.stage,'preview_api_verified');assert.equal(evidence.execution_id,'same-uuid');
+persist(process.argv[2],raw,'complete','passed');
+evidence=JSON.parse(readFileSync(resolve(process.argv[2],'topology-proximity-browser-raw.json'),'utf8'));
+assert.equal(evidence.result,'passed');assert.equal(evidence.stage,'complete');
+'''
+        result=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),self.directory.name],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)

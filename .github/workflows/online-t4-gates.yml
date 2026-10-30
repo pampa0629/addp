@@ -111,7 +111,7 @@ on:
           - full
           - bounded-recovery
       topology_case:
-        description: Topology acceptance case (normalization runs only its new branch)
+        description: Topology acceptance case (independent cases run only their selected branch)
         required: true
         type: choice
         default: full
@@ -121,6 +121,7 @@ on:
           - line-network-normalize-chains
           - multi-distance-buffer
           - operator-input-diagnostics
+          - line-proximity
       manager_case:
         description: Manager acceptance case (full preserves all model assertions)
         required: true

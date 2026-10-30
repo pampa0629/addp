@@ -444,3 +444,25 @@ class BufferFixtureTest(unittest.TestCase):
         self.assertEqual([r['properties']['route_key'] for r in expected],[2**40+1,2**40+2]*3)
         self.assertEqual(expected[0],expected[4]);self.assertEqual(expected[1],expected[5])
         self.assertEqual([r['properties']['distance'] for r in m.buffer_features('conflict')],[99.,99.])
+
+
+class ProximityFixtureTest(unittest.TestCase):
+    def test_proximity_hand_oracle_has_exact_pairs_types_original_points_and_strict_boundaries(self):
+        source=m.proximity_features('source');reference=m.proximity_features('reference');rows=m.proximity_features('result')
+        self.assertEqual((len(source),len(reference),len(rows)),(5,9,7))
+        self.assertEqual([r['properties']['reference_id'] for r in rows],['z-east','a-west','m-parts','b-east-copy','micro','shared','shared'])
+        self.assertEqual([r['properties']['distance'] for r in rows],[.5,.5,.25,.5,2**-20,.5,.5])
+        self.assertEqual(rows[2]['properties']['nearest_x'],-.25)
+        self.assertEqual(len({tuple(r['geometry']['coordinates']) for r in rows}),3)
+        self.assertTrue(all(r['properties']['source_id']>2**32 and r['properties']['source_id']<2**53 for r in rows))
+        self.assertNotIn(2**40+7,[r['properties']['source_id'] for r in rows])
+        m.validate_proximity_features(rows)
+    def test_proximity_oracle_rejects_drop_duplicate_id_coercion_nearest_instead_of_source_and_sorting(self):
+        original=m.proximity_features('result')
+        for mutate in [lambda r:r.pop(),lambda r:r.append(copy.deepcopy(r[0])),lambda r:r.reverse(),
+            lambda r:r[0]['properties'].update(source_id=float(2**40+9)),lambda r:r[0]['properties'].update(reference_id='other'),
+            lambda r:r[0]['properties'].update(distance=1.),lambda r:r[2]['properties'].update(nearest_x=.25),
+            lambda r:r[0]['geometry'].update(coordinates=[.5,0]),lambda r:r[0]['properties'].update(note='copied'),
+            lambda r:r[4]['properties'].update(distance=0.)]:
+            rows=copy.deepcopy(original);mutate(rows)
+            with self.subTest(mutate=mutate),self.assertRaises(m.FixtureError):m.validate_proximity_features(rows)

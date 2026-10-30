@@ -134,6 +134,109 @@ def run_diagnostic_scenario(repository, env, client, physical_runner, browser_ru
             'cleanup_boundary':'owned disposable deployment; no business DELETE acceptance'}
 
 
+def proximity_definition(sources,parent):
+    return {'tasks':[
+        {'id':'load_source','operator':'load','params':{'locator':sources[0]},'depends_on':[]},
+        {'id':'load_reference','operator':'load','params':{'locator':sources[1]},'depends_on':[]},
+        {'id':'near','operator':'check_line_proximity','params':{'input_gdf':{'$ref':'load_source'},'reference_gdf':{'$ref':'load_reference'},
+         'id_field':'route_key','reference_id_field':'ref_key','tolerance':1.},'depends_on':['load_source','load_reference']},
+        {'id':'save_result','operator':'save','params':{'input_df':{'$ref':'near'},'target_parent_locator':parent,'target_name':fixture.PROXIMITY_TARGET,'mode':'fail'},'depends_on':['near']}]}
+
+
+def validate_proximity_success(execution,sources,target):
+    if execution.get('status')!='success' or execution.get('outputs')!={'save_result':{'resource':{'locator':target,'type':'file','write_mode':'create'}}}:
+        raise SuiteError('proximity must publish exactly one stable create output')
+    metadata=obj(execution.get('metadata'),'proximity metadata');facts=obj(metadata.get('lineage_facts'),'proximity facts')
+    inputs=array(facts.get('inputs'),'proximity inputs');outputs=array(facts.get('outputs'),'proximity outputs')
+    if (facts.get('schema_version')!='addp.lineage-facts/v1' or len(inputs)!=2 or
+        {(value.get('port'),value.get('locator')) for value in inputs}!={('input.load_source',sources[0]),('input.load_reference',sources[1])} or
+        len(outputs)!=1 or outputs[0].get('locator')!=target or outputs[0].get('write_mode')!='create'):
+        raise SuiteError('proximity dual read ports or create facts differ')
+    scans=array(obj(metadata.get('result'),'proximity result').get('meta_scan_runs'),'proximity automatic scan')
+    if len(scans)!=1 or scans[0].get('status')!='submitted' or scans[0].get('target_locator')!=target or not isinstance(scans[0].get('execution_id'),str) or not scans[0]['execution_id']:
+        raise SuiteError('proximity requires exactly one automatic output scan')
+    return facts,scans[0]
+
+
+def validate_proximity_graph(graph,sources,target,identifier):
+    if graph.get('truncated') is not False:raise SuiteError('proximity lineage graph is truncated or incomplete')
+    edges=[edge for edge in array(graph.get('edges'),'proximity graph edges') if edge.get('relation_kind')=='derive' and edge.get('status')=='active' and edge.get('evidence',{}).get('execution_id')==identifier]
+    if len(edges)!=2 or {(e.get('source',{}).get('item_id'),e.get('target',{}).get('item_id')) for e in edges}!={(s['id'],target) for s in sources}:
+        raise SuiteError('proximity requires exactly two current-execution active source edges')
+    return edges
+
+
+def run_proximity_scenario(repository,env,client,physical_runner,browser_runner):
+    tenant=positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'tenant')
+    if tenant<=1:raise SuiteError('proximity forbids default Tenant')
+    identity=raster.validate_identity(client,tenant,required_permissions=PERMISSIONS)
+    deadline=time.monotonic()+float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS','600'))
+    def remaining():
+        value=deadline-time.monotonic()
+        if value<=0:raise SuiteError('proximity business budget exhausted')
+        return value
+    engine=positive(env['ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID'],'NFS engine');sources=[]
+    for name in fixture.PROXIMITY_SOURCES:
+        scope=f'addp://engine/{engine}/path/{name}?type=file'
+        scan=support.wait_for_meta_scan(client,engine,time.monotonic()+remaining(),scope={'targets':[scope]})
+        item=support.find_fixture_item(client,engine,name,'proximity source')
+        before=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
+        sources.append({'id':item['id'],'name':name,'locator':scope+f'&item_id={item["id"]}','scan_execution_id':scan,'before':before})
+    initial_scans=scan_ids(client)
+    if initial_scans!=sorted(source['scan_execution_id'] for source in sources):raise SuiteError('proximity initial scan inventory differs')
+    runtimes=[r for r in array(client.request('GET','/api/v1/develop/workflow-engines',(200,)).payload,'runtimes') if r.get('engine_type')=='geopython_workflow' and r.get('connection_status')=='online']
+    if len(runtimes)!=1:raise SuiteError('proximity requires one online product Runtime')
+    parent=f'addp://engine/{engine}/path/outputs?type=directory';target=f'addp://engine/{engine}/path/outputs/{fixture.PROXIMITY_TARGET}?type=file'
+    workflow=proximity_definition([source['locator'] for source in sources],parent)
+    identifier=raster.submit(client,positive(runtimes[0]['id'],'Runtime'),workflow)
+    execution=raster.wait_execution(client,'develop',identifier,remaining())
+    if execution.get('execution_id')!=identifier or type(execution.get('triggered_by')) is not int or execution['triggered_by']!=int(identity['principal_id']):raise SuiteError('proximity execution actor differs')
+    if obj(obj(execution.get('execution_config'),'proximity frozen config').get('content'),'proximity frozen content').get('workflow_definition')!=workflow:raise SuiteError('proximity frozen workflow differs')
+    facts,scan=validate_proximity_success(execution,[source['locator'] for source in sources],target)
+    observed=raster.wait_execution(client,'meta',scan['execution_id'],remaining())
+    if type(observed.get('tenant_id')) is not int or observed['tenant_id']!=tenant or type(observed.get('triggered_by')) is not int or observed['triggered_by']!=int(identity['principal_id']):raise SuiteError('proximity public automatic scan identity differs')
+    monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'proximity Monitor')
+    if monitor.get('execution_id')!=identifier or monitor.get('module')!='develop' or monitor.get('status')!='success' or type(monitor.get('triggered_by')) is not int or monitor['triggered_by']!=int(identity['principal_id']) or obj(monitor.get('metadata'),'Monitor metadata').get('lineage_facts')!=facts:raise SuiteError('proximity Monitor status or lineage differs')
+    native=physical_runner(repository,env)
+    if native.get('exact_inventory_verified') is not True or set(native.get('sources',{}))!=set(fixture.PROXIMITY_SOURCES) or set(native.get('targets',{}))!={fixture.PROXIMITY_TARGET}:raise SuiteError('proximity physical inventory differs')
+    for source,kind in zip(sources,('source','reference')):
+        size=source['before'].get('size_bytes')
+        children=source['before'].get('attributes',{}).get('type_info',{}).get('container',{}).get('children',[])
+        if type(size) is not int or size<=0 or size!=native['sources'][source['name']]['size_bytes'] or len(children)!=1 or type(children[0].get('row_count')) is not int or children[0]['row_count']!=len(fixture.proximity_features(kind)):
+            raise SuiteError('proximity source Meta size or child rows differ')
+    item=support.find_fixture_item(client,engine,'outputs/'+fixture.PROXIMITY_TARGET,'proximity output')
+    detail=obj(client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload,'proximity output Meta')
+    child=detail['attributes']['type_info']['container']['children']
+    if len(child)!=1 or type(child[0].get('row_count')) is not int or child[0]['row_count']!=7 or child[0].get('column_count')!=7:raise SuiteError('proximity Meta child row/column count differs')
+    output={'name':fixture.PROXIMITY_TARGET,'port':'result','locator':target,'item_id':item['id'],**native['targets'][fixture.PROXIMITY_TARGET],
+            'before':detail,'size_evidence':validate_item(detail,native['targets'][fixture.PROXIMITY_TARGET],fixture.PROXIMITY_TARGET)}
+    directory=Path(env['ADDP_ONLINE_ARTIFACT_DIR'])
+    checkpoint={'schema_version':fixture.PROXIMITY_SCHEMA+'-checkpoint/v1','case':fixture.PROXIMITY_CASE,'result':'incomplete','stage':'before_lineage',
+                'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],'identity':identity,'execution_id':identifier,'definition':workflow,'execution':execution,
+                'sources':sources,'output':output,'physical':native,'automatic_scan':observed,'monitor':monitor}
+    (directory/'topology-proximity-checkpoint.json').write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2)+'\n')
+    for source in sources:raster.wait_lineage(client,source['id'],item['id'],identifier,remaining())
+    graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={item["id"]}&direction=upstream',(200,)).payload,'proximity raw graph')
+    validate_proximity_graph(graph,sources,item['id'],identifier)
+    evidence={'case':fixture.PROXIMITY_CASE,'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],**identity,'execution_id':identifier,'sources':sources,'output':output,'expected':fixture.proximity_features('result')}
+    remaining();browser_report=browser_runner(repository,env,evidence);remaining()
+    final=physical_runner(repository,env)
+    expected_scans=sorted([*initial_scans,scan['execution_id']])
+    if scan_ids(client)!=expected_scans or final!=native:raise SuiteError('proximity browser changed physical files or scan inventory')
+    meta_after={}
+    for source in sources:
+        after=client.request('GET',f'/api/v1/meta/items/{source["id"]}',(200,)).payload
+        if after!=source['before']:raise SuiteError('proximity source Meta changed')
+        meta_after[source['name']]=after
+    after=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
+    if after!=detail:raise SuiteError('proximity output Meta changed during browser')
+    meta_after[fixture.PROXIMITY_TARGET]=after
+    return {**checkpoint,'schema_version':fixture.PROXIMITY_SCHEMA+'/v1','result':'passed','stage':'complete','lineage_facts':facts,'raw_lineage':graph,
+            'initial_scan_inventory':initial_scans,'final_scan_inventory':expected_scans,'automatic_scan_reference':scan,'meta_after':meta_after,
+            'post_browser_physical':final,'browser':browser_report,'sources_and_output_unchanged':True,
+            'cleanup_boundary':'owned disposable NFS/Runtime/deployment; no business DELETE acceptance'}
+
+
 def normalize_definition(source,parent,failed=False,case=fixture.NORMALIZE_CASE):
     profile=fixture.network_profile(case);composition=case==fixture.COMPOSITION_CASE
     if case==fixture.BUFFER_CASE:
@@ -441,6 +544,8 @@ def browser(repository, env, evidence):
 
 def run_scenario(repository, env, client, physical_runner=physical, browser_runner=browser,
                  diagnostic_runner=collapsed_snap_diagnostic):
+    if fixture.topology_case(env)==fixture.PROXIMITY_CASE:
+        return run_proximity_scenario(repository,env,client,physical_runner,browser_runner)
     if fixture.topology_case(env)==fixture.DIAGNOSTIC_CASE:
         return run_diagnostic_scenario(repository,env,client,physical_runner,browser_runner)
     if fixture.topology_case(env) in fixture.INDEPENDENT_CASES:

@@ -763,3 +763,14 @@ artifact／物理／Meta相等正整数大小、精确scan父执行／用户／�
 四次预期失败均须无稳定成果、输出 facts、自动成果扫描或当前执行 derive，源文件 SHA/size 和 Meta 前后不变；初始源扫描单独登记，不与成果扫描混同。归档四份冻结定义、原始公开执行/Monitor响应、源 Meta/字节、各语言页面截图及剪贴板文本，最终报告与阶段 incomplete 分开；最后核 owned NFS、Runtime/registry、部署/Infra 清理零残留，清理不认证业务 DELETE。
 
 不覆盖 `distance_to` 活动几何列名为 `distance` 的特殊冲突：当前正式文件读取会规范化内存几何列名，既有 Native/T3 证据保留，不注入内存对象、改 load 或新增数据库来制造实页覆盖。四例是代表性端到端验证，不外推全部11种组合或算子成功计算能力。
+
+
+### 近接检查独立双源 Point 成果
+
+`vector-topology-persistence` 的 `line-proximity` case 仅运行一条“双源 load → check_line_proximity → save”成功 DAG，普通 User、非默认 Tenant、精确11权限、既有隔离 Hosted 生命周期和600秒业务预算不变。两份独立 GPKG（5源线、9参考要素）均为EPSG:3857，显式容差1米；保存单层 `proximity-points.gpkg`，预期7条Point记录、3个不同原悬点XY。源业务Int64标识采用JSON安全范围内的2^40级、参考标识用字符串，均不同于物理FID；业务note不复制至成果。手写期望覆盖全部候选、不同参考ID的相同几何、同一参考多部件重复去重及等距XY决胜、任一参考精确接触时全部排除、严格边界1不报、精确2^-20小距离以及共享悬点两源分别保留；按原源行和参考行顺序核，不按ID或距离重排。
+
+独立原生读取两源一成果的原始坐标、CRS、字段／类型及顺序：成果 `source_id/reference_id` 保留Int64/String，`distance/nearest_x/nearest_y` 为Float64，活动几何为原悬点而非最近参考位置。保存后只允许一个稳定输出／create事实和一次自动成果扫描，公开严格整数tenant_id/triggered_by必须是同User/Tenant；源初始扫描单独登记，不手工补扫／collect。输入facts按两个显式读取端口与locator核身份，原图精确两条当前execution active derive（两源文件DataItem各到成果文件DataItem），Monitor事实一致。父GPKG文件正整数physical==Meta大小；唯一子层的7行Point/CRS独立核验，不把子层和父文件大小重复累计。
+
+真实Console成功页、成果属性、Point预览和血缘视图四类截图；每次导航沿实际页面请求核同普通身份。API标准EWKB和OpenLayers内全部7个Point及属性／投影坐标必须精确匹配，保留同位置的多条记录，不能用可见点簇数代替要素数；核实际像素，不能仅确认组件出现。归档两源一成果原字节、源与成果前后Meta、原始扫描/两源血缘/Monitor/预览响应及渲染数据。前后源/成果SHA、Meta不变；最终完整报告与incomplete阶段分离，完整隔离清理零残留不认证业务DELETE。
+
+不重跑原拓扑整包、已过参数失败T4或容量；空结果、英尺及更大整数边界沿原Native限定证据，不外推本case为全部输入或规模认证。case及夹具/runner/browser/Hosted选择/登记和mutation同次接入现有标准入口，无新API、算子或长期脚本。
