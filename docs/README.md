@@ -245,13 +245,17 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 
 ## 数据质量主题
 
-处理数据元质量规则、规则应用、质量检查、评分、问题工单或 Quality 执行链时，建议按以下顺序阅读：
+处理数据元质量规则、质量规则定义与修订、质量检查方案与执行、规则通过率、问题工单或 Quality 执行链时，建议按以下顺序阅读：
 
-1. [数据质量规范](spec/addp数据质量规范.md)：确认规则契约、模块边界、PostgreSQL 方言、执行授权、评分与问题状态机。
-2. [术语表](concepts/addp术语表.md)：确认质量规则、规则应用、质量检查、质量分和质量问题术语。
+1. [数据质量规范](spec/addp数据质量规范.md)：确认规则契约、模块边界、PostgreSQL 方言、执行授权、评分与问题状态机；专业读取直接见[专业执行读取与安全 DTO](spec/addp数据质量规范.md#专业执行读取与安全-dto)。
+2. [术语表](concepts/addp术语表.md)：确认质量规则定义与修订、质量检查方案、质量检查、规则通过率和质量问题术语。
 3. [任务体系规范](spec/addp任务体系规范.md)：确认 execution 状态、TaskProvider、父子 execution 和持久执行要求。
 4. [授权上下文规范](spec/addp授权上下文规范.md)：确认 User AuthContext 与 Execution Authorization 边界。
-5. [Standard 模块说明](../standard/CLAUDE.md)与 [Quality 模块说明](../quality/CLAUDE.md)：查看当前 owner 实现。
+5. [Standard 模块说明](../standard/CLAUDE.md)与 [Quality 阅读导航](../quality/CLAUDE.md#阅读导航)：查看当前 owner 实现，区分标准来源与规则、方案的事实归属。
+6. [Quality 标准入口与 CI 登记](../quality/CLAUDE.md#标准入口与-ci-登记)与[隔离、身份与清理](../quality/CLAUDE.md#隔离身份与清理)：选择层级入口与运行前提，区分确定性 runner、PostgreSQL 和 Hosted 验收。
+7. [Quality 固定版本验收证据](../quality/CLAUDE.md#固定版本验收证据)：分别查看失败与通过记录、清理证据和未覆盖范围，不将历史结果外推到当前工作区。
+
+各入口的权限、来源快照与实机验收范围以所引正文为准。
 
 ## 数据标准与建模主题
 
