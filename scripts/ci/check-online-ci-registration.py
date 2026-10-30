@@ -3225,7 +3225,6 @@ def validate_raster_focal_percentile(repository: Path, registered: set[str]) -> 
             raise RegistrationError('Focal percentile fixed 16-success/36-failure matrix changed')
 
 
-
 def validate_raster_sieve(repository: Path, registered: set[str]) -> None:
     import ast
     suite='raster-sieve-persistence'

@@ -225,6 +225,18 @@ classDiagram
 
 Workflow Runtime 的发现以 System Engine Instance 和 Runtime Descriptor 为唯一控制面路径。Common 使用一个通用 HTTP `WorkflowRuntimeProvider` 消费所有声明 `compute.workflow.runtime_api=addp.workflow/v1` 的实例；GeoPython、Spark、Math、Model3D、PointCloud、SuperMap 和用户自研 Runtime 不分别维护重复协议插件。SuperMap SDX+ for PostgreSQL 等领域能力仍保留专用 table/session Provider，但 Provider 只依赖工作区绑定 Runtime ID、Runtime Descriptor 和必需 direct 算子，不依赖固定运行时 `engine_type`。
 
+### Spark 联邦查询迁移约束
+
+以下为已确认的迁移目标，尚未通过技术准入，不代表当前 `spark` 插件已完成迁移。
+
+- Business Spark 承担联邦 SQL 查询职责，复用 `FederatedQueryRuntimeProvider` 和 `addp.query-runtime/v1`；Spark Workflow 继续独立承担工作流执行。两者可使用同一 Spark 集群，不共用执行会话或执行授权。
+- Business Spark 迁移后只声明 `compute.query` 联邦查询能力，不声明 `storage`。Meta、Manager 和其他存储消费者统一按能力选择引擎，不增加 Spark 类型排除名单。原有 Spark 表目录、表读取 Provider 和日常启动时创建的固定样例视图应随迁移删除，不保留双路径。
+- 查询工作台沿用联邦入口，展示实际 Source Engine 的表，资源身份保留 Source Engine ID。首版准入限定 PostgreSQL、MySQL 只读跨源查询；其他连接器、写入和查询结果连续导出不纳入首版声明。
+- Runtime 使用自身 Service Principal 消费与本次 execution 和实际 Runtime audience 匹配的授权，逐个取得 Source Engine 连接。调用方不能固定使用 DuckDB audience，也不能把数据源凭据放入查询 SQL、任务、日志或 Runtime 请求体。
+- 准入必须分别验证真实 Worker 跨源 JOIN、参数绑定、结果类型与数值精度、源命名冲突、未授权源拒绝、执行隔离、超时和清理。技术准入通过后再迁移正式插件、注册信息与消费链路，并执行页面验收；已有 Spark 目录项和任务绑定须先盘点，不静默删除或改绑。
+- Runtime 部署、端口和隔离进程生命周期另行确认；本节不授权启动服务或变更现有实例。
+- 当前 Spark Workflow 仍通过任务 `engine_specific.spark_cluster_id` 绑定 `engine_type=spark` 资源，并从其连接信息取得 Standalone Master 地址。这是迁移前必须解决的现存耦合：不能直接把该资源的 Thrift 地址替换为查询 Runtime HTTP 地址。集群绑定的归属和已有任务迁移规则须另行确认，不能在改造查询插件时静默改变工作流执行目标。
+
 ### DuckDB 联邦查询 Runtime 边界
 
 DuckDB 是 `engines/duckdb` 提供的平台共享联邦查询 Runtime。System 保存一条 `engine_type=duckdb`、`tenant_id=NULL`、`is_builtin=true` 的 Runtime Engine Instance，其 `connection_info` 只保存 `protocol/host/port`，能力声明为 `compute.query.supported=true` 且 `compute.query.federation.supported=true`。
