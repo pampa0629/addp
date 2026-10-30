@@ -1387,3 +1387,17 @@ def test_zonal_percentile_keeps_single_table_entry_optional_parameter_and_origin
     assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
     assert spec['attributes']['resource_groups'] == ['raster']
     assert len(spec['output_ports']) == 1 and spec['output_ports'][0]['type'] == 'DataFrame'
+
+
+def test_vector_percentile_single_existing_entry_keeps_coverage_prefix_and_optional_parameter():
+    from operators import list_operators
+    specs = [spec for spec in list_operators() if spec['id']=='raster_vector_zonal_statistics']
+    assert len(specs)==1
+    spec = specs[0]; params = {item['name']:item for item in spec['parameters']}
+    assert set(params)=={'input_raster','input_gdf','band','all_touched','field_prefix','percentile'}
+    assert params['band']['required'] and params['input_gdf']['required']
+    assert params['all_touched']['default'] is False and params['field_prefix']['default']=='zonal_'
+    assert params['percentile']['type']=='float' and not params['percentile']['required'] and 'default' not in params['percentile']
+    assert all(word in params['percentile']['description'] for word in ('0','100','50','逐面','线性','原统计'))
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    assert spec['output_ports'][0]['type']=='GeoDataFrame' and spec['attributes']['resource_groups']==['raster']

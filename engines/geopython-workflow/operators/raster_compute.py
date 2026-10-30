@@ -1318,7 +1318,10 @@ def _zone_window(dataset, bounds):
     return (x, y, end_x-x, end_y-y) if x < end_x and y < end_y else None
 
 
-def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=False, field_prefix='zonal_'):
+def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=False, field_prefix='zonal_', percentile=_PERCENTILE_UNSET):
+    requested = percentile is not _PERCENTILE_UNSET
+    if requested:
+        percentile = _percentile_parameter(percentile)
     geometries = _polygon_geometries(input_gdf)
     if type(all_touched) is not bool:
         raise ValueError('all_touched must be a boolean')
@@ -1326,6 +1329,8 @@ def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=Fa
         raise ValueError('field_prefix must be a string')
     names = [field_prefix+name for name in ('total_count', 'valid_count', 'invalid_count',
                                           'sum', 'min', 'max', 'mean', 'stddev')]
+    if requested:
+        names.extend(field_prefix+name for name in ('percentile', 'percentile_value'))
     if any(name in input_gdf.columns for name in names):
         raise ValueError('Statistics columns must not overwrite input columns')
     dataset = _open(input_raster)
@@ -1343,31 +1348,38 @@ def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=Fa
         for geometry in geometries:
             statistics = _ZoneStatistics()
             window = _zone_window(dataset, geometry.bounds)
-            if window is not None:
-                vector = ogr.GetDriverByName('Memory').CreateDataSource('')
-                layer = vector.CreateLayer('zone', _crs(dataset.GetProjection()), ogr.wkbUnknown)
-                feature = ogr.Feature(layer.GetLayerDefn())
-                feature.SetGeometry(ogr.CreateGeometryFromWkb(geometry.wkb))
-                if layer.CreateFeature(feature) != 0:
-                    raise ValueError('Cannot create zone feature')
-                feature = None
-                for x, y, arrays, masks in _blocks(dataset, [band], window=window):
-                    height, width = arrays[0].shape
-                    coverage = gdal.GetDriverByName('MEM').Create('', width, height, 1, gdal.GDT_Byte)
-                    origin = gdal.ApplyGeoTransform(transform, x, y)
-                    coverage.SetGeoTransform((origin[0], transform[1], transform[2],
-                                              origin[1], transform[4], transform[5]))
-                    coverage.SetProjection(dataset.GetProjection())
-                    coverage.GetRasterBand(1).Fill(0)
-                    layer.ResetReading()
-                    options = ['ALL_TOUCHED='+('TRUE' if all_touched else 'FALSE')]
-                    if gdal.RasterizeLayer(coverage, [1], layer, burn_values=[1], options=options) != 0:
-                        raise ValueError('Zone coverage rasterization failed')
-                    covered = coverage.GetRasterBand(1).ReadAsArray() != 0
-                    statistics.add(arrays[0][covered & masks[0]], int(covered.sum()))
-                    coverage = None
-                layer = vector = None
-            rows.append(statistics.summary())
+            with _percentile_runs(dataset, window=window) if requested and window is not None else nullcontext() as runs:
+                if window is not None:
+                    vector = ogr.GetDriverByName('Memory').CreateDataSource('')
+                    layer = vector.CreateLayer('zone', _crs(dataset.GetProjection()), ogr.wkbUnknown)
+                    feature = ogr.Feature(layer.GetLayerDefn())
+                    feature.SetGeometry(ogr.CreateGeometryFromWkb(geometry.wkb))
+                    if layer.CreateFeature(feature) != 0:
+                        raise ValueError('Cannot create zone feature')
+                    feature = None
+                    for x, y, arrays, masks in _blocks(dataset, [band], window=window, native=True):
+                        height, width = arrays[0].shape
+                        coverage = gdal.GetDriverByName('MEM').Create('', width, height, 1, gdal.GDT_Byte)
+                        origin = gdal.ApplyGeoTransform(transform, x, y)
+                        coverage.SetGeoTransform((origin[0], transform[1], transform[2],
+                                                  origin[1], transform[4], transform[5]))
+                        coverage.SetProjection(dataset.GetProjection())
+                        coverage.GetRasterBand(1).Fill(0)
+                        layer.ResetReading()
+                        options = ['ALL_TOUCHED='+('TRUE' if all_touched else 'FALSE')]
+                        if gdal.RasterizeLayer(coverage, [1], layer, burn_values=[1], options=options) != 0:
+                            raise ValueError('Zone coverage rasterization failed')
+                        covered = coverage.GetRasterBand(1).ReadAsArray() != 0
+                        values = arrays[0][covered & masks[0]].astype(np.float64)
+                        statistics.add(values, int(covered.sum()))
+                        if runs is not None:
+                            runs.add(values)
+                        coverage = None
+                    layer = vector = None
+                row = statistics.summary()
+                if requested:
+                    row.extend([percentile, runs.value(statistics.count, percentile) if runs is not None else None])
+                rows.append(row)
     finally:
         feature = layer = vector = coverage = dataset = None
     result = input_gdf.copy()
@@ -1380,6 +1392,7 @@ _PERCENTILE_MERGE_VALUES = 32768
 _STATISTICS_MESSAGES = {
     'io': ('整幅栅格百分位临时排序读写失败', 'Full-raster percentile temporary sorting I/O failed'),
     'zonal_io': ('栅格分区百分位临时排序读写失败', 'Raster zonal percentile temporary sorting I/O failed'),
+    'vector_io': ('矢量面分区百分位临时排序读写失败', 'Vector zonal percentile temporary sorting I/O failed'),
     'range': ('整幅栅格统计结果超出有限Float64范围', 'Full-raster statistics exceed the finite Float64 output range'),
     'alpha': ('栅格统计不支持复数alpha', 'Raster statistics do not support complex alpha'),
 }
@@ -1496,19 +1509,21 @@ def _zonal_percentiles(runs, statistics, percentile):
 
 
 @contextmanager
-def _percentile_runs(dataset, *, zonal=False):
-    block_count = ((dataset.RasterXSize + 511) // 512) * ((dataset.RasterYSize + 511) // 512)
+def _percentile_runs(dataset, *, zonal=False, window=None):
+    width, height = window[2:] if window is not None else (dataset.RasterXSize, dataset.RasterYSize)
+    block_count = ((width + 511) // 512) * ((height + 511) // 512)
     with tempfile.TemporaryDirectory(prefix='percentile-', dir=_WORKSPACE.get()) as directory:
         dtype = _ZONAL_PERCENTILE_DTYPE if zonal else np.dtype('float64')
         runs = _PercentileRuns(Path(directory), block_count.bit_length(), dtype)
         # At most source runs plus one merged copy, with per-file allocation slack.
         paths = runs.levels + runs.scratch
-        required = dataset.RasterXSize * dataset.RasterYSize * 2 * dtype.itemsize + len(paths) * 65536
-        with _disk_budget(required, 'zonal_percentile' if zonal else 'percentile', private_paths=paths):
+        required = width * height * 2 * dtype.itemsize + len(paths) * 65536
+        phase = 'vector_percentile' if window is not None else 'zonal_percentile' if zonal else 'percentile'
+        with _disk_budget(required, phase, private_paths=paths):
             try:
                 yield runs
             except OSError as exc:
-                raise _statistics_error('zonal_io' if zonal else 'io') from exc
+                raise _statistics_error('vector_io' if window is not None else 'zonal_io' if zonal else 'io') from exc
             finally:
                 with _DISK_LOCK:
                     shutil.rmtree(directory)
@@ -4933,7 +4948,7 @@ _SPECS = [
     (raster_surface_area, OperatorCategory.RASTER_STATISTICS, 'DEM 三维表面积统计', [_INPUT(), _param('band', 'int', '显式高程数据波段；四角有效像元中心组成面片，外缘不补面积'), _param('elevation_unit', 'str', '显式高程单位；双对角三角剖分逐面片取平均，面积平方米，结果为普通表', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段'), _param('percentile', 'float', '可选单个0至100的有限百分位；每区全量固定线性插值，50为中位数；未提供时保持原统计九列', None, False)], 'DataFrame', ['read']),
     (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_size', 'int', '以像元为单位的正方形窗口边长：3 或 5'), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）/median（中位数；偶数取两中值平均）/percentile（固定线性百分位）', enum=['sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile']), _param('percentile', 'float', 'method=percentile时必须显式指定单个0至100的有限百分位数；其他方法不得提供；50与median一致', None, False).model_copy(update={'show_when': {'method': ['percentile']}})], 'raster', ['read']),
-    (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False)], 'GeoDataFrame', ['read']),
+    (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False), _param('percentile', 'float', '可选单个0至100的有限百分位；逐面全量固定线性插值，50为中位数；未提供时保持原统计八列', None, False)], 'GeoDataFrame', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
     (raster_fill_depressions, OperatorCategory.RASTER_FLOW, 'DEM 填洼', [_INPUT(), _param('band', 'int', '显式高程数据波段；八邻接，图边及无效区边界开放'), _param('elevation_unit', 'str', '明确原高程单位，输出米制最低溢流高程', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
     (raster_flow_direction_d8, OperatorCategory.RASTER_FLOW, 'DEM D8 流向', [_INPUT(), _param('band', 'int', '显式高程数据波段；平坦区无环，封闭洼地失败'), _param('elevation_unit', 'str', '明确原高程单位，输出方向码与开放终点0', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
