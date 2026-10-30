@@ -1372,3 +1372,18 @@ def test_full_percentile_keeps_single_statistics_object_entry_and_optional_param
     assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='object'
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
     assert spec['attributes']['resource_groups']==['raster'] and len(spec['output_ports'])==1
+
+
+def test_zonal_percentile_keeps_single_table_entry_optional_parameter_and_original_inputs():
+    from operators import list_operators
+    specs = [spec for spec in list_operators() if spec['id'] == 'raster_zonal_statistics']
+    assert len(specs) == 1
+    spec = specs[0]; params = {param['name']: param for param in spec['parameters']}
+    assert set(params) == {'input_raster', 'zones_raster', 'band', 'zones_band', 'percentile'}
+    assert all(params[name]['required'] for name in ('input_raster', 'zones_raster', 'band', 'zones_band'))
+    assert params['percentile']['type'] == 'float' and not params['percentile']['required']
+    assert 'default' not in params['percentile']
+    assert all(word in params['percentile']['description'] for word in ('0', '100', '50', '线性', '原统计'))
+    assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
+    assert spec['attributes']['resource_groups'] == ['raster']
+    assert len(spec['output_ports']) == 1 and spec['output_ports'][0]['type'] == 'DataFrame'

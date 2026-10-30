@@ -54,6 +54,8 @@ _DISK_MESSAGES = {
     },
 }
 RESAMPLING = ['nearest', 'bilinear', 'cubic', 'cubicspline', 'lanczos', 'average', 'mode']
+_PERCENTILE_UNSET = object()
+_ZONAL_PERCENTILE_DTYPE = np.dtype([('zone', np.int64), ('value', np.float64)])
 
 
 @contextmanager
@@ -1251,7 +1253,10 @@ class _ZoneStatistics:
         return [self.total, self.count, self.total - self.count, *stats]
 
 
-def raster_zonal_statistics(input_raster, zones_raster, band, zones_band):
+def raster_zonal_statistics(input_raster, zones_raster, band, zones_band, percentile=_PERCENTILE_UNSET):
+    requested = percentile is not _PERCENTILE_UNSET
+    if requested:
+        percentile = _percentile_parameter(percentile)
     dataset, zones = _open(input_raster), _open(zones_raster)
     _require_same_grid(dataset, zones)
     for source, index in ((dataset, band), (zones, zones_band)):
@@ -1261,21 +1266,32 @@ def raster_zonal_statistics(input_raster, zones_raster, band, zones_band):
             if source.GetRasterBand(i).GetColorInterpretation() == gdal.GCI_AlphaBand:
                 _band(source, i)
     statistics = {}
-    for x, y, arrays, masks in _blocks(zones, [zones_band], native=True):
-        classes = _classification_values(arrays[0], masks[0])
-        height, width = arrays[0].shape
-        _, _, values, valid = next(_blocks(dataset, [band], window=(x, y, width, height)))
-        selected_values, selected_valid = values[0][masks[0]], valid[0][masks[0]]
-        # Sort once per block; never scan the full block once per classification.
-        order = np.argsort(classes, kind='stable')
-        codes, starts, counts = np.unique(classes[order], return_index=True, return_counts=True)
-        for code, start, count in zip(codes, starts, counts):
-            group = order[start:start + count]
-            statistics.setdefault(int(code), _ZoneStatistics()).add(
-                selected_values[group][selected_valid[group]], int(count))
-    columns = ['zone_value', 'total_count', 'valid_count', 'invalid_count', 'sum', 'min', 'max', 'mean', 'stddev']
-    result = pd.DataFrame([[code, *statistics[code].summary()] for code in sorted(statistics)], columns=columns)
-    return result.astype({name: 'int64' if i < 4 else 'Float64' for i, name in enumerate(columns)})
+    with _percentile_runs(dataset, zonal=True) if requested else nullcontext() as runs:
+        for x, y, arrays, masks in _blocks(zones, [zones_band], native=True):
+            classes = _classification_values(arrays[0], masks[0])
+            height, width = arrays[0].shape
+            _, _, values, valid = next(_blocks(dataset, [band], window=(x, y, width, height), native=True))
+            selected_valid = valid[0][masks[0]]
+            selected_values = values[0][masks[0]].astype(np.float64)
+            # Sort once per block; never scan the full block once per classification.
+            order = np.argsort(classes, kind='stable')
+            codes, starts, counts = np.unique(classes[order], return_index=True, return_counts=True)
+            for code, start, count in zip(codes, starts, counts):
+                group = order[start:start + count]
+                statistics.setdefault(int(code), _ZoneStatistics()).add(
+                    selected_values[group][selected_valid[group]], int(count))
+            if runs is not None:
+                records = np.empty(int(selected_valid.sum()), dtype=_ZONAL_PERCENTILE_DTYPE)
+                records['zone'] = classes[selected_valid]
+                records['value'] = selected_values[selected_valid]
+                runs.add(records)
+        columns = ['zone_value', 'total_count', 'valid_count', 'invalid_count', 'sum', 'min', 'max', 'mean', 'stddev']
+        result = pd.DataFrame([[code, *statistics[code].summary()] for code in sorted(statistics)], columns=columns)
+        result = result.astype({name: 'int64' if i < 4 else 'Float64' for i, name in enumerate(columns)})
+        if requested:
+            result['percentile'] = pd.array([percentile] * len(result), dtype='Float64')
+            result['percentile_value'] = pd.array(_zonal_percentiles(runs, statistics, percentile), dtype='Float64')
+        return result
 
 
 def _zone_window(dataset, bounds):
@@ -1360,10 +1376,10 @@ def raster_vector_zonal_statistics(input_raster, input_gdf, band, all_touched=Fa
     return result
 
 
-_PERCENTILE_UNSET = object()
 _PERCENTILE_MERGE_VALUES = 32768
 _STATISTICS_MESSAGES = {
     'io': ('整幅栅格百分位临时排序读写失败', 'Full-raster percentile temporary sorting I/O failed'),
+    'zonal_io': ('栅格分区百分位临时排序读写失败', 'Raster zonal percentile temporary sorting I/O failed'),
     'range': ('整幅栅格统计结果超出有限Float64范围', 'Full-raster statistics exceed the finite Float64 output range'),
     'alpha': ('栅格统计不支持复数alpha', 'Raster statistics do not support complex alpha'),
 }
@@ -1373,21 +1389,21 @@ def _statistics_error(code):
     return ValueError(_STATISTICS_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
 
-def _merge_percentile_runs(left_path, right_path, output_path):
+def _merge_percentile_runs(left_path, right_path, output_path, dtype=np.dtype('float64')):
     """Merge sorted files with two fixed buffers; never map the whole raster."""
     with left_path.open('rb') as left, right_path.open('rb') as right, output_path.open('wb') as output:
-        buffers = [np.empty(0), np.empty(0)]
+        buffers = [np.empty(0, dtype=dtype), np.empty(0, dtype=dtype)]
         streams = [left, right]
         finished = [False, False]
         while True:
             for index, stream in enumerate(streams):
                 if not buffers[index].size and not finished[index]:
-                    buffers[index] = np.fromfile(stream, dtype=np.float64, count=_PERCENTILE_MERGE_VALUES)
+                    buffers[index] = np.fromfile(stream, dtype=dtype, count=_PERCENTILE_MERGE_VALUES)
                     finished[index] = buffers[index].size < _PERCENTILE_MERGE_VALUES
             if not any(buffer.size for buffer in buffers):
                 break
             if all(buffer.size for buffer in buffers):
-                boundary = min(buffer[-1] for buffer in buffers)
+                boundary = min((buffer[-1] for buffer in buffers), key=lambda item: item.tolist())
                 cuts = [int(np.searchsorted(buffer, boundary, side='right')) for buffer in buffers]
             else:
                 cuts = [buffer.size for buffer in buffers]
@@ -1396,14 +1412,15 @@ def _merge_percentile_runs(left_path, right_path, output_path):
             prefix.tofile(output)
             buffers = [buffer[cut:] for buffer, cut in zip(buffers, cuts)]
     expected = left_path.stat().st_size + right_path.stat().st_size
-    if expected % 8 or output_path.stat().st_size != expected:
+    if expected % dtype.itemsize or output_path.stat().st_size != expected:
         raise OSError('Incomplete private percentile merge')
 
 
 class _PercentileRuns:
     """Binary carry merging retains only logarithmically many private runs."""
 
-    def __init__(self, directory, levels):
+    def __init__(self, directory, levels, dtype=np.dtype('float64')):
+        self.dtype = dtype
         self.levels = [directory / f'level-{index}.bin' for index in range(levels)]
         self.scratch = [directory / f'merge-{index}.bin' for index in range(2)]
 
@@ -1417,14 +1434,14 @@ class _PercentileRuns:
                 with _DISK_LOCK:
                     carry.rename(level)
                 return
-            _merge_percentile_runs(level, carry, output)
+            _merge_percentile_runs(level, carry, output, dtype=self.dtype)
             with _DISK_LOCK:
                 level.unlink()
                 carry.unlink()
             carry, output = output, carry
         raise OSError('Private percentile run capacity exceeded')
 
-    def value(self, count, percentile):
+    def finish(self, count):
         if not count:
             return None
         carry = None
@@ -1435,13 +1452,19 @@ class _PercentileRuns:
                 carry = level
                 continue
             output = next(path for path in self.scratch if path != carry)
-            _merge_percentile_runs(carry, level, output)
+            _merge_percentile_runs(carry, level, output, dtype=self.dtype)
             with _DISK_LOCK:
                 carry.unlink()
                 level.unlink()
             carry = output
-        if carry is None or carry.stat().st_size != count * 8:
+        if carry is None or carry.stat().st_size != count * self.dtype.itemsize:
             raise OSError('Incomplete private percentile ranks')
+        return carry
+
+    def value(self, count, percentile):
+        carry = self.finish(count)
+        if carry is None:
+            return None
         lower, upper, weight = _percentile_ranks(count, percentile)
         with carry.open('rb') as stream:
             stream.seek(lower * 8)
@@ -1451,19 +1474,41 @@ class _PercentileRuns:
         return float(_focal_linear_values(values[:1], values[-1:], weight)[0])
 
 
+def _zonal_percentiles(runs, statistics, percentile):
+    path = runs.finish(sum(group.count for group in statistics.values()))
+    if path is None:
+        return [None] * len(statistics)
+    values, offset = [], 0
+    with path.open('rb') as stream:
+        for code in sorted(statistics):
+            count = statistics[code].count
+            if not count:
+                values.append(None)
+                continue
+            lower, upper, weight = _percentile_ranks(count, percentile)
+            stream.seek((offset + lower) * runs.dtype.itemsize)
+            records = np.fromfile(stream, dtype=runs.dtype, count=1 + (upper != lower))
+            if records.size != 1 + (upper != lower) or not np.all(records['zone'] == code):
+                raise OSError('Incomplete private zonal percentile ranks')
+            values.append(float(_focal_linear_values(records['value'][:1], records['value'][-1:], weight)[0]))
+            offset += count
+    return values
+
+
 @contextmanager
-def _percentile_runs(dataset):
+def _percentile_runs(dataset, *, zonal=False):
     block_count = ((dataset.RasterXSize + 511) // 512) * ((dataset.RasterYSize + 511) // 512)
     with tempfile.TemporaryDirectory(prefix='percentile-', dir=_WORKSPACE.get()) as directory:
-        runs = _PercentileRuns(Path(directory), block_count.bit_length())
+        dtype = _ZONAL_PERCENTILE_DTYPE if zonal else np.dtype('float64')
+        runs = _PercentileRuns(Path(directory), block_count.bit_length(), dtype)
         # At most source runs plus one merged copy, with per-file allocation slack.
         paths = runs.levels + runs.scratch
-        required = dataset.RasterXSize * dataset.RasterYSize * 16 + len(paths) * 65536
-        with _disk_budget(required, 'percentile', private_paths=paths):
+        required = dataset.RasterXSize * dataset.RasterYSize * 2 * dtype.itemsize + len(paths) * 65536
+        with _disk_budget(required, 'zonal_percentile' if zonal else 'percentile', private_paths=paths):
             try:
                 yield runs
             except OSError as exc:
-                raise _statistics_error('io') from exc
+                raise _statistics_error('zonal_io' if zonal else 'io') from exc
             finally:
                 with _DISK_LOCK:
                     shutil.rmtree(directory)
@@ -4886,7 +4931,7 @@ _SPECS = [
     (raster_statistics, OperatorCategory.RASTER_STATISTICS, '栅格统计', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('percentile', 'float', '可选单个0至100的有限百分位；全量固定线性插值，50为中位数；未提供时只返回原统计', None, False)], 'object', ['read']),
     (raster_cut_fill, OperatorCategory.RASTER_STATISTICS, '双DEM填挖方统计', [_INPUT(), _param('after_raster', 'raster', '施工后DEM，须与施工前同CRS、尺寸和完整网格，由用户保证相同高程基准', role='input'), _param('band', 'int', '显式施工前高程数据波段'), _param('after_band', 'int', '显式施工后高程数据波段'), _param('elevation_unit', 'str', '显式施工前高程单位', enum=list(_ELEVATION_METRES)), _param('after_elevation_unit', 'str', '显式施工后高程单位；挖填体积各非负，净增加为填方减挖方，统一立方米', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_surface_area, OperatorCategory.RASTER_STATISTICS, 'DEM 三维表面积统计', [_INPUT(), _param('band', 'int', '显式高程数据波段；四角有效像元中心组成面片，外缘不补面积'), _param('elevation_unit', 'str', '显式高程单位；双对角三角剖分逐面片取平均，面积平方米，结果为普通表', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
-    (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段')], 'DataFrame', ['read']),
+    (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段'), _param('percentile', 'float', '可选单个0至100的有限百分位；每区全量固定线性插值，50为中位数；未提供时保持原统计九列', None, False)], 'DataFrame', ['read']),
     (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_size', 'int', '以像元为单位的正方形窗口边长：3 或 5'), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）/median（中位数；偶数取两中值平均）/percentile（固定线性百分位）', enum=['sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile']), _param('percentile', 'float', 'method=percentile时必须显式指定单个0至100的有限百分位数；其他方法不得提供；50与median一致', None, False).model_copy(update={'show_when': {'method': ['percentile']}})], 'raster', ['read']),
     (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False)], 'GeoDataFrame', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
