@@ -2100,6 +2100,12 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     for relative,fragments in extension_required.items():
         if any(fragment not in (repository/relative).read_text() for fragment in fragments):
             raise RegistrationError('topology extension case contract incomplete: '+relative)
+    extension_script=(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js').read_text()
+    extension_case=re.search(r"(?ms)^test\('线端延伸独立普通User双成果与精确首次交点拒绝'.*?^\}\)",extension_script)
+    body=extension_case.group(0) if extension_case else ''
+    observer=body.find('await observeLineageCanvas(page)');login=body.find('await login(')
+    if observer<0 or login<0 or observer>login or "output.port+'_graph_observed'" not in body or "output.port+'_graph_rendered'" not in body:
+        raise RegistrationError('topology extension must await its Canvas observer before navigation and preserve raw graph stages')
     proximity_required = {
         '.github/workflows/online-t4-gates.yml': ('          - line-proximity',),
         'scripts/test/online-hosted-topology-gate.sh': ('operator-input-diagnostics|line-proximity',),

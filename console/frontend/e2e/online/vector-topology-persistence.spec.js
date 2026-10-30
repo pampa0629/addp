@@ -791,6 +791,7 @@ test('线端延伸独立普通User双成果与精确首次交点拒绝',async({p
   expect(evidence.expected.result).toHaveLength(7);expect(evidence.expected.details).toHaveLength(8)
   const identity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
   const raw={schema_version:'addp.line-extension-browser-raw/v1',case:evidence.case,run_id:evidence.run_id,execution_id:evidence.execution_id,observations:[]}
+  await observeLineageCanvas(page)
   const writes=[]
   page.on('request',request=>{const path=new URL(request.url()).pathname
     if(!['GET','HEAD','OPTIONS'].includes(request.method())&&/^\/api\/v1\/(develop|meta|manager)\//.test(path))writes.push({method:request.method(),path})})
@@ -829,6 +830,7 @@ test('线端延伸独立普通User双成果与精确首次交点拒绝',async({p
     await frame.getByRole('tab',{name:'血缘',exact:true}).click()
     const graphResponse=await graphRead,graphAPI=await browserAPIFromResponse(graphResponse,process.env.GATEWAY_URL,identity)
     try{observation.graph=await json(graphResponse,'extension actual lineage tab')}finally{await graphAPI.dispose()}
+    persistExtensionEvidence(directory,raw,output.port+'_graph_observed')
     const binding={...evidence,sources:evidence.sources.slice(0,2),output}
     assertProximityLineage(observation.graph,binding)
     expect(observation.graph.edges.filter(e=>e.relation_kind==='derive'&&e.status==='active')).toHaveLength(2)
@@ -838,6 +840,7 @@ test('线端延伸独立普通User双成果与精确首次交点拒绝',async({p
       return observation.lineage_rendered?.edges?.length||0
     }).toBe(2)
     assertProximityLineage({...observation.graph,edges:observation.lineage_rendered.edges},binding)
+    persistExtensionEvidence(directory,raw,output.port+'_graph_rendered')
     await expect.poll(async()=>{observation.lineage_canvas=await lineageCanvasSnapshot(canvas);return [...binding.sources.map(s=>s.name),output.name].every(name=>observation.lineage_canvas.rows.some(r=>r.text.includes(name)))}).toBe(true)
     expect(observation.lineage_canvas.paths.length).toBeGreaterThanOrEqual(2)
     await page.screenshot({path:resolve(directory,`line-extension-${output.port}-lineage.png`)});persistExtensionEvidence(directory,raw,output.port+'_lineage_verified')

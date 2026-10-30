@@ -1577,3 +1577,25 @@ for(const expected of Object.values(expectations)){
         environment={**self.env,'ADDP_ONLINE_TEST_TIMEOUT_SECONDS':'0'}
         with self.assertRaisesRegex(m.SuiteError,'budget exhausted'):
             m.run_scenario(Path('.'),environment,ExtensionClient(),extension_physical,lambda *a:a[2])
+
+    def test_extension_installs_real_canvas_observer_before_first_login_navigation(self):
+        import subprocess
+        repository=Path(__file__).resolve().parents[2]
+        script=r'''
+import assert from 'node:assert/strict';import{readFileSync}from'node:fs';
+const source=readFileSync(process.argv[1],'utf8');
+const marker="test('线端延伸独立普通User双成果与精确首次交点拒绝',async({page})=>{";
+const start=source.indexOf(marker);assert.ok(start>=0);
+const end=source.indexOf('\n})',start);assert.ok(end>start);
+const body=source.slice(start+marker.length,end);
+const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
+const run=new AsyncFunction('page','expect','process','observeLineageCanvas','login',body);
+const events=[],stop=new Error('stop after first navigation'),page={on(){},waitForResponse(){events.push('read');return Promise.resolve({})}};
+const evidence={case:'line-extension',sources:[{},{},{}],outputs:[{port:'result'},{port:'details'}],expected:{result:Array(7),details:Array(8)}};
+const expect=value=>({toBe:x=>assert.equal(value,x),toHaveLength:x=>assert.equal(value.length,x),toEqual:x=>assert.deepEqual(value,x)});
+let installed=false;
+await assert.rejects(()=>run(page,expect,{env:{ADDP_ONLINE_TOPOLOGY_EVIDENCE:JSON.stringify(evidence)}},async actual=>{assert.equal(actual,page);await Promise.resolve();installed=true;events.push('observer')},async()=>{assert.ok(installed,'Canvas observer was not awaited before login');events.push('login');throw stop}),error=>error===stop);
+assert.deepEqual(events,['observer','read','login']);
+'''
+        value=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js')],text=True,capture_output=True)
+        self.assertEqual(value.returncode,0,value.stdout+value.stderr)

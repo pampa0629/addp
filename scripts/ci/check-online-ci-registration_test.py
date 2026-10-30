@@ -1214,6 +1214,17 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 CHECK.validate_vector_topology_profile(self.repository, registered)
             target.write_text(original)
 
+        # A different case already installs this observer; removing only the
+        # extension call must still be rejected by the scoped profile check.
+        target=self.repository/paths[7];original=target.read_text()
+        marker="test('线端延伸独立普通User双成果与精确首次交点拒绝'"
+        offset=original.index(marker);prefix,body=original[:offset],original[offset:]
+        changed=body.replace('  await observeLineageCanvas(page)\n','',1)
+        for altered in (changed,changed.replace('  const frame=', '  await observeLineageCanvas(page)\n  const frame=',1)):
+            target.write_text(prefix+altered)
+            with self.assertRaises(CHECK.RegistrationError):CHECK.validate_vector_topology_profile(self.repository,registered)
+        target.write_text(original)
+
     def test_native_cleanup_requires_unique_case_route_private_topology_and_curated_reports(self):
         source = SCRIPT.parents[2]
         paths = ('scripts/test/online-hosted-cleanup-native-gate.sh', 'scripts/test/cleanup-native-infra.py',
