@@ -25,7 +25,8 @@ OUT_DIR ?= dist
 BUILD_TYPE ?= release
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
-BIN_SUFFIX := $(if $(filter windows,$(GOOS)),.exe,)
+# Utility targets must remain usable before Go has been installed.
+BIN_SUFFIX = $(if $(filter windows,$(GOOS)),.exe,)
 
 # 本地 Go 构建缓存目录，避免写入系统 GOPATH 并降低权限/网络问题
 LOCAL_GOMODCACHE := $(abspath .gomodcache)
@@ -63,6 +64,13 @@ build-audit-archive: ## 构建独立域审计归档采集和只读核验 CLI
 
 build-iam-migration-repair: ## 构建精确状态校验的 IAM 定向迁移恢复 CLI
 	$(call build_one_service,system/backend,addp-iam-migration-repair,cmd/iam-migration-repair/main.go)
+
+.PHONY: dev-doctor test-dev-environment
+dev-doctor: ## 只读诊断新机器 Node/npm 的版本与实际路径，不安装或启停服务
+	@bash scripts/dev/doctor.sh
+
+test-dev-environment: ## 验证新机器 Node/npm 诊断、无副作用边界和文档/CI 登记
+	@python3 scripts/test/dev-environment_test.py
 
 dev-start: ## 开发模式启动所有服务（按正确顺序）
 	@bash scripts/dev/start.sh
@@ -1102,6 +1110,7 @@ test-platform: check-node-runtime ## 运行无外部服务依赖的平台一致�
 	@$(MAKE) test-book
 	@$(MAKE) test-local-ci-runner
 	@$(MAKE) test-node-runtime
+	@$(MAKE) test-dev-environment
 	@$(MAKE) test-node-dependencies
 	@$(MAKE) test-infra-postgresql-init
 	@$(MAKE) test-system-iam-runner

@@ -42,7 +42,9 @@ jobs:
           node-version-file: .node-version
 
       - name: Validate Node runtime and rejection boundaries
-        run: make check-node-runtime test-node-runtime
+        run: |
+          make check-node-runtime test-node-runtime test-dev-environment
+          make dev-doctor
 
       - name: Check changed commits for whitespace errors
         env:

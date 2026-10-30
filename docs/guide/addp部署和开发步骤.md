@@ -8,10 +8,35 @@
 
 ### 前提条件
 
-**需要 Docker 环境**: ADDP 平台需要安装 Docker 和 Docker Compose。
+**需要 Docker 环境**: ADDP 平台需要安装 Docker 和 Docker Compose v2。
 
 - 安装 Docker Desktop: https://www.docker.com/products/docker-desktop
-- 验证安装: `docker --version` 和 `docker-compose --version`
+- 验证安装: `docker --version` 和 `docker compose version`
+
+### Node 工具链准备与诊断
+
+新机器在启动 Infra 或应用服务前，先准备源码开发工具：Git、Make、Python 3、沿[common/go.mod](../../common/go.mod) `go` 指令的 Go 工具链，以及上文的 Docker / Docker Compose。具体 Python、GDAL、JDK 等 Runtime 依赖按所选模块指南准备，Node 检查不会验证这些依赖。
+
+Node 的稳定主版本只读取根 [`.node-version`](../../.node-version)。先在仓库根执行 `cat .node-version`，再从 [Node.js 官方下载页](https://nodejs.org/en/download)或操作系统包管理器安装该主版本的稳定发行版及随附 npm；不要直接采用下载页默认的其他主版本。安装方式由机器管理者选择，项目不要求安装或初始化特定版本管理器。
+
+安装后，在**将要运行 ADDP 命令的同一环境**执行：
+
+```bash
+make dev-doctor
+```
+
+该入口调用 `scripts/dev/doctor.sh`，复用唯一的 Node 校验，并报告版本要求、当前实际解析的 Node/npm 路径及版本。版本不符、解释器或 npm 缺失、版本命令失败都会返回非零；不会读取 `.env`、安装依赖、修改锁文件或 Shell 配置，也不会连接、启动或停止服务。Node 校验失败时不运行 npm。预检通过仅表示 Node/npm 可用，不能视为完整开发环境验收。
+
+多版本机器须明确选择当前命令使用的安装。仅安装正确版本，并不保证 PATH 会优先找到它；安装目录名称也不能证明实际版本。如果不改全局 Shell 配置，可对单条命令指定已验证的 Node `bin` 目录。将下面占位目录替换为本机实际目录：
+
+```bash
+env PATH="/实际的Node安装目录/bin:$PATH" make dev-doctor
+env PATH="/实际的Node安装目录/bin:$PATH" bash scripts/dev/start.sh -system
+```
+
+前缀只作用于该命令及其子进程。后续测试、构建和重启也须在同一正确的运行环境中执行；预检不会替下一条命令保存或切换版本。只保留一个版本的机器，可让默认 `node` 和 `npm` 直接解析到声明版本，无需配置版本管理器。
+
+环境准备完成后再配置根 `.env` 并启动 Infra；首次建议用 `-system` 验证最小开发入口，再按模块指南补齐其他 Runtime。应用启动/重启仍在启停副作用前执行同一 Node 校验，失败不会静默安装或切换 Node。容器部署只运行预构建镜像时不要求宿主 Node；从源码构建镜像的入口仍需通过 Node 校验。
 
 ### 第一步: 启动基础设施 (必须首先执行)
 

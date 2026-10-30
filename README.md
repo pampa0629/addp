@@ -5,7 +5,7 @@
 **全域数据平台 - 企业级微服务数据平台**
 
 [![Version](https://img.shields.io/badge/version-0.1.14-blue.svg)](https://github.com/addp/addp)
-[![Go](https://img.shields.io/badge/Go-1.23+-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-go.mod-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.x-4FC08D.svg)](https://vuejs.org/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](#-许可证)
@@ -36,10 +36,12 @@ ADDP (All Domain Data Platform / 全域数据平台) 是一个企业级数据平
 
 #### 前置要求
 
-- **Go** 1.23+
-- **Node.js** 16+
-- **Docker** & **Docker Compose** (可选，用于容器化部署)
-- **PostgreSQL** 15+ (开发模式需要)
+- **Go**：版本沿 [common/go.mod](common/go.mod) 的 `go` 指令。
+- **Node.js 与 npm**：Node 稳定主版本沿根 [`.node-version`](.node-version)，npm 随 Node 安装。
+- **Git、Make、Python 3**：用于源码开发与标准脚本；模块 Runtime 另按对应指南准备。
+- **Docker 与 Docker Compose v2**：用于本地 Infra；PostgreSQL 等基础设施通过标准容器入口准备，无需另装宿主数据库。
+
+新机器先按[工具链准备与诊断流程](docs/guide/addp部署和开发步骤.md#node-工具链准备与诊断)完成检查；不要求特定 Node 版本管理器，不需要修改全局 Shell 配置。
 
 #### 方式一：开发模式 (推荐开发调试)
 
@@ -48,22 +50,26 @@ ADDP (All Domain Data Platform / 全域数据平台) 是一个企业级数据平
 git clone https://github.com/addp/addp.git
 cd addp
 
-# 2. 配置环境变量
+# 2. 准备声明版本的 Node/npm 后执行只读诊断
+make dev-doctor
+
+# 3. 配置环境变量
 cp .env.example .env
-# 编辑 .env 修改数据库密码等配置
+# 按配置指南编辑 .env
 
-# 3. 一键启动完整开发环境（并行启动优化，约 25-39 秒）
-bash scripts/dev/start.sh
+# 4. 启动基础设施
+bash scripts/infra/up.sh
 
-# 4. 快速重启（不重新编译，约 15-25 秒）
-bash scripts/dev/restart.sh
+# 5. 先验证最小开发入口；其他模块按对应指南准备 Runtime
+bash scripts/dev/start.sh -system
 
-# 5. 选择性编译重启（只重新编译修改的模块）
-bash scripts/dev/restart.sh -manager          # 只重新编译 Manager
-bash scripts/dev/restart.sh -meta -transfer   # 重新编译 Meta 和 Transfer
-bash scripts/dev/restart.sh -all              # 重新编译所有模块
+# 6. 日常重启按构建指纹增量编译，只启停指定模块
+bash scripts/dev/restart.sh -system
+bash scripts/dev/restart.sh -manager
+bash scripts/dev/restart.sh -meta -transfer
+# 全量环境准备完成后可使用 bash scripts/dev/restart.sh -all
 
-# 6. 停止所有服务
+# 7. 停止所有服务
 bash scripts/dev/stop.sh
 
 # 访问服务
@@ -73,17 +79,14 @@ bash scripts/dev/stop.sh
 ```
 
 **特点**：
-- ✅ 直接运行 Go 和 npm 进程，无需 Docker
-- ✅ **并行编译和启动** - 6 个后端 + 3 个 Workers 同时启动
-- ✅ **快速重启** - 支持不重新编译或选择性编译
+- ✅ 业务进程在本机运行，基础设施由 Docker Compose 管理
+- ✅ **并行编译和启动** - 按本次模块清单启动 Backend 与 Worker
+- ✅ **增量重启** - 构建输入不变时复用产物，变更时重新编译
 - ✅ **智能服务检测** - 自动跳过已运行的服务
 - ✅ 自动启动基础设施容器 (PostgreSQL, Redis, MinIO)
 - ✅ 健康检查和日志管理
 
-**性能优化**：
-- 完整启动时间：从 **47-78s** 降至 **25-39s**（提速 50%）
-- 快速重启：**15-25s**（无需重新编译）
-- 选择性重启：**10-20s**（只编译修改的模块）
+启动与重启耗时取决于所选模块、依赖准备及构建缓存；新机器首次准备与已有环境的增量启动分别核对，不承诺固定耗时。
 
 #### 开发交付验证
 

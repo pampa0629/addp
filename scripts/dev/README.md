@@ -19,6 +19,7 @@
 ```
 scripts/dev/
 ├── README.md          # 本文件
+├── doctor.sh          # 新机器 Node/npm 只读诊断，不安装或启停服务
 ├── start.sh           # 启动完整开发环境(后台运行)
 ├── process-metrics-launch.py # 按具体启动单元注入可选采集配置并 exec 标准接收器
 ├── stop.sh            # 停止所有开发服务
@@ -32,6 +33,10 @@ scripts/dev/
 ```
 
 ## 使用方法
+
+### 新机器准备与诊断
+
+先按[Node 工具链准备流程](../../docs/guide/addp部署和开发步骤.md#node-工具链准备与诊断)安装根 `.node-version` 声明的稳定主版本及 npm，再运行 `make dev-doctor`。该入口复用 `scripts/utils/node-runtime.sh`，报告当前命令实际使用的路径与版本；不会读取业务配置、修改 Shell、安装依赖或启停服务，也不把 Node/npm 检查通过当成其他 Runtime 或服务就绪。多版本机器的每条启动、测试和构建命令都须使用同一正确环境。
 
 ### 快速启动(推荐)
 

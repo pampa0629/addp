@@ -8,7 +8,7 @@
 
 读取仓库根 `.node-version` 并检查当前 PATH 中 `node --version` 的稳定主版本。开发启动与重启、锁定依赖安装、前端 Make 门禁、浏览器测试启动器、本地 CI 和镜像构建共用该实现；CI 先通过 `setup-node` 选择同一版本，再执行校验。版本错误、预发布版本、解释器缺失或版本文件非法均返回非零，不安装或切换工具，不提供跳过开关。
 
-手动核对使用 `make check-node-runtime`，策略和副作用边界回归使用 `make test-node-runtime`，该回归只用临时目录与受控命令，不启停个人服务。实际测试与前端构建沿根 Make 标准入口执行；直接进入模块运行 npm 不能替代标准门禁。根 `.node-version` 声明的是主版本，并未锁定补丁版本。
+新机器安装与多版本机器的单次命令选择沿[工具链准备流程](../../docs/guide/addp部署和开发步骤.md#node-工具链准备与诊断)，Node/npm 路径与版本诊断使用 `make dev-doctor`。手动核对 Node 使用 `make check-node-runtime`，策略和副作用边界回归使用 `make test-node-runtime`，该回归只用临时目录与受控命令，不启停个人服务。实际测试与前端构建沿根 Make 标准入口执行；直接进入模块运行 npm 不能替代标准门禁。根 `.node-version` 声明的是主版本，并未锁定补丁版本。
 
 ### ports-validate.sh
 **用途**: 验证端口分配是否符合 ADDP 规范

@@ -31,7 +31,7 @@ addp_require_node_runtime() {
     major=${BASH_REMATCH[1]}
     [ "$major" != "$required" ] || return 0
   fi
-  echo "Node.js $required is required, found $actual ($executable; source: .node-version). Select the required stable runtime before retrying." >&2
+  echo "Node.js $required is required, found $actual ($executable; source: .node-version). Select the required stable runtime before retrying; run make dev-doctor for setup diagnostics." >&2
   return 1
 }
 
