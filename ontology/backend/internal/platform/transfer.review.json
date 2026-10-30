@@ -307,8 +307,8 @@
       "kind": "implementation",
       "path": "agent/frontend/src/views/ChatView.vue",
       "anchor": "function ensureLiveTextPart(",
-      "commit": "39cdb2376752c744362c43c3372d8f8260b8f61d",
-      "sha256": "70f60a5bee2406f620d771edb0bb3bfc681d3a24874342dac3be7f922a506d20",
+      "commit": "85fc6d47e3bbb850b907c6bf6b0c9eb135cfb9f7",
+      "sha256": "79127e2fa594cdb8ae35b62b69e7d676676eb338beac14cb401040ce87afdceb",
       "use": {
         "zh-cn": "文字与A2UI按事件顺序呈现，当前计划稳定替换且保留历史。设置使用既有addp-module导航；另开会话通过单次NavigationDraft跨iframe移交文字，领取完成前关闭输入、发送与会话切换，避免迟到覆盖。不复制确认、预检、引用或权限，不扩大白名单或创建效果。",
         "en": "Preserves text/A2UI order and stable current-plan replacement with history. Settings uses addp-module navigation. New conversations transfer only text through the single-use NavigationDraft across iframe reloads. Editing, sending and session changes wait for draft receipt to prevent late overwrite. No inherited confirmations, prechecks, references or permissions; no expanded allowlists or creation effects."
