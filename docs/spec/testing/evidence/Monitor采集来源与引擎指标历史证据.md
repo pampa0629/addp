@@ -231,3 +231,11 @@ Safari 已加载新缩放提示与实际提交速率曲线，但本轮截图存�
 新增五项 T3：列表与详情分别在手动／自动刷新时有意阻塞响应，确认原读数、分页和画布不消失、无整块遮罩，释放后容量从 1.00 更新到 2.00 GiB；详情确认同一 canvas 节点前后保持连接。另验等待期间撤权取消并清除，旧响应返回不得复活。修复前详情专项实际因等待中容量变为“—”失败（`/tmp/addp-engine-inplace-red3.log`）；修复后标准 `npm --prefix monitor/frontend run test:e2e -- engine-resources.spec.js` 的全部 25 项通过（1.2 分钟），含原错误、SQL 快照失败、趋势失败、权限／主机失效和缩放回归（`/tmp/addp-engine-inplace-targeted.log`）。
 
 本批 T1／T3及构建由原 `make test-monitor-frontend`、Playwright 自动发现和 Platform CI 已登记的 Monitor frontend 作业覆盖，无需修改 workflow。最终使用已有 Node 24.20.0 的 bin 临时加入 PATH 执行 `make test-monitor-frontend`，退出 0：T1 全部 131 项、T3 全部 521 项（22.1 分钟）及生产构建（6.56 秒）通过；日志 `/tmp/addp-engine-inplace-full.log`。`/tmp/addp-engine-inplace-inputs.sha256` 核对本轮页面／引擎用例／夹具在专项和完整门禁之后未改变，`git diff --check` 通过，标准浏览器入口的当轮隔离 runtime／成功输出目录已清理。本轮完整通过不改写前轮超时原记录，也不代表 backend、来源 T2、CI 或 Hosted 通过。Safari 只读检查仍报告页面隐藏、自动刷新暂停，故本次原位刷新尚未取得个人 Safari 连续可见证据，不回用前一版本的缩放验收代替。 随后只读核对当前开发前端：Console 普通组件地址和直连 Monitor 的同一路径仍返回清空旧值的旧实现，而同一路径带诊断查询参数可返回新上下文逻辑与 aria-busy；两种来源已分别保存于 `/tmp/addp-engine-inplace-served-recheck.vue.js`、`/tmp/addp-engine-inplace-served-public-query.vue.js`。这仅证明普通转换结果尚未更新，未确证缓存失效的更深层根因；不添加产品 cache-busting 路径，已请用户执行标准 `./scripts/dev/restart.sh -monitor` 后再验真实页面。未重启服务、修改个人数据库或权限，CI／Hosted 继续等专门会话回传，未查询、调度或设置定时任务。
+
+### 用户重启后的个人 Safari 复验（2026-10-30）
+
+用户执行标准 Monitor 重启并将 Safari 保持前台后，Console 普通组件地址（无诊断参数）实际返回新 dataContext 原位更新逻辑和 aria-busy，旧普通转换结果不再阻碍验证；源码响应保留于 `/tmp/addp-engine-inplace-after-restart.vue.js`。本轮只使用原生 Safari 第二个 Business 标签页、既有已登录平台系统管理员；地址为同一部署和数据库总容量，默认十五秒自动刷新，没有操作第一标签页、修改登记或采集配置。
+
+真实页面显示正在采集、最大连接数 200、容量 78.3 GiB，卡片及实际容量曲线完整可见。原生拖动滑块收窄至右半段；真实点击“刷新”后的查询窗口为 19:59:31—20:04:31、可见横轴 20:02:01—20:04:31，读数与曲线保留且视口未重置。此后没有手动刷新输入，自动更新窗口从 20:00:03—20:05:03 推进到 20:00:33—20:05:33；后一次截图的可见横轴为 20:03:03—20:05:33，滑块仍在右半段，卡片和容量曲线保持可见。由此补齐新版本在个人 Safari 的手动／自动刷新结果与视口保持；未捕获原生请求在途帧，不以离散截图声称逐帧零闪、画布身份或长时间连续性，这些在途保留／同一 canvas 的断言仍由前述阻塞响应 T3 独立证明。
+
+操作与截图保留于本会话，摘要 `/tmp/addp-engine-inplace-safari-receipt.json`。本轮仅补文档证据与能力状态，最小验证 `git diff --check` 通过，产品代码未变，复用原 131 项 T1／521 项 T3及构建结果，不重跑有效门禁。不代表列表的个人 Safari 专项、其他时段／引擎、旧来源 T2 或新 CI／Hosted 通过；CI 与 Hosted 仍等专门会话回传，未设置定时任务，未由 AI 启停个人服务。
