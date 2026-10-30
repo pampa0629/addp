@@ -177,3 +177,11 @@ Safari 使用真实平台管理员，前台详情实际显示十二项专业指�
 Business 部署发现 v2 自动变为 available，专业来源端点、当前数据库容器 ID／启动时刻与真实容器精确一致。Prometheus mTLS API 显示该目标 UP、抓取错误为空，自动沿原平台部署 `9e4fd2b0-3b45-473e-b070-cc6f92e40e11` 接入，没有重复创建部署；当前外部目标 8 个、加中心自身共 9 个，未增加目标预算。受限到该部署／容器身份的原始时序读取显示最近一分钟已有 4 个采样，提交／回滚／死锁累计量均可读。摘要为 `/tmp/addp-pg-business-runtime-receipt.json`，这只计个人环境来源及发现实链，不替代此前失败的 T2、当前 User 专业 API 页面或新的 Hosted。
 
 Safari 单独打开 Business 验证标签后内容区空白。进一步以禁用环境代理的直接本机 HTTP 核对：Monitor 后端 `/health/ready` 为 200，前端 `5179` 无监听、Console 模块代理为 500；`logs/monitor-frontend.log` 保存 Node `read EIO`／TTY 退出，因此尚未认定页面通过。已请用户通过 `bash scripts/dev/start.sh -monitor` 恢复缺失前端，已有服务复用；本会话未自行启动／重启个人服务，仍待页面复验。未运行新的 CI／Hosted 或设置定时。
+
+## PostgreSQL 私有来源投影 T1 的短数字碰撞修复（2026-10-30）
+
+CI 专门会话回传 [Actions 40984761423／Job 123833070594](https://github.com/pampa0629/addp/actions/runs/40984761423/job/123833070594)，源码 `3a004a94759f0414030d99c992e057c2651c2cb5` 的 System Go T1 在 `TestEngineMetricsPrivateProjectionDoesNotChangeAdmissionOrBrowser` 报 `private source leaked into browser`。原断言搜索整个公开 JSON 的短字符串 `19443`，它恰好出现在该次合法公开指纹 `06e61ece304ab35633d28c1f97252ab7a131b4fcd9346360db5b194430ecd96b` 中。独立核对生产发现读取器和 DTO 与失败 SHA 逐字节相同，读取器仍清除私有来源；没有以本次误报证明真实泄漏。
+
+测试保留当前新鲜的发现时间，仅将容器启动时间固定为失败现场的 `2026-10-30T00:29:17Z`，并锁定完整碰撞指纹；原短数字断言因此在标准入口稳定报出相同失败。修正为完整公开投影值比较、逐作用域检查内存中的私有指针及 JSON 私有字段，并拒绝完整私有端点；保留后台来源正确性、快照启动边界、外来 Docker 身份、可选来源身份错误和旧协议拒绝。只修改此测试，未改生产 DTO、发现路由、权限或采集断言。
+
+在当前共享工作区，以已有 Node 24.20.0 的 bin 临时加入测试命令 PATH 后，`make test-module MODULE=system GO_ONLY=1` 红阶段仅该碰撞断言失败，绿阶段完整 System Go T1 退出 0。最初使用默认 Node 25 的调用被仓库新版 Node 24 前置检查拒绝，未进入 Go、不能记为碰撞复现；没有改全局 Node 或依赖。红／绿日志 `/tmp/addp-engine-metrics-privacy-red.log`、`/tmp/addp-engine-metrics-privacy-green.log`。另用 Go overlay 在 OS 临时目录单独向测试结果注入第二作用域私有指针、私有 JSON 字段和完整私有端点，三次同一标准入口均命中各自拒绝断言；共享测试文件及生产文件未改写，记录 `/tmp/addp-engine-metrics-privacy-audit.json`。现有 Go T1 自动发现及自然 CI 已覆盖，无需新增入口；未运行 T2／Hosted、未操作个人服务、未轮询 CI 或设置定时，自然 CI 结果继续等待专门会话回传。
