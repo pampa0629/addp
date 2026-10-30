@@ -148,7 +148,7 @@ make ports-validate
 | **Nginx Gateway**     | **80**   | **80**      | **统一入口 (推荐)**        |
 | **Console Frontend**   | **5170** | 80 | **经 Nginx 路径访问** |
 | Gateway               | 8000     | 8000        | API Gateway (后端路由)     |
-| System Backend        | 8180     | 8180        | 认证、用户、日志 (统一使用8180避免端口冲突) |
+| System Backend        | 8180     | 8180        | 认证、用户、日志 |
 | System Frontend       | 5173     | 80 | 经 Nginx 路径访问                   |
 | Manager Backend       | 8081     | 8081        | 数据源、文件               |
 | Manager Frontend      | 5174     | 80 | 经 Nginx 路径访问                   |
@@ -198,6 +198,7 @@ make ports-validate
 | SuperMap Workflow Engine   | 8103     | 8103        | 超图 iObjects C++ 空间计算工作流引擎 |
 | DuckDB Query Runtime       | 8104     | 8104        | 联邦只读查询计算引擎       |
 | Document Workflow Engine   | 8105     | 8105        | 文档转换工作流引擎         |
+| Raster Mosaic Runtime     | 8291     | 8291        | Manager 栅格镶嵌渲染；容器值为镜像声明 |
 | PostgreSQL (System)   | 15432    | 5432 | ADDP 系统元数据            |
 | Redis                 | 16379    | 6379 | 缓存、事件和分布式锁       |
 | FalkorDB              | 16479    | 6379        | Ontology Infra，仅绑定回环，不注册为业务 Engine |
@@ -218,35 +219,10 @@ make ports-validate
 ## 端口分配规则
 
 ### 后端端口规则
-- **核心模块**：808x 系列（8081-8087）
-  - 8081: Manager
-  - 8082: Meta
-  - 8083: Transfer
-  - 8084: Orchestrator
-  - 8185: Develop
-  - 8086: Service
-  - 8087: Copilot
-- **特殊模块**：
-  - 8180: System（避免与企业微信等应用的 8080 端口冲突）
-  - 8100: Monitor
-  - **8110: Standard（数据标准管理）**
-  - **8181: Model（数据建模）**
-  - **8182: Quality（数据质量）**
-  - **8183: Asset（数据资产管理）**
-  - **8184: Portal（数据消费者门户）**
-  - **8191: Inference（统一 AI 推理）**
-  - **8192: Catalog（企业资源目录）**
-  - **8193: Workbench（服务消费工作台）**
-  - **8194: Security（数据安全）**
-- **引擎服务**：808x-809x 系列
-  - 8089: Math Workflow Engine（参考实现，手动注册）
-  - 8097: Jupyter API Server
-  - 8098: Spark Workflow Engine
-  - 8099: GeoPython Workflow
-  - 8101: Model3D Workflow Engine
-  - 8102: PointCloud Workflow Engine
-  - 8103: SuperMap Workflow Engine
-  - 8105: Document Workflow Engine
+
+Gateway、各模块 Backend 与引擎／Runtime 的开发首选端口统一见[端口分配](#端口分配)，变量及分配入口见[标准开发端口解析](../../scripts/dev/ports.sh)。实际监听端口以标准启动输出和 `.dev-state/ports.env` 为准，根 `.env` 只记录首选值。
+
+模块与 Runtime 的启停范围、Math 手动注册和 Manager 附属 Raster Mosaic 的归属见[模块选择与 Runtime 联调](../../scripts/docs/模块选择启动指南.md#显式选择-runtime-联调)；容器内固定端口、宿主机映射及公开入口见[部署端口规则](#前端-docker-端口规则)。端口声明不代表进程已启动、引擎已注册或业务验收通过。
 
 ### 前端开发端口规则
 
