@@ -109,6 +109,10 @@ Chat 的思考模式控制由 Model Deployment 的 `chat_thinking_mode` 显式�
 
 ### 2.1 Provider Template 与快速接入
 
+[模板职责](#模板目录职责) · [正式资源](#正式资源创建) · [复用冲突](#复用部署与配置冲突) · [模型发现](#服务端模型发现) · [网络可达](#runtime-网络可达性) · [参数规则](#模型适配与调用参数) · [验证要求](#九验证要求)
+
+#### 模板目录职责
+
 Provider Template 是 Inference owner 维护的只读接入目录，用于降低 Provider、Deployment 和 Profile 的首次配置成本。模板可以预置：
 
 - 在线厂商或本地推理运行时的稳定模板 code 和分类。
@@ -116,6 +120,8 @@ Provider Template 是 Inference owner 维护的只读接入目录，用于降低
 - 凭据是必需还是可选，以及模型发现方式。
 - 可验证的建议模型、操作能力、输入模态和向量维度。
 - 对应厂商或运行时的正式文档地址。
+
+#### 正式资源创建
 
 Provider Template 不是新的持久化运行时资源，不保存 API Key，不参与 Tenant 可见性判断，也不能作为推理请求的引用目标。快速接入必须把用户确认后的结果写入唯一正式资源路径：
 
@@ -128,9 +134,17 @@ Provider Template
 
 默认管理界面可以把上述创建过程组织为一个向导，并把三类正式资源放入高级设置，但不得在数据库中建立一套与 Provider、Deployment、Profile 并行的“简化配置”。模板目录由 Inference API 提供，Console 只负责呈现；System 仍只登记配置入口、权限和审计。
 
+#### 复用部署与配置冲突
+
 快速接入复用已有 Chat Deployment 时，必须核对用户确认的最大输出参数、温度和思考控制与已有事实一致。不一致时应在任何资源创建前拒绝，并提示通过高级设置显式编辑；不得忽略选择，也不得隐式修改可能被其他 Profile 引用的部署。
 
-OpenAI-compatible 模型发现统一由 Inference 服务端使用 Provider Connection 的 Endpoint 和加密凭据调用标准 `/models` 接口。浏览器不得直接访问厂商 Endpoint 或接触已保存凭据。发现结果只表示上游当前列出的模型标识，不能仅根据模型名称推断 Chat、Embedding、Rerank、Tool Calling、输入模态或向量维度；这些能力必须来自模板声明、管理员确认或实际能力探测。
+#### 服务端模型发现
+
+OpenAI-compatible 模型发现统一由 Inference 服务端使用 Provider Connection 的 Endpoint 和加密凭据调用标准 `/models` 接口。浏览器不得直接访问厂商 Endpoint 或接触已保存凭据。
+
+发现结果只表示上游当前列出的模型标识，不能仅根据模型名称推断 Chat、Embedding、Rerank、Tool Calling、输入模态或向量维度；这些能力必须来自模板声明、管理员确认或实际能力探测。
+
+#### Runtime 网络可达性
 
 本地运行时模板中的主机地址必须从 Inference Runtime 所在网络环境可达。浏览器所在机器的 `localhost` 不自动等于 Inference Runtime 的 `localhost`，快速接入必须允许管理员修正 Endpoint 并由服务端执行检测。
 
@@ -182,8 +196,8 @@ Provider credential 使用部署级 `ENCRYPTION_KEY` 进行认证加密。数据
 | `GET/POST /provider-connections` | 列表或创建当前 Realm 可管理的 Provider。 |
 | `GET/PUT/DELETE /provider-connections/{id}` | 读取、更新或删除 Provider 普通字段。 |
 | `PUT/DELETE /provider-connections/{id}/credential` | 设置、轮换或删除加密凭据。 |
-| `GET /provider-templates` | 查询 Inference 内置的只读模型服务接入模板。 |
-| `POST /provider-connections/{id}/discover-models` | 使用该 Provider 的服务端 Endpoint 和加密凭据发现 OpenAI-compatible 模型。 |
+| `GET /provider-templates` | 查询 Inference 内置的只读模型服务接入模板。职责与适用范围见[模板目录](#模板目录职责)。 |
+| `POST /provider-connections/{id}/discover-models` | 使用该 Provider 的服务端 Endpoint 和加密凭据发现 OpenAI-compatible 模型。结果与能力判定范围见[模型发现](#服务端模型发现)。 |
 | `GET/POST /model-deployments` | 列表或创建 Deployment；Chat 参数能力通过 `chat_max_output_tokens_parameter`、`chat_temperature_mode` 和 `chat_thinking_mode` 显式声明，映射与限制见[模型调用参数](#模型适配与调用参数)。 |
 | `GET/PUT/DELETE /model-deployments/{id}` | 读取、更新或删除 Deployment，包括显式的 Chat 参数能力映射。 |
 | `POST /model-deployments/{id}/probe` | 显式执行无副作用可达性和能力探测。 |
