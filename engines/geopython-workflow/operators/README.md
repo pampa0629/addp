@@ -209,3 +209,5 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 `raster_sieve`显式波段／min_pixels／4或8邻接，按原始连通斑块大小一次冻结，只合并到相邻达标供体，大小并列按较小分类／最前行列决定；无供体保留、不跨无效区、不填洞。原边界清理／蚕食结果保持。
 
 `raster_focal_statistics`的`method=median`复用原邻域统计入口，固定3×3／5×5、包含中心、实际有效邻居排序，偶数取两中值平均；允许小数，中心无效保留、边缘不补零，沿原网格／Float64／COG。原sum／mean／min／max／stddev／mode语义保持，不新增面板入口。
+
+同一入口的`method=percentile`必须显式指定单个`percentile`（有限实数0–100，非布尔），固定线性位置`h=(n−1)p/100`在相邻有效排序值间插值；50与median一致，0／100为端点。沿原3×3／5×5、包含中心、有效性、同网格Float64与COG主路径；其他方法不接受percentile参数，原七方法保持，不新增面板入口。

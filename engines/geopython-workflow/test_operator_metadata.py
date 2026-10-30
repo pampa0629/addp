@@ -1337,8 +1337,23 @@ def test_focal_median_keeps_one_entry_required_parameters_old_methods_and_exampl
     from operators import list_operators
     specs=[s for s in list_operators()if s['id']=='raster_focal_statistics'];assert len(specs)==1;spec=specs[0]
     params={p['name']:p for p in spec['parameters']}
-    assert set(params)=={'input_raster','band','window_size','method'}and all(params[n]['required']for n in ('band','window_size','method'))
+    assert set(params)=={'input_raster','band','window_size','method','percentile'}and all(params[n]['required']for n in ('band','window_size','method'))
     assert all(v in params['method']['description']for v in ('sum','mean','min','max','stddev','mode','median','中位数','偶数'))
     assert spec['execution_modes']==['workflow']and spec['effects']==['read']and spec['attributes']['resource_groups']==['raster']
     assert spec['output_ports'][0]['type']=='raster'and len(spec['output_ports'])==1
     assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'band':1,'window_size':3,'method':'mean'}
+
+
+def test_focal_percentile_metadata_uses_existing_entry_conditional_parameter_and_linear_method():
+    from operators import list_operators
+    specs=[s for s in list_operators() if s['id']=='raster_focal_statistics']
+    assert len(specs)==1
+    spec=specs[0];params={p['name']:p for p in spec['parameters']}
+    assert params['method']['enum']==['sum','mean','min','max','stddev','mode','median','percentile']
+    assert params['percentile']['type']=='float' and not params['percentile']['required']
+    assert 'default' not in params['percentile']
+    assert params['percentile']['show_when']=={'method':['percentile']}
+    assert all(text in params['percentile']['description'] for text in ('0','100','显式','50','median'))
+    assert '线性' in params['method']['description']
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    assert spec['attributes']['resource_groups']==['raster'] and len(spec['output_ports'])==1
