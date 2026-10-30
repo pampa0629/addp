@@ -267,6 +267,8 @@ DuckDB 是 `engines/duckdb` 提供的平台共享联邦查询 Runtime。System �
 
 Notebook 是 Develop `script` 任务的当前交互形态。任务必须在 `execution_config.engine_id` 中绑定一个 System Engine Instance；该实例必须处于 `active` 状态，并声明 `compute.script.supported=true` 且 `compute.script.modes` 包含 `notebook`。
 
+绑定与能力校验只确定 Runtime 目标。一次性 Notebook（`script`）当前仍拒绝排队派发，执行错误与待接入的运行授权统一见[任务契约](../spec/tasks/模块任务契约.md#develop-执行监督与授权)；Runtime 接口、排队任务与交互会话的范围对照见[引擎总入口](../../engines/README.md#脚本--notebook-运行时)。
+
 - Develop 通过 System Runtime Descriptor 发现 Notebook 引擎，只消费非敏感的 `protocol/host/port` 端点投影。
 - Develop 必须通过 `ScriptRuntimeProvider.OpenSession()` 打开运行会话，再使用返回的 endpoint 查询 Kernel 或提交执行；不得配置 `JUPYTER_URL`、按引擎类型拼接固定地址，或绕过 Provider 直接读取 `connection_info`。
 - Notebook 上传时必须选择并保存 `engine_id`。Kernel 属于该引擎实例的运行时能力，只能在选定引擎后查询并保存到任务内容中。
@@ -274,6 +276,10 @@ Notebook 是 Develop `script` 任务的当前交互形态。任务必须在 `exe
 - 用户可以在 Notebook 任务定义上显式更换引擎和 Kernel；Develop 必须先校验目标实例及 Kernel，再原子更新原任务的 `execution_config.engine_id` 和 `content.kernel`。该操作不复制任务、不迁移 Notebook 文件，也不自动猜测替代引擎。
 - 任务重绑定只影响后续执行。每次执行创建时保存的 `execution_config` 是历史执行快照，不能因任务之后重绑定而被回写或改写。
 - 引擎健康状态由 System 连接检查负责，Develop 不提供 Jupyter 专用健康代理 API。
+
+当前 Jupyter 的 `OpenSession()` 只返回受控 Runtime endpoint，不创建交互 Session，也不签发排队运行授权；Provider 与交互控制面的分工见[接口规范](../spec/addp引擎插件接口规范.md#runtime-provider)。
+
+交互 Session 不进入上述执行队列；Session 来源与每次数据读取的独立 Execution Authorization 统一见[会话授权规范](../spec/addp授权上下文规范.md#53-notebook-会话授权)。隔离进程、代理凭据与保存清理的 Runtime 约束见[Jupyter 会话说明](../../engines/jupyter/README.md#4-交互会话控制面)，本节及下文 Facade 的能力说明不等同于真实运行验收；未完成项、确定性覆盖与真实派发／撤权闭环按[验证边界](../../engines/jupyter/README.md#依赖库)分别记录。
 
 ### Notebook 原生引擎门面
 
