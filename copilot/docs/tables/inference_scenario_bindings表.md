@@ -1,5 +1,7 @@
 # inference_scenario_bindings 表
 
+[返回 Copilot 模块](../../CLAUDE.md) · [数据库架构](../数据库架构.md)
+
 `copilot.inference_scenario_bindings` 是 Copilot owner-local 场景绑定表。它只把稳定业务场景绑定到 Inference `model_profile_id`，不保存 Provider、endpoint、上游模型、生成参数或凭据。
 
 | 字段 | 类型 | 约束 | 说明 |
@@ -17,3 +19,5 @@
 唯一性由两个部分索引保证：平台范围按 `scenario_code` 唯一，Tenant 范围按 `(scenario_code, tenant_id)` 唯一。范围 CHECK 保证 `scope_type` 与 `tenant_id` 一致。
 
 管理 API 为 `GET/PUT /api/v1/copilot/settings/inference-bindings/{scenario_code}`。请求体只包含 `version` 和 `model_profile_id`；范围和 Tenant 完全来自 System AuthContext。
+
+场景解析与历史快照见[推理规范](<../../../docs/spec/addp AI推理接口规范.md#场景绑定解析与历史快照>)；绑定更新与模块身份见数据库架构的[范围和更新](../数据库架构.md#范围和更新)及[安全边界](../数据库架构.md#安全边界)。验证要求与结果认定见[模块推理契约导航](../../CLAUDE.md#推理契约导航)。
