@@ -552,3 +552,38 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 31份confirmation均有attempts=completed=2、membership_changes=0，最后尝试与最后完整快照的起点一致，单调起止均在确认完成之前，固定九类状态的合计不超过64且末次只有T／t／Z／X，未保存原始身份。新增成功字段已在Linux真实接通；一次读取耗尽截止、稳定D／T不确认及未知状态other仍只由确定性反例覆盖，不能宣称已采到实际失败状态。下一步若后续自然复发，先用新计数／端点／末次状态区分等待、成员变化和单次读取耗时，再决定最小修正，不先把D纳入安全或改暂停顺序。
 
 `/tmp/addp-p19-http-confirmation-recurrence-audit-20261030.json`保存本次独立归档／353输入／日志核对，原报告和日志沿`/tmp/addp-ci-20261030-100013`复用；`/tmp/addp-p19-http-confirmation-preparation-20261030.json`保存固定修正输入和红／绿门禁日志散列。`/tmp/addp-p19-http-confirmation-linux-20261030.audit.json`另存新自然运行的原始归档、353输入、31份封闭确认、预算／清理核验；同前缀job.log／report.json／zip保留原始证据。没有手动dispatch／rerun、新开本地真实窗口、Hosted、容量或定时。正式Agent/Copilot到页面和停源历史读取原缺口保持，后续若证据显示需要改变已确认的单次组暂停协议，应先讨论规范与范围，不直接放宽通过条件。
+
+
+<a id="http-confirmation-followup-manual-20261030"></a>
+
+## 2026-10-30 停止确认取证后手动复核：五次自然通过，无新复发
+
+本轮依用户“继续”只读核对f49f59ad3之后main自然Linux HTTP作业。2026-10-30 21:51:34（Asia/Shanghai）快照中，后续12条候选push均attempt 1：五条实际生成HTTP专项且全部completed／success，另外七条没有HTTP子Job，不计专项通过；快照main为01b5e4054ebf604fc6f32bb7719f15c0b713dcc3，该提交没有HTTP子Job。只核本专项，不由workflow聚合状态推断专项失败或通过，也未调查其他Job。五条的实际Verify isolated metrics lifecycle和预算归档步骤均success，不以Job名称或排队代替实际执行。
+
+五份报告分别独立核API归档身份／摘要、ZIP CRC和唯一JSON成员，353输入逐文件匹配各自固定源码；预算／shell／正式probe三脚本与f49及当前快照一致，不借当前HEAD替代运行输入。原始报告均passed／exit0／error null，无failure_detail／cleanup_overdue／compile_cleanup_error；三源失败／恢复额度及计数、三阶段完整成功顺序、无旧process_compile、inputs_unchanged／cleanup_verified／private_directory_removed=true均独立核对。最新873bc9d48另核原始实际checkout及日志摘要逐字段匹配报告。
+
+| 固定源码 | 自然run／HTTP Job | 总秒数 | 样本数／最长完整秒数 | 实际暂停数 | 总请求 |
+| --- | --- | --- | --- | --- | --- |
+| f5a5b46d640ef667faf2b3340aad6305fd3579a4 | [41040462293／124011969137](https://github.com/pampa0629/addp/actions/runs/41040462293/job/124011969137) | 803.185325 | 196／0.952018 | 25 | 252 |
+| 8d5d757c930d9dcb032b13de0c5f15394b5dd541 | [41051306029／124048024345](https://github.com/pampa0629/addp/actions/runs/41051306029/job/124048024345) | 873.984330 | 214／1.297289 | 41 | 262 |
+| e09e50ae25837d3a99ec3b7aa9fd49f03e8bccb7 | [41053660178／124056004950](https://github.com/pampa0629/addp/actions/runs/41053660178/job/124056004950) | 865.177393 | 212／1.322332 | 38 | 241 |
+| 182f93649cd1227ef6ff8451fca0902373fbde1b | [41054172788／124063615586](https://github.com/pampa0629/addp/actions/runs/41054172788/job/124063615586) | 856.969005 | 211／0.770688 | 33 | 252 |
+| 873bc9d480196b42541a65c88e01fb294f9b028c | [41055725619／124064113033](https://github.com/pampa0629/addp/actions/runs/41055725619/job/124064113033) | 870.097836 | 214／1.207331 | 41 | 256 |
+
+本次新增1047个完整样本最长1.322332秒，五次各自总时长均小于1200秒；硬配额最大均为3.25 CPU／4026531840字节内存，可写保守上界跨本批最大1809375295字节（包含原tmpfs预留，不称实占磁盘），分别守原4 CPU／4 GiB／私有可写小于2 GiB。单次总请求241至262、均不超过300；不把五次请求合计当成单次预算或容量测试。
+
+178次实际暂停全部confirmed／resumed=true、无resume_error，最多5成员；全部confirmation为attempts=completed=2、membership_changes=0，末次完整读取只有T／t／Z／X停止／已退出状态，固定九类计数与单调起止核验通过，末次完整清单读取跨本批最长0.009683秒。实际暂停阶段合计process_source 97次、http_query 2次、http_alert 79次；短query的两次分别来自f5a5b46d6及873bc9d48，新增了该阶段真实暂停／确认／恢复证据，不补写其他未重叠运行的覆盖，也未改变负载或采样节奏。
+
+本批没有复发目录消失或停止确认超时，未取得真实失败循环内的状态；多次成功只证明这些固定运行满足原口径，不证明fe105根因已定位或间歇超时已修复。此前4e548的196样本通过、fe105确认超时失败及f49取证修正三层结论保持；D／T混合不确认、一次清单耗尽截止及未知状态other仍由确定性反例覆盖，不用本批正常末次快照反推旧失败。后续若自然复发，先按confirmation尝试／完成、成员变化和最后完整读取状态／端点定位，再决定最小修正，不补发信号、接纳D或先改暂停顺序。
+
+原始归档身份：
+
+| artifact | ZIP字节数／SHA256 | 报告SHA256 |
+| --- | --- | --- |
+| 12971051051 | 25858／`ef941c0986362121a770553f45146f066bc79673425c36a6b9b81728da0dcbe2` | `f26eb76f29b255bdf75fa6bd17fb9d7468b3c0204277fa7839b4dbc37593d002` |
+| 12976011235 | 27562／`f77bf680f2ab8d78a41307993abb0290a8a0e0de427d580f318943df0108aaf5` | `f58dac8586b3509eed6a2f2de06b029a0f8f264fa256e1b75b80ff3735fa784b` |
+| 12977455242 | 27233／`58c3b9ab9913830c55f2c82e0bc0a9c53450b93ace295ea42648c939f6ce2590` | `e310f1eaf5c9fb42793850c2df14224403380297d7db9e0936c99b698f6cf913` |
+| 12977713231 | 26910／`00f97c3c7803e9853545da5efa40d6a85153c6413aabda7f0edd7789acb6af1d` | `ccae21c7954934a60f544f2c9a5afabdee8df776153e269fc49f493a712c8840` |
+| 12979905507 | 27557／`cd109ea49f0d11f42099a6a8a486a9a310a4ea538b25dcdf4e5ee7d257078023` | `ba6f1488a5062630299f52cb04ff58b702853e446abfd50f786ef55eca2e126f` |
+
+本机`/tmp/addp-p19-http-confirmation-followup-verified-20261030.json`保存12候选／五专项、归档／353输入／1047样本／178确认及三阶段实际覆盖的独立核对；各run同前缀artifact-meta.json／zip／report.json／audit.json保存原始及核验结果，最新运行另留job.log。仅更新两份证据文档，验证34主题计数、唯一锚点／索引和diff，不重跑代码门禁或已有运行。没有手动dispatch／rerun、新开本地窗口、Hosted、容量或定时；正式Agent/Copilot产品到页面、停源历史读取及历史具体删除进程等原缺口不被替代。
