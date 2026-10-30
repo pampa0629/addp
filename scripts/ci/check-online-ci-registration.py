@@ -56,7 +56,10 @@ def load_suite_registry(repository: Path) -> dict[str, object]:
         raise RegistrationError(f"cannot load {path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    except (OSError, SyntaxError) as error:
+        raise RegistrationError("cannot load Online suite registry") from error
     return dict(module.SUITES)
 
 
@@ -4456,9 +4459,9 @@ def validate_graph_protection_profile(repository: Path, registered: set[str]) ->
     case_selector = re.search(r"(?ms)^      graph_case:\n(?P<body>.*?)(?=^      [a-zA-Z0-9_-]+:\n|\Z)", workflow)
     if (case_selector is None or any(token not in case_selector.group('body') for token in ('type: choice', 'default: full', '- full', '- endpoint-geometry', '- endpoint-same-color'))
             or 'ADDP_ONLINE_GRAPH_CASE: ${{ inputs.graph_case }}' not in workflow
-            or any(token not in lifecycle for token in ('ADDP_ONLINE_GRAPH_CASE=${ADDP_ONLINE_GRAPH_CASE-full}', 'full|endpoint-geometry|endpoint-same-color)'))):
+            or any(token not in lifecycle for token in ('ADDP_ONLINE_GRAPH_CASE=${ADDP_ONLINE_GRAPH_CASE-full}', 'full|endpoint-geometry|endpoint-same-color|execution-lifecycle)'))):
         raise RegistrationError('Graph endpoint geometry requires explicit bounded case selection')
-    if lifecycle.index('full|endpoint-geometry|endpoint-same-color)') > lifecycle.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
+    if lifecycle.index('full|endpoint-geometry|endpoint-same-color|execution-lifecycle)') > lifecycle.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
         raise RegistrationError('Graph case validation must precede Hosted lifecycle')
     overlay = (repository / "scripts/test/docker-compose.graph-protection-t4.yml").read_text()
     suite = load_suite_registry(repository)["graph-protection"]
@@ -4496,6 +4499,82 @@ def validate_graph_protection_profile(repository: Path, registered: set[str]) ->
         raise RegistrationError("Graph protection must explicitly select and propagate its native engine")
     if "&& inputs.suite != 'graph-protection'" not in workflow:
         raise RegistrationError("Graph protection must not also dispatch on self-hosted")
+
+
+def validate_execution_profiles(repository: Path, registered: set[str]) -> None:
+    if "cleanup-execution" not in registered:
+        return
+    registry = load_suite_registry(repository)
+    if registry["cleanup-execution"].nightly:
+        raise RegistrationError("Cleanup execution is manual only")
+    if set(owner for owner, _ in registry["cleanup-execution"].services) != {
+            "gateway", "system", "meta", "manager", "transfer", "develop", "service", "quality", "graph", "asset", "model", "standard"}:
+        raise RegistrationError("Cleanup execution must preflight all ten Owners")
+    required = {
+        "scripts/test/online-gate.py": ("scripts.test.graph-execution-online", "scripts.test.cleanup-execution-online",
+            "validate_execution_archive(profile", "online_execution_checks_missing", "online_execution_owner_results_invalid",
+            "running_process_crash_without_replay", "physical_effect_acceptance", "blocked_provider_identity",
+            "browser_revocation_refresh_pagination_late_response", "cleanup-browser.json"),
+        "scripts/test/online-preflight.py": ("--execution-profile", "validate_execution_environment(profile", "graph-peer",
+            "independent runtime instance identities", "ADDP_ONLINE_CLEANUP_", "secret.stat().st_uid != os.getuid()"),
+        "scripts/test/online-hosted-security-gate.sh": ("# ADDP_ONLINE_SUITES=cleanup-execution", "COMPOSE_PROFILES=execution-lifecycle",
+            "docker-compose.cleanup-execution-t4.yml", "GRAPH_BUILD_LEASE_SECONDS=30 GRAPH_BUILD_HEARTBEAT_SECONDS=5",
+            "ADDP_ONLINE_GRAPH_PEER_URL=http://127.0.0.1:18186", "before_online_application_stop()",
+            "python3 -m scripts.test.execution-online-support resume", "execution-recovery.txt", "graph-backend-peer", ",console,system-frontend,nginx",
+            "compose_graph down --remove-orphans --volumes"),
+        "scripts/test/docker-compose.graph-protection-t4.yml": ("graph-backend-peer:", "profiles: [execution-lifecycle]",
+            "SERVICE_HOST: graph-backend-peer", 'ports: !override ["127.0.0.1:18186:8186"]', 'restart: "no"', 'GRAPH_BUILD_LEASE_SECONDS: "30"',
+            'GRAPH_BUILD_HEARTBEAT_SECONDS: "5"', "ADDP_ONLINE_TEST_RUN_ID", "ADDP_ONLINE_GRAPH_CASE"),
+        "scripts/test/online-hosted-security-gate_test.py": ("test_execution_graph_starts_peer_and_recovers_before_destruction",
+            "test_cleanup_execution_starts_exact_ten_owners_without_peer", "test_execution_recovery_scenario_and_residual_failures_still_destroy_and_fail"),
+        "scripts/test/online-gate_test.py": ("test_execution_report_rejects_missing_failed_or_forged_scope",
+            "test_execution_archive_is_required_and_must_match_stdout"),
+    }
+    for path, fragments in required.items():
+        file = repository / path
+        if not file.is_file() or any(fragment not in file.read_text() for fragment in fragments):
+            raise RegistrationError("Execution CI contract is incomplete: " + path)
+    overlay = (repository / "scripts/test/docker-compose.cleanup-execution-t4.yml").read_text()
+    if compose_service_block(overlay, "graph-backend-peer"):
+        raise RegistrationError("Cleanup requires exactly one Graph Owner instance")
+    for owner in ("system", "meta", "manager", "transfer", "develop", "service", "quality", "graph", "asset", "model", "standard"):
+        block = compose_service_block(overlay, owner + "-backend") or ""
+        if "ADDP_ONLINE_TEST_RUN_ID" not in block or 'ADDP_ONLINE_HOSTED: "1"' not in block or "127.0.0.1:" not in block:
+            raise RegistrationError("Cleanup Owner deployment identity/loopback binding missing: " + owner)
+    graph_overlay = (repository / "scripts/test/docker-compose.graph-protection-t4.yml").read_text()
+    peer = compose_service_block(graph_overlay, "graph-backend-peer") or ""
+    if 'restart: "no"' not in peer or 'ports: !override ["127.0.0.1:18186:8186"]' not in peer:
+        raise RegistrationError("Graph peer requires no automatic restart and one overridden loopback port")
+    lifecycle = (repository / "scripts/test/online-hosted-security-gate.sh").read_text()
+    if lifecycle.index("EXECUTION_PROFILE=") > lifecycle.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
+        raise RegistrationError("Execution selection must precede Hosted admission")
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
+    self_hosted = re.search(r"(?ms)^  online-t4:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)", workflow)
+    if self_hosted is None or "&& inputs.suite != 'cleanup-execution'" not in self_hosted.group("body"):
+        raise RegistrationError("Cleanup execution must not also dispatch on self-hosted")
+    job = re.search(r"(?ms)^  security-hosted-t4:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)", workflow)
+    if (job is None or "inputs.suite == 'cleanup-execution'" not in job.group("body")
+            or "&& inputs.suite != 'cleanup-execution'" not in workflow
+            or "- execution-lifecycle" not in workflow):
+        raise RegistrationError("Execution profiles require unique manual Hosted dispatch")
+    upload = re.search(r"(?ms)^      - name: Upload Hosted execution evidence\n(?P<body>.*?)(?=^      - name:|\Z)", job.group("body"))
+    if upload is None:
+        raise RegistrationError("Execution evidence requires a curated upload")
+    paths = re.findall(r"(?m)^            \$\{\{ runner.temp \}\}/addp-online-\$\{\{ github.run_id \}\}/(.+)$", upload.group("body"))
+    if set(paths) != {"readiness.txt", "summary.txt", "online-report.json", "graph-execution.json",
+                      "cleanup-execution.json", "cleanup-browser.json", "execution-recovery.txt"} or len(paths) != 7:
+        raise RegistrationError("Execution upload must contain only public reports and lifecycle outcomes")
+    if "logs/" in upload.group("body") or "addp-online-secret" in upload.group("body"):
+        raise RegistrationError("Execution upload must not archive private controls or raw logs")
+    if "if: always() && inputs.suite != 'cleanup-execution' && (inputs.suite != 'graph-protection' || inputs.graph_case != 'execution-lifecycle')" not in job.group("body"):
+        raise RegistrationError("Execution profiles must not use the legacy broad artifact upload")
+    if not (repository / "console/frontend/e2e/online/cleanup-execution.spec.js").is_file():
+        raise RegistrationError("Cleanup browser scenario is missing")
+    commands = make_target_commands((repository / "Makefile").read_text(), "test-online-runner")
+    if "console/frontend/e2e/online/cleanup-execution.spec.js" not in commands:
+        raise RegistrationError("Cleanup browser syntax must enter the standard Online gate")
+    if "scripts/ci/check-online-ci-registration_test.py" not in commands:
+        raise RegistrationError("Execution registration regressions must enter the standard Online gate")
 
 
 def validate_administrator_governance_profile(repository: Path, registered: set[str]) -> None:
@@ -4717,6 +4796,7 @@ def check_registration(repository: Path) -> None:
     validate_security_plaintext_access_profile(repository, registered)
     validate_security_mysql_owner_protection_profile(repository, registered)
     validate_graph_protection_profile(repository, registered)
+    validate_execution_profiles(repository, registered)
     validate_oceanbase_consumer_flow_profile(repository, registered)
     validate_tidb_consumer_flow_profile(repository, registered)
     validate_opengauss_consumer_flow_profile(repository, registered)

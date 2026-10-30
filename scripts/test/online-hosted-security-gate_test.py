@@ -15,10 +15,18 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.host.setUp()
         self.addCleanup(self.host.tearDown)
         self.host.prepare_run_fixture()
+        (self.host.repository / '.gitignore').write_text('__pycache__/\n')
         (self.host.repository / 'system/backend/go.mod').write_text('module fixture/system\n')
         (self.host.repository / 'go.work.sum').write_text('fixture-checksums\n')
         shutil.copy2(SCRIPT, self.host.repository / 'scripts/test/online-hosted-security-gate.sh')
         shutil.copy2(SCRIPT.with_name('docker-compose.graph-protection-t4.yml'), self.host.repository / 'scripts/test/docker-compose.graph-protection-t4.yml')
+        shutil.copy2(SCRIPT.with_name('docker-compose.cleanup-execution-t4.yml'), self.host.repository / 'scripts/test/docker-compose.cleanup-execution-t4.yml')
+        self.host._write_repository_script('scripts/test/execution-online-support.py', '''
+            import os, sys
+            assert sys.argv[1:] == ['resume']
+            with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as out: out.write('execution-resume\\n')
+            sys.exit(int(os.environ.get('ADDP_TEST_RESUME_FAIL', '0')))
+        ''')
         self.host._executable('curl', """
             #!/usr/bin/env bash
             exit 0
@@ -31,8 +39,12 @@ class HostedSecurityGateTest(unittest.TestCase):
                 { [ -f "${ADDP_TEST_GATE_TRACE}.containers" ] && grep -qx "$3" "${ADDP_TEST_GATE_TRACE}.containers"; }
               exit
             fi
-            if [ "$1" = ps ] || [ "$1 $2" = 'network ls' ] || [ "$1 $2" = 'volume ls' ]; then exit 0; fi
+            if [ "$1" = ps ] || [ "$1 $2" = 'network ls' ] || [ "$1 $2" = 'volume ls' ]; then
+              if [ -f "${ADDP_TEST_GATE_TRACE}.down" ] && [ "${ADDP_TEST_RESIDUAL:-0}" = 1 ]; then echo owned-residual; fi
+              exit 0
+            fi
             echo "docker:$*" >> "$ADDP_TEST_GATE_TRACE"
+            if [[ "$*" == *'down --remove-orphans --volumes' ]]; then touch "${ADDP_TEST_GATE_TRACE}.down"; fi
             if [[ "$*" == *'config --quiet' ]] && [ "${ADDP_TEST_CONFIG_FAIL:-0}" = 1 ]; then exit 1; fi
             if [ "$1" = run ]; then
               previous=
@@ -142,7 +154,7 @@ class HostedSecurityGateTest(unittest.TestCase):
             [ -z "${ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN:-}" ]
             if [ "$ONLINE_SUITE_INPUT" = graph-protection ]; then
               [ "$CONSOLE_URL" = http://127.0.0.1:18080 ]
-              case "$ADDP_ONLINE_GRAPH_CASE" in full|endpoint-geometry|endpoint-same-color) ;; *) exit 2 ;; esac
+              case "$ADDP_ONLINE_GRAPH_CASE" in full|endpoint-geometry|endpoint-same-color|execution-lifecycle) ;; *) exit 2 ;; esac
               echo "graph-case:$ADDP_ONLINE_GRAPH_CASE" >> "$ADDP_TEST_GATE_TRACE"
               [ "$ADDP_ONLINE_TEST_ENGINE_ID" = 23 ]
               if [ "$ADDP_ONLINE_GRAPH_ENGINE" = neo4j ]; then
@@ -153,6 +165,12 @@ class HostedSecurityGateTest(unittest.TestCase):
               fi
               [ "$ADDP_ONLINE_GRAPH_PREPARER_ACCESS_TOKEN" = graph-preparer ]
               [ "$ADDP_ONLINE_GRAPH_OUTSIDER_ACCESS_TOKEN" = graph-outsider ]
+              echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
+              [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
+              exit
+            fi
+            if [ "$ONLINE_SUITE_INPUT" = cleanup-execution ]; then
+              [ -z "${ADDP_ONLINE_TEST_ENGINE_ID:-}" ]
               echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
               [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
               exit
@@ -179,7 +197,7 @@ class HostedSecurityGateTest(unittest.TestCase):
 
     def run_gate(self, check=False, **overrides):
         env = dict(os.environ, PATH=f'{self.host.bin}:{os.environ["PATH"]}', GITHUB_ACTIONS='true', RUNNER_OS='Linux',
-                   RUNNER_TEMP=str(self.host.root), ADDP_ONLINE_HOST='1', ADDP_ONLINE_HOSTED='1',
+                   RUNNER_TEMP=str(self.host.root), GITHUB_RUN_ID='123', GITHUB_RUN_ATTEMPT='1', ADDP_ONLINE_HOST='1', ADDP_ONLINE_HOSTED='1',
                    ONLINE_SUITE_INPUT='security-mysql-owner-protection', ADDP_ONLINE_ARTIFACT_DIR=str(self.host.artifacts),
                    ADDP_ONLINE_SECRET_DIR=str(self.host.secrets), ADDP_TEST_GATE_TRACE=str(self.host.trace),
                    ADDP_TEST_BACKGROUND_PIDS=str(self.host.background_pids))
@@ -198,6 +216,49 @@ class HostedSecurityGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(self.host.trace.exists())
         self.assertFalse(self.host.secrets.exists())
+
+    def test_execution_graph_starts_peer_and_recovers_before_destruction(self):
+        result = self.run_gate(ONLINE_SUITE_INPUT='graph-protection', ADDP_ONLINE_GRAPH_ENGINE='falkordb',
+                               ADDP_ONLINE_GRAPH_CASE='execution-lifecycle')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        trace = self.host.trace.read_text()
+        self.assertIn('up -d --no-deps --wait graph-backend-peer', trace)
+        self.assertIn('graph-case:execution-lifecycle', trace)
+        self.assertLess(trace.index('execution-resume'), trace.index('down --remove-orphans --volumes'))
+        self.assertIn('control_recovery=passed', (self.host.artifacts / 'execution-recovery.txt').read_text())
+        self.assertFalse(self.host.secrets.exists())
+
+    def test_cleanup_execution_starts_exact_ten_owners_without_peer(self):
+        result = self.run_gate(ONLINE_SUITE_INPUT='cleanup-execution')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        trace = self.host.trace.read_text()
+        for owner in ('meta','manager','transfer','develop','service','quality','graph','asset','model','standard'):
+            self.assertEqual(trace.count('up -d --no-deps --wait ' + owner + '-backend'), 1)
+        self.assertNotIn('up -d --no-deps --wait graph-backend-peer', trace)
+        self.assertNotIn('security-fixture:', trace)
+        self.assertNotIn('graph-fixture:', trace)
+        self.assertIn('make:test-online ONLINE_SUITE=cleanup-execution', trace)
+        self.assertIn(',console,system-frontend,nginx', trace)
+        self.assertIn('up -d --no-deps --wait system-frontend', trace)
+        self.assertIn('up -d --no-deps --wait nginx', trace)
+        self.assertIn('chromium', trace)
+        self.assertIn('docker:rm -fv registry', trace)
+        self.assertLess(trace.index('execution-resume'), trace.index('down --remove-orphans --volumes'))
+        self.assertIn('infra_cleanup=zero_residuals', (self.host.artifacts / 'summary.txt').read_text())
+
+    def test_execution_recovery_scenario_and_residual_failures_still_destroy_and_fail(self):
+        for flag in ('ADDP_TEST_RESUME_FAIL', 'ADDP_TEST_SUITE_FAIL', 'ADDP_TEST_RESIDUAL'):
+            with self.subTest(flag=flag):
+                result = self.run_gate(ONLINE_SUITE_INPUT='cleanup-execution', **{flag:'1'})
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                trace = self.host.trace.read_text()
+                self.assertIn('execution-resume', trace)
+                self.assertIn('down --remove-orphans --volumes', trace)
+                self.assertIn('infra-down', trace)
+                self.assertFalse(self.host.secrets.exists())
+                self.assertIn('result=failed', (self.host.artifacts / 'summary.txt').read_text())
+                for suffix in ('', '.down', '.containers'):
+                    self.host.trace.with_name(self.host.trace.name + suffix).unlink(missing_ok=True)
 
     def test_graph_case_rejects_invalid_scope_before_any_host_operation(self):
         for case in ('', 'all', 'review', ' endpoint-geometry'):

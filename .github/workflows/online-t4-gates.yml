@@ -87,6 +87,7 @@ on:
           - vector-topology-persistence
           - raster-workflow-capacity
           - graph-protection
+          - cleanup-execution
           - security-plaintext-access
           - security-mysql-owner-protection
           - security-transfer-protection
@@ -139,6 +140,7 @@ on:
           - full
           - endpoint-geometry
           - endpoint-same-color
+          - execution-lifecycle
       graph_engine:
         description: Native engine for graph-protection
         required: true
@@ -260,7 +262,7 @@ jobs:
 
   online-t4:
     name: Online T4 (${{ inputs.suite }})
-    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'catalog-domain-overview' && inputs.suite != 'workflow-runtime-health-recovery' && inputs.suite != 'platform-administrator-governance' && inputs.suite != 'pg-source-authorization' && inputs.suite != 'opengauss-consumer-flow' && inputs.suite != 'kingbase-consumer-flow' && inputs.suite != 'metric-service-revision-lifecycle' && inputs.suite != 'ontology-revision-lifecycle' && inputs.suite != 'compose-public-origin' && inputs.suite != 'execution-retention-readonly' && inputs.suite != 'execution-events-retention' && inputs.suite != 'execution-events-pagination' && inputs.suite != 'execution-retention-hourly' && inputs.suite != 'orchestrator-execution' && inputs.suite != 'quality-dynamic-binding' && inputs.suite != 'platform-node-metrics' && inputs.suite != 'manager-internal-artifact-lineage' && inputs.suite != 'transfer-relational-sql-etl' && inputs.suite != 'transfer-continuous-events' && inputs.suite != 'security-mysql-owner-protection' && inputs.suite != 'security-plaintext-access' && inputs.suite != 'graph-protection' && inputs.suite != 'highgo-consumer-flow' && inputs.suite != 'gaussdb-consumer-flow' && inputs.suite != 'starrocks-consumer-flow' && inputs.suite != 'redis-consumer-flow' && inputs.suite != 'ftp-consumer-flow' && inputs.suite != 'elasticsearch-consumer-flow' && inputs.suite != 'vector-pmtiles-workflow' && inputs.suite != 'raster-workflow' && inputs.suite != 'vector-topology-persistence' && inputs.suite != 'raster-contour-persistence' && inputs.suite != 'raster-polygonize-persistence' && inputs.suite != 'vector-rasterize-persistence' && inputs.suite != 'vector-zonal-statistics-persistence' && inputs.suite != 'raster-proximity-persistence' && inputs.suite != 'raster-focal-mode-persistence' && inputs.suite != 'raster-boundary-clean-persistence' && inputs.suite != 'raster-thin-persistence' && inputs.suite != 'raster-fill-depressions-persistence' && inputs.suite != 'raster-flow-direction-d8-persistence' && inputs.suite != 'raster-flow-accumulation-d8-persistence' && inputs.suite != 'raster-drainage-basins-d8-persistence' && inputs.suite != 'raster-flow-length-d8-persistence' && inputs.suite != 'raster-flow-accumulation-area-d8-persistence' && inputs.suite != 'raster-distance-to-stream-d8-persistence' && inputs.suite != 'raster-hand-d8-persistence' && inputs.suite != 'raster-curvature-persistence' && inputs.suite != 'raster-profile-curvature-persistence' && inputs.suite != 'raster-cut-fill-persistence' && inputs.suite != 'raster-surface-area-persistence' && inputs.suite != 'raster-tangential-curvature-persistence' && inputs.suite != 'raster-plan-curvature-persistence' && inputs.suite != 'raster-tpi-persistence' && inputs.suite != 'raster-tri-persistence' && inputs.suite != 'raster-roughness-persistence' && inputs.suite != 'raster-twi-persistence' && inputs.suite != 'raster-spi-persistence' && inputs.suite != 'raster-sieve-persistence' && inputs.suite != 'raster-flow-length-upstream-d8-persistence' && inputs.suite != 'raster-stream-order-d8-persistence' && inputs.suite != 'raster-stream-shreve-d8-persistence' && inputs.suite != 'raster-stream-to-vector-d8-persistence' && inputs.suite != 'raster-stream-link-d8-persistence' && inputs.suite != 'raster-flow-accumulation-weighted-d8-persistence' && inputs.suite != 'raster-watershed-d8-persistence' && inputs.suite != 'raster-subcatchments-d8-persistence' && inputs.suite != 'raster-snap-pour-points-persistence' && inputs.suite != 'raster-band-recommendation-workflow' && inputs.suite != 'raster-nibble-persistence' && inputs.suite != 'raster-disk-pressure' && inputs.suite != 'raster-nibble-capacity' && inputs.suite != 'raster-focal-statistics-persistence' && inputs.suite != 'raster-zonal-statistics-persistence' && inputs.suite != 'raster-workflow-capacity' && inputs.suite != 'hdfs-spark-consumer-flow'
+    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'catalog-domain-overview' && inputs.suite != 'workflow-runtime-health-recovery' && inputs.suite != 'platform-administrator-governance' && inputs.suite != 'pg-source-authorization' && inputs.suite != 'opengauss-consumer-flow' && inputs.suite != 'kingbase-consumer-flow' && inputs.suite != 'metric-service-revision-lifecycle' && inputs.suite != 'ontology-revision-lifecycle' && inputs.suite != 'compose-public-origin' && inputs.suite != 'execution-retention-readonly' && inputs.suite != 'execution-events-retention' && inputs.suite != 'execution-events-pagination' && inputs.suite != 'execution-retention-hourly' && inputs.suite != 'orchestrator-execution' && inputs.suite != 'quality-dynamic-binding' && inputs.suite != 'platform-node-metrics' && inputs.suite != 'manager-internal-artifact-lineage' && inputs.suite != 'transfer-relational-sql-etl' && inputs.suite != 'transfer-continuous-events' && inputs.suite != 'security-mysql-owner-protection' && inputs.suite != 'security-plaintext-access' && inputs.suite != 'graph-protection' && inputs.suite != 'cleanup-execution' && inputs.suite != 'highgo-consumer-flow' && inputs.suite != 'gaussdb-consumer-flow' && inputs.suite != 'starrocks-consumer-flow' && inputs.suite != 'redis-consumer-flow' && inputs.suite != 'ftp-consumer-flow' && inputs.suite != 'elasticsearch-consumer-flow' && inputs.suite != 'vector-pmtiles-workflow' && inputs.suite != 'raster-workflow' && inputs.suite != 'vector-topology-persistence' && inputs.suite != 'raster-contour-persistence' && inputs.suite != 'raster-polygonize-persistence' && inputs.suite != 'vector-rasterize-persistence' && inputs.suite != 'vector-zonal-statistics-persistence' && inputs.suite != 'raster-proximity-persistence' && inputs.suite != 'raster-focal-mode-persistence' && inputs.suite != 'raster-boundary-clean-persistence' && inputs.suite != 'raster-thin-persistence' && inputs.suite != 'raster-fill-depressions-persistence' && inputs.suite != 'raster-flow-direction-d8-persistence' && inputs.suite != 'raster-flow-accumulation-d8-persistence' && inputs.suite != 'raster-drainage-basins-d8-persistence' && inputs.suite != 'raster-flow-length-d8-persistence' && inputs.suite != 'raster-flow-accumulation-area-d8-persistence' && inputs.suite != 'raster-distance-to-stream-d8-persistence' && inputs.suite != 'raster-hand-d8-persistence' && inputs.suite != 'raster-curvature-persistence' && inputs.suite != 'raster-profile-curvature-persistence' && inputs.suite != 'raster-cut-fill-persistence' && inputs.suite != 'raster-surface-area-persistence' && inputs.suite != 'raster-tangential-curvature-persistence' && inputs.suite != 'raster-plan-curvature-persistence' && inputs.suite != 'raster-tpi-persistence' && inputs.suite != 'raster-tri-persistence' && inputs.suite != 'raster-roughness-persistence' && inputs.suite != 'raster-twi-persistence' && inputs.suite != 'raster-spi-persistence' && inputs.suite != 'raster-sieve-persistence' && inputs.suite != 'raster-flow-length-upstream-d8-persistence' && inputs.suite != 'raster-stream-order-d8-persistence' && inputs.suite != 'raster-stream-shreve-d8-persistence' && inputs.suite != 'raster-stream-to-vector-d8-persistence' && inputs.suite != 'raster-stream-link-d8-persistence' && inputs.suite != 'raster-flow-accumulation-weighted-d8-persistence' && inputs.suite != 'raster-watershed-d8-persistence' && inputs.suite != 'raster-subcatchments-d8-persistence' && inputs.suite != 'raster-snap-pour-points-persistence' && inputs.suite != 'raster-band-recommendation-workflow' && inputs.suite != 'raster-nibble-persistence' && inputs.suite != 'raster-disk-pressure' && inputs.suite != 'raster-nibble-capacity' && inputs.suite != 'raster-focal-statistics-persistence' && inputs.suite != 'raster-zonal-statistics-persistence' && inputs.suite != 'raster-workflow-capacity' && inputs.suite != 'hdfs-spark-consumer-flow'
     concurrency:
       group: online-t4-${{ inputs.suite }}
       cancel-in-progress: false
@@ -501,7 +503,7 @@ jobs:
 
   security-hosted-t4:
     name: Online T4 (${{ inputs.suite }}, Linux x86_64)
-    if: github.event_name == 'workflow_dispatch' && (inputs.suite == 'security-mysql-owner-protection' || inputs.suite == 'security-plaintext-access' || inputs.suite == 'graph-protection')
+    if: github.event_name == 'workflow_dispatch' && (inputs.suite == 'security-mysql-owner-protection' || inputs.suite == 'security-plaintext-access' || inputs.suite == 'graph-protection' || inputs.suite == 'cleanup-execution')
     concurrency:
       group: online-t4-${{ inputs.suite }}${{ inputs.suite == 'graph-protection' && format('-{0}', inputs.graph_engine) || '' }}
       cancel-in-progress: false
@@ -551,13 +553,29 @@ jobs:
         run: bash scripts/test/online-hosted-security-gate.sh
 
       - name: Upload Hosted Security evidence
-        if: always()
+        if: always() && inputs.suite != 'cleanup-execution' && (inputs.suite != 'graph-protection' || inputs.graph_case != 'execution-lifecycle')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: online-t4-${{ inputs.suite }}-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/addp-online-${{ github.run_id }}/
             logs/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload Hosted execution evidence
+        if: always() && (inputs.suite == 'cleanup-execution' || (inputs.suite == 'graph-protection' && inputs.graph_case == 'execution-lifecycle'))
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: online-t4-execution-${{ inputs.suite }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/addp-online-${{ github.run_id }}/readiness.txt
+            ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
+            ${{ runner.temp }}/addp-online-${{ github.run_id }}/online-report.json
+            ${{ runner.temp }}/addp-online-${{ github.run_id }}/graph-execution.json
+            ${{ runner.temp }}/addp-online-${{ github.run_id }}/cleanup-execution.json
+            ${{ runner.temp }}/addp-online-${{ github.run_id }}/cleanup-browser.json
+            ${{ runner.temp }}/addp-online-${{ github.run_id }}/execution-recovery.txt
           if-no-files-found: warn
           retention-days: 14
 

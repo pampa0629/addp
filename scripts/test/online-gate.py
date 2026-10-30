@@ -559,6 +559,13 @@ SUITES: Mapping[str, Suite] = {
             "gateway", "system", "meta", "security", "graph", "manager", "develop", "service", "transfer",
         )),
     ),
+    "cleanup-execution": Suite(
+        command=(sys.executable, "-m", "scripts.test.cleanup-execution-online"),
+        services=tuple((owner, owner.upper() + "_URL") for owner in (
+            "gateway", "system", "meta", "manager", "transfer", "develop", "service",
+            "quality", "graph", "asset", "model", "standard",
+        )),
+    ),
     "security-plaintext-access": Suite(
         command=(sys.executable, "scripts/test/security-plaintext-access-online.py"),
         services=(
@@ -677,12 +684,13 @@ def parse_positive_timeout(value: str) -> float:
     return timeout
 
 
-def resolve_run_id(environment: dict[str, str]) -> str:
+def resolve_run_id(environment: dict[str, str], *, execution: bool = False) -> str:
     run_id = environment.get("ADDP_ONLINE_TEST_RUN_ID")
     if not run_id:
         run_id = f"run-{uuid.uuid4().hex}"
         environment["ADDP_ONLINE_TEST_RUN_ID"] = run_id
-    if not RUN_ID_PATTERN.fullmatch(run_id):
+    pattern = re.compile(r"[A-Za-z0-9_-]{1,100}") if execution else RUN_ID_PATTERN
+    if not pattern.fullmatch(run_id):
         raise OnlineGateError("ADDP_ONLINE_TEST_RUN_ID must be filesystem-safe")
     return run_id
 
@@ -809,6 +817,135 @@ def _service_addresses(suite: Suite, environment: Mapping[str, str]) -> dict[str
     return addresses
 
 
+EXECUTION_CHECKS = {
+    "graph": {
+        "pending_cancel_without_runtime", "cross_backend_cancel_durable_intent",
+        "real_expiry_without_replay", "old_runtime_terminal_fenced",
+        "unknown_reconcile_reopen_denied", "unknown_hold_survives_process_crash",
+        "running_process_crash_without_replay",
+    },
+    "cleanup": {
+        "ten_owner_scan_idempotence_and_private_results", "ten_owner_logical_execute_one_shot",
+        "meta_only_execute_refused_without_request", "owner_outage_fails_closed_without_writes",
+        "real_deadline_unclaimed_owner_rejection", "queued_original_user_revoked_before_claim",
+        "browser_revocation_refresh_pagination_late_response",
+    },
+}
+EXECUTION_OWNERS = {"meta", "manager", "transfer", "develop", "service", "quality", "graph", "asset", "model", "standard"}
+
+
+def execution_profile(suite_name: str, environment: Mapping[str, str]) -> str | None:
+    if suite_name == "cleanup-execution":
+        return "cleanup"
+    if suite_name == "graph-protection":
+        case = environment.get("ADDP_ONLINE_GRAPH_CASE", "full")
+        if case not in {"full", "endpoint-geometry", "endpoint-same-color", "execution-lifecycle"}:
+            raise OnlineGateError("unsupported Graph acceptance case")
+        if case == "execution-lifecycle":
+            return "graph"
+    return None
+
+
+def validate_execution_report(profile: str, report: dict[str, object], environment: Mapping[str, str]) -> None:
+    """Accept the frozen finite contract, never turn domain cleanup into destruction."""
+    required = {"schema_version": f"addp.{profile}-execution-online/v1", "result": "passed",
+                "control_cleanup": "passed", "hosted_destruction": "required"}
+    if any(report.get(key) != value for key, value in required.items()):
+        raise OnlineStageError("scenario", "online_execution_report_invalid", "execution report schema/result/recovery contract differs")
+    checks = report.get("checks")
+    if (not isinstance(checks, list) or any(type(x) is not str for x in checks)
+            or len(checks) != len(set(checks)) or not EXECUTION_CHECKS[profile].issubset(checks)):
+        raise OnlineStageError("scenario", "online_execution_checks_missing", "execution scenario checks are missing or duplicated")
+    if profile == "graph":
+        if (report.get("engine_type") != environment.get("ADDP_ONLINE_GRAPH_ENGINE")
+                or report.get("engine_type") not in {"falkordb", "neo4j"}
+                or report.get("controlled_extraction") is not True or report.get("real_model") is not False
+                or report.get("reopen_success") != "blocked_provider_identity"):
+            raise OnlineStageError("scenario", "online_execution_scope_invalid", "Graph execution scope/engine differs")
+        crash = report.get("running_crash")
+        if (not isinstance(crash, dict) or crash.get("result") != "passed" or type(crash.get("attempt")) is not int
+                or crash.get("attempt") != 1 or any(crash.get(key) is not True for key in
+                    ("live_attempt_observed", "no_replay", "unresolved_hold", "remote_return_terminal_unchanged"))
+                or type(crash.get("graph_id")) is not int or crash["graph_id"] <= 0
+                or type(report.get("graph_id")) is not int or report["graph_id"] <= 0
+                or crash["graph_id"] == report["graph_id"]
+                or type(crash.get("task_id")) is not int or crash["task_id"] <= 0):
+            raise OnlineStageError("scenario", "online_execution_crash_invalid", "running Graph crash evidence is incomplete")
+        for key in ("execution_id",):
+            value = crash.get(key)
+            try:
+                valid = isinstance(value, str) and str(uuid.UUID(value)) == value and uuid.UUID(value).int != 0
+            except ValueError:
+                valid = False
+            if not valid:
+                raise OnlineStageError("scenario", "online_execution_crash_invalid", "running Graph crash identity is invalid")
+    else:
+        if report.get("uncertain_revocation") is not False or report.get("physical_effect_acceptance") != "not_run":
+            raise OnlineStageError("scenario", "online_execution_scope_invalid", "Cleanup execution scope differs")
+        rows = report.get("owner_results")
+        expected = {(owner, action) for owner in EXECUTION_OWNERS for action in ("scan", "execute")}
+        seen, identifiers = set(), set()
+        if not isinstance(rows, list) or len(rows) != len(expected):
+            raise OnlineStageError("scenario", "online_execution_owner_results_invalid", "Cleanup requires twenty Owner results")
+        for row in rows:
+            if not isinstance(row, dict):
+                raise OnlineStageError("scenario", "online_execution_owner_results_invalid", "invalid Owner result")
+            pair, execution = (row.get("module"), row.get("action")), row.get("execution_id")
+            try:
+                valid_id = isinstance(execution, str) and str(uuid.UUID(execution)) == execution and uuid.UUID(execution).int != 0
+            except ValueError:
+                valid_id = False
+            if (pair not in expected or pair in seen or not valid_id or execution in identifiers
+                    or any(row.get(key) is not True for key in ("receipt_result_equal", "other_user_denied", "get_no_write"))):
+                raise OnlineStageError("scenario", "online_execution_owner_results_invalid", "Owner result identity or assertions differ")
+            seen.add(pair)
+            identifiers.add(execution)
+        browser = report.get("browser")
+        identity_keys = ("run_id", "tenant_id", "principal_id", "request_id", "execution_id")
+        if (not isinstance(browser, dict) or any(not isinstance(browser.get(key), str) or not browser[key] for key in identity_keys)
+                or browser["run_id"] != environment.get("ADDP_ONLINE_TEST_RUN_ID")
+                or browser["tenant_id"] != environment.get("ADDP_ONLINE_TEST_TENANT_ID")
+                or browser["principal_id"] == report.get("principal_id")):
+            raise OnlineStageError("scenario", "online_execution_browser_invalid", "Cleanup browser identity differs")
+        expected_browser = dict(schema_version="addp.cleanup-execution-browser/v1", result="passed",
+            **{key: browser[key] for key in identity_keys}, phases=[dict(phase=phase, real_pagination=True,
+                result_read_before_revoke=True, real_denial=True, previous_view_cleared=True, late_result_rejected=True)
+                for phase in ("refresh", "pagination")])
+        if json.dumps(browser, sort_keys=True) != json.dumps(expected_browser, sort_keys=True):
+            raise OnlineStageError("scenario", "online_execution_browser_invalid", "Cleanup browser report is incomplete or unsafe")
+        for key in ("request_id", "execution_id"):
+            try:
+                valid = str(uuid.UUID(browser[key])) == browser[key] and uuid.UUID(browser[key]).int != 0
+            except ValueError:
+                valid = False
+            if not valid:
+                raise OnlineStageError("scenario", "online_execution_browser_invalid", "Cleanup browser UUID is invalid")
+
+
+def validate_execution_archive(profile: str, report: dict[str, object], directory: Path,
+                               environment: Mapping[str, str]) -> None:
+    path = directory / f"{profile}-execution.json"
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 1024 * 1024:
+            raise ValueError("missing or unsafe report")
+        archived = json.loads(path.read_text())
+    except (OSError, ValueError) as error:
+        raise OnlineStageError("scenario", "online_execution_archive_invalid", "execution report archive is missing or invalid") from error
+    if archived != report:
+        raise OnlineStageError("scenario", "online_execution_archive_invalid", "execution stdout and archived report disagree")
+    validate_execution_report(profile, report, environment)
+    if profile == "cleanup":
+        browser_path = directory / "cleanup-browser.json"
+        try:
+            if browser_path.is_symlink() or not browser_path.is_file() or browser_path.stat().st_size >= 16384:
+                raise ValueError("unsafe browser report")
+            browser = json.loads(browser_path.read_text())
+        except (OSError, ValueError) as error:
+            raise OnlineStageError("scenario", "online_execution_browser_invalid", "Cleanup browser archive is missing") from error
+        if json.dumps(browser, sort_keys=True) != json.dumps(report["browser"], sort_keys=True):
+            raise OnlineStageError("scenario", "online_execution_browser_invalid", "Cleanup browser archives disagree")
+
+
 def run_online(
     suite_name: str,
     repository: Path,
@@ -825,6 +962,11 @@ def run_online(
         available = ", ".join(sorted(suites)) or "none"
         raise OnlineGateError(f"unknown ONLINE_SUITE {suite_name!r}; registered suites: {available}")
 
+    profile = execution_profile(suite_name, environment)
+    if profile == "graph":
+        suite = replace(suite, command=(sys.executable, "-m", "scripts.test.graph-execution-online"),
+                        services=(*suite.services, ("graph-peer", "ADDP_ONLINE_GRAPH_PEER_URL")))
+
     if suite_name == 'manager-internal-artifact-lineage' and environment.get('ADDP_ONLINE_MANAGER_CASE') in {'kml-export', 'native-table-orc'}:
         suite = replace(suite, services=(*suite.services, ('transfer', 'TRANSFER_URL')))
 
@@ -832,7 +974,7 @@ def run_online(
         environment.get("ADDP_ONLINE_TEST_TIMEOUT_SECONDS", "900")
     )
     started_at = time.monotonic()
-    run_id = resolve_run_id(environment)
+    run_id = resolve_run_id(environment, execution=bool(profile))
     report_path = _report_directory(repository, environment, run_id) / "online-report.json"
     preflight = [
         sys.executable,
@@ -840,6 +982,8 @@ def run_online(
         "--repository",
         str(repository),
     ]
+    if profile:
+        preflight.extend(("--execution-profile", profile))
     for module, variable in suite.services:
         url = environment.get(variable)
         if not url:
@@ -890,6 +1034,8 @@ def run_online(
                 timeout=remaining,
             )
             report["suite_report"] = suite_report
+            if profile:
+                validate_execution_archive(profile, suite_report, report_path.parent, environment)
             report["stages"] = {
                 "preflight_duration_ms": preflight_ms,
                 "scenario_duration_ms": scenario_ms,

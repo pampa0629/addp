@@ -1,0 +1,67 @@
+# Disposable ten-Owner Cleanup protocol acceptance; no second Graph/Asset instance.
+services:
+  system-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    ports: ["127.0.0.1:8180:8180"]
+  gateway:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    ports: ["127.0.0.1:8000:8000"]
+  meta-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    ports: ["127.0.0.1:8082:8082"]
+  manager-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    ports: ["127.0.0.1:8081:8081"]
+  transfer-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    ports: ["127.0.0.1:8083:8083"]
+  develop-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    ports: ["127.0.0.1:8185:8185"]
+  service-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    ports: ["127.0.0.1:8086:8086"]
+  quality-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    ports: ["127.0.0.1:8182:8182"]
+  graph-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    ports: ["127.0.0.1:8186:8186"]
+  asset-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    ports: ["127.0.0.1:8183:8183"]
+  model-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    ports: ["127.0.0.1:8181:8181"]
+  standard-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    ports: ["127.0.0.1:8110:8110"]
+  monitor-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    ports: ["127.0.0.1:8100:8100"]

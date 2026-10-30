@@ -52,6 +52,114 @@ class OnlineGateTest(unittest.TestCase):
                 self.assertEqual('transfer=http://127.0.0.1:8083' in command, case == 'kml-export')
                 self.assertEqual('transfer' in report['service_addresses'], case == 'kml-export')
 
+    def execution_report(self, profile):
+        import uuid
+        report = dict(schema_version=f'addp.{profile}-execution-online/v1', result='passed',
+                      control_cleanup='passed', hosted_destruction='required',
+                      checks=sorted(ONLINE_GATE.EXECUTION_CHECKS[profile]))
+        if profile == 'graph':
+            report.update(graph_id=1, engine_type='falkordb', controlled_extraction=True, real_model=False,
+                          reopen_success='blocked_provider_identity', running_crash=dict(
+                              graph_id=2, task_id=3, execution_id=str(uuid.uuid4()),
+                              result='passed', attempt=1, live_attempt_observed=True, no_replay=True,
+                              unresolved_hold=True, remote_return_terminal_unchanged=True))
+        else:
+            report.update(principal_id='1', browser=dict(schema_version='addp.cleanup-execution-browser/v1', result='passed',
+                              run_id='execution-test', tenant_id='42', principal_id='2', request_id=str(uuid.uuid4()),
+                              execution_id=str(uuid.uuid4()), phases=[dict(phase=phase, real_pagination=True,
+                                  result_read_before_revoke=True, real_denial=True, previous_view_cleared=True, late_result_rejected=True)
+                                  for phase in ('refresh','pagination')]),
+                          uncertain_revocation=False, physical_effect_acceptance='not_run',
+                          owner_results=[dict(module=owner, action=action, execution_id=str(uuid.uuid4()),
+                                              receipt_result_equal=True, other_user_denied=True, get_no_write=True)
+                                         for owner in sorted(ONLINE_GATE.EXECUTION_OWNERS) for action in ('scan', 'execute')])
+        return report
+
+    def test_execution_dispatch_is_unique_and_keeps_peer_out_of_other_cases(self):
+        import json
+        for profile in ('graph', 'cleanup'):
+            name = 'graph-protection' if profile == 'graph' else 'cleanup-execution'
+            env = dict(self.environment, ADDP_ONLINE_GRAPH_ENGINE='falkordb', ADDP_ONLINE_TEST_RUN_ID='execution-test',
+                       ADDP_ONLINE_GRAPH_CASE='execution-lifecycle', ADDP_ONLINE_GRAPH_PEER_URL='http://127.0.0.1:18186')
+            for _, variable in ONLINE_GATE.SUITES[name].services:
+                env.setdefault(variable, 'http://127.0.0.1:8000')
+            report = self.execution_report(profile)
+            directory = Path(env['ADDP_ONLINE_ARTIFACT_DIR']); directory.mkdir(exist_ok=True)
+            (directory / f'{profile}-execution.json').write_text(json.dumps(report))
+            if profile == 'cleanup': (directory / 'cleanup-browser.json').write_text(json.dumps(report['browser']))
+            with patch.object(ONLINE_GATE, 'run_stage', side_effect=[({}, 1), (report, 1)]) as stage:
+                actual = ONLINE_GATE.run_online(name, self.repository, env)
+            self.assertEqual(actual['result'], 'passed')
+            self.assertIn('--execution-profile', stage.call_args_list[0].args[1])
+            self.assertEqual(stage.call_args_list[1].args[1], (sys.executable, '-m', f'scripts.test.{profile}-execution-online'))
+            self.assertEqual('graph-peer=http://127.0.0.1:18186' in stage.call_args_list[0].args[1], profile == 'graph')
+        for case in ('full', 'endpoint-geometry', 'endpoint-same-color'):
+            self.assertIsNone(ONLINE_GATE.execution_profile('graph-protection', {'ADDP_ONLINE_GRAPH_CASE': case}))
+        for case in ('', 'all', 'lifecycle'):
+            with self.assertRaises(ONLINE_GATE.OnlineGateError):
+                ONLINE_GATE.execution_profile('graph-protection', {'ADDP_ONLINE_GRAPH_CASE': case})
+
+    def test_execution_report_rejects_missing_failed_or_forged_scope(self):
+        import copy
+        env = {'ADDP_ONLINE_GRAPH_ENGINE': 'falkordb', 'ADDP_ONLINE_TEST_RUN_ID':'execution-test', 'ADDP_ONLINE_TEST_TENANT_ID':'42'}
+        for profile in ('graph', 'cleanup'):
+            valid = self.execution_report(profile)
+            mutations = [lambda r: r.pop('schema_version'), lambda r: r.update(result='failed'),
+                         lambda r: r.update(control_cleanup='failed'), lambda r: r.update(hosted_destruction='passed'),
+                         lambda r: r.update(checks=r['checks'][:-1]), lambda r: r['checks'].append(r['checks'][0])]
+            if profile == 'graph':
+                mutations += [lambda r: r.update(engine_type='neo4j'), lambda r: r.update(real_model=True),
+                              lambda r: r.update(reopen_success='passed'), lambda r: r.pop('running_crash'),
+                              lambda r: r['running_crash'].update(no_replay=False),
+                              lambda r: r['running_crash'].update(task_id=True),
+                              lambda r: r['running_crash'].update(task_id='00000000-0000-0000-0000-000000000001'),
+                              lambda r: r['running_crash'].update(graph_id=r['graph_id']),
+                              lambda r: r['running_crash'].update(execution_id='not-uuid')]
+            else:
+                mutations += [lambda r: r.update(uncertain_revocation=True), lambda r: r.update(physical_effect_acceptance='passed'),
+                              lambda r: r['owner_results'].pop(),
+                              lambda r: r['owner_results'].__setitem__(1, r['owner_results'][0]),
+                              lambda r: r['owner_results'][0].update(get_no_write=False),
+                              lambda r: r['owner_results'][0].update(execution_id='not-uuid'),
+                              lambda r: r.pop('browser'), lambda r: r['browser'].update(run_id='other-run'),
+                              lambda r: r['browser']['phases'][0].update(late_result_rejected=1),
+                              lambda r: r['browser'].update(access_token='forbidden')]
+            ONLINE_GATE.validate_execution_report(profile, valid, env)
+            for mutate in mutations:
+                value = copy.deepcopy(valid); mutate(value)
+                with self.subTest(profile=profile, mutation=mutate), self.assertRaises(ONLINE_GATE.OnlineStageError):
+                    ONLINE_GATE.validate_execution_report(profile, value, env)
+
+    def test_execution_archive_is_required_and_must_match_stdout(self):
+        import json
+        directory = self.root / 'execution-reports'; directory.mkdir()
+        report = self.execution_report('graph'); env = {'ADDP_ONLINE_GRAPH_ENGINE': 'falkordb'}
+        path = directory / 'graph-execution.json'
+        for content in (None, '{', json.dumps(dict(report, result='failed'))):
+            if content is not None: path.write_text(content)
+            with self.assertRaises(ONLINE_GATE.OnlineStageError):
+                ONLINE_GATE.validate_execution_archive('graph', report, directory, env)
+        path.write_text(json.dumps(report))
+        ONLINE_GATE.validate_execution_archive('graph', report, directory, env)
+        path.unlink(); path.symlink_to(directory / 'missing')
+        with self.assertRaises(ONLINE_GATE.OnlineStageError):
+            ONLINE_GATE.validate_execution_archive('graph', report, directory, env)
+
+    def test_cleanup_browser_archive_cannot_be_missing_or_disagree(self):
+        import json
+        report = self.execution_report('cleanup')
+        env = {'ADDP_ONLINE_TEST_RUN_ID':'execution-test','ADDP_ONLINE_TEST_TENANT_ID':'42'}
+        directory = self.root / 'browser-reports'; directory.mkdir()
+        (directory / 'cleanup-execution.json').write_text(json.dumps(report))
+        browser = directory / 'cleanup-browser.json'
+        with self.assertRaises(ONLINE_GATE.OnlineStageError):
+            ONLINE_GATE.validate_execution_archive('cleanup', report, directory, env)
+        browser.write_text(json.dumps(dict(report['browser'], access_token='forbidden')))
+        with self.assertRaises(ONLINE_GATE.OnlineStageError):
+            ONLINE_GATE.validate_execution_archive('cleanup', report, directory, env)
+        browser.write_text(json.dumps(report['browser']))
+        ONLINE_GATE.validate_execution_archive('cleanup', report, directory, env)
+
     @patch.object(ONLINE_GATE.time, "monotonic", side_effect=(10.0, 12.0, 14.0))
     @patch.object(
         ONLINE_GATE,
@@ -131,6 +239,7 @@ class OnlineGateTest(unittest.TestCase):
                 "security-mysql-owner-protection",
                 "security-plaintext-access",
                 "graph-protection",
+                "cleanup-execution",
                 "security-transfer-protection",
                 "standard-model-reference-deletion",
                 "tidb-consumer-flow",

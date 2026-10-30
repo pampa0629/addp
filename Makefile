@@ -1450,9 +1450,15 @@ test-graph-online-runner: ## 验证图保护和人工审核原生夹具、普通
 	@node --check --input-type=module < console/frontend/e2e/online/graph-protection.spec.js
 	@node --check --input-type=module < console/frontend/e2e/online/develop-graph-query.spec.js
 	@python3 -m unittest scripts/test/graph-review-online_test.py scripts/test/graph-protection-online_test.py scripts/test/online-graph-fixture_test.py
-	@bash -n scripts/test/online-hosted-security-gate.sh
-	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/online-gate_test.py scripts.ci.check-online-ci-registration_test.OnlineCIRegistrationTest.test_graph_protection_requires_synthetic_lifecycle_and_regressions
+	@$(MAKE) test-execution-online-ci-runner
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run GraphProtection -count=1
+
+.PHONY: test-execution-online-ci-runner
+test-execution-online-ci-runner: ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
+	@node --check --input-type=module < console/frontend/e2e/online/cleanup-execution.spec.js
+	@bash -n scripts/test/online-hosted-security-gate.sh
+	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/ci/check-online-ci-registration_test.py
+	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
 .PHONY: test-protection-deployment-runner
 test-protection-deployment-runner: ## 验证保护消费者隔离部署、租户初始化和精确清理诊断

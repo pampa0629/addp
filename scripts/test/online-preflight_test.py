@@ -201,6 +201,56 @@ class OnlinePreflightTest(unittest.TestCase):
         self.assertEqual(report["database"], "addp_online")
         self.assertEqual(report["tenant_id"], "42")
 
+    def test_execution_preflight_rejects_wrong_owner_identity_and_peer(self):
+        secret = Path(self.temp.name) / 'addp-online-secret-profile'
+        secret.mkdir(mode=0o700)
+        env = dict(GITHUB_ACTIONS='true', RUNNER_OS='Linux', ADDP_ONLINE_HOSTED='1', ADDP_ONLINE_HOST='1',
+                   ADDP_ONLINE_TEST_RUN_ID='execution-test', ADDP_ONLINE_GRAPH_ENGINE='falkordb', ADDP_ONLINE_TEST_ENGINE_ID='42',
+                   ADDP_ONLINE_ARTIFACT_DIR=str(Path(self.temp.name) / 'artifacts'),
+                   RUNNER_TEMP=self.temp.name, ADDP_ONLINE_SECRET_DIR=str(secret),
+                   ADDP_ONLINE_GRAPH_LIFECYCLE_ACCESS_TOKEN='private-lifecycle', ADDP_ONLINE_TEST_USER_ACCESS_TOKEN='private-reader')
+        services = [ONLINE_PREFLIGHT.Service(name, f'http://127.0.0.1:{port}') for name, port in
+                    (('gateway', 8000), ('system', 8180), ('graph', 8186), ('graph-peer', 18186))]
+        with patch.dict(ONLINE_PREFLIGHT.os.environ, env, clear=True), patch.object(ONLINE_PREFLIGHT.sys, 'platform', 'linux'):
+            ONLINE_PREFLIGHT.validate_execution_environment('graph', self.repository, services)
+            for values in ({'ADDP_ONLINE_HOSTED':'0'}, {'ADDP_ONLINE_TEST_RUN_ID':'other.run'},
+                           {'ADDP_ONLINE_GRAPH_LIFECYCLE_ACCESS_TOKEN':''}, {'ADDP_ONLINE_GRAPH_ENGINE':'unknown'}):
+                with patch.dict(ONLINE_PREFLIGHT.os.environ, values), self.assertRaises(ONLINE_PREFLIGHT.PreflightError):
+                    ONLINE_PREFLIGHT.validate_execution_environment('graph', self.repository, services)
+            for invalid in (services[:-1], services[:-1] + [ONLINE_PREFLIGHT.Service('graph-peer', services[-2].base_url)],
+                            services[:-1] + [ONLINE_PREFLIGHT.Service('graph-peer','https://127.0.0.1:18186')]):
+                with self.assertRaises(ONLINE_PREFLIGHT.PreflightError):
+                    ONLINE_PREFLIGHT.validate_execution_environment('graph', self.repository, invalid)
+            secret.chmod(0o755)
+            with self.assertRaises(ONLINE_PREFLIGHT.PreflightError):
+                ONLINE_PREFLIGHT.validate_execution_environment('graph', self.repository, services)
+
+    def test_graph_peer_health_requires_same_sha_and_distinct_runtime_instances(self):
+        args = self.args()
+        args.execution_profile = 'graph'
+        args.service = [f'{name}=http://127.0.0.1:{port}' for name, port in
+                        (('gateway',8000), ('system',8180), ('graph',8186), ('graph-peer',18186))]
+        env = dict(ADDP_ONLINE_TEST='1', ADDP_ONLINE_TEST_TENANT_ID='42', POSTGRES_DB='addp_online',
+                   ADDP_ONLINE_TEST_RUN_ID='execution-health')
+        for mode in ('distinct', 'same-instance', 'wrong-sha', 'changed-ready-instance'):
+            def health(service, endpoint, timeout):
+                instance = ('graph' if mode == 'same-instance' and service.module == 'graph-peer' else service.module)
+                if mode == 'changed-ready-instance' and service.module == 'graph-peer' and endpoint.endswith('ready'):
+                    instance = 'restarted-peer'
+                return dict(status='ready' if endpoint.endswith('ready') else 'live',
+                    module='graph' if service.module == 'graph-peer' else service.module, instance_id=instance,
+                    git_commit='old' if mode == 'wrong-sha' and service.module == 'graph-peer' else 'f'*40,
+                    build_id='build', source_fingerprint='sha256:test', built_at='built', started_at='started')
+            with self.subTest(mode=mode), patch.dict(ONLINE_PREFLIGHT.os.environ, env, clear=True), \
+                    patch.object(ONLINE_PREFLIGHT, 'git', side_effect=['f'*40, '']), \
+                    patch.object(ONLINE_PREFLIGHT, 'validate_execution_environment'), \
+                    patch.object(ONLINE_PREFLIGHT, 'load_health', side_effect=health):
+                if mode == 'distinct':
+                    self.assertEqual(ONLINE_PREFLIGHT.run_preflight(args)['services']['graph-peer']['instance_id'], 'graph-peer')
+                else:
+                    with self.assertRaises(ONLINE_PREFLIGHT.PreflightError):
+                        ONLINE_PREFLIGHT.run_preflight(args)
+
 
 if __name__ == "__main__":
     unittest.main()

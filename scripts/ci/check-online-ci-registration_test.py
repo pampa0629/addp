@@ -1178,6 +1178,35 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 CHECK.validate_vector_topology_profile(self.repository, registered)
             target.write_text(original)
 
+    def test_execution_profiles_require_reports_recovery_and_exact_owners(self):
+        source = SCRIPT.parents[2]
+        paths = ('.github/workflows/online-t4-gates.yml', 'Makefile', 'scripts/test/online-gate.py',
+                 'scripts/test/online-gate_test.py', 'scripts/test/online-preflight.py',
+                 'scripts/test/online-hosted-security-gate.sh', 'scripts/test/online-hosted-security-gate_test.py',
+                 'scripts/test/docker-compose.graph-protection-t4.yml', 'scripts/test/docker-compose.cleanup-execution-t4.yml',
+                 'console/frontend/e2e/online/cleanup-execution.spec.js')
+        for relative in paths:
+            target = self.repository / relative; target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source / relative, target)
+        CHECK.validate_execution_profiles(self.repository, {'graph-protection', 'cleanup-execution'})
+        for relative, fragment in ((paths[0], "inputs.suite != 'cleanup-execution'"), (paths[0], '- execution-lifecycle'), (paths[0], 'Upload Hosted execution evidence'),
+                                   (paths[0], '/execution-recovery.txt'),
+                                   (paths[2], 'validate_execution_archive(profile, suite_report'), (paths[2], 'running_process_crash_without_replay'),
+                                   (paths[4], 'independent runtime instance identities'), (paths[5], 'python3 -m scripts.test.execution-online-support resume'),
+                                   (paths[6], 'test_execution_recovery_scenario_and_residual_failures_still_destroy_and_fail'),
+                                   (paths[7], '127.0.0.1:18186:8186'), (paths[7], 'ports: !override'), (paths[7], 'restart: "no"'), (paths[8], '  asset-backend:')):
+            file = self.repository / relative; original = file.read_text()
+            with self.subTest(fragment=fragment):
+                if fragment == 'restart: "no"':
+                    before, peer = original.split('  graph-backend-peer:', 1)
+                    changed = before + '  graph-backend-peer:' + peer.replace(fragment, '', 1)
+                else:
+                    changed = original.replace(fragment, '', 1)
+                file.write_text(changed)
+                with self.assertRaises(CHECK.RegistrationError):
+                    CHECK.validate_execution_profiles(self.repository, {'graph-protection', 'cleanup-execution'})
+                file.write_text(original)
+
     def test_graph_protection_requires_synthetic_lifecycle_and_regressions(self):
         source = SCRIPT.parents[2]
         paths = ('.github/workflows/online-t4-gates.yml', 'Makefile',
@@ -1192,7 +1221,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             target = self.repository / relative; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, target)
         CHECK.validate_graph_protection_profile(self.repository, {'graph-protection'})
-        for relative, fragment in ((paths[0], 'ADDP_ONLINE_GRAPH_CASE: ${{ inputs.graph_case }}'), (paths[0], '- endpoint-geometry'), (paths[0], '- endpoint-same-color'), (paths[2], 'full|endpoint-geometry|endpoint-same-color)'), (paths[3], 'verify_same_color_geometry'), (paths[17], 'graphOverlapPaint'), (paths[3], 'verify_endpoint_geometry'), (paths[3], 'run_endpoint_case'), (paths[17], 'node_geometry'), (paths[16], 'graphEndpointGeometry'), (paths[16], 'stableExposedGraphPixels'), (paths[16], 'page.mouse.down'), (paths[0], "inputs.suite != 'graph-protection'"),
+        for relative, fragment in ((paths[0], 'ADDP_ONLINE_GRAPH_CASE: ${{ inputs.graph_case }}'), (paths[0], '- endpoint-geometry'), (paths[0], '- endpoint-same-color'), (paths[2], 'full|endpoint-geometry|endpoint-same-color|execution-lifecycle)'), (paths[3], 'verify_same_color_geometry'), (paths[17], 'graphOverlapPaint'), (paths[3], 'verify_endpoint_geometry'), (paths[3], 'run_endpoint_case'), (paths[17], 'node_geometry'), (paths[16], 'graphEndpointGeometry'), (paths[16], 'stableExposedGraphPixels'), (paths[16], 'page.mouse.down'), (paths[0], "inputs.suite != 'graph-protection'"),
                                    (paths[1], 'graph-protection-online_test.py'), (paths[1], 'graph-review-online_test.py'),
                                    (paths[1], 'console/frontend/e2e/online/graph-review.spec.js'),
                                    (paths[2], 'develop,graph,manager,service,transfer'),

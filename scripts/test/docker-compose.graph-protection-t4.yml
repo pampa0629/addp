@@ -18,6 +18,8 @@ services:
     environment:
       ADDP_ONLINE_HOSTED: "1"
       GITHUB_ACTIONS: "true"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:-}
+      ADDP_ONLINE_GRAPH_CASE: ${ADDP_ONLINE_GRAPH_CASE:-full}
     command: ["python", "/fixture/graph-review-extractor.py"]
     volumes:
       - ./scripts/test/graph-review-extractor.py:/fixture/graph-review-extractor.py:ro
@@ -32,6 +34,10 @@ services:
   graph-backend:
     environment:
       COPILOT_URL: http://graph-review-extractor:8087
+      ADDP_ONLINE_HOSTED: ${ADDP_ONLINE_HOSTED:-}
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:-}
+      GRAPH_BUILD_LEASE_SECONDS: ${GRAPH_BUILD_LEASE_SECONDS:-120}
+      GRAPH_BUILD_HEARTBEAT_SECONDS: ${GRAPH_BUILD_HEARTBEAT_SECONDS:-20}
     ports: ["127.0.0.1:8186:8186"]
   service-backend:
     environment:
@@ -39,3 +45,18 @@ services:
     ports: ["127.0.0.1:8086:8086"]
   transfer-backend:
     ports: ["127.0.0.1:8083:8083"]
+  graph-backend-peer:
+    extends:
+      file: docker-compose.yml
+      service: graph-backend
+    container_name: graph-backend-peer
+    profiles: [execution-lifecycle]
+    restart: "no"
+    environment:
+      SERVICE_HOST: graph-backend-peer
+      COPILOT_URL: http://graph-review-extractor:8087
+      ADDP_ONLINE_HOSTED: ${ADDP_ONLINE_HOSTED:-}
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:-}
+      GRAPH_BUILD_LEASE_SECONDS: "30"
+      GRAPH_BUILD_HEARTBEAT_SECONDS: "5"
+    ports: !override ["127.0.0.1:18186:8186"]

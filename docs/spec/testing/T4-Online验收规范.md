@@ -94,6 +94,20 @@ T4 临时夹具优先通过 owner 正式 API 创建；正式 API 无法建立必
 
 各场景的部署选择、夹具和固定断言见[总入口场景索引](../addp测试与验收规范.md#online-场景索引)。
 
+## Graph 与 Cleanup 执行生命周期专项
+
+本专项仅人工选择，复用 `make test-online` 和 GitHub Hosted Linux 的一次性生命周期：Graph 使用 `ONLINE_SUITE=graph-protection`、`ADDP_ONLINE_GRAPH_CASE=execution-lifecycle`，分别选择 FalkorDB／Neo4j；Cleanup 使用独立的 `ONLINE_SUITE=cleanup-execution`。登记和确定性测试通过只证明编排代码，实际运行 Hosted 仍须单独授权，不能通过夜间调度或重跑代替授权。
+
+Graph 主／副 Backend 使用相同产品镜像、不同进程 runtime instance、独立 `127.0.0.1:8186`／`127.0.0.1:18186`，并显式配置 lease 30 秒、heartbeat 5 秒；副实例只在该 case 启动。受控抽取器携带同一 run ID 和准确 case。Cleanup 使用 System、Gateway 和 Meta、Manager、Transfer、Develop、Service、Quality、Graph、Asset、Model、Standard 十 Owner；Graph／Asset 各只有一个实例。它们共享正式 runtime 服务身份，不增加业务权限。
+
+前置检查要求准确 Hosted 标记、独占 `addp_online`、外部 owner-only 私有目录、正式测试身份、全部服务同 SHA 的健康与 readiness；Graph 还要求两实例地址和 runtime instance 都不同。控制仅作用于本轮准确容器实例，不能暂停 PostgreSQL，不能复用个人部署。
+
+分发器严格消费 `graph-execution.json`／`cleanup-execution.json`，要求与 stdout 的报告一致、schema 正确、`result=passed`、`control_cleanup=passed` 以及完整必需 checks。Graph 必须保留受控抽取、非真实模型和 Provider 身份不足时拒绝 reopen 的边界，并校验运行中崩溃的 execution／task、attempt=1、真实 started 观测、不重放、未知 holding 和迟到返回不改终态。Cleanup 必须有十 Owner × scan／execute 共二十条唯一 UUID 结果，以及回执一致、其他用户拒绝、GET 不写入断言；`physical_effect_acceptance=not_run` 不能改写为真实外部效果验收。
+
+`hosted_destruction=required` 表示外层义务。失败、超时或信号退出先以同一私有环境调用 `python3 -m scripts.test.execution-online-support resume`，核对准确暂停实例和空 pins，再销毁应用、夹具、Infra、卷和凭据。恢复失败仍继续精确销毁并令 Job 失败；恢复记录缺失表示无暂停意图，非法／他轮记录、被替换容器不得按名称恢复。场景报告成功不能代替外层退出成功及零残留，原始恢复记录、Token、私有 PG 探针和原始控制日志不归档。
+
+本批不证明原生写图回包丢失、Manager／Transfer 原生未知外部效果、Graph 同物理目标的 positive reopen 或完整故障矩阵。Cleanup 同次接入 Owner 的 `browser_revocation_refresh_pagination_late_response`：必须有独立 `cleanup-browser.json`，与汇总 `browser` 完全一致；刷新和翻页两阶段分别证明真实结果先读、精确撤权后真实拒绝、旧内容清除和迟到响应拒绝，身份、run ID、request／execution 均绑定。Console／System 前端、生产 Nginx 入口和 Chromium 属于此 profile 准备；身份口令和原始 Playwright 输出仅保存在私有临时目录，不归档。不得以未执行或拒绝路径替代其它尚未实现的成功能力。
+
 ## 平台三员治理隔离验收
 
 `platform-administrator-governance` 仅允许人工触发 GitHub Hosted Linux x86_64 profile，不支持个人开发部署、self-hosted 或夜间调度。生命周期复用 Hosted 准入与清理；新建独占 Infra、`addp_online`、System、Gateway、Console 与 System 页面，退出销毁本轮身份、数据库卷及临时凭据。禁止运行本机开发生命周期作为验收替代。

@@ -3,6 +3,7 @@
 # ADDP_ONLINE_SUITES=security-mysql-owner-protection
 # ADDP_ONLINE_SUITES=security-plaintext-access
 # ADDP_ONLINE_SUITES=graph-protection
+# ADDP_ONLINE_SUITES=cleanup-execution
 # ADDP_ONLINE_RUNNER=github-hosted-linux-x86_64
 set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
@@ -11,7 +12,7 @@ ONLINE_SUITE=${ONLINE_SUITE_INPUT:-}
 case "$ONLINE_SUITE" in
   security-mysql-owner-protection) INITIALIZER_SCRIPT=security-mysql-owner-protection-online.py ;;
   security-plaintext-access) INITIALIZER_SCRIPT=security-plaintext-access-online.py ;;
-  graph-protection) INITIALIZER_SCRIPT= ;;
+  graph-protection|cleanup-execution) INITIALIZER_SCRIPT= ;;
   *) echo 'Unsupported Hosted Security suite' >&2; exit 1 ;;
 esac
 HOSTED_FIXTURE_CONTAINERS=(addp-security-online-postgres addp-security-online-mysql addp-security-online-mongodb)
@@ -22,17 +23,45 @@ if [ "$ONLINE_SUITE" = graph-protection ]; then
   esac
   export ADDP_ONLINE_GRAPH_CASE=${ADDP_ONLINE_GRAPH_CASE-full}
   case "$ADDP_ONLINE_GRAPH_CASE" in
-    full|endpoint-geometry|endpoint-same-color) ;;
+    full|endpoint-geometry|endpoint-same-color|execution-lifecycle) ;;
     *) echo 'Unsupported Graph acceptance case' >&2; exit 1 ;;
   esac
   HOSTED_FIXTURE_CONTAINERS=(addp-graph-online-review-extractor addp-graph-online-neo4j-review addp-graph-online-neo4j addp-graph-online-neo4j-control addp-graph-online-falkordb registry addp-graph-online-upstreams system-backend gateway console meta-backend security-backend manager-backend develop-backend service-backend service-frontend transfer-backend monitor-backend graph-backend graph-frontend develop-frontend addp-nginx)
   HOSTED_FIXTURE_COMPOSE_PROJECTS=(addp-graph-online addp-platform)
 fi
+EXECUTION_PROFILE=
+COMPOSE_OVERLAY=docker-compose.graph-protection-t4.yml
+if [ "$ONLINE_SUITE" = graph-protection ] && [ "$ADDP_ONLINE_GRAPH_CASE" = execution-lifecycle ]; then
+  EXECUTION_PROFILE=graph
+  export COMPOSE_PROFILES=execution-lifecycle
+  HOSTED_FIXTURE_CONTAINERS+=(graph-backend-peer)
+fi
+if [ "$ONLINE_SUITE" = cleanup-execution ]; then
+  EXECUTION_PROFILE=cleanup
+  COMPOSE_OVERLAY=docker-compose.cleanup-execution-t4.yml
+  HOSTED_FIXTURE_CONTAINERS=(registry system-backend gateway meta-backend manager-backend transfer-backend develop-backend service-backend quality-backend graph-backend asset-backend model-backend standard-backend monitor-backend graph-backend-peer console system-frontend addp-nginx)
+  HOSTED_FIXTURE_COMPOSE_PROJECTS=(addp-platform)
+fi
+if [ -n "$EXECUTION_PROFILE" ]; then
+  export ADDP_ONLINE_TEST_RUN_ID="${ADDP_ONLINE_TEST_RUN_ID:-execution-${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}-${GITHUB_RUN_ATTEMPT:?GITHUB_RUN_ATTEMPT is required}}"
+  [[ "$ADDP_ONLINE_TEST_RUN_ID" =~ ^[A-Za-z0-9_-]{1,100}$ ]] || { echo "Invalid execution run identity" >&2; exit 1; }
+fi
+if [ -n "$EXECUTION_PROFILE" ]; then
+  python3 - <<'ADMISSION' || { echo 'Invalid execution private directory boundary' >&2; exit 1; }
+import os, re
+from pathlib import Path
+secret = Path(os.environ.get('ADDP_ONLINE_SECRET_DIR', ''))
+runner = Path(os.environ.get('RUNNER_TEMP', ''))
+assert secret.is_absolute() and runner.is_absolute() and not secret.is_symlink()
+assert secret.resolve().parent == runner.resolve()
+assert re.fullmatch(r'addp-online-secret-[A-Za-z0-9_.-]+', secret.name)
+ADMISSION
+fi
 compose_graph() {
-  docker compose -f "$ROOT_DIR/docker-compose.yml" -f "$ROOT_DIR/scripts/test/docker-compose.graph-protection-t4.yml" "$@"
+  docker compose -f "$ROOT_DIR/docker-compose.yml" -f "$ROOT_DIR/scripts/test/$COMPOSE_OVERLAY" "$@"
 }
 stop_online_fixture() {
-  if [ "$ONLINE_SUITE" = graph-protection ]; then
+  if [ "$ONLINE_SUITE" = graph-protection ] || [ "$ONLINE_SUITE" = cleanup-execution ]; then
     local status=0 container
     for container in addp-graph-online-upstreams registry; do
       if docker container inspect "$container" >/dev/null 2>&1; then
@@ -40,14 +69,26 @@ stop_online_fixture() {
       fi
       if docker container inspect "$container" >/dev/null 2>&1; then status=1; fi
     done
-    run_logged python3 business/scripts/online-graph-fixture.py stop || status=1
+    if [ "$ONLINE_SUITE" = graph-protection ]; then
+      run_logged python3 business/scripts/online-graph-fixture.py stop || status=1
+    fi
     return "$status"
-  else
+  elif [ "$ONLINE_SUITE" != cleanup-execution ]; then
     run_logged bash business/scripts/online-security-owner-fixture.sh stop
   fi
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
-if [ "$ONLINE_SUITE" = graph-protection ]; then
+if [ -n "$EXECUTION_PROFILE" ]; then
+  export GRAPH_BUILD_LEASE_SECONDS=30 GRAPH_BUILD_HEARTBEAT_SECONDS=5
+  export ADDP_ONLINE_GRAPH_PEER_URL=http://127.0.0.1:18186
+  before_online_application_stop() {
+    local status=0
+    run_logged python3 -m scripts.test.execution-online-support resume || status=1
+    printf "control_recovery=%s\n" "$([ "$status" -eq 0 ] && echo passed || echo failed)" > "$ADDP_ONLINE_ARTIFACT_DIR/execution-recovery.txt"
+    return "$status"
+  }
+fi
+if [ "$ONLINE_SUITE" = graph-protection ] || [ "$ONLINE_SUITE" = cleanup-execution ]; then
   stop_online_application() {
     local status=0 remaining kind
     run_logged compose_graph down --remove-orphans --volumes || status=1
@@ -73,6 +114,8 @@ export SECURITY_URL=http://127.0.0.1:8194
 export GRAPH_URL=http://127.0.0.1:8186
 export MONITOR_URL=http://127.0.0.1:8100 CONSOLE_URL=http://127.0.0.1:5170
 export ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE=security_fixture
+export QUALITY_URL=http://127.0.0.1:8182 ASSET_URL=http://127.0.0.1:8183
+export MODEL_URL=http://127.0.0.1:8181 STANDARD_URL=http://127.0.0.1:8110
 # Swagger generation requires an explicit workspace in a clean checkout.
 # Discover the same tracked modules as test-go; the Hosted exit trap owns it.
 export GOWORK="$ADDP_ONLINE_SECRET_DIR/go.work"
@@ -84,7 +127,7 @@ while IFS= read -r module; do
 done < <(git ls-files -- 'go.mod' '**/go.mod')
 [ "${#go_modules[@]}" -gt 0 ] || fail 'Security Hosted checkout has no tracked Go modules'
 run_logged go work init "${go_modules[@]}"
-if [ "$ONLINE_SUITE" = graph-protection ]; then
+if [ "$ONLINE_SUITE" = graph-protection ] || [ "$ONLINE_SUITE" = cleanup-execution ]; then
   run_logged compose_graph config --quiet
 fi
 infra_owned=1
@@ -92,11 +135,11 @@ run_logged bash scripts/infra/up.sh
 fixture_owned=1
 if [ "$ONLINE_SUITE" = graph-protection ]; then
   run_logged python3 business/scripts/online-graph-fixture.py start
-else
+elif [ "$ONLINE_SUITE" != cleanup-execution ]; then
   run_logged bash business/scripts/online-security-owner-fixture.sh start
 fi
 application_owned=1
-if [ "$ONLINE_SUITE" = graph-protection ]; then
+if [ "$ONLINE_SUITE" = graph-protection ] || [ "$ONLINE_SUITE" = cleanup-execution ]; then
   export CONSOLE_URL="$ADDP_PUBLIC_ORIGIN"
   run_logged docker run -d --name registry -p 127.0.0.1:5001:5000 registry:2
   registry_ready=0
@@ -106,12 +149,28 @@ if [ "$ONLINE_SUITE" = graph-protection ]; then
   done
   [ "$registry_ready" -eq 1 ] || fail 'Graph image registry readiness timed out'
   backend_images=system-backend,gateway,meta-backend,meta-worker,security-backend,security-worker,manager-backend,develop-backend,service-backend,transfer-backend,graph-backend,monitor-backend
+  if [ "$ONLINE_SUITE" = cleanup-execution ]; then
+    backend_images=system-backend,gateway,meta-backend,manager-backend,transfer-backend,develop-backend,service-backend,quality-backend,graph-backend,asset-backend,model-backend,standard-backend,monitor-backend
+  fi
   run_logged make build BUILD_ARGS="--arch amd64 --services $backend_images"
+  if [ "$ONLINE_SUITE" = cleanup-execution ]; then
+    run_logged make build-images IMAGE_BUILD_ARGS="--verify --services $backend_images,console,system-frontend,nginx"
+    for service in system-backend gateway meta-backend manager-backend transfer-backend develop-backend service-backend quality-backend graph-backend asset-backend model-backend standard-backend monitor-backend; do
+      run_logged compose_graph up -d --no-deps --wait "$service"
+    done
+    for service in console system-frontend nginx; do
+      run_logged compose_graph up -d --no-deps --wait "$service"
+    done
+    run_logged npm --prefix console/frontend ci
+  else
   run_logged make build-images IMAGE_BUILD_ARGS="--verify --services $backend_images,console,graph-frontend,develop-frontend,service-frontend,nginx"
   run_logged compose_graph up -d --no-deps --wait graph-review-extractor
   for service in system-backend security-backend gateway meta-backend manager-backend transfer-backend service-backend graph-backend monitor-backend develop-backend meta-worker security-worker console graph-frontend develop-frontend service-frontend; do
     run_logged compose_graph up -d --no-deps --wait "$service"
   done
+  if [ "$EXECUTION_PROFILE" = graph ]; then
+    run_logged compose_graph up -d --no-deps --wait graph-backend-peer
+  fi
   run_logged docker exec graph-frontend sh -ec 'wget -qO- http://127.0.0.1/graphs/1/browse | grep -q "id=\"app\""; if wget -qO- http://127.0.0.1/assets/nonexistent-acceptance-chunk.js >/dev/null 2>&1; then exit 1; fi'
   # Unvisited static upstreams need DNS names at Nginx startup, as in the
   # existing production-entry suite. Graph and Develop use real frontends.
@@ -121,6 +180,7 @@ if [ "$ONLINE_SUITE" = graph-protection ]; then
     localhost:5001/nginx:alpine
   run_logged compose_graph up -d --no-deps --wait nginx
   run_logged npm --prefix console/frontend ci
+  fi
 else
   for start_target in -meta -security -manager -develop -service -transfer -graph -monitor; do
     run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
@@ -151,7 +211,7 @@ if [ "$ONLINE_SUITE" = graph-protection ]; then
     [ "$ADDP_ONLINE_GRAPH_REVIEW_ENGINE_ID" != "$ADDP_ONLINE_TEST_ENGINE_ID" ] && [ "$ADDP_ONLINE_GRAPH_REVIEW_ENGINE_ID" != "$ADDP_ONLINE_GRAPH_CONTROL_ENGINE_ID" ] || fail 'Neo4j review requires an independent engine'
 
   fi
-else
+elif [ "$ONLINE_SUITE" != cleanup-execution ]; then
 run_logged python3 scripts/test/online-engine-registration.py \
   --descriptor "$ADDP_ONLINE_SECRET_DIR/security-postgres.json" --output "$ENGINE_RESULT_ENV"
 source "$ENGINE_RESULT_ENV"
