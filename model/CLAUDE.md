@@ -232,15 +232,22 @@ GET/PUT .../concept-mappings                              # 概念实现映射�
 
 ## 前端路由
 
+以下为 Console 业务入口，对应 [Model 路由登记](frontend/src/router/index.js)中的模块内子路由；Console 地址与独立模块加载地址的分工见[公开路由事实源](../docs/spec/addp前端路由与可恢复状态规范.md#二公开路由事实源)。登录与根路径的落点规则见[模块概述](#模块概述)。
+
+```text
+/modeling/dw-layers                        # 数仓分层
+/modeling/entities                         # 业务实体列表
+/modeling/entities/:id                     # 实体详情（属性、关系、Mermaid 图）
+/modeling/logical-tables                   # 逻辑表列表
+/modeling/logical-tables/:id               # 逻辑表详情（字段、维度层级、物理目标、建表语句预览）
+/modeling/er-diagram                       # 按业务域查看 ER 图；domain_id=all 显式全域
+/modeling/star-schema                      # 维度建模（事实表-维度表-指标三维关联）
+/modeling/metric-implementations/:id?      # 指标实现工作区：列表、创建或详情
 ```
-/modeling/dw-layers              # 数仓分层
-/modeling/entities               # 业务实体列表
-/modeling/entities/:id           # 实体详情（属性、关系、Mermaid 图）
-/modeling/logical-tables         # 逻辑表列表
-/modeling/logical-tables/:id     # 逻辑表详情（字段、维度层级、物理目标、建表语句预览）
-/modeling/er-diagram             # 按业务域查看 ER 图；domain_id=all 显式全域
-/modeling/star-schema            # 维度建模（事实表-维度表-指标三维关联）
-```
+
+指标实现入口省略 `:id` 时为列表，`new` 为创建入口，具体 ID 为实现详情；详情用 `?revision_id=<修订ID>` 定位该实现的确定修订。实现 ID 与修订 ID 分别传递，指定的修订不属于当前实现时显示不可用，见[工作区加载逻辑](frontend/src/views/MetricImplementationWorkspace.vue)。列表筛选与其他页面的可恢复状态统一见[Canonical URL](../docs/spec/addp前端路由与可恢复状态规范.md#五canonical-url)。
+
+页面准入按共享 [Console 路由权限登记](../common-frontend/basic/src/authorization/consoleRouteAccess.js)复核当前 Tenant 上下文及所需权限；创建、修改、发布等动作仍遵循[Model 授权边界](docs/model概念与数据约束规范.md#二授权边界)，由后端复核权限与资源归属。路由登记及修订参数核对属于静态验证，前端回归与真实跨模块验收按[开发与验证](#开发与验证)分别认定。
 
 ## 模块依赖关系
 
