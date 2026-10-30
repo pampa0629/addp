@@ -25,6 +25,8 @@
 
 Standard 定义 Domain、Glossary、Element、MetricDefinition、CodeSet、Unit 和标准来源文档等可复用业务语义，但不拥有这些语义与具体 DataItem、CatalogEntry 或 CatalogComponent 的应用关系。具体字段/组件到标准修订的映射只由 Catalog 保存；检查方案、规则来源快照、执行结果和问题只由 Quality 保存。Standard 不依赖 Meta 或 Catalog，不保存 `catalog_entry_id`、反向资源列表或质量执行事实。安全分类、安全等级、敏感类型和保护基线统一属于 Security，Standard 不保存第二份安全事实。
 
+安全定义的现行对象与版本约束见[Security 业务对象](../docs/spec/addp数据安全与隐私保护实现规范.md#四security-业务对象)，变更及引用删除限制见[保护定义变化的影响传播](../docs/spec/addp数据安全与隐私保护实现规范.md#73-保护定义变化的影响传播)；旧 Standard 结构与 ID 的处理统一见[迁移与旧路径删除](../docs/spec/addp数据安全与隐私保护实现规范.md#十五迁移与旧路径删除)。
+
 数据元修订 `compiled_quality_rules` 的结构和校验必须遵守 [ADDP 数据质量规范](../docs/spec/addp数据质量规范.md)。规则仅由值约束编译，`rule_key` 由 Standard 按数据元稳定 ID 与约束类型生成并跨修订保持；Standard 不拥有物理字段应用、规则执行、评分或质量问题。
 
 ### 数据元修订与机器读取
@@ -129,7 +131,6 @@ standard/
 │       │   ├── element_handler.go
 │       │   ├── code_set_handler.go
 │       │   ├── unit_handler.go
-│       │   ├── classification_handler.go
 │       │   ├── metric_handler.go
 │       │   └── document_handler.go
 │       ├── config/config.go
@@ -139,7 +140,6 @@ standard/
 │       │   ├── element.go
 │       │   ├── code_set.go
 │       │   ├── unit.go
-│       │   ├── classification.go
 │       │   ├── metric.go
 │       │   ├── document.go
 │       │   └── common_types.go        # StringArray, Int64Array, JSONB
@@ -301,9 +301,6 @@ standard/
 | name / symbol | string | 单位名 / 符号（如 kg、℃） |
 | tenant_id | int64? | 空为平台所有，非空为所属 Tenant |
 | translations | JSON | 平台目录的多语种名称与描述（单位含符号） |
-
-
-> **注意**: 分级记录由系统初始化，仅支持 PUT 更新名称/描述/颜色，不支持创建和删除。
 
 ### `standard.metric_categories` — 指标分类（树形）
 
