@@ -169,6 +169,7 @@ PostgreSQL CDC v1 capture control plane 已实现，Transfer cleanup executor �
 
 - ADDP-created Kafka Connect connector、replication slot、publication、Infra Kafka CDC topic 和 consumer group 归 Transfer owner；按 `task_id + capture_generation` 精确定位，不按 topic prefix 或数据库名称猜测。
 - CDC stop 与 System Cleanup 使用同一套准确目标操作登记。外部结果未知不重发；明确成功的原操作回执可用于后续收口，不能据此重新删除或自动重新开放任务。
+- 新 producer 因已有外部清理操作而被持久围栏拒绝时，启动／恢复接口返回 HTTP 409、稳定 `error_code=transfer_cleanup_unresolved` 和按请求语言翻译的安全 `error`，不返回底层包装错误。用户显式删除任务时外部清理失败仍返回 HTTP 503；该分类调整不开放任务、不重发未知效果，也不改变 Engine 删除保留任务与 DLQ 的语义。
 - Kafka Connect config/offset/status 等共享内部 topic、Kafka broker 数据目录和 ACL 基础配置归 Infra 部署 owner，不得由单个 Transfer task cleanup 删除。
 - cleanup 不删除目标业务表、目标业务行、目标 `addp_transfer.apply_positions`、`common.task_executions` 或 System 审计日志。
 - slot/publication 只允许删除资源登记中标记为 ADDP-created 且 identity 完全匹配的对象，不得按同名规则删除用户已有资源。

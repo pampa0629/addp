@@ -32,6 +32,7 @@ const (
 	MsgDeadLetterInternal              = "transfer.dead_letter.internal_error"
 	MsgTaskDeleteRequiresStopped       = "transfer.task.delete_requires_stopped"
 	MsgTaskDeleteCleanupFailed         = "transfer.task.delete_cleanup_failed"
+	MsgTaskCleanupUnresolved           = "transfer.task.cleanup_unresolved"
 	MsgSchemaChangeInvalid             = "transfer.schema_change.invalid"
 	MsgSchemaChangeNotFound            = "transfer.schema_change.not_found"
 	MsgSchemaChangeNotAdditive         = "transfer.schema_change.not_additive"

@@ -2162,7 +2162,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "CDC 已永久停止或被结构变化阻塞 | CDC permanently stopped or blocked by schema change",
+                        "description": "CDC 已永久停止、被结构变化阻塞或存在未核清的外部清理操作（error_code=transfer_cleanup_unresolved） | CDC permanently stopped, blocked by schema change, or fenced by an unresolved external cleanup operation (error_code=transfer_cleanup_unresolved)",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2403,7 +2403,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "CDC 已永久停止或被结构变化阻塞 | CDC permanently stopped or blocked by schema change",
+                        "description": "CDC 已永久停止、被结构变化阻塞或存在未核清的外部清理操作（error_code=transfer_cleanup_unresolved） | CDC permanently stopped, blocked by schema change, or fenced by an unresolved external cleanup operation (error_code=transfer_cleanup_unresolved)",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {

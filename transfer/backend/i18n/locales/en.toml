@@ -138,3 +138,6 @@ other = "Export protection could not be verified. Try again later."
 
 [transfer.export.protection_unavailable]
 other = "Export protection cannot be verified right now. Try again later."
+
+[transfer.task.cleanup_unresolved]
+other = "The task has an unresolved external cleanup operation and cannot start or resume"

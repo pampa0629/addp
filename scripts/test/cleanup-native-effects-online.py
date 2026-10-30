@@ -168,10 +168,11 @@ def run_dlq_unknown(user, controls, task_id, report, checkpoint):
             and after['unknown_operations'] == 1, 'unknown topic deletion erased its task, index or operation')
     # Explicit second user command must not resend the unknown native effect.
     user.request('DELETE', f'{TASKS}/{task_id}', (503,))
-    refused = user.request('POST', f'{TASKS}/{task_id}/start', (500,))
-    require(refused.payload.get('error') == 'start continuous execution: transfer external cleanup operation is unresolved',
+    refused = user.request('POST', f'{TASKS}/{task_id}/start', (409,))
+    require(refused.payload.get('error_code') == 'transfer_cleanup_unresolved',
             'producer refusal has an unrelated cause')
-    report['producer_refusal_http_status'] = 500
+    report['producer_refusal_http_status'] = 409
+    report['producer_refusal_error_code'] = refused.payload['error_code']
     require(controls.transfer_snapshot(task_id) == after, 'repeated command or producer changed isolated task facts')
     assert_proxy(controls.fault('dlq', key), controls.run_id, key)
     report['checks'].extend(['real_dlq_created', 'direct_task_delete_sent_response_lost',

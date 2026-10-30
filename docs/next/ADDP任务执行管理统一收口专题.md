@@ -578,3 +578,11 @@ Engine User 沿既有 deletion-assessments 只读评估，该未决 writer 必�
 最终实际通过 `GOMAXPROCS=4 GOFLAGS=-p=2 make test-graph-online-runner`：80 项 Graph／控制回归、68 项 native／transport／夹具／恢复测试、143 项共享预检／报告／登记及 GraphProtection Go 用例，退出 0，日志 `/tmp/addp-late-writer-graph-final-20261030.log`。其后仅修正上述 pending 零行竞态并加强迟到 GLB 原生内容校验；聚焦 20 项测试通过，再以 `make test-cleanup-native-online-runner` 完整复验最终输入，69 项通过、退出 0，日志 `/tmp/addp-late-writer-native-final-20261030.log`。共享报告／选择契约未在该增量改变，不重复稳定的共享门禁。所有结果仍是确定性、真实 loopback 传输或配置验证，没有运行新的 Hosted、共享环境切换或本地 PostgreSQL 门禁。
 
 现有六 case 的 late-writer 标记保持 not_run；新增 case 也只有在后续实际 Hosted 的全部断言及最终销毁均通过时，才能形成这一有限范围的真实运行证据。Meilisearch 真正迟到投递、Transfer 旧 producer、Graph 原生写图未知效果、positive reopen 与 Transfer 围栏错误的 HTTP 500 分类仍按原缺口保留。
+
+### 8.9 Transfer 持久围栏拒绝的 HTTP 分类修正
+
+本节承接已确认的持久隔离方案及 2026-10-30 用户明确授权。既有围栏拒绝新 producer 的领域事实正确，但其包装错误落入通用 HTTP 500；上节及此前 500 记录保留为历史事实。本批将启动／恢复的此类拒绝统一为 HTTP 409、`error_code=transfer_cleanup_unresolved` 和中英安全文案，不再向调用方暴露内部错误链。显式任务删除的外部清理失败仍为 503，身份权限、清理范围及产品删除语义不变。
+
+原生专项只接受新的 409 和稳定错误码，报告同时保存 `producer_refusal_http_status=409` 与 `producer_refusal_error_code=transfer_cleanup_unresolved`；删除响应丢失、原生 topic 不存在、私有控制事实不变及未知效果不重发等原断言保持。CI 消费同步拒绝旧 500 与错误代码，单一路径不兼容旧报告。本批最小验证为 Transfer Go T1、Swagger 生成／覆盖、`make test-cleanup-native-online-runner` 及受影响 CI 登记检查；无数据库或外部服务依赖变更。新的 Hosted 与环境切换另行确认，确定性门禁结果不计为原生故障验收。
+
+**本批实际验证。** HTTP 回归先复现原 500 及内部包装详情，再验证直接／包装错误的中英安全 409；删除清理失败即使含围栏错误仍为 503，无关内部错误保留 500。`GOMAXPROCS=4 GOFLAGS=-p=2 python3 scripts/test/module-gate.py --repository /Users/pampa/code/addp --module transfer --go-only` 完整通过 Go T1（`/tmp/addp-transfer-fence-go-t1-20261030.log`）；Swagger 标准生成及 39 个公开路由方法覆盖通过；`make test-cleanup-native-online-runner` 70 项通过（`/tmp/addp-transfer-fence-native-20261030.log`）；原生 Cleanup CI 登记专项通过。`make test-module MODULE=transfer GO_ONLY=1` 包装入口因当前 Node 25.2.1 与仓库 Node 24 要求不符而在测试前失败，不计通过，未切换环境；上面的纯 Go 标准脚本不依赖 Node。完整登记聚合 94 项中 93 项通过，另有其他会话的 NFS FileGDB 登记用例报错，本批未调查或修改，不计完整聚合通过。没有运行新的 Hosted、环境切换或 PostgreSQL 门禁；真实原生故障与 Graph 缺口仍按前节分别保留。

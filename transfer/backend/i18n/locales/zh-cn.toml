@@ -141,3 +141,6 @@ other = "暂时无法核验导出保护，请稍后重试。"
 
 [transfer.export.protection_unavailable]
 other = "暂时无法核验导出文件的保护状态，请稍后重试。"
+
+[transfer.task.cleanup_unresolved]
+other = "任务存在尚未核清的外部清理操作，无法启动或恢复"

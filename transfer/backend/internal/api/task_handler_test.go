@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -16,9 +17,11 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	"github.com/addp/common/format"
+	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
+	"github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
@@ -178,6 +181,46 @@ func TestRespondReplayTaskErrorDoesNotExposeInternalDetails(t *testing.T) {
 	}
 }
 
+func TestCleanupFenceRefusalUsesConflictAndSafeLocalizedCode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, lang := range []string{"zh-cn", "en"} {
+		for _, wrapped := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/wrapped=%t", lang, wrapped), func(t *testing.T) {
+				err := repository.ErrCleanupOperationUnresolved
+				if wrapped {
+					err = fmt.Errorf("start continuous execution: %w: broker password=secret", err)
+				}
+				router := gin.New()
+				router.Use(i18nmiddleware.I18nMiddleware())
+				router.POST("/start", func(c *gin.Context) { respondTaskServiceError(c, err) })
+				request := httptest.NewRequest(http.MethodPost, "/start", nil)
+				request.Header.Set("Accept-Language", lang)
+				response := httptest.NewRecorder()
+				router.ServeHTTP(response, request)
+				var body map[string]string
+				if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+					t.Fatal(err)
+				}
+				message := "任务存在尚未核清的外部清理操作，无法启动或恢复"
+				if lang == "en" {
+					message = "The task has an unresolved external cleanup operation and cannot start or resume"
+				}
+				if response.Code != http.StatusConflict || len(body) != 2 || body["error_code"] != "transfer_cleanup_unresolved" || body["error"] != message {
+					t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+				}
+			})
+		}
+	}
+	// Unrelated failures must not be misclassified as a known fence refusal.
+	router := gin.New()
+	router.POST("/start", func(c *gin.Context) { respondTaskServiceError(c, fmt.Errorf("database unavailable")) })
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/start", nil))
+	if response.Code != http.StatusInternalServerError || strings.Contains(response.Body.String(), "transfer_cleanup_unresolved") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestDeleteTaskErrorsUseStableStatusAndDoNotExposeCleanupDetails(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -185,7 +228,8 @@ func TestDeleteTaskErrorsUseStableStatusAndDoNotExposeCleanupDetails(t *testing.
 		respondTaskServiceError(c, service.ErrTaskDeleteRequiresStopped)
 	})
 	router.GET("/delete-cleanup", func(c *gin.Context) {
-		respondTaskServiceError(c, fmt.Errorf("%w: broker password=secret", service.ErrTaskDeleteCleanupFailed))
+		respondTaskServiceError(c, errors.Join(service.ErrTaskDeleteCleanupFailed,
+			fmt.Errorf("%w: broker password=secret", repository.ErrCleanupOperationUnresolved)))
 	})
 
 	running := httptest.NewRecorder()

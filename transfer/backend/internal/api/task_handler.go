@@ -308,7 +308,7 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 // @Success 200 {object} ExecutionResponse "启动成功，返回执行记录 | Started successfully, returns execution record"
 // @Failure 403 {object} map[string]string "需要当前租户用户身份 | Current tenant User identity required"
 // @Failure 400 {object} map[string]string "参数错误或任务已在运行 | Bad request or task already running"
-// @Failure 409 {object} map[string]string "CDC 已永久停止或被结构变化阻塞 | CDC permanently stopped or blocked by schema change"
+// @Failure 409 {object} map[string]string "CDC 已永久停止、被结构变化阻塞或存在未核清的外部清理操作（error_code=transfer_cleanup_unresolved） | CDC permanently stopped, blocked by schema change, or fenced by an unresolved external cleanup operation (error_code=transfer_cleanup_unresolved)"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["transfer.task.execute"]
@@ -668,7 +668,7 @@ func (h *TaskHandler) PauseTask(c *gin.Context) {
 // @Success 200 {object} map[string]string
 // @Failure 401 {object} map[string]string "当前用户凭据失效 | Current User credential is no longer valid"
 // @Failure 403 {object} map[string]string "需要当前租户用户身份 | Current tenant User identity required"
-// @Failure 409 {object} map[string]string "CDC 已永久停止或被结构变化阻塞 | CDC permanently stopped or blocked by schema change"
+// @Failure 409 {object} map[string]string "CDC 已永久停止、被结构变化阻塞或存在未核清的外部清理操作（error_code=transfer_cleanup_unresolved） | CDC permanently stopped, blocked by schema change, or fenced by an unresolved external cleanup operation (error_code=transfer_cleanup_unresolved)"
 // @Failure 503 {object} map[string]string "捕获控制面不可用 | Capture control unavailable"
 // @Failure 500 {object} map[string]string
 // @x-addp-auth-mode "permission"
@@ -818,6 +818,13 @@ func respondTaskServiceError(c *gin.Context, err error) {
 	}
 	if errors.Is(err, service.ErrTaskDeleteCleanupFailed) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": i18nmiddleware.T(c, transferI18n.MsgTaskDeleteCleanupFailed)})
+		return
+	}
+	if errors.Is(err, repository.ErrCleanupOperationUnresolved) {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":      i18nmiddleware.T(c, transferI18n.MsgTaskCleanupUnresolved),
+			"error_code": "transfer_cleanup_unresolved",
+		})
 		return
 	}
 	commonAPI.InternalServerError(c, err.Error())

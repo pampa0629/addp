@@ -69,11 +69,18 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                 with self.assertRaises(S.SuiteError): workflow.engine(999)
 
     def test_direct_delete_unknown_requires_physical_absence_retained_facts_and_no_replay(self):
-        for mutation in ('none', 'no_source', 'no_response', 'topic_present', 'index_erased', 'operation_missing', 'late_write', 'resent'):
+        for mutation in ('none', 'no_source', 'no_response', 'topic_present', 'index_erased', 'operation_missing', 'late_write', 'resent', 'wrong_refusal_code', 'legacy_refusal'):
             calls = []; snapshots = 0; observations = 0
             class User:
                 def request(self, method, path, expected):
-                    calls.append((method, path, expected)); return SimpleNamespace(payload={'error': 'start continuous execution: transfer external cleanup operation is unresolved'})
+                    calls.append((method, path, expected))
+                    if method == 'POST':
+                        if expected != (409,): raise AssertionError('producer refusal must be a conflict')
+                        payload = {'error': 'safe localized message', 'error_code': 'transfer_cleanup_unresolved'}
+                        if mutation == 'wrong_refusal_code': payload['error_code'] = 'unrelated_conflict'
+                        if mutation == 'legacy_refusal': payload = {'error': 'start continuous execution: transfer external cleanup operation is unresolved'}
+                        return SimpleNamespace(payload=payload)
+                    return SimpleNamespace(payload={})
             class Controls:
                 tenant, run_id = 2, 'native-1'
                 def transfer_snapshot(self, task):
@@ -101,6 +108,8 @@ class NativeCleanupRunnerTest(unittest.TestCase):
             if mutation == 'none':
                 M.run_dlq_unknown(User(), Controls(), 7, report, lambda: None)
                 self.assertEqual(report['entry'], 'transfer_task_delete')
+                self.assertEqual(report['producer_refusal_http_status'], 409)
+                self.assertEqual(report['producer_refusal_error_code'], 'transfer_cleanup_unresolved')
                 self.assertEqual([x[:2] for x in calls], [('DELETE', M.TASKS + '/7'), ('DELETE', M.TASKS + '/7'), ('POST', M.TASKS + '/7/start')])
             else:
                 with self.subTest(mutation=mutation), self.assertRaises(S.SuiteError): M.run_dlq_unknown(User(), Controls(), 7, report, lambda: None)
