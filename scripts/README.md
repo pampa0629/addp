@@ -11,7 +11,7 @@
 | 编译、镜像与部署包 | [Build 指南](build/README.md) |
 | 本地容器部署 | [Local 指南](local/README.md) |
 | 生产部署与健康检查 | [Prod 指南](prod/README.md) |
-| Registry 与通用工具 | [Registry 指南](registry/README.md)、[Utils 指南](utils/README.md) |
+| 本地构建 Registry 与辅助工具 | [Registry 指南](registry/README.md)、[Utils 指南](utils/README.md) |
 
 ## 专题导航
 

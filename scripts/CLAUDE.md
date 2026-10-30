@@ -9,10 +9,10 @@ scripts/
 ├── build/          # 构建相关脚本（Docker 镜像构建、Go 编译等）
 ├── dev/            # 开发环境脚本（启动、停止、重启、模块管理）
 ├── infra/          # 基础设施脚本（PostgreSQL、Redis、MinIO、Meilisearch 初始化）
-├── local/          # 本地开发辅助脚本
+├── local/          # 本地 Docker Compose 部署
 ├── migrations/     # 数据库迁移脚本
 ├── prod/           # 生产环境脚本（健康检查、等待基础设施就绪）
-├── registry/       # 服务注册相关脚本
+├── registry/       # 本地 Docker 构建 Registry
 ├── test/           # 测试相关脚本
 └── utils/          # 通用工具脚本（依赖检查、端口验证、颜色输出等）
 ```
@@ -46,7 +46,7 @@ scripts/
 - **utils/** - 可复用工具与独立辅助命令；运行依赖、身份和副作用按[工具说明](utils/README.md)核对
 - **test/** - 测试相关（集成测试、API 测试、性能测试）
 - **migrations/** - 数据库迁移脚本
-- **registry/** - 服务注册和发现相关
+- **registry/** - 本地 Docker 构建 Registry 与外部仓库信任配置，职责和操作边界见[Registry 指南](registry/README.md)
 
 **判断标准**：
 - 如果脚本是工具性质（被其他脚本 source 引用），放在 `utils/`
