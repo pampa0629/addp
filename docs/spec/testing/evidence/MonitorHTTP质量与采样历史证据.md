@@ -454,3 +454,25 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 本次没有复现目录消失，缺失对象现场阶段快照分支未触发；此次真实三阶段通过只证明取证覆盖已接通，不证明3f43历史删除者或根因已定位，不把新的成功时序回填为旧失败阶段。
 
 本机准备清单`/tmp/addp-p19-http-three-stage-preparation-20261030.json`保存固定实现输入与最终门禁／预期红例日志SHA256；`/tmp/addp-p19-http-three-stage-linux-audit-20261030.json`另存原始归档、353输入及三阶段独立核对。没有新开本地窗口，不运行Hosted、容量、定时；3f43的go_tmp后代对象复发仍为未定删除者，本批仅修取证覆盖，不宣称已修复间歇根因，原正式产品到页面及停源历史读取缺口不被替代。
+
+<a id="http-three-stage-followup-manual-20261030"></a>
+
+## 2026-10-30 三阶段修正后手动复核（新增一通过、两运行中）
+
+本轮依用户“继续”只读核对三阶段修正后main自然首轮HTTP门禁。2026-10-30 11:03（Asia/Shanghai）快照中，排除已验3a004a947原运行后21个候选push均attempt 1，仅三条生成HTTP质量子Job：一条通过、两条仍运行；其余18条没有HTTP子Job不计通过，不由workflow聚合结果推断本专项状态。没有dispatch／rerun、Hosted、容量、定时或新本地窗口，未调查其他专项CI。
+
+新增通过：固定源码`18efeb515310ac73bb846314431be25b41938d61`，[run40986375022／HTTP Job123838511477](https://github.com/pampa0629/addp/actions/runs/40986375022/job/123838511477)，自然push attempt 1。artifact12948087445共24484字节，实际ZIP SHA256=`569d05b7351ea77dd0c24306946f0086c518335cd6358485bb78105dab87b096`与API登记一致，CRC及唯一JSON成员通过；报告SHA256=`6b1b016d667cf2ce53a940a70b4f63ffd159adb42b5d0958e07256f413485d23`。353个输入逐文件独立匹配该固定提交，预算／shell／正式probe脚本与3a004a947一致。
+
+原始报告passed／exit0／error null／无failure_detail，867.504351秒、213个完整样本最长1.260555秒、可写保守上界最大1809240127字节，硬配额最大3.25 CPU／4026531840字节内存；原四秒、1200秒及资源预算满足。请求Go163、Python[67,26]、总256，三源阶段／计数额度一致，inputs_unchanged／cleanup_verified／private_directory_removed=true。compile_stages valid且恰好三个阶段均finished／exit0，顺序及单调端点验证通过，旧process_compile字段不存在：
+
+| 阶段 | 开始monotonic_ns | 观察结束monotonic_ns |
+| --- | --- | --- |
+| process_source | 69105442500 | 144951036366 |
+| http_query | 235662765705 | 236781480904 |
+| http_alert | 236781992750 | 296791503971 |
+
+运行中两项分别为[run40992897301／HTTP Job123860345522](https://github.com/pampa0629/addp/actions/runs/40992897301/job/123860345522)，固定源码31b60be911ded7d3c339e0ea5c6c51ed2cbf1bd4；[run40993642918／HTTP Job123864301497](https://github.com/pampa0629/addp/actions/runs/40993642918/job/123864301497)，固定源码ffa8aed3de8d3c84e5659c4575b30f6f7e8323e4。均为自然push attempt 1，快照in_progress、conclusion=null，未取得最终报告，不计通过／失败。本轮只做一次手动核对，不建立持续监控。
+
+新增通过未复现目录消失，缺失对象现场快照分支未触发，3f43历史删除者／根因仍未确定；不得以本次成功时序补写旧失败阶段。本轮无实现变更；若后续自然复发，先按新增对象／三阶段取证定位，再给最小方案讨论后实施。正式产品后端到页面及停源历史读取原有缺口不被替代。
+
+本机`/tmp/addp-p19-http-followup4-verified-20261030.json`保存独立归档核验，同前缀runs／candidates／jobs／artifact-meta保存只读快照。本轮仅文档证据修改，验证主题计数、锚点／索引及diff，没有新的代码门禁或运行验收。
