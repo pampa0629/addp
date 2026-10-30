@@ -351,11 +351,9 @@ EntityRelation 使用完整 `PUT`：请求包含变更后的 source_entity、tar
 
 ### Entity 与逻辑表状态机
 
-```
-draft ⇄ approved
-```
+`draft` 与 `approved` 的显式审批、退回草稿及审批条件统一见[正式生命周期规范](docs/model概念与数据约束规范.md#四生命周期)；`materialized` 不属于生命周期状态。详情、引用回显及 DDL 查看／预览的只读边界、未保存状态和操作后的重载要求也以该节为准。
 
-只有 `draft` 可修改；审批和退回草稿必须使用显式状态转换。`materialized` 不属于当前正式状态，建表语句预览不改变状态。
+操作须按[授权边界](docs/model概念与数据约束规范.md#二授权边界)和[当前路由登记](backend/internal/api/router.go)校验 Tenant、精确 Permission 与资源归属。状态及只读契约不代表运行验收通过，实际覆盖见[开发与验证](#开发与验证)。
 
 ### `dimension-relations` 查询返回 JOIN 结果
 
