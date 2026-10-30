@@ -2,8 +2,14 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -45,6 +51,7 @@ func exerciseAuthorizationFactsAPI(t *testing.T, db *gorm.DB, identity *iam.Repo
 			actor.AuthorizationVersion = p.AuthorizationVersion
 		}
 		refresh()
+		exerciseAuthorizationItemsRouter(t, db, actor, engine)
 		actor.TokenExpiresAt = time.Now().Add(time.Minute)
 		fingerprint := commonmodels.GenerateItemFingerprint(engine.ID, "outdoor.persons")
 		facts := &authorizationfacts.AuthorizationFacts{SchemaVersion: authorizationfacts.AuthorizationFactsSchemaV1, ItemFingerprint: fingerprint, EngineID: engine.ID, ItemType: "table", FullName: "outdoor.persons", BasisState: authorizationfacts.AuthorizationBasisComplete, ObservedAt: time.Now().UTC(), Boundary: &authorizationfacts.AuthorizationBoundary{Layout: "single", NativeTarget: plugin.TabularItemPath(engine.ID, "schema", "outdoor", "persons")}}
@@ -109,6 +116,99 @@ func exerciseAuthorizationFactsAPI(t *testing.T, db *gorm.DB, identity *iam.Repo
 		s.WithAuthorizationFactsReader(nil)
 		if _, err := s.GetAuthorizationFacts(ctx, actor, int64(engine.ID), fingerprint); !errors.Is(err, engineaccess.ErrAuthorizationFactsUnavailable) {
 			t.Fatal("missing service credential silently bypassed", err)
+		}
+	})
+}
+
+// Exercise the production composition, including the human credential guard and
+// System's tenant-scoped machine client. Handler-only tests cannot detect a
+// missing Meta identity reader in SetupRouter.
+func exerciseAuthorizationItemsRouter(t *testing.T, db *gorm.DB, actor engineaccess.Actor, engine models.Engine) {
+	t.Run("production router lists Meta identities", func(t *testing.T) {
+		const machineSecret = "identity-fixture-0123456789abcdef0123456789abcdef"
+		page := authorizationfacts.IdentityPage{
+			Data: []authorizationfacts.DataItemIdentity{{
+				EngineID: engine.ID, ItemFingerprint: commonmodels.GenerateItemFingerprint(engine.ID, "outdoor.persons"),
+				Name: "persons", FullName: "outdoor.persons", ItemType: "table",
+				Ancestors: []authorizationfacts.IdentityNode{{ID: 1, Name: "outdoor", NodeType: "schema"}},
+			}},
+			Total: 1, Page: 1, PageSize: 100, TotalPages: 1,
+		}
+		var calls atomic.Int32
+		var unavailable atomic.Bool
+		owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch r.URL.Path {
+			case "/api/v1/system/oauth/token":
+				id, secret, ok := r.BasicAuth()
+				if r.Method != http.MethodPost || !ok || id != "addp-system" || secret != machineSecret ||
+					r.ParseForm() != nil || r.Form.Get("grant_type") != "client_credentials" ||
+					r.Form.Get("context_type") != "" || r.Form.Get("tenant_id") != strconv.FormatInt(actor.TenantID, 10) {
+					t.Error("invalid System machine credential context")
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				_, _ = w.Write([]byte(`{"access_token":"addp_at_identity_fixture","token_type":"Bearer","expires_in":300,"scope":"addp.api"}`))
+			case "/api/v1/meta/runtime/data-item-identities/query":
+				calls.Add(1)
+				var query authorizationfacts.IdentityQuery
+				if r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer addp_at_identity_fixture" ||
+					r.Header.Get("X-Tenant-ID") != "" || json.NewDecoder(r.Body).Decode(&query) != nil ||
+					!reflect.DeepEqual(query, authorizationfacts.IdentityQuery{EngineID: engine.ID, Page: 1, PageSize: 100}) {
+					t.Error("wrong Meta owner query or forwarded human credential")
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				if unavailable.Load() {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					_, _ = w.Write([]byte(`{"error":"unavailable","error_code":"fixture_unavailable"}`))
+					return
+				}
+				_ = json.NewEncoder(w).Encode(page)
+			default:
+				t.Errorf("unexpected owner request: %s", r.URL.Path)
+				w.WriteHeader(http.StatusNotFound)
+			}
+		}))
+		defer owner.Close()
+		cfg := testIAMRuntimeConfig()
+		cfg.SystemServiceURL, cfg.MetaServiceURL = owner.URL, owner.URL
+		cfg.ServiceClientSecrets = map[string]string{"addp-system": machineSecret}
+		router := SetupRouter(db, cfg)
+		runtime, err := NewIAMRuntime(db, cfg, testIAMSecurityPolicy())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var now time.Time
+		if err := db.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
+			t.Fatal(err)
+		}
+		stepUp := now.Add(time.Minute)
+		session, err := runtime.ContextSelectionService.BeginContextSelection(context.Background(), iam.BeginContextSelectionInput{
+			PrincipalID:    actor.PrincipalID,
+			Authentication: iam.SessionAuthentication{Methods: []string{"password", "totp"}, AssuranceLevel: iam.AssuranceLevelAAL2, AuthenticatedAt: now, StepUpExpiresAt: &stepUp},
+		})
+		if err != nil || session == nil || session.Session == nil {
+			t.Fatalf("issue fixture browser session: %v", err)
+		}
+		request := func() *httptest.ResponseRecorder {
+			req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/system/engines/%d/data-items?page=1&page_size=100", engine.ID), nil)
+			req.Header.Set("Authorization", "Bearer "+session.Session.AccessToken)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, req)
+			return response
+		}
+		response := request()
+		var got authorizationfacts.IdentityPage
+		if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &got) != nil || !reflect.DeepEqual(got, page) || calls.Load() != 1 {
+			t.Fatalf("production identity listing: status=%d owner_calls=%d body=%s", response.Code, calls.Load(), response.Body.String())
+		}
+		unavailable.Store(true)
+		response = request()
+		var failure map[string]any
+		if response.Code != http.StatusServiceUnavailable || json.Unmarshal(response.Body.Bytes(), &failure) != nil ||
+			failure["error_code"] != "authorization_facts_unavailable" || len(failure) != 2 || calls.Load() != 2 {
+			t.Fatalf("owner failure must not become empty inventory or retry: status=%d calls=%d body=%s", response.Code, calls.Load(), response.Body.String())
 		}
 	})
 }
