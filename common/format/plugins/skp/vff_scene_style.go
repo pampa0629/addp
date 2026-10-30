@@ -21,6 +21,16 @@ type vffSceneStyleCandidate struct {
 	candidateOffset    int
 	candidateMember    string
 	candidateXMLSHA256 [32]byte
+	thumbnail          *vffSceneThumbnail
+	rendering          *vffSceneRendering
+}
+type vffSceneThumbnail struct {
+	fieldOffset, pathOffset int // 5871 and 3421 headers within model.dat
+	vffImageReference
+}
+type vffSceneRendering struct {
+	offset int // 4D71 header; values retain opaque payload identities, not meanings
+	values []vffOpaqueRecord
 }
 type vffSceneStyleFacts struct {
 	modelSHA256 [32]byte
@@ -140,7 +150,7 @@ func (r *vffSceneStyleReader) scene(raw []byte, depth, base int) error {
 	s := vffSceneStyleCandidate{offset: base - 6}
 	seen := map[string]bool{}
 	err := r.each(raw, depth, base, func(tag string, data []byte, offset int) error {
-		if tag == "546F" || tag == "4971" || tag == "4C71" {
+		if tag == "546F" || tag == "4971" || tag == "4C71" || tag == "5871" || tag == "4D71" {
 			if seen[tag] {
 				return fmt.Errorf("duplicate VFF scene identity or candidate field")
 			}
@@ -191,6 +201,20 @@ func (r *vffSceneStyleReader) scene(raw []byte, depth, base int) error {
 			}
 			s.candidateID = id
 			s.candidateOffset = offset - 6
+		case "5871":
+			thumbnail, err := r.thumbnail(data, depth+1, offset)
+			if err != nil {
+				return err
+			}
+			s.thumbnail = thumbnail
+		case "4D71":
+			rendering, err := r.rendering(data, depth+1, offset)
+			if err != nil {
+				return err
+			}
+			s.rendering = rendering
+			// Framing does not prove rendering semantics or absence of resources.
+			r.result.opaque = append(r.result.opaque, vffOpaque("model.dat", "F401/0702/606D/616D/4871/4D71", data, offset-6))
 		default:
 			r.result.opaque = append(r.result.opaque, vffOpaque("model.dat", "F401/0702/606D/616D/4871/"+tag, data, offset-6))
 		}
@@ -222,4 +246,62 @@ func (r *vffSceneStyleReader) scene(raw []byte, depth, base int) error {
 	}
 	r.result.scenes = append(r.result.scenes, s)
 	return nil
+}
+
+func (r *vffSceneStyleReader) thumbnail(raw []byte, depth, base int) (*vffSceneThumbnail, error) {
+	ref := &vffSceneThumbnail{fieldOffset: base - 6}
+	count := 0
+	err := r.each(raw, depth, base, func(tag string, data []byte, offset int) error {
+		count++
+		if tag != "3421" || count != 1 {
+			return fmt.Errorf("unsupported or duplicate VFF scene thumbnail path")
+		}
+		if err := vffMemberName(data, 0x800); err != nil {
+			return err
+		}
+		ref.member, ref.pathOffset = string(data), offset-6
+		if ref.member == "model.dat" {
+			return fmt.Errorf("VFF scene thumbnail aliases model input")
+		}
+		digest, err := r.budget.digest(ref.member)
+		if err != nil {
+			return err
+		}
+		ref.sha256 = digest
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if count != 1 {
+		return nil, fmt.Errorf("missing explicit VFF scene thumbnail path")
+	}
+	return ref, nil
+}
+
+func (r *vffSceneStyleReader) rendering(raw []byte, depth, base int) (*vffSceneRendering, error) {
+	facts := &vffSceneRendering{offset: base - 6}
+	count := 0
+	err := r.each(raw, depth, base, func(tag string, data []byte, offset int) error {
+		count++
+		if tag != "3C73" || count != 1 {
+			return fmt.Errorf("unsupported or duplicate VFF scene rendering wrapper")
+		}
+		seen := map[string]bool{}
+		return r.each(data, depth+1, offset, func(tag string, data []byte, offset int) error {
+			if seen[tag] {
+				return fmt.Errorf("duplicate VFF scene rendering value")
+			}
+			seen[tag] = true
+			facts.values = append(facts.values, vffOpaque("model.dat", "F401/0702/606D/616D/4871/4D71/3C73/"+tag, data, offset-6))
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	if count != 1 {
+		return nil, fmt.Errorf("missing VFF scene rendering wrapper")
+	}
+	return facts, nil
 }

@@ -22,7 +22,7 @@ func vffSceneStyleControl(change func(map[string][]byte, *vffContainer)) (*vffCo
 	if x, ok := p["head"]; ok {
 		head = x
 	}
-	scene := vffRecord("4871", head, p["flags"], p["reference"], p["render"])
+	scene := vffRecord("4871", head, p["flags"], p["reference"], p["render"], p["thumbnail"])
 	if x, ok := p["scene"]; ok {
 		scene = x
 	}

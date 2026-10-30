@@ -15,4 +15,7 @@ func TestSketchUpDescriptorDoesNotClaimRuntimeParsing(t *testing.T) {
 	if _, err := format.GetModel3DInfoProvider(format.FormatSKP); err == nil {
 		t.Fatal("SKP identity must not claim Go geometry parsing")
 	}
+	if _, err := format.GetModel3DCompositionProvider(format.FormatSKP); err == nil {
+		t.Fatal("private VFF research must not open SKP composition admission")
+	}
 }
