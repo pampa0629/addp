@@ -225,9 +225,9 @@ GET    /api/v1/model/entities/export-mermaid         # 按可选 domain_id 导�
 
 退回草稿需要 `model.entity.update`，审批需要 `model.entity.approve`；属性各动作的精确 Permission 以路由登记和[权限清单](authorization/permissions.yaml)为准，Tenant 及父子资源归属校验见[授权边界](docs/model概念与数据约束规范.md#二授权边界)。
 
-属性写入的草稿限制与父 Entity 版本的事务推进见[并发版本与聚合写入](docs/model概念与数据约束规范.md#并发版本与聚合写入)；退回草稿时冻结修订的清理及再次审批的解析规则见[数据元修订冻结](docs/model概念与数据约束规范.md#数据元修订冻结)。端点登记与静态契约核对不代表真实运行通过，实际验收范围见[开发与验证](#开发与验证)。
+属性写入使用父 Entity 的 `version`；草稿与版本校验、属性写入及父版本递增须在同一事务中完成，具体约束及各聚合的版本归属见[并发版本与聚合写入](docs/model概念与数据约束规范.md#并发版本与聚合写入)。JSON body 传递及新版本返回规则见[API 字段契约](../docs/spec/api/资源版本与并发更新.md#字段与-api-契约)。
 
-Entity、LogicalTable、DWLayer 和 EntityRelation 是独立并发版本主体。EntityAttribute 使用父 Entity 版本；LogicalField、TableRelation、DimensionHierarchy 使用父 LogicalTable 版本；MetricImplementation 使用独立版本，其修订使用实现版本。已有资源及聚合子资源的所有写操作都在 JSON body 中携带对应 `version`，成功后返回新版本；不接受 query、Header 或服务端版本兜底。
+退回草稿时冻结修订的清理及再次审批的解析规则见[数据元修订冻结](docs/model概念与数据约束规范.md#数据元修订冻结)。端点登记与静态契约核对不代表真实运行通过，实际验收范围见[开发与验证](#开发与验证)。
 
 Mermaid 导出仍以可选 `domain_id` query 选择当前运行时资源，但交换响应和 Markdown 使用 Standard 稳定编码，例如 `{ "markdown": "...", "scope": "domain", "domain_code": "outdoor" }`；省略 query 表示全域。交换格式唯一为 `addp.model.er/v2`，文档及实体使用 `domain_code`，属性使用 `element_code`，不输出或兼容解析 `domain_id / element_id`。预览提交 `{ "markdown": "..." }`，先按当前 Tenant 经 Standard API 精确解析编码，再返回解析后的业务域显示摘要、创建、未变更、冲突计划与 `revision`；确认导入提交同一 Markdown 和预览 `revision`。文件缺失成员不表示删除，同编码不同定义明确冲突，不保留全量替换或自动 upsert 路线。
 
