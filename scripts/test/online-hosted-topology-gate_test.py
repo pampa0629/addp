@@ -88,6 +88,13 @@ class HostedTopologyGateTest(unittest.TestCase):
             self.assertFalse(self.host.secrets.exists())
             self.assertNotIn('topology:start', self.host.trace.read_text() if self.host.trace.exists() else '')
 
+    def test_endpoint_case_is_bound_without_old_business_or_capacity(self):
+        result=self.run_gate(ADDP_ONLINE_TOPOLOGY_CASE='endpoint-snapping')
+        self.assertEqual(result.returncode,0,result.stderr+result.stdout)
+        import json
+        self.assertEqual(json.loads((self.host.artifacts/'topology-case.json').read_text()),{'suite':'vector-topology-persistence','case':'endpoint-snapping'})
+        self.assertNotIn('capacity',self.host.trace.read_text())
+
     def test_extension_case_is_bound_without_old_business_or_capacity(self):
         result=self.run_gate(ADDP_ONLINE_TOPOLOGY_CASE='line-extension')
         self.assertEqual(result.returncode,0,result.stderr+result.stdout)

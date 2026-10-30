@@ -1187,9 +1187,14 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[9], 'test_hosted_normalize_chains_case_three_save_independent_physical_oracle'),
             (paths[15], 'test_extension_case_is_bound_without_old_business_or_capacity'),
             (paths[0], '          - line-extension'), (paths[3], 'line-proximity|line-extension'),
+            (paths[0], '          - endpoint-snapping'), (paths[3], 'line-extension|endpoint-snapping'),
+            (paths[5], 'def endpoint_features('), (paths[5], 'def verify_endpoint('), (paths[4], 'def endpoint_definition('),
+            (paths[7], 'topology-endpoint-browser-raw.json'), (paths[7], 'setCenter([24.25,4])'),
+            (paths[9], 'test_hosted_endpoint_case_dual_save_four_real_failures_and_independent_oracle'),
+            (paths[13], 'class EndpointOnlineTest'), (paths[15], 'test_endpoint_case_is_bound_without_old_business_or_capacity'),
             (paths[5], 'def verify_extension('), (paths[4], 'def validate_extension_graph('),
             (paths[7], 'assertExtensionLineMap'), (paths[7], 'new_segment_pixels'),
-            (paths[7], 'topology-extension-browser-raw.json'), (paths[4], 'topology-extension-checkpoint.json'),
+            (paths[7], 'topology-extension-browser-raw.json'), (paths[4], "prefix='endpoint' if endpoint else 'extension'"),
             (paths[9], 'test_hosted_line_extension_case_dual_save_failure_barrier_and_independent_oracle'),
             (paths[0], '          - line-proximity'), (paths[3], 'operator-input-diagnostics|line-proximity'),
             (paths[5], 'def verify_proximity('), (paths[4], 'def validate_proximity_graph('),
@@ -1212,15 +1217,14 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 CHECK.validate_vector_topology_profile(self.repository, registered)
             target.write_text(original)
 
-        # A different case already installs this observer; removing only the
-        # extension call must still be rejected by the scoped profile check.
+        # Each selected case must install and await the shared observer itself.
         target=self.repository/paths[7];original=target.read_text()
-        marker="test('线端延伸独立普通User双成果与精确首次交点拒绝'"
-        offset=original.index(marker);prefix,body=original[:offset],original[offset:]
-        changed=body.replace('  await observeLineageCanvas(page)\n','',1)
-        for altered in (changed,changed.replace('  const frame=', '  await observeLineageCanvas(page)\n  const frame=',1)):
-            target.write_text(prefix+altered)
-            with self.assertRaises(CHECK.RegistrationError):CHECK.validate_vector_topology_profile(self.repository,registered)
+        for title in ('线端延伸独立普通User双成果与精确首次交点拒绝','端点吸附独立普通User线与Point双成果及四失败保护'):
+            marker="test('"+title+"'";offset=original.index(marker);prefix,body=original[:offset],original[offset:]
+            changed=body.replace('  await observeLineageCanvas(page)\n','',1)
+            for altered in (changed,changed.replace('  await verifyLineEditCase(page,evidence,directory)\n','  await verifyLineEditCase(page,evidence,directory)\n  await observeLineageCanvas(page)\n',1)):
+                target.write_text(prefix+altered)
+                with self.assertRaises(CHECK.RegistrationError):CHECK.validate_vector_topology_profile(self.repository,registered)
         target.write_text(original)
 
     def test_native_cleanup_requires_unique_case_route_private_topology_and_curated_reports(self):

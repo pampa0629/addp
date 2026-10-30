@@ -806,3 +806,14 @@ artifact／物理／Meta相等正整数大小、精确scan父执行／用户／�
 真实Console核成功／失败执行页、两成果标准EWKB／FID／业务属性及CRS、OpenLayers全部要素／原顶点与投影坐标、两幅实际线地图和属性／血缘页，实际G6两个来源边与标签可见；原始API／源Meta／图／渲染与截图归档。微小新增段须在物理／API／OL数据保留，不声称其亚像素部分单独可见；地图同时核非空像素及result的明确新增长段，不能只看到原输入就通过。浏览器每次导航绑定实际请求的同一普通身份，失败后扫描库存／物理成果／源Meta不变。完整Owner与browser报告须唯一case/run/execution绑定且passed，清理NFS/export/ownedroot、Runtime/registry、部署及Infra零残留；该清理不认证业务DELETE。夹具、runner、浏览器、Hosted选择、标准入口的既有自动覆盖与CI登记／mutation同次同步；代码及本地验证不计为真实Hosted通过。
 
 2026-10-30，固定 `46300b7efd9055fe9a40039208a5cf6f9b05017d` 的[独立线端延伸 Hosted T4 41032821129](https://github.com/pampa0629/addp/actions/runs/41032821129/job/123986411278) 已通过原始归档独立审计：同User33／Tenant2／精确11权限，三源7／14／1行与两成果7条MultiLineString／8条新增LineString明细；五份原GPKG逐行OGR核对精确坐标、原顶点／方向／部件、双方来源、可空字段类型、3857及SHA／大小，各98304字节与Meta／storage严格相等。恰有两次公开同主体自动扫描、四条本次execution active derive、两份create稳定输出／事实和一致Monitor，源及成果前后原字节／Meta不变；原始EWKB、全部OL要素属性／独立投影坐标、两实际线图和明确新增段像素、两真实血缘tab／G6三节点两边／标签paths及成功失败页共八截图已核。业务51944ms，小于600秒，最终Owner／browser／raw均v1 passed，incomplete检查点仅保留阶段含义；不可无损表示首次交点的同UUID失败DAG无输出写入／扫描，隔离owner日志固定原因已核。NFS/export/ownedroot、Runtime/registry、部署及Infra完整清理零残留，不认证业务DELETE、空批／英尺／超JS安全整数、容量或内存中间成果资源血缘；微小2^-20段保留物理／API／OL数据，不声称其亚像素部分单独可见。原41029102072在首图后因本会话新用例遗漏Canvas观察器初始化失败／清0历史保留，`1b6a16f5a`修复及红绿回归后仅作这次必要复验，不重跑旧已通过业务T4或容量。
+
+
+### 端点吸附独立线与Point双成果
+
+`vector-topology-persistence` 的独立 `endpoint-snapping` case 只运行一成功与四失败，不运行full、旧业务T4或容量。复用Hosted隔离部署、非默认Tenant、同一普通User精确11权限及600秒业务总预算。成功双源为EPSG:3857，显式容差1，`load → snap_line_endpoints → result/details分别save`；12条MultiLineString源／13部件、14参考要素，手写期望12条线与10条原悬点Point明细。覆盖严格边界及略超界不动、精确接触／闭环／无候选不动、首尾／多部件／连续重复端点、共享悬点所有源端部、同点全部参考及单参考重复段去重、最近目标且不连锁、2^-20精确微距。业务ID为JSON安全Int64且不同于FID，可空Int64／Boolean／String属性留在线成果；明细保原点、双方ID、部件、首尾及移动事实，按原行／部件／首尾／参考行排序。
+
+额外一份冻结失败源与四份参考分别真实触发等距异点、内部覆盖不能仅端部处理、斜线最近位置不能精确落线、正长度段塌缩；四DAG均带两个下游save，逐次核同User／UUID的Develop与Monitor失败、隔离owner日志准确领域原因，失败目标／输出写入事实／输出derive／新成果扫描均不存在，源与成功成果不变。失败沿现有EXECUTION_FAILED通道，不扩展结构化参数诊断或双文件事务认证。无mock替换生产几何或绕过Worker。
+
+成功稳定outputs及facts均两份create，两个load端口与locator精确绑定；恰两次成果自动扫描，公开严格整数tenant_id／triggered_by同主体。每成果均有两源的本execution active derive共四边；五份失败输入不混入成功图。七源与双成果原字节归档，独立OGR核逐原坐标、完整字段类型／空值、部件／方向／顺序及3857；物理与Meta大小严格正整数相等，父文件／唯一子层边界明确，原源及成果／Meta前后不变。期望不调用生产吸附算法、不epsilon／舍入。
+
+真实Console核成功及四失败执行页、线与Point双地图、两属性页和实际血缘tab／G6来源边标签；原始EWKB、全部OL几何／属性、线端明确移动见证及原Point像素归档，共11截图。Point在原端点，目标由字段与线成果对照；微距保物理／API／OL，不声明亚像素单独可见。每次导航绑定页面实际请求的同一普通身份。最终Owner／browser／raw报告唯一case/run/execution且passed；阶段incomplete仅保留阶段意义。末轮扫描库存、文件与Meta不变，NFS/export/ownedroot、Runtime/registry、部署／Infra清0，不认证业务DELETE、内存中间资源血缘、空批／英尺／超JS整数或容量。夹具／runner／浏览器／Hosted选择及CI登记mutation同次更新，经新增范围最小标准门禁后仅单次派发此case。

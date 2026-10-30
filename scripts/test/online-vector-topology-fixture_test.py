@@ -49,6 +49,19 @@ def records(name):
 
 
 class TopologyFixtureTest(unittest.TestCase):
+    def test_endpoint_handwritten_oracle_types_all_references_and_exact_endpoints(self):
+        self.assertEqual([len(m.endpoint_features(k)) for k in m.ENDPOINT_KINDS],[12,14,4,2,1,1,1])
+        self.assertEqual(len(m.endpoint_features('details')),10)
+        self.assertEqual(m.endpoint_features('details')[0]['geometry'],{'type':'Point','coordinates':[0,0]})
+        self.assertEqual([r['properties']['reference_id'] for r in m.endpoint_features('details')][:2],['z','a'])
+        for kind in (*m.ENDPOINT_KINDS,'result','details'):
+            original=m.endpoint_features(kind);m.validate_extension_features(original,kind,m.ENDPOINT_CASE)
+            for mutate in (lambda r:r.pop(),lambda r:r.reverse(),lambda r:r[0]['properties'].update({next(iter(r[0]['properties'])):'wrong'})):
+                import copy
+                rows=copy.deepcopy(original);mutate(rows)
+                if rows!=original:
+                    with self.subTest(kind=kind),self.assertRaises(m.FixtureError):m.validate_extension_features(rows,kind,m.ENDPOINT_CASE)
+
     def test_extension_handwritten_oracle_preserves_types_all_sources_direction_and_exact_boundaries(self):
         self.assertEqual([len(m.extension_features(k)) for k in ('source','reference','failure_reference','result','details')],[7,14,1,7,8])
         self.assertEqual([r['properties']['reference_id'] for r in m.extension_features('details')],['start','first','duplicate','collinear','forward','part-one','part-two','micro'])

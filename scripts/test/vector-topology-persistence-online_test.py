@@ -731,7 +731,7 @@ const rows=expected.map(row=>({...row.properties,coordinates:row.geometry.coordi
 const canonical=points=>[points,[...points].reverse()].map(value=>JSON.stringify(value)).sort()[0]
 async function run(values) {
   const features=values.map(row=>({get:name=>row[name],getGeometry:()=>({getCoordinates:()=>row.coordinates})}))
-  const map={getView:()=>({getAnimating:()=>false,getProjection:()=>({getCode:()=> 'EPSG:3857'})}),
+  const map={getView:()=>({getAnimating:()=>false,getResolution:()=>1,getProjection:()=>({getCode:()=> 'EPSG:3857'})}),
     getLayers:()=>({getArray:()=>[{getSource:()=>({getFeatures:()=>features})}]})}
   const renderer={evaluate:async (fn,arg)=>fn({__vueParentComponent:{setupState:{mapInstance:map}}},arg)}
   const expect=Object.assign(()=>({toContainText:async()=>{}}),{poll:fn=>({toEqual:async wanted=>assert.deepEqual(await fn(),wanted)})})
@@ -986,7 +986,7 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
         import os
         repository=Path(__file__).resolve().parents[2]
         run=m.subprocess.run
-        titles={m.fixture.EXTENSION_CASE:m.fixture.EXTENSION_TITLE,m.fixture.PROXIMITY_CASE:m.fixture.PROXIMITY_TITLE,m.fixture.DIAGNOSTIC_CASE:m.fixture.DIAGNOSTIC_TITLE,m.fixture.BUFFER_CASE:'多距缓冲独立普通User单成果与重名拒绝',m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
+        titles={m.fixture.ENDPOINT_CASE:m.fixture.ENDPOINT_TITLE,m.fixture.EXTENSION_CASE:m.fixture.EXTENSION_TITLE,m.fixture.PROXIMITY_CASE:m.fixture.PROXIMITY_TITLE,m.fixture.DIAGNOSTIC_CASE:m.fixture.DIAGNOSTIC_TITLE,m.fixture.BUFFER_CASE:'多距缓冲独立普通User单成果与重名拒绝',m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
             m.fixture.COMPOSITION_CASE:'重合规整链路合并独立普通User三成果与字段拒绝',
             'full':'同一普通User核对构面、修复、严格吸附、面叠面缝悬点线叠自叠线交自交及打断连通分组链路合并地图及塌缩失败'}
         for case,title in titles.items():
@@ -1549,7 +1549,7 @@ async function run(rows,expected,mode='normal'){
  const features=rows.map(r=>({get:k=>r.properties[k],getGeometry:()=>({getType:()=>r.geometry.type,getCoordinates:()=>project(r.geometry.coordinates)})}));
  const context={canvas:{width:40,height:40,getBoundingClientRect:()=>({left:0,top:0,width:40,height:40})},getImageData:()=>({data:pixels})};
  const layer={getVisible:()=>mode!=='hidden',getOpacity:()=>1,getSource:()=>({getFeatures:()=>features}),getRenderer:()=>({context})};
- const map={getView:()=>({getAnimating:()=>false,getProjection:()=>({getCode:()=> 'EPSG:3857'})}),getLayers:()=>({getArray:()=>[layer]}),getPixelFromCoordinate:()=>[10,10],getViewport:()=>({getBoundingClientRect:()=>({left:0,top:0})})};
+ const map={getView:()=>({getAnimating:()=>false,getResolution:()=>1,getProjection:()=>({getCode:()=> 'EPSG:3857'})}),getLayers:()=>({getArray:()=>[layer]}),getPixelFromCoordinate:()=>[10,10],getViewport:()=>({getBoundingClientRect:()=>({left:0,top:0})})};
  await check({evaluate:async(fn,arg)=>fn({__vueParentComponent:{setupState:{mapInstance:map}}},arg)},expected);
 }
 for(const expected of Object.values(expectations)){
@@ -1584,18 +1584,195 @@ for(const expected of Object.values(expectations)){
         script=r'''
 import assert from 'node:assert/strict';import{readFileSync}from'node:fs';
 const source=readFileSync(process.argv[1],'utf8');
-const marker="test('线端延伸独立普通User双成果与精确首次交点拒绝',async({page})=>{";
+const config=JSON.parse(process.argv[2]);const marker="test('"+config.title+"',async({page})=>{";
 const start=source.indexOf(marker);assert.ok(start>=0);
 const end=source.indexOf('\n})',start);assert.ok(end>start);
 const body=source.slice(start+marker.length,end);
 const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
-const run=new AsyncFunction('page','expect','process','observeLineageCanvas','login',body);
+const helper=source.slice(source.indexOf('async function verifyLineEditCase('),source.indexOf("test('线端延伸独立普通User双成果与精确首次交点拒绝'"));
+const run=new AsyncFunction('page','expect','process','observeLineageCanvas','login','writeFileSync','resolve',helper+';'+body);
 const events=[],stop=new Error('stop after first navigation'),page={on(){},waitForResponse(){events.push('read');return Promise.resolve({})}};
-const evidence={case:'line-extension',sources:[{},{},{}],outputs:[{port:'result'},{port:'details'}],expected:{result:Array(7),details:Array(8)}};
+const evidence={case:config.case,sources:Array(config.count),outputs:[{port:'result'},{port:'details'}],expected:{result:Array(config.case==='line-extension'?7:12),details:Array(config.case==='line-extension'?8:10)}};
 const expect=value=>({toBe:x=>assert.equal(value,x),toHaveLength:x=>assert.equal(value.length,x),toEqual:x=>assert.deepEqual(value,x)});
 let installed=false;
-await assert.rejects(()=>run(page,expect,{env:{ADDP_ONLINE_TOPOLOGY_EVIDENCE:JSON.stringify(evidence)}},async actual=>{assert.equal(actual,page);await Promise.resolve();installed=true;events.push('observer')},async()=>{assert.ok(installed,'Canvas observer was not awaited before login');events.push('login');throw stop}),error=>error===stop);
+await assert.rejects(()=>run(page,expect,{env:{ADDP_ONLINE_TOPOLOGY_EVIDENCE:JSON.stringify(evidence)}},async actual=>{assert.equal(actual,page);await Promise.resolve();installed=true;events.push('observer')},async()=>{assert.ok(installed,'Canvas observer was not awaited before login');events.push('login');throw stop},()=>{},(...parts)=>parts.join('/')),error=>error===stop);
 assert.deepEqual(events,['observer','read','login']);
 '''
-        value=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js')],text=True,capture_output=True)
+        for config in ({'case':'line-extension','count':3,'title':m.fixture.EXTENSION_TITLE},{'case':m.fixture.ENDPOINT_CASE,'count':7,'title':m.fixture.ENDPOINT_TITLE}):
+            value=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),json.dumps(config)],text=True,capture_output=True)
+            self.assertEqual(value.returncode,0,value.stdout+value.stderr)
+
+
+def endpoint_physical(*args):
+    return {'exact_inventory_verified':True,'sources':{n:{'size_bytes':98304,'sha256':n} for n in m.fixture.ENDPOINT_SOURCES},
+        'targets':{name:{'size_bytes':98304,'sha256':name,'feature_count':len(m.fixture.endpoint_features(port)),'layer_name':name[:-5],
+            'geometry_column':'geom','fid_column':'fid','features':m.fixture.endpoint_features(port)} for port,name in zip(m.fixture.ENDPOINT_PORTS,m.fixture.ENDPOINT_TARGETS)}}
+
+
+class EndpointClient(ExtensionClient):
+    def __init__(self):
+        super().__init__();self.sources=[];self.outputs=[];self.mutate_failed=None;self.failed_graph=None
+        for i,(name,kind) in enumerate(zip(m.fixture.ENDPOINT_SOURCES,m.fixture.ENDPOINT_KINDS)):
+            rows=m.fixture.endpoint_features(kind);item=base.item(name,10+i);item['full_name']=name
+            item['attributes']['type_info']['container']['children'][0].update(row_count=len(rows),column_count=len(rows[0]['properties'])+2);self.sources.append(item)
+        for i,(name,port) in enumerate(zip(m.fixture.ENDPOINT_TARGETS,m.fixture.ENDPOINT_PORTS)):
+            rows=m.fixture.endpoint_features(port);item=base.item(name,20+i)
+            item['attributes']['type_info']['container']['children'][0].update(row_count=len(rows),column_count=len(rows[0]['properties'])+2);self.outputs.append(item)
+        self.scans=['scan-'+name for name in m.fixture.ENDPOINT_SOURCES]
+        self.locators=[f'addp://engine/3/path/{name}?type=file&item_id={10+i}' for i,name in enumerate(m.fixture.ENDPOINT_SOURCES)]
+        self.parent='addp://engine/3/path/outputs?type=directory'
+        targets={p:f'addp://engine/3/path/outputs/{n}?type=file' for p,n in zip(m.fixture.ENDPOINT_PORTS,m.fixture.ENDPOINT_TARGETS)}
+        self.success.update(execution_id='endpoint-run',outputs={'save_'+p:{'resource':{'locator':t,'type':'file','write_mode':'create'}} for p,t in targets.items()},
+            execution_config={'content':{'workflow_definition':m.endpoint_definition(self.locators,self.parent)}})
+        self.success['metadata']={'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[{'port':p,'locator':l} for p,l in zip(['input.load_source','input.load_reference'],self.locators)],
+            'outputs':[{'locator':t,'write_mode':'create'} for t in targets.values()]},'result':{'meta_scan_runs':[{'execution_id':'output-scan-'+p,'target_locator':t,'status':'submitted'} for p,t in targets.items()]}}
+    def request(self,method,path,expected,body=None):
+        if method=='POST' and path.endswith('/develop/executions'):
+            self.calls.append((method,path,body));definition=body['content']['workflow_definition'];name=definition['tasks'][-1]['params']['target_name']
+            if name.startswith('failed-'):
+                key=next(k for k,_ in m.fixture.ENDPOINT_FAILURES if name.startswith('failed-'+k+'-'))
+                value={'execution_id':'failed-'+key,'status':'failed','triggered_by':33,'outputs':{},'metadata':{},'execution_config':{'content':{'workflow_definition':definition}}}
+                if self.mutate_failed:self.mutate_failed(value)
+            else:value=self.success;self.scans.extend(['output-scan-result','output-scan-details'])
+            self.executions[value['execution_id']]=value;data={'execution_id':value['execution_id']}
+        elif path.startswith('/api/v1/meta/lineage/graph?'):
+            if 'direction=downstream' in path:
+                data={'truncated':False,'nodes':[],'edges':[]}
+                if self.failed_graph:self.failed_graph(data)
+            else:
+                target=int(path.split('item_id=')[1].split('&')[0]);data={'truncated':False,'nodes':[],'edges':[{'source':{'item_id':v},'target':{'item_id':target},'relation_kind':'derive','status':'active','evidence':{'execution_id':'endpoint-run'}} for v in (10,11)]}
+                if self.mutate_graph:self.mutate_graph(data)
+        else:return super().request(method,path,expected,body)
+        return SimpleNamespace(payload=copy.deepcopy(data))
+
+
+class EndpointOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
+        self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.ENDPOINT_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
+    def run_case(self,client=None,physical=endpoint_physical,browser=lambda repo,env,evidence:evidence,diagnostic=None):
+        def check(repo,env,identifier,**kwargs):
+            self.assertEqual(kwargs['task'],'snap');self.assertLessEqual(kwargs['timeout'],30)
+            self.assertEqual(kwargs['reason'],dict(m.fixture.ENDPOINT_FAILURES)[kwargs['cause']])
+            return {'execution_id':identifier,'cause':kwargs['cause'],'source':'develop_runtime_log'}
+        return m.run_scenario(Path('.'),self.env,client or EndpointClient(),physical,browser,diagnostic_runner=diagnostic or check)
+    def test_endpoint_four_failures_no_publication_two_scans_four_edges(self):
+        c=EndpointClient();report=self.run_case(c)
+        self.assertEqual(report['result'],'passed');self.assertEqual(report['schema_version'],'addp.endpoint-snapping/v1')
+        self.assertEqual([len(report['browser']['expected'][p]) for p in m.fixture.ENDPOINT_PORTS],[12,10])
+        self.assertEqual(sum(len(g['edges']) for g in report['raw_lineage'].values()),4)
+        self.assertEqual([len(report[k]) for k in ['initial_scan_inventory','final_scan_inventory','meta_after']],[7,9,9])
+        self.assertEqual([f['key'] for f in report['failures']],[k for k,_ in m.fixture.ENDPOINT_FAILURES])
+        self.assertEqual(len({f['execution_id'] for f in report['failures']}),4)
+        self.assertEqual(sum(method=='POST' and path.endswith('/develop/executions') for method,path,_ in c.calls),5)
+        self.assertTrue(all(len(f['source_lineage'])==2 for f in report['failures']))
+    def test_endpoint_rejects_wrong_identity_extra_or_misbound_facts_scans_and_edges(self):
+        mutations=[lambda c:c.success.update(triggered_by=True),lambda c:setattr(c,'scan_tenant',True),lambda c:setattr(c,'scan_actor',99),
+            lambda c:c.success['outputs']['save_result']['resource'].update(write_mode='fail'),
+            lambda c:c.success['metadata']['lineage_facts']['inputs'][0].update(locator=c.locators[2]),
+            lambda c:c.success['metadata']['lineage_facts']['inputs'].append(copy.deepcopy(c.success['metadata']['lineage_facts']['inputs'][0])),
+            lambda c:c.success['metadata']['lineage_facts']['outputs'][0].update(write_mode='fail'),
+            lambda c:c.success['metadata']['result']['meta_scan_runs'].pop(),
+            lambda c:setattr(c,'mutate_graph',lambda g:g['edges'][0]['source'].update(item_id=12)),
+            lambda c:setattr(c,'mutate_graph',lambda g:g['edges'][0]['evidence'].update(execution_id='old'))]
+        for mutate in mutations:
+            c=EndpointClient();mutate(c)
+            with patch.object(m.raster,'wait_lineage',return_value={}):
+                with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):self.run_case(c)
+        c=EndpointClient();c.success['metadata']['lineage_facts']['inputs'].reverse();self.run_case(c)
+    def test_endpoint_every_failure_rejects_publication_derive_or_wrong_diagnostic(self):
+        for mutation in [lambda v:v.update(outputs={'save_result':{}}),lambda v:v.update(triggered_by=True),
+            lambda v:v['metadata'].update(lineage_facts={'outputs':[{}]}),lambda v:v['metadata'].update(result={'meta_scan_runs':[{}]})]:
+            c=EndpointClient();c.mutate_failed=mutation
+            with self.assertRaises(m.SuiteError):self.run_case(c)
+        for key,_ in m.fixture.ENDPOINT_FAILURES:
+            c=EndpointClient();c.failed_graph=lambda g:g['edges'].append({'relation_kind':'derive','evidence':{'execution_id':'failed-'+key}})
+            with self.subTest(key=key),self.assertRaises(m.SuiteError):self.run_case(c)
+            with self.assertRaises(m.SuiteError):self.run_case(diagnostic=lambda *a,**kw:{'execution_id':'wrong','cause':key,'source':'develop_runtime_log'})
+    def test_endpoint_failure_or_browser_error_preserves_raw_checkpoint_and_all_final_guards(self):
+        with self.assertRaisesRegex(m.SuiteError,'browser broke'):self.run_case(browser=lambda *a:(_ for _ in ()).throw(m.SuiteError('browser broke')))
+        evidence=json.loads((Path(self.directory.name)/'topology-endpoint-checkpoint.json').read_text())
+        self.assertEqual(evidence['result'],'incomplete');self.assertEqual(len(evidence['failures']),4)
+        self.assertTrue(all('source_lineage' in v for v in evidence['failures']))
+        calls=0
+        def changed(*a):
+            nonlocal calls
+            calls+=1;value=endpoint_physical()
+            if calls==6:value['targets'][m.fixture.ENDPOINT_TARGETS[0]]['sha256']='changed'
+            return value
+        with self.assertRaises(m.SuiteError):self.run_case(physical=changed)
+        c=EndpointClient()
+        def mutate(*a):c.sources[-1]['size_bytes']=1;return a[2]
+        with self.assertRaisesRegex(m.SuiteError,'Meta changed'):self.run_case(c,browser=mutate)
+        self.env['ADDP_ONLINE_TEST_TIMEOUT_SECONDS']='0'
+        with self.assertRaisesRegex(m.SuiteError,'budget exhausted'):self.run_case()
+
+    def test_endpoint_actual_line_map_rejects_missing_attributes_changed_endpoint_and_blank_pixels(self):
+        import subprocess
+        repository=Path(__file__).resolve().parents[2]
+        script=r'''
+import assert from 'node:assert/strict';import{readFileSync}from'node:fs';
+const source=readFileSync(process.argv[1],'utf8'),expectations=JSON.parse(process.argv[2]);
+const {webMercatorPreviewCoordinate}=await import(process.argv[3]);
+const a=source.indexOf('function normalizedMapExpectation('),b=source.indexOf('async function verifyNetworkCase(',a);
+const expectation=new Function('webMercatorPreviewCoordinate',source.slice(a,b)+';return normalizedMapExpectation')(webMercatorPreviewCoordinate);
+const start=source.indexOf('async function assertExtensionLineMap('),end=source.indexOf('function persistExtensionEvidence(',start);
+const expect={poll:fn=>({async toEqual(x){assert.deepEqual(await fn(),x)},async toBe(x){assert.equal(await fn(),x)}})};
+const check=new Function('expect','normalizedMapExpectation','webMercatorPreviewCoordinate',source.slice(start,end)+';return assertExtensionLineMap')(expect,expectation,webMercatorPreviewCoordinate);
+const project=c=>typeof c[0]==='number'?webMercatorPreviewCoordinate(c):c.map(project);
+async function run(rows,expected,mode='normal'){
+ const pixels=new Uint8ClampedArray(40*40*4);
+ for(let x=0;x<36;x++){const i=(10*40+x)*4;pixels.set([0,200,0,255],i)}
+ if(mode==='old-only'){pixels.fill(0);for(let y=0;y<7;y++)for(let x=0;x<6;x++)pixels.set([0,200,0,255],(y*40+x)*4)}
+ if(mode==='blank')pixels.fill(0);
+ const features=rows.map(r=>({get:k=>r.properties[k],getGeometry:()=>({getType:()=>r.geometry.type,getCoordinates:()=>project(r.geometry.coordinates)})}));
+ const context={canvas:{width:40,height:40,getBoundingClientRect:()=>({left:0,top:0,width:40,height:40})},getImageData:()=>({data:pixels})};
+ const layer={getVisible:()=>mode!=='hidden',getOpacity:()=>1,getSource:()=>({getFeatures:()=>features}),getRenderer:()=>({context})};
+ const map={getView:()=>({getAnimating:()=>false,getResolution:()=>1,getProjection:()=>({getCode:()=> 'EPSG:3857'})}),getLayers:()=>({getArray:()=>[layer]}),getPixelFromCoordinate:()=>[10,10],getViewport:()=>({getBoundingClientRect:()=>({left:0,top:0})})};
+ await check({evaluate:async(fn,arg)=>fn({__vueParentComponent:{setupState:{mapInstance:map}}},arg)},expected);
+}
+for(const expected of Object.values(expectations)){
+ await run(expected,expected);
+ for(const mode of ['blank','hidden','old-only'])await assert.rejects(()=>run(expected,expected,mode));
+ for(const mutation of [r=>r.pop(),r=>r.reverse(),r=>r[0].properties[Object.keys(r[0].properties)[0]]='wrong',r=>r[0].geometry.type='Point']){
+  const rows=structuredClone(expected);mutation(rows);if(JSON.stringify(rows)!==JSON.stringify(expected)){
+   // Rendering order is immaterial; a reversed row array preserves the same features.
+   if(JSON.stringify(rows)===JSON.stringify([...expected].reverse()))await run(rows,expected);else await assert.rejects(()=>run(rows,expected));
+  }
+ }
+ const changed=structuredClone(expected),coordinates=changed[0].geometry.coordinates;
+ if(changed[0].geometry.type==='MultiLineString')coordinates[0].pop();else coordinates[0][0]+=1;
+ await assert.rejects(()=>run(changed,expected));
+}
+'''
+        value=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),json.dumps({'result':m.fixture.endpoint_features('result')}),(repository/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri()],text=True,capture_output=True)
+        self.assertEqual(value.returncode,0,value.stdout+value.stderr)
+
+
+    def test_endpoint_actual_point_map_requires_all_original_points_and_attributes_and_style_pixels(self):
+        import subprocess
+        repository=Path(__file__).resolve().parents[2]
+        script=r"""
+import assert from 'node:assert/strict';import{readFileSync}from'node:fs';
+const source=readFileSync(process.argv[1],'utf8'),expected=JSON.parse(process.argv[2]);
+const {webMercatorPreviewCoordinate}=await import(process.argv[3]);
+const a=source.indexOf('function proximityPointExpectation('),b=source.indexOf('function assertProximityLineage(',a);
+const expect={poll:fn=>({async toEqual(v){assert.deepEqual(await fn(),v)},async toBeGreaterThan(v){assert.ok(await fn()>v)}})};
+function assertion(value){return{toHaveLength:v=>assert.equal(value.length,v),toBe:v=>assert.equal(value,v)}}
+assertion.poll=expect.poll;
+globalThis.OffscreenCanvas=class{getContext(){return{clearRect(){},set fillStyle(x){},fillRect(){},getImageData(){return{data:[64,158,255,255]}}}}};
+const check=new Function('expect','webMercatorPreviewCoordinate',source.slice(a,b)+';return assertProximityPointMap')(assertion,webMercatorPreviewCoordinate);
+async function run(rows,blank=false){
+ const features=rows.map(r=>({get:k=>r.properties[k],getGeometry:()=>({getType:()=>r.geometry.type,getCoordinates:()=>webMercatorPreviewCoordinate(r.geometry.coordinates)})}));
+ const pixels=new Uint8ClampedArray(40*4);if(!blank)for(let i=0;i<40;i++)pixels.set([64,158,255,255],i*4);
+ const layer={getVisible:()=>true,getOpacity:()=>1,getSource:()=>({getFeatures:()=>features}),getStyleFunction:()=>()=>({getImage:()=>({getFill:()=>({getColor:()=> '#409EFF'})})}),getRenderer:()=>({context:{getImageData:()=>({data:pixels}),canvas:{width:40,height:1}}})};
+ const map={getView:()=>({getAnimating:()=>false,getResolution:()=>1,getProjection:()=>({getCode:()=> 'EPSG:3857'})}),getLayers:()=>({getArray:()=>[layer]})};
+ await check({evaluate:async(fn,arg)=>fn({__vueParentComponent:{setupState:{mapInstance:map}}},arg)},expected);
+}
+await run(expected);await assert.rejects(()=>run(expected,true));
+for(const change of [r=>r.pop(),r=>r[0].properties.reference_id='lost',r=>r[0].geometry.coordinates=[.5,0],r=>r[0].geometry.type='LineString']){
+ const rows=structuredClone(expected);change(rows);await assert.rejects(()=>run(rows));
+}
+"""
+        value=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),json.dumps(m.fixture.endpoint_features('details')),(repository/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri()],text=True,capture_output=True)
         self.assertEqual(value.returncode,0,value.stdout+value.stderr)

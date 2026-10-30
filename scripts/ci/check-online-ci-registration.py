@@ -2098,7 +2098,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         '.github/workflows/online-t4-gates.yml': ('          - line-extension',),
         'scripts/test/online-hosted-topology-gate.sh': ('line-proximity|line-extension',),
         'business/scripts/online-vector-topology-fixture.py': ('def extension_worker(', 'def verify_extension(', 'extension exact coordinates attributes IDs types direction or row order differ', 'EXTENSION_FAILURE'),
-        'scripts/test/vector-topology-persistence-online.py': ('def run_extension_scenario(', 'def validate_extension_success(', 'def validate_extension_graph(', 'def validate_extension_failure(', 'topology-extension-checkpoint.json'),
+        'scripts/test/vector-topology-persistence-online.py': ('def run_extension_scenario(', 'def validate_extension_success(', 'def validate_extension_graph(', 'def validate_extension_failure(', "prefix='endpoint' if endpoint else 'extension'"),
         'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('线端延伸独立普通User双成果与精确首次交点拒绝', 'assertExtensionLineMap', 'new_segment_pixels', 'topology-extension-browser-raw.json', 'persistExtensionEvidence', 'assertProximityLineage(observation.graph,binding)'),
         'engines/geopython-workflow/test_topology_operators.py': ('test_hosted_line_extension_case_dual_save_failure_barrier_and_independent_oracle',),
         'scripts/test/vector-topology-persistence-online_test.py': ('class ExtensionOnlineTest', 'test_extension_actual_multiline_and_detail_map_rejects_missing_attribute_direction_pixels_and_old_geometry'),
@@ -2107,12 +2107,28 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     for relative,fragments in extension_required.items():
         if any(fragment not in (repository/relative).read_text() for fragment in fragments):
             raise RegistrationError('topology extension case contract incomplete: '+relative)
+    endpoint_required = {
+        '.github/workflows/online-t4-gates.yml': ('          - endpoint-snapping',),
+        'scripts/test/online-hosted-topology-gate.sh': ('line-extension|endpoint-snapping',),
+        'business/scripts/online-vector-topology-fixture.py': ('def endpoint_features(', 'def verify_endpoint(', 'def endpoint_worker(', 'ENDPOINT_FAILURES'),
+        'scripts/test/vector-topology-persistence-online.py': ('def endpoint_definition(', 'def run_endpoint_scenario(', "failure['source_lineage']", 'failure executions must be distinct', 'def run_line_edit_scenario('),
+        'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('端点吸附独立普通User线与Point双成果及四失败保护','topology-endpoint-browser-raw.json','assertProximityPointMap(renderer,expected)','setCenter([24.25,4])'),
+        'engines/geopython-workflow/test_topology_operators.py': ('test_hosted_endpoint_case_dual_save_four_real_failures_and_independent_oracle',),
+        'scripts/test/vector-topology-persistence-online_test.py': ('class EndpointOnlineTest', 'test_endpoint_four_failures_no_publication_two_scans_four_edges'),
+        'scripts/test/online-hosted-topology-gate_test.py': ('test_endpoint_case_is_bound_without_old_business_or_capacity',),
+    }
+    for relative,fragments in endpoint_required.items():
+        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+            raise RegistrationError('topology endpoint case contract incomplete: '+relative)
     extension_script=(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js').read_text()
-    extension_case=re.search(r"(?ms)^test\('线端延伸独立普通User双成果与精确首次交点拒绝'.*?^\}\)",extension_script)
-    body=extension_case.group(0) if extension_case else ''
-    observer=body.find('await observeLineageCanvas(page)');login=body.find('await login(')
-    if observer<0 or login<0 or observer>login or "output.port+'_graph_observed'" not in body or "output.port+'_graph_rendered'" not in body:
-        raise RegistrationError('topology extension must await its Canvas observer before navigation and preserve raw graph stages')
+    helper=re.search(r"(?ms)^async function verifyLineEditCase\(.*?^\}",extension_script)
+    shared=helper.group(0) if helper else ''
+    for title in ('线端延伸独立普通User双成果与精确首次交点拒绝','端点吸附独立普通User线与Point双成果及四失败保护'):
+        match=re.search(r"(?ms)^test\('"+title+r"'.*?^\}\)",extension_script)
+        body=match.group(0) if match else ''
+        observer=body.find('await observeLineageCanvas(page)');verify=body.find('await verifyLineEditCase(')
+        if observer<0 or verify<0 or observer>verify or 'await login(' not in shared or "output.port+'_graph_observed'" not in shared or "output.port+'_graph_rendered'" not in shared:
+            raise RegistrationError('topology line edit must await its Canvas observer before navigation and preserve raw graph stages')
     proximity_required = {
         '.github/workflows/online-t4-gates.yml': ('          - line-proximity',),
         'scripts/test/online-hosted-topology-gate.sh': ('operator-input-diagnostics|line-proximity',),
