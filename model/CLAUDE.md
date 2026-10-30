@@ -40,6 +40,8 @@ Model 声明 `logical_table_materialization` TaskProvider；已持久化的 Logi
 
 ## 目录结构
 
+主要实现入口如下；指标职责与修订约束见[指标实现独立修订](docs/model概念与数据约束规范.md#指标实现独立修订)，访问与定位规则见[前端路由](#前端路由)，测试覆盖及实际验收边界见[开发与验证](#开发与验证)。
+
 ```
 model/
 ├── authorization/
@@ -54,18 +56,21 @@ model/
 │       │   ├── entity_relation_handler.go
 │       │   ├── logical_table_handler.go
 │       │   ├── table_relation_handler.go   # 事实表-维度表关联
-│       │   ├── metric_implementation_handler.go # 指标实现
+│       │   ├── metric_implementation_handler.go # 指标实现与修订 API
 │       │   └── dw_layer_handler.go
 │       ├── config/config.go
 │       ├── models/
 │       │   ├── entity.go            # Entity, EntityAttribute, EntityRelation
 │       │   ├── logical_table.go     # LogicalTable, LogicalField, TableRelation
-│       │   ├── metric_implementation.go
+│       │   ├── metric_implementation.go # 指标稳定身份与不可变修订
 │       │   ├── dw_layer.go
 │       │   └── common_types.go      # JSONB 等共用类型
 │       ├── repository/              # 数据访问层
+│       │   ├── metric_implementation_repository.go # 指标实现与修订的租户隔离读取、持久化
+│       │   └── ...
 │       └── service/
 │           ├── mermaid_parser.go    # Mermaid ER 图解析器
+│           ├── metric_implementation_service.go # 指标生命周期、依赖复核与计划构建
 │           └── ...
 └── frontend/
     └── src/
@@ -74,6 +79,11 @@ model/
         │   ├── client.js            # Model 客户端与 403 授权刷新
         │   └── model.js             # Model API 及 Standard、Service 跨模块调用
         ├── store/auth.js            # 接入共享认证 Store
+        ├── router/index.js          # 模块路由、根落点与共享认证守卫接入
+        ├── composables/useUnsavedChanges.js # 未保存状态与离页确认
+        ├── utils/
+        │   ├── moduleNavigation.js  # 接入共享 Console 模块导航
+        │   └── routeState.js        # 列表筛选等可恢复 URL 状态解析与构造
         ├── views/
         │   ├── EntityList.vue
         │   ├── EntityDetail.vue
@@ -81,9 +91,13 @@ model/
         │   ├── LogicalTableDetail.vue
         │   ├── StarSchemaView.vue   # 维度建模
         │   ├── ERDiagramManager.vue # 实体关系图
-        │   └── DWLayerList.vue
+        │   ├── DWLayerList.vue
+        │   └── MetricImplementationWorkspace.vue # 指标列表、修订编辑与发布、Service 绑定交互
         └── components/
-            └── DDLPreviewDialog.vue
+            ├── DDLPreviewDialog.vue
+            ├── MetricImplementationLinks.vue # 逻辑表详情中的指标列表与工作区导航
+            ├── MetricRevisionServices.vue # 确定修订的引用服务只读弹窗
+            └── MetricSourceSummary.vue # 已保存修订的冻结来源摘要
 ```
 
 ## 当前数据库表结构
