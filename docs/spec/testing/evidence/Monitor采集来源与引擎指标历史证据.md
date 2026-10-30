@@ -209,3 +209,9 @@ CI 专门会话随后回传源码 `cf39ab99fc6dd1e5a022d87dd3c81230a88c9add` 的
 最终输入下，使用已有 Node 24.20.0 的 bin 临时加入 PATH，执行 `make test-monitor-frontend`：确定性测试 131 项通过；浏览器 516 项中 511 项通过，本次引擎全部用例通过，另五项分别在 HTTP 机器身份、采集配置撤权、主机 inode、英文告警筛选及进程比较中超时，整条 Make 门禁退出非零、构建未被执行，不能记作整体通过。沿同一标准 `npm --prefix monitor/frontend run test:e2e` 入口，仅筛选上述五项、保留原断言与超时独立复验，五项全通过（17.3 秒），没有修改对应页面／测试、共享图表或超时预算；随后 `npm --prefix monitor/frontend run build` 通过。日志分别为 `/tmp/addp-engine-zoom-monitor-frontend-final.log`、`/tmp/addp-engine-zoom-five-timeouts.log`、`/tmp/addp-engine-zoom-build.log`；保留完整回归的五项原失败，不把局部复验改写为原整轮通过，超时根因未确证。两轮来源均为受控浏览器 T3，非真实来源正式身份验收。`/tmp/addp-engine-zoom-inputs.sha256` 核对页面、引擎用例及夹具、共享 ChartRenderer 输入未变化，`git diff --check` 通过；原中止轮及最终两轮的隔离 runtime 目录均已清理。改名运行摘要 `/tmp/addp-business-rename-and-engine-zoom.json`。
 
 Safari 已加载新缩放提示与实际提交速率曲线，但本轮截图存在窗口可见区域缺失，尚未取得原生浏览器真实拖动成功证据，不以 AX 节点存在代替交互通过。CI 与 Hosted 继续等待专门会话回传；此前 Desktop 来源／认证变更 T2 的失败不因改名或受控图表回归而消失。
+
+### Safari 原生拖动复验的独立进展（2026-10-30）
+
+后续按用户要求复验同一 Business 部署的趋势缩放。在原生 Safari 进入全屏并激活本会话第二个标签页后，已能实际看到完整曲线及底部滑块；页面显示新名称、正在采集及十二项指标。通过真实刷新间隔下拉框选择关闭自动刷新，URL 保留同一部署并增加 `refresh=off`。随后原生拖动左侧缩放手柄，截图可见选中区域从完整时段收窄至约右侧一半：查询评估窗口仍为 16:17:48—16:22:48，曲线可见横轴变为 16:20:18—16:22:48，提交速率曲线随之放大。此项计为个人 Safari 真实拖动通过；不由截图推定请求数量或全部样本性质。
+
+准备手动刷新时，最新可访问状态已切换到第一标签页的 `/monitor/resource-overview`，并退出全屏；该次刷新不属于 Business 引擎页，明确排除，不能证明引擎视口保持。已暂停输入并请求用户确认临时独占本会话标签页，手动／自动刷新保持及指标切换重置仍未取得本轮原生证据。摘要 `/tmp/addp-engine-zoom-safari-receipt.json`，原生截图与操作记录在本会话；本次只补文档证据，`git diff --check` 为最小检查，没有修改产品、服务、身份或采集配置，不重跑 CI／Hosted、不设置定时任务。前轮受控浏览器通过与完整回归五项超时仍分别保留，不由本次个人拖动覆盖。
