@@ -586,3 +586,21 @@ Engine User 沿既有 deletion-assessments 只读评估，该未决 writer 必�
 原生专项只接受新的 409 和稳定错误码，报告同时保存 `producer_refusal_http_status=409` 与 `producer_refusal_error_code=transfer_cleanup_unresolved`；删除响应丢失、原生 topic 不存在、私有控制事实不变及未知效果不重发等原断言保持。CI 消费同步拒绝旧 500 与错误代码，单一路径不兼容旧报告。本批最小验证为 Transfer Go T1、Swagger 生成／覆盖、`make test-cleanup-native-online-runner` 及受影响 CI 登记检查；无数据库或外部服务依赖变更。新的 Hosted 与环境切换另行确认，确定性门禁结果不计为原生故障验收。
 
 **本批实际验证。** HTTP 回归先复现原 500 及内部包装详情，再验证直接／包装错误的中英安全 409；删除清理失败即使含围栏错误仍为 503，无关内部错误保留 500。`GOMAXPROCS=4 GOFLAGS=-p=2 python3 scripts/test/module-gate.py --repository /Users/pampa/code/addp --module transfer --go-only` 完整通过 Go T1（`/tmp/addp-transfer-fence-go-t1-20261030.log`）；Swagger 标准生成及 39 个公开路由方法覆盖通过；`make test-cleanup-native-online-runner` 70 项通过（`/tmp/addp-transfer-fence-native-20261030.log`）；原生 Cleanup CI 登记专项通过。`make test-module MODULE=transfer GO_ONLY=1` 包装入口因当前 Node 25.2.1 与仓库 Node 24 要求不符而在测试前失败，不计通过，未切换环境；上面的纯 Go 标准脚本不依赖 Node。完整登记聚合 94 项中 93 项通过，另有其他会话的 NFS FileGDB 登记用例报错，本批未调查或修改，不计完整聚合通过。没有运行新的 Hosted、环境切换或 PostgreSQL 门禁；真实原生故障与 Graph 缺口仍按前节分别保留。
+
+### 8.10 Transfer DLQ unknown 首次 Hosted：身份准备失败及待确认角色方案
+
+2026-10-30 用户明确授权：本批相关 CI 通过后，只运行一次 `transfer-dlq-unknown`，其他 Hosted 与环境切换仍单独确认。本次已执行这一次授权，未重试，也未运行其他 case。
+
+**前置证据及源码范围。** `9811bf36a0c60da049851963a0b7a62e639263f3` 的 Go Job `123894261292` 与 Release/T2 [41003884242](https://github.com/pampa0629/addp/actions/runs/41003884242) 通过；Platform Job `123894260959` 原始日志 4148—4190 行确认本批 native 70 项、共享 143 项和登记检查通过。该 Platform 聚合随后在独立的 Manager JS 语法检查顺序测试失败，整体仍记失败，不能将相关子检查通过扩成整轮通过。失败不在 DLQ case 的执行链，已由 CI 会话单独处理。
+
+派发前另核对 Common TIFF/COG 增量：`28794af83a71bba5115a4c7f0c7689b61cf9b7ac` 的 Go Job `123901910535` 实际通过。Hosted 源码的全部后端生产树与该版本相同；本 case 的 runner、代理、business／Infra、部署与 workflow 相对前述 native 通过版本无差异。Make 只有其他工具诊断和变量延迟求值变化，`build-images`、`test-online`、native 和共享 execution 四个相关 target 体未变。该组合仅证明本 case 的有效前置，不证明最新 main 整体 CI 通过。审查记录及 Make 差异保存在 `/tmp/addp-transfer-dlq-hosted-20261030/prerequisite-proof.json`、`Makefile-delta-reviewed.diff`。
+
+**实际运行。** [Hosted 41010264515](https://github.com/pampa0629/addp/actions/runs/41010264515)，Job `123914324207`，源码 `d13a4031668c30b2bdf29562bcb54e68af6fd579`，attempt 1。实际 Job 在北京时间 14:06:12—14:20:48 执行；readiness 通过，Online gate 失败。原始日志 4843 行：创建 `external-online-cleanup-native-engine` 角色时，System 返回 `permission is not tenant customizable`。失败发生在身份准备，尚未启动故障场景，七项故障链断言全部未运行，不能据此认定 409 或任何原生故障断言已验收。
+
+归档只有 `readiness.txt`、`summary.txt`、`execution-recovery.txt`，没有 `cleanup-native-effects.json` 或 `online-report.json`。最终 `result=failed`、`cleanup=passed`、`infra_cleanup=zero_residuals`、`control_recovery=passed`。销毁通过只证明本次运行资源已收口，不替代业务验收。readiness 中 `lifecycle=not-started` 是前置 check-only 的快照，也不表示整个 Job 没有启动过资源。原始日志、Job 元数据和三个归档文件保存在 `/tmp/addp-transfer-dlq-hosted-20261030/`。
+
+**根因。** 原批准临时 Engine User 的六项 Permission 本身未改变，但夹具用 `createPermissionFixture` 将六项全部交给 `TenantRoleService.CreateRole` 创建租户自定义角色。现行 System Manifest 把 `system.engine.create/read/delete`、`system.cleanup.read` 四项声明为不可租户自定义；另外两项 `manager.cleanup_result.read`、`transfer.cleanup_result.read` 可自定义。服务拒绝符合权限发布规范。现有唯一承载上述四项的 User 内置模板 `tenant.infrastructure_administrator` 有 11 项 Permission，包含额外的通用 Cleanup execute、Engine execute／update 等能力，不能在原六项授权下直接替用。此前固定列表及 Go/Python 一致性测试只核对集合，没有核对组合的正式可分配性，未能在 Hosted 前发现这一缺口。
+
+**待确认方案，尚未实施。** 在正式 System 角色目录新增 `tenant.engine_lifecycle_operator`（引擎生命周期操作员），仅含上述四项 System Permission，只允许 Tenant Scope 的 User、不默认分配任何账号；四项 Permission 的可自定义标记保持不变。临时 Engine User 使用这个内置模板，再通过自定义角色取得现有两项专业结果读取，最终权限并集仍严格等于原批准的六项。它是正式角色模板变化，不能作为临时夹具绕过 IAM 目录或直接写入特殊角色；角色本身仍表达 Tenant 级功能权限，不宣称提供 Engine 实例 ACL。本轮资源限制继续由独占 Tenant、冻结的本轮 Engine 身份及 runner 校验保证。
+
+确认后按同一条正式发布路线同步角色规范／词条、Role Manifest 版本、生成目录及向前迁移，再修改夹具组合；不改现有消费者角色、不借用 IAM 撤权身份、不改变 Engine／任务删除语义。补真实发布目录约束下的可分配性、主体类型／Scope、无默认分配和最终精确六项回归，避免只比较静态列表。受影响验证包括授权目录门禁、System fixture Go、System IAM PostgreSQL 标准入口及 native／共享报告登记门禁；明确处理受影响来源冻结和自然 CI。角色方案及下一次同 case Hosted 都需另行确认，本次没有扩大权限或自行重跑。Manager late writer、其他 native case、Graph 原生写图未知效果和正向 reopen 的未验收边界继续保留。
