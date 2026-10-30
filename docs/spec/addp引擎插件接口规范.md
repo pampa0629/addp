@@ -971,9 +971,19 @@ type InferenceRuntimeProvider interface {
 
 `ScriptSession.Endpoint` 是受控运行 API 的服务端调用地址，不是返回给浏览器的共享交互入口。调用方必须使用自身租户 Service Access Token 调用该端点。引擎健康检查由 System 负责；消费模块不得再维护固定运行时 URL 或专用健康代理。
 
+Provider 会话、交互 Session 与排队执行资格分别判断。当前 Jupyter 的 `OpenSession()` 只返回 Runtime endpoint，不创建交互 Session，也不签发排队运行授权；绑定、重绑与历史快照约束见[Notebook 绑定边界](../concepts/addp引擎体系图.md#develop-notebook-引擎绑定边界)。
+
+一次性 Notebook（`script`）当前仍拒绝排队派发；执行错误、待接入的运行授权及失联边界统一见[任务契约](tasks/模块任务契约.md#develop-执行监督与授权)，不能由 `OpenSession()` 成功或接口存在推定派发已开放。
+
 `InferenceRuntimeProvider` 的调用方必须先从 System Runtime Descriptor 精确解析唯一 active 且声明 `compute.inference.supported=true` 的 Runtime，再使用调用方自身 Tenant Service Access Token 调用 `addp.inference/v1`。调用方不得维护 `INFERENCE_URL`、按默认端口拼接地址或在多个候选中自动选择。第一版只允许一个平台内置 Inference Runtime；多实例能力必须在引入显式绑定后整体切换。
 
-交互会话标准控制面为 `POST /api/interactive-sessions` 和 `DELETE /api/interactive-sessions/{session_id}`。请求/响应使用 `InteractiveScriptSessionRequest` 和 `InteractiveScriptSession` 强类型契约。会话必须绑定 `tenant_id`、owner task、发起 User、kernel、外部代理 base path 和到期时间。Runtime 只接受调用模块的 Tenant Service Access Token 创建或关闭会话；会话端点只能由 owner 模块反向代理消费。浏览器不得获得 Runtime host、端口、Jupyter token 或 Service Access Token。Runtime 必须在正常关闭和 TTL 清理时保存 Notebook 并终止 kernel/process；owner 模块重启后，已有浏览器会话必须失效，不能恢复成无主共享会话。
+交互会话标准控制面为 `POST /api/interactive-sessions` 和 `DELETE /api/interactive-sessions/{session_id}`。请求/响应使用 `InteractiveScriptSessionRequest` 和 `InteractiveScriptSession` 强类型契约。会话必须绑定 `tenant_id`、owner task、发起 User、kernel、外部代理 base path 和到期时间。
+
+Runtime 只接受调用模块的 Tenant Service Access Token 创建或关闭会话；会话端点只能由 owner 模块反向代理消费。浏览器不得获得 Runtime host、端口、Jupyter token 或 Service Access Token。
+
+Runtime 必须在正常关闭和 TTL 清理时保存 Notebook 并终止 kernel/process；owner 模块重启后，已有浏览器会话必须失效，不能恢复成无主共享会话。
+
+交互 Session 不进入上述执行队列；Session 授权与逐次只读数据访问的 Execution Authorization 分工、撤销和到期规则统一见[会话授权规范](addp授权上下文规范.md#53-notebook-会话授权)。Runtime 的独有行为、确定性覆盖与未完成项见 [Jupyter 说明](../../engines/jupyter/README.md#4-交互会话控制面)及[验证边界](../../engines/jupyter/README.md#依赖库)；本节接口契约和局部门禁不代表真实队列派发、撤权闭环或跨模块 Notebook T4 已通过。
 
 ---
 
