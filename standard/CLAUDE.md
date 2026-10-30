@@ -22,7 +22,13 @@ Catalog 映射的修订冻结与历史读取以[StandardMapping 正式契约](..
 
 ### 辅助引用与权限隔离
 
+#### 单位选项
+
 数据元详情的单位选项仅在当前用户具有 `standard.unit.read` 时读取，不把单位读取权限加入数据元页面准入条件。缺少权限时不请求单位列表、不展示缓存的单位名称或裸 ID，不提供单位选择或清除操作；已有绑定显示权限提示，未绑定显示空值。查看修订和保存其他字段仍保留原 `unit_id`。辅助选项加载跟随当前授权上下文，权限变化立即清空旧选项，迟到响应和离页后的响应不得恢复旧数据；服务器实际返回的权限错误继续沿用统一错误处理，不以静默吞掉 403 代替请求前判权。
+
+数据元和指标的单位选择复用 Standard `UnitSelect`，以 Element Plus 树形选择器按计量单位自带的度量类别组织。默认收拢分类，已选单位所在分类自动展开；分类只负责展开和收拢，只有单位叶节点可以选中。搜索支持分类名、单位名称和符号，并自动展开匹配结果；清空选择保存为 `null`。交互测试纳入已有 `make test-standard-frontend` 与平台 CI 的 Standard 前端门禁。
+
+#### 关联文档读取
 
 数据元、术语和指标详情共用 `DocumentPanel`。关联文档读取按后端 all-of 契约同时检查当前对象读取权限与 `standard.document.read`，不将文档权限加入专业详情页面准入条件。缺少读取权限时不发关联列表或文档候选请求，显示无权查看；加载失败显示错误并提供只读重试，不伪装成暂无关联文档。对象或授权上下文变化时立即清空旧列表与候选，关闭旧关联弹窗；过期响应及离页后的响应不得恢复内容。只有读取成功且列表为空才显示空态。文档创建、关联、上传和解除仍遵循各自既有写权限契约。
 
@@ -578,20 +584,18 @@ draft → in_review → published → withdrawn
 
 精确读取的批量范围、`found=false` 语义及候选必须选择已发布修订的规则，统一见[StandardMapping 展示与精确读取](../docs/spec/addp企业资源目录实现规范.md#standardmapping-展示与精确读取)；历史快照可读不代表可重新选择或发布，也不授予目录或源数据访问权。
 
-现有[路由资格与参数测试](backend/internal/api/element_revision_resolution_handler_test.go)使用 SQLite 和受控 System AuthContext，覆盖两类调用方守卫、缺少权限／身份的拒绝、跨 Tenant／不存在结果及精确 ID 参数校验；不证明真实 OAuth、PostgreSQL 并发或 Catalog 联邦链路。标准入口见[测试与验收规范](../docs/spec/addp测试与验收规范.md#三标准入口)，Go T1 使用 `make test-module MODULE=standard GO_ONLY=1`，不计为完整模块或 T4 验收。
+现有[路由资格与参数测试](backend/internal/api/element_revision_resolution_handler_test.go)使用 SQLite 和受控 System AuthContext，覆盖两类调用方守卫、缺少权限／身份的拒绝、跨 Tenant／不存在结果及精确 ID 参数校验；不证明真实 OAuth、PostgreSQL 并发或 Catalog 联邦链路。执行入口与层级范围统一见[标准测试入口与范围](#标准测试入口与范围)。
 
 ### 文档关联的多维设计
 
 文档关联与术语的数据元映射指向同租户、`lifecycle_state=active` 的数据元稳定身份，允许尚未发布的草稿；不得把身份存在性误用为“当前已发布修订存在性”。下游运行时解析和正式修订引用仍必须按各自发布契约校验。
-
-数据元和指标的单位选择复用 Standard `UnitSelect`，以 Element Plus 树形选择器按计量单位自带的度量类别组织。默认收拢分类，已选单位所在分类自动展开；分类只负责展开和收拢，只有单位叶节点可以选中。搜索支持分类名、单位名称和符号，并自动展开匹配结果；清空选择保存为 `null`。交互测试纳入已有 `make test-standard-frontend` 与平台 CI 的 Standard 前端门禁。
 
 同一篇文档可同时关联：
 - 多个数据元（`document_element_mappings`）
 - 多个术语（`document_glossary_mappings`）
 - 多个指标（`document_metric_mappings`）
 
-每条关联记录 `reference_location`（在文档中的引用位置），便于溯源。
+每条关联记录 `reference_location`（在文档中的引用位置），便于溯源。读取权限、空态与加载失败统一见[关联文档读取](#关联文档读取)。
 
 ### 无跨 Schema 外键
 
@@ -648,17 +652,28 @@ Standard 当前使用单一启动迁移入口 `repository.Migrate`：在同一�
 
 ## 开发迁移与验证
 
+### 标准测试入口与范围
+
+执行与层级规则统一见[测试与验收规范](../docs/spec/addp测试与验收规范.md#三标准入口)。下表仅定位已有门禁，不表示当前版本已运行通过；未执行、失败和跳过分别记录，单项结果不替代完整模块或 T4 验收。
+
+| 验证目的 | 标准入口 | 范围与正文归属 |
+| --- | --- | --- |
+| Standard 模块聚合 | `make test-module MODULE=standard` | 按标准自动发现 owner 的 T0–T3 门禁，实际执行与跳过项单列 |
+| Go T1 定位 | `make test-module MODULE=standard GO_ONLY=1` | 仅 Go T1，不计为完整模块门禁 |
+| 前端验证 | `make test-standard-frontend` | 确定性测试、受控浏览器 T3 与构建；隔离约束见[浏览器与文档测试隔离](#浏览器与文档测试隔离) |
+| PostgreSQL／MinIO T2 | `make test-standard-postgres` | 迁移及服务集成，由[现行标准脚本](../scripts/test/standard-postgres-gate.sh)选择用例；文档文件生命周期与清理约束见[测试隔离](#浏览器与文档测试隔离) |
+
 ### 文本类型与责任字段迁移
 
 文本类型统一使用 `string`，界面显示“文本”，可选最大长度与格式约束；数据元类型选择统一采用“类型名称＋例如”两行选项，选中后显示取值范围或精度说明，使用同一个 `ElementDataTypeSelect` 组件覆盖新建和详情；不要求用户选择数据库存储类型。迁移将已有数据元修订的 `text` 类型编码原位规范化为 `string`，保留修订身份、状态和业务约束；这是类型词汇调整，不创建业务修订，受影响数据元的聚合版本推进一次。历史文档提炼批次保持不可变，旧类型候选须重新提炼后正式化。Standard 的五类标准稳定身份整体移除 `steward_id`，保留归属域、标签及审计操作人。
 
-文本类型与责任人收敛的验证复用 `make test-standard-frontend`、Standard Go 测试和 `make test-standard-postgres`；PostgreSQL 门禁覆盖字段删除、类型规范化、约束与历史快照保持及迁移幂等性。Model 对应使用 `make test-model-frontend`、Model Go 测试和 `make test-model-postgres`，Copilot 使用 `make test-copilot`。上述入口已登记到现有 CI 模块门禁。
+文本类型与责任人收敛沿[Standard 标准测试入口](#标准测试入口与范围)选择相应层级；PostgreSQL 门禁覆盖字段删除、类型规范化、约束与历史快照保持及迁移幂等性。Model 对应使用 `make test-model-frontend`、Model Go 测试和 `make test-model-postgres`，Copilot 使用 `make test-copilot`。上述入口已登记到现有 CI 模块门禁。
 
 ### 浏览器与文档测试隔离
 
-Standard 浏览器门禁使用独立的 Vite 依赖缓存，测试模式关闭 HMR，测试端口由共享启动器按轮次分配，不占用或连接开发端口 5181。日常开发模式继续保留热更新；验证沿用 `make test-standard-frontend`。
+Standard 浏览器门禁使用独立的 Vite 依赖缓存，测试模式关闭 HMR，测试端口由共享启动器按轮次分配，不占用或连接开发端口 5181。日常开发模式继续保留热更新；验证沿用[Standard 前端门禁](#标准测试入口与范围)。
 
-文档文件 T2 纳入唯一 `make test-standard-postgres`：复用 Infra 的 MinIO Dockerfile 构建独立临时实例，验证真实上传、替换、下载、草稿删除，以及发布后撤回仍可按历史修订下载。测试对自身对象执行清理并验证空前缀，数据库夹具随事务回滚且检查零残留；门禁在正常、失败及中断退出时仅销毁自己的 Compose 项目、临时卷与构建镜像，不操作现有 Infra / Business MinIO。
+文档文件 T2 沿[PostgreSQL／MinIO 标准入口](#标准测试入口与范围)执行：复用 Infra 的 MinIO Dockerfile 构建独立临时实例，验证真实上传、替换、下载、草稿删除，以及发布后撤回仍可按历史修订下载。测试对自身对象执行清理并验证空前缀，数据库夹具随事务回滚且检查零残留；门禁在正常、失败及中断退出时仅销毁自己的 Compose 项目、临时卷与构建镜像，不操作现有 Infra / Business MinIO。
 
 ## 业务域总览与五类标准接入
 
