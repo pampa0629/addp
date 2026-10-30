@@ -60,6 +60,8 @@ make build BUILD_ARGS="--arch both --services system-backend,gateway"
 
 构建 `{REGISTRY}/addp-{SERVICE}:{IMAGE_TAG}` 产品镜像。默认构建当前主机架构的 Linux 镜像，并推送到所选 Registry；`--verify` 只在本机验证产品镜像。
 
+操作边界导航：[镜像复用与缓存](#镜像复用与缓存边界) · [daemon 配置](#docker-daemon-配置边界) · [多架构构建器](#多架构构建器边界) · [构建结果与摘要](#构建结果与摘要)。
+
 ### 使用方法
 
 ```bash
@@ -81,8 +83,8 @@ make select-image-services
 | `--tag` | 标签 | 覆盖 `IMAGE_TAG`，默认 `latest` |
 | `--services` | 逗号分隔的服务名 | 默认 `all`；未知或重复名称失败 |
 | `--multi-arch` | 无 | 请求 `linux/amd64,linux/arm64` 构建并推送；仍受各 Runtime 平台约束限制 |
-| `--force` | 无 | 跳过镜像智能复用判断 |
-| `--skip-cache` | 无 | 不引用 `--cache-from`；不会清空已有 Docker 缓存 |
+| `--force` | 无 | 跳过整镜像复用判断；与 Docker 层缓存的区别见[缓存边界](#镜像复用与缓存边界) |
+| `--skip-cache` | 无 | 通用构建不附加 `--cache-from`；不强制重建整镜像，见[缓存边界](#镜像复用与缓存边界) |
 | `--verify` | 无 | 非交互强制构建，不推送产品镜像、不修改 Docker daemon 配置；只支持单一本机平台，不能与 `--multi-arch` 同用 |
 | `--jobs` | `1` / `2` | 默认 `2`；两种取值使用同一调度路径 |
 
@@ -104,6 +106,22 @@ make select-image-services
 
 多架构构建需要 Docker Buildx 和可写 Registry。Model3D 当前每次只构建一个原生 Linux 平台；SuperMap 依赖私有 Linux ARM64 基础镜像，不能把全量 `--multi-arch` 当作所有 Runtime 已支持双架构的承诺。
 
+### 镜像复用与缓存边界
+
+镜像准备使用 [build-images.sh](build-images.sh) 的实际判定，需区分以下层次：
+
+| 层次 | 当前依据 | 证明范围 |
+| --- | --- | --- |
+| Go 二进制复用 | `compile.sh` 的构建输入内容指纹，见[编译缓存](#智能缓存机制)。 | 只证明该编译产物的输入判定，不等于镜像已按同一输入重建。 |
+| 整个产品镜像跳过构建 | `check_service_changed` 文本匹配远端 `/tags/list` 中的目标 tag，再把所选输入的修改时间与 `.build-cache/<service>-<tag>.timestamp` 比较。 | 这是 tag 与时间戳判定，不核验镜像 digest、完整构建上下文或各目标平台内容；日志中的“up-to-date”不能作为源码一致性证据。 |
+| Docker 层缓存 | 通用单平台构建在本机镜像可 inspect 时附加 `--cache-from`；多平台构建在远端 manifest 可 inspect 时引用 Registry 层缓存。 | 只提供构建可用的缓存来源，不能替代本次构建、推送或运行结果。 |
+
+整镜像时间戳文件不包含 Registry、目标架构或 `BUILD_TYPE`，缺失时按 0 读取。Go Backend／Worker／Gateway 分支主要比较请求中首个架构的预编译二进制及 `runtime-log` 时间，Manager 另比较随镜像打包的插件和 Dockerfile；前端、Python 与各 Runtime 只枚举脚本分支指定的文件和共享依赖。具体输入范围以源码为准，不能把部分文件枚举、未变的时间戳或读取异常解释为完整上下文已核验，也不能把一次复用外推到另一个 Registry 或全部平台。
+
+`--force` 和 `--verify` 都跳过整镜像复用判断。`--skip-cache` 只移除通用构建的显式 `cache-from`，不会跳过上层复用判断，也不追加 `--no-cache` 或 `--pull`，更不会清理共享 Docker 缓存；`--force` 同样不保证 Docker 层重新执行。SuperMap 的专用分支显式使用 `--no-cache`，Model3D 委托自己的构建脚本，各自限制仍按[前置条件](#前置条件)和对应 Runtime 说明核对。
+
+基础镜像预热发生在整镜像复用筛选之前，所选产品镜像全部跳过也不表示整个流程没有 Registry 访问或基础镜像推送。当前代码在普通构建／推送的成功分支记录完成时刻，`--verify` 不写产品构建成功时间戳。新建、跳过和失败项的判定见[构建结果与摘要](#构建结果与摘要)；跨 Registry 推送还有独立的[本地推送记录](#工作原理)，不能与这里的构建时间戳混用。
+
 ### Docker daemon 配置边界
 
 普通构建在镜像操作前执行 [build-images.sh](build-images.sh) 的 `check_docker_config`：任一 `~/.docker/daemon.json` 或 `/etc/docker/daemon.json` 存在即继续，不解析其内容，也不证明当前 daemon 已使用这些配置。两者均不存在时进入交互选择：
@@ -124,9 +142,17 @@ make select-image-services
 
 构建器启动成功只证明准备步骤完成；目标架构的基础镜像、各 Runtime 支持范围、产品镜像与推送结果仍分别核对。平台限制见[前置条件](#前置条件)，Registry 与主机配置见[daemon 配置边界](#docker-daemon-配置边界)。
 
+### 构建结果与摘要
+
+基础镜像预热完成后才调度产品镜像；各任务写入独立临时日志：单并发持续输出新增内容，多并发在任务完成时输出，再汇总退出码、耗时与失败项。调度报告的任何非零任务结果均使整个构建失败；调度阶段中断时终止并回收本次构建进程，清理临时日志，不停止开发服务或删除已有镜像和数据卷；构建器和独立 BuildKit 配置的保留范围见[多架构构建器边界](#多架构构建器边界)。
+
+终端的跳过项只记录外层整镜像复用，已调度任务另按退出码归并。`build_service` 在服务目录不存在时只打印警告并返回 0，该项不会进入外层跳过列表，仍可能被计入成功构建数量；因此汇总数量和零退出不能证明每个所选服务都新建了镜像或完成推送，须核对原始任务日志与实际镜像。
+
+设置 `ADDP_CI_SUMMARY_FILE` 时额外写入所选服务、失败项和任务退出码／耗时，未设置时不生成这份摘要。它不记录最终镜像 digest、平台清单或源码绑定，也不是发布制品清单；新建、复用、缺失跳过和未执行项按实际证据分别认定。
+
 ### 构建与 CI 边界
 
-前端基础镜像版本统一读取根 `.node-version`，通过 `NODE_VERSION` 构建参数传入。所有前端使用 `npm ci`，包含 Linux musl 平台包的锁文件是不可变构建输入。基础镜像预热完成后才调度产品镜像；每个任务保留独立日志，完成后统一输出，并在摘要中记录耗时与失败服务。任何一个任务失败均使整个构建失败；调度阶段中断时终止并回收本次构建进程，清理临时日志，不停止开发服务或删除已有镜像和数据卷；构建器和独立 BuildKit 配置的保留范围见[多架构构建器边界](#多架构构建器边界)。
+前端基础镜像版本统一读取根 `.node-version`，通过 `NODE_VERSION` 构建参数传入。所有前端使用 `npm ci`，包含 Linux musl 平台包的锁文件是不可变构建输入。
 
 前端只复制依赖清单、构建配置、源码和静态资源，不把宿主机的 `node_modules` 或 `dist` 覆盖到镜像构建阶段。
 
@@ -272,7 +298,7 @@ CI 编排与标准验证见[测试与发布入口](../docs/测试与发布入口
 | Go 镜像缺少二进制 | 核对 `dist/{BUILD_TYPE}-linux-{arch}/`，按所选平台执行 `make build BUILD_ARGS="--arch <架构> --services <服务列表>"` |
 | Buildx 不支持多平台 | 检查 `docker buildx ls` 与 bootstrap 原始错误，按[构建器边界](#多架构构建器边界)核对固定同名资源及 Registry；单平台验证使用 `--verify` |
 | Registry 不可达 | 按 [Registry 指南](../registry/README.md)核对实际部署；不直接创建第二个同名 Registry 容器 |
-| 产物复用不符合预期 | Go 编译使用 `BUILD_ARGS=--force`，镜像构建使用 `IMAGE_BUILD_ARGS=--force`；`--skip-cache` 只控制 cache-from，不清理共享缓存 |
+| 产物复用不符合预期 | Go 编译的 `BUILD_ARGS=--force` 见[编译缓存](#智能缓存机制)；镜像的 `IMAGE_BUILD_ARGS=--force`、tag／时间戳和层缓存分别按[镜像复用边界](#镜像复用与缓存边界)核对 |
 
 ## 相关文档
 

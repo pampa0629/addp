@@ -251,7 +251,7 @@ docker compose -f docker-compose.yml ps -a system-backend
    - macOS: Docker Desktop → Settings → Resources
    - 建议: 至少 4 CPU cores, 8GB RAM
 
-2. **镜像缓存**: 使用本地 registry 缓存镜像,避免重复构建
+2. **镜像缓存**: Registry 存储、整镜像复用和 Docker 层缓存按[构建缓存边界](../build/README.md#镜像复用与缓存边界)分别核对；复用不代表当前源码、版本与目标架构已验收
 
 3. **数据卷**: 使用 volumes 而非 bind mounts,性能更好
 
