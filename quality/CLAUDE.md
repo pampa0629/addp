@@ -20,6 +20,7 @@ Quality 不依赖企业 Catalog。Standard 导入、固定修订与显式升级�
 - models/rule.go、repository/rule_repo.go、service/rule_service.go：规则修订、引用保护和约束校验；规则修改不自动升级方案引用。
 - service/plan_sources.go、service/rule_service.go：Standard 导入与来源约束复核；确定发布修订、原始规则身份及参数的冻结与冲突规则见[方案和规则](../docs/spec/addp数据质量规范.md#2-方案和规则)。
 - service/plan_service.go、service/plan_executor.go：执行触发与 Worker 快照消费；授权、完整目标冻结及非法快照失败关闭见[执行与授权](../docs/spec/addp数据质量规范.md#4-执行与授权)，Worker 不回读当前方案、规则或 Standard 补齐执行配置。
+- 跨表断言 `relational_assertion` 的逻辑表达式由 `models/assertion.go` 校验，实际目标映射属于检查项，PG 编译集中在 `service/plan_assertion.go`。`number` 常量使用十进制字符串，避免浏览器及执行快照损失精度。结构化编辑由 `AssertionEditor.vue` 拥有，`AssertionBindings.vue` 只编辑物理映射；不增加自由 SQL 入口。
 - models/plan_targets.go：定义与执行目标校验、默认值解析、规范物理身份散列；解析在方案行锁内完成。
 - service/plan_issues.go、repository/issue_repo.go：问题按 tenant + plan + target_key + rule_key 对账。
 - repository/overview_repo.go、api/overview_handler.go、frontend/src/views/Overview.vue：当前目标质量和按 UTC 执行创建日统计的历史规则通过率；异常不覆盖完整质量结论，旧版本结果显式标注。
@@ -48,21 +49,37 @@ Quality migration 11 将内嵌规则逐条提取为独立规则 R1 和检查项�
 
 Quality migration 14 增加问题目标范围，使用最后观测执行的完整有效绑定回填；缺失证据保持 NULL，不用当前方案推断。启动 SchemaVersion 升为 2，执行快照升为 v2。更新前排空 Quality 活动执行并同步重启 Backend/Worker，禁止混跑新旧 worker。不同目标可并发，同一目标范围串行；方案编辑和删除仍要求所有目标执行结束。
 
+Quality migration 15 扩展问题目标列摘要为 TEXT，SchemaVersion 升为 3；Backend/Worker 需同步更新。现有 T1/T2/T3 入口自动发现相关测试，入口见[标准入口与 CI 登记](#标准入口与-ci-登记)。
+
 ## 测试与 CI
 
-跨表断言 `relational_assertion` 的逻辑表达式由 `models/assertion.go` 校验，实际目标映射属于检查项，PG 编译集中在 `service/plan_assertion.go`。`number` 常量使用十进制字符串，避免浏览器及执行快照损失精度。结构化编辑由 `AssertionEditor.vue` 拥有，`AssertionBindings.vue` 只编辑物理映射；不增加自由 SQL 入口。Quality migration 15 扩展问题目标列摘要为 TEXT，SchemaVersion 升为 3；Backend/Worker 需同步更新。下列现有 T1/T2/T3 入口自动发现新增测试。
+执行层级沿[测试与验收规范](../docs/spec/addp测试与验收规范.md#三标准入口)。本节区分[标准入口与 CI 登记](#标准入口与-ci-登记)、[隔离、身份与清理](#隔离身份与清理)、[固定版本验收证据](#固定版本验收证据)；入口已登记不表示当前版本已执行通过，未执行、失败和跳过项分别记录。
 
-- make test-module MODULE=quality：T0、一致性、Go 与前端标准门禁。
-- make test-quality-backend：同一后端单元/契约测试集的独立入口，可在无关 T0 失败时定位本模块；Platform CI 的 Go 自动发现及模块门禁已覆盖该测试集。
-- make test-quality-postgres：真实 PG 规则、来源/执行/问题闭环、迁移、租约、域引用屏障及仅修改归属不产生内容修订；同时验证 Orchestrator 的方案引用迁移。
-- make test-quality-frontend：路由、页面端到端、构建。
-- make test-online ONLINE_SUITE=quality-dynamic-binding：GitHub Hosted 一次性 T4 部署的 Model → Quality 上游表绑定、失败阻断、工单去重、跨目标隔离及 Monitor 安全事件验收，并验证 Monitor-only 用户无法直读 Quality 或 Monitor 事件、删除方案后授权历史仍可读。准备和退出由 scripts/test/online-hosted-quality-gate.sh 统一负责；使用独立的普通执行身份、夹具准备身份及引擎注册身份，通过正式 API 创建和审批两个 Model 逻辑表并物化目标，再在当次 PostgreSQL 写入固定数据。套件运行期间只读取这些夹具；退出销毁本轮应用、业务源、Infra 和凭据，清理失败即门禁失败。配置及证据边界见 scripts/README.md；不得复用个人管理员会话。只登记手工 CI，首次真实通过前不加入夜间调度。
-- make test-quality-online-runner：上述 T4 脚本的确定性反例、宿主部署 profile、CI 登记和身份夹具检查；验证准备、执行及 Monitor-only 三类身份通过权限为 0600 的私有环境文件正确导出给子进程，不能代替真实在线验收。该入口也由 make test-online-runner 聚合执行。
-- T4 的 Run ID 保留在报告与资源名称，规则和方案编码使用其 SHA-256 摘要，遵守 Quality 的小写字母、数字及下划线契约。父编排只读取安全步骤及子 execution UUID；Model 子执行经 Monitor/Model Owner 独立裁决，实际动态目标由 Quality 专业入口的冻结绑定和结果校验，不从父步骤读取子任务 outputs。清理失败保留首个请求或断言错误，未知提交仍禁止竞态删除。提交 `c001f8814` 的 [Hosted T4 38131938772](https://github.com/pampa0629/addp/actions/runs/38131938772) 夹具准备通过，首次创建规则因编码非法返回 400，业务检查未运行；整套部署最终销毁并确认 Infra 零残留，该轮不计为业务验收通过。
-- 提交 `38506c74f` 的 [Hosted T4 38136346267](https://github.com/pampa0629/addp/actions/runs/38136346267) 已真实通过：16 项检查（含重复失败复测）、五次父编排与 Quality 子执行、两目标隔离和分别恢复、工单去重、显式修订升级、冻结绑定及默认值不漂移；五次子执行各有三条安全过程事件。Monitor-only 用户直读 Quality 返回 403，读取 Monitor 详情和事件返回 404；删除方案后获授权用户仍可读取五次专业执行历史。七个服务构建提交一致，六个临时定义确认删除，业务清理零残留，Hosted Infra 容器／网络／卷退出清理通过。36 个归档文件未包含凭据环境或控制文件，标准令牌模式未检出。该轮证明单次 Hosted 部署的真实权限及执行链路，不替代其他 Owner 或多 Backend 的验收。
+### 标准入口与 CI 登记
+
+- `make test-module MODULE=quality`：T0、一致性、Go 与前端标准门禁。
+- `make test-quality-backend`：Quality Go 单元／契约与 Orchestrator 已解析上游目标绑定回归的独立入口，可在无关 T0 失败时定位本模块；其中 Quality Go 测试已纳入 Platform CI 自动发现与模块门禁，Orchestrator 回归按其实际执行结果认定。
+- `make test-quality-postgres`：真实 PG 规则、来源/执行/问题闭环、迁移、租约、域引用屏障及仅修改归属不产生内容修订；同时验证 Orchestrator 的方案引用迁移。
+- `make test-quality-frontend`：路由、页面端到端、构建。
+- `make test-online ONLINE_SUITE=quality-dynamic-binding`：GitHub Hosted 一次性 T4 部署的 Model → Quality 上游表绑定、失败阻断、工单去重、跨目标隔离及 Monitor 安全事件验收，并验证 Monitor-only 用户无法直读 Quality 或 Monitor 事件、删除方案后授权历史仍可读。
+- `make test-quality-online-runner`：上述 T4 脚本的确定性反例、宿主部署 profile、CI 登记和身份夹具检查；验证准备、执行及 Monitor-only 三类身份通过权限为 0600 的私有环境文件正确导出给子进程，不能代替真实在线验收。同一入口还聚合有界恢复与故障编排断言。该入口也由 make test-online-runner 聚合执行。
 - System IAM migration 测试由 scripts/test/system-iam-postgres-gate.sh --package migration 自动发现；单测筛选 --test quality-plans（含规则、方案及 Standard/Quality 域引用服务身份授权刷新）。
 - release-and-t2-gates.yml 注册 Quality PG 门禁，changed-gate 将 Orchestrator 变更映射到该门禁。
+
+### 隔离、身份与清理
+
 - 本地仅用 addp_test 和 addp_iam_test；不为测试创建单次 database。
+
+准备和退出由 scripts/test/online-hosted-quality-gate.sh 统一负责；使用独立的普通执行身份、夹具准备身份及引擎注册身份，通过正式 API 创建和审批两个 Model 逻辑表并物化目标，再在当次 PostgreSQL 写入固定数据。套件运行期间只读取这些夹具；退出销毁本轮应用、业务源、Infra 和凭据，清理失败即门禁失败。配置及证据边界见 scripts/README.md；不得复用个人管理员会话。当前仅登记手工 CI，未纳入夜间调度。
+
+T4 的 Run ID 保留在报告与资源名称，规则和方案编码使用其 SHA-256 摘要，遵守 Quality 的小写字母、数字及下划线契约。父编排只读取安全步骤及子 execution UUID；Model 子执行经 Monitor/Model Owner 独立裁决，实际动态目标由 Quality 专业入口的冻结绑定和结果校验，不从父步骤读取子任务 outputs。清理失败保留首个请求或断言错误，未知提交仍禁止竞态删除。
+
+### 固定版本验收证据
+
+以下结果仅对应所列固定版本及覆盖范围；退出清理通过不代替业务检查通过，历史结果不外推为当前工作区验收。
+
+- 提交 `c001f8814` 的 [Hosted T4 38131938772](https://github.com/pampa0629/addp/actions/runs/38131938772) 夹具准备通过，首次创建规则因编码非法返回 400，业务检查未运行；整套部署最终销毁并确认 Infra 零残留，该轮不计为业务验收通过。
+- 提交 `38506c74f` 的 [Hosted T4 38136346267](https://github.com/pampa0629/addp/actions/runs/38136346267) 已真实通过：16 项检查（含重复失败复测）、五次父编排与 Quality 子执行、两目标隔离和分别恢复、工单去重、显式修订升级、冻结绑定及默认值不漂移；五次子执行各有三条安全过程事件。Monitor-only 用户直读 Quality 返回 403，读取 Monitor 详情和事件返回 404；删除方案后获授权用户仍可读取五次专业执行历史。七个服务构建提交一致，六个临时定义确认删除，业务清理零残留，Hosted Infra 容器／网络／卷退出清理通过。36 个归档文件未包含凭据环境或控制文件，标准令牌模式未检出。该轮证明单次 Hosted 部署的真实权限及执行链路，不替代其他 Owner 或多 Backend 的验收。
 
 ## 数据库启动所有权
 
