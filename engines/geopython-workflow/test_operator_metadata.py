@@ -1331,3 +1331,14 @@ def test_twi_single_workflow_entry_two_explicit_roles_and_units():
     assert params['slope_unit']['enum']==['degree','percent']
     assert spec['output_ports'][0]['type']=='raster' and len(spec['output_ports'])==1
     assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'slope_raster':{'$ref':'slope'},'band':1,'slope_band':1,'slope_unit':'degree'}
+
+
+def test_focal_median_keeps_one_entry_required_parameters_old_methods_and_example():
+    from operators import list_operators
+    specs=[s for s in list_operators()if s['id']=='raster_focal_statistics'];assert len(specs)==1;spec=specs[0]
+    params={p['name']:p for p in spec['parameters']}
+    assert set(params)=={'input_raster','band','window_size','method'}and all(params[n]['required']for n in ('band','window_size','method'))
+    assert all(v in params['method']['description']for v in ('sum','mean','min','max','stddev','mode','median','中位数','偶数'))
+    assert spec['execution_modes']==['workflow']and spec['effects']==['read']and spec['attributes']['resource_groups']==['raster']
+    assert spec['output_ports'][0]['type']=='raster'and len(spec['output_ports'])==1
+    assert spec['detailed_description']['workflow_example']['params']=={'input_raster':{'$ref':'source'},'band':1,'window_size':3,'method':'mean'}

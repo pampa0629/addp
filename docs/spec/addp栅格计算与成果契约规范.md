@@ -63,7 +63,7 @@ GeoTIFF 与 COG 是 TIFF 的布局 profile。COG 编码复用唯一实现，压�
 | `raster_footprint` | `raster` → `GeoDataFrame` | 所选数据波段有效范围的并集/交集，保留源 CRS、孔洞与分离面片。 |
 | `raster_statistics` | raster、从 1 开始的 band | 按块全量累计 min/max/mean/总体标准差、有效/无效计数与比例；全无效时统计值为 null。 |
 | `raster_zonal_statistics` | 同网格数值／整数分区 raster、必填数值／分区波段 | 同类非连通区域合并，分区无效像元排除；输出每类像元计数及 sum/min/max/mean/总体标准差普通表，全无效数值为 null，沿既有保存。Native 与真实跨模块验收分别记账。 |
-| `raster_focal_statistics` | raster、必填数据波段、3／5 像元窗口、sum/mean/min/max/stddev/mode | 首期已实现；同网格单波段 Float64，中心无效保留 NaN，忽略无效邻居，外缘只计实际像元；mode 分类众数扩展已实现并经独立 Hosted 验证，最高频并列优先中心原分类、否则取较小分类；Native 与真实跨模块验收分别记账。 |
+| `raster_focal_statistics` | raster、必填数据波段、3／5 像元窗口、sum/mean/min/max/stddev/mode/median | 首期已实现；同网格单波段 Float64，中心无效保留 NaN，忽略无效邻居，外缘只计实际像元；median扩展按有效邻居排序，偶数取两中值平均，复用原入口和COG；mode 分类众数扩展已实现并经独立 Hosted 验证，最高频并列优先中心原分类、否则取较小分类；Native 与真实跨模块验收分别记账。 |
 | `raster_vector_zonal_statistics` | raster、同 CRS 有效二维面、必填数据波段，可选覆盖规则及列前缀 | 首期已实现；每面独立，重叠分别计入，保留原面／属性／顺序并追加计数与五项统计，复用矢量保存；Native 与真实跨模块验收分别记账。 |
 | `raster_proximity` | raster、必填不超过 32 位的整数数据波段、显式目标分类值 | 首期已实现；投影北向方形网格，最近有效目标像元中心的米制 Float64 欧氏距离；源无效位置保留 NoData，不作为障碍，无有效目标失败；Native 与真实链路分开记账。 |
 | `raster_recommend_band_combination` | raster、显式 3–16 个候选数据波段 | 首期已实现并通过独立 Hosted；全量共同有效像元的 OIF 三波段组合排名及推荐 object，原始存储值，不自动 RGB 或宣称专题最优。 |

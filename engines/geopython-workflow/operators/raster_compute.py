@@ -1517,8 +1517,8 @@ def raster_focal_statistics(input_raster, band, window_size, method):
     """Reduce valid pixel neighbourhoods using bounded source reads with halos."""
     if isinstance(window_size, bool) or not isinstance(window_size, int) or window_size not in (3, 5):
         raise ValueError('window_size must be the integer 3 or 5')
-    if method not in ('sum', 'mean', 'min', 'max', 'stddev', 'mode'):
-        raise ValueError('method must be sum, mean, min, max, stddev or mode')
+    if method not in ('sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median'):
+        raise ValueError('method必须为sum、mean、min、max、stddev、mode或median' if _DISK_LANGUAGE.get() == 'zh-cn' else 'method must be sum, mean, min, max, stddev, mode or median')
     dataset = _open(input_raster)
     if _band(dataset, band).GetColorInterpretation() == gdal.GCI_AlphaBand:
         raise ValueError('Focal statistics require a data band, not alpha')
@@ -1537,7 +1537,7 @@ def raster_focal_statistics(input_raster, band, window_size, method):
             right = min(dataset.RasterXSize, x + width + radius)
             bottom = min(dataset.RasterYSize, y + height + radius)
             _, _, arrays, masks = next(_blocks(dataset, [band], window=(left, top, right-left, bottom-top),
-                                               native=method == 'mode'))
+                                               native=method in ('mode', 'median')))
             if method == 'mode':
                 _safe_classification_values(arrays[0], masks[0])
                 arrays[0] = arrays[0].astype(np.float64)
@@ -1568,6 +1568,28 @@ def raster_focal_statistics(input_raster, band, window_size, method):
                         | ((frequency == best_count) & tie_better))
                     np.copyto(result, candidate, where=take)
                     np.copyto(best_count, frequency, where=take)
+            elif method == 'median':
+                # Sort only this core block's bounded neighbourhood. Invalid
+                # placeholders sort last and never contribute to the rank.
+                ordered = np.full((window_size * window_size, *center.shape), np.inf)
+                count = np.zeros(center.shape, dtype=np.uint8)
+                for index, (sample, mask) in enumerate(neighbours()):
+                    np.copyto(ordered[index], sample, where=mask)
+                    count += mask
+                ordered.sort(axis=0)
+                rank_count = np.maximum(count, 1)
+                lower = np.take_along_axis(ordered, ((rank_count - 1) // 2)[None], axis=0)[0]
+                upper = np.take_along_axis(ordered, (rank_count // 2)[None], axis=0)[0]
+                del ordered
+                lower[count == 0] = upper[count == 0] = 0.
+                # Add first when safe, preserving subnormal halves. Only large
+                # endpoints need half-then-add to prevent intermediate overflow.
+                safe = (np.abs(lower) <= np.finfo(np.float64).max / 2) & (np.abs(upper) <= np.finfo(np.float64).max / 2)
+                result = np.empty(center.shape)
+                np.add(lower, upper, out=result, where=safe)
+                np.divide(result, 2., out=result, where=safe)
+                with np.errstate(under='ignore'):
+                    np.add(lower / 2., upper / 2., out=result, where=~safe)
             elif method in ('min', 'max'):
                 result = np.full(center.shape, np.inf if method == 'min' else -np.inf)
                 reduce = np.minimum if method == 'min' else np.maximum
@@ -4665,7 +4687,7 @@ _SPECS = [
     (raster_cut_fill, OperatorCategory.RASTER_STATISTICS, '双DEM填挖方统计', [_INPUT(), _param('after_raster', 'raster', '施工后DEM，须与施工前同CRS、尺寸和完整网格，由用户保证相同高程基准', role='input'), _param('band', 'int', '显式施工前高程数据波段'), _param('after_band', 'int', '显式施工后高程数据波段'), _param('elevation_unit', 'str', '显式施工前高程单位', enum=list(_ELEVATION_METRES)), _param('after_elevation_unit', 'str', '显式施工后高程单位；挖填体积各非负，净增加为填方减挖方，统一立方米', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_surface_area, OperatorCategory.RASTER_STATISTICS, 'DEM 三维表面积统计', [_INPUT(), _param('band', 'int', '显式高程数据波段；四角有效像元中心组成面片，外缘不补面积'), _param('elevation_unit', 'str', '显式高程单位；双对角三角剖分逐面片取平均，面积平方米，结果为普通表', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段')], 'DataFrame', ['read']),
-    (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_size', 'int', '以像元为单位的正方形窗口边长：3 或 5'), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）')], 'raster', ['read']),
+    (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_size', 'int', '以像元为单位的正方形窗口边长：3 或 5'), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）/median（中位数；偶数取两中值平均）')], 'raster', ['read']),
     (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False)], 'GeoDataFrame', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
     (raster_fill_depressions, OperatorCategory.RASTER_FLOW, 'DEM 填洼', [_INPUT(), _param('band', 'int', '显式高程数据波段；八邻接，图边及无效区边界开放'), _param('elevation_unit', 'str', '明确原高程单位，输出米制最低溢流高程', enum=list(_ELEVATION_METRES))], 'raster', ['read']),
