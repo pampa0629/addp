@@ -6,6 +6,8 @@
 addp.inference/v1
 ```
 
+[返回 Inference 专题导航](../../inference/CLAUDE.md#专题导航) · [Runtime Provider 契约](addp引擎插件接口规范.md#runtime-provider)
+
 ## 一、目标与唯一技术路线
 
 ADDP 的 Agent、Copilot、Manager 和后续业务模块只调用 Inference Runtime，不直接集成在线厂商 SDK、OpenAI-compatible endpoint 或内网模型私有协议。Inference Runtime 负责 Provider 协议适配、凭据解密、模型调用和统一错误；业务调用方负责场景语义、上下文组装和结果消费。
