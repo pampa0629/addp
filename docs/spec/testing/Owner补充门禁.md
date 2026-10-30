@@ -170,6 +170,8 @@ Graph Security 门禁沿上述两项领域 T2 验证纳管后的浏览、搜索�
 
 Manager 的唯一浏览器入口为 `make test-manager-frontend` 内部调度的共享 `scripts/test/frontend-browser-gate.mjs`，模块声明 `test:e2e`、Playwright 配置及 `addpBrowserTest` 夹具；独立回环服务/端口由共享隔离入口管理，不另外保留模块 shell runner、固定旧建议端口或生产 mock 开关。测试数据与外网地图均受夹具控制，不使用个人账号、服务或真实业务库。
 
+Manager 浏览器回归使用 2 个 worker 按文件并行，文件内仍串行执行。各测试使用独立 BrowserContext／页面和模拟 API 状态，静态样例只读，下载证据只写 `testInfo.outputPath()` 对应的测试专属目录；共享 Vite 夹具仍由上述入口独占创建和清理。并行用于在既有 20 分钟 CI Job 内完成全量回归与构建，不减少用例、放宽单项期限或过滤页面错误。
+
 共享组件 T1 由 common-frontend 所有，完整 Manager 页面组合后的布局/路由/预览 T3 由 Manager 所有，外层 iframe 与认证由 Console 唯一负责。断言优先角色、标签和少量稳定 testid，以浏览器实际可见性、bounding box、顺序及状态证明布局；异步等待依赖响应/状态，不使用长 sleep 或重试掩盖缺陷。失败 screenshot/trace/video 写操作系统临时目录或 CI Artifact。
 
 普通表格、空间容器、分页、子项/字段弹窗、视角/locator 恢复及响应式场景按当前 Owner 用例覆盖。T3 使用隔离模拟 API，只证明页面行为；真实 System 登录、Gateway、Meta、数据源与权限闭环归已登记 T4，各格式/引擎证据不互换。代码变更由模块入口和现有前端路径自动发现，开发 restart 不隐式运行或接管测试。

@@ -4,7 +4,7 @@ import { withBrowserTestIsolation } from '../../common-frontend/basic/src/utils/
 export default defineConfig(withBrowserTestIsolation('manager', {
   testDir: './e2e',
   fullyParallel: false,
-  workers: 1,
+  workers: 2,
   timeout: 60_000,
   reporter: 'line',
   use: {
