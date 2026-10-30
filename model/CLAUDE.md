@@ -344,6 +344,10 @@ draft ⇄ approved
 
 ## 开发与验证
 
+篇内导航：[标准入口与数据库前提](#标准入口与数据库前提)、[指标计划与数据库金样](#指标计划与数据库金样)、[维度关联回归](#维度关联回归)、[浏览器失败产物](#浏览器失败产物)、[引用服务弹窗与授权交互](#引用服务弹窗与授权交互)。以下为现有入口与覆盖说明，不表示当前版本已运行通过；未执行、失败和跳过项分别认定。
+
+### 标准入口与数据库前提
+
 执行与层级沿[测试与验收规范](../docs/spec/addp测试与验收规范.md#三标准入口)，从仓库根目录使用：
 
 ```bash
@@ -358,13 +362,31 @@ PostgreSQL 门禁必须提供 `ADDP_TEST_MODEL_POSTGRES_DSN`，缺失时入口�
 
 直接运行的 PostgreSQL 领域用例可能因缺少 DSN 跳过，标准门禁拒绝缺失 DSN 或用例跳过。并发、事务和迁移相关改动必须走 `make test-model-postgres`，Go T1 或跳过项不计为 PostgreSQL 验收通过。
 
-指标计算采用“Model 构建中立计划 → 引擎独立编译器 → 唯一 PreparedQuery”，完整契约见 [Model 约束](docs/model概念与数据约束规范.md#数据库无关计划与修订) 和 [引擎插件规范](../docs/spec/addp引擎插件接口规范.md#数据库无关分析计算契约)。元数据生命周期及 PG 金样沿 `make test-model-postgres`；MySQL 真实计算沿 `ADDP_TEST_MYSQL_PASSWORD=<disposable-password> make test-model-mysql`，自动清理 addp_model_mysql_it_* 并拒绝跳过，两者已登记 T2 并验证同一中立计划。TiDB 复用同一金样，经 `make test-common-tidb` 的隔离实例执行；测试来源路径从 Provider 的目录模型派生，不按引擎名判断 namespace。Service 负责在线指标查询，Develop 负责持久表加工；页面物理绑定与建表扩展另行跟踪。
+### 指标计划与数据库金样
+
+指标计算采用“Model 构建中立计划 → 引擎独立编译器 → 唯一 PreparedQuery”，完整契约见 [Model 约束](docs/model概念与数据约束规范.md#数据库无关计划与修订) 和 [引擎插件规范](../docs/spec/addp引擎插件接口规范.md#数据库无关分析计算契约)。
+
+元数据生命周期及 PG 金样沿 `make test-model-postgres`；MySQL 真实计算沿 `ADDP_TEST_MYSQL_PASSWORD=<disposable-password> make test-model-mysql`，自动清理 addp_model_mysql_it_* 并拒绝跳过，两者已登记 T2 并验证同一中立计划。TiDB 复用同一金样，经 `make test-common-tidb` 的隔离实例执行；测试来源路径从 Provider 的目录模型派生，不按引擎名判断 namespace。
+
+Service 负责在线指标查询，Develop 负责持久表加工；页面物理绑定与建表扩展另行跟踪。
+
+### 维度关联回归
 
 维度关联改动沿用现有自动发现门禁：`make test-module MODULE=model` 覆盖平台一致性、Go 单元、前端路由及交互、PostgreSQL 事务测试；其中数据库测试需配置上述测试 DSN。`make test-model-frontend` 包含关系入口唯一所有权、URL 恢复、审批只读、原位更新和冲突保留测试；CI 继续使用已登记的 Model 前端与 PostgreSQL 作业。
 
-Model 确定性浏览器门禁只在失败时保留截图与 Playwright trace；trace 可用于查看页面快照、请求响应及浏览器错误。产物写入操作系统临时目录（CI 通过 `TMPDIR=RUNNER_TEMP` 指向 Runner 目录）下当轮独立的 `addp-model-playwright-results-*/`，不进入仓库。Model 前端 CI Job 在失败时上传该目录，保留 14 天；每轮使用独立目录，重跑不覆盖此前失败产物；成功退出时删除当轮目录。排查使用失败输出中的 `playwright show-trace` 命令，不通过增加重试或放宽断言超时掩盖偶发失败。
+### 浏览器失败产物
 
-指标修订的引用服务弹窗和撤回确认弹窗只在打开、翻页或显式刷新时查询引用服务。403 后重载授权不得自动再次查询，避免拒绝请求与令牌轮换形成循环；失去读取权限时立即清除已有结果，未完成请求也不得写入无权限界面。令牌续期中的授权重载不取消原有查询；引用查询入口在返回成功结果前等待正在进行的 AuthContext 加载，两个弹窗再按最终读取权限展示，不能因查询响应先于授权响应到达而丢失结果。该行为由 `make test-model-frontend` 的可控授权重载与续期用例覆盖。
+Model 确定性浏览器门禁只在失败时保留截图与 Playwright trace；trace 可用于查看页面快照、请求响应及浏览器错误。产物写入操作系统临时目录（CI 通过 `TMPDIR=RUNNER_TEMP` 指向 Runner 目录）下当轮独立的 `addp-model-playwright-results-*/`，不进入仓库。
+
+Model 前端 CI Job 在失败时上传该目录，保留 14 天；每轮使用独立目录，重跑不覆盖此前失败产物；成功退出时删除当轮目录。
+
+排查使用失败输出中的 `playwright show-trace` 命令，不通过增加重试或放宽断言超时掩盖偶发失败。
+
+### 引用服务弹窗与授权交互
+
+指标修订的引用服务弹窗和撤回确认弹窗只在打开、翻页或显式刷新时查询引用服务。403 后重载授权不得自动再次查询，避免拒绝请求与令牌轮换形成循环；失去读取权限时立即清除已有结果，未完成请求也不得写入无权限界面。
+
+令牌续期中的授权重载不取消原有查询；引用查询入口在返回成功结果前等待正在进行的 AuthContext 加载，两个弹窗再按最终读取权限展示，不能因查询响应先于授权响应到达而丢失结果。该行为由 `make test-model-frontend` 的可控授权重载与续期用例覆盖。
 
 ## 前端公开路由
 
