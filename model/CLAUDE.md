@@ -177,7 +177,15 @@ model/
 
 ### 概念实现映射
 
-`model.logical_table_entity_mappings`、`model.logical_field_attribute_mappings` 和 `model.table_relation_entity_relation_mappings` 分别表达表、字段和关系如何实现概念模型。三类映射均属于 LogicalTable 聚合，通过同一个完整替换 API 写入并推进父版本；表映射冻结 Entity 版本，关系映射冻结 EntityRelation 版本，审批时拒绝来源草稿或版本漂移。
+三类映射通过 `tenant_id + table_id` 归属 LogicalTable 聚合，共用父 LogicalTable 的 `version`；字段定义见[concept_mapping.go](backend/internal/models/concept_mapping.go)。
+
+| 表 | 引用与冻结字段 |
+| --- | --- |
+| `model.logical_table_entity_mappings` | `entity_id`、`mapping_role`；`entity_version` 冻结来源 Entity 版本 |
+| `model.logical_field_attribute_mappings` | `field_id` 对应 `entity_id + entity_attribute_id`；`mapping_role` |
+| `model.table_relation_entity_relation_mappings` | `table_relation_id` 对应 `entity_relation_id`；`orientation` 表示方向，`entity_relation_version` 冻结来源 EntityRelation 版本 |
+
+唯一完整替换、来源冻结与审批复核统一见[聚合与引用](docs/model概念与数据约束规范.md#三聚合与引用)；父版本推进及事务约束见[并发版本与聚合写入](docs/model概念与数据约束规范.md#并发版本与聚合写入)。权限和资源归属见[授权边界](docs/model概念与数据约束规范.md#二授权边界)，实际验收范围见[开发与验证](#开发与验证)。
 
 ### `model.metric_implementations` / `model.metric_implementation_revisions`
 
