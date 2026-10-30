@@ -30,9 +30,13 @@ Model 负责已审批逻辑表的目标物理表创建、结构校验与显式�
 
 Model 声明 `logical_table_materialization` TaskProvider；已持久化的 LogicalTable 是任务定义事实源，任务 ID 等于逻辑表 ID，不新增或复制建表配置。仅已审批且配置目标的逻辑表可执行。手动入口和 Orchestrator 入口复用同一执行服务，写入 `common.task_executions`；执行冻结逻辑表版本，运行时必须匹配该版本。成功输出 `execution_id + target_locator`。
 
-**端口**:
-- 后端: `8181`（环境变量 `MODEL_BACKEND_PORT`）
-- 前端: `5182`（开发环境）
+**端口与访问入口**:
+
+- **开发监听首选值**：Backend `8181`（`MODEL_BACKEND_PORT`）、Frontend `5182`（`MODEL_FE_PORT`）；实际端口以标准启动输出和 `.dev-state/ports.env` 为准，见[Model 端口规范](../docs/spec/addp端口分配.md#model-模块数据建模)。
+- **页面入口**：Console 使用同 origin 的 `/modeling/...`，模块加载与 standalone 使用 `/module-ui/model/...`；开发监听端口与公开页面地址的分工见[公开路由规范](../docs/spec/addp前端路由与可恢复状态规范.md#二公开路由事实源)。
+- **容器部署**：根 Compose 通过 Nginx 统一入口访问，Model Backend／Frontend 不单独发布宿主机端口；模块单独部署的映射、公开 origin 与 HTTPS 边界见[部署方式与端口规则](../docs/spec/addp端口分配.md#前端-docker-端口规则)和[生产部署说明](../docs/guide/addp部署和开发步骤.md#第五步-生产模式)。
+
+端口与代理配置不代表公开入口、认证或业务结果已验收，实际覆盖见[开发与验证](#开发与验证)。
 
 **数据库 Schema**: `model`
 
