@@ -1,17 +1,9 @@
 import { expect, test } from '@playwright/test'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { identity, node, resourceBackend, resourcePermissions, setIdentity } from './node-resources.fixture'
+import { identity, node, resourceBackend, resourcePermissions, setIdentity, completeComparisonTrend as completeTrend } from './node-resources.fixture'
 
-function completeTrend(body, params, previous = 30, current = 40) {
-  const start = Date.parse(params.get('start')), end = Date.parse(params.get('end')), width = end - start
-  const step = Math.max(15, Math.ceil(width / 1000 / 999 / 15) * 15)
-  body.step_seconds = step
-  for (const line of body.series) line.points = Array.from({ length: Math.floor(width / (step * 1000)) + 1 }, (_, index) => {
-    const at = start + index * step * 1000, stamp = new Date(at).toISOString()
-    return { evaluated_at: stamp, sampled_at: stamp, value: line.unit === 'bytes' ? 2 ** 34 : at <= start + width / 2 ? previous : current, data_state: 'valid' }
-  })
-}
+
 const reads = state => state.reads.filter(row => row.path.endsWith('/resource_trends'))
 const comparisonURL = `/node-resources/${node}?range=5m&compare=previous&refresh=off`
 
@@ -160,8 +152,9 @@ test('identity revocation clears a visible comparison and rejects the late refre
   state.holdTrend()
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   await expect.poll(() => reads(state).length).toBe(2)
-  await expect(page.getByTestId('resource-comparison')).toHaveCount(0)
+  await expect(page.getByTestId('resource-comparison')).toBeVisible()
   await setIdentity(page, identity(resourcePermissions, { type: 'tenant', tenant_id: '8' }))
+  await expect(page.getByTestId('resource-comparison')).toHaveCount(0)
   state.releaseTrend()
   await expect(page.getByTestId('node-resources')).toHaveCount(0)
   await setIdentity(page, identity(resourcePermissions))

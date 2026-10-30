@@ -85,3 +85,13 @@ export async function resourceBackend(page, options = {}) {
   })
   return Object.assign(state, { hold: () => { held = new Promise(resolve => { release = resolve }) }, release: () => { release?.(); held = null }, holdSummary: () => { heldSummary = new Promise(resolve => { releaseSummary = resolve }) }, releaseSummary: () => { releaseSummary?.(); heldSummary = null }, holdTrend: () => { heldTrend = new Promise(resolve => { releaseTrend = resolve }) }, releaseTrend: () => { releaseTrend?.(); heldTrend = null } })
 }
+
+export function completeComparisonTrend(body, params, previous = 30, current = 40) {
+  const start = Date.parse(params.get('start')), end = Date.parse(params.get('end')), width = end - start
+  const step = Math.max(15, Math.ceil(width / 1000 / 999 / 15) * 15)
+  body.step_seconds = step
+  for (const line of body.series) line.points = Array.from({ length: Math.floor(width / (step * 1000)) + 1 }, (_, index) => {
+    const at = start + index * step * 1000, stamp = new Date(at).toISOString()
+    return { evaluated_at: stamp, sampled_at: stamp, value: line.unit === 'bytes' ? 2 ** 34 : at <= start + width / 2 ? previous : current, data_state: 'valid' }
+  })
+}

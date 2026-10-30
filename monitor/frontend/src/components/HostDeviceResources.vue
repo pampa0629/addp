@@ -9,7 +9,7 @@
     </div>
     <p v-if="family.name === 'disk' && family.rows.length && !family.visibleRows.length" class="resource-hint" role="status" data-testid="resource-disk-idle">{{ t('monitor.resources.disk.allIdle') }}</p>
     <el-alert v-if="family.errorKey" :title="t(family.errorKey)" type="error" :closable="false" :data-testid="`resource-${family.name}-error`" />
-    <div v-if="!loading && !family.errorKey && family.missingMessage" class="resource-empty-status" :data-testid="`resource-${family.name}-status`">
+    <div v-if="(!loading || observation) && !family.errorKey && family.missingMessage" class="resource-empty-status" :data-testid="`resource-${family.name}-status`">
       <p class="resource-hint" role="status" :data-testid="`resource-${family.name}-empty`">{{ t(family.missingMessage) }}</p>
       <el-button v-if="!family.rows.length && canConfigure" text type="primary" @click="$emit('configure')">{{ t(configureLabel) }}</el-button>
     </div>

@@ -243,7 +243,10 @@ test('invalid node or mismatched response is an error instead of another node', 
 
 
 const resourceReads = state => state.reads.filter(item => item.path.endsWith('resource_observations') && item.query.metrics.startsWith('node.cpu.logical_cores'))
-const visibleChart = page => expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+async function visibleChart(page) {
+  await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  await expect(page.getByTestId('node-resources')).toHaveAttribute('aria-busy', 'false')
+}
 async function visibility(page, hidden) {
   await page.evaluate(hidden => {
     Object.defineProperty(document, 'hidden', { configurable: true, value: hidden })

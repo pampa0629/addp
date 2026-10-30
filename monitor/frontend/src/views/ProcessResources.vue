@@ -1,9 +1,9 @@
 <template>
-  <section class="process-resources">
+  <section class="process-resources" :aria-busy="loading">
     <div class="process-toolbar">
       <h2>{{ t('monitor.process.title') }}</h2>
       <AutoRefreshControl v-if="canRead" :model-value="state.refresh" :status="refreshStatus" test-id="process-refresh" @update:model-value="selectRefresh" />
-      <el-button :disabled="!canRead || loading" @click="reload">{{ t('common.refresh') }}</el-button>
+      <el-button :disabled="!canRead" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
     </div>
     <el-alert v-if="!canRead" :title="t('monitor.process.denied')" type="warning" :closable="false" />
     <template v-else>
@@ -41,7 +41,7 @@
         <el-button :disabled="!validTimeDraft" v-if="state.status !== 'up' || state.declared !== 'true'" @click="setScope('current')">{{ t('monitor.process.currentInstances') }}</el-button>
       </form>
       <el-alert v-if="errorKey || summaryErrorKey" :title="t(errorKey || summaryErrorKey)" type="warning" :closable="false" data-testid="process-error" />
-      <el-table :data="instances" v-loading="loading" :empty-text="t('monitor.process.empty')" data-testid="process-list">
+      <el-table :data="instances" row-key="id" v-loading="loading && !instances.length" :empty-text="t('monitor.process.empty')" data-testid="process-list">
         <el-table-column :label="t('monitor.process.module')" prop="module_name" min-width="120" />
         <el-table-column :label="t('monitor.process.instance')" min-width="170" show-overflow-tooltip>
           <template #default="{ row }">{{ row.runtime_hostname || row.registered_host || row.instance_id }}<p class="process-hint" :title="row.instance_id">{{ t(processRoleLabelKey(row)) }}</p></template>
@@ -64,15 +64,15 @@
         </el-table-column>
         <el-table-column :label="t('monitor.resources.trend')" width="130"><template #default="{ row }"><el-button text type="primary" :disabled="row.status !== 'up' || !row.process_metrics_declared || loading" @click="selectTrend(row.id)">{{ t('monitor.resources.filesystem.viewTrend') }}</el-button></template></el-table-column>
       </el-table>
-      <el-pagination v-if="!loading && !errorKey" :current-page="state.page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="changePage" />
+      <el-pagination v-if="!errorKey && (instances.length || !loading)" :current-page="state.page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="changePage" />
       <el-dialog :model-value="Boolean(state.instanceID)" :title="t('monitor.process.trend.title')" width="min(960px, calc(100vw - 32px))" destroy-on-close @close="closeTrend">
-        <div v-loading="loading" data-testid="process-trend">
+        <div v-loading="loading && !trend" :aria-busy="loading" data-testid="process-trend">
           <p v-if="selectedInstance" class="process-trend-subject">{{ selectedInstance.module_name }} · {{ t(processRoleLabelKey(selectedInstance)) }} · {{ selectedInstance.instance_id }}</p>
           <div class="process-toolbar">
             <el-select :model-value="state.range" :aria-label="t('monitor.resources.range')" @update:model-value="range => selectTrend(state.instanceID, range)"><el-option v-for="(_, key) in resourceRanges" :key="key" :value="key" :label="t(`monitor.resources.ranges.${key}`)" /></el-select>
             <el-checkbox :model-value="state.compare" :disabled="!supportsProcessComparison(state.range)" data-testid="process-compare" @change="selectComparison">{{ t('monitor.resources.comparison.enable') }}</el-checkbox>
             <AutoRefreshControl :model-value="state.refresh" :status="refreshStatus" test-id="process-trend-refresh" @update:model-value="selectRefresh" />
-            <el-button :disabled="loading" @click="reload">{{ t('common.refresh') }}</el-button>
+            <el-button :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
           </div>
           <p v-if="state.range === '7d'" class="process-hint" data-testid="process-compare-retention">{{ t('monitor.resources.comparison.retention') }}</p>
           <p class="process-hint">{{ t('monitor.process.trend.scope') }}</p>
@@ -143,7 +143,7 @@ const trendZoom = ref({})
 const container = ref(null), containerErrorKey = ref('')
 const pageVisible = ref(!document.hidden), refreshBlocked = ref(false)
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : refreshBlocked.value ? 'stopped' : !pageVisible.value ? 'paused' : 'automatic')
-let disposed = false
+let disposed = false, dataContext = ''
 const selectedInstance = computed(() => instances.value.find(row => row.id === state.value.instanceID))
 const date = value => formatFieldPresentationValue(value, { temporal_format: 'datetime' }, locale.value)
 const trendCharts = computed(() => !trend.value ? [] : processMetrics.slice(0, 2).map(metric => {
@@ -244,9 +244,14 @@ async function reload({ automatic = false } = {}) {
   if (automatic && (loading.value || !canRead.value || !pageVisible.value || refreshBlocked.value)) return
   refreshCycle.stop()
   const ticket = requests.invalidate()
-  container.value = null; containerErrorKey.value = ''
+  containerErrorKey.value = ''
   if (!automatic) cancelFilter()
-  if (!automatic) { instances.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0; trend.value = null; comparisons.value = null; refreshBlocked.value = false }
+  const context = JSON.stringify([{ ...state.value.query, refresh: undefined }, identity.value])
+  if (context !== dataContext) {
+    dataContext = context
+    instances.value = []; summaries.value = new Map(); hostReferences.value = {}; total.value = 0; trend.value = null; comparisons.value = null; container.value = null
+  }
+  if (!automatic) refreshBlocked.value = false
   errorKey.value = ''; summaryErrorKey.value = ''; trendErrorKey.value = ''; loading.value = false
   if (!canRead.value) return
   if (state.value.changed) { await navigate(state.value.query); return }
@@ -257,7 +262,7 @@ async function reload({ automatic = false } = {}) {
     const list = await requests.request(config => api.instances(listParams, config))
     if (!requests.current(ticket)) return
     validateProcessInstances(list, state.value.page, listParams)
-    if (!automatic) { instances.value = list.data; total.value = list.total }
+    if (!instances.value.length) { instances.value = list.data; total.value = list.total }
     let currentSummaries = new Map(), currentTrend = null, currentComparisons = null
     if (list.data.length) {
       try {
@@ -272,8 +277,8 @@ async function reload({ automatic = false } = {}) {
     }
     if (state.value.instanceID) {
       const owner = list.data.find(row => row.id === state.value.instanceID), observed = currentSummaries.get(owner?.id)
-      if (!owner || owner.status !== 'up' || !owner.process_metrics_declared) trendErrorKey.value = 'monitor.process.trend.reselect'
-      else if (!observed) trendErrorKey.value = summaryErrorKey.value || 'monitor.resources.errors.unavailable'
+      if (!owner || owner.status !== 'up' || !owner.process_metrics_declared) { container.value = null; trendErrorKey.value = 'monitor.process.trend.reselect' }
+      else if (!observed) { container.value = null; trendErrorKey.value = summaryErrorKey.value || 'monitor.resources.errors.unavailable' }
       else {
         try {
           const value = await requests.request(config => api.container(owner.id, config))
@@ -281,6 +286,7 @@ async function reload({ automatic = false } = {}) {
           container.value = validateContainerObservation(value, owner)
         } catch (error) {
           if (!requests.current(ticket)) return
+          container.value = null
           containerErrorKey.value = processErrorKey(error)
           if ([401, 403, 404].includes(error.response?.status)) throw error
         }
@@ -299,7 +305,7 @@ async function reload({ automatic = false } = {}) {
       }
     }
     instances.value = list.data; total.value = list.total; summaries.value = currentSummaries; trend.value = currentTrend; comparisons.value = currentComparisons
-    hostReferences.value = {}; void loadHosts(list.data, ticket)
+    hostReferences.value = Object.fromEntries(Object.entries(hostReferences.value).filter(([id]) => list.data.some(row => row.node_id === id))); void loadHosts(list.data, ticket)
   } catch (error) {
     if (!requests.current(ticket)) return
     container.value = null

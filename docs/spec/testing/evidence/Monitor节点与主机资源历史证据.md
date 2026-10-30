@@ -487,3 +487,23 @@ regression／complete-comparison 在当次私有部署显式开启原容量扩�
 两轮项目均沿标准 trap 清理；随后按两个精确 Compose 项目 label 独立核对容器／网络／卷全部为0，回执 `/tmp/addp-block-snapshot-cleanup.json`，成功轮也确认临时目录删除。标准 `python3 scripts/ci/check-t2-ci-registration.py` 通过（`/tmp/addp-block-snapshot-registration.log`）；既有 metrics 输入声明、配置测试自动发现及 Release block-capacity 矩阵已覆盖，无新入口或workflow。限定文件 diff 检查通过，未处理共享工作区其他会话的改动。后续自然 CI 仍等专门会话回传，不自行查询、调度、重跑CI／Hosted或设置定时任务；个人服务、主机挂载与数据卷均未操作。
 
 2026-10-29 18:07 补充远程固定源码证据：专门 CI 会话回传 [Release run40841858063／block-capacity Job123340144076](https://github.com/pampa0629/addp/actions/runs/40841858063/job/123340144076)，源码为 efc577aa69fc0a190dddba2bc9bff4903fc99f88、push／attempt1、completed／success，实际 selected=true 的 Verify isolated metrics lifecycle 成功。已独立核对回传原始日志 `/tmp/addp-ci-20261029-100020/job-123340144076.log` 的 SHA256 为 f6a8f755a872ca3e3be400a5805b03873e8488907141df134925c29995b76335；803—816行显示原公式及 TestIntegrationMetricsBlockCapacitySource 实际通过、无跳过，固定查询08:31:31Z、抓取1793262690.69，collecting／available，当前一个设备完整核对，并确认自有容器／网络／卷／临时文件零残留。独立审计为同目录 `P12-efc-block-capacity-actual-Linux-pass-audit.json`。本次时点交接修复的固定源码 Linux T2 验收据此关闭，不重复运行有效门禁；不倒推原 no_sample 唯一根因，不外推为当前其他源码、Safari／UI／Hosted或整个Release通过。本轮仅补证据，未轮询远程、重跑或新增运行窗口。
+## 主机与服务原位刷新（2026-10-30）
+
+同一对象、当前身份及已提交查询范围内，主机列表／详情／按设备展开和服务列表／当前实例趋势不再在每次请求开始时清空成功内容。保留现有读数、分页、设备表、图表及比较结果，用刷新按钮和 aria-busy 表示在途；首次读取仍有加载反馈。沿既有共享请求代数、自动刷新和领域组件更新，不新增API、缓存或调度。主机手动刷新可重读已展开设备和容量，不通过重建子组件触发读取。
+
+上下文改变仍立即清空；独立资源组失败清除对应旧值，服务摘要失败或实例失效不保留旧趋势／容器证明。撤权、身份变化及迟到响应继续沿原隔离路径。挂载创建告警按钮在容量重读期间保留但禁用，不能用待核验容量提交。已知不支持／未采集提示在刷新期间保留，不把缺样当零。修复保留分页后暴露的空结果联动：第二页刷新为空时，分页控件不得自动改写到第一页或发起越界的新查询。
+
+新增 resource-inplace-refresh.spec.js 的13项受控浏览器场景，暂缓真实前端所用HTTP夹具响应，覆盖手动／自动刷新、原DOM／canvas保持、容量与设备展开重读、失败清理、撤权迟到拒绝及服务退出清理。比较数据复用原完整时段夹具；原测试改为等待 aria-busy 结束，不再用“旧图已被卸载”判断请求完成，未放宽样本、身份或权限断言。
+
+本地实际验证：
+
+- 首轮相关149项中147通过、2失败，分别为原图可见即请求结束的等待竞态和旧比较应在刷新开始移除的断言，日志 `/tmp/addp-host-service-inplace-regression.log`。按新契约修正等待与断言，仍保留撤权时清空检查。
+- 首轮完整 `make test-monitor-frontend`：T1为131通过，T3为531通过／3失败，未运行构建，日志 `/tmp/addp-host-service-inplace-full.log`。失败为挂载按钮旧移除断言、第二页空结果自动跳页，以及服务比较等待竞态；分别修正禁用断言、产品分页事件边界和等待完成条件，未缩减用例。
+- 三项失败的标准专项复验全部通过（18.6秒），日志 `/tmp/addp-host-service-inplace-three.log`。
+- 最终 `make test-monitor-frontend` 退出0：131项T1、534项T3全部通过，构建成功（8.32秒），日志 `/tmp/addp-host-service-inplace-final.log`。输入摘要 `/tmp/addp-host-service-inplace-final-inputs.sha256` 的12项产品／测试文件在结束后全部校验一致。构建仍有既有大chunk提示，不属于失败。
+
+Safari真实运行只操作获准的第二个标签页，前端普通组件地址已提供新版，无需重启。Docker Desktop Linux VM主机详情手动刷新后查询23:35:38、CPU9.65%、可用内存51.63GiB；后续无额外手动刷新，内存曲线窗口推进到23:35:18—23:40:18，实际截图可见容量／比例三条曲线及双轴。当前来源不支持的文件系统、网络及TCP保持明确不可用；不计这些来源通过。
+
+服务页实际打开当前Monitor后端实例的趋势弹窗，前台自动刷新把窗口从23:44:19—23:49:19推进到23:54:03—23:59:03，CPU曲线实际可见；随后点击弹窗刷新，窗口为23:54:34—23:59:34。继续滚动核对RSS真实曲线，窗口推进到23:55:02—次日00:00:02，悬停显示23:58:32为66.98MiB。原生macOS明确未接入资源组采集，不计容器配额验收。Safari的离散观察证明真实数据推进及结果可见，不声称逐帧无闪烁或原canvas身份；后两项由受控T3暂缓响应场景证明。
+
+既有Monitor前端标准入口、测试目录自动发现和CI路径已覆盖，无新依赖、Make目标或Workflow。本批只改前端及对应规范／证据，不重复未变的Go、来源T2、权限或Online验证；未触发、轮询或重跑CI／Hosted，不设置定时任务，仍等专门会话回传。个人服务、数据库、身份、凭据及配置未改动。原正式来源／Hosted缺口保留，不能将本地T1／T3和个人Safari替代正式验收。

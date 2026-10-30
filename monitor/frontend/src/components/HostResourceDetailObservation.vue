@@ -1,5 +1,5 @@
 <template>
-  <div class="host-resource-detail-observation" data-testid="host-resource-detail-observation" v-loading="loading">
+  <div class="host-resource-detail-observation" data-testid="host-resource-detail-observation" v-loading="loading && !observations.some(Boolean)" :aria-busy="loading">
     <header>
       <span v-if="familyName !== 'filesystem' && observations[0]" class="resource-hint" data-testid="resource-detail-queried-at">{{ t('monitor.resources.queriedAt') }}: {{ formatFieldPresentationValue(observations[0].queried_at, { temporal_format: 'datetime' }, locale) }}</span>
       <el-button :loading="loading" data-testid="resource-detail-refresh" @click="reload()">{{ t('monitor.resources.details.refresh') }}</el-button>
@@ -30,7 +30,7 @@ const emit = defineEmits(['update:showAllDisks', 'select', 'denied', 'create-cap
 const { t, locale } = useI18n()
 const observations = ref([]), loading = ref(false), errorKeys = ref([])
 const scope = createLatestRequestScope()
-let disposed = false, blocked = false
+let disposed = false, blocked = false, dataContext = ''
 const refreshCycle = createAutoRefresh({
   interval: () => props.refresh,
   enabled: () => !disposed && !blocked && !loading.value,
@@ -41,7 +41,9 @@ const refreshCycle = createAutoRefresh({
 async function reload() {
   refreshCycle.stop()
   const ticket = scope.invalidate()
-  observations.value = []; errorKeys.value = []; loading.value = false; blocked = false
+  const context = JSON.stringify([props.node.node_id, props.node.version, props.node.enabled, props.familyName, props.identity])
+  if (context !== dataContext) { observations.value = []; dataContext = context }
+  errorKeys.value = []; loading.value = false; blocked = false
   if (disposed) return
   const { node_id: nodeID, version } = props.node
   const groups = resourceDetailGroups[props.familyName]
@@ -59,6 +61,7 @@ async function reload() {
         observations.value[index] = value
       } catch (error) {
         if (!scope.current(ticket)) return
+        observations.value[index] = null
         errorKeys.value[index] = resourceErrorKey(error)
         if ([401, 403, 404].includes(error.response?.status)) { blocked = true; emit('denied', error); return }
       }
@@ -69,6 +72,7 @@ async function reload() {
 }
 watch(() => JSON.stringify([props.node.node_id, props.node.version, props.node.enabled, props.familyName, props.identity]), reload, { immediate: true, flush: 'sync' })
 watch(() => props.refresh, () => refreshCycle.schedule())
+defineExpose({ reload })
 onBeforeUnmount(() => { disposed = true; refreshCycle.dispose(); scope.dispose() })
 </script>
 

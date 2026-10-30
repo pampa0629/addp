@@ -196,7 +196,7 @@ test('mount action requires both rule permissions and valid current capacity, wi
    try {
     await refresh.click()
     await expect(refresh).toBeDisabled()
-    await expect(page.getByTestId('filesystem-create-alert')).toHaveCount(0)
+    await expect(page.getByTestId('filesystem-create-alert')).toBeDisabled()
    } finally { state.resourceState.release() }
   })()
  ])

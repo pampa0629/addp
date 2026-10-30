@@ -3,7 +3,7 @@
     <p class="resource-hint">{{ t('monitor.resources.block.hint') }}</p>
     <p class="resource-hint">{{ t('monitor.resources.block.scope') }}</p>
     <el-alert v-if="errorKey" :title="t(errorKey)" type="error" :closable="false" data-testid="resource-block-error" />
-    <el-alert v-else-if="status !== 'available' && !loading" :title="t(`monitor.resources.block.${status}`)" type="info" :closable="false" data-testid="resource-block-status" />
+    <el-alert v-else-if="status !== 'available' && (!loading || observation)" :title="t(`monitor.resources.block.${status}`)" type="info" :closable="false" data-testid="resource-block-status" />
     <el-table :data="rows" data-testid="resource-block-table" :empty-text="t('monitor.resources.block.empty')">
       <el-table-column prop="dimensions.device" :label="t('monitor.resources.block.device')" min-width="140" />
       <el-table-column :label="t('monitor.resources.block.kind')" min-width="150"><template #default="{ row }">{{ t(`monitor.resources.block.kinds.${row.dimensions.kind}`) }}</template></el-table-column>

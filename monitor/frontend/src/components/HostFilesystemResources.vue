@@ -7,9 +7,9 @@
     <el-alert v-if="inodeErrorKey" :title="`${t('monitor.resources.filesystem.inode')}: ${t(inodeErrorKey)}`" type="error" show-icon :closable="false" data-testid="resource-inode-error" />
     <p v-if="mountRows.length && inodes" class="resource-hint">{{ t('monitor.resources.filesystem.inode') }} · {{ t('monitor.resources.queriedAt') }}: {{ date(inodes.queried_at) }}</p>
     <div class="resource-empty-status" data-testid="resource-filesystem-status">
-      <el-alert v-if="!loading && filesystemMissingMessage && ['not_collected', 'failed'].includes(capacity?.collection.filesystem)" :title="t(filesystemMissingMessage)" type="info" :closable="false" data-testid="resource-filesystem-capability" />
-      <p v-else-if="!loading && filesystemMissingMessage" class="resource-hint" role="status" data-testid="resource-filesystem-empty">{{ t(filesystemMissingMessage) }}</p>
-      <el-button v-if="!loading && !mountRows.length && !capacityErrorKey && !inodeErrorKey && canConfigure" text type="primary" @click="$emit('configure')">{{ t(configureLabel) }}</el-button>
+      <el-alert v-if="(!loading || capacity || inodes) && filesystemMissingMessage && ['not_collected', 'failed'].includes(capacity?.collection.filesystem)" :title="t(filesystemMissingMessage)" type="info" :closable="false" data-testid="resource-filesystem-capability" />
+      <p v-else-if="(!loading || capacity || inodes) && filesystemMissingMessage" class="resource-hint" role="status" data-testid="resource-filesystem-empty">{{ t(filesystemMissingMessage) }}</p>
+      <el-button v-if="(!loading || capacity || inodes) && !mountRows.length && !capacityErrorKey && !inodeErrorKey && canConfigure" text type="primary" @click="$emit('configure')">{{ t(configureLabel) }}</el-button>
     </div>
     <el-table v-if="mountRows.length" :data="mountRows" row-key="key" data-testid="resource-filesystem-table">
       <el-table-column prop="dimensions.device" :label="t('monitor.resources.filesystem.device')" min-width="160" show-overflow-tooltip />

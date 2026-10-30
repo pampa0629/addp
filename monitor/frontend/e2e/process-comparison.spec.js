@@ -10,7 +10,10 @@ function complete(body, params, cpu = [0.125, 1.25], rss = [2 * 1024 ** 3, 1024 
     Object.assign(point, { data_state: 'valid', sampled_at: point.evaluated_at, value: (line.unit === 'cores' ? cpu : rss)[Date.parse(point.evaluated_at) <= boundary ? 0 : 1] })
   }
 }
-const refresh = (page, locale = 'zh-cn') => page.getByTestId('process-trend').getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
+async function refresh(page, locale = 'zh-cn') {
+  await page.getByTestId('process-trend').getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
+  await expect(page.getByTestId('process-trend')).toHaveAttribute('aria-busy', 'false')
+}
 const chartFor = (page, metric) => page.getByTestId(`process-trend-${metric}`).locator('.chart-renderer')
 for (const locale of ['zh-cn', 'en']) test(`process comparison shows local means and original-unit changes beside both charts (${locale})`, async ({ page }, info) => {
   await trackResourceChart(page)

@@ -1,5 +1,5 @@
 <template>
-  <main v-if="canRead" class="node-resources" data-testid="node-resources">
+  <main v-if="canRead" class="node-resources" data-testid="node-resources" :aria-busy="loading">
     <header class="resource-toolbar">
       <h2>{{ t('monitor.resources.title') }}</h2>
       <el-button v-if="nodeID" @click="navigate('/node-resources', listQuery)">{{ t('monitor.resources.back') }}</el-button>
@@ -17,11 +17,11 @@
         <el-radio-button v-for="view in Object.keys(hostListMetricSets)" :key="view" :value="view">{{ t(`monitor.resources.listView.${view}`) }}</el-radio-button>
       </el-radio-group>
       <el-alert v-if="summaryErrorKey" :title="t(summaryErrorKey)" type="warning" show-icon :closable="false" data-testid="resource-summary-error" />
-      <el-table :data="nodes" row-key="node_id" :expand-row-keys="expandedDetail ? [expandedDetail.nodeID] : []" @expand-change="changeExpandedHost" v-loading="loading" :empty-text="t('monitor.resources.empty')" class="resource-node-list" data-testid="resource-node-list">
+      <el-table :data="nodes" row-key="node_id" :expand-row-keys="expandedDetail ? [expandedDetail.nodeID] : []" @expand-change="changeExpandedHost" v-loading="loading && total === null" :empty-text="t('monitor.resources.empty')" class="resource-node-list" data-testid="resource-node-list">
         <el-table-column type="expand" width="44">
           <template #default="{ row }">
             <section v-if="expandedDetail?.nodeID === row.node_id" class="resource-detail-expansion" :id="`resource-details-${row.node_id}`" data-testid="resource-detail-expansion" :aria-label="t('monitor.resources.details.forHost', { name: row.display_name })">
-              <HostResourceDetailObservation :key="row.node_id + ':' + expandedDetail.family" :node="row" :family-name="expandedDetail.family" :identity="identity" :refresh="state.refresh" v-model:show-all-disks="expandedDetail.showAllDisks" :format-value="formatValue" :can-create-capacity-alert="canCreateCapacityAlert" :can-view-capacity-rules="canViewCapacityRules" @view-capacity-rules="mount => viewCapacityRules(row, mount)" @create-capacity-alert="mount => createCapacityAlert(row, mount)" @select="selectListResourceTrend" @denied="detailAccessDenied" />
+              <HostResourceDetailObservation ref="expandedObservation" :key="row.node_id + ':' + expandedDetail.family" :node="row" :family-name="expandedDetail.family" :identity="identity" :refresh="state.refresh" v-model:show-all-disks="expandedDetail.showAllDisks" :format-value="formatValue" :can-create-capacity-alert="canCreateCapacityAlert" :can-view-capacity-rules="canViewCapacityRules" @view-capacity-rules="mount => viewCapacityRules(row, mount)" @create-capacity-alert="mount => createCapacityAlert(row, mount)" @select="selectListResourceTrend" @denied="detailAccessDenied" />
             </section>
           </template>
         </el-table-column>
@@ -54,7 +54,7 @@
       <el-alert v-if="instant && collectionMessage" :title="t(collectionMessage)" :type="instant.collection.state === 'failed' ? 'error' : 'warning'" show-icon :closable="false" data-testid="resource-collection-status" />
       <el-button v-if="canConfigure && instant" @click="configureCollection">{{ t('monitor.resources.configure') }}</el-button>
       <el-button v-if="node && canReadAlerts" @click="openRelatedAlerts" data-testid="host-related-alerts">{{ t('monitor.platformAlerts.related') }}</el-button>
-      <p v-if="loading" role="status">{{ t('common.loading') }}</p>
+      <p v-if="loading && !instant" role="status">{{ t('common.loading') }}</p>
       <h3 v-if="instant && state.end">{{ t('monitor.resources.current') }}</h3>
       <HostResourceHeatmap v-if="instant" :instant="instant" :filesystems="filesystems" :filesystem-error-key="filesystemErrorKey" :filesystem-message="filesystemMissingMessage" :loading="loading" @select="entry => entry.dimensions ? selectFilesystem(entry) : selectTrend('metric', entry.metric)" />
       <section v-if="instant" class="resource-cards" :aria-label="t('monitor.resources.current')">
@@ -79,7 +79,7 @@
       <section v-if="instant" class="resource-trend" data-testid="block-capacity-section">
         <h3>{{ t('monitor.resources.block.title') }}</h3>
         <el-button data-testid="resource-block-toggle" :aria-expanded="showBlockCapacity" @click="showBlockCapacity = !showBlockCapacity">{{ t(showBlockCapacity ? 'monitor.resources.block.hide' : 'monitor.resources.block.show') }}</el-button>
-        <HostResourceDetailObservation v-if="showBlockCapacity" :key="nodeID" :node="node" family-name="block" :identity="identity" :refresh="state.refresh" :format-value="formatValue" @denied="detailAccessDenied" />
+        <HostResourceDetailObservation ref="blockObservation" v-if="showBlockCapacity" :key="nodeID" :node="node" family-name="block" :identity="identity" :refresh="state.refresh" :format-value="formatValue" @denied="detailAccessDenied" />
       </section>
       <HostFilesystemResources v-if="instant" :capacity="filesystems" :inodes="inodes" :capacity-error-key="filesystemErrorKey" :inode-error-key="inodeErrorKey" :loading="loading" :can-configure="Boolean(canConfigure)" :configure-label="instant.target_id ? 'monitor.resources.viewCollection' : 'monitor.resources.configure'" :format-value="formatValue" :can-create-capacity-alert="canCreateCapacityAlert" :can-view-capacity-rules="canViewCapacityRules" @view-capacity-rules="mount => viewCapacityRules(node, mount)" @create-capacity-alert="mount => createCapacityAlert(node, mount)" @select="selectFilesystem" @configure="configureCollection" />
       <template v-if="instant">
@@ -179,7 +179,7 @@ const state = computed(() => resolveResourceRoute(route.query, Boolean(nodeID.va
 const listMetrics = computed(() => hostListMetricSets[state.value.listView])
 const listQuery = computed(() => { const { range, metric, compare, end, device, mountpoint, fstype, ...query } = state.value.query; return query })
 const nodes = ref([]), total = ref(null), node = ref(null), instant = ref(null), trend = ref(null), filesystems = ref(null), inodes = ref(null), disks = ref(null), networks = ref(null)
-const showBlockCapacity = ref(false)
+const showBlockCapacity = ref(false), blockObservation = ref(null), expandedObservation = ref(null)
 const loading = ref(false), errorKey = ref(''), trendErrorKey = ref(''), filesystemErrorKey = ref(''), inodeErrorKey = ref(''), diskErrorKey = ref(''), networkErrorKey = ref(''), searchText = ref(''), evidencePage = ref(1)
 const showAllDisks = ref(false), trendSection = ref(null)
 const summaries = ref(new Map()), summaryErrorKey = ref(''), expandedDetail = ref(null)
@@ -217,7 +217,7 @@ const comparisonChange = computed(() => {
 })
 const pageVisible = ref(!document.hidden), refreshBlocked = ref(false)
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : refreshBlocked.value ? 'stopped' : !pageVisible.value ? 'paused' : 'automatic')
-let epoch = 0, disposed = false
+let epoch = 0, disposed = false, dataContext = ''
 const requestScope = createLatestRequestScope()
 useConsolePageDescriptor(router, 'monitor', { title: computed(() => t('monitor.resources.detailTitle')), subject: computed(() => node.value?.display_name || ''), ready: computed(() => Boolean(node.value)) })
 function date(value) { return formatFieldPresentationValue(value, { temporal_format: 'datetime' }, locale.value) }
@@ -277,7 +277,7 @@ function detailAccessDenied(error) {
   showBlockCapacity.value = false; node.value = null; instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null
   errorKey.value = resourceErrorKey(error)
 }
-function changePage(page) { return navigate(route.path, { ...state.value.query, page: page === 1 ? undefined : String(page) }, 'replace') }
+function changePage(page) { if (loading.value || total.value === null || total.value === 0 || page === state.value.page) return; return navigate(route.path, { ...state.value.query, page: page === 1 ? undefined : String(page) }, 'replace') }
 function changeSize(size) { return navigate('/node-resources', { ...state.value.query, page: undefined, page_size: size === 20 ? undefined : String(size) }, 'replace') }
 const filterInput = createAutoFilter({ apply: () => navigate('/node-resources', { ...state.value.query, search: searchText.value.trim() || undefined, page: undefined }, 'replace'), enabled: () => !disposed && route.name === 'NodeResources' && canRead.value, visible: () => pageVisible.value, pause: () => refreshCycle.stop() })
 const search = () => filterInput.submit()
@@ -308,11 +308,15 @@ async function reload({ automatic = false } = {}) {
   invalidate()
   if (!automatic) refreshBlocked.value = false
   const ticket = epoch
-  total.value = null
-  comparison.value = null
-  if (state.value.compare) trend.value = null
-  if (!automatic) { summaries.value = new Map(); summaryErrorKey.value = '' }
-  if (!automatic) { nodes.value = []; total.value = null; node.value = null; instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null }
+  const context = JSON.stringify([nodeID.value, { ...state.value.query, refresh: undefined }, identity.value])
+  if (context !== dataContext) {
+    dataContext = context
+    expandedDetail.value = null; summaries.value = new Map(); summaryErrorKey.value = ''; comparison.value = null
+    nodes.value = []; total.value = null; node.value = null; instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null
+  } else if (!automatic && canRead.value) {
+    void blockObservation.value?.reload()
+    void expandedObservation.value?.reload()
+  }
   errorKey.value = ''; trendErrorKey.value = ''; filesystemErrorKey.value = ''; inodeErrorKey.value = ''; diskErrorKey.value = ''; networkErrorKey.value = '';  evidencePage.value = 1; loading.value = false
   if (!canRead.value) return
   if (state.value.changed) { await navigate(route.path, state.value.query, 'replace'); return }
@@ -352,8 +356,7 @@ async function reload({ automatic = false } = {}) {
       if (!requestScope.current(ticket)) return
       validateCollection(current.collection, current.queried_at)
       instant.value = validateResourceResponse(current, id, keys)
-      if (state.value.end && Date.parse(state.value.end) > Date.parse(current.end)) { errorKey.value = 'monitor.resources.history.invalid'; return }
-      filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null
+      if (state.value.end && Date.parse(state.value.end) > Date.parse(current.end)) { trend.value = null; comparison.value = null; errorKey.value = 'monitor.resources.history.invalid'; return }
       try {
         const filesystemKeys = filesystemMetrics.map(metric => metric.key)
         const mounts = await request(config => api.instant({ node_id: id, metrics: filesystemKeys.join(',') }, config))
@@ -362,10 +365,10 @@ async function reload({ automatic = false } = {}) {
         filesystems.value = validateResourceResponse(mounts, id, filesystemKeys)
       } catch (error) {
         if (!requestScope.current(ticket)) return
+        filesystems.value = null
         filesystemErrorKey.value = resourceErrorKey(error)
         if ([401, 403, 404].includes(error.response?.status)) throw error
       }
-      inodes.value = null; disks.value = null; networks.value = null
       try {
         const inodeKeys = inodeMetrics.map(metric => metric.key)
         const observed = await request(config => api.instant({ node_id: id, metrics: inodeKeys.join(',') }, config))
@@ -374,6 +377,7 @@ async function reload({ automatic = false } = {}) {
         inodes.value = validateResourceResponse(observed, id, inodeKeys)
       } catch (error) {
         if (!requestScope.current(ticket)) return
+        inodes.value = null
         inodeErrorKey.value = resourceErrorKey(error)
         if ([401, 403, 404].includes(error.response?.status)) throw error
       }
@@ -386,11 +390,11 @@ async function reload({ automatic = false } = {}) {
           family.value.value = validateResourceResponse(observed, id, keys)
         } catch (error) {
           if (!requestScope.current(ticket)) return
+          family.value.value = null
           family.error.value = resourceErrorKey(error)
           if ([401, 403, 404].includes(error.response?.status)) throw error
         }
       }
-      trend.value = null
       try {
         const params = trendParameters(id, state.value.metric, state.value.range, state.value.end || current.end, state.value.dimensions, state.value.compare)
         const history = await request(config => api.trend(params, config))
@@ -416,7 +420,7 @@ async function reload({ automatic = false } = {}) {
     }
   } catch (error) {
     if (!requestScope.current(ticket)) return
-    instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null
+    comparison.value = null; instant.value = null; trend.value = null; filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null
     errorKey.value = resourceErrorKey(error)
     if (!id) { nodes.value = []; total.value = null; summaries.value = new Map() }
     if ([401, 403, 404].includes(error.response?.status)) { refreshBlocked.value = true; node.value = null; nodes.value = []; total.value = null; summaries.value = new Map() }
@@ -426,7 +430,7 @@ watch([() => JSON.stringify([nodeID.value, state.value.range, state.value.end, s
 watch([errorKey, trendErrorKey], ([error, trendError]) => { if (error || trendError) trendZoom.value = null }, { flush: 'sync' })
 watch(refreshBlocked, blocked => { if (blocked) capacityRuleEditor.value?.close() }, { flush: 'sync' })
 watch([nodeID, identity], () => { showAllDisks.value = false }, { flush: 'sync' })
-watch([() => route.fullPath, identity], () => { capacityRuleEditor.value?.close(); expandedDetail.value = null; reload() }, { immediate: true, flush: 'sync' })
+watch([() => route.fullPath, identity], () => { capacityRuleEditor.value?.close(); reload() }, { immediate: true, flush: 'sync' })
 onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dispose(); invalidate(); requestScope.dispose() })
 </script>
 
