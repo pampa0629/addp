@@ -43,7 +43,7 @@ scripts/
 - **prod/** - 生产环境相关（部署、健康检查、监控）
 - **infra/** - 基础设施初始化（数据库、缓存、存储、搜索引擎）
 - **build/** - 构建相关（编译、打包、镜像构建）
-- **utils/** - 通用工具（不依赖特定环境，可被其他脚本复用）
+- **utils/** - 可复用工具与独立辅助命令；运行依赖、身份和副作用按[工具说明](utils/README.md)核对
 - **test/** - 测试相关（集成测试、API 测试、性能测试）
 - **migrations/** - 数据库迁移脚本
 - **registry/** - 服务注册和发现相关
@@ -56,19 +56,12 @@ scripts/
 
 ### 3. 共享工具脚本规范
 
-**utils/ 目录专门存放可复用的工具脚本**：
-
-- `colors.sh` - 终端颜色输出变量（被 dev 脚本引用）
-- `check-deps.sh` - Go 依赖版本一致性检查
-- `check-deps-version.sh` - 依赖版本验证
-- `ports-validate.sh` - System／Business 端口报告与有限策略检查，覆盖及退出边界见[端口规范](../docs/spec/addp端口分配.md#快速校验)
-- `detect-common.sh` - Common 模块依赖检测
-- 其他通用工具...
+`utils/` 存放可复用工具及独立辅助命令，常用入口、参数和实际覆盖见 [Utils 指南](utils/README.md)，具体实现以目录内源码为准。`colors.sh` 提供被开发脚本引用的终端颜色变量；Go 依赖整理归[开发依赖维护](dev/README.md#modtidysh)。其余依赖辅助实现见 [check-deps.sh](utils/check-deps.sh)、[check-deps-version.sh](utils/check-deps-version.sh) 和 [detect-common.sh](utils/detect-common.sh)。
 
 **工具脚本特点**：
 - 可以被其他脚本通过 `source` 引用
 - 或作为独立命令行工具使用
-- 不依赖特定的运行环境（dev/prod）
+- 按各工具说明确认所需运行环境、访问身份和写入范围；交互式诊断与标准测试门禁分别使用
 - 功能单一、职责明确
 
 ### 4. 脚本命名规范
