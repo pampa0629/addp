@@ -288,41 +288,36 @@ make ports-validate
 
 ## Standard 和 Model 模块配置要求
 
+根 `.env` 保存开发首选值，由[标准端口解析入口](../../scripts/dev/ports.sh)协调分配；实际监听端口以启动输出和 `.dev-state/ports.env` 为准。前端 Vite 从表内变量读取端口，未注入时使用对应首选值。
+
+根 `docker-compose.yml` 管理容器部署，内部端口以表内值与各镜像配置为准，与开发首选值独立；两模块的 Backend／Frontend 均不单独发布宿主机端口。根 Nginx 入口、模块单独部署、公开 origin 与监听范围统一见[部署方式与公开入口](#前端-docker-端口规则)。
+
 ### Standard 模块（数据标准管理）
 
 **功能**：管理业务域、业务术语、数据元、码值集等数据标准。
 
-**端口配置**：
-- Backend 开发：`8110`
-- Backend Docker：`8110`
-- Frontend 开发：`5181`
-- Frontend Docker 内部：`80`（经 Nginx 转发，不发布宿主机端口）
+| 进程 | 开发首选配置 | 容器内端口 |
+| --- | --- | --- |
+| Backend | `STANDARD_BACKEND_PORT=8110` | `8110` |
+| Frontend | `STANDARD_FE_PORT=5181` | `80` |
 
-**配置文件**：
-- `.env` 首选值与标准解析变量：`STANDARD_BACKEND_PORT=8110`、`STANDARD_FE_PORT=5181`；实际端口以标准启动输出和 `.dev-state/ports.env` 为准
-- `standard/frontend/vite.config.js`: 从 `STANDARD_FE_PORT` 读取端口，缺省 `5181`
-- `docker-compose.yml`: Backend 内部监听 `8110`，Frontend 内部监听 `80`，两者均不单独发布宿主机端口
+配置入口：[Backend](../../standard/backend/internal/config/config.go)、[Vite](../../standard/frontend/vite.config.js)、[根 Compose](../../docker-compose.yml)。
 
 ### Model 模块（数据建模）
 
 **功能**：管理业务实体、逻辑表、数仓分层等数据模型。
 
-**端口配置**：
-- Backend 开发：`8181`
-- Backend Docker：`8181`
-- Frontend 开发：`5182`
-- Frontend Docker 内部：`80`（经 Nginx 转发，不发布宿主机端口）
+| 进程 | 开发首选配置 | 容器内端口 |
+| --- | --- | --- |
+| Backend | `MODEL_BACKEND_PORT=8181` | `8181` |
+| Frontend | `MODEL_FE_PORT=5182` | `80` |
 
-**配置文件**：
-- `.env` 首选值与标准解析变量：`MODEL_BACKEND_PORT=8181`、`MODEL_FE_PORT=5182`；实际端口以标准启动输出和 `.dev-state/ports.env` 为准
-- `model/frontend/vite.config.js`: 从 `MODEL_FE_PORT` 读取端口，缺省 `5182`
-- `docker-compose.yml`: Backend 内部监听 `8181`，Frontend 内部监听 `80`，两者均不单独发布宿主机端口
+配置入口：[Backend](../../model/backend/internal/config/config.go)、[Vite](../../model/frontend/vite.config.js)、[根 Compose](../../docker-compose.yml)。
 
-**⚠️ 注意事项**：
-1. **Standard Backend (8110)** 和 **Model Backend (8181)** 端口不得冲突
-2. **Standard Frontend (5181)** 和 **Model Frontend (5182)** 开发端口不得冲突
-3. 开发首选端口由 `.env` 与 Vite 配置协调；容器内部端口由 Compose 与 Nginx 路由协调，不要求等于开发首选端口
-4. Gateway 需要正确配置 Standard 和 Model 服务的路由映射
+**注意事项**：
+
+1. Standard 与 Model 的实际开发监听端口须互不冲突；首选值及容器内部端口的职责按上文区分。
+2. Gateway 需要正确配置 Standard 和 Model 服务的路由映射。
 
 ## 运行日志基础设施
 
