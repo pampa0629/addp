@@ -1,4 +1,6 @@
 import importlib
+from contextlib import contextmanager
+from copy import deepcopy
 import json
 import os
 from pathlib import Path
@@ -143,6 +145,53 @@ class FileGDBAcceptanceTest(unittest.TestCase):
                 self.assertFalse((Path(directory) / 'filegdb-child-ready.json').exists())
         finally:
             server.shutdown(); server.server_close(); thread.join()
+
+    def test_outage_compares_rules_while_preserving_each_query_observation(self):
+        self.outage_observations()
+
+    def test_outage_still_rejects_changed_grant_content_and_invalid_observation(self):
+        changes = [
+            lambda row: row.update(expires_at='2026-11-01T00:00:00Z'),
+            lambda row: row.update(grant_count=2),
+            lambda row: row['inspection']['sources'][0].update(request_id='replacement'),
+            lambda row: row['inspection'].update(denies=[{'deny_id': 'new-deny'}]),
+            lambda row: row['catalog_path'].update(engine_id=8),
+            lambda row: row['inspection'].pop('observed_at'),
+            lambda row: row['inspection'].update(observed_at='invalid'),
+        ]
+        for change in changes:
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.outage_observations(change)
+
+    def outage_observations(self, change=None):
+        baseline = {'data': [{'catalog_path': M.target(7), 'grant_count': 1, 'expires_at': None,
+            'inspection': {'observed_at': '2026-10-30T06:00:00+00:00', 'reason': 'grant',
+                'rule_covered': True, 'sources': [{'request_id': 'original'}], 'denies': []}}],
+            'total': 1, 'page': 1, 'page_size': 20, 'total_pages': 1}
+        observations = [deepcopy(baseline) for _ in range(5)]
+        for index, current in enumerate(observations):
+            current['data'][0]['inspection']['observed_at'] = f'2026-10-30T06:00:0{index}+00:00'
+        if change:
+            change(observations[1]['data'][0])
+        original = deepcopy(observations)
+        before = dict(instance_id='before', git_commit='sha', build_id='build', source_fingerprint='fp')
+        after = dict(before, instance_id='after')
+        health = Mock(); health.request.side_effect = [SimpleNamespace(payload=value) for value in (before, after, after)]
+        @contextmanager
+        def interruption(*args):
+            yield {'module': args[-1]}
+        current = Mock(side_effect=observations)
+        with patch.object(M.API, 'GatewayClient', return_value=health), \
+                patch.object(M.API, 'wait_manager_read_boundary'), patch.object(P, 'interruption', interruption):
+            evidence = P.verify_outages(Path('/unused'), {'MANAGER_URL': 'http://unused',
+                'ADDP_ONLINE_MANAGER_NFS_ENGINE_ID': '7'}, Mock(), 'locator', current,
+                lambda: {'a.gdbtable': 'same-sha'}, Mock(return_value={'status': 503}))
+        self.assertEqual(observations, original)  # Raw timestamps remain available for independent review.
+        for index, outage in enumerate(evidence):
+            self.assertTrue(outage['same_grant']); self.assertTrue(outage['source_unchanged'])
+            self.assertEqual(outage['current_before'], original[0])
+            self.assertEqual(outage['current_during'], original[1 + 2 * index])
+            self.assertEqual(outage['current_after'], original[2 + 2 * index])
 
     def test_nfs_daemon_stop_is_not_accepted_when_actual_mount_is_still_readable(self):
         with tempfile.TemporaryDirectory() as directory:

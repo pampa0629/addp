@@ -1,6 +1,8 @@
 """Owned FileGDB source, real read-only NFS mount and two bounded Hosted faults."""
 from __future__ import annotations
 from contextlib import contextmanager
+from copy import deepcopy
+from datetime import datetime
 import hashlib
 import json
 import os
@@ -158,18 +160,32 @@ def interruption(repository, environment, module):
         lifecycle(recover=True)
 
 
+def rule_snapshot(response):
+    """Compare every rule field; only the per-query inspection instant is observational."""
+    result = deepcopy(response)
+    for row in result['data']:
+        observed = row['inspection'].pop('observed_at', None)
+        require(isinstance(observed, str), 'inspection instant missing')
+        instant = datetime.fromisoformat(observed.replace('Z', '+00:00'))
+        require(instant.tzinfo is not None, 'inspection instant must include timezone')
+    return result
+
+
 def verify_outages(repository, environment, client, locator, current, snapshot, preview):
     API = __import__('importlib').import_module('scripts.utils.online-api')
     before, source, result = current(), snapshot(), []
+    rules = rule_snapshot(before)
     health = API.GatewayClient(environment['MANAGER_URL'], '', 10)
     prior = health.request('GET', '/health/ready', (200,)).payload
     for module in ('manager', 'nfs'):
         with interruption(repository, environment, module) as observation:
             response = preview(client, locator, 'added_points', (500, 502, 503, 504))
-            require(current() == before, 'service outage changed the original Grant')
+            during = current()
+            require(rule_snapshot(during) == rules, 'service outage changed the original Grant')
         API.wait_manager_read_boundary(client, int(environment['ADDP_ONLINE_MANAGER_NFS_ENGINE_ID']), time.monotonic() + 120)
         preview(client, locator, 'added_points', 200, 1)
-        require(current() == before and snapshot() == source, 'recovery changed source or original Grant')
+        recovered = current()
+        require(rule_snapshot(recovered) == rules and snapshot() == source, 'recovery changed source or original Grant')
         after = health.request('GET', '/health/ready', (200,)).payload
         if module == 'manager':
             require(after.get('instance_id') != prior.get('instance_id')
@@ -177,6 +193,7 @@ def verify_outages(repository, environment, client, locator, current, snapshot, 
                     'Manager recovery build identity differs')
         fields = ('instance_id', 'git_commit', 'build_id', 'source_fingerprint', 'started_at')
         result.append({**observation, 'failed_read': response, 'same_grant': True, 'source_unchanged': True,
+            'current_before': before, 'current_during': during, 'current_after': recovered,
             'before_identity': {k: prior.get(k) for k in fields}, 'after_identity': {k: after.get(k) for k in fields}})
     return result
 
