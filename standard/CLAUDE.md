@@ -683,6 +683,7 @@ GET /api/v1/standard/cleanup-executions/:execution_id/result
 - **MinIO**: 标准文档文件存储（bucket: `standard`）
 
 **被依赖**（其他模块调用 Standard 的 API）:
+- **Catalog 模块**: 消费[五类标准变化与最小摘要](#企业目录机器读取)，通过[引用与修订机器接口](#标准引用与修订机器读取)支撑目录关联、StandardMapping 和[数据字典](#数据字典边界)。机器摘要与映射解析资格不替代当前 User 的专业详情、文件和关系读取资格；完整专业事实仍归 Standard，分工见[五类标准接入规范](../docs/spec/addp企业资源目录实现规范.md#55-standard-五类专业资源变化与动态引用)。
 - **Model 模块**: 验证 domain_id、element_id / element_revision_id、metric_definition_revision_id；Mermaid 交换文档通过稳定 `domain_code / element_code` 精确解析当前 Tenant 运行时 ID；维度层级只校验 Model 本地事实
 
 模块 Bearer 请求经统一中间件解析 canonical AuthContext，各入口再核验 Context、Permission 与资源归属。`/measurement-categories`、`/units` 由 `unitContext` 明确接受 Platform User 或有效 Tenant Context，按 `standard.unit.*` 和资源归属限制读写；具体范围统一见[平台与租户单位维护](#平台与租户单位维护)，不将单位入口的上下文范围推广到其他 API。
