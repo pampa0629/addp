@@ -249,29 +249,10 @@ make ports-validate
   - 8105: Document Workflow Engine
 
 ### 前端开发端口规则
-- **Console**：5170（控制台入口）
-- **核心模块**：517x 系列（5173-5180）
-  - 5173: System
-  - 5174: Manager
-  - 5175: Meta
-  - 5176: Transfer
-  - 5177: Orchestrator
-  - 5178: Develop
-  - 5179: Monitor
-  - 5180: Service
-- **新模块**：518x 系列
-  - **5181: Standard**
-  - **5182: Model**
-  - **5183: Quality**
-  - **5184: Asset**
-  - **5185: Portal**
-  - **5186: Agent**
-  - **5187: Graph**
-  - **5188: Inference**
-  - **5189: Catalog**
-  - **5190: Workbench**
-  - **5191: Security**
-  - **5192: Ontology**
+
+Console 与各模块 Frontend 的开发首选端口统一见[端口分配](#端口分配)，变量及分配入口见[标准开发端口解析](../../scripts/dev/ports.sh)。实际监听端口以标准启动输出和 `.dev-state/ports.env` 为准。
+
+公开页面与开发监听端口的分工见[公开路由规范](addp前端路由与可恢复状态规范.md#二公开路由事实源)；容器内部端口、宿主机映射及部署入口见[前端 Docker 端口规则](#前端-docker-端口规则)。
 
 ### 前端 Docker 端口规则
 
