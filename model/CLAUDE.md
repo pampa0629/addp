@@ -347,7 +347,19 @@ Model 和 Standard 使用不同的 PostgreSQL Schema，**无数据库外键约�
 
 Model 是 `model.*` Permission 的唯一 owner，完整声明以 [authorization/permissions.yaml](authorization/permissions.yaml)（`owner_module: model`）为准。该 Manifest 由 `common/authorization` 在构建／发布期统一发现、校验和聚合，Model 服务启动时不向 System 动态注册 Permission。事实源与生成产物归属见[唯一事实源](../docs/spec/addp权限与角色发布规范.md#二唯一事实源)，发布聚合与 System migration 职责见[发布期聚合](../docs/spec/addp权限与角色发布规范.md#九发布期聚合)。
 
-Entity、EntityRelation、DWLayer 和 LogicalModel 分别使用 `model.entity.*`、`model.entity_relation.*`、`model.dw_layer.*`、`model.logical_model.*`。EntityAttribute 是 Entity 聚合内子资源；LogicalField、TableRelation、DimensionHierarchy 是 LogicalModel 聚合内子资源；MetricImplementation 是独立聚合，使用 model.metric_implementation 精确权限。Mermaid 导入预览和确认均按 Entity 与 EntityRelation 的 create 执行 all-of 校验；导出按两者的 read 执行 all-of 校验。导入只创建缺失成员，不要求全租户已审批实体退回草稿；新关系仍不得绕过两端实体的生命周期约束。
+**业务资源权限示例**：Entity、EntityRelation、DWLayer、LogicalModel 和 MetricImplementation 分别使用 `model.entity.*`、`model.entity_relation.*`、`model.dw_layer.*`、`model.logical_model.*` 和 `model.metric_implementation.*`。聚合归属统一见[聚合与引用](docs/model概念与数据约束规范.md#三聚合与引用)，User 管理与 Graph 服务受限读取的身份边界见[Model 授权规范](docs/model概念与数据约束规范.md#二授权边界)。
+
+**专用服务入口**：以下只列用途导航，完整权限声明仍以 Model Manifest 为准。
+
+| Model 权限 | 服务用途 | 正式约束 |
+| --- | --- | --- |
+| `model.catalog.read` | Catalog 变化流与批量摘要读取 | [授权边界](docs/model概念与数据约束规范.md#二授权边界) |
+| `model.task_provider.read`、`model.task_provider.execute` | Orchestrator 的 TaskProvider 读取与执行 | [目标物理表建表](docs/model概念与数据约束规范.md#目标物理表建表) |
+| `model.standard_reference.update` | Standard 引用删除协调 | [授权边界](docs/model概念与数据约束规范.md#二授权边界) |
+
+角色的允许主体类型与权限集合见 [System 内置角色 Manifest](../system/authorization/builtin_roles.yaml)，各入口的认证、Service Client Guard 与精确 Permission 见[路由登记](backend/internal/api/router.go)。Model 向其他 Owner 发起请求的服务身份见[模块依赖关系](#模块依赖关系)，所用权限仍归相应 Owner；实际验收范围见[开发与验证](#开发与验证)。
+
+**Mermaid 联合权限**：导入预览和确认均按 Entity 与 EntityRelation 的 create 执行 all-of 校验；导出按两者的 read 执行 all-of 校验。导入只创建缺失成员，不要求全租户已审批实体退回草稿；新关系仍不得绕过两端实体的生命周期约束。
 
 各聚合的版本主体、同事务校验与递增、EntityRelation 完整 `PUT` 及变更前后端点锁定统一见[并发版本与聚合写入](docs/model概念与数据约束规范.md#并发版本与聚合写入)和[完整更新语义](docs/model概念与数据约束规范.md#完整更新语义)；`409 resource_version_conflict` 后保留未保存内容及禁止自动重试的规则见[冲突响应与前端体验](../docs/spec/api/资源版本与并发更新.md#冲突响应与前端体验)。
 
