@@ -43,6 +43,14 @@ def target(engine):
         {'term': 'directory', 'kind': 'directory', 'name': NAME}]}
 
 
+def find_item(client, engine):
+    items = client.request('GET', f'/api/v1/meta/engines/{engine}/items', (200,), response_type=list).payload
+    item, = [entry for entry in items if isinstance(entry, dict) and entry.get('full_name') == NAME]
+    require(item.get('item_type') == 'file' and type(item.get('id')) is int and item['id'] > 0
+            and re.fullmatch('[0-9a-f]{64}', item.get('fingerprint', '')), 'invalid FileGDB item identity')
+    return item
+
+
 class Authorization(FILES.ModelSourceAuthorization):
     def __init__(self, issuer, consumer, report):
         super().__init__(issuer, consumer, report, source_type='nfs',
@@ -179,7 +187,7 @@ def run(repository, environment, owner):
         physical('seed')
         API.wait_manager_read_boundary(client, engine, time.monotonic() + 120)
         owner.wait_for_meta_scan(client, engine, time.monotonic() + 180, depth='basic', scope={'catalog_paths': [NAME]})
-        item = owner.find_fixture_item(client, engine, NAME, 'FileGDB')
+        item = find_item(client, engine)
         facts = authorization.facts(item)
         report['identity'] = dict(item_id=item['id'], fingerprint=item['fingerprint'], boundary_hash=facts['boundary_hash'])
         check('basic_whole_identity')

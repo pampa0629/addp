@@ -32,6 +32,26 @@ def authorization():
 
 
 class FileGDBAcceptanceTest(unittest.TestCase):
+    def test_real_http_item_array_is_explicit_and_other_endpoints_remain_object_typed(self):
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200); self.send_header('Content-Type', 'application/json'); self.end_headers()
+                self.wfile.write(json.dumps([{'id': 17, 'item_type': 'file', 'full_name': M.NAME,
+                    'fingerprint': 'a' * 64}]).encode())
+            def log_message(self, *args): pass
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever); thread.start()
+        try:
+            client = M.API.GatewayClient(f'http://127.0.0.1:{server.server_port}', 'synthetic', 3)
+            with self.assertRaisesRegex(M.API.SuiteError, 'JSON object'):
+                client.request('GET', '/api/v1/meta/engines/7/items', (200,))
+            self.assertEqual(M.find_item(client, 7)['id'], 17)
+            # An unrelated object endpoint cannot silently accept a list.
+            with self.assertRaisesRegex(M.API.SuiteError, 'JSON object'):
+                client.request('GET', '/api/v1/system/auth/context', (200,))
+        finally:
+            server.shutdown(); server.server_close(); thread.join()
+
     def test_explicit_manager_case_keeps_all_previous_cases(self):
         for case in ('full', 'native-raster-media', 'native-table-orc', 'kml-export', 'filegdb-authorization'):
             self.assertEqual(OWNER.manager_case({'ADDP_ONLINE_MANAGER_CASE': case}), case)
