@@ -354,7 +354,7 @@ API 使用现有 `/measurement-categories`、`/units` 资源路径，Platform �
 
 处置与正式化：[单项处置与代表版本](#单项处置与代表版本)、[候选族快照与胜出裁决](#候选族快照与胜出裁决)、[正式化、权限与历史保护](#正式化权限与历史保护)。
 
-执行入口与验收层级见[标准测试入口与范围](#标准测试入口与范围)；本节契约不代表当前版本、真实 Copilot 或完整浏览器链路已验收。
+各主题用例与证明范围见[文档候选治理验证范围](#文档候选治理验证范围)；本节契约不代表当前版本、真实 Copilot 或完整浏览器链路已验收。
 
 #### 提炼批次与来源证据
 
@@ -529,7 +529,7 @@ GET/PUT /api/v1/standard/documents/:id/mappings # 多维关联（数据元/术�
 
 文件上传、确定修订下载及对象补偿沿[文档文件生命周期](#文档文件生命周期)，测试覆盖与隔离清理沿[文档文件验证范围](#文档文件验证范围)。
 
-候选治理规则按[提炼与证据](#提炼批次与来源证据)、[读取与比对](#实时比对与筛选口径)、[单项处置](#单项处置与代表版本)、[候选族裁决](#候选族快照与胜出裁决)、[正式化](#正式化权限与历史保护)定位。
+候选治理规则按[提炼与证据](#提炼批次与来源证据)、[读取与比对](#实时比对与筛选口径)、[单项处置](#单项处置与代表版本)、[候选族裁决](#候选族快照与胜出裁决)、[正式化](#正式化权限与历史保护)定位。现有用例与未证明范围见[文档候选治理验证范围](#文档候选治理验证范围)。
 
 ## 前端路由
 
@@ -714,6 +714,19 @@ Standard 当前使用单一启动迁移入口 `repository.Migrate`：在同一�
 | Go T1 定位 | `make test-module MODULE=standard GO_ONLY=1` | 仅 Go T1，不计为完整模块门禁 |
 | 前端验证 | `make test-standard-frontend` | 确定性测试、受控浏览器 T3 与构建；隔离约束见[浏览器与文档测试隔离](#浏览器与文档测试隔离) |
 | PostgreSQL／MinIO T2 | `make test-standard-postgres` | 迁移及服务集成，由[现行标准脚本](../scripts/test/standard-postgres-gate.sh)选择用例；文档文件生命周期与清理约束见[测试隔离](#浏览器与文档测试隔离) |
+
+### 文档候选治理验证范围
+
+以下为现有断言索引，不是运行结果；按[标准测试入口与范围](#标准测试入口与范围)分别执行 Go T1、PostgreSQL T2 与前端验证。[PostgreSQL 标准脚本](../scripts/test/standard-postgres-gate.sh)已选择候选聚合、比对、族裁决和正式化用例，并拒绝跳过；缺少依赖的单独用例跳过不能计为通过。
+
+| 主题 | 现有用例 | 断言与证明边界 |
+| --- | --- | --- |
+| [读取与比对](#实时比对与筛选口径) | [聚合 T1](backend/internal/service/document_candidate_group_service_test.go)、[出现记录与筛选 T2](backend/internal/service/document_candidate_group_postgres_integration_test.go)、[标准比对 T2](backend/internal/repository/document_candidate_comparison_postgres_integration_test.go) | 语义归一、出现记录、候选族、筛选计数与动态标准比对；数据库夹具不证明真实提炼 |
+| [代表](#单项处置与代表版本)与[族裁决](#候选族快照与胜出裁决) | [服务 T1](backend/internal/service/document_candidate_family_decision_service_test.go)、[仓储 T2](backend/internal/repository/document_candidate_family_decision_postgres_integration_test.go) | 当前代表、快照过期、拒绝无副作用、候选版本和裁决历史；不外推完整 HTTP 权限矩阵 |
+| [正式化](#正式化权限与历史保护) | [服务 T1](backend/internal/service/document_candidate_formalization_service_test.go)、[仓储 T2](backend/internal/repository/document_candidate_formalization_postgres_integration_test.go) | 受控权限条件、创建／关联分支、代表与目标并发冲突、版本及历史约束；按具体候选类型和动作认定覆盖 |
+| [前端契约与页面](#候选聚合与族分页) | [契约 T1](frontend/tests/documentCandidateContract.test.js)、[变体差异 T1](frontend/tests/documentCandidateVariants.test.js)、[浏览器用例](frontend/e2e/standard-smoke.spec.js) | T1 包含源码契约断言和差异计算；T3 使用受控 API，页面覆盖按具体场景认定，不代替真实后端与权限裁决 |
+
+保留候选不等于正式化，正式化不等于审核发布；上述测试不自动证明真实 Copilot、OAuth 和完整浏览器链路。实际验收须以固定版本的真实请求、产物、失败与清理证据分别认定，不把契约描述、夹具或某层结果计为全部通过。
 
 ### 文本类型与责任字段迁移
 
