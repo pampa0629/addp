@@ -37,27 +37,6 @@ make ports-validate
 
 ---
 
-### go-mod-tidy-all.sh
-**用途**: 批量清理所有 Go 模块的依赖
-
-**功能**:
-- 遍历所有后端模块目录
-- 执行 `go mod tidy` 清理依赖
-- 统一依赖版本，移除未使用的包
-- 避免依赖冲突
-
-**命令**:
-```bash
-./scripts/utils/go-mod-tidy-all.sh
-```
-
-**使用场景**:
-- 切换分支后依赖冲突
-- 更新依赖版本
-- CI/CD 构建前清理
-
----
-
 ### test-tile-api.sh
 **用途**: 测试 Manager 模块的 MVT 瓦片生成和缓存
 
@@ -101,10 +80,7 @@ make ports-validate
 # 1. 输出端口报告并检查限定策略
 make ports-validate
 
-# 2. 清理 Go 依赖
-./scripts/utils/go-mod-tidy-all.sh
-
-# 3. 检查平台构建登记和前端 CI 登记
+# 2. 检查平台构建登记和前端 CI 登记
 make test-platform
 ```
 
@@ -134,12 +110,7 @@ make ports-validate
 1. **ports-validate.sh**
    - 输入、退出判定和未覆盖项统一见[端口规范的覆盖边界](../../docs/spec/addp端口分配.md#快速校验)；零退出不代表全部容器可用或业务验收通过。
 
-2. **go-mod-tidy-all.sh**
-   - 需要在项目根目录或有权限访问所有模块的位置运行
-   - 执行时间较长（取决于网络速度）
-   - 会修改 `go.mod` 和 `go.sum` 文件
-
-3. **test-tile-api.sh**
+2. **test-tile-api.sh**
    - 需要 Manager backend 和基础设施正在运行
    - 需要有效的 JWT token
    - 测试表名需要在数据库中存在
@@ -148,6 +119,7 @@ make ports-validate
 
 - [基础设施管理](../infra/README.md) - 启动 PostgreSQL、Redis、MinIO
 - [开发环境](../dev/README.md) - 本地开发启动流程
+- [Go 依赖整理](../dev/README.md#modtidysh)与[添加新依赖](../dev/README.md#添加新依赖) - 显式维护流程、脚本清单范围及 `go.mod`／`go.sum` 差异核对
 - [构建脚本](../build/README.md) - 编译和镜像构建
 
 ---
@@ -160,18 +132,7 @@ make ports-validate
 
 实际 Infra 映射用标准 `bash scripts/infra/status.sh` 核对；Business 固定端口冲突及引擎地址变更按[端口规范的使用建议](../../docs/spec/addp端口分配.md#使用建议)处理。
 
-### 问题 2: go-mod-tidy-all.sh 执行缓慢
-
-**原因**: 需要下载依赖，网络速度慢
-
-**解决**:
-```bash
-# 配置 Go 代理加速
-export GOPROXY=https://goproxy.cn,direct
-./scripts/utils/go-mod-tidy-all.sh
-```
-
-### 问题 3: test-tile-api.sh 无法运行
+### 问题 2: test-tile-api.sh 无法运行
 
 **原因**: Backend 服务未启动或 User Access Token 过期
 
