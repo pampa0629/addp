@@ -381,7 +381,8 @@ class HTTPBudget(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);(root/'common').mkdir();receipt=root/'owner.json'
             receipt.write_text(json.dumps({'project':'owned','work':directory}))
-            go=root/'go';go.write_text('#!/bin/sh\nprintf "compiling\\n"\nread line\n');go.chmod(0o700)
+            # The compile adapter consumes stdin via heredoc; wait for cancellation independently of EOF.
+            go=root/'go';go.write_text(f'#!{sys.executable}\nimport time\nprint("compiling",flush=True)\ntime.sleep(10)\n');go.chmod(0o700)
             env=dict(os.environ,ADDP_HTTP_BUDGET_RECEIPT=str(receipt),ROOT_DIR=directory,WORK_DIR=directory,
                      PATH=directory+os.pathsep+os.environ['PATH'],process_arch='amd64')
             child=subprocess.Popen(['bash','-ec',body.replace('$ROOT_DIR/scripts/test/metrics-http-budget.py',str(Path(m.__file__)))],
