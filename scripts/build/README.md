@@ -114,9 +114,19 @@ make select-image-services
 
 自动配置会影响主机 Docker，须由操作者确认其运行范围；它与[独立 Registry 信任配置脚本](../registry/README.md#外部-registry-信任配置)的参数、文件分支和确认方式不同。`--verify` 跳过此 daemon 配置阶段，但仍执行 Registry 检查及基础镜像预热／推送；它只禁止产品镜像推送，不代表整个入口只读或不访问 Registry。
 
+### 多架构构建器边界
+
+`check_buildx` 在本机单平台模式直接返回，不创建构建器；`--verify` 与 `--multi-arch` 的组合在进入构建准备前即被拒绝。选择多架构时，脚本检查 Buildx 可用性，并按固定名称处理 `addp-builder`：
+
+- 同名构建器可 inspect 时先尝试删除，删除失败被忽略，再执行创建；不按工作区核验归属，也不复用用户预先选择的其他 builder。执行前须确认该同名资源允许被替换。
+- 把固定镜像源模板写入 `/tmp/buildkitd.toml`，用 `docker-container` 驱动、host 网络、该配置和 `--bootstrap` 创建构建器，`--use` 会将其设为当前选择。
+- 创建成功后删除临时配置；创建失败时可能未到删除步骤。现有退出清理只回收构建调度进程与日志目录，不删除该构建器、不恢复之前的选择，也不清理这份独立配置文件。
+
+构建器启动成功只证明准备步骤完成；目标架构的基础镜像、各 Runtime 支持范围、产品镜像与推送结果仍分别核对。平台限制见[前置条件](#前置条件)，Registry 与主机配置见[daemon 配置边界](#docker-daemon-配置边界)。
+
 ### 构建与 CI 边界
 
-前端基础镜像版本统一读取根 `.node-version`，通过 `NODE_VERSION` 构建参数传入。所有前端使用 `npm ci`，包含 Linux musl 平台包的锁文件是不可变构建输入。基础镜像预热完成后才调度产品镜像；每个任务保留独立日志，完成后统一输出，并在摘要中记录耗时与失败服务。任何一个任务失败均使整个构建失败；中断时终止并回收本次构建进程，清理临时日志，不停止开发服务或删除已有镜像和数据卷。
+前端基础镜像版本统一读取根 `.node-version`，通过 `NODE_VERSION` 构建参数传入。所有前端使用 `npm ci`，包含 Linux musl 平台包的锁文件是不可变构建输入。基础镜像预热完成后才调度产品镜像；每个任务保留独立日志，完成后统一输出，并在摘要中记录耗时与失败服务。任何一个任务失败均使整个构建失败；调度阶段中断时终止并回收本次构建进程，清理临时日志，不停止开发服务或删除已有镜像和数据卷；构建器和独立 BuildKit 配置的保留范围见[多架构构建器边界](#多架构构建器边界)。
 
 前端只复制依赖清单、构建配置、源码和静态资源，不把宿主机的 `node_modules` 或 `dist` 覆盖到镜像构建阶段。
 
@@ -260,7 +270,7 @@ CI 编排与标准验证见[测试与发布入口](../docs/测试与发布入口
 | 问题 | 核对与处理 |
 | --- | --- |
 | Go 镜像缺少二进制 | 核对 `dist/{BUILD_TYPE}-linux-{arch}/`，按所选平台执行 `make build BUILD_ARGS="--arch <架构> --services <服务列表>"` |
-| Buildx 不支持多平台 | 检查 `docker buildx ls`；单平台验证使用 `--verify`，需要多架构时先准备可用 builder 与目标 Registry |
+| Buildx 不支持多平台 | 检查 `docker buildx ls` 与 bootstrap 原始错误，按[构建器边界](#多架构构建器边界)核对固定同名资源及 Registry；单平台验证使用 `--verify` |
 | Registry 不可达 | 按 [Registry 指南](../registry/README.md)核对实际部署；不直接创建第二个同名 Registry 容器 |
 | 产物复用不符合预期 | Go 编译使用 `BUILD_ARGS=--force`，镜像构建使用 `IMAGE_BUILD_ARGS=--force`；`--skip-cache` 只控制 cache-from，不清理共享缓存 |
 
