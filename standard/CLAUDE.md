@@ -654,7 +654,7 @@ GET /api/v1/standard/cleanup-executions/:execution_id/result
 
 ## 前端路由
 
-下列为 Console 公开路径清单；模块内路径、修订定位与页面状态保护见[前端公开路由](#前端公开路由)。
+下列为 Console 业务公开路径，逐项对应模块 [Router](frontend/src/router/index.js) 登记；模块内路径、修订定位与页面状态保护见[前端公开路由](#前端公开路由)。模块内 `/` 按权限选择默认业务页，`/login` 为认证入口，`/forbidden` 由[共享认证守卫](../common-frontend/basic/src/composables/useAuth.js)动态登记。
 
 ```
 /standard/domains                    # 业务域（树形管理）
@@ -668,7 +668,10 @@ GET /api/v1/standard/cleanup-executions/:execution_id/result
 /standard/metrics                    # 指标列表
 /standard/metrics/:id                # 指标详情（依赖关系、关联数据元）
 /standard/documents                  # 标准文档库
+/standard/documents/:id              # 文档详情（修订、文件、提炼与候选治理）
 ```
+
+页面 Context 与完整读取 Permission 组合统一见[共享准入表](../common-frontend/basic/src/authorization/consoleRouteAccess.js)，详情继承其所属资源入口的准入条件。文档列表与详情均要求 Tenant Context 下的 `standard.document.read` 和 `standard.domain.read`；单位入口同时登记 Platform、Tenant 两类 Context。准入不授予编辑、发布、提炼或正式化权限，各动作及后端资源校验仍沿[API 清单](#api-端点apiv1standard)。本清单是实现索引，实际覆盖按[标准测试入口与范围](#标准测试入口与范围)分层认定。
 
 ## 模块依赖关系
 
@@ -811,11 +814,13 @@ Standard 当前使用单一启动迁移入口 `repository.Migrate`：在同一�
 ### 路由与修订定位
 
 - 模块内 Router 使用 `/domains`、`/glossaries`、`/elements`、`/code-sets`、`/metrics` 等无模块前缀路径；Console 公开 URL 统一加 `/standard` 前缀。
-- 术语、数据元、码集和指标详情使用 `/:id` 表达对象身份；详情返回使用明确列表路由，不依赖 `router.back()`。
-- 创建成功进入详情使用 `replace`，列表进入详情和跨标准对象导航使用 `push`。
+- 术语、数据元、码集、指标和标准文档详情使用 `/:id` 表达对象身份；详情返回使用明确列表路由，不依赖 `router.back()`。
+- 列表进入详情和跨标准对象导航使用共享模块导航的默认 `push`；筛选同步、新建草稿定位等需要替换当前历史的操作显式指定 `replace`。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`。
 - 数据元详情以 `revision_id` 唯一 query 定位确定修订；省略时选择草稿、当前生效修订、最新历史修订中的首个。修订内容、精确读取权限与失败边界沿[数据元修订与机器读取](#数据元修订与机器读取)。历史选择以 replace 同步 URL，刷新与同组件 query 切换恢复同一修订。跨模块入口共用 `common-frontend` 的 `buildStandardElementRevisionRoute`，owner 内导航共用其 location builder。
 - 术语详情同样以 `revision_id` 定位确定修订；省略时依次选择草稿、当前生效、最新历史修订。历史选择通过模块导航 replace，同一修订重复点击不替换本地输入；切换前使用共享未保存确认，取消时 URL 与表单均不变。精确读取失败显示错误，不回退其他修订；加载成功才建立新保存基线，过期响应不得覆盖新选择。详情保留术语列表筛选，返回列表移除 `revision_id`。新建草稿成功后进入该草稿 URL。
+- 码值集与指标详情也使用 `revision_id` 和共享 `getStandardRouteRevision` 读取确定修订，并监听同组件 query 切换；省略时沿[标准修订展示](#标准修订展示)选择默认内容。非法、缺失、不匹配或无权读取的修订报错，不替换为默认修订；页面清空当前修订并返回对应列表。
+- 标准文档详情目前只按对象 `id` 加载，进入或刷新时沿[标准修订展示](#标准修订展示)选择默认修订；历史行选择仅更新页内修订，不写入或消费 `revision_id` query，刷新后重新选择默认修订。列表进入详情及返回保留现有列表 query；文档文件仍按选中修订调用[文件 API](#标准文档)，页面可进入不等于文件读写、提炼或正式化已获授权或验收通过。
 
 ### 未保存保护与分区保存
 
