@@ -56,7 +56,7 @@ scripts/
 
 ### 3. 共享工具脚本规范
 
-`utils/` 存放可复用工具及独立辅助命令，常用入口、参数和实际覆盖见 [Utils 指南](utils/README.md)，具体实现以目录内源码为准。`colors.sh` 提供被开发脚本引用的终端颜色变量；Go 依赖整理归[开发依赖维护](dev/README.md#modtidysh)。其余依赖辅助实现见 [check-deps.sh](utils/check-deps.sh)、[check-deps-version.sh](utils/check-deps-version.sh) 和 [detect-common.sh](utils/detect-common.sh)。
+`utils/` 存放可复用工具及独立辅助命令，常用入口、参数和实际覆盖见 [Utils 指南](utils/README.md)，具体实现以目录内源码为准。`colors.sh` 提供被开发脚本引用的终端颜色变量；Go 依赖整理归[开发依赖维护](dev/README.md#modtidysh)。依赖规约检查、同步脚本和时间戳提示的操作范围统一见[Go 依赖辅助工具](utils/README.md#go-依赖辅助工具)。
 
 **工具脚本特点**：
 - 可以被其他脚本通过 `source` 引用

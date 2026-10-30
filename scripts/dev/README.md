@@ -160,7 +160,7 @@ bash scripts/dev/keepalive.sh restart -all
 
 **功能**: 对 [modtidy.sh](modtidy.sh) 的 `GO_MODULES` 清单中存在且包含 `go.mod` 的目录并发执行 `go mod tidy`；执行范围以脚本清单为准。
 
-同步 `main` 后依赖发生变化、添加或删除 Go 依赖、解决 `go.mod` 冲突时使用。该操作可能修改各模块的 `go.mod` 和 `go.sum`，执行后核对差异；操作步骤见[添加新依赖](#添加新依赖)。
+同步 `main` 后依赖发生变化、添加或删除 Go 依赖、解决 `go.mod` 冲突时使用。该操作可能修改各模块的 `go.mod` 和 `go.sum`，执行后核对差异；操作步骤见[添加新依赖](#添加新依赖)。规约检查与辅助同步脚本的操作范围见[Go 依赖辅助工具](../utils/README.md#go-依赖辅助工具)。
 
 ## 启动依赖关系
 
@@ -210,7 +210,7 @@ curl -fsS "http://127.0.0.1:${SYSTEM_BACKEND_PORT:?未找到本工作区实际�
 
 ### 添加新依赖
 
-先停止受影响的服务，再更新和整理依赖，最后通过标准重启入口完成 Swagger 检查、按需构建和启动；任一步失败都不得继续。以下示例从项目根目录、由开发者在自己的终端执行；因 `modtidy.sh` 会整理脚本清单中的多个模块，示例采用全量停止和重启，依赖包路径须替换为实际目标。
+先停止受影响的服务，再更新和整理依赖，最后通过标准重启入口完成 Swagger 检查、按需构建和启动；任一步失败都不得继续。以下示例从项目根目录、由开发者在自己的终端执行；因 `modtidy.sh` 会整理脚本清单中的多个模块，示例采用全量停止和重启，包路径与精确版本均须替换为实际目标；已纳入规约的依赖使用其唯一目标版本。
 
 ```bash
 (
@@ -221,7 +221,7 @@ curl -fsS "http://127.0.0.1:${SYSTEM_BACKEND_PORT:?未找到本工作区实际�
 
   # 2. 添加实际需要的依赖
   cd system/backend
-  go get github.com/some/package
+  go get github.com/some/package@v1.2.3
   cd ../..
 
   # 3. 整理依赖并核对 go.mod / go.sum 差异
