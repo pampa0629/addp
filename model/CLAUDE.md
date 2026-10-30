@@ -36,7 +36,7 @@ Model 声明 `logical_table_materialization` TaskProvider；已持久化的 Logi
 
 **数据库 Schema**: `model`
 
-独立前端根路径在 AuthContext 加载后，按 Console 菜单顺序 `/entities`、`/er-diagram`、`/dw-layers`、`/logical-tables`、`/metric-implementations`、`/star-schema` 选择第一个符合页面准入条件的地址；没有可访问页面时进入 `/forbidden`。登录后的默认返回地址为根路径。显式业务地址仍只按自身权限判断，不静默改跳其他页面。
+导航顺序、根路径的按权限落点、登录默认返回及显式业务地址处理，统一见[正式建模导航规范](docs/model概念与数据约束规范.md#建模导航与物理目标操作入口)。
 
 ## 目录结构
 
@@ -301,7 +301,7 @@ POST   /api/v1/model/metric-implementations/:id/revisions/:revision_id/plan     
 
 ## 前端路由
 
-以下为 Console 业务入口，对应 [Model 路由登记](frontend/src/router/index.js)中的模块内子路由；Console 地址与独立模块加载地址的分工见[公开路由事实源](../docs/spec/addp前端路由与可恢复状态规范.md#二公开路由事实源)。登录与根路径的落点规则见[模块概述](#模块概述)。
+以下为 Console 业务入口，对应 [Model 路由登记](frontend/src/router/index.js)中的模块内子路由；Console 地址与独立模块加载地址的分工见[公开路由事实源](../docs/spec/addp前端路由与可恢复状态规范.md#二公开路由事实源)。导航顺序、登录与根路径的落点规则见[正式建模导航规范](docs/model概念与数据约束规范.md#建模导航与物理目标操作入口)。
 
 ```text
 /modeling/dw-layers                        # 数仓分层
@@ -314,7 +314,7 @@ POST   /api/v1/model/metric-implementations/:id/revisions/:revision_id/plan     
 /modeling/metric-implementations/:id?      # 指标实现工作区：列表、创建或详情
 ```
 
-指标实现入口省略 `:id` 时为列表，`new` 为创建入口，具体 ID 为实现详情；详情用 `?revision_id=<修订ID>` 定位该实现的确定修订。实现 ID 与修订 ID 分别传递，指定的修订不属于当前实现时显示不可用，见[工作区加载逻辑](frontend/src/views/MetricImplementationWorkspace.vue)。列表筛选与其他页面的可恢复状态统一见[Canonical URL](../docs/spec/addp前端路由与可恢复状态规范.md#五canonical-url)。
+指标实现的列表／创建／详情与 `revision_id` 定位规则统一见[正式建模导航规范](docs/model概念与数据约束规范.md#建模导航与物理目标操作入口)，实现入口见[工作区加载逻辑](frontend/src/views/MetricImplementationWorkspace.vue)。列表筛选与其他页面的可恢复状态统一见[Canonical URL](../docs/spec/addp前端路由与可恢复状态规范.md#五canonical-url)。
 
 页面准入按共享 [Console 路由权限登记](../common-frontend/basic/src/authorization/consoleRouteAccess.js)复核当前 Tenant 上下文及所需权限；创建、修改、发布等动作仍遵循[Model 授权边界](docs/model概念与数据约束规范.md#二授权边界)，由后端复核权限与资源归属。路由登记及修订参数核对属于静态验证，前端回归与真实跨模块验收按[开发与验证](#开发与验证)分别认定。
 
@@ -500,4 +500,4 @@ Model 前端 CI Job 在失败时上传该目录，保留 14 天；每轮使用�
 
 ## 前端公开路由
 
-完整业务入口、指标实现的列表／创建／详情与 `revision_id` 定位、权限及页签导航规则统一见[前端路由](#前端路由)；导航顺序与权限落点见[模块概述](#模块概述)。实际验收范围见[开发与验证](#开发与验证)。
+完整业务入口、指标实现的列表／创建／详情与 `revision_id` 定位、权限及页签导航规则统一见[前端路由](#前端路由)；导航顺序与权限落点见[正式建模导航规范](docs/model概念与数据约束规范.md#建模导航与物理目标操作入口)。实际验收范围见[开发与验证](#开发与验证)。
