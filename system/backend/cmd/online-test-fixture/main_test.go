@@ -1627,7 +1627,8 @@ func TestFileGDBCaseUsesReadOnlyConsumerAndExistingSourceInitializer(t *testing.
 	if err != nil || !slices.Equal(permissions, want) {
 		t.Fatalf("FileGDB consumer permissions = %v, %v", permissions, err)
 	}
-	if !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), sourceInitializerPermissions) {
-		t.Fatal("FileGDB must reuse the source initializer without Deny or additional privilege")
+	wantIssuer := append(append([]string{}, sourceInitializerPermissions...), "system.engine_access_deny.create", "system.engine_access_deny.release")
+	if !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), wantIssuer) {
+		t.Fatal("FileGDB issuer must only supplement the two Deny lifecycle permissions")
 	}
 }

@@ -22,7 +22,8 @@ PERMISSIONS = {'manager.content.read', 'manager.data_item.read', 'meta.catalog.r
 NAME = 'authorization.gdb'
 REQUIRED_CHECKS = {'basic_whole_identity', 'ungranted_child_denied', 'initial_child_actual_rows',
     'new_child_same_grant', 'manager_crash_and_source_disconnect_recovered_same_grant',
-    'revoked_next_read_denied', 'natural_expiry_next_read_denied', 'read_child_sigkill_observed'}
+    'revoked_next_read_denied', 'natural_expiry_next_read_denied', 'read_child_sigkill_observed',
+    'explicit_deny_overrides_whole_grant', 'deny_release_restores_original_grant'}
 
 
 def require(value, message):
@@ -55,7 +56,7 @@ class Authorization(FILES.ModelSourceAuthorization):
     def __init__(self, issuer, consumer, report):
         super().__init__(issuer, consumer, report, source_type='nfs',
                          consumer_permissions=PERMISSIONS,
-                         issuer_permissions=REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)
+                         issuer_permissions=FILES.ISSUER_PERMISSIONS)
         self.target = lambda _: target(self.engine_id)
         self.frozen = None
 
@@ -135,7 +136,53 @@ def preview(client, locator, child, status, rows=None):
                 'actual FileGDB scalar values differ')
     else:
         require('data' not in response.payload and 'rows' not in response.payload, 'failed read leaked content')
+        if response.status == 403:
+            require(set(response.payload) == {'error'} and isinstance(response.payload['error'], str)
+                    and bool(response.payload['error'].strip()), 'source denial response differs from the formal contract')
     return {'status': response.status, 'child': child, 'rows': rows}
+
+
+def verify_deny(authorization, client, item, locator, grant, report):
+    """A Deny blocks a live Grant; release restores that same rule without signing."""
+    physical = importlib.import_module('scripts.test.manager-filegdb-physical')
+    token = client.token
+    before = authorization.current()
+    history = authorization.history(grant['request_id'])
+    require(history['revocation'] is None, 'Deny control requires the original active Grant')
+    evidence = report['deny_priority'] = {'grant_id': grant['request_id'], 'before': before,
+        'history_before': history, 'denied_reads': [], 'restored_reads': []}
+    command = authorization.deny(item)  # Existing owner ledger registers unknown outcomes before POST.
+    evidence['deny_id'] = command
+    denied = evidence['during'] = authorization.current()
+    expected = physical.rule_snapshot(before)
+    require(expected['total'] == 1 and len(expected['data']) == 1, 'Deny control requires one source relation')
+    row = expected['data'][0]
+    require(row['grant_count'] == 1 and row['inspection']['reason'] == 'grant'
+            and row['inspection']['rule_covered'] is True and row['inspection']['denies'] == []
+            and len(row['inspection']['sources']) == 1
+            and row['inspection']['sources'][0]['request_id'] == grant['request_id'],
+            'Deny control requires the exact original Grant')
+    row['inspection'].update(reason='explicit_deny', rule_covered=False, denies=[{
+        'deny_id': command, 'recipient_type': 'user', 'recipient_id': authorization.recipient,
+        'expiry_mode': 'until_revoked', 'expires_at': None}])
+    require(physical.rule_snapshot(denied) == expected, 'Deny changed Grant sources or did not take priority')
+    for child in ('initial_points', 'added_points'):
+        evidence['denied_reads'].append(preview(client, locator, child, 403))
+    evidence['history_during'] = authorization.history(grant['request_id'])
+    require(evidence['history_during'] == history, 'Deny secretly revoked or changed the Grant')
+    authorization.release(command)
+    evidence['after'] = authorization.current()
+    require(physical.rule_snapshot(evidence['after']) == physical.rule_snapshot(before),
+            'Deny release did not restore the original source relation')
+    for child, rows in (('initial_points', 2), ('added_points', 1)):
+        evidence['restored_reads'].append(preview(client, locator, child, 200, rows))
+    evidence['history_after'] = authorization.history(grant['request_id'])
+    require(evidence['history_after'] == history and client.token == token,
+            'Deny release replaced the Grant or reader credential')
+    require(FILES.exact_user_principal(client, report['tenant_id'], PERMISSIONS) == authorization.recipient,
+            'Deny control changed the reader identity or permissions')
+    evidence.update(same_grant=True, same_credential=True, deny_released=True)
+    return evidence
 
 
 def kill_read_child(client_environment, locator, secret):
@@ -204,6 +251,9 @@ def run(repository, environment, owner):
         authorization.facts(item)
         preview(client, locator, 'added_points', 200, 1)
         check('new_child_same_grant')
+        verify_deny(authorization, client, item, locator, first, report)
+        check('explicit_deny_overrides_whole_grant')
+        check('deny_release_restores_original_grant')
         report['source_snapshot'] = physical('snapshot')
         report['original_current'] = authorization.current()
         # Product lifetime and source-connectivity faults have no authority to revoke a Grant.

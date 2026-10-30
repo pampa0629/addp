@@ -27,6 +27,7 @@ def facts():
 def authorization():
     auth = object.__new__(M.Authorization)
     auth.engine_id = 7; auth.base = '/api/v1/system/engines/7'
+    auth.target = lambda _: M.target(7)
     auth.operator = '9'; auth.recipient = '11'; auth.frozen = None
     auth.grants = []; auth.confirmed = set(); auth.denies = []; auth.confirmed_denies = set()
     auth.issuer = Mock()
@@ -111,6 +112,70 @@ class FileGDBAcceptanceTest(unittest.TestCase):
                 with self.assertRaises(ValueError): auth.grant({'fingerprint': 'a' * 64})
             self.assertEqual(len(auth.grants), 1)
             self.assertFalse(auth.confirmed)
+
+    def test_deny_priority_and_release_keep_the_same_grant_and_both_child_reads(self):
+        self.deny_flow()
+
+    def test_deny_cannot_be_ignored_revoke_replace_grant_or_leak_content(self):
+        for mutation in ('ignored', 'grant_changed', 'revoked', 'not_released', 'new_grant', 'leak', 'security_not_ready'):
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                self.deny_flow(mutation)
+
+    def deny_flow(self, mutation=None):
+        before = {'data': [{'grant_count': 1, 'inspection': {'observed_at': '2026-10-30T08:00:00Z',
+            'sources': [{'request_id': 'original'}], 'reason': 'grant', 'rule_covered': True, 'denies': []}}], 'total': 1}
+        during = deepcopy(before)
+        during['data'][0]['inspection'].update(reason='explicit_deny', rule_covered=False, denies=[{
+            'deny_id': 'denial', 'recipient_type': 'user', 'recipient_id': '11',
+            'expiry_mode': 'until_revoked', 'expires_at': None}])
+        after = deepcopy(before)
+        if mutation == 'ignored': during = deepcopy(before)
+        if mutation == 'grant_changed': during['data'][0]['inspection']['sources'][0]['request_id'] = 'other'
+        if mutation == 'not_released': after = deepcopy(during)
+        if mutation == 'new_grant': after['data'][0]['inspection']['sources'][0]['request_id'] = 'replacement'
+        history = {'request_id': 'original', 'revocation': None}
+        denied_history = dict(history, revocation={'reason': 'secret withdrawal'}) if mutation == 'revoked' else history
+        auth = Mock(recipient='11')
+        auth.current.side_effect = [before, during, after]
+        auth.history.side_effect = [history, denied_history, history]
+        auth.deny.return_value = 'denial'
+        client = Mock(token='unchanged-credential')
+        def response(method, path, statuses):
+            child = 'initial_points' if 'initial_points' in path else 'added_points'
+            if statuses == (403,):
+                payload = {'data': {'rows': []}} if mutation == 'leak' else {'error': 'denied'}
+                if mutation == 'security_not_ready': payload['error_code'] = 'security_protection_required'
+                return SimpleNamespace(status=403, payload=payload)
+            rows = 2 if child == 'initial_points' else 1
+            return SimpleNamespace(status=200, payload={'data': {'total': rows, 'rows': [
+                {'label': child + '_' + str(i), 'value': i + 1} for i in range(rows)]}})
+        client.request.side_effect = response
+        report = {'tenant_id': 2}
+        with patch.object(M.FILES, 'exact_user_principal', return_value='11'):
+            result = M.verify_deny(auth, client, {'full_name': M.NAME}, 'locator', {'request_id': 'original'}, report)
+        self.assertEqual([r['status'] for r in result['denied_reads']], [403, 403])
+        self.assertEqual([r['rows'] for r in result['restored_reads']], [2, 1])
+        self.assertEqual(result['history_before'], result['history_after'])
+        self.assertTrue(result['same_grant']); self.assertTrue(result['same_credential'])
+        auth.deny.assert_called_once(); auth.release.assert_called_once_with('denial')
+        auth.grant.assert_not_called(); auth.revoke.assert_not_called()
+
+    def test_unknown_deny_and_grant_outcomes_are_cleaned_before_permission_is_closed(self):
+        auth = authorization(); auth.frozen = facts()
+        auth.issuer.request.side_effect = TimeoutError('unknown Deny response')
+        with self.assertRaises(TimeoutError):
+            auth.deny({'full_name': M.NAME, 'fingerprint': 'a' * 64})
+        command, = auth.denies
+        auth.grants = ['owned-grant']
+        auth.issuer.request.side_effect = None
+        auth.issuer.request.return_value = SimpleNamespace(status=404, payload={'error': 'not found'})
+        auth.current = Mock(return_value={'total': 0, 'data': []})
+        with patch.object(M.REGISTRATION, 'set_direct_permission', return_value={'state': 'denied'}):
+            auth.close()
+        self.assertEqual(auth.denies, []); self.assertEqual(auth.grants, [])
+        paths = [call.args[1] for call in auth.issuer.request.call_args_list]
+        self.assertEqual(paths[-2:], [auth.base + '/access_denies/' + command + '/release',
+            auth.base + '/access_grants/owned-grant/revoke'])
 
     def test_environment_failure_is_not_counted_as_permission_denial_or_partial_content(self):
         client = Mock()

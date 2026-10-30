@@ -125,7 +125,7 @@ var sourceInitializerPermissions = []string{
 func suiteSourceInitializerPermissions(suite string) []string {
 	switch suite {
 	case "ftp-consumer-flow", "manager-internal-artifact-lineage":
-		if suite == "manager-internal-artifact-lineage" && (os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "kml-export" || os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "native-table-orc" || os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "filegdb-authorization") {
+		if suite == "manager-internal-artifact-lineage" && (os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "kml-export" || os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "native-table-orc") {
 			return append([]string{}, sourceInitializerPermissions...)
 		}
 		return append(append([]string{}, sourceInitializerPermissions...),
