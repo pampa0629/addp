@@ -1700,8 +1700,8 @@ def _numeric_output(grid, count, *, size=None):
 
 
 _FOCAL_MESSAGES = {
-    'method': ('method必须为sum、mean、min、max、stddev、mode、median或percentile',
-               'method must be sum, mean, min, max, stddev, mode, median or percentile'),
+    'method': ('method必须为sum、mean、min、max、stddev、mode、median、percentile或variety',
+               'method must be sum, mean, min, max, stddev, mode, median, percentile or variety'),
     'percentile': ('percentile必须为0至100之间的有限数值，且不能为布尔值',
                    'percentile must be a finite number from 0 to 100, excluding booleans'),
     'unused': ('只有method=percentile时才能提供percentile参数',
@@ -1768,13 +1768,19 @@ def _focal_linear_values(lower, upper, weight):
     return result
 
 
-def _focal_rank_values(neighbours, shape, window_size, percentile):
+def _focal_ordered_values(neighbours, shape, window_size):
+    """Sort one bounded halo window per core pixel; invalid slots sort last."""
     ordered = np.full((window_size * window_size, *shape), np.inf)
     count = np.zeros(shape, dtype=np.uint8)
     for index, (sample, mask) in enumerate(neighbours()):
         np.copyto(ordered[index], sample, where=mask)
         count += mask
     ordered.sort(axis=0)
+    return ordered, count
+
+
+def _focal_rank_values(neighbours, shape, window_size, percentile):
+    ordered, count = _focal_ordered_values(neighbours, shape, window_size)
     result = np.full(shape, np.nan)
     for size in np.unique(count):
         if size == 0:
@@ -1790,7 +1796,7 @@ def raster_focal_statistics(input_raster, band, window_size, method, percentile=
     """Reduce valid pixel neighbourhoods using bounded source reads with halos."""
     if isinstance(window_size, bool) or not isinstance(window_size, int) or window_size not in (3, 5):
         raise ValueError('window_size must be the integer 3 or 5')
-    if method not in ('sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile'):
+    if method not in ('sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile', 'variety'):
         raise _focal_error('method')
     if method == 'percentile':
         percentile = _percentile_parameter(percentile)
@@ -1814,8 +1820,8 @@ def raster_focal_statistics(input_raster, band, window_size, method, percentile=
             right = min(dataset.RasterXSize, x + width + radius)
             bottom = min(dataset.RasterYSize, y + height + radius)
             _, _, arrays, masks = next(_blocks(dataset, [band], window=(left, top, right-left, bottom-top),
-                                               native=method in ('mode', 'median', 'percentile')))
-            if method == 'mode':
+                                               native=method in ('mode', 'median', 'percentile', 'variety')))
+            if method in ('mode', 'variety'):
                 _safe_classification_values(arrays[0], masks[0])
                 arrays[0] = arrays[0].astype(np.float64)
             # Padding supplies only invalid placeholders, never contributing zeros.
@@ -1845,6 +1851,13 @@ def raster_focal_statistics(input_raster, band, window_size, method, percentile=
                         | ((frequency == best_count) & tie_better))
                     np.copyto(result, candidate, where=take)
                     np.copyto(best_count, frequency, where=take)
+            elif method == 'variety':
+                ordered, _ = _focal_ordered_values(neighbours, center.shape, window_size)
+                # Safe integer classes remain exact Float64 values. Count only
+                # finite run starts; repeated classes and invalid slots add zero.
+                result = np.isfinite(ordered[0]).astype(np.float64)
+                for index in range(1, window_size * window_size):
+                    result += np.isfinite(ordered[index]) & (ordered[index] != ordered[index-1])
             elif method in ('median', 'percentile'):
                 # Sort only this core block's bounded neighbourhood. Invalid
                 # placeholders sort last and never contribute to the rank.
@@ -4947,7 +4960,7 @@ _SPECS = [
     (raster_cut_fill, OperatorCategory.RASTER_STATISTICS, '双DEM填挖方统计', [_INPUT(), _param('after_raster', 'raster', '施工后DEM，须与施工前同CRS、尺寸和完整网格，由用户保证相同高程基准', role='input'), _param('band', 'int', '显式施工前高程数据波段'), _param('after_band', 'int', '显式施工后高程数据波段'), _param('elevation_unit', 'str', '显式施工前高程单位', enum=list(_ELEVATION_METRES)), _param('after_elevation_unit', 'str', '显式施工后高程单位；挖填体积各非负，净增加为填方减挖方，统一立方米', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_surface_area, OperatorCategory.RASTER_STATISTICS, 'DEM 三维表面积统计', [_INPUT(), _param('band', 'int', '显式高程数据波段；四角有效像元中心组成面片，外缘不补面积'), _param('elevation_unit', 'str', '显式高程单位；双对角三角剖分逐面片取平均，面积平方米，结果为普通表', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段'), _param('percentile', 'float', '可选单个0至100的有限百分位；每区全量固定线性插值，50为中位数；未提供时保持原统计九列', None, False)], 'DataFrame', ['read']),
-    (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_size', 'int', '以像元为单位的正方形窗口边长：3 或 5'), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）/median（中位数；偶数取两中值平均）/percentile（固定线性百分位）', enum=['sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile']), _param('percentile', 'float', 'method=percentile时必须显式指定单个0至100的有限百分位数；其他方法不得提供；50与median一致', None, False).model_copy(update={'show_when': {'method': ['percentile']}})], 'raster', ['read']),
+    (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_size', 'int', '以像元为单位的正方形窗口边长：3 或 5'), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）/median（中位数；偶数取两中值平均）/percentile（固定线性百分位）/variety（分类种类数；有效整数分类去重计数）', enum=['sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile', 'variety']), _param('percentile', 'float', 'method=percentile时必须显式指定单个0至100的有限百分位数；其他方法不得提供；50与median一致', None, False).model_copy(update={'show_when': {'method': ['percentile']}})], 'raster', ['read']),
     (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False), _param('percentile', 'float', '可选单个0至100的有限百分位；逐面全量固定线性插值，50为中位数；未提供时保持原统计八列', None, False)], 'GeoDataFrame', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
     (raster_fill_depressions, OperatorCategory.RASTER_FLOW, 'DEM 填洼', [_INPUT(), _param('band', 'int', '显式高程数据波段；八邻接，图边及无效区边界开放'), _param('elevation_unit', 'str', '明确原高程单位，输出米制最低溢流高程', enum=list(_ELEVATION_METRES))], 'raster', ['read']),

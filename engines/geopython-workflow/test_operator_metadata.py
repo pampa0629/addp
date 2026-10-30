@@ -1349,7 +1349,7 @@ def test_focal_percentile_metadata_uses_existing_entry_conditional_parameter_and
     specs=[s for s in list_operators() if s['id']=='raster_focal_statistics']
     assert len(specs)==1
     spec=specs[0];params={p['name']:p for p in spec['parameters']}
-    assert params['method']['enum']==['sum','mean','min','max','stddev','mode','median','percentile']
+    assert params['method']['enum']==['sum','mean','min','max','stddev','mode','median','percentile','variety']
     assert params['percentile']['type']=='float' and not params['percentile']['required']
     assert 'default' not in params['percentile']
     assert params['percentile']['show_when']=={'method':['percentile']}
@@ -1401,3 +1401,17 @@ def test_vector_percentile_single_existing_entry_keeps_coverage_prefix_and_optio
     assert all(word in params['percentile']['description'] for word in ('0','100','50','逐面','线性','原统计'))
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
     assert spec['output_ports'][0]['type']=='GeoDataFrame' and spec['attributes']['resource_groups']==['raster']
+
+
+def test_focal_variety_single_existing_entry_keeps_old_eight_methods_and_port():
+    specs=[spec for spec in list_operators() if spec['id']=='raster_focal_statistics']
+    assert len(specs)==1;spec=specs[0];params={p['name']:p for p in spec['parameters']}
+    assert params['method']['enum']==['sum','mean','min','max','stddev','mode','median','percentile','variety']
+    assert '分类种类数' in params['method']['description'] and '去重' in params['method']['description']
+    assert set(params)=={'input_raster','band','window_size','method','percentile'}
+    assert all(params[key]['required'] for key in ('band','window_size','method'))
+    assert params['percentile']['show_when']=={'method':['percentile']}
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read'] and spec['attributes']['resource_groups']==['raster']
+    assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='raster'
+    assert spec['detailed_description']['workflow_example']['params']['method']=='mean'
+    assert not any(spec['id'] in ('raster_variety','raster_focal_variety') for spec in list_operators())

@@ -5027,6 +5027,8 @@ def _focal_oracle(values, valid, window_size, method):
             counts = Counter(sample)
             modes = [value for value,count in counts.items() if count==max(counts.values())]
             result[row,column] = values[row,column] if values[row,column] in modes else min(modes)
+        elif method == 'variety':
+            result[row,column] = len(set(sample))
         elif method == 'median':
             from fractions import Fraction
             ordered = sorted(sample);size=len(ordered)
@@ -5039,7 +5041,7 @@ def _focal_oracle(values, valid, window_size, method):
 
 
 @pytest.mark.parametrize('window_size', [3,5])
-@pytest.mark.parametrize('method', ['sum','mean','min','max','stddev','mode','median','percentile'])
+@pytest.mark.parametrize('method', ['sum','mean','min','max','stddev','mode','median','percentile','variety'])
 def test_focal_statistics_selected_band_rotated_validity_edges_and_scalar_oracle(tmp_path, window_size, method):
     values = np.arange(56,dtype=float).reshape(7,8)-21
     values[1,1] = -9999; values[2,2] = np.nan
@@ -5156,7 +5158,7 @@ def test_focal_statistics_rejects_invalid_parameters(tmp_path,parameter,value):
 
 
 @pytest.mark.parametrize('kind',['selected-alpha','complex-data','complex-alpha'])
-@pytest.mark.parametrize('method',['mean','mode','median','percentile'])
+@pytest.mark.parametrize('method',['mean','mode','median','percentile','variety'])
 def test_focal_statistics_data_band_and_complex_rules(tmp_path,kind,method):
     path=tmp_path/'bands.tif'
     datatype=gdal.GDT_Float64 if kind=='selected-alpha' else gdal.GDT_CFloat64
@@ -13763,7 +13765,7 @@ def test_focal_median_method_diagnostic_bilingual_and_all_methods_still_valid(tm
         for method in ('sum','mean','min','max','stddev','mode','median'):
             result=raster_focal_statistics(loaded,1,3,method);ds=gdal.Open(str(result.path));ds=None
         with pytest.raises(ValueError)as error:raster_focal_statistics(loaded,1,3,'invalid-method')
-        assert str(error.value)==('method必须为sum、mean、min、max、stddev、mode、median或percentile'if language=='zh-cn'else'method must be sum, mean, min, max, stddev, mode, median or percentile')
+        assert str(error.value)==('method必须为sum、mean、min、max、stddev、mode、median、percentile或variety'if language=='zh-cn'else'method must be sum, mean, min, max, stddev, mode, median, percentile or variety')
 
 
 @pytest.mark.parametrize('case',['direct','reclassify','invalid','save-existing','rank-failure'])
@@ -13797,7 +13799,7 @@ def test_focal_median_async_cog_save_reclassification_and_failure_cleanup(tmp_pa
     assert status['status']==('failed'if case in('invalid','save-existing','rank-failure')else'success'),status
     assert workspaces and all(not p.exists()for p in workspaces)and path.read_bytes()==before
     if case=='invalid':
-        assert not target.exists();cause='method必须为sum、mean、min、max、stddev、mode、median或percentile'if language=='zh-cn'else'method must be sum, mean, min, max, stddev, mode, median or percentile'
+        assert not target.exists();cause='method必须为sum、mean、min、max、stddev、mode、median、percentile或variety'if language=='zh-cn'else'method must be sum, mean, min, max, stddev, mode, median, percentile or variety'
         assert cause in status['error']and client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
     elif case=='rank-failure':assert not target.exists()and 'injected median rank failure'in status['error']
     elif case=='save-existing':assert target.read_bytes()==b'previous artifact'
@@ -13940,7 +13942,7 @@ def test_focal_percentile_invalid_parameter_bilingual_before_allocating_output(t
     assert source.read_bytes()==before
 
 
-@pytest.mark.parametrize('method',['sum','mean','min','max','stddev','mode','median'])
+@pytest.mark.parametrize('method',['sum','mean','min','max','stddev','mode','median','variety'])
 @pytest.mark.parametrize('language',['zh-cn','en'])
 def test_focal_percentile_other_methods_reject_unused_parameter(tmp_path,method,language):
     import operators.raster_compute as compute
@@ -14573,3 +14575,188 @@ def test_vector_percentile_async_invalid_parameter_bilingual_no_publication_and_
     assert state['status']=='failed' and ('有限数值' if language=='zh-cn' else 'finite number') in state['error']
     assert not target.exists() and old.read_bytes()==b'prior artifact unchanged' and path.read_bytes()==before
     assert paths and all(not root.exists() for root in paths) and not compute._DISK_RESERVATIONS
+
+
+@pytest.mark.parametrize('window_size',[3,5])
+@pytest.mark.parametrize('seed',[0,7,93])
+def test_focal_variety_complete_scalar_sets_counts_zero_negative_and_safe_endpoints(tmp_path,window_size,seed):
+    rng=np.random.default_rng(seed);codes=np.array([-(2**53-1),-(2**53-2),-3.,0.,7.,2**53-2,2**53-1])
+    values=codes[rng.integers(0,len(codes),(9,11))];values[2,3]=-9999.;values[3,2]=np.nan;values[4,5]=np.inf
+    valid=np.isfinite(values)&(values!=-9999.)
+    path=create_raster(tmp_path/'classes.tif',values)
+    # Applying this scale/offset would collapse all classes and change counts.
+    ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(1).SetScale(0.);ds.GetRasterBand(1).SetOffset(.5);ds=None
+    before=path.read_bytes()
+    expected=_focal_oracle(values,valid,window_size,'variety')
+    with raster_workspace():
+        result=raster_focal_statistics(raster_load(source_plan(path)),1,window_size,'variety');workspace=result.workspace
+        ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1);actual=band.ReadAsArray()
+        np.testing.assert_array_equal(actual,expected);np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,valid)
+        assert np.all((actual[valid]>=1)&(actual[valid]<=window_size**2)) and band.DataType==gdal.GDT_Float64
+        assert np.isnan(band.GetNoDataValue()) and band.GetUnitType()=='';band=ds=None
+    assert not workspace.exists() and path.read_bytes()==before
+
+@pytest.mark.parametrize('window_size',[3,5])
+@pytest.mark.parametrize('all_same',[False,True])
+def test_focal_variety_known_full_distinct_and_repeated_classes(tmp_path,window_size,all_same):
+    values=np.zeros((5,5)) if all_same else np.arange(25,dtype=float).reshape(5,5)
+    path=create_raster(tmp_path/'classes.tif',values)
+    with raster_workspace():
+        result=raster_focal_statistics(raster_load(source_plan(path)),1,window_size,'variety');ds=gdal.Open(str(result.path));actual=ds.ReadAsArray();ds=None
+    assert actual[2,2]==(1 if all_same else window_size**2)
+    assert actual[0,0]==(1 if all_same else (window_size//2+1)**2)
+
+@pytest.mark.parametrize('window_size',[3,5])
+@pytest.mark.parametrize('shape',[(1,1),(1,7),(7,1),(3,4)])
+@pytest.mark.parametrize('all_invalid',[False,True])
+def test_focal_variety_thin_edges_all_invalid_and_missing_location(tmp_path,window_size,shape,all_invalid):
+    values=(np.arange(math.prod(shape)).reshape(shape)%3-1).astype(float)
+    if all_invalid:values[:]=np.nan
+    path=create_raster(tmp_path/'unlocated.tif',values,transform=None,crs='');before=path.read_bytes()
+    with raster_workspace():
+        result=raster_focal_statistics(raster_load(source_plan(path)),1,window_size,'variety');workspace=result.workspace
+        ds=gdal.Open(str(result.path));band=ds.GetRasterBand(1)
+        np.testing.assert_array_equal(ds.ReadAsArray(),_focal_oracle(values,np.isfinite(values),window_size,'variety'))
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(values))
+        assert ds.GetGeoTransform(can_return_null=True) is None and not ds.GetProjection();band=ds=None
+    assert path.read_bytes()==before and not workspace.exists()
+
+@pytest.mark.parametrize('window_size',[3,5])
+@pytest.mark.parametrize('located',[False,True])
+def test_focal_variety_full_cross_block_pixels_masks_grid_cog_and_nearest_overviews(tmp_path,monkeypatch,window_size,located):
+    import operators.raster_compute as compute
+    y,x=np.indices((515,519));values=np.array([-3.,0.,7.,11.])[(x//7+y//11)%4]
+    values[200:207,200:207]=-9999.;values[509,511]=np.nan;values[511,512]=np.inf
+    alpha=np.full(values.shape,128.);alpha[0,1]=0.;alpha[511,511]=-1.;alpha[508,510]=np.nan
+    mask=np.full(values.shape,255,np.uint8);mask[510,509]=0
+    grid=(500000.,2.,.25,3000000.,-.5,-3.) if located else None
+    path=create_raster(tmp_path/'blocked.tif',np.stack([np.full(values.shape,.5),values,alpha]),grid,'EPSG:3857' if located else '')
+    ds=gdal.Open(str(path),gdal.GA_Update);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    ds.GetRasterBand(2).SetScale(17.);ds.GetRasterBand(2).SetOffset(500.);ds.GetRasterBand(2).SetUnitType('metre')
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None;before=path.read_bytes()
+    valid=np.isfinite(values)&(values!=-9999.)&np.isfinite(alpha)&(alpha>0)&(mask!=0)
+    expected=_focal_oracle(values,valid,window_size,'variety');reads=[];original=compute._blocks
+    def bounded(ds,indices,**kwargs):
+        assert indices==[2] and kwargs.get('native') is True and kwargs['window'][2]<=512 and kwargs['window'][3]<=512
+        reads.append(kwargs['window']);yield from original(ds,indices,**kwargs)
+    with raster_workspace():
+        loaded=raster_load(source_plan(path));workspace=loaded.workspace
+        with monkeypatch.context() as scoped:
+            scoped.setattr(compute,'_blocks',bounded);result=raster_focal_statistics(loaded,2,window_size,'variety')
+        target=tmp_path/'variety.cog.tif';artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128,overview_resampling='nearest')
+        assert type(artifact['size_bytes']) is int and artifact['size_bytes']==target.stat().st_size>0 and validate_cog(raster_load(source_plan(target)))['valid']
+        ds=gdal.Open(str(target));band=ds.GetRasterBand(1);np.testing.assert_array_equal(ds.ReadAsArray(),expected)
+        np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,valid)
+        assert ds.GetGeoTransform(can_return_null=True)==grid and bool(ds.GetProjection())==located and ds.RasterCount==1
+        if located:assert ds.GetSpatialRef().GetAuthorityCode(None)=='3857'
+        assert band.GetScale() is None and band.GetOffset() is None and band.GetUnitType()=='' and band.GetOverviewCount()==3
+        assert band.GetColorInterpretation()==gdal.GCI_GrayIndex and band.GetColorTable() is None
+        previous=expected
+        for index in range(3):
+            overview=band.GetOverview(index);ys=np.floor(.5+np.arange(overview.YSize)*previous.shape[0]/overview.YSize).astype(int);xs=np.floor(.5+np.arange(overview.XSize)*previous.shape[1]/overview.XSize).astype(int)
+            previous=previous[np.ix_(ys,xs)];np.testing.assert_array_equal(overview.ReadAsArray(),previous)
+            np.testing.assert_array_equal(overview.GetMaskBand().ReadAsArray()!=0,np.isfinite(previous))
+        overview=band=ds=None
+    assert reads and any(w[0]>0 for w in reads) and any(w[1]>0 for w in reads) and path.read_bytes()==before and not workspace.exists()
+
+@pytest.mark.parametrize('datatype,value',[(gdal.GDT_Float64,.5),(gdal.GDT_Float64,2**53),(gdal.GDT_Float64,-2**53),
+    (gdal.GDT_Int64,2**53+1),(gdal.GDT_Int64,-2**53-1),(gdal.GDT_UInt64,2**64-1)])
+def test_focal_variety_rejects_fractional_and_unsafe_classes_without_rounding(tmp_path,datatype,value):
+    path=tmp_path/'unsafe.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),3,2,1,datatype);ds.GetRasterBand(1).Fill(0)
+    dtype=np.uint64 if datatype==gdal.GDT_UInt64 else np.int64 if datatype==gdal.GDT_Int64 else float
+    ds.GetRasterBand(1).WriteArray(np.array([[value]],dtype=dtype));ds=None;before=path.read_bytes()
+    with raster_workspace(),pytest.raises(ValueError,match='exact safe integers'):
+        source=raster_load(source_plan(path));workspace=source.workspace;raster_focal_statistics(source,1,3,'variety')
+    assert path.read_bytes()==before and not workspace.exists()
+
+@pytest.mark.parametrize('dtype,nodata',[('Int64',2**63-1),('UInt64',2**64-1)])
+@pytest.mark.parametrize('unsafe_adjacent',[False,True])
+def test_focal_variety_native_nodata_before_classification_and_adjacent_unsafe_not_hidden(tmp_path,dtype,nodata,unsafe_adjacent):
+    path=tmp_path/'native.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),3,2,1,getattr(gdal,'GDT_'+dtype))
+    values=np.array([[nodata,nodata-1 if unsafe_adjacent else 2**53-1,0],[0,2**53-2,2**53-1]],dtype=dtype.lower())
+    band=ds.GetRasterBand(1);band.WriteArray(values)
+    if dtype=='Int64':band.SetNoDataValueAsInt64(nodata)
+    else:band.SetNoDataValueAsUInt64(nodata)
+    band=ds=None;before=path.read_bytes()
+    with raster_workspace():
+        loaded=raster_load(source_plan(path));workspace=loaded.workspace
+        if unsafe_adjacent:
+            with pytest.raises(ValueError,match='exact safe integers'):raster_focal_statistics(loaded,1,3,'variety')
+        else:
+            result=raster_focal_statistics(loaded,1,3,'variety');ds=gdal.Open(str(result.path))
+            np.testing.assert_array_equal(ds.ReadAsArray(),_focal_oracle(values,values!=nodata,3,'variety'));ds=None
+    assert not workspace.exists() and path.read_bytes()==before
+
+def test_focal_variety_invalid_hidden_values_do_not_participate_or_fill_centers(tmp_path):
+    values=np.array([[.5,2**53,-2**53],[0,-3,7]],dtype=float)
+    alpha=np.array([[255,0,255],[128,255,255]],dtype=float);mask=np.array([[255,255,0],[255,255,255]],dtype=np.uint8)
+    path=create_raster(tmp_path/'source.tif',np.stack([np.full(values.shape,.25),values,alpha]));ds=gdal.Open(str(path),gdal.GA_Update)
+    ds.GetRasterBand(2).SetNoDataValue(.5);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);ds=None
+    valid=(values!=.5)&(alpha>0)&(mask!=0)
+    with raster_workspace():
+        result=raster_focal_statistics(raster_load(source_plan(path)),2,3,'variety');ds=gdal.Open(str(result.path))
+        np.testing.assert_array_equal(ds.ReadAsArray(),_focal_oracle(values,valid,3,'variety'));ds=None
+
+def test_focal_variety_mixed_complex_alpha_rejected_before_allocating_output(monkeypatch):
+    import operators.raster_compute as compute
+    ds=gdal.GetDriverByName('VRT').Create('',2,2,0);ds.AddBand(gdal.GDT_Float64);ds.AddBand(gdal.GDT_CFloat64);ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    monkeypatch.setattr(compute,'_open',lambda value:ds)
+    monkeypatch.setattr(compute,'_numeric_output',lambda *a,**k:pytest.fail('complex alpha allocated output'))
+    with pytest.raises(ValueError,match='Complex-valued bands'):raster_focal_statistics(object(),1,3,'variety')
+
+@pytest.mark.parametrize('parameter,value',[('window_size',True),('window_size',4),('window_size',None),('band',0),('band',99),('band',True),('band','1')])
+def test_focal_variety_invalid_window_and_band_remain_strict(tmp_path,parameter,value):
+    path=create_raster(tmp_path/'source.tif',np.ones((2,2)));params={'band':1,'window_size':3,'method':'variety',parameter:value}
+    with raster_workspace(),pytest.raises(ValueError):raster_focal_statistics(raster_load(source_plan(path)),**params)
+
+@pytest.mark.parametrize('case',['direct','reclassify','all-invalid','invalid','unused','save-existing','sort-failure'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_focal_variety_async_cog_exact_results_failure_source_old_artifact_and_cleanup(tmp_path,monkeypatch,case,language):
+    import api_server,workflow_engine
+    import operators.raster_compute as compute
+    values=np.array([[0.,0.,8.,8.],[0.,-9999.,4.,8.],[4.,4.,4.,8.]])
+    if case=='invalid':values[0,0]=.5
+    if case=='all-invalid':values[:]=-9999.
+    path=create_raster(tmp_path/'source.tif',values,(100.,2.,.5,200.,.25,-3.),'EPSG:3857');target=tmp_path/'variety.cog.tif';before=path.read_bytes()
+    if case=='save-existing':target.write_bytes(b'previous artifact')
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}}];prior='source';classified=values.copy()
+    if case=='reclassify':
+        tasks.append({'id':'classes','operator':'raster_reclassify','depends_on':['source'],'params':{'input_raster':{'$ref':'source'},'band':1,'rules':[{'value':0,'class':-3},{'value':4,'class':0},{'value':8,'class':7}]}});prior='classes'
+        classified=np.select([values==0,values==4,values==8],[-3.,0.,7.],default=np.nan)
+    params={'input_raster':{'$ref':prior},'band':1,'window_size':3,'method':'variety'}
+    if case=='unused':params['percentile']=50
+    tasks.extend([{'id':'focal','operator':'raster_focal_statistics','depends_on':[prior],'params':params},
+        {'id':'save','operator':'raster_save','depends_on':['focal'],'params':{'input_raster':{'$ref':'focal'},'access_plan':target_plan(target),'profile':'cog','blocksize':128}}])
+    workspaces=[];original=workflow_engine._execute_operator
+    def track(name,params):
+        if name=='raster_focal_statistics':workspaces.append(params['input_raster'].workspace)
+        return original(name,params)
+    if case=='sort-failure':
+        def fail(*a,**kw):raise OSError('injected variety sorting I/O')
+        monkeypatch.setattr(compute,'_focal_ordered_values',fail)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',track);client=api_server.app.test_client()
+    response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}});assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en' if language=='zh-cn' else 'zh-cn'}).json
+        if status['status'] in ('success','failed'):break
+        time.sleep(.01)
+    assert status['status']==('success' if case in ('direct','reclassify','all-invalid') else 'failed'),status
+    assert workspaces and all(not p.exists() for p in workspaces) and path.read_bytes()==before
+    if case in ('direct','reclassify','all-invalid'):
+        valid=np.isfinite(classified)&(classified!=-9999.);expected=_focal_oracle(classified,valid,3,'variety');ds=gdal.Open(str(target))
+        np.testing.assert_array_equal(ds.ReadAsArray(),expected);np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray()!=0,valid)
+        assert ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT']=='COG';ds=None
+        assert json.loads(status['result'])['size_bytes']==target.stat().st_size>0
+    elif case=='save-existing':assert target.read_bytes()==b'previous artifact'
+    else:
+        assert not target.exists()
+        cause='injected variety sorting I/O' if case=='sort-failure' else 'classification values must be exact safe integers' if case=='invalid' else str(compute._focal_error('unused'))
+        with raster_error_language(language):
+            if case=='unused':cause=str(compute._focal_error('unused'))
+        assert cause in status['error'] and '任务 focal 执行失败' in status['error']
+        assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
+    assert client.post('/api/operators/raster_focal_statistics/invoke',json={'params':{}}).status_code==403
