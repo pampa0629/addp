@@ -731,7 +731,9 @@ ORC 嵌套扩展复用同一 `native-table-orc` case、原 11 项权限与精确
 
 14成功后累计105次、52失败后各重读14成果728次，共66调用／833次实际全量成果检查；仅缓存绑定本轮／夹具／源hash的独立期望，不缓存实际成果。归档14份COG原字节及大小／hash清单，旧原件／清单不可静默修复，源及先前成果不变、失败零发布／零新增扫描派生血缘和全部清理严格保持。仅扩展既有受控只读取证的suite白名单，不改产品逻辑、安全投影或权限；准备、业务、收尾全部计入600秒。
 
-本地标准Native专项258项（155产品／103夹具），8753筛除不计通过；TWI标准runner90项及完整Python／Online登记通过，0失败／跳过，本地原件不替代Hosted原件。Node24.11.1下原`make test-raster-online-runner`完整退出0，含原套件及隔离身份夹具Go T1；共享子门禁不累计唯一测试数，Go T1不等于全量IAM或数据库集成。标准Native recipe、`make test-raster-twi-online-runner`、影响选路与独立手工CI登记同次覆盖；Linux全量及实际Hosted由CI会话协调，本会话不触发／轮询／定时，不计UI、容量或任意影像认证。
+本地标准Native专项258项（155产品／103夹具）、TWI标准runner90项及完整Python／Online登记通过；8753筛除不计通过，隔离身份夹具Go T1不等于全量IAM或数据库集成。标准Native recipe、`make test-raster-twi-online-runner`、影响选路与独立手工CI登记已覆盖。
+
+固定源码`128a5330782ec1c0033be2ce14b076392e90f012`的[Hosted运行40818720334／Job123265876421](https://github.com/pampa0629/addp/actions/runs/40818720334/job/123265876421)已完成原始归档审计：7服务与默认入口Runtime同源，普通User原12权限；14成功／52准确双语失败、66次物理调用／833次成果全检，业务421186毫秒，小于600000毫秒预算。三方相等正整数大小、精确扫描身份、当前执行全部源内部血缘／公开安全投影／Meta关系／Monitor、源及先前成果不变、失败零发布和零新增扫描派生血缘、缓存／工作目录及Hosted／Infra零残留均通过。归档artifact `12875286903`含69成员、14原COG及清单和14份血缘原档，CRC、原件大小／SHA256与现场物理回执逐一匹配；归档ZIP SHA256为`65b0ee9ffa4bc768f5a4db2fdc08efb2ef39f3468874fb7b6a2e4382d4a3c627`。Linux全量仍等CI会话回传；数值极限继续单列Native，不计当前HEAD、UI、容量或任意影像认证，也不关闭通用GDAL中止缺陷。
 
 ### 水流功率指数 SPI 独立 Hosted 验收
 
