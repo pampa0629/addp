@@ -209,6 +209,9 @@ printf '%s\n' "$ADDP_TEST_NODE_VERSION"
     def test_ci_checks_policy_before_dependency_preparation(self):
         source = (ROOT / '.github/workflows/platform-ci.yml').read_text()
         self.assertLess(source.index('make check-node-runtime test-node-runtime'), source.index('Prepare Agent Swagger environment'))
+        product = re.search(r'(?ms)^  product-build:\n(.*?)(?=^  [\w-]+:\n|\Z)', source)[1]
+        self.assertIn('node-version-file: .node-version', product)
+        self.assertLess(product.index('run: make check-node-runtime'), product.index('run: make build'))
         action = (ROOT / '.github/actions/prepare-frontend-gate/action.yml').read_text()
         self.assertIn('node-version-file: .node-version', action)
         self.assertLess(action.index('node-runtime.sh'), action.index('run: npm ci'))
