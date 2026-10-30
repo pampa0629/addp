@@ -55,15 +55,55 @@ for (const [locale, labels] of [
   })
 }
 
-async function installMockBackend(page, { locale = 'zh-cn', statuses } = {}) {
-  let tasks = [
+test.describe('last execution from the task definition contract', () => {
+  test.use({ timezoneId: 'Asia/Shanghai' })
+
+  for (const [locale, notExecuted] of [['zh-cn', '未执行'], ['en', 'Not executed']]) {
+    test(`renders last_run_at and keeps unexecuted tasks distinct in ${locale}`, async ({ page }) => {
+      const writes = []
+      page.on('request', request => {
+        if (new URL(request.url()).pathname.startsWith('/api/v1/develop/') && request.method() !== 'GET') {
+          writes.push(`${request.method()} ${request.url()}`)
+        }
+      })
+      await installMockBackend(page, {
+        locale,
+        taskItems: [
+          { id: 101, name: 'completed_workflow', dev_type: 'workflow', status: 'active', last_run_at: '2026-10-30T04:00:00Z', last_execution_status: 'success' },
+          { id: 102, name: 'failed_workflow', dev_type: 'workflow', status: 'active', last_run_at: '2026-10-30T04:01:00Z', last_execution_status: 'failed' },
+          { id: 103, name: 'never_run_omitted', dev_type: 'workflow', status: 'active' },
+          { id: 104, name: 'never_run_null', dev_type: 'workflow', status: 'active', last_run_at: null }
+        ]
+      })
+      await page.goto('/tasks')
+
+      const rows = page.locator('.el-table__body-wrapper tbody tr')
+      await expect(rows).toHaveCount(4)
+      for (const [index, time, status] of [[0, '2026/10/30 12:00:00', 'success'], [1, '2026/10/30 12:01:00', 'failed']]) {
+        const execution = rows.nth(index).getByRole('cell').nth(5)
+        await expect(execution).toContainText(time)
+        await expect(execution.locator('.el-tag')).toHaveText(status)
+        await expect(execution).not.toContainText(notExecuted)
+      }
+      for (const index of [2, 3]) {
+        const execution = rows.nth(index).getByRole('cell').nth(5)
+        await expect(execution).toHaveText(notExecuted)
+        await expect(execution.locator('.el-tag')).toHaveCount(0)
+      }
+      expect(writes).toEqual([])
+    })
+  }
+})
+
+async function installMockBackend(page, { locale = 'zh-cn', statuses, taskItems } = {}) {
+  let tasks = taskItems ?? [
     {
       id: 41,
       name: 'farm_buffer',
       dev_type: 'workflow',
       engine_id: null,
       status: 'active',
-      last_executed_at: null,
+      last_run_at: null,
       created_at: '2026-08-04T15:36:49+08:00'
     },
     {
@@ -72,7 +112,7 @@ async function installMockBackend(page, { locale = 'zh-cn', statuses } = {}) {
       dev_type: 'script',
       engine_id: null,
       status: 'active',
-      last_executed_at: null,
+      last_run_at: null,
       created_at: '2026-08-02T21:25:59+08:00'
     }
   ]

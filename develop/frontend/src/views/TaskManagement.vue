@@ -90,8 +90,8 @@
         </el-table-column>
         <el-table-column :label="t('develop.taskManagement.colLastExecution')" width="180">
           <template #default="{ row }">
-            <div v-if="row.last_executed_at">
-              <div>{{ formatTime(row.last_executed_at) }}</div>
+            <div v-if="row.last_run_at">
+              <div>{{ formatTime(row.last_run_at) }}</div>
               <el-tag
                 v-if="row.last_execution_status"
                 :type="getExecutionStatusColor(row.last_execution_status)"
