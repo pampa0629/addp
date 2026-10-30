@@ -977,6 +977,8 @@ Provider 会话、交互 Session 与排队执行资格分别判断。当前 Jupy
 
 `InferenceRuntimeProvider` 的调用方必须先从 System Runtime Descriptor 精确解析唯一 active 且声明 `compute.inference.supported=true` 的 Runtime，再使用调用方自身 Tenant Service Access Token 调用 `addp.inference/v1`。调用方不得维护 `INFERENCE_URL`、按默认端口拼接地址或在多个候选中自动选择。第一版只允许一个平台内置 Inference Runtime；多实例能力必须在引入显式绑定后整体切换。
 
+协议、资源授权与凭据规则以 [AI 推理契约](<addp AI推理接口规范.md>)为准；场景分工见[调用方边界](<addp AI推理接口规范.md#七调用方边界>)，验收按[验证要求](<addp AI推理接口规范.md#九验证要求>)逐项记录，受控上游测试不代替真实厂商调用。
+
 交互会话标准控制面为 `POST /api/interactive-sessions` 和 `DELETE /api/interactive-sessions/{session_id}`。请求/响应使用 `InteractiveScriptSessionRequest` 和 `InteractiveScriptSession` 强类型契约。会话必须绑定 `tenant_id`、owner task、发起 User、kernel、外部代理 base path 和到期时间。
 
 Runtime 只接受调用模块的 Tenant Service Access Token 创建或关闭会话；会话端点只能由 owner 模块反向代理消费。浏览器不得获得 Runtime host、端口、Jupyter token 或 Service Access Token。
@@ -1021,7 +1023,7 @@ Workflow Runtime 的直接存储接入由 `compute.workflow.storage_access.read_
 - Meta 扫描 API 和任务参数中的路径型目标统一命名为 `catalog_paths`。它表示引擎 catalog model 下的路径。
 - Manager：使用 Meta 树构建探查树；预览由 Manager 自身 preview provider / composer 组合完成。结构化数据优先消费 `BatchReadableProvider` 或只读 sample query；graph 预览优先消费 `type_info.graph` / `EngineCatalogFactsProvider` 得到 schema 视图，并通过 `GraphSampleProvider` 或 `GraphQueryProvider` 获取轻量子图样本；对象/文件优先消费 `ContentReadableProvider` 并结合格式解析。
 - Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；Notebook 绑定、会话、当前派发限制与验证范围统一见 [Runtime Provider](#runtime-provider)；Notebook Native Engine Facade 只在 `common-python` 把原生方法编译为 `EngineCatalogProvider.ListChildren` / `EngineCatalogFactsProvider.DescribeEngineCatalogFacts`，不得反向新增 PostgreSQL、MongoDB、MinIO 等专用后端接口；图结构展示入口使用 `EngineCatalogFactsProvider` / `GraphQueryProvider`。
-- Agent、Copilot、Manager：通过 System Runtime Descriptor 发现唯一 Inference Runtime，并消费 `InferenceRuntimeProvider`；业务场景绑定仍归各 owner，不能把 Runtime 端点、厂商协议或凭据保存到调用方配置。
+- Agent、Copilot、Manager：统一消费 `InferenceRuntimeProvider`，端点发现、认证与验证要求见 [Runtime Provider](#runtime-provider)；业务场景绑定仍归各 owner，不能把 Runtime 端点、厂商协议或凭据保存到调用方配置。
 - Service：发布普通查询服务时使用 query runtime 和 Meta item/spatial 元数据；图查询服务使用 `GraphQueryProvider`。图查询服务的易用向导应消费 graph item 的 `type_info.graph.node_shapes`，不得再从 Meta 树读取 Neo4j label item。
 - Transfer：使用 source / target endpoint 生成执行计划。snapshot native table 读写消费 `TableReadSessionProvider`、`BatchReadableProvider`、`TableWritePreparer`、`TableWriteSessionProvider`、`BatchWritableProvider`；动态 schema collection 原始记录导出消费 `EncodedRecordReadSessionProvider`，不得先经过预览 record map 或 table pipeline；只读原生查询 source 消费 `QueryReadSessionProvider`，不得使用有界 `QueryRuntimeProvider` 预览结果冒充全量；watermark bounded incremental 必须消费 `BoundedWatermarkReadProvider` 和幂等 `TableUpsertProvider`；encoded file/object 读写先通过 engine content provider 和 `common/engine/contentadapter` 构造 `common/contentio` 抽象，再交给 `common/format` provider。高吞吐数据搬运优先消费 batch / session / content stream 能力。
 - Transfer continuous runtime：业务 Kafka source 必须消费 `ChangeStreamReaderProvider`，由 Transfer adapter 生成 ChangeEvent 并通过 ChangeApplyWriter 组合目标 Provider。目标必须声明原子、单调且覆盖所需 operation 的 `PartitionedTableChangeApplyProvider`；当前 PostgreSQL 与 MySQL 实现该 Provider。Infra Kafka 连接来自 ADDP infra 配置，不注册 System Engine，但复用同一 Kafka reader/client 底层实现。
