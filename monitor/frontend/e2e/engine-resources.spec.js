@@ -109,6 +109,52 @@ test('engine automatic refresh retains zoom, while failure and identity changes 
   expect((await resourceChartState(page, null, chart)).start).toBe(0)
 })
 
+for (const detail of [false, true]) for (const automatic of [false, true]) test(`engine ${detail ? 'detail' : 'list'} ${automatic ? 'automatic' : 'manual'} refresh updates in place without blanking or an overlay`, async ({ page }) => {
+  trackResourceChart(page)
+  const state = await engineBackend(page)
+  if (automatic) await page.clock.install()
+  await page.goto(`/engine-resources?refresh=${automatic ? '60' : 'off'}${detail ? `&deployment_id=${engineID}` : ''}`)
+  const content = page.getByTestId(detail ? 'engine-metrics' : 'engine-list')
+  await expect(content).toContainText('1.00 GiB')
+  const chart = detail ? await engineChart(page) : null
+  const canvas = chart ? await chart.locator('canvas').elementHandle() : null
+  const row = !detail ? await content.locator('.el-table__body tr').elementHandle() : null
+  const reads = () => state.calls.filter(path => path.endsWith(detail ? '_observations' : '_summaries')).length
+  const before = reads()
+  state.hold()
+  state.setCapacity(2 * 1024 ** 3)
+  if (automatic) await page.clock.fastForward(60001)
+  else await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect.poll(reads).toBe(before + 1)
+  await expect(content).toContainText('1.00 GiB')
+  await expect(page.locator('.engine-resources')).toHaveAttribute('aria-busy', 'true')
+  await expect(content.locator('.el-loading-mask')).toHaveCount(0)
+  if (canvas) expect(await canvas.evaluate(node => node.isConnected)).toBe(true)
+  if (row) {
+    expect(await row.evaluate(node => node.isConnected)).toBe(true)
+    await expect(page.locator('.el-pagination')).toBeVisible()
+  }
+  state.release()
+  await expect(page.locator('.engine-resources')).toHaveAttribute('aria-busy', 'false')
+  await expect(content).toContainText('2.00 GiB')
+  if (canvas) expect(await canvas.evaluate(node => node.isConnected)).toBe(true)
+})
+
+test('engine scope changes clear retained content immediately and ignore the old pending response', async ({ page }) => {
+  trackResourceChart(page)
+  const state = await engineBackend(page)
+  await page.goto(`/engine-resources?deployment_id=${engineID}&refresh=off`)
+  await engineChart(page)
+  state.hold()
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByRole('button', { name: '刷新', exact: true })).toBeDisabled()
+  await setIdentity(page, identity([]))
+  await expect(page.getByTestId('engine-denied')).toBeVisible()
+  state.release()
+  await expect(page.getByTestId('engine-value-capacity')).toHaveCount(0)
+  await expect(page.getByTestId('engine-trend').locator('canvas')).toHaveCount(0)
+})
+
 for (const locale of ['zh-cn', 'en']) test(`engine text filters debounce and clear without a Search button (${locale})`, async ({ page }) => {
   await engineBackend(page, { locale })
   const queries = []

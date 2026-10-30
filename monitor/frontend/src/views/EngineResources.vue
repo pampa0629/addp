@@ -1,9 +1,9 @@
 <template>
-  <section class="engine-resources">
+  <section class="engine-resources" :aria-busy="loading">
     <header class="toolbar">
       <h2>{{ t('monitor.engines.title') }}</h2>
       <AutoRefreshControl v-if="canRead" :model-value="state.refresh" :status="refreshStatus" test-id="engine-refresh" @update:model-value="refresh => navigate({ ...state.query, refresh })" />
-      <el-button :disabled="!canRead || loading" @click="reload()">{{ t('common.refresh') }}</el-button>
+      <el-button :disabled="!canRead" :loading="loading" @click="reload()">{{ t('common.refresh') }}</el-button>
     </header>
     <el-alert v-if="!canRead" :title="t('monitor.engines.denied')" type="warning" :closable="false" data-testid="engine-denied" />
     <template v-else>
@@ -12,7 +12,7 @@
         <form class="toolbar" @submit.prevent="filterInput.submit">
           <el-input v-model="search" :placeholder="t('monitor.engines.search')" :aria-label="t('monitor.engines.search')" clearable @input="filterInput.queue" @keydown.enter="filterInput.enter" @clear="filterInput.submit" />
         </form>
-        <el-table :data="owners" v-loading="loading" :empty-text="t('monitor.engines.empty')" data-testid="engine-list">
+        <el-table :data="owners" v-loading="loading && !observed" :empty-text="t('monitor.engines.empty')" data-testid="engine-list">
           <el-table-column prop="display_name" :label="t('monitor.engines.name')" min-width="190" show-overflow-tooltip />
           <el-table-column :label="t('monitor.resources.associatedHost')" min-width="180" show-overflow-tooltip><template #default="{ row }"><MonitoredHostLink data-testid="engine-host" :node-id="row.node_id" :host="hostReferences[row.node_id]" :allowed="canReadHost" :empty-label="t('monitor.engines.noCurrentHost')" /></template></el-table-column>
           <el-table-column :label="t('monitor.engines.collection')" min-width="180"><template #default="{ row }">{{ collection(row.deployment_id) }}</template></el-table-column>
@@ -22,12 +22,12 @@
           </el-table-column>
           <el-table-column :label="t('monitor.engines.details')" width="130"><template #default="{ row }"><el-button text type="primary" :disabled="loading" @click="navigate({ ...state.query, deployment_id: row.deployment_id }, 'push')">{{ t('monitor.engines.details') }}</el-button></template></el-table-column>
         </el-table>
-        <el-pagination v-if="!loading && !errorKey" :current-page="state.page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="page => navigate({ ...state.query, page: String(page) })" />
+        <el-pagination v-if="!errorKey && (observed || !loading)" :current-page="state.page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="page => navigate({ ...state.query, page: String(page) })" />
       </template>
       <template v-else>
         <div class="toolbar"><el-button @click="back">{{ t('monitor.engines.back') }}</el-button><h3>{{ owners[0]?.display_name }}</h3><span>{{ collection(state.deploymentID) }}</span></div>
         <div v-if="owners.length" class="toolbar"><span>{{ t('monitor.resources.associatedHost') }}:</span><MonitoredHostLink data-testid="engine-host" :node-id="owners[0].node_id" :host="hostReferences[owners[0].node_id]" :allowed="canReadHost" :empty-label="t('monitor.engines.noCurrentHost')" /></div>
-        <div v-loading="loading" class="metric-grid" data-testid="engine-metrics">
+        <div v-loading="loading && !observed" class="metric-grid" data-testid="engine-metrics">
           <article v-for="metric in engineMetrics" :key="metric.key" class="metric-card">
             <h3>{{ t(`monitor.engines.metrics.${metric.name}`) }}</h3>
             <strong :data-testid="`engine-value-${metric.name}`">{{ value(observation(state.deploymentID)?.series.find(item => item.metric_key === metric.key)?.points[0], metric) }}</strong>
@@ -86,7 +86,7 @@ const state = computed(() => resolveEngineRoute(route.query)), owners = ref([]),
 const loading = ref(false), errorKey = ref(''), trendError = ref(''), search = ref(''), blocked = ref(false), visible = ref(!document.hidden)
 const trendZoom = ref(null)
 const requests = createLatestRequestScope()
-let disposed = false
+let disposed = false, dataContext = ''
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : blocked.value ? 'stopped' : !visible.value ? 'paused' : 'automatic')
 const selectedMetric = computed(() => engineMetrics.find(item => item.key === state.value.metric))
 const observation = id => observed.value?.data.find(row => row.subject.deployment_id === id)
@@ -119,7 +119,12 @@ async function reload({ automatic = false } = {}) {
   if (disposed || route.name !== 'EngineResources') return
   refreshCycle.stop()
   const ticket = requests.invalidate()
-  observed.value = null; history.value = null; owners.value = []; hostReferences.value = {}; total.value = 0; errorKey.value = ''; trendError.value = ''
+  const context = JSON.stringify([identity.value, state.value.deploymentID, state.value.metric, state.value.range, state.value.search, state.value.page])
+  if (context !== dataContext) {
+    observed.value = null; history.value = null; owners.value = []; hostReferences.value = {}; total.value = 0
+    dataContext = context
+  }
+  errorKey.value = ''; trendError.value = ''
   if (!automatic) blocked.value = false
   if (!canRead.value || !visible.value) { loading.value = false; return }
   if (state.value.changed) { await navigate(state.value.query); return }
@@ -137,6 +142,8 @@ async function reload({ automatic = false } = {}) {
     }
     if (!requests.current(ticket)) return
     owners.value = rows; total.value = count
+    hostReferences.value = Object.fromEntries(Object.entries(hostReferences.value).filter(([id]) => rows.some(row => row.node_id === id)))
+    if (!rows.length) { observed.value = null; history.value = null }
     void loadHosts(owners.value, ticket)
     if (rows.length) {
       const result = state.value.deploymentID ? await requests.request(config => api.instant({ deployment_id: state.value.deploymentID, metrics: engineMetrics.map(item => item.key).join(',') }, config)) : await requests.request(config => api.summaries(rows.map(item => item.deployment_id), config))
@@ -150,6 +157,7 @@ async function reload({ automatic = false } = {}) {
           history.value = validateEngineResources(trend, rows, [selectedMetric.value], params)
         } catch (error) {
           if (!requests.current(ticket)) return
+          history.value = null
           trendError.value = resourceErrorKey(error)
           if ([401, 403, 404].includes(error.response?.status)) throw error
         }

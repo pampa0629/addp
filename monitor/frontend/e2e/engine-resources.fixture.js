@@ -5,7 +5,7 @@ export const engineID = '10000000-0000-4000-8000-000000000001'
 export const engineOwner = { deployment_id: engineID, display_name: 'Infra PostgreSQL', enabled: true, engine_type: 'postgresql', node_id: '10000000-0000-4000-8000-000000000002', version: 1, host_binding_state: 'bound' }
 export const enginePermissions = ['monitor.resource_observation.read', 'platform.engine_deployment.read']
 export async function engineBackend(page, { locale = 'zh-cn', auth = identity(enginePermissions), mode: initial = 'valid', owner = { ...engineOwner }, hosts = [], holdHosts = false } = {}) {
-  let mode = initial
+  let mode = initial, capacity = 1024 ** 3
   const calls = [], stamp = '2026-10-20T14:00:00Z'
   let held, release, releaseHosts, hostStatus = 200
   let heldHosts = holdHosts ? new Promise(resolve => { releaseHosts = resolve }) : null
@@ -38,12 +38,12 @@ export async function engineBackend(page, { locale = 'zh-cn', auth = identity(en
       const count = trend ? Math.floor((Date.parse(stamp) - Date.parse(start)) / 15000) + 1 : 1
       const inactive = owner.host_binding_state === 'rejected' || !owner.enabled
       const state = inactive ? 'not_active' : mode === 'sql-failed' ? 'snapshot_unavailable' : trend ? 'no_sample' : 'collecting'
-      body = { queried_at: stamp, start, end: stamp, step_seconds: 15, policy_version: 1, lookback_seconds: 300, data: [{ subject: { kind: 'engine_deployment', deployment_id: engineID, display_name: owner.display_name, engine_type: 'postgresql' }, node_id: owner.node_id, collection: { state, sampled_at: trend || inactive ? null : stamp }, series: metrics.map(metric => ({ metric_key: metric.key, unit: metric.unit, window_seconds: metric.windowSeconds, dimensions: {}, points: Array.from({ length: count }, (_, index) => { const at = new Date(Date.parse(start) + index * 15000).toISOString(), missing = inactive || mode === 'sql-failed' || trend && index === 2; return { evaluated_at: at, sampled_at: missing ? null : at, value: missing ? null : metric.unit === 'bytes' ? 1024 ** 3 : 0, data_state: inactive ? 'not_active' : missing ? 'no_data' : 'valid' } }) })) }] }
+      body = { queried_at: stamp, start, end: stamp, step_seconds: 15, policy_version: 1, lookback_seconds: 300, data: [{ subject: { kind: 'engine_deployment', deployment_id: engineID, display_name: owner.display_name, engine_type: 'postgresql' }, node_id: owner.node_id, collection: { state, sampled_at: trend || inactive ? null : stamp }, series: metrics.map(metric => ({ metric_key: metric.key, unit: metric.unit, window_seconds: metric.windowSeconds, dimensions: {}, points: Array.from({ length: count }, (_, index) => { const at = new Date(Date.parse(start) + index * 15000).toISOString(), missing = inactive || mode === 'sql-failed' || trend && index === 2; return { evaluated_at: at, sampled_at: missing ? null : at, value: missing ? null : metric.unit === 'bytes' ? capacity : 0, data_state: inactive ? 'not_active' : missing ? 'no_data' : 'valid' } }) })) }] }
       if (mode === 'foreign') body.data[0].subject.deployment_id = engineOwner.node_id
       if (['unavailable', 'denied', 'notFound'].includes(mode)) { status = { unavailable: 503, denied: 403, notFound: 404 }[mode]; body = { error_code: mode === 'unavailable' ? 'observability_backend_unavailable' : 'permission_denied', error: 'fixture refusal' } }
       if (held) await held
     } else throw new Error(`Unexpected engine fixture API ${path}`)
     await route.fulfill({ status, json: body })
   })
-  return { calls, hostReads, owner, setHostStatus: value => { hostStatus = value }, releaseHosts: () => { releaseHosts?.(); heldHosts = null }, setMode: value => { mode = value }, hold: () => { held = new Promise(resolve => { release = resolve }) }, release: () => { release?.(); held = null } }
+  return { calls, hostReads, owner, setCapacity: value => { capacity = value }, setHostStatus: value => { hostStatus = value }, releaseHosts: () => { releaseHosts?.(); heldHosts = null }, setMode: value => { mode = value }, hold: () => { held = new Promise(resolve => { release = resolve }) }, release: () => { release?.(); held = null } }
 }

@@ -223,3 +223,11 @@ Safari 已加载新缩放提示与实际提交速率曲线，但本轮截图存�
 自动刷新实际观测到结束时间从 17:43:55 推进到 17:44:25，期间没有手动刷新输入；后一次完整查询窗口为 17:39:25—17:44:25，截图可见横轴 17:41:55—17:44:25，右半段视口保留。随后在已核对的 Business 页真实点击“刷新”，加载完成时完整查询窗口为 17:41:06—17:46:06，截图可见横轴为 17:43:36—17:46:06，滑块仍约右半段。以上分别证明个人原生 Safari 的自动、手动刷新后相对视口保持，不将首次未完成或前一轮错误标签页刷新改记为通过。
 
 再通过实际指标下拉框，从每秒事务提交切换到数据库总容量；Console URL 更新为同一部署及 `metric=postgresql.database.total_bytes`，截图实际看到容量曲线约 78.3 GiB，完整查询与可见横轴均为 17:44:10—17:49:10，滑块恢复全范围，证明指标切换重置。页面最终保留默认十五秒刷新及该容量指标，第一标签页未改动。摘要 `/tmp/addp-engine-zoom-safari-receipt.json` 已逐项更新，截图与实际操作保留于本会话；本轮拖动、手动／自动刷新保持、指标切换重置的个人 Safari 缺口关闭。未验其他时段、部署切换、撤权、长期或 Hosted，不外推完整 CI 或旧 T2；仅补证据及能力状态，`git diff --check` 通过，不需重跑产品门禁，未启停个人服务、修改权限或设置定时任务。
+
+## 引擎监控原位刷新（2026-10-30）
+
+用户反馈十五秒刷新时整页闪动。定位到 EngineResources 每轮 reload 在发请求前清空 owners／observed／history／主机名称，再以 loading 遮罩覆盖内容，趋势随条件消失而销毁重建；原生整页导航并非每轮刷新路径。按规范先明确同一上下文请求在途保留、成功原位更新；首次加载保留反馈，部署／指标／时段／列表范围／身份变化清空，隐藏取消和失败关闭保持原口径。只组合原请求代数、自动刷新及共享 ChartRenderer，不新增接口、权限、依赖或共享刷新实现。刷新间隔变化不清空同一数据上下文；顶部按钮显示加载状态，页面 aria-busy 标识在途。趋势独立失败立即清除旧图，保留本次合法即时值。
+
+新增五项 T3：列表与详情分别在手动／自动刷新时有意阻塞响应，确认原读数、分页和画布不消失、无整块遮罩，释放后容量从 1.00 更新到 2.00 GiB；详情确认同一 canvas 节点前后保持连接。另验等待期间撤权取消并清除，旧响应返回不得复活。修复前详情专项实际因等待中容量变为“—”失败（`/tmp/addp-engine-inplace-red3.log`）；修复后标准 `npm --prefix monitor/frontend run test:e2e -- engine-resources.spec.js` 的全部 25 项通过（1.2 分钟），含原错误、SQL 快照失败、趋势失败、权限／主机失效和缩放回归（`/tmp/addp-engine-inplace-targeted.log`）。
+
+本批 T1／T3及构建由原 `make test-monitor-frontend`、Playwright 自动发现和 Platform CI 已登记的 Monitor frontend 作业覆盖，无需修改 workflow。最终使用已有 Node 24.20.0 的 bin 临时加入 PATH 执行 `make test-monitor-frontend`，退出 0：T1 全部 131 项、T3 全部 521 项（22.1 分钟）及生产构建（6.56 秒）通过；日志 `/tmp/addp-engine-inplace-full.log`。`/tmp/addp-engine-inplace-inputs.sha256` 核对本轮页面／引擎用例／夹具在专项和完整门禁之后未改变，`git diff --check` 通过，标准浏览器入口的当轮隔离 runtime／成功输出目录已清理。本轮完整通过不改写前轮超时原记录，也不代表 backend、来源 T2、CI 或 Hosted 通过。Safari 只读检查仍报告页面隐藏、自动刷新暂停，故本次原位刷新尚未取得个人 Safari 连续可见证据，不回用前一版本的缩放验收代替。 随后只读核对当前开发前端：Console 普通组件地址和直连 Monitor 的同一路径仍返回清空旧值的旧实现，而同一路径带诊断查询参数可返回新上下文逻辑与 aria-busy；两种来源已分别保存于 `/tmp/addp-engine-inplace-served-recheck.vue.js`、`/tmp/addp-engine-inplace-served-public-query.vue.js`。这仅证明普通转换结果尚未更新，未确证缓存失效的更深层根因；不添加产品 cache-busting 路径，已请用户执行标准 `./scripts/dev/restart.sh -monitor` 后再验真实页面。未重启服务、修改个人数据库或权限，CI／Hosted 继续等专门会话回传，未查询、调度或设置定时任务。
