@@ -801,7 +801,9 @@ Standard 当前使用单一启动迁移入口 `repository.Migrate`：在同一�
 
 5. **`DocumentPanel` 组件**: 前端复用组件，用于在各详情页嵌入文档关联管理，避免重复实现。
 
-6. **前端 API 统一入口**: 所有 API 调用集中在 [frontend/src/api/standard.js](frontend/src/api/standard.js)。
+6. **前端 API 分工**: Standard 业务接口集中在 [standard.js](frontend/src/api/standard.js)，经 [client.js](frontend/src/api/client.js) 复用共享 `createAPIClient`，并在业务客户端层归一下载响应中的 Blob JSON 错误。
+
+   System 认证接口由 [auth.js](frontend/src/api/auth.js) 复用共享 `createAuthAPI`，通过 [store/auth.js](frontend/src/store/auth.js) 接入共享认证 Store。业务动作权限沿[API 清单](#api-端点apiv1standard)，验证入口与实际覆盖范围见[标准测试入口与范围](#标准测试入口与范围)。
 
 ## 前端公开路由
 
