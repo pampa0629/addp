@@ -2,7 +2,7 @@
 
 ## 模块定位
 
-`engines/` 集中管理不拥有 ADDP 业务配置事实的独立计算与 Notebook 运行时。GeoPython Workflow、Spark Workflow、DuckDB 和 Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范；Model3D Workflow 是三维模型转换专用运行时；PointCloud Workflow 是点云处理专用运行时；Document Workflow 是文档转换专用运行时；SuperMap Workflow 是面向超图 iObjects C++ 的工作流运行时。Develop 和业务模块通过引擎能力声明和 HTTP API 发现算子、执行工作流、联邦查询或 Notebook。
+`engines/` 集中管理不拥有 ADDP 业务配置事实的独立计算与 Notebook 运行时。GeoPython Workflow、Spark Workflow、DuckDB 和 Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范；Model3D Workflow 是三维模型转换专用运行时；PointCloud Workflow 是点云处理专用运行时；Document Workflow 是文档转换专用运行时；SuperMap Workflow 是面向超图 iObjects C++ 的工作流运行时。Develop 和业务模块通过引擎能力声明和 HTTP API 消费对应 Runtime；Jupyter 的接口、排队派发限制与交互会话范围统一见[引擎总入口的 Notebook 摘要](README.md#脚本--notebook-运行时)。
 
 本目录不是 `system.engines` 的源码镜像。拥有独立业务资源、数据库事实、权限、控制面和前端的 owner 模块继续位于仓库根目录；例如 `inference/` 拥有 Provider、Deployment、Profile 和凭据，其数据面以 `inference_runtime` Engine Instance 登记到 System，但不得因此把整个模块移动到本目录或复制第二套控制面。
 
@@ -17,7 +17,7 @@ engines/
 ├── pointcloud-workflow/ # 点云处理运行时，默认端口 8102；绑定 engine runtime 内部 PDAL 后自注册，POINTCLOUD_PDAL_BIN 不指向宿主机全局命令
 ├── document-workflow/ # 文档转换运行时，默认端口 8105；开发态私有官方 LibreOffice 与字体；生产镜像保留隔离
 ├── supermap-workflow/ # 超图 iObjects C++ 工作流运行时，默认端口 8103；通过 Docker 绑定 SuperMap C++ SDK 和许可，不提交 SDK 到仓库
-├── jupyter/          # 无头 Notebook Runtime API，默认端口 8097
+├── jupyter/          # Notebook Runtime 与隔离交互会话，API 默认端口 8097
 ├── duckdb/           # DuckDB 联邦查询 Runtime，默认端口 8104
 └── docs/             # 引擎 API 与设计文档
 ```
@@ -77,7 +77,10 @@ curl http://localhost:8104/health
 
 ## 相关文档
 
-- `engines/README.md`
+- [引擎总入口：Notebook 能力与验收范围](README.md#脚本--notebook-运行时)
+- [Jupyter Runtime 接口与会话约束](jupyter/README.md)
+- [Develop 执行监督与授权契约](../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)
+- [Notebook 会话授权规范](../docs/spec/addp授权上下文规范.md#53-notebook-会话授权)
 - `engines/docs/README.md`
 - `engines/docs/workflow-engine-api-v1.yaml`
 - `develop/CLAUDE.md`

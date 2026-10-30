@@ -17,7 +17,7 @@ engines/
 ├── pointcloud-workflow/ # PointCloud Workflow 点云处理运行时，默认端口 8102
 ├── document-workflow/ # Document Workflow 文档转换运行时，默认端口 8105
 ├── supermap-workflow/  # SuperMap Workflow 超图 iObjects C++ 工作流运行时，默认端口 8103
-├── jupyter/            # 无头 Notebook 执行运行时，API 默认端口 8097
+├── jupyter/            # Notebook Runtime 与隔离交互会话，API 默认端口 8097
 ├── duckdb/             # DuckDB 联邦查询运行时，API 默认端口 8104
 └── docs/               # 引擎 API 与设计文档
 ```
@@ -64,10 +64,17 @@ engines/
 
 ### 脚本 / Notebook 运行时
 
-通过 `EnginePlugin + ScriptRuntimeProvider` 纳入统一引擎体系，能力声明为 `compute.script.supported=true`。
+通过 `EnginePlugin + ScriptRuntimeProvider` 纳入统一引擎体系，能力声明为 `compute.script.supported=true`；该声明描述 Runtime 能力，不代表消费模块已开放排队派发，边界见[能力声明规范](../docs/spec/addp引擎能力声明规范.md#一基本原则)。
 
-**已有引擎**：
-- `jupyter` - 仅由 Develop 通过租户 Service Access Token 调用的无头 Notebook 运行时，不暴露共享 Lab。
+当前内置实现为 `jupyter`，接口与平台接线按以下层次区分：
+
+| 层次 | 当前范围与权威正文 |
+| --- | --- |
+| Runtime 接口 | 已有无头执行、内容摘要校验及交互会话控制面；受保护接口仅供 `addp-develop` 以租户 Service Access Token 调用，字段与错误语义见 [Jupyter API](jupyter/README.md#api-接口)。 |
+| 排队派发 | 一次性 Notebook（`script`）当前拒绝派发，可核验撤权的运行授权尚待确认和接入；执行错误、授权来源与恢复边界统一见[任务契约](../docs/spec/tasks/模块任务契约.md#develop-执行监督与授权)。 |
+| 交互会话 | Develop 创建并代理短期隔离 JupyterLab 会话，不进入上述队列，浏览器不直连 Runtime，也不暴露共享 Lab；Session 与逐次数据读取授权的分工见[授权规范](../docs/spec/addp授权上下文规范.md#53-notebook-会话授权)，Runtime 清理与 Bridge 约束见[会话说明](jupyter/README.md#4-交互会话控制面)。 |
+
+确定性门禁、镜像检查与真实队列派发／撤权闭环分别认定，覆盖与未完成项见 [Jupyter 验证边界](jupyter/README.md#依赖库)；接口存在、进程就绪或局部测试不能代替跨模块 Notebook T4，未执行或未覆盖项不计为通过。
 
 ### 联邦查询运行时
 
@@ -126,7 +133,7 @@ Math Workflow 是参考实现，服务启动后仍需在 System 中手动注册�
 | Document Workflow | [README](document-workflow/README.md) | PPTX 转 PDF 运行时与原生依赖 |
 | SuperMap Workflow | [README](supermap-workflow/README.md) | iObjects C++ SDK、镜像和许可 |
 | DuckDB | [README](duckdb/README.md) | Develop 与 Service 共用的联邦查询运行时 |
-| Jupyter | [README](jupyter/README.md) | Notebook Runtime 与交互会话管理 |
+| Jupyter | [README](jupyter/README.md) | [Runtime 接口、排队派发限制与交互会话](#脚本--notebook-运行时) |
 
 ## 相关文档
 
