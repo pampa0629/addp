@@ -326,6 +326,7 @@ POST   /api/v1/model/metric-implementations/:id/revisions/:revision_id/plan     
 - **Standard 模块**:
   - **服务端引用校验**：Service 层通过 `cfg.StandardURL`（`STANDARD_URL`），以当前 Tenant 的 `addp-model` Service Access Token 校验 domain_id、element_id / element_revision_id、metric_definition_revision_id；不转发或保存 User Access Token。维度层级只校验 Model 本地事实；服务身份的读取范围见[Model 授权规范](docs/model概念与数据约束规范.md#二授权边界)。
   - **前端引用读取**：[Model 前端](frontend/src/api/model.js)通过当前用户会话的共享客户端，以 User Access Token 调用 Standard 唯一公开 API，由 Standard 校验该用户的权限与资源归属。Model 不提供 Standard 代理路径；服务端引用校验成功不代表用户取得 Standard 读取权限。身份主线见[登录认证要求](../docs/spec/addp登录认证的统一要求.md#一认证事实与唯一主路径)，实际覆盖按[开发与验证](#开发与验证)分层认定。
+- **Service 模块（前端）**: Model 前端 → Service 查询定义管理 API，使用当前 User Access Token 读取引用服务、创建查询服务及重绑指标来源，由 Service 校验 Tenant、精确 Permission 与资源归属。权限声明见 [Service Manifest](../service/authorization/permissions.yaml)，身份边界见[Service 身份授权](../service/docs/architecture/查询发布与执行.md#身份授权与资源限制)，确定修订绑定见[指标来源与版本](../service/docs/architecture/指标来源与版本.md)；实际验收范围见[开发与验证](#开发与验证)。
 
 **被依赖**:
 
@@ -436,7 +437,7 @@ Cleanup 内部强制写入的资源锁定、资源 `version` 与 Tenant 实体�
 
    - [client.js](frontend/src/api/client.js) 使用共享 `createAPIClient` 创建 Model 业务客户端，并提供跨客户端复用的 403 授权刷新；刷新后仍将原始拒绝交给调用方，不自动再次查询。
    - [auth.js](frontend/src/api/auth.js) 适配 System 认证 API；[store/auth.js](frontend/src/store/auth.js) 接入共享 `createAuthStore`，认证与会话主线统一见[登录认证要求](../docs/spec/addp登录认证的统一要求.md#一认证事实与唯一主路径)。
-   - [model.js](frontend/src/api/model.js) 组织 Model 业务 API、Standard 引用读取及 Service 查询定义的引用查询、创建与重绑。跨模块客户端均使用当前用户会话；Standard 身份分工见[模块依赖关系](#模块依赖关系)，Service 操作由 Service 校验当前用户权限与资源归属。授权变化、令牌续期及失败后的结果处理见[引用服务弹窗与授权交互](#引用服务弹窗与授权交互)；入口存在不代表当前版本已通过真实跨模块验收。
+   - [model.js](frontend/src/api/model.js) 组织 Model 业务 API、Standard 引用读取及 Service 查询定义的引用查询、创建与重绑。跨模块调用的身份与权限分工见[模块依赖关系](#模块依赖关系)。授权变化、令牌续期及失败后的结果处理见[引用服务弹窗与授权交互](#引用服务弹窗与授权交互)；入口存在不代表当前版本已通过真实跨模块验收。
 
    实体属性与逻辑字段的数据元选择只消费 Standard `current_revision`；冻结名称通过 `elements/:id/revisions/:revision_id` 读取，不能取 `draft_revision`、旧顶层字段或用当前名称替代历史名称。两个页面共用 `modelDetailState.js` 的引用加载与展示逻辑。实体审批／退回草稿后重载属性和修订引用。对应选择、不可用、历史修订及生命周期交互由既有 `make test-model-frontend` 覆盖。
 
