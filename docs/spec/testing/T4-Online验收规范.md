@@ -125,3 +125,14 @@ System-owned fixture 通过正式 Bootstrap 建立三个不同三员，通过正
 凭编号核清复用该套件：收集阶段中断并确认 CLI 退出后，新进程只能观察到 prepared，错误恢复编号必须返回 unknown；四人 Apply 正常完成并确认原进程退出后，另启不同进程执行 `status <attempt-id> <submission-id>`，不输入 Secret、密码或验证码。核清必须返回原提交的 completed_this_submission、同一成功提交编号、四名历史 Principal／岗位及恢复时授权版本；另一个提交编号只能得到 completed_other_submission。后续恢复暂停、撤销新增岗位后再次核清，原回执必须不变，重复核清前后恢复审计完整行和当前会话授权事实不变。报告只保存断言布尔值，非敏感编号也不保存为凭据副本。此项仅证明真实 CLI 退出后的跨进程核清，不替代已提交成功响应被截断的 PostgreSQL T2，也不声称跨进程网络确认丢失 T4 已通过。
 
 凭据不写 URL、日志或报告；浏览器不保留截图、Trace、视频或 Storage State，报告只保存固定断言和脱敏身份。准入、业务和清理任一失败均为失败，未实际 Hosted 运行不计 T4 通过。
+
+
+### 原生 Cleanup 的独立有限验收
+
+`cleanup-native-effects` 是手动选择的独立 Hosted profile；不能用既有 `cleanup-execution` 的逻辑回执或浏览器通过替代原生效果证明。`ADDP_ONLINE_NATIVE_CASE` 必须明确为 `manager-success`、`manager-object-unknown`、`manager-index-unknown`、`transfer-engine`、`transfer-dlq-unknown`、`transfer-capture-unknown` 之一，无默认或全矩阵。每个 case 使用全新部署；新的 Hosted 运行与环境切换仍需单独确认。
+
+Manager 通过普通 User 的正式源 Grant 和 Model3D Runtime 生成真实 GLB；清理后直接核对输出对象和索引，并确认原始 OBJ、MTL、纹理字节未变。Transfer 区分 Engine 删除保留并禁用任务/DLQ，以及普通 User 显式删除任务清理 DLQ 两个产品入口；真实目标业务行保持不变。三种普通 User 和准确权限、六个 case 的必需 checks 唯一维护在 `scripts/test/execution-online-contract.json`，CI 按精确集合拒绝缺失、重复、跨 case 和伪造通过。DLQ unknown 当前拒绝新 producer 的 HTTP 500 分类缺口须如实保留，不能把任意 500 当成证明。
+
+四个一次性代理在应用启动前固定指向本轮 Infra，只对准确关联操作发送一次真实变更后丢弃回包，并阻止重发。控制端点仅容器 loopback；Kafka 内部 advertised listener 经过代理，外部 listener 供独立只读原生探针直达。含凭据的 manifest、描述符、代理配置与展开 Compose 均保持私有 0600，不归档。退出先停产品/Worker/Runtime，再销毁代理、业务夹具和 Infra；恢复、销毁或零残留失败均导致 Job 失败。
+
+标准确定性入口为 `make test-cleanup-native-online-runner`，纳入现有 Online/平台登记链。该批代码与确定性测试不证明 Hosted 实际通过；真实旧 writer 晚写、原生写图回包与正向 reopen 不在六个 case 中，报告必须保持相应 `not_run` 边界。

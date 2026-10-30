@@ -240,6 +240,7 @@ class OnlineGateTest(unittest.TestCase):
                 "security-plaintext-access",
                 "graph-protection",
                 "cleanup-execution",
+                "cleanup-native-effects",
                 "security-transfer-protection",
                 "standard-model-reference-deletion",
                 "tidb-consumer-flow",

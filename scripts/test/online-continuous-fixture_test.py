@@ -103,6 +103,23 @@ elif args[0]=='exec' and 'produce' in args:
         self.assertIn('com.addp.online-run=addp-online-secret-test', trace)
         self.assertNotIn('createdb', trace)
 
+    def test_native_transfer_uses_fixed_container_advertised_broker_without_host_port(self):
+        result = self.run_fixture('start', ONLINE_SUITE='cleanup-native-effects', ADDP_ONLINE_NATIVE_CASE='transfer-engine')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        descriptor = json.loads((self.secret / 'continuous-kafka.json').read_text())
+        self.assertEqual(descriptor['connection_info']['bootstrap_servers'], 'addp-continuous-kafka-online-disposable:29094')
+        calls = [json.loads(line) for line in self.trace.read_text().splitlines()]
+        broker = next(c for c in calls if c[0] == 'run' and 'addp-continuous-kafka-online-disposable' in c)
+        self.assertIn('--network', broker)
+        self.assertNotIn('-p', broker)
+        self.assertEqual(broker[-1], descriptor['connection_info']['bootstrap_servers'])
+
+    def test_native_transfer_requires_its_explicit_case_before_docker(self):
+        for case in ('', 'all', 'manager-success', 'transfer-other'):
+            result = self.run_fixture('start', ONLINE_SUITE='cleanup-native-effects', ADDP_ONLINE_NATIVE_CASE=case)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(self.trace.exists())
+
     def test_start_waits_for_final_tcp_database_before_creating_source_tables(self):
         result = self.run_fixture('start', REQUIRE_FINAL_PG='1', PG_TCP_FAILURES='2')
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -1,0 +1,110 @@
+# Disposable native Cleanup case; all ten Owners, no browser or second Owner instance.
+services:
+  system-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    restart: "no"
+    ports: !override ["127.0.0.1:8180:8180"]
+  gateway:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    restart: "no"
+    ports: !override ["127.0.0.1:8000:8000"]
+  meta-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    restart: "no"
+    ports: !override ["127.0.0.1:8082:8082"]
+  manager-backend:
+    environment:
+      MINIO_ENDPOINT: cleanup-native-object-proxy:19000
+      MEILISEARCH_URL: http://cleanup-native-index-proxy:17700
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    restart: "no"
+    ports: !override ["127.0.0.1:8081:8081"]
+  transfer-backend:
+    environment:
+      INFRA_KAFKA_BOOTSTRAP_SERVERS: cleanup-native-dlq-proxy:29092
+      KAFKA_CONNECT_URL: http://cleanup-native-capture-proxy:18083
+      KAFKA_CONNECT_BOOTSTRAP_SERVERS: cleanup-native-dlq-proxy:29092
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    restart: "no"
+    ports: !override ["127.0.0.1:8083:8083"]
+  develop-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    restart: "no"
+    ports: !override ["127.0.0.1:8185:8185"]
+  service-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    restart: "no"
+    ports: !override ["127.0.0.1:8086:8086"]
+  quality-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    restart: "no"
+    ports: !override ["127.0.0.1:8182:8182"]
+  graph-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    restart: "no"
+    ports: !override ["127.0.0.1:8186:8186"]
+  asset-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    restart: "no"
+    ports: !override ["127.0.0.1:8183:8183"]
+  model-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    restart: "no"
+    ports: !override ["127.0.0.1:8181:8181"]
+  standard-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    restart: "no"
+    ports: !override ["127.0.0.1:8110:8110"]
+  monitor-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    restart: "no"
+    ports: !override ["127.0.0.1:8100:8100"]
+  security-backend:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    restart: "no"
+    ports: !override ["127.0.0.1:8194:8194"]
+  meta-worker:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    restart: "no"
+  transfer-continuous-worker:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+      INFRA_KAFKA_BOOTSTRAP_SERVERS: cleanup-native-dlq-proxy:29092
+      KAFKA_CONNECT_URL: http://cleanup-native-capture-proxy:18083
+      KAFKA_CONNECT_BOOTSTRAP_SERVERS: cleanup-native-dlq-proxy:29092
+    restart: "no"
+  model3d-workflow-engine:
+    environment:
+      ADDP_ONLINE_HOSTED: "1"
+      ADDP_ONLINE_TEST_RUN_ID: ${ADDP_ONLINE_TEST_RUN_ID:?required}
+    volumes: !override []
+    restart: "no"

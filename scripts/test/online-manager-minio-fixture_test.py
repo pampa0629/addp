@@ -452,6 +452,39 @@ esac
         current = {str(path.relative_to(root)): path.read_bytes() for path in root.rglob("*") if path.is_file()}
         self.assertEqual(current, baseline)
 
+    def test_native_obj_uploads_only_original_three_objects_with_private_container_descriptor(self):
+        secret = self.root.resolve() / 'addp-online-secret-native'
+        secret.mkdir(mode=0o700)
+        env = dict(ADDP_TEST_OS='Linux', ADDP_ONLINE_HOSTED='1', GITHUB_ACTIONS='true', RUNNER_OS='Linux',
+            ONLINE_SUITE='cleanup-native-effects', ADDP_ONLINE_NATIVE_CASE='manager-success',
+            ADDP_ONLINE_SECRET_DIR=str(secret), RUNNER_TEMP=str(self.root.resolve()),
+            ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE=str(secret / 'manager-engine.json'),
+            ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT='', ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT='')
+        original = (self.bin / 'docker').read_text()
+        self._executable('docker', original.replace('case "$1" in',
+            'if [ "$1 $2" = "container inspect" ]; then [ -f "$ADDP_TEST_CONTAINER_STATE" ]; exit; fi\ncase "$1" in', 1))
+        result = self.run_fixture('start-obj', **env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        descriptor = secret / 'manager-engine.json'
+        self.assertEqual(json.loads(descriptor.read_text())['connection_info']['endpoint'], 'business-minio:9000')
+        self.assertEqual(descriptor.stat().st_mode & 0o777, 0o600)
+        objects = {str(p.relative_to(self.root / 'model-fixtures')) for p in (self.root / 'model-fixtures').rglob('*') if p.is_file()}
+        self.assertEqual(objects, {'obj/model.obj', 'obj/model.mtl', 'obj/texture.png'})
+        trace = self.log.read_text()
+        self.assertIn('network connect addp-network business-minio', trace)
+        self.assertNotIn('/fixture/source.las', trace)
+        self.assertNotIn('/fixture/source.pptx', trace)
+        self.assertNotEqual(self.run_fixture('start-obj', **env).returncode, 0, 'must reject source reuse')
+        self.assertEqual(self.run_fixture('stop', **env).returncode, 0)
+
+    def test_native_obj_requires_an_explicit_case_and_owned_private_descriptor_before_docker(self):
+        self.assertNotEqual(self.run_fixture('start-obj').returncode, 0)
+        for case in ('', 'all', 'manager-other', 'transfer-engine'):
+            result = self.run_fixture('start-obj', ADDP_TEST_OS='Linux', ADDP_ONLINE_HOSTED='1', GITHUB_ACTIONS='true',
+                RUNNER_OS='Linux', ONLINE_SUITE='cleanup-native-effects', ADDP_ONLINE_NATIVE_CASE=case)
+            self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.log.exists())
+
     def test_hosted_profile_creates_owner_only_descriptor_and_removes_volumes(self) -> None:
         descriptor = self.root / "manager-engine.json"
         overrides = dict(ADDP_TEST_OS="Linux", ADDP_ONLINE_HOSTED="1", GITHUB_ACTIONS="true",

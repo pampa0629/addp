@@ -152,6 +152,25 @@ def validate_execution_environment(profile: str, repository: Path, services: lis
               ["ADDP_ONLINE_CLEANUP_" + key for key in ("ACCESS_TOKEN", "OTHER_ACCESS_TOKEN", "READ_ACCESS_TOKEN",
                                                        "REVOKEE_ACCESS_TOKEN", "IAM_ACCESS_TOKEN", "ASSIGNMENT_ID",
                                                        "OTHER_USERNAME", "OTHER_PASSWORD", "OTHER_ASSIGNMENT_ID")])
+    if profile == "cleanup-native":
+        tokens = ["ADDP_ONLINE_CLEANUP_NATIVE_" + kind + "_ACCESS_TOKEN" for kind in ("MANAGER", "TRANSFER", "ENGINE")]
+        tokens.append("ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN")
+        contract = json.loads((repository / 'scripts/test/execution-online-contract.json').read_text())
+        case = os.environ.get('ADDP_ONLINE_NATIVE_CASE', '')
+        if case not in contract['native_case_checks']:
+            raise PreflightError('native Cleanup requires an explicit bounded case')
+        path = secret / 'cleanup-native-fixture.json'
+        try:
+            if path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o777 != 0o600 or path.stat().st_size >= 32768:
+                raise ValueError('private manifest missing')
+            manifest = json.loads(path.read_text())
+            if (set(manifest) != {'schema', 'run_id', 'case', 'descriptors', 'source_bucket', 'proxies', 'native'}
+                    or manifest['schema'] != 'addp.cleanup-native-fixture/v1' or manifest['case'] != case
+                    or manifest['run_id'] != os.environ['ADDP_ONLINE_TEST_RUN_ID']
+                    or set(manifest['proxies']) != {'object', 'index', 'capture', 'dlq'}):
+                raise ValueError('manifest case/run differs')
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise PreflightError('native Cleanup requires its owned private fixture manifest') from error
     if any(not os.environ.get(key) for key in tokens):
         raise PreflightError("execution profile is missing a required private fixture identity")
     if profile == "graph":
@@ -162,9 +181,12 @@ def validate_execution_environment(profile: str, repository: Path, services: lis
             raise PreflightError("execution profile requires a positive fixture Engine identity")
     else:
         required = {"gateway", "system", "meta", "manager", "transfer", "develop", "service", "quality", "graph", "asset", "model", "standard"}
-        console = parse_service("console=" + os.environ.get("CONSOLE_URL", ""))
-        if urllib.parse.urlsplit(console.base_url).scheme != "http" or urllib.parse.urlsplit(console.base_url).hostname != "127.0.0.1":
-            raise PreflightError("Cleanup browser requires the exact loopback Console entry")
+        if profile == "cleanup-native":
+            required |= {"security", "monitor"}
+        else:
+            console = parse_service("console=" + os.environ.get("CONSOLE_URL", ""))
+            if urllib.parse.urlsplit(console.base_url).scheme != "http" or urllib.parse.urlsplit(console.base_url).hostname != "127.0.0.1":
+                raise PreflightError("Cleanup browser requires the exact loopback Console entry")
     addresses = {s.module: s.base_url for s in services}
     if not required.issubset(addresses):
         raise PreflightError("execution profile is missing a required service")
@@ -248,7 +270,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repository", type=Path)
     parser.add_argument("--service", action="append", default=[])
     parser.add_argument("--timeout", type=float, default=10.0)
-    parser.add_argument("--execution-profile", choices=("graph", "cleanup"))
+    parser.add_argument("--execution-profile", choices=("graph", "cleanup", "cleanup-native"))
     return parser.parse_args()
 
 

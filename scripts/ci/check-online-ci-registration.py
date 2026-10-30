@@ -4589,6 +4589,60 @@ def validate_execution_profiles(repository: Path, registered: set[str]) -> None:
         raise RegistrationError("Execution registration regressions must enter the standard Online gate")
 
 
+def validate_native_cleanup_profile(repository: Path, registered: set[str]) -> None:
+    if 'cleanup-native-effects' not in registered:
+        return
+    registry = load_suite_registry(repository)
+    suite = registry['cleanup-native-effects']
+    owners = {'meta', 'manager', 'transfer', 'develop', 'service', 'quality', 'graph', 'asset', 'model', 'standard'}
+    if suite.nightly or {owner for owner, _ in suite.services} != owners | {'gateway', 'system', 'security', 'monitor'}:
+        raise RegistrationError('Native Cleanup requires manual selection and all ten Owners')
+    required = {
+        'scripts/test/online-hosted-cleanup-native-gate.sh': ('# ADDP_ONLINE_SUITES=cleanup-native-effects',
+            'case "${ADDP_ONLINE_NATIVE_CASE:-}" in', 'cleanup-native-infra.py prepare', 'cleanup-native-infra.py manifest',
+            'cleanup-native-infra.py stop', 'model3d-workflow-engine', 'transfer-continuous-worker', ' start-obj',
+            'execution-online-support resume', 'compose_native down --remove-orphans --volumes',
+            'source "$IDENTITY_ENV"', 'run_logged make test-online ONLINE_SUITE="$ONLINE_SUITE"'),
+        'scripts/test/cleanup-native-infra.py': ('def advertised_config(', 'internal://cleanup-native-dlq-proxy:29092',
+            'def verify_pin(', 'def stop(self):', "'native-container-pins.json'", "'--network', 'host'", 'source_minio'),
+        'scripts/test/online-gate.py': ('validate_native_cleanup_report', "contract['native_case_checks']", 'cleanup-native-effects.json'),
+        'scripts/test/online-preflight.py': ('cleanup-native-fixture.json', 'ADDP_ONLINE_CLEANUP_NATIVE_', 'ADDP_ONLINE_NATIVE_CASE'),
+        'scripts/test/cleanup-native-effects-online.py': ('native_case_checks', 'source_objects_unchanged', 'target_business_rows_preserved'),
+        'scripts/test/native-effect-proxy.py': ('--config', '18087', 'blocked_replays'),
+    }
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('Native Cleanup contract incomplete: ' + relative)
+    workflow = (repository / '.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  cleanup-native-hosted-t4:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)', workflow)
+    self_hosted = re.search(r'(?ms)^  online-t4:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)', workflow)
+    if (job is None or self_hosted is None or "inputs.suite != 'cleanup-native-effects'" not in self_hosted.group('body')
+            or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'cleanup-native-effects'" not in job.group('body')
+            or 'cancel-in-progress: false' not in job.group('body') or 'runs-on: ubuntu-24.04' not in job.group('body')
+            or 'inputs.native_case' not in job.group('body') or 'timeout-minutes: 120' not in job.group('body')):
+        raise RegistrationError('Native Cleanup requires a sole manual Hosted job')
+    paths = re.findall(r'(?m)^            \$\{\{ runner.temp \}\}/addp-online-\$\{\{ github.run_id \}\}/(.+)$', job.group('body'))
+    if len(paths) != 5 or set(paths) != {'readiness.txt', 'summary.txt', 'online-report.json', 'cleanup-native-effects.json', 'execution-recovery.txt'}:
+        raise RegistrationError('Native Cleanup must archive only five public reports/outcomes')
+    commands = make_target_commands((repository / 'Makefile').read_text(), 'test-online-runner')
+    for relative in ('cleanup-native-effects-online_test.py', 'native-effect-proxy_test.py', 'cleanup-native-infra_test.py'):
+        if relative not in commands:
+            raise RegistrationError('Native Cleanup deterministic tests missing from standard Online gate')
+    overlay = (repository / 'scripts/test/docker-compose.cleanup-native-t4.yml').read_text()
+    if compose_service_block(overlay, 'graph-backend-peer'):
+        raise RegistrationError('Native Cleanup requires one Graph Owner')
+    for owner in owners | {'system', 'security', 'monitor'}:
+        block = compose_service_block(overlay, owner + '-backend') or ''
+        if any(fragment not in block for fragment in ('ADDP_ONLINE_TEST_RUN_ID', 'ADDP_ONLINE_HOSTED: "1"', 'ports: !override ["127.0.0.1:')):
+            raise RegistrationError('Native Owner identity/loopback boundary missing: ' + owner)
+    manager = compose_service_block(overlay, 'manager-backend') or ''
+    transfer = compose_service_block(overlay, 'transfer-backend') or ''
+    if 'cleanup-native-object-proxy:19000' not in manager or 'cleanup-native-index-proxy:17700' not in manager or any(
+            fragment not in transfer for fragment in ('cleanup-native-dlq-proxy:29092', 'cleanup-native-capture-proxy:18083')):
+        raise RegistrationError('Native app endpoints must be fixed before startup')
+
+
 def validate_administrator_governance_profile(repository: Path, registered: set[str]) -> None:
     if "platform-administrator-governance" not in registered:
         return
@@ -4809,6 +4863,7 @@ def check_registration(repository: Path) -> None:
     validate_security_mysql_owner_protection_profile(repository, registered)
     validate_graph_protection_profile(repository, registered)
     validate_execution_profiles(repository, registered)
+    validate_native_cleanup_profile(repository, registered)
     validate_oceanbase_consumer_flow_profile(repository, registered)
     validate_tidb_consumer_flow_profile(repository, registered)
     validate_opengauss_consumer_flow_profile(repository, registered)

@@ -25,6 +25,10 @@ owned() {
     [ "$(docker inspect -f '{{ index .Config.Labels "com.addp.online-run" }}' "$1")" = "$owner" ] || fail 'fixture ownership mismatch'
 }
 psql_owned() { owned "$pg"; docker exec -i "$pg" psql -U postgres -d continuous_fixture -v ON_ERROR_STOP=1 -At "$@"; }
+native_network=0
+if [ "${ONLINE_SUITE:-}" = cleanup-native-effects ]; then
+  case "${ADDP_ONLINE_NATIVE_CASE:-}" in transfer-engine|transfer-dlq-unknown|transfer-capture-unknown) native_network=1 ;; *) fail 'explicit Transfer native case required' ;; esac
+fi
 action=${1:-}
 case "$action" in
   stop)
@@ -58,10 +62,16 @@ INSERT INTO public.continuous_source VALUES (1,'business-value-sentinel-initial'
 CREATE TABLE public.continuous_scan_sibling (id bigint PRIMARY KEY, label text NOT NULL);
 INSERT INTO public.continuous_scan_sibling VALUES (1,'business-value-sentinel-sibling'),(2,'business-value-sentinel-sibling');
 SQL
+    kafka_network=(-p 127.0.0.1:29094:29094)
+    export CONTINUOUS_KAFKA_BOOTSTRAP=127.0.0.1:29094
+    if [ "$native_network" = 1 ]; then
+      kafka_network=(--network addp-network)
+      CONTINUOUS_KAFKA_BOOTSTRAP="$kafka:29094"
+    fi
     docker run -d --name "$kafka" --label com.addp.online-fixture=continuous --label "com.addp.online-run=$owner" \
-      -p 127.0.0.1:29094:29094 "${REDPANDA_IMAGE:?}" redpanda start --overprovisioned \
+      "${kafka_network[@]}" "${REDPANDA_IMAGE:?}" redpanda start --overprovisioned \
       --smp 1 --memory 512M --reserve-memory 0M --node-id 0 --check=false \
-      --kafka-addr 0.0.0.0:29094 --advertise-kafka-addr 127.0.0.1:29094 >/dev/null
+      --kafka-addr 0.0.0.0:29094 --advertise-kafka-addr "$CONTINUOUS_KAFKA_BOOTSTRAP" >/dev/null
     ready=0
     for _ in $(seq 1 60); do if docker exec "$kafka" rpk cluster info -X brokers=127.0.0.1:29094 >/dev/null 2>&1; then ready=1; break; fi; sleep 1; done
     [ "$ready" = 1 ] || fail 'business Kafka did not become ready'
@@ -74,7 +84,7 @@ from pathlib import Path
 root=Path(os.environ['ADDP_ONLINE_SECRET_DIR'])
 descriptors={
  'pg':{'name':'Hosted continuous PostgreSQL','description':'Disposable PostgreSQL CDC source and target','engine_type':'postgresql','engine_origin':'general','connection_info':{'host':os.environ['CONTINUOUS_PG_HOST'],'port':5432,'database':'continuous_fixture','user':'postgres','password':os.environ['POSTGRES_PASSWORD'],'sslmode':'disable'}},
- 'kafka':{'name':'Hosted business Kafka','description':'Disposable business Kafka continuous source','engine_type':'kafka','engine_origin':'general','connection_info':{'bootstrap_servers':'127.0.0.1:29094'}},
+ 'kafka':{'name':'Hosted business Kafka','description':'Disposable business Kafka continuous source','engine_type':'kafka','engine_origin':'general','connection_info':{'bootstrap_servers':os.environ['CONTINUOUS_KAFKA_BOOTSTRAP']}},
 }
 for kind,value in descriptors.items():
  fd=os.open(root/f'continuous-{kind}.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)

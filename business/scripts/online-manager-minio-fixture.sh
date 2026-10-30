@@ -29,10 +29,30 @@ fi
 
 action=${1:-}
 case "$action" in
-  start|stop|status|index-csv-change|index-csv-restore|index-tsv-change|index-tsv-restore) ;;
+  start|start-obj|stop|status|index-csv-change|index-csv-restore|index-tsv-change|index-tsv-restore) ;;
   *) fail "unknown fixture action; use start|stop|status or a fixed Hosted index source change/restore action" ;;
 esac
 [ "$#" -eq 1 ] || fail "exactly one action is required"
+native_obj=0
+if [ "${ONLINE_SUITE:-}" = cleanup-native-effects ]; then
+  [ "${ADDP_ONLINE_HOSTED:-}" = 1 ] || fail "native OBJ requires its Hosted Manager case"
+  case "${ADDP_ONLINE_NATIVE_CASE:-}" in manager-success|manager-object-unknown|manager-index-unknown) ;; *) fail "explicit native Manager case required" ;; esac
+  native_obj=1
+fi
+[ "$action" != start-obj ] || [ "$native_obj" = 1 ] || fail "start-obj is exclusive to native Cleanup"
+[ "$native_obj" != 1 ] || [ "$action" != start ] || fail "native Cleanup must use the bounded start-obj action"
+if [ "$native_obj" = 1 ]; then
+  python3 - <<'NATIVEOWNED'
+import os, re
+from pathlib import Path
+original = Path(os.environ['ADDP_ONLINE_SECRET_DIR'])
+secret = original.resolve(strict=True)
+assert not original.is_symlink() and secret.parent == Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
+assert re.fullmatch(r'addp-online-secret-[A-Za-z0-9_.-]+', secret.name)
+assert secret.stat().st_mode & 0o777 == 0o700 and secret.stat().st_uid == os.getuid()
+assert Path(os.environ['ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE']) == secret / 'manager-engine.json'
+NATIVEOWNED
+fi
 if [[ "$action" = index-* ]]; then
   [ "${ADDP_ONLINE_HOSTED:-0}" = "1" ] || fail "index source mutation requires the exclusive Hosted fixture"
   [[ "${ADDP_ONLINE_TEST_RUN_ID:-}" =~ ^manager-[0-9]+-[0-9]+$ ]] || fail "index source mutation requires a Manager run identity"
@@ -56,9 +76,10 @@ required=(
   ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY
   ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY
   ADDP_ONLINE_MANAGER_MINIO_BUCKET
-  ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT
-  ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT
 )
+if [ "$native_obj" != 1 ]; then
+  required+=(ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT)
+fi
 if [ "${ADDP_ONLINE_HOSTED:-0}" != "1" ]; then
   required+=(ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT)
 fi
@@ -92,6 +113,7 @@ validate_object_key() {
   esac
 }
 
+if [ "$native_obj" != 1 ]; then
 validate_object_key ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT las
 validate_object_key ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT pptx
 fixture_objects=("$ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT" "$ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT")
@@ -113,6 +135,8 @@ done
 [ -f "${REPOSITORY_DIR}/manager/frontend/e2e/fixtures/fbx/LICENSE-three.txt" ] || fail "colored FBX fixture license is missing"
 [ -f "${BUSINESS_DIR}/fixtures/manager/addp_online_max_texture.png" ] || fail "MAX texture fixture source is missing"
 [ -f "${BUSINESS_DIR}/fixtures/manager/addp_online_exchange_texture.png" ] || fail "3DS texture fixture source is missing"
+
+fi
 
 docker_fixture() {
   env \
@@ -143,7 +167,11 @@ validate_container_ownership() {
 }
 
 minio_network() {
-  docker_fixture inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}' business-minio
+  if [ "$native_obj" = 1 ]; then
+    printf '%s\n' addp-network
+  else
+    docker_fixture inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}' business-minio
+  fi
 }
 
 mc() {
@@ -158,7 +186,7 @@ mc() {
 }
 
 generate_fixtures() {
-  python3 - "$1" "${BUSINESS_DIR}/fixtures/manager/addp_online_exchange_texture.png" <<'PY'
+  python3 - "$1" "${BUSINESS_DIR}/fixtures/manager/addp_online_exchange_texture.png" "$native_obj" <<'PY'
 import csv
 import io
 import struct
@@ -169,6 +197,14 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 root = Path(sys.argv[1])
+(root / 'obj').mkdir()
+(root / "obj/model.obj").write_text('mtllib model.mtl\no panel\nv 0 0 0\nv 2 0 0\nv 0 3 0\n'
+    'vt 0 0\nvt 1 0\nvt 0 1\nusemtl paint\nf 1/1 2/2 3/3\n')
+(root / "obj/model.mtl").write_text('newmtl paint\nKd 1 1 1\nd 1\nmap_Kd texture.png\n')
+
+(root / 'obj/texture.png').write_bytes(Path(sys.argv[2]).with_name('addp_online_max_texture.png').read_bytes())
+if sys.argv[3] == '1':
+    raise SystemExit(0)
 (root / 'index-source-versions').mkdir()
 for suffix, delimiter in (('csv', ','), ('tsv', '\t')):
     (root / 'index-source-versions' / ('source.' + suffix)).write_bytes('id,name\n1,Alice\n2,Bobby\n'.replace(',', delimiter).encode('ascii'))
@@ -266,14 +302,11 @@ struct.pack_into("<12d", header, 131, .01, .01, .01, 0, 0, 0, 2, 0, 2, 0, 1, 0)
 records = b"".join(struct.pack("<iiiHBBbBH", x, y, z, 100, 9, 1, 0, 0, 0)
                    for x, y, z in ((0, 0, 0), (100, 100, 50), (200, 200, 100)))
 (root / "pdal_las12_format0.las").write_bytes(header + vlr + records)
-for format_name in ("dae", "3ds", "fbx", "obj"):
+for format_name in ("dae", "3ds", "fbx"):
     (root / format_name).mkdir(parents=True)
 
 (root / "dae/texture.png").write_bytes(Path(sys.argv[2]).read_bytes())
 
-(root / "obj/model.obj").write_text('mtllib model.mtl\no panel\nv 0 0 0\nv 2 0 0\nv 0 3 0\n'
-    'vt 0 0\nvt 1 0\nvt 0 1\nusemtl paint\nf 1/1 2/2 3/3\n')
-(root / "obj/model.mtl").write_text('newmtl paint\nKd 1 1 1\nd 1\nmap_Kd texture.png\n')
 
 (root / "dae/model.dae").write_bytes(Path(sys.argv[2]).with_name("addp_online_model_fixture.dae").read_bytes())
 
@@ -284,6 +317,18 @@ seed_fixture() {
   MODEL_FIXTURE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-online-model3d.XXXXXX")
   trap 'rm -rf "$MODEL_FIXTURE_DIR"' EXIT
   generate_fixtures "$MODEL_FIXTURE_DIR"
+  if [ "$native_obj" = 1 ]; then
+    mc mb --ignore-existing "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET" >/dev/null
+    local object
+    for object in model.obj model.mtl texture.png; do
+      docker_fixture run --rm --entrypoint mc --network "$(minio_network)" \
+        -e "MC_HOST_fixture=http://${ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY}:${ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY}@business-minio:9000" \
+        -v "$MODEL_FIXTURE_DIR:/fixture:ro" "$MC_IMAGE" cp --quiet "/fixture/obj/$object" \
+        "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/model3d/obj/$object"
+      mc stat "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/model3d/obj/$object" >/dev/null
+    done
+    return
+  fi
   python3 "$SCRIPT_DIR/online-content-boundary-fixture.py" "$MODEL_FIXTURE_DIR"
   for format in ifc osgb skp max 3ds; do
     mkdir -p "$MODEL_FIXTURE_DIR/$format"
@@ -398,13 +443,19 @@ PYINDEX
     mc cat "$target" > "$directory/current"
     cmp -s "$directory/current" "$directory/$desired" || fail "index source write verification failed"
     ;;
-  start)
+  start|start-obj)
+    if [ "$native_obj" = 1 ]; then
+      ! docker_fixture container inspect business-minio >/dev/null 2>&1 || fail "native OBJ refuses an existing source container"
+    fi
     if ! docker_fixture image inspect "$MC_IMAGE" >/dev/null 2>&1; then
       compose build minio
     fi
     compose up -d minio
     for _ in $(seq 1 60); do
       if container_running && curl -fsS "http://127.0.0.1:${ADDP_ONLINE_MANAGER_MINIO_PORT}/minio/health/live" >/dev/null 2>&1; then
+        if [ "$native_obj" = 1 ]; then
+          docker network connect addp-network business-minio
+        fi
         seed_fixture
         if [ "${ADDP_ONLINE_HOSTED:-0}" = "1" ]; then
           python3 - <<'PYDESCRIPTOR'
@@ -415,7 +466,7 @@ with path.open("w") as output:
     path.chmod(0o600)
     json.dump({"name": "Hosted Manager MinIO", "engine_type": "minio", "engine_origin": "general",
                "description": "Disposable Manager artifact T4 source",
-               "connection_info": {"endpoint": "127.0.0.1:" + os.environ["ADDP_ONLINE_MANAGER_MINIO_PORT"],
+               "connection_info": {"endpoint": ("business-minio:9000" if os.environ.get("ONLINE_SUITE") == "cleanup-native-effects" else "127.0.0.1:" + os.environ["ADDP_ONLINE_MANAGER_MINIO_PORT"]),
                                    "access_key": os.environ["ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY"],
                                    "secret_key": os.environ["ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY"], "use_ssl": False}}, output)
 PYDESCRIPTOR

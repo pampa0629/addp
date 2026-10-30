@@ -566,6 +566,13 @@ SUITES: Mapping[str, Suite] = {
             "quality", "graph", "asset", "model", "standard",
         )),
     ),
+    "cleanup-native-effects": Suite(
+        command=(sys.executable, "-m", "scripts.test.cleanup-native-effects-online"),
+        services=tuple((owner, owner.upper() + "_URL") for owner in (
+            "gateway", "system", "meta", "manager", "transfer", "develop", "service",
+            "quality", "graph", "asset", "model", "standard", "security", "monitor",
+        )),
+    ),
     "security-plaintext-access": Suite(
         command=(sys.executable, "scripts/test/security-plaintext-access-online.py"),
         services=(
@@ -835,6 +842,8 @@ EXECUTION_OWNERS = {"meta", "manager", "transfer", "develop", "service", "qualit
 
 
 def execution_profile(suite_name: str, environment: Mapping[str, str]) -> str | None:
+    if suite_name == "cleanup-native-effects":
+        return "cleanup-native"
     if suite_name == "cleanup-execution":
         return "cleanup"
     if suite_name == "graph-protection":
@@ -846,8 +855,54 @@ def execution_profile(suite_name: str, environment: Mapping[str, str]) -> str | 
     return None
 
 
+def validate_native_cleanup_report(report: dict[str, object], environment: Mapping[str, str]) -> None:
+    contract = json.loads(Path(__file__).with_name('execution-online-contract.json').read_text())
+    case = environment.get('ADDP_ONLINE_NATIVE_CASE', '')
+    checks = report.get('checks')
+    required = dict(schema_version='addp.cleanup-native-effects/v1', suite='cleanup-native-effects',
+                    case=case, result='passed', control_cleanup='passed', hosted_destruction='required',
+                    run_id=environment.get('ADDP_ONLINE_TEST_RUN_ID'), tenant_id=environment.get('ADDP_ONLINE_TEST_TENANT_ID'),
+                    native_late_writer_acceptance='not_run', graph_native_write_acceptance='not_run',
+                    positive_reopen_acceptance='not_run')
+    principals = report.get('principals')
+    if (case not in contract['native_case_checks'] or any(report.get(k) != v for k, v in required.items())
+            or not required['run_id'] or not required['tenant_id']
+            or not isinstance(checks, list) or any(type(x) is not str for x in checks)
+            or len(checks) != len(set(checks)) or set(checks) != set(contract['native_case_checks'][case])
+            or not isinstance(principals, dict) or set(principals) != {'manager', 'transfer', 'engine'}
+            or any(type(x) is not str or not x for x in principals.values()) or len(set(principals.values())) != 3):
+        raise OnlineStageError('scenario', 'online_native_cleanup_report_invalid', 'native Cleanup case, identities or exact checks differ')
+    def valid_uuid(value):
+        try:
+            return isinstance(value, str) and str(uuid.UUID(value)) == value and uuid.UUID(value).int != 0
+        except ValueError:
+            return False
+    for field in ('engines', 'tasks', 'requests', 'executions'):
+        values = report.get(field)
+        numeric = field in {'engines', 'tasks'}
+        if (not isinstance(values, list) or any(not (type(x) is int and x > 0) if numeric else not valid_uuid(x) for x in values)
+                or len(values) != len(set(values))):
+            raise OnlineStageError('scenario', 'online_native_cleanup_report_invalid', 'native resource identities are invalid')
+    manager = case.startswith('manager-')
+    if (not report['engines'] or (not manager and (not report['tasks'] or not report['executions']))
+            or (case != 'transfer-dlq-unknown' and not report['requests'])
+            or (manager and (type(report.get('artifact_id')) is not int or report['artifact_id'] <= 0
+                             or not valid_uuid(report.get('generation_execution_id'))))):
+        raise OnlineStageError('scenario', 'online_native_cleanup_report_invalid', 'native product evidence identities are missing')
+    expected_entry = ('transfer_task_delete' if case == 'transfer-dlq-unknown' else
+                      'engine_deletion_then_transfer_task_delete' if case == 'transfer-engine' else 'engine_deletion')
+    if report.get('entry') != expected_entry:
+        raise OnlineStageError('scenario', 'online_native_cleanup_report_invalid', 'native Cleanup product entry differs')
+    if case == 'transfer-dlq-unknown' and (type(report.get('producer_refusal_http_status')) is not int
+                                         or report['producer_refusal_http_status'] != 500):
+        raise OnlineStageError('scenario', 'online_native_cleanup_report_invalid', 'known producer refusal classification differs')
+
+
 def validate_execution_report(profile: str, report: dict[str, object], environment: Mapping[str, str]) -> None:
     """Accept the frozen finite contract, never turn domain cleanup into destruction."""
+    if profile == "cleanup-native":
+        validate_native_cleanup_report(report, environment)
+        return
     required = {"schema_version": f"addp.{profile}-execution-online/v1", "result": "passed",
                 "control_cleanup": "passed", "hosted_destruction": "required"}
     if any(report.get(key) != value for key, value in required.items()):
@@ -924,7 +979,7 @@ def validate_execution_report(profile: str, report: dict[str, object], environme
 
 def validate_execution_archive(profile: str, report: dict[str, object], directory: Path,
                                environment: Mapping[str, str]) -> None:
-    path = directory / f"{profile}-execution.json"
+    path = directory / ("cleanup-native-effects.json" if profile == "cleanup-native" else f"{profile}-execution.json")
     try:
         if path.is_symlink() or not path.is_file() or path.stat().st_size > 1024 * 1024:
             raise ValueError("missing or unsafe report")
