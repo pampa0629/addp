@@ -410,3 +410,23 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 未完成项：[run40891932904／HTTP Job123517711481](https://github.com/pampa0629/addp/actions/runs/40891932904/job/123517711481)，固定源码`1a721a53fec6fb7a0b95920ce89cba7b438a9cc9`，自然push／attempt 1，快照仍in_progress、Verify isolated metrics lifecycle在运行，预算上传未开始；不计通过或失败，不把尚无报告解释为缺失对象。
 
 本轮只更新证据，无产品／采样实现变更或推测性修正。若后续自然复发，先核验原始对象类别／身份和单调阶段边界，提出最小方案讨论后实施；正式产品后端到页面及停源历史读取等原有缺口继续单列。仅文档变更执行主题计数、锚点／索引及diff检查，无新代码门禁／运行验收或持续监控。本机`/tmp/addp-p19-http-followup3-verified-20261029.json`保存独立核对摘要，同前缀runs／candidates／jobs／artifact-meta保存此次只读快照。
+
+<a id="http-linux-gotmp-recurrence-20261030"></a>
+
+## 2026-10-30 Linux HTTP复发：go_tmp后代对象与编译边界覆盖缺口
+
+本轮沿用户已批准的“复发先只读定位，再给最小方案讨论”边界，核验已存在的失败归档与源码；未新建环境、未重跑CI／有效验收，未运行Hosted、容量或定时，也未改采样、编译互斥或产品实现。固定失败源码`3f43b9bff04fdccb3d689c3efea8a9b9b783e44d`，[自然push attempt 1／run40903636868／HTTP Job123552811295](https://github.com/pampa0629/addp/actions/runs/40903636868/job/123552811295)当前仍completed／failure。
+
+原始artifact12911921470共20008字节，ZIP SHA256=`34b778b01ee5d455af0c7a050c1a27af620522d4dcdcea9fe6e596569f4facc0`与API登记一致、CRC及唯一JSON成员通过；报告SHA256=`bfcd8249ebd4999bbaf571b496c22efc6d3b9b8023cc2c13c1491ff666a56916`。353个输入散列逐文件独立匹配该固定提交，报告摘要与原始日志第958行／已有脱敏提取JSON逐字段一致。result=failed、error_code=http_budget_sample_command_failed、阶段private_directory_size、du exit1／path_disappeared，命令0.028348秒、整次采样0.656893秒，**不是四秒超时**；完整运行255.494611秒停止。failure_during_cleanup=false，Go/Python请求全0，inputs_unchanged／cleanup_verified／private_directory_removed=true，清理不计业务通过。
+
+新增对象证据首次命中：directory_objects.status=parsed，唯一category=go_tmp，identity_sha256=`99b0b31b779dc97194197add6b5bb1403c933b9269625fa045b7383b081d5748`，根目录lstat观察为directory。用归档中原project及现行相对身份公式，对已知相对名go-tmp计算的散列不等于该身份，因此可排除go-tmp目录本身，确认是其后代对象；没有反向枚举或恢复原始路径。该身份只能关联当次对象，不是精确文件名／类型，也不能说明哪个进程删除。du的路径消失诊断与根目录存在性表示遍历中读取不到对象，不证明此前已有独立成功枚举记录、对象删除时刻或删除系统调用。
+
+采样原始单调秒起点290.890690083，du开始291.519119050、观察退出291.547467366；process_compile已结束于monotonic_ns142259618759／exit0，仅能证明那次已记录编译早于采样148.631071秒。源码核对发现该记录只覆盖monitor-metrics-gate.sh的Common processmetrics来源编译，随后monitor-metrics-probe.py的prepare_http_test_binaries还串行执行HTTP查询resourcequery与HTTP告警service两次go test -c；它们继承同一GOTMPDIR，但没有编译边界记录。该函数在失败版本与当前5f7876931相同，预算／shell脚本也未改变。因此“process_compile已结束”不等于所有编译均结束；不能直接排除后续编译或认定其为删除者。现有记录尚不能区分失败时位于两次准备编译的哪一项，也没有确证删除进程。
+
+原始日志在来源恢复后出现后续Go依赖下载，再由守卫停止；这与静态调用链的后续编译可能性一致，仍非删除因果证据。记录0业务请求及Python startup unavailable只能证明未具备业务闭环，不能单独证明每一条初始化语句都未执行。不因这些先后关系改变互斥、忽略du或缩小统计。
+
+拟议最小下一步（已向用户提出、尚未实施）：以最多三个固定编译阶段（Common来源／HTTP查询／HTTP告警）替换单条process_compile，复用同一记录内核，保存各自开始／观察结束／退出码和取消incomplete，保留前序事实；采样快照与最终观察继续分列，不保留新旧双轨字段，不新增原始路径／stderr或进程删除跟踪。先修规范和确定性门禁，覆盖两处调用真实接入、阶段唯一／有界／保序、异常／取消不补结束及首失败保留，再沿唯一自然Linux CI观察。本提案只修边界覆盖缺口，不提前宣称修复对象消失；保持原4秒、4 CPU／4 GiB／私有可写小于2 GiB／1200秒，不手动重跑、不新开本地窗口，无Hosted／容量／定时。
+
+后续自然成功独立保留：`6d5ca9401ac62ac85d660d9ca957d28780de4209`，[run40979523356／HTTP Job123816052278](https://github.com/pampa0629/addp/actions/runs/40979523356/job/123816052278)，push attempt 1；既有artifact12944927519共24194字节，ZIP SHA256=`aa177f912236e517981cf7f3e29407eab256c7f7b65171f53ca01e8c4c91c4d3`／报告SHA256=`fb7785d7baf2c35ed5da31faaa21f2badcb103374c8281282fb2a8b86b359e23`，API摘要、CRC和353输入独立核验通过。报告passed／exit0／error null，848.407700秒、208样本最长1.264080秒、可写保守上界最大1809223743字节，251请求、三源阶段契约、编译exit0及清理通过；没有重跑，不用此成功关闭3f43的go_tmp复发。
+
+本机`/tmp/addp-p19-http-gotmp-recurrence-audit-20261030.json`记录两份原始归档独立核对、对象根散列排除及编译边界；失败原日志／提取结构位于既有`/tmp/addp-ci-20261029-160021`，通过归档沿既有`/tmp/addp-ci-20261030-004434/http-budget-6d5.zip`复用。仅文档证据变更，验证主题计数、锚点／索引及diff；没有新的代码门禁或运行验收。原正式产品到页面及停源历史读取缺口继续单列。
