@@ -70,8 +70,10 @@ model/
 └── frontend/
     └── src/
         ├── api/
-        │   ├── client.js
-        │   └── model.js             # 所有 API 调用
+        │   ├── auth.js              # System 认证 API 适配
+        │   ├── client.js            # Model 客户端与 403 授权刷新
+        │   └── model.js             # Model API 及 Standard、Service 跨模块调用
+        ├── store/auth.js            # 接入共享认证 Store
         ├── views/
         │   ├── EntityList.vue
         │   ├── EntityDetail.vue
@@ -337,7 +339,11 @@ draft ⇄ approved
 
 3. **跨模块验证**: 调用身份与权限见[模块依赖关系](#模块依赖关系)。如果 Standard 服务未启动，相关创建操作会失败。
 
-4. **前端 API 统一入口**: Model API 调用集中在 [frontend/src/api/model.js](frontend/src/api/model.js)；Standard API 使用 Standard 的唯一公开路径。
+4. **前端 API 职责**:
+
+   - [client.js](frontend/src/api/client.js) 使用共享 `createAPIClient` 创建 Model 业务客户端，并提供跨客户端复用的 403 授权刷新；刷新后仍将原始拒绝交给调用方，不自动再次查询。
+   - [auth.js](frontend/src/api/auth.js) 适配 System 认证 API；[store/auth.js](frontend/src/store/auth.js) 接入共享 `createAuthStore`，认证与会话主线统一见[登录认证要求](../docs/spec/addp登录认证的统一要求.md#一认证事实与唯一主路径)。
+   - [model.js](frontend/src/api/model.js) 组织 Model 业务 API、Standard 引用读取及 Service 查询定义的引用查询、创建与重绑。跨模块客户端均使用当前用户会话；Standard 身份分工见[模块依赖关系](#模块依赖关系)，Service 操作由 Service 校验当前用户权限与资源归属。授权变化、令牌续期及失败后的结果处理见[引用服务弹窗与授权交互](#引用服务弹窗与授权交互)；入口存在不代表当前版本已通过真实跨模块验收。
 
    实体属性与逻辑字段的数据元选择只消费 Standard `current_revision`；冻结名称通过 `elements/:id/revisions/:revision_id` 读取，不能取 `draft_revision`、旧顶层字段或用当前名称替代历史名称。两个页面共用 `modelDetailState.js` 的引用加载与展示逻辑。实体审批／退回草稿后重载属性和修订引用。对应选择、不可用、历史修订及生命周期交互由既有 `make test-model-frontend` 覆盖。
 
