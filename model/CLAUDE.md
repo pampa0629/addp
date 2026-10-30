@@ -318,6 +318,13 @@ POST   /api/v1/model/metric-implementations/:id/revisions/:revision_id/plan     
 
 页面准入按共享 [Console 路由权限登记](../common-frontend/basic/src/authorization/consoleRouteAccess.js)复核当前 Tenant 上下文及所需权限；创建、修改、发布等动作仍遵循[Model 授权边界](docs/model概念与数据约束规范.md#二授权边界)，由后端复核权限与资源归属。路由登记及修订参数核对属于静态验证，前端回归与真实跨模块验收按[开发与验证](#开发与验证)分别认定。
 
+页面状态与导航约束：
+
+- 实体和逻辑表详情使用 `/:id`；实体详情默认 `basic` Tab 省略，`attributes`、`relations` 使用唯一 `tab` query。
+- 维度建模业务域使用 `domain_id`（省略表示全部），当前事实表使用 `table_id`，并响应刷新及浏览器前进/后退；无选择时省略该 query。
+- 业务导航统一调用 [moduleNavigation.js](frontend/src/utils/moduleNavigation.js)；详情返回明确列表路由。
+- 逻辑表详情的“物理目标”页签及操作分工见[建模导航规范](docs/model概念与数据约束规范.md#建模导航与物理目标操作入口)；完整数据流程从 Orchestrator 进入。
+
 ## 模块依赖关系
 
 **依赖**:
@@ -493,10 +500,4 @@ Model 前端 CI Job 在失败时上传该目录，保留 14 天；每轮使用�
 
 ## 前端公开路由
 
-- 模块内 Router 使用 `/dw-layers`、`/entities`、`/logical-tables`、`/er-diagram`、`/star-schema`；Console 模块名为 `modeling`，公开 URL 统一加 `/modeling` 前缀。
-- 实体和逻辑表详情使用 `/:id`；实体详情默认 `basic` Tab 省略，`attributes`、`relations` 使用唯一 `tab` query。
-- 维度建模业务域使用 `domain_id`（省略表示全部），当前事实表使用 `table_id`，并响应刷新及浏览器前进/后退；无选择时省略该 query。
-- 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`；详情返回明确列表路由。
-- 逻辑表详情的“物理目标”页签集中提供目标引擎、目标位置与目标表名展示，以及建表语句预览、创建/校验、执行记录和删除目标表操作；完整数据流程从 Orchestrator 进入。
-
-- Model 导航依次为业务实体、实体关系图、数仓分层、逻辑表设计、维度建模。
+完整业务入口、指标实现的列表／创建／详情与 `revision_id` 定位、权限及页签导航规则统一见[前端路由](#前端路由)；导航顺序与权限落点见[模块概述](#模块概述)。实际验收范围见[开发与验证](#开发与验证)。
