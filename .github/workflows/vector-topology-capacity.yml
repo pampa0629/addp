@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: Line overlap, chain merging, normalization or controlled observation
+        description: Line overlap, chain merging, normalization, endpoint snapping or controlled observation
         type: choice
         default: matrix
         options:
@@ -14,6 +14,7 @@ on:
           - chains
           - normalize
           - normalize-chains
+          - endpoint-snapping
 
       case:
         description: All profile cases or only the original failed composition grid tier

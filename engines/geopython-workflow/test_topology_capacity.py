@@ -531,3 +531,62 @@ def test_composition_capacity_native_indexed_reader_preserves_geometry_and_schem
         assert layer.SetFeature(feature)==0
     ds=layer=None
     with pytest.raises(AssertionError):m.verify_composition_output(case,path,'edge_sources')
+
+
+@pytest.mark.parametrize('kind,size',[('endpoint-sparse',8),('endpoint-candidates',4),('endpoint-shared',4),('endpoint-reference-parts',5),('endpoint-source-parts',5)])
+def test_endpoint_capacity_native_full_double_source_double_output_unwrapped(tmp_path,monkeypatch,kind,size):
+    from operators import geometric_operators as geometry
+    def forbidden(*a,**k):raise AssertionError('endpoint capacity cannot wrap or sample inside compute')
+    monkeypatch.setattr(m,'observe_compute',forbidden)
+    before=tuple(getattr(geometry,n) for n in m.ENDPOINT_BINDINGS)
+    case=m.Case(kind,size,'endpoint-snapping');report=m.run_worker(case,tmp_path,'A')
+    m.validate_worker(report,case,'A')
+    assert tuple(getattr(geometry,n) for n in m.ENDPOINT_BINDINGS)==before
+    assert set(report['sources'])==set(report['source_frames_sha256'])=={'source','reference'}
+    assert all(report['physical'][p]['rows']==m.endpoint_counts(case)[p] for p in m.ENDPOINT_PORTS)
+    assert not (tmp_path/'compute-resources.jsonl').exists()
+
+
+@pytest.mark.parametrize('port,problem',[('result','coordinate'),('result','direction'),('result','null'),('result','integer_type'),('result','boolean_value'),('result','missing'),('result','crs'),
+    ('details','original_point'),('details','source_id'),('details','reference_id'),('details','part'),('details','end'),('details','distance'),('details','target'),('details','missing'),('details','extra')])
+def test_endpoint_capacity_native_rejects_real_saved_corruption(tmp_path,port,problem):
+    from osgeo import ogr
+    case=m.Case('endpoint-source-parts',5,'endpoint-snapping');m.run_worker(case,tmp_path,'A')
+    path=tmp_path/(port+'.gpkg');ds=ogr.Open(str(path),1);layer=ds.GetLayer(0);feature=layer.GetFeature(1)
+    if problem=='crs':ds.ExecuteSQL('UPDATE gpkg_geometry_columns SET srs_id=4326')
+    elif problem=='missing':layer.DeleteFeature(1)
+    elif problem=='extra':feature.SetFID(-1);assert layer.CreateFeature(feature)==0
+    elif problem=='integer_type':assert layer.AlterFieldDefn(layer.GetLayerDefn().GetFieldIndex('grade'),ogr.FieldDefn('grade',ogr.OFTReal),ogr.ALTER_TYPE_FLAG)==0
+    elif problem=='boolean_value':ds.ExecuteSQL('UPDATE "'+layer.GetName()+'" SET enabled=2')
+    else:
+        if problem in ('coordinate','direction','original_point'):
+            shape=feature.GetGeometryRef().Clone()
+            if port=='result':
+                part=shape.GetGeometryRef(0)
+                if problem=='direction':
+                    points=part.GetPoints();part.Empty()
+                    for x,y in reversed(points):part.AddPoint_2D(x,y)
+                else:part.SetPoint_2D(0,.75,0)
+            else:shape.SetPoint_2D(0,.5,0)
+            feature.SetGeometry(shape)
+        elif problem=='null':feature.SetField('note','changed-null')
+        elif problem in ('source_id','reference_id','end'):feature.SetField(problem,'foreign')
+        elif problem=='part':feature.SetField('part_no',99)
+        elif problem=='distance':feature.SetField('distance',0.)
+        else:feature.SetField('target_x',.75)
+        assert layer.SetFeature(feature)==0
+    feature=layer=ds=None
+    with pytest.raises(AssertionError):m.verify_endpoint_output(case,path,port)
+
+
+@pytest.mark.parametrize('which',('source','reference'))
+def test_endpoint_capacity_native_source_mutation_fails_before_complete(tmp_path,monkeypatch,which):
+    original=m.attributed_frame_digest;calls=0
+    def changed(frame):
+        nonlocal calls
+        calls+=1
+        value=original(frame)
+        return 'changed' if calls==(3 if which=='source' else 4) else value
+    monkeypatch.setattr(m,'attributed_frame_digest',changed)
+    with pytest.raises(AssertionError):m.run_worker(m.Case('endpoint-shared',4,'endpoint-snapping'),tmp_path,'A')
+    report=json.loads((tmp_path/'progress.json').read_text());assert report['result']=='incomplete' and report['stage']=='source_unchanged'

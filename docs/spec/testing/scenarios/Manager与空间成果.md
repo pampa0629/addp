@@ -849,3 +849,12 @@ artifact／物理／Meta相等正整数大小、精确scan父执行／用户／�
 CSV沿普通表保存契约，不虚构RasterArtifact：物理／Meta大小须为相等正整数；目标只由本次父执行自动扫描，核用户／租户／引擎／父执行与当前两角色实际输入血缘。套件仅加入既有执行范围的受控只读内部血缘登记，完整验证内部`save`／两源derive与公开`operations:null`安全投影，不改产品投影或权限；Meta关系及Monitor分别核验。失败零目标／新增扫描／派生血缘，源物理／Meta和先前CSV不变，全部退出保持NFS／Runtime／registry／部署／Infra零残留。
 
 本地入口`make test-raster-zonal-percentile-online-runner`和标准Native内`test_online_zonal_percentile_fixture.py`，同步Online、changed gate、独立workflow、只读observer和矩阵／删断言拒绝检查。准备通过不计Hosted通过。
+
+
+### 端点吸附手工容量
+
+用户确认在既有 `make test-vector-topology-capacity`／`vector-topology-capacity.yml` 增加独立 `profile=endpoint-snapping`，仅五类十五档、每档一次、串行，不运行旧矩阵／受控对照或业务T4。EPSG:3857、容差1、同源码／产品镜像／Runner，原4 CPU／2 GiB／memory.swap.max=0和每档全流程180秒不变，Runtime准备与清理另记。observer=A不包装产品函数，外部0.25秒采样与cgroup整体memory.peak、CPU用量、OOM、退出码保留；分阶段采样缺失为null，不把RSS高水位之和或采样峰值说成精确分阶段峰值。
+
+五类为：稀疏源／参考各1000、10000、100000要素（每四源一移动、一严格边界、一原位接触、一无候选，明细N/4）；密集源／参考各128、512、2048（每个待移端点K个参考候选、唯一最近目标，明细K）；同点源／参考各128、512、2048（完整保留全部S×R明细16384／262144／4194304行）；单参考要素1000／10000／100000重复部件（源1条、仅1条明细，不因参考重复扩增）；单源要素1000／10000／100000原始部件（参考1条、明细K，保部件编号与方向）。几何全部采用精确二进制坐标及唯一可落线目标，不改产品吸附语义。
+
+180秒包含生成双源、load、双源全量核验、生产snap_line_endpoints计算、线与Point双save和独立OGR完整重载、源文件／Frame不变核验；不得抽样、截断明细或只比较摘要，流式独立预期不调用生产算法。核所有坐标、来源、属性／null／Int64／Boolean／Float64、原行序／部件／方向／CRS，明细保原点、目标及距离，物理哈希与完整行摘要另存。固定产品源码／实际加载函数、两源Frame与文件哈希、各阶段耗时、整体峰值内存／CPU、两成果数量／大小／摘要和当档清理均绑定case及measurement ID。成功、超时、cgroup证实OOM、原生崩溃／其他失败分别保留，不自动调预算或重试；超限仅说明该场景的实测边界，归属容器／镜像／registry／合成数据清0。该容量不认证扫描／血缘／页面／普通User授权或跨文件事务；已通过的endpoint-snapping T4保持原范围。

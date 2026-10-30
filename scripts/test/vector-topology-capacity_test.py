@@ -331,9 +331,10 @@ class CapacityTest(unittest.TestCase):
             execute.assert_not_called()
 
     def test_timeout_and_unknown_create_both_clean_exact_owned_container_and_workspace(self):
-        for case in (m.Case('many',6,'self'),m.Case('compose-open',8,'normalize-chains')):
-            for unknown in (False,True):
-                with self.subTest(unknown=unknown),tempfile.TemporaryDirectory() as temporary:
+        for case in (m.Case('many',6,'self'),m.Case('compose-open',8,'normalize-chains'),m.Case('endpoint-shared',4,'endpoint-snapping')):
+            for unknown,tamper in ((False,False),(True,False),*(([(False,True)] if case.operator=='endpoint-snapping' else []))):
+                identity={'module_sha256':'a'*64,'endpoint_definitions_sha256':{k:'b'*64 for k in m.ENDPOINT_BINDINGS}} if case.operator=='endpoint-snapping' else None
+                with self.subTest(case=case.key,unknown=unknown,tamper=tamper),tempfile.TemporaryDirectory() as temporary:
                     root=Path(temporary);name=f'addp-topology-capacity-ours-{case.key}';exists=False;running=False;calls=[]
                     def execute(args,**kwargs):
                         nonlocal exists,running
@@ -353,7 +354,9 @@ class CapacityTest(unittest.TestCase):
                     class Process:
                         code=None
                         def __init__(self,*args,**kwargs):
-                            (root/case.key/'data/progress.json').write_text(json.dumps({'result':'incomplete','stage':'normalize' if case.operator=='normalize-chains' else 'compute'}))
+                            checkpoint={'result':'incomplete','stage':'normalize' if case.operator=='normalize-chains' else 'compute'}
+                            if identity is not None:checkpoint.update(case=m.asdict(case),observer='B' if tamper else 'A',measurement_id=case.key,implementation_identity={**identity,'loaded_endpoint_matches_source':True})
+                            (root/case.key/'data/progress.json').write_text(json.dumps(checkpoint))
                         def poll(self):return self.code
                         def kill(self):self.code=-9
                         def wait(self):return self.code
@@ -363,12 +366,17 @@ class CapacityTest(unittest.TestCase):
                          patch.object(m.subprocess,'Popen',side_effect=Process) as process,\
                          patch.object(resources,'cgroup_directory',return_value=root),patch.object(resources,'read_metrics',return_value=metrics),\
                          patch.object(m.time,'monotonic',side_effect=[0,1,181,182]):
-                        result=m.run_case(case,'our-image','ours',root)
+                        result=m.run_case(case,'our-image','ours',root,observer='A' if identity else 'C',expected_identity=identity)
                     self.assertFalse(exists);self.assertEqual(result['cleanup'],'passed')
                     self.assertFalse((root/case.key/'data').exists())
                     self.assertEqual(sum(c[1]=='create' for c in calls),1)
-                    self.assertEqual(result['result'],'failed' if unknown else 'time_limit')
+                    self.assertEqual(result['result'],'failed' if unknown or tamper else 'time_limit')
                     self.assertEqual(process.call_count,0 if unknown else 1)
+
+                    if not unknown and case.operator=='endpoint-snapping':
+                        self.assertEqual(result['worker']['stage'],'compute')
+                        self.assertEqual(result['stage_memory_samples']['compute'],{'samples':1,'observed_memory_current_peak_bytes':128})
+                        self.assertEqual(result['stage_memory_samples']['save_details'],{'samples':0,'observed_memory_current_peak_bytes':None})
 
                     if not unknown and case.operator=='normalize-chains':
                         self.assertEqual(result['worker']['stage'],'normalize')
@@ -413,6 +421,13 @@ class CapacityTest(unittest.TestCase):
                 (files[1],'          - chains','          - removed'),
                 (files[1],'          - normalize\n','          - removed\n'),
                 (files[1],'          - normalize-chains','          - removed'),
+                (files[1],'          - endpoint-snapping','          - removed'),
+                (files[2],'def endpoint_matrix():','def removed_endpoint_matrix():'),
+                (files[2],'def run_endpoint_worker(','def removed_endpoint_worker('),
+                (files[2],'def verify_endpoint_output(','def removed_endpoint_output('),
+                (files[2],"'loaded_endpoint_matches_source'","'removed_endpoint_binding'"),
+                (files[3],'test_endpoint_capacity_native_full_double_source_double_output_unwrapped','removed_endpoint_native'),
+                (files[3],'test_endpoint_capacity_native_rejects_real_saved_corruption','removed_endpoint_corruption'),
                 (files[1],'TOPOLOGY_CAPACITY_CASE: ${{ inputs.case }}','REMOVED: all'),
                 (files[1],'          - compose-grid-512-normalize-chains','          - removed'),
                 (files[2],"'case_selection': case_key","'removed_selection': case_key"),
@@ -613,3 +628,77 @@ class CompositionCapacityTest(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+
+class EndpointCapacityTest(unittest.TestCase):
+    def test_endpoint_plan_is_only_fifteen_new_unwrapped_measurements(self):
+        cases=m.endpoint_matrix();plan=m.measurement_plan('endpoint-snapping')
+        self.assertEqual(len(cases),15);self.assertEqual(len({c.key for c in cases}),15)
+        self.assertEqual({k:[c.size for c in cases if c.kind==k] for k in {c.kind for c in cases}}, {
+            'endpoint-sparse':[1000,10000,100000],'endpoint-candidates':[128,512,2048],
+            'endpoint-shared':[128,512,2048],'endpoint-reference-parts':[1000,10000,100000],'endpoint-source-parts':[1000,10000,100000]})
+        self.assertTrue(all(p['observer']=='A' and p['repetition'] is None and p['case']['operator']=='endpoint-snapping' for p in plan))
+        self.assertEqual([p['case'] for p in plan],[m.asdict(c) for c in cases])
+        self.assertFalse({c.key for c in cases}&{c.key for c in m.matrix()+m.chain_matrix()+m.normalize_matrix()+m.composition_matrix()})
+        self.assertEqual((m.CPUS,m.MEMORY,m.SECONDS,m.ENDPOINT_SCHEMA),(4,2<<30,180,'addp.vector-topology-capacity/v6'))
+        for n,rows in [(128,16384),(512,262144),(2048,4194304)]:self.assertEqual(m.endpoint_counts(m.Case('endpoint-shared',n,'endpoint-snapping'))['details'],rows)
+        self.assertEqual(m.endpoint_counts(m.Case('endpoint-reference-parts',100000,'endpoint-snapping'))['details'],1)
+        self.assertEqual(m.endpoint_counts(m.Case('endpoint-source-parts',100000,'endpoint-snapping'))['details'],100000)
+        with patch.object(m,'command') as docker:
+            with self.assertRaises(ValueError):m.run_gate('endpoint-snapping',m.COMPOSITION_SINGLE_CASE)
+            docker.assert_not_called()
+
+    def test_endpoint_closed_form_expected_sources_and_details_are_total_and_ordered(self):
+        for kind in {c.kind for c in m.endpoint_matrix()}:
+            case=m.Case(kind,8,'endpoint-snapping');counts=m.endpoint_counts(case)
+            for port in m.ENDPOINT_PORTS:self.assertEqual(len(list(m.endpoint_expected(case,port))),counts[port])
+            rows=list(m.endpoint_expected(case,'details'))
+            self.assertTrue(all(p['distance'] in (.25,.5) and g==[p['original_x'],p['original_y']] for p,g in rows))
+            self.assertTrue(all(isinstance(p['part_no'],int) and p['part_no']>0 for p,g in rows))
+            if kind=='endpoint-shared':
+                self.assertEqual([p['reference_id'] for p,g in rows[:8]],[f'ref-{i:09d}' for i in range(8)])
+                self.assertEqual(rows[8][0]['end'],'end')
+            if kind=='endpoint-source-parts':self.assertEqual([p['part_no'] for p,g in rows],list(range(1,9)))
+        for kind,size in [('endpoint-sparse',3),('endpoint-candidates',3),('unknown',4)]:
+            with self.assertRaises(AssertionError):m.endpoint_counts(m.Case(kind,size,'endpoint-snapping'))
+
+    def test_endpoint_worker_binding_requires_actual_loaded_core_and_helpers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'geometry.py';source='\n'.join(f'def {name}(*args): return args' for name in m.ENDPOINT_BINDINGS)
+            path.write_text(source);values={};exec(compile(source,str(path),'exec'),values);module=SimpleNamespace(__file__=str(path),**{k:values[k] for k in m.ENDPOINT_BINDINGS})
+            self.assertTrue(m.loaded_implementation_identity(module,'endpoint-snapping')['loaded_endpoint_matches_source'])
+            for name in m.ENDPOINT_BINDINGS:
+                original=getattr(module,name);setattr(module,name,lambda *args:None)
+                with self.assertRaisesRegex(AssertionError,'loaded endpoint'):m.loaded_implementation_identity(module,'endpoint-snapping')
+                setattr(module,name,original)
+
+    def test_endpoint_worker_report_rejects_missing_source_output_count_schema_identity_or_budget(self):
+        import copy
+        case=m.Case('endpoint-shared',4,'endpoint-snapping')
+        report={'case':m.asdict(case),'input_counts':m.endpoint_counts(case),'observer':'A','measurement_id':case.key,'result':'passed','stage':'complete',
+            'duration_seconds':1.,'worker_peak_rss_bytes':1,'timings':{k:0. for k in m.endpoint_timings()},
+            'implementation_identity':{'module_sha256':'a'*64,'endpoint_definitions_sha256':{k:'b'*64 for k in m.ENDPOINT_BINDINGS},'loaded_endpoint_matches_source':True},
+            'sources':{k:{'size_bytes':1,'sha256':'c'*64} for k in ('source','reference')},'source_frames_sha256':{k:'d'*64 for k in ('source','reference')},
+            'outputs':{k:{'size_bytes':1,'sha256':'e'*64} for k in m.ENDPOINT_PORTS},
+            'physical':{p:{'rows':m.endpoint_counts(case)[p],'crs':'EPSG:3857','full_result_sha256':'f'*64,'all_coordinates_attributes_membership_verified':True} for p in m.ENDPOINT_PORTS}}
+        m.validate_worker(report,case,'A')
+        for path,value in [(('duration_seconds',),181),(('duration_seconds',),float('nan')),(('observer',),'C'),(('stage',),'compute'),
+            (('physical','details','rows'),15),(('physical','result','all_coordinates_attributes_membership_verified'),False),
+            (('physical','details','crs'),'EPSG:4326'),(('implementation_identity','loaded_endpoint_matches_source'),False),
+            (('sources','reference','size_bytes'),0),(('outputs','details','sha256'),'missing'),(('source_frames_sha256','source'),'bad')]:
+            changed=copy.deepcopy(report);target=changed
+            for name in path[:-1]:target=target[name]
+            target[path[-1]]=value
+            with self.subTest(path=path),self.assertRaises(AssertionError):m.validate_worker(changed,case,'A')
+        changed=copy.deepcopy(report);small=m.Case('endpoint-reference-parts',4,'endpoint-snapping')
+        changed.update(case=m.asdict(small),measurement_id=small.key,input_counts=m.endpoint_counts(small))
+        for port in m.ENDPOINT_PORTS:changed['physical'][port]['rows']=m.endpoint_counts(small)[port]
+        m.validate_worker(changed,small,'A')
+        changed['input_counts']['details']=True
+        with self.assertRaises(AssertionError):m.validate_worker(changed,small,'A')
+        for key in ('source','reference'):
+            changed=copy.deepcopy(report);del changed['sources'][key]
+            with self.assertRaises(AssertionError):m.validate_worker(changed,case,'A')
+        for key in m.ENDPOINT_PORTS:
+            changed=copy.deepcopy(report);del changed['physical'][key]
+            with self.assertRaises(AssertionError):m.validate_worker(changed,case,'A')

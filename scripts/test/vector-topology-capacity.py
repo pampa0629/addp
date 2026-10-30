@@ -28,6 +28,9 @@ SECONDS = 180
 SCHEMA = 'addp.vector-topology-capacity/v3'
 NORMALIZE_SCHEMA = 'addp.vector-topology-capacity/v4'
 COMPOSITION_SCHEMA = 'addp.vector-topology-capacity/v5'
+ENDPOINT_SCHEMA = 'addp.vector-topology-capacity/v6'
+ENDPOINT_PORTS = ('result', 'details')
+ENDPOINT_BINDINGS = ('snap_line_endpoints', '_snap_line_endpoints', '_line_reference_inputs', '_reference_line_segments', '_line_projection_candidates', '_open_endpoint_occurrence', 'check_dangling_points')
 COMPOSITION_PORTS = ('chains', 'chain_edges', 'edge_sources')
 COMPOSITION_SINGLE_CASE = 'compose-grid-512-normalize-chains'
 LEGACY_COMMIT = '8a3006670e7f6cfaddf018253515ccb37ab5bc78'
@@ -82,6 +85,16 @@ def composition_matrix():
             for size in sizes]
 
 
+
+def endpoint_matrix():
+    return [Case(kind, size, 'endpoint-snapping')
+            for kind, sizes in [('endpoint-sparse', (1000, 10000, 100000)),
+                                ('endpoint-candidates', (128, 512, 2048)),
+                                ('endpoint-shared', (128, 512, 2048)),
+                                ('endpoint-reference-parts', (1000, 10000, 100000)),
+                                ('endpoint-source-parts', (1000, 10000, 100000))]
+            for size in sizes]
+
 def measurement_plan(profile, case_key='all'):
     if case_key != 'all':
         if profile != 'normalize-chains' or case_key != COMPOSITION_SINGLE_CASE:
@@ -90,6 +103,9 @@ def measurement_plan(profile, case_key='all'):
         if len(selected) != 1:
             raise ValueError('single case must exist exactly once in registered plan')
         return selected
+    if profile == 'endpoint-snapping':
+        return [{'id': case.key, 'case': asdict(case), 'observer': 'A', 'repetition': None}
+                for case in endpoint_matrix()]
     if profile == 'normalize-chains':
         return [{'id': case.key, 'case': asdict(case), 'observer': 'A', 'repetition': None}
                 for case in composition_matrix()]
@@ -124,6 +140,10 @@ def definition_name(node):
 
 
 def implementation_identity(source, operator='self'):
+    if operator == 'endpoint-snapping':
+        definitions = {definition_name(n): n for n in ast.parse(source).body}
+        return {'module_sha256': hashlib.sha256(source.encode()).hexdigest(),
+                'endpoint_definitions_sha256': {name: hashlib.sha256(ast.get_source_segment(source, definitions[name]).encode()).hexdigest() for name in ENDPOINT_BINDINGS}}
     if operator == 'normalize-chains':
         return {**implementation_identity(source, 'normalize'), **implementation_identity(source, 'chains')}
     name = 'normalize_line_network' if operator == 'normalize' else 'merge_line_chains' if operator == 'chains' else '_self_overlap_intersections'
@@ -134,6 +154,12 @@ def implementation_identity(source, operator='self'):
 
 
 def loaded_implementation_identity(module, operator='self'):
+    if operator == 'endpoint-snapping':
+        source = Path(module.__file__).read_text()
+        code = compile(source, module.__file__, 'exec', dont_inherit=True, optimize=sys.flags.optimize)
+        functions = {c.co_name: c for c in code.co_consts if isinstance(c, types.CodeType)}
+        assert all(getattr(module, name).__code__ == functions[name] for name in ENDPOINT_BINDINGS), 'loaded endpoint differs from source'
+        return {**implementation_identity(source, operator), 'loaded_endpoint_matches_source': True}
     if operator == 'normalize-chains':
         return {**loaded_implementation_identity(module, 'normalize'), **loaded_implementation_identity(module, 'chains')}
     source = Path(module.__file__).read_text()
@@ -974,6 +1000,218 @@ def validate_dual_worker(report, case, observer, measurement_id):
         assert len(fact['sha256']) == 64 and all(c in '0123456789abcdef' for c in fact['sha256'])
 
 
+def endpoint_counts(case):
+    assert case.operator == 'endpoint-snapping' and type(case.size) is int and case.size > 0
+    n = case.size
+    if case.kind == 'endpoint-sparse':
+        assert n % 4 == 0
+        return {'sources': n, 'references': n, 'source_parts': n, 'reference_parts': n, 'result': n, 'details': n//4}
+    if case.kind == 'endpoint-candidates':
+        assert n & (n-1) == 0
+        return {'sources': n, 'references': n, 'source_parts': n, 'reference_parts': n, 'result': n, 'details': n}
+    if case.kind == 'endpoint-shared':
+        return {'sources': n, 'references': n, 'source_parts': n, 'reference_parts': n, 'result': n, 'details': n*n}
+    assert case.kind in ('endpoint-reference-parts', 'endpoint-source-parts')
+    return {'sources': 1, 'references': 1, 'source_parts': n if case.kind=='endpoint-source-parts' else 1,
+            'reference_parts': n if case.kind=='endpoint-reference-parts' else 1, 'result': 1,
+            'details': n if case.kind=='endpoint-source-parts' else 1}
+
+
+def endpoint_source(case, row, moved=False):
+    counts = endpoint_counts(case); assert 0 <= row < counts['sources']
+    attrs = normalize_attributes(row)
+    if case.kind in ('endpoint-sparse','endpoint-candidates'):
+        x = row*8 if case.kind=='endpoint-sparse' else row/(4*case.size)
+        y = .25 if moved and (case.kind=='endpoint-candidates' or row%4==0) else 0
+        points = [[x,y],[x,4]]
+        return attrs, [points[::-1] if row%2 else points]
+    count = case.size if case.kind=='endpoint-source-parts' else 1
+    start = .5 if moved else 0
+    return attrs, [[[start,0],[4,0]] if (row+i)%2==0 else [[4,0],[start,0]] for i in range(count)]
+
+
+def endpoint_reference(case, row):
+    counts=endpoint_counts(case);assert 0<=row<counts['references']
+    attrs={'ref_key': f'ref-{row:09d}', 'note': None if row%3==0 else f'reference-{row}'}
+    if case.kind=='endpoint-sparse':
+        x=row*8; y=(.25,1,0,1.25)[row%4];parts=[[[x-1,y],[x+1,y]]]
+    elif case.kind=='endpoint-candidates':
+        y=.25+row/(4*case.size);parts=[[[-2,y],[2,y]]]
+    else:
+        count=case.size if case.kind=='endpoint-reference-parts' else 1
+        parts=[[[.5,-1],[.5,1]] if i%2==0 else [[.5,1],[.5,-1]] for i in range(count)]
+    return attrs,parts
+
+
+def seed_endpoint_reference(case, path):
+    from osgeo import ogr,osr
+    ogr.UseExceptions();crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
+    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path));multi=case.kind=='endpoint-reference-parts'
+    layer=ds.CreateLayer('references',crs,ogr.wkbMultiLineString if multi else ogr.wkbLineString,options=['GEOMETRY_NAME=reference_shape'])
+    for name in ('ref_key','note'):assert layer.CreateField(ogr.FieldDefn(name,ogr.OFTString))==0
+    assert layer.StartTransaction()==0
+    for row in range(endpoint_counts(case)['references']):
+        attrs,parts=endpoint_reference(case,row);feature=ogr.Feature(layer.GetLayerDefn())
+        for name,value in attrs.items():
+            if value is not None:feature.SetField(name,value)
+        shape=ogr.Geometry(ogr.wkbMultiLineString) if multi else None
+        for points in parts:
+            part=ogr.Geometry(ogr.wkbLineString)
+            for x,y in points:part.AddPoint_2D(x,y)
+            if multi:shape.AddGeometry(part)
+            else:shape=part
+        feature.SetGeometry(shape);assert layer.CreateFeature(feature)==0
+    assert layer.CommitTransaction()==0;layer=ds=None
+
+
+def verify_endpoint_reference(frame,case):
+    import pandas as pd
+    assert frame.crs.to_epsg()==3857 and len(frame)==endpoint_counts(case)['references']
+    assert list(frame.columns)==['ref_key','note',frame.geometry.name]
+    assert isinstance(frame.index,pd.RangeIndex) and frame.index.equals(pd.RangeIndex(len(frame))) and frame.index.name is None
+    for row,values in enumerate(frame.itertuples(index=False,name=None)):
+        attrs,parts=endpoint_reference(case,row)
+        actual={k:None if v is None or v is pd.NA else v for k,v in zip(('ref_key','note'),values[:2])}
+        assert actual==attrs
+        shape=values[-1];assert shape.is_valid and not shape.has_z and not getattr(shape,'has_m',False)
+        multi=case.kind=='endpoint-reference-parts';assert shape.geom_type==('MultiLineString' if multi else 'LineString')
+        assert [[list(v) for v in part.coords] for part in (shape.geoms if multi else [shape])]==parts
+
+
+def endpoint_expected(case,port):
+    counts=endpoint_counts(case)
+    reference_ids=[f'ref-{row:09d}' for row in range(counts['references'])] if port=='details' else []
+    for row in range(counts['sources']):
+        if port=='result':
+            yield endpoint_source(case,row,True);continue
+        assert port=='details'
+        if case.kind=='endpoint-sparse' and row%4:continue
+        x=row*8 if case.kind=='endpoint-sparse' else row/(4*case.size) if case.kind=='endpoint-candidates' else 0
+        target=(x,.25) if case.kind in ('endpoint-sparse','endpoint-candidates') else (.5,0)
+        parts=case.size if case.kind=='endpoint-source-parts' else 1
+        refs=case.size if case.kind=='endpoint-shared' else 1
+        reference_row=row if case.kind=='endpoint-sparse' else 0
+        source_key=normalize_attributes(row)['route_key']
+        for part in range(parts):
+            for ref in range(refs):
+                yield {'source_id':source_key,'reference_id':reference_ids[ref if refs>1 else reference_row],
+                    'part_no':part+1,'end':'start' if (row+part)%2==0 else 'end',
+                    'original_x':float(x),'original_y':0.,'target_x':float(target[0]),'target_y':float(target[1]),
+                    'distance':.25 if case.kind in ('endpoint-sparse','endpoint-candidates') else .5},[x,0]
+
+
+def verify_endpoint_output(case,path,port):
+    from osgeo import ogr,osr
+    ds=ogr.Open(str(path),0);assert ds and ds.GetLayerCount()==1;layer=ds.GetLayer(0)
+    crs=osr.SpatialReference();crs.ImportFromEPSG(3857);assert layer.GetSpatialRef().IsSame(crs)
+    source=port=='result';multi=source and case.kind=='endpoint-source-parts'
+    geometry_type=ogr.wkbMultiLineString if multi else ogr.wkbLineString if source else ogr.wkbPoint
+    assert layer.GetGeomType()==geometry_type
+    types={'route_key':ogr.OFTString,'note':ogr.OFTString,'grade':ogr.OFTInteger64,'enabled':ogr.OFTInteger} if source else {
+        'source_id':ogr.OFTString,'reference_id':ogr.OFTString,'part_no':ogr.OFTInteger64,'end':ogr.OFTString,
+        **{k:ogr.OFTReal for k in ('original_x','original_y','target_x','target_y','distance')}}
+    assert [field.GetName() for field in layer.schema]==list(types)
+    readers=[]
+    for i,(name,native) in enumerate(types.items()):
+        field=layer.GetLayerDefn().GetFieldDefn(i);assert field.GetType()==native
+        if name=='enabled':assert field.GetSubType()==ogr.OFSTBoolean
+        getter={ogr.OFTString:ogr.Feature.GetFieldAsString,ogr.OFTInteger64:ogr.Feature.GetFieldAsInteger64,
+                ogr.OFTInteger:ogr.Feature.GetFieldAsInteger,ogr.OFTReal:ogr.Feature.GetFieldAsDouble}[native]
+        readers.append((name,i,getter))
+    if source:
+        import sqlite3
+        with sqlite3.connect(Path(path).resolve().as_uri()+'?mode=ro',uri=True) as db:
+            table='"'+layer.GetName().replace('"','""')+'"'
+            assert db.execute('SELECT 1 FROM '+table+' WHERE enabled IS NOT NULL AND (typeof(enabled)!=\'integer\' OR enabled NOT IN (0,1)) LIMIT 1').fetchone() is None
+    rows=endpoint_counts(case)[port];assert layer.GetFeatureCount()==rows
+    checksum=hashlib.sha256();encoder=json.JSONEncoder(sort_keys=True).encode;iterator=iter(layer);not_null=ogr.Feature.IsFieldSetAndNotNull
+    for i,(expected,points) in enumerate(endpoint_expected(case,port),1):
+        feature=next(iterator);assert feature.GetFID()==i;shape=feature.GetGeometryRef()
+        assert shape and shape.GetCoordinateDimension()==2 and not shape.IsMeasured() and shape.IsValid()
+        assert shape.GetGeometryType()==geometry_type
+        actual={name:getter(feature,index) if not_null(feature,index) else None for name,index,getter in readers}
+        if source and actual['enabled'] is not None:
+            assert actual['enabled'] in (0,1);actual['enabled']=bool(actual['enabled'])
+        coordinates=([[list(v) for v in shape.GetGeometryRef(j).GetPoints()] for j in range(shape.GetGeometryCount())] if multi else
+                     [list(v) for v in shape.GetPoints()] if source else list(shape.GetPoint_2D()))
+        expected_coordinates=points if multi or not source else points[0]
+        assert coordinates==expected_coordinates and actual==expected
+        assert all(type(actual[k]) is type(v) for k,v in expected.items())
+        checksum.update(encoder([actual,coordinates]).encode())
+    assert next(iterator,None) is None;ds=None
+    return {'rows':rows,'crs':'EPSG:3857','full_result_sha256':checksum.hexdigest(),'all_coordinates_attributes_membership_verified':True}
+
+
+def endpoint_timings():
+    return ('generate','read','source_oracle','compute','save_result','save_details','reload_oracle','source_unchanged')
+
+
+def run_endpoint_worker(case,root,observer,measurement_id):
+    import resource,platform,geopandas,shapely
+    from osgeo import gdal
+    sys.path.insert(0,'/app')
+    from operators.io_operators import load,save
+    from operators import geometric_operators as geometry
+    assert observer=='A';counts=endpoint_counts(case);started=time.monotonic()
+    report={'implementation_identity':loaded_implementation_identity(geometry,case.operator),'case':asdict(case),
+        'observer':observer,'measurement_id':measurement_id or case.key,'result':'incomplete','timings':{},'input_counts':counts,
+        'versions':{'python':platform.python_version(),'machine':platform.machine(),'geopandas':geopandas.__version__,'shapely':shapely.__version__,'geos':shapely.geos_version_string,'gdal':gdal.VersionInfo('RELEASE_NAME')}}
+    progress=root/'progress.json'
+    def phase(name,operation):
+        report['stage']=name;write_json(progress,report);before=time.monotonic()
+        value=operation();report['timings'][name]=time.monotonic()-before;write_json(progress,report);return value
+    def generate():
+        seed_network_source(root/'source.gpkg',counts['sources'],lambda row:endpoint_source(case,row),case.kind=='endpoint-source-parts')
+        seed_endpoint_reference(case,root/'reference.gpkg')
+        return {name:digest(root/(name+'.gpkg')) for name in ('source','reference')}
+    original=phase('generate',generate);report['sources']=original
+    connection={'engine_type':'nfs','mount_path':str(root)}
+    frames=phase('read',lambda:{name:load(connection_info=connection,path=name+'.gpkg') for name in original})
+    def source_oracle():
+        verify_network_source(frames['source'],counts['sources'],lambda row:endpoint_source(case,row),case.kind=='endpoint-source-parts')
+        verify_endpoint_reference(frames['reference'],case)
+        return {name:attributed_frame_digest(frame) for name,frame in frames.items()}
+    before=phase('source_oracle',source_oracle);report['source_frames_sha256']=before
+    outputs=phase('compute',lambda:geometry.snap_line_endpoints(frames['source'],frames['reference'],'route_key','ref_key',1.))
+    assert set(outputs)==set(ENDPOINT_PORTS)
+    assert outputs['result'].index.equals(frames['source'].index) and outputs['result'].geometry.name==frames['source'].geometry.name
+    for column in frames['source'].columns:assert outputs['result'][column].dtype==frames['source'][column].dtype
+    output_files={};report['outputs']=output_files
+    for port in ENDPOINT_PORTS:
+        assert len(outputs[port])==counts[port]
+        def save_port(port=port):
+            save(outputs[port],connection_info=connection,path=port+'.gpkg',mode='fail')
+            return digest(root/(port+'.gpkg'))
+        output_files[port]=phase('save_'+port,save_port)
+    physical=phase('reload_oracle',lambda:{port:verify_endpoint_output(case,root/(port+'.gpkg'),port) for port in ENDPOINT_PORTS})
+    def unchanged():
+        for name,frame in frames.items():assert attributed_frame_digest(frame)==before[name] and digest(root/(name+'.gpkg'))==original[name]
+    phase('source_unchanged',unchanged)
+    report.update(result='passed',stage='complete',source_frames_sha256=before,sources=original,
+        outputs=output_files,physical=physical,duration_seconds=time.monotonic()-started,
+        worker_peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*(1 if sys.platform=='darwin' else 1024),
+        versions={'python':platform.python_version(),'machine':platform.machine(),'geopandas':geopandas.__version__,'shapely':shapely.__version__,'geos':shapely.geos_version_string,'gdal':gdal.VersionInfo('RELEASE_NAME')})
+    write_json(progress,report);return report
+
+
+def validate_endpoint_worker(report,case,observer,measurement_id):
+    assert observer==report['observer']=='A' and report['measurement_id']==(measurement_id or case.key)
+    assert report['case']==asdict(case) and report['input_counts']==endpoint_counts(case) and report['result']=='passed' and report['stage']=='complete'
+    assert all(type(value) is int for value in report['input_counts'].values())
+    assert math.isfinite(report['duration_seconds']) and 0<report['duration_seconds']<=SECONDS and report['worker_peak_rss_bytes']>0
+    assert set(report['timings'])==set(endpoint_timings()) and all(math.isfinite(v) and v>=0 for v in report['timings'].values())
+    assert sum(report['timings'].values())<=report['duration_seconds'] and 'compute_observation' not in report
+    identity=report['implementation_identity'];assert identity['loaded_endpoint_matches_source'] is True and len(identity['module_sha256'])==64
+    assert set(identity['endpoint_definitions_sha256'])==set(ENDPOINT_BINDINGS) and all(len(v)==64 for v in identity['endpoint_definitions_sha256'].values())
+    assert set(report['sources'])==set(report['source_frames_sha256'])=={'source','reference'}
+    assert all(len(v)==64 for v in report['source_frames_sha256'].values())
+    assert set(report['outputs'])==set(report['physical'])==set(ENDPOINT_PORTS)
+    for port in ENDPOINT_PORTS:
+        physical=report['physical'][port];assert type(physical['rows']) is int and physical['rows']==endpoint_counts(case)[port]
+        assert physical['crs']=='EPSG:3857' and physical['all_coordinates_attributes_membership_verified'] is True and len(physical['full_result_sha256'])==64
+    for value in [*report['sources'].values(),*report['outputs'].values()]:
+        assert type(value['size_bytes']) is int and value['size_bytes']>0 and len(value['sha256'])==64 and all(c in '0123456789abcdef' for c in value['sha256'])
+
 @contextmanager
 def observe_compute(root, report, progress, observer='C'):
     """Observe the unchanged production calls; never replace their geometry work."""
@@ -1067,6 +1305,8 @@ def observe_compute(root, report, progress, observer='C'):
 
 
 def run_worker(case, root, observer='C', measurement_id=None):
+    if case.operator == 'endpoint-snapping':
+        return run_endpoint_worker(case, root, observer, measurement_id)
     """One process, one full measurement including generation and independent checks."""
     if case.operator == 'normalize-chains':
         return run_composition_worker(case, root, observer, measurement_id)
@@ -1149,6 +1389,8 @@ def classify(returncode, timed_out, state, metrics):
 
 
 def validate_worker(report, case, observer='C', measurement_id=None):
+    if case.operator == 'endpoint-snapping':
+        return validate_endpoint_worker(report, case, observer, measurement_id)
     if case.operator == 'normalize-chains':
         return validate_composition_worker(report, case, observer, measurement_id)
     if case.operator in ('chains','normalize'):
@@ -1223,7 +1465,7 @@ def run_case(case, image, run_id, artifact, observer='C', measurement_id=None, r
         directory = cgroup_directory(inspect(name)['State']['Pid']); before = read_metrics(directory)
         timed_out = False; started = time.monotonic(); returncode = None
         metrics = before; peak_rss = before['process_peak_rss_bytes']; samples = 0
-        stage_samples = {stage: {'samples':0, 'observed_memory_current_peak_bytes':None} for stage in composition_timings()} if case.operator == 'normalize-chains' else None
+        stage_samples = {stage: {'samples':0, 'observed_memory_current_peak_bytes':None} for stage in (endpoint_timings() if case.operator=='endpoint-snapping' else composition_timings())} if case.operator in ('normalize-chains','endpoint-snapping') else None
         with (root / 'worker.log').open('w') as log, (root / 'resources.jsonl').open('w') as series:
             process = subprocess.Popen(['docker', 'exec', name, 'python', '/capacity.py', '--worker', case.key, '--observer', observer, '--measurement', measurement_id], stdout=log, stderr=subprocess.STDOUT)
             while process.poll() is None:
@@ -1265,12 +1507,18 @@ def run_case(case, image, run_id, artifact, observer='C', measurement_id=None, r
         progress = workspace / 'progress.json'
         outcome['worker'] = json.loads(progress.read_text()) if progress.is_file() else None
         if progress.is_file(): shutil.copyfile(progress, root / 'worker-progress.json')
+        if case.operator == 'endpoint-snapping' and outcome['worker'] is not None:
+            partial = outcome['worker']
+            assert partial['case'] == asdict(case) and partial['observer'] == observer == 'A' and partial['measurement_id'] == measurement_id
+            assert partial['stage'] in (*endpoint_timings(), 'complete')
+            if expected_identity is not None:
+                assert partial['implementation_identity'] == {**expected_identity, 'loaded_endpoint_matches_source': True}
         if (workspace / 'compute-resources.jsonl').is_file():
             shutil.copyfile(workspace / 'compute-resources.jsonl', root / 'compute-resources.jsonl')
         if outcome['result'] == 'passed':
             validate_worker(outcome['worker'], case, observer, measurement_id)
             if expected_identity is not None:
-                assert outcome['worker']['implementation_identity'] == {**expected_identity, **({'loaded_normalize_matches_source': True, 'loaded_merge_matches_source': True} if case.operator == 'normalize-chains' else {('loaded_normalize_matches_source' if case.operator == 'normalize' else 'loaded_merge_matches_source'): True})}
+                assert outcome['worker']['implementation_identity'] == {**expected_identity, **({'loaded_endpoint_matches_source': True} if case.operator == 'endpoint-snapping' else {'loaded_normalize_matches_source': True, 'loaded_merge_matches_source': True} if case.operator == 'normalize-chains' else {('loaded_normalize_matches_source' if case.operator == 'normalize' else 'loaded_merge_matches_source'): True})}
             assert elapsed <= SECONDS
             assert metrics['swap_current_bytes'] == 0
     except Exception as error:
@@ -1326,12 +1574,14 @@ def run_gate(profile='matrix', case_key='all'):
     artifact.mkdir(mode=0o700)
     image = f'localhost:5001/addp-geopython-workflow-engine:topology-capacity-{run_id}'
     registry = f'addp-topology-capacity-registry-{run_id}'
-    report = {'schema_version': COMPOSITION_SCHEMA if profile == 'normalize-chains' else NORMALIZE_SCHEMA if profile == 'normalize' else SCHEMA, 'source': source, 'experiment_profile': profile, 'case_selection': case_key,
+    report = {'schema_version': ENDPOINT_SCHEMA if profile == 'endpoint-snapping' else COMPOSITION_SCHEMA if profile == 'normalize-chains' else NORMALIZE_SCHEMA if profile == 'normalize' else SCHEMA, 'source': source, 'experiment_profile': profile, 'case_selection': case_key,
               'runner': {key: os.getenv(key) for key in ('GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_JOB', 'RUNNER_NAME', 'RUNNER_ARCH', 'ImageOS', 'ImageVersion')},
               'host': {'hostname': os.uname().nodename, 'available_cpus': sorted(os.sched_getaffinity(0)),
                        'cpuinfo_sha256': hashlib.sha256(Path('/proc/cpuinfo').read_bytes()).hexdigest()},
               'profile': {'cpu': CPUS, 'memory_bytes': MEMORY, 'swap_bytes': 0, 'seconds_per_case': SECONDS},
               'planned_measurements': plan, 'planned_cases': [item['case'] for item in plan], 'groups': [], 'result': 'incomplete'}
+    if profile == 'endpoint-snapping':
+        report['endpoint_implementation'] = implementation_identity((repository / GEOMETRY_MODULE).read_text(), 'endpoint-snapping')
     if profile == 'normalize-chains':
         report['composition_implementation'] = implementation_identity((repository / GEOMETRY_MODULE).read_text(), 'normalize-chains')
     if profile == 'normalize':
@@ -1382,7 +1632,7 @@ def run_gate(profile='matrix', case_key='all'):
         for index, item in enumerate(plan):
             report['groups'].append(run_case(Case(**item['case']), images[item.get('implementation', 'new')], run_id, artifact,
                 observer=item['observer'], measurement_id=item['id'], repetition=item['repetition'], implementation=item.get('implementation'),
-                expected_identity=report.get('composition_implementation') if profile == 'normalize-chains' else report.get('normalization_implementation') if profile == 'normalize' else report.get('chain_implementation')))
+                expected_identity=report.get('endpoint_implementation') if profile == 'endpoint-snapping' else report.get('composition_implementation') if profile == 'normalize-chains' else report.get('normalization_implementation') if profile == 'normalize' else report.get('chain_implementation')))
             write_json(artifact / 'report.json', report)
             if report['groups'][-1].get('cleanup') != 'passed':
                 report['not_run'] = {'reason': 'prior_case_cleanup_failed', 'measurements': plan[index + 1:]}
@@ -1411,14 +1661,14 @@ if __name__ == '__main__':
         raise KeyboardInterrupt('capacity interrupted')
     signal.signal(signal.SIGTERM, terminate)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--worker', choices=[case.key for case in matrix() + chain_matrix() + normalize_matrix() + composition_matrix()])
-    parser.add_argument('--profile', choices=('matrix', 'observation', 'comparison', 'chains', 'normalize', 'normalize-chains'), default=os.getenv('TOPOLOGY_CAPACITY_PROFILE', 'matrix'))
+    parser.add_argument('--worker', choices=[case.key for case in matrix() + chain_matrix() + normalize_matrix() + composition_matrix() + endpoint_matrix()])
+    parser.add_argument('--profile', choices=('matrix', 'observation', 'comparison', 'chains', 'normalize', 'normalize-chains', 'endpoint-snapping'), default=os.getenv('TOPOLOGY_CAPACITY_PROFILE', 'matrix'))
     parser.add_argument('--case', choices=('all', COMPOSITION_SINGLE_CASE), default=os.getenv('TOPOLOGY_CAPACITY_CASE', 'all'))
     parser.add_argument('--observer', choices=('A', 'B', 'C'), default='C')
     parser.add_argument('--measurement')
     args = parser.parse_args()
     measurement_plan(args.profile, args.case)  # Validate environment defaults before any mutation.
     if args.worker:
-        run_worker(next(case for case in matrix() + chain_matrix() + normalize_matrix() + composition_matrix() if case.key == args.worker), Path('/capacity-data'), args.observer, args.measurement)
+        run_worker(next(case for case in matrix() + chain_matrix() + normalize_matrix() + composition_matrix() + endpoint_matrix() if case.key == args.worker), Path('/capacity-data'), args.observer, args.measurement)
     else:
         raise SystemExit(run_gate(args.profile, args.case))
