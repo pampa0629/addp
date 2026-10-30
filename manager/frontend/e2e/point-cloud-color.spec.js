@@ -33,27 +33,28 @@ test('switching items during COPC initialization settles the obsolete read witho
   let release, started
   const held = new Promise(resolve => { release = resolve })
   const requested = new Promise(resolve => { started = resolve })
-  let first = true
+  // Hold every read of item 8, including replacement mounts of that item.
+  // A single held request may belong to an already obsolete mount; observing
+  // the current component would then capture a different, ready source.
   await page.route('**/point_cloud_copc/1/content', async route => {
-    if (first) {
-      first = false
-      started()
-      await held
-    }
+    started()
+    await held
     return route.fallback()
   })
   await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
   await requested
-  await page.locator('.point-cloud-preview').evaluate(element => {
+  await expect.poll(() => page.locator('.point-cloud-preview').evaluate(element => {
     const state = element.__vueParentComponent.setupState
     const instance = state.giroInstance?.value || state.giroInstance
-    const source = instance.getObjects()[0].source
+    const source = instance?.getObjects()[0]?.source
+    if (!source || source.ready) return false
     window.obsoleteCOPCRead = { settled: false }
     source.initialize().then(
       () => { window.obsoleteCOPCRead = { settled: true, ready: source.ready } },
       error => { window.obsoleteCOPCRead = { settled: true, ready: source.ready, error: error.message } }
     )
-  })
+    return true
+  })).toBe(true)
   await page.getByRole('treeitem', { name: 'other.copc.laz', exact: true }).click()
   await expect.poll(async () => (await inspect(page)).count).toBeGreaterThan(100)
   release()
@@ -85,6 +86,8 @@ async function backend(page, locale, domain) {
     const url = new URL(route.request().url()), path = url.pathname
     const identity = url.searchParams.get('locator') || locator
     const state = states.get(identity) || {}
+    const resultID = identity === otherLocator ? 2 : 1
+    const contentURL = `/api/v1/manager/point_cloud_copc/${resultID}/content`
     const json = value => route.fulfill({ json: value })
     if (path.endsWith('/system/refresh')) return json({ access_token: 'point-color-fixture', expires_in: 3600 })
     if (path.endsWith('/system/users/me')) return json({ id: 1, display_name: 'point-color-test', local_account: { username: 'point-color-test' } })
@@ -102,12 +105,12 @@ async function backend(page, locale, domain) {
     if (path.endsWith('/manager/quick-view/capability')) return json({
       can_use_quick_view: domain === 'quick_view', status: 'available', render_source: 'point_cloud_copc',
       preferred_mode: domain === 'quick_view' ? 'map_quick_view' : 'basic_preview', view_state: state,
-      point_cloud: { result_id: 1, last_execution_id: 'fixture-v1', point_count: 441, preview_url: '/api/v1/manager/point_cloud_copc/1/content' }
+      point_cloud: { result_id: resultID, last_execution_id: 'fixture-v1', point_count: 441, preview_url: contentURL }
     })
     if (path.endsWith('/manager/preview')) return json({ preview_type: 'object', data: {
-      mode: 'object', object: { content: { kind: 'point_cloud', frontend_renderer: 'point_cloud', url: '/api/v1/manager/point_cloud_copc/1/content', metadata: { format: 'copc' } } }
+      mode: 'object', object: { content: { kind: 'point_cloud', frontend_renderer: 'point_cloud', url: contentURL, metadata: { format: 'copc' } } }
     } })
-    if (path.endsWith('/point_cloud_copc/1/content')) {
+    if (/\/point_cloud_copc\/[12]\/content$/.test(path)) {
       const range = /bytes=(\d+)-(\d+)/.exec(route.request().headers().range || '')
       expect(range).not.toBeNull()
       const start = Number(range[1]), end = Math.min(Number(range[2]), copc.length - 1)
