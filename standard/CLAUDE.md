@@ -685,7 +685,15 @@ GET /api/v1/standard/cleanup-executions/:execution_id/result
 **被依赖**（其他模块调用 Standard 的 API）:
 - **Model 模块**: 验证 domain_id、element_id / element_revision_id、metric_definition_revision_id；Mermaid 交换文档通过稳定 `domain_code / element_code` 精确解析当前 Tenant 运行时 ID；维度层级只校验 Model 本地事实
 
-`/api/v1/standard` 路由只接受 canonical Bearer Tenant AuthContext；文档下载还可使用 Standard owner 的 Browser Resource Ticket。Catalog 与 Model 对 Domain、Glossary、Element 稳定身份的精确校验只走 `/api/v1/standard/references/resolve`，每项必须且只能提交 Tenant 内代理 `id` 或不可变 `code`；`addp-model` 只解析 Domain 与 Element，Glossary 仍只允许 `addp-catalog`。Metric 目录来源只走 `/catalog-resources/changes` 与 `/runtime/catalog-references/resolve`，两类契约不可混用，也不提供面向 Asset 的自动发现接口。
+模块 Bearer 请求经统一中间件解析 canonical AuthContext，各入口再核验 Context、Permission 与资源归属。`/measurement-categories`、`/units` 由 `unitContext` 明确接受 Platform User 或有效 Tenant Context，按 `standard.unit.*` 和资源归属限制读写；具体范围统一见[平台与租户单位维护](#平台与租户单位维护)，不将单位入口的上下文范围推广到其他 API。
+
+标准文档的确定修订文件 GET 另可使用 Standard owner 的 Browser Resource Access Ticket，仍要求 `standard.document.read` 及同租户资源校验；普通业务 API 与写入不接受该票据。票据边界沿[统一认证规范](../docs/spec/addp登录认证的统一要求.md#23-browser-resource-access-ticket)，文件权限与生命周期沿[文档文件生命周期](#文档文件生命周期)。
+
+Catalog、Model 对 Domain、Glossary、Element 稳定身份的精确解析，以当前 Tenant 内代理 `id` 或不可变 `code` 为输入；互斥条件、对象类型与调用方差异统一见[标准引用与修订机器读取](#标准引用与修订机器读取)。候选与机器修订入口沿同节，时点解析和固定修订读取的语义沿[数据字典边界](#数据字典边界)。
+
+五类标准的目录变化和最小摘要使用[企业目录机器读取](#企业目录机器读取)，与身份解析契约分别消费，不提供面向 Asset 的自动发现接口。执行读取范围与本人回收结果另沿[专用读取边界](#执行读取与回收结果)。
+
+以上为当前入口与契约索引，受控 AuthContext 测试、真实 OAuth 和完整消费链路的覆盖分别按[标准测试入口与范围](#标准测试入口与范围)认定。
 
 ## IAM Permission 所有权
 
