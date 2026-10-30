@@ -332,6 +332,7 @@ POST   /api/v1/model/metric-implementations/:id/revisions/:revision_id/plan     
 以下为其他模块服务端 → Model 的调用，使用调用方当前 Tenant 的服务身份；与前端 User 访问的权限分工统一见[IAM Permission 所有权](#iam-permission-所有权)，实际验收范围见[开发与验证](#开发与验证)。
 
 - **Graph 模块**: 使用 `tenant.graph_runtime` 读取 Entity、EntityAttribute 和 EntityRelation，生成本体导入预览。
+- **Service 模块**: 按确定的指标实现 ID 与发布修订 ID，通过 Model Client SDK 读取计划包，使用当前 Tenant 服务身份和 `model.metric_implementation.read`（见[IAM 权限说明](#iam-permission-所有权)）。计划冻结及执行前复核见[Model 计划规范](docs/model概念与数据约束规范.md#数据库无关计划与修订)与[Service 指标来源与版本](../service/docs/architecture/指标来源与版本.md)；用户与消费请求的授权仍按[Service 身份授权](../service/docs/architecture/查询发布与执行.md#身份授权与资源限制)独立裁决。
 - **Catalog 模块**: 拉取 Model 可恢复变化流，并按需批量解析目录引用；来源归属及同步边界见[企业目录接入边界](docs/model概念与数据约束规范.md#企业目录接入边界)。
 - **Orchestrator 模块**: 通过 Model TaskProvider 发现任务、派发目标物理表建表执行并读取状态；执行授权、父 execution 及版本冻结前提见[目标物理表建表](docs/model概念与数据约束规范.md#目标物理表建表)。
 - **Standard 模块**: 调用 Model 引用删除屏障，协调被 Model 引用的 Standard 资源删除；冻结、失败恢复及终态边界见[Standard 引用删除屏障](docs/model概念与数据约束规范.md#standard-引用删除屏障)。
