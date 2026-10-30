@@ -307,11 +307,11 @@
       "kind": "implementation",
       "path": "agent/frontend/src/views/ChatView.vue",
       "anchor": "function ensureLiveTextPart(",
-      "commit": "560caff552508bc73b5fc3d4c7508fbc5ba6cec2",
-      "sha256": "83653f3522e83b7ce1d7f9208f030021277756a67e83e2c01c1838249421ef1a",
+      "commit": "39cdb2376752c744362c43c3372d8f8260b8f61d",
+      "sha256": "70f60a5bee2406f620d771edb0bb3bfc681d3a24874342dac3be7f922a506d20",
       "use": {
-        "zh-cn": "文字与A2UI按事件顺序呈现，同回复计划按稳定身份替换且保留历史。设置使用既有addp-module导航来源；另开会话以既有单次NavigationDraft仅移交文字，跨iframe重载后领取，不复制确认、预检、引用或权限。不扩Console白名单或创建效果。",
-        "en": "Preserves text/A2UI order and stable current-plan replacement with historical snapshots. Settings uses the existing addp-module navigation source. New conversations transfer only text through the existing single-use NavigationDraft across iframe reloads, never confirmations, prechecks, references or permissions. Console allowlists and creation effects are unchanged."
+        "zh-cn": "文字与A2UI按事件顺序呈现，当前计划稳定替换且保留历史。设置使用既有addp-module导航；另开会话通过单次NavigationDraft跨iframe移交文字，领取完成前关闭输入、发送与会话切换，避免迟到覆盖。不复制确认、预检、引用或权限，不扩大白名单或创建效果。",
+        "en": "Preserves text/A2UI order and stable current-plan replacement with history. Settings uses addp-module navigation. New conversations transfer only text through the single-use NavigationDraft across iframe reloads. Editing, sending and session changes wait for draft receipt to prevent late overwrite. No inherited confirmations, prechecks, references or permissions; no expanded allowlists or creation effects."
       }
     },
     {
