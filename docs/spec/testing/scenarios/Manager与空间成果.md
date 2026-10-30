@@ -818,6 +818,8 @@ artifact／物理／Meta相等正整数大小、精确scan父执行／用户／�
 
 真实Console核成功及四失败执行页、线与Point双地图、两属性页和实际血缘tab／G6来源边标签；原始EWKB、全部OL几何／属性、线端明确移动见证及原Point像素归档，共11截图。Point在原端点，目标由字段与线成果对照；微距保物理／API／OL，不声明亚像素单独可见。每次导航绑定页面实际请求的同一普通身份。最终Owner／browser／raw报告唯一case/run/execution且passed；阶段incomplete仅保留阶段意义。末轮扫描库存、文件与Meta不变，NFS/export/ownedroot、Runtime/registry、部署／Infra清0，不认证业务DELETE、内存中间资源血缘、空批／英尺／超JS整数或容量。夹具／runner／浏览器／Hosted选择及CI登记mutation同次更新，经新增范围最小标准门禁后仅单次派发此case。
 
+2026-10-30，固定 `182f93649cd1227ef6ff8451fca0902373fbde1b` 的[端点吸附独立普通User Hosted T4 41054235377](https://github.com/pampa0629/addp/actions/runs/41054235377/job/124057611152)已通过原始归档独立审计：同User33／Tenant2／精确11权限，七源与线／Point双成果九份原GPKG各98304字节，逐原坐标、全部属性类型／空值、部件／方向／顺序、3857及SHA／大小与现场／Meta／storage及浏览器后记录严格一致。12条MultiLineString结果／10条原悬点Point明细、双create稳定输出与事实、两次公开同主体自动扫描、四条本次execution active derive及Monitor一致；两原图与实际血缘tab／G6三节点两边／标签paths、原EWKB及全部OL坐标属性精确核对，线端移动像素14与Point图层像素451、两地图／属性／血缘和成功四失败页共11截图已核。四真实失败的准确同UUID owner日志及无输出事实／目标／扫描／derive、扫描库存7→9后不变均通过；源和成果原字节／Meta前后不变。最终Owner／browser／raw唯一v1 passed，业务69915ms，小于600秒，incomplete检查点只保留阶段含义；NFS/export/ownedroot、Runtime/registry/镜像、部署及Infra完整清理零残留。四份独立物理／渲染／截图／清理审计及同SHA Console／Platform CI实际通过；GeoPython全量9994通过／1个未改动的TIFF overview负例失败，交对应owner，不计全量通过；该证据不认证容量、跨文件事务、内存中间血缘、业务DELETE、空批／英尺／超JS整数，微距仅核物理／API／OL数据，不宣称其亚像素部分独立可见。本轮仅单次派发该case，未重跑旧业务T4或容量。
+
 
 ## 整幅栅格百分位统计独立 Hosted 验收
 
