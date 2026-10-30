@@ -78,6 +78,11 @@ class ChangedGateTest(unittest.TestCase):
             MODULE.affected_modules(self.repository, ["common/client/system.go"]),
         )
 
+    def test_node_policy_selects_all_frontend_consumers(self) -> None:
+        for path in (".node-version", "scripts/utils/node-runtime.sh"):
+            self.assertEqual(["agent", "alias", "other", "sample"],
+                             MODULE.affected_modules(self.repository, [path]))
+
     def test_common_python_health_changes_select_importing_runtime_owner(self) -> None:
         for name, content in {
             "engines/workflow/requirements.txt": "Flask==3.0.0\n",

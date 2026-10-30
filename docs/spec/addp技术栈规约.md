@@ -132,6 +132,8 @@ Python HTTP 指标来源使用 `prometheus-client==0.26.0`，证书检查统一�
 ### 前端技术栈
 
 - **运行时**: Node.js 24（根目录 `.node-version` 是工具链版本的唯一事实源）
+- `.node-version` 只声明稳定主版本，开发、测试与构建接受该主版本的不同补丁版本，拒绝其他主版本与预发布版本。`scripts/utils/node-runtime.sh` 独占版本读取和实际 `node --version` 校验，不自动切换、安装或修改 PATH。
+- 开发启动和重启必须在加锁、停止服务、安装依赖及启动进程前完成校验；锁定依赖安装、前端测试与构建入口复用同一校验。停止、服务状态查询与纯 Go 编译不额外要求 Node。版本不符必须返回非零并报告要求、实际版本和解释器位置，不保留跳过校验开关。
 - 前端产品镜像同样读取根 `.node-version`，由唯一镜像构建入口传入 `NODE_VERSION`；Dockerfile 不维护另一个 Node 版本或默认值。
 - 前端产品镜像必须复制 `package.json` 与 `package-lock.json` 后执行 `npm ci`。包括 Rollup 平台包在内的依赖均由锁文件确定，不允许构建期间执行 `npm install` 或绕过锁文件。
 - **框架**: Vue 3 + Composition API

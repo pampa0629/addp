@@ -33,6 +33,8 @@ IMAGE_TAG="${IMAGE_TAG:-latest}"
 USE_CACHE="--cache-from"
 SERVICES_TO_BUILD="all"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "${PROJECT_ROOT}/scripts/utils/node-runtime.sh"
+addp_require_node_runtime || exit 1
 BUILD_PLATFORMS="linux/$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"  # Native platform by default
 MULTI_ARCH=false
 FORCE_BUILD=false
@@ -40,11 +42,7 @@ VERIFY_ONLY=false
 BUILD_JOBS=2
 IMAGE_WORK_DIR=""
 IMAGE_SCHEDULER_PID=""
-NODE_VERSION=$(tr -d '[:space:]' < "$PROJECT_ROOT/.node-version")
-if ! [[ "$NODE_VERSION" =~ ^[1-9][0-9]*$ ]]; then
-    echo "Error: .node-version must contain a Node major version" >&2
-    exit 1
-fi
+NODE_VERSION=$(addp_node_required_major)
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do

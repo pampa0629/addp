@@ -5,7 +5,10 @@
 # one installation route only: npm ci. Lockfile creation belongs to explicit
 # dependency-maintenance workflows, never service startup.
 
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../utils" && pwd)/node-runtime.sh"
+
 addp_install_node_dependencies() {
+  addp_require_node_runtime || return 1
   local directory=$1
   shift
 

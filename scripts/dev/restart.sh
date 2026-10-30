@@ -65,6 +65,9 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
+source "${ROOT_DIR}/scripts/utils/node-runtime.sh"
+addp_require_node_runtime || exit 1
+
 cd "${ROOT_DIR}"
 source "${SCRIPT_DIR}/lifecycle-lock.sh"
 addp_acquire_lifecycle_lock restart "$@"

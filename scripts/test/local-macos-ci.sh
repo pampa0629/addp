@@ -5,6 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "${SCRIPT_DIR}/../.." && pwd -P)
+source "$ROOT_DIR/scripts/utils/node-runtime.sh"
 LOCAL_CI_COMPOSE_FILE="$SCRIPT_DIR/docker-compose.local-macos-ci.yml"
 MYSQL_CONTAINER_NAME=addp-local-ci-mysql
 OCEANBASE_CONTAINER_NAME=addp-local-ci-oceanbase
@@ -131,17 +132,6 @@ if sys.version_info < (3, 11):
 PY
 }
 
-validate_node() {
-  local required major
-  [ -f "$ROOT_DIR/.node-version" ] || fail "Node.js version file is missing: $ROOT_DIR/.node-version"
-  required=$(sed -n '1p' "$ROOT_DIR/.node-version")
-  case "$required" in
-    ''|*[!0-9]*) fail "invalid Node.js major version in $ROOT_DIR/.node-version: ${required:-empty}" ;;
-  esac
-  major=$(node --version | sed 's/^v//' | cut -d. -f1)
-  [ "$major" = "$required" ] || fail "Node.js $required is required, found $(node --version)"
-}
-
 validate_go() {
   local version major minor
   version=$(GOTOOLCHAIN=local go env GOVERSION 2>/dev/null | sed 's/^go//')
@@ -177,7 +167,7 @@ validate_host() {
     require_command "$command"
   done
   validate_python
-  validate_node
+  addp_require_node_runtime || exit 1
   validate_go
   docker info >/dev/null 2>&1 || fail "Docker is not running or is not accessible"
   local_ci_compose config --quiet >/dev/null 2>&1 ||

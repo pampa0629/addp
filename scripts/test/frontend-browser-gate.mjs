@@ -54,6 +54,7 @@ async function cleanupFixtures(runtimeDir) {
 }
 
 export async function runBrowserGate(frontend, args) {
+  execFileSync('bash', [resolve(dirname(fileURLToPath(import.meta.url)), '../utils/node-runtime.sh')], { stdio: 'inherit' })
   frontend = resolve(frontend)
   for (let index = 0; index < args.length; index++) {
     const argument = args[index]

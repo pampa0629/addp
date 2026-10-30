@@ -702,6 +702,9 @@ class ImageBuildRuntimeTest(unittest.TestCase):
         self.builder = self.root / 'scripts/build/build-images.sh'
         self.builder.parent.mkdir(parents=True)
         shutil.copyfile(SCRIPT.parents[1] / 'build/build-images.sh', self.builder)
+        helper = self.root / 'scripts/utils/node-runtime.sh'
+        helper.parent.mkdir(parents=True)
+        shutil.copyfile(SCRIPT.parents[2] / 'scripts/utils/node-runtime.sh', helper)
         (self.root / '.node-version').write_text('24\n')
         self.services = ['console', 'system-frontend', 'manager-frontend', 'standard-frontend']
         for module in ('console', 'system', 'manager', 'standard'):
@@ -758,6 +761,9 @@ sys.exit(9 if name==os.environ.get('FAKE_FAILURE') else 0)
         executable.chmod(0o755)
         shutil.copyfile(executable, self.bin / 'curl')
         (self.bin / 'curl').chmod(0o755)
+        node = self.bin / 'node'
+        node.write_text('#!/bin/bash\nprintf \"v%s.0.0\\n\" \"${FAKE_NODE_MAJOR:-24}\"\n')
+        node.chmod(0o755)
         self.env = dict(os.environ, PATH=str(self.bin)+os.pathsep+os.environ['PATH'],
                         FAKE_STATE=str(self.root), FAKE_ARCH='arm64' if os.uname().machine in ('arm64','aarch64') else 'amd64',
                         TMPDIR=str(self.root), ADDP_CI_SUMMARY_FILE=str(self.root/'summary'))
@@ -781,7 +787,7 @@ sys.exit(9 if name==os.environ.get('FAKE_FAILURE') else 0)
 
     def test_default_two_workers_use_root_node_version_and_isolated_logs(self):
         (self.root/'.node-version').write_text('26\n')
-        result=self.run_builder()
+        result=self.run_builder(FAKE_NODE_MAJOR='26')
         self.assertEqual(0,result.returncode,result.stdout+result.stderr)
         self.assertEqual(2,self.peak())
         starts=[event for event in self.events() if event['kind']=='start']

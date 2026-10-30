@@ -232,10 +232,10 @@ test-kingbase-official-media-release:
 test-dameng-official-media-release:
 	@bash scripts/test/dameng-official-media-release-gate.sh
 
-test-module: ## 运行指定模块的 T0-T3 门禁；用法：make test-module MODULE=standard
+test-module: check-node-runtime ## 运行指定模块的 T0-T3 门禁；用法：make test-module MODULE=standard
 	@python3 scripts/test/module-gate.py --repository "$(CURDIR)" --module "$(MODULE)" $(if $(filter 1,$(GO_ONLY)),--go-only,)
 
-test-changed: ## 根据相对 HEAD 或 BASE_REF 的改动运行受影响 T0-T3 门禁
+test-changed: check-node-runtime ## 根据相对 HEAD 或 BASE_REF 的改动运行受影响 T0-T3 门禁
 	@python3 scripts/test/changed-gate.py --repository "$(CURDIR)" $(if $(BASE_REF),--base-ref "$(BASE_REF)",)
 
 local-ci: ## 在专用 macOS checkout 运行辅助 T0-T3 巡检；无拉取全量用 LOCAL_CI_ARGS="--no-fetch --full"
@@ -243,6 +243,13 @@ local-ci: ## 在专用 macOS checkout 运行辅助 T0-T3 巡检；无拉取全�
 
 test-local-ci-runner: ## 运行辅助 macOS 巡检器的确定性测试
 	@python3 scripts/test/local-macos-ci_test.py
+
+.PHONY: check-node-runtime test-node-runtime
+check-node-runtime: ## 校验当前 Node 与根 .node-version 的稳定主版本一致
+	@bash scripts/utils/node-runtime.sh
+
+test-node-runtime: ## 验证 Node 版本策略及副作用前拒绝边界（不启动服务）
+	@python3 scripts/test/node-runtime_test.py
 
 test-node-dependencies: ## 校验开发生命周期不会改写已锁定的 Node 依赖
 	@bash scripts/test/node-dependencies_test.sh
@@ -1080,7 +1087,7 @@ test-build-registration: ## 验证产品镜像构建登记与影响范围选择
 test-infra-minio-cache: ## 验证 MinIO 构建缓存输入、隔离和失败传播契约
 	@python3 -m unittest scripts/ci/minio-build-cache_test.py
 
-test-platform: ## 运行无外部服务依赖的平台一致性门禁
+test-platform: check-node-runtime ## 运行无外部服务依赖的平台一致性门禁
 	@$(MAKE) test-infra-minio-cache
 	@$(MAKE) test-platform-review
 	@$(MAKE) test-dev-lifecycle
@@ -1089,6 +1096,7 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@$(MAKE) test-common-frontend
 	@$(MAKE) test-book
 	@$(MAKE) test-local-ci-runner
+	@$(MAKE) test-node-runtime
 	@$(MAKE) test-node-dependencies
 	@$(MAKE) test-infra-postgresql-init
 	@$(MAKE) test-system-iam-runner
@@ -1145,105 +1153,105 @@ test-engine-startup-isolation: ## 校验模块启动不依赖 Engine Instance �
 	@cd engines/duckdb && go test ./cmd/server ./internal/config -count=1
 	@cd inference/backend && go test ./cmd/server ./internal/config -count=1
 
-test-model-frontend: ## 运行 Model 前端状态、交互与浏览器回归测试
+test-model-frontend: check-node-runtime ## 运行 Model 前端状态、交互与浏览器回归测试
 	@cd model/frontend && npm test
 	@cd model/frontend && npm run test:e2e
 	@cd model/frontend && npm run build
 
-test-quality-frontend: ## 运行 Quality 前端路由、浏览器与构建门禁
+test-quality-frontend: check-node-runtime ## 运行 Quality 前端路由、浏览器与构建门禁
 	@cd quality/frontend && npm run test:route
 	@cd quality/frontend && npm run test:e2e
 	@cd quality/frontend && npm run build
 
-test-security-frontend: ## 运行 Security 前端确定性测试、浏览器回归与构建
+test-security-frontend: check-node-runtime ## 运行 Security 前端确定性测试、浏览器回归与构建
 	@cd security/frontend && npm test
 	@cd security/frontend && npm run test:e2e
 	@cd security/frontend && npm run build
 
-test-agent-frontend: ## 运行 Agent 前端确定性测试、浏览器回归与构建门禁
+test-agent-frontend: check-node-runtime ## 运行 Agent 前端确定性测试、浏览器回归与构建门禁
 	@cd agent/frontend && npm test
 	@cd agent/frontend && npm run test:e2e
 	@cd agent/frontend && npm run build
 
-test-asset-frontend: ## 运行 Asset 前端确定性测试与构建
+test-asset-frontend: check-node-runtime ## 运行 Asset 前端确定性测试与构建
 	@cd asset/frontend && npm test
 	@cd asset/frontend && npm run build
 
-test-catalog-frontend: ## 运行 Catalog 前端路由状态测试与构建
+test-catalog-frontend: check-node-runtime ## 运行 Catalog 前端路由状态测试与构建
 	@cd catalog/frontend && npm test
 	@cd catalog/frontend && npm run build
 
-test-console-frontend: ## 运行 Console 前端确定性测试、浏览器回归与构建
+test-console-frontend: check-node-runtime ## 运行 Console 前端确定性测试、浏览器回归与构建
 	@cd console/frontend && npm test
 	@cd console/frontend && npm run test:e2e
 	@cd console/frontend && npm run build
 
-test-common-frontend: ## 运行共享前端组件、契约与唯一所有权门禁
+test-common-frontend: check-node-runtime ## 运行共享前端组件、契约与唯一所有权门禁
 	@npm --prefix common-frontend test
 
-test-develop-frontend: ## 运行 Develop 前端确定性测试与构建
+test-develop-frontend: check-node-runtime ## 运行 Develop 前端确定性测试与构建
 	@cd develop/frontend && npm run test:workflow
 	@cd develop/frontend && npm run test:e2e
 	@cd develop/frontend && npm run build
 
-test-graph-frontend: ## 运行 Graph 前端确定性测试与构建
+test-graph-frontend: check-node-runtime ## 运行 Graph 前端确定性测试与构建
 	@cd graph/frontend && npm test
 	@cd graph/frontend && npm run build
 
-test-inference-frontend: ## 运行 Inference 前端确定性测试与构建
+test-inference-frontend: check-node-runtime ## 运行 Inference 前端确定性测试与构建
 	@cd inference/frontend && npm test
 	@cd inference/frontend && npm run build
 
-test-manager-frontend: ## 运行 Manager 前端确定性测试与构建
+test-manager-frontend: check-node-runtime ## 运行 Manager 前端确定性测试与构建
 	@cd manager/frontend && npm test
 	@cd manager/frontend && npm run test:e2e
 	@cd manager/frontend && npm run build
 
-test-meta-frontend: ## 运行 Meta 前端确定性测试与构建
+test-meta-frontend: check-node-runtime ## 运行 Meta 前端确定性测试与构建
 	@cd meta/frontend && npm test
 	@cd meta/frontend && npm run build
 
-test-monitor-frontend: ## 运行 Monitor 前端确定性测试、诊断浏览器回归与构建
+test-monitor-frontend: check-node-runtime ## 运行 Monitor 前端确定性测试、诊断浏览器回归与构建
 	@cd monitor/frontend && npm test
 	@cd monitor/frontend && npm run test:e2e
 	@cd monitor/frontend && npm run build
 
-test-orchestrator-frontend: ## 运行 Orchestrator 前端确定性测试、编辑器与路由浏览器回归及构建
+test-orchestrator-frontend: check-node-runtime ## 运行 Orchestrator 前端确定性测试、编辑器与路由浏览器回归及构建
 	@cd orchestrator/frontend && npm test
 	@cd orchestrator/frontend && npm run test:e2e:routes
 	@cd orchestrator/frontend && npm run build
 
-test-portal-frontend: ## 运行 Portal 前端确定性测试、浏览器回归与构建
+test-portal-frontend: check-node-runtime ## 运行 Portal 前端确定性测试、浏览器回归与构建
 	@cd portal/frontend && npm test
 	@cd portal/frontend && npm run test:e2e
 	@cd portal/frontend && npm run build
 
-test-service-frontend: ## 运行 Service 前端确定性测试与构建
+test-service-frontend: check-node-runtime ## 运行 Service 前端确定性测试与构建
 	@cd service/frontend && npm test
 	@cd service/frontend && npm run build
 
-test-standard-frontend: ## 运行 Standard 前端确定性测试与构建
+test-standard-frontend: check-node-runtime ## 运行 Standard 前端确定性测试与构建
 	@cd standard/frontend && npm test
 	@cd standard/frontend && npm run test:e2e
 	@cd standard/frontend && npm run build
 
-test-system-frontend: ## 运行 System 前端确定性测试与构建
+test-system-frontend: check-node-runtime ## 运行 System 前端确定性测试与构建
 	@cd system/frontend && npm test
 	@cd system/frontend && npm run test:e2e
 	@cd system/frontend && npm run build
 
-test-transfer-frontend: ## 运行 Transfer 前端确定性测试与构建
+test-transfer-frontend: check-node-runtime ## 运行 Transfer 前端确定性测试与构建
 	@cd transfer/frontend && npm test
 	@cd transfer/frontend && npm run test:e2e
 	@cd transfer/frontend && npm run build
 
 .PHONY: test-ontology-frontend
-test-ontology-frontend: ## 运行 Ontology 前端状态契约、浏览器交互与构建
+test-ontology-frontend: check-node-runtime ## 运行 Ontology 前端状态契约、浏览器交互与构建
 	@cd ontology/frontend && npm test
 	@cd ontology/frontend && npm run test:e2e
 	@cd ontology/frontend && npm run build
 
-test-workbench-frontend: ## 运行 Workbench 前端确定性测试与构建
+test-workbench-frontend: check-node-runtime ## 运行 Workbench 前端确定性测试与构建
 	@cd workbench/frontend && npm test
 	@cd workbench/frontend && npm run test:e2e
 	@cd workbench/frontend && npm run build
@@ -1316,7 +1324,7 @@ test-swagger: ## 校验 Swagger 检查脚本与全模块路由覆盖
 	@python3 scripts/test/swagger-route-coverage_test.py
 	@bash scripts/swagger/check-route-coverage.sh all
 
-test: test-platform test-go test-common-python test-agent-eval test-copilot \
+test: check-node-runtime test-platform test-go test-common-python test-agent-eval test-copilot \
 	test-document-workflow test-jupyter test-math-workflow test-pointcloud-workflow test-geopython-workflow test-raster-mosaic-runtime test-model3d-workflow test-supermap-workflow test-spark-workflow \
 	test-agent-frontend test-asset-frontend test-catalog-frontend test-console-frontend test-develop-frontend \
 	test-graph-frontend test-inference-frontend test-manager-frontend test-meta-frontend \

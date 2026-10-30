@@ -81,6 +81,9 @@ class LocalMacOSCiTest(unittest.TestCase):
         target = self.repository / "scripts/test/local-macos-ci.sh"
         target.parent.mkdir(parents=True)
         shutil.copy2(SCRIPT, target)
+        helper = self.repository / "scripts/utils/node-runtime.sh"
+        helper.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(SCRIPT.parents[2] / "scripts/utils/node-runtime.sh", helper)
         shutil.copy2(MYSQL_GATE, target.with_name("common-mysql-data-protection-gate.sh"))
         shutil.copy2(OCEANBASE_GATE, target.with_name("common-oceanbase-gate.sh"))
         if LOCAL_CI_COMPOSE.exists():

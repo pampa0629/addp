@@ -41,6 +41,9 @@ jobs:
         with:
           node-version-file: .node-version
 
+      - name: Validate Node runtime and rejection boundaries
+        run: make check-node-runtime test-node-runtime
+
       - name: Check changed commits for whitespace errors
         env:
           ADDP_CI_BEFORE: ${{ github.event.before }}

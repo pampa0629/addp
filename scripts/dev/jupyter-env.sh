@@ -1,5 +1,7 @@
 #!/bin/bash
 
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/node-dependencies.sh"
+
 JUPYTER_ENV_FINGERPRINT_VERSION="jupyter-env-v2"
 
 jupyter_dependency_fingerprint() {
@@ -33,7 +35,8 @@ install_jupyter_labextension() {
   local build_dir
   local target_dir="$venv_dir/share/jupyter/labextensions/@addp/notebook-bridge"
 
-  if ! command -v npm >/dev/null 2>&1; then
+  PATH="$venv_dir/bin:$PATH" addp_require_node_runtime || return 1
+  if ! PATH="$venv_dir/bin:$PATH" command -v npm >/dev/null 2>&1; then
     echo "✗ 构建 JupyterLab bridge 需要 Node.js/npm" >&2
     return 1
   fi
@@ -41,8 +44,9 @@ install_jupyter_labextension() {
   cp -R "$engine_dir/labextension/." "$build_dir/"
   if ! (
     cd "$build_dir"
-    PATH="$venv_dir/bin:$PATH" npm ci --no-audit --no-fund
-    PATH="$venv_dir/bin:$PATH" npm run build
+    export PATH="$venv_dir/bin:$PATH"
+    addp_install_node_dependencies "$build_dir" --no-audit --no-fund &&
+      npm run build
   ); then
     rm -rf "$build_dir"
     return 1

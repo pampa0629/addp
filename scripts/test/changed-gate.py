@@ -95,6 +95,9 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     }
     roots = {path.split("/", 1)[0] for path in files if "/" in path}
 
+    if any(path in {".node-version", "scripts/utils/node-runtime.sh"} for path in files):
+        affected.update(file_consumers(repository, "*/frontend/package.json", ""))
+
     if "scripts/test/frontend-browser-gate.mjs" in files:
         affected.update(file_consumers(repository, "*/frontend/package.json", "frontend-browser-gate.mjs"))
 

@@ -28,6 +28,11 @@ cat > "$TEST_ROOT/bin/npm" <<'EOF'
 printf '%s|%s\n' "$PWD" "$*" >> "$ADDP_TEST_NPM_LOG"
 EOF
 chmod +x "$TEST_ROOT/bin/npm"
+cat > "$TEST_ROOT/bin/node" <<'EOF'
+#!/bin/bash
+printf 'v24.11.1\n'
+EOF
+chmod +x "$TEST_ROOT/bin/node"
 
 export PATH="$TEST_ROOT/bin:$PATH"
 export ADDP_TEST_NPM_LOG="$NPM_LOG"

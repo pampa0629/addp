@@ -396,6 +396,8 @@ dev.mkdir(parents=True)
 for name in ('restart.sh', 'stop.sh', 'ports.sh', 'lifecycle-lock.sh', 'node-dependencies.sh', 'jupyter-env.sh', 'worker-units.sh'):
     shutil.copy2(repository / 'scripts/dev' / name, dev / name)
 (root / 'scripts/utils').mkdir()
+shutil.copy2(repository / '.node-version', root / '.node-version')
+shutil.copy2(repository / 'scripts/utils/node-runtime.sh', root / 'scripts/utils/node-runtime.sh')
 (root / 'scripts/utils/colors.sh').write_text('YELLOW= RED= GREEN= NC=\n')
 shutil.copy2(repository / 'scripts/utils/deployment-inventory.py', root / 'scripts/utils/deployment-inventory.py')
 (root / 'scripts/infra').mkdir()
@@ -642,6 +644,9 @@ for name, args, failure in cases:
     root = temporary / ('restart-' + name)
     dev = root / 'scripts/dev'
     dev.mkdir(parents=True)
+    (root / 'scripts/utils').mkdir()
+    shutil.copy2(repository / '.node-version', root / '.node-version')
+    shutil.copy2(repository / 'scripts/utils/node-runtime.sh', root / 'scripts/utils/node-runtime.sh')
     for filename in ('restart.sh', 'lifecycle-lock.sh', 'node-dependencies.sh', 'jupyter-env.sh', 'worker-units.sh'):
         shutil.copy2(repository / 'scripts/dev' / filename, dev / filename)
     with (dev/'lifecycle-lock.sh').open('a') as helper:

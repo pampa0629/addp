@@ -5,6 +5,11 @@
 
 set -e
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "$ROOT_DIR/scripts/utils/node-runtime.sh"
+addp_require_node_runtime || exit 1
+cd "$ROOT_DIR"
+
 ELEMENT_PLUS_VERSION="2.8.8"
 ICONS_VERSION="2.3.2"
 

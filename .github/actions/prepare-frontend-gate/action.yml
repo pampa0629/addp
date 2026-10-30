@@ -16,6 +16,10 @@ runs:
         cache: npm
         cache-dependency-path: ${{ inputs.frontend-directory }}/package-lock.json
 
+    - name: Validate Node runtime
+      shell: bash
+      run: bash "$GITHUB_WORKSPACE/scripts/utils/node-runtime.sh"
+
     - name: Install locked frontend dependencies
       shell: bash
       working-directory: ${{ inputs.frontend-directory }}
