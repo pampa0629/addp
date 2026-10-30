@@ -357,9 +357,9 @@ EntityRelation 使用完整 `PUT`：请求包含变更后的 source_entity、tar
 
 ### `dimension-relations` 查询返回 JOIN 结果
 
-事实表查询出向关联，维度表查询被哪些事实表引用；详情包含两端表名、编码、字段名和列名。关系唯一编辑入口为事实表详情 `?tab=relations&relation_id=<id>`；维度建模只导航。新增、更新、删除只要求事实表为草稿，引用已审批维度不解除其审批或冻结修订。
+查询方向、事实表详情的唯一编辑入口（`?tab=relations&relation_id=<id>`）及维度建模只导航的规则统一见[建模导航规范](docs/model概念与数据约束规范.md#建模导航与物理目标操作入口)；事实侧父版本、草稿及已审批维度约束见[并发版本与聚合写入](docs/model概念与数据约束规范.md#并发版本与聚合写入)。权限及资源归属见[授权边界](docs/model概念与数据约束规范.md#二授权边界)，实际验收范围见[开发与验证](#开发与验证)。
 
-`GET /api/v1/model/logical-tables/:id/dimension-relations` 返回的是带字段名的详情（通过 Raw SQL JOIN），而非原始 ID，前端可直接展示，无需二次请求：
+`GET /api/v1/model/logical-tables/:id/dimension-relations` 通过 Raw SQL JOIN 返回 [TableRelationDetail](backend/internal/models/logical_table.go) 列表，已包含两端表名、编码、字段名和列名，展示这些字段无需额外查询。以下为单个列表元素示例：
 
 ```json
 {
