@@ -527,3 +527,28 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 `/tmp/addp-p19-http-stable-linux-20261030.audit.json`保存原始归档、固定输入、26次协调和预算／清理独立核对，同前缀job.log、report.json及zip保留原始结果；预备清单另存日志和源散列。本次未复现目录消失，不能以成功反推历史删除者或保证长期不复发；Linux正常路径与Darwin取消／失败夹具的证明层级分列。
 
 本批针对活动Go临时树与整树读取并发的机制，不宣称已经观测到历史散列对象的删除进程；历史失败保留。正式Agent/Copilot产品后端到Console／Monitor页面、停源后历史读取等原有缺口不被此协调修正替代。没有手动重跑、新开本地窗口、Hosted、容量或定时。
+
+
+<a id="http-stop-confirmation-recurrence-20261030"></a>
+
+## 2026-10-30 稳定读取后停止确认超时复发与最小取证（根因未定）
+
+此前4e5487386的196完整样本／26次暂停全部恢复的通过记录按原范围保留。本次另核[自然push attempt 1／run41028885736／HTTP Job123973797116](https://github.com/pampa0629/addp/actions/runs/41028885736/job/123973797116)，固定源码fe105602d93195d9b2343032547f1aa74ec10fba，fresh API为completed／failure。已通过4e548、失败fe105及本次取证修正前父提交的预算内核blob均为23218d8f6b866fada508d0292defbb964c66714f；没有把旧通过当作新回归已经解决，也不调查无关CI或聚合传播失败。
+
+独立复核artifact12964943223：18041字节，ZIP SHA256=`bcd45aaad3efa2180a3d54372643241f8b7b1fa7b4e65d76286281ca5093ada4`匹配API，CRC及唯一JSON成员通过；报告SHA256=`cf920a3da52fb6962227132384ed7df81d00a4948c38a9c60e2f9bc89d590e2b`，353输入逐文件匹配固定fe105源码，原始日志第913行摘要逐字段匹配。原报告failed／http_compile_coordination_deadline，stage=compile_inventory、kind=deadline；总47.799267秒，0业务请求，process_source只见开始551089735254ns，query／alert均未开始。compile_cleanup_error为空、inputs_unchanged／cleanup_verified／private_directory_removed=true，退出143是首失败后的取消结果，不改写首因。
+
+失败协调562580569121..566590882118ns，共4.010313秒，stop_sent=true／resumed=true，无confirmed字段，未进入完整du采样；恢复发生在原成功截止耗尽后，仍然失败，不因清理通过补业务通过。members=3是暂停前初始清单，不能当作失败时最后成员或状态。之前9个已保存完整样本中两次编译协调成功（初始1成员及2成员）；本次没有保存确认循环内的读取次数、状态或成员变化，不能由compile_inventory标签唯一断言一次读取耗时过长，也不能断言是D状态、fork竞态或历史目录删除。
+
+只读源码确认实际工具链go1.24.2 linux/amd64、GOTOOLCHAIN=local；该版本[Linux进程启动](https://github.com/golang/go/blob/go1.24.2/src/syscall/exec_linux.go#L305)默认加入CLONE_VFORK／CLONE_VM。参考[Linux v6.11父进程vfork等待](https://github.com/torvalds/linux/blob/v6.11/kernel/fork.c#L1569)可见父进程等待子进程完成，组暂停可能与启动等待相互阻塞；这是待检验机制，不是当次runner内核版本或现场状态的证明。Linux同版本还专门[延迟传播fork期间组信号](https://github.com/torvalds/linux/blob/v6.11/kernel/signal.c#L1171)，不能仅凭fork子进程初始pending为空就断言漏收SIGSTOP。当前不改停止顺序、不补发信号、不将D等非停止状态接纳为安全，不以推测性优化代替事实。
+
+先修观测／T0–T3规范，再提交`f49f59ad39d2d50f0aef69335ca74aa5c1fdb830`补取证缺口：只复用原确认清单读取，记录尝试／完整返回次数、成员集合变化次数、最后尝试起点及最后一次完整读取的单调起止和固定R／S／D／T／t／Z／X／I／other状态计数。仅保留一份完整快照，不保存成员PID、出生身份、原始状态、命令、路径或原始stderr，不增探针／信号／读取；清单未返回与多次快速返回分列。取证开销仍在原四秒及原资源预算内，一次组暂停、全成员停止、完整统计、finally恢复、首失败及清理期限不变；这是诊断修正，尚未修复或唯一定位实际超时根因。
+
+确定性反例先在旧代码缺少confirmation事实时按预期产生断言失败（2用例／3分支，无额外错误），补齐后预算53项通过；逻辑单调时钟分别模拟稳定D／T组反复返回和一次清单耗尽截止，二者均拒绝进入读取、保留首inventory截止并恢复，且证明没有额外组读取或信号。另覆盖成员变化、未知状态封闭归other、只保留最后完整快照及不泄漏身份。这只证明模型／取证契约，不证明真实失败就是该模型。`make test-infra-runtime-log-lifecycle`退出0，包含HTTP本地23项、Trace共享136项及相关Go／登记、预算与生命周期122项；Metrics配置122项、T2登记24／12／9／2及diff通过。现有Make／workflow／输入登记和同一预算artifact自动覆盖，无需新增入口／依赖／配置／镜像。新增取证的[自然push attempt 1／run41039374832／HTTP Job124008442804](https://github.com/pampa0629/addp/actions/runs/41039374832/job/124008442804)已于2026-10-30 18:30:33（Asia/Shanghai）completed／success，实际checkout为固定f49f59ad3；没有手动dispatch／rerun。
+
+原始artifact12970980011共26383字节，实际ZIP SHA256=`60252c77529d8833ffc004a3d5c0c371dfbee976e6a08d6603b206d6ada334ce`与API一致，CRC及唯一JSON成员通过；报告SHA256=`f76e4116094d08f9a7016b0ef80f4214d881157497f65c2e4b8215073f82dd5e`，353输入逐文件匹配固定修正源码，原始日志摘要逐字段匹配报告。真实三源采集／查询／历史趋势、告警事件／签名重试／同事件恢复、停源隔离通过；本轮未复现确认超时，不用新成功覆盖fe105失败或宣称超时根因已修复。
+
+报告passed／exit0／error null，无failure_detail／cleanup_overdue／compile_cleanup_error；814.608862秒，200个完整样本最长1.144740秒，可写保守上界最大1809215551字节、硬配额最大3.25 CPU／4026531840字节内存，原四秒和资源／1200秒均满足。Go160／Python[67,26]，总253请求；三源失败／恢复计数与原额度、三阶段完整顺序exit0和无旧process_compile、输入稳定及零残留清理独立核对通过。31次实际暂停全部confirmed／resumed=true、无resume_error，最大5成员，协调跨度最长0.564704秒，计入各自完整样本；覆盖process_source／http_alert，http_query较短未与采样重叠，不补算其实际暂停。
+
+31份confirmation均有attempts=completed=2、membership_changes=0，最后尝试与最后完整快照的起点一致，单调起止均在确认完成之前，固定九类状态的合计不超过64且末次只有T／t／Z／X，未保存原始身份。新增成功字段已在Linux真实接通；一次读取耗尽截止、稳定D／T不确认及未知状态other仍只由确定性反例覆盖，不能宣称已采到实际失败状态。下一步若后续自然复发，先用新计数／端点／末次状态区分等待、成员变化和单次读取耗时，再决定最小修正，不先把D纳入安全或改暂停顺序。
+
+`/tmp/addp-p19-http-confirmation-recurrence-audit-20261030.json`保存本次独立归档／353输入／日志核对，原报告和日志沿`/tmp/addp-ci-20261030-100013`复用；`/tmp/addp-p19-http-confirmation-preparation-20261030.json`保存固定修正输入和红／绿门禁日志散列。`/tmp/addp-p19-http-confirmation-linux-20261030.audit.json`另存新自然运行的原始归档、353输入、31份封闭确认、预算／清理核验；同前缀job.log／report.json／zip保留原始证据。没有手动dispatch／rerun、新开本地真实窗口、Hosted、容量或定时。正式Agent/Copilot到页面和停源历史读取原缺口保持，后续若证据显示需要改变已确认的单次组暂停协议，应先讨论规范与范围，不直接放宽通过条件。
