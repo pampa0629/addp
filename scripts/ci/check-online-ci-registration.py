@@ -3856,6 +3856,91 @@ def validate_raster_zonal_percentile(repository: Path, registered: set[str]) -> 
         raise RegistrationError('zonal percentile oracle must remain independent')
 
 
+VECTOR_ZONAL_PERCENTILE_REQUIRED = {
+    'scripts/test/online-hosted-vector-zonal-percentile-gate.sh': (
+        'start_online_geopython_runtime', '--mount', '--suite raster-workflow',
+        '--wait-protection-owners develop,manager', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600',
+        'online_raster_lineage.py prepare', 'online-vector-zonal-percentile-fixture.py stop',
+        'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
+    ),
+    'business/scripts/online-vector-zonal-percentile-fixture.py': (
+        'NFSExport', 'owned_root', 'from fractions import Fraction', 'WIDTH,HEIGHT=519,515',
+        'position=(count-1)*Fraction(float(p))/100', 'sorted(float(v)', 'shapely.contains', 'shapely.intersection',
+        'np.array_equal', 'GDAL_TIFF_INTERNAL_MASK', 'full_gpkg_checks', 'full_source_pixels_verified',
+        'full_source_vectors_verified', 'runtime_workspaces_removed', 'archive_files', 'oracle cache hash changed',
+        'source file changed', 'percentile changed original eight fields', 'vector-zonal-percentile-gpkgs',
+    ),
+    'scripts/test/vector-zonal-percentile-persistence-online.py': (
+        'raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'budget != 600', 'BudgetClient', 'remaining()',
+        'validate_preview', 'legacy.validate_success', 'lineage.collect',
+        'lineage.validate(facts, wanted, public=True)', 'lineage.verify_archive', 'base.validate_scan',
+        'raster.wait_lineage', 'source_edges', 'readonly.no_publication', 'query language rewrote stored failure',
+        'previous complete GeoPackage changed', 'fixture_call', 'cleanup-oracle', 'oracle cleanup also failed',
+        'full_checks != 904', 'physical_calls != 65', 'len(cases) != 16', 'len(failures) != 48', 'exact_cause',
+        'Monitor current output lineage differs', 'vector_persistence.validate_item',
+    ),
+    'engines/geopython-workflow/test_online_vector_zonal_percentile_fixture.py': (
+        'test_vector_zonal_percentile_sixteen_real_gpkgs_complete_independent_oracle_and_raw_archive',
+        'test_vector_zonal_percentile_forty_eight_exact_submitted_failures_and_no_output',
+        'test_vector_zonal_percentile_real_physical_corruption_is_rejected', 'one-ulp',
+        'test_vector_zonal_percentile_gpkg_archive_never_repairs_or_overwrites',
+        'test_vector_zonal_percentile_worker_stdin_frozen_oracle_poison_and_cleanup',
+    ),
+    'scripts/test/vector-zonal-percentile-persistence-online_test.py': (
+        'test_full_matrix_16_success_48_failures_904_checks_and_cleanup',
+        'test_role_bound_lineage_rejects_wrong_roles_operations_and_public_projection',
+        'test_strict_physical_counts_sizes_original_archives_and_cleanup_cannot_weaken',
+        'test_failures_preserve_primary_and_cleanup_error',
+        'test_exact_failure_stage_language_scan_lineage_and_budget_are_enforced',
+    ),
+    'business/scripts/online-raster-zonal-percentile-fixture.py': (
+        'previous archive was deleted', 'previous archived bytes changed',
+    ),
+    'scripts/utils/online_raster_lineage.py': (
+        "'vector-zonal-percentile-persistence': 'vector-zonal-percentile-lineage'",
+    ),
+    'scripts/test/online-raster-lineage_test.py': (
+        'test_vector_zonal_percentile_approved_two_role_gpkg_facts_preserve_internal_and_public_boundaries',
+    ),
+    'Makefile': (
+        'test_online_vector_zonal_percentile_fixture.py', '@$(MAKE) test-vector-zonal-percentile-online-runner',
+        'scripts/test/vector-zonal-percentile-persistence-online_test.py',
+        'scripts/test/online-vector-zonal-percentile-fixture_test.py',
+        'scripts/test/online-hosted-vector-zonal-percentile-gate_test.py',
+        'test_vector_zonal_percentile_requires_exact_gpkg_matrix_budget_and_regressions',
+    ),
+}
+
+
+def validate_vector_zonal_percentile(repository: Path, registered: set[str]) -> None:
+    suite = 'vector-zonal-percentile-persistence'
+    if suite not in registered: return
+    workflow = (repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  vector-zonal-percentile-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'vector-zonal-percentile-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'vector-zonal-percentile-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body') or 'cancel-in-progress: false' not in job.group('body')
+        or 'if: always()' not in job.group('body') or 'logs/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('zonal percentile requires an independent manual Hosted NFS job')
+    make = (repository/'Makefile').read_text()
+    if 'test_online_vector_zonal_percentile_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('zonal percentile Native omitted from standard recipe')
+    for relative, fragments in VECTOR_ZONAL_PERCENTILE_REQUIRED.items():
+        path = repository/relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('zonal percentile strict contract incomplete: '+relative)
+    source = (repository/'business/scripts/online-vector-zonal-percentile-fixture.py').read_text()
+    tree = ast.parse(source)
+    actual = {key: [node.value for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == key for target in node.targets)] for key in ('CASES','FAILURES')}
+    expected_cases = {'original.gpkg': ('values.tif', 'zones.geojson', None, False, 'zonal_'), 'p0.gpkg': ('values.tif', 'zones.geojson', 0, False, 'zonal_'), 'p100.gpkg': ('values.tif', 'zones.geojson', 100, False, 'zonal_'), 'p50-odd.gpkg': ('odd.tif', 'small.geojson', 50, False, 'zonal_'), 'p50-even.gpkg': ('even.tif', 'small.geojson', 50, False, 'zonal_'), 'p25.gpkg': ('values.tif', 'zones.geojson', 25, False, 'zonal_'), 'p75.gpkg': ('values.tif', 'zones.geojson', 75, False, 'zonal_'), 'p33-center.gpkg': ('values.tif', 'zones.geojson', 33.3, False, 'zonal_'), 'p33-touched.gpkg': ('values.tif', 'zones.geojson', 33.3, True, 'zonal_'), 'custom.gpkg': ('values.tif', 'zones.geojson', 25, False, 'custom_'), 'empty-prefix.gpkg': ('values.tif', 'zones.geojson', 75, False, ''), 'classified.gpkg': ('values.tif', None, 90, False, 'zonal_'), 'int64.gpkg': ('int64.tif', 'small.geojson', 50, False, 'zonal_'), 'uint64.gpkg': ('uint64.tif', 'small.geojson', 50, False, 'zonal_'), 'invalid-values.gpkg': ('invalid.tif', 'small.geojson', 50, False, 'zonal_'), 'empty-zones.gpkg': ('even.tif', 'empty.gpkg', 50, False, 'zonal_')}
+    expected_failures = ('percentile_null', 'percentile_boolean', 'percentile_string', 'percentile_array', 'percentile_object', 'percentile_low', 'percentile_high', 'band_zero', 'band_high', 'band_boolean', 'band_string', 'complex', 'alpha', 'touched_numeric', 'touched_null', 'prefix_null', 'prefix_boolean', 'collision_stats', 'collision_percentile', 'collision_value', 'different_crs', 'missing_crs', 'missing_grid', 'singular_grid')
+    if (any(len(nodes) != 1 for nodes in actual.values()) or repr(ast.literal_eval(actual['CASES'][0])) != repr(expected_cases)
+        or repr(ast.literal_eval(actual['FAILURES'][0])) != repr(expected_failures)): raise RegistrationError('zonal percentile fixed 16/48 matrix changed')
+    if any(word in source for word in ('operators.raster_compute', 'np.percentile', 'np.quantile', 'gdal.RasterizeLayer', 'gdal.Polygonize')):
+        raise RegistrationError('zonal percentile oracle must remain independent')
+
+
 STATISTICS_PERCENTILE_REQUIRED = {
     'scripts/test/online-hosted-raster-statistics-percentile-gate.sh': (
         'start_online_geopython_runtime', '--mount', '--suite raster-workflow',
@@ -5066,6 +5151,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_band_recommendation_profile(repository, registered)
     validate_raster_statistics_percentile(repository, registered)
     validate_raster_zonal_percentile(repository, registered)
+    validate_vector_zonal_percentile(repository, registered)
     validate_raster_nibble_profile(repository, registered)
     validate_raster_disk_pressure_profile(repository, registered)
     validate_raster_nibble_capacity_profile(repository, registered)

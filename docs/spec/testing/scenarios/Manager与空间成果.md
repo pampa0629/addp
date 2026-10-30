@@ -851,6 +851,23 @@ CSV沿普通表保存契约，不虚构RasterArtifact：物理／Meta大小须�
 本地入口`make test-raster-zonal-percentile-online-runner`和标准Native内`test_online_zonal_percentile_fixture.py`，同步Online、changed gate、独立workflow、只读observer和矩阵／删断言拒绝检查。准备通过不计Hosted通过。
 
 
+## 矢量面分区百分位独立 Hosted 验收
+
+`vector-zonal-percentile-persistence`为独立手工套件，复用NFS、同源产品默认入口Runtime和普通User原12权限；固定600秒业务预算覆盖源初始化扫描、首次独立期望、64条执行及查询、全部物理复核与执行工作区／期望缓存清理。部署、静态播种和NFS／Infra退出沿既有隔离生命周期分别核验，任何清理失败整套失败。原矢量分区／栅格百分位套件、产品逻辑、安全投影及权限不改；实际Linux全量和Hosted仍由CI会话协调，准备通过不计Hosted、UI或容量通过。
+
+固定16条成功GeoPackage保存链：不带百分位的原八列1条；0／100端点、奇偶总体50百分位4条；25／75插值、33.3跨块中心／全部触及4条；自定义／空前缀2条；栅格重分类→面化→90百分位1条；Int64／UInt64数值NoData邻接有效值2条；全无效数值保留面行与空矢量批次保留Schema／CRS2条。常规面共同覆盖孔洞、重叠、MultiPolygon、细面、部分／完全出界、单有效零和重复几何，以显式唯一`source_row`核行序；主栅格保留旋转网格、显式第二波段、独立mask／alpha和未应用的scale-offset。GeoPackage的FID不冒充用户索引；重复索引、活动几何列名冲突、混合类型复数alpha及数值极限继续单列Native。
+
+固定24类各按中英文提交，共48次准确失败：百分位null／布尔／字符串／数组／对象／低于0／高于100共7类；波段0／越界／布尔／字符串4类；所选复数数据与alpha2类；all_touched数值／null、前缀null／布尔4类；原统计列／percentile／percentile_value冲突3类；不同CRS、栅格缺CRS、缺仿射及奇异网格4类。必须到达当前执行的`analysis`统计任务并准确核原因，前置加载或扫描失败不能充数；新增百分位原因按中英核验，原有英文原因沿当前契约，不把两种语言提交称为全部诊断已翻译。反向查询不改写提交语言、原错误或执行快照。非法几何／无矢量CRS等文件准入边界、非有限JSON参数与IO／磁盘注入仍沿Native或既有专项记账。
+
+独立oracle用像元平面的Shapely中心包含或正面积相交计算覆盖，不调用产品函数、GDAL栅格化／面化或NumPy百分位；派生面由独立4邻接遍历与横向条带并集计算。Python标量排序、标准库统计及Fraction的确切二进制位置核完整逐面属性、几何／孔洞／多部件、Schema／CRS／顺序、原八列和新增两列、null与合法零。同源带／不带百分位的原八列逐值相同，端点／50百分位与min/max精确，其他百分位固定rtol=4e-15／atol=0，原统计其余值rtol=1e-12／atol=1e-12。GeoDataFrame公开FeatureCollection核完整属性和身份；所有完整拓扑几何及真实字段类型均在物理文件重读时核验，不新增宿主机几何依赖。
+
+每次成功后重读当前全部成果，每次失败后重读16份，固定904次完整GeoPackage检查；加首次源全检共65轮物理检查。仅缓存冻结的独立期望，实际成果和14份源的原件hash、完整栅格像元／mask／类型／原生NoData／仿射／CRS／scale-offset、矢量几何／属性／Schema每轮重读。归档14份源原字节、16份GeoPackage原字节及大小／SHA256清单、独立期望和16份当前执行血缘取证；原件／manifest／期望变化、缺失和额外文件均拒绝，不覆盖、重建或静默修复。
+
+GeoPackage沿普通矢量容器保存契约，不虚构RasterArtifact／COG或第三方大小：物理／Meta大小为相等正整数，唯一图层事实保留容器边界。精确自动扫描核父执行／普通User／租户／引擎；直接链核矢量面与数值栅格两源，面化派生链只核实际TIFF源，不虚构第二来源。现有受控只读observer仅登记本套件，完整核内部`save`／derive端口及公开`operations:null`安全投影，Meta关系和Monitor分别核验。失败零目标／新增扫描／派生血缘，源物理／Meta及先前成果不变；全部退出保持NFS／Runtime／registry／部署／Infra零残留。
+
+本地标准入口为`make test-vector-zonal-percentile-online-runner`及标准Native中的`test_online_vector_zonal_percentile_fixture.py`；Online／changed gate／独立workflow、observer和固定矩阵／删断言变异检查同步登记，实际Hosted由CI会话唯一协调运行。
+
+
 ### 端点吸附手工容量
 
 用户确认在既有 `make test-vector-topology-capacity`／`vector-topology-capacity.yml` 增加独立 `profile=endpoint-snapping`，仅五类十五档、每档一次、串行，不运行旧矩阵／受控对照或业务T4。EPSG:3857、容差1、同源码／产品镜像／Runner，原4 CPU／2 GiB／memory.swap.max=0和每档全流程180秒不变，Runtime准备与清理另记。镜像构建前须按根`.node-version`准备Node，不依赖Runner默认版本；登记检查拒绝缺失、条件跳过或晚于门禁的准备步骤。observer=A不包装产品函数，外部0.25秒采样与cgroup整体memory.peak、CPU用量、OOM、退出码保留；分阶段采样缺失为null，不把RSS高水位之和或采样峰值说成精确分阶段峰值。
