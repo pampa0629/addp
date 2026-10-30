@@ -49,6 +49,7 @@ var executionAudienceClients = map[string]string{
 	commonExecution.AudienceDevelop:  "addp-develop",
 	commonExecution.AudienceTransfer: "addp-transfer",
 	commonExecution.AudienceDuckDB:   "addp-duckdb",
+	commonExecution.AudienceSpark:    "addp-spark",
 	commonExecution.AudienceService:  "addp-service",
 	commonExecution.AudienceOntology: "addp-ontology",
 }
@@ -370,7 +371,7 @@ func (s *ExecutionAuthorizationService) IssueFromExecution(
 		return nil, err
 	}
 	expectedClientID := executionAudienceClients[audience]
-	if audience == "duckdb" {
+	if audience == commonExecution.AudienceDuckDB || audience == commonExecution.AudienceSpark {
 		expectedClientID = "addp-develop"
 	}
 	hasAttempt := input.Attempt != 0
@@ -697,6 +698,9 @@ func normalizeExecutionAuthorizationRequest(
 	if err != nil {
 		return "", nil, nil, 0, err
 	}
+	if audience == commonExecution.AudienceSpark && (len(normalizedEffects) != 1 || normalizedEffects[0] != "read") {
+		return "", nil, nil, 0, fmt.Errorf("%w: Spark query authorization must be read-only", commonapi.ErrBadRequest)
+	}
 	return audience, normalizedAccesses, normalizedEffects, expiresIn, nil
 }
 
@@ -875,6 +879,8 @@ func containsAllExecutionPermissions(
 		return containsServiceSampleBoundary()
 	case commonExecution.AudienceDuckDB:
 		return containsDevelopBoundary() || containsServiceSampleBoundary()
+	case commonExecution.AudienceSpark:
+		return len(effects) == 1 && effects[0] == "read" && containsDevelopBoundary()
 	default:
 		return false
 	}

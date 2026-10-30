@@ -36,6 +36,8 @@ Spark JDBC 的 schema 解析发生在 driver，分区读取和写入发生在 ex
 
 ## 资源绑定与执行
 
+查询授权接线增加 `system_client.get_execution_engine_access()`，只消费当前 execution 的 `spark` 只读授权，不从用户请求接受连接配置，也不回退为引擎详情读取。响应逐项核对授权、execution、Engine、Tenant、audience、效果和有效期；401 仅刷新一次服务凭据，拒绝或异常响应不回显原始响应体。System 新增对应 audience、最小 Runtime 消费权限和迁移 256。相关 Common Go、System IAM/API/迁移 Go、122 项 Spark T1、IAM runner 34 项及真实 PostgreSQL 受众迁移分组通过；System 聚合因并行的角色清单排序失败，不能记作整体通过。当前正式查询 HTTP、集群/Runtime 路由与页面仍未开放。
+
 1. 在 System 注册 Spark 通用引擎资源，在 Develop 的 `execution_config.engine_specific.spark_cluster_id` 中记录所选资源。
 2. Develop 校验资源为已启用的 `engine_type=spark`，执行时映射为请求顶层 `engine_id`。它与 Workflow Runtime 实例 ID、数据源 locator 中的存储引擎 ID 分属不同职责。
 3. 后端按当前用户授权，从输入 `locator` 或输出 `target_parent_locator + target_name` 派生连接、表名或路径；用户与 AI 侧任务不保存明文连接。Runtime 不解析 `addp://` locator。

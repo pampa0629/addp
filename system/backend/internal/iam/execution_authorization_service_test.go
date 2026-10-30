@@ -61,6 +61,40 @@ func TestNormalizeExecutionAuthorizationRequestAcceptsTransferAudience(t *testin
 	}
 }
 
+func TestSparkQueryAudienceUsesExistingMachineIdentityAndReadOnlyDevelopBoundary(t *testing.T) {
+	if executionAudienceClients[commonExecution.AudienceSpark] != "addp-spark" {
+		t.Fatal("Spark query must consume authorization as the existing Spark service client")
+	}
+	rows := []RoleAssignmentPermissionProjection{
+		{PermissionKey: developExecutionPermission},
+		{PermissionKey: executionEffectPermissions["read"]},
+		{PermissionKey: executionEffectPermissions["write"]},
+	}
+	if !containsAllExecutionPermissions(rows, commonExecution.AudienceSpark, []string{"read"}) {
+		t.Fatal("authorized Develop read was rejected")
+	}
+	for _, effects := range [][]string{{"write"}, {"read", "write"}, {"ddl"}, {}} {
+		if containsAllExecutionPermissions(rows, commonExecution.AudienceSpark, effects) {
+			t.Fatalf("Spark query accepted effects %v", effects)
+		}
+		if _, _, _, _, err := normalizeExecutionAuthorizationRequest(commonExecution.AudienceSpark,
+			uuid.New(), []ExecutionEngineAccessScope{{EngineID: 1, Effects: effects}}, time.Minute); err == nil {
+			t.Fatalf("Spark query normalized unsupported effects %v", effects)
+		}
+	}
+	if containsAllExecutionPermissions(rows[1:], commonExecution.AudienceSpark, []string{"read"}) {
+		t.Fatal("data read permission alone must not permit Spark execution")
+	}
+	if _, _, _, _, err := normalizeExecutionAuthorizationRequest(commonExecution.AudienceSpark,
+		uuid.New(), []ExecutionEngineAccessScope{{EngineID: 1, Effects: []string{"read"}}}, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, _, err := normalizeExecutionAuthorizationRequest("addp-spark",
+		uuid.New(), []ExecutionEngineAccessScope{{EngineID: 1, Effects: []string{"read"}}}, time.Minute); err == nil {
+		t.Fatal("OAuth client name must not be accepted as an audience alias")
+	}
+}
+
 func TestNormalizeExecutionAuthorizationRequestRejectsUnknownOrDuplicateBoundary(t *testing.T) {
 	executionID := uuid.New()
 	testCases := []struct {

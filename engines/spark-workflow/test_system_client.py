@@ -1,8 +1,10 @@
 import os
+from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 import unittest
 from unittest.mock import patch
 
-from system_client import get_engine
+from system_client import get_engine, get_execution_engine_access
 
 
 class FakeResponse:
@@ -95,6 +97,52 @@ class SystemClientTest(unittest.TestCase):
     def test_get_engine_rejects_missing_tenant_context(self):
         with self.assertRaisesRegex(ValueError, "tenant_id must be a positive integer"):
             get_engine(34, 0)
+
+    def test_execution_access_is_bound_to_exact_execution_source_and_consumer(self):
+        execution = '9a21ab1a-2900-42a5-ae91-821339b3fcdd'
+        payload = {'authorization_id': '8', 'execution_id': execution, 'engine_id': '34',
+                   'audience': 'spark', 'effects': ['read'],
+                   'expires_at': (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
+                   'engine': {'id': 34, 'tenant_id': 7, 'connection_info': {'password': 'private'}}}
+        mutations = [({}, True), ({'audience': 'duckdb'}, False), ({'authorization_id': '9'}, False),
+                     ({'execution_id': 'other'}, False), ({'engine_id': '35'}, False),
+                     ({'effects': ['read', 'write']}, False), ({'engine': {'id': 35, 'tenant_id': 7}}, False),
+                     ({'engine': {'id': 34, 'tenant_id': 8}}, False),
+                     ({'expires_at': '2000-01-01T00:00:00Z'}, False),
+                     ({'expires_at': '2099-01-01T00:00:00'}, False)]
+        for change, allowed in mutations:
+            with self.subTest(change=change), patch('system_client._service_token_source',
+                    return_value=FakeTokenSource(['addp_at_fixture'])), patch('system_client.requests.post') as post:
+                body = deepcopy(payload)
+                body.update(change)
+                post.return_value = FakeResponse(200, body)
+                if allowed:
+                    self.assertEqual(get_execution_engine_access('8', execution, 34, 7), body)
+                else:
+                    with self.assertRaisesRegex(ValueError, 'invalid Spark execution'):
+                        get_execution_engine_access('8', execution, 34, 7)
+                request = post.call_args.kwargs['json']
+                self.assertEqual(request, {'execution_id': execution, 'engine_id': '34', 'required_effects': ['read']})
+                self.assertNotIn('connection_info', request)
+
+    def test_execution_access_refreshes_only_on_401_and_never_echoes_server_body(self):
+        execution = '9a21ab1a-2900-42a5-ae91-821339b3fcdd'
+        source = FakeTokenSource(['old', 'new'])
+        with patch('system_client._service_token_source', return_value=source), \
+             patch('system_client.requests.post', side_effect=[FakeResponse(401), FakeResponse(403, text='private-secret')]) as post:
+            with self.assertRaises(ValueError) as error:
+                get_execution_engine_access('8', execution, 34, 7)
+            self.assertNotIn('private-secret', str(error.exception))
+            self.assertEqual(source.invalidations, [(7, 'old')])
+            self.assertEqual(post.call_count, 2)
+
+    def test_invalid_execution_binding_does_not_contact_system(self):
+        with patch('system_client.requests.post') as post:
+            for auth, execution, engine, tenant in [('08', 'bad', 34, 7), ('8', 'bad', 34, 7),
+                    ('8', '9a21ab1a-2900-42a5-ae91-821339b3fcdd', True, 7)]:
+                with self.assertRaises(ValueError):
+                    get_execution_engine_access(auth, execution, engine, tenant)
+            post.assert_not_called()
 
 
 if __name__ == "__main__":

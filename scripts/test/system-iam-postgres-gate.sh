@@ -395,7 +395,7 @@ case "$TEST_FILTER" in
             echo "execution-audience test requires --package migration" >&2
             exit 2
         fi
-        test_pattern='^TestExecutionAudienceForwardMigrationAgainstPostgres$'
+        test_pattern='^TestExecutionAudience.*AgainstPostgres$'
         ;;
     duckdb-runtime-catalog)
         if [ "$PACKAGE_FILTER" != "migration" ]; then

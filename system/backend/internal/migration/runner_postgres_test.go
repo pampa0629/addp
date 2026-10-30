@@ -7219,3 +7219,50 @@ func TestModuleRuntimeHostNodeIPsForwardMigrationAgainstPostgres(t *testing.T) {
 		t.Fatalf("updated IP matches=%d err=%v", total, err)
 	}
 }
+
+func TestExecutionAudienceSparkForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("requires standard IAM PostgreSQL gate")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if err := (&Runner{DSN: dsn, FS: EmbeddedSQL, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var constraint string
+	if err := db.QueryRow(`SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid='system.execution_authorizations'::regclass AND conname='execution_authorizations_audience_check'`).Scan(&constraint); err != nil {
+		t.Fatal(err)
+	}
+	for _, sample := range []struct {
+		audience string
+		allowed  bool
+	}{{"spark", true}, {"duckdb", true}, {"cleanup", true}, {"addp-spark", false}, {"unknown", false}} {
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(`CREATE TEMP TABLE spark_audience_probe (audience text NOT NULL, ` + constraint + `) ON COMMIT DROP`); err != nil {
+			tx.Rollback()
+			t.Fatal(err)
+		}
+		_, err = tx.Exec(`INSERT INTO spark_audience_probe VALUES ($1)`, sample.audience)
+		tx.Rollback()
+		if (err == nil) != sample.allowed {
+			t.Fatalf("audience %s: error=%v, allowed=%v", sample.audience, err, sample.allowed)
+		}
+	}
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM system.role_permissions rp JOIN system.roles r ON r.id=rp.role_id JOIN system.permissions p ON p.id=rp.permission_id WHERE r.tenant_id IS NULL AND r.role_key='tenant.spark_runtime' AND p.permission_key='system.execution_authorization.execute'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("Spark execution permission count=%d error=%v", count, err)
+	}
+}
