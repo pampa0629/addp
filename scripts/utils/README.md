@@ -11,41 +11,13 @@
 新机器安装与多版本机器的单次命令选择沿[工具链准备流程](../../docs/guide/addp部署和开发步骤.md#node-工具链准备与诊断)，Node/npm 路径与版本诊断使用 `make dev-doctor`。手动核对 Node 使用 `make check-node-runtime`，策略和副作用边界回归使用 `make test-node-runtime`，该回归只用临时目录与受控命令，不启停个人服务。实际测试与前端构建沿根 Make 标准入口执行；直接进入模块运行 npm 不能替代标准门禁。根 `.node-version` 声明的是主版本，并未锁定补丁版本。
 
 ### ports-validate.sh
-**用途**: 验证端口分配是否符合 ADDP 规范
+**用途**: 展示 System／Business 指定端口信息并检查有限策略。输入来源、失败条件、查询缺失与未覆盖项统一见[端口规范：快速校验](../../docs/spec/addp端口分配.md#快速校验)；报告不等于端口占用扫描或运行就绪验收。
 
-**功能**:
-- 检查系统 MinIO 端口 (9000-9001)
-- 检查业务 MinIO 端口 (9002-9003)
-- 检查 PostgreSQL 端口 (5432-5433)
-- 验证端口配置与实际运行容器一致性
-- 彩色输出状态报告
+**标准入口**（从仓库根目录运行）：
 
-**端口规范**:
-- **系统 MinIO**: API 端口 9000，Console 端口 9001
-- **业务 MinIO**: API 端口 9002，Console 端口 9003
-- **系统 PostgreSQL**: 5432
-- **业务 PostgreSQL**: 5433
-
-**命令**:
 ```bash
-./scripts/utils/ports-validate.sh
+make ports-validate
 ```
-
-**预期输出**:
-```
-Business (.env or defaults):
-  ✓ BUSINESS_MINIO_API_PORT: 9002
-  ✓ BUSINESS_MINIO_CONSOLE_PORT: 9003
-  ✓ BUSINESS_POSTGRES_PORT: 5433
-
-Runtime containers (if any):
-  minio    0.0.0.0:9000->9000/tcp
-  business-minio    0.0.0.0:9002->9000/tcp
-
-Policy OK. No changes required.
-```
-
-**使用场景**: 部署前配置验证、端口冲突排查
 
 ---
 
@@ -126,8 +98,8 @@ Policy OK. No changes required.
 ### 场景 1: 部署前验证
 
 ```bash
-# 1. 验证端口配置
-./scripts/utils/ports-validate.sh
+# 1. 输出端口报告并检查限定策略
+make ports-validate
 
 # 2. 清理 Go 依赖
 ./scripts/utils/go-mod-tidy-all.sh
@@ -142,16 +114,17 @@ make test-platform
 # 测试 MVT 瓦片功能
 ./scripts/utils/test-tile-api.sh
 
-# 查看端口占用情况
-./scripts/utils/ports-validate.sh
+# 查看指定容器端口报告（不代表运行就绪）
+make ports-validate
 ```
 
 ### 场景 3: CI/CD 集成
 
 ```bash
-# 验证平台登记与配置
+# 平台登记门禁
 make test-platform
-./scripts/utils/ports-validate.sh
+# 端口诊断报告仅作辅助，不替代集成或运行验收
+make ports-validate
 ```
 
 ---
@@ -159,9 +132,7 @@ make test-platform
 ## ⚠️ 注意事项
 
 1. **ports-validate.sh**
-   - 需要读取 `business/.env` 文件获取业务端口配置
-   - 会检查实际运行的 Docker 容器端口映射
-   - 端口冲突会导致脚本退出（exit 1）
+   - 输入、退出判定和未覆盖项统一见[端口规范的覆盖边界](../../docs/spec/addp端口分配.md#快速校验)；零退出不代表全部容器可用或业务验收通过。
 
 2. **go-mod-tidy-all.sh**
    - 需要在项目根目录或有权限访问所有模块的位置运行
@@ -183,23 +154,11 @@ make test-platform
 
 ## 📞 故障排查
 
-### 问题 1: ports-validate.sh 报错端口冲突
+### 问题 1: ports-validate.sh 报告策略不一致
 
-**症状**: `Policy mismatch detected`
+`Policy mismatch detected` 按[快速校验的两类判定](../../docs/spec/addp端口分配.md#快速校验)定位；未出现该标记的非零退出需先查看原始读取或执行错误。容器未运行和查询失败也不能按零退出计为通过。
 
-**原因**: 实际端口配置与规范不符
-
-**解决**:
-```bash
-# 检查 business/.env 配置
-cat business/.env | grep PORT
-
-# 检查运行中的容器
-docker ps --format 'table {{.Names}}\t{{.Ports}}'
-
-# 修正配置后重启
-docker-compose down && docker-compose up -d
-```
+实际 Infra 映射用标准 `bash scripts/infra/status.sh` 核对；Business 固定端口冲突及引擎地址变更按[端口规范的使用建议](../../docs/spec/addp端口分配.md#使用建议)处理。
 
 ### 问题 2: go-mod-tidy-all.sh 执行缓慢
 

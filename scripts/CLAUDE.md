@@ -61,7 +61,7 @@ scripts/
 - `colors.sh` - 终端颜色输出变量（被 dev 脚本引用）
 - `check-deps.sh` - Go 依赖版本一致性检查
 - `check-deps-version.sh` - 依赖版本验证
-- `ports-validate.sh` - 端口占用检查
+- `ports-validate.sh` - System／Business 端口报告与有限策略检查，覆盖及退出边界见[端口规范](../docs/spec/addp端口分配.md#快速校验)
 - `detect-common.sh` - Common 模块依赖检测
 - 其他通用工具...
 

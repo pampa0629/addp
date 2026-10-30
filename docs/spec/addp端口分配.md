@@ -118,15 +118,25 @@ Ontology Backend 使用 `8195`（开发/容器内部一致），经 Gateway `/ap
 
 ## 快速校验
 
-使用命令校验策略是否符合：
+从仓库根目录运行标准入口：
 
-```
+```bash
 make ports-validate
 ```
 
-输出会显示 business/.env 的端口配置、System 默认端口以及当前运行容器的实际映射，帮助定位问题。
+当前实现为 [ports-validate.sh](../../scripts/utils/ports-validate.sh)，覆盖范围如下：
 
-如果本地已有其他服务占用 System 首选端口，`scripts/infra/up.sh` 自动选择其他空闲端口；`scripts/dev/start.sh` 读取实际映射。
+| 读取范围 | 实际行为 |
+| --- | --- |
+| Business PostgreSQL、MySQL、MinIO API／Console | 存在时加载 `business/.env`，未设变量沿用继承环境或脚本缺省值；读取 `business/.business-state/ports.env` 固定值，并查询指定容器的首个 TCP 宿主机映射。 |
+| System／Infra | 展示脚本内置的参考首选值和指定容器的 `docker port` 查询结果；这不是全量模块／Runtime 端口检查，也不读取 `.dev-state/ports.env`。 |
+| 末尾容器列表 | `docker ps` 仅筛选名称含 `minio` 或 `postgres` 的记录；输出标题中的 Runtime 不表示已枚举全部 Runtime。 |
+
+脚本明确标记策略不一致的条件只有两类：Business 固定值和实际映射均非空且不相等；或 Business MinIO API／Console 的首选值使用 `19000`、`19001`。这些条件最终使脚本非零退出，`make` 传播失败；其他读取或 Shell 执行错误也可能提前非零退出，不能一概解释为端口占用。
+
+缺容器、无映射或部分 Docker 查询失败会归入 `actual=not running`／`(none)`，入口仍可能以零退出。`Policy OK` 只表示本次未标记上述违规，不证明 Docker 查询成功、宿主机端口无占用、Compose 归属、健康、引擎注册或业务就绪。
+
+实际 Infra 状态用标准 `bash scripts/infra/status.sh` 核对；开发进程端口另取启动输出和 `.dev-state/ports.env`。公开入口、认证与业务结果仍按[部署与验收边界](#前端-docker-端口规则)独立验证。
 
 ## 使用建议
 
