@@ -2032,6 +2032,70 @@ print('PASS: frontend dependency preparation precedes HTTP wait; failed installs
 PY
 }
 
+test_frontend_background_stdin_is_detached() {
+  python3 - "$ROOT_DIR" "$TEST_ROOT" <<'PY'
+import json
+import os
+from pathlib import Path
+import pty
+import signal
+import subprocess
+import sys
+import time
+
+root, temporary = map(Path, sys.argv[1:])
+source = (root / 'scripts/dev/start.sh').read_text()
+start = source.index('# 并发启动所有前端\nfor config')
+launch = source[start:source.index('  end_start_listener_batch', start)]
+for job_control in (False, True):
+    workspace = temporary / ('frontend-stdin-' + str(job_control))
+    (workspace / 'fixture/frontend').mkdir(parents=True)
+    (workspace / 'logs').mkdir()
+    probe = workspace / 'probe.py'
+    probe.write_text('''import json, os
+from pathlib import Path
+is_tty = os.isatty(0)
+# Never read from a TTY: the regression records the hazardous descriptor
+# without stopping on SIGTTIN or consuming the operator's terminal input.
+eof = None if is_tty else os.read(0, 1) == b''
+Path(os.environ['CASE_ROOT'], 'stdin.json').write_text(json.dumps({'tty': is_tty, 'eof': eof}))
+''')
+    script = r'''
+set -eu
+cd "$CASE_ROOT"
+FRONTEND_CONFIGS=("fixture:8180:fixture/frontend")
+FRONTEND_PID_FILE="$CASE_ROOT/pids"
+check_service_running() { return 0; }
+ensure_node_modules() { :; }
+npm() { "$PROBE_PYTHON" "$CASE_ROOT/probe.py"; }
+''' + ('set -m\n' if job_control else '') + launch + '\nwait\n'
+    pid, master = pty.fork()
+    if pid == 0:
+        # A dedicated controlling terminal; no personal services or terminal.
+        log = os.open(workspace / 'launcher.log', os.O_WRONLY | os.O_CREAT, 0o600)
+        os.dup2(log, 1); os.dup2(log, 2); os.close(log)
+        os.execve('/bin/bash', ['bash', '-c', script],
+                  dict(os.environ, CASE_ROOT=str(workspace), PROBE_PYTHON=sys.executable))
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            done, status = os.waitpid(pid, os.WNOHANG)
+            if done:
+                break
+            time.sleep(.01)
+        else:
+            os.kill(pid, signal.SIGKILL)
+            os.waitpid(pid, 0)
+            raise AssertionError('isolated frontend launcher timed out')
+        assert os.waitstatus_to_exitcode(status) == 0, (workspace / 'launcher.log').read_text()
+        actual = json.loads((workspace / 'stdin.json').read_text())
+        assert actual == {'tty': False, 'eof': True}, (job_control, actual)
+    finally:
+        os.close(master)
+print('PASS: real frontend launcher detaches stdin under a controlling TTY, with and without job control')
+PY
+}
+
 test_start_batches_listening_ports() {
   python3 - "$ROOT_DIR" "$TEST_ROOT" <<'PY'
 import os
@@ -2473,6 +2537,7 @@ test_worker_backend_readiness_order
 test_swagger_incremental_generation
 test_start_batches_listening_ports
 test_frontend_dependencies_precede_health_wait
+test_frontend_background_stdin_is_detached
 test_parallel_runtime_startup
 test_python_dependency_install_lock
 test_start_loads_runtime_ownership_in_all_profiles

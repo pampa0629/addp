@@ -2385,7 +2385,8 @@ for config in "${FRONTEND_CONFIGS[@]}"; do
     ensure_node_modules "$dir"
     (
       cd "$dir"
-      npm run dev -- --host "${SERVICE_HOST:-0.0.0.0}" --port "$port" --strictPort > "../../logs/${name}-frontend.log" 2>&1
+      # Background Vite must not read the launching terminal after this script exits.
+      npm run dev -- --host "${SERVICE_HOST:-0.0.0.0}" --port "$port" --strictPort < /dev/null > "../../logs/${name}-frontend.log" 2>&1
     ) &
 
     pid=$!

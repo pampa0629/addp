@@ -109,6 +109,8 @@ GDAL 绑定重建必须先准备 setuptools 与 wheel，并使用已同步的 Ru
 
 Node 运行时统一沿根 `.node-version` 的稳定主版本，由 `scripts/utils/node-runtime.sh` 校验当前 PATH 中的实际解释器。`start.sh`、`restart.sh` 和 `keepalive.sh` 在生命周期锁、配置加载及任何启停副作用前检查；尤其重启不能先停止正在运行的服务再发现 Node 版本不符。停止入口不依赖 Node，仍可清理旧进程。依赖安装、前端测试、镜像构建及本地 CI 复用此校验，不各自维护版本比较逻辑。校验不会安装工具、切换版本或重启服务。
 
+后台前端进程的标准输入必须显式连接 `/dev/null`，不能继承启动终端；日志继续写入各自文件。Vite 会在输入为 TTY 时启用 readline 快捷键，启动器退出后形成的后台孤儿进程组读取终端可触发 `read EIO` 并使进程退出。该约束与 Node 主版本校验独立，不通过吞掉异常或自动重载恢复进程。
+
 所有由开发生命周期启动的 Node 单元必须提交 `package-lock.json`。锁文件是不可变构建输入，启动和重启统一通过 `scripts/dev/node-dependencies.sh` 执行 `npm ci`；缺少锁文件必须立即失败，不得在生命周期内退回 `npm install`、生成锁文件或静默采用未锁定依赖。
 
 `npm install` 只允许用于显式的依赖维护流程，由开发者审查并提交 `package.json` 与 `package-lock.json` 的一致变更。Hosted Online 等要求干净构建身份的门禁在安装前后必须保持仓库状态不变，不能通过忽略锁文件改动、关闭仓库清洁检查或在预检前恢复文件来掩盖生命周期污染。
