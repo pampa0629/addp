@@ -253,13 +253,13 @@ test('find, copy, export and text-only new conversation never replay hidden stat
 
 
 
-async function installIframeHost(page, testInfo) {
+async function installIframeHost(page, testInfo, { delayDraft = false } = {}) {
   const root = resolve(dirname(testInfo.file), '../../../common-frontend/basic/src')
   const bridge = (await readFile(resolve(root, 'utils/consoleBridge.js'), 'utf8')).replace(/^export /gm, '')
   const drafts = (await readFile(resolve(root, 'utils/navigationDraft.mjs'), 'utf8')).replace(/^import[^\n]+\n/gm, '').replace(/^export /gm, '')
   const auth = (await readFile(resolve(root, 'auth/authSession.js'), 'utf8')).replace(/^export /gm, '')
   await page.route('**/workspace-host', route => route.fulfill({ contentType: 'text/html', body: `
-    <p id="ready"></p><p id="destination"></p>
+    <p id="ready"></p><p id="destination"></p><p id="draft-waiting"></p><button id="release-draft">Release draft</button>
     <iframe title="Agent workspace" src="/module-ui/agent/sessions/61" style="width:100%;height:850px"></iframe>
     <script type="module">
       ${bridge}
@@ -268,10 +268,19 @@ async function installIframeHost(page, testInfo) {
         ${auth}
         createIframeAuthCoordinator({ allowedOrigins: [location.origin], getToken: () => 'fixture-token', getExpiresAt: () => Date.now() + 300000, refreshToken: async () => 'fixture-token', logout: async () => {} });
       })();
+      let releaseDraft;
+      const draftReady = new Promise(resolve => { releaseDraft = resolve });
+      document.querySelector('#release-draft').onclick = releaseDraft;
       const slot = createNavigationDraftSlot();
       let activeRoute = '/agent/sessions/61';
       registerConsoleBridgeHandler('console-navigation', async payload => {
-        if (payload.operation === 'take-draft') return slot.take(activeRoute, 'fixture-user-tenant');
+        if (payload.operation === 'take-draft') {
+          if (${delayDraft} && activeRoute === '/agent') {
+            document.querySelector('#draft-waiting').textContent = 'Waiting for draft';
+            await draftReady;
+          }
+          return slot.take(activeRoute, 'fixture-user-tenant');
+        }
         if (payload.draft) slot.publish(payload.route, 'fixture-user-tenant', payload.draft);
         activeRoute = payload.route;
         document.querySelector('#destination').textContent = payload.route;
@@ -306,6 +315,28 @@ test('text draft survives a real iframe remount through the shared single-use sl
   await expect(frame.locator('.message-row')).toHaveCount(0)
   await page.locator('iframe').evaluate(element => element.contentWindow.location.reload())
   await expect(frame.locator('.input-area textarea')).toHaveValue('')
+  expect(backend.writes).toEqual([])
+  expect(backend.unexpected).toEqual([])
+})
+
+
+test('delayed draft transfer keeps editing and session changes closed until text is ready', async ({ page }, testInfo) => {
+  const backend = await installWorkspace(page, { history: [{ id: 1, role: 'assistant', content: '所选文字，不执行' }] })
+  const frame = await installIframeHost(page, testInfo, { delayDraft: true })
+  await frame.getByRole('button', { name: '另开会话', exact: true }).click()
+  await frame.getByRole('dialog', { name: '另开会话', exact: true }).getByRole('button', { name: '使用此草稿', exact: true }).click()
+  await expect(page.locator('#draft-waiting')).toHaveText('Waiting for draft')
+  await expect(frame.locator('.input-area textarea')).toBeDisabled()
+  await expect(frame.getByRole('button', { name: '发送', exact: true })).toHaveCount(0)
+  await expect(frame.getByRole('button', { name: '新对话', exact: true })).toBeDisabled()
+  await frame.getByRole('button', { name: '数据分析会话', exact: true }).click()
+  await expect(frame.getByRole('heading', { name: '你好！我是 ADDP AI 助手。' })).toBeVisible()
+  await page.locator('#release-draft').click()
+  await expect(frame.locator('.input-area textarea')).toHaveValue('所选文字，不执行')
+  await expect(frame.locator('.input-area textarea')).toBeEnabled()
+  await frame.locator('.input-area textarea').fill('用户继续编辑的文字')
+  await expect(frame.locator('.input-area textarea')).toHaveValue('用户继续编辑的文字')
+  await expect(frame.locator('.message-row')).toHaveCount(0)
   expect(backend.writes).toEqual([])
   expect(backend.unexpected).toEqual([])
 })

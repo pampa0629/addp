@@ -4,7 +4,7 @@
       <div class="sidebar-header">
         <div class="sidebar-title-row">
           <button class="workspace-home" type="button" :aria-label="t('agent.workspace.home')" @click="showHome">{{ t('agent.workspace.moduleTitle') }}</button>
-          <el-button v-if="authStore.hasPermission('agent.session.create')" type="primary" :icon="Plus" @click="createSession">{{ t('agent.chat.newSession') }}</el-button>
+          <el-button v-if="authStore.hasPermission('agent.session.create')" type="primary" :icon="Plus" :disabled="navigationDraftPending" @click="createSession">{{ t('agent.chat.newSession') }}</el-button>
         </div>
         <div class="session-search-row">
           <el-input v-model="sessionSearch" clearable :placeholder="t('agent.workspace.search')" @keyup.enter="filterSessions" @clear="filterSessions" />
@@ -154,7 +154,7 @@
         </div>
       </div>
 
-      <div class="input-area">
+      <div class="input-area" :aria-busy="navigationDraftPending">
         <el-input
           v-model="inputText"
           type="textarea"
@@ -222,6 +222,7 @@ watch(preferenceScope, () => { preferencesVisible.value = false })
 const validBranchDraft = computed(() => { try { createMessageDraft(branchText.value); return true } catch { return false } })
 const route = useRoute()
 const router = useRouter()
+const navigationDraftPending = ref(!route.params.session_id && window.parent !== window)
 
 const sessions = ref([])
 const currentSessionId = ref(null)
@@ -233,7 +234,7 @@ useConsolePageDescriptor(router, 'agent', {
 })
 const sessionUnavailable = ref(false)
 const canRun = computed(() =>
-  !sessionUnavailable.value && !currentSession.value?.archived &&
+  !navigationDraftPending.value && !sessionUnavailable.value && !currentSession.value?.archived &&
   ['agent.run.create', 'agent.run.execute'].every(permission => authStore.hasPermission(permission)) &&
   (Boolean(currentSessionId.value) || authStore.hasPermission('agent.session.create'))
 )
@@ -393,6 +394,7 @@ async function reloadRenameVersion() {
 }
 
 async function createSession() {
+  if (navigationDraftPending.value) return null
   try {
     const session = await sessionAPI.create({ title: null })
     currentSession.value = session
@@ -427,7 +429,7 @@ async function loadSessionMessages(sessionId) {
   }
 }
 async function switchSession(sessionId) {
-  if (isLoading.value || String(sessionId) === currentSessionId.value) return
+  if (isLoading.value || navigationDraftPending.value || String(sessionId) === currentSessionId.value) return
   await navigateAgentRoute(router, { name: 'ChatSession', params: { session_id: String(sessionId) } })
 }
 async function restoreRouteSession(sessionId) {
@@ -722,15 +724,17 @@ function scrollToBottom() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadSessions(), loadSkills()])
-  sessionsLoaded.value = true
-  await restoreRouteSession(route.params.session_id)
-  if (!route.params.session_id && window.parent !== window) {
-    try {
-      const draft = await takeConsoleNavigationDraft()
-      if (draft) inputText.value = readMessageDraft(draft)
-    } catch { ElMessage.error(t('agent.workspace.draftFailed')) }
-  }
+  try {
+    await Promise.all([loadSessions(), loadSkills()])
+    sessionsLoaded.value = true
+    await restoreRouteSession(route.params.session_id)
+    if (navigationDraftPending.value) {
+      try {
+        const draft = await takeConsoleNavigationDraft()
+        if (draft) inputText.value = readMessageDraft(draft)
+      } catch { ElMessage.error(t('agent.workspace.draftFailed')) }
+    }
+  } finally { navigationDraftPending.value = false }
 })
 
 onBeforeUnmount(() => { listScope.dispose(); detailScope.dispose() })
@@ -740,7 +744,7 @@ watch(() => route.params.session_id, sessionId => {
 })
 
 onBeforeRouteUpdate((to, from) => {
-  if (isLoading.value && String(to.params.session_id || '') !== String(from.params.session_id || '')) {
+  if ((isLoading.value || navigationDraftPending.value) && String(to.params.session_id || '') !== String(from.params.session_id || '')) {
     return false
   }
   return true
