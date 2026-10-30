@@ -91,6 +91,30 @@ test('archiving keeps history readable across reload and requires explicit resto
   expect(backend.unexpected).toEqual([])
 })
 
+test('pending interaction stays readable but disabled while archived and reopens after restore', async ({ page }) => {
+  const interactionId = '1b842c47-cdf4-4228-af6e-25bfbaa8609b'
+  const history = [{ id: 72, role: 'assistant', parts: [
+    { type: 'interaction_ref', interaction_id: interactionId, status: 'pending' },
+    { type: 'presentation_ref', protocol: 'a2ui', interaction_id: interactionId, surface_id: 'waiting:1', content: { operations: [
+      { version: 'v0.9', createSurface: { surfaceId: 'waiting:1', catalogId: 'addp.catalog/v1' } },
+      { version: 'v0.9', updateComponents: { surfaceId: 'waiting:1', components: [{ id: 'root', component: 'ClarificationChoice', interactionId, prompt: '请选择引擎', options: [{ label: 'GeoPython', value: 6 }] }] } }
+    ] } }
+  ] }]
+  const backend = await installWorkspace(page, { history })
+  await page.goto('/module-ui/agent/sessions/61')
+  const choice = page.getByRole('button', { name: 'GeoPython', exact: true })
+  await expect(choice).toBeEnabled()
+  await menu(page, '归档')
+  await expect(choice).toBeDisabled()
+  await expect(page.getByText('请选择引擎', { exact: true })).toBeVisible()
+  await page.reload()
+  await expect(choice).toBeDisabled()
+  await page.getByRole('button', { name: '恢复会话', exact: true }).click()
+  await expect(choice).toBeEnabled()
+  expect(backend.writes).toEqual([{ version: 1, archived: true }, { version: 2, archived: false }])
+  expect(backend.unexpected).toEqual([])
+})
+
 test('rename conflict retains the draft and reloads a version only on request', async ({ page }) => {
   const backend = await installWorkspace(page, { conflict: true })
   await page.goto('/module-ui/agent/sessions/61')

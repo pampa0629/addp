@@ -122,6 +122,7 @@
             <MessagePartsRenderer
               :message="message"
               :expand-details="preferences.expandDetails"
+              :interaction-disabled="isLoading || !canRun"
               @action="handleA2UIAction"
               @error="handlePresentationError"
             />
@@ -146,6 +147,7 @@
             <MessagePartsRenderer
               :message="liveMessage"
               :expand-details="preferences.expandDetails"
+              :interaction-disabled="isLoading || !canRun"
               @action="handleA2UIAction"
               @error="handlePresentationError"
             />

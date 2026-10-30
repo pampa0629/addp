@@ -12,18 +12,22 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, shallowRef, watch } from 'vue'
+import { onBeforeUnmount, provide, shallowRef, toRef, watch } from 'vue'
 import { MessageProcessor } from '@a2ui/web_core/v0_9'
 
 import A2UIRoot from './A2UIRoot.js'
 import { createAddpCatalog, validateCatalogComponent } from './catalog.js'
+import { interactionDisabledKey } from './interactionState.js'
 
 const props = defineProps({
   operations: {
     type: Array,
     required: true
-  }
+  },
+  interactionDisabled: Boolean
 })
+
+provide(interactionDisabledKey, toRef(props, 'interactionDisabled'))
 
 const emit = defineEmits(['action', 'error'])
 const surfaces = shallowRef([])
@@ -41,6 +45,7 @@ function renderOperations(operations) {
   if (!Array.isArray(operations) || operations.length === 0) return
 
   processor = new MessageProcessor([createAddpCatalog()], action => {
+    if (props.interactionDisabled && action.name === 'interaction.submit') return
     // Catalog actions are JSON; do not expose Vue proxies to protocol clients.
     emit('action', JSON.parse(JSON.stringify(action)))
   })

@@ -10,6 +10,7 @@
       <A2UISurface
         v-else-if="isVisiblePresentation(part)"
         :operations="part.content?.operations || []"
+        :interaction-disabled="interactionDisabled"
         @action="emit('action', $event)"
         @error="emit('error', $event)"
       />
@@ -34,7 +35,8 @@ import AgentPlan from './AgentPlan.vue'
 
 const props = defineProps({
   message: { type: Object, required: true },
-  expandDetails: Boolean
+  expandDetails: Boolean,
+  interactionDisabled: Boolean
 })
 
 const { t } = useI18n()

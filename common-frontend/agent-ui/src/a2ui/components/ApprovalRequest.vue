@@ -28,7 +28,7 @@
         <el-icon><TopRight /></el-icon>
         {{ t('agent.chat.approval.openOwner') }}
       </el-button>
-      <el-button type="primary" :loading="submitting" @click="checkStatus">
+      <el-button type="primary" :disabled="interactionDisabled" :loading="submitting" @click="checkStatus">
         <el-icon><Refresh /></el-icon>
         {{ t('agent.chat.approval.checkStatus') }}
       </el-button>
@@ -40,6 +40,7 @@
 import { onUnmounted, ref } from 'vue'
 import { Refresh, TopRight } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { useInteractionDisabled } from '../interactionState.js'
 
 const props = defineProps({
   context: { type: Object, required: true },
@@ -49,6 +50,7 @@ const props = defineProps({
 const { t } = useI18n()
 const properties = ref({ ...props.context.componentModel.properties })
 const submitting = ref(false)
+const interactionDisabled = useInteractionDisabled()
 const subscription = props.context.componentModel.onUpdated.subscribe(component => {
   properties.value = { ...component.properties }
 })
@@ -65,7 +67,7 @@ async function openOwner() {
 }
 
 async function checkStatus() {
-  if (submitting.value) return
+  if (submitting.value || interactionDisabled.value) return
   submitting.value = true
   try {
     await props.context.dispatchAction({

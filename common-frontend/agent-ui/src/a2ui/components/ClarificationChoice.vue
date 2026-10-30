@@ -11,7 +11,7 @@
       <el-button
         v-for="option in properties.options"
         :key="String(option.value)"
-        :disabled="submitting"
+        :disabled="submitting || interactionDisabled"
         plain
         @click="submit(option)"
       >
@@ -24,6 +24,7 @@
 <script setup>
 import { computed, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useInteractionDisabled } from '../interactionState.js'
 
 const props = defineProps({
   context: { type: Object, required: true },
@@ -48,12 +49,13 @@ const promptParts = computed(() => {
   return parts
 })
 const submitting = ref(false)
+const interactionDisabled = useInteractionDisabled()
 const subscription = props.context.componentModel.onUpdated.subscribe(component => {
   properties.value = { ...component.properties }
 })
 
 async function submit(option) {
-  if (submitting.value) return
+  if (submitting.value || interactionDisabled.value) return
   submitting.value = true
   try {
     await props.context.dispatchAction({

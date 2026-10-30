@@ -7,7 +7,7 @@
         :key="option.value"
         type="button"
         class="resource-option"
-        :disabled="submitting"
+        :disabled="submitting || interactionDisabled"
         @click="submit(option)"
       >
         <span class="resource-label">{{ option.label }}</span>
@@ -19,6 +19,7 @@
 
 <script setup>
 import { onUnmounted, ref } from 'vue'
+import { useInteractionDisabled } from '../interactionState.js'
 
 const props = defineProps({
   context: { type: Object, required: true },
@@ -27,12 +28,13 @@ const props = defineProps({
 
 const properties = ref({ ...props.context.componentModel.properties })
 const submitting = ref(false)
+const interactionDisabled = useInteractionDisabled()
 const subscription = props.context.componentModel.onUpdated.subscribe(component => {
   properties.value = { ...component.properties }
 })
 
 async function submit(option) {
-  if (submitting.value) return
+  if (submitting.value || interactionDisabled.value) return
   submitting.value = true
   try {
     await props.context.dispatchAction({

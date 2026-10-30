@@ -41,6 +41,41 @@ const presentationI18n = createI18n({
 })
 
 describe('ADDP A2UI renderer', () => {
+  it.each(['ClarificationChoice', 'ResourcePicker', 'ApprovalRequest'])('disables %s interaction submission without losing its content or readonly navigation', async component => {
+    const interactionId = '1b842c47-cdf4-4228-af6e-25bfbaa8609b'
+    const properties = component === 'ApprovalRequest'
+      ? { interactionId, owner: 'develop', ownerInteractionId: 'owner-review', openUrl: '/develop/approvals/owner-review', requestFingerprint: 'a'.repeat(64), requestSummary: {} }
+      : { interactionId, prompt: '请选择', options: [{ label: 'GeoPython', value: 'addp://engine/6', candidate: { locator: 'addp://engine/6' } }] }
+    const operations = [
+      { version: 'v0.9', createSurface: { surfaceId: 'disabled-test', catalogId: 'addp.catalog/v1' } },
+      { version: 'v0.9', updateComponents: { surfaceId: 'disabled-test', components: [{ id: 'root', component, ...properties }] } }
+    ]
+    const wrapper = mount(A2UISurface, {
+      props: { operations, interactionDisabled: true },
+      global: {
+        plugins: [createI18n({ legacy: false, locale: 'zh-cn', messages: { 'zh-cn': zhCnMessages } })],
+        stubs: { 'el-button': ElButtonStub, 'el-tag': SlotStub, 'el-icon': SlotStub }
+      }
+    })
+    const button = wrapper.findAll('button').at(-1)
+    const originalNode = button.element
+    expect(button.attributes('disabled')).toBeDefined()
+    await button.trigger('click')
+    expect(wrapper.emitted('action')).toBeUndefined()
+    if (component === 'ApprovalRequest') {
+      const openOwner = wrapper.findAll('button')[0]
+      expect(openOwner.attributes('disabled')).toBeUndefined()
+      await openOwner.trigger('click')
+      await vi.waitFor(() => expect(wrapper.emitted('action')?.[0]?.[0]?.name).toBe('owner.open'))
+    } else expect(wrapper.text()).toContain('GeoPython')
+    await wrapper.setProps({ interactionDisabled: false })
+    expect(button.element).toBe(originalNode)
+    expect(button.attributes('disabled')).toBeUndefined()
+    await button.trigger('click')
+    await vi.waitFor(() => expect(wrapper.emitted('action')?.at(-1)?.[0]?.name).toBe('interaction.submit'))
+    expect(wrapper.emitted('action').at(-1)[0].context.interactionId).toBe(interactionId)
+  })
+
   it('folds exact review details without changing confirmation and follows the current language', async () => {
     const answer = { label: '确认创建', value: 'review-fingerprint', candidate: { operation_review: { revision: 3 } } }
     const exact = '{"name":"demo","config":{"source":{"locator":"addp://engine/11/path/Outdoor/Outdoors"}}}'
