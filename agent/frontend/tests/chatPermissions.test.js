@@ -56,6 +56,8 @@ function renderChat() {
         'el-icon': true,
         'el-tag': true,
         'el-tooltip': true,
+        'el-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /><slot name="footer" /></div>' },
+        WorkspacePreferences: true,
         MessagePartsRenderer: true
       }
     }
@@ -148,7 +150,7 @@ describe('Agent chat operation permissions', () => {
     await wrapper.findAll('button').find(item => item.text() === 'agent.chat.send').trigger('click')
     await flushPromises()
     expect(addMessage).toHaveBeenCalledTimes(1)
-    expect(runAgent.mock.calls[0][0]).toEqual({})
+    expect(runAgent.mock.calls[0][0]).toEqual({ forwardedProps: { replyDetail: 'standard' } })
     wrapper.unmount()
   })
 

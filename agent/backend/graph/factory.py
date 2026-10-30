@@ -20,6 +20,7 @@ from langgraph.graph import END
 from langgraph.types import Command
 from pydantic import BaseModel, Field, ValidationError
 
+from agents.reply_preferences import reply_detail_prompt
 from agents.checkpoint import canonicalize_clarification_options, capture_owner_facts, checkpoint_prompt, normalize_checkpoint
 from agents.events import AgentEvent, text_event
 from agents.result_refs import build_result_ref
@@ -534,7 +535,7 @@ class AgentFactory:
         loop_detection = LoopDetectionMiddleware()
         graph = create_deerflow_agent(
             model=llm or get_llm(task_context["tenant_id"], "reasoning"), tools=tools,
-            system_prompt=f"{skill_body}\n\n{_runtime_instructions()}",
+            system_prompt=f"{skill_body}\n\n{_runtime_instructions()}{reply_detail_prompt(checkpoint['reply_detail'])}",
             middleware=[DanglingToolCallMiddleware(), SystemMessageCoalescingMiddleware(), loop_detection, planning, boundary],
             checkpointer=None, name=task_context["skill_name"],
         )

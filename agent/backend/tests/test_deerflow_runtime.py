@@ -47,6 +47,16 @@ async def _collect(client, names, tenant_id=1, checkpoint=None, run_id="run-fixt
 
 
 class DeerFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_expression_preference_reaches_real_harness_without_changing_request(self):
+        from agents.checkpoint import new_checkpoint
+        checkpoint = {**new_checkpoint(), "reply_detail": "concise"}
+        client = _InferenceFixture([Message(role="assistant", content="收到")])
+        events = await _collect(client, [], checkpoint=checkpoint)
+        system_text = "\n".join(message.content for message in client.calls[0]["messages"] if message.role == "system")
+        self.assertIn("用户表达偏好", system_text)
+        self.assertIn("不改变任务目标", system_text)
+        self.assertTrue(any(event.kind == "text" for event in events))
+
     async def test_explicit_illegal_null_is_not_silently_removed(self):
         client = _InferenceFixture([
             Message(role="assistant", tool_calls=[_call("data.search", {"query": "outdoor", "engine_id": None})]),

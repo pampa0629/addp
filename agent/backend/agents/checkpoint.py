@@ -6,6 +6,9 @@ from jsonschema import Draft202012Validator
 from addp_common.tools import get_tool, preview_resource_fact
 
 
+from agents.reply_preferences import REPLY_DETAILS
+
+
 CHECKPOINT_SCHEMA = "addp.agent-checkpoint/v1"
 CHECKPOINT_MAX_BYTES = 256 * 1024
 
@@ -20,6 +23,7 @@ def new_checkpoint() -> dict[str, Any]:
     return {
         "schema": CHECKPOINT_SCHEMA,
         "draft_ref": None,
+        "reply_detail": "standard",
         "observed": {"workflow_engines": {}, "resources": {}, "platform_capabilities": {}, "operation_reviews": {}, "config_checks": {}},
         "confirmed": {"workflow_engine": None, "resources": {}, "operation_reviews": {}},
     }
@@ -29,6 +33,11 @@ def normalize_checkpoint(value: Any) -> dict[str, Any]:
     checkpoint = new_checkpoint()
     if not isinstance(value, dict) or value.get("schema") != CHECKPOINT_SCHEMA:
         return checkpoint
+
+    detail = value.get("reply_detail", "standard")
+    if not isinstance(detail, str) or detail not in REPLY_DETAILS:
+        raise ValueError("invalid_reply_detail")
+    checkpoint["reply_detail"] = detail
 
     reference = value.get("draft_ref")
     if reference is not None and not isinstance(reference, str):

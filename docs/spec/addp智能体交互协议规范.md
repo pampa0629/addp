@@ -86,6 +86,8 @@ AgentDraftRef 使用 `draft:<已完成步骤 UUID>:<参数 SHA-256>`，来源只
 
 内置 Agent 使用 `POST /api/v1/agent/chat` 返回 `text/event-stream`。旧 `0:`、`dag:` 私有前缀和 `result_type + result_data` 已删除，不提供兼容解析。
 
+请求仍为标准 AG-UI RunAgentInput，`forwardedProps` 只接受可选 `replyDetail=standard|concise|detailed`，缺省 standard；其他字段或枚举拒绝。该字段只用于新用户消息的表达偏好，不是权限、路由条件或业务参数。新 Run 在接纳事务内保存到已有 checkpoint 的 `reply_detail`；resume 和 retry 沿用 Run 快照，不能覆盖。偏好仅补充普通回复与 Skill 的表达指导，用户明确要求优先，固定澄清、正式预检、复核和 owner 成功／错误提示不按该偏好改写。浏览器偏好不写入会话摘要，不改变原始消息正文。
+
 当前使用的标准事件包括：
 
 - `RUN_STARTED`、`RUN_FINISHED`、`RUN_ERROR`；

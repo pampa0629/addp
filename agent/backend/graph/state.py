@@ -27,6 +27,7 @@ class AgentState(TypedDict):
     routed_skill: Optional[str]   # 技能名称；None 表示无需技能
     direct_reply: Optional[str]   # 无需技能时的直接回复内容（来自同一次 LLM 调用）
     needs_platform_semantics: NotRequired[bool]
+    reply_detail: NotRequired[str]  # 表达偏好，不改变业务目标或权限
     draft_catalog: NotRequired[List[Dict[str, str]]]
     draft_action: NotRequired[Optional[Literal["inspect", "create"]]]
     draft_ref: NotRequired[Optional[str]]

@@ -88,6 +88,7 @@ async def create_agent_run(
     user_id: int,
     tenant_id: int,
     protocol_run_id: str,
+    reply_detail: str = "standard",
 ) -> AgentRun:
     run = AgentRun(
         session_id=session_id,
@@ -95,7 +96,7 @@ async def create_agent_run(
         tenant_id=tenant_id,
         initial_protocol_run_id=protocol_run_id,
         status="running",
-        checkpoint=new_checkpoint(),
+        checkpoint=normalize_checkpoint({**new_checkpoint(), "reply_detail": reply_detail}),
     )
     db.add(run)
     await db.flush()

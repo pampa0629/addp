@@ -33,6 +33,24 @@
         "title": "ActivityMessage",
         "type": "object"
       },
+      "AgentForwardedProps": {
+        "additionalProperties": false,
+        "properties": {
+          "replyDetail": {
+            "default": "standard",
+            "description": "新运行的回复表达偏好，不影响正式报告或业务权限 | Reply expression preference for a new run only",
+            "enum": [
+              "standard",
+              "concise",
+              "detailed"
+            ],
+            "title": "Replydetail",
+            "type": "string"
+          }
+        },
+        "title": "AgentForwardedProps",
+        "type": "object"
+      },
       "AgentRunActionResponse": {
         "properties": {
           "id": {
@@ -50,6 +68,115 @@
           "status"
         ],
         "title": "AgentRunActionResponse",
+        "type": "object"
+      },
+      "AgentRunInput": {
+        "additionalProperties": true,
+        "properties": {
+          "context": {
+            "items": {
+              "$ref": "#/components/schemas/Context"
+            },
+            "title": "Context",
+            "type": "array"
+          },
+          "forwardedProps": {
+            "$ref": "#/components/schemas/AgentForwardedProps"
+          },
+          "messages": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "activity": "#/components/schemas/ActivityMessage",
+                  "assistant": "#/components/schemas/AssistantMessage",
+                  "developer": "#/components/schemas/DeveloperMessage",
+                  "reasoning": "#/components/schemas/ReasoningMessage",
+                  "system": "#/components/schemas/SystemMessage",
+                  "tool": "#/components/schemas/ToolMessage",
+                  "user": "#/components/schemas/UserMessage"
+                },
+                "propertyName": "role"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/DeveloperMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/SystemMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/AssistantMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/UserMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/ToolMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/ActivityMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/ReasoningMessage"
+                }
+              ]
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "parentRunId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parentrunid"
+          },
+          "resume": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ResumeEntry"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume"
+          },
+          "runId": {
+            "title": "Runid",
+            "type": "string"
+          },
+          "state": {
+            "title": "State"
+          },
+          "threadId": {
+            "title": "Threadid",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/Tool"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "threadId",
+          "runId",
+          "state",
+          "messages",
+          "tools",
+          "context"
+        ],
+        "title": "AgentRunInput",
         "type": "object"
       },
       "AgentRunResponse": {
@@ -964,117 +1091,6 @@
         "title": "RetryAgentRunInput",
         "type": "object"
       },
-      "RunAgentInput": {
-        "additionalProperties": true,
-        "description": "Input for running an agent.",
-        "properties": {
-          "context": {
-            "items": {
-              "$ref": "#/components/schemas/Context"
-            },
-            "title": "Context",
-            "type": "array"
-          },
-          "forwardedProps": {
-            "title": "Forwardedprops"
-          },
-          "messages": {
-            "items": {
-              "discriminator": {
-                "mapping": {
-                  "activity": "#/components/schemas/ActivityMessage",
-                  "assistant": "#/components/schemas/AssistantMessage",
-                  "developer": "#/components/schemas/DeveloperMessage",
-                  "reasoning": "#/components/schemas/ReasoningMessage",
-                  "system": "#/components/schemas/SystemMessage",
-                  "tool": "#/components/schemas/ToolMessage",
-                  "user": "#/components/schemas/UserMessage"
-                },
-                "propertyName": "role"
-              },
-              "oneOf": [
-                {
-                  "$ref": "#/components/schemas/DeveloperMessage"
-                },
-                {
-                  "$ref": "#/components/schemas/SystemMessage"
-                },
-                {
-                  "$ref": "#/components/schemas/AssistantMessage"
-                },
-                {
-                  "$ref": "#/components/schemas/UserMessage"
-                },
-                {
-                  "$ref": "#/components/schemas/ToolMessage"
-                },
-                {
-                  "$ref": "#/components/schemas/ActivityMessage"
-                },
-                {
-                  "$ref": "#/components/schemas/ReasoningMessage"
-                }
-              ]
-            },
-            "title": "Messages",
-            "type": "array"
-          },
-          "parentRunId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parentrunid"
-          },
-          "resume": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/ResumeEntry"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Resume"
-          },
-          "runId": {
-            "title": "Runid",
-            "type": "string"
-          },
-          "state": {
-            "title": "State"
-          },
-          "threadId": {
-            "title": "Threadid",
-            "type": "string"
-          },
-          "tools": {
-            "items": {
-              "$ref": "#/components/schemas/Tool"
-            },
-            "title": "Tools",
-            "type": "array"
-          }
-        },
-        "required": [
-          "threadId",
-          "runId",
-          "state",
-          "messages",
-          "tools",
-          "context",
-          "forwardedProps"
-        ],
-        "title": "RunAgentInput",
-        "type": "object"
-      },
       "RunPage": {
         "properties": {
           "data": {
@@ -1744,7 +1760,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RunAgentInput"
+                "$ref": "#/components/schemas/AgentRunInput"
               }
             }
           },

@@ -12,9 +12,8 @@ from services.schema import migrate, MIGRATION_ROOT
 from api.sessions import SessionUpdate, VersionInput, get_session, list_sessions, update_session, delete_session, list_session_runs
 from api.runs import get_agent_run
 from services.plans import read_run_plan
-from models.run import AgentRun
+from services.runs import create_agent_run, retry_agent_run
 from models.run_event import AgentRunEvent
-from uuid import uuid4
 from models.session import Session
 from starlette.requests import Request
 
@@ -68,8 +67,12 @@ async def main():
                             assert stale_delete.status_code == 409
                             page = await list_sessions(request(),session,search='%_',archived=True)
                             assert page['total'] == 1 and page['data'][0]['title'] == '100%_renamed'
-                            run = AgentRun(id=uuid4(),session_id=1,user_id=7,tenant_id=10,status='cancelled',initial_protocol_run_id='plan-fixture')
-                            session.add(run); await session.commit()
+                            run = await create_agent_run(session,session_id=1,user_id=7,tenant_id=10,protocol_run_id='plan-fixture',reply_detail='concise')
+                            run.status='failed'; await session.commit(); await session.refresh(run)
+                            assert run.checkpoint['reply_detail']=='concise'
+                            retried=await retry_agent_run(session,agent_run_id=run.id,session_id=1,user_id=7,tenant_id=10)
+                            assert retried.id==run.id and retried.checkpoint['reply_detail']=='concise'
+                            run.status='cancelled'; await session.commit()
                             todos=[{'content':'Inspect','status':'pending'}]
                             session.add(AgentRunEvent(agent_run_id=run.id,sequence=1,protocol_invocation_id='plan-fixture',event_type='ACTIVITY_SNAPSHOT',
                                 payload={'type':'ACTIVITY_SNAPSHOT','activityType':'addp-plan','content':{'agent_run_id':str(run.id),'todos':todos}}))

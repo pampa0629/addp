@@ -162,3 +162,8 @@ _WORKSPACE_MESSAGES = {
 
 def workspace_message(accept_language, key):
     return _WORKSPACE_MESSAGES[key][_language(accept_language or 'zh-cn')]
+
+
+def reply_preference_resume_error(language: str) -> str:
+    return ("Reply preferences apply to new messages only" if language.lower().startswith("en")
+            else "回复偏好只能用于新消息")

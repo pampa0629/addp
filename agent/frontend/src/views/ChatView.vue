@@ -2,13 +2,22 @@
   <div class="chat-layout">
     <aside class="sidebar">
       <div class="sidebar-header">
-        <el-button @click="showHome">{{ t('agent.workspace.home') }}</el-button>
-        <el-button v-if="authStore.hasPermission('agent.session.create')" type="primary" :icon="Plus" @click="createSession">{{ t('agent.chat.newSession') }}</el-button>
-        <el-input v-model="sessionSearch" clearable :placeholder="t('agent.workspace.search')" @keyup.enter="filterSessions" @clear="filterSessions" />
-        <div class="session-filter">
-          <el-switch v-model="showArchived" :active-text="t('agent.workspace.archived')" @change="filterSessions" />
-          <el-button :aria-label="t('agent.workspace.refresh')" :icon="RefreshRight" @click="loadSessions" />
+        <div class="sidebar-title-row">
+          <button class="workspace-home" type="button" :aria-label="t('agent.workspace.home')" @click="showHome">{{ t('agent.workspace.moduleTitle') }}</button>
+          <el-button v-if="authStore.hasPermission('agent.session.create')" type="primary" :icon="Plus" @click="createSession">{{ t('agent.chat.newSession') }}</el-button>
         </div>
+        <div class="session-search-row">
+          <el-input v-model="sessionSearch" clearable :placeholder="t('agent.workspace.search')" @keyup.enter="filterSessions" @clear="filterSessions" />
+          <el-dropdown trigger="click" @command="filterCommand">
+            <el-button :icon="Filter" :aria-label="t('agent.workspace.filter')" :type="showArchived ? 'primary' : 'default'" plain />
+            <template #dropdown><el-dropdown-menu>
+              <el-dropdown-item command="current" :icon="!showArchived ? Check : undefined">{{ t('agent.workspace.unarchived') }}</el-dropdown-item>
+              <el-dropdown-item command="archived" :icon="showArchived ? Check : undefined">{{ t('agent.workspace.archived') }}</el-dropdown-item>
+              <el-dropdown-item command="refresh" divided :icon="RefreshRight">{{ t('agent.workspace.refresh') }}</el-dropdown-item>
+            </el-dropdown-menu></template>
+          </el-dropdown>
+        </div>
+        <span v-if="showArchived" class="active-filter">{{ t('agent.workspace.archived') }}</span>
       </div>
       <div class="session-list" v-loading="sessionsLoading">
         <el-alert v-if="sessionsError" :title="t('agent.workspace.loadFailed')" type="error" :closable="false" />
@@ -17,6 +26,7 @@
           <div v-for="session in group.items" :key="session.id" class="session-item" :class="{ active: currentSessionId === String(session.id) }">
             <button type="button" class="session-select" :title="session.title || t('agent.chat.newSession')" @click="switchSession(session.id)">
               <el-icon><ChatDotRound /></el-icon><span class="session-title">{{ session.title || t('agent.chat.newSession') }}</span>
+              <span v-if="currentSessionId === String(session.id) && attentionStatus" class="session-attention">{{ t(`agent.workspace.status.${attentionStatus}`) }}</span>
             </button>
             <el-dropdown v-if="authStore.hasPermission('agent.session.update') || authStore.hasPermission('agent.session.delete')" trigger="click" @command="command => sessionCommand(session, command)">
               <el-button text :aria-label="t('agent.workspace.actions')"><el-icon><MoreFilled /></el-icon></el-button>
@@ -26,15 +36,30 @@
                   <el-dropdown-item command="pin">{{ t(session.pinned ? 'agent.workspace.unpin' : 'agent.workspace.pin') }}</el-dropdown-item>
                   <el-dropdown-item command="archive">{{ t(session.archived ? 'agent.workspace.restore' : 'agent.workspace.archive') }}</el-dropdown-item>
                 </template>
-                <el-dropdown-item v-if="authStore.hasPermission('agent.session.delete')" command="delete">{{ t('agent.workspace.delete') }}</el-dropdown-item>
+                <el-dropdown-item v-if="authStore.hasPermission('agent.session.delete')" command="delete" divided class="agent-session-delete">{{ t('agent.workspace.delete') }}</el-dropdown-item>
               </el-dropdown-menu></template>
             </el-dropdown>
           </div>
         </section>
         <el-empty v-if="!sessionsError && !sessionsLoading && sessions.length === 0" :description="t('agent.chat.noSessions')" :image-size="60" />
       </div>
-      <el-pagination small layout="prev, pager, next" :page-size="20" :total="sessionTotal" v-model:current-page="sessionPage" @current-change="loadSessions" />
+      <el-pagination v-if="sessionTotal > 20" small layout="prev, pager, next" :page-size="20" :total="sessionTotal" v-model:current-page="sessionPage" @current-change="loadSessions" />
+      <div class="sidebar-footer">
+        <el-dropdown trigger="click" @command="settingsCommand">
+          <el-button text :icon="Setting">{{ t('agent.workspace.settings') }}</el-button>
+          <template #dropdown><el-dropdown-menu>
+            <el-dropdown-item command="preferences">{{ t('agent.workspace.preferences') }}</el-dropdown-item>
+            <el-dropdown-item v-if="authStore.hasPermission('agent.configuration.read')" command="configuration">{{ t('agent.workspace.configuration') }}</el-dropdown-item>
+          </el-dropdown-menu></template>
+        </el-dropdown>
+      </div>
     </aside>
+    <WorkspacePreferences v-model="preferencesVisible" :preferences="preferences" @save="savePreferences" />
+    <el-dialog v-model="branchVisible" :title="t('agent.workspace.branch')" width="min(640px, 90vw)">
+      <p>{{ t('agent.workspace.branchNotice') }}</p>
+      <el-input v-model="branchText" type="textarea" :rows="8" :aria-label="t('agent.workspace.branchText')" />
+      <template #footer><el-button @click="branchVisible = false">{{ t('agent.workspace.close') }}</el-button><el-button type="primary" :disabled="!branchText.trim() || isLoading" @click="useBranchDraft">{{ t('agent.workspace.useDraft') }}</el-button></template>
+    </el-dialog>
     <el-dialog v-model="renameVisible" :title="t('agent.workspace.rename')" width="min(480px, 90vw)" :close-on-click-modal="false">
       <el-input v-model="renameDraft.title" maxlength="255" :aria-label="t('agent.workspace.title')" />
       <p v-if="renameServerTitle !== renameDraft.title">{{ t('agent.workspace.savedTitle') }}：{{ renameServerTitle }}</p>
@@ -47,7 +72,21 @@
     </el-dialog>
 
     <main class="chat-main">
-      <div v-if="currentSession" class="conversation-header"><span>{{ currentSession.title || t('agent.chat.newSession') }}</span><el-button @click="panelVisible = !panelVisible">{{ t('agent.workspace.panel') }}</el-button></div>
+      <div v-if="currentSession" class="conversation-header">
+        <span class="conversation-title">{{ currentSession.title || t('agent.chat.newSession') }}</span>
+        <div class="conversation-actions">
+          <el-button text :icon="Search" :aria-label="t('agent.workspace.find')" :aria-expanded="findVisible" @click="findVisible = !findVisible" />
+          <el-button text :icon="Bottom" :aria-label="t('agent.workspace.latest')" @click="scrollToBottom" />
+          <el-button text :icon="Download" :aria-label="t('agent.workspace.export')" :disabled="isLoading || !messages.length" @click="exportConversation" />
+          <el-button :aria-expanded="panelVisible" @click="panelVisible = !panelVisible">{{ t(panelVisible ? 'agent.workspace.collapsePanel' : 'agent.workspace.panel') }}</el-button>
+        </div>
+      </div>
+      <div v-if="findVisible && currentSession" class="conversation-find">
+        <el-input v-model="findQuery" clearable :maxlength="200" :placeholder="t('agent.workspace.findPlaceholder')" @keyup.enter="moveMatch(1)" />
+        <span>{{ findMatches.length ? findIndex + 1 : 0 }}/{{ findMatches.length }}</span>
+        <el-button text :aria-label="t('agent.workspace.previousMatch')" :disabled="!findMatches.length" @click="moveMatch(-1)">↑</el-button>
+        <el-button text :aria-label="t('agent.workspace.nextMatch')" :disabled="!findMatches.length" @click="moveMatch(1)">↓</el-button>
+      </div>
       <div v-if="currentSession?.archived" class="archive-notice">
         <el-alert :title="t('agent.workspace.archiveNotice')" type="info" :closable="false" />
         <el-button v-if="authStore.hasPermission('agent.session.update')" @click="updateOrganization(currentSession, { archived: false })">{{ t('agent.workspace.restore') }}</el-button>
@@ -76,20 +115,25 @@
           :key="message.protocol_message_id || message.id"
           :data-message-id="String(message.protocol_message_id || message.id)"
           class="message-row"
-          :class="message.role"
+          :class="[message.role, { 'find-match': findMatches[findIndex] === messageIdentity(message) }]"
         >
           <div class="message-bubble">
             <MessagePartsRenderer
               :message="message"
+              :expand-details="preferences.expandDetails"
               @action="handleA2UIAction"
               @error="handlePresentationError"
             />
+            <div v-if="messageText(message)" class="message-actions">
+              <el-button text size="small" @click="copyMessage(message)">{{ t('agent.workspace.copy') }}</el-button>
+              <el-button v-if="canBranch" text size="small" :disabled="isLoading" @click="prepareBranch(message)">{{ t('agent.workspace.branch') }}</el-button>
+            </div>
           </div>
         </div>
 
         <div v-if="liveMessage" class="message-row assistant" :data-message-id="String(liveMessage.id)">
           <div class="message-bubble live-message">
-            <div v-if="liveTools.length" class="tool-trace">
+            <details v-if="liveTools.length" class="tool-trace" :open="preferences.expandDetails"><summary>{{ t('agent.workspace.toolCount', { count: liveTools.length }) }}</summary>
               <div v-for="tool in liveTools" :key="tool.id" class="tool-trace-item">
                 <el-icon :class="{ spinning: tool.status === 'running' }"><Loading /></el-icon>
                 <span>{{ tool.name }}</span>
@@ -97,9 +141,10 @@
                   {{ t(`agent.chat.toolStatus.${tool.status}`) }}
                 </el-tag>
               </div>
-            </div>
+            </details>
             <MessagePartsRenderer
               :message="liveMessage"
+              :expand-details="preferences.expandDetails"
               @action="handleA2UIAction"
               @error="handlePresentationError"
             />
@@ -113,11 +158,11 @@
           v-model="inputText"
           type="textarea"
           :rows="3"
-          :placeholder="t(pendingClarifications.length === 1 ? 'agent.chat.clarificationPlaceholder' : 'agent.chat.inputPlaceholder')"
+          :placeholder="t(pendingClarifications.length === 1 ? 'agent.chat.clarificationPlaceholder' : preferences.sendShortcut === 'enter' ? 'agent.workspace.enterPlaceholder' : 'agent.chat.inputPlaceholder')"
           :maxlength="pendingClarifications.length ? 2000 : undefined"
           resize="none"
           :disabled="isLoading || !canRun"
-          @keydown.ctrl.enter="handleSend"
+          @keydown="handleInputKey"
         />
         <div class="input-actions">
           <el-tooltip v-if="isLoading && authStore.hasPermission('agent.run.cancel')" :content="t('agent.chat.cancel')">
@@ -141,23 +186,27 @@
         </div>
       </div>
     </main>
-    <WorkspacePanel v-if="panelVisible && currentSessionId && !sessionUnavailable" :session-id="currentSessionId" :messages="panelMessages" :can-read-runs="authStore.hasPermission('agent.run.read')" :revision="runRevision" :active-run-id="activeRunId" @locate="locateMessage" @close="panelVisible = false" />
+    <WorkspacePanel v-if="panelVisible && currentSessionId && !sessionUnavailable" :session-id="currentSessionId" :messages="panelMessages" :can-read-runs="authStore.hasPermission('agent.run.read')" :revision="runRevision" :active-run-id="activeRunId" :expand-details="preferences.expandDetails" @locate="locateMessage" @close="panelVisible = false" />
   </div>
 </template>
 
 <script setup>
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
-import { ChatDotRound, CircleClose, Delete, Loading, MoreFilled, Plus, Position, RefreshRight } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { Bottom, ChatDotRound, Check, CircleClose, Download, Filter, Loading, MoreFilled, Plus, Position, RefreshRight, Search, Setting } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { useConsolePageDescriptor } from '@common-ui'
-import { resolveTaskOwnerUrl } from '@common-ui'
+import { openConsoleRoute, resolveTaskOwnerUrl } from '@common-ui'
+import { saveBlobDownload } from '@common-ui/utils/exportSession'
 
 import { createAgentClient, replayAgentRunEvents } from '../agent/createAgentClient'
 import { runAPI, sessionAPI } from '../api/index'
 import MessagePartsRenderer from '../components/MessagePartsRenderer.vue'
 import WorkspacePanel from '../components/WorkspacePanel.vue'
+import WorkspacePreferences from '../components/WorkspacePreferences.vue'
+import { useWorkspacePreferences } from '../composables/useWorkspacePreferences'
+import { conversationMarkdown, messageIdentity, messageText, pendingSessionInteractions } from '../utils/conversation'
 import { useAuthStore } from '../store/auth'
 import { navigateAgentRoute } from '../utils/moduleNavigation'
 import { createLatestRequestScope } from '@common-ui'
@@ -165,6 +214,10 @@ import { groupSessions } from '../utils/workspace'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
+const { preferences, save: persistPreferences, scopeKey: preferenceScope } = useWorkspacePreferences(authStore)
+const preferencesVisible = ref(false), branchVisible = ref(false), branchText = ref('')
+const findVisible = ref(false), findQuery = ref(''), findIndex = ref(0)
+watch(preferenceScope, () => { preferencesVisible.value = false })
 const route = useRoute()
 const router = useRouter()
 
@@ -184,6 +237,10 @@ const canRun = computed(() =>
 )
 const sessionsLoaded = ref(false)
 const messages = ref([])
+const canBranch = computed(() => ['agent.session.create', 'agent.run.create', 'agent.run.execute'].every(permission => authStore.hasPermission(permission)))
+const findMatches = computed(() => findQuery.value.trim() ? messages.value.filter(message => messageText(message).toLocaleLowerCase().includes(findQuery.value.trim().toLocaleLowerCase())).map(messageIdentity) : [])
+const pendingInteractions = computed(() => pendingSessionInteractions(messages.value))
+const attentionStatus = computed(() => isLoading.value ? 'running' : pendingInteractions.value.length ? 'waiting' : retryRunId.value ? 'failed' : null)
 const pendingClarifications = computed(() => {
   const interactions = new Map()
   for (const message of messages.value) {
@@ -226,7 +283,63 @@ async function loadSessions() {
     if (listScope.current(ticket)) sessionsLoading.value = false
   }
 }
+function settingsCommand(command) {
+  if (command === 'configuration') return openConfiguration()
+  preferencesVisible.value = true
+}
+function savePreferences(value) {
+  if (!persistPreferences(value)) { ElMessage.error(t('agent.workspace.preferencesFailed')); return }
+  preferencesVisible.value = false
+  ElMessage.success(t('agent.workspace.preferencesSaved'))
+}
+function handleInputKey(event) {
+  if (event.key !== 'Enter' || event.isComposing || event.shiftKey || event.altKey || event.repeat) return
+  const send = preferences.value.sendShortcut === 'enter' ? !event.ctrlKey && !event.metaKey : event.ctrlKey || event.metaKey
+  if (send) { event.preventDefault(); handleSend() }
+}
+async function copyMessage(message) {
+  try { await navigator.clipboard.writeText(messageText(message)); ElMessage.success(t('agent.workspace.copied')) }
+  catch { ElMessage.error(t('agent.workspace.copyFailed')) }
+}
+function exportConversation() {
+  const text = conversationMarkdown(currentSession.value.title || t('agent.chat.newSession'), messages.value, t)
+  saveBlobDownload(new Blob([text], { type: 'text/markdown;charset=utf-8' }), `agent-session-${currentSessionId.value}.md`)
+}
+function prepareBranch(message) {
+  const selection = window.getSelection()
+  const row = [...(messagesAreaRef.value?.querySelectorAll('[data-message-id]') || [])].find(element => element.dataset.messageId === messageIdentity(message))
+  const selected = selection && row?.contains(selection.anchorNode) && row.contains(selection.focusNode) ? selection.toString() : ''
+  branchText.value = selected.trim() || messageText(message)
+  branchVisible.value = true
+}
+async function useBranchDraft() {
+  if (!canBranch.value || isLoading.value || !branchText.value.trim()) return
+  if (inputText.value.trim()) {
+    try { await ElMessageBox.confirm(t('agent.workspace.replaceDraft'), t('agent.workspace.branch'), { confirmButtonText: t('agent.workspace.useDraft'), cancelButtonText: t('agent.workspace.close'), type: 'warning' }) }
+    catch { return }
+  }
+  const moved = await navigateAgentRoute(router, { name: 'Chat' })
+  if (moved === false || route.params.session_id) return
+  inputText.value = branchText.value
+  branchVisible.value = false
+}
+function moveMatch(direction) {
+  if (!findMatches.value.length) return
+  findIndex.value = (findIndex.value + direction + findMatches.value.length) % findMatches.value.length
+  locateMessage(findMatches.value[findIndex.value])
+}
+watch([findQuery, currentSessionId], () => { findIndex.value = 0; if (findMatches.value.length) locateMessage(findMatches.value[0]) })
 function filterSessions() { sessionPage.value = 1; loadSessions() }
+function filterCommand(command) {
+  if (command === 'refresh') return loadSessions()
+  showArchived.value = command === 'archived'
+  filterSessions()
+}
+async function openConfiguration() {
+  if (!authStore.hasPermission('agent.configuration.read')) return
+  try { await openConsoleRoute('/configuration/agent', { source: 'agent' }) }
+  catch { ElMessage.error(t('agent.workspace.navigationFailed')) }
+}
 async function loadSkills() {
   try { skills.value = await sessionAPI.skills(); skillsError.value = false }
   catch { skillsError.value = true }
@@ -456,7 +569,7 @@ async function runAgent({ userMessage = null, resume = null } = {}) {
   let replayed = false
   let succeeded = false
   try {
-    await agent.runAgent(resume ? { resume } : {}, createSubscriber())
+    await agent.runAgent(resume ? { resume } : { forwardedProps: { replyDetail: preferences.value.replyDetail } }, createSubscriber())
     succeeded = true
   } catch (error) {
     try {
@@ -640,9 +753,13 @@ onBeforeRouteUpdate((to, from) => {
   border-bottom: 1px solid var(--addp-border-color);
 }
 
-.sidebar-header > .el-button {
-  width: 100%;
-}
+.sidebar-title-row, .session-search-row { display: flex; align-items: center; gap: 8px; }
+.sidebar-title-row { justify-content: space-between; margin-bottom: 12px; }
+.workspace-home { padding: 0; border: 0; background: transparent; color: var(--addp-text-primary); font: inherit; font-weight: 600; cursor: pointer; }
+.session-search-row .el-input { min-width: 0; flex: 1; }
+.sidebar-footer { padding: 8px 12px; border-top: 1px solid var(--addp-border-color); }
+.active-filter { display: inline-block; margin-top: 8px; color: var(--el-color-primary); font-size: 12px; }
+:global(.agent-session-delete) { color: var(--el-color-danger); }
 
 .session-list {
   flex: 1;
@@ -746,12 +863,10 @@ onBeforeRouteUpdate((to, from) => {
 }
 
 .tool-trace {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
   margin-bottom: 10px;
 }
 
+.tool-trace summary { cursor: pointer; color: var(--addp-text-secondary); font-size: 12px; }
 .tool-trace-item {
   display: flex;
   align-items: center;
@@ -808,8 +923,6 @@ onBeforeRouteUpdate((to, from) => {
     width: auto;
   }
 }
-.sidebar-header { gap: 8px; flex-wrap: wrap; }
-.session-filter { display: flex; align-items: center; justify-content: space-between; width: 100%; }
 .session-group-title { font-size: 12px; font-weight: 500; color: var(--addp-text-secondary); padding: 8px; margin: 0; }
 .session-select { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; }
 .session-item { padding: 4px 8px; }
@@ -825,5 +938,14 @@ onBeforeRouteUpdate((to, from) => {
 @media (max-width: 760px) { .sidebar { width: 200px; } .capability-grid { grid-template-columns: 1fr; } .capability-home { margin: 16px auto; } }
 @media (max-width: 540px) { .chat-layout { flex-direction: column; } .sidebar { width: 100%; max-height: 220px; border-right: 0; border-bottom: 1px solid var(--addp-border-color); } .sidebar-header { padding: 8px; } .session-list { max-height: 80px; } }
 .conversation-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 8px 16px; border-bottom: 1px solid var(--addp-border-color); color: var(--addp-text-primary); }
-.conversation-header span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-header .conversation-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-actions, .conversation-find, .message-actions { display: flex; align-items: center; gap: 4px; }
+.conversation-actions { flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+.conversation-find { padding: 8px 16px; border-bottom: 1px solid var(--addp-border-color); color: var(--addp-text-secondary); }
+.conversation-find .el-input { flex: 1; min-width: 0; }
+.message-actions { margin-top: 8px; }
+.message-row.user .message-actions .el-button { color: var(--el-color-white); }
+.find-match .message-bubble { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+.session-attention { flex-shrink: 0; font-size: 11px; color: var(--el-color-warning); }
+@media (max-width: 760px) { .conversation-header { align-items: flex-start; gap: 4px; flex-direction: column; } .conversation-actions { width: 100%; } }
 </style>

@@ -544,6 +544,7 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.writes(), [])
 
     async def test_explicit_check_completion_uses_user_language_and_exact_status(self):
+        self.checkpoint["reply_detail"] = "concise"
         for status, expected in (("supported", "does not guarantee execution success"), ("unknown", "not passed"), ("unsupported", "Unsupported definitions")):
             self.check_result = {**self.report, "status": status}
             events, client = await self.run_factory([

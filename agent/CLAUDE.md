@@ -195,6 +195,14 @@ python evals/agent-scenarios/gate.py --output /tmp/addp-agent-evaluation-gate.js
 
 对话工作区采用模块设计共识的三批契约：个人会话组织、运行/成果索引、可见计划。归档不停止已接纳运行；新消息、恢复和重试先核对未归档。计划复用 Harness TodoListMiddleware，最多 12 条、每条 300 字符，模型报告的计划进度不代表业务成功；最新投影由安全事件恢复，保留唯一语义检查点路线。Schema 只由 `backend/migrations/` 的版本化 SQL 维护，旧 create_all/零散补列初始化删除。验证入口为 `make test-module MODULE=agent`，新增 PostgreSQL 变量及事务回滚边界见 Infra 测试库规范。
 
+## 工作区交互
+
+会话栏使用两行主操作与底部设置入口：点击“智能体”回能力首页，筛选菜单包含未归档／已归档及刷新；管理配置复用 Console `/configuration/agent`，按已有 `agent.configuration.read` 显示。个人使用偏好仅在本浏览器按 User/Tenant 隔离保存，不管理模型凭据。默认折叠正文计划和技术摘要，侧栏保留完整计划；会话支持已加载文字查找、跳转最新、文字／代码复制、Markdown 导出、成果分类和正式历史引用定位。
+
+“另开会话”只把用户选定文字放入可编辑草稿，有未发送输入时确认替换，发送前不创建会话或运行，不继承原 Interaction、批准、草稿引用、预检或资源事实。会话信息的首次请求与历史资源引用均从已有消息投影，不建立长期记忆。新 Run 的 `forwardedProps.replyDetail` 只接受 standard/concise/detailed，存入既有 checkpoint 的 `reply_detail` 后沿同一 Run 恢复，不能由 resume 覆盖；表达偏好不更改用户原文、工具权限或正式报告。完整边界见模块设计共识与智能体交互协议规范。
+
+现有 `make test-agent-frontend` 自动发现新增单测与隔离浏览器用例，验证布局、配置入口权限、账号／租户偏好隔离、发送快捷键及 IME、复制／导出安全投影和另开会话不重放状态；`make test-agent-eval` 自动发现回复偏好 DTO、Run 快照及真实 Harness 回归。公开请求描述随 FastAPI OpenAPI 同步。没有新测试依赖、构建入口或 CI Job；不得将受控浏览器门禁记为个人环境真实模型验收。
+
 ## 协议约束
 
 - `/api/v1/agent/chat` 请求体使用标准 AG-UI `RunAgentInput`。

@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
 
 const runId = 'ace1d263-f309-4c67-8f47-761cfa691f35'
@@ -11,7 +12,7 @@ const resultMessage = { id: 71, protocol_message_id: 'result-71', role: 'assista
   ] } }
 ] }
 
-async function installWorkspace(page, { conflict = false } = {}) {
+async function installWorkspace(page, { conflict = false, configuration = false, history = [resultMessage], identity = { user: 9, tenant: '7' } } = {}) {
   const session = { id: 61, title: '数据分析会话', version: 1, pinned: false, archived: false, created_at: '2026-10-29T00:00:00Z', updated_at: '2026-10-30T00:00:00Z' }
   const writes = [], queries = [], unexpected = []
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
@@ -20,8 +21,8 @@ async function installWorkspace(page, { conflict = false } = {}) {
     const request = route.request(), url = new URL(request.url()), path = url.pathname
     let body
     if (path === '/api/v1/system/refresh') body = { access_token: 'fixture-token', expires_in: 3600 }
-    else if (path === '/api/v1/system/users/me') body = { id: 9, username: 'fixture-user' }
-    else if (path === '/api/v1/system/auth/context') body = { context: { type: 'tenant', tenant_id: '7' }, authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '7' }, permissions: ['agent.session.read','agent.session.create','agent.session.update','agent.run.create','agent.run.execute','agent.run.read'] }] } }
+    else if (path === '/api/v1/system/users/me') body = { id: identity.user, username: 'fixture-user' }
+    else if (path === '/api/v1/system/auth/context') body = { context: { type: 'tenant', tenant_id: identity.tenant }, authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: identity.tenant }, permissions: ['agent.session.read','agent.session.create','agent.session.update','agent.run.create','agent.run.execute','agent.run.read', ...(configuration ? ['agent.configuration.read'] : [])] }] } }
     else if (path === '/api/v1/agent/skills') body = [{ name: 'query-generation', description: 'SQL 草稿' }]
     else if (path === '/api/v1/agent/sessions') {
       queries.push(Object.fromEntries(url.searchParams))
@@ -36,7 +37,7 @@ async function installWorkspace(page, { conflict = false } = {}) {
       }
       expect(value.version).toBe(session.version)
       Object.assign(session, value, { version: session.version + 1 }); body = session
-    } else if (path === '/api/v1/agent/sessions/61/messages') body = [resultMessage]
+    } else if (path === '/api/v1/agent/sessions/61/messages') body = history
     else if (path === '/api/v1/agent/sessions/61/runs') body = { data: [{ id: runId, skill_name: 'query-generation', status: 'waiting', created_at: '2026-10-30T00:00:00Z' }], total: 1, page: 1, page_size: 20, total_pages: 1 }
     else if (path === `/api/v1/agent/runs/${runId}`) body = { id: runId, status: 'waiting', plan, steps: [{ id: 'step-1', tool_name: 'resource.facts.get', step_type: 'tool_call', status: 'completed', started_at: '2026-10-30T00:00:00Z', completed_at: '2026-10-30T00:00:02Z', output_summary: '{"field_count":2}' }] }
     else { unexpected.push(`${request.method()} ${path}`); return route.fulfill({ status: 500, json: { error: 'Unexpected fixture request' } }) }
@@ -62,8 +63,9 @@ test('capability home fills a draft without submitting, searches titles and keep
   await expect(page.getByText('暂无对话', { exact: true })).toBeVisible()
   expect(backend.queries.at(-1)).toMatchObject({ search: '不存在', page: '1', page_size: '20' })
   await page.setViewportSize({ width: 620, height: 900 })
-  await page.locator('.session-filter .el-switch').click()
-  const labelLines = await page.getByText('已归档', { exact: true }).evaluate(element => {
+  await page.getByRole('button', { name: '筛选会话', exact: true }).click()
+  await page.getByRole('menuitem', { name: '已归档', exact: true }).click()
+  const labelLines = await page.locator('.active-filter').evaluate(element => {
     const range = document.createRange()
     range.selectNodeContents(element)
     return new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size
@@ -127,5 +129,123 @@ test('historical process, plan and result source survive refresh in narrow and d
   await panel.getByRole('button', { name: '关闭', exact: true }).click()
   await expect(panel).not.toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
+  expect(backend.unexpected).toEqual([])
+})
+
+
+test('compact workspace reuses management configuration and keeps the footer reachable', async ({ page }, testInfo) => {
+  const backend = await installWorkspace(page, { configuration: true })
+  await page.route('**/configuration/agent', route => route.fulfill({ contentType: 'text/html', body: '<main>Existing Agent configuration</main>' }))
+  await page.goto('/module-ui/agent/sessions/61')
+  await expect(page.locator('.sidebar-header .el-switch')).toHaveCount(0)
+  const home = await page.getByRole('button', { name: '能力首页', exact: true }).boundingBox()
+  const create = await page.getByRole('button', { name: '新对话', exact: true }).boundingBox()
+  expect(Math.abs(home.y + home.height / 2 - create.y - create.height / 2)).toBeLessThan(2)
+  const plan = page.locator('.messages-area .agent-plan')
+  await expect(plan).not.toHaveAttribute('open')
+  await expect(plan).toContainText('已处理 1/2')
+  await page.getByRole('button', { name: '过程与成果', exact: true }).click()
+  await expect(page.getByRole('button', { name: '收起侧栏', exact: true })).toBeVisible()
+  await expect(page.locator('.step-summary')).not.toHaveAttribute('open')
+  await page.screenshot({ path: testInfo.outputPath('workspace-enhancement-wide.png') })
+  await page.getByRole('button', { name: '收起侧栏', exact: true }).click()
+  await page.setViewportSize({ width: 620, height: 900 })
+  await page.evaluate(() => document.documentElement.className = 'dark')
+  await expect(page.getByRole('button', { name: '设置', exact: true })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('workspace-enhancement-narrow.png') })
+  await page.getByRole('button', { name: '设置', exact: true }).click()
+  await page.getByRole('menuitem', { name: '管理配置', exact: true }).click()
+  await expect(page).toHaveURL(/\/configuration\/agent$/)
+  await expect(page.getByText('Existing Agent configuration')).toBeVisible()
+  expect(backend.writes).toEqual([])
+  expect(backend.unexpected).toEqual([])
+})
+
+test('browser preferences persist and remain separate across tenants and accounts', async ({ page }) => {
+  const identity = { user: 9, tenant: '7' }
+  const backend = await installWorkspace(page, { identity })
+  async function openPreferences() {
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await expect(page.getByRole('menuitem', { name: '管理配置', exact: true })).toHaveCount(0)
+    await page.getByRole('menuitem', { name: '使用偏好', exact: true }).click()
+    return page.getByRole('dialog', { name: '使用偏好', exact: true })
+  }
+  await page.goto('/module-ui/agent/sessions/61')
+  let dialog = await openPreferences()
+  await dialog.getByRole('combobox', { name: '回复详略' }).press('ArrowDown')
+  await page.getByRole('option', { name: '简洁', exact: true }).click()
+  await dialog.getByRole('combobox', { name: '发送快捷键' }).press('ArrowDown')
+  await page.getByRole('option', { name: 'Enter', exact: true }).click()
+  await dialog.getByText('默认展开计划与技术详情', { exact: true }).click()
+  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  await expect(page.locator('.messages-area .agent-plan')).toHaveJSProperty('tagName', 'SECTION')
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('addp:agent:preferences:v1:9:7')))).toEqual({ replyDetail: 'concise', expandDetails: true, sendShortcut: 'enter' })
+  await page.reload()
+  await expect(page.locator('textarea')).toHaveAttribute('placeholder', /Enter 发送/)
+  identity.tenant = '8'
+  await page.reload()
+  dialog = await openPreferences()
+  await expect(dialog.locator('.el-form-item').filter({ has: page.getByRole('combobox', { name: '回复详略' }) })).toContainText('标准')
+  await expect(dialog.getByRole('checkbox')).not.toBeChecked()
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  identity.tenant = '7'; identity.user = 10
+  await page.reload()
+  await expect(page.locator('textarea')).toHaveAttribute('placeholder', /Ctrl\+Enter/)
+  identity.user = 9
+  await page.reload()
+  await expect(page.locator('textarea')).toHaveAttribute('placeholder', /Enter 发送/)
+  expect(backend.writes).toEqual([])
+  expect(backend.unexpected).toEqual([])
+})
+
+test('find, copy, export and text-only new conversation never replay hidden state', async ({ page, context }, testInfo) => {
+  const history = [{ id: 1, role: 'user', content: '只读分析，不创建、不运行' }, { ...resultMessage, parts: [
+    { type: 'text', text: '查询草稿\n```sql\nSELECT 1;\n```' }, ...resultMessage.parts,
+    { type: 'interaction_ref', interaction_id: 'private-approval', kind: 'owner_approval', status: 'pending', payload: { secret: 'private-checkpoint' } }
+  ] }]
+  const backend = await installWorkspace(page, { history })
+  await page.goto('/module-ui/agent/sessions/61')
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(page.url()).origin })
+  await page.getByRole('button', { name: '查找当前会话', exact: true }).click()
+  await page.getByPlaceholder('查找已加载的会话文字').fill('SELECT 1')
+  const reply = page.locator('[data-message-id="result-71"]')
+  await expect(reply).toHaveClass(/find-match/)
+  await expect(reply).toBeFocused()
+  await reply.getByRole('button', { name: '复制代码', exact: true }).click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('SELECT 1;')
+  await reply.getByRole('button', { name: '复制文字', exact: true }).click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('```sql')
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: '导出 Markdown', exact: true }).click()
+  const download = await downloadPromise
+  const exported = await readFile(await download.path(), 'utf8')
+  expect(exported).toContain('SELECT 1;')
+  expect(exported).not.toContain('private-')
+  expect(exported).not.toContain('agent_run_id')
+  await page.getByRole('button', { name: '过程与成果', exact: true }).click()
+  const panel = page.getByRole('complementary', { name: '过程与成果' })
+  await panel.getByRole('tab', { name: '会话信息', exact: true }).click()
+  await expect(panel.getByText('只读分析，不创建、不运行', { exact: true })).toBeVisible()
+  await panel.getByRole('button', { name: '待审批：定位原交互', exact: true }).click()
+  await expect(reply).toBeFocused()
+  await panel.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.locator('textarea').fill('已有草稿')
+  await reply.getByRole('button', { name: '另开会话', exact: true }).click()
+  const dialog = page.locator('.el-dialog').filter({ hasText: '仅将所选文字放入可编辑草稿' })
+  await dialog.getByRole('textbox').fill('只解释这个 SQL，不执行。')
+  await dialog.getByRole('button', { name: '使用此草稿', exact: true }).click()
+  await page.locator('.el-message-box').getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(page.locator('.el-message-box')).not.toBeVisible()
+  await expect(page.locator('.input-area textarea')).toHaveValue('已有草稿')
+  await dialog.getByRole('button', { name: '使用此草稿', exact: true }).click()
+  await page.locator('.el-message-box').getByRole('button', { name: '使用此草稿', exact: true }).click()
+  await expect(page).toHaveURL(/\/module-ui\/agent\/$/)
+  await expect(page.locator('.input-area textarea')).toHaveValue('只解释这个 SQL，不执行。')
+  await expect(page.getByRole('heading', { name: '你好！我是 ADDP AI 助手。' })).toBeVisible()
+  await expect(page.locator('.message-row')).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('text-only-conversation-draft.png') })
+  expect(backend.writes).toEqual([])
   expect(backend.unexpected).toEqual([])
 })

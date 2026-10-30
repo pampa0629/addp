@@ -7,7 +7,7 @@ import logging
 import httpx
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from ag_ui.core import (
@@ -36,6 +36,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.main_agent import stream_agent_response
+from i18n import reply_preference_resume_error
 from agents.context import HISTORY_MESSAGE_LIMIT, build_context_window
 from agents.events import AgentEvent
 from api.runs import ErrorResponse
@@ -99,6 +100,17 @@ from services.plans import PLAN_ACTIVITY, PLAN_TOOL, plan_todos, read_run_plan
 from services.drafts import DRAFT_INSPECT, list_session_drafts, read_session_draft, read_checked_draft_step, draft_presentation
 from agents.platform_conditions import CHECK_TOOL
 from utils.summary import maybe_update_summary
+
+
+class AgentForwardedProps(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reply_detail: Literal["standard", "concise", "detailed"] = Field(
+        default="standard", alias="replyDetail", description="新运行的回复表达偏好，不影响正式报告或业务权限 | Reply expression preference for a new run only",
+    )
+
+
+class AgentRunInput(RunAgentInput):
+    forwarded_props: AgentForwardedProps = Field(default_factory=AgentForwardedProps, alias="forwardedProps")
 
 router = APIRouter(prefix="", tags=["对话 | Chat"])
 logger = logging.getLogger(__name__)
@@ -372,7 +384,11 @@ async def _save_assistant_message(
         503: {"model": ErrorResponse, "description": "Owner 审批状态不可用 | Owner approval state unavailable"},
     },
 )
-async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends(get_db)):
+async def chat(request: Request, body: AgentRunInput, db: AsyncSession = Depends(get_db)):
+    preferences = AgentForwardedProps.model_validate(body.forwarded_props)
+    if body.resume and "reply_detail" in preferences.model_fields_set:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=reply_preference_resume_error(request.headers.get("accept-language", "zh-cn")))
     try:
         session_id = int(body.thread_id)
     except (TypeError, ValueError) as exc:
@@ -428,6 +444,7 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                     user_id=user_id,
                     tenant_id=tenant_id,
                     protocol_run_id=body.run_id,
+                    reply_detail=preferences.reply_detail,
                 )
         current_plan = await read_run_plan(db, agent_run.id, user_id, tenant_id) if (resumed_from_interaction or retry_run_id) else []
     except AgentRunNotFoundError as exc:
