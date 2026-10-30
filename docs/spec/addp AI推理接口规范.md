@@ -305,12 +305,14 @@ Provider、Deployment 和 Profile 是强类型资源，使用独立 API、表、
 
 ## 九、验证要求
 
+本节列出最低验证要求，不代表已有通过证据。实际执行按[测试与验收规范](addp测试与验收规范.md)分层记录；未运行、失败和未覆盖项分别说明，不计为通过。
+
 实现或修改本规范必须至少验证：
 
-1. Provider scope 与 Tenant allowlist 的正反向授权。
-2. credential 创建、轮换、删除只暴露 `configured/version`，数据库不存在明文。
-3. Profile 与 Deployment operation/modalities 双向校验。
-4. 三种场景绑定解析结果：Tenant 显式、平台默认、未配置错误。
-5. 上游错误到 ADDP 稳定错误的映射，且不存在隐藏 fallback。
-6. Agent、Copilot、Manager 代码和根 `.env.example` 中不存在厂商 API Key 或直连模型 endpoint 路径。
-7. Chat 思考控制的默认省略、显式关闭、非法值拒绝、持久化更新及快速接入/高级编辑；关闭思考不改变 Tool Choice、不产生额外请求。真实厂商调用须在部署新代码后另行验证，不能以受控上游测试代替。
+1. Provider scope 与 Tenant allowlist 的正反向授权。 相关正文：[资源可见性](#资源范围与可见性)、[访问身份](#管理权限与数据面身份)。
+2. credential 创建、轮换、删除只暴露 `configured/version`，数据库不存在明文。 相关正文：[凭据规则](#四凭据)。
+3. Profile 与 Deployment operation/modalities 双向校验。 相关正文：[资源模型](#二资源模型与-owner)、[请求与能力校验](#请求身份与操作端点)。
+4. 三种场景绑定解析结果：Tenant 显式、平台默认、未配置错误。 相关正文：[场景解析与历史快照](#场景绑定解析与历史快照)。
+5. 上游错误到 ADDP 稳定错误的映射，且不存在隐藏 fallback。 相关正文：[错误与重试](#错误与重试边界)、[超时分类](#超时与响应完整性)、[诊断日志](#诊断日志与提示)。
+6. Agent、Copilot、Manager 代码和根 `.env.example` 中不存在厂商 API Key 或直连模型 endpoint 路径。 相关正文：[调用方边界](#七调用方边界)、[凭据规则](#四凭据)。
+7. Chat 思考控制的默认省略、显式关闭、非法值拒绝、持久化更新及快速接入/高级编辑；关闭思考不改变 Tool Choice、不产生额外请求。真实厂商调用须在部署新代码后另行验证，不能以受控上游测试代替。 相关正文：[思考模式](#chat-思考模式)、[复用配置冲突](#复用部署与配置冲突)。
