@@ -29,7 +29,7 @@ Quality 不依赖企业 Catalog。Standard 导入、固定修订与显式升级�
 - Quality 独立前端根路径在 AuthContext 加载后，按 Console 菜单顺序 `/overview`、`/rules`、`/plans`、`/issues` 选择第一个满足页面准入条件的地址；没有可访问页面时进入 `/forbidden`。登录后的默认返回地址为根路径。显式业务地址只按自身权限判断，不能静默改跳其他页面；执行详情是业务深链，不参与根路径候选。
 - RuleList 与 RuleSourceDetails：候选浏览、来源预览及精确修订只读追溯，详情使用当前 User 的 `standard.element.read`；候选选择、导入确认、空态／失败及历史缺编译规则的修复统一见[API 与页面](../docs/spec/addp数据质量规范.md#6-api-与页面)。来源无权读取或查询失败时保留冻结来源身份和约束，不影响已有冻结约束执行；手工规则不推断来源。
 - authorization/permissions.yaml：quality.rule.* 与 quality.plan.* 分离；方案写入还要求 rule.read，方案运行不要求规则管理权限。
-- 专业执行列表和详情同时要求 monitor.execution.read 与 quality.plan.read；Quality 在 SQL 中限定当前租户 quality_plan 的任务历史及本人一次性执行，已删除方案的历史不回查当前定义，缺少发起主体的一次性执行拒绝。分页总数与详情共用 Owner 范围；TaskProvider 保持独立机器认证。前端详情深链和工单执行链接同步这两项权限；专业详情通过显式 Quality DTO 保留冻结版本、目标及规则结果，列表只输出安全概览，不序列化内部执行授权字段。Monitor 与 TaskProvider 不返回专业配置和结果。
+- api/execution_handler.go、api/execution_read_scope.go、api/execution_response.go：专业执行查询、Owner SQL 范围与安全 DTO。入口同时要求 `monitor.execution.read` 与 `quality.plan.read`，裁决当前 Tenant 的 `quality_plan` 任务历史及本人一次性执行；主体限制、历史读取、分页与投影规则统一见[专业执行读取与安全 DTO](../docs/spec/addp数据质量规范.md#专业执行读取与安全-dto)。实际覆盖沿[测试与 CI](#测试与-ci)的分版本证据认定，不外推为当前版本完整验收。
 - cmd/server、cmd/worker：独立控制面和执行进程。
 
 error 规则失败使执行 failed，同时保存完整结果和问题；warning/info 不阻断。运行异常和超时不对账部分问题。终态、最近摘要、问题必须在有效 lease 下原子提交。规则通过率不等于数据行去重合格率。

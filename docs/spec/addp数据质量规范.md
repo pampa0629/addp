@@ -117,6 +117,8 @@ Quality 提供 `/overview` 聚合查询与同名页面：当前按方案和目�
 
 规则权限为 quality.rule.read/create/update/delete；方案权限为 quality.plan.read/create/update/delete/execute。方案新增或修改引用要求同时具备 rule.read，运行既有方案不增加规则管理权限。TaskProvider 继续使用 quality.task_provider.read/execute 和固定 addp-orchestrator Service Client Guard。Catalog 的既有只读摘要接口不改造成输入依赖。
 
+### 专业执行读取与安全 DTO
+
 Quality 专业执行列表和详情同时要求 `monitor.execution.read` 与 `quality.plan.read`，仅接受第一方 Web 或普通 OAuth API 的租户 User；委托令牌、资源票据和机器身份不得进入该专业读取入口。Quality 在查询前安装自身的 `quality_plan` 读取范围：有 `source_task_id` 的执行按本租户方案读取权限开放，包括已删除方案的历史；无任务定义的一次性执行仅当前发起人可读，缺少主体证据或归属不完整时拒绝。分页、总数与详情使用同一 SQL 范围；不可读、不存在、跨租户和跨模块的执行详情统一返回 404。该裁决不授予子执行读取权，也不套用到 TaskProvider 的固定机器身份接口。前端专业详情及问题到执行的链接使用相同的两项权限条件。专业详情使用 Quality 显式 DTO，提供冻结方案版本、目标绑定、历史业务域归属和强类型规则结果，不序列化任意执行配置、任意 metadata 或执行授权引用；业务域未记录与显式公共 null 必须区分。列表只返回安全执行概览，TaskProvider 只返回安全状态和稳定 outputs，Monitor 继续只提供安全诊断投影。
 
 ## 7. 替换与验证
