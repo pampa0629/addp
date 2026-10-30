@@ -7,6 +7,39 @@ const isCapacityRequest = request => {
   return url.pathname === '/api/v1/monitor/platform/resource_observations' && url.searchParams.get('metrics') === 'node.block.capacity_bytes'
 }
 
+test('host detail tips translate in the same Console iframe without querying or hiding current states', async ({ page }) => {
+  const state = await resourceBackend(page)
+  state.filesystemMode = 'filesystem-uncollected'; state.inodeMode = 'filesystem-uncollected'
+  await page.goto(`/monitor/node-resources/${node}?range=5m&refresh=off`)
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(monitor.getByTestId('node-resources')).toHaveAttribute('aria-busy', 'false')
+  await expect(monitor.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  const origin = await monitor.locator('body').evaluate(() => performance.timeOrigin)
+  const count = state.reads.length, url = page.url()
+  const filesystemHelp = monitor.getByTestId('resource-filesystems').getByRole('heading', { level: 3 }).getByRole('button')
+  await filesystemHelp.focus()
+  await expect(monitor.getByRole('tooltip')).toContainText('不作物理总量汇总')
+  await filesystemHelp.blur()
+  await expect(monitor.getByRole('tooltip')).not.toBeVisible()
+  const help = monitor.getByTestId('resource-trend-help').getByRole('button')
+  await help.focus()
+  await expect(monitor.getByRole('tooltip')).toContainText('右轴：内存使用率（%）')
+  await expect(monitor.getByRole('tooltip')).toContainText('时段对比的范围保持不变')
+  await expect(monitor.getByTestId('resource-filesystem-capability')).toContainText('未提供文件系统指标')
+  await expect(monitor.getByTestId('resource-trend-window')).toBeVisible()
+  await expect(monitor.getByTestId('resource-paired-values')).toContainText('16.00 GiB')
+  await page.getByRole('button', { name: 'CN', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'English', exact: true }).click()
+  await page.setViewportSize({ width: 620, height: 900 })
+  await help.focus()
+  await expect(monitor.getByRole('tooltip')).toContainText('right axis: memory usage (%)')
+  await expect(monitor.getByTestId('resource-filesystem-capability')).toContainText('does not provide filesystem metrics')
+  expect(await monitor.locator('body').evaluate(() => performance.timeOrigin)).toBe(origin)
+  expect(state.reads).toHaveLength(count)
+  expect(page.url()).toBe(url)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
+
 for (const locale of ['zh-cn', 'en']) test(`host automatic filters retain one Console iframe and owner query (${locale})`, async ({ page }) => {
   const state = await resourceBackend(page, { locale })
   const reads = () => state.reads.filter(read => read.path.endsWith('/host_nodes'))
@@ -286,12 +319,13 @@ for (const entry of ['list', 'detail']) test(`capacity disabled, source/query fa
     capacityState = failure.state
     const before = resources.length
     const previousDevices = (await readBlockCapacityTable(table, resources, node, expect)).devices
+    const previousRows = await table.locator('.el-table__body tr').allTextContents()
     await refresh.click()
     if (failure.state === 'http-error') {
-      // The request is held at the transport boundary: old values must disappear before failure arrives.
+      // Same-context refresh retains accepted rows while pending; the failed response must then clear them.
       try {
         await expect.poll(() => requests.filter(row => row.query.metrics === 'node.block.capacity_bytes').length).toBe(before + 1)
-        await expect(table.locator('.el-table__body tr')).toHaveCount(0)
+        await expect(table.locator('.el-table__body tr')).toHaveText(previousRows)
         await expect(refresh).toBeDisabled()
       } finally { releaseFailure() }
     }
@@ -410,6 +444,7 @@ for (const entry of ['list', 'detail']) test(`capacity automatic refresh pauses,
     bytes = 2 ** 38; state.serverEnd = '2026-10-07T00:00:20Z'
     await visibility(false)
     const resumed = await readCapacity(3, bytes)
+    const resumedRows = await table.locator('.el-table__body tr').allTextContents()
     expect(resumed.resource_index).toBe(automatic.resource_index + 1)
     await expect(monitor.getByTestId('resource-refresh-status')).toHaveText('自动刷新已开启')
 
@@ -419,7 +454,7 @@ for (const entry of ['list', 'detail']) test(`capacity automatic refresh pauses,
     await expect.poll(() => Boolean(heldRequest)).toBe(true)
     expect(requests).toHaveLength(4)
     await expect(refresh).toBeDisabled()
-    await expect(table.locator('.el-table__body tr')).toHaveCount(0)
+    await expect(table.locator('.el-table__body tr')).toHaveText(resumedRows)
     await page.clock.fastForward(60001)
     expect(requests).toHaveLength(4)
     const cancelled = page.waitForEvent('requestfailed', request => request === heldRequest)
@@ -444,13 +479,13 @@ for (const entry of ['list', 'detail']) test(`capacity automatic refresh pauses,
     await expect(table).not.toContainText('8.00 TiB')
     expect(page.url()).toBe(url)
 
-    // The shared URL preference owns off; a list route change closes its temporary expansion.
+    // A refresh preference change retains the same data context and temporary expansion.
     bytes = 2 ** 35; state.serverEnd = '2026-10-07T00:01:00Z'
     await monitor.getByTestId('resource-refresh').click()
     await monitor.getByRole('option', { name: '关闭自动刷新', exact: true }).click()
     await expect(page).toHaveURL(current => current.searchParams.get('refresh') === 'off')
     await expect(pageRefresh).toBeEnabled()
-    if (entry === 'list') { await expect(table).toHaveCount(0); await toggle.click() }
+    if (entry === 'list') { await expect(table).toBeVisible(); await expect(toggle).toHaveAttribute('aria-expanded', 'true') }
     await readCapacity(7, bytes)
     await expect(monitor.getByTestId('resource-refresh-status')).toHaveText('手工刷新')
     await page.clock.fastForward(60001)

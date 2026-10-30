@@ -507,3 +507,20 @@ Safari真实运行只操作获准的第二个标签页，前端普通组件地�
 服务页实际打开当前Monitor后端实例的趋势弹窗，前台自动刷新把窗口从23:44:19—23:49:19推进到23:54:03—23:59:03，CPU曲线实际可见；随后点击弹窗刷新，窗口为23:54:34—23:59:34。继续滚动核对RSS真实曲线，窗口推进到23:55:02—次日00:00:02，悬停显示23:58:32为66.98MiB。原生macOS明确未接入资源组采集，不计容器配额验收。Safari的离散观察证明真实数据推进及结果可见，不声称逐帧无闪烁或原canvas身份；后两项由受控T3暂缓响应场景证明。
 
 既有Monitor前端标准入口、测试目录自动发现和CI路径已覆盖，无新依赖、Make目标或Workflow。本批只改前端及对应规范／证据，不重复未变的Go、来源T2、权限或Online验证；未触发、轮询或重跑CI／Hosted，不设置定时任务，仍等专门会话回传。个人服务、数据库、身份、凭据及配置未改动。原正式来源／Hosted缺口保留，不能将本地T1／T3和个人Safari替代正式验收。
+
+## 主机详情就近提示（2026-10-31）
+
+主机详情复用共享FieldHelp：CPU／负载详细统计含义移到指标标题旁，采样折叠区保留实际时间；文件系统范围、磁盘排序、网卡口径移到各自标题旁，设备容量及Desktop VM范围移到容量列旁。磁盘列删除原独立点击Popover与重复短说明，并删除两语言中仅供旧展示使用的metricHelp和五项summary词条，完整detail保留。趋势的双轴／双向单位、断点、缩放与CPU比较滚动窗口说明随当前指标在选择器旁提示，不常驻重复段落。图轴、方向末次值、查询窗口、固定历史说明、短负载／TCP口径、设备数量及当前异常／缺样原因保持可见。列表展开复用同一设备／挂载组件；不改指标公式、数据、查询、权限、身份或刷新路线。
+
+测试沿原标准入口验证中英文悬停／键盘提示、容量边界、表头与设备展开、缺样／撤权、内存双轴、网络柱状、全量采样／缩放／比较和原位刷新。新增Console场景从正式语言控件切换，再检查同一Monitor iframe里的实际提示翻译、620像素宽度、URL不变、无新增指标读取及来源未提供的状态仍可见。窄屏原本隐藏语言控件，故先在桌面切换再缩窄验证，不修改产品响应式布局。
+
+本地结果与原失败分别保留：
+
+- `npm --prefix monitor/frontend test`：131项T1通过，日志 `/tmp/addp-host-detail-tips-unit.log`；`npm --prefix monitor/frontend run build`退出0（3.71秒），日志 `/tmp/addp-host-detail-tips-build.log`，既有大chunk提示保留。
+- `npm --prefix monitor/frontend run test:e2e -- node-resources.spec.js block-capacity.spec.js host-resource-zoom.spec.js network-bars.spec.js resource-comparison.spec.js host-device-expansion.spec.js host-filesystem-expansion.spec.js resource-inplace-refresh.spec.js`：143通过／1失败（5.8分钟），日志 `/tmp/addp-host-detail-tips-browser.log`。唯一失败仍等待已移走的CPU比较正文；改为聚焦指标旁提示读取原解释，并显式等aria-busy结束再核对刷新锚点。原入口 `resource-comparison.spec.js --grep 'historical comparison keeps'` 专项1项通过（6.2秒），日志 `/tmp/addp-host-detail-tips-history.log`；其余143项相关产品／测试输入未变，不重复运行。初轮仍为退出1，不冒写整批退出0。
+- `npm --prefix console/frontend run test:e2e -- node-resource-navigation.spec.js`：23通过／5失败（1.8分钟），日志 `/tmp/addp-host-detail-tips-console.log`。新增场景未等待前一提示隐藏，导致短暂两条tooltip的严格匹配失败；补原提示隐藏同步。四项容量场景仍要求在途清空，改为逐行核对保留原内容，失败后清空、身份撤销、精确响应收据、取消及迟到隔离断言保留。
+- 这五项第一次专项为3通过／2失败（1.5分钟），日志 `/tmp/addp-host-detail-tips-console-fixed.log`：新增提示场景在620像素时点击已隐藏的语言控件，按上述桌面切换后缩窄修正；列表容量场景仍要求仅切刷新偏好就关闭展开，按既有同上下文契约改为保持展开并重读。随后标准入口 `--grep 'host detail tips'` 为1项通过（33.2秒），日志 `/tmp/addp-host-detail-tips-console-tip.log`；`--grep 'capacity automatic refresh.*Console list iframe'` 为1项通过（37.5秒），日志 `/tmp/addp-host-detail-tips-console-list.log`。已通过的23项及3项相关输入未变，复用有效结果，不将任一失败轮改判通过或跳过后续断言。
+
+个人Safari仅操作已获准的第二个标签页，经菜单进入当前Desktop Linux VM主机详情。实际截图可见新的磁盘表头问号、设备数量和逐设备读数，文件系统／网络未提供的状态仍直显；点击内存趋势选择器旁问号后，实际弹出GiB容量／百分比双轴、断点及缩放范围解释，查询窗口及末次值仍在。页面直接提供新版，无需重启；本轮仅计当前个人来源的显示与提示可见，不外推全部来源、原生Linux、逐帧刷新或正式Hosted。
+
+根Make的Monitor／Console前端入口、现有浏览器目录自动发现及Monitor变更扩散至Console的路径登记已覆盖，无新依赖、目标或Workflow。未改共享组件内核、API、Swagger、后端、部署、IAM或个人配置。上述是本次显示变更的最小充分T1／相关T3与构建，不计整套Monitor／Console聚合、未运行的Go／来源T2／Online或新CI通过；CI及Hosted仍等专门会话回传，未自行触发、轮询、重跑或设置定时任务，也未重启个人服务。

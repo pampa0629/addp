@@ -20,7 +20,11 @@ for (const locale of ['zh-cn', 'en']) test(`managed device capacity is lazy, use
   await expect(table).toContainText('vda')
   await expect(table).toContainText('dm-0')
   await expect(table).toContainText('2.00 TiB')
-  await expect(page.getByTestId('resource-block-capacity')).toContainText(locale === 'en' ? 'not a physical host total' : '不代表整机物理总量')
+  const capacityHelp = table.getByRole('columnheader').filter({ hasText: locale === 'en' ? 'Capacity' : '容量' }).getByRole('button')
+  await capacityHelp.focus()
+  await expect(page.getByRole('tooltip')).toContainText(locale === 'en' ? 'not a physical host total' : '不代表整机物理总量')
+  await expect(page.getByRole('tooltip')).toContainText('Docker Desktop')
+  await expect(page.getByTestId('resource-block-capacity')).not.toContainText(locale === 'en' ? 'not a physical host total' : '不代表整机物理总量')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   const detail = page.getByTestId('block-capacity-section')
   capacityState = 'stale'

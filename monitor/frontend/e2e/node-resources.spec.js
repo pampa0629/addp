@@ -18,8 +18,8 @@ test('resource quantities use binary capacity and elapsed time while load is not
     await expect(card.locator('strong')).toHaveText('约 0.00 个任务')
     await expect(card.getByText('平均正在运行或等待的任务数，非百分比。', { exact: true })).toBeVisible()
   }
-  await load.getByText('采样说明', { exact: true }).click()
-  await expect(load.getByText(/任务指进程或线程/)).toBeVisible()
+  await load.getByRole('button', { name: /任务指进程或线程/ }).focus()
+  await expect(page.getByRole('tooltip')).toContainText('任务指进程或线程')
   state.mode = 'load-active'
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   await expect(load.locator('strong')).toHaveText('约 10.59 个任务')
@@ -379,8 +379,8 @@ test('CPU minute warmup stays empty while gauges work; recovery restores valid z
   await expect(page.getByTestId('resource-cpuBusy')).toContainText('缺失')
   await expect(page.getByTestId('resource-cpuBusy').locator('strong')).toHaveText('—')
   await expect(page.getByTestId('resource-cpu-idle')).toHaveText('CPU 空闲率：—')
-  await page.getByTestId('resource-cpuBusy').getByText('采样说明', { exact: true }).click()
-  await expect(page.getByTestId('resource-cpuBusy')).toContainText('最近一分钟')
+  await page.getByTestId('resource-cpuBusy').getByRole('button', { name: /最近一分钟/ }).focus()
+  await expect(page.getByRole('tooltip')).toContainText('最近一分钟')
   await expect(page.getByTestId('resource-cores')).toContainText('0 核')
   await expect(page.getByTestId('resource-metric')).toContainText('CPU 忙碌率（1 分钟）')
   state.mode = ''
@@ -600,8 +600,8 @@ for (const locale of ['zh-cn', 'en']) for (const [family, device, keys, names, l
   await expect(values).toContainText(labels[locale][1])
   await expect(page.getByTestId(`resource-trend-${names[0]}`).locator('strong')).toHaveText('0.00 B/s')
   await expect(page.getByTestId(`resource-trend-${names[1]}`).locator('strong')).toHaveText('2.00 MiB/s')
-  await expect(page.getByTestId('resource-paired-hint')).toContainText(locale === 'en' ? 'not cumulative traffic' : '不是累计流量')
-  await expect(page.getByTestId('resource-paired-hint')).toContainText('MiB/s')
+  await expect(page.getByTestId('resource-trend-help').getByRole('button')).toHaveAccessibleName(locale === 'en' ? /not cumulative traffic/ : /不是累计流量/)
+  await expect(page.getByTestId('resource-trend-help').getByRole('button')).toHaveAccessibleName(/MiB\/s/)
   await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
   expect(state.reads.filter(item => item.path.endsWith('resource_trends')).at(-1).query).toMatchObject({ metrics: keys.join(','), device })
   const renderer = await page.locator('.chart-renderer').evaluate(element => ({ type: element.__vueParentComponent.props.config.chart_type, labels: element.__vueParentComponent.props.showValueLabels }))
@@ -678,10 +678,10 @@ test('disk IO timing uses percent and ms and restores all three exact device tre
   const table = page.getByTestId('resource-disk-table')
   await expect(table).toContainText('0.00 %')
   await expect(table).toContainText('2.50 ms')
-  await expect(table.getByRole('columnheader').filter({ hasText: '平均读取耗时' })).toContainText('每次读取的平均耗时')
-  await table.getByRole('button', { name: '平均读取耗时说明', exact: true }).click()
+  const readHelp = table.getByRole('columnheader').filter({ hasText: '平均读取耗时' }).getByRole('button')
+  await readHelp.focus()
   await expect(page.getByRole('tooltip')).toContainText('包含排队与处理时间')
-  await table.getByRole('button', { name: '平均读取耗时说明', exact: true }).click()
+  await readHelp.blur()
   await table.getByRole('button', { name: '查看趋势' }).click()
   for (const [label, key] of [['IO 忙碌时间占比', 'node.disk.io_busy_percent'], ['平均读取耗时', 'node.disk.read_mean_duration_milliseconds'], ['平均写入耗时', 'node.disk.write_mean_duration_milliseconds']]) {
     await page.getByTestId('resource-metric').click()
@@ -726,7 +726,10 @@ for (const locale of ['zh-cn', 'en']) {
     await expect(names).toHaveText(['z-active', 'nbd2', 'nbd10', 'a-stale', 'b-missing'])
     expect(state.reads).toHaveLength(beforeToggle)
     expect(page.url()).toBe(beforeURL)
-    await expect(page.getByTestId('resource-disks')).toContainText(locale === 'en' ? 'Missing or stale data remains visible.' : '缺失或陈旧数据仍显示。')
+    const orderHelp = page.getByTestId('resource-disks').getByRole('heading', { level: 3 }).getByRole('button')
+    await orderHelp.focus()
+    await expect(page.getByRole('tooltip')).toContainText(locale === 'en' ? 'Missing or stale data remains visible.' : '缺失或陈旧数据仍显示。')
+    await orderHelp.blur()
     const descriptions = locale === 'en' ? [
       ['Disk read throughput', 'Data read per second', 'Average data read per second over the last complete minute'],
       ['Disk write throughput', 'Data written per second', 'Average data written per second over the last complete minute'],
@@ -740,14 +743,13 @@ for (const locale of ['zh-cn', 'en']) {
       ['平均读取耗时', '每次读取的平均耗时', '没有完成读取请求'],
       ['平均写入耗时', '每次写入的平均耗时', '没有完成写入请求']
     ]
-    for (const [index, [label, summary, detail]] of descriptions.entries()) {
+    for (const [label, summary, detail] of descriptions) {
       const header = table.getByRole('columnheader').filter({ hasText: label })
-      await expect(header.getByText(summary, { exact: true })).toBeVisible()
-      const help = header.getByRole('button', { name: locale === 'en' ? `About ${label}` : `${label}说明`, exact: true })
-      if (index === 0) { await help.focus(); await help.press('Space') }
-      else await help.click()
+      await expect(header.getByText(summary, { exact: true })).toHaveCount(0)
+      const help = header.getByRole('button')
+      await help.focus()
       await expect(page.getByRole('tooltip').filter({ hasText: detail })).toBeVisible()
-      await help.click()
+      await help.blur()
       await expect(page.getByRole('tooltip').filter({ hasText: detail })).not.toBeVisible()
     }
     await expect(page.getByTestId('resource-disks')).not.toContainText(locale === 'en' ? 'Device layers are never summed' : '按设备展示完整一分钟的读写吞吐')
@@ -772,8 +774,8 @@ for (const locale of ['zh-cn', 'en']) {
     await expect(page.getByTestId('resource-selected-device')).toHaveText('z-active')
     await page.setViewportSize({ width: 620, height: 800 })
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
-    const writeHelp = table.getByRole('button', { name: locale === 'en' ? 'About Mean write duration' : '平均写入耗时说明', exact: true })
-    await writeHelp.click()
+    const writeHelp = table.getByRole('columnheader').filter({ hasText: locale === 'en' ? 'Mean write duration' : '平均写入耗时' }).getByRole('button')
+    await writeHelp.focus()
     await expect(page.getByRole('tooltip').filter({ hasText: locale === 'en' ? 'No completed writes' : '没有完成写入请求' })).toBeVisible()
   })
 }
@@ -995,7 +997,7 @@ for (const locale of ['zh-cn', 'en']) test(`memory capacity and usage share alig
   await page.setViewportSize({ width: 620, height: 900 })
   await page.goto(`/node-resources/${node}?range=5m&refresh=off`)
   await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
-  await expect(page.getByTestId('resource-paired-hint')).toContainText(locale === 'en' ? 'Left axis: memory capacity (GiB); right axis: memory usage (%)' : '左轴：内存容量（GiB）；右轴：内存使用率（%）')
+  await expect(page.getByTestId('resource-trend-help').getByRole('button')).toHaveAccessibleName(locale === 'en' ? /Left axis: memory capacity \(GiB\); right axis: memory usage \(%\)/ : /左轴：内存容量（GiB）；右轴：内存使用率（%）/)
   await expect(page.getByTestId('resource-trend-memoryTotal')).toContainText('64.00 GiB')
   await expect(page.getByTestId('resource-trend-memoryAvailable')).toContainText('32.00 GiB')
   await expect(page.getByTestId('resource-trend-memoryUsed')).toContainText('50.00 %')
@@ -1023,7 +1025,7 @@ for (const locale of ['zh-cn', 'en']) test(`memory capacity and usage share alig
   await expect.poll(async () => (await chartProps()).rows.at(-1)).toMatchObject({ memoryTotal: 64, memoryAvailable: null, memoryUsed: 50 })
   capacity = 2 * 1024 ** 4; gap = false
   await refresh()
-  await expect(page.getByTestId('resource-paired-hint')).toContainText('TiB')
+  await expect(page.getByTestId('resource-trend-help').getByRole('button')).toHaveAccessibleName(/TiB/)
   expect((await chartProps()).rows.at(-1)).toMatchObject({ memoryTotal: 2, memoryAvailable: 1, memoryUsed: 50 })
   misaligned = true
   await refresh()

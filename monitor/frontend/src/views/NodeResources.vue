@@ -59,7 +59,7 @@
       <HostResourceHeatmap v-if="instant" :instant="instant" :filesystems="filesystems" :filesystem-error-key="filesystemErrorKey" :filesystem-message="filesystemMissingMessage" :loading="loading" @select="entry => entry.dimensions ? selectFilesystem(entry) : selectTrend('metric', entry.metric)" />
       <section v-if="instant" class="resource-cards" :aria-label="t('monitor.resources.current')">
         <article v-for="metric in resourceMetrics" :key="metric.key" class="resource-card" :data-testid="`resource-${metric.name}`">
-          <h4>{{ t(`monitor.resources.metrics.${metric.name}`) }}</h4>
+          <h4 class="resource-metric-heading" :aria-label="t(`monitor.resources.metrics.${metric.name}`)"><span>{{ t(`monitor.resources.metrics.${metric.name}`) }}</span><FieldHelp v-if="scalarHelp(metric)" :content="scalarHelp(metric)" /></h4>
           <strong>{{ formatValue(point(metric.key), metric) }}</strong>
           <p v-if="metric.name === 'cpuBusy'" class="resource-hint" data-testid="resource-cpu-idle">{{ t('monitor.resources.cpuIdle', { value: cpuIdleValue() }) }}</p>
           <p v-if="metric.unit === 'load'" class="resource-hint">{{ t('monitor.resources.loadSummary') }}</p>
@@ -68,8 +68,6 @@
           <p v-if="metric.name === 'tcpConnections' && point(metric.key).data_state === 'no_data'" class="resource-hint" data-testid="resource-tcp-unavailable">{{ t('monitor.resources.tcpUnavailable') }}</p>
           <el-collapse>
             <el-collapse-item :title="t('monitor.resources.sampling')" name="sampling">
-              <p v-if="metric.windowSeconds" class="resource-hint">{{ t('monitor.resources.cpuBusyHint') }}</p>
-              <p v-if="metric.unit === 'load'" class="resource-hint">{{ t('monitor.resources.loadHint') }}</p>
               <p>{{ t('monitor.resources.sampledAt') }}: {{ date(point(metric.key).sampled_at) }}</p>
               <p>{{ t('monitor.resources.evaluatedAt') }}: {{ date(point(metric.key).evaluated_at) }}</p>
             </el-collapse-item>
@@ -94,6 +92,7 @@
           <el-select :model-value="state.metric" :aria-label="t('monitor.resources.metric')" data-testid="resource-metric" @update:model-value="value => selectTrend('metric', value)">
             <el-option v-for="metric in trendMetrics" :key="metric.key" :value="metric.key" :label="t(`monitor.resources.metrics.${metric.name}`)" />
           </el-select>
+          <span v-if="trend" class="resource-metric-heading" data-testid="resource-trend-help"><FieldHelp :content="trendHelp" /></span>
           <el-select :model-value="state.range" :aria-label="t('monitor.resources.range')" data-testid="resource-range" @update:model-value="value => selectTrend('range', value)">
             <el-option v-for="(_, key) in resourceRanges" :key="key" :value="key" :label="t(`monitor.resources.ranges.${key}`)" />
           </el-select>
@@ -104,19 +103,14 @@
         </div>
         <p v-if="state.end" class="resource-hint" data-testid="resource-history">{{ t('monitor.resources.history.fixed', { time: date(state.end) }) }}</p>
         <el-alert v-if="trendErrorKey" :title="t(trendErrorKey)" type="error" show-icon :closable="false" data-testid="resource-trend-error" />
-        <ResourcePeriodComparison v-if="comparison" :comparison="comparison" :title="t(`monitor.resources.comparison.averages.${selectedMetric.name}`)" :format-value="numeric => formatValue({ data_state: 'valid', value: numeric }, selectedMetric)" :change="comparisonChange" prefix="resource-compare" test-id="resource-comparison">
-          <p v-if="selectedMetric.windowSeconds" class="resource-hint">{{ t('monitor.resources.comparison.cpuWindow') }}</p>
-        </ResourcePeriodComparison>
+        <ResourcePeriodComparison v-if="comparison" :comparison="comparison" :title="t(`monitor.resources.comparison.averages.${selectedMetric.name}`)" :format-value="numeric => formatValue({ data_state: 'valid', value: numeric }, selectedMetric)" :change="comparisonChange" prefix="resource-compare" test-id="resource-comparison" />
         <template v-if="trend">
           <p class="resource-hint" data-testid="resource-trend-window">{{ t('monitor.resources.window', { start: date(comparison?.current.start || trend.start), end: date(trend.end), step: trend.step_seconds }) }}</p>
-          <p class="resource-hint">{{ t('monitor.resources.gaps') }}</p>
           <template v-if="chartMetrics.length > 1">
-            <p class="resource-hint" data-testid="resource-paired-hint">{{ memoryTrend ? t('monitor.resources.memoryAxes', { unit: chartScale.unit }) : t(networkTrend ? 'monitor.resources.networkBars' : 'monitor.resources.pairedThroughput', { unit: chartScale.unit + '/s' }) }}</p>
             <div class="resource-toolbar" data-testid="resource-paired-values">
               <p v-for="metric in chartMetrics" :key="metric.key" :data-testid="`resource-trend-${metric.name}`" :title="date(trendPoint(metric.key)?.evaluated_at)">{{ t(`monitor.resources.metrics.${metric.name}`) }}: <strong>{{ formatValue(trendPoint(metric.key), metric) }}</strong></p>
             </div>
           </template>
-          <p class="resource-hint" data-testid="resource-zoom-hint">{{ t('monitor.resources.zoomHint') }}</p>
           <div class="resource-chart" role="img" :aria-label="t('monitor.resources.trend')" data-testid="resource-chart">
             <ChartRenderer :rows="chartRows" :config="chartConfig" :value-axes="chartAxes" :max-rows="networkTrend ? 1000 : undefined" :show-value-labels="!networkTrend" zoomable :initial-zoom="trendZoom" @zoom-change="trendZoom = $event" @invalid="invalidChart" />
           </div>
@@ -141,6 +135,7 @@
 
 <script setup>
 import HostNodeFilters from '../../../../common-frontend/basic/src/components/HostNodeFilters.vue'
+import FieldHelp from '../../../../common-frontend/basic/src/components/FieldHelp.vue'
 import AutoRefreshControl from '../../../../common-frontend/basic/src/components/AutoRefreshControl.vue'
 import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
 import { createAutoFilter } from '../../../../common-frontend/basic/src/utils/autoFilter.mjs'
@@ -207,6 +202,19 @@ const chartAxes = computed(() => memoryTrend.value ? [
   { measures: ['memoryUsed'], min: 0, max: 100 },
 ] : networkTrend.value ? [{ measures: chartMetrics.value.map(metric => metric.name), label: t('monitor.resources.networkAxis'), min: 0 }] : [])
 const chartConfig = computed(() => ({ chart_type: networkTrend.value ? 'bar' : 'line', dimension: 'evaluated_at', measures: chartMetrics.value.map(metric => metric.name), field_presentations: [{ field: 'evaluated_at', label: t('monitor.resources.evaluatedAt'), temporal_format: 'datetime' }, ...chartMetrics.value.map(metric => ({ ...presentation(metric), field: metric.name, ...(byteMetrics.value.includes(metric) ? { unit: chartScale.value.unit + (metric.unit === 'bytes_per_second' ? '/s' : ''), precision: 2 } : {}), ...(metric.unit === 'seconds' ? { unit: t(`monitor.resources.durationUnits.${durationScale.value.unit}`), precision: 2 } : {}) }))] }))
+function scalarHelp(metric) {
+  if (metric.name === 'cpuBusy') return t('monitor.resources.cpuBusyHint')
+  if (metric.unit === 'load') return t('monitor.resources.loadHint')
+  if (metric.name === 'tcpConnections') return t('monitor.resources.tcpSummary')
+  if (metric.key.startsWith('node.disk.')) return t(`monitor.resources.disk.columns.${metric.name}.detail`)
+  return ''
+}
+const trendHelp = computed(() => [
+  scalarHelp(selectedMetric.value),
+  memoryTrend.value ? t('monitor.resources.memoryAxes', { unit: chartScale.value.unit }) : chartMetrics.value.length > 1 ? t(networkTrend.value ? 'monitor.resources.networkBars' : 'monitor.resources.pairedThroughput', { unit: chartScale.value.unit + '/s' }) : '',
+  comparison.value && selectedMetric.value.windowSeconds ? t('monitor.resources.comparison.cpuWindow') : '',
+  t('monitor.resources.gaps'), t('monitor.resources.zoomHint')
+].filter(Boolean).join(' '))
 const evidenceRows = computed(() => trendPoints.value.slice((evidencePage.value - 1) * 20, evidencePage.value * 20))
 const comparisonChange = computed(() => {
   const delta = comparison.value?.delta
@@ -451,6 +459,7 @@ onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dis
 .resource-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
 .resource-card { min-width: 0; border: 1px solid var(--addp-border-color); border-radius: 8px; padding: 16px; background: var(--addp-bg-primary); overflow-wrap: anywhere; }
 .resource-card strong { display: block; margin-top: 12px; font-size: 22px; }
+.resource-metric-heading { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .resource-trend { margin-top: 24px; }
 .resource-column-summary { font-weight: 400; line-height: 1.4; margin: 4px 0 0; }
 .resource-chart { display: flex; min-width: 0; }

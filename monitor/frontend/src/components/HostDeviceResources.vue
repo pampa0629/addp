@@ -1,8 +1,6 @@
 <template>
   <section class="device-resources" :data-testid="`resource-${family.name}s`">
-    <h3>{{ t(`monitor.resources.${family.name}.title`) }}</h3>
-    <p v-if="family.name === 'network' && family.rows.length" class="resource-hint">{{ t('monitor.resources.network.hint') }}</p>
-    <p v-if="family.name === 'disk' && family.rows.length" class="resource-hint">{{ t('monitor.resources.disk.orderHint') }}</p>
+    <h3 class="resource-metric-heading" :aria-label="t(`monitor.resources.${family.name}.title`)"><span>{{ t(`monitor.resources.${family.name}.title`) }}</span><FieldHelp :content="t(family.name === 'disk' ? 'monitor.resources.disk.orderHint' : 'monitor.resources.network.hint')" /></h3>
     <div v-if="family.name === 'disk' && family.rows.length" class="resource-toolbar" data-testid="resource-disk-display">
       <span class="resource-hint" role="status">{{ t('monitor.resources.disk.deviceCount', { shown: family.visibleRows.length, total: family.rows.length }) }}</span>
       <el-button v-if="family.collapsedCount" :aria-expanded="showAllDisks" data-testid="resource-disk-toggle" @click="$emit('update:showAllDisks', !showAllDisks)">{{ t(showAllDisks ? 'monitor.resources.disk.collapseIdle' : 'monitor.resources.disk.showAll', { total: family.rows.length }) }}</el-button>
@@ -19,13 +17,8 @@
         <template #header>
           <div class="resource-metric-heading">
             <span>{{ t(`monitor.resources.metrics.${metric.name}`) }}</span>
-            <el-popover v-if="family.name === 'disk'" trigger="click" placement="top" :width="280" :content="t(`monitor.resources.disk.columns.${metric.name}.detail`)">
-              <template #reference>
-                <el-button text circle size="small" :aria-label="t('monitor.resources.metricHelp', { metric: t(`monitor.resources.metrics.${metric.name}`) })"><el-icon><InfoFilled /></el-icon></el-button>
-              </template>
-            </el-popover>
+            <FieldHelp v-if="family.name === 'disk'" :content="t(`monitor.resources.disk.columns.${metric.name}.detail`)" />
           </div>
-          <p v-if="family.name === 'disk'" class="resource-hint resource-column-summary">{{ t(`monitor.resources.disk.columns.${metric.name}.summary`) }}</p>
         </template>
         <template #default="{ row }"><strong>{{ formatValue(row.metrics[metric.key], metric) }}</strong><p v-if="row.metrics[metric.key]" class="resource-hint">{{ t(`monitor.resources.states.${row.metrics[metric.key].data_state}`) }}</p></template>
       </el-table-column>
@@ -37,7 +30,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { InfoFilled } from '@element-plus/icons-vue'
+import FieldHelp from '../../../../common-frontend/basic/src/components/FieldHelp.vue'
 import { resourceDetailGroups, resourceDimensionRows, sortDiskResourceRows, visibleDiskResourceRows, currentResourceValue, resourceMissingMessage } from '../utils/nodeResources'
 
 const props = defineProps({
@@ -68,7 +61,5 @@ const family = computed(() => {
 .resource-empty-status { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .resource-empty-status > .resource-hint { margin: 0; }
 .resource-metric-heading { display: flex; align-items: center; gap: 4px; }
-.resource-metric-heading .el-button { flex-shrink: 0; }
-.resource-column-summary { margin: 4px 0 0; font-weight: normal; line-height: 1.5; }
 :deep(.el-table__header .cell) { white-space: normal; text-overflow: clip; }
 </style>

@@ -41,7 +41,10 @@ for (const locale of ['zh-cn', 'en']) for (const [family, key, names, keys, alte
   await page.setViewportSize({ width: 620, height: 900 })
   await page.goto(`/node-resources/${node}?metric=${key}&range=7d&refresh=off&${new URLSearchParams(dimensions)}`)
   await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
-  await expect(page.getByTestId('resource-zoom-hint')).toContainText(locale === 'en' ? 'period comparisons keep their original scope' : '时段对比的范围保持不变')
+  const help = page.getByTestId('resource-trend-help').getByRole('button')
+  await help.focus()
+  await expect(page.getByRole('tooltip')).toContainText(locale === 'en' ? 'period comparisons keep their original scope' : '时段对比的范围保持不变')
+  await help.blur()
   const before = trendReads(state).length, params = trendReads(state).at(-1).query
   expect(params.metrics).toBe(keys.join(','))
   expect(params).toMatchObject(dimensions)
@@ -167,7 +170,7 @@ test('automatic refresh retains scalar zoom while a new metric or identity reset
   await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
   expect((await resourceChartProps(page)).zoomable).toBe(true)
   expect((await resourceChartState(page)).start).toBe(0)
-  await expect(page.getByTestId('resource-zoom-hint')).toBeVisible()
+  await expect(page.getByTestId('resource-trend-help').getByRole('button')).toHaveAccessibleName(/时段对比的范围保持不变/)
   await dragResourceChartZoom(page, 0.6)
   await expect.poll(async () => (await resourceChartState(page)).start).toBeGreaterThan(50)
   const loadZoom = (await resourceChartState(page)).start, loadCount = trendReads(state).length

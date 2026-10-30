@@ -33,8 +33,8 @@ for (const locale of ['zh-cn', 'en']) test(`network grouped bars retain the full
     const before = state.reads.filter(row => row.path.endsWith('resource_trends')).length
     await page.goto(`/node-resources/${node}?metric=${keys[0]}&device=eth0&range=${range}&refresh=off`)
     await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
-    await expect(page.getByTestId('resource-paired-hint')).toContainText(locale === 'en' ? 'grouped bars' : '并排柱状')
-    await expect(page.getByTestId('resource-paired-hint')).toContainText('MiB/s')
+    await expect(page.getByTestId('resource-trend-help').getByRole('button')).toHaveAccessibleName(locale === 'en' ? /grouped bars/ : /并排柱状/)
+    await expect(page.getByTestId('resource-trend-help').getByRole('button')).toHaveAccessibleName(/MiB\/s/)
     await expect(page.getByTestId('resource-trend-networkReceive')).toContainText('1.00 MiB/s')
     await expect(page.getByTestId('resource-trend-networkTransmit')).toContainText('2.00 MiB/s')
     const props = await chartProps()

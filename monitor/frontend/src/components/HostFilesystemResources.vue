@@ -1,7 +1,6 @@
 <template>
   <section class="resource-filesystems" data-testid="resource-filesystems">
-    <h3>{{ t('monitor.resources.filesystem.title') }}</h3>
-    <p v-if="mountRows.length" class="resource-hint">{{ t('monitor.resources.filesystem.hint') }}</p>
+    <h3 :aria-label="t('monitor.resources.filesystem.title')"><span>{{ t('monitor.resources.filesystem.title') }}</span><FieldHelp :content="t('monitor.resources.filesystem.hint')" /></h3>
     <p v-if="mountRows.length && capacity" class="resource-hint">{{ t('monitor.resources.queriedAt') }}: {{ date(capacity.queried_at) }}</p>
     <el-alert v-if="capacityErrorKey" :title="t(capacityErrorKey)" type="error" show-icon :closable="false" data-testid="resource-filesystem-error" />
     <el-alert v-if="inodeErrorKey" :title="`${t('monitor.resources.filesystem.inode')}: ${t(inodeErrorKey)}`" type="error" show-icon :closable="false" data-testid="resource-inode-error" />
@@ -27,6 +26,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import FieldHelp from '../../../../common-frontend/basic/src/components/FieldHelp.vue'
 import { formatFieldPresentationValue } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 import { filesystemMetrics, mountMetrics, filesystemResourceState, currentResourceValue } from '../utils/nodeResources'
 const props = defineProps({
@@ -46,6 +46,7 @@ const date = value => formatFieldPresentationValue(value, { temporal_format: 'da
 .filesystem-rule-actions { display: flex; flex-direction: column; align-items: flex-start; }
 .filesystem-rule-actions .el-button + .el-button { margin-left: 0; }
 .resource-filesystems { margin-top: 24px; min-width: 0; }
+h3 { display: flex; align-items: center; gap: 4px; }
 .resource-hint { color: var(--addp-text-secondary); margin-top: 8px; font-size: 13px; }
 .resource-empty-status { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .resource-empty-status > .el-alert { flex: 1; min-width: 0; margin: 0; }
