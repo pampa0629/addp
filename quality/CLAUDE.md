@@ -10,7 +10,7 @@
 
 QualityRule（质量规则）管理目标无关的强类型约束及不可变修订。QualityPlan（质量检查方案）通过检查项引用固定规则修订，声明表别名与可选默认物理表；执行参数 `table_bindings` 按别名提供实际表，省略的别名使用默认值，未知或空值拒绝。规则与方案多对多，同一方案可跨地区复用。检查项独立保存字段、级别和禁用策略。用户手动执行与 Orchestrator 调用都创建冻结 execution，由独立 quality-worker 执行。旧 RuleApplication、CheckTask、DataValidationTask 不再是可配置或可执行实体。
 
-Quality 不依赖企业 Catalog。Standard 的已发布数据元可以导入为冻结规则；来源修订变化不会隐式改写方案。Model 的结构约束可作为人工配置依据，本期尚未提供 Model 自动导入。方案绑定不是企业落标映射，不能推导 Catalog 落标覆盖率。
+Quality 不依赖企业 Catalog。Standard 导入、固定修订与显式升级统一见[方案和规则](../docs/spec/addp数据质量规范.md#2-方案和规则)。Model 的结构约束可作为人工配置依据，本期尚未提供 Model 自动导入。方案绑定不是企业落标映射，不能推导 Catalog 落标覆盖率。
 
 首期仅支持 PostgreSQL。plan_contract.go 表达规则语义，plan_service.go 管理方案，plan_executor.go 管理执行生命周期，plan_postgresql.go 集中物理目标验证、SQL 编译与只读可重复读事务。多引擎能力协议待单独讨论，不在业务层继续堆叠方言分支。
 
@@ -18,7 +18,8 @@ Quality 不依赖企业 Catalog。Standard 的已发布数据元可以导入为�
 
 - models/plan.go、repository/plan_repo.go：方案版本、执行冻结、租约提交。
 - models/rule.go、repository/rule_repo.go、service/rule_service.go：规则修订、引用保护和约束校验；规则修改不自动升级方案引用。
-- service/plan_sources.go：Standard 来源与修订校验；worker 不回读 Standard。
+- service/plan_sources.go、service/rule_service.go：Standard 导入与来源约束复核；确定发布修订、原始规则身份及参数的冻结与冲突规则见[方案和规则](../docs/spec/addp数据质量规范.md#2-方案和规则)。
+- service/plan_service.go、service/plan_executor.go：执行触发与 Worker 快照消费；授权、完整目标冻结及非法快照失败关闭见[执行与授权](../docs/spec/addp数据质量规范.md#4-执行与授权)，Worker 不回读当前方案、规则或 Standard 补齐执行配置。
 - models/plan_targets.go：定义与执行目标校验、默认值解析、规范物理身份散列；解析在方案行锁内完成。
 - service/plan_issues.go、repository/issue_repo.go：问题按 tenant + plan + target_key + rule_key 对账。
 - repository/overview_repo.go、api/overview_handler.go、frontend/src/views/Overview.vue：当前目标质量和按 UTC 执行创建日统计的历史规则通过率；异常不覆盖完整质量结论，旧版本结果显式标注。
@@ -26,8 +27,7 @@ Quality 不依赖企业 Catalog。Standard 的已发布数据元可以导入为�
 - api/task_provider_handler.go：仅声明 quality_plan。
 - frontend/src/views/RuleList.vue：规则定义与来源；PlanList.vue：选规则、固定修订、绑定目标与执行。约束控件唯一所有者为 RuleConstraintFields.vue，方案页只读展示。ExecutionDetail.vue 展示领域结果；IssueList/IssueDetail 管理问题。
 - Quality 独立前端根路径在 AuthContext 加载后，按 Console 菜单顺序 `/overview`、`/rules`、`/plans`、`/issues` 选择第一个满足页面准入条件的地址；没有可访问页面时进入 `/forbidden`。登录后的默认返回地址为根路径。显式业务地址只按自身权限判断，不能静默改跳其他页面；执行详情是业务深链，不参与根路径候选。
-- RuleList 的数据元导入支持空关键词分页浏览和名称/编码搜索，保留已选来源；RuleSourceDetails 通过当前用户读取 Standard 精确修订详情，展示数据元、码值集修订及码项含义。无 Standard 读取权限或查询失败时仍保留冻结来源身份和约束，不影响执行。手工规则不推断来源。
-- 无可导入规则的数据元仍可选中预览来源，但不能确认导入；根据精确修订区分未配置值约束与缺少编译规则，读取失败时不猜测原因。历史发布修订缺少编译规则时，应在 Standard 创建并审核发布新修订，不改写历史快照、不在 Quality 重新推导约束。
+- RuleList 与 RuleSourceDetails：候选浏览、来源预览及精确修订只读追溯，详情使用当前 User 的 `standard.element.read`；候选选择、导入确认、空态／失败及历史缺编译规则的修复统一见[API 与页面](../docs/spec/addp数据质量规范.md#6-api-与页面)。来源无权读取或查询失败时保留冻结来源身份和约束，不影响已有冻结约束执行；手工规则不推断来源。
 - authorization/permissions.yaml：quality.rule.* 与 quality.plan.* 分离；方案写入还要求 rule.read，方案运行不要求规则管理权限。
 - 专业执行列表和详情同时要求 monitor.execution.read 与 quality.plan.read；Quality 在 SQL 中限定当前租户 quality_plan 的任务历史及本人一次性执行，已删除方案的历史不回查当前定义，缺少发起主体的一次性执行拒绝。分页总数与详情共用 Owner 范围；TaskProvider 保持独立机器认证。前端详情深链和工单执行链接同步这两项权限；专业详情通过显式 Quality DTO 保留冻结版本、目标及规则结果，列表只输出安全概览，不序列化内部执行授权字段。Monitor 与 TaskProvider 不返回专业配置和结果。
 - cmd/server、cmd/worker：独立控制面和执行进程。

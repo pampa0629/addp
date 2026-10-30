@@ -31,7 +31,7 @@ Standard 定义 Domain、Glossary、Element、MetricDefinition、CodeSet、Unit 
 
 ### 数据元修订与机器读取
 
-数据元精确修订 GET 返回 ElementRevisionDetail：在原修订内容上提供稳定 element_code 和按 code_set_revision_id 解析的码值集完整只读快照。历史已撤回码值集仍按确定 ID 展示，不改用当前生效修订；权限仍为 standard.element.read，跨租户及不匹配的数据元/修订拒绝。精确读取失败显示错误且不替换为默认修订。Quality 管理界面可读取该投影追溯来源，worker 不依赖它。URL 定位、导航与未保存保护见[前端公开路由](#前端公开路由)。
+数据元精确修订 GET 返回 ElementRevisionDetail：在原修订内容上提供稳定 element_code 和按 code_set_revision_id 解析的码值集完整只读快照。历史已撤回码值集仍按确定 ID 展示，不改用当前生效修订；权限仍为 standard.element.read，跨租户及不匹配的数据元/修订拒绝。精确读取失败显示错误且不替换为默认修订。Quality 的来源读取与冻结职责见[Quality 消费入口](#模块依赖关系)。URL 定位、导航与未保存保护见[前端公开路由](#前端公开路由)。
 
 数据元详情无论默认打开还是通过 `revision_id` 定位，均读取选中修订的精确详情。关联码值集的名称、编码、版次和状态来自该修订快照，不以可选候选反推历史引用；绑定快照缺失或身份不匹配时明确报错。只读状态不请求码值集候选，查看历史不额外要求 `standard.code_set.read`；可编辑草稿仍按类型与生效时间提供已发布候选，已绑定但不再可选的修订仅保留显示，不允许重新选入。选择其他候选后不显示旧快照的状态。
 
@@ -683,6 +683,7 @@ GET /api/v1/standard/cleanup-executions/:execution_id/result
 - **MinIO**: 标准文档文件存储（bucket: `standard`）
 
 **被依赖**（其他模块调用 Standard 的 API）:
+- **Quality 模块**: 管理端按当前 User 读取数据元精确修订，规则导入与来源约束变化由 Quality 后端复核；执行只消费已冻结规则与目标，Worker 不回读 Standard。权限与只读投影沿[质量 API 与页面](../docs/spec/addp数据质量规范.md#6-api-与页面)，来源冻结沿[方案和规则](../docs/spec/addp数据质量规范.md#2-方案和规则)，执行快照与授权沿[执行与授权](../docs/spec/addp数据质量规范.md#4-执行与授权)。
 - **Catalog 模块**: 消费[五类标准变化与最小摘要](#企业目录机器读取)，通过[引用与修订机器接口](#标准引用与修订机器读取)支撑目录关联、StandardMapping 和[数据字典](#数据字典边界)。机器摘要与映射解析资格不替代当前 User 的专业详情、文件和关系读取资格；完整专业事实仍归 Standard，分工见[五类标准接入规范](../docs/spec/addp企业资源目录实现规范.md#55-standard-五类专业资源变化与动态引用)。
 - **Model 模块**: 验证 domain_id、element_id / element_revision_id、metric_definition_revision_id；Mermaid 交换文档通过稳定 `domain_code / element_code` 精确解析当前 Tenant 运行时 ID；维度层级只校验 Model 本地事实
 
