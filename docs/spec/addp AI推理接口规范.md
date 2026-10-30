@@ -150,6 +150,10 @@ OpenAI-compatible 模型发现统一由 Inference 服务端使用 Provider Conne
 
 ## 三、范围和授权
 
+[资源可见性](#资源范围与可见性) · [场景与快照](#场景绑定解析与历史快照) · [访问身份](#管理权限与数据面身份) · [模型标签](#窄模型标签投影) · [验证要求](#九验证要求)
+
+### 资源范围与可见性
+
 Provider Connection 的 `scope_type` 固定为 `platform` 或 `tenant`：
 
 - Platform Provider 可以授权所有 Tenant，或通过 allowlist 只授权指定 Tenant。
@@ -159,6 +163,8 @@ Provider Connection 的 `scope_type` 固定为 `platform` 或 `tenant`：
 - Model Deployment 继承 Provider scope，不单独改变范围。
 - Platform Model Profile 只能绑定 Platform Deployment；Tenant Model Profile 可以绑定本 Tenant Deployment，或当前 Tenant 已获授权的 Platform Deployment。
 
+### 场景绑定解析与历史快照
+
 Scenario Binding 的有效解析顺序固定为：
 
 ```text
@@ -167,9 +173,19 @@ Scenario Binding 的有效解析顺序固定为：
 
 “Tenant 存在任意 Provider 或模型”不会触发自动优先。调用方必须按场景显式覆盖；解析结果必须固化到任务或 execution 快照，后续绑定变化不得改写历史执行事实。
 
-平台资源管理使用 `inference.provider.*`、`inference.deployment.*`、`inference.profile.*` Permission；Tenant 资源使用相同稳定 Permission，并由 AuthContext scope 限定。数据面只接受受信调用模块的 Service Access Token，并要求显式 Tenant Context；终端用户 Token 不直接调用内部推理数据面。
+### 管理权限与数据面身份
 
-业务页面展示模型名称时使用租户可定制的 `inference.model_label.read`，由 Inference 提供 `GET /api/v1/inference/model-labels`。响应只包含当前 Context 可见的 Profile ID、Profile 名称和其绑定 Deployment 的上游模型标识，不包含 Provider、Endpoint、凭据、状态、管理字段或跨租户资源。已禁用但仍可见的 Profile 保留标签，供历史任务展示；该权限不授权管理列表、配置或推理执行。Manager 向量化任务页首次加载依赖此投影。
+平台资源管理使用 `inference.provider.*`、`inference.deployment.*`、`inference.profile.*` Permission；Tenant 资源使用相同稳定 Permission，并由 AuthContext scope 限定。
+
+数据面只接受受信调用模块的 Service Access Token，并要求显式 Tenant Context；终端用户 Token 不直接调用内部推理数据面。
+
+### 窄模型标签投影
+
+业务页面展示模型名称时使用租户可定制的 `inference.model_label.read`，由 Inference 提供 `GET /api/v1/inference/model-labels`。
+
+响应只包含当前 Context 可见的 Profile ID、Profile 名称和其绑定 Deployment 的上游模型标识，不包含 Provider、Endpoint、凭据、状态、管理字段或跨租户资源。
+
+已禁用但仍可见的 Profile 保留标签，供历史任务展示；该权限不授权管理列表、配置或推理执行。Manager 向量化任务页首次加载依赖此投影。
 
 ## 四、凭据
 
@@ -203,7 +219,7 @@ Provider credential 使用部署级 `ENCRYPTION_KEY` 进行认证加密。数据
 | `POST /model-deployments/{id}/probe` | 显式执行无副作用可达性和能力探测。 |
 | `GET/POST /model-profiles` | 列表或创建 Profile。 |
 | `GET/PUT /model-profiles/{id}` | 读取或更新 Profile；已创建 Profile 只允许禁用，不物理删除。 |
-| `GET /model-labels` | 查询当前 Context 可见的窄模型标签投影。 |
+| `GET /model-labels` | 查询当前 Context 可见的窄模型标签投影。字段、权限与历史展示限制见[标签投影](#窄模型标签投影)。 |
 
 Provider 或 Deployment 存在 Inference 本地的下游引用时，删除必须返回 `409 resource_in_use`。Inference 不读取各业务模块的 Scenario Binding，因此第一版 Model Profile 只允许禁用，不提供删除 API；引用已禁用 Profile 的调用明确返回 `model_profile_unavailable`。后续若需要物理回收，必须先定义跨 owner cleanup 协议，不能增加反向私有表查询。
 
