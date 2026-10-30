@@ -34,7 +34,7 @@ Quality 不依赖企业 Catalog。Standard 导入、固定修订与显式升级�
 
 error 规则失败使执行 failed，同时保存完整结果和问题；warning/info 不阻断。运行异常和超时不对账部分问题。终态、最近摘要、问题必须在有效 lease 下原子提交。规则通过率不等于数据行去重合格率。
 
-方案执行复用 `common.execution_events`：领取开始、逐条启用规则完成后的实际检查百分比、终态及租约耗尽失败均受 Common 租约裁决并与相应事实同事务提交。提前失败和超时保留已记录进度，新 attempt 领取时归零；检查完成度不等于规则通过率或问题已提交。事件不含规则、SQL、业务证据和授权信息，不凭当前方案补造步骤历史。Monitor 使用已有安全事件展示，专业结果仍由 Quality 授权入口读取。租约重试、回滚、读取隔离与事件生命周期由 Quality 后端及 PostgreSQL 标准门禁自动发现；真实 Gateway/Monitor 事件验收扩展既有 quality-dynamic-binding T4，未运行时不计为通过。
+方案过程事件复用 `common.execution_events`，新 attempt 领取时进度归零；租约与事务、实际检查进度、重试、敏感信息及留存边界统一见[执行过程事件](../docs/spec/addp数据质量规范.md#执行过程事件)。现有断言见[Quality 事件测试](backend/internal/repository/plan_events_test.go)，标准门禁及 Gateway／Monitor 真实链路的分版本证据见[测试与 CI](#测试与-ci)；测试登记或静态核对不计为运行通过。
 
 ## 迁移与运行
 
