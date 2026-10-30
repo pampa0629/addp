@@ -52,7 +52,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 通用处理 | 数据筛选 | 5 | `filter_by_attribute`、`sort_by_field`、`select_top_n`、`sample`、`random_split` |
 | 通用处理 | 数值统计 | 4 | `normalize_field`、`encode_categorical`、`bin_field`、`aggregate` |
 | 矢量处理 | 几何构造 | 6 | `buffer`、`centroid`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer` |
-| 矢量处理 | 几何整理 | 5 | `simplify`、`dissolve`、`check_geometry`、`repair_geometry`、`snap_geometry` |
+| 矢量处理 | 几何整理 | 6 | `simplify`、`dissolve`、`check_geometry`、`repair_geometry`、`snap_geometry`、`snap_line_endpoints` |
 | 矢量处理 | 拓扑检查 | 8 | `check_polygon_overlap`、`check_polygon_gap`、`check_dangling_points`、`check_line_proximity`、`check_line_overlap`、`check_line_self_overlap`、`check_line_intersection`、`check_line_self_intersection` |
 | 矢量处理 | 线网处理 | 5 | `polygonize`、`split_line_intersections`、`group_line_components`、`merge_line_chains`、`normalize_line_network` |
 | 矢量处理 | 叠加分析 | 4 | `intersection`、`union`、`difference`、`clip` |
@@ -126,6 +126,10 @@ D8流长只保留`raster_flow_length_d8`一个入口，必填`method=downstream`
 ## 近接检查
 
 `check_line_proximity` 复用源线悬点提取；精确落在任一参考线上的点整体排除，其余逐参考要素报告严格容差内的原悬点、双方来源、距离和最近位置。只检查不改线，详见[近接检查契约](../../../docs/spec/workflow/矢量算子契约.md#近接检查契约)。
+
+## 端点吸附
+
+`snap_line_endpoints` 将可仅移动原始开口部件端部完整处理的悬点，一次移到严格容差内参考线的唯一精确最近位置。默认`result`保留原业务属性与部件，`details`保留原端点Point、双方来源和全部移动事实；等距异点、内部／闭环覆盖、不能精确落线或塌缩／无效时整批失败。复用近接候选内核，不改变近接检查的诊断语义，详见[端点吸附契约](../../../docs/spec/workflow/矢量算子契约.md#端点吸附契约)。
 
 ## 几何检查与修复
 

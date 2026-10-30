@@ -821,7 +821,16 @@ def check_dangling_points(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.Geo
     )
 
 
-class NearLineInputError(ValueError):
+class _LineReferenceError(ValueError):
+    def __init__(self, code):
+        self.code = code
+        super().__init__(self.message('zh-cn'))
+
+    def message(self, language):
+        return self._messages[language][self.code]
+
+
+class NearLineInputError(_LineReferenceError):
     """Near-line diagnostics localized by the existing execution adapter."""
 
     _messages = {
@@ -843,80 +852,113 @@ class NearLineInputError(ValueError):
         },
     }
 
-    def __init__(self, code):
-        self.code = code
-        super().__init__(self.message('zh-cn'))
-
-    def message(self, language):
-        return self._messages[language][self.code]
 
 
-def check_line_proximity(
-    input_gdf: gpd.GeoDataFrame,
-    reference_gdf: gpd.GeoDataFrame,
-    id_field: str,
-    reference_id_field: str,
-    tolerance: float,
-) -> gpd.GeoDataFrame:
-    """Report every near reference feature for each unconnected source dangle."""
+class EndpointSnapError(_LineReferenceError):
+    """Endpoint moves fail as one calculation, without partial repair."""
+
+    _messages = {
+        'zh-cn': {
+            'tolerance': '端点吸附的容差必须是以坐标系水平单位表示的有限正数。',
+            'source': '端点吸附的源图层须具有有效有限二维线、已知投影坐标系及非空唯一标识；不接受缺失或空几何，允许空批。',
+            'reference': '端点吸附的参考图层须具有有效有限二维线、已知投影坐标系及非空唯一标识；不接受缺失或空几何，允许空批。',
+            'crs': '端点吸附要求两个图层使用相同的已知投影坐标系和匹配的水平单位；请先显式重投影。',
+            'ambiguous': '端点吸附存在等距但位置不同的最近候选，未生成任何修复结果。',
+            'endpoint': '端点吸附无法仅移动原始开口部件的端点完整处理该悬点；请先显式规整源线。',
+            'landing': '端点吸附的最近位置不能精确落在原始参考线上，未生成任何修复结果。',
+            'invalid': '端点吸附会造成原始正长度线段塌缩或产生无效几何，未生成任何修复结果。',
+            'calculation': '端点吸附无法可靠计算有限的最近位置和距离，未生成任何修复结果。',
+        },
+        'en': {
+            'tolerance': 'Endpoint snapping tolerance must be a finite positive number in horizontal CRS units.',
+            'source': 'Endpoint snapping requires valid finite XY source lines, a known projected CRS and unique non-null IDs; missing or empty geometries are rejected, but empty batches are allowed.',
+            'reference': 'Endpoint snapping requires valid finite XY reference lines, a known projected CRS and unique non-null IDs; missing or empty geometries are rejected, but empty batches are allowed.',
+            'crs': 'Endpoint snapping requires the same known projected CRS and matching horizontal units; reproject explicitly first.',
+            'ambiguous': 'Endpoint snapping has equally near candidates at different positions; no repair result was produced.',
+            'endpoint': 'Endpoint snapping cannot completely handle this dangle by moving only original open-part endpoints; normalize the source lines explicitly first.',
+            'landing': 'Endpoint snapping cannot place the nearest position exactly on the original reference lines; no repair result was produced.',
+            'invalid': 'Endpoint snapping would collapse an original positive-length segment or produce invalid geometry; no repair result was produced.',
+            'calculation': 'Endpoint snapping cannot reliably compute finite nearest coordinates and distance; no repair result was produced.',
+        },
+    }
+
+
+def _line_reference_inputs(input_gdf, reference_gdf, id_field, reference_id_field, tolerance, error_type):
     if isinstance(tolerance, (bool, np.bool_)) or not isinstance(tolerance, Real):
-        raise NearLineInputError('tolerance')
+        raise error_type('tolerance')
     try:
         tolerance = float(tolerance)
     except OverflowError as exc:
-        raise NearLineInputError('tolerance') from exc
+        raise error_type('tolerance') from exc
     if not np.isfinite(tolerance) or tolerance <= 0:
-        raise NearLineInputError('tolerance')
-
+        raise error_type('tolerance')
     try:
         dangling = check_dangling_points(input_gdf, id_field)
     except ValueError as exc:
-        raise NearLineInputError('source') from exc
+        raise error_type('source') from exc
     try:
         reference = _finite_xy_geometry(reference_gdf, 'reference_gdf')
         _require_projected_xy_crs(reference.crs)
         reference_ids = _source_identifiers(reference_gdf, reference_id_field)
         _require_nonempty_valid_lines(reference)
     except ValueError as exc:
-        raise NearLineInputError('reference') from exc
+        raise error_type('reference') from exc
     if not dangling.crs.equals(reference.crs):
-        raise NearLineInputError('crs')
+        raise error_type('crs')
+    return dangling, reference, reference_ids, tolerance
 
+
+def _reference_line_segments(reference):
     segments, owners = [], []
     for owner, shape in enumerate(reference.array):
         for part in shapely.get_parts(shape):
             for start, end in pairwise(part.coords):
                 if start != end:
-                    # Canonical direction makes projection independent of the
-                    # reference path direction without modifying source data.
+                    # A fixed direction makes projection independent of source
+                    # orientation. Neither input geometry is modified.
                     segments.append(shapely.LineString(sorted((start, end))))
                     owners.append(owner)
-    tree = shapely.STRtree(segments)
-    source_rows, reference_rows, distances, nearest_x, nearest_y = [], [], [], [], []
+    return segments, owners, shapely.STRtree(segments)
+
+
+def _line_projection_candidates(point, segments, owners, tree, tolerance, error_type):
+    if len(tree.query(point, predicate='intersects')):
+        return
+    x, y = point.x, point.y
     limit = float(np.finfo(float).max)
+    envelope = shapely.box(
+        max(-limit, nextafter(x - tolerance, -float('inf'))),
+        max(-limit, nextafter(y - tolerance, -float('inf'))),
+        min(limit, nextafter(x + tolerance, float('inf'))),
+        min(limit, nextafter(y + tolerance, float('inf'))),
+    )
+    for segment_row in tree.query(envelope):
+        try:
+            connection = shapely.shortest_line(point, segments[segment_row])
+        except shapely.errors.GEOSException as exc:
+            raise error_type('calculation') from exc
+        if connection.is_empty:
+            raise error_type('calculation')
+        nx, ny = connection.coords[-1]
+        distance = hypot(nx - x, ny - y)
+        if not np.isfinite([nx, ny, distance]).all():
+            raise error_type('calculation')
+        yield owners[segment_row], distance, nx, ny
+
+
+def check_line_proximity(
+    input_gdf: gpd.GeoDataFrame, reference_gdf: gpd.GeoDataFrame,
+    id_field: str, reference_id_field: str, tolerance: float,
+) -> gpd.GeoDataFrame:
+    """Report every near reference feature for each unconnected source dangle."""
+    dangling, reference, reference_ids, tolerance = _line_reference_inputs(
+        input_gdf, reference_gdf, id_field, reference_id_field, tolerance, NearLineInputError)
+    segments, owners, tree = _reference_line_segments(reference)
+    source_rows, reference_rows, distances, nearest_x, nearest_y = [], [], [], [], []
     for row, point in enumerate(dangling.geometry):
-        if len(tree.query(point, predicate='intersects')):
-            continue
-        x, y = point.x, point.y
-        envelope = shapely.box(
-            max(-limit, nextafter(x - tolerance, -float('inf'))),
-            max(-limit, nextafter(y - tolerance, -float('inf'))),
-            min(limit, nextafter(x + tolerance, float('inf'))),
-            min(limit, nextafter(y + tolerance, float('inf'))),
-        )
         best = {}
-        for segment_row in tree.query(envelope):
-            try:
-                connection = shapely.shortest_line(point, segments[segment_row])
-            except shapely.errors.GEOSException as exc:
-                raise NearLineInputError('calculation') from exc
-            if connection.is_empty:
-                raise NearLineInputError('calculation')
-            nx, ny = connection.coords[-1]
-            distance = hypot(nx - x, ny - y)
-            if not np.isfinite([nx, ny, distance]).all():
-                raise NearLineInputError('calculation')
-            owner = owners[segment_row]
+        for owner, distance, nx, ny in _line_projection_candidates(
+                point, segments, owners, tree, tolerance, NearLineInputError):
             candidate = (distance, nx, ny)
             if owner not in best or candidate < best[owner]:
                 best[owner] = candidate
@@ -936,6 +978,113 @@ def check_line_proximity(
          'nearest_y': pd.Series(nearest_y, dtype='float64')},
         geometry=gpd.GeoSeries(dangling.geometry.iloc[source_rows].reset_index(drop=True), crs=dangling.crs),
     )
+
+
+def snap_line_endpoints(
+    input_gdf: gpd.GeoDataFrame, reference_gdf: gpd.GeoDataFrame,
+    id_field: str, reference_id_field: str, tolerance: float,
+) -> dict[str, gpd.GeoDataFrame]:
+    """Move complete original endpoint occurrences once to a unique exact target."""
+    try:
+        return _snap_line_endpoints(input_gdf, reference_gdf, id_field, reference_id_field, tolerance)
+    except shapely.errors.GEOSException as exc:
+        raise EndpointSnapError('calculation') from exc
+
+
+def _snap_line_endpoints(input_gdf, reference_gdf, id_field, reference_id_field, tolerance):
+    dangling, reference, reference_ids, tolerance = _line_reference_inputs(
+        input_gdf, reference_gdf, id_field, reference_id_field, tolerance, EndpointSnapError)
+    segments, owners, tree = _reference_line_segments(reference)
+    parts = [(row, number, part, list(part.coords)) for row, shape in enumerate(input_gdf.geometry.array)
+             for number, part in enumerate(shapely.get_parts(shape), 1)]
+    part_tree = shapely.STRtree([part for _, _, part, _ in parts])
+    plans = {}
+    coordinates = dict.fromkeys(tuple(point.coords[0]) for point in dangling.geometry)
+    for coordinate in coordinates:
+        point = shapely.Point(coordinate)
+        nearest, positions, selected = None, set(), set()
+        for owner, distance, nx, ny in _line_projection_candidates(
+                point, segments, owners, tree, tolerance, EndpointSnapError):
+            if distance == 0:
+                # The original point did not intersect any reference segment.
+                # A computed zero is therefore unreliable, not a new contact.
+                raise EndpointSnapError('calculation')
+            if distance >= tolerance:
+                continue
+            if nearest is None or distance < nearest:
+                nearest, positions, selected = distance, {(nx, ny)}, {owner}
+            elif distance == nearest:
+                positions.add((nx, ny))
+                selected.add(owner)
+        if nearest is None:
+            continue
+        if len(positions) != 1:
+            raise EndpointSnapError('ambiguous')
+        target = next(iter(positions))
+        references = sorted({owners[i] for i in tree.query(shapely.Point(target), predicate='intersects')})
+        if not selected <= set(references):
+            raise EndpointSnapError('landing')
+        # Every source occurrence of this network dangle must be movable at an
+        # open part's terminal coordinate run. Interior coverage cannot be left
+        # behind just because another source has an endpoint at the same XY.
+        for index in sorted(part_tree.query(point, predicate='intersects')):
+            _, _, part, coords = parts[index]
+            if part.is_closed:
+                raise EndpointSnapError('endpoint')
+            if coords[0] == coordinate:
+                stop = 1
+                while coords[stop] == coordinate:
+                    stop += 1
+                end, span, remainder = 'start', (0, stop), coords[stop:]
+            elif coords[-1] == coordinate:
+                start = len(coords)-2
+                while coords[start] == coordinate:
+                    start -= 1
+                end, span, remainder = 'end', (start+1, len(coords)), coords[:start+1]
+            else:
+                raise EndpointSnapError('endpoint')
+            if len(remainder) > 1 and shapely.intersects(shapely.LineString(remainder), point):
+                raise EndpointSnapError('endpoint')
+            plans[index, end] = (span, coordinate, target, nearest, references)
+
+    output = input_gdf.geometry.array.copy()
+    rebuilt = {}
+    source_rows, reference_rows, numbers, ends, originals, targets, distances = [], [], [], [], [], [], []
+    for index, (row, number, part, coords) in enumerate(parts):
+        values = coords.copy()
+        moved = False
+        for end in ('start', 'end'):
+            if (index, end) not in plans:
+                continue
+            span, original, target, distance, references = plans[index, end]
+            values[span[0]:span[1]] = [target] * (span[1]-span[0])
+            moved = True
+            for owner in references:
+                source_rows.append(row); reference_rows.append(owner); numbers.append(number); ends.append(end)
+                originals.append(original); targets.append(target); distances.append(distance)
+        if moved and any(a != b and c == d for (a,b),(c,d) in zip(pairwise(coords),pairwise(values))):
+            raise EndpointSnapError('invalid')
+        rebuilt.setdefault(row, []).append(shapely.LineString(values) if moved else part)
+    for row, row_parts in rebuilt.items():
+        output[row] = row_parts[0] if input_gdf.geometry.iloc[row].geom_type == 'LineString' else shapely.MultiLineString(row_parts)
+    result = input_gdf.copy()
+    result[result.geometry.name] = gpd.GeoSeries(output, index=input_gdf.index, crs=input_gdf.crs)
+    try:
+        _finite_xy_geometry(result, 'result')
+        _require_nonempty_valid_lines(result.geometry)
+    except ValueError as exc:
+        raise EndpointSnapError('invalid') from exc
+    details = gpd.GeoDataFrame({
+        'source_id': input_gdf[id_field].iloc[source_rows].reset_index(drop=True),
+        'reference_id': reference_ids.iloc[reference_rows].reset_index(drop=True),
+        'part_no': pd.Series(numbers, dtype='int64'), 'end': pd.Series(ends, dtype='string'),
+        'original_x': pd.Series([p[0] for p in originals], dtype='float64'),
+        'original_y': pd.Series([p[1] for p in originals], dtype='float64'),
+        'target_x': pd.Series([p[0] for p in targets], dtype='float64'),
+        'target_y': pd.Series([p[1] for p in targets], dtype='float64'),
+        'distance': pd.Series(distances, dtype='float64'),
+    }, geometry=gpd.GeoSeries([shapely.Point(p) for p in originals], crs=input_gdf.crs))
+    return {'result': result, 'details': details}
 
 
 def check_polygon_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
@@ -1284,6 +1433,28 @@ CHECK_LINE_PROXIMITY_METADATA = OperatorMetadata(
     use_cases=["定位差一点接上参考道路的悬点及全部候选", "检查小断口后由用户决定连接对象"],
     notes=["精确落在任一参考线上的悬点整体排除；其余保留全部严格容差内参考要素，不只取全局最近一条", "每个悬点与参考要素对输出一次；等距最近位置按X/Y稳定决胜，不按部件或索引遍历顺序", "按源行/悬点XY/参考行排序，输出原悬点及最近坐标，不复制业务属性", "同图层接到两个输入时，自身覆盖端点按精确相接规则排除，不增加自动排除自身模式", "不重投影、吸附、延伸或修复，不生成Quality结论；保存另接save", "线网、参考段索引和成果驻内存，不承诺固定容量"],
     workflow_example={"id": "check_near", "operator": "check_line_proximity", "params": {"input_gdf": {"$ref": "load"}, "reference_gdf": {"$ref": "reference"}, "id_field": "line_id", "reference_id_field": "ref_id", "tolerance": 1.0}, "depends_on": ["load", "reference"]},
+)
+
+SNAP_LINE_ENDPOINTS_METADATA = OperatorMetadata(
+    name="snap_line_endpoints", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_PREPARATION,
+    description="端点吸附", brief_description="将可完整移动的原始悬点端部一次吸到唯一精确参考位置，保留原属性和全部来源",
+    execution_modes=["workflow"], effects=["read"],
+    overview="沿源线网真实悬点查找固定参考线的全局唯一最近位置，仅移动原始开口部件的首尾。"
+             "同时返回保留原业务属性的线和逐端点／参考来源的移动明细，不隐式规整或修复其他问题。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="待移动端点的源线图层", notes="有效有限二维线，使用实际活动几何列；允许空批，拒绝缺失或空几何"),
+        OperatorParam(name="reference_gdf", type="input", data_type="GeoDataFrame", required=True, description="固定参考线图层", notes="与源使用相同的已知投影CRS，参考线不动"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="源线唯一非空标识字段", notes="显式非几何标量列，不用索引或FID替代"),
+        OperatorParam(name="reference_id_field", type="param", data_type="str", required=True, description="参考线唯一非空标识字段", notes="每个实际覆盖目标的参考要素分别保留来源"),
+        OperatorParam(name="tolerance", type="param", data_type="float", required=True, description="原始位置的有限正容差", notes="单位沿源投影水平单位，只允许0＜距离＜容差，不连锁移动"),
+    ],
+    output_ports=[
+        OutputPort(name="result", type="geodataframe", description="保留源属性、行序、索引、部件和CRS的线图层", is_default=True),
+        OutputPort(name="details", type="geodataframe", description="原端点Point及双方来源、part_no/end、original_x/y、target_x/y、distance", is_default=False),
+    ],
+    use_cases=["按固定参考线显式连接近接悬点", "审计每个实际移动端点和全部参考来源"],
+    notes=["已精确接上参考线的悬点不动，其他目标只按冻结原始位置查询一次", "等距异点、不能仅移动端点完整处理或目标不能精确落线时整批失败，不按XY或行序选择路径", "端部连续重复坐标一并移动，保留顶点数；原始正长度段塌缩或无效结果整批失败", "不移动内部顶点、闭环或参考，不吸附到已移动源，不保证全部拓扑问题消除", "result与details分别接现有save，不承诺跨文件事务或固定规模容量"],
+    workflow_example={"id":"snap_ends", "operator":"snap_line_endpoints", "params":{"input_gdf":{"$ref":"source"},"reference_gdf":{"$ref":"reference"},"id_field":"line_id","reference_id_field":"ref_id","tolerance":1.0},"depends_on":["source","reference"]},
 )
 
 CHECK_POLYGON_OVERLAP_METADATA = OperatorMetadata(
@@ -1895,6 +2066,7 @@ OPERATORS = dict([
     register_operator(CHECK_GEOMETRY_METADATA, check_geometry),
     register_operator(REPAIR_GEOMETRY_METADATA, repair_geometry),
     register_operator(SNAP_GEOMETRY_METADATA, snap_geometry),
+    register_operator(SNAP_LINE_ENDPOINTS_METADATA, snap_line_endpoints),
     register_operator(CHECK_POLYGON_OVERLAP_METADATA, check_polygon_overlap),
     register_operator(CHECK_POLYGON_GAP_METADATA, check_polygon_gap),
     register_operator(CHECK_DANGLING_POINTS_METADATA, check_dangling_points),

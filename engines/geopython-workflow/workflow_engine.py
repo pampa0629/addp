@@ -10,7 +10,7 @@ from operators import OPERATORS, get_operator
 from operators.orc_table import SourceChanged as OrcSourceChanged
 from operators.spatial_relations import DistanceInputError
 from operators.data_operations import MultiBufferInputError
-from operators.geometric_operators import NearLineInputError
+from operators.geometric_operators import NearLineInputError, EndpointSnapError
 from operators.raster_compute import RasterDataset, RasterTiles, raster_info, raster_tiles_info, raster_workspace, raster_error_language
 
 logger = logging.getLogger(__name__)
@@ -79,6 +79,8 @@ class GeoPythonWorkflowRunner(WorkflowRunner):
     def _execute_operator(self, operator, params):
         try:
             return _execute_workflow_operator(operator, params)
+        except EndpointSnapError as exc:
+            raise ValueError(exc.message(self.language)) from exc
         except (DistanceInputError, NearLineInputError, MultiBufferInputError) as exc:
             reasons = {
                 MultiBufferInputError: {'source': 'operator_input_invalid', 'distance_conflict': 'operator_field_conflict',

@@ -4455,3 +4455,374 @@ def test_hosted_line_proximity_case_exact_seven_points_and_independent_oracle(tm
         assert len(list((tmp_path.parent/'proximity-archive/topology-physical').rglob('*.gpkg')))==3
     else:
         with pytest.raises(fixture.FixtureError):fixture.worker('verify',tmp_path,fixture.PROXIMITY_CASE)
+
+
+def endpoint_snap_frames(crs="EPSG:3857"):
+    source = gpd.GeoDataFrame({
+        'route_key': pd.Series([2**53+1, 9], dtype='Int64'),
+        'grade': pd.Series([3, None], dtype='Int64'),
+        'enabled': pd.Series([True, None], dtype='boolean'),
+        'note': pd.Series(['original', None], dtype='string'),
+    }, geometry=[LineString([(0, 0), (0, 0), (4, 0), (4, 10)]),
+                 LineString([(20, 0), (20, 10)])], crs=crs).rename_geometry('source_shape')
+    source.index = [31, 11]
+    reference = gpd.GeoDataFrame({'ref_key': pd.Series(['z', 'a', 'far', 'other'], dtype='string')},
+        geometry=[LineString([(.5, -1), (.5, 1)]), LineString([(.5, 1), (.5, -1)]),
+                  LineString([(.75, -1), (.75, 1)]), LineString([(19, .25), (21, .25)])],
+        crs=crs).rename_geometry('reference_shape')
+    return source, reference
+
+
+def endpoint_snap(source, reference, tolerance=1., **kwargs):
+    return get_operator('snap_line_endpoints')(input_gdf=source, reference_gdf=reference,
+        id_field=kwargs.get('id_field', 'route_key'), reference_id_field=kwargs.get('reference_id_field', 'ref_key'),
+        tolerance=tolerance)
+
+
+def test_endpoint_snap_keeps_source_attributes_index_repeated_vertices_and_all_target_sources():
+    source, reference = endpoint_snap_frames()
+    before, ref_before = source.copy(deep=True), reference.copy(deep=True)
+    outputs = endpoint_snap(source, reference)
+    assert set(outputs) == {'result', 'details'}
+    result, details = outputs['result'], outputs['details']
+    assert result.geometry.iloc[0].coords[:] == [(.5, 0.), (.5, 0.), (4., 0.), (4., 10.)]
+    assert result.geometry.iloc[1].coords[:] == [(20., .25), (20., 10.)]
+    assert result.index.equals(source.index) and result.columns.equals(source.columns)
+    pd.testing.assert_frame_equal(pd.DataFrame(result.drop(columns=result.geometry.name)),
+                                  pd.DataFrame(source.drop(columns=source.geometry.name)))
+    assert result.geometry.name == 'source_shape' and result.crs == source.crs
+    assert details.columns.tolist() == ['source_id', 'reference_id', 'part_no', 'end', 'original_x', 'original_y', 'target_x', 'target_y', 'distance', 'geometry']
+    assert details.source_id.tolist() == [2**53+1, 2**53+1, 9]
+    assert details.reference_id.tolist() == ['z', 'a', 'other']
+    assert details.part_no.tolist() == [1, 1, 1] and details['end'].tolist() == ['start']*3
+    assert details['distance'].tolist() == [.5, .5, .25]
+    assert details.original_x.tolist() == [0., 0., 20.] and details.target_x.tolist() == [.5, .5, 20.]
+    assert details.original_y.tolist() == [0., 0., 0.] and details.target_y.tolist() == [0., 0., .25]
+    assert [p.coords[0] for p in details.geometry] == [(0., 0.), (0., 0.), (20., 0.)]
+    assert details.source_id.dtype == source.route_key.dtype and details.reference_id.dtype == reference.ref_key.dtype
+    assert str(details.part_no.dtype) == 'int64' and str(details['end'].dtype) == 'string'
+    assert all(str(details[k].dtype) == 'float64' for k in ['original_x','original_y','target_x','target_y','distance'])
+    assert_geodataframe_equal(source, before); assert_geodataframe_equal(reference, ref_before)
+
+
+@pytest.mark.parametrize('crs', ['EPSG:3857', 'EPSG:2263'])
+def test_endpoint_snap_multipart_and_both_ends_use_frozen_source_native_units(crs):
+    source = line_overlap_frame([MultiLineString([[(0,0),(2,0)],[(10,0),(12,0)]])], crs=crs)
+    reference = line_overlap_frame([LineString([(-1,.25),(13,.25)])], crs=crs).rename(columns={'route_key':'ref_key'})
+    result = endpoint_snap(source, reference)
+    assert [part.coords[:] for part in result['result'].geometry.iloc[0].geoms] == [[(0.,.25),(2.,.25)],[(10.,.25),(12.,.25)]]
+    assert result['details'].part_no.tolist() == [1,1,2,2]
+    assert result['details']['end'].tolist() == ['start','end','start','end']
+    assert result['details']['distance'].tolist() == [.25]*4 and result['result'].crs == source.crs
+    assert result['details'].original_y.tolist()==[0.]*4 and result['details'].target_y.tolist()==[.25]*4
+
+
+@pytest.mark.parametrize('offset,moves', [(1.,False),(np.nextafter(1.,0.),True),
+    (np.nextafter(1.,2.),False),(2**-40,True),(2**-500,True)])
+def test_endpoint_snap_strict_original_distance_boundary_and_no_chaining(offset,moves):
+    source = line_overlap_frame([LineString([(0,0),(0,10)])])
+    reference = line_overlap_frame([LineString([(offset,-1),(offset,1)]),LineString([(offset+1,-1),(offset+1,1)])]).rename(columns={'route_key':'ref_key'})
+    out=endpoint_snap(source,reference)
+    assert out['result'].geometry.iloc[0].coords[0] == ((offset,0.) if moves else (0.,0.))
+    assert len(out['details']) == int(moves)
+    if moves: assert out['details']['distance'].tolist() == [offset]
+
+
+@pytest.mark.parametrize('kind',['rows','multipart','same_part'])
+def test_endpoint_snap_rejects_all_equidistant_distinct_target_positions(kind):
+    source=line_overlap_frame([LineString([(0,0),(0,10)])])
+    parts=[LineString([(-.5,-1),(-.5,1)]),LineString([(.5,-1),(.5,1)])]
+    shapes=parts if kind=='rows' else [MultiLineString(parts)] if kind=='multipart' else [LineString([(-.5,-1),(-.5,1),(.5,1),(.5,-1)])]
+    reference=line_overlap_frame(shapes).rename(columns={'route_key':'ref_key'})
+    before,ref_before=source.copy(deep=True),reference.copy(deep=True)
+    with pytest.raises(ValueError,match='等距'):
+        endpoint_snap(source,reference,.75)
+    assert_geodataframe_equal(source,before);assert_geodataframe_equal(reference,ref_before)
+
+
+def test_endpoint_snap_ignores_farther_ties_and_does_not_choose_reference_row_order():
+    source=line_overlap_frame([LineString([(0,0),(0,10)])])
+    reference=line_overlap_frame([LineString([(-.5,-1),(-.5,1)]),LineString([(.5,-1),(.5,1)]),
+                                 LineString([(.25,-1),(.25,1)])]).rename(columns={'route_key':'ref_key'})
+    for frame in [reference,reference.iloc[::-1]]:
+        out=endpoint_snap(source,frame)
+        assert out['result'].geometry.iloc[0].coords[0] == (.25,0.)
+        assert out['details'].reference_id.tolist()==[2]
+
+
+def test_endpoint_snap_all_references_covering_same_unique_target_are_retained():
+    source=line_overlap_frame([LineString([(0,0),(0,10)])])
+    reference=line_overlap_frame([LineString([(.5,-1),(.5,1)]),LineString([(.5,0),(2,0)])]).rename(columns={'route_key':'ref_key'})
+    out=endpoint_snap(source,reference)
+    assert out['details'].reference_id.tolist()==[0,1]
+    assert out['details'].target_x.tolist()==[.5,.5]
+
+
+@pytest.mark.parametrize('kind',['touch','connected','closed','no_candidate'])
+def test_endpoint_snap_leaves_exact_contacts_connected_endpoints_closed_and_out_of_range_unchanged(kind):
+    source=line_overlap_frame([LineString([(0,0),(0,10)])])
+    reference=line_overlap_frame([LineString([(.5,-1),(.5,1)]),LineString([(-.5,-1),(-.5,1)])]).rename(columns={'route_key':'ref_key'})
+    if kind=='touch': reference.loc[reference.index[0],reference.geometry.name]=LineString([(0,-1),(0,1)])
+    if kind=='connected':
+        source=line_overlap_frame([LineString([(-2,0),(0,0)]),LineString([(0,0),(2,0)])])
+        reference=line_overlap_frame([LineString([(-.1,.5),(.1,.5)])]).rename(columns={'route_key':'ref_key'})
+    if kind=='closed': source=line_overlap_frame([LineString([(0,0),(1,0),(1,1),(0,0)])])
+    if kind=='no_candidate': source=line_overlap_frame([LineString([(20,0),(20,10)])])
+    result=endpoint_snap(source,reference,.75)
+    assert_geodataframe_equal(result['result'],source)
+    assert result['details'].empty
+
+
+@pytest.mark.parametrize('shape',[
+    LineString([(-2,0),(0,0),(-2,0),(-2,2)]),
+    LineString([(0,0),(2,0),(0,0),(2,0),(2,2)]),
+    LineString([(-2,0),(0,0),(-2,0)]),
+    MultiLineString([[(-2,0),(0,0)],[(0,0),(-2,0),(0,0)]]),
+])
+def test_endpoint_snap_rejects_dangles_requiring_internal_vertex_or_closed_part_moves(shape):
+    source=line_overlap_frame([shape]);reference=line_overlap_frame([LineString([(.25,-1),(.25,1)])]).rename(columns={'route_key':'ref_key'})
+    assert any(p.coords[0]==(0.,0.) for p in get_operator('check_dangling_points')(input_gdf=source,id_field='route_key').geometry)
+    before=source.copy(deep=True)
+    with pytest.raises(ValueError,match='端点完整'):
+        endpoint_snap(source,reference,.5)
+    assert_geodataframe_equal(source,before)
+
+
+def test_endpoint_snap_shared_dangle_moves_every_source_endpoint_and_keeps_occurrences():
+    source=line_overlap_frame([LineString([(-2,0),(0,0)]),LineString([(0,0),(-2,0)])])
+    reference=line_overlap_frame([LineString([(.5,-1),(.5,1)])]).rename(columns={'route_key':'ref_key'})
+    out=endpoint_snap(source,reference)
+    assert [g.coords[:] for g in out['result'].geometry] == [[(-2.,0.),(.5,0.)],[(.5,0.),(-2.,0.)]]
+    assert out['details'].source_id.tolist()==[0,1] and out['details']['end'].tolist()==['end','start']
+
+
+@pytest.mark.parametrize('shape,reference',[
+    (LineString([(0,0),(.5,0),(0,10)]),LineString([(.5,-1),(.5,0)])),
+    (LineString([(0,0),(.5,0)]),LineString([(.25,-1),(.25,1)])),
+])
+def test_endpoint_snap_rejects_local_or_complete_collapse_even_if_remaining_geometry_is_valid(shape,reference):
+    source=line_overlap_frame([shape]);refs=line_overlap_frame([reference]).rename(columns={'route_key':'ref_key'})
+    with pytest.raises(ValueError,match='塌缩|无效'):
+        endpoint_snap(source,refs)
+
+
+@pytest.mark.parametrize('problem',['off_line','empty','nonfinite'])
+def test_endpoint_snap_rejects_non_exact_landing_or_unreliable_projection(monkeypatch,problem):
+    source=line_overlap_frame([LineString([(0,0),(0,10)])]);reference=line_overlap_frame([LineString([(.5,-1),(.5,1)])]).rename(columns={'route_key':'ref_key'})
+    monkeypatch.setattr(shapely,'shortest_line',lambda *a: LineString() if problem=='empty' else
+        LineString([(0,0),(np.nan,0)]) if problem=='nonfinite' else LineString([(0,0),(np.nextafter(.5,1.),0)]))
+    with pytest.raises(ValueError,match='精确落|可靠计算'):
+        endpoint_snap(source,reference)
+
+
+@pytest.mark.parametrize('side',['source','reference','both'])
+def test_endpoint_snap_empty_batches_and_no_moves_keep_complete_schema(side):
+    source,reference=endpoint_snap_frames()
+    if side in {'source','both'}: source=source.iloc[:0].copy()
+    if side in {'reference','both'}: reference=reference.iloc[:0].copy()
+    out=endpoint_snap(source,reference)
+    assert_geodataframe_equal(out['result'],source)
+    assert out['details'].empty and out['details'].source_id.dtype==source.route_key.dtype
+    assert out['details'].reference_id.dtype==reference.ref_key.dtype and out['details'].crs==source.crs
+    assert str(out['details'].part_no.dtype)=='int64' and str(out['details']['end'].dtype)=='string'
+
+
+@pytest.mark.parametrize('tolerance',[0,-1,True,np.bool_(False),np.nan,np.inf,None,'1',10**400])
+def test_endpoint_snap_rejects_invalid_tolerance(tolerance):
+    source,reference=endpoint_snap_frames()
+    with pytest.raises(ValueError): endpoint_snap(source,reference,tolerance)
+
+
+@pytest.mark.parametrize('source_crs,ref_crs',[(None,'EPSG:3857'),('EPSG:3857',None),('EPSG:4326','EPSG:4326'),('EPSG:3857','EPSG:32650')])
+def test_endpoint_snap_rejects_unknown_geographic_or_mismatched_crs(source_crs,ref_crs):
+    source,_=endpoint_snap_frames(source_crs);_,reference=endpoint_snap_frames(ref_crs)
+    with pytest.raises(ValueError): endpoint_snap(source,reference)
+
+
+@pytest.mark.parametrize('column',['distance','source_id','reference_id','part_no'])
+def test_endpoint_snap_result_business_or_geometry_columns_do_not_conflict_with_detail_columns(column):
+    source,reference=endpoint_snap_frames()
+    source=source.rename_geometry(column)
+    result=endpoint_snap(source,reference)['result']
+    assert result.geometry.name==column and result.columns.equals(source.columns)
+
+
+def test_endpoint_snap_discovery_has_one_default_result_and_details_without_new_resource_parameters():
+    spec=next(op for op in list_operators() if op['id']=='snap_line_endpoints')
+    assert spec['display_name']=='端点吸附' and spec['category_path']==['矢量处理','几何整理']
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    assert [(p['name'],p['type'],p['is_default']) for p in spec['output_ports']]==[('result','geodataframe',True),('details','geodataframe',False)]
+    assert {p['name'] for p in spec['parameters']}=={'input_gdf','reference_gdf','id_field','reference_id_field','tolerance'}
+    assert all(p['required'] for p in spec['parameters'])
+
+
+def test_endpoint_snap_preserves_duplicate_input_index_and_business_columns():
+    source,reference=endpoint_snap_frames();source.index=[7,7]
+    source['source_id']=pd.array(['business-a','business-b'],dtype='string')
+    source['distance']=pd.array([1,None],dtype='Int64')
+    out=endpoint_snap(source,reference)
+    assert out['result'].index.equals(source.index)
+    pd.testing.assert_frame_equal(pd.DataFrame(out['result'].drop(columns='source_shape')),pd.DataFrame(source.drop(columns='source_shape')))
+    assert out['details'].source_id.tolist()==[2**53+1,2**53+1,9]
+
+
+@pytest.mark.parametrize('side',['source','reference'])
+@pytest.mark.parametrize('problem',['missing_id','geometry_id','duplicate_id','null_geometry','z'])
+def test_endpoint_snap_rejects_invalid_source_or_reference_without_mutation(side,problem):
+    source,reference=endpoint_snap_frames();frame=source if side=='source' else reference
+    key='route_key' if side=='source' else 'ref_key';options={}
+    if problem=='missing_id': options['id_field' if side=='source' else 'reference_id_field']='absent'
+    if problem=='geometry_id': options['id_field' if side=='source' else 'reference_id_field']=frame.geometry.name
+    if problem=='duplicate_id': frame[key]=[1]*len(frame)
+    if problem=='null_geometry': frame.loc[frame.index[0],frame.geometry.name]=None
+    if problem=='z': frame.loc[frame.index[0],frame.geometry.name]=LineString([(0,0,1),(0,1,1)])
+    before,ref_before=source.copy(deep=True),reference.copy(deep=True)
+    with pytest.raises(ValueError): endpoint_snap(source,reference,**options)
+    assert_geodataframe_equal(source,before);assert_geodataframe_equal(reference,ref_before)
+
+
+def test_endpoint_snap_real_nonrepresentable_slanted_nearest_point_is_rejected():
+    # The perpendicular foot is (1/10, 3/10), which is not an exact binary XY
+    # point on y=3*x at the nearest Float64 coordinates returned by GEOS.
+    source=line_overlap_frame([LineString([(1,0),(10,-10)])])
+    reference=line_overlap_frame([LineString([(0,0),(1,3)])]).rename(columns={'route_key':'ref_key'})
+    foot=shapely.shortest_line(shapely.Point(1,0),reference.geometry.iloc[0]).coords[-1]
+    assert not shapely.intersects(shapely.Point(foot),reference.geometry.iloc[0])
+    from operators.geometric_operators import EndpointSnapError
+    with pytest.raises(EndpointSnapError,match='不能精确落在') as error: endpoint_snap(source,reference)
+    assert error.value.code=='landing'
+
+
+@pytest.mark.parametrize('language,expected',[('zh-cn','等距但位置不同'),('en','equally near candidates at different positions')])
+def test_endpoint_snap_workflow_localizes_exact_domain_failure_without_fabricating_parameter_diagnostic(language,expected):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source=line_overlap_frame([LineString([(0,0),(0,10)])])
+    reference=line_overlap_frame([LineString([(-.5,-1),(-.5,1)]),LineString([(.5,-1),(.5,1)])]).rename(columns={'route_key':'ref_key'})
+    task={'id':'snap','operator':'snap_line_endpoints','params':{'input_gdf':source,'reference_gdf':reference,'id_field':'route_key','reference_id_field':'ref_key','tolerance':1.},'depends_on':[]}
+    with pytest.raises(WorkflowExecutionError) as error:
+        GeoPythonWorkflowRunner(language=language).execute({'tasks':[task]})
+    assert error.value.error_code=='EXECUTION_FAILED' and error.value.diagnostic is None
+    assert expected in str(error.value)
+
+
+@pytest.mark.parametrize('problem',[None,'ambiguous','endpoint','landing','collapse'])
+def test_endpoint_snap_workflow_saves_both_ports_with_independent_ogr_or_publishes_neither(tmp_path,monkeypatch,problem):
+    from osgeo import ogr
+    source,reference=endpoint_snap_frames()
+    if problem=='ambiguous':
+        reference.loc[len(reference),['ref_key','reference_shape']]=['other-side',LineString([(19,-.25),(21,-.25)])]
+    if problem=='endpoint': source.loc[source.index[0],source.geometry.name]=LineString([(-2,0),(0,0),(-2,0),(-2,2)])
+    if problem=='collapse': source.loc[source.index[0],source.geometry.name]=LineString([(0,0),(.5,0),(4,10)])
+    source.to_file(tmp_path/'source.gpkg',driver='GPKG',index=False)
+    reference.to_file(tmp_path/'reference.gpkg',driver='GPKG',index=False)
+    original={name:(tmp_path/name).read_bytes() for name in ['source.gpkg','reference.gpkg']}
+    connection={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[
+        {'id':'source','operator':'load','params':{'connection_info':connection,'path':'source.gpkg'},'depends_on':[]},
+        {'id':'reference','operator':'load','params':{'connection_info':connection,'path':'reference.gpkg'},'depends_on':[]},
+        {'id':'snap','operator':'snap_line_endpoints','params':{'input_gdf':{'$ref':'source'},'reference_gdf':{'$ref':'reference'},'id_field':'route_key','reference_id_field':'ref_key','tolerance':1.},'depends_on':['source','reference']},
+        {'id':'save_lines','operator':'save','params':{'input_df':{'$ref':'snap'},'connection_info':connection,'path':'lines.gpkg','mode':'fail'},'depends_on':['snap']},
+        {'id':'save_details','operator':'save','params':{'input_df':{'$ref':'snap','port':'details'},'connection_info':connection,'path':'details.gpkg','mode':'fail'},'depends_on':['snap']},
+    ]
+    if problem=='landing':
+        monkeypatch.setattr(shapely,'shortest_line',lambda *a: LineString([(0,0),(np.nextafter(.5,1.),0)]))
+    result=execute_workflow({'tasks':tasks})
+    assert all((tmp_path/name).read_bytes()==value for name,value in original.items())
+    if problem:
+        assert result['status']=='failed' and result['error_code']=='EXECUTION_FAILED'
+        assert not (tmp_path/'lines.gpkg').exists() and not (tmp_path/'details.gpkg').exists()
+        assert 'snap' not in result.get('all_results',{})
+        expected={'ambiguous':'等距','endpoint':'端点完整','landing':'不能精确落在','collapse':'塌缩'}[problem]
+        assert expected in result['error']
+        return
+    assert result['status']=='success',result
+    lines_ds=ogr.Open(str(tmp_path/'lines.gpkg'));layer=lines_ds.GetLayerByIndex(0)
+    assert layer.GetFeatureCount()==2 and layer.GetSpatialRef().GetAuthorityCode(None)=='3857'
+    definition=layer.GetLayerDefn()
+    assert {definition.GetFieldDefn(i).GetName() for i in range(definition.GetFieldCount())}=={'route_key','grade','enabled','note'}
+    assert definition.GetFieldDefn(definition.GetFieldIndex('route_key')).GetType()==ogr.OFTInteger64
+    assert definition.GetFieldDefn(definition.GetFieldIndex('grade')).GetType()==ogr.OFTInteger64
+    boolean=definition.GetFieldDefn(definition.GetFieldIndex('enabled'));assert boolean.GetType()==ogr.OFTInteger and boolean.GetSubType()==ogr.OFSTBoolean
+    rows=list(layer);assert [f.GetGeometryRef().GetPoints() for f in rows]==[
+        [(.5,0.),(.5,0.),(4.,0.),(4.,10.)],[(20.,.25),(20.,10.)]]
+    assert [f.GetField('route_key') for f in rows]==[2**53+1,9]
+    assert [f.GetField('grade') for f in rows]==[3,None] and [f.GetField('enabled') for f in rows]==[True,None]
+    assert [f.GetField('note') for f in rows]==['original',None]
+    detail_ds=ogr.Open(str(tmp_path/'details.gpkg'));details=detail_ds.GetLayerByIndex(0)
+    assert details.GetFeatureCount()==3 and details.GetSpatialRef().GetAuthorityCode(None)=='3857'
+    fields=details.GetLayerDefn()
+    assert fields.GetFieldDefn(fields.GetFieldIndex('source_id')).GetType()==ogr.OFTInteger64
+    assert fields.GetFieldDefn(fields.GetFieldIndex('reference_id')).GetType()==ogr.OFTString
+    assert fields.GetFieldDefn(fields.GetFieldIndex('part_no')).GetType()==ogr.OFTInteger64
+    assert all(fields.GetFieldDefn(fields.GetFieldIndex(k)).GetType()==ogr.OFTReal for k in ['distance','original_x','original_y','target_x','target_y'])
+    records=list(details)
+    assert [f.GetField('source_id') for f in records]==[2**53+1,2**53+1,9]
+    assert [f.GetField('reference_id') for f in records]==['z','a','other']
+    assert [f.GetField('end') for f in records]==['start']*3
+    assert [f.GetField('part_no') for f in records]==[1]*3
+    assert [f.GetGeometryRef().GetPoints() for f in records]==[[(0.,0.)],[(0.,0.)],[(20.,0.)]]
+    assert [f.GetField('original_x') for f in records]==[0.,0.,20.]
+    assert [f.GetField('original_y') for f in records]==[0.,0.,0.]
+    assert [f.GetField('target_x') for f in records]==[.5,.5,20.]
+    assert [f.GetField('target_y') for f in records]==[0.,0.,.25]
+    assert [f.GetField('distance') for f in records]==[.5,.5,.25]
+
+
+@pytest.mark.parametrize('language,expected',[('zh-cn','端点吸附的容差必须'),('en','Endpoint snapping tolerance must')])
+def test_endpoint_snap_async_runtime_discovery_direct_denial_and_existing_failure_channel(language,expected,monkeypatch):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    monkeypatch.setattr(api_server,'executions',ExecutionRegistry())
+    source,reference=endpoint_snap_frames()
+    params={'input_gdf':json.loads(source.to_json()),'reference_gdf':json.loads(reference.to_json()),
+            'id_field':'route_key','reference_id_field':'ref_key','tolerance':0}
+    workflow={'tasks':[{'id':'snap','operator':'snap_line_endpoints','params':params,'depends_on':[]}]}
+    with api_server.app.test_client() as client:
+        operators=client.get('/api/operators').get_json()['operators']
+        assert len([item for item in operators if item['id']=='snap_line_endpoints'])==1
+        assert client.post('/api/operators/snap_line_endpoints/invoke',json={'params':params}).status_code==403
+        assert client.post('/api/workflow',json={'workflow_def':workflow}).status_code==400
+        response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':workflow,
+            'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read']}}})
+        assert response.status_code==202
+        deadline=time.monotonic()+5
+        while time.monotonic()<deadline:
+            state=client.get('/api/executions/'+response.get_json()['execution_id']).get_json()
+            if state['status'] in {'success','failed'}:break
+            time.sleep(.01)
+        assert state['status']=='failed' and state['error_code']=='EXECUTION_FAILED' and not state.get('diagnostic')
+        assert expected in state['error']
+
+
+def test_endpoint_snap_reference_reverse_and_row_reorder_keep_targets_and_complete_provenance():
+    source,reference=endpoint_snap_frames()
+    reference=reference.iloc[::-1].copy();reference[reference.geometry.name]=reference.geometry.map(shapely.reverse)
+    result=endpoint_snap(source,reference)
+    assert result['result'].geometry.iloc[0].coords[0]==(.5,0.)
+    assert result['result'].geometry.iloc[1].coords[0]==(20.,.25)
+    assert result['details'].reference_id.tolist()==['a','z','other']
+
+
+def test_endpoint_snap_never_chains_beyond_the_original_position_limit():
+    source=line_overlap_frame([LineString([(0,0),(0,10)])])
+    reference=line_overlap_frame([LineString([(.5,-1),(.5,1)]),LineString([(1,-1),(1,1)])]).rename(columns={'route_key':'ref_key'})
+    out=endpoint_snap(source,reference,.75)
+    assert out['result'].geometry.iloc[0].coords[0]==(.5,0.)
+    assert out['details'].reference_id.tolist()==[0] and out['details']['distance'].tolist()==[.5]
+
+
+def test_endpoint_snap_later_ambiguity_does_not_modify_an_earlier_valid_source():
+    source,reference=endpoint_snap_frames()
+    reference.loc[len(reference),['ref_key','reference_shape']]=['other-side',LineString([(19,-.25),(21,-.25)])]
+    before,ref_before=source.copy(deep=True),reference.copy(deep=True)
+    with pytest.raises(ValueError,match='等距但位置不同'): endpoint_snap(source,reference)
+    assert_geodataframe_equal(source,before);assert_geodataframe_equal(reference,ref_before)
+
+
+def test_endpoint_snap_unselected_internal_dangle_does_not_require_implicit_normalization():
+    source=line_overlap_frame([LineString([(-2,0),(0,0),(-2,0),(-2,2)])])
+    reference=line_overlap_frame([LineString([(100,0),(100,1)])]).rename(columns={'route_key':'ref_key'})
+    out=endpoint_snap(source,reference)
+    assert_geodataframe_equal(out['result'],source)
+    assert out['details'].empty
