@@ -38,6 +38,10 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
       - name: Validate capacity registration and deterministic runner
         run: make test-vector-topology-capacity-runner
       - name: Run manual line capacity gate

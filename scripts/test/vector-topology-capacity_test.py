@@ -417,6 +417,9 @@ class CapacityTest(unittest.TestCase):
                 (files[2],'SECONDS = 180','SECONDS = 181'),
                 (files[2],"'--memory-swap'","'--removed-swap'"),
                 (files[1],'default: matrix','default: observation'),
+                (files[1],'actions/setup-node@','actions/removed-node@'),
+                (files[1],'node-version-file: .node-version','node-version: 24'),
+                (files[1],'      - name: Set up Node.js\n','      - name: Set up Node.js\n        if: false\n'),
                 (files[1],'          - comparison','          - removed'),
                 (files[1],'          - chains','          - removed'),
                 (files[1],'          - normalize\n','          - removed\n'),
@@ -461,6 +464,11 @@ class CapacityTest(unittest.TestCase):
                 p=root/f;original=p.read_text();self.assertIn(old,original);p.write_text(original.replace(old,new))
                 with self.subTest(f=f,old=old):self.assertTrue(check.validate_topology_capacity(root))
                 p.write_text(original)
+            p=root/files[1];original=p.read_text()
+            start=original.index('      - name: Set up Node.js\n');end=original.index('      - name: Validate capacity',start)
+            block=original[start:end];p.write_text(original[:start]+original[end:]+'\n'+block)
+            self.assertTrue(any('before its gates' in error for error in check.validate_topology_capacity(root)))
+            p.write_text(original)
 
 
 class NormalizeCapacityTest(unittest.TestCase):

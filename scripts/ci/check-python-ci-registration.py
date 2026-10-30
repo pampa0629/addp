@@ -136,6 +136,16 @@ def validate_topology_capacity(repository: Path) -> list[str]:
     workflow = repository / '.github/workflows/vector-topology-capacity.yml'
     if workflow.is_file() and re.search(r'(?m)^  (?:push|pull_request|schedule):', workflow.read_text()):
         errors.append('line topology capacity must be manual only')
+    if workflow.is_file():
+        steps = workflow_steps(workflow.read_text())
+        node_steps = [offset for offset, step in steps
+                      if step_setting(step, 'uses').startswith('actions/setup-node@')
+                      and step_setting(step, 'node-version-file') == '.node-version'
+                      and not step_setting(step, 'if')]
+        gates = [offset for offset, step in steps
+                 if step_setting(step, 'run') in ('make test-vector-topology-capacity', 'make test-vector-topology-capacity-runner')]
+        if len(node_steps) != 1 or any(node_steps[0] >= gate for gate in gates):
+            errors.append('line topology capacity requires unconditional Node setup from .node-version before its gates')
     make = (repository / 'Makefile').read_text() if (repository / 'Makefile').is_file() else ''
     if 'test-vector-topology-capacity' in (make_dependencies(make, 'test') or []):
         errors.append('large line capacity must not run in the ordinary test gate')

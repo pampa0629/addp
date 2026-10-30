@@ -853,7 +853,7 @@ CSV沿普通表保存契约，不虚构RasterArtifact：物理／Meta大小须�
 
 ### 端点吸附手工容量
 
-用户确认在既有 `make test-vector-topology-capacity`／`vector-topology-capacity.yml` 增加独立 `profile=endpoint-snapping`，仅五类十五档、每档一次、串行，不运行旧矩阵／受控对照或业务T4。EPSG:3857、容差1、同源码／产品镜像／Runner，原4 CPU／2 GiB／memory.swap.max=0和每档全流程180秒不变，Runtime准备与清理另记。observer=A不包装产品函数，外部0.25秒采样与cgroup整体memory.peak、CPU用量、OOM、退出码保留；分阶段采样缺失为null，不把RSS高水位之和或采样峰值说成精确分阶段峰值。
+用户确认在既有 `make test-vector-topology-capacity`／`vector-topology-capacity.yml` 增加独立 `profile=endpoint-snapping`，仅五类十五档、每档一次、串行，不运行旧矩阵／受控对照或业务T4。EPSG:3857、容差1、同源码／产品镜像／Runner，原4 CPU／2 GiB／memory.swap.max=0和每档全流程180秒不变，Runtime准备与清理另记。镜像构建前须按根`.node-version`准备Node，不依赖Runner默认版本；登记检查拒绝缺失、条件跳过或晚于门禁的准备步骤。observer=A不包装产品函数，外部0.25秒采样与cgroup整体memory.peak、CPU用量、OOM、退出码保留；分阶段采样缺失为null，不把RSS高水位之和或采样峰值说成精确分阶段峰值。
 
 五类为：稀疏源／参考各1000、10000、100000要素（每四源一移动、一严格边界、一原位接触、一无候选，明细N/4）；密集源／参考各128、512、2048（每个待移端点K个参考候选、唯一最近目标，明细K）；同点源／参考各128、512、2048（完整保留全部S×R明细16384／262144／4194304行）；单参考要素1000／10000／100000重复部件（源1条、仅1条明细，不因参考重复扩增）；单源要素1000／10000／100000原始部件（参考1条、明细K，保部件编号与方向）。几何全部采用精确二进制坐标及唯一可落线目标，不改产品吸附语义。
 
