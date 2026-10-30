@@ -13,7 +13,9 @@ import sys
 import tarfile
 import tempfile
 import urllib.request
+from contextlib import contextmanager
 from pathlib import Path
+from time import monotonic
 from xml.etree import ElementTree as ET
 
 ENGINE = Path(__file__).resolve().parent
@@ -109,30 +111,57 @@ def unpack(package, destination):
                 subprocess.run(["dpkg-deb", "--extract", str(deb), str(destination)], check=True)
 
 
+@contextmanager
+def preparation_stage(phase):
+    started = monotonic()
+
+    def emit(result):
+        print("DOCUMENT_NATIVE_PREPARE=" + json.dumps({
+            "phase": phase, "result": result,
+            "elapsed_ms": round((monotonic() - started) * 1000, 3),
+        }), flush=True)
+
+    emit("started")
+    try:
+        yield
+    except Exception:
+        emit("failed")
+        raise
+    else:
+        emit("passed")
+
+
 def prepare(root):
-    if current(root):
+    with preparation_stage("current_check"):
+        ready = current(root)
+    if ready:
         return
     manifest, identity, prefix, executable, fonts = native_paths(root)
     cache = Path(root) / "downloads"
-    package = download(manifest["packages"][platform.system() + "-" + platform.machine()], cache)
-    font = download(manifest["font"], cache)
+    with preparation_stage("package_download"):
+        package = download(manifest["packages"][platform.system() + "-" + platform.machine()], cache)
+    with preparation_stage("font_download"):
+        font = download(manifest["font"], cache)
     Path(root).mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="install-", dir=root) as directory:
         stage = Path(directory) / "runtime"
         stage.mkdir()
-        unpack(package, stage)
-        (stage / "fonts").mkdir()
-        shutil.copyfile(font, stage / "fonts/NotoSansCJKsc-Regular.otf")
-        (stage / "font-cache").mkdir()
-        (stage / "fonts.conf").write_text(font_config(prefix, fonts))
-        state = {"identity": identity, "executable_sha256": sha256(stage / executable.relative_to(prefix))}
-        (stage / "ready.json").write_text(json.dumps(state))
-        # Called only while this Runtime is stopped and under the platform dependency lock.
-        if prefix.exists():
-            shutil.rmtree(prefix)
-        stage.replace(prefix)
-    if not current(root):
-        raise RuntimeError("Document native installation failed validation")
+        with preparation_stage("package_unpack"):
+            unpack(package, stage)
+        with preparation_stage("publish_installation"):
+            (stage / "fonts").mkdir()
+            shutil.copyfile(font, stage / "fonts/NotoSansCJKsc-Regular.otf")
+            (stage / "font-cache").mkdir()
+            (stage / "fonts.conf").write_text(font_config(prefix, fonts))
+            state = {"identity": identity, "executable_sha256": sha256(stage / executable.relative_to(prefix))}
+            (stage / "ready.json").write_text(json.dumps(state))
+            # Called only while this Runtime is stopped and under the platform dependency lock.
+            if prefix.exists():
+                shutil.rmtree(prefix)
+            stage.replace(prefix)
+    with preparation_stage("validate_installation"):
+        if not current(root):
+            raise RuntimeError("Document native installation failed validation")
 
 
 def check(root):

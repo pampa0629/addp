@@ -53,3 +53,5 @@ make test-document-native
 ```
 
 该入口默认使用开发态 `venv/bin/python`，只校验已准备的依赖，不安装依赖、不启动服务。测试使用临时输入和输出，核对三页 PDF、中文文本、转换目录清理及源样例不变；缺失依赖直接失败。CI 在 Document Workflow Job 中准备同一官方包和字体，并通过 `DOCUMENT_NATIVE_PYTHON` 指定测试解释器调用此入口。跨模块转换与浏览器预览仍由 Manager T4 独立验收。
+
+原生依赖准备以 `DOCUMENT_NATIVE_PREPARE=` 输出并立即刷新各阶段的 JSON 记录，包含 `phase`、`result` 和阶段耗时 `elapsed_ms`，区分当前安装检查、包下载、字体下载、解包、发布与最终校验。记录不包含私有路径、下载地址或异常内容；异常仍按原链路传播。阶段通过只说明该准备步骤完成，不能代替原生转换测试；Job 超时后最后一条 `started` 记录用于定位未完成的阶段。

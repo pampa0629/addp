@@ -104,3 +104,67 @@ def test_unknown_platform_fails_without_download(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="unavailable"):
         native_setup.prepare(tmp_path)
     assert not list(tmp_path.iterdir())
+
+
+def prepare_fixture(tmp_path, monkeypatch):
+    prefix = tmp_path / "private-install"
+    manifest = {"packages": {"Linux-x86_64": {"url": "https://example.test/package"}},
+                "font": {"url": "https://example.test/font"}}
+    monkeypatch.setattr(native_setup, "current", lambda root: False)
+    monkeypatch.setattr(native_setup.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(native_setup.platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(native_setup, "native_paths", lambda root: (
+        manifest, "identity", prefix, prefix / "program/soffice", prefix / "fonts"))
+    return prefix
+
+
+def test_prepare_trace_is_flushed_before_blocking_download_and_preserves_first_error(tmp_path, monkeypatch):
+    prefix = prepare_fixture(tmp_path, monkeypatch)
+
+    class FlushedOutput(io.StringIO):
+        visible = ""
+
+        def flush(self):
+            self.visible = self.getvalue()
+
+    output = FlushedOutput()
+    monkeypatch.setattr(native_setup.sys, "stdout", output)
+    failure = ConnectionResetError("private transport detail")
+
+    def download(asset, cache):
+        events = [json.loads(line.split("=", 1)[1]) for line in output.visible.splitlines()]
+        assert events[-1]["phase"] == "package_download"
+        assert events[-1]["result"] == "started"
+        raise failure
+
+    monkeypatch.setattr(native_setup, "download", download)
+    with pytest.raises(ConnectionResetError) as caught:
+        native_setup.prepare(tmp_path)
+    assert caught.value is failure
+    events = [json.loads(line.split("=", 1)[1]) for line in output.visible.splitlines()]
+    assert events[-1]["phase"] == "package_download"
+    assert events[-1]["result"] == "failed"
+    assert all(event["elapsed_ms"] >= 0 for event in events)
+    assert "private transport detail" not in output.visible
+    assert str(tmp_path) not in output.visible
+    assert not prefix.exists()
+
+
+def test_prepare_trace_distinguishes_unpack_failure_and_removes_staging(tmp_path, monkeypatch, capsys):
+    prefix = prepare_fixture(tmp_path, monkeypatch)
+    monkeypatch.setattr(native_setup, "download", lambda asset, cache: tmp_path / "verified-asset")
+    failure = OSError("unpack failed")
+
+    def unpack(package, destination):
+        raise failure
+
+    monkeypatch.setattr(native_setup, "unpack", unpack)
+    with pytest.raises(OSError) as caught:
+        native_setup.prepare(tmp_path)
+    assert caught.value is failure
+    events = [json.loads(line.split("=", 1)[1]) for line in capsys.readouterr().out.splitlines()]
+    assert [(e["phase"], e["result"]) for e in events if e["result"] != "started"] == [
+        ("current_check", "passed"), ("package_download", "passed"),
+        ("font_download", "passed"), ("package_unpack", "failed")]
+    assert not prefix.exists()
+    assert not list(tmp_path.glob("install-*"))
