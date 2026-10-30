@@ -232,16 +232,32 @@ GET/PUT/DELETE /api/v1/model/entity-relations/:id
 
 ### 逻辑表
 
+逻辑表及其子资源按[当前路由登记](backend/internal/api/router.go)区分集合、单项与动作入口：
+
+```text
+GET    /api/v1/model/logical-tables                                              # 列表，支持 table_type/status/domain_id 过滤
+POST   /api/v1/model/logical-tables                                              # 创建
+GET/PUT/DELETE /api/v1/model/logical-tables/:id                                   # 详情/更新/删除
+GET    /api/v1/model/logical-tables/standard_references                          # 业务域标准引用查询
+POST   /api/v1/model/logical-tables/:id/approve                                  # 审批
+POST   /api/v1/model/logical-tables/:id/reopen                                   # 退回草稿
+GET    /api/v1/model/logical-tables/:id/relations                                # 只读一跳专业关系
+POST/DELETE /api/v1/model/logical-tables/:id/materialized-target                 # 创建或校验/显式删除目标物理表
+GET/POST /api/v1/model/logical-tables/:id/fields                                 # 字段列表/创建
+PUT/DELETE /api/v1/model/logical-tables/:id/fields/:fid                           # 更新/删除确定字段
+POST   /api/v1/model/logical-tables/:id/preview-ddl                              # 预览建表语句
+GET/POST /api/v1/model/logical-tables/:id/dimension-relations                    # 事实表维度关联列表/创建（含字段映射）
+PUT/DELETE /api/v1/model/logical-tables/:id/dimension-relations/:rid              # 更新/删除确定关联
+GET/POST /api/v1/model/logical-tables/:id/dimension-hierarchies                  # 维度表层级列表/创建（含成员）
+PUT/DELETE /api/v1/model/logical-tables/:id/dimension-hierarchies/:hid            # 更新/删除确定层级
+POST   /api/v1/model/logical-tables/:id/dimension-hierarchies/:hid/levels         # 创建层级成员
+PUT/DELETE /api/v1/model/logical-tables/:id/dimension-hierarchies/:hid/levels/:lid # 更新/删除确定成员
+GET/PUT /api/v1/model/logical-tables/:id/concept-mappings                        # 概念实现映射读取/完整替换
 ```
-GET    /api/v1/model/logical-tables                          # 列表，支持 table_type/status/domain_id 过滤
-POST   /api/v1/model/logical-tables                          # 创建
-GET/PUT/DELETE /api/v1/model/logical-tables/:id              # 详情/更新/删除
-GET/POST/PUT/DELETE /api/v1/model/logical-tables/:id/fields  # 字段 CRUD
-POST   /api/v1/model/logical-tables/:id/preview-ddl          # 预览建表语句
-GET/POST/PUT/DELETE .../dimension-relations                   # 事实表关联维度表（含字段映射）
-GET/POST/PUT/DELETE .../dimension-hierarchies             # 维度表聚合内层级及成员
-GET/PUT .../concept-mappings                              # 概念实现映射读取/完整替换
-```
+
+字段、维度关联、层级及成员、概念实现映射共用所属 LogicalTable 的 `version`；JSON body 传递、事务版本推进与各写入对象的草稿条件见[并发版本与聚合写入](docs/model概念与数据约束规范.md#并发版本与聚合写入)，完整替换规则见[完整更新语义](docs/model概念与数据约束规范.md#完整更新语义)。请求仍须通过 Tenant、各路由的精确 Permission 与父子资源归属校验，见[授权边界](docs/model概念与数据约束规范.md#二授权边界)。
+
+目标物理表操作的独立授权、执行与删除边界见[目标物理表建表](docs/model概念与数据约束规范.md#目标物理表建表)；业务域引用查询见[业务域总览与五类标准接入](docs/model概念与数据约束规范.md#业务域总览与五类标准接入)。端点与静态契约核对不证明真实建表或业务查询成功，实际验收范围见[开发与验证](#开发与验证)。
 
 ### 指标实现与修订
 
