@@ -58,6 +58,55 @@ class HTTPBudget(unittest.TestCase):
         self.assertIs(caught.exception,failure);self.assertTrue(facts['resumed'])
         self.assertEqual([c.args[1] for c in send.call_args_list],[m.signal.SIGSTOP,m.signal.SIGCONT])
 
+    def test_confirmation_diagnostics_distinguish_waiting_members_from_a_slow_inventory(self):
+        for slow_inventory in (False,True):
+            with self.subTest(slow_inventory=slow_inventory):
+                now=[1.0];facts={};sent=[];calls=[]
+                rows=[{'pid':7,'birth':'1','state':'D'},{'pid':8,'birth':'2','state':'T'}]
+                def inventory(proof,end):
+                    calls.append(now[0])
+                    if len(calls)>1 and m.signal.SIGCONT not in sent:
+                        now[0]+=4 if slow_inventory else .2
+                    m.bounded(end,'compile_inventory')
+                    return rows
+                def send(proof,sig,end):
+                    sent.append(sig)
+                    if sig==m.signal.SIGCONT:
+                        for row in rows:row['state']='S'
+                with patch.object(m.time,'monotonic',side_effect=lambda:now[0]),patch.object(m.time,'monotonic_ns',side_effect=lambda:int(now[0]*1e9)),patch.object(m.time,'sleep',side_effect=lambda delay:now.__setitem__(0,now[0]+delay)),patch.object(m,'checked_group',side_effect=inventory),patch.object(m,'group_signal',side_effect=send):
+                    with self.assertRaises(m.BudgetFailure) as caught:
+                        with m.paused_compile({'stage':'process_source'},5,facts):self.fail('non-stopped group was read')
+                self.assertEqual(caught.exception.detail['stage'],'compile_inventory')
+                self.assertEqual(sent,[m.signal.SIGSTOP,m.signal.SIGCONT]);self.assertTrue(facts['resumed'])
+                self.assertNotIn('confirmed',facts)
+                self.assertIn('confirmation',facts)
+                proof=facts['confirmation'];self.assertEqual(proof['attempts'],proof['completed']+1)
+                self.assertEqual(len(calls),proof['attempts']+2)  # Initial ownership and mandatory restoration only.
+                self.assertEqual(proof['membership_changes'],0)
+                if slow_inventory:self.assertIsNone(proof['last_completed'])
+                else:
+                    self.assertGreater(proof['completed'],1)
+                    self.assertEqual(proof['last_completed']['state_counts'],{'R':0,'S':0,'D':1,'T':1,'t':0,'Z':0,'X':0,'I':0,'other':0})
+                    self.assertLess(proof['last_completed']['finished_monotonic_ns'],proof['last_attempt_started_monotonic_ns'])
+                self.assertNotIn('pid',json.dumps(proof));self.assertNotIn('birth',json.dumps(proof))
+
+    def test_confirmation_diagnostics_keep_only_last_complete_closed_snapshot(self):
+        facts={};calls=[0]
+        rows=[{'pid':7,'birth':'1','state':'T'}]
+        def inventory(proof,end):
+            calls[0]+=1
+            if calls[0]==2:return rows+[{'pid':8,'birth':'2','state':'private-state'}]
+            if calls[0]>=3:rows[0]['birth']='3'
+            return rows
+        with patch.object(m,'checked_group',side_effect=inventory),patch.object(m,'group_signal'),patch.object(m.time,'sleep'):
+            # The restoration observation is running, without another inventory for diagnostics.
+            with m.paused_compile({'stage':'process_source'},m.time.monotonic()+4,facts):rows[0]['state']='S'
+        self.assertIn('confirmation',facts)
+        proof=facts['confirmation'];self.assertEqual(proof['attempts'],3);self.assertEqual(proof['completed'],3)
+        self.assertEqual(proof['membership_changes'],1)
+        self.assertEqual(proof['last_completed']['state_counts'],{'R':0,'S':0,'D':0,'T':1,'t':0,'Z':0,'X':0,'I':0,'other':0})
+        self.assertEqual(calls[0],5);self.assertNotIn('private-state',json.dumps(facts));self.assertTrue(facts['resumed'])
+
     def test_foreign_self_reused_or_escaped_group_never_receives_a_signal(self):
         proof={'stage':'process_source','pid':999991,'pgid':999991,'sid':999991,'birth':'100','uid':os.geteuid(),
                'caller_pid':999992,'caller_birth':'10','caller_group':999992,'state':'active'}

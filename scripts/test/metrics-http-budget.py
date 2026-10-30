@@ -291,13 +291,26 @@ def paused_compile(proof,end,facts):
     stopped=False;primary=None
     facts['started_monotonic_ns']=time.monotonic_ns()
     try:
-        rows=checked_group(proof,end);facts.update(stage=proof['stage'],members=len(rows),stop_sent=False,resumed=False)
+        rows=checked_group(proof,end);facts.update(stage=proof['stage'],members=len(rows),stop_sent=False,resumed=False,confirmation=None)
         if not all(r['state'] in ('Z','X') for r in rows):
             stopped=True;group_signal(proof,signal.SIGSTOP,end);facts['stop_sent']=True
+            confirmation={'attempts':0,'completed':0,'membership_changes':0,
+                          'last_attempt_started_monotonic_ns':None,'last_completed':None}
+            facts['confirmation']=confirmation
             previous=None
             while True:
+                confirmation['attempts']+=1
+                inventory_started=time.monotonic_ns()
+                confirmation['last_attempt_started_monotonic_ns']=inventory_started
                 rows=checked_group(proof,end)
+                inventory_finished=time.monotonic_ns()
+                counts=dict.fromkeys(('R','S','D','T','t','Z','X','I','other'),0)
+                for row in rows:counts[row['state'] if row['state'] in counts else 'other']+=1
+                confirmation['completed']+=1
+                confirmation['last_completed']={'started_monotonic_ns':inventory_started,
+                                                'finished_monotonic_ns':inventory_finished,'state_counts':counts}
                 identities={(r['pid'],r['birth']) for r in rows}
+                if previous is not None and identities!=previous:confirmation['membership_changes']+=1
                 if quiescent(rows) and identities==previous:break
                 previous=identities
                 time.sleep(min(.005,bounded(end,'compile_pause')))
