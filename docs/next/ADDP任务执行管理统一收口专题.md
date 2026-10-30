@@ -604,3 +604,9 @@ Engine User 沿既有 deletion-assessments 只读评估，该未决 writer 必�
 **待确认方案，尚未实施。** 在正式 System 角色目录新增 `tenant.engine_lifecycle_operator`（引擎生命周期操作员），仅含上述四项 System Permission，只允许 Tenant Scope 的 User、不默认分配任何账号；四项 Permission 的可自定义标记保持不变。临时 Engine User 使用这个内置模板，再通过自定义角色取得现有两项专业结果读取，最终权限并集仍严格等于原批准的六项。它是正式角色模板变化，不能作为临时夹具绕过 IAM 目录或直接写入特殊角色；角色本身仍表达 Tenant 级功能权限，不宣称提供 Engine 实例 ACL。本轮资源限制继续由独占 Tenant、冻结的本轮 Engine 身份及 runner 校验保证。
 
 确认后按同一条正式发布路线同步角色规范／词条、Role Manifest 版本、生成目录及向前迁移，再修改夹具组合；不改现有消费者角色、不借用 IAM 撤权身份、不改变 Engine／任务删除语义。补真实发布目录约束下的可分配性、主体类型／Scope、无默认分配和最终精确六项回归，避免只比较静态列表。受影响验证包括授权目录门禁、System fixture Go、System IAM PostgreSQL 标准入口及 native／共享报告登记门禁；明确处理受影响来源冻结和自然 CI。角色方案及下一次同 case Hosted 都需另行确认，本次没有扩大权限或自行重跑。Manager late writer、其他 native case、Graph 原生写图未知效果和正向 reopen 的未验收边界继续保留。
+
+### 8.11 已确认的六权限角色组合修复与第二次 DLQ Hosted
+
+用户在第 8.10 节具体方案和下一次同 case Hosted 的确认问题后回复“继续”。本批据此实施：发布不默认分配的 `tenant.engine_lifecycle_operator` 四权限模板，通过正式角色分配组合两项原有专业结果读取，最终权限仍精确为六项；四项不可自定义标记、原业务身份及删除语义保持不变。先完成真实目录可分配性、精确权限并集及受影响门禁，再仅运行一次新的 `transfer-dlq-unknown`。其他 Hosted、环境切换和既有未验收缺口不扩大；第 8.10 节首次失败保留为历史实际结果。
+
+本批正式发布使用 Role Manifest 143 和新迁移 `000255_engine_lifecycle_operator`，角色总数由 74 增至 75，Permission 总数仍为 544；未改写历史 seed 或 Permission 标记。原六项直接创建 custom 角色的构造路径已移除，真实构造和目录回归共用同一份角色组合声明。目录回归先红后绿；最终 `make test-authorization`、System Go T1、native 70 项及 System IAM PostgreSQL 的 `online-fixture`、`migration --test catalog-integrity` 标准门禁均通过。真实 PG 验证旧六项 custom 仍拒绝，新模板无默认分配，正式 User 会话精确六项，并确认高风险自分配仍要求 MFA。日志分别为 `/tmp/addp-cleanup-native-role-authorization.log`、`system-t1.log`（同前缀）、`runner.log`（同前缀）、`postgres-final.log`（同前缀）及 `catalog-postgres.log`（同前缀）；新 Hosted 的结果后续另记，不把本地门禁计为运行通过。

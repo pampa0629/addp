@@ -537,3 +537,8 @@ other = "Engine authorization administrators configure direct issuance permissio
 
 [system.cleanup.manager_scope_required]
 other = "Meta cleanup requires a new assessment explicitly including both Meta and Manager."
+
+[roles.tenant.engine_lifecycle_operator.name]
+other = "Engine lifecycle operator"
+[roles.tenant.engine_lifecycle_operator.description]
+other = "Create, read and delete tenant Engines and read Cleanup results; no default assignments or data access"

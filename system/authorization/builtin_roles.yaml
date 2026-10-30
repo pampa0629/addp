@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 142
+manifest_version: 143
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -811,6 +811,17 @@ roles:
       - system.meta_collection_qualification.approve
       - system.meta_collection_qualification.read
       - system.meta_collection_qualification.revoke
+  - key: tenant.engine_lifecycle_operator
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.engine_lifecycle_operator.name
+    description_i18n_key: roles.tenant.engine_lifecycle_operator.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [user]
+    permissions:
+      - system.cleanup.read
+      - system.engine.create
+      - system.engine.delete
+      - system.engine.read
   - key: tenant.geopython_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.geopython_runtime.name

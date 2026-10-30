@@ -140,6 +140,8 @@ Role 只组合现有 Permission，不产生新 Permission，也不表达资源�
 
 首期 Break-glass 仅支持指定 Tenant 普通 User 的单个第一方 Web Token Family 撤销。`iam.emergency_session_revocation` 的创建／放弃／执行仅 Tenant Scope、不可委托，入口资格不默认组合进角色；读取允许 Platform 和 Tenant，Tenant 仅本人申请。批准／拒绝／撤销仅 Platform Scope、不可租户定制，只组合进系统和安全管理员；读取另授审计管理员，审计管理员不得批准、拒绝、撤销或执行。每次批准还在事务中核验具体平台岗位，两条批准必须分别来自系统及安全岗，不能只按 Permission 或两个账号判定完成。它不授予其他 IAM 管理权或业务数据读取权。
 
+引擎生命周期操作员（`tenant.engine_lifecycle_operator`）只允许 Tenant Scope 的 User，精确组合 `system.engine.create`、`system.engine.read`、`system.engine.delete` 和 `system.cleanup.read`。模板不默认分配账号，不新增 Permission 或资源实例 ACL，不改变上述 Permission 的不可租户自定义边界；通用 Cleanup execute、Engine update／execute、源数据访问及授权管理仍不在角色中。原生 Cleanup 验收的临时 Engine User 显式组合该模板与两项可自定义的专业结果读取权限，最终并集保持原批准六项；角色分配、会话及审计继续走 System 正式主路径。
+
 Tenant 自定义 Role：
 
 角色标识 `role_key` 使用两段式 `<namespace>.<name>`，精确格式为 `^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`；每段以小写英文字母开头，后续只允许小写英文字母、数字和下划线。创建时去除首尾空白，例如 `custom.ontology_manager`；`custom` 是示例命名空间，不是强制前缀。前端必须展示格式说明并在提交前校验；后端独立校验，不合规则返回 HTTP 400、稳定错误码 `role_key_invalid` 和对应语言的明确格式提示，不暴露内部错误详情。

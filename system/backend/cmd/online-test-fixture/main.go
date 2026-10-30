@@ -238,6 +238,20 @@ var cleanupNativeEnginePermissions = []string{
 	"system.cleanup.read", "manager.cleanup_result.read", "transfer.cleanup_result.read",
 }
 
+const cleanupNativeEngineRoleKey = "tenant.engine_lifecycle_operator"
+
+var cleanupNativeEngineResultPermissions = []string{"manager.cleanup_result.read", "transfer.cleanup_result.read"}
+
+// The real creator and the published-catalog contract tests share these declarations.
+var cleanupNativeFixtureSubjects = []struct {
+	name, environment string
+	permissions       []string
+	builtinRoles      []string
+}{
+	{"external-online-cleanup-native-transfer", "ADDP_ONLINE_CLEANUP_NATIVE_TRANSFER_ACCESS_TOKEN", transferContinuousPermissions, nil},
+	{"external-online-cleanup-native-engine", "ADDP_ONLINE_CLEANUP_NATIVE_ENGINE_ACCESS_TOKEN", cleanupNativeEngineResultPermissions, []string{cleanupNativeEngineRoleKey}},
+}
+
 var managerArtifactPermissions = []string{
 	"manager.content.read",
 	"manager.data_item.update",
@@ -853,15 +867,9 @@ func run(args []string, environment []string) error {
 	}
 	if *suite == "cleanup-native-effects" {
 		values["ADDP_ONLINE_CLEANUP_NATIVE_MANAGER_ACCESS_TOKEN"] = consumerSession.AccessToken
-		for _, subject := range []struct {
-			name, environment string
-			permissions       []string
-		}{
-			{"external-online-cleanup-native-transfer", "ADDP_ONLINE_CLEANUP_NATIVE_TRANSFER_ACCESS_TOKEN", transferContinuousPermissions},
-			{"external-online-cleanup-native-engine", "ADDP_ONLINE_CLEANUP_NATIVE_ENGINE_ACCESS_TOKEN", cleanupNativeEnginePermissions},
-		} {
+		for _, subject := range cleanupNativeFixtureSubjects {
 			prepared, _, _, fixtureErr := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
-				tenant.ID, administrator.PrincipalID, subject.name, subject.permissions)
+				tenant.ID, administrator.PrincipalID, subject.name, subject.permissions, subject.builtinRoles...)
 			if fixtureErr != nil {
 				return fixtureErr
 			}

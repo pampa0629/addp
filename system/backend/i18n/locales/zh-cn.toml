@@ -537,3 +537,8 @@ other = "引擎授权管理员设置数据项是否允许直接授权，不影�
 
 [system.cleanup.manager_scope_required]
 other = "执行 Meta 清理前，请显式选择 Meta 和 Manager 重新评估。"
+
+[roles.tenant.engine_lifecycle_operator.name]
+other = "引擎生命周期操作员"
+[roles.tenant.engine_lifecycle_operator.description]
+other = "仅办理当前租户的引擎创建、读取、删除及清理结果读取，不默认分配或授予数据访问"

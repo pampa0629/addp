@@ -601,6 +601,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | Role | 角色 | Permission 的命名集合。 | Role 本身不表达业务资源实例；具体作用范围由 Role Assignment 和 owner Resource Grant / Policy 决定。 |
 | Source Data Authorizer | 源数据授权办理员 | 按有效业务批准办理授权，或对已获准直接授权的精确 DataItem 办理直接只读授权，并查询、撤销授权的内置功能角色。 | 使用 `tenant.source_data_authorizer`，仅 Tenant Scope 的 User；办理另须对应引擎的有效管理资格。角色不自动赋予业务批准、直接授权许可管理、创建委托或内容读取权。实施与验证状态见《授权上下文规范》5.5.5。 |
 | Data Architect | 数据架构师 | 负责维护 Tenant 全局数据架构与建模约束的内置业务角色。 | 当前使用 `tenant.data_architect`，只允许 Tenant Scope 和 User Principal，负责业务实体、实体关系、逻辑模型、数仓分层与命名规范。质量执行策略由 Quality 管理。 |
+| Engine Lifecycle Operator | 引擎生命周期操作员 | 以最小功能权限办理 Tenant 内引擎注册、读取、删除及清理结果读取的内置管理角色。 | `tenant.engine_lifecycle_operator` 仅允许 Tenant Scope 的 User，只组合 `system.engine.create/read/delete` 和 `system.cleanup.read`，不默认分配；不表达 Engine 实例 ACL，不包含通用 Cleanup execute、引擎 update／execute 或业务数据访问。 |
 | Role Assignment | 角色分配 | 将 Role 赋予 Principal，并声明 Platform 或 Tenant Scope 的功能授权事实。 | 不使用 `user_type` 同时表达身份类别和完整权限。 |
 | Department | 部门 | Tenant 内表达稳定组织归属的层级组织单元。 | 一个 User 可有一个主部门和多个附加部门；父子部门权限默认不继承。名称表达显示名称；编码由用户创建时必填，同 Tenant 内唯一，创建后不可修改，作为技术身份。 |
 | Project Group | 项目组 | Tenant 内面向跨部门协作的成员集合。 | 严格属于单个 Tenant，第一阶段不嵌套，不改变成员的 Department 归属；创建即启用，关闭后不可恢复。名称表达显示名称；编码由用户创建时必填，同 Tenant 内唯一，创建后不可修改，作为技术身份。 |
