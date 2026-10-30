@@ -204,18 +204,28 @@ model/
 
 ### 业务实体
 
-```
-GET    /api/v1/model/entities               # 列表，支持 domain_id/status 过滤
-POST   /api/v1/model/entities               # 创建
-GET    /api/v1/model/entities/:id           # 详情
-PUT    /api/v1/model/entities/:id           # 更新
-DELETE /api/v1/model/entities/:id           # 删除
-POST   /api/v1/model/entities/:id/approve   # 审批通过（status: draft → approved）
-GET/POST/PUT/DELETE .../attributes       # 实体属性 CRUD
+实体及属性入口按[当前路由登记](backend/internal/api/router.go)区分集合、单项与生命周期动作：
+
+```text
+GET    /api/v1/model/entities                       # 列表，支持 domain_id/status 过滤
+POST   /api/v1/model/entities                       # 创建
+GET    /api/v1/model/entities/standard_references   # 业务域标准引用查询
+GET    /api/v1/model/entities/:id                   # 详情
+PUT    /api/v1/model/entities/:id                   # 更新
+DELETE /api/v1/model/entities/:id                   # 删除
+GET    /api/v1/model/entities/:id/relations         # 只读一跳专业关系
+POST   /api/v1/model/entities/:id/approve           # 审批通过（status: draft → approved）
+POST   /api/v1/model/entities/:id/reopen            # 显式退回草稿
+GET/POST /api/v1/model/entities/:id/attributes       # 属性列表/创建
+PUT/DELETE /api/v1/model/entities/:id/attributes/:aid # 更新/删除确定属性
 POST   /api/v1/model/entities/import-mermaid/preview # 预览 Markdown Mermaid 增量导入
 POST   /api/v1/model/entities/import-mermaid         # 确认 Markdown Mermaid 增量导入
 GET    /api/v1/model/entities/export-mermaid         # 按可选 domain_id 导出 Markdown Mermaid
 ```
+
+退回草稿需要 `model.entity.update`，审批需要 `model.entity.approve`；属性各动作的精确 Permission 以路由登记和[权限清单](authorization/permissions.yaml)为准，Tenant 及父子资源归属校验见[授权边界](docs/model概念与数据约束规范.md#二授权边界)。
+
+属性写入的草稿限制与父 Entity 版本的事务推进见[并发版本与聚合写入](docs/model概念与数据约束规范.md#并发版本与聚合写入)；退回草稿时冻结修订的清理及再次审批的解析规则见[数据元修订冻结](docs/model概念与数据约束规范.md#数据元修订冻结)。端点登记与静态契约核对不代表真实运行通过，实际验收范围见[开发与验证](#开发与验证)。
 
 Entity、LogicalTable、DWLayer 和 EntityRelation 是独立并发版本主体。EntityAttribute 使用父 Entity 版本；LogicalField、TableRelation、DimensionHierarchy 使用父 LogicalTable 版本；MetricImplementation 使用独立版本，其修订使用实现版本。已有资源及聚合子资源的所有写操作都在 JSON body 中携带对应 `version`，成功后返回新版本；不接受 query、Header 或服务端版本兜底。
 
