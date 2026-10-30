@@ -21,6 +21,8 @@ Inference 是 ADDP 统一 AI 推理 owner。正式契约见 [AI 推理接口规�
 | 凭据设置、轮换、删除、加密与响应边界 | [凭据](<../docs/spec/addp AI推理接口规范.md#四凭据>) |
 | 资源管理 API | [控制面 API](<../docs/spec/addp AI推理接口规范.md#五控制面-api>) |
 | 统一推理协议、Profile 解析与请求校验 | [数据面 API](<../docs/spec/addp AI推理接口规范.md#六数据面-api>) |
+| 数据面错误、重试、超时与响应完整性 | [错误与重试](<../docs/spec/addp AI推理接口规范.md#错误与重试边界>)、[超时分类](<../docs/spec/addp AI推理接口规范.md#超时与响应完整性>) |
+| 上游诊断、敏感信息保护与受控提示 | [诊断日志与提示](<../docs/spec/addp AI推理接口规范.md#诊断日志与提示>) |
 | Agent、Copilot、Manager 的场景职责与配置边界 | [调用方边界](<../docs/spec/addp AI推理接口规范.md#七调用方边界>) |
 | Console／System 配置管理入口与强类型资源 | [配置管理入口](<../docs/spec/addp AI推理接口规范.md#八配置管理入口>) |
 | 授权、凭据、能力、场景解析及上游错误的验证 | [验证要求](<../docs/spec/addp AI推理接口规范.md#九验证要求>) |

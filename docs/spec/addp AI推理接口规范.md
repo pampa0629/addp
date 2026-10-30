@@ -195,6 +195,10 @@ Provider 或 Deployment 存在 Inference 本地的下游引用时，删除必须
 
 ## 六、数据面 API
 
+[请求与端点](#请求身份与操作端点) · [输入与输出](#输入与输出协议) · [错误与重试](#错误与重试边界) · [超时分类](#超时与响应完整性) · [诊断日志](#诊断日志与提示) · [验证要求](#九验证要求)
+
+### 请求身份与操作端点
+
 内部前缀固定为 `/api/v1/inference/internal`。所有请求必须包含 `schema_version="addp.inference/v1"`、`tenant_id`、`model_profile_id`，并由 Inference 验证调用方 audience、Profile scope、Provider allowlist、Deployment 状态和 operation 能力。
 
 调用方在执行前需要判断本地结果是否仍匹配当前 Profile 时，统一调用 `POST /profiles/resolve`。请求额外声明 `operation` 和 `modality`，响应只返回 `profile_version`、`deployment_id` 和 `dimension`；不得返回 Provider、endpoint、adapter、upstream model 或 credential。该解析接口与实际推理共用同一可见性和能力校验，不形成控制面旁路。
@@ -206,11 +210,17 @@ Provider 或 Deployment 存在 Inference 本地的下游引用时，删除必须
 | `POST /rerank` | `query`、`documents[]`、`top_n` | `results[]`、`usage`、`deployment_id`、`profile_version` |
 | `POST /profiles/resolve` | `operation`、`modality` | `model_profile_id`、`profile_version`、`deployment_id`、`dimension` |
 
-第一版 chat 使用非流式 JSON 主路径；流式能力只有在 `compute.inference.streaming=true` 且正式定义事件协议后才能开放，不能透传厂商 SSE。图片输入使用受控二进制或 owner 签发的短期内容访问材料，不接受可由 Inference 任意访问的内网 URL。
+### 输入与输出协议
+
+第一版 chat 使用非流式 JSON 主路径；流式能力只有在 `compute.inference.streaming=true` 且正式定义事件协议后才能开放，不能透传厂商 SSE。
+
+图片输入使用受控二进制或 owner 签发的短期内容访问材料，不接受可由 Inference 任意访问的内网 URL。
 
 Chat Tool Calling 使用厂商无关的结构：`tools[]` 只包含稳定 `name/description/parameters` JSON Schema，`tool_choice` 只允许 `auto/none/required`；assistant 消息返回 `tool_calls[]`，每项只包含 `id/name/arguments`，Tool 结果消息使用 `role=tool + tool_call_id + content`。Inference 负责与上游协议互转，但不执行 Tool、不签发委托令牌、不理解 AgentRun，也不保存 Tool 参数或结果。
 
 结构化输出通过 `response_schema={name,description,schema,strict}` 声明。调用方必须使用 Tool Calling 或 `response_schema` 中的一种，不得同时提交两条结构化路线；不支持所需语义的 Deployment 必须明确返回 `inference_operation_unsupported`，不能退化为纯文本后猜测 JSON。所有 Schema 必须是 JSON object，工具名和 Schema 名使用稳定 ASCII 标识符。
+
+### 错误与重试边界
 
 统一错误至少包含：
 
@@ -227,11 +237,19 @@ Chat Tool Calling 使用厂商无关的结构：`tools[]` 只包含稳定 `name/
 
 不得把 scope、credential、协议或模型未配置错误转换为空结果。只有明确可重试的 `503/504` 可以由调用方按执行策略重试；第一版不自动切换 Deployment。
 
-超时分类覆盖请求发送和响应正文读取，不以收到上游 `200` 响应头作为推理完成。两阶段的 deadline 到期或传输超时均使用既有 `504 inference_timeout`；正文提前结束、解码失败和主动取消不冒充超时。共享 Python 客户端向已发现的 Inference Runtime 发起请求时，传输超时同样表达为 `inference_timeout`；System Runtime 发现阶段的传输失败仍表达为 `inference_runtime_unavailable`。该分类不延长现有 120 秒调用上限、不自动重试，也不切换模型。
+### 超时与响应完整性
+
+超时分类覆盖请求发送和响应正文读取，不以收到上游 `200` 响应头作为推理完成。两阶段的 deadline 到期或传输超时均使用既有 `504 inference_timeout`；正文提前结束、解码失败和主动取消不冒充超时。
+
+共享 Python 客户端向已发现的 Inference Runtime 发起请求时，传输超时同样表达为 `inference_timeout`；System Runtime 发现阶段的传输失败仍表达为 `inference_runtime_unavailable`。该分类不延长现有 120 秒调用上限、不自动重试，也不切换模型。
+
+### 诊断日志与提示
 
 上游调用失败时，Inference 记录固定的失败阶段、Provider / Deployment 身份和 HTTP 状态。OpenAI-compatible 错误中的 `code/type/param` 只能以严格允许列表投影到诊断日志，未知值统一为 `unclassified`；不得记录原始错误文案、响应正文、Endpoint、凭据、请求消息或 Tool 参数和结果。诊断不改变公开错误契约，也不触发参数替换、模型切换或额外重试。
 
-当上游没有给出可识别的结构化错误时，可以从错误文案的固定模板生成允许列表内的 `upstream_error_hint`。提示与上游的 `code/type/param` 分开记录，不冒充结构化事实，不自动驱动配置变更。模板只识别稳定的参数名、消息角色、Schema 和接口拒绝类别，不输出文案中的模型名、工具名、参数值或任意子串；未匹配或过长的文案仍为 `unclassified`。
+当上游没有给出可识别的结构化错误时，可以从错误文案的固定模板生成允许列表内的 `upstream_error_hint`。提示与上游的 `code/type/param` 分开记录，不冒充结构化事实，不自动驱动配置变更。
+
+模板只识别稳定的参数名、消息角色、Schema 和接口拒绝类别，不输出文案中的模型名、工具名、参数值或任意子串；未匹配或过长的文案仍为 `unclassified`。
 
 ## 七、调用方边界
 
