@@ -204,21 +204,13 @@ Copilot Permission 只授予“生成候选结果”，不授予候选查询、W
 
 ## 环境变量配置
 
-```bash
-# 数据库配置
-POSTGRES_HOST=localhost
-POSTGRES_PORT=15432
-POSTGRES_USER=addp
-POSTGRES_PASSWORD=addp_password
-POSTGRES_DB=addp
+数据库、宿主机首选端口与部署 Secret 按[配置规范的环境文件与密钥规则](../docs/spec/configuration/部署环境与密钥.md#根目录环境配置唯一路径)维护，变量模板见[环境变量参考](../docs/spec/configuration/环境变量参考.md#环境变量参考)。根 `.env.example` 是唯一模板，标准开发入口将根 `.env` 注入进程。
 
-# Copilot Service Principal；Inference Runtime 由 System Runtime Descriptor 发现
-COPILOT_SERVICE_CLIENT_SECRET=replace-with-unique-copilot-secret-32bytes
+本地 Infra 的实际数据库端口通过 `bash scripts/infra/status.sh` 查询，开发入口从 Compose 实际映射注入连接配置。Copilot 的实际 HTTP 端口以启动输出和 `.dev-state/ports.env` 中的 `COPILOT_BACKEND_PORT` 为准，由标准入口注入运行时 `PORT`；首选端口、容器内部端口与公开入口的区别统一见[端口规范](../docs/spec/addp端口分配.md)。
 
-# 服务配置
-PORT=8087
-DEBUG=true
-```
+Copilot 服务身份使用独立的 `COPILOT_SERVICE_CLIENT_SECRET`，调用身份见[多租户支持](#多租户支持)；Inference Runtime 由 System Runtime Descriptor 发现，上游凭据的归属与保护见[推理契约导航](#推理契约导航)。
+
+配置、启动就绪与实际推理验收的区别见[测试 API 的验收边界](#测试-api)，验证要求与结果认定见[推理契约导航](#推理契约导航)。
 
 ## 多租户支持
 
