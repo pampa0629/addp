@@ -39,17 +39,31 @@ Quality 不依赖企业 Catalog。Standard 导入、固定修订与显式升级�
 
 ## 迁移与运行
 
+篇内导航：[迁移演进](#迁移演进)、[运行入口与 Worker 实例](#运行入口与-worker-实例)、[当前数据库启动所有权](#数据库启动所有权)。
+
+### 迁移演进
+
+以下记录 SQL 迁移与当时的启动配套要求；历史 SchemaVersion 不代表当前启动版本，当前值与迁移职责见[数据库启动所有权](#数据库启动所有权)。
+
 Quality migration 10 一次性合并旧定义和问题身份，删除旧表。旧 check ID 转为 2×ID，data_validation ID 转为 2×ID+1；无检查任务的规则应用也转换为方案。旧执行历史保留在 Monitor，不通过新版 Quality 详情解释旧契约。空规则方案必须补齐规则后执行。
 
 System migration 147 合并用户权限，撤销旧权限授予并使相关授权失效。Orchestrator migration 005 只更新自身 steps 中的旧引用。升级前排空旧 Quality 与关联 Orchestrator 活动执行，并在恢复调度前完成三个 owner 的迁移；不得混跑新旧 worker。
 
 Quality migration 11 将内嵌规则逐条提取为独立规则 R1 和检查项，保留原 rule_key、目标、级别、来源；不按名称去重，不改写历史执行，删除旧 plans.rules 列。System migration 148 补齐规则 CRUD 授予并刷新受影响用户授权。规则修订仅追加；被方案引用时禁止删除，升级引用必须显式保存方案。租户物理清理包含规则及修订；引擎清理不删除目标无关规则。
 
-后端 8182，前端 5183；服务按 scripts/dev 标准入口启动。本轮实现不等于已在运行环境执行迁移。
-
 Quality migration 14 增加问题目标范围，使用最后观测执行的完整有效绑定回填；缺失证据保持 NULL，不用当前方案推断。启动 SchemaVersion 升为 2，执行快照升为 v2。更新前排空 Quality 活动执行并同步重启 Backend/Worker，禁止混跑新旧 worker。不同目标可并发，同一目标范围串行；方案编辑和删除仍要求所有目标执行结束。
 
 Quality migration 15 扩展问题目标列摘要为 TEXT，SchemaVersion 升为 3；Backend/Worker 需同步更新。现有 T1/T2/T3 入口自动发现相关测试，入口见[标准入口与 CI 登记](#标准入口与-ci-登记)。
+
+Quality migration 16 增加记录级历史异常接受和永久处理审计，当时 SchemaVersion 升为 4。表绑定可声明稳定 `record_key`；完整观测保留失败摘要，工单处理携带 version。accepted 不改变规则结论、分数或 error 阻断；新增与恢复后复发的记录重新待处理。业务语义见[接受当前历史异常](../docs/spec/addp数据质量规范.md#接受当前历史异常)。
+
+Quality migration 17 通过 [Runner](backend/internal/migration/runner.go) 的 `cleanup.MigrateResults(tx, "quality")` 钩子初始化 Owner 本地专业回收结果；[SQL 迁移文件](backend/internal/migration/sql/000017_cleanup_results.up.sql)与该钩子属于同一迁移事务。
+
+### 运行入口与 Worker 实例
+
+后端首选 8182、前端首选 5183；服务按 scripts/dev 标准入口启动，实际端口以启动输出和 `.dev-state/ports.env` 为准，公开访问入口与监听范围沿[端口规范](../docs/spec/addp端口分配.md)。
+
+原生开发 Worker 默认一个，`ADDP_DEV_QUALITY_WORKER_REPLICAS=2` 选择两个；唯一启动单元为 `quality-worker-1/-2`，共用 Worker 产物，每个进程独立登记并消费自己的采集计划，沿既有 `ADDP_HOST_NODE_ID` 主机声明。标准启动补缺失单元，模块停止／重启覆盖全部编号单元；配置、身份及先 Backend Ready 后 Worker 的要求统一见[生命周期规范](../docs/spec/addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)。`make test-dev-lifecycle` 和 `make test-node-metrics-online-runner` 覆盖启动及专项夹具；`platform-node-metrics` 的 `quality-workers` 属于节点采集实机专项，其结果不等同于质量业务任务的多 Worker 验收；按各自固定版本证据认定，未执行或未覆盖不计通过。
 
 ## 测试与 CI
 
@@ -70,6 +84,8 @@ Quality migration 15 扩展问题目标列摘要为 TEXT，SchemaVersion 升为 
 
 - 本地仅用 addp_test 和 addp_iam_test；不为测试创建单次 database。
 
+`make test-quality-postgres` 在测试前后清理测试库中 Quality Schema 和 Quality 执行事实，拒绝开发数据库，避免用修改迁移校验和的方式复验未发布迁移；已有 Quality T2 CI 入口自动覆盖该生命周期。
+
 准备和退出由 scripts/test/online-hosted-quality-gate.sh 统一负责；使用独立的普通执行身份、夹具准备身份及引擎注册身份，通过正式 API 创建和审批两个 Model 逻辑表并物化目标，再在当次 PostgreSQL 写入固定数据。套件运行期间只读取这些夹具；退出销毁本轮应用、业务源、Infra 和凭据，清理失败即门禁失败。配置及证据边界见 scripts/README.md；不得复用个人管理员会话。当前仅登记手工 CI，未纳入夜间调度。
 
 T4 的 Run ID 保留在报告与资源名称，规则和方案编码使用其 SHA-256 摘要，遵守 Quality 的小写字母、数字及下划线契约。父编排只读取安全步骤及子 execution UUID；Model 子执行经 Monitor/Model Owner 独立裁决，实际动态目标由 Quality 专业入口的冻结绑定和结果校验，不从父步骤读取子任务 outputs。清理失败保留首个请求或断言错误，未知提交仍禁止竞态删除。
@@ -83,8 +99,8 @@ T4 的 Run ID 保留在报告与资源名称，规则和方案编码使用其 SH
 
 ## 数据库启动所有权
 
-Quality migration 16 增加记录级历史异常接受和永久处理审计，SchemaVersion 为 4。表绑定可声明稳定 `record_key`；完整观测保留失败摘要，工单处理携带 version。accepted 不改变规则结论、分数或 error 阻断；新增与恢复后复发的记录重新待处理。具体语义以数据质量规范为准。`make test-quality-postgres` 在测试前后清理测试库中 Quality Schema 和 Quality 执行事实，拒绝开发数据库，避免用修改迁移校验和的方式复验未发布迁移；已有 Quality T2 CI 入口自动覆盖该生命周期。
+当前源码的启动 `SchemaVersion=5`，以 [startup_schema.go](backend/internal/migration/startup_schema.go) 为准；SQL 迁移序号与成功初始化的启动版本分别记录，不由迁移编号推导启动版本。历史迁移见[迁移演进](#迁移演进)。
 
-原生开发 Worker 默认一个，`ADDP_DEV_QUALITY_WORKER_REPLICAS=2` 选择两个；唯一启动单元为 `quality-worker-1/-2`，共用 Worker 产物，每个进程独立登记并消费自己的采集计划，沿既有 `ADDP_HOST_NODE_ID` 主机声明。标准启动补缺失单元，模块停止／重启覆盖全部编号单元；配置、身份及先 Backend Ready 后 Worker 的要求统一见生命周期规范。`make test-dev-lifecycle` 和 `make test-node-metrics-online-runner` 覆盖启动及专项夹具；`platform-node-metrics` 的 `quality-workers` 由专门会话执行真实 Hosted 验收，不等同于质量业务任务的多 Worker 验收。
+Backend 独占模块迁移，Worker 只读校验模块及 common schema 的成功提交版本。多 Backend 锁、迁移失败回滚、SchemaVersion 递增和 Backend 就绪后启动 Worker 的规则，统一见[模块迁移与 Worker 启动顺序](../docs/spec/addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)。
 
-本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见 `docs/spec/addp开发服务生命周期与构建身份规范.md`。
+源码版本与迁移文件存在不证明运行环境已执行迁移；按[标准入口与 CI 登记](#标准入口与-ci-登记)及固定版本运行证据分别认定。
