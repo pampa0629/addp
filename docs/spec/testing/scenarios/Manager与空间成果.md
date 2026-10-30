@@ -832,3 +832,20 @@ artifact／物理／Meta相等正整数大小、精确scan父执行／用户／�
 源初始化扫描须核当前执行、无父执行、同租户／普通User／引擎；随后40条业务执行全部零资源发布、零新增扫描和零派生血缘，专业详情与Monitor核当前身份、状态和提交DAG／语言快照。共41次完整物理检查，每次覆盖11份源原件／全像元／mask／类型／NoData／网格／CRS／scale-offset及Runtime执行工作区零残留；每步重新读取此前成功结果，共504次先前结果检查。归档11份源原字节、独立期望、80份专业／Monitor终态原始响应及大小／hash清单（响应文件名相对于`statistics-responses/`目录），所有旧原件／响应／期望禁止覆盖、重建或静默修复。业务计时覆盖源初始化、oracle、40执行、查询、原件复核和执行工作区清理；Hosted部署／NFS／Infra退出清理由既有生命周期单独严格核验，清理失败不得通过。
 
 本地入口为`make test-raster-statistics-percentile-online-runner`及标准`make test-geopython-workflow`中的`test_online_statistics_percentile_fixture.py`；已同步Online registry、changed gate、独立workflow与固定矩阵／删除断言变异检查，仅登记不代表已运行Hosted。
+
+
+## 栅格分区百分位独立 Hosted 验收
+
+`raster-zonal-percentile-persistence`为独立手工套件，复用NFS、同源产品默认入口Runtime与普通User原12权限；固定600秒业务预算覆盖源初始化扫描、首次独立期望、执行／查询、全部物理复核及执行工作区／期望缓存清理。部署、静态夹具播种及NFS／Infra退出沿既有隔离生命周期分别核验，任何清理失败整套失败。原分区／整幅／邻域套件不改，实际Linux全量和Hosted仍由CI会话协调，不计UI或容量。
+
+固定16条成功CSV保存链：原九列统计1条；0／100端点、奇偶总体50百分位4条；25／75插值及33.3跨六块／逆序4条；分区重分类1条；79分区完整表／50行预览1条；精确Int64大分区号配Int64／UInt64数值NoData邻接有效值2条；显式第二波段独立mask／alpha及scale-offset1条；无有效数值保留分区、分区全无效空表2条。共同包含负分类、合法零、同分类非连通合组及单有效零值，主网格保留旋转。
+
+固定28类各按中英文提交，共56次准确失败：百分位null／布尔／字符串／数组／对象／低于0／高于100共7类；两个角色的波段0／越界／布尔／字符串共8类；两个角色的所选复数数据／alpha共4类；小数分类、UInt64超Int64共2类；缺CRS、不同CRS、缺仿射、奇异网格、不同尺寸、原点偏移和旋转不一致共7类。必须核当前执行UUID、`analysis`任务、准确原因、专业详情与Monitor失败及冻结提交语言；反向查询不改错误和快照。新增百分位原因按中英核验，原有英文原因沿当前契约，不把两种提交称为全部诊断已翻译。非有限JSON参数、混合类型复数alpha、数值极限、IO注入及真实低盘另列Native或既有专项。
+
+独立原生有效性与Python标量分组／排序、标准库统计及Fraction位置核完整CSV每行每列、精确Int64编号／计数、顺序、null、合法零和固定Schema；端点／50百分位及min/max精确，其他百分位rtol=4e-15／atol=0，原统计其余值rtol=1e-12／atol=1e-12。同源带／不带百分位的原九列逐值相等，逆序百分位逐组相同。完整CSV不舍入；轻量表预览沿既有`double_precision=15`序列化，大数min/max独立核15位展示值，不能据预览外推原字节精度。
+
+每次成功后重读当前全部CSV、每次失败后重读16份，固定1032次完整CSV检查；另含首次源全检，共73轮物理检查。仅缓存冻结的独立期望，不缓存实际成果；各轮完整重读所有源像元／mask／类型／原生NoData／网格／CRS／scale-offset和字节hash。归档源原字节、16份CSV原字节及大小／SHA256清单、独立期望和16份当前执行血缘取证；旧原件／manifest／期望变化、缺失或额外文件均拒绝，不覆盖、重建或静默修复。
+
+CSV沿普通表保存契约，不虚构RasterArtifact：物理／Meta大小须为相等正整数；目标只由本次父执行自动扫描，核用户／租户／引擎／父执行与当前两角色实际输入血缘。套件仅加入既有执行范围的受控只读内部血缘登记，完整验证内部`save`／两源derive与公开`operations:null`安全投影，不改产品投影或权限；Meta关系及Monitor分别核验。失败零目标／新增扫描／派生血缘，源物理／Meta和先前CSV不变，全部退出保持NFS／Runtime／registry／部署／Infra零残留。
+
+本地入口`make test-raster-zonal-percentile-online-runner`和标准Native内`test_online_zonal_percentile_fixture.py`，同步Online、changed gate、独立workflow、只读observer和矩阵／删断言拒绝检查。准备通过不计Hosted通过。

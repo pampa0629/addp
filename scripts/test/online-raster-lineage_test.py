@@ -234,4 +234,20 @@ class RasterLineageTest(unittest.TestCase):
         for result in (SimpleNamespace(returncode=1,stdout='NEVER_ARCHIVE'),SimpleNamespace(returncode=0,stdout=''),SimpleNamespace(returncode=0,stdout='null'),SimpleNamespace(returncode=0,stdout='{}'),SimpleNamespace(returncode=0,stdout='x'*40001)):
             with self.subTest(result=result),self.assertRaises(Exception):self.read(result=result)
 
+
+    def test_zonal_percentile_approved_two_role_csv_facts_preserve_internal_and_public_boundaries(self):
+        self.assertEqual(m.SUITES['raster-zonal-percentile-persistence'], 'zonal-percentile-lineage')
+        expected = copy.deepcopy(EXPECTED)
+        expected['inputs'] = [{'port': 'input.values', 'locator': 'values'}, {'port': 'input.zones', 'locator': 'zones'}]
+        expected['operations'][0].update(operator='save', input_ports=['input.values', 'input.zones'])
+        m.validate(expected, expected, public=False)
+        m.validate({**expected, 'operations': None}, expected, public=True)
+        for fault in ('swap', 'missing', 'duplicate', 'operation'):
+            changed = copy.deepcopy(expected)
+            if fault == 'swap': changed['inputs'][0]['locator'], changed['inputs'][1]['locator'] = 'zones', 'values'
+            elif fault == 'missing': changed['inputs'].pop()
+            elif fault == 'duplicate': changed['inputs'].append(changed['inputs'][0])
+            else: changed['operations'][0]['operator'] = 'raster_save'
+            with self.subTest(fault=fault), self.assertRaises(m.SuiteError): m.validate(changed, expected, public=False)
+
 if __name__=='__main__':unittest.main()

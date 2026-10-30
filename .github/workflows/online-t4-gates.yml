@@ -80,6 +80,7 @@ on:
           - raster-snap-pour-points-persistence
           - raster-band-recommendation-workflow
           - raster-statistics-percentile-workflow
+          - raster-zonal-percentile-persistence
           - raster-nibble-persistence
           - raster-disk-pressure
           - raster-nibble-capacity
@@ -273,7 +274,7 @@ jobs:
 
   online-t4:
     name: Online T4 (${{ inputs.suite }})
-    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'catalog-domain-overview' && inputs.suite != 'workflow-runtime-health-recovery' && inputs.suite != 'platform-administrator-governance' && inputs.suite != 'pg-source-authorization' && inputs.suite != 'opengauss-consumer-flow' && inputs.suite != 'kingbase-consumer-flow' && inputs.suite != 'metric-service-revision-lifecycle' && inputs.suite != 'ontology-revision-lifecycle' && inputs.suite != 'compose-public-origin' && inputs.suite != 'execution-retention-readonly' && inputs.suite != 'execution-events-retention' && inputs.suite != 'execution-events-pagination' && inputs.suite != 'execution-retention-hourly' && inputs.suite != 'orchestrator-execution' && inputs.suite != 'quality-dynamic-binding' && inputs.suite != 'platform-node-metrics' && inputs.suite != 'manager-internal-artifact-lineage' && inputs.suite != 'transfer-relational-sql-etl' && inputs.suite != 'transfer-continuous-events' && inputs.suite != 'security-mysql-owner-protection' && inputs.suite != 'security-plaintext-access' && inputs.suite != 'graph-protection' && inputs.suite != 'cleanup-execution' && inputs.suite != 'cleanup-native-effects' && inputs.suite != 'highgo-consumer-flow' && inputs.suite != 'gaussdb-consumer-flow' && inputs.suite != 'starrocks-consumer-flow' && inputs.suite != 'redis-consumer-flow' && inputs.suite != 'ftp-consumer-flow' && inputs.suite != 'elasticsearch-consumer-flow' && inputs.suite != 'vector-pmtiles-workflow' && inputs.suite != 'raster-workflow' && inputs.suite != 'vector-topology-persistence' && inputs.suite != 'raster-contour-persistence' && inputs.suite != 'raster-polygonize-persistence' && inputs.suite != 'vector-rasterize-persistence' && inputs.suite != 'vector-zonal-statistics-persistence' && inputs.suite != 'raster-proximity-persistence' && inputs.suite != 'raster-focal-mode-persistence' && inputs.suite != 'raster-boundary-clean-persistence' && inputs.suite != 'raster-thin-persistence' && inputs.suite != 'raster-fill-depressions-persistence' && inputs.suite != 'raster-flow-direction-d8-persistence' && inputs.suite != 'raster-flow-accumulation-d8-persistence' && inputs.suite != 'raster-drainage-basins-d8-persistence' && inputs.suite != 'raster-flow-length-d8-persistence' && inputs.suite != 'raster-flow-accumulation-area-d8-persistence' && inputs.suite != 'raster-distance-to-stream-d8-persistence' && inputs.suite != 'raster-hand-d8-persistence' && inputs.suite != 'raster-curvature-persistence' && inputs.suite != 'raster-profile-curvature-persistence' && inputs.suite != 'raster-cut-fill-persistence' && inputs.suite != 'raster-surface-area-persistence' && inputs.suite != 'raster-tangential-curvature-persistence' && inputs.suite != 'raster-plan-curvature-persistence' && inputs.suite != 'raster-tpi-persistence' && inputs.suite != 'raster-tri-persistence' && inputs.suite != 'raster-roughness-persistence' && inputs.suite != 'raster-twi-persistence' && inputs.suite != 'raster-spi-persistence' && inputs.suite != 'raster-sieve-persistence' && inputs.suite != 'raster-focal-percentile-persistence' && inputs.suite != 'raster-flow-length-upstream-d8-persistence' && inputs.suite != 'raster-stream-order-d8-persistence' && inputs.suite != 'raster-stream-shreve-d8-persistence' && inputs.suite != 'raster-stream-to-vector-d8-persistence' && inputs.suite != 'raster-stream-link-d8-persistence' && inputs.suite != 'raster-flow-accumulation-weighted-d8-persistence' && inputs.suite != 'raster-watershed-d8-persistence' && inputs.suite != 'raster-subcatchments-d8-persistence' && inputs.suite != 'raster-snap-pour-points-persistence' && inputs.suite != 'raster-band-recommendation-workflow' && inputs.suite != 'raster-statistics-percentile-workflow' && inputs.suite != 'raster-nibble-persistence' && inputs.suite != 'raster-disk-pressure' && inputs.suite != 'raster-nibble-capacity' && inputs.suite != 'raster-focal-statistics-persistence' && inputs.suite != 'raster-zonal-statistics-persistence' && inputs.suite != 'raster-workflow-capacity' && inputs.suite != 'hdfs-spark-consumer-flow'
+    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'catalog-domain-overview' && inputs.suite != 'workflow-runtime-health-recovery' && inputs.suite != 'platform-administrator-governance' && inputs.suite != 'pg-source-authorization' && inputs.suite != 'opengauss-consumer-flow' && inputs.suite != 'kingbase-consumer-flow' && inputs.suite != 'metric-service-revision-lifecycle' && inputs.suite != 'ontology-revision-lifecycle' && inputs.suite != 'compose-public-origin' && inputs.suite != 'execution-retention-readonly' && inputs.suite != 'execution-events-retention' && inputs.suite != 'execution-events-pagination' && inputs.suite != 'execution-retention-hourly' && inputs.suite != 'orchestrator-execution' && inputs.suite != 'quality-dynamic-binding' && inputs.suite != 'platform-node-metrics' && inputs.suite != 'manager-internal-artifact-lineage' && inputs.suite != 'transfer-relational-sql-etl' && inputs.suite != 'transfer-continuous-events' && inputs.suite != 'security-mysql-owner-protection' && inputs.suite != 'security-plaintext-access' && inputs.suite != 'graph-protection' && inputs.suite != 'cleanup-execution' && inputs.suite != 'cleanup-native-effects' && inputs.suite != 'highgo-consumer-flow' && inputs.suite != 'gaussdb-consumer-flow' && inputs.suite != 'starrocks-consumer-flow' && inputs.suite != 'redis-consumer-flow' && inputs.suite != 'ftp-consumer-flow' && inputs.suite != 'elasticsearch-consumer-flow' && inputs.suite != 'vector-pmtiles-workflow' && inputs.suite != 'raster-workflow' && inputs.suite != 'vector-topology-persistence' && inputs.suite != 'raster-contour-persistence' && inputs.suite != 'raster-polygonize-persistence' && inputs.suite != 'vector-rasterize-persistence' && inputs.suite != 'vector-zonal-statistics-persistence' && inputs.suite != 'raster-proximity-persistence' && inputs.suite != 'raster-focal-mode-persistence' && inputs.suite != 'raster-boundary-clean-persistence' && inputs.suite != 'raster-thin-persistence' && inputs.suite != 'raster-fill-depressions-persistence' && inputs.suite != 'raster-flow-direction-d8-persistence' && inputs.suite != 'raster-flow-accumulation-d8-persistence' && inputs.suite != 'raster-drainage-basins-d8-persistence' && inputs.suite != 'raster-flow-length-d8-persistence' && inputs.suite != 'raster-flow-accumulation-area-d8-persistence' && inputs.suite != 'raster-distance-to-stream-d8-persistence' && inputs.suite != 'raster-hand-d8-persistence' && inputs.suite != 'raster-curvature-persistence' && inputs.suite != 'raster-profile-curvature-persistence' && inputs.suite != 'raster-cut-fill-persistence' && inputs.suite != 'raster-surface-area-persistence' && inputs.suite != 'raster-tangential-curvature-persistence' && inputs.suite != 'raster-plan-curvature-persistence' && inputs.suite != 'raster-tpi-persistence' && inputs.suite != 'raster-tri-persistence' && inputs.suite != 'raster-roughness-persistence' && inputs.suite != 'raster-twi-persistence' && inputs.suite != 'raster-spi-persistence' && inputs.suite != 'raster-sieve-persistence' && inputs.suite != 'raster-focal-percentile-persistence' && inputs.suite != 'raster-flow-length-upstream-d8-persistence' && inputs.suite != 'raster-stream-order-d8-persistence' && inputs.suite != 'raster-stream-shreve-d8-persistence' && inputs.suite != 'raster-stream-to-vector-d8-persistence' && inputs.suite != 'raster-stream-link-d8-persistence' && inputs.suite != 'raster-flow-accumulation-weighted-d8-persistence' && inputs.suite != 'raster-watershed-d8-persistence' && inputs.suite != 'raster-subcatchments-d8-persistence' && inputs.suite != 'raster-snap-pour-points-persistence' && inputs.suite != 'raster-band-recommendation-workflow' && inputs.suite != 'raster-statistics-percentile-workflow' && inputs.suite != 'raster-zonal-percentile-persistence' && inputs.suite != 'raster-nibble-persistence' && inputs.suite != 'raster-disk-pressure' && inputs.suite != 'raster-nibble-capacity' && inputs.suite != 'raster-focal-statistics-persistence' && inputs.suite != 'raster-zonal-statistics-persistence' && inputs.suite != 'raster-workflow-capacity' && inputs.suite != 'hdfs-spark-consumer-flow'
     concurrency:
       group: online-t4-${{ inputs.suite }}
       cancel-in-progress: false
@@ -4888,6 +4889,79 @@ jobs:
         uses: ./.github/actions/ci-gate-summary
         with:
           gate: Online T4 (raster-statistics-percentile-workflow, Linux x86_64)
+          status: ${{ job.status }}
+          details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
+
+
+
+  raster-zonal-percentile-hosted-t4:
+    name: Online T4 (raster-zonal-percentile-persistence, Linux x86_64)
+    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-zonal-percentile-persistence'
+    concurrency:
+      group: online-t4-raster-zonal-percentile-persistence
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      ADDP_ONLINE_HOST: "1"
+      ADDP_ONLINE_HOSTED: "1"
+      ONLINE_SUITE_INPUT: raster-zonal-percentile-persistence
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: system/backend/go.mod
+          cache: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+
+      - name: Install disposable NFS dependencies
+        run: sudo apt-get update && sudo apt-get install -y nfs-kernel-server nfs-common
+
+      - name: Validate Hosted Raster Zonal Percentile readiness
+        env:
+          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
+          ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
+        run: bash scripts/test/online-hosted-raster-zonal-percentile-gate.sh --check-only
+
+      - name: Run Hosted Raster Zonal Percentile Online gate
+        env:
+          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
+          ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
+        run: bash scripts/test/online-hosted-raster-zonal-percentile-gate.sh
+
+      - name: Upload Hosted Raster Zonal Percentile evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: online-t4-raster-zonal-percentile-persistence-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/addp-online-${{ github.run_id }}/
+            logs/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Summarize Hosted Raster Zonal Percentile T4 gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Online T4 (raster-zonal-percentile-persistence, Linux x86_64)
           status: ${{ job.status }}
           details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
 

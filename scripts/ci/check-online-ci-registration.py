@@ -3794,6 +3794,68 @@ def validate_raster_snap_pour_points_profile(repository: Path, registered: set[s
 
 
 
+ZONAL_PERCENTILE_REQUIRED = {
+    'scripts/test/online-hosted-raster-zonal-percentile-gate.sh': ('start_online_geopython_runtime', '--mount', '--suite raster-workflow',
+        '--wait-protection-owners develop,manager', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare',
+        'online-raster-zonal-percentile-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
+    'business/scripts/online-raster-zonal-percentile-fixture.py': ('NFSExport', 'owned_root', 'from fractions import Fraction',
+        'WIDTH, HEIGHT = 1025, 513', 'position = (count-1)*Fraction(p)/100', 'sorted(samples.get(code, []))', 'np.array_equal',
+        'GDAL_TIFF_INTERNAL_MASK', 'full_csv_checks', 'full_source_pixels_verified', 'runtime_workspaces_removed', 'archive_files',
+        'previous archive was deleted', 'previous archived bytes changed', 'oracle cache hash changed', 'source file changed',
+        'requested percentile changed original nine columns', 'source order changed percentile', 'zonal-percentile-csvs'),
+    'scripts/test/raster-zonal-percentile-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS',
+        'budget != 600', 'BudgetClient', 'remaining()', 'validate_preview', 'legacy.validate_success', 'lineage.collect',
+        'lineage.validate(facts, wanted, public=True)', 'lineage.verify_archive', 'base.validate_scan', 'raster.wait_lineage',
+        'source_edges', 'readonly.no_publication', 'query language rewrote stored failure', 'previous complete CSV changed',
+        'fixture_call', 'cleanup-oracle', 'oracle cleanup also failed', 'full_checks != 1032', 'physical_calls != 73',
+        'len(cases) != 16', 'len(failures) != 56', 'exact_cause', 'Monitor current output lineage differs'),
+    'engines/geopython-workflow/test_online_zonal_percentile_fixture.py': (
+        'test_zonal_percentile_sixteen_real_csvs_complete_independent_oracle_and_raw_archive',
+        'test_zonal_percentile_fifty_six_exact_submitted_failures_and_no_output',
+        'test_zonal_percentile_real_physical_corruption_is_rejected', 'one-ulp',
+        'test_zonal_percentile_csv_archive_never_repairs_or_overwrites',
+        'test_zonal_percentile_worker_stdin_frozen_oracle_poison_and_cleanup'),
+    'scripts/test/raster-zonal-percentile-persistence-online_test.py': (
+        'test_full_matrix_16_success_56_failures_1032_checks_and_cleanup', 'test_role_bound_lineage_rejects_wrong_roles_operations_and_public_projection',
+        'test_strict_physical_counts_sizes_original_archives_and_cleanup_cannot_weaken', 'test_failures_preserve_primary_and_cleanup_error',
+        'test_exact_failure_stage_language_scan_lineage_and_budget_are_enforced'),
+    'scripts/utils/online_raster_lineage.py': ("'raster-zonal-percentile-persistence': 'zonal-percentile-lineage'",),
+    'scripts/test/online-raster-lineage_test.py': ('test_zonal_percentile_approved_two_role_csv_facts_preserve_internal_and_public_boundaries',),
+    'Makefile': ('test_online_zonal_percentile_fixture.py', '@$(MAKE) test-raster-zonal-percentile-online-runner',
+        'scripts/test/raster-zonal-percentile-persistence-online_test.py', 'scripts/test/online-raster-zonal-percentile-fixture_test.py',
+        'scripts/test/online-hosted-raster-zonal-percentile-gate_test.py', 'test_zonal_percentile_requires_exact_csv_matrix_budget_and_regressions'),
+}
+
+
+def validate_raster_zonal_percentile(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-zonal-percentile-persistence'
+    if suite not in registered: return
+    workflow = (repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-zonal-percentile-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-zonal-percentile-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-zonal-percentile-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body') or 'cancel-in-progress: false' not in job.group('body')
+        or 'if: always()' not in job.group('body') or 'logs/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('zonal percentile requires an independent manual Hosted NFS job')
+    make = (repository/'Makefile').read_text()
+    if 'test_online_zonal_percentile_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('zonal percentile Native omitted from standard recipe')
+    for relative, fragments in ZONAL_PERCENTILE_REQUIRED.items():
+        path = repository/relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('zonal percentile strict contract incomplete: '+relative)
+    source = (repository/'business/scripts/online-raster-zonal-percentile-fixture.py').read_text()
+    tree = ast.parse(source)
+    actual = {key: [node.value for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == key for target in node.targets)] for key in ('CASES','FAILURES')}
+    expected_cases = {'original.csv': ('values.tif', 'zones.tif', None, 2), 'p0.csv': ('values.tif', 'zones.tif', 0, 2), 'p100.csv': ('values.tif', 'zones.tif', 100, 2), 'p50-odd.csv': ('odd.tif', 'small-zones.tif', 50, 2), 'p50-even.csv': ('even.tif', 'small-zones.tif', 50, 2), 'p25.csv': ('values.tif', 'zones.tif', 25, 2), 'p75.csv': ('values.tif', 'zones.tif', 75, 2), 'p33.csv': ('values.tif', 'zones.tif', 33.3, 2), 'p33-reversed.csv': ('reversed.tif', 'zones.tif', 33.3, 2), 'reclassified.csv': ('values.tif', 'zones.tif', 90, 2), 'many-zones.csv': ('values.tif', 'zones.tif', 50, 1), 'int64.csv': ('int64.tif', 'large-zones.tif', 50, 2), 'uint64.csv': ('uint64.tif', 'large-zones.tif', 50, 2), 'coverage.csv': ('coverage.tif', 'coverage-zones.tif', 50, 2), 'invalid-values.csv': ('invalid.tif', 'small-zones.tif', 50, 2), 'empty-zones.csv': ('even.tif', 'empty-zones.tif', 50, 2)}
+    expected_failures = ('percentile_null', 'percentile_boolean', 'percentile_string', 'percentile_array', 'percentile_object', 'percentile_low', 'percentile_high', 'values_band_zero', 'values_band_high', 'values_band_boolean', 'values_band_string', 'zones_band_zero', 'zones_band_high', 'zones_band_boolean', 'zones_band_string', 'values_complex', 'zones_complex', 'values_alpha', 'zones_alpha', 'fractional_zone', 'overflow_zone', 'missing_crs', 'different_crs', 'missing_grid', 'singular_grid', 'different_size', 'shifted_grid', 'rotated_grid')
+    if (any(len(nodes) != 1 for nodes in actual.values()) or ast.literal_eval(actual['CASES'][0]) != expected_cases
+        or ast.literal_eval(actual['FAILURES'][0]) != expected_failures): raise RegistrationError('zonal percentile fixed 16/56 matrix changed')
+    if any(word in source for word in ('operators.raster_compute', 'np.percentile', 'np.quantile')):
+        raise RegistrationError('zonal percentile oracle must remain independent')
+
+
 STATISTICS_PERCENTILE_REQUIRED = {
     'scripts/test/online-hosted-raster-statistics-percentile-gate.sh': (
         'start_online_geopython_runtime', '--mount', '--suite raster-workflow',
@@ -5003,6 +5065,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_snap_pour_points_profile(repository, registered)
     validate_raster_band_recommendation_profile(repository, registered)
     validate_raster_statistics_percentile(repository, registered)
+    validate_raster_zonal_percentile(repository, registered)
     validate_raster_nibble_profile(repository, registered)
     validate_raster_disk_pressure_profile(repository, registered)
     validate_raster_nibble_capacity_profile(repository, registered)
