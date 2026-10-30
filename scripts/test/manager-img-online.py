@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -39,8 +40,66 @@ GRD_SOURCES = tuple({'case':case, 'object':'raster/grd-'+case+'.grd', 'source_sr
      'grid_facts':{'profile':'surfer6_ascii', 'node_origin':[100.,200.], 'node_spacing':[2.,3.],
                    'node_shape':[3,5], 'node_extent':[100.,200.,108.,206.], 'blank_value':1.70141e38}},)
 
+TIFF_SOURCES=({'case':'unlocated-small-cog','object':'raster/tiff-unlocated-small-cog.tif',
+    'source_srid':None,'source_format':'tiff','driver':'GTiff','width':240,'height':120,'band_count':1},)
+
+
+def validate_tiff_meta(owner, detail):
+    attrs=owner._object(detail.get('attributes'),'TIFF attributes')
+    item=attrs.get('item',{});media=attrs.get('type_info',{}).get('media',{});info=attrs.get('format_info',{}).get('tiff',{})
+    if (any(item.get(k)!=v for k,v in {'data_type':'media','format':'tiff','layout':'multi','file_count':1}.items())
+        or any(media.get(k)!=v for k,v in {'kind':'image','encoding':'tiff','width':240,'height':120}.items())
+        or info.get('profile')!='cog' or info.get('cog_check_level')!='heuristic'
+        or info.get('is_cloud_optimized') is not True or info.get('is_tiled') is not True
+        or info.get('has_overviews') is not False or info.get('big_tiff') is not False
+        or info.get('page_count')!=1 or info.get('page_summary_status')!='parsed'
+        or info.get('pages')!=[{'ifd_index':0,'width':240,'height':120}]):
+        raise owner.SuiteError('small TIFF COG layout metadata differs from its physical source')
+    if any(value.get('spatial') is not None for value in (attrs,attrs.get('type_info',{}),attrs.get('capabilities',{}))):
+        raise owner.SuiteError('small TIFF acquired fabricated spatial facts')
+
+
+def validate_tiff_physical(owner, facts):
+    required={'case':'unlocated-small-cog','object':'raster/tiff-unlocated-small-cog.tif','source_srid':None,
+        'driver':'GTiff','width':240,'height':120,'band_count':1,'dtype':'Float64','nodata_is_nan':True,
+        'overview_count':0,'block_size':[512,512],'cog_valid':True,'cog_errors':0,'cog_warnings':0,
+        'pixels_verified':28800,'valid_pixels':28765,'complete_mask_verified':True}
+    if any(k not in facts or type(facts[k]) is not type(v) or facts[k]!=v for k,v in required.items()):
+        raise owner.SuiteError('small TIFF complete physical proof is missing')
+
+
+def refresh_tiff(owner,client,engine,fixture,detail):
+    path=f'/api/v1/manager/engines/{engine}/items/refresh'
+    response=client.request('POST',path+'?'+urlencode({'locator':fixture.locator}),(200,)).payload
+    if response.get('status')!='success' or type(response.get('items_scanned')) is not int or response['items_scanned']!=1:
+        raise owner.SuiteError('small TIFF exact synchronous refresh did not succeed')
+    after=client.request('GET',f"/api/v1/meta/items/{fixture.item['id']}",(200,)).payload
+    try:
+        started=datetime.fromisoformat(response['started_at'].replace('Z','+00:00'))
+        scanned=datetime.fromisoformat(after['scanned_at'].replace('Z','+00:00'))
+        previous=datetime.fromisoformat(detail['scanned_at'].replace('Z','+00:00'))
+        if not started.tzinfo or not scanned.tzinfo or not previous.tzinfo or scanned<started or scanned<=previous:
+            raise ValueError('refresh did not advance the exact item scan time')
+    except (KeyError,TypeError,ValueError)as error:
+        raise owner.SuiteError('small TIFF refresh timestamps are missing or inconsistent')from error
+    expected_attrs=json.loads(json.dumps(detail['attributes']))
+    full_name=detail.get('full_name')
+    if not isinstance(full_name,str) or not full_name or expected_attrs['item'].get('full_name',full_name)!=full_name:
+        raise owner.SuiteError('small TIFF original catalog identity is inconsistent')
+    # Known-item refresh restores this exact catalog fact; all format/storage facts remain strict.
+    expected_attrs['item']['full_name']=full_name
+    if (after.get('id')!=detail.get('id') or after.get('fingerprint')!=detail.get('fingerprint')
+        or after.get('full_name')!=full_name or after.get('size_bytes')!=detail.get('size_bytes')
+        or after.get('attributes')!=expected_attrs):
+        raise owner.SuiteError('small TIFF refresh changed source identity or format facts')
+    validate_tiff_meta(owner,after)
+    return after,{'path':path,'locator':fixture.locator,'response':response,
+                  'full_name':full_name,'scanned_at_before':detail['scanned_at'],'scanned_at_after':after['scanned_at']}
+
 
 def validate_meta(owner, detail, spec):
+    if spec['source_format']=='tiff':
+        return validate_tiff_meta(owner,detail)
     attrs = owner._object(detail.get('attributes'), 'IMG attributes')
     item = attrs.get('item', {})
     media = attrs.get('type_info', {}).get('media', {})
@@ -68,7 +127,7 @@ def validate_meta(owner, detail, spec):
 
 
 def validate_browser(owner, report, evidence):
-    for key, value in {'schema_version': 'addp.manager-raster-media-browser/v3', 'result': 'passed',
+    for key, value in {'schema_version': 'addp.manager-raster-media-browser/v4', 'result': 'passed',
                        'run_id': evidence['run_id'], 'identity': evidence['identity'], 'source_format':evidence['source_format'],
                        'generation_requests': 0, 'failed_business_responses': 0, 'warnings_errors': 0}.items():
         if report.get(key) != value:
@@ -84,7 +143,14 @@ def validate_browser(owner, report, evidence):
                 or actual.get('source_preview_verified') is not True):
             raise owner.SuiteError('IMG browser source bytes or metadata were not verified')
         if expected['source_srid'] is None:
-            if any(actual.get(key) is not True for key in ('generation_unavailable', 'map_absent', 'source_image_absent', 'unsupported_message_visible')):
+            keys=('map_absent','source_image_absent','unsupported_message_visible')
+            if evidence['source_format']=='tiff':
+                keys+=('tiff_pages_verified','cog_metadata_visible','zero_overviews_verified','refreshed_metadata_verified','reopened')
+                if (actual.get('download_bundle',{}).get('members')!=expected['download_members']
+                    or actual.get('scanned_at')!=expected['refresh']['scanned_at_after']):
+                    raise owner.SuiteError('small TIFF browser refresh or exact download bundle differs')
+            else:keys+=('generation_unavailable',)
+            if any(actual.get(key) is not True for key in keys):
                 raise owner.SuiteError('unlocated IMG browser boundary is incomplete')
         else:
             if (actual.get('preview_url') != expected['preview_url']
@@ -107,7 +173,7 @@ def run_browser(repository, environment, evidence, owner):
 
 
 def run(repository, environment, owner, *, browser_runner=None, physical_runner=None, source_format="img"):
-    sources = {"img": SOURCES, "jpeg2000": JPEG2000_SOURCES, "grd":GRD_SOURCES}[source_format]
+    sources = {"img": SOURCES, "jpeg2000": JPEG2000_SOURCES, "grd":GRD_SOURCES,'tiff':TIFF_SOURCES}[source_format]
     tenant = owner.positive_int(environment['ADDP_ONLINE_TEST_TENANT_ID'], 'IMG Tenant')
     engine = owner.positive_int(environment['ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID'], 'IMG Engine')
     client = owner.GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30)
@@ -119,35 +185,48 @@ def run(repository, environment, owner, *, browser_runner=None, physical_runner=
     if seed.get('source_unchanged') is not True or [x.get('case') for x in seed.get(source_format+'_sources', [])] != [x['case'] for x in sources]:
         raise owner.SuiteError('IMG physical source evidence is incomplete')
     fixtures, cases, snapshots = [], [], {}
-    report = {'schema_version': 'addp.manager-raster-media/v1', 'source_format': source_format, 'run_id': environment['ADDP_ONLINE_TEST_RUN_ID'],
+    report = {'schema_version': 'addp.manager-raster-media/v2', 'source_format': source_format, 'run_id': environment['ADDP_ONLINE_TEST_RUN_ID'],
               'identity': identity, 'result': 'incomplete', 'cases': cases, 'physical_sources': seed[source_format+'_sources'], 'cleanup': {}}
     error = None
     try:
         for spec, seeded in zip(sources, seed[source_format+'_sources']):
             if seeded.get('object') != spec['object'] or seeded.get('source_srid') != spec['source_srid']:
                 raise owner.SuiteError('IMG physical receipt has a mismatched source')
+            if source_format=='tiff':validate_tiff_physical(owner,seeded)
             item = owner.find_fixture_item(client, engine, environment['ADDP_ONLINE_MANAGER_MINIO_BUCKET'] + '/' + spec['object'], spec['case'])
             if item.get('size_bytes') != seeded['size_bytes']:
                 raise owner.SuiteError('IMG Meta source size differs from its physical receipt')
             detail = client.request('GET', f"/api/v1/meta/items/{item['id']}", (200,)).payload
             validate_meta(owner, detail, spec)
-            snapshots[item['id']] = detail
             fixture = owner.ArtifactFixture(source_format+'-' + spec['case'], item, owner.build_item_locator(engine, item))
             fixtures.append(fixture)
+            refresh=None
+            if source_format=='tiff':
+                (Path(environment['ADDP_ONLINE_ARTIFACT_DIR'])/'raster-meta-tiff-unlocated-small-cog-before-refresh.json').write_text(json.dumps(detail,ensure_ascii=False,sort_keys=True)+'\n')
+                detail,refresh=refresh_tiff(owner,client,engine,fixture,detail)
+            snapshots[item['id']] = detail
             downloaded = client.request('GET', '/api/v1/manager/downloads/file?' + urlencode({'locator': fixture.locator}), (200,))
-            if len(downloaded.raw) != seeded['size_bytes'] or hashlib.sha256(downloaded.raw).hexdigest() != seeded['sha256']:
+            download_members=None
+            if source_format=='tiff':
+                download_members={Path(spec['object']).name:{k:seeded[k]for k in ('sha256','size_bytes')}}
+                owner.validate_model_bundle(downloaded.raw,download_members)
+                import io,zipfile
+                with zipfile.ZipFile(io.BytesIO(downloaded.raw))as bundle:source_raw=bundle.read(Path(spec['object']).name)
+            else:source_raw=downloaded.raw
+            if len(source_raw) != seeded['size_bytes'] or hashlib.sha256(source_raw).hexdigest() != seeded['sha256']:
                 raise owner.SuiteError('IMG original download differs from physical source')
             archive = Path(environment['ADDP_ONLINE_ARTIFACT_DIR'])
-            (archive / ('raster-source-'+source_format+'-'+spec['case']+Path(spec['object']).suffix)).write_bytes(downloaded.raw)
+            (archive / ('raster-source-'+source_format+'-'+spec['case']+Path(spec['object']).suffix)).write_bytes(source_raw)
             (archive / ('raster-meta-'+source_format+'-'+spec['case']+'.json')).write_text(json.dumps(detail, ensure_ascii=False, sort_keys=True)+'\n')
             case = {**spec, 'item_id': item['id'], 'locator': fixture.locator,
                     'sha256': seeded['sha256'], 'size_bytes': seeded['size_bytes'], 'metadata_verified': True}
             cases.append(case)
+            if source_format=='tiff':case.update(download_members=download_members,refresh=refresh)
             if spec['source_srid'] is None:
                 capability = client.request('GET', '/api/v1/manager/quick-view/capability?' + urlencode({'locator': fixture.locator}), (200,)).payload
-                if capability.get('can_use_quick_view') or 'generate_raster_cog' in capability.get('available_actions', []):
+                if capability.get('can_use_quick_view') or (source_format!='tiff' and 'generate_raster_cog' in capability.get('available_actions', [])):
                     raise owner.SuiteError('unlocated IMG unexpectedly permits a map or COG generation')
-                case['generation_unavailable'] = True
+                if source_format!='tiff':case['generation_unavailable'] = True
                 continue
             owner.generate_raster_cog(client, fixture, tenant, timeout, physical, source_facts=spec)
             task = client.request('GET', f'/api/v1/manager/tasks/{owner.RASTER_TASK_TYPE}/{fixture.task_id}', (200,)).payload

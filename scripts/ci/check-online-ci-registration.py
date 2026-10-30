@@ -418,7 +418,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     manager_owner = (repository / 'scripts/test/manager-internal-artifact-lineage-online.py').read_text(encoding='utf-8')
     for fragment in ('def manager_case(', 'def run_full_case(', 'def run_raster_media_scenes(',
                      'def run_native_raster_media_case(', 'manager-native-raster-media.json',
-                     'addp.manager-native-raster-media/v1', 'case = manager_case(os.environ)',
+                     'addp.manager-native-raster-media/v2', 'case = manager_case(os.environ)',
                      'if case == "native-raster-media":'):
         if fragment not in manager_owner:
             raise RegistrationError('Manager acceptance case owner must preserve full and separate media routing: ' + fragment)
@@ -443,12 +443,19 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
             or any(fragment not in kml_browser for fragment in ("name: 'KML'", "waitForEvent('download'", 'actual_button_download: true', 'monitor_verified: true'))):
         raise RegistrationError('Manager KML export requires real button, physical oracle, identity and isolated cleanup regressions')
     if ("img_scene.run(repository, environment, sys.modules[__name__], source_format=source_format)" not in manager_owner
-            or "for source_format in ('img', 'jpeg2000', 'grd')" not in manager_owner
+            or "for source_format in ('img', 'jpeg2000', 'grd', 'tiff')" not in manager_owner
             or not img_runner or '\t@python3 -m unittest scripts/test/manager-img-online_test.py' not in img_runner.group('body')
             or '\t@node --check --input-type=module < console/frontend/e2e/online/manager-img.spec.js' not in img_runner.group('body')
-            or any(fragment not in img_owner for fragment in ('manager-img.spec.js', 'generate_raster_cog', 'cleanup_managed_artifact', 'source_format', 'JPEG2000_SOURCES', 'GRD_SOURCES', 'grid_facts', 'addp.manager-raster-media/v1'))
-            or any(fragment not in img_browser for fragment in ('modelPixels', 'range_loaded', 'reused_result', 'generation_unavailable', 'source_image_absent', 'unsupported_message_visible', 'download_sha256', 'matchesSourcePreviewResponse', 'source_preview_verified', 'addp.manager-raster-media-browser/v3'))):
+            or any(fragment not in img_owner for fragment in ('manager-img.spec.js', 'generate_raster_cog', 'cleanup_managed_artifact', 'source_format', 'JPEG2000_SOURCES', 'GRD_SOURCES', 'grid_facts', 'addp.manager-raster-media/v2'))
+            or any(fragment not in img_browser for fragment in ('modelPixels', 'range_loaded', 'reused_result', 'generation_unavailable', 'source_image_absent', 'unsupported_message_visible', 'download_sha256', 'matchesSourcePreviewResponse', 'source_preview_verified', 'addp.manager-raster-media-browser/v4'))):
         raise RegistrationError('Manager IMG Hosted subscene must include real generation, browser, cleanup and standard regressions')
+    tiff_physical=(repository/'business/scripts/online-raster-minio-fixture.py').read_text()
+    tiff_native=(repository/'engines/geopython-workflow/test_online_raster_fixture.py').read_text()
+    if (any(fragment not in img_owner for fragment in ('TIFF_SOURCES','validate_tiff_meta','validate_tiff_physical','refresh_tiff','download_members'))
+            or any(fragment not in img_browser for fragment in ('tiff_pages_verified','cog_metadata_visible','zero_overviews_verified','refreshed_metadata_verified','tiff-unlocated-small-cog-button.zip'))
+            or any(fragment not in tiff_physical for fragment in ('def manager_tiff_facts','def manager_seed_tiff','def manager_tiff_source','tiff-source','full_check=True'))
+            or any(fragment not in tiff_native for fragment in ('test_manager_tiff_unlocated_small_cog_complete_pixels_and_source_bytes','test_manager_tiff_rejects_semantic_tampering_even_with_rewritten_receipt'))):
+        raise RegistrationError('Manager TIFF COG requires complete physical, exact refresh, browser and regression proofs')
     for relative in ('scripts/test/manager-orc-online.py','scripts/test/manager-orc-online_test.py',
                      'business/scripts/online-orc-fixture.py','console/frontend/e2e/online/manager-orc.spec.js'):
         if not (repository / relative).is_file():

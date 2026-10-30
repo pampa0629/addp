@@ -27,7 +27,7 @@
 
 唯一选择项为 `ADDP_ONLINE_MANAGER_CASE=full|native-raster-media|native-table-orc|kml-export`，未提供时明确选择 `full`，未知或空值在任何 Hosted 生命周期动作前拒绝。标准业务入口仍为 `ADDP_ONLINE_MANAGER_CASE=native-raster-media make test-online ONLINE_SUITE=manager-internal-artifact-lineage`；人工 Hosted 使用既有 workflow 的 `suite=manager-internal-artifact-lineage` 和明确 `manager_case`。Job 名称、Artifact 名称和 `manager-case.json` 必须显式包含所选 case，不能把任一独立 case 的通过标为完整 Manager 场景通过。KML case 的独立数据、身份、导出与清理边界见下节。
 
-`native-raster-media` 执行既有 IMG/JPEG2000 子场景及 Surfer 7 GRD 只读子场景。前两者沿同一入口验证真实 Meta、原文件、COG、页面、缓存和领域／物理清理；GRD 验证完整数值源、元数据、页面原文件下载及无定位边界。三个子场景任一个失败即失败，不因另一个通过继续宣称整项通过。独立根报告为 `manager-native-raster-media.json`、`schema_version=addp.manager-native-raster-media/v1`，包含 `case=native-raster-media`、完整 `source_formats=[img,jpeg2000,grd]`、普通身份、三个子报告及真实失败状态；总 `online-report.json` 仍由统一分发器生成。未执行的模型、点云、文档、结构化数据及其他格式既不计通过，也不伪装成跳过后完整通过；完整 case 在新模型源授权迁移完成前仍可能受其原有正向断言阻断，须单独验收。成功／失败后的应用、夹具、凭据与 Infra 清理继续使用同一 Hosted 生命周期，不修改开发服务。
+`native-raster-media` 执行既有 IMG/JPEG2000、Surfer GRD 只读及 TIFF 无定位小图 COG 布局子场景。前两者沿同一入口验证真实 Meta、原文件、COG、页面、缓存和领域／物理清理；GRD 验证完整数值源、元数据、页面原文件下载及无定位边界。四个子场景任一个失败即失败，不因另一个通过继续宣称整项通过。独立根报告为 `manager-native-raster-media.json`、`schema_version=addp.manager-native-raster-media/v2`，包含 `case=native-raster-media`、完整 `source_formats=[img,jpeg2000,grd,tiff]`、普通身份、四个子报告及真实失败状态；总 `online-report.json` 仍由统一分发器生成。未执行的模型、点云、文档、结构化数据及其他格式既不计通过，也不伪装成跳过后完整通过；完整 case 在新模型源授权迁移完成前仍可能受其原有正向断言阻断，须单独验收。成功／失败后的应用、夹具、凭据与 Infra 清理继续使用同一 Hosted 生命周期，不修改开发服务。
 
 case 路由、默认完整场景保留、未知值只读拒绝、子场景失败与清理、case 归档及 workflow 接线由现有 `make test-manager-online-runner` 及 CI 登记检查覆盖；不新增长期脚本或根 Makefile 入口。
 
@@ -35,7 +35,7 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 
 按内容认领 `DSRB` 的 Surfer 7 二进制 `.grd`（版本 1/2、单波段 Float64、零旋转、完整单 GRID/DATA）、`DSBB` 的 Surfer 6 Binary（单波段 Float32、完整头和全部节点）和 `DSAA` 的 Surfer 6 ASCII（五行头、完整 Float64 文本数值）。三种主体均不超过 64 MiB。拒绝其他同后缀格式、非有限值、断层／尾随结构及当前 GDAL 无法等价表达的版本 1 范围缺失值；不读取旁文件，不据 XY 数值推导 CRS，不新增 GRD 导出。完整产品契约见[媒体与地图数据集](../../builtin-formats/媒体与地图数据集.md)。
 
-沿现有 `native-raster-media` 部署和十项普通 User 权限增加两份自建 5×3 非方形网格，分别为版本 1 的经纬度外观 XY 和版本 2 的投影外观 XY；版本 2 还包含大于 BlankValue 的有效数值。独立物理 oracle 核对完整原字节与 SHA-256、15 个 Float64、14 个有效节点、NoData、上下行顺序及半像元网格；Meta 必须提供 GS7BG、单波段、版本和节点原点／间距／形状／范围私有事实，不能发布空间能力。真实 Console iframe 的属性页、预览页及下载按钮逐一核对原文件哈希、截图、无地图、无破图、无 COG 生成入口；不创建 GRD 任务或产物，不宣称 GRD 缓存、地图或导出通过。源字节与 Meta 前后不变，所有部署、源和 Infra 仍由既有生命周期清理并核零残留。页面就绪统一观察当前 locator 的 `GET /api/v1/manager/preview`，沿该真实请求的 Bearer 核对同一普通身份；GRD 没有快显 target，不能等待页面本不请求的 COG capability。IMG/JPEG2000 的 Range、像素和缓存重开断言保留，页面报告升 `addp.manager-raster-media-browser/v3` 并逐源要求 `source_preview_verified=true`；旧 v2 不替代该页面证明。证据为 `manager-grd.json`、`manager-grd-browser.json`、两份原文件、Meta 快照及截图；新增范围须以对应 SHA 的正式 Hosted 通过证明，历史两格式报告不替代三格式证据。
+沿现有 `native-raster-media` 部署和十项普通 User 权限增加两份自建 5×3 非方形网格，分别为版本 1 的经纬度外观 XY 和版本 2 的投影外观 XY；版本 2 还包含大于 BlankValue 的有效数值。独立物理 oracle 核对完整原字节与 SHA-256、15 个 Float64、14 个有效节点、NoData、上下行顺序及半像元网格；Meta 必须提供 GS7BG、单波段、版本和节点原点／间距／形状／范围私有事实，不能发布空间能力。真实 Console iframe 的属性页、预览页及下载按钮逐一核对原文件哈希、截图、无地图、无破图、无 COG 生成入口；不创建 GRD 任务或产物，不宣称 GRD 缓存、地图或导出通过。源字节与 Meta 前后不变，所有部署、源和 Infra 仍由既有生命周期清理并核零残留。页面就绪统一观察当前 locator 的 `GET /api/v1/manager/preview`，沿该真实请求的 Bearer 核对同一普通身份；GRD 没有快显 target，不能等待页面本不请求的 COG capability。IMG/JPEG2000 的 Range、像素和缓存重开断言保留，页面报告升 `addp.manager-raster-media-browser/v4` 并逐源要求 `source_preview_verified=true`；旧 v2 不替代该页面证明。证据为 `manager-grd.json`、`manager-grd-browser.json`、两份原文件、Meta 快照及截图；新增范围须以对应 SHA 的正式 Hosted 通过证明，历史两格式报告不替代三格式证据。
 
 在原两份 Surfer 7 数据与所有 IMG／JPEG2000 断言外增加 `grd-surfer6.grd`，共三份 GRD；Surfer 6 原件 116 字节，5×3 Float32，14 有效值、1 个精确固定 NoData，含小数和大整数。原生物理 oracle 核全部 15 值、原 Float32 类型、mask、行序、半像元网格和无 CRS；Meta／真实属性页及原下载逐一核对，`profile=surfer6_binary`、`encoding=GSBG`，不得伪造不存在的版本字段。Native 回归另须拒绝 GDAL 掩膜与精确 NoData 判定不等价的输入，不修改值或绕过原生读取。不增加服务、权限、超时或 GRD 产物，不重用两份 Surfer 7 的通过结论认定 Surfer 6 已通过；现行三份原件／Meta／browser v3／截图及完整清理须由同一固定源码 Hosted 验证。
 
@@ -51,13 +51,21 @@ case 路由、默认完整场景保留、未知值只读拒绝、子场景失败
 
 新 case 的报告、异常和下载证据不得泄漏凭据。导出会话沿现有保留与生命周期规则，不新建业务删除 API；成功和失败均销毁本轮源容器／数据、应用、临时凭据及 Infra，并核零残留。业务结果和清理结果独立报告：业务失败且夹具清理成功时仍是 `result=failed / cleanup=passed`；夹具清理实际失败必须保留 `cleanup=failed`，不能由 Infra 零残留替代。部署清理不冒充会话业务 DELETE 或缓存验收。根 `make test-manager-online-runner`、`make test-online-runner`、System Go、共享前端及现有 Platform CI 覆盖新增路由、最小身份、页面脚本、物理 oracle 拒绝样例和失败清理；正式 Hosted 尚未通过前不得回填已验收。此 case 不扩展 bigint／decimal／时序／嵌套字段、Z/M、样式、KMZ 或其他目标格式。
 
+### TIFF 无定位小图的 COG 布局回归
+
+`native-raster-media` 保留原IMG/JPEG2000/四种GRD的全部断言，再添加一份自建240×120、Float64/NaN、512瓦片、DEFLATE、无CRS/网格定位及无overview的Classic TIFF COG。沿原十项普通User权限、原部署/预算/四份受管COG生成及缓存/删除/全部清理，不上传个人成果，不触发该小图的生成任务。隔离夹具的GDAL完整COG验证必须0错误/0警告，独立公式核全部28,800数值、35个NaN及完整有效掩膜、块尺寸/空CRS/空网格/零overview、原字节大小及SHA；源被修改后即使重写哈希收据也须拒绝。
+
+同一普通身份经Gateway的Meta扫描、Manager精确item刷新及Meta读回必须得到`tiff/cog/true/heuristic`、240×120、tiled=true、overview=false，无spatial事实；归档刷新前后完整Meta、单项同步刷新请求范围/实际响应、前后扫描时间和独占源扫描execution；已知item刷新仅允许补回与目录身份完全一致的`item.full_name`，其余attributes严格不变，不能把同步刷新伪装为另一个异步scan-run。真实Console的属性弹窗核同一元数据，预览核240×120单页及Float64采样不支持提示、无地图/隐藏未渲染canvas，不以fallback冒充图像渲染。TIFF仍允许既有非定位可选转换动作，测试仅要求不提交生成，不把“不可地图定位”等同“按钮不存在”。原下载按实际multi-ref协议验证ZIP精确唯一TIF及CRC/大小/SHA，API和真实按钮下载一致；归档原TIF与按钮ZIP。页面重开后复核同一源，浏览器零生成/零业务失败/零警告，源/Meta保持（除本次显式单项刷新外），原四份COG缓存和领域/物理删除/模式恢复/部署/Infra清理仍必须全部通过。
+
+当前子报告为`addp.manager-raster-media/v2`、页面报告`addp.manager-raster-media-browser/v4`；当前入口只接受新报告，不用历史三格式或旧版本报告替代本轮四格式完整结果。仅验证MinIO该有界TIFF样例及原三格式回归，不认证BigTIFF、任意布局/容量、NFS或Float64基础图片/地图渲染；SKP精确组成授权保持关闭。
+
 ### IMG 原生扫描与 COG 快显
 
 同一 Manager Hosted suite 增加 IMG 子场景，使用既有普通 User、十项权限、Business MinIO、GeoPython 产品 Runtime 与同一部署生命周期，不新增 suite、服务或权限。Runtime 中生成三份自有 256×256 三波段 Byte HFA：WGS84、UTM50N 和无定位影像；全部自包含、同数据类型且无 NoData。真实 Meta 深度扫描须证明 `img/media/single`、HFA 编码、尺寸、波段及明确的源 CRS/范围；无定位样例不得出现推断的空间能力或 COG 生成动作。
 
 两份有定位 IMG 经正式 `generate_raster_cog` action 生成受管 TIFF/COG，核任务 `source_format=img`、原生 Runtime 身份、完整像元/mask/CRS/仿射网格、完整 COG 布局、API/物理哈希和大小、Range 前后缀及越界拒绝。同一普通 User 在真实 Console iframe 显示 WGS84/UTM COG，检查 WebGL 图层的品红/青/黄像素及截图，重开复用同一结果且不产生额外生成请求；原文件下载哈希保持一致。无定位样例核元数据、不开放地图，以及可见的“不支持直接预览”提示；预览区域不得挂载普通图片组件或 `<img>`，不得把 IMG/JP2/J2K 源交给浏览器图片解码。浏览器报告必须保存 `source_image_absent=true` 与 `unsupported_message_visible=true`，缺失或为假均拒绝，不能仅凭无地图／无生成按钮判通过。生成、页面、复用及退出均核源原字节不变；通过正式 Manager API 删除结果和任务，核内容404、物理对象缺失、源预览模式恢复与零残留。失败仍须尝试本轮已知精确资源清理，保留首个业务错误和清理错误。
 
-IMG 与 JPEG2000 子场景复用唯一媒体栅格 runner，分别归档 `manager-img*.json` 和 `manager-jpeg2000*.json`，报告使用 `addp.manager-raster-media/v1` 与 `addp.manager-raster-media-browser/v3`，旧 Manager 场景断言保持。标准确定性入口仍为 `make test-manager-online-runner`，原生物理夹具由 `make test-geopython-workflow` 自动发现，CI 注册检查须确认新子场景、浏览器和两组回归在已有入口中实际接线。仅手工触发既有 Manager Hosted，不增加定时；真实结果出来前不记通过。该证据不外推 IMG 导出、外部 IGE/RRD/依赖文件、复数/异质波段、自定义 WKT、NFS Hosted 或任意影像容量。
+IMG 与 JPEG2000 子场景复用唯一媒体栅格 runner，分别归档 `manager-img*.json` 和 `manager-jpeg2000*.json`，报告使用 `addp.manager-raster-media/v2` 与 `addp.manager-raster-media-browser/v4`，旧 Manager 场景断言保持。标准确定性入口仍为 `make test-manager-online-runner`，原生物理夹具由 `make test-geopython-workflow` 自动发现，CI 注册检查须确认新子场景、浏览器和两组回归在已有入口中实际接线。仅手工触发既有 Manager Hosted，不增加定时；真实结果出来前不记通过。该证据不外推 IMG 导出、外部 IGE/RRD/依赖文件、复数/异质波段、自定义 WKT、NFS Hosted 或任意影像容量。
 
 JPEG2000 扩展仍使用同一 Manager Hosted、Business MinIO、十项普通 User 权限及产品 Runtime，不新建 suite 或服务。四份 256×256 三波段 Byte 合成源分别为 GeoJP2 WGS84、GMLJP2 UTM50N、无定位 JP2 和原始 J2K；采用可逆无损编码。检查 canonical `jpeg2000/media/single`、JP2OpenJPEG、profile、尺寸和波段，完整下载核源大小/哈希。两份定位源沿同一任务入口生成 COG，核实际 source_format、完整像元、mask、CRS、仿射网格、COG布局、HTTP/物理哈希及Range和416；真实浏览器检查三色像素、截图、重开复用且零新生成请求。两份无定位源无地图、无生成动作，不假定经纬度。每份源 Meta 及字节前后不变，两个 COG 结果/任务经 API 删除后核物理对象缺失、内容404和预览模式恢复，部署与Infra清理仍须通过。此扩展不认证外部定位/PAM、JPX组合、NFS/FTP、JPEG2000写出或任意厂商容量；旧IMG通过证据不代表JPEG2000通过。
 
@@ -761,7 +769,7 @@ ORC 嵌套扩展复用同一 `native-table-orc` case、原 11 项权限与精确
 
 非法波段、零／负／非整数／布尔阈值、非法值／非整数／布尔邻接、小数分类、正向越界、Int64负向越界与UInt64越界紧邻精确NoData、选择alpha、复数数据14类各中英文共28次准确sieve节点失败；反向查询不得改写提交语言。异构复数alpha独立分支、不可观测的同分类供体行列并列和资源极限单列Native，不扩大Hosted结论。
 
-独立逐像元BFS连通与原始邻界搜索不调用产品游程算法或GDAL Sieve，完整分类／mask／原网格／CRS及定位缺失、COG布局和3级nearest概览逐项核验。缺失定位成果在Meta的plain_tiff提示与无spatial事实按真实契约核验，不伪造CRS／网格；实际COG由GDAL全量布局检查证明。6成功累计21次、28失败各重读6成果168次，共34次物理调用／189次实际全量成果检查。只缓存绑定本轮／夹具／全部源hash的独立期望，实际成果每次重读；6份COG原字节及大小／SHA-256清单归档，缺失／篡改／额外项／符号链接／静默修复拒绝。
+独立逐像元BFS连通与原始邻界搜索不调用产品游程算法或GDAL Sieve，完整分类／mask／原网格／CRS及定位缺失、COG布局和3级nearest概览逐项核验。缺失定位成果在Meta的cog/true/heuristic有界布局提示与无spatial事实按真实契约核验，不伪造CRS／网格；实际COG由GDAL全量布局检查证明。6成功累计21次、28失败各重读6成果168次，共34次物理调用／189次实际全量成果检查。只缓存绑定本轮／夹具／全部源hash的独立期望，实际成果每次重读；6份COG原字节及大小／SHA-256清单归档，缺失／篡改／额外项／符号链接／静默修复拒绝。
 
 artifact／物理／Meta相等正整数大小、精确scan父执行／用户／租户／引擎、当前实际input.source内部血缘／公开安全投影／Meta关系／Monitor、源和旧成果不变、失败零发布／新增扫描派生血缘及所有清理严格保持。只扩展既有受控只读取证套件白名单，不改SQL／产品安全投影／权限／算法或原套件。期望准备／首次BFS构建／业务／期望清理计入600秒；构建部署／源准备／部署拆除沿原外层生命周期分别取证。标准`make test-raster-sieve-online-runner`、Native recipe、影响选路和独立手工CI同次登记；本地准备、Linux与实际Hosted分别记账，实际运行由CI会话协调，不计UI／容量或任意影像认证。
 

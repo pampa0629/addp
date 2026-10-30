@@ -2108,14 +2108,14 @@ class ManagerAcceptanceCaseTest(unittest.TestCase):
                     full.assert_not_called()
 
     def test_both_formats_use_shared_scene_and_failure_preserves_partial_root(self):
-        for failure in (None, 'second', 'third', 'unclean'):
+        for failure in (None, 'second', 'third', 'fourth', 'unclean'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
                 env = {'ADDP_ONLINE_ARTIFACT_DIR': directory, 'ADDP_ONLINE_TEST_RUN_ID': 'media-1',
                        'ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID': '27'}
                 scene = mock.Mock()
                 def run(repository, environment, owner, *, source_format):
                     self.assertIs(owner, SUITE)
-                    if (failure == 'second' and source_format == 'jpeg2000') or (failure == 'third' and source_format == 'grd'):
+                    if (failure == 'second' and source_format == 'jpeg2000') or (failure == 'third' and source_format == 'grd') or (failure == 'fourth' and source_format == 'tiff'):
                         raise SUITE.SuiteError('second subscene failed')
                     return {'result': 'passed', 'source_format': source_format,
                             'source_unchanged': failure != 'unclean', 'cleanup': {}}
@@ -2130,12 +2130,12 @@ class ManagerAcceptanceCaseTest(unittest.TestCase):
                         SUITE.run_native_raster_media_case(Path('/repository'), env, mock.Mock(), {'principal_type': 'user'})
                 scan.assert_called_once()
                 report = json.loads(Path(directory, 'manager-native-raster-media.json').read_text())
-                self.assertEqual(report['schema_version'], 'addp.manager-native-raster-media/v1')
+                self.assertEqual(report['schema_version'], 'addp.manager-native-raster-media/v2')
                 self.assertEqual(report['case'], 'native-raster-media')
-                self.assertEqual(report['source_formats'], ['img', 'jpeg2000', 'grd'])
+                self.assertEqual(report['source_formats'], ['img', 'jpeg2000', 'grd', 'tiff'])
                 self.assertEqual(report['result'], 'failed' if failure else 'passed')
                 calls = [call.kwargs['source_format'] for call in scene.run.call_args_list]
-                self.assertEqual(calls, ['img'] if failure == 'unclean' else ['img', 'jpeg2000'] if failure == 'second' else ['img', 'jpeg2000', 'grd'])
+                self.assertEqual(calls, ['img'] if failure == 'unclean' else ['img', 'jpeg2000'] if failure == 'second' else ['img', 'jpeg2000', 'grd'] if failure == 'third' else ['img', 'jpeg2000', 'grd', 'tiff'])
                 if failure == 'second':
                     self.assertEqual(report['img']['result'], 'passed')
                     self.assertIn('second subscene failed', report['error'])

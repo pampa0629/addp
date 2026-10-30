@@ -2528,3 +2528,48 @@ def test_proximity_persistence_oracle_rejects_corruption(proximity_persistence,t
     elif corruption=='missing':path.unlink()
     else:(root/'outputs'/'extra.tif').write_bytes(path.read_bytes())
     with pytest.raises(module.FixtureError):module.verify(root,list(module.TARGETS))
+
+
+def test_manager_tiff_unlocated_small_cog_complete_pixels_and_source_bytes(manager_physical):
+    proof=fixture.manager_worker('tiff-source',manager_physical)
+    assert proof['source_unchanged'] is True and len(proof['tiff_sources'])==1
+    facts=proof['tiff_sources'][0]
+    assert facts['width']==240 and facts['height']==120 and facts['pixels_verified']==28800
+    assert facts['valid_pixels']==28765 and facts['complete_mask_verified'] is True
+    assert facts['source_srid'] is None and facts['overview_count']==0 and facts['block_size']==[512,512]
+    assert facts['cog_valid'] is True and facts['cog_errors']==facts['cog_warnings']==0
+    raw=LocalMinio.objects['source','business',facts['object']]
+    assert len(raw)==facts['size_bytes'] and hashlib.sha256(raw).hexdigest()==facts['sha256']
+    fixture.private_json(manager_physical.parent/'manager-raster-request.json',{'source_format':'tiff','source_case':'unlocated-small-cog'})
+    with pytest.raises(fixture.FixtureError,match='cannot verify generated outputs'):
+        fixture.manager_worker('verify',manager_physical)
+
+
+@pytest.mark.parametrize('fault',['one_ulp','nan_mask','nodata','grid','crs','overview','dtype','tiles','plain_tiff'])
+def test_manager_tiff_rejects_semantic_tampering_even_with_rewritten_receipt(manager_physical,tmp_path,fault):
+    import numpy as np
+    key=('source','business','raster/tiff-unlocated-small-cog.tif')
+    original=tmp_path/'small-original.tif';original.write_bytes(LocalMinio.objects[key])
+    ds=gdal.Translate('',str(original),format='MEM')
+    band=ds.GetRasterBand(1)
+    if fault in ('one_ulp','nan_mask'):
+        values=band.ReadAsArray()
+        if fault=='one_ulp':values[10,10]=np.nextafter(values[10,10],float('inf'))
+        else:values[0,0]=0
+        band.WriteArray(values)
+    elif fault=='nodata':band.SetNoDataValue(-9999.)
+    elif fault=='grid':ds.SetGeoTransform((100.,1.,0.,200.,0.,-1.))
+    elif fault=='crs':
+        crs=osr.SpatialReference();crs.ImportFromEPSG(4326);ds.SetSpatialRef(crs)
+    elif fault=='overview':ds.BuildOverviews('NEAREST',[2])
+    edited=tmp_path/'small-edited.tif'
+    options=['COMPRESS=DEFLATE','BLOCKSIZE='+('128' if fault=='tiles' else '512'),
+             'OVERVIEWS='+('FORCE_USE_EXISTING' if fault=='overview' else 'NONE')]
+    if fault=='plain_tiff':out=gdal.Translate(str(edited),ds,format='GTiff',creationOptions=['TILED=YES','BLOCKXSIZE=512','BLOCKYSIZE=512'])
+    else:out=gdal.Translate(str(edited),ds,format='COG',outputType=gdal.GDT_Float32 if fault=='dtype' else gdal.GDT_Float64,creationOptions=options)
+    out=band=ds=None
+    raw=edited.read_bytes();LocalMinio.objects[key]=raw
+    receipt_path=manager_physical.parent/'manager-raster-source.json'
+    receipt=json.loads(receipt_path.read_text());receipt['tiff_sources'][0].update(sha256=hashlib.sha256(raw).hexdigest(),size_bytes=len(raw))
+    receipt_path.write_text(json.dumps(receipt))
+    with pytest.raises(fixture.FixtureError):fixture.manager_worker('tiff-source',manager_physical)

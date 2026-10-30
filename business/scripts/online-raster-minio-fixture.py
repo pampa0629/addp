@@ -1510,7 +1510,7 @@ def manager_physical(action, request=None):
     if (os.environ.get('ADDP_ONLINE_HOSTED') != '1'
             or os.environ.get('ONLINE_SUITE') != 'manager-internal-artifact-lineage'):
         raise FixtureError('Manager raster physical verification requires its Hosted owner')
-    if action not in ('seed', 'verify', 'deleted', 'pdf-verify', 'pdf-deleted', 'img-source', 'jpeg2000-source', 'grd-source'):
+    if action not in ('seed', 'verify', 'deleted', 'pdf-verify', 'pdf-deleted', 'img-source', 'jpeg2000-source', 'grd-source', 'tiff-source'):
         raise FixtureError('unknown Manager physical action')
     root = environment()
     image = os.environ.get('ADDP_ONLINE_RASTER_RUNTIME_IMAGE', '')
@@ -1713,6 +1713,60 @@ def manager_seed_grids(client,bucket,directory):
     return sources
 
 
+def manager_tiff_facts(path):
+    import math
+    import numpy as np
+    from osgeo import gdal
+    from osgeo_utils.samples.validate_cloud_optimized_geotiff import validate
+    expected=(np.arange(240*120,dtype=np.float64).reshape(120,240)%103)-30
+    expected[:5,:7]=np.nan
+    ds=gdal.Open(str(path))
+    if (ds is None or (ds.RasterXSize,ds.RasterYSize,ds.RasterCount)!=(240,120,1)
+        or ds.GetDriver().ShortName!='GTiff' or ds.GetFileList()!=[str(path)]
+        or ds.GetSpatialRef() is not None or ds.GetGeoTransform(can_return_null=True) is not None):
+        raise FixtureError('small TIFF dimensions, driver, dependencies or missing location differ')
+    band=ds.GetRasterBand(1)
+    if (band.DataType!=gdal.GDT_Float64 or band.GetNoDataValue() is None or not math.isnan(band.GetNoDataValue())
+        or band.GetBlockSize()!=[512,512] or band.GetOverviewCount()!=0
+        or not np.array_equal(band.ReadAsArray(),expected,equal_nan=True)
+        or not np.array_equal(band.GetMaskBand().ReadAsArray(),np.where(np.isnan(expected),0,255).astype('uint8'))):
+        raise FixtureError('small TIFF complete pixels, NaN mask, type, tiles or zero overviews differ')
+    warnings,errors,_=validate(ds,full_check=True)
+    if warnings or errors or ds.GetMetadataItem('LAYOUT','IMAGE_STRUCTURE')!='COG':
+        raise FixtureError('small TIFF full COG validation did not pass without warnings')
+    band=ds=None
+    return {'case':'unlocated-small-cog','object':'raster/tiff-unlocated-small-cog.tif','source_srid':None,
+            'driver':'GTiff','width':240,'height':120,'band_count':1,'dtype':'Float64','nodata_is_nan':True,
+            'overview_count':0,'block_size':[512,512],'cog_valid':True,'cog_errors':0,'cog_warnings':0,
+            'pixels_verified':28800,'valid_pixels':28765,'complete_mask_verified':True,
+            'size_bytes':path.stat().st_size,'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
+
+
+def manager_seed_tiff(client,bucket,directory):
+    import numpy as np
+    from osgeo import gdal
+    path=Path(directory)/'tiff-unlocated-small-cog.tif'
+    values=(np.arange(240*120,dtype=np.float64).reshape(120,240)%103)-30
+    values[:5,:7]=np.nan
+    ds=gdal.GetDriverByName('MEM').Create('',240,120,1,gdal.GDT_Float64)
+    ds.GetRasterBand(1).WriteArray(values);ds.GetRasterBand(1).SetNoDataValue(float('nan'))
+    output=gdal.Translate(str(path),ds,format='COG',creationOptions=['COMPRESS=DEFLATE','BLOCKSIZE=512','OVERVIEWS=NONE'])
+    output=ds=None
+    facts=manager_tiff_facts(path)
+    client.fput_object(bucket,facts['object'],str(path),content_type='image/tiff')
+    return [facts]
+
+
+def manager_tiff_source(client,bucket,root):
+    seeded=json.loads((root/'manager-raster-source.json').read_text())['tiff_sources']
+    with tempfile.TemporaryDirectory(prefix='manager-tiff-physical-')as directory:
+        path=Path(directory)/'tiff-unlocated-small-cog.tif'
+        client.fget_object(bucket,'raster/tiff-unlocated-small-cog.tif',str(path))
+        actual=[manager_tiff_facts(path)]
+    if actual!=seeded:raise FixtureError('small TIFF physical source receipt changed')
+    return {'source_unchanged':True,'tiff_sources':actual}
+
+
 def manager_grd_source(client,bucket,root):
     seeded=json.loads((root/'manager-raster-source.json').read_text())['grd_sources']
     actual=[]
@@ -1737,8 +1791,11 @@ def manager_img_worker(action, path):
     source = config['source']
     clients = {role: Minio(entry['endpoint'], access_key=entry['access_key'], secret_key=entry['secret_key'], secure=False)
                for role, entry in config.items()}
-    request = {} if action in ('img-source','jpeg2000-source','grd-source') else json.loads((root / 'manager-raster-request.json').read_text())
-    source_format = action.removesuffix('-source') if action in ('img-source','jpeg2000-source','grd-source') else request.get('source_format', 'img')
+    request = {} if action in ('img-source','jpeg2000-source','grd-source','tiff-source') else json.loads((root / 'manager-raster-request.json').read_text())
+    source_format = action.removesuffix('-source') if action in ('img-source','jpeg2000-source','grd-source','tiff-source') else request.get('source_format', 'img')
+    if source_format=='tiff':
+        if action!='tiff-source':raise FixtureError('small TIFF acceptance cannot verify generated outputs')
+        return manager_tiff_source(clients['source'],source['bucket'],root)
     if source_format == 'grd':
         if action != 'grd-source':
             raise FixtureError('GRD read-only acceptance cannot verify generated outputs')
@@ -1821,7 +1878,7 @@ def manager_worker(action, path):
     if action.startswith('pdf-'):
         return manager_pdf_worker(action, path)
     request_file = Path(path).parent / 'manager-raster-request.json'
-    if action in ('img-source','jpeg2000-source','grd-source') or (request_file.exists() and json.loads(request_file.read_text()).get('source_case')):
+    if action in ('img-source','jpeg2000-source','grd-source','tiff-source') or (request_file.exists() and json.loads(request_file.read_text()).get('source_case')):
         return manager_img_worker(action, path)
     from minio import Minio
     from minio.error import S3Error
@@ -1842,7 +1899,8 @@ def manager_worker(action, path):
             return {'sha256': hashlib.sha256(source_path.read_bytes()).hexdigest(), 'size_bytes': source_path.stat().st_size,
                     'img_sources': manager_seed_imgs(clients['source'], source['bucket'], directory),
                     'jpeg2000_sources': manager_seed_imgs(clients['source'], source['bucket'], directory, 'jpeg2000'),
-                    'grd_sources': manager_seed_grids(clients['source'], source['bucket'], directory)}
+                    'grd_sources': manager_seed_grids(clients['source'], source['bucket'], directory),
+                    'tiff_sources': manager_seed_tiff(clients['source'], source['bucket'], directory)}
         clients['source'].fget_object(source['bucket'], source['object'], str(source_path))
         seeded = json.loads((root / 'manager-raster-source.json').read_text())
         if hashlib.sha256(source_path.read_bytes()).hexdigest() != seeded['sha256']:

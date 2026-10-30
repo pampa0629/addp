@@ -2600,6 +2600,10 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         )
         config = self.repository / "console/frontend/playwright.online.config.js"
         config.write_text("--use-gl=angle --use-angle=swiftshader-webgl --enable-unsafe-swiftshader\n", encoding="utf-8")
+        for relative in ('business/scripts/online-raster-minio-fixture.py','engines/geopython-workflow/test_online_raster_fixture.py'):
+            target=self.repository/relative
+            target.parent.mkdir(parents=True,exist_ok=True)
+            target.write_text((SCRIPT.parents[2]/relative).read_text())
         img_owner = self.repository / 'scripts/test/manager-img-online.py'
         img_browser = browser.with_name('manager-img.spec.js')
         for target in (img_owner, img_browser, img_owner.with_name('manager-img-online_test.py')):
@@ -2609,8 +2613,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         for target in (kml_owner, kml_owner.with_name('manager-kml-export-online_test.py'), kml_browser):
             target.write_text((SCRIPT.parents[2] / target.relative_to(self.repository)).read_text())
         owner.write_text(owner.read_text() + "\nif case == 'kml-export':\nmanager-kml-export-online\n")
-        owner.write_text(owner.read_text() + "\nfor source_format in ('img', 'jpeg2000', 'grd'):\n" + '\nimg_scene.run(repository, environment, sys.modules[__name__], source_format=source_format)\n')
-        owner.write_text(owner.read_text() + '\ndef manager_case(\ndef run_full_case(\ndef run_raster_media_scenes(\ndef run_native_raster_media_case(\nmanager-native-raster-media.json addp.manager-native-raster-media/v1\ncase = manager_case(os.environ)\nif case == "native-raster-media":\n')
+        owner.write_text(owner.read_text() + "\nfor source_format in ('img', 'jpeg2000', 'grd', 'tiff'):\n" + '\nimg_scene.run(repository, environment, sys.modules[__name__], source_format=source_format)\n')
+        owner.write_text(owner.read_text() + '\ndef manager_case(\ndef run_full_case(\ndef run_raster_media_scenes(\ndef run_native_raster_media_case(\nmanager-native-raster-media.json addp.manager-native-raster-media/v2\ncase = manager_case(os.environ)\nif case == "native-raster-media":\n')
         make = self.repository / 'Makefile'
         make.write_text((make.read_text() if make.exists() else '') + '\ntest-manager-online-runner:\n\t@node --check --input-type=module < console/frontend/e2e/online/manager-img.spec.js\n\t@python3 -m unittest scripts/test/manager-img-online_test.py\n')
         make.write_text(make.read_text() + '\t@node --check --input-type=module < console/frontend/e2e/online/manager-kml-export.spec.js\n\t@python3 -m unittest scripts/test/manager-kml-export-online_test.py\n')
@@ -2637,7 +2641,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (kml_browser, 'actual_button_download: true', 'KML export'),
             (self.workflow, 'ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}', 'acceptance case'),
             (owner, 'def run_full_case(', 'acceptance case'),
-            (owner, 'addp.manager-native-raster-media/v1', 'acceptance case'),
+            (owner, 'addp.manager-native-raster-media/v2', 'acceptance case'),
             (img_owner, 'cleanup_managed_artifact', 'IMG Hosted subscene'),
             (img_owner, 'JPEG2000_SOURCES', 'IMG Hosted subscene'),
             (img_owner, 'GRD_SOURCES', 'IMG Hosted subscene'),
@@ -2647,7 +2651,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (img_browser, 'matchesSourcePreviewResponse', 'IMG Hosted subscene'),
             (img_browser, 'source_preview_verified', 'IMG Hosted subscene'),
             (img_browser, 'unsupported_message_visible', 'IMG Hosted subscene'),
-            (img_browser, 'addp.manager-raster-media-browser/v3', 'IMG Hosted subscene'),
+            (img_browser, 'addp.manager-raster-media-browser/v4', 'IMG Hosted subscene'),
+            (img_owner, 'validate_tiff_physical', 'TIFF COG'),
+            (img_owner, 'refresh_tiff', 'TIFF COG'),
+            (img_browser, 'refreshed_metadata_verified', 'TIFF COG'),
+            (self.repository/'business/scripts/online-raster-minio-fixture.py', 'def manager_tiff_facts', 'TIFF COG'),
+            (self.repository/'engines/geopython-workflow/test_online_raster_fixture.py', 'test_manager_tiff_rejects_semantic_tampering_even_with_rewritten_receipt', 'TIFF COG'),
             (owner, 'img_scene.run(repository, environment, sys.modules[__name__], source_format=source_format)', 'IMG Hosted subscene'),
             (hosted, "start_online_model3d_runtime", "Hosted profile"),
             (hosted, "bash business/scripts/online-manager-nfs-fixture.sh start", "Hosted profile"),
