@@ -2561,13 +2561,44 @@ def test_manager_tiff_rejects_semantic_tampering_even_with_rewritten_receipt(man
     elif fault=='grid':ds.SetGeoTransform((100.,1.,0.,200.,0.,-1.))
     elif fault=='crs':
         crs=osr.SpatialReference();crs.ImportFromEPSG(4326);ds.SetSpatialRef(crs)
-    elif fault=='overview':ds.BuildOverviews('NEAREST',[2])
+    elif fault=='overview':
+        assert band.GetOverviewCount()==0
+        assert ds.BuildOverviews('NEAREST',[2])==gdal.CE_None
+        assert band.GetOverviewCount()==1
     edited=tmp_path/'small-edited.tif'
     options=['COMPRESS=DEFLATE','BLOCKSIZE='+('128' if fault=='tiles' else '512'),
              'OVERVIEWS='+('FORCE_USE_EXISTING' if fault=='overview' else 'NONE')]
     if fault=='plain_tiff':out=gdal.Translate(str(edited),ds,format='GTiff',creationOptions=['TILED=YES','BLOCKXSIZE=512','BLOCKYSIZE=512'])
-    else:out=gdal.Translate(str(edited),ds,format='COG',outputType=gdal.GDT_Float32 if fault=='dtype' else gdal.GDT_Float64,creationOptions=options)
+    else:
+        # A redundant -ot hides MEM overviews behind Translate's VRT in GDAL
+        # 3.8. Only the dtype fault should request a sample type conversion.
+        type_options={'outputType':gdal.GDT_Float32} if fault=='dtype' else {}
+        out=gdal.Translate(str(edited),ds,format='COG',creationOptions=options,**type_options)
+    assert out is not None
     out=band=ds=None
+    if fault=='overview':
+        # Prove the intended semantic fault survived serialization before
+        # rewriting the receipt or asking the independent oracle to reject it.
+        changed=gdal.Open(str(edited))
+        assert changed is not None
+        changed_band=changed.GetRasterBand(1)
+        assert changed_band.GetOverviewCount()==1
+        overview=changed_band.GetOverview(0)
+        assert (overview.XSize,overview.YSize)==(120,60)
+        source=gdal.Open(str(original))
+        source_band=source.GetRasterBand(1)
+        assert source_band.GetOverviewCount()==0
+        assert changed_band.DataType==source_band.DataType==gdal.GDT_Float64
+        assert changed_band.GetBlockSize()==source_band.GetBlockSize()==[512,512]
+        assert changed.GetSpatialRef() is None and changed.GetGeoTransform(can_return_null=True) is None
+        assert math.isnan(changed_band.GetNoDataValue()) and math.isnan(source_band.GetNoDataValue())
+        values=source_band.ReadAsArray()
+        assert np.array_equal(changed_band.ReadAsArray(),values,equal_nan=True)
+        assert np.array_equal(changed_band.GetMaskBand().ReadAsArray(),source_band.GetMaskBand().ReadAsArray())
+        assert np.array_equal(overview.ReadAsArray(),values[::2,::2],equal_nan=True)
+        assert changed.GetFileList()==[str(edited)]
+        assert changed.GetMetadataItem('LAYOUT','IMAGE_STRUCTURE')=='COG'
+        overview=changed_band=changed=source_band=source=None
     raw=edited.read_bytes();LocalMinio.objects[key]=raw
     receipt_path=manager_physical.parent/'manager-raster-source.json'
     receipt=json.loads(receipt_path.read_text());receipt['tiff_sources'][0].update(sha256=hashlib.sha256(raw).hexdigest(),size_bytes=len(raw))
