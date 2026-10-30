@@ -407,6 +407,8 @@ pg.sql("SELECT * FROM public.farmland WHERE id > $1", params=[100], max_rows=100
 - GaussDB 以独立 `gaussdb` 身份和固定纯 Go 驱动接入，首版只开放非空间目录、字段及有序主键 Facts、批次／会话读取和参数化只读 SQL；System 登记、Meta 扫描、Manager 预览按各自 T2／T4 实际结果认定。它只组合已验证的 PostgreSQL 协议方法，不继承写入、COPY、TableResult、watermark、空间、CDC 或关系 enrichment 能力。
 - SQL metadata 复用只允许在事实来源和语义一致的引擎家族内发生，例如 MySQL、OceanBase MySQL 模式、TiDB 和 Doris 共享 `information_schema` helper；openGauss 与 KingbaseES 只在各自真实介质门禁已认证的范围内显式转发 PostgreSQL wire/catalog 实现，未认证的厂商方言、系统 schema 和扩展能力仍由独立插件拥有。共享协议或 SQL 方言不改变 `engine_type`；所有方言差异必须由 `SQLDialectProvider.SQLDialect()` 声明，上层不维护兼容引擎白名单。
 - AI 调用统一走 `InferenceRuntimeProvider` 和 `addp.inference/v1`。调用方不得直连 OpenAI、DashScope、Ollama 或其他厂商协议，也不得读取厂商 API Key。
-- 第一版只允许一个 active、平台内置且声明 `compute.inference.supported=true` 的 Inference Runtime Engine Instance。调用方必须通过 System Runtime Descriptor 精确解析该实例；零个或多个候选都明确失败，不得使用模块环境变量、固定端口、列表第一项或隐藏 fallback 选择 Runtime。
+- 第一版只允许一个 active、平台内置且声明 `compute.inference.supported=true` 的 Inference Runtime Engine Instance。实例发现与选址拒绝规则统一见[推理技术路线](<../spec/addp AI推理接口规范.md#一目标与唯一技术路线>)，调用身份与 Provider 边界见[Runtime Provider](../spec/addp引擎插件接口规范.md#runtime-provider)。
 - `compute.inference` 只声明 Runtime 支持的统一操作和输入模态，不保存动态 Provider、Deployment 或 Profile 列表；动态资源由 Inference 控制面查询。
 - Inference Runtime Instance 按网络区域、安全域、GPU 集群、故障域或 SLA 拆分，不按厂商、账号或模型拆分。第一版一个 Model Profile 只绑定一个 Deployment，禁止隐藏 fallback。
+
+Inference 接入和调用的实际覆盖按[验证要求](<../spec/addp AI推理接口规范.md#九验证要求>)与对应部署证据分别认定；受控上游测试不代替新代码部署后的真实厂商调用，未执行、失败或未覆盖项不计为通过。
