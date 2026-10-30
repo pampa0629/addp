@@ -9,8 +9,8 @@
 技术栈：
 - **后端**：Python 3.11+ + FastAPI + SQLAlchemy + PostgreSQL
 - **AI 框架**：LangChain 领域 Chain + ADDP Inference Runtime
-- **部署**：Docker + Docker Compose
-- **端口**：后端默认 `8087`（环境变量 `COPILOT_BACKEND_PORT` 或运行时 `PORT`）
+- **部署**：开发使用[原生进程](#开发环境)，产品使用 [Docker Compose 容器](../scripts/docs/开发与容器部署.md)。
+- **端口**：后端开发首选 `8087`；实际端口、运行时 `PORT` 注入与公开入口边界见[环境变量配置](#环境变量配置)。
 
 核心功能：
 - **查询生成**：用户输入自然语言，AI 按当前 Query Engine capability 生成 SQL、MQL、Cypher 等候选查询
