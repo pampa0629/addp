@@ -140,11 +140,11 @@ make ports-validate
 
 ## 使用建议
 
-- 同机运行 System 与 Business：
-  - 先启动 Business：`cd business && ./scripts/start.sh`
-  - 再启动 System 基础设施：`bash scripts/infra/up.sh` 或 `make infra-up`
-  - 注册到 ADDP 的 Business 引擎地址应使用容器可访问地址，例如 `business-postgres:5432`、`business-minio:9000`；不要使用 `localhost`，因为连接测试由 ADDP 容器内服务发起。
+- Business 的准备与启动见 [Business 快速开始](../../business/README.md#快速开始)；ADDP Infra 与应用启动见[部署指南](../guide/addp部署和开发步骤.md#快速开始)。
+- 注册地址按 [Business 连接与端口规则](#business-业务库)选择，取决于实际发起连接的进程所在网络。根 Compose 使用 `addp-network`，Business 使用 `business_business-network`；只有连接方已具备对应网络可达性时才能使用 Business 容器服务名，同机运行不代表两套网络已互通。本机原生开发的批量注册入口见 [register-business.sh 说明](../../scripts/utils/README.md#register-businesssh)，容器部署应另按实际网络确认地址。
 - 如遇 Business 已持久化端口被其他服务占用，先释放该端口；若同一实际引擎必须搬迁，先通过标准 Business 生命周期脚本启动，再由有权限的用户在 System 编辑页确认并更新其连接地址。
+
+System 连接测试只验证发起方在当时配置下的连接结果；其他 Owner／Runtime 的访问路径仍须按实际部署验证，不能替代[跨模块与发布验收](addp测试与验收规范.md#二测试分层)。
 
 
 ### 端口分配
