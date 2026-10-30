@@ -189,6 +189,8 @@ Scenario Binding 的有效解析顺序固定为：
 
 ## 四、凭据
 
+[控制面 API](#五控制面-api) · [资源删除限制](#资源删除与引用限制) · [验证要求](#九验证要求)
+
 Provider credential 使用部署级 `ENCRYPTION_KEY` 进行认证加密。数据库只保存 ciphertext、nonce、算法版本、credential version、更新时间和操作者 Principal ID。
 
 控制面规则：
@@ -210,18 +212,22 @@ Provider credential 使用部署级 `ENCRYPTION_KEY` 进行认证加密。数据
 | 方法与路径 | 作用 |
 | --- | --- |
 | `GET/POST /provider-connections` | 列表或创建当前 Realm 可管理的 Provider。 |
-| `GET/PUT/DELETE /provider-connections/{id}` | 读取、更新或删除 Provider 普通字段。 |
-| `PUT/DELETE /provider-connections/{id}/credential` | 设置、轮换或删除加密凭据。 |
+| `GET/PUT/DELETE /provider-connections/{id}` | 读取、更新或删除 Provider 普通字段。删除前提见[引用限制](#资源删除与引用限制)。 |
+| `PUT/DELETE /provider-connections/{id}/credential` | 设置、轮换或删除加密凭据。版本、响应与审计边界见[凭据规则](#四凭据)。 |
 | `GET /provider-templates` | 查询 Inference 内置的只读模型服务接入模板。职责与适用范围见[模板目录](#模板目录职责)。 |
 | `POST /provider-connections/{id}/discover-models` | 使用该 Provider 的服务端 Endpoint 和加密凭据发现 OpenAI-compatible 模型。结果与能力判定范围见[模型发现](#服务端模型发现)。 |
 | `GET/POST /model-deployments` | 列表或创建 Deployment；Chat 参数能力通过 `chat_max_output_tokens_parameter`、`chat_temperature_mode` 和 `chat_thinking_mode` 显式声明，映射与限制见[模型调用参数](#模型适配与调用参数)。 |
-| `GET/PUT/DELETE /model-deployments/{id}` | 读取、更新或删除 Deployment，包括显式的 Chat 参数能力映射。 |
+| `GET/PUT/DELETE /model-deployments/{id}` | 读取、更新或删除 Deployment，包括显式的 Chat 参数能力映射。删除前提见[引用限制](#资源删除与引用限制)。 |
 | `POST /model-deployments/{id}/probe` | 显式执行无副作用可达性和能力探测。 |
 | `GET/POST /model-profiles` | 列表或创建 Profile。 |
-| `GET/PUT /model-profiles/{id}` | 读取或更新 Profile；已创建 Profile 只允许禁用，不物理删除。 |
+| `GET/PUT /model-profiles/{id}` | 读取或更新 Profile；已创建 Profile 只允许禁用，不物理删除。原因与回收前提见[删除限制](#资源删除与引用限制)。 |
 | `GET /model-labels` | 查询当前 Context 可见的窄模型标签投影。字段、权限与历史展示限制见[标签投影](#窄模型标签投影)。 |
 
+### 资源删除与引用限制
+
 Provider 或 Deployment 存在 Inference 本地的下游引用时，删除必须返回 `409 resource_in_use`。Inference 不读取各业务模块的 Scenario Binding，因此第一版 Model Profile 只允许禁用，不提供删除 API；引用已禁用 Profile 的调用明确返回 `model_profile_unavailable`。后续若需要物理回收，必须先定义跨 owner cleanup 协议，不能增加反向私有表查询。
+
+[凭据操作](#四凭据) · [禁用 Profile 的历史标签](#窄模型标签投影) · [验证要求](#九验证要求)
 
 ## 六、数据面 API
 
