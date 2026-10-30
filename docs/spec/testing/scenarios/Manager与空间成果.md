@@ -774,3 +774,5 @@ artifact／物理／Meta相等正整数大小、精确scan父执行／用户／�
 真实Console成功页、成果属性、Point预览和血缘视图四类截图；每次导航沿实际页面请求核同普通身份。API标准EWKB和OpenLayers内全部7个Point及属性／投影坐标必须精确匹配，保留同位置的多条记录，不能用可见点簇数代替要素数；核实际像素，不能仅确认组件出现。像素读取有要素的可见矢量层绘制画布，按当前点样式的实际填色匹配，至少超过30个非透明像素，不沿用面／线的绿色假设；空白、隐藏图层或颜色不匹配均拒绝。归档两源一成果原字节、源与成果前后Meta、原始扫描/两源血缘/Monitor/预览响应及渲染数据。前后源/成果SHA、Meta不变；最终完整报告与incomplete阶段分离，完整隔离清理零残留不认证业务DELETE。
 
 不重跑原拓扑整包、已过参数失败T4或容量；空结果、英尺及更大整数边界沿原Native限定证据，不外推本case为全部输入或规模认证。case及夹具/runner/browser/Hosted选择/登记和mutation同次接入现有标准入口，无新API、算子或长期脚本。
+
+2026-10-30，固定 `ffa8aed3de8d3c84e5659c4575b30f6f7e8323e4` 的[独立近接 Hosted T4 40995207798](https://github.com/pampa0629/addp/actions/runs/40995207798/job/123866626980) 已通过原始归档独立审计：User33／Tenant2／精确11权限，5条源线与9个参考要素得到7条Point记录、3个原悬点位置；三份原始GPKG逐行OGR核对原生坐标、字段类型、CRS及SHA／大小，保留精确2^-20距离、业务Int64标识和参考顺序。成果98304字节与Meta严格相等，恰有一次公开同主体自动扫描、两条本次execution active derive及一致Monitor，源和成果前后Meta／原字节均未变。标准EWKB、实际OL七要素／属性／精确投影坐标、174个点填色像素、真实G6三节点／两边及成功页／属性／地图／血缘四截图均已核；业务42859ms，小于600秒，最终Owner／browser报告均v1 passed，incomplete检查点只保留阶段含义。NFS/export/owned root、Runtime／registry／部署及Infra清理零残留；不认证业务DELETE、空批、英尺、超JSON安全整数、容量或算子内存中间结果的资源登记，不重复原已通过业务T4。
