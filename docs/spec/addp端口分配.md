@@ -299,8 +299,8 @@ make ports-validate
 - Frontend Docker 内部：`80`（经 Nginx 转发，不发布宿主机端口）
 
 **配置文件**：
-- `.env`: `STANDARD_BACKEND_PORT=8110`, `STANDARD_FRONTEND_PORT=5181`
-- `standard/frontend/vite.config.js`: `port: 5181`
+- `.env` 首选值与标准解析变量：`STANDARD_BACKEND_PORT=8110`、`STANDARD_FE_PORT=5181`；实际端口以标准启动输出和 `.dev-state/ports.env` 为准
+- `standard/frontend/vite.config.js`: 从 `STANDARD_FE_PORT` 读取端口，缺省 `5181`
 - `docker-compose.yml`: Backend 内部监听 `8110`，Frontend 内部监听 `80`，两者均不单独发布宿主机端口
 
 ### Model 模块（数据建模）
