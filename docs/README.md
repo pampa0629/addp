@@ -115,7 +115,7 @@
 10. [铁路占耕地面积计算 AI 自动化实验](plan/铁路占耕地面积计算-AI自动化实验.md)：查看尚未闭合的空间计算业务场景与验收问题。
 11. [本体定义与发布规范](spec/addp本体定义与发布规范.md)：查看已实现 Tenant/平台定义、PG 权威修订、FalkorDB 投影及 Agent 消费；绑定与真实求值见[后续设计](next/ADDP%20Ontology最小设计契约.md)。
 
-AI 模型接入、在线厂商账号、内网模型服务、模型档案、场景绑定或推理密钥管理，应先阅读 [ADDP AI 推理接口规范](spec/addp%20AI推理接口规范.md)。Agent 与 Copilot 只消费统一推理数据面，不拥有 Provider 或 API Key。
+AI 模型接入、在线厂商账号、内网模型服务、模型档案、场景绑定或推理密钥管理，应先阅读 [ADDP AI 推理接口规范](spec/addp%20AI推理接口规范.md)；资源归属、授权、凭据、接口与验证的专题索引见 [Inference 模块导航](../inference/CLAUDE.md#专题导航)。Agent 与 Copilot 只消费统一推理数据面，不拥有 Provider 或 API Key。
 
 ## 资源定位、资源树与数据检索主题
 
