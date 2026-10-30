@@ -78,6 +78,8 @@ bash scripts/dev/start.sh -jupyter
 
 镜像部署使用根 `docker-compose.runtimes.yml` 中的 `jupyter-engine`，不另用 `docker run` 建立开发实例。
 
+产品镜像准备统一使用[标准构建入口](../../scripts/build/README.md#build-imagessh)；冷构建日志、依赖层及指定镜像的扩展／Node 检查见[Python 镜像排查](../../docs/guide/troubleshooting/开发服务与构建.md#python-镜像首次构建耗时过长)，短期镜像检查不能替代真实 Notebook 验收。
+
 ## 环境变量
 
 - `API_PORT`: Notebook Runtime API 端口（默认 8097）
