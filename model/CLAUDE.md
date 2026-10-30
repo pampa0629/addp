@@ -328,7 +328,13 @@ POST   /api/v1/model/metric-implementations/:id/revisions/:revision_id/plan     
   - **前端引用读取**：[Model 前端](frontend/src/api/model.js)通过当前用户会话的共享客户端，以 User Access Token 调用 Standard 唯一公开 API，由 Standard 校验该用户的权限与资源归属。Model 不提供 Standard 代理路径；服务端引用校验成功不代表用户取得 Standard 读取权限。身份主线见[登录认证要求](../docs/spec/addp登录认证的统一要求.md#一认证事实与唯一主路径)，实际覆盖按[开发与验证](#开发与验证)分层认定。
 
 **被依赖**:
+
+以下为其他模块服务端 → Model 的调用，使用调用方当前 Tenant 的服务身份；与前端 User 访问的权限分工统一见[IAM Permission 所有权](#iam-permission-所有权)，实际验收范围见[开发与验证](#开发与验证)。
+
 - **Graph 模块**: 使用 `tenant.graph_runtime` 读取 Entity、EntityAttribute 和 EntityRelation，生成本体导入预览。
+- **Catalog 模块**: 拉取 Model 可恢复变化流，并按需批量解析目录引用；来源归属及同步边界见[企业目录接入边界](docs/model概念与数据约束规范.md#企业目录接入边界)。
+- **Orchestrator 模块**: 通过 Model TaskProvider 发现任务、派发目标物理表建表执行并读取状态；执行授权、父 execution 及版本冻结前提见[目标物理表建表](docs/model概念与数据约束规范.md#目标物理表建表)。
+- **Standard 模块**: 调用 Model 引用删除屏障，协调被 Model 引用的 Standard 资源删除；冻结、失败恢复及终态边界见[Standard 引用删除屏障](docs/model概念与数据约束规范.md#standard-引用删除屏障)。
 
 ## 跨 Schema 关联设计
 
