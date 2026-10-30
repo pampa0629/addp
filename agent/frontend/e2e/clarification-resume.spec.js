@@ -12,6 +12,7 @@ const reviewOptions = [{ label: '知悉未核验项，仅创建任务', value: '
 const unknownWarning = '预检结果为无法确定（unknown），并非通过。请核对未检查项和运行时核验要求；确认表示知情接受这些限制，仅保存未运行任务。'
 const draftGoal = '把 MongoDB 的 outdoor 传到 PostgreSQL 的 outdoor，检查配置，只给草稿，不创建、不运行。'
 const checkExplanation = '关键检查解释：尚有未核验项，不代表可以运行。'
+const checkedDraftName = 'readonly_persons_mongodb_to_postgresql_workspace_acceptance_20261030'
 
 function checkReport(status) {
   const report = { status, observed_at: '2026-10-12T00:00:00Z', checked: ['request_shape'], not_checked: ['business_rows'],
@@ -31,8 +32,8 @@ function checkedDraftPart() {
     content: { operations: [
       { version: 'v0.9', createSurface: { surfaceId: surface, catalogId: 'addp.catalog/v1' } },
       { version: 'v0.9', updateComponents: { surfaceId: surface, components: [{ id: 'root', component: 'TransferDraftSnapshot',
-        reference: `draft:cccccccc-cccc-cccc-cccc-cccccccccccc:${'a'.repeat(64)}`, name: 'readonly_persons',
-        parameters: JSON.stringify({ name: 'readonly_persons', config: {
+        reference: `draft:cccccccc-cccc-cccc-cccc-cccccccccccc:${'a'.repeat(64)}`, name: checkedDraftName,
+        parameters: JSON.stringify({ name: checkedDraftName, config: {
           source: { locator: 'addp://engine/11/path/Outdoor/Persons?type=collection&item_id=106', data_type: 'table', representation: 'native' },
           target: { parent_locator: 'addp://engine/2/path/outdoor?type=schema&node_id=3', name: 'persons_check',
             data_type: 'table', representation: 'native', policy: { apply_mode: 'replace' } },

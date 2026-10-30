@@ -66,7 +66,7 @@ const columns = computed(() => ['source', 'target', 'target_type', 'nullable', '
 
 <style scoped>
 .draft-snapshot { padding: 16px; border: 1px solid var(--addp-border-color); border-radius: 8px; color: var(--addp-text-primary); background: var(--addp-bg-primary); min-width: 0; }
-h4 { margin: 0; }
+h4 { margin: 0; overflow-wrap: anywhere; }
 p, summary { overflow-wrap: anywhere; }
 .draft-reference { color: var(--addp-text-secondary); font-size: 12px; }
 .draft-overview { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; margin: 12px 0; }

@@ -11,7 +11,7 @@ from unittest.mock import patch
 from langchain_core.tools import StructuredTool
 
 from agents.events import text_event
-from agents.main_agent import SkillMeta, _route_node, _select_platform_skill, stream_agent_response
+from agents.main_agent import SkillMeta, _load_skill_registry, _route_node, _select_platform_skill, stream_agent_response
 from graph.state import PlatformRouteDecision, RouteDecision
 
 
@@ -49,6 +49,35 @@ class ScriptedRouter:
 
 
 class PlatformRoutingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_readonly_workflow_facts_use_ordinary_skill_without_ontology_dependency(self):
+        request = '请重新从当前正式接口核对工作流引擎及公开算子能力，比较 GeoPython 与 SuperMap 对矢量缓冲、叠加和坐标转换的适用性。只查询，不创建、不运行任务。'
+        registry = _load_skill_registry()
+        model = ScriptedRouter([RouteDecision(skill='workflow-analysis')])
+
+        async def query_domain(**kwargs):
+            self.assertEqual(kwargs['task_context']['user_request'], request)
+            self.assertEqual(kwargs['task_context']['skill_name'], 'workflow-analysis')
+            self.assertIn('engine.list', kwargs['allowed_tool_names'])
+            self.assertIn('workflow.operators.list', kwargs['allowed_tool_names'])
+            yield text_event('只读能力查询')
+
+        with (
+            patch('agents.main_agent._get_skill_registry', return_value=registry),
+            patch('agents.main_agent.get_llm', return_value=model),
+            patch('agents.main_agent.create_agent_tools', side_effect=AssertionError('ordinary query must not read platform catalog')),
+            patch('agents.main_agent.AgentFactory.run', side_effect=query_domain),
+        ):
+            events = [event async for event in stream_agent_response([
+                {'role': 'user', 'content': SHORT_REQUEST},
+                {'role': 'assistant', 'content': '平台目录当前仅包含 Transfer 创建定义。'},
+                {'role': 'user', 'content': request},
+            ], 3, 5, 'user-token', 'run-readonly')]
+        self.assertEqual([event.kind for event in events], ['run_state', 'text'])
+        prompt = model.messages[0][0].content
+        self.assertIn(registry['workflow-analysis'].description, prompt)
+        self.assertIn('普通技能的只读事实查询不以平台本体目录为前置条件', prompt)
+        self.assertIn('历史只用于解析指代，不继承上一轮的任务领域', prompt)
+
     async def test_short_request_selects_from_owner_catalog_before_domain_execution(self):
         model = ScriptedRouter([
             RouteDecision(needs_platform_semantics=True),

@@ -640,7 +640,7 @@ onBeforeRouteUpdate((to, from) => {
   border-bottom: 1px solid var(--addp-border-color);
 }
 
-.sidebar-header .el-button {
+.sidebar-header > .el-button {
   width: 100%;
 }
 

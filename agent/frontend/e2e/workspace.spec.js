@@ -61,6 +61,14 @@ test('capability home fills a draft without submitting, searches titles and keep
   await page.getByPlaceholder('搜索会话标题').press('Enter')
   await expect(page.getByText('暂无对话', { exact: true })).toBeVisible()
   expect(backend.queries.at(-1)).toMatchObject({ search: '不存在', page: '1', page_size: '20' })
+  await page.setViewportSize({ width: 620, height: 900 })
+  await page.locator('.session-filter .el-switch').click()
+  const labelLines = await page.getByText('已归档', { exact: true }).evaluate(element => {
+    const range = document.createRange()
+    range.selectNodeContents(element)
+    return new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size
+  })
+  expect(labelLines).toBe(1)
   expect(backend.unexpected).toEqual([])
 })
 
