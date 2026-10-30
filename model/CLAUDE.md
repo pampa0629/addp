@@ -244,6 +244,7 @@ GET/PUT .../concept-mappings                              # 概念实现映射�
 
 **依赖**:
 - **System 模块**: JWT 认证、用户信息（`SYSTEM_URL`）
+- **Meta 模块**: 提供指标计划所需的已扫描物理结构（`META_URL`，配置默认 `http://localhost:8082`）；Model Runtime 使用已有 `meta.catalog.read`，不新增 System 结构查询权限。字段投影与依赖冻结见[指标计划与数据库金样](#指标计划与数据库金样)。
 - **Standard 模块**:
   - 验证 domain_id、element_id / element_revision_id、metric_definition_revision_id 是否存在（`STANDARD_URL`）；维度层级只校验 Model 本地事实
   - Standard 前端直接调用 Standard 唯一 API，Model 不提供代理路径
@@ -366,6 +367,8 @@ PostgreSQL 门禁必须提供 `ADDP_TEST_MODEL_POSTGRES_DSN`，缺失时入口�
 
 指标计算采用“Model 构建中立计划 → 引擎独立编译器 → 唯一 PreparedQuery”，完整契约见 [Model 约束](docs/model概念与数据约束规范.md#数据库无关计划与修订) 和 [引擎插件规范](../docs/spec/addp引擎插件接口规范.md#数据库无关分析计算契约)。
 
+Meta 物理结构只投影参与计算的字段事实到冻结包，扫描时间与无关显示字段不进入计算依赖；已扫描结构读取、来源绑定、依赖冻结和执行期漂移复核统一见[数据库无关计划与修订](docs/model概念与数据约束规范.md#数据库无关计划与修订)。结构校验、数据库金样与真实业务链路的验收范围分别认定。
+
 元数据生命周期及 PG 金样沿 `make test-model-postgres`；MySQL 真实计算沿 `ADDP_TEST_MYSQL_PASSWORD=<disposable-password> make test-model-mysql`，自动清理 addp_model_mysql_it_* 并拒绝跳过，两者已登记 T2 并验证同一中立计划。TiDB 复用同一金样，经 `make test-common-tidb` 的隔离实例执行；测试来源路径从 Provider 的目录模型派生，不按引擎名判断 namespace。
 
 Service 负责在线指标查询，Develop 负责持久表加工；页面物理绑定与建表扩展另行跟踪。
@@ -397,5 +400,3 @@ Model 前端 CI Job 在失败时上传该目录，保留 14 天；每轮使用�
 - 逻辑表详情的“物理目标”页签集中提供目标引擎、目标位置与目标表名展示，以及建表语句预览、创建/校验、执行记录和删除目标表操作；完整数据流程从 Orchestrator 进入。
 
 - Model 导航依次为业务实体、实体关系图、数仓分层、逻辑表设计、维度建模。
-
-指标计划所需物理结构由 `META_URL` 指定的 Meta 提供（默认 `http://localhost:8082`）；Model Runtime 使用已有 `meta.catalog.read`，不新增 System 结构查询权限。只有参与计算的字段事实进入冻结包，Meta 扫描时间与无关显示字段不进入计算依赖。
