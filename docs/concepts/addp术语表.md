@@ -36,7 +36,7 @@
 | File Geodatabase | 文件地理数据库 | ArcGIS `.gdb` 目录承载的多图层矢量容器格式；ADDP 使用 `format=filegdb + layout=whole + data_type=container` 表达，feature class / table 是容器 child。 | 内置开源数据面使用 GDAL OpenFileGDB；普通图层读写不等同 Enterprise Geodatabase、SDE 注册、拓扑或版本化支持。 |
 | Microsoft Access Database | Microsoft Access 数据库 | Microsoft Jet / Access `.mdb` 承载的通用数据库容器格式；ADDP 使用 `format=access + layout=single + data_type=container` 表达。 | `.mdb` 后缀和 `application/x-msaccess` MIME 只证明 Access 容器候选，不能证明它是 ArcGIS Personal Geodatabase。 |
 | Personal Geodatabase | 个人地理数据库 | Microsoft Access `.mdb` 承载、且经 ArcGIS PGeo 驱动确定性识别的旧 ArcGIS 地理数据库容器格式；ADDP 使用 `format=pgeo + layout=single + data_type=container` 表达。 | Meta 深度扫描从 `access` 候选精化为 `pgeo`；内置开源数据面只允许作为只读 source，通过 GDAL PGeo + unixODBC / MDB Tools 抽取，不提供 `.mdb` 写回。 |
-| engine registration group | 引擎注册展示分组 | 引擎类型描述中用于注册界面导航的 `registration_group`，由插件声明，未单独声明时使用其主引擎族。 | 仅控制展示，不参与能力判断、目录模型、扫描或授权；Spark SQL 使用 `compute` 分组，仍保留 `tabular` 能力与表目录。 |
+| engine registration group | 引擎注册展示分组 | 引擎类型描述中用于注册界面导航的 `registration_group`，由插件声明，未单独声明时使用其主引擎族。 | 仅控制展示，不参与能力判断、目录模型、扫描或授权；Business Spark 使用 `compute` 分组；是否进入存储消费链路只取决于真实能力声明，不能由展示分组推断。 |
 | Engine Instance | 引擎实例 | System 中一条代表同一实际引擎、具有永久平台 ID 的登记事实。 | `engine_id` 单调分配、永久保留且不得复用；同一实际引擎搬迁时，有 `system.engine.update` 权限的用户可确认后更新连接地址并保留 ID 与已有引用。不同实际引擎必须创建新实例，不得借编辑改挂旧引用。连接地址键只用于当前非删除实例去重。 |
 | Engine Server Version | 引擎实例原生产品版本 | 插件在真实只读连接探测中返回的产品版本。 | System 将其与独立探测时间保存为只读 `server_version` / `server_version_checked_at`，不属于能力声明，不等同于聚合根 `version`。探测失败保留最后一次成功结果。 |
 | Workflow storage access | 工作流直接存储接入能力 | 计算引擎在 `compute.workflow.storage_access` 中声明自身直接连接的存储引擎类型与读写方向。 | 不是存储引擎自身能力，也不是算子名单；仅约束直接使用执行期 `connection_info` 的接入路径。受控 access-plan 路径按对应 Provider 能力校验。 |
@@ -446,6 +446,8 @@
 | ADDP Operator | ADDP 算子 | ADDP 平台统一的可编排能力定义，包含稳定 ID、参数、输入输出端口、执行模式和展示元数据。 | 面向 Develop 前端、工作流定义、参数校验、执行历史和血缘；不承载具体引擎私有类名。 |
 | Workflow Runtime | 工作流运行时 | 按 `addp.workflow/v1` 协议接收算子列表查询和 workflow_def 执行请求的独立执行服务。 | 例如 GeoPython Workflow、Spark Workflow、Model3D Workflow、PointCloud Workflow、SuperMap Workflow。 |
 | GeoPython Workflow | GeoPython Workflow 运行时 | 基于 Python 地理计算生态实现的 Workflow Runtime，提供 Pandas、GeoPandas、GDAL/OGR 等算子能力。 | 用户可见名称、System Engine Instance 名称和文档专名统一使用 `GeoPython Workflow`；`engine_type` 固定为 `geopython_workflow`，不得使用其他历史别名。 |
+| Business Spark Cluster | Business Spark 集群 | 用户登记的实际 Spark 计算资源，`engine_type=spark`，用于查询或工作流的执行目标。 | 不承担存储职责；一个任务绑定一个集群，不同任务可选不同集群。集群 ID 与平台内置 Runtime ID 分开。 |
+| Built-in Spark Runtime | 内置 Spark 运行时 | 平台复用现有 `spark_workflow` 服务提供的 Spark 执行适配层，目标为同时承接查询和工作流协议。 | 用户无需管理其地址；不新增 `spark-query` 服务，不因计算集群数量增加而强制增加 Runtime 数量。查询接入状态以实际准入及验收记录为准。 |
 | Federated Query Runtime | 联邦查询运行时 | 通过统一查询协议执行 SQL，并按本次执行授权动态挂载多个 Source Engine 或对象表的独立计算服务。 | DuckDB Runtime 是首个实现；Runtime Engine 只表示计算端点，SQL 引用的数据源仍分别保持自己的 Engine Instance 身份。 |
 | Runtime Engine | 运行时引擎 | System 中代表独立计算 Runtime 物理端点的 Engine Instance。 | Develop 任务和 Service 定义绑定 Runtime Engine；它不等于查询涉及的 Source Engine，也不因此获得 Source Engine 数据权限。 |
 | Source Engine | 数据源引擎 | 一次查询、工作流或服务执行实际读取或写入数据的 Engine Instance。 | Source Engine 必须逐个进入 Execution Authorization；不能用 Runtime Engine ID 替代或隐式扩大数据源范围。 |

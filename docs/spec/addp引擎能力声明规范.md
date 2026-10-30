@@ -455,6 +455,8 @@ type QueryFederationCapability struct {
 
 DuckDB Runtime 第一阶段声明 `runtime_api="addp.query-runtime/v1"`、`source_engine_types=["postgresql","mysql","minio","s3"]`、`object_formats=["parquet"]`。能力只声明当前真正实现并验证过的连接器；Doris、ClickHouse、Spark SQL、MongoDB、Neo4j、Kafka 等不能仅因 ADDP 已支持该 Engine 类型就自动列入。
 
+Spark 联邦查询迁移采用“集群作为执行目标、内置 Runtime 作为协议执行方”的边界，见 [引擎体系图](../concepts/addp引擎体系图.md#spark-集群与内置运行时边界)。Business Spark 与 Runtime 均不声明 `storage`；查询工作台选择集群，工作流选择 Runtime 后绑定集群。目标可执行能力必须同时满足集群有效、Runtime 可用及其连接器能力，不得仅因集群类型为 Spark 就认定查询可用。Runtime 同时提供查询与工作流入口，不增加独立查询服务。技术准入完成前不得提前声明联邦查询已可用；正式迁移须删除旧表目录与 Thrift 查询路径，不兼容双轨。
+
 联邦 Runtime 的资源引用名由 Source Owner preview 作为 `ResourceFact.query_names.federated_sql` 提供，并与 Runtime 解析规则使用同一共享标识符规范。DuckDB 当前形式为 `<sanitized_source_engine_name>.<schema>.<table>` 或对象表的 `<sanitized_source_engine_name>.<table>`。Copilot 和前端不得各自实现 engine name 清洗或从 locator/full_name 拼接联邦引用。
 
 查询语言差异通过 `languages` / `default_language` / `identifier_quotes` 和 `QueryRequest.Language` 表达，不新增按数据库类别拆分的 query provider。`identifier_quotes` 只是编辑器插入标识符所需的语法事实，查询生成、校验和执行仍归当前 Query Runtime Provider。`result_kinds=document` 只表示原生查询结果可能是 JSON document / record 形态，不表示 data item 的 `data_type=document`。图结构查询如果需要节点 / 关系结构结果，仍使用 `GraphQueryProvider`。

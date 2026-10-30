@@ -1296,6 +1296,26 @@ jobs:
           gate: Common, System, Meta and Manager key contracts (Redis 7.2.13)
           status: ${{ job.status }}
 
+  common-spark-federation:
+    name: Spark native federation admission
+    needs: selection
+    if: needs.selection.outputs.common == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Run Spark federation native admission
+        run: make test-common-spark-federation
+      - name: Summarize Spark federation admission
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Spark native federation admission
+          status: ${{ job.status }}
+
   common-hdfs:
     name: HDFS WebHDFS, Spark and PostgreSQL publication contracts
     needs: selection

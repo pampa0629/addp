@@ -2,6 +2,8 @@
 
 **适用引擎**: Math Workflow、GeoPython Workflow、Spark Workflow、Model3D Workflow、PointCloud Workflow、Document Workflow、SuperMap Workflow
 
+Spark 的已确认扩展方案是在现有内置 Runtime 中同时提供本规范工作流入口和 `addp.query-runtime/v1` 查询入口，不新增独立查询服务。工作流仍逐任务绑定一个 Business Spark 集群，不同任务可以选择不同集群；查询工作台则直接选择集群，由平台解析 Runtime。两种协议、集群身份及数据源身份不得混用，迁移状态和统一边界见[引擎体系图](../concepts/addp引擎体系图.md#spark-集群与内置运行时边界)。
+
 本文档定义 ADDP 工作流运行时的 `addp.workflow/v1` HTTP 协议。该协议由 Common Engine 的通用 HTTP `WorkflowRuntimeProvider` 消费；工作流运行时通过 System Engine Instance 和 `engine.capabilities/v1` 纳入统一引擎体系，不要求把每个运行时的 `engine_type` 编译成 Common Engine Plugin。
 
 ---

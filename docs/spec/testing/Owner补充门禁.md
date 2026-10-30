@@ -279,6 +279,10 @@ GeoPython 本地 T1 使用独立 Python 3.12 venv 与匹配的原生 GDAL，`mak
 
 Document 原生转换使用独立入口 `make test-document-native`，在已准备的私有 LibreOffice 和固定中文字体上，经正式 `document_to_pdf` 算子转换三页 PPTX，核对页数、中文文本、工作目录清理及源样例不变。缺失或损坏的依赖直接失败，不跳过、不隐式安装。测试使用临时输入、输出和 profile，不启动 ADDP 服务；由 Platform CI 的 Document Workflow Job 准备依赖后调用。普通 start/restart 只负责依赖与服务就绪，不执行该功能测试。HTTP／算子确定性测试继续使用 `make test-document-workflow`，跨模块产物生成与浏览器预览继续由 Manager T4 验证，三者分别报告。
 
+## Spark 联邦查询技术准入
+
+`make test-common-spark-federation` 使用固定摘要的独占 PostgreSQL 15、MySQL 8.0、Spark 3.5.0 Master/Worker，无宿主端口，不访问个人 Business 或共享 Infra。当前只核验原生 JDBC catalog 的跨源 JOIN、位置参数、真实 Worker、bigint/Decimal 类型与数值、null、中文及尾随空格，以及第二个独立 Driver 不继承前一次 catalog 和临时视图。清理同时核对容器、卷和网络零残留；启动与 Driver 失败的清理回归纳入现有 `make test-spark-workflow` 自动发现。入口由 Release/T2 的 Common 变更选择及根 `test-integration` 调用，不能以该准入证明正式授权、HTTP 查询接口、超时取消、多集群任务路由或页面验收通过。
+
 ## Spark 数据发布门禁
 
 Spark PostgreSQL 发布复用 `make test-common-hdfs` 中已有的独占 PostGIS 和真实 Spark Worker，验证已有目标与新目标提交成功但响应丢失、提交前失败的回滚及清理、回滚未确认时保留证据，以及提交成功后关闭连接或暂存清理失败不改写已提交事实。故障注入只包裹正式 JDBC 控制连接，实际提交、数据核对与暂存检查仍由原生 PostgreSQL 和独立连接完成；T1 同时验证原始错误不被回滚、查询资源关闭或连接关闭错误遮盖。沿用现有 owner、CI 输入登记和零残留生命周期，不连接个人 Business 实例。

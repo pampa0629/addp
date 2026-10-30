@@ -209,6 +209,10 @@ test-spark-workflow: ## 运行 Spark Workflow 元数据、租户身份和存储�
 test-common-spark-table: ## 使用独占 MySQL/Doris 与真实 Spark Worker 验证暂存发布
 	@bash scripts/test/common-spark-table-gate.sh
 
+.PHONY: test-common-spark-federation
+test-common-spark-federation: ## 独占 PG/MySQL 与真实 Spark Worker 联邦查询技术准入
+	@bash scripts/test/common-spark-federation-gate.sh
+
 RASTER_MOSAIC_RUNTIME_PYTHON ?= manager/raster-mosaic-runtime/venv/bin/python
 .PHONY: test-raster-mosaic-runtime
 test-raster-mosaic-runtime: ## 运行 Manager 栅格镶嵌单测及真实 GDAL/COG 验证
@@ -401,6 +405,7 @@ test-integration: ## 严格串行运行所有本地可执行的 disposable 基�
 	@$(MAKE) test-common-neo4j
 	@$(MAKE) test-common-falkordb
 	@$(MAKE) test-common-hdfs
+	@$(MAKE) test-common-spark-federation
 	@$(MAKE) test-manager-postgres
 	@$(MAKE) test-manager-mongodb-security
 	@$(MAKE) test-system-iam-postgres

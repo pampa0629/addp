@@ -724,6 +724,8 @@ type FederatedQueryRequest struct {
 - `GET /health`：运行时和离线扩展完整性检查。
 - `POST /api/v1/queries`：同步执行一次只读联邦查询。
 
+Spark 采用该协议时，HTTP 查询入口集成在现有内置 Spark Runtime，而不是 Business Spark 集群的 Thrift 端口。Develop 必须区分用户选择的集群执行目标和受信控制面解析的 Runtime 端点，并将两者绑定到本次 execution；Runtime 仅提交到该获授权集群。查询与工作流复用服务，不复用任务会话。Source Engine 身份、连接取用和凭据限制保持本节统一契约；具体集群适配尚须完成技术准入，不能以文档目标代替已实现声明。
+
 查询请求必须绑定唯一 execution。Runtime 按 Execution Authorization 逐个取得 Source Engine 连接，限制可挂载引擎、对象物理路径、内存、线程、临时目录、超时和最大返回行数。HTTP JSON 解码必须保留整数精度，参数只能通过数据库驱动绑定。HTTP 请求取消必须传递到 DuckDB 查询上下文；若未提供独立取消资源端点，`supports_cancel` 不得声明为 true。
 
 联邦对象表消费必须显式区分 Source Engine 与 Query Runtime。对象表由 Meta 的 `item.data_type=table`、`item.format`、`item.layout`、`storage.physical_path` 等标准事实确定，不能恢复 `lake_table` item type 或 `lake_mode`。当前 DuckDB 对象表仅开放 Parquet、single/whole；普通 object/file 的目录叶子身份不随表格内容语义改变。

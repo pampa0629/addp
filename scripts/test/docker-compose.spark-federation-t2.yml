@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+    environment:
+      POSTGRES_DB: addp_test
+      POSTGRES_USER: fixture_admin
+      POSTGRES_PASSWORD: owned-test-only
+    tmpfs: [/var/lib/postgresql/data]
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fixture_admin -d addp_test"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+  mysql:
+    image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
+    environment:
+      MYSQL_ROOT_PASSWORD: owned-test-only
+      MYSQL_DATABASE: addp_test
+    tmpfs: [/var/lib/mysql]
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -h127.0.0.1 -uroot -powned-test-only -e 'SELECT 1' >/dev/null 2>&1"]
+      interval: 2s
+      timeout: 2s
+      retries: 90
+  spark-master:
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c
+    user: root
+    entrypoint: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "spark-master", "--port", "7077"]
+    volumes:
+      - ./spark-federation-contract.py:/addp/contract.py:ro
+    mem_limit: 2g
+  spark-worker:
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c
+    user: root
+    entrypoint: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "--host", "spark-worker", "--cores", "2", "--memory", "1g", "spark://spark-master:7077"]
+    mem_limit: 2g

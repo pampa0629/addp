@@ -225,17 +225,26 @@ classDiagram
 
 Workflow Runtime 的发现以 System Engine Instance 和 Runtime Descriptor 为唯一控制面路径。Common 使用一个通用 HTTP `WorkflowRuntimeProvider` 消费所有声明 `compute.workflow.runtime_api=addp.workflow/v1` 的实例；GeoPython、Spark、Math、Model3D、PointCloud、SuperMap 和用户自研 Runtime 不分别维护重复协议插件。SuperMap SDX+ for PostgreSQL 等领域能力仍保留专用 table/session Provider，但 Provider 只依赖工作区绑定 Runtime ID、Runtime Descriptor 和必需 direct 算子，不依赖固定运行时 `engine_type`。
 
-### Spark 联邦查询迁移约束
+### Spark 集群与内置运行时边界
 
-以下为已确认的迁移目标，尚未通过技术准入，不代表当前 `spark` 插件已完成迁移。
+以下为已确认的统一方案；查询适配正在技术准入，不能据此认定当前插件或页面已完成迁移。
 
-- Business Spark 承担联邦 SQL 查询职责，复用 `FederatedQueryRuntimeProvider` 和 `addp.query-runtime/v1`；Spark Workflow 继续独立承担工作流执行。两者可使用同一 Spark 集群，不共用执行会话或执行授权。
-- Business Spark 迁移后只声明 `compute.query` 联邦查询能力，不声明 `storage`。Meta、Manager 和其他存储消费者统一按能力选择引擎，不增加 Spark 类型排除名单。原有 Spark 表目录、表读取 Provider 和日常启动时创建的固定样例视图应随迁移删除，不保留双路径。
-- 查询工作台沿用联邦入口，展示实际 Source Engine 的表，资源身份保留 Source Engine ID。首版准入限定 PostgreSQL、MySQL 只读跨源查询；其他连接器、写入和查询结果连续导出不纳入首版声明。
-- Runtime 使用自身 Service Principal 消费与本次 execution 和实际 Runtime audience 匹配的授权，逐个取得 Source Engine 连接。调用方不能固定使用 DuckDB audience，也不能把数据源凭据放入查询 SQL、任务、日志或 Runtime 请求体。
-- 准入必须分别验证真实 Worker 跨源 JOIN、参数绑定、结果类型与数值精度、源命名冲突、未授权源拒绝、执行隔离、超时和清理。技术准入通过后再迁移正式插件、注册信息与消费链路，并执行页面验收；已有 Spark 目录项和任务绑定须先盘点，不静默删除或改绑。
-- Runtime 部署、端口和隔离进程生命周期另行确认；本节不授权启动服务或变更现有实例。
-- 当前 Spark Workflow 仍通过任务 `engine_specific.spark_cluster_id` 绑定 `engine_type=spark` 资源，并从其连接信息取得 Standalone Master 地址。这是迁移前必须解决的现存耦合：不能直接把该资源的 Thrift 地址替换为查询 Runtime HTTP 地址。集群绑定的归属和已有任务迁移规则须另行确认，不能在改造查询插件时静默改变工作流执行目标。
+- Business Spark 是用户在 System 登记的实际计算集群（`engine_type=spark`），不是存储引擎。用户可登记多个集群，每次任务固定选择一个，并按现有权限使用。集群连接事实不能替换为 Runtime HTTP 地址，也不能用 Runtime ID 代替集群 ID。
+- 平台复用现有 `engines/spark-workflow` 内置服务，增加 `addp.query-runtime/v1` 查询入口，同时保留 `addp.workflow/v1` 工作流入口。不新增 `spark-query` 服务、端口、Service Principal 或第二套 Spark 集群；用户不配置内部 Runtime 地址。查询和工作流分别创建自己的执行状态，不共用任务会话。
+- Develop 查询工作台直接选择 Business Spark 集群；`execution_config.engine_id` 表达该执行目标。Develop 从受信控制面解析内置 Spark Runtime，冻结实际 Runtime 与集群的对应关系，再通过 Provider 派发。源树展示实际 Source Engine 的表，不展示 Spark 的合成目录。
+- Develop 工作流先选择内置 Spark Workflow，再通过 `engine_specific.spark_cluster_id` 选择一个 Business Spark 集群。不同任务可以使用不同集群，不要求每个集群部署一个 Runtime。同一任务与一次 execution 的集群绑定不得由 Runtime 自行替换。
+- 集群与内置 Runtime 都不声明 `storage`。Meta、Manager、扫描和存储读取入口按能力校验，不增加 Spark 类型排除名单；原有 Spark 表目录、表读取 Provider 和日常启动的固定样例视图随正式迁移删除，不保留 Thrift 查询双路径。已有目录项和任务绑定先盘点，不静默删除或改绑。
+- Runtime 用自身 Service Principal 消费本次 execution 的授权，取得所选集群及允许的 Source Engine 连接；实际 Runtime audience 不得固定成 DuckDB。集群 ID、Runtime ID、数据源 ID 分别核验，不能用其中一个扩大另外两个的权限。连接凭据不进入 SQL、任务、公开请求体或日志。
+- 首版限定 PostgreSQL、MySQL 只读联邦查询。真实 Worker 跨源 JOIN、参数绑定、数值精度、命名冲突、未授权源拒绝、执行隔离、超时及清理分别完成准入后，才开放正式能力和页面验收；不同时声明对象数据源、写入或连续结果导出。
+
+```mermaid
+flowchart LR
+    Q[查询工作台：选择 Business Spark 集群] --> D[Develop：冻结任务与执行授权]
+    W[工作流：选择 Spark Workflow 与 Business Spark 集群] --> D
+    D -->|查询接口或工作流接口| R[内置 Spark Runtime：同一后端服务]
+    R -->|提交本次 Driver 作业| C[所选 Business Spark 集群]
+    C --> S[获授权的真实存储数据源]
+```
 
 ### DuckDB 联邦查询 Runtime 边界
 
@@ -297,7 +306,7 @@ pg.table(schema="public", name="roads")
 | Engine | Facade 原生层级 | 公开发现方法 | 公开读取方法 |
 | --- | --- | --- | --- |
 | PostgreSQL、openGauss、KingbaseES、GaussDB（只读首版） | schema -> table/view | `schemas()`、`tables(schema=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
-| MySQL、OceanBase、TiDB、Doris、ClickHouse、Spark SQL | database -> table/view | `databases()`、`tables(database=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
+| MySQL、OceanBase、TiDB、Doris、ClickHouse | database -> table/view | `databases()`、`tables(database=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
 | MongoDB | database -> collection | `databases()`、`collections(database=...)` | collection: `head()`、`scan()`、`to_pandas()`；engine: `mql()` |
 | Neo4j | database -> graph | `databases()`、`graphs(database=...)` | graph: `sample()`；engine: `cypher()` |
 | MinIO、S3 | bucket -> prefix -> object | `buckets()`、`objects(bucket=..., prefix=...)` | object: `open()`、`read_range()` |
@@ -354,11 +363,11 @@ pg.sql("SELECT * FROM public.farmland WHERE id > $1", params=[100], max_rows=100
 
 ## 五、当前支持的引擎
 
-下表按能力模型归纳引擎族，不等同于注册弹窗的展示分类。注册界面按插件描述的 `registration_group` 分组：`tabular` 显示“关系型数据库”，Spark SQL 单独显示在“计算引擎”（`compute`）中，但保留表目录与 SQL 查询能力；Spark Workflow 继续走扩展运行时入口。
+下表按能力模型归纳引擎族，不等同于注册弹窗的展示分类。注册界面按插件描述的 `registration_group` 分组：`tabular` 显示“关系型数据库”，Business Spark 显示在“计算引擎”（`compute`）中，只承担计算职责；Spark Runtime 的查询与工作流接口共用现有内置服务。旧表目录声明按上述迁移约束移除。
 
 | 引擎族 | 引擎 |
 | --- | --- |
-| 表格型 | PostgreSQL、Oracle、MySQL、OceanBase、openGauss、KingbaseES、GaussDB（只读首版）、TiDB、Doris、ClickHouse、Spark SQL |
+| 表格型 | PostgreSQL、Oracle、MySQL、OceanBase、openGauss、KingbaseES、GaussDB（只读首版）、TiDB、Doris、ClickHouse |
 | 动态 schema 记录集合型 | MongoDB |
 | 图数据库 | Neo4j、FalkorDB |
 | 对象存储 | MinIO、S3 |

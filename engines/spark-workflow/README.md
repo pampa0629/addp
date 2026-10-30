@@ -4,6 +4,10 @@ Spark Workflow 是基于 Apache Spark 和 Apache Sedona 的工作流运行时，
 
 ## 配置与启动
 
+已确认的查询扩展方案复用本服务与现有端口，不另建 `spark-query`。查询工作台选择 Business Spark 集群，由本运行时承接联邦查询；工作流继续逐任务绑定集群。当前查询适配正在准入，尚未开放为正式能力，角色与迁移边界见[关系说明](docs/spark-design.md)。
+
+2026-10-30 本机 Linux ARM64 的 `make test-common-spark-federation` 通过：固定 Spark 3.5.0 与独占 PG/MySQL、真实 Worker 完成只读账号的两源 JOIN、位置参数、bigint/Decimal、null、中文与尾随空格核对，第二个独立 Driver 不继承目录和临时视图，测试资源零残留。首轮夹具关闭 TLS 导致 MySQL 认证失败、中文初始化使用了错误客户端字符集，已分别通过原生 JDBC 与物理字节定位，改为要求 TLS 并显式 UTF-8 初始化；未放宽原值断言。115 项 Spark 确定性测试与 T2 登记门禁通过。该结果仅为底层技术准入，不代表正式授权、HTTP 查询接口、超时取消、多集群路由或页面已验收；Linux amd64 CI 尚待实际结果。
+
 部署配置使用仓库根目录 `.env`，不读取引擎目录中的 `.env`。关键配置为 `SYSTEM_URL`、`SPARK_WORKFLOW_PORT`（默认 8098）、独立 `SPARK_WORKFLOW_SERVICE_CLIENT_SECRET`，以及应用固定的 HDFS Simple 身份 `HADOOP_USER_NAME`。默认不设置 `SPARK_MODE`，计算使用用户选择的 Spark general Engine。
 
 在仓库根目录启动；需要重启时，由用户在自己的终端执行对应命令：
