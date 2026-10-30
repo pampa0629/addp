@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import ast
+import json
 import importlib.util
 import re
 import sys
@@ -4599,13 +4601,15 @@ def validate_native_cleanup_profile(repository: Path, registered: set[str]) -> N
         raise RegistrationError('Native Cleanup requires manual selection and all ten Owners')
     required = {
         'scripts/test/online-hosted-cleanup-native-gate.sh': ('# ADDP_ONLINE_SUITES=cleanup-native-effects',
+            'if [ "$ADDP_ONLINE_NATIVE_CASE" = manager-late-writer ]; then',
+            'export MANAGER_EXECUTION_LEASE_DURATION=30s MANAGER_EXECUTION_HEARTBEAT_INTERVAL=5s',
             'case "${ADDP_ONLINE_NATIVE_CASE:-}" in', 'cleanup-native-infra.py prepare', 'cleanup-native-infra.py manifest',
-            'cleanup-native-infra.py stop', 'model3d-workflow-engine', 'transfer-continuous-worker', ' start-obj',
+            'cleanup-native-infra.py stop', 'cleanup-native-infra.py recover-writer', 'model3d-workflow-engine', 'transfer-continuous-worker', ' start-obj',
             'execution-online-support resume', 'compose_native down --remove-orphans --volumes',
             'source "$IDENTITY_ENV"', 'run_logged make test-online ONLINE_SUITE="$ONLINE_SUITE"'),
         'scripts/test/cleanup-native-infra.py': ('def advertised_config(', 'internal://cleanup-native-dlq-proxy:29092',
             'def verify_pin(', 'def stop(self):', "'native-container-pins.json'", "'--network', 'host'", 'source_minio'),
-        'scripts/test/online-gate.py': ('validate_native_cleanup_report', "contract['native_case_checks']", 'cleanup-native-effects.json'),
+        'scripts/test/online-gate.py': ('validate_native_cleanup_report', "contract['native_case_checks']", 'cleanup-native-effects.json', 'native_late_writer_scope', 'manager_glb_upload_after_owner_crash'),
         'scripts/test/online-preflight.py': ('cleanup-native-fixture.json', 'ADDP_ONLINE_CLEANUP_NATIVE_', 'ADDP_ONLINE_NATIVE_CASE'),
         'scripts/test/cleanup-native-effects-online.py': ('native_case_checks', 'source_objects_unchanged', 'target_business_rows_preserved'),
         'scripts/test/native-effect-proxy.py': ('--config', '18087', 'blocked_replays'),
@@ -4614,6 +4618,20 @@ def validate_native_cleanup_profile(repository: Path, registered: set[str]) -> N
         path = repository / relative
         if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
             raise RegistrationError('Native Cleanup contract incomplete: ' + relative)
+    contract = json.loads((repository / 'scripts/test/execution-online-contract.json').read_text())
+    cases = set(contract['native_case_checks'])
+    lifecycle = (repository / 'scripts/test/online-hosted-cleanup-native-gate.sh').read_text()
+    selection = re.search(r'(?m)^  (manager-success[^)]*)\) ;;$', lifecycle)
+    tree = ast.parse((repository / 'scripts/test/cleanup-native-infra.py').read_text())
+    assignments = [node.value for node in tree.body if isinstance(node, ast.Assign)
+                   and any(isinstance(target, ast.Name) and target.id == 'CASES' for target in node.targets)]
+    if (selection is None or set(selection.group(1).split('|')) != cases or len(assignments) != 1
+            or set(ast.literal_eval(assignments[0])) != cases):
+        raise RegistrationError('Native Cleanup case selection must equal the sole Owner contract')
+    fixture = (repository / 'business/scripts/online-manager-minio-fixture.sh').read_text()
+    manager_selection = re.search(r'case "\$\{ADDP_ONLINE_NATIVE_CASE:-\}" in ([a-z|-]+)\)', fixture)
+    if manager_selection is None or set(manager_selection.group(1).split('|')) != {case for case in cases if case.startswith('manager-')}:
+        raise RegistrationError('Native Manager source fixture case selection differs')
     workflow = (repository / '.github/workflows/online-t4-gates.yml').read_text()
     job = re.search(r'(?ms)^  cleanup-native-hosted-t4:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)', workflow)
     self_hosted = re.search(r'(?ms)^  online-t4:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)', workflow)

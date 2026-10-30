@@ -136,3 +136,6 @@ Manager 通过普通 User 的正式源 Grant 和 Model3D Runtime 生成真实 GL
 四个一次性代理在应用启动前固定指向本轮 Infra，只对准确关联操作发送一次真实变更后丢弃回包，并阻止重发。控制端点仅容器 loopback；Kafka 内部 advertised listener 经过代理，外部 listener 供独立只读原生探针直达。含凭据的 manifest、描述符、代理配置与展开 Compose 均保持私有 0600，不归档。退出先停产品/Worker/Runtime，再销毁代理、业务夹具和 Infra；恢复、销毁或零残留失败均导致 Job 失败。
 
 标准确定性入口为 `make test-cleanup-native-online-runner`，纳入现有 Online/平台登记链。该批代码与确定性测试不证明 Hosted 实际通过；真实旧 writer 晚写、原生写图回包与正向 reopen 不在六个 case 中，报告必须保持相应 `not_run` 边界。
+
+
+`manager-late-writer` 为额外显式专项，保持上述六 case 的原边界。Manager 的输出访问计划直接传递 `MINIO_ENDPOINT`，Model3D 通过该 endpoint 调用原生 S3 上传，故无需新增产品路由；固定 object proxy 可对当次 pending StorageRef 的准确 PUT 建立私有有界 barrier。仅该 case 使用现有 `MANAGER_EXECUTION_LEASE_DURATION=30s`／`MANAGER_EXECUTION_HEARTBEAT_INTERVAL=5s`，其它 case 仍使用原默认值，部署总预算不变。必须观察完整真实上传已进入但尚未发送，再终止并补回本轮 Manager、真实等待旧 lease 失败；Engine 评估被未决 writer 阻断，不能 DELETE。释放同一 PUT 后，独立原生读取确认迟到对象出现，而原 failed attempt 及 pending 审计、新 generation 围栏不被覆盖。只有此精确场景可将 late-writer 验收记为通过，scope 限于 `manager_glb_upload_after_owner_crash`；其它 case、Graph 写图回包、正向 reopen 均不能据此计通过。退出须恢复本轮暂停实例并释放本轮 barrier，控制状态、原始 body 和私有计划不归档；实际 Hosted 仍需单独确认。

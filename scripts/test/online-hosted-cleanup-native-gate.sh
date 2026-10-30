@@ -7,7 +7,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=cleanup-native-effects
 case "${ADDP_ONLINE_NATIVE_CASE:-}" in
-  manager-success|manager-object-unknown|manager-index-unknown|transfer-engine|transfer-dlq-unknown|transfer-capture-unknown) ;;
+  manager-success|manager-object-unknown|manager-index-unknown|manager-late-writer|transfer-engine|transfer-dlq-unknown|transfer-capture-unknown) ;;
   *) echo 'An explicit bounded native Cleanup case is required' >&2; exit 1 ;;
 esac
 export ADDP_ONLINE_TEST_RUN_ID="native-${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}"
@@ -36,6 +36,11 @@ stop_online_fixture() {
   return "$status"
 }
 source "$ROOT_DIR/scripts/utils/hosted-online.sh"
+# The canonical Compose service already forwards these product controls.
+# Only this explicit case changes the default 2m / 30s supervisor timings.
+if [ "$ADDP_ONLINE_NATIVE_CASE" = manager-late-writer ]; then
+  export MANAGER_EXECUTION_LEASE_DURATION=30s MANAGER_EXECUTION_HEARTBEAT_INTERVAL=5s
+fi
 stop_online_application() {
   local status=0 remaining kind
   run_logged compose_native down --remove-orphans --volumes || status=1
@@ -51,6 +56,9 @@ before_online_application_stop() {
   # Reuse bounded recovery before destroying the deployment; never force-delete unknown business effects.
   local status=0
   run_logged python3 -m scripts.test.execution-online-support resume || status=1
+  if [ "$ADDP_ONLINE_NATIVE_CASE" = manager-late-writer ]; then
+    python3 scripts/test/cleanup-native-infra.py recover-writer || status=1
+  fi
   printf 'control_recovery=%s\n' "$([ "$status" -eq 0 ] && echo passed || echo failed)" > "$ADDP_ONLINE_ARTIFACT_DIR/execution-recovery.txt"
   return "$status"
 }

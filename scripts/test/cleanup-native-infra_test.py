@@ -40,8 +40,9 @@ class Harness(N.Lifecycle):
             identifier = f'{len(self.rows) + 1:064x}'
             self.rows[identifier] = dict(Id=identifier, Name='/' + name, Image='sha256:fixed',
                 State={'Running': True, 'StartedAt': '2026-10-30T01:00:00Z'},
-                Config={'Labels': {'com.addp.online-native-run': self.run_id,
-                                  'com.docker.compose.project.working_dir': str(ROOT)}})
+                Config={'Labels': {'com.addp.online-native-run': self.run_id, 'com.addp.online-fixture': 'cleanup-native-effects',
+                                  'com.addp.online-run': self.run_id, 'com.docker.compose.project.working_dir': str(ROOT)},
+                        'Env': ['ADDP_ONLINE_HOSTED=1','ADDP_ONLINE_TEST=1','ADDP_ONLINE_TEST_RUN_ID='+self.run_id]})
             return identifier
         if args[:2] == ['docker', 'rm']:
             self.rows.pop(args[-1]); return ''
@@ -150,10 +151,45 @@ class NativeInfraTest(unittest.TestCase):
         with mock.patch.object(N.subprocess, 'run', side_effect=self.life.docker_result): self.life.stop()
         self.assertEqual(self.life.rows, {})
 
+    def test_interrupted_writer_recovery_uses_owned_proxy_state_and_releases_once(self):
+        self.life.prepare(); self.life.case = 'manager-late-writer'
+        value = dict(run_id=self.life.run_id, key='11111111-1111-4111-8111-111111111111',
+                     entered=1, forwarded=0, upstream_response=False, blocked_replays=0, released=False, expired=False)
+        original = self.life.command; released = []
+        def control(args, **kwargs):
+            if args[-1] == 'state': return json.dumps(value)
+            if args[-1] == 'release':
+                released.append(json.loads(kwargs['input'])); value['released'] = True
+                return json.dumps(value)
+            return original(args, **kwargs)
+        with mock.patch.object(self.life, 'command', side_effect=control):
+            self.life.recover_writer(); self.life.recover_writer()
+            self.assertEqual(released, [{'run_id': self.life.run_id, 'key': value['key']}])
+            for field, replacement in (('run_id', 'other'), ('expired', True), ('key', 'not-uuid'),
+                                       ('blocked_replays', True), ('forwarded', -1), ('upstream_response', True)):
+                saved = value[field]; value[field] = replacement
+                with self.subTest(field=field), self.assertRaises(ValueError): self.life.recover_writer()
+                value[field] = saved
+            expected = self.life.state['pins'][N.PREFIX + 'object-proxy']
+            self.life.rows[expected['id']]['Config']['Env'][-1] = 'ADDP_ONLINE_TEST_RUN_ID=other'
+            with self.assertRaisesRegex(ValueError, 'scope'): self.life.recover_writer()
+
+    def test_unused_writer_transport_is_not_armed_or_released_by_recovery(self):
+        self.life.prepare(); self.life.case = 'manager-late-writer'
+        value = dict(run_id=self.life.run_id, key=None, forwarded=0, upstream_response=False, blocked_replays=0)
+        original = self.life.command
+        def control(args, **kwargs):
+            if args[-1] == 'state': return json.dumps(value)
+            self.assertNotEqual(args[-1], 'release')
+            return original(args, **kwargs)
+        with mock.patch.object(self.life, 'command', side_effect=control): self.life.recover_writer()
+        self.life.case = 'manager-success'
+        with self.assertRaisesRegex(ValueError, 'outside'): self.life.recover_writer()
+
 
 class NativeEvidenceTest(unittest.TestCase):
     def report(self, case):
-        return dict(schema_version='addp.cleanup-native-effects/v1', suite='cleanup-native-effects', case=case,
+        report = dict(schema_version='addp.cleanup-native-effects/v1', suite='cleanup-native-effects', case=case,
             result='passed', control_cleanup='passed', hosted_destruction='required', run_id='native-test', tenant_id='7',
             engines=[11], tasks=[] if case.startswith('manager-') else [22], requests=['11111111-1111-4111-8111-111111111111'],
             executions=[] if case.startswith('manager-') else ['22222222-2222-4222-8222-222222222222'],
@@ -162,6 +198,10 @@ class NativeEvidenceTest(unittest.TestCase):
             entry='transfer_task_delete' if case == 'transfer-dlq-unknown' else 'engine_deletion_then_transfer_task_delete' if case == 'transfer-engine' else 'engine_deletion',
             producer_refusal_http_status=500, native_late_writer_acceptance='not_run',
             graph_native_write_acceptance='not_run', positive_reopen_acceptance='not_run')
+        if case == 'manager-late-writer':
+            report.update(native_late_writer_acceptance='passed', native_late_writer_scope='manager_glb_upload_after_owner_crash',
+                          entry='engine_deletion_assessment', tasks=[22], executions=[report['generation_execution_id']])
+        return report
 
     def environment(self, case):
         return dict(ADDP_ONLINE_NATIVE_CASE=case, ADDP_ONLINE_TEST_RUN_ID='native-test', ADDP_ONLINE_TEST_TENANT_ID='7')
@@ -181,6 +221,19 @@ class NativeEvidenceTest(unittest.TestCase):
                     G.validate_execution_report('cleanup-native', bad, env)
         bad = self.report('transfer-dlq-unknown'); bad['producer_refusal_http_status'] = 503
         with self.assertRaises(G.OnlineStageError): G.validate_execution_report('cleanup-native', bad, self.environment('transfer-dlq-unknown'))
+
+    def test_late_writer_proof_cannot_be_promoted_from_other_cases_or_assessment_to_delete(self):
+        for case in N.CASES:
+            report = self.report(case)
+            mutations = [('native_late_writer_scope', 'other_scope'), ('entry', 'engine_deletion')]
+            if case == 'manager-late-writer':
+                mutations += [('native_late_writer_acceptance', 'not_run'), ('executions', []), ('tasks', [])]
+            else:
+                mutations = [('native_late_writer_acceptance', 'passed'),
+                             ('native_late_writer_scope', 'manager_glb_upload_after_owner_crash')]
+            for field, value in mutations:
+                with self.subTest(case=case, field=field), self.assertRaises(G.OnlineStageError):
+                    G.validate_execution_report('cleanup-native', {**report, field: value}, self.environment(case))
 
     def test_native_archive_cannot_substitute_stdout_or_a_prior_case(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -209,5 +262,14 @@ class NativeEvidenceTest(unittest.TestCase):
                                    ('ADDP_ONLINE_CLEANUP_NATIVE_ENGINE_ACCESS_TOKEN', '')):
                     with mock.patch.dict(os.environ, {key: value}), self.assertRaises(P.PreflightError):
                         P.validate_execution_environment('cleanup-native', ROOT, services)
+                manifest['case'] = 'manager-late-writer'; path.write_text(json.dumps(manifest))
+                late_env = dict(ADDP_ONLINE_NATIVE_CASE='manager-late-writer', MANAGER_EXECUTION_LEASE_DURATION='30s',
+                                MANAGER_EXECUTION_HEARTBEAT_INTERVAL='5s')
+                with mock.patch.dict(os.environ, late_env):
+                    P.validate_execution_environment('cleanup-native', ROOT, services)
+                    for key in ('MANAGER_EXECUTION_LEASE_DURATION', 'MANAGER_EXECUTION_HEARTBEAT_INTERVAL'):
+                        with mock.patch.dict(os.environ, {key: '2m'}), self.assertRaises(P.PreflightError):
+                            P.validate_execution_environment('cleanup-native', ROOT, services)
+                manifest['case'] = 'manager-success'
                 manifest['run_id'] = 'other'; path.write_text(json.dumps(manifest))
                 with self.assertRaises(P.PreflightError): P.validate_execution_environment('cleanup-native', ROOT, services)

@@ -159,6 +159,10 @@ def validate_execution_environment(profile: str, repository: Path, services: lis
         case = os.environ.get('ADDP_ONLINE_NATIVE_CASE', '')
         if case not in contract['native_case_checks']:
             raise PreflightError('native Cleanup requires an explicit bounded case')
+        if case == 'manager-late-writer' and (
+                os.environ.get('MANAGER_EXECUTION_LEASE_DURATION') != '30s'
+                or os.environ.get('MANAGER_EXECUTION_HEARTBEAT_INTERVAL') != '5s'):
+            raise PreflightError('Manager late writer requires its 30s/5s lease profile')
         path = secret / 'cleanup-native-fixture.json'
         try:
             if path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o777 != 0o600 or path.stat().st_size >= 32768:

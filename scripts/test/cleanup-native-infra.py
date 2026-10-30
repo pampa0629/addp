@@ -12,9 +12,10 @@ import re
 import subprocess
 import sys
 import time
+import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
-CASES = ('manager-success', 'manager-object-unknown', 'manager-index-unknown',
+CASES = ('manager-success', 'manager-object-unknown', 'manager-index-unknown', 'manager-late-writer',
          'transfer-engine', 'transfer-dlq-unknown', 'transfer-capture-unknown')
 PROXIES = {'object': ('http', 19000, 'minio', 9000),
            'index': ('http', 17700, 'meilisearch', 7700),
@@ -201,6 +202,56 @@ class Lifecycle:
                  descriptors=descriptors, source_bucket='addp-online',
                  proxies={kind: self.state['pins'][PREFIX + kind + '-proxy'] for kind in PROXIES}, native=native))
 
+    def recover_writer(self):
+        """Recover only this run's private write barrier, including lost runner state."""
+        require(self.case == 'manager-late-writer', 'writer recovery is outside this case')
+        expected = self.state['pins'].get(PREFIX + 'object-proxy')
+        require(isinstance(expected, dict), 'writer proxy ownership record missing')
+        row = self.inspect(expected['id'])
+        verify_pin(row, expected, self.run_id)
+        labels = row['Config'].get('Labels') or {}
+        environment = dict(x.split('=', 1) for x in row['Config'].get('Env', []) if '=' in x)
+        require(labels.get('com.addp.online-fixture') == 'cleanup-native-effects'
+                and labels.get('com.addp.online-run') == self.run_id
+                and environment.get('ADDP_ONLINE_TEST_RUN_ID') == self.run_id
+                and environment.get('ADDP_ONLINE_HOSTED') == '1' and environment.get('ADDP_ONLINE_TEST') == '1',
+                'writer recovery requires exact proxy scope')
+        program = """import json,sys,urllib.request
+request=urllib.request.Request('http://127.0.0.1:18087/'+sys.argv[1],data=sys.stdin.buffer.read(),headers={'Content-Type':'application/json'},method='POST')
+with urllib.request.urlopen(request,timeout=5) as response: print(response.read().decode())
+"""
+        def control(action, body):
+            return json.loads(self.command(['docker', 'exec', '-i', expected['id'], 'python', '-c', program, action],
+                                           input=json.dumps(body)))
+        value = control('state', {'run_id': self.run_id})
+        base = {'run_id', 'key', 'forwarded', 'upstream_response', 'blocked_replays'}
+        require(isinstance(value, dict) and value.get('run_id') == self.run_id, 'foreign writer recovery state')
+        if value.get('key') is None:
+            require(set(value) == base and type(value['forwarded']) is int and value['forwarded'] == 0
+                    and value['upstream_response'] is False and type(value['blocked_replays']) is int
+                    and value['blocked_replays'] == 0, 'writer was not an unused transport')
+            return
+        key = value['key']
+        require(isinstance(key, str) and str(uuid.UUID(key)) == key and uuid.UUID(key).int != 0,
+                'invalid writer recovery key')
+        def validate_writer(state):
+            require(isinstance(state, dict) and set(state) == base | {'entered', 'released', 'expired'}
+                    and state['run_id'] == self.run_id and state['key'] == key
+                    and type(state['entered']) is int and state['entered'] in (0, 1)
+                    and type(state['forwarded']) is int and state['forwarded'] in (0, 1)
+                    and type(state['blocked_replays']) is int and state['blocked_replays'] >= 0
+                    and type(state['upstream_response']) is bool and type(state['released']) is bool
+                    and state['expired'] is False
+                    and state['forwarded'] <= state['entered']
+                    and (not state['forwarded'] or state['released'])
+                    and (not state['upstream_response'] or state['forwarded'] == 1),
+                    'invalid or expired writer recovery state')
+        validate_writer(value)
+        if not value['released']:
+            released = control('release', {'run_id': self.run_id, 'key': key})
+            validate_writer(released)
+            require(released['released'] is True, 'writer recovery release was not confirmed')
+
     def stop(self):
         failed = False
         for name, expected in list(self.state['pins'].items()):
@@ -235,10 +286,10 @@ class Lifecycle:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('action', choices=('prepare', 'manifest', 'stop'))
+    parser.add_argument('action', choices=('prepare', 'manifest', 'stop', 'recover-writer'))
     args = parser.parse_args()
     try:
-        getattr(Lifecycle(), args.action)()
+        getattr(Lifecycle(), args.action.replace('-', '_'))()
     except (ValueError, KeyError, OSError, subprocess.SubprocessError, json.JSONDecodeError) as error:
         print('Native fixture lifecycle failed: ' + type(error).__name__, file=sys.stderr)
         return 1

@@ -859,10 +859,11 @@ def validate_native_cleanup_report(report: dict[str, object], environment: Mappi
     contract = json.loads(Path(__file__).with_name('execution-online-contract.json').read_text())
     case = environment.get('ADDP_ONLINE_NATIVE_CASE', '')
     checks = report.get('checks')
+    late_writer = case == 'manager-late-writer'
     required = dict(schema_version='addp.cleanup-native-effects/v1', suite='cleanup-native-effects',
                     case=case, result='passed', control_cleanup='passed', hosted_destruction='required',
                     run_id=environment.get('ADDP_ONLINE_TEST_RUN_ID'), tenant_id=environment.get('ADDP_ONLINE_TEST_TENANT_ID'),
-                    native_late_writer_acceptance='not_run', graph_native_write_acceptance='not_run',
+                    native_late_writer_acceptance='passed' if late_writer else 'not_run', graph_native_write_acceptance='not_run',
                     positive_reopen_acceptance='not_run')
     principals = report.get('principals')
     if (case not in contract['native_case_checks'] or any(report.get(k) != v for k, v in required.items())
@@ -872,6 +873,9 @@ def validate_native_cleanup_report(report: dict[str, object], environment: Mappi
             or not isinstance(principals, dict) or set(principals) != {'manager', 'transfer', 'engine'}
             or any(type(x) is not str or not x for x in principals.values()) or len(set(principals.values())) != 3):
         raise OnlineStageError('scenario', 'online_native_cleanup_report_invalid', 'native Cleanup case, identities or exact checks differ')
+    if ((late_writer and report.get('native_late_writer_scope') != 'manager_glb_upload_after_owner_crash')
+            or (not late_writer and 'native_late_writer_scope' in report)):
+        raise OnlineStageError('scenario', 'online_native_cleanup_report_invalid', 'late writer scope is outside its explicit case')
     def valid_uuid(value):
         try:
             return isinstance(value, str) and str(uuid.UUID(value)) == value and uuid.UUID(value).int != 0
@@ -889,7 +893,10 @@ def validate_native_cleanup_report(report: dict[str, object], environment: Mappi
             or (manager and (type(report.get('artifact_id')) is not int or report['artifact_id'] <= 0
                              or not valid_uuid(report.get('generation_execution_id'))))):
         raise OnlineStageError('scenario', 'online_native_cleanup_report_invalid', 'native product evidence identities are missing')
-    expected_entry = ('transfer_task_delete' if case == 'transfer-dlq-unknown' else
+    if late_writer and (not report['tasks'] or report['generation_execution_id'] not in report['executions']):
+        raise OnlineStageError('scenario', 'online_native_cleanup_report_invalid', 'late writer attempt identity is missing')
+    expected_entry = ('engine_deletion_assessment' if late_writer else
+                      'transfer_task_delete' if case == 'transfer-dlq-unknown' else
                       'engine_deletion_then_transfer_task_delete' if case == 'transfer-engine' else 'engine_deletion')
     if report.get('entry') != expected_entry:
         raise OnlineStageError('scenario', 'online_native_cleanup_report_invalid', 'native Cleanup product entry differs')

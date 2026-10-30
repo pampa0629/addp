@@ -42,6 +42,11 @@ echo "docker:$*"'''))
 #!/usr/bin/env bash
 set -euo pipefail
 echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
+if [ "$ADDP_ONLINE_NATIVE_CASE" = manager-late-writer ]; then
+  [ "$MANAGER_EXECUTION_LEASE_DURATION" = 30s ] && [ "$MANAGER_EXECUTION_HEARTBEAT_INTERVAL" = 5s ]
+else
+  [ -z "${MANAGER_EXECUTION_LEASE_DURATION:-}" ] && [ -z "${MANAGER_EXECUTION_HEARTBEAT_INTERVAL:-}" ]
+fi
 if [ "$1" = test-online ]; then
   [ "$ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN" = source-initializer-token ]
   [ "${NATIVE_FAIL:-}" != scenario ]
@@ -62,7 +67,7 @@ fi
 
     def test_each_explicit_case_starts_only_needed_runtime_and_cleans_in_order(self):
         cases = ('manager-success', 'manager-object-unknown', 'manager-index-unknown',
-                 'transfer-engine', 'transfer-dlq-unknown', 'transfer-capture-unknown')
+                 'manager-late-writer', 'transfer-engine', 'transfer-dlq-unknown', 'transfer-capture-unknown')
         for case in cases:
             with self.subTest(case=case):
                 for suffix in ('', '.containers', '.remaining', '.down'):
@@ -99,6 +104,16 @@ fi
                 self.assertFalse(self.host.secrets.exists())
                 self.assertIn('result=failed', (self.host.artifacts / 'summary.txt').read_text())
                 if failure == 'prepare': self.assertNotIn('make:test-online', trace)
+
+    def test_late_writer_recovery_precedes_destruction_and_failure_remains_failed(self):
+        result = self.run_gate('manager-late-writer', NATIVE_FAIL='recover-writer')
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        order = ['execution-resume', 'native:recover-writer', 'down --remove-orphans --volumes', 'native:stop', 'business:stop', 'infra-down']
+        self.assertEqual([trace.index(x) for x in order], sorted(trace.index(x) for x in order))
+        self.assertIn('control_recovery=failed', (self.host.artifacts / 'execution-recovery.txt').read_text())
+        self.assertIn('cleanup=failed', (self.host.artifacts / 'summary.txt').read_text())
+        self.assertFalse(self.host.secrets.exists())
 
     def test_empty_all_and_unrelated_cases_rejected_before_admission_or_mutation(self):
         for case in ('', 'all', 'manager-other', 'full'):

@@ -36,7 +36,7 @@ esac
 native_obj=0
 if [ "${ONLINE_SUITE:-}" = cleanup-native-effects ]; then
   [ "${ADDP_ONLINE_HOSTED:-}" = 1 ] || fail "native OBJ requires its Hosted Manager case"
-  case "${ADDP_ONLINE_NATIVE_CASE:-}" in manager-success|manager-object-unknown|manager-index-unknown) ;; *) fail "explicit native Manager case required" ;; esac
+  case "${ADDP_ONLINE_NATIVE_CASE:-}" in manager-success|manager-object-unknown|manager-index-unknown|manager-late-writer) ;; *) fail "explicit native Manager case required" ;; esac
   native_obj=1
 fi
 [ "$action" != start-obj ] || [ "$native_obj" = 1 ] || fail "start-obj is exclusive to native Cleanup"

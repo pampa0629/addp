@@ -1187,12 +1187,15 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         paths = ('scripts/test/online-hosted-cleanup-native-gate.sh', 'scripts/test/cleanup-native-infra.py',
                  'scripts/test/online-gate.py', 'scripts/test/online-preflight.py',
                  'scripts/test/cleanup-native-effects-online.py', 'scripts/test/native-effect-proxy.py',
-                 'scripts/test/docker-compose.cleanup-native-t4.yml', 'Makefile', '.github/workflows/online-t4-gates.yml')
+                 'scripts/test/docker-compose.cleanup-native-t4.yml', 'Makefile', '.github/workflows/online-t4-gates.yml',
+                 'scripts/test/execution-online-contract.json', 'business/scripts/online-manager-minio-fixture.sh')
         for relative in paths:
             target = self.repository / relative; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, target)
         CHECK.validate_native_cleanup_profile(self.repository, {'cleanup-native-effects'})
-        mutations = ((paths[0], 'cleanup-native-infra.py prepare'), (paths[0], 'model3d-workflow-engine'),
+        mutations = ((paths[0], 'cleanup-native-infra.py prepare'),
+                     (paths[10], 'manager-late-writer'),
+                     (paths[0], 'export MANAGER_EXECUTION_LEASE_DURATION=30s MANAGER_EXECUTION_HEARTBEAT_INTERVAL=5s'), (paths[0], 'model3d-workflow-engine'),
                      (paths[1], 'internal://cleanup-native-dlq-proxy:29092'), (paths[2], "contract['native_case_checks']"),
                      (paths[6], 'cleanup-native-object-proxy:19000'), (paths[7], 'scripts/test/cleanup-native-infra_test.py'),
                      (paths[8], "inputs.suite != 'cleanup-native-effects'"), (paths[8], '/cleanup-native-effects.json'))
