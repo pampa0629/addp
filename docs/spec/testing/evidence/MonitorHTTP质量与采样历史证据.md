@@ -430,3 +430,27 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 后续自然成功独立保留：`6d5ca9401ac62ac85d660d9ca957d28780de4209`，[run40979523356／HTTP Job123816052278](https://github.com/pampa0629/addp/actions/runs/40979523356/job/123816052278)，push attempt 1；既有artifact12944927519共24194字节，ZIP SHA256=`aa177f912236e517981cf7f3e29407eab256c7f7b65171f53ca01e8c4c91c4d3`／报告SHA256=`fb7785d7baf2c35ed5da31faaa21f2badcb103374c8281282fb2a8b86b359e23`，API摘要、CRC和353输入独立核验通过。报告passed／exit0／error null，848.407700秒、208样本最长1.264080秒、可写保守上界最大1809223743字节，251请求、三源阶段契约、编译exit0及清理通过；没有重跑，不用此成功关闭3f43的go_tmp复发。
 
 本机`/tmp/addp-p19-http-gotmp-recurrence-audit-20261030.json`记录两份原始归档独立核对、对象根散列排除及编译边界；失败原日志／提取结构位于既有`/tmp/addp-ci-20261029-160021`，通过归档沿既有`/tmp/addp-ci-20261030-004434/http-budget-6d5.zip`复用。仅文档证据变更，验证主题计数、锚点／索引及diff；没有新的代码门禁或运行验收。原正式产品到页面及停源历史读取缺口继续单列。
+
+<a id="http-three-compile-stages-20261030"></a>
+
+## 2026-10-30 三阶段编译取证：规范、确定性与自然Linux分列
+
+用户确认先修规范和确定性门禁，再沿自然Linux CI验证。实现`3a004a94759f0414030d99c992e057c2651c2cb5`用唯一compile_stages替换单条process_compile；三个固定阶段process_source／http_query／http_alert分别由既有shell及正式probe的两次Go编译调用同一原子记录内核。不改命令、环境、原串行顺序、180秒编译超时、编译／采样互斥和清理协议，也不新增运行入口、镜像、权限或依赖。采样时所见compile_stages_at_sample_read与最终compile_stages分列，不保留旧新双轨字段。
+
+每阶段至多一次开始／观察结束，保留前序事实、同一主机单调纳秒和实际退出码；后序只能在前序成功后开始，未知／越序／倒退／重复记录拒绝。未开始／取消不完整／非法分别表达，不补造结束。Python直接观察的负信号退出码原值保留；已有编译错误不被边界写入错误替代。正常HTTP通过要求三个阶段均有完整成功边界，缺失／非法不能证明取证通过；公共mTLS前置仍未进入编译。du首失败、完整统计范围及原4秒／4 CPU／4 GiB／私有可写小于2 GiB／1200秒预算均保持，不添加删除跟踪、原始路径或stderr。
+
+确定性验证：`make test-infra-runtime-log-lifecycle`最终退出0，包括HTTP本地23项、Trace共享内核136项及相关Go／CI登记、预算与生命周期合跑100项；`python3 -m unittest scripts/test/metrics-deployment-config_test.py`122项通过，Shell语法、T2登记及diff检查通过。新增回归从正式probe提取实际函数，以受控Go替身验证两次编译接入、顺序历史、错误／信号／超时和取消不完整，回执写失败不覆盖编译首失败；验证采样快照与最终观察独立、缺任一阶段不能通过。向同一回归注入“省略两次HTTP边界记录”时，测试按预期失败；恢复当前实现全部通过，该预期红例不计正常门禁失败。夹具仅临时小文件／原生子进程，无Docker、业务负载或新本地环境。
+
+现有Make生命周期／dev-lifecycle／Metrics配置门禁与T2输入登记已覆盖上述三个脚本和测试，HTTP预算artifact会保存新字段，不需新增Make／workflow或兼容路线。此次只推送main触发[run40984761553／HTTP Job123833677076](https://github.com/pampa0629/addp/actions/runs/40984761553/job/123833677076)，push attempt 1已通过，未手工dispatch／rerun。原始artifact12946559397共23965字节，ZIP实际SHA256=`aca8ce7f7e09818fc3de1b3a4cadd71f413e8961ae8967c02fa530f59a953278`与API登记一致，CRC和唯一JSON成员验证通过；报告SHA256=`f749a1af0e4d6bf2bcde953813cbd61e38c8b4699e163668ee5acd269916727d`。353个输入独立逐文件匹配固定实现3a004a947，不借当前HEAD替代。
+
+真实报告result=passed／exit0／error null，823.080908秒，202个完整样本最长1.042991秒，私有可写保守上界最大1809215551字节，硬配额最大3.25 CPU／4026531840字节内存，原四秒／资源／1200秒均满足。请求Go163、Python[75,28]、总266，三源阶段和计数契约一致；inputs_unchanged／cleanup_verified／private_directory_removed=true，无failure_detail。compile_stages.status=valid，三个且仅三个阶段均finished／exit0，顺序及单调端点验证通过，报告没有旧process_compile字段：
+
+| 阶段 | 开始monotonic_ns | 观察结束monotonic_ns | 退出码 |
+| --- | --- | --- | --- |
+| process_source | 103719535750 | 163707494686 | 0 |
+| http_query | 245058910654 | 246027629632 | 0 |
+| http_alert | 246028054898 | 300201039945 | 0 |
+
+本次没有复现目录消失，缺失对象现场阶段快照分支未触发；此次真实三阶段通过只证明取证覆盖已接通，不证明3f43历史删除者或根因已定位，不把新的成功时序回填为旧失败阶段。
+
+本机准备清单`/tmp/addp-p19-http-three-stage-preparation-20261030.json`保存固定实现输入与最终门禁／预期红例日志SHA256；`/tmp/addp-p19-http-three-stage-linux-audit-20261030.json`另存原始归档、353输入及三阶段独立核对。没有新开本地窗口，不运行Hosted、容量、定时；3f43的go_tmp后代对象复发仍为未定删除者，本批仅修取证覆盖，不宣称已修复间歇根因，原正式产品到页面及停源历史读取缺口不被替代。
