@@ -203,11 +203,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/main_agent.py",
       "anchor": "async def _route_node(",
-      "commit": "da8794a89cddf4d8ef9d890e56ec1bf7c450b7a7",
-      "sha256": "6fbe1f14198c982ff559ab5cb96924f2e1f8aa7c442c1050629cb49cad039258",
+      "commit": "4d970f63298bcf2f465e07ca3609a11665638300",
+      "sha256": "930b2721067a3fa9111fc4a4eb71593aa87d9fda7ae08cd79d6a6c00fc3caf79",
       "use": {
-        "zh-cn": "纯解释与原参数创建区分；恢复按同用户/租户/会话重读摘要引用，仅把原参数和服务端恢复标志传入 Runtime，不导入历史权限；正式确认后的推进不依赖模型。 计划/工作区展示不改变创建条件、确认或权限。",
-        "en": "Separates explanation and exact-draft creation; resume re-reads the scoped digest reference and passes only exact arguments and a server-owned resume flag, without historical authorization; confirmed advancement does not depend on the model. Workspace plans confer no creation authority."
+        "zh-cn": "纯解释与原参数创建分离，恢复只重读同身份草稿，不继承历史授权；正式确认由 Runtime 推进。普通引擎/算子查询按本轮目标走普通 Skill，不以平台目录为前置条件，不新增目录失败回退或创建权限。",
+        "en": "Separate explanation from exact-draft creation, re-read scoped references without historical authorization and advance confirmed creation in Runtime. Route ordinary engine/operator queries by the current goal without a platform-catalog prerequisite, catalog-failure fallback or new creation authority."
       }
     },
     {
@@ -281,11 +281,11 @@
       "kind": "implementation",
       "path": "common-frontend/agent-ui/src/a2ui/components/TransferDraftSnapshot.vue",
       "anchor": "const overview = computed(",
-      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
-      "sha256": "c46fd0b25d1f4aa2eaf33adf1543ea9c4b84f12d0918e996306b83196b2ef219",
+      "commit": "4d970f63298bcf2f465e07ca3609a11665638300",
+      "sha256": "871e541553615c6b43fdcfd692d449a51e6760e717b2c534b4ccf3fcaea45077",
       "use": {
-        "zh-cn": "从同一已预检参数显示受限事实概要，复用共享定位符、表格和 JSON；不新增摘要 props、推测业务事实或任务状态，不发 action 或请求",
-        "en": "Display bounded facts from the same checked arguments using shared locators, tables and JSON; no summary props, inferred business facts or task state, actions or requests"
+        "zh-cn": "从同一已预检参数显示受限事实概要，复用共享定位符、表格和 JSON；长名称完整换行，不新增事实、任务状态、action 或请求。",
+        "en": "Display bounded facts from the same checked arguments using shared locators, tables and JSON. Wrap complete long names without adding facts, task state, actions or requests."
       }
     },
     {
@@ -307,8 +307,8 @@
       "kind": "implementation",
       "path": "agent/frontend/src/views/ChatView.vue",
       "anchor": "function ensureLiveTextPart(",
-      "commit": "77442db2420a8b73f1e530f8078cc16e454ea8c6",
-      "sha256": "1dac609dd8b06249bd6e1f53394ac26f06b8f325cf7b810fdc995589905d3850",
+      "commit": "4d970f63298bcf2f465e07ca3609a11665638300",
+      "sha256": "03455921eb59906cdce65a3f874d4c666a54b9e3cd270aced6592b8495f489b7",
       "use": {
         "zh-cn": "实时和安全回放保留文字及 A2UI 顺序，计划只替换同消息中同身份投影，保留历史快照；不改变创建条件、确认或权限。",
         "en": "Live rendering and safe replay retain text and A2UI order. Replace only the same plan activity within the current message, preserving historical snapshots and all creation conditions, reviews and permissions."
@@ -346,11 +346,11 @@
       "kind": "test",
       "path": "agent/frontend/e2e/clarification-resume.spec.js",
       "anchor": "test('exact checked draft streams and reloads",
-      "commit": "da8794a89cddf4d8ef9d890e56ec1bf7c450b7a7",
-      "sha256": "d97932c50f64b308af6b5425a847e6fc55a15a74f6a8bc460f7087d795733768",
+      "commit": "4d970f63298bcf2f465e07ca3609a11665638300",
+      "sha256": "b2146ee5f41bea08da9d50af42b74b2f1a8770092f3dd696b771670bf824539f",
       "use": {
-        "zh-cn": "T3 用生产 UI 和协议客户端、受控 HTTP/SSE 记录实时 DOM 顺序，并核对刷新后的参数、引用和顺序；禁止夹具访问个人服务，不宣称自由模型或 Hosted T4 验收 计划/工作区展示不改变创建条件、确认或权限。",
-        "en": "T3 production UI and protocol client with controlled HTTP/SSE record live DOM order and verify reloaded arguments, reference and order; fixtures forbid personal service calls and do not prove free-model or hosted T4 acceptance Workspace plans confer no creation authority."
+        "zh-cn": "T3 使用生产 UI/协议客户端与受控 HTTP/SSE 核对文字、卡片顺序、刷新后的原参数与引用；长草稿名在窄屏不溢出。禁止夹具访问个人服务，不作为真实模型或 Hosted T4 验收。",
+        "en": "T3 uses production UI/client with controlled HTTP/SSE to verify content order and reloaded exact arguments/references, including narrow long-name layout. Fixtures forbid personal service calls and do not prove live-model or Hosted T4 acceptance."
       }
     },
     {
