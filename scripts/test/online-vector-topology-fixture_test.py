@@ -49,6 +49,22 @@ def records(name):
 
 
 class TopologyFixtureTest(unittest.TestCase):
+    def test_extension_handwritten_oracle_preserves_types_all_sources_direction_and_exact_boundaries(self):
+        self.assertEqual([len(m.extension_features(k)) for k in ('source','reference','failure_reference','result','details')],[7,14,1,7,8])
+        self.assertEqual([r['properties']['reference_id'] for r in m.extension_features('details')],['start','first','duplicate','collinear','forward','part-one','part-two','micro'])
+        for kind in ('source','reference','failure_reference','result','details'):
+            original=m.extension_features(kind);m.validate_extension_features(original,kind)
+            for mutate in [lambda r:r.pop(),lambda r:r.append(copy.deepcopy(r[0])),lambda r:r[0]['properties'].update(grade=3.0) if 'grade' in r[0]['properties'] else r[0]['properties'].update(note='foreign'),
+                lambda r:r[0]['geometry']['coordinates'].reverse()]:
+                rows=copy.deepcopy(original);mutate(rows)
+                if rows!=original:
+                    with self.subTest(kind=kind,mutate=mutate),self.assertRaises(m.FixtureError):m.validate_extension_features(rows,kind)
+            if kind in ('source','result'):
+                rows=copy.deepcopy(original);rows[0]['properties']['enabled']=1
+                with self.assertRaises(m.FixtureError):m.validate_extension_features(rows,kind)
+        details=m.extension_features('details');details[-1]['properties']['distance']=0.
+        with self.assertRaises(m.FixtureError):m.validate_extension_features(details,'details')
+
     def test_chain_oracles_preserve_all_members_and_reject_wrong_chain_direction_schema_and_microgap(self):
         self.assertEqual(len(m.line_chain_source_features()),16)
         self.assertEqual(len(records('line-chains.gpkg')),12)

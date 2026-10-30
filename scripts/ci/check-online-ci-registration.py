@@ -2087,6 +2087,19 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     for relative,fragments in diagnostics_required.items():
         if any(fragment not in (repository/relative).read_text() for fragment in fragments):
             raise RegistrationError('topology operator input diagnostics contract incomplete: '+relative)
+    extension_required = {
+        '.github/workflows/online-t4-gates.yml': ('          - line-extension',),
+        'scripts/test/online-hosted-topology-gate.sh': ('line-proximity|line-extension',),
+        'business/scripts/online-vector-topology-fixture.py': ('def extension_worker(', 'def verify_extension(', 'extension exact coordinates attributes IDs types direction or row order differ', 'EXTENSION_FAILURE'),
+        'scripts/test/vector-topology-persistence-online.py': ('def run_extension_scenario(', 'def validate_extension_success(', 'def validate_extension_graph(', 'def validate_extension_failure(', 'topology-extension-checkpoint.json'),
+        'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('线端延伸独立普通User双成果与精确首次交点拒绝', 'assertExtensionLineMap', 'new_segment_pixels', 'topology-extension-browser-raw.json', 'persistExtensionEvidence', 'assertProximityLineage(observation.graph,binding)'),
+        'engines/geopython-workflow/test_topology_operators.py': ('test_hosted_line_extension_case_dual_save_failure_barrier_and_independent_oracle',),
+        'scripts/test/vector-topology-persistence-online_test.py': ('class ExtensionOnlineTest', 'test_extension_actual_multiline_and_detail_map_rejects_missing_attribute_direction_pixels_and_old_geometry'),
+        'scripts/test/online-hosted-topology-gate_test.py': ('test_extension_case_is_bound_without_old_business_or_capacity',),
+    }
+    for relative,fragments in extension_required.items():
+        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+            raise RegistrationError('topology extension case contract incomplete: '+relative)
     proximity_required = {
         '.github/workflows/online-t4-gates.yml': ('          - line-proximity',),
         'scripts/test/online-hosted-topology-gate.sh': ('operator-input-diagnostics|line-proximity',),

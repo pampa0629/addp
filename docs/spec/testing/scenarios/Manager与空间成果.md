@@ -788,3 +788,11 @@ artifact／物理／Meta相等正整数大小、精确scan父执行／用户／�
 不重跑原拓扑整包、已过参数失败T4或容量；空结果、英尺及更大整数边界沿原Native限定证据，不外推本case为全部输入或规模认证。case及夹具/runner/browser/Hosted选择/登记和mutation同次接入现有标准入口，无新API、算子或长期脚本。
 
 2026-10-30，固定 `ffa8aed3de8d3c84e5659c4575b30f6f7e8323e4` 的[独立近接 Hosted T4 40995207798](https://github.com/pampa0629/addp/actions/runs/40995207798/job/123866626980) 已通过原始归档独立审计：User33／Tenant2／精确11权限，5条源线与9个参考要素得到7条Point记录、3个原悬点位置；三份原始GPKG逐行OGR核对原生坐标、字段类型、CRS及SHA／大小，保留精确2^-20距离、业务Int64标识和参考顺序。成果98304字节与Meta严格相等，恰有一次公开同主体自动扫描、两条本次execution active derive及一致Monitor，源和成果前后Meta／原字节均未变。标准EWKB、实际OL七要素／属性／精确投影坐标、174个点填色像素、真实G6三节点／两边及成功页／属性／地图／血缘四截图均已核；业务42859ms，小于600秒，最终Owner／browser报告均v1 passed，incomplete检查点只保留阶段含义。NFS/export/owned root、Runtime／registry／部署及Infra清理零残留；不认证业务DELETE、空批、英尺、超JSON安全整数、容量或算子内存中间结果的资源登记，不重复原已通过业务T4。
+
+### 线端延伸独立双源双成果
+
+`vector-topology-persistence` 新增显式 `line-extension` case，仅执行“双源load → extend_line_endpoints → result/details分别save”及一条不可精确表示首次交点的失败DAG，不运行full或任何旧业务／容量。复用Hosted隔离生命周期、普通User／非默认Tenant／精确11权限及600秒业务总预算，无新suite、API、权限或长期入口。成功输入为3857的7条MultiLineString源要素／8部件及14条参考线，max_distance=2；手写期望为7条结果和8条新增LineString明细。覆盖首尾和重复端部顶点、上限等号／略超界、共线入口、首次而非侧向最近／后方目标、同点全部来源、已接触不动、多部件、2^-20正距离、JSON安全Int64业务ID区别FID及可空整型／布尔／字符串。第三份独立参考GPKG只用于制造x=4/3不可无损表示的首次交点，不修改成功双源。三源与两成果均保留原字节供归档后独立OGR逐原坐标、字段类型、方向、顺序、CRS和SHA／大小核验，不调用生产算法生成期望，不舍入或增容差。
+
+成功两份稳定outputs/facts必须为create，两输入端口与locator精确对应、顺序无关，各成果各有两条本次execution active derive共4条；失败参考不混入成功血缘。恰有两次成果自动扫描，公开tenant_id／triggered_by严格整数且同当前User／Tenant，源初始3次扫描分开登记，无手工补扫或collect。父文件Meta与物理严格正整数大小相等，唯一子层行数和列数正确，源及成果前后Meta／原文件不变。失败execution／Monitor同UUID、同主体、固定领域拒绝原因，两个失败保存目标、输出写入事实／派生边／新扫描均不存在，保留原始失败与incomplete检查点，不能当最终通过。
+
+真实Console核成功／失败执行页、两成果标准EWKB／FID／业务属性及CRS、OpenLayers全部要素／原顶点与投影坐标、两幅实际线地图和属性／血缘页，实际G6两个来源边与标签可见；原始API／源Meta／图／渲染与截图归档。微小新增段须在物理／API／OL数据保留，不声称其亚像素部分单独可见；地图同时核非空像素及result的明确新增长段，不能只看到原输入就通过。浏览器每次导航绑定实际请求的同一普通身份，失败后扫描库存／物理成果／源Meta不变。完整Owner与browser报告须唯一case/run/execution绑定且passed，清理NFS/export/ownedroot、Runtime/registry、部署及Infra零残留；该清理不认证业务DELETE。夹具、runner、浏览器、Hosted选择、标准入口的既有自动覆盖与CI登记／mutation同次同步；代码及本地验证不计为真实Hosted通过。

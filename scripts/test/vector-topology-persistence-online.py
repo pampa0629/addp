@@ -134,6 +134,133 @@ def run_diagnostic_scenario(repository, env, client, physical_runner, browser_ru
             'cleanup_boundary':'owned disposable deployment; no business DELETE acceptance'}
 
 
+def extension_definition(sources,parent,failed=False):
+    tasks=[{'id':'load_source','operator':'load','params':{'locator':sources[0]},'depends_on':[]},
+        {'id':'load_reference','operator':'load','params':{'locator':sources[2] if failed else sources[1]},'depends_on':[]},
+        {'id':'extend','operator':'extend_line_endpoints','params':{'input_gdf':{'$ref':'load_source'},'reference_gdf':{'$ref':'load_reference'},
+          'id_field':'route_key','reference_id_field':'ref_key','max_distance':2.},'depends_on':['load_source','load_reference']}]
+    for port,name in zip(fixture.EXTENSION_PORTS,fixture.EXTENSION_TARGETS):
+        tasks.append({'id':'save_'+port,'operator':'save','params':{'input_df':{'$ref':'extend',**({'port':port} if port!='result' else {})},
+            'target_parent_locator':parent,'target_name':('failed-' if failed else '')+name,'mode':'fail'},'depends_on':['extend']})
+    return {'tasks':tasks}
+
+
+def validate_extension_success(execution,sources,targets):
+    stable={'save_'+port:{'resource':{'locator':target,'type':'file','write_mode':'create'}} for port,target in targets.items()}
+    if execution.get('status')!='success' or execution.get('outputs')!=stable:raise SuiteError('extension requires exactly two stable create outputs')
+    metadata=obj(execution.get('metadata'),'extension metadata');facts=obj(metadata.get('lineage_facts'),'extension facts')
+    inputs=array(facts.get('inputs'),'extension inputs');outputs=array(facts.get('outputs'),'extension output facts')
+    bindings=[(value.get('port'),value.get('locator')) for value in inputs]
+    if (facts.get('schema_version')!='addp.lineage-facts/v1' or len(bindings)!=2 or
+        set(bindings)!={('input.load_source',sources[0]),('input.load_reference',sources[1])} or
+        len(outputs)!=2 or {o.get('locator') for o in outputs}!=set(targets.values()) or any(o.get('write_mode')!='create' for o in outputs)):
+        raise SuiteError('extension dual-source ports or two create facts differ')
+    scans=array(obj(metadata.get('result'),'extension result').get('meta_scan_runs'),'extension scans')
+    if (len(scans)!=2 or {s.get('target_locator') for s in scans}!=set(targets.values()) or
+        any(s.get('status')!='submitted' or not isinstance(s.get('execution_id'),str) or not s['execution_id'] for s in scans) or len({s['execution_id'] for s in scans})!=2):
+        raise SuiteError('extension requires exactly two distinct automatic output scans')
+    return facts,scans
+
+
+def validate_extension_graph(graph,sources,target,identifier):
+    if graph.get('truncated') is not False:raise SuiteError('extension lineage graph is truncated')
+    edges=[e for e in array(graph.get('edges'),'extension graph edges') if e.get('relation_kind')=='derive' and e.get('status')=='active']
+    if (len(edges)!=2 or any(e.get('evidence',{}).get('execution_id')!=identifier for e in edges) or
+        {(e.get('source',{}).get('item_id'),e.get('target',{}).get('item_id')) for e in edges}!={(s['id'],target) for s in sources[:2]}):
+        raise SuiteError('extension requires exactly two current-execution active source edges per output')
+    return edges
+
+
+def validate_extension_failure(execution,identifier,principal):
+    metadata=obj(execution.get('metadata'),'extension failure metadata');result=metadata.get('result')
+    if (execution.get('execution_id')!=identifier or execution.get('status')!='failed' or execution.get('outputs') or
+        type(execution.get('triggered_by')) is not int or execution['triggered_by']!=principal or metadata.get('lineage_facts') or
+        isinstance(result,dict) and result.get('meta_scan_runs')):
+        raise SuiteError('extension failure must publish neither port nor facts/scans under the same User')
+
+
+def run_extension_scenario(repository,env,client,physical_runner,browser_runner,diagnostic_runner):
+    tenant=positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'tenant')
+    if tenant<=1:raise SuiteError('extension forbids default Tenant')
+    identity=raster.validate_identity(client,tenant,required_permissions=PERMISSIONS);principal=int(identity['principal_id'])
+    deadline=time.monotonic()+float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS','600'))
+    def remaining():
+        value=deadline-time.monotonic()
+        if value<=0:raise SuiteError('extension business budget exhausted')
+        return value
+    engine=positive(env['ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID'],'NFS engine');sources=[]
+    for name in fixture.EXTENSION_SOURCES:
+        scope=f'addp://engine/{engine}/path/{name}?type=file'
+        scan=support.wait_for_meta_scan(client,engine,time.monotonic()+remaining(),scope={'targets':[scope]})
+        item=support.find_fixture_item(client,engine,name,'extension source')
+        before=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
+        sources.append({'id':item['id'],'name':name,'locator':scope+f'&item_id={item["id"]}','scan_execution_id':scan,'before':before})
+    initial=scan_ids(client)
+    if initial!=sorted(s['scan_execution_id'] for s in sources):raise SuiteError('extension initial scan inventory differs')
+    runtimes=[r for r in array(client.request('GET','/api/v1/develop/workflow-engines',(200,)).payload,'runtimes') if r.get('engine_type')=='geopython_workflow' and r.get('connection_status')=='online']
+    if len(runtimes)!=1:raise SuiteError('extension requires one product Runtime')
+    runtime=positive(runtimes[0]['id'],'Runtime');parent=f'addp://engine/{engine}/path/outputs?type=directory'
+    targets={port:f'addp://engine/{engine}/path/outputs/{name}?type=file' for port,name in zip(fixture.EXTENSION_PORTS,fixture.EXTENSION_TARGETS)}
+    workflow=extension_definition([s['locator'] for s in sources],parent)
+    identifier=raster.submit(client,runtime,workflow);execution=raster.wait_execution(client,'develop',identifier,remaining())
+    if execution.get('execution_id')!=identifier or type(execution.get('triggered_by')) is not int or execution['triggered_by']!=principal:raise SuiteError('extension execution actor differs')
+    if obj(obj(execution.get('execution_config'),'extension frozen config').get('content'),'extension content').get('workflow_definition')!=workflow:raise SuiteError('extension frozen DAG differs')
+    facts,scans=validate_extension_success(execution,[s['locator'] for s in sources],targets)
+    observed=[]
+    for scan in scans:
+        value=raster.wait_execution(client,'meta',scan['execution_id'],remaining())
+        if type(value.get('tenant_id')) is not int or value['tenant_id']!=tenant or type(value.get('triggered_by')) is not int or value['triggered_by']!=principal:raise SuiteError('extension automatic scan public User/Tenant differs')
+        observed.append(value)
+    monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'extension Monitor')
+    if monitor.get('execution_id')!=identifier or monitor.get('module')!='develop' or monitor.get('status')!='success' or type(monitor.get('triggered_by')) is not int or monitor['triggered_by']!=principal or obj(monitor.get('metadata'),'Monitor metadata').get('lineage_facts')!=facts:raise SuiteError('extension Monitor facts differ')
+    native=physical_runner(repository,env)
+    if native.get('exact_inventory_verified') is not True or set(native.get('sources',{}))!=set(fixture.EXTENSION_SOURCES) or set(native.get('targets',{}))!=set(fixture.EXTENSION_TARGETS):raise SuiteError('extension physical inventory differs')
+    for source,count,columns in zip(sources,(7,14,1),(6,4,4)):
+        before=source['before'];size=before.get('size_bytes');children=before.get('attributes',{}).get('type_info',{}).get('container',{}).get('children',[])
+        if type(size) is not int or size<=0 or size!=native['sources'][source['name']]['size_bytes'] or len(children)!=1 or type(children[0].get('row_count')) is not int or children[0]['row_count']!=count or type(children[0].get('column_count')) is not int or children[0]['column_count']!=columns:raise SuiteError('extension source Meta size/rows/columns differ')
+    outputs=[]
+    for port,name,count,columns in zip(fixture.EXTENSION_PORTS,fixture.EXTENSION_TARGETS,(7,8),(6,11)):
+        item=support.find_fixture_item(client,engine,'outputs/'+name,'extension output');detail=obj(client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload,'extension output Meta')
+        physical=native['targets'][name];sizes=validate_item(detail,physical,name);child=detail['attributes']['type_info']['container']['children'][0]
+        if type(child.get('row_count')) is not int or child['row_count']!=count or type(child.get('column_count')) is not int or child['column_count']!=columns:raise SuiteError('extension output Meta rows/columns differ')
+        outputs.append({'name':name,'port':port,'locator':targets[port],'item_id':item['id'],**physical,'before':detail,'size_evidence':sizes})
+    directory=Path(env['ADDP_ONLINE_ARTIFACT_DIR'])
+    checkpoint={'schema_version':fixture.EXTENSION_SCHEMA+'-checkpoint/v1','case':fixture.EXTENSION_CASE,'result':'incomplete','stage':'before_lineage','run_id':env['ADDP_ONLINE_TEST_RUN_ID'],
+        'identity':identity,'execution_id':identifier,'definition':workflow,'execution':execution,'sources':sources,'outputs':outputs,'physical':native,'automatic_scans':observed,'monitor':monitor,'stable_outputs':execution['outputs'],'lineage_facts':facts}
+    path=directory/'topology-extension-checkpoint.json';path.write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2)+'\n')
+    graphs={}
+    for output in outputs:
+        for source in sources[:2]:raster.wait_lineage(client,source['id'],output['item_id'],identifier,remaining())
+        graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={output["item_id"]}&direction=upstream',(200,)).payload,'extension original graph')
+        validate_extension_graph(graph,sources,output['item_id'],identifier);graphs[output['port']]=graph
+    expected_scans=sorted([*initial,*[s['execution_id'] for s in scans]])
+    if scan_ids(client)!=expected_scans:raise SuiteError('extension scan inventory differs before failure')
+    failed_workflow=extension_definition([s['locator'] for s in sources],parent,failed=True)
+    failed_id=raster.submit(client,runtime,failed_workflow);failed=raster.wait_execution(client,'develop',failed_id,remaining(),expected='failed')
+    validate_extension_failure(failed,failed_id,principal)
+    if obj(obj(failed.get('execution_config'),'extension failed config').get('content'),'extension failed content').get('workflow_definition')!=failed_workflow:raise SuiteError('extension failed frozen DAG differs')
+    diagnostic=diagnostic_runner(repository,env,failed_id,timeout=min(30,remaining()),task='extend',reason=fixture.EXTENSION_FAILURE,cause='unrepresentable_first_intersection')
+    if diagnostic!={'execution_id':failed_id,'cause':'unrepresentable_first_intersection','source':'develop_runtime_log'}:raise SuiteError('extension exact failure diagnostic binding differs')
+    failed_monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{failed_id}',(200,)).payload,'extension failed Monitor')
+    if failed_monitor.get('execution_id')!=failed_id or failed_monitor.get('status')!='failed' or failed_monitor.get('module')!='develop' or type(failed_monitor.get('triggered_by')) is not int or failed_monitor['triggered_by']!=principal:raise SuiteError('extension failure Monitor identity differs')
+    if scan_ids(client)!=expected_scans or physical_runner(repository,env)!=native:raise SuiteError('extension failure changed physical files or scans')
+    failure={'execution_id':failed_id,'definition':failed_workflow,'execution':failed,'monitor':failed_monitor,'diagnostic':diagnostic,'no_publication_or_scan':True}
+    checkpoint.update(stage='before_browser',raw_lineage=graphs,failure=failure);path.write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2)+'\n')
+    evidence={'case':fixture.EXTENSION_CASE,'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],**identity,'execution_id':identifier,'failed_execution_id':failed_id,'sources':sources,'outputs':outputs,
+        'expected':{port:fixture.extension_features(port) for port in fixture.EXTENSION_PORTS}}
+    remaining();browser_report=browser_runner(repository,env,evidence);remaining()
+    final=physical_runner(repository,env)
+    if final!=native or scan_ids(client)!=expected_scans:raise SuiteError('extension browser changed physical files or scan inventory')
+    meta_after={}
+    for entry in [*sources,*outputs]:
+        item_id=entry.get('item_id',entry.get('id'));after=client.request('GET',f'/api/v1/meta/items/{item_id}',(200,)).payload
+        if after!=entry['before']:raise SuiteError('extension source or output Meta changed')
+        meta_after[entry['name']]=after
+    remaining()
+    return {**checkpoint,'schema_version':fixture.EXTENSION_SCHEMA+'/v1','result':'passed','stage':'complete','browser':browser_report,'meta_after':meta_after,'post_browser_physical':final,
+        'initial_scan_inventory':initial,'final_scan_inventory':expected_scans,'sources_and_outputs_unchanged':True,'cleanup_boundary':'owned disposable NFS/Runtime/deployment; no business DELETE acceptance'}
+
+
 def proximity_definition(sources,parent):
     return {'tasks':[
         {'id':'load_source','operator':'load','params':{'locator':sources[0]},'depends_on':[]},
@@ -544,6 +671,8 @@ def browser(repository, env, evidence):
 
 def run_scenario(repository, env, client, physical_runner=physical, browser_runner=browser,
                  diagnostic_runner=collapsed_snap_diagnostic):
+    if fixture.topology_case(env)==fixture.EXTENSION_CASE:
+        return run_extension_scenario(repository,env,client,physical_runner,browser_runner,diagnostic_runner)
     if fixture.topology_case(env)==fixture.PROXIMITY_CASE:
         return run_proximity_scenario(repository,env,client,physical_runner,browser_runner)
     if fixture.topology_case(env)==fixture.DIAGNOSTIC_CASE:

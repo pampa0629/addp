@@ -1164,7 +1164,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             'engines/geopython-workflow/test_topology_operators.py',
             'manager/frontend/e2e/geometry-preview-support.js', 'manager/frontend/tests/previewGeometryWire.test.js',
             'manager/frontend/e2e/geometry-preview-coordinate.js',
-            'scripts/test/vector-topology-persistence-online_test.py', '.github/workflows/platform-ci.yml')
+            'scripts/test/vector-topology-persistence-online_test.py', '.github/workflows/platform-ci.yml', 'scripts/test/online-hosted-topology-gate_test.py')
         for relative in paths:
             target = self.repository / relative; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, target)
@@ -1187,6 +1187,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[4], "'depends_on':['normal','chains'] if composition and port=='edge_sources' else ['chains'] if composition else ['normal']"), (paths[4], 'invalid_chain_id_field'),
             (paths[7], 'if(expected.length>20)'), (paths[7], 'chains:9,chain_edges:15,edge_sources:22'),
             (paths[9], 'test_hosted_normalize_chains_case_three_save_independent_physical_oracle'),
+            (paths[15], 'test_extension_case_is_bound_without_old_business_or_capacity'),
+            (paths[0], '          - line-extension'), (paths[3], 'line-proximity|line-extension'),
+            (paths[5], 'def verify_extension('), (paths[4], 'def validate_extension_graph('),
+            (paths[7], 'assertExtensionLineMap'), (paths[7], 'new_segment_pixels'),
+            (paths[7], 'topology-extension-browser-raw.json'), (paths[4], 'topology-extension-checkpoint.json'),
+            (paths[9], 'test_hosted_line_extension_case_dual_save_failure_barrier_and_independent_oracle'),
             (paths[0], '          - line-proximity'), (paths[3], 'operator-input-diagnostics|line-proximity'),
             (paths[5], 'def verify_proximity('), (paths[4], 'def validate_proximity_graph('),
             (paths[7], 'assertProximityPointMap'), (paths[7], 'topology-proximity-browser-raw.json'),

@@ -375,8 +375,8 @@ test('同一普通User核对构面、修复、严格吸附、面叠面缝悬点�
 })
 
 function normalizedMapExpectation(features) {
-  return features.map(row => JSON.stringify({ properties:row.properties,
-    coordinates:row.geometry.type==='Polygon' ? row.geometry.coordinates.map(ring=>ring.map(webMercatorPreviewCoordinate)) : row.geometry.coordinates.map(webMercatorPreviewCoordinate) })).sort()
+  const project=coordinates=>typeof coordinates[0]==='number' ? webMercatorPreviewCoordinate(coordinates) : coordinates.map(project)
+  return features.map(row => JSON.stringify({ properties:row.properties,coordinates:project(row.geometry.coordinates) })).sort()
 }
 
 async function verifyNetworkCase(page,caseName,counts,schema) {
@@ -737,4 +737,120 @@ test('近接检查独立普通User双源Point成果',async({page})=>{
   expect(writes).toEqual([])
   persistProximityEvidence(directory,raw,'complete','passed')
   writeFileSync(resolve(directory,'topology-browser.json'),JSON.stringify({...evidence,schema_version:'addp.line-proximity-browser/v1',result:'passed'},null,2)+'\n')
+})
+
+async function assertExtensionLineMap(renderer,expected) {
+  const fields=Object.keys(expected[0].properties)
+  let rendered
+  await expect.poll(async()=>{
+    rendered=await renderer.evaluate((element,fields)=>{
+      const ref=element.__vueParentComponent?.setupState?.mapInstance,map=ref?.value||ref
+      if(!map||map.getView().getAnimating())return null
+      return {projection:map.getView().getProjection().getCode(),features:map.getLayers().getArray()
+        .filter(layer=>layer.getVisible()&&layer.getOpacity()>0).flatMap(layer=>layer.getSource?.()?.getFeatures?.()||[])
+        .map(feature=>({type:feature.getGeometry().getType(),coordinates:feature.getGeometry().getCoordinates(),properties:Object.fromEntries(fields.map(key=>[key,feature.get(key)]))}))}
+    },fields)
+    if(!rendered||rendered.projection!=='EPSG:3857'||rendered.features.some(f=>f.type!==expected[0].geometry.type))return []
+    return rendered.features.map(({properties,coordinates})=>JSON.stringify({properties,coordinates})).sort()
+  }).toEqual(normalizedMapExpectation(expected))
+  let pixels
+  await expect.poll(async()=>{
+    pixels=await renderer.evaluate((element,coordinate)=>{
+      const ref=element.__vueParentComponent?.setupState?.mapInstance,map=ref?.value||ref
+      const position=map.getPixelFromCoordinate(coordinate),viewport=map.getViewport().getBoundingClientRect()
+      let total=0,added=0
+      for(const layer of map.getLayers().getArray()){
+        if(!layer.getVisible()||layer.getOpacity()<=0||!layer.getSource?.()?.getFeatures?.()?.length)continue
+        const context=layer.getRenderer()?.context
+        if(!context)continue
+        const canvas=context.canvas,rect=canvas.getBoundingClientRect(),data=context.getImageData(0,0,canvas.width,canvas.height).data
+        const x=Math.round((position[0]+viewport.left-rect.left)*canvas.width/rect.width)
+        const y=Math.round((position[1]+viewport.top-rect.top)*canvas.height/rect.height)
+        for(let py=0;py<canvas.height;py++)for(let px=0;px<canvas.width;px++){
+          const i=(py*canvas.width+px)*4
+          if(data[i+3]>0&&data[i+1]>data[i]*1.1&&data[i+1]>data[i+2]*1.1){
+            total++;if(Math.abs(px-x)<=3&&Math.abs(py-y)<=3)added++
+          }
+        }
+      }
+      return {painted_pixels:total,new_segment_pixels:added}
+    },webMercatorPreviewCoordinate([2,0]))
+    return pixels.painted_pixels>30&&pixels.new_segment_pixels>0
+  }).toBe(true)
+  return {...rendered,...pixels}
+}
+
+function persistExtensionEvidence(directory,raw,stage,result='incomplete') {
+  writeFileSync(resolve(directory,'topology-extension-browser-raw.json'),JSON.stringify({...raw,stage,result},null,2)+'\n')
+}
+
+test('线端延伸独立普通User双成果与精确首次交点拒绝',async({page})=>{
+  const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}'),directory=process.env.ADDP_ONLINE_ARTIFACT_DIR
+  expect(evidence.case).toBe('line-extension');expect(evidence.sources).toHaveLength(3)
+  expect(evidence.outputs.map(o=>o.port)).toEqual(['result','details'])
+  expect(evidence.expected.result).toHaveLength(7);expect(evidence.expected.details).toHaveLength(8)
+  const identity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
+  const raw={schema_version:'addp.line-extension-browser-raw/v1',case:evidence.case,run_id:evidence.run_id,execution_id:evidence.execution_id,observations:[]}
+  const writes=[]
+  page.on('request',request=>{const path=new URL(request.url()).pathname
+    if(!['GET','HEAD','OPTIONS'].includes(request.method())&&/^\/api\/v1\/(develop|meta|manager)\//.test(path))writes.push({method:request.method(),path})})
+  const read=page.waitForResponse(r=>r.request().method()==='GET'&&new URL(r.url()).pathname===`/api/v1/develop/executions/${evidence.execution_id}`)
+  await login(page,process.env.ADDP_ONLINE_TEST_USER_USERNAME,process.env.ADDP_ONLINE_TEST_USER_PASSWORD,`/develop/executions/${evidence.execution_id}`)
+  const response=await read,executionAPI=await browserAPIFromResponse(response,process.env.GATEWAY_URL,identity)
+  try{raw.execution=await json(response,'extension success');expect(raw.execution.status).toBe('success');expect(Object.keys(raw.execution.outputs).sort()).toEqual(['save_details','save_result'])}finally{await executionAPI.dispose()}
+  const frame=page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(frame.getByText('成功',{exact:true})).toBeVisible()
+  for(const output of evidence.outputs)await expect(frame.locator('.workflow-result')).toContainText(output.name)
+  await page.screenshot({path:resolve(directory,'line-extension-execution.png')});persistExtensionEvidence(directory,raw,'execution_verified')
+  for(const output of evidence.outputs){
+    const expected=evidence.expected[output.port],fields=Object.keys(expected[0].properties),locator=`${output.locator}&item_id=${output.item_id}`
+    const previewRead=page.waitForResponse(r=>{const url=new URL(r.url());return r.request().method()==='GET'&&url.pathname==='/api/v1/manager/preview'&&url.searchParams.get('locator')===locator&&url.searchParams.get('child_name')===output.layer_name})
+    await page.goto(`${process.env.CONSOLE_URL}/manager/data-explorer?locator=${encodeURIComponent(locator)}`)
+    const previewResponse=await previewRead,api=await browserAPIFromResponse(previewResponse,process.env.GATEWAY_URL,identity)
+    const observation={port:output.port,output_item_id:output.item_id,sources:[]};raw.observations.push(observation)
+    try{
+      observation.preview=await json(previewResponse,'extension actual preview')
+      for(const source of evidence.sources){const item=await json(await api.get(`/api/v1/meta/items/${source.id}`),'unchanged extension source');expect(item).toEqual(source.before);observation.sources.push({item_id:source.id,item})}
+      observation.output=await json(await api.get(`/api/v1/meta/items/${output.item_id}`),'extension output Meta');expect(observation.output).toEqual(output.before)
+    }finally{await api.dispose()}
+    persistExtensionEvidence(directory,raw,output.port+'_preview_observed')
+    const preview=observation.preview,data=preview.data
+    expect(preview.preview_type).toBe('table');expect([data.total,data.source_srid,data.source_crs,data.transform_status,data.preview_hint]).toEqual([expected.length,3857,'EPSG:3857','not_transformed','frontend_transform_required'])
+    expect(data.geometry_columns).toEqual([output.geometry_column]);expect(output.fid_column).toBeTruthy()
+    expect([...data.columns].sort()).toEqual([output.fid_column,output.geometry_column,...fields].sort())
+    expect(data.rows.map(r=>r[output.fid_column])).toEqual(Array.from({length:expected.length},(_,i)=>i+1))
+    expect(data.rows.map(r=>({properties:Object.fromEntries(fields.map(key=>[key,r[key]])),geometry:decodePreviewEWKB(r[output.geometry_column])}))).toEqual(expected)
+    const table=frame.locator('.table-preview');await expect(table).toBeVisible();await expect(table.locator('.map-placeholder')).toHaveCount(0)
+    observation.rendered=await assertExtensionLineMap(table.locator('.openlayers-map-renderer'),expected)
+    await page.screenshot({path:resolve(directory,`line-extension-${output.port}-map.png`)});persistExtensionEvidence(directory,raw,output.port+'_map_verified')
+    await frame.getByRole('tab',{name:'属性',exact:true}).click();await expect(frame.locator('.attributes-tab-pane')).toContainText(output.layer_name)
+    await page.screenshot({path:resolve(directory,`line-extension-${output.port}-attributes.png`)})
+    const graphRead=page.waitForResponse(r=>{const u=new URL(r.url());return r.request().method()==='GET'&&u.pathname==='/api/v1/meta/lineage/graph'&&u.searchParams.get('item_id')===String(output.item_id)&&u.searchParams.get('direction')==='both'})
+    await frame.getByRole('tab',{name:'血缘',exact:true}).click()
+    const graphResponse=await graphRead,graphAPI=await browserAPIFromResponse(graphResponse,process.env.GATEWAY_URL,identity)
+    try{observation.graph=await json(graphResponse,'extension actual lineage tab')}finally{await graphAPI.dispose()}
+    const binding={...evidence,sources:evidence.sources.slice(0,2),output}
+    assertProximityLineage(observation.graph,binding)
+    expect(observation.graph.edges.filter(e=>e.relation_kind==='derive'&&e.status==='active')).toHaveLength(2)
+    const viewer=frame.locator('.lineage-viewer'),canvas=viewer.locator('.lineage-canvas canvas').first();await expect(canvas).toBeVisible()
+    await expect.poll(async()=>{
+      observation.lineage_rendered=await viewer.evaluate(element=>{const ref=element.__vueParentComponent?.setupState?.graphInstance,graph=ref?.value||ref;return graph?{nodes:graph.getNodes().map(i=>i.getModel()._node),edges:graph.getEdges().map(i=>i.getModel()._edge)}:null})
+      return observation.lineage_rendered?.edges?.length||0
+    }).toBe(2)
+    assertProximityLineage({...observation.graph,edges:observation.lineage_rendered.edges},binding)
+    await expect.poll(async()=>{observation.lineage_canvas=await lineageCanvasSnapshot(canvas);return [...binding.sources.map(s=>s.name),output.name].every(name=>observation.lineage_canvas.rows.some(r=>r.text.includes(name)))}).toBe(true)
+    expect(observation.lineage_canvas.paths.length).toBeGreaterThanOrEqual(2)
+    await page.screenshot({path:resolve(directory,`line-extension-${output.port}-lineage.png`)});persistExtensionEvidence(directory,raw,output.port+'_lineage_verified')
+  }
+  const failureRead=page.waitForResponse(r=>r.request().method()==='GET'&&new URL(r.url()).pathname===`/api/v1/develop/executions/${evidence.failed_execution_id}`)
+  await page.goto(`${process.env.CONSOLE_URL}/develop/executions/${evidence.failed_execution_id}`)
+  const failedResponse=await failureRead,failedAPI=await browserAPIFromResponse(failedResponse,process.env.GATEWAY_URL,identity)
+  try{
+    raw.failure=await json(failedResponse,'extension failed execution');expect(raw.failure.execution_id).toBe(evidence.failed_execution_id);expect(raw.failure.status).toBe('failed');expect(raw.failure.outputs||{}).toEqual({})
+    raw.failed_monitor=await json(await failedAPI.get(`/api/v1/monitor/executions/by-execution-id/${evidence.failed_execution_id}`),'extension failed Monitor');expect(raw.failed_monitor.execution_id).toBe(evidence.failed_execution_id);expect(raw.failed_monitor.status).toBe('failed')
+    for(const source of evidence.sources)expect(await json(await failedAPI.get(`/api/v1/meta/items/${source.id}`),'unchanged source after failure')).toEqual(source.before)
+  }finally{await failedAPI.dispose()}
+  await expect(frame.getByText('失败',{exact:true})).toBeVisible();await page.screenshot({path:resolve(directory,'line-extension-failed.png')})
+  expect(writes).toEqual([]);persistExtensionEvidence(directory,raw,'complete','passed')
+  writeFileSync(resolve(directory,'topology-browser.json'),JSON.stringify({...evidence,schema_version:'addp.line-extension-browser/v1',result:'passed'},null,2)+'\n')
 })

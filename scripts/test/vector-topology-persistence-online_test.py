@@ -986,7 +986,7 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
         import os
         repository=Path(__file__).resolve().parents[2]
         run=m.subprocess.run
-        titles={m.fixture.PROXIMITY_CASE:m.fixture.PROXIMITY_TITLE,m.fixture.DIAGNOSTIC_CASE:m.fixture.DIAGNOSTIC_TITLE,m.fixture.BUFFER_CASE:'多距缓冲独立普通User单成果与重名拒绝',m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
+        titles={m.fixture.EXTENSION_CASE:m.fixture.EXTENSION_TITLE,m.fixture.PROXIMITY_CASE:m.fixture.PROXIMITY_TITLE,m.fixture.DIAGNOSTIC_CASE:m.fixture.DIAGNOSTIC_TITLE,m.fixture.BUFFER_CASE:'多距缓冲独立普通User单成果与重名拒绝',m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
             m.fixture.COMPOSITION_CASE:'重合规整链路合并独立普通User三成果与字段拒绝',
             'full':'同一普通User核对构面、修复、严格吸附、面叠面缝悬点线叠自叠线交自交及打断连通分组链路合并地图及塌缩失败'}
         for case,title in titles.items():
@@ -1433,3 +1433,147 @@ assert.equal(evidence.result,'passed');assert.equal(evidence.stage,'complete');
 '''
         result=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),self.directory.name],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
+
+
+def extension_physical(*args):
+    return {'exact_inventory_verified':True,'sources':{n:{'size_bytes':98304,'sha256':n} for n in m.fixture.EXTENSION_SOURCES},
+        'targets':{name:{'size_bytes':98304,'sha256':name,'feature_count':len(m.fixture.extension_features(port)),'layer_name':name[:-5],
+            'geometry_column':'geom','fid_column':'fid','features':m.fixture.extension_features(port)} for port,name in zip(m.fixture.EXTENSION_PORTS,m.fixture.EXTENSION_TARGETS)}}
+
+
+class ExtensionClient(InputDiagnosticClient):
+    def __init__(self):
+        super().__init__();self.sources=[];self.outputs=[];self.scan_tenant=2;self.scan_actor=33;self.mutate_graph=None
+        for i,(name,count,columns) in enumerate(zip(m.fixture.EXTENSION_SOURCES,[7,14,1],[6,4,4])):
+            item=base.item(name,10+i);item['full_name']=name;item['attributes']['type_info']['container']['children'][0].update(row_count=count,column_count=columns);self.sources.append(item)
+        for i,(name,count,columns) in enumerate(zip(m.fixture.EXTENSION_TARGETS,[7,8],[6,11])):
+            item=base.item(name,20+i);item['attributes']['type_info']['container']['children'][0].update(row_count=count,column_count=columns);self.outputs.append(item)
+        self.scans=['scan-'+name for name in m.fixture.EXTENSION_SOURCES]
+        locators=[f'addp://engine/3/path/{name}?type=file&item_id={10+i}' for i,name in enumerate(m.fixture.EXTENSION_SOURCES)]
+        parent='addp://engine/3/path/outputs?type=directory';targets={p:f'addp://engine/3/path/outputs/{n}?type=file' for p,n in zip(m.fixture.EXTENSION_PORTS,m.fixture.EXTENSION_TARGETS)}
+        facts={'schema_version':'addp.lineage-facts/v1','inputs':[{'port':p,'locator':l} for p,l in zip(['input.load_source','input.load_reference'],locators)],'outputs':[{'locator':t,'write_mode':'create'} for t in targets.values()]}
+        self.success={'execution_id':'extension-run','status':'success','triggered_by':33,'outputs':{'save_'+p:{'resource':{'locator':t,'type':'file','write_mode':'create'}} for p,t in targets.items()},
+            'metadata':{'lineage_facts':facts,'result':{'meta_scan_runs':[{'execution_id':'output-scan-'+p,'target_locator':t,'status':'submitted'} for p,t in targets.items()]}},
+            'execution_config':{'content':{'workflow_definition':m.extension_definition(locators,parent)}}}
+        self.failed={'execution_id':'extension-failed','status':'failed','triggered_by':33,'outputs':{},'metadata':{},'execution_config':{'content':{'workflow_definition':m.extension_definition(locators,parent,failed=True)}}}
+    def request(self,method,path,expected,body=None):
+        if method=='POST' and path.endswith('/develop/executions'):
+            self.calls.append((method,path,body));failed=body['content']['workflow_definition']['tasks'][-1]['params']['target_name'].startswith('failed-')
+            value=self.failed if failed else self.success;self.executions[value['execution_id']]=value
+            if not failed:self.scans.extend(['output-scan-result','output-scan-details'])
+            data={'execution_id':value['execution_id']}
+        elif path.endswith('/engines/3/items'):data=[*self.sources,*self.outputs]
+        elif path in ['/api/v1/meta/items/20','/api/v1/meta/items/21']:data=self.outputs[int(path.rsplit('/',1)[1])-20]
+        elif path.startswith('/api/v1/meta/lineage/graph?'):
+            target=int(path.split('item_id=')[1].split('&')[0]);data={'truncated':False,'nodes':[],'edges':[{'source':{'item_id':s},'target':{'item_id':target},'relation_kind':'derive','status':'active','evidence':{'execution_id':'extension-run'}} for s in (10,11)]}
+            if self.mutate_graph:self.mutate_graph(data)
+        elif '/meta/executions/' in path:data={'status':'success','tenant_id':self.scan_tenant,'triggered_by':self.scan_actor}
+        else:return super().request(method,path,expected,body)
+        return SimpleNamespace(payload=copy.deepcopy(data))
+
+
+class ExtensionOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
+        self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.EXTENSION_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
+    def run_case(self,client=None,physical=extension_physical,browser=lambda repo,env,evidence:evidence):
+        def diagnostic(repo,env,identifier,**kwargs):
+            self.assertEqual(kwargs['task'],'extend');self.assertEqual(kwargs['reason'],m.fixture.EXTENSION_FAILURE);self.assertLessEqual(kwargs['timeout'],30)
+            return {'execution_id':identifier,'cause':kwargs['cause'],'source':'develop_runtime_log'}
+        return m.run_scenario(Path('.'),self.env,client or ExtensionClient(),physical,browser,diagnostic_runner=diagnostic)
+    def test_extension_exact_two_sources_per_output_two_scans_four_edges_and_isolated_failure(self):
+        client=ExtensionClient();report=self.run_case(client)
+        self.assertEqual(report['schema_version'],'addp.line-extension/v1');self.assertEqual(report['result'],'passed')
+        self.assertEqual([len(report['browser']['expected'][p]) for p in m.fixture.EXTENSION_PORTS],[7,8])
+        self.assertEqual(sum(len(g['edges']) for g in report['raw_lineage'].values()),4)
+        self.assertEqual(len(report['initial_scan_inventory']),3);self.assertEqual(len(report['final_scan_inventory']),5)
+        self.assertEqual(len(report['meta_after']),5)
+        posts=[body for method,path,body in client.calls if method=='POST' and path.endswith('/develop/executions')]
+        self.assertEqual(len(posts),2)
+        self.assertTrue(posts[1]['content']['workflow_definition']['tasks'][1]['params']['locator'].startswith('addp://engine/3/path/extension-failure-reference.gpkg'))
+        self.assertEqual(report['failure']['diagnostic']['cause'],'unrepresentable_first_intersection')
+    def test_extension_binding_order_independent_and_all_identity_size_fact_scan_guards(self):
+        c=ExtensionClient();c.success['metadata']['lineage_facts']['inputs'].reverse();self.run_case(c)
+        mutations=[lambda c:c.success['metadata']['lineage_facts']['inputs'][1].update(locator='failure-reference'),
+            lambda c:c.success['metadata']['lineage_facts']['inputs'].append(copy.deepcopy(c.success['metadata']['lineage_facts']['inputs'][0])),
+            lambda c:c.success['metadata']['lineage_facts']['outputs'][0].update(write_mode='fail'),lambda c:c.success['outputs'].pop('save_details'),
+            lambda c:c.success['metadata']['result']['meta_scan_runs'][1].update(execution_id='output-scan-result'),
+            lambda c:c.success.update(triggered_by=True),lambda c:c.success.update(execution_config={'content':{'workflow_definition':{}}}),
+            lambda c:setattr(c,'scan_tenant','2'),lambda c:setattr(c,'scan_actor',99),
+            lambda c:c.sources[0].update(size_bytes=0),lambda c:c.outputs[1].update(size_bytes='98304'),
+            lambda c:c.outputs[1]['attributes']['type_info']['container']['children'][0].update(row_count=7),
+            lambda c:c.failed.update(outputs={'bad':{}}),lambda c:c.failed.update(triggered_by=99),
+            lambda c:c.failed['metadata'].update(lineage_facts={'outputs':[{}]}),lambda c:c.failed['metadata'].update(result={'meta_scan_runs':[{}]})]
+        for mutate in mutations:
+            c=ExtensionClient();mutate(c)
+            with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):self.run_case(c)
+    def test_extension_missing_duplicate_failure_source_and_old_execution_edges_rejected(self):
+        for mutate in [lambda g:g['edges'].pop(),lambda g:g['edges'].append(copy.deepcopy(g['edges'][0])),
+            lambda g:g['edges'][1]['source'].update(item_id=12),lambda g:g['edges'][1]['evidence'].update(execution_id='old'),lambda g:g.update(truncated=True)]:
+            c=ExtensionClient();c.mutate_graph=mutate
+            with patch.object(m.raster,'wait_lineage',return_value={}):
+                with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):self.run_case(c)
+    def test_extension_failure_or_browser_error_keeps_incomplete_original_payload_and_final_guards(self):
+        with self.assertRaisesRegex(m.SuiteError,'browser broke'):self.run_case(browser=lambda *a:(_ for _ in ()).throw(m.SuiteError('browser broke')))
+        checkpoint=json.loads((Path(self.directory.name)/'topology-extension-checkpoint.json').read_text())
+        self.assertEqual(checkpoint['stage'],'before_browser');self.assertEqual(checkpoint['result'],'incomplete')
+        self.assertEqual(checkpoint['failure']['execution']['execution_id'],'extension-failed')
+        calls=0
+        def changed(*a):
+            nonlocal calls
+            calls+=1;value=extension_physical()
+            if calls==3:value['targets'][m.fixture.EXTENSION_TARGETS[1]]['sha256']='changed'
+            return value
+        with self.assertRaisesRegex(m.SuiteError,'physical files'):self.run_case(physical=changed)
+        c=ExtensionClient()
+        def meta_changed(*a):c.sources[2]['size_bytes']=999;return a[2]
+        with self.assertRaisesRegex(m.SuiteError,'Meta changed'):self.run_case(c,browser=meta_changed)
+    def test_extension_actual_multiline_and_detail_map_rejects_missing_attribute_direction_pixels_and_old_geometry(self):
+        import subprocess
+        repository=Path(__file__).resolve().parents[2]
+        script=r'''
+import assert from 'node:assert/strict';import{readFileSync}from'node:fs';
+const source=readFileSync(process.argv[1],'utf8'),expectations=JSON.parse(process.argv[2]);
+const {webMercatorPreviewCoordinate}=await import(process.argv[3]);
+const a=source.indexOf('function normalizedMapExpectation('),b=source.indexOf('async function verifyNetworkCase(',a);
+const expectation=new Function('webMercatorPreviewCoordinate',source.slice(a,b)+';return normalizedMapExpectation')(webMercatorPreviewCoordinate);
+const start=source.indexOf('async function assertExtensionLineMap('),end=source.indexOf('function persistExtensionEvidence(',start);
+const expect={poll:fn=>({async toEqual(x){assert.deepEqual(await fn(),x)},async toBe(x){assert.equal(await fn(),x)}})};
+const check=new Function('expect','normalizedMapExpectation','webMercatorPreviewCoordinate',source.slice(start,end)+';return assertExtensionLineMap')(expect,expectation,webMercatorPreviewCoordinate);
+const project=c=>typeof c[0]==='number'?webMercatorPreviewCoordinate(c):c.map(project);
+async function run(rows,expected,mode='normal'){
+ const pixels=new Uint8ClampedArray(40*40*4);
+ for(let x=0;x<36;x++){const i=(10*40+x)*4;pixels.set([0,200,0,255],i)}
+ if(mode==='old-only'){pixels.fill(0);for(let y=0;y<7;y++)for(let x=0;x<6;x++)pixels.set([0,200,0,255],(y*40+x)*4)}
+ if(mode==='blank')pixels.fill(0);
+ const features=rows.map(r=>({get:k=>r.properties[k],getGeometry:()=>({getType:()=>r.geometry.type,getCoordinates:()=>project(r.geometry.coordinates)})}));
+ const context={canvas:{width:40,height:40,getBoundingClientRect:()=>({left:0,top:0,width:40,height:40})},getImageData:()=>({data:pixels})};
+ const layer={getVisible:()=>mode!=='hidden',getOpacity:()=>1,getSource:()=>({getFeatures:()=>features}),getRenderer:()=>({context})};
+ const map={getView:()=>({getAnimating:()=>false,getProjection:()=>({getCode:()=> 'EPSG:3857'})}),getLayers:()=>({getArray:()=>[layer]}),getPixelFromCoordinate:()=>[10,10],getViewport:()=>({getBoundingClientRect:()=>({left:0,top:0})})};
+ await check({evaluate:async(fn,arg)=>fn({__vueParentComponent:{setupState:{mapInstance:map}}},arg)},expected);
+}
+for(const expected of Object.values(expectations)){
+ await run(expected,expected);
+ for(const mode of ['blank','hidden','old-only'])await assert.rejects(()=>run(expected,expected,mode));
+ for(const mutation of [r=>r.pop(),r=>r.reverse(),r=>r[0].properties[Object.keys(r[0].properties)[0]]='wrong',r=>r[0].geometry.type='Point']){
+  const rows=structuredClone(expected);mutation(rows);if(JSON.stringify(rows)!==JSON.stringify(expected)){
+   // Rendering order is immaterial; a reversed row array preserves the same features.
+   if(JSON.stringify(rows)===JSON.stringify([...expected].reverse()))await run(rows,expected);else await assert.rejects(()=>run(rows,expected));
+  }
+ }
+ const changed=structuredClone(expected),coordinates=changed[0].geometry.coordinates;
+ if(changed[0].geometry.type==='MultiLineString')coordinates[0].pop();else coordinates[0][0]+=1;
+ await assert.rejects(()=>run(changed,expected));
+}
+'''
+        value=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),json.dumps({p:m.fixture.extension_features(p) for p in m.fixture.EXTENSION_PORTS}),(repository/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri()],text=True,capture_output=True)
+        self.assertEqual(value.returncode,0,value.stdout+value.stderr)
+
+    def test_extension_failure_diagnostic_must_bind_exact_uuid_and_final_budget_stays_bounded(self):
+        for diagnostic in ({'execution_id':'other','cause':'unrepresentable_first_intersection','source':'develop_runtime_log'},
+                {'execution_id':'extension-failed','cause':'other','source':'develop_runtime_log'},{}):
+            with self.subTest(diagnostic=diagnostic),self.assertRaisesRegex(m.SuiteError,'diagnostic binding'):
+                m.run_scenario(Path('.'),self.env,ExtensionClient(),extension_physical,lambda *a:a[2],diagnostic_runner=lambda *a,**kw:diagnostic)
+        environment={**self.env,'ADDP_ONLINE_TEST_TIMEOUT_SECONDS':'0'}
+        with self.assertRaisesRegex(m.SuiteError,'budget exhausted'):
+            m.run_scenario(Path('.'),environment,ExtensionClient(),extension_physical,lambda *a:a[2])

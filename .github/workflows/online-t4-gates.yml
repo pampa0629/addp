@@ -124,6 +124,7 @@ on:
           - multi-distance-buffer
           - operator-input-diagnostics
           - line-proximity
+          - line-extension
       manager_case:
         description: Manager acceptance case (full preserves all model assertions)
         required: true

@@ -25,7 +25,130 @@ PROXIMITY_SOURCES = ('proximity-source.gpkg','proximity-reference.gpkg')
 PROXIMITY_TARGET = 'proximity-points.gpkg'
 PROXIMITY_SCHEMA = 'addp.line-proximity'
 PROXIMITY_TITLE = '近接检查独立普通User双源Point成果'
-INDEPENDENT_CASES = (PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
+EXTENSION_CASE = 'line-extension'
+EXTENSION_SOURCES = ('extension-source.gpkg','extension-reference.gpkg','extension-failure-reference.gpkg')
+EXTENSION_TARGETS = ('extended-lines.gpkg','extension-details.gpkg')
+EXTENSION_PORTS = ('result','details')
+EXTENSION_SCHEMA = 'addp.line-extension'
+EXTENSION_TITLE = '线端延伸独立普通User双成果与精确首次交点拒绝'
+EXTENSION_FAILURE = '线端延伸的首次交点不能精确沿原方向落在参考线上，未生成任何延伸结果。'
+
+
+def extension_features(kind):
+    """Independent handwritten original and extended coordinates; no production calls."""
+    keys=[9,7,3,5,1,11,13]
+    if kind in ('source','result'):
+        source=[[[[0,0],[0,0],[1,0]]],[[[10,0],[11,0]]],[[[20,0],[21,0]]],[[[30,0],[31,0]]],
+                [[[40,0],[41,0]]],[[[50,0],[51,0]],[[60,0],[61,0]]],[[[70,0],[71,0]]]]
+        result=[[[[-1,0],[0,0],[0,0],[1,0],[3,0]]],[[[10,0],[11,0],[13,0]]],[[[20,0],[21,0],[22,0]]],
+                [[[30,0],[31,0]]],[[[40,0],[41,0]]],[[[50,0],[51,0],[52,0]],[[60,0],[61,0],[62,0]]],
+                [[[70,0],[71,0],[71+2**-20,0]]]]
+        return [{'properties':{'route_key':2**40+key,'grade':None if i%2 else 3+i,'enabled':None if i%3==1 else i%2==0,'note':None if i%2 else 'source-'+str(i)},
+                 'geometry':{'type':'MultiLineString','coordinates':points}} for i,(key,points) in enumerate(zip(keys,source if kind=='source' else result))]
+    if kind in ('reference','failure_reference'):
+        lines=[('start',[[-1,-1],[-1,1]]),('first',[[3,-1],[3,1]]),('duplicate',[[3,1],[3,-1]]),('far',[[4,-1],[4,1]]),
+               ('collinear',[[13,0],[15,0]]),('side',[[20.25,.1],[20.75,.1]]),('forward',[[22,-1],[22,1]]),('later',[[23,-1],[23,1]]),
+               ('outside',[[33+2**-20,-1],[33+2**-20,1]]),('contact',[[41,-1],[41,1]]),('after-contact',[[43,-1],[43,1]]),
+               ('part-one',[[52,-1],[52,1]]),('part-two',[[62,-1],[62,1]]),('micro',[[71+2**-20,-1],[71+2**-20,1]])]
+        if kind=='failure_reference':lines=[('nonrepresentable-first',[[1,1],[2,-2]])]
+        return [{'properties':{'ref_key':key,'note':'reference-'+str(i)},'geometry':{'type':'LineString','coordinates':points}} for i,(key,points) in enumerate(lines)]
+    if kind!='details':raise FixtureError('unknown extension table')
+    return [{'properties':{'source_id':2**40+keys[row],'reference_id':ref,'part_no':part,'end':end,
+               'original_x':float(x),'original_y':0.,'target_x':float(target),'target_y':0.,'distance':float(distance)},
+             'geometry':{'type':'LineString','coordinates':[[x,0],[target,0]]}}
+            for row,ref,part,end,x,target,distance in [(0,'start',1,'start',0,-1,1),(0,'first',1,'end',1,3,2),(0,'duplicate',1,'end',1,3,2),
+                (1,'collinear',1,'end',11,13,2),(2,'forward',1,'end',21,22,1),(5,'part-one',1,'end',51,52,1),
+                (5,'part-two',2,'end',61,62,1),(6,'micro',1,'end',71,71+2**-20,2**-20)]]
+
+
+def extension_field_types(kind):
+    from osgeo import ogr
+    if kind in ('source','result'):return {'route_key':(ogr.OFTInteger64,ogr.OFSTNone),'grade':(ogr.OFTInteger64,ogr.OFSTNone),
+        'enabled':(ogr.OFTInteger,ogr.OFSTBoolean),'note':(ogr.OFTString,ogr.OFSTNone)}
+    if kind in ('reference','failure_reference'):return {'ref_key':(ogr.OFTString,ogr.OFSTNone),'note':(ogr.OFTString,ogr.OFSTNone)}
+    return {'source_id':(ogr.OFTInteger64,ogr.OFSTNone),'reference_id':(ogr.OFTString,ogr.OFSTNone),'part_no':(ogr.OFTInteger64,ogr.OFSTNone),
+        'end':(ogr.OFTString,ogr.OFSTNone),**{k:(ogr.OFTReal,ogr.OFSTNone) for k in ('original_x','original_y','target_x','target_y','distance')}}
+
+
+def seed_extension(path,kind):
+    from osgeo import ogr,osr
+    crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
+    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path))
+    layer=ds.CreateLayer(path.stem,crs,ogr.wkbMultiLineString if kind=='source' else ogr.wkbLineString,
+        options=['GEOMETRY_NAME='+('source_shape' if kind=='source' else 'reference_shape')])
+    for name,(native,subtype) in extension_field_types(kind).items():
+        field=ogr.FieldDefn(name,native);field.SetSubType(subtype)
+        if layer.CreateField(field)!=0:raise FixtureError('cannot seed extension field')
+    for row in extension_features(kind):
+        item=ogr.Feature(layer.GetLayerDefn())
+        for key,value in row['properties'].items():
+            if value is None:item.SetFieldNull(key)
+            else:item.SetField(key,int(value) if type(value) is bool else value)
+        item.SetGeometry(ogr.CreateGeometryFromJson(json.dumps(row['geometry'])))
+        if layer.CreateFeature(item)!=0:raise FixtureError('cannot seed extension source')
+        item=None
+    layer=None;ds=None
+
+
+def validate_extension_features(rows,kind):
+    expected=extension_features(kind)
+    if rows!=expected or any(type(row['properties'][key]) is not type(ref['properties'][key])
+        for row,ref in zip(rows,expected) for key in ref['properties']):
+        raise FixtureError('extension exact coordinates attributes IDs types direction or row order differ')
+
+
+def verify_extension(path,kind):
+    from osgeo import ogr,osr
+    ds=ogr.Open(str(path),0)
+    if ds is None or ds.GetLayerCount()!=1:raise FixtureError('extension requires one physical layer')
+    layer=ds.GetLayer(0);crs=osr.SpatialReference();crs.ImportFromEPSG(3857);schema=layer.GetLayerDefn();types=extension_field_types(kind)
+    if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs):raise FixtureError('extension CRS differs')
+    if [schema.GetFieldDefn(i).GetName() for i in range(schema.GetFieldCount())]!=list(types):raise FixtureError('extension fields differ')
+    if any((schema.GetFieldDefn(i).GetType(),schema.GetFieldDefn(i).GetSubType())!=pair for i,pair in enumerate(types.values())):
+        raise FixtureError('extension physical field types differ')
+    if kind in ('source','result'):
+        # OGR coerces a corrupt SQLite BOOLEAN value such as 2 to True. Check
+        # the original physical values before its logical Boolean decoder.
+        import sqlite3
+        connection=sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True)
+        try:
+            table='"'+layer.GetName().replace('"','""')+'"'
+            values=connection.execute('SELECT "enabled" FROM '+table).fetchall()
+            if any(value is not None and (type(value) is not int or value not in (0,1)) for (value,) in values):
+                raise FixtureError('extension non-Boolean physical value')
+        finally:connection.close()
+    rows=[]
+    for i,item in enumerate(layer,1):
+        if item.GetFID()!=i:raise FixtureError('extension physical FID order differs')
+        props=item.items()
+        if 'enabled' in props and props['enabled'] is not None:
+            if type(props['enabled']) not in (int,bool) or props['enabled'] not in (0,1):raise FixtureError('extension non-Boolean physical value')
+            props['enabled']=bool(props['enabled'])
+        rows.append({'properties':props,'geometry':proximity_geometry(item.GetGeometryRef())})
+    validate_extension_features(rows,kind)
+    if layer.GetGeomType()!=(ogr.wkbMultiLineString if kind in ('source','result') else ogr.wkbLineString):raise FixtureError('extension declared geometry type differs')
+    geometry=layer.GetGeometryColumn()
+    if not geometry or (kind in ('source','reference','failure_reference') and geometry!=('source_shape' if kind=='source' else 'reference_shape')):raise FixtureError('extension geometry column differs')
+    result={**digest(path),'feature_count':len(rows),'layer_name':layer.GetName(),'geometry_column':geometry,'fid_column':layer.GetFIDColumn(),
+        'source_crs':'EPSG:3857','features':rows,'field_types':{name:ogr.GetFieldTypeName(native) for name,(native,_) in types.items()}}
+    ds=None
+    return result
+
+
+def extension_worker(action,root):
+    if action=='seed':
+        if any((root/name).exists() for name in EXTENSION_SOURCES) or list((root/'outputs').iterdir()):raise FixtureError('refusing existing extension data')
+        for name,kind in zip(EXTENSION_SOURCES,('source','reference','failure_reference')):seed_extension(root/name,kind)
+        return {'sources':{name:digest(root/name) for name in EXTENSION_SOURCES}}
+    if action!='verify':raise FixtureError('unknown extension action')
+    if sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',*EXTENSION_SOURCES]) or sorted(p.name for p in (root/'outputs').iterdir())!=sorted(EXTENSION_TARGETS):
+        raise FixtureError('extension requires exactly three sources and two outputs, no failed publication')
+    return {'sources':{name:digest(root/name) for name in EXTENSION_SOURCES},
+        'source_tables':{name:verify_extension(root/name,kind) for name,kind in zip(EXTENSION_SOURCES,('source','reference','failure_reference'))},
+        'targets':{name:verify_extension(root/'outputs'/name,port) for name,port in zip(EXTENSION_TARGETS,EXTENSION_PORTS)},'exact_inventory_verified':True}
+
+
+INDEPENDENT_CASES = (EXTENSION_CASE, PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
 
 NORMALIZE_CASE = 'line-network-normalize'
 NORMALIZE_SOURCE = 'normalize-input.gpkg'
@@ -39,6 +162,8 @@ COMPOSITION_TARGETS = ('chains.gpkg','chain-edges.gpkg','edge-sources.gpkg')
 
 
 def network_profile(case):
+    if case==EXTENSION_CASE:
+        return {"ports":EXTENSION_PORTS,"targets":EXTENSION_TARGETS,"schema":EXTENSION_SCHEMA,"title":EXTENSION_TITLE}
     if case==PROXIMITY_CASE:
         return {'ports':('result',),'targets':(PROXIMITY_TARGET,),'schema':PROXIMITY_SCHEMA,'title':PROXIMITY_TITLE}
     if case==DIAGNOSTIC_CASE:
@@ -320,6 +445,7 @@ def composition_expected_features(port):
 
 
 def network_features(case,kind):
+    if case==EXTENSION_CASE:return extension_features(kind)
     if case==PROXIMITY_CASE:return proximity_features(kind)
     if case==BUFFER_CASE:return buffer_features(kind)
     if case==COMPOSITION_CASE:
@@ -1374,6 +1500,7 @@ def validate_features(name, features):
 
 def worker(action, root, case=None):
     case=topology_case() if case is None else topology_case({"ADDP_ONLINE_TOPOLOGY_CASE":case})
+    if case==EXTENSION_CASE:return extension_worker(action,root)
     if case==PROXIMITY_CASE:return proximity_worker(action,root)
     if case==DIAGNOSTIC_CASE:return diagnostic_worker(action,root)
     if case==BUFFER_CASE:return buffer_worker(action,root)
@@ -1482,7 +1609,7 @@ def runtime_worker(action, root):
 def archive_physical_evidence(root, directory, result, case=None):
     """Retain only this synthetic fixture's verified bytes for offline audit."""
     case=topology_case() if case is None else topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':case})
-    sources,targets=(PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
+    sources,targets=(EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
     archive = directory / 'topology-physical'
     if archive.is_symlink() or (archive/'outputs').is_symlink():
         raise FixtureError('physical archive must not follow symlinks')
