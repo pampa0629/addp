@@ -246,8 +246,8 @@ GET/PUT .../concept-mappings                              # 概念实现映射�
 - **System 模块**: 统一用户／服务身份认证及权威 AuthContext（`SYSTEM_URL`）。用户身份使用 User Access Token，服务身份通过独立 OAuth Client 获取 Service Access Token；Bearer 请求与解析主线统一见[登录认证要求](../docs/spec/addp登录认证的统一要求.md#一认证事实与唯一主路径)和[AuthContext 唯一调用链](../docs/spec/addp授权上下文规范.md#二唯一调用链)。Model 继续按 Tenant、精确 Permission 和资源归属裁决，用户与机器入口的完整边界见[Model 授权规范](docs/model概念与数据约束规范.md#二授权边界)；实际运行覆盖按[开发与验证](#开发与验证)分层认定。
 - **Meta 模块**: 提供指标计划所需的已扫描物理结构（`META_URL`，配置默认 `http://localhost:8082`）；Model Runtime 使用已有 `meta.catalog.read`，不新增 System 结构查询权限。字段投影与依赖冻结见[指标计划与数据库金样](#指标计划与数据库金样)。
 - **Standard 模块**:
-  - 验证 domain_id、element_id / element_revision_id、metric_definition_revision_id 是否存在（`STANDARD_URL`）；维度层级只校验 Model 本地事实
-  - Standard 前端直接调用 Standard 唯一 API，Model 不提供代理路径
+  - **服务端引用校验**：Service 层通过 `cfg.StandardURL`（`STANDARD_URL`），以当前 Tenant 的 `addp-model` Service Access Token 校验 domain_id、element_id / element_revision_id、metric_definition_revision_id；不转发或保存 User Access Token。维度层级只校验 Model 本地事实；服务身份的读取范围见[Model 授权规范](docs/model概念与数据约束规范.md#二授权边界)。
+  - **前端引用读取**：[Model 前端](frontend/src/api/model.js)通过当前用户会话的共享客户端，以 User Access Token 调用 Standard 唯一公开 API，由 Standard 校验该用户的权限与资源归属。Model 不提供 Standard 代理路径；服务端引用校验成功不代表用户取得 Standard 读取权限。身份主线见[登录认证要求](../docs/spec/addp登录认证的统一要求.md#一认证事实与唯一主路径)，实际覆盖按[开发与验证](#开发与验证)分层认定。
 
 **被依赖**:
 - **Graph 模块**: 使用 `tenant.graph_runtime` 读取 Entity、EntityAttribute 和 EntityRelation，生成本体导入预览。
@@ -263,7 +263,7 @@ Model 和 Standard 使用不同的 PostgreSQL Schema，**无数据库外键约�
 | `logical_fields.element_id` | `standard.elements.id` |
 | `metric_implementation_revisions.metric_definition_revision_id` | `standard.metric_definition_revisions.id` |
 
-创建/更新时，Service 层通过 HTTP 调用 Standard 模块 API 验证 ID 是否存在。前端直接调用 Standard 的唯一公开 API，Model 不提供 Standard 代理路径。
+创建/更新时，Service 层通过 HTTP 校验 Standard 引用；前端读取与服务端校验的身份、权限分工统一见[模块依赖关系](#模块依赖关系)。
 
 ## IAM Permission 所有权
 
@@ -335,7 +335,7 @@ draft ⇄ approved
    bash scripts/dev/restart.sh -model
    ```
 
-3. **跨模块验证**: Service 层通过 `cfg.StandardURL` 和 `addp-model` Tenant Service Access Token 调用 Standard API。如果 Standard 服务未启动，相关创建操作会失败。
+3. **跨模块验证**: 调用身份与权限见[模块依赖关系](#模块依赖关系)。如果 Standard 服务未启动，相关创建操作会失败。
 
 4. **前端 API 统一入口**: Model API 调用集中在 [frontend/src/api/model.js](frontend/src/api/model.js)；Standard API 使用 Standard 的唯一公开路径。
 
