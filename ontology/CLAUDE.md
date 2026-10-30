@@ -12,6 +12,8 @@ Ontology 自身 PG、FalkorDB 和 System 当前注册构成 Ready 前置；除 S
 
 ## 当前交付范围
 
+平台 Transfer 修订 39 复核并冻结 Agent 对话工作区实现 `da8794a89`：归档只控制新请求接纳，计划只展示模型报告的处理进度，成果与运行记录复用现有受限投影。审批状态在会话锁前只读预取，锁内重读 Interaction 并核对当前绑定；原配置预检、最终确认与唯一创建 Tool 路径不变。创建仍只保存未运行任务，不新增执行、扫描、写入或业务授权。该修订仅更新 Agent 来源审核与摘要，不改 Ontology 发布/图投影机制；来源审查、Ontology Go T1 与 Agent 既有门禁覆盖，未作运行时激活或真实模型验收声明。
+
 平台 Transfer 修订 32 复核 `d01c5772f` 的角色专用脱敏接入：Planner 仅增加可选的来源字段选择；没有选择的委托创建仍保存 idle/stopped 的 bounded/snapshot/native table 定义，无 execution、调度、扫描或业务写入。角色方式只允许当前第一方 Tenant User，不能借用委托人或服务身份；新增 Owner 回归确认 Delegated 带角色选择返回 409 且不读取本人角色、不增加定义／执行。手动执行的 EA／当前角色核验与 Develop 文件交付均不属于当前创建能力，覆盖说明显式标记角色专用方式尚未建模。创建 Tool／权限、确认、条件、效果和排除效果不变，不新增角色配置或运行能力。来源冻结到已提交的 Owner 代码／回归与共享本人角色客户端，新修订不是运行时已激活的证明。门禁沿现有 `make test-platform-review`（强制 count=1）、Transfer／Ontology Go T1；发布／投影实现、schema、前端和依赖未变，已有 Ontology PG／FalkorDB 自动发现继续覆盖，无新 Makefile 或 CI 入口。
 
 修订 32 验证：`make test-platform-review` 非缓存执行通过（`-count=1`），`make test-module MODULE=ontology GO_ONLY=1` 和 `make test-module MODULE=transfer GO_ONLY=1` 通过；来源先提交为 `6a188526a` 再冻结，审查同时核对所引提交的真实字节与当前文件。初轮新增 Owner 断言误用不存在的错误码，按既有 `transfer_protection_roles_unavailable` 精确契约修正后完整复验；未改产品错误码或放宽断言。影响矩阵实际选中 ontology、transfer。此次没有改存储／发布运行内核，未重跑 PG／FalkorDB T2、前端 T3 或 Hosted T4，不将来源复核计为正式激活或 CSV 撤销验收。日志 `/tmp/p145-transfer-semantic-{review-final,owner-t1-final,ontology-t1}.log`。

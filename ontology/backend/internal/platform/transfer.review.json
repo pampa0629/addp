@@ -138,11 +138,11 @@
       "kind": "implementation",
       "path": "agent/backend/graph/factory.py",
       "anchor": "async def _run_config_check(",
-      "commit": "01435b1554120d1c00c6d092681ddec0979af93f",
-      "sha256": "52dc1efebe44178c660c23727e2a34d6b4cc5993b9487d9c5a97c499ed2051d9",
+      "commit": "da8794a89cddf4d8ef9d890e56ec1bf7c450b7a7",
+      "sha256": "6d58eecb78916711996a1eec9cb8229889de2909addaa591e3166f5e6db29fd1",
       "use": {
-        "zh-cn": "确认恢复重读原参数、本体及源/目标父节点事实，正式复检匹配指纹后沿唯一Adapter、确认消费与提交屏障创建一次。稳定内容变化重新确认，失败不重试。同批用前序完成屏障按模型顺序执行，搜索失败或取消阻断排队调用；显式检查仍固定展示并结束，不放宽权限。",
-        "en": "Runtime resumes exact arguments with fresh semantics, source/target-parent evidence and formal checks, creating once through the same guarded adapter after confirmation consumption and commit acknowledgement. Changed stable content requires review; failures are not retried. Predecessor gates preserve model order and block queued calls after search failure or cancellation. Explicit checks still display and stop without widening permissions."
+        "zh-cn": "确认恢复重读原参数、本体及源/目标父节点事实，正式复检匹配指纹后沿唯一Adapter、确认消费与提交屏障创建一次。稳定内容变化重新确认，失败不重试。同批用前序完成屏障按模型顺序执行，搜索失败或取消阻断排队调用；显式检查仍固定展示并结束，不放宽权限。 计划/工作区展示不改变创建条件、确认或权限。",
+        "en": "Runtime resumes exact arguments with fresh semantics, source/target-parent evidence and formal checks, creating once through the same guarded adapter after confirmation consumption and commit acknowledgement. Changed stable content requires review; failures are not retried. Predecessor gates preserve model order and block queued calls after search failure or cancellation. Explicit checks still display and stop without widening permissions. Workspace plans confer no creation authority."
       }
     },
     {
@@ -164,11 +164,11 @@
       "kind": "implementation",
       "path": "agent/backend/i18n.py",
       "anchor": "def transfer_config_check_completed(",
-      "commit": "68c687a4926cf034aa0702d7fb0ccb583b05e737",
-      "sha256": "a5215d8a79fb59832815dc60d73016be813e93e117f14b4b57143f47aa97ba67",
+      "commit": "da8794a89cddf4d8ef9d890e56ec1bf7c450b7a7",
+      "sha256": "a94e0c0a40d9b19a8e73a92f78fada2751a599e5cbf8ec425b6398d9432516a9",
       "use": {
-        "zh-cn": "显式预检的双语三态完成提示，以及确认恢复后仅基于正式创建响应的固定成功提示；失败不宣称已创建，unknown 不标为通过。",
-        "en": "Localized tri-state explicit-check completion and fixed confirmed-resume completion based only on the formal creation response; failure never claims creation, and unknown is not passed."
+        "zh-cn": "显式预检的双语三态完成提示，以及确认恢复后仅基于正式创建响应的固定成功提示；失败不宣称已创建，unknown 不标为通过。 计划/工作区展示不改变创建条件、确认或权限。",
+        "en": "Localized tri-state explicit-check completion and fixed confirmed-resume completion based only on the formal creation response; failure never claims creation, and unknown is not passed. Workspace plans confer no creation authority."
       }
     },
     {
@@ -203,11 +203,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/main_agent.py",
       "anchor": "async def _route_node(",
-      "commit": "68c687a4926cf034aa0702d7fb0ccb583b05e737",
-      "sha256": "4bd92be47cda36a017d61d7053456bda03aab1db56400475ef521a172a24d91e",
+      "commit": "da8794a89cddf4d8ef9d890e56ec1bf7c450b7a7",
+      "sha256": "6fbe1f14198c982ff559ab5cb96924f2e1f8aa7c442c1050629cb49cad039258",
       "use": {
-        "zh-cn": "纯解释与原参数创建区分；恢复按同用户/租户/会话重读摘要引用，仅把原参数和服务端恢复标志传入 Runtime，不导入历史权限；正式确认后的推进不依赖模型。",
-        "en": "Separates explanation and exact-draft creation; resume re-reads the scoped digest reference and passes only exact arguments and a server-owned resume flag, without historical authorization; confirmed advancement does not depend on the model."
+        "zh-cn": "纯解释与原参数创建区分；恢复按同用户/租户/会话重读摘要引用，仅把原参数和服务端恢复标志传入 Runtime，不导入历史权限；正式确认后的推进不依赖模型。 计划/工作区展示不改变创建条件、确认或权限。",
+        "en": "Separates explanation and exact-draft creation; resume re-reads the scoped digest reference and passes only exact arguments and a server-owned resume flag, without historical authorization; confirmed advancement does not depend on the model. Workspace plans confer no creation authority."
       }
     },
     {
@@ -216,11 +216,11 @@
       "kind": "implementation",
       "path": "agent/backend/api/chat.py",
       "anchor": "async def draft_reader(",
-      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
-      "sha256": "5fcf69edd4d238016129a71eda6462973d69f86bf6e411fb44ded513dd6e925b",
+      "commit": "da8794a89cddf4d8ef9d890e56ec1bf7c450b7a7",
+      "sha256": "2c8359da4d1a187fa8f2deee9f144d04cf14168169ef8428d637870f30a51ff9",
       "use": {
-        "zh-cn": "完成步骤事务后按相同身份范围读取原输入，经唯一 A2UI 路径展示；实时与持久 parts 按事件顺序追加，后到文字不前置，完整 content 不截断。历史读取仍为 Runtime 审计，不注册业务 Tool、授予权限或创建任务",
-        "en": "Read original inputs within the same scope after step commit through one A2UI path; live and persisted parts append in event order without moving later text first or truncating content. Historical reads remain runtime audits, not business tools, grants or task creation"
+        "zh-cn": "完成步骤事务后按相同身份范围读取原输入，经唯一 A2UI 路径展示；实时与持久 parts 按事件顺序追加，后到文字不前置，完整 content 不截断。历史读取仍为 Runtime 审计，不注册业务 Tool、授予权限或创建任务 计划/工作区展示不改变创建条件、确认或权限。",
+        "en": "Read original inputs within the same scope after step commit through one A2UI path; live and persisted parts append in event order without moving later text first or truncating content. Historical reads remain runtime audits, not business tools, grants or task creation Workspace plans confer no creation authority."
       }
     },
     {
@@ -242,11 +242,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_run_events.py",
       "anchor": "async def test_completed_precheck_mints_exact_scoped_snapshot_into_stream_and_history(",
-      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
-      "sha256": "e7794b7ac170f80ba654196d7752bd4dd18c41911f85c83ae475a14b143310f1",
+      "commit": "da8794a89cddf4d8ef9d890e56ec1bf7c450b7a7",
+      "sha256": "35c7b84b8f464ea871a7791441b0b5648fb3930692d14ff4c9450eb324865ceb",
       "use": {
-        "zh-cn": "受控持久层消费真实 Chat 流验证完成预检步骤的身份范围、原参数及引用在 SSE、消息和回放中一致；卡片前后文字与失败文字按原事件顺序保存，content 完整，不作为真实数据库或部署验收",
-        "en": "Controlled persistence consuming the real Chat stream verifies completed step scope, exact arguments and references across SSE, messages and replay; text before and after cards and failure text retain event order and complete content, not live database or deployment acceptance"
+        "zh-cn": "受控持久层消费真实 Chat 流验证完成预检步骤的身份范围、原参数及引用在 SSE、消息和回放中一致；卡片前后文字与失败文字按原事件顺序保存，content 完整，不作为真实数据库或部署验收 计划/工作区展示不改变创建条件、确认或权限。",
+        "en": "Controlled persistence consuming the real Chat stream verifies completed step scope, exact arguments and references across SSE, messages and replay; text before and after cards and failure text retain event order and complete content, not live database or deployment acceptance Workspace plans confer no creation authority."
       }
     },
     {
@@ -307,11 +307,11 @@
       "kind": "implementation",
       "path": "agent/frontend/src/views/ChatView.vue",
       "anchor": "function ensureLiveTextPart(",
-      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
-      "sha256": "15ad282621419fb206a748602030920bf2db44d86b3318e74716a7f44a52ab9e",
+      "commit": "da8794a89cddf4d8ef9d890e56ec1bf7c450b7a7",
+      "sha256": "2880539d1574af1817975551c7c564e5c838ca8c75186974667673f46cff735d",
       "use": {
-        "zh-cn": "实时和安全事件回放只追加相邻文字段，不把模型解释移到此前卡片之前，不过滤或修订既有历史消息",
-        "en": "Live and safe event replay append adjacent text without moving explanations before preceding cards or filtering or revising existing history"
+        "zh-cn": "实时和安全事件回放只追加相邻文字段，不把模型解释移到此前卡片之前，不过滤或修订既有历史消息 计划/工作区展示不改变创建条件、确认或权限。",
+        "en": "Live and safe event replay append adjacent text without moving explanations before preceding cards or filtering or revising existing history Workspace plans confer no creation authority."
       }
     },
     {
@@ -320,11 +320,11 @@
       "kind": "contract",
       "path": "agent/backend/graph/state.py",
       "anchor": "class RouteDecision(",
-      "commit": "68c687a4926cf034aa0702d7fb0ccb583b05e737",
-      "sha256": "655493d48366a24c3f050f508a484babfb8f3df2a3943ef2761528f5dba3f7d2",
+      "commit": "da8794a89cddf4d8ef9d890e56ec1bf7c450b7a7",
+      "sha256": "e091cb05be7eab10ef86d8cc7e8a64fcb458f2a737c69739fc036d5e488d8c34",
       "use": {
-        "zh-cn": "请求级 TaskContext 携带服务端 Interaction 恢复标志与临时原参数；语义 checkpoint 仅保存引用，不保存第二份参数或模型状态。",
-        "en": "Request-local TaskContext carries the server-owned Interaction resume flag and temporary exact arguments; semantic checkpoints retain only the reference, not duplicate arguments or model state."
+        "zh-cn": "请求级 TaskContext 携带服务端 Interaction 恢复标志与临时原参数；语义 checkpoint 仅保存引用，不保存第二份参数或模型状态。 计划/工作区展示不改变创建条件、确认或权限。",
+        "en": "Request-local TaskContext carries the server-owned Interaction resume flag and temporary exact arguments; semantic checkpoints retain only the reference, not duplicate arguments or model state. Workspace plans confer no creation authority."
       }
     },
     {
@@ -346,11 +346,11 @@
       "kind": "test",
       "path": "agent/frontend/e2e/clarification-resume.spec.js",
       "anchor": "test('exact checked draft streams and reloads",
-      "commit": "ee6450e371dbb355c045c987b22500fd9f3bbc3a",
-      "sha256": "83c76e24025a393c064cb1eaf24d46a65c4cb543418ec516115999354f24b530",
+      "commit": "da8794a89cddf4d8ef9d890e56ec1bf7c450b7a7",
+      "sha256": "d97932c50f64b308af6b5425a847e6fc55a15a74f6a8bc460f7087d795733768",
       "use": {
-        "zh-cn": "T3 用生产 UI 和协议客户端、受控 HTTP/SSE 记录实时 DOM 顺序，并核对刷新后的参数、引用和顺序；禁止夹具访问个人服务，不宣称自由模型或 Hosted T4 验收",
-        "en": "T3 production UI and protocol client with controlled HTTP/SSE record live DOM order and verify reloaded arguments, reference and order; fixtures forbid personal service calls and do not prove free-model or hosted T4 acceptance"
+        "zh-cn": "T3 用生产 UI 和协议客户端、受控 HTTP/SSE 记录实时 DOM 顺序，并核对刷新后的参数、引用和顺序；禁止夹具访问个人服务，不宣称自由模型或 Hosted T4 验收 计划/工作区展示不改变创建条件、确认或权限。",
+        "en": "T3 production UI and protocol client with controlled HTTP/SSE record live DOM order and verify reloaded arguments, reference and order; fixtures forbid personal service calls and do not prove free-model or hosted T4 acceptance Workspace plans confer no creation authority."
       }
     },
     {
@@ -398,11 +398,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_agent_factory_events.py",
       "anchor": "async def test_search_failure_stops_without_retry_enumeration_or_write(",
-      "commit": "01435b1554120d1c00c6d092681ddec0979af93f",
-      "sha256": "954534fca89929013b615c63a6cecda9f1509a810f0b9d2b301b92461c7389e8",
+      "commit": "da8794a89cddf4d8ef9d890e56ec1bf7c450b7a7",
+      "sha256": "6f5c23314bffb724355d2134e1e009eb588961fa2532ece44619e1ce6392b0ef",
       "use": {
-        "zh-cn": "真实Harness受控倒序到达稳定复现五类搜索错误的同批枚举竞态；严格断言无备用调用、无下一轮模型，另验证成功顺序、取消阻断与重复身份执行前拒绝。",
-        "en": "Real-Harness controlled reverse arrival reproduces same-batch enumeration for five search errors; strict assertions forbid fallback calls or another model turn, with successful-order, cancellation and duplicate-identity rejection regressions."
+        "zh-cn": "真实Harness受控倒序到达稳定复现五类搜索错误的同批枚举竞态；严格断言无备用调用、无下一轮模型，另验证成功顺序、取消阻断与重复身份执行前拒绝。 计划/工作区展示不改变创建条件、确认或权限。",
+        "en": "Real-Harness controlled reverse arrival reproduces same-batch enumeration for five search errors; strict assertions forbid fallback calls or another model turn, with successful-order, cancellation and duplicate-identity rejection regressions. Workspace plans confer no creation authority."
       }
     },
     {
