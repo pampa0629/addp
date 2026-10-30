@@ -1357,3 +1357,18 @@ def test_focal_percentile_metadata_uses_existing_entry_conditional_parameter_and
     assert '线性' in params['method']['description']
     assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
     assert spec['attributes']['resource_groups']==['raster'] and len(spec['output_ports'])==1
+
+
+def test_full_percentile_keeps_single_statistics_object_entry_and_optional_parameter():
+    from operators import list_operators
+    specs=[spec for spec in list_operators() if spec['id']=='raster_statistics']
+    assert len(specs)==1
+    spec=specs[0]
+    params={param['name']:param for param in spec['parameters']}
+    assert set(params)=={'input_raster','band','percentile'}
+    assert params['percentile']['type']=='float' and not params['percentile']['required']
+    assert 'default' not in params['percentile']
+    assert all(word in params['percentile']['description'] for word in ('0','100','50','线性','原统计'))
+    assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='object'
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    assert spec['attributes']['resource_groups']==['raster'] and len(spec['output_ports'])==1

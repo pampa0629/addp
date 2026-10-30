@@ -1078,6 +1078,317 @@ def test_statistics_combines_blocks_and_all_nodata(tmp_path):
         assert raster_histogram(raster)['counts'] == []
 
 
+def _full_percentile_oracle(values, percent):
+    from fractions import Fraction
+    ordered = sorted(float(value) for value in values)
+    if not ordered:
+        return None
+    rank = Fraction(float(percent)) * (len(ordered) - 1) / 100
+    index = rank.numerator // rank.denominator
+    weight = rank - index
+    return float(Fraction(ordered[index]) * (1 - weight)
+                 + Fraction(ordered[min(index + 1, len(ordered) - 1)]) * weight)
+
+
+@pytest.mark.parametrize('percent', [0, 1, 25, 33.3, 50, 75, 99, 100])
+@pytest.mark.parametrize('values', [[-8., 0., 0., 5., 11.], [-7., 0., 4., 12.], [0.], [-9999.]])
+def test_full_percentile_preserves_original_statistics_and_exact_linear_ranks(tmp_path, percent, values):
+    import operators.raster_compute as compute
+    path = create_raster(tmp_path/'whole.tif', np.array([values]))
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+    valid = [value for value in values if value != -9999.]
+    with raster_workspace():
+        source = raster_load(source_plan(path))
+        existing = raster_statistics(source)
+        workspace = source.workspace
+        files = set(workspace.iterdir())
+        result = raster_statistics(source, percentile=percent)
+        assert set(result) == set(existing) | {'percentile', 'percentile_value'}
+        assert {key: result[key] for key in existing} == existing
+        assert result['percentile'] == float(percent)
+        expected = _full_percentile_oracle(valid, percent)
+        if expected is None:
+            assert result['percentile_value'] is None
+        else:
+            assert result['percentile_value'] == pytest.approx(expected, rel=4e-15, abs=0)
+            if percent in (0, 50, 100):
+                control = (min(valid) if percent == 0 else max(valid) if percent == 100
+                           else statistics.median(valid))
+                assert result['percentile_value'] == control
+        assert set(workspace.iterdir()) == files
+        assert not compute._DISK_RESERVATIONS
+        json.dumps(result, allow_nan=False)
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+
+
+@pytest.mark.parametrize('percent', [None, True, False, '50', [50], {}, -1, 101, float('nan'), float('inf'), -float('inf')])
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+def test_full_percentile_rejects_invalid_parameter_before_source_read(monkeypatch, percent, language):
+    import operators.raster_compute as compute
+    monkeypatch.setattr(compute, '_open', lambda *a: pytest.fail('invalid percentile opened source'))
+    with raster_error_language(language), pytest.raises(ValueError, match=('有限数值' if language == 'zh-cn' else 'finite number')):
+        raster_statistics(object(), percentile=percent)
+
+
+@pytest.mark.parametrize('percent', [0, 33.3, 50, 100])
+def test_full_percentile_cross_blocks_buffered_merge_and_source_order_independence(tmp_path, monkeypatch, percent):
+    import operators.raster_compute as compute
+    # Six real GDAL blocks, unequal runs and repeated values, tiny merge buffers.
+    values = ((np.arange(513*1025, dtype=np.int64)*37) % 65521 - 32760).reshape(513,1025).astype(float)
+    values[::19, ::17] = -9999
+    expected = _full_percentile_oracle(values[values != -9999], percent)
+    monkeypatch.setattr(compute, '_PERCENTILE_MERGE_VALUES', 4096)
+    original_merge = compute._merge_percentile_runs
+    merges = []
+    def tracked(left, right, output):
+        merges.append((left.stat().st_size, right.stat().st_size))
+        return original_merge(left, right, output)
+    monkeypatch.setattr(compute, '_merge_percentile_runs', tracked)
+    results = []
+    for index, data in enumerate((values, values[::-1, ::-1])):
+        path = create_raster(tmp_path/f'blocks-{index}.tif', data)
+        with raster_workspace():
+            source = raster_load(source_plan(path))
+            files = set(source.workspace.iterdir())
+            actual = raster_statistics(source, percentile=percent)
+            results.append(actual['percentile_value'])
+            assert actual['valid_count'] == int(np.count_nonzero(values != -9999))
+            assert set(source.workspace.iterdir()) == files
+    assert len(merges) >= 8
+    assert results[0] == results[1]
+    assert results[0] == pytest.approx(expected, rel=4e-15, abs=0)
+
+
+@pytest.mark.parametrize('dtype', ['Int64', 'UInt64'])
+def test_full_percentile_raw_64bit_nodata_adjacent_valid_value(tmp_path, dtype):
+    path = tmp_path/'native.tif'
+    code = (2**63 - 1) if dtype == 'Int64' else (2**64 - 1)
+    values = np.array([[code, code-1, 0, 12]], dtype=np.int64 if dtype == 'Int64' else np.uint64)
+    source = gdal.GetDriverByName('GTiff').Create(str(path),4,1,1,getattr(gdal,'GDT_'+dtype))
+    source.GetRasterBand(1).WriteArray(values)
+    setter = source.GetRasterBand(1).SetNoDataValueAsInt64 if dtype == 'Int64' else source.GetRasterBand(1).SetNoDataValueAsUInt64
+    setter(code)
+    source = None
+    with raster_workspace():
+        raster = raster_load(source_plan(path))
+        result = raster_statistics(raster, percentile=50)
+        assert (result['valid_count'],result['invalid_count']) == (3,1)
+        assert result['percentile_value'] == 12.
+        assert {key: value for key,value in result.items() if not key.startswith('percentile')} == raster_statistics(raster)
+
+
+def test_full_percentile_selected_band_independent_mask_alpha_and_unlocated_grid(tmp_path):
+    data = np.array([[0., -6., 8., -9999.], [4., 12., np.nan, np.inf]])
+    alpha = np.array([[128., 255., 0., 255.], [255., np.nan, 255., 255.]])
+    path = create_raster(tmp_path/'coverage.tif',np.stack([np.full(data.shape, -9999.),data,alpha]),None,None)
+    ds = gdal.Open(str(path),gdal.GA_Update)
+    ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    ds.GetRasterBand(2).SetScale(100); ds.GetRasterBand(2).SetOffset(200)
+    previous=gdal.GetThreadLocalConfigOption('GDAL_TIFF_INTERNAL_MASK')
+    gdal.SetThreadLocalConfigOption('GDAL_TIFF_INTERNAL_MASK','YES')
+    try:
+        ds.GetRasterBand(2).CreateMaskBand(gdal.GMF_PER_DATASET)
+    finally:
+        gdal.SetThreadLocalConfigOption('GDAL_TIFF_INTERNAL_MASK',previous)
+    mask = np.full(data.shape,255,np.uint8); mask[1,0]=0
+    ds.GetRasterBand(2).GetMaskBand().WriteArray(mask); ds=None
+    with raster_workspace():
+        result=raster_statistics(raster_load(source_plan(path)),band=2,percentile=50)
+        assert (result['valid_count'],result['invalid_count'])==(2,6)
+        assert result['percentile_value']==-3.
+
+
+@pytest.mark.parametrize('phase', ['sort', 'merge', 'rank-read'])
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+def test_full_percentile_io_failure_cleans_private_runs(tmp_path, monkeypatch, phase, language):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'failure.tif',np.arange(513*513,dtype=float).reshape(513,513))
+    with raster_workspace(), raster_error_language(language):
+        source=raster_load(source_plan(path)); files=set(source.workspace.iterdir())
+        def fail(*args, **kwargs):
+            raise OSError('injected sorting I/O failure')
+        if phase=='sort': monkeypatch.setattr(np,'sort',fail)
+        elif phase=='merge': monkeypatch.setattr(compute,'_merge_percentile_runs',fail)
+        else: monkeypatch.setattr(compute._PercentileRuns,'value',fail)
+        with pytest.raises(ValueError,match='临时排序读写失败' if language=='zh-cn' else 'sorting I/O failed'):
+            raster_statistics(source,percentile=50)
+        assert set(source.workspace.iterdir())==files
+        assert not compute._DISK_RESERVATIONS
+
+
+@pytest.mark.parametrize('fault', ['insufficient', 'unavailable'])
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+def test_full_percentile_disk_refusal_before_sort_and_release(tmp_path, monkeypatch, fault, language):
+    import operators.raster_compute as compute
+    from types import SimpleNamespace
+    path=create_raster(tmp_path/'disk.tif',np.arange(16,dtype=float).reshape(4,4))
+    with raster_workspace(), raster_error_language(language):
+        source=raster_load(source_plan(path)); files=set(source.workspace.iterdir())
+        original=compute.shutil.disk_usage
+        def capacity(*args):
+            if fault=='unavailable': raise OSError('unavailable disk')
+            return SimpleNamespace(free=compute._DISK_SAFETY_BYTES)
+        monkeypatch.setattr(compute.shutil,'disk_usage',capacity)
+        with pytest.raises(RuntimeError,match='percentile'):
+            raster_statistics(source,percentile=50)
+        assert set(source.workspace.iterdir())==files
+        assert not compute._DISK_RESERVATIONS
+        monkeypatch.setattr(compute.shutil,'disk_usage',original)
+        assert raster_statistics(source,percentile=50)['percentile_value']==7.5
+
+
+@pytest.mark.parametrize('percent', [0, 50, 100])
+def test_full_percentile_matches_focal_for_same_population(tmp_path, percent):
+    data=np.array([[-4., 0., 8.],[12.,3.,-9999.],[15.,21.,25.]])
+    path=create_raster(tmp_path/'population.tif',data)
+    with raster_workspace():
+        source=raster_load(source_plan(path))
+        result=raster_statistics(source,percentile=percent)
+        focal=raster_focal_statistics(source,1,3,'percentile',percent)
+        assert result['percentile_value']==gdal.Open(str(focal.path)).ReadAsArray()[1,1]
+
+
+def test_full_percentile_workflow_read_only_object_and_no_private_path(tmp_path):
+    path=create_raster(tmp_path/'dag.tif',np.arange(9,dtype=float).reshape(3,3))
+    workflow={'tasks':[{'id':'load','operator':'raster_load','params':{'access_plan':source_plan(path)},'depends_on':[]},
+                       {'id':'stats','operator':'raster_statistics','params':{'input_raster':{'$ref':'load'},'band':1,'percentile':25},'depends_on':['load']}]}
+    result=execute_workflow(workflow)
+    assert result['status']=='success',result
+    public=json.loads(result['final_result'])
+    assert public['percentile_value']==2. and public['percentile']==25.
+    assert public['valid_count']==9 and public['strategy']=='full'
+    assert not any(word in result['final_result'] for word in ('percentile-','merge-','workspace','artifact_type','size_bytes'))
+
+
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+def test_full_percentile_inherited_moment_range_failure_is_explicit_and_cleans(tmp_path,language):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'extreme.tif',np.array([[-np.finfo(float).max,np.finfo(float).max]]))
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));files=set(source.workspace.iterdir())
+        with pytest.raises(ValueError,match='有限Float64' if language=='zh-cn' else 'finite Float64'):
+            raster_statistics(source,percentile=50)
+        assert set(source.workspace.iterdir())==files and not compute._DISK_RESERVATIONS
+
+
+@pytest.mark.parametrize('case', ['interleaved','separated','duplicates','unequal'])
+def test_full_percentile_merge_is_complete_and_bounded(tmp_path,monkeypatch,case):
+    import operators.raster_compute as compute
+    samples={'interleaved':([0,2,4,6,8],[1,3,5,7,9]),
+             'separated':([-10,-9,-8],[20,21,22,23,24]),
+             'duplicates':([0,0,0,2,2],[0,0,1,2,2,2,2]),
+             'unequal':([-1],[0,1,2,3,4,5,6,7])}
+    left,right=samples[case]
+    paths=[tmp_path/name for name in ('left.bin','right.bin','out.bin')]
+    for values,path in zip((left,right),paths):np.array(values,dtype=np.float64).tofile(path)
+    monkeypatch.setattr(compute,'_PERCENTILE_MERGE_VALUES',2)
+    original=np.fromfile;reads=[]
+    def bounded(stream,*,dtype,count):
+        assert 0<count<=2
+        reads.append(count)
+        return original(stream,dtype=dtype,count=count)
+    with monkeypatch.context() as patch:
+        patch.setattr(np,'fromfile',bounded)
+        compute._merge_percentile_runs(*paths)
+    assert reads
+    np.testing.assert_array_equal(original(paths[2],dtype=np.float64),sorted(left+right))
+
+
+@pytest.mark.parametrize('fault', ['data-complex','alpha-complex','band-zero','band-high','band-bool','band-string'])
+def test_full_percentile_preserves_band_admission_and_rejects_complex_alpha(monkeypatch,fault):
+    import operators.raster_compute as compute
+    dataset=gdal.GetDriverByName('MEM').Create('',2,2,0)
+    dataset.AddBand(gdal.GDT_CFloat64 if fault=='data-complex' else gdal.GDT_Float64)
+    dataset.GetRasterBand(1).Fill(1)
+    if fault=='alpha-complex':
+        dataset.AddBand(gdal.GDT_CFloat64)
+        dataset.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    monkeypatch.setattr(compute,'_open',lambda source:dataset)
+    band={'band-zero':0,'band-high':3,'band-bool':True,'band-string':'1'}.get(fault,1)
+    with raster_workspace(),pytest.raises(ValueError):
+        raster_statistics(object(),band=band,percentile=50)
+    dataset=None
+
+
+@pytest.mark.parametrize('percent', [np.nextafter(0.,1.), 1e-250, 33.3, 50., 99.])
+@pytest.mark.parametrize('pair', [(-np.finfo(float).max,np.finfo(float).max),
+                                 (-np.nextafter(0.,1.),np.nextafter(0.,1.)),
+                                 (0.,np.finfo(float).max)])
+def test_full_percentile_rank_interpolation_extremes_native_only(pair,percent):
+    import operators.raster_compute as compute
+    from fractions import Fraction
+    lower,upper,weight=compute._percentile_ranks(2,percent)
+    result=compute._focal_linear_values(np.array([pair[lower]]),np.array([pair[upper]]),weight)[0]
+    # Independent exact endpoint arithmetic, including a nonzero subnormal rank weight.
+    fraction=Fraction(float(percent))/100
+    expected=float(Fraction(float(pair[0]))*(1-fraction)+Fraction(float(pair[1]))*fraction)
+    assert result==expected and math.isfinite(result)
+
+
+def test_full_percentile_bounded_raw_reads_private_budget_and_rotated_grid(tmp_path,monkeypatch):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'rotated.tif',np.arange(513*515,dtype=float).reshape(513,515),
+                       (100.,2.,.3,200.,.4,-3.))
+    before=path.read_bytes()
+    original=compute._blocks; sizes=[]; peaks=[]
+    def blocks(dataset,indices,**kwargs):
+        assert kwargs.get('native') is True
+        for x,y,arrays,masks in original(dataset,indices,**kwargs):
+            assert arrays[0].shape[0]<=512 and arrays[0].shape[1]<=512
+            sizes.append(arrays[0].size)
+            yield x,y,arrays,masks
+    monkeypatch.setattr(compute,'_blocks',blocks)
+    merge=compute._merge_percentile_runs
+    def tracked_merge(left,right,output):
+        merge(left,right,output)
+        reservation=list(compute._DISK_RESERVATIONS.values())
+        assert len(reservation)==1
+        device,budget,paths=reservation[0]
+        logical=sum(p.stat().st_size for p in paths if p.exists())
+        peaks.append(logical)
+        assert logical<=budget and len(paths)<=6
+    monkeypatch.setattr(compute,'_merge_percentile_runs',tracked_merge)
+    with raster_workspace():
+        result=raster_statistics(raster_load(source_plan(path)),percentile=50)
+    assert sizes and peaks and sum(sizes)==513*515
+    assert result['percentile_value']==(513*515-1)/2
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_full_percentile_async_runtime_read_only_result_and_failure_cleanup(tmp_path,monkeypatch,language):
+    import api_server
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'async.tif',np.array([[0.,1.,2.,3.]]))
+    workspaces=[];original=OPERATORS['raster_load']['function']
+    def load(*args,**kwargs):
+        workspaces.append(compute._WORKSPACE.get())
+        return original(*args,**kwargs)
+    monkeypatch.setitem(OPERATORS['raster_load'],'function',load)
+    workflow={'tasks':[{'id':'load','operator':'raster_load','params':{'access_plan':source_plan(path)},'depends_on':[]},
+                       {'id':'stats','operator':'raster_statistics','params':{'input_raster':{'$ref':'load'},'percentile':25},'depends_on':['load']}]}
+    client=api_server.app.test_client()
+    for percent in (25,'25'):
+        workflow['tasks'][1]['params']['percentile']=percent
+        response=client.post('/api/workflow',json={'workflow_def':workflow,'runtime':{
+            'tenant_id':7,'execution_authorization':{'id':1,'effects':['read']}}},headers={'Accept-Language':language})
+        assert response.status_code==202,response.json
+        deadline=time.monotonic()+10
+        while time.monotonic()<deadline:
+            state=client.get('/api/executions/'+response.json['execution_id']).json
+            if state['status'] in ('success','failed'):break
+            time.sleep(.01)
+        if isinstance(percent,int):
+            assert state['status']=='success',state
+            assert json.loads(state['result'])['percentile_value']==.75
+        else:
+            assert state['status']=='failed',state
+            assert ('有限数值' if language=='zh-cn' else 'finite number') in state['error']
+        assert workspaces and all(not workspace.exists() for workspace in workspaces)
+        assert not compute._DISK_RESERVATIONS
+        assert not list(tmp_path.glob('*.bin'))
+
+
 def _profile_process_usage():
     import resource
     import sys
