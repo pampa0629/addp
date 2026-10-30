@@ -44,10 +44,11 @@
           </div>
           <p class="hint">{{ t('monitor.engines.trendScope') }}</p>
           <p class="hint">{{ t(`monitor.engines.hints.${selectedMetric.name}`) }}</p>
+          <p class="hint" data-testid="engine-zoom-hint">{{ t('monitor.resources.zoomHint') }}</p>
           <el-alert v-if="trendError" :title="t(trendError)" type="warning" :closable="false" />
           <template v-if="chart">
             <p class="hint">{{ t('monitor.resources.window', { start: date(history.start), end: date(history.end), step: history.step_seconds }) }}</p>
-            <div class="chart" role="img" :aria-label="t(`monitor.engines.metrics.${selectedMetric.name}`)"><ChartRenderer :rows="chart.rows" :config="chart.config" @invalid="invalidChart" /></div>
+            <div class="chart" role="img" :aria-label="t(`monitor.engines.metrics.${selectedMetric.name}`)"><ChartRenderer :rows="chart.rows" :config="chart.config" zoomable :initial-zoom="trendZoom" @zoom-change="trendZoom = $event" @invalid="invalidChart" /></div>
           </template>
         </section>
       </template>
@@ -83,6 +84,7 @@ const hostReferences = ref({})
 const identity = computed(() => JSON.stringify([auth.authContext?.principal, auth.authContext?.context, auth.authContext?.delegation, auth.permissions]))
 const state = computed(() => resolveEngineRoute(route.query)), owners = ref([]), total = ref(0), observed = ref(null), history = ref(null)
 const loading = ref(false), errorKey = ref(''), trendError = ref(''), search = ref(''), blocked = ref(false), visible = ref(!document.hidden)
+const trendZoom = ref(null)
 const requests = createLatestRequestScope()
 let disposed = false
 const refreshStatus = computed(() => state.value.refresh === 'off' ? 'manual' : blocked.value ? 'stopped' : !visible.value ? 'paused' : 'automatic')
@@ -166,6 +168,8 @@ async function loadHosts(rows, ticket) {
   const hosts = await loadHostReferences(rows.map(row => row.node_id), id => requests.request(config => hostsAPI.node(id, config)), current)
   if (current()) hostReferences.value = hosts
 }
+watch([() => JSON.stringify([state.value.deploymentID, state.value.metric, state.value.range]), identity], () => { trendZoom.value = null }, { flush: 'sync' })
+watch([errorKey, trendError], ([error, trend]) => { if (error || trend) trendZoom.value = null }, { flush: 'sync' })
 watch([() => route.fullPath, identity], () => reload(), { immediate: true, flush: 'sync' })
 onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dispose(); requests.dispose() })
 </script>

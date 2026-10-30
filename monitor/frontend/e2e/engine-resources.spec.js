@@ -2,8 +2,112 @@ import { test, expect } from '@playwright/test'
 import { engineBackend, engineID } from './engine-resources.fixture'
 import { identity, setIdentity } from './monitoring-targets.fixture'
 import { enginePermissions, engineOwner } from './engine-resources.fixture'
+import { trackResourceChart, resourceChartProps, resourceChartState, dragResourceChartZoom,
+  clickResourceChartLegend, hoverResourceChartPoint, resourceChartTooltip } from './resource-chart.fixture'
 
 const hostPermissions = [...enginePermissions, 'platform.host_node.read']
+
+async function engineChart(page) {
+  const chart = page.getByTestId('engine-trend').locator('.chart-renderer')
+  await expect(chart.locator('canvas')).toBeVisible()
+  await expect.poll(async () => (await resourceChartState(page, null, chart)).finished).toBe(true)
+  return chart
+}
+
+for (const locale of ['zh-cn', 'en']) test(`engine trend zoom preserves samples and refresh viewport, resets on metric and range (${locale})`, async ({ page }) => {
+  trackResourceChart(page)
+  const state = await engineBackend(page, { locale })
+  await page.setViewportSize({ width: 620, height: 900 })
+  await page.goto(`/engine-resources?deployment_id=${engineID}&refresh=off`)
+  const chart = await engineChart(page)
+  const props = await resourceChartProps(page, chart)
+  expect(props.zoomable).toBe(true)
+  expect(props.rows).toHaveLength(9)
+  expect(props.rows[0].value).toBe(0)
+  expect(props.rows[2].value).toBeNull()
+  await hoverResourceChartPoint(page, 0, chart)
+  await expect(resourceChartTooltip(page, chart)).toContainText(`0.00 ${props.config.field_presentations[1].unit}`)
+  const calls = state.calls.length, url = page.url()
+  await dragResourceChartZoom(page, 0.6, chart)
+  const start = (await resourceChartState(page, null, chart)).start
+  expect(start).toBeGreaterThan(50)
+  expect((await resourceChartProps(page, chart)).rows).toEqual(props.rows)
+  expect((await resourceChartState(page, null, chart)).lengths).toEqual([9])
+  const label = props.config.field_presentations[1].label
+  await clickResourceChartLegend(page, label, chart)
+  await expect.poll(async () => (await resourceChartState(page, null, chart)).active).toEqual([])
+  await expect(resourceChartTooltip(page, chart)).not.toBeVisible()
+  await clickResourceChartLegend(page, label, chart)
+  await expect.poll(async () => (await resourceChartState(page, null, chart)).active).toEqual([label])
+  expect(state.calls).toHaveLength(calls)
+  expect(page.url()).toBe(url)
+  await page.evaluate(() => document.documentElement.style.setProperty('--addp-border-color', 'rgb(30, 40, 50)'))
+  await expect.poll(async () => (await resourceChartState(page, null, chart)).borderColor).toBe('rgb(30, 40, 50)')
+  expect((await resourceChartState(page, null, chart)).start).toBeCloseTo(start, 2)
+  await page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
+  await engineChart(page)
+  expect((await resourceChartState(page, null, chart)).start).toBeCloseTo(start, 2)
+  const trendFailure = route => route.fulfill({ status: 503, json: { error_code: 'observability_backend_unavailable', error: 'fixture trend unavailable' } })
+  await page.route('**/api/v1/monitor/platform/engine_resource_trends?**', trendFailure)
+  await page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
+  await expect(chart).toHaveCount(0)
+  await expect(page.getByTestId('engine-value-capacity')).toHaveText('1.00 GiB')
+  await page.unroute('**/api/v1/monitor/platform/engine_resource_trends?**', trendFailure)
+  await page.getByRole('button', { name: locale === 'en' ? 'Refresh' : '刷新', exact: true }).click()
+  await engineChart(page)
+  expect((await resourceChartState(page, null, chart)).start).toBe(0)
+  await dragResourceChartZoom(page, 0.6, chart)
+  await page.getByTestId('engine-trend').locator('.el-select').first().click()
+  await page.getByRole('option', { name: locale === 'en' ? 'Total database size' : '数据库总容量', exact: true }).click()
+  await engineChart(page)
+  expect((await resourceChartState(page, null, chart)).start).toBe(0)
+  await dragResourceChartZoom(page, 0.6, chart)
+  await page.getByTestId('engine-trend').locator('.el-select').nth(1).click()
+  await page.getByRole('option', { name: locale === 'en' ? 'Last hour' : '近 1 小时', exact: true }).click()
+  await engineChart(page)
+  expect((await resourceChartState(page, null, chart)).start).toBe(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
+
+test('engine automatic refresh retains zoom, while failure and identity changes reset it', async ({ page }) => {
+  trackResourceChart(page)
+  const state = await engineBackend(page)
+  await page.clock.install()
+  await page.goto(`/engine-resources?deployment_id=${engineID}&refresh=60`)
+  const chart = await engineChart(page)
+  await dragResourceChartZoom(page, 0.6, chart)
+  const start = (await resourceChartState(page, null, chart)).start
+  const trends = () => state.calls.filter(path => path.endsWith('_trends')).length
+  const count = trends()
+  await page.clock.fastForward(60001)
+  await expect.poll(trends).toBe(count + 1)
+  await engineChart(page)
+  expect((await resourceChartState(page, null, chart)).start).toBeCloseTo(start, 2)
+  state.setMode('unavailable')
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByTestId('engine-error')).toBeVisible()
+  await expect(chart).toHaveCount(0)
+  state.setMode('valid')
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await engineChart(page)
+  expect((await resourceChartState(page, null, chart)).start).toBe(0)
+  await dragResourceChartZoom(page, 0.6, chart)
+  await setIdentity(page, { ...identity(enginePermissions), principal: { type: 'user', id: 'next-engine-reader' } })
+  await engineChart(page)
+  await expect.poll(async () => (await resourceChartState(page, null, chart)).start).toBe(0)
+  await dragResourceChartZoom(page, 0.6, chart)
+  await setIdentity(page, identity([]))
+  await expect(chart).toHaveCount(0)
+  await setIdentity(page, identity(enginePermissions))
+  await engineChart(page)
+  expect((await resourceChartState(page, null, chart)).start).toBe(0)
+  await dragResourceChartZoom(page, 0.6, chart)
+  await page.getByRole('button', { name: '返回引擎列表', exact: true }).click()
+  await expect(page.getByTestId('engine-list')).toBeVisible()
+  await page.getByRole('button', { name: '查看监控', exact: true }).click()
+  await engineChart(page)
+  expect((await resourceChartState(page, null, chart)).start).toBe(0)
+})
 
 for (const locale of ['zh-cn', 'en']) test(`engine text filters debounce and clear without a Search button (${locale})`, async ({ page }) => {
   await engineBackend(page, { locale })
