@@ -32,7 +32,7 @@ Quality 不依赖企业 Catalog。Standard 导入、固定修订与显式升级�
 - api/execution_handler.go、api/execution_read_scope.go、api/execution_response.go：专业执行查询、Owner SQL 范围与安全 DTO。入口同时要求 `monitor.execution.read` 与 `quality.plan.read`，裁决当前 Tenant 的 `quality_plan` 任务历史及本人一次性执行；主体限制、历史读取、分页与投影规则统一见[专业执行读取与安全 DTO](../docs/spec/addp数据质量规范.md#专业执行读取与安全-dto)。实际覆盖沿[测试与 CI](#测试与-ci)的分版本证据认定，不外推为当前版本完整验收。
 - cmd/server、cmd/worker：独立控制面和执行进程。
 
-error 规则失败使执行 failed，同时保存完整结果和问题；warning/info 不阻断。运行异常和超时不对账部分问题。终态、最近摘要、问题必须在有效 lease 下原子提交。规则通过率不等于数据行去重合格率。
+完整结果、各严重级别的阻断与评分、问题对账规则统一见[结果与问题](../docs/spec/addp数据质量规范.md#5-结果与问题)；终态、最近摘要和问题的有效租约原子提交沿[执行与授权](../docs/spec/addp数据质量规范.md#4-执行与授权)。实际覆盖按[测试与 CI](#测试与-ci)中的分版本证据认定。
 
 方案过程事件复用 `common.execution_events`，新 attempt 领取时进度归零；租约与事务、实际检查进度、重试、敏感信息及留存边界统一见[执行过程事件](../docs/spec/addp数据质量规范.md#执行过程事件)。现有断言见[Quality 事件测试](backend/internal/repository/plan_events_test.go)，标准门禁及 Gateway／Monitor 真实链路的分版本证据见[测试与 CI](#测试与-ci)；测试登记或静态核对不计为运行通过。
 
