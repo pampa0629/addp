@@ -116,50 +116,87 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 
 ## 目录结构
 
+以下仅列关键职责入口；表与接口契约分别见[当前数据库表结构](#当前数据库表结构)、[API 端点](#api-端点apiv1standard)，权限所有权见[IAM Permission 所有权](#iam-permission-所有权)。测试文件的存在不代表已执行通过，标准入口、分层覆盖与未覆盖范围见[标准测试入口与范围](#标准测试入口与范围)。
+
 ```
 standard/
 ├── authorization/
 │   └── permissions.yaml              # Standard owner Permission Manifest
 ├── backend/
-│   ├── cmd/server/main.go             # 应用入口
+│   ├── cmd/server/main.go             # 配置、迁移、依赖组装与服务入口
 │   ├── go.mod                         # github.com/addp/standard
 │   └── internal/
 │       ├── api/
-│       │   ├── router.go              # 路由配置
+│       │   ├── router.go              # 路由与 Permission 中间件挂载
 │       │   ├── domain_handler.go
 │       │   ├── glossary_handler.go
 │       │   ├── element_handler.go
 │       │   ├── code_set_handler.go
 │       │   ├── unit_handler.go
 │       │   ├── metric_handler.go
-│       │   └── document_handler.go
+│       │   ├── document_handler.go
+│       │   ├── catalog_resource_handler.go             # 目录专业来源读取
+│       │   ├── domain_standard_reference_handler.go    # 域级标准引用
+│       │   └── element_revision_resolution_handler.go # 数据元修订批量解析
+│       ├── authorization/permissions_generated.go     # 由 Manifest 生成，不手工修改
+│       ├── candidate/semantic.go      # 候选语义指纹与族快照令牌
 │       ├── config/config.go
 │       ├── models/
 │       │   ├── domain.go
-│       │   ├── glossary.go
-│       │   ├── element.go
+│       │   ├── glossary.go            # 另含 StringArray、Int64Array
+│       │   ├── element.go             # 另含 JSONB
 │       │   ├── code_set.go
 │       │   ├── unit.go
 │       │   ├── metric.go
 │       │   ├── document.go
-│       │   └── common_types.go        # StringArray, Int64Array, JSONB
-│       ├── repository/
-│       └── service/
+│       │   ├── catalog_resource.go    # 目录来源投影
+│       │   └── professional_relation.go # 专业关系投影
+│       ├── repository/                # 持久化、事务与约束
+│       │   ├── schema.go              # 当前模块迁移入口
+│       │   ├── temporal_revision.go   # 生效区间与管理历史读取
+│       │   └── document_candidate_formalization_repository.go # 候选正式化事务
+│       └── service/                   # 业务校验与用例编排
+│           ├── document_service.go    # 文档、修订、提炼与候选处置
+│           ├── document_candidate_group_service.go # 候选聚合、族分页与裁决历史
+│           ├── document_storage.go    # 文档对象存储接口与 MinIO 适配
+│           ├── element_revision_resolution_service.go # 数据元修订解析
+│           └── professional_relation_service.go       # 一跳专业关系读取
 └── frontend/
-    └── src/
-        ├── api/
-        │   └── standard.js            # 所有 API 调用
-        ├── views/
-        │   ├── DomainList.vue
-        │   ├── GlossaryList.vue / GlossaryDetail.vue
-        │   ├── ElementList.vue / ElementDetail.vue
-        │   ├── CodeSetList.vue / CodeSetDetail.vue
-        │   ├── UnitList.vue
-        │   ├── MetricList.vue / MetricDetail.vue
-        │   └── DocumentList.vue
-        └── components/
-            ├── DocumentPanel.vue       # 通用文档关联面板
-            └── DDLPreviewDialog.vue
+    ├── src/
+    │   ├── api/
+    │   │   ├── standard.js            # Standard 业务 API 调用
+    │   │   ├── client.js              # 共享业务客户端接入与 Blob 错误处理
+    │   │   └── auth.js                # System 认证 API 适配
+    │   ├── router/index.js            # 页面路由与共享认证、准入接入
+    │   ├── store/auth.js              # 共享认证 Store 接入
+    │   ├── views/
+    │   │   ├── DomainList.vue
+    │   │   ├── GlossaryList.vue
+    │   │   ├── GlossaryDetail.vue
+    │   │   ├── ElementList.vue
+    │   │   ├── ElementDetail.vue
+    │   │   ├── CodeSetList.vue
+    │   │   ├── CodeSetDetail.vue
+    │   │   ├── UnitList.vue
+    │   │   ├── MetricList.vue
+    │   │   ├── MetricDetail.vue
+    │   │   ├── DocumentList.vue
+    │   │   ├── DocumentDetail.vue      # 文档修订、提炼与候选治理
+    │   │   └── Login.vue
+    │   ├── components/
+    │   │   ├── Layout.vue             # 模块布局与导航
+    │   │   ├── DocumentPanel.vue      # 通用文档关联面板
+    │   │   ├── DDLPreviewDialog.vue
+    │   │   ├── ElementDataTypeSelect.vue # 数据元类型选择
+    │   │   └── UnitSelect.vue          # 单位引用候选选择
+    │   ├── composables/
+    │   │   ├── useStandardPermissions.js # 页面动作 Permission 投影
+    │   │   └── useUnsavedChanges.js    # 未保存状态与离开确认
+    │   └── utils/
+    │       ├── standardRevision.js    # 管理展示与显式修订读取
+    │       └── moduleNavigation.js    # Console 模块导航适配
+    ├── tests/                         # 前端确定性测试
+    └── e2e/standard-smoke.spec.js      # 受控 API 浏览器场景
 ```
 
 ## 当前数据库表结构
