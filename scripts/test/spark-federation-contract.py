@@ -1,5 +1,7 @@
 """Fixed Spark 3.5 native feasibility probe, not the product authorization layer."""
 from decimal import Decimal
+import json
+from pathlib import Path
 import socket
 import sys
 
@@ -45,6 +47,30 @@ def bind_source(spark, alias, url, driver):
 
 
 def main(phase):
+    if phase == 'supervised':
+        from query_process import run_driver
+        result = run_driver([sys.executable, __file__, 'child'], {'value': 9007199254740993}, timeout=90)
+        assert result['value'] == 9007199254740993
+        assert result['distributed'] is True
+        assert not Path(result['directory']).exists()
+        print('SPARK_FEDERATION_SUPERVISED_DRIVER_PASS real_jvm worker private_stdin cleanup', flush=True)
+        return
+    if phase == 'child':
+        request = json.load(sys.stdin)
+        spark = (SparkSession.builder.appName('ADDP-supervised-query-admission')
+                 .master('spark://spark-master:7077')
+                 .config('spark.driver.host', 'spark-master')
+                 .config('spark.executor.memory', '512m').config('spark.cores.max', '2')
+                 .config('spark.ui.enabled', 'false').getOrCreate())
+        try:
+            workers = spark.sparkContext.parallelize([1], 1).map(lambda _: socket.gethostname()).collect()
+            rows = spark.sql('SELECT CAST(? AS BIGINT) AS value', args=[request['value']]).collect()
+            Path(sys.argv[2]).write_text(json.dumps({'value': rows[0].value,
+                'distributed': bool(workers) and all(host != socket.gethostname() for host in workers),
+                'directory': str(Path.cwd())}))
+        finally:
+            spark.stop()
+        return
     if phase not in {'query', 'fresh'}:
         raise ValueError('unknown admission phase')
     spark = SparkSession.builder.appName('ADDP-federation-admission-' + phase).getOrCreate()

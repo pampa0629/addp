@@ -8,6 +8,8 @@ Spark Workflow 是基于 Apache Spark 和 Apache Sedona 的工作流运行时，
 
 2026-10-30 本机 Linux ARM64 的 `make test-common-spark-federation` 通过：固定 Spark 3.5.0 与独占 PG/MySQL、真实 Worker 完成只读账号的两源 JOIN、位置参数、bigint/Decimal、null、中文与尾随空格核对，第二个独立 Driver 不继承目录和临时视图，测试资源零残留。首轮夹具关闭 TLS 导致 MySQL 认证失败、中文初始化使用了错误客户端字符集，已分别通过原生 JDBC 与物理字节定位，改为要求 TLS 并显式 UTF-8 初始化；未放宽原值断言。115 项 Spark 确定性测试与 T2 登记门禁通过。该结果仅为底层技术准入，不代表正式授权、HTTP 查询接口、超时取消、多集群路由或页面已验收；Linux amd64 CI 尚待实际结果。
 
+同日新增内部 `query_process.py`，由现有 Runtime 管理每次查询的独立 Driver。请求只经标准输入传递；子进程环境只继承计算必需配置，不继承 Runtime Service Client Secret；结果有大小限制，保留原生整数与 Decimal。超时、取消、异常和正常返回统一清理进程组及私有临时目录，子进程原始输出不作为公开错误。该组件尚未连接 HTTP，不接受用户传入启动命令。`make test-spark-workflow` 119 项通过，含真实子进程及忽略 SIGTERM 的后代清理；扩展后的原生准入另验证该组件启动真实 Spark JVM、使用远端 Worker、返回精确 bigint 及正常清理。真实 JVM 的取消、多集群路由与正式授权/HTTP 仍待后续验收。
+
 部署配置使用仓库根目录 `.env`，不读取引擎目录中的 `.env`。关键配置为 `SYSTEM_URL`、`SPARK_WORKFLOW_PORT`（默认 8098）、独立 `SPARK_WORKFLOW_SERVICE_CLIENT_SECRET`，以及应用固定的 HDFS Simple 身份 `HADOOP_USER_NAME`。默认不设置 `SPARK_MODE`，计算使用用户选择的 Spark general Engine。
 
 在仓库根目录启动；需要重启时，由用户在自己的终端执行对应命令：

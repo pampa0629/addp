@@ -42,7 +42,7 @@ GRANT SELECT ON addp_test.customers TO 'reader'@'%';
 SQL
 label_hex=$(compose exec -T mysql mysql -uroot -powned-test-only --batch --skip-column-names addp_test -e 'SELECT HEX(label) FROM customers WHERE id=1')
 [ "$label_hex" = E4B8ADE696872020 ] || { echo "MySQL physical fixture bytes differ: $label_hex" >&2; exit 1; }
-for phase in query fresh; do
+for phase in query fresh supervised; do
     compose exec -T spark-master /opt/spark/bin/spark-submit \
         --master spark://spark-master:7077 --conf spark.driver.host=spark-master \
         --conf spark.executor.memory=512m --conf spark.cores.max=2 \

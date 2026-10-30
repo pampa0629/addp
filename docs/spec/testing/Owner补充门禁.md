@@ -281,6 +281,8 @@ Document 原生转换使用独立入口 `make test-document-native`，在已准�
 
 ## Spark 联邦查询技术准入
 
+内置 Spark 查询 Driver 生命周期复用 `query_process.py`：`make test-spark-workflow` 通过真实子进程验证标准输入取源请求、不继承机器身份密钥、精确数值结果、有界读取、超时/取消和忽略 SIGTERM 的后代清理；同一原生准入再调用该组件启动真实 Spark JVM，核对远端 Worker、bigint 和私有目录清理。进程管理的 T1 不代替实际 Spark JVM 取消、HTTP 认证或执行授权验收；这些尚未接通，不提前开放能力。
+
 `make test-common-spark-federation` 使用固定摘要的独占 PostgreSQL 15、MySQL 8.0、Spark 3.5.0 Master/Worker，无宿主端口，不访问个人 Business 或共享 Infra。当前只核验原生 JDBC catalog 的跨源 JOIN、位置参数、真实 Worker、bigint/Decimal 类型与数值、null、中文及尾随空格，以及第二个独立 Driver 不继承前一次 catalog 和临时视图。清理同时核对容器、卷和网络零残留；启动与 Driver 失败的清理回归纳入现有 `make test-spark-workflow` 自动发现。入口由 Release/T2 的 Common 变更选择及根 `test-integration` 调用，不能以该准入证明正式授权、HTTP 查询接口、超时取消、多集群任务路由或页面验收通过。
 
 ## Spark 数据发布门禁

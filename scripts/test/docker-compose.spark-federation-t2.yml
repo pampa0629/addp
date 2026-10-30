@@ -30,6 +30,7 @@ services:
     entrypoint: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "spark-master", "--port", "7077"]
     volumes:
       - ./spark-federation-contract.py:/addp/contract.py:ro
+      - ../../engines/spark-workflow/query_process.py:/addp/query_process.py:ro
     mem_limit: 2g
   spark-worker:
     image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c
