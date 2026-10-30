@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/textproto"
 	"sort"
 	"strings"
 	"sync"
@@ -137,9 +138,21 @@ func (s *Session) failure(op string, err error) error {
 	return fmt.Errorf("FTP %s failed: %w", op, safeError(err))
 }
 func safeError(err error) error {
+	if failure, ok := err.(*loginError); ok {
+		return fmt.Errorf("%s: %w", failure.stage, safeError(failure.cause))
+	}
 	var pe *protocolError
 	if errors.As(err, &pe) {
 		return &protocolError{Code: pe.Code}
+	}
+	var response *textproto.Error
+	if errors.As(err, &response) {
+		return &protocolError{Code: response.Code}
+	}
+	// EOF during negotiation is a failed connection, never content EOF. Do not
+	// unwrap it into io.EOF: consumers must not mistake failure for empty data.
+	if errors.Is(err, io.EOF) {
+		return errors.New("connection closed (EOF)")
 	}
 	var ne net.Error
 	if errors.As(err, &ne) && ne.Timeout() {

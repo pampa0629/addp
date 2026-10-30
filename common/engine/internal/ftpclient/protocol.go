@@ -17,6 +17,15 @@ type protocolError struct{ Code int }
 
 func (e *protocolError) Error() string { return fmt.Sprintf("FTP server returned status %d", e.Code) }
 
+// Only fixed negotiation stages and sanitized categories cross the client
+// boundary. The original reply is never part of the public error string.
+type loginError struct {
+	stage string
+	cause error
+}
+
+func (e *loginError) Error() string { return "FTP negotiation failed" }
+
 // wire owns only the admitted read-only protocol surface. Every command uses a
 // single session; there is no shared pool, retry, active mode or LIST fallback.
 type wire struct {
@@ -54,7 +63,13 @@ func (w *wire) expect(command, arg string, expected int) (string, error) {
 	}
 	return message, nil
 }
-func (w *wire) login(config Config) error {
+func (w *wire) login(config Config) (err error) {
+	stage := "dial"
+	defer func() {
+		if err != nil {
+			err = &loginError{stage: stage, cause: err}
+		}
+	}()
 	conn, err := w.session.dial(net.JoinHostPort(config.Host, strconv.Itoa(config.Port)))
 	if err != nil {
 		return err
@@ -62,30 +77,36 @@ func (w *wire) login(config Config) error {
 	w.peer = conn.RemoteAddr().(*net.TCPAddr).IP.String()
 	// Bound control input too: multiline replies cannot consume unlimited memory.
 	w.text = textproto.NewConn(&budgetConn{Conn: conn, left: metadataBudget})
+	stage = "welcome"
 	if _, _, err = w.text.ReadResponse(220); err != nil {
 		return err
 	}
 	if w.tls != nil {
+		stage = "AUTH TLS"
 		if _, err = w.expect("AUTH", "TLS", 234); err != nil {
 			return err
 		}
 		secure := tls.Client(conn, w.tls)
+		stage = "TLS handshake"
 		if err = secure.HandshakeContext(w.session.ctx); err != nil {
 			return err
 		}
 		w.text = textproto.NewConn(&budgetConn{Conn: secure, left: metadataBudget})
 	}
+	stage = "USER"
 	code, _, err := w.command("USER", config.User)
 	if err != nil {
 		return err
 	}
 	if code == 331 {
+		stage = "PASS"
 		if _, err = w.expect("PASS", config.Password, 230); err != nil {
 			return err
 		}
 	} else if code != 230 {
 		return &protocolError{code}
 	}
+	stage = "FEAT"
 	features, err := w.expect("FEAT", "", 211)
 	if err != nil {
 		return err
@@ -110,18 +131,22 @@ func (w *wire) login(config Config) error {
 	if !mlst || !rest {
 		return fmt.Errorf("FTP requires native MLST and REST STREAM")
 	}
+	stage = "TYPE"
 	if _, err = w.expect("TYPE", "I", 200); err != nil {
 		return err
 	}
 	if utf8 {
+		stage = "OPTS UTF8"
 		if _, err = w.expect("OPTS", "UTF8 ON", 200); err != nil {
 			return err
 		}
 	}
 	if w.tls != nil {
+		stage = "PBSZ"
 		if _, err = w.expect("PBSZ", "0", 200); err != nil {
 			return err
 		}
+		stage = "PROT"
 		if _, err = w.expect("PROT", "P", 200); err != nil {
 			return err
 		}

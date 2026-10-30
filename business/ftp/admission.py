@@ -63,6 +63,34 @@ def allocate():
     raise RuntimeError('no isolated matching passive range available')
 
 
+def capture_server_logs(root, container, phase):
+    """Publish counts only; keep bounded raw diagnostics in the private owner."""
+    try:
+        logs = run('docker', 'logs', '--tail', '200', container)
+    except subprocess.CalledProcessError:
+        return {'diagnostics_unavailable': True}
+    private = root / ('server-' + phase + '.log')
+    private.write_text(logs)
+    private.chmod(0o600)
+    counts = {key: 0 for key in ('service', 'dataprovider', 'ftpd', 'fatal')}
+    levels = {key: 0 for key in ('debug', 'info', 'warn', 'error', 'fatal')}
+    for line in logs.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        sender, level = event.get('sender'), event.get('level')
+        if isinstance(sender, str) and sender in ('service', 'dataprovider', 'ftpd'):
+            counts[sender] += 1
+        if isinstance(level, str) and level in levels:
+            levels[level] += 1
+        if level == 'fatal':
+            counts['fatal'] += 1
+    return {'server_log_counts': counts, 'server_log_levels': levels}
+
+
 def wait_for_greeting(root, state, connection, phase, timeout=90):
     """Wait for the FTP server, not merely Docker's running process.
 
@@ -99,27 +127,7 @@ def wait_for_greeting(root, state, connection, phase, timeout=90):
     finally:
         # Keep raw server logs private; artifacts include only fixed sender/level
         # counts and startup outcomes, never configuration, usernames or replies.
-        try:
-            logs = run('docker', 'logs', '--tail', '200', state['name'])
-            private_log = root / ('server-' + phase + '.log')
-            private_log.write_text(logs)
-            private_log.chmod(0o600)
-            counts = {key: 0 for key in ('service', 'dataprovider', 'ftpd', 'fatal')}
-            for line in logs.splitlines():
-                try:
-                    event = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(event, dict):
-                    continue
-                sender = event.get('sender')
-                if sender in ('service', 'dataprovider', 'ftpd'):
-                    counts[sender] += 1
-                if event.get('level') == 'fatal':
-                    counts['fatal'] += 1
-            report['server_log_counts'] = counts
-        except subprocess.CalledProcessError:
-            report['diagnostics_unavailable'] = True
+        report.update(capture_server_logs(root, state['name'], phase))
         write(root / ('readiness-' + phase + '.json'), report)
 
 
@@ -302,17 +310,24 @@ def stop():
     state = json.loads(state_path.read_text())
     # Never remove a personal or foreign resource, including on partial startup.
     containers = run('docker', 'ps', '-aq', '--filter', 'label=' + state['label']).split()
-    if containers:
-        run('docker', 'rm', '-f', *containers)
-    volumes = run('docker', 'volume', 'ls', '-q', '--filter', 'label=' + state['label']).split()
-    if volumes:
-        run('docker', 'volume', 'rm', *volumes)
-    remaining = run('docker', 'ps', '-aq', '--filter', 'label=' + state['label']).split()
-    remaining += run('docker', 'volume', 'ls', '-q', '--filter', 'label=' + state['label']).split()
-    write(root / 'cleanup.json', {'residuals': len(remaining)})
-    if remaining:
-        raise RuntimeError('FTP owned resources remain')
-    state_path.unlink()
+    # Capture the end of the actual protocol tests before deleting their server.
+    # IDs come only from this fixture's label query, never an arbitrary name.
+    try:
+        reports = [capture_server_logs(root, container, 'final-' + str(index))
+                   for index, container in enumerate(containers)]
+        write(root / 'server-final.json', {'servers': reports})
+    finally:
+        if containers:
+            run('docker', 'rm', '-f', *containers)
+        volumes = run('docker', 'volume', 'ls', '-q', '--filter', 'label=' + state['label']).split()
+        if volumes:
+            run('docker', 'volume', 'rm', *volumes)
+        remaining = run('docker', 'ps', '-aq', '--filter', 'label=' + state['label']).split()
+        remaining += run('docker', 'volume', 'ls', '-q', '--filter', 'label=' + state['label']).split()
+        write(root / 'cleanup.json', {'residuals': len(remaining)})
+        if remaining:
+            raise RuntimeError('FTP owned resources remain')
+        state_path.unlink()
 
 
 if __name__ == '__main__':

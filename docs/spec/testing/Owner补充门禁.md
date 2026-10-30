@@ -81,6 +81,8 @@
 
 正式 `ftp` builtin 已接入；固定源码48a28fbd4的Linux ARM64／amd64整套准入39373761312均通过，历史重建欢迎响应EOF故障已有实际复现与修复证据。平台消费另走 [FTP 普通 User 场景](scenarios/同步与引擎消费.md#ftp-普通-user-消费ftp-consumer-flow)，`make test-ftp-online-runner` 不替代真实 Hosted T4。
 
+连接失败仅公开固定协商阶段、协议状态码和脱敏错误类别；欢迎响应 EOF 仍是连接失败，不得变成内容读取的正常 EOF，也不得借此重试。Provider Parquet 检查记录实际范围请求数，原有范围读取和完整行数断言保持不变。清理原生夹具前，以本轮 owner 标签查出的容器 ID 采集最后 200 行日志：原文仅存私有 `server-final-<index>.log`，Artifact 的 `server-final.json` 只含固定 sender／level 计数或明确的不可用标记，不含路径、账号、凭据、服务端原文或容器标识。取证失败仍须清理当次资源；清理成功和后继门禁通过均不能替代首失败的根因核实。
+
 `make test-common-ftp-unit` 验证严格连接事实、固定账号根、规范路径、TLS 选择、取消、种子生成与数据目录忽略、临时资源归属，同时核对 T2 的 Make／CI 登记。`make test-common-ftp` 使用 Business 唯一固定 SFTPGo 镜像、独占容器与卷、随机密码、私有 CA 和内外一致的回环被动端口，实际验证 FTP／显式 FTPS、只读账号、NLST+MLST 完整目录、原始中文／空格／百分号名称、REST 范围、PASV 地址约束和读取会话隔离，退出必须零残留。Linux ARM64／amd64 执行同一标准入口；镜像 manifest、协议准入和生产 Provider／普通用户 Hosted T4 分别认定。准入通过前不注册生产插件，未实际运行的层级不得记为通过。 初次创建和同卷重建必须共用有截止时间的 FTP `220` 欢迎响应就绪判据；Docker `Running` 只表示容器进程已启动，不能直接开始 TLS／账号／目录断言。仅在欢迎响应前等待连接拒绝、重置、超时或 EOF；服务端协议拒绝、容器退出及后续 TLS／认证／目录错误立即失败。门禁公开 `readiness-initial.json`／`readiness-recreated.json` 的阶段、错误类别及固定日志计数；原始日志与外部命令 stderr 只留在私有临时目录，不上传 Artifact，失败后仍清理当次容器与卷。
 
 ## Business Redis 门禁

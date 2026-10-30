@@ -283,6 +283,66 @@ class FTPAdmissionTests(unittest.TestCase):
             self.assertFalse((root / 'state.json').exists())
             self.assertEqual(json.loads((root / 'cleanup.json').read_text()), {'residuals': 0})
 
+    def test_final_logs_are_captured_before_owned_server_removal_and_redacted(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, ADDP_FTP_ADMISSION_DIR=directory):
+            root = Path(directory)
+            admission.write(root / 'state.json', {'name': 'untrusted-name', 'label': 'org.addp.ftp.owner=owned', 'volumes': []})
+            calls = []
+            logs = '\n'.join([json.dumps({'sender': 'ftpd', 'level': 'error', 'message': 'private-password /private-path'}),
+                              json.dumps({'sender': ['invalid'], 'level': {'invalid': True}}), 'invalid json'])
+            def run(*args):
+                calls.append(args)
+                if args[:3] == ('docker', 'ps', '-aq'):
+                    return 'owned-id' if len(calls) == 1 else ''
+                if args[:2] == ('docker', 'logs'):
+                    return logs
+                return ''
+            with patch.object(admission, 'run', run):
+                admission.stop()
+            self.assertLess(calls.index(('docker', 'logs', '--tail', '200', 'owned-id')),
+                            calls.index(('docker', 'rm', '-f', 'owned-id')))
+            report = (root / 'server-final.json').read_text()
+            self.assertNotIn('private-', report)
+            self.assertNotIn('owned-id', report)
+            self.assertEqual(json.loads(report)['servers'][0]['server_log_levels']['error'], 1)
+            private = root / 'server-final-0.log'
+            self.assertEqual(private.read_text(), logs)
+            self.assertEqual(private.stat().st_mode & 0o777, 0o600)
+
+    def test_log_command_failure_does_not_prevent_owned_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, ADDP_FTP_ADMISSION_DIR=directory):
+            root = Path(directory)
+            admission.write(root / 'state.json', {'name': 'owned', 'label': 'org.addp.ftp.owner=owned', 'volumes': []})
+            calls = []
+            def run(*args):
+                calls.append(args)
+                if args[:3] == ('docker', 'ps', '-aq'):
+                    return 'owned-id' if len(calls) == 1 else ''
+                if args[:2] == ('docker', 'logs'):
+                    raise subprocess.CalledProcessError(1, args, stderr='private failure')
+                return ''
+            with patch.object(admission, 'run', run):
+                admission.stop()
+            self.assertIn(('docker', 'rm', '-f', 'owned-id'), calls)
+            self.assertEqual(json.loads((root / 'server-final.json').read_text()), {'servers': [{'diagnostics_unavailable': True}]})
+            self.assertEqual(json.loads((root / 'cleanup.json').read_text()), {'residuals': 0})
+
+    def test_private_log_write_failure_still_cleans_owned_resources(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, ADDP_FTP_ADMISSION_DIR=directory):
+            root = Path(directory)
+            admission.write(root / 'state.json', {'name': 'owned', 'label': 'org.addp.ftp.owner=owned', 'volumes': []})
+            calls = []
+            def run(*args):
+                calls.append(args)
+                if args[:3] == ('docker', 'ps', '-aq'):
+                    return 'owned-id' if len(calls) == 1 else ''
+                return ''
+            with patch.object(admission, 'run', run), patch.object(admission, 'capture_server_logs', side_effect=OSError('disk failure')):
+                with self.assertRaises(OSError):
+                    admission.stop()
+            self.assertIn(('docker', 'rm', '-f', 'owned-id'), calls)
+            self.assertEqual(json.loads((root / 'cleanup.json').read_text()), {'residuals': 0})
+
     def test_zero_cleanup_failure_never_reported_as_success(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, ADDP_FTP_ADMISSION_DIR=directory):
             root = Path(directory)

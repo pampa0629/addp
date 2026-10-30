@@ -95,9 +95,13 @@ func TestTLSFailureNeverSendsCredentials(t *testing.T) {
 		commands <- seen
 	}()
 	c := Config{Host: "127.0.0.1", Port: listener.Addr().(*net.TCPAddr).Port, User: "private-user", Password: "private-password", Security: "explicit_tls", Timeout: time.Second}
-	if s, err := Dial(t.Context(), c); err == nil {
+	s, dialErr := Dial(t.Context(), c)
+	if dialErr == nil {
 		s.Close()
 		t.Fatal("TLS failure downgraded")
+	}
+	if !strings.Contains(dialErr.Error(), "AUTH TLS: FTP server returned status 502") {
+		t.Fatal("TLS negotiation stage or rejection status lost", dialErr)
 	}
 	select {
 	case seen := <-commands:

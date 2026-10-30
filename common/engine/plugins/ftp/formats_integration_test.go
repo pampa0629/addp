@@ -87,6 +87,7 @@ func TestIntegrationProviderSharedFormats(t *testing.T) {
 				audit := &rangeOnly{FTPPlugin: p}
 				content := contentadapter.NewMappedReader(audit, info, contentadapter.ScopePathMapper(scope), plugin.ReadOptions{})
 				rows, err = parquetformat.NewPlugin().SampleTableScope(t.Context(), content, contentio.NewRef(scope.StringPath(), contentio.RoleScope), 0, 10, nil)
+				t.Logf("native FTP range requests=%d", audit.calls.Load())
 				if err != nil || len(rows) != 3 || audit.calls.Load() == 0 {
 					t.Fatal("Parquet preview did not consume native FTP ranges", err)
 				}
