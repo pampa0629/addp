@@ -199,7 +199,7 @@ python evals/agent-scenarios/gate.py --output /tmp/addp-agent-evaluation-gate.js
 
 会话栏使用两行主操作与底部设置入口：点击“智能体”回能力首页，筛选菜单包含未归档／已归档及刷新；管理配置复用 Console `/configuration/agent`，按已有 `agent.configuration.read` 显示。个人使用偏好仅在本浏览器按 User/Tenant 隔离保存，不管理模型凭据。默认折叠正文计划和技术摘要，侧栏保留完整计划；会话支持已加载文字查找、跳转最新、文字／代码复制、Markdown 导出、成果分类和正式历史引用定位。
 
-“另开会话”只把用户选定文字放入可编辑草稿，有未发送输入时确认替换，发送前不创建会话或运行，不继承原 Interaction、批准、草稿引用、预检或资源事实。会话信息的首次请求与历史资源引用均从已有消息投影，不建立长期记忆。新 Run 的 `forwardedProps.replyDetail` 只接受 standard/concise/detailed，存入既有 checkpoint 的 `reply_detail` 后沿同一 Run 恢复，不能由 resume 覆盖；表达偏好不更改用户原文、工具权限或正式报告。完整边界见模块设计共识与智能体交互协议规范。
+“另开会话”只把用户选定文字放入可编辑草稿，有未发送输入时确认替换，发送前不创建会话或运行；Console 内复用既有单次 NavigationDraft 移交，以精确路由与身份绑定、4 KiB／60 秒限额跨 iframe 重载保留文字，不截断、不另建存储；独立模块仅使用组件内草稿。不继承原 Interaction、批准、草稿引用、预检或资源事实。会话信息的首次请求与历史资源引用均从已有消息投影，不建立长期记忆。新 Run 的 `forwardedProps.replyDetail` 只接受 standard/concise/detailed，存入既有 checkpoint 的 `reply_detail` 后沿同一 Run 恢复，不能由 resume 覆盖；表达偏好不更改用户原文、工具权限或正式报告。完整边界见模块设计共识与智能体交互协议规范。
 
 现有 `make test-agent-frontend` 自动发现新增单测与隔离浏览器用例，验证布局、配置入口权限、账号／租户偏好隔离、发送快捷键及 IME、复制／导出安全投影和另开会话不重放状态；`make test-agent-eval` 自动发现回复偏好 DTO、Run 快照及真实 Harness 回归。公开请求描述随 FastAPI OpenAPI 同步。没有新测试依赖、构建入口或 CI Job；不得将受控浏览器门禁记为个人环境真实模型验收。
 

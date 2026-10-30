@@ -1,3 +1,4 @@
+import { copyNavigationDraft } from '@common-ui/utils/navigationDraft.mjs'
 import { sessionResults } from './workspace'
 
 export function messageText(message) {
@@ -54,4 +55,14 @@ export function conversationResources(messages) {
     }
   }
   return [...items.values()]
+}
+
+
+export function createMessageDraft(text) {
+  if (typeof text !== 'string' || !text.trim()) throw new Error('invalid_message_draft')
+  return copyNavigationDraft({ kind: 'agent.message-draft/v1', text })
+}
+export function readMessageDraft(value) {
+  if (!value || value.kind !== 'agent.message-draft/v1' || Object.keys(value).some(key => !['kind', 'text'].includes(key))) throw new Error('invalid_message_draft')
+  return createMessageDraft(value.text).text
 }

@@ -202,7 +202,9 @@
         "drafts": "Drafts",
         "reports": "Reports",
         "other": "Other results"
-      }
+      },
+      "draftLimit": "Selected text exceeds 4 KiB; shorten it before continuing",
+      "draftFailed": "Could not transfer the text draft; select the text again"
     },
     "skills": {
       "data-discovery": {

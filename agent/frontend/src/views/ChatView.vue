@@ -58,7 +58,8 @@
     <el-dialog v-model="branchVisible" :title="t('agent.workspace.branch')" width="min(640px, 90vw)">
       <p>{{ t('agent.workspace.branchNotice') }}</p>
       <el-input v-model="branchText" type="textarea" :rows="8" :aria-label="t('agent.workspace.branchText')" />
-      <template #footer><el-button @click="branchVisible = false">{{ t('agent.workspace.close') }}</el-button><el-button type="primary" :disabled="!branchText.trim() || isLoading" @click="useBranchDraft">{{ t('agent.workspace.useDraft') }}</el-button></template>
+      <el-alert v-if="branchText.trim() && !validBranchDraft" :title="t('agent.workspace.draftLimit')" type="warning" :closable="false" />
+      <template #footer><el-button @click="branchVisible = false">{{ t('agent.workspace.close') }}</el-button><el-button type="primary" :disabled="!validBranchDraft || isLoading" @click="useBranchDraft">{{ t('agent.workspace.useDraft') }}</el-button></template>
     </el-dialog>
     <el-dialog v-model="renameVisible" :title="t('agent.workspace.rename')" width="min(480px, 90vw)" :close-on-click-modal="false">
       <el-input v-model="renameDraft.title" maxlength="255" :aria-label="t('agent.workspace.title')" />
@@ -197,7 +198,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { useConsolePageDescriptor } from '@common-ui'
-import { openConsoleRoute, resolveTaskOwnerUrl } from '@common-ui'
+import { openConsoleRoute, resolveTaskOwnerUrl, takeConsoleNavigationDraft } from '@common-ui'
 import { saveBlobDownload } from '@common-ui/utils/exportSession'
 
 import { createAgentClient, replayAgentRunEvents } from '../agent/createAgentClient'
@@ -206,7 +207,7 @@ import MessagePartsRenderer from '../components/MessagePartsRenderer.vue'
 import WorkspacePanel from '../components/WorkspacePanel.vue'
 import WorkspacePreferences from '../components/WorkspacePreferences.vue'
 import { useWorkspacePreferences } from '../composables/useWorkspacePreferences'
-import { conversationMarkdown, messageIdentity, messageText, pendingSessionInteractions } from '../utils/conversation'
+import { createMessageDraft, readMessageDraft, conversationMarkdown, messageIdentity, messageText, pendingSessionInteractions } from '../utils/conversation'
 import { useAuthStore } from '../store/auth'
 import { navigateAgentRoute } from '../utils/moduleNavigation'
 import { createLatestRequestScope } from '@common-ui'
@@ -218,6 +219,7 @@ const { preferences, save: persistPreferences, scopeKey: preferenceScope } = use
 const preferencesVisible = ref(false), branchVisible = ref(false), branchText = ref('')
 const findVisible = ref(false), findQuery = ref(''), findIndex = ref(0)
 watch(preferenceScope, () => { preferencesVisible.value = false })
+const validBranchDraft = computed(() => { try { createMessageDraft(branchText.value); return true } catch { return false } })
 const route = useRoute()
 const router = useRouter()
 
@@ -318,10 +320,18 @@ async function useBranchDraft() {
     try { await ElMessageBox.confirm(t('agent.workspace.replaceDraft'), t('agent.workspace.branch'), { confirmButtonText: t('agent.workspace.useDraft'), cancelButtonText: t('agent.workspace.close'), type: 'warning' }) }
     catch { return }
   }
-  const moved = await navigateAgentRoute(router, { name: 'Chat' })
-  if (moved === false || route.params.session_id) return
-  inputText.value = branchText.value
-  branchVisible.value = false
+  try {
+    const draft = createMessageDraft(branchText.value)
+    if (window.parent !== window) {
+      const moved = await openConsoleRoute('/agent', { draft })
+      if (moved === false) return
+    } else {
+      const moved = await navigateAgentRoute(router, { name: 'Chat' })
+      if (moved === false || route.params.session_id) return
+      inputText.value = readMessageDraft(draft)
+    }
+    branchVisible.value = false
+  } catch { ElMessage.error(t('agent.workspace.draftFailed')) }
 }
 function moveMatch(direction) {
   if (!findMatches.value.length) return
@@ -337,7 +347,7 @@ function filterCommand(command) {
 }
 async function openConfiguration() {
   if (!authStore.hasPermission('agent.configuration.read')) return
-  try { await openConsoleRoute('/configuration/agent', { source: 'agent' }) }
+  try { await openConsoleRoute('/configuration/agent') }
   catch { ElMessage.error(t('agent.workspace.navigationFailed')) }
 }
 async function loadSkills() {
@@ -715,6 +725,12 @@ onMounted(async () => {
   await Promise.all([loadSessions(), loadSkills()])
   sessionsLoaded.value = true
   await restoreRouteSession(route.params.session_id)
+  if (!route.params.session_id && window.parent !== window) {
+    try {
+      const draft = await takeConsoleNavigationDraft()
+      if (draft) inputText.value = readMessageDraft(draft)
+    } catch { ElMessage.error(t('agent.workspace.draftFailed')) }
+  }
 })
 
 onBeforeUnmount(() => { listScope.dispose(); detailScope.dispose() })

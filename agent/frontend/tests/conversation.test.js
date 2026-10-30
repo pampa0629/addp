@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { conversationMarkdown, conversationResources, messageText, pendingSessionInteractions } from '../src/utils/conversation'
+import { createMessageDraft, readMessageDraft, conversationMarkdown, conversationResources, messageText, pendingSessionInteractions } from '../src/utils/conversation'
 import { defaultPreferences, normalizePreferences, preferenceStorageKey } from '../src/composables/useWorkspacePreferences'
 
 describe('conversation projections preserve authority boundaries', () => {
@@ -28,7 +28,18 @@ describe('conversation projections preserve authority boundaries', () => {
   })
 })
 
-describe('browser preference isolation', () => {
+describe('single-use text draft payload', () => {
+  it('keeps text only and enforces the existing UTF-8 byte limit', () => {
+    const draft = createMessageDraft('只解释，不执行')
+    expect(readMessageDraft(draft)).toBe('只解释，不执行')
+    expect(Object.keys(draft)).toEqual(['kind', 'text'])
+    expect(() => createMessageDraft('中'.repeat(1400))).toThrow()
+    expect(() => readMessageDraft({ ...draft, approval: 'old-confirmation' })).toThrow()
+    expect(() => readMessageDraft({ kind: 'unrelated/v1', text: 'x' })).toThrow()
+  })
+})
+
+describe('browser preference isolation' , () => {
   it('separates accounts and tenants, with no shared anonymous key', () => {
     expect(preferenceStorageKey(7, 8)).not.toBe(preferenceStorageKey(8, 7))
     expect(preferenceStorageKey(7, 8)).not.toBe(preferenceStorageKey(7, 9))

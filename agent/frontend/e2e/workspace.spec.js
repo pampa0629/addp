@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
 
 const runId = 'ace1d263-f309-4c67-8f47-761cfa691f35'
@@ -246,6 +247,65 @@ test('find, copy, export and text-only new conversation never replay hidden stat
   await expect(page.getByRole('heading', { name: '你好！我是 ADDP AI 助手。' })).toBeVisible()
   await expect(page.locator('.message-row')).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('text-only-conversation-draft.png') })
+  expect(backend.writes).toEqual([])
+  expect(backend.unexpected).toEqual([])
+})
+
+
+
+async function installIframeHost(page, testInfo) {
+  const root = resolve(dirname(testInfo.file), '../../../common-frontend/basic/src')
+  const bridge = (await readFile(resolve(root, 'utils/consoleBridge.js'), 'utf8')).replace(/^export /gm, '')
+  const drafts = (await readFile(resolve(root, 'utils/navigationDraft.mjs'), 'utf8')).replace(/^import[^\n]+\n/gm, '').replace(/^export /gm, '')
+  const auth = (await readFile(resolve(root, 'auth/authSession.js'), 'utf8')).replace(/^export /gm, '')
+  await page.route('**/workspace-host', route => route.fulfill({ contentType: 'text/html', body: `
+    <p id="ready"></p><p id="destination"></p>
+    <iframe title="Agent workspace" src="/module-ui/agent/sessions/61" style="width:100%;height:850px"></iframe>
+    <script type="module">
+      ${bridge}
+      ${drafts}
+      (function () {
+        ${auth}
+        createIframeAuthCoordinator({ allowedOrigins: [location.origin], getToken: () => 'fixture-token', getExpiresAt: () => Date.now() + 300000, refreshToken: async () => 'fixture-token', logout: async () => {} });
+      })();
+      const slot = createNavigationDraftSlot();
+      let activeRoute = '/agent/sessions/61';
+      registerConsoleBridgeHandler('console-navigation', async payload => {
+        if (payload.operation === 'take-draft') return slot.take(activeRoute, 'fixture-user-tenant');
+        if (payload.draft) slot.publish(payload.route, 'fixture-user-tenant', payload.draft);
+        activeRoute = payload.route;
+        document.querySelector('#destination').textContent = payload.route;
+        if (payload.draft) document.querySelector('iframe').src = '/module-ui/agent/';
+        return { route: payload.route };
+      }, { allowedSources: ['addp-module'], acknowledgePending: true });
+      document.querySelector('#ready').textContent = 'Bridge ready';
+    </script>` }))
+  await page.goto('/workspace-host')
+  await expect(page.locator('#ready')).toHaveText('Bridge ready')
+  return page.frameLocator('iframe')
+}
+
+test('configuration shortcut uses the existing trusted source through the real iframe bridge', async ({ page }, testInfo) => {
+  const backend = await installWorkspace(page, { configuration: true })
+  const frame = await installIframeHost(page, testInfo)
+  await frame.getByRole('button', { name: '新对话', exact: true }).waitFor()
+  await frame.getByRole('button', { name: '设置', exact: true }).click()
+  await frame.getByRole('menuitem', { name: '管理配置', exact: true }).click()
+  await expect(page.locator('#destination')).toHaveText('/configuration/agent')
+  expect(backend.writes).toEqual([])
+  expect(backend.unexpected).toEqual([])
+})
+
+test('text draft survives a real iframe remount through the shared single-use slot', async ({ page }, testInfo) => {
+  const backend = await installWorkspace(page, { history: [{ id: 1, role: 'assistant', content: '所选文字，不执行' }] })
+  const frame = await installIframeHost(page, testInfo)
+  await frame.getByRole('button', { name: '另开会话', exact: true }).click()
+  await frame.getByRole('dialog', { name: '另开会话', exact: true }).getByRole('button', { name: '使用此草稿', exact: true }).click()
+  await expect(page.locator('#destination')).toHaveText('/agent')
+  await expect(frame.locator('.input-area textarea')).toHaveValue('所选文字，不执行')
+  await expect(frame.locator('.message-row')).toHaveCount(0)
+  await page.locator('iframe').evaluate(element => element.contentWindow.location.reload())
+  await expect(frame.locator('.input-area textarea')).toHaveValue('')
   expect(backend.writes).toEqual([])
   expect(backend.unexpected).toEqual([])
 })

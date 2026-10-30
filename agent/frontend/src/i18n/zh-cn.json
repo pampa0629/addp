@@ -202,7 +202,9 @@
         "drafts": "草稿",
         "reports": "报告",
         "other": "其他成果"
-      }
+      },
+      "draftLimit": "所选文字超过 4 KiB，请缩短后再使用",
+      "draftFailed": "文字草稿移交失败，请重新选择文字"
     },
     "skills": {
       "data-discovery": {
