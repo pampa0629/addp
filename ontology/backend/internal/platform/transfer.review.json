@@ -21,11 +21,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/api/task_handler.go",
       "anchor": "func validDelegatedTaskCreation(",
-      "commit": "d01c5772f84d19c74010d1bd048433c8000d85be",
-      "sha256": "d44d16ed3521375262036492174f9a9ecfe1dbc41ead612511a7c21cd5d83943",
+      "commit": "151e6a263aad93d7ad5d40becc8eb26261772f39",
+      "sha256": "d73b9ffbbfc46c98e0f4392cc00e6c0387eff908d6d28e0ae28425451fd47002",
       "use": {
-        "zh-cn": "委托创建仍限租户内停止态 bounded/snapshot/native table，无调度、扫描或执行。同步请求固化当前 AuthContext；人工角色执行与错误分类不扩张创建 Tool 权限，角色方式不接受委托身份。",
-        "en": "Delegated creation remains tenant-scoped stopped bounded/snapshot/native table without scheduling, scanning or execution. Synchronous requests carry current AuthContext; manual role execution and error classification do not widen create Tool permissions, and role choices reject delegated identity."
+        "zh-cn": "委托创建仍限租户内停止态 bounded/snapshot/native table，无调度、扫描或执行，固化当前 AuthContext。人工启动／恢复因未核清 Cleanup 围栏返回 409 和安全双语 transfer_cleanup_unresolved；删除清理失败仍优先 503。人工运行／角色及 Cleanup 未纳入创建能力，不扩权、不借用角色或解除围栏。",
+        "en": "Delegated creation stays tenant-scoped stopped bounded/snapshot/native table without schedules, scans or execution, using current AuthContext. Manual start/resume cleanup-fence refusals return 409 and safe localized transfer_cleanup_unresolved; failed delete cleanup retains 503 precedence. Manual execution, roles and Cleanup remain outside creation scope: no wider grants, borrowed roles or fence release."
       }
     },
     {
