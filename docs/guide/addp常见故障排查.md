@@ -10,6 +10,7 @@
 | 本地容器启动与状态 | [启动阶段与失败边界](../../scripts/local/README.md#1-startsh---启动服务)、[状态展示范围](../../scripts/local/README.md#3-statussh---查看状态)、[超时与已退出容器](../../scripts/local/README.md#5-健康检查超时) |
 | 生产容器与入口 | [容器状态及回环 HTTP 检查](../../scripts/prod/README.md#health-checksh)、[失败与覆盖范围排查](../../scripts/prod/README.md#问题-3-健康检查失败) |
 | 依赖与镜像 | [GeoPython 依赖安装失败](troubleshooting/开发服务与构建.md#geopython-workflow-依赖安装失败)、[Document 下载 Debian 依赖失败](troubleshooting/开发服务与构建.md#document-镜像下载-debian-依赖失败阻断全量启动)、[Python 镜像冷构建过慢](troubleshooting/开发服务与构建.md#python-镜像首次构建耗时过长) |
+| 镜像推送 | [代理分层验证](../../scripts/docs/Docker镜像推送代理配置指南.md#验证范围与实际操作)、[服务选择与预演](../../scripts/build/README.md#服务选择与预演范围)、[推送退出与验收边界](../../scripts/build/README.md#推送退出与验收边界) |
 | 前端显示 | [Manager 预览没有数据](troubleshooting/前端与数据预览.md#manager-数据预览显示暂无数据)、[Vite 依赖分块缺失与首次导航中断](troubleshooting/前端与数据预览.md#前端页面重启后白屏vite-提示依赖分块不存在)、[血缘图自动适配异常](troubleshooting/前端与数据预览.md#血缘图自动适配后节点过小或偏离中心) |
 | 条目与目录 | [条目刷新未更新属性](troubleshooting/元数据扫描与检索.md#manager-刷新-item-成功但属性未更新item-刷新误走-catalog-scan)、[上传后目录不可见或数量不一致](troubleshooting/元数据扫描与检索.md#manager-上传成功但文件只有扫描目录后才显示)、[目录扫描状态与时间异常](troubleshooting/元数据扫描与检索.md#目录仍显示扫描失败或失败子目录反而显示已扫描) |
 | 扫描与检索 | [NFS 深度扫描进度与计数](troubleshooting/元数据扫描与检索.md#nfs-深度扫描长时间无新进展或完成数大于最终数据项数)、[SQLite / Excel 容器误识别](troubleshooting/元数据扫描与检索.md#sqlite-扫描要求-table-option或-excel-父文件被识别为-table)、[Meta 已登记但 Manager 搜不到](troubleshooting/元数据扫描与检索.md#meta-已登记-dataitem但-manager-搜索不到) |

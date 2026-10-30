@@ -105,11 +105,13 @@ make build-images
 # 只构建点云转换运行时镜像（内置 PDAL）
 make build-images IMAGE_BUILD_ARGS="--services pointcloud-workflow-engine --force"
 
-# 打包并推送镜像 (如需要)
+# 生成部署包（如需要）
 bash scripts/build/package.sh
 ```
 
 `make build` 与 `make build-images` 是平台唯一标准构建入口，分别薄调用 `scripts/build/compile.sh` 与 `scripts/build/build-images.sh`。`make build BUILD_ARGS="--arch amd64 --services system-backend,gateway"` 可精确构建指定服务；Go 产物按实际依赖指纹判断缓存并写入构建身份，供 Online 预检核对。
+
+跨 Registry 推送与打包的先后顺序见[构建流程](../../scripts/docs/构建打包与推送.md#完整构建流程)，打包参数与产物见[部署包专题](../../scripts/build/README.md#packagesh)；上传故障从[镜像推送排查](addp常见故障排查.md#按现象查找)进入，不把包生成成功当作镜像已送达。
 
 代码交付前默认使用统一影响分析入口，不要等推送后的 CI 通知才补测试或构建适配：
 
