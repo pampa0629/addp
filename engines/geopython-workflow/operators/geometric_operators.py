@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import shapely
 from collections import Counter
+from fractions import Fraction
 from itertools import pairwise
 from math import fsum, hypot, nextafter
 from numbers import Real
@@ -883,6 +884,56 @@ class EndpointSnapError(_LineReferenceError):
     }
 
 
+class LineExtensionError(_LineReferenceError):
+    """Exact bounded extension fails without selecting a fallback intersection."""
+
+    _messages = {
+        'zh-cn': {
+            'tolerance': '线端延伸的最大延伸距离必须是以坐标系水平单位表示的有限正数。',
+            'source': '线端延伸的源图层须具有有效有限二维线、已知投影坐标系及非空唯一标识；不接受缺失或空几何，允许空批。',
+            'reference': '线端延伸的参考图层须具有有效有限二维线、已知投影坐标系及非空唯一标识；不接受缺失或空几何，允许空批。',
+            'crs': '线端延伸要求两个图层使用相同的已知投影坐标系和匹配的水平单位；请先显式重投影。',
+            'endpoint': '线端延伸无法将该悬点完整表达为原始开口部件的端点；请先显式规整源线。',
+            'direction': '线端延伸的同一悬点具有不同的朝外方向，未生成任何延伸结果。',
+            'landing': '线端延伸的首次交点不能精确沿原方向落在参考线上，未生成任何延伸结果。',
+            'invalid': '线端延伸产生无效或非有限几何，未生成任何延伸结果。',
+            'calculation': '线端延伸无法可靠计算有限的首次交点和延伸长度，未生成任何延伸结果。',
+        },
+        'en': {
+            'tolerance': 'The maximum extension distance must be a finite positive number in horizontal CRS units.',
+            'source': 'Line extension requires valid finite XY source lines, a known projected CRS and unique non-null IDs; missing or empty geometries are rejected, but empty batches are allowed.',
+            'reference': 'Line extension requires valid finite XY reference lines, a known projected CRS and unique non-null IDs; missing or empty geometries are rejected, but empty batches are allowed.',
+            'crs': 'Line extension requires the same known projected CRS and matching horizontal units; reproject explicitly first.',
+            'endpoint': 'Line extension cannot completely represent this dangle as original open-part endpoints; normalize the source lines explicitly first.',
+            'direction': 'Line extension has different outward directions at the same dangle; no extension result was produced.',
+            'landing': 'Line extension cannot place the first intersection exactly along the original direction on the reference lines; no extension result was produced.',
+            'invalid': 'Line extension produced invalid or non-finite geometry; no extension result was produced.',
+            'calculation': 'Line extension cannot reliably compute a finite first intersection and extension length; no extension result was produced.',
+        },
+    }
+
+
+def _open_endpoint_occurrence(part, coords, coordinate, error_type):
+    """Locate a complete terminal run, rejecting any remaining interior coverage."""
+    if part.is_closed:
+        raise error_type('endpoint')
+    if coords[0] == coordinate:
+        stop = 1
+        while coords[stop] == coordinate:
+            stop += 1
+        end, span, remainder = 'start', (0, stop), coords[stop:]
+    elif coords[-1] == coordinate:
+        start = len(coords)-2
+        while coords[start] == coordinate:
+            start -= 1
+        end, span, remainder = 'end', (start+1, len(coords)), coords[:start+1]
+    else:
+        raise error_type('endpoint')
+    if len(remainder) > 1 and shapely.intersects(shapely.LineString(remainder), shapely.Point(coordinate)):
+        raise error_type('endpoint')
+    return end, span, remainder
+
+
 def _line_reference_inputs(input_gdf, reference_gdf, id_field, reference_id_field, tolerance, error_type):
     if isinstance(tolerance, (bool, np.bool_)) or not isinstance(tolerance, Real):
         raise error_type('tolerance')
@@ -1029,22 +1080,7 @@ def _snap_line_endpoints(input_gdf, reference_gdf, id_field, reference_id_field,
         # behind just because another source has an endpoint at the same XY.
         for index in sorted(part_tree.query(point, predicate='intersects')):
             _, _, part, coords = parts[index]
-            if part.is_closed:
-                raise EndpointSnapError('endpoint')
-            if coords[0] == coordinate:
-                stop = 1
-                while coords[stop] == coordinate:
-                    stop += 1
-                end, span, remainder = 'start', (0, stop), coords[stop:]
-            elif coords[-1] == coordinate:
-                start = len(coords)-2
-                while coords[start] == coordinate:
-                    start -= 1
-                end, span, remainder = 'end', (start+1, len(coords)), coords[:start+1]
-            else:
-                raise EndpointSnapError('endpoint')
-            if len(remainder) > 1 and shapely.intersects(shapely.LineString(remainder), point):
-                raise EndpointSnapError('endpoint')
+            end, span, _ = _open_endpoint_occurrence(part, coords, coordinate, EndpointSnapError)
             plans[index, end] = (span, coordinate, target, nearest, references)
 
     output = input_gdf.geometry.array.copy()
@@ -1085,6 +1121,143 @@ def _snap_line_endpoints(input_gdf, reference_gdf, id_field, reference_id_field,
         'distance': pd.Series(distances, dtype='float64'),
     }, geometry=gpd.GeoSeries([shapely.Point(p) for p in originals], crs=input_gdf.crs))
     return {'result': result, 'details': details}
+
+
+def _cross_xy(a, b):
+    return a[0]*b[1] - a[1]*b[0]
+
+
+def _ray_segment_entry(origin, direction, segment):
+    """First ray parameter on a closed segment, using exact original binary XY."""
+    a, b = (tuple(map(Fraction, xy)) for xy in segment.coords)
+    edge = (b[0]-a[0], b[1]-a[1])
+    delta = (a[0]-origin[0], a[1]-origin[1])
+    denominator = _cross_xy(direction, edge)
+    if denominator:
+        t = _cross_xy(delta, edge) / denominator
+        u = _cross_xy(delta, direction) / denominator
+        return t if t > 0 and 0 <= u <= 1 else None
+    if _cross_xy(delta, direction):
+        return None
+    axis = 0 if direction[0] else 1
+    first, last = sorted(((a[axis]-origin[axis])/direction[axis],
+                          (b[axis]-origin[axis])/direction[axis]))
+    if last <= 0:
+        return None
+    # An interval containing the origin was already excluded as exact contact.
+    # A disagreement between exact arithmetic and GEOS cannot become a repair.
+    if first <= 0:
+        raise LineExtensionError('landing')
+    return first
+
+
+def extend_line_endpoints(
+    input_gdf: gpd.GeoDataFrame, reference_gdf: gpd.GeoDataFrame,
+    id_field: str, reference_id_field: str, max_distance: float,
+) -> dict[str, gpd.GeoDataFrame]:
+    """Extend frozen original dangles to the first exact forward reference hit."""
+    try:
+        return _extend_line_endpoints(input_gdf, reference_gdf, id_field, reference_id_field, max_distance)
+    except (shapely.errors.GEOSException, OverflowError, ZeroDivisionError) as exc:
+        raise LineExtensionError('calculation') from exc
+
+
+def _extend_line_endpoints(input_gdf, reference_gdf, id_field, reference_id_field, max_distance):
+    dangling, reference, reference_ids, maximum = _line_reference_inputs(
+        input_gdf, reference_gdf, id_field, reference_id_field, max_distance, LineExtensionError)
+    segments, owners, tree = _reference_line_segments(reference)
+    parts = [(row, number, part, list(part.coords)) for row, shape in enumerate(input_gdf.geometry.array)
+             for number, part in enumerate(shapely.get_parts(shape), 1)]
+    part_tree = shapely.STRtree([part for _, _, part, _ in parts])
+    plans = {}
+    maximum_squared = Fraction(maximum)**2
+    limit = float(np.finfo(float).max)
+    for coordinate in dict.fromkeys(tuple(p.coords[0]) for p in dangling.geometry):
+        point = shapely.Point(coordinate)
+        if not segments or len(tree.query(point, predicate='intersects')):
+            continue
+        origin = tuple(map(Fraction, coordinate))
+        occurrences, direction = [], None
+        for index in sorted(part_tree.query(point, predicate='intersects')):
+            _, _, part, coords = parts[index]
+            end, _, remainder = _open_endpoint_occurrence(part, coords, coordinate, LineExtensionError)
+            inner = remainder[0] if end == 'start' else remainder[-1]
+            outward = tuple(origin[i]-Fraction(inner[i]) for i in (0,1))
+            if direction is not None and (_cross_xy(direction, outward) or
+                    sum(a*b for a,b in zip(direction, outward)) <= 0):
+                raise LineExtensionError('direction')
+            direction = outward if direction is None else direction
+            occurrences.append((index, end))
+        if direction is None:
+            raise LineExtensionError('endpoint')
+        x, y = coordinate
+        envelope = shapely.box(
+            max(-limit, nextafter(x-maximum, -float('inf'))),
+            max(-limit, nextafter(y-maximum, -float('inf'))),
+            min(limit, nextafter(x+maximum, float('inf'))),
+            min(limit, nextafter(y+maximum, float('inf'))))
+        squared_direction = sum(value*value for value in direction)
+        first, selected = None, set()
+        for segment_row in tree.query(envelope):
+            t = _ray_segment_entry(origin, direction, segments[segment_row])
+            if t is None or t*t*squared_direction > maximum_squared:
+                continue
+            if first is None or t < first:
+                first, selected = t, {owners[segment_row]}
+            elif t == first:
+                selected.add(owners[segment_row])
+        if first is None:
+            continue
+        exact_target = tuple(origin[i]+first*direction[i] for i in (0,1))
+        target = tuple(map(float, exact_target))
+        if any(Fraction(value) != exact for value, exact in zip(target, exact_target)):
+            raise LineExtensionError('landing')
+        covered = {owners[i] for i in tree.query(shapely.Point(target), predicate='intersects')}
+        if not selected <= covered:
+            raise LineExtensionError('landing')
+        distance = hypot(*(float(first*value) for value in direction))
+        if not np.isfinite(distance) or not 0 < distance <= maximum:
+            raise LineExtensionError('calculation')
+        for occurrence in occurrences:
+            plans[occurrence] = (coordinate, target, distance, sorted(selected))
+
+    rebuilt = {}
+    rows, references, numbers, ends, originals, targets, distances = [], [], [], [], [], [], []
+    for index, (row, number, part, coords) in enumerate(parts):
+        values = coords.copy()
+        for end in ('start','end'):
+            if (index,end) not in plans:
+                continue
+            original, target, distance, selected = plans[index,end]
+            if end == 'start':
+                values.insert(0,target)
+            else:
+                values.append(target)
+            for owner in selected:
+                rows.append(row); references.append(owner); numbers.append(number); ends.append(end)
+                originals.append(original); targets.append(target); distances.append(distance)
+        rebuilt.setdefault(row,[]).append(shapely.LineString(values) if values != coords else part)
+    output = input_gdf.geometry.array.copy()
+    for row, row_parts in rebuilt.items():
+        output[row] = row_parts[0] if input_gdf.geometry.iloc[row].geom_type == 'LineString' else shapely.MultiLineString(row_parts)
+    result = input_gdf.copy()
+    result[result.geometry.name] = gpd.GeoSeries(output,index=input_gdf.index,crs=input_gdf.crs)
+    try:
+        _finite_xy_geometry(result,'result')
+        _require_nonempty_valid_lines(result.geometry)
+    except ValueError as exc:
+        raise LineExtensionError('invalid') from exc
+    details = gpd.GeoDataFrame({
+        'source_id': input_gdf[id_field].iloc[rows].reset_index(drop=True),
+        'reference_id': reference_ids.iloc[references].reset_index(drop=True),
+        'part_no': pd.Series(numbers,dtype='int64'), 'end': pd.Series(ends,dtype='string'),
+        'original_x': pd.Series([p[0] for p in originals],dtype='float64'),
+        'original_y': pd.Series([p[1] for p in originals],dtype='float64'),
+        'target_x': pd.Series([p[0] for p in targets],dtype='float64'),
+        'target_y': pd.Series([p[1] for p in targets],dtype='float64'),
+        'distance': pd.Series(distances,dtype='float64'),
+    },geometry=gpd.GeoSeries([shapely.LineString([a,b]) for a,b in zip(originals,targets)],crs=input_gdf.crs))
+    return {'result':result,'details':details}
 
 
 def check_polygon_overlap(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
@@ -1455,6 +1628,27 @@ SNAP_LINE_ENDPOINTS_METADATA = OperatorMetadata(
     use_cases=["按固定参考线显式连接近接悬点", "审计每个实际移动端点和全部参考来源"],
     notes=["已精确接上参考线的悬点不动，其他目标只按冻结原始位置查询一次", "等距异点、不能仅移动端点完整处理或目标不能精确落线时整批失败，不按XY或行序选择路径", "端部连续重复坐标一并移动，保留顶点数；原始正长度段塌缩或无效结果整批失败", "不移动内部顶点、闭环或参考，不吸附到已移动源，不保证全部拓扑问题消除", "result与details分别接现有save，不承诺跨文件事务或固定规模容量"],
     workflow_example={"id":"snap_ends", "operator":"snap_line_endpoints", "params":{"input_gdf":{"$ref":"source"},"reference_gdf":{"$ref":"reference"},"id_field":"line_id","reference_id_field":"ref_id","tolerance":1.0},"depends_on":["source","reference"]},
+)
+
+EXTEND_LINE_ENDPOINTS_METADATA = OperatorMetadata(
+    name="extend_line_endpoints", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_PREPARATION,
+    description="线端延伸", brief_description="沿原悬点朝外方向延伸到上限内首次参考交点，保留原属性和全部来源",
+    execution_modes=["workflow"], effects=["read"],
+    overview="沿原始开口部件方向延伸悬点，上限包含等号，共线取重合入口。返回原属性线副本与逐来源新增段明细，不移动参考、不连锁或隐式修复。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="待延伸的源线图层", notes="有效有限二维线、已知投影CRS，使用实际活动几何列；允许空批"),
+        OperatorParam(name="reference_gdf", type="input", data_type="GeoDataFrame", required=True, description="固定参考线图层", notes="相同已知投影CRS，参考线不动"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="源线唯一非空标识字段"),
+        OperatorParam(name="reference_id_field", type="param", data_type="str", required=True, description="参考线唯一非空标识字段", notes="首次目标的全部参考要素分别保留来源"),
+        OperatorParam(name="max_distance", type="param", data_type="float", required=True, description="最大延伸距离", notes="有限正数，单位沿投影CRS；0＜延伸长度≤上限，无目标保持原线"),
+    ],
+    output_ports=[
+        OutputPort(name="result", type="geodataframe", description="保留源属性、行序、索引、原顶点、方向、部件和CRS的延伸线", is_default=True),
+        OutputPort(name="details", type="geodataframe", description="原端点至目标的新增线段及全部source_id/reference_id、part_no/end、坐标和distance", is_default=False),
+    ],
+    use_cases=["沿端部原方向连接参考线断口", "审计新增延伸段和全部参考来源"],
+    notes=["只处理全图悬点；两源冻结，一次计算，不连锁", "首次参考点命中或共线区间入口即停止，不能越过首个不可精确表示的交点", "同点全部参考来源保留，同一参考重复段去重；朝外方向不一致或原始内部覆盖整批失败", "不使用epsilon、网格或舍入；不插入参考节点、不打断新增交叉、不合并链路", "两输出分别连接既有save，不提供跨文件事务或固定规模容量"],
+    workflow_example={"id":"extend", "operator":"extend_line_endpoints", "params":{"input_gdf":{"$ref":"source"},"reference_gdf":{"$ref":"reference"},"id_field":"line_id","reference_id_field":"ref_id","max_distance":2.0},"depends_on":["source","reference"]},
 )
 
 CHECK_POLYGON_OVERLAP_METADATA = OperatorMetadata(
@@ -2067,6 +2261,7 @@ OPERATORS = dict([
     register_operator(REPAIR_GEOMETRY_METADATA, repair_geometry),
     register_operator(SNAP_GEOMETRY_METADATA, snap_geometry),
     register_operator(SNAP_LINE_ENDPOINTS_METADATA, snap_line_endpoints),
+    register_operator(EXTEND_LINE_ENDPOINTS_METADATA, extend_line_endpoints),
     register_operator(CHECK_POLYGON_OVERLAP_METADATA, check_polygon_overlap),
     register_operator(CHECK_POLYGON_GAP_METADATA, check_polygon_gap),
     register_operator(CHECK_DANGLING_POINTS_METADATA, check_dangling_points),

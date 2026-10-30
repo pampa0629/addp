@@ -4826,3 +4826,291 @@ def test_endpoint_snap_unselected_internal_dangle_does_not_require_implicit_norm
     out=endpoint_snap(source,reference)
     assert_geodataframe_equal(out['result'],source)
     assert out['details'].empty
+
+
+# Line extension: bounded forward first hit, immutable sources and complete provenance.
+def line_extension(source, reference, max_distance=2., **kwargs):
+    return get_operator('extend_line_endpoints')(
+        input_gdf=source, reference_gdf=reference,
+        id_field=kwargs.get('id_field', 'route_key'),
+        reference_id_field=kwargs.get('reference_id_field', 'ref_key'), max_distance=max_distance)
+
+
+def line_extension_frames(crs='EPSG:3857'):
+    source, _ = endpoint_snap_frames(crs)
+    source[source.geometry.name] = [LineString([(0,0),(0,0),(1,0)]), LineString([(20,0),(20,10)])]
+    reference = gpd.GeoDataFrame({'ref_key':pd.Series(['start','first','duplicate','far','side','other'],dtype='string')},
+        geometry=[LineString([(-1,-1),(-1,1)]), LineString([(3,-1),(3,1)]),
+                  LineString([(3,1),(3,-1)]), LineString([(4,-1),(4,1)]),
+                  LineString([(.25,.1),(.75,.1)]), LineString([(19,-1),(21,-1)])],crs=crs).rename_geometry('reference_shape')
+    return source,reference
+
+
+def test_line_extension_first_hit_inclusive_limit_keeps_originals_attributes_and_all_sources():
+    source,reference=line_extension_frames();before=source.copy(deep=True);ref_before=reference.copy(deep=True)
+    result,details=line_extension(source,reference).values()
+    assert result.geometry.iloc[0].coords[:] == [(-1.,0.),(0.,0.),(0.,0.),(1.,0.),(3.,0.)]
+    assert result.geometry.iloc[1].coords[:] == [(20.,-1.),(20.,0.),(20.,10.)]
+    assert result.geometry.name==source.geometry.name and result.index.equals(source.index)
+    pd.testing.assert_frame_equal(pd.DataFrame(result.drop(columns=result.geometry.name)),pd.DataFrame(source.drop(columns=source.geometry.name)))
+    assert details.source_id.tolist()==[2**53+1]*3+[9]
+    assert details.reference_id.tolist()==['start','first','duplicate','other']
+    assert details.part_no.tolist()==[1]*4 and details['end'].tolist()==['start','end','end','start']
+    assert details['distance'].tolist()==[1.,2.,2.,1.]
+    assert [g.coords[:] for g in details.geometry]==[[(0.,0.),(-1.,0.)],[(1.,0.),(3.,0.)],[(1.,0.),(3.,0.)],[(20.,0.),(20.,-1.)]]
+    assert details.source_id.dtype==source.route_key.dtype and details.reference_id.dtype==reference.ref_key.dtype
+    assert str(details.part_no.dtype)=='int64' and str(details['end'].dtype)=='string'
+    assert all(str(details[c].dtype)=='float64' for c in ['original_x','original_y','target_x','target_y','distance'])
+    assert details.crs==source.crs and result.crs==source.crs
+    assert_geodataframe_equal(source,before);assert_geodataframe_equal(reference,ref_before)
+
+
+@pytest.mark.parametrize('limit,expected',[(2.,3.),(np.nextafter(2.,0.),1.),(np.nextafter(2.,3.),3.)])
+def test_line_extension_maximum_boundary(limit,expected):
+    source=line_overlap_frame([LineString([(0,0),(1,0)])])
+    reference=line_overlap_frame([LineString([(3,-1),(3,1)])]).rename(columns={'route_key':'ref_key'})
+    result=line_extension(source,reference,limit)
+    assert result['result'].geometry.iloc[0].coords[-1]==(expected,0.)
+    assert len(result['details'])==int(expected==3.)
+
+
+@pytest.mark.parametrize('reference_coords,expected',[
+    ([(3,0),(5,0)],[(0.,0.),(1.,0.),(3.,0.)]),
+    ([(5,0),(3,0)],[(0.,0.),(1.,0.),(3.,0.)]),
+    ([(1,0),(5,0)],[(0.,0.),(1.,0.)]),
+    ([(-4,0),(-3,0)],[(0.,0.),(1.,0.)]),
+    ([(.2,.2),(.8,.2)],[(0.,0.),(1.,0.)]),
+])
+def test_line_extension_collinear_entry_existing_contact_and_no_forward_hit(reference_coords,expected):
+    source=line_overlap_frame([LineString([(0,0),(1,0)])])
+    reference=line_overlap_frame([LineString(reference_coords)]).rename(columns={'route_key':'ref_key'})
+    result=line_extension(source,reference)
+    assert result['result'].geometry.iloc[0].coords[:]==expected
+
+
+@pytest.mark.parametrize('crs',['EPSG:3857','EPSG:2263'])
+def test_line_extension_multipart_frozen_input_native_units_and_no_chaining(crs):
+    source=line_overlap_frame([MultiLineString([[(0,0),(1,0)],[(10,0),(11,0)]])],crs=crs)
+    reference=line_overlap_frame([LineString([(2,0),(3,0)]),LineString([(12,0),(13,0)])],crs=crs).rename(columns={'route_key':'ref_key'})
+    result=line_extension(source,reference,1.)
+    assert [list(p.coords) for p in result['result'].geometry.iloc[0].geoms]==[[(0.,0.),(1.,0.),(2.,0.)],[(10.,0.),(11.,0.),(12.,0.)]]
+    assert result['details'].part_no.tolist()==[1,2] and result['details']['distance'].tolist()==[1.,1.]
+    assert [list(g.coords) for g in source.geometry.iloc[0].geoms]==[[(0.,0.),(1.,0.)],[(10.,0.),(11.,0.)]]
+
+
+def test_line_extension_reversed_duplicate_sources_keep_all_parts_and_reference_owners():
+    source=line_overlap_frame([LineString([(0,0),(1,0)]),MultiLineString([[(1,0),(0,0)],[(0,0),(1,0)]])])
+    reference=line_overlap_frame([MultiLineString([[(2,-1),(2,1)],[(2,1),(2,-1)]]),LineString([(2,0),(4,0)])]).rename(columns={'route_key':'ref_key'})
+    result=line_extension(source,reference,1.)
+    assert len(result['details'])==6
+    assert result['details']['end'].tolist()==['end','end','start','start','end','end']
+    assert result['result'].geometry.iloc[0].coords[:]==[(0.,0.),(1.,0.),(2.,0.)]
+    assert result['result'].geometry.iloc[1].geoms[0].coords[:]==[(2.,0.),(1.,0.),(0.,0.)]
+
+
+def test_line_extension_exact_diagonal_and_tiny_binary_distance():
+    source=line_overlap_frame([LineString([(0,0),(1,1)])])
+    reference=line_overlap_frame([LineString([(2,0),(2,3)])]).rename(columns={'route_key':'ref_key'})
+    assert line_extension(source,reference)['result'].geometry.iloc[0].coords[-1]==(2.,2.)
+    tiny=2.**-500
+    source=line_overlap_frame([LineString([(-tiny,0),(0,0)])])
+    reference=line_overlap_frame([LineString([(tiny,-tiny),(tiny,tiny)])]).rename(columns={'route_key':'ref_key'})
+    result=line_extension(source,reference,tiny)
+    assert result['details']['distance'].tolist()==[tiny] and result['result'].geometry.iloc[0].coords[-1]==(tiny,0.)
+
+
+def test_line_extension_unrepresentable_first_hit_fails_instead_of_choosing_later():
+    source=line_overlap_frame([LineString([(-1,0),(0,0)])])
+    reference=line_overlap_frame([LineString([(0,1),(1,-2)]),LineString([(1,-1),(1,1)])]).rename(columns={'route_key':'ref_key'})
+    before=source.copy(deep=True)
+    with pytest.raises(ValueError,match='精确'):line_extension(source,reference)
+    assert_geodataframe_equal(source,before)
+
+
+@pytest.mark.parametrize('bad',[0,-1,True,np.bool_(False),float('inf'),float('nan'),'1',None])
+def test_line_extension_rejects_invalid_maximum(bad):
+    source,reference=line_extension_frames()
+    with pytest.raises(ValueError,match='最大延伸距离'):line_extension(source,reference,bad)
+
+
+@pytest.mark.parametrize('problem',['source_id','reference_id','source_crs','mismatch','empty_geometry','z','point'])
+def test_line_extension_rejects_invalid_sources(problem):
+    source,reference=line_extension_frames()
+    if problem=='source_id':source['route_key']=[1,1]
+    elif problem=='reference_id':reference['ref_key']=None
+    elif problem=='source_crs':source=source.set_crs(None,allow_override=True)
+    elif problem=='mismatch':reference=reference.set_crs('EPSG:2263',allow_override=True)
+    elif problem=='empty_geometry':source.loc[source.index[0],source.geometry.name]=LineString()
+    elif problem=='z':source.loc[source.index[0],source.geometry.name]=LineString([(0,0,0),(1,0,0)])
+    else:source.loc[source.index[0],source.geometry.name]=Point(0,0)
+    with pytest.raises(ValueError):line_extension(source,reference)
+
+
+@pytest.mark.parametrize('which',['source','reference','both'])
+def test_line_extension_empty_batches_preserve_schema(which):
+    source,reference=line_extension_frames()
+    if which in ('source','both'):source=source.iloc[:0]
+    if which in ('reference','both'):reference=reference.iloc[:0]
+    outputs=line_extension(source,reference)
+    assert_geodataframe_equal(outputs['result'],source)
+    details=outputs['details'];assert len(details)==0 and details.crs==source.crs
+    assert details.source_id.dtype==source.route_key.dtype and details.reference_id.dtype==reference.ref_key.dtype
+    assert details.columns.tolist()==['source_id','reference_id','part_no','end','original_x','original_y','target_x','target_y','distance','geometry']
+
+
+def test_line_extension_closed_part_is_not_extended():
+    source=line_overlap_frame([LineString([(0,0),(1,0),(0,1),(0,0)])])
+    reference=line_overlap_frame([LineString([(2,-2),(2,2)])]).rename(columns={'route_key':'ref_key'})
+    result=line_extension(source,reference)
+    assert_geodataframe_equal(result['result'],source);assert result['details'].empty
+
+
+@pytest.mark.parametrize('language,expected',[('zh-cn','最大延伸距离'),('en','maximum extension distance')])
+def test_line_extension_runner_localizes_without_expanding_parameter_diagnostic(language,expected):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    source,reference=line_extension_frames()
+    task={'id':'extend','operator':'extend_line_endpoints','params':{'input_gdf':source,'reference_gdf':reference,'id_field':'route_key','reference_id_field':'ref_key','max_distance':0},'depends_on':[]}
+    with pytest.raises(WorkflowExecutionError) as error:GeoPythonWorkflowRunner(language=language).execute({'tasks':[task]})
+    assert error.value.error_code=='EXECUTION_FAILED' and error.value.diagnostic is None
+    assert expected in str(error.value)
+
+
+@pytest.mark.parametrize('problem',[None,'first_hit','invalid_limit'])
+def test_line_extension_workflow_dual_save_independent_ogr_and_failure_no_publish(tmp_path,problem):
+    from osgeo import ogr
+    source,reference=line_extension_frames()
+    if problem=='first_hit':reference.loc[reference.index[0],reference.geometry.name]=LineString([(0,1),(-1,-2)])
+    for name,frame in [('source',source),('reference',reference)]:frame.to_file(tmp_path/f'{name}.gpkg',driver='GPKG',index=False)
+    originals={name:(tmp_path/f'{name}.gpkg').read_bytes() for name in ['source','reference']}
+    conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':name,'operator':'load','params':{'connection_info':conn,'path':f'{name}.gpkg'},'depends_on':[]} for name in ['source','reference']]
+    tasks.append({'id':'extend','operator':'extend_line_endpoints','params':{'input_gdf':{'$ref':'source'},'reference_gdf':{'$ref':'reference'},'id_field':'route_key','reference_id_field':'ref_key','max_distance':0 if problem=='invalid_limit' else 2.},'depends_on':['source','reference']})
+    for name,ref in [('lines',{'$ref':'extend'}),('details',{'$ref':'extend','port':'details'})]:
+        tasks.append({'id':f'save_{name}','operator':'save','params':{'input_df':ref,'connection_info':conn,'path':f'{name}.gpkg','mode':'fail'},'depends_on':['extend']})
+    result=execute_workflow({'tasks':tasks})
+    assert all((tmp_path/f'{name}.gpkg').read_bytes()==value for name,value in originals.items())
+    if problem:
+        assert result['status']=='failed' and result['error_code']=='EXECUTION_FAILED',result
+        assert not (tmp_path/'lines.gpkg').exists() and not (tmp_path/'details.gpkg').exists()
+        return
+    assert result['status']=='success',result
+    ds=ogr.Open(str(tmp_path/'lines.gpkg'));layer=ds.GetLayer(0)
+    assert layer.GetSpatialRef().GetAuthorityCode(None)=='3857' and layer.GetFeatureCount()==2
+    features=list(layer);assert features[0].GetField('route_key')==2**53+1
+    definition=layer.GetLayerDefn()
+    assert definition.GetFieldDefn(definition.GetFieldIndex('route_key')).GetType()==ogr.OFTInteger64
+    assert definition.GetFieldDefn(definition.GetFieldIndex('grade')).GetType()==ogr.OFTInteger64
+    assert definition.GetFieldDefn(definition.GetFieldIndex('enabled')).GetSubType()==ogr.OFSTBoolean
+    assert features[0].GetField('grade')==3 and features[0].GetField('enabled')==1
+    assert features[0].GetField('note')=='original' and features[1].GetField('note') is None
+    assert features[0].GetGeometryRef().GetPoints()==[(-1.,0.),(0.,0.),(0.,0.),(1.,0.),(3.,0.)]
+    assert features[1].GetField('grade') is None and features[1].GetField('enabled') is None
+    ds2=ogr.Open(str(tmp_path/'details.gpkg'));detail_layer=ds2.GetLayer(0)
+    assert detail_layer.GetSpatialRef().GetAuthorityCode(None)=='3857' and detail_layer.GetFeatureCount()==4
+    rows=list(detail_layer)
+    assert [f.GetField('reference_id') for f in rows]==['start','first','duplicate','other']
+    assert [f.GetGeometryRef().GetPoints() for f in rows]==[[(0.,0.),(-1.,0.)],[(1.,0.),(3.,0.)],[(1.,0.),(3.,0.)],[(20.,0.),(20.,-1.)]]
+
+
+def test_line_extension_metadata_has_single_explicit_owner_and_two_ports():
+    spec=next(op for op in list_operators() if op['id']=='extend_line_endpoints')
+    assert spec['display_name']=='线端延伸' and spec['category_path']==['矢量处理','几何整理']
+    assert spec['execution_modes']==['workflow'] and spec['effects']==['read']
+    assert [(p['name'],p['is_default']) for p in spec['output_ports']]==[('result',True),('details',False)]
+    assert {p['name'] for p in spec['parameters']}=={'input_gdf','reference_gdf','id_field','reference_id_field','max_distance'}
+
+
+def test_line_extension_reference_order_direction_and_duplicate_index_do_not_choose_main_source():
+    source,reference=line_extension_frames();source.index=[5,5]
+    reference=reference.iloc[::-1].copy();reference[reference.geometry.name]=reference.geometry.map(shapely.reverse)
+    result=line_extension(source,reference)
+    assert result['result'].index.tolist()==[5,5]
+    assert result['details'].reference_id.tolist()==['start','duplicate','first','other']
+    assert result['result'].geometry.iloc[0].coords[:]==[(-1.,0.),(0.,0.),(0.,0.),(1.,0.),(3.,0.)]
+
+
+def test_line_extension_first_point_contact_keeps_all_touching_reference_features():
+    source=line_overlap_frame([LineString([(0,0),(1,0)])])
+    reference=line_overlap_frame([LineString([(2,0),(3,1)]),LineString([(2,0),(3,-1)]),LineString([(2,-1),(2,1)])]).rename(columns={'route_key':'ref_key'})
+    result=line_extension(source,reference,1.)
+    assert result['details'].reference_id.tolist()==[0,1,2]
+    assert result['result'].geometry.iloc[0].coords[:]==[(0.,0.),(1.,0.),(2.,0.)]
+
+
+def test_line_extension_internal_foldback_dangle_rejected_without_mutating_prior_plans():
+    source=line_overlap_frame([LineString([(10,0),(11,0)]),LineString([(-2,0),(0,0),(-2,0),(-2,2)])])
+    reference=line_overlap_frame([LineString([(12,-1),(12,1)]),LineString([(1,-1),(1,1)])]).rename(columns={'route_key':'ref_key'})
+    assert (0.,0.) in {tuple(p.coords[0]) for p in get_operator('check_dangling_points')(source,'route_key').geometry}
+    before=source.copy(deep=True);ref_before=reference.copy(deep=True)
+    with pytest.raises(ValueError,match='端点'):line_extension(source,reference)
+    assert_geodataframe_equal(source,before);assert_geodataframe_equal(reference,ref_before)
+
+
+def test_line_extension_terminal_helper_and_ray_parameter_reject_ambiguous_or_interior_inputs():
+    from fractions import Fraction
+    from operators.geometric_operators import _open_endpoint_occurrence, _ray_segment_entry, LineExtensionError
+    for shape,coordinate in [(LineString([(0,0),(1,0),(0,1),(0,0)]),(0.,0.)),
+                              (LineString([(-1,0),(0,0),(1,0)]),(0.,0.))]:
+        with pytest.raises(LineExtensionError,match='端点'):_open_endpoint_occurrence(shape,list(shape.coords),coordinate,LineExtensionError)
+    with pytest.raises(LineExtensionError,match='精确'):
+        _ray_segment_entry((Fraction(0),Fraction(0)),(Fraction(1),Fraction(0)),LineString([(-1,0),(1,0)]))
+
+
+def test_line_extension_original_source_is_not_an_implicit_target_or_a_chained_reference():
+    source=line_overlap_frame([LineString([(0,0),(1,0)]),LineString([(2,-1),(2,1)])])
+    reference=line_overlap_frame([LineString([(3,-2),(3,2)])]).rename(columns={'route_key':'ref_key'})
+    result=line_extension(source,reference)
+    assert result['result'].geometry.iloc[0].coords[-1]==(3.,0.)
+    assert result['result'].geometry.iloc[1].coords[:]==[(2.,-1.),(2.,1.)]
+    assert len(result['details'])==1
+
+
+@pytest.mark.parametrize('language,expected',[('zh-cn','最大延伸距离'),('en','maximum extension distance')])
+def test_line_extension_async_discovery_and_existing_runtime_failure_channel(language,expected,monkeypatch):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    monkeypatch.setattr(api_server,'executions',ExecutionRegistry())
+    source,reference=line_extension_frames()
+    params={'input_gdf':json.loads(source.to_json()),'reference_gdf':json.loads(reference.to_json()),
+        'id_field':'route_key','reference_id_field':'ref_key','max_distance':0}
+    workflow={'tasks':[{'id':'extend','operator':'extend_line_endpoints','params':params,'depends_on':[]}]}
+    with api_server.app.test_client() as client:
+        specs=client.get('/api/operators').get_json()['operators']
+        assert len([s for s in specs if s['id']=='extend_line_endpoints'])==1
+        assert client.post('/api/operators/extend_line_endpoints/invoke',json={'params':params}).status_code==403
+        assert client.post('/api/workflow',json={'workflow_def':workflow}).status_code==400
+        response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':workflow,
+            'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read']}}})
+        assert response.status_code==202
+        deadline=time.monotonic()+5
+        while time.monotonic()<deadline:
+            state=client.get('/api/executions/'+response.get_json()['execution_id']).get_json()
+            if state['status'] in {'success','failed'}:break
+            time.sleep(.01)
+        assert state['status']=='failed' and state['error_code']=='EXECUTION_FAILED' and not state.get('diagnostic')
+        assert expected in state['error']
+
+
+def test_line_extension_multiple_outward_directions_fail_without_choosing_a_part(monkeypatch):
+    import operators.geometric_operators as module
+    source=line_overlap_frame([LineString([(0,0),(1,0)]),LineString([(0,0),(0,1)])])
+    reference=line_overlap_frame([LineString([(-1,-2),(-1,2)])]).rename(columns={'route_key':'ref_key'})
+    # Defensive occurrence guard: inject a shared point to exercise direction
+    # disagreement, without claiming this degree-two node is a genuine dangle.
+    diagnostic=gpd.GeoDataFrame({'source_id':source.route_key},geometry=[Point(0,0),Point(0,0)],crs=source.crs)
+    monkeypatch.setattr(module,'check_dangling_points',lambda *_:diagnostic)
+    before=source.copy(deep=True)
+    with pytest.raises(module.LineExtensionError,match='朝外方向'):line_extension(source,reference)
+    assert_geodataframe_equal(source,before)
+
+
+def test_line_extension_exact_binary_maximum_uses_length_not_axis_box_only():
+    source=line_overlap_frame([LineString([(0,0),(1,1)])])
+    reference=line_overlap_frame([LineString([(2,0),(2,3)])]).rename(columns={'route_key':'ref_key'})
+    too_short=line_extension(source,reference,1.)
+    assert_geodataframe_equal(too_short['result'],source);assert too_short['details'].empty
+    source=line_overlap_frame([LineString([(0,0),(3,4)])])
+    reference=line_overlap_frame([LineString([(6,0),(6,9)])]).rename(columns={'route_key':'ref_key'})
+    assert line_extension(source,reference,5.)['result'].geometry.iloc[0].coords[-1]==(6.,8.)
+    assert line_extension(source,reference,np.nextafter(5.,0.))['details'].empty

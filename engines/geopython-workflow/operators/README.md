@@ -52,7 +52,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 通用处理 | 数据筛选 | 5 | `filter_by_attribute`、`sort_by_field`、`select_top_n`、`sample`、`random_split` |
 | 通用处理 | 数值统计 | 4 | `normalize_field`、`encode_categorical`、`bin_field`、`aggregate` |
 | 矢量处理 | 几何构造 | 6 | `buffer`、`centroid`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer` |
-| 矢量处理 | 几何整理 | 6 | `simplify`、`dissolve`、`check_geometry`、`repair_geometry`、`snap_geometry`、`snap_line_endpoints` |
+| 矢量处理 | 几何整理 | 7 | `simplify`、`dissolve`、`check_geometry`、`repair_geometry`、`snap_geometry`、`snap_line_endpoints`、`extend_line_endpoints` |
 | 矢量处理 | 拓扑检查 | 8 | `check_polygon_overlap`、`check_polygon_gap`、`check_dangling_points`、`check_line_proximity`、`check_line_overlap`、`check_line_self_overlap`、`check_line_intersection`、`check_line_self_intersection` |
 | 矢量处理 | 线网处理 | 5 | `polygonize`、`split_line_intersections`、`group_line_components`、`merge_line_chains`、`normalize_line_network` |
 | 矢量处理 | 叠加分析 | 4 | `intersection`、`union`、`difference`、`clip` |
@@ -211,3 +211,7 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 `raster_focal_statistics`的`method=median`复用原邻域统计入口，固定3×3／5×5、包含中心、实际有效邻居排序，偶数取两中值平均；允许小数，中心无效保留、边缘不补零，沿原网格／Float64／COG。原sum／mean／min／max／stddev／mode语义保持，不新增面板入口。
 
 同一入口的`method=percentile`必须显式指定单个`percentile`（有限实数0–100，非布尔），固定线性位置`h=(n−1)p/100`在相邻有效排序值间插值；50与median一致，0／100为端点。沿原3×3／5×5、包含中心、有效性、同网格Float64与COG主路径；其他方法不接受percentile参数，原七方法保持，不新增面板入口。
+
+## 线端延伸
+
+`extend_line_endpoints` 沿原始开口部件朝外方向，将悬点延伸到显式距离上限内首次参考交点；上限包含等号，共线取入口，同点参考来源全部保留。原顶点、方向及业务属性不变，`details`为原端点指向目标的新增段；方向不一致、不能精确连接或结果无效整批失败。无目标不变，不连锁或隐式修复。详见[线端延伸契约](../../../docs/spec/workflow/矢量算子契约.md#线端延伸契约)。
