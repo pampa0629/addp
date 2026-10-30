@@ -231,6 +231,7 @@ Copilot 服务身份使用独立的 `COPILOT_SERVICE_CLIENT_SECRET`，调用身�
 
 ## 相关文档
 
+- [Copilot × Develop 调用关系](docs/copilot-develop-调用关系说明.md) - 查询、Notebook、工作流与公开算子读取边界
 - [ADDP 平台架构](../CLAUDE.md) - 平台整体架构
 - [System 模块](../system/CLAUDE.md) - 用户认证和租户管理
 - [Meta 模块](../meta/CLAUDE.md) - 元数据查询（SQL Agent 依赖）

@@ -1,8 +1,10 @@
 # Copilot × Develop 调用关系说明
 
+[返回 Copilot 模块](../CLAUDE.md) · [查询生成](#查询工作台生成主流程) · [Notebook 生成](#notebook-编辑器生成主流程) · [工作流时序](#时序图-1develop-前端发起工作流生成主流程) · [实例与资源约束](#工作流引擎选择机制) · [公开算子契约](#算子元数据结构) · [验收边界](#验收边界)
+
 ## 概述
 
-Copilot 是一个**纯后端 API 服务**（Python FastAPI，端口 8087），没有独立前端。Develop 的查询工作台、工作流编辑器和 Notebook 编辑器分别嵌入 AI 助手：查询工作台把当前 Query Engine、查询语言、可选的已确认资源和编辑器已有查询交给 Copilot 生成候选查询文本；工作流编辑器把工作流运行时和已确认资源交给 Copilot 生成 DAG；Notebook 编辑器把当前 Session Engine Catalog 中用户确认的资源事实交给 Copilot 生成 Python/GeoPandas 单元。三种结果都只作为候选，保存、插入和执行继续归 Develop。
+Copilot 是一个**纯后端 API 服务**（Python FastAPI，实际端口见[模块环境配置](../CLAUDE.md#环境变量配置)），没有独立前端。Develop 的查询工作台、工作流编辑器和 Notebook 编辑器分别嵌入 AI 助手：查询工作台把当前 Query Engine、查询语言、可选的已确认资源和编辑器已有查询交给 Copilot 生成候选查询文本；工作流编辑器把工作流运行时和已确认资源交给 Copilot 生成 DAG；Notebook 编辑器把当前 Session Engine Catalog 中用户确认的资源事实交给 Copilot 生成 Python/GeoPandas 单元。三种结果都只作为候选，保存、插入和执行继续归 Develop。
 
 ---
 
@@ -15,20 +17,20 @@ Copilot 是一个**纯后端 API 服务**（Python FastAPI，端口 8087），�
 | **Develop 前端** | `NotebookEditor.vue` | Notebook AI 助手；只使用当前 Notebook Session Engine Catalog，逐角色确认数据源后展示并插入 Python 单元 |
 | **Develop 前端** | `OperatorPalette.vue` | 算子面板；按工作流引擎实例加载可用算子列表供用户拖拽使用 |
 | **Develop 前端** | `api/copilot.js` | 封装对 Copilot 后端的 HTTP 调用 |
-| **Gateway** | `gateway:8000` | 统一路由入口；将 `/api/copilot/*` 反向代理到 Copilot 后端 |
-| **Develop 后端** | `operator_discovery_service.go` | 算子发现服务；按工作流引擎实例查询算子元数据；汇总入口仅用于调试/全局查看 |
+| **Gateway** | `Gateway` | 统一路由入口；将 `/api/v1/copilot/*` 转发到已登记的 Copilot 后端；实际端口与公开入口见[端口规范](../../docs/spec/addp端口分配.md) |
+| **Develop 后端** | `operator_discovery_service.go` | 算子发现服务；按 Tenant 和工作流引擎实例查询、校验公开算子目录；入口见[工作流调用规范](../../docs/spec/workflow/Develop资源与执行.md#调用流程) |
 | **Copilot 后端** | `workflow_agent_api.py` | 工作流生成 API 端点；缺少资源事实时先返回 owner 校验后的候选 |
 | **Copilot 后端** | `query_agent_api.py` | 查询生成 API 端点；只在请求的当前 Query Engine 内发现资源，确认后按引擎 capability 生成候选查询语言 |
 | **Develop 后端** | `notebook_copilot_service.go` | Notebook Session 候选粗筛、缺失角色补充检索、候选确认和 Catalog facts 重新校验 |
 | **Copilot 后端** | `notebook_agent_api.py`、`notebook_service.py` | Notebook 输入角色理解、候选语义排序和受控 Python/GeoPandas 单元生成；不执行代码、不做租户级搜索 |
-| **Copilot 后端** | `resource_intent_chain.py`、`resource_discovery.py`、`resource_recommendation_chain.py` | 查询与工作流共享的资源确认；明确 Catalog scope 时执行 `resource.children.list → resource.facts.get`，无范围时提取跨语言检索词并执行 `data.search → resource.ancestors.get → resource.facts.get`，最后由 LLM 对已验证候选排序并标记推荐项，不过滤仍然合理的候选 |
+| **Copilot 后端** | `resource_intent_chain.py`、`resource_discovery.py`、`resource_recommendation_chain.py` | 查询与工作流共享的资源确认与已验证候选排序；范围枚举见[查询主流程](#查询工作台生成主流程)，搜索、确认和澄清见[数据源事实约定](#数据源事实约定) |
 | **Copilot 后端** | `workflow_service.py` | 消费已确认资源事实，协调算子筛选、生成、验证全流程 |
 | **Copilot 后端** | `operator_selection_chain.py` | LLM Chain；从全量算子列表中筛选 3-8 个最相关算子 |
 | **Copilot 后端** | `workflow_generation_chain.py` | LLM Chain；根据选定算子的 Public Operator Spec 生成完整 DAG JSON |
 | **Copilot 后端** | `workflow_validation_chain.py` | 四层验证；结构、唯一性、依赖关系、参数合法性 |
 | **Copilot 后端** | `operator_catalog.py` | 通过共享 Develop Client 获取公开算子目录与详情 |
-| **工作流引擎** | `geopython-workflow` / `spark-workflow` / `math-workflow` | 暴露 `/api/operators` 端点；提供算子元数据（参数定义、输出定义、workflow_example） |
-| **LLM 服务** | 通义千问 / OpenAI / Claude / Ollama | 执行算子筛选、工作流生成、自动修复等推理任务 |
+| **工作流引擎** | 所选 `compute.workflow` 实例 | 经 `/api/operators` 提供 Runtime Operator Spec，由 Develop 投影公开契约，见[算子契约分层](../../docs/spec/workflow/Develop资源与执行.md#算子契约分层) |
+| **Inference Runtime** | Model Profile 解析后的统一推理入口 | 执行算子筛选、工作流生成和有限修复的模型请求；协议适配与上游凭据归 Inference，见[调用方边界](<../../docs/spec/addp AI推理接口规范.md#copilot-场景与领域职责>) |
 
 ## 查询工作台生成主流程
 
@@ -54,20 +56,22 @@ Agent 使用根 `skills/query-generation` 和 `query.draft.generate` Tool 复用
 
 ## 时序图 1：Develop 前端发起工作流生成（主流程）
 
+图中 Bearer 访问令牌的身份与 Tool Scope 按[模块 IAM 说明](../CLAUDE.md#iam-permission-所有权)校验，认证事实来自[System AuthContext](../../docs/spec/addp登录认证的统一要求.md#一认证事实与唯一主路径)。Copilot 读取 Develop 算子目录使用自身 Tenant Service Access Token，见[模块服务身份](../CLAUDE.md#多租户支持)。图中的模型请求统一经过 Inference，配置、凭据和验证要求见[推理契约导航](../CLAUDE.md#推理契约导航)。
+
 ```mermaid
 sequenceDiagram
     actor User as 用户
     participant FE as Develop前端<br/>WorkflowEditor.vue
-    participant GW as Gateway<br/>:8000
-    participant Copilot as Copilot后端<br/>:8087
+    participant GW as Gateway
+    participant Copilot as Copilot后端
     participant WorkflowService
-    participant DevBE as Develop后端<br/>:8084
-    participant LLM as LLM服务
+    participant DevBE as Develop后端
+    participant LLM as Inference统一推理入口
 
     User->>FE: 1. 在AI助手面板输入自然语言描述<br/>（已选择工作流引擎实例）
-    FE->>GW: 2. POST /api/v1/copilot/workflow/generate<br/>Bearer JWT + { query, workflow_engine_id, resources[] }
+    FE->>GW: 2. POST /api/v1/copilot/workflow/generate<br/>Bearer Access Token + { query, workflow_engine_id, resources[] }
     GW->>Copilot: 3. 反向代理转发
-    Copilot->>Copilot: 4. 通过 System 校验 JWT 并取得 tenant_id / user_id
+    Copilot->>Copilot: 4. 通过 System AuthContext 取得权威用户与租户，校验接口权限
 
     alt 普通用户且 resources[] 为空
         Copilot->>GW: 5. ToolExecutor 按原始词与跨语言技术名请求 data.search
@@ -99,7 +103,7 @@ sequenceDiagram
 
     note over WorkflowService: 阶段3：工作流生成
     WorkflowService->>DevBE: 11. 通过 OperatorCatalogService 获取选定算子详情
-    DevBE-->>WorkflowService: 返回算子详情（parameters、public_parameters、output_ports）
+    DevBE-->>WorkflowService: 返回算子详情（消费 public_parameters、output_ports）
     WorkflowService->>LLM: 12. 结合算子详情 + 已确认资源事实<br/>生成工作流 DAG JSON
     LLM-->>WorkflowService: 返回工作流 JSON
 
@@ -121,17 +125,19 @@ sequenceDiagram
 
 ## 时序图 2：算子发现机制（如何知道有哪些算子可用）
 
+`OperatorCatalogService` 的列表摘要按 `(tenant_id, workflow_engine_id)` 缓存 300 秒；详情读取仍通过共享 Develop Client 再取同实例目录并按名称定位。Develop 的发现服务按请求读取 Runtime Descriptor 和算子，不在本服务维护上述 TTL 缓存；缓存命中不证明当前目录读取或实际生成已验收。
+
 ```mermaid
 sequenceDiagram
     participant FE as Develop前端<br/>OperatorPalette.vue
-    participant DevBE as Develop后端<br/>:8084
-    participant DiscSvc as OperatorDiscoveryService<br/>（5分钟TTL缓存）
+    participant DevBE as Develop后端
+    participant DiscSvc as OperatorDiscoveryService
     participant WorkflowEngine as 已选工作流引擎实例<br/>compute.workflow
-    participant Copilot as Copilot后端<br/>develop_tools.py
+    participant Copilot as Copilot后端<br/>operator_catalog.py
 
     note over FE,WorkflowEngine: 路径A：Develop前端加载算子面板
     FE->>DevBE: GET /api/v1/develop/workflow-engines/{workflow_engine_id}/operators<br/>（用户切换工作流引擎实例时触发）
-    DevBE->>DiscSvc: GetOperatorsByWorkflowEngineID(workflow_engine_id)
+    DevBE->>DiscSvc: GetOperatorsByWorkflowEngineIDForTenant(workflow_engine_id, tenant_id)
 
     DiscSvc->>WorkflowEngine: GET /api/operators
     WorkflowEngine-->>DiscSvc: 返回该实例的算子元数据
@@ -141,13 +147,13 @@ sequenceDiagram
     FE->>FE: 渲染算子面板供用户拖拽使用
 
     note over Copilot,WorkflowEngine: 路径B：Copilot生成工作流时获取算子
-    Copilot->>DevBE: GET /api/v1/develop/workflow-engines/{workflow_engine_id}/operators<br/>（OperatorCatalogService，5分钟 TTL 缓存）
-    DevBE->>DiscSvc: GetOperatorsByWorkflowEngineID(workflow_engine_id)
-    DiscSvc-->>DevBE: 返回缓存中的算子列表（简要信息）
+    Copilot->>DevBE: GET /api/v1/develop/workflow-engines/{workflow_engine_id}/operators<br/>（OperatorCatalogService 列表缓存未命中时）
+    DevBE->>DiscSvc: GetOperatorsByWorkflowEngineIDForTenant(workflow_engine_id, tenant_id)
+    DiscSvc-->>DevBE: 返回当前实例公开算子目录
     DevBE-->>Copilot: 算子列表（name, brief_description, category）
 
-    Copilot->>Copilot: OperatorCatalogService 从同一工作流引擎实例的算子目录读取 operator_name
-    Copilot-->>Copilot: 算子详情（parameters, public_parameters, output_ports）
+    Copilot->>DevBE: OperatorCatalogService 再读同一 Tenant 和实例的算子目录，定位 operator_name
+    DevBE-->>Copilot: 算子详情（消费 public_parameters、output_ports）
 ```
 
 ---
@@ -165,7 +171,7 @@ sequenceDiagram
     participant Fix as WorkflowAutoFix
     participant Executor as common-python ToolExecutor
     participant Catalog as OperatorCatalogService
-    participant LLM as LLM服务
+    participant LLM as Inference统一推理入口
 
     API->>Discovery: resources[] 为空时 discover(query)
     Discovery->>Executor: ToolExecutor → data.search
@@ -191,7 +197,7 @@ sequenceDiagram
         note right of WorkflowService: 阶段3 工作流生成
         WorkflowService->>Gen: generate(query, resources, operators, workflow_engine_id)
         Gen->>Catalog: OperatorCatalogService（并发批量）<br/>获取每个选定算子的详情
-        Catalog-->>Gen: 算子详情（parameters, public_parameters, output_ports）
+        Catalog-->>Gen: 算子详情（消费 public_parameters、output_ports）
         Gen->>LLM: 生成工作流 DAG<br/>（只使用 public_parameters 中的非 UI 参数和已确认 locator）
         LLM-->>Gen: 工作流 JSON 字符串
         Gen->>Gen: 按结构化响应契约解析 JSON
@@ -241,7 +247,7 @@ Copilot 生成接口接收 `workflow_engine_id` 和可选的 `resources[]`：
 
 ```
 Develop前端（用户选择引擎）
-  → POST /api/v1/copilot/workflow/generate（用户身份来自 Bearer JWT）
+  → POST /api/v1/copilot/workflow/generate（用户与租户来自 Bearer Access Token 对应的 AuthContext）
     { workflow_engine_id: 1, resources: [{ role, locator, geometry_column, crs }] }
   → Copilot WorkflowService
     → OperatorCatalogService: GET /api/v1/develop/workflow-engines/1/operators
@@ -267,57 +273,7 @@ Develop前端（用户选择引擎）
 
 每个算子向 Develop 后端暴露标准化的元数据。`parameters` 是工作流运行时真实执行参数，`public_parameters` 是前端、用户和 AI 共同使用的公开契约。Copilot 只能根据 `public_parameters` 生成和验证 workflow definition，不能消费 Runtime Operator Spec 中的 `parameters` 或 `detailed_description.workflow_example`。
 
-```json
-{
-  "id": "buffer",
-  "name": "buffer",
-  "display_name": "缓冲区分析",
-  "category": "空间分析",
-  "category_path": ["空间分析"],
-  "engine_type": "geopython_workflow",
-  "brief_description": "对几何对象生成指定距离的缓冲区",
-  "detailed_description": "...",
-  "parameters": [
-    {
-      "name": "input_gdf",
-      "type": "GeoDataFrame",
-      "required": true,
-      "description": "运行时输入"
-    },
-    {
-      "name": "distance",
-      "type": "float",
-      "required": true,
-      "description": "缓冲区距离"
-    }
-  ],
-  "public_parameters": [
-    {
-      "name": "distance",
-      "type": "float",
-      "required": true,
-      "description": "缓冲区距离",
-      "notes": "单位由 unit 参数决定"
-    },
-    {
-      "name": "unit",
-      "type": "string",
-      "required": false,
-      "default": "meters",
-      "enum": ["meters", "kilometers", "degrees"]
-    }
-  ],
-  "output_ports": [
-    {
-      "name": "result",
-      "type": "GeoDataFrame",
-      "description": "缓冲区结果"
-    }
-  ],
-  "use_cases": ["POI 服务范围分析", "洪水淹没区域计算"],
-  "notes": ["输入几何必须已设置正确的坐标系"]
-}
-```
+字段定义与运行时元数据示例统一见[算子元数据与实现](../../docs/spec/workflow/算子元数据与实现.md#算子描述结构)；公开、适配与运行时三层的归属见[算子契约分层](../../docs/spec/workflow/Develop资源与执行.md#算子契约分层)。本专题保留各消费方的字段用途：
 
 ### 字段作用分工
 
@@ -336,4 +292,8 @@ Develop前端（用户选择引擎）
 
 - LLM 调用失败、Develop API 失败或算子公开契约缺失时，Copilot 必须立即终止当前生成流程并向 API 层传播真实原因。
 - 不得将上游异常转换为空算子列表或空算子详情，否则会将真实故障误报为“无法获取算子详情”。
-- API 以非 2xx 状态返回生成失败，`detail` 保留可操作的上游错误信息，Develop 前端直接展示该字段。
+- 当前工作流 API 将 Tool 调用失败映射为 `502`、参数错误映射为 `400`、其他生成异常映射为 `500`，身份与权限错误保留原状态；普通异常返回固定“工作流生成失败”，不能承诺向前端透传原始上游错误。`need_clarification` 与 `validation_failed` 是业务响应状态，不能按 HTTP 成功就判定生成成功。响应与敏感信息边界见[响应与错误规范](../../docs/spec/api/响应与错误.md#错误响应格式)。
+
+## 验收边界
+
+本页的流程和时序图不代表已有运行通过证据。实际检查须区分接口身份与权限、资源确认、公开算子读取、候选生成，以及 Develop 后续保存、插入与执行；受控上游测试不代替新代码部署后的真实厂商调用。验证要求见[推理契约导航](../CLAUDE.md#推理契约导航)，层级与标准入口见[测试与验收规范](../../docs/spec/addp测试与验收规范.md)；未运行、失败和未覆盖项分别记录，不计为通过。
