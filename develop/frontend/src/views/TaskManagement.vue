@@ -109,7 +109,7 @@
             {{ formatTime(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column :label="t('develop.taskManagement.colActions')" width="320" fixed="right">
+        <el-table-column :label="t('develop.taskManagement.colActions')" width="320">
           <template #default="{ row }">
             <div class="task-actions">
               <el-button
@@ -438,11 +438,14 @@ onMounted(async () => {
 .task-management-page {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   background: var(--addp-bg-secondary);
 }
 
 .toolbar {
   display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   justify-content: space-between;
   align-items: center;
   padding: 12px 20px;
@@ -453,11 +456,13 @@ onMounted(async () => {
 .toolbar-left,
 .toolbar-right {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
 }
 
 .toolbar h2 {
+  flex-shrink: 0;
   margin: 0;
   font-size: 18px;
   color: var(--addp-text-primary);
@@ -467,6 +472,7 @@ onMounted(async () => {
 
 .content-area {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: visible;
