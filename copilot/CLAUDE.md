@@ -66,30 +66,30 @@
 
 ### 开发环境
 
+从项目根目录、在开发者自己的终端执行。先按[部署指南](../docs/guide/addp部署和开发步骤.md#快速开始)准备开发工具与 Infra，宿主机 Python 需为 3.11–3.13；数据库与 Copilot 服务身份在根 `.env` 中配置，归属见[配置规范](../docs/spec/addp配置介绍.md#阅读导航)，身份见[多租户支持](#多租户支持)。
+
 ```bash
-# 进入后端目录
-cd copilot/backend
-
-# 安装依赖
-pip install -r requirements.txt
-
-# 数据库和 Inference Runtime 服务身份统一配置在仓库根目录 .env
-cd ../..
 bash scripts/dev/start.sh -copilot
-
-# 或在 copilot/backend 内本地调试
-cd copilot/backend
-PORT=8087 ./venv/bin/python main.py
 ```
+
+入口统一准备 `copilot/backend/venv` 与声明依赖，安装锁、指纹复用和失败规则见[Python 依赖同步](../docs/spec/addp开发服务生命周期与构建身份规范.md#python-依赖同步)。模块依赖范围见[模块选择指南](../scripts/docs/模块选择启动指南.md#如何合并依赖)；需要本机模型联调时使用 `bash scripts/dev/start.sh -copilot -inference`，并按[推理契约导航](#推理契约导航)配置场景绑定及推理资源。
+
+代码或依赖变化后，由用户在终端执行 `./scripts/dev/restart.sh -copilot`。复用运行中服务、重启范围、停止与准备失败的处理见[启动与重启边界](../scripts/docs/启动脚本使用指南.md#启动与重启边界)，生命周期锁与进程归属见[停止与进程归属](../scripts/docs/启动脚本使用指南.md#停止与进程归属)。产品容器部署见[开发与容器部署](../scripts/docs/开发与容器部署.md)。
 
 ### 测试 API
 
+以下示例用于后端直连，实际地址以启动输出和 `.dev-state/ports.env` 为准，首选端口与公开入口的区别见[端口规范](../docs/spec/addp端口分配.md)。`<token>` 须满足 [IAM Permission 所有权](#iam-permission-所有权)中对应接口的身份、Tool Scope 和权限要求，不能用 Copilot Client Secret 或其推理服务令牌替代。示例中的引擎 ID、locator 与数据条件须替换为当前租户实际可访问的资源。
+
 ```bash
+# 从项目根目录读取本工作区实际端口
+source .dev-state/ports.env
+COPILOT_BASE_URL="http://127.0.0.1:${COPILOT_BACKEND_PORT:?请先通过标准入口启动 Copilot}"
+
 # 健康检查
-curl http://localhost:8087/health/ready
+curl -fsS "$COPILOT_BASE_URL/health/ready"
 
 # 测试查询生成
-curl -X POST http://localhost:8087/api/v1/copilot/query/generate \
+curl -X POST "$COPILOT_BASE_URL/api/v1/copilot/query/generate" \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -100,7 +100,7 @@ curl -X POST http://localhost:8087/api/v1/copilot/query/generate \
   }'
 
 # 测试工作流生成
-curl -X POST http://localhost:8087/api/v1/copilot/workflow/generate \
+curl -X POST "$COPILOT_BASE_URL/api/v1/copilot/workflow/generate" \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -111,6 +111,8 @@ curl -X POST http://localhost:8087/api/v1/copilot/workflow/generate \
     ]
   }'
 ```
+
+启动输出与 `/health/ready` 只反映本次实际执行的准备、进程启动或复用及就绪检查，不证明场景绑定、授权、资源事实、领域生成或真实厂商推理可用。示例只请求候选生成，不保存或执行候选；实际结果仍按[推理契约导航的验收说明](#推理契约导航)分层认定。
 
 ## 项目结构
 
