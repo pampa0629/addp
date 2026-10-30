@@ -1388,18 +1388,26 @@ const start=source.indexOf('function proximityPointExpectation('),end=source.ind
 const expect=value=>({toHaveLength:n=>assert.equal(value.length,n),toBe:n=>assert.equal(value,n)});
 expect.poll=fn=>({async toEqual(value){assert.deepEqual(await fn(),value)},async toBeGreaterThan(value){assert.ok(await fn()>value)}});
 const check=new Function('webMercatorPreviewCoordinate','expect',source.slice(start,end)+';return assertProximityPointMap')(webMercatorPreviewCoordinate,expect);
-async function run(rows,projection='EPSG:3857',pixels=40){
+globalThis.OffscreenCanvas=class {getContext(){return {clearRect(){},fillRect(){},fillStyle:'#000000',getImageData(){return {data:[...this.fillStyle.slice(1).match(/../g).map(value=>parseInt(value,16)),255]}}}}};
+async function run(rows,projection='EPSG:3857',pixels=40,color='#409eff',rgba=[64,158,255,255],visible=true){
  const features=rows.map(row=>({get:k=>row.properties[k],getGeometry:()=>({getType:()=>row.geometry.type,getCoordinates:()=>webMercatorPreviewCoordinate(row.geometry.coordinates)})}));
- const map={getView:()=>({getAnimating:()=>false,getProjection:()=>({getCode:()=>projection})}),getLayers:()=>({getArray:()=>[{getSource:()=>({getFeatures:()=>features})}]})};
- const renderer={evaluate:async(fn,fields)=>fn({__vueParentComponent:{setupState:{mapInstance:map}}},fields),locator:()=>({evaluateAll:async()=>pixels})};
+ const context={canvas:{width:pixels,height:1},getImageData:()=>({data:new Uint8ClampedArray(Array.from({length:pixels},()=>rgba).flat())})};
+ const layer={getSource:()=>({getFeatures:()=>features}),getVisible:()=>visible,getOpacity:()=>1,getRenderer:()=>({context}),getStyleFunction:()=>()=>({getImage:()=>({getFill:()=>({getColor:()=>color})})})};
+ const map={getView:()=>({getAnimating:()=>false,getResolution:()=>1,getProjection:()=>({getCode:()=>projection})}),getLayers:()=>({getArray:()=>[layer]})};
+ const canvas={width:pixels,height:1,getContext:()=>context};
+ const renderer={evaluate:async(fn,fields)=>fn({__vueParentComponent:{setupState:{mapInstance:map}}},fields),locator:()=>({evaluateAll:async fn=>fn([canvas])})};
  return check(renderer,expected);
 }
-await run(expected);await run([...expected].reverse());
+assert.equal((await run(expected)).painted_pixels,40);await run([...expected].reverse());
+assert.equal((await run(expected,'EPSG:3857',40,'#67c23a',[103,194,58,255])).painted_pixels,40);
 for(const mutate of [r=>r.pop(),r=>r.push(structuredClone(r[0])),r=>r[0].properties.source_id=1,r=>r[0].properties.reference_id='other',
  r=>r[0].properties.distance=1,r=>r[2].properties.nearest_x=.25,r=>r[0].geometry.coordinates=[.5,0],r=>r[0].geometry.type='LineString']){
  const rows=structuredClone(expected);mutate(rows);await assert.rejects(run(rows),{code:'ERR_ASSERTION'});
 }
 await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'});await assert.rejects(run(expected,'EPSG:3857',0),{code:'ERR_ASSERTION'});
+await assert.rejects(run(expected,'EPSG:3857',40,'#409eff',[103,194,58,255]),{code:'ERR_ASSERTION'});
+await assert.rejects(run(expected,'EPSG:3857',40,'#409eff',[64,158,255,0]),{code:'ERR_ASSERTION'});
+await assert.rejects(run(expected,'EPSG:3857',40,'#409eff',[64,158,255,255],false),{code:'ERR_ASSERTION'});
 '''
         result=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),
             json.dumps(m.fixture.proximity_features('result')),(repository/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri()],capture_output=True,text=True)

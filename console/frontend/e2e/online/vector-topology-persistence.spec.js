@@ -609,13 +609,31 @@ async function assertProximityPointMap(renderer,expected) {
   }).toEqual(proximityPointExpectation(expected))
   expect(observed.features).toHaveLength(7)
   expect(new Set(observed.features.map(feature=>JSON.stringify(feature.coordinates))).size).toBe(3)
-  let greenPixels=0
-  await expect.poll(async()=>greenPixels=await renderer.locator('canvas').evaluateAll(canvases=>canvases.reduce((n,canvas)=>{
-    const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data
-    for(let i=0;i<pixels.length;i+=4)if(pixels[i+3]>0&&pixels[i+1]>pixels[i]*1.1&&pixels[i+1]>pixels[i+2]*1.1)n++
-    return n
-  },0))).toBeGreaterThan(30)
-  return {...observed,green_pixels:greenPixels}
+  let paintedPixels=0
+  await expect.poll(async()=>paintedPixels=await renderer.evaluate(element=>{
+    const ref=element.__vueParentComponent?.setupState?.mapInstance,map=ref?.value||ref
+    if(!map)return 0
+    const probe=new OffscreenCanvas(1,1).getContext('2d')
+    let count=0
+    for(const layer of map.getLayers().getArray()){
+      const features=layer.getSource?.()?.getFeatures?.()||[]
+      if(!features.length||!layer.getVisible()||layer.getOpacity()===0)continue
+      const feature=features[0],style=layer.getStyleFunction()?.(feature,map.getView().getResolution())
+      const styles=Array.isArray(style)?style:[style]
+      const colors=styles.map(value=>value?.getImage()?.getFill()?.getColor()).filter(Boolean).map(color=>{
+        probe.clearRect(0,0,1,1);probe.fillStyle=color;probe.fillRect(0,0,1,1)
+        return [...probe.getImageData(0,0,1,1).data]
+      })
+      const context=layer.getRenderer()?.context
+      if(!context||!colors.length)continue
+      const pixels=context.getImageData(0,0,context.canvas.width,context.canvas.height).data
+      for(let i=0;i<pixels.length;i+=4){
+        if(pixels[i+3]>0&&colors.some(color=>color[3]>0&&pixels[i]===color[0]&&pixels[i+1]===color[1]&&pixels[i+2]===color[2]))count++
+      }
+    }
+    return count
+  })).toBeGreaterThan(30)
+  return {...observed,painted_pixels:paintedPixels}
 }
 
 function assertProximityLineage(graph,evidence) {
