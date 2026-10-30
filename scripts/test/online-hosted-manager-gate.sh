@@ -8,12 +8,14 @@ ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=manager-internal-artifact-lineage
 export ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}
 case "$ADDP_ONLINE_MANAGER_CASE" in
-  full|native-raster-media|native-table-orc|kml-export) ;;
-  *) echo 'ADDP_ONLINE_MANAGER_CASE must be full, native-raster-media, native-table-orc or kml-export' >&2; exit 1 ;;
+  full|native-raster-media|native-table-orc|kml-export|filegdb-authorization) ;;
+  *) echo 'ADDP_ONLINE_MANAGER_CASE must be full, native-raster-media, native-table-orc, kml-export or filegdb-authorization' >&2; exit 1 ;;
 esac
 HOSTED_FIXTURE_CONTAINERS=(addp-manager-model3d-runtime business-minio addp-manager-online-registry addp-manager-raster-runtime addp-manager-raster-verifier)
 if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ]; then
   HOSTED_FIXTURE_CONTAINERS=(addp-metric-online-disposable)
+elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ]; then
+  HOSTED_FIXTURE_CONTAINERS=(addp-manager-online-registry addp-manager-raster-runtime)
 fi
 HOSTED_FIXTURE_COMPOSE_PROJECTS=(business)
 RUNTIME_CONTAINER=addp-manager-raster-runtime
@@ -21,10 +23,27 @@ RUNTIME_TAG=manager-raster-online
 RUNTIME_IMAGE=localhost:5001/addp-geopython-workflow-engine:$RUNTIME_TAG
 export ADDP_ONLINE_RASTER_RUNTIME_IMAGE="$RUNTIME_IMAGE"
 HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE" localhost:5001/python:3.11-slim 127.0.0.1:5001/addp-model3d-converter:online 127.0.0.1:5001/addp-model3d-workflow-engine:online)
+if [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ]; then
+  HOSTED_FIXTURE_IMAGES=("$RUNTIME_IMAGE")
+fi
 stop_online_fixture() {
   local cleanup_status=0 image
   if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ]; then
     run_logged bash business/scripts/online-metric-postgres-fixture.sh stop || cleanup_status=1
+    return "$cleanup_status"
+  fi
+  if [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ]; then
+    if [ -f "$ADDP_ONLINE_SECRET_DIR/filegdb-nfs-mount" ]; then
+      run_logged python3 -m scripts.test.manager-filegdb-physical unmount || cleanup_status=1
+    fi
+    run_logged bash business/scripts/online-manager-nfs-fixture.sh stop || cleanup_status=1
+    remove_online_product_container addp-manager-online-registry || cleanup_status=1
+    for image in "${HOSTED_FIXTURE_IMAGES[@]}"; do
+      if docker image inspect "$image" >/dev/null 2>&1; then
+        run_logged docker image rm "$image" || cleanup_status=1
+        if docker image inspect "$image" >/dev/null 2>&1; then cleanup_status=1; fi
+      fi
+    done
     return "$cleanup_status"
   fi
   run_logged bash business/scripts/online-manager-nfs-fixture.sh stop || cleanup_status=1
@@ -82,6 +101,35 @@ if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ]; then
     --descriptor "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE" --output "$ENGINE_RESULT_ENV"
   source "$ENGINE_RESULT_ENV"
   export ADDP_ONLINE_MANAGER_PG_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
+  unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
+  run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"
+  exit 0
+fi
+if [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ]; then
+  export ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE="$ADDP_ONLINE_SECRET_DIR/manager-nfs-engine.json"
+  fixture_owned=1
+  run_logged docker run -d --name addp-manager-online-registry --label "com.addp.online-runtime=$ONLINE_SUITE" -p 127.0.0.1:5001:5000 registry:2
+  for attempt in $(seq 1 30); do
+    if curl -fsS http://127.0.0.1:5001/v2/ >/dev/null; then break; fi
+    [ "$attempt" -lt 30 ] || fail 'temporary registry not ready'
+    sleep 1
+  done
+  infra_owned=1
+  run_logged bash scripts/infra/up.sh
+  run_logged bash business/scripts/online-manager-nfs-fixture.sh start
+  run_logged python3 -m scripts.test.manager-filegdb-physical mount
+  nfs_root=$(cat "$ADDP_ONLINE_SECRET_DIR/nfs-root")
+  nfs_read_mount=$(cat "$ADDP_ONLINE_SECRET_DIR/filegdb-nfs-mount")
+  application_owned=1
+  for start_target in -security -meta -manager -monitor; do
+    run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
+  done
+  start_online_geopython_runtime "$RUNTIME_TAG" --mount "type=bind,src=$nfs_read_mount,dst=$nfs_root,readonly"
+  run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite manager-internal-artifact-lineage --wait-protection-owners manager --output "$1"' _ "$IDENTITY_ENV"
+  source "$IDENTITY_ENV"
+  run_logged python3 scripts/test/online-engine-registration.py --descriptor "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE" --output "$ENGINE_RESULT_ENV"
+  source "$ENGINE_RESULT_ENV"
+  export ADDP_ONLINE_MANAGER_NFS_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
   unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
   run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"
   exit 0

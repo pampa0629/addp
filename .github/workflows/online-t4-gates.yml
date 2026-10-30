@@ -133,6 +133,7 @@ on:
           - native-raster-media
           - native-table-orc
           - kml-export
+          - filegdb-authorization
       native_case:
         description: Explicit cleanup-native-effects case (manager-success, manager-object-unknown, manager-index-unknown, manager-late-writer, transfer-engine, transfer-dlq-unknown, transfer-capture-unknown)
         required: false
@@ -1399,6 +1400,10 @@ jobs:
             libfontconfig1 libcairo2 libcups2t64 libdbus-1-3 libnspr4 libnss3 \
             libsm6 libx11-6 libxext6 libxinerama1 libxrender1 libxcb1 libxslt1.1 \
             libgpgme11t64 libgpgmepp6t64 nfs-kernel-server
+
+      - name: Install isolated NFS FileGDB fixture tools
+        if: inputs.manager_case == 'filegdb-authorization'
+        run: sudo apt-get install -y --no-install-recommends nfs-common gdal-bin python3-gdal
 
       - name: Validate Hosted Manager readiness
         env:

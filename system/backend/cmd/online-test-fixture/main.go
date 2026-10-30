@@ -125,7 +125,7 @@ var sourceInitializerPermissions = []string{
 func suiteSourceInitializerPermissions(suite string) []string {
 	switch suite {
 	case "ftp-consumer-flow", "manager-internal-artifact-lineage":
-		if suite == "manager-internal-artifact-lineage" && (os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "kml-export" || os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "native-table-orc") {
+		if suite == "manager-internal-artifact-lineage" && (os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "kml-export" || os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "native-table-orc" || os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "filegdb-authorization") {
 			return append([]string{}, sourceInitializerPermissions...)
 		}
 		return append(append([]string{}, sourceInitializerPermissions...),
@@ -243,6 +243,10 @@ var managerORCPermissions = []string{
 	"transfer.task.create", "transfer.task.read", "transfer.task.execute", "transfer.task.delete", "system.execution_authorization.create",
 }
 
+var managerFileGDBPermissions = []string{
+	"manager.content.read", "manager.data_item.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read",
+}
+
 var managerKMLExportPermissions = []string{
 	"manager.data_item.read", "manager.derived_artifact.create", "manager.derived_artifact.read",
 	"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read",
@@ -343,6 +347,8 @@ func suitePermissions(suite string) ([]string, error) {
 		return orchestratorPermissions, nil
 	case "manager-internal-artifact-lineage":
 		switch os.Getenv("ADDP_ONLINE_MANAGER_CASE") {
+		case "filegdb-authorization":
+			return managerFileGDBPermissions, nil
 		case "kml-export":
 			return managerKMLExportPermissions, nil
 		case "native-table-orc":

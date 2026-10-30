@@ -145,14 +145,45 @@ class HostedManagerGateTest(unittest.TestCase):
             fi
             if [ "$ADDP_ONLINE_MANAGER_CASE" = kml-export ]; then
               [ "$ADDP_ONLINE_MANAGER_PG_ENGINE_ID" = 17 ]
+            elif [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ]; then
+              [ "$ADDP_ONLINE_MANAGER_NFS_ENGINE_ID" = 18 ]
+              [ -z "${ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID:-}" ]
             else
               [ "$ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID" = 17 ]
               [ "$ADDP_ONLINE_MANAGER_NFS_ENGINE_ID" = 18 ]
             fi
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         """)
+        self.host._write_repository_script('scripts/test/manager-filegdb-physical.py', """
+            import os, sys
+            from pathlib import Path
+            with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as out:
+                out.write('filegdb-physical:' + sys.argv[1] + '\\n')
+            state = Path(os.environ['ADDP_ONLINE_SECRET_DIR']) / 'filegdb-nfs-mount'
+            if sys.argv[1] == 'mount': state.write_text('/tmp/filegdb-test-read-mount')
+            else: state.unlink(missing_ok=True)
+        """)
         subprocess.run(["git", "add", "."], cwd=self.host.repository, check=True)
         subprocess.run(["git", "commit", "-qm", "test fixture"], cwd=self.host.repository, check=True)
+
+    def check_filegdb_case(self, failure):
+        result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='filegdb-authorization',
+            **({'ADDP_TEST_SUITE_FAIL':'1'} if failure else {}))
+        self.assertEqual(result.returncode == 0, not failure, result.stderr)
+        trace = self.host.trace.read_text()
+        self.assertIn('filegdb-physical:mount', trace)
+        self.assertIn('filegdb-physical:unmount', trace)
+        self.assertNotIn('source-fixture:start', trace)
+        self.assertNotIn('source-fixture:stop', trace)
+        self.assertIn('nfs-fixture:stop', trace)
+        self.assertIn('infra-down', trace)
+        self.assertFalse(self.host.secrets.exists())
+
+    def test_filegdb_case_owns_only_nfs_mount(self):
+        self.check_filegdb_case(False)
+
+    def test_filegdb_case_cleans_after_scenario_failure(self):
+        self.check_filegdb_case(True)
 
     def test_unknown_or_empty_case_is_rejected_before_lifecycle(self):
         for case in ('', 'other'):

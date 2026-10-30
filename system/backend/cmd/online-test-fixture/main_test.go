@@ -1619,3 +1619,15 @@ func TestManagerORCFixtureUsesApprovedElevenPermissions(t *testing.T) {
 		t.Fatalf("ORC fixture permissions differ: %v %v", got, err)
 	}
 }
+
+func TestFileGDBCaseUsesReadOnlyConsumerAndExistingSourceInitializer(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "filegdb-authorization")
+	permissions, err := suitePermissions("manager-internal-artifact-lineage")
+	want := []string{"manager.content.read", "manager.data_item.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read"}
+	if err != nil || !slices.Equal(permissions, want) {
+		t.Fatalf("FileGDB consumer permissions = %v, %v", permissions, err)
+	}
+	if !slices.Equal(suiteSourceInitializerPermissions("manager-internal-artifact-lineage"), sourceInitializerPermissions) {
+		t.Fatal("FileGDB must reuse the source initializer without Deny or additional privilege")
+	}
+}
