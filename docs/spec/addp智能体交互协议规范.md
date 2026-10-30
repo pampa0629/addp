@@ -1,6 +1,6 @@
 # ADDP 智能体交互协议规范
 
-更新日期：2026-10-10
+更新日期：2026-10-30
 
 状态：正式规范。内置 Agent 的 AgentRun、AG-UI、消息 parts、Interaction、ResultRef、Presentation 和 ADDP A2UI Catalog 以本文为准。
 
@@ -20,6 +20,18 @@ ADDP 智能体交互分为四层：
 各层不能互相替代：Presentation 不是结果事实，浏览器动作不是审批事实，AG-UI `runId` 也不是 AgentRun 主键。
 
 ## 三、AgentRun 与协议调用
+
+### 对话工作区与计划投影
+
+会话组织字段为 `version`（非空 BIGINT，初值 1）、`pinned`、`archived`。列表 `GET /sessions` 唯一采用标准管理分页对象，接受 `page/page_size/search/archived`，默认未归档；检索仅对标题作字面量子串匹配，在计数与分页前应用 User/Tenant 条件。排序为 pinned、updated_at、id 倒序。`PATCH /sessions/{id}` 携带必填版本及至少一个 title/pinned/archived 字段；`DELETE` 的 JSON body 同样必填版本。版本冲突返回 409 与 `resource_version_conflict`，不改写本地编辑或自动重试。组织写入使用 `agent.session.update`，删除沿用 `agent.session.delete`。
+
+归档不删除内容或取消已接纳的运行。当前身份仍可读取归档详情和历史；新消息、恢复和重试在接纳前锁定会话行检查 archived，归档时返回 409 `session_archived`，恢复后才可继续。Owner 审批状态在会话锁前按当前归属只读预取，锁内仍重读 Interaction 并核验 owner 身份、请求指纹和状态，不接受客户端自报批准。会话锁只覆盖接纳事务，不覆盖流式运行。自动历史摘要和首条消息标题初始化不得覆盖用户的组织修改或递增组织版本。
+
+`GET /skills` 使用 `agent.session.read`，从正式 Skill 注册表返回已登记方法，供首页发现能力；不声明当前业务权限或运行可用性。示例只填入输入框，不绕过路由或立即执行。`GET /sessions/{id}/runs` 使用 `agent.run.read`，按当前 User/Tenant 和会话归属分页查询；详情继续使用既有 run API，步骤正文保持原受限投影。
+
+Runtime 私有 `write_todos` 复用 Harness TodoListMiddleware，输入 todos 最多 12 条，content 非空且最多 300 字符，status 仅 pending/in_progress/completed。一次模型响应最多一次更新；与其他工具共批时仍沿原顺序屏障，正式预检/澄清优先规则不变。计划只表达模型报告的处理进度，不能当作业务成功、资源事实或审批；展示标题与正式执行记录、预检结论分开。
+
+计划使用 Activity type `addp-plan`，内容 `{agent_run_id, todos}`，沿既有安全事件与 `presentation_ref` parts 保存。每次更新替换同一 Run 的当前计划投影，历史消息保留当时快照；同一 Run 恢复只从已提交历史消息读取最近一份，重新校验上限，不保存 LangGraph 私有消息、隐藏推理或完整 state。流式回放、刷新均使用同一投影。终态、暂停和恢复不自动完成条目。成果侧栏只索引现有 A2UI 成果与 ResultRef，不把计划或 Interaction 当作业务成果，不创建新的 Artifact 事实。
 
 ### 3.1 身份
 

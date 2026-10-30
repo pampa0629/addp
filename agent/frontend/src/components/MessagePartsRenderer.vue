@@ -6,6 +6,7 @@
         class="message-content markdown"
         v-html="renderMarkdown(part.text)"
       />
+      <AgentPlan v-else-if="part.type === 'presentation_ref' && part.protocol === 'ag-ui' && part.activity_type === 'addp-plan'" :plan="part.content?.todos || []" />
       <A2UISurface
         v-else-if="isVisiblePresentation(part)"
         :operations="part.content?.operations || []"
@@ -27,6 +28,7 @@ import { marked } from 'marked'
 import { A2UISurface } from '@addp/common-frontend/agent-ui'
 
 import ExecutionResultRef from './ExecutionResultRef.vue'
+import AgentPlan from './AgentPlan.vue'
 
 const props = defineProps({
   message: { type: Object, required: true }

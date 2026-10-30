@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -6,7 +6,7 @@ class Settings(BaseSettings):
 
     # Agent 模块配置
     AGENT_BACKEND_PORT: int = 8190
-    AGENT_DB_SCHEMA: str = "agent"
+    AGENT_DB_SCHEMA: Literal["agent"] = "agent"
 
     AGENT_SERVICE_CLIENT_SECRET: str = ""
 

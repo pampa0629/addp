@@ -147,3 +147,18 @@ def transfer_creation_completed(accept_language: str, result: dict) -> str:
 def transfer_creation_stopped(accept_language: str) -> str:
     return ("Creation stopped. See the audited tool results; no automatic retry was performed." if _language(accept_language) == "en"
             else "创建流程已终止，请查看工具审计结果；未自动重试。")
+
+
+_WORKSPACE_MESSAGES = {
+    'owner_approval_unavailable': {'zh-cn': 'Develop 审批状态暂时不可用', 'en': 'Develop approval status is temporarily unavailable'},
+    'invalid_request': {'zh-cn': '请求参数不合法', 'en': 'Invalid request parameters'},
+    'session_deleted': {'zh-cn': '会话已删除', 'en': 'Session deleted'},
+    'invalid_plan': {'zh-cn': '任务计划格式不合法', 'en': 'Invalid task plan'},
+    'session_missing': {'zh-cn': '会话不存在或无权访问', 'en': 'Session not found or inaccessible'},
+    'session_archived': {'zh-cn': '会话已归档，请恢复后继续', 'en': 'Restore this archived session to continue'},
+    'version_conflict': {'zh-cn': '会话已变化，请保留修改并重新加载后重试', 'en': 'Session changed; keep your edits and reload before retrying'},
+}
+
+
+def workspace_message(accept_language, key):
+    return _WORKSPACE_MESSAGES[key][_language(accept_language or 'zh-cn')]

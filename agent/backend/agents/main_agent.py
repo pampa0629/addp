@@ -345,6 +345,7 @@ async def stream_agent_response(
     accept_language: str = "zh-cn",
     draft_catalog: Optional[List[Dict[str, str]]] = None,
     draft_reader: Any = None,
+    plan: Optional[List[Dict[str, str]]] = None,
 ) -> AsyncIterator[AgentEvent]:
     """
     流式输出 Agent 回复。yield (msg_type, content) 元组。
@@ -466,6 +467,7 @@ async def stream_agent_response(
             "agent_run_id": agent_run_id,
             "checkpoint": checkpoint or {},
             "resuming": bool(forced_skill_name),
+            "plan": plan or [],
             "accept_language": accept_language,
             **({"draft_arguments": draft_arguments} if draft_arguments is not None else {}),
         }

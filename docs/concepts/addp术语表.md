@@ -537,6 +537,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
+| Agent Plan | 智能体计划 | AgentRun 内面向用户展示的有界任务安排及模型报告的处理进度。 | 不代表业务 execution、验证结论或批准；与正式运行步骤和 owner 报告分别展示，不能驱动权限或绕过 Tool 条件。 |
 | Agent Runtime | 智能体运行时 | 负责多轮对话、上下文管理、Skill 加载、规划、Tool 调用循环和 run 生命周期的智能体执行环境。 | ADDP 内置 Agent、Codex、Hermes Agent 都可以是 Agent Runtime；Agent Runtime 不拥有 ADDP 业务能力。 |
 | AgentRun | 智能体运行 | Agent Runtime 为完成一次用户目标而持有的可暂停、恢复和审计的逻辑运行。 | 可以跨多个 AG-UI 请求或连接存在；不等同于 owner 模块 execution，也不以某个内存中的 LLM 调用为生命周期边界。 |
 | AgentCheckpoint | 智能体检查点 | AgentRun 在可恢复边界保存的语义状态快照。 | 只保存 owner Tool 已观察事实、用户已确认选择、待处理 Interaction 和恢复所需控制状态；不保存模型隐藏推理、完整大结果或框架私有内存对象。 |

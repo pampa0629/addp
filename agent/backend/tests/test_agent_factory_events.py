@@ -539,7 +539,7 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
         await self._run_workflow_events(
             tools=[], responses=responses, allowed_tool_names=[], llm=llm,
         )
-        prompt = "\n".join(message.content for message in llm.messages[0] if message.type == "system")
+        prompt = "\n".join(message.text for message in llm.messages[0] if message.type == "system")
         self.assertIn("只要求展示草稿或确认配置、明确不要创建", prompt)
         self.assertIn("不调用 transfer_create_review，不提供“确认创建”选项", prompt)
         self.assertIn("用户明确要求创建任务后", prompt)

@@ -36,12 +36,12 @@ def _model(client, tenant_id=1):
     return InferenceChatModel.model_construct(client=client, tenant_id=tenant_id, model_profile_id="test-profile")
 
 
-async def _collect(client, names, tenant_id=1, checkpoint=None, run_id="run-fixture"):
+async def _collect(client, names, tenant_id=1, checkpoint=None, run_id="run-fixture", plan=None):
     return [event async for event in AgentFactory.run(
         task_context={
             "skill_name": "data-browse", "user_request": "查看数据", "context_summary": "",
             "user_id": tenant_id, "tenant_id": tenant_id, "token": "private-user-token",
-            "agent_run_id": run_id, "checkpoint": checkpoint,
+            "agent_run_id": run_id, "checkpoint": checkpoint, "plan": plan or [],
         }, skill_body="测试 Skill", allowed_tool_names=names, max_iterations=5, llm=_model(client, tenant_id),
     )]
 
@@ -147,7 +147,7 @@ class DeerFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(json.loads(client.calls[1]["messages"][-1].content), result)
         self.assertEqual(json.loads(next(e.payload["content"] for e in events if e.kind == "tool_result")), result)
-        self.assertEqual({t.name for t in client.calls[0]["tools"]}, {"data__search", "request_clarification"})
+        self.assertEqual({t.name for t in client.calls[0]["tools"]}, {"data__search", "request_clarification", "write_todos"})
         self.assertNotIn("private-user-token", str(client.calls))
 
     async def test_unknown_tool_cannot_reach_executor(self):

@@ -8,7 +8,7 @@ from starlette.requests import Request
 from ag_ui.core import RunAgentInput
 
 from api.chat import _get_owned_session, chat, get_messages
-from api.sessions import delete_session, get_session, list_sessions
+from api.sessions import delete_session, get_session, list_sessions, VersionInput
 from models.session import Session
 
 
@@ -58,7 +58,7 @@ class AgentSessionTenantIsolationTests(unittest.IsolatedAsyncioTestCase):
     async def test_list_only_returns_current_tenant_and_user(self):
         sessions = await list_sessions(self.request, self.db)
 
-        self.assertEqual([session["id"] for session in sessions], [self.own_id])
+        self.assertEqual([session["id"] for session in sessions["data"]], [self.own_id])
 
     async def test_detail_message_and_delete_hide_other_tenant(self):
         own = await get_session(self.own_id, self.request, self.db)
@@ -66,7 +66,7 @@ class AgentSessionTenantIsolationTests(unittest.IsolatedAsyncioTestCase):
 
         for action in (
             lambda: get_session(self.other_tenant_id, self.request, self.db),
-            lambda: delete_session(self.other_tenant_id, self.request, self.db),
+            lambda: delete_session(self.other_tenant_id, self.request, VersionInput(version=1), self.db),
             lambda: get_messages(self.other_tenant_id, self.request, self.db),
             lambda: _get_owned_session(self.db, self.other_tenant_id, 7, 10),
             lambda: get_session(self.other_user_id, self.request, self.db),

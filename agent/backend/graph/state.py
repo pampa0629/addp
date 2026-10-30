@@ -45,6 +45,7 @@ class TaskContext(TypedDict):
     checkpoint: NotRequired[Dict[str, Any]]  # addp.agent-checkpoint/v1 语义检查点
     accept_language: NotRequired[str]  # 当前 HTTP 请求语言，只用于 Runtime 展示，不参与复核身份
     draft_arguments: NotRequired[Dict[str, Any]]  # 本次按身份恢复的原参数，仅临时输入；checkpoint 只存引用
+    plan: NotRequired[List[Dict[str, str]]]  # 用户可见计划进度，不是业务事实
     resuming: NotRequired[bool]  # 服务端已恢复同一 Run 的正式 Interaction，非模型输入
 
 

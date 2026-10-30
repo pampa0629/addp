@@ -105,10 +105,13 @@ cd agent/frontend && npm test && npm run build
 |------|------|------|
 | GET | /health/live | 进程存活检查 |
 | GET | /health/ready | 模块就绪检查 |
-| GET | /api/v1/agent/sessions | 会话列表 |
+| GET | /api/v1/agent/sessions | 按标题与归档状态分页查询，置顶优先 |
+| GET | /api/v1/agent/skills | 从正式注册表发现 Skill 方法 |
 | POST | /api/v1/agent/sessions | 创建会话 |
 | GET | /api/v1/agent/sessions/:id | 会话详情 |
-| DELETE | /api/v1/agent/sessions/:id | 删除会话 |
+| PATCH | /api/v1/agent/sessions/:id | 按版本重命名、置顶、归档或恢复 |
+| DELETE | /api/v1/agent/sessions/:id | JSON body 携带 version 删除会话 |
+| GET | /api/v1/agent/sessions/:id/runs | 当前用户与租户的会话运行分页 |
 | GET | /api/v1/agent/sessions/:id/messages | 消息历史 |
 | POST | /api/v1/agent/chat | 运行智能体（AG-UI SSE） |
 | GET | /api/v1/agent/runs/:id | 查询 AgentRun、语义检查点和步骤审计 |
@@ -130,7 +133,7 @@ Agent 是以下 Permission 的唯一 owner：
 
 路由与 Permission 语义映射固定如下：
 
-- Session 列表、详情和消息历史使用 `agent.session.read`，创建和删除分别使用 `agent.session.create/delete`。
+- Session 列表、详情和消息历史使用 `agent.session.read`，创建和删除分别使用 `agent.session.create/delete`；标题、置顶、归档与恢复使用 `agent.session.update`，Skill 目录使用 `agent.session.read`。
 - `/chat` 是单一 AG-UI Operation，新建和 Interaction resume 统一按 all-of 校验 `agent.run.create + agent.run.execute`；独立的失败重试路由只继续已有 AgentRun，校验 `agent.run.execute`。
 - AgentRun 详情和事件回放使用 `agent.run.read`，取消使用 `agent.run.cancel`。
 
@@ -141,7 +144,9 @@ Session 和 AgentRun 当前都只允许所有者访问。Role Permission 只提�
 ## 数据库 Schema
 
 ```sql
-agent.sessions    -- 会话管理、增量历史摘要和摘要水位
+agent.schema_migrations -- Agent 自有 SQL 版本、文件名与 SHA-256
+agent.startup_schema_revision -- 与平台启动协议一致的提交版本
+agent.sessions    -- 会话 version、pinned、archived、增量历史摘要和水位
 agent.messages    -- 对话历史（AG-UI message id + 有序 parts）
 agent.runs        -- AgentRun 生命周期、checkpoint、运行/上下文指标与错误归因
 agent.run_steps   -- Tool / Runtime 步骤审计、紧凑事实投影与错误归因
@@ -188,6 +193,8 @@ python evals/agent-scenarios/gate.py --output /tmp/addp-agent-evaluation-gate.js
 
 `make test-agent-frontend` 包含独立临时端口的 T3 浏览器回归，加载正式聊天页面、AG-UI 客户端和共享 A2UI 组件，以受控 HTTP/SSE 夹具验证短输入、刷新后的文字 resume、配置复核和取消，以及多 pending 不猜测、失败保留输入。后端 `make test-agent-eval` 覆盖真实 Harness、Interaction 服务和 Run 恢复的受控模型链路，验证同一身份和取消后创建条件拒绝；数据库与 owner 是夹具，不计为真实跨模块 T4。CI 的 Agent 前端矩阵安装 Chromium 并保留失败证据，不复用个人服务或登录态。
 
+对话工作区采用模块设计共识的三批契约：个人会话组织、运行/成果索引、可见计划。归档不停止已接纳运行；新消息、恢复和重试先核对未归档。计划复用 Harness TodoListMiddleware，最多 12 条、每条 300 字符，模型报告的计划进度不代表业务成功；最新投影由安全事件恢复，保留唯一语义检查点路线。Schema 只由 `backend/migrations/` 的版本化 SQL 维护，旧 create_all/零散补列初始化删除。验证入口为 `make test-module MODULE=agent`，新增 PostgreSQL 变量及事务回滚边界见 Infra 测试库规范。
+
 ## 协议约束
 
 - `/api/v1/agent/chat` 请求体使用标准 AG-UI `RunAgentInput`。
@@ -228,7 +235,7 @@ python evals/agent-scenarios/gate.py --output /tmp/addp-agent-evaluation-gate.js
 ## 前端公开路由
 
 - 模块内聊天首页为 `/`，会话为 `/sessions/:session_id`；Console 公开 URL 分别为 `/agent`、`/agent/sessions/:session_id`。
-- 当前会话由 path 参数唯一驱动。点击和创建会话使用 `push`，首次自动选择与删除当前会话后的重定向使用 `replace`。
+- 当前会话由 path 参数唯一驱动。点击和创建会话使用 `push`，`/agent` 为能力首页，不自动选择列表第一条；删除当前会话后使用 `replace` 返回首页。详情独立读取，不受列表分页或筛选影响。
 - `/agent` 旧模块内前缀不再接受；无效或无权访问的会话 ID 保留错误上下文，不得静默切换到其他会话。
 
 ## 配置项

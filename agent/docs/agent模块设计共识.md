@@ -1,6 +1,6 @@
 # Agent 模块设计共识
 
-更新时间：2026-10-04
+更新时间：2026-10-30
 
 本文只记录 Agent 模块内部边界。平台级 Tool、AG-UI / A2UI 和评测契约分别以 `docs/spec/addp智能体Tool开放规范.md`、`docs/spec/addp智能体交互协议规范.md`、`docs/spec/addp智能体评测规范.md` 为事实源；Skill 与认证分别引用各自既有规范。专题文档只保留架构决策和实施历史。
 
@@ -16,6 +16,20 @@ Agent 是 ADDP 官方提供的自然语言交互产品和一种 Agent Runtime，
 - ResultRef、Interaction 和 Presentation 的消息编排。
 
 Agent 不拥有平台级 Skill、owner 模块业务结果或审批事实，也不复制 Copilot 的结构化生成逻辑。
+
+### 对话工作区（三批实施契约）
+
+1. **会话管理与 Skill 首页**：会话列表按当前 User/Tenant 隔离，以 `search` 对标题做字面量子串检索，使用标准 `page/page_size` 分页。默认只列未归档会话，置顶优先，再按更新时间、ID 倒序；前端对当前页作时间分组，不声称已加载全部历史。`sessions` 增加 BIGINT `version`、`pinned` 和 `archived`。重命名、置顶、归档、恢复与删除提交版本，事务内校验并递增；冲突保留编辑内容，由用户显式重新加载。会话组织操作使用独立 `agent.session.update`，默认属于已有 `tenant.ai_user`，不增加业务 Tool 权限。
+2. **运行过程与成果侧栏**：按会话分页列出本人 AgentRun，详情复用已有受限 steps 与指标。仅具备 `agent.run.read` 时加载运行审计；普通聊天不因此新增读取权限要求。成果索引从消息现有 Presentation/ResultRef 投影，点击定位来源消息并复用既有 Renderer；不新增 Artifact 表、结果副本或 owner 状态缓存。
+3. **可见计划**：复用 Harness 的 TodoListMiddleware，`write_todos` 仅是 Runtime 私有计划动作，不能作为平台 Tool 或业务批准。最多 12 条、每条 300 字符；条目为 `content + pending|in_progress|completed`。进度是模型报告的计划处理状态，不证明业务执行或验证通过；UI 与真实 steps、正式报告分别展示。简单问答不要求计划。计划经既有 AG-UI Activity 安全事件持久化，正常回复的消息 parts 保存相同展示投影；断线、取消或异常后的最新计划由 Run 详情从安全事件恢复，恢复同一 Run 时从最近已提交安全事件中的计划重建，不序列化框架状态、不增加另一套检查点。暂停、失败、取消、完成均不自动把计划条目标为完成。
+
+归档只改变会话组织：默认列表隐藏，归档列表与原详情 URL 仍可查看、恢复；已经接纳的运行继续，不取消 owner execution。归档后新消息、Interaction 恢复及失败重试统一拒绝，恢复后才可继续。接纳请求与归档更新锁定同一会话行，使先后顺序明确；不持会话锁等待模型或业务 HTTP。Owner 审批状态先按当前 User/Tenant 的待处理 Interaction 做只读预取，接纳锁内重读 Interaction 并沿原逻辑核对 owner 身份、指纹和状态；不从客户端传入该结果，不产生批准事实。
+
+Skill 首页从正式注册表输出稳定 Skill 身份及其方法描述，名称、示例等界面文案由 Agent 双语词条持有并校验登记完整。`/agent` 固定展示能力首页，不自动打开列表第一条；详情按路由直接读取，不受列表分页或筛选影响。点击示例只填入输入框，提交后仍走正式路由；目录不代表当前权限、服务在线或业务可执行，也不替代 Ontology 平台能力语义目录。
+
+Agent Schema 由 `backend/migrations/` 的连续版本 SQL 唯一维护；启动在同一 PostgreSQL 事务内持 advisory lock，校验已应用文件名与 SHA-256，拒绝历史漂移、缺号或数据库版本超前。首版迁移建表并收纳原未版本化结构，第二版增加会话组织字段。旧 create_all/零散 ALTER 初始化删除；System migration 不操作 Agent Schema。失败 DDL 和版本记录一起回滚，重复启动不重做已登记迁移。
+
+实现与验证依上述顺序进行。已有 `make test-agent-eval`、`make test-agent-frontend` 和平台授权/OpenAPI 检查承接 T1/T3；新增 `make test-agent-postgres` 使用事务回滚测试 owner Schema 的升级、版本与隔离，并同步 T2 CI 登记。涉及平台 Transfer 冻结来源的文件按既有审查规则同步新修订，不改已发布历史。真实模型与真实部署验收另记，不能用受控门禁代替。
 
 ### 进程内执行内核
 

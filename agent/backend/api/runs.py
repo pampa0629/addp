@@ -17,6 +17,7 @@ from models.run_step import AgentRunStep
 from services.run_events import append_run_event, encode_replayed_event, iter_run_events
 from services.runs import AgentRunStateError, cancel_agent_run, refresh_run_metrics
 from services.runtime import run_cancellation_registry
+from services.plans import PlanItem, read_run_plan
 
 
 router = APIRouter(prefix="/runs", tags=["智能体运行 | Agent Runs"])
@@ -56,10 +57,12 @@ class AgentRunResponse(BaseModel):
     updated_at: datetime
     completed_at: datetime | None
     steps: list[AgentRunStepResponse]
+    plan: list[PlanItem]
 
 
 class ErrorResponse(BaseModel):
     error: str
+    error_code: str | None = None
 
 
 class AgentRunActionResponse(BaseModel):
@@ -115,6 +118,7 @@ async def get_agent_run(agent_run_id: UUID, request: Request, db: AsyncSession =
         "created_at": run.created_at,
         "updated_at": run.updated_at,
         "completed_at": run.completed_at,
+        "plan": await read_run_plan(db, run.id, user_id, tenant_id),
         "steps": [
             {
                 "id": step.id,

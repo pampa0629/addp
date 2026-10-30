@@ -253,6 +253,10 @@ case "$TEST_FILTER" in
         [ "$PACKAGE_FILTER" = repository ] || { echo "observability-identity requires --package repository" >&2; exit 2; }
         test_pattern='^TestObservabilityIdentityProjectionAgainstPostgres$'
         ;;
+    agent-session-organization)
+        [ "$PACKAGE_FILTER" = migration ] || { echo "agent-session-organization requires --package migration" >&2; exit 2; }
+        test_pattern='^TestAgentSessionOrganizationForwardMigrationAgainstPostgres$'
+        ;;
     unified-data-authorizer)
         [ "$PACKAGE_FILTER" = migration ] || { echo "unified-data-authorizer requires --package migration" >&2; exit 2; }
         test_pattern='^Test(UnifiedDataAuthorizer(AssignedSessionRefresh|ForwardMigration)|Runner)AgainstPostgres$'

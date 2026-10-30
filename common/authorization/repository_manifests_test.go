@@ -45,8 +45,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 543 {
-		t.Fatalf("descriptor count = %d, want 543", len(descriptors))
+	if len(descriptors) != 544 {
+		t.Fatalf("descriptor count = %d, want 544", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if strings.HasPrefix(descriptor.Key, "system.meta_collection_qualification.") && (descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) || descriptor.TenantCustomizable == (descriptor.Action == "execute")) {
@@ -422,6 +422,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"agent.session.create",
 		"agent.session.delete",
 		"agent.session.read",
+		"agent.session.update",
 		"copilot.notebook.execute",
 		"copilot.sql.execute",
 		"copilot.transfer.execute",

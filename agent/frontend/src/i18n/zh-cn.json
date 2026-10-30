@@ -38,14 +38,21 @@
           "parameters": "完整预检参数",
           "unspecified": "未指定",
           "overview": "草稿事实概要",
-          "sourceLocation": "源", "targetLocation": "目标",
+          "sourceLocation": "源",
+          "targetLocation": "目标",
           "location": "引擎 {engine} · {path}",
-          "boundary": "运行边界", "loadMode": "装载方式",
-          "applyPolicy": "写入策略", "mappingCount": "映射数量",
+          "boundary": "运行边界",
+          "loadMode": "装载方式",
+          "applyPolicy": "写入策略",
+          "mappingCount": "映射数量",
           "replace": "replace · 运行时先清理再写入",
           "append": "append · 运行时追加写入",
-          "source": "源字段", "target": "目标字段", "target_type": "目标标准类型",
-          "nullable": "允许空值", "precision": "精度", "scale": "小数位"
+          "source": "源字段",
+          "target": "目标字段",
+          "target_type": "目标标准类型",
+          "nullable": "允许空值",
+          "precision": "精度",
+          "scale": "小数位"
         },
         "mapTruncated": "地图仅展示受限要素样本",
         "tableSummary": "显示 {visible} / {total} 行",
@@ -71,11 +78,102 @@
         "completed": "已完成"
       }
     },
-    "quickHints": {
-      "listWorkflowEngines": "查看当前可用的工作流引擎",
-      "listGeoPythonOperators": "查看 GeoPython Workflow支持的公开算子",
-      "listSparkOperators": "查看 Spark 工作流引擎支持的公开算子",
-      "listPointCloudOperators": "查看 PointCloud 工作流引擎支持的公开算子"
+    "workspace": {
+      "home": "能力首页",
+      "search": "搜索会话标题",
+      "archived": "已归档",
+      "refresh": "刷新列表",
+      "loadFailed": "会话读取失败，请重试",
+      "actions": "会话操作",
+      "rename": "重命名",
+      "pin": "置顶",
+      "unpin": "取消置顶",
+      "archive": "归档",
+      "restore": "恢复会话",
+      "delete": "删除",
+      "title": "会话标题",
+      "conflict": "会话已变化，修改已保留，请重新加载后重试",
+      "reload": "重新加载版本",
+      "close": "关闭",
+      "save": "保存",
+      "updateFailed": "会话更新失败",
+      "archiveNotice": "此会话已归档，恢复后可以继续对话。已有运行继续。",
+      "chooseCapability": "选择任务示例，补充要求后发送。",
+      "skillsFailed": "能力目录读取失败，请刷新重试",
+      "groups": {
+        "pinned": "置顶",
+        "today": "今天",
+        "week": "最近七天",
+        "older": "更早"
+      },
+      "panel": "过程与成果",
+      "process": "执行记录",
+      "results": "成果",
+      "selectRun": "选择运行",
+      "conversation": "对话",
+      "runsFailed": "运行记录读取失败，请重试",
+      "noSteps": "本轮没有工具步骤",
+      "noRuns": "暂无运行记录",
+      "runReadRequired": "当前账号没有运行记录读取权限",
+      "noResults": "本会话尚无成果",
+      "locate": "定位来源消息",
+      "plan": "任务计划",
+      "planNotice": "计划进度不代表业务执行或验证通过；请结合执行记录和正式报告判断。",
+      "status": {
+        "running": "执行中",
+        "waiting": "等待回答或审批",
+        "completed": "已结束",
+        "failed": "失败",
+        "cancelled": "已停止",
+        "pending": "待处理",
+        "in_progress": "进行中"
+      },
+      "planStatus": {
+        "pending": "待处理",
+        "in_progress": "进行中",
+        "completed": "已处理"
+      },
+      "resultKinds": {
+        "WorkflowDag": "工作流",
+        "TransferDraftSnapshot": "传输草稿",
+        "TransferConfigCheckReport": "配置预检报告",
+        "MapView": "地图",
+        "TablePreview": "表格",
+        "execution": "执行引用"
+      },
+      "savedTitle": "当前保存的标题"
+    },
+    "skills": {
+      "data-discovery": {
+        "title": "发现数据",
+        "description": "搜索和预览平台中已有的数据。",
+        "example": "帮我查找与人口有关的数据，先列出候选，不读取样本。"
+      },
+      "query-generation": {
+        "title": "编写查询",
+        "description": "根据数据结构生成 SQL 草稿。",
+        "example": "帮我编写 SQL，先确认数据和查询口径，只生成草稿，不执行。"
+      },
+      "notebook-generation": {
+        "title": "生成 Notebook",
+        "description": "根据分析要求生成 Notebook 草稿。",
+        "example": "帮我生成一个数据分析 Notebook 草稿，先确认输入数据，不执行。"
+      },
+      "workflow-analysis": {
+        "title": "设计分析流程",
+        "description": "发现公开算子，生成并校验工作流。",
+        "example": "帮我设计一个分析工作流，先确认数据和目标，生成并校验草稿，不运行。"
+      },
+      "transfer-generation": {
+        "title": "配置数据传输",
+        "description": "生成传输配置，进行正式预检，并在确认后创建任务。",
+        "example": "帮我配置数据传输，先确认源和目标，检查配置，只给草稿，不创建、不运行。"
+      },
+      "ontology-exploration": {
+        "title": "探索本体",
+        "description": "查看已发布的本体概念及上下文。",
+        "example": "帮我查看已发布本体中的概念和关系，先列出可选本体。"
+      }
     }
   }
 }

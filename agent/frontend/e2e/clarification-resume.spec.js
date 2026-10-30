@@ -64,7 +64,7 @@ function completed(message) {
   message.parts.find(part => part.type === 'interaction_ref').status = 'completed'
 }
 
-async function installBackend(page, { multiple = false, rejectResume = false, draftReportStatus = null, checkedDraft = false } = {}) {
+async function installBackend(page, { multiple = false, rejectResume = false, draftReportStatus = null, checkedDraft = false, withPlan = false } = {}) {
   const question = clarification(questionId, '请选择行粒度', [{ label: '展开数组', value: 'unwind' }])
   const review = clarification(reviewId, `仅创建，不运行。请复核配置。\n\n${unknownWarning}\n\n\`\`\`json\n{"name":"outdoor_copy","config":{"runtime":{"boundary":"bounded"},"load":{"mode":"snapshot"}}}\n\`\`\``, reviewOptions)
   review.parts.splice(1, 0, checkReport('unknown').parts[0])
@@ -83,7 +83,9 @@ async function installBackend(page, { multiple = false, rejectResume = false, dr
       authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '7' },
         permissions: ['agent.session.read', 'agent.run.create', 'agent.run.execute'] }] }
     }
-    else if (path === '/api/v1/agent/sessions' && request.method() === 'GET') body = [{ id: sessionId, title: goal }]
+    else if (path === '/api/v1/agent/sessions' && request.method() === 'GET') body = { data: [{ id: sessionId, title: goal, version: 1, pinned: false, archived: false }], total: 1, page: 1, page_size: 20, total_pages: 1 }
+    else if (path === '/api/v1/agent/skills') body = []
+    else if (path === `/api/v1/agent/sessions/${sessionId}`) body = { id: sessionId, title: goal, version: 1, pinned: false, archived: false }
     else if (path === `/api/v1/agent/sessions/${sessionId}/messages`) body = messages
     else if (path === '/api/v1/agent/chat' && request.method() === 'POST') {
       const input = request.postDataJSON()
@@ -98,6 +100,8 @@ async function installBackend(page, { multiple = false, rejectResume = false, dr
         expect(input.messages[0]).toMatchObject({ role: 'user', content: expectedGoal })
         current = draftReportStatus ? checkReport(draftReportStatus) : question
         if (checkedDraft) current.parts = [checkedDraftPart(), ...current.parts, { type: 'text', text: checkExplanation }]
+        if (withPlan) current.parts.unshift({ type: 'presentation_ref', protocol: 'ag-ui', activity_type: 'addp-plan', surface_id: 'plan:stream',
+          content: { agent_run_id: runId, todos: [{ content: '确认资源', status: 'in_progress' }, { content: '预检配置', status: 'pending' }] } })
         messages.push({ id: 'goal', role: 'user', parts: [{ type: 'text', text: expectedGoal }] }, current)
       } else if (requests.length === 2) {
         expect(input.messages).toEqual([])
@@ -119,7 +123,7 @@ async function installBackend(page, { multiple = false, rejectResume = false, dr
         { type: 'STATE_SNAPSHOT', snapshot: { agentRunId: runId, sessionId, status: waiting ? 'waiting' : 'completed' } },
         ...(current ? current.parts.flatMap((part, index) => {
           if (part.type === 'presentation_ref') return [
-            { type: 'ACTIVITY_SNAPSHOT', messageId: `activity:${current.id}:${index}`, activityType: 'a2ui-surface', content: part.content }
+            { type: 'ACTIVITY_SNAPSHOT', messageId: `activity:${current.id}:${index}`, activityType: part.activity_type || 'a2ui-surface', content: part.content }
           ]
           if (part.type === 'text') return [
             { type: 'TEXT_MESSAGE_START', messageId: `text:${current.id}:${index}`, role: 'assistant' },
@@ -145,12 +149,12 @@ async function installBackend(page, { multiple = false, rejectResume = false, dr
 test('short goal → reloaded text resume → reloaded review → cancel, with the real protocol client', async ({ page }) => {
   const backend = await installBackend(page)
   await page.goto(`/module-ui/agent/sessions/${sessionId}`)
-  await page.getByRole('textbox').fill(goal)
+  await page.locator('textarea').fill(goal)
   await page.getByRole('button', { name: '发送', exact: true }).click()
   await expect(page.getByRole('button', { name: '展开数组', exact: true })).toBeVisible()
   await page.reload()
-  await expect(page.getByRole('textbox')).toHaveAttribute('maxlength', '2000')
-  await page.getByRole('textbox').fill(answer)
+  await expect(page.locator('textarea')).toHaveAttribute('maxlength', '2000')
+  await page.locator('textarea').fill(answer)
   await page.getByRole('button', { name: '发送', exact: true }).click()
   await expect(page.getByRole('button', { name: reviewOptions[0].label, exact: true })).toBeVisible()
   await expect(page.getByText(unknownWarning)).toBeVisible()
@@ -193,7 +197,7 @@ test('exact checked draft streams and reloads without rebuilding parameters or s
   const backend = await installBackend(page, { draftReportStatus: 'unknown', checkedDraft: true })
   await page.setViewportSize({ width: 620, height: 900 })
   await page.goto(`/module-ui/agent/sessions/${sessionId}`)
-  await page.getByRole('textbox').fill(draftGoal)
+  await page.locator('textarea').fill(draftGoal)
   await page.getByRole('button', { name: '发送', exact: true }).click()
   const panel = page.getByTestId('transfer-draft-snapshot')
   await expect(panel).toContainText('readonly_persons')
@@ -233,7 +237,7 @@ for (const [status, title] of [['supported', '已检查定义受支持'], ['unsu
     const backend = await installBackend(page, { draftReportStatus: status })
     await page.setViewportSize({ width: 620, height: 900 })
     await page.goto(`/module-ui/agent/sessions/${sessionId}`)
-    await page.getByRole('textbox').fill(draftGoal)
+    await page.locator('textarea').fill(draftGoal)
     await page.getByRole('button', { name: '发送', exact: true }).click()
     const panel = page.getByTestId('task-config-check-report')
     await expect(panel).toContainText(title)
@@ -254,10 +258,10 @@ for (const [status, title] of [['supported', '已检查定义受支持'], ['unsu
 test('multiple pending questions do not guess a resume target or lose text', async ({ page }) => {
   const backend = await installBackend(page, { multiple: true })
   await page.goto(`/module-ui/agent/sessions/${sessionId}`)
-  await page.getByRole('textbox').fill(answer)
+  await page.locator('textarea').fill(answer)
   await page.getByRole('button', { name: '发送', exact: true }).click()
   await expect(page.getByText('当前有多个待回答的问题，请在对应卡片中选择选项', { exact: true })).toBeVisible()
-  await expect(page.getByRole('textbox')).toHaveValue(answer)
+  await expect(page.locator('textarea')).toHaveValue(answer)
   expect(backend.requests).toEqual([])
   expect(backend.unexpected).toEqual([])
 })
@@ -265,13 +269,27 @@ test('multiple pending questions do not guess a resume target or lose text', asy
 test('a rejected text resume keeps the answer and does not retry as a new goal', async ({ page }) => {
   const backend = await installBackend(page, { rejectResume: true })
   await page.goto(`/module-ui/agent/sessions/${sessionId}`)
-  await page.getByRole('textbox').fill(goal)
+  await page.locator('textarea').fill(goal)
   await page.getByRole('button', { name: '发送', exact: true }).click()
   await expect(page.getByRole('button', { name: '展开数组', exact: true })).toBeVisible()
-  await page.getByRole('textbox').fill(answer)
+  await page.locator('textarea').fill(answer)
   await page.getByRole('button', { name: '发送', exact: true }).click()
-  await expect(page.getByRole('textbox')).toHaveValue(answer)
+  await expect(page.locator('textarea')).toHaveValue(answer)
   await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible()
   expect(backend.requests).toHaveLength(2)
+  expect(backend.unexpected).toEqual([])
+})
+
+
+test('plan activity streams through the real client and reloads without marking pending work complete', async ({ page }) => {
+  const backend = await installBackend(page, { withPlan: true })
+  await page.goto(`/module-ui/agent/sessions/${sessionId}`)
+  await page.locator('textarea').fill(goal)
+  await page.getByRole('button', { name: '发送', exact: true }).click()
+  await expect(page.getByRole('region', { name: '任务计划' })).toContainText('预检配置')
+  await expect(page.getByRole('region', { name: '任务计划' }).getByText('待处理', { exact: true })).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('region', { name: '任务计划' }).getByText('待处理', { exact: true })).toBeVisible()
+  expect(backend.requests).toHaveLength(1)
   expect(backend.unexpected).toEqual([])
 })

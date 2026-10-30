@@ -4,6 +4,7 @@ import asyncio
 import copy
 import json
 import logging
+import httpx
 import uuid
 from datetime import datetime
 from typing import Any
@@ -45,7 +46,7 @@ from authorization_permissions_generated import (
 )
 from database import AsyncSessionLocal, get_db
 from middleware.auth import require_permissions
-from i18n import clarification_text_error
+from i18n import clarification_text_error, workspace_message
 from models.interaction import Interaction
 from models.message import Message
 from models.run import AgentRun
@@ -61,6 +62,7 @@ from protocol.a2ui import (
     workflow_dag_surface,
 )
 from services.interactions import (
+    _load_owner_approval,
     InteractionAnswerError,
     InteractionTextAnswerError,
     InteractionNotFoundError,
@@ -92,6 +94,8 @@ from services.runs import (
     update_run_checkpoint,
 )
 from services.runtime import run_cancellation_registry
+from services.sessions import archived_response, get_owned_session as _get_owned_session
+from services.plans import PLAN_ACTIVITY, PLAN_TOOL, plan_todos, read_run_plan
 from services.drafts import DRAFT_INSPECT, list_session_drafts, read_session_draft, read_checked_draft_step, draft_presentation
 from agents.platform_conditions import CHECK_TOOL
 from utils.summary import maybe_update_summary
@@ -142,18 +146,34 @@ def _parse_optional_datetime(value: Any) -> datetime | None:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-async def _get_owned_session(db: AsyncSession, session_id: int, user_id: int, tenant_id: int) -> Session:
-    result = await db.execute(
-        select(Session).where(
-            Session.id == session_id,
-            Session.user_id == user_id,
-            Session.tenant_id == tenant_id,
-        )
-    )
-    session = result.scalar_one_or_none()
-    if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="会话不存在")
-    return session
+async def _prefetch_owner_approvals(db, body, session_id, user_id, tenant_id, source_token, accept_language="zh-cn"):
+    """Read owner status before session admission locks; never approve or write."""
+    owner_ids = set()
+    for entry in body.resume or []:
+        if entry.status != 'resolved' or entry.payload != {'action': 'check'}:
+            continue
+        try:
+            identity = UUID(entry.interrupt_id)
+        except ValueError:
+            continue  # The existing Interaction validation returns its precise error.
+        owner_id = (await db.execute(select(Interaction.owner_interaction_id).where(
+            Interaction.id == identity, Interaction.session_id == session_id, Interaction.user_id == user_id,
+            Interaction.tenant_id == tenant_id, Interaction.kind == 'owner_approval', Interaction.status == 'pending',
+        ))).scalar_one_or_none()
+        if owner_id:
+            owner_ids.add(owner_id)
+    approvals = {}
+    for owner_id in sorted(owner_ids):
+        try:
+            approvals[owner_id] = await _load_owner_approval(owner_id, source_token)
+        except httpx.HTTPError as exc:
+            raise HTTPException(503, workspace_message(accept_language, 'owner_approval_unavailable')) from exc
+
+    async def loader(owner_id, token):
+        if token != source_token or owner_id not in approvals:
+            raise InteractionOwnerUnavailableError
+        return approvals[owner_id]
+    return loader
 
 
 async def _save_user_input(
@@ -165,6 +185,7 @@ async def _save_user_input(
     tenant_id: int,
     source_token: str,
     accept_language: str = "zh-cn",
+    owner_approval_loader=None,
 ) -> list[Interaction]:
     if body.resume:
         resolved_interactions: list[Interaction] = []
@@ -180,6 +201,7 @@ async def _save_user_input(
                     tenant_id=tenant_id,
                     payload=entry.payload,
                     source_token=source_token,
+                    owner_approval_loader=owner_approval_loader,
                 )
             except InteractionNotFoundError as exc:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="交互请求不存在") from exc
@@ -358,7 +380,15 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
 
     user_id = int(request.state.principal_id)
     tenant_id = int(request.state.tenant_id)
-    session = await _get_owned_session(db, session_id, user_id, tenant_id)
+    owner_approval_loader = None
+    if body.resume:
+        candidate_session = await _get_owned_session(db, session_id, user_id, tenant_id)
+        if candidate_session.archived:
+            return archived_response(request)
+        owner_approval_loader = await _prefetch_owner_approvals(db, body, session_id, user_id, tenant_id, request.state.token, request.headers.get("accept-language", "zh-cn"))
+    session = await _get_owned_session(db, session_id, user_id, tenant_id, lock=True)
+    if session.archived:
+        return archived_response(request)
 
     retry_run_id = getattr(request.state, "agent_run_retry_id", None)
     resumed_from_interaction = False
@@ -380,6 +410,7 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                 tenant_id=tenant_id,
                 source_token=request.state.token,
                 accept_language=request.headers.get("accept-language", "zh-cn"),
+                owner_approval_loader=owner_approval_loader,
             )
             if resolved_interactions:
                 resumed_from_interaction = True
@@ -398,6 +429,7 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                     tenant_id=tenant_id,
                     protocol_run_id=body.run_id,
                 )
+        current_plan = await read_run_plan(db, agent_run.id, user_id, tenant_id) if (resumed_from_interaction or retry_run_id) else []
     except AgentRunNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AgentRun 不存在") from exc
     except (AgentRunStateError, ValueError) as exc:
@@ -498,7 +530,7 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                 checkpoint=run_checkpoint,
                 forced_skill_name=(agent_run.skill_name if resumed_from_interaction else None),
                 accept_language=request.headers.get("accept-language", "zh-cn"),
-                draft_catalog=draft_catalog, draft_reader=draft_reader,
+                draft_catalog=draft_catalog, draft_reader=draft_reader, plan=current_plan,
             ):
                 if await request.is_disconnected():
                     if event.checkpoint_committed is not None and not event.checkpoint_committed.done():
@@ -584,6 +616,14 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                     yield await emit(RunErrorEvent(message=error_message, code=error_code))
                     return
 
+                if event.kind == 'plan':
+                    content = {'agent_run_id': str(agent_run_id), 'todos': plan_todos(event.payload['todos'])}
+                    activity_id = f'plan:{uuid.uuid4()}'
+                    parts.append({'type': 'presentation_ref', 'protocol': 'ag-ui', 'activity_type': PLAN_ACTIVITY,
+                                  'surface_id': activity_id, 'content': content})
+                    yield await emit(ActivitySnapshotEvent(message_id=activity_id, activity_type=PLAN_ACTIVITY, content=content))
+                    continue
+
                 if event.kind == "run_state":
                     async with AsyncSessionLocal() as run_db:
                         async with run_db.begin():
@@ -602,7 +642,7 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                                 run_db,
                                 agent_run_id=agent_run_id,
                                 protocol_invocation_id=body.run_id,
-                                step_type="runtime" if event.payload["tool_name"] == DRAFT_INSPECT else "tool_call",
+                                step_type="runtime" if event.payload["tool_name"] in {DRAFT_INSPECT, PLAN_TOOL} else "tool_call",
                                 tool_call_id=tool_call_id,
                                 tool_name=str(event.payload["tool_name"]),
                                 input_data=_tool_input_projection(

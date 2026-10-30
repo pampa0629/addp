@@ -195,7 +195,7 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
             })
 
         with (
-            patch("api.chat._get_owned_session", new=AsyncMock(return_value=SimpleNamespace(summary=""))),
+            patch("api.chat._get_owned_session", new=AsyncMock(return_value=SimpleNamespace(summary="", archived=False))),
             patch("api.chat._save_user_input", new=AsyncMock(return_value=[])),
             patch("api.chat.create_agent_run", new=AsyncMock(return_value=SimpleNamespace(id=run_id, checkpoint={}))),
             patch("api.chat._load_agent_history", new=AsyncMock(return_value=([{"role": "user", "content": "Outdoor"}], 1))),
@@ -382,7 +382,7 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
             yield AgentEvent(kind="presentation", payload=presentation)
             yield AgentEvent(kind="text", payload={"delta": "只展示草稿，不创建"})
 
-        with (patch("api.chat._get_owned_session", new=AsyncMock(return_value=SimpleNamespace(summary=""))),
+        with (patch("api.chat._get_owned_session", new=AsyncMock(return_value=SimpleNamespace(summary="", archived=False))),
               patch("api.chat._save_user_input", new=AsyncMock(return_value=[])),
               patch("api.chat.create_agent_run", new=AsyncMock(return_value=SimpleNamespace(id=run_id, checkpoint={}))),
               patch("api.chat._load_agent_history", new=AsyncMock(return_value=([{"role": "user", "content": "只检查草稿"}], 1))),
@@ -406,6 +406,41 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(db.added[0].content, "检查提示只展示草稿，不创建")
         self.assertEqual(status.await_args.kwargs["status"], "completed")
 
+    async def test_runtime_plan_has_identical_stream_and_persistent_message_projection(self):
+        from ag_ui.core import RunAgentInput
+        from agents.events import AgentEvent
+        from api.chat import chat
+        run_id=uuid.uuid4()
+        todos=[{'content':'Inspect','status':'in_progress'},{'content':'Validate','status':'pending'}]
+        db=_MessageDB()
+        request=SimpleNamespace(state=SimpleNamespace(principal_id=1,tenant_id=1,token='fixture'),headers={},is_disconnected=AsyncMock(return_value=False))
+        body=RunAgentInput.model_validate(dict(threadId='12',runId='plan-stream',state={},messages=[{'id':'u','role':'user','content':'Plan a task'}],tools=[],context=[],forwardedProps={}))
+        async def stream(*args,**kwargs):
+            yield AgentEvent(kind='plan',payload={'todos':todos})
+            yield AgentEvent(kind='text',payload={'delta':'Need your input'})
+        with (patch('api.chat._get_owned_session',new=AsyncMock(return_value=SimpleNamespace(summary='',archived=False))),
+              patch('api.chat._save_user_input',new=AsyncMock(return_value=[])),
+              patch('api.chat.create_agent_run',new=AsyncMock(return_value=SimpleNamespace(id=run_id,checkpoint={}))),
+              patch('api.chat._load_agent_history',new=AsyncMock(return_value=([{'role':'user','content':'Plan a task'}],1))),
+              patch('api.chat.list_session_drafts',new=AsyncMock(return_value=[])),
+              patch('api.chat.AsyncSessionLocal',return_value=_SessionContext(db)),
+              patch('api.chat.set_run_context_metrics',new=AsyncMock()),
+              patch('api.chat.set_run_status',new=AsyncMock()),
+              patch('api.chat.append_run_event',new=AsyncMock(return_value=None)) as persisted,
+              patch('api.chat.refresh_run_metrics',new=AsyncMock()),
+              patch('api.chat.maybe_update_summary',new=AsyncMock()),
+              patch('api.chat.stream_agent_response',new=stream)):
+            response=await chat(request,body,db=SimpleNamespace(commit=AsyncMock()))
+            chunks=[chunk async for chunk in response.body_iterator]
+        events=[json.loads(line[6:]) for chunk in chunks for line in chunk.splitlines() if line.startswith('data: ')]
+        event=next(item for item in events if item['type']=='ACTIVITY_SNAPSHOT')
+        self.assertEqual(event['activityType'],'addp-plan')
+        self.assertEqual(event['content'],{'agent_run_id':str(run_id),'todos':todos})
+        self.assertEqual(db.added[0].parts[0]['content'],event['content'])
+        self.assertEqual(db.added[0].parts[0]['protocol'],'ag-ui')
+        self.assertTrue(any(call.kwargs['event_payload'].get('activityType')=='addp-plan' for call in persisted.await_args_list))
+        self.assertEqual(todos[1]['status'],'pending')
+
     async def test_completed_precheck_mints_exact_scoped_snapshot_into_stream_and_history(self):
         from ag_ui.core import RunAgentInput
         from agents.events import AgentEvent
@@ -427,7 +462,7 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
             yield AgentEvent(kind="tool_result", payload={"tool_call_id": "check", "tool_name": step.tool_name, "content": "{}", "is_error": False})
             yield AgentEvent(kind="text", payload={"delta": "只解释关键检查原因"})
 
-        with (patch("api.chat._get_owned_session", new=AsyncMock(return_value=SimpleNamespace(summary=""))),
+        with (patch("api.chat._get_owned_session", new=AsyncMock(return_value=SimpleNamespace(summary="", archived=False))),
               patch("api.chat._save_user_input", new=AsyncMock(return_value=[])),
               patch("api.chat.create_agent_run", new=AsyncMock(return_value=SimpleNamespace(id=uuid.uuid4(), checkpoint={}))),
               patch("api.chat._load_agent_history", new=AsyncMock(return_value=([{"role": "user", "content": "检查草稿"}], 1))),

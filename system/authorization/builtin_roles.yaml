@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 141
+manifest_version: 142
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -528,6 +528,7 @@ roles:
       - agent.session.create
       - agent.session.delete
       - agent.session.read
+      - agent.session.update
       - copilot.notebook.execute
       - copilot.sql.execute
       - copilot.transfer.execute

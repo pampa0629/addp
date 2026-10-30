@@ -2,6 +2,8 @@ import asyncio
 import logging
 import uvicorn
 from fastapi import Depends, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from i18n import workspace_message
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
@@ -49,7 +51,16 @@ app = FastAPI(
     title="ADDP Agent Service",
     description="ADDP 平台智能体服务 | ADDP Platform Agent Service",
     version="1.0.0",
+    responses={422: {"model": ErrorResponse, "description": "请求参数不合法 | Invalid request parameters"}},
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid_request_response(request: Request, _error: RequestValidationError):
+    return JSONResponse(status_code=422, content={
+        "error": workspace_message(request.headers.get('accept-language'), 'invalid_request'),
+        "error_code": "invalid_request",
+    })
 
 
 @app.exception_handler(HTTPException)

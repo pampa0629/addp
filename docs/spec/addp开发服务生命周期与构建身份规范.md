@@ -51,6 +51,8 @@ Python 环境检查和服务启动可以并行；依赖安装互斥及指纹复�
 
 Backend 使用 `common/schema` 的模块级事务 advisory lock 串行迁移，同一 schema 多实例同时启动只应用一次相同版本。`<schema>.startup_schema_revision` 记录成功提交的版本，迁移失败回滚结构和版本；旧程序不得覆盖较新的版本。模块持有自己的 `SchemaVersion`，任何数据库结构或初始化迁移变化必须同步递增；版本记录不代替已有模块 SQL 迁移目录，只作为该版本初始化完成的证明。SQLite 领域单测继续由测试夹具建立表，不作为正式启动路径。
 
+Python Agent Backend 在自身事务中实现同一 PostgreSQL 协议（`addp.schema/agent` advisory lock 与 `agent.startup_schema_revision`），顺序执行 owner 的连续 SQL 文件；`agent.schema_migrations` 额外保存逐文件名和 SHA-256，拒绝历史修改或超前版本。迁移目录是结构唯一来源，不再运行 create_all/零散补列。无 Python Worker 时不预先增加 Worker 路径。
+
 `common` schema 的执行记录及运行心跳由 System Backend 在就绪前统一初始化，领域实现仍归 `common/execution` 和 `common/runtimehealth`；业务 Backend、Worker 只校验公共 schema。连接数据库与执行迁移分离。
 
 开发脚本和 Compose 按模块执行 `Backend /health/ready 成功 → 对应 Worker 启动`。各模块之间保持并行，不等待全平台 Backend 就绪才启动 Worker。等待必须有超时并确认 Backend 进程存活；Backend 失败不得启动其 Worker。Backend readiness 不依赖 Worker，避免循环依赖。Worker 运行后不因所属 Backend 的短暂不可用被强制停止；涉及结构升级时，必须先停止相关 Worker 领取任务并妥善结束在途任务，再迁移和恢复，禁止新旧 schema 程序混跑。

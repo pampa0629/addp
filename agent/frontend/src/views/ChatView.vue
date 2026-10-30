@@ -2,64 +2,79 @@
   <div class="chat-layout">
     <aside class="sidebar">
       <div class="sidebar-header">
-        <el-button v-if="authStore.hasPermission('agent.session.create')" type="primary" size="small" :icon="Plus" @click="createSession">
-          {{ t('agent.chat.newSession') }}
-        </el-button>
+        <el-button @click="showHome">{{ t('agent.workspace.home') }}</el-button>
+        <el-button v-if="authStore.hasPermission('agent.session.create')" type="primary" :icon="Plus" @click="createSession">{{ t('agent.chat.newSession') }}</el-button>
+        <el-input v-model="sessionSearch" clearable :placeholder="t('agent.workspace.search')" @keyup.enter="filterSessions" @clear="filterSessions" />
+        <div class="session-filter">
+          <el-switch v-model="showArchived" :active-text="t('agent.workspace.archived')" @change="filterSessions" />
+          <el-button :aria-label="t('agent.workspace.refresh')" :icon="RefreshRight" @click="loadSessions" />
+        </div>
       </div>
-      <div class="session-list">
-        <button
-          v-for="session in sessions"
-          :key="session.id"
-          type="button"
-          class="session-item"
-          :class="{ active: currentSessionId === session.id }"
-          @click="switchSession(session.id)"
-        >
-          <el-icon><ChatDotRound /></el-icon>
-          <span class="session-title">{{ session.title }}</span>
-          <el-button
-            v-if="authStore.hasPermission('agent.session.delete')"
-            class="delete-btn"
-            type="danger"
-            link
-            size="small"
-            :icon="Delete"
-            @click.stop="deleteSession(session.id)"
-          />
-        </button>
-        <el-empty
-          v-if="sessions.length === 0"
-          :description="t('agent.chat.noSessions')"
-          :image-size="60"
-        />
+      <div class="session-list" v-loading="sessionsLoading">
+        <el-alert v-if="sessionsError" :title="t('agent.workspace.loadFailed')" type="error" :closable="false" />
+        <section v-for="group in sessionGroups" :key="group.key">
+          <h3 class="session-group-title">{{ t(`agent.workspace.groups.${group.key}`) }}</h3>
+          <div v-for="session in group.items" :key="session.id" class="session-item" :class="{ active: currentSessionId === String(session.id) }">
+            <button type="button" class="session-select" :title="session.title || t('agent.chat.newSession')" @click="switchSession(session.id)">
+              <el-icon><ChatDotRound /></el-icon><span class="session-title">{{ session.title || t('agent.chat.newSession') }}</span>
+            </button>
+            <el-dropdown v-if="authStore.hasPermission('agent.session.update') || authStore.hasPermission('agent.session.delete')" trigger="click" @command="command => sessionCommand(session, command)">
+              <el-button text :aria-label="t('agent.workspace.actions')"><el-icon><MoreFilled /></el-icon></el-button>
+              <template #dropdown><el-dropdown-menu>
+                <template v-if="authStore.hasPermission('agent.session.update')">
+                  <el-dropdown-item command="rename">{{ t('agent.workspace.rename') }}</el-dropdown-item>
+                  <el-dropdown-item command="pin">{{ t(session.pinned ? 'agent.workspace.unpin' : 'agent.workspace.pin') }}</el-dropdown-item>
+                  <el-dropdown-item command="archive">{{ t(session.archived ? 'agent.workspace.restore' : 'agent.workspace.archive') }}</el-dropdown-item>
+                </template>
+                <el-dropdown-item v-if="authStore.hasPermission('agent.session.delete')" command="delete">{{ t('agent.workspace.delete') }}</el-dropdown-item>
+              </el-dropdown-menu></template>
+            </el-dropdown>
+          </div>
+        </section>
+        <el-empty v-if="!sessionsError && !sessionsLoading && sessions.length === 0" :description="t('agent.chat.noSessions')" :image-size="60" />
       </div>
+      <el-pagination small layout="prev, pager, next" :page-size="20" :total="sessionTotal" v-model:current-page="sessionPage" @current-change="loadSessions" />
     </aside>
+    <el-dialog v-model="renameVisible" :title="t('agent.workspace.rename')" width="min(480px, 90vw)" :close-on-click-modal="false">
+      <el-input v-model="renameDraft.title" maxlength="255" :aria-label="t('agent.workspace.title')" />
+      <p v-if="renameServerTitle !== renameDraft.title">{{ t('agent.workspace.savedTitle') }}：{{ renameServerTitle }}</p>
+      <el-alert v-if="renameConflict" :title="t('agent.workspace.conflict')" type="warning" :closable="false" />
+      <template #footer>
+        <el-button v-if="renameConflict" @click="reloadRenameVersion">{{ t('agent.workspace.reload') }}</el-button>
+        <el-button @click="renameVisible = false">{{ t('agent.workspace.close') }}</el-button>
+        <el-button type="primary" :disabled="renameConflict || !renameDraft.title.trim()" :loading="organizationSaving" @click="saveRename">{{ t('agent.workspace.save') }}</el-button>
+      </template>
+    </el-dialog>
 
     <main class="chat-main">
+      <div v-if="currentSession" class="conversation-header"><span>{{ currentSession.title || t('agent.chat.newSession') }}</span><el-button @click="panelVisible = !panelVisible">{{ t('agent.workspace.panel') }}</el-button></div>
+      <div v-if="currentSession?.archived" class="archive-notice">
+        <el-alert :title="t('agent.workspace.archiveNotice')" type="info" :closable="false" />
+        <el-button v-if="authStore.hasPermission('agent.session.update')" @click="updateOrganization(currentSession, { archived: false })">{{ t('agent.workspace.restore') }}</el-button>
+      </div>
       <div ref="messagesAreaRef" class="messages-area">
         <el-empty
           v-if="sessionUnavailable"
           class="empty-hint"
           :description="t('agent.chat.sessionUnavailable')"
         />
-        <div v-else-if="messages.length === 0 && !liveMessage" class="empty-hint">
-          <el-icon size="48"><ChatDotRound /></el-icon>
-          <p>{{ t('agent.chat.welcome') }}</p>
-          <div v-if="canRun" class="quick-actions">
-            <el-tag
-              v-for="hint in quickHints"
-              :key="hint"
-              class="quick-tag"
-              @click="sendQuickMessage(hint)"
-            >
-              {{ hint }}
-            </el-tag>
+        <section v-else-if="messages.length === 0 && !liveMessage" class="capability-home">
+          <h1>{{ t('agent.chat.welcome') }}</h1>
+          <p>{{ t('agent.workspace.chooseCapability') }}</p>
+          <el-alert v-if="skillsError" :title="t('agent.workspace.skillsFailed')" type="error" :closable="false" />
+          <div class="capability-grid">
+            <button v-for="skill in skills" :key="skill.name" class="capability-card" type="button" :disabled="!canRun" @click="fillExample(skill.name)">
+              <strong>{{ t(`agent.skills.${skill.name}.title`) }}</strong>
+              <span>{{ t(`agent.skills.${skill.name}.description`) }}</span>
+              <small>{{ t(`agent.skills.${skill.name}.example`) }}</small>
+            </button>
           </div>
-        </div>
+        </section>
 
         <div
           v-for="message in messages"
           :key="message.protocol_message_id || message.id"
+          :data-message-id="String(message.protocol_message_id || message.id)"
           class="message-row"
           :class="message.role"
         >
@@ -72,7 +87,7 @@
           </div>
         </div>
 
-        <div v-if="liveMessage" class="message-row assistant">
+        <div v-if="liveMessage" class="message-row assistant" :data-message-id="String(liveMessage.id)">
           <div class="message-bubble live-message">
             <div v-if="liveTools.length" class="tool-trace">
               <div v-for="tool in liveTools" :key="tool.id" class="tool-trace-item">
@@ -126,12 +141,13 @@
         </div>
       </div>
     </main>
+    <WorkspacePanel v-if="panelVisible && currentSessionId && !sessionUnavailable" :session-id="currentSessionId" :messages="panelMessages" :can-read-runs="authStore.hasPermission('agent.run.read')" :revision="runRevision" :active-run-id="activeRunId" @locate="locateMessage" @close="panelVisible = false" />
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { ChatDotRound, CircleClose, Delete, Loading, Plus, Position, RefreshRight } from '@element-plus/icons-vue'
+import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { ChatDotRound, CircleClose, Delete, Loading, MoreFilled, Plus, Position, RefreshRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
@@ -141,9 +157,11 @@ import { resolveTaskOwnerUrl } from '@common-ui'
 import { createAgentClient, replayAgentRunEvents } from '../agent/createAgentClient'
 import { runAPI, sessionAPI } from '../api/index'
 import MessagePartsRenderer from '../components/MessagePartsRenderer.vue'
+import WorkspacePanel from '../components/WorkspacePanel.vue'
 import { useAuthStore } from '../store/auth'
 import { navigateAgentRoute } from '../utils/moduleNavigation'
-import { routeAfterSessionDeletion, resolveAgentSessionRouteState } from '../utils/routeState'
+import { createLatestRequestScope } from '@common-ui'
+import { groupSessions } from '../utils/workspace'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -152,7 +170,7 @@ const router = useRouter()
 
 const sessions = ref([])
 const currentSessionId = ref(null)
-const currentSession = computed(() => sessions.value.find(session => String(session.id) === currentSessionId.value) || null)
+const currentSession = ref(null)
 useConsolePageDescriptor(router, 'agent', {
   title: computed(() => t('agent.chat.recentVisitTitle')),
   subject: computed(() => currentSession.value?.title || ''),
@@ -160,7 +178,7 @@ useConsolePageDescriptor(router, 'agent', {
 })
 const sessionUnavailable = ref(false)
 const canRun = computed(() =>
-  !sessionUnavailable.value &&
+  !sessionUnavailable.value && !currentSession.value?.archived &&
   ['agent.run.create', 'agent.run.execute'].every(permission => authStore.hasPermission(permission)) &&
   (Boolean(currentSessionId.value) || authStore.hasPermission('agent.session.create'))
 )
@@ -183,28 +201,79 @@ const isCancelling = ref(false)
 const liveMessage = ref(null)
 const liveTools = ref([])
 const messagesAreaRef = ref(null)
+const panelVisible = ref(false), runRevision = ref(0)
+const panelMessages = computed(() => liveMessage.value ? [...messages.value, liveMessage.value] : messages.value)
 const activeRunId = ref(null)
 const retryRunId = ref(null)
 
-const quickHints = computed(() => [
-  t('agent.quickHints.listWorkflowEngines'),
-  t('agent.quickHints.listGeoPythonOperators'),
-  t('agent.quickHints.listSparkOperators'),
-  t('agent.quickHints.listPointCloudOperators')
-])
+const sessionSearch = ref(''), showArchived = ref(false), sessionPage = ref(1), sessionTotal = ref(0)
+const sessionsLoading = ref(false), sessionsError = ref(false), skills = ref([]), skillsError = ref(false)
+const renameVisible = ref(false), renameDraft = ref({ id: null, title: '', version: 1 }), renameConflict = ref(false)
+const organizationSaving = ref(false), renameServerTitle = ref('')
+const listScope = createLatestRequestScope(), detailScope = createLatestRequestScope()
+const sessionGroups = computed(() => groupSessions(sessions.value))
 
 async function loadSessions() {
+  const ticket = listScope.invalidate()
+  sessionsLoading.value = true
+  sessionsError.value = false
   try {
-    sessions.value = await sessionAPI.list() || []
-  } catch (error) {
-    console.error('Failed to load sessions', error)
+    const result = await listScope.request(options => sessionAPI.list({ page: sessionPage.value, page_size: 20, search: sessionSearch.value, archived: showArchived.value }, options))
+    if (listScope.current(ticket)) { sessions.value = result.data; sessionTotal.value = result.total }
+  } catch {
+    if (listScope.current(ticket)) sessionsError.value = true
+  } finally {
+    if (listScope.current(ticket)) sessionsLoading.value = false
   }
+}
+function filterSessions() { sessionPage.value = 1; loadSessions() }
+async function loadSkills() {
+  try { skills.value = await sessionAPI.skills(); skillsError.value = false }
+  catch { skillsError.value = true }
+}
+function fillExample(name) { inputText.value = t(`agent.skills.${name}.example`) }
+function showHome() { if (!isLoading.value) navigateAgentRoute(router, { name: 'Chat' }) }
+
+async function sessionCommand(session, command) {
+  if (command === 'rename') {
+    renameDraft.value = { id: session.id, title: session.title || '', version: session.version }
+    renameServerTitle.value = session.title || ''; renameConflict.value = false; renameVisible.value = true
+  } else if (command === 'pin') await updateOrganization(session, { pinned: !session.pinned })
+  else if (command === 'archive') await updateOrganization(session, { archived: !session.archived })
+  else if (command === 'delete') await deleteSession(session)
+}
+async function updateOrganization(session, changes) {
+  if (organizationSaving.value) return false
+  organizationSaving.value = true
+  try {
+    const updated = await sessionAPI.update(session.id, { version: session.version, ...changes })
+    if (String(updated.id) === currentSessionId.value) currentSession.value = updated
+    await loadSessions()
+    return true
+  } catch (error) {
+    const conflict = error.response?.data?.error_code === 'resource_version_conflict'
+    if (renameVisible.value && conflict) renameConflict.value = true
+    ElMessage.error(t(conflict ? 'agent.workspace.conflict' : 'agent.workspace.updateFailed'))
+    return false
+  } finally { organizationSaving.value = false }
+}
+async function saveRename() {
+  if (await updateOrganization(renameDraft.value, { title: renameDraft.value.title.trim() })) renameVisible.value = false
+}
+async function reloadRenameVersion() {
+  try {
+    const latest = await sessionAPI.get(renameDraft.value.id)
+    renameDraft.value.version = latest.version
+    renameServerTitle.value = latest.title || ''
+    renameConflict.value = false
+  } catch { ElMessage.error(t('agent.workspace.loadFailed')) }
 }
 
 async function createSession() {
   try {
     const session = await sessionAPI.create({ title: null })
-    sessions.value.unshift(session)
+    currentSession.value = session
+    await loadSessions()
     await navigateAgentRoute(router, {
       name: 'ChatSession',
       params: { session_id: String(session.id) }
@@ -217,72 +286,40 @@ async function createSession() {
 }
 
 async function loadSessionMessages(sessionId) {
-  if (isLoading.value) return
+  if (isLoading.value || !sessionId) return
+  const ticket = detailScope.invalidate()
+  if (currentSessionId.value !== String(sessionId)) {
+    currentSession.value = null; messages.value = []; retryRunId.value = null
+  }
   currentSessionId.value = String(sessionId)
   sessionUnavailable.value = false
   try {
-    messages.value = await sessionAPI.getMessages(sessionId) || []
+    const [session, history] = await detailScope.request(options => Promise.all([sessionAPI.get(sessionId, options), sessionAPI.getMessages(sessionId, options)]))
+    if (!detailScope.current(ticket)) return
+    if (!currentSession.value || currentSession.value.version <= session.version) currentSession.value = session
+    messages.value = history
     scrollToBottom()
-  } catch (error) {
-    messages.value = []
-    sessionUnavailable.value = true
-    console.error('Failed to load messages', error)
+  } catch {
+    if (detailScope.current(ticket)) { currentSession.value = null; messages.value = []; sessionUnavailable.value = true }
   }
 }
-
 async function switchSession(sessionId) {
   if (isLoading.value || String(sessionId) === currentSessionId.value) return
-  await navigateAgentRoute(router, {
-    name: 'ChatSession',
-    params: { session_id: String(sessionId) }
-  })
+  await navigateAgentRoute(router, { name: 'ChatSession', params: { session_id: String(sessionId) } })
 }
-
 async function restoreRouteSession(sessionId) {
   if (!sessionsLoaded.value) return
-
-  const routeState = resolveAgentSessionRouteState(sessions.value, sessionId)
-  if (routeState.kind === 'redirect') {
-    currentSessionId.value = null
-    sessionUnavailable.value = false
-    messages.value = []
-    await navigateAgentRoute(router, routeState.location, { history: 'replace' })
-    return
-  }
-
-  if (routeState.kind === 'empty') {
-    currentSessionId.value = null
-    sessionUnavailable.value = false
-    messages.value = []
-    return
-  }
-
-  if (routeState.kind === 'unavailable') {
-    currentSessionId.value = routeState.sessionId
-    messages.value = []
-    sessionUnavailable.value = true
-    return
-  }
-
-  await loadSessionMessages(routeState.sessionId)
+  if (sessionId) return loadSessionMessages(String(sessionId))
+  detailScope.invalidate()
+  currentSessionId.value = null; currentSession.value = null; messages.value = []; sessionUnavailable.value = false; retryRunId.value = null
 }
-
-async function deleteSession(sessionId) {
+async function deleteSession(session) {
   if (isLoading.value) return
   try {
-    await sessionAPI.delete(sessionId)
-    sessions.value = sessions.value.filter(session => String(session.id) !== String(sessionId))
-    if (currentSessionId.value === String(sessionId)) {
-      await navigateAgentRoute(router, routeAfterSessionDeletion(sessions.value), { history: 'replace' })
-    }
-  } catch (error) {
-    ElMessage.error(t('agent.chat.deleteFailed'))
-  }
-}
-
-async function sendQuickMessage(text) {
-  inputText.value = text
-  await handleSend()
+    await sessionAPI.delete(session.id, session.version)
+    await loadSessions()
+    if (currentSessionId.value === String(session.id)) await navigateAgentRoute(router, { name: 'Chat' }, { history: 'replace' })
+  } catch (error) { ElMessage.error(t(error.response?.status === 409 ? 'agent.workspace.conflict' : 'agent.chat.deleteFailed')) }
 }
 
 function startLiveMessage() {
@@ -312,6 +349,7 @@ function applyToolStart(event) {
 }
 
 function applyToolResult(event) {
+  runRevision.value++
   const tool = liveTools.value.find(item => item.id === event.toolCallId)
   if (tool) tool.status = 'completed'
 }
@@ -319,7 +357,7 @@ function applyToolResult(event) {
 function applyActivity(event) {
   liveMessage.value.parts.push({
     type: 'presentation_ref',
-    protocol: 'a2ui',
+    protocol: event.activityType === 'addp-plan' ? 'ag-ui' : 'a2ui',
     activity_type: event.activityType,
     surface_id: event.messageId,
     content: event.content
@@ -329,6 +367,7 @@ function applyActivity(event) {
 
 function applyStateSnapshot(event) {
   if (event.snapshot?.agentRunId) activeRunId.value = event.snapshot.agentRunId
+  runRevision.value++
 }
 
 function applyRunError(event, { notify = true } = {}) {
@@ -431,6 +470,7 @@ async function runAgent({ userMessage = null, resume = null } = {}) {
     isLoading.value = false
     isCancelling.value = false
     activeRunId.value = null
+    runRevision.value++
     await Promise.all([loadSessions(), loadSessionMessages(currentSessionId.value)])
   }
   return succeeded
@@ -448,7 +488,7 @@ async function cancelActiveRun() {
 }
 
 async function retryFailedRun() {
-  if (!retryRunId.value || isLoading.value) return
+  if (!retryRunId.value || isLoading.value || !canRun.value) return
   const agentRunId = retryRunId.value
   isLoading.value = true
   retryRunId.value = null
@@ -468,6 +508,7 @@ async function retryFailedRun() {
     liveTools.value = []
     isLoading.value = false
     activeRunId.value = null
+    runRevision.value++
     await Promise.all([loadSessions(), loadSessionMessages(currentSessionId.value)])
   }
 }
@@ -503,9 +544,10 @@ async function handleSend() {
   inputText.value = ''
   scrollToBottom()
 
-  await runAgent({
+  const succeeded = await runAgent({
     userMessage: { id: protocolMessageId, role: 'user', content }
   })
+  if (!succeeded && currentSession.value?.archived) inputText.value = content
 }
 
 async function handleA2UIAction(action) {
@@ -515,7 +557,7 @@ async function handleA2UIAction(action) {
     if (resolved) window.open(resolved, '_blank', 'noopener,noreferrer')
     return
   }
-  if (action.name !== 'interaction.submit' || isLoading.value) return
+  if (action.name !== 'interaction.submit' || isLoading.value || !canRun.value) return
   const interactionId = action.context?.interactionId
   if (!interactionId) return
   await resumeInteraction(interactionId, action.context.answer)
@@ -536,6 +578,14 @@ function handlePresentationError(error) {
   ElMessage.error(t('agent.chat.presentationFailed'))
 }
 
+function locateMessage(source) {
+  nextTick(() => {
+    const element = [...(messagesAreaRef.value?.querySelectorAll('[data-message-id]') || [])].find(item => item.dataset.messageId === source)
+    element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (element) { element.setAttribute('tabindex', '-1'); element.focus({ preventScroll: true }) }
+  })
+}
+
 function scrollToBottom() {
   nextTick(() => {
     const element = messagesAreaRef.value
@@ -544,10 +594,12 @@ function scrollToBottom() {
 }
 
 onMounted(async () => {
-  await loadSessions()
+  await Promise.all([loadSessions(), loadSkills()])
   sessionsLoaded.value = true
   await restoreRouteSession(route.params.session_id)
 })
+
+onBeforeUnmount(() => { listScope.dispose(); detailScope.dispose() })
 
 watch(() => route.params.session_id, sessionId => {
   restoreRouteSession(sessionId)
@@ -563,13 +615,14 @@ onBeforeRouteUpdate((to, from) => {
 
 <style scoped>
 .chat-layout {
+  position: relative;
   display: flex;
   height: 100vh;
   background: var(--addp-bg-secondary);
 }
 
 .sidebar {
-  width: 240px;
+  width: 280px;
   background: var(--addp-bg-primary);
   border-right: 1px solid var(--addp-border-color);
   display: flex;
@@ -624,14 +677,6 @@ onBeforeRouteUpdate((to, from) => {
   font-size: 13px;
 }
 
-.delete-btn {
-  opacity: 0;
-}
-
-.session-item:hover .delete-btn {
-  opacity: 1;
-}
-
 .chat-main {
   flex: 1;
   min-width: 0;
@@ -658,22 +703,6 @@ onBeforeRouteUpdate((to, from) => {
 
 .empty-hint p {
   margin: 16px 0;
-}
-
-.quick-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-}
-
-.quick-tag {
-  max-width: 100%;
-  height: auto;
-  line-height: 1.4;
-  padding-block: 4px;
-  white-space: normal;
-  cursor: pointer;
 }
 
 .message-row {
@@ -774,4 +803,22 @@ onBeforeRouteUpdate((to, from) => {
     width: auto;
   }
 }
+.sidebar-header { gap: 8px; flex-wrap: wrap; }
+.session-filter { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+.session-group-title { font-size: 12px; font-weight: 500; color: var(--addp-text-secondary); padding: 8px; margin: 0; }
+.session-select { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; }
+.session-item { padding: 4px 8px; }
+.archive-notice { display: flex; gap: 8px; padding: 8px 16px; }
+.capability-home { width: 100%; max-width: 900px; margin: 32px auto; }
+.capability-home h1 { font-size: 24px; color: var(--addp-text-primary); }
+.capability-home p { color: var(--addp-text-secondary); }
+.capability-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.capability-card { display: flex; flex-direction: column; gap: 12px; text-align: left; padding: 16px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-primary); color: var(--addp-text-primary); cursor: pointer; }
+.capability-card:hover { border-color: var(--el-color-primary); }
+.capability-card span, .capability-card small { color: var(--addp-text-secondary); line-height: 1.6; }
+.capability-card:disabled { cursor: default; opacity: .65; }
+@media (max-width: 760px) { .sidebar { width: 200px; } .capability-grid { grid-template-columns: 1fr; } .capability-home { margin: 16px auto; } }
+@media (max-width: 540px) { .chat-layout { flex-direction: column; } .sidebar { width: 100%; max-height: 220px; border-right: 0; border-bottom: 1px solid var(--addp-border-color); } .sidebar-header { padding: 8px; } .session-list { max-height: 80px; } }
+.conversation-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 8px 16px; border-bottom: 1px solid var(--addp-border-color); color: var(--addp-text-primary); }
+.conversation-header span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

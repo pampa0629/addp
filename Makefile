@@ -121,6 +121,10 @@ infra-cloud-backup: ## 备份并隔离演练后加密到本地网盘监视目录
 ports-validate: ## 校验 System/Business 端口分配是否符合策略
 	@bash scripts/utils/ports-validate.sh
 
+.PHONY: test-agent-postgres
+test-agent-postgres: ## 验证 Agent 版本化迁移、会话版本与租户隔离，测试事务退出回滚
+	@bash scripts/test/agent-postgres-gate.sh
+
 test-agent-eval: ## 运行 Agent 统一离线评测门禁
 	@bash scripts/test/agent-evaluation-gate.sh offline
 
@@ -375,6 +379,7 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@python3 -m unittest business/doris/init_test.py
 
 test-integration: ## 严格串行运行所有本地可执行的 disposable 基础设施集成门禁
+	@$(MAKE) test-agent-postgres
 	@$(MAKE) test-business-redis
 	@$(MAKE) test-common-redis
 	@$(MAKE) test-common-postgres

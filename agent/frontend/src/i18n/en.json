@@ -38,14 +38,21 @@
           "parameters": "Complete check arguments",
           "unspecified": "Not specified",
           "overview": "Draft fact overview",
-          "sourceLocation": "Source", "targetLocation": "Target",
+          "sourceLocation": "Source",
+          "targetLocation": "Target",
           "location": "Engine {engine} · {path}",
-          "boundary": "Runtime boundary", "loadMode": "Load mode",
-          "applyPolicy": "Apply policy", "mappingCount": "Mapping count",
+          "boundary": "Runtime boundary",
+          "loadMode": "Load mode",
+          "applyPolicy": "Apply policy",
+          "mappingCount": "Mapping count",
           "replace": "replace · clear then write at execution time",
           "append": "append · append at execution time",
-          "source": "Source field", "target": "Target field", "target_type": "Target standard type",
-          "nullable": "Nullable", "precision": "Precision", "scale": "Scale"
+          "source": "Source field",
+          "target": "Target field",
+          "target_type": "Target standard type",
+          "nullable": "Nullable",
+          "precision": "Precision",
+          "scale": "Scale"
         },
         "mapTruncated": "Map shows a bounded feature sample",
         "tableSummary": "Showing {visible} / {total} rows",
@@ -71,11 +78,102 @@
         "completed": "Completed"
       }
     },
-    "quickHints": {
-      "listWorkflowEngines": "Show the currently available workflow engines",
-      "listGeoPythonOperators": "Show the public operators supported by the GeoPython workflow engine",
-      "listSparkOperators": "Show the public operators supported by the Spark workflow engine",
-      "listPointCloudOperators": "Show the public operators supported by the PointCloud workflow engine"
+    "workspace": {
+      "home": "Capabilities",
+      "search": "Search session titles",
+      "archived": "Archived",
+      "refresh": "Refresh list",
+      "loadFailed": "Unable to load sessions. Try again.",
+      "actions": "Session actions",
+      "rename": "Rename",
+      "pin": "Pin",
+      "unpin": "Unpin",
+      "archive": "Archive",
+      "restore": "Restore session",
+      "delete": "Delete",
+      "title": "Session title",
+      "conflict": "Session changed. Your edits are retained; reload before retrying.",
+      "reload": "Reload version",
+      "close": "Close",
+      "save": "Save",
+      "updateFailed": "Unable to update session",
+      "archiveNotice": "This session is archived. Restore it to continue chatting. Admitted runs continue.",
+      "chooseCapability": "Choose an example, add your requirements, then send.",
+      "skillsFailed": "Unable to load capabilities. Refresh to retry.",
+      "groups": {
+        "pinned": "Pinned",
+        "today": "Today",
+        "week": "Last seven days",
+        "older": "Earlier"
+      },
+      "panel": "Process and results",
+      "process": "Execution records",
+      "results": "Results",
+      "selectRun": "Select run",
+      "conversation": "Conversation",
+      "runsFailed": "Unable to load run records. Try again.",
+      "noSteps": "No tool steps in this run",
+      "noRuns": "No runs yet",
+      "runReadRequired": "Run record permission is required",
+      "noResults": "No results in this conversation",
+      "locate": "Locate source message",
+      "plan": "Task plan",
+      "planNotice": "Plan progress does not establish execution or validation success. Consult execution records and formal reports.",
+      "status": {
+        "running": "Running",
+        "waiting": "Waiting for input or approval",
+        "completed": "Finished",
+        "failed": "Failed",
+        "cancelled": "Stopped",
+        "pending": "Pending",
+        "in_progress": "In progress"
+      },
+      "planStatus": {
+        "pending": "Pending",
+        "in_progress": "In progress",
+        "completed": "Handled"
+      },
+      "resultKinds": {
+        "WorkflowDag": "Workflow",
+        "TransferDraftSnapshot": "Transfer draft",
+        "TransferConfigCheckReport": "Configuration check report",
+        "MapView": "Map",
+        "TablePreview": "Table",
+        "execution": "Execution reference"
+      },
+      "savedTitle": "Currently saved title"
+    },
+    "skills": {
+      "data-discovery": {
+        "title": "Discover data",
+        "description": "Find and preview existing platform data.",
+        "example": "Find population-related data and list candidates without reading samples."
+      },
+      "query-generation": {
+        "title": "Draft a query",
+        "description": "Generate SQL drafts from resource structures.",
+        "example": "Help me draft SQL. Confirm the data and meaning first; do not execute."
+      },
+      "notebook-generation": {
+        "title": "Draft a Notebook",
+        "description": "Generate a Notebook draft for an analysis task.",
+        "example": "Draft an analysis Notebook. Confirm its inputs first; do not execute."
+      },
+      "workflow-analysis": {
+        "title": "Design an analysis",
+        "description": "Discover public operators and generate and validate workflows.",
+        "example": "Design an analysis workflow. Confirm inputs and goals, then draft and validate it without running it."
+      },
+      "transfer-generation": {
+        "title": "Configure a transfer",
+        "description": "Draft and precheck transfer configurations; create tasks after confirmation.",
+        "example": "Help configure a transfer. Confirm source and target, check the configuration, and show a draft without creating or running a task."
+      },
+      "ontology-exploration": {
+        "title": "Explore ontologies",
+        "description": "Inspect published ontology concepts and context.",
+        "example": "Explore concepts and relations in published ontologies. List available ontologies first."
+      }
     }
   }
 }

@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: agent
-manifest_version: 3
+manifest_version: 4
 permissions:
   - key: agent.configuration.read
     allowed_scope_types: [platform, tenant]
@@ -74,3 +74,11 @@ permissions:
     status: active
     name_i18n_key: permissions.agent.session.read.name
     description_i18n_key: permissions.agent.session.read.description
+  - key: agent.session.update
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.agent.session.update.name
+    description_i18n_key: permissions.agent.session.update.description

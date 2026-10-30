@@ -13,7 +13,9 @@ vi.mock('../src/store/auth', () => ({
 }))
 vi.mock('../src/api/index', () => ({
   sessionAPI: {
-    list: vi.fn(async () => availableSessions),
+    list: vi.fn(async () => ({ data: availableSessions, total: availableSessions.length })),
+    skills: vi.fn(async () => []),
+    get: vi.fn(async id => availableSessions.find(item => String(item.id) === String(id))),
     getMessages: vi.fn(async () => availableMessages)
   },
   runAPI: {}
@@ -23,6 +25,7 @@ vi.mock('../src/agent/createAgentClient', () => ({
   replayAgentRunEvents: vi.fn()
 }))
 vi.mock('@common-ui', () => ({
+  createLatestRequestScope: () => ({ invalidate: () => 1, current: () => true, request: work => work({}), dispose: vi.fn() }),
   useConsolePageDescriptor: vi.fn(),
   resolveTaskOwnerUrl: vi.fn()
 }))
@@ -38,9 +41,9 @@ import { createAgentClient, replayAgentRunEvents } from '../src/agent/createAgen
 
 const button = { template: '<button><slot /></button>' }
 const input = {
-  props: ['disabled', 'modelValue'],
+  props: ['disabled', 'modelValue', 'type'],
   emits: ['update:modelValue'],
-  template: '<textarea :disabled="disabled" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />'
+  template: '<textarea v-if="type === \'textarea\'" :disabled="disabled" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />'
 }
 
 function renderChat() {

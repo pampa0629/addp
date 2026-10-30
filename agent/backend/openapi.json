@@ -128,6 +128,13 @@
             "title": "Metrics",
             "type": "object"
           },
+          "plan": {
+            "items": {
+              "$ref": "#/components/schemas/PlanItem"
+            },
+            "title": "Plan",
+            "type": "array"
+          },
           "session_id": {
             "title": "Session Id",
             "type": "integer"
@@ -175,7 +182,8 @@
           "created_at",
           "updated_at",
           "completed_at",
-          "steps"
+          "steps",
+          "plan"
         ],
         "title": "AgentRunResponse",
         "type": "object"
@@ -611,6 +619,17 @@
           "error": {
             "title": "Error",
             "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
           }
         },
         "required": [
@@ -637,19 +656,6 @@
           "arguments"
         ],
         "title": "FunctionCall",
-        "type": "object"
-      },
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail",
-            "type": "array"
-          }
-        },
-        "title": "HTTPValidationError",
         "type": "object"
       },
       "ImageInputContent": {
@@ -845,6 +851,32 @@
           "value"
         ],
         "title": "InputContentUrlSource",
+        "type": "object"
+      },
+      "PlanItem": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "in_progress",
+              "completed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "status"
+        ],
+        "title": "PlanItem",
         "type": "object"
       },
       "ReasoningMessage": {
@@ -1043,11 +1075,147 @@
         "title": "RunAgentInput",
         "type": "object"
       },
+      "RunPage": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/RunSummary"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "total_pages": {
+            "title": "Total Pages",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "data",
+          "total",
+          "page",
+          "page_size",
+          "total_pages"
+        ],
+        "title": "RunPage",
+        "type": "object"
+      },
+      "RunSummary": {
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "error_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Source"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "metrics": {
+            "additionalProperties": true,
+            "title": "Metrics",
+            "type": "object"
+          },
+          "skill_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Name"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "skill_name",
+          "created_at",
+          "updated_at",
+          "completed_at",
+          "metrics",
+          "error_source",
+          "error_code",
+          "error_message"
+        ],
+        "title": "RunSummary",
+        "type": "object"
+      },
       "SessionCreate": {
+        "additionalProperties": false,
         "properties": {
           "title": {
             "anyOf": [
               {
+                "maxLength": 255,
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -1058,6 +1226,163 @@
           }
         },
         "title": "SessionCreate",
+        "type": "object"
+      },
+      "SessionPage": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SessionResponse"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "total_pages": {
+            "title": "Total Pages",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "data",
+          "total",
+          "page",
+          "page_size",
+          "total_pages"
+        ],
+        "title": "SessionPage",
+        "type": "object"
+      },
+      "SessionResponse": {
+        "properties": {
+          "archived": {
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "pinned": {
+            "title": "Pinned",
+            "type": "boolean"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "version",
+          "pinned",
+          "archived",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SessionResponse",
+        "type": "object"
+      },
+      "SessionUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "archived": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived"
+          },
+          "pinned": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pinned"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "version": {
+            "description": "读取时的会话版本 | Observed session version",
+            "exclusiveMinimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "SessionUpdate",
+        "type": "object"
+      },
+      "SkillResponse": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "SkillResponse",
         "type": "object"
       },
       "SystemMessage": {
@@ -1335,44 +1660,20 @@
         "title": "UserMessage",
         "type": "object"
       },
-      "ValidationError": {
+      "VersionInput": {
+        "additionalProperties": false,
         "properties": {
-          "ctx": {
-            "title": "Context",
-            "type": "object"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "loc": {
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "title": "Location",
-            "type": "array"
-          },
-          "msg": {
-            "title": "Message",
-            "type": "string"
-          },
-          "type": {
-            "title": "Error Type",
-            "type": "string"
+          "version": {
+            "description": "读取时的会话版本 | Observed session version",
+            "exclusiveMinimum": 0.0,
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
-          "loc",
-          "msg",
-          "type"
+          "version"
         ],
-        "title": "ValidationError",
+        "title": "VersionInput",
         "type": "object"
       },
       "VideoInputContent": {
@@ -1510,11 +1811,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "请求参数不合法 | Invalid request parameters"
           },
           "503": {
             "content": {
@@ -1605,11 +1906,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "请求参数不合法 | Invalid request parameters"
           }
         },
         "security": [
@@ -1699,11 +2000,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "请求参数不合法 | Invalid request parameters"
           }
         },
         "security": [
@@ -1790,11 +2091,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "请求参数不合法 | Invalid request parameters"
           }
         },
         "security": [
@@ -1870,11 +2171,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "请求参数不合法 | Invalid request parameters"
           }
         },
         "security": [
@@ -1895,13 +2196,61 @@
     },
     "/api/v1/agent/sessions": {
       "get": {
-        "description": "获取当前 Tenant 内当前用户的会话列表",
+        "description": "标题按字面量子串检索，默认未归档，置顶优先。 | Literal title search; active sessions by default, pinned first.",
         "operationId": "list_sessions_api_v1_agent_sessions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 200,
+              "title": "Search",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Archived",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SessionPage"
+                }
               }
             },
             "description": "Successful Response"
@@ -1925,6 +2274,16 @@
               }
             },
             "description": "权限不足 | Permission denied"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "请求参数不合法 | Invalid request parameters"
           }
         },
         "security": [
@@ -1932,7 +2291,7 @@
             "BearerAuth": []
           }
         ],
-        "summary": "获取会话列表 | List Sessions",
+        "summary": "分页查询会话 | List sessions",
         "tags": [
           "会话管理 | Sessions"
         ],
@@ -1942,7 +2301,6 @@
         ]
       },
       "post": {
-        "description": "创建新会话",
         "operationId": "create_session_api_v1_agent_sessions_post",
         "requestBody": {
           "content": {
@@ -1958,7 +2316,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -1987,11 +2347,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "请求参数不合法 | Invalid request parameters"
           }
         },
         "security": [
@@ -1999,7 +2359,7 @@
             "BearerAuth": []
           }
         ],
-        "summary": "创建会话 | Create Session",
+        "summary": "创建会话 | Create session",
         "tags": [
           "会话管理 | Sessions"
         ],
@@ -2011,7 +2371,6 @@
     },
     "/api/v1/agent/sessions/{session_id}": {
       "delete": {
-        "description": "删除当前 Tenant 内当前用户拥有的会话",
         "operationId": "delete_session_api_v1_agent_sessions__session_id__delete",
         "parameters": [
           {
@@ -2024,6 +2383,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionInput"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -2053,15 +2422,35 @@
             },
             "description": "权限不足 | Permission denied"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "会话不存在 | Session not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "会话版本冲突 | Session version conflict"
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "请求参数不合法 | Invalid request parameters"
           }
         },
         "security": [
@@ -2069,7 +2458,7 @@
             "BearerAuth": []
           }
         ],
-        "summary": "删除会话 | Delete Session",
+        "summary": "删除会话 | Delete session",
         "tags": [
           "会话管理 | Sessions"
         ],
@@ -2079,7 +2468,6 @@
         ]
       },
       "get": {
-        "description": "获取当前 Tenant 内当前用户拥有的会话详情",
         "operationId": "get_session_api_v1_agent_sessions__session_id__get",
         "parameters": [
           {
@@ -2096,7 +2484,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -2121,15 +2511,25 @@
             },
             "description": "权限不足 | Permission denied"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "会话不存在 | Session not found"
+          },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "请求参数不合法 | Invalid request parameters"
           }
         },
         "security": [
@@ -2137,13 +2537,113 @@
             "BearerAuth": []
           }
         ],
-        "summary": "获取会话详情 | Get Session",
+        "summary": "获取会话 | Get session",
         "tags": [
           "会话管理 | Sessions"
         ],
         "x-addp-auth-mode": "permission",
         "x-addp-required-permissions": [
           "agent.session.read"
+        ]
+      },
+      "patch": {
+        "description": "按版本修改标题、置顶或归档；归档不取消已接纳的运行。 | Versioned title, pin or archive update; archiving does not cancel admitted runs.",
+        "operationId": "update_session_api_v1_agent_sessions__session_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "认证失效 | Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "权限不足 | Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "会话不存在 | Session not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "会话版本冲突 | Session version conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "请求参数不合法 | Invalid request parameters"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "更新会话组织 | Update session organization",
+        "tags": [
+          "会话管理 | Sessions"
+        ],
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "agent.session.update"
         ]
       }
     },
@@ -2195,11 +2695,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "请求参数不合法 | Invalid request parameters"
           }
         },
         "security": [
@@ -2214,6 +2714,111 @@
         "x-addp-auth-mode": "permission",
         "x-addp-required-permissions": [
           "agent.session.read"
+        ]
+      }
+    },
+    "/api/v1/agent/sessions/{session_id}/runs": {
+      "get": {
+        "description": "仅当前 User/Tenant 的会话运行；不返回检查点或工具原始结果。 | Current User/Tenant session runs without checkpoints or raw tool results.",
+        "operationId": "list_session_runs_api_v1_agent_sessions__session_id__runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "认证失效 | Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "权限不足 | Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "会话不存在 | Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "请求参数不合法 | Invalid request parameters"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "分页查询会话运行 | List session runs",
+        "tags": [
+          "会话管理 | Sessions"
+        ],
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "agent.run.read"
         ]
       }
     },
@@ -2266,11 +2871,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "请求参数不合法 | Invalid request parameters"
           }
         },
         "security": [
@@ -2345,11 +2950,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "请求参数不合法 | Invalid request parameters"
           }
         },
         "security": [
@@ -2364,6 +2969,71 @@
         ]
       }
     },
+    "/api/v1/agent/skills": {
+      "get": {
+        "description": "方法目录不代表当前权限或运行可用性。 | Method catalog does not imply permission or runtime availability.",
+        "operationId": "list_skills_api_v1_agent_skills_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkillResponse"
+                  },
+                  "title": "Response List Skills Api V1 Agent Skills Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "认证失效 | Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "权限不足 | Permission denied"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "请求参数不合法 | Invalid request parameters"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "列出已登记 Skill | List registered Skills",
+        "tags": [
+          "会话管理 | Sessions"
+        ],
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "agent.session.read"
+        ]
+      }
+    },
     "/health/live": {
       "get": {
         "operationId": "health_live_health_live_get",
@@ -2375,6 +3045,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "请求参数不合法 | Invalid request parameters"
           }
         },
         "summary": "存活检查 | Liveness Check",
@@ -2392,6 +3072,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "请求参数不合法 | Invalid request parameters"
           }
         },
         "summary": "就绪检查 | Readiness Check",

@@ -15,6 +15,9 @@ class AgentOpenAPIContractTests(unittest.TestCase):
             ("get", "/api/v1/agent/sessions"): ("permission", ["agent.session.read"]),
             ("post", "/api/v1/agent/sessions"): ("permission", ["agent.session.create"]),
             ("get", "/api/v1/agent/sessions/{session_id}"): ("permission", ["agent.session.read"]),
+            ("patch", "/api/v1/agent/sessions/{session_id}"): ("permission", ["agent.session.update"]),
+            ("get", "/api/v1/agent/sessions/{session_id}/runs"): ("permission", ["agent.run.read"]),
+            ("get", "/api/v1/agent/skills"): ("permission", ["agent.session.read"]),
             ("delete", "/api/v1/agent/sessions/{session_id}"): ("permission", ["agent.session.delete"]),
             ("get", "/api/v1/agent/sessions/{session_id}/messages"): ("permission", ["agent.session.read"]),
             ("post", "/api/v1/agent/chat"): (
@@ -47,6 +50,24 @@ class AgentOpenAPIContractTests(unittest.TestCase):
             assert health["x-addp-auth-mode"] == "public"
             assert "x-addp-required-permissions" not in health
 
+
+    def test_new_session_mutations_require_update_permission_and_standard_validation_errors(self):
+        from fastapi.testclient import TestClient
+        from main import app
+        context = AuthorizationContext(principal_id=12, tenant_id=3, tenant_membership_id=8)
+        with patch("main.ready_response", return_value=({}, True)), patch("middleware.auth.resolve_authorization_context", new=AsyncMock(return_value=context)):
+            client=TestClient(app)
+            denied=client.patch('/api/v1/agent/sessions/1',json={'version':1,'archived':True},headers={'Authorization':'Bearer token'})
+            self.assertEqual(denied.status_code,403)
+        from main import invalid_request_response
+        from fastapi.exceptions import RequestValidationError
+        from starlette.requests import Request
+        import asyncio
+        request=Request({'type':'http','headers':[(b'accept-language',b'en')],'method':'POST','path':'/'})
+        result=asyncio.run(invalid_request_response(request,RequestValidationError([])))
+        self.assertEqual(result.status_code,422)
+        import json
+        self.assertEqual(json.loads(result.body),{'error':'Invalid request parameters','error_code':'invalid_request'})
 
     def test_agent_health_and_business_gate_are_distinct_before_registration(self):
         from fastapi.testclient import TestClient
