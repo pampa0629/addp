@@ -17,6 +17,82 @@ ID = str(uuid.uuid4())
 
 
 class NativeCleanupRunnerTest(unittest.TestCase):
+    def test_failure_diagnostics_publish_only_closed_categories_and_http_status(self):
+        cases = [
+            (S.SuiteError('POST /private?token=secret returned HTTP 403 (private_code)'),
+             {'failure_kind': 'http_unexpected_status', 'failure_http_status': 403}),
+            (S.SuiteError('DELETE /private returned HTTP 503 (secret)'),
+             {'failure_kind': 'http_unexpected_status', 'failure_http_status': 503}),
+            (S.SuiteError('GET /private returned invalid JSON'), {'failure_kind': 'http_invalid_json'}),
+            (S.SuiteError('GET /private transport failed: secret connection'), {'failure_kind': 'http_transport'}),
+            (S.SuiteError('GET /private returned HTTP 700 (secret)'), {'failure_kind': 'assertion_failed'}),
+            (S.SuiteError('private assertion and response'), {'failure_kind': 'assertion_failed'}),
+            (RuntimeError('POST /private returned HTTP 403 (secret)'), {'failure_kind': 'unexpected_exception'}),
+        ]
+        for error, expected in cases:
+            with self.subTest(expected=expected):
+                result = M.failure_diagnostics(error)
+                self.assertEqual(result, expected)
+                self.assertNotIn('private', json.dumps(result))
+                self.assertNotIn('secret', json.dumps(result))
+
+    def test_transfer_scan_and_grant_failure_checkpoints_precede_task_creation(self):
+        for failed in ('scan', 'grant'):
+            engines = iter((9, 10))
+            workflow = SimpleNamespace(register=lambda descriptor: next(engines))
+            controls = SimpleNamespace(tenant=2, run_id='native-1', descriptor=lambda kind: {})
+            report, stages = {'checks': []}, []
+            with self.subTest(failed=failed), \
+                    patch.object(M.MANAGER, 'wait_for_meta_scan', side_effect=S.SuiteError('private') if failed == 'scan' else None), \
+                    patch.object(M.REGISTRATION, 'initialize_exact_record_read_grants', side_effect=S.SuiteError('private')) as grant, \
+                    patch.object(M, 'prepare_task') as prepare:
+                with self.assertRaises(S.SuiteError):
+                    M.run_transfer(object(), workflow, controls, object(), 'transfer-dlq-unknown', report,
+                                   lambda: stages.append(report['stage']))
+                self.assertEqual(report['stage'], 'transfer_source_scan' if failed == 'scan' else 'transfer_source_grant')
+                self.assertEqual(stages[-1], report['stage'])
+                prepare.assert_not_called()
+                if failed == 'scan': grant.assert_not_called()
+                else: grant.assert_called_once()
+
+    def test_transfer_task_preparation_records_the_failing_call_before_effects(self):
+        stages = {'create': 'transfer_task_create', 'start': 'transfer_task_start',
+                  'runtime': 'transfer_runtime_start', 'initial': 'transfer_initial_records',
+                  'invalid': 'transfer_dlq_records', 'dead_letter_read': 'transfer_dlq_records',
+                  'topic': 'transfer_dlq_native_verify', 'pause': 'transfer_task_pause',
+                  'quiescence': 'transfer_task_pause', None: 'transfer_task_pause'}
+        for failed, expected_stage in stages.items():
+            report, checkpoints = {'tasks': [], 'executions': []}, []
+            def effect(name):
+                if name == failed: raise S.SuiteError('private failure')
+            class User:
+                def request(self, method, path, expected, body=None):
+                    if method == 'POST' and path == M.TASKS: effect('create'); value = {'id': 7}
+                    elif method == 'POST' and path.endswith('/start'): effect('start'); value = {'execution_id': ID}
+                    elif method == 'GET' and '/executions/' in path: effect('runtime'); value = {'status': 'running'}
+                    elif method == 'GET' and '/dead-letters?' in path: effect('dead_letter_read'); value = {'total': 1}
+                    elif method == 'POST' and path.endswith('/pause'): effect('pause'); value = {}
+                    elif method == 'GET' and path == M.TASKS + '/7': value = {'desired_state': 'paused', 'status': 'idle'}
+                    else: raise AssertionError('unexpected preparation request')
+                    return SimpleNamespace(payload=value)
+            class Controls:
+                def produce_initial(self): effect('initial')
+                def produce_invalid(self): effect('invalid')
+                def topic(self, task, *, present): effect('topic')
+                def require_invocations_stopped(self, task): effect('quiescence')
+            def wait(read, predicate, message, **kwargs):
+                value = read(); M.require(predicate(value), message); return value
+            with self.subTest(failed=failed), patch.object(S, 'wait_for', side_effect=wait), \
+                    patch.object(M.TRANSFER, 'physical', return_value=True):
+                def run():
+                    return M.prepare_task(User(), Controls(), 9, 10, 'kafka', 'native-1', report,
+                                          lambda: checkpoints.append(report['stage']))
+                if failed is None: self.assertEqual(run(), (7, ID))
+                else:
+                    with self.assertRaises(S.SuiteError): run()
+                self.assertEqual(report['stage'], expected_stage)
+                self.assertEqual(checkpoints[-1], expected_stage)
+
     def test_proxy_evidence_requires_actual_upstream_response_and_single_forward(self):
         valid = dict(run_id='native-1', key=ID, forwarded=1, upstream_response=True, blocked_replays=0)
         M.assert_proxy(valid, 'native-1', ID)
@@ -114,6 +190,13 @@ class NativeCleanupRunnerTest(unittest.TestCase):
             else:
                 with self.subTest(mutation=mutation), self.assertRaises(S.SuiteError): M.run_dlq_unknown(User(), Controls(), 7, report, lambda: None)
                 self.assertNotIn('new_producer_rejected', report['checks'])
+                self.assertEqual(report['stage'], {
+                    'no_source': 'direct_task_delete_unknown', 'no_response': 'transfer_dlq_effect_probe',
+                    'topic_present': 'transfer_dlq_native_absence', 'index_erased': 'transfer_dlq_hold_verify',
+                    'operation_missing': 'transfer_dlq_hold_verify', 'late_write': 'transfer_dlq_hold_after_refusal',
+                    'resent': 'transfer_dlq_no_replay', 'wrong_refusal_code': 'transfer_dlq_producer_refusal',
+                    'legacy_refusal': 'transfer_dlq_producer_refusal',
+                }[mutation])
 
     def test_manifest_rejects_foreign_runs_extra_fields_and_nonprivate_files(self):
         for mutation in ('foreign', 'case', 'extra', 'permissions', 'symlink'):

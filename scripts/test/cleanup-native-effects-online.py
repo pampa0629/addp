@@ -27,6 +27,22 @@ ENGINE = '/api/v1/system/engines'
 TASKS = '/api/v1/transfer/task-definitions'
 
 
+def failure_diagnostics(error):
+    known = (S.SuiteError, MANAGER.SuiteError, TRANSFER.SuiteError, REGISTRATION.RegistrationError)
+    if not isinstance(error, known):
+        return {'failure_kind': 'unexpected_exception'}
+    message = str(error)
+    request = r'(?:GET|POST|PUT|PATCH|DELETE) /[^\r\n]+'
+    status = re.fullmatch(request + r' returned HTTP ([1-5][0-9]{2}) \([^()\r\n]*\)', message)
+    if status:
+        return {'failure_kind': 'http_unexpected_status', 'failure_http_status': int(status.group(1))}
+    if re.fullmatch(request + r' returned invalid JSON', message):
+        return {'failure_kind': 'http_invalid_json'}
+    if re.fullmatch(request + r' transport failed: [^\r\n]*', message):
+        return {'failure_kind': 'http_transport'}
+    return {'failure_kind': 'assertion_failed'}
+
+
 def assert_proxy(value, run_id, key):
     require(type(value) is dict and set(value) == {'run_id', 'key', 'forwarded', 'upstream_response', 'blocked_replays'}
             and value['run_id'] == run_id and value['key'] == key
@@ -128,6 +144,7 @@ def wait_paused(user, task_id, controls):
 
 
 def prepare_task(user, controls, pg, kafka, kind, run_id, report, checkpoint):
+    report['stage'] = 'transfer_task_create'; checkpoint()
     config = TRANSFER.task_config(kind, pg, kafka)
     if kind == 'kafka': config['runtime']['record_failure']['mode'] = 'dead_letter'
     name = 'native-' + run_id + '-' + kind
@@ -135,21 +152,29 @@ def prepare_task(user, controls, pg, kafka, kind, run_id, report, checkpoint):
         'enabled': False, 'auto_scan_metadata': True, 'batch_size': 100, 'config': config}).payload
     task_id = S.positive(created['id'])
     report['tasks'].append(task_id); checkpoint()
+    report['stage'] = 'transfer_task_start'; checkpoint()
     started = user.request('POST', f'{TASKS}/{task_id}/start', (200,)).payload
     execution_id = S.identifier(started['execution_id'])
     report['executions'].append(execution_id); checkpoint()
+    report['stage'] = 'transfer_runtime_start'; checkpoint()
     S.wait_for(lambda: user.request('GET', f'/api/v1/transfer/executions/{execution_id}', (200,)).payload,
                lambda x: x.get('status') == 'running', 'native Transfer runtime did not start')
     if kind == 'kafka':
+        report['stage'] = 'transfer_initial_records'; checkpoint()
         controls.produce_initial()
         S.wait_for(lambda: TRANSFER.physical('verify-kafka-initial'), bool, 'native Kafka target rows were not committed')
+        report['stage'] = 'transfer_dlq_records'; checkpoint()
         controls.produce_invalid()
         S.wait_for(lambda: user.request('GET', f'{TASKS}/{task_id}/dead-letters?page=1&page_size=10', (200,)).payload,
                    lambda x: x.get('total', 0) > 0, 'native DLQ record was not created')
+        report['stage'] = 'transfer_dlq_native_verify'; checkpoint()
         controls.topic(task_id, present=True)
     else:
+        report['stage'] = 'transfer_initial_records'; checkpoint()
         S.wait_for(lambda: TRANSFER.physical('verify-cdc-initial'), bool, 'native CDC target rows were not committed')
+        report['stage'] = 'transfer_capture_native_verify'; checkpoint()
         controls.capture(task_id, present=True)
+    report['stage'] = 'transfer_task_pause'; checkpoint()
     wait_paused(user, task_id, controls)
     return task_id, execution_id
 
@@ -158,25 +183,35 @@ def run_dlq_unknown(user, controls, task_id, report, checkpoint):
     report['stage'] = 'direct_task_delete_unknown'; checkpoint()
     before = controls.transfer_snapshot(task_id)
     require(before['dead_letters'] > 0 and before['task_exists'] is True, 'DLQ has no retained control facts')
+    report['stage'] = 'transfer_dlq_fault_arm'; checkpoint()
     key = controls.arm('dlq', topic=f'__addp_dlq.{controls.tenant}.{task_id}')
+    report['stage'] = 'transfer_dlq_delete_unknown'; checkpoint()
     user.request('DELETE', f'{TASKS}/{task_id}', (503,))
+    report['stage'] = 'transfer_dlq_effect_probe'; checkpoint()
     evidence = controls.fault('dlq', key)
     assert_proxy(evidence, controls.run_id, key)
+    report['stage'] = 'transfer_dlq_native_absence'; checkpoint()
     controls.topic(task_id, present=False)
+    report['stage'] = 'transfer_dlq_hold_verify'; checkpoint()
     after = controls.transfer_snapshot(task_id)
     require(after['task_exists'] and after['dead_letters'] == before['dead_letters']
             and after['unknown_operations'] == 1, 'unknown topic deletion erased its task, index or operation')
     # Explicit second user command must not resend the unknown native effect.
+    report['stage'] = 'transfer_dlq_repeat_delete'; checkpoint()
     user.request('DELETE', f'{TASKS}/{task_id}', (503,))
+    report['stage'] = 'transfer_dlq_producer_refusal'; checkpoint()
     refused = user.request('POST', f'{TASKS}/{task_id}/start', (409,))
     require(refused.payload.get('error_code') == 'transfer_cleanup_unresolved',
             'producer refusal has an unrelated cause')
     report['producer_refusal_http_status'] = 409
     report['producer_refusal_error_code'] = refused.payload['error_code']
+    report['stage'] = 'transfer_dlq_hold_after_refusal'; checkpoint()
     require(controls.transfer_snapshot(task_id) == after, 'repeated command or producer changed isolated task facts')
+    report['stage'] = 'transfer_dlq_no_replay'; checkpoint()
     assert_proxy(controls.fault('dlq', key), controls.run_id, key)
     report['checks'].extend(['real_dlq_created', 'direct_task_delete_sent_response_lost',
         'native_topic_absent', 'unknown_preserves_task_and_index', 'unknown_delete_not_resent', 'new_producer_rejected'])
+    report['stage'] = 'transfer_target_rows_verify'; checkpoint()
     controls.target_rows('kafka')
     report['checks'].append('target_business_rows_preserved')
     report['entry'] = 'transfer_task_delete'
@@ -547,13 +582,16 @@ def run_transfer(user, workflow, controls, source, case, report, checkpoint):
     report['stage'] = 'transfer_native_prepare'; checkpoint()
     pg = workflow.register(controls.descriptor('pg'))
     kafka = workflow.register(controls.descriptor('kafka'))
+    report['stage'] = 'transfer_source_scan'; checkpoint()
     MANAGER.wait_for_meta_scan(user, pg, time.monotonic() + 180)
     # CDC consumes source contents through the existing exact DataItem Grant.
+    report['stage'] = 'transfer_source_grant'; checkpoint()
     REGISTRATION.initialize_exact_record_read_grants(source, user, controls.tenant,
                                                     [(pg, 'schema', 'public', 'continuous_source')])
     task_ids = []
     if case != 'transfer-dlq-unknown':
         cdc, _ = prepare_task(user, controls, pg, kafka, 'cdc', controls.run_id, report, checkpoint)
+        report['stage'] = 'transfer_capture_native_verify'; checkpoint()
         controls.capture(cdc, present=True)
         task_ids.append(cdc)
     if case != 'transfer-capture-unknown':
@@ -728,7 +766,8 @@ def main():
                 and len(report['checks']) == len(set(report['checks'])), 'native case checks missing, duplicated or outside scope')
         report['result'] = 'passed'
     except Exception as error:
-        report.update(result='failed', error_type=type(error).__name__, failure_stage=report.get('stage', 'preflight'))
+        report.update(result='failed', error_type=type(error).__name__, failure_stage=report.get('stage', 'preflight'),
+                      **failure_diagnostics(error))
     finally:
         if deployment is not None:
             try:

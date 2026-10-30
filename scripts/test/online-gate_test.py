@@ -1,5 +1,6 @@
 import importlib.util
 import fcntl
+import json
 import sys
 import tempfile
 import unittest
@@ -40,6 +41,34 @@ class OnlineGateTest(unittest.TestCase):
 
     def tearDown(self):
         self.temporary.cleanup()
+
+    def test_native_passed_report_rejects_failure_fields_even_when_null(self):
+        case = 'transfer-dlq-unknown'
+        contract = json.loads(SCRIPT.with_name('execution-online-contract.json').read_text())
+        report = dict(
+            schema_version='addp.cleanup-native-effects/v1', suite='cleanup-native-effects',
+            case=case, result='passed', control_cleanup='passed', hosted_destruction='required',
+            run_id='native-test', tenant_id='7', stage='native_postconditions',
+            engines=[11], tasks=[22], requests=[], executions=['22222222-2222-4222-8222-222222222222'],
+            principals={'manager': 'user-a', 'transfer': 'user-b', 'engine': 'user-c'},
+            checks=contract['native_case_checks'][case], entry='transfer_task_delete',
+            native_late_writer_acceptance='not_run', graph_native_write_acceptance='not_run',
+            positive_reopen_acceptance='not_run', producer_refusal_http_status=409,
+            producer_refusal_error_code='transfer_cleanup_unresolved',
+        )
+        environment = dict(ADDP_ONLINE_NATIVE_CASE=case, ADDP_ONLINE_TEST_RUN_ID='native-test',
+                           ADDP_ONLINE_TEST_TENANT_ID='7')
+        ONLINE_GATE.validate_execution_report('cleanup-native', report, environment)
+        for field, diagnostic in (
+            ('failure_kind', 'http_unexpected_status'), ('failure_http_status', 503),
+            ('failure_stage', 'transfer_native_prepare'), ('error_type', 'SuiteError'),
+            ('cleanup_error_type', 'SuiteError'),
+        ):
+            for value in (None, '', False, diagnostic):
+                with self.subTest(field=field, value=value):
+                    with self.assertRaises(ONLINE_GATE.OnlineStageError) as caught:
+                        ONLINE_GATE.validate_execution_report('cleanup-native', {**report, field: value}, environment)
+                    self.assertEqual(caught.exception.error_code, 'online_native_cleanup_report_invalid')
 
     def test_kml_case_probes_transfer_before_owner_and_keeps_other_cases_unchanged(self):
         for case in ('full', 'native-raster-media', 'kml-export'):
