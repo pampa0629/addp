@@ -1632,3 +1632,22 @@ func TestFileGDBCaseUsesReadOnlyConsumerAndExistingSourceInitializer(t *testing.
 		t.Fatal("FileGDB issuer must only supplement the two Deny lifecycle permissions")
 	}
 }
+
+func TestFileGDBOutsiderHasOnlyReadFunctionsAndIsScopedToItsCase(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_MANAGER_CASE", "filegdb-authorization")
+	want := []string{"manager.content.read", "manager.data_item.read"}
+	if !slices.Equal(managerFileGDBOutsiderPermissions("manager-internal-artifact-lineage"), want) {
+		t.Fatal("FileGDB outsider must have only the two read functions")
+	}
+	for _, suite := range []string{"pg-source-authorization", "ftp-consumer-flow", "unknown"} {
+		if managerFileGDBOutsiderPermissions(suite) != nil {
+			t.Fatal("FileGDB outsider leaked into another suite")
+		}
+	}
+	for _, caseName := range []string{"full", "kml-export", "native-table-orc", "native-raster-media", ""} {
+		t.Setenv("ADDP_ONLINE_MANAGER_CASE", caseName)
+		if managerFileGDBOutsiderPermissions("manager-internal-artifact-lineage") != nil {
+			t.Fatal("FileGDB outsider leaked into another Manager case")
+		}
+	}
+}

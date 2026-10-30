@@ -113,6 +113,53 @@ class FileGDBAcceptanceTest(unittest.TestCase):
             self.assertEqual(len(auth.grants), 1)
             self.assertFalse(auth.confirmed)
 
+    def test_ungranted_account_is_denied_while_original_reader_stays_allowed(self):
+        self.isolation_flow()
+
+    def test_isolation_rejects_shared_identity_credentials_grant_or_wrong_denial(self):
+        for mutation in ('same_user', 'issuer_user', 'same_token', 'issuer_token', 'has_grant',
+                         'has_deny', 'leaked_read', 'security_not_ready', 'grant_changed', 'relation_created'):
+            with self.subTest(mutation=mutation), self.assertRaises((ValueError, M.API.SuiteError)):
+                self.isolation_flow(mutation)
+
+    def isolation_flow(self, mutation=None):
+        before = {'data': [{'grant_count': 1, 'inspection': {'observed_at': '2026-10-30T10:00:00Z',
+            'reason': 'grant', 'sources': [{'request_id': 'original'}], 'denies': []}}], 'total': 1}
+        after = deepcopy(before)
+        if mutation == 'grant_changed': after['data'][0]['inspection']['sources'][0]['request_id'] = 'new'
+        zero = {'data': [], 'total': 0}
+        outsider_before = {'data': [{'grant_count': 1}], 'total': 1} if mutation == 'has_grant' else zero
+        if mutation == 'has_deny': outsider_before = {'data': [{'grant_count': 0, 'denies': ['deny']}], 'total': 1}
+        outsider_after = {'data': [{'grant_count': 1}], 'total': 1} if mutation == 'relation_created' else zero
+        auth = Mock(recipient='11', operator='9'); auth.issuer.token = 'issuer'
+        auth.current.side_effect = [before, outsider_before, after, outsider_after]
+        auth.history.return_value = {'request_id': 'original', 'revocation': None}
+        reader = Mock(token='reader'); outsider = Mock(token='outsider')
+        outsider_id = '11' if mutation == 'same_user' else ('9' if mutation == 'issuer_user' else '12')
+        if mutation == 'same_token': outsider.token = reader.token
+        if mutation == 'issuer_token': outsider.token = auth.issuer.token
+        def read_response(method, path, statuses):
+            child = 'initial_points' if 'initial_points' in path else 'added_points'
+            rows = 2 if child == 'initial_points' else 1
+            return SimpleNamespace(status=200, payload={'data': {'total': rows, 'rows': [
+                {'label': child + '_' + str(i), 'value': i + 1} for i in range(rows)]}})
+        reader.request.side_effect = read_response
+        if mutation == 'leaked_read': outsider.request.side_effect = read_response
+        else:
+            outsider.request.return_value = SimpleNamespace(status=403, payload={'error': 'denied', **(
+                {'error_code': 'security_protection_required'} if mutation == 'security_not_ready' else {})})
+        report = {'tenant_id': 2}
+        with patch.object(M.FILES, 'exact_user_principal', return_value=outsider_id) as identity:
+            evidence = M.verify_account_isolation(auth, reader, outsider, outsider_id, 'locator',
+                {'request_id': 'original'}, [('initial_points', 2), ('added_points', 1)], report)
+        self.assertEqual([r['outsider_denied']['status'] for r in evidence['reads']], [403, 403])
+        self.assertEqual([r['allowed_after']['rows'] for r in evidence['reads']], [2, 1])
+        self.assertTrue(evidence['same_grant']); self.assertTrue(evidence['same_credentials'])
+        identity.assert_called_once_with(outsider, 2, M.OUTSIDER_PERMISSIONS)
+        self.assertEqual(auth.current.call_args_list[1].kwargs, {'recipient': '12'})
+        self.assertEqual(report['account_isolation']['principal_id'], '12')
+        auth.grant.assert_not_called(); auth.revoke.assert_not_called(); auth.deny.assert_not_called()
+
     def test_deny_priority_and_release_keep_the_same_grant_and_both_child_reads(self):
         self.deny_flow()
 
@@ -307,9 +354,10 @@ class FileGDBAcceptanceTest(unittest.TestCase):
             root = Path(directory)
             env = {'ADDP_ONLINE_ARTIFACT_DIR': directory, 'ADDP_ONLINE_SECRET_DIR': directory,
                 'GATEWAY_URL': 'http://localhost:8000', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN': 'test',
-                'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'issuer', 'ADDP_ONLINE_MANAGER_NFS_ENGINE_ID': '7',
+                'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'issuer', 'ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN': 'outsider',
+                'ADDP_ONLINE_MANAGER_NFS_ENGINE_ID': '7',
                 'ADDP_ONLINE_TEST_TENANT_ID': '2', 'ADDP_ONLINE_TEST_RUN_ID': 'manager-1-1'}
-            auth = Mock(); auth.current.return_value = {'total': 0}; auth.close.return_value = None
+            auth = Mock(); auth.current.return_value = {'total': 0, 'data': []}; auth.close.return_value = None
             owner = Mock(); owner.wait_for_meta_scan.side_effect = ValueError('source scan unavailable')
             actions = []
             def physical(action, target):
@@ -317,7 +365,7 @@ class FileGDBAcceptanceTest(unittest.TestCase):
                 if action == 'snapshot': raise OSError('source not readable')
                 return {'source_removed': True}
             with patch.object(M, 'guard', return_value=root), patch.object(M.API, 'GatewayClient'), \
-                    patch.object(M.FILES, 'exact_user_principal', return_value='11'), \
+                    patch.object(M.FILES, 'exact_user_principal', side_effect=['11', '12']), \
                     patch.object(M.API, 'wait_manager_read_boundary'), patch.object(M, 'Authorization', return_value=auth), \
                     patch.object(P, 'physical', side_effect=physical):
                 with self.assertRaises(ValueError): M.run(root, env, owner)

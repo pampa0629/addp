@@ -19,11 +19,13 @@ FILES = importlib.import_module('scripts.test.ftp-consumer-flow-online')
 REGISTRATION = importlib.import_module('scripts.test.online-engine-registration')
 PERMISSIONS = {'manager.content.read', 'manager.data_item.read', 'meta.catalog.read',
                'meta.scan_task.execute', 'meta.scan_task.read', 'monitor.execution.read'}
+OUTSIDER_PERMISSIONS = {'manager.content.read', 'manager.data_item.read'}
 NAME = 'authorization.gdb'
 REQUIRED_CHECKS = {'basic_whole_identity', 'ungranted_child_denied', 'initial_child_actual_rows',
     'new_child_same_grant', 'manager_crash_and_source_disconnect_recovered_same_grant',
     'revoked_next_read_denied', 'natural_expiry_next_read_denied', 'read_child_sigkill_observed',
-    'explicit_deny_overrides_whole_grant', 'deny_release_restores_original_grant'}
+    'explicit_deny_overrides_whole_grant', 'deny_release_restores_original_grant',
+    'ungranted_account_initial_child_denied', 'ungranted_account_new_child_denied'}
 
 
 def require(value, message):
@@ -99,9 +101,9 @@ class Authorization(FILES.ModelSourceAuthorization):
         self.confirmed.add(command)
         return receipt
 
-    def current(self):
+    def current(self, *, recipient=None):
         response = self.issuer.request('GET', self.base + '/access_grants?' + urlencode({
-            'recipient_type': 'user', 'recipient_id': self.recipient, 'table_search': NAME}), (200,)).payload
+            'recipient_type': 'user', 'recipient_id': recipient or self.recipient, 'table_search': NAME}), (200,)).payload
         require(response.get('total') in (0, 1), 'unexpected active source count')
         return response
 
@@ -140,6 +142,39 @@ def preview(client, locator, child, status, rows=None):
             require(set(response.payload) == {'error'} and isinstance(response.payload['error'], str)
                     and bool(response.payload['error'].strip()), 'source denial response differs from the formal contract')
     return {'status': response.status, 'child': child, 'rows': rows}
+
+
+def verify_account_isolation(authorization, client, outsider, outsider_id, locator, grant, children, report):
+    """A same-Tenant reader with functional permission must not inherit another User's Grant."""
+    physical = importlib.import_module('scripts.test.manager-filegdb-physical')
+    require(outsider_id not in {authorization.recipient, authorization.operator}
+            and outsider.token not in {client.token, authorization.issuer.token}, 'isolation requires distinct Users and credentials')
+    credentials = (client.token, outsider.token)
+    before = authorization.current()
+    history = authorization.history(grant['request_id'])
+    require(history['revocation'] is None, 'account isolation requires the original active Grant')
+    observation = {'before': before, 'history_before': history, 'reads': []}
+    evidence = report.setdefault('account_isolation', {'principal_id': outsider_id,
+        'permissions': sorted(OUTSIDER_PERMISSIONS), 'observations': []})
+    evidence['observations'].append(observation)
+    observation['outsider_before'] = authorization.current(recipient=outsider_id)
+    require(observation['outsider_before']['total'] == 0 and observation['outsider_before']['data'] == [],
+            'outsider unexpectedly has a Grant or Deny relation')
+    for child, rows in children:
+        observation['reads'].append({'allowed_before': preview(client, locator, child, 200, rows),
+            'outsider_denied': preview(outsider, locator, child, 403),
+            'allowed_after': preview(client, locator, child, 200, rows)})
+    observation['after'] = authorization.current()
+    observation['history_after'] = authorization.history(grant['request_id'])
+    observation['outsider_after'] = authorization.current(recipient=outsider_id)
+    require(physical.rule_snapshot(observation['after']) == physical.rule_snapshot(before)
+            and observation['history_after'] == history, 'outsider read changed the original Grant')
+    require(observation['outsider_after']['total'] == 0 and observation['outsider_after']['data'] == [],
+            'outsider read created an authorization relation')
+    require(FILES.exact_user_principal(outsider, report['tenant_id'], OUTSIDER_PERMISSIONS) == outsider_id
+            and (client.token, outsider.token) == credentials, 'outsider identity or credentials changed')
+    observation.update(grant_id=grant['request_id'], same_grant=True, same_credentials=True)
+    return observation
 
 
 def verify_deny(authorization, client, item, locator, grant, report):
@@ -223,6 +258,8 @@ def run(repository, environment, owner):
                   tenant_id=tenant, principal_id=principal, engine_id=engine, source_engine_type='nfs',
                   result='failed', checks=[], cleanup='pending')
     authorization = Authorization(issuer, client, report)
+    outsider = None
+    outsider_id = None
     locator = None
     primary_completed = False
     fixture = importlib.import_module('scripts.test.manager-filegdb-physical')
@@ -231,6 +268,9 @@ def run(repository, environment, owner):
     def check(name):
         report['checks'].append(name)
     try:
+        outsider = API.GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN'], 30)
+        outsider_id = FILES.exact_user_principal(outsider, tenant, OUTSIDER_PERMISSIONS)
+        require(outsider_id not in {principal, authorization.operator}, 'outsider must be a separate User')
         physical('seed')
         API.wait_manager_read_boundary(client, engine, time.monotonic() + 120)
         owner.wait_for_meta_scan(client, engine, time.monotonic() + 180, depth='basic', scope={'catalog_paths': [NAME]})
@@ -246,11 +286,17 @@ def run(repository, environment, owner):
         owner.wait_for_meta_scan(client, engine, time.monotonic() + 180, scope={'catalog_paths': [NAME]})
         preview(client, locator, 'initial_points', 200, 2)
         check('initial_child_actual_rows')
+        verify_account_isolation(authorization, client, outsider, outsider_id, locator, first,
+            [('initial_points', 2)], report)
+        check('ungranted_account_initial_child_denied')
         physical('add')
         owner.wait_for_meta_scan(client, engine, time.monotonic() + 180, scope={'catalog_paths': [NAME]})
         authorization.facts(item)
         preview(client, locator, 'added_points', 200, 1)
         check('new_child_same_grant')
+        verify_account_isolation(authorization, client, outsider, outsider_id, locator, first,
+            [('initial_points', 2), ('added_points', 1)], report)
+        check('ungranted_account_new_child_denied')
         verify_deny(authorization, client, item, locator, first, report)
         check('explicit_deny_overrides_whole_grant')
         check('deny_release_restores_original_grant')
@@ -294,6 +340,10 @@ def run(repository, environment, owner):
         try:
             report['direct_permission_after'] = authorization.close()
             report['final_current'] = authorization.current()
+            if outsider_id:
+                report['final_outsider_current'] = authorization.current(recipient=outsider_id)
+                require(report['final_outsider_current']['total'] == 0 and report['final_outsider_current']['data'] == [],
+                        'outsider retained an authorization relation')
             if 'crash_grant' in report:
                 report['crash_grant_history'] = authorization.history(report['crash_grant']['request_id'])
                 require(report['crash_grant_history']['revocation'] is not None, 'crash Grant withdrawal history missing')

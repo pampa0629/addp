@@ -137,6 +137,13 @@ func suiteSourceInitializerPermissions(suite string) []string {
 	}
 }
 
+func managerFileGDBOutsiderPermissions(suite string) []string {
+	if suite == "manager-internal-artifact-lineage" && os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "filegdb-authorization" {
+		return []string{"manager.content.read", "manager.data_item.read"}
+	}
+	return nil
+}
+
 func sourceInitializerSupplement(effective []string) []string {
 	var supplement []string
 	for _, key := range effective {
@@ -676,6 +683,14 @@ func run(args []string, environment []string) error {
 			return err
 		}
 		values["ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN"] = organizationOperator.AccessToken
+	}
+	if permissions := managerFileGDBOutsiderPermissions(*suite); len(permissions) > 0 {
+		outsider, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-filegdb-outsider", permissions)
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN"] = outsider.AccessToken
 	}
 	if *suite == "transfer-relational-sql-etl" {
 		outsider, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
