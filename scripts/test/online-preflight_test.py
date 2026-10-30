@@ -238,6 +238,53 @@ class OnlinePreflightTest(unittest.TestCase):
             with self.assertRaises(ONLINE_PREFLIGHT.PreflightError):
                 ONLINE_PREFLIGHT.validate_execution_environment('graph', self.repository, services)
 
+    def test_execution_profiles_follow_global_and_business_health_contracts(self):
+        env = dict(ADDP_ONLINE_TEST='1', ADDP_ONLINE_TEST_TENANT_ID='42', POSTGRES_DB='addp_online',
+                   ADDP_ONLINE_TEST_RUN_ID='execution-health')
+        for profile in ('graph', 'cleanup', 'cleanup-native'):
+            args = self.args()
+            args.execution_profile = profile
+            args.service = ['gateway=http://127.0.0.1:8000', 'system=http://127.0.0.1:8180',
+                            'transfer=http://127.0.0.1:8083']
+            if profile == 'graph':
+                args.service += ['graph=http://127.0.0.1:8186', 'graph-peer=http://127.0.0.1:18186']
+            def health(service, endpoint, timeout):
+                value = dict(status='ready' if endpoint.endswith('ready') else 'live',
+                             module='graph' if service.module == 'graph-peer' else service.module,
+                             git_commit='f'*40, build_id='build', source_fingerprint='sha256:test',
+                             built_at='built', started_at='started')
+                if service.module not in ('system', 'gateway') or endpoint.endswith('live'):
+                    value['instance_id'] = service.module
+                return value
+            with self.subTest(profile=profile), patch.dict(ONLINE_PREFLIGHT.os.environ, env, clear=True), \
+                    patch.object(ONLINE_PREFLIGHT, 'git', side_effect=['f'*40, '']), \
+                    patch.object(ONLINE_PREFLIGHT, 'validate_execution_environment'), \
+                    patch.object(ONLINE_PREFLIGHT, 'load_health', side_effect=health):
+                self.assertEqual(ONLINE_PREFLIGHT.run_preflight(args)['services']['transfer']['instance_id'], 'transfer')
+
+    def test_execution_process_identity_rejects_changed_or_missing_evidence(self):
+        live = dict(build_id='build', git_commit='f'*40, source_fingerprint='sha256:test',
+                    built_at='built', started_at='started', instance_id='original')
+        for module in ('gateway', 'system', 'transfer'):
+            service = ONLINE_PREFLIGHT.Service(module, 'http://127.0.0.1:8000')
+            ready = dict(live)
+            if module != 'transfer':
+                del ready['instance_id']
+            ONLINE_PREFLIGHT.validate_execution_process_identity(service, live, ready)
+            for field in ('build_id', 'git_commit', 'source_fingerprint', 'built_at', 'started_at'):
+                with self.subTest(module=module, field=field), self.assertRaises(ONLINE_PREFLIGHT.PreflightError):
+                    ONLINE_PREFLIGHT.validate_execution_process_identity(service, live, {**ready, field: 'changed'})
+            if module == 'transfer':
+                for value in (None, '', 'unknown', 7, 'restarted'):
+                    with self.subTest(instance_id=value), self.assertRaises(ONLINE_PREFLIGHT.PreflightError):
+                        ONLINE_PREFLIGHT.validate_execution_process_identity(service, live, {**ready, 'instance_id': value})
+                with self.assertRaises(ONLINE_PREFLIGHT.PreflightError):
+                    ONLINE_PREFLIGHT.validate_execution_process_identity(service, {}, {})
+            else:
+                for field in ('role', 'instance_id', 'registration_state'):
+                    with self.subTest(module=module, unexpected=field), self.assertRaises(ONLINE_PREFLIGHT.PreflightError):
+                        ONLINE_PREFLIGHT.validate_execution_process_identity(service, live, {**ready, field: 'unexpected'})
+
     def test_graph_peer_health_requires_same_sha_and_distinct_runtime_instances(self):
         args = self.args()
         args.execution_profile = 'graph'
@@ -250,10 +297,13 @@ class OnlinePreflightTest(unittest.TestCase):
                 instance = ('graph' if mode == 'same-instance' and service.module == 'graph-peer' else service.module)
                 if mode == 'changed-ready-instance' and service.module == 'graph-peer' and endpoint.endswith('ready'):
                     instance = 'restarted-peer'
-                return dict(status='ready' if endpoint.endswith('ready') else 'live',
+                payload = dict(status='ready' if endpoint.endswith('ready') else 'live',
                     module='graph' if service.module == 'graph-peer' else service.module, instance_id=instance,
                     git_commit='old' if mode == 'wrong-sha' and service.module == 'graph-peer' else 'f'*40,
                     build_id='build', source_fingerprint='sha256:test', built_at='built', started_at='started')
+                if endpoint.endswith('ready') and service.module in ('system', 'gateway'):
+                    del payload['instance_id']
+                return payload
             with self.subTest(mode=mode), patch.dict(ONLINE_PREFLIGHT.os.environ, env, clear=True), \
                     patch.object(ONLINE_PREFLIGHT, 'git', side_effect=['f'*40, '']), \
                     patch.object(ONLINE_PREFLIGHT, 'validate_execution_environment'), \

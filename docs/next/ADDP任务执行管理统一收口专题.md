@@ -610,3 +610,15 @@ Engine User 沿既有 deletion-assessments 只读评估，该未决 writer 必�
 用户在第 8.10 节具体方案和下一次同 case Hosted 的确认问题后回复“继续”。本批据此实施：发布不默认分配的 `tenant.engine_lifecycle_operator` 四权限模板，通过正式角色分配组合两项原有专业结果读取，最终权限仍精确为六项；四项不可自定义标记、原业务身份及删除语义保持不变。先完成真实目录可分配性、精确权限并集及受影响门禁，再仅运行一次新的 `transfer-dlq-unknown`。其他 Hosted、环境切换和既有未验收缺口不扩大；第 8.10 节首次失败保留为历史实际结果。
 
 本批正式发布使用 Role Manifest 143 和新迁移 `000255_engine_lifecycle_operator`，角色总数由 74 增至 75，Permission 总数仍为 544；未改写历史 seed 或 Permission 标记。原六项直接创建 custom 角色的构造路径已移除，真实构造和目录回归共用同一份角色组合声明。目录回归先红后绿；最终 `make test-authorization`、System Go T1、native 70 项及 System IAM PostgreSQL 的 `online-fixture`、`migration --test catalog-integrity` 标准门禁均通过。真实 PG 验证旧六项 custom 仍拒绝，新模板无默认分配，正式 User 会话精确六项，并确认高风险自分配仍要求 MFA。日志分别为 `/tmp/addp-cleanup-native-role-authorization.log`、`system-t1.log`（同前缀）、`runner.log`（同前缀）、`postgres-final.log`（同前缀）及 `catalog-postgres.log`（同前缀）；新 Hosted 的结果后续另记，不把本地门禁计为运行通过。
+
+### 8.12 角色修复后的 Hosted：预检误判及契约对齐
+
+角色与夹具修复提交 `57d7665d2b0b4d5d68e574edb1c15122dc225e79` 已取得同源自然 CI 证据：Go Job `124111197357`、Platform 一致性 Job `124111197491`、System IAM PostgreSQL Job `124112090462` 均通过。新 PG 身份用例在原始日志 2256—2257 行实际执行通过；平台原始日志 4237—4245 行确认 native 70 项及共享 145 项通过。具体证据保存在 `/tmp/addp-transfer-dlq-hosted-rolefix-20261030/`。当前 main 的 Spark 256、独立 Raster suite 等后续差异已按执行分支审查，不变的 native job、角色／夹具及 native 报告 validator 和相关 Make target 另有等价断言；没有将其他工作流排队或无关模块结果算作本 case 通过。
+
+按用户本次授权，仅运行一次新的 [Hosted 41076186644](https://github.com/pampa0629/addp/actions/runs/41076186644)，Job `124132895073`，固定源码 `be9545f949fc47bef50bd898372ee59608f21001`，attempt 1。北京时间 23:02:19—23:19:19 执行，readiness 通过，Online gate 失败。原始日志 4739 行确认临时身份已为 Tenant 2 创建成功，首次不可自定义权限的角色构造阻断已越过；4740 行随后出现 `runtime identity changed during execution preflight`。没有运行场景中的身份核验、任务创建或故障注入，七项业务断言仍为 0/7，不据此宣称 409 或未知效果完整验收通过。
+
+归档包含 `readiness.txt`、`online-report.json`、`summary.txt`、`execution-recovery.txt` 四个文件，没有 `cleanup-native-effects.json`。`online-report` 为 `online_preflight_failed`／`preflight`；最终 `cleanup=passed`、`infra_cleanup=zero_residuals`、`control_recovery=passed`。公开四文件未检出凭据模式；原始日志、元数据和审计结论保存于上述临时目录。本次一次运行授权已使用，没有自动追加第三次 Hosted，也没有切换本地环境。
+
+后续只读检索查明预检根因：既有[健康契约](../spec/api/健康与平台控制面.md#进程存活与模块就绪端点)明确 System／Gateway ready 省略 `role`、`instance_id`、`registration_state`，业务 Backend 则发布该身份。旧 execution 预检统一比较所有服务的 live／ready `instance_id`，把 native 服务顺序首项 Gateway 的合规缺省误判为重启。Common 健康实现符合现行规范，不改产品 API、角色或权限。预检改为所有服务严格比较公共 `build_id/git_commit/source_fingerprint/built_at/started_at`，System／Gateway 按既定 ready 结构验证；业务 Backend 继续要求两次身份均非空且相同，Graph main／peer 的独立实例约束保留。正例使用现行两种健康结构，负例覆盖公共身份变化、业务实例缺失／空值／错误类型／变化以及全局 ready 错带业务字段。旧统一比较路径删除，不提供忽略身份开关。
+
+修复验证：现行健康结构正例先复现原预检误拒，修正后 `python3 -m unittest scripts.test.online-preflight_test` 14 项通过。共享标准入口所调用的 Python 四模块全集（Hosted Security wrapper、online-gate、online-preflight、CI registration）148 项同次执行通过，日志 `/tmp/addp-cleanup-health-shared-gate.log`；没有修改或重跑 JavaScript、产品 Go／API 或 PostgreSQL 状态，不切换本机工具链／运行环境。完整 Make 入口含未变更的 Node 语法阶段，本轮不另计该包装入口通过。新预检修复的自然 CI 与下一次 Hosted 均按实际后继结果单独记录；没有用本地模拟结果覆盖上述第二次 Hosted 失败。

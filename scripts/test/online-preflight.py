@@ -103,6 +103,23 @@ def validate_health(service: Service, payload: dict[str, object], expected_commi
             raise PreflightError(f"{service.module} health {field} must contain a build identity")
 
 
+def validate_execution_process_identity(service: Service, live: dict[str, object], ready: dict[str, object]) -> None:
+    # These fields identify the same process across both health contracts.
+    for field in ("build_id", "git_commit", "source_fingerprint", "built_at", "started_at"):
+        if live.get(field) != ready.get(field):
+            raise PreflightError(f"{service.module} health {field} changed during execution preflight")
+    if service.module in {"system", "gateway"}:
+        if {"role", "instance_id", "registration_state"}.intersection(ready):
+            raise PreflightError(f"{service.module} readiness contains business Backend identity fields")
+        return
+    for payload in (live, ready):
+        instance = payload.get("instance_id")
+        if not isinstance(instance, str) or not instance or instance == "unknown":
+            raise PreflightError(f"{service.module} health instance_id must contain a runtime identity")
+    if live["instance_id"] != ready["instance_id"]:
+        raise PreflightError(f"{service.module} runtime identity changed during execution preflight")
+
+
 def validate_online_environment(*, require_run_id: bool, execution: bool = False) -> dict[str, str]:
     if os.environ.get("ADDP_ONLINE_TEST") != "1":
         raise PreflightError("ADDP_ONLINE_TEST must be exactly 1")
@@ -241,8 +258,7 @@ def run_preflight(args: argparse.Namespace) -> dict[str, object]:
             raise PreflightError(f"{service.module} readiness status is not ready")
         if profile:
             validate_health(identity, ready_payload, expected_commit, "ready")
-            if ready_payload.get("instance_id") != payload.get("instance_id"):
-                raise PreflightError("runtime identity changed during execution preflight")
+            validate_execution_process_identity(identity, payload, ready_payload)
         health[service.module] = {
             "build_id": payload["build_id"],
             "git_commit": payload["git_commit"],
