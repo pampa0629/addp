@@ -412,11 +412,14 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
         from api.chat import chat
         run_id=uuid.uuid4()
         todos=[{'content':'Inspect','status':'in_progress'},{'content':'Validate','status':'pending'}]
+        updated_todos=[{'content':'Inspect','status':'completed'},{'content':'Validate','status':'pending'}]
         db=_MessageDB()
         request=SimpleNamespace(state=SimpleNamespace(principal_id=1,tenant_id=1,token='fixture'),headers={},is_disconnected=AsyncMock(return_value=False))
         body=RunAgentInput.model_validate(dict(threadId='12',runId='plan-stream',state={},messages=[{'id':'u','role':'user','content':'Plan a task'}],tools=[],context=[],forwardedProps={}))
         async def stream(*args,**kwargs):
             yield AgentEvent(kind='plan',payload={'todos':todos})
+            yield AgentEvent(kind='text',payload={'delta':'Progress: '})
+            yield AgentEvent(kind='plan',payload={'todos':updated_todos})
             yield AgentEvent(kind='text',payload={'delta':'Need your input'})
         with (patch('api.chat._get_owned_session',new=AsyncMock(return_value=SimpleNamespace(summary='',archived=False))),
               patch('api.chat._save_user_input',new=AsyncMock(return_value=[])),
@@ -433,12 +436,18 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
             response=await chat(request,body,db=SimpleNamespace(commit=AsyncMock()))
             chunks=[chunk async for chunk in response.body_iterator]
         events=[json.loads(line[6:]) for chunk in chunks for line in chunk.splitlines() if line.startswith('data: ')]
-        event=next(item for item in events if item['type']=='ACTIVITY_SNAPSHOT')
+        plan_events=[item for item in events if item['type']=='ACTIVITY_SNAPSHOT']
+        self.assertEqual(len(plan_events),2)
+        self.assertEqual(len({item['messageId'] for item in plan_events}),1)
+        event=plan_events[-1]
         self.assertEqual(event['activityType'],'addp-plan')
-        self.assertEqual(event['content'],{'agent_run_id':str(run_id),'todos':todos})
+        self.assertEqual(event['content'],{'agent_run_id':str(run_id),'todos':updated_todos})
+        self.assertEqual([part['type'] for part in db.added[0].parts],['presentation_ref','text'])
         self.assertEqual(db.added[0].parts[0]['content'],event['content'])
+        self.assertEqual(db.added[0].parts[0]['surface_id'],event['messageId'])
         self.assertEqual(db.added[0].parts[0]['protocol'],'ag-ui')
-        self.assertTrue(any(call.kwargs['event_payload'].get('activityType')=='addp-plan' for call in persisted.await_args_list))
+        self.assertEqual(db.added[0].parts[1]['text'],'Progress: Need your input')
+        self.assertEqual(sum(call.kwargs['event_payload'].get('activityType')=='addp-plan' for call in persisted.await_args_list),2)
         self.assertEqual(todos[1]['status'],'pending')
 
     async def test_completed_precheck_mints_exact_scoped_snapshot_into_stream_and_history(self):

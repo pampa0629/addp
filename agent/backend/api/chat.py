@@ -618,9 +618,15 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
 
                 if event.kind == 'plan':
                     content = {'agent_run_id': str(agent_run_id), 'todos': plan_todos(event.payload['todos'])}
-                    activity_id = f'plan:{uuid.uuid4()}'
-                    parts.append({'type': 'presentation_ref', 'protocol': 'ag-ui', 'activity_type': PLAN_ACTIVITY,
-                                  'surface_id': activity_id, 'content': content})
+                    activity_id = f'plan:{assistant_message_id}'
+                    plan_part = {'type': 'presentation_ref', 'protocol': 'ag-ui', 'activity_type': PLAN_ACTIVITY,
+                                 'surface_id': activity_id, 'content': content}
+                    for index, part in enumerate(parts):
+                        if part.get('surface_id') == activity_id:
+                            parts[index] = plan_part
+                            break
+                    else:
+                        parts.append(plan_part)
                     yield await emit(ActivitySnapshotEvent(message_id=activity_id, activity_type=PLAN_ACTIVITY, content=content))
                     continue
 

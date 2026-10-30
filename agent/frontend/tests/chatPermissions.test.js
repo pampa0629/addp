@@ -222,4 +222,47 @@ describe('Agent chat operation permissions', () => {
     expect(replayAgentRunEvents).not.toHaveBeenCalled()
     wrapper.unmount()
   })
+
+  it('replaces the live plan without duplicating cards or changing historical snapshots', async () => {
+    for (const permission of ['agent.session.read', 'agent.run.create', 'agent.run.execute']) grantedPermissions.add(permission)
+    availableSessions.push({ id: 5, title: 'existing' })
+    routeParams.session_id = '5'
+    const initial = [{ content: 'Inspect', status: 'in_progress' }, { content: 'Validate', status: 'pending' }]
+    availableMessages.push({ id: 'history', role: 'assistant', parts: [{ type: 'presentation_ref', protocol: 'ag-ui', activity_type: 'addp-plan',
+      surface_id: 'plan:history', content: { agent_run_id: 'run-5', todos: initial } }] })
+    let subscriber, finishRun
+    createAgentClient.mockReturnValue({ addMessage: vi.fn(), runAgent: vi.fn((_input, value) => {
+      subscriber = value
+      return new Promise(resolve => { finishRun = resolve })
+    }) })
+    const wrapper = renderChat()
+    await flushPromises()
+    await wrapper.find('textarea').setValue('Inspect and validate without running')
+    await wrapper.findAll('button').find(item => item.text() === 'agent.chat.send').trigger('click')
+    await flushPromises()
+    const updatePlan = todos => subscriber.onActivitySnapshotEvent({ event: {
+      activityType: 'addp-plan', messageId: 'plan:live', content: { agent_run_id: 'run-5', todos }
+    } })
+    updatePlan(initial)
+    subscriber.onTextMessageContentEvent({ event: { delta: 'Inspecting' } })
+    subscriber.onActivitySnapshotEvent({ event: { activityType: 'a2ui-surface', messageId: 'facts', content: { operations: [] } } })
+    await flushPromises()
+    const currentParts = () => wrapper.findAllComponents({ name: 'MessagePartsRenderer' }).at(-1).props('message').parts
+    expect(currentParts().map(part => part.type)).toEqual(['presentation_ref', 'text', 'presentation_ref'])
+    const updated = [{ content: 'Inspect', status: 'completed' }, { content: 'Validate', status: 'pending' }]
+    updatePlan(updated)
+    await flushPromises()
+    expect(currentParts()).toHaveLength(3)
+    expect(currentParts()[0].content.todos).toEqual(updated)
+    expect(currentParts()[1]).toEqual({ type: 'text', text: 'Inspecting' })
+    expect(currentParts()[2].surface_id).toBe('facts')
+    expect(availableMessages[0].parts[0].content.todos).toEqual(initial)
+    updatePlan([])
+    await flushPromises()
+    expect(currentParts()).toHaveLength(3)
+    expect(currentParts()[0].content.todos).toEqual([])
+    finishRun()
+    await flushPromises()
+    wrapper.unmount()
+  })
 })

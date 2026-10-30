@@ -355,13 +355,18 @@ function applyToolResult(event) {
 }
 
 function applyActivity(event) {
-  liveMessage.value.parts.push({
+  const part = {
     type: 'presentation_ref',
     protocol: event.activityType === 'addp-plan' ? 'ag-ui' : 'a2ui',
     activity_type: event.activityType,
     surface_id: event.messageId,
     content: event.content
-  })
+  }
+  const planIndex = event.activityType === 'addp-plan'
+    ? liveMessage.value.parts.findIndex(item => item.protocol === 'ag-ui' && item.activity_type === 'addp-plan' && item.surface_id === event.messageId)
+    : -1
+  if (planIndex < 0) liveMessage.value.parts.push(part)
+  else liveMessage.value.parts.splice(planIndex, 1, part)
   scrollToBottom()
 }
 

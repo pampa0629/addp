@@ -124,4 +124,24 @@ describe('AG-UI client', () => {
     expect(authStore.refreshAccessToken).toHaveBeenCalledWith({ force: true })
     expect(authStore.clearLocalSession).not.toHaveBeenCalled()
   })
+
+  it('forwards successive plan snapshots with the same activity identity', async () => {
+    setRuntimeAccessToken('test-token')
+    const plans = [[{ content: 'Inspect', status: 'in_progress' }], [{ content: 'Inspect', status: 'completed' }]]
+    const fetchMock = vi.fn(async (_url, init) => {
+      const input = JSON.parse(init.body)
+      return new Response([
+        { type: 'RUN_STARTED', threadId: input.threadId, runId: input.runId },
+        ...plans.map(todos => ({ type: 'ACTIVITY_SNAPSHOT', messageId: 'plan:reply', activityType: 'addp-plan',
+          content: { agent_run_id: 'run-1', todos } })),
+        { type: 'RUN_FINISHED', threadId: input.threadId, runId: input.runId, outcome: { type: 'success' } }
+      ].map(sse).join(''), { headers: { 'Content-Type': 'text/event-stream' } })
+    })
+    const agent = createAgentClient({ sessionId: 42, fetch: fetchMock,
+      getAuthStore: () => ({ token: 'test-token', clearLocalSession: vi.fn(), refreshAccessToken: vi.fn() }) })
+    const snapshots = []
+    await agent.runAgent({}, { onActivitySnapshotEvent: ({ event }) => snapshots.push(event) })
+    expect(snapshots.map(event => event.messageId)).toEqual(['plan:reply', 'plan:reply'])
+    expect(snapshots.map(event => event.content.todos)).toEqual(plans)
+  })
 })
