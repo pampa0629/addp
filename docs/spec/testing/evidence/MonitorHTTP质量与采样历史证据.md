@@ -476,3 +476,23 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 新增通过未复现目录消失，缺失对象现场快照分支未触发，3f43历史删除者／根因仍未确定；不得以本次成功时序补写旧失败阶段。本轮无实现变更；若后续自然复发，先按新增对象／三阶段取证定位，再给最小方案讨论后实施。正式产品后端到页面及停源历史读取原有缺口不被替代。
 
 本机`/tmp/addp-p19-http-followup4-verified-20261030.json`保存独立归档核验，同前缀runs／candidates／jobs／artifact-meta保存只读快照。本轮仅文档证据修改，验证主题计数、锚点／索引及diff，没有新的代码门禁或运行验收。
+
+<a id="http-process-source-gotmp-recurrence-20261030"></a>
+
+## 2026-10-30 三阶段命中复发：Common来源观察区间与可变临时树
+
+依此前用户“复发先核对象和阶段、给最小方案再实施”边界，本轮只读核验已有失败，不新增环境／负载，不重跑有效验收／CI，不运行Hosted、容量或定时。固定源码`23bcfb82cfb88be2ca8eb1ca728d6c1c6bb51f22`，[自然push attempt 1／run40999198941／HTTP Job123881246445](https://github.com/pampa0629/addp/actions/runs/40999198941/job/123881246445)fresh API仍completed／failure；预算／shell／正式probe三脚本与当前bab10492f及三阶段修正一致，未发现已经落地的对应采样修复。
+
+复用已下载artifact12954002076，共18503字节，实际ZIP SHA256=`68c959f60e0eabe4944f6d51eee634b5f7997a9624f9aeb3aa0877631a4207be`与API登记一致，CRC及唯一JSON成员通过；报告SHA256=`db5c7a3458f6047a024d25de897fae55a5313725facb3c163b58f21821b3e756`。353个输入散列独立逐文件匹配固定提交，完整报告摘要与原始日志第842行逐字段一致。原始结果failed／http_budget_sample_command_failed／退出143，总83.739913秒；失败阶段private_directory_size，du exit1／path_disappeared，子命令0.023743秒、完整采样0.579913秒，命令开始剩余3.443954秒，**不是四秒超时**。failure_during_cleanup=false，请求Go0／Python[0,0]，inputs_unchanged／cleanup_verified／private_directory_removed=true；后续取消退出143是首采样失败后的停止结果，不作为原始原因，清理不计业务通过。
+
+对象解析parsed且唯一category=go_tmp，identity_sha256=`20f54447c2cccb8a949f8f1cbac041ec4d713f72ebb6accc7d726251d1e450b2`；根目录lstat观察directory。用当次project及已知相对名go-tmp按现行公式计算的身份不相等，排除go-tmp目录本身，确认后代对象，不恢复原始文件名。仍没有精确删除系统调用／进程或此前成功枚举证明，不把“路径消失”解释为私有根目录已删除。
+
+三阶段快照首次把故障定位到process_source观察区间：开始monotonic_ns58816184557，状态incomplete；http_query／http_alert均not_started。采样原始单调秒起点108.885652319、du开始109.441697987／观察退出109.465440747，最终回执仍同一状态。incomplete仅说明没有记录到编译返回，可能含编译执行／增量清理／收尾或边界尚未落盘，不证明那一瞬间Go进程仍存活。该证据不再有前次“只记录Common、漏后续编译”的阶段歧义，但仍不能确定具体删除者。
+
+日志确认实际Go工具链为go1.24.2 linux/amd64、GOTOOLCHAIN=local，Common来源保持CGO_ENABLED=0。只读核对该固定版本的[Builder工作目录／关闭](https://github.com/golang/go/blob/go1.24.2/src/cmd/go/internal/work/action.go#L283)、[增量对象清理](https://github.com/golang/go/blob/go1.24.2/src/cmd/go/internal/work/exec.go#L1873)及[产物移动](https://github.com/golang/go/blob/go1.24.2/src/cmd/go/internal/work/shell.go#L120)：Go合法路径会创建GOTMPDIR下go-build树、清理中间对象目录，安装／输出还可能重命名源文件。这证明活动编译临时树本来允许变动，完整du遍历与合法移除可并发；它支持采样模型竞态的机制判断，不唯一证明本次散列对象由上述哪一个调用删除。
+
+没有把“加-work”当作已验证修复：该标志可关闭部分目录清理，但产物重命名未因此全部禁止，还会改变保留量并打印WORK路径；不能据此保证整树稳定。移出临时目录、排除短命项、忽略du或重试成功均不满足原全范围／首失败口径；加长超时也不针对本次不足一秒的路径消失。
+
+拟议最小下一步（已向用户讨论，未实施）：先细化只管理当次Go编译进程组的稳定读取协议，单次暂停、确认全部自有成员停止后沿原范围完整采样、finally恢复；归属确认／等待／采样／恢复合计仍限原四秒，不重置期限、不新增配额／权限／镜像。编译组创建／退出和采样的协调、PID复用／成员变化拒绝、取消恢复及清理回收必须同批明确并有确定性回归；清理仍守原期限，首失败不被恢复错误覆盖。该协议确会改变此前用户“不改互斥”的生命周期边界，必须确认后才能改规范／实现，不把方案已经提出计为修复。最小回归应区分保留根目录的后代移除、整个根目录删除、预算耗尽和归属未知，并证明失败不被忽略、统计不缩小；实际删除者归因仍需对应证据，不由夹具重现反推。
+
+既有有效三阶段自然通过继续保留，不重跑、不覆盖这次失败；本轮不新增产品或控制器变更，仅校验文档主题／锚点／索引及diff，没有新的代码门禁／运行验收。`/tmp/addp-p19-http-process-source-recurrence-audit-20261030.json`保存固定353输入、原始归档与Go版本源码散列；原归档和日志沿`/tmp/addp-ci-20261030-043005`复用。正式产品后端到页面及停源历史读取等原缺口保持。
