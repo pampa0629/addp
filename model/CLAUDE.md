@@ -243,7 +243,7 @@ GET/PUT .../concept-mappings                              # 概念实现映射�
 ## 模块依赖关系
 
 **依赖**:
-- **System 模块**: JWT 认证、用户信息（`SYSTEM_URL`）
+- **System 模块**: 统一用户／服务身份认证及权威 AuthContext（`SYSTEM_URL`）。用户身份使用 User Access Token，服务身份通过独立 OAuth Client 获取 Service Access Token；Bearer 请求与解析主线统一见[登录认证要求](../docs/spec/addp登录认证的统一要求.md#一认证事实与唯一主路径)和[AuthContext 唯一调用链](../docs/spec/addp授权上下文规范.md#二唯一调用链)。Model 继续按 Tenant、精确 Permission 和资源归属裁决，用户与机器入口的完整边界见[Model 授权规范](docs/model概念与数据约束规范.md#二授权边界)；实际运行覆盖按[开发与验证](#开发与验证)分层认定。
 - **Meta 模块**: 提供指标计划所需的已扫描物理结构（`META_URL`，配置默认 `http://localhost:8082`）；Model Runtime 使用已有 `meta.catalog.read`，不新增 System 结构查询权限。字段投影与依赖冻结见[指标计划与数据库金样](#指标计划与数据库金样)。
 - **Standard 模块**:
   - 验证 domain_id、element_id / element_revision_id、metric_definition_revision_id 是否存在（`STANDARD_URL`）；维度层级只校验 Model 本地事实
