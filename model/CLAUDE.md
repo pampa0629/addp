@@ -238,11 +238,30 @@ POST   /api/v1/model/logical-tables                          # 创建
 GET/PUT/DELETE /api/v1/model/logical-tables/:id              # 详情/更新/删除
 GET/POST/PUT/DELETE /api/v1/model/logical-tables/:id/fields  # 字段 CRUD
 POST   /api/v1/model/logical-tables/:id/preview-ddl          # 预览建表语句
-GET/POST /metric-implementations                         # 独立指标实现及修订，详见正式规范
 GET/POST/PUT/DELETE .../dimension-relations                   # 事实表关联维度表（含字段映射）
 GET/POST/PUT/DELETE .../dimension-hierarchies             # 维度表聚合内层级及成员
 GET/PUT .../concept-mappings                              # 概念实现映射读取/完整替换
 ```
+
+### 指标实现与修订
+
+指标实现是独立资源，以下路径与[当前路由登记](backend/internal/api/router.go)对应：
+
+```text
+GET    /api/v1/model/metric-implementations                                      # 列表，可按 fact_table_id 筛选
+POST   /api/v1/model/metric-implementations                                      # 创建
+GET    /api/v1/model/metric-implementations/standard_references                  # 业务域标准引用查询
+GET    /api/v1/model/metric-implementations/:id                                  # 实现详情及修订
+DELETE /api/v1/model/metric-implementations/:id                                  # 删除未发布身份
+PUT    /api/v1/model/metric-implementations/:id/draft                            # 保存草稿
+POST   /api/v1/model/metric-implementations/:id/revisions/:revision_id/publish   # 发布确定修订
+POST   /api/v1/model/metric-implementations/:id/revisions/:revision_id/withdraw  # 撤回确定修订
+POST   /api/v1/model/metric-implementations/:id/revisions/:revision_id/plan      # 读取确定发布修订的计划包
+```
+
+各入口经过统一认证与 Tenant 上下文校验，精确 Permission 以路由登记和 [Model 权限清单](authorization/permissions.yaml)为准；资源归属见[授权边界](docs/model概念与数据约束规范.md#二授权边界)。已有资源写入的实现 `version`、修订生命周期与计划依赖复核统一见[指标实现独立修订](docs/model概念与数据约束规范.md#指标实现独立修订)；路径中的 `revision_id` 是实现修订 ID，绑定确定修订，不自动选择最新版。业务域引用查询见[业务域总览与五类标准接入](docs/model概念与数据约束规范.md#业务域总览与五类标准接入)。
+
+端点登记及契约核对不代表真实指标计算或跨模块消费已验收；实际范围见[开发与验证](#开发与验证)。
 
 ## 前端路由
 
