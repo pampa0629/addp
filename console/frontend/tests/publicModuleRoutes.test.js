@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const readRepoFile = path => readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8')
@@ -119,22 +119,41 @@ describe('P2 module public route contracts', () => {
     expect(source).toContain(`navigateConsoleModuleRoute(router, '${moduleName}', location, options)`)
   })
 
-  it('uses a canonical Agent session path and route-driven session loading', () => {
+  it('keeps the Agent capability home distinct from canonical session deep links', () => {
     const router = readRepoFile('agent/frontend/src/router/index.js')
+    expect(router).toContain("path: '/'")
+    expect(router).toContain("name: 'Chat'")
     expect(router).toContain("path: '/sessions/:session_id'")
+    expect(router).toContain("name: 'ChatSession'")
     expect(router).not.toContain("path: '/agent'")
 
     const chat = readRepoFile('agent/frontend/src/views/ChatView.vue')
-    const routeState = readRepoFile('agent/frontend/src/utils/routeState.js')
-    expect(chat).toContain('route.params.session_id')
-    expect(chat).toContain('resolveAgentSessionRouteState')
-    expect(routeState).toContain("name: 'ChatSession'")
-    expect(chat).toContain("name: 'ChatSession'")
-    expect(chat).toContain("{ history: 'replace' }")
+    expect(chat).toContain("navigateAgentRoute(router, { name: 'Chat' })")
+    expect(chat).toContain('await restoreRouteSession(route.params.session_id)')
+    expect(chat).toContain("watch(() => route.params.session_id, sessionId => {\n  restoreRouteSession(sessionId)")
+    expect(chat).toContain('if (sessionId) return loadSessionMessages(String(sessionId))')
+    expect(chat).toContain('currentSessionId.value = null; currentSession.value = null; messages.value = []')
+    // A populated or filtered page must never select the first session for /agent.
+    expect(chat).not.toContain('sessions.value[0]')
+    expect(chat).not.toContain('resolveAgentSessionRouteState')
+    expect(existsSync(new URL('../../../agent/frontend/src/utils/routeState.js', import.meta.url))).toBe(false)
 
     const login = readRepoFile('agent/frontend/src/views/Login.vue')
     expect(login).toContain('route.query.redirect')
     expect(login).toContain("!route.query.redirect.startsWith('//')")
+  })
+
+  it('loads Agent session identity independently of the list and isolates route changes', () => {
+    const chat = readRepoFile('agent/frontend/src/views/ChatView.vue')
+    expect(chat).toContain("navigateAgentRoute(router, { name: 'ChatSession', params: { session_id: String(sessionId) } })")
+    expect(chat).toContain('sessionAPI.get(sessionId, options)')
+    expect(chat).toContain('sessionAPI.getMessages(sessionId, options)')
+    expect(chat).not.toContain('sessions.value.find(')
+    expect(chat).toContain('const ticket = detailScope.invalidate()')
+    expect(chat).toContain('if (!detailScope.current(ticket)) return')
+    expect(chat).toContain('currentSession.value = null; messages.value = []; retryRunId.value = null')
+    expect(chat).toContain('sessionUnavailable.value = true')
+    expect(chat).toContain("navigateAgentRoute(router, { name: 'Chat' }, { history: 'replace' })")
   })
 
   it('uses Meta engine ownership and removes the old module-prefix redirect', () => {

@@ -3,6 +3,16 @@ import { CONSOLE_ROUTE_ACCESS, consoleRouteAccess } from '@common-ui'
 import { filterSidebarMenus, firstAccessibleModuleRoute, matchesNavigationAccess } from '../src/utils/navigationAccess'
 
 describe('Console page access', () => {
+  it.each(['/agent', '/agent/sessions/61'])('keeps %s readable without granting Agent actions', (route) => {
+    expect(matchesNavigationAccess({ route }, 'tenant', ['agent.session.read'])).toBe(true)
+    // Run auditing and write permissions cannot substitute for session visibility.
+    for (const permission of ['agent.run.read', 'agent.session.create', 'agent.session.update', 'agent.run.create', 'agent.run.execute']) {
+      expect(matchesNavigationAccess({ route }, 'tenant', [permission]), permission).toBe(false)
+    }
+    expect(matchesNavigationAccess({ route }, 'tenant', [])).toBe(false)
+    expect(matchesNavigationAccess({ route }, 'platform', ['agent.session.read'])).toBe(false)
+  })
+
   it('selects platform inspection without granting Tenant modeling or machine publication', async () => {
     vi.stubGlobal('window', { location: { origin: 'http://localhost' } })
     try {
