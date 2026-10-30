@@ -342,15 +342,21 @@ draft ⇄ approved
 
    冻结修订链接由 `FrozenElementLink` 统一组合共享 Standard route builder 与 Console 导航；无 `standard.element.read` 时禁用，不在 Model 增加标准详情。跨模块地址与无权限浏览器回归由既有前端门禁覆盖。
 
-5. **后端测试**:
+## 开发与验证
 
-   ```bash
-   cd model/backend
-   go test ./...
-   ADDP_TEST_MODEL_POSTGRES_DSN='postgres://addp:addp_password@localhost:15432/addp_test?sslmode=disable' \
-     make -C ../.. test-model-postgres
-   ```
-   PostgreSQL 集成测试未设置 `ADDP_TEST_MODEL_POSTGRES_DSN` 时会跳过；并发、事务和迁移相关改动必须通过根 Makefile 的第二条标准门禁执行，不能直接创建临时 database。
+执行与层级沿[测试与验收规范](../docs/spec/addp测试与验收规范.md#三标准入口)，从仓库根目录使用：
+
+```bash
+# 仅 Go T1，不计为完整模块门禁
+make test-module MODULE=model GO_ONLY=1
+
+# 配置测试 DSN 后运行 PostgreSQL T2
+make test-model-postgres
+```
+
+PostgreSQL 门禁必须提供 `ADDP_TEST_MODEL_POSTGRES_DSN`，缺失时入口直接失败；本地先用 `bash scripts/infra/status.sh` 核实实际端口与实例归属，再配置指向共享测试库 `addp_test` 的 DSN，连接规则见[端口规范](../docs/spec/addp端口分配.md)。不按首选端口推断运行连接，也不自行创建临时 database。
+
+直接运行的 PostgreSQL 领域用例可能因缺少 DSN 跳过，标准门禁拒绝缺失 DSN 或用例跳过。并发、事务和迁移相关改动必须走 `make test-model-postgres`，Go T1 或跳过项不计为 PostgreSQL 验收通过。
 
 指标计算采用“Model 构建中立计划 → 引擎独立编译器 → 唯一 PreparedQuery”，完整契约见 [Model 约束](docs/model概念与数据约束规范.md#数据库无关计划与修订) 和 [引擎插件规范](../docs/spec/addp引擎插件接口规范.md#数据库无关分析计算契约)。元数据生命周期及 PG 金样沿 `make test-model-postgres`；MySQL 真实计算沿 `ADDP_TEST_MYSQL_PASSWORD=<disposable-password> make test-model-mysql`，自动清理 addp_model_mysql_it_* 并拒绝跳过，两者已登记 T2 并验证同一中立计划。TiDB 复用同一金样，经 `make test-common-tidb` 的隔离实例执行；测试来源路径从 Provider 的目录模型派生，不按引擎名判断 namespace。Service 负责在线指标查询，Develop 负责持久表加工；页面物理绑定与建表扩展另行跟踪。
 
