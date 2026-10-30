@@ -229,9 +229,9 @@ GET    /api/v1/model/entities/export-mermaid         # 按可选 domain_id 导�
 
 退回草稿时冻结修订的清理及再次审批的解析规则见[数据元修订冻结](docs/model概念与数据约束规范.md#数据元修订冻结)。端点登记与静态契约核对不代表真实运行通过，实际验收范围见[开发与验证](#开发与验证)。
 
-Mermaid 导出仍以可选 `domain_id` query 选择当前运行时资源，但交换响应和 Markdown 使用 Standard 稳定编码，例如 `{ "markdown": "...", "scope": "domain", "domain_code": "outdoor" }`；省略 query 表示全域。交换格式唯一为 `addp.model.er/v2`，文档及实体使用 `domain_code`，属性使用 `element_code`，不输出或兼容解析 `domain_id / element_id`。预览提交 `{ "markdown": "..." }`，先按当前 Tenant 经 Standard API 精确解析编码，再返回解析后的业务域显示摘要、创建、未变更、冲突计划与 `revision`；确认导入提交同一 Markdown 和预览 `revision`。文件缺失成员不表示删除，同编码不同定义明确冲突，不保留全量替换或自动 upsert 路线。
+Mermaid 的 `addp.model.er/v2` Markdown 格式、Standard 稳定 `domain_code / element_code`、业务域／全域导出边界、完整可编辑元数据及非破坏性增量规则统一见[Mermaid 交换规范](docs/model概念与数据约束规范.md#五mermaid-与-ddl)。导出响应示例：`{ "markdown": "...", "scope": "domain", "domain_code": "outdoor" }`。
 
-Tenant 实体模型集合的 `revision` 由所有 Entity、EntityAttribute、EntityRelation 写入推进，确保预览后发生的普通写入会使确认导入返回版本冲突。Mermaid ADDP 元数据必须完整保存这些资源的可编辑业务字段。
+预览提交 `{ "markdown": "..." }`，核对当前 Tenant 精确解析后的业务域摘要及创建、未变更、冲突计划，再以同一 Markdown 和预览 `revision` 确认。Tenant 集合 `revision` 的推进、确认时的锁定校验、事务内重新计划及失败回滚均沿用上述规范；联合权限与生命周期边界见[IAM Permission 所有权](#iam-permission-所有权)，实际覆盖见[开发与验证](#开发与验证)。
 
 ### 实体关系
 
@@ -347,7 +347,7 @@ EntityRelation 使用完整 `PUT`：请求包含变更后的 source_entity、tar
 
 ### Mermaid 解析器
 
-`backend/internal/service/mermaid_parser.go` 实现了 `addp.model.er/v2` ADDP Markdown Mermaid ER 文档的解析，支持预览后将缺失的实体和关系批量创建。交换文档只携带稳定 `domain_code / element_code`，Service 通过 Standard API 在当前 Tenant 精确解析为运行时 ID；它不覆盖或删除现有模型。
+[mermaid_parser.go](backend/internal/service/mermaid_parser.go) 负责交换文档解析；[EntityService](backend/internal/service/entity_service.go) 负责 Standard 稳定编码解析、预览计划与确认导入。协议、集合修订及事务正文统一见[Mermaid 交换规范](docs/model概念与数据约束规范.md#五mermaid-与-ddl)。
 
 ### Entity 与逻辑表状态机
 
