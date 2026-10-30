@@ -116,6 +116,8 @@ curl -X POST "$COPILOT_BASE_URL/api/v1/copilot/workflow/generate" \
 
 ## 项目结构
 
+以下列出关键入口。接口身份与候选生成的权限边界见 [IAM Permission 所有权](#iam-permission-所有权)，场景职责与实际验收范围见[推理契约导航](#推理契约导航)。
+
 ```
 copilot/
 ├── authorization/
@@ -125,13 +127,19 @@ copilot/
 │   ├── config.py            # 配置管理
 │   ├── database.py          # 数据库连接
 │   ├── models/              # SQLAlchemy 模型
-│   │   └── inference_scenario_binding.py # 推理场景绑定
+│   │   ├── inference_scenario_binding.py # 推理场景绑定
+│   │   └── standard_document_models.py # Standard 文档提炼请求与候选 DTO
 │   ├── api/                 # API 路由
 │   │   ├── query_agent_api.py    # 当前 Query Engine 范围内的查询语言生成 API
 │   │   ├── notebook_agent_api.py # Notebook Session 候选排序和 Python 单元生成 API
 │   │   ├── workflow_agent_api.py # 工作流生成 API
+│   │   ├── transfer_agent_api.py # 源意图或 Transfer 草稿生成 API，不创建或启动任务
 │   │   ├── kg_extract_api.py     # Graph 内部单 chunk 抽取 API
+│   │   ├── standard_document_extract_api.py # Standard 服务身份的文档候选提炼 API
+│   │   ├── inference_scenario_binding_api.py # 平台默认与 Tenant 场景绑定管理 API
 │   │   └── navigate_api.py       # 导航建议 API
+│   ├── repositories/        # 持久化读写
+│   │   └── inference_scenario_binding_repository.py # 绑定读取、解析与版本写入
 │   ├── chains/              # 资源意图、候选推荐和生成链
 │   ├── services/            # 业务服务
 │   │   ├── resource_resolution.py # 统一输入资源解析与确认
@@ -140,7 +148,9 @@ copilot/
 │   │   ├── workflow_service.py # 工作流编排服务
 │   │   ├── query_service.py # 查询语言生成服务
 │   │   ├── notebook_service.py # Notebook Python 单元生成服务
-│   │   └── kg_extraction_service.py # 图谱抽取服务
+│   │   ├── kg_extraction_service.py # 图谱抽取服务
+│   │   ├── standard_document_extraction_service.py # Standard 候选提炼与证据校验
+│   │   └── inference_service.py # 场景绑定解析与统一 Inference 调用
 │   └── requirements.txt     # Python 依赖
 └── docs/                    # 文档目录
     ├── tables/              # 单表文档
