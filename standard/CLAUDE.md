@@ -474,6 +474,10 @@ standard/
 
 ## API 端点（`/api/v1/standard`）
 
+以下清单对应当前 [router.go](backend/internal/api/router.go) 的模块业务路由；Permission 事实源见 [Manifest](authorization/permissions.yaml)。普通资源列表／详情使用对应 `read`，创建身份使用 `create`，更新身份或草稿、创建修订及提交审核使用 `update`，退回／发布／撤回使用 `publish`，删除身份使用 `delete`；多资源、机器及专用动作按下文独立约束校验，不从 HTTP 方法推导权限。
+
+本节仅说明登记与调用边界；路由及 Swagger 一致不证明真实认证、持久化或完整消费链路通过，运行验证仍按[标准测试入口与范围](#标准测试入口与范围)分别记录。
+
 ### 业务域
 ```
 GET/POST /api/v1/standard/domains
@@ -483,6 +487,7 @@ GET/PUT/DELETE /api/v1/standard/domains/:id
 ### 业务术语
 ```
 GET/POST /api/v1/standard/glossaries                 # 创建稳定身份时同时创建首个草稿
+GET /api/v1/standard/glossaries/standard_references # 域级标准引用，要求 standard.glossary.read
 GET/PUT/DELETE /api/v1/standard/glossaries/:id       # PUT 只更新适用范围、归属域和标签
 GET/POST /api/v1/standard/glossaries/:id/revisions
 GET/PUT /api/v1/standard/glossaries/:id/revisions/:revision_id
@@ -496,10 +501,12 @@ GET/PUT /api/v1/standard/glossaries/:id/elements      # 关联数据元稳定身
 ### 数据元
 ```
 GET/POST /api/v1/standard/elements             # 创建稳定身份时同时创建首个草稿
+GET /api/v1/standard/elements/standard_references # 域级标准引用，要求 standard.element.read
 GET/PUT/DELETE /api/v1/standard/elements/:id   # PUT 只更新归属域和标签
 GET/POST /api/v1/standard/elements/:id/revisions
 GET/PUT /api/v1/standard/elements/:id/revisions/:revision_id
 POST /api/v1/standard/elements/:id/revisions/:revision_id/submit
+POST /api/v1/standard/elements/:id/revisions/:revision_id/return
 POST /api/v1/standard/elements/:id/revisions/:revision_id/publish
 POST /api/v1/standard/elements/:id/revisions/:revision_id/withdraw
 GET /api/v1/standard/elements/:id/quality-rules # 只返回当前发布修订的编译规则
@@ -512,15 +519,21 @@ GET /api/v1/standard/elements/:id/quality-rules # 只返回当前发布修订的
 GET/POST /api/v1/standard/code-sets
 GET/PUT/DELETE /api/v1/standard/code-sets/:id   # PUT 只更新归属域和标签
 GET/POST /api/v1/standard/code-sets/:id/revisions
-GET/PUT /api/v1/standard/code-sets/:id/revisions/:revision_id
+GET/PUT /api/v1/standard/code-sets/:id/revisions/:revision_id # GET 包含该修订的 items
 POST /api/v1/standard/code-sets/:id/revisions/:revision_id/submit
+POST /api/v1/standard/code-sets/:id/revisions/:revision_id/return
 POST /api/v1/standard/code-sets/:id/revisions/:revision_id/publish
 POST /api/v1/standard/code-sets/:id/revisions/:revision_id/withdraw
-GET/POST /api/v1/standard/code-sets/:id/revisions/:revision_id/items
+POST /api/v1/standard/code-sets/:id/revisions/:revision_id/items
 PUT/DELETE /api/v1/standard/code-sets/:id/revisions/:revision_id/items/:item_id
 ```
 
+码值项通过指定修订读取，新增、更新与删除均要求 `standard.code_set.update`。
+
 ### 计量单位
+
+度量类别复用 `standard.unit.*`；平台与租户 Context 的读写范围统一见[平台与租户单位维护](#平台与租户单位维护)。
+
 ```
 GET/POST /api/v1/standard/measurement-categories
 PUT/DELETE /api/v1/standard/measurement-categories/:id
@@ -529,6 +542,9 @@ GET/PUT/DELETE /api/v1/standard/units/:id
 ```
 
 ### 指标
+
+指标分类复用 `standard.metric.*`，专业关系与域级标准引用的职责分别见下文导航。
+
 ```
 GET/POST /api/v1/standard/metric-categories
 PUT/DELETE /api/v1/standard/metric-categories/:id
@@ -559,6 +575,23 @@ GET /api/v1/standard/catalog-resources/changes
 POST /api/v1/standard/runtime/catalog-references/resolve
 ```
 
+### 标准引用与修订机器读取
+
+以下为 Tenant Service 专用入口，与用户详情、域级标准引用及目录变化摘要分别授权：
+
+```
+POST /api/v1/standard/references/resolve
+GET /api/v1/standard/references/candidates
+POST /api/v1/standard/runtime/element-revisions/resolve
+POST /api/v1/standard/runtime/element-revisions/resolve-exact
+```
+
+`references/resolve` 仅允许 `addp-catalog`、`addp-model`，路由要求 `standard.domain.read` 与 `standard.element.read`；请求含 Glossary 时还要求 `standard.glossary.read`，且 Glossary 仅允许 `addp-catalog`。每项只能提交 `id` 或 `code`，批量上限 200；精确身份范围沿[模块间读取契约](#模块依赖关系)。
+
+`references/candidates` 仅允许 `addp-catalog`，同时要求上述三个读取 Permission，返回 Domain、Glossary 或 Element 的当前可引用候选最小摘要，不替代精确解析。
+
+两类数据元修订解析的调用方差异、`standard.element.read`、时点选版与精确历史修订读取，统一见[数据字典边界](#数据字典边界)；其受控测试不证明真实 OAuth 或联邦链路通过。
+
 ### 标准文档
 ```
 GET/POST /api/v1/standard/documents
@@ -571,7 +604,7 @@ POST /api/v1/standard/documents/:id/revisions/:revision_id/publish
 POST /api/v1/standard/documents/:id/revisions/:revision_id/withdraw
 POST /api/v1/standard/documents/:id/revisions/:revision_id/file # 上传或替换草稿修订文件
 GET /api/v1/standard/documents/:id/revisions/:revision_id/file # 下载确定修订文件
-POST /api/v1/standard/documents/:id/revisions/:revision_id/extractions # Copilot 提炼
+POST /api/v1/standard/documents/:id/revisions/:revision_id/extractions # Copilot 提炼，要求 standard.document_extraction.create
 GET /api/v1/standard/documents/:id/extraction-candidate-families # 按同类型同编码组织跨批次候选语义变体、出现记录与动态 Standard 比对
 GET /api/v1/standard/documents/:id/extraction-candidate-family-decisions # 按候选类型和编码分页读取追加式裁决历史
 POST /api/v1/standard/documents/:id/extraction-candidates/batch_decide # 显式列出同族代表候选并原子选择一个胜出变体
@@ -583,6 +616,41 @@ GET/PUT /api/v1/standard/documents/:id/mappings # 多维关联（数据元/术�
 文件上传、确定修订下载及对象补偿沿[文档文件生命周期](#文档文件生命周期)，测试覆盖与隔离清理沿[文档文件验证范围](#文档文件验证范围)。
 
 候选治理规则按[提炼与证据](#提炼批次与来源证据)、[读取与比对](#实时比对与筛选口径)、[单项处置](#单项处置与代表版本)、[候选族裁决](#候选族快照与胜出裁决)、[正式化](#正式化权限与历史保护)定位。现有用例与未证明范围见[文档候选治理验证范围](#文档候选治理验证范围)。
+
+### 对象侧文档关联
+
+```
+GET/POST /api/v1/standard/glossaries/:id/documents
+POST /api/v1/standard/glossaries/:id/documents/link
+DELETE /api/v1/standard/glossaries/:id/documents/:doc_id
+GET/POST /api/v1/standard/elements/:id/documents
+POST /api/v1/standard/elements/:id/documents/link
+DELETE /api/v1/standard/elements/:id/documents/:doc_id
+GET/POST /api/v1/standard/metrics/:id/documents
+POST /api/v1/standard/metrics/:id/documents/link
+DELETE /api/v1/standard/metrics/:id/documents/:doc_id
+```
+
+下表的“对象”分别对应 `standard.glossary`、`standard.element`、`standard.metric`，所列权限均为 all-of：
+
+| 动作 | 对象 Permission | 文档 Permission |
+| --- | --- | --- |
+| GET 关联列表 | `read` | `standard.document.read` |
+| POST 新建并关联 | `update` | `standard.document.create` |
+| POST 关联已有文档、DELETE 解除关联 | `update` | `standard.document.update` |
+
+DELETE 只解除关联，不删除文档。关联目标与稳定身份约束见[文档关联的多维设计](#文档关联的多维设计)，页面请求资格、空态与失败提示见[关联文档读取](#关联文档读取)；文档侧 `documents/:id/mappings` 仍按其独立路由与业务校验处理，不套用本表权限组合。
+
+### 执行读取与回收结果
+
+```
+GET /api/v1/standard/execution-read-scope
+GET /api/v1/standard/cleanup-executions/:execution_id/result
+```
+
+读取范围端点由共享 Owner 裁决接受第一方、`unrestricted` 的 Tenant User；只有具备 `system.cleanup.read` 才返回 `cleanup_executor` 的任务历史与本人一次性执行 grant，合法身份缺少该权限时返回空 grants，不授予专业结果读取权。公共读取规则见[执行监控规范](../docs/spec/tasks/执行监控.md#通用执行读取与过程事件)。
+
+专业结果同时要求 `standard.cleanup_result.read` 与 `system.cleanup.read`，并校验相同身份限制、同 Tenant、本人子执行及当前 attempt 的回执／请求绑定；不返回 SQL、凭据、对象路径或原始错误。结果未就绪、不可见与不可用分别按实际响应认定，不能以范围端点成功代替专业结果或真实回收完成；完整契约与验收边界见[Owner 专业结果读取](../docs/spec/addp-cleanup体系规范.md#owner-专业结果读取)。
 
 ## 前端路由
 
@@ -627,6 +695,7 @@ Standard 是以下第一批 Permission 的唯一 owner：
 - `standard.code_set.*`
 - `standard.document.*`
 - `standard.document_extraction.create`
+- `standard.cleanup_result.read`（与 `system.cleanup.read` 共同校验，见[回收结果入口](#执行读取与回收结果)）
 - `standard.glossary.*`
 - `standard.unit.*`
 
