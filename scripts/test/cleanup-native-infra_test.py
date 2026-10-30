@@ -196,8 +196,10 @@ class NativeEvidenceTest(unittest.TestCase):
             artifact_id=33, generation_execution_id='33333333-3333-4333-8333-333333333333',
             principals={'manager': 'user-a', 'transfer': 'user-b', 'engine': 'user-c'}, checks=CONTRACT['native_case_checks'][case].copy(),
             entry='transfer_task_delete' if case == 'transfer-dlq-unknown' else 'engine_deletion_then_transfer_task_delete' if case == 'transfer-engine' else 'engine_deletion',
-            producer_refusal_http_status=500, native_late_writer_acceptance='not_run',
+            native_late_writer_acceptance='not_run',
             graph_native_write_acceptance='not_run', positive_reopen_acceptance='not_run')
+        if case == 'transfer-dlq-unknown':
+            report.update(producer_refusal_http_status=409, producer_refusal_error_code='transfer_cleanup_unresolved')
         if case == 'manager-late-writer':
             report.update(native_late_writer_acceptance='passed', native_late_writer_scope='manager_glb_upload_after_owner_crash',
                           entry='engine_deletion_assessment', tasks=[22], executions=[report['generation_execution_id']])
@@ -219,8 +221,21 @@ class NativeEvidenceTest(unittest.TestCase):
                 bad = {**report, field: value}
                 with self.subTest(case=case, field=field), self.assertRaises(G.OnlineStageError):
                     G.validate_execution_report('cleanup-native', bad, env)
-        bad = self.report('transfer-dlq-unknown'); bad['producer_refusal_http_status'] = 503
-        with self.assertRaises(G.OnlineStageError): G.validate_execution_report('cleanup-native', bad, self.environment('transfer-dlq-unknown'))
+
+    def test_producer_refusal_requires_conflict_and_stable_code(self):
+        case = 'transfer-dlq-unknown'
+        report = self.report(case)
+        for field, values in (
+            ('producer_refusal_http_status', (500, 503, True, '409', 409.0, None)),
+            ('producer_refusal_error_code', ('other_conflict', '', None, 409, ['transfer_cleanup_unresolved'])),
+        ):
+            for value in values:
+                with self.subTest(field=field, value=value), self.assertRaises(G.OnlineStageError):
+                    G.validate_execution_report('cleanup-native', {**report, field: value}, self.environment(case))
+            missing = report.copy()
+            del missing[field]
+            with self.subTest(missing=field), self.assertRaises(G.OnlineStageError):
+                G.validate_execution_report('cleanup-native', missing, self.environment(case))
 
     def test_late_writer_proof_cannot_be_promoted_from_other_cases_or_assessment_to_delete(self):
         for case in N.CASES:

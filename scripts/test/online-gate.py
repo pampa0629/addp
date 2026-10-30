@@ -901,8 +901,9 @@ def validate_native_cleanup_report(report: dict[str, object], environment: Mappi
     if report.get('entry') != expected_entry:
         raise OnlineStageError('scenario', 'online_native_cleanup_report_invalid', 'native Cleanup product entry differs')
     if case == 'transfer-dlq-unknown' and (type(report.get('producer_refusal_http_status')) is not int
-                                         or report['producer_refusal_http_status'] != 500):
-        raise OnlineStageError('scenario', 'online_native_cleanup_report_invalid', 'known producer refusal classification differs')
+                                         or report['producer_refusal_http_status'] != 409
+                                         or report.get('producer_refusal_error_code') != 'transfer_cleanup_unresolved'):
+        raise OnlineStageError('scenario', 'online_native_cleanup_report_invalid', 'producer refusal conflict status or error code differs')
 
 
 def validate_execution_report(profile: str, report: dict[str, object], environment: Mapping[str, str]) -> None:

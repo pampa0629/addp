@@ -131,7 +131,7 @@ System-owned fixture 通过正式 Bootstrap 建立三个不同三员，通过正
 
 `cleanup-native-effects` 是手动选择的独立 Hosted profile；不能用既有 `cleanup-execution` 的逻辑回执或浏览器通过替代原生效果证明。`ADDP_ONLINE_NATIVE_CASE` 必须明确为 `manager-success`、`manager-object-unknown`、`manager-index-unknown`、`transfer-engine`、`transfer-dlq-unknown`、`transfer-capture-unknown` 之一，无默认或全矩阵。每个 case 使用全新部署；新的 Hosted 运行与环境切换仍需单独确认。
 
-Manager 通过普通 User 的正式源 Grant 和 Model3D Runtime 生成真实 GLB；清理后直接核对输出对象和索引，并确认原始 OBJ、MTL、纹理字节未变。Transfer 区分 Engine 删除保留并禁用任务/DLQ，以及普通 User 显式删除任务清理 DLQ 两个产品入口；真实目标业务行保持不变。三种普通 User 和准确权限、六个 case 的必需 checks 唯一维护在 `scripts/test/execution-online-contract.json`，CI 按精确集合拒绝缺失、重复、跨 case 和伪造通过。DLQ unknown 当前拒绝新 producer 的 HTTP 500 分类缺口须如实保留，不能把任意 500 当成证明。
+Manager 通过普通 User 的正式源 Grant 和 Model3D Runtime 生成真实 GLB；清理后直接核对输出对象和索引，并确认原始 OBJ、MTL、纹理字节未变。Transfer 区分 Engine 删除保留并禁用任务/DLQ，以及普通 User 显式删除任务清理 DLQ 两个产品入口；真实目标业务行保持不变。三种普通 User 和准确权限、六个 case 的必需 checks 唯一维护在 `scripts/test/execution-online-contract.json`，CI 按精确集合拒绝缺失、重复、跨 case 和伪造通过。DLQ unknown 的未决清理围栏拒绝新 producer 时，必须返回 HTTP 409 和稳定 `error_code=transfer_cleanup_unresolved`，`error` 为安全的本地化文案；专项报告必须同时提供 `producer_refusal_http_status=409` 和对应 `producer_refusal_error_code`。旧 HTTP 500、其它状态或错误码均不能作为围栏拒绝证明；DELETE 外部清理失败仍为 HTTP 503。
 
 四个一次性代理在应用启动前固定指向本轮 Infra，只对准确关联操作发送一次真实变更后丢弃回包，并阻止重发。控制端点仅容器 loopback；Kafka 内部 advertised listener 经过代理，外部 listener 供独立只读原生探针直达。含凭据的 manifest、描述符、代理配置与展开 Compose 均保持私有 0600，不归档。退出先停产品/Worker/Runtime，再销毁代理、业务夹具和 Infra；恢复、销毁或零残留失败均导致 Job 失败。
 
