@@ -307,11 +307,11 @@
       "kind": "implementation",
       "path": "agent/frontend/src/views/ChatView.vue",
       "anchor": "function ensureLiveTextPart(",
-      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
-      "sha256": "38928716d82ea8b1235e3524f7b61e8b1c7a58bdfbb091ed9ad433bea0fdce1c",
+      "commit": "560caff552508bc73b5fc3d4c7508fbc5ba6cec2",
+      "sha256": "83653f3522e83b7ce1d7f9208f030021277756a67e83e2c01c1838249421ef1a",
       "use": {
-        "zh-cn": "实时和安全回放保留文字及 A2UI 顺序，计划只替换同消息中同身份投影，保留历史快照；不改变创建条件、确认或权限。 设置复用现有配置；复制、导出与另开会话仅投影文字，另开会话只填可编辑草稿，不重放确认、预检或引用。",
-        "en": "Live rendering and safe replay retain text and A2UI order. Replace only the same plan activity within the current message, preserving historical snapshots and all creation conditions, reviews and permissions. Settings reuses existing configuration. Copy, export and new-conversation drafts project text only; no confirmation, precheck or draft reference is replayed."
+        "zh-cn": "文字与A2UI按事件顺序呈现，同回复计划按稳定身份替换且保留历史。设置使用既有addp-module导航来源；另开会话以既有单次NavigationDraft仅移交文字，跨iframe重载后领取，不复制确认、预检、引用或权限。不扩Console白名单或创建效果。",
+        "en": "Preserves text/A2UI order and stable current-plan replacement with historical snapshots. Settings uses the existing addp-module navigation source. New conversations transfer only text through the existing single-use NavigationDraft across iframe reloads, never confirmations, prechecks, references or permissions. Console allowlists and creation effects are unchanged."
       }
     },
     {
