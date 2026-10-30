@@ -216,11 +216,11 @@
       "kind": "implementation",
       "path": "agent/backend/api/chat.py",
       "anchor": "async def draft_reader(",
-      "commit": "da8794a89cddf4d8ef9d890e56ec1bf7c450b7a7",
-      "sha256": "2c8359da4d1a187fa8f2deee9f144d04cf14168169ef8428d637870f30a51ff9",
+      "commit": "77442db2420a8b73f1e530f8078cc16e454ea8c6",
+      "sha256": "cc2aaf2037c945867f5d733ba6118efc8c64e6f79be74935ec3db97a516d7afd",
       "use": {
-        "zh-cn": "完成步骤事务后按相同身份范围读取原输入，经唯一 A2UI 路径展示；实时与持久 parts 按事件顺序追加，后到文字不前置，完整 content 不截断。历史读取仍为 Runtime 审计，不注册业务 Tool、授予权限或创建任务 计划/工作区展示不改变创建条件、确认或权限。",
-        "en": "Read original inputs within the same scope after step commit through one A2UI path; live and persisted parts append in event order without moving later text first or truncating content. Historical reads remain runtime audits, not business tools, grants or task creation Workspace plans confer no creation authority."
+        "zh-cn": "同身份读取原草稿并经唯一 A2UI 路径展示，文字与成果保持原事件顺序。计划在同回复按稳定身份替换当前投影，不改变正式预检、确认、创建权限或业务效果。",
+        "en": "Read exact scoped drafts through one A2UI path, retaining text and result order. Replace the current plan within one reply under a stable activity identity; prechecks, reviews, creation permissions and business effects are unchanged."
       }
     },
     {
@@ -242,11 +242,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_run_events.py",
       "anchor": "async def test_completed_precheck_mints_exact_scoped_snapshot_into_stream_and_history(",
-      "commit": "da8794a89cddf4d8ef9d890e56ec1bf7c450b7a7",
-      "sha256": "35c7b84b8f464ea871a7791441b0b5648fb3930692d14ff4c9450eb324865ceb",
+      "commit": "77442db2420a8b73f1e530f8078cc16e454ea8c6",
+      "sha256": "9c8b61d8cd895533b2024d41ca8ea1db9453effc33135a02cdf6e9a9e839ce51",
       "use": {
-        "zh-cn": "受控持久层消费真实 Chat 流验证完成预检步骤的身份范围、原参数及引用在 SSE、消息和回放中一致；卡片前后文字与失败文字按原事件顺序保存，content 完整，不作为真实数据库或部署验收 计划/工作区展示不改变创建条件、确认或权限。",
-        "en": "Controlled persistence consuming the real Chat stream verifies completed step scope, exact arguments and references across SSE, messages and replay; text before and after cards and failure text retain event order and complete content, not live database or deployment acceptance Workspace plans confer no creation authority."
+        "zh-cn": "受控持久层核对草稿引用、原参数、文字顺序和完整 content；多次计划更新共用身份，最终消息只保存最新投影，安全事件仍保留各次更新。不作为真实数据库或部署验收。",
+        "en": "Controlled persistence checks exact draft references, arguments, text order and complete content. Plan updates share one identity, retain every safe event and save only the latest message projection; not live database or deployment acceptance."
       }
     },
     {
@@ -307,11 +307,11 @@
       "kind": "implementation",
       "path": "agent/frontend/src/views/ChatView.vue",
       "anchor": "function ensureLiveTextPart(",
-      "commit": "da8794a89cddf4d8ef9d890e56ec1bf7c450b7a7",
-      "sha256": "2880539d1574af1817975551c7c564e5c838ca8c75186974667673f46cff735d",
+      "commit": "77442db2420a8b73f1e530f8078cc16e454ea8c6",
+      "sha256": "1dac609dd8b06249bd6e1f53394ac26f06b8f325cf7b810fdc995589905d3850",
       "use": {
-        "zh-cn": "实时和安全事件回放只追加相邻文字段，不把模型解释移到此前卡片之前，不过滤或修订既有历史消息 计划/工作区展示不改变创建条件、确认或权限。",
-        "en": "Live and safe event replay append adjacent text without moving explanations before preceding cards or filtering or revising existing history Workspace plans confer no creation authority."
+        "zh-cn": "实时和安全回放保留文字及 A2UI 顺序，计划只替换同消息中同身份投影，保留历史快照；不改变创建条件、确认或权限。",
+        "en": "Live rendering and safe replay retain text and A2UI order. Replace only the same plan activity within the current message, preserving historical snapshots and all creation conditions, reviews and permissions."
       }
     },
     {

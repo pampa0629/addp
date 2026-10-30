@@ -12,6 +12,8 @@ Ontology 自身 PG、FalkorDB 和 System 当前注册构成 Ready 前置；除 S
 
 ## 当前交付范围
 
+平台 Transfer 修订 41 复核并冻结 `77442db24` 的 Agent 计划投影修复：一次回复使用稳定 Activity 身份，流式与持久消息只替换当前计划，安全事件及历史回复保留原快照。正式草稿、预检、确认、创建权限和业务效果均不变；仅更新三项 Agent 来源、用途和修订绑定，不修改发布／投影内核或新增验收入口。真实会话暴露的重复卡片保留原始证据；修复后的真实复验仍须加载新 Agent 代码，不能用静态冻结冒充运行时激活。
+
 平台 Transfer 修订 40 复核并冻结 `151e6a263` 的持久 Cleanup 围栏错误分类：人工启动／恢复被未核清的外部清理操作拒绝时返回 409、稳定 `transfer_cleanup_unresolved` 和双语安全消息；删除清理失败仍优先返回 503，不暴露底层包装错误。已逐项对照旧 handler：委托创建、租户权限、bounded/snapshot/native table、idle/stopped、无计划／扫描／执行的条件与效果均不变；人工运行与 Cleanup 仍不纳入当前创建能力。本轮只更新 handler 来源身份、摘要、用途和修订绑定，保留全部来源、覆盖与拒绝校验；既有来源审查、Ontology Go T1 及 CI Go／Platform 自动发现覆盖，不新增入口或依赖。未修改发布／投影内核、schema 或前端，不以来源冻结宣称运行时已激活、真实模型或 Hosted 验收通过。
 
 修订 40 验证：非缓存 `make test-platform-review` 先准确复现 handler 漂移，冻结后通过；选用现有 Node 24.11.1 后 `make test-module MODULE=ontology GO_ONLY=1` 通过。默认 PATH 的 Node 25 曾被标准运行时前置检查拒绝，未执行模块测试；未放宽该检查。32 项来源逐一核对当前文件、真实提交字节和锚点全部匹配，只有 handler 来源变化，定义除 revision 外逐字段相同，来源拒绝测试和覆盖绑定未改。未运行完整 T0、PG／FalkorDB T2、前端 T3 或 Hosted T4；本轮未变更其对应运行内核，既有自动发现入口继续覆盖。证据 `/tmp/addp-ontology-r40-review-red.log`、`/tmp/addp-ontology-r40-review-green.log`、`/tmp/addp-ontology-r40-t1-node24.log`、`/tmp/addp-ontology-r40-source-audit.json`。
