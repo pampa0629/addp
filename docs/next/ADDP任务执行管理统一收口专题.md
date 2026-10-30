@@ -560,3 +560,21 @@ Cleanup 浏览器增量复用现有同权限 other User，不新增用户、角�
 共享身份夹具 `GOMAXPROCS=4 GOFLAGS=-p=2 make test-quality-online-runner` 48 项 Python 与完整 Go 包通过（`/tmp/addp-native-identity-final-20261030.log`）；源 Grant helper 的既有 `make test-ftp-online-runner` 98 项、JS／Shell／登记和完整身份 Go 包通过（`/tmp/addp-native-grant-helper-20261030.log`）。CI 负责人另完成 workflow security 标准门禁及实际 Compose 只读合成，准确十三个 Backend loopback、Graph／Asset 单例及代理出口的证据位于 `/tmp/addp-native-actual-compose-proof.json`。这些都是确定性／配置证据，未启动容器故障场景或新的 Hosted。
 
 上一批 `5f7876931` 的自然 Platform CI 原始失败为接入测试把 secret 放在临时 checkout 内；CI 负责人以 `117d7f892` 修正测试目录与规范化，未放宽生产准入。修复后的自然 Platform Job `123835886996` 中 142 项与登记实际通过，关联 Run `40985638920`，不据此将整轮或新原生 Hosted 计为通过。本批 Owner／CI 按依赖顺序分别提交，再统一推送和跟进本次影响门禁。
+
+### 8.8 Manager 旧 Runtime 真正迟到写入专项（2026-10-30，实施前范围）
+
+按用户继续指令和既定边界内自主推进授权，新增独立 `manager-late-writer` case；身份仍为既有 Manager 10／Transfer 10／Engine 6 与准确源 Grant 初始化角色，不改变产品删除语义，不启动新的 Hosted 或切换环境。该 case 只验证 Model3D Runtime 的旧执行迟到上传，不泛化为 Meilisearch 旧投递、Transfer 旧 producer 或 Graph 原生写图的完整证明。
+
+先暂停本轮固定 Model3D Runtime，普通 Manager User 通过正式 quick-view action 受理 OBJ→GLB；从当次私有只读 PG 取得准确 execution／attempt 及 pending StorageRef，准确对象在 native store 尚不存在。只对该对象的 PUT 预置私有 `http-write` barrier；恢复同一 Runtime，必须看到真实请求完整进入且尚未发送上游，再终止并补回固定 ID／image 的本轮 Manager Backend。该 case 的 lease／heartbeat 明确为 30s／5s，真实等待旧 lease 过期及 attempt 1 失败收口，不修改公共 execution／lease 或伪造停止证明。
+
+Engine User 沿既有 deletion-assessments 只读评估，该未决 writer 必须阻断评估，Engine 保持 active，不能转入 DELETE 或把请求失败当作对象不存在。随后释放原准确 PUT：proxy 至多发送一次，必须取得真实 native 回包；独立 S3 读取确认迟到 GLB 确实出现。旧执行仍保留失败、原 UUID／attempt／start，不能发布 ready 成果或由新进程接收迟到结果；原 pending／未决审计身份保留，新 generation 被拒绝，原业务 OBJ／MTL／纹理哈希不变。Native store 的迟到对象存在不等于业务成果可见或清理可执行，必须继续隔离。
+
+故障控制只针对本轮 Model3D pause/resume 与 Manager kill/start，均使用准确容器 ID／image／StartedAt 和 run 环境身份；退出先恢复本轮暂停实例并释放本轮 barrier，未知事实不通过产品 DELETE 强清，最终仍由一次性 Hosted 生命周期销毁。`http-write` binding 不拦其他对象，不复制原始 body 到报告；未知、未收到请求、未真实发送、无 native 对象或缺少原 attempt 围栏证据均失败关闭。
+
+必需门禁仍由 `make test-cleanup-native-online-runner` 及上层接入门禁执行，补精确 PUT／不可重放、错误对象／跨 run／重复绑定／等待失效、旧 Owner 与 late native 状态反例，并同步 CI 显式 case／报告／恢复契约。只有该 case 完整成功时才可报告 `native_late_writer_acceptance=passed`，且 scope 固定 `manager_glb_upload_after_owner_crash`；现有六 case 继续 not_run，Graph 原生回包与正向 reopen 仍不在此 case 范围。代码与确定性门禁不能计为真实 Hosted 已通过。
+
+**本批实施及实际验证。** 新 case 的普通业务准备复用原 Manager 单一路径。Model3D 输出 access-plan 的 endpoint 实际来自 Manager MinIO 配置，故该真实 Runtime PUT 会经过准确 object proxy；原生读取继续直达 MinIO。新增 `http-write` barrier 在完整 PUT 进入后才等待，放行前不连接 upstream，放行后最多发送一次并保留原响应；等待过期后不允许迟到放行或重放。控制意图在发出 `/arm` 前登记，即使响应丢失，退出仍按原 key 恢复。pending GLB 读取使用有界零／一行观察，Worker 尚未建立结果时等待，重复身份拒绝；不把零行误当作 JSON 协议错误。迟到对象按原生 S3 读取并复用现有 OBJ→GLB 完整校验器，不仅检查非空。
+
+最终实际通过 `GOMAXPROCS=4 GOFLAGS=-p=2 make test-graph-online-runner`：80 项 Graph／控制回归、68 项 native／transport／夹具／恢复测试、143 项共享预检／报告／登记及 GraphProtection Go 用例，退出 0，日志 `/tmp/addp-late-writer-graph-final-20261030.log`。其后仅修正上述 pending 零行竞态并加强迟到 GLB 原生内容校验；聚焦 20 项测试通过，再以 `make test-cleanup-native-online-runner` 完整复验最终输入，69 项通过、退出 0，日志 `/tmp/addp-late-writer-native-final-20261030.log`。共享报告／选择契约未在该增量改变，不重复稳定的共享门禁。所有结果仍是确定性、真实 loopback 传输或配置验证，没有运行新的 Hosted、共享环境切换或本地 PostgreSQL 门禁。
+
+现有六 case 的 late-writer 标记保持 not_run；新增 case 也只有在后续实际 Hosted 的全部断言及最终销毁均通过时，才能形成这一有限范围的真实运行证据。Meilisearch 真正迟到投递、Transfer 旧 producer、Graph 原生写图未知效果、positive reopen 与 Transfer 围栏错误的 HTTP 500 分类仍按原缺口保留。

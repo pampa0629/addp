@@ -9,6 +9,7 @@ import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+from contextlib import contextmanager
 
 M = importlib.import_module('scripts.test.cleanup-native-effects-online')
 S = M.S
@@ -250,6 +251,141 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     with self.subTest(code=code), self.assertRaises(S.SuiteError):
                         controls.object('addp-infra://minio/manager/tenant_2/output.glb?type=object', present=False)
                 with self.assertRaises(S.SuiteError): controls.object('addp-infra://minio/manager/tenant_3/output.glb', present=False)
+
+    def test_late_writer_requires_real_old_attempt_failed_assessment_and_unpublished_native_upload(self):
+        for mutation in ('none', 'not_running', 'wrong_failure', 'replayed', 'cleanup_passed', 'other_owner_failed',
+                         'engine_changed', 'no_native_write', 'published', 'lost_hold', 'changed_terminal'):
+            events, attempted = [], []
+            state = dict(crashed=False, released=False, observed=False)
+            model = SimpleNamespace(locator='owned-model', item={}, format='obj')
+            pending = dict(execution_id=ID, task_id='11', storage_ref='owned-ref')
+            class Deployment:
+                @contextmanager
+                def paused_owner(self, name):
+                    if name != 'model3d-workflow-engine': raise AssertionError('foreign pause')
+                    events.append('paused')
+                    try: yield
+                    finally: events.append('resumed')
+                def crash_and_start_manager(self):
+                    if 'resumed' not in events or 'put_entered' not in events: raise AssertionError('crashed before real PUT')
+                    state['crashed'] = True; events.append('crashed')
+            class Controls:
+                tenant, run_id, deployment = 2, 'native-1', Deployment()
+                def pending_glb(self, engine, execution):
+                    return dict(id=7, status='ready' if state['released'] and mutation == 'published' else 'failed' if state['crashed'] else 'building',
+                        pending=copy.deepcopy(pending), storage_ref='published' if state['released'] and mutation == 'published' else '',
+                        generation_holds=0 if state['released'] and mutation == 'lost_hold' else 2, deleted=False)
+                def object(self, ref, *, present, verify_glb=False):
+                    if ref != 'owned-ref': raise AssertionError('wrong native output')
+                    if present and (not state['released'] or mutation == 'no_native_write'): raise S.SuiteError('no native write')
+                    if present: state['observed'] = True
+                    return '/manager/tenant_2/model3d-quick-view/fp/output.glb'
+                def arm_writer(self, target):
+                    if 'resumed' in events: raise AssertionError('proxy armed after Runtime resumed')
+                    return ID
+                def fault(self, kind, key):
+                    events.append('put_entered')
+                    return dict(run_id='native-1', key=ID, entered=1, forwarded=1 if state['released'] else 0,
+                        upstream_response=state['released'], released=state['released'], expired=False, blocked_replays=0)
+                def manager_attempt(self, execution):
+                    status = 'failed' if state['crashed'] or mutation == 'not_running' else 'running'
+                    return dict(execution_id=ID, status=status, attempt=2 if state['crashed'] and mutation == 'replayed' else 1,
+                        started_at='original-start', completed_at='finished' if state['crashed'] else None,
+                        lease_live=not state['crashed'], error_code='wrong' if mutation == 'wrong_failure' else 'manager.execution.lease_expired',
+                        state_digest='changed' if state['released'] and mutation == 'changed_terminal' else 'stable')
+                def release_writer(self, key):
+                    if not state['crashed'] or 'assessment_failed' not in events: raise AssertionError('released before terminal/assessment proof')
+                    state['released'] = True; events.append('released')
+                def source_objects(self): events.append('source_unchanged')
+            class Manager:
+                def request(self, method, path, expected, body=None):
+                    if method == 'POST' and expected == (202,):
+                        return SimpleNamespace(payload=dict(task_id=11, task_type=M.MANAGER.MODEL_TASK_TYPE, execution_id=ID))
+                    if method == 'GET':
+                        if not state['observed']: raise AssertionError('public visibility checked before native effect')
+                    if method == 'POST' and expected == (409,): attempted.append('new_generation')
+                    return SimpleNamespace(payload={})
+            class EngineUser:
+                def request(self, method, path, expected, body=None):
+                    if method == 'POST':
+                        self.request_id = body['request_id']; return SimpleNamespace(payload={'assessment_id': self.request_id})
+                    events.append('assessment_failed')
+                    return SimpleNamespace(payload=dict(status='success' if mutation == 'cleanup_passed' else 'failed',
+                        task={'context': {'engine_id': 9}, 'expected_modules': list(S.OWNERS), 'requested_by': 17},
+                        module_executions=[dict(module='manager', status='success' if mutation == 'other_owner_failed' else 'failed')]))
+            workflow = SimpleNamespace(user=EngineUser(), principal='17',
+                engine=lambda engine: {'lifecycle_state': 'deleting' if mutation == 'engine_changed' else 'active'})
+            def wait(read, predicate, message, **kwargs):
+                value = read(); M.require(predicate(value), message); return value
+            with patch.object(M, 'prepare_manager', return_value=(9, model)), patch.object(S, 'wait_for', side_effect=wait), \
+                 patch.object(M.MANAGER, 'verify_mesh_source'):
+                report = dict(checks=[], tasks=[], executions=[], requests=[])
+                if mutation == 'none':
+                    M.run_late_writer(Manager(), workflow, Controls(), None, report, lambda: None)
+                    self.assertEqual(set(report['checks']), set(S.CONTRACT['native_case_checks']['manager-late-writer']))
+                    self.assertEqual(report['native_late_writer_acceptance'], 'passed')
+                    self.assertEqual(report['entry'], 'engine_deletion_assessment')
+                    self.assertEqual(attempted, ['new_generation'])
+                else:
+                    with self.subTest(mutation=mutation), self.assertRaises(S.SuiteError):
+                        M.run_late_writer(Manager(), workflow, Controls(), None, report, lambda: None)
+                    self.assertNotIn('native_late_writer_acceptance', report)
+                    if mutation == 'not_running': self.assertNotIn('crashed', events)
+                    if mutation in {'cleanup_passed', 'other_owner_failed', 'engine_changed'}: self.assertNotIn('released', events)
+
+    def test_manager_crash_and_model_pause_are_restricted_to_the_exact_late_writer_case(self):
+        deployment = S.OwnedDeployment.__new__(S.OwnedDeployment)
+        deployment.paused, deployment.pins = set(), {'manager-backend': ('owned-id', 'owned-image', 'old-start')}
+        before = dict(Id='owned-id', Image='owned-image', State=dict(Running=True, StartedAt='old-start', Health={'Status': 'healthy'}),
+            HostConfig={'RestartPolicy': {'Name': 'no'}}, Config={'Env': ['MANAGER_EXECUTION_LEASE_DURATION=30s', 'MANAGER_EXECUTION_HEARTBEAT_INTERVAL=5s']})
+        after = copy.deepcopy(before); after['State']['StartedAt'] = 'new-start'
+        stopped = dict(Id='owned-id', Image='owned-image', State={'Running': False, 'ExitCode': 137})
+        for case in ('', 'manager-success', 'transfer-engine'):
+            with patch.dict(M.os.environ, {'ADDP_ONLINE_NATIVE_CASE': case}), patch.object(deployment, 'inspect') as inspect, \
+                 patch.object(deployment, 'command') as command:
+                with self.assertRaises(S.SuiteError): deployment.crash_and_start_manager()
+                with self.assertRaises(S.SuiteError): S.OwnedDeployment.inspect(deployment, 'model3d-workflow-engine')
+                inspect.assert_not_called(); command.assert_not_called()
+        with patch.dict(M.os.environ, {'ADDP_ONLINE_NATIVE_CASE': 'manager-late-writer'}), \
+             patch.object(deployment, 'inspect', side_effect=[before, before, after]), \
+             patch.object(deployment, 'command', side_effect=['', json.dumps([stopped]), '']) as command, \
+             patch.object(S, 'wait_for', return_value=after):
+            deployment.crash_and_start_manager()
+        self.assertEqual([call.args[0] for call in command.call_args_list], [
+            ['docker', 'kill', '--signal=KILL', 'owned-id'], ['docker', 'inspect', 'owned-id'], ['docker', 'start', 'owned-id']])
+
+    def test_uncertain_writer_arm_retains_release_intent_and_never_releases_foreign_key(self):
+        controls = M.NativeControls.__new__(M.NativeControls)
+        controls.run_id, controls.proxies, controls.writer_keys = 'native-1', {}, set()
+        calls = []
+        def control(kind, action, body):
+            calls.append(action)
+            if action == 'arm':
+                self.assertEqual(controls.proxies['object'], body['key'])
+                self.assertIn(body['key'], controls.writer_keys)
+                raise S.SuiteError('arm response lost')
+            self.assertEqual(kind, 'object')
+            self.assertEqual(body, {'run_id': 'native-1', 'key': controls.proxies['object']})
+            return {'released': True, 'expired': False}
+        with patch.object(controls, 'control', side_effect=control):
+            with self.assertRaises(S.SuiteError): controls.arm_writer('/manager/tenant_2/model3d-quick-view/fp/out.glb')
+            self.assertEqual(len(controls.writer_keys), 1)
+            with self.assertRaises(S.SuiteError): controls.release_writer(str(uuid.uuid4()))
+            self.assertEqual(calls, ['arm'])
+            controls.close()
+        self.assertEqual(calls, ['arm', 'release'])
+        self.assertEqual(controls.writer_keys, set())
+
+    def test_pending_glb_can_be_absent_before_worker_preparation_but_never_ambiguous(self):
+        controls = M.NativeControls.__new__(M.NativeControls)
+        controls.tenant = 2
+        pending = {'id': 7, 'pending': {'execution_id': ID, 'storage_ref': 'owned'}}
+        read = SimpleNamespace(read=None)
+        controls.deployment = read
+        with patch.object(read, 'read', side_effect=[[], [pending], [pending, pending]]):
+            self.assertIsNone(controls.pending_glb(9, ID))
+            self.assertEqual(controls.pending_glb(9, ID), pending)
+            with self.assertRaises(S.SuiteError): controls.pending_glb(9, ID)
 
     def test_native_grants_use_exact_existing_initializer_without_deny_authority(self):
         initializer = M.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS

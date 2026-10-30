@@ -1,4 +1,4 @@
-"""Private disposable transport: forward one exact mutation, withhold its response.
+"""Private disposable transport: bind one exact mutation to a bounded fault barrier.
 
 No product API or database writes. Each instance has a fixed upstream and one
 immutable fault binding. Control listens only on container loopback; the Hosted
@@ -21,6 +21,7 @@ import uuid
 from urllib.parse import urlsplit, parse_qs
 
 LIMIT = 8 * 1024 * 1024
+WRITE_WAIT_SECONDS = 180
 
 
 class Fault:
@@ -29,6 +30,8 @@ class Fault:
             raise ValueError('invalid run identity')
         self.run_id, self.lock, self.binding = run_id, threading.Lock(), None
         self.forwarded, self.upstream_response, self.blocked = 0, False, 0
+        self.entered, self.expired = 0, False
+        self.release_event = threading.Event()
 
     def arm(self, value):
         with self.lock:
@@ -44,6 +47,12 @@ class Fault:
                         or value['correlated'] and (value['method'] != 'POST' or not re.fullmatch(r'/indexes/[A-Za-z0-9_-]+/documents/delete', value['path']))
                         or not re.fullmatch(r'[0-9a-f]{64}', value['body_sha256'])):
                     raise ValueError('invalid exact HTTP target')
+            elif value.get('protocol') == 'http-write':
+                if (set(value) != {'key', 'run_id', 'protocol', 'path'}
+                        or not isinstance(value['path'], str)
+                        or not re.fullmatch(r'/manager/tenant_[1-9][0-9]*/model3d-quick-view/[A-Za-z0-9_./-]+\.glb', value['path'])
+                        or '..' in value['path'].split('/')):
+                    raise ValueError('invalid exact GLB writer target')
             elif value.get('protocol') == 'kafka':
                 if (set(value) != {'key', 'run_id', 'protocol', 'topic'}
                         or not re.fullmatch(r'__addp_dlq\.[1-9][0-9]*\.[1-9][0-9]*', value['topic'])):
@@ -65,15 +74,41 @@ class Fault:
             self.forwarded = 1
             return 'drop'
 
+    def take_write(self, method, path):
+        with self.lock:
+            if not self.binding or self.binding['protocol'] != 'http-write' or method != 'PUT' or path != self.binding['path']:
+                return 'pass'
+            if self.entered:
+                self.blocked += 1
+                return 'block'
+            self.entered = 1
+            return 'defer'
+
+    def release(self, value):
+        with self.lock:
+            if (not self.binding or self.binding['protocol'] != 'http-write'
+                    or value != {'run_id': self.run_id, 'key': self.binding['key']} or self.expired):
+                raise ValueError('foreign or expired writer release')
+            self.release_event.set()
+
+    def await_write(self):
+        if not self.release_event.wait(WRITE_WAIT_SECONDS):
+            with self.lock: self.expired = True
+            return False
+        with self.lock: self.forwarded = 1
+        return True
+
     def received(self):
         with self.lock:
             self.upstream_response = True
 
     def state(self):
         with self.lock:
-            return dict(run_id=self.run_id, key=self.binding['key'] if self.binding else None,
-                        forwarded=self.forwarded, upstream_response=self.upstream_response,
-                        blocked_replays=self.blocked)
+            value = dict(run_id=self.run_id, key=self.binding['key'] if self.binding else None,
+                         forwarded=self.forwarded, upstream_response=self.upstream_response, blocked_replays=self.blocked)
+            if self.binding and self.binding['protocol'] == 'http-write':
+                value.update(entered=self.entered, released=self.release_event.is_set(), expired=self.expired)
+            return value
 
 
 class Control(BaseHTTPRequestHandler):
@@ -85,6 +120,7 @@ class Control(BaseHTTPRequestHandler):
             if not 0 < size < 4096: raise ValueError('invalid control size')
             value = json.loads(self.rfile.read(size))
             if self.path == '/arm': self.server.fault.arm(value)
+            elif self.path == '/release': self.server.fault.release(value)
             elif self.path != '/state' or value != {'run_id': self.server.fault.run_id}:
                 raise ValueError('invalid control identity')
             data = json.dumps(self.server.fault.state()).encode()
@@ -114,14 +150,19 @@ class HTTPProxy(BaseHTTPRequestHandler):
                     correlation = query['customMetadata'][0]
                     if str(uuid.UUID(correlation)) == correlation:
                         path, correlated = url.path, True
-            action = self.server.fault.take('http', method=self.command, path=path, correlated=correlated,
-                                           body_sha256=hashlib.sha256(body).hexdigest())
+            action = self.server.fault.take_write(self.command, urlsplit(self.path).path)
+            if action == 'pass':
+                action = self.server.fault.take('http', method=self.command, path=path, correlated=correlated,
+                                               body_sha256=hashlib.sha256(body).hexdigest())
             if action == 'block':
                 self.send_error(503, 'owned mutation remains isolated'); return
+            if action == 'defer' and not self.server.fault.await_write():
+                self.close_connection = True; return
             upstream = http.client.HTTPConnection(*self.server.upstream, timeout=30)
             headers = {k: v for k, v in self.headers.items() if k.lower() not in {'connection', 'proxy-connection'}}
             upstream.request(self.command, self.path, body, headers)
             response = upstream.getresponse()
+            if action == 'defer': self.server.fault.received()
             if action == 'drop':
                 # Getting the actual upstream response proves a sent request;
                 # an independent native probe must still prove the effect.

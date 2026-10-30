@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[2]
 OWNERS = ('asset', 'develop', 'graph', 'manager', 'meta', 'model', 'quality', 'service', 'standard', 'transfer')
 TERMINAL = {'success', 'failed', 'timeout', 'cancelled'}
 CONTRACT = json.loads(Path(__file__).with_name('execution-online-contract.json').read_text())
-CONTROL_CONTAINERS = {'graph-backend', 'graph-backend-peer', 'asset-backend'}
+CONTROL_CONTAINERS = {'graph-backend', 'graph-backend-peer', 'asset-backend', 'model3d-workflow-engine'}
 
 
 def require(ok, message):
@@ -114,8 +114,10 @@ class OwnedDeployment:
         return result.stdout + (result.stderr if include_stderr else '')
 
     def inspect(self, name):
+        if name == 'model3d-workflow-engine':
+            require(os.environ.get('ADDP_ONLINE_NATIVE_CASE') == 'manager-late-writer', 'Model3D control is outside this case')
         require(name in {x + '-backend' for x in OWNERS} | {'graph-backend-peer', 'system-backend',
-                    'monitor-backend', 'addp-graph-online-review-extractor', 'addp-postgres'}, 'container is outside execution acceptance')
+                    'monitor-backend', 'addp-graph-online-review-extractor', 'addp-postgres', 'model3d-workflow-engine'}, 'container is outside execution acceptance')
         rows = json.loads(self.command(['docker', 'inspect', name]))
         require(isinstance(rows, list) and len(rows) == 1, 'ambiguous container identity')
         row = rows[0]
@@ -155,19 +157,30 @@ class OwnedDeployment:
         self.persist()
 
     def crash_and_start_graph_peer(self):
-        name = 'graph-backend-peer'
+        self._crash_and_start('graph-backend-peer')
+
+    def crash_and_start_manager(self):
+        require(os.environ.get('ADDP_ONLINE_NATIVE_CASE') == 'manager-late-writer', 'Manager crash is outside this case')
+        row = self.inspect('manager-backend')
+        env = dict(v.split('=', 1) for v in row['Config']['Env'] if '=' in v)
+        require(env.get('MANAGER_EXECUTION_LEASE_DURATION') == '30s'
+                and env.get('MANAGER_EXECUTION_HEARTBEAT_INTERVAL') == '5s', 'Manager fault lease profile differs')
+        self._crash_and_start('manager-backend')
+
+    def _crash_and_start(self, name):
+        require(name in {'graph-backend-peer', 'manager-backend'}, 'runtime crash is outside scope')
         row = self.inspect(name)
         require(name not in self.paused and row['State'].get('Health', {}).get('Status') == 'healthy',
-                'Graph peer must be healthy and not paused before crash')
+                'owned runtime must be healthy and not paused before crash')
         require(row.get('HostConfig', {}).get('RestartPolicy', {}).get('Name') == 'no',
-                'Graph crash requires an explicitly disabled automatic restart policy')
+                'runtime crash requires an explicitly disabled automatic restart policy')
         old = self.pins[name]
         try:
             self.command(['docker', 'kill', '--signal=KILL', old[0]])
             stopped = json.loads(self.command(['docker', 'inspect', old[0]]))[0]
             require(stopped['Id'] == old[0] and stopped['Image'] == old[1]
                     and stopped['State']['Running'] is False and stopped['State']['ExitCode'] == 137,
-                    'owned Graph peer crash was not observed')
+                    'owned runtime crash was not observed')
         finally:
             # The command addresses the pinned immutable ID, even if a name is
             # reassigned. No compose up/restart or global service action occurs.
@@ -175,9 +188,9 @@ class OwnedDeployment:
         del self.pins[name]
         current = self.inspect(name)
         require(current['Id'] == old[0] and current['Image'] == old[1] and current['State']['StartedAt'] != old[2],
-                'Graph restart changed the physical runtime or failed to replace the process')
+                'restart changed the physical runtime or failed to replace the process')
         wait_for(lambda: self.inspect(name), lambda x: x['State'].get('Health', {}).get('Status') == 'healthy',
-                 'restarted Graph peer did not become ready', timeout=120)
+                 'restarted runtime did not become ready', timeout=120)
 
     def persist(self):
         HOSTED.write_json(self.secret / 'execution-paused-containers.json',

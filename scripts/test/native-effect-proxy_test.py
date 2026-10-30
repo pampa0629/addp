@@ -8,6 +8,8 @@ import struct
 import threading
 import unittest
 import uuid
+import time
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 M = importlib.import_module('scripts.test.native-effect-proxy')
@@ -127,6 +129,70 @@ class NativeEffectProxyTest(unittest.TestCase):
         finally:
             for server in (proxy, native): server.shutdown(); server.server_close()
             for thread in threads: thread.join(timeout=2)
+
+    def test_actual_put_stays_before_upstream_until_bound_release_then_writes_once(self):
+        effects, outcomes = [], []
+        class Native(BaseHTTPRequestHandler):
+            def log_message(self, *_): pass
+            def do_PUT(self):
+                effects.append((self.path, self.rfile.read(int(self.headers['Content-Length']))))
+                self.send_response(200); self.send_header('Content-Length', '0'); self.end_headers()
+        native = ThreadingHTTPServer(('127.0.0.1', 0), Native)
+        proxy = ThreadingHTTPServer(('127.0.0.1', 0), M.HTTPProxy)
+        proxy.upstream, proxy.fault = native.server_address, M.Fault('native-1')
+        key = str(uuid.uuid4()); path = '/manager/tenant_2/model3d-quick-view/owned/execution.glb'
+        proxy.fault.arm(dict(key=key, run_id='native-1', protocol='http-write', path=path))
+        threads = [threading.Thread(target=s.serve_forever, daemon=True) for s in (native, proxy)]
+        for thread in threads: thread.start()
+        def write():
+            client = http.client.HTTPConnection(*proxy.server_address, timeout=4)
+            try:
+                client.request('PUT', path, b'glTF-owned-output')
+                outcomes.append(client.getresponse().status)
+            except Exception as error: outcomes.append(type(error).__name__)
+            finally: client.close()
+        writer = threading.Thread(target=write, daemon=True); writer.start()
+        try:
+            deadline = time.monotonic() + 2
+            while proxy.fault.state()['entered'] != 1 and time.monotonic() < deadline: time.sleep(.005)
+            self.assertEqual(proxy.fault.state()['entered'], 1)
+            self.assertEqual(effects, []); self.assertEqual(proxy.fault.state()['forwarded'], 0)
+            with self.assertRaises(ValueError): proxy.fault.release({'run_id': 'foreign', 'key': key})
+            self.assertEqual(effects, [])
+            proxy.fault.release({'run_id': 'native-1', 'key': key})
+            writer.join(timeout=3)
+            self.assertEqual(outcomes, [200]); self.assertEqual(effects, [(path, b'glTF-owned-output')])
+            client = http.client.HTTPConnection(*proxy.server_address, timeout=2)
+            client.request('PUT', path, b'late-repeat')
+            self.assertEqual(client.getresponse().status, 503); client.close()
+            self.assertEqual(len(effects), 1)
+            self.assertEqual(proxy.fault.state(), dict(run_id='native-1', key=key, forwarded=1,
+                upstream_response=True, blocked_replays=1, entered=1, released=True, expired=False))
+        finally:
+            proxy.fault.release_event.set()
+            for server in (proxy, native): server.shutdown(); server.server_close()
+            for thread in threads: thread.join(timeout=2)
+            writer.join(timeout=2)
+
+    def test_writer_timeout_never_forwards_and_rejects_late_release_or_rebind(self):
+        fault = M.Fault('native-1'); key = str(uuid.uuid4())
+        path = '/manager/tenant_2/model3d-quick-view/fp/result.glb'
+        for invalid in ('/other/result.glb', '/manager/tenant_0/model3d-quick-view/a.glb',
+                        '/manager/tenant_2/model3d-quick-view/../other.glb',
+                        '/manager/tenant_2/model3d-quick-view/%2e%2e/other.glb'):
+            with self.subTest(path=invalid), self.assertRaises(ValueError):
+                M.Fault('native-1').arm(dict(run_id='native-1', key=key, protocol='http-write', path=invalid))
+        binding = dict(run_id='native-1', key=key, protocol='http-write', path=path)
+        fault.arm(binding)
+        with self.assertRaises(ValueError): fault.arm(binding)
+        self.assertEqual(fault.take_write('PUT', '/unrelated'), 'pass')
+        self.assertEqual(fault.take_write('GET', path), 'pass')
+        self.assertEqual(fault.take_write('PUT', path), 'defer')
+        with patch.object(M, 'WRITE_WAIT_SECONDS', 0): self.assertFalse(fault.await_write())
+        self.assertTrue(fault.state()['expired']); self.assertEqual(fault.state()['forwarded'], 0)
+        with self.assertRaises(ValueError): fault.release({'run_id': 'native-1', 'key': key})
+        self.assertEqual(fault.take_write('PUT', path), 'block')
+        self.assertEqual(fault.state()['forwarded'], 0)
 
     def test_kafka_forward_binds_response_correlation_before_discarding(self):
         native = socket.socket(); native.bind(('127.0.0.1', 0)); native.listen()

@@ -154,6 +154,19 @@
       "engine_remains_deleting",
       "new_producer_rejected",
       "target_business_rows_preserved"
+    ],
+    "manager-late-writer": [
+      "real_old_runtime_put_held",
+      "old_running_attempt_observed",
+      "real_lease_expiry_after_owner_crash",
+      "pending_target_identity_retained",
+      "cleanup_assessment_refused",
+      "engine_remains_active",
+      "late_native_object_observed",
+      "late_result_not_published",
+      "new_generation_rejected",
+      "old_attempt_not_replayed",
+      "source_objects_unchanged"
     ]
   }
 }

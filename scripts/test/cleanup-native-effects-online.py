@@ -194,7 +194,7 @@ class NativeControls:
                 and self.manifest['schema'] == 'addp.cleanup-native-fixture/v1'
                 and self.manifest['run_id'] == self.run_id and self.manifest['case'] == case,
                 'native fixture manifest identity differs')
-        self.proxies, self.captures = {}, {}
+        self.proxies, self.captures, self.writer_keys = {}, {}, set()
         for kind, pin in self.manifest['proxies'].items():
             require(kind in {'object', 'index', 'dlq', 'capture'}, 'unknown native control')
             self.container(pin, proxy=True)
@@ -246,6 +246,48 @@ with urllib.request.urlopen(request,timeout=5) as response: print(response.read(
                 'native fault binding was not fresh')
         self.proxies[kind] = key
         return key
+
+    def arm_writer(self, path):
+        key = str(uuid.uuid4())
+        require('object' not in self.proxies, 'object proxy already belongs to another operation')
+        self.proxies['object'] = key
+        self.writer_keys.add(key)  # Retain intent even if the arm response is lost.
+        value = self.control('object', 'arm', dict(run_id=self.run_id, key=key, protocol='http-write', path=path))
+        require(value['key'] == key and value['entered'] == 0 and value['forwarded'] == 0
+                and value['released'] is False and value['expired'] is False, 'late writer binding was not fresh')
+        return key
+
+    def release_writer(self, key):
+        require(self.proxies.get('object') == key, 'foreign late writer release')
+        value = self.control('object', 'release', {'run_id': self.run_id, 'key': key})
+        require(value['released'] is True and value['expired'] is False, 'late writer release was not confirmed')
+        self.writer_keys.discard(key)
+
+    def close(self):
+        failures = []
+        for key in list(self.writer_keys):
+            try: self.release_writer(key)
+            except Exception: failures.append(key)
+        require(not failures, 'owned writer release failed; final deployment destruction remains mandatory')
+
+    def manager_attempt(self, execution_id):
+        return self.deployment.read(f"""SELECT row_to_json(e) FROM (
+ SELECT execution_id,status,attempt,started_at,completed_at,error_details->>'code' AS error_code,
+ COALESCE(lease_expires_at > clock_timestamp(),false) AS lease_live,
+ md5((to_jsonb(t)-'lease_token'-'execution_config')::text) AS state_digest
+ FROM common.task_executions t WHERE tenant_id={self.tenant} AND execution_id='{S.identifier(execution_id)}'
+ AND module='manager' AND task_type='model_3d_glb_generation') e""")
+
+    def pending_glb(self, engine_id, execution_id):
+        rows = self.deployment.read(f"""SELECT COALESCE(json_agg(a),'[]'::json) FROM (
+ SELECT id,status,storage_ref,deleted_at IS NOT NULL AS deleted,
+ metadata#>'{{model3d_output_lifecycle,pending}}' AS pending,
+ (SELECT count(*) FROM manager.cleanup_targets WHERE tenant_id={self.tenant}
+  AND operation_id='{S.identifier(execution_id)}') AS generation_holds
+ FROM manager.model_3d_glb WHERE tenant_id={self.tenant} AND source_engine_id={S.positive(engine_id)}
+ AND metadata#>>'{{model3d_output_lifecycle,pending,execution_id}}'='{execution_id}') a""")
+        require(isinstance(rows, list) and len(rows) <= 1, 'duplicate or invalid pending GLB identity')
+        return rows[0] if rows else None
 
     def fault(self, kind, key):
         require(self.proxies.get(kind) == key, 'foreign native operation binding')
@@ -326,7 +368,7 @@ with urllib.request.urlopen(request,timeout=5) as response: print(response.read(
                 'native index returned a foreign projection')
         return result['total']
 
-    def object(self, storage_ref, *, present):
+    def object(self, storage_ref, *, present, verify_glb=False):
         from urllib.parse import urlsplit, unquote
         from minio import Minio
         from minio.error import S3Error
@@ -341,6 +383,15 @@ with urllib.request.urlopen(request,timeout=5) as response: print(response.read(
         try:
             value = client.stat_object(bucket, key)
             require(present and value.size > 0, 'native artifact unexpectedly exists or is empty')
+            if verify_glb:
+                require(value.size <= 8 * 1024 * 1024, 'native GLB exceeds bounded observation size')
+                response = client.get_object(bucket, key)
+                try:
+                    data = response.read(value.size + 1)
+                    require(len(data) == value.size, 'native GLB changed during observation')
+                    MANAGER.validate_model_glb(data, 'obj')
+                finally:
+                    response.close(); response.release_conn()
         except S3Error as error:
             require(not present and error.code == 'NoSuchKey', 'native artifact absence is not proven')
         return '/' + quote(bucket, safe='') + '/' + quote(key, safe='/')
@@ -408,7 +459,7 @@ with urllib.request.urlopen(request,timeout=5) as response: print(response.read(
         return value['storage_ref']
 
 
-def run_manager(manager, workflow, controls, source, case, report, checkpoint):
+def prepare_manager(manager, workflow, controls, source, report, checkpoint):
     report['stage'] = 'manager_native_prepare'; checkpoint()
     controls.source_objects()
     engine_id = workflow.register(controls.descriptor('minio'))
@@ -428,6 +479,11 @@ def run_manager(manager, workflow, controls, source, case, report, checkpoint):
     # Explicit Grants and original source bytes remain owned by this disposable
     # Tenant and are destroyed with it. A failed case never abandons its evidence.
     model = MANAGER.prepare_model_fixture(manager, engine_id, bucket, 'obj')
+    return engine_id, model
+
+
+def run_manager(manager, workflow, controls, source, case, report, checkpoint):
+    engine_id, model = prepare_manager(manager, workflow, controls, source, report, checkpoint)
     MANAGER.generate_model_glb(manager, model, controls.tenant, 180)
     report.update(artifact_id=S.positive(model.result_id), generation_execution_id=S.identifier(model.execution_id))
     checkpoint()
@@ -548,6 +604,99 @@ def run_transfer(user, workflow, controls, source, case, report, checkpoint):
     checkpoint()
 
 
+def assert_writer_evidence(value, run_id, key, *, completed):
+    require(type(value) is dict and set(value) == {'run_id', 'key', 'forwarded', 'upstream_response',
+                'blocked_replays', 'entered', 'released', 'expired'}
+            and value['run_id'] == run_id and value['key'] == key
+            and type(value['entered']) is int and value['entered'] == 1
+            and type(value['forwarded']) is int and value['forwarded'] == (1 if completed else 0)
+            and value['upstream_response'] is completed and value['released'] is completed
+            and value['expired'] is False and type(value['blocked_replays']) is int and value['blocked_replays'] >= 0,
+            'late writer transport lacks a bound real request or response')
+
+
+def run_late_writer(manager, workflow, controls, source, report, checkpoint):
+    engine_id, model = prepare_manager(manager, workflow, controls, source, report, checkpoint)
+    deployment = controls.deployment
+    report['stage'] = 'late_writer_admission'; checkpoint()
+    with deployment.paused_owner('model3d-workflow-engine'):
+        started = manager.request('POST', '/api/v1/manager/quick-view/actions', (202,),
+            {'locator': model.locator, 'action': 'generate_model_3d_glb'}).payload
+        require(started['task_type'] == MANAGER.MODEL_TASK_TYPE, 'late writer has the wrong task type')
+        task_id, execution_id = S.positive(started['task_id']), S.identifier(started['execution_id'])
+        report['tasks'].append(task_id); report['executions'].append(execution_id)
+        report['generation_execution_id'] = execution_id; checkpoint()
+        pending = S.wait_for(lambda: controls.pending_glb(engine_id, execution_id),
+                            lambda x: isinstance(x, dict) and bool(x.get('pending')), 'late writer pending output missing')
+        require(pending['pending']['execution_id'] == execution_id and pending['pending']['task_id'] == str(task_id)
+                and pending['generation_holds'] > 0 and pending['deleted'] is False and not pending['storage_ref'],
+                'late writer pending target was published, unbound or unheld')
+        result_id, ref = S.positive(pending['id']), pending['pending']['storage_ref']
+        report['artifact_id'] = result_id; checkpoint()
+        target = controls.object(ref, present=False)
+        key = controls.arm_writer(target)
+    report['stage'] = 'late_writer_request_entered'; checkpoint()
+    entered = S.wait_for(lambda: controls.fault('object', key), lambda x: x.get('entered') == 1,
+                         'real old Runtime PUT did not enter the bound proxy')
+    assert_writer_evidence(entered, controls.run_id, key, completed=False)
+    before = controls.manager_attempt(execution_id)
+    require(before['execution_id'] == execution_id and before['status'] == 'running' and before['attempt'] == 1
+            and before['started_at'] and before['completed_at'] is None and before['lease_live'] is True,
+            'late writer Owner is not the first live running attempt')
+    report['stage'] = 'late_writer_owner_crash'; checkpoint()
+    deployment.crash_and_start_manager()
+    terminal = S.wait_for(lambda: controls.manager_attempt(execution_id), lambda x: x['status'] == 'failed',
+                          'old Manager attempt did not fail after real lease expiry', timeout=90)
+    require(terminal['execution_id'] == execution_id and terminal['attempt'] == 1
+            and terminal['started_at'] == before['started_at'] and terminal['completed_at']
+            and terminal['lease_live'] is False and terminal['error_code'] == 'manager.execution.lease_expired',
+            'Manager recovery replayed work or failed for an unrelated reason')
+    held = controls.pending_glb(engine_id, execution_id)
+    require(held['pending'] == pending['pending'] and held['generation_holds'] == pending['generation_holds']
+            and held['status'] == 'failed' and held['storage_ref'] == '', 'old writer lost pending identity or isolation')
+    report['stage'] = 'late_writer_cleanup_assessment'; checkpoint()
+    request_id = str(uuid.uuid4()); report['requests'].append(request_id); checkpoint()
+    accepted = workflow.user.request('POST', f'{ENGINE}/{engine_id}/deletion-assessments', (202,),
+        {'request_id': request_id, 'external_artifact_policy': 'delete'}).payload
+    require(accepted == {'assessment_id': request_id}, 'blocked assessment identity changed')
+    assessment = S.wait_for(lambda: workflow.user.request('GET', f'{ENGINE}/{engine_id}/deletion-assessments/{request_id}', (200,)).payload,
+        lambda x: x.get('status') in S.TERMINAL, 'unresolved writer assessment did not settle')
+    require(assessment['status'] == 'failed' and assessment['task']['context']['engine_id'] == engine_id
+            and set(assessment['task']['expected_modules']) == set(S.OWNERS)
+            and assessment['task']['requested_by'] == int(workflow.principal), 'unresolved writer assessment was accepted or foreign')
+    rows = assessment.get('module_executions', [])
+    require(len([x for x in rows if x['module'] == 'manager' and x['status'] == 'failed']) == 1,
+            'assessment was not blocked by Manager')
+    require(workflow.engine(engine_id)['lifecycle_state'] == 'active', 'read-only failed assessment changed Engine lifecycle')
+    controls.object(ref, present=False)
+    assert_writer_evidence(controls.fault('object', key), controls.run_id, key, completed=False)
+    report['stage'] = 'late_native_writer_release'; checkpoint()
+    controls.release_writer(key)
+    completed = S.wait_for(lambda: controls.fault('object', key), lambda x: x['upstream_response'] is True,
+                          'old Runtime upload did not receive a real native response')
+    assert_writer_evidence(completed, controls.run_id, key, completed=True)
+    controls.object(ref, present=True, verify_glb=True)
+    require(controls.manager_attempt(execution_id) == terminal and controls.pending_glb(engine_id, execution_id) == held,
+            'late native write changed the terminal attempt or published its result')
+    manager.request('GET', f'/api/v1/manager/model_3d_glb/{result_id}/content', (404,))
+    # The source still exists and the original User remains authorized. A domain
+    # refusal here cannot be explained by a deleted Engine or revoked source.
+    MANAGER.verify_mesh_source(manager, model)
+    manager.request('POST', '/api/v1/manager/quick-view/actions', (409,),
+                    {'locator': model.locator, 'action': 'generate_model_3d_glb'})
+    require(controls.manager_attempt(execution_id) == terminal and controls.pending_glb(engine_id, execution_id) == held,
+            'new generation changed a retained old-writer target')
+    assert_writer_evidence(controls.fault('object', key), controls.run_id, key, completed=True)
+    controls.source_objects()
+    report.update(native_late_writer_acceptance='passed', native_late_writer_scope='manager_glb_upload_after_owner_crash',
+                  entry='engine_deletion_assessment')
+    report['checks'].extend(['real_old_runtime_put_held', 'old_running_attempt_observed',
+        'real_lease_expiry_after_owner_crash', 'pending_target_identity_retained', 'cleanup_assessment_refused',
+        'engine_remains_active', 'late_native_object_observed', 'late_result_not_published', 'new_generation_rejected',
+        'old_attempt_not_replayed', 'source_objects_unchanged'])
+    checkpoint()
+
+
 def main():
     output = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']) / 'cleanup-native-effects.json'
     case = os.environ.get('ADDP_ONLINE_NATIVE_CASE', '')
@@ -555,7 +704,7 @@ def main():
                   result='failed', checks=[], engines=[], tasks=[], requests=[], executions=[],
                   control_cleanup='pending', hosted_destruction='required', real_model=False,
                   native_late_writer_acceptance='not_run', graph_native_write_acceptance='not_run', positive_reopen_acceptance='not_run')
-    deployment = None
+    deployment, controls = None, None
     def checkpoint(): output.write_text(json.dumps(report, sort_keys=True) + '\n')
     try:
         require(case in CASES, 'an explicit bounded native case is required')
@@ -571,7 +720,8 @@ def main():
         controls = NativeControls(deployment, tenant, case)
         source = S.local_client(os.environ['GATEWAY_URL'], os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
         checkpoint()
-        if case.startswith('manager-'): run_manager(clients['manager'], workflow, controls, source, case, report, checkpoint)
+        if case == 'manager-late-writer': run_late_writer(clients['manager'], workflow, controls, source, report, checkpoint)
+        elif case.startswith('manager-'): run_manager(clients['manager'], workflow, controls, source, case, report, checkpoint)
         else: run_transfer(clients['transfer'], workflow, controls, source, case, report, checkpoint)
         require(set(report['checks']) == set(S.CONTRACT['native_case_checks'][case])
                 and len(report['checks']) == len(set(report['checks'])), 'native case checks missing, duplicated or outside scope')
@@ -581,7 +731,11 @@ def main():
     finally:
         if deployment is not None:
             try:
-                deployment.close(); report['control_cleanup'] = 'passed'
+                try:
+                    deployment.close()
+                finally:
+                    if controls is not None: controls.close()
+                report['control_cleanup'] = 'passed'
             except Exception as error:
                 report.update(result='failed', control_cleanup='failed', cleanup_error_type=type(error).__name__)
         checkpoint(); print(json.dumps(report, sort_keys=True))
