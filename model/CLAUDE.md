@@ -349,9 +349,9 @@ Model 是 `model.logical_model.*` 第一批 Permission 的唯一 owner，机器�
 
 Entity、EntityRelation、DWLayer 和 LogicalModel 分别使用 `model.entity.*`、`model.entity_relation.*`、`model.dw_layer.*`、`model.logical_model.*`。EntityAttribute 是 Entity 聚合内子资源；LogicalField、TableRelation、DimensionHierarchy 是 LogicalModel 聚合内子资源；MetricImplementation 是独立聚合，使用 model.metric_implementation 精确权限。Mermaid 导入预览和确认均按 Entity 与 EntityRelation 的 create 执行 all-of 校验；导出按两者的 read 执行 all-of 校验。导入只创建缺失成员，不要求全租户已审批实体退回草稿；新关系仍不得绕过两端实体的生命周期约束。
 
-并发契约以 [Model 概念与数据约束规范](docs/model概念与数据约束规范.md) 为事实源。后端必须把版本校验、生命周期校验、聚合写入和版本递增放在同一事务中；前端收到 `409 resource_version_conflict` 后保留本地未保存状态，不自动重试。
+各聚合的版本主体、同事务校验与递增、EntityRelation 完整 `PUT` 及变更前后端点锁定统一见[并发版本与聚合写入](docs/model概念与数据约束规范.md#并发版本与聚合写入)和[完整更新语义](docs/model概念与数据约束规范.md#完整更新语义)；`409 resource_version_conflict` 后保留未保存内容及禁止自动重试的规则见[冲突响应与前端体验](../docs/spec/api/资源版本与并发更新.md#冲突响应与前端体验)。
 
-EntityRelation 使用完整 `PUT`：请求包含变更后的 source_entity、target_entity、relation_type、name、description 和 version，并在事务内锁定变更前后涉及的全部 Entity。Cleanup 属于内部强制写入，同样必须推进资源版本和实体模型集合 revision。
+Cleanup 内部强制写入的资源锁定、资源 `version` 与 Tenant 实体模型集合 `revision` 推进，以及物理清理的单事务边界，统一见[Model Cleanup 约束](docs/model概念与数据约束规范.md#五mermaid-与-ddl)。权限及写入契约不代表运行验收通过，实际覆盖见[开发与验证](#开发与验证)。
 
 ## 特殊设计
 
