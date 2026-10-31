@@ -1318,7 +1318,8 @@ const handleDownload = async () => {
     }
   } catch (error) {
     if (controller.signal.aborted || error?.name === 'AbortError') return
-    console.error('下载失败:', error)
+    // Authentication/authorization refusals are handled by the error message.
+    if (error?.status !== 401 && error?.status !== 403) console.error('下载失败:', error)
     ElMessage.error(t('manager.explorer.downloadFailed', { error: error.message || t('manager.explorer.invalidDownloadResponse') }))
   } finally {
     if (sourceDownloadController === controller) {

@@ -81,6 +81,8 @@ for (const locale of ['zh-cn', 'en']) for (const [header, name, suggested] of [
 for (const status of [401, 403]) {
   test(`HTTP ${status} from the real model button never saves error bytes or claims success`, async ({ page }) => {
     let downloads = 0, calls = 0
+    const errors = []
+    page.on('console', message => { if (message.text().startsWith('下载失败:')) errors.push(message.text()) })
     page.on('download', () => downloads++)
     await install(page, route => { calls++; return json(route, { error: '源模型读取已拒绝' }, status) })
     await page.getByRole('button', { name: /^(下载|Download)$/i }).click()
@@ -88,6 +90,7 @@ for (const status of [401, 403]) {
     await expect(page.getByText(/^(下载已开始|Download started)$/i)).toHaveCount(0)
     expect(downloads).toBe(0)
     expect(calls).toBe(status === 401 ? 2 : 1)
+    expect(errors).toEqual([])
   })
 }
 
@@ -147,12 +150,15 @@ for (const locale of ['zh-cn', 'en']) test(`FileGDB downloads its complete serve
 })
 for (const status of [403, 409, 500]) test(`FileGDB rejection ${status} saves nothing and shows no download success`, async ({ page }) => {
   let downloads = 0, requests = 0
+  const errors = []
+  page.on('console', message => { if (message.text().startsWith('下载失败:')) errors.push(message.text()) })
   page.on('download',()=>downloads++)
   await install(page,route=>{ requests++; return json(route,{error:'源数据稳定后重试'},status) },'zh-cn',gdbOptions)
   await page.getByRole('button', {name:/^(下载|Download)$/i}).click()
   await expect(page.locator('.el-message--error')).toContainText('源数据稳定后重试')
   await expect(page.getByText(/^(下载已开始|Download started)$/i)).toHaveCount(0)
   expect(downloads).toBe(0); expect(requests).toBe(1)
+  expect(errors).toHaveLength(status === 403 ? 0 : 1)
 })
 test('unsupported whole-container download capability does not offer a download button or read source', async ({ page }) => {
   let reads=0
