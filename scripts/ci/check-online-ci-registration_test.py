@@ -1109,6 +1109,28 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 CHECK.validate_raster_focal_weighted_mean(self.repository, {'raster-focal-weighted-mean-persistence'})
             target.write_text(original)
 
+    def test_weighted_stddev_requires_exact_cog_matrix_budget_and_regressions(self):
+        source = Path(__file__).resolve().parents[2]
+        required = CHECK.WEIGHTED_STDDEV_REQUIRED
+        for relative in ('scripts/test/online-gate.py', '.github/workflows/online-t4-gates.yml', *required):
+            target = self.repository/relative
+            target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(source/relative,target)
+        CHECK.validate_raster_focal_weighted_stddev(self.repository, {'raster-focal-weighted-stddev-persistence'})
+        for relative, fragments in required.items():
+            target=self.repository/relative; original=target.read_text()
+            for fragment in fragments:
+                target.write_text(original.replace(fragment, 'omitted'))
+                with self.subTest(relative=relative,fragment=fragment), self.assertRaises(CHECK.RegistrationError):
+                    CHECK.validate_raster_focal_weighted_stddev(self.repository, {'raster-focal-weighted-stddev-persistence'})
+                target.write_text(original)
+        target=self.repository/'business/scripts/online-raster-focal-weighted-stddev-fixture.py';original=target.read_text()
+        for before,after in [("'values.tif',3,'weighted_stddev','asymmetric-3'", "'values.tif',5,'weighted_stddev','asymmetric-3'"),("'weights_missing'", "'omitted_missing'"),("[0,1,2],[3,0,5]", "[1,1,2],[3,0,5]")]:
+            self.assertIn(before,original);target.write_text(original.replace(before,after,1))
+            with self.subTest(matrix=before),self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_raster_focal_weighted_stddev(self.repository, {'raster-focal-weighted-stddev-persistence'})
+            target.write_text(original)
+
     def test_protected_sieve_requires_exact_cog_matrix_budget_and_regressions(self):
         source = Path(__file__).resolve().parents[2]
         required = CHECK.PROTECTED_SIEVE_REQUIRED
