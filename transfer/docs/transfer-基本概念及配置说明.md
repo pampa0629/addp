@@ -1,6 +1,6 @@
 # Transfer 模块基本概念及配置说明
 
-更新时间：2026-09-26
+更新时间：2026-10-31
 
 本文档定义 Transfer 稳定任务配置、执行状态、bounded snapshot 主链路、watermark bounded incremental 规则，以及 continuous/Kafka 契约与当前实现边界。旧版顶层 `mode`、`target.policy.write_mode`、`connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段不再兼容。
 
@@ -112,9 +112,7 @@ Console 和 Transfer 页面按入口及动作权限显示：无任务权限时�
 | `object` | `addp://engine/3/path/bucket/exports/roads.csv?type=object` |
 | 已入库 source item | `addp://engine/3/path/bucket/roads.shp?type=object&item_id=12` |
 
-CSV / TSV encoded source 沿用既有 `source.options.header` 布尔选项，不新增 `has_header` 任务参数。有效的显式任务选项优先；未显式设置时，继承 Meta `type_info.table.native.has_header`，两者均无声明才默认 `true`。Meta 表头声明必须是布尔值，显式 `false` 不得丢失。任务读取选项只影响本次读取，不回写 Meta，也不按首行内容猜测表头。
-
-单资源 encoded source 打开真实格式 reader 后，必须在目标准备、删除、创建或写入前核对实际有序字段名与本次 Meta／Describe 声明。reader 在打开时已有字段的，直接核对该字段结构；JSON／GeoJSON 等动态 reader 尚未提供字段时，使用同一格式 InfoProvider 对当前源执行 Describe 后核对，本次打开流程已经取得的 Describe 结果直接复用，不能将“尚无字段”当作空表或跳过校验。已有 Meta 声明的动态格式因此多读取一次源文件；这不提供不可变源快照。启用字段选择时，两边按同一选择投影后比较；字段数量、名称或顺序冲突即拒绝并关闭源资源，不能用缓存声明掩盖当前源字段，也不能依靠字段映射默认值补空后继续写。该检查只核对字段身份；共享 CSV reader 的字符串字段描述不覆盖 Meta 已推断的 bigint、精度等丰富类型事实。没有 Meta 声明时继续沿既有 Describe／reader 取得结构，不另建推断路径；reader 尚无字段且无 InfoProvider 可核验时明确拒绝。
+CSV／TSV 的表头选项见[CSV 与 TSV 表头](#csv-与-tsv-表头)；单资源 encoded source 的字段身份、Meta／Describe 比对及失败边界见[单资源结构核对](#单资源结构核对)。
 
 ### 2.3 Bounded query source 与轻量 ETL 构造
 
@@ -189,6 +187,8 @@ MongoDB 第一版固定输出 Canonical Extended JSON v2、UTF-8、每行一个�
 
 ### 3.3 格式
 
+[读取布局与入口](#读取布局与入口) · [CSV／TSV 表头](#csv-与-tsv-表头) · [单资源结构核对](#单资源结构核对) · [Parquet 压缩](#parquet-列式压缩) · [空间字段与 CRS](#34-空间字段与-crs-边界) · [写后扫描](#十一写后-meta-扫描)
+
 | 格式 | 支持形态 |
 |---|---|
 | CSV / TSV | single table read / write。 |
@@ -197,14 +197,33 @@ MongoDB 第一版固定输出 Canonical Extended JSON v2、UTF-8、每行一个�
 | Parquet | single table read / write；whole scope dataset read；支持 field_selection 下推；普通 Parquet 与 GeoParquet 共用列式压缩配置。 |
 | Shapefile | multi table read / write；完整 refs 由 format specs 或 Meta attributes 提供。 |
 
-格式同时提供 single 和 whole reader 时，Transfer 按 Meta 已确定的 item layout 选择读取入口：单个 Parquet 文件走 `TableReaderProvider`，目录数据集走 `ScopeTableReaderProvider`，不能仅因格式注册了 scope reader 就把单文件当目录读取。PGeo 等 container child 没有普通 content table reader，仍消费运行时工厂已绑定的 scope reader；不把父容器的 single layout 改写为 whole。
+#### 读取布局与入口
 
-Parquet writer 的列式压缩通过 `target.options.compression` 配置，该值作用于所有列的 Column Chunk / Data Page，不是文件封装压缩，也不是 Parquet value encoding。当前契约为：
+已入库 encoded table source 使用 Meta 确定的 item layout；身份、primary content、whole scope 和 refs 的权威定义见[已入库 item 的再次消费](../../docs/spec/addp数据项探测器规范.md#已入库-item-的再次消费)，持久字段归属见[attributes 写入规则](../../docs/spec/addp元数据attributes规范.md#写入规则)。
 
-- 默认：`zstd`。
-- 支持：`zstd`、`snappy`、`lz4_raw`、`brotli`、`gzip`、`uncompressed`。
-- 普通 Parquet 和 GeoParquet 使用同一份契约；当源数据含空间事实时，压缩后的 WKB 几何列和 `geo` metadata 一起写出。
-- 不开放压缩级别和逐列 codec；未声明的 codec 直接报错。
+| 布局 | 本节典型来源与消费范围 | 读取入口 |
+| --- | --- | --- |
+| `single` | 单个文件／对象，例如单个 Parquet 文件。 | `TableReaderProvider`。 |
+| `whole` | Meta 已确定的 Parquet 目录数据集，使用 whole scope 根范围。 | `ScopeTableReaderProvider`。 |
+| `multi` | Shapefile primary content 与完整 `attributes.item.refs`；按格式声明核验必需成员。 | `MultiTableReaderProvider`。 |
+
+不能仅因格式注册了 scope reader 就把单文件当目录读取。PGeo 等 container child 没有普通 content table reader，仍消费运行时工厂已绑定的 scope reader；不把父容器的 single layout 改写为 whole。
+
+multi 的 primary 路径不能替代完整 refs；缺失或不完整时回到节点重扫，由 detector 重新裁决，不能在格式 reader 内枚举兄弟文件补齐。whole 的 refs 只保存 manifest／关键入口，不用于反推全部数据集成员；消费边界沿上述探测器规范，不扩大为普通父目录。
+
+#### CSV 与 TSV 表头
+
+CSV / TSV encoded source 沿用既有 `source.options.header` 布尔选项，不新增 `has_header` 任务参数。有效的显式任务选项优先；未显式设置时，继承 Meta `type_info.table.native.has_header`，两者均无声明才默认 `true`。Meta 表头声明必须是布尔值，显式 `false` 不得丢失。任务读取选项只影响本次读取，不回写 Meta，也不按首行内容猜测表头。
+
+#### 单资源结构核对
+
+单资源 encoded source 打开真实格式 reader 后，必须在目标准备、删除、创建或写入前核对实际有序字段名与本次 Meta／Describe 声明。reader 在打开时已有字段的，直接核对该字段结构；JSON／GeoJSON 等动态 reader 尚未提供字段时，使用同一格式 InfoProvider 对当前源执行 Describe 后核对，本次打开流程已经取得的 Describe 结果直接复用，不能将“尚无字段”当作空表或跳过校验。已有 Meta 声明的动态格式因此多读取一次源文件；这不提供不可变源快照。启用字段选择时，两边按同一选择投影后比较；字段数量、名称或顺序冲突即拒绝并关闭源资源，不能用缓存声明掩盖当前源字段，也不能依靠字段映射默认值补空后继续写。该检查只核对字段身份；共享 CSV reader 的字符串字段描述不覆盖 Meta 已推断的 bigint、精度等丰富类型事实。没有 Meta 声明时继续沿既有 Describe／reader 取得结构，不另建推断路径；reader 尚无字段且无 InfoProvider 可核验时明确拒绝。
+
+#### Parquet 列式压缩
+
+Parquet writer 使用 `target.options.compression`；默认值、允许 codec、整列统一配置、压缩级别及非 canonical 别名的拒绝规则，统一见[列式压缩能力规范](../../docs/spec/addp数据类型与格式能力规范.md#列式压缩能力)。该选项不是文件封装压缩或 Parquet value encoding。
+
+普通 Parquet 和 GeoParquet 使用同一份契约；当源数据含空间事实时，压缩后的 WKB 几何列和 `geo` metadata 一起写出。
 
 `GET /api/v1/transfer/capabilities` 的 `table_formats[].columnar_compression` 是唯一能力事实源，包含 `default` 和 canonical `codecs`。控制台必须消费该声明，不按格式名硬编码列表。
 
@@ -218,6 +237,8 @@ Parquet writer 的列式压缩通过 `target.options.compression` 配置，该�
   }
 }
 ```
+
+布局、格式能力声明和 refs 完整性不授予读取或写入权限；任务权限、目录选择和当前 Tenant 范围见[租户阶段的任务授权](#13-租户阶段的任务授权)，源读、目标写及运行期保护仍独立核验。格式表、静态映射或配置预检不等于真实数据与完整链路验收通过；标准门禁及历史结果见[模块验证](../CLAUDE.md#开发与验证)，操作与结果核对见[快速开始](快速开始.md#五开发验证)。
 
 ### 3.3 Native table target
 
