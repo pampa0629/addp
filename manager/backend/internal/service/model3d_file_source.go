@@ -132,7 +132,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 		if err != nil {
 			return err
 		}
-		raw, readErr := io.ReadAll(io.LimitReader(&model3DStagingContextReader{ctx: ctx, reader: stream}, primarySize+1))
+		raw, readErr := io.ReadAll(io.LimitReader(&sourceContextReader{ctx: ctx, reader: stream}, primarySize+1))
 		closeErr := stream.Close()
 		if readErr != nil || closeErr != nil {
 			return errors.Join(readErr, closeErr)
@@ -232,7 +232,7 @@ func (e *ManagerModel3DGLBExecutor) withFileModel3DSource(ctx context.Context, r
 		if err != nil {
 			return err
 		}
-		raw, readErr := io.ReadAll(io.LimitReader(&model3DStagingContextReader{ctx: ctx, reader: stream}, primarySize+1))
+		raw, readErr := io.ReadAll(io.LimitReader(&sourceContextReader{ctx: ctx, reader: stream}, primarySize+1))
 		closeErr := stream.Close()
 		if readErr != nil || closeErr != nil {
 			return errors.Join(readErr, closeErr)

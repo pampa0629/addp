@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -13,10 +14,16 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/engineaccess"
+	"github.com/addp/manager/internal/models"
 )
 
 type ResourceActionService struct {
-	systemClient SystemClient
+	systemClient    SystemClient
+	downloadPlanner storageDownloadPlanner
+}
+
+type storageDownloadPlanner interface {
+	ResolveStorageDownloadPlanByLocator(context.Context, string, *uint) (*StorageDataItem, *models.DownloadPlan, error)
 }
 
 type SystemClient interface {
@@ -24,8 +31,8 @@ type SystemClient interface {
 	GetEngineForTenant(ctx context.Context, tenantID, engineID uint) (*commonModels.Engine, error)
 }
 
-func NewResourceActionService(systemClient SystemClient) *ResourceActionService {
-	return &ResourceActionService{systemClient: systemClient}
+func NewResourceActionService(systemClient SystemClient, downloadPlanner storageDownloadPlanner) *ResourceActionService {
+	return &ResourceActionService{systemClient: systemClient, downloadPlanner: downloadPlanner}
 }
 
 type ResourceActionsResponse struct {
@@ -36,14 +43,14 @@ type ResourceActionsResponse struct {
 }
 
 type ResourceActionStatus struct {
-	Supported bool     `json:"supported"`
-	Reason    string   `json:"reason,omitempty"`
-	DataTypes []string `json:"data_types,omitempty"`
-	Formats   []string `json:"formats,omitempty"`
+	Supported           bool     `json:"supported"`
+	Reason              string   `json:"reason,omitempty"`
+	DataTypes           []string `json:"data_types,omitempty"`
+	Formats             []string `json:"formats,omitempty"`
+	RequiresCurrentUser bool     `json:"requires_current_user,omitempty"`
 }
 
 func (s *ResourceActionService) GetResourceActions(ctx context.Context, locatorURI string, tenantID *uint) (*ResourceActionsResponse, error) {
-	_ = ctx
 	locatorURI = strings.TrimSpace(locatorURI)
 	if locatorURI == "" {
 		return nil, fmt.Errorf("locator is required")
@@ -91,7 +98,19 @@ func (s *ResourceActionService) GetResourceActions(ctx context.Context, locatorU
 			resp.Actions["upload"] = unsupported("engine does not support content write")
 		}
 		if isStorageItemType(loc.Type) && storageCanRead(engine) {
-			resp.Actions["download"] = ResourceActionStatus{Supported: true}
+			if s.downloadPlanner == nil {
+				return nil, fmt.Errorf("download planner is unavailable")
+			}
+			target, plan, err := s.downloadPlanner.ResolveStorageDownloadPlanByLocator(ctx, locatorURI, tenantID)
+			if errors.Is(err, ErrDownloadNotSupported) {
+				resp.Actions["download"] = unsupported(ErrDownloadNotSupported.Error())
+			} else if err != nil {
+				return nil, err
+			} else if target == nil || plan == nil {
+				return nil, fmt.Errorf("download planner returned no data item or plan")
+			} else {
+				resp.Actions["download"] = ResourceActionStatus{Supported: true, RequiresCurrentUser: target.Descriptor.DataType == datatype.Model3D || plan.DirectoryRoot != nil}
+			}
 		} else if isStorageItemType(loc.Type) {
 			resp.Actions["download"] = unsupported("engine does not support content read")
 		}

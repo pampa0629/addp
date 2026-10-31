@@ -22,6 +22,7 @@ func NewResourceActionHandler(service *service.ResourceActionService) *ResourceA
 // GetResourceActions 查询资源可用用户动作。
 // @Summary 查询资源动作能力 | Get resource action capabilities
 // @Description 按 ResourceLocator 返回当前资源可显示的 Manager 用户动作及格式限制 | Return Manager user actions and format constraints for a resource locator
+// @Description 下载能力复用 Meta 身份与实际下载计划准入，不枚举或读取源内容；requires_current_user 表示必须使用当前普通用户认证下载，不是数据读取许可。 | Download support uses Meta identity and actual download planning without source enumeration or content reads; requires_current_user mandates ordinary User authentication and does not grant data access.
 // @Tags Manager
 // @Produce json
 // @Param locator query string true "资源定位符 URI | Resource locator URI"

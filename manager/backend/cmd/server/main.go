@@ -383,7 +383,7 @@ func main() {
 	importHandler := api.NewImportHandler(importService)
 	uploadService := service.NewUploadService(systemClient, commonClient.NewMetaScanUserClient(cfg.MetaServiceURL))
 	uploadHandler := api.NewUploadHandler(uploadService)
-	resourceActionService := service.NewResourceActionService(systemClient)
+	resourceActionService := service.NewResourceActionService(systemClient, metadataService)
 	resourceActionHandler := api.NewResourceActionHandler(resourceActionService)
 	exportService := service.NewExportService(
 		systemClient,

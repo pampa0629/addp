@@ -284,6 +284,9 @@ func (s *MetadataService) resolveStorageDownloadPlan(ctx context.Context, resour
 		return nil, err
 	}
 	descriptor := downloadItemDescriptor(item)
+	if descriptor.Layout == format.LayoutWhole || descriptor.Format == "filegdb" {
+		return directoryDownloadPlan(engineType, resourceID, displayPath, descriptor)
+	}
 	refs := downloadRefsFromDescriptor(descriptor)
 	if descriptor.Layout == format.LayoutMulti && len(refs) == 0 {
 		return nil, fmt.Errorf("%w: multi item is missing item.refs; rescan the node to rebuild related refs", ErrDownloadNotSupported)
@@ -538,7 +541,7 @@ func (s *MetadataService) OpenStorageDownloadPlan(ctx context.Context, target *S
 	if plan == nil {
 		return nil, ErrDownloadNotSupported
 	}
-	if plan.Kind == models.DownloadKindBundle {
+	if plan.Kind == models.DownloadKindBundle && plan.DirectoryRoot == nil {
 		if _, err := downloadBundleNames(plan.Refs); err != nil {
 			return nil, err
 		}
@@ -546,6 +549,9 @@ func (s *MetadataService) OpenStorageDownloadPlan(ctx context.Context, target *S
 	read, err := s.prepareStorageRead(target, tenantID, credential, human, plan)
 	if err != nil {
 		return nil, err
+	}
+	if plan.DirectoryRoot != nil {
+		return s.openDirectoryDownload(ctx, read, plan)
 	}
 	if plan.Kind == models.DownloadKindBundle {
 		entries, err := s.openDownloadBundleEntries(ctx, read, plan)

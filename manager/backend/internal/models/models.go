@@ -233,11 +233,12 @@ const (
 )
 
 type DownloadPlan struct {
-	Kind        string        `json:"kind"`
-	URL         string        `json:"url,omitempty"`
-	FileName    string        `json:"filename,omitempty"`
-	ContentType string        `json:"content_type,omitempty"`
-	Refs        []DownloadRef `json:"refs,omitempty"`
+	Kind          string                    `json:"kind"`
+	URL           string                    `json:"url,omitempty"`
+	FileName      string                    `json:"filename,omitempty"`
+	ContentType   string                    `json:"content_type,omitempty"`
+	Refs          []DownloadRef             `json:"refs,omitempty"`
+	DirectoryRoot *plugin.EngineCatalogPath `json:"directory_root,omitempty"`
 }
 
 type DownloadRef struct {

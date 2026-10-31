@@ -2,6 +2,8 @@ import importlib
 from contextlib import contextmanager
 from copy import deepcopy
 import json
+import hashlib
+import io
 import os
 from pathlib import Path
 import tempfile
@@ -9,6 +11,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
 import unittest
+import zipfile
 from unittest.mock import Mock, patch
 
 M = importlib.import_module('scripts.test.manager-filegdb-online')
@@ -35,6 +38,65 @@ def authorization():
 
 
 class FileGDBAcceptanceTest(unittest.TestCase):
+    def test_failed_directory_download_never_accepts_content_or_another_denial_gate(self):
+        for status in (403, 409, 503):
+            for mutation in (None, 'data', 'archive', 'security'):
+                with self.subTest(status=status, mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                    payload = {'error': 'explicit failure'}
+                    if mutation == 'data': payload['data'] = 'private'
+                    if mutation == 'security': payload['error_code'] = 'security_protection_required'
+                    raw = b'PK-private' if mutation == 'archive' else json.dumps(payload).encode()
+                    binary = Mock(); binary.request.return_value = SimpleNamespace(status=status, raw=raw, payload=payload)
+                    client = SimpleNamespace(base_url='http://localhost:8000', token='unchanged', timeout=30)
+                    destination = Path(directory) / 'failed.zip'
+                    with patch.object(OWNER, 'GatewayClient', return_value=binary):
+                        if mutation in {'data', 'archive'} or (status == 403 and mutation == 'security'):
+                            with self.assertRaises(ValueError): M.directory_download(client, 'locator', {}, status, destination)
+                        else:
+                            self.assertEqual(M.directory_download(client, 'locator', {}, status, destination)['status'], status)
+                        self.assertFalse(destination.exists())
+
+    def test_complete_directory_archive_checks_exact_members_original_bytes_and_headers(self):
+        for mutation in (None, 'missing', 'outside', 'duplicate', 'wrong_bytes', 'wrong_length'):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                data = io.BytesIO()
+                with zipfile.ZipFile(data, 'w') as archive:
+                    archive.writestr(M.NAME + '/', b'')
+                    if mutation != 'missing':
+                        archive.writestr(M.NAME + '/a.gdbtable', b'changed' if mutation == 'wrong_bytes' else b'original')
+                    if mutation == 'outside': archive.writestr('../outside', b'external')
+                    if mutation == 'duplicate': archive.writestr(M.NAME + '/a.gdbtable', b'original')
+                raw = data.getvalue()
+                binary = Mock(); binary.request.return_value = SimpleNamespace(status=200, raw=raw,
+                    headers={'Content-Type': 'application/zip', 'Content-Disposition': 'attachment; filename=authorization.gdb.zip',
+                             'Content-Length': str(len(raw) + (1 if mutation == 'wrong_length' else 0))})
+                client = SimpleNamespace(base_url='http://localhost:8000', token='unchanged', timeout=30)
+                destination = Path(directory) / 'complete.zip'
+                with patch.object(OWNER, 'GatewayClient', return_value=binary):
+                    if mutation:
+                        with self.assertRaises(ValueError):
+                            M.directory_download(client, 'locator', {'a.gdbtable':hashlib.sha256(b'original').hexdigest()}, 200, destination)
+                        self.assertFalse(destination.exists())
+                    else:
+                        result = M.directory_download(client, 'locator', {'a.gdbtable':hashlib.sha256(b'original').hexdigest()}, 200, destination)
+                        self.assertEqual(result['sha256'],hashlib.sha256(destination.read_bytes()).hexdigest())
+                        self.assertEqual(result['status'],200)
+
+    def test_archive_handle_observation_is_exact_manager_and_checkout_owned(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); repository=root/'repository'; repository.mkdir()
+            (repository/'.dev-pids').mkdir(); (repository/'.dev-pids/manager.pid').write_text('123')
+            (repository/'.dev-bins').mkdir(); binary=repository/'.dev-bins/addp-manager'; binary.write_bytes(b'fixture')
+            proc=root/'proc'; process=proc/'123'; process.mkdir(parents=True); (process/'fd').mkdir()
+            (process/'cwd').symlink_to(repository); (process/'exe').symlink_to(binary)
+            descriptor=process/'fd/1'; descriptor.symlink_to('/tmp/addp-manager-filegdb-download-owned.zip (deleted)')
+            with patch.object(P,'owned_root',return_value=(root,root)):
+                self.assertEqual(P.archive_state(repository,{},proc),{'pid':123,'open_archives':1})
+                descriptor.unlink()
+                self.assertEqual(P.archive_state(repository,{},proc),{'pid':123,'open_archives':0})
+                (process/'cwd').unlink(); (process/'cwd').symlink_to(root)
+                with self.assertRaisesRegex(ValueError,'another checkout'): P.archive_state(repository,{},proc)
+
     def test_raw_members_require_exact_source_bytes_ranges_and_denial_without_content(self):
         for mutation in (None, 'wrong_bytes', 'wrong_range', 'leaked_denial', 'security_denial'):
             with self.subTest(mutation=mutation):
@@ -229,9 +291,11 @@ class FileGDBAcceptanceTest(unittest.TestCase):
                 {'label': child + '_' + str(i), 'value': i + 1} for i in range(rows)]}})
         client.request.side_effect = response
         report = {'tenant_id': 2, 'engine_id': 7, 'raw_member': {'name': 'gdb'}}
+        download = Mock(return_value={'status': 200})
         with patch.object(M.FILES, 'exact_user_principal', return_value='11'), patch.object(M, 'raw_member', return_value=[]) as raw:
-            result = M.verify_deny(auth, client, {'full_name': M.NAME}, 'locator', {'request_id': 'original'}, report)
+            result = M.verify_deny(auth, client, {'full_name': M.NAME}, 'locator', {'request_id': 'original'}, report, download)
         self.assertEqual([call.args[-1] for call in raw.call_args_list], [403, 200])
+        self.assertEqual([call.args[1:] for call in download.call_args_list], [(403, 'deny'), (200, 'deny-release')])
         self.assertEqual([r['status'] for r in result['denied_reads']], [403, 403])
         self.assertEqual([r['rows'] for r in result['restored_reads']], [2, 1])
         self.assertEqual(result['history_before'], result['history_after'])
@@ -325,17 +389,22 @@ class FileGDBAcceptanceTest(unittest.TestCase):
         def interruption(*args):
             yield {'module': args[-1]}
         current = Mock(side_effect=observations)
+        download = Mock(side_effect=lambda actor, status, phase: {'status': status if isinstance(status, int) else 503})
         with patch.object(M.API, 'GatewayClient', return_value=health), \
                 patch.object(M.API, 'wait_manager_read_boundary'), patch.object(P, 'interruption', interruption):
             evidence = P.verify_outages(Path('/unused'), {'MANAGER_URL': 'http://unused',
                 'ADDP_ONLINE_MANAGER_NFS_ENGINE_ID': '7'}, Mock(), 'locator', current,
-                lambda: {'a.gdbtable': 'same-sha'}, Mock(return_value={'status': 503}))
+                lambda: {'a.gdbtable': 'same-sha'}, Mock(return_value={'status': 503}), download)
         self.assertEqual(observations, original)  # Raw timestamps remain available for independent review.
         for index, outage in enumerate(evidence):
             self.assertTrue(outage['same_grant']); self.assertTrue(outage['source_unchanged'])
             self.assertEqual(outage['current_before'], original[0])
             self.assertEqual(outage['current_during'], original[1 + 2 * index])
             self.assertEqual(outage['current_after'], original[2 + 2 * index])
+            self.assertEqual(outage['failed_archive']['status'], 503)
+            self.assertEqual(outage['recovered_archive']['status'], 200)
+        self.assertEqual([call.args[2] for call in download.call_args_list],
+                         ['fault-manager', 'recovered-manager', 'fault-nfs', 'recovered-nfs'])
 
     def test_nfs_daemon_stop_is_not_accepted_when_actual_mount_is_still_readable(self):
         with tempfile.TemporaryDirectory() as directory:

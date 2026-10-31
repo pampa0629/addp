@@ -344,3 +344,6 @@ other = "Could not obtain read authorization for the original model and its rela
 
 [manager.error.model3d_source_composition_incomplete]
 other = "The original model and related file composition is incomplete. Rescan the model directory before generating a quick view."
+
+[manager.error.download_source_changed]
+other = "The source changed while packaging. Retry after the source is stable."

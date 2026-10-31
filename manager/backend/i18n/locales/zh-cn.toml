@@ -344,3 +344,6 @@ other = "无法取得原始模型及关联文件的读取授权，请核对源�
 
 [manager.error.model3d_source_composition_incomplete]
 other = "原始模型及关联文件的组成信息不完整，请重新扫描模型所在目录后再生成快显。"
+
+[manager.error.download_source_changed]
+other = "源数据在打包期间发生变化，请待源数据稳定后重试。"

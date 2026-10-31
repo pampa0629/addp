@@ -16,7 +16,7 @@ func bufferOBJStagingManifest(ctx context.Context, input io.Reader, size int64, 
 	if input == nil || size < 0 || size > obj.MaxCompositionBytes || (!material && size == 0) {
 		return nil, nil, errors.New("OBJ manifest size is outside its bound")
 	}
-	raw, err := io.ReadAll(io.LimitReader(&model3DStagingContextReader{ctx: ctx, reader: input}, size+1))
+	raw, err := io.ReadAll(io.LimitReader(&sourceContextReader{ctx: ctx, reader: input}, size+1))
 	if err != nil {
 		return nil, nil, err
 	}

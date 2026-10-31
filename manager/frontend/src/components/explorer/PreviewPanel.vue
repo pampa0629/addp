@@ -522,7 +522,7 @@ import { getPreviewComponent } from '@/plugins/previews'
 import { createAuthenticatedFetch, downloadAuthenticatedExport, downloadFromUrl, ExportDialog, parseLocator, waitForExportSession } from '@addp/common-frontend'
 import client from '@/api/client'
 import { useAuthStore } from '@/store/auth'
-import { downloadModel3DSource } from '@/utils/model3DSource'
+import { downloadStorageSource } from '@/utils/storageSource'
 import { StaticTrajectoryPreview } from '@common-ui-map'
 import { canPreviewStaticTrajectory, readStaticTrajectoryTable } from '@/utils/staticTrajectoryPreview'
 import { dataExplorerAPI } from '@/api/dataExplorer'
@@ -1299,10 +1299,8 @@ const handleDownload = async () => {
     const info = downloadInfo.value
     switch (info.kind) {
       case 'url':
-        if (isModel3DGLBSourceNode.value ||
-            [props.previewData?.object?.attributes?.item?.data_type, props.previewData?.metadata?.data_type,
-              props.previewData?.object?.content?.metadata?.data_type].includes('model_3d')) {
-          await downloadModel3DSource(info.url, authenticatedFetch, {
+        if (selectedAction('download')?.requires_current_user === true) {
+          await downloadStorageSource(info.url, authenticatedFetch, {
             origin: window.location.origin, signal: controller.signal, language: locale.value
           })
         } else {

@@ -9,10 +9,17 @@ import (
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/engineaccess"
+	"github.com/addp/manager/internal/models"
 )
 
 type fakeResourceActionSystemClient struct {
 	engines map[uint]*commonModels.Engine
+}
+
+type actionDownloadPlan func(context.Context, string, *uint) (*StorageDataItem, *models.DownloadPlan, error)
+
+func (f actionDownloadPlan) ResolveStorageDownloadPlanByLocator(ctx context.Context, locator string, tenant *uint) (*StorageDataItem, *models.DownloadPlan, error) {
+	return f(ctx, locator, tenant)
 }
 
 func (c fakeResourceActionSystemClient) GetEngine(engineID uint) (*commonModels.Engine, error) {
@@ -42,7 +49,7 @@ func TestResourceActionsStorageNodeSupportsUploadOnly(t *testing.T) {
 				LifecycleState: "active",
 			},
 		},
-	})
+	}, nil)
 
 	got, err := svc.GetResourceActions(t.Context(), "addp://engine/3/path/data/raw?type=prefix&node_id=20", uintPtr(7))
 	if err != nil {
@@ -71,7 +78,12 @@ func TestResourceActionsStorageItemSupportsDownloadOnly(t *testing.T) {
 				LifecycleState: "active",
 			},
 		},
-	})
+	}, actionDownloadPlan(func(_ context.Context, locator string, tenant *uint) (*StorageDataItem, *models.DownloadPlan, error) {
+		if locator != "addp://engine/3/path/data/roads.shp?type=object&item_id=8" || tenant == nil || *tenant != 7 {
+			t.Fatal("lost exact item or tenant")
+		}
+		return &StorageDataItem{}, &models.DownloadPlan{Kind: models.DownloadKindBundle}, nil
+	}))
 
 	got, err := svc.GetResourceActions(t.Context(), "addp://engine/3/path/data/roads.shp?type=object&item_id=8", uintPtr(7))
 	if err != nil {
@@ -100,7 +112,7 @@ func TestResourceActionsDatabaseNodeSupportsImportOnly(t *testing.T) {
 				LifecycleState: "active",
 			},
 		},
-	})
+	}, nil)
 
 	got, err := svc.GetResourceActions(t.Context(), "addp://engine/8/path/public?type=schema&node_id=18", uintPtr(7))
 	if err != nil {
@@ -132,7 +144,7 @@ func TestResourceActionsDatabaseItemSupportsExportOnly(t *testing.T) {
 				LifecycleState: "active",
 			},
 		},
-	})
+	}, nil)
 
 	got, err := svc.GetResourceActions(t.Context(), "addp://engine/8/path/public/roads?type=table&item_id=54", uintPtr(7))
 	if err != nil {
@@ -177,7 +189,7 @@ func TestResourceActionsMongoCollectionSupportsCanonicalExtendedJSONExport(t *te
 		11: {
 			ID: 11, TenantID: uintPtr(7), EngineType: "mongodb", LifecycleState: "active", Capabilities: &raw,
 		},
-	}})
+	}}, nil)
 
 	got, err := svc.GetResourceActions(t.Context(), "addp://engine/11/path/Outdoor/Persons?type=collection&item_id=81", uintPtr(7))
 	if err != nil {
@@ -201,7 +213,7 @@ func TestResourceActionsRespectsInactiveEngine(t *testing.T) {
 				LifecycleState: "disabled",
 			},
 		},
-	})
+	}, nil)
 
 	_, err := svc.GetResourceActions(t.Context(), "addp://engine/3/path/data/raw?type=prefix&node_id=20", nil)
 	if err != ErrEngineAccessDenied {
@@ -220,7 +232,7 @@ func TestResourceActionsRejectsOfflineEngineAsUnavailable(t *testing.T) {
 				ConnectionStatus: commonModels.EngineConnectionOffline,
 			},
 		},
-	})
+	}, nil)
 
 	_, err := svc.GetResourceActions(t.Context(), "addp://engine/3/path/data/raw?type=prefix&node_id=20", uintPtr(7))
 	if !errors.Is(err, engineaccess.ErrUnavailable) {
@@ -244,7 +256,7 @@ func TestResourceActionsUsesStoredCapabilities(t *testing.T) {
 				Capabilities:   &raw,
 			},
 		},
-	})
+	}, nil)
 
 	got, err := svc.GetResourceActions(t.Context(), "addp://engine/9/path/bucket?type=bucket&node_id=1", uintPtr(7))
 	if err != nil {

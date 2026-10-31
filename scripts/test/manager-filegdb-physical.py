@@ -171,7 +171,29 @@ def rule_snapshot(response):
     return result
 
 
-def verify_outages(repository, environment, client, locator, current, snapshot, preview):
+def archive_state(repository, environment, proc_root=Path('/proc')):
+    """Read only the exact Hosted Manager's request-private archive handles."""
+    owned_root(environment)
+    repository = repository.resolve()
+    require(not (repository / '.env').exists(), 'archive observation refuses a developer checkout')
+    pid = (repository / '.dev-pids/manager.pid').read_text().strip()
+    require(re.fullmatch('[1-9][0-9]*', pid), 'invalid owned Manager pid')
+    process = proc_root / pid
+    require((process / 'cwd').resolve(strict=True) == repository, 'Manager belongs to another checkout')
+    require((process / 'exe').resolve(strict=True) == (repository / '.dev-bins/addp-manager').resolve(strict=True),
+            'Manager executable is not owned')
+    archives = 0
+    for descriptor in (process / 'fd').iterdir():
+        try:
+            name = Path(os.readlink(descriptor).removesuffix(' (deleted)')).name
+        except FileNotFoundError:
+            continue  # The request closed this descriptor after the directory read.
+        if name.startswith('addp-manager-filegdb-download-') and name.endswith('.zip'):
+            archives += 1
+    return {'pid': int(pid), 'open_archives': archives}
+
+
+def verify_outages(repository, environment, client, locator, current, snapshot, preview, download):
     API = __import__('importlib').import_module('scripts.utils.online-api')
     before, source, result = current(), snapshot(), []
     rules = rule_snapshot(before)
@@ -180,10 +202,12 @@ def verify_outages(repository, environment, client, locator, current, snapshot, 
     for module in ('manager', 'nfs'):
         with interruption(repository, environment, module) as observation:
             response = preview(client, locator, 'added_points', (500, 502, 503, 504))
+            archive_failure = download(client, (500, 502, 503, 504), 'fault-' + module)
             during = current()
             require(rule_snapshot(during) == rules, 'service outage changed the original Grant')
         API.wait_manager_read_boundary(client, int(environment['ADDP_ONLINE_MANAGER_NFS_ENGINE_ID']), time.monotonic() + 120)
         preview(client, locator, 'added_points', 200, 1)
+        archive_recovered = download(client, 200, 'recovered-' + module)
         recovered = current()
         require(rule_snapshot(recovered) == rules and snapshot() == source, 'recovery changed source or original Grant')
         after = health.request('GET', '/health/ready', (200,)).payload
@@ -193,6 +217,7 @@ def verify_outages(repository, environment, client, locator, current, snapshot, 
                     'Manager recovery build identity differs')
         fields = ('instance_id', 'git_commit', 'build_id', 'source_fingerprint', 'started_at')
         result.append({**observation, 'failed_read': response, 'same_grant': True, 'source_unchanged': True,
+            'failed_archive': archive_failure, 'recovered_archive': archive_recovered,
             'current_before': before, 'current_during': during, 'current_after': recovered,
             'before_identity': {k: prior.get(k) for k in fields}, 'after_identity': {k: after.get(k) for k in fields}})
     return result

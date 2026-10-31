@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlencode
 import uuid
+import zipfile
 
 API = importlib.import_module('scripts.utils.online-api')
 FILES = importlib.import_module('scripts.test.ftp-consumer-flow-online')
@@ -28,7 +30,10 @@ REQUIRED_CHECKS = {'basic_whole_identity', 'ungranted_child_denied', 'initial_ch
     'explicit_deny_overrides_whole_grant', 'deny_release_restores_original_grant',
     'ungranted_account_initial_child_denied', 'ungranted_account_new_child_denied',
     'ungranted_raw_members_denied', 'raw_members_same_grant_and_account_isolation',
-    'raw_members_revoked_and_expired_denied'}
+    'raw_members_revoked_and_expired_denied',
+    'ungranted_directory_download_denied', 'directory_download_same_grant_and_new_child',
+    'directory_download_account_isolation_and_deny', 'directory_download_revoke_expiry',
+    'directory_download_failure_cleanup_and_recovery'}
 
 
 def require(value, message):
@@ -178,6 +183,38 @@ def raw_member(client, locator, engine, member, status):
     return evidence
 
 
+def directory_download(client, locator, source, status, destination):
+    owner = importlib.import_module('scripts.test.manager-internal-artifact-lineage-online')
+    binary = owner.GatewayClient(client.base_url, client.token, client.timeout)
+    statuses = (status,) if isinstance(status, int) else status
+    response = binary.request('GET', '/api/v1/manager/downloads/file?' + urlencode({'locator': locator}), statuses)
+    result = {'status': response.status}
+    if response.status == 200:
+        headers = {k.lower(): v for k, v in response.headers.items()}
+        require(headers.get('content-type') == 'application/zip'
+                and headers.get('content-disposition') == 'attachment; filename=authorization.gdb.zip'
+                and headers.get('content-length') == str(len(response.raw)), 'directory attachment headers differ')
+        with zipfile.ZipFile(io.BytesIO(response.raw)) as archive:
+            names = archive.namelist()
+            require(len(names) == len(set(names)) and set(names) == {NAME + '/', *(NAME + '/' + name for name in source)}
+                    and archive.testzip() is None, 'directory package members, root or CRC differ')
+            hashes = {name.removeprefix(NAME + '/'): hashlib.sha256(archive.read(name)).hexdigest()
+                      for name in names if not name.endswith('/')}
+            require(hashes == source, 'directory package changed or omitted source bytes')
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(response.raw)
+        result.update(size=len(response.raw), sha256=hashlib.sha256(response.raw).hexdigest(),
+                      members=hashes, archive=destination.name)
+    else:
+        require(isinstance(response.payload, dict) and set(response.payload) <= {'error', 'error_code'}
+                and isinstance(response.payload.get('error'), str)
+                and bool(response.payload['error'].strip()) and not response.raw.startswith(b'PK'),
+                'failed directory download leaked an archive or lacked an explicit error')
+        if response.status == 403:
+            require(set(response.payload) == {'error'}, 'source denial was replaced by another protection gate')
+    return result
+
+
 def verify_account_isolation(authorization, client, outsider, outsider_id, locator, grant, children, report):
     """A same-Tenant reader with functional permission must not inherit another User's Grant."""
     physical = importlib.import_module('scripts.test.manager-filegdb-physical')
@@ -211,7 +248,7 @@ def verify_account_isolation(authorization, client, outsider, outsider_id, locat
     return observation
 
 
-def verify_deny(authorization, client, item, locator, grant, report):
+def verify_deny(authorization, client, item, locator, grant, report, download):
     """A Deny blocks a live Grant; release restores that same rule without signing."""
     physical = importlib.import_module('scripts.test.manager-filegdb-physical')
     token = client.token
@@ -238,6 +275,7 @@ def verify_deny(authorization, client, item, locator, grant, report):
     for child in ('initial_points', 'added_points'):
         evidence['denied_reads'].append(preview(client, locator, child, 403))
     evidence['raw_denied'] = raw_member(client, locator, report['engine_id'], report['raw_member'], 403)
+    evidence['directory_denied'] = download(client, 403, 'deny')
     evidence['history_during'] = authorization.history(grant['request_id'])
     require(evidence['history_during'] == history, 'Deny secretly revoked or changed the Grant')
     authorization.release(command)
@@ -247,6 +285,7 @@ def verify_deny(authorization, client, item, locator, grant, report):
     for child, rows in (('initial_points', 2), ('added_points', 1)):
         evidence['restored_reads'].append(preview(client, locator, child, 200, rows))
     evidence['raw_restored'] = raw_member(client, locator, report['engine_id'], report['raw_member'], 200)
+    evidence['directory_restored'] = download(client, 200, 'deny-release')
     evidence['history_after'] = authorization.history(grant['request_id'])
     require(evidence['history_after'] == history and client.token == token,
             'Deny release replaced the Grant or reader credential')
@@ -303,6 +342,18 @@ def run(repository, environment, owner):
         return fixture.physical(action, root)
     def check(name):
         report['checks'].append(name)
+    def download(actor, status, phase):
+        require(re.fullmatch('[a-z-]+', phase), 'invalid directory evidence name')
+        records = report.setdefault('directory_downloads', {})
+        require(phase not in records, 'directory evidence phase repeated')
+        records[phase] = {'result': 'pending'}  # Even an unexpected first response must reach final archive cleanup.
+        result = directory_download(actor, locator, physical('snapshot'), status,
+            artifact / 'directory-downloads' / (phase + '.zip'))
+        if phase != 'fault-manager':
+            result['temporary_archives_after'] = fixture.archive_state(repository, environment)
+            require(result['temporary_archives_after']['open_archives'] == 0, 'request left a temporary archive open')
+        records[phase] = result
+        return result
     try:
         outsider = API.GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN'], 30)
         outsider_id = FILES.exact_user_principal(outsider, tenant, OUTSIDER_PERMISSIONS)
@@ -315,6 +366,11 @@ def run(repository, environment, owner):
         report['identity'] = dict(item_id=item['id'], fingerprint=item['fingerprint'], boundary_hash=facts['boundary_hash'])
         check('basic_whole_identity')
         locator = f"addp://engine/{engine}/path/{NAME}?type=file&item_id={item['id']}"
+        actions = client.request('GET', '/api/v1/manager/resource-actions?' + urlencode({'locator': locator}), (200,)).payload
+        require(actions['actions']['download'].get('supported') is True
+                and actions['actions']['download'].get('requires_current_user') is True,
+                'FileGDB capability does not match actual authenticated directory download')
+        report['directory_download_capability'] = actions['actions']['download']
         snapshot = physical('snapshot')
         member, = sorted(name for name in snapshot if name == 'a00000001.gdbtable')
         report['raw_member'] = {'name': member, 'sha256': snapshot[member], 'item_id': item['id']}
@@ -322,11 +378,14 @@ def run(repository, environment, owner):
         check('ungranted_child_denied')
         report['raw_ungranted'] = raw_member(client, locator, engine, report['raw_member'], 403)
         check('ungranted_raw_members_denied')
+        download(client, 403, 'ungranted')
+        check('ungranted_directory_download_denied')
         first = authorization.grant(item)
         report['first_grant'] = first
         owner.wait_for_meta_scan(client, engine, time.monotonic() + 180, scope={'catalog_paths': [NAME]})
         preview(client, locator, 'initial_points', 200, 2)
         check('initial_child_actual_rows')
+        initial_archive = download(client, 200, 'initial')
         verify_account_isolation(authorization, client, outsider, outsider_id, locator, first,
             [('initial_points', 2)], report)
         check('ungranted_account_initial_child_denied')
@@ -335,6 +394,9 @@ def run(repository, environment, owner):
         authorization.facts(item)
         preview(client, locator, 'added_points', 200, 1)
         check('new_child_same_grant')
+        added_archive = download(client, 200, 'new-child')
+        require(added_archive['members'] != initial_archive['members'], 'new child did not enter the current whole archive')
+        check('directory_download_same_grant_and_new_child')
         verify_account_isolation(authorization, client, outsider, outsider_id, locator, first,
             [('initial_points', 2), ('added_points', 1)], report)
         check('ungranted_account_new_child_denied')
@@ -344,6 +406,9 @@ def run(repository, environment, owner):
             'allowed_before': raw_member(client, locator, engine, report['raw_member'], 200),
             'outsider_denied': raw_member(outsider, locator, engine, report['raw_member'], 403),
             'allowed_after': raw_member(client, locator, engine, report['raw_member'], 200)}
+        download(client, 200, 'account-before')
+        download(outsider, 403, 'outsider')
+        download(client, 200, 'account-after')
         raw_outsider = authorization.current(recipient=outsider_id)
         raw_after, raw_history_after = authorization.current(), authorization.history(first['request_id'])
         require(fixture.rule_snapshot(raw_after) == fixture.rule_snapshot(raw_before)
@@ -353,19 +418,22 @@ def run(repository, environment, owner):
         report['raw_isolation'].update(before=raw_before, after=raw_after, history_before=raw_history,
             history_after=raw_history_after, outsider_after=raw_outsider, grant_id=first['request_id'], same_grant=True)
         check('raw_members_same_grant_and_account_isolation')
-        verify_deny(authorization, client, item, locator, first, report)
+        verify_deny(authorization, client, item, locator, first, report, download)
         check('explicit_deny_overrides_whole_grant')
         check('deny_release_restores_original_grant')
+        check('directory_download_account_isolation_and_deny')
         report['source_snapshot'] = physical('snapshot')
         report['original_current'] = authorization.current()
         # Product lifetime and source-connectivity faults have no authority to revoke a Grant.
         fault = importlib.import_module('scripts.test.manager-filegdb-physical')
         report['outages'] = fault.verify_outages(repository, environment, client, locator,
-            lambda: authorization.current(), lambda: physical('snapshot'), preview)
+            lambda: authorization.current(), lambda: physical('snapshot'), preview, download)
         check('manager_crash_and_source_disconnect_recovered_same_grant')
+        check('directory_download_failure_cleanup_and_recovery')
         authorization.revoke(first['request_id'])
         preview(client, locator, 'added_points', 403)
         report['raw_revoked'] = raw_member(client, locator, engine, report['raw_member'], 403)
+        download(client, 403, 'revoked')
         report['revoked_history'] = authorization.history(first['request_id'])
         require(report['revoked_history']['revocation'] is not None and authorization.current()['total'] == 0,
                 'withdrawal history or active state differs')
@@ -375,15 +443,18 @@ def run(repository, environment, owner):
         report['expiry_grant'] = second
         preview(client, locator, 'added_points', 200, 1)
         report['raw_expiry_before'] = raw_member(client, locator, engine, report['raw_member'], 200)
+        download(client, 200, 'expiry-before')
         while datetime.now(timezone.utc) <= expires:
             time.sleep(.2)
         preview(client, locator, 'added_points', 403)
         report['raw_expired'] = raw_member(client, locator, engine, report['raw_member'], 403)
+        download(client, 403, 'expired')
         expired = authorization.history(second['request_id'])
         report['expired_history'] = expired
         require(expired['revocation'] is None and authorization.current()['total'] == 0, 'expiry was replaced by withdrawal')
         check('natural_expiry_next_read_denied')
         check('raw_members_revoked_and_expired_denied')
+        check('directory_download_revoke_expiry')
         # Preserve the natural-expiry receipt; do not issue an artificial revoke for it.
         authorization.grants.remove(second['request_id'])
         authorization.confirmed.remove(second['request_id'])
@@ -412,6 +483,13 @@ def run(repository, environment, owner):
             report['cleanup'] = 'zero_current_source_rules'
         except Exception as error:
             failures.append({'stage': 'authorization', 'error_type': type(error).__name__})
+        if report.get('directory_downloads'):
+            try:
+                report['directory_archive_cleanup'] = fixture.archive_state(repository, environment)
+                require(report['directory_archive_cleanup']['open_archives'] == 0,
+                        'temporary directory archive survived failure cleanup')
+            except Exception as error:
+                failures.append({'stage': 'directory_archive_cleanup', 'error_type': type(error).__name__})
         try:
             report['source_after'] = physical('snapshot')
             if 'source_snapshot' in report:

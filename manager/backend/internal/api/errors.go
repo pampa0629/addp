@@ -60,3 +60,7 @@ func protectionRequired(c *gin.Context) {
 func invalidDownloadBundle(c *gin.Context) {
 	c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, manageri18n.MsgDownloadBundleInvalid), "error_code": "download_bundle_invalid"})
 }
+
+func downloadSourceChanged(c *gin.Context) {
+	c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, manageri18n.MsgDownloadSourceChanged), "error_code": "download_source_changed"})
+}

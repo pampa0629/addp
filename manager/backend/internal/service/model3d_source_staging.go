@@ -122,7 +122,7 @@ func (e *ManagerModel3DGLBExecutor) withStagedModel3DSource(
 		object := prefix + "/" + file.RelativePath
 		// Record before PutObject: an error response does not prove no object was written.
 		attempted = append(attempted, object)
-		limited := &io.LimitedReader{R: &model3DStagingContextReader{ctx: ctx, reader: reader}, N: file.SizeBytes + 1}
+		limited := &io.LimitedReader{R: &sourceContextReader{ctx: ctx, reader: reader}, N: file.SizeBytes + 1}
 		writesSettled = false // A panic or unknown PUT response cannot settle the producer.
 		info, putErr := store.PutObject(ctx, bucket, object, limited, file.SizeBytes, minio.PutObjectOptions{ContentType: "application/octet-stream"})
 		writesSettled = putErr == nil
@@ -189,18 +189,6 @@ func validModel3DStagingPath(name string) bool {
 		!strings.HasPrefix(name, "/") && name != ".." && !strings.HasPrefix(name, "../") && path.Clean(name) == name
 }
 
-type model3DStagingContextReader struct {
-	ctx    context.Context
-	reader io.Reader
-}
-
-func (r *model3DStagingContextReader) Read(p []byte) (int, error) {
-	if err := r.ctx.Err(); err != nil {
-		return 0, err
-	}
-	return r.reader.Read(p)
-}
-
 // bufferExchangeModelStagingEntrypoint accepts the caller's already-authorized main-file
 // stream, not a locator or authorization proof. The shared parser bounds input.
 // Only these parsed bytes may subsequently be staged; reopening the source would
@@ -224,7 +212,7 @@ func bufferExchangeModelStagingEntrypoint(ctx context.Context, main io.Reader, f
 		return nil, fmt.Errorf("resolve model input parser: %w", err)
 	}
 	var buffered bytes.Buffer
-	facts, err := provider.DescribeModel3D(ctx, io.TeeReader(&model3DStagingContextReader{ctx: ctx, reader: main}, &buffered), nil)
+	facts, err := provider.DescribeModel3D(ctx, io.TeeReader(&sourceContextReader{ctx: ctx, reader: main}, &buffered), nil)
 	if err != nil {
 		return nil, fmt.Errorf("inspect model input references: %w", err)
 	}

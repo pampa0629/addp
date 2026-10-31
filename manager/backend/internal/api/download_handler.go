@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,7 +30,7 @@ func NewDownloadHandler(metadataService *service.MetadataService, protectionStor
 // @Summary 下载存储数据项 | Download storage item
 // @Description 按 ResourceLocator 下载存储型 engine 的 item；单文件直接流式下载，多文件 ZIP 以已确认 refs 的共同父目录为根，保留相对目录和原始名称，不摊平或改名；非法或重复组成拒绝 | Download a storage engine item by ResourceLocator; multi-ref ZIP preserves paths relative to the confirmed refs common parent without flattening or renaming; invalid or duplicate compositions are rejected
 // @Description 模型源包仅接受当前普通用户 Bearer；在每个源读取前，以完整组成及同一 Engine 版本核验现行源许可。资源票据或终态执行授权不能代替；原有下载权限与保护检查仍须满足。 | Model source packages require the current User Bearer and current source permission bound to the complete composition and same Engine version before each read. Resource tickets or terminal execution authorizations cannot replace it; download permissions and protection checks still apply.
-// @Description NFS FileGDB 内容须核验当前普通用户的整项授权；本接口尚不提供整目录 ZIP 打包。 | NFS FileGDB content requires the current User's whole DataItem authorization; whole-directory ZIP packaging is not provided.
+// @Description NFS FileGDB 以当前普通用户核验整项授权，枚举根范围并打成 ZIP，保留 .gdb 顶层目录；交付前检测到成员、大小或修改时间变化时返回409，不交付半成品。 | NFS FileGDB requires the current User's whole DataItem authorization and packages the root scope into ZIP preserving its .gdb directory; observed member, size or modification-time changes before delivery return 409 without a partial archive.
 // @Tags Manager
 // @Produce octet-stream
 // @Param locator query string true "资源定位符 URI | Resource locator URI"
@@ -37,6 +38,7 @@ func NewDownloadHandler(metadataService *service.MetadataService, protectionStor
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "需要当前用户凭据 | Current User credential required"
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
+// @Failure 409 {object} map[string]interface{} "源数据变化，请稳定后重试 | Source changed; retry after it is stable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @Failure 503 {object} map[string]interface{} "引擎不可用 | Engine unavailable"
 // @x-addp-auth-mode "resource_ticket"
@@ -85,6 +87,10 @@ func (h *DownloadHandler) DownloadFile(c *gin.Context) {
 	principal, exists := commonauth.PrincipalFromGin(c)
 	reader, err := h.metadataService.OpenStorageDownloadPlan(c.Request.Context(), target, plan, tenantID, commonauth.CanonicalBearerToken(c.GetHeader("Authorization")), exists && principal.Type == "user")
 	if err != nil {
+		if errors.Is(err, service.ErrDownloadSourceChanged) {
+			downloadSourceChanged(c)
+			return
+		}
 		if writePreviewAuthorizationError(c, err) {
 			return
 		}
@@ -111,9 +117,12 @@ func (h *DownloadHandler) DownloadFile(c *gin.Context) {
 	}
 	c.Header("Content-Type", contentType)
 	c.Header("Content-Disposition", attachmentContentDisposition(plan.FileName))
+	if prepared, ok := reader.(interface{ Size() int64 }); ok {
+		c.Header("Content-Length", strconv.FormatInt(prepared.Size(), 10))
+	}
 	c.Status(http.StatusOK)
 
-	if _, err := io.Copy(c.Writer, reader); err != nil {
+	if _, err := io.Copy(c.Writer, reader); err != nil && !c.Writer.Written() {
 		commonAPI.InternalServerError(c, err.Error())
 	}
 }
