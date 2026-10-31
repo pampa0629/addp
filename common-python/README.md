@@ -82,14 +82,26 @@ results = await manager.search("城市", page_size=10)
 
 ## 客户端列表
 
-- `BaseClient` - 基础 HTTP 客户端
-- `SystemClient` - System 模块 (引擎管理)
-- `MetaClient` - Meta 模块 (元数据搜索)
-- `DevelopClient` - Develop 模块 (SQL、工作流、算子)
-- `ManagerClient` - Manager 模块 (数据管理、预览)
-- `ServiceConsumerClient` - Service Consumer Catalog、Descriptor 和发布查询服务执行
-- `CopilotClient` - Copilot 模块（结构化生成）
-- `TransferClient` - Transfer 未启动任务定义及只读配置预检
+公开客户端以 [`addp_common.client` 导出入口](addp_common/client/__init__.py)为准；下表链接到对应实现。令牌来源、Runtime 注册助手等配套入口见[模块目录导航](CLAUDE.md#重要目录)。
+
+| 客户端 | 职责与访问边界 |
+| --- | --- |
+| [`BaseClient`](addp_common/client/base.py) | 基础 HTTP 客户端。 |
+| [`SystemClient`](addp_common/client/system.py) | System 模块（引擎管理）。 |
+| [`MetaClient`](addp_common/client/meta.py) | Meta 模块（元数据搜索）。 |
+| [`DevelopClient`](addp_common/client/develop.py) | Develop 模块（SQL、工作流、算子）。 |
+| [`ManagerClient`](addp_common/client/manager.py) | Manager 模块（数据管理、预览）。 |
+| [`ServiceConsumerClient`](addp_common/client/service.py) | Service Consumer Catalog、Descriptor 和发布查询服务执行，见下文 [Consumer SDK](#service-consumer-sdk)。 |
+| [`GraphClient`](addp_common/client/graph.py) | 图谱目录、结构描述、实体搜索、邻居与子图；访问权限、显式公开策略和保护边界见 [Graph 契约](../graph/CLAUDE.md#iam-permission-所有权)。 |
+| [`OntologyClient`](addp_common/client/ontology.py) | 已激活原生定义的类目录与上下文、平台能力定义读取；不读取业务实例。身份与版本规则见[原生定义消费](../docs/spec/addp本体定义与发布规范.md#五原生定义消费与假设性试算)和[平台能力消费](../docs/spec/addp本体定义与发布规范.md#八平台能力与图依赖消费)。 |
+| [`InferenceClient`](addp_common/client/inference.py) | 经 System 发现 Runtime，调用 Profile 解析、Chat、Embedding 和 Rerank 数据面；使用受信模块的 Service Token 与显式 Tenant Context，见[数据面身份](<../docs/spec/addp AI推理接口规范.md#管理权限与数据面身份>)。 |
+| [`CopilotClient`](addp_common/client/copilot.py) | Copilot 模块（结构化生成）。 |
+| [`TransferClient`](addp_common/client/transfer.py) | Transfer 未启动任务定义及只读配置预检，边界见下文。 |
+| [`ModuleRegistryClient`](addp_common/client/module_registry.py) | 模块实例注册、心跳、注销与本地登记状态；使用 Platform Service 注册自身模块，见[登记身份](../docs/spec/api/健康与平台控制面.md#平台节点台账与模块实例关联)。 |
+
+`OntologyClient` 定义消费要求 Tenant User 或精确对应 Tool 的 Delegated Token 及 `ontology.semantic.read`；类上下文必须沿目录返回的 `revision/generation/activation_version` 读取。它与 Graph 知识服务的职责、权限分别核对。Inference 的 Provider 凭据由 [Inference owner](<../docs/spec/addp AI推理接口规范.md#四凭据>)管理，不由调用 SDK 的模块保存或直接使用。
+
+通用访问身份见[认证方式](#认证方式)，CLI／Agent Tool 委托约束见[开发规则](CLAUDE.md#开发规则)。客户端导出或静态契约核对不证明当前调用获权、真实服务可达或模型可用；回归、产品 E2E 与真实跨模块验收的分工及未覆盖项统一见[开发与验证](#开发与验证)。
 
 `TransferClient.check_task_config()` 与 `create_task()` 接收相同参数并提交相同的完整创建请求（无计划、未启用、不自动扫描）。检查方法只调用 `/api/v1/transfer/task-config-checks`，保留完整 owner 报告的三态、诊断、事实摘要及未检查项，不自动创建、重试或执行任务。HTTP 200 不等于 `supported`，`supported` 也不证明全部值可写入。正式 `transfer.task.config.check` Tool 已接入 ToolExecutor；它与创建 Tool 共用 Manifest 根 `$defs` 中唯一输入定义，SDK 共用完整请求构造。委托 audience 唯一为 `transfer`、Scope 唯一为 Tool 名，System 签发与 Transfer 路由均要求 `transfer.task.create`、`meta.catalog.read`、`system.engine.read` 三项权限交集。CLI 经同一 ToolExecutor 使用，不能绕过正式委托链。当前 Transfer Skill/平台定义尚未装配该 Tool，Agent 的最终复核仍不能冒充正式预检。
 
