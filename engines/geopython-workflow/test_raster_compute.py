@@ -14964,7 +14964,12 @@ def test_sieve_area_crs_linear_units_non_square_and_unrounded_cell_product(tmp_p
     path = create_raster(tmp_path/'units.tif', values, (100, step[0], 0, 200, 0, -step[1]), 'EPSG:3857')
     ds = gdal.Open(str(path), gdal.GA_Update); reference = osr.SpatialReference(ds.GetProjection()); reference.SetLinearUnits(unit, factor); ds.SetSpatialRef(reference); ds = None
     ds = gdal.Open(str(path)); actual_factor = osr.SpatialReference(ds.GetProjection()).GetLinearUnits(); ds = None
-    assert actual_factor == (osr.SpatialReference('EPSG:2227').GetLinearUnits() if unit == 'US survey foot' else factor)
+    expected_factor = factor
+    if unit == 'US survey foot':
+        survey_reference = osr.SpatialReference()
+        assert survey_reference.ImportFromEPSG(2227) == 0
+        expected_factor = survey_reference.GetLinearUnits()
+    assert actual_factor == expected_factor
     with localcontext() as context:
         context.prec = 2000
         exact = Decimal.from_float(step[0]) * Decimal.from_float(step[1]) * Decimal.from_float(actual_factor) ** 2
@@ -15073,7 +15078,9 @@ def test_sieve_area_cross_block_cog_complete_pixels_masks_raw_band_grid_and_clea
         assert artifact['size_bytes'] == target.stat().st_size > 0 and validate_cog(raster_load(source_plan(target)))['valid']
         ds = gdal.Open(str(target)); band = ds.GetRasterBand(1)
         np.testing.assert_array_equal(band.ReadAsArray(), expected); np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0, valid)
-        assert ds.GetGeoTransform() == (100,2,0,200,0,-3) and osr.SpatialReference(ds.GetProjection()).IsSame(osr.SpatialReference('EPSG:3857'))
+        expected_reference = osr.SpatialReference()
+        assert expected_reference.ImportFromEPSG(3857) == 0
+        assert ds.GetGeoTransform() == (100,2,0,200,0,-3) and osr.SpatialReference(ds.GetProjection()).IsSame(expected_reference)
         assert band.DataType == gdal.GDT_Float64 and math.isnan(band.GetNoDataValue()) and band.GetScale() is None and band.GetOffset() is None and band.GetColorTable() is None
         assert band.GetOverviewCount() > 0; band = ds = None
     assert len(reads) == 515*2 and path.read_bytes() == before
