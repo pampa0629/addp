@@ -17,10 +17,129 @@ ID = str(uuid.uuid4())
 
 
 class NativeCleanupRunnerTest(unittest.TestCase):
+    def test_cdc_readiness_uses_engine_user_reads_and_same_scan_deadline(self):
+        for case in ('transfer-engine', 'transfer-capture-unknown'):
+            calls, engines = [], iter((9, 10))
+            workflow = SimpleNamespace(register=lambda _: next(engines))
+            controls = SimpleNamespace(run_id='native-1', descriptor=lambda _: {})
+            def scan(user, engine, deadline): calls.append(('scan', engine, deadline))
+            def ready(owner, pg, kafka, deadline, report, checkpoint):
+                self.assertIs(owner, workflow)
+                calls.append(('ready', pg, kafka, deadline))
+            with self.subTest(case=case), patch.object(M.time, 'monotonic', return_value=20), \
+                    patch.object(M.MANAGER, 'wait_for_meta_scan', side_effect=scan), \
+                    patch.object(M, 'wait_transfer_engines', side_effect=ready, create=True), \
+                    patch.object(M, 'prepare_task', side_effect=S.SuiteError('stop before effects')):
+                with self.assertRaises(S.SuiteError):
+                    M.run_transfer(object(), workflow, controls, case, {'checks': []}, lambda: None)
+                self.assertEqual(calls, [('scan', 9, 200), ('ready', 9, 10, 200)])
+
+    def test_engine_readiness_waits_for_both_current_observations_without_mutation(self):
+        reads, report = [], {}
+        class Owner:
+            def engine(self, engine):
+                reads.append(engine)
+                return dict(engine_type='postgresql' if engine == 9 else 'kafka', lifecycle_state='active',
+                            connection_status='unknown' if len(reads) <= 2 else 'online',
+                            connection_info={'password': 'private'}, error='secret')
+        with patch.object(M.time, 'monotonic', side_effect=[1, 2]), patch.object(M.time, 'sleep') as sleep:
+            M.wait_transfer_engines(Owner(), 9, 10, 180, report, lambda: self.fail('no failure diagnostics on success'))
+        self.assertEqual(reads, [9, 10, 9, 10])
+        sleep.assert_called_once_with(1)
+        self.assertEqual(report, {})
+
+    def test_engine_readiness_deadline_and_invalid_state_fail_closed_with_safe_last_observation(self):
+        for state in ('unknown', 'offline', 'checking', 'secret status'):
+            report, reads = {}, []
+            def engine(identity):
+                reads.append(identity)
+                return dict(engine_type='postgresql' if identity == 9 else 'kafka', lifecycle_state='active',
+                            connection_status=state, password='secret password')
+            with self.subTest(state=state), patch.object(M.time, 'monotonic', side_effect=[1, 180]), \
+                    patch.object(M.time, 'sleep') as sleep:
+                with self.assertRaises(S.SuiteError):
+                    M.wait_transfer_engines(SimpleNamespace(engine=engine), 9, 10, 180, report, lambda: None)
+                self.assertEqual(reads, [9, 10])
+                self.assertEqual([r['connection_status'] for r in report['engine_readiness_diagnostic']['engines']],
+                                 [state if state != 'secret status' else 'unrecognized'] * 2)
+                self.assertNotIn('secret', json.dumps(report))
+                sleep.assert_called_once_with(1)
+        report = {}
+        with patch.object(M.time, 'monotonic', return_value=180):
+            with self.assertRaises(S.SuiteError):
+                M.wait_transfer_engines(SimpleNamespace(engine=lambda _: self.fail('expired deadline must not read')),
+                                        9, 10, 180, report, lambda: None)
+        self.assertEqual([r['observation'] for r in report['engine_readiness_diagnostic']['engines']],
+                         ['not_observed', 'not_observed'])
+
+    def test_engine_readiness_rejects_changed_type_lifecycle_and_read_errors(self):
+        for bad in ('type', 'lifecycle', 'read'):
+            calls, report = [], {}
+            def engine(identity):
+                calls.append(identity)
+                if bad == 'read': raise S.SuiteError('GET /private returned HTTP 403 (secret)')
+                return dict(engine_type='minio' if bad == 'type' else 'postgresql',
+                            lifecycle_state='deleting' if bad == 'lifecycle' else 'active', connection_status='online')
+            with self.subTest(bad=bad), patch.object(M.time, 'monotonic', return_value=1), \
+                    patch.object(M.time, 'sleep') as sleep:
+                with self.assertRaises(S.SuiteError):
+                    M.wait_transfer_engines(SimpleNamespace(engine=engine), 9, 10, 180, report, lambda: None)
+                self.assertEqual(calls, [9])
+                sleep.assert_not_called()
+                self.assertNotIn('secret', json.dumps(report))
+
+    def test_task_create_400_records_bound_closed_reason_without_retry_or_raw_error(self):
+        cases = [
+            ('invalid transfer task config: resolve database CDC source engine: engine 9 is unavailable', 'source_engine_unavailable'),
+            ('invalid transfer task config: resolve database CDC target engine: engine 9 is unavailable', 'target_engine_unavailable'),
+            ('invalid transfer task config: resolve database CDC source engine: private token/SQL', 'source_engine_resolution_failed'),
+            ('invalid transfer task config: resolve database CDC target engine: private token/SQL', 'target_engine_resolution_failed'),
+            ('invalid transfer task config: database CDC target engine "postgresql" does not declare atomic monotonic upsert/delete partitioned_table_change_apply', 'target_apply_unsupported'),
+            ('invalid transfer task config: continuous_kafka=private; database_cdc=private', 'configuration_rejected'),
+            ('private connection password', 'unrecognized'),
+            ({'nested': 'private'}, 'unrecognized'),
+        ]
+        for error, reason in cases:
+            calls, report = [], {'tasks': [], 'executions': []}
+            class User:
+                def request(self, method, path, expected, body):
+                    calls.append((method, path, expected))
+                    return SimpleNamespace(status=400, payload={'error': error, 'error_code': 'private', 'token': 'secret'})
+            with self.subTest(reason=reason), self.assertRaises(S.SuiteError) as caught:
+                M.prepare_task(User(), object(), 9, 10, 'cdc', 'native-1', report, lambda: None)
+            self.assertEqual(M.failure_diagnostics(caught.exception), {'failure_kind': 'http_unexpected_status', 'failure_http_status': 400})
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0], ('POST', M.TASKS, (201, 400)))
+            self.assertEqual(report['tasks'], [])
+            self.assertEqual(report['task_create_diagnostic'], dict(task_kind='cdc', source_engine_id=9,
+                target_engine_id=9, http_status=400, reason=reason))
+            self.assertNotIn('private', json.dumps(report)); self.assertNotIn('secret', json.dumps(report))
+
+    def test_readiness_failure_prevents_cdc_creation_and_does_not_restart_scan_budget(self):
+        for case in ('transfer-engine', 'transfer-capture-unknown'):
+            report, engines = {}, iter((9, 10))
+            workflow = SimpleNamespace(register=lambda _: next(engines), engine=lambda _: self.fail('scan consumed budget'))
+            controls = SimpleNamespace(run_id='native-1', descriptor=lambda _: {})
+            with self.subTest(case=case), patch.object(M.time, 'monotonic', side_effect=[20, 200]), \
+                    patch.object(M.MANAGER, 'wait_for_meta_scan') as scan, patch.object(M, 'prepare_task') as prepare:
+                with self.assertRaises(S.SuiteError):
+                    M.run_transfer(object(), workflow, controls, case, report, lambda: None)
+                self.assertEqual(scan.call_args.args[2], 200)
+                self.assertEqual(report['stage'], 'transfer_engine_readiness')
+                prepare.assert_not_called()
+
+    def test_non_cdc_create_rejection_keeps_exact_bindings_and_never_claims_cdc_reason(self):
+        diagnostic = M.task_create_rejection({'error': 'invalid transfer task config: resolve database CDC source engine: engine 10 is unavailable'},
+                                             'kafka', 9, 10)
+        self.assertEqual(diagnostic, dict(task_kind='kafka', source_engine_id=10, target_engine_id=9,
+                                         http_status=400, reason='unrecognized'))
+
     def test_cdc_cases_use_task_execution_without_manager_grant_preparation(self):
         for case in ('transfer-engine', 'transfer-capture-unknown'):
             engines = iter((9, 10))
-            workflow = SimpleNamespace(register=lambda descriptor: next(engines))
+            workflow = SimpleNamespace(register=lambda descriptor: next(engines),
+                engine=lambda identity: dict(engine_type='postgresql' if identity == 9 else 'kafka',
+                                             lifecycle_state='active', connection_status='online'))
             controls = SimpleNamespace(tenant=2, run_id='native-1', descriptor=lambda kind: {})
             user, report = object(), {'checks': []}
             with self.subTest(case=case), patch.object(M.MANAGER, 'wait_for_meta_scan'), \
@@ -253,7 +372,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     elif method == 'POST' and path.endswith('/pause'): effect('pause'); value = {}
                     elif method == 'GET' and path == M.TASKS + '/7': value = {'desired_state': 'paused', 'status': 'idle'}
                     else: raise AssertionError('unexpected preparation request')
-                    return SimpleNamespace(payload=value)
+                    return SimpleNamespace(status=201 if path == M.TASKS else 200, payload=value)
             class Controls:
                 def produce_initial(self): effect('initial')
                 def produce_invalid(self): effect('invalid')
@@ -490,6 +609,8 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     def target_rows(self, kind):
                         if mutation == 'business_rows_changed': raise S.SuiteError('target rows changed')
                 workflow = SimpleNamespace(user=User(), register=lambda descriptor: 9 if descriptor['kind'] == 'pg' else 10,
+                    engine=lambda identity: dict(engine_type='postgresql' if identity == 9 else 'kafka',
+                                                 lifecycle_state='active', connection_status='online'),
                     begin=lambda engine: calls.append(('ENGINE_BEGIN', engine)), settled=lambda *args, **kwargs: {})
                 def prepare(user, controls, pg, kafka, kind, run_id, report, checkpoint):
                     task = 7 if kind == 'cdc' else 8

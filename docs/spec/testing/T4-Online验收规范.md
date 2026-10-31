@@ -135,6 +135,8 @@ Manager 通过普通 User 的正式源 Grant 和 Model3D Runtime 生成真实 GL
 
 `transfer-engine` 与 `transfer-capture-unknown` 沿 Transfer 当前 Tenant／任务功能权限执行，不准备没有对应消费链的源 Grant，也不调用 Manager 用途的同步源规则检查。实际 CDC 读取由原正式 runtime 与独立原生目标行探针证明；本专项不验证 Transfer 的当前 Grant／Deny、源撤权或连续运行中收权闭环。Manager 的源 Grant 准备及其同步检查保持原用途。
 
+两个 CDC case 的 Meta 源扫描与 Engine 就绪核验共用原 180 秒绝对截止时间。扫描成功后，由原 Engine User 仅 GET 本轮自有 PG／Kafka，要求准确 Tenant／ID／类型、active 且 online 后才创建任务；不触发连接测试、不增加权限、等待预算或创建重试。就绪失败只归档最后一次读取的身份与闭集状态，创建 HTTP 400 只归档准确源／目标绑定和闭集拒绝类别；原始错误、响应、连接配置及凭据不归档。失败诊断不得出现在成功报告中；任务启动仍沿原 120 秒预算，全部 case checks 不变。
+
 四个一次性代理在应用启动前固定指向本轮 Infra，只对准确关联操作发送一次真实变更后丢弃回包，并阻止重发。控制端点仅容器 loopback；Kafka 内部 advertised listener 经过代理，外部 listener 供独立只读原生探针直达。含凭据的 manifest、描述符、代理配置与展开 Compose 均保持私有 0600，不归档。退出先停产品/Worker/Runtime，再销毁代理、业务夹具和 Infra；恢复、销毁或零残留失败均导致 Job 失败。
 
 标准确定性入口为 `make test-cleanup-native-online-runner`，纳入现有 Online/平台登记链。该批代码与确定性测试不证明 Hosted 实际通过；真实旧 writer 晚写、原生写图回包与正向 reopen 不在六个 case 中，报告必须保持相应 `not_run` 边界。

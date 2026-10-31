@@ -722,3 +722,17 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 最终回归已先红后绿：原代码在两个 CDC case 触发无用途 Grant 调用，三个 Transfer 入口因缺少不应使用的源授权办理员 client 而在进入执行前失败，共五个反例；日志 `/tmp/addp-cdc-purpose-final-red.log`。最终标准 `make test-execution-online-ci-runner` 退出 0，native 81 项、共享 157 项、Node／Shell 语法及实际 CI 登记检查通过，日志 `/tmp/addp-cdc-purpose-final-gates.log`；`make check-node-runtime` 与本轮四文件 `git diff --check` 通过。Manager 普通／late-writer 入口仍必须使用原独立授权办理员，原 Grant 身份约束与完整故障矩阵未改。CI 会话已只读确认原 Make／workflow／登记覆盖最终四文件，无需变更。该批仅 runner／测试／验收用途文档，不运行产品 Go、PG 或浏览器门禁；新源码 Hosted 未运行，不能以这些确定性结果升级两 CDC case 的真实验收。
 
 最终实现提交 `b8da4d0d8913b0e6b305697b1d2bba72375c2cf7` 的独立 [Execution online CI runner Job 124545082130](https://github.com/pampa0629/addp/actions/runs/41203934361/job/124545082130) 已实际成功，push／attempt 1，北京时间 2026-10-31 21:28:55—21:30:34。原始日志 235 行为 `scripts/*` 真实选中，250—252 行执行 Node 检查与 canonical Make，258—260 行 native 81 项 `OK`（24.888 秒），264—266 行共享 157 项 `OK`（41.869 秒），300 行登记一致，324 行 `selected:true`；只计本次独立专项实际通过。证据 `/tmp/addp-cdc-purpose-ci-20261031/{proof,job-final,local-proof}.json`、`job.log`，原始日志 SHA-256 为 `cd3fd1e981006b844dc98863c6560b8b6aaca59f02bc114b9d05f86f5755a68f`。本轮读取核验用途按最终四文件实现及这些确定性证据收口；两个 CDC case 的真实 Hosted 尚未运行，后续建议先单独确认 `transfer-engine` 的 CDC 创建／停止／清理基线，再验 `transfer-capture-unknown` 的回包丢失链路。新的 Hosted、环境切换与权限边界变化继续单独确认。
+
+### 8.21 首次 transfer-engine Hosted：创建拒绝与准备就绪缺口
+
+用户单独批准一次 `transfer-engine`，原身份权限、操作范围、七项断言及等待预算不变。一次派发、一次实际 [Hosted 41206409015 / Job 124552261795](https://github.com/pampa0629/addp/actions/runs/41206409015/job/124552261795)，固定源码 `db624d32e5fe76faaae342471acff5b834fcf4a5`，attempt 1，北京时间 2026-10-31 21:57:49—22:13:13，结果 failure。相对已通过的 b8da4d0d8，相关产品执行链、native runner／身份／契约与标准入口未变；已提交的无关源码增量已只读核对，共享未提交改动未进入运行。
+
+本轮完成身份准备、两个 Engine 注册与 PG Meta 扫描，但 `transfer_task_create` 的正式 POST 返回 HTTP 400；tasks、executions、requests、checks 均为空，业务验收 0/7。没有 CDC 创建、实际停止或 Engine 清理基线通过的证据。五个公开文件齐备，固定实际源码的 validator 独立重放后确认失败报告，未检出已知凭据模式；control_cleanup、control_recovery、cleanup 分别 passed，infra_cleanup=zero_residuals。证据位于 `/tmp/addp-transfer-engine-hosted-first-20261031/`，原始日志 4622—4627 行记录身份创建及安全失败报告，日志 SHA-256 为 `956b68ce5229beeb484789cd8af1a428970b436b2cf7eed6a24cbc3671661705`。清理通过不能替代业务通过，本轮 Hosted 授权已使用。
+
+固定实际源码核对发现可确定的准备缺口：System 人工注册后连接状态默认 unknown，由现有 30 秒健康探测刷新；Transfer 的数据库 CDC 创建同步解析源／目标，只有 active＋online 才可用，失败归为无效任务配置并返回 400。原 runner 将注册成功、Meta 扫描成功当成了足够前提，未核验 System 的可用观察。本轮没有归档实际 Engine 连接状态或创建拒绝原因，故不能据此认定该缺口是此次 400 的唯一根因，更不能改写此前启动失败原因。
+
+先按 T4 规范补齐两个 CDC case 的准备前提：保留原 Meta 扫描，并与其共用原 180 秒绝对 deadline；扫描后使用原 Engine User 的 engine.read 核对本轮 PG／Kafka 的准确身份、类型、active／online，再允许一次原任务创建。只轮询既有只读观察，不触发连接检测、不重试创建、不增加权限或预算；Kafka DLQ 独立 case 的准备顺序不变。失败仅保存最后一次有界 Engine 状态投影，另为创建 HTTP 400 增加绑定当前配置的闭集拒绝类别，未知原因仍记 unrecognized，不复制服务端原文。成功报告拒绝这两类失败字段，原运行等待与七项检查不变。
+
+本批影响 runner／报告消费者／隐私反例与现有验收规范，验证入口为 `make test-execution-online-ci-runner`，现有独立 Linux Job 与路径登记应覆盖全部输入；实施时核对覆盖，不修改无关 workflow 或产品 API。新增反例须先复现旧路径不检查就绪、预算未共用及创建缺少安全原因，再验证修正。产品 Go、PostgreSQL、浏览器代码不改；新源码的真实 Hosted 尚未运行，需另行确认。
+
+本批先红后绿已完成：旧路径反例见 `/tmp/addp-native-engine-readiness-red.log`，新增用例核验同一 deadline、超时禁止创建、两 Engine 当前观察、生命周期／类型／读取失败、闭集拒绝与隐私；原完整故障矩阵及权限契约继续通过。最终 `make test-execution-online-ci-runner` 退出 0，native 88 项（77.117 秒）、共享编排／报告 158 项（77.559 秒）、Node／Shell 语法及实际 CI 登记检查通过；`make check-node-runtime` 和本轮六文件 `git diff --check` 通过。日志 `/tmp/addp-native-engine-readiness-gates.log`。CI 会话只读确认 canonical Make、独立 Job 与路径登记已覆盖，无需修改编排。该结果为确定性 T0／T1，不是修正版 Hosted；实际 HTTP 400 的唯一原因、CDC 创建／实际停止／Engine 清理基线仍缺真实运行证据。

@@ -201,13 +201,65 @@ def wait_transfer_runtime(user, task_id, execution_id, report, checkpoint):
         raise
 
 
+def wait_transfer_engines(workflow, pg, kafka, deadline, report, checkpoint):
+    """Observe registration readiness inside the existing source-scan budget."""
+    engines = [(pg, 'postgresql'), (kafka, 'kafka')]
+    last = [dict(engine_id=identity, engine_type=kind, observation='not_observed') for identity, kind in engines]
+    try:
+        while time.monotonic() < deadline:
+            for i, (identity, kind) in enumerate(engines):
+                value = workflow.engine(identity)  # Original Engine User checks exact owned ID and Tenant.
+                require(type(value) is dict and value.get('engine_type') == kind, 'fixture Engine type changed')
+                def state(field, allowed):
+                    candidate = value.get(field)
+                    return candidate if type(candidate) is str and candidate in allowed else 'unrecognized'
+                last[i] = dict(engine_id=identity, engine_type=kind, observation='observed',
+                    lifecycle_state=state('lifecycle_state', {'active', 'deleting', 'deleted'}),
+                    connection_status=state('connection_status', {'unknown', 'checking', 'offline', 'online'}))
+                require(last[i]['lifecycle_state'] == 'active', 'fixture Engine is no longer active')
+            if all(row['connection_status'] == 'online' for row in last):
+                return
+            time.sleep(1)
+        raise S.SuiteError('native Transfer Engines were not ready before the source preparation deadline')
+    except Exception:
+        report['engine_readiness_diagnostic'] = {'engines': last}
+        checkpoint()
+        raise
+
+
+def task_create_rejection(payload, kind, pg, kafka):
+    """Classify known validation branches without retaining server error prose."""
+    source, target = (pg if kind == 'cdc' else kafka), pg
+    error = payload.get('error') if type(payload) is dict else None
+    reason = 'unrecognized'
+    if kind == 'cdc' and type(error) is str:
+        prefix = 'invalid transfer task config: '
+        for endpoint, identity in (('source', source), ('target', target)):
+            branch = prefix + f'resolve database CDC {endpoint} engine: '
+            if error == branch + f'engine {identity} is unavailable':
+                reason = endpoint + '_engine_unavailable'
+            elif error.startswith(branch):
+                reason = endpoint + '_engine_resolution_failed'
+        if error == prefix + 'database CDC target engine "postgresql" does not declare atomic monotonic upsert/delete partitioned_table_change_apply':
+            reason = 'target_apply_unsupported'
+        elif error.startswith(prefix + 'continuous_kafka=') and '; database_cdc=' in error:
+            reason = 'configuration_rejected'
+    return dict(task_kind=kind, source_engine_id=source, target_engine_id=target, http_status=400, reason=reason)
+
+
 def prepare_task(user, controls, pg, kafka, kind, run_id, report, checkpoint):
     report['stage'] = 'transfer_task_create'; checkpoint()
     config = TRANSFER.task_config(kind, pg, kafka)
     if kind == 'kafka': config['runtime']['record_failure']['mode'] = 'dead_letter'
     name = 'native-' + run_id + '-' + kind
-    created = user.request('POST', TASKS, (201,), {'name': name, 'task_type': 'sync',
-        'enabled': False, 'auto_scan_metadata': True, 'batch_size': 100, 'config': config}).payload
+    response = user.request('POST', TASKS, (201, 400), {'name': name, 'task_type': 'sync',
+        'enabled': False, 'auto_scan_metadata': True, 'batch_size': 100, 'config': config})
+    if response.status == 400:
+        report['task_create_diagnostic'] = task_create_rejection(response.payload, kind, pg, kafka)
+        checkpoint()
+        raise S.SuiteError(f'POST {TASKS} returned HTTP 400 (unknown)')
+    require(response.status == 201, 'native Transfer task creation did not succeed')
+    created = response.payload
     task_id = S.positive(created['id'])
     report['tasks'].append(task_id); checkpoint()
     report['stage'] = 'transfer_task_start'; checkpoint()
@@ -640,7 +692,11 @@ def run_transfer(user, workflow, controls, case, report, checkpoint):
     pg = workflow.register(controls.descriptor('pg'))
     kafka = workflow.register(controls.descriptor('kafka'))
     report['stage'] = 'transfer_source_scan'; checkpoint()
-    MANAGER.wait_for_meta_scan(user, pg, time.monotonic() + 180)
+    preparation_deadline = time.monotonic() + 180
+    MANAGER.wait_for_meta_scan(user, pg, preparation_deadline)
+    if case != 'transfer-dlq-unknown':
+        report['stage'] = 'transfer_engine_readiness'; checkpoint()
+        wait_transfer_engines(workflow, pg, kafka, preparation_deadline, report, checkpoint)
     task_ids = []
     if case != 'transfer-dlq-unknown':
         # Current Transfer uses Tenant/task permissions. Manager-purpose source

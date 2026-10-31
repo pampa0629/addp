@@ -64,6 +64,8 @@ class OnlineGateTest(unittest.TestCase):
             ('failure_stage', 'transfer_native_prepare'), ('error_type', 'SuiteError'),
             ('cleanup_error_type', 'SuiteError'),
             ('runtime_start_diagnostic', {'status': 'failed'}),
+            ('engine_readiness_diagnostic', {'engines': []}),
+            ('task_create_diagnostic', {'reason': 'unrecognized'}),
         ):
             for value in (None, '', False, diagnostic):
                 with self.subTest(field=field, value=value):
