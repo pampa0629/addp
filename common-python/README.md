@@ -178,7 +178,7 @@ filtered = pg.sql(
 
 ## Tool 与 CLI
 
-`addp_common/tools/manifest.json` 定义稳定 Tool 契约，完整开放规则见 `docs/spec/addp智能体Tool开放规范.md`。`ToolExecutor` 在每次 Tool 调用前使用当前 User Access Token 向 System 申请绑定 owner audience、稳定 Tool Scope、AgentRun 和 ToolCall 的短期 Delegated Access Token，随后只通过持有该委托令牌的 SDK Client 调用 owner API。安装后可供 Codex 等本地 Agent 使用：
+`addp_common/tools/manifest.json` 定义稳定 Tool 契约，完整开放规则见 [Tool 开放规范](../docs/spec/addp智能体Tool开放规范.md)。`ToolExecutor` 在每次 Tool 调用前使用当前 User Access Token 向 System 申请绑定 owner audience、稳定 Tool Scope、AgentRun 和 ToolCall 的短期 Delegated Access Token，随后只通过持有该委托令牌的 SDK Client 调用 owner API。安装后可供 Codex 等本地 Agent 使用：
 
 ```bash
 export ADDP_BASE_URL=http://localhost:8000
@@ -199,6 +199,17 @@ addp tool call workflow.validate --agent-run-id <run-id> --tool-call-id <call-id
 成功响应的 stdout 是 Tool 结果紧凑 JSON；失败响应也是标准错误 JSON，并返回非零 exit code。
 
 `workflow.run` 使用 Develop owner approval 的两阶段单一路线：首次输入 `workflow_engine_id + workflow_definition`，返回 `approval_required`；批准后再次调用时只输入 `approval_id + request_fingerprint`。SDK 不保存审批事实或完整 workflow payload，恢复调用由 Develop 从自己的审批记录读取原请求并一次性消费。
+
+### 资源发现与结构事实
+
+| 阅读内容 | 权威正文 |
+| --- | --- |
+| `resource.children.list` 的根／父目录范围、直接子资源，以及 discovery scope 与输入资源、执行目标的区别 | [目录发现](../docs/spec/addp智能体Tool开放规范.md#44-resourcechildrenlist) |
+| `resource.facts.get` 的 Owner 返回数据项身份、Meta 结构事实与不读取原始行的边界 | [资源身份与结构事实](../docs/spec/addp智能体Tool开放规范.md#45-resourcefactsget) |
+| `data.preview` 的明确样本读取用途，以及不得替代生成前 Schema 校验或在扫描事实缺失时兜底的要求 | [结构事实与样本读取分工](../docs/spec/addp智能体Tool开放规范.md#45-resourcefactsget) |
+| 目录与数据项的 Owner、Permission 和委托 Tool Scope | [Tool 权限映射](../docs/spec/addp智能体Tool开放规范.md#34-当前-tool-集合) |
+
+目录可见、结构确认、样本读取与后续执行的授权分别核对；导航和静态 SDK 映射不代表 Owner 实际允许样本读取或真实链路验收已通过。门禁覆盖、未覆盖项与结果认定见[开发与验证](#开发与验证)。
 
 ## 认证方式
 
