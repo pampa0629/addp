@@ -4145,6 +4145,97 @@ def validate_raster_focal_variety(repository: Path, registered: set[str]) -> Non
         raise RegistrationError('focal variety oracle must remain independent')
 
 
+WEIGHTED_MEAN_REQUIRED = {
+    'scripts/test/online-hosted-raster-focal-weighted-mean-gate.sh': (
+        'start_online_geopython_runtime', '--mount', '--suite raster-workflow',
+        '--wait-protection-owners develop,manager', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600',
+        'online_raster_lineage.py prepare', 'online-raster-focal-weighted-mean-fixture.py stop',
+        'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
+    ),
+    'business/scripts/online-raster-focal-weighted-mean-fixture.py': (
+        'NFSExport', 'owned_root', 'from decimal import Decimal', 'context.prec=2000', 'zip(samples,kernel)',
+        'float(total/mass)', 'case_shape(name)', 'source_arrays(name)', 'weight_orientation_verified', 'valid_weight_renormalization_verified', 'verify_sources(root)', 'np.array_equal',
+        'GDAL_TIFF_INTERNAL_MASK', 'full_source_pixels_verified', 'runtime_workspaces_removed', 'archive_files',
+        'oracle cache hash changed', 'source file changed', 'weighted_mean-cogs', 'archive history missing',
+        'weighted_mean-expectations', 'validate_expected_export', 'archive_expectations',
+        'allow_pickle=False', 'def cleanup_oracle', 'full_check=True', 'nearest_overviews', 'private_control',
+    ),
+    'scripts/test/raster-focal-weighted-mean-persistence-online.py': (
+        'raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'budget != 600', 'BudgetClient', 'remaining()',
+        'validate_success', 'lineage.collect', 'lineage.validate(facts,wanted,public=True)',
+        'lineage.verify_archive', 'base.validate_scan', 'raster.wait_lineage', 'source_edges',
+        'readonly.no_publication', 'query language rewrote stored failure', 'previous original COG changed',
+        'fixture_call', 'cleanup-oracle', 'oracle cleanup also failed', 'full_checks != 1032',
+        'frozen independent array archive changed', 'archived_expectations',
+        'physical_calls != 73', 'len(cases) != 16', 'len(failures) != 56', 'exact_cause',
+        'Monitor current output lineage differs', 'raster.strict_sizes', 'fixture.expected_cache_bytes()',
+    ),
+    'engines/geopython-workflow/test_online_focal_weighted_mean_fixture.py': (
+        'test_weighted_mean_hosted_sixteen_real_cogs_complete_oracle_weight_and_mean_controls_and_original_bytes',
+        'test_weighted_mean_hosted_fifty_six_exact_submitted_failures_no_output_and_clean_workspace',
+        'test_weighted_mean_hosted_actual_pixel_mask_metadata_and_overview_corruption_rejected', 'one-ulp',
+        'test_weighted_mean_hosted_original_cog_archive_never_repairs_or_overwrites',
+        'test_weighted_mean_hosted_frozen_cache_rejects_hash_shape_inventory_or_run_change',
+        'test_weighted_mean_hosted_stdin_worker_has_no_repository_dependency_and_exact_cleanup',
+        'test_weighted_mean_hosted_frozen_expected_archive_rejects_tampering',
+    ),
+    'scripts/test/raster-focal-weighted-mean-persistence-online_test.py': (
+        'test_full_matrix_16_success_56_failures_1032_checks_and_cleanup',
+        'test_role_bound_lineage_rejects_wrong_roles_operations_and_public_projection',
+        'test_strict_physical_counts_sizes_original_archives_and_cleanup_cannot_weaken',
+        'test_failures_preserve_primary_and_cleanup_error',
+        'test_exact_failure_stage_language_scan_lineage_and_budget_are_enforced',
+    ),
+    'business/scripts/online-raster-zonal-percentile-fixture.py': (
+        'previous archive was deleted', 'previous archived bytes changed',
+    ),
+    'scripts/utils/online_raster_lineage.py': (
+        "'raster-focal-weighted-mean-persistence': 'weighted_mean-lineage'", 'BEGIN READ ONLY;', 'statement_timeout',
+        'workflow_matches', 'validate_container', 'closed(public, expected)', 'closed(internal, expected)',
+    ),
+    'scripts/test/online-raster-lineage_test.py': (
+        'test_weighted_mean_approved_single_source_current_raster_save_and_hidden_public_operation',
+    ),
+    'Makefile': (
+        'test_online_focal_weighted_mean_fixture.py', '@$(MAKE) test-raster-focal-weighted-mean-online-runner',
+        'scripts/test/raster-focal-weighted-mean-persistence-online_test.py',
+        'scripts/test/online-raster-focal-weighted-mean-fixture_test.py',
+        'scripts/test/online-hosted-raster-focal-weighted-mean-gate_test.py',
+        'test_weighted_mean_requires_exact_cog_matrix_budget_and_regressions',
+    ),
+}
+
+def validate_raster_focal_weighted_mean(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-focal-weighted-mean-persistence'
+    if suite not in registered: return
+    workflow = (repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-focal-weighted-mean-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-focal-weighted-mean-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-focal-weighted-mean-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body') or 'cancel-in-progress: false' not in job.group('body')
+        or 'if: always()' not in job.group('body') or 'logs/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('focal weighted_mean requires an independent manual Hosted NFS job')
+    make = (repository/'Makefile').read_text()
+    if 'test_online_focal_weighted_mean_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('focal weighted_mean Native omitted from standard recipe')
+    for relative, fragments in WEIGHTED_MEAN_REQUIRED.items():
+        path = repository/relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('focal weighted_mean strict contract incomplete: '+relative)
+    source = (repository/'business/scripts/online-raster-focal-weighted-mean-fixture.py').read_text()
+    tree = ast.parse(source)
+    actual = {key: [node.value for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == key for target in node.targets)] for key in ('CASES','FAILURES','KERNELS')}
+    expected_cases = {'weighted-3.cog.tif': ('values.tif', 3, 'weighted_mean', 'asymmetric-3', 'direct'), 'weighted-5.cog.tif': ('values.tif', 5, 'weighted_mean', 'asymmetric-5', 'direct'), 'ones-3.cog.tif': ('ones.tif', 3, 'weighted_mean', 'ones-3', 'direct'), 'ones-5.cog.tif': ('ones.tif', 5, 'weighted_mean', 'ones-5', 'direct'), 'control-mean-3.cog.tif': ('ones.tif', 3, 'mean', None, 'direct'), 'control-mean-5.cog.tif': ('ones.tif', 5, 'mean', None, 'direct'), 'scaled-3.cog.tif': ('values.tif', 3, 'weighted_mean', 'scaled-3', 'direct'), 'scaled-5.cog.tif': ('values.tif', 5, 'weighted_mean', 'scaled-5', 'direct'), 'zero-center.cog.tif': ('support.tif', 3, 'weighted_mean', 'asymmetric-3', 'direct'), 'invalid.cog.tif': ('invalid.tif', 5, 'weighted_mean', 'asymmetric-5', 'direct'), 'reclassified.cog.tif': ('values.tif', 3, 'weighted_mean', 'asymmetric-3', 'reclassify'), 'rotated.cog.tif': ('rotated.tif', 5, 'weighted_mean', 'asymmetric-5', 'direct'), 'unlocated-row.cog.tif': ('unlocated.tif', 3, 'weighted_mean', 'asymmetric-3', 'direct'), 'int64.cog.tif': ('int64.tif', 3, 'weighted_mean', 'asymmetric-3', 'direct'), 'uint64.cog.tif': ('uint64.tif', 5, 'weighted_mean', 'asymmetric-5', 'direct'), 'encoding.cog.tif': ('encoding.tif', 5, 'weighted_mean', 'asymmetric-5', 'direct')}
+    expected_failures = ('weights_missing', 'weights_null', 'weights_number', 'weights_boolean', 'weights_string', 'weights_object', 'weights_empty', 'weights_vector', 'weights_rows', 'weights_columns', 'weights_ragged', 'weights_zero', 'weights_negative', 'weights_bool_element', 'weights_string_element', 'weights_null_element', 'weights_object_element', 'weights_list_element', 'unused_mean', 'unused_variety_null', 'unused_percentile', 'method', 'window_value', 'window_boolean', 'band_zero', 'band_high', 'alpha', 'complex')
+    expected_kernels = {'asymmetric-3': [[0, 1, 2], [3, 0, 5], [6, 7, 8]], 'asymmetric-5': [[0, 1, 2, 3, 4], [5, 0, 7, 8, 9], [1, 2, 3, 4, 0], [6, 7, 8, 9, 1], [2, 3, 4, 5, 6]], 'ones-3': [[1, 1, 1], [1, 1, 1], [1, 1, 1]], 'ones-5': [[1, 1, 1, 1, 1], [1, 1, 1, 1, 1], [1, 1, 1, 1, 1], [1, 1, 1, 1, 1], [1, 1, 1, 1, 1]], 'scaled-3': [[0, 8, 16], [24, 0, 40], [48, 56, 64]], 'scaled-5': [[0, 8, 16, 24, 32], [40, 0, 56, 64, 72], [8, 16, 24, 32, 0], [48, 56, 64, 72, 8], [16, 24, 32, 40, 48]]}
+    if (any(len(nodes) != 1 for nodes in actual.values()) or repr(ast.literal_eval(actual['CASES'][0])) != repr(expected_cases)
+        or repr(ast.literal_eval(actual['FAILURES'][0])) != repr(expected_failures)
+        or repr(ast.literal_eval(actual['KERNELS'][0])) != repr(expected_kernels)): raise RegistrationError('focal weighted_mean fixed 16/56 matrix changed')
+    if any(word in source for word in ('operators.raster_compute', 'np.percentile', 'np.quantile', 'gdal.RasterizeLayer', 'gdal.Polygonize')):
+        raise RegistrationError('focal weighted_mean oracle must remain independent')
+
+
 PROTECTED_SIEVE_REQUIRED = {
     'scripts/test/online-hosted-raster-sieve-protected-gate.sh': (
         'start_online_geopython_runtime', '--mount', '--suite raster-workflow',
@@ -5579,6 +5670,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_zonal_percentile(repository, registered)
     validate_vector_zonal_percentile(repository, registered)
     validate_raster_focal_variety(repository, registered)
+    validate_raster_focal_weighted_mean(repository, registered)
     validate_raster_sieve_protected(repository, registered)
     validate_raster_sieve_area(repository, registered)
     validate_raster_nibble_profile(repository, registered)

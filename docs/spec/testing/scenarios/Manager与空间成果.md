@@ -932,3 +932,14 @@ GeoPackage沿普通矢量容器保存契约，不虚构RasterArtifact／COG或�
 唯一成功成果rings.gpkg的stable_outputs和facts均为create；一次成果自动扫描公开整数tenant_id／triggered_by与本普通User同主体，严格正整数physical==Meta大小、单子层行数8与完整字段数；一源到一成果恰好一条本execution active derive，Monitor与原图一致，不为内存环登记DataItem。两失败各携带下游save，但不得发布文件／输出事实／扫描／derive；同UUID原始运行日志核准确拒绝原因，失败页及Monitor核同User和failed。三源与成功成果SHA／大小／源Meta在失败和浏览器后均不变，扫描库存三源加一成果恰好四次。
 
 实际浏览器复用每次导航后的browserAPIFromResponse身份绑定；核原EWKB、8条OL线要素的来源／编号／完整坐标和真实线像素，不以像素区分重复线或证明微小线段独立可见。成功页、线地图和两失败页至少四截图，另核真实血缘tab原图及画布单边；浏览器只读，无补扫、重放执行或额外业务写入。Owner／browser／raw报告仅此case/v1，阶段检查点incomplete不得替代最终通过。归档四份合成原GPKG及原始API／Meta／血缘／Monitor／渲染证据，下载后独立OGR重核全部原坐标／类型／属性／行序／3857和SHA／大小，期望不调用生产算法生成、不舍入或增容差。最后核NFS/export/ownedroot、Runtime/registry/部署/Infra全清零；不认证业务DELETE。现有runner、Native与Console、Online CI登记及mutation检查同次覆盖独立case，无新suite、权限或永久入口。
+
+
+### 邻域加权均值独立 Hosted 验收
+
+独立手工`raster-focal-weighted-mean-persistence`复用Hosted／NFS、同源默认入口Runtime、非默认Tenant与普通User原12权限；固定600秒业务预算，覆盖身份／源初始化、首次独立预期、执行查询、全部物理全检、归档和业务缓存清理。部署、静态播种与隔离生命周期退出另核；任何业务超时或清理失败整套失败，不自动重试、扩预算或加入nightly。产品、原九方法／原套件、权限和安全投影不改；Linux全量和实际Hosted继续由CI会话协调，准备通过不计真实Hosted、UI、容量或吞吐。
+
+固定16条COG成功链（14条weighted_mean＋2条mean对照）：非对称3／5各一、全1权重3／5与同源mean3／5共四、非均匀权重同比例放大3／5两条、中心权重零且局部有效支持空、全无效、重分类接加权、旋转网格、缺定位单行、Int64／UInt64原生NoData邻接合法整数、显式第二波段原始scale-offset与mask／部分透明alpha。非对称和同比例／重分类使用519×515跨块样本，其他用例保留实际概览。矩阵行列直接对应不翻转；中心无效不填洞，有效正权重为空输出NaN，合法零和负值保留。全1与mean、同比例权重均核实际成果完整像元／mask一致。预期只用独立逐位置Decimal（2000位）构建、最终Float64舍入，完整像元精确比较，不调用生产算法、不用容差或抽样；Native另覆盖原九方法及数值极限。
+
+固定28类各中英文提交共56次准确失败：权重缺失／null／数值标量／布尔／字符串／对象／空列表／一维列表／行列数错误／不规则行／全零／负元素／布尔元素／字符串元素／null元素／对象元素／列表元素共18类；mean带权重、variety带null权重、weighted_mean带percentile三类；未知方法、非法窗口、布尔窗口、波段0、越界波段、选择alpha、复数数据七类。必须同execution精确命中focal阶段及真实原因；反向语言查询不改提交语言，失败零发布、零新增扫描／派生血缘。NaN／Infinity及超标准JSON数值、混合类型复数alpha和数值极限单列Native，不用平台前置拒绝充数。
+
+成功后重查全部已生成成果136次，56次失败后各重查16份共896次，合计1032次完整成果检查；加首次无成果基线共73次物理核验调用。每次核完整像元／mask、Float64／NaN、原网格／CRS／缺定位、清除源编码、COG完整布局和实际最近邻概览；严格核artifact／物理／Meta相等正整数大小、同主体精确父执行扫描、当前执行实际输入完整内部／公开投影血缘和Monitor。源与旧成果原字节／Meta保持不变，16份原COG及大小／SHA256清单、十源原件和16份冻结独立预期归档，不覆盖／修补旧归档。受控只读血缘观察沿既有有界SQL及独立凭据路径，身份／DAG／租户／用户／Runtime必须绑定当前执行，不扩大产品权限或安全投影。私有预期缓存和执行工作区、NFS／Runtime／registry／部署／Infra退出全部核清0，失败同样保留首个业务原因及清理错误。
