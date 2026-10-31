@@ -867,7 +867,7 @@ CSV沿普通表保存契约，不虚构RasterArtifact：物理／Meta大小须�
 
 ## 矢量面分区百分位独立 Hosted 验收
 
-`vector-zonal-percentile-persistence`为独立手工套件，复用NFS、同源产品默认入口Runtime和普通User原12权限；固定600秒业务预算覆盖源初始化扫描、首次独立期望、64条执行及查询、全部物理复核与执行工作区／期望缓存清理。部署、静态播种和NFS／Infra退出沿既有隔离生命周期分别核验，任何清理失败整套失败。原矢量分区／栅格百分位套件、产品逻辑、安全投影及权限不改；实际Linux全量和Hosted仍由CI会话协调，准备通过不计Hosted、UI或容量通过。
+`vector-zonal-percentile-persistence`为独立手工套件，复用NFS、同源产品默认入口Runtime和普通User原12权限；固定600秒业务预算覆盖源初始化扫描、首次独立期望、64条执行及查询、全部物理复核与执行工作区／期望缓存清理。部署、静态播种和NFS／Infra退出沿既有隔离生命周期分别核验，任何清理失败整套失败。原矢量分区／栅格百分位套件、产品逻辑、安全投影及权限不改；实际Hosted仍由CI会话协调，准备通过不计Hosted、UI或容量通过。
 
 固定16条成功GeoPackage保存链：不带百分位的原八列1条；0／100端点、奇偶总体50百分位4条；25／75插值、33.3跨块中心／全部触及4条；自定义／空前缀2条；栅格重分类→面化→90百分位1条；Int64／UInt64数值NoData邻接有效值2条；全无效数值保留面行与空矢量批次保留Schema／CRS2条。常规面共同覆盖孔洞、重叠、MultiPolygon、细面、部分／完全出界、单有效零和重复几何，以显式唯一`source_row`核行序；主栅格保留旋转网格、显式第二波段、独立mask／alpha和未应用的scale-offset。GeoPackage的FID不冒充用户索引；重复索引、活动几何列名冲突、混合类型复数alpha及数值极限继续单列Native。
 
@@ -880,6 +880,8 @@ CSV沿普通表保存契约，不虚构RasterArtifact：物理／Meta大小须�
 GeoPackage沿普通矢量容器保存契约，不虚构RasterArtifact／COG或第三方大小：物理／Meta大小为相等正整数，唯一图层事实保留容器边界。精确自动扫描核父执行／普通User／租户／引擎；直接链核矢量面与数值栅格两源，面化派生链只核实际TIFF源，不虚构第二来源。现有受控只读observer仅登记本套件，完整核内部`save`／derive端口及公开`operations:null`安全投影，Meta关系和Monitor分别核验。失败零目标／新增扫描／派生血缘，源物理／Meta及先前成果不变；全部退出保持NFS／Runtime／registry／部署／Infra零残留。
 
 本地标准入口为`make test-vector-zonal-percentile-online-runner`及标准Native中的`test_online_vector_zonal_percentile_fixture.py`；Online／changed gate／独立workflow、observer和固定矩阵／删断言变异检查同步登记，实际Hosted由CI会话唯一协调运行。
+
+固定修复提交`c116e05fd9fb3eb4f2fd49bd1598879f64a14647`的[正式Linux Native Job](https://github.com/pampa0629/addp/actions/runs/41151306867/job/124388227200)已完整通过：Ubuntu24.04 x86_64／GDAL3.8.4，实际`make test-geopython-workflow`，10587 passed／104 warnings／1610.63秒，0失败／跳过／筛除，148行进度的10587个通过标记与最终汇总一致。九种真实物理篡改保留；Schema分支无存活Feature时变更字段定义，关闭重开后核完整字段名称／顺序／类型，再由原oracle准确拒绝，并有生命周期先红后绿回归。完整原始Job日志SHA256为`98e7f99734aea607c907d065f86f89dcf358434161ece47a1ce5124e822f83c6`；此前段错误失败保持独立历史，其他位置的原生故障不由本次通过关闭。该证据只认证固定源码Native，不计实际Hosted、页面或容量。
 
 
 ### 端点吸附手工容量
