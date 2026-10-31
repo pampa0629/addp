@@ -494,6 +494,14 @@ test('多距缓冲独立普通User单成果与重名拒绝', async ({page}) => {
 
 // Literal acceptance expectations: do not derive these from the production formatter.
 const inputDiagnosticText = {
+  'ring-field-conflict': {
+    'zh-cn':['源图层字段 ring_id 与算子的固定输出字段重名。','面界提取','源图层（input_gdf）','ring_id','先在上游手动重命名源字段 ring_id，再重新执行；不会自动改名或覆盖。'],
+    en:['Source field ring_id conflicts with a fixed operator output field.','Extract polygon rings','Source layer (input_gdf)','ring_id','Manually rename source field ring_id upstream before submitting a new execution; it is not renamed or overwritten automatically.']
+  },
+  'ring-geometry-invalid': {
+    'zh-cn':['输入图层包含未通过有效性检查的几何。','面界提取','源图层（input_gdf）','','先运行几何检查，确认问题后显式修复；修复结果须满足算子说明，再提交新的执行。'],
+    en:['The input layer contains geometry that failed the validity check.','Extract polygon rings','Source layer (input_gdf)','','Run geometry checks first, explicitly repair confirmed issues, and verify the result meets the operator requirements before submitting a new execution.']
+  },
   'field-conflict': {
     'zh-cn':['源图层字段 distance 与算子的固定输出字段重名。','多距缓冲','源图层（input_gdf）','distance','先在上游手动重命名源字段 distance，再重新执行；不会自动改名或覆盖。'],
     en:['Source field distance conflicts with a fixed operator output field.','Multi-distance buffer','Source layer (input_gdf)','distance','Manually rename source field distance upstream before submitting a new execution; it is not renamed or overwritten automatically.']
@@ -525,15 +533,17 @@ async function assertInputDiagnosticPanel(panel,key,locale,executionID) {
   await expect(panel).toBeVisible()
   await expect(panel.locator('h4')).toHaveText(expected.reason)
   await expect(panel.locator('dd')).toHaveText(expected.values)
-  await expect(panel).not.toContainText(/PRIVATE_DIAGNOSTIC|Traceback|site-packages|\/tmp\/|99\.0/)
+  await expect(panel).not.toContainText(/PRIVATE_DIAGNOSTIC|Traceback|site-packages|\/tmp\/|99\.0|parcel_shape|parcel_key|rings-(conflict|invalid)\.gpkg|相邻乙|重复丙|地块属性|普通业务几何/)
   return expected
 }
 
-test('算子参数诊断独立普通User双语失败页',async({page})=>{
+async function verifyInputDiagnosticCase(page,caseName) {
   const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}')
-  expect(evidence.case).toBe('operator-input-diagnostics')
-  expect(evidence.executions.map(run=>run.key)).toEqual(Object.keys(inputDiagnosticText))
-  expect(new Set(evidence.executions.map(run=>run.execution_id)).size).toBe(4)
+  expect(evidence.case).toBe(caseName)
+  const rings=caseName==='polygon-rings-input-diagnostics'
+  const keys=rings?['ring-field-conflict','ring-geometry-invalid']:['field-conflict','number-array','crs-mismatch','positive-number']
+  expect(evidence.executions.map(run=>run.key)).toEqual(keys)
+  expect(new Set(evidence.executions.map(run=>run.execution_id)).size).toBe(keys.length)
   const expectedIdentity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
   await page.context().grantPermissions(['clipboard-read','clipboard-write'],{origin:process.env.CONSOLE_URL})
   let loggedIn=false
@@ -584,11 +594,15 @@ test('算子参数诊断独立普通User双语失败页',async({page})=>{
       observations.push({key:run.key,owner,locale,execution_id:run.execution_id,raw,clipboard,screenshot})
     }
   }
-  expect(observations).toHaveLength(16)
+  if(rings) expect(observations).toHaveLength(8)
+  else expect(observations).toHaveLength(16)
   expect(publicationRequests).toEqual([])
   writeFileSync(resolve(process.env.ADDP_ONLINE_ARTIFACT_DIR,'topology-browser.json'),JSON.stringify({
-    ...evidence,schema_version:'addp.operator-input-diagnostics-browser/v1',result:'passed',observations},null,2)+'\n')
-})
+    ...evidence,schema_version:(rings?'addp.polygon-rings-input-diagnostics':'addp.operator-input-diagnostics')+'-browser/v1',result:'passed',observations},null,2)+'\n')
+}
+
+test('算子参数诊断独立普通User双语失败页',async({page})=>verifyInputDiagnosticCase(page,'operator-input-diagnostics'))
+test('面界提取参数诊断独立普通User双语失败页',async({page})=>verifyInputDiagnosticCase(page,'polygon-rings-input-diagnostics'))
 
 function proximityPointExpectation(features) {
   return features.map(row=>JSON.stringify({type:'Point',properties:row.properties,coordinates:webMercatorPreviewCoordinate(row.geometry.coordinates)})).sort()

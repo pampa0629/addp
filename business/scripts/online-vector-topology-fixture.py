@@ -227,6 +227,10 @@ def line_edit_worker(action,root,case):
         'targets':{name:verify(root/'outputs'/name,port) for name,port in zip(targets,EXTENSION_PORTS)},'exact_inventory_verified':True}
 
 
+RINGS_DIAGNOSTIC_CASE = 'polygon-rings-input-diagnostics'
+RINGS_DIAGNOSTIC_SOURCES = ('rings-conflict.gpkg','rings-invalid.gpkg')
+RINGS_DIAGNOSTIC_SCHEMA = 'addp.polygon-rings-input-diagnostics'
+RINGS_DIAGNOSTIC_TITLE = '面界提取参数诊断独立普通User双语失败页'
 RINGS_CASE = 'polygon-rings'
 RINGS_SOURCES = ('rings-source.gpkg','rings-conflict.gpkg','rings-invalid.gpkg')
 RINGS_TARGET = 'rings.gpkg'
@@ -318,7 +322,20 @@ def rings_worker(action,root):
     return {'sources':{name:digest(root/name) for name in RINGS_SOURCES},'targets':{RINGS_TARGET:verify_rings(root/'outputs'/RINGS_TARGET,'result')},'exact_inventory_verified':True}
 
 
-INDEPENDENT_CASES = (RINGS_CASE, ENDPOINT_CASE, EXTENSION_CASE, PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
+def rings_diagnostic_worker(action,root):
+    """Only two rejected source files; no physical publication is allowed."""
+    if action=='seed':
+        if any((root/name).exists() for name in RINGS_DIAGNOSTIC_SOURCES) or list((root/'outputs').iterdir()):
+            raise FixtureError('refusing existing rings diagnostic data')
+        for name,kind in zip(RINGS_DIAGNOSTIC_SOURCES,('conflict','invalid')):seed_rings(root/name,kind)
+    elif action!='verify':raise FixtureError('unknown rings diagnostic action')
+    if sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',*RINGS_DIAGNOSTIC_SOURCES]) or list((root/'outputs').iterdir()):
+        raise FixtureError('rings diagnostics require exact sources and no physical publication')
+    for name,kind in zip(RINGS_DIAGNOSTIC_SOURCES,('conflict','invalid')):verify_rings(root/name,kind)
+    return {'sources':{name:digest(root/name) for name in RINGS_DIAGNOSTIC_SOURCES},'targets':{},'exact_inventory_verified':True}
+
+
+INDEPENDENT_CASES = (RINGS_DIAGNOSTIC_CASE, RINGS_CASE, ENDPOINT_CASE, EXTENSION_CASE, PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
 
 NORMALIZE_CASE = 'line-network-normalize'
 NORMALIZE_SOURCE = 'normalize-input.gpkg'
@@ -332,6 +349,8 @@ COMPOSITION_TARGETS = ('chains.gpkg','chain-edges.gpkg','edge-sources.gpkg')
 
 
 def network_profile(case):
+    if case==RINGS_DIAGNOSTIC_CASE:
+        return {"schema":RINGS_DIAGNOSTIC_SCHEMA,"title":RINGS_DIAGNOSTIC_TITLE,"ports":(),"targets":(),"diagnostic_sources":RINGS_DIAGNOSTIC_SOURCES}
     if case==RINGS_CASE:return {"ports":("result",),"targets":(RINGS_TARGET,),"schema":RINGS_SCHEMA,"title":RINGS_TITLE}
     if case==ENDPOINT_CASE:
         return {"ports":ENDPOINT_PORTS,"targets":ENDPOINT_TARGETS,"schema":ENDPOINT_SCHEMA,"title":ENDPOINT_TITLE}
@@ -340,7 +359,7 @@ def network_profile(case):
     if case==PROXIMITY_CASE:
         return {'ports':('result',),'targets':(PROXIMITY_TARGET,),'schema':PROXIMITY_SCHEMA,'title':PROXIMITY_TITLE}
     if case==DIAGNOSTIC_CASE:
-        return {'schema':DIAGNOSTIC_SCHEMA,'title':DIAGNOSTIC_TITLE,'ports':(),'targets':()}
+        return {'schema':DIAGNOSTIC_SCHEMA,'title':DIAGNOSTIC_TITLE,'ports':(),'targets':(),'diagnostic_sources':DIAGNOSTIC_SOURCES}
     if case==BUFFER_CASE:
         return {'source':BUFFER_SOURCES[0],'ports':('result',),'targets':BUFFER_TARGETS,
                 'schema':'addp.topology-buffer','title':'多距缓冲独立普通User单成果与重名拒绝'}
@@ -1674,6 +1693,7 @@ def validate_features(name, features):
 
 def worker(action, root, case=None):
     case=topology_case() if case is None else topology_case({"ADDP_ONLINE_TOPOLOGY_CASE":case})
+    if case==RINGS_DIAGNOSTIC_CASE:return rings_diagnostic_worker(action,root)
     if case==RINGS_CASE:return rings_worker(action,root)
     if case==ENDPOINT_CASE:return endpoint_worker(action,root)
     if case==EXTENSION_CASE:return extension_worker(action,root)
@@ -1785,7 +1805,7 @@ def runtime_worker(action, root):
 def archive_physical_evidence(root, directory, result, case=None):
     """Retain only this synthetic fixture's verified bytes for offline audit."""
     case=topology_case() if case is None else topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':case})
-    sources,targets=(RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
+    sources,targets=(RINGS_DIAGNOSTIC_SOURCES,()) if case==RINGS_DIAGNOSTIC_CASE else (RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
     archive = directory / 'topology-physical'
     if archive.is_symlink() or (archive/'outputs').is_symlink():
         raise FixtureError('physical archive must not follow symlinks')

@@ -986,7 +986,7 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
         import os
         repository=Path(__file__).resolve().parents[2]
         run=m.subprocess.run
-        titles={m.fixture.RINGS_CASE:m.fixture.RINGS_TITLE,m.fixture.ENDPOINT_CASE:m.fixture.ENDPOINT_TITLE,m.fixture.EXTENSION_CASE:m.fixture.EXTENSION_TITLE,m.fixture.PROXIMITY_CASE:m.fixture.PROXIMITY_TITLE,m.fixture.DIAGNOSTIC_CASE:m.fixture.DIAGNOSTIC_TITLE,m.fixture.BUFFER_CASE:'多距缓冲独立普通User单成果与重名拒绝',m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
+        titles={m.fixture.RINGS_DIAGNOSTIC_CASE:m.fixture.RINGS_DIAGNOSTIC_TITLE,m.fixture.RINGS_CASE:m.fixture.RINGS_TITLE,m.fixture.ENDPOINT_CASE:m.fixture.ENDPOINT_TITLE,m.fixture.EXTENSION_CASE:m.fixture.EXTENSION_TITLE,m.fixture.PROXIMITY_CASE:m.fixture.PROXIMITY_TITLE,m.fixture.DIAGNOSTIC_CASE:m.fixture.DIAGNOSTIC_TITLE,m.fixture.BUFFER_CASE:'多距缓冲独立普通User单成果与重名拒绝',m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
             m.fixture.COMPOSITION_CASE:'重合规整链路合并独立普通User三成果与字段拒绝',
             'full':'同一普通User核对构面、修复、严格吸附、面叠面缝悬点线叠自叠线交自交及打断连通分组链路合并地图及塌缩失败'}
         for case,title in titles.items():
@@ -1170,9 +1170,10 @@ class BufferOnlineTest(unittest.TestCase):
 
 
 class InputDiagnosticClient:
-    def __init__(self):
-        self.calls=[];self.executions={};self.scans=['scan-'+name for name in m.fixture.DIAGNOSTIC_SOURCES]
-        self.sources=[{'id':10+i,'full_name':name,'size_bytes':98304,'item_type':'file','fingerprint':name} for i,name in enumerate(m.fixture.DIAGNOSTIC_SOURCES)]
+    def __init__(self,case=None):
+        case=case or m.fixture.DIAGNOSTIC_CASE;self.specs=m.input_diagnostic_specs(case);names=m.fixture.network_profile(case)['diagnostic_sources']
+        self.calls=[];self.executions={};self.scans=['scan-'+name for name in names]
+        self.sources=[{'id':10+i,'full_name':name,'size_bytes':98304,'item_type':'file','fingerprint':name} for i,name in enumerate(names)]
         self.mutate=None
     def request(self,method,path,expected,body=None):
         self.calls.append((method,path,body))
@@ -1187,10 +1188,10 @@ class InputDiagnosticClient:
         elif '/meta/items/' in path:data=self.sources[int(path.rsplit('/',1)[1])-10]
         elif path.endswith('/workflow-engines'):data=[{'id':7,'engine_type':'geopython_workflow','connection_status':'online'}]
         elif method=='POST' and path.endswith('/develop/executions'):
-            spec=m.DIAGNOSTIC_SPECS[len(self.executions)];identifier='diagnostic-'+spec[0]
+            spec=self.specs[len(self.executions)];identifier='diagnostic-'+spec[0]
             data={'execution_id':identifier}
             self.executions[identifier]={'execution_id':identifier,'triggered_by':33,'status':'failed','outputs':{},'metadata':{},
-                'error_details':{'code':'develop.workflow.invalid_params','category':'execution_failed','message':'controlled', 'diagnostic':m.expected_input_diagnostic(spec)}}
+                'error_details':{'code':'develop.workflow.invalid_params','category':'execution_failed','message':'controlled', 'diagnostic':m.expected_input_diagnostic(spec)},'execution_config':{'content':{'workflow_definition':copy.deepcopy(body['content']['workflow_definition'])}}}
             if self.mutate:self.mutate(self.executions[identifier])
         elif '/develop/executions/' in path:data=self.executions[path.rsplit('/',1)[1]]
         elif '/monitor/executions/by-execution-id/' in path:data={**self.executions[path.rsplit('/',1)[1]],'module':'develop'}
@@ -1272,6 +1273,8 @@ const sandbox={};vm.createContext(sandbox);vm.runInContext(source.slice(start,en
 for(const locale of ['zh-cn','en']){
  const text=JSON.parse(fs.readFileSync(process.argv[2]+'/'+locale+'.json','utf8')).common.executionFailure;
  for(const [key,reason,op,param,field] of [
+ ['ring-field-conflict','operator_field_conflict','extract_polygon_rings','input_gdf','ring_id'],
+ ['ring-geometry-invalid','operator_geometry_invalid','extract_polygon_rings','input_gdf',''],
  ['field-conflict','operator_field_conflict','batch_buffer','input_gdf','distance'],
  ['number-array','operator_number_array_invalid','batch_buffer','distances',''],
  ['crs-mismatch','operator_crs_mismatch','distance_to','',''],
@@ -1905,3 +1908,46 @@ persist(process.argv[2],{execution_id:'current'},'complete','passed');raw=JSON.p
         for mutate in [lambda r:r.update(result='incomplete'),lambda r:r.update(execution_id='foreign'),lambda r:r.update(run_id='foreign'),lambda r:r.update(stage='preview_observed'),lambda r:r.update(preview_text=json.dumps({'data':{'rows':[{}]}}))]:
             value=copy.deepcopy(raw);mutate(value)
             with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):run_raw(value)
+
+
+class RingInputDiagnosticOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
+        self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.RINGS_DIAGNOSTIC_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
+    def run_case(self,client=None,physical=None,browser=lambda repo,env,evidence:evidence):
+        if physical is None:physical=lambda *args:{'sources':{name:{'size_bytes':98304,'sha256':name} for name in m.fixture.RINGS_DIAGNOSTIC_SOURCES},'targets':{},'exact_inventory_verified':True}
+        return m.run_scenario(Path('.'),self.env,client or InputDiagnosticClient(m.fixture.RINGS_DIAGNOSTIC_CASE),physical,browser)
+    def test_rings_diagnostic_only_two_failures_keep_frozen_position_and_no_publish(self):
+        client=InputDiagnosticClient(m.fixture.RINGS_DIAGNOSTIC_CASE);report=self.run_case(client)
+        self.assertEqual(report['schema_version'],'addp.polygon-rings-input-diagnostics/v1')
+        self.assertEqual(len(report['executions']),2);self.assertEqual(len(report['sources']),2)
+        self.assertEqual(report['initial_scan_inventory'],report['final_scan_inventory'])
+        for run,spec in zip(report['executions'],m.RINGS_DIAGNOSTIC_SPECS):
+            self.assertEqual(run['expected_diagnostic'],m.expected_input_diagnostic(spec))
+            self.assertEqual(run['definition']['tasks'][0]['operator'],'extract_polygon_rings')
+            self.assertEqual(run['definition']['tasks'][-1]['operator'],'save')
+        self.assertEqual(sum(method=='POST' and path.endswith('/develop/executions') for method,path,_ in client.calls),2)
+    def test_rings_diagnostic_rejects_wrong_context_frozen_source_or_publication(self):
+        for mutate in [lambda v:v['error_details']['diagnostic']['operator'].update(node_index=2),
+            lambda v:v['error_details']['diagnostic']['operator'].update(field='source-private'),
+            lambda v:v['execution_config']['content']['workflow_definition']['tasks'][0].update(operator='load'),
+            lambda v:v.update(outputs={'save':{}}),lambda v:v['metadata'].update(lineage_facts={'outputs':[{}]}),
+            lambda v:v['metadata'].update(result={'meta_scan_runs':[{}]}),lambda v:v.update(triggered_by=True)]:
+            c=InputDiagnosticClient(m.fixture.RINGS_DIAGNOSTIC_CASE);c.mutate=mutate
+            with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):self.run_case(c)
+        c=InputDiagnosticClient(m.fixture.RINGS_DIAGNOSTIC_CASE);c.sources[0]['size_bytes']=0
+        with self.assertRaises(m.SuiteError):self.run_case(c)
+    def test_rings_diagnostic_requires_exact_eight_uuid_owner_locale_bindings(self):
+        evidence=self.run_case()['browser'];output=Path(self.directory.name)/'topology-browser.json'
+        observations=[{'key':run['key'],'execution_id':run['execution_id'],'owner':owner,'locale':locale,
+            'raw':run['execution'] if owner=='develop' else {'execution':run['execution']},'clipboard':'safe'}
+            for run in evidence['executions'] for owner in ('develop','monitor') for locale in ('zh-cn','en')]
+        report={**evidence,'schema_version':'addp.polygon-rings-input-diagnostics-browser/v1','result':'passed','observations':observations}
+        def invoke(*args,**kwargs):output.write_text(json.dumps(report));return SimpleNamespace(returncode=0)
+        with patch.object(m.subprocess,'run',side_effect=invoke):
+            m.browser(Path('.'),self.env,evidence)
+            for mutate in [lambda v:v['observations'].pop(),lambda v:v['observations'][0].update(locale='en'),
+                lambda v:v['observations'][0].update(execution_id='old'),lambda v:v['observations'][0].update(clipboard='Traceback')]:
+                before=copy.deepcopy(report);mutate(report)
+                with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):m.browser(Path('.'),self.env,evidence)
+                report=before

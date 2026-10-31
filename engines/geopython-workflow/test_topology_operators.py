@@ -5537,3 +5537,39 @@ def test_extract_polygon_rings_other_rejections_are_not_validity_diagnostics(rin
     frame=gpd.GeoDataFrame({'key':[1]},geometry=[None if wkt is None else shapely.from_wkt(wkt)],crs=3857)
     with pytest.raises(ValueError) as caught:ring_extractor(frame,'key')
     assert not isinstance(caught.value,PolygonRingInputError)
+
+
+@pytest.mark.parametrize('key',['ring-field-conflict','ring-geometry-invalid'])
+def test_hosted_polygon_ring_diagnostics_only_two_real_file_rejections(tmp_path,key,monkeypatch):
+    import importlib
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    fixture=importlib.import_module('business.scripts.online-vector-topology-fixture')
+    acceptance=importlib.import_module('scripts.test.vector-topology-persistence-online')
+    (tmp_path/'outputs').mkdir();(tmp_path/'.addp-online-owner').touch()
+    original=fixture.worker('seed',tmp_path,fixture.RINGS_DIAGNOSTIC_CASE)
+    assert set(original['sources'])==set(fixture.RINGS_DIAGNOSTIC_SOURCES) and not original['targets']
+    workflow=acceptance.diagnostic_definition(key,list(fixture.RINGS_DIAGNOSTIC_SOURCES),'unused-parent')
+    for task in workflow['tasks']:
+        if task['operator']=='load':task['params']={'connection_info':{'engine_type':'nfs','mount_path':str(tmp_path)},'path':task['params']['locator']}
+        elif task['operator']=='save':
+            task['params'].pop('target_parent_locator');task['params'].pop('target_name')
+            task['params'].update(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)},path='outputs/forbidden.gpkg')
+    monkeypatch.setattr(api_server,'executions',ExecutionRegistry())
+    with api_server.app.test_client() as client:
+        response=client.post('/api/workflow',json={'workflow_def':workflow,'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+        assert response.status_code==202
+        deadline=time.monotonic()+10
+        while time.monotonic()<deadline:
+            state=client.get('/api/executions/'+response.get_json()['execution_id']).get_json()
+            if state['status'] in ('failed','success'):break
+            time.sleep(.01)
+    spec=next(spec for spec in acceptance.RINGS_DIAGNOSTIC_SPECS if spec[0]==key)
+    assert state['status']=='failed' and state['error_code']=='INVALID_PARAMS',state
+    assert state['diagnostic']==acceptance.expected_input_diagnostic(spec)
+    assert state['diagnostic']['operator']['node_index']==1
+    assert fixture.worker('verify',tmp_path,fixture.RINGS_DIAGNOSTIC_CASE)==original
+    fixture.archive_physical_evidence(tmp_path,tmp_path.parent/(key+'-evidence'),original,fixture.RINGS_DIAGNOSTIC_CASE)
+    assert not list((tmp_path/'outputs').iterdir())
+    (tmp_path/'outputs/forbidden.gpkg').touch()
+    with pytest.raises(fixture.FixtureError,match='no physical publication'):fixture.worker('verify',tmp_path,fixture.RINGS_DIAGNOSTIC_CASE)

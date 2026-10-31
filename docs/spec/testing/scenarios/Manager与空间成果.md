@@ -943,3 +943,9 @@ GeoPackage沿普通矢量容器保存契约，不虚构RasterArtifact／COG或�
 固定28类各中英文提交共56次准确失败：权重缺失／null／数值标量／布尔／字符串／对象／空列表／一维列表／行列数错误／不规则行／全零／负元素／布尔元素／字符串元素／null元素／对象元素／列表元素共18类；mean带权重、variety带null权重、weighted_mean带percentile三类；未知方法、非法窗口、布尔窗口、波段0、越界波段、选择alpha、复数数据七类。必须同execution精确命中focal阶段及真实原因；反向语言查询不改提交语言，失败零发布、零新增扫描／派生血缘。NaN／Infinity及超标准JSON数值、混合类型复数alpha和数值极限单列Native，不用平台前置拒绝充数。
 
 成功后重查全部已生成成果136次，56次失败后各重查16份共896次，合计1032次完整成果检查；加首次无成果基线共73次物理核验调用。每次核完整像元／mask、Float64／NaN、原网格／CRS／缺定位、清除源编码、COG完整布局和实际最近邻概览；严格核artifact／物理／Meta相等正整数大小、同主体精确父执行扫描、当前执行实际输入完整内部／公开投影血缘和Monitor。源与旧成果原字节／Meta保持不变，16份原COG及大小／SHA256清单、十源原件和16份冻结独立预期归档，不覆盖／修补旧归档。受控只读血缘观察沿既有有界SQL及独立凭据路径，身份／DAG／租户／用户／Runtime必须绑定当前执行，不扩大产品权限或安全投影。私有预期缓存和执行工作区、NFS／Runtime／registry／部署／Infra退出全部核清0，失败同样保留首个业务原因及清理错误。
+
+### 面界提取参数诊断独立实页
+
+`vector-topology-persistence` 新增 `polygon-rings-input-diagnostics` case，仅执行ring_id固定字段重名与实际无效面的两次真实失败，不执行旧成功链、旧参数诊断四场景或容量。复用原Hosted生命周期、普通User精确11权限、非默认Tenant和600秒业务预算；只准备rings-conflict.gpkg与rings-invalid.gpkg两源，保留实际parcel_shape及普通geometry业务列。失败节点置于冻结tasks数组首位，在load之后调度，下游save必须未执行。两次Develop及Monitor响应均须绑定当前UUID/同一User/冻结定义，准确返回v3、execution、INVALID_PARAMS对应develop.workflow.invalid_params；重名仅field=ring_id，无效面仅operator_geometry_invalid且无field。
+
+两执行分别在Develop/Monitor中英文实页刷新同一UUID，共8份原始响应、截图及真实剪贴板核验；复用现有唯一共享面板和浏览器当前请求身份绑定，不持有跨导航旧Token。核准确原因、人工重命名或先几何检查后显式修复建议、算子/节点/参数/固定字段、稳定码和UUID；不得包含自定义节点名、业务ID/值、坐标、路径或GEOS正文。两源物理字节/大小/SHA及Meta始终不变；两初始扫描库存不变、无新增文件/成果扫描/输出facts/本次derive。保存全部原始证据和源文件，最终报告不能由incomplete checkpoint替代；退出NFS/export/ownedroot/Runtime/registry/应用/Infra全部清0，不把清理当业务DELETE验收。该case更新原runner/Native/浏览器和CI登记，不新增suite、权限、产品API或容量入口。
