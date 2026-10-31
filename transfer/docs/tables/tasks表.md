@@ -1,6 +1,6 @@
 # transfer.transfer_tasks 表说明
 
-更新时间：2026-08-02
+更新时间：2026-10-31
 
 `transfer.transfer_tasks` 存储 Transfer 任务定义。任务的执行历史不在本表中保存，统一写入 `common.task_executions`。
 
@@ -18,11 +18,11 @@
 | `schedule` | Cron 表达式；为空表示手动任务。 |
 | `batch_size` | 默认批大小。 |
 | `enabled` | 定时任务是否启用。 |
-| `auto_scan_metadata` | 是否自动触发 Meta deep scan。bounded 在成功后触发；continuous 在目标结构首次建立后触发。 |
-| `initial_metadata_scan_status` | continuous 首次目标扫描私有状态：空值、`running`、`success` 或 `failed`。 |
-| `initial_metadata_scan_claim_token` / `initial_metadata_scan_lease_until` | continuous 首次扫描的 fencing claim；仅 `running` 时有效。 |
+| `auto_scan_metadata` | 是否自动触发 Meta deep scan；bounded、业务 Kafka 与数据库 CDC 的触发时机和精确范围统一见[写后扫描契约](../transfer-基本概念及配置说明.md#十一写后-meta-扫描)。 |
+| `initial_metadata_scan_status` | continuous 首次目标扫描的私有提交状态：空值、`running`、`success` 或 `failed`；`success` 表示提交成功，结果核对见[首次扫描导航](#首次扫描的提交与结果核对)。 |
+| `initial_metadata_scan_claim_token` / `initial_metadata_scan_lease_until` | continuous 首次扫描的 fencing claim；仅 `running` 时有效，领取、接管与 TTL 见[claim 契约](../../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)。 |
 | `initial_metadata_scan_attempt` | continuous 首次扫描领取次数。 |
-| `initial_metadata_scan_execution_id` / `initial_metadata_scan_error` | Meta execution UUID 或最近一次提交错误。 |
+| `initial_metadata_scan_execution_id` / `initial_metadata_scan_error` | 已提交的 Meta execution UUID 或最近一次提交错误；提交反馈与失败边界见[持久化说明](../数据库架构.md#九写后-meta-扫描)。 |
 | `status` | `idle`、`running` 或 `blocked`；`blocked` 表示数据库 CDC 当前 generation 被 schema drift 阻塞。只有专用 additive 审批成功后可回到 `idle`，其他变化只允许 Stop。 |
 | `desired_state` | continuous runtime 用户期望状态：`running` / `paused` / `stopped`，默认 `stopped`；bounded task 不消费。该字段不能单独判定数据库 CDC 是否永久停止，终态以 `capture_resources.status=stopped` 为准。 |
 | `progress` | 当前任务进度百分比。 |
@@ -32,6 +32,14 @@
 | `last_run_at` | 最近运行时间。 |
 | `next_run_at` | 下次计划运行时间。 |
 | `created_at` / `updated_at` / `deleted_at` | 审计字段。 |
+
+### 首次扫描的提交与结果核对
+
+触发条件、普通 DML／batch 不触发、原生表完整 `targets` 和 encoded 目标 `ref_groups` 的精确范围统一见[写后扫描契约](../transfer-基本概念及配置说明.md#十一写后-meta-扫描)。claim 防重复、失败或过期后的接管及 TTL 要求沿[同步执行规范](../../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)；Meta API 提交失败与仓储／fencing 错误的不同处理见[数据库架构](../数据库架构.md#九写后-meta-扫描)。
+
+上述 `initial_metadata_scan_*` 是私有持久字段，不直接序列化为公开 DTO，也不授予 Meta 读取或执行权限。`success` 或保存的 Meta execution UUID 仅记录提交结果；是否完成、目标 attributes 是否正确，须通过已授权的 Meta 入口核对对应 execution 与目标事实，不能以任务数据面继续运行代替。
+
+字段、状态或静态接线不等于真实扫描验收通过；固定版本证据、失败记录和未覆盖项统一见[模块验证](../../CLAUDE.md#开发与验证)。未运行、失败或未覆盖项分别记录，不计为通过。
 
 ## 二、config 字段结构
 
