@@ -1,24 +1,14 @@
 import { buildLocator, safePickerEngineID, readDataItemIdentityTree, buildDataItemIdentityTree } from '@common-ui'
-import { readPermissionTarget } from './directPermission'
+import { readNativeApprovalFacts } from '@common-ui'
 
 export const isApprovalTarget = node => !!node?.metadata?.data_item
 export const isApprovalSelection = node => isApprovalTarget(node) || !!node?.metadata?.identity_node
 
-// Nodes expand the currently observed DataItems only. They never become ACLs.
-export async function collectApprovalTargets(selection, engineID, adapter, limit = 200) {
-  const targets = [], visited = new Set()
-  async function visit(node) {
-    if (!isApprovalSelection(node) || visited.has(node.id)) throw new Error('invalidCatalogTarget')
-    visited.add(node.id)
-    if (isApprovalTarget(node)) {
-      if (targets.length >= limit) throw new Error('tooManyTargets')
-      targets.push(await approvalTargetFromSelection({ raw: { node } }, engineID, adapter))
-    } else {
-      for (const child of await adapter.getNodeChildren(node)) await visit(child)
-    }
-  }
-  await visit(selection?.raw?.node)
-  return targets
+// Node selection is a snapshot of current DataItems, never a parent ACL.
+export function approvalNodeItems(node, recursive = false) {
+  if (isApprovalTarget(node)) return [node]
+  if (!isApprovalSelection(node)) return []
+  return (node.children || []).flatMap(child => isApprovalTarget(child) ? [child] : recursive ? approvalNodeItems(child, true) : [])
 }
 
 export async function approvalTargetFromSelection(selection, engineID, adapter) {
@@ -39,7 +29,7 @@ export function approvalTargetsEqual(left, right) {
 }
 
 // System's adapter consumes the identity-only Meta projection through System.
-// ResourceTreeSelect owns the UI; exact signing boundaries still come from Meta.
+// Shared resource-tree components own the UI; exact signing boundaries still come from Meta.
 export function createApprovalCatalogAdapter(engine, listItems, readFacts) {
   const id = safePickerEngineID(engine.id)
   let snapshot, generation = 0, nodes = new Map()
@@ -65,7 +55,7 @@ export function createApprovalCatalogAdapter(engine, listItems, readFacts) {
       const roots = buildDataItemIdentityTree(rows)
       if (roots.length > 1) throw new Error('invalidCatalogTarget')
       const result = { id: `engine:${id}`, label: engine.name, type: 'root', locator: buildLocator({ engineId: id, path: [], type: 'root' }), hasChildren: true,
-        metadata: { engine_id: id, engine_type: engine.engine_type, engine_name: engine.name, has_children: true },
+        metadata: { engine_id: id, engine_type: engine.engine_type, engine_name: engine.name, has_children: true, identity_node: `engine:${id}` },
         children: (roots[0]?.children || []).map(node => convert(node, index)) }
       index.set(result.id, result)
       nodes = index
@@ -88,7 +78,7 @@ export function createApprovalCatalogAdapter(engine, listItems, readFacts) {
     async resolveTarget(node) {
       const identity = (await owned(node)).metadata.data_item
       if (!identity) throw new Error('invalidCatalogTarget')
-      const { path } = await readPermissionTarget(String(id), identity.item_fingerprint, readFacts)
+      const { path } = await readAuthorizationTarget(String(id), identity.item_fingerprint, readFacts)
       return { ...path, engine_id: String(id), segments: path.segments.map(part => ({ ...part })) }
     },
     async search(engineID, keyword, { limit = 20 } = {}) {
@@ -100,4 +90,16 @@ export function createApprovalCatalogAdapter(engine, listItems, readFacts) {
         (node.metadata.data_item?.full_name || node.label).toLocaleLowerCase().includes(query)).slice(0, Math.min(limit, 20))
     }
   }
+}
+
+export async function readAuthorizationTarget(engineID, fingerprint, readFacts) {
+  const facts = await readFacts(engineID, fingerprint)
+  const target = facts?.boundary?.scope?.root || facts?.boundary?.native_target || facts?.boundary?.file_composition?.refs?.find(ref => ref.primary === true)?.target
+  if (String(target?.engine_id) !== String(engineID) || facts?.item_fingerprint !== fingerprint) throw new Error('invalidDataItemBoundary')
+  const observed = await readNativeApprovalFacts(target, async (id, fp) => {
+    if (String(id) !== String(engineID) || fp !== fingerprint) throw new Error('invalidDataItemBoundary')
+    return facts
+  })
+  if (observed.state !== 'complete') throw new Error('invalidDataItemBoundary')
+  return { path: target, binding: observed.binding }
 }

@@ -190,9 +190,7 @@ func (r *Repository) queryInitialProduction(ctx context.Context, prepared *prepa
 const productionTargetHistorySQL = `WITH target AS (
  SELECT ?::bigint AS tenant_id, ?::bigint AS engine_id, ?::text AS fingerprint, ?::jsonb AS path
 ) SELECT EXISTS (
- SELECT 1 FROM target t JOIN system.engine_access_direct_permissions r
- ON r.tenant_id=t.tenant_id AND r.engine_id=t.engine_id AND (r.item_fingerprint=t.fingerprint OR r.catalog_path=t.path)
- UNION ALL SELECT 1 FROM target t JOIN system.engine_access_fulfillment_outcomes o
+ SELECT 1 FROM target t JOIN system.engine_access_fulfillment_outcomes o
  ON o.tenant_id=t.tenant_id AND o.engine_id=t.engine_id AND (o.binding->>'item_fingerprint'=t.fingerprint OR o.catalog_path=t.path)
  UNION ALL SELECT 1 FROM target t JOIN system.engine_access_grants g
  ON g.tenant_id=t.tenant_id AND g.engine_id=t.engine_id AND (g.item_fingerprint=t.fingerprint OR g.catalog_path=t.path)

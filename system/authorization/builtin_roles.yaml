@@ -802,8 +802,6 @@ roles:
       - system.engine_access_delegation.create
       - system.engine_access_delegation.read
       - system.engine_access_delegation.revoke
-      - system.engine_access_direct_permission.read
-      - system.engine_access_direct_permission.update
       - system.engine_access_grant.create
       - system.engine_access_grant.read
       - system.engine_access_grant.revoke
@@ -1211,7 +1209,6 @@ roles:
       - iam.project_group.read
       - iam.tenant_membership.read
       - system.engine.read
-      - system.engine_access_direct_permission.read
       - system.engine_access_fulfillment.create
       - system.engine_access_grant.create
       - system.engine_access_grant.read

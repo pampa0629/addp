@@ -132,8 +132,7 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 			if err != nil || canonical.CatalogRequestID == nil || *canonical.CatalogRequestID != id ||
 				canonical.TenantID != actor.TenantID || canonical.EngineID != int64(base.Path.EngineID) ||
 				canonical.RecipientType != base.RecipientType || canonical.RecipientID != base.RecipientID ||
-				canonical.Action != base.Action || canonical.DirectPermissionVersion != 0 ||
-				canonical.OperatorPrincipalID != base.Operator.PrincipalID || canonical.OperatorMembershipID != base.Operator.MembershipID ||
+				canonical.Action != base.Action || canonical.OperatorPrincipalID != base.Operator.PrincipalID || canonical.OperatorMembershipID != base.Operator.MembershipID ||
 				canonical.OperatorAuthorizationVersion != base.Operator.AuthorizationVersion ||
 				!shared.EqualSharingExpiry(canonical.ExpiryMode, canonical.ExpiresAt, base.ExpiryMode, base.ExpiresAt) {
 				t.Fatalf("Catalog rule parameters did not reach the canonical Grant: %+v %v", canonical, err)
@@ -518,28 +517,14 @@ func exerciseFulfillmentGrants(t *testing.T, db *gorm.DB, acceptor *Service, act
 			}
 			assertCount(t, id, 1)
 		})
-		t.Run("accepted issuance survives later approval arrangement change", func(t *testing.T) {
+		t.Run("accepted issuance needs no direct permit", func(t *testing.T) {
 			binding := base
 			binding.Path.Segments = append(binding.Path.Segments[:0:0], binding.Path.Segments...)
 			binding.Path.Segments[len(binding.Path.Segments)-1].Name = uuid.NewString()
 			binding.ItemFingerprint, binding.BoundaryHash = testReadBindings(binding.Path)[0].ItemFingerprint, testReadBindings(binding.Path)[0].BoundaryHash
 			acceptor.WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{base.Path, binding.Path}})
 			issuer.WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{base.Path, binding.Path}})
-			input := fixturePermitInput(ctx, issuer.repository, actor.TenantID, adminID, binding.Path, false, 0)
-			change := func() error {
-				return issuer.repository.transaction(ctx, func(tx *Repository) error {
-					_, err := fixtureSetPermit(ctx, tx, input, func(*Repository) error { return nil })
-					return err
-				})
-			}
-			if err := change(); err != nil {
-				t.Fatal(err)
-			}
 			id := prepare(t, binding)
-			input.Allowed, input.ExpectedSource, input.ExpectedVersion = true, "explicit", 1
-			if err := change(); err != nil {
-				t.Fatal(err)
-			}
 			if _, err := issuer.writeAcceptedGrant(ctx, actor, id, binding); err != nil {
 				t.Fatal(err)
 			}

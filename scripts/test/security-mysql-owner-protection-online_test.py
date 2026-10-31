@@ -1839,9 +1839,6 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
                 return ONLINE.SUPPORT.Response(200, {"principal": {"type": "user", "id": "8"},
                     "context": {"type": "tenant", "tenant_id": "2"},
                     "authorization": {"role_assignments": [{"role_key": ONLINE.REGISTRATION.SOURCE_INITIALIZER_ROLE, "permissions": sorted(ONLINE.REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS)}]}})
-            if path.endswith('/direct-permission'):
-                return ONLINE.SUPPORT.Response(200, {'engine_id': path.split('/')[5], 'item_fingerprint': path.split('/')[-2],
-                    'state': 'allowed', 'source': 'explicit', 'version': '1'})
             if method == 'GET':
                 fingerprint = path.split('/')[-2]
                 engine = int(path.split('/')[5])
@@ -1900,8 +1897,8 @@ class HostedGovernanceInitializationTest(unittest.TestCase):
             self.assertEqual(body["recipient_type"], "user")
             self.assertEqual(body["recipient_id"], "7")
             self.assertEqual(body["action"], "read")
-            self.assertEqual(body["direct_permission_version"], "1")
-            self.assertEqual(body["direct_permission_source"], "explicit")
+            self.assertNotIn("direct_permission_version", body)
+            self.assertNotIn("direct_permission_source", body)
             self.assertEqual(body["expiry_mode"], "until_revoked")
             actual.add((engine, namespace["term"], namespace["name"], table["name"]))
         self.assertEqual(actual, {

@@ -677,28 +677,17 @@ func exerciseCurrentSourceRules(t *testing.T, db *gorm.DB, acceptor *Service, ru
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err := repo.transaction(ctx, func(tx *Repository) error {
-						input := fixturePermitInput(ctx, tx, runtime.TenantID, actor.PrincipalID, path, true, 0)
-						_, err := fixtureSetPermit(ctx, tx, input, func(*Repository) error { return nil })
-						return err
-					}); err != nil {
-						t.Fatal(err)
-					}
 
 					if result := read(t, user, path); result.Covered {
-						t.Fatal("approval configuration alone granted access")
+						t.Fatal("ungranted target was readable")
 					}
 					reason := "Explicit independent storage fixture"
 					row := &sourceGrant{RequestID: uuid.New(), ApprovalMode: approvalModeIndependent,
 						TenantID: runtime.TenantID, EngineID: int64(path.EngineID), CatalogPath: encoded, ItemFingerprint: testReadBindings(path)[0].ItemFingerprint, BoundaryHash: testReadBindings(path)[0].BoundaryHash,
 						RecipientType: kind, RecipientID: recipientID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked,
-						DirectPermissionVersion: 1, DirectPermissionSource: "explicit", OperatorPrincipalID: actor.PrincipalID, OperatorMembershipID: actor.MembershipID,
+						OperatorPrincipalID: actor.PrincipalID, OperatorMembershipID: actor.MembershipID,
 						OperatorAuthorizationVersion: actor.AuthorizationVersion, Reason: &reason}
-					bad := *row
-					bad.DirectPermissionVersion++
-					if err := repo.insertSourceGrant(ctx, &bad); err == nil {
-						t.Fatal("mismatched independent requirement accepted")
-					}
+
 					if err := repo.insertSourceGrant(ctx, row); err != nil {
 						t.Fatal(err)
 					}

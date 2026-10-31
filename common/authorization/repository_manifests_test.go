@@ -45,8 +45,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 544 {
-		t.Fatalf("descriptor count = %d, want 544", len(descriptors))
+	if len(descriptors) != 542 {
+		t.Fatalf("descriptor count = %d, want 542", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if strings.HasPrefix(descriptor.Key, "system.meta_collection_qualification.") && (descriptor.Delegable || !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) || descriptor.TenantCustomizable == (descriptor.Action == "execute")) {
@@ -98,9 +98,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			if key == PlatformDefinitionPublishPermission && role.Key != "platform.ontology_runtime" {
 				t.Fatalf("built-in role %q unexpectedly grants platform publication", role.Key)
 			}
-			if key == "system.engine_access_direct_permission.update" && role.Key != "tenant.engine_access_delegation_administrator" {
-				t.Fatalf("built-in role %q unexpectedly grants direct permission management", role.Key)
-			}
 			if (key == "system.engine_access_grant.create" || key == "system.engine_access_grant.read") && role.Key != "tenant.source_data_authorizer" && role.Key != "tenant.engine_access_delegation_administrator" {
 				t.Fatalf("built-in role %q unexpectedly grants independent source Grant permission %q", role.Key, key)
 			}
@@ -136,9 +133,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			if key == "system.engine_access_fulfillment.create" && role.Key != "tenant.source_data_authorizer" {
 				t.Fatalf("built-in role %q unexpectedly grants human business handling", role.Key)
 			}
-			if key == "system.engine_access_direct_permission.read" && role.Key != "tenant.source_data_authorizer" && role.Key != "tenant.engine_access_delegation_administrator" {
-				t.Fatalf("built-in role %q unexpectedly grants direct permission %q", role.Key, key)
-			}
 			if key == "catalog.sharing_decision.create" {
 				t.Fatalf("built-in role %q unexpectedly grants business confirmation", role.Key)
 			}
@@ -160,7 +154,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "tenant.source_data_authorizer", []string{
 		"catalog.entry.read",
 		"iam.department.read", "iam.project_group.read", "iam.tenant_membership.read", "system.engine.read",
-		"system.engine_access_direct_permission.read",
 		"system.engine_access_fulfillment.create",
 		"system.engine_access_grant.create", "system.engine_access_grant.read", "system.engine_access_grant.revoke",
 		"system.engine_catalog.read",
@@ -174,8 +167,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"system.engine_access_delegation.create",
 		"system.engine_access_delegation.read",
 		"system.engine_access_delegation.revoke",
-		"system.engine_access_direct_permission.read",
-		"system.engine_access_direct_permission.update",
 		"system.engine_access_grant.create", "system.engine_access_grant.read", "system.engine_access_grant.revoke",
 		"system.engine_catalog.read",
 		"system.meta_collection_qualification.approve", "system.meta_collection_qualification.read", "system.meta_collection_qualification.revoke",

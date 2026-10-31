@@ -1,3 +1,5 @@
+直接授权简化（2026-10-31）：逐 DataItem 直接许可、许可 Tab 与部署默认退出。直接办理沿既有 Grant 创建权限及引擎管理范围，Catalog 业务批准始终保留；新增授权支持 DataItem 多选、节点本级／递归当前项选择。实现与验证状态见 IAM 数据模型规范。
+
 Graph 保护投影 Runtime（000218）：只向既有 `tenant.graph_runtime` 发布 `security.protection_projection.read/update`，向 `platform.graph_runtime` 发布 `platform.tenant.read` 以发现待同步租户；不新增用户授权或 Role Assignment，不调整源数据访问授权。绑定变更沿现有 IAM 触发器推进服务主体授权版本。验证使用 `make test-system-iam-postgres SYSTEM_IAM_POSTGRES_TEST_ARGS="--package migration --test graph-protection-runtime"`，完整迁移门禁与既有 System CI 自动发现。
 
 # CLAUDE.md
@@ -6,11 +8,10 @@ Meta basic 采集资格由 System 唯一保存及裁决，首期限定 PG entire
 
 采集资格的 API／Worker、审批页、下一次执行自然到期、Cron 及运行中撤销／到期，统一按[分版本验收导读](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#meta-采集资格验收导读)定位固定源码、完整证据、失败与未覆盖项，不合并为当前 HEAD 或完整矩阵通过。范围仍限 PG 整引擎 basic、一次 Catalog 枚举边界；排队／运行中配置变化竞态、逐 SQL 取消、deep、其他 selector／引擎和生产容量不能据此认定通过。非预期致命失败清理仍以确定性反例为证，不宣称 Hosted 已注入该故障。
 
-数据授权办理员统一角色：`tenant.source_data_authorizer` 组合直接 Grant 创建、Catalog 人类办理、直接许可读取和必要候选读取。直接办理须目标有效许可允许；Catalog 办理须有效业务依据，两者分别核验功能 Permission 与当前引擎管理资格。角色不授予业务批准、许可管理、Deny、机器 execute 或数据内容读取。当前模板以 `system/authorization/builtin_roles.yaml` 为准。
+数据授权办理员统一角色：`tenant.source_data_authorizer` 组合直接 Grant 创建、Catalog 人类办理和必要候选读取。直接办理须当前功能 Permission 与引擎管理资格；Catalog 办理须有效业务依据，两者分别核验功能 Permission 与当前引擎管理资格。角色不授予业务批准、Deny、机器 execute 或数据内容读取。当前模板以 `system/authorization/builtin_roles.yaml` 为准。
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-直接授权许可（2026-10-28）：System 使用精确 DataItem 的显式允许／禁止替代互斥批准模式。显式设置优先；无设置时 Catalog 持久启用默认不允许，明确未启用默认允许，未知状态拒绝新直接签发，临时故障不放开。许可管理要求独立 `.engine_access_direct_permission.update` 与当前引擎授权管理员资格，不授予普通办理员。Catalog 业务批准始终保留，关闭许可不撤销既有 Grant。独立 `direct-permissions` Tab 查询全部已识别 DataItem 的最终许可，先过滤再计数和分页；新增授权仅显示选中项许可。迁移 000248 映射旧配置、移除旧协议；000246 与 Catalog／Transfer 各自启动迁移清理已获准丢弃的全部旧授权历史并防止旧成果续办重签。固定 `c8977cecb` 的 PG Hosted T4 已通过 93 项检查和三段浏览器，清理零残留；开发环境重启后的迁移 248 及旧授权历史归零已只读核实，本机页面的当前／历史归零、直接许可过滤及选中项许可展示已只读核实。完整证据见[验收记录](../docs/spec/testing/evidence/数据保护与执行血缘历史证据.md#直接授权许可模型替换--pg-hosted-t4-与开发库迁移)，完整边界见《授权上下文规范》5.5.5 与《System IAM 数据模型与迁移规范》。
 
 > IAM 概念与平台契约以 `docs/concepts/addp账号与权限体系图.md`、`docs/spec/addp授权上下文规范.md`、`docs/spec/addp权限与角色发布规范.md` 和 `docs/spec/addp OAuth授权规范.md` 为准；System 数据与协议实现以 `system/docs/IAM数据模型与迁移规范.md` 和 `system/docs/OAuth与Fosite实现说明.md` 为准。当前实现已切换为 Principal、Tenant Membership、Role/Permission、Token Family 和 `addp.auth_context/v1`，不得恢复旧账号分级或平行认证路径。
 
@@ -26,7 +27,7 @@ Manager 剖析结果的固定同步源检查 `POST /engine-access/read-checks/ma
 
 Manager 正式剖析执行授权由 `iam.ManagerProfileAuthorizationService` 与同事务的 `engineaccess.VerifyExecutionSourceRead` 组合。000192 在既有 Execution Authorization 上加入不可变 `source_read_scope`，只接受精确 pending、普通 API User、单引擎只读的 `data-profile-config/v6`，冻结全配置摘要及完整 ReadSet；消费复核当前 Manager Runtime、真实 running claim、发起人功能及全部源规则，审计后再次检查到期。仅给内置 Manager Runtime 增加已有机器消费 Permission，不给用户或源资源补权。固定 HTTP 签发入口 `/auth/execution-authorizations/manager-profiles` 仅接受 execution UUID／有效期，核验两项 Manager 功能 Permission；消费入口 `/execution-authorizations/:id/manager-profile-accesses` 仅接受固定 `addp-manager` Tenant Service 和真实执行租约，返回不可缓存的当次观察时刻，不返回连接或访问租约。范围类型及纯值校验唯一归 `common/execution`，共享客户端不自动重试或跟随重定向。禁止通过 engine-accesses、Notebook 或服务定义绕过范围；Manager 生产采样仍未接通，继续明确拒绝无正式来源授权的剖析。
 
-> 正式受理归属：Catalog 管业务批准及当前责任核验，System 保存最小不可变正式受理回执，并沿唯一源 Grant 路径签发。新受理不读取直接授权许可，也不消费旧模式或批准要求版本；回执与同请求关闭、签发沿既有事务边界排序。原 5 分钟办理窗口不因重试刷新，责任变化前已受理的同次、同参办理可按原规则继续。PG 业务签发与读取在本次许可模型替换后的固定 `c8977cecb` T4 中已重新验证，见验收索引；不推广到其他引擎或消费入口。
+> 正式受理归属：Catalog 管业务批准及当前责任核验，System 保存最小不可变正式受理回执，并沿唯一源 Grant 路径签发。新受理不读取直接授权许可，也不消费旧模式或批准要求版本；回执与同请求关闭、签发沿既有事务边界排序。原 5 分钟办理窗口不因重试刷新，责任变化前已受理的同次、同参办理可按原规则继续。PG 业务签发与读取在旧许可模型的固定 `c8977cecb` T4 中已验证（不代表 2026-10-31 简化后的版本），见验收索引；不推广到其他引擎或消费入口。
 
 > 内部核清读取：`engineaccess.Repository.readFulfillment` 使用独立只读事务，与仲裁共用完整请求绑定匹配，不取仲裁锁；未找到不等于关闭，退出或过期不改写原回执。拒绝在受理写事务中暴露自身未提交结果。该仓储不替代可信跨模块核清接口、当前资格判断或实际 Grant 消费。
 
@@ -48,13 +49,13 @@ Hosted Security T4 的一次性 IAM 夹具复用 `backend/cmd/online-test-fixtur
 
 正式 Runtime 首次受理（2026-10-03）：`POST /runtime/engine-access-fulfillments/:request_id/accept` 限定当前 `addp-catalog` Tenant Service 身份及 `.execute`。System 在本地锁外使用独立 `addp-system` Tenant Service OAuth 反查 Catalog 精确待核清依据，再按稳定 IAM 锁顺序核验原办理人、确认人、接收主体、独立办理权限／委派及有效业务依据；结果和审计原子提交。000180 仅给 `tenant.system_runtime` 最小 Catalog 依据读取权。可选 `SYSTEM_SERVICE_CLIENT_SECRET` 缺失不影响 Ready，只阻断新受理并返回明确 503；历史结果恢复和关闭不依赖它。移除配置停用 Client 并撤销原 Token Family，不借用其他模块凭据。受理回执本身不是 Grant 或实际读取许可；PG 的自动签发、Manager 真实读取、Deny 与收权另由 `pg-source-authorization` Hosted T4 验收，不把该结果推广到其他引擎或消费入口。
 
-幂等 Grant 签发：`system.engine_access_grants` 是精确源规则的唯一不可变存储。`approval_mode` 仅记录 `catalog/independent/task_production` 签发来源，不是 DataItem 可切换的批准模式。Catalog 来源从 accepted 回执提取规则并核验原窗口，不读取直接许可；直接来源保存 `direct_permission_source/version`，正式事务核对有效许可和观察版本。公开 `POST /api/v1/system/engines/:id/access_grants` 只在当前 User 具备 Grant 创建 Permission、引擎管理资格、有效接收方及完整 Meta 边界时签发，Grant 与审计原子提交。`GET` 同路径展示当前关系，`GET /access_grants/history` 查询历史；关系存在与否不替代实际读取裁决。原编号同参重试仅恢复原历史，不续期、不复活撤销、不因后续许可变化改写结果；不同新编号不得重复发放有效关系。读取与撤销只消费同一 Grant，不拼接受理回执或许可配置。
+幂等 Grant 签发：`system.engine_access_grants` 是精确源规则的唯一不可变存储。`approval_mode` 仅记录 `catalog/independent/task_production` 签发来源，不是 DataItem 可切换的批准模式。Catalog 来源从 accepted 回执提取规则并核验原窗口，不读取直接许可；直接来源仅按独立 Grant 创建权限、当前引擎办理范围和完整 Meta 边界签发，不配置逐项许可。公开 `POST /api/v1/system/engines/:id/access_grants` 只在当前 User 具备 Grant 创建 Permission、引擎管理资格、有效接收方及完整 Meta 边界时签发，Grant 与审计原子提交。`GET` 同路径展示当前关系，`GET /access_grants/history` 查询历史；关系存在与否不替代实际读取裁决。原编号同参重试仅恢复原历史，不续期、不复活撤销、不因后续配置变化改写结果；不同新编号不得重复发放有效关系。读取与撤销只消费同一 Grant，不拼接受理回执或许可配置。
 
-直接许可接口：`GET /engines/:id/direct-permissions` 依据 Meta 最小身份清单列出有效许可；`GET /engines/:id/data-items/:fingerprint/direct-permission` 查询精确项；同路径 `PUT` 显式设置允许／禁止，要求结构化目标、预期边界、已观察许可来源和字符串版本及原因。读取与修改分别校验独立 Permission 和当前引擎管理资格，修改另须当前管理员资格。Meta RPC 不跨 IAM 锁，返回后重核资格；许可变更与直接签发共用精确目标锁，采用部署默认时锁定持久模块定义直至提交。版本冲突必须显式刷新；同显式值不递增版本或重复审计。旧要求观察、首次初始化、模式切换及原子初始化 Grant 已删除，不提供兼容路径。
+直接授权不再提供逐项许可接口或配置。最小 DataItem 身份清单与精确授权事实接口继续用于目标选择和边界核验。
 
 2026-10-08：000198 将现有委派管理员模板完善为“引擎授权管理员”，显式组合初始化、Grant 创建／读取／撤销和候选读取权限。当前租户有效的 `system.engine_access_delegation.create` 表达管理员管理范围，管理员无需委托自己；具体功能仍逐项核验，不能仅凭角色名称放行。角色扩展不创建委托或读取 Grant；已分配账号的授权版本推进、旧会话撤销，需重新登录。000199 仅保存不可变初始化意图，不改变历史授权事实。
 
-引擎列表的“授权”操作与“详情”并列，无存储能力时禁用授权。独立授权窗口按功能权限提供“数据授权”“直接授权许可”“委托授权”和“采集资格”分区，详情不再混入授权操作。数据授权保留新增／当前／全部记录分区；新增使用共享 DataItem 搜索和资源树，选中后逐项查询 Meta 边界及有效许可。schema/node 只展开本次已有普通表，最多 200 项，不包括未来表或视图；任一选中项不允许、未知或读取失败，批次不能静默跳过它提交。许可管理、引擎管理委托和内容 Grant 各自独立，不互相授予。
+引擎列表的“授权”操作与“详情”并列，无存储能力时禁用授权。独立授权窗口按功能权限提供“数据授权”“委托授权”和“采集资格”分区，详情不再混入授权操作。数据授权保留新增／当前／全部记录分区；新增使用共享 DataItem 搜索和资源树，支持多选及节点批量选择，默认仅当前节点直接子项，显式递归才包括更深层的当前数据项；选中后逐项查询 Meta 边界。schema/node 只展开本次已有普通表，最多 200 项，不包括未来表或视图；任一选中项身份或边界未知、读取失败，批次不能静默跳过它提交。引擎管理委托和内容 Grant 各自独立，不互相授予。
 
 引擎授权窗口的 `tab=delegations`（委托授权）提供管理委派分页查询、创建和撤销，分别要求 `system.engine_access_delegation.read/create/revoke`；进入引擎详情或授权窗口仍需 `system.engine.read`。接收账号复用 `TenantMemberSelect` 和有权读取的有效 Tenant Membership 候选，不手填 ID；创建要求显式未来到期时间及原因，不自动分配角色或数据读取权。管理委派变更会撤销接收账号的旧会话；撤销管理委派不撤销既有源数据 Grant。无权限的 Tab 规范化为基础信息，草稿不写入 URL 或浏览器存储。
 

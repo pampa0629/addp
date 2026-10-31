@@ -36,8 +36,8 @@
         "disabled": "Catalog not enabled",
         "submit": "Declare deployment state",
         "success": "Catalog deployment state declared",
-        "enableImpact": "Enabling Catalog makes direct authorization disallowed by default for items without an explicit setting. Explicit settings and existing data grants remain unchanged.",
-        "disableImpact": "Without Catalog enabled, qualified operators may directly authorize items without an explicit setting. Explicit settings and existing data grants remain unchanged. This does not automatically grant anyone read access."
+        "enableImpact": "Enable Catalog business approval. Existing grants remain unchanged.",
+        "disableImpact": "Disable Catalog. Direct authorization still requires its existing role permissions and engine scope."
       },
       "tabs": {
         "overview": "Module Overview",
@@ -726,7 +726,6 @@
           "element": "Data Element",
           "engine": "Engine",
           "engine_catalog": "Engine Catalog",
-          "engine_access_direct_permission": "Direct Authorization Permission",
           "engine_access_fulfillment": "Source Access Fulfillment",
           "engine_access_grant": "Source Data Grant",
           "engine_access_initial_grant": "Initial Task Output Grant",
@@ -1190,53 +1189,10 @@
         "invalid": "Inspect a real task, enter a purpose (up to 2000 characters), and select a future expiry.",
         "invalidReason": "Enter a revocation reason (up to 2000 characters) and review the current revocable version."
       },
-      "directPermission": {
-        "recursive": "Include descendant nodes",
-        "selectionHint": "Node operations include items hidden by filters, but never future items.",
-        "empty": "No matching DataItems",
-        "modified": "Pending change",
-        "itemCount": "{count} DataItems",
-        "count": "{count} DataItems; {changed} pending changes",
-        "discard": "Discard changes",
-        "batchReview": "Review permission changes",
-        "batchHint": "Review the exact items below. Each item is submitted independently; a failure stops subsequent writes. No automatic retries.",
-        "current": "Current permission",
-        "after": "Set to",
-        "result": "Result",
-        "capacity": "The tree exceeds the 20,000-item capacity. No partial list or permission changes were applied.",
-        "results": {
-          "pending": "Not submitted",
-          "saving": "Submitting",
-          "succeeded": "Succeeded",
-          "unchanged": "No change needed",
-          "failed": "Failed; review required",
-          "unknown": "Unknown; review required"
-        },
-        "title": "Direct authorization permissions",
-        "boundary": "Controls new direct Grants. Catalog business approval remains available; existing Grants, Denies and revocations are unchanged. Unconfigured items use the persistent Catalog deployment declaration.",
-        "search": "DataItem name or path",
-        "state": "Effective permission",
-        "source": "Permission source",
-        "all": "All",
-        "states": {
-          "allowed": "Direct authorization allowed",
-          "denied": "Direct authorization not allowed",
-          "unknown": "Deployment state unknown",
-          "pending": "Not checked"
-        },
-        "sources": {
-          "explicit": "Explicit setting",
-          "deployment_default": "Deployment default",
-          "deployment_unknown": "Deployment undeclared"
-        },
-        "edit": "Set permission",
-        "selectedHint": "Only the selected DataItems are shown. An engine authorization administrator may enable direct authorization in its separate tab; Catalog business fulfillment remains available.",
-        "changeBoundary": "Sets future direct authorization permission for the listed DataItems only. Does not issue reading access, revoke existing Grants or affect Catalog business fulfillment."
-      },
       "dataAuthorization": {
         "newAuthorization": "New authorization",
         "title": "Data authorization",
-        "boundary": "Select data and recipients, review direct authorization permission and the reading validity, then confirm. Handling does not automatically grant the handler read access.",
+        "boundary": "Select DataItems, recipients and read expiry, then confirm. Handling a grant does not give the operator read access.",
         "selectData": "1. Choose data to authorize",
         "basis": {
           "title": "DataItem basic identification",
@@ -1253,7 +1209,7 @@
           "pending": "Not checked"
         },
         "addSelection": "Add to this authorization",
-        "snapshotOnly": "Select up to 200 DataItems identified by Meta. Nodes expand only their current DataItems, excluding future items. An NFS FileGDB is authorized as a whole container, including future child tables. Materials, textures and container fragments are not authorized separately.",
+        "snapshotOnly": "Node selection includes only the current DataItems (up to 200 per batch), not future items.",
         "remove": "Remove",
         "reviewCurrent": "Refresh and review current permission",
         "selectionFailed": "A complete eligible DataItem list could not be obtained or exceeds 200 items. No DataItems were added. Narrow the selection or retry.",
@@ -1262,7 +1218,6 @@
         "version": "Version",
         "reason": "Configuration reason",
         "pickTable": "Select Meta DataItems or nodes",
-        "readRequired": "Reviewing direct authorization permission requires its read permission and management qualification for this engine.",
         "browseRequired": "Selecting DataItems requires source-grant read permission. Contact your permission administrator.",
         "unsupported": "The engine cannot be browsed or its ID cannot be safely represented. Confirm that the engine is active and online.",
         "failed": "No reliable result was obtained. Refresh to check; this page never automatically retries or claims configuration took effect.",
@@ -1271,7 +1226,8 @@
           "catalog": "Business approval",
           "task_production": "Initial task output grant",
           "mixed": "Multiple authorization sources"
-        }
+        },
+        "recursive": "Include descendant nodes"
       },
       "delegations": {
         "new": "New delegation",
@@ -2165,7 +2121,7 @@
         "scanFailed": "Failed to create resource assessment task: {error}",
         "cleanupCreated": "Resource reclaim task created",
         "managerScopeRequired": "Select both Meta and Manager and run a new assessment before executing Meta cleanup.",
-      "cleanupFailed": "Failed to create resource reclaim task: {error}",
+        "cleanupFailed": "Failed to create resource reclaim task: {error}",
         "taskFailed": "Task execution failed",
         "noScanFirst": "Please run a resource assessment first",
         "confirmRequired": "Complete the confirmation first",

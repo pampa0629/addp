@@ -350,9 +350,6 @@ class FakeSourceIssuer:
             return SimpleNamespace(payload={'principal': {'id': self.principal, 'type': 'user'},
                 'context': {'type': 'tenant', 'tenant_id': '2'}, 'token': {'type': 'first_party_access_token'},
                 'authorization': {'role_assignments': [{'role_key': 'online.ftp_initializer', 'permissions': sorted(M.ISSUER_PERMISSIONS)}]}})
-        if path.endswith('/direct-permission'):
-            return SimpleNamespace(payload={'engine_id': path.split('/')[5], 'item_fingerprint': path.split('/')[-2],
-                'source': 'explicit', 'state': 'allowed', 'version': '1'})
         if path.endswith('/authorization-facts'):
             model = next(model for model in self.report['models'] if model['fingerprint'] in path)
             composition = {'format': model['format'], 'refs': [
@@ -1254,7 +1251,7 @@ class FTPConsumerTest(unittest.TestCase):
         commands = [body for method, path, body in issuer.calls if path.endswith('/access_grants')]
         self.assertEqual([body['recipient_id'] for body in commands], ['8'] * len(report['models']))
         for body in commands:
-            self.assertEqual((body['direct_permission_source'], body['direct_permission_version']), ('explicit', '1'))
+            self.assertNotIn('direct_permission_source', body)
             self.assertEqual(body['catalog_path']['segments'][-1]['term'], 'file')
             self.assertNotIn('file_composition', body)
             self.assertNotIn('actor_principal_id', body)
@@ -1271,7 +1268,7 @@ class FTPConsumerTest(unittest.TestCase):
         self.assertEqual(issuer.release_statuses, (200,))
         authorization.revoke(receipts[1]['request_id'])
         receipts.append(authorization.grant(report['models'][1]))
-        self.assertEqual([body for _, path, body in issuer.calls if path.endswith('/access_grants')][-1]['direct_permission_version'], '1')
+        self.assertNotIn('direct_permission_version', [body for _, path, body in issuer.calls if path.endswith('/access_grants')][-1])
         authorization.cleanup()
         self.assertEqual(authorization.grants, [])
         self.assertEqual(issuer.revoke_statuses, (200,))

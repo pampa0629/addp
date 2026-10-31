@@ -423,7 +423,6 @@ func TestEngineAccessDelegationAgainstPostgres(t *testing.T) {
 	if finalAudits != initialAudits+6 {
 		t.Fatalf("audit count=%d want=%d", finalAudits, initialAudits+6)
 	}
-	exerciseDirectPermissionAPI(t, db, identity, service, actor, engine, otherTenant.ID)
 	exerciseHandlingScopeAPI(t, db, identity, service, actor, engine, otherTenant.ID)
 	exerciseAuthorizationFactsAPI(t, db, identity, actor, engine)
 }

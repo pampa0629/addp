@@ -31,8 +31,6 @@ SOURCE_INITIALIZER_PERMISSIONS = {
     'system.engine_access_delegation.create',
     'system.engine_access_delegation.read',
     'system.engine_access_delegation.revoke',
-    'system.engine_access_direct_permission.read',
-    'system.engine_access_direct_permission.update',
     'system.engine_access_grant.create',
     'system.engine_access_grant.read',
     'system.engine_access_grant.revoke',
@@ -58,40 +56,6 @@ def read_exact_record_authorization_facts(authorizer, path):
         or not facts.get('observed_at')):
         raise RegistrationError('source Grant requires a complete matching System authorization boundary')
     return facts
-
-
-def read_direct_permission(client, engine_id, fingerprint):
-    """Observe the effective setting; module health never implies permission."""
-    view = client.request('GET', f'/api/v1/system/engines/{engine_id}/data-items/{fingerprint}/direct-permission', (200,)).payload
-    if (not isinstance(view, dict) or view.get('engine_id') != str(engine_id)
-        or view.get('item_fingerprint') != fingerprint or view.get('state') not in {'allowed', 'denied', 'unknown'}
-        or view.get('source') not in {'explicit', 'deployment_default', 'deployment_unknown'}
-        or not isinstance(view.get('version'), str) or not re.fullmatch('0|[1-9][0-9]*', view['version'])
-        or (view['source'] == 'deployment_unknown') != (view['state'] == 'unknown')
-        or (view['source'] == 'deployment_unknown') != (view['version'] == '0')):
-        raise RegistrationError('direct permission observation has an invalid identity or basis')
-    return view
-
-
-def set_direct_permission(client, path, facts, allowed, *, current=None):
-    """An explicit administrator command bound to trusted Meta facts and observation."""
-    current = current if current is not None else read_direct_permission(client, path['engine_id'], facts['item_fingerprint'])
-    body = {'catalog_path': path, 'expected_boundary_hash': facts['boundary_hash'], 'allowed': allowed,
-            'expected_source': current['source'], 'expected_version': current['version'],
-            'reason': 'Disposable Online exact DataItem direct permission'}
-    view = client.request('PUT', f"/api/v1/system/engines/{path['engine_id']}/data-items/{facts['item_fingerprint']}/direct-permission", (200,), body).payload
-    expected_version = (int(current['version']) if current['state'] == ('allowed' if allowed else 'denied')
-                        else int(current['version']) + 1) if current['source'] == 'explicit' else 1
-    expected = {'engine_id': str(path['engine_id']), 'item_fingerprint': facts['item_fingerprint'],
-                'source': 'explicit', 'state': 'allowed' if allowed else 'denied', 'version': str(expected_version)}
-    if view != expected:
-        raise RegistrationError('direct permission command changed its identity, state or version')
-    return view
-
-
-def ensure_direct_permission(client, path, facts):
-    current = read_direct_permission(client, path['engine_id'], facts['item_fingerprint'])
-    return current if current['state'] == 'allowed' else set_direct_permission(client, path, facts, True, current=current)
 
 
 def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets, *, item_term="table"):
@@ -145,15 +109,13 @@ def initialize_exact_record_read_grants(authorizer, consumer, tenant_id, targets
         if len(matches) != 1 or matches[0].get('fingerprint') != fingerprint:
             raise RegistrationError('source Grant requires one matching persisted DataItem identity')
         facts = read_exact_record_authorization_facts(authorizer, body['catalog_path'])
-        permission = ensure_direct_permission(authorizer, body['catalog_path'], facts)
-        body.update(item_fingerprint=fingerprint, expected_boundary_hash=facts['boundary_hash'],
-                    direct_permission_source=permission['source'], direct_permission_version=permission['version'])
+        body.update(item_fingerprint=fingerprint, expected_boundary_hash=facts['boundary_hash'])
         check_path = '/api/v1/system/engine-access/read-checks/manager-preview'
         check_body = {'targets': [body['catalog_path']]}
         consumer.request('POST', check_path, (403,), check_body)
         issued = authorizer.request('POST', f'/api/v1/system/engines/{engine_id}/access_grants', (201,), body).payload
         expected = {key: body[key] for key in (
-            'request_id', 'catalog_path', 'direct_permission_source', 'direct_permission_version', 'recipient_type', 'recipient_id', 'action', 'expiry_mode')}
+            'request_id', 'catalog_path', 'recipient_type', 'recipient_id', 'action', 'expiry_mode')}
         expected.update(engine_id=str(engine_id), approval_mode='independent', revocation=None,
                         item_fingerprint=fingerprint, boundary_hash=facts['boundary_hash'])
         if not isinstance(issued, dict) or any(issued.get(key) != value for key, value in expected.items()):

@@ -36,8 +36,8 @@
         "disabled": "未启用 Catalog",
         "submit": "登记部署状态",
         "success": "Catalog 部署状态已登记",
-        "enableImpact": "启用 Catalog 后，未单独配置的数据项默认不允许直接授权。显式许可和已有数据授权保持不变。",
-        "disableImpact": "未启用 Catalog 时，未单独配置的数据项默认允许有资格的人员直接授权。显式许可和已有数据授权保持不变；这不会向任何人自动授予读取权限。"
+        "enableImpact": "启用 Catalog 业务批准流程，已有数据授权保持不变。",
+        "disableImpact": "停用 Catalog。直接授权仍须相应功能权限及引擎管理资格。"
       },
       "tabs": {
         "overview": "模块概览",
@@ -726,7 +726,6 @@
           "element": "数据元",
           "engine": "引擎",
           "engine_catalog": "引擎目录",
-          "engine_access_direct_permission": "直接授权许可",
           "engine_access_fulfillment": "源授权办理",
           "engine_access_grant": "源数据授权",
           "engine_access_initial_grant": "任务产出初始授权",
@@ -1190,53 +1189,10 @@
         "invalid": "请核对真实任务、填写用途并选择未来的到期时间；用途最多 2000 字。",
         "invalidReason": "请填写撤销原因（最多 2000 字），并核对当前可撤销版本。"
       },
-      "directPermission": {
-        "recursive": "包含下级节点",
-        "selectionHint": "节点操作包含被筛选隐藏的项，仅处理本次清单，不包含未来新增项。",
-        "empty": "没有匹配的数据项",
-        "modified": "待确认",
-        "itemCount": "{count} 个数据项",
-        "count": "共 {count} 个数据项，待变更 {changed} 项",
-        "discard": "放弃变更",
-        "batchReview": "确认批量许可变更",
-        "batchHint": "核对以下具体数据项。逐项提交，遇到失败即停止并保留结果；不会自动重新提交。",
-        "current": "当前许可",
-        "after": "设置为",
-        "result": "办理结果",
-        "capacity": "数据项超过单次资源树容量（20,000 项），未加载部分清单，也未进行任何设置。",
-        "results": {
-          "pending": "未执行",
-          "saving": "提交中",
-          "succeeded": "已成功",
-          "unchanged": "无需变更",
-          "failed": "失败，待核对",
-          "unknown": "结果未知，待核对"
-        },
-        "title": "直接授权许可",
-        "boundary": "此处控制是否允许新增直接授权。Catalog 业务批准始终保留；已有授权、拒绝和撤销不因许可设置而改变。未单独配置的数据项按 Catalog 的持久部署状态决定默认值。",
-        "search": "数据项名称或路径",
-        "state": "有效许可",
-        "source": "许可来源",
-        "all": "全部",
-        "states": {
-          "allowed": "允许直接授权",
-          "denied": "不允许直接授权",
-          "unknown": "部署状态未知",
-          "pending": "尚未核实"
-        },
-        "sources": {
-          "explicit": "显式设置",
-          "deployment_default": "部署默认",
-          "deployment_unknown": "部署状态未登记"
-        },
-        "edit": "设置许可",
-        "selectedHint": "仅显示本次选中数据项的有效许可。未允许时，请由引擎授权管理员在“直接授权许可”中设置，或在 Catalog 中按业务批准办理。",
-        "changeBoundary": "此次只设置清单中数据项后续的直接授权许可，不签发读取权限，不撤销已有授权，也不影响 Catalog 业务办理。"
-      },
       "dataAuthorization": {
         "newAuthorization": "新增授权",
         "title": "数据授权",
-        "boundary": "选择数据与接收方，核对直接授权许可和读取有效期后确认。办理授权不会让办理人自动获得读取权。",
+        "boundary": "选择数据项与接收方，核对读取有效期后确认。办理授权不会让办理人自动获得读取权。",
         "selectData": "1. 选择要授权的数据",
         "basis": {
           "title": "DataItem 基础识别",
@@ -1253,7 +1209,7 @@
           "pending": "尚未核对"
         },
         "addSelection": "加入本次授权清单",
-        "snapshotOnly": "按 Meta 已识别的数据项选择，最多 200 项。选择节点只展开其中当前的数据项，不包含未来新增项；NFS FileGDB 按整个容器授权，包含容器内以后新增的子表。材料、纹理和容器碎片不单独授权。",
+        "snapshotOnly": "节点选择仅包含当前已识别的数据项，单批最多 200 项，不包含以后新增的数据项。",
         "remove": "移除",
         "reviewCurrent": "刷新并核对当前许可",
         "selectionFailed": "未能取得完整的可授权数据项清单，或超过 200 项；本次未加入任何数据项。请缩小范围或重试。",
@@ -1262,7 +1218,6 @@
         "version": "版本",
         "reason": "配置原因",
         "pickTable": "选择 Meta 已识别的数据项或节点",
-        "readRequired": "核对直接授权许可需要相应功能权限及本引擎管理资格。",
         "browseRequired": "选择数据项需要源数据授权读取权限，请联系权限管理员配置。",
         "unsupported": "当前引擎不可浏览或编号无法安全表示；请先确认引擎处于启用、在线状态。",
         "failed": "未取得可靠结果。请刷新核对，页面不会自动重试或宣称配置已生效。",
@@ -1271,7 +1226,8 @@
           "catalog": "业务批准",
           "task_production": "任务产出初始授权",
           "mixed": "多种授权来源"
-        }
+        },
+        "recursive": "递归选择下级节点"
       },
       "delegations": {
         "new": "新增委托",
@@ -2165,7 +2121,7 @@
         "scanFailed": "创建资源评估任务失败: {error}",
         "cleanupCreated": "资源回收任务已创建",
         "managerScopeRequired": "请显式选择 Meta 和 Manager 重新评估，再执行 Meta 清理。",
-      "cleanupFailed": "创建资源回收任务失败: {error}",
+        "cleanupFailed": "创建资源回收任务失败: {error}",
         "taskFailed": "任务执行失败",
         "noScanFirst": "请先执行资源评估",
         "confirmRequired": "请先完成确认",

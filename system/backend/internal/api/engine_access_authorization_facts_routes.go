@@ -126,8 +126,32 @@ func (h *EngineAccessAuthorizationFactsHandler) List(c *gin.Context) {
 	}
 	result, err := h.service.ListAuthorizationItems(c.Request.Context(), actor, engineID, page, size)
 	if err != nil {
-		respondDirectPermissionError(c, err)
+		respondAuthorizationFactsError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+func respondAuthorizationFactsError(c *gin.Context, err error) {
+	if errors.Is(err, engineaccess.ErrAuthorizationFactsUnavailable) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, sysi18n.MsgAuthorizationFactsUnavailable), "error_code": "authorization_facts_unavailable"})
+		return
+	}
+	respondIAMError(c, err)
+}
+func engineAccessActor(c *gin.Context) (engineaccess.Actor, int64, bool) {
+	if rejectTenantIDQuery(c) {
+		return engineaccess.Actor{}, 0, false
+	}
+	actor, err := engineDelegationActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return actor, 0, false
+	}
+	engineID, err := parseIAMDecimalID(c.Param("id"))
+	if err != nil {
+		respondIAMError(c, err)
+		return actor, 0, false
+	}
+	return actor, engineID, true
 }

@@ -18,7 +18,7 @@ func exerciseDevelopmentAuthorizationRetirement(t *testing.T, db *gorm.DB) {
 			t.Fatal(tx.Error)
 		}
 		defer tx.Rollback()
-		preserved := []string{"principals", "tenant_memberships", "role_assignments", "departments", "project_groups", "engine_access_delegations", "meta_collection_qualifications", "engine_access_direct_permissions"}
+		preserved := []string{"principals", "tenant_memberships", "role_assignments", "departments", "project_groups", "engine_access_delegations", "meta_collection_qualifications"}
 		snapshot := func() string {
 			var result strings.Builder
 			for _, table := range preserved {

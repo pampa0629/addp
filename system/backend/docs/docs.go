@@ -2540,7 +2540,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "当前 Tenant User 需独立授予权限及引擎管理资格；支持 Meta 基础识别 complete 的 schema 普通单表、数据库单表／集合和 FTP IFC／3DS 完整组成 single 数据项，必须提交数据项身份及确认时边界摘要，直接授权许可有效且来源、版本匹配。文件组成快照由 System 独立读取 Meta 后冻结，不能由请求自报或把旧主文件许可升级。不要求企业 Catalog 编目；结构核验不读取样本 | Current Tenant User needs Grant creation permission and engine management qualification. Supports Meta-complete schema ordinary-table, database-table/collection and complete FTP IFC/3DS single DataItems, with explicit identity, expected boundary hash and effective direct permission source and version. System freezes file composition from Meta, not caller input or an upgraded primary-only permission. No enterprise Catalog curation is required; structural verification reads no samples\n同命令同操作者同参数重试仅恢复原签发及撤销事实，不续期或恢复读取。不同参数 409；成功不替代消费侧功能权限、Deny、当前主体和安全策略 | Identical command, operator and parameters recover issuance and revocation history without renewal or restored access. Changed parameters return 409; success does not replace consumer permissions, Deny, current identity or security policy\n同目标、接收方和动作已有有效授权时，新命令返回 409 engine_access_grant_relation_exists，不重复发放或静默变更期限；包括业务批准来源 | A new command returns 409 engine_access_grant_relation_exists when the same target, recipient and action already have active access, including business-approved Grants. No duplicate issuance or silent validity change",
+                "description": "当前 Tenant User 需独立授予权限及引擎管理资格；支持 Meta 基础识别 complete 的 schema 普通单表、数据库单表／集合和 FTP IFC／3DS 完整组成 single 数据项，必须提交数据项身份及确认时边界摘要。文件组成快照由 System 独立读取 Meta 后冻结，不能由请求自报或把旧主文件许可升级。不要求企业 Catalog 编目；结构核验不读取样本 | Current Tenant User needs Grant creation permission and engine management qualification. Supports Meta-complete schema ordinary-table, database-table/collection and complete FTP IFC/3DS single DataItems, with explicit identity, expected boundary hash. System freezes file composition from Meta, not caller input or an upgraded primary-only permission. No enterprise Catalog curation is required; structural verification reads no samples\n同命令同操作者同参数重试仅恢复原签发及撤销事实，不续期或恢复读取。不同参数 409；成功不替代消费侧功能权限、Deny、当前主体和安全策略 | Identical command, operator and parameters recover issuance and revocation history without renewal or restored access. Changed parameters return 409; success does not replace consumer permissions, Deny, current identity or security policy\n同目标、接收方和动作已有有效授权时，新命令返回 409 engine_access_grant_relation_exists，不重复发放或静默变更期限；包括业务批准来源 | A new command returns 409 engine_access_grant_relation_exists when the same target, recipient and action already have active access, including business-approved Grants. No duplicate issuance or silent validity change",
                 "consumes": [
                     "application/json"
                 ],
@@ -3300,190 +3300,6 @@ const docTemplate = `{
                 ]
             }
         },
-        "/engines/{id}/data-items/{fingerprint}/direct-permission": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "仅查询Meta已识别身份；显式设置优先，否则使用Catalog持久启用状态，未登记为未知。运行健康不改变默认。不授予读取权，不初始化许可 | Queries a Meta-identified item. Explicit settings win; otherwise persistent Catalog enablement determines the default, with undeclared state unknown. Runtime health never changes this default. No content grant or implicit initialization",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "直接授权许可 | Direct Authorization Permissions"
-                ],
-                "summary": "查询数据项有效直接授权许可 | Read effective direct permission for a DataItem",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "引擎ID | Engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "数据项指纹 | DataItem fingerprint",
-                        "name": "fingerprint",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "当次观察，不是凭据 | Current observation, not a credential",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.DirectPermissionView"
-                        }
-                    },
-                    "400": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.engine_access_direct_permission.read"
-                ]
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "需独立许可管理权限和当前引擎授权管理员资格；普通办理委托不能代替。提交实际观察的来源与版本，显式设置覆盖部署默认。仅控制后续直接签发，不修改已有Grant，不阻断Catalog业务办理，不授予内容读取 | Requires dedicated manage permission and current engine authorization administrator qualification; delegated handlers are insufficient. Submit the observed source and version; explicit settings override deployment defaults. Controls future direct issuance only, without changing Grants, blocking Catalog fulfillment or granting content access",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "直接授权许可 | Direct Authorization Permissions"
-                ],
-                "summary": "设置精确数据项的直接授权许可 | Set direct authorization permission for an exact DataItem",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "引擎ID | Engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "数据项指纹 | DataItem fingerprint",
-                        "name": "fingerprint",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "目标、边界、许可值、原观察及原因 | Target, boundary, desired value, prior observation and reason",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.SetEngineDirectPermissionRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "显式许可观察 | Explicit permission observation",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.DirectPermissionView"
-                        }
-                    },
-                    "400": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.engine_access_direct_permission.update"
-                ]
-            }
-        },
         "/engines/{id}/deletion-assessments": {
             "post": {
                 "security": [
@@ -3611,141 +3427,6 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "system.engine.delete"
-                ]
-            }
-        },
-        "/engines/{id}/direct-permissions": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "包含未显式配置的数据项；由Meta按身份筛选后计数分页，System组合许可来源及Meta权威父节点链；树仅作导航，不建立节点许可。跨服务查询不持有IAM锁；配置变化返回冲突，故障不返回空清单 | Includes unconfigured items. Meta filters identities before counting and pagination; System combines permission provenance and Meta-owned ancestry for navigation, never node-level permission. No IAM lock crosses the owner request; configuration changes return conflict, and failures never become empty lists",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "直接授权许可 | Direct Authorization Permissions"
-                ],
-                "summary": "按有效状态查询数据项直接授权许可 | List DataItems by effective direct permission",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "引擎ID | Engine ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "名称或路径搜索 | Name or path search",
-                        "name": "search",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "精确数据项身份 | Exact DataItem identity",
-                        "name": "item_fingerprint",
-                        "in": "query"
-                    },
-                    {
-                        "enum": [
-                            "allowed",
-                            "denied",
-                            "unknown"
-                        ],
-                        "type": "string",
-                        "description": "有效许可状态 | Effective permission state",
-                        "name": "state",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "页码，默认1 | Page, default 1",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "每页数量，默认20，最多100 | Page size, default 20, maximum 100",
-                        "name": "page_size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "有效许可清单 | Effective permission list",
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "data": {
-                                    "type": "array",
-                                    "items": {
-                                        "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.DirectPermissionIdentityView"
-                                    }
-                                },
-                                "page": {
-                                    "type": "integer"
-                                },
-                                "page_size": {
-                                    "type": "integer"
-                                },
-                                "total": {
-                                    "type": "integer"
-                                },
-                                "total_pages": {
-                                    "type": "integer"
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "请求失败 | Request failed",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.engine_access_direct_permission.read"
                 ]
             }
         },
@@ -17674,85 +17355,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_system_internal_engineaccess.DirectPermissionIdentityView": {
-            "type": "object",
-            "properties": {
-                "ancestors": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/authorizationfacts.IdentityNode"
-                    }
-                },
-                "engine_id": {
-                    "type": "string",
-                    "example": ""
-                },
-                "full_name": {
-                    "type": "string"
-                },
-                "item_fingerprint": {
-                    "type": "string"
-                },
-                "item_type": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "source": {
-                    "type": "string",
-                    "enum": [
-                        "explicit",
-                        "deployment_default",
-                        "deployment_unknown"
-                    ]
-                },
-                "state": {
-                    "type": "string",
-                    "enum": [
-                        "allowed",
-                        "denied",
-                        "unknown"
-                    ]
-                },
-                "version": {
-                    "type": "string",
-                    "example": ""
-                }
-            }
-        },
-        "github_com_addp_system_internal_engineaccess.DirectPermissionView": {
-            "type": "object",
-            "properties": {
-                "engine_id": {
-                    "type": "string",
-                    "example": ""
-                },
-                "item_fingerprint": {
-                    "type": "string"
-                },
-                "source": {
-                    "type": "string",
-                    "enum": [
-                        "explicit",
-                        "deployment_default",
-                        "deployment_unknown"
-                    ]
-                },
-                "state": {
-                    "type": "string",
-                    "enum": [
-                        "allowed",
-                        "denied",
-                        "unknown"
-                    ]
-                },
-                "version": {
-                    "type": "string",
-                    "example": ""
-                }
-            }
-        },
         "github_com_addp_system_internal_engineaccess.GrantRevocation": {
             "type": "object",
             "properties": {
@@ -18038,13 +17640,6 @@ const docTemplate = `{
                 },
                 "catalog_request_id": {
                     "type": "string"
-                },
-                "direct_permission_source": {
-                    "type": "string"
-                },
-                "direct_permission_version": {
-                    "type": "string",
-                    "example": ""
                 },
                 "engine_id": {
                     "type": "string",
@@ -20814,16 +20409,6 @@ const docTemplate = `{
                 },
                 "catalog_path": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
-                },
-                "direct_permission_source": {
-                    "type": "string",
-                    "enum": [
-                        "explicit",
-                        "deployment_default"
-                    ]
-                },
-                "direct_permission_version": {
-                    "type": "string"
                 },
                 "expected_boundary_hash": {
                     "type": "string"
@@ -23689,40 +23274,6 @@ const docTemplate = `{
             "properties": {
                 "connection_info": {
                     "$ref": "#/definitions/github_com_addp_system_internal_models.ConnectionInfo"
-                }
-            }
-        },
-        "internal_api.SetEngineDirectPermissionRequest": {
-            "type": "object",
-            "required": [
-                "allowed",
-                "catalog_path",
-                "expected_boundary_hash",
-                "reason"
-            ],
-            "properties": {
-                "allowed": {
-                    "type": "boolean"
-                },
-                "catalog_path": {
-                    "$ref": "#/definitions/plugin.EngineCatalogPath"
-                },
-                "expected_boundary_hash": {
-                    "type": "string"
-                },
-                "expected_source": {
-                    "type": "string",
-                    "enum": [
-                        "explicit",
-                        "deployment_default",
-                        "deployment_unknown"
-                    ]
-                },
-                "expected_version": {
-                    "type": "string"
-                },
-                "reason": {
-                    "type": "string"
                 }
             }
         },

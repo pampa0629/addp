@@ -109,8 +109,6 @@ const (
 	PermissionSystemEngineAccessDelegationRevoke        = "system.engine_access_delegation.revoke"
 	PermissionSystemEngineAccessDenyCreate              = "system.engine_access_deny.create"
 	PermissionSystemEngineAccessDenyRelease             = "system.engine_access_deny.release"
-	PermissionSystemEngineAccessDirectPermissionRead    = "system.engine_access_direct_permission.read"
-	PermissionSystemEngineAccessDirectPermissionUpdate  = "system.engine_access_direct_permission.update"
 	PermissionSystemEngineAccessFulfillmentCreate       = "system.engine_access_fulfillment.create"
 	PermissionSystemEngineAccessFulfillmentExecute      = "system.engine_access_fulfillment.execute"
 	PermissionSystemEngineAccessGrantCreate             = "system.engine_access_grant.create"
@@ -242,8 +240,6 @@ var permissionKeys = [...]string{
 	"system.engine_access_delegation.revoke",
 	"system.engine_access_deny.create",
 	"system.engine_access_deny.release",
-	"system.engine_access_direct_permission.read",
-	"system.engine_access_direct_permission.update",
 	"system.engine_access_fulfillment.create",
 	"system.engine_access_fulfillment.execute",
 	"system.engine_access_grant.create",

@@ -42,8 +42,6 @@ type sourceGrant struct {
 	Action                       string
 	ExpiryMode                   string
 	ExpiresAt                    *time.Time
-	DirectPermissionVersion      int64
-	DirectPermissionSource       string
 	OperatorPrincipalID          int64
 	OperatorMembershipID         int64
 	OperatorAuthorizationVersion int64

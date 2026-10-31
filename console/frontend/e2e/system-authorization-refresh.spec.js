@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 const authorizationURL = '/system/engines/2?tab=data-authorization'
 const permissions = ['system.engine.read', 'system.engine_access_grant.read',
-  'system.engine_access_direct_permission.read', 'system.engine_catalog.read']
+  'system.engine_catalog.read']
 
 async function setup(page, { storage = true } = {}) {
   let generation = 0, hold = false, allowed = [...permissions]
@@ -16,7 +16,7 @@ async function setup(page, { storage = true } = {}) {
   })
   await page.route('**/api/v1/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname
-    if (path.includes('/access_approval_requirements')) obsoleteRequests.push(`${request.method()} ${path}`)
+    if (path.includes('/access_approval_requirements') || path.includes('/direct-permissions')) obsoleteRequests.push(`${request.method()} ${path}`)
     if (path === '/api/v1/system/refresh') return route.fulfill({ json: { access_token: `engine-token-${++generation}`, expires_in: 900 } })
     if (path === '/api/v1/system/users/me') return route.fulfill({ json: { id: '1', display_name: 'Engine administrator fixture' } })
     if (path === '/api/v1/system/auth/context') {
@@ -34,7 +34,7 @@ async function setup(page, { storage = true } = {}) {
       '/api/v1/system/engines': [engine], '/api/v1/system/engines/2': engine,
       '/api/v1/system/engine-types': [],
       '/api/v1/system/engines/2/access_grants': { data: [], total: 0, page: 1, page_size: 20, total_pages: 0 },
-      '/api/v1/system/engines/2/direct-permissions': { data: [], total: 0, page: 1, page_size: 20 }
+      '/api/v1/system/engines/2/data-items': { data: [], total: 0, page: 1, page_size: 200, total_pages: 0 }
     }
     if (request.method() === 'GET' && Object.hasOwn(responses, path)) return route.fulfill({ json: responses[path] })
     unexpected.push(`${request.method()} ${path}`)
@@ -102,10 +102,8 @@ test('keeps the real engine authorization tab and URL through repeated token rot
     await fixture.finishRefresh()
     await fixture.verifyRestored()
   }
-  await fixture.frame.getByRole('tab', { name: '直接授权许可', exact: true }).click()
-  await expect(fixture.frame.getByTestId('direct-permission-list')).toBeVisible()
-  await expect(fixture.frame.getByTestId('direct-permission-edit')).toHaveCount(0)
-  expect(fixture.reads).toContain('/api/v1/system/engines/2/direct-permissions')
+  await expect(fixture.frame.getByRole('tab', { name: '直接授权许可', exact: true })).toHaveCount(0)
+  expect(fixture.reads).toContain('/api/v1/system/engines/2/access_grants')
   fixture.verifyNoWrites()
 })
 

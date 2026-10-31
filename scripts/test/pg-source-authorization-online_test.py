@@ -33,7 +33,6 @@ class Server:
         self.meta_down = False
         self.catalog_down = False
         self.people = ('A', 'B')
-        self.permissions = {}
 
     def context(self, kind):
         reader = kind.startswith('reader')
@@ -78,19 +77,6 @@ class Server:
                 elif path == '/api/v1/system/login':
                     server.current_reader_token = f'reader-{server.version}-private-token'
                     result = {'next_action': 'session_issued', 'session': {'access_token': server.current_reader_token}}
-                elif path.endswith('/direct-permission'):
-                    current = server.permissions.setdefault(path.split('/')[-2], {
-                        'engine_id': path.split('/')[5], 'item_fingerprint': path.split('/')[-2],
-                        'state': 'allowed', 'source': 'explicit', 'version': '1'})
-                    if method == 'PUT':
-                        if (body['expected_source'], body['expected_version']) != (current['source'], current['version']):
-                            status, result = 409, {'error_code': 'resource_version_conflict'}
-                        else:
-                            state = 'allowed' if body['allowed'] else 'denied'
-                            if state != current['state']:
-                                current.update(state=state, version=str(int(current['version']) + 1))
-                    if status == 200:
-                        result = deepcopy(current)
                 elif path.endswith('/authorization-facts'):
                     status, result = 503, {'error': 'dependency unavailable', 'error_code': 'authorization_facts_unavailable'}
                 elif path == READ_CHECK:
@@ -679,26 +665,18 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
     def test_workspace_requires_actual_withdrawal_and_preserves_tracked_history(self):
         server, lifecycle = self.lifecycle()
         report = {'checks': []}
-        baseline = ONLINE.REGISTRATION.read_direct_permission(lifecycle.operator, 2, self.facts['item_fingerprint'])
         with patch.object(ONLINE, 'WorkspaceObservation') as observation:
             observed = observation.return_value.__enter__.return_value
             def finish():
-                self.workspace_permission_transitions(lifecycle)
                 lifecycle.revoke(lifecycle.grants[-1])
                 return {'result': 'passed'}
             observed.finish.side_effect = finish
             lifecycle.workspace_flow(report, '35')
             self.assertEqual(observation.call_args.args, (3, '33', ONLINE.locator(2, 'metric_people', 10), 2, '35', lifecycle.grants[-1],
-                baseline, self.facts))
+                ))
         self.assertEqual(report['checks'], ONLINE.WORKSPACE_CHECKS)
-        self.assertEqual(report['workspace_permission_cleanup'], 'allowed')
-        self.assertEqual(server.permissions['a' * 64]['version'], '3')
         self.assertIsNotNone(server.grants[lifecycle.grants[-1]]['revocation'])
         lifecycle.cleanup()
-
-    def workspace_permission_transitions(self, lifecycle):
-        for allowed in (False, True):
-            ONLINE.REGISTRATION.set_direct_permission(lifecycle.operator, lifecycle.path, self.facts, allowed)
 
     def test_valid_grant_does_not_replace_manager_read_function(self):
         server, lifecycle = self.lifecycle()
@@ -751,7 +729,6 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                 active = {key for key, row in server.grants.items()
                           if row['revocation'] is None and key not in server.expired_grants}
                 self.assertEqual(active, {lifecycle.grants[-1]})
-                self.workspace_permission_transitions(lifecycle)
                 lifecycle.revoke(lifecycle.grants[-1])
                 return {'result': 'passed'}
             observed.finish.side_effect = withdraw
@@ -779,65 +756,12 @@ class PGAuthorizationOnlineTest(unittest.TestCase):
                     if fault == 'browser_failed':
                         observed.finish.side_effect = ONLINE.SuiteError('browser failed')
                     else:
-                        observed.finish.side_effect = lambda: self.workspace_permission_transitions(lifecycle) or {'result': 'passed'}
+                        observed.finish.side_effect = lambda: {'result': 'passed'}
                     with self.assertRaises(ONLINE.SuiteError):
                         lifecycle.workspace_flow({'checks': []}, '35')
                 self.assertEqual(len(lifecycle.grants), 1)
                 lifecycle.cleanup()
                 self.assertTrue(all(row['revocation'] for row in server.grants.values()))
-
-    def test_workspace_failure_after_close_restores_only_its_version_after_browser_exit(self):
-        server, lifecycle = self.lifecycle()
-        report = {'checks': []}
-        closed = []
-        with patch.object(ONLINE, 'WorkspaceObservation') as observation:
-            observed = observation.return_value.__enter__.return_value
-            observation.return_value.__exit__.side_effect = lambda *_: closed.append(True) and False
-            def interrupted():
-                ONLINE.REGISTRATION.set_direct_permission(lifecycle.operator, lifecycle.path, self.facts, False)
-                raise ONLINE.SuiteError('browser failed after close')
-            observed.finish.side_effect = interrupted
-            restore = lifecycle.restore_workspace_permission
-            def restore_after_exit(*args):
-                self.assertEqual(closed, [True])
-                restore(*args)
-            with patch.object(lifecycle, 'restore_workspace_permission', side_effect=restore_after_exit), \
-                    self.assertRaisesRegex(ONLINE.SuiteError, 'browser failed after close'):
-                lifecycle.workspace_flow(report, '35')
-        self.assertEqual(report['workspace_permission_cleanup'], 'allowed')
-        self.assertEqual(report['checks'], [])
-        self.assertEqual(server.permissions['a' * 64]['state'], 'allowed')
-        self.assertEqual(server.permissions['a' * 64]['version'], '3')
-        writes = [call[3] for call in server.calls if call[1] == 'PUT']
-        self.assertEqual([(body['expected_version'], body['allowed']) for body in writes], [('1', False), ('2', True)])
-        lifecycle.cleanup()
-        self.assertTrue(all(row['revocation'] for row in server.grants.values()))
-
-    def test_workspace_cleanup_refuses_unowned_state_and_does_not_rewrite_allowed(self):
-        for state, version in [('denied', '1'), ('allowed', '2'), ('denied', '3'), ('allowed', '4'), ('allowed', '1'), ('allowed', '3')]:
-            with self.subTest(state=state, version=version):
-                server, lifecycle = self.lifecycle()
-                baseline = ONLINE.REGISTRATION.read_direct_permission(lifecycle.operator, 2, self.facts['item_fingerprint'])
-                server.permissions['a' * 64].update(state=state, version=version)
-                if state == 'allowed' and version in {'1', '3'}:
-                    lifecycle.restore_workspace_permission(baseline, self.facts)
-                else:
-                    with self.assertRaisesRegex(ONLINE.SuiteError, 'unowned permission'):
-                        lifecycle.restore_workspace_permission(baseline, self.facts)
-                self.assertFalse(any(call[1] == 'PUT' for call in server.calls))
-
-    def test_workspace_permission_cleanup_failure_does_not_claim_success_or_lose_grant_cleanup(self):
-        server, lifecycle = self.lifecycle()
-        report = {'checks': []}
-        with patch.object(ONLINE, 'WorkspaceObservation') as observation, \
-                patch.object(lifecycle, 'restore_workspace_permission', side_effect=ONLINE.SuiteError('restore failed')):
-            observation.return_value.__enter__.return_value.finish.side_effect = ONLINE.SuiteError('browser failed')
-            with self.assertRaisesRegex(ONLINE.SuiteError, 'restore failed'):
-                lifecycle.workspace_flow(report, '35')
-        self.assertEqual(report['workspace_permission_cleanup'], 'failed')
-        self.assertEqual(report['checks'], [])
-        lifecycle.cleanup()
-        self.assertTrue(all(row['revocation'] for row in server.grants.values()))
 
     def test_content_changes_require_current_data_stable_binding_deny_and_withdrawal(self):
         for fault in ('stale_content', 'content_loses_deny', 'content_restores_withdrawn',
@@ -1198,8 +1122,6 @@ class PGCatalogApprovalTest(unittest.TestCase):
         self.facts = {'item_fingerprint': 'c' * 64, 'boundary_hash': 'd' * 64}
         self.entry = {'id': '553f9868-9021-4d23-bae2-43d5a9fbc030', 'version': '1',
                       'governance_status': 'discovered', 'visibility': 'tenant', 'responsibilities': [], 'semantic_links': []}
-        self.permission = {'engine_id': '2', 'item_fingerprint': self.facts['item_fingerprint'],
-            'state': 'unknown', 'source': 'deployment_unknown', 'version': '0'}
         self.fulfillments = {}
         self.lifecycle = ONLINE.Lifecycle(self.client('operator'), self.client('reader'), 3, 2, '33',
             {'department': '41', 'project_group': '51'}, self.client('outsider'), self.client('coordinator'),
@@ -1212,45 +1134,14 @@ class PGCatalogApprovalTest(unittest.TestCase):
         def request(method, url, expected, body=None, **kwargs):
             path = urlsplit(url).path
             direct = path.endswith('/access_grants') and method == 'POST'
-            permit = path.endswith('/direct-permission')
-            update = permit and method == 'PUT'
             fault = self.server.fault
-            valid_direct = direct and (body['request_id'] in self.server.grants or (
-                self.permission['state'] == 'allowed' and (body['direct_permission_version'] == self.permission['version']
-                                                            or fault == 'stale_direct_accepted')))
-            if (valid_direct or ('/catalog/' not in path and not update
-                    and not permit
-                    and not direct)):
-                return original(method, url, expected, body, **kwargs)
+            if '/catalog/' not in path:
+                response = original(method, url, expected, body, **kwargs)
+                if direct and fault == 'wrong_offline_direct_binding': response.payload['boundary_hash'] = 'f' * 64
+                return response
             self.server.calls.append((kind, method, path, body))
             status, result = 200, {}
-            if update:
-                if kind != 'operator' and fault != 'missing_update_permission_ignored':
-                    result, status = {'error': 'update forbidden'}, 403
-                elif body['expected_version'] != self.permission['version'] and fault != 'stale_update_accepted':
-                    result, status = {'error': 'stale update', 'error_code': 'resource_version_conflict'}, 409
-                else:
-                    state = 'allowed' if body['allowed'] else 'denied'
-                    if self.permission['source'] != 'explicit' or state != self.permission['state'] or fault == 'same_value_changes_version':
-                        self.permission.update(state=state, source='explicit', version=str(int(self.permission['version']) + 1))
-                    result = dict(self.permission)
-                    if fault == 'same_value_changes_source':
-                        result['source'] = 'deployment_default'
-                    if fault == 'switch_rewrites_old_grant':
-                        for row in self.server.grants.values():
-                            row['direct_permission_version'] = self.permission['version']
-            elif direct:
-                status, result = 409, {'error': 'wrong approval mode', 'error_code': 'engine_access_grant_approval_changed'}
-                if fault == 'direct_fallback':
-                    result, status = dict(body, revocation=None), 201
-                    self.server.grants[body['request_id']] = result
-                elif fault == 'duplicate_masks_approval':
-                    result['error_code'] = 'engine_access_grant_relation_exists'
-            elif permit:
-                result = dict(self.permission)
-                if self.server.catalog_down and fault == 'implicit_mode_change':
-                    result['state'] = 'allowed'
-            elif '/catalog/' in path and self.server.catalog_down:
+            if '/catalog/' in path and self.server.catalog_down:
                 status, result = 503, {'error': 'module unavailable'}
                 if fault == 'offline_fulfillment_issued':
                     self.issue(body['request_id'])
@@ -1278,8 +1169,6 @@ class PGCatalogApprovalTest(unittest.TestCase):
                     if result['state'] == 'closed' and fault == 'closed_stale_request_reopens':
                         result['state'] = 'pending'
                     return SimpleNamespace(status=200, payload=result)
-                if self.permission['state'] == 'allowed' and fault == 'direct_configuration_blocks_catalog':
-                    return SimpleNamespace(status=202, payload={'request_id': body['request_id'], 'state': 'closed'})
                 self.request_id = body['request_id']
                 if self.request_id not in self.server.grants and fault != 'never_issue':
                     self.issue(self.request_id)
@@ -1318,7 +1207,7 @@ class PGCatalogApprovalTest(unittest.TestCase):
         decision = self.decision
         grant = {'request_id': request_id, 'catalog_request_id': request_id, 'approval_mode': 'catalog',
                  'business_decision_id': decision['decision_id'],
-                 'engine_id': '2', 'operator_principal_id': '35', 'direct_permission_source': '', 'direct_permission_version': '0',
+                 'engine_id': '2', 'operator_principal_id': '35',
                  'catalog_path': self.path, 'item_fingerprint': self.facts['item_fingerprint'],
                  'boundary_hash': self.facts['boundary_hash'], 'recipient_type': 'user', 'recipient_id': decision['recipient_id'],
                  'action': 'read', 'expiry_mode': 'at_time', 'expires_at': decision['expires_at'],
@@ -1334,23 +1223,21 @@ class PGCatalogApprovalTest(unittest.TestCase):
 
     def test_business_approval_uses_formal_human_commands_and_system_history_not_runtime_credentials(self):
         self.run_flow()
-        self.assertEqual(len(self.report['checks']), 21)
+        self.assertEqual(len(self.report['checks']), 11)
         self.assertEqual(self.report['catalog_approval']['rows'], 4)
         self.assertTrue(self.report['catalog_approval']['revoked_replay_denied'])
         decisions = [call for call in self.server.calls if call[2].endswith('/sharing_decisions')]
         requests = [call for call in self.server.calls if call[2].endswith('/sharing_fulfillments')]
-        self.assertEqual([call[0] for call in decisions], ['business', 'business'])
-        self.assertEqual([call[0] for call in requests], ['operator'] * 6)
+        self.assertEqual([call[0] for call in decisions], ['business'])
+        self.assertEqual([call[0] for call in requests], ['operator'] * 4)
         self.assertEqual(requests[0][3], requests[-1][3])
         self.assertNotEqual(requests[0][3]['request_id'], requests[2][3]['request_id'])
         self.assertEqual(set(requests[0][3]), {'request_id', 'decision_id'})
         self.assertFalse(any('/runtime/' in call[2] for call in self.server.calls))
         direct = [call for call in self.server.calls if call[2].endswith('/access_grants') and call[1] == 'POST']
-        self.assertEqual(len(direct), 6)
-        self.assertTrue(all(call[3]['recipient_id'] == '34' and call[3]['direct_permission_source'] == 'explicit' for call in direct))
-        self.assertEqual(self.report['direct_permission_changes']['versions'], [1, 2, 3])
-        self.assertIn('catalog_acceptance_independent_of_direct_configuration', self.report['checks'])
-        self.assertEqual(self.permission['version'], '3')
+        self.assertEqual(len(direct), 1)
+        self.assertTrue(all(call[3]['recipient_id'] == '34' and 'direct_permission_source' not in call[3] for call in direct))
+        self.assertIn('catalog_offline_explicit_direct_grant_and_revocation', self.report['checks'])
         self.assertTrue(self.report['catalog_outage']['same_credential'])
         self.assertFalse(self.server.catalog_down)
         self.assertEqual(self.lifecycle.paths, [ONLINE.table_path(2, 'metric_people'), self.path])
@@ -1369,23 +1256,8 @@ class PGCatalogApprovalTest(unittest.TestCase):
                     self.run_flow()
                 self.assertNotEqual(len(self.report['checks']), 21)
 
-    def test_approval_switch_rejects_permission_version_grant_mutation_and_silent_catalog_upgrade(self):
-        for fault in ('missing_update_permission_ignored', 'switch_rewrites_old_grant', 'stale_direct_accepted',
-                      'same_value_changes_version', 'same_value_changes_source',
-                      'stale_update_accepted', 'direct_replay_renews', 'direct_replay_restores_revoked',
-                      'direct_configuration_blocks_catalog'):
-            with self.subTest(fault=fault):
-                self.reset()
-                self.server.fault = fault
-                with self.assertRaises((ONLINE.SuiteError, ONLINE.REGISTRATION.RegistrationError)):
-                    self.run_flow()
-                self.assertFalse(self.server.catalog_down)
-                self.lifecycle.cleanup()
-                self.assertTrue(all(row['revocation'] is not None for row in self.server.grants.values()))
-
     def test_catalog_outage_cannot_mask_read_dependency_fallback_mode_change_or_recovery_regrant(self):
-        for fault in ('catalog_blocks_existing_read', 'direct_fallback', 'duplicate_masks_approval',
-                      'implicit_mode_change', 'offline_fulfillment_issued', 'outage_wrong_status',
+        for fault in ('catalog_blocks_existing_read', 'wrong_offline_direct_binding', 'offline_fulfillment_issued', 'outage_wrong_status',
                       'catalog_recovery_restores_grant', 'catalog_blocks_rule_writes'):
             with self.subTest(fault=fault):
                 self.reset()
@@ -1673,52 +1545,23 @@ class PGBrowserObservationTest(unittest.TestCase):
                            ADDP_ONLINE_PG_OPERATOR_PASSWORD='operator-private-password')
         with patch.dict(ONLINE.os.environ, environment), patch.object(ONLINE.subprocess, 'Popen', return_value=self.process) as popen, \
              patch.object(ONLINE.os, 'killpg'):
-            permission = {'engine_id': '1', 'item_fingerprint': 'a' * 64, 'state': 'allowed', 'source': 'explicit', 'version': '3'}
             facts = {'boundary': {'native_target': ONLINE.table_path(1, 'metric_people')}, 'boundary_hash': 'b' * 64}
-            with REAL_WORKSPACE_OBSERVATION(2, '33', 'target', 1, '35', 'owned-grant', permission, facts) as browser:
+            with REAL_WORKSPACE_OBSERVATION(2, '33', 'target', 1, '35', 'owned-grant') as browser:
                 expected = dict(browser.binding, schema_version='addp.pg-authorization-workspace/v1', result='passed',
-                                checks=ONLINE.WORKSPACE_CHECKS, login_requests=3, preview_statuses=[200, 403],
-                                direct_permission_edit={
-                                    'item_fingerprint': 'a' * 64, 'boundary_hash': 'b' * 64, 'versions': ['3', '4', '5'],
-                                    'writes': [{'expected_version': '3', 'allowed': False, 'status': 200},
-                                               {'expected_version': '3', 'allowed': False, 'status': 409},
-                                               {'expected_version': '4', 'allowed': True, 'status': 200}],
-                                    'conflict_code': 'resource_version_conflict', 'cancelled_writes': 0, 'review_writes': 0,
-                                    'grant_unchanged': True, 'closed_preview_status': 200, 'same_reader_credential': True,
-                                    'final_state': 'allowed'},
-                                direct_permission_observations=[{'search': 'metric_people', 'state': state, 'total': total,
-                                    'item_fingerprints': ['a' * 64] if total else []}
-                                    for state, total in [('', 1), ('allowed', 1), ('denied', 0)]])
+                                checks=ONLINE.WORKSPACE_CHECKS, login_requests=2, preview_statuses=[200, 403])
                 browser.evidence.write_text(json.dumps(expected))
                 self.assertEqual(browser.finish(), expected)
                 env = popen.call_args.kwargs['env']
                 self.assertFalse(any('TOKEN' in key or 'SECRET' in key for key in env))
                 self.assertEqual(env['ADDP_ONLINE_PG_OPERATOR_PASSWORD'], 'operator-private-password')
                 self.assertIn(browser.test_name, popen.call_args.args[0])
-                for fault in ('missing_check', 'missing_permission_check', 'wrong_permission_target', 'denied_filter_leaks_target',
-                              'wrong_grant', 'relogin', 'still_readable', 'extra_field', 'missing_edit', 'wrong_conflict',
-                              'auto_retry', 'wrong_version', 'wrong_boundary', 'grant_changed', 'closed_read_denied',
-                              'reader_replaced', 'cancel_writes', 'review_writes', 'final_denied'):
+                for fault in ('missing_check', 'wrong_grant', 'relogin', 'still_readable', 'extra_field'):
                     bad = deepcopy(expected)
                     if fault == 'missing_check': bad['checks'] = bad['checks'][:-1]
-                    if fault == 'missing_permission_check': bad['checks'].remove('direct_permission_tab_read_only_filters')
-                    if fault == 'wrong_permission_target': bad['direct_permission_observations'][1]['item_fingerprints'] = ['b' * 64]
-                    if fault == 'denied_filter_leaks_target': bad['direct_permission_observations'][2].update(total=1, item_fingerprints=['a' * 64])
                     if fault == 'wrong_grant': bad['grant_id'] = 'unowned'
-                    if fault == 'relogin': bad['login_requests'] = 4
+                    if fault == 'relogin': bad['login_requests'] = 3
                     if fault == 'still_readable': bad['preview_statuses'] = [200, 200]
                     if fault == 'extra_field': bad['raw_token'] = 'must-not-accept'
-                    if fault == 'missing_edit': bad.pop('direct_permission_edit')
-                    if fault == 'wrong_conflict': bad['direct_permission_edit']['conflict_code'] = 'other_conflict'
-                    if fault == 'auto_retry': bad['direct_permission_edit']['writes'].append(bad['direct_permission_edit']['writes'][-1])
-                    if fault == 'wrong_version': bad['direct_permission_edit']['versions'] = ['3', '4', '4']
-                    if fault == 'wrong_boundary': bad['direct_permission_edit']['boundary_hash'] = 'c' * 64
-                    if fault == 'grant_changed': bad['direct_permission_edit']['grant_unchanged'] = False
-                    if fault == 'closed_read_denied': bad['direct_permission_edit']['closed_preview_status'] = 403
-                    if fault == 'reader_replaced': bad['direct_permission_edit']['same_reader_credential'] = False
-                    if fault == 'cancel_writes': bad['direct_permission_edit']['cancelled_writes'] = 1
-                    if fault == 'review_writes': bad['direct_permission_edit']['review_writes'] = 1
-                    if fault == 'final_denied': bad['direct_permission_edit']['final_state'] = 'denied'
                     browser.evidence.write_text(json.dumps(bad))
                     with self.subTest(fault=fault), self.assertRaises(ONLINE.SuiteError):
                         browser.finish()
@@ -2971,7 +2814,7 @@ class InitialProductionOnlineTest(unittest.TestCase):
     def row(self):
         row = dict(request_id=self.command, approval_mode='task_production', producer_owner='transfer',
                    production_execution_id=self.execution, catalog_path=self.path, recipient_type='user', recipient_id='33',
-                   operator_principal_id='33', action='read', direct_permission_source='', direct_permission_version='0', expiry_mode='at_time',
+                   operator_principal_id='33', action='read',  expiry_mode='at_time',
                    expires_at=self.expiry, revocation={'reason': 'test'} if self.output_revoked else None,
                    issuer_principal_id='55', issuer_membership_id='66', **self.facts)
         if self.bad:
@@ -3056,7 +2899,7 @@ class InitialProductionOnlineTest(unittest.TestCase):
         for invalid in ({'approval_mode': 'independent'}, {'producer_owner': 'develop'},
                         {'production_execution_id': 'f9041a08-785c-48bc-bb12-c0650b720dac'},
                         {'recipient_id': '34'}, {'operator_principal_id': '35'}, {'issuer_principal_id': '33'},
-                        {'boundary_hash': 'c' * 64}, {'direct_permission_version': '1'},
+                        {'boundary_hash': 'c' * 64},
                         {'expires_at': '2031-10-20T10:00:00Z'}):
             self.bad = invalid
             with self.subTest(invalid=invalid), self.assertRaises(ONLINE.SuiteError):

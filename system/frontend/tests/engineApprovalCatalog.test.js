@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
-import { approvalTargetFromSelection, approvalTargetsEqual, collectApprovalTargets, createApprovalCatalogAdapter, isApprovalSelection } from '../src/utils/engineApprovalCatalog'
+import { approvalTargetFromSelection, approvalTargetsEqual, approvalNodeItems, createApprovalCatalogAdapter, isApprovalSelection } from '../src/utils/engineApprovalCatalog'
 const engine = { id: '2', name: 'NFS', engine_type: 'nfs' }
 const fingerprint = name => createHash('sha256').update(`2:${name}`).digest('hex')
 const ancestors = [{ id: '1', name: 'NFS', node_type: 'root' }, { id: '2', name: 'exports', node_type: 'dir' }]
@@ -26,16 +26,18 @@ describe('Meta DataItem authorization picker', () => {
     expect(await approvalTargetFromSelection(selection(structuredClone(leaf)), '2', adapter)).toEqual({ ...path, engine_id: '2' })
     expect(read).toHaveBeenCalledWith('2', item.item_fingerprint)
     expect(list.mock.calls).toEqual([['2', { page: 1, page_size: 100 }]])
-    expect(isApprovalSelection(root)).toBe(false)
+    expect(isApprovalSelection(root)).toBe(true)
   })
-  it('expands current DataItems only, rereads exact facts and fails closed on incomplete facts', async () => {
+  it('selects direct children by default, recurses only explicitly, and never includes parent nodes', async () => {
     const { adapter, read } = fixture()
-    const root = await adapter.getTreeRoot()
-    expect(await collectApprovalTargets(selection(root.children[0]), '2', adapter)).toEqual([{ ...path, engine_id: '2' }])
-    await expect(collectApprovalTargets(selection(root.children[0]), '2', adapter, 0)).rejects.toThrow('tooManyTargets')
+    const root = await adapter.getTreeRoot(), directory = root.children[0], leaf = directory.children[0]
+    expect(approvalNodeItems(root)).toEqual([])
+    expect(approvalNodeItems(directory)).toEqual([leaf])
+    expect(approvalNodeItems(root, true)).toEqual([leaf])
+    expect(approvalNodeItems(leaf, true)).toEqual([leaf])
+    expect(read).not.toHaveBeenCalled()
     read.mockResolvedValue({ ...facts, basis_state: 'needs_refresh', boundary: null, boundary_hash: null })
-    await expect(collectApprovalTargets(selection(root.children[0]), '2', adapter)).rejects.toThrow('invalidDataItemBoundary')
-    await expect(collectApprovalTargets(selection(root), '2', adapter)).rejects.toThrow()
+    await expect(adapter.resolveTarget(leaf)).rejects.toThrow('invalidDataItemBoundary')
   })
   it('rejects cross-engine, malformed ancestry and incomplete pages instead of exposing a partial tree', async () => {
     for (const rows of [[{ ...item, engine_id: 3 }], [{ ...item, ancestors: [...ancestors, ancestors[0]] }]]) {

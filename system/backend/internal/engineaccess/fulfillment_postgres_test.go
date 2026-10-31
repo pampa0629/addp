@@ -187,20 +187,9 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	// Only coordination predicates are tested here. This is NOT a production
 	// business approval or approval-requirement service.
 	verified := func(*Repository) error { return nil }
-	change := func(path engineplugin.EngineCatalogPath, allowed bool, version int64, verify func(*Repository) error) (*directPermission, error) {
-		input := fixturePermitInput(ctx, repo, tenant.ID, user.ID, path, allowed, version)
-		var row *directPermission
-		err := repo.transaction(ctx, func(tx *Repository) error {
-			var err error
-			row, err = fixtureSetPermit(ctx, tx, input, verify)
-			return err
-		})
-		return row, err
-	}
 
-	if _, err := change(newRequest().Path, false, 0, verified); err != nil {
-		t.Fatal(err)
-	}
+
+
 	exerciseMetaCollectionQualifications(t, db, tenant.ID, user.ID, engine, newOperator, seedDelegation)
 	exerciseFulfillmentAcceptance(t, db, newRequest(), confirmation, newOperator, seedDelegation)
 	t.Run("real IAM role assignment does not deadlock qualification", func(t *testing.T) {
@@ -577,9 +566,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		r := newRequest()
 		r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "public", uuid.NewString())
 		r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
-		if _, err := change(r.Path, false, 0, verified); err != nil {
-			t.Fatal(err)
-		}
+
 		tx := db.Begin()
 		if tx.Error != nil {
 			t.Fatal(tx.Error)
@@ -596,10 +583,6 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		bounded, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 		err := repo.transaction(bounded, func(second *Repository) error {
-			input := fixturePermitInput(bounded, second, tenant.ID, user.ID, other.Path, false, 0)
-			if _, err := fixtureSetPermit(bounded, second, input, verified); err != nil {
-				return err
-			}
 
 			_, err := second.settleFulfillment(bounded, other, true, confirmation, verified)
 			return err
@@ -690,17 +673,13 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		r := newRequest()
 		r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "public", "recovery_handoff")
 		r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
-		if _, err := change(r.Path, false, 0, verified); err != nil {
-			t.Fatal(err)
-		}
+
 		r.ExpiresAt = testFulfillmentExpiry(time.Now().Add(time.Second))
 		first, err := settle(r, true)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := change(r.Path, true, 1, verified); err != nil {
-			t.Fatal(err)
-		}
+
 		if err := db.Exec("SELECT pg_sleep(1.05)").Error; err != nil {
 			t.Fatal(err)
 		}
@@ -717,223 +696,13 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 			t.Fatalf("expired closed result could not be recovered: %+v %v", row, err)
 		}
 	})
-	t.Run("permit mutation requires transaction and current qualification", func(t *testing.T) {
-		path := engineplugin.TabularItemPath(engine.ID, "schema", "public", "qualification_checks")
-		input := fixturePermitInput(ctx, repo, tenant.ID, user.ID, path, true, 0)
-		if _, err := fixtureSetPermit(ctx, repo, input, verified); !errors.Is(err, commonapi.ErrBadRequest) {
-			t.Fatal(err)
-		}
-		failure := errors.New("qualification revoked")
-		err := repo.transaction(ctx, func(tx *Repository) error {
-			_, err := fixtureSetPermit(ctx, tx, input, func(*Repository) error { return failure })
-			return err
-		})
-		if !errors.Is(err, failure) {
-			t.Fatal(err)
-		}
-		if _, err := repo.directPermission(ctx, tenant.ID, int64(engine.ID), input.ItemFingerprint); !errors.Is(err, gorm.ErrRecordNotFound) {
-			t.Fatal(err)
-		}
-	})
-	t.Run("Catalog acceptance is independent of direct configuration", func(t *testing.T) {
+	t.Run("Catalog acceptance needs no direct configuration", func(t *testing.T) {
 		r := newRequest()
 		r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "public", "no_requirement")
 		r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
-		for _, mode := range []string{"", approvalModeIndependent, approvalModeCatalog} {
-			if mode == approvalModeIndependent {
-				if _, err := change(r.Path, true, 0, verified); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if mode == approvalModeCatalog {
-				if _, err := change(r.Path, false, 1, verified); err != nil {
-					t.Fatal(err)
-				}
-			}
-			r.RequestID = uuid.New()
-			if _, err := settle(r, true); err != nil {
-				t.Fatalf("Catalog refused with direct configuration %q: %v", mode, err)
-			}
-		}
-	})
-	t.Run("requirement changes are explicit and audit rolls back with them", func(t *testing.T) {
-		r := newRequest()
-		r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "public", "explicit_versions")
-		r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
-		if _, err := change(r.Path, false, 0, nil); !errors.Is(err, commonapi.ErrBadRequest) {
-			t.Fatalf("missing qualification verifier: %v", err)
-		}
-		row, err := change(r.Path, false, 0, verified)
-		if err != nil || row.Version != 1 {
-			t.Fatalf("initialize=%+v err=%v", row, err)
-		}
-		if _, err := change(r.Path, true, 0, verified); !errors.Is(err, ErrDirectPermissionVersion) {
-			t.Fatalf("initialization cannot replace current requirement: %v", err)
-		}
-		failure := errors.New("interrupt after authority and audit write")
-		err = repo.transaction(ctx, func(tx *Repository) error {
-			input := fixturePermitInput(ctx, tx, tenant.ID, user.ID, r.Path, true, 1)
-			if _, err := fixtureSetPermit(ctx, tx, input, verified); err != nil {
-				return err
-			}
+		r.RequestID = uuid.New()
+        if _, err := settle(r, true); err != nil { t.Fatalf("Catalog without direct configuration: %v", err) }
 
-			return failure
-		})
-		if !errors.Is(err, failure) {
-			t.Fatal(err)
-		}
-		current, err := repo.directPermission(ctx, tenant.ID, int64(engine.ID), r.ItemFingerprint)
-		var audits int64
-		if err != nil || current.Version != 1 || current.Allowed {
-			t.Fatalf("rollback current=%+v err=%v", current, err)
-		}
-		if err := db.Table("system.audit_logs").Where("entity_type = ? AND entity_id = ?", "engine_access_direct_permission", row.ID.String()).Count(&audits).Error; err != nil || audits != 1 {
-			t.Fatalf("rollback audits=%d err=%v", audits, err)
-		}
-		if _, err := change(r.Path, true, 1, verified); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := change(r.Path, false, 1, verified); !errors.Is(err, ErrDirectPermissionVersion) {
-			t.Fatalf("old retry cannot re-enable after exit: %v", err)
-		}
-		if row, err := change(r.Path, false, 2, verified); err != nil || row.Version != 3 {
-			t.Fatalf("re-enable=%+v err=%v", row, err)
-		}
-
-		if _, err := settle(r, true); err != nil {
-			t.Fatalf("explicit current version cannot accept: %v", err)
-		}
-	})
-	t.Run("exact long targets have separate identities and immutable version boundaries", func(t *testing.T) {
-		r := newRequest()
-		r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "业务.域", " 表/名 "+strings.Repeat("资源", 600))
-		r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
-		row, err := change(r.Path, false, 0, verified)
-		if err != nil {
-			t.Fatal(err)
-		}
-		other := r
-		other.RequestID = uuid.New()
-		other.Path = engineplugin.TabularItemPath(engine.ID, "schema", "业务.域", "表/名"+strings.Repeat("资源", 600))
-		other.ItemFingerprint, other.BoundaryHash = testReadBindings(other.Path)[0].ItemFingerprint, testReadBindings(other.Path)[0].BoundaryHash
-		if _, err := settle(other, true); err != nil {
-			t.Fatalf("separate Catalog target refused: %v", err)
-		}
-		otherRow, err := change(other.Path, true, 0, verified)
-		if err != nil || row.ID == otherRow.ID {
-			t.Fatalf("distinct identity=%+v err=%v", otherRow, err)
-		}
-		if _, err := settle(r, true); err != nil {
-			t.Fatal(err)
-		}
-		for _, statement := range []string{
-			"UPDATE system.engine_access_direct_permissions SET allowed = true WHERE id = ?",
-			"UPDATE system.engine_access_direct_permissions SET catalog_path = '{}'::jsonb, version = version + 1 WHERE id = ?",
-			"DELETE FROM system.engine_access_direct_permissions WHERE id = ?",
-		} {
-			if err := db.Exec(statement, row.ID).Error; err == nil {
-				t.Fatalf("accepted authority mutation: %s", statement)
-			}
-		}
-		if err := db.Exec("TRUNCATE system.engine_access_direct_permissions").Error; err == nil {
-			t.Fatal("accepted authority truncate")
-		}
-	})
-	t.Run("exit and acceptance share the actual target boundary in both orders", func(t *testing.T) {
-		for _, acceptFirst := range []bool{false, true} {
-			r := newRequest()
-			r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "public", uuid.NewString())
-			r.ItemFingerprint, r.BoundaryHash = testReadBindings(r.Path)[0].ItemFingerprint, testReadBindings(r.Path)[0].BoundaryHash
-			if _, err := change(r.Path, false, 0, verified); err != nil {
-				t.Fatal(err)
-			}
-			held, release, done := make(chan struct{}), make(chan struct{}), make(chan error, 2)
-			var holdOnce sync.Once
-			hold := func(*Repository) error { holdOnce.Do(func() { close(held); <-release }); return nil }
-			go func() {
-				if acceptFirst {
-					done <- repo.transaction(ctx, func(tx *Repository) error {
-						_, err := tx.settleFulfillment(ctx, r, true, confirmation, hold)
-						return err
-					})
-				} else {
-					_, err := change(r.Path, true, 1, hold)
-					done <- err
-				}
-			}()
-			select {
-			case <-held:
-			case <-time.After(5 * time.Second):
-				close(release)
-				t.Fatal("first operation did not acquire target")
-			}
-			waitingPID := make(chan int, 1)
-			go func() {
-				done <- repo.transaction(ctx, func(tx *Repository) error {
-					var pid int
-					if err := tx.db.Raw("SELECT pg_backend_pid()").Scan(&pid).Error; err != nil {
-						return err
-					}
-					waitingPID <- pid
-					if !acceptFirst {
-						_, err := tx.settleFulfillment(ctx, r, true, confirmation, verified)
-						return err
-					}
-					input := fixturePermitInput(ctx, tx, tenant.ID, user.ID, r.Path, true, 1)
-					_, err := fixtureSetPermit(ctx, tx, input, verified)
-					return err
-				})
-			}()
-			var pid int
-			select {
-			case pid = <-waitingPID:
-			case <-time.After(5 * time.Second):
-				close(release)
-				t.Fatal("waiting transaction did not begin")
-			}
-			deadline := time.Now().Add(5 * time.Second)
-			blocked := false
-			for time.Now().Before(deadline) {
-				if err := db.Raw("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid = ? AND NOT granted AND locktype = 'advisory')", pid).Scan(&blocked).Error; err != nil {
-					close(release)
-					t.Fatal(err)
-				}
-				if blocked {
-					break
-				}
-				time.Sleep(10 * time.Millisecond)
-			}
-			close(release)
-			if !blocked {
-				t.Fatal("second operation did not wait on the shared target lock")
-			}
-			for i := 0; i < 2; i++ {
-				if err := <-done; err != nil {
-					t.Fatal(err)
-				}
-			}
-			var count int64
-			if err := db.Model(&fulfillmentOutcome{}).Where("request_id = ?", r.RequestID).Count(&count).Error; err != nil {
-				t.Fatal(err)
-			}
-			if count != 1 {
-				t.Fatalf("acceptFirst=%t accepted results=%d", acceptFirst, count)
-			}
-			if acceptFirst {
-				first, err := settle(r, true)
-				if err != nil {
-					t.Fatal(err)
-				}
-				again, err := settle(r, false)
-				if err != nil || !first.Deadline.Equal(*again.Deadline) {
-					t.Fatalf("accepted receipt changed after exit: %+v %v", again, err)
-				}
-			}
-			r.RequestID = uuid.New()
-			if _, err := settle(r, true); err != nil {
-				t.Fatalf("new business acceptance must remain available: %v", err)
-			}
-		}
 	})
 	t.Run("no owner transaction cannot create a result", func(t *testing.T) {
 		r := newRequest()

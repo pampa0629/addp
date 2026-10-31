@@ -4931,8 +4931,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount < 345 || disabledPermissionCount != 120 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 120", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount < 345 || disabledPermissionCount != 122 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 122", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string
@@ -5629,13 +5629,14 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := make(map[string]string, len(manifest.Permissions)+11)
+	expected := make(map[string]string, len(manifest.Permissions)+13)
 	for _, permission := range manifest.Permissions {
 		expected[permission.Key] = permission.Status
 	}
 	// 000133 retired API consumers' predecessors; 000091 retired department delete;
-	// 000248 replaced the mutually exclusive approval-mode controls.
-	for _, key := range []string{"iam.department.delete", "system.api_key.create", "system.api_key.read", "system.api_key.revoke", "system.application.create", "system.application.delete", "system.application.read", "system.application.update", "system.engine_access_approval_requirement.read", "system.engine_access_approval_requirement.initialize", "system.engine_access_approval_requirement.update"} {
+	// 000248 replaced the mutually exclusive approval-mode controls;
+	// 000257 retired the per-DataItem direct-permission controls.
+	for _, key := range []string{"iam.department.delete", "system.api_key.create", "system.api_key.read", "system.api_key.revoke", "system.application.create", "system.application.delete", "system.application.read", "system.application.update", "system.engine_access_approval_requirement.read", "system.engine_access_approval_requirement.initialize", "system.engine_access_approval_requirement.update", "system.engine_access_direct_permission.read", "system.engine_access_direct_permission.update"} {
 		if _, exists := expected[key]; exists {
 			t.Fatalf("historical permission %s returned to current manifest", key)
 		}

@@ -44,7 +44,6 @@ class FakeClient:
             {"term": "schema", "kind": "schema", "name": "public"},
             {"term": "table", "kind": "table", "name": SUITE.FIXTURE_TABLE},
         ]}
-        self.direct_permission = {"state": "denied", "source": "explicit", "version": "1"}
         self.decisions = {}
         self.receipts = {}
         self.grants = {}
@@ -462,16 +461,11 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
                 self.assertEqual(len(client.decisions), 1)
                 self.assertLessEqual(len(client.receipts), 1)
 
-    def test_catalog_is_independent_of_direct_configuration(self) -> None:
-        for setting in (None, {"state": "denied", "source": "explicit", "version": "1"},
-                        {"state": "allowed", "source": "explicit", "version": "9223372036854775807"}):
-            with self.subTest(setting=setting):
-                client = FakeClient()
-                client.direct_permission = setting
-                report = SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", client.observe_grant)
-                self.assertEqual(report["grant_write"], "passed")
-                self.assertEqual(client.direct_permission, setting)
-                self.assertFalse(any("direct-permission" in path for _, path in client.calls))
+    def test_catalog_does_not_call_retired_direct_permission_api(self) -> None:
+        client = FakeClient()
+        report = SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1", client.observe_grant)
+        self.assertEqual(report["grant_write"], "passed")
+        self.assertFalse(any("direct-permission" in path for _, path in client.calls))
 
     def test_missing_business_owner_does_not_reassign_or_create_decision(self) -> None:
         client = FakeClient()

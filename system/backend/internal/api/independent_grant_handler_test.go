@@ -55,12 +55,12 @@ func TestIndependentGrantHTTPContract(t *testing.T) {
 	permission("system.engine_access_grant.create", "system.engine_access_grant.read")
 	id := uuid.New()
 	body := func() map[string]any {
-		return map[string]any{"request_id": id.String(), "catalog_path": engineplugin.TabularItemPath(1, "schema", "public", "orders"), "direct_permission_version": "1", "direct_permission_source": "explicit", "recipient_type": "user", "recipient_id": "9007199254740993", "action": "read", "expiry_mode": "until_revoked", "reason": "Explicit read access"}
+		return map[string]any{"request_id": id.String(), "catalog_path": engineplugin.TabularItemPath(1, "schema", "public", "orders"), "recipient_type": "user", "recipient_id": "9007199254740993", "action": "read", "expiry_mode": "until_revoked", "reason": "Explicit read access"}
 	}
 	for _, mutate := range []func(map[string]any){
 		func(b map[string]any) { b["tenant_id"] = "2" }, func(b map[string]any) { b["operator_id"] = "2" },
 		func(b map[string]any) { b["recipient_id"] = 9007199254740993 }, func(b map[string]any) { b["recipient_id"] = "01" },
-		func(b map[string]any) { b["direct_permission_version"] = 1 }, func(b map[string]any) { delete(b, "direct_permission_version") },
+		func(b map[string]any) { b["direct_permission_version"] = 1 }, func(b map[string]any) { b["direct_permission_source"] = "explicit" },
 		func(b map[string]any) { b["request_id"] = uuid.Nil.String() },
 	} {
 		b := body()
@@ -89,10 +89,10 @@ func TestIndependentGrantHTTPContract(t *testing.T) {
 		}
 	}
 	qualified := independentGrantTestService{create: func(input engineaccess.CreateIndependentGrantInput) (*engineaccess.SourceGrantView, error) {
-		if input.RecipientID != 9007199254740993 || input.EngineID != 1 || input.RequestID != id || input.Actor.PrincipalID <= 0 || input.Actor.MembershipID <= 0 || input.DirectPermissionVersion != 1 {
+		if input.RecipientID != 9007199254740993 || input.EngineID != 1 || input.RequestID != id || input.Actor.PrincipalID <= 0 || input.Actor.MembershipID <= 0 {
 			t.Fatalf("lost provenance: %+v", input)
 		}
-		return &engineaccess.SourceGrantView{RequestID: id, RecipientID: input.RecipientID, DirectPermissionVersion: input.DirectPermissionVersion, ApprovalMode: "independent"}, nil
+		return &engineaccess.SourceGrantView{RequestID: id, RecipientID: input.RecipientID, ApprovalMode: "independent"}, nil
 	}, list: func(a engineaccess.Actor, engineID int64, page, size int, filter engineaccess.SourceGrantFilter) ([]engineaccess.SourceGrantView, int64, error) {
 		if a.PrincipalID <= 0 || engineID != 1 || page != 2 || size != 10 {
 			t.Fatalf("lost list scope: %+v %d %d %d", a, engineID, page, size)
@@ -101,7 +101,7 @@ func TestIndependentGrantHTTPContract(t *testing.T) {
 	}}
 	response := engineDelegationTestRequest(t, grantTestRouter(t, &projection, qualified), "POST", path, body(), 201)
 	var fields map[string]any
-	if err := json.Unmarshal(response.Body.Bytes(), &fields); err != nil || fields["recipient_id"] != "9007199254740993" || fields["direct_permission_version"] != "1" {
+	if err := json.Unmarshal(response.Body.Bytes(), &fields); err != nil || fields["recipient_id"] != "9007199254740993" {
 		t.Fatalf("lossy IDs: %s %v", response.Body.String(), err)
 	}
 	first := body()
@@ -177,7 +177,7 @@ func TestIndependentGrantHTTPContract(t *testing.T) {
 	for _, failure := range []struct {
 		err    error
 		status int
-	}{{commonapi.ErrForbidden, 403}, {engineaccess.ErrGrantRelationExists, 409}, {engineaccess.ErrIndependentGrantConflict, 409}, {engineaccess.ErrIndependentGrantBasis, 409}, {engineaccess.ErrIndependentGrantExpiry, 409}, {engineaccess.ErrIndependentGrantSourceUnavailable, 503}} {
+	}{{commonapi.ErrForbidden, 403}, {engineaccess.ErrGrantRelationExists, 409}, {engineaccess.ErrIndependentGrantConflict, 409}, {engineaccess.ErrIndependentGrantEngineChanged, 409}, {engineaccess.ErrIndependentGrantExpiry, 409}, {engineaccess.ErrIndependentGrantSourceUnavailable, 503}} {
 		s := independentGrantTestService{create: func(engineaccess.CreateIndependentGrantInput) (*engineaccess.SourceGrantView, error) {
 			return nil, failure.err
 		}}

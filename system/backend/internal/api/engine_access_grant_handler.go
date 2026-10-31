@@ -35,23 +35,21 @@ type RevokeEngineAccessGrantRequest struct {
 }
 
 type CreateIndependentEngineAccessGrantRequest struct {
-	RequestID               string                         `json:"request_id"`
-	CatalogPath             engineplugin.EngineCatalogPath `json:"catalog_path"`
-	ItemFingerprint         string                         `json:"item_fingerprint" binding:"required"`
-	ExpectedBoundaryHash    string                         `json:"expected_boundary_hash" binding:"required"`
-	DirectPermissionVersion string                         `json:"direct_permission_version"`
-	DirectPermissionSource  string                         `json:"direct_permission_source" enums:"explicit,deployment_default"`
-	RecipientType           string                         `json:"recipient_type" enums:"user,department,project_group"`
-	RecipientID             string                         `json:"recipient_id"`
-	Action                  string                         `json:"action" enums:"read"`
-	ExpiryMode              string                         `json:"expiry_mode" enums:"at_time,until_revoked"`
-	ExpiresAt               *time.Time                     `json:"expires_at"`
-	Reason                  string                         `json:"reason"`
+	RequestID            string                         `json:"request_id"`
+	CatalogPath          engineplugin.EngineCatalogPath `json:"catalog_path"`
+	ItemFingerprint      string                         `json:"item_fingerprint" binding:"required"`
+	ExpectedBoundaryHash string                         `json:"expected_boundary_hash" binding:"required"`
+	RecipientType        string                         `json:"recipient_type" enums:"user,department,project_group"`
+	RecipientID          string                         `json:"recipient_id"`
+	Action               string                         `json:"action" enums:"read"`
+	ExpiryMode           string                         `json:"expiry_mode" enums:"at_time,until_revoked"`
+	ExpiresAt            *time.Time                     `json:"expires_at"`
+	Reason               string                         `json:"reason"`
 }
 
 // Create godoc
 // @Summary 显式签发独立只读授权 | Issue explicit independent read access
-// @Description 当前 Tenant User 需独立授予权限及引擎管理资格；支持 Meta 基础识别 complete 的 schema 普通单表、数据库单表／集合和 FTP IFC／3DS 完整组成 single 数据项，必须提交数据项身份及确认时边界摘要，直接授权许可有效且来源、版本匹配。文件组成快照由 System 独立读取 Meta 后冻结，不能由请求自报或把旧主文件许可升级。不要求企业 Catalog 编目；结构核验不读取样本 | Current Tenant User needs Grant creation permission and engine management qualification. Supports Meta-complete schema ordinary-table, database-table/collection and complete FTP IFC/3DS single DataItems, with explicit identity, expected boundary hash and effective direct permission source and version. System freezes file composition from Meta, not caller input or an upgraded primary-only permission. No enterprise Catalog curation is required; structural verification reads no samples
+// @Description 当前 Tenant User 需独立授予权限及引擎管理资格；支持 Meta 基础识别 complete 的 schema 普通单表、数据库单表／集合和 FTP IFC／3DS 完整组成 single 数据项，必须提交数据项身份及确认时边界摘要。文件组成快照由 System 独立读取 Meta 后冻结，不能由请求自报或把旧主文件许可升级。不要求企业 Catalog 编目；结构核验不读取样本 | Current Tenant User needs Grant creation permission and engine management qualification. Supports Meta-complete schema ordinary-table, database-table/collection and complete FTP IFC/3DS single DataItems, with explicit identity, expected boundary hash. System freezes file composition from Meta, not caller input or an upgraded primary-only permission. No enterprise Catalog curation is required; structural verification reads no samples
 // @Description 同命令同操作者同参数重试仅恢复原签发及撤销事实，不续期或恢复读取。不同参数 409；成功不替代消费侧功能权限、Deny、当前主体和安全策略 | Identical command, operator and parameters recover issuance and revocation history without renewal or restored access. Changed parameters return 409; success does not replace consumer permissions, Deny, current identity or security policy
 // @Description 同目标、接收方和动作已有有效授权时，新命令返回 409 engine_access_grant_relation_exists，不重复发放或静默变更期限；包括业务批准来源 | A new command returns 409 engine_access_grant_relation_exists when the same target, recipient and action already have active access, including business-approved Grants. No duplicate issuance or silent validity change
 // @Tags 源数据授权 | Source Data Grants
@@ -77,13 +75,12 @@ func (h *EngineAccessGrantHandler) Create(c *gin.Context) {
 	}
 	id, err := uuid.Parse(request.RequestID)
 	recipientID, recipientErr := parseIAMDecimalID(request.RecipientID)
-	version, versionErr := parseIAMDecimalID(request.DirectPermissionVersion)
-	if err != nil || id == uuid.Nil || id.String() != request.RequestID || recipientErr != nil || versionErr != nil {
+	if err != nil || id == uuid.Nil || id.String() != request.RequestID || recipientErr != nil {
 		respondIAMError(c, commonapi.ErrBadRequest)
 		return
 	}
 	row, err := h.service.CreateIndependentGrant(c.Request.Context(), engineaccess.CreateIndependentGrantInput{
-		Actor: actor, EngineID: engineID, RequestID: id, CatalogPath: request.CatalogPath, DirectPermissionVersion: version, DirectPermissionSource: request.DirectPermissionSource,
+		Actor: actor, EngineID: engineID, RequestID: id, CatalogPath: request.CatalogPath,
 		ItemFingerprint: request.ItemFingerprint, ExpectedBoundaryHash: request.ExpectedBoundaryHash,
 		RecipientType: request.RecipientType, RecipientID: recipientID, Action: request.Action,
 		ExpiryMode: request.ExpiryMode, ExpiresAt: request.ExpiresAt, Reason: request.Reason,
@@ -247,7 +244,7 @@ func respondIndependentGrantError(c *gin.Context, err error) {
 	}{
 		{engineaccess.ErrGrantRelationExists, "engine_access_grant_relation_exists", modulei18n.MsgGrantRelationExists, 409},
 		{engineaccess.ErrIndependentGrantConflict, "engine_access_grant_command_conflict", modulei18n.MsgIndependentGrantConflict, 409},
-		{engineaccess.ErrIndependentGrantBasis, "engine_access_grant_approval_changed", modulei18n.MsgIndependentGrantBasis, 409},
+		{engineaccess.ErrIndependentGrantEngineChanged, "engine_access_grant_engine_changed", modulei18n.MsgIndependentGrantEngineChanged, 409},
 		{engineaccess.ErrIndependentGrantExpiry, "engine_access_grant_expiry_elapsed", modulei18n.MsgIndependentGrantExpiry, 409},
 		{engineaccess.ErrIndependentGrantSourceUnavailable, "engine_access_grant_source_unavailable", modulei18n.MsgIndependentGrantSourceUnavailable, 503},
 	} {

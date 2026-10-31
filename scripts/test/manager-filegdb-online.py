@@ -87,11 +87,10 @@ class Authorization(FILES.ModelSourceAuthorization):
     def grant(self, item, expires_at=None):
         facts = self.facts(item)
         self.frozen = facts
-        permission = REGISTRATION.ensure_direct_permission(self.issuer, target(self.engine_id), facts)
+
         command = str(uuid.uuid4())
         body = dict(request_id=command, catalog_path=target(self.engine_id), item_fingerprint=item['fingerprint'],
-                    expected_boundary_hash=facts['boundary_hash'], direct_permission_source=permission['source'],
-                    direct_permission_version=permission['version'], recipient_type='user', recipient_id=self.recipient,
+                    expected_boundary_hash=facts['boundary_hash'], recipient_type='user', recipient_id=self.recipient,
                     action='read', expiry_mode='at_time' if expires_at else 'until_revoked',
                     reason='Disposable NFS FileGDB acceptance')
         if expires_at:
@@ -99,7 +98,7 @@ class Authorization(FILES.ModelSourceAuthorization):
         self.grants.append(command)  # Own unknown outcomes before sending any write.
         receipt = self.issuer.request('POST', self.base + '/access_grants', (201,), body).payload
         require(all(receipt.get(k) == body[k] for k in ('request_id', 'catalog_path', 'item_fingerprint',
-                'recipient_type', 'recipient_id', 'action', 'expiry_mode', 'direct_permission_source', 'direct_permission_version'))
+                'recipient_type', 'recipient_id', 'action', 'expiry_mode'))
                 and receipt.get('boundary_hash') == facts['boundary_hash']
                 and receipt.get('scope') == facts['boundary']['scope']
                 and receipt.get('operator_principal_id') == self.operator and receipt.get('revocation') is None,
@@ -129,10 +128,7 @@ class Authorization(FILES.ModelSourceAuthorization):
     def close(self):
         self.cleanup()
         require(self.current()['total'] == 0, 'owned Grant survived cleanup')
-        if self.frozen:
-            permission = REGISTRATION.set_direct_permission(self.issuer, target(self.engine_id), self.frozen, False)
-            require(permission['state'] == 'denied', 'test permission remained open')
-            return permission
+        return 'zero_current_source_rules'
 
 
 def preview(client, locator, child, status, rows=None):
@@ -543,7 +539,7 @@ def run(repository, environment, owner):
     finally:
         failures = []
         try:
-            report['direct_permission_after'] = authorization.close()
+            report['authorization_cleanup'] = authorization.close()
             report['final_current'] = authorization.current()
             if outsider_id:
                 report['final_outsider_current'] = authorization.current(recipient=outsider_id)

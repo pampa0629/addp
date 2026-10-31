@@ -2246,6 +2246,19 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     for relative,fragments in rings_required.items():
         if any(fragment not in (repository/relative).read_text() for fragment in fragments):
             raise RegistrationError('topology polygon rings case contract incomplete: '+relative)
+    rings_diagnostic_required = {
+        '.github/workflows/online-t4-gates.yml': ('          - polygon-rings-input-diagnostics',),
+        'scripts/test/online-hosted-topology-gate.sh': ('polygon-rings|polygon-rings-input-diagnostics',),
+        'business/scripts/online-vector-topology-fixture.py': ('def rings_diagnostic_worker(', 'RINGS_DIAGNOSTIC_SOURCES', 'no physical publication'),
+        'scripts/test/vector-topology-persistence-online.py': ('RINGS_DIAGNOSTIC_SPECS', 'def input_diagnostic_specs(', 'diagnostic frozen definition differs', 'distinct executions for the selected case'),
+        'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('面界提取参数诊断独立普通User双语失败页', 'verifyInputDiagnosticCase', 'observations).toHaveLength(8)', 'ring-geometry-invalid'),
+        'engines/geopython-workflow/test_topology_operators.py': ('test_hosted_polygon_ring_diagnostics_only_two_real_file_rejections',),
+        'scripts/test/vector-topology-persistence-online_test.py': ('class RingInputDiagnosticOnlineTest', 'test_rings_diagnostic_requires_exact_eight_uuid_owner_locale_bindings'),
+        'scripts/test/online-hosted-topology-gate_test.py': ('test_rings_diagnostic_case_runs_only_two_failures_without_old_business',),
+    }
+    for relative,fragments in rings_diagnostic_required.items():
+        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+            raise RegistrationError('topology polygon ring diagnostics case incomplete: '+relative)
     rings_script=(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js').read_text()
     rings_match=re.search(r"(?ms)^test\('面界提取独立普通User单成果与两失败保护'.*?^\}\)",rings_script)
     rings_body=rings_match.group(0) if rings_match else ''
@@ -5030,15 +5043,11 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
             'deny_survives_meta_recovery_without_rescan', "'authorization_service_unavailable'",
             'lifecycle.catalog_flow(', 'catalog_confirmation_alone_denied',
             'catalog_replay_does_not_restore_revoked_grant', "with DependencyOutage('catalog')",
-            'catalog_offline_no_direct_approval_fallback', 'catalog_recovery_preserves_original_rules',
-            'self.direct_permission_flow(', 'direct_permission_change_preserves_business_grant',
-            'catalog_acceptance_independent_of_direct_configuration', 'self.content_change_flow(',
+            'catalog_offline_explicit_direct_grant_and_revocation', 'catalog_recovery_preserves_original_rules',
+            'self.content_change_flow(',
             'mutate_source_content(', 'deny_survives_content_change_and_basic_rescan',
             'content_change_and_replay_do_not_restore_withdrawn_grant',
             'lifecycle.workspace_flow(', 'with WorkspaceObservation(', 'pg-authorization-workspace.json',
-            'direct_permission_observations', 'direct_permission_tab_read_only_filters',
-            'direct_permission_edit=self.expected_permission_edit()', 'self.restore_workspace_permission(permission, facts)',
-            "report['workspace_permission_cleanup'] = 'allowed'",
             'browser withdrawal did not preserve its exact Grant history',
             'lifecycle.production_flow(', "'auto_scan_metadata': False", 'self.collect_production_grants()',
             'new_pg_output_initial_grant_issued', 'output_survives_source_withdrawal',
@@ -5055,14 +5064,10 @@ def validate_pg_authorization_profile(repository: Path, registered: set[str]) ->
             'sessionSnapshot', 'same_iframe_without_relogin', 'denied_preview_clears_old_rows',
             'isAnonymousRefreshResponse', 'beforeCookie.value !== afterCookie.value',
             'exclusive_workspace_tabs', 'integrated_create_picker_without_write',
-            'direct_permission_tab_read_only_filters', "name: '直接授权许可'", "getByPlaceholder('数据项名称或路径', { exact: true })",
-            "option('direct-permission-state', label)", 'directPermissionObservations.push(',
+            "getByTestId('approval-resource-tree')",
             'table_text_and_tree_filters', 'recipient_type_and_account_filters',
             'browser_revocation_updates_current_and_history', 'browser_revocation_denies_manager_read',
-            'browser_direct_permission_cancel_zero_write', 'browser_direct_permission_conflict_requires_review',
-            'browser_direct_permission_close_preserves_grant', "conflict.error_code).toBe('resource_version_conflict')",
-            'expect(rows.data).toEqual(unchangedHistory)',
-            'expect(writes).toEqual([permitRoute, permitRoute, permitRoute, base +', 'reader.fingerprint'),
+            'expect(writes).toEqual([base +', 'reader.fingerprint'),
         "Makefile": ('test-pg-authorization-online-runner', 'pg-source-authorization-online_test.py',
                      'online-hosted-pg-authorization-gate_test.py', '@$(MAKE) test-pg-authorization-online-runner',
                      'scripts/test/online-hosted-pg-authorization-gate.sh business/scripts/online-metric-postgres-fixture.sh',

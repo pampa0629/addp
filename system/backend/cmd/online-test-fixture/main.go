@@ -111,8 +111,6 @@ var sourceInitializerPermissions = []string{
 	"system.engine_access_delegation.create",
 	"system.engine_access_delegation.read",
 	"system.engine_access_delegation.revoke",
-	"system.engine_access_direct_permission.read",
-	"system.engine_access_direct_permission.update",
 	"system.engine_access_grant.create",
 	"system.engine_access_grant.read",
 	"system.engine_access_grant.revoke",

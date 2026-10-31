@@ -20,7 +20,7 @@ const (
 	MsgAuthorizationTargetNotFound                   = "system.engine_access.authorization_target_not_found"
 	MsgIndependentGrantConflict                      = "system.engine_access_grant_command_conflict"
 	MsgGrantRelationExists                           = "system.engine_access_grant_relation_exists"
-	MsgIndependentGrantBasis                         = "system.engine_access_grant_approval_changed"
+	MsgIndependentGrantEngineChanged                 = "system.engine_access_grant_engine_changed"
 	MsgIndependentGrantExpiry                        = "system.engine_access_grant_expiry_elapsed"
 	MsgIndependentGrantSourceUnavailable             = "system.engine_access_grant_source_unavailable"
 	MsgGrantRevocationConflict                       = "system.engine_access_grant.revocation_conflict"

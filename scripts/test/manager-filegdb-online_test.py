@@ -256,10 +256,8 @@ class FileGDBAcceptanceTest(unittest.TestCase):
         auth = authorization()
         auth.facts = Mock(return_value=facts())
         auth.issuer.request.side_effect = TimeoutError('uncertain outcome')
-        permission = dict(source='explicit', version='1')
-        with patch.object(M.REGISTRATION, 'ensure_direct_permission', return_value=permission):
-            with self.assertRaises(TimeoutError):
-                auth.grant({'fingerprint': 'a' * 64})
+        with self.assertRaises(TimeoutError):
+            auth.grant({'fingerprint': 'a' * 64})
         self.assertEqual(len(auth.grants), 1)
         command = auth.grants[0]
         auth.issuer.request.side_effect = None
@@ -279,8 +277,7 @@ class FileGDBAcceptanceTest(unittest.TestCase):
                 row[field] = 'wrong'
                 return SimpleNamespace(payload=row)
             auth.issuer.request.side_effect = response
-            with patch.object(M.REGISTRATION, 'ensure_direct_permission', return_value=dict(source='explicit', version='1')):
-                with self.assertRaises(ValueError): auth.grant({'fingerprint': 'a' * 64})
+            with self.assertRaises(ValueError): auth.grant({'fingerprint': 'a' * 64})
             self.assertEqual(len(auth.grants), 1)
             self.assertFalse(auth.confirmed)
 
@@ -381,7 +378,7 @@ class FileGDBAcceptanceTest(unittest.TestCase):
         auth.deny.assert_called_once(); auth.release.assert_called_once_with('denial')
         auth.grant.assert_not_called(); auth.revoke.assert_not_called()
 
-    def test_unknown_deny_and_grant_outcomes_are_cleaned_before_permission_is_closed(self):
+    def test_unknown_deny_and_grant_outcomes_are_cleaned(self):
         auth = authorization(); auth.frozen = facts()
         auth.issuer.request.side_effect = TimeoutError('unknown Deny response')
         with self.assertRaises(TimeoutError):
@@ -391,8 +388,7 @@ class FileGDBAcceptanceTest(unittest.TestCase):
         auth.issuer.request.side_effect = None
         auth.issuer.request.return_value = SimpleNamespace(status=404, payload={'error': 'not found'})
         auth.current = Mock(return_value={'total': 0, 'data': []})
-        with patch.object(M.REGISTRATION, 'set_direct_permission', return_value={'state': 'denied'}):
-            auth.close()
+        auth.close()
         self.assertEqual(auth.denies, []); self.assertEqual(auth.grants, [])
         paths = [call.args[1] for call in auth.issuer.request.call_args_list]
         self.assertEqual(paths[-2:], [auth.base + '/access_denies/' + command + '/release',
@@ -522,11 +518,9 @@ class FileGDBAcceptanceTest(unittest.TestCase):
                 self.assertTrue(P.native('delete', root)['source_removed'])
             self.assertEqual((root / 'keep').read_text(), 'foreign')
 
-    def test_cleanup_must_prove_zero_before_closing_permission(self):
+    def test_cleanup_must_prove_zero_owned_grants(self):
         auth = authorization(); auth.frozen = facts(); auth.cleanup = Mock(); auth.current = Mock(return_value={'total': 1})
-        with patch.object(M.REGISTRATION, 'set_direct_permission') as permission:
-            with self.assertRaisesRegex(ValueError, 'survived cleanup'): auth.close()
-            permission.assert_not_called()
+        with self.assertRaisesRegex(ValueError, 'survived cleanup'): auth.close()
 
     def test_early_scan_failure_stays_failed_but_still_closes_authorization_and_deletes_owned_source(self):
         with tempfile.TemporaryDirectory() as directory:

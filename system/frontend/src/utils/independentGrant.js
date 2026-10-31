@@ -10,7 +10,7 @@ function decimal(value) {
 export function captureIndependentGrant(engineID, requirement, form, candidates, now = Date.now()) {
   const id = String(safePickerEngineID(engineID)), path = requirement?.catalog_path
   const leaf = path?.segments?.at(-1)
-  if (requirement?.state !== 'allowed' || !['explicit', 'deployment_default'].includes(requirement.source) || String(requirement.engine_id) !== id || String(path?.engine_id) !== id ||
+  if (String(requirement.engine_id) !== id || String(path?.engine_id) !== id ||
     !((leaf?.term === 'table' && leaf.kind === 'table') || (leaf?.term === 'directory' && leaf.kind === 'directory' && requirement.binding?.scope) || (['file', 'object'].includes(leaf?.term) && leaf.kind === leaf.term))) throw new Error('invalidGrant')
   const candidate = candidates.find(row => row.id === form.recipientID)
   const reason = form.reason?.trim()
@@ -21,7 +21,7 @@ export function captureIndependentGrant(engineID, requirement, form, candidates,
     if (!(form.expiresAt instanceof Date) || !Number.isFinite(form.expiresAt.getTime()) || form.expiresAt.getTime() <= now) throw new Error('invalidGrant')
     expiresAt = form.expiresAt.toISOString()
   }
-  const fields = { ...approvedBoundaryFields(path, requirement.binding), request_id: crypto.randomUUID(), direct_permission_version: decimal(requirement.version), direct_permission_source: requirement.source, recipient_type: form.recipientType,
+  const fields = { ...approvedBoundaryFields(path, requirement.binding), request_id: crypto.randomUUID(), recipient_type: form.recipientType,
     recipient_id: decimal(candidate.id), action: 'read', expiry_mode: form.expiryMode, expires_at: expiresAt, reason }
   const encoded = JSON.stringify(fields)
   return Object.freeze({ requestID: fields.request_id, payload: `${encoded.slice(0, -1)},"catalog_path":${serializeEngineCatalogTarget({ ...path, engine_id: id })}}`,

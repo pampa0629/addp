@@ -316,8 +316,8 @@ other = "View source-data Grant history"
 other = "View issuance, expiry and revocation history with effective engine delegation; history access grants neither handling nor data read access"
 [system.engine_access_grant_command_conflict]
 other = "Parameters differ from the original Grant issuance; consult the original record"
-[system.engine_access_grant_approval_changed]
-other = "Direct authorization permission is denied or changed; no new Grant was issued. Refresh the target information"
+[system.engine_access_grant_engine_changed]
+other = "The source engine changed; no new Grant was issued. Refresh the target information"
 [system.engine_access_grant_expiry_elapsed]
 other = "The Grant expiry is no longer future; no new Grant was issued. Select an explicit valid expiry"
 [system.engine_access_grant_source_unavailable]
@@ -519,21 +519,6 @@ other = "Revoke an active collection qualification while retaining history and e
 other = "Check metadata collection execution qualification"
 [permissions.system.meta_collection_qualification.execute.description]
 other = "Allow only the Meta runtime to check current qualification against the real execution plan and active lease"
-
-[system.engine_access_direct_permission.version_conflict]
-other = "Direct authorization permission changed. Refresh and review before confirming."
-
-[permissions.system.engine_access_direct_permission.read.name]
-other = "Read direct authorization permissions"
-
-[permissions.system.engine_access_direct_permission.read.description]
-other = "View effective direct authorization permissions for Meta-identified DataItems without granting data access"
-
-[permissions.system.engine_access_direct_permission.update.name]
-other = "Manage direct authorization permissions"
-
-[permissions.system.engine_access_direct_permission.update.description]
-other = "Engine authorization administrators configure direct issuance permission without affecting Catalog business approvals or existing Grants"
 
 [system.cleanup.manager_scope_required]
 other = "Meta cleanup requires a new assessment explicitly including both Meta and Manager."

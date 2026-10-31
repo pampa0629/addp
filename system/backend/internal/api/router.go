@@ -180,11 +180,6 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	}); err != nil {
 		panic(err)
 	}
-	if err := RegisterEngineAccessDirectPermissionRoutes(api, runtime, &EngineAccessDirectPermissionHandler{
-		service: engineaccess.NewService(engineaccess.NewRepository(db), hasLiveEngineCatalogCapability).WithAuthorizationFactsReader(metaFacts).WithDataItemIdentityReader(metaIdentities),
-	}); err != nil {
-		panic(fmt.Errorf("register engine direct permission routes: %w", err))
-	}
 	if err := registerExecutionReadScopeRoute(api, runtime); err != nil {
 		panic(err)
 	}

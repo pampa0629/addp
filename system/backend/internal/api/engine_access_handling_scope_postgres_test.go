@@ -86,11 +86,11 @@ func exerciseHandlingScopeAPI(t *testing.T, db *gorm.DB, identity *iam.Repositor
 		}
 		// The prior owner fixture initialized this exact target, then revoked its
 		// governance role. Handling must not imply engine configuration reading.
-		if _, _, err := service.ListDirectPermissions(ctx, actor, int64(engine.ID), 1, 20, engineaccess.DirectPermissionFilter{}); !errors.Is(err, commonapi.ErrForbidden) {
+		if _, err := service.ListAuthorizationItems(ctx, actor, int64(engine.ID), 1, 20); !errors.Is(err, commonapi.ErrForbidden) {
 			t.Fatalf("handling expanded to configuration enumeration: %v", err)
 		}
 		var beforeFacts, beforeAudits int64
-		if err := db.Table("system.engine_access_direct_permissions").Count(&beforeFacts).Error; err != nil {
+		if err := db.Table("system.engine_access_grants").Count(&beforeFacts).Error; err != nil {
 			t.Fatal(err)
 		}
 		if err := db.Table("system.audit_logs").Count(&beforeAudits).Error; err != nil {
@@ -100,7 +100,7 @@ func exerciseHandlingScopeAPI(t *testing.T, db *gorm.DB, identity *iam.Repositor
 			t.Fatal(err)
 		}
 		var afterFacts, afterAudits int64
-		if err := db.Table("system.engine_access_direct_permissions").Count(&afterFacts).Error; err != nil {
+		if err := db.Table("system.engine_access_grants").Count(&afterFacts).Error; err != nil {
 			t.Fatal(err)
 		}
 		if err := db.Table("system.audit_logs").Count(&afterAudits).Error; err != nil {

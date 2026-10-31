@@ -22,21 +22,17 @@ describe('engines API', () => {
     client.put.mockReset()
   })
 
-  it('uses the single direct-permission contract without implicit configuration writes', async () => {
+  it('reads identities and exact facts without a per-DataItem direct permission API', async () => {
     const fingerprint = 'a'.repeat(64)
-    const body = '{"catalog_path":{"engine_id":9007199254740993,"version":"v1","segments":[]},"allowed":false,"expected_source":"explicit","expected_version":"2","reason":"Review"}'
-    await enginesAPI.listDirectPermissions('9007199254740993', { state: 'allowed', page: 2, page_size: 10 })
-    await enginesAPI.getDirectPermission('9007199254740993', fingerprint)
-    await enginesAPI.setDirectPermission('9007199254740993', fingerprint, body)
-    await enginesAPI.listCatalogChildren('2', { version: 'v1', engine_id: 2, segments: [] })
+    await enginesAPI.listAuthorizationItems('2', { page: 1, page_size: 100 })
+    await enginesAPI.getAuthorizationFacts('2', fingerprint)
     expect(client.get.mock.calls).toEqual([
-      ['/system/engines/9007199254740993/direct-permissions', { params: { state: 'allowed', page: 2, page_size: 10 } }],
-      [`/system/engines/9007199254740993/data-items/${fingerprint}/direct-permission`]
+      ['/system/engines/2/data-items', { params: { page: 1, page_size: 100 } }],
+      [`/system/engines/2/data-items/${fingerprint}/authorization-facts`]
     ])
-    expect(client.put).toHaveBeenCalledWith(`/system/engines/9007199254740993/data-items/${fingerprint}/direct-permission`, body, { headers: { 'Content-Type': 'application/json' } })
-    expect(client.post.mock.calls).toEqual([['/system/engines/2/catalog/children', { path: { version: 'v1', engine_id: 2, segments: [] } }]])
-    expect(enginesAPI).not.toHaveProperty('initializeApprovalRequirement')
-    expect(enginesAPI).not.toHaveProperty('listApprovalRequirements')
+    expect(client.put).not.toHaveBeenCalled()
+    expect(client.post).not.toHaveBeenCalled()
+    for (const method of ['listDirectPermissions', 'getDirectPermission', 'setDirectPermission', 'initializeApprovalRequirement']) expect(enginesAPI).not.toHaveProperty(method)
   })
 
   it('uses the canonical delegation endpoints and preserves explicit write parameters', async () => {

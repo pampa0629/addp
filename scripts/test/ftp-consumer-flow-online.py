@@ -595,18 +595,18 @@ class ModelSourceAuthorization:
 
     def grant(self, model):
         facts = self.facts(model)
-        permission = REGISTRATION.ensure_direct_permission(self.issuer, self.target(model['full_name']), facts)
+
         command = str(uuid.uuid4())
         body = {'request_id': command, 'catalog_path': self.target(model['full_name']),
                 'item_fingerprint': model['fingerprint'], 'expected_boundary_hash': facts['boundary_hash'],
-                'direct_permission_source': permission['source'], 'direct_permission_version': permission['version'], 'recipient_type': 'user',
+                'recipient_type': 'user',
                 'recipient_id': self.recipient, 'action': 'read', 'expiry_mode': 'until_revoked',
                 'reason': 'Disposable FTP exact model composition approval'}
         # Retain our command before the write, including an unknown outcome.
         self.grants.append(command)
         receipt = self.issuer.request('POST', self.base + '/access_grants', (201,), body).payload
         expected = {key: body[key] for key in ('request_id', 'catalog_path', 'item_fingerprint',
-                                             'direct_permission_source', 'direct_permission_version', 'recipient_type', 'recipient_id', 'action', 'expiry_mode')}
+                                             'recipient_type', 'recipient_id', 'action', 'expiry_mode')}
         expected.update(engine_id=str(self.engine_id), approval_mode='independent', expires_at=None,
                         boundary_hash=facts['boundary_hash'], file_composition=facts['boundary']['file_composition'],
                         operator_principal_id=self.operator, revocation=None)

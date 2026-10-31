@@ -32,7 +32,7 @@ READER_PERMISSIONS |= {'transfer.task.create', 'transfer.task.read', 'transfer.t
 OPERATOR_PERMISSIONS = REGISTRATION.SOURCE_INITIALIZER_PERMISSIONS | {
     'system.engine_access_grant.revoke', 'system.engine_access_deny.create', 'system.engine_access_deny.release',
     'catalog.entry.read', 'catalog.inventory.read', 'system.engine_access_fulfillment.create',
-    'system.engine.read', 'system.engine_catalog.read', 'system.engine_access_direct_permission.read',
+    'system.engine.read', 'system.engine_catalog.read',
     'meta.scan_task.create', 'meta.scan_task.update', 'meta.scan_task.delete',
     'system.meta_collection_qualification.read', 'system.meta_collection_qualification.approve',
     'system.meta_collection_qualification.revoke',
@@ -43,10 +43,8 @@ ORGANIZATION_PERMISSIONS = {'iam.department_membership.read', 'iam.department_me
                             'iam.project_group_membership.read', 'iam.project_group_membership.close'}
 BROWSER_CHECKS = ['department_exit_silent_refresh', 'project_exit_silent_refresh',
                   'same_iframe_without_relogin', 'denied_preview_clears_old_rows']
-WORKSPACE_CHECKS = ['direct_permission_tab_read_only_filters', 'exclusive_workspace_tabs', 'integrated_create_picker_without_write',
+WORKSPACE_CHECKS = ['exclusive_workspace_tabs', 'integrated_create_picker_without_write',
                     'table_text_and_tree_filters', 'recipient_type_and_account_filters',
-                    'browser_direct_permission_cancel_zero_write', 'browser_direct_permission_conflict_requires_review',
-                    'browser_direct_permission_close_preserves_grant',
                     'browser_revocation_updates_current_and_history', 'browser_revocation_denies_manager_read']
 PRODUCTION_CHECKS = ['new_pg_output_initial_grant_issued', 'new_pg_output_basic_only_identification',
                      'new_pg_output_manager_readable', 'output_survives_source_withdrawal',
@@ -400,7 +398,7 @@ def validate_production_grant(row, *, execution, path, recipient, facts, source_
             and row.get('boundary_hash') == facts['boundary_hash']
             and row.get('recipient_type') == 'user' and row.get('recipient_id') == recipient
             and row.get('operator_principal_id') == recipient and row.get('action') == 'read'
-            and row.get('direct_permission_version') == '0' and row.get('direct_permission_source') == '' and row.get('catalog_request_id') is None
+            and row.get('catalog_request_id') is None
             and row.get('expiry_mode') == 'at_time' and row.get('revocation') is None
             and re.fullmatch(r'[1-9][0-9]*', row.get('issuer_principal_id', ''))
             and re.fullmatch(r'[1-9][0-9]*', row.get('issuer_membership_id', ''))
@@ -646,12 +644,10 @@ class BrowserObservation:
 
 
 class WorkspaceObservation(BrowserObservation):
-    """Two administrator sessions edit one permit; only the tracked Grant is revoked."""
-
-    def __init__(self, tenant, principal, target, engine, issuer, grant, permission, facts):
+    """The operator navigates without writes, then withdraws its exact Grant."""
+    def __init__(self, tenant, principal, target, engine, issuer, grant):
         super().__init__(tenant, principal, target)
-        self.binding.update(engine_id=str(engine), issuer_id=str(issuer), grant_id=grant, direct_permission=dict(permission),
-                            permission_target={'catalog_path': facts['boundary']['native_target'], 'boundary_hash': facts['boundary_hash']})
+        self.binding.update(engine_id=str(engine), issuer_id=str(issuer), grant_id=grant)
         self.evidence = Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']) / 'pg-authorization-workspace.json'
         self.test_name = 'PG authorization workspace'
         self.login_keys += ('ADDP_ONLINE_PG_OPERATOR_USERNAME', 'ADDP_ONLINE_PG_OPERATOR_PASSWORD')
@@ -664,25 +660,9 @@ class WorkspaceObservation(BrowserObservation):
         require(self.evidence.is_file(), 'PG browser workspace report missing')
         result = json.loads(self.evidence.read_text())
         expected = dict(self.binding, schema_version='addp.pg-authorization-workspace/v1', result='passed',
-                        checks=WORKSPACE_CHECKS, login_requests=3, preview_statuses=[200, 403],
-                        direct_permission_edit=self.expected_permission_edit(),
-                        direct_permission_observations=[{'search': 'metric_people', 'state': state, 'total': total,
-                            'item_fingerprints': [self.binding['direct_permission']['item_fingerprint']] if total else []}
-                            for state, total in [('', 1), ('allowed', 1), ('denied', 0)]])
+                        checks=WORKSPACE_CHECKS, login_requests=2, preview_statuses=[200, 403])
         require(result == expected, 'PG browser workspace evidence is incomplete or changed identity')
         return result
-
-    def expected_permission_edit(self):
-        initial = self.binding['direct_permission']
-        version = int(initial['version'])
-        require(initial['source'] == 'explicit' and initial['state'] == 'allowed', 'workspace requires explicit baseline permission')
-        return {'item_fingerprint': initial['item_fingerprint'], 'boundary_hash': self.binding['permission_target']['boundary_hash'],
-                'versions': [str(version + offset) for offset in range(3)],
-                'writes': [{'expected_version': str(version), 'allowed': False, 'status': 200},
-                           {'expected_version': str(version), 'allowed': False, 'status': 409},
-                           {'expected_version': str(version + 1), 'allowed': True, 'status': 200}],
-                'conflict_code': 'resource_version_conflict', 'cancelled_writes': 0, 'review_writes': 0,
-                'grant_unchanged': True, 'closed_preview_status': 200, 'same_reader_credential': True, 'final_state': 'allowed'}
 
 
 class CollectionObservation(BrowserObservation):
@@ -1932,15 +1912,13 @@ class Lifecycle:
                                      + '?' + urlencode(query), (200,)).payload
 
     def grant_command(self, facts, *, seconds=300, recipient_type='user', recipient_id=None,
-                      catalog_path=None, permission=None):
+                      catalog_path=None):
         path = self.path if catalog_path is None else catalog_path
-        permission = permission if permission is not None else REGISTRATION.ensure_direct_permission(self.operator, path, facts)
         command = str(uuid.uuid4())
         expires = datetime.now(timezone.utc) + timedelta(seconds=seconds)
         body = {'request_id': command, 'catalog_path': self.path if catalog_path is None else catalog_path,
                 'item_fingerprint': facts['item_fingerprint'],
-                'expected_boundary_hash': facts['boundary_hash'], 'direct_permission_source': permission['source'],
-                'direct_permission_version': permission['version'], 'recipient_type': recipient_type,
+                'expected_boundary_hash': facts['boundary_hash'], 'recipient_type': recipient_type,
                 'recipient_id': self.recipient if recipient_id is None else recipient_id,
                 'action': 'read', 'expiry_mode': 'at_time', 'expires_at': expires.isoformat(),
                 'reason': 'Disposable PG source authorization lifecycle'}
@@ -1951,7 +1929,7 @@ class Lifecycle:
     def grant(self, facts, **options):
         command, body = self.grant_command(facts, **options)
         receipt = self.operator.request('POST', self.base + '/access_grants', (201,), body).payload
-        for key in ('request_id', 'catalog_path', 'item_fingerprint', 'direct_permission_source', 'direct_permission_version',
+        for key in ('request_id', 'catalog_path', 'item_fingerprint',
                     'recipient_type', 'recipient_id', 'action', 'expiry_mode'):
             require(receipt.get(key) == body[key], 'Grant receipt changed its bound target or recipient')
         require(receipt.get('boundary_hash') == facts['boundary_hash'] and receipt.get('revocation') is None,
@@ -2242,7 +2220,7 @@ class Lifecycle:
         require(issued.get('total') == 1 and len(issued.get('data', [])) == 1
                 and issued['data'][0].get('request_id') == command
                 and all(issued['data'][0].get(key) == body[key] for key in (
-                    'catalog_path', 'item_fingerprint', 'direct_permission_source', 'direct_permission_version',
+                    'catalog_path', 'item_fingerprint',
                     'recipient_type', 'recipient_id', 'action', 'expiry_mode'))
                 and issued['data'][0].get('boundary_hash') == facts['boundary_hash']
                 and issued['data'][0].get('revocation') is None,
@@ -2278,38 +2256,14 @@ class Lifecycle:
         facts = REGISTRATION.read_exact_record_authorization_facts(self.operator, self.path)
         target = locator(self.engine, 'metric_people', item(self.reader, self.engine, 'metric_people')['id'])
         command, body = self.grant(facts, seconds=300)
-        permission = REGISTRATION.read_direct_permission(self.operator, self.engine, facts['item_fingerprint'])
-        require(permission['state'] == 'allowed' and permission['source'] == body['direct_permission_source']
-                and permission['version'] == body['direct_permission_version'], 'workspace permission changed after its Grant')
-        try:
-            with WorkspaceObservation(self.tenant, self.recipient, target, self.engine, issuer, command, permission, facts) as browser:
-                report['workspace_browser'] = browser.finish()
-            current = REGISTRATION.read_direct_permission(self.operator, self.engine, facts['item_fingerprint'])
-            require(current == dict(permission, version=str(int(permission['version']) + 2)),
-                    'workspace browser did not restore the exact permission with two transitions')
-        finally:
-            # The context has terminated its browsers before restoring our disposable setting.
-            report['workspace_permission_cleanup'] = 'failed'
-            self.restore_workspace_permission(permission, facts)
-            report['workspace_permission_cleanup'] = 'allowed'
+        with WorkspaceObservation(self.tenant, self.recipient, target, self.engine, issuer, command) as browser:
+            report['workspace_browser'] = browser.finish()
         preview(self.reader, target, False)
         require(self.listing()['total'] == 0, 'browser withdrawal left current source rules')
         history = self.listing(history=True, state='revoked')
         require(any(row.get('request_id') == command and row.get('revocation') for row in history['data']),
                 'browser withdrawal did not preserve its exact Grant history')
         report['checks'].extend(WORKSPACE_CHECKS)
-
-    def restore_workspace_permission(self, baseline, facts):
-        current = REGISTRATION.read_direct_permission(self.operator, self.engine, facts['item_fingerprint'])
-        version = int(baseline['version'])
-        expected = [dict(baseline, state=state, version=str(version + offset))
-                    for offset, state in enumerate(('allowed', 'denied', 'allowed'))]
-        require(current in expected, 'workspace cleanup encountered an unowned permission version or state')
-        if current == expected[1]:
-            current = REGISTRATION.set_direct_permission(self.operator, self.path, facts, True, current=current)
-            require(current == expected[2], 'workspace cleanup could not restore its allowed permission')
-            require(REGISTRATION.read_direct_permission(self.operator, self.engine, facts['item_fingerprint']) == expected[2],
-                    'workspace cleanup permission readback did not match restoration')
 
     def deny(self, facts, *, recipient_type='user', recipient_id=None, catalog_path=None):
         command = str(uuid.uuid4())
@@ -2419,7 +2373,6 @@ class Lifecycle:
         boundary = business.request('GET', route + '/sharing_boundary', (200,)).payload
         require(boundary == {'item_fingerprint': facts['item_fingerprint'], 'boundary_hash': facts['boundary_hash'],
                              'native_target': path}, 'Catalog and System disagree on the Meta boundary')
-        permission = REGISTRATION.set_direct_permission(self.operator, path, facts, False)
         decision_id, request_id = str(uuid.uuid4()), str(uuid.uuid4())
         evidence = report['catalog_approval'] = {'entry_id': entry_id, 'decision_id': decision_id,
             'request_id': request_id, 'item_fingerprint': facts['item_fingerprint'], 'boundary_hash': facts['boundary_hash']}
@@ -2454,7 +2407,7 @@ class Lifecycle:
         require(grant.get('request_id') == request_id and grant.get('catalog_request_id') == request_id
                 and grant.get('approval_mode') == 'catalog' and grant.get('catalog_path') == path
                 and grant.get('engine_id') == str(self.engine) and grant.get('action') == 'read'
-                and grant.get('direct_permission_version') == '0' and grant.get('direct_permission_source') == '' and bool(grant.get('granted_at'))
+                and bool(grant.get('granted_at'))
                 and grant.get('operator_principal_id') == report['principals']['operator']
                 and grant.get('item_fingerprint') == facts['item_fingerprint'] and grant.get('boundary_hash') == facts['boundary_hash']
                 and grant.get('recipient_type') == 'user' and grant.get('recipient_id') == self.recipient
@@ -2471,10 +2424,8 @@ class Lifecycle:
                 'same-parameter fulfillment replay changed issuance history')
         read(True)
         preview(self.outsider, target, False)
-        self.direct_permission_flow(report, business=business, path=path, facts=facts, route=route,
-            permission=permission, command=command, history=history, read=read, target=target)
         self.catalog_outage_flow(report, path=path, facts=facts, route=route, command=command,
-                                 history=history, read=read, target=target, permission_version='3')
+                                 history=history, read=read, target=target)
         self.operator.request('POST', route + '/sharing_fulfillments', (200,), command)
         read(False)
         revoked = self.listing(history=True, state='revoked', catalog_path=path)
@@ -2487,134 +2438,7 @@ class Lifecycle:
             'catalog_grant_actual_preview_readable', 'catalog_replay_preserves_issuance',
             'catalog_grant_deny_release_and_withdrawal', 'catalog_replay_does_not_restore_revoked_grant'])
 
-    def direct_permission_flow(self, report, *, business, path, facts, route, permission, command, history, read, target):
-        report['phase'] = 'direct_permission_explicit_update'
-        update_route = self.base + f"/data-items/{facts['item_fingerprint']}/direct-permission"
-        outsider = self.outsider.request('GET', '/api/v1/system/auth/context', (200,)).payload['principal']['id']
-        token = self.outsider.token
-        def outsider_read(allowed):
-            preview(self.outsider, target, allowed, 4 if allowed else None,
-                    columns=('event_id', 'event_date'), values=('e1', 'e2', 'e3', 'old'))
-        def observe(state, version):
-            current = REGISTRATION.read_direct_permission(self.operator, self.engine, facts['item_fingerprint'])
-            require(current['state'] == state and current['source'] == 'explicit' and current['version'] == str(version),
-                    'direct permission observation changed state or version')
-            require(self.listing(history=True, state='active', catalog_path=path) == history,
-                    'direct permission change rewrote the original business Grant')
-            read(True)
-            return current
-        def switch(version, allowed, *, expected_version):
-            current = dict(permission, source='explicit', state='allowed' if version == 2 else 'denied', version=str(version))
-            result = REGISTRATION.set_direct_permission(self.operator, path, facts, allowed, current=current)
-            require(result['version'] == str(expected_version), 'unexpected direct permission version')
-            observe('allowed' if allowed else 'denied', expected_version)
-            return result
-        def rejected_grant(version):
-            request_id, body = self.grant_command(facts, catalog_path=path, recipient_id=outsider,
-                                                  permission={'source': 'explicit', 'version': str(version)})
-            rejected = self.operator.request('POST', self.base + '/access_grants', (409,), body).payload
-            require(rejected.get('error_code') == 'engine_access_grant_approval_changed',
-                    'new direct approval did not reject its stale or business basis')
-            require(not any(row.get('request_id') == request_id for row in self.listing(
-                history=True, recipient_id=outsider, catalog_path=path)['data']), 'rejected handoff command issued a Grant')
-            outsider_read(False)
-            return request_id
-        forbidden = business.request('PUT', update_route, (403,), {
-            'catalog_path': path, 'expected_boundary_hash': facts['boundary_hash'], 'allowed': True,
-            'expected_source': 'explicit', 'expected_version': '1', 'reason': 'Disposable PG direct permission update check'}).payload
-        require(bool(forbidden.get('error')), 'missing update permission did not return a denial')
-        observe('denied', 1)
-        switch(1, True, expected_version=2)
-        outsider_read(False)
-        stale_direct = rejected_grant(1)
-        # A new business approval remains usable while direct issuance is enabled.
-        # Use a different recipient, then withdraw its actual Grant before the
-        # direct-flow checks; never leave a duplicate pending issuance behind.
-        business_decision = dict(decision_id=str(uuid.uuid4()),
-            version=str(business.request('GET', route, (200,)).payload['version']),
-            recipient_type='user', recipient_id=outsider, expiry_mode='at_time',
-            expires_at=(datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
-            expected_boundary_hash=facts['boundary_hash'], reason='Business approval independent of direct permission')
-        created = business.request('POST', route + '/sharing_decisions', (201,), business_decision).payload
-        require(created.get('id') == business_decision['decision_id'] and created.get('recipient_id') == outsider,
-                'independent business decision changed recipient')
-        business_command = {'request_id': str(uuid.uuid4()), 'decision_id': created['id']}
-        self.grants.append(business_command['request_id'])
-        result = self.operator.request('POST', route + '/sharing_fulfillments', (200, 202), business_command).payload
-        require(result.get('request_id') == business_command['request_id'] and result.get('state') in {'pending', 'accepted'},
-                'direct configuration blocked Catalog business acceptance')
-        deadline = time.monotonic() + 120
-        while time.monotonic() < deadline:
-            business_history = self.listing(history=True, state='active', recipient_id=outsider, catalog_path=path)
-            if business_history['total']:
-                break
-            time.sleep(1)
-        require(business_history['total'] == 1 and len(business_history['data']) == 1,
-                'independent business approval did not issue exactly one Grant')
-        business_grant = business_history['data'][0]
-        require(business_grant.get('request_id') == business_command['request_id']
-                and business_grant.get('catalog_request_id') == business_command['request_id']
-                and business_grant.get('approval_mode') == 'catalog' and business_grant.get('direct_permission_version') == '0' and business_grant.get('direct_permission_source') == ''
-                and business_grant.get('item_fingerprint') == facts['item_fingerprint']
-                and business_grant.get('boundary_hash') == facts['boundary_hash']
-                and business_grant.get('recipient_type') == 'user' and business_grant.get('recipient_id') == outsider,
-                'independent business Grant binding changed')
-        outsider_read(True)
-        self.revoke(business_command['request_id'])
-        outsider_read(False)
-        require(self.listing(history=True, state='active', catalog_path=path) == history,
-                'independent business approval changed the original recipient Grant')
-        report['phase'] = 'direct_permission_current_grant'
-        direct_id, direct_body = self.grant(facts, catalog_path=path, recipient_id=outsider, permission={'source': 'explicit', 'version': '2'})
-        direct_history = self.listing(history=True, state='active', recipient_id=outsider, catalog_path=path)
-        require(direct_history['total'] == 1 and direct_history['data'][0].get('request_id') == direct_id
-                and direct_history['data'][0].get('direct_permission_version') == '2'
-                and direct_history['data'][0].get('direct_permission_source') == 'explicit'
-                and direct_history['data'][0].get('approval_mode') == 'independent',
-                'current-version direct approval changed its issuance basis')
-        outsider_read(True)
-        observe('allowed', 2)
-        report['phase'] = 'direct_permission_disabled'
-        current = switch(2, False, expected_version=3)
-        require(self.listing(history=True, state='active', recipient_id=outsider, catalog_path=path) == direct_history,
-                'disabling direct permission rewrote the existing direct Grant')
-        outsider_read(True)
-        report['phase'] = 'direct_permission_same_value_replay'
-        repeated = switch(3, False, expected_version=3)
-        require(repeated == current, 'same-value command mutated direct permission observation')
-        original = self.operator.request('POST', route + '/sharing_fulfillments', (200,), command).payload
-        require(original.get('request_id') == command['request_id'] and original.get('state') == 'accepted',
-                'permission change invalidated the already accepted original business command')
-        observe('denied', 3)
-        stale_update = self.operator.request('PUT', update_route, (409,), {
-            'catalog_path': path, 'expected_boundary_hash': facts['boundary_hash'], 'allowed': True,
-            'expected_source': 'explicit', 'expected_version': '2', 'reason': 'Disposable PG stale permission version'}).payload
-        require(stale_update.get('error_code') == 'resource_version_conflict', 'stale switch did not conflict explicitly')
-        observe('denied', 3)
-        self.operator.request('POST', self.base + '/access_grants', (201,), direct_body)
-        require(self.listing(history=True, state='active', recipient_id=outsider, catalog_path=path) == direct_history,
-                'original direct command replay renewed or replaced its issuance')
-        self.revoke(direct_id)
-        outsider_read(False)
-        revoked = self.listing(history=True, state='revoked', recipient_id=outsider, catalog_path=path)
-        rejected_grant(3)
-        self.operator.request('POST', self.base + '/access_grants', (201,), direct_body)
-        outsider_read(False)
-        require(self.listing(history=True, state='revoked', recipient_id=outsider, catalog_path=path) == revoked,
-                'revoked original direct replay changed withdrawal or issuance history')
-        report['direct_permission_changes'] = {'item_fingerprint': facts['item_fingerprint'], 'versions': [1, 2, 3],
-            'direct_request_id': direct_id, 'stale_direct_request_id': stale_direct,
-            'independent_catalog_request_id': business_command['request_id'], 'same_consumer_credentials': self.outsider.token == token,
-            'old_business_grant_unchanged': True, 'old_direct_grant_unchanged': True}
-        require(self.outsider.token == token, 'handoff changed the separately granted consumer credential')
-        report['checks'].extend(['direct_permission_update_permission_required', 'direct_permission_change_preserves_business_grant',
-            'old_version_new_direct_grant_rejected', 'current_version_direct_grant_actual_read',
-            'disabled_permission_preserves_direct_grant', 'same_value_update_preserves_version',
-            'stale_permission_version_rejected', 'original_direct_replay_preserves_issuance_and_withdrawal',
-            'new_direct_grant_blocked_after_permission_disabled'])
-        report['checks'].append('catalog_acceptance_independent_of_direct_configuration')
-
-    def catalog_outage_flow(self, report, *, path, facts, route, command, history, read, target, permission_version):
+    def catalog_outage_flow(self, report, *, path, facts, route, command, history, read, target):
         report['phase'] = 'catalog_outage_existing_grant'
         token = self.reader.token
         outsider = self.outsider.request('GET', '/api/v1/system/auth/context', (200,)).payload['principal']['id']
@@ -2622,7 +2446,7 @@ class Lifecycle:
         blocked_request = str(uuid.uuid4())
         self.grants.append(blocked_request)
         direct_request, direct_body = self.grant_command(facts, catalog_path=path, recipient_id=outsider,
-                                                        permission={'source': 'explicit', 'version': permission_version}, seconds=180)
+                                                        seconds=180)
         evidence = report['catalog_outage'] = {'unaccepted_request_id': blocked_request,
                                              'direct_request_id': direct_request}
         with DependencyOutage('catalog') as outage:
@@ -2634,18 +2458,20 @@ class Lifecycle:
                 dict(command, request_id=blocked_request))
             require(set(unavailable.payload) == {'error'} and bool(unavailable.payload['error']),
                     'offline business request did not return the Gateway dependency error')
-            # Use an ungranted recipient so a duplicate-relation conflict cannot mask the approval check.
-            direct = self.operator.request('POST', self.base + '/access_grants', (409,), direct_body).payload
-            require(set(direct) == {'error', 'error_code'} and bool(direct['error'])
-                    and direct['error_code'] == 'engine_access_grant_approval_changed',
-                    'direct authorization bypassed the explicitly denied direct permission')
-            permission = REGISTRATION.read_direct_permission(self.operator, self.engine, facts['item_fingerprint'])
-            require(permission['state'] == 'denied' and permission['source'] == 'explicit'
-                    and permission['version'] == permission_version, 'Catalog outage implicitly changed direct permission')
-            require(self.listing(history=True, state='active', recipient_id=outsider, catalog_path=path)['total'] == 0
-                    and self.listing(history=True, state='active', catalog_path=path) == history,
-                    'offline request silently issued a new Grant')
+            # A failed business request never creates a Grant. A separately explicit
+            # direct command remains available to the qualified engine operator.
+            require(self.listing(history=True, state='active', recipient_id=outsider, catalog_path=path)['total'] == 0,
+                    'offline business request silently issued a new Grant')
             preview(self.outsider, target, False)
+            direct = self.operator.request('POST', self.base + '/access_grants', (201,), direct_body).payload
+            require(direct.get('request_id') == direct_request and direct.get('approval_mode') == 'independent'
+                    and direct.get('recipient_id') == outsider and direct.get('item_fingerprint') == facts['item_fingerprint']
+                    and direct.get('boundary_hash') == facts['boundary_hash'], 'offline direct Grant changed its binding')
+            preview(self.outsider, target, True, 4, columns=('event_id', 'event_date'), values=('e1', 'e2', 'e3', 'old'))
+            self.revoke(direct_request)
+            preview(self.outsider, target, False)
+            require(self.listing(history=True, state='active', catalog_path=path) == history,
+                    'independent direct command changed the original business Grant')
             report['phase'] = 'catalog_outage_deny_release_and_withdrawal'
             deny = self.deny(facts, catalog_path=path)
             read(False)
@@ -2658,16 +2484,16 @@ class Lifecycle:
             require(self.listing(history=True, state='active', recipient_id=recipient, catalog_path=path)['total'] == 0,
                     'Catalog recovery created or restored an active Grant')
             all_history = self.listing(history=True, recipient_id=recipient, catalog_path=path)
-            require(not any(row.get('request_id') in {blocked_request, direct_request} for row in all_history['data']),
+            require(not any(row.get('request_id') == blocked_request for row in all_history['data']),
                     'a rejected offline command left a source Grant history')
         absent = self.operator.request('GET', route + '/sharing_fulfillments/' + blocked_request, (404,)).payload
         require(bool(absent.get('error')) and not any(key in absent for key in ('state', 'granted_at')),
                 'offline new request unexpectedly became a Catalog fulfillment')
         require(self.reader.token == token, 'Catalog outage changed the consumer credential')
-        evidence.update(unavailable_status=unavailable.status, direct_error_code=direct['error_code'],
+        evidence.update(unavailable_status=unavailable.status, direct_granted_and_revoked=True,
                         same_credential=True, before=outage.before, after=outage.after)
         report['checks'].extend(['existing_grant_readable_without_catalog', 'catalog_offline_new_fulfillment_unavailable',
-            'catalog_offline_no_direct_approval_fallback', 'catalog_offline_deny_release_withdrawal',
+            'catalog_offline_explicit_direct_grant_and_revocation', 'catalog_offline_deny_release_withdrawal',
             'catalog_recovery_preserves_original_rules'])
 
     def inspect_sources(self, facts, sources, denies, reason='grant'):

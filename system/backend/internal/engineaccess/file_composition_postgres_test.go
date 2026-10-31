@@ -177,19 +177,8 @@ func exerciseFileCompositionGrants(t *testing.T, db *gorm.DB, tenantID, adminID 
 				}
 				read(request, false)
 				input := CreateIndependentGrantInput{Actor: actor, EngineID: int64(engine.ID), RequestID: uuid.New(), CatalogPath: primary,
-					ItemFingerprint: current.ItemFingerprint, ExpectedBoundaryHash: *current.BoundaryHash, DirectPermissionVersion: 1, DirectPermissionSource: "explicit",
+					ItemFingerprint: current.ItemFingerprint, ExpectedBoundaryHash: *current.BoundaryHash,
 					RecipientType: "user", RecipientID: reader.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Approve complete A composition"}
-				binding, err := current.ApprovedBinding()
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := repo.transaction(ctx, func(tx *Repository) error {
-					permitInput := fixturePermitBindingInput(ctx, tx, tenantID, adminID, primary, binding, true, 0)
-					_, err := fixtureSetPermit(ctx, tx, permitInput, func(*Repository) error { return nil })
-					return err
-				}); err != nil {
-					t.Fatal(err)
-				}
 				grantA, err := service.CreateIndependentGrant(ctx, input)
 				if err != nil {
 					t.Fatal(err)
