@@ -537,3 +537,12 @@ Safari真实运行只操作获准的第二个标签页，前端普通组件地�
 根因为测试在点击English后立即缩窄视口，尚未等语言菜单退出动画结束；不应把尚在桌面位置退出的菜单计作后续稳定窄屏tip布局。仅在主机和同样流程的引擎两项用例中，缩窄前定位实际含English项的语言弹层，并用`toHaveCSS('display', 'none')`确认退出完成。仍保留620px宽度、原`scrollWidth <= innerWidth`断言、同iframe timeOrigin、URL和无额外请求检查；不以aria隐藏／透明度代替退出完成，不加固定sleep、重试或时限，不改产品布局或共享组件。
 
 最终最小充分验证：`npm --prefix console/frontend run test:e2e -- node-resource-navigation.spec.js engine-resource-navigation.spec.js --grep 'host detail tips translate|engine detail tips follow'`，2项通过（36.2秒），日志`/tmp/addp-host-engine-tip-exit-sync.log`；`git diff --check`通过。标准浏览器入口隔离并清理本轮服务，不操作个人部署。只改变两项测试的操作同步，不重跑产品未变的单测、构建、来源T2、全量Linux或Hosted；修正后的自然CI继续等专门会话回传，不自行轮询／重跑或设置定时任务。本轮UI测试修复与个人Infra／Business“采集来源不可用”是不同事实，后者未由此恢复。
+
+
+### 菜单退出同步修复的 Linux Console 门禁回传（2026-10-31）
+
+专门CI会话回传后，本会话重新读取原始日志及proof并核对SHA256：固定修复提交`4a6a7a4fa574ddda204b61d73acbdb5c397e1e52`，push／attempt1，[Platform CI run41156059896的Console Job124402993366](https://github.com/pampa0629/addp/actions/runs/41156059896/job/124402993366)，selected=true，整个Console Job completed／success，运行01:41:56—01:59:16 UTC。实际执行`make test-console-frontend`（raw686）：30文件／222项单元测试通过（732—733），272项浏览器通过（1034，15.1分钟），构建通过（1065，4.82秒），末尾selected=true／status=success（1070—1071）。
+
+原始日志`/tmp/addp-ci-20261031-100003/console-4a-job-124402993366.log`，SHA256为`321de09d045ad951ebda479d9525bac22e13a4ea7f57d94f632de6d0562f5cb7`；回执`/tmp/addp-ci-20261031-100003/console-4a-actual-proof.json`。本次为菜单退出同步修复本身的真实Linux完整Console门禁，不沿用此前f8同输入通过代替；5cb首失败、f8后继通过及本次修复通过分别保留，不倒改历史。此结论仅覆盖该固定提交的Console Job，不声明整个Platform workflow通过；未调查其他owner失败。
+
+本轮仅补证据，`git diff --check`通过，产品和测试未变，不重跑有效本地、CI或Hosted，不轮询／调度、不设置定时任务、不启停个人服务。Infra／Business来源不可用仍是另一项个人环境缺口，未由本次Console门禁恢复；下一步优先只读定位来源状态。
