@@ -13439,7 +13439,7 @@ def test_spi_smallest_nonzero_slope_can_be_recovered_by_large_area(tmp_path,unit
     with raster_workspace():assert _twi_read(_spi_result(paths,unit))[0,0]==expected and expected>0
 
 
-def _sieve_oracle(values, valid, minimum, connectivity, protected=()):
+def _sieve_oracle(values, valid, minimum, connectivity, protected=(), cell_area=1):
     """Independent per-pixel BFS and exhaustive original component boundaries."""
     from collections import deque
     height,width=values.shape;identity=np.full(values.shape,-1,dtype=int);components=[]
@@ -13458,13 +13458,13 @@ def _sieve_oracle(values, valid, minimum, connectivity, protected=()):
     answer=np.full(values.shape,np.nan)
     for number,cells in enumerate(components):
         category=values[cells[0]]
-        if len(cells)<minimum and int(category) not in protected:
+        if len(cells)*cell_area<minimum and int(category) not in protected:
             neighbours=set()
             for y,x in cells:
                 for dy,dx in offsets:
                     yy,xx=y+dy,x+dx
                     if 0<=yy<height and 0<=xx<width and identity[yy,xx]>=0 and identity[yy,xx]!=number:neighbours.add(int(identity[yy,xx]))
-            eligible=[n for n in neighbours if len(components[n])>=minimum]
+            eligible=[n for n in neighbours if len(components[n])*cell_area>=minimum]
             if eligible:
                 donor=min(eligible,key=lambda n:(-len(components[n]),int(values[components[n][0]]),min(components[n])))
                 category=values[components[donor][0]]
@@ -13610,7 +13610,8 @@ def test_sieve_partial_private_labels_and_output_removed_after_failure(tmp_path,
 def test_sieve_metadata_has_one_workflow_entry_required_parameters_and_example():
     spec=next(item for item in list_operators()if item['id']=='raster_sieve');params={p['name']:p for p in spec['parameters']}
     assert spec['category_path']==['栅格处理','分类处理']and spec['execution_modes']==['workflow']
-    assert all(params[k]['required']for k in ('band','min_pixels','connectivity'))
+    assert all(params[k]['required']for k in ('band','connectivity'))
+    assert all(not params[k]['required'] and 'default' not in params[k]for k in ('min_pixels','min_area_m2'))
     assert spec['detailed_description']['workflow_example']['params']['min_pixels']==10
 
 @pytest.mark.parametrize('case',['direct','reclassified','invalid','save-failure'])
@@ -14909,3 +14910,290 @@ def test_sieve_protected_async_cog_reclassification_language_and_failure_cleanup
     else:
         ds=gdal.Open(str(target));expected=np.array([[10.,10.,20.,30.,30.]])if case=='reclassified'else values
         np.testing.assert_array_equal(ds.ReadAsArray(),expected);assert ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT']=='COG';ds=None
+
+
+def _sieve_area_result(path, minimum, connectivity=4, band=1, **params):
+    from operators.raster_compute import raster_sieve
+    return raster_sieve(raster_load(source_plan(path)), band, connectivity=connectivity,
+                        min_area_m2=minimum, **params)
+
+
+def _sieve_area_reference(path, values, valid, minimum, connectivity, protected=()):
+    from decimal import Decimal, localcontext
+    ds = gdal.Open(str(path)); transform = ds.GetGeoTransform(); reference = osr.SpatialReference(ds.GetProjection())
+    factor = reference.GetLinearUnits(); ds = None
+    with localcontext() as context:
+        context.prec = 2000
+        area = Decimal.from_float(transform[1]) * Decimal.from_float(-transform[5]) * Decimal.from_float(factor) ** 2
+        threshold = Decimal(minimum) if isinstance(minimum, int) else Decimal.from_float(minimum)
+        return _sieve_oracle(values, valid, threshold, connectivity, protected, area)
+
+
+@pytest.mark.parametrize('connectivity', [4, 8])
+@pytest.mark.parametrize('seed', [3, 17, 29])
+@pytest.mark.parametrize('protected', [[], [0, -7], [-7, 0, 2, 2**53-1]])
+@pytest.mark.parametrize('minimum', [6., 12., 12.1])
+def test_sieve_area_independent_decimal_bfs_frozen_rules_and_protection(tmp_path, connectivity, seed, protected, minimum):
+    rng = np.random.default_rng(seed); values = rng.choice([-7., 0., 2., 2**53-1], size=(13, 17)); valid = rng.random(values.shape) > .15
+    path = create_raster(tmp_path/'area.tif', np.where(valid, values, -9999), (100, 2, 0, 200, 0, -3), 'EPSG:3857')
+    before = path.read_bytes(); expected = _sieve_area_reference(path, values, valid, minimum, connectivity, protected)
+    with raster_workspace():
+        actual = _twi_read(_sieve_area_result(path, minimum, connectivity, protected_values=protected))
+        np.testing.assert_array_equal(actual, expected)
+        np.testing.assert_array_equal(_twi_read(_sieve_area_result(path, minimum, connectivity, protected_values=list(reversed(protected)))), actual)
+        if minimum in (6., 12.):
+            np.testing.assert_array_equal(_twi_read(_sieve_result(path, int(minimum/6), connectivity, protected_values=protected)), actual)
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize('minimum', [float(np.nextafter(12., 0.)), 12., float(np.nextafter(12., math.inf))])
+@pytest.mark.parametrize('donor_boundary', [False, True])
+def test_sieve_area_exact_equality_one_ulp_and_same_threshold_for_donors(tmp_path, minimum, donor_boundary):
+    values = np.array([[1., 2., 2.]] if donor_boundary else [[1., 1., 2., 2., 2., 2.]])
+    path = create_raster(tmp_path/'boundary.tif', values, (0, 2, 0, 10, 0, -3), 'EPSG:3857')
+    expected = values.copy()
+    if (donor_boundary and minimum <= 12.) or (not donor_boundary and minimum > 12.): expected[:] = 2
+    with raster_workspace(): np.testing.assert_array_equal(_twi_read(_sieve_area_result(path, minimum)), expected)
+
+
+@pytest.mark.parametrize('unit,factor', [('metre', 1.), ('foot', .3048), ('US survey foot', 1200/3937)])
+@pytest.mark.parametrize('step', [(2., 3.), (.1, .3)])
+def test_sieve_area_crs_linear_units_non_square_and_unrounded_cell_product(tmp_path, unit, factor, step):
+    from decimal import Decimal, localcontext
+    values = np.array([[1., 1., 2., 2., 2., 2., 9.]])
+    path = create_raster(tmp_path/'units.tif', values, (100, step[0], 0, 200, 0, -step[1]), 'EPSG:3857')
+    ds = gdal.Open(str(path), gdal.GA_Update); reference = osr.SpatialReference(ds.GetProjection()); reference.SetLinearUnits(unit, factor); ds.SetSpatialRef(reference); ds = None
+    ds = gdal.Open(str(path)); actual_factor = osr.SpatialReference(ds.GetProjection()).GetLinearUnits(); ds = None
+    assert actual_factor == (osr.SpatialReference('EPSG:2227').GetLinearUnits() if unit == 'US survey foot' else factor)
+    with localcontext() as context:
+        context.prec = 2000
+        exact = Decimal.from_float(step[0]) * Decimal.from_float(step[1]) * Decimal.from_float(actual_factor) ** 2
+        boundary = float(exact*2)
+    for threshold in (float(np.nextafter(boundary, 0.)), boundary, float(np.nextafter(boundary, math.inf))):
+        expected = _sieve_area_reference(path, values, np.ones(values.shape, bool), threshold, 4, [9])
+        with raster_workspace(): np.testing.assert_array_equal(_twi_read(_sieve_area_result(path, threshold, protected_values=[9])), expected)
+
+
+def test_sieve_area_same_square_metres_threshold_changes_with_resolution(tmp_path):
+    values = np.array([[1., 1.] + [2.]*15])
+    for step in (10., 30.):
+        path = create_raster(tmp_path/f'{step}.tif', values, (0, step, 0, 100, 0, -step), 'EPSG:3857')
+        with raster_workspace():
+            np.testing.assert_array_equal(_twi_read(_sieve_area_result(path, 1000)), np.full_like(values, 2) if step == 10 else values)
+
+
+@pytest.mark.parametrize('params', [{}, {'min_pixels':2,'min_area_m2':12.}, {'min_pixels':None,'min_area_m2':12.},
+                                    {'min_pixels':2,'min_area_m2':None}, {'min_pixels':None,'min_area_m2':None}])
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+def test_sieve_area_thresholds_exactly_one_explicit_argument_before_open(monkeypatch, params, language):
+    import operators.raster_compute as compute
+    monkeypatch.setattr(compute, '_open', lambda *_: pytest.fail('must reject threshold conflict before source access'))
+    with raster_workspace(), raster_error_language(language), pytest.raises(ValueError) as error:
+        compute.raster_sieve(None, 1, connectivity=4, **params)
+    assert str(error.value) == ('小斑块筛除的min_pixels与min_area_m2必须且只能提供一个' if language == 'zh-cn' else 'Raster sieve requires exactly one of min_pixels or min_area_m2')
+
+
+@pytest.mark.parametrize('value', [None, True, False, 0, -1, -.5, math.nan, math.inf, -math.inf, '12', [], {}, 1+0j, 10**400])
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+def test_sieve_area_threshold_no_coercion_finite_positive_bilingual(monkeypatch, value, language):
+    import operators.raster_compute as compute
+    monkeypatch.setattr(compute, '_open', lambda *_: pytest.fail('invalid area must fail before opening source'))
+    with raster_workspace(), raster_error_language(language), pytest.raises(ValueError) as error:
+        compute.raster_sieve(None, 1, connectivity=4, min_area_m2=value)
+    assert str(error.value) == ('小斑块筛除的min_area_m2必须为有限正数，单位为平方米' if language == 'zh-cn' else 'Raster sieve min_area_m2 must be a finite positive number in square metres')
+
+
+@pytest.mark.parametrize('case', ['geographic', 'no-crs', 'no-transform', 'rotated-x', 'rotated-y', 'negative-x', 'positive-y', 'zero-x', 'nan-origin', 'unknown-unit', 'compound'])
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+def test_sieve_area_grid_admission_rejects_without_touching_pixel_mode(tmp_path, case, language):
+    import operators.raster_compute as compute
+    transform = [100., 2., 0., 200., 0., -3.]
+    if case == 'rotated-x': transform[2] = .5
+    if case == 'rotated-y': transform[4] = .5
+    if case == 'negative-x': transform[1] = -2.
+    if case == 'positive-y': transform[5] = 3.
+    if case == 'zero-x': transform[1] = 0.
+    if case == 'nan-origin': transform[0] = math.nan
+    path = create_raster(tmp_path/'grid.tif', np.ones((2, 3)), None if case == 'no-transform' else tuple(transform), None if case == 'no-crs' else 'EPSG:4326' if case == 'geographic' else 'EPSG:3857')
+    if case in ('unknown-unit', 'compound'):
+        ds = gdal.Open(str(path), gdal.GA_Update); reference = osr.SpatialReference(ds.GetProjection())
+        if case == 'unknown-unit': reference.SetLinearUnits('unknown', .7)
+        else:
+            vertical = osr.SpatialReference(); vertical.ImportFromEPSG(5703); compound = osr.SpatialReference(); compound.SetCompoundCS('compound', reference, vertical); reference = compound
+        ds.SetSpatialRef(reference); ds = None
+    if case == 'unknown-unit':
+        ds = gdal.Open(str(path)); assert osr.SpatialReference(ds.GetProjection()).GetLinearUnitsName().lower() == 'unknown'; ds = None
+    before = path.read_bytes()
+    with raster_workspace(), raster_error_language(language):
+        source = raster_load(source_plan(path)); prior = set(source.workspace.iterdir())
+        with pytest.raises(ValueError) as error: compute.raster_sieve(source, 1, connectivity=4, min_area_m2=1.)
+        assert str(error.value) == str(compute._sieve_error('area_grid')) and set(source.workspace.iterdir()) == prior
+        np.testing.assert_array_equal(_twi_read(compute.raster_sieve(source, 1, 2, 4)), np.ones((2, 3)))
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize('width,height', [(2.**600, 2.**600), (2.**-600, 2.**-600)])
+@pytest.mark.parametrize('language', ['zh-cn', 'en'])
+def test_sieve_area_extreme_grid_rejects_no_private_output(tmp_path, monkeypatch, width, height, language):
+    import operators.raster_compute as compute
+    path = create_raster(tmp_path/'extreme.tif', np.ones((2, 3)), (0, width, 0, 0, 0, -height), 'EPSG:3857')
+    # Test numeric admission independently of GDAL's earlier inverse-grid rejection.
+    monkeypatch.setattr(compute, '_projected_north_up_grid', lambda _: 1.)
+    with raster_workspace(), raster_error_language(language):
+        source = raster_load(source_plan(path)); prior = set(source.workspace.iterdir())
+        with pytest.raises(ValueError) as error: compute.raster_sieve(source, 1, connectivity=4, min_area_m2=1.)
+        assert str(error.value) == str(compute._sieve_error('area_numeric')) and set(source.workspace.iterdir()) == prior
+
+
+@pytest.mark.parametrize('width,height,minimum', [(2.**600, 2.**-600, 2.), (2.**-520, 2.**-520, float(np.nextafter(0.,1.)))])
+def test_sieve_area_finite_product_and_nonzero_tiny_threshold_not_rounded(tmp_path, monkeypatch, width, height, minimum):
+    import operators.raster_compute as compute
+    path = create_raster(tmp_path/'finite.tif', np.array([[1.,2.,2.]]), (0, width, 0, 0, 0, -height), 'EPSG:3857')
+    monkeypatch.setattr(compute, '_projected_north_up_grid', lambda _: 1.)
+    with raster_workspace(): np.testing.assert_array_equal(_twi_read(_sieve_area_result(path, minimum)), [[2.,2.,2.]] if width > 1 else [[1.,2.,2.]])
+
+
+@pytest.mark.parametrize('connectivity', [4, 8])
+def test_sieve_area_cross_block_cog_complete_pixels_masks_raw_band_grid_and_cleanup(tmp_path, monkeypatch, connectivity):
+    import operators.raster_compute as compute
+    values = np.zeros((515, 519)); values[:,511:513] = 1; values[511,510] = 1; values[10,10] = 7
+    valid = np.ones(values.shape, bool); valid[500,500] = False
+    path = create_raster(tmp_path/'large-area.tif', np.stack([np.full(values.shape,.5),np.where(valid, values, -9999)]), (100,2,0,200,0,-3), 'EPSG:3857')
+    ds = gdal.Open(str(path), gdal.GA_Update); ds.GetRasterBand(2).SetScale(2); ds.GetRasterBand(2).SetOffset(7); ds = None
+    before = path.read_bytes(); expected = _sieve_area_reference(path, values, valid, 6000., connectivity, [7]); reads = []; blocks = compute._blocks
+    def bounded(*args, **kwargs):
+        for x,y,arrays,masks in blocks(*args, **kwargs):
+            assert kwargs.get('native') is True and arrays[0].shape[0] == 1 and arrays[0].shape[1] <= 512
+            reads.append((x,y)); yield x,y,arrays,masks
+    monkeypatch.setattr(compute, '_blocks', bounded)
+    with raster_workspace():
+        source = raster_load(source_plan(path)); prior = set(source.workspace.iterdir()); result = compute.raster_sieve(source, 2, connectivity=connectivity, min_area_m2=6000., protected_values=[7])
+        assert set(source.workspace.iterdir()) == prior | {result.path}
+        target = tmp_path/'area.cog.tif'; artifact = raster_save(result, target_plan(target), profile='cog', blocksize=128)
+        assert artifact['size_bytes'] == target.stat().st_size > 0 and validate_cog(raster_load(source_plan(target)))['valid']
+        ds = gdal.Open(str(target)); band = ds.GetRasterBand(1)
+        np.testing.assert_array_equal(band.ReadAsArray(), expected); np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0, valid)
+        assert ds.GetGeoTransform() == (100,2,0,200,0,-3) and osr.SpatialReference(ds.GetProjection()).IsSame(osr.SpatialReference('EPSG:3857'))
+        assert band.DataType == gdal.GDT_Float64 and math.isnan(band.GetNoDataValue()) and band.GetScale() is None and band.GetOffset() is None and band.GetColorTable() is None
+        assert band.GetOverviewCount() > 0; band = ds = None
+    assert len(reads) == 515*2 and path.read_bytes() == before
+
+
+@pytest.mark.parametrize('minimum', [float(np.nextafter(0.,1.)), 1e300])
+@pytest.mark.parametrize('language', ['zh-cn','en'])
+def test_sieve_area_all_protected_or_identity_still_validates_source_classes(tmp_path, minimum, language):
+    import operators.raster_compute as compute
+    path = create_raster(tmp_path/'bad-class.tif', np.array([[1.,.5]]), (0,2,0,10,0,-3), 'EPSG:3857')
+    with raster_workspace(), raster_error_language(language):
+        source = raster_load(source_plan(path)); prior = set(source.workspace.iterdir())
+        with pytest.raises(ValueError) as error: compute.raster_sieve(source, 1, connectivity=4, min_area_m2=minimum, protected_values=[1])
+        assert str(error.value) == str(compute._sieve_error('classes')) and set(source.workspace.iterdir()) == prior
+
+
+@pytest.mark.parametrize('stage', ['components','donors','output','metadata','write'])
+def test_sieve_area_private_labels_partial_output_failure_cleanup(tmp_path, monkeypatch, stage):
+    import operators.raster_compute as compute
+    path = create_raster(tmp_path/'source-area.tif', np.ones((3,4)), (0,2,0,10,0,-3), 'EPSG:3857')
+    def failure(*args, **kwargs): raise RuntimeError('injected area sieve failure')
+    target = {'components':'_sieve_components','donors':'_sieve_donors','output':'_numeric_output','metadata':'_raster'}
+    with raster_workspace():
+        source = raster_load(source_plan(path)); prior = set(source.workspace.iterdir())
+        monkeypatch.setattr(gdal.Band if stage == 'write' else compute, 'WriteArray' if stage == 'write' else target[stage], failure)
+        with pytest.raises(RuntimeError, match='injected area sieve failure'): compute.raster_sieve(source, 1, connectivity=4, min_area_m2=12., protected_values=[1])
+        assert set(source.workspace.iterdir()) == prior
+
+
+@pytest.mark.parametrize('dtype,category,nodata', [('Int64',-(2**53-1),-2**63),('UInt64',2**53-1,2**64-1)])
+def test_sieve_area_native64_nodata_before_conversion_and_exact_protected_classes(tmp_path, dtype, category, nodata):
+    path = tmp_path/'native-area.tif'; values = np.array([[category,nodata,0,0,2]], dtype=np.int64 if dtype == 'Int64' else np.uint64)
+    ds = gdal.GetDriverByName('GTiff').Create(str(path),5,1,1,getattr(gdal,'GDT_'+dtype)); reference = osr.SpatialReference(); reference.ImportFromEPSG(3857)
+    ds.SetSpatialRef(reference); ds.SetGeoTransform((0,2,0,10,0,-3)); band = ds.GetRasterBand(1); band.WriteArray(values)
+    (band.SetNoDataValueAsInt64 if dtype == 'Int64' else band.SetNoDataValueAsUInt64)(nodata); band = ds = None
+    with raster_workspace(): np.testing.assert_array_equal(_twi_read(_sieve_area_result(path,12.,protected_values=[category])), [[category,np.nan,0,0,0]])
+
+
+@pytest.mark.parametrize('case', ['mask-alpha','raw-scale','all-invalid','selected-alpha','complex'])
+def test_sieve_area_selected_band_raw_classification_and_invalid_coverage(tmp_path, case):
+    path = tmp_path/'coverage-area.tif'; ds = gdal.GetDriverByName('GTiff').Create(str(path),5,3,3,gdal.GDT_CFloat64 if case == 'complex' else gdal.GDT_Float64)
+    reference = osr.SpatialReference(); reference.ImportFromEPSG(3857); ds.SetSpatialRef(reference); ds.SetGeoTransform((0,2,0,10,0,-3))
+    values = np.array([[0,0,7,2,2]]*3,dtype=float); valid = np.ones(values.shape,bool)
+    ds.GetRasterBand(1).Fill(.5); ds.GetRasterBand(2).WriteArray(values); ds.GetRasterBand(3).Fill(128); ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    if case == 'mask-alpha':
+        ds.GetRasterBand(3).WriteArray(np.array([[0,128,255,255,255]]*3)); valid[:,0] = False
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'): ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+        mask = np.full(values.shape,255,np.uint8); mask[1,3] = 0; ds.GetRasterBand(1).GetMaskBand().WriteArray(mask); valid[1,3] = False
+    if case == 'raw-scale': ds.GetRasterBand(2).SetScale(2); ds.GetRasterBand(2).SetOffset(7)
+    if case == 'all-invalid': ds.GetRasterBand(2).Fill(math.nan); valid[:] = False
+    ds = None
+    with raster_workspace():
+        if case in ('selected-alpha','complex'):
+            import operators.raster_compute as compute
+            with pytest.raises(ValueError) as error: _sieve_area_result(path,24.,band=3 if case == 'selected-alpha' else 2)
+            assert str(error.value) == str(compute._sieve_error('alpha' if case == 'selected-alpha' else 'complex'))
+        else: np.testing.assert_array_equal(_twi_read(_sieve_area_result(path,24.,band=2,protected_values=[7])),_sieve_area_reference(path,values,valid,24.,4,[7]))
+
+
+@pytest.mark.parametrize('case', ['direct','reclassified','all-invalid','both','bad-area','bad-grid','save-existing'])
+@pytest.mark.parametrize('language', ['zh-cn','en'])
+def test_sieve_area_async_cog_reclassification_accurate_failure_language_and_cleanup(tmp_path, monkeypatch, case, language):
+    import api_server, workflow_engine, operators.raster_compute as compute
+    values = np.array([[0.,0.,1.,2.,2.]])
+    if case == 'all-invalid': values[:] = math.nan
+    path = create_raster(tmp_path/'workflow-area.tif',values,(0,2,0,10,0,-3),'EPSG:4326' if case == 'bad-grid' else 'EPSG:3857')
+    before = path.read_bytes(); target = tmp_path/'area-result.cog.tif'
+    if case == 'save-existing': target.write_bytes(b'previous original result')
+    tasks = [{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}}]; prior = 'source'; protected = [1]
+    if case == 'reclassified':
+        tasks.append({'id':'classes','operator':'raster_reclassify','depends_on':['source'],'params':{'input_raster':{'$ref':'source'},'band':1,'rules':[{'value':0,'class':10},{'value':1,'class':20},{'value':2,'class':30}]}}); prior = 'classes'; protected = [20]
+    params = {'input_raster':{'$ref':prior},'band':1,'connectivity':4,'min_area_m2':0 if case == 'bad-area' else 18.,'protected_values':protected}
+    if case == 'both': params['min_pixels'] = 3
+    tasks.extend([{'id':'sieve','operator':'raster_sieve','depends_on':[prior],'params':params},{'id':'save','operator':'raster_save','depends_on':['sieve'],'params':{'input_raster':{'$ref':'sieve'},'access_plan':target_plan(target),'profile':'cog'}}])
+    workspaces = []; execute = workflow_engine._execute_operator
+    def capture(name, params):
+        if name == 'raster_sieve': workspaces.append(params['input_raster'].workspace)
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture); client = api_server.app.test_client()
+    assert client.post('/api/operators/raster_sieve/invoke',json={'params':{}}).status_code == 403
+    response = client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code == 202, response.json
+    deadline = time.monotonic()+15
+    while time.monotonic() < deadline:
+        status = client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en' if language == 'zh-cn' else 'zh-cn'}).json
+        if status['status'] in ('success','failed'): break
+        time.sleep(.01)
+    success = case in ('direct','reclassified','all-invalid')
+    assert status['status'] == ('success' if success else 'failed'), status
+    assert workspaces and all(not workspace.exists() for workspace in workspaces) and path.read_bytes() == before
+    if success:
+        ds = gdal.Open(str(target)); expected = np.array([[10.,10.,20.,30.,30.]]) if case == 'reclassified' else values
+        np.testing.assert_array_equal(ds.ReadAsArray(),expected); np.testing.assert_array_equal(ds.GetRasterBand(1).GetMaskBand().ReadAsArray()!=0,np.isfinite(expected))
+        assert ds.GetGeoTransform() == (0,2,0,10,0,-3) and ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT'] == 'COG'; ds = None
+        assert json.loads(status['result'])['size_bytes'] == target.stat().st_size > 0
+    elif case == 'save-existing': assert target.read_bytes() == b'previous original result'
+    else:
+        assert not target.exists()
+        with raster_error_language(language): cause = str(compute._sieve_error({'both':'threshold_choice','bad-area':'area_threshold','bad-grid':'area_grid'}[case]))
+        assert status['error'] == '任务 sieve 执行失败: '+cause
+        assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error'] == status['error']
+
+
+@pytest.mark.parametrize('values,minimum,protected,expected', [
+    ([[1,1,9,2,2,2,2]],18.,[9],[[1,1,9,2,2,2,2]]),
+    ([[7,7,7,1]],18.,[7],[[7,7,7,7]]),
+    ([[7,7,1]],18.,[7],[[7,7,1]]),
+    ([[7,7,1,2,2,2]],18.,[7],[[7,7,2,2,2,2]]),
+    ([[5,5,5,2,1,1,1]],18.,[],[[5,5,5,1,1,1,1]]),
+    ([[3,3,9,2,2]],12.,[3],[[3,3,2,2,2]]),
+    ([[-7,-9999,0,0,0]],12.,[-7],[[-7,np.nan,0,0,0]]),
+])
+@pytest.mark.parametrize('connectivity', [4,8])
+def test_sieve_area_analytic_protected_donor_minimum_no_bridge_ties_and_nodata(tmp_path,values,minimum,protected,expected,connectivity):
+    path = create_raster(tmp_path/'area-controls.tif',np.array(values,dtype=float),(0,2,0,10,0,-3),'EPSG:3857')
+    with raster_workspace(): np.testing.assert_array_equal(_twi_read(_sieve_area_result(path,minimum,connectivity,protected_values=protected)),expected)
+
+
+@pytest.mark.parametrize('threshold', [np.int64(12),np.float32(12),np.float64(12)])
+def test_sieve_area_native_real_scalar_threshold_keeps_exact_equality(tmp_path,threshold):
+    values = np.array([[1.,1.,2.,2.,2.]])
+    path = create_raster(tmp_path/'scalar-area.tif',values,(0,2,0,10,0,-3),'EPSG:3857')
+    with raster_workspace(): np.testing.assert_array_equal(_twi_read(_sieve_area_result(path,threshold)),values)

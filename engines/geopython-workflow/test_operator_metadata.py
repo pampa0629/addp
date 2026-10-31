@@ -1422,6 +1422,22 @@ def test_sieve_protected_values_is_one_optional_integer_array_without_new_entry(
     spec=matches[0];params={p['name']:p for p in spec['parameters']}
     assert params['protected_values']['type']=='array' and params['protected_values']['item_type']=='integer'
     assert params['protected_values']['required']is False and params['protected_values']['default']==[]
-    assert all(params[k]['required']for k in ('band','min_pixels','connectivity'))
+    assert all(params[k]['required']for k in ('band','connectivity'))
+    assert all(not params[k]['required'] and 'default' not in params[k]for k in ('min_pixels','min_area_m2'))
     assert spec['category_path']==['栅格处理','分类处理']and spec['execution_modes']==['workflow']and spec['effects']==['read']
     assert spec['detailed_description']['workflow_example']['params']['protected_values']==[7]
+
+
+def test_sieve_area_has_one_entry_two_optional_no_default_thresholds_and_original_example():
+    matches = [operator for operator in list_operators() if operator['id'] == 'raster_sieve']
+    assert len(matches) == 1
+    spec = matches[0]; params = {param['name']:param for param in spec['parameters']}
+    assert set(params) == {'input_raster','band','min_pixels','min_area_m2','connectivity','protected_values'}
+    assert all(params[name]['required'] for name in ('input_raster','band','connectivity'))
+    assert params['min_pixels']['type'] == 'integer' and params['min_area_m2']['type'] == 'float'
+    assert all(not params[name]['required'] and 'default' not in params[name] for name in ('min_pixels','min_area_m2'))
+    assert '必须且只能提供一个' in params['min_pixels']['description'] and '互斥' in params['min_area_m2']['description']
+    example = spec['detailed_description']['workflow_example']['params']
+    assert example['min_pixels'] == 10 and 'min_area_m2' not in example and example['protected_values'] == [7]
+    assert spec['execution_modes'] == ['workflow'] and spec['effects'] == ['read']
+    assert not any(operator['id'] in ('raster_sieve_area','raster_sieve_m2') for operator in list_operators())

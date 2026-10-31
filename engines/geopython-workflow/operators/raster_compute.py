@@ -1962,9 +1962,18 @@ def _boundary_neighbours(values):
 
 
 _SIEVE_PROTECTED_UNSET = object()
+_SIEVE_THRESHOLD_UNSET = object()
 _SIEVE_MESSAGES = {
     'band': ('小斑块筛除必须显式选择有效的一基数据波段', 'Raster sieve requires an explicit valid one-based data band'),
     'threshold': ('小斑块筛除的min_pixels必须为正整数', 'Raster sieve min_pixels must be a positive integer'),
+    'threshold_choice': ('小斑块筛除的min_pixels与min_area_m2必须且只能提供一个',
+                         'Raster sieve requires exactly one of min_pixels or min_area_m2'),
+    'area_threshold': ('小斑块筛除的min_area_m2必须为有限正数，单位为平方米',
+                       'Raster sieve min_area_m2 must be a finite positive number in square metres'),
+    'area_grid': ('小斑块筛除面积模式需要已知线性单位的二维投影、北向无旋转网格，请先显式重投影',
+                  'Raster sieve area mode requires a projected north-up grid with known linear units; reproject explicitly'),
+    'area_numeric': ('小斑块筛除的像元平方米面积必须为有限正Float64，非零面积不能下溢为零',
+                     'Raster sieve cell area must be finite positive Float64 square metres; a nonzero area must not underflow to zero'),
     'protected': ('小斑块筛除的protected_values必须为不重复的安全整数列表，可为空',
                   'Raster sieve protected_values must be a list of distinct exact safe integers, possibly empty'),
     'connectivity': ('小斑块筛除必须显式选择整数4或8邻接', 'Raster sieve requires explicit integer connectivity 4 or 8'),
@@ -2080,10 +2089,40 @@ def _sieve_donors(labels, roots, sizes, classes, anchors, min_pixels, connectivi
     return {small: candidate[-1] for small, candidate in chosen.items()}
 
 
-def raster_sieve(input_raster, band, min_pixels, connectivity, protected_values=_SIEVE_PROTECTED_UNSET):
+def _sieve_area_minimum(dataset, threshold):
+    """Exact count-equivalent ratio; never round an area to a whole-cell cutoff."""
+    try:
+        horizontal = _projected_north_up_grid(dataset)
+    except (ValueError, RuntimeError) as cause:
+        raise _sieve_error('area_grid') from cause
+    transform = dataset.GetGeoTransform()
+    area = Fraction(transform[1]) * Fraction(-transform[5]) * Fraction(horizontal) ** 2
+    try:
+        representable = float(area)
+    except OverflowError as cause:
+        raise _sieve_error('area_numeric') from cause
+    if not math.isfinite(representable) or representable <= 0:
+        raise _sieve_error('area_numeric')
+    return threshold / area
+
+
+def raster_sieve(input_raster, band, min_pixels=_SIEVE_THRESHOLD_UNSET, connectivity=None,
+                 protected_values=_SIEVE_PROTECTED_UNSET, *, min_area_m2=_SIEVE_THRESHOLD_UNSET):
     """One frozen connected-component sieve; invalid pixels are never donors."""
-    if type(min_pixels) is not int or min_pixels <= 0:
-        raise _sieve_error('threshold')
+    area_mode = min_area_m2 is not _SIEVE_THRESHOLD_UNSET
+    if (min_pixels is not _SIEVE_THRESHOLD_UNSET) == area_mode:
+        raise _sieve_error('threshold_choice')
+    if area_mode:
+        try:
+            if isinstance(min_area_m2, bool) or not isinstance(min_area_m2, Real) or not math.isfinite(min_area_m2) or min_area_m2 <= 0:
+                raise _sieve_error('area_threshold')
+            minimum = Fraction(int(min_area_m2)) if isinstance(min_area_m2, Integral) else Fraction(float(min_area_m2))
+        except (TypeError, OverflowError) as cause:
+            raise _sieve_error('area_threshold') from cause
+    else:
+        if type(min_pixels) is not int or min_pixels <= 0:
+            raise _sieve_error('threshold')
+        minimum = min_pixels
     if type(connectivity) is not int or connectivity not in (4, 8):
         raise _sieve_error('connectivity')
     if protected_values is _SIEVE_PROTECTED_UNSET:
@@ -2105,6 +2144,8 @@ def raster_sieve(input_raster, band, min_pixels, connectivity, protected_values=
         if (index == band or candidate.GetColorInterpretation() == gdal.GCI_AlphaBand) and gdal.DataTypeIsComplex(candidate.DataType):
             raise _sieve_error('complex')
     selected = candidate = None
+    if area_mode:
+        minimum = _sieve_area_minimum(dataset, minimum)
     label_path = _path('.labels')
     labels = output = destination = None
     output_path = None
@@ -2112,7 +2153,7 @@ def raster_sieve(input_raster, band, min_pixels, connectivity, protected_values=
     try:
         labels = np.memmap(label_path, dtype=np.int64, mode='w+', shape=(dataset.RasterYSize, dataset.RasterXSize))
         roots, sizes, classes, anchors = _sieve_components(dataset, band, connectivity, labels)
-        donors = _sieve_donors(labels, roots, sizes, classes, anchors, min_pixels, connectivity, protected)
+        donors = _sieve_donors(labels, roots, sizes, classes, anchors, minimum, connectivity, protected)
         replacement = np.asarray(classes, dtype=np.float64)
         replacement[0] = np.nan
         for small, donor in donors.items():
@@ -4961,7 +5002,7 @@ _SPECS = [
     (raster_proximity, OperatorCategory.RASTER_CALCULATION, '栅格邻近距离', [_INPUT(), _param('band', 'int', '显式选择不超过 32 位的整数数据波段'), _param('target_values', 'list[int]', '有效目标分类值集合，允许合法零，不能重复')], 'raster', ['read']),
     (raster_nibble, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格蚕食', [_INPUT(), _param('band', 'int', '显式选择精确安全整数分类数据波段，不能选择 alpha'), _param('target_values', 'list[int]', '待替换的安全整数分类，非空且不重复；取最近原始有效非目标供体，等距按源行列')], 'raster', ['read']),
     (raster_boundary_clean, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格边界清理', [_INPUT(), _param('band', 'int', '显式分类数据波段；原类别有效总数优先，八邻域单轮扩张和收缩，保留无效覆盖')], 'raster', ['read']),
-    (raster_sieve, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格小斑块筛除', [_INPUT(), _param('band', 'int', '显式分类数据波段，精确安全整数；原无效覆盖保留'), _param('min_pixels', 'int', '显式正整数像元数阈值；只处理严格小于阈值的原始连通斑块'), _param('connectivity', 'int', '显式4或8邻接；仅合并到原始达标的直接相邻大斑块，大小／较小分类／最前行列决胜；无供体保留，单轮冻结'), _param('protected_values', 'list[int]', '免于替换的安全整数分类，列表不可重复；空列表保持原结果，保护斑块作为供体仍须原始大小达标', [], False)], 'raster', ['read']),
+    (raster_sieve, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格小斑块筛除', [_INPUT(), _param('band', 'int', '显式分类数据波段，精确安全整数；原无效覆盖保留'), _param('min_pixels', 'int', '正整数像元数阈值；与min_area_m2必须且只能提供一个，等于阈值保留', None, False), _param('min_area_m2', 'float', '有限正平方米阈值；与min_pixels互斥，北向无旋转投影网格、按CRS线性单位换算，精确比较且等于阈值保留', None, False), _param('connectivity', 'int', '显式4或8邻接；仅合并到原始达标的直接相邻大斑块，大小／较小分类／最前行列决胜；无供体保留，单轮冻结'), _param('protected_values', 'list[int]', '免于替换的安全整数分类，列表不可重复；空列表保持原结果，保护斑块作为供体仍须原始大小达标', [], False)], 'raster', ['read']),
     (raster_thin, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格细化', [_INPUT(), _param('band', 'int', '显式分类数据波段，不能选择 alpha'), _param('foreground_value', 'float', '单个精确安全整数前景分类；Guo–Hall 八邻域收敛，输出骨架1／背景0／原无效NaN')], 'raster', ['read']),
     (raster_aggregate, OperatorCategory.RASTER_CALCULATION, '栅格聚合', [_INPUT(), _param('factors', 'list[int]', '相邻像元的列、行聚合倍数，例如 [2,2]'), _param('method', 'str', '聚合方法；忽略无效像元并保留边缘组', enum=['sum', 'mean', 'min', 'max'])], 'raster', ['read']),
     (raster_footprint, OperatorCategory.RASTER_EXTENT, '栅格有效像元轮廓', [_INPUT(), _param('bands', 'list[int]', '选择互不重复的一基数据波段，省略时为所有数据波段', None, False), _param('validity', 'str', '有效范围并集或交集', 'any', False, enum=['any', 'all'])], 'GeoDataFrame', ['read']),
