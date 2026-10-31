@@ -1065,6 +1065,28 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 CHECK.validate_vector_zonal_percentile(self.repository, {'vector-zonal-percentile-persistence'})
             target.write_text(original)
 
+    def test_variety_requires_exact_cog_matrix_budget_and_regressions(self):
+        source = Path(__file__).resolve().parents[2]
+        required = CHECK.VARIETY_REQUIRED
+        for relative in ('scripts/test/online-gate.py', '.github/workflows/online-t4-gates.yml', *required):
+            target = self.repository/relative
+            target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(source/relative,target)
+        CHECK.validate_raster_focal_variety(self.repository, {'raster-focal-variety-persistence'})
+        for relative, fragments in required.items():
+            target=self.repository/relative; original=target.read_text()
+            for fragment in fragments:
+                target.write_text(original.replace(fragment, 'omitted'))
+                with self.subTest(relative=relative,fragment=fragment), self.assertRaises(CHECK.RegistrationError):
+                    CHECK.validate_raster_focal_variety(self.repository, {'raster-focal-variety-persistence'})
+                target.write_text(original)
+        target=self.repository/'business/scripts/online-raster-focal-variety-fixture.py';original=target.read_text()
+        for before,after in [("5,'variety',None", "4,'variety',None"),("'positive_unsafe'", "'omitted_unsafe'"),("50,'direct'", "True,'direct'")]:
+            self.assertIn(before,original);target.write_text(original.replace(before,after,1))
+            with self.subTest(matrix=before),self.assertRaises(CHECK.RegistrationError):
+                CHECK.validate_raster_focal_variety(self.repository, {'raster-focal-variety-persistence'})
+            target.write_text(original)
+
     def test_band_recommendation_requires_manual_nfs_readonly_oif_and_regressions(self):
         source=SCRIPT.parents[2]
         paths=('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py', 'scripts/test/online-hosted-raster-band-recommendation-gate.sh', 'scripts/test/raster-band-recommendation-workflow-online.py', 'business/scripts/online-raster-band-recommendation-fixture.py', 'scripts/utils/online_nfs_fixture.py', 'engines/geopython-workflow/test_online_band_recommendation_fixture.py', 'Makefile')

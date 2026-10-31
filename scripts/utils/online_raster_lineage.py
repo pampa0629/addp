@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 BASE = importlib.import_module('scripts.test.execution-retention-readonly-online')
 SuiteError = importlib.import_module('scripts.test.manager-internal-artifact-lineage-online').SuiteError
-SUITES = {'raster-cut-fill-persistence': 'cut-fill-lineage', 'raster-tpi-persistence': 'tpi-lineage', 'raster-tri-persistence': 'tri-lineage', 'raster-roughness-persistence': 'roughness-lineage', 'raster-surface-area-persistence': 'surface-area-lineage', 'raster-twi-persistence': 'twi-lineage', 'raster-spi-persistence': 'spi-lineage', 'raster-sieve-persistence': 'sieve-lineage', 'raster-focal-percentile-persistence': 'percentile-lineage', 'raster-zonal-percentile-persistence': 'zonal-percentile-lineage', 'vector-zonal-percentile-persistence': 'vector-zonal-percentile-lineage'}
+SUITES = {'raster-cut-fill-persistence': 'cut-fill-lineage', 'raster-tpi-persistence': 'tpi-lineage', 'raster-tri-persistence': 'tri-lineage', 'raster-roughness-persistence': 'roughness-lineage', 'raster-surface-area-persistence': 'surface-area-lineage', 'raster-twi-persistence': 'twi-lineage', 'raster-spi-persistence': 'spi-lineage', 'raster-sieve-persistence': 'sieve-lineage', 'raster-focal-percentile-persistence': 'percentile-lineage', 'raster-focal-variety-persistence': 'variety-lineage', 'raster-zonal-percentile-persistence': 'zonal-percentile-lineage', 'vector-zonal-percentile-persistence': 'vector-zonal-percentile-lineage'}
 RECEIPT = 'raster-lineage-owner.json'
 FIELDS = {'schema_version', 'inputs', 'outputs', 'operations'}
 

@@ -264,4 +264,10 @@ class RasterLineageTest(unittest.TestCase):
             else: changed['operations'][0]['operator'] = 'raster_save'
             with self.subTest(fault=fault), self.assertRaises(m.SuiteError): m.validate(changed, expected, public=False)
 
+    def test_variety_approved_single_source_current_raster_save_and_hidden_public_operation(self):
+        self.assertEqual(m.SUITES['raster-focal-variety-persistence'],'variety-lineage')
+        m.validate(EXPECTED,EXPECTED,public=False);m.validate(PUBLIC,EXPECTED,public=True)
+        changed=copy.deepcopy(EXPECTED);changed['operations'][0]['operator']='save'
+        with self.assertRaises(m.SuiteError):m.validate(changed,EXPECTED,public=False)
+
 if __name__=='__main__':unittest.main()

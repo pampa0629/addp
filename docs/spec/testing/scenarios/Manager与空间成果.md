@@ -12,7 +12,7 @@
 | --- | --- |
 | Manager 与文件 | [内部产物与 case](#manager-internal-artifact-lineage) · [混合检索](#manager-hybrid-search) · [KML／GML／TopoJSON S3](#kmlgmltopojson-的-s3-兼容消费) · [设备静态轨迹](#设备静态轨迹范围读取) · [ORC 单文件](#orc-单文件表格-hosted) |
 | 矢量与地图 | [拓扑持久化](#拓扑构面面叠面缝悬点与线叠持久化vector-topology-persistence) · [重合规整](#重合规整独立场景) · [PMTiles 工作流](#vector-pmtiles-workflow) |
-| 栅格流程与持久化 | [Raster 工作流](#raster-workflow) · [等值线](#raster-contour-persistence) · [分类转面](#raster-polygonize-persistence) · [矢量栅格化](#vector-rasterize-persistence) · [整数分区统计](#raster-zonal-statistics-persistence) · [邻域统计](#raster-focal-statistics-persistence) · [邻域百分位](#raster-focal-percentile-persistence) · [矢量分区统计](#vector-zonal-statistics-persistence) · [邻近距离](#raster-proximity-persistence) · [细化](#raster-thin-persistence) · [边界清理](#raster-boundary-clean-persistence) |
+| 栅格流程与持久化 | [Raster 工作流](#raster-workflow) · [等值线](#raster-contour-persistence) · [分类转面](#raster-polygonize-persistence) · [矢量栅格化](#vector-rasterize-persistence) · [整数分区统计](#raster-zonal-statistics-persistence) · [邻域统计](#raster-focal-statistics-persistence) · [邻域百分位](#raster-focal-percentile-persistence) · [邻域分类种类数](#raster-focal-variety-persistence) · [矢量分区统计](#vector-zonal-statistics-persistence) · [邻近距离](#raster-proximity-persistence) · [细化](#raster-thin-persistence) · [边界清理](#raster-boundary-clean-persistence) |
 | 容量与磁盘 | [分类蚕食容量](#分类蚕食容量raster-nibble-capacity) · [容量验证入口](#分类蚕食容量的验证入口) · [临时磁盘保护](#raster-disk-pressure) |
 | DEM 地形与统计 | [填洼](#raster-fill-depressions-persistence) · [平均曲率](#dem-平均曲率独立-hosted-验收) · [剖面曲率](#dem-剖面曲率独立-hosted-验收) · [切向曲率](#dem-切向曲率独立-hosted-验收) · [平面曲率](#dem-平面曲率独立-hosted-验收) · [双 DEM 填挖方](#双dem填挖方统计独立-hosted-验收) |
 | D8 流向与累积 | [流向](#dem-d8-流向持久化) · [汇流累积](#d8-汇流累积持久化) · [加权累积](#raster-flow-accumulation-weighted-d8-persistence) · [下游流长](#d8-下游流长持久化) · [上游最长流长](#d8-上游最长流长持久化) · [汇水分区](#d8-汇水分区持久化) |
@@ -327,6 +327,20 @@ Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 M
 独立标量邻居枚举与Fraction线性位置oracle逐像元核完整结果及mask，不调用产品排序／插值或NumPy quantile。已核输入／参数的只读期望可缓存，首次构建计入预算；不缓存实际成果验证。端点／50与各自控制链逐像元完全一致，其他插值按既有Native Float64精度rtol=4e-15、atol=0核验，mask与合法零严格比较。每次成功／失败后重读全部既有成果，16轮成功累计136次、36轮失败576次，共52次物理调用／712次全检；完整COG及3层nearest概览、原网格／编码、三方相等正整数大小、精确扫描父执行／User／Tenant／Engine、当前实际输入内部血缘与公开安全投影、Monitor、源及先前成果不变和失败零发布／扫描／血缘均保持。原16份COG字节与大小／SHA清单只追加核验，不重新编码或静默修复；期望缓存、源／NFS、Runtime／镜像／registry、部署及Infra所有退出核零残留，保留首个失败及收尾失败。
 
 标准准备入口为`make test-raster-focal-percentile-online-runner`，真实GDAL与篡改拒绝接既有`make test-geopython-workflow`；新增suite、手工workflow、受控只读血缘suite及路径登记同批验证，不改原套件、产品安全投影或权限，不登记定时。准备代码和本地门禁不计实际Hosted通过；Linux全量与真实Hosted继续由CI会话协调，不计UI或容量。
+
+
+## raster-focal-variety-persistence
+
+独立手工`raster-focal-variety-persistence`复用Hosted／NFS、同源产品默认入口Runtime与普通User原12权限，固定600秒业务预算，不加入nightly、不修改原套件或产品逻辑。预算覆盖身份及源初始化、首次独立预期构建、全部44次执行／查询、物理全检、原字节归档与执行／预期缓存清理；部署、静态播种及隔离生命周期退出另核，任一清理失败整套失败。实际Linux全量和Hosted由CI会话协调，准备通过不计真实运行通过，不计UI、容量或任意影像认证。
+
+固定16条成功COG链：直接variety的3／5窗口、重分类接variety、零分类、Int64／UInt64安全整数分类、缺定位519×1单行、全无效，以及同源sum／mean／min／max／stddev／mode／median／percentile50原八方法对照。主样本519×515旋转网格、显式第二波段，覆盖跨块、边缘截断、负分类、合法零、孤立有效中心、NoData／mask／透明／非有限覆盖和部分透明，未选第一波段故意含小数；源scale=0、offset=0.5不得隐式应用。直接种类数严格为有效不同分类的正整数，零分类计1；无效中心不填补，50百分位与中位数实际成果相等。Int64／UInt64原生NoData先于Float64转换排除；安全整数邻接极限及复数alpha混合类型继续单列Native，不以Hosted全复数前置失败代替。
+
+14类非法输入各中英文提交，共28次准确失败：分类小数、正／负超安全整数、波段0／越界／布尔／字符串、alpha、复数分类、窗口非法值／布尔／字符串、非法method及不适用percentile参数。逐项定位当前focal任务及精确原因，不接受load／保存／扫描提前失败充数；保留现有诊断的实际语言契约，反向查询不改提交语言或已保存错误。
+
+独立标量set／Counter／math／statistics／Fraction oracle构建16份不可变预期，不调用产品统计／排序或NumPy百分位函数；预期不由实际成果生成。每次成功后重读所有已有成果，每次失败后重读全部16份，共584次完整像元／mask核验，另加首次完整源基线，合计45轮物理核对。variety及除mean／stddev外对照精确相等；mean／stddev保留rtol=1e-12、atol=1e-12。完整核COG布局、按实际尺寸的nearest概览、Float64／NaN、原网格／CRS、无伪造定位、编码属性、合法零和源全波段／mask。artifact／物理／Meta大小须为相等正整数；只扫描精确源，成果扫描须由当前父执行自动产生，核同用户／租户／引擎、当前实际输入血缘、内部raster_save／derive与公开operations:null投影、Meta关系及Monitor。失败零发布／新增扫描／派生血缘，源和先前成果物理字节及Meta不变。
+
+归档10份源TIFF、16份成果COG和16份冻结独立预期NPY原字节及各自大小／SHA256清单，保留当前执行受控只读封闭血缘回执；禁止从结果缓存替代物理重读。私有预期缓存按当前run／fixture／源hash绑定；源导出与归档已有文件缺失、篡改、额外文件或符号链接均拒绝，不重建修复，运行后清理NFS／Runtime／registry／部署／Infra全部自有残留。标准准备入口`make test-raster-focal-variety-online-runner`；真实GDAL、准确失败、像元／概览／缓存／原COG和预期归档篡改拒绝接既有`make test-geopython-workflow`。Online／changed gate、独立手工workflow、受控只读observer与CI静态登记同批覆盖。
+
 
 ## vector-zonal-statistics-persistence
 

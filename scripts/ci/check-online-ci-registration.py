@@ -3912,6 +3912,94 @@ VECTOR_ZONAL_PERCENTILE_REQUIRED = {
 }
 
 
+VARIETY_REQUIRED = {
+    'scripts/test/online-hosted-raster-focal-variety-gate.sh': (
+        'start_online_geopython_runtime', '--mount', '--suite raster-workflow',
+        '--wait-protection-owners develop,manager', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600',
+        'online_raster_lineage.py prepare', 'online-raster-focal-variety-fixture.py stop',
+        'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
+    ),
+    'business/scripts/online-raster-focal-variety-fixture.py': (
+        'NFSExport', 'owned_root', 'from fractions import Fraction', 'len(set(samples))', 'Counter(samples)',
+        'statistics.pstdev', 'case_shape(name)', 'verify_sources(root)', 'np.array_equal',
+        'GDAL_TIFF_INTERNAL_MASK', 'full_source_pixels_verified', 'runtime_workspaces_removed', 'archive_files',
+        'oracle cache hash changed', 'source file changed', 'variety-cogs', 'archive history missing',
+        'variety-expectations', 'validate_expected_export', 'archive_expectations',
+        'allow_pickle=False', 'def cleanup_oracle', 'full_check=True', 'nearest_overviews', 'private_control',
+    ),
+    'scripts/test/raster-focal-variety-persistence-online.py': (
+        'raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'budget != 600', 'BudgetClient', 'remaining()',
+        'validate_success', 'lineage.collect', 'lineage.validate(facts,wanted,public=True)',
+        'lineage.verify_archive', 'base.validate_scan', 'raster.wait_lineage', 'source_edges',
+        'readonly.no_publication', 'query language rewrote stored failure', 'previous original COG changed',
+        'fixture_call', 'cleanup-oracle', 'oracle cleanup also failed', 'full_checks != 584',
+        'frozen independent array archive changed', 'archived_expectations',
+        'physical_calls != 45', 'len(cases) != 16', 'len(failures) != 28', 'exact_cause',
+        'Monitor current output lineage differs', 'raster.strict_sizes', 'fixture.expected_cache_bytes()',
+    ),
+    'engines/geopython-workflow/test_online_focal_variety_fixture.py': (
+        'test_variety_hosted_sixteen_real_cogs_complete_oracle_old_eight_controls_and_original_bytes',
+        'test_variety_hosted_twenty_eight_exact_submitted_failures_no_output_and_clean_workspace',
+        'test_variety_hosted_actual_pixel_mask_metadata_and_overview_corruption_rejected', 'one-ulp',
+        'test_variety_hosted_original_cog_archive_never_repairs_or_overwrites',
+        'test_variety_hosted_frozen_cache_rejects_hash_shape_inventory_or_run_change',
+        'test_variety_hosted_stdin_worker_has_no_repository_dependency_and_exact_cleanup',
+        'test_variety_hosted_frozen_expected_archive_rejects_tampering',
+    ),
+    'scripts/test/raster-focal-variety-persistence-online_test.py': (
+        'test_full_matrix_16_success_28_failures_584_checks_and_cleanup',
+        'test_role_bound_lineage_rejects_wrong_roles_operations_and_public_projection',
+        'test_strict_physical_counts_sizes_original_archives_and_cleanup_cannot_weaken',
+        'test_failures_preserve_primary_and_cleanup_error',
+        'test_exact_failure_stage_language_scan_lineage_and_budget_are_enforced',
+    ),
+    'business/scripts/online-raster-zonal-percentile-fixture.py': (
+        'previous archive was deleted', 'previous archived bytes changed',
+    ),
+    'scripts/utils/online_raster_lineage.py': (
+        "'raster-focal-variety-persistence': 'variety-lineage'", 'BEGIN READ ONLY;', 'statement_timeout',
+        'workflow_matches', 'validate_container', 'closed(public, expected)', 'closed(internal, expected)',
+    ),
+    'scripts/test/online-raster-lineage_test.py': (
+        'test_variety_approved_single_source_current_raster_save_and_hidden_public_operation',
+    ),
+    'Makefile': (
+        'test_online_focal_variety_fixture.py', '@$(MAKE) test-raster-focal-variety-online-runner',
+        'scripts/test/raster-focal-variety-persistence-online_test.py',
+        'scripts/test/online-raster-focal-variety-fixture_test.py',
+        'scripts/test/online-hosted-raster-focal-variety-gate_test.py',
+        'test_variety_requires_exact_cog_matrix_budget_and_regressions',
+    ),
+}
+
+def validate_raster_focal_variety(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-focal-variety-persistence'
+    if suite not in registered: return
+    workflow = (repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-focal-variety-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-focal-variety-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-focal-variety-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body') or 'cancel-in-progress: false' not in job.group('body')
+        or 'if: always()' not in job.group('body') or 'logs/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('focal variety requires an independent manual Hosted NFS job')
+    make = (repository/'Makefile').read_text()
+    if 'test_online_focal_variety_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('focal variety Native omitted from standard recipe')
+    for relative, fragments in VARIETY_REQUIRED.items():
+        path = repository/relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('focal variety strict contract incomplete: '+relative)
+    source = (repository/'business/scripts/online-raster-focal-variety-fixture.py').read_text()
+    tree = ast.parse(source)
+    actual = {key: [node.value for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == key for target in node.targets)] for key in ('CASES','FAILURES')}
+    expected_cases = {'variety-3.cog.tif': ('values.tif', 3, 'variety', None, 'direct'), 'variety-5.cog.tif': ('values.tif', 5, 'variety', None, 'direct'), 'reclassified.cog.tif': ('values.tif', 3, 'variety', None, 'reclassify'), 'zero.cog.tif': ('zero.tif', 5, 'variety', None, 'direct'), 'int64.cog.tif': ('int64.tif', 3, 'variety', None, 'direct'), 'uint64.cog.tif': ('uint64.tif', 5, 'variety', None, 'direct'), 'unlocated-row.cog.tif': ('unlocated.tif', 5, 'variety', None, 'direct'), 'invalid.cog.tif': ('invalid.tif', 3, 'variety', None, 'direct'), 'control-sum.cog.tif': ('values.tif', 3, 'sum', None, 'direct'), 'control-mean.cog.tif': ('values.tif', 3, 'mean', None, 'direct'), 'control-min.cog.tif': ('values.tif', 3, 'min', None, 'direct'), 'control-max.cog.tif': ('values.tif', 3, 'max', None, 'direct'), 'control-stddev.cog.tif': ('values.tif', 3, 'stddev', None, 'direct'), 'control-mode.cog.tif': ('values.tif', 3, 'mode', None, 'direct'), 'control-median.cog.tif': ('values.tif', 3, 'median', None, 'direct'), 'control-percentile.cog.tif': ('values.tif', 3, 'percentile', 50, 'direct')}
+    expected_failures = ('fractional', 'positive_unsafe', 'negative_unsafe', 'band_zero', 'band_high', 'band_boolean', 'band_string', 'alpha', 'complex', 'window_value', 'window_boolean', 'window_string', 'method', 'unused')
+    if (any(len(nodes) != 1 for nodes in actual.values()) or repr(ast.literal_eval(actual['CASES'][0])) != repr(expected_cases)
+        or repr(ast.literal_eval(actual['FAILURES'][0])) != repr(expected_failures)): raise RegistrationError('focal variety fixed 16/28 matrix changed')
+    if any(word in source for word in ('operators.raster_compute', 'np.percentile', 'np.quantile', 'gdal.RasterizeLayer', 'gdal.Polygonize')):
+        raise RegistrationError('focal variety oracle must remain independent')
+
 def validate_vector_zonal_percentile(repository: Path, registered: set[str]) -> None:
     suite = 'vector-zonal-percentile-persistence'
     if suite not in registered: return
@@ -5152,6 +5240,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_statistics_percentile(repository, registered)
     validate_raster_zonal_percentile(repository, registered)
     validate_vector_zonal_percentile(repository, registered)
+    validate_raster_focal_variety(repository, registered)
     validate_raster_nibble_profile(repository, registered)
     validate_raster_disk_pressure_profile(repository, registered)
     validate_raster_nibble_capacity_profile(repository, registered)
