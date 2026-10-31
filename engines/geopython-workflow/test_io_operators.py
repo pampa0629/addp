@@ -384,3 +384,227 @@ def test_native_arrow_filesystem_parquet_admission(order):
     assert result.returncode == 0, result.stdout + result.stderr
     evidence = json.loads(result.stdout.splitlines()[-1])
     assert evidence['result'] == 'passed' and evidence['order'] == order
+
+
+# Native file geometry identity must not consume an ordinary "geometry" column.
+def _native_geometry_identity_source(path,fmt,empty=False,null_geometry=False):
+    ogr.UseExceptions();crs=osr.SpatialReference();crs.ImportFromEPSG(4326)
+    ds=ogr.GetDriverByName(io_operators._spatial_driver(fmt)).CreateDataSource(str(path))
+    options=["GEOMETRY_NAME=parcel_shape"] if fmt=="gpkg" else []
+    layer=ds.CreateLayer("source",crs,ogr.wkbLineString,options=options)
+    for name,kind in [("record_id",ogr.OFTInteger64),("geometry",ogr.OFTString),("ordinary",ogr.OFTString),("enabled",ogr.OFTInteger),("amount",ogr.OFTReal)]:
+        field=ogr.FieldDefn(name,kind)
+        if name=="enabled":field.SetSubType(ogr.OFSTBoolean)
+        assert layer.CreateField(field)==0
+    if not empty:
+        for row in range(3):
+            f=ogr.Feature(layer.GetLayerDefn());f.SetField("record_id",2**53+1+row)
+            if row!=1:f.SetField("geometry",f"business-{row}");f.SetField("enabled",row==0);f.SetField("amount",float(row))
+            f.SetField("ordinary","not-WKB-"+str(row))
+            if not null_geometry:
+                line=ogr.Geometry(ogr.wkbLineString);line.AddPoint_2D(row,0);line.AddPoint_2D(row+0.5,0);f.SetGeometry(line)
+            assert layer.CreateFeature(f)==0
+        f=None
+    layer=ds=None
+
+
+@pytest.mark.parametrize("fmt",["gpkg","shp","geojson","kml","gml","fgb"])
+def test_load_spatial_geometry_identity_keeps_real_geometry_and_every_business_field(tmp_path,fmt):
+    import pyogrio
+    path=tmp_path/("source."+fmt);_native_geometry_identity_source(path,fmt)
+    ds=ogr.Open(str(path));layer=ds.GetLayer(0);features=list(layer);fields=list(layer.schema)
+    assert "geometry" in [f.name for f in fields]
+    meta,table=pyogrio.read_arrow(path)
+    geometry_fields=[f.name for f in table.schema if (f.metadata or {}).get(b"ARROW:extension:name") in (b"geoarrow.wkb",b"ogc.wkb")]
+    assert len(geometry_fields)==1;physical=layer.GetGeometryColumn();expected_name=physical or geometry_fields[0]
+    before={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in tmp_path.iterdir()}
+    loaded=_load_local(path)
+    assert loaded.geometry.name==expected_name and loaded.geometry.name!="geometry"
+    assert loaded.columns.tolist()==table.schema.names
+    for field in fields:
+        values=[f.GetField(field.name) if f.IsFieldSetAndNotNull(field.name) else None for f in features]
+        for actual,wanted in zip(loaded[field.name],values):assert pd.isna(actual) if wanted is None else actual==wanted
+    assert loaded.geometry.to_wkb().tolist()==[bytes(f.GetGeometryRef().ExportToWkb()) for f in features]
+    assert loaded.crs.equals(layer.GetSpatialRef().ExportToWkt(),ignore_axis_order=True)
+    assert {p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in tmp_path.iterdir()}==before
+    if physical:
+        selected=io_operators.load(connection_info={"engine_type":"nfs","mount_path":str(tmp_path)},path=path.name,geom_column=physical)
+        pd.testing.assert_frame_equal(loaded,selected)
+        with pytest.raises(ValueError,match="geometry"):io_operators._read_file(str(path),fmt,"geometry")
+    else:
+        selected=io_operators._read_file(str(path),fmt,"selected_shape")
+        assert selected.geometry.name=="selected_shape" and selected.geometry.to_wkb().tolist()==loaded.geometry.to_wkb().tolist()
+        pd.testing.assert_series_equal(selected["geometry"],loaded["geometry"])
+        with pytest.raises(ValueError,match="conflict"):io_operators._read_file(str(path),fmt,"geometry")
+
+
+@pytest.mark.parametrize("empty,null_geometry",[(True,False),(False,True)])
+def test_load_spatial_geometry_identity_empty_or_all_null_keeps_complete_schema(tmp_path,empty,null_geometry):
+    path=tmp_path/"source.gpkg";_native_geometry_identity_source(path,"gpkg",empty,null_geometry)
+    loaded=_load_local(path)
+    assert loaded.geometry.name=="parcel_shape" and len(loaded)==(0 if empty else 3)
+    assert loaded.geometry.isna().all() and loaded.crs.to_epsg()==4326
+    assert loaded.record_id.dtype=="Int64" and loaded.enabled.dtype=="boolean"
+    assert loaded.geometry.name!="geometry" and loaded["geometry"].tolist()==([] if empty else ["business-0",None,"business-2"])
+
+
+def test_load_spatial_geometry_identity_preserves_plain_nonspatial_table(tmp_path):
+    ds=ogr.GetDriverByName("GPKG").CreateDataSource(str(tmp_path/"table.gpkg"));layer=ds.CreateLayer("plain",geom_type=ogr.wkbNone)
+    layer.CreateField(ogr.FieldDefn("geometry",ogr.OFTString));f=ogr.Feature(layer.GetLayerDefn());f.SetField("geometry","business");layer.CreateFeature(f);f=layer=ds=None
+    value=_load_local(tmp_path/"table.gpkg")
+    assert isinstance(value,pd.DataFrame) and not isinstance(value,gpd.GeoDataFrame) and value["geometry"].tolist()==["business"]
+    with pytest.raises(ValueError,match="geometry"):io_operators._read_file(str(tmp_path/"table.gpkg"),"gpkg","geometry")
+
+
+@pytest.mark.parametrize("physical",[False,True])
+@pytest.mark.parametrize("problem",["duplicate","missing_marker","multiple_geometry","physical_mismatch","business_binary","wrong_request","empty_request"])
+def test_load_spatial_geometry_identity_rejects_ambiguous_or_conflicting_schema(monkeypatch,physical,problem):
+    import pyogrio,shapely
+    data={"geometry":pa.array(["business"],type=pa.string()),"payload":pa.array([b"not a geometry"],type=pa.binary())}
+    shape=pa.field("shape",pa.binary(),metadata={b"ARROW:extension:name":b"geoarrow.wkb"})
+    fields=[pa.field(n,a.type) for n,a in data.items()]+[shape]
+    values=[*data.values(),pa.array([shapely.Point(0,0).wkb],type=pa.binary())]
+    meta={"crs":"EPSG:4326","geometry_name":"shape" if physical else "","geometry_type":"Point"}
+    request=None
+    if problem=="duplicate":fields[0]=pa.field("shape",pa.string())
+    elif problem=="missing_marker":fields[-1]=pa.field("shape",pa.binary())
+    elif problem=="multiple_geometry":fields[1]=pa.field("payload",pa.binary(),metadata={b"ARROW:extension:name":b"geoarrow.wkb"})
+    elif problem=="physical_mismatch":meta["geometry_name"]="other"
+    elif problem=="business_binary":meta["geometry_name"]="payload"
+    elif problem=="wrong_request":request="payload"
+    else:request=""
+    table=pa.Table.from_arrays(values,schema=pa.schema(fields))
+    monkeypatch.setattr(pyogrio,"read_arrow",lambda *a,**kw:(meta,table))
+    with pytest.raises(ValueError):io_operators._read_file("file.gpkg","gpkg",request)
+
+
+@pytest.mark.parametrize("extension",[b"geoarrow.wkb",b"ogc.wkb"])
+def test_load_spatial_geometry_identity_geometry_marker_is_not_a_column_name_guess(monkeypatch,extension):
+    import pyogrio,shapely
+    table=pa.Table.from_arrays([pa.array([b"ordinary blob"]),pa.array(["business"]),pa.array([shapely.Point(1,2).wkb])],schema=pa.schema([
+        pa.field("wkb_geometry",pa.binary()),pa.field("geometry",pa.string()),pa.field("real_shape",pa.binary(),metadata={b"ARROW:extension:name":extension})]))
+    monkeypatch.setattr(pyogrio,"read_arrow",lambda *a,**kw:({"crs":None,"geometry_name":"real_shape","geometry_type":"Point"},table))
+    loaded=io_operators._read_file("file.gpkg","gpkg")
+    assert loaded.geometry.name=="real_shape" and loaded["geometry"].tolist()==["business"] and loaded["wkb_geometry"].tolist()==[b"ordinary blob"]
+    assert loaded.geometry.iloc[0].wkt=="POINT (1 2)" and loaded.crs is None
+
+
+@pytest.mark.parametrize("wkt",["POINT ZM (1 2 3 4)","POINT Z (1 2 3)","POINT M (1 2 4)","POINT EMPTY",None])
+def test_load_spatial_geometry_identity_preserves_dimensions_empty_and_missing(tmp_path,wkt):
+    import shapely
+    path=tmp_path/"source.gpkg";source=ogr.CreateGeometryFromWkt(wkt) if wkt else None
+    ds=ogr.GetDriverByName("GPKG").CreateDataSource(str(path));layer=ds.CreateLayer("source",geom_type=source.GetGeometryType() if source is not None else ogr.wkbPoint,options=["GEOMETRY_NAME=raw_shape"])
+    layer.CreateField(ogr.FieldDefn("geometry",ogr.OFTString));feature=ogr.Feature(layer.GetLayerDefn());feature.SetField("geometry","business")
+    if source is not None:feature.SetGeometry(source)
+    assert layer.CreateFeature(feature)==0;feature=layer=ds=None
+    ds=ogr.Open(str(path));feature=ds.GetLayer(0).GetFeature(1);source=feature.GetGeometryRef();wanted=bytes(source.ExportToIsoWkb()) if source is not None else None
+    expected_z=source.Is3D() if source is not None else False;expected_m=source.IsMeasured() if source is not None else False;expected_empty=source.IsEmpty() if source is not None else False
+    original=path.read_bytes();result=_load_local(path);geometry=result.geometry.iloc[0]
+    assert result.geometry.name=="raw_shape" and result["geometry"].tolist()==["business"]
+    assert (None if geometry is None else shapely.to_wkb(geometry,flavor="iso",output_dimension=4))==wanted
+    if geometry is not None:assert geometry.has_z==expected_z and geometry.has_m==expected_m and geometry.is_empty==expected_empty
+    assert path.read_bytes()==original
+
+
+def test_load_spatial_geometry_identity_invalid_wkb_fails_without_ignoring(monkeypatch):
+    import pyogrio,shapely
+    table=pa.Table.from_arrays([pa.array([b"invalid WKB"])],schema=pa.schema([pa.field("shape",pa.binary(),metadata={b"ARROW:extension:name":b"geoarrow.wkb"})]))
+    monkeypatch.setattr(pyogrio,"read_arrow",lambda *a,**kw:({"geometry_name":"shape","geometry_type":"Point","crs":None},table))
+    with pytest.raises(shapely.errors.GEOSException):io_operators._read_file("file.gpkg","gpkg")
+    assert table.column("shape").to_pylist()==[b"invalid WKB"]
+
+
+
+def _loaded_geometry_consumer_source(tmp_path):
+    shapes=gpd.GeoSeries.from_wkt(["POLYGON ((0 0,2 0,2 1,0 1,0 0))","POLYGON ((10 0,13 0,13 3,10 3,10 0))"],crs=3857)
+    frame=gpd.GeoDataFrame({"geometry":["业务甲","业务乙"],"value":pd.Series([5,7],dtype="Int64"),"parcel_shape":shapes},geometry="parcel_shape")
+    frame.to_file(tmp_path/"consumer.gpkg",driver="GPKG",index=False)
+    return _load_local(tmp_path/"consumer.gpkg")
+
+
+@pytest.mark.parametrize("operator",["get_area","get_length","get_bounds","split_by_area","export_to_wkt","aggregate"])
+def test_load_spatial_geometry_identity_consumers_keep_active_geometry_and_business_fields(tmp_path,operator):
+    from operators import get_operator
+    from geopandas.testing import assert_geodataframe_equal
+    frame=_loaded_geometry_consumer_source(tmp_path);before=frame.copy(deep=True);op=get_operator(operator)
+    if operator=="split_by_area":
+        result=op(frame,2.)
+        assert result["large"].value.tolist()==[7] and result["small"].value.tolist()==[5]
+        for value in result.values():assert value.geometry.name==frame.geometry.name and set(value["geometry"])<=set(frame["geometry"])
+    elif operator=="export_to_wkt":assert op(frame)==["POLYGON ((0 0, 2 0, 2 1, 0 1, 0 0))","POLYGON ((10 0, 13 0, 13 3, 10 3, 10 0))"]
+    elif operator=="aggregate":
+        result=op(frame,["value"],"sum",["geometry"])
+        assert result["geometry"].tolist()==sorted(["业务甲","业务乙"])
+        assert dict(zip(result["geometry"],result.value))=={"业务甲":5,"业务乙":7}
+        assert frame.geometry.name not in result.columns
+    else:
+        result=op(frame);assert result.geometry.name==frame.geometry.name and result["geometry"].tolist()==frame["geometry"].tolist()
+        if operator=="get_area":assert result["area"].tolist()==[2.,9.]
+        elif operator=="get_length":assert result["length"].tolist()==[6.,12.]
+        else:assert result[["minx","miny","maxx","maxy"]].values.tolist()==[[0.,0.,2.,1.],[10.,0.,13.,3.]]
+    assert_geodataframe_equal(frame,before)
+
+
+@pytest.mark.parametrize("operator,field",[("get_area","area"),("get_length","length"),("get_bounds","minx"),("get_bounds","miny"),("get_bounds","maxx"),("get_bounds","maxy"),("split_by_area","area")])
+@pytest.mark.parametrize("empty",[False,True])
+def test_load_spatial_geometry_identity_consumers_reject_geometry_output_collision(tmp_path,operator,field,empty):
+    from operators import get_operator
+    from geopandas.testing import assert_geodataframe_equal
+    frame=_loaded_geometry_consumer_source(tmp_path).rename_geometry(field)
+    if empty:frame=frame.iloc[:0]
+    before=frame.copy(deep=True)
+    with pytest.raises(ValueError,match="geometry.*conflict"):
+        get_operator(operator)(frame,2.) if operator=="split_by_area" else get_operator(operator)(frame)
+    assert_geodataframe_equal(frame,before)
+
+
+def test_load_spatial_geometry_identity_voronoi_reads_actual_point_geometry(tmp_path):
+    from operators import get_operator
+    from geopandas.testing import assert_geodataframe_equal
+    points=gpd.GeoDataFrame({"geometry":["甲","乙","丙"],"point_shape":gpd.GeoSeries.from_wkt(["POINT (0 0)","POINT (2 0)","POINT (1 2)"],crs=3857)},geometry="point_shape")
+    points.to_file(tmp_path/"points.gpkg",driver="GPKG",index=False);frame=_load_local(tmp_path/"points.gpkg");before=frame.copy(deep=True)
+    expected=get_operator("voronoi")(frame.drop(columns="geometry").rename_geometry("geometry"))
+    actual=get_operator("voronoi")(frame)
+    assert len(actual)==len(expected)==3 and actual.geometry.to_wkb().tolist()==expected.geometry.to_wkb().tolist()
+    assert_geodataframe_equal(frame,before)
+
+
+@pytest.mark.parametrize("is_geo",[False,True])
+def test_load_spatial_geometry_identity_aggregate_retains_plain_geometry_attribute(is_geo):
+    from operators import get_operator
+    frame=pd.DataFrame({"geometry":["a","b","a"],"amount":[1,2,3]})
+    if is_geo:frame=gpd.GeoDataFrame(frame,geometry=None)
+    before=frame.copy(deep=True);result=get_operator("aggregate")(frame,["amount"],"sum",["geometry"])
+    assert result["geometry"].tolist()==["a","b"] and result.amount.tolist()==[4,2]
+    pd.testing.assert_frame_equal(frame,before)
+
+
+@pytest.mark.parametrize("engine",["mysql","doris"])
+@pytest.mark.parametrize("active",[False,True])
+def test_load_spatial_geometry_identity_sql_text_save_encodes_only_active_geometry(monkeypatch,engine,active):
+    from shapely.geometry import Point
+    from geopandas.testing import assert_geodataframe_equal
+    frame=pd.DataFrame({"geometry":["business",None,"keep"],"value":[1,2,3]})
+    if active:frame=gpd.GeoDataFrame({**frame.to_dict("list"),"actual_shape":gpd.GeoSeries([Point(1,2),None,Point()],crs=3857)},geometry="actual_shape")
+    before=frame.copy(deep=True);calls=[]
+    monkeypatch.setattr(io_operators,"create_engine",lambda *a,**kw:object())
+    monkeypatch.setattr(pd.DataFrame,"to_sql",lambda self,*a,**kw:calls.append(pd.DataFrame(self.copy())))
+    io_operators.save(frame,connection_info={"engine_type":engine,"host":"127.0.0.1","port":3306,"user":"test","database":"unused"},table="output")
+    assert len(calls)==1 and calls[0]["geometry"].tolist()==frame["geometry"].tolist()
+    if active:
+        assert calls[0].actual_shape.tolist()==["POINT (1 2)",None,"POINT EMPTY"]
+        assert_geodataframe_equal(frame,before)
+    else:pd.testing.assert_frame_equal(frame,before)
+
+
+
+def test_load_spatial_geometry_identity_read_failure_has_no_alternate_reader(monkeypatch):
+    import pyogrio
+    calls=[]
+    def read(*a,**kw):calls.append(1);raise RuntimeError("original Arrow read failure")
+    def forbidden(*a,**kw):raise AssertionError("alternate spatial reader is forbidden")
+    monkeypatch.setattr(pyogrio,"read_arrow",read)
+    monkeypatch.setattr(pyogrio,"read_dataframe",forbidden)
+    monkeypatch.setattr(gpd,"read_file",forbidden)
+    with pytest.raises(RuntimeError,match="original Arrow read failure"):io_operators._read_file("file.gpkg","gpkg")
+    assert calls==[1]

@@ -9,6 +9,7 @@ import logging
 import os
 import pandas as pd
 import geopandas as gpd
+import pyogrio
 import pyarrow as pa
 import pyarrow.feather as feather
 import pyarrow.parquet as parquet
@@ -51,13 +52,38 @@ def _map_loopback_host(host: str) -> str:
 def _read_file(full_path: str, fmt: str, geom_column: str = None):
     """根据格式读取文件，返回 DataFrame 或 GeoDataFrame"""
     if fmt in _SPATIAL_FORMATS:
-        kwargs = {
-            'engine': 'pyogrio', 'use_arrow': True,
-            'arrow_to_pandas_kwargs': {'types_mapper': _NULLABLE_ARROW_TYPES.get},
-        }
-        if geom_column:
-            kwargs['geometry'] = geom_column
-        return gpd.read_file(full_path, **kwargs)
+        metadata, table = pyogrio.read_arrow(full_path)
+        if len(set(table.column_names)) != len(table.column_names):
+            raise ValueError("spatial file requires unique field names")
+        if geom_column is not None and (not isinstance(geom_column, str) or not geom_column.strip()):
+            raise ValueError("geom_column must name a non-empty geometry field")
+        geometry_fields = [field.name for field in table.schema
+                           if (field.metadata or {}).get(b'ARROW:extension:name') in (b'geoarrow.wkb', b'ogc.wkb')]
+        physical_name = metadata.get('geometry_name')
+        if not geometry_fields:
+            if physical_name or metadata.get('geometry_type') is not None or geom_column is not None:
+                raise ValueError("spatial file geometry declaration is missing from Arrow schema")
+            return table.to_pandas(types_mapper=_NULLABLE_ARROW_TYPES.get)
+        if len(geometry_fields) != 1:
+            raise ValueError("spatial file requires one unambiguous declared geometry field")
+        geometry_field = geometry_fields[0]
+        if physical_name and physical_name != geometry_field:
+            raise ValueError("spatial file geometry metadata differs from Arrow schema")
+        if physical_name and geom_column is not None and geom_column != physical_name:
+            raise ValueError("geom_column must reference the declared physical geometry field")
+        output_name = physical_name or geom_column or geometry_field
+        if output_name != geometry_field and output_name in table.column_names:
+            raise ValueError("geometry field name conflicts with a source business field")
+
+        # Bypass read_dataframe's forced df['geometry'] assignment. Decode only
+        # the tagged geometry field, preserving every scalar attribute and name.
+        frame = table.to_pandas(types_mapper=_NULLABLE_ARROW_TYPES.get)
+        del table
+        frame[geometry_field] = gpd.GeoSeries.from_wkb(
+            frame[geometry_field].to_numpy(na_value=None), index=frame.index, crs=metadata.get('crs'))
+        if output_name != geometry_field:
+            frame = frame.rename(columns={geometry_field: output_name})
+        return gpd.GeoDataFrame(frame, geometry=output_name)
     elif fmt in ('csv',):
         return gpd.GeoDataFrame(pd.read_csv(full_path))
     elif fmt in ('parquet', 'feather'):
@@ -346,7 +372,6 @@ def save(
                 # 使用 to_sql 保存普通数据（包括无 geometry 的 GeoDataFrame）
                 # 如果是 GeoDataFrame 但无有效 geometry，转为 DataFrame
                 if isinstance(input_df, gpd.GeoDataFrame):
-                    import pandas as pd
                     df_to_save = pd.DataFrame(input_df.drop(columns=[input_df._geometry_column_name], errors='ignore'))
                     df_to_save.to_sql(table, engine_db, schema=schema, if_exists=if_exists, index=False)
                 else:
@@ -361,15 +386,16 @@ def save(
             engine_db = create_engine(conn_str)
 
             if_exists = 'replace' if mode == 'replace' else 'append'
-            # MySQL/Doris 使用 to_sql（即使是 GeoDataFrame 也先转换为 DataFrame）
+            # Only the active geometry is WKT; preserve ordinary same-named fields.
+            df_to_save = pd.DataFrame(input_df.copy())
             if isinstance(input_df, gpd.GeoDataFrame):
-                # 转换几何列为 WKT 格式
-                df_to_save = input_df.copy()
-                if 'geometry' in df_to_save.columns:
-                    df_to_save['geometry'] = df_to_save['geometry'].apply(lambda x: x.wkt if x else None)
-                df_to_save.to_sql(table, engine_db, if_exists=if_exists, index=False)
-            else:
-                input_df.to_sql(table, engine_db, if_exists=if_exists, index=False)
+                try:
+                    geometry = input_df.geometry
+                except AttributeError:
+                    pass
+                else:
+                    df_to_save[geometry.name] = geometry.apply(lambda value: None if value is None else value.wkt)
+            df_to_save.to_sql(table, engine_db, if_exists=if_exists, index=False)
 
         else:
             raise ValueError(f"Unsupported engine type for table: {engine_type}")
@@ -440,7 +466,7 @@ LOAD_METADATA = OperatorMetadata(
             data_type="string",
             required=False,
             description="几何列名",
-            notes="空间数据的几何列名。如果不指定，geopandas会自动检测几何列（推荐）。仅在自动检测失败或需要指定特定列时使用",
+            notes="数据库选择源几何列；空间文件默认保留声明的几何名，有物理名时须精确匹配，无物理名时可显式绑定逻辑名；不得覆盖业务字段",
             default=None
         ),
         OperatorParam(
@@ -467,7 +493,7 @@ LOAD_METADATA = OperatorMetadata(
         "文件格式从扩展名自动推断",
         "文件引擎支持空间格式(shp/gpkg/geojson等)和非空间格式(csv/parquet/xlsx等)",
         "支持自动检测几何列,无需手动指定 geom_column (推荐)",
-        "如果表中有多个几何列或自动检测失败,可通过 geom_column 参数指定",
+        "数据库表可通过geom_column选择几何列；空间文件按Arrow声明读取，歧义或与业务字段冲突时失败，不猜测或覆盖",
         "connection_info、schema/table 或 path 由 Develop Adapter 注入，工作流引擎无需依赖 System 或 Meta API"
     ],
 

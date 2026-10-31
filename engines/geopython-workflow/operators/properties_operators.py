@@ -5,6 +5,7 @@
 """
 
 import geopandas as gpd
+from .geometric_operators import _geometry_for_output
 from .base import (
     OperatorType,
     OperatorMetadata, OperatorParam, OperatorCategory, register_operator
@@ -23,8 +24,9 @@ def get_area(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     Returns:
         GeoDataFrame 添加 area 列
     """
+    geometry = _geometry_for_output(input_gdf, ('area',))
     result = input_gdf.copy()
-    result['area'] = result['geometry'].area
+    result['area'] = geometry.area
     return result
 
 
@@ -38,8 +40,9 @@ def get_length(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     Returns:
         GeoDataFrame 添加 length 列
     """
+    geometry = _geometry_for_output(input_gdf, ('length',))
     result = input_gdf.copy()
-    result['length'] = result['geometry'].length
+    result['length'] = geometry.length
     return result
 
 
@@ -53,8 +56,9 @@ def get_bounds(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     Returns:
         GeoDataFrame 添加 bounds 列
     """
+    geometry = _geometry_for_output(input_gdf, ('minx', 'miny', 'maxx', 'maxy'))
     result = input_gdf.copy()
-    bounds = result['geometry'].bounds
+    bounds = geometry.bounds
     result['minx'] = bounds['minx']
     result['miny'] = bounds['miny']
     result['maxx'] = bounds['maxx']
@@ -93,6 +97,7 @@ GET_AREA_METADATA = OperatorMetadata(
     ],
 
     notes=[
+        "读取实际活动几何列；若几何列名为area则报错，请先显式重命名几何列",
         "面积单位与坐标系一致:投影坐标系为平方米,地理坐标系为平方度",
         "地理坐标系(EPSG:4326)的平方度不直观,建议先转投影坐标系(如UTM)",
         "对于点和线几何,面积为0",
@@ -139,6 +144,7 @@ GET_LENGTH_METADATA = OperatorMetadata(
     ],
 
     notes=[
+        "读取实际活动几何列；若几何列名为length则报错，请先显式重命名几何列",
         "长度单位与坐标系一致:投影坐标系为米,地理坐标系为度",
         "地理坐标系(EPSG:4326)的度单位不直观,建议先转投影坐标系",
         "对于点几何,长度为0;对于面几何,返回周长",
@@ -185,6 +191,7 @@ GET_BOUNDS_METADATA = OperatorMetadata(
     ],
 
     notes=[
+        "读取实际活动几何列；几何列名与四个输出名冲突时先显式重命名",
         "返回DataFrame包含minx、miny、maxx、maxy四列",
         "边界框是轴对齐矩形,不随几何旋转",
         "坐标单位与输入坐标系一致",

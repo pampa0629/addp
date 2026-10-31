@@ -184,6 +184,14 @@ def _active_geometry(input_gdf: gpd.GeoDataFrame, name: str = "input_gdf") -> gp
         raise ValueError(f"{name} requires an active geometry column") from exc
 
 
+def _geometry_for_output(input_gdf: gpd.GeoDataFrame, fields) -> gpd.GeoSeries:
+    """Resolve the active geometry before fixed scalar outputs can replace it."""
+    geometry = _active_geometry(input_gdf)
+    if geometry.name in fields:
+        raise ValueError("active geometry column conflicts with output fields; rename the geometry column explicitly")
+    return geometry
+
+
 def _finite_xy_geometry(input_gdf: gpd.GeoDataFrame, name: str = "input_gdf") -> gpd.GeoSeries:
     geometry = _active_geometry(input_gdf, name)
     if shapely.has_z(geometry.array).any() or shapely.has_m(geometry.array).any():
@@ -547,6 +555,45 @@ def merge_line_chains(input_gdf: gpd.GeoDataFrame, id_field: str, match_fields: 
     _finite_xy_geometry(result, "result")
     _require_nonempty_valid_lines(result.geometry)
     return {"result": result, "members": members}
+
+
+def extract_polygon_rings(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
+    """Extract original exterior/interior rings with their unmerged source attributes."""
+    geometry = _finite_xy_geometry(input_gdf)
+    ids = _source_identifiers(input_gdf, id_field)
+    reserved = ("source_id", "part_no", "ring_no", "ring_id", "is_hole")
+    if any(field in input_gdf.columns for field in reserved):
+        raise ValueError("output columns source_id, part_no, ring_no, ring_id and is_hole must not overwrite source fields")
+    if geometry.isna().any() or not geometry.geom_type.isin(["Polygon", "MultiPolygon"]).all():
+        raise ValueError("input_gdf requires non-null Polygon or MultiPolygon geometries")
+    parts, source_rows = shapely.get_parts(geometry.array, return_index=True)
+    if (shapely.is_empty(geometry.array).any() or shapely.is_empty(parts).any()
+            or not shapely.is_valid(geometry.array).all()):
+        raise ValueError("input_gdf requires non-empty valid polygons; repair explicitly before extraction")
+
+    rows, lines, part_numbers, ring_numbers, holes = [], [], [], [], []
+    source_part_counts = np.zeros(len(input_gdf), dtype=np.int64)
+    for part, source_row in zip(parts, source_rows):
+        source_part_counts[source_row] += 1
+        # Walk original rings directly: preserve seams, directions and repeated
+        # vertices, even for shared edges or duplicate polygons in other rows.
+        for ring_no, ring in enumerate((part.exterior, *part.interiors), 1):
+            if ring.is_empty:
+                raise ValueError("input_gdf requires non-empty polygon rings")
+            rows.append(source_row)
+            lines.append(shapely.LineString(ring))
+            part_numbers.append(source_part_counts[source_row])
+            ring_numbers.append(ring_no)
+            holes.append(ring_no != 1)
+
+    result = input_gdf.iloc[rows].copy().reset_index(drop=True)
+    result[geometry.name] = gpd.GeoSeries(lines, crs=geometry.crs)
+    result["source_id"] = ids.iloc[rows].reset_index(drop=True)
+    result["part_no"] = pd.Series(part_numbers, dtype="int64")
+    result["ring_no"] = pd.Series(ring_numbers, dtype="int64")
+    result["ring_id"] = np.arange(1, len(rows) + 1, dtype=np.int64)
+    result["is_hole"] = pd.Series(holes, dtype="bool")
+    return result
 
 
 def group_line_components(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
@@ -1475,6 +1522,23 @@ MERGE_LINE_CHAINS_METADATA = OperatorMetadata(
 )
 
 
+EXTRACT_POLYGON_RINGS_METADATA = OperatorMetadata(
+    name="extract_polygon_rings", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_NETWORK,
+    description="面界提取", brief_description="逐原始内外环生成闭合线，保留来源、属性、方向及共有边的各次记录",
+    execution_modes=["workflow"], effects=["read"],
+    overview="按源行、面部件、外环和原顺序内环逐环输出LineString。"
+             "不合并共有边或重复面，不推断边界归属，保留原始顶点、起点与方向。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True, description="有效有限二维面图层", notes="Polygon/MultiPolygon；拒绝缺失、空几何、空部件/空环、Z/M和无效面，允许空批；原CRS不变"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True, description="来源面要素标识字段", notes="显式引用现有非几何唯一非空标量列，不使用索引或存储FID推断"),
+    ],
+    output_ports=[OutputPort(name="result", type="geodataframe", description="每环一条闭合LineString，保留全部原列并追加source_id/part_no/ring_no/ring_id/is_hole", is_default=True)],
+    use_cases=["提取地块外环和孔洞，保留每条边界的原始来源", "使用唯一环ID衔接线网加工并保留上游面属性"],
+    notes=["部件号在源内从1开始；环号在每部件内从1开始，1为外环、2起为内环，is_hole只表达原始角色", "ring_id按结果顺序从1连续编号，只在本次结果内唯一，不是持久身份", "source_id/part_no/ring_no/ring_id/is_hole冲突时整批失败，不覆盖或自动改名", "后续线网算子以ring_id作为本级来源；同名追加字段先用rename_fields显式保留为上游名称", "保留原始CRS，不计算距离或面积；后续投影要求仍须显式重投影", "无去重、打断、吸附或隐式修复；源不变，保存另接save，成果随环和顶点数增长"],
+    workflow_example={"id":"polygon_rings", "operator":"extract_polygon_rings", "params":{"input_gdf":{"$ref":"load"},"id_field":"parcel_id"}, "depends_on":["load"]},
+)
+
+
 GROUP_LINE_COMPONENTS_METADATA = OperatorMetadata(
     name="group_line_components", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_NETWORK,
     description="连通分组", brief_description="按原始线部件的精确相交关系归组，保留来源、全部属性和原路径",
@@ -2271,6 +2335,7 @@ OPERATORS = dict([
     register_operator(CHECK_LINE_INTERSECTION_METADATA, check_line_intersection),
     register_operator(CHECK_LINE_SELF_INTERSECTION_METADATA, check_line_self_intersection),
     register_operator(SPLIT_LINE_INTERSECTIONS_METADATA, split_line_intersections),
+    register_operator(EXTRACT_POLYGON_RINGS_METADATA, extract_polygon_rings),
     register_operator(GROUP_LINE_COMPONENTS_METADATA, group_line_components),
     register_operator(MERGE_LINE_CHAINS_METADATA, merge_line_chains),
     register_operator(NORMALIZE_LINE_NETWORK_METADATA, normalize_line_network),

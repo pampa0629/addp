@@ -47,7 +47,7 @@ def export_to_wkt(input_gdf: gpd.GeoDataFrame) -> List[str]:
     Returns:
         WKT 字符串列表
     """
-    return input_gdf['geometry'].apply(lambda g: g.wkt).tolist()
+    return input_gdf.geometry.apply(lambda g: g.wkt).tolist()
 
 
 # ==================== 元数据定义 ====================

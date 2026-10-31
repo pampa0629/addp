@@ -12,7 +12,7 @@ from typing import Dict, List, Any
 from .base import (
     OperatorMetadata, OperatorParam, OperatorType, OperatorCategory, register_operator, OutputPort
 )
-from .geometric_operators import buffer
+from .geometric_operators import buffer, _geometry_for_output
 
 
 # ==================== 算子实现 ====================
@@ -44,7 +44,7 @@ def voronoi(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     from shapely.ops import voronoi_diagram
 
     # 合并所有点
-    points = input_gdf['geometry'].unary_union
+    points = input_gdf.geometry.unary_union
 
     # 计算 Voronoi 图
     voronoi_polys = voronoi_diagram(points)
@@ -71,8 +71,9 @@ def split_by_area(input_gdf: gpd.GeoDataFrame, threshold: float) -> Dict[str, gp
             - "large": 面积大于阈值的要素
             - "small": 面积小于等于阈值的要素
     """
+    geometry = _geometry_for_output(input_gdf, ('area',))
     result = input_gdf.copy()
-    result['area'] = result['geometry'].area
+    result['area'] = geometry.area
 
     large = result[result['area'] > threshold].copy()
     small = result[result['area'] <= threshold].copy()
@@ -291,6 +292,7 @@ SPLIT_BY_AREA_METADATA = OperatorMetadata(
     ],
 
     notes=[
+        "读取实际活动几何列；几何列名为area时先显式重命名，不覆盖几何",
         "返回两个输出端口: large(大于阈值) 和 small(小于等于阈值)",
         "面积单位与坐标系一致,地理坐标系建议先转投影坐标系",
         "对于点和线几何,面积为0,全部归入small组",

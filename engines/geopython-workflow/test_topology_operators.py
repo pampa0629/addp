@@ -5229,3 +5229,234 @@ def test_hosted_endpoint_case_dual_save_four_real_failures_and_independent_oracl
             layer.SetFeature(feature);feature=None
         layer=None;ds=None
     with pytest.raises(fixture.FixtureError):fixture.worker('verify',tmp_path,fixture.ENDPOINT_CASE)
+
+
+# Polygon boundaries are original rings, not unioned linework.
+def polygon_ring_fixture(ids_kind="integer", crs="EPSG:3857"):
+    from shapely.geometry import MultiPolygon
+    rings = [
+        [(0,0),(8,0),(8,8),(0,8),(0,0)],
+        [(1,1),(1,2),(2,2),(2,1),(1,1)],
+        [(4,4),(6,4),(6,6),(4,6),(4,4)],
+        [(10,0),(10,3),(13,3),(13,0),(10,0)],
+        [(11,.5),(12,.5),(12,1.5),(11,1.5),(11,.5)],
+        [(8,0),(16,0),(16,8),(8,8),(8,0)],
+    ]
+    shapes=[MultiPolygon([Polygon(rings[0],rings[1:3]),Polygon(rings[3],[rings[4]])]),Polygon(rings[5])]
+    ids=pd.Series([2**60+1,7],dtype="Int64") if ids_kind=="integer" else pd.Series(["地块甲","地块乙"],dtype="string")
+    frame=gpd.GeoDataFrame({"parcel_key":ids,"note":pd.Series([None,"原始属性"],dtype="string"),
+        "grade":pd.Series([None,2**53+1],dtype="Int64"),"enabled":pd.Series([None,False],dtype="boolean"),
+        "weight":pd.Series([None,.125],dtype="Float64"),"kind":pd.Categorical(["甲","乙"]),"geometry":["业务几何名甲","业务几何名乙"],
+        "parcel_shape":gpd.GeoSeries(shapes,crs=crs)},geometry="parcel_shape",crs=crs)
+    frame.index=pd.Index([9,9],name="source_index")
+    return frame,rings
+
+
+@pytest.fixture
+def ring_extractor():
+    return get_operator("extract_polygon_rings")
+
+
+@pytest.mark.parametrize("ids_kind",["integer","string"])
+def test_extract_polygon_rings_keeps_each_ring_source_attributes_order_and_direction(ring_extractor,ids_kind):
+    frame,expected=polygon_ring_fixture(ids_kind);before=frame.copy(deep=True)
+    result=ring_extractor(frame,"parcel_key");rows=[0,0,0,0,0,1]
+    assert isinstance(result.index,pd.RangeIndex) and result.index.name is None
+    assert result.geometry.name=="parcel_shape" and result.crs==frame.crs
+    assert result.columns.tolist()==frame.columns.tolist()+["source_id","part_no","ring_no","ring_id","is_hole"]
+    for column in frame.columns:
+        if column!=frame.geometry.name:
+            pd.testing.assert_series_equal(result[column],frame[column].iloc[rows].reset_index(drop=True))
+    assert result.source_id.dtype==frame.parcel_key.dtype
+    assert result.source_id.tolist()==frame.parcel_key.iloc[rows].tolist()
+    assert result.part_no.tolist()==[1,1,1,2,2,1] and result.ring_no.tolist()==[1,2,3,1,2,1]
+    assert result.ring_id.tolist()==[1,2,3,4,5,6] and result.ring_id.is_unique
+    assert result.is_hole.tolist()==[False,True,True,False,True,False]
+    for name in ("part_no","ring_no","ring_id"):assert str(result[name].dtype)=="int64"
+    assert str(result.is_hole.dtype)=="bool"
+    assert all(g.geom_type=="LineString" and g.is_valid and g.is_closed and not g.has_z for g in result.geometry)
+    assert [list(g.coords) for g in result.geometry]==expected
+    assert_geodataframe_equal(frame,before)
+
+
+@pytest.mark.parametrize("crs",[None,"EPSG:4326","OGC:CRS84","EPSG:3857"])
+@pytest.mark.parametrize("empty",[False,True])
+def test_extract_polygon_rings_preserves_source_crs_and_complete_empty_schema(ring_extractor,crs,empty):
+    frame,expected=polygon_ring_fixture("string",crs)
+    if empty:frame=frame.iloc[:0]
+    result=ring_extractor(frame,"parcel_key")
+    assert result.crs==frame.crs and result.geometry.name==frame.geometry.name and len(result)==(0 if empty else 6)
+    for name in frame.columns:assert result[name].dtype==frame[name].dtype
+    assert result.source_id.dtype==frame.parcel_key.dtype
+    for name in ("part_no","ring_no","ring_id"):assert str(result[name].dtype)=="int64"
+    assert str(result.is_hole.dtype)=="bool"
+
+
+def test_extract_polygon_rings_keeps_shared_and_duplicate_boundaries_without_union(ring_extractor,monkeypatch):
+    first=[(0,0),(1,0),(1,1),(0,1),(0,0)];second=[(1,0),(2,0),(2,1),(1,1),(1,0)]
+    frame=gpd.GeoDataFrame({"key":["甲","乙","重复甲"]},geometry=[Polygon(first),Polygon(second),Polygon(first)],crs=3857)
+    def forbidden(*a,**k):raise AssertionError("boundary extraction must not union or node source rings")
+    monkeypatch.setattr(shapely,"union_all",forbidden);monkeypatch.setattr(shapely,"node",forbidden)
+    result=ring_extractor(frame,"key")
+    assert [list(g.coords) for g in result.geometry]==[first,second,first]
+    assert result.source_id.tolist()==["甲","乙","重复甲"] and result.ring_id.tolist()==[1,2,3]
+
+
+@pytest.mark.parametrize("coords",[
+    [(1,0),(1,0),(1,1),(0,1),(0,0),(1,0)],
+    [(0,0),(2**-40,0),(2**-40,2**-40),(0,2**-40),(0,0)],
+])
+def test_extract_polygon_rings_preserves_original_seam_repeats_and_exact_tiny_coordinates(ring_extractor,coords):
+    frame=gpd.GeoDataFrame({"key":[1]},geometry=[Polygon(coords)])
+    assert list(ring_extractor(frame,"key").geometry.iloc[0].coords)==coords
+
+
+@pytest.mark.parametrize("wkt",[
+    "POLYGON EMPTY", "POINT (0 0)", "LINESTRING (0 0,1 1)",
+    "GEOMETRYCOLLECTION (POLYGON ((0 0,1 0,1 1,0 0)))",
+    "POLYGON ((0 0,2 2,0 2,2 0,0 0))",
+    "POLYGON Z ((0 0 1,1 0 1,1 1 1,0 0 1))",
+    "POLYGON M ((0 0 1,1 0 1,1 1 1,0 0 1))",
+    "POLYGON ((0 0,1 0,Infinity 1,0 0))",
+    "POLYGON ((0 0,1 0,NaN 1,0 0))",
+    "MULTIPOLYGON (EMPTY,((0 0,1 0,1 1,0 0)))",
+    "POLYGON ((0 0,2 0,2 2,0 2,0 0),EMPTY)",
+])
+def test_extract_polygon_rings_rejects_invalid_missing_dimension_or_empty_parts(ring_extractor,wkt):
+    frame=gpd.GeoDataFrame({"key":[1]},geometry=[shapely.from_wkt(wkt)],crs=3857)
+    # GEOS topological equality is undefined for these intentionally malformed
+    # rings. Exact WKB and scalar/index equality prove nonmutation without it.
+    original=frame.geometry.to_wkb().tolist();attributes=frame.drop(columns=frame.geometry.name).copy(deep=True)
+    with pytest.raises(ValueError):ring_extractor(frame,"key")
+    assert frame.geometry.to_wkb().tolist()==original
+    pd.testing.assert_frame_equal(frame.drop(columns=frame.geometry.name),attributes)
+
+
+def test_extract_polygon_rings_rejects_missing_geometry_and_inactive_frame(ring_extractor):
+    for value in [pd.DataFrame({"key":[1]}),gpd.GeoDataFrame({"key":[1],"shapes":gpd.GeoSeries([box(0,0,1,1)])}),gpd.GeoDataFrame({"key":[1]},geometry=[None])]:
+        with pytest.raises(ValueError):ring_extractor(value,"key")
+
+
+@pytest.mark.parametrize("field",["source_id","part_no","ring_no","ring_id","is_hole"])
+@pytest.mark.parametrize("active_geometry",[False,True])
+def test_extract_polygon_rings_rejects_source_or_geometry_output_column_collision(ring_extractor,field,active_geometry):
+    frame,_=polygon_ring_fixture()
+    if active_geometry:frame=frame.rename_geometry(field)
+    else:frame[field]="原属性"
+    before=frame.copy(deep=True)
+    with pytest.raises(ValueError,match="must not overwrite"):ring_extractor(frame,"parcel_key")
+    with pytest.raises(ValueError,match="must not overwrite"):ring_extractor(frame.iloc[:0],"parcel_key")
+    assert_geodataframe_equal(frame,before)
+
+
+@pytest.mark.parametrize("ids",[[1,1],[None,2],[" ","valid"],[[1],[2]]])
+def test_extract_polygon_rings_rejects_missing_duplicate_or_nonscalar_source_identifiers(ring_extractor,ids):
+    frame,_=polygon_ring_fixture();frame["parcel_key"]=ids
+    with pytest.raises(ValueError,match="identifiers"):ring_extractor(frame,"parcel_key")
+
+
+@pytest.mark.parametrize("field",[None,"","unknown","parcel_shape"])
+def test_extract_polygon_rings_does_not_guess_source_identity(ring_extractor,field):
+    frame,_=polygon_ring_fixture()
+    with pytest.raises(ValueError,match="id_field"):ring_extractor(frame,field)
+
+
+def test_extract_polygon_rings_rejects_duplicate_column_names(ring_extractor):
+    frame,_=polygon_ring_fixture();frame.columns=["parcel_key" if c=="note" else c for c in frame.columns]
+    with pytest.raises(ValueError,match="id_field"):ring_extractor(frame,"parcel_key")
+
+
+@pytest.mark.parametrize("empty",[False,True])
+def test_extract_polygon_rings_native_dag_full_ogr_reload_and_rejection_no_publish(ring_extractor,tmp_path,empty):
+    from osgeo import ogr
+    frame,rings=polygon_ring_fixture();frame=frame.drop(columns="kind").reset_index(drop=True)
+    if empty:frame=frame.iloc[:0]
+    frame.to_file(tmp_path/"source.gpkg",driver="GPKG",index=False)
+    before=(tmp_path/"source.gpkg").read_bytes();connection={"engine_type":"nfs","mount_path":str(tmp_path)}
+    tasks=[
+        {"id":"load","operator":"load","params":{"connection_info":connection,"path":"source.gpkg"},"depends_on":[]},
+        {"id":"rings","operator":"extract_polygon_rings","params":{"input_gdf":{"$ref":"load"},"id_field":"parcel_key"},"depends_on":["load"]},
+        {"id":"save","operator":"save","params":{"input_df":{"$ref":"rings"},"connection_info":connection,"path":"rings.gpkg","mode":"fail"},"depends_on":["rings"]},
+    ]
+    result=execute_workflow({"tasks":tasks});assert result["status"]=="success",result
+    ds=ogr.Open(str(tmp_path/"rings.gpkg"));assert ds and ds.GetLayerCount()==1;layer=ds.GetLayer(0)
+    assert layer.GetFeatureCount()==(0 if empty else 6) and layer.GetSpatialRef().GetAuthorityCode(None)=="3857"
+    assert [f.name for f in layer.schema]==["parcel_key","note","grade","enabled","weight","geometry","source_id","part_no","ring_no","ring_id","is_hole"]
+    expected_types={"parcel_key":ogr.OFTInteger64,"note":ogr.OFTString,"grade":ogr.OFTInteger64,"enabled":ogr.OFTInteger,"weight":ogr.OFTReal,"geometry":ogr.OFTString,"source_id":ogr.OFTInteger64,"part_no":ogr.OFTInteger64,"ring_no":ogr.OFTInteger64,"ring_id":ogr.OFTInteger64,"is_hole":ogr.OFTInteger}
+    for f in layer.schema:
+        assert f.GetType()==expected_types[f.name]
+        if f.name in ("enabled","is_hole"):assert f.GetSubType()==ogr.OFSTBoolean
+    for i,f in enumerate(layer):
+        assert f.GetFID()==i+1 and f.GetGeometryRef().GetGeometryName()=="LINESTRING"
+        assert f.GetGeometryRef().GetCoordinateDimension()==2 and f.GetGeometryRef().GetPoints()==rings[i]
+        assert f.GetField("parcel_key")==f.GetField("source_id")==([2**60+1]*5+[7])[i]
+        assert f.GetField("part_no")==[1,1,1,2,2,1][i] and f.GetField("ring_no")==[1,2,3,1,2,1][i]
+        assert f.GetField("ring_id")==i+1 and f.GetField("is_hole")==[False,True,True,False,True,False][i]
+        assert f.GetField("grade")==([None]*5+[2**53+1])[i] and f.GetField("note")==([None]*5+["原始属性"])[i]
+        assert f.GetField("enabled")==([None]*5+[False])[i] and f.GetField("weight")==([None]*5+[.125])[i]
+    f=layer=ds=None;assert (tmp_path/"source.gpkg").read_bytes()==before
+    tasks[1]["params"]["id_field"]="missing";tasks[2]["params"]["path"]="rejected.gpkg"
+    rejected=execute_workflow({"tasks":tasks});assert rejected["status"]=="failed" and not (tmp_path/"rejected.gpkg").exists()
+    assert (tmp_path/"source.gpkg").read_bytes()==before
+
+
+def test_extract_polygon_rings_metadata_async_default_port_and_direct_forbidden(ring_extractor,tmp_path,monkeypatch):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    frame,_=polygon_ring_fixture("string");frame=frame.drop(columns="kind").reset_index(drop=True)
+    frame.to_file(tmp_path/"source.gpkg",driver="GPKG",index=False)
+    tasks=[{"id":"load","operator":"load","params":{"connection_info":{"engine_type":"nfs","mount_path":str(tmp_path)},"path":"source.gpkg"},"depends_on":[]},
+        {"id":"rings","operator":"extract_polygon_rings","params":{"input_gdf":{"$ref":"load"},"id_field":"parcel_key"},"depends_on":["load"]}]
+    monkeypatch.setattr(api_server,"executions",ExecutionRegistry())
+    with api_server.app.test_client() as client:
+        op=next(o for o in client.get("/api/operators").get_json()["operators"] if o["id"]=="extract_polygon_rings")
+        assert op["display_name"]=="面界提取" and op["category_path"]==["矢量处理","线网处理"]
+        assert op["execution_modes"]==["workflow"] and op["effects"]==["read"]
+        assert [(p["name"],p["required"]) for p in op["parameters"]]==[("input_gdf",True),("id_field",True)]
+        assert len(op["output_ports"])==1 and op["output_ports"][0]["name"]=="result" and op["output_ports"][0]["is_default"] is True
+        assert client.post("/api/operators/extract_polygon_rings/invoke",json={"params":{}}).status_code==403
+        response=client.post("/api/workflow",json={"workflow_def":{"tasks":tasks},"runtime":{"tenant_id":7,"execution_authorization":{"id":1,"effects":["read"]}}})
+        assert response.status_code==202;deadline=time.monotonic()+5
+        while time.monotonic()<deadline:
+            state=client.get("/api/executions/"+response.get_json()["execution_id"]).get_json()
+            if state["status"] in ("success","failed"):break
+            time.sleep(.01)
+        assert state["status"]=="success",state
+        features=json.loads(state["result"])["features"]
+        assert [f["properties"]["ring_id"] for f in features]==[1,2,3,4,5,6]
+        assert [f["properties"]["source_id"] for f in features]==["地块甲"]*5+["地块乙"]
+        assert all(f["geometry"]["type"]=="LineString" for f in features)
+
+
+def test_extract_polygon_rings_downstream_explicit_rename_retains_two_level_sources(ring_extractor):
+    frame,_=polygon_ring_fixture();rings=ring_extractor(frame,"parcel_key");before=rings.copy(deep=True)
+    normalizer=get_operator("normalize_line_network")
+    with pytest.raises(ValueError,match="must not overwrite"):normalizer(rings,"ring_id")
+    renamed=get_operator("rename_fields")(rings,{"source_id":"polygon_source_id","part_no":"polygon_part_no"})
+    output=normalizer(renamed,"ring_id");members=output["members"]
+    assert set(members.source_id)==set(rings.ring_id)
+    assert set(members.polygon_source_id)==set(frame.parcel_key)
+    assert members.polygon_source_id.dtype==frame.parcel_key.dtype and members.note.dtype==frame.note.dtype
+    assert members.groupby("source_id").polygon_source_id.nunique().eq(1).all()
+    assert len(output["result"])<len(members)  # shared boundary retains two original occurrences
+    assert_geodataframe_equal(rings,before)
+
+
+@pytest.mark.parametrize("empty",[False,True])
+def test_extract_polygon_rings_direct_native_save_preserves_business_geometry_column(ring_extractor,tmp_path,empty):
+    from osgeo import ogr
+    frame,coordinates=polygon_ring_fixture();frame=frame.drop(columns="kind").reset_index(drop=True)
+    if empty:frame=frame.iloc[:0]
+    before=frame.copy(deep=True);result=ring_extractor(frame,"parcel_key")
+    get_operator("save")(result,connection_info={"engine_type":"nfs","mount_path":str(tmp_path)},path="direct-rings.gpkg",mode="fail")
+    ds=ogr.Open(str(tmp_path/"direct-rings.gpkg"));layer=ds.GetLayer(0)
+    assert layer.GetFeatureCount()==len(result) and layer.GetSpatialRef().GetAuthorityCode(None)=="3857"
+    fields=[name for name in result.columns if name!=result.geometry.name]
+    assert [f.name for f in layer.schema]==fields
+    for i,f in enumerate(layer):
+        assert f.GetGeometryRef().GetGeometryName()=="LINESTRING" and f.GetGeometryRef().GetPoints()==coordinates[i]
+        for name in fields:
+            value=result[name].iloc[i];expected=None if pd.isna(value) else value
+            assert f.GetField(name)==expected
+        assert f.GetField("geometry")==(["业务几何名甲"]*5+["业务几何名乙"])[i]
+    assert_geodataframe_equal(frame,before)

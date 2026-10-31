@@ -40,7 +40,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 
 ## 算子分类
 
-`load` 对空间文件、Parquet 与 Feather 按源 Schema 保留可空整型与布尔型，避免空值导致整型提升为浮点并损失精度；统一使用 Arrow→pandas 的选择性类型映射，其他字段不按取值重新推断。边界与验证见[文件字段类型契约](../../../docs/spec/workflow/矢量算子契约.md#load-文件字段类型契约)。
+`load` 对空间文件、Parquet 与 Feather 按源 Schema 保留可空整型与布尔型，避免空值导致整型提升为浮点并损失精度；统一使用 Arrow→pandas 的选择性类型映射，其他字段不按取值重新推断。空间文件按 Arrow 几何声明解码并保留真实几何列，不固定写入 `geometry` 或覆盖同名业务列；无物理名时可显式绑定无冲突的逻辑几何名。边界与验证见[文件字段类型契约](../../../docs/spec/workflow/矢量算子契约.md#load-文件字段类型契约)。
 
 分类由 Runtime 的 `OperatorCategory` 声明。工作流面板只显示支持 `workflow` 的算子，实际数量以当前注册表为准。所有分组名称为四个字，`category` 为末级组名，`category_path` 为完整两级目录；同级顺序由 Runtime 分类声明决定。
 
@@ -54,7 +54,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 矢量处理 | 几何构造 | 6 | `buffer`、`centroid`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer` |
 | 矢量处理 | 几何整理 | 7 | `simplify`、`dissolve`、`check_geometry`、`repair_geometry`、`snap_geometry`、`snap_line_endpoints`、`extend_line_endpoints` |
 | 矢量处理 | 拓扑检查 | 8 | `check_polygon_overlap`、`check_polygon_gap`、`check_dangling_points`、`check_line_proximity`、`check_line_overlap`、`check_line_self_overlap`、`check_line_intersection`、`check_line_self_intersection` |
-| 矢量处理 | 线网处理 | 5 | `polygonize`、`split_line_intersections`、`group_line_components`、`merge_line_chains`、`normalize_line_network` |
+| 矢量处理 | 线网处理 | 6 | `polygonize`、`extract_polygon_rings`、`split_line_intersections`、`group_line_components`、`merge_line_chains`、`normalize_line_network` |
 | 矢量处理 | 叠加分析 | 4 | `intersection`、`union`、`difference`、`clip` |
 | 矢量处理 | 空间关系 | 3 | `contains`、`intersects`、`distance_to` |
 | 矢量处理 | 几何量测 | 3 | `get_area`、`get_length`、`get_bounds` |
@@ -114,6 +114,10 @@ D8流长只保留`raster_flow_length_d8`一个入口，必填`method=downstream`
 ## 线内自叠
 
 `check_line_self_overlap` 检查同一个线要素内部的重复走线和部件间重合，每源汇总去重后报告来源、线和长度，只检查不修复。重复次数、点交集和保存边界见[线内自叠契约](../../../docs/spec/workflow/矢量算子契约.md#线内自叠契约)。
+
+## 面界提取
+
+`extract_polygon_rings` 按原始面部件的外环、内环逐环生成闭合线，保留来源、全部属性、原始坐标、起点及方向，共有边和重复面分别保留。`ring_id`为本次结果内唯一环号，`source_id/part_no/ring_no/is_hole`记录原始面及环角色；不计算度量、去重或修复。来源字段冲突及后续显式重命名规则见[面界提取契约](../../../docs/spec/workflow/矢量算子契约.md#面界提取契约)。
 
 ## 线叠检查
 

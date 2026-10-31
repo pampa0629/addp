@@ -793,7 +793,7 @@ def aggregate(input_gdf: gpd.GeoDataFrame, fields: List[str], agg_func: str = 's
         group_by: 分组字段列表（可选，不指定则对全表聚合）
 
     Returns:
-        聚合结果 DataFrame（无 geometry 列）
+        聚合结果 DataFrame（无活动几何列）
     """
     import pandas as pd
 
@@ -808,8 +808,14 @@ def aggregate(input_gdf: gpd.GeoDataFrame, fields: List[str], agg_func: str = 's
     if agg_func not in func_map:
         raise ValueError(f"不支持的聚合函数: {agg_func}，支持: {list(func_map.keys())}")
 
-    # 只保留非几何列进行聚合
-    df = pd.DataFrame(input_gdf.drop(columns=['geometry'], errors='ignore'))
+    # Exclude the active role, not an ordinary business column named geometry.
+    geometry_column = None
+    if isinstance(input_gdf, gpd.GeoDataFrame):
+        try:
+            geometry_column = input_gdf.geometry.name
+        except AttributeError:
+            pass
+    df = pd.DataFrame(input_gdf.drop(columns=[geometry_column]) if geometry_column is not None else input_gdf)
 
     if group_by:
         result_df = df.groupby(group_by)[fields].agg(func_map[agg_func]).reset_index()
@@ -820,7 +826,7 @@ def aggregate(input_gdf: gpd.GeoDataFrame, fields: List[str], agg_func: str = 's
             result_dict[field] = df[field].agg(func_map[agg_func])
         result_df = pd.DataFrame([result_dict])
 
-    # 返回 GeoDataFrame（无 geometry 列，设置 geometry=None 避免自动创建）
+    # 返回无活动几何的统计表，普通同名业务字段保持普通列
     return gpd.GeoDataFrame(result_df, geometry=None)
 
 
@@ -835,7 +841,7 @@ AGGREGATE_METADATA = OperatorMetadata(
 
     overview="对 GeoDataFrame 的指定字段进行聚合计算，支持全表聚合或按字段分组聚合。"
              "常用于将多条计算结果（如各地块面积）汇总为单一统计值（如总面积）。"
-             "输出不含 geometry 列的统计结果表。",
+             "输出不含活动几何列的统计结果表，普通同名业务字段不被删除。",
 
     params=[
         OperatorParam(
@@ -880,7 +886,7 @@ AGGREGATE_METADATA = OperatorMetadata(
 
     notes=[
         "不指定 group_by 时，对全表聚合，输出单行结果",
-        "输出结果不包含 geometry 列（纯属性统计表）",
+        "输出结果不包含活动几何列（纯属性统计表），普通同名业务字段保留",
         "字段名区分大小写，确保与 get_area 等算子输出的字段名一致",
         "常用于工作流最后一步，将多条结果汇总为单一统计值后保存"
     ],
