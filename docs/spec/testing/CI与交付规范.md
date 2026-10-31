@@ -18,6 +18,8 @@ Manager Hosted 的 Infra MinIO 构建准备复用固定输入缓存：继续使�
 
 Platform CI 的 `frontend-deterministic` 默认每个 Job 最长20分钟。Monitor 的完整单测、浏览器回归及构建沿唯一 `make test-monitor-frontend`，保持单Worker；两轮原始check-run注释明确20分钟超时，第二轮至423/424仍未出完整报告，因此仅 Monitor 保留 `timeout_minutes: 30`。Console 沿唯一 `make test-console-frontend`，按用户确认保留20分钟预算，浏览器采用两个Worker按文件并行，`fullyParallel: false` 保持同文件用例顺序；不删减单测、浏览器回归或构建，不改变单用例时限或重试。隔离前提是测试独立的浏览器上下文和page/context级HTTP夹具，Vite只服务源码，运行端口、缓存和证据由共享标准入口隔离与清理。Job统一读取矩阵预算、缺省20，登记检查拒绝扩大Console或其他模块预算，以及删除或扩大Monitor例外。预算包含安装、测试、构建和退出。Console 先前 `40254270886`、`40254922673`、`40255039253` 的20分钟超时仍保留为未通过；门禁级隔离或本地并行通过不能替代Linux完整门禁实际通过，文档提交的选择跳过也不能补齐前序缺口。
 
+执行管理确定性专项在 Platform CI 中使用独立的 `Execution online CI runner` Job，复用唯一 `make test-execution-online-ci-runner`，不依赖 Platform 聚合 Job 或复制语言测试列表。该 Job 只做现有 Graph／Cleanup 编排、准入、报告、恢复和登记的 T0/T1，不启动产品部署、数据库或 T4；输入闭包由登记检查约束，并复用标准路径选择的 push／PR 差异与 schedule／manual 语义。跳过必须明确 `selected:false`，不替代前序代码的实际执行证据；专项成功也不替代原聚合及 review 的失败结果。原聚合入口、断言及预算保留，未引入第二套实现或容错放行。
+
 Workflow 只负责：
 
 - 触发条件与 owner 影响选择。

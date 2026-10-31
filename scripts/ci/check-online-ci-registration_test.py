@@ -3198,5 +3198,141 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             )
 
 
+class ExecutionRunnerCIRegistrationTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="addp-execution-ci-registration-")
+        self.addCleanup(self.temporary.cleanup)
+        self.repository = Path(self.temporary.name)
+        self.workflow = self.repository / ".github/workflows/platform-ci.yml"
+        self.workflow.parent.mkdir(parents=True)
+        self.source = SCRIPT.parents[2]
+        shutil.copy2(self.source / "Makefile", self.repository / "Makefile")
+        self.original = (self.source / ".github/workflows/platform-ci.yml").read_text()
+        self.workflow.write_text(self.original)
+
+    def test_execution_runner_has_independent_canonical_job(self):
+        CHECK.validate_execution_runner_ci(self.repository)
+
+    def test_execution_runner_rejects_missing_dependent_skipped_or_masked_job(self):
+        import re
+        job = re.search(r"(?ms)^  execution-online-ci-runner:\n.*?(?=^  [a-zA-Z0-9_-]+:\n|\Z)", self.original)
+        self.assertIsNotNone(job, "independent execution runner job must be registered")
+        body = job.group()
+        mutations = (
+            (body, ""),
+            ("    name: Execution online CI runner", "    needs: platform-consistency\n    name: Execution online CI runner"),
+            ("    name: Execution online CI runner", "    if: false\n    name: Execution online CI runner"),
+            ("    timeout-minutes: 10", "    timeout-minutes: 30"),
+            ("    steps:", "    continue-on-error: true\n    steps:"),
+            ("    steps:", "    concurrency: execution-runner\n    steps:"),
+            ("    steps:", "    strategy: {}\n    steps:"),
+            ("        id: selection", "        if: false\n        id: selection"),
+            ("          ADDP_CI_BEFORE:", "          ADDP_CI_FORCE: true\n          ADDP_CI_BEFORE:"),
+            ("actions/setup-node@", "unregistered/action@"),
+            ("make test-execution-online-ci-runner", "make test-cleanup-native-online-runner"),
+            ("make test-execution-online-ci-runner", "make test-execution-online-ci-runner || true"),
+            ("make check-node-runtime", "true"),
+            ("if: steps.selection.outputs.run == 'true'", "if: false"),
+            ("if: always()", "if: success()"),
+            ("selected: ${{ steps.selection.outputs.run }}", 'selected: "true"'),
+            ("status: ${{ job.status }}", 'status: "success"'),
+            ("node-version-file: .node-version", "node-version: 24"),
+            ("ADDP_CI_BEFORE: ${{ github.event.before }}", 'ADDP_CI_BEFORE: "HEAD^"'),
+        )
+        for old, new in mutations:
+            with self.subTest(old=old, new=new):
+                self.workflow.write_text(self.original.replace(body, body.replace(old, new)))
+                with self.assertRaises(CHECK.RegistrationError):
+                    CHECK.validate_execution_runner_ci(self.repository)
+        self.workflow.write_text(self.original)
+
+    def test_execution_runner_rejects_each_missing_selection_input(self):
+        import fnmatch
+        import shlex
+        from unittest.mock import patch
+        job = re.search(r"(?ms)^  execution-online-ci-runner:\n.*?(?=^  [a-zA-Z0-9_-]+:\n|\Z)", self.original).group()
+        selector = re.search(r"(?m)^        run: \|\n((?:          .*\n)+)", job).group(1)
+        patterns = shlex.split(selector.replace("\\\n", ""))[3:]
+        actual_inputs = CHECK.execution_runner_ci_inputs(self.source)
+        for pattern in patterns:
+            with self.subTest(pattern=pattern):
+                self.assertTrue(any(fnmatch.fnmatchcase(path, pattern) for path in actual_inputs))
+                self.workflow.write_text(self.original.replace("'" + pattern + "'", "'unrelated/*'"))
+                with patch.object(CHECK, "execution_runner_ci_inputs", return_value=actual_inputs):
+                    with self.assertRaises(CHECK.RegistrationError):
+                        CHECK.validate_execution_runner_ci(self.repository)
+        self.workflow.write_text(self.original)
+
+    def test_execution_runner_rejects_new_source_dependency_outside_selection(self):
+        dependency = self.repository / "new-owner/runner-source.py"
+        dependency.parent.mkdir()
+        dependency.write_text("# newly consumed source\n")
+        test = self.repository / "scripts/test/runner-source_test.py"
+        test.parent.mkdir(parents=True)
+        makefile = self.repository / "Makefile"
+        makefile.write_text("test-execution-online-ci-runner:\n\t@python3 scripts/test/runner-source_test.py\n")
+        package = self.repository / "future_owner"
+        package.mkdir(); (package / "source.py").write_text("# imported future owner\n")
+        for code, missing in (("from pathlib import Path\nPath('new-owner/runner-source.py').read_text()\n", "new-owner/runner-source.py"),
+                              ("from pathlib import Path\n(Path.cwd() / 'new-owner' / 'runner-source.py').read_text()\n", "new-owner/runner-source.py"),
+                              ("from future_owner import source\n", "future_owner/source.py"),
+                              ("import importlib\nimportlib.import_module('future_owner.source')\n", "future_owner/source.py")):
+            with self.subTest(code=code):
+                test.write_text(code)
+                with self.assertRaisesRegex(CHECK.RegistrationError, missing):
+                    CHECK.validate_execution_runner_ci(self.repository)
+
+    def test_execution_runner_real_selector_keeps_code_and_docs_evidence_separate(self):
+        import os
+        import shlex
+        import subprocess
+        job = re.search(r"(?ms)^  execution-online-ci-runner:\n.*?(?=^  [a-zA-Z0-9_-]+:\n|\Z)", self.original)
+        self.assertIsNotNone(job)
+        selector = re.search(r"(?m)^        run: \|\n((?:          .*\n)+)", job.group()).group(1)
+        arguments = shlex.split(selector.replace("\\\n", ""))
+        script = self.source / arguments[1]
+        def git(*args):
+            return subprocess.check_output(["git", "-c", "user.name=CI test", "-c", "user.email=ci@example.invalid", *args], cwd=self.repository, text=True).strip()
+        git("init", "-q", "-b", "main")
+        git("add", "."); git("commit", "-qm", "baseline")
+        cases = []
+        for relative in ("Makefile", ".node-version", ".github/actions/ci-gate-summary/action.yml",
+                         "scripts/test/cleanup-native-effects-online.py", "business/scripts/online-continuous-fixture.sh",
+                         "console/frontend/e2e/online/cleanup-execution.spec.js", "engines/geopython-workflow/test_online_vector_zonal_percentile_fixture.py",
+                         "graph/frontend/Dockerfile", "manager/frontend/e2e/geometry-preview-support.js",
+                         "system/backend/cmd/online-test-fixture/main.go", "transfer/backend/internal/planner/online_write_failure_contract_test.go",
+                         "common/httptrace/execution.go", "develop/backend/internal/repository/execution_trace.go",
+                         "nginx/nginx.conf", "orchestrator/backend/internal/service/execution_trace.go"):
+            before = git("rev-parse", "HEAD")
+            code = self.repository / relative
+            code.parent.mkdir(parents=True, exist_ok=True)
+            with code.open("a") as stream:
+                stream.write("# consumed input change\n")
+            git("add", "."); git("commit", "-qm", "one consumed input")
+            head = git("rev-parse", "HEAD")
+            cases.extend((("push", before, head, True), ("pull_request", before, head, True)))
+        code_sha = git("rev-parse", "HEAD")
+        for relative in ("docs/books/unrelated.md", "docs/plan/unrelated.md"):
+            before = git("rev-parse", "HEAD")
+            doc = self.repository / relative
+            doc.parent.mkdir(parents=True, exist_ok=True); doc.write_text("unrelated documentation\n")
+            git("add", "."); git("commit", "-qm", "unrelated docs")
+            docs_sha = git("rev-parse", "HEAD")
+            cases.extend((("push", before, docs_sha, False), ("pull_request", before, docs_sha, False)))
+        cases.extend((("schedule", code_sha, docs_sha, True), ("workflow_dispatch", code_sha, docs_sha, True)))
+        for event, before, head, selected in cases:
+            with self.subTest(event=event, head=head):
+                output = self.repository / "selection-output"
+                output.unlink(missing_ok=True)
+                env = {k: v for k, v in os.environ.items() if not k.startswith("ADDP_CI_")}
+                env.update(ADDP_CI_EVENT=event, ADDP_CI_BEFORE=before, ADDP_CI_HEAD=head,
+                           ADDP_CI_PR_BASE=before, GITHUB_OUTPUT=str(output))
+                result = subprocess.run(["bash", str(script), *arguments[2:]], cwd=self.repository,
+                                        env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(output.read_text().strip(), "run=" + str(selected).lower())
+                self.assertIn("selected:" if selected else "skipped:", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

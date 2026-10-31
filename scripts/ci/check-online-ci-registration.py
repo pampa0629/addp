@@ -5,15 +5,138 @@ from __future__ import annotations
 
 import argparse
 import ast
+import fnmatch
 import json
 import importlib.util
 import re
+import shlex
 import sys
 from pathlib import Path
 
 
 class RegistrationError(RuntimeError):
     pass
+
+
+def execution_runner_ci_inputs(repository: Path) -> set[str]:
+    """Follow executed Python imports; static source reads are inputs, not programs."""
+    commands = make_target_commands((repository / "Makefile").read_text(), "test-execution-online-ci-runner")
+    if not commands:
+        raise RegistrationError("Execution runner canonical Make target is missing")
+    inputs = {"Makefile", ".node-version", ".github/workflows/platform-ci.yml",
+              ".github/actions/ci-gate-summary/action.yml", "scripts/ci/select-gate-by-paths.sh"}
+    pending = [(path, path.endswith(".py")) for path in re.findall(r"[\w.-]+(?:/[\w.*-]+)+", commands)]
+    pending += [(value.replace(".", "/") + ".py", True) for value in re.findall(r"scripts(?:\.[\w-]+)+", commands)]
+    parsed = set()
+    while pending:
+        relative, execute = pending.pop()
+        path = repository / relative
+        if not path.is_file():
+            continue
+        inputs.add(relative)
+        if not execute or relative in parsed or path.suffix != ".py":
+            continue
+        parsed.add(relative)
+        for parent in path.relative_to(repository).parents:
+            initializer = str(parent / "__init__.py")
+            if (repository / initializer).is_file() and initializer not in parsed:
+                pending.append((initializer, True))
+        text = path.read_text()
+        tree = ast.parse(text)
+        bindings = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        bindings.setdefault(target.id, []).append(node.value)
+        def strings(node, seen=frozenset()):
+            values = [item.value for item in ast.walk(node) if isinstance(item, ast.Constant) and isinstance(item.value, str)]
+            for item in ast.walk(node):
+                if isinstance(item, ast.Name) and item.id not in seen:
+                    for value in bindings.get(item.id, []):
+                        values.extend(strings(value, seen | {item.id}))
+            return values
+        candidates = [(value, False) for value in re.findall(r"[\w.-]+(?:/[\w.*-]+)+", text)]
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                candidates.append((node.value, False))
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                modules = [alias.name for alias in node.names] if isinstance(node, ast.Import) else [node.module or "", *((node.module + "." if node.module else "") + alias.name for alias in node.names)]
+                for module in modules:
+                    candidates.extend(((module.replace(".", "/") + ".py", True), (module.replace(".", "/") + "/__init__.py", True)))
+            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in {"import_module", "spec_from_file_location"}:
+                arguments = node.args[:1] if node.func.attr == "import_module" else node.args[1:2]
+                for argument in arguments:
+                    for value in strings(argument):
+                        candidates.append((value.replace(".", "/") + ".py" if node.func.attr == "import_module" and re.fullmatch(r"[\w-]+(?:\.[\w-]+)+", value) else value, True))
+            elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+                parts, current = [], node
+                while isinstance(current, ast.BinOp) and isinstance(current.op, ast.Div) and isinstance(current.right, ast.Constant) and isinstance(current.right.value, str):
+                    parts.insert(0, current.right.value)
+                    current = current.left
+                if parts:
+                    candidates.append(("/".join(parts), False))
+        for candidate, imported in candidates:
+            if not re.fullmatch(r"[.\w-]+(?:/[.\w*-]+)*", candidate) or ".." in Path(candidate).parts:
+                continue
+            # A bare name is only a sibling source file, never a development .env.
+            values = [str(path.parent.relative_to(repository) / candidate)]
+            if "/" in candidate:
+                values.append(candidate)
+            for value in values:
+                if (repository / value).is_file() and (value not in inputs or imported and value not in parsed):
+                    pending.append((value, imported))
+    return inputs
+
+
+def validate_execution_runner_ci(repository: Path) -> None:
+    """Keep focused Linux evidence independent while retaining the full platform gate."""
+    workflow = (repository / ".github/workflows/platform-ci.yml").read_text()
+    matches = re.findall(r"(?ms)^  execution-online-ci-runner:\n(.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)", workflow)
+    if len(matches) != 1:
+        raise RegistrationError("Execution runner requires exactly one independent Linux job")
+    job = matches[0]
+    if re.findall(r"(?m)^    ([a-z-]+):", job) != ["name", "runs-on", "timeout-minutes", "steps"]:
+        raise RegistrationError("Execution runner must have no dependencies, matrix or failure-masking job controls")
+    steps = re.findall(r"(?ms)^      - name: [^\n]+\n.*?(?=^      - name:|\Z)", job)
+    if len(steps) != 5:
+        raise RegistrationError("Execution runner requires only checkout, selection, Node, canonical Make and summary")
+    uses = [re.findall(r"(?m)^        uses: (\S+)", step) for step in steps]
+    if not (len(uses[0]) == 1 and re.fullmatch(r"actions/checkout@[0-9a-f]{40}", uses[0][0])
+            and uses[1] == [] and len(uses[2]) == 1 and re.fullmatch(r"actions/setup-node@[0-9a-f]{40}", uses[2][0])
+            and uses[3] == [] and uses[4] == ["./.github/actions/ci-gate-summary"]):
+        raise RegistrationError("Execution runner must use only the existing pinned checkout, Node and summary actions")
+    conditions = [re.findall(r"(?m)^        if: (.+)$", step) for step in steps]
+    if conditions != [[], [], ["steps.selection.outputs.run == 'true'"], ["steps.selection.outputs.run == 'true'"], ["always()"]]:
+        raise RegistrationError("Execution runner selection must execute before guarded setup/Make and truthful summary")
+    if re.findall(r"(?m)^          (ADDP_CI_[A-Z_]+):", steps[1]) != ["ADDP_CI_BEFORE", "ADDP_CI_EVENT", "ADDP_CI_HEAD", "ADDP_CI_PR_BASE"]:
+        raise RegistrationError("Execution runner must preserve the event commit range without forcing selection")
+    if re.findall(r"(?m)^          ([a-z-]+):", steps[2]) != ["node-version-file"]:
+        raise RegistrationError("Execution runner Node version must come only from .node-version")
+    if re.search(r"(?m)^    (?:needs|if|concurrency|continue-on-error|services|container|environment):", job) or "continue-on-error:" in job:
+        raise RegistrationError("Execution runner must run independently without masking failures or services")
+    required = ("    name: Execution online CI runner\n", "    runs-on: ubuntu-24.04\n", "    timeout-minutes: 10\n",
+                "          fetch-depth: 0\n", "          persist-credentials: false\n", "          node-version-file: .node-version\n",
+                "          ADDP_CI_BEFORE: ${{ github.event.before }}\n", "          ADDP_CI_EVENT: ${{ github.event_name }}\n",
+                "          ADDP_CI_HEAD: ${{ github.sha }}\n", "          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}\n",
+                "        uses: ./.github/actions/ci-gate-summary\n", "          gate: Execution online CI runner\n",
+                "          selected: ${{ steps.selection.outputs.run }}\n", "          status: ${{ job.status }}\n")
+    if any(fragment not in job for fragment in required):
+        raise RegistrationError("Execution runner runtime, selection environment or truthful summary is incomplete")
+    runs = re.findall(r"(?m)^        run: \|\n((?:          .*\n)+)", job)
+    if len(runs) != 2 or len(re.findall(r"(?m)^        run:", job)) != 2:
+        raise RegistrationError("Execution runner must only select paths and invoke its canonical Make target")
+    selection = shlex.split(runs[0].replace("\\\n", ""))
+    if selection[:3] != ["bash", "scripts/ci/select-gate-by-paths.sh", "Execution online CI runner"]:
+        raise RegistrationError("Execution runner must reuse the shared path selector")
+    patterns = selection[3:]
+    if not patterns or len(patterns) != len(set(patterns)) or "*" in patterns:
+        raise RegistrationError("Execution runner selection must declare distinct bounded input patterns")
+    missing = [path for path in execution_runner_ci_inputs(repository) if not any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)]
+    if missing:
+        raise RegistrationError("Execution runner selection misses source inputs: " + ", ".join(sorted(missing)))
+    if [line.strip() for line in runs[1].splitlines()] != ["make check-node-runtime", "make test-execution-online-ci-runner"]:
+        raise RegistrationError("Execution runner must invoke the canonical Make target without masking its exit")
 
 
 def make_target_commands(makefile: str, target: str, visited: set[str] | None = None) -> str:
@@ -5269,6 +5392,8 @@ def check_registration(repository: Path) -> None:
     validate_security_mysql_owner_protection_profile(repository, registered)
     validate_graph_protection_profile(repository, registered)
     validate_execution_profiles(repository, registered)
+    if "cleanup-execution" in registered:
+        validate_execution_runner_ci(repository)
     validate_native_cleanup_profile(repository, registered)
     validate_oceanbase_consumer_flow_profile(repository, registered)
     validate_tidb_consumer_flow_profile(repository, registered)

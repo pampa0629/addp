@@ -18,6 +18,62 @@ permissions:
 # Hosted jobs own isolated resources; later skipped runs cannot replace them.
 
 jobs:
+  execution-online-ci-runner:
+    name: Execution online CI runner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select execution online CI runner
+        id: selection
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          bash scripts/ci/select-gate-by-paths.sh "Execution online CI runner" \
+            'Makefile' \
+            '.node-version' \
+            '.github/*' \
+            'scripts/*' \
+            'business/*' \
+            'console/*' \
+            'engines/*' \
+            'graph/*' \
+            'manager/*' \
+            'system/*' \
+            'transfer/*' \
+            'common/*' \
+            'develop/*' \
+            'nginx/*' \
+            'orchestrator/*'
+
+      - name: Set up Node.js
+        if: steps.selection.outputs.run == 'true'
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+
+      - name: Run execution online CI runner
+        if: steps.selection.outputs.run == 'true'
+        run: |
+          make check-node-runtime
+          make test-execution-online-ci-runner
+
+      - name: Summarize execution online CI runner
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Execution online CI runner
+          selected: ${{ steps.selection.outputs.run }}
+          status: ${{ job.status }}
+
   platform-consistency:
     name: Platform consistency
     runs-on: ubuntu-24.04
