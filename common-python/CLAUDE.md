@@ -69,10 +69,10 @@ common-python/
 
 ## 相关文档
 
-- `common-python/README.md`
-- `common-python/common-python实施报告.md`
-- `docs/spec/addp智能体Tool开放规范.md`
-- `docs/spec/addp智能体评测规范.md`
-- `docs/spec/addp OAuth授权规范.md`
-- `agent/CLAUDE.md`
-- `copilot/CLAUDE.md`
+- [README：客户端、资源发现与验证](README.md)
+- [Common-Python 当前实施状态](common-python实施报告.md)
+- [Tool 开放规范](../docs/spec/addp智能体Tool开放规范.md)
+- [智能体评测规范](../docs/spec/addp智能体评测规范.md)
+- [OAuth 授权规范](<../docs/spec/addp OAuth授权规范.md>)
+- [Agent 模块](../agent/CLAUDE.md)
+- [Copilot 模块](../copilot/CLAUDE.md)
