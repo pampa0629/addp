@@ -2,7 +2,9 @@
 
 更新时间：2026-10-31
 
-Transfer 执行记录统一存储在 `common.task_executions`。本文说明保存的关联、计数和 checkpoint 事实；HTTP 公开字段与读取身份统一见[Transfer 专业读取与响应](../../../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)。专业 DTO 保留声明的执行身份、时间、计数和安全诊断，不返回原始 checkpoint；持久字段不自动成为响应字段。
+Transfer 执行记录统一存储在 `common.task_executions`。本文说明关联、计数、checkpoint 及恢复的持久事实；HTTP 公开字段与读取身份统一见[Transfer 专业读取与响应](../../../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)，持久字段不自动成为响应字段。
+
+阅读导航：[checkpoint 样例](#三metadata-中的-checkpoint-字段)、[恢复类型与位置](#恢复类型与位置)、[自动恢复字段与安全 DTO](#自动恢复字段与安全-dto)、[API 与权限](#六api)、[验证边界](#验证边界)。
 
 ## 一、关联规则
 
@@ -77,11 +79,19 @@ Backend schema 版本 2 单向删除历史 `metadata.execution_logs` 和 `error_
 
 ## 五、恢复语义
 
-恢复分级统一见[配置契约](../transfer-基本概念及配置说明.md#恢复分级)：失败 snapshot retry 创建新的 execution 并从头执行，不携带旧 `checkpoint_state` 继续写入，append 拒绝重试。写入策略沿[策略正文](../transfer-基本概念及配置说明.md#六写入策略)。
+### 恢复类型与位置
 
-watermark incremental 的跨 execution resume 使用独立 `transfer.sync_states` 的 committed position；支持范围、稳定键与目标幂等要求见[增量同步契约](../transfer-基本概念及配置说明.md#七watermark-bounded-incremental)。这不表示 snapshot checkpoint 已支持断点续写。格式级 marker 恢复还须源定位、目标幂等提交和 provider 消费同时满足，条件见[格式恢复契约](../../../docs/spec/addp数据类型与格式能力规范.md#checkpoint--resume-契约)。
+snapshot 失败重跑与 watermark 跨 execution 续读统一见[Bounded 执行语义](../transfer-任务语义与同步模式.md#四bounded-执行语义)：失败 snapshot retry 创建新 execution 并从头执行，不携带旧 `checkpoint_state` 续写，append 拒绝重试；watermark 使用独立 `transfer.sync_states` 的 committed position，仍须满足已支持源、稳定键及目标幂等要求。checkpoint 与同步主状态的区别见[状态所有权](../transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)，写入策略沿[策略正文](../transfer-基本概念及配置说明.md#六写入策略)。
 
-失败 execution UUID、重试响应中的新 UUID 与实际观察步骤见[快速开始](../快速开始.md#四checkpoint-和重试)。结构样例、marker 持久化或确定性回归不等于真实恢复、权限及目标数据已验收；标准入口、历史结果和未覆盖项见[模块验证](../../CLAUDE.md#开发与验证)，未运行、失败或跳过不计为通过。
+格式级 marker 恢复还须源定位、目标幂等提交和 provider 消费同时满足，条件见[格式恢复契约](../../../docs/spec/addp数据类型与格式能力规范.md#checkpoint--resume-契约)。保存 marker 不表示 snapshot 已支持断点续写。
+
+### 自动恢复字段与安全 DTO
+
+continuous 恢复 metadata 中，本次恢复的审计事实与可变计数、circuit 状态分别维护；字段清单与重置边界统一见[恢复审计与运行状态](../transfer-任务语义与同步模式.md#恢复审计与运行状态)，新旧 execution、领取条件及退避规则见[自动恢复与退避](../transfer-任务语义与同步模式.md#自动恢复与退避)。恢复字段的存在不额外授予读取权限。
+
+用户专业详情及启动、恢复、回放、重试响应使用同一显式安全投影，不直接公开任意 metadata、原始 checkpoint、执行授权引用或 fencing／租约；允许的恢复诊断与其他敏感信息排除统一见[专业响应契约](../../../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)。模块结果与 TaskProvider 使用各自入口和投影，身份、权限及来源隔离见[API 归属](#六api)，不能用专业响应可见字段反推原始持久实体可读。
+
+失败 execution UUID、重试响应中的新 UUID 与实际观察步骤见[快速开始](../快速开始.md#四checkpoint-和重试)。结构样例、marker、恢复审计与确定性回归的结果认定统一见[验证边界](#验证边界)及[专题验收范围](../transfer-任务语义与同步模式.md#十一验证范围)。
 
 ## 六、API
 
@@ -118,4 +128,4 @@ watermark incremental 的跨 execution resume 使用独立 `transfer.sync_states
 
 ### 验证边界
 
-上述来源、路由和守卫的静态核对不代表真实授权或运行通过。User 读取、模块来源隔离与 TaskProvider 机器入口须按各自身份分别验证；未运行、失败、跳过或未覆盖项不计为通过。标准门禁、固定版本证据及实际范围统一见[模块验证](../../CLAUDE.md#开发与验证)。
+上述持久字段、来源、路由和守卫的静态核对不代表真实授权或运行通过。User 读取、模块来源隔离与 TaskProvider 机器入口须按各自身份分别验证；snapshot 重跑、watermark 续读和 continuous 恢复按各自契约核对新旧 execution、适用的已提交位置与目标数据，不能由结构样例、marker 或恢复审计推断运行成功。标准门禁、固定版本证据、失败与修复结论及未覆盖项统一见[模块验证](../../CLAUDE.md#开发与验证)，未运行、失败、跳过或未覆盖项不计为通过。
