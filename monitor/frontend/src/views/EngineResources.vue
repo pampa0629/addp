@@ -17,7 +17,7 @@
           <el-table-column :label="t('monitor.resources.associatedHost')" min-width="180" show-overflow-tooltip><template #default="{ row }"><MonitoredHostLink data-testid="engine-host" :node-id="row.node_id" :host="hostReferences[row.node_id]" :allowed="canReadHost" :empty-label="t('monitor.engines.noCurrentHost')" /></template></el-table-column>
           <el-table-column :label="t('monitor.engines.collection')" min-width="180"><template #default="{ row }">{{ collection(row.deployment_id) }}</template></el-table-column>
           <el-table-column v-for="metric in engineSummaryMetrics" :key="metric.key" min-width="170">
-            <template #header>{{ t(`monitor.engines.metrics.${metric.name}`) }}</template>
+            <template #header><div class="metric-heading"><span>{{ t(`monitor.engines.metrics.${metric.name}`) }}</span><FieldHelp :content="t(`monitor.engines.hints.${metric.name}`)" /></div></template>
             <template #default="{ row }">{{ value(observation(row.deployment_id)?.series.find(item => item.metric_key === metric.key)?.points[0], metric) }}</template>
           </el-table-column>
           <el-table-column :label="t('monitor.engines.details')" width="130"><template #default="{ row }"><el-button text type="primary" :disabled="loading" @click="navigate({ ...state.query, deployment_id: row.deployment_id }, 'push')">{{ t('monitor.engines.details') }}</el-button></template></el-table-column>
@@ -28,10 +28,9 @@
         <div class="toolbar"><el-button @click="back">{{ t('monitor.engines.back') }}</el-button><h3>{{ owners[0]?.display_name }}</h3><span>{{ collection(state.deploymentID) }}</span></div>
         <div v-if="owners.length" class="toolbar"><span>{{ t('monitor.resources.associatedHost') }}:</span><MonitoredHostLink data-testid="engine-host" :node-id="owners[0].node_id" :host="hostReferences[owners[0].node_id]" :allowed="canReadHost" :empty-label="t('monitor.engines.noCurrentHost')" /></div>
         <div v-loading="loading && !observed" class="metric-grid" data-testid="engine-metrics">
-          <article v-for="metric in engineMetrics" :key="metric.key" class="metric-card">
-            <h3>{{ t(`monitor.engines.metrics.${metric.name}`) }}</h3>
+          <article v-for="metric in engineMetrics" :key="metric.key" class="metric-card" :data-testid="`engine-metric-${metric.name}`">
+            <h3 class="metric-heading" :aria-label="t(`monitor.engines.metrics.${metric.name}`)"><span>{{ t(`monitor.engines.metrics.${metric.name}`) }}</span><FieldHelp :content="t(`monitor.engines.hints.${metric.name}`)" /></h3>
             <strong :data-testid="`engine-value-${metric.name}`">{{ value(observation(state.deploymentID)?.series.find(item => item.metric_key === metric.key)?.points[0], metric) }}</strong>
-            <p class="hint">{{ t(`monitor.engines.hints.${metric.name}`) }}</p>
             <p v-if="observation(state.deploymentID)?.series.find(item => item.metric_key === metric.key)?.points[0]?.data_state !== 'valid'" class="hint">{{ t('monitor.engines.missing') }}</p>
             <el-button text type="primary" :disabled="loading" @click="navigate({ ...state.query, metric: metric.key })">{{ t('monitor.engines.viewTrend') }}</el-button>
           </article>
@@ -40,11 +39,10 @@
           <div class="toolbar">
             <h3>{{ t('monitor.engines.trend') }}</h3>
             <el-select :model-value="state.metric" :aria-label="t('monitor.engines.metric')" @update:model-value="metric => navigate({ ...state.query, metric })"><el-option v-for="metric in engineMetrics" :key="metric.key" :value="metric.key" :label="t(`monitor.engines.metrics.${metric.name}`)" /></el-select>
+            <span class="metric-heading" data-testid="engine-trend-help"><FieldHelp :content="t(`monitor.engines.hints.${selectedMetric.name}`) + ' ' + t('monitor.resources.zoomHint')" /></span>
             <el-select :model-value="state.range" :aria-label="t('monitor.resources.range')" @update:model-value="range => navigate({ ...state.query, range })"><el-option v-for="(_, range) in resourceRanges" :key="range" :value="range" :label="t(`monitor.resources.ranges.${range}`)" /></el-select>
+            <span class="metric-heading" data-testid="engine-range-help"><FieldHelp :content="t('monitor.engines.trendScope')" /></span>
           </div>
-          <p class="hint">{{ t('monitor.engines.trendScope') }}</p>
-          <p class="hint">{{ t(`monitor.engines.hints.${selectedMetric.name}`) }}</p>
-          <p class="hint" data-testid="engine-zoom-hint">{{ t('monitor.resources.zoomHint') }}</p>
           <el-alert v-if="trendError" :title="t(trendError)" type="warning" :closable="false" />
           <template v-if="chart">
             <p class="hint">{{ t('monitor.resources.window', { start: date(history.start), end: date(history.end), step: history.step_seconds }) }}</p>
@@ -60,6 +58,7 @@
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import FieldHelp from '../../../../common-frontend/basic/src/components/FieldHelp.vue'
 import AutoRefreshControl from '../../../../common-frontend/basic/src/components/AutoRefreshControl.vue'
 import ChartRenderer from '../../../../common-frontend/chart/src/ChartRenderer.vue'
 import { createAutoRefresh } from '../../../../common-frontend/basic/src/utils/autoRefresh.mjs'
@@ -190,6 +189,7 @@ onBeforeUnmount(() => { disposed = true; filterInput.dispose(); refreshCycle.dis
 .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 16px; }
 .metric-card { padding: 20px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); min-width: 0; }
 .metric-card h3 { font-size: 16px; margin: 0 0 12px; }
+.metric-heading { display: flex; align-items: center; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
 .metric-card strong { font-size: 24px; overflow-wrap: anywhere; }
 .hint { margin: 8px 0; color: var(--addp-text-secondary); line-height: 1.5; font-size: 13px; }
 .trend, .el-pagination { margin-top: 20px; }

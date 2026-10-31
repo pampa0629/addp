@@ -7,6 +7,50 @@ import { trackResourceChart, resourceChartProps, resourceChartState, dragResourc
 
 const hostPermissions = [...enginePermissions, 'platform.host_node.read']
 
+for (const locale of ['zh-cn', 'en']) test(`engine explanations stay beside their metrics and do not hide missing states (${locale})`, async ({ page }) => {
+  const en = locale === 'en', state = await engineBackend(page, { locale })
+  await page.setViewportSize({ width: 620, height: 900 })
+  await page.goto('/engine-resources?refresh=off')
+  await expect(page.getByTestId('engine-list')).toContainText('1.00 GiB')
+  const capacityHint = en ? 'without tenant attribution' : '不按租户归算'
+  const listHelp = page.getByTestId('engine-list').getByRole('columnheader').filter({ hasText: en ? 'Total database size' : '数据库总容量' }).getByRole('button')
+  const listCalls = state.calls.length
+  await listHelp.focus()
+  await expect(page.getByRole('tooltip')).toContainText(capacityHint)
+  expect(state.calls).toHaveLength(listCalls)
+  await page.getByRole('button', { name: en ? 'View monitoring' : '查看监控', exact: true }).click()
+  await expect(page.locator('.engine-resources')).toHaveAttribute('aria-busy', 'false')
+  await expect(page.getByTestId('engine-metrics').locator('article')).toHaveCount(12)
+  const calls = state.calls.length
+  for (const [metric, detail] of [['total', en ? 'excluding this observation session' : '不含本次采集连接'], ['committed', en ? 'not business throughput' : '不等同于业务吞吐'], ['capacity', capacityHint]]) {
+    const card = page.getByTestId(`engine-metric-${metric}`), help = card.getByRole('heading').getByRole('button')
+    await expect(card).not.toContainText(detail)
+    await help.focus()
+    await expect(page.getByRole('tooltip')).toContainText(detail)
+    await help.blur()
+    await expect(page.getByRole('tooltip')).not.toBeVisible()
+  }
+  const rangeHelp = page.getByTestId('engine-range-help').getByRole('button')
+  await rangeHelp.focus()
+  await expect(page.getByRole('tooltip')).toContainText(en ? 'up to seven days' : '最长七天')
+  await rangeHelp.blur()
+  await expect(page.getByRole('tooltip')).not.toBeVisible()
+  expect(state.calls).toHaveLength(calls)
+  await page.getByTestId('engine-metric-capacity').getByRole('button', { name: en ? 'View trend' : '查看趋势', exact: true }).click()
+  await expect(page.locator('.engine-resources')).toHaveAttribute('aria-busy', 'false')
+  const trendHelp = page.getByTestId('engine-trend-help').getByRole('button')
+  await trendHelp.focus()
+  await expect(page.getByRole('tooltip')).toContainText(capacityHint)
+  await expect(page.getByRole('tooltip')).toContainText(en ? 'period comparisons keep their original scope' : '时段对比的范围保持不变')
+  await expect(trendHelp).not.toHaveAccessibleName(en ? /not business throughput/ : /不等同于业务吞吐/)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  state.setMode('sql-failed')
+  await page.getByRole('button', { name: en ? 'Refresh' : '刷新', exact: true }).click()
+  await expect(page.getByTestId('engine-value-capacity')).toHaveText('—')
+  await expect(page.getByTestId('engine-metric-capacity')).toContainText(en ? 'No valid value yet' : '暂无有效值')
+  await expect(page.getByText(en ? 'No valid database snapshot' : '未取得有效数据库快照', { exact: true })).toBeVisible()
+})
+
 async function engineChart(page) {
   const chart = page.getByTestId('engine-trend').locator('.chart-renderer')
   await expect(chart.locator('canvas')).toBeVisible()
@@ -272,7 +316,8 @@ for (const locale of ['zh-cn', 'en']) test(`PostgreSQL direct detail shows units
   await expect(page.getByTestId('engine-value-capacity')).toHaveText('1.00 GiB')
   await expect(page.getByTestId('engine-value-committed')).toHaveText(locale === 'en' ? '0.00 transactions/s' : '0.00 次/秒')
   await expect(page.getByTestId('engine-trend').getByRole('img', { name: locale === 'en' ? 'Commits per second' : '每秒事务提交', exact: true })).toBeVisible()
-  await expect(page.getByTestId('engine-trend')).toContainText(locale === 'en' ? 'Current database container' : '当前数据库容器')
+  await page.getByTestId('engine-range-help').getByRole('button').focus()
+  await expect(page.getByRole('tooltip')).toContainText(locale === 'en' ? 'Current database container' : '当前数据库容器')
   await expect(page.getByTestId('engine-metrics')).not.toContainText('/metrics')
   await page.screenshot({ path: info.outputPath(`postgresql-${locale}.png`), fullPage: true })
 })

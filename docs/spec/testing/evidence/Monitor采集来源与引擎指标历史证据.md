@@ -239,3 +239,20 @@ Safari 已加载新缩放提示与实际提交速率曲线，但本轮截图存�
 真实页面显示正在采集、最大连接数 200、容量 78.3 GiB，卡片及实际容量曲线完整可见。原生拖动滑块收窄至右半段；真实点击“刷新”后的查询窗口为 19:59:31—20:04:31、可见横轴 20:02:01—20:04:31，读数与曲线保留且视口未重置。此后没有手动刷新输入，自动更新窗口从 20:00:03—20:05:03 推进到 20:00:33—20:05:33；后一次截图的可见横轴为 20:03:03—20:05:33，滑块仍在右半段，卡片和容量曲线保持可见。由此补齐新版本在个人 Safari 的手动／自动刷新结果与视口保持；未捕获原生请求在途帧，不以离散截图声称逐帧零闪、画布身份或长时间连续性，这些在途保留／同一 canvas 的断言仍由前述阻塞响应 T3 独立证明。
 
 操作与截图保留于本会话，摘要 `/tmp/addp-engine-inplace-safari-receipt.json`。本轮仅补文档证据与能力状态，最小验证 `git diff --check` 通过，产品代码未变，复用原 131 项 T1／521 项 T3及构建结果，不重跑有效门禁。不代表列表的个人 Safari 专项、其他时段／引擎、旧来源 T2 或新 CI／Hosted 通过；CI 与 Hosted 仍等专门会话回传，未设置定时任务，未由 AI 启停个人服务。
+
+
+## 引擎监控就近提示（2026-10-31）
+
+按用户“文字写在需要的地方”要求，先更新运行观测规范6.3，再复用唯一 FieldHelp：列表四项摘要的说明放在列名旁，详情十二项说明放在卡片标题旁，当前趋势含义／缩放说明和当前数据库容器／最长七天范围分别放在指标与时间选择器旁。删除对应常驻重复段落；实际数值、单位、查询窗口、当前缺样、采集失败及权限错误仍直接显示。复用既有中英文文案，不新增翻译键、请求、权限、统计口径或共享提示实现，不修改来源及刷新生命周期。
+
+验证由现有 `make test-monitor-frontend` 的 T1／T3／构建入口和 Console 已登记的前端 T3 自动发现覆盖，Platform frontend 编排及 changed-gate 已覆盖 Monitor 与 Console，无需修改 CI 注册。本轮按仅引擎展示的影响范围拆分执行标准入口，使用现有 Node 24.20.0 的 bin 临时加入 PATH：
+
+- `npm --prefix monitor/frontend test`：131项T1全部通过，日志 `/tmp/addp-engine-tips-unit.log`。
+- `npm --prefix monitor/frontend run test:e2e -- engine-resources.spec.js`：首次27项中24项通过、3项失败；两项旧断言仍要求容器范围常驻显示，一项新用例在前一 tip 退出动画未结束时读取到两个 tooltip。保留首次失败日志 `/tmp/addp-engine-tips-browser.log`，失败目录 `/var/folders/r1/l7b49c757dz02zftf_l9vl9r0000gn/T/addp-monitor-playwright-results-RaDX4K`。修正为实际聚焦读取容器范围 tip，并在切换提示前等待上一提示关闭；未修改产品或放宽指标／请求断言。
+- `npm --prefix monitor/frontend run test:e2e -- engine-resources.spec.js --grep 'engine explanations|PostgreSQL direct detail'`：4项通过，日志 `/tmp/addp-engine-tips-recheck.log`。产品输入未改变，结合原24项中的23项不受测试修改影响的通过结果，共27个场景均有有效通过证据；不是一次27项全绿运行。
+- `npm --prefix console/frontend run test:e2e -- engine-resource-navigation.spec.js`：3项全部通过，日志 `/tmp/addp-engine-tips-console.log`；实际 Console iframe 中切换中英文，提示随语言更新，iframe timeOrigin、URL和API次数不变，并覆盖620px布局。
+- `npm --prefix monitor/frontend run build`：退出0，4.85秒，日志 `/tmp/addp-engine-tips-build.log`；仅既有大分块提示。`git diff --check`通过。
+
+上述受控浏览器新增验证卡片说明不再常驻、实际键盘聚焦提示、容量不按租户归算／采集事务不等同业务吞吐／当前容器七天范围保持、选定指标提示同步、无额外查询，以及采集失败后当前值清空而缺样及快照错误仍直接可见。既有自动筛选、主机导航、刷新与缩放回归分别沿原用例验证。本轮未运行完整 Monitor／Console 前端总门禁、后端或来源T2，不能把专项通过写成完整模块通过。
+
+原生Safari只读检查第二个本会话标签页时已回到登录页（重定向仍指向主机详情）；未操作第一个标签页，未填写或取得认证凭据，已请用户在第二个标签页完成平台系统管理员密码／MFA登录。本轮引擎 tip 的个人Safari真实显示／交互尚未验，不沿用上一版本的刷新证据代替。本次不启停个人服务、不修改数据库／IAM／配置，不查询或触发CI／Hosted，不设置定时任务；CI与Hosted仍等专门会话回传。

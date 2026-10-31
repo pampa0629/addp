@@ -1,6 +1,32 @@
 import { expect, test } from '@playwright/test'
 import { engineBackend, engineOwner } from '../../../monitor/frontend/e2e/engine-resources.fixture'
 
+test('engine detail tips follow Console language without reloading the iframe or querying again', async ({ page }) => {
+  const state = await engineBackend(page)
+  await page.goto(`/monitor/engine-resources?deployment_id=${engineOwner.deployment_id}&refresh=off`)
+  const monitor = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(monitor.locator('.engine-resources')).toHaveAttribute('aria-busy', 'false')
+  await expect(monitor.getByTestId('engine-value-capacity')).toHaveText('1.00 GiB')
+  const origin = await monitor.locator('body').evaluate(() => performance.timeOrigin), calls = state.calls.length, url = page.url()
+  const help = monitor.getByTestId('engine-metric-committed').getByRole('heading').getByRole('button')
+  await help.focus()
+  await expect(monitor.getByRole('tooltip')).toContainText('不等同于业务吞吐')
+  await expect(monitor.getByTestId('engine-metrics')).not.toContainText('不等同于业务吞吐')
+  await page.getByRole('button', { name: 'CN', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'English', exact: true }).click()
+  await page.setViewportSize({ width: 620, height: 900 })
+  await help.focus()
+  await expect(monitor.getByRole('tooltip')).toContainText('not business throughput')
+  await help.blur()
+  await expect(monitor.getByRole('tooltip')).not.toBeVisible()
+  await monitor.getByTestId('engine-range-help').getByRole('button').focus()
+  await expect(monitor.getByRole('tooltip')).toContainText('Current database container only, up to seven days')
+  expect(await monitor.locator('body').evaluate(() => performance.timeOrigin)).toBe(origin)
+  expect(state.calls).toHaveLength(calls)
+  expect(page.url()).toBe(url)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
+
 for (const locale of ['zh-cn', 'en']) test(`engine automatic filters retain one Console iframe and owner query (${locale})`, async ({ page }) => {
   await engineBackend(page, { locale })
   const queries = []
