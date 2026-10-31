@@ -6214,8 +6214,7 @@ const docTemplate = `{
                 "statistics": {
                     "type": "object",
                     "additionalProperties": {
-                        "type": "integer",
-                        "format": "int64"
+                        "type": "integer"
                     }
                 },
                 "status": {

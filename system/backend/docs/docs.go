@@ -24371,6 +24371,9 @@ const docTemplate = `{
         "plugin.QueryFederationCapability": {
             "type": "object",
             "properties": {
+                "execution_audience": {
+                    "type": "string"
+                },
                 "object_formats": {
                     "type": "array",
                     "items": {
@@ -24378,6 +24381,9 @@ const docTemplate = `{
                     }
                 },
                 "runtime_api": {
+                    "type": "string"
+                },
+                "runtime_engine_type": {
                     "type": "string"
                 },
                 "source_engine_types": {
@@ -24388,6 +24394,12 @@ const docTemplate = `{
                 },
                 "supported": {
                     "type": "boolean"
+                },
+                "target_engine_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

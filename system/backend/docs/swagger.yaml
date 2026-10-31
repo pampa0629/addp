@@ -5908,11 +5908,15 @@ definitions:
     type: object
   plugin.QueryFederationCapability:
     properties:
+      execution_audience:
+        type: string
       object_formats:
         items:
           type: string
         type: array
       runtime_api:
+        type: string
+      runtime_engine_type:
         type: string
       source_engine_types:
         items:
@@ -5920,6 +5924,10 @@ definitions:
         type: array
       supported:
         type: boolean
+      target_engine_types:
+        items:
+          type: string
+        type: array
     type: object
   plugin.QueryParameterCapability:
     properties:
