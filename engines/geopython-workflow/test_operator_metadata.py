@@ -1415,3 +1415,13 @@ def test_focal_variety_single_existing_entry_keeps_old_eight_methods_and_port():
     assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='raster'
     assert spec['detailed_description']['workflow_example']['params']['method']=='mean'
     assert not any(spec['id'] in ('raster_variety','raster_focal_variety') for spec in list_operators())
+
+
+def test_sieve_protected_values_is_one_optional_integer_array_without_new_entry():
+    operators=list_operators();matches=[o for o in operators if o['id']=='raster_sieve'];assert len(matches)==1
+    spec=matches[0];params={p['name']:p for p in spec['parameters']}
+    assert params['protected_values']['type']=='array' and params['protected_values']['item_type']=='integer'
+    assert params['protected_values']['required']is False and params['protected_values']['default']==[]
+    assert all(params[k]['required']for k in ('band','min_pixels','connectivity'))
+    assert spec['category_path']==['栅格处理','分类处理']and spec['execution_modes']==['workflow']and spec['effects']==['read']
+    assert spec['detailed_description']['workflow_example']['params']['protected_values']==[7]

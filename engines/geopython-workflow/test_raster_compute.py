@@ -13439,7 +13439,7 @@ def test_spi_smallest_nonzero_slope_can_be_recovered_by_large_area(tmp_path,unit
     with raster_workspace():assert _twi_read(_spi_result(paths,unit))[0,0]==expected and expected>0
 
 
-def _sieve_oracle(values, valid, minimum, connectivity):
+def _sieve_oracle(values, valid, minimum, connectivity, protected=()):
     """Independent per-pixel BFS and exhaustive original component boundaries."""
     from collections import deque
     height,width=values.shape;identity=np.full(values.shape,-1,dtype=int);components=[]
@@ -13458,7 +13458,7 @@ def _sieve_oracle(values, valid, minimum, connectivity):
     answer=np.full(values.shape,np.nan)
     for number,cells in enumerate(components):
         category=values[cells[0]]
-        if len(cells)<minimum:
+        if len(cells)<minimum and int(category) not in protected:
             neighbours=set()
             for y,x in cells:
                 for dy,dx in offsets:
@@ -13472,9 +13472,9 @@ def _sieve_oracle(values, valid, minimum, connectivity):
     return answer
 
 
-def _sieve_result(path,minimum=3,connectivity=4,band=1):
+def _sieve_result(path,minimum=3,connectivity=4,band=1,**params):
     from operators.raster_compute import raster_sieve
-    return raster_sieve(raster_load(source_plan(path)),band,minimum,connectivity)
+    return raster_sieve(raster_load(source_plan(path)),band,minimum,connectivity,**params)
 
 
 @pytest.mark.parametrize('connectivity',[4,8])
@@ -14760,3 +14760,152 @@ def test_focal_variety_async_cog_exact_results_failure_source_old_artifact_and_c
         assert cause in status['error'] and '任务 focal 执行失败' in status['error']
         assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
     assert client.post('/api/operators/raster_focal_statistics/invoke',json={'params':{}}).status_code==403
+
+
+@pytest.mark.parametrize('connectivity',[4,8])
+@pytest.mark.parametrize('seed',[3,11,23])
+@pytest.mark.parametrize('protected',[[],[0],[-7,2**53-1],[-7,0,2,2**53-1],[999]])
+def test_sieve_protected_independent_bfs_and_empty_original_equivalence(tmp_path,connectivity,seed,protected):
+    rng=np.random.default_rng(seed);values=rng.choice([-7.,0.,2.,2**53-1],size=(13,17));valid=rng.random(values.shape)>.12
+    path=create_raster(tmp_path/'classes.tif',np.where(valid,values,-9999));before=path.read_bytes()
+    expected=_sieve_oracle(values,valid,4,connectivity,protected)
+    with raster_workspace():
+        actual=_twi_read(_sieve_result(path,4,connectivity,protected_values=protected))
+        np.testing.assert_array_equal(actual,expected)
+        np.testing.assert_array_equal(_twi_read(_sieve_result(path,4,connectivity,protected_values=list(reversed(protected)))),actual)
+        if not protected or protected==[999]:np.testing.assert_array_equal(_twi_read(_sieve_result(path,4,connectivity)),actual)
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('values,minimum,protected,expected',[
+    ([[1,1,9,2,2,2,2]],3,[9],[[1,1,9,2,2,2,2]]),
+    ([[5,5,5,7,1,1,1]],3,[7],[[5,5,5,7,1,1,1]]),
+    ([[7,7,7,1]],3,[7],[[7,7,7,7]]),
+    ([[7,7,1]],3,[7],[[7,7,1]]),
+    ([[7,7,1,2,2,2]],3,[7],[[7,7,2,2,2,2]]),
+    ([[2,2,2,0,1,1,1]],3,[0],[[2,2,2,0,1,1,1]]),
+    ([[-7,-7,-7,2]],3,[-7],[[-7,-7,-7,-7]]),
+    ([[3,3,7,2,2]],2,[3],[[3,3,2,2,2]]),
+    ([[7,-9999,1,1,1]],3,[7],[[7,np.nan,1,1,1]]),
+    ([[7,7,1,1,1,1,1,7]],3,[7],[[7,7,1,1,1,1,1,7]]),
+])
+@pytest.mark.parametrize('connectivity',[4,8])
+def test_sieve_protected_analytic_small_and_large_donors_frozen_ties_no_bridge(tmp_path,values,minimum,protected,expected,connectivity):
+    path=create_raster(tmp_path/'input.tif',np.asarray(values,dtype=float))
+    with raster_workspace():np.testing.assert_array_equal(_twi_read(_sieve_result(path,minimum,connectivity,protected_values=protected)),expected)
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('value',[None,True,1,1.,'1',{},(1,),[True],[1.],[.5],[2**53],[-2**53],[0,0],[[1]],[{}],[float('nan')],[float('inf')]])
+def test_sieve_protected_values_exact_bilingual_admission_before_open(tmp_path,monkeypatch,language,value):
+    import operators.raster_compute as compute
+    def forbidden(*args,**kwargs):raise AssertionError('invalid protection must fail before opening data')
+    monkeypatch.setattr(compute,'_open',forbidden)
+    with raster_workspace(),raster_error_language(language),pytest.raises(ValueError)as error:compute.raster_sieve(None,1,2,4,protected_values=value)
+    assert str(error.value)==('Raster sieve protected_values must be a list of distinct exact safe integers, possibly empty' if language=='en' else '小斑块筛除的protected_values必须为不重复的安全整数列表，可为空')
+
+
+@pytest.mark.parametrize('minimum',[1,3])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('value',[.5,2**53,-2**53])
+def test_sieve_protected_does_not_skip_any_source_class_validation(tmp_path,minimum,language,value):
+    import operators.raster_compute as compute
+    values=np.ones((2,514));values[1,513]=value;path=create_raster(tmp_path/'invalid.tif',values)
+    with raster_workspace(),raster_error_language(language):
+        source=raster_load(source_plan(path));before=set(source.workspace.iterdir())
+        with pytest.raises(ValueError)as error:compute.raster_sieve(source,1,minimum,4,protected_values=[1])
+        assert str(error.value)==str(compute._sieve_error('classes')) and set(source.workspace.iterdir())==before
+
+
+@pytest.mark.parametrize('dtype,protected,nodata',[('Int64',-(2**53-1),-2**63),('UInt64',2**53-1,2**64-1)])
+def test_sieve_protected_native64_limits_nodata_and_zero(tmp_path,dtype,protected,nodata):
+    path=tmp_path/'native.tif';values=np.array([[protected,1,1,nodata,0,2,2]],dtype=np.int64 if dtype=='Int64'else np.uint64)
+    ds=gdal.GetDriverByName('GTiff').Create(str(path),7,1,1,getattr(gdal,'GDT_'+dtype));band=ds.GetRasterBand(1);band.WriteArray(values)
+    (band.SetNoDataValueAsInt64 if dtype=='Int64'else band.SetNoDataValueAsUInt64)(nodata);band=ds=None
+    with raster_workspace():np.testing.assert_array_equal(_twi_read(_sieve_result(path,2,protected_values=[protected,0])),[[protected,1,1,np.nan,0,2,2]])
+
+
+@pytest.mark.parametrize('connectivity',[4,8])
+@pytest.mark.parametrize('located',[True,False])
+def test_sieve_protected_cross_block_cog_exact_grid_masks_and_cleanup(tmp_path,connectivity,located):
+    import operators.raster_compute as compute
+    values=np.zeros((515,519));values[:,511:513]=1;values[511,510]=7;values[512,513]=7;values[10,10]=-7
+    valid=np.ones(values.shape,bool);valid[500,500]=False;path=create_raster(tmp_path/'cross.tif',np.where(valid,values,-9999),(100,2,.5,200,.25,-3),'EPSG:3857'if located else None)
+    if not located:
+        ds=gdal.Open(str(path),gdal.GA_Update);ds.SetGeoTransform((0,1,0,0,0,1));ds=None
+    ds=gdal.Open(str(path));grid=ds.GetGeoTransform(can_return_null=True);projection=ds.GetProjection();ds=None;before=path.read_bytes()
+    expected=_sieve_oracle(values,valid,1000,connectivity,[7])
+    with raster_workspace():
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir());result=compute.raster_sieve(source,1,1000,connectivity,protected_values=[7])
+        assert set(source.workspace.iterdir())==prior|{result.path}
+        target=tmp_path/'protected.cog.tif';artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128)
+        assert type(artifact['size_bytes'])is int and artifact['size_bytes']==target.stat().st_size>0 and validate_cog(raster_load(source_plan(target)))['valid']
+        ds=gdal.Open(str(target));b=ds.GetRasterBand(1);actual=b.ReadAsArray();np.testing.assert_array_equal(actual,expected)
+        np.testing.assert_array_equal(b.GetMaskBand().ReadAsArray()!=0,valid)
+        assert actual[511,510]==actual[512,513]==7 and actual[10,10]==0
+        assert ds.GetGeoTransform(can_return_null=True)==grid and ds.GetProjection()==projection and ds.RasterCount==1
+        assert b.DataType==gdal.GDT_Float64 and np.isnan(b.GetNoDataValue())and b.GetScale()is None and b.GetOffset()is None and b.GetColorTable()is None and b.GetOverviewCount()>0
+        b=ds=None;workspace=source.workspace
+    assert not workspace.exists()and path.read_bytes()==before
+
+
+@pytest.mark.parametrize('case',['coverage','all-invalid'])
+def test_sieve_protected_explicit_band_alpha_mask_raw_scale_and_invalid_coverage(tmp_path,case):
+    values=np.tile(np.array([[0.,0.,7.,2.,2.]]),(3,1));values[0,1]=-9999
+    alpha=np.full(values.shape,128.);alpha[1,2]=0;mask=np.full(values.shape,255,np.uint8);mask[2,0]=0
+    if case=='all-invalid':values[:]=np.nan
+    valid=np.isfinite(values)&(values!=-9999)&(alpha>0)&(mask!=0)
+    path=tmp_path/'coverage.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),5,3,3,gdal.GDT_Float64)
+    ds.GetRasterBand(1).Fill(.25);band=ds.GetRasterBand(2);band.WriteArray(values);band.SetNoDataValue(-9999);band.SetScale(0);band.SetOffset(.5)
+    ds.GetRasterBand(3).WriteArray(alpha);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+    ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);band=ds=None;before=path.read_bytes()
+    with raster_workspace():np.testing.assert_array_equal(_twi_read(_sieve_result(path,4,band=2,protected_values=[7])),_sieve_oracle(values,valid,4,4,[7]))
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('stage',['components','donors','output','metadata','write'])
+def test_sieve_protected_private_labels_and_output_cleanup_remain_strict(tmp_path,monkeypatch,stage):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'source.tif',np.array([[7.,1.,1.]]))
+    target={'components':'_sieve_components','donors':'_sieve_donors','output':'_numeric_output','metadata':'_raster','write':'_numeric_output'}[stage]
+    def failure(*args,**kwargs):raise RuntimeError('injected protected sieve failure')
+    with raster_workspace():
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        if stage=='write':monkeypatch.setattr(gdal.Band,'WriteArray',failure)
+        else:monkeypatch.setattr(compute,target,failure)
+        with pytest.raises(RuntimeError,match='injected protected sieve failure'):compute.raster_sieve(source,1,2,8,protected_values=[7])
+        assert set(source.workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('case',['direct','reclassified','invalid','save-failure'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_sieve_protected_async_cog_reclassification_language_and_failure_cleanup(tmp_path,monkeypatch,case,language):
+    import api_server,workflow_engine
+    values=np.array([[0.,0.,1.,2.,2.]]);path=create_raster(tmp_path/'source.tif',values);before=path.read_bytes();target=tmp_path/'sieved.tif'
+    if case=='save-failure':target.write_bytes(b'previous result')
+    tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}}];prior='source';protected=[1]
+    if case=='reclassified':
+        tasks.append({'id':'classes','operator':'raster_reclassify','depends_on':['source'],'params':{'input_raster':{'$ref':'source'},'band':1,'rules':[{'value':0,'class':10},{'value':1,'class':20},{'value':2,'class':30}]}});prior='classes';protected=[20]
+    tasks.extend([{'id':'sieve','operator':'raster_sieve','depends_on':[prior],'params':{'input_raster':{'$ref':prior},'band':1,'min_pixels':2,'connectivity':4,'protected_values':None if case=='invalid'else protected}},{'id':'save','operator':'raster_save','depends_on':['sieve'],'params':{'input_raster':{'$ref':'sieve'},'access_plan':target_plan(target),'profile':'cog'}}])
+    workspaces=[];execute=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_sieve':workspaces.append(params['input_raster'].workspace)
+        return execute(name,params)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture)
+    client=api_server.app.test_client();assert client.post('/api/operators/raster_sieve/invoke',json={'params':{}}).status_code==403
+    response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}});assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en'if language=='zh-cn'else'zh-cn'}).json
+        if status['status']in('success','failed'):break
+        time.sleep(.01)
+    assert status['status']==('failed'if case in('invalid','save-failure')else'success'),status
+    assert workspaces and all(not p.exists()for p in workspaces)and path.read_bytes()==before
+    if case=='invalid':
+        assert not target.exists()and ('protected_values必须为不重复的安全整数列表'if language=='zh-cn'else'protected_values must be a list of distinct exact safe integers')in status['error']
+        assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
+    elif case=='save-failure':assert target.read_bytes()==b'previous result'
+    else:
+        ds=gdal.Open(str(target));expected=np.array([[10.,10.,20.,30.,30.]])if case=='reclassified'else values
+        np.testing.assert_array_equal(ds.ReadAsArray(),expected);assert ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT']=='COG';ds=None
