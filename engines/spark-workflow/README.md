@@ -36,6 +36,8 @@ Spark JDBC 的 schema 解析发生在 driver，分区读取和写入发生在 ex
 
 ## 资源绑定与执行
 
+2026-10-31，能力路由基础增加 `execution_audience/runtime_engine_type/target_engine_types`。Common 统一解析所选计算目标与唯一内置 Runtime；System 的脱敏描述不把委托目标连接当成 HTTP 端点；查询候选排除必须绑定外部目标的 Runtime。Develop 的直接/样例/父任务查询授权沿同一解析器取得受众，计算目标与真实源分别进入授权范围，HTTP 请求通过 `target_engine_id` 单独传递计算目标，不发送连接或调用方 Token 到请求体。Common、Develop、System、Service、DuckDB 的标准 Go T1 通过，覆盖缺失/重复/离线/能力不匹配拒绝、脱敏端点、受众与三类身份及受控 HTTP 派发。该层尚未切换 Spark 原生插件，也未提供 Spark 查询 HTTP 实现；实际 Runtime 绑定的执行快照冻结、集群登记迁移和页面运行验收仍待后续完成，不计为端到端查询已交付。
+
 查询授权接线增加 `system_client.get_execution_engine_access()`，只消费当前 execution 的 `spark` 只读授权，不从用户请求接受连接配置，也不回退为引擎详情读取。响应逐项核对授权、execution、Engine、Tenant、audience、效果和有效期；401 仅刷新一次服务凭据，拒绝或异常响应不回显原始响应体。System 新增对应 audience、最小 Runtime 消费权限和迁移 256。相关 Common Go、System IAM/API/迁移 Go、122 项 Spark T1、IAM runner 34 项及真实 PostgreSQL 受众迁移分组通过；System 聚合因并行的角色清单排序失败，不能记作整体通过。当前正式查询 HTTP、集群/Runtime 路由与页面仍未开放。
 
 1. 在 System 注册 Spark 通用引擎资源，在 Develop 的 `execution_config.engine_specific.spark_cluster_id` 中记录所选资源。

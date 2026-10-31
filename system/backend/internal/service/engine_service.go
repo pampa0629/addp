@@ -365,7 +365,8 @@ func supportsFederatedQueryRuntime(engine *models.Engine) bool {
 	capabilities, err := engineplugin.ParseEngineCapabilities(string(*engine.Capabilities))
 	return err == nil && capabilities != nil && capabilities.Compute != nil &&
 		capabilities.Compute.Query != nil && capabilities.Compute.Query.Supported &&
-		capabilities.Compute.Query.Federation != nil && capabilities.Compute.Query.Federation.Supported
+		capabilities.Compute.Query.Federation != nil && capabilities.Compute.Query.Federation.Supported &&
+		capabilities.Compute.Query.Federation.RuntimeEngineType == ""
 }
 
 func filterEngines(engines []models.Engine, filter EngineListFilter) []models.Engine {

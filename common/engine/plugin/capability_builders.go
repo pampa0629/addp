@@ -296,6 +296,7 @@ func NewFederatedQueryCapabilities(
 			ResultKinds:     []string{"table", "scalar"},
 			ReadOnly:        true,
 			Federation: &QueryFederationCapability{
+				ExecutionAudience: engineType,
 				Supported:         true,
 				RuntimeAPI:        runtimeAPI,
 				SourceEngineTypes: append([]string(nil), sourceEngineTypes...),

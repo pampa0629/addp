@@ -125,7 +125,7 @@ func (s *QueryExecutionService) ordinaryAuthorization(
 		}
 		authorization, err := s.executor.sqlEngine.IssueFederatedReadExecutionAuthorizationFromExecution(
 			ctx, uint(execution.TenantID), parentExecutionID, executionID, engineIDs,
-			lease.Attempt, lease.Token, devTask.Timeout,
+			lease.Attempt, lease.Token, devTask.Timeout, *devTask.GetEngineID(),
 		)
 		return authorization, true, err
 	}

@@ -426,6 +426,9 @@ type AnalyticalCapability struct {
 }
 
 type QueryFederationCapability struct {
+    ExecutionAudience string   `json:"execution_audience"`
+    RuntimeEngineType string   `json:"runtime_engine_type,omitempty"`
+    TargetEngineTypes []string `json:"target_engine_types,omitempty"`
     Supported         bool     `json:"supported"`
     RuntimeAPI        string   `json:"runtime_api"`
     SourceEngineTypes []string `json:"source_engine_types,omitempty"`
@@ -456,6 +459,16 @@ type QueryFederationCapability struct {
 DuckDB Runtime 第一阶段声明 `runtime_api="addp.query-runtime/v1"`、`source_engine_types=["postgresql","mysql","minio","s3"]`、`object_formats=["parquet"]`。能力只声明当前真正实现并验证过的连接器；Doris、ClickHouse、Spark SQL、MongoDB、Neo4j、Kafka 等不能仅因 ADDP 已支持该 Engine 类型就自动列入。
 
 Spark 联邦查询迁移采用“集群作为执行目标、内置 Runtime 作为协议执行方”的边界，见 [引擎体系图](../concepts/addp引擎体系图.md#spark-集群与内置运行时边界)。Business Spark 与 Runtime 均不声明 `storage`；查询工作台选择集群，工作流选择 Runtime 后绑定集群。目标可执行能力必须同时满足集群有效、Runtime 可用及其连接器能力，不得仅因集群类型为 Spark 就认定查询可用。Runtime 同时提供查询与工作流入口，不增加独立查询服务。技术准入完成前不得提前声明联邦查询已可用；正式迁移须删除旧表目录与 Thrift 查询路径，不兼容双轨。
+
+联邦查询在 `compute.query.federation` 内区分执行目标与实际 Runtime：
+
+| 字段 | 契约 |
+| --- | --- |
+| `execution_audience` | 实际 Runtime 消费的执行授权受众，必须明确声明，调用方不能固定写 DuckDB。 |
+| `runtime_engine_type` | 选定目标需要的平台内置 Runtime 类型；未声明时目标自身就是 Runtime。声明时目标不暴露 Runtime HTTP 端点。 |
+| `target_engine_types` | Runtime 需要的外部计算目标类型；非空时它不是可单独选择的查询目标，只能经匹配集群派发。 |
+
+DuckDB 自身为目标及 Runtime，受众为 `duckdb`。Business Spark 的目标声明 `runtime_engine_type=spark_workflow`、受众 `spark`；内置 Runtime 声明接受 `target_engine_types=[spark]`，并匹配同一查询协议、受众及源连接器范围。派发必须从受信 Runtime Descriptor 解析唯一有效内置实例；缺失、重复、离线、类型或能力不匹配均拒绝，不按类型硬编码地址、不任取第一个、不回退到集群 Thrift 端口。该路由声明不能提前代替接口准入。
 
 联邦 Runtime 的资源引用名由 Source Owner preview 作为 `ResourceFact.query_names.federated_sql` 提供，并与 Runtime 解析规则使用同一共享标识符规范。DuckDB 当前形式为 `<sanitized_source_engine_name>.<schema>.<table>` 或对象表的 `<sanitized_source_engine_name>.<table>`。Copilot 和前端不得各自实现 engine name 清洗或从 locator/full_name 拼接联邦引用。
 

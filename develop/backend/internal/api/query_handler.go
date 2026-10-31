@@ -243,7 +243,7 @@ func (h *QueryHandler) getFederatedSampleQuery(c *gin.Context, tenantID, runtime
 	for _, candidate := range candidates {
 		executionID := uuid.New()
 		authorization, issueErr := h.sqlEngine.IssueFederatedReadExecutionAuthorization(
-			c.Request.Context(), tenantID, userAccessToken, executionID, []uint{candidate.EngineID}, 30,
+			c.Request.Context(), tenantID, userAccessToken, executionID, []uint{candidate.EngineID}, 30, runtimeEngineID,
 		)
 		if issueErr != nil {
 			if h.writeExecutionAuthorizationError(c, issueErr) {

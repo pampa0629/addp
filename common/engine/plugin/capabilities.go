@@ -278,6 +278,9 @@ type QueryParameterCapability struct {
 }
 
 type QueryFederationCapability struct {
+	ExecutionAudience string   `json:"execution_audience"`
+	RuntimeEngineType string   `json:"runtime_engine_type,omitempty"`
+	TargetEngineTypes []string `json:"target_engine_types,omitempty"`
 	Supported         bool     `json:"supported"`
 	RuntimeAPI        string   `json:"runtime_api"`
 	SourceEngineTypes []string `json:"source_engine_types,omitempty"`

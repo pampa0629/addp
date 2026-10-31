@@ -281,6 +281,8 @@ Document 原生转换使用独立入口 `make test-document-native`，在已准�
 
 ## Spark 联邦查询技术准入
 
+能力路由 T1 使用 Common 的 `ResolveExecutionBinding`，拒绝缺失、重复、离线、协议/受众/连接器不匹配的 Runtime，按角色选择集群而不硬编码 Spark 名称；System 核对委托目标不泄露连接为 HTTP 端点，Develop 的受控 HTTP 回归核对目标/Runtime/源分离、受众及无凭据请求体，DuckDB 拒绝外部计算目标。标准入口为 Common、Develop、System、Service、Engines 的 `make test-module MODULE=<owner> GO_ONLY=1`，沿现有 Go CI 自动发现；这些 T1 不替代实际 Spark 查询 HTTP、快照绑定或浏览器 T4。
+
 内置 Spark 查询 Driver 生命周期复用 `query_process.py`：`make test-spark-workflow` 通过真实子进程验证标准输入取源请求、不继承机器身份密钥、精确数值结果、有界读取、超时/取消和忽略 SIGTERM 的后代清理；同一原生准入再调用该组件启动真实 Spark JVM，核对远端 Worker、bigint 和私有目录清理。进程管理的 T1 不代替实际 Spark JVM 取消、HTTP 认证或执行授权验收；这些尚未接通，不提前开放能力。
 
 `make test-common-spark-federation` 使用固定摘要的独占 PostgreSQL 15、MySQL 8.0、Spark 3.5.0 Master/Worker，无宿主端口，不访问个人 Business 或共享 Infra。当前只核验原生 JDBC catalog 的跨源 JOIN、位置参数、真实 Worker、bigint/Decimal 类型与数值、null、中文及尾随空格，以及第二个独立 Driver 不继承前一次 catalog 和临时视图。清理同时核对容器、卷和网络零残留；启动与 Driver 失败的清理回归纳入现有 `make test-spark-workflow` 自动发现。入口由 Release/T2 的 Common 变更选择及根 `test-integration` 调用，不能以该准入证明正式授权、HTTP 查询接口、超时取消、多集群任务路由或页面验收通过。

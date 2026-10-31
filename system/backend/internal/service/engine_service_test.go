@@ -26,6 +26,26 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestDelegatedQueryDescriptorDoesNotProjectClusterAsHTTPEndpoint(t *testing.T) {
+	caps := engineplugin.NewFederatedQueryCapabilities("cluster_test", "addp.query-runtime/v1", []string{"mysql"}, nil)
+	caps.Compute.Query.Federation.RuntimeEngineType = "builtin_compute"
+	encoded, err := json.Marshal(caps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capabilities := models.JSONString(encoded)
+	engine := &models.Engine{ID: 41, EngineType: "cluster_test", Capabilities: &capabilities,
+		ConnectionInfo: models.ConnectionInfo{"host": "cluster-master", "port": 7077, "password": "private"}}
+	descriptor, err := NewEngineService(nil, nil, nil).buildRuntimeDescriptor(engine)
+	if err != nil || descriptor.RuntimeEndpoint != nil {
+		t.Fatalf("descriptor=%+v error=%v", descriptor, err)
+	}
+	value, err := json.Marshal(descriptor)
+	if err != nil || strings.Contains(string(value), "cluster-master") || strings.Contains(string(value), "private") {
+		t.Fatalf("cluster connection leaked into masked descriptor: error=%v", err)
+	}
+}
+
 func TestListReturnsCompleteFilteredResult(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {

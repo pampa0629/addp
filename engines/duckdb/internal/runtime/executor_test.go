@@ -79,6 +79,22 @@ func TestExecutorRejectsExecutionAuthorizationForAnotherAudience(t *testing.T) {
 	}
 }
 
+func TestExecutorRejectsExternalComputeTargetBeforeAccessingSources(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("invalid compute target must not request any source credential")
+		http.Error(w, "unexpected access", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	tokens := &runtimeTestTokenSource{}
+	executor := NewExecutor(commonclient.NewSystemServiceClient(server.URL, tokens, server.Client()),
+		commonclient.NewMetaClient(server.URL, tokens), 100, "128MB", 1, time.Second, "")
+	_, err := executor.Execute(context.Background(), 3, plugin.FederatedQueryRequest{TargetEngineID: 41,
+		Language: "sql", Query: "SELECT 1", Options: plugin.QueryOptions{ReadOnly: true}})
+	if err == nil || !strings.Contains(err.Error(), "external compute target") {
+		t.Fatalf("error=%v", err)
+	}
+}
+
 func TestExecutorRejectsUnsafeSQLBeforeConsumingAuthorization(t *testing.T) {
 	t.Parallel()
 

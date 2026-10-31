@@ -700,6 +700,7 @@ type FederatedQueryRuntimeProvider interface {
 }
 
 type FederatedQueryRequest struct {
+    TargetEngineID           uint
     ExecutionID              string
     ExecutionAuthorizationID string
     SourceEngineIDs          []uint
@@ -723,6 +724,8 @@ type FederatedQueryRequest struct {
 
 - `GET /health`：运行时和离线扩展完整性检查。
 - `POST /api/v1/queries`：同步执行一次只读联邦查询。
+
+`TargetEngineID` 对应 JSON `target_engine_id`，只有委托内置 Runtime 执行的外部计算目标使用；它不能混入 `SourceEngineIDs`。目标自身即 Runtime 时省略该字段，DuckDB 必须拒绝非零外部计算目标。Develop 从同一能力路由解析执行受众并签发只读范围：真实 Source Engine 与计算目标分别校验，不把 Runtime ID 当作数据源，也不把目标集群连接放进 `runtimeConn` 或请求体。缺少执行受众不得回退为 DuckDB。
 
 Spark 采用该协议时，HTTP 查询入口集成在现有内置 Spark Runtime，而不是 Business Spark 集群的 Thrift 端口。Develop 必须区分用户选择的集群执行目标和受信控制面解析的 Runtime 端点，并将两者绑定到本次 execution；Runtime 仅提交到该获授权集群。查询与工作流复用服务，不复用任务会话。Source Engine 身份、连接取用和凭据限制保持本节统一契约；具体集群适配尚须完成技术准入，不能以文档目标代替已实现声明。
 

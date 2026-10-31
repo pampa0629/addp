@@ -49,6 +49,9 @@ func (e *Executor) Execute(
 	if e == nil || e.system == nil || e.meta == nil || tenantID == 0 {
 		return nil, errors.New("DuckDB runtime is not initialized")
 	}
+	if req.TargetEngineID != 0 {
+		return nil, errors.New("DuckDB does not accept an external compute target")
+	}
 	if req.Language != "sql" || !req.Options.ReadOnly {
 		return nil, errors.New("DuckDB runtime only accepts read-only SQL")
 	}

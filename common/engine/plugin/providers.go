@@ -755,6 +755,7 @@ type QueryRequest struct {
 }
 
 type FederatedQueryRequest struct {
+	TargetEngineID           uint                         `json:"target_engine_id,omitempty"`
 	ExecutionID              string                       `json:"execution_id"`
 	ExecutionAuthorizationID string                       `json:"execution_authorization_id"`
 	SourceEngineIDs          []uint                       `json:"source_engine_ids"`

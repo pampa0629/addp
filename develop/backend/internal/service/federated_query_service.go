@@ -47,15 +47,22 @@ func NewFederatedQueryService(systemClient *commonClient.SystemServiceClient, me
 
 func (s *FederatedQueryService) runtime(
 	ctx context.Context, tenantID, runtimeEngineID uint,
-) (*commonModels.EngineRuntimeDescriptor, plugin.FederatedQueryRuntimeProvider, error) {
-	if s == nil || s.systemClient == nil || tenantID == 0 || runtimeEngineID == 0 {
+) (*federatedquery.ExecutionBinding, plugin.FederatedQueryRuntimeProvider, error) {
+	if s == nil {
 		return nil, nil, fmt.Errorf("联邦查询服务未正确初始化")
 	}
-	descriptor, err := s.systemClient.WithTenantID(tenantID).GetEngineRuntimeDescriptor(ctx, runtimeEngineID)
+	return resolveFederatedRuntime(ctx, s.systemClient, tenantID, runtimeEngineID)
+}
+
+func resolveFederatedRuntime(ctx context.Context, systemClient *commonClient.SystemServiceClient, tenantID, runtimeEngineID uint) (*federatedquery.ExecutionBinding, plugin.FederatedQueryRuntimeProvider, error) {
+	if systemClient == nil || tenantID == 0 || runtimeEngineID == 0 {
+		return nil, nil, fmt.Errorf("联邦查询服务未正确初始化")
+	}
+	descriptor, err := systemClient.WithTenantID(tenantID).GetEngineRuntimeDescriptor(ctx, runtimeEngineID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("获取联邦查询 Runtime 失败: %w", err)
 	}
-	if !engineselection.IsAvailableForComputeEntrypoint(descriptor.AsEngine(), "query") || descriptor.RuntimeEndpoint == nil {
+	if !engineselection.IsAvailableForComputeEntrypoint(descriptor.AsEngine(), "query") {
 		return nil, nil, fmt.Errorf("联邦查询 Runtime 不可用")
 	}
 	enginePlugin, err := plugin.Get(descriptor.EngineType)
@@ -66,7 +73,22 @@ func (s *FederatedQueryService) runtime(
 	if !ok {
 		return nil, nil, fmt.Errorf("引擎 %s 不支持联邦查询", descriptor.EngineType)
 	}
-	return descriptor, provider, nil
+	var candidates []commonModels.EngineRuntimeDescriptor
+	caps, err := engineselection.ParseCapabilities(descriptor.Capabilities)
+	if err != nil || caps == nil || caps.Compute == nil || caps.Compute.Query == nil || caps.Compute.Query.Federation == nil {
+		return nil, nil, fmt.Errorf("联邦查询目标能力无效")
+	}
+	if caps.Compute.Query.Federation.RuntimeEngineType != "" {
+		candidates, err = systemClient.WithTenantID(tenantID).ListEngineRuntimeDescriptors(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	binding, err := federatedquery.ResolveExecutionBinding(descriptor, candidates)
+	if err != nil {
+		return nil, nil, err
+	}
+	return binding, provider, nil
 }
 
 func (s *FederatedQueryService) IsRuntime(ctx context.Context, tenantID, engineID uint) bool {
@@ -112,12 +134,17 @@ func (s *FederatedQueryService) ExecuteQuery(
 	limit int,
 	sourceEngineIDs []uint,
 ) (*FederatedQueryResult, error) {
-	descriptor, provider, err := s.runtime(ctx, tenantID, runtimeEngineID)
+	binding, provider, err := s.runtime(ctx, tenantID, runtimeEngineID)
 	if err != nil {
 		return nil, err
 	}
 	if executionID == uuid.Nil || authorizationID <= 0 || len(sourceEngineIDs) == 0 {
 		return nil, fmt.Errorf("联邦查询 Execution Authorization 无效")
+	}
+	for _, sourceID := range sourceEngineIDs {
+		if binding.TargetEngineID != 0 && sourceID == binding.TargetEngineID {
+			return nil, fmt.Errorf("计算目标不能作为联邦数据源")
+		}
 	}
 	if s.protectionGate == nil {
 		return nil, fmt.Errorf("Develop 联邦查询保护门禁未配置")
@@ -138,8 +165,9 @@ func (s *FederatedQueryService) ExecuteQuery(
 		return nil, fmt.Errorf("获取 Develop Runtime 凭据失败: %w", err)
 	}
 	start := time.Now()
-	result, err := provider.ExecuteFederatedQuery(ctx, plugin.ConnectionInfo(descriptor.AsEngine().ConnectionInfo), plugin.FederatedQueryRequest{
-		ExecutionID: executionID.String(), ExecutionAuthorizationID: fmt.Sprintf("%d", authorizationID),
+	result, err := provider.ExecuteFederatedQuery(ctx, plugin.ConnectionInfo(binding.Runtime.AsEngine().ConnectionInfo), plugin.FederatedQueryRequest{
+		TargetEngineID: binding.TargetEngineID,
+		ExecutionID:    executionID.String(), ExecutionAuthorizationID: fmt.Sprintf("%d", authorizationID),
 		SourceEngineIDs: append([]uint(nil), sourceEngineIDs...), Query: query, Language: "sql",
 		Options:           plugin.QueryOptions{Limit: limit, Timeout: time.Duration(timeout) * time.Second, ReadOnly: true},
 		CallerAccessToken: callerToken,

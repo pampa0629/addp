@@ -397,7 +397,7 @@ func (e *DevExecutor) prepareSQLExecutionAuthorization(
 			return nil, fmt.Errorf("执行 ID 无效: %w", err)
 		}
 		return e.sqlEngine.IssueFederatedReadExecutionAuthorization(
-			ctx, tenantID, userAccessToken, parsedExecutionID, engineIDs, devTask.Timeout,
+			ctx, tenantID, userAccessToken, parsedExecutionID, engineIDs, devTask.Timeout, *devTask.GetEngineID(),
 		)
 	}
 	engineID := devTask.GetEngineID()

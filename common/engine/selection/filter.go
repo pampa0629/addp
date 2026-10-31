@@ -108,7 +108,17 @@ func IsSelectionOption(resource *models.Engine) bool {
 // IsSelectionOptionForComputeEntrypoint matches a visible business option by
 // its declared compute capability without hiding its connection state.
 func IsSelectionOptionForComputeEntrypoint(resource *models.Engine, entrypoint string) bool {
-	return IsSelectionOption(resource) && SupportsComputeEntrypoint(resource, entrypoint)
+	if !IsSelectionOption(resource) {
+		return false
+	}
+	caps, err := ParseCapabilities(resource.Capabilities)
+	if err != nil || !supportsComputeEntrypoint(caps, entrypoint) {
+		return false
+	}
+	if entrypoint == "query" || entrypoint == "sql" {
+		return isQueryTarget(caps.Compute.Query)
+	}
+	return true
 }
 
 // IsStorageSelectionOption matches a visible storage option by capability
@@ -128,7 +138,7 @@ func IsAvailable(resource *models.Engine) bool {
 // IsAvailableForComputeEntrypoint applies the single business-candidate rule
 // before matching a compute capability.
 func IsAvailableForComputeEntrypoint(resource *models.Engine, entrypoint string) bool {
-	return IsAvailable(resource) && SupportsComputeEntrypoint(resource, entrypoint)
+	return IsAvailable(resource) && IsSelectionOptionForComputeEntrypoint(resource, entrypoint)
 }
 
 // SupportsAnalytical uses only certified instance facts, never an engine list.
@@ -210,4 +220,8 @@ func computeEntrypoints(capabilities *engineplugin.EngineCapabilities) []string 
 		entrypoints = append(entrypoints, "inference")
 	}
 	return entrypoints
+}
+
+func isQueryTarget(query *engineplugin.QueryCapability) bool {
+	return query != nil && query.Supported && (query.Federation == nil || len(query.Federation.TargetEngineTypes) == 0)
 }
