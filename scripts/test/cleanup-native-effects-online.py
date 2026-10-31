@@ -635,7 +635,7 @@ def run_manager(manager, workflow, controls, source, case, report, checkpoint):
     checkpoint()
 
 
-def run_transfer(user, workflow, controls, source, case, report, checkpoint):
+def run_transfer(user, workflow, controls, case, report, checkpoint):
     report['stage'] = 'transfer_native_prepare'; checkpoint()
     pg = workflow.register(controls.descriptor('pg'))
     kafka = workflow.register(controls.descriptor('kafka'))
@@ -643,10 +643,8 @@ def run_transfer(user, workflow, controls, source, case, report, checkpoint):
     MANAGER.wait_for_meta_scan(user, pg, time.monotonic() + 180)
     task_ids = []
     if case != 'transfer-dlq-unknown':
-        # Only CDC reads this PG source table; Kafka uses PG as its target.
-        report['stage'] = 'transfer_source_grant'; checkpoint()
-        REGISTRATION.initialize_exact_record_read_grants(source, user, controls.tenant,
-                                                        [(pg, 'schema', 'public', 'continuous_source')])
+        # Current Transfer uses Tenant/task permissions. Manager-purpose source
+        # Grants do not prove CDC authorization and have no consumer here.
         cdc, _ = prepare_task(user, controls, pg, kafka, 'cdc', controls.run_id, report, checkpoint)
         report['stage'] = 'transfer_capture_native_verify'; checkpoint()
         controls.capture(cdc, present=True)
@@ -814,11 +812,12 @@ def main():
         report['principals'] = principals
         workflow = EngineWorkflow(clients['engine'], tenant, report, checkpoint)
         controls = NativeControls(deployment, tenant, case)
-        source = S.local_client(os.environ['GATEWAY_URL'], os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
         checkpoint()
-        if case == 'manager-late-writer': run_late_writer(clients['manager'], workflow, controls, source, report, checkpoint)
-        elif case.startswith('manager-'): run_manager(clients['manager'], workflow, controls, source, case, report, checkpoint)
-        else: run_transfer(clients['transfer'], workflow, controls, source, case, report, checkpoint)
+        if case.startswith('manager-'):
+            source = S.local_client(os.environ['GATEWAY_URL'], os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'], 30)
+            if case == 'manager-late-writer': run_late_writer(clients['manager'], workflow, controls, source, report, checkpoint)
+            else: run_manager(clients['manager'], workflow, controls, source, case, report, checkpoint)
+        else: run_transfer(clients['transfer'], workflow, controls, case, report, checkpoint)
         require(set(report['checks']) == set(S.CONTRACT['native_case_checks'][case])
                 and len(report['checks']) == len(set(report['checks'])), 'native case checks missing, duplicated or outside scope')
         report['result'] = 'passed'

@@ -708,3 +708,15 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 五个公开文件齐备，固定实际源码的 validator 已独立重放通过，七项检查集合、任务／execution／run／Tenant 和三名身份均按原契约核对；成功报告没有 `runtime_start_diagnostic` 或其它失败字段。`control_cleanup=passed`、`control_recovery=passed`、`cleanup=passed`、`infra_cleanup=zero_residuals` 分别核验通过，五文件未检出已知凭据模式。证据 `/tmp/addp-transfer-dlq-hosted-sixth-20261031/`，`audit.json` 分开记录业务及清理结果，原始日志 4970—4975 行保留身份创建和安全报告；`hosted-job.log` SHA-256 为 `8842c50a56d28692dd88c2d744f237042e85f6d7e9359d419816cd71a7a61ab9`。实际命令为单次标准 workflow 派发、只读元数据／日志／artifact 下载及 `python3 /tmp/addp-transfer-dlq-hosted-sixth-20261031/audit-artifact.py`，后继同源、终态、7/7 和清理断言全部通过。
 
 该 case 可按本轮固定源码与实际 T4 范围收口；第五次未观察到 running 的历史失败未在本轮复现，不能因新运行成功就声称已确定其根因。按契约成功不归档失败末态，因此本轮没有该历史根因的新证据，不据此改动产品运行逻辑。原第五次失败记录保留，当前结论为本轮完整故障链 7/7 已验，而非已修复未知启动故障或已证明重复运行稳定性。其它两个 CDC case 的读取核验用途问题仍未收敛；Manager late-writer、Graph 原生写图与正向 reopen 均继续 `not_run`，不能扩张为 Graph／Cleanup 全矩阵通过。本轮只有证据文档更新，无新增代码修复，未重跑有效确定性门禁；本轮 Hosted 授权已使用，没有追加其它 Hosted、切换环境或重启个人服务。
+
+### 8.20 两个 CDC Cleanup case 的读取核验用途收敛
+
+用户授权先收敛 `transfer-engine`、`transfer-capture-unknown` 的读取核验用途，既定模块边界和最小权限不变；新的 Hosted、环境切换或权限边界变化仍需单独确认。核对正式规范 `transfer/docs/transfer-基本概念及配置说明.md` 第 1.3 节及实际启动／continuous 引擎解析链路，当前 Transfer 按 Tenant 归属和任务功能 Permission 执行，未声明逐 DataItem 的 Grant／Deny 闭环。System 当前同步源规则检查仅有 Manager preview／profile-result，固定要求 `manager.data_item.read`；Grant 签发／管理记录不是当前有效 Allow。现有 Transfer 配置预检也不能替代：其范围是 bounded snapshot native table 配置，另需 `system.engine.read`，不是 CDC 当前源规则裁决。不得借 Manager 检查或其它用途 EA 补造 Transfer 读取授权证明，也不能通过给原用户增加 Manager Permission 使其通过。
+
+因此两个 Cleanup CDC case 不再创建没有实际消费者的源 Grant，删除原 `transfer_source_grant` 调用与检查点，保留 PG Meta 扫描、原正式 Transfer 任务创建／启动、原生 capture、CDC 初始目标行、实际停止、未知效果及目标业务行保持的全部原断言和预算。Transfer 分支不再构造或要求源授权办理员 client，并移除其未使用的函数参数；Manager 分支继续独立使用原办理员及原共享 helper。共享 Grant helper、Manager 的签发前 403／签发后 200 检查、System API／EA、三类 native 身份、角色权限与全部 case checks 均不变。不是新增或跳过权限判定，而是删除 Cleanup 夹具中没有对应产品消费语义的授权写入。
+
+本专项的 CDC 验收目标只包括 Transfer 在现有 Tenant／任务权限下的实际读取，以及原 Cleanup 故障效果；不升级为当前 Grant／Deny 裁决、源撤权或运行中收权闭环。若要建设这些产品授权能力，需独立明确 owner／操作范围／源规则与 runtime 消费契约，并按权限边界变化单独确认；本轮不扩大实施。Kafka DLQ 7/7 的已有固定源码 T4 继续只覆盖原运行，不因本次删去未用 client 扩张为新源码重验。两个 CDC case 的新源码真实 Hosted 尚未执行。
+
+受影响验证为两个 CDC case 不调用 Grant helper、原扫描失败仍先于任务创建、三个 Transfer case 的入口不读取／构造授权办理员 client、原完整故障矩阵与 Manager Grant 身份约束保持。反例先在原调用链复现失败，再执行标准 `make test-execution-online-ci-runner`；现有 native 测试文件自动发现、canonical 入口及 `scripts/*` 独立 Linux Job 已覆盖，无需修改 Make、workflow 或登记，不增加公共入口或脚本。规范同步限定这些证据用途，不修改产品 API 或 Swagger。
+
+最终回归已先红后绿：原代码在两个 CDC case 触发无用途 Grant 调用，三个 Transfer 入口因缺少不应使用的源授权办理员 client 而在进入执行前失败，共五个反例；日志 `/tmp/addp-cdc-purpose-final-red.log`。最终标准 `make test-execution-online-ci-runner` 退出 0，native 81 项、共享 157 项、Node／Shell 语法及实际 CI 登记检查通过，日志 `/tmp/addp-cdc-purpose-final-gates.log`；`make check-node-runtime` 与本轮四文件 `git diff --check` 通过。Manager 普通／late-writer 入口仍必须使用原独立授权办理员，原 Grant 身份约束与完整故障矩阵未改。CI 会话已只读确认原 Make／workflow／登记覆盖最终四文件，无需变更。该批仅 runner／测试／验收用途文档，不运行产品 Go、PG 或浏览器门禁；新源码 Hosted 未运行，不能以这些确定性结果升级两 CDC case 的真实验收。

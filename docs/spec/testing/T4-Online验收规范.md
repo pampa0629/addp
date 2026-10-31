@@ -133,6 +133,8 @@ System-owned fixture 通过正式 Bootstrap 建立三个不同三员，通过正
 
 Manager 通过普通 User 的正式源 Grant 和 Model3D Runtime 生成真实 GLB；清理后直接核对输出对象和索引，并确认原始 OBJ、MTL、纹理字节未变。Transfer 区分 Engine 删除保留并禁用任务/DLQ，以及普通 User 显式删除任务清理 DLQ 两个产品入口；真实目标业务行保持不变。三种普通 User 和准确权限、六个 case 的必需 checks 唯一维护在 `scripts/test/execution-online-contract.json`，CI 按精确集合拒绝缺失、重复、跨 case 和伪造通过。DLQ unknown 的未决清理围栏拒绝新 producer 时，必须返回 HTTP 409 和稳定 `error_code=transfer_cleanup_unresolved`，`error` 为安全的本地化文案；专项报告必须同时提供 `producer_refusal_http_status=409` 和对应 `producer_refusal_error_code`。旧 HTTP 500、其它状态或错误码均不能作为围栏拒绝证明；DELETE 外部清理失败仍为 HTTP 503。
 
+`transfer-engine` 与 `transfer-capture-unknown` 沿 Transfer 当前 Tenant／任务功能权限执行，不准备没有对应消费链的源 Grant，也不调用 Manager 用途的同步源规则检查。实际 CDC 读取由原正式 runtime 与独立原生目标行探针证明；本专项不验证 Transfer 的当前 Grant／Deny、源撤权或连续运行中收权闭环。Manager 的源 Grant 准备及其同步检查保持原用途。
+
 四个一次性代理在应用启动前固定指向本轮 Infra，只对准确关联操作发送一次真实变更后丢弃回包，并阻止重发。控制端点仅容器 loopback；Kafka 内部 advertised listener 经过代理，外部 listener 供独立只读原生探针直达。含凭据的 manifest、描述符、代理配置与展开 Compose 均保持私有 0600，不归档。退出先停产品/Worker/Runtime，再销毁代理、业务夹具和 Infra；恢复、销毁或零残留失败均导致 Job 失败。
 
 标准确定性入口为 `make test-cleanup-native-online-runner`，纳入现有 Online/平台登记链。该批代码与确定性测试不证明 Hosted 实际通过；真实旧 writer 晚写、原生写图回包与正向 reopen 不在六个 case 中，报告必须保持相应 `not_run` 边界。

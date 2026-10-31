@@ -17,6 +17,74 @@ ID = str(uuid.uuid4())
 
 
 class NativeCleanupRunnerTest(unittest.TestCase):
+    def test_cdc_cases_use_task_execution_without_manager_grant_preparation(self):
+        for case in ('transfer-engine', 'transfer-capture-unknown'):
+            engines = iter((9, 10))
+            workflow = SimpleNamespace(register=lambda descriptor: next(engines))
+            controls = SimpleNamespace(tenant=2, run_id='native-1', descriptor=lambda kind: {})
+            user, report = object(), {'checks': []}
+            with self.subTest(case=case), patch.object(M.MANAGER, 'wait_for_meta_scan'), \
+                    patch.object(M.REGISTRATION, 'initialize_exact_record_read_grants',
+                                 side_effect=AssertionError('CDC must not prepare an unused Manager Grant')) as grant, \
+                    patch.object(M, 'prepare_task', side_effect=S.SuiteError('reached CDC execution')) as prepare:
+                with self.assertRaisesRegex(S.SuiteError, 'reached CDC execution'):
+                    M.run_transfer(user, workflow, controls, case, report, lambda: None)
+                grant.assert_not_called()
+                self.assertEqual(prepare.call_args.args[:6], (user, controls, 9, 10, 'cdc', 'native-1'))
+                self.assertNotEqual(report['stage'], 'transfer_source_grant')
+                config = M.TRANSFER.task_config('cdc', 9, 10)
+                self.assertEqual(config['source']['locator'], 'addp://engine/9/path/public/continuous_source?type=table')
+                self.assertEqual(config['load']['change_detection'], {'type': 'cdc', 'bootstrap': 'initial_snapshot'})
+
+    def test_transfer_entry_does_not_construct_or_require_source_authorizer_client(self):
+        for case in ('transfer-engine', 'transfer-capture-unknown', 'transfer-dlq-unknown'):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                environment = dict(ADDP_ONLINE_ARTIFACT_DIR=directory, ADDP_ONLINE_NATIVE_CASE=case,
+                    ADDP_ONLINE_TEST_TENANT_ID='2', GATEWAY_URL='http://127.0.0.1:8000',
+                    ADDP_ONLINE_CLEANUP_NATIVE_MANAGER_ACCESS_TOKEN='manager-token',
+                    ADDP_ONLINE_CLEANUP_NATIVE_TRANSFER_ACCESS_TOKEN='transfer-token',
+                    ADDP_ONLINE_CLEANUP_NATIVE_ENGINE_ACCESS_TOKEN='engine-token')
+                deployment, controls = SimpleNamespace(run_id='native-1', close=lambda: None), SimpleNamespace(close=lambda: None)
+                clients = [object(), object(), object()]
+                with patch.dict(M.os.environ, environment, clear=True), \
+                        patch.object(S, 'OwnedDeployment', return_value=deployment), \
+                        patch.object(S, 'local_client', side_effect=clients) as local, \
+                        patch.object(S, 'user_identity', side_effect=('33', '34', '35')), \
+                        patch.object(M, 'EngineWorkflow'), patch.object(M, 'NativeControls', return_value=controls), \
+                        patch.object(M, 'run_transfer', side_effect=S.SuiteError('stop at Transfer entry')) as run, \
+                        patch('builtins.print'):
+                    self.assertEqual(M.main(), 1)
+                    run.assert_called_once()
+                    self.assertEqual(local.call_count, 3)
+                    self.assertEqual([c.args[1] for c in local.call_args_list], ['manager-token', 'transfer-token', 'engine-token'])
+                    self.assertIs(run.call_args.args[0], clients[1])
+
+    def test_manager_entry_keeps_its_separate_source_authorizer_client(self):
+        for case in ('manager-success', 'manager-late-writer'):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                environment = dict(ADDP_ONLINE_ARTIFACT_DIR=directory, ADDP_ONLINE_NATIVE_CASE=case,
+                    ADDP_ONLINE_TEST_TENANT_ID='2', GATEWAY_URL='http://127.0.0.1:8000',
+                    ADDP_ONLINE_CLEANUP_NATIVE_MANAGER_ACCESS_TOKEN='manager-token',
+                    ADDP_ONLINE_CLEANUP_NATIVE_TRANSFER_ACCESS_TOKEN='transfer-token',
+                    ADDP_ONLINE_CLEANUP_NATIVE_ENGINE_ACCESS_TOKEN='engine-token',
+                    ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN='source-token')
+                deployment, controls = SimpleNamespace(run_id='native-1', close=lambda: None), SimpleNamespace(close=lambda: None)
+                clients = [object(), object(), object(), object()]
+                with patch.dict(M.os.environ, environment, clear=True), \
+                        patch.object(S, 'OwnedDeployment', return_value=deployment), \
+                        patch.object(S, 'local_client', side_effect=clients) as local, \
+                        patch.object(S, 'user_identity', side_effect=('33', '34', '35')), \
+                        patch.object(M, 'EngineWorkflow'), patch.object(M, 'NativeControls', return_value=controls), \
+                        patch.object(M, 'run_manager', side_effect=S.SuiteError('stop at Manager entry')) as manager, \
+                        patch.object(M, 'run_late_writer', side_effect=S.SuiteError('stop at Manager entry')) as late, \
+                        patch('builtins.print'):
+                    self.assertEqual(M.main(), 1)
+                    run = late if case == 'manager-late-writer' else manager
+                    run.assert_called_once()
+                    self.assertIs(run.call_args.args[3], clients[3])
+                    self.assertEqual(local.call_count, 4)
+                    self.assertEqual(local.call_args.args[1:], ('source-token', 30))
+
     def test_runtime_wait_retains_only_last_scoped_observation_with_original_budget(self):
         for status in ('pending', 'failed', 'timeout', 'cancelled', 'success'):
             report, snapshots, calls = {}, [], []
@@ -123,30 +191,29 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                 self.assertNotIn('private', json.dumps(result))
                 self.assertNotIn('secret', json.dumps(result))
 
-    def test_transfer_scan_and_grant_failure_checkpoints_precede_task_creation(self):
-        for failed in ('scan', 'grant'):
+    def test_transfer_scan_failure_checkpoint_precedes_task_creation(self):
+        for case in ('transfer-engine', 'transfer-capture-unknown', 'transfer-dlq-unknown'):
             engines = iter((9, 10))
             workflow = SimpleNamespace(register=lambda descriptor: next(engines))
             controls = SimpleNamespace(tenant=2, run_id='native-1', descriptor=lambda kind: {})
             report, stages = {'checks': []}, []
-            with self.subTest(failed=failed), \
-                    patch.object(M.MANAGER, 'wait_for_meta_scan', side_effect=S.SuiteError('private') if failed == 'scan' else None), \
-                    patch.object(M.REGISTRATION, 'initialize_exact_record_read_grants', side_effect=S.SuiteError('private')) as grant, \
+            with self.subTest(case=case), \
+                    patch.object(M.MANAGER, 'wait_for_meta_scan', side_effect=S.SuiteError('private')), \
+                    patch.object(M.REGISTRATION, 'initialize_exact_record_read_grants') as grant, \
                     patch.object(M, 'prepare_task') as prepare:
                 with self.assertRaises(S.SuiteError):
-                    M.run_transfer(object(), workflow, controls, object(), 'transfer-engine', report,
+                    M.run_transfer(object(), workflow, controls, case, report,
                                    lambda: stages.append(report['stage']))
-                self.assertEqual(report['stage'], 'transfer_source_scan' if failed == 'scan' else 'transfer_source_grant')
+                self.assertEqual(report['stage'], 'transfer_source_scan')
                 self.assertEqual(stages[-1], report['stage'])
                 prepare.assert_not_called()
-                if failed == 'scan': grant.assert_not_called()
-                else: grant.assert_called_once()
+                grant.assert_not_called()
 
     def test_dlq_case_uses_kafka_input_and_never_prepares_unrelated_cdc_grant(self):
         engines = iter((9, 10))
         workflow = SimpleNamespace(register=lambda descriptor: next(engines))
         controls = SimpleNamespace(tenant=2, run_id='native-1', descriptor=lambda kind: {})
-        user, source = object(), object()
+        user = object()
         report = {'checks': []}
         with patch.object(M.MANAGER, 'wait_for_meta_scan') as scan, \
                 patch.object(M.REGISTRATION, 'initialize_exact_record_read_grants',
@@ -154,7 +221,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                 patch.object(M, 'prepare_task', return_value=(7, ID)) as prepare, \
                 patch.object(M, 'run_dlq_unknown') as unknown:
             checkpoint = lambda: None
-            M.run_transfer(user, workflow, controls, source, 'transfer-dlq-unknown', report, checkpoint)
+            M.run_transfer(user, workflow, controls, 'transfer-dlq-unknown', report, checkpoint)
             scan.assert_called_once()
             self.assertEqual(scan.call_args.args[:2], (user, 9))
             grant.assert_not_called()
@@ -432,7 +499,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                      patch.object(M, 'prepare_task', side_effect=prepare), patch.object(M, 'professional', return_value={}):
                     report = dict(checks=[], tasks=[])
                     if mutation == 'none':
-                        M.run_transfer(User(), workflow, Controls(), User(), case, report, lambda: None)
+                        M.run_transfer(User(), workflow, Controls(), case, report, lambda: None)
                         self.assertEqual(set(report['checks']), set(S.CONTRACT['native_case_checks'][case]))
                         if case == 'transfer-engine':
                             self.assertLess(calls.index(('ENGINE_BEGIN', 9)), calls.index(('DELETE', M.TASKS + '/8')))
@@ -440,7 +507,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                         else: self.assertFalse(deleted)
                     else:
                         with self.subTest(case=case, mutation=mutation), self.assertRaises(S.SuiteError):
-                            M.run_transfer(User(), workflow, Controls(), User(), case, report, lambda: None)
+                            M.run_transfer(User(), workflow, Controls(), case, report, lambda: None)
 
     def test_native_object_never_treats_auth_failure_or_missing_bucket_as_absence(self):
         class S3Error(Exception):
