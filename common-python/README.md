@@ -215,18 +215,19 @@ CLI Browser Login 按 RFC 8252 在 `127.0.0.1` 绑定随机空闲端口，先向
 
 授权页会在批准前显示当前 Platform 或 Tenant Context，并允许使用 Browser Context Switch 选择目标。OAuth Family 在批准后永久绑定该 Context；CLI 不提供事后切换命令，需要进入其他 Context 时先执行 `addp auth logout`，再重新登录并授权。`addp auth status` 会实际轮换 Refresh Token 并解析 System AuthContext，输出当前 Principal 与 Context 摘要，不以 Keychain 中是否存在值代替服务端会话检查。
 
-本地开发环境与单元测试：
+## 开发与验证
+
+源码开发在 `common-python/` 下执行 `uv sync --extra dev --extra inference-langchain` 准备本模块声明的依赖；测试从仓库根目录使用标准共享库入口：
 
 ```bash
-cd common-python
-uv sync --extra dev --extra inference-langchain
-uv run pytest -q
-addp --version
+make test-common-python
 ```
 
-Tool 与 Adapter 变更至少运行 common-python 全量测试和 `make test-agent-eval`；场景与发布门禁规则见 `docs/spec/addp智能体评测规范.md`。
+该入口运行共享库全量 pytest，覆盖当前 Manifest、SDK、ToolExecutor、CLI 等用例；不证明真实服务、macOS Keychain 产品认证或模型调用可用。Tool 与 Adapter 变更至少覆盖共享 Python 回归和 Agent 离线评测，授权、owner 与共享依赖扩散的门禁分工统一见[Tool 最低验证](../docs/spec/addp智能体Tool开放规范.md#八变更与验证)和[测试标准入口](../docs/spec/addp测试与验收规范.md#三标准入口)。
 
-CLI 正式发布必须从仓库根目录运行唯一产品门禁：
+`make test-agent-eval` 已包含共享 Python 全量回归，重复执行不构成额外验收层级；有效结果须覆盖当前输入与环境。Agent 前端、离线受控响应及在线证据的区别见[评测门禁规范](../docs/spec/addp智能体评测规范.md#五统一门禁)，不能用离线通过代替真实路由、跨模块或真实厂商验收。
+
+CLI 正式发布按 [T5 发布认证规范](../docs/spec/testing/T5-发布认证规范.md)准备真实 macOS Keychain 等前置条件，从仓库根目录运行唯一产品门禁：
 
 ```bash
 make test-release RELEASE_SUITE=common-python-cli
@@ -238,13 +239,14 @@ GitHub Actions 的 `CLI product gate (macOS Keychain)` Job 使用同一入口，
 
 版本发布预检由全量测试中的 `tests/test_version.py` 统一执行，校验运行时单一版本源、包元数据、命令版本和长期文档版本，不增加第二套版本脚本。发布工作流中的所有第三方 `uses:` 固定到不可变提交 SHA，并由固定版本的 zizmor 在现有 required Job 中扫描，禁止重新引入浮动 Action Tag。推送与包版本一致的 `v<version>` Tag 会重新运行 macOS CLI 产品门禁和 PostgreSQL 15 System IAM 门禁。两项均通过后，发布 Job 只下载同一次运行归档的 wheel，校验 SHA-256、包名和 `METADATA` 版本，使用 GitHub OIDC 为 wheel 生成 build provenance attestation，再创建 GitHub Release；发布阶段不检出源码、不重新构建。用户可使用 `gh attestation verify` 验证 wheel 来源。维护者本地复现也必须使用统一 `test-release` 入口；分发器调用的 owner 目标不作为第二个公共命令。
 
-CLI 门禁验证已安装客户端，不替代 System Fosite 和 PostgreSQL 事务验收。正式发布还必须对专用一次性数据库运行：
+CLI 产品门禁不替代 System Fosite 和 PostgreSQL 事务验证；后者仍属 T2，不因参与发布流程成为 T5。正式发布还需独立运行 System IAM 标准门禁；运行前按[PostgreSQL 测试数据库与隔离要求](../scripts/infra/docs/PostgreSQL与测试库.md#postgresql-database-清单)核对允许的测试库、实际端口和连接条件：
 
 ```bash
 ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?sslmode=disable' \
   make test-system-iam-postgres
 ```
 
+以上是验证要求与入口，不代表已有通过证据。共享库回归、CLI 产品门禁、System IAM T2 和真实跨模块验收分别记录结果；未运行、失败或未覆盖项不计为通过。
 
 ### 可选同步 HTTP 追踪
 
