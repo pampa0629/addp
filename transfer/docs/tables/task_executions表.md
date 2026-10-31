@@ -1,8 +1,8 @@
 # common.task_executions 中的 Transfer 执行记录
 
-更新时间：2026-05-31
+更新时间：2026-10-31
 
-Transfer 执行记录统一存储在 `common.task_executions`。Transfer API 会将统一执行记录投影为模块 DTO，因此接口响应中仍可看到 `task_id`、`start_time`、`checkpoint_offset`、`checkpoint_state` 等 Transfer 视图字段。
+Transfer 执行记录统一存储在 `common.task_executions`。本文说明保存的关联、计数和 checkpoint 事实；HTTP 公开字段与读取身份统一见[Transfer 专业读取与响应](../../../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)。专业 DTO 保留声明的执行身份、时间、计数和安全诊断，不返回原始 checkpoint；持久字段不自动成为响应字段。
 
 ## 一、关联规则
 
@@ -28,7 +28,7 @@ Transfer 执行记录统一存储在 `common.task_executions`。Transfer API 会
 
 ## 三、metadata 中的 checkpoint 字段
 
-Transfer 将 checkpoint 观测信息写入 `metadata`：
+Transfer 将 checkpoint 观测信息写入 `metadata`。以下仅为持久结构示例，不是公开 DTO 或恢复通过证据：
 
 ```json
 {
@@ -64,13 +64,7 @@ Transfer 将 checkpoint 观测信息写入 `metadata`：
 }
 ```
 
-规则：
-
-1. checkpoint 只在目标 batch 写入成功后更新。
-2. `checkpoint_offset` 当前等于累计 `records_read`；raw copy 第一版完成后为 `1`。
-3. `checkpoint_state` 用于进度展示、故障定位和 provider marker 持久化。
-4. Transfer 只保存 `resume_marker` / `commit_marker`，不解析 marker 内部位置字段。
-5. 保存 marker 不表示当前执行可从 checkpoint 后自动恢复。
+字段口径、batch 成功后更新、provider marker 的生成与解释职责，以及 snapshot 只可观测的边界，统一见[Checkpoint、进度和重试](../transfer-基本概念及配置说明.md#十checkpoint进度和重试)。保存 marker 不表示当前执行可自动续写。
 
 ## 四、执行过程事件和错误
 
@@ -82,23 +76,11 @@ Backend schema 版本 2 单向删除历史 `metadata.execution_logs` 和 `error_
 
 ## 五、恢复语义
 
-Transfer 当前恢复能力分三档：
+恢复分级统一见[配置契约](../transfer-基本概念及配置说明.md#恢复分级)：失败 snapshot retry 创建新的 execution 并从头执行，不携带旧 `checkpoint_state` 继续写入，append 拒绝重试。写入策略沿[策略正文](../transfer-基本概念及配置说明.md#六写入策略)。
 
-| 等级 | 当前状态 | 说明 |
-|---|---|---|
-| observable | 已支持 | checkpoint 用于进度展示和故障定位。 |
-| restartable | 已支持 | 失败执行 retry 创建新 execution 并从头执行。 |
-| resumable | 未进入主链路 | 需要 source seek、target 幂等提交和 provider marker 消费同时满足。 |
+watermark incremental 的跨 execution resume 使用独立 `transfer.sync_states` 的 committed position；支持范围、稳定键与目标幂等要求见[增量同步契约](../transfer-基本概念及配置说明.md#七watermark-bounded-incremental)。这不表示 snapshot checkpoint 已支持断点续写。格式级 marker 恢复还须源定位、目标幂等提交和 provider 消费同时满足，条件见[格式恢复契约](../../../docs/spec/addp数据类型与格式能力规范.md#checkpoint--resume-契约)。
 
-`POST /api/v1/transfer/executions/:execution_id/retry` 当前语义：
-
-- 仅重试失败 execution。
-- 新建一条 execution。
-- 不携带旧 execution 的 checkpoint_state 继续写。
-- overwrite / 默认模式可以重试。
-- append 模式拒绝重试，避免重复写入。
-
-因此，文档和 UI 不应宣称 Transfer 已支持“从中断点继续写入”。正确说法是：当前已支持 checkpoint 观测和 restartable retry；checkpoint resumable 尚未进入主链路。
+失败 execution UUID、重试响应中的新 UUID 与实际观察步骤见[快速开始](../快速开始.md#四checkpoint-和重试)。结构样例、marker 持久化或确定性回归不等于真实恢复、权限及目标数据已验收；标准入口、历史结果和未覆盖项见[模块验证](../../CLAUDE.md#开发与验证)，未运行、失败或跳过不计为通过。
 
 ## 六、API
 

@@ -33,15 +33,16 @@ Transfer 执行记录使用统一表 `common.task_executions`。Transfer API 会
 
 可复用同步配置使用 `transfer.transfer_tasks`；Manager 数据导出、Develop 查询完整结果导出等一次性动作通过 `POST /api/v1/transfer/executions` 直接创建 bounded `sync` ad-hoc execution，`source_task_id` 为空。该入口不创建临时任务定义，调用方只持有统一 `execution_id`。模块 Runtime 使用 `GET /api/v1/transfer/executions/{execution_id}/result` 回查自己创建的一次性 execution；Transfer 从 Service Client 身份再次推导来源模块并与 execution `source` 精确匹配，其他来源一律按不存在处理。请求使用强类型 source / target / fields 契约，Transfer 在内部生成唯一 planner 配置并继续使用相同 worker、checkpoint、保护和输出主链路。查询 source 可在 `query.inputs[]` 提交本次执行已经解析完成的关系输入 `{name, locator}`；Transfer 只接受与 source locator 同 Engine 的标准 ResourceLocator，并使用这些输入生成完整执行血缘，不解析查询文本反推资源。Develop 的 CSV 查询导出必须按参数名稳定排序提交全部有效关系输入，并把冻结结果的有序列名提交为同名 `field_mapping` 投影；`target_type=unknown` 表示保留 Provider 返回值且不做类型转换，不能用有界预览样本猜测类型。
 
-| 字段 | 当前语义 |
+下表区分保存的执行事实与专业 HTTP 响应；公开字段以[Transfer 专业读取与响应](../../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)为准，原始 checkpoint 和旧 `logs` 不作为专业响应字段返回。
+
+| 字段或事实 | 口径与正文归属 |
 |---|---|
 | `records_read` / `records_written` | table Transfer 的行数指标；raw copy 第一版固定为 `1/1`。 |
 | `bytes_read` / `bytes_written` | 字节指标；table Transfer 当前通常不作为主指标，raw copy 第一版会写入。 |
-| `checkpoint_offset` | 从 execution metadata 投影出来的观测偏移，table Transfer 当前为累计读取记录数，raw copy 第一版完成后为 `1`。 |
-| `checkpoint_state` | 从 execution metadata 投影出来的 checkpoint JSON，包含 batch、进度和 provider marker。 |
-| `logs` | 从 error details 中投影出来的简短执行日志。 |
+| `checkpoint_offset` / `checkpoint_state` | execution metadata 中的观测与 marker 持久事实；字段口径、生成与解释职责统一见[Checkpoint、进度和重试](#十checkpoint进度和重试)，不据此扩大 HTTP DTO。 |
+| `error_details` / 安全 `metadata` | 专业响应仅保留已声明的安全错误与诊断投影，边界沿上述专业读取契约。 |
 
-snapshot checkpoint 用于 progress / diagnostics，不表示可从 checkpoint 自动续写。watermark incremental 使用独立同步主状态 resume。失败 snapshot retry 走 restartable：创建新 execution 并从头重新执行；append 任务 retry 会被拒绝。
+snapshot 重跑与 watermark incremental 的恢复分工见[恢复分级](#恢复分级)和[增量同步契约](#七watermark-bounded-incremental)；返回执行记录、字段统计或保存 marker 均不代表真实恢复已验收。
 
 ### 1.3 租户阶段的任务授权
 
@@ -486,6 +487,8 @@ capture supervisor 已通过 Kafka Connect REST 和 Infra Kafka admin API 管理
 
 ## 十、Checkpoint、进度和重试
 
+本节维护 execution metadata 中的 checkpoint 口径；持久事实不自动成为公开字段，专业 HTTP 读取范围见[执行记录](#12-执行记录)及其引用的安全 DTO 契约。
+
 当前 checkpoint 语义：
 
 - 每个成功写入 batch 后更新执行进度。
@@ -493,13 +496,15 @@ capture supervisor 已通过 Kafka Connect REST 和 Infra Kafka admin API 管理
 - `checkpoint_state` 可包含 `batch_index`、`source_offset`、`records_read`、`records_written`、`resume_marker`、`commit_marker` 等。
 - marker 由 provider 生成并解释；Transfer 只保存和展示，不解析 marker 内部字段。
 
-恢复分级：
+### 恢复分级
 
 | 等级 | 当前状态 |
 |---|---|
 | observable | 已支持，用于进度展示和故障定位。 |
-| restartable | 已支持 retry 从头重跑；append 拒绝。 |
-| resumable | PostgreSQL/MySQL/OceanBase/openGauss/TiDB source 的 watermark incremental 通过 `transfer.sync_states` 支持 execution 间 resume，OceanBase/openGauss/TiDB 限非空间表；目标按幂等 `table_upsert` capability 选择，snapshot checkpoint 仍仅可观测。 |
+| restartable | 失败 snapshot retry 创建新 execution 并从头执行；append 拒绝。 |
+| resumable | watermark incremental 通过 `transfer.sync_states` 支持 execution 间 resume，目标按幂等 `table_upsert` capability 选择；支持引擎、非空间限制与稳定键条件统一见[增量同步契约](#七watermark-bounded-incremental)。snapshot checkpoint 仍仅可观测。 |
+
+恢复操作及新旧 execution UUID 的使用见[快速开始](快速开始.md#四checkpoint-和重试)。恢复能力、回归与真实运行结果分别认定；标准入口和历史证据见[模块验证](../CLAUDE.md#开发与验证)，未运行、失败、跳过和未覆盖项不计为通过。
 
 ## 十一、写后 Meta 扫描
 
