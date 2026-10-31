@@ -5344,8 +5344,10 @@ def test_extract_polygon_rings_rejects_source_or_geometry_output_column_collisio
     if active_geometry:frame=frame.rename_geometry(field)
     else:frame[field]="原属性"
     before=frame.copy(deep=True)
-    with pytest.raises(ValueError,match="must not overwrite"):ring_extractor(frame,"parcel_key")
-    with pytest.raises(ValueError,match="must not overwrite"):ring_extractor(frame.iloc[:0],"parcel_key")
+    from operators.geometric_operators import PolygonRingInputError
+    for value in [frame, frame.iloc[:0]]:
+        with pytest.raises(PolygonRingInputError,match="must not overwrite") as caught: ring_extractor(value,"parcel_key")
+        assert (caught.value.code,caught.value.field)==("field_conflict",field)
     assert_geodataframe_equal(frame,before)
 
 
@@ -5510,3 +5512,28 @@ def test_hosted_polygon_rings_save_two_failures_and_independent_oracle(tmp_path,
             layer.SetFeature(feature);feature=None
         layer=ds=None
     with pytest.raises(fixture.FixtureError):fixture.worker('verify',tmp_path,fixture.RINGS_CASE)
+
+
+def test_extract_polygon_rings_conflict_uses_fixed_priority_before_validity(ring_extractor):
+    from operators.geometric_operators import PolygonRingInputError
+    frame=gpd.GeoDataFrame({'key':['private'], 'is_hole':[True],'ring_id':[7],'ring_no':[3],'part_no':[2],'source_id':['private']},
+        geometry=[shapely.from_wkt('POLYGON ((0 0,2 2,0 2,2 0,0 0))')],crs=3857)
+    for field in ['source_id','part_no','ring_no','ring_id','is_hole']:
+        before=frame.copy(deep=True)
+        with pytest.raises(PolygonRingInputError) as caught:ring_extractor(frame,'key')
+        assert (caught.value.code,caught.value.field)==('field_conflict',field)
+        assert frame.geometry.to_wkb().tolist()==before.geometry.to_wkb().tolist()
+        pd.testing.assert_frame_equal(frame.drop(columns='geometry'),before.drop(columns='geometry'))
+        frame=frame.drop(columns=field)
+    with pytest.raises(PolygonRingInputError) as caught:ring_extractor(frame,'key')
+    assert (caught.value.code,caught.value.field)==('geometry_invalid','')
+
+
+@pytest.mark.parametrize('wkt', [None,'POLYGON EMPTY','POINT (0 0)','POLYGON Z ((0 0 1,1 0 1,1 1 1,0 0 1))',
+    'POLYGON M ((0 0 1,1 0 1,1 1 1,0 0 1))','POLYGON ((0 0,1 0,Infinity 1,0 0))',
+    'MULTIPOLYGON (EMPTY,((0 0,1 0,1 1,0 0)))'])
+def test_extract_polygon_rings_other_rejections_are_not_validity_diagnostics(ring_extractor,wkt):
+    from operators.geometric_operators import PolygonRingInputError
+    frame=gpd.GeoDataFrame({'key':[1]},geometry=[None if wkt is None else shapely.from_wkt(wkt)],crs=3857)
+    with pytest.raises(ValueError) as caught:ring_extractor(frame,'key')
+    assert not isinstance(caught.value,PolygonRingInputError)

@@ -200,7 +200,7 @@ def test_typed_operator_diagnostic_preserves_definition_position_and_prior_resul
     calls=[]
     def execute(op,params):
         calls.append(op)
-        if op=='batch_buffer':raise OperatorInputError('operator_field_conflict','private password=secret')
+        if op=='batch_buffer':raise OperatorInputError('operator_field_conflict','private password=secret',field='distance')
         return {'previous':'kept'}
     registry=ExecutionRegistry();accepted=registry.submit(WorkflowRunner({'load','batch_buffer','save'},execute),workflow)
     import time,json
@@ -221,8 +221,8 @@ def test_parameter_diagnostic_refuses_untyped_messages_and_malformed_context():
     from addp_common.workflow_runtime import OperatorInputError
     from addp_common.workflow_runtime.errors import validated_operator_diagnostic,OPERATOR_INPUT_RULES
     import copy
-    for (op,reason),_ in OPERATOR_INPUT_RULES.items():
-        value=OperatorInputError(reason,'internal text').diagnostic(op,2)
+    for (op,reason,field),_ in OPERATOR_INPUT_RULES.items():
+        value=OperatorInputError(reason,'internal text',field=field).diagnostic(op,2)
         assert validated_operator_diagnostic(value)==value
         for patch in [lambda x:x.update(message='private'),lambda x:x.update(stage='validation'),
             lambda x:x['operator'].update(node_index=True),lambda x:x['operator'].update(field='private'),
@@ -232,3 +232,37 @@ def test_parameter_diagnostic_refuses_untyped_messages_and_malformed_context():
     def raw(op,p):raise ValueError('INVALID_PARAMS distance conflicts password=secret')
     with pytest.raises(WorkflowExecutionError) as failed:WorkflowRunner({'batch_buffer'},raw).execute(workflow)
     assert failed.value.error_code=='EXECUTION_FAILED' and failed.value.diagnostic is None
+
+
+def test_ring_diagnostic_never_infers_a_conflict_field_or_trusts_private_fields():
+    from addp_common.workflow_runtime import OperatorInputError
+    from addp_common.workflow_runtime.errors import validated_operator_diagnostic
+    import copy
+    assert OperatorInputError('operator_field_conflict','private').diagnostic('extract_polygon_rings',1) is None
+    for field in ['distance','private',None,[],{},True]:
+        assert OperatorInputError('operator_field_conflict','private',field=field).diagnostic('extract_polygon_rings',1) is None
+    original=OperatorInputError('operator_geometry_invalid','private').diagnostic('extract_polygon_rings',2)
+    assert original['operator']=={'node_index':2,'operator_id':'extract_polygon_rings','parameter':'input_gdf'}
+    for field in ['source_id','',None,[],True]:
+        value=copy.deepcopy(original);value['operator']['field']=field
+        assert validated_operator_diagnostic(value) is None
+
+
+@pytest.mark.parametrize('reason,field', [('operator_field_conflict','ring_id'),('operator_geometry_invalid','')])
+def test_ring_diagnostic_uses_definition_position_and_stops_before_save(reason,field):
+    from addp_common.workflow_runtime import OperatorInputError
+    tasks=[{'id':'private-ring','operator':'extract_polygon_rings','params':{},'depends_on':['load']},
+           {'id':'load','operator':'load','params':{},'depends_on':[]},
+           {'id':'save','operator':'save','params':{},'depends_on':['private-ring']}]
+    calls=[]
+    def execute(op,params):
+        calls.append(op)
+        if op=='extract_polygon_rings':raise OperatorInputError(reason,'private GEOS/password',field=field)
+        return {'previous':'kept'}
+    with pytest.raises(WorkflowExecutionError) as failure:
+        WorkflowRunner({'load','extract_polygon_rings','save'},execute).execute({'tasks':tasks})
+    assert calls==['load','extract_polygon_rings']
+    assert failure.value.all_results=={'load':{'previous':'kept'}}
+    diagnostic=failure.value.diagnostic
+    assert diagnostic['operator']['node_index']==1 and diagnostic['reason']==reason
+    assert diagnostic['operator'].get('field','')==field

@@ -204,3 +204,29 @@ func TestOperatorFailureObservationRoundTripRejectsRawContext(t *testing.T) {
 		}
 	}
 }
+
+func TestPolygonRingObservationRetainsOnlyConfirmedContractFacts(t *testing.T) {
+	for _, field := range []string{"source_id", "part_no", "ring_no", "ring_id", "is_hole", ""} {
+		reason := "operator_field_conflict"
+		operator := map[string]interface{}{"node_index": 2, "operator_id": "extract_polygon_rings", "parameter": "input_gdf"}
+		if field == "" {
+			reason = "operator_geometry_invalid"
+		} else {
+			operator["field"] = field
+		}
+		diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": reason, "operator": operator}
+		item := &execution.TaskExecution{Status: "failed", ErrorDetails: models.JSONMap{"message": "private-id /private/path password=secret GEOS", "diagnostic": diagnostic}}
+		observed := execution.Observe(item).ErrorDetails
+		if observed["diagnostic"] == nil {
+			t.Fatalf("lost ring diagnostic %s", field)
+		}
+		encoded, _ := json.Marshal(observed)
+		if strings.Contains(string(encoded), "private") || strings.Contains(string(encoded), "secret") || strings.Contains(string(encoded), "GEOS") {
+			t.Fatal("private context leaked")
+		}
+		operator["field"] = "private"
+		if execution.Observe(item).ErrorDetails["diagnostic"] != nil {
+			t.Fatal("accepted private column")
+		}
+	}
+}

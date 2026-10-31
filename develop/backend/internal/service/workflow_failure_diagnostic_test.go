@@ -38,3 +38,31 @@ func TestWorkflowParameterDiagnosticRequiresMatchingFrozenDefinition(t *testing.
 		}
 	}
 }
+
+func TestPolygonRingDiagnosticBindsFrozenDefinitionAndRejectsForgedContext(t *testing.T) {
+	for _, reason := range []string{"operator_field_conflict", "operator_geometry_invalid"} {
+		operator := map[string]interface{}{"node_index": 2, "operator_id": "extract_polygon_rings", "parameter": "input_gdf"}
+		if reason == "operator_field_conflict" {
+			operator["field"] = "ring_id"
+		}
+		diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": reason, "operator": operator}
+		raw := map[string]interface{}{"runtime_status": map[string]interface{}{"status": "failed", "error_code": "INVALID_PARAMS", "diagnostic": diagnostic}}
+		definition := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"operator": "load"}, map[string]interface{}{"operator": "extract_polygon_rings"}}}
+		result := executionFailureDetails("workflow", "execution_failed", "private GEOS password", raw, definition)
+		if result["code"] != "develop.workflow.invalid_params" || result["diagnostic"] == nil {
+			t.Fatalf("lost ring binding: %+v", result)
+		}
+		for _, invalid := range []map[string]interface{}{
+			{"node_index": 1, "operator_id": "extract_polygon_rings", "parameter": "input_gdf", "field": "ring_id"},
+			{"node_index": 2, "operator_id": "extract_polygon_rings", "parameter": "input_gdf", "field": "private"},
+			{"node_index": 2, "operator_id": "extract_polygon_rings", "parameter": "reference_gdf", "field": "ring_id"},
+			{"node_index": 2, "operator_id": "distance_to", "parameter": "input_gdf", "field": "ring_id"},
+		} {
+			diagnostic["operator"] = invalid
+			rejected := executionFailureDetails("workflow", "execution_failed", "private GEOS", raw, definition)
+			if rejected["diagnostic"] != nil || rejected["code"] != "develop.workflow.execution_failed" {
+				t.Fatal("trusted forged ring context")
+			}
+		}
+	}
+}

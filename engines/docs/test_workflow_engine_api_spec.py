@@ -155,12 +155,12 @@ def test_typed_operator_diagnostic_spec_matches_the_single_runtime_contract():
     props = diagnostic['properties']
     assert props['schema_version']['enum'] == ['addp.execution-failure/v3']
     assert props['stage']['enum'] == ['execution']
-    assert set(props['reason']['enum']) == {reason for _, reason in OPERATOR_INPUT_RULES}
-    assert diagnostic['x-addp-operator-input-rules'] == [[op, reason, *value] for (op, reason), value in OPERATOR_INPUT_RULES.items()]
+    assert set(props['reason']['enum']) == {reason for _, reason, _ in OPERATOR_INPUT_RULES}
+    assert diagnostic['x-addp-operator-input-rules'] == [[op, reason, parameter, field] for (op, reason, field), parameter in OPERATOR_INPUT_RULES.items()]
     context = props['operator']
     assert context['additionalProperties'] is False
     assert context['required'] == ['node_index', 'operator_id']
-    assert context['properties']['field']['enum'] == ['distance']
+    assert context['properties']['field']['enum'] == ['distance', 'source_id', 'part_no', 'ring_no', 'ring_id', 'is_hole']
     assert context['properties']['node_index']['minimum'] == 1
     assert context['properties']['node_index']['maximum'] == 65535
     assert spec['ExecutionStatusResponse']['properties']['diagnostic'] == {'$ref':'#/components/schemas/WorkflowInputDiagnostic'}

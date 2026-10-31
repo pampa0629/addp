@@ -13,21 +13,21 @@ func TestWorkflowInputDiagnosticMatchesCanonicalLanguageContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pattern := regexp.MustCompile(`\('([^']+)', '([^']+)'\): \('([^']*)', '([^']*)'\)`)
+	pattern := regexp.MustCompile(`\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'`)
 	tuples := pattern.FindAllStringSubmatch(string(source), -1)
-	if len(tuples) != 11 {
+	if len(tuples) != 17 {
 		t.Fatalf("rules=%d", len(tuples))
 	}
 	valid := map[string]bool{}
 	reasons := map[string]bool{}
 	for _, r := range tuples {
-		valid[strings.Join(r[1:], "|")] = true
+		valid[strings.Join([]string{r[1], r[2], r[4], r[3]}, "|")] = true
 		reasons[r[2]] = true
 	}
-	for _, op := range []string{"batch_buffer", "distance_to", "check_line_proximity", "foreign"} {
+	for _, op := range []string{"batch_buffer", "distance_to", "check_line_proximity", "extract_polygon_rings", "foreign"} {
 		for reason := range reasons {
 			for _, parameter := range []string{"", "input_gdf", "reference_gdf", "distances", "resolution", "tolerance", "private"} {
-				for _, field := range []string{"", "distance", "private"} {
+				for _, field := range []string{"", "distance", "source_id", "part_no", "ring_no", "ring_id", "is_hole", "private"} {
 					context := &WorkflowOperatorFailure{NodeIndex: 2, OperatorID: op, Parameter: parameter, Field: field}
 					want := valid[strings.Join([]string{op, reason, parameter, field}, "|")]
 					if context.Valid(reason) != want {

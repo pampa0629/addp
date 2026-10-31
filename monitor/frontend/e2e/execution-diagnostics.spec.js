@@ -413,15 +413,31 @@ for (const locale of ['zh-cn', 'en']) test(`shows actionable create conflict in 
 })
 
 
-for (const locale of ['zh-cn','en']) test(`workflow operator diagnostic uses the shared panel in Monitor (${locale})`,async({page})=>{
+for (const locale of ['zh-cn','en']) for (const [operator_id,reason,field] of [
+  ['batch_buffer','operator_field_conflict','distance'],
+  ...['source_id','part_no','ring_no','ring_id','is_hole'].map(field=>['extract_polygon_rings','operator_field_conflict',field]),
+  ['extract_polygon_rings','operator_geometry_invalid','']
+]) test(`workflow operator diagnostic uses the shared panel in Monitor (${operator_id}, ${reason}, ${field}, ${locale})`,async({page})=>{
+  await page.addInitScript(()=>{window.copiedDiagnostic='';Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedDiagnostic=text}},configurable:true})})
   await installBackend(page,{locale,empty:true,targetExists:true,errorDetails:{category:'execution_failed',code:'develop.workflow.invalid_params',message:'private-password',
-    diagnostic:{schema_version:'addp.execution-failure/v3',stage:'execution',reason:'operator_field_conflict',
-      operator:{node_index:2,operator_id:'batch_buffer',parameter:'input_gdf',field:'distance'}}}})
+    diagnostic:{schema_version:'addp.execution-failure/v3',stage:'execution',reason,
+      operator:{node_index:2,operator_id,parameter:'input_gdf',...(field?{field}:{})}}}})
   await page.goto('/executions?execution_id=diagnostic-run')
   const panel=page.locator('.execution-detail-content > .execution-failure')
-  await expect(panel).toContainText(locale==='zh-cn'?'多距缓冲':'Multi-distance buffer')
-  await expect(panel).toContainText('distance')
+  const name=operator_id==='batch_buffer'?(locale==='zh-cn'?'多距缓冲':'Multi-distance buffer'):(locale==='zh-cn'?'面界提取':'Extract polygon rings')
+  await expect(panel).toContainText(name)
+  if(field) await expect(panel).toContainText(field)
+  else {
+    await expect(panel).toContainText(locale==='zh-cn'?'未通过有效性检查':'failed the validity check')
+    await expect(panel).toContainText(locale==='zh-cn'?'显式修复':'explicitly repair')
+  }
   await expect(panel).toContainText(locale==='zh-cn'?'定义中的第 2 个节点':'Node 2 in the workflow definition')
   await expect(panel).toContainText('develop.workflow.invalid_params')
   await expect(panel).not.toContainText('private-password')
+  await panel.getByRole('button',{name:locale==='zh-cn'?'复制诊断信息':'Copy diagnostics',exact:true}).click()
+  const copied=await page.evaluate(()=>window.copiedDiagnostic)
+  expect(copied).toContain(name)
+  expect(copied).toContain('diagnostic-run')
+  if(field) expect(copied).toContain(field)
+  expect(copied).not.toContain('private-password')
 })

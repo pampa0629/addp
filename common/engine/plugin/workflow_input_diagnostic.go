@@ -27,6 +27,17 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 	}
 	parameter, field, ok := "", "", false
 	switch o.OperatorID {
+	case "extract_polygon_rings":
+		parameter = "input_gdf"
+		switch reason {
+		case "operator_geometry_invalid":
+			ok = true
+		case "operator_field_conflict":
+			switch o.Field {
+			case "source_id", "part_no", "ring_no", "ring_id", "is_hole":
+				field, ok = o.Field, true
+			}
+		}
 	case "batch_buffer":
 		switch reason {
 		case "operator_input_invalid":

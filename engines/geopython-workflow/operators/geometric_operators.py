@@ -557,19 +557,32 @@ def merge_line_chains(input_gdf: gpd.GeoDataFrame, id_field: str, match_fields: 
     return {"result": result, "members": members}
 
 
+class PolygonRingInputError(ValueError):
+    """Confirmed ring admission facts; the adapter owns public diagnostics."""
+    def __init__(self, code, field=""):
+        self.code, self.field = code, field
+        messages = {
+            'field_conflict': 'output columns source_id, part_no, ring_no, ring_id and is_hole must not overwrite source fields',
+            'geometry_invalid': 'input_gdf requires non-empty valid polygons; repair explicitly before extraction',
+        }
+        super().__init__(messages[code])
+
+
 def extract_polygon_rings(input_gdf: gpd.GeoDataFrame, id_field: str) -> gpd.GeoDataFrame:
     """Extract original exterior/interior rings with their unmerged source attributes."""
     geometry = _finite_xy_geometry(input_gdf)
     ids = _source_identifiers(input_gdf, id_field)
     reserved = ("source_id", "part_no", "ring_no", "ring_id", "is_hole")
-    if any(field in input_gdf.columns for field in reserved):
-        raise ValueError("output columns source_id, part_no, ring_no, ring_id and is_hole must not overwrite source fields")
+    for field in reserved:
+        if field in input_gdf.columns:
+            raise PolygonRingInputError("field_conflict", field)
     if geometry.isna().any() or not geometry.geom_type.isin(["Polygon", "MultiPolygon"]).all():
         raise ValueError("input_gdf requires non-null Polygon or MultiPolygon geometries")
     parts, source_rows = shapely.get_parts(geometry.array, return_index=True)
-    if (shapely.is_empty(geometry.array).any() or shapely.is_empty(parts).any()
-            or not shapely.is_valid(geometry.array).all()):
+    if shapely.is_empty(geometry.array).any() or shapely.is_empty(parts).any():
         raise ValueError("input_gdf requires non-empty valid polygons; repair explicitly before extraction")
+    if not shapely.is_valid(geometry.array).all():
+        raise PolygonRingInputError("geometry_invalid")
 
     rows, lines, part_numbers, ring_numbers, holes = [], [], [], [], []
     source_part_counts = np.zeros(len(input_gdf), dtype=np.int64)

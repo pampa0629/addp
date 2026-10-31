@@ -863,7 +863,7 @@ components:
           enum: [execution]
         reason:
           type: string
-          enum: [operator_input_invalid, operator_reference_invalid, operator_field_conflict, operator_geometry_field_conflict, operator_number_array_invalid, operator_positive_integer_required, operator_positive_number_required, operator_projected_crs_required, operator_crs_mismatch, operator_crs_invalid]
+          enum: [operator_input_invalid, operator_reference_invalid, operator_field_conflict, operator_geometry_field_conflict, operator_number_array_invalid, operator_positive_integer_required, operator_positive_number_required, operator_projected_crs_required, operator_crs_mismatch, operator_crs_invalid, operator_geometry_invalid]
         operator:
           type: object
           additionalProperties: false
@@ -876,13 +876,13 @@ components:
               description: 原workflow_def.tasks的1起始位置，不是拓扑调度顺序。
             operator_id:
               type: string
-              enum: [batch_buffer, distance_to, check_line_proximity]
+              enum: [batch_buffer, distance_to, check_line_proximity, extract_polygon_rings]
             parameter:
               type: string
               enum: [input_gdf, reference_gdf, distances, resolution, tolerance]
             field:
               type: string
-              enum: [distance]
+              enum: [distance, source_id, part_no, ring_no, ring_id, is_hole]
       x-addp-operator-input-rules:
         - ["batch_buffer", "operator_input_invalid", "input_gdf", ""]
         - ["batch_buffer", "operator_field_conflict", "input_gdf", "distance"]
@@ -895,6 +895,12 @@ components:
         - ["check_line_proximity", "operator_input_invalid", "input_gdf", ""]
         - ["check_line_proximity", "operator_reference_invalid", "reference_gdf", ""]
         - ["check_line_proximity", "operator_crs_invalid", "", ""]
+        - ["extract_polygon_rings", "operator_field_conflict", "input_gdf", "source_id"]
+        - ["extract_polygon_rings", "operator_field_conflict", "input_gdf", "part_no"]
+        - ["extract_polygon_rings", "operator_field_conflict", "input_gdf", "ring_no"]
+        - ["extract_polygon_rings", "operator_field_conflict", "input_gdf", "ring_id"]
+        - ["extract_polygon_rings", "operator_field_conflict", "input_gdf", "is_hole"]
+        - ["extract_polygon_rings", "operator_geometry_invalid", "input_gdf", ""]
       x-addp-constraints:
         - 只允许共享算子/原因/参数白名单组合；field仅两类冲突原因允许。
         - 未定位一侧的CRS错误不提供parameter；不推断整个DAG无输出或无副作用。

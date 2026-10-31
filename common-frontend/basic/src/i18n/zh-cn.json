@@ -236,7 +236,8 @@
         "operator_positive_number_required": "容差必须为以源坐标系水平单位表示的有限正数。",
         "operator_projected_crs_required": "两个输入均须具有已知投影坐标系及匹配的有限正水平线性单位。",
         "operator_crs_mismatch": "两个输入的投影坐标系不同。",
-        "operator_crs_invalid": "两个图层须使用相同的已知投影坐标系和匹配的水平单位。"
+        "operator_crs_invalid": "两个图层须使用相同的已知投影坐标系和匹配的水平单位。",
+        "operator_geometry_invalid": "输入图层包含未通过有效性检查的几何。"
       },
       "actions": {
         "configuration_missing": "重新发起执行；若仍失败，请联系管理员检查执行配置生成过程。",
@@ -288,7 +289,8 @@
         "operator_positive_number_required": "按源坐标系单位设置有限且大于零的容差后重新执行，不自动换算为米。",
         "operator_projected_crs_required": "先显式重投影到符合要求的同一投影坐标系，再重新执行。",
         "operator_crs_mismatch": "先显式统一两个输入的投影坐标系；不能仅因单位相同就直接计算。",
-        "operator_crs_invalid": "先显式统一两个图层的投影坐标系与水平单位，再重新执行。"
+        "operator_crs_invalid": "先显式统一两个图层的投影坐标系与水平单位，再重新执行。",
+        "operator_geometry_invalid": "先运行几何检查，确认问题后显式修复；修复结果须满足算子说明，再提交新的执行。"
       },
       "write": "写入字段",
       "writeColumn": "本次写入第 {column_index} 列（声明类型：{declared_type}）",
@@ -302,7 +304,8 @@
       "operatorNames": {
         "batch_buffer": "多距缓冲",
         "distance_to": "距离计算",
-        "check_line_proximity": "近接检查"
+        "check_line_proximity": "近接检查",
+        "extract_polygon_rings": "面界提取"
       },
       "operatorParameters": {
         "input_gdf": "源图层（input_gdf）",

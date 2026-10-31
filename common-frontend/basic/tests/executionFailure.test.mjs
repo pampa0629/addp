@@ -134,9 +134,9 @@ test('protection refusals remain distinct from data permissions without exposing
 
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
-  const canonical = [...source.matchAll(/\('([^']+)', '([^']+)'\): \('([^']*)', '([^']*)'\)/g)].map(match => match.slice(1))
-  assert.equal(canonical.length, 11)
-  const actual = Object.entries(operatorInputRules).flatMap(([op, rules]) => Object.entries(rules).map(([reason, rule]) => [op, reason, ...rule]))
+  const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
+  assert.equal(canonical.length, 17)
+  const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
     const operator = { node_index: 2, operator_id, ...(parameter ? { parameter } : {}), ...(field ? { field } : {}) }
@@ -178,5 +178,21 @@ test('controlled input messages distinguish ordinary and active geometry conflic
       assert.doesNotMatch(JSON.stringify(presentation), /private/)
     }
     assert.notEqual(messages.reasons.operator_field_conflict, messages.reasons.operator_geometry_field_conflict)
+  }
+})
+
+test('ring diagnostics provide controlled bilingual reasons and explicit repair guidance', () => {
+  for (const locale of ['zh-cn','en']) {
+    const messages=JSON.parse(read(`../src/i18n/${locale}.json`)).common.executionFailure
+    const translate=(key,params={})=>key.replace('common.executionFailure.','').split('.').reduce((node,part)=>node[part],messages).replace(/\{(\w+)\}/g,(_,key)=>params[key])
+    for(const field of ['source_id','part_no','ring_no','ring_id','is_hole','']) {
+      const reason=field?'operator_field_conflict':'operator_geometry_invalid'
+      const diagnostic={schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:2,operator_id:'extract_polygon_rings',parameter:'input_gdf',...(field?{field}:{})}}
+      const presentation=executionFailurePresentation({diagnostic,message:'private GEOS /path source-id'},translate)
+      assert.equal(presentation.operator,locale==='zh-cn'?'面界提取':'Extract polygon rings')
+      if(field) { assert.ok(presentation.reason.includes(field));assert.match(presentation.action,locale==='zh-cn'?/重命名/:/[Rr]ename/) }
+      else { assert.match(presentation.reason,locale==='zh-cn'?/未通过有效性检查/:/failed the validity check/);assert.match(presentation.action,locale==='zh-cn'?/显式修复/:/explicitly repair/);assert.equal(presentation.field,'') }
+      assert.doesNotMatch(JSON.stringify(presentation),/private|GEOS|source-id/)
+    }
   }
 })

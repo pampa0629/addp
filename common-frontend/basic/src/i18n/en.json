@@ -236,7 +236,8 @@
         "operator_positive_number_required": "Tolerance must be a finite positive number in the source CRS horizontal units.",
         "operator_projected_crs_required": "Both inputs require known projected CRSs with matching finite positive horizontal linear units.",
         "operator_crs_mismatch": "The input projected CRSs differ.",
-        "operator_crs_invalid": "Both layers require the same known projected CRS and matching horizontal units."
+        "operator_crs_invalid": "Both layers require the same known projected CRS and matching horizontal units.",
+        "operator_geometry_invalid": "The input layer contains geometry that failed the validity check."
       },
       "actions": {
         "configuration_missing": "Start a new execution. If it fails again, ask an administrator to check configuration preparation.",
@@ -288,7 +289,8 @@
         "operator_positive_number_required": "Set a finite positive tolerance in source CRS units; it is not converted to metres automatically.",
         "operator_projected_crs_required": "Explicitly reproject both inputs to the same suitable projected CRS before submitting a new execution.",
         "operator_crs_mismatch": "Explicitly align the projected CRSs; equal units alone do not make the CRSs equivalent.",
-        "operator_crs_invalid": "Explicitly align both projected CRSs and horizontal units before submitting a new execution."
+        "operator_crs_invalid": "Explicitly align both projected CRSs and horizontal units before submitting a new execution.",
+        "operator_geometry_invalid": "Run geometry checks first, explicitly repair confirmed issues, and verify the result meets the operator requirements before submitting a new execution."
       },
       "write": "Write column",
       "writeColumn": "Write column {column_index} (declared type: {declared_type})",
@@ -302,7 +304,8 @@
       "operatorNames": {
         "batch_buffer": "Multi-distance buffer",
         "distance_to": "Distance calculation",
-        "check_line_proximity": "Line proximity check"
+        "check_line_proximity": "Line proximity check",
+        "extract_polygon_rings": "Extract polygon rings"
       },
       "operatorParameters": {
         "input_gdf": "Source layer (input_gdf)",

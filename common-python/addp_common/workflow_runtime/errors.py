@@ -18,34 +18,43 @@ class WorkflowExecutionError(RuntimeError):
 
 # Closed protocol tuples; never classify arbitrary exception text as input errors.
 OPERATOR_INPUT_RULES = {
-    ('batch_buffer', 'operator_input_invalid'): ('input_gdf', ''),
-    ('batch_buffer', 'operator_field_conflict'): ('input_gdf', 'distance'),
-    ('batch_buffer', 'operator_number_array_invalid'): ('distances', ''),
-    ('batch_buffer', 'operator_positive_integer_required'): ('resolution', ''),
-    ('distance_to', 'operator_geometry_field_conflict'): ('input_gdf', 'distance'),
-    ('distance_to', 'operator_projected_crs_required'): ('', ''),
-    ('distance_to', 'operator_crs_mismatch'): ('', ''),
-    ('check_line_proximity', 'operator_positive_number_required'): ('tolerance', ''),
-    ('check_line_proximity', 'operator_input_invalid'): ('input_gdf', ''),
-    ('check_line_proximity', 'operator_reference_invalid'): ('reference_gdf', ''),
-    ('check_line_proximity', 'operator_crs_invalid'): ('', ''),
+    ('batch_buffer', 'operator_input_invalid', ''): 'input_gdf',
+    ('batch_buffer', 'operator_field_conflict', 'distance'): 'input_gdf',
+    ('batch_buffer', 'operator_number_array_invalid', ''): 'distances',
+    ('batch_buffer', 'operator_positive_integer_required', ''): 'resolution',
+    ('distance_to', 'operator_geometry_field_conflict', 'distance'): 'input_gdf',
+    ('distance_to', 'operator_projected_crs_required', ''): '',
+    ('distance_to', 'operator_crs_mismatch', ''): '',
+    ('check_line_proximity', 'operator_positive_number_required', ''): 'tolerance',
+    ('check_line_proximity', 'operator_input_invalid', ''): 'input_gdf',
+    ('check_line_proximity', 'operator_reference_invalid', ''): 'reference_gdf',
+    ('check_line_proximity', 'operator_crs_invalid', ''): '',
+    ('extract_polygon_rings', 'operator_field_conflict', 'source_id'): 'input_gdf',
+    ('extract_polygon_rings', 'operator_field_conflict', 'part_no'): 'input_gdf',
+    ('extract_polygon_rings', 'operator_field_conflict', 'ring_no'): 'input_gdf',
+    ('extract_polygon_rings', 'operator_field_conflict', 'ring_id'): 'input_gdf',
+    ('extract_polygon_rings', 'operator_field_conflict', 'is_hole'): 'input_gdf',
+    ('extract_polygon_rings', 'operator_geometry_invalid', ''): 'input_gdf',
 }
 
 
 class OperatorInputError(ValueError):
     """A known admission fact; the runner binds its actual node and operator."""
 
-    def __init__(self, reason, message):
+    def __init__(self, reason, message, *, field=""):
         super().__init__(message)
-        if reason not in {reason for _, reason in OPERATOR_INPUT_RULES}:
+        if reason not in {reason for _, reason, _ in OPERATOR_INPUT_RULES}:
             raise ValueError('unsupported operator input reason')
         self.reason = reason
+        self.field = field
 
     def diagnostic(self, operator_id, node_index):
-        rule = OPERATOR_INPUT_RULES.get((operator_id, self.reason))
+        if not isinstance(self.field, str):
+            return None
+        rule = OPERATOR_INPUT_RULES.get((operator_id, self.reason, self.field))
         if rule is None or type(node_index) is not int or not 1 <= node_index <= 65535:
             return None
-        parameter, field = rule
+        parameter, field = rule, self.field
         context = {'node_index': node_index, 'operator_id': operator_id}
         if parameter: context['parameter'] = parameter
         if field: context['field'] = field
@@ -64,9 +73,11 @@ def validated_operator_diagnostic(value):
     if type(context['node_index']) is not int or not 1 <= context['node_index'] <= 65535:
         return None
     if not isinstance(context['operator_id'], str) or not isinstance(value['reason'], str): return None
-    rule = OPERATOR_INPUT_RULES.get((context['operator_id'], value['reason']))
+    field = context.get('field', '')
+    if not isinstance(field, str): return None
+    rule = OPERATOR_INPUT_RULES.get((context['operator_id'], value['reason'], field))
     if rule is None: return None
-    parameter, field = rule
+    parameter = rule
     expected = {'node_index': context['node_index'], 'operator_id': context['operator_id']}
     if parameter: expected['parameter'] = parameter
     if field: expected['field'] = field

@@ -1157,12 +1157,14 @@ def test_multi_distance_buffer_public_workflow_language_metadata_and_context(mon
     ('check_line_proximity','source','operator_input_invalid','input_gdf',''),
     ('check_line_proximity','reference','operator_reference_invalid','reference_gdf',''),
     ('check_line_proximity','crs','operator_crs_invalid','',''),
+    *[('extract_polygon_rings','field_conflict','operator_field_conflict','input_gdf',field) for field in ['source_id','part_no','ring_no','ring_id','is_hole']],
+    ('extract_polygon_rings','geometry_invalid','operator_geometry_invalid','input_gdf',''),
 ])
 def test_operator_input_diagnostic_survives_async_http_snapshot(monkeypatch, language, operator, code, reason, parameter, field):
     import json
     import time
     import geopandas as gpd
-    from shapely.geometry import Point, LineString
+    from shapely.geometry import Point, LineString, Polygon
     import api_server
     from addp_common.workflow_runtime import ExecutionRegistry
     from workflow_engine import GeoPythonWorkflowRunner
@@ -1180,6 +1182,11 @@ def test_operator_input_diagnostic_survives_async_http_snapshot(monkeypatch, lan
         if code == 'geometry_column_conflict': params['input_gdf'] = source.rename_geometry('distance')
         if code == 'projected_crs': params['input_gdf'] = source.set_crs(4326,allow_override=True)
         if code == 'crs_mismatch': params['target_geom'] = target.set_crs(3395,allow_override=True)
+    elif operator == 'extract_polygon_rings':
+        shape = Polygon([(0,0),(2,2),(0,2),(2,0),(0,0)]) if code == 'geometry_invalid' else Polygon([(0,0),(2,0),(0,2),(0,0)])
+        source = gpd.GeoDataFrame({'key':['private-id']},geometry=[shape],crs=3857)
+        if field: source[field] = ['private-value']
+        params = {'input_gdf':source,'id_field':'key'}
     else:
         source = gpd.GeoDataFrame({'key':['s']},geometry=[LineString([(0,0),(1,0)])],crs=3857)
         target = gpd.GeoDataFrame({'key':['r']},geometry=[LineString([(0,1),(1,1)])],crs=3857)
@@ -1225,4 +1232,14 @@ def test_operator_numerical_failure_remains_execution_failure(monkeypatch):
     monkeypatch.setattr(workflow_engine,'_execute_workflow_operator',numerical_failure)
     with pytest.raises(WorkflowExecutionError) as caught:
         workflow_engine.GeoPythonWorkflowRunner().execute({'tasks':[{'id':'check','operator':'check_line_proximity','params':{},'depends_on':[]}]})
+    assert caught.value.error_code=='EXECUTION_FAILED' and caught.value.diagnostic is None
+
+
+def test_ring_unexpected_value_error_is_not_a_parameter_diagnostic(monkeypatch):
+    import workflow_engine
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    def unexpected(*args):raise ValueError('operator_geometry_invalid private GEOS error')
+    monkeypatch.setattr(workflow_engine,'_execute_workflow_operator',unexpected)
+    with pytest.raises(WorkflowExecutionError) as caught:
+        workflow_engine.GeoPythonWorkflowRunner().execute({'tasks':[{'id':'private','operator':'extract_polygon_rings','params':{},'depends_on':[]}]})
     assert caught.value.error_code=='EXECUTION_FAILED' and caught.value.diagnostic is None

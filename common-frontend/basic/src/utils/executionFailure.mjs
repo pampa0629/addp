@@ -9,7 +9,7 @@ export const failureReasons = Object.freeze([
   'target_exists',
   'operator_input_invalid', 'operator_reference_invalid', 'operator_field_conflict', 'operator_geometry_field_conflict',
   'operator_number_array_invalid', 'operator_positive_integer_required', 'operator_positive_number_required',
-  'operator_projected_crs_required', 'operator_crs_mismatch', 'operator_crs_invalid',
+  'operator_projected_crs_required', 'operator_crs_mismatch', 'operator_crs_invalid', 'operator_geometry_invalid',
   'timeout', 'cancelled', 'resource_exhausted', 'query_failed', 'result_invalid', 'database_required', 'data_protection_required', 'local_read_unsupported',
   'protection_computed_output_unsupported', 'protection_lineage_unverified', 'protection_role_choice_unavailable', 'protection_not_ready',
   'protection_expired', 'protection_not_yet_valid', 'protection_schema_mismatch', 'protection_operation_unsupported'
@@ -51,13 +51,25 @@ export function executionFailurePresentation(details, translate) {
   }
 }
 
-export const operatorInputRules = Object.freeze({
-  batch_buffer: { operator_input_invalid:['input_gdf',''], operator_field_conflict:['input_gdf','distance'],
-    operator_number_array_invalid:['distances',''], operator_positive_integer_required:['resolution',''] },
-  distance_to: { operator_geometry_field_conflict:['input_gdf','distance'], operator_projected_crs_required:['',''], operator_crs_mismatch:['',''] },
-  check_line_proximity: { operator_positive_number_required:['tolerance',''], operator_input_invalid:['input_gdf',''],
-    operator_reference_invalid:['reference_gdf',''], operator_crs_invalid:['',''] }
-})
+export const operatorInputRules = Object.freeze([
+  ["batch_buffer", "operator_input_invalid", "input_gdf", ""],
+  ["batch_buffer", "operator_field_conflict", "input_gdf", "distance"],
+  ["batch_buffer", "operator_number_array_invalid", "distances", ""],
+  ["batch_buffer", "operator_positive_integer_required", "resolution", ""],
+  ["distance_to", "operator_geometry_field_conflict", "input_gdf", "distance"],
+  ["distance_to", "operator_projected_crs_required", "", ""],
+  ["distance_to", "operator_crs_mismatch", "", ""],
+  ["check_line_proximity", "operator_positive_number_required", "tolerance", ""],
+  ["check_line_proximity", "operator_input_invalid", "input_gdf", ""],
+  ["check_line_proximity", "operator_reference_invalid", "reference_gdf", ""],
+  ["check_line_proximity", "operator_crs_invalid", "", ""],
+  ["extract_polygon_rings", "operator_field_conflict", "input_gdf", "source_id"],
+  ["extract_polygon_rings", "operator_field_conflict", "input_gdf", "part_no"],
+  ["extract_polygon_rings", "operator_field_conflict", "input_gdf", "ring_no"],
+  ["extract_polygon_rings", "operator_field_conflict", "input_gdf", "ring_id"],
+  ["extract_polygon_rings", "operator_field_conflict", "input_gdf", "is_hole"],
+  ["extract_polygon_rings", "operator_geometry_invalid", "input_gdf", ""],
+].map(Object.freeze))
 
 function validOperatorContext(diagnostic) {
   if (!diagnostic.reason.startsWith('operator_')) return diagnostic.operator === undefined
@@ -66,11 +78,10 @@ function validOperatorContext(diagnostic) {
       !value || typeof value !== 'object' || Array.isArray(value) ||
       Object.keys(value).some(key => !['node_index','operator_id','parameter','field'].includes(key)) ||
       !Number.isInteger(value.node_index) || value.node_index < 1 || value.node_index > 65535) return false
-  const rules = Object.hasOwn(operatorInputRules, value.operator_id) ? operatorInputRules[value.operator_id] : null
-  const rule = rules && Object.hasOwn(rules, diagnostic.reason) ? rules[diagnostic.reason] : null
-  if (!rule) return false
-  return (rule[0] ? value.parameter === rule[0] : value.parameter === undefined) &&
-    (rule[1] ? value.field === rule[1] : value.field === undefined)
+  return operatorInputRules.some(([operator, reason, parameter, field]) =>
+    value.operator_id === operator && diagnostic.reason === reason &&
+    (parameter ? value.parameter === parameter : value.parameter === undefined) &&
+    (field ? value.field === field : value.field === undefined))
 }
 
 function validWriteContext(diagnostic) {
