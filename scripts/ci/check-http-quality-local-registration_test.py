@@ -13,8 +13,10 @@ class LocalHTTPRegistrationTests(unittest.TestCase):
         (self.root/'.github/workflows').mkdir(parents=True)
         for relative in ('scripts/test/monitor-http-local-gate.py','scripts/test/monitor-http-local-online.py','console/frontend/e2e/online/http-quality-local.spec.js','console/frontend/e2e/http-quality-page-support.mjs','console/frontend/e2e/online/local-identity-support.mjs','system/backend/cmd/online-test-fixture/http_quality_local.go'):
             path=self.root/relative;path.parent.mkdir(parents=True,exist_ok=True);path.write_text('owned fixture')
-        self.make='test-monitor-http-local:\n\t@python3 scripts/test/monitor-http-local-gate.py\ntest-monitor-http-local-runner:\n\t@$(MAKE) test-monitor-http-local-runner\n\t@python3 -m unittest scripts/test/monitor-http-local-gate_test.py scripts/test/monitor-http-local-online_test.py\n'
+        self.make='test-monitor-http-local:\n\t@python3 scripts/test/monitor-http-local-gate.py\ntest-monitor-http-local-runner:\n\t@command -v openssl >/dev/null\n\t@$(MAKE) test-monitor-http-local-runner\n\t@python3 -m unittest scripts/test/monitor-http-local-gate_test.py scripts/test/monitor-http-local-online_test.py\n'
         (self.root/'Makefile').write_text(self.make)
+        self.workflow='jobs:\n  platform-consistency:\n    steps:\n      - run: |\n          sudo apt-get install -y --no-install-recommends openssl\n          command -v openssl\n      - run: make test-platform\n'
+        (self.root/'.github/workflows/platform-ci.yml').write_text(self.workflow)
     def test_manual_registration_and_existing_deterministic_runner(self):
         m.validate_local_http_quality_profile(self.root)
     def test_missing_actual_entry_or_formal_identity_is_rejected(self):
@@ -27,6 +29,19 @@ class LocalHTTPRegistrationTests(unittest.TestCase):
     def test_shared_page_oracle_is_a_required_formal_input(self):
         (self.root/'console/frontend/e2e/http-quality-page-support.mjs').unlink()
         with self.assertRaises(m.RegistrationError):m.validate_local_http_quality_profile(self.root)
+
+    def test_native_tls_requires_local_admission_and_prior_ci_dependency_preparation(self):
+        for content in (self.make.replace('@command -v openssl >/dev/null','@true'),
+                self.make.replace('@command -v openssl >/dev/null\n','')+'\t@command -v openssl >/dev/null\n'):
+            (self.root/'Makefile').write_text(content)
+            with self.assertRaisesRegex(m.RegistrationError,'OpenSSL admission'):m.validate_local_http_quality_profile(self.root)
+        (self.root/'Makefile').write_text(self.make)
+        path=self.root/'.github/workflows/platform-ci.yml'
+        for content in (self.workflow.replace('sudo apt-get install -y --no-install-recommends openssl','true'),
+                self.workflow.replace('command -v openssl','true'),
+                self.workflow.replace('      - run: make test-platform\n','').replace('    steps:\n','    steps:\n      - run: make test-platform\n')):
+            path.write_text(content)
+            with self.assertRaisesRegex(m.RegistrationError,'CI preparation'):m.validate_local_http_quality_profile(self.root)
 
     def test_public_workflows_cannot_dispatch_real_local_gate(self):
         path=self.root/'.github/workflows/rejected.yml'

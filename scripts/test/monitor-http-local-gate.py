@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Manual, single-window formal Python HTTP quality acceptance; never CI/Hosted."""
 from __future__ import annotations
+from contextlib import contextmanager
 import ipaddress
 import json
 import os
@@ -123,69 +124,90 @@ def defaults(life):
     return env
 
 
+@contextmanager
+def preparation_phase(life,phase):
+    """Restore the outer stage on success only; a failure keeps its exact step."""
+    previous=life.phase
+    life.phase=phase
+    yield
+    life.phase=previous
+
+
 def tls(life,env):
     """Short-lived independent center/source/control roots; private keys never enter reports."""
-    directory=life.work/'certificates';directory.mkdir(mode=0o700)
-    def ca(name):
-        key=directory/(name+'.key');crt=directory/(name+'.crt')
-        life.command(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1',
-            '-subj','/CN=local-'+name,'-addext','basicConstraints=critical,CA:TRUE',
-            '-addext','keyUsage=critical,keyCertSign,cRLSign','-keyout',str(key),'-out',str(crt)],timeout=10)
-        return key,crt
-    def cert(name,root,usage,sans):
-        key=directory/(name+'.key');csr=directory/(name+'.csr');crt=directory/(name+'.crt')
-        ext=directory/(name+'.ext');ext.write_text('extendedKeyUsage='+usage+'\nsubjectAltName='+sans+'\n')
-        life.command(['openssl','req','-newkey','rsa:2048','-nodes','-subj','/CN='+name,
-            '-keyout',str(key),'-out',str(csr)],timeout=10)
-        life.command(['openssl','x509','-req','-in',str(csr),'-CA',str(root[1]),'-CAkey',str(root[0]),
-            '-set_serial',str(secrets.randbits(120)),'-days','1','-extfile',str(ext),'-out',str(crt)],timeout=10)
-        return key,crt
-    def copy(source,dest,mode=0o644):
-        shutil.copyfile(source,dest);dest.chmod(mode)
-    center,source,control=ca('center'),ca('source'),ca('control')
-    query=cert('query',center,'clientAuth','DNS:query')
-    health=cert('health',center,'clientAuth','DNS:health')
-    server=cert('prometheus',center,'serverAuth','DNS:prometheus,DNS:localhost')
-    collector=cert('collector',source,'clientAuth','DNS:collector')
-    admission=cert('admission',source,'clientAuth','DNS:admission')
-    proxy=cert('metrics-control',control,'serverAuth','DNS:metrics-control')
-    deployment=life.work/'metrics-deployment';deployment.mkdir(mode=0o700)
-    center_dir=life.work/'metrics-center';center_dir.mkdir(mode=0o755)
-    control_dir=life.work/'metrics-control';control_dir.mkdir(mode=0o755)
-    # UID 65534 reads only these mount trees; the enclosing host directory remains 0700.
-    for path,items in ((center_dir,{'ca.crt':center[1],'server.crt':server[1],'server.key':server[0],
-            'health.crt':health[1],'health.key':health[0]}),
-            (control_dir,{'server.crt':proxy[1],'server.key':proxy[0]}),
-            (deployment,{'control-ca.crt':control[1],'source-ca.crt':source[1],
-             'collector.crt':collector[1],'collector.key':collector[0]})):
-        for name,item in items.items():copy(item,path/name)
-    (deployment/'prometheus-client-secret').write_text(env['PROMETHEUS_SERVICE_CLIENT_SECRET'])
-    env.update(ADDP_METRICS_DEPLOYMENT_DIR=str(deployment),ADDP_METRICS_TLS_DIR=str(center_dir),
-        ADDP_METRICS_CONTROL_DIR=str(control_dir),MONITOR_PROMETHEUS_CA_FILE=str(center[1]),
-        MONITOR_PROMETHEUS_CLIENT_CERT_FILE=str(query[1]),MONITOR_PROMETHEUS_CLIENT_KEY_FILE=str(query[0]),
-        MONITOR_METRICS_CA_FILE=str(source[1]),MONITOR_METRICS_CLIENT_CERT_FILE=str(admission[1]),
-        MONITOR_METRICS_CLIENT_KEY_FILE=str(admission[0]))
-    declarations=[]
-    for i,(module,address) in enumerate(life.addresses.items()):
-        path=life.work/(module+'-source');path.mkdir(mode=0o700)
-        pair=cert(module,source,'serverAuth','IP:'+address)
-        for name,item in {'ca.crt':source[1],'server.crt':pair[1],'server.key':pair[0]}.items():
-            copy(item,path/name,0o600 if name.endswith('.key') else 0o644)
-        declarations.append(dict(module_name=module,role='backend',listen=address+':'+str(19444+i),
-            endpoint='https://'+address+':'+str(19444+i)+'/metrics',tls_dir=str(path)))
-    env['ADDP_PROCESS_METRICS_DEPLOYMENTS']=json.dumps(declarations)
-    life.command([sys.executable,'scripts/infra/generate-metrics-config.py'],env=env)
-    life.command([sys.executable,'scripts/prod/generate-process-metrics-platform.py'],env=env)
-    # The generated Prometheus config and public certificates must be readable by its product UID.
-    deployment.chmod(0o755)
+    with preparation_phase(life,'http_tls_materials'):
+        directory=life.work/'certificates';directory.mkdir(mode=0o700)
+        config=directory/'openssl.cnf'
+        with open(config,'x',opener=lambda path,flags:os.open(path,flags,0o600)) as stream:
+            stream.write('[req]\nprompt = no\ndistinguished_name = dn\n[dn]\n')
+        openssl_env={**life.env,'OPENSSL_CONF':str(config)}
+        def openssl(step,args):
+            with preparation_phase(life,'http_tls_'+step.replace('-','_')):
+                return life.command(['openssl',*args],env=openssl_env,timeout=10)
+        def ca(name):
+            key=directory/(name+'.key');crt=directory/(name+'.crt')
+            openssl('ca_'+name,['req','-config',str(config),'-x509','-newkey','rsa:2048','-nodes','-days','1',
+                '-subj','/CN=local-'+name,'-addext','basicConstraints=critical,CA:TRUE',
+                '-addext','keyUsage=critical,keyCertSign,cRLSign','-keyout',str(key),'-out',str(crt)])
+            return key,crt
+        def cert(name,root,usage,sans):
+            key=directory/(name+'.key');csr=directory/(name+'.csr');crt=directory/(name+'.crt')
+            ext=directory/(name+'.ext');ext.write_text('extendedKeyUsage='+usage+'\nsubjectAltName='+sans+'\n')
+            openssl('csr_'+name,['req','-config',str(config),'-newkey','rsa:2048','-nodes','-subj','/CN='+name,
+                '-keyout',str(key),'-out',str(csr)])
+            openssl('sign_'+name,['x509','-req','-in',str(csr),'-CA',str(root[1]),'-CAkey',str(root[0]),
+                '-set_serial',str(secrets.randbits(120)),'-days','1','-extfile',str(ext),'-out',str(crt)])
+            return key,crt
+        def copy(source,dest,mode=0o644):
+            shutil.copyfile(source,dest);dest.chmod(mode)
+        center,source,control=ca('center'),ca('source'),ca('control')
+        query=cert('query',center,'clientAuth','DNS:query')
+        health=cert('health',center,'clientAuth','DNS:health')
+        server=cert('prometheus',center,'serverAuth','DNS:prometheus,DNS:localhost')
+        collector=cert('collector',source,'clientAuth','DNS:collector')
+        admission=cert('admission',source,'clientAuth','DNS:admission')
+        proxy=cert('metrics-control',control,'serverAuth','DNS:metrics-control')
+        deployment=life.work/'metrics-deployment';deployment.mkdir(mode=0o700)
+        center_dir=life.work/'metrics-center';center_dir.mkdir(mode=0o755)
+        control_dir=life.work/'metrics-control';control_dir.mkdir(mode=0o755)
+        # UID 65534 reads only these mount trees; the enclosing host directory remains 0700.
+        for path,items in ((center_dir,{'ca.crt':center[1],'server.crt':server[1],'server.key':server[0],
+                'health.crt':health[1],'health.key':health[0]}),
+                (control_dir,{'server.crt':proxy[1],'server.key':proxy[0]}),
+                (deployment,{'control-ca.crt':control[1],'source-ca.crt':source[1],
+                 'collector.crt':collector[1],'collector.key':collector[0]})):
+            for name,item in items.items():copy(item,path/name)
+        (deployment/'prometheus-client-secret').write_text(env['PROMETHEUS_SERVICE_CLIENT_SECRET'])
+        env.update(ADDP_METRICS_DEPLOYMENT_DIR=str(deployment),ADDP_METRICS_TLS_DIR=str(center_dir),
+            ADDP_METRICS_CONTROL_DIR=str(control_dir),MONITOR_PROMETHEUS_CA_FILE=str(center[1]),
+            MONITOR_PROMETHEUS_CLIENT_CERT_FILE=str(query[1]),MONITOR_PROMETHEUS_CLIENT_KEY_FILE=str(query[0]),
+            MONITOR_METRICS_CA_FILE=str(source[1]),MONITOR_METRICS_CLIENT_CERT_FILE=str(admission[1]),
+            MONITOR_METRICS_CLIENT_KEY_FILE=str(admission[0]))
+        declarations=[]
+        for i,(module,address) in enumerate(life.addresses.items()):
+            path=life.work/(module+'-source');path.mkdir(mode=0o700)
+            pair=cert(module,source,'serverAuth','IP:'+address)
+            for name,item in {'ca.crt':source[1],'server.crt':pair[1],'server.key':pair[0]}.items():
+                copy(item,path/name,0o600 if name.endswith('.key') else 0o644)
+            declarations.append(dict(module_name=module,role='backend',listen=address+':'+str(19444+i),
+                endpoint='https://'+address+':'+str(19444+i)+'/metrics',tls_dir=str(path)))
+        env['ADDP_PROCESS_METRICS_DEPLOYMENTS']=json.dumps(declarations)
+        with preparation_phase(life,'http_metrics_config_render'):
+            life.command([sys.executable,'scripts/infra/generate-metrics-config.py'],env=env)
+        with preparation_phase(life,'http_process_metrics_render'):
+            life.command([sys.executable,'scripts/prod/generate-process-metrics-platform.py'],env=env)
+        # The generated Prometheus config and public certificates must be readable by its product UID.
+        deployment.chmod(0o755)
 
 
 def project(life,env,images):
-    infra=json.loads(life.command(['docker','compose','--env-file','/dev/null','--profile','observability-metrics',
+    with preparation_phase(life,'http_infra_compose_projection'):
+        infra=json.loads(life.command(['docker','compose','--env-file','/dev/null','--profile','observability-metrics',
         '--profile','observability-metrics-control','-f','docker-compose.infra.yml','config','--format','json'],env=env))
     files=['docker-compose.yml','scripts/prod/metrics-platform.yml','scripts/prod/metrics-query.yml',
            str(life.work/'metrics-deployment/platform-process-metrics.json')]
-    product=json.loads(life.command(['docker','compose','--env-file','/dev/null',
+    with preparation_phase(life,'http_product_compose_projection'):
+        product=json.loads(life.command(['docker','compose','--env-file','/dev/null',
         *[v for f in files for v in ('-f',f)],'config','--format','json'],env=env))
     require({'postgres','redis','prometheus','metrics-control'}<=infra.get('services',{}).keys(),
         'product_metrics_profile_services_missing')

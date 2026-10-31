@@ -4971,6 +4971,18 @@ def validate_local_http_quality_profile(repository: Path) -> None:
                    "scripts/test/monitor-http-local-gate_test.py", "scripts/test/monitor-http-local-online_test.py"):
         if marker not in make:
             raise RegistrationError("local HTTP quality requires manual entry and deterministic lifecycle registration")
+    commands=make_target_commands(make,"test-monitor-http-local-runner")
+    probe=commands.find("command -v openssl")
+    tests=commands.find("python3 -m unittest")
+    workflow_path=repository / ".github/workflows/platform-ci.yml"
+    workflow=workflow_path.read_text() if workflow_path.is_file() else ""
+    job=re.search(r"(?ms)^  platform-consistency:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\n|\Z)",workflow)
+    body=job.group("body") if job else ""
+    install=re.search(r"(?m)^\s*sudo apt-get install[^\n]*\bopenssl\b[^\n]*$",body)
+    gate=body.find("make test-platform")
+    verify=body.find("command -v openssl")
+    if not (0<=probe<tests and install and install.end()<verify<gate):
+        raise RegistrationError("local HTTP TLS requires OpenSSL admission and CI preparation before the gate")
     for relative in (entry, "scripts/test/monitor-http-local-online.py",
                      "console/frontend/e2e/online/http-quality-local.spec.js",
                      "console/frontend/e2e/http-quality-page-support.mjs",

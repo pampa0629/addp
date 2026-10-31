@@ -2,6 +2,8 @@
 from pathlib import Path
 import importlib.util
 import json
+import os
+import subprocess
 import tempfile
 import threading
 import time
@@ -145,7 +147,7 @@ class HTTPProductLocalTests(unittest.TestCase):
         # Compose config omits inactive profiles. Model that actual behavior,
         # rather than handing the adapter an impossible always-complete map.
         with tempfile.TemporaryDirectory() as directory:
-            life=SimpleNamespace(work=Path(directory),run_id='owned',uuid='run',network='owned_data',addresses=m.source_addresses('172.29.0.0/16'))
+            life=SimpleNamespace(work=Path(directory),run_id='owned',uuid='run',phase='projection',network='owned_data',addresses=m.source_addresses('172.29.0.0/16'))
             services={name:{'image':'product:'+name,'environment':{},'volumes':[],'command':[]} for name in m.LIMITS}
             calls=[]
             def compose(args,**kwargs):
@@ -164,7 +166,7 @@ class HTTPProductLocalTests(unittest.TestCase):
 
     def test_projection_has_owned_static_sources_and_product_readonly_mounts(self):
         with tempfile.TemporaryDirectory() as directory:
-            life=SimpleNamespace(work=Path(directory),run_id='owned',uuid='run',network='owned_data',addresses=m.source_addresses('172.29.0.0/16'))
+            life=SimpleNamespace(work=Path(directory),run_id='owned',uuid='run',phase='projection',network='owned_data',addresses=m.source_addresses('172.29.0.0/16'))
             services={name:{'image':'product:'+name,'environment':{},'volumes':[],'command':[]} for name in m.LIMITS}
             services['prometheus']['volumes']=[{'type':'volume','source':'prometheus_data','target':'/prometheus','volume':{}}]
             services['postgres']['volumes']=[{'type':'volume','source':'postgres_data','target':'/var/lib/postgresql/data','volume':{'nocopy':True}}]
@@ -182,5 +184,192 @@ class HTTPProductLocalTests(unittest.TestCase):
                 self.assertEqual(len(source),1);self.assertTrue(source[0]['read_only']);self.assertEqual(source[0]['type'],'volume')
             self.assertNotIn('entry',config['services']['agent-backend']['networks'])
             self.assertIn('cluster_name=addp-http-quality-local-run',config['services']['postgres']['command'])
+
+class HTTPPrivateTLSConfigTests(unittest.TestCase):
+    def fixture(self,directory,failure=None):
+        life=SimpleNamespace(work=Path(directory),phase='metrics_deployment_projection',
+            env={'PATH':os.defpath,'OPENSSL_CONF':'foreign-default-config'},
+            addresses=m.source_addresses('172.29.0.0/16'))
+        calls=[]
+        def command(args,**kwargs):
+            calls.append((life.phase,args,kwargs))
+            if failure and failure(life.phase,args,kwargs):raise m.core.GateError('first_tls_failure')
+            if args[0]=='openssl':
+                # No crypto in the model. The real implementation must bind
+                # the request and library initialization to the private file.
+                config=life.work/'certificates/openssl.cnf'
+                self.assertEqual(kwargs['env']['OPENSSL_CONF'],str(config))
+                self.assertTrue(config.is_file())
+                if args[1]=='req':self.assertEqual(args[args.index('-config')+1],str(config))
+                for flag in ('-keyout','-out'):
+                    if flag in args:Path(args[args.index(flag)+1]).write_text('fixture')
+            return ''
+        life.command=command
+        return life,calls,{'PROMETHEUS_SERVICE_CLIENT_SECRET':'fixture-only'}
+
+    def test_all_crypto_uses_private_config_without_polluting_parent_or_product(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,calls,env=self.fixture(directory);original=life.env.copy()
+            m.tls(life,env)
+            self.assertEqual(life.env,original);self.assertNotIn('OPENSSL_CONF',env)
+            self.assertEqual(life.phase,'metrics_deployment_projection')
+            config=life.work/'certificates/openssl.cnf'
+            self.assertEqual(config.stat().st_mode&0o777,0o600)
+            self.assertEqual(config.parent.stat().st_mode&0o777,0o700)
+            self.assertNotIn('.include',config.read_text());self.assertNotIn('provider',config.read_text())
+            crypto=[row for row in calls if row[1][0]=='openssl']
+            self.assertEqual(len(crypto),19);self.assertTrue(all(row[2]['timeout']==10 for row in crypto))
+            self.assertEqual(calls[-2][0],'http_metrics_config_render')
+            self.assertEqual(calls[-1][0],'http_process_metrics_render')
+            self.assertTrue(all('OPENSSL_CONF' not in row[2]['env'] for row in calls[-2:]))
+
+    def test_failed_or_timed_out_step_stays_exact_and_stops_before_later_work(self):
+        for phase in ('http_tls_ca_center','http_tls_csr_query','http_tls_sign_query',
+                'http_metrics_config_render','http_process_metrics_render'):
+            for code in ('first_tls_failure','command_deadline_exceeded'):
+                with self.subTest(phase=phase,code=code),tempfile.TemporaryDirectory() as directory:
+                    life,calls,env=self.fixture(directory)
+                    original=life.command
+                    def fail(args,**kwargs):
+                        if life.phase==phase:
+                            calls.append((life.phase,args,kwargs));raise m.core.GateError(code)
+                        return original(args,**kwargs)
+                    life.command=fail
+                    with self.assertRaisesRegex(m.core.GateError,code):m.tls(life,env)
+                    self.assertEqual(life.phase,phase);self.assertEqual(calls[-1][0],phase)
+
+    def test_missing_or_invalid_config_is_not_retried_or_replaced(self):
+        for invalid in (False,True):
+            with self.subTest(invalid=invalid),tempfile.TemporaryDirectory() as directory:
+                life,calls,env=self.fixture(directory)
+                def broken(args,**kwargs):
+                    config=life.work/'certificates/openssl.cnf'
+                    if invalid:config.write_text('invalid configuration')
+                    else:config.unlink()
+                    calls.append((life.phase,args,kwargs));raise m.core.GateError('config_unusable')
+                life.command=broken
+                with self.assertRaisesRegex(m.core.GateError,'config_unusable'):m.tls(life,env)
+                self.assertEqual(len(calls),1);self.assertEqual(life.phase,'http_tls_ca_center')
+                self.assertFalse((life.work/'metrics-deployment').exists())
+
+    def test_material_io_failure_cannot_be_mislabelled_as_previous_sign_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life,calls,env=self.fixture(directory)
+            with mock.patch.object(m.shutil,'copyfile',side_effect=OSError('copy_failure')):
+                with self.assertRaisesRegex(OSError,'copy_failure'):m.tls(life,env)
+            self.assertEqual(life.phase,'http_tls_materials')
+            self.assertEqual(calls[-1][0],'http_tls_sign_metrics_control')
+
+    def test_native_adapter_satisfies_the_real_command_kernel_before_crypto(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=HTTPNativeTLSConfigTest.lifecycle(Path(directory),time.monotonic())
+            child=mock.Mock(pid=123,returncode=0)
+            child.poll.return_value=0
+            with mock.patch.object(m.core.subprocess,'Popen',return_value=child) as spawn:
+                self.assertEqual(m.core.Lifecycle.command(life,['openssl','version'],timeout=10,output_limit=65536),'')
+            spawn.assert_called_once()
+            self.assertTrue(life.command_evidence.sequence==1)
+
+    def test_cleanup_error_does_not_replace_the_first_tls_error_in_entry_report(self):
+        # Actual HTTP main() failure handling with only command/lifecycle doubles.
+        with tempfile.TemporaryDirectory() as directory:
+            life=SimpleNamespace(run_id='synthetic-tls',phase='http_tls_ca_center',env={},started=time.monotonic(),
+                samples=[],command_evidence=SimpleNamespace(snapshot=lambda:[]),
+                docker=mock.Mock(return_value='arm64'),cleanup=mock.Mock(return_value=['cleanup_failed']))
+            report=Path(directory)/'synthetic-tls-report.json'
+            with mock.patch.object(m,'Lifecycle',return_value=life),mock.patch.object(m,'validate_profile'), \
+                 mock.patch.object(m.core,'effective_docker_endpoint',return_value='unix:///synthetic'), \
+                 mock.patch.object(m.core,'private_docker_client'),mock.patch.object(m,'build',side_effect=m.core.GateError('first_tls_failure')), \
+                 mock.patch.object(m.tempfile,'gettempdir',return_value=directory),mock.patch.object(m.sys,'argv',['gate']),mock.patch('builtins.print'):
+                self.assertEqual(m.main(),1)
+            payload=json.loads(report.read_text())
+            self.assertEqual(payload['error_code'],'first_tls_failure')
+            self.assertEqual(payload['stage'],'http_tls_ca_center')
+            self.assertFalse(payload['cleanup']['zero_owned_resources']);life.cleanup.assert_called_once()
+
+class HTTPNativeTLSConfigTest(unittest.TestCase):
+    @staticmethod
+    def lifecycle(work,started):
+        return SimpleNamespace(work=work,run_id='offline-http-tls',checkout=work/'no-checkout',
+            started=started,work_seconds=60,phase='offline_tls',sample_thread_id=None,
+            failure=None,command_evidence=m.core.CommandEvidence(label=m.LABEL),
+            env=m.core.safe_environment(),addresses=m.source_addresses('172.29.0.0/16'))
+
+    def test_offline_private_config_chain_purpose_and_names_within_one_bounded_group(self):
+        # This is the only native crypto scene. The full production TLS function
+        # runs once; the two later renderers are explicit doubles, never Docker.
+        started=time.monotonic();count=0;peak=0;rejections=0;version=''
+        directory=None
+        try:
+            with tempfile.TemporaryDirectory(prefix='addp-http-tls-t1-') as directory:
+                work=Path(directory);work.chmod(0o700)
+                life=self.lifecycle(work,started)
+                # Deliberately unusable parent config: successful crypto must
+                # come from the exact same private configuration as production.
+                life.env['OPENSSL_CONF']=str(work/'missing-user-default.cnf')
+                parent=life.env.copy()
+                def budget():
+                    nonlocal peak
+                    remaining=60-(time.monotonic()-started)
+                    self.assertGreater(remaining,0,'offline_tls_total_deadline')
+                    amount=sum(path.stat().st_size for path in work.rglob('*') if path.is_file())+65536
+                    peak=max(peak,amount)
+                    self.assertLessEqual(amount,1024**2,'offline_tls_material_budget')
+                    return remaining
+                def command(args,**kwargs):
+                    nonlocal count
+                    if args[0]!='openssl':
+                        self.assertEqual(args[0],m.sys.executable)
+                        self.assertIn(args[1],('scripts/infra/generate-metrics-config.py','scripts/prod/generate-process-metrics-platform.py'))
+                        self.assertNotIn('OPENSSL_CONF',kwargs['env'])
+                        return ''
+                    count+=1;self.assertLessEqual(count,40,'offline_tls_command_budget')
+                    kwargs['timeout']=min(kwargs.get('timeout',10),10,budget())
+                    kwargs['output_limit']=65536
+                    result=m.core.Lifecycle.command(life,args,**kwargs)
+                    budget()
+                    return result
+                life.command=command
+                env={'PROMETHEUS_SERVICE_CLIENT_SECRET':'offline-fixture-only'}
+                m.tls(life,env)
+                self.assertEqual(life.env,parent)
+                self.assertFalse((work/'missing-user-default.cnf').exists())
+                private={**life.env,'OPENSSL_CONF':str(work/'certificates/openssl.cnf')}
+                def openssl(*args):return command(['openssl',*args],env=private)
+                version=openssl('version').split()[1]
+                roots=[work/'certificates'/name for name in ('center.crt','source.crt','control.crt')]
+                self.assertEqual(len({root.read_bytes() for root in roots}),3)
+                for root in roots:
+                    text=openssl('x509','-in',str(root),'-noout','-text')
+                    for required in ('CA:TRUE','Certificate Sign','CRL Sign','Public-Key: (2048 bit)'):
+                        self.assertTrue(required in text,'offline_tls_ca_contract')
+                    dates=[m.datetime.strptime(m.re.search(label+r'\s*(.+)',text)[1].strip(),'%b %d %H:%M:%S %Y %Z') for label in ('Not Before:','Not After :')]
+                    self.assertEqual((dates[1]-dates[0]).total_seconds(),86400)
+                leaves=[('query','center','sslclient','-verify_hostname','query'),
+                    ('health','center','sslclient','-verify_hostname','health'),
+                    ('prometheus','center','sslserver','-verify_hostname','localhost'),
+                    ('collector','source','sslclient','-verify_hostname','collector'),
+                    ('admission','source','sslclient','-verify_hostname','admission'),
+                    ('metrics-control','control','sslserver','-verify_hostname','metrics-control'),
+                    *[(name,'source','sslserver','-verify_ip',address) for name,address in life.addresses.items()]]
+                for name,root,purpose,flag,value in leaves:
+                    openssl('verify','-purpose',purpose,flag,value,'-CAfile',str(work/'certificates'/(root+'.crt')),str(work/'certificates'/(name+'.crt')))
+                for name,root,purpose,flag,value in (
+                        ('agent','center','sslserver','-verify_ip',life.addresses['agent']),
+                        ('agent','source','sslserver','-verify_ip','172.29.0.1'),
+                        ('query','center','sslserver','-verify_hostname','query'),
+                        ('prometheus','center','sslserver','-verify_hostname','wrong.local')):
+                    with self.assertRaisesRegex(m.core.GateError,'^command_failed_[12]$'):
+                        openssl('verify','-purpose',purpose,flag,value,'-CAfile',str(work/'certificates'/(root+'.crt')),str(work/'certificates'/(name+'.crt')))
+                    rejections+=1
+                budget()
+        finally:
+            elapsed=time.monotonic()-started
+            removed=directory is not None and not Path(directory).exists()
+            print('HTTP TLS offline T1: '+json.dumps({'commands':count,'openssl_version':version,
+                'elapsed_seconds':round(elapsed,6),'material_and_output_peak_bytes':peak,
+                'expected_rejections':rejections,'cleanup_removed':removed}),flush=True)
+            self.assertTrue(removed,'offline_tls_cleanup_residue')
+            self.assertLess(elapsed,60,'offline_tls_total_deadline')
 
 if __name__=='__main__':unittest.main()

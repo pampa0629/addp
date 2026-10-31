@@ -687,3 +687,27 @@ Console 受控回归与人工用例复用唯一 `http-quality-page-support.mjs`�
 原生命周期自动清理完成，报告`cleanup.zero_owned_resources=true`、`failures=[]`，当次容器／网络／卷／builder残留检查无失败；私有工作目录已删除，本轮只读核对同run_id目录数量为0。首失败保留，原资源及清理期限未改。失败即结束，剩余时间没有被复用，未自动重试或续窗。
 
 报告SHA256=`dfcc1dce648df718b62d925eafbbc1c59f79bc8b8bb09810eb139b269f6626ec`，原报告8002字节，位于系统临时目录`addp-http-local-3fa6c05f2dd047728a1b0b29925fc05e-report.json`。仅脱敏报告、阶段日志、窗口起点及独立核对回执归档到`/tmp/addp-p19-http-product-window-20261031-3fa6c05f/`（`report.json`／`run.log`／`launch.json`／`audit.json`，目录0700／文件0600），不保留临时密钥、口令或完整环境。正式产品→身份→采集/API→Console/Monitor页面闭环仍未验收；停源历史、完整5/15分钟窗口及其余原缺口保持。本次只更新两份证据文档，以38条主题计数、唯一锚点／索引、固定输入摘要、报告／清理及本专项差异检查验证，不重复已通过且未变的代码门禁。
+
+
+<a id="http-private-openssl-config-20261031"></a>
+
+## 2026-10-31 HTTP 临时证书私有配置与离线T1（无真实新窗口）
+
+用户确认先修规范、HTTP本地入口及确定性门禁，允许一次实际离线证书组，单并发／最多40条命令／含清理60秒／材料与输出预留≤1 MiB；不新开真实部署窗口，不运行Hosted／容量／定时，不手动dispatch／rerun。运行观测及T0–T3规范先修订，再沿唯一HTTP入口修改，无产品API／权限／证书用途／共享资源守卫变更。前次b45cad3a6窗口失败及其未能唯一定位命令的证据保留，不以本次离线成功追认历史唯一根因。
+
+`tls()`在当次0700 certificates目录内以排他创建方式写0600最小请求配置；所有OpenSSL子进程的局部OPENSSL_CONF及req显式-config绑定同一文件，父环境／产品配置不污染，无外部include／provider加载。原系统默认配置依赖调用删除，保留三套CA、RSA2048、一天有效期、显式CA约束、叶子用途及DNS／来源IP SAN和原复制／挂载权限。既有phase增加固定CA／CSR／签发／材料／配置生成／Infra与产品Compose投影步骤：成功恢复外层，异常保留确切步骤，材料复制失败不会误归前一签发；沿原封闭错误／输出摘要及首因，不留原始参数／路径／stderr。共享完整四秒、8 CPU／12 GiB、4 GiB停止线、清理及原单命令10秒口径未变。
+
+OpenSSL依赖在原HTTP runner先检查，Platform consistency既有准备步骤显式安装及检查，先于make test-platform；登记回归拒绝本地准入缺失／晚于测试，以及CI安装缺失／晚于门禁。原HTTP人工入口仍禁止在公共CI执行，无新入口、workflow、版本分支或本机软件安装。实际证书组使用正式tls函数及原有可取消命令内核，两个指标配置生成器仅受控替身，没有Docker、网络、正式身份或采集请求。
+
+| 实际验证 | 结果与边界 |
+| --- | --- |
+| 原默认配置调用的受控反证 | 新配置绑定回归拒绝旧HEAD的tls实现；仅替身，无OpenSSL子进程 |
+| 模拟回归 | 最终36项通过，覆盖原四秒／资源／权限边界与新增配置污染、缺失／损坏、CA／CSR／签发／渲染失败及超时、不继续、复制阶段归属、首因与清理失败、依赖登记；不生成证书 |
+| 首轮HTTP runner | 新T1夹具遗漏run_id，在命令内核登记时AttributeError；尚未进入Popen，实际OpenSSL子进程0，临时目录已删除。此轮失败保留，修正夹具并用真实命令内核＋Popen替身验证适配字段后才执行实际离线组 |
+| 修正后的`make test-monitor-http-local-runner` | 37项Python通过（含唯一实际离线组）、JS语法及HTTP登记通过；随后Go身份负例因本轮调用者umask077而失败，整条make退出2，不能写成一次完整入口通过 |
+| 实际离线证书T1 | macOS ARM64／OpenSSL4.1.0，35条命令、0.617958秒（含清理）、材料与65536字节在途输出预留合计峰值125465字节；三CA约束／2048位／一天有效期、八份叶子的链／用途／DNS或IP验证通过，错误CA／用途／IP／DNS四个反例均拒绝，cleanup_removed=true。私钥／CSR／证书均随临时目录删除；仅公开汇总回执保留 |
+| 原runner中的Go身份命令定向复核 | `umask 022; cd system/backend; GOWORK=off go test ./cmd/online-test-fixture -run 'HTTPQualityLocal\|ExecutionTrace\|ProtectionReadiness' -count=1`通过。未改Go断言；此前测试以os.Mkdir(...,0755)构造公开目录，被调用者077掩码变成0700而丢失负例前提。只复核同一既有子门禁，未再次生成证书；完整入口原失败不改写，单次整体exit0待自然CI |
+| `make test-build-registration` | 59项＋9项及26个Go服务／59个镜像静态登记通过，不是实际产品构建证据 |
+| 独立JS语法、HTTP专属CI登记、本专项差异 | 通过；无前端／共享命令内核改动，不重复原T3和其它无关门禁 |
+
+日志位于`/tmp/addp-p19-http-tls-runner-20261031.log`（首轮夹具失败）、`/tmp/addp-p19-http-tls-runner-corrected-20261031.log`（实际T1及umask负例失败）、`/tmp/addp-p19-http-tls-build-registration-20261031.log`；验证输入摘要保存`/tmp/addp-p19-http-tls-verified-inputs-20261031.json`，不包含秘密材料。离线证书实际执行仅一次，没有自动重试真实证书组或新开本地窗口。本地各必要子项分列有效证据，不能声称一次完整runner已通过；Linux自然CI与正式产品构建／注册／mTLS采集／MFA／API／两阶段页面／注销／零残留仍待各自实际结果。停源历史、完整窗口及原容量／长期保留缺口保持。
