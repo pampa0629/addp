@@ -267,12 +267,17 @@ owner 业务错误只有在 Manifest `errors` 中显式声明时才能保留稳�
 6. 增加输入、输出、授权、错误、输出上限和 owner 副作用测试。
 7. 更新受影响的 Skill 与智能体评测场景。
 
-最低验证：
+最低验证从项目根目录使用[测试与验收标准入口](addp测试与验收规范.md#三标准入口)。Tool 与 Adapter 变更至少覆盖共享 Python 全量回归和 Agent 离线评测；按实际改动补充授权与 owner 门禁，核对结果所对应的输入版本、环境和实际执行范围。
 
-```bash
-cd common-python && ../agent/backend/venv/bin/python -m unittest discover -s tests
-make test-agent-eval
-```
+| 验证范围 | 标准入口与覆盖 | 未覆盖项与结果边界 |
+| --- | --- | --- |
+| 共享 Python 回归 | `make test-common-python`：按标准解释器运行共享库全量 pytest，覆盖现有 Manifest、SDK、ToolExecutor、CLI 等用例。 | 不证明真实 owner 服务、跨模块拓扑或模型调用可用。 |
+| Agent 离线评测 | `make test-agent-eval`：场景契约、Agent 后端测试及共享 Python 全量测试；采用脚本化决策和受控响应。 | 不调用真实 LLM 或在线 owner API，不包含 Agent 前端门禁。 |
+| 授权与发布期投影变化 | `make test-authorization`：授权清单、生成投影、覆盖报告及 Swagger 路由覆盖。 | 声明一致不代表真实路由守卫已按契约拒绝越权。 |
+| owner API、Handler 或消费端变化 | `make test-module MODULE=<owner>`：运行该 owner 自动发现的 T0–T3 门禁。 | 只证明实际登记并执行的用例；未编写的身份矩阵和 T4/T5 不计入。 |
+| 共享依赖或多个 owner 受影响 | `make test-changed`：按当前改动与真实依赖选择受影响 owner。 | 不等于全仓执行，也不包含真实跨模块 Online 或发布认证。 |
+
+`make test-agent-eval` 已包含共享 Python 全量回归，重复执行不构成额外验收层级；有效结果须覆盖当前输入与环境。Agent 前端范围见[离线门禁](addp智能体评测规范.md#52-离线门禁)，在线证据与发布要求见[发布门禁](addp智能体评测规范.md#53-发布门禁)。按[测试分层](addp测试与验收规范.md#二测试分层)分别认定真实路由、跨模块、模型调用及发布证据；离线通过或发布门禁校验已有在线证据，不表示本次执行了真实链路或模型调用。
 
 完成标准是 Manifest 严格加载、SDK/ToolExecutor/Adapter 只有一条实现路径、owner 权限与 Swagger 同步、关键测试通过，仓库中不存在旧 Tool 名称或兼容分支。
 
