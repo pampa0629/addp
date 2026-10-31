@@ -30,6 +30,9 @@ test('host detail tips translate in the same Console iframe without querying or 
   await expect(monitor.getByTestId('resource-paired-values')).toContainText('16.00 GiB')
   await page.getByRole('button', { name: 'CN', exact: true }).click()
   await page.getByRole('menuitem', { name: 'English', exact: true }).click()
+  // Wait for the desktop language popup to finish leaving before shrinking its viewport.
+  const languagePopup = page.locator('.el-dropdown__popper').filter({ has: page.getByRole('menuitem', { name: 'English', exact: true, includeHidden: true }) })
+  await expect(languagePopup).toHaveCSS('display', 'none')
   await page.setViewportSize({ width: 620, height: 900 })
   await help.focus()
   await expect(monitor.getByRole('tooltip')).toContainText('right axis: memory usage (%)')

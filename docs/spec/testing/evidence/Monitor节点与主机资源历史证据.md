@@ -524,3 +524,16 @@ Safari真实运行只操作获准的第二个标签页，前端普通组件地�
 个人Safari仅操作已获准的第二个标签页，经菜单进入当前Desktop Linux VM主机详情。实际截图可见新的磁盘表头问号、设备数量和逐设备读数，文件系统／网络未提供的状态仍直显；点击内存趋势选择器旁问号后，实际弹出GiB容量／百分比双轴、断点及缩放范围解释，查询窗口及末次值仍在。页面直接提供新版，无需重启；本轮仅计当前个人来源的显示与提示可见，不外推全部来源、原生Linux、逐帧刷新或正式Hosted。
 
 根Make的Monitor／Console前端入口、现有浏览器目录自动发现及Monitor变更扩散至Console的路径登记已覆盖，无新依赖、目标或Workflow。未改共享组件内核、API、Swagger、后端、部署、IAM或个人配置。上述是本次显示变更的最小充分T1／相关T3与构建，不计整套Monitor／Console聚合、未运行的Go／来源T2／Online或新CI通过；CI及Hosted仍等专门会话回传，未自行触发、轮询、重跑或设置定时任务，也未重启个人服务。
+
+
+### Console 窄屏 tip 回归的语言弹层退出同步（2026-10-31）
+
+专门CI会话回传固定`5cb1a9980a1829fc1250834f3a5d3fcb95e6580c`的[Console失败Job](https://github.com/pampa0629/addp/actions/runs/41149596599/job/124382684316)，push／attempt1、selected=true：`node-resource-navigation.spec.js`的`host detail tips translate...`在620像素的外层文档宽度断言失败；浏览器271通过／1失败，构建未运行。原始日志`/tmp/addp-ci-20261031-092302/job-124382684316.log:864`及同目录`console-browser-artifact/addp-console-playwright-results-13bpEJ/node-resource-navigation-h-75080-ng-or-hiding-current-states/`保留。失败截图显示英文tip完整可见，截图自身不足以确认溢出元素，也不把相邻ECONNRESET日志当根因。
+
+同时核验唯一后继固定`f8a1b435ce18597aa7a6eaa1233362bc4b72d7f6`的[Console成功Job](https://github.com/pampa0629/addp/actions/runs/41150779367/job/124386516227)：272项浏览器实际通过（10.9分钟），构建完成（3.20秒），末尾selected=true／status=success。专门会话提供的原始pass日志`/tmp/addp-ci-20261031-092302/pass-job-124386516227.log`本轮重新核对，SHA256为`8558e032eb0a11aca5e4510eec3d4317b90d90da80a52674ffd55c53557e19f5`。`git diff 5cb1a9980 f8a1b435c -- console/frontend monitor/frontend common-frontend`为空，复用该固定版本真实Linux通过，不重复调度或重跑有效CI；后继通过本身不证明首失败根因已修，也不扩为当前所有模块／Hosted通过。
+
+沿原标准入口对唯一失败场景做一次测量：`npm --prefix console/frontend run test:e2e -- node-resource-navigation.spec.js --grep 'host detail tips translate'`，日志`/tmp/addp-host-tip-geometry-diagnostic.log`，实际退出1，保留原宽度断言失败。临时测量只在既有测试里记录resize后30次几何快照，不写产品；随后全部删除测量代码。620px视口中document.scrollWidth为1171，超出的是Console语言菜单的`el-dropdown__popper el-zoom-in-top-leave-active`，仍位于桌面坐标right=1170.75；主内容区和iframe右界始终为620。侧栏从240收缩至72后，外层溢出仍随退出中的语言弹层存在，故不是侧栏宽度或Monitor图表挤出。测量覆盖233.2毫秒的退出阶段，不据此推断持续溢出。
+
+根因为测试在点击English后立即缩窄视口，尚未等语言菜单退出动画结束；不应把尚在桌面位置退出的菜单计作后续稳定窄屏tip布局。仅在主机和同样流程的引擎两项用例中，缩窄前定位实际含English项的语言弹层，并用`toHaveCSS('display', 'none')`确认退出完成。仍保留620px宽度、原`scrollWidth <= innerWidth`断言、同iframe timeOrigin、URL和无额外请求检查；不以aria隐藏／透明度代替退出完成，不加固定sleep、重试或时限，不改产品布局或共享组件。
+
+最终最小充分验证：`npm --prefix console/frontend run test:e2e -- node-resource-navigation.spec.js engine-resource-navigation.spec.js --grep 'host detail tips translate|engine detail tips follow'`，2项通过（36.2秒），日志`/tmp/addp-host-engine-tip-exit-sync.log`；`git diff --check`通过。标准浏览器入口隔离并清理本轮服务，不操作个人部署。只改变两项测试的操作同步，不重跑产品未变的单测、构建、来源T2、全量Linux或Hosted；修正后的自然CI继续等专门会话回传，不自行轮询／重跑或设置定时任务。本轮UI测试修复与个人Infra／Business“采集来源不可用”是不同事实，后者未由此恢复。
