@@ -34,6 +34,7 @@ type MetadataService struct {
 	previews           *preview.PreviewRegistry
 	content            *objectcontent.ObjectContentRegistry
 	modelSourceChecker modelStorageReadChecker
+	wholeSourceChecker wholeStorageReadChecker
 }
 
 // StorageDataItem is a server-verified storage item identity. Callers must use

@@ -10,6 +10,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	"github.com/addp/common/format/plugins/fbx"
@@ -34,6 +35,7 @@ type storageRead struct {
 	tenantID   *uint
 	credential string
 	expected   *commonClient.ManagerModel3DExpectedSource
+	wholeRoot  *plugin.EngineCatalogPath
 }
 
 func (s *MetadataService) prepareStorageRead(target *StorageDataItem, tenantID *uint, credential string, human bool, plan *models.DownloadPlan) (*storageRead, error) {
@@ -41,6 +43,9 @@ func (s *MetadataService) prepareStorageRead(target *StorageDataItem, tenantID *
 		return nil, ErrEngineAccessDenied
 	}
 	read := &storageRead{service: s, target: target, tenantID: tenantID}
+	if target.Descriptor.Format == "filegdb" {
+		return s.prepareWholeStorageRead(read, credential, human)
+	}
 	if target.Descriptor.DataType != datatype.Model3D {
 		return read, nil
 	}
@@ -95,15 +100,18 @@ func (s *MetadataService) prepareStorageRead(target *StorageDataItem, tenantID *
 }
 
 func (r *storageRead) resource(ctx context.Context) (*models.Engine, error) {
-	if r.expected == nil {
+	if r.expected == nil && r.wholeRoot == nil {
 		return r.service.getResourceForTenant(ctx, r.target.EngineID, r.tenantID)
 	}
-	// System compares this exact Engine version in the same source decision.
-	// Re-fetching a possibly different connection after that decision is forbidden.
+	// Keep the server-verified request snapshot. Model decisions additionally
+	// compare its exact Engine version; do not substitute another connection.
 	return r.target.engine, nil
 }
 
 func (r *storageRead) check(ctx context.Context, storageRef string) error {
+	if r.wholeRoot != nil {
+		return r.checkWhole(ctx, storageRef)
+	}
 	if r.expected == nil {
 		return nil
 	}

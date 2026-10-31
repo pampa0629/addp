@@ -29,6 +29,7 @@ func NewDownloadHandler(metadataService *service.MetadataService, protectionStor
 // @Summary 下载存储数据项 | Download storage item
 // @Description 按 ResourceLocator 下载存储型 engine 的 item；单文件直接流式下载，多文件 ZIP 以已确认 refs 的共同父目录为根，保留相对目录和原始名称，不摊平或改名；非法或重复组成拒绝 | Download a storage engine item by ResourceLocator; multi-ref ZIP preserves paths relative to the confirmed refs common parent without flattening or renaming; invalid or duplicate compositions are rejected
 // @Description 模型源包仅接受当前普通用户 Bearer；在每个源读取前，以完整组成及同一 Engine 版本核验现行源许可。资源票据或终态执行授权不能代替；原有下载权限与保护检查仍须满足。 | Model source packages require the current User Bearer and current source permission bound to the complete composition and same Engine version before each read. Resource tickets or terminal execution authorizations cannot replace it; download permissions and protection checks still apply.
+// @Description NFS FileGDB 内容须核验当前普通用户的整项授权；本接口尚不提供整目录 ZIP 打包。 | NFS FileGDB content requires the current User's whole DataItem authorization; whole-directory ZIP packaging is not provided.
 // @Tags Manager
 // @Produce octet-stream
 // @Param locator query string true "资源定位符 URI | Resource locator URI"

@@ -35,6 +35,37 @@ def authorization():
 
 
 class FileGDBAcceptanceTest(unittest.TestCase):
+    def test_raw_members_require_exact_source_bytes_ranges_and_denial_without_content(self):
+        for mutation in (None, 'wrong_bytes', 'wrong_range', 'leaked_denial', 'security_denial'):
+            with self.subTest(mutation=mutation):
+                binary = Mock()
+                def response(method, path, statuses, headers=None):
+                    if statuses == (403,):
+                        payload = {'error': 'denied'}
+                        if mutation == 'leaked_denial': payload['data'] = 'private'
+                        if mutation == 'security_denial': payload['error_code'] = 'security_protection_required'
+                        return SimpleNamespace(status=403, payload=payload, raw=json.dumps(payload).encode())
+                    raw = b'abcd-private-member'
+                    if headers: raw = b'bad!' if mutation == 'wrong_range' else raw[:4]
+                    elif mutation == 'wrong_bytes': raw = b'other-source'
+                    return SimpleNamespace(status=statuses[0], payload={}, raw=raw)
+                binary.request.side_effect = response
+                user = SimpleNamespace(base_url='http://localhost:8000', token='unchanged', timeout=30)
+                member = dict(name='a00000001.gdbtable', sha256=M.hashlib.sha256(b'abcd-private-member').hexdigest(), item_id=17)
+                with patch.object(OWNER, 'GatewayClient', return_value=binary) as factory:
+                    if mutation is None:
+                        allowed = M.raw_member(user, 'locator', 7, member, 200)
+                        denied = M.raw_member(user, 'locator', 7, member, 403)
+                        self.assertEqual([r['range_status'] for r in allowed], [206, 206])
+                        self.assertEqual([r['range_status'] for r in denied], [403, 403])
+                        factory.assert_called_with(user.base_url, user.token, user.timeout)
+                        paths = [call.args[1] for call in binary.request.call_args_list]
+                        self.assertTrue(any('/storage-stream?' in path for path in paths))
+                        self.assertTrue(any('/storage-assets/7/items/17/' in path for path in paths))
+                    else:
+                        with self.assertRaises(ValueError):
+                            M.raw_member(user, 'locator', 7, member, 403 if mutation.endswith('denial') else 200)
+
     def test_real_http_item_array_is_explicit_and_other_endpoints_remain_object_typed(self):
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
@@ -197,9 +228,10 @@ class FileGDBAcceptanceTest(unittest.TestCase):
             return SimpleNamespace(status=200, payload={'data': {'total': rows, 'rows': [
                 {'label': child + '_' + str(i), 'value': i + 1} for i in range(rows)]}})
         client.request.side_effect = response
-        report = {'tenant_id': 2}
-        with patch.object(M.FILES, 'exact_user_principal', return_value='11'):
+        report = {'tenant_id': 2, 'engine_id': 7, 'raw_member': {'name': 'gdb'}}
+        with patch.object(M.FILES, 'exact_user_principal', return_value='11'), patch.object(M, 'raw_member', return_value=[]) as raw:
             result = M.verify_deny(auth, client, {'full_name': M.NAME}, 'locator', {'request_id': 'original'}, report)
+        self.assertEqual([call.args[-1] for call in raw.call_args_list], [403, 200])
         self.assertEqual([r['status'] for r in result['denied_reads']], [403, 403])
         self.assertEqual([r['rows'] for r in result['restored_reads']], [2, 1])
         self.assertEqual(result['history_before'], result['history_after'])

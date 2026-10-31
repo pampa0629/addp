@@ -185,6 +185,7 @@ func main() {
 	searchHistoryService := service.NewSearchHistoryService(searchHistoryRepo)
 	metadataService := service.NewMetadataService(metadataRepo, systemClient, metaClient, previewRegistry, contentRegistry)
 	metadataService.SetModelSourceReadChecker(systemServiceClient)
+	metadataService.SetWholeSourceReadChecker(systemServiceClient)
 	metadataService.SetMetaScanUserClient(commonClient.NewMetaScanUserClient(cfg.MetaServiceURL))
 	indexDeliveries := repository.NewContentIndexDeliveryRepository(db, cfg.MeilisearchManagerContentIndex)
 	managerProjectionBarrier := service.NewManagerProjectionBarrier(dataProfileRepo, dataProfileExecutionRepo, indexDeliveries)

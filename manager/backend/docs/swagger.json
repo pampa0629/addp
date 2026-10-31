@@ -326,7 +326,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "按 ResourceLocator 下载存储型 engine 的 item；单文件直接流式下载，多文件 ZIP 以已确认 refs 的共同父目录为根，保留相对目录和原始名称，不摊平或改名；非法或重复组成拒绝 | Download a storage engine item by ResourceLocator; multi-ref ZIP preserves paths relative to the confirmed refs common parent without flattening or renaming; invalid or duplicate compositions are rejected\n模型源包仅接受当前普通用户 Bearer；在每个源读取前，以完整组成及同一 Engine 版本核验现行源许可。资源票据或终态执行授权不能代替；原有下载权限与保护检查仍须满足。 | Model source packages require the current User Bearer and current source permission bound to the complete composition and same Engine version before each read. Resource tickets or terminal execution authorizations cannot replace it; download permissions and protection checks still apply.",
+                "description": "按 ResourceLocator 下载存储型 engine 的 item；单文件直接流式下载，多文件 ZIP 以已确认 refs 的共同父目录为根，保留相对目录和原始名称，不摊平或改名；非法或重复组成拒绝 | Download a storage engine item by ResourceLocator; multi-ref ZIP preserves paths relative to the confirmed refs common parent without flattening or renaming; invalid or duplicate compositions are rejected\n模型源包仅接受当前普通用户 Bearer；在每个源读取前，以完整组成及同一 Engine 版本核验现行源许可。资源票据或终态执行授权不能代替；原有下载权限与保护检查仍须满足。 | Model source packages require the current User Bearer and current source permission bound to the complete composition and same Engine version before each read. Resource tickets or terminal execution authorizations cannot replace it; download permissions and protection checks still apply.\nNFS FileGDB 内容须核验当前普通用户的整项授权；本接口尚不提供整目录 ZIP 打包。 | NFS FileGDB content requires the current User's whole DataItem authorization; whole-directory ZIP packaging is not provided.",
                 "produces": [
                     "application/octet-stream"
                 ],
@@ -4890,7 +4890,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "以路径型 URL 传输 S3M 等多文件预览数据集中的单个资源，支持 manifest 相对路径解析与 Range 请求；资源仍通过存储引擎和租户权限校验。 | Stream one asset from a multi-file preview dataset with path-relative URL resolution and Range support; storage-engine and tenant authorization still apply.\n模型资源仅限已批准完整组成中的精确成员，以当前普通用户 Bearer 每次重核；未准入的模型组成拒绝。 | Model assets must be exact members of the approved complete composition, rechecked for the current User Bearer on every request; unsupported model composition is denied.",
+                "description": "以路径型 URL 传输 S3M 等多文件预览数据集中的单个资源，支持 manifest 相对路径解析与 Range 请求；资源仍通过存储引擎和租户权限校验。 | Stream one asset from a multi-file preview dataset with path-relative URL resolution and Range support; storage-engine and tenant authorization still apply.\n模型资源仅限已批准完整组成中的精确成员，以当前普通用户 Bearer 每次重核；未准入的模型组成拒绝。 | Model assets must be exact members of the approved complete composition, rechecked for the current User Bearer on every request; unsupported model composition is denied.\nNFS FileGDB 成员同样按当前普通用户的根 DataItem 授权检查，不能凭路径型 URL 绕过整项授权。 | NFS FileGDB members require the current User's root DataItem authorization; path-style URLs cannot bypass whole-item authorization.",
                 "produces": [
                     "application/octet-stream"
                 ],
@@ -4970,7 +4970,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "支持 Range 请求的单存储叶子内容流式传输，用于图片、PDF、视频等在线预览；用户下载请使用 downloads/file。storage_ref 在对象存储中为 bucket/path，在文件系统中为文件路径 | Storage leaf content streaming with Range request support for online previews such as images, PDF, and video; use downloads/file for user downloads. storage_ref is bucket/path for object catalogs and file path for file catalogs\n模型主文件及确认依赖须以当前普通用户 Bearer 核验完整组成和现行源许可，不接受 Resource Ticket 代替源授权。 | Model primaries and confirmed dependencies require the current User Bearer, complete composition and current source rules; resource tickets cannot replace source authorization.",
+                "description": "支持 Range 请求的单存储叶子内容流式传输，用于图片、PDF、视频等在线预览；用户下载请使用 downloads/file。storage_ref 在对象存储中为 bucket/path，在文件系统中为文件路径 | Storage leaf content streaming with Range request support for online previews such as images, PDF, and video; use downloads/file for user downloads. storage_ref is bucket/path for object catalogs and file path for file catalogs\n模型主文件及确认依赖须以当前普通用户 Bearer 核验完整组成和现行源许可，不接受 Resource Ticket 代替源授权。 | Model primaries and confirmed dependencies require the current User Bearer, complete composition and current source rules; resource tickets cannot replace source authorization.\nNFS FileGDB 内部成员须以当前普通用户 Bearer 在每次源读取前核验根 DataItem 的现行授权；不授予容器外路径读取权。 | NFS FileGDB members require the current User Bearer and a current root DataItem authorization check before each source read; paths outside the container are not authorized.",
                 "produces": [
                     "application/octet-stream"
                 ],
@@ -6200,7 +6200,8 @@
                 "statistics": {
                     "type": "object",
                     "additionalProperties": {
-                        "type": "integer"
+                        "type": "integer",
+                        "format": "int64"
                     }
                 },
                 "status": {

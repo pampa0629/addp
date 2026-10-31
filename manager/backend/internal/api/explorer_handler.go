@@ -423,6 +423,7 @@ func (h *ExplorerHandler) ListEngines(c *gin.Context) {
 // @Summary 存储内容流式传输 | Storage content streaming
 // @Description 支持 Range 请求的单存储叶子内容流式传输，用于图片、PDF、视频等在线预览；用户下载请使用 downloads/file。storage_ref 在对象存储中为 bucket/path，在文件系统中为文件路径 | Storage leaf content streaming with Range request support for online previews such as images, PDF, and video; use downloads/file for user downloads. storage_ref is bucket/path for object catalogs and file path for file catalogs
 // @Description 模型主文件及确认依赖须以当前普通用户 Bearer 核验完整组成和现行源许可，不接受 Resource Ticket 代替源授权。 | Model primaries and confirmed dependencies require the current User Bearer, complete composition and current source rules; resource tickets cannot replace source authorization.
+// @Description NFS FileGDB 内部成员须以当前普通用户 Bearer 在每次源读取前核验根 DataItem 的现行授权；不授予容器外路径读取权。 | NFS FileGDB members require the current User Bearer and a current root DataItem authorization check before each source read; paths outside the container are not authorized.
 // @Tags Manager
 // @Produce octet-stream
 // @Param locator query string true "带 item_id 的存储数据项定位符 | Storage DataItem locator with item_id"
@@ -550,6 +551,7 @@ func (h *ExplorerHandler) streamStorageTarget(c *gin.Context, target *service.St
 // @Summary 多文件预览资源传输 | Multi-file preview asset streaming
 // @Description 以路径型 URL 传输 S3M 等多文件预览数据集中的单个资源，支持 manifest 相对路径解析与 Range 请求；资源仍通过存储引擎和租户权限校验。 | Stream one asset from a multi-file preview dataset with path-relative URL resolution and Range support; storage-engine and tenant authorization still apply.
 // @Description 模型资源仅限已批准完整组成中的精确成员，以当前普通用户 Bearer 每次重核；未准入的模型组成拒绝。 | Model assets must be exact members of the approved complete composition, rechecked for the current User Bearer on every request; unsupported model composition is denied.
+// @Description NFS FileGDB 成员同样按当前普通用户的根 DataItem 授权检查，不能凭路径型 URL 绕过整项授权。 | NFS FileGDB members require the current User's root DataItem authorization; path-style URLs cannot bypass whole-item authorization.
 // @Tags Manager
 // @Produce octet-stream
 // @Param engine_id path int true "存储引擎ID | Engine ID"

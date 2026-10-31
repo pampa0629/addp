@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -11,7 +12,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 import uuid
 
 API = importlib.import_module('scripts.utils.online-api')
@@ -25,7 +26,9 @@ REQUIRED_CHECKS = {'basic_whole_identity', 'ungranted_child_denied', 'initial_ch
     'new_child_same_grant', 'manager_crash_and_source_disconnect_recovered_same_grant',
     'revoked_next_read_denied', 'natural_expiry_next_read_denied', 'read_child_sigkill_observed',
     'explicit_deny_overrides_whole_grant', 'deny_release_restores_original_grant',
-    'ungranted_account_initial_child_denied', 'ungranted_account_new_child_denied'}
+    'ungranted_account_initial_child_denied', 'ungranted_account_new_child_denied',
+    'ungranted_raw_members_denied', 'raw_members_same_grant_and_account_isolation',
+    'raw_members_revoked_and_expired_denied'}
 
 
 def require(value, message):
@@ -144,6 +147,37 @@ def preview(client, locator, child, status, rows=None):
     return {'status': response.status, 'child': child, 'rows': rows}
 
 
+def raw_member(client, locator, engine, member, status):
+    """Consume the existing owner binary client, with the same current User."""
+    owner = importlib.import_module('scripts.test.manager-internal-artifact-lineage-online')
+    binary = owner.GatewayClient(client.base_url, client.token, client.timeout)
+    path = NAME + '/' + member['name']
+    routes = [('stream', '/api/v1/manager/storage-stream?' + urlencode({
+        'locator': locator, 'storage_ref': path})),
+        ('asset', f'/api/v1/manager/storage-assets/{engine}/items/' +
+         str(member['item_id']) + '/' + quote(path, safe='/'))]
+    evidence = []
+    for exit_name, url in routes:
+        response = binary.request('GET', url, (status,))
+        row = {'exit': exit_name, 'status': response.status, 'member': member['name']}
+        if status == 200:
+            require(bool(response.raw) and hashlib.sha256(response.raw).hexdigest() == member['sha256'],
+                    'raw FileGDB member differs from physical source')
+            ranged = binary.request('GET', url, (206,), headers={'Range': 'bytes=0-3'})
+            require(ranged.raw == response.raw[:4] and len(ranged.raw) == 4,
+                    'FileGDB Range differs from the same source member')
+            row.update(sha256=member['sha256'], size=len(response.raw), range_status=ranged.status)
+        else:
+            require(set(response.payload) == {'error'} and isinstance(response.payload['error'], str)
+                    and bool(response.payload['error'].strip()), 'raw denial is not an explicit source decision')
+            ranged = binary.request('GET', url, (status,), headers={'Range': 'bytes=0-3'})
+            require(set(ranged.payload) == {'error'} and isinstance(ranged.payload['error'], str)
+                    and bool(ranged.payload['error'].strip()), 'raw Range denial leaked content or used a different gate')
+            row['range_status'] = ranged.status
+        evidence.append(row)
+    return evidence
+
+
 def verify_account_isolation(authorization, client, outsider, outsider_id, locator, grant, children, report):
     """A same-Tenant reader with functional permission must not inherit another User's Grant."""
     physical = importlib.import_module('scripts.test.manager-filegdb-physical')
@@ -203,6 +237,7 @@ def verify_deny(authorization, client, item, locator, grant, report):
     require(physical.rule_snapshot(denied) == expected, 'Deny changed Grant sources or did not take priority')
     for child in ('initial_points', 'added_points'):
         evidence['denied_reads'].append(preview(client, locator, child, 403))
+    evidence['raw_denied'] = raw_member(client, locator, report['engine_id'], report['raw_member'], 403)
     evidence['history_during'] = authorization.history(grant['request_id'])
     require(evidence['history_during'] == history, 'Deny secretly revoked or changed the Grant')
     authorization.release(command)
@@ -211,6 +246,7 @@ def verify_deny(authorization, client, item, locator, grant, report):
             'Deny release did not restore the original source relation')
     for child, rows in (('initial_points', 2), ('added_points', 1)):
         evidence['restored_reads'].append(preview(client, locator, child, 200, rows))
+    evidence['raw_restored'] = raw_member(client, locator, report['engine_id'], report['raw_member'], 200)
     evidence['history_after'] = authorization.history(grant['request_id'])
     require(evidence['history_after'] == history and client.token == token,
             'Deny release replaced the Grant or reader credential')
@@ -279,8 +315,13 @@ def run(repository, environment, owner):
         report['identity'] = dict(item_id=item['id'], fingerprint=item['fingerprint'], boundary_hash=facts['boundary_hash'])
         check('basic_whole_identity')
         locator = f"addp://engine/{engine}/path/{NAME}?type=file&item_id={item['id']}"
+        snapshot = physical('snapshot')
+        member, = sorted(name for name in snapshot if name == 'a00000001.gdbtable')
+        report['raw_member'] = {'name': member, 'sha256': snapshot[member], 'item_id': item['id']}
         preview(client, locator, 'initial_points', 403)
         check('ungranted_child_denied')
+        report['raw_ungranted'] = raw_member(client, locator, engine, report['raw_member'], 403)
+        check('ungranted_raw_members_denied')
         first = authorization.grant(item)
         report['first_grant'] = first
         owner.wait_for_meta_scan(client, engine, time.monotonic() + 180, scope={'catalog_paths': [NAME]})
@@ -297,6 +338,21 @@ def run(repository, environment, owner):
         verify_account_isolation(authorization, client, outsider, outsider_id, locator, first,
             [('initial_points', 2), ('added_points', 1)], report)
         check('ungranted_account_new_child_denied')
+        report['raw_member']['sha256'] = physical('snapshot')[member]
+        raw_before, raw_history = authorization.current(), authorization.history(first['request_id'])
+        report['raw_isolation'] = {
+            'allowed_before': raw_member(client, locator, engine, report['raw_member'], 200),
+            'outsider_denied': raw_member(outsider, locator, engine, report['raw_member'], 403),
+            'allowed_after': raw_member(client, locator, engine, report['raw_member'], 200)}
+        raw_outsider = authorization.current(recipient=outsider_id)
+        raw_after, raw_history_after = authorization.current(), authorization.history(first['request_id'])
+        require(fixture.rule_snapshot(raw_after) == fixture.rule_snapshot(raw_before)
+                and raw_history_after == raw_history
+                and raw_outsider.get('data') == [] and raw_outsider.get('total') == 0,
+                'raw account isolation changed the original Grant or created an outsider relation')
+        report['raw_isolation'].update(before=raw_before, after=raw_after, history_before=raw_history,
+            history_after=raw_history_after, outsider_after=raw_outsider, grant_id=first['request_id'], same_grant=True)
+        check('raw_members_same_grant_and_account_isolation')
         verify_deny(authorization, client, item, locator, first, report)
         check('explicit_deny_overrides_whole_grant')
         check('deny_release_restores_original_grant')
@@ -309,6 +365,7 @@ def run(repository, environment, owner):
         check('manager_crash_and_source_disconnect_recovered_same_grant')
         authorization.revoke(first['request_id'])
         preview(client, locator, 'added_points', 403)
+        report['raw_revoked'] = raw_member(client, locator, engine, report['raw_member'], 403)
         report['revoked_history'] = authorization.history(first['request_id'])
         require(report['revoked_history']['revocation'] is not None and authorization.current()['total'] == 0,
                 'withdrawal history or active state differs')
@@ -317,13 +374,16 @@ def run(repository, environment, owner):
         second = authorization.grant(item, expires.isoformat())
         report['expiry_grant'] = second
         preview(client, locator, 'added_points', 200, 1)
+        report['raw_expiry_before'] = raw_member(client, locator, engine, report['raw_member'], 200)
         while datetime.now(timezone.utc) <= expires:
             time.sleep(.2)
         preview(client, locator, 'added_points', 403)
+        report['raw_expired'] = raw_member(client, locator, engine, report['raw_member'], 403)
         expired = authorization.history(second['request_id'])
         report['expired_history'] = expired
         require(expired['revocation'] is None and authorization.current()['total'] == 0, 'expiry was replaced by withdrawal')
         check('natural_expiry_next_read_denied')
+        check('raw_members_revoked_and_expired_denied')
         # Preserve the natural-expiry receipt; do not issue an artificial revoke for it.
         authorization.grants.remove(second['request_id'])
         authorization.confirmed.remove(second['request_id'])
