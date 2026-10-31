@@ -113,6 +113,8 @@ Manifest 不保存第二套 HTTP 路径事实。ToolExecutor 通过 Python SDK �
 
 这是当前完整集合。未出现在 Manifest 中的 API 不能被 Adapter 自行包装为 ADDP Tool。
 
+`workflow.draft.generate` 在此表中描述 Agent Tool，仍按 Manifest 使用委托令牌；同一 Copilot HTTP 生成端点保留普通用户直调。普通用户、Agent 委托、入站服务令牌拒绝要求及 Copilot 内部服务调用的边界统一见[工作流入口身份](workflow/Develop资源与执行.md#copilot-工作流入口身份)，当前未落实项与实际验收范围见[守卫缺口与验收边界](workflow/Develop资源与执行.md#当前守卫缺口与验收边界)。
+
 `transfer.task.config.check` 与 `transfer.task.create` 共用输入 Schema 和 SDK 请求构造，固定未启用、无调度、无自动扫描。它只读取控制面快照，不创建任务、读取业务行或执行 DDL。返回完整 `addp.transfer_task_config_check/v1` 报告；HTTP 200 不代表 `supported`。`unsupported` 阻止 Agent 创建，`unknown` 必须向用户明确未检查项与运行时检查要求，取得知情确认后才可只保存未运行任务；`supported` 也不是执行保证。委托失败、依赖错误或损坏报告不能转换为 `unknown`。报告摘要不是授权票据，创建前仍须 owner 当前授权与 Runtime 的配置/事实复核；观察时间变化本身不表示配置变化。
 
 `platform.capabilities.list` 无输入参数，返回同一只读 PG 快照中完整核验的已激活平台定义目录，最多 32 项、128 KiB；未激活不列出，空数组不等于运行模块不存在或用户无业务权限。超限和损坏明确失败，不截断、换源或跳过成员。Agent 先用其语义选择能力，再经定义引用和当前 Manifest 校验 Skill/Tool 装配；HTTP 地址和权限仍属于 Manifest/SDK/owner，不复制进本体。目录调用必须有 AgentRun/ToolCall 委托及步骤审计；失败不能退回静态 Skill 描述选择平台能力。
@@ -273,6 +275,8 @@ make test-agent-eval
 ```
 
 完成标准是 Manifest 严格加载、SDK/ToolExecutor/Adapter 只有一条实现路径、owner 权限与 Swagger 同步、关键测试通过，仓库中不存在旧 Tool 名称或兼容分支。
+
+工作流生成的身份回归按[当前守卫缺口与验收边界](workflow/Develop资源与执行.md#当前守卫缺口与验收边界)核对；Manifest 和 Swagger 声明不能代替真实路由守卫验证，普通用户、委托及服务身份的接收与拒绝结果分别记录。静态核对、路由回归与真实链路验收分层认定，未运行、失败和未覆盖项不计为通过。
 
 ## 九、相关文档
 
