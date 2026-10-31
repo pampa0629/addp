@@ -45,7 +45,7 @@ func readVFFMaterials(ctx context.Context, container *vffContainer, limits vffXM
 		if len(parts) != 3 || parts[2] != "material.xml" {
 			return nil, fmt.Errorf("unsupported VFF material member layout")
 		}
-		root, err := readVFFXML(ctx, container.members[member], budget, map[string]bool{vffMaterialNS: true})
+		root, err := readVFFXML(ctx, container.members[member], budget, map[string]bool{vffMaterialNS: true}, nil)
 		if err != nil {
 			return nil, err
 		}

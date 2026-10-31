@@ -22,7 +22,9 @@ type vffXMLNode struct {
 	begin, end int
 }
 
-func readVFFXML(ctx context.Context, raw []byte, budget *vffXMLBudget, namespaces map[string]bool) (*vffXMLNode, error) {
+// Qualified attributes are opt-in and retain their expanded names. Material
+// and style callers pass nil and keep their existing strict attribute rules.
+func readVFFXML(ctx context.Context, raw []byte, budget *vffXMLBudget, namespaces map[string]bool, qualified map[xml.Name]bool) (*vffXMLNode, error) {
 	if len(raw) > budget.limits.bytes-budget.bytes {
 		return nil, fmt.Errorf("VFF cumulative XML byte budget exceeded")
 	}
@@ -64,10 +66,14 @@ func readVFFXML(ctx context.Context, raw []byte, budget *vffXMLBudget, namespace
 				if attr.Name.Space == "xmlns" || attr.Name.Space == "" && attr.Name.Local == "xmlns" {
 					continue
 				}
-				if attr.Name.Space != "" {
+				key := attr.Name.Local
+				if attr.Name.Space != "" && !qualified[attr.Name] {
 					return nil, fmt.Errorf("unsupported VFF namespaced attribute")
 				}
-				node.attrs[attr.Name.Local] = attr.Value
+				if attr.Name.Space != "" {
+					key = vffXMLAttributeKey(attr.Name.Space, attr.Name.Local)
+				}
+				node.attrs[key] = attr.Value
 			}
 			if len(stack) == 0 {
 				if root != nil {
@@ -113,3 +119,5 @@ func readVFFXML(ctx context.Context, raw []byte, budget *vffXMLBudget, namespace
 	}
 	return root, nil
 }
+
+func vffXMLAttributeKey(namespace, local string) string { return "{" + namespace + "}" + local }

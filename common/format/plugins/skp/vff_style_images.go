@@ -64,7 +64,7 @@ func readVFFStyleImages(ctx context.Context, c *vffContainer, catalog *vffStyleF
 			return nil, fmt.Errorf("VFF style XML facts are stale")
 		}
 		raw := c.members[entry.member]
-		root, err := readVFFXML(ctx, raw, xmlBudget, map[string]bool{vffStyleNS: true, vffTypesNS: true, vffWatermarkNS: true})
+		root, err := readVFFXML(ctx, raw, xmlBudget, map[string]bool{vffStyleNS: true, vffTypesNS: true, vffWatermarkNS: true}, nil)
 		if err != nil {
 			return nil, err
 		}
