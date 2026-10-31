@@ -103,7 +103,11 @@ results = await manager.search("城市", page_size=10)
 
 通用访问身份见[认证方式](#认证方式)，CLI／Agent Tool 委托约束见[开发规则](CLAUDE.md#开发规则)。客户端导出或静态契约核对不证明当前调用获权、真实服务可达或模型可用；回归、产品 E2E 与真实跨模块验收的分工及未覆盖项统一见[开发与验证](#开发与验证)。
 
-`TransferClient.check_task_config()` 与 `create_task()` 接收相同参数并提交相同的完整创建请求（无计划、未启用、不自动扫描）。检查方法只调用 `/api/v1/transfer/task-config-checks`，保留完整 owner 报告的三态、诊断、事实摘要及未检查项，不自动创建、重试或执行任务。HTTP 200 不等于 `supported`，`supported` 也不证明全部值可写入。正式 `transfer.task.config.check` Tool 已接入 ToolExecutor；它与创建 Tool 共用 Manifest 根 `$defs` 中唯一输入定义，SDK 共用完整请求构造。委托 audience 唯一为 `transfer`、Scope 唯一为 Tool 名，System 签发与 Transfer 路由均要求 `transfer.task.create`、`meta.catalog.read`、`system.engine.read` 三项权限交集。CLI 经同一 ToolExecutor 使用，不能绕过正式委托链。当前 Transfer Skill/平台定义尚未装配该 Tool，Agent 的最终复核仍不能冒充正式预检。
+Transfer 预检的正文归属与边界：
+
+- **请求与报告**：`check_task_config()` 与 `create_task()` 共用完整请求，固定无计划、未启用、无自动扫描；预检不创建、重试或执行任务。完整三态报告、诊断、事实摘要、未检查项及 `config_hash/binding_hash` 内容绑定统一见 [Transfer 配置预检契约](../transfer/docs/transfer-基本概念及配置说明.md#33-native-table-target)；摘要不是授权票据，实时事实与逐值检查仍归运行期。
+- **权限与委托**：三项权限交集为 `transfer.task.create`、`meta.catalog.read`、`system.engine.read`；委托 audience 唯一为 `transfer`，Scope 唯一为 `transfer.task.config.check`。CLI 经同一 ToolExecutor 调用；共用输入 Schema、签发与 Owner 校验统一见 [Tool 契约](../docs/spec/addp智能体Tool开放规范.md#34-当前-tool-集合)。
+- **结果与复核**：HTTP 200 不等于 `supported`，`supported` 不是执行保证；`unsupported` 阻止 Agent 创建，`unknown` 须说明未检查项并取得知情确认，才可仅保存未运行定义。权限、依赖失败或损坏报告不能降级为 `unknown`。复核与创建前重检、原参数和稳定报告的绑定及变化后的重新确认见[创建条件与复核](../docs/spec/addp本体定义与发布规范.md#九transfer-创建条件与复核)；SDK／离线结果与真实链路的验收分工见[开发与验证](#开发与验证)。
 
 ## Service Consumer SDK
 
