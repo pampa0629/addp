@@ -6,31 +6,37 @@
 
 ## 重要目录
 
+以下按职责列出主要入口，不穷举文件；使用示例和验证入口见 [README](README.md)。
+
 ```text
 common-python/
 ├── addp_common/
-│   └── client/
-│       ├── base.py
-│       ├── service.py
-│       ├── system.py
-│       ├── meta.py
-│       ├── develop.py
-│       ├── manager.py
-│       ├── graph.py
-│       └── copilot.py
-│   ├── tools/
-│   │   ├── manifest.json
-│   │   ├── manifest.py
-│   │   └── executor.py
-│   ├── cli.py
-│   └── workflow_runtime/
-│       ├── validation.py
-│       ├── graph.py
-│       ├── references.py
-│       └── execution.py
-├── pyproject.toml
-└── README.md
+│   ├── __init__.py         # 包版本事实源
+│   ├── auth.py             # 权威 AuthContext 解析
+│   ├── oauth.py            # CLI OAuth、Keychain 与跨进程锁
+│   ├── cli.py              # addp 命令入口与 ToolExecutor Adapter
+│   ├── client/             # Owner SDK、服务令牌及注册客户端
+│   ├── resources/          # 资源事实数据模型
+│   ├── tools/              # Tool Manifest、校验与唯一执行映射
+│   ├── workflow_runtime/   # 通用工作流协议、执行与就绪核心
+│   ├── workflow_access.py  # 工作流源访问与目录暂存
+│   ├── notebook/           # Notebook 引擎发现门面
+│   ├── module_lifecycle.py # Python Backend 健康、就绪与注册生命周期
+│   ├── runtime_logging.py  # 服务正文日志 JSON 出口
+│   ├── http_observation.py # HTTP 观测共用传输归一化
+│   ├── httpmetrics/        # HTTP 指标与受保护来源
+│   ├── httptrace/          # HTTP Trace 与有界导出
+│   ├── inference_langchain.py # Inference 的可选 LangChain 适配
+│   └── raster_mosaic.py    # 栅格镶嵌 Manifest 与来源索引
+├── tests/                  # 共享库回归与 CLI 产品 E2E 用例
+├── pyproject.toml          # 依赖、包构建与 addp entry point
+├── README.md               # 使用与标准验证入口
+└── common-python实施报告.md # 产品门禁断言与未覆盖边界
 ```
+
+客户端导出入口见 [`client/__init__.py`](addp_common/client/__init__.py)，包含 Service Consumer、Inference、Ontology、Transfer 等 SDK；服务令牌、模块实例登记和 Runtime 引擎登记分别见 [`service_token.py`](addp_common/client/service_token.py)、[`module_registry.py`](addp_common/client/module_registry.py) 和 [`runtime_registration.py`](addp_common/client/runtime_registration.py)。栅格策略客户端 [`raster_policy.py`](addp_common/client/raster_policy.py) 的访问身份限定为 Platform Service OAuth，不因位于共享库而扩大权限。
+
+Tool 契约与执行映射分别定位到 [`manifest.json`](addp_common/tools/manifest.json) 和 [`executor.py`](addp_common/tools/executor.py)；目录导航不代表功能或运行验收通过，覆盖范围与结果认定见[验证](#验证)。
 
 ## 开发规则
 
