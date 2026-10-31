@@ -24,6 +24,7 @@ type vffSKCDeclarationWitness struct {
 type vffSKCFieldCandidate struct {
 	declaration vffSKCDeclarationWitness
 	via         []vffSKCDeclarationWitness
+	value       *vffSKCValueBinding
 }
 type vffSKCFieldBinding struct {
 	name       string
@@ -34,6 +35,7 @@ type vffSKCRuleBinding struct {
 	typeDeclaration *vffSKCDeclarationWitness
 	fields          []vffSKCFieldBinding
 	issues          []string
+	scopes          []vffSKCBlacklistScope
 }
 type vffSKCFilterBindings struct {
 	packageMember, schemaMember, filterMember string
@@ -50,6 +52,9 @@ type vffSKCBinder struct {
 	active            map[*vffXMLNode]bool
 	witnesses         map[*vffXMLNode]vffSKCDeclarationWitness
 	issues            []string
+	nodes             map[int]*vffXMLNode
+	groupUses         []vffSKCGroupUse
+	values            map[*vffXMLNode]*vffSKCValueBinding
 }
 
 func readVFFClassificationBindings(ctx context.Context, c *vffContainer, limits vffSKCBindingLimits) ([]vffSKCFilterBindings, error) {
@@ -104,7 +109,10 @@ func readVFFSKCFilterBindings(ctx context.Context, member string, raw []byte, fi
 	if root.name != (xml.Name{Space: vffXSDNS, Local: "schema"}) {
 		return nil, fmt.Errorf("binding requires exact XSD root")
 	}
-	b := &vffSKCBinder{ctx: ctx, member: member, namespace: root.attrs["targetNamespace"], raw: raw, definitions: map[string]map[string]*vffXMLNode{}, budget: budget, active: map[*vffXMLNode]bool{}, witnesses: map[*vffXMLNode]vffSKCDeclarationWitness{}}
+	b := &vffSKCBinder{ctx: ctx, member: member, namespace: root.attrs["targetNamespace"], raw: raw, definitions: map[string]map[string]*vffXMLNode{}, budget: budget, active: map[*vffXMLNode]bool{}, witnesses: map[*vffXMLNode]vffSKCDeclarationWitness{}, nodes: map[int]*vffXMLNode{}, values: map[*vffXMLNode]*vffSKCValueBinding{}}
+	if b.namespace == vffXSDNS {
+		return nil, fmt.Errorf("schema overriding the builtin XSD namespace is unsupported")
+	}
 	for _, child := range root.children {
 		if err := b.tick(0); err != nil {
 			return nil, err
@@ -131,6 +139,7 @@ func readVFFSKCFilterBindings(ctx context.Context, member string, raw []byte, fi
 			return nil, err
 		}
 		b.issues = nil
+		b.groupUses = nil
 		fact := vffSKCRuleBinding{rule: index}
 		var candidates []vffSKCFieldCandidate
 		if rule.typeName == "" {
@@ -180,6 +189,9 @@ func readVFFSKCFilterBindings(ctx context.Context, member string, raw []byte, fi
 		fact.issues = append(fact.issues, b.issues...)
 		result.rules = append(result.rules, fact)
 	}
+	if err := b.bindSemantics(filter, result); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
@@ -199,6 +211,7 @@ func (b *vffSKCBinder) witness(n *vffXMLNode) vffSKCDeclarationWitness {
 	}
 	w := vffSKCDeclarationWitness{b.member, b.namespace, n.name.Local, n.attrs["name"], n.begin, n.end, sha256.Sum256(b.raw[n.begin:n.end])}
 	b.witnesses[n] = w
+	b.nodes[n.begin] = n
 	return w
 }
 
@@ -214,10 +227,10 @@ func vffSKCBindingName(name string) bool {
 	return true
 }
 
-func (b *vffSKCBinder) lookup(n *vffXMLNode, value, kind string) (*vffXMLNode, error) {
+func (b *vffSKCBinder) qname(n *vffXMLNode, value string) (xml.Name, error) {
 	parts := strings.Split(strings.TrimSpace(value), ":")
 	if len(parts) > 2 || !vffSKCBindingName(parts[len(parts)-1]) || len(parts) == 2 && !vffSKCBindingName(parts[0]) {
-		return nil, fmt.Errorf("invalid binding QName")
+		return xml.Name{}, fmt.Errorf("invalid binding QName")
 	}
 	prefix, local := "", parts[len(parts)-1]
 	if len(parts) == 2 {
@@ -230,7 +243,7 @@ func (b *vffSKCBinder) lookup(n *vffXMLNode, value, kind string) (*vffXMLNode, e
 	}
 	for scope := n; !found && scope != nil; scope = scope.parent {
 		if err := b.tick(0); err != nil {
-			return nil, err
+			return xml.Name{}, err
 		}
 		if uri, ok := scope.bindings[prefix]; ok {
 			namespace, found = uri, true
@@ -238,13 +251,21 @@ func (b *vffSKCBinder) lookup(n *vffXMLNode, value, kind string) (*vffXMLNode, e
 		}
 	}
 	if prefix != "" && !found {
-		return nil, fmt.Errorf("undeclared QName prefix")
+		return xml.Name{}, fmt.Errorf("undeclared QName prefix")
 	}
-	if namespace != b.namespace || b.definitions[kind][local] == nil {
+	return xml.Name{Space: namespace, Local: local}, nil
+}
+
+func (b *vffSKCBinder) lookup(n *vffXMLNode, value, kind string) (*vffXMLNode, error) {
+	name, err := b.qname(n, value)
+	if err != nil {
+		return nil, err
+	}
+	if name.Space != b.namespace || b.definitions[kind][name.Local] == nil {
 		b.issues = append(b.issues, "unresolved "+kind+" QName: "+value)
 		return nil, nil
 	}
-	return b.definitions[kind][local], nil
+	return b.definitions[kind][name.Local], nil
 }
 
 func (b *vffSKCBinder) expand(n *vffXMLNode, via []vffSKCDeclarationWitness, depth int) ([]vffSKCFieldCandidate, error) {
@@ -313,7 +334,7 @@ func (b *vffSKCBinder) expand(n *vffXMLNode, via []vffSKCDeclarationWitness, dep
 			} else if !vffSKCBindingName(name) {
 				return nil, fmt.Errorf("invalid field name")
 			}
-			fields = append(fields, vffSKCFieldCandidate{b.witness(declaration), append([]vffSKCDeclarationWitness(nil), via...)})
+			fields = append(fields, vffSKCFieldCandidate{declaration: b.witness(declaration), via: append([]vffSKCDeclarationWitness(nil), via...)})
 		case "attributeGroup", "group":
 			parent := n.name.Local
 			if kind == "attributeGroup" && parent != "complexType" && parent != "extension" && parent != "attributeGroup" || kind == "group" && parent != "complexType" && parent != "extension" && parent != "sequence" && parent != "choice" && parent != "all" {
@@ -332,6 +353,7 @@ func (b *vffSKCBinder) expand(n *vffXMLNode, via []vffSKCDeclarationWitness, dep
 			if group == nil {
 				continue
 			}
+			b.groupUses = append(b.groupUses, vffSKCGroupUse{declaration: b.witness(group), reference: b.witness(child), via: append([]vffSKCDeclarationWitness(nil), via...)})
 			more, err := b.expand(group, via, depth+1)
 			if err != nil {
 				return nil, err
