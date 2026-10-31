@@ -246,6 +246,8 @@ make test-release RELEASE_SUITE=common-python-cli
 
 门禁构建 wheel，在全新 venv 中安装依赖和 wheel，校验 `addp` entry point 与版本，然后使用真实 macOS Keychain 完成 Browser loopback + PKCE、Device Flow、AuthContext、跨进程刷新轮换、撤销和终端敏感信息 E2E。非 macOS 环境或缺少可用 macOS Keychain 后端时门禁失败，不降级到明文文件凭据库。
 
+产品门禁的已安装工件、pipx 生命周期、Keychain E2E 及测试 OAuth 服务的详细断言与边界见[实施报告](common-python实施报告.md#发布门禁)。
+
 GitHub Actions 的 `CLI product gate (macOS Keychain)` Job 使用同一入口，并归档通过 `twine check`、全新环境安装和产品 E2E 的同一个 wheel 及其 SHA-256；不得在门禁后重新构建另一个待发布 wheel。
 
 版本发布预检由全量测试中的 `tests/test_version.py` 统一执行，校验运行时单一版本源、包元数据、命令版本和长期文档版本，不增加第二套版本脚本。发布工作流中的所有第三方 `uses:` 固定到不可变提交 SHA，并由固定版本的 zizmor 在现有 required Job 中扫描，禁止重新引入浮动 Action Tag。推送与包版本一致的 `v<version>` Tag 会重新运行 macOS CLI 产品门禁和 PostgreSQL 15 System IAM 门禁。两项均通过后，发布 Job 只下载同一次运行归档的 wheel，校验 SHA-256、包名和 `METADATA` 版本，使用 GitHub OIDC 为 wheel 生成 build provenance attestation，再创建 GitHub Release；发布阶段不检出源码、不重新构建。用户可使用 `gh attestation verify` 验证 wheel 来源。维护者本地复现也必须使用统一 `test-release` 入口；分发器调用的 owner 目标不作为第二个公共命令。

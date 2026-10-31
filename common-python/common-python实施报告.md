@@ -2,6 +2,10 @@
 
 更新日期：2026-07-31
 
+[返回模块入口](CLAUDE.md) · [使用与认证](README.md#认证方式) · [产品 E2E 断言](#发布门禁) · [未覆盖项](#延期边界)
+
+本文保留产品门禁的实现断言和未覆盖边界，使用操作与通用契约统一引用 README；不作为某一源码版本的验收通过报告。
+
 ## 模块边界
 
 `common-python` 是 ADDP Python 共享库，同时发布正式 `addp` CLI entry point。它负责：
@@ -16,30 +20,19 @@
 
 ## CLI 认证主路径
 
-CLI 登录只有两种标准交互：
-
-1. `addp auth login` 使用 Authorization Code + PKCE 和 RFC 8252 动态 loopback；
-2. `addp auth login --device` 使用 Device Authorization Flow。
-
-两者固定使用公共客户端 `client_id=addp-cli`、`scope=addp.api`，不配置 Client Secret。CLI 不提供用户名密码直传、API Key、Client Secret 或手工 Token 登录。
+登录交互、公共客户端、禁止输入的认证材料及批准后的 Context 绑定统一见[README 认证方式](README.md#认证方式)；正式协议见[CLI 产品契约](<../docs/spec/addp OAuth授权规范.md#71-正式-addp-cli-产品契约>)。客户端本地状态保留以下约束：
 
 Refresh Token 按归一化 ADDP Base URL 隔离，只保存到 OS Keychain。Access Token、Authorization Request Secret、PKCE verifier、Authorization Code 和 Device Code 只存在于进程内存。同一 Base URL 的登录、刷新、状态和撤销共用跨进程文件锁，刷新轮换后原子更新 Keychain。
-
-`addp auth status` 会先刷新，再调用 System 唯一 AuthContext API；Keychain 中有值不等于已认证。OAuth Family 在浏览器批准时绑定 Platform 或 Tenant Context，CLI 不提供事后 Context Switch，需要其他 Context 时先撤销并重新授权。
 
 ## 安装与版本
 
 包名固定为 `addp-common`，命令固定为 `addp`。版本只在 `addp_common.__version__` 定义，构建元数据和 `addp --version` 都读取该事实源。当前版本为 `0.1.14`。
 
-正式交付使用 GitHub Release 中的 wheel，不以本地源码构建或 editable 源码目录作为用户安装方式。维护者复现构建、全新环境安装和产品 E2E 的唯一入口为：
-
-```bash
-make test-release RELEASE_SUITE=common-python-cli
-```
+正式交付、升级与版本准备见[README 安装说明](README.md#cli-安装)；维护者的唯一产品门禁、环境前提与 System IAM T2 要求见[开发与验证](README.md#开发与验证)。
 
 ## 发布门禁
 
-门禁按固定顺序执行：
+以下为产品门禁的实现顺序与断言，实际结果须按对应源码版本与报告认定：
 
 1. 从 `common-python` 构建 wheel；
 2. 创建全新 venv 并只安装 wheel、运行依赖和测试依赖；
@@ -55,8 +48,12 @@ make test-release RELEASE_SUITE=common-python-cli
 
 测试 OAuth 协议服务器只用于驱动已安装 CLI 的客户端行为，不进入生产包、不新增生产端点，也不替代 System Fosite 协议验收。System Fosite Provider、PostgreSQL Storage、刷新重用和审计事务仍由 System 测试独立证明；正式发布要求两侧门禁都通过。
 
-GitHub Release 是当前唯一正式分发路径。发布工作流中的第三方 `uses:` 必须固定到不可变提交 SHA，固定版本的 zizmor 扫描直接属于现有 required Job，不能作为非阻断旁路。推送 `v<version>` Tag 后，同一次 GitHub Actions 运行必须重新通过 macOS CLI 产品门禁和 PostgreSQL 15 System IAM 门禁；发布 Job 只下载前者归档的已验证 wheel，复核 SHA-256、包名和 wheel `METADATA` 版本与 Tag 一致，使用 GitHub OIDC 为 wheel 生成 build provenance attestation，然后创建 Release。发布阶段不检出源码、不重新构建。发布物来源使用 `gh attestation verify <wheel> --repo pampa0629/addp` 验证。PyPI 与私有包仓库待账号、权限和发布策略独立确定后再设计。
+分发渠道、Tag 门禁、同次 wheel 归档、摘要与版本核验、OIDC 来源证明及后续渠道边界，统一见[README 安装说明](README.md#cli-安装)和[发布验证](README.md#开发与验证)。
 
 ## 延期边界
 
 OIDC、外部 IdP、跨域 SSO 与单点退出不在本阶段实现。当前 System 不注册 OpenID Handler，不允许 `openid` Scope，也不发布 Discovery/JWKS；这些能力必须在后续独立阶段完成 issuer、Claim、密钥生命周期和 External Identity 映射设计后实施。
+
+CLI 当前正式支持范围与真实 OS Keychain 发布证据仅覆盖 macOS；Windows Credential Manager 与 Linux Secret Service 尚需同等级产品 E2E，范围见[README 认证方式](README.md#认证方式)。这不限制共享 SDK 本身的运行平台。
+
+共享库回归、已安装 CLI／真实 Keychain 的 T5、System IAM PostgreSQL T2 和真实跨模块运行验收分别认定，层级见[测试与验收规范](../docs/spec/addp测试与验收规范.md#二测试分层)。本报告未提供固定源码版本的执行报告，不能据门禁代码或上述断言认定已通过；未运行、失败和未覆盖项分别记录，不计为通过。
