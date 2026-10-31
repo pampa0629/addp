@@ -69,6 +69,7 @@ Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provi
 - 资源选择与资源树：引擎列表及资源树统一使用 Meta engine / resource-tree / item API；Transfer 不保留私有引擎列表、数据源树、节点 children 或表 metadata 代理接口。
 - TaskProvider 标准任务：`GET /task-provider/tasks`、`GET /task-provider/tasks/:task_type/:id`、`POST /task-provider/tasks/:task_type/:id/execute`、`GET /task-provider/executions/:execution_id`，其中 `task_type` 固定为 `sync`；四个端点不接受用户任务权限。
 - 任务定义：`GET /task-definitions`、`POST /task-definitions`、`GET /task-definitions/statistics`、`GET /task-definitions/:id`、`PUT /task-definitions/:id`、`DELETE /task-definitions/:id`、`POST /task-definitions/:id/start|pause|resume`、`GET /task-definitions/:id/executions`。`pause/resume` 只控制 owner schedule，不中断 active execution。
+- 只读配置预检：`POST /task-config-checks`，请求、权限与只读边界见[只读配置预检](#只读配置预检)。
 - “传输任务”列表页提供传输任务创建助手，由 Copilot `/api/v1/copilot/transfer/generate` 只识别源资源意图；向导调用 Manager 搜索/资源事实和 Meta 祖先链得到真实候选，确认时重读 owner 事实，目标继续使用共享资源树。唯一候选也必须由用户确认；之后在助手内依次确认目标引擎、目标父位置、目标表、字段映射和任务配置。声明 `limits.table_write.decimal` 的新目标表复用 Transfer 字段定义推荐 API，按目标 capability 校验基于源数据生成并展示确认；不得按 MySQL、OceanBase 等 `engine_type` 建立名单。Copilot 接口只消费上下文，不调用资源 owner、不创建或启动任务；最终仍使用本模块 `task-definitions` API 和 `transfer.task.create` 权限，由 Transfer 独立校验。
 - Transfer 不提供模块级全局执行列表或监控面板；任务列表通过 `MonitorExecutionsButton(module=transfer, task_type=sync)` 进入统一 Monitor。任务详情保留当前任务的执行历史和 Transfer 领域诊断、结果、重试操作，单次领域详情继续使用 `ExecutionDetail`。
 - 数据库 CDC 结构变更：`GET /task-definitions/:id/schema-change` 查询当前请求，`POST /task-definitions/:id/schema-change/approve` 人工审批 additive migration。
@@ -78,6 +79,16 @@ Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provi
 - 执行记录：用户管理接口为 `GET /executions`、`GET /executions/statistics`、`GET /executions/:execution_id`；模块一次性 execution 的来源隔离回查接口为 `GET /executions/:execution_id/result`。
 - 执行管理：`POST /executions/:execution_id/retry`、`GET /executions/:execution_id/progress|events` 按统一 `execution_id` 定位执行记录；当前没有真实 worker 中断能力，因此不提供 cancel/stop API，TaskProvider 保持 `supports_cancel=false`。
 - 转换器：`GET /transforms`、`GET /transforms/stats`、`GET /transforms/:name`、`POST /transforms/:name/validate|test`。
+
+### 只读配置预检
+
+`POST /api/v1/transfer/task-config-checks` 接收完整创建请求，要求当前租户用户的 `transfer.task.create`、`meta.catalog.read`、`system.engine.read` 三项权限交集；委托使用唯一 `transfer` audience 和精确 `transfer.task.config.check` Scope。共用输入 Schema 与委托校验见 [Tool 契约](../docs/spec/addp智能体Tool开放规范.md#34-当前-tool-集合)；支持范围、三态结果、请求与报告摘要绑定、未检查项及运行期复核统一见[配置预检正文](docs/transfer-基本概念及配置说明.md#33-native-table-target)。
+
+Transfer 先授权，再用 Tenant Service 读取 System 引擎事实及 Meta 已落库快照；不得调用业务行、查询执行／描述、实时 Catalog Facts、Prepare、任务保存或执行。
+
+T1 覆盖授权隔离、零任务副作用、完整配置／结构摘要及缺失／采样／依赖错误；已有 `make test-transfer-postgres` 覆盖非法数组在 replace 删除前拒绝。
+
+标准入口与实际验收边界见[开发与验证](#开发与验证)。
 
 ### 角色专用导出选择
 
@@ -196,8 +207,6 @@ curl http://localhost:8083/health/ready
 本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见 `docs/spec/addp开发服务生命周期与构建身份规范.md`。
 
 原生开发的 bounded、continuous Worker 均支持默认单实例、可选双实例，分别配置 `ADDP_DEV_TRANSFER_BOUNDED_WORKER_REPLICAS` 和 `ADDP_DEV_TRANSFER_CONTINUOUS_WORKER_REPLICAS`（仅 1／2）。标准入口按编号单元管理 PID，沿正式登记传递独立进程身份与 `ADDP_HOST_NODE_ID`。持续同步双实例必须省略固定 `TRANSFER_CONTINUOUS_WORKER_INSTANCE_ID`，复用原有每进程租约 Owner 生成。启动、缩容和停止边界见上述生命周期规范；多进程部署不等于已验证业务任务竞争或 HA。
-
-正式只读配置预检为 `POST /api/v1/transfer/task-config-checks`：完整创建请求、三项当前租户用户权限交集（`transfer.task.create`、`meta.catalog.read`、`system.engine.read`），精确委托 Scope `transfer.task.config.check`。只读取 System 引擎事实及 Meta 已落库快照，先授权后用 Tenant Service 读取；不得调用业务行、查询执行／描述、实时 Catalog Facts、Prepare、任务保存或执行。支持边界、摘要及 unknown 语义见 `docs/transfer-基本概念及配置说明.md`。T1 覆盖授权隔离、零任务副作用、完整配置／结构摘要及缺失／采样／依赖错误；已有 `make test-transfer-postgres` 覆盖非法数组在 replace 删除前拒绝。
 
 Transfer bounded 执行失败的诊断沿既有 `error_details.code` 输出：不可证明查询输出血缘的类型化 `plugin.ErrQueryOutputLineageUnresolved`（含逐层 `%w` 包装）在唯一完成事务中保存 `query_output_lineage_unresolved`。执行完成内部接口传递 error，不先转字符串再猜测原因；私有 message 仍仅用于内部诊断，专业响应继续通过 Common Observation 隐藏原始文本。Hosted 派生查询拒绝验收只匹配该稳定 code、failed 终态、本次执行身份、零写入与空目标前后事实，不消费已删除的 error_msg，也不把连接错误或同文案字符串当作保护拒绝。T1 覆盖类型化／包装／无关错误、当前租约下完成与专业响应隐藏文本；现有 Transfer PostgreSQL 读取隔离门禁复验诊断字段及权限，已有门禁登记承接，不新增数据库或测试入口。
 
