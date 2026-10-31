@@ -1700,16 +1700,20 @@ def _numeric_output(grid, count, *, size=None):
 
 
 _FOCAL_MESSAGES = {
-    'method': ('method必须为sum、mean、min、max、stddev、mode、median、percentile、variety或weighted_mean',
-               'method must be sum, mean, min, max, stddev, mode, median, percentile, variety or weighted_mean'),
+    'method': ('method必须为sum、mean、min、max、stddev、mode、median、percentile、variety、weighted_mean或weighted_stddev',
+               'method must be sum, mean, min, max, stddev, mode, median, percentile, variety, weighted_mean or weighted_stddev'),
     'percentile': ('percentile必须为0至100之间的有限数值，且不能为布尔值',
                    'percentile must be a finite number from 0 to 100, excluding booleans'),
     'unused': ('只有method=percentile时才能提供percentile参数',
                'percentile is only accepted when method=percentile'),
     'weights': ('weighted_mean的weights必须为与3或5窗口同尺寸的二维列表，元素为有限非负数且至少一个为正，不能为布尔值',
                 'weighted_mean weights must be a square list matching the 3 or 5 window, containing finite nonnegative numbers with at least one positive value, excluding booleans'),
-    'weights_unused': ('只有method=weighted_mean时才能提供weights参数',
-                       'weights is only accepted when method=weighted_mean'),
+    'weights_unused': ('只有method=weighted_mean或weighted_stddev时才能提供weights参数',
+                       'weights is only accepted when method=weighted_mean or weighted_stddev'),
+    'stddev_weights': ('weighted_stddev的weights必须为与3或5窗口同尺寸的二维列表，元素为有限非负数且至少一个为正，不能为布尔值',
+                       'weighted_stddev weights must be a square list matching the 3 or 5 window, containing finite nonnegative numbers with at least one positive value, excluding booleans'),
+    'weighted_stddev_numeric': ('邻域加权总体标准差无法表示为有限非负Float64结果',
+                               'Focal weighted population standard deviation cannot be represented as a finite nonnegative Float64 result'),
     'weighted_numeric': ('邻域加权均值无法表示为有限Float64结果',
                          'Focal weighted mean cannot be represented as a finite Float64 result'),
 }
@@ -1799,24 +1803,25 @@ def _focal_rank_values(neighbours, shape, window_size, percentile):
     return result
 
 
-def _focal_weight_kernel(weights, window_size):
+def _focal_weight_kernel(weights, window_size, *, method='weighted_mean'):
+    error = 'stddev_weights' if method == 'weighted_stddev' else 'weights'
     if (not isinstance(weights, list) or len(weights) != window_size
             or any(not isinstance(row, list) or len(row) != window_size for row in weights)):
-        raise _focal_error('weights')
+        raise _focal_error(error)
     values = []
     for row in weights:
         for value in row:
             try:
                 if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real):
-                    raise _focal_error('weights')
+                    raise _focal_error(error)
                 value = float(value)
             except (TypeError, OverflowError) as cause:
-                raise _focal_error('weights') from cause
+                raise _focal_error(error) from cause
             if not math.isfinite(value) or value < 0:
-                raise _focal_error('weights')
+                raise _focal_error(error)
             values.append(value)
     if not any(values):
-        raise _focal_error('weights')
+        raise _focal_error(error)
     ratios = [value.as_integer_ratio() for value in values]
     shift = max(denominator.bit_length() - 1 for _, denominator in ratios)
     units = [numerator << (shift - (denominator.bit_length() - 1)) for numerator, denominator in ratios]
@@ -1824,14 +1829,15 @@ def _focal_weight_kernel(weights, window_size):
     return tuple(values), tuple(value // divisor for value in units)
 
 
-def _focal_weighted_values(values, valid, cx, cy, shape, window_size, units, center_valid):
-    """Bounded dyadic integer sums; round only the final nonuniform weighted ratio."""
+def _focal_weighted_values(values, valid, cx, cy, shape, window_size, units, center_valid, *, stddev=False):
+    """Bounded exact moments; round only the final weighted ratio or square root."""
     ratios = [float(value).as_integer_ratio() for value in values.flat]
     shift = max(denominator.bit_length() - 1 for _, denominator in ratios)
     encoded = np.fromiter((numerator << (shift - (denominator.bit_length() - 1))
                            for numerator, denominator in ratios), dtype=object, count=values.size).reshape(values.shape)
     numerator = np.zeros(shape, dtype=object)
     denominator = np.zeros(shape, dtype=object)
+    squares = np.zeros(shape, dtype=object) if stddev else None
     radius = window_size // 2
     height, width = shape
     for index, weight in enumerate(units):
@@ -1840,15 +1846,25 @@ def _focal_weighted_values(values, valid, cx, cy, shape, window_size, units, cen
         dy, dx = index // window_size - radius, index % window_size - radius
         region = np.s_[cy+dy:cy+dy+height, cx+dx:cx+dx+width]
         numerator += encoded[region] * weight
+        if stddev:
+            squares += encoded[region] ** 2 * weight
         denominator += valid[region].astype(object) * weight
     result = np.full(shape, np.nan)
     for index in np.flatnonzero(center_valid & (denominator != 0)):
         try:
-            value = float(Fraction(numerator.flat[index], denominator.flat[index] << shift))
+            if stddev:
+                mass = denominator.flat[index]
+                variance_numerator = squares.flat[index] * mass - numerator.flat[index] ** 2
+                if variance_numerator < 0:
+                    raise _focal_error('weighted_stddev_numeric')
+                variance = Fraction(variance_numerator, mass * mass << (2 * shift))
+                value = _sqrt_fraction(variance, error=lambda: _focal_error('weighted_stddev_numeric'), allow_rounded_zero=True)
+            else:
+                value = float(Fraction(numerator.flat[index], denominator.flat[index] << shift))
         except OverflowError as cause:
-            raise _focal_error('weighted_numeric') from cause
+            raise _focal_error('weighted_stddev_numeric' if stddev else 'weighted_numeric') from cause
         if not math.isfinite(value):
-            raise _focal_error('weighted_numeric')
+            raise _focal_error('weighted_stddev_numeric' if stddev else 'weighted_numeric')
         result.flat[index] = value
     return result
 
@@ -1857,7 +1873,7 @@ def raster_focal_statistics(input_raster, band, window_size, method, percentile=
     """Reduce valid pixel neighbourhoods using bounded source reads with halos."""
     if isinstance(window_size, bool) or not isinstance(window_size, int) or window_size not in (3, 5):
         raise ValueError('window_size must be the integer 3 or 5')
-    if method not in ('sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile', 'variety', 'weighted_mean'):
+    if method not in ('sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile', 'variety', 'weighted_mean', 'weighted_stddev'):
         raise _focal_error('method')
     if method == 'percentile':
         percentile = _percentile_parameter(percentile)
@@ -1865,11 +1881,11 @@ def raster_focal_statistics(input_raster, band, window_size, method, percentile=
         raise _focal_error('unused')
     reduce_method = method
     kernel_units = None
-    if method == 'weighted_mean':
-        kernel, kernel_units = _focal_weight_kernel(weights, window_size)
-        # Equal positive weights are the existing mean, with its exact reduction order.
+    if method in ('weighted_mean', 'weighted_stddev'):
+        kernel, kernel_units = _focal_weight_kernel(weights, window_size, method=method)
+        # Equal positive weights reuse the corresponding original reduction order.
         if len(set(kernel)) == 1:
-            reduce_method = 'mean'
+            reduce_method = 'mean' if method == 'weighted_mean' else 'stddev'
     elif weights is not _FOCAL_WEIGHTS_UNSET:
         raise _focal_error('weights_unused')
     dataset = _open(input_raster)
@@ -1910,8 +1926,9 @@ def raster_focal_statistics(input_raster, band, window_size, method, percentile=
                             yield (values[cy+dy:cy+dy+height, cx+dx:cx+dx+width],
                                    valid[cy+dy:cy+dy+height, cx+dx:cx+dx+width])
 
-                if reduce_method == 'weighted_mean':
-                    result = _focal_weighted_values(values, valid, cx, cy, center.shape, window_size, kernel_units, center_valid)
+                if reduce_method in ('weighted_mean', 'weighted_stddev'):
+                    result = _focal_weighted_values(values, valid, cx, cy, center.shape, window_size, kernel_units, center_valid,
+                                                    stddev=reduce_method == 'weighted_stddev')
                 elif reduce_method == 'mode':
                     result = center.copy()
                     best_count = np.zeros(center.shape, dtype=np.uint8)
@@ -4642,7 +4659,7 @@ def _tri_error(code):
     return ValueError(_TRI_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
 
 
-def _tri_root(squared):
+def _sqrt_fraction(squared, *, error, allow_rounded_zero=False):
     """Round an exact nonnegative square root to binary64, ties to even.
 
     Scale before integer square root so no intermediate float can overflow or
@@ -4667,10 +4684,14 @@ def _tri_root(squared):
     try:
         result = math.ldexp(float(integral), step)
     except OverflowError as cause:
-        raise _tri_error('numeric') from cause
-    if not math.isfinite(result) or result == 0:
-        raise _tri_error('numeric')
+        raise error() from cause
+    if not math.isfinite(result) or (result == 0 and not allow_rounded_zero):
+        raise error()
     return result
+
+
+def _tri_root(squared):
+    return _sqrt_fraction(squared, error=lambda: _tri_error('numeric'))
 
 
 def _tri_block(values, valid, elevation_factor):
@@ -5092,7 +5113,7 @@ _SPECS = [
     (raster_cut_fill, OperatorCategory.RASTER_STATISTICS, '双DEM填挖方统计', [_INPUT(), _param('after_raster', 'raster', '施工后DEM，须与施工前同CRS、尺寸和完整网格，由用户保证相同高程基准', role='input'), _param('band', 'int', '显式施工前高程数据波段'), _param('after_band', 'int', '显式施工后高程数据波段'), _param('elevation_unit', 'str', '显式施工前高程单位', enum=list(_ELEVATION_METRES)), _param('after_elevation_unit', 'str', '显式施工后高程单位；挖填体积各非负，净增加为填方减挖方，统一立方米', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_surface_area, OperatorCategory.RASTER_STATISTICS, 'DEM 三维表面积统计', [_INPUT(), _param('band', 'int', '显式高程数据波段；四角有效像元中心组成面片，外缘不补面积'), _param('elevation_unit', 'str', '显式高程单位；双对角三角剖分逐面片取平均，面积平方米，结果为普通表', enum=list(_ELEVATION_METRES))], 'DataFrame', ['read']),
     (raster_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格分区统计', [_INPUT(), _param('zones_raster', 'raster', '整数分类分区输入，须与数值栅格具有完全相同的网格', role='input'), _param('band', 'int', '显式选择从 1 开始的数值数据波段'), _param('zones_band', 'int', '显式选择从 1 开始的整数分类数据波段'), _param('percentile', 'float', '可选单个0至100的有限百分位；每区全量固定线性插值，50为中位数；未提供时保持原统计九列', None, False)], 'DataFrame', ['read']),
-    (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_size', 'int', '以像元为单位的正方形窗口边长：3 或 5'), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）/median（中位数；偶数取两中值平均）/percentile（固定线性百分位）/variety（分类种类数；有效整数分类去重计数）/weighted_mean（非负矩阵加权均值；有效位置重新归一化）', enum=['sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile', 'variety', 'weighted_mean']), _param('percentile', 'float', 'method=percentile时必须显式指定单个0至100的有限百分位数；其他方法不得提供；50与median一致', None, False).model_copy(update={'show_when': {'method': ['percentile']}}), _param('weights', 'list[list[float]]', 'weighted_mean必填：同窗口3×3或5×5有限非负二维权重，至少一个正值；行列直接对应，不翻转；其他方法不得提供', None, False).model_copy(update={'show_when': {'method': ['weighted_mean']}})], 'raster', ['read']),
+    (raster_focal_statistics, OperatorCategory.RASTER_STATISTICS, '栅格邻域统计', [_INPUT(), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('window_size', 'int', '以像元为单位的正方形窗口边长：3 或 5'), _param('method', 'str', 'sum/mean/min/max/stddev（总体标准差）/mode（分类众数；并列优先中心原分类，否则较小分类）/median（中位数；偶数取两中值平均）/percentile（固定线性百分位）/variety（分类种类数；有效整数分类去重计数）/weighted_mean（非负矩阵加权均值；有效位置重新归一化）/weighted_stddev（非负矩阵加权总体标准差）', enum=['sum', 'mean', 'min', 'max', 'stddev', 'mode', 'median', 'percentile', 'variety', 'weighted_mean', 'weighted_stddev']), _param('percentile', 'float', 'method=percentile时必须显式指定单个0至100的有限百分位数；其他方法不得提供；50与median一致', None, False).model_copy(update={'show_when': {'method': ['percentile']}}), _param('weights', 'list[list[float]]', 'weighted_mean/weighted_stddev必填：同窗口3×3或5×5有限非负二维权重，至少一个正值；行列直接对应，不翻转；其他方法不得提供', None, False).model_copy(update={'show_when': {'method': ['weighted_mean', 'weighted_stddev']}})], 'raster', ['read']),
     (raster_vector_zonal_statistics, OperatorCategory.RASTER_STATISTICS, '矢量分区统计', [_INPUT(), _param('input_gdf', 'GeoDataFrame', '同 CRS 有效二维面，各面独立统计，重叠分别计入', role='input'), _param('band', 'int', '显式选择从 1 开始的数据波段，不能选择 alpha'), _param('all_touched', 'bool', '默认按像元中心覆盖，可选全部触及像元', False, False), _param('field_prefix', 'str', '新增统计列前缀，同名冲突报错，可为空', 'zonal_', False), _param('percentile', 'float', '可选单个0至100的有限百分位；逐面全量固定线性插值，50为中位数；未提供时保持原统计八列', None, False)], 'GeoDataFrame', ['read']),
     (raster_histogram, OperatorCategory.RASTER_STATISTICS, '栅格直方图', [_INPUT(), _param('band', 'int', '从 1 开始的波段序号', 1, False), _param('bins', 'int', '分桶数量', 256, False), _param('value_range', 'list[float]', '统计值域', None, False)], 'object', ['read']),
     (raster_fill_depressions, OperatorCategory.RASTER_FLOW, 'DEM 填洼', [_INPUT(), _param('band', 'int', '显式高程数据波段；八邻接，图边及无效区边界开放'), _param('elevation_unit', 'str', '明确原高程单位，输出米制最低溢流高程', enum=list(_ELEVATION_METRES))], 'raster', ['read']),

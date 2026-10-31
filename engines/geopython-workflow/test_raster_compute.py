@@ -13766,7 +13766,7 @@ def test_focal_median_method_diagnostic_bilingual_and_all_methods_still_valid(tm
         for method in ('sum','mean','min','max','stddev','mode','median'):
             result=raster_focal_statistics(loaded,1,3,method);ds=gdal.Open(str(result.path));ds=None
         with pytest.raises(ValueError)as error:raster_focal_statistics(loaded,1,3,'invalid-method')
-        assert str(error.value)==('method必须为sum、mean、min、max、stddev、mode、median、percentile、variety或weighted_mean'if language=='zh-cn'else'method must be sum, mean, min, max, stddev, mode, median, percentile, variety or weighted_mean')
+        assert str(error.value)==('method必须为sum、mean、min、max、stddev、mode、median、percentile、variety、weighted_mean或weighted_stddev'if language=='zh-cn'else'method must be sum, mean, min, max, stddev, mode, median, percentile, variety, weighted_mean or weighted_stddev')
 
 
 @pytest.mark.parametrize('case',['direct','reclassify','invalid','save-existing','rank-failure'])
@@ -13800,7 +13800,7 @@ def test_focal_median_async_cog_save_reclassification_and_failure_cleanup(tmp_pa
     assert status['status']==('failed'if case in('invalid','save-existing','rank-failure')else'success'),status
     assert workspaces and all(not p.exists()for p in workspaces)and path.read_bytes()==before
     if case=='invalid':
-        assert not target.exists();cause='method必须为sum、mean、min、max、stddev、mode、median、percentile、variety或weighted_mean'if language=='zh-cn'else'method must be sum, mean, min, max, stddev, mode, median, percentile, variety or weighted_mean'
+        assert not target.exists();cause='method必须为sum、mean、min、max、stddev、mode、median、percentile、variety、weighted_mean或weighted_stddev'if language=='zh-cn'else'method must be sum, mean, min, max, stddev, mode, median, percentile, variety, weighted_mean or weighted_stddev'
         assert cause in status['error']and client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
     elif case=='rank-failure':assert not target.exists()and 'injected median rank failure'in status['error']
     elif case=='save-existing':assert target.read_bytes()==b'previous artifact'
@@ -15409,3 +15409,245 @@ def test_focal_weighted_mean_async_cog_accurate_failures_submitted_language_and_
         with raster_error_language(language):cause='injected weighted computation failure'if case=='compute-failure'else str(compute._focal_error('weights_unused'if case=='unused'else'weights'))
         assert status['error']=='任务 focal 执行失败: '+cause
         assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
+
+
+def _weighted_stddev_reference(values,valid,weights):
+    """Independent positional Decimal weighted deviations, not raw second moments."""
+    from decimal import Decimal,localcontext
+    size=len(weights);radius=size//2;answer=np.full(values.shape,np.nan);known={}
+    with localcontext()as context:
+        context.prec=3000
+        kernel=[Decimal.from_float(float(w))for row in weights for w in row]
+        for row,col in zip(*np.nonzero(valid)):
+            samples=tuple(float(values[y,x])if 0<=y<values.shape[0]and 0<=x<values.shape[1]and valid[y,x]else None
+                          for y in range(row-radius,row+radius+1)for x in range(col-radius,col+radius+1))
+            if samples not in known:
+                pairs=[(Decimal.from_float(v),w)for v,w in zip(samples,kernel)if v is not None and w>0]
+                if pairs:
+                    mass=sum(w for v,w in pairs);mean=sum(v*w for v,w in pairs)/mass
+                    variance=sum(w*(v-mean)**2 for v,w in pairs)/mass
+                    known[samples]=float(variance.sqrt())
+                else:known[samples]=math.nan
+            answer[row,col]=known[samples]
+    return answer
+
+
+def _weighted_focal_stddev_result(path,weights,band=1):
+    return raster_focal_statistics(raster_load(source_plan(path)),band,len(weights),'weighted_stddev',weights=weights)
+
+
+@pytest.mark.parametrize('size',[3,5])
+@pytest.mark.parametrize('seed',[7,19,31])
+def test_focal_weighted_stddev_exact_decimal_random_asymmetric_zeros_masks_edges(tmp_path,size,seed):
+    rng=np.random.default_rng(seed);values=rng.normal(size=(11,13))*31.25;valid=rng.random(values.shape)>.23
+    values[5,5]=0.;valid[5,5]=True;weights=rng.integers(0,9,size=(size,size)).astype(float).tolist()
+    path=create_raster(tmp_path/'weighted.tif',np.where(valid,values,-9999));before=path.read_bytes()
+    expected=_weighted_stddev_reference(values,valid,weights)
+    with raster_workspace():
+        actual=_twi_read(_weighted_focal_stddev_result(path,weights));np.testing.assert_array_equal(actual,expected)
+        np.testing.assert_array_equal(np.isfinite(actual),np.isfinite(expected))
+    assert path.read_bytes()==before
+
+
+@pytest.mark.parametrize('size',[3,5])
+@pytest.mark.parametrize('constant',[1.,2.,float(np.nextafter(0.,1.)),np.finfo(float).max])
+def test_focal_weighted_stddev_equal_positive_weights_use_existing_stddev_exactly(tmp_path,size,constant):
+    values=np.array([[0.,1.,-3.,1e308],[1e-300,-1e308,7.,9.],[2.,-9999.,4.,-0.]])
+    path=create_raster(tmp_path/'uniform.tif',values)
+    with raster_workspace():
+        source=raster_load(source_plan(path));mean=_twi_read(raster_focal_statistics(source,1,size,'stddev'))
+        weighted=_twi_read(raster_focal_statistics(source,1,size,'weighted_stddev',weights=[[constant]*size for _ in range(size)]))
+        np.testing.assert_array_equal(weighted,mean)
+        np.testing.assert_array_equal(np.isnan(weighted),np.isnan(mean))
+
+
+@pytest.mark.parametrize('size',[3,5])
+@pytest.mark.parametrize('position',[(0,0),(0,2),(2,0)])
+def test_focal_weighted_stddev_matrix_is_not_flipped_and_empty_effective_support_is_nodata(tmp_path,size,position):
+    values=np.arange(size*size,dtype=float).reshape(size,size)+1;weights=np.zeros((size,size));weights[position]=1
+    path=create_raster(tmp_path/'oriented.tif',values);expected=_weighted_stddev_reference(values,np.ones(values.shape,bool),weights.tolist())
+    with raster_workspace():
+        actual=_twi_read(_weighted_focal_stddev_result(path,weights.tolist()));np.testing.assert_array_equal(actual,expected)
+        assert actual[size//2,size//2]==0
+        assert np.isnan(actual).any()
+
+
+@pytest.mark.parametrize('size',[3,5])
+@pytest.mark.parametrize('case',['max','opposite','adjacent','subnormal','tiny_weight','weighted_cancellation','round_zero','tiny_signal','mixed_scales'])
+def test_focal_weighted_stddev_numerical_extremes_exact_decimal_no_false_nodata(tmp_path,size,case):
+    maximum=np.finfo(float).max;tiny=float(np.nextafter(0.,1.))
+    pairs={'max':([maximum,maximum],[1e308,1e308]),'opposite':([maximum,-maximum],[1.,1.]),
+           'adjacent':([maximum,-np.nextafter(maximum,0.)],[1.,1.]),'subnormal':([tiny,2*tiny],[1.,2.]),
+           'tiny_weight':([maximum,1.],[tiny,1.]),'weighted_cancellation':([maximum,-maximum],[1.,np.nextafter(1.,2.)]),
+           'round_zero':([-tiny,tiny],[1.,2.]),'tiny_signal':([0.,tiny],[tiny,1.]),'mixed_scales':([1e308,1e-300],[1e-300,1e308])}
+    samples,masses=pairs[case];values=np.full((size,size),-9999.);values[size//2,size//2]=0;values[0,:2]=samples
+    valid=values!=-9999.;weights=np.zeros((size,size));weights[0,:2]=masses
+    path=create_raster(tmp_path/'extremes.tif',values);expected=_weighted_stddev_reference(values,valid,weights.tolist())
+    with raster_workspace():
+        with np.errstate(over='raise',invalid='raise'):
+            actual=_twi_read(_weighted_focal_stddev_result(path,weights.tolist()))
+        np.testing.assert_array_equal(actual,expected);assert np.isfinite(actual[size//2,size//2])
+
+
+@pytest.mark.parametrize('weights',[None,[],{},True,'matrix',[[1]*3]*2,[[1]*2]*3,[[1]*3,[1]*3,[1]*4],[[0]*3]*3,
+                                    [[-1,0,0],[0,1,0],[0,0,0]],[[True]*3]*3,[[None]*3]*3,[['1']*3]*3,
+                                    [[math.nan]*3]*3,[[math.inf]*3]*3,[[{}]*3]*3,[[[]]*3]*3,[[10**400]*3]*3])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_focal_weighted_stddev_invalid_weights_bilingual_before_source_or_output(monkeypatch,weights,language):
+    import operators.raster_compute as compute
+    monkeypatch.setattr(compute,'_open',lambda *_:pytest.fail('invalid weights must fail before source access'))
+    with raster_workspace(),raster_error_language(language):
+        with pytest.raises(ValueError)as error:
+            raster_focal_statistics(None,1,3,'weighted_stddev',weights=weights)
+        assert str(error.value)==str(compute._focal_error('stddev_weights'))
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_focal_weighted_stddev_missing_weights_bilingual_and_other_methods_reject_even_null(language):
+    import operators.raster_compute as compute
+    with raster_workspace(),raster_error_language(language):
+        with pytest.raises(ValueError)as error:raster_focal_statistics(None,1,3,'weighted_stddev')
+        assert str(error.value)==str(compute._focal_error('stddev_weights'))
+        for method in ('sum','mean','min','max','stddev','mode','median','percentile','variety'):
+            for weights in (None,[[1]*3]*3):
+                with pytest.raises(ValueError)as error:raster_focal_statistics(None,1,3,method,percentile=50 if method=='percentile'else None,weights=weights)
+                assert str(error.value)==str(compute._focal_error('weights_unused'))
+
+
+@pytest.mark.parametrize('size',[3,5])
+@pytest.mark.parametrize('located',[True,False])
+def test_focal_weighted_stddev_complete_cross_block_cog_exact_oracle_mask_grid_and_cleanup(tmp_path,monkeypatch,size,located):
+    import operators.raster_compute as compute
+    rows,cols=np.indices((515,519));values=((rows*3+cols*5)%17-8).astype(float);valid=np.ones(values.shape,bool);valid[510,511]=False
+    path=create_raster(tmp_path/'blocks.tif',np.where(valid,values,-9999),(100,2,.25,200,-.5,-3)if located else None,'EPSG:3857'if located else None)
+    weights=((np.arange(size*size).reshape(size,size)*3+1)%7).astype(float).tolist();expected=_weighted_stddev_reference(values,valid,weights);before=path.read_bytes();reads=[];blocks=compute._blocks
+    def bounded(*args,**kwargs):
+        for x,y,arrays,masks in blocks(*args,**kwargs):
+            assert kwargs.get('native')is True and arrays[0].shape[0]<=512 and arrays[0].shape[1]<=512
+            reads.append((x,y));yield x,y,arrays,masks
+    monkeypatch.setattr(compute,'_blocks',bounded)
+    with raster_workspace():
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir());result=raster_focal_statistics(source,1,size,'weighted_stddev',weights=weights)
+        assert set(source.workspace.iterdir())==prior|{result.path}
+        target=tmp_path/'weighted.cog.tif';artifact=raster_save(result,target_plan(target),profile='cog',blocksize=128)
+        assert artifact['size_bytes']==target.stat().st_size>0 and validate_cog(raster_load(source_plan(target)))['valid']
+        ds=gdal.Open(str(target));band=ds.GetRasterBand(1);np.testing.assert_array_equal(band.ReadAsArray(),expected);np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected))
+        original=gdal.Open(str(path));assert ds.GetGeoTransform(can_return_null=True)==original.GetGeoTransform(can_return_null=True)and ds.GetProjection()==original.GetProjection();original=None
+        assert band.DataType==gdal.GDT_Float64 and np.isnan(band.GetNoDataValue())and band.GetScale()is None and band.GetOffset()is None and band.GetColorTable()is None
+        assert band.GetOverviewCount()>0;band=ds=None
+    assert len(reads)==4 and path.read_bytes()==before and not source.workspace.exists()
+
+
+@pytest.mark.parametrize('case',['mask-alpha','raw-scale','all-invalid','selected-alpha','complex','bad-band','bad-window'])
+def test_focal_weighted_stddev_explicit_band_coverage_and_original_admission(tmp_path,case):
+    path=tmp_path/'coverage.tif';ds=gdal.GetDriverByName('GTiff').Create(str(path),5,3,3,gdal.GDT_CFloat64 if case=='complex'else gdal.GDT_Float64)
+    values=np.array([[0.,1.,2.,-3.,4.]]*3);valid=np.ones(values.shape,bool)
+    ds.GetRasterBand(1).Fill(.5);ds.GetRasterBand(2).WriteArray(values);ds.GetRasterBand(3).Fill(128);ds.GetRasterBand(3).SetColorInterpretation(gdal.GCI_AlphaBand)
+    if case=='mask-alpha':
+        ds.GetRasterBand(3).WriteArray(np.array([[0,128,255,255,255]]*3));valid[:,0]=False
+        with gdal.config_option('GDAL_TIFF_INTERNAL_MASK','YES'):ds.CreateMaskBand(gdal.GMF_PER_DATASET)
+        mask=np.full(values.shape,255,np.uint8);mask[1,3]=0;ds.GetRasterBand(1).GetMaskBand().WriteArray(mask);valid[1,3]=False
+    if case=='raw-scale':ds.GetRasterBand(2).SetScale(0);ds.GetRasterBand(2).SetOffset(9)
+    if case=='all-invalid':ds.GetRasterBand(2).Fill(math.nan);valid[:]=False
+    ds=None;weights=[[0,1,2],[3,4,5],[6,7,8]]
+    with raster_workspace():
+        if case in('selected-alpha','complex','bad-band','bad-window'):
+            with pytest.raises(ValueError):raster_focal_statistics(raster_load(source_plan(path)),3 if case=='selected-alpha'else 0 if case=='bad-band'else 2,4 if case=='bad-window'else 3,'weighted_stddev',weights=weights)
+        else:np.testing.assert_array_equal(_twi_read(_weighted_focal_stddev_result(path,weights,2)),_weighted_stddev_reference(values,valid,weights))
+
+
+@pytest.mark.parametrize('stage',['read','compute','write','metadata'])
+def test_focal_weighted_stddev_partial_private_output_removed_on_failure(tmp_path,monkeypatch,stage):
+    import operators.raster_compute as compute
+    path=create_raster(tmp_path/'cleanup.tif',np.arange(16,dtype=float).reshape(4,4))
+    def broken(*args,**kwargs):raise RuntimeError('injected weighted failure')
+    with raster_workspace():
+        source=raster_load(source_plan(path));prior=set(source.workspace.iterdir())
+        monkeypatch.setattr(gdal.Band if stage=='write'else compute,'WriteRaster'if stage=='write'else{'read':'_blocks','compute':'_focal_weighted_values','metadata':'_raster'}[stage],broken)
+        with pytest.raises(RuntimeError,match='injected weighted failure'):raster_focal_statistics(source,1,3,'weighted_stddev',weights=[[0,1,2],[3,4,5],[6,7,8]])
+        assert set(source.workspace.iterdir())==prior
+
+
+@pytest.mark.parametrize('case',['direct','reclassify','all-invalid','invalid','unused','save-existing','compute-failure'])
+@pytest.mark.parametrize('language',['zh-cn','en'])
+def test_focal_weighted_stddev_async_cog_accurate_failures_submitted_language_and_cleanup(tmp_path,monkeypatch,case,language):
+    import api_server,workflow_engine,operators.raster_compute as compute
+    values=np.array([[0.,0.,1.,2.,2.]]);valid=np.ones(values.shape,bool)
+    if case=='all-invalid':values[:]=math.nan;valid[:]=False
+    path=create_raster(tmp_path/'async-weighted.tif',values);before=path.read_bytes();target=tmp_path/'weighted.cog.tif'
+    if case=='save-existing':target.write_bytes(b'previous original result')
+    weights=[[0,1,2],[3,4,5],[6,7,8]];tasks=[{'id':'source','operator':'raster_load','depends_on':[],'params':{'access_plan':source_plan(path)}}];prior='source';classified=values
+    if case=='reclassify':
+        tasks.append({'id':'classes','operator':'raster_reclassify','depends_on':['source'],'params':{'input_raster':{'$ref':'source'},'band':1,'rules':[{'value':0,'class':10},{'value':1,'class':20},{'value':2,'class':30}]}});prior='classes';classified=np.array([[10.,10.,20.,30.,30.]])
+    params={'input_raster':{'$ref':prior},'band':1,'window_size':3,'method':'mean'if case=='unused'else'weighted_stddev','weights':[[0]*3]*3 if case=='invalid'else weights}
+    tasks.extend([{'id':'focal','operator':'raster_focal_statistics','depends_on':[prior],'params':params},{'id':'save','operator':'raster_save','depends_on':['focal'],'params':{'input_raster':{'$ref':'focal'},'access_plan':target_plan(target),'profile':'cog'}}])
+    workspaces=[];execute=workflow_engine._execute_operator
+    def capture(name,params):
+        if name=='raster_focal_statistics':workspaces.append(params['input_raster'].workspace)
+        return execute(name,params)
+    if case=='compute-failure':
+        def broken(*args,**kwargs):raise RuntimeError('injected weighted computation failure')
+        monkeypatch.setattr(compute,'_focal_weighted_values',broken)
+    monkeypatch.setattr(workflow_engine,'_execute_operator',capture);client=api_server.app.test_client()
+    assert client.post('/api/operators/raster_focal_statistics/invoke',json={'params':{}}).status_code==403
+    response=client.post('/api/workflow',headers={'Accept-Language':language},json={'workflow_def':{'tasks':tasks},'input_data':{},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read','write']}}})
+    assert response.status_code==202,response.json
+    deadline=time.monotonic()+15
+    while time.monotonic()<deadline:
+        status=client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':'en'if language=='zh-cn'else'zh-cn'}).json
+        if status['status']in('success','failed'):break
+        time.sleep(.01)
+    success=case in('direct','reclassify','all-invalid')
+    assert status['status']==('success'if success else'failed'),status
+    assert workspaces and all(not workspace.exists()for workspace in workspaces)and path.read_bytes()==before
+    if success:
+        expected=_weighted_stddev_reference(classified,valid,weights);ds=gdal.Open(str(target));band=ds.GetRasterBand(1)
+        np.testing.assert_array_equal(band.ReadAsArray(),expected);np.testing.assert_array_equal(band.GetMaskBand().ReadAsArray()!=0,np.isfinite(expected))
+        assert ds.GetMetadata('IMAGE_STRUCTURE')['LAYOUT']=='COG';band=ds=None;assert json.loads(status['result'])['size_bytes']==target.stat().st_size>0
+    elif case=='save-existing':assert target.read_bytes()==b'previous original result'
+    else:
+        assert not target.exists()
+        with raster_error_language(language):cause='injected weighted computation failure'if case=='compute-failure'else str(compute._focal_error('weights_unused'if case=='unused'else'stddev_weights'))
+        assert status['error']=='任务 focal 执行失败: '+cause
+        assert client.get('/api/executions/'+response.json['execution_id'],headers={'Accept-Language':language}).json['error']==status['error']
+
+
+@pytest.mark.parametrize('size',[3,5])
+@pytest.mark.parametrize('dtype,nodata',[('Int64',-2**63),('UInt64',2**64-2)])
+def test_focal_weighted_stddev_native_nodata_adjacent_valid_integer_coverage(tmp_path,size,dtype,nodata):
+    path=tmp_path/'stddev-native.tif';values=np.array([[nodata,nodata+1,nodata+2 if dtype=='Int64'else nodata-1]],dtype=np.int64 if dtype=='Int64'else np.uint64)
+    ds=gdal.GetDriverByName('GTiff').Create(str(path),3,1,1,getattr(gdal,'GDT_'+dtype));band=ds.GetRasterBand(1);band.WriteArray(values)
+    (band.SetNoDataValueAsInt64 if dtype=='Int64'else band.SetNoDataValueAsUInt64)(nodata);band=ds=None
+    weights=((np.arange(size*size).reshape(size,size)%7)+1).tolist();valid=values!=nodata
+    with raster_workspace():
+        actual=_twi_read(_weighted_focal_stddev_result(path,weights));np.testing.assert_array_equal(np.isfinite(actual),[[False,True,True]])
+        np.testing.assert_array_equal(actual,_weighted_stddev_reference(values,valid,weights))
+
+
+@pytest.mark.parametrize('size',[3,5])
+def test_focal_weighted_stddev_population_formula_weight_scaling_translation_and_value_scaling(tmp_path,size):
+    values=(np.arange(63).reshape(7,9)%19-9).astype(float)/4;valid=np.ones(values.shape,bool);valid[0,0]=False
+    weights=((np.arange(size*size).reshape(size,size)*3+1)%7).tolist();answers=[]
+    with raster_workspace():
+        for index,(array,kernel)in enumerate(((values,weights),(values,[[8*w for w in row]for row in weights]),(values+2**40,weights),(values*2,weights))):
+            path=create_raster(tmp_path/f'invariant-{index}.tif',np.where(valid,array,-9999))
+            answer=_twi_read(_weighted_focal_stddev_result(path,kernel));np.testing.assert_array_equal(answer,_weighted_stddev_reference(array,valid,kernel));answers.append(answer)
+        np.testing.assert_array_equal(answers[0],answers[1]);np.testing.assert_array_equal(answers[0],answers[2]);np.testing.assert_array_equal(answers[0]*2,answers[3])
+    # Analytic weighted population standard deviation: weights 1,3 at values 0,4 => sqrt(3).
+    path=create_raster(tmp_path/'population.tif',np.array([[0.,4.]]))
+    with raster_workspace():
+        result=_twi_read(_weighted_focal_stddev_result(path,[[0,0,0],[0,1,3],[0,0,0]]))
+        assert result[0,0]==math.sqrt(3)and result[0,1]==0
+
+
+@pytest.mark.parametrize('lower',[0.,np.nextafter(0.,1.),np.finfo(float).tiny,1.,np.nextafter(1.,2.),np.nextafter(np.finfo(float).max,0.)])
+@pytest.mark.parametrize('offset',[-1,0,1])
+def test_focal_weighted_stddev_shared_exact_root_nearest_even_preserves_tri_policy(lower,offset):
+    from fractions import Fraction
+    import struct,operators.raster_compute as compute
+    upper=np.nextafter(lower,np.inf);a=Fraction(float(lower));b=Fraction(float(upper));root=(a+b)/2+(b-a)*Fraction(offset,2**100)
+    even=not(struct.unpack('>Q',struct.pack('>d',lower))[0]&1);expected=lower if offset<0 or(offset==0 and even)else upper
+    actual=compute._sqrt_fraction(root**2,error=lambda:ValueError('numeric'),allow_rounded_zero=True);assert actual==expected
+    if expected==0:
+        with pytest.raises(ValueError):compute._tri_root(root**2)
+    else:assert compute._tri_root(root**2)==expected

@@ -34,7 +34,7 @@ MESSAGES={
  'alpha':('Focal statistics require a data band, not alpha',)*2,
  'complex':('Complex-valued bands are not supported by numeric analysis',)*2,
  **{name:('window_size must be the integer 3 or 5',)*2 for name in FAILURES if name.startswith('window_')},
- 'method':('method必须为sum、mean、min、max、stddev、mode、median、percentile、variety或weighted_mean','method must be sum, mean, min, max, stddev, mode, median, percentile, variety or weighted_mean'),
+ 'method':('method必须为sum、mean、min、max、stddev、mode、median、percentile、variety、weighted_mean或weighted_stddev','method must be sum, mean, min, max, stddev, mode, median, percentile, variety, weighted_mean or weighted_stddev'),
  'unused':('只有method=percentile时才能提供percentile参数','percentile is only accepted when method=percentile'),
 }
 
