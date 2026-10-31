@@ -193,14 +193,15 @@ curl http://localhost:8083/health/ready
 
 ## 相关文档
 
-- `transfer/docs/数据库架构.md`
-- `transfer/docs/transfer-基本概念及配置说明.md`
-- `transfer/docs/transfer-任务语义与同步模式.md`
-- `transfer/docs/design.md`
-- `transfer/docs/transfer转换器架构分析.md`
-- `transfer/docs/transfer高性能分析.md`
-- `transfer/docs/tables/tasks表.md`
-- `transfer/docs/tables/task_executions表.md`
+- [快速开始](docs/快速开始.md)
+- [数据库架构](docs/数据库架构.md)
+- [基本概念及配置说明](docs/transfer-基本概念及配置说明.md)
+- [任务语义与同步模式](docs/transfer-任务语义与同步模式.md)
+- [当前架构设计](docs/design.md)
+- [转换器架构分析（历史归档）](docs/transfer转换器架构分析.md)
+- [高性能分析（历史归档）](docs/transfer高性能分析.md)
+- [transfer.transfer_tasks 表](docs/tables/tasks表.md)
+- [common.task_executions 中的 Transfer 执行记录](docs/tables/task_executions表.md)
 
 ## 数据库启动所有权
 
