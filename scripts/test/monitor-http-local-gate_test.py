@@ -18,6 +18,17 @@ class HTTPProductLocalTests(unittest.TestCase):
             with self.subTest(marker=marker),self.assertRaises(m.core.GateError):m.validate_profile({marker:'1'},'arm64','arm64')
         with self.assertRaises(m.core.GateError):m.validate_profile({},'x86_64','arm64')
 
+    def test_uncommitted_shared_page_oracle_is_rejected_before_any_docker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            for relative in m.OWN_INPUTS:
+                target=root/relative;target.parent.mkdir(parents=True,exist_ok=True);target.write_text('committed\n')
+            (root/'console/frontend/e2e/http-quality-page-support.mjs').write_text('dirty oracle\n')
+            life=SimpleNamespace(command=mock.Mock(return_value='committed\n'),docker=mock.Mock())
+            with mock.patch.object(m.core,'ROOT',root),self.assertRaisesRegex(m.core.GateError,'commit_all_http_inputs_before_acceptance'):
+                m.build(life)
+            life.docker.assert_not_called()
+
     def test_dynamic_subnet_requires_private_sufficient_ipv4(self):
         addresses=m.source_addresses('172.29.0.0/16')
         self.assertEqual(addresses,{'agent':'172.29.255.245','copilot':'172.29.255.244'})

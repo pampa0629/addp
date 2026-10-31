@@ -36,6 +36,7 @@ OWN_INPUTS=('scripts/test/monitor-http-local-gate.py','scripts/test/monitor-http
     'system/backend/cmd/online-test-fixture/http_quality_local_test.go',
     'system/backend/cmd/online-test-fixture/execution_trace_local.go',
     'console/frontend/e2e/online/http-quality-local.spec.js',
+    'console/frontend/e2e/http-quality-page-support.mjs',
     'console/frontend/e2e/online/local-identity-support.mjs')
 
 class Lifecycle(core.Lifecycle):

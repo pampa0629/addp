@@ -15,7 +15,7 @@ require=auth.require
 PREFIX='/api/v1/monitor/platform/'
 
 class RequestBudget:
-    def __init__(self):self.control=0;self.controlled=0;self.last=None
+    def __init__(self):self.control=0;self.controlled=0;self.browser=0;self.last=None
     def before(self,path):
         if path.startswith(('/api/v1/agent/','/api/v1/copilot/')):
             self.controlled+=1;require(self.controlled<=300,'controlled_request_limit')
@@ -92,32 +92,53 @@ def logout(life,env,clients):
         client.request('GET','/api/v1/system/auth/context',(401,))
 
 
-def browser(life,env,report,instances,stopped=False):
-    require(not stopped,'browser_runs_before_single_source_stop')
-    require(life.request_budget.control+80<=200,'browser_control_reserve_insufficient')
-    input={'schema':'addp.http-quality-browser/v1','run_id':life.run_id,
+def browser(life,env,report,instances,stopped_at=None):
+    phase='stopped' if stopped_at else 'live'
+    receipts=report.setdefault('browser',{})
+    require(phase not in receipts and (phase=='live' or receipts.get('live',{}).get('result')=='passed'),
+        'browser_phase_order_invalid')
+    remaining=80-life.request_budget.browser
+    require(remaining>0 and life.request_budget.control+remaining<=200,'browser_control_reserve_insufficient')
+    input={'schema':'addp.http-quality-browser/v1','run_id':life.run_id,'phase':phase,'request_limit':remaining,
+        'stopped_at':stopped_at.isoformat() if stopped_at else None,
         'instances':[{k:row[k] for k in ('id','module_name','instance_id','role')} for row in instances]}
-    life.private_json('http-browser.json',input)
+    config='http-browser-'+phase+'.json';receipt_name='http-browser-'+phase+'-report.json'
+    life.private_json(config,input)
     selected={k:v for k,v in env.items() if k.startswith('ADDP_HTTP_LOCAL_ADMIN_')}
-    selected.update(ADDP_HTTP_LOCAL='1',CONSOLE_URL='http://nginx',ADDP_HTTP_LOCAL_BROWSER_CONFIG_FILE='/private/http-browser.json',
-        ADDP_HTTP_LOCAL_BROWSER_REPORT_FILE='/private/http-browser-report.json',ADDP_ONLINE_ARTIFACT_DIR='/tmp/http-browser')
-    secret=life.work/'browser.env';secret.write_text('\n'.join(k+'='+v for k,v in selected.items())+'\n');secret.chmod(0o600)
-    life.phase='formal_console_http_quality_page'
+    selected.update(ADDP_HTTP_LOCAL='1',CONSOLE_URL='http://nginx',ADDP_HTTP_LOCAL_BROWSER_CONFIG_FILE='/private/'+config,
+        ADDP_HTTP_LOCAL_BROWSER_REPORT_FILE='/private/'+receipt_name,ADDP_ONLINE_ARTIFACT_DIR='/tmp/http-browser-'+phase)
+    secret=life.work/('browser-'+phase+'.env');secret.write_text('\n'.join(k+'='+v for k,v in selected.items())+'\n');secret.chmod(0o600)
+    life.phase='formal_console_http_quality_page_'+phase
+    primary=None
     try:
-        life.docker('run','--name',life.run_id+'-browser','--label',life.label+'='+life.run_id,
+        life.docker('run','--name',life.run_id+'-browser-'+phase,'--label',life.label+'='+life.run_id,
             '--label',life.label+'.role=oneshot','--cpus','.5','--memory','1g','--network',life.network,
             '--env-file',str(secret),'--mount',f'type=bind,source={life.checkout},target=/workspace',
             '--mount',f'type=bind,source={life.work},target=/private','-w','/workspace/console/frontend',life.browser_image,
             'node','node_modules/@playwright/test/cli.js','test','--config=playwright.online.config.js',
             'http-quality-local.spec.js','--reporter=line',timeout=300)
+    except BaseException as error:
+        primary=error
+        raise
     finally:
-        receipt_path=life.work/'http-browser-report.json'
-        if receipt_path.is_file():report['browser']=json.loads(receipt_path.read_text())
-    receipt=json.loads((life.work/'http-browser-report.json').read_text())
-    require(receipt.get('result')=='passed' and receipt.get('run_id')==life.run_id,'formal_browser_receipt_failed')
-    require(type(receipt.get('api_requests')) is int and life.request_budget.control+receipt['api_requests']<=200,'control_request_limit')
-    life.request_budget.control+=receipt['api_requests']
-    report['browser']=receipt
+        try:
+            receipt_path=life.work/receipt_name
+            if receipt_path.is_file():
+                receipt=json.loads(receipt_path.read_text())
+                receipts[phase]=receipt
+                # Failed attempts consume the same cumulative allowance, too.
+                count=receipt.get('api_requests')
+                require(type(count) is int and 0<=count<=remaining,'browser_request_count_invalid')
+                life.request_budget.browser+=count;life.request_budget.control+=count
+        except Exception:
+            if primary is None:raise
+            report['browser_receipt_error']='browser_receipt_invalid'
+    receipt=receipts.get(phase,{})
+    require(receipt.get('schema')=='addp.http-quality-browser-receipt/v1' and receipt.get('result')=='passed'
+        and receipt.get('run_id')==life.run_id and receipt.get('phase')==phase,'formal_browser_receipt_failed')
+    required={'real_password_mfa','summary_ranking_trend_api_values','agent_sample_after_stop','stopped_page_empty'} if stopped_at else {
+        'real_password_mfa','summary_ranking_trend_api_values','url_reload_restored','chinese_and_english'}
+    require(all(receipt.get('assertions',{}).get(key) is True for key in required),'formal_browser_assertions_incomplete')
 
 
 def source_counts(life,phase):
@@ -243,7 +264,8 @@ def run(life,env,report):
     report['source_stop_summary']=after
     report['assertions']['single_source_stop_isolation']=True
     report['stopped_history_readback']='not_accepted_product_gap'
+    browser(life,env,report,instances,stopped_at=stopped_at)
     life.phase='formal_logout_and_revocation'
     logout(life,env,clients)
     report['assertions']['logout_old_sessions_denied']=True
-    report['request_counts']={'controlled':budget.controlled,'control':budget.control,'concurrency':1,'qps_max':1}
+    report['request_counts']={'controlled':budget.controlled,'control':budget.control,'browser':budget.browser,'concurrency':1,'qps_max':1}

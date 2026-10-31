@@ -647,3 +647,26 @@ cleanup.zero_owned_resources=true、failures=[]，当次构建器／容器／网
 至此，上轮记录的九条已生成HTTP专项均有实际步骤／预算归档通过证据，合计1890个完整样本、316次暂停全部恢复，最长完整采样1.342966秒；该合计只是各次固定运行的记录，不是容量或长期不复发证明，也不外推后来push、未生成专项的workflow或当前HEAD。最后一条同样没有复发目录消失／停止确认超时，未取得真实失败循环内状态，fe105实际根因和修复仍未确认；保留历史失败，不因九次成功改停止规则或把D状态接纳为安全。正式Agent/Copilot产品后端到页面、停源历史读取及历史具体删除进程等原缺口保持。
 
 本机`/tmp/addp-p19-http-remaining-20261031-job.json`保存最终Job快照；同前缀artifact-meta.json／zip／report.json／job.log／audit.json保存原始归档、353固定输入、37份封闭确认、资源／阶段计数／清理和日志摘要独立核验。本轮仅两份文档变更，验证36主题计数、唯一锚点／索引、历史状态到最终结果链接及diff，没有代码变更或重跑代码门禁。没有手动dispatch／rerun、新开本地窗口、Hosted、容量或定时；若后续自然超时复发，仍须先用新增取证定位再讨论最小修正，不在本次正常记录上推测改码。
+
+
+<a id="http-formal-page-oracles-20261031"></a>
+
+## 2026-10-31 正式 Python HTTP 页面的验收断言准备（未运行真实窗口）
+
+用户仅授权先修规范及确定性门禁，真实本地窗口另行确认。本次补齐既有 `make test-monitor-http-local` 内的页面验收，不修改产品 API、权限、指标或停源历史语义；没有运行该真实入口、Docker、正式身份或采集环境，也没有 Hosted、容量重跑、定时、CI 手动 dispatch／rerun。
+
+Console 受控回归与人工用例复用唯一 `http-quality-page-support.mjs`：逐一比较七项汇总、六项模板排行、排序和实际画布提示值与同次响应；先等待 Monitor 与 Console 的 canonical query 一致，再刷新核对实例、模板／方法、范围、排序、backend、关闭自动刷新、实际请求及数值和单 iframe。受控反例拒绝错误汇总／排行值、缺样显示为零、错误身份、无有效趋势、趋势提示与响应数值不符和停源前的 Agent 采样。受控停源先展示非空指标，随后在原 iframe 内改变排序重载查询，证明旧汇总／排行／趋势清空且 iframe 未销毁。
+
+人工用例按存活／停源分两个独立真实密码／MFA浏览器阶段，不声称已证明真实页面跨停源驻留；第二阶段由既有单次 Copilot 正常停源与 API `not_active`／空观测之后调用，验证在线列表中该来源已退出、详情提示重新选择且无旧指标及图，Agent 响应与页面仍为停源后新鲜观测。两份回执独立保留，合计浏览器最多80次、控制面最多200次，失败尝试仍计数；顺序错误、重复阶段、预算不足、回执缺失／错归属／不完整均失败，回执解析问题不覆盖首个运行失败。新断言文件纳入固定源码输入与登记检查，公共 CI 仍禁止调用真实人工入口。完整四秒、60分钟／55分钟停新业务、8 CPU／12 GiB、4 GiB停止线、失败清理且不重试／续窗均未改。
+
+| 本轮实际命令 | 结果与边界 |
+| --- | --- |
+| `make test-monitor-http-local-runner` | 29项通过；含未提交共享断言在任何 Docker 调用前被拒绝；同入口 System 正式 HTTP 身份夹具 Go 单元通过，无真实服务 |
+| `cd console/frontend && npm run test:e2e -- http-quality-navigation.spec.js` | 首轮两处测试定位／交互失败（控件名误写、背景刷新被详情遮罩挡住）；修正后4项通过。随后标准完整 Console 门禁执行了增加数值篡改、缺样／趋势反例和原 iframe 停源清空的最终版本 |
+| `make test-console-frontend` | 222项单元、274项受控浏览器及构建通过；包含本次四项 HTTP 用例，不等同真实后端／真实身份实链 |
+| `make test-monitor-frontend` | 131项单元、539项受控浏览器及构建通过；包含原HTTP页面／规则与身份隔离回归，不扩大为正式后端实测 |
+| `make test-frontend-ci-registration` | 27项登记／隔离检查及21个前端登记检查通过；既有路径选择命中新断言的 Console，以及夹具变更的 Monitor／Console，无需新增入口或 workflow |
+| `make test-module MODULE=console` | 前置 `test-platform-review` 的 `TestTransferReviewSourceDrift/batch_contract` 因 `docs/spec/addp智能体Tool开放规范.md` 来源漂移失败，未进入 Console owner 门禁；不在本专项修复，不计完整模块通过 |
+| Node／Python源语法、本专项 `git diff --check -- <owned paths>` | 通过；人工 JS 仅语法检查与共享断言的受控实测，不声称实际运行真实密码/MFA用例 |
+
+正式产品构建／注册／mTLS采集、真实密码/MFA、API及两阶段真实页面、注销和最终零残留仍未验收；停源后历史读取、5／15分钟完整窗口、模型／工具、5xx／告警通知、Hosted、容量及72小时保留仍不在本批。历史 Mac Docker list／inspect 等待与完整四秒失败原因未确认；Linux SDK 稳定读取路径的成功不能代替本地资源守卫修复。下一步只建议另行确认原60分钟真实本地窗口，未取得授权前不启动。

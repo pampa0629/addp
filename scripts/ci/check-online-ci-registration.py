@@ -4882,6 +4882,7 @@ def validate_local_http_quality_profile(repository: Path) -> None:
             raise RegistrationError("local HTTP quality requires manual entry and deterministic lifecycle registration")
     for relative in (entry, "scripts/test/monitor-http-local-online.py",
                      "console/frontend/e2e/online/http-quality-local.spec.js",
+                     "console/frontend/e2e/http-quality-page-support.mjs",
                      "console/frontend/e2e/online/local-identity-support.mjs",
                      "system/backend/cmd/online-test-fixture/http_quality_local.go"):
         if not (repository / relative).is_file():

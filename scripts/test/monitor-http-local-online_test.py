@@ -4,6 +4,9 @@ import importlib.util
 import unittest
 from datetime import datetime,timezone,timedelta
 import copy
+import json
+import tempfile
+from types import SimpleNamespace
 from unittest import mock
 spec=importlib.util.spec_from_file_location('http_local_online',Path(__file__).with_name('monitor-http-local-online.py'))
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
@@ -67,5 +70,78 @@ class HTTPProductOracles(unittest.TestCase):
         for item in (payload('failed'),payload(changes={'http.failures.percent':1}),payload(changes={'http.requests.per_second':0}),payload(changes={'http.client_errors.percent':0})):
             with self.assertRaises(m.auth.LocalTraceAssertionFailure):m.validate_live(item,[instance])
         with self.assertRaises(m.auth.LocalTraceAssertionFailure):m.validate_live(payload(),[{**instance,'id':2}])
+
+class HTTPBrowserPhases(unittest.TestCase):
+    def fixture(self,directory):
+        life=SimpleNamespace(work=Path(directory),checkout=Path(directory),run_id='owned',label='owned.label',
+            network='owned-network',browser_image='owned-image',request_budget=m.RequestBudget())
+        life.private_json=lambda name,value:(life.work/name).write_text(json.dumps(value))
+        life.request_budget.control=20
+        def docker(*args,**kwargs):
+            phase='stopped' if args[args.index('--name')+1].endswith('-stopped') else 'live'
+            receipt={'schema':'addp.http-quality-browser-receipt/v1','run_id':'owned','phase':phase,'result':'passed',
+                'api_requests':35 if phase=='live' else 25,'assertions':{key:True for key in (
+                    'real_password_mfa','summary_ranking_trend_api_values','url_reload_restored','chinese_and_english',
+                    'agent_sample_after_stop','stopped_page_empty')}}
+            (life.work/('http-browser-'+phase+'-report.json')).write_text(json.dumps(receipt))
+        life.docker=mock.Mock(side_effect=docker)
+        return life
+
+    def test_two_phases_share_request_budget_and_keep_distinct_receipts_and_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=self.fixture(directory);report={}
+            m.browser(life,{},report,[])
+            stop=datetime.now(timezone.utc)
+            m.browser(life,{},report,[],stopped_at=stop)
+            self.assertEqual(life.request_budget.browser,60);self.assertEqual(life.request_budget.control,80)
+            self.assertEqual(set(report['browser']),{'live','stopped'})
+            self.assertEqual(json.loads((life.work/'http-browser-stopped.json').read_text())['request_limit'],45)
+            self.assertEqual(len({call.args[call.args.index('--name')+1] for call in life.docker.call_args_list}),2)
+            self.assertTrue(all(call.kwargs['timeout']==300 for call in life.docker.call_args_list))
+            self.assertEqual(json.loads((life.work/'http-browser-stopped.json').read_text())['stopped_at'],stop.isoformat())
+
+    def test_phase_order_duplicate_or_exhausted_budget_never_starts_transport(self):
+        with tempfile.TemporaryDirectory() as directory:
+            life=self.fixture(directory)
+            with self.assertRaisesRegex(m.auth.LocalTraceAssertionFailure,'phase_order'):
+                m.browser(life,{}, {},[],stopped_at=datetime.now(timezone.utc))
+            for count,control in ((80,100),(0,121)):
+                life.request_budget.browser=count;life.request_budget.control=control
+                with self.assertRaisesRegex(m.auth.LocalTraceAssertionFailure,'reserve_insufficient'):m.browser(life,{}, {},[])
+            life.docker.assert_not_called()
+            life.request_budget.browser=0;life.request_budget.control=20
+            report={};m.browser(life,{},report,[])
+            with self.assertRaisesRegex(m.auth.LocalTraceAssertionFailure,'phase_order'):m.browser(life,{},report,[])
+            self.assertEqual(life.docker.call_count,1)
+
+    def test_missing_wrong_or_incomplete_receipt_cannot_pass(self):
+        for change in ({'run_id':'foreign'},{'phase':'stopped'},{'result':'failed'},{'assertions':{}},
+                {'api_requests':81},{'api_requests':-1},{'api_requests':True}):
+            with self.subTest(change=change),tempfile.TemporaryDirectory() as directory:
+                life=self.fixture(directory);original=life.docker.side_effect
+                def docker(*args,**kwargs):
+                    original(*args,**kwargs)
+                    path=life.work/'http-browser-live-report.json'
+                    path.write_text(json.dumps({**json.loads(path.read_text()),**change}))
+                life.docker.side_effect=docker
+                with self.assertRaises(m.auth.LocalTraceAssertionFailure):m.browser(life,{}, {},[])
+                self.assertEqual(life.docker.call_count,1)
+        with tempfile.TemporaryDirectory() as directory:
+            life=self.fixture(directory);life.docker.side_effect=None
+            with self.assertRaisesRegex(m.auth.LocalTraceAssertionFailure,'receipt_failed'):m.browser(life,{}, {},[])
+
+    def test_failed_transport_counts_attempts_and_preserves_first_failure(self):
+        for malformed in (False,True):
+            with self.subTest(malformed=malformed),tempfile.TemporaryDirectory() as directory:
+                life=self.fixture(directory);original=life.docker.side_effect
+                def docker(*args,**kwargs):
+                    original(*args,**kwargs)
+                    if malformed:(life.work/'http-browser-live-report.json').write_text('not-json')
+                    raise RuntimeError('first_transport_failure')
+                life.docker.side_effect=docker;report={}
+                with self.assertRaisesRegex(RuntimeError,'first_transport_failure'):m.browser(life,{},report,[])
+                self.assertEqual(life.request_budget.browser,0 if malformed else 35)
+                self.assertEqual(life.docker.call_count,1)
+                if malformed:self.assertEqual(report['browser_receipt_error'],'browser_receipt_invalid')
 
 if __name__=='__main__':unittest.main()
