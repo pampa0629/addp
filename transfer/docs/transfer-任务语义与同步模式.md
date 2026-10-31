@@ -177,7 +177,7 @@ continuous session 不进入 bounded execution claim。Transfer 使用独立 con
 
 同一 task 同一时刻只有一个合法 runtime owner。`transfer.runtime_leases` 提供 lease、heartbeat 和 fencing；`transfer.sync_states` 按 partition 保存 `kafka_offset/v1.next_offset`。Kafka auto commit 禁用，consumer group 只承担 partition assignment。
 
-continuous 的用户运行控制见[生命周期](#64-生命周期)。worker shutdown、lease expiry 和普通可恢复失败会结束当前 execution；任务仍为运行期望时，supervisor 按持久化退避和 circuit 状态创建 recovery execution，并从 committed position 恢复。schema drift、Pause 和 Stop 不自动恢复。
+continuous 的用户控制、自动恢复与审计分工见[生命周期](#64-生命周期)；进程、租约和 committed position 的所有权仍按本章约束。
 
 ### 6.1 交付保证
 
@@ -244,13 +244,40 @@ Oracle RAC 当前没有 capture/provider 契约。readiness 必须读取 `V$PARA
 
 ### 6.4 生命周期
 
-本节只描述 continuous 的运行控制；用户入口与逐动作权限见[任务表](tables/tasks表.md#用户任务定义与控制)，当前 User 与执行授权遵循[触发身份规则](#触发身份与调度授权)。它不使用 bounded 定时任务的暂停清除／恢复重建调度授权流程。
+本节描述 continuous 的用户控制与自动恢复；用户入口与逐动作权限见[任务表](tables/tasks表.md#用户任务定义与控制)，当前 User 与执行授权遵循[触发身份规则](#触发身份与调度授权)。它不使用 bounded 定时任务的暂停清除／恢复重建调度授权流程。
+
+阅读导航：[用户运行控制](#用户运行控制)、[自动恢复与退避](#自动恢复与退避)、[恢复审计与运行状态](#恢复审计与运行状态)。
+
+#### 用户运行控制
 
 Pause 停止目标应用并结束当前 session；启动或 Resume 创建新 execution，恢复须确认 committed position 仍处于 Kafka retention 范围。位置已被 retention 清除时必须明确失败，不能静默跳到 earliest。真实停止、释放 session／lease 与恢复约束见[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)。
 
 数据库 CDC 的 Pause 不暂停 connector。捕获仍会写入 Infra Kafka，主要风险是 backlog、磁盘和 retention；connector 或 Kafka 故障时还要分别观测 PostgreSQL WAL、MySQL binlog 或 Oracle redo/archive log 容量风险。捕获健康与源日志窗口的判读见[诊断章节](#捕获健康与源日志窗口)。
 
 数据库 CDC 的 Stop 是不可逆终态。它清理 ADDP-owned connector、Provider 专属捕获资源、data/schema-history topic、consumer group 和 ACL；已停止任务不能再次 Start/Resume。重新同步必须创建新任务和新目标表。Stop 保留目标业务数据、目标 ledger、任务定义、execution 和审计记录。
+
+#### 自动恢复与退避
+
+以下自动恢复由 supervisor 管理，均要求任务仍为 `desired_state=running`。
+
+continuous worker 重启时不会复用已结束的 execution。正常 worker shutdown 将旧 execution 收敛为 `cancelled + stop_reason=worker_shutdown`；新 worker 在任务 `desired_state=running` 时原子创建 recovery execution，继承上一 execution 的 `trigger_type`，并从 `transfer.sync_states` 已提交位置继续。runtime lease 过期时旧 execution 先以 `failed + stop_reason=lease_expired` 结束，再创建 recovery execution。每次领取继续递增 fencing token。
+
+普通 execution failure 和 lease expiry 会立即创建唯一 pending recovery execution，但在 metadata 的 `recovery_not_before` 之前不可领取。连续失败采用指数退避；达到最大连续失败次数后 `recovery_circuit_state=open`，冷却到期被领取时转为 `half_open`。circuit open 不复用 schema drift 的任务 `blocked`；任务仍保持 `desired_state=running`，没有活 lease 时实际 `status=idle`。worker shutdown 不累计失败，schema drift、Pause 和 Stop 不自动恢复。
+
+唯一执行、领取与恢复条件以[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)为准；参数管理归属见[配置说明](transfer-基本概念及配置说明.md#八continuouskafka-v1-契约与当前实现边界)，恢复位置核验见[生命周期控制](#用户运行控制)。
+
+#### 恢复审计与运行状态
+
+恢复 execution 的 metadata 区分以下持久事实：
+
+| 事实 | 字段与边界 |
+|---|---|
+| 本次恢复的不可变审计 | `recovery_reason`、`recovered_from_execution_id`、`recovery_attempt`、`recovery_not_before`、`recovery_backoff_seconds`；不随成功提交重置。 |
+| 可变运行状态 | `recovery_consecutive_failures` 与 `recovery_circuit_state=closed|open|half_open`。 |
+
+任一目标 position 成功提交，或 session 稳定运行达到配置的稳定运行窗口后再失败，只重置 `recovery_consecutive_failures` 和 circuit 状态；本次 execution 的 `recovery_attempt`、`recovery_not_before` 与 `recovery_backoff_seconds` 作为审计事实保持不变。
+
+字段持久化不自动扩大公开 DTO；专业读取范围以[执行监控契约](../../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)为准。上述语义、配置或状态观测不作为运行通过记录，固定版本证据、失败与未覆盖项见[验证范围](#十一验证范围)。
 
 ### 6.5 诊断与恢复窗口
 

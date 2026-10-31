@@ -453,9 +453,9 @@ diagnostics 采样间隔、degraded/critical retention 阈值和 checkpoint 停�
 
 诊断结果写入 `common.task_executions.metadata.continuous.diagnostics`；Monitor 只读取 execution metadata，不直连业务 Kafka 或 Transfer 私有状态表。允许公开的字段与敏感信息排除统一见[安全投影与读取边界](transfer-任务语义与同步模式.md#安全投影与读取边界)；诊断展示不作为恢复通过记录，固定版本证据、失败与未覆盖项见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)。
 
-continuous worker 重启时不会复用已结束的 execution。正常 worker shutdown 将旧 execution 收敛为 `cancelled + stop_reason=worker_shutdown`；新 worker 在任务 `desired_state=running` 时原子创建 recovery execution，继承上一 execution 的 `trigger_type`，并从 `transfer.sync_states` 已提交位置继续。runtime lease 过期时旧 execution 先以 `failed + stop_reason=lease_expired` 结束，再创建 recovery execution。恢复 execution 在 metadata 记录 `recovery_reason` 和 `recovered_from_execution_id`，每次领取继续递增 fencing token。
+continuous worker 的重启恢复、领取条件与 circuit 状态统一见[自动恢复与退避](transfer-任务语义与同步模式.md#自动恢复与退避)，不可变审计与可变状态见[恢复审计与运行状态](transfer-任务语义与同步模式.md#恢复审计与运行状态)；唯一 pending execution、租约及恢复约束以[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)为准。
 
-普通 execution failure 和 lease expiry 会立即创建唯一 pending recovery execution，但在 metadata 的 `recovery_not_before` 之前不可领取。连续失败按配置页中的指数退避、最大连续失败次数、circuit 冷却时间和稳定运行窗口处理；达到上限后 `recovery_circuit_state=open`，冷却到期被领取时转为 `half_open`。circuit open 不复用 schema drift 的任务 `blocked`；任务仍保持 `desired_state=running`，没有活 lease 时实际 `status=idle`。worker shutdown 不累计失败，schema drift、Pause 和 Stop 不自动恢复。任一目标 position 成功提交，或 session 稳定运行达到配置的稳定运行窗口后再失败，只重置 `recovery_consecutive_failures` 和 circuit 状态；本次 execution 的 `recovery_attempt`、`recovery_not_before` 与 `recovery_backoff_seconds` 作为审计事实保持不变。相关参数属于 Transfer-owned 平台运行配置，不进入任务 JSON。
+指数退避、最大连续失败次数、circuit 冷却时间和稳定运行窗口由“连续任务策略”配置页统一维护，属于 Transfer-owned 平台运行配置，不进入任务 JSON。参数保存或 recovery execution 创建不等于恢复成功；固定版本证据、失败与未覆盖项见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)。
 
 ## 九、数据库 CDC v1 已冻结边界
 
