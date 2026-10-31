@@ -275,3 +275,14 @@ Safari 已加载新缩放提示与实际提交速率曲线，但本轮截图存�
 ### 菜单退出同步修复的 Console CI 结果（2026-10-31）
 
 固定修复提交`4a6a7a4fa`的真实Linux Console Job现已由专门会话回传并核对原始日志：`make test-console-frontend`的222项单元测试、272项浏览器及构建通过，selected=true／整个Job success。完整来源、摘要与原失败分层见[主机证据](Monitor节点与主机资源历史证据.md#菜单退出同步修复的-linux-console-门禁回传2026-10-31)。本轮仅补文档，最小检查`git diff --check`通过，不重复有效验收，不计整个Platform、Hosted或个人两库来源恢复，仍优先只读排查采集来源不可用。
+
+
+## 个人两库来源不可用的只读诊断（2026-10-31）
+
+用户要求继续后，沿现有部署及发现契约只读核对，不修改采集开关、证书、账号、HBA或个人服务。标准`bash scripts/infra/status.sh`显示两库与Prometheus均运行，指标中心Ready只作中心存活证据，不代表数据库专业来源可用。`docker ps -a`及限定字段inspect确认Infra／Business各自的SQL Exporter和mTLS入口共四个容器均为Exited(255)、OOM=false、无Docker State.Error，restart策略为no。四个来源停止时间均在2026-10-30 16:13:20 UTC附近；两库与Prometheus记录几乎同时停止，随后在16:13:23 UTC重新启动，采用unless-stopped策略。换算北京时间为10月31日00:13。该时间关联不能独立证明Docker Desktop或daemon的具体退出原因，原始255事件不按猜测归因。
+
+两个作用域的配置仍为`ADDP_POSTGRES_METRICS_ENABLED=true`；既有服务器证书存在，`openssl x509 -checkend 0 -noout`均成功，只证明本轮未过期，不替代完整信任链及mTLS验收。两库的当前容器ID与四个来源的数据库ID标签一致，但数据库StartedAt已改变，四个来源的数据库启动时刻标签全部不匹配。标准发现快照infra/business本体均available且持续更新（分别13:00:10Z／13:00:12Z），其中postgresql_metrics.state均为unavailable，与`scripts/utils/deployment-inventory.py::postgres_metrics`要求来源运行、容器身份及启动时刻精确匹配的拒绝路径一致。Monitor沿`engine_observation.go`将私有投影的unavailable映射为source_unavailable；本轮不借用后台身份或绕过当前用户授权调用私有接口。
+
+确认的直接断点为采集容器未恢复，且旧来源声明已不匹配本次数据库启动；不是页面tip修改引入的查询或展示问题。仅docker start旧容器或补重启策略，仍不能重新发布当前启动身份，因此不能据此认定恢复。当前支持的恢复路径仍是标准部署入口：用户在仓库根目录依次运行`bash scripts/infra/up.sh --metrics`及`bash business/scripts/start.sh -postgres`。前者重新应用中心和Infra来源；后者沿现有幂等分支复用已运行Business PostgreSQL，再重新核验采集账号、认证及当前数据库身份并发布来源。暂不要求Monitor重启；恢复后分别复验来源发现、实际专业值和趋势，不用source deployed输出替代采集通过。按AGENTS，实际应用已请求用户操作，本会话未执行。
+
+本轮仅诊断并更新现有证据／能力状态，最小检查`git diff --check`通过；没有产品／测试变更，不运行额外数据库、来源T2、CI或Hosted，不设置定时任务。Prometheus受保护API的无凭据直读未成功，不记为目标状态通过，也不读取或输出服务秘密。当前来源恢复与本次采集新鲜度／趋势有效性仍待用户应用后的验证；后续若要让宿主恢复时自动协调来源，需要另行明确部署侧身份重发布职责，不直接加入restart旁路或放宽StartedAt校验。
