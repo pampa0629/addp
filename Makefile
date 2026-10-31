@@ -280,6 +280,8 @@ test-deployment-discovery: ## 校验 Infra/Business 只读部署发现与原子�
 	@bash -n scripts/infra/up.sh scripts/infra/down.sh scripts/dev/start.sh business/scripts/start.sh business/scripts/stop.sh
 
 test-business-config: ## 校验 Business Compose 和服务管理脚本（不启动容器）
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --format json | python3 -c 'import json,sys; s=json.load(sys.stdin)["services"]["spark-master"]; assert {p["target"] for p in s["ports"]} == {7077,8080}; assert "start-master.sh" in str(s["command"]); assert "thrift" not in str(s["command"]).lower(); assert "init-test-data" not in str(s["command"])'
+	@test ! -e business/spark/init-test-data.sh
 	@$(MAKE) test-deployment-discovery
 	@$(MAKE) test-common-ftp-unit
 	@$(MAKE) test-common-starrocks-unit

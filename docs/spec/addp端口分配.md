@@ -35,7 +35,7 @@ Document、PointCloud 和 GeoPython 原生开发直接监听回环地址和已�
 
 Spark Workflow 本地开发使用原生进程，HTTP 以 `WORKFLOW_BIND_HOST=127.0.0.1` 监听实际 `SPARK_WORKFLOW_PORT`；端口归属通过 `.dev-pids/spark-workflow-engine.pid` 与实际监听进程核对。Driver RPC 和 BlockManager 动态端口在宿主机原生监听。macOS 以 `host.docker.internal` 公布 Driver 地址，并在本机 `/etc/hosts` 配置该名为 `127.0.0.1`；Docker Worker 使用内置宿主网关解析。无需 Docker Desktop host networking。Hosted 产品验收独立使用容器宿主网络，不由开发入口启动 Spark 镜像。
 
-已确认的 Spark 联邦查询扩展复用上述内置 Runtime HTTP 服务与标准生命周期，不新增 `spark-query` 服务或 HTTP 端口。用户登记的 Business Spark 集群保留自身计算端点，不能用 Runtime HTTP 端口替换；查询适配完成前不据此声明查询入口已可用。
+已确认的 Spark 联邦查询扩展复用上述内置 Runtime HTTP 服务与标准生命周期，不新增 `spark-query` 服务或 HTTP 端口。用户登记的 Business Spark 集群使用 Standalone Master 计算端点（默认7077），不能用 Runtime HTTP 端口替换；日常 Business 部署不再启动或发布 Thrift 11000接口，也不再创建固定 SQL 视图。查询适配完成前不据此声明查询入口已可用。
 
 `13306` 和 `12881` 由 `scripts/test/docker-compose.local-macos-ci.yml` 中的固定 digest MySQL 8 与 OceanBase CE 4.4.2 LTS 使用，不属于 System 或 Business 长期基础设施。两个服务都无数据卷，只绑定 `127.0.0.1`，在本地巡检的确定性门禁和编译开始前完成健康检查，并在巡检的统一退出清理中删除。
 
@@ -64,7 +64,6 @@ HDFS Simple 本机 Docker Desktop 实验实例通过 `business/scripts/start.sh 
 - Neo4j Bolt: `7687`
 - Spark Master: `7077`
 - Spark Master UI: `18088`
-- Spark Thrift Server: `11000`
 - Business Kafka bootstrap: `29092`
 - OceanBase SQL: `2881`
 - TiDB SQL: `4000`
@@ -94,7 +93,6 @@ NEO4J_HTTP_PORT=7474
 NEO4J_BOLT_PORT=7687
 SPARK_MASTER_PORT=7077
 SPARK_MASTER_UI=18088
-SPARK_THRIFT_PORT=11000
 BUSINESS_KAFKA_PORT=29092
 OCEANBASE_PORT=2881
 TIDB_PORT=4000

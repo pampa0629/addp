@@ -418,7 +418,6 @@ DORIS_FE_PORT=${DORIS_FE_PORT:-9030}
 DORIS_FE_HTTP_PORT=${DORIS_FE_HTTP_PORT:-8030}
 SPARK_MASTER_PORT=${SPARK_MASTER_PORT:-7077}
 SPARK_MASTER_UI=${SPARK_MASTER_UI:-18088}
-SPARK_THRIFT_PORT=${SPARK_THRIFT_PORT:-11000}
 
 NEO4J_HTTP_PORT_VAL=${NEO4J_HTTP_PORT:-7474}
 NEO4J_BOLT_PORT_VAL=${NEO4J_BOLT_PORT:-7687}
@@ -475,7 +474,7 @@ PORTS_TO_CHECK=""
 [ "$ENABLE_CLICKHOUSE" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $CLICKHOUSE_PORT $CLICKHOUSE_HTTP_PORT"
 [ "$ENABLE_MONGODB" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $MONGO_PORT"
 [ "$ENABLE_DORIS" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $DORIS_FE_PORT $DORIS_FE_HTTP_PORT 8040 9050 9060 8060"
-[ "$ENABLE_SPARK" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $SPARK_MASTER_PORT $SPARK_MASTER_UI $SPARK_THRIFT_PORT"
+[ "$ENABLE_SPARK" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $SPARK_MASTER_PORT $SPARK_MASTER_UI"
 [ "$ENABLE_NEO4J" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $NEO4J_HTTP_PORT_VAL $NEO4J_BOLT_PORT_VAL"
 [ "$ENABLE_OCEANBASE" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $OCEANBASE_PORT_VAL"
 [ "$ENABLE_TIDB" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $TIDB_PORT_VAL"
@@ -926,20 +925,32 @@ if [ "$ENABLE_DORIS" = true ]; then
 fi
 
 if [ "$ENABLE_SPARK" = true ]; then
-    echo -e "${YELLOW}等待 Spark 启动 (可能需要 60-90 秒)...${NC}"
-    for i in {1..90}; do
-        if curl -sf http://localhost:${SPARK_MASTER_UI} >/dev/null 2>&1; then
-            echo -e "${GREEN}✓ Spark Master 就绪${NC}"
+    echo -e "${YELLOW}等待 Spark Master 和 Worker 就绪 (最多90秒)...${NC}"
+    SPARK_READY=false
+    SPARK_DEADLINE=$((SECONDS + 90))
+    while [ "$SECONDS" -lt "$SPARK_DEADLINE" ]; do
+        SPARK_PROBE_TIMEOUT=$((SPARK_DEADLINE - SECONDS))
+        [ "$SPARK_PROBE_TIMEOUT" -le 3 ] || SPARK_PROBE_TIMEOUT=3
+        if (set -o pipefail
+            curl --max-time "$SPARK_PROBE_TIMEOUT" -sf "http://localhost:${SPARK_MASTER_UI}/json" | python3 -c '
+import json, sys
+try:
+    state = json.load(sys.stdin)
+    ready = state.get("status") == "ALIVE" and type(state.get("aliveworkers")) is int and state["aliveworkers"] > 0
+except (ValueError, AttributeError):
+    ready = False
+sys.exit(0 if ready else 1)
+' >/dev/null 2>&1); then
+            SPARK_READY=true
             break
         fi
         sleep 1
     done
-    if ! bash "${PROJECT_ROOT}/spark/init-test-data.sh"; then
-        echo -e "${RED}✗ Spark 样例数据初始化失败${NC}"
-        docker exec business-spark-master cat /tmp/addp-spark-sample-init.log 2>/dev/null || true
+    if [ "$SPARK_READY" != true ]; then
+        echo -e "${RED}✗ Spark Master 或 Worker 未就绪；请检查集群日志${NC}" >&2
         exit 1
     fi
-    echo -e "${GREEN}✓ Spark 样例数据已真实查询验证${NC}"
+    echo -e "${GREEN}✓ Spark Master 和 Worker 就绪（计算集群，无固定数据视图）${NC}"
 fi
 
 if [ "$ENABLE_NEO4J" = true ]; then
@@ -1240,7 +1251,6 @@ fi
 if [ "$ENABLE_SPARK" = true ]; then
     echo -e "Spark Master: spark://localhost:${SPARK_MASTER_PORT}"
     echo -e "Spark Master UI: http://localhost:${SPARK_MASTER_UI}"
-    echo -e "Spark Thrift Server: localhost:${SPARK_THRIFT_PORT}"
 fi
 if [ "$ENABLE_NEO4J" = true ]; then
     echo -e "Neo4j Browser: http://localhost:${NEO4J_HTTP_PORT_VAL}"

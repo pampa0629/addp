@@ -719,7 +719,7 @@ services:
       start_period: 60s
     restart: unless-stopped
 
-  # Apache Spark Master + Thrift Server
+  # Apache Spark Standalone Master（仅计算，不启动 Thrift）
   spark-master:
     image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu@sha256:0ed5154e6b32ac3af1272d4d65e9f65b13afcfe80b41ad10bd059bcd6317863c
     container_name: business-spark-master
@@ -731,7 +731,6 @@ services:
     ports:
       - "${SPARK_MASTER_PORT:-7077}:7077"   # Spark 集群通信
       - "${SPARK_MASTER_UI:-18088}:8080"    # Spark Master Web UI
-      - "${SPARK_THRIFT_PORT:-11000}:10000" # Thrift Server (SQL 接口)
     volumes:
       - ./spark:/opt/spark/conf
     command:
@@ -740,9 +739,6 @@ services:
       - |
         set -e
         /opt/spark/sbin/start-master.sh
-        /opt/spark/sbin/start-thriftserver.sh --master spark://spark-master:7077 --conf spark.cores.max=1 --conf spark.executor.cores=1 --conf spark.executor.memory=1g
-        rm -f /tmp/addp-spark-sample-ready
-        /opt/spark/conf/init-test-data.sh >/tmp/addp-spark-sample-init.log 2>&1 &
         exec tail -f /dev/null
     networks:
       - business-network

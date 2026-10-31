@@ -92,3 +92,9 @@ BUSINESS_KAFKA_READER_PASSWORD=change-in-production
 
 
 Business FTP 通过独立 `-ftp` profile 启动，不加入 `-all`。Compose 固定官方 SFTPGo v2.7.6 多架构镜像及 digest，回环端口固定为控制2121／被动50000–50009、内外一致、冲突失败。`business/.env` 使用 `FTP_USER`、必填且至少12字符的 `FTP_PASSWORD`、默认 `FTP_SECURITY=explicit_tls`；选择明文必须显式配置 `plain`。脚本在私有 `.business-state/ftp/` 下生成并保留本机证书，容器以非 root 身份读取内层配置，客户端必须校验证书和名称。独立文件／账号状态卷持久化；只读账号、账号配置身份核验和三个增量示范文件由 `business/ftp/` 唯一维护；种子生成到 Git 忽略的 `ftp/data/`，再由唯一入口补入持久卷。协议根固定为账号虚拟 `/`，不配置客户端 `root_path`。初始化不覆盖用户文件、不隐式轮换账号，不调用 System API。FTP 只读引擎的实际支持范围与验收证据另行认定。
+
+## Business Spark 计算集群
+
+日常 `start.sh -spark` 只启动 Standalone Master 和 Worker，不启动 Thrift Server，不创建固定 SQL 视图或业务表。保留 `SPARK_MASTER_PORT`（默认7077）和 `SPARK_MASTER_UI`（默认18088），删除 `SPARK_THRIFT_PORT`；已有环境文件中的旧变量不再发布 SQL 端口。启动就绪以 Master 原生 `/json` 返回 `status=ALIVE` 且至少一个在线 Worker 为准，超时明确失败，不能用首页可访问或示例查询成功替代。
+
+System 登记的目标是实际 Master 计算端点，不是 Thrift、数据库命名空间或内置 Runtime 的 HTTP 地址；运行时和登记契约按[引擎体系](../../concepts/addp引擎体系图.md#spark-集群与内置运行时边界)统一迁移。Business 不访问 System API，不改写已有引擎登记，也不删除历史 Meta 数据项；旧登记与任务先盘点、显式调整。部署变更不代表查询工作台联邦接口已经完成，正式启用仍须核对插件、授权、Runtime 和页面验收。

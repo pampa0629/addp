@@ -649,5 +649,51 @@ observer.watch(directory,sys.argv[-1])
             self.assertEqual(inventory.observer_state(second), 'owned')
 
 
+class SparkStartupTests(unittest.TestCase):
+    """Execute the production readiness block without starting any service."""
+
+    def run_readiness(self, state, curl_status=0):
+        source = (ROOT / 'business/scripts/start.sh').read_text()
+        start = source.index('if [ "$ENABLE_SPARK" = true ]; then\n    echo -e "${YELLOW}等待 Spark')
+        end = source.index('\nfi', start) + len('\nfi')
+        harness = r'''
+set -eu
+ENABLE_SPARK=true
+SPARK_MASTER_UI=18088
+YELLOW= GREEN= RED= NC=
+curl() {
+    [[ "$*" == *http://localhost:18088/json* ]] || return 20
+    printf '%s' "$PROBE_RESPONSE"
+    return "$PROBE_STATUS"
+}
+sleep() { SECONDS=$((SECONDS + 90)); }
+'''
+        return subprocess.run(['bash', '-c', harness + source[start:end]], text=True,
+            capture_output=True, timeout=5,
+            env=dict(os.environ, PROBE_RESPONSE=state, PROBE_STATUS=str(curl_status)))
+
+    def test_ready_master_with_worker_needs_no_thrift_application(self):
+        result = self.run_readiness(json.dumps({'status': 'ALIVE', 'aliveworkers': 1, 'activeapps': []}))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('Spark Master 和 Worker 就绪', result.stdout)
+
+    def test_homepage_or_standby_or_no_workers_never_reports_success(self):
+        for state in ('<html>Master</html>', '{}', '[]',
+                      '{"status":"ALIVE","aliveworkers":0}',
+                      '{"status":"STANDBY","aliveworkers":1}',
+                      '{"status":"ALIVE","aliveworkers":true}',
+                      '{"status":"ALIVE","aliveworkers":"1"}'):
+            with self.subTest(state=state):
+                result = self.run_readiness(state)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn('未就绪', result.stderr)
+                self.assertNotIn('✓', result.stdout)
+
+    def test_network_failure_is_not_hidden_by_valid_response(self):
+        result = self.run_readiness('{"status":"ALIVE","aliveworkers":1}', curl_status=22)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn('未就绪', result.stderr)
+
+
 if __name__ == '__main__':
     unittest.main()

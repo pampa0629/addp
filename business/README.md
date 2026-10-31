@@ -86,7 +86,7 @@ Schema 使用[该版本通用 SQL 参考](https://support.huaweicloud.com/intl/e
 - **KingbaseES V9R1C10**：固定 `V009R001C010B0004` 官方 Docker tar 与 SHA-256、使用 owner 正规 License 的 PG 模式国产关系数据库测试源，端口 5436；只通过 owner-managed Linux x86_64 disposable 生命周期启动。
 - **达梦 DM8 ARM64**：固定鲲鹏 920/麒麟 10 SP1 官方安装 ZIP、服务端/驱动 SHA-256，本机只构建不可推送的 disposable 镜像，端口 5236；以独立 `engine_type=dameng` 登记，真实 Provider 只在 Linux ARM64 Docker 中执行。
 - **Apache Doris**：实时分析数据库，FE 端口 9030/8030，BE 端口 8040/9050/9060/8060，仅绑定回环
-- **Apache Spark**：分布式计算引擎，主机端口 7077、18088、11000；默认 Worker 为 Thrift 查询和工作流执行分别保留执行资源
+- **Apache Spark**：分布式计算引擎，主机端口7077（Master）和18088（Web UI）；日常只启动 Master/Worker，不启动 Thrift，不创建固定视图
 - **Redpanda**：兼容 Kafka API 的业务消息流，端口 29092
 
 Business 的 Doris all-in-one 服务是固定单 FE、单 BE 的本地开发拓扑，FE 因此固定使用 `force_olap_table_replication_num=1`。生产 Doris 集群不复用该单节点配置，应按实际 BE 数量和容灾策略设置副本数。
@@ -278,7 +278,6 @@ business/
 │
 ├── spark/                          # Apache Spark 配置
 │   ├── spark-defaults.conf         # Spark 默认配置
-│   └── init-test-data.sh           # Spark 测试数据初始化
 │
 └── minio/                          # MinIO 配置（预留）
 ```
@@ -448,13 +447,9 @@ bash scripts/restart.sh
 
 检测架构、清理旧镜像、重启服务（幂等）。
 
-### spark/init-test-data.sh - Spark 测试数据
+### Spark 计算集群
 
-```bash
-bash spark/init-test-data.sh
-```
-
-幂等重建并真实查询验证 `default.addp_sample_orders`。Spark Master 启动时会自动执行该脚本，因此 Develop 查询工作台可以从 Spark 实时 Catalog 动态生成可执行样例。
+`bash scripts/start.sh -spark` 启动 Standalone Master 和默认 Worker；标准入口检查 Master 的原生集群状态和在线 Worker，超时返回失败。集群本身不提供 ADDP 存储目录，不创建示例表／视图，也不开放 Thrift 11000端口。真实业务数据继续由 PostgreSQL、MySQL、HDFS 等源引擎保存，Spark 通过运行时执行计算。已有 System 连接与任务不由 Business 脚本自动改写；登记迁移和查询接口的实际完成范围见 [Spark 用户手册](../engines/spark-workflow/docs/spark-user-guide.md)。
 
 ## 常用操作
 
