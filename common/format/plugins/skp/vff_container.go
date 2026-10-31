@@ -102,13 +102,30 @@ func readVFFContainer(ctx context.Context, input io.ReaderAt, size int64, limits
 	if err != nil {
 		return nil, err
 	}
-	records, directory, err := readVFFDirectory(source, base, limits)
+	records, directory, err := readVFFDirectory(source, base, limits, vffModelZIP)
 	if err != nil {
 		return nil, err
 	}
 	if foldedVFFCRC(records) != checksum {
 		return nil, fmt.Errorf("VFF directory checksum mismatch")
 	}
+	members, err := readVFFZIPMembers(source, base, records, directory, vffModelZIP)
+	if err != nil {
+		return nil, err
+	}
+	result := &vffContainer{version: version, schema: schema, members: members}
+	if len(result.members["model.dat"]) == 0 {
+		return nil, fmt.Errorf("VFF requires one nonempty model.dat member")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// One physical framing/decompression path for the model envelope and its SKC
+// members. Profile-specific differences never relax the outer VFF contract.
+func readVFFZIPMembers(source *vffSource, base int64, records []vffZIPRecord, directory int64, profile vffZIPProfile) (map[string][]byte, error) {
 	physical := append([]vffZIPRecord(nil), records...)
 	sort.Slice(physical, func(i, j int) bool { return physical[i].offset < physical[j].offset })
 	next := base
@@ -117,7 +134,8 @@ func readVFFContainer(ctx context.Context, input io.ReaderAt, size int64, limits
 		if record.offset != next {
 			return nil, fmt.Errorf("VFF ZIP has overlapping, hidden or unclaimed bytes")
 		}
-		next, err = validateVFFLocal(source, record)
+		var err error
+		next, err = validateVFFLocal(source, record, profile)
 		if err != nil {
 			return nil, err
 		}
@@ -125,21 +143,18 @@ func readVFFContainer(ctx context.Context, input io.ReaderAt, size int64, limits
 	if next != directory {
 		return nil, fmt.Errorf("VFF ZIP local entries do not cover the exact archive range")
 	}
-	result := &vffContainer{version: version, schema: schema, members: make(map[string][]byte, len(records))}
+	members := make(map[string][]byte, len(records))
 	for _, record := range physical {
 		data, err := readVFFMember(source, record)
 		if err != nil {
 			return nil, err
 		}
-		result.members[record.name] = data
+		members[record.name] = data
 	}
-	if len(result.members["model.dat"]) == 0 {
-		return nil, fmt.Errorf("VFF requires one nonempty model.dat member")
-	}
-	if err := ctx.Err(); err != nil {
+	if err := source.ctx.Err(); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return members, nil
 }
 
 func readVFFHeader(source *vffSource) (string, uint16, uint32, int64, error) {
@@ -202,7 +217,19 @@ type vffZIPRecord struct {
 	crc                          uint32
 	compressed, expanded, offset int64
 	dataOffset                   int64
+	directory                    bool
 }
+
+type vffZIPProfile uint8
+
+const (
+	vffModelZIP vffZIPProfile = iota + 1
+	vffClassificationZIP
+)
+
+// Read-only, hidden, system, directory, archive, normal. Other DOS/Windows
+// attributes (including reparse points) are outside the SKC container profile.
+const skcDOSAttributes = uint32(0x01 | 0x02 | 0x04 | 0x10 | 0x20 | 0x80)
 
 func vffMemberName(name []byte, flags uint16) error {
 	if !utf8.Valid(name) || len(name) == 0 || name[0] == '/' || bytes.ContainsAny(name, "\\:\x00") {
@@ -225,7 +252,10 @@ func vffMemberName(name []byte, flags uint16) error {
 	return nil
 }
 
-func readVFFDirectory(source *vffSource, base int64, limits vffReadLimits) ([]vffZIPRecord, int64, error) {
+func readVFFDirectory(source *vffSource, base int64, limits vffReadLimits, profile vffZIPProfile) ([]vffZIPRecord, int64, error) {
+	if profile != vffModelZIP && profile != vffClassificationZIP {
+		return nil, 0, fmt.Errorf("unknown VFF ZIP profile")
+	}
 	end, err := source.at(source.size-22, 22)
 	if err != nil {
 		return nil, 0, err
@@ -268,18 +298,39 @@ func readVFFDirectory(source *vffSource, base int64, limits vffReadLimits) ([]vf
 		n := int(binary.LittleEndian.Uint16(header[28:]))
 		extra := int(binary.LittleEndian.Uint16(header[30:]))
 		comment := int(binary.LittleEndian.Uint16(header[32:]))
-		if n == 0 || n > len(data)-position-46 || extra != 0 || comment != 0 || binary.LittleEndian.Uint16(header[34:]) != 0 ||
+		if n == 0 || n+extra > len(data)-position-46 || comment != 0 || binary.LittleEndian.Uint16(header[34:]) != 0 ||
 			(made>>8 != 0 && made>>8 != 3) || (needed != 10 && needed != 20) || flags & ^uint16(0x806) != 0 || (method != 0 && method != 8) || method == 0 && flags&6 != 0 {
 			return nil, 0, fmt.Errorf("unsupported VFF ZIP metadata, flags or compression")
 		}
 		attrs := binary.LittleEndian.Uint32(header[38:])
+		if profile == vffClassificationZIP {
+			dos := attrs & 0xffff
+			if dos & ^skcDOSAttributes != 0 || dos&0x80 != 0 && dos != 0x80 || made>>8 == 0 && attrs>>16 != 0 {
+				return nil, 0, fmt.Errorf("unsupported SKC DOS file attributes")
+			}
+		}
 		kind := (attrs >> 16) & 0170000
-		if attrs&0x10 != 0 || made>>8 == 3 && kind != 0 && kind != 0100000 {
+		isDirectory := attrs&0x10 != 0 || made>>8 == 3 && kind == 0040000
+		if isDirectory {
+			if profile != vffClassificationZIP || made>>8 == 3 && kind != 0 && kind != 0040000 {
+				return nil, 0, fmt.Errorf("unsupported VFF ZIP directory attributes")
+			}
+		} else if made>>8 == 3 && kind != 0 && kind != 0100000 {
 			return nil, 0, fmt.Errorf("VFF ZIP members must be regular files")
 		}
 		nameBytes := data[position+46 : position+46+n]
-		if err := vffMemberName(nameBytes, flags); err != nil {
+		checkedName := nameBytes
+		if isDirectory {
+			if !bytes.HasSuffix(nameBytes, []byte("/")) {
+				return nil, 0, fmt.Errorf("SKC directory name lacks its explicit separator")
+			}
+			checkedName = nameBytes[:len(nameBytes)-1]
+		}
+		if err := vffMemberName(checkedName, flags); err != nil {
 			return nil, 0, err
+		}
+		if !validVFFZIPCentralExtra(data[position+46+n:position+46+n+extra], profile) {
+			return nil, 0, fmt.Errorf("unsupported VFF ZIP central extension")
 		}
 		name := string(nameBytes)
 		if names[name] {
@@ -289,18 +340,50 @@ func readVFFDirectory(source *vffSource, base int64, limits vffReadLimits) ([]vf
 		compressed := int64(binary.LittleEndian.Uint32(header[20:]))
 		size := int64(binary.LittleEndian.Uint32(header[24:]))
 		local := int64(binary.LittleEndian.Uint32(header[42:]))
+		if isDirectory && (method != 0 || compressed != 0 || size != 0 || binary.LittleEndian.Uint32(header[16:]) != 0) {
+			return nil, 0, fmt.Errorf("SKC directory carries file data")
+		}
 		if compressed == 0xffffffff || size == 0xffffffff || local == 0xffffffff || size > limits.memberBytes || size > limits.expandedBytes-expanded ||
 			local > directory-base || compressed > directory-base-local || method == 0 && compressed != size {
 			return nil, 0, fmt.Errorf("VFF member exceeds declared bounds or expansion budget")
 		}
 		expanded += size
-		records = append(records, vffZIPRecord{name: name, flags: flags, method: method, needed: needed, crc: binary.LittleEndian.Uint32(header[16:]), compressed: compressed, expanded: size, offset: base + local})
-		position += 46 + n
+		records = append(records, vffZIPRecord{name: name, flags: flags, method: method, needed: needed, crc: binary.LittleEndian.Uint32(header[16:]), compressed: compressed, expanded: size, offset: base + local, directory: isDirectory})
+		position += 46 + n + extra
 	}
 	if len(records) != int(count) {
 		return nil, 0, fmt.Errorf("VFF central directory count mismatch")
 	}
+	if profile == vffClassificationZIP {
+		paths := map[string]bool{}
+		for _, record := range records {
+			name := strings.TrimSuffix(record.name, "/")
+			if _, exists := paths[name]; exists {
+				return nil, 0, fmt.Errorf("SKC file and directory path conflict")
+			}
+			paths[name] = record.directory
+		}
+		for name := range paths {
+			for parent := name; strings.Contains(parent, "/"); {
+				parent = parent[:strings.LastIndexByte(parent, '/')]
+				if directory, exists := paths[parent]; exists && !directory {
+					return nil, 0, fmt.Errorf("SKC file used as parent directory")
+				}
+			}
+		}
+	}
 	return records, directory, nil
+}
+
+func validVFFZIPCentralExtra(raw []byte, profile vffZIPProfile) bool {
+	if len(raw) == 0 {
+		return true
+	}
+	// APPNOTE 4.5.5: one NTFS time tuple, without unknown subattributes.
+	return profile == vffClassificationZIP && len(raw) == 36 &&
+		binary.LittleEndian.Uint16(raw) == 0x000a && binary.LittleEndian.Uint16(raw[2:]) == 32 &&
+		binary.LittleEndian.Uint32(raw[4:]) == 0 && binary.LittleEndian.Uint16(raw[8:]) == 1 &&
+		binary.LittleEndian.Uint16(raw[10:]) == 24
 }
 
 // The published VFF fold uses the CRC sequence in central-directory order.
@@ -323,7 +406,7 @@ func foldedVFFCRC(records []vffZIPRecord) uint32 {
 	return result
 }
 
-func validateVFFLocal(source *vffSource, record *vffZIPRecord) (int64, error) {
+func validateVFFLocal(source *vffSource, record *vffZIPRecord, profile vffZIPProfile) (int64, error) {
 	header, err := source.at(record.offset, 30)
 	if err != nil {
 		return 0, err
@@ -337,7 +420,7 @@ func validateVFFLocal(source *vffSource, record *vffZIPRecord) (int64, error) {
 		int64(binary.LittleEndian.Uint32(header[22:])) != record.expanded || n != int64(len(record.name)) {
 		return 0, fmt.Errorf("VFF local header and central directory disagree")
 	}
-	if !(extra == 0 && needed == record.needed) && !(extra == 20 && needed == 45 && record.needed == 20) {
+	if !(extra == 0 && needed == record.needed) && !(profile == vffModelZIP && extra == 20 && needed == 45 && record.needed == 20) {
 		return 0, fmt.Errorf("unsupported VFF local extension or version")
 	}
 	fields, err := source.at(record.offset+30, n+extra)
