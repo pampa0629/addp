@@ -270,4 +270,10 @@ class RasterLineageTest(unittest.TestCase):
         changed=copy.deepcopy(EXPECTED);changed['operations'][0]['operator']='save'
         with self.assertRaises(m.SuiteError):m.validate(changed,EXPECTED,public=False)
 
+    def test_protected_sieve_approved_single_source_current_raster_save_and_hidden_public_operation(self):
+        self.assertEqual(m.SUITES['raster-sieve-protected-persistence'],'sieve-protected-lineage')
+        m.validate(EXPECTED,EXPECTED,public=False);m.validate(PUBLIC,EXPECTED,public=True)
+        changed=copy.deepcopy(EXPECTED);changed['operations'][0]['operator']='save'
+        with self.assertRaises(m.SuiteError):m.validate(changed,EXPECTED,public=False)
+
 if __name__=='__main__':unittest.main()
