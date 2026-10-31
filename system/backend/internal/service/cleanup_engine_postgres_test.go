@@ -59,6 +59,76 @@ func testCleanupEngineWorkflowPostgres(t *testing.T) {
 	f.coordinator.db = db
 	svc := &CleanupOrchestratorService{coordinator: f.coordinator, registry: NewModuleRegistryService(repository.NewModuleRegistryRepository(db))}
 	engineService := NewEngineService(repo, nil, nil).WithCleanupOrchestrator(svc)
+	t.Run("actual_assessment_acceptance_with_engine_origin", func(t *testing.T) {
+		requestID := uuid.NewString()
+		// This request owns a server-created parent, independent of the fixture's
+		// prebuilt workflow below. Clean only identities derived from this request.
+		t.Cleanup(func() {
+			var record models.CleanupRequestRecord
+			if err := db.Where("request_id = ? AND tenant_id = ?", requestID, f.input.TenantID).First(&record).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+				return
+			} else if err != nil {
+				t.Error(err)
+				return
+			}
+			var ids []string
+			if err := db.Model(&execution.TaskExecution{}).Where("execution_id = ? OR parent_execution_id = ?", record.ParentExecutionID, record.ParentExecutionID).Pluck("execution_id", &ids).Error; err != nil {
+				t.Error(err)
+				return
+			}
+			for _, model := range []any{&execution.Event{}, &execution.TaskExecution{}} {
+				if err := db.Where("execution_id IN ?", ids).Delete(model).Error; err != nil {
+					t.Error(err)
+				}
+				var count int64
+				if err := db.Model(model).Where("execution_id IN ?", ids).Count(&count).Error; err != nil || count != 0 {
+					t.Errorf("assessment execution residue=%d: %v", count, err)
+				}
+			}
+			if err := db.Where("request_id = ?", requestID).Delete(&models.CleanupRequestRecord{}).Error; err != nil {
+				t.Error(err)
+			}
+			var count int64
+			if err := db.Model(&models.CleanupRequestRecord{}).Where("request_id = ?", requestID).Count(&count).Error; err != nil || count != 0 {
+				t.Errorf("assessment request residue=%d: %v", count, err)
+			}
+			if err := db.Exec("DELETE FROM "+f.probe+".facts WHERE identity IN ?", append(ids, requestID)).Error; err != nil {
+				t.Error(err)
+			}
+		})
+		ctx := execution.WithUserOrigin(f.ctx, authtest.NewTenantUserAuthContext(strconv.Itoa(int(f.input.TenantID)), "7", []string{"system.engine.delete"}))
+		ctx, err := commoni18n.WithLanguage(ctx, "en")
+		if err != nil {
+			t.Fatal(err)
+		}
+		accepted, err := engineService.CreateDeletionAssessment(ctx, requestID, engine.ID, f.input.TenantID, 7, models.ExternalArtifactPolicyDelete)
+		if err != nil || accepted != requestID {
+			t.Fatalf("actual assessment acceptance: %s %v", accepted, err)
+		}
+		var record models.CleanupRequestRecord
+		if err := db.Where("request_id = ?", requestID).First(&record).Error; err != nil {
+			t.Fatal(err)
+		}
+		input, err := record.Input()
+		if err != nil || input.CauseEvent != events.CleanupCauseEngineDeleting || input.Context.EngineID != engine.ID || input.RequestedBy != 7 {
+			t.Fatal("actual assessment purpose", input, err)
+		}
+		var rows []execution.TaskExecution
+		if err := db.Where("execution_id = ? OR parent_execution_id = ?", record.ParentExecutionID, record.ParentExecutionID).Find(&rows).Error; err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) != len(f.input.ExpectedModules)+1 {
+			t.Fatal("assessment parent/children incomplete", len(rows))
+		}
+		for _, row := range rows {
+			if row.Status != execution.ExecutionStatusPending || row.Attempt != 0 || row.StartedAt != nil || row.ActorPrincipalID == nil || *row.ActorPrincipalID != 7 {
+				t.Fatal("assessment admission mutated origin or start", row.ExecutionID)
+			}
+			if lang, err := execution.DisplayLanguage(&row); err != nil || lang != "en" {
+				t.Fatal("assessment language", err)
+			}
+		}
+	})
 	f.input.CauseEvent = events.CleanupCauseEngineDeleting
 	f.input.Context = events.CleanupContext{EngineID: engine.ID}
 	if err := f.input.Seal(); err != nil {

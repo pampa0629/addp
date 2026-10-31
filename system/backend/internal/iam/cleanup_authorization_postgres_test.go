@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -103,6 +104,21 @@ func TestCleanupAuthorizationAgainstPostgres(t *testing.T) {
 	fixture := func(t *testing.T) (execution.TaskExecution, execution.TaskExecution) {
 		return originFixture(t, "", user.PrincipalID, member.Membership.ID, principal.AuthorizationVersion)
 	}
+	fixtureRole := func(key string, permissions ...string) string {
+		t.Helper()
+		var id int64
+		if err := db.Raw(`INSERT INTO system.roles (role_key,name_i18n_key,description_i18n_key,role_type,allowed_scope_types,allowed_principal_types,immutable,status) VALUES (?,?,?,'tenant_builtin',ARRAY['tenant'],ARRAY['user'],true,'active') RETURNING id`, key, key+".name", key+".description").Scan(&id).Error; err != nil {
+			t.Fatal(err)
+		}
+		for _, permission := range permissions {
+			if err := db.Exec("INSERT INTO system.role_permissions(role_id,permission_id,source_type) SELECT ?,id,'product' FROM system.permissions WHERE permission_key=?", id, permission).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		return key
+	}
+	cleanupRole := fixtureRole("tenant.cleanup_test_only", "system.cleanup.execute")
+	engineRole := fixtureRole("tenant.cleanup_engine_test", "system.engine.delete")
 
 	t.Run("catalog_grants_only_reviewed_runtimes", func(t *testing.T) {
 		var roles []string
@@ -128,25 +144,93 @@ func TestCleanupAuthorizationAgainstPostgres(t *testing.T) {
 		}
 	})
 
+	t.Run("six_permission_engine_identity_is_purpose_isolated", func(t *testing.T) {
+		actor := createContextSelectionUser(t, ctx, NewIdentityService(repo, nil), "cleanup-engine-only", audit)
+		membership := establishContextSelectionMembership(t, ctx, members, tenant.ID, actor.PrincipalID, audit)
+		now, err := execution.DatabaseNow(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		readRole := fixtureRole("tenant.cleanup_professional_read_test", "manager.cleanup_result.read", "transfer.cleanup_result.read")
+		insertRoleAssignment(t, db, actor.PrincipalID, "tenant.engine_lifecycle_operator", "tenant", &tenant.ID, nil, nil, now.Add(-time.Minute), nil, "manual")
+		insertRoleAssignment(t, db, actor.PrincipalID, readRole, "tenant", &tenant.ID, nil, nil, now.Add(-time.Minute), nil, "manual")
+		permissions, err := repo.ListEffectiveRoleAssignmentPermissions(ctx, actor.PrincipalID, PrincipalTypeUser, ContextTypeTenant, &tenant.ID, &membership.Membership.ID, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys := make([]string, 0, len(permissions))
+		for _, row := range permissions {
+			keys = append(keys, row.PermissionKey)
+		}
+		sort.Strings(keys)
+		expected := []string{"manager.cleanup_result.read", "system.cleanup.read", "system.engine.create", "system.engine.delete", "system.engine.read", "transfer.cleanup_result.read"}
+		if strings.Join(keys, ",") != strings.Join(expected, ",") {
+			t.Fatal("Engine identity is not the approved exact six permissions", keys)
+		}
+		var origin Principal
+		if err := db.First(&origin, actor.PrincipalID).Error; err != nil {
+			t.Fatal(err)
+		}
+		for _, cause := range []string{events.CleanupCauseEngineDeleting, events.CleanupCauseEngineDeleted} {
+			p, c := originFixture(t, cause, actor.PrincipalID, membership.Membership.ID, origin.AuthorizationVersion)
+			grant, err := service.IssueCleanup(ctx, uuid.MustParse(c.ExecutionID), audit)
+			if err != nil {
+				t.Fatalf("Engine-only issue for %s: %v", cause, err)
+			}
+			in := AuthorizeCleanupInput{AuthorizationID: grant.ID, ExecutionID: grant.ExecutionID, Stage: "claim", Scope: *grant.CleanupScope, ServicePrincipalID: runtimeID, ServiceClientID: "addp-meta", TenantID: tenant.ID, Audit: runtimeAudit}
+			if _, err := service.AuthorizeCleanup(ctx, in); err != nil {
+				t.Fatal("Engine-only claim", err)
+			}
+			identity := func(e execution.TaskExecution) execution.PendingIdentity {
+				return execution.PendingIdentity{ExecutionID: e.ExecutionID, TenantID: e.TenantID, Module: e.Module, TaskType: e.TaskType, Source: e.Source}
+			}
+			options := func(e execution.TaskExecution) execution.ClaimOptions {
+				return execution.ClaimOptions{Module: e.Module, TaskType: e.TaskType, Source: e.Source, WorkerID: "engine-only-auth", LeaseDuration: time.Minute}
+			}
+			if _, lease, err := execution.ClaimPending(ctx, db, identity(p), options(p), nil); err != nil || lease == nil {
+				t.Fatal("Engine-only parent", err)
+			}
+			opts := options(c)
+			opts.RequireAuthorization = true
+			_, lease, err := execution.ClaimCleanupChild(ctx, db, identity(c), opts, nil)
+			if err != nil || lease == nil {
+				t.Fatal("Engine-only child", err)
+			}
+			in.Stage, in.Attempt, in.LeaseToken = "effect", lease.Attempt, uuid.MustParse(lease.Token)
+			if _, err := service.AuthorizeCleanup(ctx, in); err != nil {
+				t.Fatal("Engine-only effect", err)
+			}
+		}
+		_, ordinary := originFixture(t, "", actor.PrincipalID, membership.Membership.ID, origin.AuthorizationVersion)
+		if _, err := service.IssueCleanup(ctx, uuid.MustParse(ordinary.ExecutionID), audit); !errors.Is(err, commonapi.ErrForbidden) {
+			t.Fatal("Engine permission authorized generic Cleanup", err)
+		}
+
+		generic := createContextSelectionUser(t, ctx, NewIdentityService(repo, nil), "cleanup-generic-only", audit)
+		genericMember := establishContextSelectionMembership(t, ctx, members, tenant.ID, generic.PrincipalID, audit)
+		insertRoleAssignment(t, db, generic.PrincipalID, cleanupRole, "tenant", &tenant.ID, nil, nil, now.Add(-time.Minute), nil, "manual")
+		var genericOrigin Principal
+		if err := db.First(&genericOrigin, generic.PrincipalID).Error; err != nil {
+			t.Fatal(err)
+		}
+		_, allowed := originFixture(t, "", generic.PrincipalID, genericMember.Membership.ID, genericOrigin.AuthorizationVersion)
+		if _, err := service.IssueCleanup(ctx, uuid.MustParse(allowed.ExecutionID), audit); err != nil {
+			t.Fatal("generic-only issue", err)
+		}
+		for _, cause := range []string{events.CleanupCauseEngineDeleting, events.CleanupCauseEngineDeleted} {
+			_, denied := originFixture(t, cause, generic.PrincipalID, genericMember.Membership.ID, genericOrigin.AuthorizationVersion)
+			if _, err := service.IssueCleanup(ctx, uuid.MustParse(denied.ExecutionID), audit); !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatal("generic permission authorized Engine deletion", err)
+			}
+		}
+	})
+
 	t.Run("engine_purpose_keeps_current_delete_permission", func(t *testing.T) {
 		actor := createContextSelectionUser(t, ctx, NewIdentityService(repo, nil), "cleanup-engine-user", audit)
 		membership := establishContextSelectionMembership(t, ctx, members, tenant.ID, actor.PrincipalID, audit)
 		// These two fixture-only builtin roles separate permissions that the
 		// shipped infrastructure role groups together. The real role/assignment
 		// constraints and clocks still apply; no production role or manifest changes.
-		fixtureRole := func(key, permission string) string {
-			t.Helper()
-			var id int64
-			if err := db.Raw(`INSERT INTO system.roles (role_key,name_i18n_key,description_i18n_key,role_type,allowed_scope_types,allowed_principal_types,immutable,status) VALUES (?,?,?,'tenant_builtin',ARRAY['tenant'],ARRAY['user'],true,'active') RETURNING id`, key, key+".name", key+".description").Scan(&id).Error; err != nil {
-				t.Fatal(err)
-			}
-			if err := db.Exec("INSERT INTO system.role_permissions(role_id,permission_id,source_type) SELECT ?,id,'product' FROM system.permissions WHERE permission_key=?", id, permission).Error; err != nil {
-				t.Fatal(err)
-			}
-			return key
-		}
-		cleanupRole := fixtureRole("tenant.cleanup_test_only", "system.cleanup.execute")
-		engineRole := fixtureRole("tenant.cleanup_engine_test", "system.engine.delete")
 		now, err := execution.DatabaseNow(db)
 		if err != nil {
 			t.Fatal(err)
@@ -187,6 +271,15 @@ func TestCleanupAuthorizationAgainstPostgres(t *testing.T) {
 			t.Fatal("Engine effect", err)
 		}
 		_, unissued := originFixture(t, events.CleanupCauseEngineDeleting, actor.PrincipalID, membership.Membership.ID, origin.AuthorizationVersion)
+		_, unclaimed := originFixture(t, events.CleanupCauseEngineDeleting, actor.PrincipalID, membership.Membership.ID, origin.AuthorizationVersion)
+		waitingGrant, err := service.IssueCleanup(ctx, uuid.MustParse(unclaimed.ExecutionID), audit)
+		if err != nil {
+			t.Fatal("issue before permission expiry", err)
+		}
+		waiting := AuthorizeCleanupInput{AuthorizationID: waitingGrant.ID, ExecutionID: waitingGrant.ExecutionID, Stage: "claim", Scope: *waitingGrant.CleanupScope, ServicePrincipalID: runtimeID, ServiceClientID: "addp-meta", TenantID: tenant.ID, Audit: runtimeAudit}
+		if _, err := service.AuthorizeCleanup(ctx, waiting); err != nil {
+			t.Fatal("claim before permission expiry", err)
+		}
 		// Wait on the real database clock: no permission mutation or actor-version
 		// change can accidentally make the negative oracle pass for another reason.
 		if err := db.Exec("SELECT pg_sleep(GREATEST(0,EXTRACT(EPOCH FROM ?::timestamptz-clock_timestamp()))+0.02)", expires).Error; err != nil {
@@ -197,6 +290,9 @@ func TestCleanupAuthorizationAgainstPostgres(t *testing.T) {
 		}
 		if _, err := service.AuthorizeCleanup(ctx, in); !errors.Is(err, commonapi.ErrForbidden) {
 			t.Fatalf("Engine effect after delete permission expired: %v", err)
+		}
+		if _, err := service.AuthorizeCleanup(ctx, waiting); !errors.Is(err, commonapi.ErrForbidden) {
+			t.Fatalf("Engine claim after delete permission expired: %v", err)
 		}
 		var current Principal
 		if err := db.First(&current, actor.PrincipalID).Error; err != nil {

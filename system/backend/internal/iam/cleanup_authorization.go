@@ -133,13 +133,6 @@ func (s *ExecutionAuthorizationService) AuthorizeCleanup(ctx context.Context, in
 		if authorization.SealedAt == nil || authorization.RevokedAt != nil || !authorization.ExpiresAt.After(now) {
 			return ErrExecutionAuthorizationUnavailable
 		}
-		permissions, err := tx.ListEffectiveRoleAssignmentPermissions(ctx, principal.ID, principal.PrincipalType, ContextTypeTenant, &membership.TenantID, &membership.ID, now)
-		if err != nil {
-			return err
-		}
-		if !hasCleanupPermission(permissions) {
-			return ErrExecutionAuthorizationPermissionDenied
-		}
 		// Runtime clients have fixed Owner identity and current active membership.
 		var runtime struct {
 			MembershipID int64
@@ -216,7 +209,7 @@ func (s *ExecutionAuthorizationService) AuthorizeCleanup(ctx context.Context, in
 		}
 		// A role assignment may expire while the child row is locked elsewhere.
 		// Recheck using the post-lock wall clock, not the earlier transaction time.
-		permissions, err = tx.ListEffectiveRoleAssignmentPermissions(ctx, principal.ID, principal.PrincipalType, ContextTypeTenant, &membership.TenantID, &membership.ID, now)
+		permissions, err := tx.ListEffectiveRoleAssignmentPermissions(ctx, principal.ID, principal.PrincipalType, ContextTypeTenant, &membership.TenantID, &membership.ID, now)
 		if err != nil {
 			return err
 		}
@@ -249,11 +242,11 @@ func (s *ExecutionAuthorizationService) AuthorizeCleanup(ctx context.Context, in
 // Current role facts are rechecked after the exact child lock at claim/effect.
 func hasCleanupActorPermissions(rows []RoleAssignmentPermissionProjection, child execution.TaskExecution) bool {
 	input, err := execution.CleanupRequestFromExecution(child)
-	if err != nil || !hasCleanupPermission(rows) {
+	if err != nil {
 		return false
 	}
 	if input.CauseEvent != events.CleanupCauseEngineDeleting && input.CauseEvent != events.CleanupCauseEngineDeleted {
-		return true
+		return hasCleanupPermission(rows)
 	}
 	for _, row := range rows {
 		if row.PermissionKey == "system.engine.delete" {

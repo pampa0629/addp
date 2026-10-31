@@ -416,7 +416,7 @@ Graph首次领取需要领域准入锁时，完整顺序为P→C→G→T/B；领
 
 ### Cleanup执行授权
 
-2026-10-29补充确认：复用System执行授权框架，新增Cleanup目的绑定和`system.cleanup_authorization.execute` Tenant Service Permission。仅十个已登记Owner的runtime角色持有，固定Service客户端与Owner对应；不授予用户角色或通用数据读写权限。普通用户受理仍核验现有`system.cleanup.execute`。授权绑定原User／Tenant／Membership、请求及确认摘要、准确父子execution、Owner、action／mode、scope和当前attempt／lease，实际效果前由System重新核验用户当前资格、授权版本和权限；Engine 删除派生请求还须持续具有当前 `system.engine.delete`，其到期不能由仍有效的 Cleanup 权限替代；任何授权失败不得派发清理，临时不可用与已撤权分别保留事实。不保存User Bearer，不把父子记录或lease当授权。
+2026-10-29补充确认：复用System执行授权框架，新增Cleanup目的绑定和`system.cleanup_authorization.execute` Tenant Service Permission。仅十个已登记Owner的runtime角色持有，固定Service客户端与Owner对应；不授予用户角色或通用数据读写权限。2026-10-31确认按用途分离原用户的执行 Permission：通用手动 Cleanup 核验当前 `system.cleanup.execute`；服务端确认的 Engine 删除派生流程独立核验当前 `system.engine.delete`，不叠加通用 Cleanup 执行权。两者不能互相替代，Engine 删除权到期仍须拒绝，即使通用 Cleanup 权限有效。用途只取自服务端持久化的原请求，不接受调用方自报 cause 改用途。授权绑定原User／Tenant／Membership、请求及确认摘要、准确父子execution、Owner、action／mode、scope和当前attempt／lease，实际效果前由System重新核验用户当前资格、授权版本和相应用途权限；任何授权失败不得派发清理，临时不可用与已撤权分别保留事实。不保存User Bearer，不把父子记录或lease当授权。不改变原六项 Engine User、角色、默认授予和操作范围。
 
 首期仅支持active Tenant的用户来源请求及其已确认Engine删除派生流程。closed Tenant／`tenant.deleted`、没有可信用户来源或没有目的限定许可的事件保持阻断；不复活Membership、不使用PlatformToken替代Tenant权力。历史Tenant治理需另行确认。该权限不扩大Owner资源范围，不恢复旧执行、不重放删除。
 
