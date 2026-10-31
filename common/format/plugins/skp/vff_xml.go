@@ -20,6 +20,8 @@ type vffXMLNode struct {
 	children   []*vffXMLNode
 	text       string
 	begin, end int
+	parent     *vffXMLNode
+	bindings   map[string]string // Declarations at this node only, not a scope copy.
 }
 
 // Qualified attributes are opt-in and retain their expanded names. Material
@@ -67,6 +69,14 @@ func readVFFXML(ctx context.Context, raw []byte, budget *vffXMLBudget, namespace
 					if err := vffXMLNamespaceDeclaration(attr); err != nil {
 						return nil, err
 					}
+					if node.bindings == nil {
+						node.bindings = map[string]string{}
+					}
+					prefix := ""
+					if attr.Name.Space == "xmlns" {
+						prefix = attr.Name.Local
+					}
+					node.bindings[prefix] = attr.Value
 					continue
 				}
 				key := attr.Name.Local
@@ -85,6 +95,7 @@ func readVFFXML(ctx context.Context, raw []byte, budget *vffXMLBudget, namespace
 				root = node
 			} else {
 				parent := stack[len(stack)-1]
+				node.parent = parent
 				parent.children = append(parent.children, node)
 			}
 			stack = append(stack, node)
