@@ -548,13 +548,16 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     make = (repository / 'Makefile').read_text(encoding='utf-8')
     img_runner = re.search(r'(?ms)^test-manager-online-runner:[^\n]*\n(?P<body>(?:\t[^\n]*\n)+)', make)
     filegdb = repository / 'scripts/test/manager-filegdb-online.py'
+    filegdb_browser = repository / 'console/frontend/e2e/online/manager-filegdb.spec.js'
     if (not filegdb.is_file() or not (repository / 'scripts/test/manager-filegdb-physical.py').is_file()
+            or not filegdb_browser.is_file()
             or not img_runner or 'scripts/test/manager-filegdb-online_test.py' not in img_runner.group('body')
+            or 'console/frontend/e2e/online/manager-filegdb.spec.js' not in img_runner.group('body')
             or "if case == 'filegdb-authorization':" not in manager_owner
             or 'manager-filegdb-online' not in manager_owner
             or 'python3 -m scripts.test.manager-filegdb-physical unmount' not in hosted
             or 'src=$nfs_read_mount,dst=$nfs_root,readonly' not in hosted):
-        raise RegistrationError('NFS FileGDB requires explicit routing, real NFS read mount and bounded cleanup')
+        raise RegistrationError('NFS FileGDB requires explicit routing, browser registration, real NFS read mount and bounded cleanup')
     kml_owner = (repository / 'scripts/test/manager-kml-export-online.py').read_text(encoding='utf-8')
     kml_browser = (repository / 'console/frontend/e2e/online/manager-kml-export.spec.js').read_text(encoding='utf-8')
     if ("if case == 'kml-export':" not in manager_owner

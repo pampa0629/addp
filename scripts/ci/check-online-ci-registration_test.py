@@ -2742,14 +2742,16 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         owner.write_text(owner.read_text()+"\nif case == 'native-table-orc':\nmanager-orc-online\n")
         make.write_text(make.read_text()+'\t@node --check --input-type=module < console/frontend/e2e/online/manager-orc.spec.js\n\t@python3 -m unittest scripts/test/manager-orc-online_test.py\n')
         for relative in ('scripts/test/manager-filegdb-online.py', 'scripts/test/manager-filegdb-online_test.py',
-                         'scripts/test/manager-filegdb-physical.py'):
+                         'scripts/test/manager-filegdb-physical.py', 'console/frontend/e2e/online/manager-filegdb.spec.js'):
             target = self.repository / relative
             target.write_text((SCRIPT.parents[2] / relative).read_text())
         owner.write_text(owner.read_text()+"\nif case == 'filegdb-authorization':\nmanager-filegdb-online\n")
         make.write_text(make.read_text()+'\t@python3 -m unittest scripts/test/manager-filegdb-online_test.py\n')
+        make.write_text(make.read_text()+'\t@node --check --input-type=module < console/frontend/e2e/online/manager-filegdb.spec.js\n')
         CHECK.check_registration(self.repository)
         for file, fragment, reason in (
             (owner, "if case == 'filegdb-authorization':", 'NFS FileGDB'),
+            (make, 'console/frontend/e2e/online/manager-filegdb.spec.js', 'NFS FileGDB'),
             (hosted, 'src=$nfs_read_mount,dst=$nfs_root,readonly', 'NFS FileGDB'),
             (hosted, 'manager-case.json', 'acceptance case'),
             (hosted, 'full|native-raster-media|native-table-orc|kml-export|filegdb-authorization)', 'acceptance case'),

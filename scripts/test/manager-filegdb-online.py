@@ -33,7 +33,8 @@ REQUIRED_CHECKS = {'basic_whole_identity', 'ungranted_child_denied', 'initial_ch
     'raw_members_revoked_and_expired_denied',
     'ungranted_directory_download_denied', 'directory_download_same_grant_and_new_child',
     'directory_download_account_isolation_and_deny', 'directory_download_revoke_expiry',
-    'directory_download_failure_cleanup_and_recovery'}
+    'directory_download_failure_cleanup_and_recovery', 'real_browser_directory_download_saved',
+    'real_browser_ungranted_revoked_expired_denied'}
 
 
 def require(value, message):
@@ -183,6 +184,59 @@ def raw_member(client, locator, engine, member, status):
     return evidence
 
 
+def validate_directory_zip(raw, source):
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        names = archive.namelist()
+        require(len(names) == len(set(names)) and set(names) == {NAME + '/', *(NAME + '/' + name for name in source)}
+                and archive.testzip() is None, 'directory package members, root or CRC differ')
+        hashes = {name.removeprefix(NAME + '/'): hashlib.sha256(archive.read(name)).hexdigest()
+                  for name in names if not name.endswith('/')}
+        require(hashes == source, 'directory package changed or omitted source bytes')
+    return {'size': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(), 'members': hashes}
+
+
+def validate_browser_report(payload, context, artifact):
+    require(payload.get('schema_version') == 'addp.manager-filegdb-browser/v1' and payload.get('result') == 'passed',
+            'FileGDB browser did not pass')
+    for name in ('run_id', 'phase', 'locator', 'identity', 'status'):
+        require(payload.get(name) == context[name], 'FileGDB browser identity or phase differs: ' + name)
+    require(all(payload.get(name) is True for name in ('actual_button_clicked', 'current_user_bearer', 'cookie_absent'))
+            and payload.get('credential_in_url') is False, 'FileGDB browser bypassed current-user button transport')
+    require(all(payload.get(name) == [] for name in ('business_writes', 'unexpected_responses', 'warnings', 'page_errors')),
+            'FileGDB browser has unexpected activity or diagnostics')
+    anonymous = payload.get('anonymous_refresh_401')
+    require(type(anonymous) is int and 0 <= anonymous <= 1, 'FileGDB browser refresh boundary differs')
+    require(payload.get('screenshot') == context['screenshot'] and (artifact / context['screenshot']).is_file(),
+            'FileGDB browser screenshot missing')
+    destination = artifact / context['download_file']
+    if context['status'] == 200:
+        require(payload.get('download_events') == 1 and payload.get('suggested_filename') == NAME + '.zip',
+                'FileGDB browser did not save the original attachment')
+        physical = validate_directory_zip(destination.read_bytes(), context['source'])
+        require(payload.get('size') == physical['size'] and payload.get('sha256') == physical['sha256'],
+                'FileGDB browser saved bytes differ from its proof')
+        return dict(payload, physical=physical)
+    require(payload.get('download_events') == 0 and payload.get('error_visible') is True
+            and payload.get('success_visible') is False and not destination.exists(),
+            'FileGDB rejected browser request saved a file or claimed success')
+    return payload
+
+
+def run_browser(repository, environment, context):
+    artifact = Path(environment['ADDP_ONLINE_ARTIFACT_DIR'])
+    report_path = artifact / ('manager-filegdb-browser-' + context['phase'] + '.json')
+    require(not report_path.exists() and not (artifact / context['download_file']).exists(),
+            'FileGDB browser phase evidence already exists')
+    browser_env = {key: value for key, value in environment.items()
+                   if not key.startswith(('ADDP_ONLINE_FIXTURE_', 'ADDP_ONLINE_ADMIN_USER_'))
+                   and key != 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'}
+    browser_env['ADDP_ONLINE_MANAGER_FILEGDB_JSON'] = json.dumps(context)
+    subprocess.run(['npm', 'exec', '--', 'playwright', 'test', 'e2e/online/manager-filegdb.spec.js',
+                    '--config=playwright.online.config.js'], cwd=repository / 'console/frontend',
+                   env=browser_env, check=True)
+    return validate_browser_report(json.loads(report_path.read_text()), context, artifact)
+
+
 def directory_download(client, locator, source, status, destination):
     owner = importlib.import_module('scripts.test.manager-internal-artifact-lineage-online')
     binary = owner.GatewayClient(client.base_url, client.token, client.timeout)
@@ -194,17 +248,10 @@ def directory_download(client, locator, source, status, destination):
         require(headers.get('content-type') == 'application/zip'
                 and headers.get('content-disposition') == 'attachment; filename=authorization.gdb.zip'
                 and headers.get('content-length') == str(len(response.raw)), 'directory attachment headers differ')
-        with zipfile.ZipFile(io.BytesIO(response.raw)) as archive:
-            names = archive.namelist()
-            require(len(names) == len(set(names)) and set(names) == {NAME + '/', *(NAME + '/' + name for name in source)}
-                    and archive.testzip() is None, 'directory package members, root or CRC differ')
-            hashes = {name.removeprefix(NAME + '/'): hashlib.sha256(archive.read(name)).hexdigest()
-                      for name in names if not name.endswith('/')}
-            require(hashes == source, 'directory package changed or omitted source bytes')
+        physical = validate_directory_zip(response.raw, source)
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(response.raw)
-        result.update(size=len(response.raw), sha256=hashlib.sha256(response.raw).hexdigest(),
-                      members=hashes, archive=destination.name)
+        result.update(physical, archive=destination.name)
     else:
         require(isinstance(response.payload, dict) and set(response.payload) <= {'error', 'error_code'}
                 and isinstance(response.payload.get('error'), str)
@@ -354,6 +401,26 @@ def run(repository, environment, owner):
             require(result['temporary_archives_after']['open_archives'] == 0, 'request left a temporary archive open')
         records[phase] = result
         return result
+    def browser(phase, status, grant=None):
+        records = report.setdefault('browser', {})
+        require(phase not in records, 'FileGDB browser phase repeated')
+        records[phase] = {'result': 'pending'}
+        before, source = authorization.current(), physical('snapshot')
+        history = authorization.history(grant['request_id']) if grant else None
+        context = {'run_id': report['run_id'], 'phase': phase, 'status': status, 'locator': locator,
+            'identity': {'principal_id': principal, 'tenant_id': str(tenant), 'permissions_verified': sorted(PERMISSIONS)},
+            'source': source, 'screenshot': 'manager-filegdb-' + phase + '.png',
+            'download_file': 'manager-filegdb-' + phase + '.zip'}
+        result = run_browser(repository, environment, context)
+        after = authorization.current()
+        require(fixture.rule_snapshot(before) == fixture.rule_snapshot(after)
+                and physical('snapshot') == source
+                and (authorization.history(grant['request_id']) if grant else None) == history,
+                'FileGDB browser changed source or authorization')
+        result.update(current_before=before, current_after=after, history_before=history,
+                      history_after=history, temporary_archives_after=fixture.archive_state(repository, environment))
+        require(result['temporary_archives_after']['open_archives'] == 0, 'browser left a temporary archive open')
+        records[phase] = result
     try:
         outsider = API.GatewayClient(environment['GATEWAY_URL'], environment['ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN'], 30)
         outsider_id = FILES.exact_user_principal(outsider, tenant, OUTSIDER_PERMISSIONS)
@@ -380,6 +447,7 @@ def run(repository, environment, owner):
         check('ungranted_raw_members_denied')
         download(client, 403, 'ungranted')
         check('ungranted_directory_download_denied')
+        browser('ungranted', 403)
         first = authorization.grant(item)
         report['first_grant'] = first
         owner.wait_for_meta_scan(client, engine, time.monotonic() + 180, scope={'catalog_paths': [NAME]})
@@ -397,6 +465,8 @@ def run(repository, environment, owner):
         added_archive = download(client, 200, 'new-child')
         require(added_archive['members'] != initial_archive['members'], 'new child did not enter the current whole archive')
         check('directory_download_same_grant_and_new_child')
+        browser('granted', 200, first)
+        check('real_browser_directory_download_saved')
         verify_account_isolation(authorization, client, outsider, outsider_id, locator, first,
             [('initial_points', 2), ('added_points', 1)], report)
         check('ungranted_account_new_child_denied')
@@ -438,6 +508,7 @@ def run(repository, environment, owner):
         require(report['revoked_history']['revocation'] is not None and authorization.current()['total'] == 0,
                 'withdrawal history or active state differs')
         check('revoked_next_read_denied')
+        browser('revoked', 403, first)
         expires = datetime.now(timezone.utc) + timedelta(seconds=45)
         second = authorization.grant(item, expires.isoformat())
         report['expiry_grant'] = second
@@ -458,6 +529,9 @@ def run(repository, environment, owner):
         # Preserve the natural-expiry receipt; do not issue an artificial revoke for it.
         authorization.grants.remove(second['request_id'])
         authorization.confirmed.remove(second['request_id'])
+        browser('expired', 403, second)
+        require(set(report['browser']) == {'ungranted', 'granted', 'revoked', 'expired'}, 'missing FileGDB browser phase')
+        check('real_browser_ungranted_revoked_expired_denied')
         third = authorization.grant(item)
         report['crash_grant'] = third
         report['child_crash'] = kill_read_child(environment, locator, secret)

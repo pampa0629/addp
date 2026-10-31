@@ -125,6 +125,7 @@ if [ "$ADDP_ONLINE_MANAGER_CASE" = filegdb-authorization ]; then
     run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
   done
   start_online_geopython_runtime "$RUNTIME_TAG" --mount "type=bind,src=$nfs_read_mount,dst=$nfs_root,readonly"
+  run_logged npm --prefix console/frontend exec -- playwright install --with-deps chromium
   run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite manager-internal-artifact-lineage --wait-protection-owners manager --output "$1"' _ "$IDENTITY_ENV"
   source "$IDENTITY_ENV"
   run_logged python3 scripts/test/online-engine-registration.py --descriptor "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE" --output "$ENGINE_RESULT_ENV"

@@ -38,6 +38,84 @@ def authorization():
 
 
 class FileGDBAcceptanceTest(unittest.TestCase):
+    def browser_proof(self, directory, phase='granted'):
+        context = {'run_id': 'manager-1-1', 'phase': phase, 'locator': 'exact-locator',
+            'status': 200 if phase == 'granted' else 403,
+            'identity': {'principal_id': '11', 'tenant_id': '2', 'permissions_verified': sorted(M.PERMISSIONS)},
+            'source': {'a.gdbtable': hashlib.sha256(b'original').hexdigest()},
+            'screenshot': phase + '.png', 'download_file': phase + '.zip'}
+        payload = {**context, 'schema_version': 'addp.manager-filegdb-browser/v1', 'result': 'passed',
+            'actual_button_clicked': True, 'current_user_bearer': True, 'cookie_absent': True,
+            'credential_in_url': False, 'business_writes': [], 'unexpected_responses': [], 'warnings': [],
+            'page_errors': [], 'anonymous_refresh_401': 1, 'download_events': int(phase == 'granted')}
+        (directory / context['screenshot']).write_bytes(b'screenshot-fixture')
+        if phase == 'granted':
+            raw = io.BytesIO()
+            with zipfile.ZipFile(raw, 'w') as archive:
+                archive.writestr(M.NAME + '/', b''); archive.writestr(M.NAME + '/a.gdbtable', b'original')
+            (directory / context['download_file']).write_bytes(raw.getvalue())
+            payload.update(suggested_filename=M.NAME+'.zip', size=len(raw.getvalue()),
+                           sha256=hashlib.sha256(raw.getvalue()).hexdigest())
+        else:
+            payload.update(error_visible=True, success_visible=False)
+        return context, payload
+
+    def test_browser_proof_binds_current_user_phase_physical_bytes_and_denials(self):
+        for phase in ('ungranted', 'granted', 'revoked', 'expired'):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as name:
+                root = Path(name); context, payload = self.browser_proof(root, phase)
+                self.assertEqual(M.validate_browser_report(payload, context, root)['result'], 'passed')
+                changes = [lambda p: p.update(identity={}), lambda p: p.update(locator='other'),
+                    lambda p: p.update(current_user_bearer=False), lambda p: p.update(cookie_absent=False),
+                    lambda p: p.update(credential_in_url=True), lambda p: p.update(actual_button_clicked=False),
+                    lambda p: p.update(business_writes=['grant']), lambda p: p.update(unexpected_responses=[503]),
+                    lambda p: p.update(warnings=['error']), lambda p: p.update(page_errors=['crash']),
+                    lambda p: p.update(anonymous_refresh_401=2), lambda p: p.update(result='failed')]
+                changes += ([lambda p: p.update(sha256='wrong'), lambda p: p.update(size=0),
+                             lambda p: p.update(download_events=0), lambda p: p.update(suggested_filename='other.zip')]
+                            if phase == 'granted' else [lambda p: p.update(download_events=1),
+                             lambda p: p.update(error_visible=False), lambda p: p.update(success_visible=True)])
+                for change in changes:
+                    wrong = deepcopy(payload); change(wrong)
+                    with self.assertRaises(ValueError): M.validate_browser_report(wrong, context, root)
+                if phase == 'granted':
+                    # Rewriting the receipt's hash does not conceal changed source bytes.
+                    raw = io.BytesIO()
+                    with zipfile.ZipFile(raw, 'w') as archive:
+                        archive.writestr(M.NAME+'/', b''); archive.writestr(M.NAME+'/a.gdbtable', b'changed')
+                    (root/context['download_file']).write_bytes(raw.getvalue())
+                    payload.update(size=len(raw.getvalue()), sha256=hashlib.sha256(raw.getvalue()).hexdigest())
+                else:
+                    (root/context['download_file']).write_bytes(b'leaked')
+                with self.assertRaises(ValueError): M.validate_browser_report(payload, context, root)
+
+    def test_browser_runner_drops_issuer_and_tokens_uses_current_login_and_rejects_failure(self):
+        with tempfile.TemporaryDirectory() as name:
+            root=Path(name); context, payload=self.browser_proof(root, 'revoked')
+            environment={'ADDP_ONLINE_ARTIFACT_DIR':name, 'ADDP_ONLINE_TEST_USER_USERNAME':'ordinary',
+                'ADDP_ONLINE_TEST_USER_PASSWORD':'private', 'ADDP_ONLINE_TEST_USER_ACCESS_TOKEN':'api-token',
+                'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN':'issuer', 'ADDP_ONLINE_ADMIN_USER_PASSWORD':'admin'}
+            path=root/'manager-filegdb-browser-revoked.json'
+            def execute(args, **kwargs):
+                self.assertEqual(args, ['npm', 'exec', '--', 'playwright', 'test',
+                    'e2e/online/manager-filegdb.spec.js', '--config=playwright.online.config.js'])
+                self.assertEqual(kwargs['cwd'],root/'console/frontend')
+                self.assertTrue(kwargs['check'])
+                env=kwargs['env']; self.assertEqual(env['ADDP_ONLINE_TEST_USER_USERNAME'],'ordinary')
+                self.assertEqual(env['ADDP_ONLINE_TEST_USER_PASSWORD'],'private')
+                self.assertFalse(any(k.startswith(('ADDP_ONLINE_FIXTURE_','ADDP_ONLINE_ADMIN_USER_')) for k in env))
+                self.assertNotIn('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN',env)
+                self.assertEqual(json.loads(env['ADDP_ONLINE_MANAGER_FILEGDB_JSON']),context)
+                path.write_text(json.dumps(payload))
+            with patch.object(M.subprocess,'run',side_effect=execute):
+                self.assertEqual(M.run_browser(root,environment,context)['result'],'passed')
+            with patch.object(M.subprocess,'run') as execute:
+                with self.assertRaisesRegex(ValueError,'already exists'):M.run_browser(root,environment,context)
+                execute.assert_not_called()
+            path.unlink()
+            with patch.object(M.subprocess,'run',side_effect=M.subprocess.CalledProcessError(1,['browser'])):
+                with self.assertRaises(M.subprocess.CalledProcessError):M.run_browser(root,environment,context)
+
     def test_failed_directory_download_never_accepts_content_or_another_denial_gate(self):
         for status in (403, 409, 503):
             for mutation in (None, 'data', 'archive', 'security'):

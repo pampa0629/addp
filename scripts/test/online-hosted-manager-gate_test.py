@@ -173,6 +173,7 @@ class HostedManagerGateTest(unittest.TestCase):
         trace = self.host.trace.read_text()
         self.assertIn('filegdb-physical:mount', trace)
         self.assertIn('filegdb-physical:unmount', trace)
+        self.assertIn('npm:--prefix console/frontend exec -- playwright install --with-deps chromium', trace)
         self.assertNotIn('source-fixture:start', trace)
         self.assertNotIn('source-fixture:stop', trace)
         self.assertIn('nfs-fixture:stop', trace)
