@@ -670,3 +670,20 @@ Console 受控回归与人工用例复用唯一 `http-quality-page-support.mjs`�
 | Node／Python源语法、本专项 `git diff --check -- <owned paths>` | 通过；人工 JS 仅语法检查与共享断言的受控实测，不声称实际运行真实密码/MFA用例 |
 
 正式产品构建／注册／mTLS采集、真实密码/MFA、API及两阶段真实页面、注销和最终零残留仍未验收；停源后历史读取、5／15分钟完整窗口、模型／工具、5xx／告警通知、Hosted、容量及72小时保留仍不在本批。历史 Mac Docker list／inspect 等待与完整四秒失败原因未确认；Linux SDK 稳定读取路径的成功不能代替本地资源守卫修复。下一步只建议另行确认原60分钟真实本地窗口，未取得授权前不启动。
+
+
+<a id="http-formal-page-window-projection-failed-20261031"></a>
+
+## 2026-10-31 正式 Agent/Copilot 页面本地窗口：指标投影准备失败并清理
+
+用户另行授权原上限单次60分钟窗口，含准备／构建／验收／清理，55分钟停新业务，完整资源检查四秒、8 CPU／12 GiB及私有可写4 GiB停止线；失败即停清理，不自动重试／续窗，不运行Hosted／容量／定时。本轮只执行一次标准 `make test-monitor-http-local`，未修改产品代码、依赖、系统配置或断言，也未手动触发CI。启动前核对当次12项自有输入已提交，并按标准 `scripts/infra/status.sh` 核对现有Infra；该状态入口使用其既有健康／日志探针，不能称所有前置动作都纯只读。未重启或接管个人开发服务，隔离场景不使用共享PostgreSQL。
+
+窗口于2026-10-31 19:33:47（Asia/Shanghai）开始，固定源码 `b45cad3a65ecf8bce641ec24016175b48f25dee3`，包含页面断言实现 `5ad3ade67a3ac0dbb851e3e1ee08a94f77899385`。当次run_id=`addp-http-local-3fa6c05f2dd047728a1b0b29925fc05e`。来源快照、固定Nginx摘要缓存身份／Linux ARM64与隔离网络准入已通过；未隐式拉取、更换辅助镜像或修改TLS。报告15项固定输入摘要独立匹配该源码。约4.40秒进入`metrics_deployment_projection`，4.52秒进入清理，含清理总5.277706915978342秒；`make`退出2，报告`failed`，首因`command_failed_1`（子命令退出1）。输出只保留SHA256=`37962b1ee42e4de2504353bed1c3a64808786c8c5f8c1285f734b1c7ce27428d`及`no such file or directory`封闭标记，未保留失败命令类别、原始输出或缺失路径，不能唯一指认具体命令／对象。
+
+阶段包含临时证书、指标配置生成及Compose投影，现有回执不足以区分子步骤。本轮失败后仅做只读源码／配置核对：本机`openssl version`为OpenSSL 4.1.0（23 Oct 2026），`openssl version -d`指向`/opt/homebrew/etc/openssl@4`，其`openssl.cnf`确实不存在；当前临时CA生成的`openssl req`未传显式`-config`。该缺失是待处理的证书准备前置事实，与失败阶段相符，但缺少本轮失败命令及原始输出，不能当作已唯一确认的根因。没有重试证书生成、修改系统配置、降级工具或另起环境；建议下一批先核对该依赖，再讨论显式当次私有OpenSSL配置及封闭步骤诊断的最小修正与确定性回归，实际新窗口另行授权。
+
+本轮尚未创建采样线程／完成任何完整资源样本，`resource_samples=[]`，无`resource_guard_failure`；不能算四秒守卫运行通过，也不是四秒超时复发。没有进入产品构建／启动、完整Python依赖检查、正式密码/MFA、业务请求、采集查询或页面，两阶段及停源断言均未执行，`assertions={}`，没有浏览器回执。不能以已有受控T0/T3、SDK Linux或缓存镜像准入替代这些结果；未取得完整大小样本，也不能认定4 GiB容量足够。
+
+原生命周期自动清理完成，报告`cleanup.zero_owned_resources=true`、`failures=[]`，当次容器／网络／卷／builder残留检查无失败；私有工作目录已删除，本轮只读核对同run_id目录数量为0。首失败保留，原资源及清理期限未改。失败即结束，剩余时间没有被复用，未自动重试或续窗。
+
+报告SHA256=`dfcc1dce648df718b62d925eafbbc1c59f79bc8b8bb09810eb139b269f6626ec`，原报告8002字节，位于系统临时目录`addp-http-local-3fa6c05f2dd047728a1b0b29925fc05e-report.json`。仅脱敏报告、阶段日志、窗口起点及独立核对回执归档到`/tmp/addp-p19-http-product-window-20261031-3fa6c05f/`（`report.json`／`run.log`／`launch.json`／`audit.json`，目录0700／文件0600），不保留临时密钥、口令或完整环境。正式产品→身份→采集/API→Console/Monitor页面闭环仍未验收；停源历史、完整5/15分钟窗口及其余原缺口保持。本次只更新两份证据文档，以38条主题计数、唯一锚点／索引、固定输入摘要、报告／清理及本专项差异检查验证，不重复已通过且未变的代码门禁。
