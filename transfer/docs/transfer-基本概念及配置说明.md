@@ -449,7 +449,9 @@ continuous worker 是 Transfer 独立进程角色，不使用 Asynq。`desired_s
 
 resume 前必须确认 committed `next_offset` 仍在 Kafka partition 的保留范围内。若 retention 已删除该位置，任务明确失败并要求人工决定如何处理，不能自动跳到 earliest。PostgreSQL/MySQL/Oracle 目标锁等待必须响应 context 取消；Oracle 使用 `FOR UPDATE NOWAIT` 有界重试，取消事务不得留下业务行或目标 ledger 的半提交状态。数据库 CDC 遇到 schema drift 时，当前 execution 失败且任务进入 `blocked`；业务 Kafka record 路线按显式 `block|dead_letter` 处理确定性记录错误，不复用 CDC 的 schema change request 语义。
 
-continuous worker 按 Transfer 配置管理页面“连续任务策略”中的 diagnostics 采样间隔读取每分区 earliest/latest offset，用目标已成功应用的 committed `next_offset` 计算 lag 和 retention 恢复余量。时间余量使用连续 latest 样本的增长率估算；冷启动、无 committed position 或写入速率为零时显示 unknown。degraded/critical retention 阈值、checkpoint 停滞阈值均由同一配置页统一控制。`transfer.sync_states.position_committed_at` 单独保存真实 position commit 时间；只有存在 source lag 且 commit age 超过配置的 checkpoint 停滞阈值时 checkpoint health 才进入 degraded，lag 为 0 时保持 healthy。所有阈值均不进入任务 JSON。诊断结果写入 `common.task_executions.metadata.continuous.diagnostics`，Monitor 只读取 execution metadata，不直连业务 Kafka 或 Transfer 私有状态表。
+diagnostics 采样间隔、degraded/critical retention 阈值和 checkpoint 停滞阈值由 Transfer 配置管理页面“连续任务策略”统一维护，不进入任务 JSON。指标计算、unknown 条件与真实 position commit 口径见[分区位置与 Kafka 恢复窗口](transfer-任务语义与同步模式.md#分区位置与-kafka-恢复窗口)，捕获健康与源日志窗口见[诊断专题](transfer-任务语义与同步模式.md#捕获健康与源日志窗口)。
+
+诊断结果写入 `common.task_executions.metadata.continuous.diagnostics`；Monitor 只读取 execution metadata，不直连业务 Kafka 或 Transfer 私有状态表。允许公开的字段与敏感信息排除统一见[安全投影与读取边界](transfer-任务语义与同步模式.md#安全投影与读取边界)；诊断展示不作为恢复通过记录，固定版本证据、失败与未覆盖项见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)。
 
 continuous worker 重启时不会复用已结束的 execution。正常 worker shutdown 将旧 execution 收敛为 `cancelled + stop_reason=worker_shutdown`；新 worker 在任务 `desired_state=running` 时原子创建 recovery execution，继承上一 execution 的 `trigger_type`，并从 `transfer.sync_states` 已提交位置继续。runtime lease 过期时旧 execution 先以 `failed + stop_reason=lease_expired` 结束，再创建 recovery execution。恢复 execution 在 metadata 记录 `recovery_reason` 和 `recovered_from_execution_id`，每次领取继续递增 fencing token。
 

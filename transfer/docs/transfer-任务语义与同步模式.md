@@ -268,6 +268,12 @@ continuous worker 定期读取每个 partition 的 earliest/latest position，�
 - retention horizon。
 - checkpoint age 与 health。
 
+时间余量使用连续 latest 样本的增长率估算；冷启动、无 committed position 或写入速率为零时显示 unknown。
+
+`transfer.sync_states.position_committed_at` 单独保存真实 position commit 时间；只有存在 source lag 且 commit age 超过配置的 checkpoint 停滞阈值时 checkpoint health 才进入 degraded，lag 为 0 时保持 healthy。
+
+采样间隔与阈值的管理入口见[配置说明](transfer-基本概念及配置说明.md#八continuouskafka-v1-契约与当前实现边界)。
+
 #### 捕获健康与源日志窗口
 
 capture generation 的健康由两个独立事实聚合：`connector_status` 表示 Kafka Connect connector/task 线程状态，`source_status` 表示使用 connector 实际数据库凭据执行最小只读查询的结果。只有两者都健康时 capture 才是 `running`；任一失败或无法观测时 capture 为 `failed`。Oracle 使用独立 `cdc_user` 探测，不能因为 Kafka Connect REST 仍返回 `RUNNING` 就推断 LogMiner 数据源可达，也不能用业务 schema-owner 连接或 System 的普通 Engine 连通性缓存代替。
