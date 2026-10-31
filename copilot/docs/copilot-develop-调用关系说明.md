@@ -56,7 +56,7 @@ Agent 使用根 `skills/query-generation` 和 `query.draft.generate` Tool 复用
 
 ## 时序图 1：Develop 前端发起工作流生成（主流程）
 
-图中 Bearer 访问令牌的身份与 Tool Scope 按[模块 IAM 说明](../CLAUDE.md#iam-permission-所有权)校验，认证事实来自[System AuthContext](../../docs/spec/addp登录认证的统一要求.md#一认证事实与唯一主路径)。Copilot 读取 Develop 算子目录使用自身 Tenant Service Access Token，见[模块服务身份](../CLAUDE.md#多租户支持)。图中的模型请求统一经过 Inference，配置、凭据和验证要求见[推理契约导航](../CLAUDE.md#推理契约导航)。
+同一工作流生成端点保留普通用户直调与 Agent Tool 委托，身份、Scope、Permission 及入站服务令牌拒绝要求统一见[工作流入口身份](../../docs/spec/workflow/Develop资源与执行.md#copilot-工作流入口身份)。[当前守卫缺口与验收边界](../../docs/spec/workflow/Develop资源与执行.md#当前守卫缺口与验收边界)单独记录未落实项，不能用时序图推定全部身份要求已实现。Copilot 读取 Develop 算子目录仍使用自身 Tenant Service Access Token，图中模型请求仍统一经过 Inference，配置与凭据见[推理契约导航](../CLAUDE.md#推理契约导航)。
 
 ```mermaid
 sequenceDiagram
@@ -295,5 +295,7 @@ Develop前端（用户选择引擎）
 - 当前工作流 API 将 Tool 调用失败映射为 `502`、参数错误映射为 `400`、其他生成异常映射为 `500`，身份与权限错误保留原状态；普通异常返回固定“工作流生成失败”，不能承诺向前端透传原始上游错误。`need_clarification` 与 `validation_failed` 是业务响应状态，不能按 HTTP 成功就判定生成成功。响应与敏感信息边界见[响应与错误规范](../../docs/spec/api/响应与错误.md#错误响应格式)。
 
 ## 验收边界
+
+工作流身份守卫的未修复项和回归要求统一见[正式规范](../../docs/spec/workflow/Develop资源与执行.md#当前守卫缺口与验收边界)。
 
 本页的流程和时序图不代表已有运行通过证据。实际检查须区分接口身份与权限、资源确认、公开算子读取、候选生成，以及 Develop 后续保存、插入与执行；受控上游测试不代替新代码部署后的真实厂商调用。验证要求见[推理契约导航](../CLAUDE.md#推理契约导航)，层级与标准入口见[测试与验收规范](../../docs/spec/addp测试与验收规范.md)；未运行、失败和未覆盖项分别记录，不计为通过。

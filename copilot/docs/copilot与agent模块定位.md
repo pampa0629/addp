@@ -1,5 +1,7 @@
 # Copilot 与 Agent 模块定位
 
+[返回 Copilot 模块](../CLAUDE.md) · [Develop 调用关系](copilot-develop-调用关系说明.md) · [工作流入口身份](../../docs/spec/workflow/Develop资源与执行.md#copilot-工作流入口身份) · [当前守卫缺口与验收](../../docs/spec/workflow/Develop资源与执行.md#当前守卫缺口与验收边界)
+
 ## 两个模块的本质差异
 
 表面上两者都是"Python + HTTP 调用各模块 API"，但它们解决的问题不同：
@@ -43,6 +45,8 @@ Agent 提供独立的自然语言入口，用户无需进入任何具体模块�
 - "查一下最近上传的数据里有没有包含人口字段的表"
 
 ## 调用关系
+
+Develop 页面普通用户直调与 Agent Tool 委托使用同一工作流生成端点；两类调用的身份与授权要求、内部服务身份边界统一见[工作流入口身份](../../docs/spec/workflow/Develop资源与执行.md#copilot-工作流入口身份)，当前未落实项见[守卫缺口与验收](../../docs/spec/workflow/Develop资源与执行.md#当前守卫缺口与验收边界)。此分工不改变资源确认、候选生成与后续执行各自的归属。
 
 两者分离，但 Agent 可以调用 Copilot 作为高级工具：
 

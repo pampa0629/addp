@@ -26,6 +26,7 @@
 | 场景绑定优先级、未配置错误与历史快照 | [场景绑定解析与历史快照](<../docs/spec/addp AI推理接口规范.md#场景绑定解析与历史快照>) |
 | 推理数据面的服务身份与 Tenant Context | [管理权限与数据面身份](<../docs/spec/addp AI推理接口规范.md#管理权限与数据面身份>)；Copilot 的身份见[多租户支持](#多租户支持) |
 | 调用方配置范围与上游凭据保护 | [本模块绑定表](docs/tables/inference_scenario_bindings表.md)、[调用方共同边界](<../docs/spec/addp AI推理接口规范.md#调用方与-inference-的共同边界>)、[凭据规则](<../docs/spec/addp AI推理接口规范.md#四凭据>) |
+| 工作流普通用户直调、Agent 委托与内部服务身份 | [入口身份](../docs/spec/workflow/Develop资源与执行.md#copilot-工作流入口身份)、[守卫缺口与验收](../docs/spec/workflow/Develop资源与执行.md#当前守卫缺口与验收边界) |
 | 授权、场景解析、凭据与真实厂商调用的验证 | [验证要求](<../docs/spec/addp AI推理接口规范.md#九验证要求>) |
 
 验证清单不代表已通过验收；实际结果按[测试与验收规范](../docs/spec/addp测试与验收规范.md)分层记录。受控上游测试不代替新代码部署后的真实厂商调用，未运行、失败和未覆盖项不计为通过。
@@ -177,7 +178,7 @@ Copilot Permission 只授予“生成候选结果”，不授予候选查询、W
 
 - `/query/generate` 使用 `query.draft.generate` Tool Scope，并唯一映射到可委托的 `copilot.sql.execute`；请求体禁止 `tenant_id/user_id`。
 - `/notebook/generate` 使用 `notebook.draft.generate` Tool Scope，并唯一映射到可委托的 `copilot.notebook.execute`；只接受 Develop 已限定的 Session 候选或已验证资源事实，不自行执行租户级资源搜索。
-- `/workflow/generate` 使用 `workflow.draft.generate` Tool Scope，并唯一映射到可委托的 `copilot.workflow.execute`。
+- `/workflow/generate` 的普通用户直调和 Agent 委托使用同一端点，均要求 `copilot.workflow.execute`；委托的 `workflow.draft.generate` Scope、服务身份边界及当前未落实的守卫要求统一见[工作流入口身份](../docs/spec/workflow/Develop资源与执行.md#copilot-工作流入口身份)和[守卫缺口与验收](../docs/spec/workflow/Develop资源与执行.md#当前守卫缺口与验收边界)。
 - `/transfer/generate` 使用 `transfer.draft.generate` Tool Scope，只要求 `copilot.transfer.execute`；源和目标由 Agent/Transfer 向导调用正式 owner 能力校验，Copilot 只生成草稿，不再调用资源 Tool 或申请二次委托。无资源时返回源资源意图，调用方发现候选；完整配置只使用 `transfer_generation` 场景。传入的 ResourceFact 是受限生成上下文，不是权限或真实性凭据，Transfer 创建及执行仍独立校验。
 - `/kg-build/extract` 只接受 Graph 的 Tenant Service Access Token，请求和令牌 Tenant 必须一致，不消费 User Permission。
 - `/standard-documents/extract` 只接受 Standard 的 Tenant Service Access Token；只返回候选内容与绝对行号，不保存、创建或发布正式标准。数据元候选的 `data_type` 只允许 `string|int|bigint|float|decimal|date|datetime|bool|json`，码值集候选只允许 `string|int|bigint`，术语和指标候选必须为 `null`；原文只能确定 `numeric`、`date_or_datetime` 等上位类型时必须保持 `null`，不得猜测。数据元候选的 `value_domain_kind` 只允许 `unrestricted|range|enumeration`；枚举数据元必须通过 `code_set_code` 引用同一响应中的码值集候选，非枚举及其他类型候选必须为 `null`。候选不得生成数据库修订 ID，正式数据元修订仍由 Standard 冻结具体码值集修订；`identifier` 等业务语义写入名称或定义，不得发明数据类型或值域类型。
@@ -199,7 +200,7 @@ Copilot Permission 只授予“生成候选结果”，不授予候选查询、W
 
 ### Workflow Agent 工作流程
 
-1. **接收用户请求**：通过 `common-python` 调用 System AuthContext 验证 ADDP 用户访问令牌，取得权威用户和租户；Develop 普通用户首次请求缺少 `resources[]` 时，Copilot 先理解独立输入数据意图，再通过共享 ToolExecutor 对每个输入执行 `data.search → resource.ancestors.get → resource.facts.get` 并返回候选；某个角色首轮零召回时只为该角色生成未尝试的新检索词并补充搜索一次；LLM 只对已验证候选排序和标记推荐项，不删除仍然合理的候选；同一输入角色存在多个候选时由用户选择一个；Agent/确认后的请求直接携带 owner Tool 已验证的 resources
+1. **接收用户请求**：通过 `common-python` 调用 System AuthContext 解析普通用户直调或 Agent 委托的身份，按[工作流入口契约](../docs/spec/workflow/Develop资源与执行.md#copilot-工作流入口身份)取得权威用户和租户并校验；当前守卫缺口见该节后续说明。Develop 普通用户首次请求缺少 `resources[]` 时，Copilot 先理解独立输入数据意图，再通过共享 ToolExecutor 对每个输入执行 `data.search → resource.ancestors.get → resource.facts.get` 并返回候选；某个角色首轮零召回时只为该角色生成未尝试的新检索词并补充搜索一次；LLM 只对已验证候选排序和标记推荐项，不删除仍然合理的候选；同一输入角色存在多个候选时由用户选择一个；Agent/确认后的请求直接携带 owner Tool 已验证的 resources
 2. **生成工作流**：`WorkflowService` 通过 `OperatorCatalogService` 读取当前 Runtime 的 Public Operator Spec，完成算子筛选、DAG 生成、验证和有限自动修复
 3. **返回结果**：workflow DAG、解释、资源事实和验证结果；不保存 Copilot 对话记忆
 

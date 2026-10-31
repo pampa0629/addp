@@ -75,7 +75,31 @@ Develop 的算子发现 API 是工作流编排视角，只返回 `execution_mode
 
 Copilot 等上层智能生成链路也必须沿用同一实例 ID 契约：生成工作流时只接收 `workflow_engine_id`，不得要求前端额外提交 `engine_type` 作为生成上下文或算子发现条件。工作流引擎类型只能由 Develop/System 后端按实例 ID 查询得到，不能成为 API 输入侧的第二事实源。
 
-Copilot 工作流生成入口只接受 audience 为 `copilot`、scope 为 `workflow.draft.generate` 的 Delegated Access Token；该令牌只用于约束用户发起的 Copilot Tool 请求，不得转发给 Develop。Copilot 在同一 Tenant Context 中读取工作流引擎列表和 Public Operator Spec 时，必须使用 `addp-copilot` Confidential OAuth Client 获取的 Tenant Service Access Token，并且只发送 Bearer。`tenant.copilot_runtime` 只授予该链路所需的 `develop.task.read` 和推理执行权限，不授予工作流保存、修改或执行权限；调用不得发送 `X-Internal-API-Key` 或 `X-Tenant-ID`。
+### Copilot 工作流入口身份
+
+`POST /api/v1/copilot/workflow/generate` 使用同一条生成路径，按调用凭据区分校验。身份事实来自 System AuthContext，普通用户与委托的通用规则见 [OAuth AuthContext 映射](<../addp OAuth授权规范.md#八authcontext-映射>)及[受委托访问令牌](<../addp OAuth授权规范.md#九受委托访问令牌>)。
+
+| 调用身份 | 接收与授权要求 | 资源确认与生成边界 |
+| --- | --- | --- |
+| 普通用户直调 | 接受第一方 Web User Access Token 或 OAuth User Access Token；要求 User Principal、当前 Tenant Context 和 `copilot.workflow.execute`。OAuth User Token 仍须按已批准的 Scope 收窄访问。 | Develop 页面使用当前用户令牌。缺少 `resources[]` 时先发现候选并等待用户确认，确认后生成候选 DAG。 |
+| Agent Tool 委托 | Agent 调用必须使用 System 签发的 Delegated Access Token；要求 User Principal、当前 Tenant Context、唯一 audience `copilot`、精确 Scope 集合 `["workflow.draft.generate"]`，以及同一 `copilot.workflow.execute` Permission。委托来源、AgentRun、ToolCall 和有效性遵循 OAuth 规范。 | Agent 先通过 Owner Tool 确认资源，再提交 `resources[]`。空资源不在 Copilot 重新发现；现有 WorkflowService 返回 `status=need_clarification`、`clarification_reason=resource_facts_required`，不视为生成成功。 |
+| 服务身份 | Service Access Token 不得作为本生成端点的入站身份，不能代替普通用户或 Agent 委托。 | Copilot 自身向 Develop、Inference 发起内部调用的服务身份按下文保留；Standard、Graph 等其他 Copilot 端点继续遵循各自的服务身份契约。 |
+
+普通用户直调不要求页面先兑换 Agent 委托令牌。Agent Tool 不得把原始 User Access Token 直接转发给 Copilot；入站委托令牌也不得转发给 Develop。`resources[]` 是受限生成上下文，不是资源授权或真实性凭据；候选生成不授予保存、发布或执行权限，后续操作继续由 Develop 独立校验。
+
+Copilot 在同一 Tenant Context 中读取工作流引擎列表和 Public Operator Spec 时，必须使用 `addp-copilot` Confidential OAuth Client 获取的 Tenant Service Access Token，并且只发送 Bearer。`tenant.copilot_runtime` 只授予该链路所需的 `develop.task.read` 和推理执行权限，不授予工作流保存、修改或执行权限；调用不得发送 `X-Internal-API-Key` 或 `X-Tenant-ID`。
+
+### 当前守卫缺口与验收边界
+
+上述为统一契约；以下差异尚未修复，不能把规范要求写成当前已具备的保护：
+
+- 实际路由使用 [require_tool_user](../../../copilot/backend/dependencies/auth.py)，只显式检查 Tenant ID、委托条件和 Permission，未显式限定 User Principal，也未落实普通 OAuth Token 的 Scope 收窄校验。不能宣称当前路由已保证拒绝服务身份。
+- [allows_delegated_tool](../../../common-python/addp_common/auth.py) 对非委托令牌直接返回允许，对委托 audience 和 Scope 使用包含判断；owner 的 Scope 精确集合检查仍有缺口。这里描述 owner 校验不足，不表示 System 已签发超范围委托令牌。Swagger 的 `delegated_tool` 标记只声明契约，不会自动安装运行时守卫。
+- [工作流认证测试](../../../copilot/backend/tests/test_workflow_auth.py)中的服务主体拒绝用例调用 `require_user`，未覆盖实际路由的 `require_tool_user`。已有直接调用 Handler 的资源发现用例和 OpenAPI 声明检查，也不能代替已挂载路由的认证、授权回归。
+
+后续回归须覆盖同一真实路由上的第一方与 OAuth 用户、合法与越界委托、缺少 Permission／Tenant、服务主体拒绝，以及普通用户资源确认和 Agent 不重新发现的差异；另核对 Copilot 内部调用没有转发入站用户或委托令牌。若调整共享守卫，须复核 Query、Notebook、Transfer 等消费者，并按[测试与验收规范](../addp测试与验收规范.md)选择 `make test-module MODULE=copilot`、共享依赖对应门禁及 `make test-changed` 的扩散范围。
+
+本节不提供上述缺口已修复或已通过验收的证据。静态源码核对、Handler 单测、真实路由回归与 System → Gateway → Copilot／Develop 的运行验收分别记录；真实模型调用按[推理验证要求](<../addp AI推理接口规范.md#九验证要求>)独立验证。未运行、失败和未覆盖项不计为通过。
 
 ## 工作流算子资源参数
 
