@@ -892,7 +892,7 @@ def execution_profile(suite_name: str, environment: Mapping[str, str]) -> str | 
 
 def validate_native_cleanup_report(report: dict[str, object], environment: Mapping[str, str]) -> None:
     if any(field in report for field in ('failure_kind', 'failure_http_status', 'failure_stage',
-                                         'error_type', 'cleanup_error_type')):
+                                         'error_type', 'cleanup_error_type', 'runtime_start_diagnostic')):
         raise OnlineStageError('scenario', 'online_native_cleanup_report_invalid',
                                'passed native Cleanup report contains failure diagnostics')
     contract = json.loads(Path(__file__).with_name('execution-online-contract.json').read_text())

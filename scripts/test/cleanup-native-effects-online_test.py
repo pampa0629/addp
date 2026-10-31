@@ -17,6 +17,93 @@ ID = str(uuid.uuid4())
 
 
 class NativeCleanupRunnerTest(unittest.TestCase):
+    def test_runtime_wait_retains_only_last_scoped_observation_with_original_budget(self):
+        for status in ('pending', 'failed', 'timeout', 'cancelled', 'success'):
+            report, snapshots, calls = {}, [], []
+            values = iter(({'execution_id': ID, 'task_id': 7, 'status': 'pending'},
+                           {'execution_id': ID, 'task_id': 7, 'status': status,
+                            'error_details': {'category': 'connection_failed', 'code': 'lease_expired',
+                                              'message': 'secret connection/SQL', 'raw_response': 'private'},
+                            'metadata': {'stop_reason': 'worker_shutdown', 'recovery_reason': 'execution_failed',
+                                         'metadata_scan': {'status': 'failed', 'error_code': 'scan_submission_failed',
+                                                           'message': 'secret source'},
+                                         'execution_config': {'password': 'private'}}}))
+            class User:
+                def request(self, method, path, expected):
+                    calls.append((method, path, expected))
+                    return SimpleNamespace(payload=next(values))
+            with self.subTest(status=status), patch.object(S.time, 'monotonic', side_effect=[0, 0, 1, 120]), \
+                    patch.object(S.time, 'sleep') as sleep:
+                with self.assertRaisesRegex(S.SuiteError, 'native Transfer runtime did not start'):
+                    M.wait_transfer_runtime(User(), 7, ID, report, lambda: snapshots.append(copy.deepcopy(report)))
+                self.assertEqual(calls, [('GET', f'/api/v1/transfer/executions/{ID}', (200,))] * 2)
+                self.assertEqual(sleep.call_args_list, [unittest.mock.call(.2)] * 2)
+                self.assertEqual(report['runtime_start_diagnostic'], {
+                    'execution_id': ID, 'task_id': 7, 'observation': 'observed', 'status': status,
+                    'error_details': {'category': 'connection_failed', 'code': 'lease_expired'},
+                    'metadata': {'stop_reason': 'worker_shutdown', 'recovery_reason': 'execution_failed',
+                                 'metadata_scan': {'status': 'failed', 'error_code': 'scan_submission_failed'}}})
+                self.assertEqual(snapshots, [report])
+                self.assertNotIn('secret', json.dumps(report))
+                self.assertNotIn('private', json.dumps(report))
+
+    def test_runtime_wait_running_succeeds_without_failure_fields_or_extra_requests(self):
+        reads = []
+        class User:
+            def request(self, method, path, expected):
+                reads.append(path)
+                return SimpleNamespace(payload={'execution_id': ID, 'task_id': 7,
+                                                 'status': 'pending' if len(reads) == 1 else 'running'})
+        report = {}
+        with patch.object(S.time, 'monotonic', side_effect=[0, 0, 1]), patch.object(S.time, 'sleep'):
+            M.wait_transfer_runtime(User(), 7, ID, report, lambda: self.fail('success must not publish failure diagnostics'))
+        self.assertEqual(len(reads), 2)
+        self.assertEqual(report, {})
+
+    def test_runtime_wait_read_failure_preserves_prior_observation_without_an_extra_get(self):
+        for observed in (False, True):
+            calls, report = [], {}
+            class User:
+                def request(self, method, path, expected):
+                    calls.append(path)
+                    if observed and len(calls) == 1:
+                        return SimpleNamespace(payload={'execution_id': ID, 'task_id': 7, 'status': 'pending'})
+                    raise S.SuiteError('GET /private returned HTTP 503 (secret)')
+            with self.subTest(observed=observed), patch.object(S.time, 'monotonic', return_value=0), \
+                    patch.object(S.time, 'sleep'):
+                with self.assertRaises(S.SuiteError) as caught:
+                    M.wait_transfer_runtime(User(), 7, ID, report, lambda: None)
+                self.assertEqual(M.failure_diagnostics(caught.exception),
+                                 {'failure_kind': 'http_unexpected_status', 'failure_http_status': 503})
+                self.assertEqual(len(calls), 2 if observed else 1)
+                diagnostic = report['runtime_start_diagnostic']
+                self.assertEqual(diagnostic['observation'], 'observed' if observed else 'not_observed')
+                self.assertEqual(diagnostic.get('status'), 'pending' if observed else None)
+                self.assertNotIn('secret', json.dumps(report))
+
+    def test_runtime_observation_uses_closed_enums_and_rejects_foreign_or_malformed_identity(self):
+        payload = {'execution_id': ID, 'task_id': 7, 'status': 'secret',
+                   'error_details': {'category': ['private'], 'code': {'password': 'secret'},
+                                     'error_code': 'private.driver.detail', 'message': 'private'},
+                   'metadata': {'stop_reason': 'private', 'recovery_reason': 'private',
+                                'metadata_scan': {'status': 'private', 'error_code': 'private'},
+                                'continuous': {'diagnostics': {'error': 'private'}}}}
+        safe = M.transfer_runtime_observation(payload, 7, ID)
+        self.assertEqual(safe, {'execution_id': ID, 'task_id': 7, 'observation': 'observed',
+                               'status': 'unrecognized',
+                               'error_details': {'category': 'unrecognized', 'code': 'unrecognized',
+                                                 'error_code': 'unrecognized'},
+                               'metadata': {'stop_reason': 'unrecognized', 'recovery_reason': 'unrecognized',
+                                            'metadata_scan': {'status': 'unrecognized', 'error_code': 'unrecognized'}}})
+        for invalid in (None, [], {'execution_id': str(uuid.uuid4()), 'task_id': 7, 'status': 'running'},
+                        {'execution_id': ID, 'task_id': True, 'status': 'running'},
+                        {'execution_id': ID, 'task_id': 8, 'status': 'running'}):
+            with self.subTest(invalid=invalid):
+                diagnostic = M.transfer_runtime_observation(invalid, 7, ID)
+                self.assertIn(diagnostic['observation'], ('invalid_response', 'identity_mismatch'))
+                self.assertNotIn('status', diagnostic)
+                self.assertEqual(set(diagnostic), {'execution_id', 'task_id', 'observation'})
+
     def test_failure_diagnostics_publish_only_closed_categories_and_http_status(self):
         cases = [
             (S.SuiteError('POST /private?token=secret returned HTTP 403 (private_code)'),
@@ -93,7 +180,8 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                 def request(self, method, path, expected, body=None):
                     if method == 'POST' and path == M.TASKS: effect('create'); value = {'id': 7}
                     elif method == 'POST' and path.endswith('/start'): effect('start'); value = {'execution_id': ID}
-                    elif method == 'GET' and '/executions/' in path: effect('runtime'); value = {'status': 'running'}
+                    elif method == 'GET' and '/executions/' in path:
+                        effect('runtime'); value = {'execution_id': ID, 'task_id': 7, 'status': 'running'}
                     elif method == 'GET' and '/dead-letters?' in path: effect('dead_letter_read'); value = {'total': 1}
                     elif method == 'POST' and path.endswith('/pause'): effect('pause'); value = {}
                     elif method == 'GET' and path == M.TASKS + '/7': value = {'desired_state': 'paused', 'status': 'idle'}
@@ -116,6 +204,11 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     with self.assertRaises(S.SuiteError): run()
                 self.assertEqual(report['stage'], expected_stage)
                 self.assertEqual(checkpoints[-1], expected_stage)
+                if failed == 'runtime':
+                    self.assertEqual(report['runtime_start_diagnostic'], {
+                        'execution_id': ID, 'task_id': 7, 'observation': 'not_observed'})
+                else:
+                    self.assertNotIn('runtime_start_diagnostic', report)
 
     def test_proxy_evidence_requires_actual_upstream_response_and_single_forward(self):
         valid = dict(run_id='native-1', key=ID, forwarded=1, upstream_response=True, blocked_replays=0)

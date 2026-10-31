@@ -63,6 +63,7 @@ class OnlineGateTest(unittest.TestCase):
             ('failure_kind', 'http_unexpected_status'), ('failure_http_status', 503),
             ('failure_stage', 'transfer_native_prepare'), ('error_type', 'SuiteError'),
             ('cleanup_error_type', 'SuiteError'),
+            ('runtime_start_diagnostic', {'status': 'failed'}),
         ):
             for value in (None, '', False, diagnostic):
                 with self.subTest(field=field, value=value):

@@ -143,6 +143,64 @@ def wait_paused(user, task_id, controls):
     return value
 
 
+def transfer_runtime_observation(value, task_id, execution_id):
+    """Project only this execution's closed public states, never private prose."""
+    result = {'execution_id': execution_id, 'task_id': task_id}
+    if type(value) is not dict:
+        return {**result, 'observation': 'invalid_response'}
+    if (value.get('execution_id') != execution_id or type(value.get('task_id')) is not int
+            or value['task_id'] != task_id):
+        return {**result, 'observation': 'identity_mismatch'}
+
+    def enum(value, allowed):
+        return value if type(value) is str and value in allowed else 'unrecognized'
+
+    def fields(value, allowed):
+        if type(value) is not dict:
+            return {}
+        return {key: enum(value[key], choices) for key, choices in allowed.items() if key in value}
+
+    # These are the existing ExecutionResponse / Common observation enums.
+    result.update(observation='observed', status=enum(value.get('status'),
+                  {'pending', 'running', 'success', 'failed', 'timeout', 'cancelled'}))
+    codes = {'schema_change_blocked', 'lease_expired', 'invalid_json_object', 'multiple_json_values',
+             'unknown_source_field', 'missing_source_key', 'missing_required_field',
+             'incompatible_field_type', 'null_target_key'}
+    result['error_details'] = fields(value.get('error_details'), {
+        'category': {'owner_unavailable', 'submission_uncertain', 'coordinator_lost', 'child_failed',
+                     'permission_denied', 'timeout', 'cancelled', 'connection_failed', 'resource_exhausted',
+                     'invalid_input', 'execution_failed'},
+        'code': codes, 'error_code': codes})
+    metadata = value.get('metadata')
+    result['metadata'] = fields(metadata, {
+        'stop_reason': {'paused', 'stopped', 'cleanup', 'worker_shutdown', 'lease_expired',
+                        'execution_failed', 'schema_change_blocked'},
+        'recovery_reason': {'worker_shutdown', 'lease_expired', 'execution_failed'}})
+    if type(metadata) is dict and 'metadata_scan' in metadata:
+        result['metadata']['metadata_scan'] = fields(metadata['metadata_scan'], {
+            'status': {'submitted', 'failed'},
+            'error_code': {'scan_origin_unavailable', 'scan_output_unavailable',
+                           'scan_service_unavailable', 'scan_submission_failed'}})
+    return result
+
+
+def wait_transfer_runtime(user, task_id, execution_id, report, checkpoint):
+    last = {'execution_id': execution_id, 'task_id': task_id, 'observation': 'not_observed'}
+    def read():
+        nonlocal last
+        value = user.request('GET', f'/api/v1/transfer/executions/{execution_id}', (200,)).payload
+        last = transfer_runtime_observation(value, task_id, execution_id)
+        require(last['observation'] == 'observed', 'native Transfer execution response identity differs')
+        return value
+    try:
+        # Keep the canonical 120s wait, original running predicate and GET cadence.
+        S.wait_for(read, lambda x: x.get('status') == 'running', 'native Transfer runtime did not start')
+    except Exception:
+        report['runtime_start_diagnostic'] = last
+        checkpoint()
+        raise
+
+
 def prepare_task(user, controls, pg, kafka, kind, run_id, report, checkpoint):
     report['stage'] = 'transfer_task_create'; checkpoint()
     config = TRANSFER.task_config(kind, pg, kafka)
@@ -157,8 +215,7 @@ def prepare_task(user, controls, pg, kafka, kind, run_id, report, checkpoint):
     execution_id = S.identifier(started['execution_id'])
     report['executions'].append(execution_id); checkpoint()
     report['stage'] = 'transfer_runtime_start'; checkpoint()
-    S.wait_for(lambda: user.request('GET', f'/api/v1/transfer/executions/{execution_id}', (200,)).payload,
-               lambda x: x.get('status') == 'running', 'native Transfer runtime did not start')
+    wait_transfer_runtime(user, task_id, execution_id, report, checkpoint)
     if kind == 'kafka':
         report['stage'] = 'transfer_initial_records'; checkpoint()
         controls.produce_initial()
