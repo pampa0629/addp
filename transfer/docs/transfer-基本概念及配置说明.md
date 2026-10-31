@@ -18,7 +18,7 @@
 | `description` | 任务描述。 |
 | `task_type` | 当前固定为 `sync`；执行主链路统一由 `config` 决定。 |
 | `config` | source / target endpoint 任务配置。 |
-| `schedule` | Cron 表达式；为空表示手动任务。 |
+| `schedule` | Cron 表达式；为空表示手动任务，授权与控制见[调度说明](#调度授权与控制)。 |
 | `batch_size` | 批大小；config 内未声明时作为 planner 默认值。 |
 | `enabled` | 定时任务是否启用。 |
 | `auto_scan_metadata` | 成功后是否触发 Meta deep scan，默认 true。 |
@@ -46,11 +46,21 @@ snapshot 重跑与 watermark incremental 的恢复分工见[恢复分级](#恢�
 
 ### 1.3 租户阶段的任务授权
 
-Transfer 任务定义与执行记录在当前 Tenant 内共享。`transfer.task.read` 可以读取当前 Tenant 的任务列表、统计、详情和相应执行记录；创建者身份不额外赋予功能 Permission，也不限制有读取权限的其他租户成员。`transfer.task.create/update/execute/delete` 分别控制创建、修改、执行和删除，彼此不隐式包含。跨 Tenant 的任务 ID 按不存在处理。Department 与 Project Group 工作区及任务级分享在本阶段不生效，组织 Scope 不能扩大为 Tenant 权限；要启用组织 Scope，必须先完成任务归属、同范围列表裁剪及 owner 授权设计。
+#### 租户可见性与动作权限
 
-创建向导的格式和 CDC 支持矩阵不包含任务或引擎实例，已认证 Tenant 用户可读取 `GET /capabilities`，不依赖 `transfer.task.read`。源与目标引擎选择使用 Meta 的引擎目录和资源树，调用者另需 `meta.catalog.read`；目录可见性不表示用户具有独立的数据资源授权。当前 Transfer 仅按 Tenant 归属和任务功能权限控制任务创建、执行；个人、部门、项目组或逐资源授权需在 owner 契约明确后另行设计。创建与启动是两个动作：没有 `transfer.task.execute` 时创建成功后不得自动启动；没有 `transfer.task.read` 时不得跳转到任务列表。内置角色和自定义角色应显式组合创建向导需要的跨模块权限。
+Transfer 任务定义与执行记录在当前 Tenant 内共享。`transfer.task.read` 可以读取当前 Tenant 的任务列表、统计、详情和相应执行记录；创建者身份不额外赋予功能 Permission，也不限制有读取权限的其他租户成员。各动作的精确 Permission、用户任务定义与 TaskProvider 的身份分工统一见[任务表 API](tables/tasks表.md#五api)，各权限彼此不隐式包含。跨 Tenant 的任务 ID 按不存在处理。Department 与 Project Group 工作区及任务级分享在本阶段不生效，组织 Scope 不能扩大为 Tenant 权限；要启用组织 Scope，必须先完成任务归属、同范围列表裁剪及 owner 授权设计。
+
+#### 资源选择与页面入口
+
+创建向导的格式和 CDC 支持矩阵不包含任务或引擎实例，已认证 Tenant 用户可读取 `GET /capabilities`，不依赖 `transfer.task.read`。源与目标引擎选择使用 Meta 的引擎目录和资源树，调用者另需 `meta.catalog.read`；目录可见性不表示用户具有独立的数据资源授权。任务管理访问按 Tenant 归属和任务功能权限核验；个人、部门、项目组或逐资源的任务授权需在 owner 契约明确后另行设计。创建与启动是两个动作：没有 `transfer.task.execute` 时创建成功后不得自动启动；没有 `transfer.task.read` 时不得跳转到任务列表。内置角色和自定义角色应显式组合创建向导需要的跨模块权限。
 
 Console 和 Transfer 页面按入口及动作权限显示：无任务权限时不提供任务入口，直达地址显示无权限状态；仅有创建权限的账号可进入创建向导；只读者可进入租户任务列表与详情但看不到写操作。API 对每次请求独立执行功能权限与 Tenant 校验，不能以隐藏按钮代替授权。
+
+#### 调度授权与控制
+
+带 Cron 的 bounded 任务在保存定义或恢复调度时，必须由同 Tenant 的本次 User 授权：除相应的创建／更新权限外，还要求 `transfer.task.execute` 和 `system.execution_authorization.create`。暂停清除本地调度授权，恢复重新授权，不按创建者补齐或沿用暂停前的主体，也不以 Service 身份代替。主体字段、定义摘要、原子更新、触发时重核及失败语义统一见[Transfer 定时任务授权](../../docs/spec/tasks/任务定义与授权.md#transfer-定时任务授权)；授权主体不是数据访问权，源读、目标写与运行期保护仍须独立核验。
+
+bounded pause/resume 只控制未来调度，不中断已有 execution，也不执行 checkpoint 续写；无 Cron 的手动任务不支持这两个操作。用户控制与 continuous 运行控制的入口分工见[任务表执行与恢复边界](tables/tasks表.md#执行恢复与验收边界)，操作示例见[暂停与恢复定时调度](快速开始.md#暂停与恢复定时调度)。execution 的重跑与增量续读另按[恢复分级](#恢复分级)认定。
 
 ## 二、任务 Config JSON
 
@@ -504,7 +514,7 @@ capture supervisor 已通过 Kafka Connect REST 和 Infra Kafka admin API 管理
 | restartable | 失败 snapshot retry 创建新 execution 并从头执行；append 拒绝。 |
 | resumable | watermark incremental 通过 `transfer.sync_states` 支持 execution 间 resume，目标按幂等 `table_upsert` capability 选择；支持引擎、非空间限制与稳定键条件统一见[增量同步契约](#七watermark-bounded-incremental)。snapshot checkpoint 仍仅可观测。 |
 
-恢复操作及新旧 execution UUID 的使用见[快速开始](快速开始.md#四checkpoint-和重试)。恢复能力、回归与真实运行结果分别认定；标准入口和历史证据见[模块验证](../CLAUDE.md#开发与验证)，未运行、失败、跳过和未覆盖项不计为通过。
+本表只区分 execution 的观测、重跑与增量续读；任务的调度暂停／恢复另见[调度授权与控制](#调度授权与控制)。恢复操作及新旧 execution UUID 的使用见[快速开始](快速开始.md#四checkpoint-和重试)。调度控制、重跑与续读须分别验收；标准入口、固定版本证据、失败与修复结论及未覆盖项见[模块验证](../CLAUDE.md#开发与验证)，未运行、失败、跳过和未覆盖项不计为通过。静态配置、授权或调度更新成功均不等于实际触发、Worker 执行和目标数据验收通过。
 
 ## 十一、写后 Meta 扫描
 
