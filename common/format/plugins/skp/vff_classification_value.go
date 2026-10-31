@@ -16,6 +16,7 @@ type vffSKCValueBinding struct {
 	declarations, facets []vffSKCDeclarationWitness
 	terminals            []xml.Name
 	issues               []string
+	structures           []vffSKCValueStructure
 }
 
 func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error) {
@@ -26,6 +27,27 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 	active := map[*vffXMLNode]bool{}
 	var visit func(*vffXMLNode, int) error
 	var reference func(*vffXMLNode, string, string, int) error
+	memberReference := func(source *vffXMLNode, raw string, depth int) error {
+		if err := b.tick(depth); err != nil {
+			return err
+		}
+		name, err := b.qname(source, raw)
+		if err != nil {
+			return err
+		}
+		kind := source.name.Local
+		result.references = append(result.references, vffSKCValueReference{kind + "Ref", name, b.witness(source)})
+		if name.Space != b.namespace {
+			result.issues = append(result.issues, "external complex value "+kind+" reference: "+raw)
+			return nil
+		}
+		declaration := b.definitions[kind][name.Local]
+		if declaration == nil {
+			result.issues = append(result.issues, "complex value "+kind+" declaration missing: "+raw)
+			return nil
+		}
+		return visit(declaration, depth+1)
+	}
 	reference = func(source *vffXMLNode, raw, role string, depth int) error {
 		if err := b.tick(depth); err != nil {
 			return err
@@ -54,9 +76,11 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 			return visit(declaration, depth+1)
 		}
 		if declaration := b.definitions["complexType"][name.Local]; declaration != nil {
-			result.declarations = append(result.declarations, b.witness(declaration))
-			result.issues = append(result.issues, "complex value type not expanded")
-			return nil
+			if source.name.Local != "element" || role != "type" {
+				result.issues = append(result.issues, "complex value type outside element type position")
+				return nil
+			}
+			return visit(declaration, depth+1)
 		}
 		result.issues = append(result.issues, "value type declaration missing: "+raw)
 		return nil
@@ -81,6 +105,17 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 		}
 		switch kind := node.name.Local; kind {
 		case "element", "attribute":
+			if err := b.valueStructure(node, result); err != nil {
+				return err
+			}
+			if name, named := node.attrs["name"]; named && !vffSKCBindingName(name) {
+				return fmt.Errorf("invalid complex value member name")
+			}
+			if _, named := node.attrs["name"]; !named {
+				if _, referenced := node.attrs["ref"]; !referenced {
+					return fmt.Errorf("complex value member requires name or ref")
+				}
+			}
 			var inline []*vffXMLNode
 			for _, child := range children {
 				if child.name.Local == "simpleType" || child.name.Local == "complexType" {
@@ -90,6 +125,12 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 				}
 			}
 			typeName, typed := node.attrs["type"]
+			if ref, exists := node.attrs["ref"]; exists {
+				if _, named := node.attrs["name"]; named || typed || len(inline) > 0 {
+					return fmt.Errorf("conflicting complex value member reference")
+				}
+				return memberReference(node, ref, depth+1)
+			}
 			if typed && len(inline) > 0 || len(inline) > 1 {
 				return fmt.Errorf("conflicting field value type declarations")
 			}
@@ -102,7 +143,40 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 			result.issues = append(result.issues, "implicit value type not proved")
 		case "complexType":
 			result.declarations = append(result.declarations, b.witness(node))
-			result.issues = append(result.issues, "anonymous complex value not expanded")
+			if node.parent != nil && node.parent.name.Local == "attribute" {
+				result.issues = append(result.issues, "complex value type outside element type position")
+				return nil
+			}
+			if err := b.valueStructure(node, result); err != nil {
+				return err
+			}
+			if len(children) == 0 {
+				result.issues = append(result.issues, "empty complex value semantics not proved")
+			}
+			for _, child := range children {
+				switch child.name.Local {
+				case "sequence", "choice", "all", "attribute":
+					if err := visit(child, depth+1); err != nil {
+						return err
+					}
+				default:
+					result.issues = append(result.issues, "unsupported complex value child: "+child.name.Local)
+				}
+			}
+		case "sequence", "choice", "all":
+			if err := b.valueStructure(node, result); err != nil {
+				return err
+			}
+			for _, child := range children {
+				switch child.name.Local {
+				case "sequence", "choice", "element":
+					if err := visit(child, depth+1); err != nil {
+						return err
+					}
+				default:
+					result.issues = append(result.issues, "unsupported complex value particle: "+child.name.Local)
+				}
+			}
 		case "simpleType":
 			result.declarations = append(result.declarations, b.witness(node))
 			if len(children) != 1 {
