@@ -8,13 +8,14 @@ Transfer 执行记录统一存储在 `common.task_executions`。本文说明保�
 
 | 字段 | Transfer 语义 |
 |---|---|
-| `module` | 固定为 `transfer`。 |
-| `source` | 默认 `transfer`。如果未来由 Manager 或其他模块直接触发 Transfer execution，应写触发模块。 |
-| `source_task_id` | 对应 `transfer.transfer_tasks.id`，按十进制字符串软引用写入。 |
+| `module` | 执行 Owner 固定为 `transfer`，不随调用来源改变。 |
+| `task_type` | 本文传输执行为 `sync`，用户、模块结果与 TaskProvider 入口均核对该归属，不扩展到其他任务类型。 |
+| `source` | 本次调用来源。模块一次性执行已用于 Manager／Develop 等调用方，来源由已认证 `addp-<module>` Service Client 推导，不接受请求自报；流程见[执行记录契约](../transfer-基本概念及配置说明.md#12-执行记录)。 |
+| `source_task_id` | 有定义执行按十进制字符串软引用 `transfer.transfer_tasks.id`；模块一次性执行为空，不创建临时任务定义。 |
 | `tenant_id` | 租户隔离字段。 |
-| `status` | `pending`、`running`、`success`、`failed`。 |
+| `status` | 取值及终态语义统一见公共[执行状态枚举](../../../docs/spec/tasks/执行记录与租约.md#执行状态枚举)。 |
 | `trigger_type` | `manual` / `scheduled`。只表达手动或定时触发，不表达来源模块、API 通道或重试场景。 |
-| `triggered_by` | 触发用户 ID。 |
+| `triggered_by` | 经核验的发起 User 事实，不是机器认证主体或执行授权。服务代发导出从 Owner 核验取得用户；普通无用户来源的机器执行不伪造发起人，见[来源核验](../../../docs/spec/addp登录认证的统一要求.md#一认证事实与唯一主路径)。 |
 
 ## 二、指标字段
 
@@ -84,14 +85,37 @@ watermark incremental 的跨 execution resume 使用独立 `transfer.sync_states
 
 ## 六、API
 
-路由前缀：`/api/v1/transfer`。
+路由前缀：`/api/v1/transfer`。用户、模块结果与 TaskProvider 的读取范围和 DTO 统一见[Transfer 专业执行读取与响应](../../../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)，下表仅定位各入口。
+
+### 用户专业读取与重试
+
+第一方和普通 OAuth User 使用 `transfer.task.read` 读取；重试使用 `transfer.task.execute`，并独立复核当前执行资格。读取同时限定可信 Tenant、`module=transfer` 和 `task_type=sync`：有定义的历史（含已删除定义）按 Owner 任务范围读取，无定义的一次性执行仅发起 User 可读，无主体证据拒绝。列表、总数和统计适用同一范围；父执行可读不授予子执行读取权。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/executions` | 查询租户下 Transfer 执行记录。 |
 | `GET` | `/executions/statistics` | 查询执行统计。 |
-| `GET` | `/executions/:execution_id` | TaskProvider 标准执行详情入口，按统一 `common.task_executions.execution_id` 查询。 |
+| `GET` | `/executions/:execution_id` | 用户专业执行详情入口，按统一 `common.task_executions.execution_id` 查询。 |
 | `POST` | `/executions/:execution_id/retry` | 按统一 `common.task_executions.execution_id` 和 restartable 语义重试失败执行。 |
 | `GET` | `/executions/:execution_id/progress` | 按统一 `common.task_executions.execution_id` 查询执行进度。 |
 | `GET` | `/executions/:execution_id/events` | 按统一 `common.task_executions.execution_id` 查询安全过程事件。 |
 | `GET` | `/task-definitions/:id/executions` | 查询某个任务的执行记录。 |
+
+### 模块一次性执行与来源隔离
+
+以下入口使用当前 Tenant 的模块 Service 身份，创建与读取权限互不替代。来源由 Client ID 推导，结果回查还须匹配同租户、`module=transfer`、`task_type=sync`、无任务定义且 `source` 等于调用模块；其他来源按不存在处理。不能用用户任务读取权或 TaskProvider 权限代替模块结果读取权。
+
+| 方法 | 路径 | 权限与职责 |
+| --- | --- | --- |
+| `POST` | `/executions` | `transfer.execution.create`：创建无任务定义的 bounded `sync` execution，返回统一 execution UUID。 |
+| `GET` | `/executions/:execution_id/result` | `transfer.execution.read`：只回查当前模块创建的一次性结果，使用专用安全结果 DTO。 |
+
+服务身份与发起 User 分开核验；导出会话的 UUID、请求摘要和来源事实按[来源核验契约](../../../docs/spec/addp登录认证的统一要求.md#一认证事实与唯一主路径)处理。来源归属不授予数据访问或执行权限，成功取得结果也不替代后续交付所需的保护校验。
+
+### TaskProvider 机器状态读取
+
+`GET /task-provider/executions/:execution_id` 仅供固定 `addp-orchestrator` Service Client 使用 `transfer.task_provider.read` 读取同租户 Transfer `sync` 执行状态；不套用用户本人条件，也不代替用户专业详情或模块导出结果。TaskProvider 的独立任务与执行契约见[模块核心 API](../../CLAUDE.md#核心-api)和[TaskProvider 规范](../../../docs/spec/tasks/TaskProvider接口.md)。
+
+### 验证边界
+
+上述来源、路由和守卫的静态核对不代表真实授权或运行通过。User 读取、模块来源隔离与 TaskProvider 机器入口须按各自身份分别验证；未运行、失败、跳过或未覆盖项不计为通过。标准门禁、固定版本证据及实际范围统一见[模块验证](../../CLAUDE.md#开发与验证)。
