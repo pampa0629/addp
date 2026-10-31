@@ -242,18 +242,49 @@ Parquet writer 使用 `target.options.compression`；默认值、允许 codec、
 
 ### 3.3 Native table target
 
+[运行期定义检查](#运行期定义检查) · [请求与权限](#预检请求权限与读取范围) · [报告与三态](#报告与三态结果) · [快照与未检查项](#快照覆盖与未检查项) · [目标能力](#目标能力与写入策略) · [摘要与输出](#摘要绑定与输出保护) · [Agent 复核](#agent-tool-与创建复核) · [写侧范围](#已接入的原生目标写侧)
+
+#### 运行期定义检查
+
 执行器在删除／准备目标之前调用 Provider 可选的纯定义检查，拒绝确定不支持的字段声明。PostgreSQL 已复用实际类型映射和结构兼容规则；缺少事实或需要读取实际值才能判断的情况为 `unknown`。这不是行值预检或执行授权，不能据此证明整个 replace 无副作用，仍须通过运行期授权、Security、实时结构及逐值编码检查。
+
+#### 预检请求、权限与读取范围
 
 `POST /api/v1/transfer/task-config-checks` 接收与创建任务相同的**完整请求**，供 Console 与 Agent 共用。首期支持 bounded + snapshot、native table、replace/append；不检查 upsert。当前租户用户必须同时具备 `transfer.task.create`、`meta.catalog.read`、`system.engine.read`，委托还须使用精确 transfer audience 和唯一 `transfer.task.config.check` Scope。Service Principal 和 Resource Access Ticket 不能调用此用户入口。此接口不会保存任务、安装调度、扫描、执行查询、读取业务行、建表或删除目标；原创建／更新接口的权限和行为不因此改变。
 
-HTTP 200 返回 `addp.transfer_task_config_check/v1` 报告，`status` 为 `supported / unsupported / unknown`；字段诊断含 `code`、`check`、`config_path`、`source_field / target_field` 及 Provider 物理类型。`checked` 记录实际检查，`not_checked` 与 `runtime_checks_required` 列出剩余门禁。`facts[].schema_coverage` 是完整／采样／未知的**已落库快照**覆盖度，不是实时结构保证。查询不执行；可选 Common `QueryDefinitionChecker` 只用已保存快照分析部分输出。MongoDB 首期单集合、单个简单 `$project` 支持包含、排除和字段别名，覆盖度仍为 sampled／unknown；复杂查询、采样、缺失快照、无 Provider Checker 均保留 unknown。查询前原表结构不能充当输出结构，未观察字段不能证明缺失或确定 NULL／默认值。即使源未知，仍由目标 Provider 检查显式目标约束及常量；unsupported 优先于 unknown。Meta 404 不能证明物理目标不存在。已知数字默认值经过运行期 float64 配置解析的精度未证明，明确返回 unknown。依赖服务的权限、网络或无效响应返回 502，不作为 unknown 吞掉。
+Agent Tool 与 SDK 只接入上述 HTTP 契约；`transfer.task.config.check` 的输入 Schema、SDK 映射与权限声明统一见 [Tool 契约](../../docs/spec/addp智能体Tool开放规范.md#34-当前-tool-集合)。System 签发与 Transfer 委托路由均按上述三项 Permission 执行 all-of 校验；完成当前主体校验后，由 Transfer 使用已有 Tenant Service 客户端读取租户绑定的控制面事实，不转发委托 token 给 Meta/System，不增加权限。
 
-原生目标能力按 `apply_mode` 校验：append 只要求已登记的写入能力；replace 还要求实例已登记 `storage.store.delete`，且当前插件声明该能力并实现 `ResourceDeleteProvider`。已知缺少删除能力即返回 unsupported，诊断路径为 `/config/target/policy/apply_mode`；缺少事实而无确定反证时返回 unknown。源读取不要求删除能力。该只读检查不执行删除，也不将缺少 Meta 快照当作目标不存在，仍不证明数据库权限、实时目标状态或覆盖副作用安全。
+#### 报告与三态结果
+
+HTTP 200 返回 `addp.transfer_task_config_check/v1` 报告，`status` 为 `supported / unsupported / unknown`；字段诊断含 `code`、`check`、`config_path`、`source_field / target_field` 及 Provider 物理类型。`checked` 记录实际检查，`not_checked` 与 `runtime_checks_required` 列出剩余门禁。
+
+HTTP 200 只表示成功取得报告，不代表 `supported`；三态对创建的影响见[Agent Tool 与创建复核](#agent-tool-与创建复核)，依赖错误仍按下节失败语义处理。
+
+#### 快照覆盖与未检查项
+
+`facts[].schema_coverage` 是完整／采样／未知的**已落库快照**覆盖度，不是实时结构保证。
+
+查询不执行；可选 Common `QueryDefinitionChecker` 只用已保存快照分析部分输出。MongoDB 首期单集合、单个简单 `$project` 支持包含、排除和字段别名，覆盖度仍为 sampled／unknown；复杂查询、采样、缺失快照、无 Provider Checker 均保留 unknown。查询前原表结构不能充当输出结构，未观察字段不能证明缺失或确定 NULL／默认值。
+
+即使源未知，仍由目标 Provider 检查显式目标约束及常量；unsupported 优先于 unknown。缺少 Meta 快照或 Meta 404 均不能证明物理目标不存在。已知数字默认值经过运行期 float64 配置解析的精度未证明，明确返回 unknown。
+
+依赖服务的权限、网络或无效响应返回 502，不作为 unknown 吞掉。
+
+#### 目标能力与写入策略
+
+原生目标能力按 `apply_mode` 校验：append 只要求已登记的写入能力；replace 还要求实例已登记 `storage.store.delete`，且当前插件声明该能力并实现 `ResourceDeleteProvider`。已知缺少删除能力即返回 unsupported，诊断路径为 `/config/target/policy/apply_mode`；缺少事实而无确定反证时返回 unknown。源读取不要求删除能力。目标应用策略统一见[写入策略](#六写入策略)；实时目标状态与覆盖副作用仍须按下节要求重新验证。
+
+#### 摘要绑定与输出保护
 
 规范 JSON 使用对象键递归排序、保留数组顺序和数字 token、不增加空白的 UTF-8 JSON（与 Go encoding/json 的字符转义一致）。`config_hash` 是完整提交请求的规范 JSON SHA-256；`facts` 摘要绑定引擎版本、已登记能力和完整 Meta 结构（含字段顺序、原生／元素类型、精度、默认表达式、空间事实、身份与扫描时刻）；`binding_hash` 是将自身置空后对完整报告规范 JSON 求 SHA-256。它们是内容绑定，**不是签名或执行授权凭据**。报告不回传配置、SQL、默认值正文、凭据或样本，响应禁止缓存。结构快照时效、实时连接／结构、数据库权限、Security、源读取 Grant 和逐值转换均须运行时重新验证；replace 的目标副作用也不由此报告证明安全。
 
-Agent 正式 Tool Manifest 和 SDK 接入此唯一 HTTP 契约，不增加权限、不转发委托 token 给 Meta/System；完成当前主体三项权限检查后，由 Transfer 使用已有 Tenant Service 客户端读取租户绑定的控制面事实。`transfer.task.config.check` 的 `required_permissions` 显式声明上述三项 Permission 交集，System 签发与 Transfer 委托路由都按 all-of 校验；audience 仍唯一 `transfer`，Scope 仍唯一 `transfer.task.config.check`。Agent Runtime 在最终配置复核及创建前调用正式预检；unsupported 阻止创建，unknown 展示未检查项与运行要求后知情确认，只保存未运行定义。supported 不保证执行成功，报告也不改变创建与执行接口自身的权限和配置校验。
+#### Agent Tool 与创建复核
 
+Agent Runtime 在最终配置复核及创建前调用正式预检；unsupported 阻止创建，unknown 展示未检查项与运行要求后知情确认，只保存未运行定义。supported 不保证执行成功，报告也不改变创建与执行接口自身的权限和配置校验。
+
+创建复核的原参数、稳定报告绑定、重检及确认失效规则统一见[Transfer 创建条件与复核](../../docs/spec/addp本体定义与发布规范.md#九transfer-创建条件与复核)。上述接入与预检报告不代表真实运行已验收；标准门禁、历史结果及未覆盖项见[模块验证](../CLAUDE.md#开发与验证)，不将未运行、失败或跳过项计为通过。
+
+#### 已接入的原生目标写侧
 
 | 引擎 | 当前写侧 |
 |---|---|
