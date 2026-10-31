@@ -105,9 +105,9 @@ results = await manager.search("城市", page_size=10)
 
 Transfer 预检的正文归属与边界：
 
-- **请求与报告**：`check_task_config()` 与 `create_task()` 共用完整请求，固定无计划、未启用、无自动扫描；预检不创建、重试或执行任务。完整三态报告、诊断、事实摘要、未检查项及 `config_hash/binding_hash` 内容绑定统一见 [Transfer 配置预检契约](../transfer/docs/transfer-基本概念及配置说明.md#33-native-table-target)；摘要不是授权票据，实时事实与逐值检查仍归运行期。
-- **权限与委托**：三项权限交集为 `transfer.task.create`、`meta.catalog.read`、`system.engine.read`；委托 audience 唯一为 `transfer`，Scope 唯一为 `transfer.task.config.check`。CLI 经同一 ToolExecutor 调用；共用输入 Schema、签发与 Owner 校验统一见 [Tool 契约](../docs/spec/addp智能体Tool开放规范.md#34-当前-tool-集合)。
-- **结果与复核**：HTTP 200 不等于 `supported`，`supported` 不是执行保证；`unsupported` 阻止 Agent 创建，`unknown` 须说明未检查项并取得知情确认，才可仅保存未运行定义。权限、依赖失败或损坏报告不能降级为 `unknown`。复核与创建前重检、原参数和稳定报告的绑定及变化后的重新确认见[创建条件与复核](../docs/spec/addp本体定义与发布规范.md#九transfer-创建条件与复核)；SDK／离线结果与真实链路的验收分工见[开发与验证](#开发与验证)。
+- **请求与报告**：`check_task_config()` 与 `create_task()` 共用完整请求，固定无计划、未启用、无自动扫描；预检不创建、重试或执行任务。完整三态报告、诊断与事实摘要见[报告与三态结果](../transfer/docs/transfer-基本概念及配置说明.md#报告与三态结果)，未检查项见[快照覆盖](../transfer/docs/transfer-基本概念及配置说明.md#快照覆盖与未检查项)，`config_hash/binding_hash` 内容绑定见[摘要与输出保护](../transfer/docs/transfer-基本概念及配置说明.md#摘要绑定与输出保护)；摘要不是授权票据，实时事实与逐值检查仍归运行期。
+- **权限与委托**：三项权限交集为 `transfer.task.create`、`meta.catalog.read`、`system.engine.read`；委托 audience 唯一为 `transfer`，Scope 唯一为 `transfer.task.config.check`。CLI 经同一 ToolExecutor 调用；共用输入 Schema、签发与 Owner 校验统一见 [Tool 契约](../docs/spec/addp智能体Tool开放规范.md#34-当前-tool-集合)；HTTP 入口身份与读取范围见[预检权限契约](../transfer/docs/transfer-基本概念及配置说明.md#预检请求权限与读取范围)。
+- **结果与复核**：HTTP 200 不等于 `supported`，`supported` 不是执行保证；`unsupported` 阻止 Agent 创建，`unknown` 须说明未检查项并取得知情确认，才可仅保存未运行定义。权限、依赖失败或损坏报告不能降级为 `unknown`。复核与创建前重检、原参数和稳定报告的绑定及变化后的重新确认见[HTTP 预检接入](../transfer/docs/transfer-基本概念及配置说明.md#agent-tool-与创建复核)和[创建条件与复核](../docs/spec/addp本体定义与发布规范.md#九transfer-创建条件与复核)；SDK／离线结果与真实链路的验收分工见[开发与验证](#开发与验证)。
 
 ## Service Consumer SDK
 

@@ -82,7 +82,9 @@ Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provi
 
 ### 只读配置预检
 
-`POST /api/v1/transfer/task-config-checks` 接收完整创建请求，要求当前租户用户的 `transfer.task.create`、`meta.catalog.read`、`system.engine.read` 三项权限交集；委托使用唯一 `transfer` audience 和精确 `transfer.task.config.check` Scope。共用输入 Schema 与委托校验见 [Tool 契约](../docs/spec/addp智能体Tool开放规范.md#34-当前-tool-集合)；支持范围、三态结果、请求与报告摘要绑定、未检查项及运行期复核统一见[配置预检正文](docs/transfer-基本概念及配置说明.md#33-native-table-target)。
+`POST /api/v1/transfer/task-config-checks` 接收完整创建请求，要求当前租户用户的 `transfer.task.create`、`meta.catalog.read`、`system.engine.read` 三项权限交集；委托使用唯一 `transfer` audience 和精确 `transfer.task.config.check` Scope。共用输入 Schema 与委托校验见 [Tool 契约](../docs/spec/addp智能体Tool开放规范.md#34-当前-tool-集合)。
+
+配置契约直达：[请求、权限与读取范围](docs/transfer-基本概念及配置说明.md#预检请求权限与读取范围) · [报告与三态结果](docs/transfer-基本概念及配置说明.md#报告与三态结果) · [快照覆盖与未检查项](docs/transfer-基本概念及配置说明.md#快照覆盖与未检查项) · [目标能力与写入策略](docs/transfer-基本概念及配置说明.md#目标能力与写入策略) · [摘要绑定与输出保护](docs/transfer-基本概念及配置说明.md#摘要绑定与输出保护) · [Agent Tool 与创建复核](docs/transfer-基本概念及配置说明.md#agent-tool-与创建复核)。
 
 Transfer 先授权，再用 Tenant Service 读取 System 引擎事实及 Meta 已落库快照；不得调用业务行、查询执行／描述、实时 Catalog Facts、Prepare、任务保存或执行。
 
