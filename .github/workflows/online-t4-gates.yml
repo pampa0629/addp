@@ -130,6 +130,7 @@ on:
           - line-proximity
           - line-extension
           - endpoint-snapping
+          - polygon-rings
       manager_case:
         description: Manager acceptance case (full preserves all model assertions)
         required: true

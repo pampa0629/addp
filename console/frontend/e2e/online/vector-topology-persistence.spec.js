@@ -888,3 +888,85 @@ test('端点吸附独立普通User线与Point双成果及四失败保护',async(
   await observeLineageCanvas(page)
   await verifyLineEditCase(page,evidence,directory)
 })
+
+function assertRingsLineage(graph,evidence) {
+  expect(graph.truncated).toBe(false)
+  const edges=graph.edges.filter(edge=>edge.relation_kind==='derive'&&edge.status==='active')
+  expect(edges.map(edge=>[edge.source.item_id,edge.target.item_id,edge.evidence?.execution_id]))
+    .toEqual([[evidence.sources[0].id,evidence.outputs[0].item_id,evidence.execution_id]])
+}
+
+function persistRingsEvidence(directory,raw,stage,result='incomplete') {
+  writeFileSync(resolve(directory,'topology-rings-browser-raw.json'),JSON.stringify({...raw,stage,result},null,2)+'\n')
+}
+
+test('面界提取独立普通User单成果与两失败保护',async({page})=>{
+  const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}'),directory=process.env.ADDP_ONLINE_ARTIFACT_DIR
+  expect(evidence.case).toBe('polygon-rings');expect(evidence.sources).toHaveLength(3);expect(evidence.outputs).toHaveLength(1)
+  expect(evidence.failures.map(f=>f.key)).toEqual(['conflict','invalid'])
+  const expected=evidence.expected.result,output=evidence.outputs[0],identity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
+  expect(expected).toHaveLength(8)
+  const raw={schema_version:'addp.polygon-rings-browser-raw/v1',case:evidence.case,run_id:evidence.run_id,execution_id:evidence.execution_id}
+  const persist=(stage,result='incomplete')=>persistRingsEvidence(directory,raw,stage,result)
+  const writes=[]
+  page.on('request',request=>{const path=new URL(request.url()).pathname
+    if(!['GET','HEAD','OPTIONS'].includes(request.method())&&/^\/api\/v1\/(develop|meta|manager)\//.test(path))writes.push({method:request.method(),path})})
+  await observeLineageCanvas(page)
+  const read=page.waitForResponse(r=>r.request().method()==='GET'&&new URL(r.url()).pathname===`/api/v1/develop/executions/${evidence.execution_id}`)
+  await login(page,process.env.ADDP_ONLINE_TEST_USER_USERNAME,process.env.ADDP_ONLINE_TEST_USER_PASSWORD,`/develop/executions/${evidence.execution_id}`)
+  const response=await read,executionAPI=await browserAPIFromResponse(response,process.env.GATEWAY_URL,identity)
+  try{raw.execution=await json(response,'rings success');expect(raw.execution.execution_id).toBe(evidence.execution_id);expect(raw.execution.triggered_by).toBe(Number(evidence.principal_id));expect(raw.execution.status).toBe('success');expect(Object.keys(raw.execution.outputs)).toEqual(['save_result'])}finally{await executionAPI.dispose()}
+  const frame=page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(frame.getByText('成功',{exact:true})).toBeVisible();await expect(frame.locator('.workflow-result')).toContainText(output.name)
+  await page.screenshot({path:resolve(directory,'polygon-rings-execution.png')});persist('execution_verified')
+  const locator=`${output.locator}&item_id=${output.item_id}`
+  const previewRead=page.waitForResponse(r=>{const u=new URL(r.url());return r.request().method()==='GET'&&u.pathname==='/api/v1/manager/preview'&&u.searchParams.get('locator')===locator&&u.searchParams.get('child_name')===output.layer_name})
+  await page.goto(`${process.env.CONSOLE_URL}/manager/data-explorer?locator=${encodeURIComponent(locator)}`)
+  const previewResponse=await previewRead,api=await browserAPIFromResponse(previewResponse,process.env.GATEWAY_URL,identity)
+  try{
+    raw.preview_text=await previewResponse.text();raw.preview=JSON.parse(raw.preview_text);raw.sources=[]
+    for(const source of evidence.sources){const item=await json(await api.get(`/api/v1/meta/items/${source.id}`),'unchanged rings source');expect(item).toEqual(source.before);raw.sources.push({item_id:source.id,item})}
+    raw.output=await json(await api.get(`/api/v1/meta/items/${output.item_id}`),'rings output Meta');expect(raw.output).toEqual(output.before)
+  }finally{await api.dispose()}
+  persist('preview_observed')
+  const data=raw.preview.data,fields=Object.keys(expected[0].properties)
+  expect(raw.preview.preview_type).toBe('table');expect([data.total,data.source_srid,data.source_crs,data.transform_status,data.preview_hint]).toEqual([8,3857,'EPSG:3857','not_transformed','frontend_transform_required'])
+  expect(data.geometry_columns).toEqual([output.geometry_column]);expect(output.geometry_column).not.toBe('geometry')
+  expect([...data.columns].sort()).toEqual([output.fid_column,output.geometry_column,...fields].sort())
+  expect(data.rows.map(r=>r[output.fid_column])).toEqual([1,2,3,4,5,6,7,8])
+  const safeFields=fields.filter(f=>f!=='grade') // Exact Int64 checked from preview_text by the Python owner.
+  expect(data.rows.map(r=>({properties:Object.fromEntries(safeFields.map(f=>[f,r[f]])),geometry:decodePreviewEWKB(r[output.geometry_column])})))
+    .toEqual(expected.map(r=>({...r,properties:Object.fromEntries(safeFields.map(f=>[f,r.properties[f]]))})))
+  const renderer=frame.locator('.table-preview .openlayers-map-renderer');await expect(renderer).toBeVisible()
+  const mapFields=['parcel_key','source_id','part_no','ring_no','ring_id','is_hole']
+  const mapExpected=expected.map(r=>({...r,properties:Object.fromEntries(mapFields.map(f=>[f,r.properties[f]]))}))
+  raw.rendered=await assertExtensionLineMap(renderer,mapExpected,[4,0])
+  await page.screenshot({path:resolve(directory,'polygon-rings-result-map.png')});persist('map_verified')
+  const graphRead=page.waitForResponse(r=>{const u=new URL(r.url());return r.request().method()==='GET'&&u.pathname==='/api/v1/meta/lineage/graph'&&u.searchParams.get('item_id')===String(output.item_id)&&u.searchParams.get('direction')==='both'})
+  await frame.getByRole('tab',{name:'血缘',exact:true}).click()
+  const graphResponse=await graphRead,graphAPI=await browserAPIFromResponse(graphResponse,process.env.GATEWAY_URL,identity)
+  try{raw.graph=await json(graphResponse,'rings actual lineage tab')}finally{await graphAPI.dispose()}
+  assertRingsLineage(raw.graph,evidence);persist('graph_observed')
+  const viewer=frame.locator('.lineage-viewer'),canvas=viewer.locator('.lineage-canvas canvas').first();await expect(canvas).toBeVisible()
+  await expect.poll(async()=>{
+    raw.lineage_rendered=await viewer.evaluate(element=>{const ref=element.__vueParentComponent?.setupState?.graphInstance,graph=ref?.value||ref;return graph?{nodes:graph.getNodes().map(i=>i.getModel()._node),edges:graph.getEdges().map(i=>i.getModel()._edge)}:null})
+    return raw.lineage_rendered?.edges?.length||0
+  }).toBe(1)
+  assertRingsLineage({...raw.graph,edges:raw.lineage_rendered.edges},evidence)
+  await expect.poll(async()=>{raw.lineage_canvas=await lineageCanvasSnapshot(canvas);return [evidence.sources[0].name,output.name].every(name=>raw.lineage_canvas.rows.some(r=>r.text.includes(name)))}).toBe(true)
+  expect(raw.lineage_canvas.paths.length).toBeGreaterThanOrEqual(1);persist('graph_rendered')
+  raw.failures=[]
+  for(const failure of evidence.failures){
+    const failureRead=page.waitForResponse(r=>r.request().method()==='GET'&&new URL(r.url()).pathname===`/api/v1/develop/executions/${failure.execution_id}`)
+    await page.goto(`${process.env.CONSOLE_URL}/develop/executions/${failure.execution_id}`)
+    const response=await failureRead,api=await browserAPIFromResponse(response,process.env.GATEWAY_URL,identity),record={key:failure.key,execution_id:failure.execution_id};raw.failures.push(record)
+    try{
+      record.execution=await json(response,'rings failure');expect(record.execution.execution_id).toBe(failure.execution_id);expect(record.execution.triggered_by).toBe(Number(evidence.principal_id));expect(record.execution.status).toBe('failed');expect(record.execution.outputs||{}).toEqual({})
+      record.monitor=await json(await api.get(`/api/v1/monitor/executions/by-execution-id/${failure.execution_id}`),'rings failed Monitor');expect(record.monitor.execution_id).toBe(failure.execution_id);expect(record.monitor.triggered_by).toBe(Number(evidence.principal_id));expect(record.monitor.module).toBe('develop');expect(record.monitor.status).toBe('failed')
+      for(const entry of [...evidence.sources,output])expect(await json(await api.get(`/api/v1/meta/items/${entry.item_id||entry.id}`),'unchanged rings item after failure')).toEqual(entry.before)
+    }finally{await api.dispose()}
+    await expect(frame.getByText('失败',{exact:true})).toBeVisible();await page.screenshot({path:resolve(directory,`polygon-rings-${failure.key}-failed.png`)});persist('failure_'+failure.key+'_verified')
+  }
+  expect(writes).toEqual([]);persist('complete','passed')
+  writeFileSync(resolve(directory,'topology-browser.json'),JSON.stringify({...evidence,schema_version:'addp.polygon-rings-browser/v1',result:'passed'},null,2)+'\n')
+})

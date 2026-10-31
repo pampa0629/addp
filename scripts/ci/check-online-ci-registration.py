@@ -2230,6 +2230,24 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     for relative,fragments in extension_required.items():
         if any(fragment not in (repository/relative).read_text() for fragment in fragments):
             raise RegistrationError('topology extension case contract incomplete: '+relative)
+    rings_required = {
+        '.github/workflows/online-t4-gates.yml': ('          - polygon-rings',),
+        'scripts/test/online-hosted-topology-gate.sh': ('endpoint-snapping|polygon-rings',),
+        'business/scripts/online-vector-topology-fixture.py': ('def rings_features(', 'def verify_rings(', 'def rings_worker(', 'RINGS_FAILURES'),
+        'scripts/test/vector-topology-persistence-online.py': ('def rings_definition(', 'def run_rings_scenario(', 'def validate_rings_graph(', 'validate_rings_preview_text', 'rings executions must be distinct'),
+        'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('面界提取独立普通User单成果与两失败保护','topology-rings-browser-raw.json','raw.preview_text=await previewResponse.text()','assertRingsLineage(raw.graph,evidence)'),
+        'engines/geopython-workflow/test_topology_operators.py': ('test_hosted_polygon_rings_save_two_failures_and_independent_oracle',),
+        'scripts/test/vector-topology-persistence-online_test.py': ('class RingsOnlineTest', 'test_rings_one_source_one_scan_one_edge_and_two_failures'),
+        'scripts/test/online-hosted-topology-gate_test.py': ('test_rings_case_is_bound_without_old_business_or_capacity',),
+    }
+    for relative,fragments in rings_required.items():
+        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+            raise RegistrationError('topology polygon rings case contract incomplete: '+relative)
+    rings_script=(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js').read_text()
+    rings_match=re.search(r"(?ms)^test\('面界提取独立普通User单成果与两失败保护'.*?^\}\)",rings_script)
+    rings_body=rings_match.group(0) if rings_match else ''
+    if rings_body.find('await observeLineageCanvas(page)')<0 or rings_body.find('await login(')<rings_body.find('await observeLineageCanvas(page)'):
+        raise RegistrationError('topology rings must await Canvas observer before navigation')
     endpoint_required = {
         '.github/workflows/online-t4-gates.yml': ('          - endpoint-snapping',),
         'scripts/test/online-hosted-topology-gate.sh': ('line-extension|endpoint-snapping',),

@@ -891,3 +891,12 @@ GeoPackage沿普通矢量容器保存契约，不虚构RasterArtifact／COG或�
 五类为：稀疏源／参考各1000、10000、100000要素（每四源一移动、一严格边界、一原位接触、一无候选，明细N/4）；密集源／参考各128、512、2048（每个待移端点K个参考候选、唯一最近目标，明细K）；同点源／参考各128、512、2048（完整保留全部S×R明细16384／262144／4194304行）；单参考要素1000／10000／100000重复部件（源1条、仅1条明细，不因参考重复扩增）；单源要素1000／10000／100000原始部件（参考1条、明细K，保部件编号与方向）。几何全部采用精确二进制坐标及唯一可落线目标，不改产品吸附语义。
 
 180秒包含生成双源、load、双源全量核验、生产snap_line_endpoints计算、线与Point双save和独立OGR完整重载、源文件／Frame不变核验；不得抽样、截断明细或只比较摘要，流式独立预期不调用生产算法。核所有坐标、来源、属性／null／Int64／Boolean／Float64、原行序／部件／方向／CRS，明细保原点、目标及距离，物理哈希与完整行摘要另存。固定产品源码／实际加载函数、两源Frame与文件哈希、各阶段耗时、整体峰值内存／CPU、两成果数量／大小／摘要和当档清理均绑定case及measurement ID。成功、超时、cgroup证实OOM、原生崩溃／其他失败分别保留，不自动调预算或重试；超限仅说明该场景的实测边界，归属容器／镜像／registry／合成数据清0。该容量不认证扫描／血缘／页面／普通User授权或跨文件事务；已通过的endpoint-snapping T4保持原范围。
+
+
+### 面界提取独立普通用户场景
+
+用户确认新增 `polygon-rings` 独立case，复用 `vector-topology-persistence` 原入口、Hosted生命周期、非默认租户普通User精确11权限与600秒业务预算，只运行一成功和两失败，不运行full、旧业务T4或容量。三份独立3857单层GPKG分别为成功源、ring_id字段冲突源和自交无效面源。成功DAG为 `load → extract_polygon_rings(id_field=parcel_key) → save(mode=fail)`，四源要素输出八条闭合LineString：多部件面含五环、相邻面一环、重复面一环、含精确微坐标的面一环。保留原环起点／方向／重复顶点／共有边各次记录，原源顺序／部件／外环后内环；逐字段核source_id、part_no、ring_no、ring_id、is_hole及全部业务属性。源物理几何列parcel_shape与普通字符串geometry严格区分，来源用中文字符串业务主键而非FID；可空Int64／Boolean／String／Real及大整数按原生字段与原值核，不靠JS数值推断类型。文件写出的物理几何名遵循现有GPKG写出事实，不要求与内存角色名相同。
+
+唯一成功成果rings.gpkg的stable_outputs和facts均为create；一次成果自动扫描公开整数tenant_id／triggered_by与本普通User同主体，严格正整数physical==Meta大小、单子层行数8与完整字段数；一源到一成果恰好一条本execution active derive，Monitor与原图一致，不为内存环登记DataItem。两失败各携带下游save，但不得发布文件／输出事实／扫描／derive；同UUID原始运行日志核准确拒绝原因，失败页及Monitor核同User和failed。三源与成功成果SHA／大小／源Meta在失败和浏览器后均不变，扫描库存三源加一成果恰好四次。
+
+实际浏览器复用每次导航后的browserAPIFromResponse身份绑定；核原EWKB、8条OL线要素的来源／编号／完整坐标和真实线像素，不以像素区分重复线或证明微小线段独立可见。成功页、线地图和两失败页至少四截图，另核真实血缘tab原图及画布单边；浏览器只读，无补扫、重放执行或额外业务写入。Owner／browser／raw报告仅此case/v1，阶段检查点incomplete不得替代最终通过。归档四份合成原GPKG及原始API／Meta／血缘／Monitor／渲染证据，下载后独立OGR重核全部原坐标／类型／属性／行序／3857和SHA／大小，期望不调用生产算法生成、不舍入或增容差。最后核NFS/export/ownedroot、Runtime/registry/部署/Infra全清零；不认证业务DELETE。现有runner、Native与Console、Online CI登记及mutation检查同次覆盖独立case，无新suite、权限或永久入口。

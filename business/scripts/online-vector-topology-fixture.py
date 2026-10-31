@@ -227,7 +227,98 @@ def line_edit_worker(action,root,case):
         'targets':{name:verify(root/'outputs'/name,port) for name,port in zip(targets,EXTENSION_PORTS)},'exact_inventory_verified':True}
 
 
-INDEPENDENT_CASES = (ENDPOINT_CASE, EXTENSION_CASE, PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
+RINGS_CASE = 'polygon-rings'
+RINGS_SOURCES = ('rings-source.gpkg','rings-conflict.gpkg','rings-invalid.gpkg')
+RINGS_TARGET = 'rings.gpkg'
+RINGS_SCHEMA = 'addp.polygon-rings'
+RINGS_TITLE = '面界提取独立普通User单成果与两失败保护'
+RINGS_FAILURES = (('conflict','output columns source_id, part_no, ring_no, ring_id and is_hole must not overwrite source fields'),
+                  ('invalid','input_gdf requires non-empty valid polygons; repair explicitly before extraction'))
+
+
+def rings_features(kind):
+    """Frozen original rings and field values, independent of production extraction."""
+    rings=[[[0,0],[8,0],[8,8],[8,8],[0,8],[0,0]],
+           [[1,1],[1,2],[2,2],[2,1],[1,1]],[[4,4],[6,4],[6,6],[4,6],[4,4]],
+           [[10,0],[10,3],[13,3],[13,0],[10,0]],[[11,.5],[12,.5],[12,1.5],[11,1.5],[11,.5]],
+           [[8,0],[16,0],[16,8],[8,8],[8,0]],[[8,0],[16,0],[16,8],[8,8],[8,0]],
+           [[20,0],[20+2**-20,0],[20+2**-20,2**-20],[20,2**-20],[20,0]]]
+    props=[{'parcel_key':key,'note':None if i==0 else '地块属性'+str(i),'grade':None if i==0 else 2**53+i,
+            'enabled':None if i==0 else i%2==0,'weight':None if i==0 else .125*i,'geometry':'普通业务几何'+str(i)}
+           for i,key in enumerate(('地块甲','相邻乙','重复丙','微面丁'))]
+    source=[{'properties':props[0],'geometry':{'type':'MultiPolygon','coordinates':[rings[:3],rings[3:5]]}},
+            *[{'properties':props[i],'geometry':{'type':'MultiPolygon','coordinates':[[rings[i+4]]]}} for i in range(1,4)]]
+    if kind=='source':return source
+    if kind=='conflict':return [{'properties':{**props[1],'ring_id':99},'geometry':source[1]['geometry']}]
+    if kind=='invalid':return [{'properties':props[2],'geometry':{'type':'MultiPolygon','coordinates':[[[[30,0],[34,4],[30,4],[34,0],[30,0]]]]}}]
+    if kind!='result':raise FixtureError('unknown polygon rings table')
+    return [{'properties':{**props[row],'source_id':props[row]['parcel_key'],'part_no':part,'ring_no':number,'ring_id':i+1,'is_hole':hole},
+             'geometry':{'type':'LineString','coordinates':points}}
+            for i,(row,part,number,hole,points) in enumerate(zip([0]*5+[1,2,3],[1,1,1,2,2,1,1,1],[1,2,3,1,2,1,1,1],
+                    [False,True,True,False,True,False,False,False],rings))]
+
+
+def seed_rings(path,kind):
+    from osgeo import ogr,osr
+    crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
+    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path));layer=ds.CreateLayer(path.stem,crs,ogr.wkbMultiPolygon,options=['GEOMETRY_NAME=parcel_shape'])
+    for name,value in rings_features(kind)[0]['properties'].items():
+        native=ogr.OFTInteger64 if name in ('grade','ring_id') else ogr.OFTInteger if name=='enabled' else ogr.OFTReal if name=='weight' else ogr.OFTString
+        field=ogr.FieldDefn(name,native)
+        if name=='enabled':field.SetSubType(ogr.OFSTBoolean)
+        if layer.CreateField(field)!=0:raise FixtureError('cannot seed ring field')
+    for row in rings_features(kind):
+        feature=ogr.Feature(layer.GetLayerDefn())
+        for name,value in row['properties'].items():
+            if value is not None:feature.SetField(name,value)
+        feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps(row['geometry'])))
+        if layer.CreateFeature(feature)!=0:raise FixtureError('cannot seed ring feature')
+    feature=layer=ds=None
+
+
+def verify_rings(path,kind):
+    from osgeo import ogr,osr
+    ds=ogr.Open(str(path),0)
+    if ds is None or ds.GetLayerCount()!=1:raise FixtureError('rings require one physical layer')
+    layer=ds.GetLayer(0);schema=layer.GetLayerDefn();crs=osr.SpatialReference();crs.ImportFromEPSG(3857)
+    if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs):raise FixtureError('rings CRS differs')
+    expected=rings_features(kind);fields=list(expected[0]['properties'])
+    if [f.name for f in layer.schema]!=fields:raise FixtureError('rings fields or order differ')
+    for name in fields:
+        field=schema.GetFieldDefn(schema.GetFieldIndex(name));native=ogr.OFTInteger64 if name in ('grade','ring_id','ring_no','part_no') else ogr.OFTInteger if name in ('enabled','is_hole') else ogr.OFTReal if name=='weight' else ogr.OFTString
+        if field.GetType()!=native or field.GetSubType()!=(ogr.OFSTBoolean if name in ('enabled','is_hole') else ogr.OFSTNone):raise FixtureError('rings physical field type differs')
+    def coordinates(shape):
+        if shape.GetGeometryName() in ('LINESTRING','LINEARRING'):return [list(p) for p in shape.GetPoints()]
+        return [coordinates(shape.GetGeometryRef(i)) for i in range(shape.GetGeometryCount())]
+    rows=[]
+    for i,feature in enumerate(layer,1):
+        shape=feature.GetGeometryRef()
+        if feature.GetFID()!=i or shape is None or shape.GetCoordinateDimension()!=2 or shape.IsMeasured() or bool(shape.IsValid())!=(kind!='invalid'):raise FixtureError('rings row dimension or validity differs')
+        properties={name:feature.GetField(name) for name in fields}
+        for name in ('enabled','is_hole'):
+            if name in properties and properties[name] is not None:
+                if type(properties[name]) not in (int,bool) or properties[name] not in (0,1):raise FixtureError('rings boolean value differs')
+                properties[name]=bool(properties[name])
+        rows.append({'properties':properties,'geometry':{'type':'LineString' if kind=='result' else 'MultiPolygon','coordinates':coordinates(shape)}})
+    if rows!=expected or any(type(row['properties'][k]) is not type(wanted['properties'][k]) for row,wanted in zip(rows,expected) for k in fields):raise FixtureError('rings exact source attributes coordinates direction order or types differ')
+    if schema.GetGeomFieldDefn(0).GetType()!=(ogr.wkbLineString if kind=='result' else ogr.wkbMultiPolygon):raise FixtureError('rings geometry type differs')
+    geom=schema.GetGeomFieldDefn(0).GetName()
+    if not geom or geom=='geometry' or kind!='result' and geom!='parcel_shape':raise FixtureError('rings geometry identity differs from business geometry')
+    return {**digest(path),'feature_count':len(rows),'crs':'EPSG:3857','layer_name':layer.GetName(),'geometry_column':geom,'fid_column':layer.GetFIDColumn(),'fields':fields}
+
+
+def rings_worker(action,root):
+    if action=='seed':
+        if any((root/n).exists() for n in RINGS_SOURCES) or list((root/'outputs').iterdir()):raise FixtureError('refusing existing rings data')
+        for name,kind in zip(RINGS_SOURCES,('source','conflict','invalid')):seed_rings(root/name,kind)
+        return {'sources':{name:digest(root/name) for name in RINGS_SOURCES}}
+    if action!='verify':raise FixtureError('unknown rings action')
+    if sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',*RINGS_SOURCES]) or sorted(p.name for p in (root/'outputs').iterdir())!=[RINGS_TARGET]:raise FixtureError('rings physical inventory differs')
+    for name,kind in zip(RINGS_SOURCES,('source','conflict','invalid')):verify_rings(root/name,kind)
+    return {'sources':{name:digest(root/name) for name in RINGS_SOURCES},'targets':{RINGS_TARGET:verify_rings(root/'outputs'/RINGS_TARGET,'result')},'exact_inventory_verified':True}
+
+
+INDEPENDENT_CASES = (RINGS_CASE, ENDPOINT_CASE, EXTENSION_CASE, PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
 
 NORMALIZE_CASE = 'line-network-normalize'
 NORMALIZE_SOURCE = 'normalize-input.gpkg'
@@ -241,6 +332,7 @@ COMPOSITION_TARGETS = ('chains.gpkg','chain-edges.gpkg','edge-sources.gpkg')
 
 
 def network_profile(case):
+    if case==RINGS_CASE:return {"ports":("result",),"targets":(RINGS_TARGET,),"schema":RINGS_SCHEMA,"title":RINGS_TITLE}
     if case==ENDPOINT_CASE:
         return {"ports":ENDPOINT_PORTS,"targets":ENDPOINT_TARGETS,"schema":ENDPOINT_SCHEMA,"title":ENDPOINT_TITLE}
     if case==EXTENSION_CASE:
@@ -1582,6 +1674,7 @@ def validate_features(name, features):
 
 def worker(action, root, case=None):
     case=topology_case() if case is None else topology_case({"ADDP_ONLINE_TOPOLOGY_CASE":case})
+    if case==RINGS_CASE:return rings_worker(action,root)
     if case==ENDPOINT_CASE:return endpoint_worker(action,root)
     if case==EXTENSION_CASE:return extension_worker(action,root)
     if case==PROXIMITY_CASE:return proximity_worker(action,root)
@@ -1692,7 +1785,7 @@ def runtime_worker(action, root):
 def archive_physical_evidence(root, directory, result, case=None):
     """Retain only this synthetic fixture's verified bytes for offline audit."""
     case=topology_case() if case is None else topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':case})
-    sources,targets=(ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
+    sources,targets=(RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
     archive = directory / 'topology-physical'
     if archive.is_symlink() or (archive/'outputs').is_symlink():
         raise FixtureError('physical archive must not follow symlinks')

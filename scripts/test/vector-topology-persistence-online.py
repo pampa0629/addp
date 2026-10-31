@@ -134,6 +134,109 @@ def run_diagnostic_scenario(repository, env, client, physical_runner, browser_ru
             'cleanup_boundary':'owned disposable deployment; no business DELETE acceptance'}
 
 
+def rings_definition(sources,parent,failure=None):
+    index=0 if failure is None else 1+[key for key,_ in fixture.RINGS_FAILURES].index(failure)
+    return {'tasks':[
+        {'id':'rings_input','operator':'load','params':{'locator':sources[index]},'depends_on':[]},
+        {'id':'rings','operator':'extract_polygon_rings','params':{'input_gdf':{'$ref':'rings_input'},'id_field':'parcel_key'},'depends_on':['rings_input']},
+        {'id':'save_result','operator':'save','params':{'input_df':{'$ref':'rings'},'target_parent_locator':parent,
+            'target_name':('failed-'+failure+'-' if failure else '')+fixture.RINGS_TARGET,'mode':'fail'},'depends_on':['rings']}]}
+
+
+def validate_rings_graph(graph,source,target,identifier):
+    if graph.get('truncated') is not False:raise SuiteError('rings lineage graph is truncated')
+    edges=[e for e in array(graph.get('edges'),'rings edges') if e.get('relation_kind')=='derive' and e.get('status')=='active']
+    if len(edges)!=1 or edges[0].get('source',{}).get('item_id')!=source or edges[0].get('target',{}).get('item_id')!=target or edges[0].get('evidence',{}).get('execution_id')!=identifier:
+        raise SuiteError('rings require exactly one current execution source derive')
+
+
+def validate_rings_preview_text(text):
+    # Parse the original HTTP text in Python: JS Number cannot prove Int64 values.
+    data=obj(json.loads(text).get('data'),'rings raw preview');rows=array(data.get('rows'),'rings rows')
+    expected=fixture.rings_features('result')
+    if len(rows)!=len(expected):raise SuiteError('rings raw preview count differs')
+    for row,wanted in zip(rows,expected):
+        for name,value in wanted['properties'].items():
+            if row.get(name)!=value or type(row.get(name)) is not type(value):raise SuiteError('rings raw preview attribute value or type differs')
+
+
+def run_rings_scenario(repository,env,client,physical_runner,browser_runner,diagnostic_runner):
+    tenant=positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'tenant')
+    if tenant<=1:raise SuiteError('rings forbid default Tenant')
+    identity=raster.validate_identity(client,tenant,required_permissions=PERMISSIONS);principal=int(identity['principal_id'])
+    deadline=time.monotonic()+float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS','600'))
+    def remaining():
+        value=deadline-time.monotonic()
+        if value<=0:raise SuiteError('rings business budget exhausted')
+        return value
+    engine=positive(env['ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID'],'NFS engine');sources=[]
+    for name in fixture.RINGS_SOURCES:
+        scope=f'addp://engine/{engine}/path/{name}?type=file'
+        scan=support.wait_for_meta_scan(client,engine,time.monotonic()+remaining(),scope={'targets':[scope]})
+        item=support.find_fixture_item(client,engine,name,'rings source');before=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
+        sources.append({'id':item['id'],'name':name,'locator':scope+f'&item_id={item["id"]}','scan_execution_id':scan,'before':before})
+    initial=scan_ids(client)
+    if initial!=sorted(s['scan_execution_id'] for s in sources):raise SuiteError('rings initial scan inventory differs')
+    runtimes=[r for r in array(client.request('GET','/api/v1/develop/workflow-engines',(200,)).payload,'runtimes') if r.get('engine_type')=='geopython_workflow' and r.get('connection_status')=='online']
+    if len(runtimes)!=1:raise SuiteError('rings require one product Runtime')
+    runtime=positive(runtimes[0]['id'],'Runtime');parent=f'addp://engine/{engine}/path/outputs?type=directory'
+    target=f'addp://engine/{engine}/path/outputs/{fixture.RINGS_TARGET}?type=file';locators=[s['locator'] for s in sources]
+    workflow=rings_definition(locators,parent);identifier=raster.submit(client,runtime,workflow);execution=raster.wait_execution(client,'develop',identifier,remaining())
+    def frozen(value,uid,definition):
+        if value.get('execution_id')!=uid or type(value.get('triggered_by')) is not int or value['triggered_by']!=principal or obj(obj(value.get('execution_config'),'rings frozen config').get('content'),'rings content').get('workflow_definition')!=definition:raise SuiteError('rings execution identity or frozen DAG differs')
+    frozen(execution,identifier,workflow)
+    facts,scans=validate_saved_success(execution,[("input.rings_input",locators[0])],{'result':target},1)
+    observed=[]
+    for scan in scans:
+        result=raster.wait_execution(client,'meta',scan['execution_id'],remaining())
+        if type(result.get('tenant_id')) is not int or result['tenant_id']!=tenant or type(result.get('triggered_by')) is not int or result['triggered_by']!=principal:raise SuiteError('rings scan public identity differs')
+        observed.append(result)
+    monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'rings Monitor')
+    if monitor.get('execution_id')!=identifier or monitor.get('status')!='success' or monitor.get('module')!='develop' or type(monitor.get('triggered_by')) is not int or monitor['triggered_by']!=principal or obj(monitor.get('metadata'),'rings Monitor metadata').get('lineage_facts')!=facts:raise SuiteError('rings Monitor differs')
+    native=physical_runner(repository,env)
+    if native.get('exact_inventory_verified') is not True or set(native.get('sources',{}))!=set(fixture.RINGS_SOURCES) or set(native.get('targets',{}))!={fixture.RINGS_TARGET}:raise SuiteError('rings physical inventory differs')
+    for source,kind in zip(sources,('source','conflict','invalid')):
+        detail=source['before'];rows=fixture.rings_features(kind);children=detail.get('attributes',{}).get('type_info',{}).get('container',{}).get('children',[])
+        if type(detail.get('size_bytes')) is not int or detail['size_bytes']<=0 or detail['size_bytes']!=native['sources'][source['name']]['size_bytes'] or len(children)!=1 or type(children[0].get('row_count')) is not int or children[0]['row_count']!=len(rows) or type(children[0].get('column_count')) is not int or children[0]['column_count']!=len(rows[0]['properties'])+2:raise SuiteError('rings source Meta differs')
+    item=support.find_fixture_item(client,engine,'outputs/'+fixture.RINGS_TARGET,'rings output');detail=obj(client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload,'rings output')
+    physical=native['targets'][fixture.RINGS_TARGET];sizes=validate_item(detail,physical,fixture.RINGS_TARGET);child=detail['attributes']['type_info']['container']['children'][0]
+    if type(child.get('row_count')) is not int or child['row_count']!=8 or type(child.get('column_count')) is not int or child['column_count']!=13:raise SuiteError('rings Meta rows/columns differ')
+    output={'name':fixture.RINGS_TARGET,'port':'result','locator':target,'item_id':item['id'],**physical,'before':detail,'size_evidence':sizes}
+    directory=Path(env['ADDP_ONLINE_ARTIFACT_DIR']);path=directory/'topology-rings-checkpoint.json'
+    checkpoint={'schema_version':fixture.RINGS_SCHEMA+'-checkpoint/v1','case':fixture.RINGS_CASE,'result':'incomplete','stage':'before_lineage','identity':identity,'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],
+        'execution_id':identifier,'definition':workflow,'execution':execution,'sources':sources,'outputs':[output],'physical':native,'lineage_facts':facts,'stable_outputs':execution['outputs'],'automatic_scan_observations':observed,'monitor':monitor,'failures':[]}
+    path.write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2)+'\n')
+    raster.wait_lineage(client,sources[0]['id'],item['id'],identifier,remaining())
+    graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={item["id"]}&direction=upstream',(200,)).payload,'rings graph');validate_rings_graph(graph,sources[0]['id'],item['id'],identifier)
+    expected_scans=sorted([*initial,scans[0]['execution_id']])
+    if scan_ids(client)!=expected_scans:raise SuiteError('rings scan inventory before failure differs')
+    for index,(key,reason) in enumerate(fixture.RINGS_FAILURES,1):
+        definition=rings_definition(locators,parent,key);uid=raster.submit(client,runtime,definition);failed=raster.wait_execution(client,'develop',uid,remaining(),expected='failed');frozen(failed,uid,definition);validate_extension_failure(failed,uid,principal)
+        diagnostic=diagnostic_runner(repository,env,uid,timeout=min(30,remaining()),task='rings',reason=reason,cause=key)
+        if diagnostic!={'execution_id':uid,'cause':key,'source':'develop_runtime_log'}:raise SuiteError('rings failure diagnostic binding differs')
+        fm=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{uid}',(200,)).payload,'rings failed Monitor')
+        if fm.get('execution_id')!=uid or fm.get('status')!='failed' or fm.get('module')!='develop' or type(fm.get('triggered_by')) is not int or fm['triggered_by']!=principal:raise SuiteError('rings failed Monitor differs')
+        fg=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={sources[index]["id"]}&direction=downstream',(200,)).payload,'rings failed source graph')
+        if fg.get('truncated') is not False or any(e.get('relation_kind')=='derive' and e.get('evidence',{}).get('execution_id')==uid for e in array(fg.get('edges'),'failed edges')):raise SuiteError('rings failed execution published derive')
+        checkpoint['failures'].append({'key':key,'execution_id':uid,'definition':definition,'execution':failed,'monitor':fm,'diagnostic':diagnostic,'source_lineage':fg,'no_publication_or_scan':True})
+        checkpoint.update(stage='failure_'+key+'_verified',raw_lineage=graph);path.write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2)+'\n')
+        if scan_ids(client)!=expected_scans or physical_runner(repository,env)!=native:raise SuiteError('rings failure changed physical data or scans')
+    if len({identifier,*[f['execution_id'] for f in checkpoint['failures']]})!=3:raise SuiteError('rings executions must be distinct')
+    expected=fixture.rings_features('result')
+    # Decimal strings bind large integer expectations without passing through JS Number.
+    expected=[{**r,'properties':{**r['properties'],'grade':str(r['properties']['grade']) if r['properties']['grade'] is not None else None}} for r in expected]
+    evidence={'case':fixture.RINGS_CASE,'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],**identity,'execution_id':identifier,'sources':sources,'outputs':[output],'expected':{'result':expected},'failures':[{'key':f['key'],'execution_id':f['execution_id']} for f in checkpoint['failures']]}
+    remaining();browser_report=browser_runner(repository,env,evidence);remaining();final=physical_runner(repository,env)
+    if final!=native or scan_ids(client)!=expected_scans:raise SuiteError('rings browser changed physical data or scans')
+    meta_after={}
+    for entry in [*sources,output]:
+        after=client.request('GET',f'/api/v1/meta/items/{entry.get("item_id",entry.get("id"))}',(200,)).payload
+        if after!=entry['before']:raise SuiteError('rings source or output Meta changed')
+        meta_after[entry['name']]=after
+    remaining()
+    return {**checkpoint,'schema_version':fixture.RINGS_SCHEMA+'/v1','result':'passed','stage':'complete','browser':browser_report,'meta_after':meta_after,'post_browser_physical':final,'initial_scan_inventory':initial,'final_scan_inventory':expected_scans,'sources_and_outputs_unchanged':True,'cleanup_boundary':'owned disposable NFS/Runtime/deployment; no business DELETE acceptance'}
+
+
 def extension_definition(sources,parent,failed=False):
     tasks=[{'id':'load_source','operator':'load','params':{'locator':sources[0]},'depends_on':[]},
         {'id':'load_reference','operator':'load','params':{'locator':sources[2] if failed else sources[1]},'depends_on':[]},
@@ -432,15 +535,14 @@ def normalize_definition(source,parent,failed=False,case=fixture.NORMALIZE_CASE)
     return {'tasks':tasks}
 
 
-def validate_normalize_success(execution,source,targets,case=fixture.NORMALIZE_CASE):
-    count=len(fixture.network_profile(case)['ports'])
+def validate_saved_success(execution,bindings,targets,count):
     outputs=obj(execution.get('outputs'),'normalize stable outputs')
     expected={'save_'+port:{'resource':{'locator':locator,'type':'file','write_mode':'create'}} for port,locator in targets.items()}
-    if outputs!=expected:raise SuiteError('normalization must publish exactly the selected named ports')
+    if execution.get('status')!='success' or outputs!=expected:raise SuiteError('normalization must publish exactly the selected named ports')
     metadata=obj(execution.get('metadata'),'normalize metadata');facts=obj(metadata.get('lineage_facts'),'normalize facts')
     inputs=array(facts.get('inputs'),'normalize inputs');produced=array(facts.get('outputs'),'normalize outputs')
     if (facts.get('schema_version')!='addp.lineage-facts/v1' or
-        [(x.get('port'),x.get('locator')) for x in inputs]!=[('input.normal_input',source)] or
+        [(x.get('port'),x.get('locator')) for x in inputs]!=bindings or
         len(produced)!=count or {x.get('locator') for x in produced}!=set(targets.values()) or
         any(x.get('write_mode')!='create' for x in produced)):
         raise SuiteError('normalization source port or selected create facts differ')
@@ -450,6 +552,9 @@ def validate_normalize_success(execution,source,targets,case=fixture.NORMALIZE_C
         len({s['execution_id'] for s in scans})!=count):raise SuiteError('normalization requires exactly the selected distinct automatic scans')
     return facts,scans
 
+
+def validate_normalize_success(execution,source,targets,case=fixture.NORMALIZE_CASE):
+    return validate_saved_success(execution,[("input.normal_input",source)],targets,len(fixture.network_profile(case)["ports"]))
 
 def run_normalize_scenario(repository,env,client,physical_runner,browser_runner,diagnostic_runner):
     case=fixture.topology_case(env);profile=fixture.network_profile(case)
@@ -714,11 +819,17 @@ def browser(repository, env, evidence):
     else:binding=report
     if binding != {**evidence, 'schema_version': schema, 'result': 'passed'}:
         raise SuiteError('browser report does not bind the exact run, User and outputs')
+    if case==fixture.RINGS_CASE:
+        raw=obj(json.loads((path.parent/'topology-rings-browser-raw.json').read_text()),'rings browser raw')
+        if (raw.get('stage')!='complete' or raw.get('result')!='passed' or any(raw.get(k)!=evidence.get(k) for k in ('case','run_id','execution_id'))):raise SuiteError('rings browser raw incomplete or foreign')
+        validate_rings_preview_text(raw['preview_text'])
     return report
 
 
 def run_scenario(repository, env, client, physical_runner=physical, browser_runner=browser,
                  diagnostic_runner=collapsed_snap_diagnostic):
+    if fixture.topology_case(env)==fixture.RINGS_CASE:
+        return run_rings_scenario(repository,env,client,physical_runner,browser_runner,diagnostic_runner)
     if fixture.topology_case(env)==fixture.ENDPOINT_CASE:
         return run_endpoint_scenario(repository,env,client,physical_runner,browser_runner,diagnostic_runner)
     if fixture.topology_case(env)==fixture.EXTENSION_CASE:

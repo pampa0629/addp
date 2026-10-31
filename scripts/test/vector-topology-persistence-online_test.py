@@ -986,7 +986,7 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
         import os
         repository=Path(__file__).resolve().parents[2]
         run=m.subprocess.run
-        titles={m.fixture.ENDPOINT_CASE:m.fixture.ENDPOINT_TITLE,m.fixture.EXTENSION_CASE:m.fixture.EXTENSION_TITLE,m.fixture.PROXIMITY_CASE:m.fixture.PROXIMITY_TITLE,m.fixture.DIAGNOSTIC_CASE:m.fixture.DIAGNOSTIC_TITLE,m.fixture.BUFFER_CASE:'多距缓冲独立普通User单成果与重名拒绝',m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
+        titles={m.fixture.RINGS_CASE:m.fixture.RINGS_TITLE,m.fixture.ENDPOINT_CASE:m.fixture.ENDPOINT_TITLE,m.fixture.EXTENSION_CASE:m.fixture.EXTENSION_TITLE,m.fixture.PROXIMITY_CASE:m.fixture.PROXIMITY_TITLE,m.fixture.DIAGNOSTIC_CASE:m.fixture.DIAGNOSTIC_TITLE,m.fixture.BUFFER_CASE:'多距缓冲独立普通User单成果与重名拒绝',m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
             m.fixture.COMPOSITION_CASE:'重合规整链路合并独立普通User三成果与字段拒绝',
             'full':'同一普通User核对构面、修复、严格吸附、面叠面缝悬点线叠自叠线交自交及打断连通分组链路合并地图及塌缩失败'}
         for case,title in titles.items():
@@ -1745,7 +1745,7 @@ for(const expected of Object.values(expectations)){
  await assert.rejects(()=>run(changed,expected));
 }
 '''
-        value=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),json.dumps({'result':m.fixture.endpoint_features('result')}),(repository/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri()],text=True,capture_output=True)
+        value=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),json.dumps({'result':m.fixture.endpoint_features('result'),'rings':[{**row,'properties':{k:row['properties'][k] for k in ('parcel_key','source_id','part_no','ring_no','ring_id','is_hole')}} for row in m.fixture.rings_features('result')]}),(repository/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri()],text=True,capture_output=True)
         self.assertEqual(value.returncode,0,value.stdout+value.stderr)
 
 
@@ -1776,3 +1776,132 @@ for(const change of [r=>r.pop(),r=>r[0].properties.reference_id='lost',r=>r[0].g
 """
         value=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),json.dumps(m.fixture.endpoint_features('details')),(repository/'manager/frontend/e2e/geometry-preview-coordinate.js').as_uri()],text=True,capture_output=True)
         self.assertEqual(value.returncode,0,value.stdout+value.stderr)
+
+
+def rings_physical(*args):
+    return {'exact_inventory_verified':True,'sources':{n:{'size_bytes':98304,'sha256':n} for n in m.fixture.RINGS_SOURCES},
+        'targets':{m.fixture.RINGS_TARGET:{'size_bytes':98304,'sha256':'rings','feature_count':8,'layer_name':'rings','geometry_column':'geom','fid_column':'fid','fields':list(m.fixture.rings_features('result')[0]['properties'])}}}
+
+
+class RingsClient(InputDiagnosticClient):
+    def __init__(self):
+        super().__init__();self.sources=[];self.mutate_success=None;self.mutate_failed=None;self.mutate_graph=None;self.failed_graph=None;self.scan_tenant=2;self.scan_actor=33
+        for i,(name,kind) in enumerate(zip(m.fixture.RINGS_SOURCES,('source','conflict','invalid'))):
+            rows=m.fixture.rings_features(kind);item=base.item(name,10+i);item['full_name']=name;item['attributes']['type_info']['container']['children'][0].update(row_count=len(rows),column_count=len(rows[0]['properties'])+2);self.sources.append(item)
+        self.output=base.item(m.fixture.RINGS_TARGET,20);self.output['attributes']['type_info']['container']['children'][0].update(row_count=8,column_count=13)
+        self.scans=['scan-'+n for n in m.fixture.RINGS_SOURCES];self.locators=[f'addp://engine/3/path/{n}?type=file&item_id={10+i}' for i,n in enumerate(m.fixture.RINGS_SOURCES)];self.parent='addp://engine/3/path/outputs?type=directory'
+        target='addp://engine/3/path/outputs/rings.gpkg?type=file'
+        self.success={'execution_id':'rings-run','status':'success','triggered_by':33,'outputs':{'save_result':{'resource':{'locator':target,'type':'file','write_mode':'create'}}},
+            'metadata':{'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.rings_input','locator':self.locators[0]}],'outputs':[{'locator':target,'write_mode':'create'}]},
+                'result':{'meta_scan_runs':[{'execution_id':'rings-output-scan','target_locator':target,'status':'submitted'}]}},
+            'execution_config':{'content':{'workflow_definition':m.rings_definition(self.locators,self.parent)}}}
+    def request(self,method,path,expected,body=None):
+        if method=='POST' and path.endswith('/develop/executions'):
+            self.calls.append((method,path,body));definition=body['content']['workflow_definition'];name=definition['tasks'][-1]['params']['target_name']
+            if name.startswith('failed-'):
+                key=next(k for k,_ in m.fixture.RINGS_FAILURES if name.startswith('failed-'+k+'-'))
+                value={'execution_id':'failed-'+key,'status':'failed','triggered_by':33,'outputs':{},'metadata':{},'execution_config':{'content':{'workflow_definition':definition}}}
+                if self.mutate_failed:self.mutate_failed(value)
+            else:
+                value=copy.deepcopy(self.success);self.scans.append('rings-output-scan')
+                if self.mutate_success:self.mutate_success(value)
+            self.executions[value['execution_id']]=value;data={'execution_id':value['execution_id']}
+        elif path.endswith('/engines/3/items'):data=[*self.sources,self.output]
+        elif path=='/api/v1/meta/items/20':data=self.output
+        elif '/meta/executions/' in path:data={'status':'success','tenant_id':self.scan_tenant,'triggered_by':self.scan_actor}
+        elif '/meta/lineage/graph?' in path:
+            data={'truncated':False,'nodes':[],'edges':[] if 'direction=downstream' in path else [{'source':{'item_id':10},'target':{'item_id':20},'relation_kind':'derive','status':'active','evidence':{'execution_id':'rings-run'}}]}
+            callback=self.failed_graph if 'direction=downstream' in path else self.mutate_graph
+            if callback:callback(data)
+        else:return super().request(method,path,expected,body)
+        return SimpleNamespace(payload=copy.deepcopy(data))
+
+
+class RingsOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
+        self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.RINGS_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
+    def run_case(self,client=None,physical=rings_physical,browser=lambda repo,env,evidence:evidence,diagnostic=None):
+        def checked(repo,env,uid,**kw):
+            self.assertEqual(kw['task'],'rings');self.assertEqual(kw['reason'],dict(m.fixture.RINGS_FAILURES)[kw['cause']]);self.assertLessEqual(kw['timeout'],30)
+            return {'execution_id':uid,'cause':kw['cause'],'source':'develop_runtime_log'}
+        with patch.object(m.raster,'wait_lineage',return_value={}):
+            return m.run_scenario(Path('.'),self.env,client or RingsClient(),physical,browser,diagnostic_runner=diagnostic or checked)
+    def test_rings_one_source_one_scan_one_edge_and_two_failures(self):
+        client=RingsClient();report=self.run_case(client)
+        self.assertEqual(report['schema_version'],'addp.polygon-rings/v1');self.assertEqual(report['result'],'passed');self.assertEqual(len(report['raw_lineage']['edges']),1)
+        self.assertEqual(len(report['final_scan_inventory']),4);self.assertEqual(len(report['meta_after']),4);self.assertEqual(len(report['failures']),2)
+        self.assertEqual(len(report['browser']['expected']['result']),8);self.assertEqual(report['browser']['expected']['result'][5]['properties']['grade'],str(2**53+1))
+        self.assertEqual(sum(method=='POST' and path.endswith('/develop/executions') for method,path,_ in client.calls),3)
+    def test_rings_rejects_wrong_identity_facts_scans_and_current_graph(self):
+        mutations=[lambda c:setattr(c,'scan_tenant',True),lambda c:setattr(c,'scan_actor',99),
+            lambda c:c.success['outputs']['save_result']['resource'].update(write_mode='replace'),
+            lambda c:c.success['metadata']['lineage_facts']['inputs'][0].update(port='input.other'),
+            lambda c:c.success['metadata']['lineage_facts']['inputs'].append(copy.deepcopy(c.success['metadata']['lineage_facts']['inputs'][0])),
+            lambda c:c.success['metadata']['lineage_facts']['outputs'][0].update(write_mode='fail'),
+            lambda c:setattr(c,'mutate_graph',lambda g:g['edges'].append(copy.deepcopy(g['edges'][0]))),
+            lambda c:setattr(c,'mutate_graph',lambda g:g['edges'][0]['evidence'].update(execution_id='old')),
+            lambda c:setattr(c,'mutate_graph',lambda g:g.update(truncated=True))]
+        for mutate in mutations:
+            client=RingsClient();mutate(client)
+            with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):self.run_case(client)
+    def test_rings_failures_cannot_publish_or_hide_lineage_or_wrong_diagnostic(self):
+        for mutate in [lambda f:f.update(outputs={'save_result':{}}),lambda f:f.update(triggered_by=True),lambda f:f['metadata'].update(lineage_facts={'outputs':[{}]}),lambda f:f['metadata'].update(result={'meta_scan_runs':[{}]})]:
+            c=RingsClient();c.mutate_failed=mutate
+            with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):self.run_case(c)
+        c=RingsClient();c.failed_graph=lambda g:g['edges'].append({'relation_kind':'derive','evidence':{'execution_id':'failed-conflict'}})
+        with self.assertRaises(m.SuiteError):self.run_case(c)
+        with self.assertRaises(m.SuiteError):self.run_case(diagnostic=lambda *a,**kw:{'execution_id':'foreign','cause':kw['cause'],'source':'develop_runtime_log'})
+    def test_rings_incomplete_browser_and_final_immutable_guards(self):
+        def fail(*a):raise m.SuiteError('browser failed')
+        with self.assertRaises(m.SuiteError):self.run_case(browser=fail)
+        checkpoint=json.loads((Path(self.directory.name)/'topology-rings-checkpoint.json').read_text());self.assertEqual(checkpoint['result'],'incomplete');self.assertEqual(len(checkpoint['failures']),2)
+        calls=0
+        def changed(*a):
+            nonlocal calls
+            calls+=1;value=rings_physical()
+            if calls==4:value['targets'][m.fixture.RINGS_TARGET]['sha256']='changed'
+            return value
+        with self.assertRaises(m.SuiteError):self.run_case(physical=changed)
+    def test_rings_raw_json_requires_exact_big_integer_values_types_and_all_attributes(self):
+        rows=[r['properties'] for r in m.fixture.rings_features('result')];m.validate_rings_preview_text(json.dumps({'data':{'rows':rows}}))
+        for mutate in [lambda r:r.pop(),lambda r:r[5].update(grade=float(2**53+1)),lambda r:r[0].update(note='lost-null'),lambda r:r[1].update(is_hole=1),lambda r:r[5].update(geometry='overwritten')]:
+            values=copy.deepcopy(rows);mutate(values)
+            with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):m.validate_rings_preview_text(json.dumps({'data':{'rows':values}}))
+
+    def test_rings_browser_uses_exact_one_source_edge_and_keeps_incomplete_stage(self):
+        import subprocess
+        repository=Path(__file__).resolve().parents[2]
+        script=r'''
+import assert from 'node:assert/strict';import{readFileSync,writeFileSync}from'node:fs';import{resolve}from'node:path';
+const source=readFileSync(process.argv[1],'utf8');
+const start=source.indexOf('function assertRingsLineage('),end=source.indexOf('function persistRingsEvidence(',start);
+const expect=value=>({toBe:other=>assert.equal(value,other),toEqual:other=>assert.deepEqual(value,other)});
+const check=new Function('expect',source.slice(start,end)+';return assertRingsLineage')(expect);
+const evidence={sources:[{id:10},{id:11},{id:12}],outputs:[{item_id:20}],execution_id:'current'};
+const graph={truncated:false,edges:[{source:{item_id:10},target:{item_id:20},evidence:{execution_id:'current'},relation_kind:'derive',status:'active'}]};
+check(graph,evidence);
+for(const mutate of [g=>g.edges.pop(),g=>g.edges.push(structuredClone(g.edges[0])),g=>g.edges[0].source.item_id=11,g=>g.edges[0].target.item_id=21,g=>g.edges[0].evidence.execution_id='old',g=>g.truncated=true]){
+ const copy=structuredClone(graph);mutate(copy);assert.throws(()=>check(copy,evidence));
+}
+const stop=source.indexOf("test('面界提取",end);
+const persist=new Function('writeFileSync','resolve',source.slice(end,stop)+';return persistRingsEvidence')(writeFileSync,resolve);
+persist(process.argv[2],{execution_id:'current'},'preview_observed');let raw=JSON.parse(readFileSync(resolve(process.argv[2],'topology-rings-browser-raw.json'),'utf8'));assert.equal(raw.result,'incomplete');
+persist(process.argv[2],{execution_id:'current'},'complete','passed');raw=JSON.parse(readFileSync(resolve(process.argv[2],'topology-rings-browser-raw.json'),'utf8'));assert.equal(raw.result,'passed');
+'''
+        result=subprocess.run(['node','--input-type=module','-e',script,str(repository/'console/frontend/e2e/online/vector-topology-persistence.spec.js'),self.directory.name],text=True,capture_output=True)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
+    def test_rings_browser_owner_rejects_partial_foreign_or_rounded_raw_response(self):
+        evidence={'case':m.fixture.RINGS_CASE,'run_id':'run','execution_id':'current'}
+        rows=[r['properties'] for r in m.fixture.rings_features('result')]
+        def run_raw(raw):
+            def complete(*a,**kw):
+                root=Path(self.directory.name);(root/'topology-browser.json').write_text(json.dumps({**evidence,'schema_version':m.fixture.RINGS_SCHEMA+'-browser/v1','result':'passed'}));(root/'topology-rings-browser-raw.json').write_text(json.dumps(raw))
+                return SimpleNamespace(returncode=0)
+            with patch.object(m.subprocess,'run',side_effect=complete):return m.browser(Path('.'),self.env,evidence)
+        raw={**evidence,'stage':'complete','result':'passed','preview_text':json.dumps({'data':{'rows':rows}})}
+        self.assertEqual(run_raw(raw)['result'],'passed')
+        for mutate in [lambda r:r.update(result='incomplete'),lambda r:r.update(execution_id='foreign'),lambda r:r.update(run_id='foreign'),lambda r:r.update(stage='preview_observed'),lambda r:r.update(preview_text=json.dumps({'data':{'rows':[{}]}}))]:
+            value=copy.deepcopy(raw);mutate(value)
+            with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):run_raw(value)

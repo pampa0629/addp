@@ -5460,3 +5460,53 @@ def test_extract_polygon_rings_direct_native_save_preserves_business_geometry_co
             assert f.GetField(name)==expected
         assert f.GetField("geometry")==(["业务几何名甲"]*5+["业务几何名乙"])[i]
     assert_geodataframe_equal(frame,before)
+
+
+@pytest.mark.parametrize('problem',[None,'direction','coordinate','source_id','part','hole','null','big_integer','integer_type','boolean_type','boolean_value','crs','missing','extra_output','source_changed'])
+def test_hosted_polygon_rings_save_two_failures_and_independent_oracle(tmp_path,problem):
+    import importlib
+    from osgeo import ogr
+    fixture=importlib.import_module('business.scripts.online-vector-topology-fixture');acceptance=importlib.import_module('scripts.test.vector-topology-persistence-online')
+    (tmp_path/'outputs').mkdir();(tmp_path/'.addp-online-owner').touch();seeded=fixture.worker('seed',tmp_path,fixture.RINGS_CASE)
+    def definition(key=None):
+        workflow=acceptance.rings_definition(list(fixture.RINGS_SOURCES),'unused',key)
+        for task in workflow['tasks']:
+            if task['operator']=='load':task['params']={'connection_info':{'engine_type':'nfs','mount_path':str(tmp_path)},'path':task['params']['locator']}
+            elif task['operator']=='save':
+                name=task['params'].pop('target_name');task['params'].pop('target_parent_locator');task['params'].update(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)},path='outputs/'+name)
+        return workflow
+    result=execute_workflow(definition());assert result['status']=='success',result
+    native=fixture.worker('verify',tmp_path,fixture.RINGS_CASE);assert native['sources']==seeded['sources'];assert native['targets'][fixture.RINGS_TARGET]['feature_count']==8
+    if problem is None:
+        for key,reason in fixture.RINGS_FAILURES:
+            failed=execute_workflow(definition(key));assert failed['status']=='failed' and reason in failed['error'],failed
+            assert fixture.worker('verify',tmp_path,fixture.RINGS_CASE)==native
+        archive=tmp_path.parent/(tmp_path.name+'-archive');fixture.archive_physical_evidence(tmp_path,archive,native,fixture.RINGS_CASE)
+        assert len(list((archive/'topology-physical').rglob('*.gpkg')))==4
+        return
+    path=tmp_path/'outputs'/fixture.RINGS_TARGET
+    if problem=='extra_output':(tmp_path/'outputs/extra.gpkg').write_bytes(b'reject')
+    else:
+        if problem=='source_changed':path=tmp_path/fixture.RINGS_SOURCES[0]
+        ds=ogr.Open(str(path),1);layer=ds.GetLayer(0)
+        if problem=='boolean_value':ds.ExecuteSQL('UPDATE "'+layer.GetName()+'" SET is_hole=2 WHERE fid=1')
+        elif problem=='crs':ds.ExecuteSQL('UPDATE gpkg_geometry_columns SET srs_id=4326')
+        elif problem=='missing':layer.DeleteFeature(1)
+        elif problem in ('integer_type','boolean_type'):
+            name='part_no' if problem=='integer_type' else 'is_hole';assert layer.AlterFieldDefn(layer.GetLayerDefn().GetFieldIndex(name),ogr.FieldDefn(name,ogr.OFTReal),ogr.ALTER_TYPE_FLAG)==0
+        else:
+            feature=layer.GetFeature(6 if problem=='big_integer' else 1)
+            if problem=='source_changed':feature.SetField('note','changed')
+            elif problem=='source_id':feature.SetField('source_id','foreign')
+            elif problem=='part':feature.SetField('part_no',99)
+            elif problem=='hole':feature.SetField('is_hole',1)
+            elif problem=='null':feature.SetField('grade',0)
+            elif problem=='big_integer':feature.SetField('grade',2**53)
+            else:
+                points=[list(v) for v in feature.GetGeometryRef().GetPoints()]
+                if problem=='direction':points.reverse()
+                else:points[1][0]+=.25
+                feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps({'type':'LineString','coordinates':points})))
+            layer.SetFeature(feature);feature=None
+        layer=ds=None
+    with pytest.raises(fixture.FixtureError):fixture.worker('verify',tmp_path,fixture.RINGS_CASE)
