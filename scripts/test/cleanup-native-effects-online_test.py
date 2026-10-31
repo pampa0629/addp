@@ -47,13 +47,37 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     patch.object(M.REGISTRATION, 'initialize_exact_record_read_grants', side_effect=S.SuiteError('private')) as grant, \
                     patch.object(M, 'prepare_task') as prepare:
                 with self.assertRaises(S.SuiteError):
-                    M.run_transfer(object(), workflow, controls, object(), 'transfer-dlq-unknown', report,
+                    M.run_transfer(object(), workflow, controls, object(), 'transfer-engine', report,
                                    lambda: stages.append(report['stage']))
                 self.assertEqual(report['stage'], 'transfer_source_scan' if failed == 'scan' else 'transfer_source_grant')
                 self.assertEqual(stages[-1], report['stage'])
                 prepare.assert_not_called()
                 if failed == 'scan': grant.assert_not_called()
                 else: grant.assert_called_once()
+
+    def test_dlq_case_uses_kafka_input_and_never_prepares_unrelated_cdc_grant(self):
+        engines = iter((9, 10))
+        workflow = SimpleNamespace(register=lambda descriptor: next(engines))
+        controls = SimpleNamespace(tenant=2, run_id='native-1', descriptor=lambda kind: {})
+        user, source = object(), object()
+        report = {'checks': []}
+        with patch.object(M.MANAGER, 'wait_for_meta_scan') as scan, \
+                patch.object(M.REGISTRATION, 'initialize_exact_record_read_grants',
+                             side_effect=AssertionError('DLQ must not require an unrelated CDC Grant')) as grant, \
+                patch.object(M, 'prepare_task', return_value=(7, ID)) as prepare, \
+                patch.object(M, 'run_dlq_unknown') as unknown:
+            checkpoint = lambda: None
+            M.run_transfer(user, workflow, controls, source, 'transfer-dlq-unknown', report, checkpoint)
+            scan.assert_called_once()
+            self.assertEqual(scan.call_args.args[:2], (user, 9))
+            grant.assert_not_called()
+            prepare.assert_called_once_with(user, controls, 9, 10, 'kafka', 'native-1', report, checkpoint)
+            unknown.assert_called_once_with(user, controls, 7, report, checkpoint)
+        config = M.TRANSFER.task_config('kafka', 9, 10)
+        self.assertEqual(config['source']['locator'], 'addp://engine/10/path/continuous_events?type=topic')
+        self.assertEqual(config['target']['parent_locator'], 'addp://engine/9/path/public?type=schema')
+        self.assertNotIn('continuous_source', json.dumps(config))
+        self.assertNotIn('manager.data_item.read', S.CONTRACT['native_permissions']['transfer'])
 
     def test_transfer_task_preparation_records_the_failing_call_before_effects(self):
         stages = {'create': 'transfer_task_create', 'start': 'transfer_task_start',

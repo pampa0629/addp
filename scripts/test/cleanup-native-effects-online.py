@@ -584,12 +584,12 @@ def run_transfer(user, workflow, controls, source, case, report, checkpoint):
     kafka = workflow.register(controls.descriptor('kafka'))
     report['stage'] = 'transfer_source_scan'; checkpoint()
     MANAGER.wait_for_meta_scan(user, pg, time.monotonic() + 180)
-    # CDC consumes source contents through the existing exact DataItem Grant.
-    report['stage'] = 'transfer_source_grant'; checkpoint()
-    REGISTRATION.initialize_exact_record_read_grants(source, user, controls.tenant,
-                                                    [(pg, 'schema', 'public', 'continuous_source')])
     task_ids = []
     if case != 'transfer-dlq-unknown':
+        # Only CDC reads this PG source table; Kafka uses PG as its target.
+        report['stage'] = 'transfer_source_grant'; checkpoint()
+        REGISTRATION.initialize_exact_record_read_grants(source, user, controls.tenant,
+                                                        [(pg, 'schema', 'public', 'continuous_source')])
         cdc, _ = prepare_task(user, controls, pg, kafka, 'cdc', controls.run_id, report, checkpoint)
         report['stage'] = 'transfer_capture_native_verify'; checkpoint()
         controls.capture(cdc, present=True)
