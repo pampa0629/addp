@@ -67,8 +67,8 @@ Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provi
 
 - 公共连通：`GET /ping`。
 - 资源选择与资源树：引擎列表及资源树统一使用 Meta engine / resource-tree / item API；Transfer 不保留私有引擎列表、数据源树、节点 children 或表 metadata 代理接口。
-- TaskProvider 标准任务：`GET /task-provider/tasks`、`GET /task-provider/tasks/:task_type/:id`、`POST /task-provider/tasks/:task_type/:id/execute`、`GET /task-provider/executions/:execution_id`，其中 `task_type` 固定为 `sync`；四个端点不接受用户任务权限。
-- 任务定义：`GET /task-definitions`、`POST /task-definitions`、`GET /task-definitions/statistics`、`GET /task-definitions/:id`、`PUT /task-definitions/:id`、`DELETE /task-definitions/:id`、`POST /task-definitions/:id/start|pause|resume`、`GET /task-definitions/:id/executions`。`pause/resume` 只控制 owner schedule，不中断 active execution。
+- TaskProvider 标准任务：独立 `/task-provider/` 端点与专用机器权限见[任务表 API](docs/tables/tasks表.md#taskprovider-机器发现与执行)；`task_type` 固定为 `sync`，不接受用户任务权限。
+- 用户任务定义：统一使用 `/task-definitions`，各动作与精确权限见[任务表 API](docs/tables/tasks表.md#用户任务定义与控制)。bounded pause/resume 只控制 owner schedule，不中断 active execution；continuous 的暂停、恢复和停止见[执行与恢复边界](docs/tables/tasks表.md#执行恢复与验收边界)。
 - 只读配置预检：`POST /task-config-checks`，请求、权限与只读边界见[只读配置预检](#只读配置预检)。
 - “传输任务”列表页提供传输任务创建助手，由 Copilot `/api/v1/copilot/transfer/generate` 只识别源资源意图；向导调用 Manager 搜索/资源事实和 Meta 祖先链得到真实候选，确认时重读 owner 事实，目标继续使用共享资源树。唯一候选也必须由用户确认；之后在助手内依次确认目标引擎、目标父位置、目标表、字段映射和任务配置。声明 `limits.table_write.decimal` 的新目标表复用 Transfer 字段定义推荐 API，按目标 capability 校验基于源数据生成并展示确认；不得按 MySQL、OceanBase 等 `engine_type` 建立名单。Copilot 接口只消费上下文，不调用资源 owner、不创建或启动任务；最终仍使用本模块 `task-definitions` API 和 `transfer.task.create` 权限，由 Transfer 独立校验。
 - Transfer 不提供模块级全局执行列表或监控面板；任务列表通过 `MonitorExecutionsButton(module=transfer, task_type=sync)` 进入统一 Monitor。任务详情保留当前任务的执行历史和 Transfer 领域诊断、结果、重试操作，单次领域详情继续使用 `ExecutionDetail`。
