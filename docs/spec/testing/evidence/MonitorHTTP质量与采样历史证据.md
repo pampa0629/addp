@@ -711,3 +711,5 @@ OpenSSL依赖在原HTTP runner先检查，Platform consistency既有准备步骤
 | 独立JS语法、HTTP专属CI登记、本专项差异 | 通过；无前端／共享命令内核改动，不重复原T3和其它无关门禁 |
 
 日志位于`/tmp/addp-p19-http-tls-runner-20261031.log`（首轮夹具失败）、`/tmp/addp-p19-http-tls-runner-corrected-20261031.log`（实际T1及umask负例失败）、`/tmp/addp-p19-http-tls-build-registration-20261031.log`；验证输入摘要保存`/tmp/addp-p19-http-tls-verified-inputs-20261031.json`，不包含秘密材料。离线证书实际执行仅一次，没有自动重试真实证书组或新开本地窗口。本地各必要子项分列有效证据，不能声称一次完整runner已通过；Linux自然CI与正式产品构建／注册／mTLS采集／MFA／API／两阶段页面／注销／零残留仍待各自实际结果。停源历史、完整窗口及原容量／长期保留缺口保持。
+
+实现与规范提交`a517d68becca6d55a29cad1bf9ff48191a0dd23a`已推送main，仅10个本专项路径／片段；共享Makefile仅1行、登记文件仅12行自有增加，其他会话改动未提交。自然push生成[Platform CI run41204767479／Platform consistency Job124547494998](https://github.com/pampa0629/addp/actions/runs/41204767479/job/124547494998)，截至2026-10-31 21:17（Asia/Shanghai）API为queued／conclusion=null／steps=[]，不计Linux或单次完整runner通过。后续须核对该固定提交实际步骤，不能用后续文档提交的选择跳过或其他Job结果补齐；本轮未手动重跑／dispatch，未设置任何定时跟进。
