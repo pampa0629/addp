@@ -405,6 +405,52 @@ class NativeCleanupRunnerTest(unittest.TestCase):
             value = dict(valid, **update)
             with self.subTest(update=update), self.assertRaises(S.SuiteError): M.assert_proxy(value, 'native-1', ID)
 
+    def test_engine_begin_checkpoints_each_original_request_without_retry_or_private_text(self):
+        stages = ['engine_before_assessment_read', 'engine_assessment_create', 'engine_assessment_read',
+                  'engine_before_delete_read', 'engine_delete_confirm']
+        for failed, expected_stage in enumerate(stages):
+            calls, report = [], {'engines': [9], 'requests': [], 'stage': 'transfer_engine_deletion'}
+            class User:
+                def request(self, method, path, expected, body=None):
+                    calls.append((method, path, expected, body))
+                    if len(calls) - 1 == failed:
+                        raise S.SuiteError(f'{method} {path} returned HTTP 400 (private error)')
+                    engine = dict(id=9, tenant_id=2, engine_type='postgresql', lifecycle_state='active',
+                                  version=3, name='private confirmation')
+                    if method == 'POST':
+                        self.assessment = body['request_id']
+                        return SimpleNamespace(payload={'assessment_id': self.assessment})
+                    if '/deletion-assessments/' in path:
+                        return SimpleNamespace(payload=dict(status='success', task=dict(context={'engine_id': 9},
+                            requested_by=17, action='scan', expected_modules=list(S.OWNERS))))
+                    return SimpleNamespace(payload=engine)
+            with self.subTest(failed=failed), patch.object(S, 'user_identity', return_value='17'):
+                workflow = M.EngineWorkflow(User(), 2, report, lambda: None); workflow.owned.add(9)
+                with self.assertRaises(S.SuiteError) as caught: workflow.begin(9)
+                self.assertEqual(report['stage'], expected_stage)
+                self.assertEqual(len(calls), failed + 1)
+                self.assertEqual(M.failure_diagnostics(caught.exception), {'failure_kind': 'http_unexpected_status', 'failure_http_status': 400})
+                self.assertNotIn('private', json.dumps(report))
+
+    def test_engine_execution_separates_engine_lookup_from_parent_read(self):
+        for failed in ('engine', 'parent'):
+            report, calls = {}, []
+            def engine(identity):
+                calls.append('engine')
+                if failed == 'engine': raise S.SuiteError('GET /private returned HTTP 400 (secret)')
+                return {'deletion_execute_task_id': ID}
+            def parent(user, identity):
+                calls.append('parent')
+                raise S.SuiteError('GET /private returned HTTP 400 (secret)')
+            with self.subTest(failed=failed), patch.object(S, 'user_identity', return_value='17'), \
+                    patch.object(M.PROTOCOL, 'task', side_effect=parent):
+                workflow = M.EngineWorkflow(object(), 2, report, lambda: None)
+                workflow.engine = engine
+                with self.assertRaises(S.SuiteError): workflow.execution(9)
+                self.assertEqual(report['stage'], 'engine_cleanup_engine_read' if failed == 'engine' else 'engine_cleanup_task_read')
+                self.assertEqual(calls, ['engine'] if failed == 'engine' else ['engine', 'parent'])
+                self.assertNotIn('secret', json.dumps(report))
+
     def test_engine_workflow_keeps_name_version_assessment_and_ten_owner_identity(self):
         for mutation in ('none', 'wrong_assessment', 'missing_owner', 'running', 'changed_version', 'foreign_engine', 'wrong_creator'):
             calls = []; reads = 0; deleted = False
@@ -577,13 +623,17 @@ class NativeCleanupRunnerTest(unittest.TestCase):
 
     def test_transfer_engine_preserves_definition_and_dlq_until_explicit_delete(self):
         for case in ('transfer-engine', 'transfer-capture-unknown'):
-            for mutation in ('none', 'definition_missing', 'dlq_erased', 'native_capture_remains', 'business_rows_changed'):
+            for mutation in ('none', 'definition_missing', 'dlq_erased', 'native_capture_remains', 'business_rows_changed',
+                             'delete_http400', 'professional_http400'):
                 if case == 'transfer-capture-unknown' and mutation == 'dlq_erased': continue
+                if case != 'transfer-engine' and mutation in ('delete_http400', 'professional_http400'): continue
                 calls, deleted, snapshots = [], [], []
                 class User:
                     def request(self, method, path, expected):
                         calls.append((method, path))
-                        if method == 'DELETE': deleted.append(8)
+                        if method == 'DELETE':
+                            if mutation == 'delete_http400': raise S.SuiteError('DELETE /private returned HTTP 400 (secret)')
+                            deleted.append(8)
                         if method == 'GET' and path.endswith('/8') and expected == (404,): return SimpleNamespace(payload={})
                         value = dict(id=int(path.rsplit('/', 1)[-1]) if method == 'GET' else 7,
                                      tenant_id=2, enabled=mutation == 'definition_missing')
@@ -616,8 +666,11 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     task = 7 if kind == 'cdc' else 8
                     report['tasks'].append(task)
                     return task, ID
+                def professional(*_):
+                    if mutation == 'professional_http400': raise S.SuiteError('GET /private returned HTTP 400 (secret)')
+                    return {}
                 with patch.object(M.MANAGER, 'wait_for_meta_scan'), patch.object(M.REGISTRATION, 'initialize_exact_record_read_grants'), \
-                     patch.object(M, 'prepare_task', side_effect=prepare), patch.object(M, 'professional', return_value={}):
+                     patch.object(M, 'prepare_task', side_effect=prepare), patch.object(M, 'professional', side_effect=professional):
                     report = dict(checks=[], tasks=[])
                     if mutation == 'none':
                         M.run_transfer(User(), workflow, Controls(), case, report, lambda: None)
@@ -629,6 +682,10 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                     else:
                         with self.subTest(case=case, mutation=mutation), self.assertRaises(S.SuiteError):
                             M.run_transfer(User(), workflow, Controls(), case, report, lambda: None)
+                        expected = dict(definition_missing='transfer_retained_task_read', dlq_erased='transfer_retained_dlq_verify',
+                            native_capture_remains='transfer_capture_cleanup_verify', business_rows_changed='transfer_business_rows_verify',
+                            delete_http400='transfer_task_delete', professional_http400='transfer_professional_result_read')
+                        self.assertEqual(report['stage'], expected[mutation])
 
     def test_native_object_never_treats_auth_failure_or_missing_bucket_as_absence(self):
         class S3Error(Exception):

@@ -137,6 +137,8 @@ Manager 通过普通 User 的正式源 Grant 和 Model3D Runtime 生成真实 GL
 
 两个 CDC case 的 Meta 源扫描与 Engine 就绪核验共用原 180 秒绝对截止时间。扫描成功后，由原 Engine User 仅 GET 本轮自有 PG／Kafka，要求准确 Tenant／ID／类型、active 且 online 后才创建任务；不触发连接测试、不增加权限、等待预算或创建重试。就绪失败只归档最后一次读取的身份与闭集状态，创建 HTTP 400 只归档准确源／目标绑定和闭集拒绝类别；原始错误、响应、连接配置及凭据不归档。失败诊断不得出现在成功报告中；任务启动仍沿原 120 秒预算，全部 case checks 不变。
 
+Engine 工作流必须在原请求前分别记录评估受理／读取、删除确认、执行观察与墓碑读取的闭集阶段；Transfer 后续的停止证明、定义／DLQ 保留、专业结果、显式任务删除、删除后复核与业务行核验也分别定位。阶段不复制 URL、请求体、名称确认文本或错误原文，不增加请求、重发或等待。只有分支原七项全部完成才能通过；到达后续阶段只证明已越过的前置，不能把空 checks 报为部分业务通过。
+
 四个一次性代理在应用启动前固定指向本轮 Infra，只对准确关联操作发送一次真实变更后丢弃回包，并阻止重发。控制端点仅容器 loopback；Kafka 内部 advertised listener 经过代理，外部 listener 供独立只读原生探针直达。含凭据的 manifest、描述符、代理配置与展开 Compose 均保持私有 0600，不归档。退出先停产品/Worker/Runtime，再销毁代理、业务夹具和 Infra；恢复、销毁或零残留失败均导致 Job 失败。
 
 标准确定性入口为 `make test-cleanup-native-online-runner`，纳入现有 Online/平台登记链。该批代码与确定性测试不证明 Hosted 实际通过；真实旧 writer 晚写、原生写图回包与正向 reopen 不在六个 case 中，报告必须保持相应 `not_run` 边界。

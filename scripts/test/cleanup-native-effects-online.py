@@ -58,6 +58,10 @@ class EngineWorkflow:
         self.principal = S.user_identity(user, tenant, S.CONTRACT['native_permissions']['engine'])
         self.owned = set()
 
+    def _stage(self, stage):
+        self.report['stage'] = stage
+        self.checkpoint()
+
     def register(self, descriptor):
         require(type(descriptor) is dict and descriptor.get('engine_type') in {'minio', 'postgresql', 'kafka'}
                 and descriptor.get('engine_origin') == 'general', 'unsupported native fixture Engine')
@@ -76,14 +80,17 @@ class EngineWorkflow:
         return value
 
     def begin(self, engine_id):
+        self._stage('engine_before_assessment_read')
         before = self.engine(engine_id)
         require(before['lifecycle_state'] == 'active' and type(before['version']) is int and before['version'] > 0,
                 'Engine is not an active exact-version fixture')
         request_id = str(uuid.uuid4())
         self.report['requests'].append(request_id); self.checkpoint()
+        self._stage('engine_assessment_create')
         accepted = self.user.request('POST', f'{ENGINE}/{engine_id}/deletion-assessments', (202,),
                                     {'request_id': request_id, 'external_artifact_policy': 'delete'}).payload
         require(accepted == {'assessment_id': request_id}, 'assessment identity changed')
+        self._stage('engine_assessment_read')
         assessment = S.wait_for(lambda: self.user.request('GET', f'{ENGINE}/{engine_id}/deletion-assessments/{request_id}', (200,)).payload,
             lambda x: x.get('status') in S.TERMINAL, 'Engine assessment did not settle')
         task = assessment['task']
@@ -93,8 +100,10 @@ class EngineWorkflow:
         # The server validates the complete committed impact digest. This User
         # reads only its two authorized Owners; do not reconstruct a full digest
         # from that deliberately filtered public projection.
+        self._stage('engine_before_delete_read')
         current = self.engine(engine_id)
         require(current['version'] == before['version'], 'Engine changed after assessment')
+        self._stage('engine_delete_confirm')
         result = self.user.request('DELETE', f'{ENGINE}/{engine_id}', (202,),
             {'version': current['version'], 'assessment_id': request_id,
              'confirmation_token': current['name'], 'external_artifact_policy': 'delete'}).payload
@@ -103,10 +112,12 @@ class EngineWorkflow:
         return request_id
 
     def execution(self, engine_id):
+        self._stage('engine_cleanup_engine_read')
         engine = self.engine(engine_id)
         request_id = engine.get('deletion_execute_task_id')
         if request_id is None: return None
         S.identifier(request_id)
+        self._stage('engine_cleanup_task_read')
         result = PROTOCOL.task(self.user, request_id)
         require(result['task']['context']['engine_id'] == engine_id
                 and result['task']['requested_by'] == int(self.principal)
@@ -117,6 +128,7 @@ class EngineWorkflow:
         result = S.wait_for(lambda: self.execution(engine_id), lambda x: x is not None and x['status'] in S.TERMINAL,
                             'Engine execute did not settle', timeout=360)
         require((result['status'] == 'success') is success, 'Engine execute has an unexpected outcome')
+        self._stage('engine_tombstone_read')
         if success:
             S.wait_for(lambda: self.engine(engine_id), lambda x: x['lifecycle_state'] == 'deleted',
                        'strict Engine completion did not create the tombstone')
@@ -719,21 +731,30 @@ def run_transfer(user, workflow, controls, case, report, checkpoint):
     report['stage'] = 'transfer_engine_deletion'; checkpoint()
     workflow.begin(pg)
     completed = workflow.settled(pg, success=case == 'transfer-engine')
+    report['stage'] = 'transfer_capture_cleanup_verify'; checkpoint()
     controls.capture(cdc, present=False, connector_only=case == 'transfer-capture-unknown')
     for task_id in task_ids:
+        report['stage'] = 'transfer_actual_stop_verify'; checkpoint()
         controls.require_invocations_stopped(task_id)
+        report['stage'] = 'transfer_retained_task_read'; checkpoint()
         retained = user.request('GET', f'{TASKS}/{task_id}', (200,)).payload
         require(retained['id'] == task_id and retained['tenant_id'] == controls.tenant and retained['enabled'] is False,
                 'Engine deletion removed or re-enabled a retained Transfer definition')
     if case == 'transfer-engine':
+        report['stage'] = 'transfer_retained_dlq_verify'; checkpoint()
         controls.topic(kafka_task, present=True)
         require(controls.transfer_snapshot(kafka_task)['dead_letters'] > 0, 'Engine cleanup erased retained DLQ index')
+        report['stage'] = 'transfer_professional_result_read'; checkpoint()
         professional(workflow.user, completed, 'transfer', controls.tenant)
         # The ordinary User now explicitly deletes its retained task via the
         # second authorized entry; this is not a System Cleanup child result.
+        report['stage'] = 'transfer_task_delete'; checkpoint()
         user.request('DELETE', f'{TASKS}/{kafka_task}', (200,))
+        report['stage'] = 'transfer_deleted_dlq_verify'; checkpoint()
         controls.topic(kafka_task, present=False)
+        report['stage'] = 'transfer_deleted_task_read'; checkpoint()
         user.request('GET', f'{TASKS}/{kafka_task}', (404,))
+        report['stage'] = 'transfer_deleted_dlq_index_verify'; checkpoint()
         require(controls.transfer_snapshot(kafka_task)['dead_letters'] == 0, 'direct deletion retained DLQ private state')
         report['checks'].extend(['real_capture_created', 'actual_invocations_returned', 'native_capture_absent',
             'engine_retains_task_and_dlq', 'professional_receipt_equal', 'explicit_task_delete_removes_dlq'])
@@ -748,6 +769,7 @@ def run_transfer(user, workflow, controls, case, report, checkpoint):
         report['checks'].extend(['real_capture_created', 'actual_invocations_returned', 'native_connector_absent',
             'native_mutation_sent_response_lost', 'unknown_effect_hold_retained', 'engine_remains_deleting', 'new_producer_rejected'])
         report['entry'] = 'engine_deletion'
+    report['stage'] = 'transfer_business_rows_verify'; checkpoint()
     controls.target_rows('cdc')
     if case == 'transfer-engine': controls.target_rows('kafka')
     report['checks'].append('target_business_rows_preserved')
