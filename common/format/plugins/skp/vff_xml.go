@@ -64,6 +64,9 @@ func readVFFXML(ctx context.Context, raw []byte, budget *vffXMLBudget, namespace
 				seen[attr.Name] = true
 				budget.text += len(attr.Value)
 				if attr.Name.Space == "xmlns" || attr.Name.Space == "" && attr.Name.Local == "xmlns" {
+					if err := vffXMLNamespaceDeclaration(attr); err != nil {
+						return nil, err
+					}
 					continue
 				}
 				key := attr.Name.Local
@@ -121,3 +124,22 @@ func readVFFXML(ctx context.Context, raw []byte, budget *vffXMLBudget, namespace
 }
 
 func vffXMLAttributeKey(namespace, local string) string { return "{" + namespace + "}" + local }
+
+// encoding/xml does not itself enforce all Namespaces in XML constraints.
+// Reject invalid reserved bindings even when their prefixes are unused.
+func vffXMLNamespaceDeclaration(attr xml.Attr) error {
+	const xmlNS = "http://www.w3.org/XML/1998/namespace"
+	const xmlnsNS = "http://www.w3.org/2000/xmlns/"
+	prefix := ""
+	if attr.Name.Space == "xmlns" {
+		prefix = attr.Name.Local
+	}
+	if prefix == "xml" {
+		if attr.Value != xmlNS {
+			return fmt.Errorf("invalid VFF reserved XML namespace binding")
+		}
+	} else if attr.Value == xmlNS || attr.Value == xmlnsNS || prefix == "xmlns" || strings.Contains(prefix, ":") || prefix != "" && attr.Value == "" {
+		return fmt.Errorf("invalid VFF namespace declaration")
+	}
+	return nil
+}

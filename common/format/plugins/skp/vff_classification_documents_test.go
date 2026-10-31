@@ -17,7 +17,7 @@ import (
 )
 
 func skcDocumentLimits() vffClassificationDocumentLimits {
-	return vffClassificationDocumentLimits{packages: skcTestLimits(), xml: vffXMLLimits{bytes: 1 << 20, nodes: 10000, depth: 32, attributes: 10000, text: 1 << 20}, images: vffImageLimits{images: 10, bytes: 1 << 20, pixels: 10000}, dependencies: 100}
+	return vffClassificationDocumentLimits{packages: skcTestLimits(), xml: vffXMLLimits{bytes: 1 << 20, nodes: 10000, depth: 32, attributes: 10000, text: 1 << 20}, images: vffImageLimits{images: 10, bytes: 1 << 20, pixels: 10000}, filters: vffSKCFilterLimits{bytes: 1 << 20, tokens: 10000, rules: 1000, attributes: 10000}, dependencies: 100}
 }
 
 func skcDocumentFiles(t *testing.T) map[string][]byte {
@@ -224,7 +224,7 @@ func TestVFFClassificationDocumentsCumulativeBudgetsAndFreshSources(t *testing.T
 	for _, name := range []string{"document.xml", "documentProperties.xml", "references.xml", "Schemas/root.xsd", "Schemas/shared.xsd"} {
 		limits.xml.bytes += len(files[name])
 	}
-	limits.dependencies, limits.images.images, limits.images.bytes, limits.images.pixels = 5, 1, len(files["images/literal%20thumb.png"]), 2
+	limits.dependencies, limits.images.images, limits.images.bytes, limits.images.pixels = 6, 1, len(files["images/literal%20thumb.png"]), 2
 	if _, err := readVFFClassificationDocuments(context.Background(), c, limits); err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestVFFClassificationDocumentsCumulativeBudgetsAndFreshSources(t *testing.T
 		"XML cumulative":          func(l *vffClassificationDocumentLimits) { l.xml.bytes = limits.xml.bytes },
 		"images cumulative":       func(l *vffClassificationDocumentLimits) { l.images.images = 1 },
 		"pixels cumulative":       func(l *vffClassificationDocumentLimits) { l.images.pixels = 3 },
-		"dependencies cumulative": func(l *vffClassificationDocumentLimits) { l.dependencies = 9 },
+		"dependencies cumulative": func(l *vffClassificationDocumentLimits) { l.dependencies = 11 },
 	} {
 		t.Run(name, func(t *testing.T) {
 			l := skcDocumentLimits()

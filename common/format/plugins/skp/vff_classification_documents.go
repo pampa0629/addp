@@ -26,6 +26,7 @@ type vffClassificationDocumentLimits struct {
 	packages     vffClassificationPackageLimits
 	xml          vffXMLLimits
 	images       vffImageLimits
+	filters      vffSKCFilterLimits
 	dependencies int
 }
 
@@ -58,6 +59,13 @@ type vffSKCSchemaFact struct {
 	targetNamespace string
 	dependencies    []vffSKCDependency
 	opaque          []vffSKCOpaqueXML
+	resources       []vffSKCResourceDeclaration
+}
+
+type vffSKCResourceDeclaration struct {
+	kind, attribute, value string
+	begin, end             int
+	sha256                 [32]byte
 }
 
 type vffSKCDocumentFact struct {
@@ -66,8 +74,8 @@ type vffSKCDocumentFact struct {
 	rootSchema       string
 	thumbnail        vffImageFact
 	schemas          []vffSKCSchemaFact
-	// Official <schema>.filter naming proves association, not filter semantics.
-	filters, unexplained []vffSKCMemberFact
+	filters          []vffSKCFilterFact
+	unexplained      []vffSKCMemberFact
 }
 
 type vffClassificationDocumentFacts struct {
@@ -79,15 +87,19 @@ func readVFFClassificationDocuments(ctx context.Context, c *vffContainer, limits
 	if limits.xml.bytes <= 0 || limits.xml.nodes <= 0 || limits.xml.depth <= 0 || limits.xml.attributes <= 0 || limits.xml.text <= 0 || limits.dependencies <= 0 || limits.images.images <= 0 || limits.images.bytes <= 0 || limits.images.pixels == 0 {
 		return nil, fmt.Errorf("SKC documents require explicit cumulative XML, dependency and image budgets")
 	}
+	if limits.filters.bytes <= 0 || limits.filters.tokens <= 0 || limits.filters.rules <= 0 || limits.filters.attributes <= 0 {
+		return nil, fmt.Errorf("SKC documents require explicit cumulative filter budgets")
+	}
 	packages, err := readVFFClassificationPackages(ctx, c, limits.packages)
 	if err != nil {
 		return nil, err
 	}
 	result := &vffClassificationDocumentFacts{packages: packages}
 	budget := &vffXMLBudget{limits: limits.xml}
+	filterBudget := &vffSKCFilterBudget{limits: limits.filters}
 	remainingImages, remainingDependencies := limits.images, limits.dependencies
 	for _, item := range packages.packages {
-		fact, err := readVFFSKCDocument(ctx, item, budget, &remainingImages, &remainingDependencies)
+		fact, err := readVFFSKCDocument(ctx, item, budget, filterBudget, &remainingImages, &remainingDependencies)
 		if err != nil {
 			return nil, err
 		}
@@ -99,7 +111,7 @@ func readVFFClassificationDocuments(ctx context.Context, c *vffContainer, limits
 	return result, nil
 }
 
-func readVFFSKCDocument(ctx context.Context, item vffClassificationPackage, budget *vffXMLBudget, images *vffImageLimits, dependencies *int) (*vffSKCDocumentFact, error) {
+func readVFFSKCDocument(ctx context.Context, item vffClassificationPackage, budget *vffXMLBudget, filterBudget *vffSKCFilterBudget, images *vffImageLimits, dependencies *int) (*vffSKCDocumentFact, error) {
 	result := &vffSKCDocumentFact{vffSKCMemberFact: vffSKCMemberFact{item.member, item.sha256}}
 	claimed := map[string]bool{}
 	names := []string{"document.xml", "documentProperties.xml", "references.xml"}
@@ -185,8 +197,12 @@ func readVFFSKCDocument(ctx context.Context, item vffClassificationPackage, budg
 		}
 		filter := name + ".filter"
 		if raw, ok := item.files[filter]; ok {
+			fact, err := readVFFSKCFilter(ctx, filter, raw, filterBudget)
+			if err != nil {
+				return nil, err
+			}
 			claimed[filter] = true
-			result.filters = append(result.filters, vffSKCMemberFact{filter, sha256.Sum256(raw)})
+			result.filters = append(result.filters, *fact)
 		}
 	}
 	var unclaimed []string
@@ -292,6 +308,11 @@ func readVFFSKCSchema(ctx context.Context, member string, files map[string][]byt
 		}
 	}
 	result := &vffSKCSchemaFact{vffSKCMemberFact: vffSKCMemberFact{member, sha256.Sum256(raw)}, targetNamespace: root.attrs["targetNamespace"]}
+	resources, err := vffSKCSchemaResources(ctx, root, raw, dependencies)
+	if err != nil {
+		return nil, err
+	}
+	result.resources = resources
 	for _, child := range root.children {
 		if err := ctx.Err(); err != nil {
 			return nil, err
