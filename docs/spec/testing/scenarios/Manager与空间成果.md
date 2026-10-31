@@ -12,7 +12,7 @@
 | --- | --- |
 | Manager 与文件 | [内部产物与 case](#manager-internal-artifact-lineage) · [混合检索](#manager-hybrid-search) · [KML／GML／TopoJSON S3](#kmlgmltopojson-的-s3-兼容消费) · [设备静态轨迹](#设备静态轨迹范围读取) · [ORC 单文件](#orc-单文件表格-hosted) |
 | 矢量与地图 | [拓扑持久化](#拓扑构面面叠面缝悬点与线叠持久化vector-topology-persistence) · [重合规整](#重合规整独立场景) · [PMTiles 工作流](#vector-pmtiles-workflow) |
-| 栅格流程与持久化 | [Raster 工作流](#raster-workflow) · [等值线](#raster-contour-persistence) · [分类转面](#raster-polygonize-persistence) · [矢量栅格化](#vector-rasterize-persistence) · [整数分区统计](#raster-zonal-statistics-persistence) · [邻域统计](#raster-focal-statistics-persistence) · [邻域百分位](#raster-focal-percentile-persistence) · [邻域分类种类数](#raster-focal-variety-persistence) · [筛除分类保护](#分类小斑块筛除指定类别保护独立-hosted-验收) · [矢量分区统计](#vector-zonal-statistics-persistence) · [邻近距离](#raster-proximity-persistence) · [细化](#raster-thin-persistence) · [边界清理](#raster-boundary-clean-persistence) |
+| 栅格流程与持久化 | [Raster 工作流](#raster-workflow) · [等值线](#raster-contour-persistence) · [分类转面](#raster-polygonize-persistence) · [矢量栅格化](#vector-rasterize-persistence) · [整数分区统计](#raster-zonal-statistics-persistence) · [邻域统计](#raster-focal-statistics-persistence) · [邻域百分位](#raster-focal-percentile-persistence) · [邻域分类种类数](#raster-focal-variety-persistence) · [筛除分类保护](#分类小斑块筛除指定类别保护独立-hosted-验收) · [筛除面积阈值](#分类小斑块筛除平方米面积阈值独立-hosted-验收) · [矢量分区统计](#vector-zonal-statistics-persistence) · [邻近距离](#raster-proximity-persistence) · [细化](#raster-thin-persistence) · [边界清理](#raster-boundary-clean-persistence) |
 | 容量与磁盘 | [分类蚕食容量](#分类蚕食容量raster-nibble-capacity) · [容量验证入口](#分类蚕食容量的验证入口) · [临时磁盘保护](#raster-disk-pressure) |
 | DEM 地形与统计 | [填洼](#raster-fill-depressions-persistence) · [平均曲率](#dem-平均曲率独立-hosted-验收) · [剖面曲率](#dem-剖面曲率独立-hosted-验收) · [切向曲率](#dem-切向曲率独立-hosted-验收) · [平面曲率](#dem-平面曲率独立-hosted-验收) · [双 DEM 填挖方](#双dem填挖方统计独立-hosted-验收) |
 | D8 流向与累积 | [流向](#dem-d8-流向持久化) · [汇流累积](#d8-汇流累积持久化) · [加权累积](#raster-flow-accumulation-weighted-d8-persistence) · [下游流长](#d8-下游流长持久化) · [上游最长流长](#d8-上游最长流长持久化) · [汇水分区](#d8-汇水分区持久化) |
@@ -835,6 +835,20 @@ artifact／物理／Meta相等正整数大小、精确scan父执行／用户／�
 2026-10-30，固定 `182f93649cd1227ef6ff8451fca0902373fbde1b` 的[端点吸附独立普通User Hosted T4 41054235377](https://github.com/pampa0629/addp/actions/runs/41054235377/job/124057611152)已通过原始归档独立审计：同User33／Tenant2／精确11权限，七源与线／Point双成果九份原GPKG各98304字节，逐原坐标、全部属性类型／空值、部件／方向／顺序、3857及SHA／大小与现场／Meta／storage及浏览器后记录严格一致。12条MultiLineString结果／10条原悬点Point明细、双create稳定输出与事实、两次公开同主体自动扫描、四条本次execution active derive及Monitor一致；两原图与实际血缘tab／G6三节点两边／标签paths、原EWKB及全部OL坐标属性精确核对，线端移动像素14与Point图层像素451、两地图／属性／血缘和成功四失败页共11截图已核。四真实失败的准确同UUID owner日志及无输出事实／目标／扫描／derive、扫描库存7→9后不变均通过；源和成果原字节／Meta前后不变。最终Owner／browser／raw唯一v1 passed，业务69915ms，小于600秒，incomplete检查点只保留阶段含义；NFS/export/ownedroot、Runtime/registry/镜像、部署及Infra完整清理零残留。四份独立物理／渲染／截图／清理审计及同SHA Console／Platform CI实际通过；GeoPython全量9994通过／1个未改动的TIFF overview负例失败，交对应owner，不计全量通过；该证据不认证容量、跨文件事务、内存中间血缘、业务DELETE、空批／英尺／超JS整数，微距仅核物理／API／OL数据，不宣称其亚像素部分独立可见。本轮仅单次派发该case，未重跑旧业务T4或容量。
 
 
+
+### 分类小斑块筛除平方米面积阈值独立 Hosted 验收
+
+独立手工`raster-sieve-area-persistence`复用Hosted／NFS、同源默认入口Runtime、非默认Tenant与普通User原12权限，业务预算严格600秒，不加入nightly，不改产品、原筛除／保护套件、权限或安全投影。预算覆盖身份／源核验、首次冻结独立预期生成、全部执行及查询、物理全检、原件归档和缓存清理；部署及隔离生命周期退出另核，超时和清理失败明确失败，不扩预算或自动重试。实际Linux和Hosted仍由CI会话协调，本地准备不计真实Hosted、UI、容量或全量IAM。
+
+固定16条成功COG链：米制4／8邻接及重分类接面积筛除3条；国际英尺／美制测量英尺换算及提前舍入反例2条；阈值恰等／上下相邻浮点值3条；等价像元数对照1条；省略／空保护列表2条；相同1000平方米阈值的10米／30米分辨率2条；Int64／UInt64安全分类及原生NoData2条；全无效1条。519×515、显式第二波段、北向非方形主网格，覆盖跨512分块、零／负分类、内部mask、透明／部分透明和未应用的scale/offset；三个基本链内核受保护小斑块不替换、达标保护供体可供给、未达标保护不能供给／桥接、原始大小及并列决胜／不传播。临界小斑块须直接邻接达标供体，另核供体恰等阈值资格，避免无供体保留掩盖数值错误。
+
+固定32类各以zh-cn／en提交，共64次准确失败：阈值均缺失／均提供／像元null加合法面积／合法像元加面积null4类；面积null／布尔／零／负／字符串／数组／对象7类；地理CRS／缺CRS／缺定位／两个旋转方向／未知线性单位／复合CRS7类；波段0／alpha／复数数据及非法值／小数／布尔邻接6类；源小数／不安全Float64整数／原生Int64或UInt64 NoData邻接越界值4类；保护null／列表内对象[{}]／重复值／越界值4类。必须准确落在当前sieve任务并匹配原因；前置读取、保存或扫描失败不得充数。反向查询不改提交语言或冻结失败，失败零发布／新增扫描／派生血缘。
+
+独立2000位Decimal面积乘积、逐像元BFS与原始边界枚举oracle，不调用产品筛除、连通标记／供体或GDAL Sieve；CRS单位按原文件重读事实精确核对，不能用写入前单位系数代替。完整像元／mask无容差比较；只缓存冻结预期，实际成果每轮重读：1+…+16+64×16=1160次成果全检；另含源基线，共81轮物理核对和80次执行。严格核原网格／CRS、Float64／NaN、合法零、COG完整布局／实际nearest概览、artifact／物理／Meta相等正整数大小、自动扫描精确父执行／用户／租户／引擎、当前执行全部实际输入血缘及Monitor；内部raster_save／derive与公开operations:null分别核，受控只读observer仅登记本suite。
+
+归档全部源TIFF、16份COG、16份冻结预期NPY原字节及各自大小／SHA256清单、当前执行封闭血缘回执；源全波段／原生NoData／mask／类型／网格／CRS／单位／编码及Meta、先前成果每轮不变。原件／清单／预期缺失、篡改、额外文件或符号链接均拒绝，不静默重建；私有缓存绑定run／fixture／源hash。部分启动及所有退出严格清理缓存／NFS／Runtime／镜像／registry／部署／Infra自有残留，保留首个失败和收尾错误。
+
+NaN／Infinity参数、整数形式浮点[1.0]保护值、混合类型复数alpha、退化网格、数值溢出／下溢和I/O注入继续单列Native证据，不冒充Hosted覆盖。标准准备入口`make test-raster-sieve-area-online-runner`；真实GDAL的16链／64准确失败、独立oracle语义污染、COG／源／缓存及原字节归档破坏拒绝和无仓库依赖stdin Worker进入原`make test-geopython-workflow`，Online／changed gate／手工workflow／严格矩阵删断言拒绝同步登记。原像元和保护套件不替代新面积范围。
 
 ### 分类小斑块筛除指定类别保护独立 Hosted 验收
 

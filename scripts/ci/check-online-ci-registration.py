@@ -4235,6 +4235,96 @@ def validate_raster_sieve_protected(repository: Path, registered: set[str]) -> N
     if any(word in source for word in ('operators.raster_compute', 'np.percentile', 'np.quantile', 'gdal.RasterizeLayer', 'gdal.Polygonize')):
         raise RegistrationError('protected sieve oracle must remain independent')
 
+AREA_SIEVE_REQUIRED = {
+    'scripts/test/online-hosted-raster-sieve-area-gate.sh': (
+        'start_online_geopython_runtime', '--mount', '--suite raster-workflow',
+        '--wait-protection-owners develop,manager', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600',
+        'online_raster_lineage.py prepare', 'online-raster-sieve-area-fixture.py stop',
+        'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
+    ),
+    'business/scripts/online-raster-sieve-area-fixture.py': (
+        'NFSExport', 'owned_root', 'from collections import deque', 'category not in (CASES[name][3] or ())',
+        'len(components[other][1])*cell_area>=minimum', 'case_shape(name)', 'from decimal import Decimal', 'context.prec=2000', 'len(pixels)*cell_area<minimum', 'source_reference(name)', 'threshold_contract(name)', 'area_comparison_verified', 'linear_units_verified', 'verify_sources(root)', 'np.array_equal',
+        'GDAL_TIFF_INTERNAL_MASK', 'full_source_pixels_verified', 'runtime_workspaces_removed', 'archive_files',
+        'oracle cache hash changed', 'source file changed', 'sieve-area-cogs', 'archive history missing',
+        'sieve-area-expectations', 'validate_expected_export', 'archive_expectations',
+        'allow_pickle=False', 'def cleanup_oracle', 'full_check=True', 'nearest_overviews', 'private_control',
+    ),
+    'scripts/test/raster-sieve-area-persistence-online.py': (
+        'raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'budget != 600', 'BudgetClient', 'remaining()',
+        'validate_success', 'lineage.collect', 'lineage.validate(facts,wanted,public=True)',
+        'lineage.verify_archive', 'base.validate_scan', 'raster.wait_lineage', 'source_edges',
+        'readonly.no_publication', 'query language rewrote stored failure', 'previous original COG changed',
+        'fixture_call', 'cleanup-oracle', 'oracle cleanup also failed', 'full_checks != 1160',
+        'frozen independent array archive changed', 'archived_expectations',
+        "fact.get('threshold_contract')!=fixture.threshold_contract(name)", "resource_type='file'", 'physical_calls != 81', 'len(cases) != 16', 'len(failures) != 64', 'exact_cause',
+        'Monitor current output lineage differs', 'raster.strict_sizes', 'fixture.expected_cache_bytes()',
+    ),
+    'engines/geopython-workflow/test_online_sieve_area_fixture.py': (
+        'test_area_sieve_hosted_sixteen_real_cogs_complete_oracle_protected_controls_and_original_bytes',
+        'test_area_sieve_hosted_sixty_four_exact_submitted_failures_no_output_and_clean_workspace',
+        'test_area_sieve_hosted_actual_pixel_mask_metadata_and_overview_corruption_rejected', 'one-ulp',
+        'test_area_sieve_hosted_original_cog_archive_never_repairs_or_overwrites',
+        'test_area_sieve_hosted_frozen_cache_rejects_hash_shape_inventory_or_run_change',
+        'test_area_sieve_hosted_stdin_worker_has_no_repository_dependency_and_exact_cleanup',
+        'test_area_sieve_hosted_frozen_expected_archive_rejects_tampering',
+        'test_area_sieve_native_only_integral_float_rejection', 'test_area_sieve_source_crs_roundtrip_and_complete_native_source_facts',
+        'test_area_sieve_hosted_independent_oracle_rejects_area_protection_and_original_semantic_tampering', 'small_protected_donor', 'large_protected_refused',
+    ),
+    'scripts/test/raster-sieve-area-persistence-online_test.py': (
+        'test_full_matrix_16_success_64_failures_1160_checks_and_cleanup',
+        'test_role_bound_lineage_rejects_wrong_roles_operations_and_public_projection',
+        'test_strict_physical_counts_sizes_original_archives_and_cleanup_cannot_weaken',
+        'test_failures_preserve_primary_and_cleanup_error',
+        'test_exact_failure_stage_language_scan_lineage_and_budget_are_enforced',
+    ),
+    'business/scripts/online-raster-zonal-percentile-fixture.py': (
+        'previous archive was deleted', 'previous archived bytes changed',
+    ),
+    'scripts/utils/online_raster_lineage.py': (
+        "'raster-sieve-area-persistence': 'sieve-area-lineage'", 'BEGIN READ ONLY;', 'statement_timeout',
+        'workflow_matches', 'validate_container', 'closed(public, expected)', 'closed(internal, expected)',
+    ),
+    'scripts/test/online-raster-lineage_test.py': (
+        'test_area_sieve_approved_single_source_current_raster_save_and_hidden_public_operation',
+    ),
+    'Makefile': (
+        'test_online_sieve_area_fixture.py', '@$(MAKE) test-raster-sieve-area-online-runner',
+        'scripts/test/raster-sieve-area-persistence-online_test.py',
+        'scripts/test/online-raster-sieve-area-fixture_test.py',
+        'scripts/test/online-hosted-raster-sieve-area-gate_test.py',
+        'test_area_sieve_requires_exact_cog_matrix_budget_and_regressions',
+    ),
+}
+
+def validate_raster_sieve_area(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-sieve-area-persistence'
+    if suite not in registered: return
+    workflow = (repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-sieve-area-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-sieve-area-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-sieve-area-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body') or 'cancel-in-progress: false' not in job.group('body')
+        or 'if: always()' not in job.group('body') or 'logs/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('area sieve requires an independent manual Hosted NFS job')
+    make = (repository/'Makefile').read_text()
+    if 'test_online_sieve_area_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('area sieve Native omitted from standard recipe')
+    for relative, fragments in AREA_SIEVE_REQUIRED.items():
+        path = repository/relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('area sieve strict contract incomplete: '+relative)
+    source = (repository/'business/scripts/online-raster-sieve-area-fixture.py').read_text()
+    tree = ast.parse(source)
+    actual = {key: [node.value for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == key for target in node.targets)] for key in ('CASES','FAILURES')}
+    expected_cases = {'area-four.cog.tif': ('classes.tif', 30.0, 4, (7, 9), 'direct'), 'area-eight.cog.tif': ('classes.tif', 30.0, 8, (7, 9), 'direct'), 'reclassified.cog.tif': ('classes.tif', 30.0, 4, (-7, -9), 'reclassify'), 'feet.cog.tif': ('feet.tif', 1.1148364800000001, 4, (7, 9), 'direct'), 'survey-feet.cog.tif': ('survey-feet.tif', 1.1148409393592984, 4, (7, 9), 'direct'), 'equal.cog.tif': ('classes.tif', 12.0, 4, (7, 9), 'direct'), 'below.cog.tif': ('classes.tif', 11.999999999999998, 4, (7, 9), 'direct'), 'above.cog.tif': ('classes.tif', 12.000000000000002, 4, (7, 9), 'direct'), 'pixel-control.cog.tif': ('classes.tif', 5, 4, (7, 9), 'pixels'), 'omitted.cog.tif': ('classes.tif', 30.0, 4, None, 'direct'), 'empty.cog.tif': ('classes.tif', 30.0, 4, (), 'direct'), 'int64.cog.tif': ('safe-int64.tif', 30.0, 4, (0, 9), 'direct'), 'uint64.cog.tif': ('safe-uint64.tif', 30.0, 8, (0, 9), 'direct'), 'resolution-10.cog.tif': ('resolution-10.tif', 1000.0, 4, (7, 9), 'direct'), 'resolution-30.cog.tif': ('resolution-30.tif', 1000.0, 4, (7, 9), 'direct'), 'invalid.cog.tif': ('invalid.tif', 30.0, 8, (7, 9), 'direct')}
+    expected_failures = ('threshold_missing', 'threshold_both', 'threshold_pixel_null', 'threshold_area_null_with_pixel', 'area_null', 'area_boolean', 'area_zero', 'area_negative', 'area_string', 'area_array', 'area_object', 'grid_geographic', 'grid_no_crs', 'grid_no_transform', 'grid_rotated_x', 'grid_rotated_y', 'grid_unknown_unit', 'grid_compound', 'band', 'alpha', 'complex', 'connectivity_value', 'connectivity_fractional', 'connectivity_boolean', 'fractional', 'unsafe', 'int64', 'uint64', 'protected_null', 'protected_item_object', 'protected_duplicate', 'protected_positive_unsafe')
+    if (any(len(nodes) != 1 for nodes in actual.values()) or repr(ast.literal_eval(actual['CASES'][0])) != repr(expected_cases)
+        or repr(ast.literal_eval(actual['FAILURES'][0])) != repr(expected_failures)): raise RegistrationError('area sieve fixed 16/64 matrix changed')
+    if any(word in source for word in ('operators.raster_compute', 'np.percentile', 'np.quantile', 'gdal.RasterizeLayer', 'gdal.Polygonize')):
+        raise RegistrationError('area sieve oracle must remain independent')
+
 def validate_vector_zonal_percentile(repository: Path, registered: set[str]) -> None:
     suite = 'vector-zonal-percentile-persistence'
     if suite not in registered: return
@@ -5490,6 +5580,7 @@ def check_registration(repository: Path) -> None:
     validate_vector_zonal_percentile(repository, registered)
     validate_raster_focal_variety(repository, registered)
     validate_raster_sieve_protected(repository, registered)
+    validate_raster_sieve_area(repository, registered)
     validate_raster_nibble_profile(repository, registered)
     validate_raster_disk_pressure_profile(repository, registered)
     validate_raster_nibble_capacity_profile(repository, registered)
