@@ -107,8 +107,8 @@ _PERCENTILE=('percentile必须为0至100之间的有限数值，且不能为布�
 MESSAGES={
  **{name:_PERCENTILE for name in FAILURES if name.startswith('percentile_')},
  'unused':('只有method=percentile时才能提供percentile参数','percentile is only accepted when method=percentile'),
- 'method':('method必须为sum、mean、min、max、stddev、mode、median、percentile或variety',
-           'method must be sum, mean, min, max, stddev, mode, median, percentile or variety'),
+ 'method':('method必须为sum、mean、min、max、stddev、mode、median、percentile、variety或weighted_mean',
+           'method must be sum, mean, min, max, stddev, mode, median, percentile, variety or weighted_mean'),
  **{name:('window_size must be the integer 3 or 5',)*2 for name in FAILURES if name.startswith('window_')},
  **{name:('band must be a valid one-based index',)*2 for name in ('band','band_zero','band_boolean','band_string')},
  'alpha':('Focal statistics require a data band, not alpha',)*2,

@@ -103,6 +103,7 @@ def list_operators():
         'geodataframe': 'object',
         'GeoDataFrame': 'object',
         'list[float]': 'array',
+        'list[list[float]]': 'array',
         'list[str]': 'array',
         'list[int]': 'array',
         'list[dict]': 'array',
@@ -126,8 +127,8 @@ def list_operators():
                 }
 
                 # 数组类型需要指定item_type
-                if param['type'] in ['list[float]', 'list[str]', 'list[int]', 'list[dict]', 'list[raster]']:
-                    param_meta["item_type"] = {'list[float]': 'float', 'list[str]': 'string', 'list[int]': 'integer', 'list[dict]': 'object', 'list[raster]': 'raster'}[param['type']]
+                if param['type'] in ['list[float]', 'list[str]', 'list[int]', 'list[dict]', 'list[raster]', 'list[list[float]]']:
+                    param_meta["item_type"] = {'list[list[float]]': 'array', 'list[float]': 'float', 'list[str]': 'string', 'list[int]': 'integer', 'list[dict]': 'object', 'list[raster]': 'raster'}[param['type']]
 
                 if param.get('enum'):
                     param_meta["enum"] = param['enum']
