@@ -72,18 +72,51 @@ def test_vector_zonal_percentile_real_physical_corruption_is_rejected(vector_zon
         ds=gdal.Open(str(root/'values.tif'),gdal.GA_Update);ds.GetRasterBand(1).GetMaskBand().WriteArray(np.zeros((1,1),np.uint8),10,10);ds=None
     elif fault=='sidecar':(root/'outputs'/'unrequested.gpkg').write_bytes(b'bad')
     else:
-        ds=ogr.Open(str(root/'outputs'/'p50-even.gpkg'),1);layer=ds.GetLayer(0);feature=layer.GetNextFeature()
-        if fault=='schema':layer.CreateField(ogr.FieldDefn('unexpected',ogr.OFTString))
+        ds=ogr.Open(str(root/'outputs'/'p50-even.gpkg'),1);layer=ds.GetLayer(0)
+        if fault=='schema':
+            # CreateField invalidates Features using the old layer definition.
+            # This branch must not fetch a Feature, including for cleanup.
+            before_schema=[(layer.GetLayerDefn().GetFieldDefn(i).GetName(),layer.GetLayerDefn().GetFieldDefn(i).GetType()) for i in range(layer.GetLayerDefn().GetFieldCount())]
+            assert layer.CreateField(ogr.FieldDefn('unexpected',ogr.OFTString))==ogr.OGRERR_NONE
         else:
+            feature=layer.GetNextFeature();assert feature is not None
             if fault in ('percentile','one-ulp'):feature.SetField('zonal_percentile_value',3.5 if fault=='percentile' else math.nextafter(2.5,math.inf))
             elif fault=='geometry':feature.SetGeometry(ogr.CreateGeometryFromWkt('POLYGON ((0 0,1 0,1 1,0 0))'))
             elif fault=='count':feature.SetField('zonal_valid_count',99)
             elif fault=='null':feature.SetFieldNull('zonal_percentile_value')
             else:feature.SetField('label','changed')
-            layer.SetFeature(feature)
-        feature=layer=ds=None
+            assert layer.SetFeature(feature)==ogr.OGRERR_NONE
+            feature=None
+        layer=ds=None
+        if fault=='schema':
+            reopened=ogr.Open(str(root/'outputs'/'p50-even.gpkg'),0);layer=reopened.GetLayer(0)
+            actual_schema=[(layer.GetLayerDefn().GetFieldDefn(i).GetName(),layer.GetLayerDefn().GetFieldDefn(i).GetType()) for i in range(layer.GetLayerDefn().GetFieldCount())]
+            assert actual_schema==before_schema+[('unexpected',ogr.OFTString)]
+            layer=reopened=None
     reason={'percentile':'exact percentile','one-ulp':'exact percentile','geometry':'full geometry','count':'exact count','null':'nonnumeric or nonfinite statistic','property':'original property','schema':'field names/order/types','source-mask':'complete source pixels','sidecar':'unexpected output'}[fault]
     with pytest.raises(f.FixtureError,match=reason):f.verify(root,list(f.CASES),expected)
+
+
+def test_vector_zonal_percentile_schema_change_has_no_live_feature(vector_zonal_sources,tmp_path,monkeypatch):
+    """OGR schema changes invalidate live Features; reject before native damage."""
+    import weakref
+    from osgeo import ogr
+    original_next=ogr.Layer.GetNextFeature;original_create=ogr.Layer.CreateField
+    observed=[];changes=[]
+    def next_feature(layer,*args,**kwargs):
+        feature=original_next(layer,*args,**kwargs)
+        if feature is not None:observed.append((int(layer.this),weakref.ref(feature)))
+        return feature
+    def create_field(layer,definition,*args,**kwargs):
+        live=sum(reference() is not None for owner,reference in observed if owner==int(layer.this))
+        assert live==0,'schema mutation would invalidate a live OGR Feature'
+        changes.append((definition.GetName(),definition.GetType(),live))
+        return original_create(layer,definition,*args,**kwargs)
+    monkeypatch.setattr(ogr.Layer,'GetNextFeature',next_feature)
+    monkeypatch.setattr(ogr.Layer,'CreateField',create_field)
+    test_vector_zonal_percentile_real_physical_corruption_is_rejected(vector_zonal_sources,tmp_path,'schema')
+    assert changes==[('unexpected',ogr.OFTString,0)]
+
 
 @pytest.mark.parametrize('fault',['changed','deleted','manifest','extra'])
 def test_vector_zonal_percentile_gpkg_archive_never_repairs_or_overwrites(vector_zonal_sources,tmp_path,fault):
