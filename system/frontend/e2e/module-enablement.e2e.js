@@ -397,7 +397,7 @@ test('Catalog intent is explicit, conflicts preserve input and reads never decla
   expect(creates).toEqual([])
   await page.locator('label.el-radio').filter({ hasText: '未启用 Catalog' }).click()
   await submit.click()
-  await expect(page.getByRole('dialog')).toContainText('这不会向任何人自动授予读取权限')
+  await expect(page.getByRole('dialog')).toContainText('直接授权仍须相应功能权限及引擎管理资格。')
   await page.getByRole('button', { name: '取消', exact: true }).click()
   expect(creates).toEqual([])
   await submit.click()
