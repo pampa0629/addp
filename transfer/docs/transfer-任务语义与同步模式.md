@@ -2,9 +2,11 @@
 
 状态：正式
 
-更新时间：2026-09-12
+更新时间：2026-10-31
 
-本文定义 Transfer `sync` 任务的稳定语义、执行边界、状态所有权和当前支持范围。配置字段、类型矩阵和 API 以 [Transfer 模块基本概念及配置说明](transfer-基本概念及配置说明.md) 为准；公共任务与 execution 字段以 [ADDP 任务体系规范](../../docs/spec/addp任务体系规范.md) 为准；尚未实现的能力见 [Transfer 后续能力清单](../../docs/next/transfer后续能力清单.md)。
+本文定义 Transfer `sync` 任务的稳定语义、执行边界、状态所有权和当前支持范围。配置字段和类型矩阵见[配置说明](transfer-基本概念及配置说明.md)，API 入口、身份与动作权限见[任务表](tables/tasks表.md#五api)；公共任务与 execution 字段以 [ADDP 任务体系规范](../../docs/spec/addp任务体系规范.md) 为准；尚未实现的能力见 [Transfer 后续能力清单](../../docs/next/transfer后续能力清单.md)。
+
+阅读导航：[触发身份与调度授权](#触发身份与调度授权)、[状态与恢复](#五状态checkpoint-与-replay)、[continuous 生命周期](#64-生命周期)、[验证范围](#十一验证范围)。
 
 ## 一、模块定位
 
@@ -84,6 +86,12 @@ Kafka poll 会分批读取，但不因此成为 bounded；数据库 CDC 的 init
 
 `continuous` 是执行边界，不是 `realtime` 触发类型。
 
+#### 触发身份与调度授权
+
+触发标签不授予身份或权限。用户任务定义与固定 Service Client 的 TaskProvider 入口、精确动作 Permission 统一见[任务表 API](tables/tasks表.md#五api)。手动执行以同 Tenant 的本次 User 为主体，不借用任务创建者或已保存的调度主体；用户与服务身份及父执行来源链按[任务授权主体规范](../../docs/spec/tasks/任务定义与授权.md#任务授权主体)核验。
+
+带 Cron 的 bounded 任务使用调度授权；暂停清除本地授权，恢复由当前 User 重新授权，不沿用暂停前的主体或以 Service 身份替代。附加执行权限、主体与摘要的原子更新、触发时重核及失败语义统一见[Transfer 定时任务授权](../../docs/spec/tasks/任务定义与授权.md#transfer-定时任务授权)，模块内分工与操作导航见[调度授权与控制](transfer-基本概念及配置说明.md#调度授权与控制)。任务与调度授权均不代替源读、目标写及运行期保护核验。
+
 ### 2.5 目标应用方式
 
 | 取值 | 含义 |
@@ -151,6 +159,8 @@ watermark 支持 execution 间 resume，但不能发现物理删除。单字段�
 | runtime ownership | `transfer.runtime_leases` | 保存 owner、lease、heartbeat 和 fencing token。 |
 | 目标 apply ledger | 目标业务数据库 | 防止重复或失效 worker 覆盖更高 position。 |
 
+bounded 任务的 pause/resume 只控制未来调度，不中断已有 execution；无 Cron 的手动任务不支持这两个操作。入口与权限见[任务表控制说明](tables/tasks表.md#用户任务定义与控制)，命令见[调度操作示例](快速开始.md#暂停与恢复定时调度)。这与下面的 execution 间位置恢复分开认定。
+
 execution checkpoint 不是增量主状态。watermark resume 和 Kafka/CDC resume 都从 `transfer.sync_states` 开始；结束的 execution 不会重新变为 running。
 
 业务 Kafka bounded replay 是独立 execution。它读取显式 partition offset 范围，以 execution-scoped apply identity 写入不存在的新 PostgreSQL 隔离表，不修改 owner task、主 committed position、主 runtime lease、主 apply identity 或主目标，因此可以与主 continuous runtime 并行。
@@ -167,7 +177,7 @@ continuous session 不进入 bounded execution claim。Transfer 使用独立 con
 
 同一 task 同一时刻只有一个合法 runtime owner。`transfer.runtime_leases` 提供 lease、heartbeat 和 fencing；`transfer.sync_states` 按 partition 保存 `kafka_offset/v1.next_offset`。Kafka auto commit 禁用，consumer group 只承担 partition assignment。
 
-每次启动或恢复都会创建新的 execution。worker shutdown、lease expiry 和普通可恢复失败会结束当前 execution；任务仍为运行期望时，supervisor 按持久化退避和 circuit 状态创建 recovery execution，并从 committed position 恢复。schema drift、Pause 和 Stop 不自动恢复。
+continuous 的用户运行控制见[生命周期](#64-生命周期)。worker shutdown、lease expiry 和普通可恢复失败会结束当前 execution；任务仍为运行期望时，supervisor 按持久化退避和 circuit 状态创建 recovery execution，并从 committed position 恢复。schema drift、Pause 和 Stop 不自动恢复。
 
 ### 6.1 交付保证
 
@@ -228,7 +238,9 @@ ArcGIS SDE 后续数据面不进入上述 Oracle Debezium/LogMiner 分支。唯�
 
 ### 6.4 生命周期
 
-Pause 停止目标应用并结束当前 session；Resume 在 committed position 仍处于 Kafka retention 范围时创建新 execution 并恢复。
+本节只描述 continuous 的运行控制；用户入口与逐动作权限见[任务表](tables/tasks表.md#用户任务定义与控制)，当前 User 与执行授权遵循[触发身份规则](#触发身份与调度授权)。它不使用 bounded 定时任务的暂停清除／恢复重建调度授权流程。
+
+Pause 停止目标应用并结束当前 session；启动或 Resume 创建新 execution，恢复须确认 committed position 仍处于 Kafka retention 范围。位置已被 retention 清除时必须明确失败，不能静默跳到 earliest。真实停止、释放 session／lease 与恢复约束见[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)。
 
 数据库 CDC 的 Pause 不暂停 connector。捕获仍会写入 Infra Kafka，主要风险是 backlog、磁盘和 retention；connector 或 Kafka 故障时还要分别观测 PostgreSQL WAL、MySQL binlog 或 Oracle redo/archive log 容量风险。
 
@@ -254,7 +266,7 @@ continuous worker 定期读取每个 partition 的 earliest/latest position，�
 - retention horizon。
 - checkpoint age 与 health。
 
-诊断写入 `common.task_executions.metadata.continuous`。数据库 CDC 在同一次诊断采样中把当前 capture generation 的安全摘要写入唯一 `metadata.continuous.capture`，仅包含 `generation`、类型化 `source_recovery` 和 `source_transactions`；私有错误、连接信息、凭据、Provider 资源名和未知字段不得进入公共 execution。非数据库 continuous execution 不保留该对象。Monitor 只读取公共 execution metadata，不直连 Kafka，也不读取 Transfer 的 `sync_states`、`runtime_leases`、`capture_resources` 或 Provider 私表。Resume 前必须验证 committed position 没有被 retention 清除，不能静默跳到 earliest。
+诊断写入 `common.task_executions.metadata.continuous`。数据库 CDC 在同一次诊断采样中把当前 capture generation 的安全摘要写入唯一 `metadata.continuous.capture`，仅包含 `generation`、类型化 `source_recovery` 和 `source_transactions`；私有错误、连接信息、凭据、Provider 资源名和未知字段不得进入公共 execution。非数据库 continuous execution 不保留该对象。Monitor 只读取公共 execution metadata，不直连 Kafka，也不读取 Transfer 的 `sync_states`、`runtime_leases`、`capture_resources` 或 Provider 私表。恢复前的位置核验统一见[生命周期](#64-生命周期)；诊断展示不替代恢复资格或实际恢复结果。
 
 ## 七、Schema 变化
 
@@ -310,3 +322,9 @@ Meta 提交失败不回滚已经提交的数据或 schema。Transfer 只触发�
 - 不通过忽略未知字段维持表面成功。
 
 只有出现已验证的事件时间窗口、stream join、CEP、大规模有状态计算或当前 runtime 无法满足的并行规模时，才重新评估 Flink；评估也必须复用同一任务语义、ChangeEvent、execution 和 committed position 契约。
+
+## 十一、验证范围
+
+标准门禁、固定版本证据、失败与修复结论及未覆盖项统一见[模块验证](../CLAUDE.md#开发与验证)，操作与结果核对见[快速开始](快速开始.md#五开发验证)。本专题的语义与支持矩阵不作为某一版本的运行通过记录。
+
+调度暂停／恢复、snapshot 重跑、watermark 续读及 continuous 停止／恢复分别验收。静态路由与授权声明、调度更新或 execution 创建成功，不证明真实 System → Gateway → Owner／Worker 链路、目标数据或公开入口已通过；未运行、失败、跳过和未覆盖项不计为通过。
