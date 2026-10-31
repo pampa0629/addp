@@ -60,17 +60,11 @@ common-python/
 
 ## 验证
 
-```bash
-cd common-python
-uv sync --extra dev --extra inference-langchain
-uv run pytest -q
+开发环境、依赖准备与常用验证统一见 [README 开发与验证](README.md#开发与验证)；从仓库根目录按[测试标准入口](../docs/spec/addp测试与验收规范.md#三标准入口)选择实际改动范围。
 
-# 正式 CLI wheel、全新 venv、pipx 生命周期和 macOS Keychain 产品门禁
-cd ..
-make test-release RELEASE_SUITE=common-python-cli
-```
+共享库全量回归、Agent 离线评测、授权检查及受影响 owner 的覆盖分工见[Tool 最低验证](../docs/spec/addp智能体Tool开放规范.md#八变更与验证)。CLI 产品的 wheel、全新 venv、pipx 生命周期、真实 macOS Keychain 门禁与独立 System IAM T2 的范围及前置条件，统一沿用上述 README。
 
-如本地未安装测试依赖，可先用引用模块的虚拟环境做导入和最小调用验证。
+导入与最小调用仅用于环境定位，不能替代完整门禁。共享库回归和 Agent 离线结果不证明真实路由、跨模块或模型调用可用；CLI 产品认证与服务端事务验证分别认定。缺少依赖、未运行、失败和未覆盖项分别记录，不计为通过。
 
 ## 相关文档
 
