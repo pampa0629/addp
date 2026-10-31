@@ -1237,15 +1237,15 @@ def test_dem_tri_single_workflow_explicit_band_unit_metres_and_complete_window_m
 
 
 def test_vector_geometry_groups_have_expected_counts_and_clear_display_names():
-    expected = {'几何构造': 6, '几何整理': 7, '拓扑检查': 8, '线网处理': 5}
+    expected = {'几何构造': 6, '几何整理': 7, '拓扑检查': 8, '线网处理': 6}
     operators = list_operators()
     moved = [op for op in operators if op['category_path'][0] == '矢量处理' and op['category'] in expected]
-    assert len(moved) == len({op['id'] for op in moved}) == 26
+    assert len(moved) == len({op['id'] for op in moved}) == 27
     assert {group: sum(op['category'] == group for op in moved) for group in expected} == expected
     assert not any(op['category_path'] == ['矢量处理', '几何处理'] for op in operators)
     names = {op['id']: op['display_name'] for op in moved}
-    assert {key: names[key] for key in ('batch_buffer', 'envelope')} == {
-        'batch_buffer': '多距缓冲', 'envelope': '外包矩形',
+    assert {key: names[key] for key in ('batch_buffer', 'envelope', 'extract_polygon_rings')} == {
+        'batch_buffer': '多距缓冲', 'envelope': '外包矩形', 'extract_polygon_rings': '面界提取',
     }
 
 
