@@ -53,7 +53,7 @@ if any(argument.endswith('/business/elasticsearch/init.py') for argument in sys.
     raise SystemExit(1 if os.environ.get('FAIL_SEED') == '1' else 0)
 if sys.argv[1:] != ['-']:
     raise SystemExit(subprocess.call([{sys.executable!r}] + sys.argv[1:]))
-master = {{'aliveworkers': 1, 'activeapps': [{{'name': 'Thrift JDBC/ODBC Server', 'state': 'RUNNING'}}]}}
+master = {{'status': 'ALIVE', 'aliveworkers': 1, 'activeapps': []}}
 code = sys.stdin.read()
 with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return_value=io.BytesIO(json.dumps(master).encode())):
     exec(compile(code, '<fixture-inline>', 'exec'), {{'__name__': '__main__'}})
@@ -91,6 +91,8 @@ with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return
         spark = self.secret / 'spark-engine.json'
         self.assertEqual(stat.S_IMODE(spark.stat().st_mode), 0o600)
         self.assertEqual(json.loads(spark.read_text())['engine_type'], 'spark')
+        self.assertEqual(json.loads(spark.read_text())['connection_info'], {'host': '127.0.0.1', 'port': 7077, 'web_ui_url': 'http://127.0.0.1:18080'})
+        self.assertNotIn('start-thriftserver', commands)
         self.assertEqual(len(list(self.state.iterdir())), 3)
         self.assertNotIn('local[*]', commands)
         self.assertEqual(self.run_fixture('stop').returncode, 0)

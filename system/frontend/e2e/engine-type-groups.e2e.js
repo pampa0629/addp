@@ -11,11 +11,19 @@ const descriptor = (type, displayName, family, port = 5432) => ({
     { key: 'port', label_key: 'storageEngine.port', input: 'number', default: port }
   ] }
 })
+const sparkDescriptor = {
+  ...descriptor('spark', 'Apache Spark', 'compute', 7077),
+  connection_spec: { schema_version: 'engine.connection/v1', fields: [
+    { key: 'host', label_key: 'storageEngine.host', input: 'text', default: 'localhost', required: true, identity: true },
+    { key: 'port', label_key: 'storageEngine.sparkMasterPort', input: 'number', default: 7077, required: true, identity: true },
+    { key: 'web_ui_url', label_key: 'storageEngine.sparkMasterWebUI', input: 'text', required: true }
+  ] }
+}
 const descriptors = [
   descriptor('clickhouse', 'ClickHouse', 'tabular', 9000),
   descriptor('postgresql', 'PostgreSQL', 'tabular'),
   descriptor('oracle', 'Oracle', 'tabular', 1521),
-  { ...descriptor('spark', 'Apache Spark', 'tabular', 10000), registration_group: 'compute' },
+  sparkDescriptor,
   { ...descriptor('vendor_compute', 'Another compute engine', 'query_runtime', 1235), registration_group: 'compute' },
   descriptor('futuredb', 'Newly compiled database', 'tabular', 1234),
   descriptor('mongodb', 'MongoDB', 'dynamic_schema', 27017),
@@ -48,6 +56,11 @@ async function fixture(page, language = 'zh-cn', typeDescriptors = descriptors, 
         permissions: ['system.engine.read', 'system.engine.create', 'system.engine.update'] }] } })
     if (request.method() !== 'GET') writes.push({ path, body: request.postDataJSON() })
     if (path.endsWith('/engine-types')) return reply(typeDescriptors)
+    if (path.endsWith('/engines') && request.method() === 'POST') {
+      const submitted = request.postDataJSON()
+      return reply({ ...submitted, id: '3', engine_origin: 'general', lifecycle_state: 'active',
+        capabilities: typeDescriptors.find(item => item.type === submitted.engine_type)?.capabilities })
+    }
     if (path.endsWith('/engines/2')) return reply({ id: '2', name: 'Existing HighGo', engine_type: 'highgo', engine_origin: 'general', lifecycle_state: 'active', connection_info: {}, ...engineFacts })
     if (path.endsWith('/engines')) return reply([{ id: '2', name: 'Existing PostgreSQL',
       engine_type: 'postgresql', engine_origin: 'general', lifecycle_state: 'active',
@@ -148,7 +161,7 @@ test('compute registration uses the plugin group and retains the declared connec
   await search.fill('spark')
   await expect(sidebar(dialog).locator('.engine-type-group-title')).toHaveText(['计算引擎'])
   await sidebar(dialog).getByRole('button', { name: 'Apache Spark', exact: true }).click()
-  await expect(dialog.getByRole('spinbutton')).toHaveValue('10000')
+  await expect(dialog.getByRole('spinbutton')).toHaveValue('7077')
   await search.fill('vendor_compute')
   await expect(sidebar(dialog).locator('.engine-type-group-title')).toHaveText(['计算引擎'])
   await sidebar(dialog).getByRole('button', { name: 'Another compute engine', exact: true }).click()
@@ -253,4 +266,32 @@ test('an engine without a successful version probe does not infer a version from
   await expect(dialog.getByText('实例版本', { exact: true })).toHaveCount(0)
   await expect(dialog.getByText('版本探测时间', { exact: true })).toHaveCount(0)
   expect(writes).toEqual([])
+})
+
+
+test('compute registration uses Master fields and never offers a metadata scan', async ({ page }) => {
+  const source = { ...descriptor('catalog_vendor', 'Catalog source', 'tabular'), capabilities: {
+    engine_family: 'tabular', storage: { catalog_model: {}, catalog: { supported: true, real_time: true } }
+  } }
+  const writes = await fixture(page, 'zh-cn', [source, sparkDescriptor])
+  await page.getByRole('button', { name: '注册通用引擎', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '新建通用引擎', exact: true })
+  await expect(dialog.getByText('元数据扫描配置（可选）', { exact: true })).toBeVisible()
+  await group(dialog, '计算引擎').getByRole('button', { name: /^计算引擎/ }).click()
+  await sidebar(dialog).getByRole('button', { name: 'Apache Spark', exact: true }).click()
+  await expect(dialog.getByText('元数据扫描配置（可选）', { exact: true })).toHaveCount(0)
+  await expect(dialog.getByText('Master 计算端口', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('Master Web UI 地址', { exact: true })).toBeVisible()
+  await expect(dialog.getByRole('spinbutton')).toHaveValue('7077')
+  await dialog.getByRole('textbox', { name: /^\*?\s*名称$/ }).fill('Master compute cluster')
+  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(dialog.locator('.el-form-item__error')).toContainText(['请输入Master Web UI 地址'])
+  expect(writes).toEqual([])
+  await dialog.getByRole('textbox', { name: /^\*?\s*Master Web UI 地址$/ }).fill('http://localhost:18088')
+  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  expect(writes).toHaveLength(1)
+  expect(writes[0].body.connection_info).toEqual({ host: 'localhost', port: 7077, web_ui_url: 'http://localhost:18088' })
+  expect(writes[0].body).not.toHaveProperty('scan_config')
+  await expect(page.getByText(/扫描计划同步失败/)).toHaveCount(0)
 })

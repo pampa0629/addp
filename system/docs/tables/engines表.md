@@ -92,8 +92,9 @@
 - 不需要 `extension_api_config`
 
 **典型类型**：
-- 数据库：`postgresql`、`mysql`、`doris`、`clickhouse`、`mongodb`、`spark_sql`
+- 数据库：`postgresql`、`mysql`、`doris`、`clickhouse`、`mongodb`
 - 对象存储：`minio`、`s3`
+- Standalone 计算集群：`spark`；连接字段为 Master `host`、`port` 和 `web_ui_url`，不提供存储目录。
 
 **普通 Engine API 示例**：
 ```json

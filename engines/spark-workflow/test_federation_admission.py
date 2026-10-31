@@ -32,10 +32,16 @@ if args[0] == 'compose':
         if '/opt/spark/bin/spark-submit' in args:
             state['phases'].append(args[-1])
             status = 19 if os.environ.get('FAIL_AT') == 'driver' else 0
+        elif 'uname' in args:
+            print('aarch64')
+        elif '/tmp/addp-spark-probe.test' in args:
+            status = 21 if os.environ.get('FAIL_AT') == 'probe' else 0
         else:
             sys.stdin.read()
             if 'SELECT HEX(label) FROM customers WHERE id=1' in args:
                 print('00' if os.environ.get('FAIL_AT') == 'seed' else 'E4B8ADE696872020')
+    elif args[0] == 'cp':
+        assert Path(args[1]).is_file()
     else: raise AssertionError(args)
 elif args[0] in ('ps', 'volume', 'network'):
     if state['active'] or os.environ.get('FAIL_AT') == 'leak': print('owned-residual')
@@ -45,12 +51,18 @@ sys.exit(status)
 '''
         gate = ROOT / 'scripts/test/common-spark-federation-gate.sh'
         subprocess.run(['bash', '-n', str(gate)], check=True)
-        for failure in ('', 'up', 'driver', 'leak', 'seed'):
+        for failure in ('', 'up', 'compile', 'probe', 'driver', 'leak', 'seed'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
                 path = Path(directory)
                 docker = path / 'docker'
                 docker.write_text('#!' + sys.executable + '\n' + fake)
                 docker.chmod(0o700)
+                compiler = path / 'go'
+                compiler.write_text('#!' + sys.executable + '\nimport os,sys\nfrom pathlib import Path\nif os.environ.get("FAIL_AT")=="compile":sys.exit(18)\nPath(sys.argv[sys.argv.index("-o")+1]).write_bytes(b"fixture-test-only")\n')
+                compiler.chmod(0o700)
+                sleeper = path / 'sleep'
+                sleeper.write_text('#!/bin/sh\nexit 0\n')
+                sleeper.chmod(0o700)
                 env = dict(os.environ, PATH=directory + os.pathsep + os.environ['PATH'],
                            STATE=str(path / 'state.json'), FAIL_AT=failure)
                 result = subprocess.run(['bash', str(gate)], env=env, capture_output=True,

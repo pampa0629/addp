@@ -93,7 +93,6 @@ docker run -d --name addp-elasticsearch-online-master --label "$LABEL=$SUITE" --
   --entrypoint bash "$SPARK_IMAGE" -c '
     set -e
     /opt/spark/sbin/start-master.sh --host 127.0.0.1 --port 7077 --webui-port 18080
-    /opt/spark/sbin/start-thriftserver.sh --master spark://127.0.0.1:7077 --conf spark.driver.host=127.0.0.1 --conf spark.driver.bindAddress=127.0.0.1 --conf spark.cores.max=1 --conf spark.executor.cores=1 --conf spark.executor.memory=1g
     exec tail -f /dev/null' >/dev/null
 docker run -d --name addp-elasticsearch-online-worker --label "$LABEL=$SUITE" --network host --user root --memory 3g \
   --entrypoint /opt/spark/bin/spark-class "$SPARK_IMAGE" org.apache.spark.deploy.worker.Worker \
@@ -104,8 +103,8 @@ from pathlib import Path
 deadline = time.monotonic() + 120
 while time.monotonic() < deadline:
     try:
-        with urllib.request.urlopen('http://127.0.0.1:18080/json', timeout=5) as response: master = json.load(response)
-        if master.get('aliveworkers') == 1 and any(app.get('name') == 'Thrift JDBC/ODBC Server' and app.get('state') == 'RUNNING' for app in master.get('activeapps', [])): break
+        with urllib.request.urlopen('http://127.0.0.1:18080/json/', timeout=5) as response: master = json.load(response)
+        if master.get('status') == 'ALIVE' and master.get('aliveworkers') == 1: break
     except (OSError, ValueError): pass
     time.sleep(1)
 else: raise SystemExit('Spark Standalone readiness timed out')
@@ -119,7 +118,7 @@ with os.fdopen(fd, 'w') as stream:
     json.dump(value, stream)
 value = {'name': 'Hosted Spark', 'engine_type': 'spark', 'engine_origin': 'general',
          'description': 'Disposable ES distributed Spark acceptance',
-         'connection_info': {'host': '127.0.0.1', 'port': 10000, 'master_port': 7077, 'database': 'default', 'username': 'spark'}}
+         'connection_info': {'host': '127.0.0.1', 'port': 7077, 'web_ui_url': 'http://127.0.0.1:18080'}}
 fd = os.open(Path(os.environ['ADDP_ONLINE_SECRET_DIR']) / 'spark-engine.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
 with os.fdopen(fd, 'w') as stream: json.dump(value, stream)
 PY

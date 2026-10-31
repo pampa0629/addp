@@ -145,5 +145,37 @@ class SystemClientTest(unittest.TestCase):
             post.assert_not_called()
 
 
+
+
+class ClusterMasterConnectionTest(unittest.TestCase):
+    def test_uses_explicit_registered_master_port_and_ipv6(self):
+        from spark_connector import cluster_master_url
+        self.assertEqual(cluster_master_url({'host': 'cluster.example', 'port': 17077, 'web_ui_url': 'http://cluster.example:18088'}), 'spark://cluster.example:17077')
+        self.assertEqual(cluster_master_url({'host': '::1', 'port': 7077, 'web_ui_url': 'http://[::1]:18088'}), 'spark://[::1]:7077')
+
+    def test_never_accepts_missing_port_or_legacy_cluster_fields(self):
+        from spark_connector import cluster_master_url
+        for connection in ({'host': 'cluster', 'web_ui_url': 'http://cluster:8080'},
+                           {'host': 'cluster', 'port': 10000, 'master_port': 7077},
+                           {'host': 'cluster:7077', 'port': 7077, 'web_ui_url': 'http://cluster:8080'},
+                           {'host': 'cluster', 'port': True, 'web_ui_url': 'http://cluster:8080'}):
+            with self.assertRaises(ValueError):
+                cluster_master_url(connection)
+
+    def test_workflow_session_submits_to_registered_compute_port(self):
+        from unittest.mock import MagicMock
+        import spark_connector
+        builder = MagicMock()
+        builder.appName.return_value = builder
+        builder.config.return_value = builder
+        builder.master.return_value = builder
+        connector = spark_connector.SparkConnector()
+        with patch.object(connector, 'get_engine_from_system', return_value={'connection_info': {'host': 'cluster.example', 'port': 17077, 'web_ui_url': 'http://cluster.example:18088'}}), \
+             patch.object(spark_connector, 'configure_spark_dependencies', return_value=builder), \
+             patch.dict(os.environ, {'SPARK_MODE': 'standalone'}):
+            connector.get_or_create_session(19, 7)
+        builder.master.assert_called_once_with('spark://cluster.example:17077')
+
+
 if __name__ == "__main__":
     unittest.main()

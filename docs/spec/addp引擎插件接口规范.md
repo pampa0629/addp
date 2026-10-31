@@ -41,11 +41,11 @@ type EnginePlugin interface {
 - `Type()` 必须稳定、小写、唯一，如 `postgresql`、`minio`、`neo4j`。
 - `EngineOrigin()` 表达引擎来源，取值为 `general` 或 `extension`；它不是能力判断字段，上层功能判断必须基于 capabilities。
 - `connection_info` 是所有引擎连接信息的统一事实源，保持 key-value map；字段 key 使用稳定英文机器名，不承载 i18n。
-- 所有可由 System 注册的内置插件必须实现 `ConnectionSpecProvider.ConnectionSpec()`，返回 `engine.connection/v1`。字段顺序、控件类型、默认值、必填、敏感、身份、条件显示、选项和跨字段约束只能在该描述中声明一次；System API、共享前端表单、敏感字段处理和身份归一化必须消费该描述，不得维护 `engine_type` 列表或条件分支。
+- 所有可由 System 注册的内置插件必须实现 `ConnectionSpecProvider.ConnectionSpec()`，返回 `engine.connection/v1`。字段顺序、控件类型、默认值、必填、敏感、身份、条件显示、选项和跨字段约束只能在该描述中声明一次；System API、共享前端表单、敏感字段处理和身份归一化必须消费该描述，不得维护 `engine_type` 列表或条件分支。 面向用户的连接详情只投影当前声明字段，不能返回已删除字段中的历史密文；显式编辑或连接测试覆盖配置时，先按当前描述投影原记录，再合并提交值并执行插件校验。未编辑的存量配置不批量改写，明确提交的非法字段不能被投影静默吞掉。
 - 商业数据库插件若受官方驱动平台与再分发限制，可以把不含驱动的插件控制面代码编入 System，同时通过专用 build tag 只在获准平台加载官方驱动。此时无驱动进程只允许登记和展示，不得执行 `TestConnection` 或任何数据面 Provider；调用必须返回明确的执行边界错误，不能退化为 TCP 探活、CLI 代调或第三方驱动。
 - `DefaultPort()`、`RequiredFields()`、`SensitiveFields()` 与 `ConnectionIdentityFields()` 是现有运行时接口方法；内置可注册插件的这些方法必须从 `ConnectionSpec()` 派生，不能重复保存常量或字段列表。`ValidateConnectionInfo()` 负责协议级及条件级校验，`TestConnection()` 负责真实只读连接验证。
 - `ConnectionSpec` 中 `identity=true` 的非敏感字段决定当前连接地址去重键，不决定永久 `engine_id`。地址键以 JSON 对象的字段和值比较，不能用 JSON 文本顺序或空格判断变化；PostgreSQL JSONB 读取后的重排不构成搬迁。MongoDB 的地址键是服务端点 `host`、`port` 与认证主体 `user`、`auth_source`；`database` 只是可选的工作台初始数据库，不是身份或权限边界。其他数据库插件按自身协议声明端点字段；对象存储声明 `endpoint`；NFS 声明 `server`、`export_path`。
-- `EngineTypeDescriptor.registration_group` 是必返的注册展示分组。插件可实现 `EngineRegistrationGroupProvider.RegistrationGroup() string` 声明不同于主引擎族的展示分组；未实现时由描述构造器使用 `capabilities.engine_family`。该字段只控制注册导航，不改变能力、Engine Catalog Model 或业务选择资格。Spark SQL 声明 `compute`，其他现有通用存储插件使用各自主引擎族；前端只消费 `registration_group`，不得按类型特判或回退到旧分类来源。
+- `EngineTypeDescriptor.registration_group` 是必返的注册展示分组。插件可实现 `EngineRegistrationGroupProvider.RegistrationGroup() string` 声明不同于主引擎族的展示分组；未实现时由描述构造器使用 `capabilities.engine_family`。该字段只控制注册导航，不改变能力、Engine Catalog Model 或业务选择资格。Business Spark 声明 `compute`，其他现有通用存储插件使用各自主引擎族；前端只消费 `registration_group`，不得按类型特判或回退到旧分类来源。
 - `GET /api/v1/system/engine-types` 返回当前编译进 System 且 `origin=general` 的描述数组，并投影 capabilities，以及插件真实声明的可选 Engine Catalog Model。该接口不返回连接值或凭据；新增国产或其他数据库后，注册入口必须由插件描述自动出现，不允许同步修改前端类型列表或表单分支。
 - 有 `system.engine.update` 权限的用户确认同一实际引擎搬迁后，可在现有更新接口修改地址键字段并保留 `engine_id` 与已有引用；请求必须显式确认这一事实。System 校验连接配置、拒绝其他非删除实例占用的新地址，重置连接观测并发布更新事件。地址变化不自动证明源数据相同；要改接不同实际引擎必须新建实例并由各 owner 重绑。默认端口按插件语义归一化后比较。
 - System 使用插件声明的地址键字段在 Tenant 与 `engine_type` 范围内对非删除实例强制唯一。相同地址重复注册返回现有非删除 Engine Instance；`deleted` 墓碑不占用地址。恢复墓碑须用户显式确认同一实际引擎，提交完整连接配置并检查地址冲突。名称、描述、密码、capabilities 和连接状态不参与地址键。
@@ -78,7 +78,7 @@ type InstanceCapabilitiesResolver interface {
 
 System 把成功探测的非空结果保存为 Engine Instance 的只读 `server_version` 和 `server_version_checked_at`。二者由同一次连接观测、同一地址键条件原子更新，不改变 `version` 或 `updated_at`。连接失败、插件未提供版本或临时连接配置测试不覆盖最后一次成功事实；详情同时展示版本和探测时间，不能把最新失败检测时间当成版本探测时间。创建、编辑、恢复请求不接受这两个事实字段，能力声明和连接配置不承载它们。
 
-Spark SQL 的 Thrift 会话用户名只消费插件 `ConnectionSpec` 的 `username`，连接探测、SQL 查询和表读取使用同一字段，不接收 `user` 别名或依赖宿主机用户名。HDFS Simple 的 `user` 与 `HADOOP_USER_NAME` 属于存储/应用身份，不能代替 Thrift 会话身份；两种连接分别按各自契约校验。
+Business Spark 的连接事实统一为 `host`、必填 `port`（表单默认7077）和必填 `web_ui_url`。前两者标识 Standalone Master 计算端点，Web UI 地址只用于原生集群状态检测，不参与实例永久身份。旧 `database`、`username`、`password`、`master_port` 与 Thrift 查询不再接受。连接检测同时要求配置的 RPC 端点可达、原生 `/json/` 返回合法公布 Master URI、`status=ALIVE`，且在线 Worker 数与明细一致且非零；不提交探针应用、不把检测当作真实计算成功。公布地址是服务端原生事实，Docker/NAT 下可以不同于显式登记的宿主端点，不自动改写连接、不从返回值推算端口或替换派发地址。首版仅支持未启用 RPC 认证的 Standalone 开发集群；Web UI 不接收账号、嵌入凭据或跳转，不跳过 TLS 校验。
 
 ### 内置插件加载入口
 
@@ -218,13 +218,13 @@ Kafka topic 使用 `EngineCatalogFacts.Topic *TopicFacts` 表达实时 topic 事
 
 对 tabular 引擎，`EngineCatalogProvider.ListChildren()` 和 `EngineCatalogFactsProvider.DescribeEngineCatalogFacts()` 必须围绕同一份 `datatype.TableInfo` 事实表达。表级通用事实进入 `Name`、`Kind`、`Comment`、`RowCount`、`EstimatedRowCount`、`SizeBytes`、`UpdatedAt`、`Fields` 等标准字段；`RowCount` 只表示精确值，`EstimatedRowCount` 只表示估算值，0 是有效精确值。来源原生但仍属表级的事实进入 `TableInfo.Native`，列表接口通过 `EngineCatalogEntry.Table.Native` 透出，详情接口通过 `EngineCatalogFacts.Table.Native` 透出。`EngineCatalogFacts` 不保留 `Attributes` 兜底口袋。不得在列表接口保留一套事实、详情接口丢失另一套事实。
 
-Tabular provider 默认不执行高成本真实 row count。只有调用方显式传入 `EngineCatalogFactsOptions.IncludeStatistics=true` 或走专用计数入口时，才允许调用 `RowCount` callback；该 callback 必须返回精确值。列表和路径解析阶段只能使用元数据来源中已有的统计估算，并写入 `EstimatedRowCount`。PostgreSQL、MySQL/Doris、ClickHouse 这类能从 catalog / system table 获得统计估算的引擎不得把该值写入 `RowCount`；Spark SQL 这类列表阶段没有低成本估算的引擎保持 `EstimatedRowCount` 为空。未知值保持为空，不得用 `0` 表示未知。
+Tabular provider 默认不执行高成本真实 row count。只有调用方显式传入 `EngineCatalogFactsOptions.IncludeStatistics=true` 或走专用计数入口时，才允许调用 `RowCount` callback；该 callback 必须返回精确值。列表和路径解析阶段只能使用元数据来源中已有的统计估算，并写入 `EstimatedRowCount`。PostgreSQL、MySQL/Doris、ClickHouse 这类能从 catalog / system table 获得统计估算的引擎不得把该值写入 `RowCount`。未知值保持为空，不得用 `0` 表示未知。
 
 SQL catalog facts provider 的实现边界：
 
 - Common Engine 的 provider 是对上层模块的稳定能力契约；SQL catalog facts helper 只是 provider 内部实现复用工具，不作为新的对外抽象层。
 - `common/query` 中的 SQL 方言能力负责标识符引用、表名限定、分页、count/sample SQL 等；不得混入 catalog facts 探测逻辑。
-- Engine Catalog facts helper 只在多个引擎共享同一类事实来源时抽取，例如 MySQL/Doris 共享 `information_schema`；PostgreSQL、ClickHouse、Spark SQL 等差异较大的实现应保留在插件内，不做大一统 `SQLCatalogFactsDialect`。
+- Engine Catalog facts helper 只在多个引擎共享同一类事实来源时抽取，例如 MySQL/Doris 共享 `information_schema`；PostgreSQL、ClickHouse 等差异较大的实现应保留在插件内，不做大一统 `SQLCatalogFactsDialect`。
 - GORM 只作为连接池、driver 和 raw SQL 执行工具，不承担 ADDP 的 catalog path、catalog facts、系统库过滤、row count 策略等平台元数据语义。
 
 SQL catalog facts provider 差异矩阵：
@@ -259,7 +259,6 @@ SDE Provider 不直接成为 Transfer continuous consumer。Transfer capture ada
 | TiDB | database | `information_schema.schemata/tables/columns/statistics` | 同 MySQL 兼容逻辑；表引擎元数据按官方兼容约定报告为 InnoDB | `information_schema.columns`，主键来自 `column_key`，注释来自 `column_comment` | 列表将 `information_schema.tables.table_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | `INFORMATION_SCHEMA`、`INSPECTION_SCHEMA`、`METRICS_SCHEMA`、`PERFORMANCE_SCHEMA`、`mysql`、`sys` | 与 MySQL/OceanBase/Doris 共享 `MySQLCompatibleCatalogFactsDialect`，与 MySQL/OceanBase 共享 MySQL 方言的 `QueryReadSet` / `QueryOutputLineage`、非空间 `BoundedWatermarkReadProvider` 和普通表写入核心；共享 upsert 必须由插件显式声明冲突值引用语法，TiDB 8.5 固定使用官方支持的 `VALUES(column)`，不得套用 MySQL 8 的 insert row alias；`engine_type` 固定为 `tidb`，bounded watermark 只接受真实 TiDB T2 认证的 InnoDB 兼容基表，并在 TiDB Snapshot Isolation 事务中冻结上界；不声明 MySQL replication、TiCDC、分区变化应用或空间能力 |
 | Doris | database | MySQL 兼容 `information_schema.schemata/tables/columns` | 同 MySQL 兼容逻辑 | 同 MySQL 兼容逻辑，注释能力按引擎实际返回 | 列表将 `information_schema.tables.table_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | MySQL 系统库 + `__internal_schema` | 与 MySQL 共享 `MySQLCompatibleCatalogFactsDialect`；非空间表写入由 Doris Provider 独立实现建库建表、可空列演进、批次会话和删除，Decimal 必须显式声明并精确匹配 precision/scale；`Native.engine` 待确认 `information_schema.tables.engine` 稳定性后再启用 |
 | ClickHouse | database | `system.databases`、`system.tables`、`system.columns` | `MaterializedView` -> `materialized_view`，`View`/其他包含 `View` 的 engine -> `view`，其他 -> `table` | `system.columns`，nullable 从类型字符串推断，`DEFAULT` / `MATERIALIZED` / `ALIAS` 映射到通用默认值和生成列字段，当前不表达主键 | 列表将 `system.tables.total_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | `system`、`information_schema`、`INFORMATION_SCHEMA` | ClickHouse `system.*` 与非空间表写入语义独立；Provider 实现建库建表、可空列演进、批次会话和删除，Decimal 必须显式声明并精确匹配 precision/scale |
-| Spark SQL | database | `SHOW DATABASES`、`SHOW TABLES`、`DESCRIBE`，部分环境可查询 `information_schema` | 当前 `SHOW TABLES` 结果统一映射为 `table` | `DESCRIBE table` | 列表阶段不做真实 count，未知 `row_count` / `size_bytes` 保持为空；单表 catalog facts 显式请求统计时才执行 `COUNT(*)` | `information_schema`、`sys` | 暂留插件内；Spark catalog facts 更偏命令式接口 |
 
 对 graph 引擎，`EngineCatalogProvider` 暴露 graph catalog leaf，label、relationship type 和 endpoint pattern 作为 `datatype.GraphInfo` 中的 schema / shape facts，而不是作为 graph data type 的主 catalog leaf 本体。Neo4j label / relationship 只作为 Manager 展示投影或查询筛选条件，不作为公共 catalog leaf。graph 公共事实应围绕 `GraphInfo.NodeShapes`、`GraphInfo.RelationshipShapes` 和 `GraphRelationshipPatternInfo` 表达，不得继续把 `from_labels[]` / `to_labels[]` 两个集合作为 relationship endpoint 主事实。
 
@@ -1005,7 +1004,7 @@ Workflow Runtime 的直接存储接入由 `compute.workflow.storage_access.read_
 | TiDB | 非空间通用 tabular 组合 + `AnalyticalCompilerProvider` + `AnalyticalSQLExecutionValidator` + `BoundedWatermarkReadProvider` + `TableUpsertProvider` |
 | Oracle | 通用 tabular 组合 + `SpatialFeatureReadProvider` + `PartitionedTableChangeApplyProvider`；普通 Store 不声明 CDC |
 | Doris / ClickHouse | 非空间通用 tabular 组合；不声明 `BoundedWatermarkReadProvider`、`TableUpsertProvider` 或 CDC |
-| Spark SQL | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
+| Business Spark | `EnginePlugin` + `ConnectionSpecProvider`；Standalone 计算目标，无 Storage／Catalog／Table Session；查询 HTTP 尚未接通时不声明查询 Provider |
 | Redis | `EnginePlugin` + `ConnectionSpecProvider` + Catalog Model/Catalog/Facts + `KeyValueReadableProvider`；`key_value` 存储族，模型为 `server -> keyspace`，不实现表、记录集合或 Query Provider。认证后的 HELLO 必须报告 standalone 模式，再执行 SELECT 与 DBSIZE。 |
 | MongoDB | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `DynamicSchemaSamplingProvider` + `RecordReadSessionProvider` + `EncodedRecordReadSessionProvider` + `QueryRuntimeProvider` + `QueryReadSessionProvider` |
 | Neo4j | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `GraphSampleProvider` + `QueryRuntimeProvider` + `GraphQueryProvider` |

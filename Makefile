@@ -1307,7 +1307,7 @@ test-standard-frontend: check-node-runtime ## 运行 Standard 前端确定性测
 
 test-system-frontend: check-node-runtime ## 运行 System 前端确定性测试与构建
 	@cd system/frontend && npm test
-	@cd system/frontend && npm run test:e2e
+	@cd system/frontend && npm run test:e2e -- $(SYSTEM_FRONTEND_BROWSER_ARGS)
 	@cd system/frontend && npm run build
 
 test-transfer-frontend: check-node-runtime ## 运行 Transfer 前端确定性测试与构建

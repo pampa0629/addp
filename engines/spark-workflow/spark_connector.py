@@ -5,12 +5,30 @@ Spark Connector - 动态连接到用户注册的Spark集群
 
 import os
 import logging
+import ipaddress
 from typing import Dict, Tuple
 from pyspark.sql import SparkSession
 from system_client import get_engine
 from spark_dependencies import configure_spark_dependencies
 
 logger = logging.getLogger(__name__)
+
+def cluster_master_url(connection):
+    """Consume the canonical registered Master endpoint; never infer a port."""
+    if not isinstance(connection, dict) or set(connection) != {'host', 'port', 'web_ui_url'}:
+        raise ValueError('invalid Spark cluster connection fields')
+    host, port = connection['host'], connection['port']
+    if (not isinstance(host, str) or not host or host != host.strip()
+            or any(char in host for char in '/@?#\\ \t\r\n')):
+        raise ValueError('invalid Spark Master host')
+    if not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535:
+        raise ValueError('invalid Spark Master port')
+    if ':' in host:
+        if ipaddress.ip_address(host).version != 6:
+            raise ValueError('invalid Spark Master host')
+        host = '[' + host + ']'
+    return f'spark://{host}:{port}'
+
 
 class SparkConnector:
     """
@@ -54,8 +72,7 @@ class SparkConnector:
 
         logger.info(f"Creating new SparkSession for engine {engine_id}: {conn_info['host']}:{conn_info['port']}")
 
-        # 工作流通过 Standalone Master 提交 DataFrame 作业；同一引擎实例的
-        # Thrift 端口属于 SQL 查询能力，不参与 PySpark Session 建立。
+        # 集群登记只有 Master 计算端点，不能回退到旧 Thrift/master_port。
         builder = configure_spark_dependencies(SparkSession.builder) \
             .appName(f"ADDP-Workflow-Engine-{engine_id}")
 
@@ -70,8 +87,7 @@ class SparkConnector:
             builder = builder.master('local[*]')
         else:
             # 连接到用户的Spark集群
-            spark_master = f"spark://{conn_info['host']}:{conn_info.get('master_port', 7077)}"
-            builder = builder.master(spark_master)
+            builder = builder.master(cluster_master_url(conn_info))
             if conn_info['host'] in {'localhost', '127.0.0.1', '::1'}:
                 shared_host = os.getenv("SPARK_WORKFLOW_SHARED_HOST", "").strip()
                 if not shared_host:

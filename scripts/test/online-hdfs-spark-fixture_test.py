@@ -75,7 +75,7 @@ from unittest.mock import patch, MagicMock
 if sys.argv[1:] != ['-']:
     raise SystemExit(subprocess.call([{sys.executable!r}] + sys.argv[1:]))
 code = sys.stdin.read()
-master = {{'aliveworkers': 1, 'activeapps': [{{'name': 'Thrift JDBC/ODBC Server', 'state': 'RUNNING'}}]}}
+master = {{'status': 'ALIVE', 'aliveworkers': 1, 'activeapps': []}}
 with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return_value=io.BytesIO(json.dumps(master).encode())):
     exec(compile(code, '<fixture-inline>', 'exec'), {{'__name__': '__main__'}})
 ''')
@@ -106,8 +106,8 @@ with patch('socket.socket', MagicMock()), patch('urllib.request.urlopen', return
         hdfs = json.loads((self.secret / 'hdfs-engine.json').read_text())['connection_info']
         self.assertEqual((hdfs['authentication'], hdfs['user'], hdfs['root_path']), ('simple', 'addp_business_reader', '/addp'))
         spark = json.loads((self.secret / 'spark-engine.json').read_text())['connection_info']
-        self.assertEqual(spark['username'], 'spark')
-        self.assertNotIn('user', spark)
+        self.assertEqual(spark, {'host': '127.0.0.1', 'port': 7077, 'web_ui_url': 'http://127.0.0.1:18080'})
+        self.assertNotIn('start-thriftserver', self.trace.read_text())
         postgres = json.loads((self.secret / 'postgres-engine.json').read_text())['connection_info']
         self.assertEqual(postgres['user'], 'spark_writer')
         self.assertEqual(postgres['port'], 15435)

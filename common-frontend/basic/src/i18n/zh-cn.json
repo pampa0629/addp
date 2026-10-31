@@ -774,6 +774,8 @@
     "sslRequire": "要求 (require)",
     "sslVerifyCa": "验证CA (verify-ca)",
     "sslVerifyFull": "完全验证 (verify-full)",
+    "sparkMasterPort": "Master 计算端口",
+    "sparkMasterWebUI": "Master Web UI 地址",
     "endpoint": "端点地址",
     "endpointPlaceholder": "localhost:9002",
     "accessKey": "Access Key",
@@ -827,7 +829,7 @@
       "mongoAuth": "MongoDB 默认端口：27017。用户名和认证数据库决定登录主体；可访问的数据库和集合由 MongoDB 用户角色控制。默认数据库仅用于打开工作台时的初始选择。",
       "neo4j": "Neo4j 图数据库，Bolt 协议连接。默认端口: 7687。Community Edition 仅有一个 \"neo4j\" 数据库。",
       "spatialite": "该连接器读取本地 SQLite 数据库（建议为 SpatiaLite 扩展），任务执行节点需要能访问该文件路径。",
-      "spark": "Apache Spark 通过 Thrift Server (Hive2 协议) 连接，支持 Sedona 空间扩展。默认端口: 10000",
+      "spark": "Standalone Master 计算集群；Web UI 仅用于状态检测。首版支持未启用 RPC 认证的开发集群。",
       "workflow": "工作流引擎的 API 端点已标准化，无需手动配置。",
       "hdfsSimple": "Simple 仅用于开发实验；Spark 应用 Hadoop 用户必须与此用户一致。"
     },

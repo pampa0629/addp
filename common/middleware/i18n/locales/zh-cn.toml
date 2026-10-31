@@ -39,3 +39,18 @@ other = "资源回收结果不存在。"
 
 [cleanup.result.not_ready]
 other = "模块尚未提交资源回收结果。"
+
+["engine.spark.configuration"]
+other = "Spark 集群配置无效：请填写 Master 主机、计算端口和 Web UI 地址，不使用旧 Thrift 字段。"
+
+["engine.spark.state_invalid"]
+other = "Spark Master 返回的集群状态或 Worker 明细无效。"
+
+["engine.spark.state_unavailable"]
+other = "无法读取 Spark Master 集群状态，请检查 Web UI 地址及 TLS 配置。"
+
+["engine.spark.capacity_unavailable"]
+other = "Spark Master 尚未就绪或没有在线 Worker。"
+
+["engine.spark.rpc_unavailable"]
+other = "无法连接登记的 Spark Master 计算端点。"

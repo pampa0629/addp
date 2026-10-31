@@ -95,6 +95,6 @@ Business FTP 通过独立 `-ftp` profile 启动，不加入 `-all`。Compose 固
 
 ## Business Spark 计算集群
 
-日常 `start.sh -spark` 只启动 Standalone Master 和 Worker，不启动 Thrift Server，不创建固定 SQL 视图或业务表。保留 `SPARK_MASTER_PORT`（默认7077）和 `SPARK_MASTER_UI`（默认18088），删除 `SPARK_THRIFT_PORT`；已有环境文件中的旧变量不再发布 SQL 端口。启动就绪以 Master 原生 `/json` 返回 `status=ALIVE` 且至少一个在线 Worker 为准，超时明确失败，不能用首页可访问或示例查询成功替代。
+日常 `start.sh -spark` 只启动 Standalone Master 和 Worker，不启动 Thrift Server，不创建固定 SQL 视图或业务表。保留 `SPARK_MASTER_PORT`（默认7077）和 `SPARK_MASTER_UI`（默认18088），删除 `SPARK_THRIFT_PORT`；已有环境文件中的旧变量不再发布 SQL 端口。启动就绪以 Master 原生 `/json/` 返回 `status=ALIVE` 且至少一个在线 Worker 为准，超时明确失败，不能用首页可访问或示例查询成功替代。
 
-System 登记的目标是实际 Master 计算端点，不是 Thrift、数据库命名空间或内置 Runtime 的 HTTP 地址；运行时和登记契约按[引擎体系](../../concepts/addp引擎体系图.md#spark-集群与内置运行时边界)统一迁移。Business 不访问 System API，不改写已有引擎登记，也不删除历史 Meta 数据项；旧登记与任务先盘点、显式调整。部署变更不代表查询工作台联邦接口已经完成，正式启用仍须核对插件、授权、Runtime 和页面验收。
+System 登记填写 `host`、实际 Master `port`（默认7077）和独立 `web_ui_url`（本机默认 `http://localhost:18088`），不登记 Thrift、数据库命名空间或内置 Runtime 的 HTTP 地址；运行时和登记契约按[引擎体系](../../concepts/addp引擎体系图.md#spark-集群与内置运行时边界)统一迁移。Business 不访问 System API，不改写已有引擎登记，也不删除历史 Meta 数据项；旧登记与任务先盘点、显式调整。部署变更不代表查询工作台联邦接口已经完成，正式启用仍须核对插件、授权、Runtime 和页面验收。

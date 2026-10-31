@@ -458,7 +458,7 @@ type QueryFederationCapability struct {
 
 DuckDB Runtime 第一阶段声明 `runtime_api="addp.query-runtime/v1"`、`source_engine_types=["postgresql","mysql","minio","s3"]`、`object_formats=["parquet"]`。能力只声明当前真正实现并验证过的连接器；Doris、ClickHouse、Spark SQL、MongoDB、Neo4j、Kafka 等不能仅因 ADDP 已支持该 Engine 类型就自动列入。
 
-Spark 联邦查询迁移采用“集群作为执行目标、内置 Runtime 作为协议执行方”的边界，见 [引擎体系图](../concepts/addp引擎体系图.md#spark-集群与内置运行时边界)。Business Spark 与 Runtime 均不声明 `storage`；查询工作台选择集群，工作流选择 Runtime 后绑定集群。目标可执行能力必须同时满足集群有效、Runtime 可用及其连接器能力，不得仅因集群类型为 Spark 就认定查询可用。Runtime 同时提供查询与工作流入口，不增加独立查询服务。技术准入完成前不得提前声明联邦查询已可用；正式迁移须删除旧表目录与 Thrift 查询路径，不兼容双轨。
+Spark 联邦查询迁移采用“集群作为执行目标、内置 Runtime 作为协议执行方”的边界，见 [引擎体系图](../concepts/addp引擎体系图.md#spark-集群与内置运行时边界)。Business Spark 与 Runtime 均不声明 `storage`；查询工作台选择集群，工作流选择 Runtime 后绑定集群。目标可执行能力必须同时满足集群有效、Runtime 可用及其连接器能力，不得仅因集群类型为 Spark 就认定查询可用。Runtime 同时提供查询与工作流入口，不增加独立查询服务。技术准入完成前不得提前声明联邦查询已可用；正式迁移须删除旧表目录与 Thrift 查询路径，不兼容双轨。 集群登记使用 `host`、Master `port`（默认7077）与独立 `web_ui_url`，不接受数据库、Thrift 认证或 `master_port` 别名；原生状态核验按插件接口规范执行。查询 HTTP 尚未完成时不声明 `compute.query.supported`，工作流仍可显式绑定该计算集群。 System 注册表单、既有扫描配置读取及保存后扫描编排，只对声明真实 Catalog（`catalog_model`、`catalog.supported`、`catalog.real_time`）的引擎开放；不按名称或注册展示分组判断，不为计算目标默认创建 Meta 扫描计划。
 
 联邦查询在 `compute.query.federation` 内区分执行目标与实际 Runtime：
 

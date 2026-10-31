@@ -2,6 +2,7 @@ package i18n
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -47,5 +48,27 @@ func TestRestoredLanguageRejectsHeaderSyntax(t *testing.T) {
 	cancel()
 	if restored.Err() != context.Canceled {
 		t.Fatal("language context lost cancellation")
+	}
+}
+
+func TestKeyedErrorsRetainLanguageAcrossWrappedServiceBoundaries(t *testing.T) {
+	for _, lang := range []string{LangZhCN, LangEn} {
+		router := gin.New()
+		router.Use(I18nMiddleware())
+		router.GET("/", func(c *gin.Context) {
+			keyed := fmt.Errorf("private service prefix: %w", NewMessageError("engine.spark.configuration"))
+			if got := ErrorMessage(c, keyed); got != ForLanguage(lang, "engine.spark.configuration") {
+				t.Fatalf("incorrect keyed error: %s", got)
+			}
+			if got := ErrorMessage(c, fmt.Errorf("existing technical error")); got != "existing technical error" {
+				t.Fatal(got)
+			}
+			if ErrorMessage(c, nil) != "" {
+				t.Fatal("nil error must be empty")
+			}
+		})
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Accept-Language", lang)
+		router.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }

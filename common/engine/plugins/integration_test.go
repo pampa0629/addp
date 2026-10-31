@@ -126,7 +126,7 @@ func TestPluginDefaultPorts(t *testing.T) {
 		{"clickhouse", 9000},
 		{"mongodb", 27017},
 		{"kafka", 9092},
-		{"spark", 10000},
+		{"spark", 7077},
 		{"minio", 9000},
 		{"s3", 443},
 		{"nfs", 2049},
@@ -256,7 +256,7 @@ func TestBuiltinPluginCapabilityMatrix(t *testing.T) {
 		"neo4j":             {origin: "general", family: "graph", storage: true, query: true, graphQuery: true},
 		"postgresql":        {origin: "general", family: "tabular", storage: true, query: true},
 		"oracle":            {origin: "general", family: "tabular", storage: true, query: true},
-		"spark":             {origin: "general", family: "tabular", storage: true, query: true},
+		"spark":             {origin: "general", family: "compute"},
 		"minio":             {origin: "general", family: "object", storage: true},
 		"nfs":               {origin: "general", family: "file", storage: true},
 		"hdfs":              {origin: "general", family: "file", storage: true},
@@ -426,11 +426,10 @@ func TestRegisterableEngineDisplayMetadata(t *testing.T) {
 		t.Fatalf("PostgreSQL registration group = %q", got)
 	}
 	spark := byType["spark"]
-	if spark.RegistrationGroup != plugin.EngineRegistrationGroupCompute || spark.Capabilities.EngineFamily != "tabular" ||
-		spark.CatalogModel == nil || spark.Capabilities.Compute == nil || spark.Capabilities.Compute.Query == nil ||
-		!spark.Capabilities.Compute.Query.Supported || spark.Capabilities.Storage == nil || spark.Capabilities.Storage.Store == nil ||
-		!spark.Capabilities.Storage.Store.TableReadSession {
-		t.Fatalf("Spark must use compute navigation while retaining tabular catalog, reads and SQL: %#v", spark)
+	if spark.RegistrationGroup != plugin.EngineRegistrationGroupCompute || spark.Capabilities.EngineFamily != "compute" ||
+		spark.CatalogModel != nil || spark.Capabilities.Storage != nil || spark.Capabilities.Compute == nil ||
+		spark.Capabilities.Compute.Query != nil {
+		t.Fatalf("Spark must expose only a compute target until query Runtime admission: %#v", spark)
 	}
 	if got := byType["oracle"].DisplayName; got != "Oracle" {
 		t.Fatalf("Oracle display name = %q", got)

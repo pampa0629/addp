@@ -63,7 +63,7 @@ import spark_connector
 # construction, Maven dependencies and function registration use production code.
 os.environ["SPARK_MODE"] = "local"
 spark_connector.get_engine = lambda engine_id, tenant_id: {
-    "connection_info": {"host": "127.0.0.1", "port": 10000}
+    "connection_info": {"host": "127.0.0.1", "port": 7077, "web_ui_url": "http://127.0.0.1:8080"}
 }
 spark = spark_connector.SparkConnector().get_or_create_session(engine_id=1, tenant_id=1)
 try:

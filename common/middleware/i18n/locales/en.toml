@@ -39,3 +39,18 @@ other = "The cleanup result was not found."
 
 [cleanup.result.not_ready]
 other = "The module has not committed a cleanup result yet."
+
+["engine.spark.configuration"]
+other = "Invalid Spark cluster configuration. Supply the Master host, compute port and Web UI URL without legacy Thrift fields."
+
+["engine.spark.state_invalid"]
+other = "Spark Master returned invalid cluster state or worker inventory."
+
+["engine.spark.state_unavailable"]
+other = "Spark Master state is unavailable. Check the Web UI URL and TLS configuration."
+
+["engine.spark.capacity_unavailable"]
+other = "Spark Master is not ready or has no online workers."
+
+["engine.spark.rpc_unavailable"]
+other = "The registered Spark Master RPC endpoint is unreachable."

@@ -1,6 +1,6 @@
 # Spark 内置运行时与 Business Spark 集群
 
-本文描述已确认的统一方案：复用现有内置 Spark 运行时提供查询和工作流入口，执行时绑定 System 中登记的 Business Spark 集群。查询接入尚在技术准入，当前实现仍含待移除的 Thrift 查询与目录路径，不应将下述目标当作验收完成。部署与操作步骤见 [Runtime README](../README.md)和 [Spark 用户手册](spark-user-guide.md)。
+本文描述已确认的统一方案：复用现有内置 Spark 运行时提供查询和工作流入口，执行时绑定 System 中登记的 Business Spark 集群。Master 登记与状态检测、Thrift／存储 Provider 移除已落地，查询 HTTP 接口与执行快照绑定仍待接通，不应将下述整体目标当作验收完成。部署与操作步骤见 [Runtime README](../README.md)和 [Spark 用户手册](spark-user-guide.md)。
 
 ## 两类引擎的职责
 

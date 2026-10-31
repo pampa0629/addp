@@ -303,3 +303,25 @@ class HDFSOnlineTest(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+
+class ComputeClusterRoleTest(unittest.TestCase):
+    def test_selector_is_independent_of_storage_and_keeps_credentials_private(self):
+        from copy import deepcopy
+        cluster = {'id': 8, 'engine_type': 'spark', 'engine_origin': 'general', 'is_builtin': False,
+                   'lifecycle_state': 'active', 'connection_status': 'online',
+                   'capabilities': {'schema_version': 'engine.capabilities/v1', 'engine_type': 'spark', 'engine_family': 'compute', 'compute': {}}}
+        self.assertEqual(MODULE.SPARK.require_compute_cluster(8, [{'id': 7}], [cluster]), cluster)
+        for mutation in ('catalog', 'missing', 'duplicate', 'offline', 'storage', 'credentials', 'builtin', 'endpoint'):
+            item = deepcopy(cluster)
+            catalog, selectors = [{'id': 7}], [item]
+            if mutation == 'catalog': catalog.append({'id': 8})
+            if mutation == 'missing': selectors = []
+            if mutation == 'duplicate': selectors.append(deepcopy(item))
+            if mutation == 'offline': item['connection_status'] = 'offline'
+            if mutation == 'storage': item['capabilities']['storage'] = {}
+            if mutation == 'credentials': item['connection_info'] = {}
+            if mutation == 'builtin': item['is_builtin'] = True
+            if mutation == 'endpoint': item['runtime_endpoint'] = {'port': 7077}
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                MODULE.SPARK.require_compute_cluster(8, catalog, selectors)

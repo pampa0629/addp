@@ -122,10 +122,14 @@ def run(client, tenant_id, engine_id, cluster_id, timeout, physical=worker_evide
         raise SuiteError('HDFS source and Spark cluster must be distinct Engines')
     principal = validate_identity(client, tenant_id)
     engines = support._array(client.request('GET', '/api/v1/system/engine-catalog/engines', (200,)).payload, 'catalog engines')
-    for identifier, engine_type in ((engine_id, 'hdfs'), (cluster_id, 'spark')):
-        matches = [engine for engine in engines if engine.get('id') == identifier and engine.get('engine_type') == engine_type]
-        if len(matches) != 1:
-            raise SuiteError('System catalog must expose the exact disposable HDFS and Spark Engines')
+    matches = [engine for engine in engines if engine.get('id') == engine_id and engine.get('engine_type') == 'hdfs']
+    if len(matches) != 1:
+        raise SuiteError('System catalog must expose the disposable HDFS source')
+    clusters = support._array(client.request('GET', '/api/v1/develop/spark-runtimes', (200,)).payload, 'Spark cluster selectors')
+    try:
+        SPARK.require_compute_cluster(cluster_id, engines, clusters)
+    except ValueError as error:
+        raise SuiteError(str(error)) from error
     runtimes = support._array(client.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'runtimes')
     selected = [runtime for runtime in runtimes if runtime.get('engine_type') == 'spark_workflow' and runtime.get('connection_status') == 'online']
     if len(selected) != 1:

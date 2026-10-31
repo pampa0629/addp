@@ -20,6 +20,14 @@ export function hasDeclaredStorageCapability(engine) {
   return Boolean(storage && typeof storage === 'object' && !Array.isArray(storage))
 }
 
+// Catalog-backed scanning requires the same native facts as System selectors.
+export function hasLiveEngineCatalogCapability(engine) {
+  const storage = parseEngineCapabilities(engine)?.storage
+  const model = storage?.catalog_model
+  return Boolean(model && typeof model === 'object' && !Array.isArray(model) &&
+    storage?.catalog?.supported === true && storage.catalog.real_time === true)
+}
+
 export function isNativeTableStorageEngine(engine) {
   return hasDeclaredStorageCapability(engine) && engineCapabilityFamily(engine) === 'tabular'
 }

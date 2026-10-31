@@ -87,6 +87,7 @@
       </span>
     </el-form-item>
 
+    <template v-if="canConfigureCatalogScan">
     <!-- 元数据扫描配置 -->
     <el-divider content-position="left">
       <span style="cursor: pointer; user-select: none;" @click="scanConfigExpanded = !scanConfigExpanded">
@@ -143,6 +144,7 @@
         </el-form-item>
       </template>
     </template>
+    </template>
   </el-form>
 </template>
 
@@ -151,6 +153,7 @@ import { computed, reactive, ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowDown, ArrowRight } from '@element-plus/icons-vue'
 import ScheduleConfig from './ScheduleConfig.vue'
+import { hasLiveEngineCatalogCapability } from '../utils/engineCapabilities.mjs'
 import { buildScheduleFromForm, decodeScheduleToForm } from '../utils/schedule'
 import {
   applyConnectionSpecDefaults,
@@ -201,6 +204,7 @@ const effectiveTypeOptions = computed(() => props.engineTypeDescriptors.map(desc
 const selectedEngineTypeDescriptor = computed(() =>
   props.engineTypeDescriptors.find(descriptor => descriptor.type === formState.engine_type) || null
 )
+const canConfigureCatalogScan = computed(() => hasLiveEngineCatalogCapability(selectedEngineTypeDescriptor.value))
 const selectedConnectionSpec = computed(() => selectedEngineTypeDescriptor.value?.connection_spec || null)
 const visibleConnectionFieldSpecs = computed(() =>
   visibleConnectionFields(selectedConnectionSpec.value, formState.connection_info)
@@ -363,7 +367,7 @@ watch(
 
 // 计算属性：判断是否启用了任何扫描配置
 const scanConfigEnabled = computed(() => {
-  return immediateScanEnabled.value || scheduledScanEnabled.value
+  return canConfigureCatalogScan.value && (immediateScanEnabled.value || scheduledScanEnabled.value)
 })
 
 const scheduledScanCron = computed({
@@ -406,7 +410,12 @@ watch(
 		lifecycle_state: value.lifecycle_state,
       connection_info: { ...value.connection_info }
     }
-    payload.scan_config = { ...value.scan_config, enabled: scanConfigEnabled.value }
+    payload.scan_config = {
+      ...value.scan_config,
+      enabled: scanConfigEnabled.value,
+      immediate_scan: canConfigureCatalogScan.value && immediateScanEnabled.value,
+      scheduled_scan: canConfigureCatalogScan.value && scheduledScanEnabled.value
+    }
     emit('update:modelValue', payload)
   },
   { deep: true }

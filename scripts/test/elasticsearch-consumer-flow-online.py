@@ -170,8 +170,13 @@ def run(client, tenant_id, engine_id, timeout):
     if len(selected) != 1 or selected[0].get('engine_type') != 'elasticsearch':
         raise SuiteError('Online catalog must contain the dedicated Elasticsearch engine')
     cluster_id = SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_SPARK_ENGINE_ID'), 'Spark')
-    if cluster_id == engine_id or len([engine for engine in engines if engine.get('id') == cluster_id and engine.get('engine_type') == 'spark']) != 1:
-        raise SuiteError('ES source and Spark cluster must be distinct catalog Engines')
+    if cluster_id == engine_id:
+        raise SuiteError('ES source and Spark compute target must be distinct Engines')
+    clusters = SUPPORT._array(client.request('GET', '/api/v1/develop/spark-runtimes', (200,)).payload, 'Spark cluster selectors')
+    try:
+        SPARK.require_compute_cluster(cluster_id, engines, clusters)
+    except ValueError as error:
+        raise SuiteError(str(error)) from error
     deadline = time.monotonic() + timeout
     scan = SUPPORT.wait_for_scan(client, engine_id, deadline)
     item = SUPPORT.find_item(client, engine_id, 'addp_orders.v1', 'index')

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=postgres,mysql,spark-master,spark-worker
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.spark-federation-t2.yml
-# ADDP_T2_INPUT_FILES=engines/spark-workflow/ common/engine/plugins/spark_sql/ scripts/test/spark-federation-contract.py
+# ADDP_T2_INPUT_FILES=engines/spark-workflow/ common/engine/plugins/spark/ scripts/test/spark-federation-contract.py
 # Native admission only: disposable services, no personal Business or Infra access.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 PROJECT="addp-spark-federation-${PPID}-$$"
+PROBE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-spark-probe.XXXXXX")
 compose() { docker compose -p "$PROJECT" -f "$ROOT_DIR/scripts/test/docker-compose.spark-federation-t2.yml" "$@"; }
 cleanup() {
     local status=$? containers volumes networks
@@ -19,6 +20,7 @@ cleanup() {
         echo 'Spark federation admission left owned resources' >&2
         status=1
     fi
+    rm -rf "$PROBE_DIR" || status=1
     [ "$status" -ne 0 ] || echo 'SPARK_FEDERATION_CLEANUP_PASS zero_residuals'
     exit "$status"
 }
@@ -26,6 +28,27 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 compose up -d --wait --wait-timeout 180
+
+# Compile only the production probe tests for the container's actual Linux CPU.
+# Arrow still needs Apache Thrift transitively; the removed Hive SQL client does not.
+case "$(compose exec -T spark-master uname -m | tr -d '\r')" in
+  aarch64|arm64) probe_arch=arm64 ;;
+  x86_64) probe_arch=amd64 ;;
+  *) echo 'Unsupported Spark probe architecture' >&2; exit 1 ;;
+esac
+(cd "$ROOT_DIR/common" && GOOS=linux GOARCH="$probe_arch" CGO_ENABLED=0 go test -c -o "$PROBE_DIR/spark-probe.test" ./engine/plugins/spark)
+compose cp "$PROBE_DIR/spark-probe.test" spark-master:/tmp/addp-spark-probe.test
+# Wait through the production state probe, never a page-only or TCP-only check.
+probe_ready=false
+for attempt in $(seq 1 30); do
+  if compose exec -T --env ADDP_SPARK_NATIVE_PROBE=1 spark-master /tmp/addp-spark-probe.test -test.run '^TestNativeMasterProbeAgainstStandalone$' -test.v; then
+    probe_ready=true
+    break
+  fi
+  sleep 1
+done
+[ "$probe_ready" = true ] || { echo 'Native Spark Master probe did not become ready' >&2; exit 1; }
+echo 'SPARK_MASTER_NATIVE_PROBE_PASS production_go actual_master worker no_thrift'
 compose exec -T postgres psql -U fixture_admin -d addp_test -v ON_ERROR_STOP=1 <<'SQL'
 CREATE TABLE orders (id bigint PRIMARY KEY, customer_id integer, amount numeric(38,18));
 INSERT INTO orders VALUES (9007199254740993,1,100.123456789012345678),(-9007199254740993,2,-200.987654321098765432);

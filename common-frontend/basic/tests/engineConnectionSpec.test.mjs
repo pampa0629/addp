@@ -73,3 +73,15 @@ test('new sensitive input replaces the stored mask without being reset', () => {
     { endpoint: 'localhost', security: 'secure', password: 'name****suffix' }
   )
 })
+
+
+test('current connection descriptors remove obsolete fields without silently changing endpoints', () => {
+  const spec = { fields: [
+    { key: 'host', input: 'text' },
+    { key: 'port', input: 'number', default: 7077 },
+    { key: 'web_ui_url', input: 'text' }
+  ] }
+  const previous = { host: 'localhost', port: 11000, database: 'default', username: 'spark', password: '********', master_port: 7077 }
+  assert.deepEqual(applyConnectionSpecDefaults(spec, previous), { host: 'localhost', port: 11000, web_ui_url: '' })
+  assert.equal(previous.password, '********')
+})

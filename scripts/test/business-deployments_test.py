@@ -662,7 +662,7 @@ ENABLE_SPARK=true
 SPARK_MASTER_UI=18088
 YELLOW= GREEN= RED= NC=
 curl() {
-    [[ "$*" == *http://localhost:18088/json* ]] || return 20
+    [[ "$*" == *http://localhost:18088/json/* ]] || return 20
     printf '%s' "$PROBE_RESPONSE"
     return "$PROBE_STATUS"
 }

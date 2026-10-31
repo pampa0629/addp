@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   engineCapabilityFamily,
   hasDeclaredStorageCapability,
+  hasLiveEngineCatalogCapability,
   isContentStorageEngine,
   isNativeTableStorageEngine,
   parseEngineCapabilities,
@@ -49,4 +50,14 @@ test('federation source compatibility is read from the runtime contract', () => 
   assert.equal(federation.sourceEngineTypes.has('opengauss'), true)
   assert.equal(federation.objectFormats.has('parquet'), true)
   assert.equal(parseEngineCapabilities('{invalid'), null)
+})
+
+
+test('metadata scanning follows native catalog capability rather than engine names or registration groups', () => {
+  const capabilities = { storage: { catalog_model: {}, catalog: { supported: true, real_time: true } } }
+  assert.equal(hasLiveEngineCatalogCapability({ engine_type: 'unknown_vendor', registration_group: 'compute', capabilities }), true)
+  assert.equal(hasLiveEngineCatalogCapability({ engine_type: 'postgresql', registration_group: 'tabular', capabilities: { compute: {} } }), false)
+  for (const storage of [null, {}, { catalog_model: {}, catalog: { supported: true } }, { catalog_model: {}, catalog: { supported: false, real_time: true } }]) {
+    assert.equal(hasLiveEngineCatalogCapability({ capabilities: { storage } }), false)
+  }
 })

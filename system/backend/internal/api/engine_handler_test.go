@@ -217,7 +217,7 @@ func TestRedisCatalogRequestsExposeStructuralRoot(t *testing.T) {
 	})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/engines/1/catalog/children", strings.NewReader(`{"path":{"version":"catalog.path/v1","segments":[]}}`))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/json/")
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("Redis live catalog root: status=%d body=%s", rec.Code, rec.Body.String())
@@ -243,7 +243,7 @@ func TestCatalogRequestsRejectWorkflowRuntimeWithoutLiveCatalog(t *testing.T) {
 		t.Run(path, func(t *testing.T) {
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"path":{"segments":[]}}`))
-			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Content-Type", "application/json/")
 			router.ServeHTTP(rec, req)
 			if rec.Code != http.StatusUnprocessableEntity {
 				t.Fatalf("status = %d, want 422, body=%s", rec.Code, rec.Body.String())
@@ -352,7 +352,7 @@ func TestTestConnectionBeforeCreateProbesCustomWorkflowRuntime(t *testing.T) {
 	router.POST("/engines/test-connection", handler.TestConnectionBeforeCreate)
 
 	req := httptest.NewRequest(http.MethodPost, "/engines/test-connection", bytes.NewReader(payload))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/json/")
 	rec := httptest.NewRecorder()
 
 	router.ServeHTTP(rec, req)
@@ -478,5 +478,71 @@ func TestManualWorkflowRegistrationAndConnectionRejectUnreadyRuntime(t *testing.
 		EngineType: engineType, EngineOrigin: "extension", ConnectionInfo: connection, Capabilities: &capabilities,
 	}); err == nil {
 		t.Fatal("manual connection test accepted an unready runtime")
+	}
+}
+
+func TestSparkMasterRegistrationUsesNativeStateAndLocalizedErrors(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go func() {
+		for {
+			c, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			_ = c.Close()
+		}
+	}()
+	nativeCalls := 0
+	state := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nativeCalls++
+		if r.Method != "GET" || r.URL.Path != "/json/" || r.Header.Get("Authorization") != "" {
+			t.Error("unexpected native request")
+		}
+		_, _ = w.Write([]byte(`{"url":"spark://internal-master:7077","status":"ALIVE","aliveworkers":1,"workers":[{"id":"worker-a","state":"ALIVE"}]}`))
+	}))
+	defer state.Close()
+	handler := NewEngineHandler(nil)
+	router := gin.New()
+	router.Use(commoni18n.I18nMiddleware())
+	router.POST("/test", handler.TestConnectionBeforeCreate)
+	connection := map[string]interface{}{"host": "127.0.0.1", "port": listener.Addr().(*net.TCPAddr).Port, "web_ui_url": state.URL}
+	run := func(lang string) map[string]interface{} {
+		payload, _ := json.Marshal(map[string]interface{}{"name": "Spark cluster", "engine_type": "spark", "engine_origin": "general", "connection_info": connection})
+		req := httptest.NewRequest(http.MethodPost, "/test", bytes.NewReader(payload))
+		req.Header.Set("Content-Type", "application/json/")
+		req.Header.Set("Accept-Language", lang)
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("probe response: %d %s", recorder.Code, recorder.Body.String())
+		}
+		var response map[string]interface{}
+		if json.Unmarshal(recorder.Body.Bytes(), &response) != nil {
+			t.Fatal("invalid probe response")
+		}
+		return response
+	}
+	if result := run("zh-cn"); result["success"] != true {
+		t.Fatalf("native probe failed: %#v", result)
+	}
+	if nativeCalls != 1 {
+		t.Fatalf("native calls=%d", nativeCalls)
+	}
+	connection["password"] = "private-sentinel"
+	for _, lang := range []string{"zh-cn", "en"} {
+		result := run(lang)
+		if result["success"] != false || result["error"] != commoni18n.ForLanguage(lang, "engine.spark.configuration") {
+			t.Fatalf("unexpected localized response: %#v", result)
+		}
+		if strings.Contains(result["error"].(string), "private-sentinel") {
+			t.Fatal("configuration leaked")
+		}
+	}
+	if nativeCalls != 1 {
+		t.Fatal("invalid legacy config reached native service")
 	}
 }

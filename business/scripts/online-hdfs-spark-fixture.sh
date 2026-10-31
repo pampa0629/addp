@@ -250,7 +250,6 @@ docker run -d --name addp-hdfs-online-master --label "$LABEL=$SUITE" --network h
   --entrypoint bash "$SPARK_IMAGE" -c '
     set -e
     /opt/spark/sbin/start-master.sh --host 127.0.0.1 --port 7077 --webui-port 18080
-    /opt/spark/sbin/start-thriftserver.sh --master spark://127.0.0.1:7077 --conf spark.driver.host=127.0.0.1 --conf spark.driver.bindAddress=127.0.0.1 --conf spark.cores.max=1 --conf spark.executor.cores=1 --conf spark.executor.memory=1g
     exec tail -f /dev/null' >/dev/null
 docker run -d --name addp-hdfs-online-worker --label "$LABEL=$SUITE" --network host --user root --memory 3g \
   --add-host host.docker.internal:127.0.0.1 \
@@ -263,9 +262,9 @@ from pathlib import Path
 deadline = time.monotonic() + 120
 while time.monotonic() < deadline:
     try:
-        with urllib.request.urlopen('http://127.0.0.1:18080/json', timeout=5) as response:
+        with urllib.request.urlopen('http://127.0.0.1:18080/json/', timeout=5) as response:
             master = json.load(response)
-        if master.get('aliveworkers') == 1 and any(app.get('name') == 'Thrift JDBC/ODBC Server' and app.get('state') == 'RUNNING' for app in master.get('activeapps', [])):
+        if master.get('status') == 'ALIVE' and master.get('aliveworkers') == 1:
             break
     except (OSError, ValueError):
         pass
@@ -276,7 +275,7 @@ root = Path(os.environ['ADDP_ONLINE_SECRET_DIR'])
 for name, engine_type, connection in (
     ('hdfs', 'hdfs', {'webhdfs_endpoint': 'http://127.0.0.1:9870', 'rpc_uri': 'hdfs://127.0.0.1:8020',
                       'root_path': '/addp', 'authentication': 'simple', 'user': 'addp_business_reader'}),
-    ('spark', 'spark', {'host': '127.0.0.1', 'port': 10000, 'master_port': 7077, 'database': 'default', 'username': 'spark'}),
+    ('spark', 'spark', {'host': '127.0.0.1', 'port': 7077, 'web_ui_url': 'http://127.0.0.1:18080'}),
 ):
     value = {'name': 'Hosted ' + name.upper(), 'engine_type': engine_type, 'engine_origin': 'general',
              'description': 'Disposable HDFS distributed Spark acceptance', 'connection_info': connection}

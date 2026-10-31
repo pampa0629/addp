@@ -21,7 +21,7 @@ func TestSupportsReadOnlySQLExecution(t *testing.T) {
 		{engineType: "doris", want: true},
 		{engineType: "tidb", want: true},
 		{engineType: "clickhouse", want: false},
-		{engineType: "spark", want: true},
+		{engineType: "spark", want: false},
 		{engineType: "mongodb", want: false},
 	}
 	for _, test := range tests {
@@ -41,7 +41,6 @@ func TestReadOnlySQLExecutionUsesProviderBoundary(t *testing.T) {
 		{engineType: "postgresql", want: plugin.ControlledReadOnlySQLBoundaryDatabaseTransaction},
 		{engineType: "mysql", want: plugin.ControlledReadOnlySQLBoundaryDatabaseTransaction},
 		{engineType: "tidb", want: plugin.ControlledReadOnlySQLBoundaryValidatedStatement},
-		{engineType: "spark", want: plugin.ControlledReadOnlySQLBoundaryValidatedStatement},
 	}
 	for _, test := range tests {
 		t.Run(test.engineType, func(t *testing.T) {

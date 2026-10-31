@@ -770,7 +770,7 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { enginesAPI } from '../api/engines'
 import { Plus, Edit, Delete, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { StorageEngineForm, EngineTypeIcon, requestConsoleBridge, hasDeclaredStorageCapability, parseCleanupExecutions } from '@common-ui'
+import { StorageEngineForm, EngineTypeIcon, requestConsoleBridge, hasDeclaredStorageCapability, hasLiveEngineCatalogCapability, parseCleanupExecutions } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useConsolePageDescriptor } from '@common-ui'
@@ -951,7 +951,9 @@ const requestConsoleEngineScanPolicy = (payload) => {
   })
 }
 
-const loadEngineScanConfig = async (engineId) => {
+const loadEngineScanConfig = async (engine) => {
+  if (!hasLiveEngineCatalogCapability(engine)) return null
+  const engineId = engine.id
   try {
     const result = await requestConsoleEngineScanPolicy({
       action: 'load',
@@ -966,7 +968,7 @@ const loadEngineScanConfig = async (engineId) => {
 
 const syncEngineScanPolicy = async (engine, scanConfig, shouldTriggerImmediate) => {
   const normalized = normalizeScanConfig(scanConfig)
-  if (!engine?.id) {
+  if (!engine?.id || !hasLiveEngineCatalogCapability(engine)) {
     return
   }
   await requestConsoleEngineScanPolicy({
@@ -1677,7 +1679,7 @@ const editEngine = async (row) => {
 
   selectedEngineCapabilityGroup.value = 'storage'
 
-  const scanConfig = await loadEngineScanConfig(row.id)
+  const scanConfig = await loadEngineScanConfig(row)
   form.value = {
     engine_type: row.engine_type,
     name: row.name,

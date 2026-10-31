@@ -624,7 +624,7 @@ func (h *EngineHandler) respondWithResourceError(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrDeletionRunningExecutions):
 		commonapi.RespondError(c, http.StatusConflict, commoni18n.T(c, sysi18n.MsgEngineDeletionRunningExecutions))
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.ErrorMessage(c, err)})
 	}
 }
 
@@ -678,7 +678,7 @@ func (h *EngineHandler) TestConnection(c *gin.Context) {
 		commonapi.RespondSuccess(c, gin.H{
 			"success": false,
 			"message": "连接失败",
-			"error":   err.Error(),
+			"error":   commoni18n.ErrorMessage(c, err),
 		})
 		return
 	}
@@ -727,7 +727,7 @@ func (h *EngineHandler) TestConnectionBeforeCreate(c *gin.Context) {
 		commonapi.RespondSuccess(c, gin.H{
 			"success": false,
 			"message": "连接失败",
-			"error":   err.Error(),
+			"error":   commoni18n.ErrorMessage(c, err),
 		})
 		return
 	}

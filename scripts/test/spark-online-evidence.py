@@ -6,8 +6,27 @@ import urllib.parse
 import urllib.request
 
 
+def require_compute_cluster(cluster_id, catalog_engines, cluster_descriptors):
+    """Independent T4 role oracle: computation must not masquerade as storage."""
+    if any(engine.get('id') == cluster_id for engine in catalog_engines):
+        raise ValueError('Spark compute target must not appear in the storage catalog')
+    matches = [engine for engine in cluster_descriptors if engine.get('id') == cluster_id]
+    if len(matches) != 1:
+        raise ValueError('exactly one selected Spark compute cluster is required')
+    cluster = matches[0]
+    caps = cluster.get('capabilities')
+    if (cluster.get('engine_type') != 'spark' or cluster.get('engine_origin') != 'general'
+            or cluster.get('is_builtin') is not False or cluster.get('lifecycle_state') != 'active'
+            or cluster.get('connection_status') != 'online' or not isinstance(caps, dict)
+            or caps.get('schema_version') != 'engine.capabilities/v1' or caps.get('engine_type') != 'spark'
+            or caps.get('engine_family') != 'compute' or caps.get('storage') is not None
+            or 'connection_info' in cluster or cluster.get('runtime_endpoint') is not None):
+        raise ValueError('Spark cluster must be an online masked compute target without storage')
+    return cluster
+
+
 def worker_evidence(engine_id, suite, container, master_url):
-    with urllib.request.urlopen(master_url.rstrip('/') + '/json', timeout=10) as response:
+    with urllib.request.urlopen(master_url.rstrip('/') + '/json/', timeout=10) as response:
         master = json.load(response)
     applications = [app for app in master.get('activeapps', []) if app.get('name') == f'ADDP-Workflow-Engine-{engine_id}']
     if len(applications) != 1 or applications[0].get('state') != 'RUNNING' or applications[0].get('cores', 0) < 1 or master.get('aliveworkers') != 1:

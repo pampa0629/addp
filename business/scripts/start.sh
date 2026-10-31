@@ -932,7 +932,7 @@ if [ "$ENABLE_SPARK" = true ]; then
         SPARK_PROBE_TIMEOUT=$((SPARK_DEADLINE - SECONDS))
         [ "$SPARK_PROBE_TIMEOUT" -le 3 ] || SPARK_PROBE_TIMEOUT=3
         if (set -o pipefail
-            curl --max-time "$SPARK_PROBE_TIMEOUT" -sf "http://localhost:${SPARK_MASTER_UI}/json" | python3 -c '
+            curl --noproxy '*' --max-time "$SPARK_PROBE_TIMEOUT" -sf "http://localhost:${SPARK_MASTER_UI}/json/" | python3 -c '
 import json, sys
 try:
     state = json.load(sys.stdin)

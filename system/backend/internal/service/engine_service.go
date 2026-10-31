@@ -1071,8 +1071,8 @@ func (s *EngineService) BuildConnectionTestEngine(id, tenantID uint, override *m
 func (s *EngineService) mergePlainConnectionInfo(engineType string, original, updated models.ConnectionInfo) models.ConnectionInfo {
 	merged := make(models.ConnectionInfo)
 
-	// 先复制原始明文字段。
-	for k, v := range original {
+	// 只继承当前连接契约仍声明的字段；显式提交的非法字段留给插件拒绝。
+	for k, v := range s.projectDeclaredConnectionInfo(engineType, original) {
 		if s.isConnectionInfoMetaField(k) {
 			continue
 		}
@@ -1230,13 +1230,33 @@ func (s *EngineService) decryptStoredConnectionInfo(engineType string, connInfo 
 	return decrypted, nil
 }
 
+// projectDeclaredConnectionInfo is the user-facing counterpart of the shared
+// ConnectionSpec form. It does not mutate stored configuration or service access.
+func (s *EngineService) projectDeclaredConnectionInfo(engineType string, info models.ConnectionInfo) models.ConnectionInfo {
+	provider, err := engineplugin.Get(strings.TrimSpace(engineType))
+	if err != nil {
+		return info
+	}
+	declared, ok := provider.(engineplugin.ConnectionSpecProvider)
+	if !ok {
+		return info
+	} // Extension runtime protocols own their connection contract.
+	projected := make(models.ConnectionInfo)
+	for _, field := range declared.ConnectionSpec().Fields {
+		if value, exists := info[field.Key]; exists {
+			projected[field.Key] = value
+		}
+	}
+	return projected
+}
+
 func (s *EngineService) maskSensitiveFields(engineType string, connInfo models.ConnectionInfo) models.ConnectionInfo {
 	if connInfo == nil {
 		return nil
 	}
 
 	masked := make(models.ConnectionInfo)
-	for k, v := range connInfo {
+	for k, v := range s.projectDeclaredConnectionInfo(engineType, connInfo) {
 		if s.isSensitiveField(engineType, k) && v != nil {
 			masked[k] = "******"
 			continue

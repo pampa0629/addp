@@ -774,6 +774,8 @@
     "sslRequire": "Require",
     "sslVerifyCa": "Verify CA",
     "sslVerifyFull": "Verify Full",
+    "sparkMasterPort": "Master compute port",
+    "sparkMasterWebUI": "Master Web UI URL",
     "endpoint": "Endpoint",
     "endpointPlaceholder": "localhost:9002",
     "accessKey": "Access Key",
@@ -827,7 +829,7 @@
       "mongoAuth": "MongoDB default port: 27017. The username and authentication database define the login principal; MongoDB user roles control which databases and collections are available. The default database only sets the initial workbench selection.",
       "neo4j": "Neo4j graph database via Bolt protocol. Default port: 7687. Community Edition only has one 'neo4j' database.",
       "spatialite": "Reads a local SQLite database (SpatiaLite extension recommended). The task execution node must be able to access the file path.",
-      "spark": "Apache Spark via Thrift Server (Hive2 protocol), supports Sedona spatial extension. Default port: 10000",
+      "spark": "Standalone Master compute cluster. The Web UI is used only for state checks. Initial support is limited to development clusters without RPC authentication.",
       "workflow": "Workflow engine API endpoints are standardized; no manual configuration needed.",
       "hdfsSimple": "Simple is for development only. The Spark application Hadoop user must match this user."
     },

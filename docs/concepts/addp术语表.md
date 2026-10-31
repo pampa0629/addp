@@ -446,7 +446,7 @@
 | ADDP Operator | ADDP 算子 | ADDP 平台统一的可编排能力定义，包含稳定 ID、参数、输入输出端口、执行模式和展示元数据。 | 面向 Develop 前端、工作流定义、参数校验、执行历史和血缘；不承载具体引擎私有类名。 |
 | Workflow Runtime | 工作流运行时 | 按 `addp.workflow/v1` 协议接收算子列表查询和 workflow_def 执行请求的独立执行服务。 | 例如 GeoPython Workflow、Spark Workflow、Model3D Workflow、PointCloud Workflow、SuperMap Workflow。 |
 | GeoPython Workflow | GeoPython Workflow 运行时 | 基于 Python 地理计算生态实现的 Workflow Runtime，提供 Pandas、GeoPandas、GDAL/OGR 等算子能力。 | 用户可见名称、System Engine Instance 名称和文档专名统一使用 `GeoPython Workflow`；`engine_type` 固定为 `geopython_workflow`，不得使用其他历史别名。 |
-| Business Spark Cluster | Business Spark 集群 | 用户登记的实际 Spark 计算资源，`engine_type=spark`，用于查询或工作流的执行目标。 | 不承担存储职责；一个任务绑定一个集群，不同任务可选不同集群。集群 ID 与平台内置 Runtime ID 分开。 |
+| Business Spark Cluster | Business Spark 集群 | 用户登记的实际 Spark 计算资源，`engine_type=spark`，用于查询或工作流的执行目标。 | 不承担存储职责；一个任务绑定一个集群，不同任务可选不同集群。集群 ID 与平台内置 Runtime ID 分开；Master 计算端点用于提交，Master Web UI 地址仅用于集群状态检测。 |
 | Built-in Spark Runtime | 内置 Spark 运行时 | 平台复用现有 `spark_workflow` 服务提供的 Spark 执行适配层，目标为同时承接查询和工作流协议。 | 用户无需管理其地址；不新增 `spark-query` 服务，不因计算集群数量增加而强制增加 Runtime 数量。查询接入状态以实际准入及验收记录为准。 |
 | Federated Query Runtime | 联邦查询运行时 | 通过统一查询协议执行 SQL，并按本次执行授权动态挂载多个 Source Engine 或对象表的独立计算服务。 | DuckDB Runtime 是首个实现；Runtime Engine 只表示计算端点，SQL 引用的数据源仍分别保持自己的 Engine Instance 身份。 |
 | Runtime Engine | 运行时引擎 | System 中代表独立计算 Runtime 物理端点的 Engine Instance。 | Develop 任务和 Service 定义绑定 Runtime Engine；它不等于查询涉及的 Source Engine，也不因此获得 Source Engine 数据权限。 |

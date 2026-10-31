@@ -282,7 +282,6 @@ def test_client_uses_exact_engine_type_registration(monkeypatch, notebook_sessio
         ("mysql", "server", (("database", "branch"), ("table", "leaf")), engines.MySQLEngine),
         ("doris", "server", (("database", "branch"), ("table", "leaf")), engines.DorisEngine),
         ("clickhouse", "server", (("database", "branch"), ("table", "leaf")), engines.ClickHouseEngine),
-        ("spark", "server", (("database", "branch"), ("table", "leaf")), engines.SparkSQLEngine),
         ("mongodb", "server", (("database", "branch"), ("collection", "leaf")), engines.MongoDBEngine),
         ("neo4j", "server", (("database", "branch"), ("graph", "leaf")), engines.Neo4jEngine),
         ("minio", "service", (("bucket", "branch"), ("prefix", "branch"), ("object", "leaf")), engines.MinIOEngine),
@@ -817,3 +816,10 @@ def test_kafka_stream_restores_binary_record_fields(monkeypatch, notebook_sessio
     assert record["key"] == b"k"
     assert record["value"] == b"v"
     assert record["headers"][0]["value"] == b"h"
+
+
+@pytest.mark.parametrize("engine_type", ["spark", "duckdb", "spark_workflow"])
+def test_compute_engines_have_no_native_storage_facade(monkeypatch, notebook_session, engine_type):
+    monkeypatch.setattr(engines, "list", lambda **_kwargs: [{"id": 7, "engine_type": engine_type}])
+    with pytest.raises(engines.NotebookEngineCatalogUnsupportedError):
+        engines.client(7)

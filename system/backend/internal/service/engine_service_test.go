@@ -1627,3 +1627,33 @@ func TestConnectionIdentityJSONBComparisonRejectsMalformedKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestConnectionSpecRemovalDoesNotExposeOrReintroduceOldFields(t *testing.T) {
+	svc := NewEngineService(&repository.EngineRepository{}, nil, nil)
+	original := models.ConnectionInfo{"host": "localhost", "port": 11000, "database": "default", "username": "spark", "password": "historical-secret-ciphertext", "master_port": 7077}
+	masked := svc.maskSensitiveFields("spark", original)
+	if len(masked) != 2 || masked["host"] != "localhost" || masked["port"] != 11000 {
+		t.Fatal("public connection must project only declared fields without changing the actual endpoint")
+	}
+	updated := models.ConnectionInfo{"port": 7077, "web_ui_url": "http://localhost:18088"}
+	merged := svc.mergePlainConnectionInfo("spark", original, updated)
+	if len(merged) != 3 || merged["port"] != 7077 || merged["host"] != "localhost" {
+		t.Fatal("explicit update reintroduced removed fields")
+	}
+	registered, err := engineplugin.Get("spark")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registered.ValidateConnectionInfo(engineplugin.ConnectionInfo(merged)); err != nil {
+		t.Fatal(err)
+	}
+	// Explicit invalid submissions must not be silently dropped.
+	updated["password"] = "new-invalid-secret"
+	rejected := svc.mergePlainConnectionInfo("spark", original, updated)
+	if registered.ValidateConnectionInfo(engineplugin.ConnectionInfo(rejected)) == nil {
+		t.Fatal("invalid submitted field was silently accepted")
+	}
+	if original["password"] != "historical-secret-ciphertext" || len(original) != 6 {
+		t.Fatal("read or merge changed stored configuration")
+	}
+}

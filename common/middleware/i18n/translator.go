@@ -2,6 +2,7 @@ package i18n
 
 import (
 	"embed"
+	"errors"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -99,4 +100,23 @@ func localizeLanguage(lang, messageID string, templateData map[string]interface{
 // TWithDetail 翻译消息 ID 并追加动态详情（如错误原因）。
 func TWithDetail(c *gin.Context, messageID, detail string) string {
 	return T(c, messageID) + ": " + detail
+}
+
+// MessageError carries a shared message key across service and HTTP boundaries.
+// Raw driver diagnostics and user-supplied values do not belong in this error.
+type MessageError struct{ messageID string }
+
+func NewMessageError(messageID string) error { return &MessageError{messageID: messageID} }
+func (e *MessageError) Error() string        { return ForLanguage(DefaultLang, e.messageID) }
+
+// ErrorMessage localizes keyed errors, preserving existing non-keyed diagnostics.
+func ErrorMessage(c *gin.Context, err error) string {
+	if err == nil {
+		return ""
+	}
+	var message *MessageError
+	if errors.As(err, &message) {
+		return T(c, message.messageID)
+	}
+	return err.Error()
 }

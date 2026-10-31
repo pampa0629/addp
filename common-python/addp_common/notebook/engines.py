@@ -650,10 +650,6 @@ class ClickHouseEngine(_DatabaseTabularEngine):
     engine_type = "clickhouse"
 
 
-class SparkSQLEngine(_DatabaseTabularEngine):
-    engine_type = "spark"
-
-
 @dataclass(frozen=True)
 class MongoDBCollection:
     name: str
@@ -1624,7 +1620,6 @@ _CLIENT_TYPES: dict[str, type[Any]] = {
     "mysql": MySQLEngine,
     "doris": DorisEngine,
     "clickhouse": ClickHouseEngine,
-    "spark": SparkSQLEngine,
     "mongodb": MongoDBEngine,
     "neo4j": Neo4jEngine,
     "minio": MinIOEngine,
@@ -1679,7 +1674,6 @@ __all__ = [
     "PostgreSQLSchema",
     "PostgreSQLTable",
     "S3Engine",
-    "SparkSQLEngine",
     "client",
     "list",
 ]

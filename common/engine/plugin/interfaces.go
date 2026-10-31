@@ -40,6 +40,7 @@ type EnginePlugin interface {
 	//
 	// 实现要求：
 	//   - 必须使用 connInfo 中的凭据建立连接并执行一个需要认证的操作（如 SELECT 1、listDatabases、ListBuckets 等）
+	//   - 明确不支持认证的计算集群必须读取原生集群状态及实际执行容量，不得把 TCP 可连接当作集群就绪
 	//   - 仅检查网络连通性（如 Ping、VerifyConnectivity）是不够的，无法验证账号密码是否正确
 	//   - 关系型数据库：至少执行一次 SELECT 查询（如 SELECT 1 或 SELECT version()）
 	//   - NoSQL 数据库：至少执行一次需要权限的命令（如 ListDatabases、SHOW DATABASES）
