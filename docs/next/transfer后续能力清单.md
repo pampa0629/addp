@@ -8,6 +8,8 @@
 
 新增能力前必须先确认真实需求、Provider 契约和可验证的一致性边界；完成后应迁入正式文档并从本清单删除，不能长期保留“已完成”条目。
 
+验收说明：[验收范围与证据](#六验收范围与证据)。
+
 ## 一、Bounded 同步
 
 | 能力 | 当前缺口 | 进入实现前必须确认 |
@@ -31,7 +33,7 @@
 | Kafka target | 当前 Kafka 只能作为业务 source | writer Provider、partition key、交付确认、幂等、事务和目标资源 owner |
 | [Replay 扩展到其他目标](../spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约) | 当前仅业务 Kafka record/json 的显式 offset ranges 可写入不存在的新 PostgreSQL 隔离表，不含 CDC 重放或 DLQ topic 读取 | 其他目标的 execution-scoped ledger、隔离保证和能力声明 |
 
-业务 Kafka 的记录错误策略与 replay 分工见[业务 Kafka 语义](../../transfer/docs/transfer-任务语义与同步模式.md#62-业务-kafka)及[Checkpoint 与 Replay](../../transfer/docs/transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)，完整约束以[Kafka 与 DLQ 契约](../spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)为准。replay 从原业务 topic 读取，DLQ topic 不是 replay source；它使用独立 bounded execution、execution-scoped apply identity 和隔离目标，不改主状态、水位、lease、主 apply identity 或主目标，可与主 runtime 并行，失败不改变主任务状态或触发 continuous 恢复 circuit。DLQ 的 Tenant/task 查询隔离与 payload 安全见[公开查询与来源隔离](../../transfer/docs/数据库架构.md#dlq-公开查询与来源隔离)。DLQ 查询成功或 `payload_available=true` 不证明 replay 通过，也不代表 CDC replay/DLQ 已开放；固定版本证据、失败与未覆盖项按[模块验证](../../transfer/CLAUDE.md#开发与验证)的原始场景认定。
+业务 Kafka 的记录错误策略与 replay 分工见[业务 Kafka 语义](../../transfer/docs/transfer-任务语义与同步模式.md#62-业务-kafka)及[Checkpoint 与 Replay](../../transfer/docs/transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)，完整约束以[Kafka 与 DLQ 契约](../spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)为准。replay 从原业务 topic 读取，DLQ topic 不是 replay source；它使用独立 bounded execution、execution-scoped apply identity 和隔离目标，不改主状态、水位、lease、主 apply identity 或主目标，可与主 runtime 并行，失败不改变主任务状态或触发 continuous 恢复 circuit。DLQ 的 Tenant/task 查询隔离与 payload 安全见[公开查询与来源隔离](../../transfer/docs/数据库架构.md#dlq-公开查询与来源隔离)。
 
 ## 三、数据库 CDC
 
@@ -47,11 +49,9 @@
 | Oracle CDC 高级能力 | 当前支持单实例 CDB/PDB、普通字段与 Oracle Spatial 单表，并提供源恢复窗口和未提交事务压力观测；捕获与类型边界见下述专题 | RAC、普通业务 LOB、长事务阈值/告警策略、归档日志自动治理 |
 | [ArcGIS SDE 逻辑变化源](ArcGIS%20SDE支持设计.md) | 普通 Oracle/PostgreSQL 表日志不能等同版本化要素变化 | geodatabase 版本模型、A/D delta tables、空间类型、业务事务和许可边界 |
 
-单表、主键与事件约束见[数据库 CDC 语义](../../transfer/docs/transfer-任务语义与同步模式.md#63-数据库-cdc)。单表与主键要求属于捕获准入条件，未满足时不得启动捕获；运行时主键或 schema 漂移按[Schema 变化](../../transfer/docs/transfer-任务语义与同步模式.md#七schema-变化)阻塞，当前消息和 committed position 不推进。已有单表 snapshot/upsert/delete 结果不能补作多表、无主键或 Truncate 通过；固定版本证据、失败及未覆盖项沿[验证范围](../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)的原始场景认定。
+单表、主键与事件约束见[数据库 CDC 语义](../../transfer/docs/transfer-任务语义与同步模式.md#63-数据库-cdc)。单表与主键要求属于捕获准入条件，未满足时不得启动捕获；运行时主键或 schema 漂移按[Schema 变化](../../transfer/docs/transfer-任务语义与同步模式.md#七schema-变化)阻塞，当前消息和 committed position 不推进。
 
 Oracle 普通表 CDC 与 ArcGIS SDE 逻辑变化源是两个不同能力，不能包装成同一路径。Oracle Spatial 的捕获、冻结空间事实与源／目标限制统一见[CDC 正式契约](../spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)及[Oracle CDC 配置](../../transfer/docs/transfer-基本概念及配置说明.md#oracle-cdc)。ArcGIS 传统版本化编辑仍需独立验证版本、权限、事务和许可边界。基础 `MDSYS.SDO_GEOMETRY` Spatial 读取继续由 Oracle Engine Provider 独立支持。
-
-类型声明与实际验证须按源／目标组合、snapshot／insert／update／delete、精度／时区及空间维度分别核对，空间源捕获不代表目标写入同样受支持。固定源码版本、有效证据、失败与修复结论及未覆盖项沿[模块验证](../../transfer/CLAUDE.md#开发与验证)的原始场景认定，其他专项通过不能补作 CDC 类型矩阵通过；Oracle 的既有数据面范围见[Oracle 既有验证与验收边界](../../transfer/docs/transfer-基本概念及配置说明.md#oracle-既有验证与验收边界)，标准调用与隔离清理门禁缺口见[Oracle 专项入口说明](../../transfer/README.md#oracle-cdc-专项入口缺口)。能力声明、已有用例或部分结果不代表全部组合或当前版本已验收；未运行、失败、跳过或未覆盖项不计为通过。
 
 ## 四、Continuous 运行时与观测
 
@@ -74,4 +74,15 @@ Oracle 普通表 CDC 与 ArcGIS SDE 逻辑变化源是两个不同能力，不�
 
 这些能力应在出现具体使用场景时分别确认 Provider 归属和测试矩阵，不能借同步模式扩展在 Transfer 内建立引擎专用旁路。
 
-容器子表的现行主路径与身份边界见[架构约束](../../transfer/docs/design.md#容器子表约束)，具体读取入口见[读取布局与入口](../../transfer/docs/transfer-基本概念及配置说明.md#读取布局与入口)。实际格式与目标能力仍由对应 Provider 声明决定；这些约束不代表所有格式、任意目标或端到端场景已验收。标准门禁、固定版本证据、失败与未覆盖项见[模块验证](../../transfer/CLAUDE.md#开发与验证)，未运行、失败、跳过或未覆盖项不计为通过。
+容器子表的现行主路径与身份边界见[架构约束](../../transfer/docs/design.md#容器子表约束)，具体读取入口见[读取布局与入口](../../transfer/docs/transfer-基本概念及配置说明.md#读取布局与入口)。实际格式与目标能力仍由对应 Provider 声明决定。
+
+## 六、验收范围与证据
+
+标准门禁与验证分层统一见[验证范围](../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)。固定源码版本、有效证据、失败与修复结论及未覆盖项以[模块验证](../../transfer/CLAUDE.md#开发与验证)的原记录为准，只对应所列源码、运行与场景，不扩大到全部组合或当前版本；未运行、失败、跳过或未覆盖项不计为通过。
+
+| 主题 | 独有验收边界 | 专题入口 |
+|---|---|---|
+| 业务 Kafka DLQ / replay | DLQ 查询成功或 `payload_available=true` 不证明 replay 通过，也不代表 CDC replay/DLQ 已开放。 | [DLQ availability 与验收](../../transfer/docs/数据库架构.md#availability-失败与验收边界) |
+| CDC 单表与待扩展能力 | 已有单表 snapshot/upsert/delete 结果不能补作多表、无主键或 Truncate 通过。 | [数据库 CDC 语义](../../transfer/docs/transfer-任务语义与同步模式.md#63-数据库-cdc) |
+| CDC 类型矩阵与 Oracle | 源／目标组合、snapshot／insert／update／delete、精度／时区及空间维度分别核对；空间源捕获不代表目标写入同样受支持，其他专项通过不能补作 CDC 类型矩阵通过。 | [Oracle 既有数据面范围](../../transfer/docs/transfer-基本概念及配置说明.md#oracle-既有验证与验收边界)、[专项调用与隔离清理门禁缺口](../../transfer/README.md#oracle-cdc-专项入口缺口) |
+| 容器子表 | Provider 声明和现行主路径不代表所有格式、任意目标或端到端场景已验收。 | [读取布局与入口](../../transfer/docs/transfer-基本概念及配置说明.md#读取布局与入口) |
