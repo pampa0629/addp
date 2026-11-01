@@ -431,6 +431,8 @@ bounded + incremental + watermark + upsert
 
 ## 八、Continuous/Kafka v1 契约与当前实现边界
 
+验收说明：[Continuous 验收边界](#continuous-验收边界)。
+
 业务 Kafka continuous 路径为 keyed JSON record -> PostgreSQL/MySQL native table upsert。业务 Kafka 作为 System Engine 暴露 `service -> topic` catalog；用户选择 `type=topic` locator，partition 不进入资源树或 locator。Infra Kafka 是数据库 CDC 的内部实现，不进入公开任务配置。
 
 Kafka Provider 通过 `ChangeStreamReaderProvider` 返回原始 ChangeRecord 和 per-partition provider position；Transfer adapter 只接受 JSON object，从 value 的显式非空字段提取稳定 key，并归一化为 `operation=upsert` ChangeEvent。任务必须提供完整 `field_mapping` 固定目标 schema，source key 映射后必须与目标 keys 一一对应，并显式提交 `runtime.record_failure.mode=block|dead_letter`，不得依赖字段省略猜默认值。
@@ -441,31 +443,37 @@ Kafka Provider 通过 `ChangeStreamReaderProvider` 返回原始 ChangeRecord 和
 
 各目标 ledger 的表名与归属以[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)为准：PostgreSQL ledger 位于业务目标库；MySQL 使用同一目标数据库的 InnoDB 私有表，不跨库；Oracle CDC 目标 schema 必须等于连接用户，ledger 通过 ownership comment 从 Catalog 隐藏。同名 ledger 结构不符合唯一规范时直接失败，不保留兼容路径。
 
-每个 partition 的主状态保存在 `transfer.sync_states`，position 固定为 `type=kafka_offset`、`version=v1`、`next_offset`；consumer auto commit 禁用。先提交目标业务行与 ledger，再以 runtime fencing token + state version 做 Infra CAS；两步之间崩溃会重放，由目标 ledger 吸收重复并阻止旧 worker 回写，不宣称分布式 exactly-once。首次无状态 partition 必须显式选择 `earliest|latest`。该顺序的实际通过范围、失败与未覆盖项见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)。
+每个 partition 的主状态保存在 `transfer.sync_states`，position 固定为 `type=kafka_offset`、`version=v1`、`next_offset`；consumer auto commit 禁用。先提交目标业务行与 ledger，再以 runtime fencing token + state version 做 Infra CAS；两步之间崩溃会重放，由目标 ledger 吸收重复并阻止旧 worker 回写，不宣称分布式 exactly-once。首次无状态 partition 必须显式选择 `earliest|latest`。
 
 业务 Kafka JSON upsert + DLQ 与 PostgreSQL/MySQL/Oracle CDC snapshot/upsert/delete 已实现，并共用同一个 consumer/apply/CAS 主循环；continuous worker 不使用 Asynq。独立进程角色、状态控制与租约归属见[Continuous 运行时](transfer-任务语义与同步模式.md#六continuous-运行时)，交付与恢复约束以[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)为准。
 
 Console Wizard 已支持业务 Kafka 以及 PostgreSQL/MySQL/Oracle CDC 配置。业务 Kafka 默认显式发送 `block`，公开 API 可显式选择 `dead_letter`，完整策略见[Kafka 与 DLQ 契约](../../docs/spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)。execution 详情展示 owner、heartbeat、lease、fencing token、每个 partition 的 committed next offset 与最近提交时间。
 
-当前仍不支持无 key append、Schema Registry、Avro、Protobuf、Kafka target、数据库 CDC replay/DLQ、普通 Oracle LOB/RAC、ArcGIS SDE 或自动 schema evolution。能力摘要和详情展示不作为当前版本的运行通过记录，固定版本证据、失败与未覆盖项见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)。
+当前仍不支持无 key append、Schema Registry、Avro、Protobuf、Kafka target、数据库 CDC replay/DLQ、普通 Oracle LOB/RAC、ArcGIS SDE 或自动 schema evolution。
 
 `dead_letter` 的错误分类、幂等身份和处理协议统一见[Kafka 与 DLQ 契约](../../docs/spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)。顺序为 DLQ payload → `transfer.dead_letters` 控制索引 → 目标 `skip` ledger → `transfer.sync_states` CAS，任一步失败不得推进后续 position。仅业务 Kafka 确定性记录错误可以进入 DLQ；source/poll、目标、fencing、retention 和 Infra 故障仍严格阻塞。
 
 业务 Kafka bounded replay 的唯一入口为 `POST /task-definitions/:id/replay`，请求只提交显式 per-partition `[start_offset,end_offset)` 和不存在的新 PostgreSQL 目标 `parent_locator + name`。source、mapping、key、policy 与原目标事实从 owner task 冻结继承，不得覆盖；提交前校验 retention 并拒绝原目标或已有目标，bounded worker 执行时再次核验 retention 和目标不存在。
 
-独立 execution、execution-scoped apply identity 与主状态隔离统一见[Checkpoint 与 Replay](transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)，完整失败约束以上述 Kafka 与 DLQ 契约为准。replay 从原业务 topic 读取，DLQ topic 不是 replay source；它写独立隔离表，不读写主水位、lease、apply identity、目标及任务状态，可与主 continuous runtime 并行，失败不改变主任务状态或触发 continuous 恢复 circuit。DLQ 查询的 Tenant/task 隔离与 payload 安全见[公开查询与来源隔离](数据库架构.md#dlq-公开查询与来源隔离)；处理或查询成功不替代 replay、来源隔离和完整链路的[实际验收](transfer-任务语义与同步模式.md#十一验证范围)。
+独立 execution、execution-scoped apply identity 与主状态隔离统一见[Checkpoint 与 Replay](transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)，完整失败约束以上述 Kafka 与 DLQ 契约为准。replay 从原业务 topic 读取，DLQ topic 不是 replay source；它写独立隔离表，不读写主水位、lease、apply identity、目标及任务状态，可与主 continuous runtime 并行，失败不改变主任务状态或触发 continuous 恢复 circuit。DLQ 查询的 Tenant/task 隔离与 payload 安全见[公开查询与来源隔离](数据库架构.md#dlq-公开查询与来源隔离)。
 
 resume 的新 execution 与位置核验见[用户运行控制](transfer-任务语义与同步模式.md#用户运行控制)；完整恢复条件以[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)为准。committed `next_offset` 必须落在当前 partition 的 `[earliest_offset,latest_offset]` 内；retention 已清除该位置或位置高于 latest 时均明确失败，不能自动重置到 earliest/latest，须人工处理。
 
-PostgreSQL/MySQL/Oracle 目标锁等待必须响应 context 取消，并回滚未完成的业务行与目标 ledger 事务；Oracle 使用 `FOR UPDATE NOWAIT` 有界重试，约束见[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)。位置诊断或取消请求返回不证明实际恢复、停止或回滚通过，按[验证范围](transfer-任务语义与同步模式.md#十一验证范围)核对。
+PostgreSQL/MySQL/Oracle 目标锁等待必须响应 context 取消，并回滚未完成的业务行与目标 ledger 事务；Oracle 使用 `FOR UPDATE NOWAIT` 有界重试，约束见[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)。
 
 diagnostics 采样间隔、degraded/critical retention 阈值和 checkpoint 停滞阈值由 Transfer 配置管理页面“连续任务策略”统一维护，不进入任务 JSON。指标计算、unknown 条件与真实 position commit 口径见[分区位置与 Kafka 恢复窗口](transfer-任务语义与同步模式.md#分区位置与-kafka-恢复窗口)，捕获健康与源日志窗口见[诊断专题](transfer-任务语义与同步模式.md#捕获健康与源日志窗口)。
 
-诊断结果写入 `common.task_executions.metadata.continuous.diagnostics`；Monitor 只读取 execution metadata，不直连业务 Kafka 或 Transfer 私有状态表。允许公开的字段与敏感信息排除统一见[安全投影与读取边界](transfer-任务语义与同步模式.md#安全投影与读取边界)；诊断展示不作为恢复通过记录，固定版本证据、失败与未覆盖项见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)。
+诊断结果写入 `common.task_executions.metadata.continuous.diagnostics`；Monitor 只读取 execution metadata，不直连业务 Kafka 或 Transfer 私有状态表。允许公开的字段与敏感信息排除统一见[安全投影与读取边界](transfer-任务语义与同步模式.md#安全投影与读取边界)。
 
 continuous worker 的重启恢复、领取条件与 circuit 状态统一见[自动恢复与退避](transfer-任务语义与同步模式.md#自动恢复与退避)，不可变审计与可变状态见[恢复审计与运行状态](transfer-任务语义与同步模式.md#恢复审计与运行状态)；唯一 pending execution、租约及恢复约束以[continuous 正式契约](../../docs/spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约)为准。
 
-指数退避、最大连续失败次数、circuit 冷却时间和稳定运行窗口由“连续任务策略”配置页统一维护，属于 Transfer-owned 平台运行配置，不进入任务 JSON。参数保存或 recovery execution 创建不等于恢复成功；固定版本证据、失败与未覆盖项见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)。
+指数退避、最大连续失败次数、circuit 冷却时间和稳定运行窗口由“连续任务策略”配置页统一维护，属于 Transfer-owned 平台运行配置，不进入任务 JSON。
+
+### Continuous 验收边界
+
+本章能力摘要、execution 详情和诊断展示不作为当前版本的运行通过记录。标准门禁、固定版本证据、失败与修复结论及未覆盖项统一见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)；未运行、失败、跳过或未覆盖项不计为通过。
+
+目标事务与 Infra CAS 的提交顺序须实际核对；DLQ 处理或查询成功不替代 replay、Tenant/task 来源隔离与完整链路验收；位置诊断或取消请求返回不证明实际恢复、停止或回滚通过；策略参数保存或 recovery execution 创建不等于自动恢复成功。各项须按对应场景分别验证。
 
 ## 九、数据库 CDC v1 已冻结边界
 
