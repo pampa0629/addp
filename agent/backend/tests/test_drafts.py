@@ -2,7 +2,9 @@
 
 In-memory SQL is T1, not a PostgreSQL or live-model acceptance claim.
 """
+import asyncio
 import copy
+from contextlib import aclosing
 import json
 import unittest
 import uuid
@@ -199,6 +201,68 @@ class DraftScopeTests(unittest.IsolatedAsyncioTestCase):
 
 
 class DraftRoutingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_historical_explanation_streams_before_completion_with_exact_snapshot_and_no_tools(self):
+        from langchain_core.messages import AIMessageChunk
+        snapshot = draft_snapshot(checked_step())
+        release = asyncio.Event()
+        class Model(ScriptedRouter):
+            async def astream(inner, messages):
+                inner.messages.append(messages)
+                yield AIMessageChunk(content='第一段历史说明')
+                await release.wait()
+                yield AIMessageChunk(content='第二段历史说明')
+        model = Model([RouteDecision(draft_action='inspect', draft_ref=snapshot['reference'])])
+        reader = AsyncMock(return_value=snapshot)
+        with (patch('agents.main_agent.get_llm', return_value=model),
+              patch('agents.main_agent.create_agent_tools') as tools,
+              patch('agents.main_agent.AgentFactory.run') as harness):
+            async with aclosing(stream_agent_response([{'role':'user','content':'只解释历史草稿'}],
+                    1, 1, 'token', 'history-stream', draft_catalog=[{'reference':snapshot['reference'],'name':snapshot['name']}],
+                    draft_reader=reader)) as events:
+                received = []
+                while True:
+                    event = await asyncio.wait_for(anext(events), 2)
+                    received.append(event)
+                    if event.kind == 'text' and event.payload['delta'] == '第一段历史说明':
+                        break
+                self.assertFalse(release.is_set())
+                presentation = next(e.payload for e in received if e.kind=='presentation' and e.payload['kind']=='transfer_draft_snapshot')
+                self.assertEqual(json.loads(presentation['parameters']), snapshot['arguments'])
+                self.assertEqual([e.payload['kind'] for e in received if e.kind=='presentation'],
+                    ['transfer_draft_snapshot','transfer_config_check'])
+                release.set()
+                rest = [event async for event in events]
+            self.assertEqual([e.payload['delta'] for e in rest if e.kind=='text'], ['第二段历史说明'])
+            reader.assert_awaited_once_with(snapshot['reference'])
+            tools.assert_not_called()
+            harness.assert_not_called()
+
+    async def test_invalid_draft_route_stops_before_tools_and_logs_only_closed_metadata(self):
+        request = 'private-user-content'
+        reference = 'private-draft-reference'
+        for decision in (RouteDecision(draft_action='inspect', draft_ref=reference, needs_platform_semantics=True),
+                         RouteDecision(draft_ref=reference)):
+            with (self.subTest(decision=decision),
+                  patch('agents.main_agent._get_skill_registry', return_value=registry_fixture()),
+                  patch('agents.main_agent.get_llm', return_value=ScriptedRouter([decision])),
+                  patch('agents.main_agent.create_agent_tools') as tools,
+                  patch('agents.main_agent.AgentFactory.run') as harness,
+                  patch('agents.main_agent.logger.info') as log):
+                reader = AsyncMock()
+                with self.assertRaisesRegex(ValueError, 'invalid_draft_route'):
+                    _ = [event async for event in stream_agent_response([{'role':'user','content':request}],
+                        1, 1, 'private-token', 'invalid-route', draft_catalog=[{'reference':reference,'name':'draft'}],
+                        draft_reader=reader)]
+                tools.assert_not_called()
+                harness.assert_not_called()
+                reader.assert_not_awaited()
+                records = [call.args for call in log.call_args_list if call.args[0].startswith('[ROUTE]')]
+                self.assertEqual(len(records), 1)
+                self.assertEqual(records[0][1:], (decision.draft_action, bool(decision.skill),
+                    decision.needs_platform_semantics, bool(decision.draft_ref)))
+                for secret in (request, reference, 'private-token'):
+                    self.assertNotIn(secret, str(records))
+
     async def test_creation_restores_only_parameters_before_current_platform_selection(self):
         snapshot = draft_snapshot(checked_step())
         reference = snapshot["reference"]

@@ -54,18 +54,18 @@ class RouteDecision(BaseModel):
     """只返回路由决策；正文由独立回答阶段生成"""
 
     model_config = ConfigDict(extra="forbid")
-    draft_action: Optional[Literal["inspect", "create"]] = Field(default=None, description="inspect 只解释已有草稿且不操作业务；create 仅明确沿用全部原参数创建、不修改、不运行，此时必须 needs_platform_semantics=true。请求修改则走普通平台路线。指代不明时保留动作但 draft_ref=null，不能猜选。")
+    draft_action: Optional[Literal["inspect", "create"]] = Field(default=None, description="草稿动作优先于通用平台领域分类。inspect 只解释已有草稿：skill=null 且 needs_platform_semantics=false；create 仅明确沿用全部原参数创建、不修改、不运行：skill=null 且 needs_platform_semantics=true。请求修改则本字段为 null，走普通平台路线。指代不明时保留动作但 draft_ref=null，不能猜选。")
     draft_ref: Optional[str] = Field(default=None, description="只选近期受信任草稿目录的确切 reference；缺失或有歧义时为 null，不能从正文推测。")
     skill: Optional[str] = Field(
         default=None,
         description=(
             "需要激活的技能名称，例如 data-browse、execute-sql、data-preview、metadata-search。"
-            "如果不需要技能则为 null。"
+            "draft_action 非 null 时必须为 null；无草稿动作且不需要技能时也为 null。"
         ),
     )
     needs_platform_semantics: bool = Field(
         default=False,
-        description="用户目标属于平台语义任务领域时为 true，此时 skill 为 null，必须先读取平台能力目录。",
+        description="draft_action=inspect 时必须为 false；draft_action=create 时必须为 true，两种动作的 skill 均为 null。仅无草稿动作时再按本轮平台语义任务领域分类：属于该领域为 true、skill=null，必须先读取平台能力目录；普通目标为 false。",
     )
 
 

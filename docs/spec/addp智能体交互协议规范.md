@@ -72,6 +72,8 @@ AgentDraftRef 使用 `draft:<已完成步骤 UUID>:<参数 SHA-256>`，来源只
 
 历史参数读取统一记录 Runtime `draft.inspect` 审计。纯解释只提供完整且有界的参数和去身份化报告，不装配业务工具；原参数创建只将明确选定引用的参数作为候选，不导入其报告、checkpoint、资源确认或权限。快照总量最多 128 KiB，超限拒绝而非截断。固定草稿 Presentation 从同一参数生成精确字段映射和完整参数展示，明确预检／保存任务定义不代表目标建表或实际执行。模型只补充解释，不重新推测已有映射。历史展示不保证当前结构、权限或能力仍有效。
 
+草稿动作优先于通用平台领域分类，路由字段必须互斥：纯解释为 `draft_action=inspect, skill=null, needs_platform_semantics=false`；原参数创建为 `draft_action=create, skill=null, needs_platform_semantics=true`。其余目标才按普通 Skill 或平台领域分类，`draft_action/draft_ref` 均为 null。提示词与结构化 Schema 必须表达相同约束；模型输出混用字段时明确拒绝，不修正标志、不重试或绕过校验。路由诊断仅记录封闭动作和字段有无等布尔标志，不记录用户正文、草稿引用或参数。
+
 用户明确要求沿用原参数创建时，路由选择 `draft_action=create` 及受信任目录中的确切引用，仍必须走当前平台语义路线。指代不清时先询问，不自动选首项；明确要求改配置则走修改流程，不进入原参数创建。Runtime 在当前 Run 的 checkpoint 中仅保存 `draft_ref` 控制引用，不保存第二份参数；每次 Harness 调用（含确认恢复）重新按同一 User/Tenant/Session 读取、校验引用及完整参数摘要。缺失、篡改、错版、越界或超限均终止，不从聊天或当前结构重建原稿。引用绑定后，创建复核的私有 `operation_review` 仅提交 `{tool:"transfer.task.create"}`，Runtime 使用恢复的完整参数；未经绑定的普通创建仍提交 `{tool,arguments}`。向正式创建 Adapter 的参数也由 Runtime 绑定，保留 name、description、字段顺序、可选参数的原始有无，不接收模型重新拼装的值。实际执行参数而非模型建议值写入 Tool 审计。
 
 原参数创建仍重新读取当前平台能力及必要资源事实、自动预检、取得新的完整参数复核与知情确认，创建前再次预检并消费确认、等待持久提交屏障后调用同一正式 Adapter。unsupported、事实变化、权限失败、取消或未确认均不得写入；旧引用从不代表创建或运行授权。绑定流程中不接受模型同时提交一套替代参数；需要修改时明确结束原参数创建，再沿原修改/预检/复核流程生成新候选。没有新平台 Tool、HTTP API、可编辑草稿表或第二条 Owner 创建路线。
