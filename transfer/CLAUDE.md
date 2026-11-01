@@ -162,8 +162,9 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 
 #### 任务删除与物理清理
 
-- task 直接删除与 System physical cleanup 必须复用同一 task-owned resource cleanup：CDC capture（如适用）→ 业务 Kafka 确定性 DLQ topic → tenant/task scoped `transfer.dead_letters` → task definition。logical cleanup、pause/stop 保留 DLQ；Kafka 删除失败时不得先删索引或任务。
-- physical cleanup 在删除私有状态前必须把 continuous task 收敛到 desired stopped，并取得所有原 runtime invocation 的实际停止证明；lease 过期、cancel 或进程消失不构成证明。pending／running bounded task 无真实 cancel 能力，必须拒绝清理。外部资源清理后，`dead_letters/sync_states/runtime_leases/schema_change_requests/capture_resources` 在同一事务删除，公共 execution 和目标业务事实继续保留。
+- 用户显式删除按当前 Tenant 与 `transfer.task.delete` 独立授权，见[任务定义入口](docs/tables/tasks表.md#用户任务定义与控制)；Engine 生命周期 Cleanup 保留命中的任务定义，供后续重绑定或显式删除，不能按 physical mode 一概删除。Transfer-owned 捕获／DLQ 资源与 Infra 共享资源的所有权、用户目标及审计保留统一见[Cleanup 的 Transfer 职责](../docs/spec/addp-cleanup体系规范.md#transfer)。
+- 删除运行控制状态前须收敛 continuous task 为 desired stopped，并取得所有原 invocation 的实际停止证明；lease 过期、cancel 或进程消失均不构成证明。pending／running bounded 执行阻断清理。外部效果先登记精确目标并复核原用户授权，未知不重发；Runner、持久围栏及验收边界见[Cleanup 执行边界](#cleanup-执行边界)和[正式 Owner 约束](../docs/spec/addp-cleanup体系规范.md#十五已确认决策)。
+- 显式任务删除的 capture → DLQ → 私有状态／定义收口、失败保留及最终事务沿[任务资源契约](../docs/spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)和[私有状态与任务删除](docs/transfer-任务语义与同步模式.md#51-私有状态与任务删除)。外部删除失败不得先删索引或任务，公共 execution、目标业务数据及目标 ledger 保留；`runtime_sessions`／`cleanup_operations` 不随普通私有状态抹除。门禁、真实停止、外部资源与零残留须分别验收，不以 lease 或 API 返回证明清理通过。
 
 #### 写后扫描触发与范围
 
