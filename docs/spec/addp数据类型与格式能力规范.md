@@ -371,6 +371,9 @@ spatial := datatype.SpatialInfo{
 
 容器型 data item 的父级 `type_info.container.children` 只保存轻量子对象索引，例如 child 名称、真实入口名、类型、行数、列数和默认入口。子对象的完整字段信息、行样本和分页内容属于该 child 自身，应在指定 child 后继续调用对应 table / document / media info provider 或 content reader 获取；父容器不能把所有 child 的 `fields`、`rows` 等内容展开塞进自身 attributes。
 
+多维数值容器的网格切片使用`GridSliceSelection`/`GridSliceResult`，只是一种内容预览契约，不新增data type或独立DataItem。父级轻量变量索引保存名字、原生类型、维序/大小和有界精选属性，完整变量属性及数值/掩膜只在显式选择后读取，不写回父attributes。`RuntimeContainerSliceProviderFactory`复用既有容器绑定，`ContainerSliceReader`在同一授权source plan下读取选定变量的有界二维网格；没有第二套绑定或table伪装。
+
+
 容器 child、multi ref 和嵌套容器路径必须区分：
 
 - `child_name` 表示当前容器第一层可寻址子对象，例如 Excel sheet、SQLite table、ZIP entry 或已归并的 Shapefile child。
@@ -473,7 +476,7 @@ info provider 和 content reader 是上层消费者面向数据类型能力的�
 | sample / text reader | 提供按 data type 组织后的轻量内容数据，供 Manager / Search / 轻量探查消费 | `TableSampleReader`、`DocumentTextReader`、`MediaThumbnailReader`、点云抽样 reader |
 | continuous reader provider | 打开一次连续读取会话，供 Transfer 等批处理消费 | `TableReaderProvider`、`MultiTableReaderProvider`、`ScopeTableReaderProvider` |
 | writer provider | 打开一次连续写出会话，供 Transfer 写侧消费 | `TableWriterProvider`、`MultiTableWriterProvider`、`ScopeTableWriterProvider` |
-| runtime-bound provider factory | 将已授权的 workflow runtime 和执行期 access plan 绑定为具体 media / container info provider 或 scope reader / writer | `RuntimeMediaInfoProviderFactory`、`RuntimeContainerInfoProviderFactory`、`RuntimeScopeTableProviderFactory` |
+| runtime-bound provider factory | 将已授权的 workflow runtime 和执行期 access plan 绑定为具体 media / container info provider 或 scope reader / writer | `RuntimeMediaInfoProviderFactory`、`RuntimeContainerInfoProviderFactory`、`RuntimeContainerSliceProviderFactory`、`RuntimeScopeTableProviderFactory` |
 
 info provider 只回答对应 data type 的元数据语义；sample / text reader 只回答预览、探查和轻量片段读取；continuous reader provider / writer provider 面向全量批处理。它们都不回答格式识别，也不回答 item 归并。
 

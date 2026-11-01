@@ -52,6 +52,7 @@ const (
 	FormatXML                  FormatType = "xml"
 	FormatParquet              FormatType = "parquet"
 	FormatORC                  FormatType = "orc"
+	FormatNetCDF               FormatType = "netcdf"
 	FormatAvro                 FormatType = "avro"
 	FormatZIP                  FormatType = "zip"
 	FormatRasterMosaic         FormatType = "raster_mosaic"

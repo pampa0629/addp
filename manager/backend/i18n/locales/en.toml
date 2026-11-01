@@ -347,3 +347,6 @@ other = "The original model and related file composition is incomplete. Rescan t
 
 [manager.error.download_source_changed]
 other = "The source changed while packaging. Retry after the source is stable."
+
+[manager.error.grid_slice_invalid]
+other = "Grid slice selection is invalid or outside the supported bounds"

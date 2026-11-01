@@ -227,6 +227,7 @@
 | data type | 数据类型 | 用户和平台理解 data item 的高层语义类型。 | 比文件格式更高层，例如 `table`、`document`、`media`。 |
 | format | 文件格式 | data item 或 content 的编码方式或格式族。 | 例如 `csv`、`parquet`、`pdf`、`shapefile`。 |
 | layout | 内容布局 | content 如何组成 data item 的布局维度。 | `format.layouts` 表示格式支持的布局列表，`attributes.item.layout` 表示已识别 item 的布局结果；取值为 `single`、`multi`、`whole`。 |
+| grid slice preview | 网格切片预览 | 对容器内选定数值变量按显式前导维索引及二维窗口读取的临时有界视图。 | 不是新data type、DataItem、任务或产物；保留原存储值、掩膜和维序，不从变量名称猜测CRS或时间语义。NetCDF经典文件沿GeoPython GDAL单一路线读取。 |
 | vector tile set | 矢量瓦片集 | 以 PMTiles v3 单文件封装、可作为业务数据长期保存和跨平台交换的二维矢量瓦片 data item。 | 统一使用 `data_type=media`、`format=pmtiles`、`layout=single`；当前瓦片编码固定为 MVT。 |
 | PMTiles | PMTiles | 面向 HTTP Range Read 的单文件瓦片归档格式。 | ADDP 业务矢量瓦片集固定使用 PMTiles v3；PMTiles 是归档格式，MVT 是归档内单瓦片编码。 |
 | capture location | 拍摄位置 | 媒体记录时采集设备所处的地理位置，以经纬度和源大地基准表达。 | 写入 `capabilities.spatial.capture_location`；与影像地面覆盖范围 `extent`、像元定位及几何字段相互独立。基准未知时不猜测 WGS84，不据拍摄点开启栅格地图预览。 |

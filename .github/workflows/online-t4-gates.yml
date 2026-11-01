@@ -151,6 +151,7 @@ on:
           - full
           - native-raster-media
           - native-table-orc
+          - native-netcdf
           - kml-export
           - filegdb-authorization
       native_case:

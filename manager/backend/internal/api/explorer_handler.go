@@ -109,6 +109,7 @@ func bearerToken(c *gin.Context) string {
 // @Param trajectory_selection query string false "单文件轨迹范围 JSON：device_field,time_field,time_encoding,devices,start,end；page=1、page_size=2000；时间左闭右开；最多2000点、32MiB、250000行、15秒 | Single-file trajectory selection JSON; device_field,time_field,time_encoding,devices,start,end; page=1,page_size=2000; half-open time range; budgets 2000 points,32MiB,250000 rows,15 seconds"
 // @Description 范围成功返回 data.trajectory_scope 的 selection/complete/scanned_rows；只有完整扫描才返回结果，不返回部分路线。设备/时间字段受保护时拒绝筛选 | A successful range response includes data.trajectory_scope selection/complete/scanned_rows; partial scans publish no rows; protected device/time predicates are rejected
 // @Failure 422 {object} map[string]interface{} "轨迹点数或扫描预算超限，或源数据无效 | Trajectory point/scan budget exceeded or invalid source data"
+// @Param grid_slice query string false "数值容器网格切片JSON：variable/indices/x/y/width/height，最多4096格；另需manager.content.read | Numeric container grid selection JSON, at most 4096 cells; additionally requires manager.content.read"
 // @Param child_name query string false "容器内部 child 名称，例如 Excel 工作表 | Container child name, e.g. Excel sheet"
 // @Param ref_path query string false "multi child 内的 ref 路径 | Ref path inside a multi child"
 // @Param nested_child_path query string false "嵌套容器内部 child 相对路径 | Relative child path inside a nested container"
@@ -140,6 +141,15 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 		return
 	}
 
+	gridSlice, gridErr := gridSliceFromQuery(c)
+	if gridErr != nil {
+		writeGridSliceError(c, gridErr)
+		return
+	}
+	if gridSlice != nil && !commonauth.HasAllRolePermissions(c, "manager.content.read") {
+		accessDeniedToEngine(c)
+		return
+	}
 	selection, selectionErr := trajectorySelectionFromQuery(c)
 	if selectionErr != nil {
 		writeTrajectoryError(c, selectionErr)
@@ -175,6 +185,7 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	// 未纳管资源只是一次本地 map miss，不访问 Security。
 	req, err := h.previewResolver.ResolveRequestFromURIWithSelection(c.Request.Context(), locatorURI, page, pageSize, childName, refPath, nestedChildPath, graphSample, tenantID)
 	if err == nil {
+		req.GridSlice = gridSlice
 		req.KeyValueOptions = plugin.KeyValueReadOptions{Key: c.Query("key_name"), Cursor: c.Query("key_cursor"), Prefix: c.Query("key_prefix")}
 		if (req.KeyValueOptions.Key != "" || req.KeyValueOptions.Cursor != "" || req.KeyValueOptions.Prefix != "") && (req.ItemType != "keyspace" || (req.KeyValueOptions.Key != "" && (req.KeyValueOptions.Cursor != "" || req.KeyValueOptions.Prefix != ""))) {
 			err = plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorInvalidPath, fmt.Errorf("invalid keyspace content selection"))
@@ -219,6 +230,16 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 				return
 			}
 		}
+		req.CheckContainerSliceRead = func(ctx context.Context, target plugin.EngineCatalogPath) error {
+			if tenant == 0 || req.Engine == nil || target.EngineID != req.Engine.ID || target.StringPath() != req.ItemFullName || !commonauth.HasAllRolePermissions(c, "manager.content.read") {
+				return managerprotection.ErrRequired
+			}
+			if err := managerprotection.RequireUnmanagedDataItem(ctx, h.protectionStore, tenant, req.ItemFingerprint, time.Now().UTC()); err != nil {
+				return err
+			}
+			return nil
+		}
+
 		req.CheckWholeContainerRead = func(ctx context.Context, root plugin.EngineCatalogPath) error {
 			if h.previewSourceChecker == nil || h.protectionStore == nil || tenant == 0 {
 				return managerprotection.ErrRequired
@@ -236,6 +257,9 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 			}
 		}
 		if selection != nil && c.Request.Context().Err() != nil {
+			return
+		}
+		if writeGridSliceError(c, err) {
 			return
 		}
 		if writeTrajectoryError(c, err) {

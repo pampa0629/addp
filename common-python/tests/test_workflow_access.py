@@ -216,3 +216,35 @@ def test_create_conflict_is_typed_and_never_writes(tmp_path, monkeypatch, kind, 
         else: publish_target_directory(source, plan, completion_marker='tileset.json')
     assert writes == []
     assert (target if kind == 'file' else target / 'original').read_bytes() == b'original'
+
+
+def test_file_byte_budget_snapshots_mounted_source_and_never_deletes_unowned(tmp_path):
+    import addp_common.workflow_access as access
+    source = tmp_path/'input.nc'; source.write_bytes(b'CDF\1exact')
+    target = tmp_path/'output.nc'
+    plan = _plan(source, target)
+    result = stage_source_file(plan, tmp_path/'snapshot', max_bytes=9)
+    assert result != source and result.read_bytes() == source.read_bytes()
+    with pytest.raises(FileExistsError):
+        stage_source_file(plan, tmp_path/'snapshot', max_bytes=9)
+    assert result.read_bytes() == source.read_bytes()
+    with pytest.raises(WorkflowAccessError, match='budget'):
+        stage_source_file(plan, tmp_path/'limited', max_bytes=3)
+    assert not (tmp_path/'limited'/'source'/source.name).exists()
+
+
+def test_file_object_byte_budget_stops_growing_response_and_cleans_owned_partial(tmp_path, monkeypatch):
+    import io
+    import addp_common.workflow_access as access
+    from types import SimpleNamespace
+    response = io.BytesIO(b'123456789')
+    released=[]
+    response.release_conn=lambda:released.append(True)
+    class Client:
+        def stat_object(self,*args):return SimpleNamespace(size=3)
+        def get_object(self,*args):return response
+    monkeypatch.setattr(access,'_object_store_client',lambda _:Client())
+    with pytest.raises(WorkflowAccessError, match='budget'):
+        stage_source_file(_object_source('file','grid.nc'), tmp_path, max_bytes=4)
+    assert response.closed and released==[True]
+    assert not (tmp_path/'source'/'grid.nc').exists()

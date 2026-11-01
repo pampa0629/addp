@@ -1208,5 +1208,20 @@
         "description": "Reads data and the Meta catalog, and manages service definitions and external registrations."
       }
     }
+  },
+  "gridPreview": {
+    "variable": "Variable",
+    "type": "Native type",
+    "dimensions": "Dimensions and sizes",
+    "x": "Start column",
+    "y": "Start row",
+    "width": "Columns",
+    "height": "Rows",
+    "read": "Read slice",
+    "rawValues": "Raw stored values; scale, offset and time units are listed as source attributes.",
+    "missing": "Missing",
+    "noLocation": "No confirmed map location for this slice.",
+    "unsupportedVariable": "Structure is available; this variable has no supported numeric 2D slice.",
+    "failed": "Slice read failed"
   }
 }

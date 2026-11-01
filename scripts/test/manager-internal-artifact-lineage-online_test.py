@@ -2078,7 +2078,7 @@ class MinIOExactModelGrantPreparationTest(unittest.TestCase):
 class ManagerAcceptanceCaseTest(unittest.TestCase):
     def test_default_full_and_invalid_values_fail_before_http(self):
         self.assertEqual(SUITE.manager_case({}), 'full')
-        for case in ('full', 'native-raster-media'):
+        for case in ('full', 'native-raster-media', 'native-netcdf'):
             self.assertEqual(SUITE.manager_case({'ADDP_ONLINE_MANAGER_CASE': case}), case)
         for case in ('', 'unknown', 'FULL'):
             with self.subTest(case=case), mock.patch.dict(SUITE.os.environ, {'ADDP_ONLINE_MANAGER_CASE': case}, clear=True), \

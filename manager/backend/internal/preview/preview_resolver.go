@@ -116,6 +116,8 @@ func (r *PreviewResolver) runtimeDescriptorClientForTenant(tenantID *uint) insta
 
 // PreviewRequest 新的预览请求（基于 ResourceLocator）
 type PreviewResolverRequest struct {
+	GridSlice               *format.GridSliceSelection
+	CheckContainerSliceRead func(context.Context, plugin.EngineCatalogPath) error
 	TrajectorySelection     *models.TrajectorySelection
 	CheckTrajectoryRead     func() error
 	CheckWholeContainerRead func(context.Context, plugin.EngineCatalogPath) error
@@ -223,6 +225,10 @@ func (r *PreviewResolver) PreviewWithQueryExecutor(ctx context.Context, req *Pre
 	providerReq.executePrepared = execute
 	if err := checkWholeContainerRead(ctx, req, providerReq); err != nil {
 		return nil, err
+	}
+
+	if req.GridSlice != nil {
+		return r.previewContainerSlice(ctx, req, providerReq)
 	}
 
 	// 4. 按 Meta 标准属性确定性选择预览插件

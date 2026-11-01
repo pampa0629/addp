@@ -123,7 +123,7 @@ var sourceInitializerPermissions = []string{
 func suiteSourceInitializerPermissions(suite string) []string {
 	switch suite {
 	case "ftp-consumer-flow", "manager-internal-artifact-lineage":
-		if suite == "manager-internal-artifact-lineage" && (os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "kml-export" || os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "native-table-orc") {
+		if suite == "manager-internal-artifact-lineage" && (os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "kml-export" || os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "native-table-orc" || os.Getenv("ADDP_ONLINE_MANAGER_CASE") == "native-netcdf") {
 			return append([]string{}, sourceInitializerPermissions...)
 		}
 		return append(append([]string{}, sourceInitializerPermissions...),
@@ -370,6 +370,8 @@ func suitePermissions(suite string) ([]string, error) {
 			return managerFileGDBPermissions, nil
 		case "kml-export":
 			return managerKMLExportPermissions, nil
+		case "native-netcdf":
+			return managerFileGDBPermissions, nil
 		case "native-table-orc":
 			return managerORCPermissions, nil
 		case "", "full", "native-raster-media":

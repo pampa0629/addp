@@ -505,16 +505,27 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         raise RegistrationError("manager-internal-artifact-lineage requires Ubuntu Hosted job")
     manager_input = re.search(r"(?ms)^      manager_case:\n(?P<body>.*?)(?=^      [a-z_]+:\n|^jobs:|\Z)", workflow)
     if (not manager_input or any(fragment not in manager_input.group('body') for fragment in
-            ('required: true', 'type: choice', 'default: full', '- full', '- native-raster-media', '- native-table-orc', '- kml-export', '- filegdb-authorization'))
+            ('required: true', 'type: choice', 'default: full', '- full', '- native-raster-media', '- native-table-orc', '- native-netcdf', '- kml-export', '- filegdb-authorization'))
             or any(fragment not in job.group('body') for fragment in (
                 'ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}',
                 'name: Online T4 (manager-internal-artifact-lineage, ${{ inputs.manager_case }}, Linux x86_64)',
                 'name: online-t4-manager-internal-artifact-lineage-${{ inputs.manager_case }}-${{ github.run_id }}'))
             or any(fragment not in hosted for fragment in (
-                'ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}', 'full|native-raster-media|native-table-orc|kml-export|filegdb-authorization)',
+                'ADDP_ONLINE_MANAGER_CASE=${ADDP_ONLINE_MANAGER_CASE-full}', 'full|native-raster-media|native-table-orc|native-netcdf|kml-export|filegdb-authorization)',
                 'manager-case.json', 'addp.manager-acceptance-case/v1'))):
         raise RegistrationError('Manager acceptance case requires explicit full/media selection and case-specific evidence')
-    if hosted.index('full|native-raster-media|native-table-orc|kml-export|filegdb-authorization)') > hosted.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
+    netcdf_paths = ('scripts/test/manager-netcdf-online.py', 'scripts/test/manager-netcdf-online_test.py',
+                    'business/scripts/online-netcdf-fixture.py', 'console/frontend/e2e/online/manager-netcdf.spec.js')
+    if any(not (repository / path).is_file() for path in netcdf_paths):
+        raise RegistrationError('NetCDF case is missing its owner, physical oracle, browser or regression')
+    netcdf_owner = (repository / netcdf_paths[0]).read_text(encoding='utf-8')
+    netcdf_case_owner = (repository / 'scripts/test/manager-internal-artifact-lineage-online.py').read_text(encoding='utf-8')
+    netcdf_make = (repository / 'Makefile').read_text(encoding='utf-8')
+    if (any(fragment not in netcdf_owner for fragment in ('native-netcdf', 'addp.manager-netcdf/v1', 'manager-netcdf.json', 'source_drift_denied', 'original_download_verified'))
+            or "if case == 'native-netcdf':" not in netcdf_case_owner
+            or any(fragment not in netcdf_make for fragment in (netcdf_paths[1], netcdf_paths[3]))):
+        raise RegistrationError('NetCDF case must retain explicit dispatch, standard gates, raw values, source version, download and cleanup evidence')
+    if hosted.index('full|native-raster-media|native-table-orc|native-netcdf|kml-export|filegdb-authorization)') > hosted.index('source "$ROOT_DIR/scripts/utils/hosted-online.sh"'):
         raise RegistrationError('Manager acceptance case must reject invalid input before Hosted lifecycle')
     if "nfs-kernel-server" not in job.group("body"):
         raise RegistrationError("Manager content boundary acceptance requires its Hosted NFS package")

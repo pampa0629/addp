@@ -41,6 +41,8 @@ setMapConfigAPI(configAPI)
 // 导入主题管理
 import { useTheme } from '@common-ui'
 
+import NetCDFPreview from './components/explorer/NetCDFPreview.vue'
+
 const { createApp, h, resolveComponent } = Vue
 
 const app = createApp(App)
@@ -87,6 +89,7 @@ if (typeof window !== 'undefined') {
   window.Vue = Object.assign({}, window.Vue, Vue)
 
   window.DataExplorerPluginComponents = {
+    NetCDFPreview,
     KeyValuePreview,
     TablePreview,
     ContainerPreview,

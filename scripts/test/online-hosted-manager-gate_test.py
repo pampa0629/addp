@@ -206,6 +206,17 @@ class HostedManagerGateTest(unittest.TestCase):
         report=json.loads((self.host.artifacts/'manager-case.json').read_text())
         self.assertEqual(report['case'],'native-table-orc')
 
+    def test_netcdf_case_uses_six_permission_profile_without_model_or_transfer_runtime(self):
+        result=self.run_gate(ADDP_ONLINE_MANAGER_CASE='native-netcdf')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        trace=self.host.trace.read_text()
+        for fragment in ('manager-case:native-netcdf','application-stop','source-fixture:stop','nfs-fixture:stop','infra-down'):
+            self.assertIn(fragment,trace)
+        for fragment in ('start:-pointcloud-workflow','start:-document-workflow','start:-transfer','--services model3d-workflow-engine'):
+            self.assertNotIn(fragment,trace)
+        report=json.loads((self.host.artifacts/'manager-case.json').read_text())
+        self.assertEqual(report['case'],'native-netcdf')
+
     def test_native_media_case_is_explicit_and_uses_same_cleanup(self):
         result = self.run_gate(ADDP_ONLINE_MANAGER_CASE='native-raster-media')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

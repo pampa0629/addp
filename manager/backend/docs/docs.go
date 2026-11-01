@@ -2848,6 +2848,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "数值容器网格切片JSON：variable/indices/x/y/width/height，最多4096格；另需manager.content.read | Numeric container grid selection JSON, at most 4096 cells; additionally requires manager.content.read",
+                        "name": "grid_slice",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "容器内部 child 名称，例如 Excel 工作表 | Container child name, e.g. Excel sheet",
                         "name": "child_name",
                         "in": "query"

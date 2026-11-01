@@ -75,7 +75,9 @@ def target_name(plan: dict[str, Any]) -> str:
     return _text(_required_object(plan, "target").get("name"))
 
 
-def stage_source_file(plan: dict[str, Any], work_dir: Path) -> Path:
+def stage_source_file(plan: dict[str, Any], work_dir: Path, *, max_bytes: int | None = None) -> Path:
+    if max_bytes is not None and (isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0):
+        raise WorkflowAccessError("max_bytes must be a positive integer")
     source = _required_object(plan, "source")
     if source.get("kind") != "file":
         raise WorkflowAccessError("access_plan.source.kind must be file")
@@ -84,7 +86,15 @@ def stage_source_file(plan: dict[str, Any], work_dir: Path) -> Path:
         path = Path(_required_text(access, "path"))
         if not path.is_file():
             raise WorkflowAccessError(f"source file not found: {path}")
-        return path
+        if max_bytes is None:
+            return path
+        destination = work_dir / "source" / path.name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if path.stat().st_size > max_bytes:
+            raise WorkflowAccessError("source file exceeds byte budget")
+        with path.open("rb") as stream:
+            _copy_source_with_budget(stream, destination, max_bytes)
+        return destination
     client = _object_store_client(access)
     bucket = _required_text(access, "bucket")
     object_name = _source_storage_name(access, "object")
@@ -96,10 +106,40 @@ def stage_source_file(plan: dict[str, Any], work_dir: Path) -> Path:
     path = work_dir / "source" / Path(entrypoint).name
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        client.fget_object(bucket, object_name, str(path))
+        if max_bytes is None:
+            client.fget_object(bucket, object_name, str(path))
+        else:
+            if client.stat_object(bucket, object_name).size > max_bytes:
+                raise WorkflowAccessError("source object exceeds byte budget")
+            response = client.get_object(bucket, object_name)
+            try:
+                _copy_source_with_budget(response, path, max_bytes)
+            finally:
+                response.close()
+                response.release_conn()
     except Exception as exc:
         raise WorkflowAccessError(f"download source object failed: {bucket}/{object_name}: {exc}") from exc
     return path
+
+
+def _copy_source_with_budget(stream, destination: Path, max_bytes: int) -> None:
+    total = 0
+    created = False
+    try:
+        with destination.open("xb") as output:
+            created = True
+            while True:
+                chunk = stream.read(min(1024 * 1024, max_bytes - total + 1))
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_bytes:
+                    raise WorkflowAccessError("source file exceeds byte budget")
+                output.write(chunk)
+    except Exception:
+        if created:
+            destination.unlink(missing_ok=True)
+        raise
 
 
 def stage_source_directory(plan: dict[str, Any], work_dir: Path) -> Path:

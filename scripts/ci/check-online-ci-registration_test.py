@@ -2921,13 +2921,22 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         owner.write_text(owner.read_text()+"\nif case == 'filegdb-authorization':\nmanager-filegdb-online\n")
         make.write_text(make.read_text()+'\t@python3 -m unittest scripts/test/manager-filegdb-online_test.py\n')
         make.write_text(make.read_text()+'\t@node --check --input-type=module < console/frontend/e2e/online/manager-filegdb.spec.js\n')
+        netcdf = self.repository / 'scripts/test/manager-netcdf-online.py'
+        for relative in ('scripts/test/manager-netcdf-online.py', 'scripts/test/manager-netcdf-online_test.py',
+                         'business/scripts/online-netcdf-fixture.py', 'console/frontend/e2e/online/manager-netcdf.spec.js'):
+            target=self.repository/relative
+            target.parent.mkdir(parents=True,exist_ok=True)
+            target.write_text((SCRIPT.parents[2]/relative).read_text(),encoding='utf-8')
+        owner.write_text(owner.read_text()+"\nif case == 'native-netcdf':\nmanager-netcdf-online\n")
+        make.write_text(make.read_text()+'\t@python3 -m unittest scripts/test/manager-netcdf-online_test.py\n\t@node --check --input-type=module < console/frontend/e2e/online/manager-netcdf.spec.js\n')
         CHECK.check_registration(self.repository)
         for file, fragment, reason in (
             (owner, "if case == 'filegdb-authorization':", 'NFS FileGDB'),
             (make, 'console/frontend/e2e/online/manager-filegdb.spec.js', 'NFS FileGDB'),
             (hosted, 'src=$nfs_read_mount,dst=$nfs_root,readonly', 'NFS FileGDB'),
+            (netcdf, 'source_drift_denied', 'NetCDF'),
             (hosted, 'manager-case.json', 'acceptance case'),
-            (hosted, 'full|native-raster-media|native-table-orc|kml-export|filegdb-authorization)', 'acceptance case'),
+            (hosted, 'full|native-raster-media|native-table-orc|native-netcdf|kml-export|filegdb-authorization)', 'acceptance case'),
             (kml_owner, 'source_unchanged=True', 'KML export'),
             (kml_browser, 'actual_button_download: true', 'KML export'),
             (self.workflow, 'ADDP_ONLINE_MANAGER_CASE: ${{ inputs.manager_case }}', 'acceptance case'),

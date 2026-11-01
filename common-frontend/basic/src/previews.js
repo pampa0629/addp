@@ -30,3 +30,5 @@ export { default as OfficePreview } from './components/previews/OfficePreview.vu
 export { default as PptxPreview } from './components/previews/PptxPreview.vue'
 export { default as ObjectCatalogPreview } from './components/previews/ObjectCatalogPreview.vue'
 export { default as KeyValuePreview } from './components/previews/KeyValuePreview.vue'
+
+export { default as GridContainerPreview } from './components/previews/GridContainerPreview.vue'

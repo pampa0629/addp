@@ -1208,5 +1208,20 @@
         "description": "查看数据与 Meta Catalog，并管理服务定义和外部服务注册。"
       }
     }
+  },
+  "gridPreview": {
+    "variable": "变量",
+    "type": "原生类型",
+    "dimensions": "维度与大小",
+    "x": "列起点",
+    "y": "行起点",
+    "width": "列数",
+    "height": "行数",
+    "read": "读取切片",
+    "rawValues": "显示原始存储值；比例、偏移和时间单位按源属性列出。",
+    "missing": "缺失",
+    "noLocation": "本切片没有已确认的地图定位。",
+    "unsupportedVariable": "此变量支持结构查看，暂不支持二维数值切片。",
+    "failed": "切片读取失败"
   }
 }

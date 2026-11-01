@@ -347,3 +347,6 @@ other = "原始模型及关联文件的组成信息不完整，请重新扫描�
 
 [manager.error.download_source_changed]
 other = "源数据在打包期间发生变化，请待源数据稳定后重试。"
+
+[manager.error.grid_slice_invalid]
+other = "网格切片选择无效或超出支持范围"

@@ -57,6 +57,7 @@
       </div>
 
       <template v-if="activeChild">
+        <slot name="child-details" :child="activeChild">
         <div class="child-meta">
           <el-descriptions border size="small" :column="3">
             <el-descriptions-item :label="t('containerPreview.childName')">{{ activeChild.name || activeChild.label || activeChild.key }}</el-descriptions-item>
@@ -68,6 +69,8 @@
             </el-descriptions-item>
           </el-descriptions>
         </div>
+
+        </slot>
 
         <div class="column-tags" v-if="activeColumnPairs.length">
           <el-tag
@@ -81,6 +84,7 @@
         </div>
 
         <div class="child-preview">
+          <slot name="child-preview" :child="activeChild">
           <component
             v-if="activePreviewComponent"
             :is="activePreviewComponent"
@@ -115,6 +119,7 @@
               @change="handlePageChange"
             />
           </div>
+          </slot>
         </div>
       </template>
     </div>

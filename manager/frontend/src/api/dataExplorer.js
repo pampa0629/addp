@@ -77,6 +77,9 @@ export const dataExplorerAPI = {
       timeout: 60000 // 空间数据预览可能需要更长时间（60秒）
     })
   },
+  getGridSlice(locator, selection, signal) {
+    return client.get('/manager/preview', { params: { locator, grid_slice: JSON.stringify(selection) }, signal, timeout: 120000 })
+  },
   getDataProfileCurrent(locator, selection = {}, profileConfigHash = '') {
     const params = { locator }
     if (selection.childName) params.child_name = selection.childName
