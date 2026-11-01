@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=prometheus,metrics-source,node-exporter,block-capacity,metrics-control,postgres,postgres-metrics,postgres-metrics-web,python-http-agent,python-http-copilot
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.monitor-metrics-t2.yml
-# ADDP_T2_INPUT_FILES=common-python/ agent/backend/main.py agent/backend/requirements.txt copilot/backend/main.py copilot/backend/requirements.txt scripts/test/python-http-metrics-source.py scripts/test/python-http-metrics-probe.py scripts/test/metrics-http-budget.py scripts/test/postgres-metrics-lifecycle_test.py scripts/test/postgres-lifecycle-probe.py business/scripts/stop.sh business/docker-compose.yml business/scripts/start.sh business/.env.example scripts/infra/postgres-metrics.yml scripts/infra/postgres-observation/ scripts/test/postgres-observation-probe.py scripts/utils/deployment-inventory.py scripts/utils/container-proof.py scripts/infra/metrics-control.yml scripts/infra/metrics-control.conf scripts/infra/block-capacity.py scripts/infra/node-block-capacity.yml scripts/infra/node-block-capacity-linux.yml scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/lifecycle-lock.sh scripts/dev/process-metrics-launch.py scripts/dev/worker-units.sh scripts/dev/ports.sh scripts/test/dev-process-metrics-plan_test.py scripts/prod/start.sh scripts/prod/stop.sh scripts/prod/generate-process-metrics-platform.py scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml common/processmetrics/ common/httpmetrics/ common/modulelifecycle/ common/config/process_metrics.go common/models/process_metrics.go common/models/container_observation.go common/client/system_service.go common/client/system_runtime_instances.go common/client/system_observability_identity.go common/models/observability_identity.go common/models/module_runtime_query.go common/models/observability_identity.go common/models/service_expectations.go common/models/postgresql_metrics.go common/client/system_engine_deployments.go monitor/backend/internal/metricsdiscovery/ monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go common/client/system_host_node.go common/client/system_host_node_scope.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example monitor/backend/internal/service/ monitor/backend/internal/models/ monitor/backend/internal/repository/
+# ADDP_T2_INPUT_FILES=common-python/ agent/backend/main.py agent/backend/requirements.txt copilot/backend/main.py copilot/backend/requirements.txt scripts/test/python-http-metrics-source.py scripts/test/python-http-metrics-probe.py scripts/test/metrics-http-budget.py scripts/test/postgres-metrics-lifecycle_test.py scripts/test/postgres-lifecycle-probe.py business/scripts/stop.sh business/docker-compose.yml business/scripts/start.sh business/.env.example scripts/infra/postgres-metrics.yml scripts/infra/postgres-observation/ scripts/test/postgres-observation-probe.py scripts/test/directory-publication-probe.py scripts/utils/deployment-inventory.py scripts/utils/container-proof.py scripts/infra/metrics-control.yml scripts/infra/metrics-control.conf scripts/infra/block-capacity.py scripts/infra/node-block-capacity.yml scripts/infra/node-block-capacity-linux.yml scripts/infra/node-metrics.py scripts/infra/node-metrics.yml scripts/infra/node-metrics-linux.yml scripts/infra/node-metrics-desktop.yml scripts/infra/node-metrics-web.yml scripts/infra/metrics.yml scripts/infra/prometheus.yml scripts/infra/generate-metrics-config.py scripts/infra/prometheus-web.yml scripts/infra/prometheus-http.yml scripts/infra/up.sh scripts/infra/down.sh scripts/infra/ports.sh scripts/infra/status.sh scripts/utils/observability-env.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/lifecycle-lock.sh scripts/dev/process-metrics-launch.py scripts/dev/worker-units.sh scripts/dev/ports.sh scripts/test/dev-process-metrics-plan_test.py scripts/prod/start.sh scripts/prod/stop.sh scripts/prod/generate-process-metrics-platform.py scripts/prod/metrics-platform.yml scripts/prod/metrics-query.yml common/processmetrics/ common/httpmetrics/ common/modulelifecycle/ common/config/process_metrics.go common/models/process_metrics.go common/models/container_observation.go common/client/system_service.go common/client/system_runtime_instances.go common/client/system_observability_identity.go common/models/observability_identity.go common/models/module_runtime_query.go common/models/observability_identity.go common/models/service_expectations.go common/models/postgresql_metrics.go common/client/system_engine_deployments.go monitor/backend/internal/metricsdiscovery/ monitor/backend/internal/resourcequery/ monitor/backend/internal/config/metrics.go monitor/backend/internal/config/config.go common/client/system_host_node.go common/client/system_host_node_scope.go scripts/prod/wait-infra.sh scripts/test/monitor-metrics-probe.py scripts/test/metrics-deployment-config_test.py scripts/test/infra-runtime-log-lifecycle_test.py docker-compose.infra.yml docker-compose.yml .env.example monitor/backend/internal/service/ monitor/backend/internal/models/ monitor/backend/internal/repository/
 # Own disposable Compose startup, certificates, source files and zero-residue cleanup.
 set -euo pipefail
 [[ $# -le 1 ]] || { echo 'Metrics T2: unexpected arguments' >&2; exit 2; }
 case "${1:-}" in
   ''|--case=all) metrics_case=all ;;
   --case=postgres-observation) metrics_case=postgres-observation ;;
+  --case=directory-publication) metrics_case=directory-publication ;;
   --case=postgres-source) metrics_case=postgres-source ;;
   --case=http-quality) metrics_case=http-quality ;;
   --case=mtls-preflight) metrics_case=mtls-preflight ;;
@@ -20,7 +21,11 @@ case "${1:-}" in
 esac
 export ADDP_METRICS_T2_CASE="$metrics_case"
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-python3 -m unittest "$ROOT_DIR/scripts/test/metrics-deployment-config_test.py"
+if [[ "$metrics_case" == directory-publication ]]; then
+  (cd "$ROOT_DIR" && python3 -m unittest scripts.test.metrics-deployment-config_test.MetricsDeploymentConfigTest)
+else
+  python3 -m unittest "$ROOT_DIR/scripts/test/metrics-deployment-config_test.py"
+fi
 if [[ "$metrics_case" == all || "$metrics_case" == postgres-observation || "$metrics_case" == postgres-source ]]; then
   python3 -m unittest "$ROOT_DIR/scripts/test/postgres-metrics-lifecycle_test.py"
 fi
@@ -139,6 +144,10 @@ CLEANUP_VERIFIED
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+if [[ "$metrics_case" == all || "$metrics_case" == directory-publication ]]; then
+  python3 "$ROOT_DIR/scripts/test/directory-publication-probe.py" --project "$COMPOSE_PROJECT"
+  [[ "$metrics_case" != directory-publication ]] || exit 0
+fi
 # The private work directory owns this mandatory startup secret. Rendering only
 # the shared source transport (Hosted T4) does not need a database credential.
 printf '%s' "$METRICS_T2_POSTGRES_PASSWORD" >"$WORK_DIR/postgres-password"

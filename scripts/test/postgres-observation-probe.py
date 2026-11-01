@@ -11,7 +11,6 @@ import json
 import os
 from pathlib import Path
 import re
-import selectors
 import secrets
 import ssl
 import subprocess
@@ -23,70 +22,15 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 SQL = ROOT / 'scripts/infra/postgres-observation/000002_lifecycle.sql'
+_directory_spec = importlib.util.spec_from_file_location('directory_publication_probe', Path(__file__).with_name('directory-publication-probe.py'))
+directory_publication = importlib.util.module_from_spec(_directory_spec)
+_directory_spec.loader.exec_module(directory_publication)
 FIELDS = {
     'observed_at', 'server_started_at', 'statistics_generation', 'track_counts_enabled',
     'connections', 'active_connections', 'idle_connections', 'idle_in_transaction_connections',
     'active_waiting_connections', 'active_lock_waiting_connections', 'active_io_waiting_connections',
     'max_connections', 'transactions_committed', 'transactions_rolled_back', 'deadlocks', 'database_bytes',
 }
-
-# No external commands, subshells or child processes: reads, timed waits and
-# filename expansion all execute in this one Bash process in the owned PG image.
-DIRECTORY_PROCESS_SCRIPT = r'''
-set -eu
-exec 2>/dev/null
-a=$1; b=$2
-first=$a; second=$b
-if [[ "$3" == b ]]; then first=$b; second=$a; fi
-sample() {
-    local phase=$1 av bv value uptime rest
-    if IFS= read -r value < "$a"; then av=$value; else av=unreadable; fi
-    if IFS= read -r value < "$b"; then bv=$value; else bv=unreadable; fi
-    case "$av" in before|after-version|unreadable) ;; *) av=other ;; esac
-    case "$bv" in before|after-version|unreadable) ;; *) bv=other ;; esac
-    IFS=' ' read -r uptime rest < /proc/uptime
-    printf '%s\t%s\t%s\t%s\t%s\n' "$phase" "$$" "$uptime" "$av" "$bv"
-}
-enumerate() {
-    local target=$1 entry found=0
-    local entries=("${target%/*}"/*)
-    for entry in "${entries[@]}"; do
-        if [[ "$entry" == "$target" ]]; then found=1; fi
-    done
-    [[ "$found" == 1 ]]
-}
-sample baseline
-IFS= read -r -t 2 signal
-[[ "$signal" == published ]]
-sample published
-if IFS= read -r -t 1 signal; then exit 75; fi
-sample control_before_enum
-enumerate "$first"
-sample enumerate_first
-if IFS= read -r -t 1 signal; then exit 75; fi
-sample control_before_enum_b
-enumerate "$second"
-sample enumerate_second
-'''
-
-
-def directory_process_observations(data):
-    phases = ['baseline','published','control_before_enum','enumerate_first','control_before_enum_b','enumerate_second']
-    lines = data.decode('ascii').splitlines()
-    assert len(lines)==len(phases), 'Owned directory process output incomplete'
-    rows, pids, times = [], set(), []
-    for phase,line in zip(phases,lines):
-        fields = line.split('\t')
-        assert len(fields)==5 and fields[0]==phase, 'Owned directory process phase mismatch'
-        _,pid,clock,a,b = fields
-        assert re.fullmatch(r'[1-9][0-9]{0,9}',pid) and re.fullmatch(r'[0-9]{1,12}\.[0-9]{1,6}',clock), 'Owned directory process clock or identity invalid'
-        assert a in ('before','after-version','unreadable','other') and b in ('before','after-version','unreadable','other'), 'Owned directory process state invalid'
-        pids.add(pid);times.append(float(clock))
-        rows.append({'phase':phase,'elapsed_ms':round((times[-1]-times[0])*1000,2),'a':a,'b':b})
-    assert len(pids)==1 and times==sorted(times) and times[-1]-times[0]<=8, 'Owned directory process identity or monotonic order changed'
-    assert round((times[2]-times[1])*1000)>=990 and round((times[4]-times[3])*1000)>=990, 'Owned directory no-enumeration interval incomplete'
-    assert rows[0]['a']==rows[0]['b']=='before', 'Owned directory process baseline differs'
-    return {'single_process':True,'samples':rows}
 
 
 def verifier(password):
@@ -696,41 +640,14 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
     def directory_process_trial(self, sides, enumerate_first):
         runtime = self.auth_directory/'runtime'
         paths = [runtime/('publication-process-'+side)/'item' for side in sides]
-        deadline = time.monotonic()+8
-        process = subprocess.Popen(self.compose+['exec','-T','postgres','bash','--noprofile','--norc','-c',
-            DIRECTORY_PROCESS_SCRIPT,'owned-directory-observation',
-            *['/etc/addp-postgres-auth/publication-process-'+side+'/item' for side in sides],enumerate_first],
-            stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
-        data = bytearray()
-        with selectors.DefaultSelector() as selector:
-            selector.register(process.stdout,selectors.EVENT_READ)
-            def receive():
-                remaining = deadline-time.monotonic()
-                assert remaining>0 and selector.select(remaining), 'Owned directory process deadline reached'
-                chunk = os.read(process.stdout.fileno(),4096)
-                assert len(data)+len(chunk)<=8192, 'Owned directory process output exceeds budget'
-                data.extend(chunk)
-                return bool(chunk)
-            try:
-                while b'\n' not in data:
-                    assert receive(), 'Owned directory process ended before baseline'
-                # Validate the baseline before changing either test-owned file.
-                baseline = bytes(data).split(b'\n',1)[0].decode('ascii').split('\t')
-                assert len(baseline)==5 and baseline[0]=='baseline' and baseline[3:]==['before','before'], 'Owned directory baseline unavailable'
-                for path in paths:
-                    self.authentication._atomic(path,'after-version\n',0o644,previous='before\n')
-                    assert self.authentication._read(path,0o644)[0]=='after-version\n'
-                process.stdin.write(b'published\n');process.stdin.flush()
-                while receive():
-                    pass
-                remaining = deadline-time.monotonic()
-                assert remaining>0 and process.wait(timeout=remaining)==0, 'Owned directory process failed'
-                return dict(directory_process_observations(bytes(data)),enumerated_first=enumerate_first)
-            finally:
-                if process.poll() is None:
-                    process.kill()
-                    process.wait(timeout=2)
-                process.stdin.close();process.stdout.close()
+        def publish():
+            for path in paths:
+                self.authentication._atomic(path,'after-version\n',0o644,previous='before\n')
+                assert self.authentication._read(path,0o644)[0]=='after-version\n'
+        command = self.compose+['exec','-T','postgres','bash','--noprofile','--norc','-c',
+            directory_publication.DIRECTORY_PROCESS_SCRIPT,'owned-directory-observation',
+            *['/etc/addp-postgres-auth/publication-process-'+side+'/item' for side in sides],enumerate_first]
+        return dict(directory_publication.observe(command,publish),enumerated_first=enumerate_first)
 
     def check_directory_publication(self):
         target = self.auth_directory/'runtime/publication-probe'

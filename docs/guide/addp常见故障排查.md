@@ -7,6 +7,7 @@
 | 范围 | 排查入口 |
 | --- | --- |
 | 开发服务 | [托管命令退出后服务立刻不可用](troubleshooting/开发服务与构建.md#codex-等托管命令环境中-restartsh-退出后服务立刻不可用)、[端口被浏览器占用的误报](troubleshooting/开发服务与构建.md#restartsh-误报端口被浏览器占用)、[旧进程被反复拉起](troubleshooting/开发服务与构建.md#restartsh-报告-addp-旧进程未清理)、[部署发现停止未退出](troubleshooting/开发服务与构建.md#部署发现停止提示进程尚未退出不删除运行记录) |
+| Docker 文件共享 | [原子替换后容器仍见旧文件或不可读](troubleshooting/开发服务与构建.md#docker-desktop-共享目录原子替换后容器读不到文件) |
 | 本地容器启动与状态 | [启动阶段与失败边界](../../scripts/local/README.md#1-startsh---启动服务)、[状态展示范围](../../scripts/local/README.md#3-statussh---查看状态)、[超时与已退出容器](../../scripts/local/README.md#5-健康检查超时) |
 | 生产容器与入口 | [容器状态及回环 HTTP 检查](../../scripts/prod/README.md#health-checksh)、[失败与覆盖范围排查](../../scripts/prod/README.md#问题-3-健康检查失败) |
 | 依赖与镜像 | [GeoPython 依赖安装失败](troubleshooting/开发服务与构建.md#geopython-workflow-依赖安装失败)、[Document 下载 Debian 依赖失败](troubleshooting/开发服务与构建.md#document-镜像下载-debian-依赖失败阻断全量启动)、[Python 镜像冷构建过慢](troubleshooting/开发服务与构建.md#python-镜像首次构建耗时过长) |

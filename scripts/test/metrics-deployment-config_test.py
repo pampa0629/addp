@@ -143,6 +143,77 @@ def run_business_postgres_compose(environment, case):
 
 
 class MetricsDeploymentConfigTest(unittest.TestCase):
+    def test_minimal_reproducer_has_no_database_and_reclaims_owned_resources(self):
+        module=postgres_probe.directory_publication
+        phases=['baseline','published','control_before_enum','enumerate_first','control_before_second_enum','enumerate_second']
+        for fail in (False,True):
+            with self.subTest(fail=fail):
+                commands=[]
+                def docker(command,**kwargs):
+                    commands.append(command)
+                    code=1 if command[:2]==['docker','inspect'] else 0
+                    return subprocess.CompletedProcess(command,code,'','')
+                def observe(command,publish):
+                    self.assertEqual(command[1],'run')
+                    self.assertIn('--read-only',command)
+                    self.assertIn('none',command)
+                    self.assertIn('ALL',command)
+                    self.assertEqual(command[command.index('--entrypoint')+1],'/bin/bash')
+                    self.assertFalse(any(value.startswith('--env') or value.startswith('--publish') for value in command))
+                    publish()
+                    if fail:raise AssertionError('private-sentinel')
+                    return {'single_process':True,'samples':[{'phase':phase,'a':'before' if index==0 else 'after-version',
+                        'b':'before' if index==0 else 'after-version'} for index,phase in enumerate(phases)]}
+                with mock.patch.object(module.subprocess,'run',side_effect=docker),mock.patch.object(module,'observe',side_effect=observe):
+                    result=module.run('addp-metrics-t2-'+'a'*32)
+                self.assertFalse(result['database_started'])
+                self.assertTrue(result['cleanup_verified'])
+                self.assertTrue(result['temporary_removed'])
+                self.assertEqual(len(result['trials']),0 if fail else 2)
+                self.assertNotIn('sentinel',json.dumps(result))
+                self.assertFalse(any(command[:2]==['docker','pull'] for command in commands))
+                self.assertEqual(result.get('failure_class'),'AssertionError' if fail else None)
+
+    def test_directory_reproducer_is_selected_before_secrets_or_database_start(self):
+        gate=(ROOT/'scripts/test/monitor-metrics-gate.sh').read_text()
+        self.assertIn('--case=directory-publication) metrics_case=directory-publication ;;',gate)
+        selected=gate.index('if [[ "$metrics_case" == all || "$metrics_case" == directory-publication ]]; then')
+        end=gate.index('\nfi',selected)
+        self.assertIn('directory-publication-probe.py',gate[selected:end])
+        self.assertIn('|| exit 0',gate[selected:end])
+        self.assertLess(end,gate.index('>"$WORK_DIR/postgres-password"'))
+        self.assertLess(end,gate.index('compose up -d --wait --wait-timeout 90 postgres'))
+        self.assertIn('python3 -m unittest scripts.test.metrics-deployment-config_test.MetricsDeploymentConfigTest',gate)
+        self.assertIn('else\n  python3 -m unittest "$ROOT_DIR/scripts/test/metrics-deployment-config_test.py"\nfi',gate)
+        probe=(ROOT/'scripts/test/postgres-observation-probe.py').read_text()
+        self.assertNotIn('DIRECTORY_PROCESS_SCRIPT =',probe)
+        self.assertIn('directory_publication.observe(',probe)
+
+    def test_directory_observer_closes_transport_on_selector_setup_failure(self):
+        module=postgres_probe.directory_publication
+        process=mock.Mock()
+        process.poll.return_value=None
+        with mock.patch.object(module.subprocess,'Popen',return_value=process),mock.patch.object(module.selectors,'DefaultSelector',side_effect=OSError('private-sentinel')):
+            with self.assertRaises(OSError):module.observe(['owned-transport'],mock.Mock())
+        process.kill.assert_called_once_with()
+        process.wait.assert_called_once_with(timeout=2)
+        process.stdin.close.assert_called_once_with()
+        process.stdout.close.assert_called_once_with()
+
+    def test_directory_reproducer_does_not_remove_a_foreign_container(self):
+        module=postgres_probe.directory_publication
+        commands=[]
+        def docker(command,**kwargs):
+            commands.append(command)
+            output='{"addp.directory-publication.owner":"foreign"}' if command[:2]==['docker','inspect'] else ''
+            if command[:3]==['docker','ps','-aq']:output='foreign\n'
+            return subprocess.CompletedProcess(command,0,output,'')
+        with mock.patch.object(module.subprocess,'run',side_effect=docker),mock.patch.object(module,'observe',side_effect=AssertionError('controlled')):
+            result=module.run('addp-metrics-t2-'+'b'*32)
+        self.assertFalse(result['cleanup_verified'])
+        self.assertFalse(result['zero_containers'])
+        self.assertFalse(any(command[:2]==['docker','rm'] for command in commands))
+
     def test_directory_publication_checks_an_ordinary_file_and_preserves_hba(self):
         for visible in (True,False):
             with self.subTest(visible=visible), tempfile.TemporaryDirectory() as temporary:
@@ -202,18 +273,18 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
             self.assertEqual(list(runtime.rglob('.pg-auth-*')),[])
 
     def test_directory_process_rejects_unmatched_identity_time_and_output(self):
-        phases=['baseline','published','control_before_enum','enumerate_first','control_before_enum_b','enumerate_second']
+        phases=['baseline','published','control_before_enum','enumerate_first','control_before_second_enum','enumerate_second']
         rows=[f'{phase}\t17\t{clock}\t{state}\t{state}' for phase,clock,state in
             zip(phases,['0.00','0.01','1.02','1.03','2.04','2.05'],['before']+['unreadable']*5)]
         good=('\n'.join(rows)+'\n').encode()
-        self.assertTrue(postgres_probe.directory_process_observations(good)['single_process'])
+        self.assertTrue(postgres_probe.directory_publication.directory_process_observations(good)['single_process'])
         negatives=[good.replace(b'17\t1.03',b'18\t1.03'),good.replace(b'1.02',b'0.02'),
             good.replace(b'2.04',b'1.04'),good.replace(b'2.05',b'9.05'),
             good.replace(b'enumerate_first',b'private-sentinel'),good.replace(b'unreadable',b'private-sentinel'),
             good.replace(b'1.03',b'0.00'),b'\n'.join(good.splitlines()[:-1])]
         for value in negatives:
             with self.subTest(value=value),self.assertRaises(AssertionError) as caught:
-                postgres_probe.directory_process_observations(value)
+                postgres_probe.directory_publication.directory_process_observations(value)
             self.assertNotIn('sentinel',str(caught.exception))
 
     def test_hba_readback_failure_restores_the_published_version(self):
@@ -1097,7 +1168,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
         workflow = (ROOT / '.github/workflows/release-and-t2-gates.yml').read_text()
         cases = re.search(r'^  monitor-metrics-cases:\n(.*?)(?=^  \S|\Z)', workflow, re.M | re.S).group(1)
         self.assertIn('fail-fast: false', cases)
-        self.assertIn('case: [postgres-source, http-quality, process-alerts, host-resources, filesystem-alerts, cgroup-source, block-capacity]', cases)
+        self.assertIn('case: [postgres-source, directory-publication, http-quality, process-alerts, host-resources, filesystem-alerts, cgroup-source, block-capacity]', cases)
         self.assertIn('timeout-minutes: 20', cases)
         self.assertIn('MONITOR_METRICS_TEST_ARGS: --case=${{ matrix.case }}', cases)
         self.assertEqual(cases.count('run: make test-monitor-metrics\n'), 1)
@@ -1347,6 +1418,7 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                      'scripts/test/postgres-lifecycle-probe.py',
                      'business/scripts/stop.sh',
                      'scripts/test/postgres-observation-probe.py',
+                     'scripts/test/directory-publication-probe.py',
                      'scripts/infra/postgres-metrics.yml',
                      'scripts/infra/postgres-observation/source.py',
                      'scripts/infra/postgres-observation/source-web.conf',

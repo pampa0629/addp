@@ -377,3 +377,22 @@ Business真实截图看到提交曲线，五分钟窗口08:11:12—08:16:12、15
 两轮各131项配置T1、26项生命周期T1通过；Infra／Business原生认证、汇总、权限拒绝、幂等、轮换、归属T2均通过。原目录前置仍失败、两侧HBA原内容不变、正向目录认证未进入，整体T2失败，不因诊断后来可读而改判。两个项目 `addp-metrics-t2-714e53c6268943f787eb249e977cbca3`／`addp-metrics-t2-ddf06be8f89c46f683cb68bae160c5a0` 已标准退出清理，并按各自标签独立确认容器／网络／卷全零；py_compile、bash -n及git diff --check通过。
 
 本轮不修改Docker设置、现有服务、个人数据库或凭据，不加入先枚举／重试／原地覆盖的认证路线；未查询或触发CI、Hosted，未设置定时任务。当前仍是共享层一致性缺口，安全发布保持不可见即拒绝。下一步建议以该同进程双目录对照核对原生Linux结果，并据此讨论共享层维护或发布职责调整；后者若改变既定部署边界，须先确认，不能当作局部兜底直接实现。
+
+
+## 无数据库的共享目录最小复现与修复建议（2026-11-01）
+
+用户要求去除数据库依赖并明确共享层处理建议，继续禁止修改Docker设置、重启现有服务或设置定时任务。现将同进程Bash协议、单调阶段校验及八秒／8192字节观察收敛到 `scripts/test/directory-publication-probe.py`；PG目录失败诊断只适配命令和已有认证发布器，不再维护另一份脚本／协议。新文件只依赖Python标准库和Docker，复制单文件即可在ADDP仓库外执行；不是新增产品认证路线。
+
+独立复现使用既有固定PG镜像里的Bash，入口覆盖为 `/bin/bash`，不启动PG、SQL、采集器或TLS，不读取ADDP配置、账号和HBA。宿主仅对随机临时目录中的普通文件执行write／flush／chmod／fsync／os.replace／目录fsync；容器只读、无网络／端口／额外能力，CPU0.5、内存64MiB、进程32。镜像声明的数据库VOLUME显式用64KiB tmpfs遮蔽，不创建匿名数据库卷。每次创建的容器都有随机项目及专属owner标签；异常回收前核对owner和项目，不删除外来对象，最后检查项目容器／网络／卷及临时文件为零。selector初始化失败亦回收传输。未匹配首次发布立即失败，后续枚举恢复不改判。
+
+公共入口新增 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=directory-publication`，默认all同样覆盖它；该case的T1仅执行配置／协议所属的 `MetricsDeploymentConfigTest`，其余case继续执行原完整配置套件。新脚本登记到既有T2输入和Release `Monitor metrics infrastructure (directory-publication)` 矩阵，保留fail-fast=false及20分钟上限，无新权限、Hosted用途或运行依赖。新矩阵只为后续自然CI验证登记，本会话未查询、触发或重跑CI／Hosted。
+
+两次最初完整配置预检分别运行133／135项，均因既有 `ServiceExpectationPublicationTest.test_standard_stop_publishes_selected_scope_before_the_first_stop_action` 的fake stop-dev脚本10秒超时而失败，尚未进入最小容器。未修改该夹具、停止逻辑或期限，也不把失败升级为通过。完成新case的正确范围划分后，最终两轮各77项相关T1通过；这不替代上述完整套件结果。
+
+最终标准命令日志 `/tmp/addp-directory-minimal-proof.log`，项目 `addp-metrics-t2-12509b04692b460e8c03524f54a2ff95`：无数据库两组正反顺序均完成。两侧发布后立即不可读；第一组约1010毫秒仍不可读，枚举A后仅A恢复，约2020毫秒B仍不可读、枚举B后恢复。第二组约1010毫秒仍不可读，枚举B后仅B恢复，约2020毫秒A仍不可读、枚举A后恢复。未依赖HBA、CAS、数据库读取或重载即可复现。独立复现按共享契约失败退出1，外层make返回非零，不是修复通过；JSON的cleanup_verified、zero_containers／networks／volumes及temporary_removed均true，之后按该项目标签独立复核三类资源全零。前一轮 `/tmp/addp-directory-minimal-scoped.log` 有一侧在后续等待时自行恢复的记录继续保留，不能推导固定TTL。
+
+`make test-t2-ci-registration` 的74项套件因四项Common execution-lifecycle夹具15秒超时失败，实际仓库检查因make顺序未进入；未改这些非本批夹具。随后只读执行内部事实检查 `python3 scripts/ci/check-t2-ci-registration.py --repository /Users/pampa/code/addp` 通过，确认当前登记命中，不将该局部结果称为整套登记门禁通过。`make test-workflow-security`通过（固定版本zizmor离线模式，覆盖现有工作流安全审计，不是线上CI结果）；py_compile、bash -n、git diff --check通过。PG来源正向完整门禁、本轮新Linux与Hosted仍未获得通过结论。
+
+可交给维护人员的包为 `/private/tmp/addp-directory-minimal-b5kwiyfk.zip`，包含与仓库逐字节一致的独立脚本、运行JSON、有限版本信息和README；脚本SHA256为 `c864911b5034f3f0a62993686acbcd1c2c5161947a6a85120d76a9c5bdfaa4c5`。包内Docker设置注明为本会话前期只读快照，不冒充升级后或重启后的状态；未自动上传或向上游发消息。
+
+修复建议已写入[开发服务与构建故障排查](../../../guide/troubleshooting/开发服务与构建.md#docker-desktop-共享目录原子替换后容器读不到文件)并加入故障总索引：保留不可见即拒绝，先在独立环境或授权维护窗口验证候选受支持Docker版本，保持VMM／VirtioFS不变；仍失败时才单独比较gRPC FUSE，分别跑相同复现及原目录认证／重载／恢复门禁。官方[发行说明](https://docs.docker.com/desktop/release-notes/)记录过缓存／宿主通知修订但未证明本例已修复，不能承诺升级或重启即可解决；官方[设置说明](https://docs.docker.com/desktop/settings-and-maintenance/settings/#general)只作为可选共享实现的事实来源。若长期要求避开跨宿主动态发布，应单独讨论VM内受管卷和部署侧发布职责，不在本批引入。个人环境及产品安全校验未改动。
