@@ -184,7 +184,7 @@ def service_has_required_nofile_limit(service_block: str) -> bool:
 
 
 def dockerfile_build_is_pinned(repository: Path, context: Path, dockerfile: Path,
-                              declared_inputs: frozenset[str]) -> bool:
+                              declared_inputs: frozenset[str], build_args: dict[str, str] | None = None) -> bool:
     """Inspect local build inputs without executing Docker or shell commands."""
     root, context, dockerfile = repository.resolve(), context.resolve(), dockerfile.resolve()
     if not context.is_relative_to(root) or not context.is_dir() or not dockerfile.is_relative_to(context) or not dockerfile.is_file():
@@ -192,6 +192,8 @@ def dockerfile_build_is_pinned(repository: Path, context: Path, dockerfile: Path
     if not MODULE_GATE.gate_input_covers(declared_inputs, dockerfile.relative_to(root).as_posix()):
         raise RegistrationError("owned build Dockerfile must be declared in ADDP_T2_INPUT_FILES")
     stages: set[str] = set()
+    arguments = build_args or {}
+    bound_arguments: dict[str, str] = {}
     external_base_count = 0
     text = re.sub(r"\\\n\s*", " ", dockerfile.read_text(encoding="utf-8"))
     for line in text.splitlines():
@@ -201,7 +203,15 @@ def dockerfile_build_is_pinned(repository: Path, context: Path, dockerfile: Path
         instruction, _, body = line.partition(" ")
         instruction = instruction.upper()
         if instruction == "ARG":
-            return False
+            match = re.fullmatch(r"([A-Z][A-Z0-9_]*)(?:=[^\s]+)?", body)
+            if match is None or match[1] not in arguments or match[1] in bound_arguments:
+                return False
+            bound_arguments[match[1]] = arguments[match[1]]
+            continue
+        # Compose must supply every ARG as a literal; defaults never establish
+        # a pin. FROM and git revision checks below still enforce their pins.
+        body = re.sub(r"\$\{([A-Z][A-Z0-9_]*)\}|\$([A-Z][A-Z0-9_]*)",
+                      lambda m: bound_arguments.get(m[1] or m[2], m[0]), body)
         if instruction == "FROM":
             match = re.fullmatch(r"(\S+)(?:\s+AS\s+(\w+))?", body, re.IGNORECASE)
             if match is None:
@@ -252,7 +262,7 @@ def dockerfile_build_is_pinned(repository: Path, context: Path, dockerfile: Path
                             return False
                         if resolved.is_file() and not MODULE_GATE.gate_input_covers(declared_inputs, resolved.relative_to(root).as_posix()):
                             raise RegistrationError("owned build COPY/ADD inputs must be declared in ADDP_T2_INPUT_FILES")
-    return external_base_count > 0
+    return external_base_count > 0 and set(bound_arguments) == set(arguments)
 
 
 def compose_service_is_pinned(repository: Path, path: Path, service: str,
@@ -280,12 +290,29 @@ def compose_service_is_pinned(repository: Path, path: Path, service: str,
         build = re.search(r"(?ms)^    build:\s*\n((?:^      [^\n]*\n?)+)", block)
         if build is None:
             return False
-        fields = dict(re.findall(r"(?m)^      (\w+): ([\w./-]+)\s*$", build.group(1)))
-        if set(fields) != {"context", "dockerfile"} or len(build.group(1).splitlines()) != 2:
+        fields, arguments = {}, {}
+        in_arguments = False
+        for line in build.group(1).splitlines():
+            if line == "      args:":
+                if in_arguments:
+                    return False
+                in_arguments = True
+                continue
+            argument = re.fullmatch(r"        ([A-Z][A-Z0-9_]*): ([A-Za-z0-9./:@_-]+)", line)
+            if in_arguments and argument:
+                if argument[1] in arguments:
+                    return False
+                arguments[argument[1]] = argument[2]
+                continue
+            field = re.fullmatch(r"      (context|dockerfile): ([\w./-]+)", line)
+            if field is None or field[1] in fields or in_arguments:
+                return False
+            fields[field[1]] = field[2]
+        if set(fields) != {"context", "dockerfile"} or in_arguments and not arguments:
             return False
         context = path.parent / fields["context"]
         source_builds.add((context / fields["dockerfile"]).resolve())
-        return dockerfile_build_is_pinned(repository, context, context / fields["dockerfile"], declared_inputs)
+        return dockerfile_build_is_pinned(repository, context, context / fields["dockerfile"], declared_inputs, arguments)
     image_override = re.search(r"(?m)^    image:", block) is not None
     extension = re.search(r"(?m)^    extends:\s*\n((?:^      [^\n]*\n?)+)", block)
     if not extension:
@@ -541,7 +568,7 @@ def validate_registration(repository: Path) -> list[str]:
                     errors.append(f"{script}: shared lifecycle must use its declared Compose file")
         if "docker compose" not in script_content or "down --volumes --remove-orphans" not in script_content or "disposable" not in script_content:
             errors.append(f"{script}: owned-service gate must own disposable Compose startup and cleanup")
-        if source_builds and not re.search(r"(?m)^(?:docker )?compose build\s", script_content):
+        if source_builds and not re.search(r"(?m)^[ \t]*(?:docker )?compose build\s", script_content):
             errors.append(f"{script}: owned source build must run compose build explicitly")
         selection_step = next(
             (

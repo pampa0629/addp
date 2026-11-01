@@ -456,6 +456,30 @@ class T2CIRegistrationTest(unittest.TestCase):
         self._add_owned_source_build()
         self.assertEqual([], MODULE.validate_registration(self.repository))
 
+    def test_owned_build_args_must_bind_every_arg_to_fixed_inputs(self) -> None:
+        dockerfile = self._add_owned_source_build()
+        compose = self.repository / "scripts/test/docker-compose.tidb-t2.yml"
+        original = compose.read_text()
+        args = '      args:\n        BASE: golang:1.24@sha256:' + 'a' * 64 + '\n        REVISION: ' + 'b' * 40 + '\n'
+        compose.write_text(original.replace('      dockerfile: Dockerfile', '      dockerfile: Dockerfile\n' + args.rstrip()))
+        dockerfile.write_text('ARG BASE=golang:latest\nFROM ${BASE}\nARG REVISION=main\nRUN git clone --branch release https://example.test/source.git source && test "$(git -C source rev-parse HEAD)" = ${REVISION} && echo built\n')
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+        valid = compose.read_text()
+        for bad in (valid.replace('        BASE: golang:1.24@sha256:' + 'a'*64, '        BASE: golang:latest'),
+                    valid.replace('        REVISION: ' + 'b'*40 + '\n', ''),
+                    valid.replace('b'*40, '${UNTRUSTED_REVISION}'),
+                    valid.replace('b'*40, 'main'),
+                    valid.replace('      args:', '      ignored: value\n      args:'),
+                    valid.replace('      args:', '      args: [BASE, REVISION]'),
+                    valid.replace('      args:', '      args:\n        UNUSED: surprise'),
+                    valid.replace('      args:', '      args:\n        REVISION: ' + 'b'*40)):
+            with self.subTest(bad=bad):
+                compose.write_text(bad)
+                self.assertTrue(MODULE.validate_registration(self.repository))
+        compose.write_text(valid)
+        dockerfile.write_text(dockerfile.read_text() + 'ARG UNUSED=latest\n')
+        self.assertTrue(MODULE.validate_registration(self.repository))
+
     def test_rejects_unpinned_owned_build_inputs(self) -> None:
         dockerfile = self._add_owned_source_build()
         original = dockerfile.read_text()

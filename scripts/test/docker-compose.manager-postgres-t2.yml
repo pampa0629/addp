@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: ${MANAGER_PG_TEST_IMAGE:?owned image tag required}
+    platform: linux/amd64
+    build:
+      context: ../infra
+      dockerfile: Dockerfile.postgres
+      args:
+        POSTGRES_BASE_IMAGE: postgres:15-bookworm@sha256:daeac543477e189e334f159133f4be6dae739b005cec2dfb9d482509fed05465
+        PGVECTOR_SOURCE_COMMIT: 2627c5ff775ae6d7aef0c430121ccf857842d2f2
+    environment:
+      POSTGRES_USER: addp_ci
+      POSTGRES_PASSWORD: addp_ci_password
+      POSTGRES_DB: addp_manager_disposable
+    labels:
+      addp.test-owner: manager-postgres
+      addp.test-run: ${MANAGER_PG_TEST_OWNER:?owned run required}
+    ports:
+      - "127.0.0.1:5432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    restart: "no"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U addp_ci -d addp_manager_disposable"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+networks:
+  default:
+    labels:
+      addp.test-owner: manager-postgres
+      addp.test-run: ${MANAGER_PG_TEST_OWNER:?owned run required}

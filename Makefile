@@ -561,6 +561,7 @@ test-system-cleanup: ## 验证 System Cleanup 准入、父子协调与只读快�
 
 test-t2-ci-registration: ## 验证 T2 入口、选择、服务登记及 PostgreSQL runner 契约
 	@python3 scripts/ci/check-t2-ci-registration_test.py
+	@python3 scripts/test/manager-postgres-gate_test.py
 	@python3 scripts/ci/check-t2-ci-registration.py --repository "$(CURDIR)"
 
 test-asset-postgres: ## 使用一次性 PostgreSQL 数据库运行 Asset 授权履约迁移门禁

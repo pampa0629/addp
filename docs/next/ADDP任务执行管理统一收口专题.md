@@ -863,7 +863,7 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 本轮最终本地门禁已通过：`make test-manager-postgres` 退出 0，31 项顶层 PG 用例、零跳过，包含生产 schema／所有 Cleanup 仓库／真实 owned Meili／Common 领取／完整 Manager handler／结果回执，以及五种失败阶段、SQL 回滚和终态原 lease 不能追加证据。首次阶段事件写入被共享事件的“步骤必须先存在”守卫拒绝，已按其唯一协议改为同一 C 事务先保存步骤、后追加事件，前后均校验原 lease；最终 PG 反例通过。`make test-manager-backend` 退出 0；`make test-execution-online-ci-runner` 退出 0，native 100 项／共享 166 项均 OK、登记一致，Python focused 43 项通过。`make check-node-runtime`、自有差异检查通过；与 Hosted 固定源码 AST 对比，HTTP／wait／sleep 调用不变，原六权限与七断言机器契约逐字节不变。私有证据同目录 `manager-production-{prerequisite-missing,plan-native-pass}.log`、`manager-production-repro.log`、`manager-failure-stage-{red,focused,pg-red,final-pg,final-unit,final-runner}.log`、`authorization-code-red.log` 及 `manager-failure-stage-{invariants,local-proof}.json`。这些结果修复了确定的失败阶段丢失／授权原因消费缺陷，但未复现并修复现场 Manager 底层错误，整体仍为部分实现。新的精确源码 Linux CI 将只跟 Execution runner、Manager PG 及 Go workspace 中实际覆盖 Manager 的部分；不调查或修复无关 Job。API／Permission／Swagger 沿既有安全 Observation 契约，不新增字段或管理能力；第七次 Hosted、其他环境及权限变化没有授权。
 
 
-### 8.29 bf015 Linux 终态与 Manager PG 依赖缺口（CI 基线修正待确认）
+### 8.29 bf015 Linux 终态与 Manager PG 依赖缺口（CI 基线修正已确认）
 
 已独立 fresh 核验 `bf015feb9f33199c0c2063f8dd24e2c0c8b413b4`／push／attempt 1 的三项实际终态：
 
@@ -875,13 +875,19 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 
 **已核实的唯一既有安装路线。** 本地 Infra／Linux Hosted 复用 `scripts/infra/Dockerfile.postgres`：PostgreSQL 15 bookworm、PostGIS 3、源码构建 pgvector v0.8.0；Manager PG workflow 仍只声明固定摘要的 `postgis/postgis:15-3.4` Service，因而缺少 vector 扩展文件。生产 Manager 对 vector 的要求是既有事实，本批新增的是首次在这个 CI 中执行完整初始化。不得为了测试拆出禁用向量的生产初始化第二路径，也不临时在个人共享 PostgreSQL 安装或更换镜像。
 
-**建议待确认范围。** 仅调整 `manager-postgres` Job 的独占测试数据库供给：由同一个标准 `make test-manager-postgres`／脚本沿仓库 Dockerfile 构建本 Job 自有 Linux amd64 镜像，显式固定构建基础输入并保存准确源码／版本／镜像 ID，启动新鲜 `addp_manager_disposable`；保留原 GitHub Meilisearch Service 和全部测试。版本轨道对齐仓库现有 PostgreSQL 15／PostGIS 3／pgvector 0.8.0；不声称纯 PostGIS Service 的旧 3.4 小版本天然等于当前仓库构建结果，实际版本必须核验并归档。不新增镜像发布／注册仓库权限或个人服务操作。
+**已确认范围。** 用户已同意“仅修正 Manager CI 基线”。仅调整 `manager-postgres` Job 的独占测试数据库供给：由同一个标准 `make test-manager-postgres`／脚本沿仓库 Dockerfile 构建本 Job 自有 Linux amd64 镜像，显式固定构建基础输入并保存准确源码／版本／镜像 ID，启动新鲜 `addp_manager_disposable`；保留原 GitHub Meilisearch Service 和全部测试。版本轨道对齐仓库现有 PostgreSQL 15／PostGIS 3／pgvector 0.8.0；不声称纯 PostGIS Service 的旧 3.4 小版本天然等于当前仓库构建结果，实际版本必须核验并归档。不新增镜像发布／注册仓库权限或个人服务操作。
 
 数据库创建须由该 workflow 调用的标准生命周期完成；新容器、临时数据、镜像标记绑定本 Job／Run／attempt，ready 与真实 extension 能力核验后才测试；失败、取消和正常退出均按准确资源身份销毁，不复用个人实例或旧测试卷。删除 Manager Job 原来的纯 PostGIS Service，避免两个数据库供给路线并存。本地标准入口仍只用已核归属的 `addp_test`，不切换或重启个人 Infra，不创建新本地 database。针对这一 repo-built Postgres 供给同步 T2 服务登记／路径选择与反例验证，不能借不存在或未使用的旧 Service 假登记；不影响其他 Owner Job 的服务或镜像。
 
 **最小实施与验证。** 修改范围限 `.github/workflows/release-and-t2-gates.yml` 的 Manager Job、`scripts/test/manager-postgres-gate.sh`、既有 T2 登记／module gate 测试及对应说明；不新增产品 API、权限、持久数据实体或业务路径。离线验证 CI 所有权／拒绝个人环境／真实扩展前置／失败与取消回收／原 full-suite 和 skip 拒绝，复用 `make test-t2-ci-registration` 与已有 module-gate 标准测试；保留本地标准 Manager PG／Go 验证，再由自然 Manager PG CI 执行新的准确镜像及 31 项完整用例。其他必要 CI 只核本批实际覆盖。新的 Hosted 未获授权，不运行第七次。
 
-**确认点。** 用户已明确“其他环境和权限边界变化仍单独确认”；上述切换改变的是 Manager 专属 CI 数据库测试基线与供给生命周期，实施及推送触发该新基线前须确认。当前仅完成只读事实核验、证据收口和本节具体方案，没有构建、运行或发布新镜像，没有改变 CI／个人环境。runner／Manager Go 已验，Manager PG 仍失败，整条 Engine 清理链路仍为第六轮 0/7、现场 Manager 底层原因待足够证据。
+**授权与证据边界。** 此次确认仅涵盖 Manager 专属 CI 数据库测试基线与供给生命周期；其他环境和权限边界变化仍单独确认。runner／Manager Go 已验，旧 Manager PG 失败事实保留，新 CI 必须取得实际终态才能计通过。整条 Engine 清理链路仍为第六轮 0/7、现场 Manager 底层原因待足够证据；本轮不追加 Hosted。
 
 
-确认前的独立核验已完成：未修改实现情况下，标准 `make test-t2-ci-registration` 74 项和当前登记检查通过（24 个 hosted-service、14 个 gate-owned Compose、9 个 hosted-only、2 个 owner-managed）。这只证明原登记自身一致，不能弥补原 Manager Service 实际缺 vector。实施应优先复用现有 `ADDP_T2_OWNED_SERVICES`／Compose／lifecycle 登记模式，不新建平行服务目录；严格保留其固定基础镜像、源码构建输入、无不受控覆盖和唯一资源清理的反例，不能为了接纳当前未固定默认 ARG／git tag 而放宽构建来源校验。源码固定与已有 Dockerfile 复用方式需同次落实，并且保持其他 Job 的现有环境供给不变。当前仅本节文档变更，确认请求已发出，依赖该决定的代码及 CI 环境实施仍暂停。
+确认前的独立核验已完成：未修改实现情况下，标准 `make test-t2-ci-registration` 74 项和当前登记检查通过（24 个 hosted-service、14 个 gate-owned Compose、9 个 hosted-only、2 个 owner-managed）。这只证明原登记自身一致，不能弥补原 Manager Service 实际缺 vector。实施复用现有 `ADDP_T2_OWNED_SERVICES`／Compose／lifecycle 登记模式，不新建平行服务目录；严格保留其固定基础镜像、源码构建输入、无不受控覆盖和唯一资源清理的反例，不能为了接纳当前未固定默认 ARG／git tag 而放宽构建来源校验。源码固定与已有 Dockerfile 复用方式同次落实，其他 Job 的现有环境供给不变。
+
+**实现约束。** Manager Compose 显式绑定 `postgres:15-bookworm@sha256:daeac543477e189e334f159133f4be6dae739b005cec2dfb9d482509fed05465` 与 pgvector v0.8.0 提交 `2627c5ff775ae6d7aef0c430121ccf857842d2f2`；共享 Dockerfile 保留其他调用方的原基础镜像默认值，仅校验同一版本的准确源码身份。T2 静态检查仅接受显式字面量绑定所有 Dockerfile ARG，浮动基础镜像、缺失／重复／多余参数、外部变量和未固定 git 提交继续拒绝。门禁限定准确 Linux Job、Run／attempt、工作区及 DSN，使用带归属标签的独占 Project、tmpfs 和唯一镜像标记；退出前检查容器／网络归属，拒绝清理外来资源或被替换的镜像。
+
+启动后实际安装 PostGIS，并在可回滚临时 Schema 中安装／使用 vector，核验 PostgreSQL 15、PostGIS 3、pgvector 0.8.0 与 probe 零残留后才进入原完整测试。执行必须观察到生产初始化、Cleanup 原子性、原生索引快照与 API 隔离用例的顶层 PASS，任何 skip 或缺失都失败。`postgres-evidence.json` 记录准确源码、镜像 ID、实际版本、测试退出码与清理结果，workflow 无论成功失败均归档；不包含连接密码。离线生命周期测试归入原 `make test-t2-ci-registration`，验证准备失败、扩展不符、测试失败、取消、清理失败及资源身份冲突，不启动真实 Docker 或数据库。
+
+**提交前本地验证。** `make test-t2-ci-registration` 75 项登记反例＋9 项 Manager 生命周期／实际输入选择测试通过；当前登记为 24 hosted-service、15 gate-owned Compose、9 hosted-only、2 owner-managed。已有 module-gate 41 项、选择 9 项、`make test-infra-postgresql-init` 2 项、`make check-node-runtime`、`make test-workflow-security`、Shell 语法与 Compose 配置检查均通过。本地 `make test-manager-postgres` 在确认实际映射为 25432 的 `addp-postgres`／`addp_test` 上完整重跑，31 个顶层 PASS、0 skip、0 fail，退出 0；日志 SHA-256 `94390c8305287c803775ff8cc96e59c0050a3930f3d802bce11d660b0b58cfbe`。此前边运行边编辑门禁脚本造成 Shell 读偏移的那次中断不计通过，完整重跑原件沿第六轮目录 `manager-ci-baseline-local-final.log`。Linux 新镜像构建、真实扩展能力及实际销毁仍待本次提交的自然 CI，不以模拟生命周期或本地旧实例替代。

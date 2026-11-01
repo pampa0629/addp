@@ -27,9 +27,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-server-dev-15 \
     && rm -rf /var/lib/apt/lists/*
 
+# 同一 v0.8.0 源码身份固定；Manager CI 额外显式绑定此值与基础镜像摘要。
+ARG PGVECTOR_SOURCE_COMMIT=2627c5ff775ae6d7aef0c430121ccf857842d2f2
+LABEL pgvector.source_revision="${PGVECTOR_SOURCE_COMMIT}"
+
 # 下载并安装 pgvector v0.8.0
 RUN cd /tmp && \
-    git clone --branch v0.8.0 https://github.com/pgvector/pgvector.git && \
+    git clone --branch v0.8.0 https://github.com/pgvector/pgvector.git /tmp/pgvector && \
+    test "$(git -C /tmp/pgvector rev-parse HEAD)" = ${PGVECTOR_SOURCE_COMMIT} && \
     cd pgvector && \
     make clean && \
     make OPTFLAGS="" && \

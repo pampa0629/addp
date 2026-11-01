@@ -64,7 +64,9 @@ MANAGER_POSTGRES_TEST_DSN='postgres://addp:addp_password@127.0.0.1:15432/addp_te
   make test-manager-postgres
 ```
 
-GitHub Actions 使用每个 Job 独占、随 Job 销毁的 PostgreSQL 15 Service，不连接本地开发环境 Infra；workflow 可以为 Job 创建专用测试 database，但必须由 workflow 声明并由隔离实例生命周期回收。
+Manager 的 GitHub `manager-postgres` Job 由同一个标准入口独占构建 `scripts/infra/Dockerfile.postgres`，使用 PostgreSQL 15／PostGIS 3／pgvector 0.8.0。专属 Compose 固定基础镜像摘要与 pgvector 源码提交，先验证实际扩展版本与回滚 probe，再运行完整生产初始化等所有用例；Job 使用 `addp_manager_disposable` 和 tmpfs，退出核对并销毁本轮容器、网络、卷及唯一镜像标记。准确源码、镜像 ID、实际版本、测试退出码和清理结果归档为 `postgres-evidence.json`。本地仍只连接已核实的 `addp_test`，不启用此 CI 专属生命周期。
+
+GitHub Actions 使用每个 Job 独占、随 Job 销毁的 PostgreSQL 实例（Service 或已登记的 gate-owned Compose），不连接本地开发环境 Infra；workflow 可以为 Job 创建专用测试 database，但必须由 workflow 声明并由隔离实例生命周期回收。
 
 Ontology 修订/发布门禁使用 `ONTOLOGY_POSTGRES_TEST_DSN` 连接本地 `addp_test`，标准入口为 `make test-ontology-postgres`，并已纳入 `make test-module MODULE=ontology`、串行 `test-integration` 和辅助 macOS 巡检。门禁仅接管此前不存在的 ontology schema，用随机 Run ID 标记所有权；退出时核对标记并删除本轮执行记录和 schema，验证零残留，不删除或重建 common。CI 对应独占 `addp_ontology_test`，不访问开发库。具体语义范围见 [Ontology 模块说明](../../../ontology/CLAUDE.md)。
 
@@ -171,7 +173,7 @@ addp (database)
   - 在开发库和 `addp_test` 中创建 postgis 扩展
 - **pgvector 0.8.0** - 向量检索支持
   - 从源码编译安装
-  - 仅在开发库的 `manager` Schema 中支持向量嵌入和相似度搜索
+  - 开发库由 `manager` Schema 使用；Manager 完整生产初始化测试也会在隔离测试 Schema 中安装，夹具退出清理该 Schema
 
 **特性**:
 - ✅ 幂等性（已安装扩展不会重复安装）

@@ -1521,19 +1521,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
-      postgres:
-        image: postgis/postgis:15-3.4@sha256:3f4a5d48e0be9580ed70ed618cd039ce57bbb2dd113053d3836e28513f1f87cd
-        env:
-          POSTGRES_USER: addp_ci
-          POSTGRES_PASSWORD: addp_ci_password
-          POSTGRES_DB: addp_manager_disposable
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U addp_ci -d addp_manager_disposable"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
       meilisearch:
         image: getmeili/meilisearch:v1.54.3@sha256:e68913ab7d6f5b159529e472cfd362ce3c741fafd3c127961b2142abbe41b3c9
         env:
@@ -1555,16 +1542,26 @@ jobs:
 
       - name: Run Manager PostgreSQL gate
         env:
+          MANAGER_POSTGRES_CI_OWNED: "1"
           MANAGER_MEILISEARCH_TEST_URL: http://127.0.0.1:7700
           MANAGER_MEILISEARCH_TEST_KEY: addp-ci-manager-snapshots-test-key
           MANAGER_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_manager_disposable?sslmode=disable
         run: make test-manager-postgres
 
+      - name: Upload Manager PostgreSQL identity and cleanup evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: manager-postgres-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/addp-manager-pg-${{ github.run_id }}-${{ github.run_attempt }}/postgres-evidence.json
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Summarize Manager PostgreSQL gate
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: Manager task lifecycle and geometry declarations (PostgreSQL 15 / PostGIS 3.4)
+          gate: Manager lifecycle and content snapshots (PostgreSQL 15 / PostGIS 3 / pgvector 0.8.0)
           status: ${{ job.status }}
 
   manager-mongodb-security:
