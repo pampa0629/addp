@@ -783,6 +783,8 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 
 用户随后明确认可只读分期方向，业务图回执另议。已先补术语，再将职责、失败关闭、首次绑定／锁外观察／CAS、版本能力验证和禁止补造历史绑定写入正式 Provider 规范及模块任务契约，Graph 导航同步。该确认不等于原生身份候选已通过，也不等于 Provider／正向 reopen 已实现；当前只细化正式契约，代码与实际验收分别推进。
 
+正式契约已提交推送 `6baf05aeaa5d61bf5f5e1a641f3493f0ea5e3b1a`，仅五个文档的自有段落；共享 Provider 规范原有四行他人联邦查询改动未纳入提交。文档本地链接与暂存差异检查通过。另按当前 `common/cleanup/runtime.go` 的 `ClaimCleanupChild`、Graph Cleanup 运行路径、Owner 专业结果入口及共享 `CleanupAdmission` 组件，纠正了 Graph 导航／模块任务契约／回执术语中残留的“尚未迁移／尚未实施”描述；新增五处本地链接检查和差异检查通过。该校正只确认已有代码接入，不新增产品行为，也不将其升级为真实浏览器、原生效果或完整 Hosted 已通过。证据 `/tmp/addp-transfer-engine-hosted-fourth-20261101/graph-{contract-doc-proof,current-facts-doc-proof}.json`。
+
 **当前证据链。** Graph 已在派发前将准确 operation ID、Tenant／Graph、execution／attempt 或审核 command、Runner、请求摘要和配置目标摘要写入自己的 PG 表；配置目标包含 Engine／version／CatalogPath／index_management，不是原生物理身份。合法所有者的完整返回可提交 known；失权后的晚到摘要只追加，不能解除 unknown。`Reconcile` 只消费完整 known 操作，`Reopen` 最终仍返回 `ErrGraphPhysicalTargetUnverified`。Common `PropertyGraphProvider` 仅提供执行、索引和约束操作，没有原生目标代际或单次操作核清接口。
 
 **必须分别证明的三件事。** 一是当前仍为首次受理绑定的原生目标代际；二是准确操作的结果已确定，而非仅观察到相似业务数据；三是原运行体及在途／排队调用已结束，且不会在重新开放后迟到写入。目标身份、操作结果与停止证明不能互代；`SHOW TRANSACTIONS`／`GRAPH.INFO` 瞬时空列表、客户端超时、断开连接和 lease 过期都不能单独构成三项证明。恢复只追加 Graph 私有证据和准入事实，不修改已经终结的公共 execution、不自动重跑。
