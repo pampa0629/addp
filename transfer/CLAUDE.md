@@ -250,13 +250,19 @@ Cleanup 使用 Common 持久 Runner，System 预建子执行，Transfer 不消�
 
 开发启动、由用户执行的后端重启、实际端口与就绪检查统一见[README 启动说明](README.md#开发启动与就绪检查)。测试和构建不要求重启开发服务；就绪响应不证明 Worker、源读、目标写或公开入口已经验收。
 
-模块、Go 定位、PostgreSQL 专项与 Hosted runner 的标准命令、环境前提及覆盖范围统一见[README 门禁说明](README.md#常规模块与专项门禁)；测试连接必须指向核对后的实际映射，凭据按受控环境注入。原生 GDAL/Python、GeoPython Runtime、Business Oracle、样本和临时对象权限沿[ArcGIS 专项](README.md#arcgis-开放格式专项)，部分运行不计完整门禁通过。
+标准命令、环境前提与覆盖范围按用途阅读：
 
-`make test-transfer-postgres` 的测试连接与覆盖范围统一见[README 门禁说明](README.md#常规模块与专项门禁)，无需 PostGIS。Planner 的通用 PostgreSQL 连接辅助函数只检查连接；PostGIS 前置检查仅属于 GeoJSON 坐标转换等空间测试。目标覆盖回归在自身连接的 `search_path=pg_catalog` 下执行，确保本地 `addp_test` 已安装的空间扩展不会掩盖非空间测试的错误依赖；不删除扩展、不创建额外 database，仍拒绝门禁中的任何 Skip。
-
-两类 Oracle CDC 显式开关用例仍缺专门登记的标准调用与隔离清理门禁，具体实现、数据面范围、环境及已授权故障窗口统一见[专项入口缺口](README.md#oracle-cdc-专项入口缺口)。普通模块、Go 或 PostgreSQL 门禁成功以及未激活用例的跳过，都不能计为这两类实测通过，也不以直接语言命令替代标准入口。
+- 模块、Go 定位、PostgreSQL 专项与 Hosted runner：统一见[README 门禁说明](README.md#常规模块与专项门禁)，含实际测试连接、凭据注入、PostGIS 与非空间隔离要求。
+- ArcGIS 格式集成：原生依赖、Runtime、Business Oracle、样本、临时对象权限与部分运行边界见[ArcGIS 专项](README.md#arcgis-开放格式专项)。
+- Oracle CDC：两类显式开关用例的标准入口缺口、环境与故障窗口见[专项入口缺口](README.md#oracle-cdc-专项入口缺口)；普通门禁成功或未激活用例的跳过不计为这两类实测通过，不以直接语言命令替代标准入口。
 
 真实 T4 的专用身份、最小权限与独占部署遵循[Online 规范](../docs/spec/testing/T4-Online验收规范.md)，不复用个人开发服务或扩大生产权限。以下分版本证据只适用于所列源码和运行尝试，不代表当前 HEAD 已重跑；标准门禁、runner 回归、实际运行与历史结论分别认定，未运行、失败、跳过和未覆盖项不计为通过。各后续增强的独有验收边界见[清单验收范围与证据](../docs/next/transfer后续能力清单.md#六验收范围与证据)。
+
+常用日志：
+
+- `logs/transfer-backend.log`
+- `logs/transfer-bounded-worker.log`
+- `logs/transfer-continuous-worker.log`
 
 ### 专项约束与分版本证据
 
@@ -339,12 +345,6 @@ continuous 双用户审批验收沿用现有 Hosted suite 和同租户 peer：�
 [Hosted 38987715068](https://github.com/pampa0629/addp/actions/runs/38987715068) 在运行时代码提交 `c0543178726054fa4245e566cadff13bf46385e0` 真实通过，独立核验了 5 个服务构建身份、13 项检查、6 个不同 Transfer UUID 与 4 次精确目标扫描。定时 execution `d2a77c47-c63e-4660-83a5-a51ea59a928b` 由真实 Cron 触发，发起人为当前授权 User 33；Meta 扫描 `835fbbf7-acfd-4713-8a2f-68d9446b90ba` 继承同一 User 和这个直接父执行。拥有读取权限的 peer 可读父执行，对该一次性子扫描仍返回 404。实际写入两行，扫描只新增 `addp://engine/1/path/public/continuous_scheduled_target?type=table`（DataItem 5，id／label 两字段）；原 Kafka／CDC 目标、兄弟项和 schema／root 两级祖先扫描事实不变。此前双用户审批、初次扫描与 live／recovery／revocation 三组浏览器验证继续通过，3 个定义删除成功，suite 残留 0、Infra `zero_residuals`。37 个归档文件未检出凭据前缀、Service Secret 赋值或业务行哨兵。
 
 最终 `make test-go` 22 个模块、Common Go T1、Transfer／Meta／Orchestrator Go T1、完整 System IAM PostgreSQL 7 个 package、Transfer／Meta PostgreSQL、Ontology PostgreSQL／独占 FalkorDB、来源审查、授权清单和 System／Transfer／Orchestrator Swagger 覆盖均通过。6 个重定向反例及 active execution 期间恢复调度完成红绿验证；IAM 门禁入口 16 项测试通过。后续 `86b4e726f` 仅修正验收失败清理：定时场景先暂停未来触发再等待当前执行结束，41 项 runner 测试与 System fixture Go 通过，55 个运行时／契约文件与该 Hosted 源码一致。现有标准入口和 CI 登记覆盖，无新增 Job。清洁快照 `1c7301253` 的完整 `make test-module MODULE=transfer` 未通过：平台 T0、后端 T1 和前端 130 项单元通过，但 MongoDB query 恢复配置的两项浏览器断言失败（24 项中 22 项通过）；前端构建及聚合后续 T2 未执行，独立后端 T2 已通过，不计完整模块聚合通过，未修改这些前端实现或测试。个人开发服务本轮未重启；更新 Common 后由用户按标准入口重启全部模块，旧定时定义须通过现有保存／恢复入口重新授权。
-
-常用日志：
-
-- `logs/transfer-backend.log`
-- `logs/transfer-bounded-worker.log`
-- `logs/transfer-continuous-worker.log`
 
 ## 相关文档
 

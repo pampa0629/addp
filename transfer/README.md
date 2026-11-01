@@ -161,6 +161,8 @@ bash scripts/dev/start.sh -transfer
 
 PostgreSQL 门禁及模块聚合的 T2 步骤要求已核对的 `ADDP_TEST_POSTGRES_PORT`、`ADDP_TEST_POSTGRES_PASSWORD` 等测试连接。先用 `bash scripts/infra/status.sh` 核对实际映射，凭据通过受控环境注入，不写入命令字面值或日志。本模块本地使用 `addp_test`；库归属、权限与清理边界见[Infra PostgreSQL 清单](../scripts/infra/README.md)和[测试隔离规范](../docs/spec/addp测试与验收规范.md)，不创建旁路测试库。T2 前提缺失会在模块门禁执行前拒绝，不能把只完成 Go 子集算作模块通过。
 
+Planner 的通用 PostgreSQL 连接辅助函数只检查连接；PostGIS 前置检查仅属于 GeoJSON 坐标转换等空间测试。目标覆盖回归在自身连接的 `search_path=pg_catalog` 下执行，确保本地 `addp_test` 已安装的空间扩展不会掩盖非空间测试的错误依赖；不删除扩展、不创建额外 database，仍拒绝门禁中的任何 Skip。
+
 ### ArcGIS 开放格式专项
 
 ```bash
