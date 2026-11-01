@@ -812,3 +812,24 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 后续真实入口仍仅`make test-monitor-http-local`，须另行获得原上限单次60分钟窗口授权，55分钟停新业务，8 CPU／12 GiB、私有可写4 GiB停止线、完整四秒、受控请求／身份浏览器总预算、首失败即停清理、不自动重试或续窗不变。当前授权仍是不新开本地窗口，本次没有开始计时或执行运行前Docker／服务检查，也不申请放宽条件。停源后历史读取、完整5／15分钟窗口、模型／工具、5xx／告警通知重演、Hosted、容量与长期保留继续另批。
 
 原始日志`/tmp/addp-p19-http-page-admission-086-platform.log`共425865字节，SHA256=`82cd34c5a7311e894968af3d7a71df8944b61aeed941d472f933cc9450a90e4d`；独立审计`/tmp/addp-p19-http-product-admission-20261101/audit.json`及`fixed-http-recipe.txt`保存固定Make配方、37项／Go及离线T1、12项来源比较（私有目录／文件）。仅更新两份证据文档，验证43主题、唯一锚点／索引、固定SHA／配方／实际日志及自有差异，不重跑任何代码或实链门禁，不设置定时。
+
+
+<a id="http-formal-product-window-agent-apt-failed-20261101"></a>
+
+## 2026-11-01 正式产品60分钟本地窗口：Agent镜像系统包步骤失败，已清理
+
+用户另行授权原上限一次60分钟本地窗口，含准备／构建／身份／采集API／页面／停源／注销／清理；8 CPU／12 GiB、私有可写4 GiB停止线及完整四秒保持，失败即停，不自动重试或续窗。本轮只执行一次标准`make test-monitor-http-local`，未修产品、依赖或环境。先核对12项自有入口已提交，再沿标准`bash scripts/infra/status.sh`核对现有Infra；该入口含既有健康／日志探针，不能称所有前置均纯只读。没有重启、接管个人开发服务或操作共享测试库；场景仍使用当次独占数据库／网络配置，未运行Hosted／容量／定时。
+
+窗口于2026-11-01 10:48:39.446842（Asia/Shanghai）开始，原截止11:48:39.446842；标准入口于10:48:47进入，当次run_id=`addp-http-local-4b06f791f4f144f29fbdd9f0b9cf52ee`，固定源码`671fcd9b2b6d8f8844edc5a734f23c599213c938`。报告15个输入摘要独立逐文件匹配固定提交；其他会话未提交Agent／Common修改未进入clone。含前置及清理总545.992120541865秒，生命周期538.0205238747876秒，10:57:45结束，make退出2／报告failed；没有复用剩余约51分钟，不自动重启或续窗。
+
+已通过当次固定Nginx缓存摘要／不可变ID与Linux ARM64准入、独占内部网络、私有OpenSSL配置及三CA／八叶子生成、指标渲染和Infra／产品Compose投影。约28.03秒进入正式Go编译，371.75秒进入缓存回收；原完整预检0.444075秒通过，删除0.842063秒、锁等待0.000011秒、删除子进程停止和清理时已停止均确认。随后System／Gateway／Monitor镜像构建命令成功返回；约439.96秒进入Agent镜像，534.99秒转入强制清理。后续Copilot／前端／浏览器依赖尚未开始，不能算全部产品镜像构建或身份核验通过。
+
+首失败stage=`product_image_agent_backend`、error_code=`command_failed_2`，保留构建命令退出2及输出SHA256=`93bd2511578b7b00a89ccf19940bfa4e5ec3772de150f8d9ad1f8b3b504f28bf`。既有公共构建取证为reasons=[dockerfile_process_exit]、steps=[package_install,run]、dockerfile_lines=[5]、process_exit_codes=[100]，无具体输入及HTTP状态；封闭标记见failed to solve／not found／timed out。固定源码Agent Dockerfile第5–8行为同一个`RUN apt-get update && apt-get install -y gcc postgresql-client && rm ...`，可定位到系统包准备步骤退出100，仍不能区分update／install子步骤、具体源／包、DNS、代理或连接错误。不保留或追造已销毁的原始apt stderr；不能仅凭timed out标记唯一认定网络根因。尚未进入后续Python依赖解析／安装、容器内pip check或正式产品启动，不把此失败写作cryptography解析冲突复发。
+
+本轮130个已保存完整资源样本全部预算4秒且无读取重试、各步骤passed，最长1.847531秒；容器硬配额峰值2.25 CPU／3288334336字节内存，私有可写保守上界最大4174077952字节，小于4294967296停止线。无resource_guard_failure，没有四秒超时、OOM或资源触线记录；失败首因为上述构建子命令，不能用资源读成功补算构建成功。私有可写峰值已接近4 GiB，但未触线；尚余完整Agent／Copilot／前端／浏览器准备未运行，不能认定原4 GiB足以完成完整产品链，更不能当作容量或长期保留通过。
+
+未启动正式后端／数据库准备／注册及完整依赖核验，未建立密码／MFA身份，未发受控业务或浏览器请求，`assertions={}`且无python_dependencies、页面回执或注销结果。正式产品构建→真实身份→采集/API→Console/Monitor页面、停源和旧会话拒绝仍未验收；停源历史、完整5／15分钟、模型／工具、5xx通知重演及原容量／长期保留边界保持。已有固定086 SDK HTTP T2及HTTP local runner通过证据按原范围保留，不被本轮失败抹去，也不用于替代本轮尚未执行的子链。
+
+标准生命周期清理`zero_owned_resources=true`、failures=[]：原内核先停采样并等其退出，再回收当次只读测量助手、builder及其容器／卷、当次标签的容器／网络／卷和临时镜像标签，最后删除私有目录。报告4份清理阶段归属列表命令全部passed，缓存删除子进程已停止；本会话按同run_id只统计目录而非-report.json文件，独立确认私有工作目录残留0。没有把清理动作当作业务通过。原共享Infra仍保留，不删除其他会话资源。
+
+原报告1441711字节，SHA256=`520c31da1ceff3f601d66a617d63d80ff301a5a46ceaf2ca2bf681551c2eb2db`，原路径系统临时目录`addp-http-local-4b06f791f4f144f29fbdd9f0b9cf52ee-report.json`；归档`/tmp/addp-p19-http-product-window-20261101-x5tejves/`含launch.json／entry-started.json／completion.json／expected-inputs.json／infra-status.log／run.log／report.json／audit.json，目录0700／文件0600，无私钥、口令或完整环境。本次仅补两份证据文档，验证44主题、唯一锚点／索引、15固定输入、130样本／阶段／首因／清理及差异，不重复代码门禁或任何运行。下一步建议先调查Agent系统包构建的已有配置和取证，明确最小修正方案；不得在本轮剩余时间重试构建、改镜像／apt源／代理或另起环境。

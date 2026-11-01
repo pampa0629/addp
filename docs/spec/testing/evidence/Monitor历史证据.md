@@ -13,7 +13,7 @@
 | [实例与服务发现](Monitor实例与服务发现历史证据.md) | 多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期 | 25 |
 | [告警与规则](Monitor告警与规则历史证据.md) | CPU/RSS、告警检索与排序、服务失联、文件系统容量规则 | 27 |
 | [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与正式身份本地多窗口 | 16 |
-| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 43 |
+| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 44 |
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL 账号、来源准入、引擎身份与专业观测 | 12 |
 | [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存 | 7 |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时 | 6 |
@@ -758,3 +758,10 @@
 [完整记录、失败与验收边界](MonitorHTTP质量与采样历史证据.md#http-formal-admission-runner-linux-20261101)
 
 固定086的HTTP本地runner完整通过（37项、Linux离线证书35命令及System身份子门禁），聚合之后在无关前端失败；当前12项入口来源一致，正式构建／身份／API／两阶段页面与清理仍待另行授权的真实窗口。
+
+
+### 2026-11-01 正式产品60分钟本地窗口：Agent镜像系统包步骤失败，已清理
+
+[完整记录、失败与验收边界](MonitorHTTP质量与采样历史证据.md#http-formal-product-window-agent-apt-failed-20261101)
+
+固定671fcd9b2的单次窗口在Agent镜像apt系统包步骤退出100；130完整资源样本及Go缓存回收通过，清理零残留，不是四秒超时。正式身份/API/页面等未执行，未重试或续窗，具体包源／网络根因尚未确定。
