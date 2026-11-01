@@ -767,3 +767,22 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 日志`/tmp/addp-p19-http-wchan-red-20261101.log`、`-budget-20261101.log`（首次夹具失败）、`-budget-final-20261101.log`（改名前组合通过）、`-lifecycle-20261101.log`／`-config-final-20261101.log`／`-registration-20261101.log`保存对应结果；`/tmp/addp-p19-http-wchan-staged-20261101.json`保存4份实际提交输入摘要。未重复运行无关HTTP临时证书组或整条Make聚合，不把分项通过记为整个聚合通过；未重跑实际本地或Linux验收。
 
 截至2026-11-01 09:03（Asia/Shanghai），该固定源码自然push生成[Release/T2 run41259443591](https://github.com/pampa0629/addp/actions/runs/41259443591)和[Platform CI run41259443660](https://github.com/pampa0629/addp/actions/runs/41259443660)，均queued／无结论，HTTP矩阵尚无实际结果，不能计Linux／真实取证通过。后续只手动核对本专项实际步骤和原始归档，未触发rerun／dispatch或设置定时；不新开本地窗口，不运行Hosted或容量。前述11db／fe105失败保留；正式Agent/Copilot产品到Console/Monitor页面、停源历史及原长期保留等缺口保持。
+
+
+<a id="http-bounded-wait-linux-success-086-20261101"></a>
+
+## 2026-11-01 固定086自然Linux HTTP整门禁通过，持续D取证未触发
+
+依用户仅手动跟进固定提交的授权，本次复用唯一自然运行，不重跑任何场景。fresh API确认[run41259443591／HTTP Job124714607784](https://github.com/pampa0629/addp/actions/runs/41259443591/job/124714607784)的源码为`086ae6ada785264813dec96ace94d64bc190ae5d`、main／push／attempt 1，实际`Verify isolated metrics lifecycle`与预算归档步骤均success，Job于2026-11-01 10:12:26—10:27:18（Asia/Shanghai）completed／success，日志selected=true。原09:03 queued和10:20生命周期in_progress／无结论按历史快照保留，本次只补实际最终结果；不外推整条workflow、后续main或其他Job。
+
+独立复核artifact13065999126：27288字节，ZIP SHA256=`26b04e51f4f6154799844f6413ff863b16ce322684995a86b01b028ec24cef84`与API登记一致，CRC与唯一JSON成员monitor-http-budget.json通过。原始成员164865字节，SHA256=`ebe9c7e45f7873608ca929a97b9a2cea8d7fe9d308ac54eb51513f209de3753a`；353个input_sha256逐文件匹配固定086源码，实际checkout日志及第1264行封闭摘要逐字段匹配报告。另一会话本机提取文件末尾多一个换行，JSON内容相同；本记录散列和长度以原ZIP成员为准，不混用格式化副本字节。
+
+报告passed／exit0／error null，无failure_detail／compile_cleanup_error／cleanup_overdue，含清理870.748097421秒，小于原1200秒。214个完整样本最长1.24847829秒，全部低于原四秒；硬配额峰值3.25 CPU／4026531840字节内存，私有可写保守上界最大1809285183字节（含原tmpfs预留，不能称为实占磁盘），逐样本满足4 CPU／4 GiB／私有可写小于2 GiB。inputs_unchanged／cleanup_verified／private_directory_removed=true，hosted／capacity／schedule=false；无丢弃du失败、缩小统计或延长预算。
+
+38次实际编译协调均stop_sent／confirmed／resumed=true，无resume_error，单次暂停→采样→恢复最长0.681580624秒；确认区间（含初始归属检查的保守端点）最长0.072256006秒，小于100毫秒。每份confirmation attempts=completed且至少2、membership_changes=0，末次完整状态仅T／t／Z／X，D为0，末次读取、最后尝试及确认／恢复端点顺序逐份核验。实际覆盖process_source 21次、http_alert 17次；http_query未与采样重叠，不补算暂停覆盖。三阶段均有完整、顺序一致且exit0的边界。
+
+38份wait_observation均明确为null：本轮没有触发“持续至少100毫秒且仍有D”的真实等待位置读取，不能说Linux wchan、D角色／父子关系或不可用分类已现场验收，更不能说11db／fe105的间歇超时根因已查清／修复。新字段随固定代码及真实预算报告接通与实际持续D分支覆盖分列；历史失败和原停止规则保留，不将D接纳为安全，不追加信号或修改暂停顺序。今后若自然超时再发，仍先核原始等待观察、最后完整清单及端点，再讨论最小修正。
+
+原生受控请求Go148、Python[75,29]，总252；各源failure／healthy尝试分别90／58、45／30、15／14，阶段与限额、计数及最后请求端点通过固定086的完整请求校验。来源localhost叶子／source IP两项TLS探针通过且叶子摘要匹配当次原子换证；两Python ASGI来源实际启动并导入原生依赖，无生产者清理错误。实际日志证明Go和两ASGI SDK来源的真实mTLS采集、身份隔离、Monitor查询、有权历史趋势、原生Prometheus窗口、503打开事件、签名通知失败后重试、成功窗口恢复同一事件及来源停止隔离通过。只计完整标准Linux HTTP T2功能门禁；这不是正式Agent/Copilot产品构建、密码／MFA、Console/Monitor真实浏览器页面或Hosted验收，也不关闭停源历史／长期保留及原容量缺口。
+
+原始归档／日志复用`/tmp/addp-ci-20261101-103029/http-quality-086ae-budget.zip`及`http-quality-086ae-job.log`，日志137252字节，SHA256=`45dbad4c85b452f0f590126d1bc3b153e455d400dd7ba7645119422b92f143f5`。本会话独立审计位于`/tmp/addp-p19-http-086-followup-20261101/verified-report.json`／`verified-audit.json`／`job-final.json`／`artifact-meta.json`及run快照（目录0700／文件0600），保留原输入、38份封闭确认及预算／请求／清理核验。仅更新两份证据文档，以42主题计数、唯一锚点／索引、固定输入／归档／实际日志／资源及首因清理检查和diff验证，不重复代码测试。已核对维护会话状态后按原授权回报；未手动rerun／dispatch、开本地窗口或运行Hosted／容量／定时。

@@ -13,7 +13,7 @@
 | [实例与服务发现](Monitor实例与服务发现历史证据.md) | 多 Worker、实例筛选、cgroup 配额、部署预期与发现生命周期 | 25 |
 | [告警与规则](Monitor告警与规则历史证据.md) | CPU/RSS、告警检索与排序、服务失联、文件系统容量规则 | 27 |
 | [Trace 与日志](MonitorTrace与日志历史证据.md) | 分布式追踪、Python 接入、容量基线与正式身份本地多窗口 | 16 |
-| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 41 |
+| [HTTP 质量与采样](MonitorHTTP质量与采样历史证据.md) | 公共 mTLS、Go/Python 来源、启动诊断及采样／清理交接 | 42 |
 | [采集来源与引擎指标](Monitor采集来源与引擎指标历史证据.md) | PostgreSQL 账号、来源准入、引擎身份与专业观测 | 12 |
 | [执行监控与留存](Monitor执行监控与留存历史证据.md) | continuous、Owner 不可用、租户日志终审及过程事件留存 | 7 |
 | [部署与前置诊断](Monitor部署与前置诊断历史证据.md) | 资源守卫、Docker CLI／daemon 取证与 Compose 超时 | 6 |
@@ -744,3 +744,10 @@
 [完整记录、失败与验收边界](MonitorHTTP质量与采样历史证据.md#http-bounded-wait-evidence-20261101)
 
 确认范围的取证实现086ae6ada已推送；最终生命周期／预算133项、配置122项、T2登记74项通过，自然CI排队不计通过，真实停止确认超时根因未定。
+
+
+### 2026-11-01 固定086自然Linux HTTP整门禁通过，持续D取证未触发
+
+[完整记录、失败与验收边界](MonitorHTTP质量与采样历史证据.md#http-bounded-wait-linux-success-086-20261101)
+
+固定086的自然HTTP T2实际通过：353输入匹配、214完整样本、38次确认采样恢复及零残留；wait_observation均null，持续D／wchan仍未现场触发，历史超时根因未定，正式产品到页面仍未验收。
