@@ -135,7 +135,7 @@ test('protection refusals remain distinct from data permissions without exposing
 test('operator input contract matches the canonical runtime tuples and rejects unproven fields', () => {
   const source = read('../../../common-python/addp_common/workflow_runtime/errors.py')
   const canonical = [...source.matchAll(/\('([^']+)', '([^']+)', '([^']*)'\): '([^']*)'/g)].map(match => [match[1],match[2],match[4],match[3]])
-  assert.equal(canonical.length, 23)
+  assert.equal(canonical.length, 31)
   const actual = operatorInputRules.map(rule => [...rule])
   assert.deepEqual(actual.sort(), canonical.sort())
   for (const [operator_id, reason, parameter, field] of canonical) {
@@ -209,6 +209,27 @@ test('line trimming uses closed bilingual input facts and never publishes numeri
       assert.doesNotMatch(JSON.stringify(got),/PRIVATE|GEOS|coordinates/)
       if(parameter) assert.ok(got.parameter.includes(parameter))
       const bad={...diagnostic,operator:{...diagnostic.operator,field:'distance'}}
+      assert.equal(executionFailurePresentation({diagnostic:bad},translate).stage,'')
+    }
+  }
+})
+
+
+test('node extraction presents all closed input facts bilingually without source data', () => {
+  for (const locale of ['zh-cn','en']) {
+    const messages=JSON.parse(read(`../src/i18n/${locale}.json`)).common.executionFailure
+    const translate=(key,params={})=>key.replace('common.executionFailure.','').split('.').reduce((node,part)=>node[part],messages).replace(/\{(\w+)\}/g,(_,key)=>params[key])
+    const rules=operatorInputRules.filter(([name])=>name==='extract_line_nodes')
+    assert.equal(rules.length,8)
+    for (const [operator_id,reason,parameter,field] of rules) {
+      const diagnostic={schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:2,operator_id,...(parameter?{parameter}:{}),...(field?{field}:{})}}
+      const got=executionFailurePresentation({diagnostic,message:'PRIVATE GEOS /source/path 123'},translate)
+      assert.equal(got.operator,locale==='zh-cn'?'节点提取':'Extract line nodes')
+      assert.ok(got.reason && got.action)
+      assert.doesNotMatch(JSON.stringify(got),/PRIVATE|GEOS|source\/path/)
+      if(field)assert.ok(got.reason.includes(field))
+      if(reason==='operator_endpoint_network_invalid')assert.match(got.reason,locale==='zh-cn'?/双方端点/:/both endpoints/)
+      const bad={...diagnostic,operator:{...diagnostic.operator,field:'PRIVATE_FIELD'}}
       assert.equal(executionFailurePresentation({diagnostic:bad},translate).stage,'')
     }
   }

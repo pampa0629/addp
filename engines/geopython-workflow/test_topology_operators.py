@@ -5932,3 +5932,267 @@ def test_hosted_line_trim_case_dual_save_eight_failures_and_independent_oracle(t
             layer.SetFeature(feature);feature=None
         layer=None;ds=None
     with pytest.raises(fixture.FixtureError):fixture.worker('verify',tmp_path,fixture.TRIM_CASE)
+
+
+def test_extract_line_nodes_closed_ring_twice_and_complete_part_incidence():
+    frame = line_overlap_frame([
+        MultiLineString([[(0,0),(1,0),(0,1),(0,0)], [(0,0),(-1,0)]]),
+        LineString([(-1,0),(-2,0),(-2,1)]),
+    ], pd.Series([2**40+1,2**40+3],dtype='Int64'))
+    frame['grade']=pd.Series([None,2**40],dtype='Int64')
+    frame['enabled']=pd.Series([None,False],dtype='boolean')
+    frame['geometry']=pd.Series(['普通业务几何',None],dtype='string')
+    frame.index=[9,9]
+    before=frame.copy(deep=True)
+    out=get_operator('extract_line_nodes')(frame,'route_key')
+    result,members=out['result'],out['members']
+    assert result.geometry.name==members.geometry.name=='boundary'
+    assert result.geometry.tolist()==[Point(0,0),Point(-1,0),Point(-2,1)]
+    assert result.node_id.tolist()==[1,2,3] and result.degree.tolist()==[3,2,1]
+    assert members.node_id.tolist()==[1,1,1,2,2,3]
+    assert members.source_id.tolist()==[2**40+1]*4+[2**40+3]*2
+    assert members.source_part_no.tolist()==[1,1,2,2,1,1]
+    assert members.end.tolist()==['start','end']*3
+    assert members.geometry.tolist()==[Point(0,0),Point(0,0),Point(0,0),Point(-1,0),Point(-1,0),Point(-2,1)]
+    assert len(members)==result.degree.sum()==6
+    assert members['geometry'].tolist()==['普通业务几何']*4+[pd.NA]*2
+    for field in ['grade','enabled','geometry','route_key']:
+        assert members[field].dtype==frame[field].dtype
+    assert members.source_id.dtype==frame.route_key.dtype
+    assert result.crs==members.crs==frame.crs
+    assert_geodataframe_equal(frame,before)
+
+
+@pytest.mark.parametrize('shapes,points,degrees',[
+    ([LineString([(0,0),(1,0),(1,1),(0,0)])],[(0,0)],[2]),
+    ([LineString([(0,0),(1,0)]),LineString([(1,0),(0,1)]),LineString([(0,1),(0,0)])],[(0,0),(1,0),(0,1)],[2,2,2]),
+    ([LineString([(0,0),(1,1),(2,0)]),LineString([(0,0),(1,-1),(2,0)])],[(0,0),(2,0)],[2,2]),
+    ([LineString([(0,0),(0,0),(1,0),(2,0),(2,0)])],[(0,0),(2,0)],[1,1]),
+    ([MultiLineString([[(0,0),(1,0)],[(10,0),(11,0)]])],[(0,0),(1,0),(10,0),(11,0)],[1,1,1,1]),
+    ([LineString([(0,0),(1,0)]),LineString([(1+2**-40,0),(2,0)])],[(0,0),(1,0),(1+2**-40,0),(2,0)],[1,1,1,1]),
+])
+def test_extract_line_nodes_exact_topology_closed_lens_multicomponent_and_microgap(shapes,points,degrees):
+    frame=line_overlap_frame(shapes)
+    out=get_operator('extract_line_nodes')(frame,'route_key')
+    assert [p.coords[0] for p in out['result'].geometry]==points
+    assert out['result'].degree.tolist()==degrees
+    assert out['result'].degree.sum()==len(out['members'])==2*sum(shapely.get_num_geometries(frame.geometry.array))
+    assert all(str(out['result'][k].dtype)=='int64' for k in ['node_id','degree'])
+
+
+@pytest.mark.parametrize('shapes',[
+    [LineString([(0,0),(1,0)]),LineString([(0,0),(1,0)])],
+    [LineString([(0,0),(1,0)]),LineString([(1,0),(0,0)])],
+    [LineString([(0,0),(4,0)]),LineString([(1,0),(2,0),(3,0)])],
+    [MultiLineString([[(0,0),(4,0)],[(3,0),(1,0)]])],
+    [LineString([(0,0),(2,0),(1,0)])],
+    [LineString([(0,0),(2,2),(0,2),(2,0)])],
+    [LineString([(0,0),(2,0)]),LineString([(1,-1),(1,1)])],
+    [LineString([(0,0),(2,0)]),LineString([(1,0),(1,1)])],
+    [MultiLineString([[(0,0),(2,0)],[(1,0),(1,1)]])],
+    [LineString([(0,0),(2,0),(2,2),(0,0)]),LineString([(1,0),(1,-1)])],
+])
+def test_extract_line_nodes_rejects_overlap_and_unresolved_contacts_atomically(shapes):
+    from operators.geometric_operators import LineNodeInputError
+    frame=line_overlap_frame(shapes);before=frame.copy(deep=True)
+    with pytest.raises(LineNodeInputError) as error:get_operator('extract_line_nodes')(frame,'route_key')
+    assert error.value.code=='network'
+    assert_geodataframe_equal(frame,before)
+
+
+@pytest.mark.parametrize('field',['node_id','degree','source_id','source_part_no','end'])
+@pytest.mark.parametrize('active',[False,True])
+def test_extract_line_nodes_fixed_output_conflicts_include_active_geometry(field,active):
+    from operators.geometric_operators import LineNodeInputError
+    frame=line_overlap_frame([LineString([(0,0),(1,0)])])
+    if active:frame=frame.rename_geometry(field)
+    else:frame[field]='PRIVATE_VALUE'
+    with pytest.raises(LineNodeInputError) as error:get_operator('extract_line_nodes')(frame,'route_key')
+    assert error.value.code=='field_conflict' and error.value.field==field
+
+
+@pytest.mark.parametrize('crs',[None,'EPSG:4326','EPSG:4978'])
+@pytest.mark.parametrize('empty',[False,True])
+def test_extract_line_nodes_rejects_nonprojected_even_empty(crs,empty):
+    from operators.geometric_operators import LineNodeInputError
+    frame=line_overlap_frame([] if empty else [LineString([(0,0),(1,0)])],crs=crs)
+    with pytest.raises(LineNodeInputError) as error:get_operator('extract_line_nodes')(frame,'route_key')
+    assert error.value.code=='crs'
+
+
+@pytest.mark.parametrize('ids',[['a','a'],[None,'a'],['  ','a'],[['nested'],'a']])
+def test_extract_line_nodes_rejects_nonunique_missing_or_nonscalar_ids(ids):
+    from operators.geometric_operators import LineNodeInputError
+    frame=line_overlap_frame([LineString([(0,0),(1,0)]),LineString([(1,0),(2,0)])],ids)
+    with pytest.raises(LineNodeInputError) as error:get_operator('extract_line_nodes')(frame,'route_key')
+    assert error.value.code=='source'
+
+
+@pytest.mark.parametrize('wkt',['POINT (0 0)','LINESTRING EMPTY','MULTILINESTRING (EMPTY,(0 0,1 0))',
+    'LINESTRING (0 0,0 0)','LINESTRING Z (0 0 1,1 0 1)','LINESTRING M (0 0 1,1 0 1)',
+    'LINESTRING (0 0,NaN 1)'])
+def test_extract_line_nodes_rejects_bad_geometry_admission(wkt):
+    from operators.geometric_operators import LineNodeInputError
+    frame=line_overlap_frame([shapely.from_wkt(wkt)])
+    with pytest.raises(LineNodeInputError) as error:get_operator('extract_line_nodes')(frame,'route_key')
+    assert error.value.code=='source'
+
+
+@pytest.mark.parametrize('language',['zh-cn','en'])
+@pytest.mark.parametrize('problem,reason,field',[
+    ('source','operator_input_invalid',''),('crs','operator_projected_crs_required',''),
+    ('network','operator_endpoint_network_invalid',''),
+    *[(field,'operator_field_conflict',field) for field in ['node_id','degree','source_id','source_part_no','end']],
+])
+def test_extract_line_nodes_typed_diagnostic_exact_frozen_node_and_no_private_fields(language,problem,reason,field):
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    frame=line_overlap_frame([LineString([(0,0),(1,0)])])
+    if problem=='source':frame['route_key']=None
+    elif problem=='crs':frame=frame.set_crs('EPSG:4326',allow_override=True)
+    elif problem=='network':frame=line_overlap_frame([LineString([(0,0),(1,0),(0,0)])])
+    else:frame[field]='PRIVATE_DATA'
+    task={'id':'PRIVATE_NODE','operator':'extract_line_nodes','params':{'input_gdf':frame,'id_field':'route_key'},'depends_on':[]}
+    with pytest.raises(WorkflowExecutionError) as error:GeoPythonWorkflowRunner(language=language).execute({'tasks':[task]})
+    assert error.value.error_code=='INVALID_PARAMS'
+    assert error.value.diagnostic=={'schema_version':'addp.execution-failure/v3','stage':'execution','reason':reason,
+        'operator':{'node_index':1,'operator_id':'extract_line_nodes',**({} if problem=='crs' else {'parameter':'input_gdf'}),**({'field':field} if field else {})}}
+    assert 'PRIVATE' not in json.dumps(error.value.diagnostic)
+    assert ('node extraction' in str(error.value).lower()) if language=='en' else ('节点提取' in str(error.value))
+
+
+def test_extract_line_nodes_native_exception_is_not_reclassified_as_input(monkeypatch):
+    from operators import geometric_operators as module
+    from workflow_engine import GeoPythonWorkflowRunner
+    from addp_common.workflow_runtime import WorkflowExecutionError
+    frame=line_overlap_frame([LineString([(0,0),(1,0)])])
+    def fail(*args,**kwargs):raise shapely.errors.GEOSException('PRIVATE GEOS calculation')
+    monkeypatch.setattr(module,'_endpoint_line_network',fail)
+    with pytest.raises(WorkflowExecutionError) as error:GeoPythonWorkflowRunner().execute({'tasks':[
+        {'id':'PRIVATE','operator':'extract_line_nodes','params':{'input_gdf':frame,'id_field':'route_key'},'depends_on':[]}]})
+    assert error.value.error_code=='EXECUTION_FAILED' and error.value.diagnostic is None
+
+
+@pytest.mark.parametrize('empty',[False,True])
+@pytest.mark.parametrize('id_kind',['Int64','string'])
+def test_extract_line_nodes_dual_save_native_ogr_full_schema_source_and_empty_preserved(tmp_path,empty,id_kind):
+    from osgeo import ogr
+    ids=pd.Series([2**60+1,2**60+3],dtype='Int64') if id_kind=='Int64' else pd.Series(['主环','外支'],dtype='string')
+    frame=line_overlap_frame([MultiLineString([[(0,0),(1,0),(0,1),(0,0)],[(0,0),(-1,0)]]),LineString([(-1,0),(-2,0)])],ids)
+    frame['grade']=pd.Series([None,2**53+1],dtype='Int64');frame['enabled']=pd.Series([None,False],dtype='boolean')
+    frame['geometry']=pd.Series(['普通业务几何',None],dtype='string')
+    if empty:frame=frame.iloc[:0]
+    frame.to_file(tmp_path/'source.gpkg',driver='GPKG',index=False)
+    before=(tmp_path/'source.gpkg').read_bytes();conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':'nodes','operator':'extract_line_nodes','params':{'input_gdf':{'$ref':'load'},'id_field':'route_key'},'depends_on':['load']},
+        {'id':'load','operator':'load','params':{'connection_info':conn,'path':'source.gpkg'},'depends_on':[]}]
+    for name,ref in [('nodes',{'$ref':'nodes'}),('members',{'$ref':'nodes','port':'members'})]:
+        tasks.append({'id':'save_'+name,'operator':'save','params':{'input_df':ref,'connection_info':conn,'path':name+'.gpkg','mode':'fail'},'depends_on':['nodes']})
+    result=execute_workflow({'tasks':tasks});assert result['status']=='success',result
+    expected_points={'nodes':[(0,0),(-1,0),(-2,0)],'members':[(0,0),(0,0),(0,0),(-1,0),(-1,0),(-2,0)]}
+    for name in ['nodes','members']:
+        ds=ogr.Open(str(tmp_path/(name+'.gpkg')),0);layer=ds.GetLayer(0)
+        assert ds.GetLayerCount()==1 and layer.GetSpatialRef().GetAuthorityCode(None)=='3857'
+        assert layer.GetFeatureCount()==(0 if empty else len(expected_points[name]))
+        if not empty:assert layer.GetGeomType()==ogr.wkbPoint
+        schema={f.name:(f.GetType(),f.GetSubType()) for f in layer.schema}
+        if name=='nodes':assert schema=={'node_id':(ogr.OFTInteger64,0),'degree':(ogr.OFTInteger64,0)}
+        else:
+            assert schema['grade']==(ogr.OFTInteger64,0) and schema['enabled']==(ogr.OFTInteger,ogr.OFSTBoolean)
+            assert schema['geometry']==(ogr.OFTString,0) and schema['node_id']==schema['source_part_no']==(ogr.OFTInteger64,0)
+            assert schema['source_id']==schema['route_key']==((ogr.OFTInteger64,0) if id_kind=='Int64' else (ogr.OFTString,0))
+            assert schema['end']==(ogr.OFTString,0)
+        for i,item in enumerate(layer):
+            assert item.GetFID()==i+1
+            g=item.GetGeometryRef();assert g.GetGeometryName()=='POINT' and g.GetPoint_2D()==expected_points[name][i]
+            if name=='nodes':assert item.GetField('node_id')==i+1 and item.GetField('degree')==[3,2,1][i]
+            else:
+                source=0 if i<4 else 1
+                assert item.GetField('source_id')==item.GetField('route_key')==ids.iloc[source]
+                assert item.GetField('node_id')==[1,1,1,2,2,3][i] and item.GetField('source_part_no')==[1,1,2,2,1,1][i]
+                assert item.GetField('end')==['start','end'][i%2]
+                assert item.GetField('geometry')==('普通业务几何' if source==0 else None)
+                assert item.GetField('grade')==(None if source==0 else 2**53+1)
+                assert item.GetField('enabled')==(None if source==0 else False)
+        item=layer=ds=None
+    assert (tmp_path/'source.gpkg').read_bytes()==before
+    tasks[0]['params']['id_field']='PRIVATE_MISSING';tasks[2]['params']['path']='bad_nodes.gpkg';tasks[3]['params']['path']='bad_members.gpkg'
+    failure=execute_workflow({'tasks':tasks})
+    assert failure['status']=='failed' and failure['error_code']=='INVALID_PARAMS'
+    assert failure['diagnostic']['operator']['node_index']==1
+    assert not (tmp_path/'bad_nodes.gpkg').exists() and not (tmp_path/'bad_members.gpkg').exists()
+    assert (tmp_path/'source.gpkg').read_bytes()==before
+
+
+def test_extract_line_nodes_protocol_discovery_async_dual_ports_and_direct_denied(tmp_path,monkeypatch):
+    import api_server
+    from addp_common.workflow_runtime import ExecutionRegistry
+    frame=line_overlap_frame([LineString([(0,0),(1,0)])])
+    frame.to_file(tmp_path/'source.gpkg',driver='GPKG',index=False)
+    conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':'load','operator':'load','params':{'connection_info':conn,'path':'source.gpkg'},'depends_on':[]},
+        {'id':'nodes','operator':'extract_line_nodes','params':{'input_gdf':{'$ref':'load'},'id_field':'route_key'},'depends_on':['load']}]
+    monkeypatch.setattr(api_server,'executions',ExecutionRegistry())
+    with api_server.app.test_client() as client:
+        op=next(o for o in client.get('/api/operators').get_json()['operators'] if o['id']=='extract_line_nodes')
+        assert op['display_name']=='节点提取' and op['category_path']==['矢量处理','线网处理']
+        assert op['execution_modes']==['workflow'] and op['effects']==['read']
+        assert [(p['name'],p['is_default']) for p in op['output_ports']]==[('result',True),('members',False)]
+        assert {p['name'] for p in op['parameters']}=={'input_gdf','id_field'}
+        assert client.post('/api/operators/extract_line_nodes/invoke',json={'params':{}}).status_code==403
+        response=client.post('/api/workflow',json={'workflow_def':{'tasks':tasks},'runtime':{'tenant_id':7,'execution_authorization':{'id':1,'effects':['read']}}})
+        assert response.status_code==202,response.get_json()
+        execution_id=response.get_json()['execution_id'];deadline=time.monotonic()+10
+        while time.monotonic()<deadline:
+            status=client.get('/api/executions/'+execution_id).get_json()
+            if status['status'] in ('success','failed'):break
+            time.sleep(.01)
+        assert status['status']=='success',status
+        ports=json.loads(status['all_results']['nodes'])
+        assert set(ports)=={'result','members'} and len(ports['result']['features'])==len(ports['members']['features'])==2
+
+
+@pytest.mark.parametrize('problem',['network','field','crs'])
+def test_extract_line_nodes_late_invalid_source_prevents_both_saves(tmp_path,problem):
+    shapes=[LineString([(100,0),(101,0)]),LineString([(0,0),(1,0),(0,0)]) if problem=='network' else LineString([(0,0),(1,0)])]
+    frame=line_overlap_frame(shapes,crs='EPSG:4326' if problem=='crs' else 'EPSG:3857')
+    if problem=='field':frame['node_id']='PRIVATE'
+    frame.to_file(tmp_path/'input.gpkg',driver='GPKG',index=False)
+    before=(tmp_path/'input.gpkg').read_bytes();conn={'engine_type':'nfs','mount_path':str(tmp_path)}
+    tasks=[{'id':'load','operator':'load','params':{'connection_info':conn,'path':'input.gpkg'},'depends_on':[]},
+        {'id':'nodes','operator':'extract_line_nodes','params':{'input_gdf':{'$ref':'load'},'id_field':'route_key'},'depends_on':['load']}]
+    for name,ref in [('points',{'$ref':'nodes'}),('members',{'$ref':'nodes','port':'members'})]:
+        tasks.append({'id':'save_'+name,'operator':'save','params':{'input_df':ref,'connection_info':conn,'path':name+'.gpkg','mode':'fail'},'depends_on':['nodes']})
+    result=execute_workflow({'tasks':tasks})
+    assert result['status']=='failed' and result['error_code']=='INVALID_PARAMS'
+    assert not (tmp_path/'points.gpkg').exists() and not (tmp_path/'members.gpkg').exists()
+    assert (tmp_path/'input.gpkg').read_bytes()==before
+
+
+def test_extract_line_nodes_fixed_conflict_priority_and_normalize_explicit_composition():
+    from operators.geometric_operators import LineNodeInputError
+    frame=line_overlap_frame([LineString([(0,0),(1,0)])])
+    for key in ['end','source_part_no','source_id','degree','node_id']:frame[key]=None
+    with pytest.raises(LineNodeInputError) as error:get_operator('extract_line_nodes')(frame,'route_key')
+    assert error.value.field=='node_id'
+    repeated=line_overlap_frame([LineString([(0,0),(1,0)]),LineString([(1,0),(0,0)])])
+    normalized=get_operator('normalize_line_network')(repeated,'route_key')
+    nodes=get_operator('extract_line_nodes')(normalized['result'],'edge_id')
+    assert nodes['result'].degree.tolist()==[1,1]
+    assert nodes['members'].edge_id.tolist()==nodes['members'].source_id.tolist()==[1,1]
+    assert normalized['members'].source_id.tolist()==[0,1]
+
+
+def test_extract_line_nodes_nonframe_missing_id_duplicate_columns_and_empty_schema():
+    from operators.geometric_operators import LineNodeInputError
+    frame=line_overlap_frame([LineString([(0,0),(1,0)])])
+    for value,field in [(pd.DataFrame({'a':[1]}),'a'),(frame,'missing'),(frame,frame.geometry.name),
+                        (pd.concat([frame,frame[['route_key']]],axis=1),'route_key')]:
+        with pytest.raises(LineNodeInputError) as error:get_operator('extract_line_nodes')(value,field)
+        assert error.value.code=='source'
+    empty=frame.iloc[:0].copy();empty['geometry']=pd.Series([],dtype='string')
+    out=get_operator('extract_line_nodes')(empty,'route_key')
+    assert list(out['result'])==['boundary','node_id','degree']
+    assert out['members'].source_id.dtype==empty.route_key.dtype
+    assert str(out['members'].end.dtype)=='string'
+    assert out['result'].empty and out['members'].empty and out['result'].crs==empty.crs

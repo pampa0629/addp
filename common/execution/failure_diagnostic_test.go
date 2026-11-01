@@ -257,3 +257,35 @@ func TestLineTrimObservationRetainsOnlyTypedFacts(t *testing.T) {
 		}
 	}
 }
+
+func TestLineNodeObservationRetainsOnlyClosedInputFacts(t *testing.T) {
+	for _, field := range []string{"", "node_id", "degree", "source_id", "source_part_no", "end"} {
+		reasons := []string{"operator_field_conflict"}
+		if field == "" {
+			reasons = []string{"operator_input_invalid", "operator_projected_crs_required", "operator_endpoint_network_invalid"}
+		}
+		for _, reason := range reasons {
+			operator := map[string]interface{}{"node_index": 2, "operator_id": "extract_line_nodes"}
+			if reason != "operator_projected_crs_required" {
+				operator["parameter"] = "input_gdf"
+			}
+			if field != "" {
+				operator["field"] = field
+			}
+			diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": reason, "operator": operator}
+			item := &execution.TaskExecution{Status: "failed", ErrorDetails: models.JSONMap{"message": "PRIVATE GEOS /source/path", "diagnostic": diagnostic}}
+			got := execution.Observe(item).ErrorDetails
+			if got["diagnostic"] == nil {
+				t.Fatalf("lost node diagnostic %s/%s", reason, field)
+			}
+			encoded, _ := json.Marshal(got)
+			if strings.Contains(string(encoded), "PRIVATE") || strings.Contains(string(encoded), "GEOS") {
+				t.Fatal("private payload leaked")
+			}
+			operator["field"] = "PRIVATE_FIELD"
+			if execution.Observe(item).ErrorDetails["diagnostic"] != nil {
+				t.Fatal("accepted arbitrary field")
+			}
+		}
+	}
+}

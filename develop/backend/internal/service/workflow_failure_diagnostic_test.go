@@ -95,3 +95,37 @@ func TestLineTrimDiagnosticMatchesDefinitionPositionAndRejectsForgedParameter(t 
 		}
 	}
 }
+
+func TestLineNodeDiagnosticRequiresExactFrozenOperatorPosition(t *testing.T) {
+	for _, field := range []string{"", "node_id", "degree", "source_id", "source_part_no", "end"} {
+		reasons := []string{"operator_field_conflict"}
+		if field == "" {
+			reasons = []string{"operator_input_invalid", "operator_projected_crs_required", "operator_endpoint_network_invalid"}
+		}
+		for _, reason := range reasons {
+			context := map[string]interface{}{"node_index": 1, "operator_id": "extract_line_nodes"}
+			if reason != "operator_projected_crs_required" {
+				context["parameter"] = "input_gdf"
+			}
+			if field != "" {
+				context["field"] = field
+			}
+			diagnostic := map[string]interface{}{"schema_version": "addp.execution-failure/v3", "stage": "execution", "reason": reason, "operator": context}
+			raw := map[string]interface{}{"runtime_status": map[string]interface{}{"status": "failed", "error_code": "INVALID_PARAMS", "diagnostic": diagnostic}}
+			frozen := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "PRIVATE_NODE", "operator": "extract_line_nodes", "depends_on": []string{"load"}}, map[string]interface{}{"operator": "load"}}}
+			got := executionFailureDetails("workflow", "execution_failed", "PRIVATE GEOS /source/path", raw, frozen)
+			if got["diagnostic"] == nil || got["code"] != "develop.workflow.invalid_params" {
+				t.Fatalf("lost nodes %s/%s: %+v", reason, field, got)
+			}
+			context["node_index"] = 2
+			if executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen)["diagnostic"] != nil {
+				t.Fatal("trusted scheduling index")
+			}
+			context["node_index"] = 1
+			context["parameter"] = "id_field"
+			if executionFailureDetails("workflow", "execution_failed", "PRIVATE", raw, frozen)["diagnostic"] != nil {
+				t.Fatal("trusted foreign parameter")
+			}
+		}
+	}
+}

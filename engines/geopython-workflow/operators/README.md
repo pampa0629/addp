@@ -56,7 +56,7 @@ D8汇流累积`raster_flow_accumulation_d8`仅有一个`measure=count/area`选�
 | 矢量处理 | 几何构造 | 6 | `buffer`、`centroid`、`convex_hull`、`envelope`、`voronoi`、`batch_buffer` |
 | 矢量处理 | 几何整理 | 8 | `simplify`、`dissolve`、`check_geometry`、`repair_geometry`、`snap_geometry`、`snap_line_endpoints`、`extend_line_endpoints`、`trim_line_endpoints` |
 | 矢量处理 | 拓扑检查 | 8 | `check_polygon_overlap`、`check_polygon_gap`、`check_dangling_points`、`check_line_proximity`、`check_line_overlap`、`check_line_self_overlap`、`check_line_intersection`、`check_line_self_intersection` |
-| 矢量处理 | 线网处理 | 6 | `polygonize`、`extract_polygon_rings`、`split_line_intersections`、`group_line_components`、`merge_line_chains`、`normalize_line_network` |
+| 矢量处理 | 线网处理 | 7 | `polygonize`、`extract_polygon_rings`、`split_line_intersections`、`group_line_components`、`merge_line_chains`、`normalize_line_network`、`extract_line_nodes` |
 | 矢量处理 | 叠加分析 | 4 | `intersection`、`union`、`difference`、`clip` |
 | 矢量处理 | 空间关系 | 3 | `contains`、`intersects`、`distance_to` |
 | 矢量处理 | 几何量测 | 3 | `get_area`、`get_length`、`get_bounds` |
@@ -249,3 +249,7 @@ SPI只有`raster_spi`一个入口：显式m2汇流面积与degree/percent坡度�
 `trim_line_endpoints` 沿原始悬端向内按原路径搜索首个精确参考交会，共线取入口，累计长度上限含等号，不跨部件或越过原线网分支。保留源属性、方向、行与部件；result为修剪线，details为目标Point及逐端点全部参考来源明细。内部自交／源正长度重合、两端冲突／整段消失或不能精确落线整批拒绝。复用统一参数诊断，详见[线端修剪契约](../../../docs/spec/workflow/矢量算子契约.md#线端修剪契约)。不自动补缝、吸附或修复。
 
 `raster_vector_zonal_statistics`可显式`include_area_weighted=True`追加覆盖平方米／有效覆盖平方米／面积加权均值；原八统计及all_touched规则保持，新三列独立按实际正交叠面积计算。孔洞扣除、重叠独立，已知线性单位二维投影支持原旋转仿射网格；与权重栅格、百分位及加权标准差互斥。无有效面积均值null，字段冲突与数值范围失败严格拒绝；不增加面板入口，详见栅格算子契约。
+
+## 节点提取
+
+`extract_line_nodes`对已打断且无重合线网，按原始部件首尾提取Point节点、度数及完整端部来源Point明细。闭环首尾计两次，同源多部件分别计，拒绝未打断交会／自交／正长度重合，不去重或修复。两端口及原属性、来源与诊断边界见[节点提取契约](../../../docs/spec/workflow/矢量算子契约.md#节点提取契约)。

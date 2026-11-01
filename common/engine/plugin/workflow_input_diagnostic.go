@@ -27,6 +27,19 @@ func (o *WorkflowOperatorFailure) Valid(reason string) bool {
 	}
 	parameter, field, ok := "", "", false
 	switch o.OperatorID {
+	case "extract_line_nodes":
+		switch reason {
+		case "operator_input_invalid", "operator_endpoint_network_invalid":
+			parameter, ok = "input_gdf", true
+		case "operator_projected_crs_required":
+			ok = true
+		case "operator_field_conflict":
+			parameter = "input_gdf"
+			switch o.Field {
+			case "node_id", "degree", "source_id", "source_part_no", "end":
+				field, ok = o.Field, true
+			}
+		}
 	case "trim_line_endpoints":
 		switch reason {
 		case "operator_distance_limit_invalid":

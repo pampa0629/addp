@@ -443,6 +443,107 @@ def check_line_self_intersection(input_gdf: gpd.GeoDataFrame, id_field: str) -> 
     return result
 
 
+class _EndpointNetworkError(ValueError):
+    """Proven non-endpoint contact or overlapping/self-intersecting source parts."""
+
+
+def _endpoint_line_network(geometry):
+    """One exact, unmodified original-part endpoint graph for extraction and merging."""
+    parts, sources = shapely.get_parts(geometry.array, return_index=True)
+    if not shapely.is_simple(parts).all():
+        raise _EndpointNetworkError("internal point intersection or self-overlap is not supported; resolve explicitly before merging")
+    vertices = [list(part.coords) for part in parts]
+    ends, part_numbers = {}, []
+    source_counts = np.zeros(len(geometry), dtype=np.int64)
+    for index, row in enumerate(sources):
+        source_counts[row] += 1
+        part_numbers.append(source_counts[row])
+        for side in (0, 1):
+            ends.setdefault(vertices[index][0 if side == 0 else -1], []).append((index, side))
+    tree = shapely.STRtree(parts)
+    for a, part in enumerate(parts):
+        candidates = tree.query(part)
+        for b in np.sort(candidates[candidates > a]):
+            for piece in _line_intersection_parts(shapely.intersection(part, parts[b])):
+                if piece.geom_type != "Point":
+                    raise _EndpointNetworkError("positive-length overlap is not supported; resolve overlap explicitly before merging")
+                point = (piece.x, piece.y)
+                if point not in (vertices[a][0], vertices[a][-1]) or point not in (vertices[b][0], vertices[b][-1]):
+                    raise _EndpointNetworkError("non-endpoint intersection is not supported; split intersections explicitly before merging")
+
+    return parts, sources, vertices, ends, part_numbers
+
+
+class LineNodeInputError(ValueError):
+    """Closed admission facts; numerical/native failures keep their original classification."""
+    _messages = {
+        'zh-cn': {
+            'source': '节点提取要求有效有限二维线图层及唯一非空来源标识。',
+            'crs': '节点提取要求已知投影坐标系和相同有效水平单位；请先显式重投影。',
+            'network': '节点提取要求部件仅在双方端点相接；请先显式打断交会并处理内部自交或正长度重合。',
+            'field_conflict': '节点提取的固定输出字段与源字段重名；请先显式重命名。',
+        },
+        'en': {
+            'source': 'Node extraction requires valid finite XY lines and unique non-null source identifiers.',
+            'crs': 'Node extraction requires a known projected CRS with matching valid horizontal units; reproject explicitly first.',
+            'network': 'Node extraction requires parts to meet only at both endpoints; explicitly split intersections and resolve internal self-intersections or positive-length overlaps first.',
+            'field_conflict': 'A fixed node extraction output field conflicts with a source field; rename it explicitly first.',
+        },
+    }
+
+    def __init__(self, code, field=''):
+        self.code, self.field = code, field
+        super().__init__(self.message('zh-cn'))
+
+    def message(self, language):
+        return self._messages['en' if language == 'en' else 'zh-cn'][self.code]
+
+
+def extract_line_nodes(input_gdf: gpd.GeoDataFrame, id_field: str) -> dict[str, gpd.GeoDataFrame]:
+    """Extract exact original-part endpoints; loops contribute start and end separately."""
+    try:
+        geometry = _finite_xy_geometry(input_gdf)
+        _require_nonempty_valid_lines(geometry)
+    except ValueError as exc:
+        raise LineNodeInputError('source') from exc
+    for field in ('node_id', 'degree', 'source_id', 'source_part_no', 'end'):
+        if field in input_gdf.columns:
+            raise LineNodeInputError('field_conflict', field)
+    try:
+        ids = _source_identifiers(input_gdf, id_field)
+    except ValueError as exc:
+        raise LineNodeInputError('source') from exc
+    try:
+        _require_projected_xy_crs(geometry.crs)
+    except ValueError as exc:
+        raise LineNodeInputError('crs') from exc
+    try:
+        parts, sources, vertices, ends, part_numbers = _endpoint_line_network(geometry)
+    except _EndpointNetworkError as exc:
+        raise LineNodeInputError('network') from exc
+
+    nodes = {coordinate: index for index, coordinate in enumerate(ends, 1)}
+    point_geometry = gpd.GeoSeries([shapely.Point(coordinate) for coordinate in nodes], crs=geometry.crs)
+    result = gpd.GeoDataFrame({geometry.name: point_geometry,
+        'node_id': pd.Series(list(nodes.values()), dtype='int64'),
+        'degree': pd.Series([len(incident) for incident in ends.values()], dtype='int64')}, geometry=geometry.name, crs=geometry.crs)
+    member_rows, member_points, node_ids, source_parts, sides = [], [], [], [], []
+    for index, row in enumerate(sources):
+        for side, coordinate in (('start', vertices[index][0]), ('end', vertices[index][-1])):
+            member_rows.append(row)
+            member_points.append(shapely.Point(coordinate))
+            node_ids.append(nodes[coordinate])
+            source_parts.append(part_numbers[index])
+            sides.append(side)
+    members = input_gdf.iloc[member_rows].copy().reset_index(drop=True)
+    members[geometry.name] = gpd.GeoSeries(member_points, crs=geometry.crs)
+    members['node_id'] = pd.Series(node_ids, dtype='int64')
+    members['source_id'] = ids.iloc[member_rows].reset_index(drop=True)
+    members['source_part_no'] = pd.Series(source_parts, dtype='int64')
+    members['end'] = pd.Series(sides, dtype='string')
+    return {'result': result, 'members': members}
+
+
 def merge_line_chains(input_gdf: gpd.GeoDataFrame, id_field: str, match_fields: list) -> dict:
     """Join exact non-branching paths, with lossless original-part membership."""
     geometry = _finite_xy_geometry(input_gdf)
@@ -474,27 +575,7 @@ def merge_line_chains(input_gdf: gpd.GeoDataFrame, id_field: str, match_fields: 
                 return False
         return True
 
-    parts, sources = shapely.get_parts(geometry.array, return_index=True)
-    if not shapely.is_simple(parts).all():
-        raise ValueError("internal point intersection or self-overlap is not supported; resolve explicitly before merging")
-    vertices = [list(part.coords) for part in parts]
-    ends, part_numbers = {}, []
-    source_counts = np.zeros(len(input_gdf), dtype=np.int64)
-    for index, row in enumerate(sources):
-        source_counts[row] += 1
-        part_numbers.append(source_counts[row])
-        for side in (0, 1):
-            ends.setdefault(vertices[index][0 if side == 0 else -1], []).append((index, side))
-    tree = shapely.STRtree(parts)
-    for a, part in enumerate(parts):
-        candidates = tree.query(part)
-        for b in np.sort(candidates[candidates > a]):
-            for piece in _line_intersection_parts(shapely.intersection(part, parts[b])):
-                if piece.geom_type != "Point":
-                    raise ValueError("positive-length overlap is not supported; resolve overlap explicitly before merging")
-                point = (piece.x, piece.y)
-                if point not in (vertices[a][0], vertices[a][-1]) or point not in (vertices[b][0], vertices[b][-1]):
-                    raise ValueError("non-endpoint intersection is not supported; split intersections explicitly before merging")
+    parts, sources, vertices, ends, part_numbers = _endpoint_line_network(geometry)
 
     # Full network degree is fixed before comparing business attributes. A
     # branch can never disappear merely because another arm differs in value.
@@ -1735,6 +1816,28 @@ NORMALIZE_LINE_NETWORK_METADATA = OperatorMetadata(
 )
 
 
+EXTRACT_LINE_NODES_METADATA = OperatorMetadata(
+    name="extract_line_nodes", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_NETWORK,
+    description="节点提取", brief_description="按原始部件端点提取节点及度数，双输出保留每次端部来源和全部属性",
+    execution_modes=["workflow"], effects=["read"],
+    overview="每原始LineString部件为边，精确XY端点合并为节点；闭环首尾计两次，同源多部件各计。"
+             "内部折点不提取，不自动打断、去重、吸附或修复。",
+    params=[
+        OperatorParam(name="input_gdf", type="input", data_type="GeoDataFrame", required=True,
+            description="已在交会处打断且无重合的有效有限二维投影线图层"),
+        OperatorParam(name="id_field", type="param", data_type="str", required=True,
+            description="现有非几何唯一非空来源标识字段，不推断索引或存储FID"),
+    ],
+    output_ports=[
+        OutputPort(name="result", type="geodataframe", description="每节点一个Point，仅几何与node_id/degree", is_default=True),
+        OutputPort(name="members", type="geodataframe", description="每部件起终端各一Point，保原列及node_id/source_id/source_part_no/end", is_default=False),
+    ],
+    use_cases=["提取已规整线网的端点和分支节点", "按端部逐次追溯全部来源及业务属性"],
+    notes=["闭环首尾同点度为2，明细保留start和end两行；同源多部件不去重", "未打断交会、内部自交与任何正长度重合整批拒绝；相同端点的不同非重合路径分别计边", "普通内部折点不提节点，连续重复坐标不增度；节点集合依赖实际部件分段", "完整明细指当前输入每次端部及全部属性，不复制原线或猜上游来源", "node_id/degree/source_id/source_part_no/end冲突按固定顺序报错，用户显式重命名", "源不变，两Point端口分别接save；节点ID仅关联本次结果，不承诺固定容量"],
+    workflow_example={"id":"nodes", "operator":"extract_line_nodes", "params":{"input_gdf":{"$ref":"load"},"id_field":"line_id"}, "depends_on":["load"]},
+)
+
+
 MERGE_LINE_CHAINS_METADATA = OperatorMetadata(
     name="merge_line_chains", type=OperatorType.SPATIAL, category=OperatorCategory.VECTOR_NETWORK,
     description="链路合并", brief_description="按精确端点和显式一致字段串联非分支线，双输出保留完整来源明细",
@@ -2594,5 +2697,6 @@ OPERATORS = dict([
     register_operator(EXTRACT_POLYGON_RINGS_METADATA, extract_polygon_rings),
     register_operator(GROUP_LINE_COMPONENTS_METADATA, group_line_components),
     register_operator(MERGE_LINE_CHAINS_METADATA, merge_line_chains),
+    register_operator(EXTRACT_LINE_NODES_METADATA, extract_line_nodes),
     register_operator(NORMALIZE_LINE_NETWORK_METADATA, normalize_line_network),
 ])

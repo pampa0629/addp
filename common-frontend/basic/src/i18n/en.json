@@ -187,6 +187,7 @@
         "result": "Save execution result"
       },
       "reasons": {
+        "operator_endpoint_network_invalid": "Line parts have internal self-intersections, positive-length overlaps or unsplit intersections; the network is not connected only at both endpoints.",
         "operator_distance_limit_invalid": "The maximum trim path distance must be a finite positive number in horizontal CRS units.",
         "operator_source_topology_invalid": "Source parts have internal self-intersections or positive-length overlaps and cannot be trimmed directly.",
         "operator_trim_conflict": "The two trim plans cross or meet and would remove an original part.",
@@ -243,6 +244,7 @@
         "operator_geometry_invalid": "The input layer contains geometry that failed the validity check."
       },
       "actions": {
+        "operator_endpoint_network_invalid": "Explicitly split intersections and resolve self-intersections or overlaps before extracting nodes; no automatic splitting, deduplication or repair is performed.",
         "operator_distance_limit_invalid": "Set a finite positive max_distance in horizontal CRS units before submitting a new execution.",
         "operator_source_topology_invalid": "Check source self-intersections and overlaps, then normalize explicitly to meet the operator requirements; no automatic repair is performed.",
         "operator_trim_conflict": "Review reference intersections at both ends and the maximum path distance, preserving a positive-length original part before submitting a new execution.",
@@ -308,6 +310,7 @@
       "field": "Conflicting field",
       "operatorNodeIndex": "Node {index} in the workflow definition",
       "operatorNames": {
+        "extract_line_nodes": "Extract line nodes",
         "trim_line_endpoints": "Line endpoint trimming",
         "batch_buffer": "Multi-distance buffer",
         "distance_to": "Distance calculation",

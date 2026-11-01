@@ -1069,7 +1069,7 @@ def test_workflow_categories_have_one_explicit_two_level_owner():
         (("矢量处理", "几何构造"), "buffer centroid convex_hull envelope voronoi batch_buffer"),
         (("矢量处理", "几何整理"), "simplify dissolve check_geometry repair_geometry snap_geometry snap_line_endpoints extend_line_endpoints trim_line_endpoints"),
         (("矢量处理", "拓扑检查"), "check_polygon_overlap check_polygon_gap check_dangling_points check_line_proximity check_line_overlap check_line_self_overlap check_line_intersection check_line_self_intersection"),
-        (("矢量处理", "线网处理"), "polygonize extract_polygon_rings split_line_intersections group_line_components merge_line_chains normalize_line_network"),
+        (("矢量处理", "线网处理"), "polygonize extract_polygon_rings split_line_intersections group_line_components merge_line_chains normalize_line_network extract_line_nodes"),
         (("矢量处理", "叠加分析"), "intersection union difference clip"),
         (("矢量处理", "空间关系"), "contains intersects distance_to"),
         (("矢量处理", "几何量测"), "get_area get_length get_bounds"),
@@ -1237,10 +1237,10 @@ def test_dem_tri_single_workflow_explicit_band_unit_metres_and_complete_window_m
 
 
 def test_vector_geometry_groups_have_expected_counts_and_clear_display_names():
-    expected = {'几何构造': 6, '几何整理': 8, '拓扑检查': 8, '线网处理': 6}
+    expected = {'几何构造': 6, '几何整理': 8, '拓扑检查': 8, '线网处理': 7}
     operators = list_operators()
     moved = [op for op in operators if op['category_path'][0] == '矢量处理' and op['category'] in expected]
-    assert len(moved) == len({op['id'] for op in moved}) == 28
+    assert len(moved) == len({op['id'] for op in moved}) == 29
     assert {group: sum(op['category'] == group for op in moved) for group in expected} == expected
     assert not any(op['category_path'] == ['矢量处理', '几何处理'] for op in operators)
     names = {op['id']: op['display_name'] for op in moved}

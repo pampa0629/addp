@@ -460,3 +460,23 @@ for (const locale of ['zh-cn','en']) for (const [reason,parameter,zh,en] of [
   await page.setViewportSize({width:620,height:700})
   expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBeTruthy()
 })
+
+
+for (const locale of ['zh-cn','en']) for (const field of ['', 'node_id']) {
+  test(`node extraction controlled diagnosis in Monitor (${field || 'network'}, ${locale})`,async({page})=>{
+    await page.addInitScript(()=>{window.copiedDiagnostic='';Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedDiagnostic=text}},configurable:true})})
+    const reason=field?'operator_field_conflict':'operator_endpoint_network_invalid'
+    await installBackend(page,{locale,empty:true,targetExists:true,errorDetails:{category:'execution_failed',code:'develop.workflow.invalid_params',message:'PRIVATE GEOS /source/path',
+      diagnostic:{schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator:{node_index:2,operator_id:'extract_line_nodes',parameter:'input_gdf',...(field?{field}:{})}}}})
+    await page.goto('/executions?execution_id=diagnostic-run')
+    const panel=page.locator('.execution-detail-content > .execution-failure')
+    await expect(panel).toContainText(locale==='zh-cn'?'节点提取':'Extract line nodes')
+    await expect(panel).toContainText(field || (locale==='zh-cn'?'双方端点':'both endpoints'))
+    await expect(panel).not.toContainText('PRIVATE')
+    await panel.getByRole('button',{name:locale==='zh-cn'?'复制诊断信息':'Copy diagnostics',exact:true}).click()
+    const copied=await page.evaluate(()=>window.copiedDiagnostic)
+    expect(copied).toContain('diagnostic-run');expect(copied).not.toContain('PRIVATE')
+    await page.setViewportSize({width:620,height:700})
+    expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBeTruthy()
+  })
+}

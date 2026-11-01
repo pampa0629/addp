@@ -18,6 +18,15 @@ class WorkflowExecutionError(RuntimeError):
 
 # Closed protocol tuples; never classify arbitrary exception text as input errors.
 OPERATOR_INPUT_RULES = {
+    ('extract_line_nodes', 'operator_input_invalid', ''): 'input_gdf',
+    ('extract_line_nodes', 'operator_projected_crs_required', ''): '',
+    ('extract_line_nodes', 'operator_endpoint_network_invalid', ''): 'input_gdf',
+    ('extract_line_nodes', 'operator_field_conflict', 'node_id'): 'input_gdf',
+    ('extract_line_nodes', 'operator_field_conflict', 'degree'): 'input_gdf',
+    ('extract_line_nodes', 'operator_field_conflict', 'source_id'): 'input_gdf',
+    ('extract_line_nodes', 'operator_field_conflict', 'source_part_no'): 'input_gdf',
+    ('extract_line_nodes', 'operator_field_conflict', 'end'): 'input_gdf',
+
     ('trim_line_endpoints', 'operator_distance_limit_invalid', ''): 'max_distance',
     ('trim_line_endpoints', 'operator_input_invalid', ''): 'input_gdf',
     ('trim_line_endpoints', 'operator_reference_invalid', ''): 'reference_gdf',

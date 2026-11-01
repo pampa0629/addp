@@ -1158,6 +1158,8 @@ for (const locale of ['zh-cn', 'en']) for (const cause of ['roles', 'choice', 'r
 
 for (const locale of ['zh-cn','en']) {
   for (const [operator_id,reason,parameter,field,name] of [
+    ['extract_line_nodes','operator_field_conflict','input_gdf','node_id',locale==='zh-cn'?'节点提取':'Extract line nodes'],
+    ['extract_line_nodes','operator_endpoint_network_invalid','input_gdf','',locale==='zh-cn'?'节点提取':'Extract line nodes'],
     ['batch_buffer','operator_field_conflict','input_gdf','distance', locale === 'zh-cn' ? '多距缓冲' : 'Multi-distance buffer'],
     ['distance_to','operator_geometry_field_conflict','input_gdf','distance', locale === 'zh-cn' ? '距离计算' : 'Distance calculation'],
     ['check_line_proximity','operator_positive_number_required','tolerance','', locale === 'zh-cn' ? '近接检查' : 'Line proximity check'],
@@ -1179,7 +1181,8 @@ for (const locale of ['zh-cn','en']) {
     else if(reason==='operator_geometry_invalid') {
       await expect(panel).toContainText(locale==='zh-cn'?'未通过有效性检查':'failed the validity check')
       await expect(panel).toContainText(locale==='zh-cn'?'显式修复':'explicitly repair')
-    } else if(reason==='operator_source_topology_invalid') await expect(panel).toContainText(locale==='zh-cn'?'内部自交':'internal self-intersections')
+    } else if(reason==='operator_endpoint_network_invalid') await expect(panel).toContainText(locale==='zh-cn'?'双方端点':'both endpoints')
+    else if(reason==='operator_source_topology_invalid') await expect(panel).toContainText(locale==='zh-cn'?'内部自交':'internal self-intersections')
     else if(reason==='operator_trim_conflict') await expect(panel).toContainText(locale==='zh-cn'?'交错或相遇':'cross or meet')
     else await expect(panel).toContainText(locale==='zh-cn'?'有限正数':'finite positive')
     await expect(panel).not.toContainText('private-password')
