@@ -16,3 +16,15 @@ def authoritative_raster_policy(monkeypatch):
     monkeypatch.setattr(api_server, 'raster_resources', RasterResources(lambda: Client(), poll=False))
     yield
     gdal.SetCacheMax(previous_cache)
+
+
+@pytest.hookimpl(hookwrapper=True, trylast=True)
+def pytest_runtest_makereport(item, call):
+    """Retain named failures even when the enclosing CI job ends before summary."""
+    outcome = yield
+    report = outcome.get_result()
+    if report.failed:
+        terminal = item.config.pluginmanager.getplugin('terminalreporter')
+        if terminal is not None:
+            terminal.write_sep('=', f'NATIVE TEST FAILURE {report.nodeid} [{report.when}]')
+            terminal.write_line(report.longreprtext)

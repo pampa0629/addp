@@ -189,3 +189,40 @@ def test_netcdf_native_invalid_selection_returns_stable_rejection(tmp_path):
     version=netcdf.inspect(plan)['format_info']['source_version']
     result=get_operator('netcdf.read_slice')(access_plan=plan,source_version=version,selection=dict(variable='/temperature',indices=[2],x=0,y=0,width=4,height=3))
     assert result['error_code']=='NETCDF_SLICE_INVALID'
+
+
+def test_int64_attributes_use_the_existing_raw_api_not_newer_helpers(tmp_path, monkeypatch):
+    from osgeo import gdal
+    # GDAL 3.8.4 has ReadAsRaw, but no Attribute.ReadAsInt64Array.
+    monkeypatch.delattr(gdal.Attribute, 'ReadAsInt64Array', raising=False)
+    path = tmp_path / 'int64-attribute.nc'
+    classic_fixture(path, version=5)
+    result = netcdf.inspect(source_plan(path, 'netcdf'))
+    attribute = result['container']['children'][0]['native']['attributes']['_FillValue']
+    assert attribute == {'type': 'Int64', 'values': ['-9999']}
+
+
+def test_numeric_attribute_storage_values_do_not_use_string_or_double_conversion(tmp_path, monkeypatch):
+    from osgeo import gdal
+    original_strings = gdal.Attribute.ReadAsStringArray
+    def strings_only(attribute, *args, **kwargs):
+        assert attribute.GetDataType().GetClass() == gdal.GEDTC_STRING
+        return original_strings(attribute, *args, **kwargs)
+    def forbidden(*args, **kwargs):
+        raise AssertionError('numeric attributes must use their declared native storage type')
+    monkeypatch.setattr(gdal.Attribute, 'ReadAsStringArray', strings_only)
+    monkeypatch.setattr(gdal.Attribute, 'ReadAsDoubleArray', forbidden)
+    monkeypatch.setattr(gdal.Attribute, 'ReadAsInt64Array', forbidden, raising=False)
+    cases = [(1, [-128, 127]), (3, [-32768, 32767]), (4, [-2147483648, 2147483647]),
+             (5, [-1.25, .5]), (6, [-273.15, .5]), (7, [0, 255]),
+             (8, [0, 65535]), (9, [0, 4294967295]),
+             (10, [-9223372036854775808, 9223372036854775807]),
+             (11, [9007199254740993, 18446744073709551615])]
+    attrs = [(f'number{kind}', kind, values) for kind, values in cases]
+    path = tmp_path / 'typed-attributes.nc'
+    classic_dataset(path, [('y', 2), ('x', 2)],
+                    [dict(name='data', type=4, dims=[0, 1], values=[0, 1, 2, 3],
+                          attrs=[('units', 2, 'K')])], version=5, global_attributes=attrs)
+    report = netcdf.inspect(source_plan(path, 'netcdf'))
+    for kind, values in cases:
+        assert report['format_info']['attributes'][f'number{kind}']['values'] == [str(v) for v in values]

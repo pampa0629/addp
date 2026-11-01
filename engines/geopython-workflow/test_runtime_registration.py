@@ -269,3 +269,23 @@ runpy.run_path('api_server.py', run_name='__main__')
             process.terminate()
             process.wait(timeout=15)
         assert process.returncode == 0, log.read_text()
+
+
+def test_native_failure_diagnostics_are_emitted_before_the_next_test(tmp_path):
+    import sys
+    from pathlib import Path
+    from operators import _native_process
+    (tmp_path / 'conftest.py').write_text(Path(__file__).with_name('conftest.py').read_text())
+    (tmp_path / 'test_diagnostic_probe.py').write_text(
+        "def test_first():\n    assert False, 'NATIVE_SENTINEL_FAILURE'\n"
+        "def test_later():\n    print('NATIVE_LATER_TEST_RAN', flush=True)\n")
+    result = _native_process.run(
+        [sys.executable, '-m', 'pytest', '-q', '-s', '--tb=short', str(tmp_path)],
+        cwd=Path(__file__).parent, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 1, result.stdout + result.stderr
+    marker = 'NATIVE TEST FAILURE '
+    assert marker in result.stdout, result.stdout + result.stderr
+    assert result.stdout.index(marker) < result.stdout.index('NATIVE_LATER_TEST_RAN')
+    assert 'test_diagnostic_probe.py::test_first' in result.stdout
+    assert result.stdout.index('NATIVE_SENTINEL_FAILURE') < result.stdout.index('NATIVE_LATER_TEST_RAN')
+    assert '1 failed, 1 passed' in result.stdout

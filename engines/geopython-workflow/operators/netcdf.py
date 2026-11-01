@@ -10,7 +10,7 @@ import tempfile
 from contextlib import contextmanager
 
 import numpy as np
-from osgeo import gdal, osr
+from osgeo import gdal, gdal_array, osr
 from addp_common.workflow_access import require_source_plan, stage_source_file
 from . import _native_process
 from .base import OperatorCategory, OperatorMetadata, OperatorParam, OperatorType, register_operator
@@ -96,14 +96,14 @@ def _attributes(owner, selected=None):
             values = attribute.ReadAsStringArray()
         elif kind.GetClass() == gdal.GEDTC_NUMERIC:
             native = kind.GetNumericDataType()
-            if native == gdal.GDT_Int64:
-                values = attribute.ReadAsInt64Array()
-            elif native == gdal.GDT_UInt64:
-                # ReadAsString keeps unsigned integers out of a signed/double conversion.
-                values = attribute.ReadAsStringArray()
-            else:
-                values = attribute.ReadAsDoubleArray()
-            values = [_numeric_text(v) if not isinstance(v, str) else v for v in values]
+            numeric_type = gdal_array.GDALTypeCodeToNumericTypeCode(native)
+            if numeric_type is None or gdal.DataTypeIsComplex(native):
+                raise ValueError("unsupported NetCDF numeric attribute type")
+            dtype = np.dtype(numeric_type)
+            raw = attribute.ReadAsRaw()
+            if raw is None or len(raw) != attribute.GetTotalElementsCount() * dtype.itemsize:
+                raise ValueError("incomplete NetCDF numeric attribute storage")
+            values = [_numeric_text(v) for v in np.frombuffer(raw, dtype=dtype)]
         else:
             raise ValueError("NetCDF compound attribute types are unsupported")
         result[attribute.GetName()] = {"type": _type_name(kind), "values": list(values)}
