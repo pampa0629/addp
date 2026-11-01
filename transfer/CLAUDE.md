@@ -1,5 +1,7 @@
 # Transfer 模块说明
 
+阅读导航：[当前支持矩阵与任务语义](docs/transfer-任务语义与同步模式.md#三当前支持矩阵)、[后续能力清单](../docs/next/transfer后续能力清单.md)、[开发与验证](#开发与验证)。
+
 ## 模块定位
 
 Transfer 模块是 ADDP 的数据传输中枢，统一负责 `sync` 任务、任务配置、字段映射 / 转换编排、写后 Meta 扫描触发和执行运行时。bounded execution 由独立 `transfer-bounded-worker` 通过 PostgreSQL execution claim 承担；continuous execution 由独立 `transfer-continuous-worker`/supervisor 承担。导入 / 导出是 Manager、Develop 等调用方的用户动作语义，不是 Transfer 的 `task_type`。可复用同步配置才创建 `transfer.transfer_tasks`；一次性导出使用 `POST /api/v1/transfer/executions` 直接创建 `source_task_id=null` 的 bounded `sync` execution，响应只暴露统一 `execution_id`。
@@ -160,7 +162,7 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 
 两类 Oracle CDC 显式开关用例仍缺专门登记的标准调用与隔离清理门禁，具体实现、数据面范围、环境及已授权故障窗口统一见[专项入口缺口](README.md#oracle-cdc-专项入口缺口)。普通模块、Go 或 PostgreSQL 门禁成功以及未激活用例的跳过，都不能计为这两类实测通过，也不以直接语言命令替代标准入口。
 
-真实 T4 的专用身份、最小权限与独占部署遵循[Online 规范](../docs/spec/testing/T4-Online验收规范.md)，不复用个人开发服务或扩大生产权限。以下分版本证据只适用于所列源码和运行尝试，不代表当前 HEAD 已重跑；标准门禁、runner 回归、实际运行与历史结论分别认定，未运行、失败、跳过和未覆盖项不计为通过。
+真实 T4 的专用身份、最小权限与独占部署遵循[Online 规范](../docs/spec/testing/T4-Online验收规范.md)，不复用个人开发服务或扩大生产权限。以下分版本证据只适用于所列源码和运行尝试，不代表当前 HEAD 已重跑；标准门禁、runner 回归、实际运行与历史结论分别认定，未运行、失败、跳过和未覆盖项不计为通过。各后续增强的独有验收边界见[清单验收范围与证据](../docs/next/transfer后续能力清单.md#六验收范围与证据)。
 
 ### 专项约束与分版本证据
 
@@ -211,8 +213,9 @@ continuous 的 claim、累计提交计数与终态复用 `common.execution_event
 - [Continuous/Kafka 配置](docs/transfer-基本概念及配置说明.md#八continuouskafka-v1-契约与当前实现边界)
 - [数据库 CDC 配置](docs/transfer-基本概念及配置说明.md#九数据库-cdc-v1-已冻结边界)
 - [Checkpoint 恢复分级](docs/transfer-基本概念及配置说明.md#恢复分级)
-- [任务语义与同步模式](docs/transfer-任务语义与同步模式.md)
 - [当前架构设计](docs/design.md)
+- [当前支持矩阵与任务语义](docs/transfer-任务语义与同步模式.md#三当前支持矩阵)
+- [Transfer 后续能力清单](../docs/next/transfer后续能力清单.md)
 - [转换器架构分析（历史归档）](docs/transfer转换器架构分析.md)
 - [高性能分析（历史归档）](docs/transfer高性能分析.md)
 - [transfer.transfer_tasks 表](docs/tables/tasks表.md)
