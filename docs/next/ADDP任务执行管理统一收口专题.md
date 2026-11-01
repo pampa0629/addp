@@ -937,3 +937,13 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 [Go workspace Job 124921686413](https://github.com/pampa0629/addp/actions/runs/41331263958/job/124921686413) 中 **15 个实际 Manager 测试包均 OK**，包括新增真实 SDK／代理回归所在 service 包；聚合随后因已有 Ontology `TestTransferReviewSourceDrift/config` 的 Transfer 文档来源漂移实际 failure，不声称整套 Go 通过，不对未执行模块作推断。原日志 SHA-256 `d6165d48acfa268377b4fccda927e4f34d2e1363349388913f247daad45868c7`。[Platform Job 124921685948](https://github.com/pampa0629/addp/actions/runs/41331263958/job/124921685948) 同样因该无关前置漂移失败，**尚未执行到本批 T2 登记 75＋9**，故仅保留本地该门禁的通过，不记作 Linux 通过；原日志 SHA-256 `df7fc6dfde274c94f073fb862d9be9bb2f8016df2c8255a9c8264d295e4feff6`。按会话职责不修复或重跑该无关失败，不为绕过它另设工作流；Manager 的实际独立 CI 成功与聚合缺口分别记录。
 
 本批已实证收口代理正常传输缺陷及其 Manager／native 回归；**第七轮 Hosted 仍为失败 0/7，修复后真实整链七项尚未验收**。现场公开诊断仅到库存阶段，不能将本地复现认定为唯一现场原因；既有 Graph 原生证据及正向 reopen 缺口也未由本批收口。下一步仅建议单独确认一次修正版 transfer-engine Hosted，保持原六权限、操作范围、七断言和等待预算；本批不自动追加 Hosted、切换环境或改变权限。M327 维护会话已核对保存部分实现，Linux 终态增量另报。
+
+### 8.31 第八轮 transfer-engine 代理修复后单次 Hosted 验收（已授权，运行中）
+
+用户于 2026-11-02 单独确认再运行一次修正版 `transfer-engine Hosted`，验证代理修复及完整清理链路，保持原六项身份权限、操作范围、七项断言和等待预算；其他 Hosted、环境切换和权限边界变化仍单独确认。已单次 POST 创建 [Run 41364581693／Job 125021924813](https://github.com/pampa0629/addp/actions/runs/41364581693/job/125021924813)，workflow_dispatch／attempt 1，准确源码 `161a26cdd65a7a434f2acfd8994d6dcc98cf837a`；记录时运行中，不计通过。本次授权已使用，不自动追加第九轮。
+
+先 fresh 核对上节修复 `9591622ea` 的独立 runner **102＋168** 及 Manager PG **31 顶层／0 fail／0 skip** 实际 success，再逐项验证运行输入闭包未变。原生 runner、proxy、身份夹具、正式七断言契约、HTTP／wait／sleep、Hosted Job、共享依赖和部署入口均与已验修复源码一致；其后 main 增量仅其他场景文档／测试，System 变动仅源元数据到期测试断言，未修改运行授权路径。首次候选 `b147ae753` 因 main 前移，在 POST 之前中止；核对新增 Transfer 任务表 endpoint 导航文档后使用当前准确源码，POST 计数仍为一。个人工作区的未提交 fixture、AGENTS 和表格均不进入部署；忽略的本地 go.work 不复用，Hosted 仍由标准入口生成私有 workspace 并沿用未变的 go.work.sum。
+
+本次验收仍要求完整 `real_capture_created`、`actual_invocations_returned`、`native_capture_absent`、`engine_retains_task_and_dlq`、`professional_receipt_equal`、`explicit_task_delete_removes_dlq`、`target_business_rows_preserved` 七项，无放宽、重试或追加等待。先核对真实 CDC 创建／停止和 Engine 删除保留语义，再沿普通用户显式任务删除验证 DLQ 清理及目标业务行保持；代理修复后的初始化／盘点是否通过由本次实际结果判定，不以本地红绿或旧 CI 替代。
+
+私有证据目录 `/tmp/addp-transfer-engine-hosted-eighth-20261102/` 保存 `intent.json`（一次授权／一次 POST／唯一 Run）、`invariants.json`、`prerequisite-proof.json` 及冻结于准确源码的报告审计。CI 会话仅只读跟进该唯一 Job；终态后独立核对十四服务同 SHA、原授权可见的父／Manager／Transfer 诊断、七项 checks 及控制恢复／清理／零残留。旧第七轮失败 **0/7**、本次 Linux T2 登记 75＋9 未执行及 Graph 既有缺口分别保留，不提前记为通过。
