@@ -302,7 +302,7 @@ class LifecycleTest(unittest.TestCase):
             module.auth.replace(directory, baseline, value)
             path = runtime / 'pg_hba.conf'
             before = path.stat()
-            with mock.patch.object(module.auth.tempfile, 'mkstemp', side_effect=AssertionError('Unchanged policy must not be republished')):
+            with mock.patch.object(module.auth.private.tempfile, 'mkstemp', side_effect=AssertionError('Unchanged policy must not be republished')):
                 module.auth.replace(directory, value, value)
                 stale = module.source.authentication_configuration(baseline, 'business', ['127.0.0.1/32', '::1/128'])
                 with self.assertRaisesRegex(module.auth.AuthenticationError, 'version changed'):

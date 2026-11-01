@@ -52,9 +52,14 @@ services:
   redis:
     image: redis:7-alpine
     container_name: addp-redis
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    command: ["sh", "/addp/redis-authentication.sh", "infra"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Redis deployment password required}
     volumes:
       - redis_data:/data
+      - ./scripts/infra/redis-authentication.sh:/addp/redis-authentication.sh:ro
+    tmpfs:
+      - /run/addp-redis:mode=0700
     ports:
       - "${INFRA_BIND_HOST:-0.0.0.0}:${REDIS_PORT:-16379}:6379"
     networks:

@@ -13,3 +13,6 @@ for specification in "${specifications[@]}"; do
     if grep -q -- '--- SKIP:' "$WORK_DIR/${owner//\//-}.log"; then echo "Redis T2 refuses skipped tests" >&2; exit 1; fi
     grep -q -- '--- PASS: TestIntegrationRedis' "$WORK_DIR/${owner//\//-}.log" || { echo "Redis T2 requires real consumer tests" >&2; exit 1; }
 done
+if [[ $# == 1 ]]; then
+    python3 "$ROOT_DIR/scripts/test/redis-metrics-lifecycle-probe.py"
+fi

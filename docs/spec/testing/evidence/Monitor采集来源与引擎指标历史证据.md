@@ -412,3 +412,22 @@ Business真实截图看到提交曲线，五分钟窗口08:11:12—08:16:12、15
 - `make test-workflow-security`：固定zizmor离线审计退出0，日志 `/tmp/addp-redis-source-workflow-security-final.log`；新增入口／共享runner的bash语法及差异格式检查通过。
 
 完整 `make test-t2-ci-registration` 本轮74项聚合退出非零：SystemCleanupPostgresRunnerTest的no-tests子场景15秒超时，随后skip-child因当次模拟锁／目录残留失败，日志 `/tmp/addp-redis-source-registration-full.log`。未修改这些非本批夹具、放宽时限或将注册事实局部通过记为完整聚合通过。正式账号生命周期、mTLS、System登记／私有发现投影、Prometheus、Monitor查询／Console和正式身份T4尚未接通，CI／Hosted未自行查询、触发或重跑，继续等待专门会话回传；未设置定时任务、修改Docker设置、重启个人服务或安装个人账号。
+
+
+## Redis 账号持久化与来源生命周期（2026-11-01）
+
+本批接通 Infra／Business 单机 Redis 的原生 ACL 启动、数据卷内本方账号记录、部署用户私有凭据与归属、显式启停及独立 mTLS 固定来源。唯一配方仍由 `redissource.ObserverACL` 生成；标准生命周期通过来源镜像的受限 stdin 计划调用该配方，不保留另一套账号生成器。源进程只持最小采集凭据，管理员只在安装期进入 stdin；源容器非特权、只读、限额，不挂载数据卷／宿主目录／Docker socket。Business 原 admin／reader 配方保留，Infra 保留原 default 认证。未修改个人 `.env`、安装个人账号或启停个人服务。
+
+本地验证及证据：
+
+- `make test-module MODULE=monitor GO_ONLY=1`：Monitor Go T1 全部退出0，含新来源命令及内核；日志 `/tmp/addp-redis-lifecycle-monitor-go.log`。
+- `make test-monitor-redis-source-unit`：两个Go包及11项生命周期T1退出0，覆盖凭据沿用、先停源后清权、journal版本恢复、归属／权限／丢失状态拒绝、私有文件和锁，以及未安装关闭时不联系Docker；日志 `/tmp/addp-redis-lifecycle-unit-final.log`。
+- `make test-monitor-redis-source`：最终标准门禁退出0；固定 Redis 7.2.13 镜像、随机密码、专属两个 Redis，既有协议／越权检查和两作用域实际 mTLS 来源均通过。验证运行中及重启后账号精确配方、同一密码沿用、进程重启计数代际变化、停用后重启仍清权、坏TLS重新应用后的停源与持久清权、损坏记录不阻断业务认证且拒绝接管、标记数据保留，以及无客户端／错误用途证书及额外HTTP入口拒绝。日志 `/tmp/addp-redis-lifecycle-t2-final2.log`，项目 `addp-redis-t2-34256-34261`（以该日志中的实际项目标签为准）。两个作用域源容器／配置卷、主夹具容器／网络／数据卷全部清零；另按精确项目标签复核本轮8个项目及对应来源项目零残留。
+- `make test-business-redis`：5项原认证、原生样例、幂等、数据保留／重启及权限冲突回归退出0；日志 `/tmp/addp-redis-lifecycle-business-final.log`。
+- `make test-infra-runtime-log-lifecycle`：标准入口退出0，其中启动选择／失败边界、HTTP预算、Trace配置与PostgreSQL生命周期等合计142项通过，含共享私有文件／Docker传输抽取后的PostgreSQL生命周期26项回归；日志 `/tmp/addp-redis-lifecycle-infra-unit-final.log`。`make test-monitor-metrics-config` 的136项配置T1退出0，日志 `/tmp/addp-redis-lifecycle-config.log`。未重跑完整PostgreSQL实源T2，不把共享帮助函数的T1当作目录挂载故障已解决。
+- Hosted Business Redis物理夹具同步只读挂载唯一认证入口；`python3 -m unittest scripts/test/online-redis-consumer-fixture_test.py` 6项受控命令T1退出0，日志 `/tmp/addp-redis-lifecycle-online-fixture-final.log`。不等于真实Hosted运行。
+- T2注册事实检查退出0（24个hosted-service、14个owned-Compose、9个hosted-only、2个owner-managed），日志 `/tmp/addp-redis-lifecycle-registration-final.log`；Online注册事实检查退出0，日志 `/tmp/addp-redis-lifecycle-online-registration-final.log`。沿现有Monitor／根集成／Release专项自动发现，未新增CI身份、Hosted用途或定时任务。脚本语法、Python编译及差异格式检查通过。
+
+过程失败均未计通过：最初Redis CLI `--json`实际协商RESP3对象，而部署代码按数组读取，已改为显式RESP3并只接受对象；当前Python严格TLS验证拒绝缺少密钥标识的测试证书，已补SKI／AKI，未放宽验证；损坏记录恢复测试原先只恢复文件、未重新加载Redis，已补一次性夹具重启后再验停用。Infra配置渲染夹具补齐本身必需的Redis密码。最终标准门禁覆盖这些修正，早期失败项目均清理，不以等待、补零、自动接管或放宽ACL处理。
+
+范围仍为来源与账号生命周期。System Redis部署类型／私有投影、部署发现、Prometheus HTTP SD、Monitor查询／Console尚未接通；正式用户链路、CI及Hosted未在本会话查询、触发或重跑，等待专门会话回传。当前个人环境未应用本批Redis部署，也未声明正式页面已可用。推荐下一批接通Redis部署发现与System精确来源关联，再接查询展示。

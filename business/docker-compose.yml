@@ -132,6 +132,7 @@ services:
     volumes:
       - redis_data:/data
       - ./redis:/addp/redis:ro
+      - ../scripts/infra/redis-authentication.sh:/addp/redis-authentication.sh:ro
     tmpfs:
       - /run/addp-redis:mode=0700
     networks:

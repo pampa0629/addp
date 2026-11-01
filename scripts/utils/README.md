@@ -139,3 +139,8 @@ make ports-validate
 ### 问题 2: test-tile-api.sh 无法运行
 
 按[工具说明](#test-tile-apish)先区分固定地址不可达、Token 失效、Tenant Context／权限不符与资源参数错误，再核对原始 HTTP 状态和响应体；脚本未单列的 403 等结果会进入通用失败分支。已有服务的状态和归属按[开发排障](../docs/启动脚本使用指南.md#排查失败)核对，需要启停时使用该指南的标准入口。MVT 空响应、超时及降级按[正式响应契约](../../manager/docs/quick-view/矢量快显与物化视图.md#mvt-瓦片数据)排查，不能仅以“下载成功”或脚本零退出排除问题。
+
+
+### 部署私有文件与 Docker 传输
+
+`private-state.py` 是 PostgreSQL／Redis 生命周期共用的私有目录、非阻塞锁、受限读取和 CAS 原子发布内核；拒绝符号链接、归属／权限漂移及版本冲突，不包含数据库认证规则。`deployment-docker.py` 统一核验本地 Unix Docker context、固定传输预算及容器事实，拒绝远程 Engine，不打印原始命令、凭据或 Docker 错误。数据库协议与来源启停仍各由 Infra 的 PostgreSQL／Redis 生命周期拥有，不能通过该工具绕开标准入口。确定性验证复用 `make test-monitor-metrics-config`、`make test-monitor-redis-source-unit`；真实数据库读取分别沿现有来源 T2。

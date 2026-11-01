@@ -84,6 +84,14 @@ Infra 根 `.env` 与 `business/.env` 各自的 `ADDP_POSTGRES_METRICS_ENABLED=fa
 
 由各自标准启动入口在 PostgreSQL 就绪后安装固定函数、验证并重载认证规则，成功后启用 Login 并部署来源；标准停止或关闭选择则先停来源并关闭本方 Login，保留历史与数据卷。可选失败不阻止核心运行，未知会话及凭据丢失拒绝自动修复，不重启数据库。Business 首次认证目录切换另由部署方安排标准重建。配置随下一次相应生命周期生效，不承诺热更新；来源启动不表示正式发现、专业查询或页面已就绪。完整操作见[PostgreSQL 采集账号与指标来源启停](../../../scripts/infra/docs/指标中心与来源.md#postgresql-采集账号与指标来源启停)。
 
+## Redis 独立来源部署选择
+
+根 `.env` 与 `business/.env` 分别配置 `ADDP_REDIS_METRICS_ENABLED=false`、`ADDP_REDIS_METRICS_TLS_DIR`、`ADDP_REDIS_METRICS_LISTEN`、`ADDP_REDIS_METRICS_STATE_DIR`，不相互继承，不从 PostgreSQL 或指标中心开关推断启用。开关仅接受 `true/false`；未安装且未启用时不连接 Redis，也不要求专用证书。
+
+启用需要仓库外的 CA／服务器证书／私钥和显式、规范的本机私网或回环 IP:端口；证书覆盖该 IP，不自动生成信任或换端口。状态根为仓库外绝对目录，默认按工作区隔离在当前用户的 `~/.local/state/addp/` 下；随机采集密码与归属记录分别按 `infra/business` 保存，目录 `0700`、文件 `0600`。丢失私有凭据时不接管已有账号、不自动重置密码。
+
+各自标准 Infra／Business 启停负责应用配置、验证账号归属、持久化原生 ACL 和部署独立 mTLS 来源；停用先停来源再 reset/off 清权，保留数据及私有状态。首次切换原生 ACL 启动由部署方沿标准入口重建 Redis 容器并保留数据卷。采集记录在 Redis 数据卷内更新，不依赖宿主共享目录的动态替换；来源只读挂载专属配置卷，不挂载 Redis 数据或管理员凭据。操作及当前发现缺口见[Redis 采集账号与指标来源启停](../../../scripts/infra/docs/指标中心与来源.md#redis-采集账号与指标来源启停)。
+
 ## 指标中心部署选择
 
 `ADDP_OBSERVABILITY_METRICS_ENABLED` 缺省 `false`，只接受 `true/false`，不根据端口探测或证书是否存在推断部署意图。中心采用 `observability-metrics` Profile，与 `observability-logs` 独立；共享生命周期准备只由 `scripts/utils/observability-env.sh` 组织。选择、证书和启动配置随下一次标准 Infra 生命周期生效，不承诺热更新。缺失或故障只影响指标设施，不加入业务 Ready。

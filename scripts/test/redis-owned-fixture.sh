@@ -5,7 +5,7 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 export ADDP_REDIS_T2_PROJECT="addp-redis-t2-${PPID}-$$"
 export BUSINESS_REDIS_ADMIN_PASSWORD="$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')"
 export BUSINESS_REDIS_READER_PASSWORD="$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')"
-compose() { docker compose -p "$ADDP_REDIS_T2_PROJECT" -f "$ROOT_DIR/scripts/test/docker-compose.redis-t2.yml" "$@"; }
+compose() { docker compose --profile redis-observation -p "$ADDP_REDIS_T2_PROJECT" -f "$ROOT_DIR/scripts/test/docker-compose.redis-t2.yml" "$@"; }
 cleanup() {
     local status=$?
     trap - EXIT INT TERM
@@ -22,7 +22,9 @@ cleanup() {
     exit "$status"
 }
 trap cleanup EXIT INT TERM
-compose up -d --wait --wait-timeout 120
+services=(redis)
+if [[ "${ADDP_REDIS_OBSERVATION_T2:-0}" == 1 ]]; then services+=(redis-infra); fi
+compose up -d --wait --wait-timeout 120 "${services[@]}"
 compose exec -T redis sh /addp/redis/init.sh
 compose exec -T redis sh /addp/redis/init.sh
 export ADDP_REDIS_T2_ENDPOINT="$(compose port redis 6379)"

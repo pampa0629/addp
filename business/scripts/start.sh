@@ -332,6 +332,7 @@ fi
 # 2. 加载环境变量
 # Root Infra selection must never activate Business observation implicitly.
 unset ADDP_POSTGRES_METRICS_ENABLED ADDP_POSTGRES_METRICS_TLS_DIR ADDP_POSTGRES_METRICS_LISTEN ADDP_POSTGRES_METRICS_STATE_DIR
+unset ADDP_REDIS_METRICS_ENABLED ADDP_REDIS_METRICS_TLS_DIR ADDP_REDIS_METRICS_LISTEN ADDP_REDIS_METRICS_STATE_DIR
 if [ -f .env ]; then
     set -a
     source .env
@@ -600,6 +601,7 @@ fi
 
 # Redis
 if [ "$ENABLE_REDIS" = true ]; then
+    python3 "$PROJECT_ROOT/../scripts/infra/redis-metrics.py" down --scope business || echo 'Previous Redis metrics unavailable; business startup continues' >&2
     docker compose up -d --wait --wait-timeout 120 redis
     docker compose exec -T redis sh /addp/redis/init.sh
     echo "✓ Business Redis 已就绪，只读账号 addp_business_reader"
@@ -1291,9 +1293,17 @@ if [ "$ENABLE_FALKORDB" = true ]; then
 fi
 
 python3 "$PROJECT_ROOT/../scripts/utils/deployment-inventory.py" start || echo 'Business deployment discovery unavailable; business services remain running' >&2
+observation_result=0
 if [ "$ENABLE_PG" = true ]; then
     python3 "$PROJECT_ROOT/../scripts/infra/postgres-observation/lifecycle.py" up --scope business || {
         echo 'PostgreSQL metrics unavailable; business services remain running' >&2
-        exit 1
+        observation_result=1
     }
 fi
+if [ "$ENABLE_REDIS" = true ]; then
+    python3 "$PROJECT_ROOT/../scripts/infra/redis-metrics.py" up --scope business || {
+        echo 'Redis metrics unavailable; business services remain running' >&2
+        observation_result=1
+    }
+fi
+exit "$observation_result"

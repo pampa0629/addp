@@ -97,7 +97,7 @@ Linux VM 单新 Monitor 绑定的固定版本、失败和覆盖限制见[清单�
 
 ### Redis 专业指标实施状态
 
-Redis 后续范围已确认：首批 Infra／Business 单机 Redis 7，独立账号只授 HELLO／PING／INFO，无业务键和频道访问。已补固定采集内核与独占 Redis 协议验证入口；正式契约见[Redis 首期边界](../spec/addp平台运行观测规范.md#redis-专业观测首期边界2026-11-01-确认分阶段实施)。账号安装／持久化、mTLS 来源、System 类型与私有投影、自动发现、Monitor 查询／页面尚未接通，不将采集协议通过计为已纳管或专业监控完成。
+Redis 后续范围已确认：首批 Infra／Business 单机 Redis 7，独立账号只授 HELLO／PING／INFO，无业务键和频道访问。已补固定采集内核、原生ACL持久化、独立mTLS来源与Infra／Business标准启停；正式契约见[Redis 首期边界](../spec/addp平台运行观测规范.md#redis-专业观测首期边界2026-11-01-确认分阶段实施)。本批[账号与来源证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-账号持久化与来源生命周期2026-11-01)与正式页面分层；System 类型与私有投影、自动发现、Monitor 查询／页面尚未接通，不将来源通过计为已纳管或专业监控完成。
 
 ### PostgreSQL 专业指标实施状态
 

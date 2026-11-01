@@ -136,6 +136,7 @@ if [[ "$METRICS_ONLY" == true ]]; then
   metrics_result=0
   reconcile_metrics || metrics_result=1
   python3 "$SCRIPT_DIR/postgres-observation/lifecycle.py" up --scope infra || metrics_result=1
+  python3 "$SCRIPT_DIR/redis-metrics.py" up --scope infra || metrics_result=1
   exit "$metrics_result"
 fi
 
@@ -294,6 +295,7 @@ if [ "$ALL_SERVICES_RUNNING" = "true" ]; then
 fi
 echo -e "${YELLOW}▶ 启动或校验基础设施容器${NC}"
 python3 "$SCRIPT_DIR/postgres-observation/lifecycle.py" down --scope infra || echo 'Previous PostgreSQL metrics shutdown incomplete; core startup continues' >&2
+python3 "$SCRIPT_DIR/redis-metrics.py" down --scope infra || echo 'Previous Redis metrics shutdown incomplete; core startup continues' >&2
 compose up -d "${CORE_SERVICES[@]}"
 ADDP_INFRA_PORT_SCOPE=core addp_infra_read_actual_ports
 echo ""
@@ -536,5 +538,6 @@ else
 fi
 reconcile_metrics || optional_result=1
 python3 "$SCRIPT_DIR/postgres-observation/lifecycle.py" up --scope infra || optional_result=1
+python3 "$SCRIPT_DIR/redis-metrics.py" up --scope infra || optional_result=1
 python3 "$PROJECT_ROOT/scripts/utils/deployment-inventory.py" start || echo 'Infra deployment discovery unavailable; core services remain running' >&2
 exit "$optional_result"

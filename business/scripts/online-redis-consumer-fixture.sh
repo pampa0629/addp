@@ -61,6 +61,7 @@ created=1
 docker run -d --name "$CONTAINER" --label "$LABEL=$SUITE" \
   --publish '127.0.0.1::6379' --env BUSINESS_REDIS_ADMIN_PASSWORD --env BUSINESS_REDIS_READER_PASSWORD \
   --mount "type=bind,src=$ROOT_DIR/business/redis,dst=/addp/redis,readonly" \
+  --mount "type=bind,src=$ROOT_DIR/scripts/infra/redis-authentication.sh,dst=/addp/redis-authentication.sh,readonly" \
   --tmpfs /run/addp-redis:mode=0700 --tmpfs /data:mode=1777 --memory 512m \
   "$IMAGE" sh /addp/redis/start.sh >/dev/null
 ready=0

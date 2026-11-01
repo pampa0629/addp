@@ -81,6 +81,9 @@ class InfraRuntimeLogLifecycleTest(unittest.TestCase):
                     'DOCKER_HOST', 'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH'):
             env.pop(key, None)
         env['ADDP_POSTGRES_METRICS_STATE_DIR'] = str((self.root / 'postgres-metrics').resolve())
+        for key in ('ADDP_REDIS_METRICS_ENABLED','ADDP_REDIS_METRICS_TLS_DIR','ADDP_REDIS_METRICS_LISTEN'):
+            env.pop(key,None)
+        env['ADDP_REDIS_METRICS_STATE_DIR'] = str((self.root / 'redis-metrics').resolve())
         env.pop('ADDP_DEPLOYMENT_DISCOVERY_DIR', None)
         for key in (*KEYS, "LOKI_S3_ACCESS_KEY", "ADDP_HOST_NODE_NAME", "ADDP_RUNTIME_LOG_OWNER", "ADDP_ONLINE_ENV_FILE", "ADDP_ONLINE_HOST", "ADDP_OBSERVABILITY_LOGS_ENABLED", "ADDP_OBSERVABILITY_METRICS_ENABLED", "ADDP_METRICS_TLS_DIR", "ADDP_METRICS_DEPLOYMENT_DIR", "ADDP_METRICS_CONTROL_ENABLED", "ADDP_METRICS_CONTROL_DIR", "ADDP_METRICS_CONTROL_GATEWAY_URL", "ADDP_METRICS_DESKTOP_LOOPBACK_PORTS", "PROMETHEUS_SYSTEM_URL", "PROMETHEUS_MONITOR_URL", "PROMETHEUS_SERVICE_CLIENT_SECRET", "COMPOSE_PROFILES", "ADDP_OBSERVABILITY_TRACES_ENABLED", "ADDP_TRACE_DEPLOYMENTS", "ADDP_TRACE_DEPLOYMENT_DIR", "MONITOR_TEMPO_URL", "MONITOR_TRACE_TLS_DIR", "TEMPO_S3_ACCESS_KEY", "TEMPO_S3_SECRET_KEY", "TEMPO_BUCKET", "TRACE_OTLP_PORT", "TRACE_QUERY_PORT"):
             env.pop(key, None)
@@ -532,7 +535,7 @@ exit 0
 
     def test_compose_profiles_render_without_unselected_secrets(self):
         env = self.fixture_environment()
-        env.update(INFRA_FALKORDB_PASSWORD='graph-test', INFRA_KAFKA_ADMIN_PASSWORD='admin-test', INFRA_KAFKA_CONNECT_PASSWORD='connect-test', INFRA_KAFKA_TRANSFER_PASSWORD='transfer-test')
+        env.update(REDIS_PASSWORD='redis-test', INFRA_FALKORDB_PASSWORD='graph-test', INFRA_KAFKA_ADMIN_PASSWORD='admin-test', INFRA_KAFKA_CONNECT_PASSWORD='connect-test', INFRA_KAFKA_TRANSFER_PASSWORD='transfer-test')
         args=['docker','compose','--env-file','/dev/null','-f',str(ROOT/'docker-compose.infra.yml'),'config','--format','json']
         for selected in (False, True):
             command=args[:]

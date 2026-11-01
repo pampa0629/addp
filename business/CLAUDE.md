@@ -36,6 +36,7 @@ PostgreSQL 采集账号和固定指标来源由 `scripts/infra/postgres-observat
 - Neo4j：图业务数据测试环境。
 - FalkorDB 4.20.6：独立 `business-falkordb`，通过 `start.sh -falkordb` 管理，回环首选 6381、独立密码和持久卷；用户明确要求的 Infra 快照只在首次启动前一次性恢复，不自动复制或持续同步。
 - Redis 7.2.13：独立 Business 单机键值样例，不复用 Infra Redis。使用固定官方多架构镜像、单独数据卷和 ACL 管理/只读账号；ADDP Redis Engine Plugin 提供 ACL 连接登记、认证检测、server → keyspace 目录、Meta 键值数据集身份扫描与 Manager 原生有限样本预览；Develop 查询尚未实现。
+- Redis 可选专业采集由标准启停接入唯一 `scripts/infra/redis-metrics.py`，默认关闭；原生 ACL 启动、独立采集账号的持久化／清权、mTLS与私有凭据边界见[来源操作指南](../scripts/infra/docs/指标中心与来源.md#redis-采集账号与指标来源启停)。不复用可读业务键的 reader，不因来源失败阻止业务运行。
 
 GaussDB 混合云开发者版 V2.0-10.0.0 使用独立 `gaussdb` profile，`scripts/start.sh -gaussdb` 必须单独调用，不进入 `-all`。`gaussdb/image.py`、Dockerfile 与 entrypoint 是 Business 和原生 Linux 双架构 Release 认证唯一共用的构建／初始化路径。首选回环 SQL 5437，独立持久卷；仅空数据目录初始化，缺少完成标记的旧库直接失败，停止不删除卷，重启只补缺失样例。管理员和普通账号密码分别配置，不自动轮换，不调用 System API。开发者版只用于非商业学习、适配及测试。独立 `engine_type=gaussdb` 只读插件已接入；Linux ARM64／amd64 Provider T2 与六权限普通 User 的 System—Meta—Manager—Console Hosted T4 已分别通过，精确源码、运行及清理证据见 README 的 GaussDB 节。写入、空间、CDC 和 Spark 接入不在已验证范围。
 

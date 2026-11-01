@@ -302,7 +302,7 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@bash -n business/hdfs/start.sh scripts/test/common-hdfs-gate.sh
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --format json | python3 -c 'import json,sys; services=json.load(sys.stdin)["services"]; nn=services["hdfs-namenode"]; dn=services["hdfs-datanode"]; assert "@sha256:" in nn["image"] and nn["image"] == dn["image"]; assert all(p["host_ip"] == "127.0.0.1" for s in (nn,dn) for p in s["ports"]); assert all(s["environment"]["HDFS_DATANODE_HOST"] == "host.docker.internal" for s in (nn,dn)); assert all(str(p["target"]) == p["published"] for p in dn["ports"]); assert nn["volumes"][1]["source"] != dn["volumes"][1]["source"]'
 	@! rg -q 'HDFS_SHARED_HOST|ipconfig getifaddr|ip route get' business/docker-compose.yml business/scripts/start.sh business/.env.example
-	@sh -n business/redis/start.sh business/redis/init.sh
+	@sh -n business/redis/start.sh business/redis/init.sh scripts/infra/redis-authentication.sh
 	@bash -n scripts/test/business-redis-gate.sh scripts/test/common-redis-gate.sh scripts/test/redis-owned-fixture.sh scripts/test/common-redis-contract.sh
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --format json | python3 -c 'import json,sys; s=json.load(sys.stdin)["services"]["redis"]; assert s["ports"][0]["host_ip"] == "127.0.0.1"; assert "@sha256:" in s["image"]; assert "redis_data" == s["volumes"][0]["source"]'
 	@bash -n business/scripts/start.sh business/scripts/stop.sh business/scripts/restart.sh business/scripts/ports.sh scripts/test/common-elasticsearch-gate.sh
@@ -1543,7 +1543,8 @@ test-monitor-metrics-config: ## 验证指标配置与服务部署意图 T1，不
 
 .PHONY: test-monitor-redis-source test-monitor-redis-source-unit
 test-monitor-redis-source-unit: ## Redis 专业采集固定协议与账号白名单 T1
-	@cd monitor/backend && GOWORK=off go test ./internal/redissource -run '^Test(Snapshot|Observer|Source)' -count=1
+	@cd monitor/backend && GOWORK=off go test ./internal/redissource ./cmd/redis-metrics-source -run '^Test(Snapshot|Observer|Source)' -count=1
+	@python3 -m unittest scripts/test/redis-metrics-lifecycle_test.py
 
 test-monitor-redis-source: ## 复用独占 Redis 夹具验证专业采集与越权拒绝
 	@bash scripts/test/monitor-redis-source-gate.sh

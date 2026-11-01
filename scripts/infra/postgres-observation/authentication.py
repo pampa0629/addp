@@ -4,27 +4,19 @@ The container receives only runtime/, read-only. Private ownership/version facts
 remain outside that mount. This module does not connect, reload or restart PG.
 """
 import argparse
-from contextlib import contextmanager
-import fcntl
 import hashlib
 import importlib.util
 import json
 import os
 from pathlib import Path
 import re
-import stat
 import sys
-import tempfile
 
 ROOT = Path(__file__).resolve().parents[3]
 _spec = importlib.util.spec_from_file_location('addp_postgres_auth_source', Path(__file__).with_name('source.py'))
 source = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(source)
 SCHEMA = 'addp.postgres-auth-directory/v1'
-
-
-class AuthenticationError(ValueError):
-    """Closed deployment diagnosis: do not include file contents or secrets."""
 
 
 def digest(value):
@@ -44,104 +36,12 @@ def state_directory(env):
     return path
 
 
-def _directory(path, mode):
-    # Reject linked components, including a link into another private directory.
-    # Callers using /tmp on macOS pass its canonical /private/tmp spelling.
-    for parent in (path, *path.parents):
-        if parent.is_symlink():
-            raise AuthenticationError('Linked PostgreSQL authentication directory')
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    try:
-        path.mkdir(mode=mode)
-    except FileExistsError:
-        pass
-    else:
-        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
-            os.fchmod(fd, mode)
-        finally:
-            os.close(fd)
-    info = path.stat()
-    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
-            or stat.S_IMODE(info.st_mode) != mode):
-        raise AuthenticationError('PostgreSQL authentication directory ownership or mode mismatch')
-
-
-@contextmanager
-def locked(directory):
-    directory = Path(directory)
-    if not directory.is_absolute():
-        raise AuthenticationError('PostgreSQL authentication directory must be absolute')
-    _directory(directory, 0o700)
-    fd = os.open(directory / 'control.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
-    try:
-        info = os.fstat(fd)
-        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) != 0o600):
-            raise AuthenticationError('Invalid PostgreSQL authentication lock')
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise AuthenticationError('PostgreSQL authentication deployment is busy') from None
-        yield
-    finally:
-        os.close(fd)
-
-
-def _read(path, mode):
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    try:
-        info = os.fstat(fd)
-        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid()
-                or stat.S_IMODE(info.st_mode) != mode or info.st_size > source.HBA_LIMIT):
-            raise AuthenticationError('Invalid PostgreSQL authentication file ownership or budget')
-        with os.fdopen(fd, 'r', encoding='utf-8', newline='', closefd=False) as stream:
-            value = stream.read(source.HBA_LIMIT + 1)
-        if len(value.encode('utf-8')) > source.HBA_LIMIT or '\x00' in value:
-            raise AuthenticationError('Invalid PostgreSQL authentication file')
-        return value, (info.st_uid, info.st_gid)
-    finally:
-        os.close(fd)
-
-
-def _atomic(path, value, mode, *, previous=None):
-    data = value.encode('utf-8')
-    if len(data) > source.HBA_LIMIT or b'\x00' in data:
-        raise AuthenticationError('PostgreSQL authentication replacement exceeds budget')
-    metadata = None
-    if previous is None:
-        if os.path.lexists(path):
-            raise AuthenticationError('PostgreSQL authentication file already exists')
-    else:
-        current, metadata = _read(path, mode)
-        if current != previous:
-            raise AuthenticationError('PostgreSQL authentication input version changed')
-        if current == value:
-            return
-    fd, temporary = tempfile.mkstemp(prefix='.pg-auth-', dir=path.parent)
-    try:
-        with os.fdopen(fd, 'wb') as stream:
-            stream.write(data)
-            stream.flush()
-            if metadata is not None:
-                os.fchown(stream.fileno(), *metadata)
-            os.fchmod(stream.fileno(), mode)
-            os.fsync(stream.fileno())
-        if previous is None:
-            # Hard-link publication is create-only; never overwrite a raced file.
-            os.link(temporary, path)
-        else:
-            if _read(path, mode)[0] != previous:
-                raise AuthenticationError('PostgreSQL authentication input version changed')
-            os.replace(temporary, path)
-        directory_fd = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
+# Shared private-file implementation; HBA ownership and parsing stay here.
+_private_spec = importlib.util.spec_from_file_location('addp_private_state', ROOT / 'scripts/utils/private-state.py')
+private = importlib.util.module_from_spec(_private_spec)
+_private_spec.loader.exec_module(private)
+AuthenticationError = private.PrivateStateError
+_directory, locked, _read, _atomic = private.directory, private.locked, private.read, private.atomic
 
 
 def _baseline(value):

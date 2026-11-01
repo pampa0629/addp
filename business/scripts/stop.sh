@@ -103,6 +103,13 @@ done
 
 echo -e "${YELLOW}🛑 停止服务...${NC}"
 postgres_metrics_result=0
+if [ "$HAS_ARGS" = false ] || [ ${#SERVICES[@]} -eq 0 ] || [[ " ${SERVICES[*]} " == *" redis "* ]]; then
+    (
+        unset ADDP_REDIS_METRICS_ENABLED ADDP_REDIS_METRICS_TLS_DIR ADDP_REDIS_METRICS_LISTEN ADDP_REDIS_METRICS_STATE_DIR
+        if [ -f .env ]; then set -a; source .env; set +a; fi
+        python3 "$PROJECT_ROOT/../scripts/infra/redis-metrics.py" down --scope business
+    ) || postgres_metrics_result=1
+fi
 if [ "$HAS_ARGS" = false ] || [ ${#SERVICES[@]} -eq 0 ] || [[ " ${SERVICES[*]} " == *" postgres "* ]]; then
     (
         unset ADDP_POSTGRES_METRICS_ENABLED ADDP_POSTGRES_METRICS_TLS_DIR ADDP_POSTGRES_METRICS_LISTEN ADDP_POSTGRES_METRICS_STATE_DIR

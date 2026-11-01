@@ -80,7 +80,7 @@ Go 后端与 Vue 3 / Element Plus / ECharts 前端沿平台技术栈。开发首
 
 配置与服务部署意图的确定性T1可单独使用 `make test-monitor-metrics-config`，不启动个人服务或实源；它不替代完整模块、来源T2或Hosted。
 
-Redis 专业采集首批内核位于 `backend/internal/redissource`，仅供部署侧来源消费，不由 Monitor Web 直连数据库。固定字段、账号命令、INFO 元数据和运行身份边界见平台运行观测规范的“Redis 专业观测首期边界”；`make test-monitor-redis-source-unit` 执行确定性 T1，`make test-monitor-redis-source` 复用现有独占 Redis 夹具执行两种作用域账号的真实读取／越权／停用拒绝。完整Monitor门禁与根串行集成自动发现该专项；部署安装、mTLS、System／发现扩展和页面尚未接通，不能将内核通过算作已纳管或产品上线。
+Redis 专业采集首批内核位于 `backend/internal/redissource`，仅供部署侧来源消费，不由 Monitor Web 直连数据库。固定字段、账号命令、INFO 元数据和运行身份边界见平台运行观测规范的“Redis 专业观测首期边界”；`make test-monitor-redis-source-unit` 执行确定性 T1，`make test-monitor-redis-source` 复用现有独占 Redis 夹具执行两种作用域账号的真实读取／越权／停用拒绝。完整Monitor门禁与根串行集成自动发现该专项；部署安装／原生ACL持久化和mTLS来源已沿 `scripts/infra/redis-metrics.py` 接入Infra／Business标准启停；同一T2另验真实来源、重启／停用持久化和失败清理。System／发现扩展、查询和页面仍未接通，不能将来源通过算作已纳管或产品上线。
 
 持久化/真实指标分别沿 `make test-monitor-postgres`、`make test-monitor-metrics`，真实 HTTP Trace、Tempo 与日志关联沿 `make test-monitor-traces`；显式容量基线使用 `make test-monitor-traces MONITOR_TRACES_TEST_ARGS=--capacity`，负载、资源上限及外推判定沿运行观测规范 6.5（仅当次本地设施，不运行 Hosted），前端沿 `make test-monitor-frontend`，共享组件和真实 iframe 按影响扩散至 Common Frontend / Console。System IAM、运行日志及授权/Swagger 变化按规范扩散，不为文档整理重跑无关门禁。API 变更同时执行标准 Swagger 生成与路由覆盖检查。
 

@@ -36,15 +36,12 @@ SERVICES = {'postgres-metrics', 'postgres-metrics-web'}
 ACTIVATION_STAGES = frozenset({'session-check', 'transport-check', 'private-state', 'authentication-read',
     'account-install', 'authentication-update', 'account-enable', 'connection-check',
     'source-files', 'identity-recheck', 'source-start', 'source-health'})
-FACT = ('{"id":{{json .Id}},"running":{{json .State.Running}},'
-        '"started_at":{{json .State.StartedAt}},'
-        '"labels":{{json .Config.Labels}},"networks":{{json .NetworkSettings.Networks}},'
-        '"mounts":{{json .Mounts}},"network_mode":{{json .HostConfig.NetworkMode}},'
-        '"ports":{{json .HostConfig.PortBindings}}}')
 
 
-class LifecycleError(ValueError):
-    """Closed diagnostic; raw command output is never operator-facing."""
+
+deployment = load('postgres_deployment_transport', ROOT / 'scripts/utils/deployment-docker.py')
+Docker = deployment.Docker
+LifecycleError = deployment.DeploymentError
 
 
 def verifier(password):
@@ -120,40 +117,6 @@ SELECT current_user='addp_{scope}_observer'
  AND f.prosecdef AND pg_catalog.has_function_privilege(current_user,f.oid,'EXECUTE'))
 FROM r,o,n,p;"""
 
-
-class Docker:
-    def __init__(self, env):
-        self.env = {key: env[key] for key in ('PATH', 'HOME', 'DOCKER_CONFIG', 'DOCKER_CONTEXT',
-                    'LANG', 'LC_ALL', 'TMPDIR') if key in env}
-        self.context = None
-        _, self.info, _ = inventory.local_docker(env=env, reader=self._discovery)
-
-    def _discovery(self, *args):
-        value = self.run(list(args), raw=True)
-        if args == ('context', 'show'):
-            self.context = value.strip()
-        return value.strip()
-
-    def run(self, args, *, input=None, timeout=15, check=True, raw=False, extra_env=None):
-        prefix = [] if raw else ['--context', self.context]
-        environment = dict(self.env, **(extra_env or {}))
-        try:
-            result = subprocess.run(['docker', *prefix, *args], input=input, capture_output=True,
-                                    text=True, timeout=timeout, env=environment)
-        except (OSError, subprocess.SubprocessError):
-            raise LifecycleError('PostgreSQL source command unavailable or timed out') from None
-        if len(result.stdout.encode()) > 1024 * 1024 or len(result.stderr.encode()) > 1024 * 1024:
-            raise LifecycleError('PostgreSQL source response exceeds budget')
-        if check and result.returncode:
-            raise LifecycleError('PostgreSQL source command failed')
-        return result.stdout if check else result
-
-    def fact(self, identity):
-        value = json.loads(self.run(['inspect', '--format', FACT, identity]))
-        # Docker does not promise mount-array ordering between inspections.
-        # Preserve every mount property while comparing the unordered facts.
-        value['mounts'] = sorted(value['mounts'], key=lambda item: json.dumps(item, sort_keys=True))
-        return value
 
 
 class ObservationDatabase:
