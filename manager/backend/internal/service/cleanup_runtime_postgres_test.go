@@ -331,6 +331,7 @@ func TestIntegrationPostgresManagerCleanupProductionRepositories(t *testing.T) {
 	if endpoint == "" || key == "" {
 		t.Fatal("gate-owned Meilisearch required")
 	}
+	endpoint = nativeContentIndexProxy(t, endpoint)
 	target, err := url.Parse(os.Getenv("MANAGER_POSTGRES_TEST_DSN"))
 	if err != nil || target.User == nil {
 		t.Fatal("test DSN required")

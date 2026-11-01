@@ -212,7 +212,8 @@ class ManagerPostgresGateTest(unittest.TestCase):
         changed = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(changed)
         for path in ("scripts/test/manager-postgres-gate.sh", "scripts/infra/Dockerfile.postgres",
-                     "scripts/test/docker-compose.manager-postgres-t2.yml", "scripts/test/manager-postgres-gate_test.py"):
+                     "scripts/test/docker-compose.manager-postgres-t2.yml", "scripts/test/manager-postgres-gate_test.py",
+                     "scripts/test/native-effect-proxy.py"):
             with self.subTest(path=path):
                 self.assertIn("manager", changed.affected_modules(ROOT, [path]))
                 commands = [s.command for s in changed.plan_changed(ROOT, [path])]

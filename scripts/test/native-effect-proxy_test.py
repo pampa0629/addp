@@ -2,6 +2,7 @@
 import hashlib
 import http.client
 import importlib
+import io
 import json
 import socket
 import struct
@@ -9,6 +10,8 @@ import threading
 import unittest
 import uuid
 import time
+from email.message import Message
+from types import SimpleNamespace
 from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -35,6 +38,66 @@ def request(version, topics, correlation=17):
 
 
 class NativeEffectProxyTest(unittest.TestCase):
+    def test_bounded_http_body_framing(self):
+        def read(headers, wire):
+            message = Message()
+            for key, value in headers: message[key] = value
+            connection = SimpleNamespace(gettimeout=lambda: None, settimeout=lambda _: None)
+            return M.read_http_body(SimpleNamespace(headers=message, connection=connection, rfile=io.BytesIO(wire)))
+        valid = [([], b'', b''),
+                 ([('Content-Length', '3')], b'abc', b'abc'),
+                 ([('Transfer-Encoding', 'chunked')], b'1\r\na\r\n2\r\nbc\r\n0\r\n\r\n', b'abc'),
+                 ([('Transfer-Encoding', 'CHUNKED')], b'0\r\n\r\n', b''),
+                 ([('Transfer-Encoding', 'chunked')], b'8\r\n12345678\r\n0\r\n\r\n', b'12345678')]
+        with patch.object(M, 'LIMIT', 8):
+            for headers, wire, expected in valid:
+                with self.subTest(headers=headers, wire=wire): self.assertEqual(read(headers, wire), expected)
+            invalid = [([('Content-Length', '9')], b''),
+                       ([('Content-Length', '3')], b'ab'),
+                       ([('Content-Length', '-1')], b''),
+                       ([('Content-Length', '3'), ('Content-Length', '3')], b'abc'),
+                       ([('Content-Length', '3'), ('Transfer-Encoding', 'chunked')], b'abc'),
+                       ([('Transfer-Encoding', 'chunked'), ('Transfer-Encoding', 'chunked')], b''),
+                       ([('Transfer-Encoding', 'gzip, chunked')], b''),
+                       ([('Transfer-Encoding', 'identity')], b''),
+                       ([('Transfer-Encoding', 'chunked'), ('Trailer', 'X-Test')], b'0\r\n\r\n')]
+            for headers, wire in invalid:
+                with self.subTest(headers=headers, wire=wire), self.assertRaises(ValueError): read(headers, wire)
+            for wire in (b'9\r\n', b'5\r\n12345\r\n4\r\n', b'z\r\n', b'1;ext=x\r\na\r\n0\r\n\r\n',
+                         b'1\r\n', b'1\r\na', b'1\r\na\n0\r\n\r\n', b'0\r\n', b'0\r\nX-Test: value\r\n\r\n',
+                         b'FFFFFFFFFFFFFFFFF\r\n', b'FFFFFFFFFFFFFFFF\r\n'):
+                with self.subTest(wire=wire), self.assertRaises(ValueError): read([('Transfer-Encoding', 'chunked')], wire)
+        # Many tiny chunks cannot evade the separate bounded framing budget.
+        with self.assertRaises(ValueError):
+            read([('Transfer-Encoding', 'chunked')], b'1\r\nx\r\n' * 14000 + b'0\r\n\r\n')
+        with patch.object(M.time, 'monotonic', side_effect=[0, 31]), self.assertRaises(ValueError):
+            read([('Content-Length', '1')], b'x')
+
+    def test_chunked_sdk_json_reaches_upstream_as_the_same_bounded_payload(self):
+        observed = []
+        class Native(BaseHTTPRequestHandler):
+            def log_message(self, *_): pass
+            def do_POST(self):
+                observed.append((self.path, self.headers.get('Transfer-Encoding'),
+                                 self.headers.get('Authorization'), self.rfile.read(int(self.headers['Content-Length']))))
+                self.send_response(200); self.send_header('Content-Length', '2'); self.end_headers(); self.wfile.write(b'{}')
+        native = ThreadingHTTPServer(('127.0.0.1', 0), Native)
+        proxy = ThreadingHTTPServer(('127.0.0.1', 0), M.HTTPProxy)
+        proxy.upstream, proxy.fault = native.server_address, M.Fault('native-1')
+        threads = [threading.Thread(target=s.serve_forever, daemon=True) for s in (native, proxy)]
+        for thread in threads: thread.start()
+        body = b'{"filter":"tenant_id = 2","limit":256}'
+        try:
+            client = http.client.HTTPConnection(*proxy.server_address, timeout=2)
+            client.request('POST', '/indexes/content/documents/fetch', iter([body[:4], body[4:]]),
+                           headers={'Authorization': 'Bearer fixture'}, encode_chunked=True)
+            response = client.getresponse(); self.assertEqual(response.status, 200); response.read(); client.close()
+            self.assertEqual(observed, [('/indexes/content/documents/fetch', None, 'Bearer fixture', body)])
+            self.assertEqual(proxy.fault.state()['forwarded'], 0)
+        finally:
+            for server in (proxy, native): server.shutdown(); server.server_close()
+            for thread in threads: thread.join(timeout=2)
+
     def binding(self, **extra):
         return dict(key=str(uuid.uuid4()), run_id='native-1', protocol='kafka', topic='__addp_dlq.2.3', **extra)
 
@@ -121,7 +184,7 @@ class NativeEffectProxyTest(unittest.TestCase):
             self.assertEqual(client.getresponse().status, 202); client.close()
             self.assertEqual(proxy.fault.state()['forwarded'], 0)
             client = http.client.HTTPConnection(*proxy.server_address, timeout=2)
-            client.request('POST', path + '?customMetadata=' + str(uuid.uuid4()), body)
+            client.request('POST', path + '?customMetadata=' + str(uuid.uuid4()), iter([body[:7], body[7:]]), encode_chunked=True)
             with self.assertRaises(http.client.RemoteDisconnected): client.getresponse()
             client.close()
             self.assertEqual(len(effects), 2)

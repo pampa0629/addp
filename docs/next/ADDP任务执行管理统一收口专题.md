@@ -908,7 +908,7 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 
 本批 Manager 专属 CI 基线、完整生产初始化、登记／资源生命周期与夹具 Linux 复验已通过，不再列为待验。当前剩余是第六轮 Hosted **0/7** 的 Manager 现场底层原因与真实整链验收；下一步应在单独确认新的 transfer-engine Hosted 后读取已补齐的安全阶段诊断，不能用上述 CI 结果替代运行验收。本次仅更新终态证据，不运行新的 Hosted，不更改身份权限、环境或等待预算。
 
-### 8.30 第七轮 transfer-engine 单次新诊断取证（已授权，待实际终态）
+### 8.30 第七轮 transfer-engine 新诊断终态与专项代理传输修复
 
 用户于 2026-11-02 明确同意再运行一次携带新诊断的 `transfer-engine Hosted`，定位 Manager 子执行失败；原六项身份权限、操作范围、七项断言和等待预算不变，其他 Hosted／环境切换／权限边界变化仍单独确认。已单次 POST 创建 [Run 41326379080／Job 124907076861](https://github.com/pampa0629/addp/actions/runs/41326379080/job/124907076861)，workflow_dispatch／attempt 1，准确源码 `dcd46a9fc1402df2302d9b1413ba6c131940c479`。创建时为 queued，尚未运行，不计通过；本次单次授权已使用，不追加第八轮。
 
@@ -919,3 +919,13 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 本地 canonical `make test-execution-online-ci-runner` 100＋168 项 OK，登记一致。与第六轮固定源码 AST 比较，native HTTP／wait／sleep 调用和七断言机器契约均不变；三普通 User 的准备权限列表与 Engine 六项权限、native Hosted Job 整块保持原样。对后续 main 前移先检查再 POST，两次检查中止时 POST 数均为 0；审阅到最终 dcd 源码的增量为当前分支不用的前端、栅格、独立 PG 验收及文档，当前 native 后端、授权、夹具、契约、依赖与等待闭包无变化。源码只来自已提交 main，不部署共享 WIP。
 
 私有证据 `/tmp/addp-transfer-engine-hosted-seventh-20261102/` 的 `intent.json` 明确一次授权／一次 POST／一个 Run，`prerequisite-proof.json`、`invariants.json` 保存分层前提和范围；CI 会话仅只读跟进这个唯一 Job，真实终态后独立核对十四服务源码、父及 Manager／Transfer 两项已授权子执行、安全闭集 `failure_step`／原因、七断言与恢复／清理／零残留。排队、准备或归档动作不表示业务通过；第六轮 0/7 和 Manager 现场原因未证实的缺口，在本轮实际终态前保持。
+
+**第七轮实际终态。** 上述 Job 已实际 failure，北京时间 2026-11-02 00:42:02—00:57:23；十四服务同 dcd 源码、repository_clean=true，正式 checks 为空，仍为 **0/7**。父评估 timeout，五项绑定均为真，两个授权可见子执行已观察：Manager attempt=1／started=true／failed／无回执，新增闭集 `failure_step=manager_cleanup_inventory`；Transfer attempt=1／started=true／success／回执 success。两个公开授权错误标志 false 仅表示未观察到对应安全错误码，不能推断全部授权通过。control_cleanup、control_recovery、cleanup 均 passed，infra_cleanup=zero_residuals，仅为控制与退出证据。主责 fresh API、独立下载并与 CI 原件逐字节核对，原日志 SHA-256 `68f2db7b353b8a3752016bfc1f195f7478a142a763690bcea65274054c5ee7b6`，五文件 ZIP `5fd31c1ede4a1a33186bc11a5beb6f74fd72f096e5aa8a54986ff1a78b461326`，公开诊断在日志 4969 行；同目录 `audit.json`、`assessment-diagnostic-audit.json`、`terminal-proof.json` 已核验。授权已消费，不自动追加 Hosted。
+
+**库存阶段的本地传输复现与修复范围。** 对固定 meilisearch-go v0.36.3 的源码和真实请求核对，SDK 把 JSON body 包装为 io.ReadCloser，实际发出 `Transfer-Encoding: chunked`、ContentLength=-1；本轮原生 HTTP 代理在转发前一律拒绝该头。新增同一 Manager 库存读取、同一真实 SDK、同一 native 代理 Handler 的本地反例：直连成功，经过代理失败为 `content index inventory could not be verified`，上游未收到库存请求（`proxy-sdk-red.log`）。这确认了专项正常传输链的一项具体缺陷，与现场库存阶段一致；现场未归档底层异常，尚不能认定为唯一原因。
+
+修复仅限自有故障代理的 HTTP body 解码：在原 8 MiB payload 上限内接收 Content-Length 或严格的 chunked 帧，再以准确 Content-Length 转发同一原始 payload；拒绝冲突／重复长度头、其他传输编码、无效／截断／越界块和 trailers，帧开销与读取也必须有界。故障绑定继续比较解码后原 payload 哈希及准确方法／路径／correlation，不改变故障计数或未知效果隔离，不加业务重试、sleep、权限或场景等待预算。真实 SDK／代理回归与真实 Meili 初始化及库存读取进入现有 Manager Go／PG 门禁；代理输入同次登记为 Manager T2 依赖，native 回归沿原 `make test-execution-online-ci-runner` 及独立 CI Job，不新增部署路线或 Hosted。
+
+**真实生产组合的红绿对照。** 保持同一 PostgreSQL／Meilisearch 标准入口、生产初始化及原测试断言，只替换代理为第七轮准确旧源码，`make test-manager-postgres` 退出 2，唯一顶层失败是 `TestIntegrationPostgresManagerCleanupProductionRepositories`，明确报 `real content index initialization incomplete`；同组其余 29 项通过，后续 API 独立一项因标准入口失败即停而未运行。恢复修正版后同一入口退出 0，**31 个顶层 PASS、0 fail、0 skip**，真实索引初始化、库存、Common claim、Manager 效果／结果／回执组合及原资源清理均通过。日志为本轮私有目录 `proxy-production-red.log`、`proxy-production-green.log`，`proxy-production-red-green.json` 固定了对照及修正版哈希。`make test-manager-backend` 也退出 0，新增真实 SDK／同一 Python Handler 的库存回归通过。这证实正常传输缺陷及修复，不把本地成功计作第七轮七断言通过；修复后新的 Hosted 仍需另行确认。
+
+**本次修复提交前的最小充分门禁。** `make test-execution-online-ci-runner` 实际 **102 native＋168 shared** 均 OK，`make test-t2-ci-registration` 实际 **75＋9** 均 OK 且登记检查通过；`make test-manager-backend`、上述真实 `make test-manager-postgres`、Go 格式、Python／Shell 语法及所改文件差异检查均通过。原生回归包括严格帧边界、原 payload／鉴权头保真，以及 chunked 形式下准确故障绑定、单次转发／丢回包和重复阻断；原产品断言未删除。真实 PG 绿日志 SHA-256 `6c66bd5b86efdb29d64ae450ac82c567b2e29029f2773ea7973a532ad9203b85`，全量 runner 日志及其余哈希见本轮私有目录 `proxy-local-audit.json`。当前仅本地通过，准确修复提交的 Linux CI 另核对；不以测试通过覆盖第七轮 Hosted 的失败终态。

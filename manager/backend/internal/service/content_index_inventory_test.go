@@ -1,15 +1,110 @@
 package service
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/addp/manager/internal/models"
+	"github.com/meilisearch/meilisearch-go"
 	"gorm.io/gorm"
 )
+
+// Exercise the exact native Hosted handler on owned loopback fixtures, without
+// invoking its deployment CLI or pretending the local host is a Hosted runner.
+func nativeContentIndexProxy(t *testing.T, upstream string) string {
+	t.Helper()
+	_, file, _, _ := runtime.Caller(0)
+	script := filepath.Join(filepath.Dir(file), "../../../../scripts/test/native-effect-proxy.py")
+	const program = `import importlib.util,sys
+from http.server import ThreadingHTTPServer
+from urllib.parse import urlsplit
+spec=importlib.util.spec_from_file_location('native_proxy',sys.argv[1])
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+target=urlsplit(sys.argv[2]);assert target.scheme=='http' and target.hostname in {'127.0.0.1','localhost'} and not target.username
+server=ThreadingHTTPServer(('127.0.0.1',0),m.HTTPProxy)
+server.upstream=(target.hostname,target.port);server.fault=m.Fault('manager-transport-fixture')
+print(server.server_address[1],flush=True)
+server.serve_forever()
+`
+	cmd := exec.Command("python3", "-u", "-c", program, script, upstream)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	ready := make(chan string, 1)
+	go func() { line, _ := bufio.NewReader(stdout).ReadString('\n'); ready <- strings.TrimSpace(line) }()
+	select {
+	case line := <-ready:
+		port, err := strconv.Atoi(line)
+		if err != nil || port <= 0 || port > 65535 {
+			t.Fatalf("owned proxy failed to start: %s", stderr.String())
+		}
+		return "http://127.0.0.1:" + line
+	case <-time.After(5 * time.Second):
+		t.Fatal("owned proxy readiness timed out")
+		return ""
+	}
+}
+
+func TestContentIndexInventoryNativeProxyTransport(t *testing.T) {
+	var calls atomic.Int32
+	origin := make(chan string, 1)
+	svc, _ := contentDeliveryServiceFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := calls.Add(1)
+		if n == 1 {
+			origin <- "http://" + r.Host
+			t.Logf("direct SDK Transfer-Encoding=%v, ContentLength=%d", r.TransferEncoding, r.ContentLength)
+		}
+		var query struct {
+			Filter string `json:"filter"`
+		}
+		if r.Method != http.MethodPost || r.URL.Path != "/indexes/content/documents/fetch" ||
+			n > 1 && (r.ContentLength <= 0 || len(r.TransferEncoding) != 0) || json.NewDecoder(r.Body).Decode(&query) != nil || query.Filter != "tenant_id = 7" {
+			t.Error("proxy did not preserve and bound the SDK inventory request")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[],"offset":0,"limit":256,"total":0}`))
+	}))
+	if _, err := svc.ReadContentIndexInventory(t.Context(), 7); err != nil {
+		t.Fatalf("direct real SDK inventory baseline: %v", err)
+	}
+	proxy := nativeContentIndexProxy(t, <-origin)
+	svc.client = meilisearch.New(proxy, meilisearch.WithCustomClient(&http.Client{Timeout: 2 * time.Second}), meilisearch.DisableRetries())
+	svc.endpointID = contentIndexEndpointID(proxy)
+	var err error
+	svc.epoch, err = svc.deliveries.Open(t.Context(), svc.endpointID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.deliveries.ActivateIfSettled(t.Context(), svc.epoch); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ReadContentIndexInventory(t.Context(), 7); err != nil {
+		t.Fatalf("real SDK through native proxy inventory: %v", err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("read-only inventory upstream calls: %d", calls.Load())
+	}
+}
 
 func TestContentIndexInventoryCompleteness(t *testing.T) {
 	for _, scenario := range []string{"complete", "empty", "duplicate", "wrong_tenant", "fractional_engine", "total_changed", "short_empty_page", "rapid_completed_write", "pending"} {

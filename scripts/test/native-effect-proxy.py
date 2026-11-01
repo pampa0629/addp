@@ -17,6 +17,7 @@ import socketserver
 import struct
 import sys
 import threading
+import time
 import uuid
 from urllib.parse import urlsplit, parse_qs
 
@@ -130,6 +131,57 @@ class Control(BaseHTTPRequestHandler):
             self.send_error(400, 'invalid private control')
 
 
+def read_http_body(handler):
+    """Normalize bounded HTTP framing before hashing or forwarding payloads."""
+    lengths = handler.headers.get_all('Content-Length', [])
+    encodings = handler.headers.get_all('Transfer-Encoding', [])
+    if len(lengths) > 1 or len(encodings) > 1 or handler.headers.get('Trailer'):
+        raise ValueError('ambiguous request framing')
+    if encodings and (lengths or encodings[0].strip().lower() != 'chunked'):
+        raise ValueError('unsupported request framing')
+    deadline = time.monotonic() + 30
+    previous_timeout = handler.connection.gettimeout()
+
+    def exact(size):
+        parts = []
+        while size:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0: raise ValueError('request body timeout')
+            handler.connection.settimeout(remaining)
+            data = handler.rfile.read1(min(size, 65536))
+            if not data: raise ValueError('incomplete request body')
+            parts.append(data); size -= len(data)
+        return b''.join(parts)
+
+    def chunk_line():
+        line = bytearray()
+        while len(line) < 20:
+            line.extend(exact(1))
+            if line.endswith(b'\r\n'): return bytes(line)
+        raise ValueError('invalid chunk header')
+
+    try:
+        if not encodings:
+            length = lengths[0].strip() if lengths else '0'
+            if not re.fullmatch(r'[0-9]{1,16}', length) or int(length) > LIMIT:
+                raise ValueError('invalid request length')
+            return exact(int(length))
+        parts, size, framing = [], 0, 0
+        while True:
+            line = chunk_line(); framing += len(line) + 2
+            if framing > 65536 or not re.fullmatch(rb'[0-9A-Fa-f]{1,16}\r\n', line):
+                raise ValueError('invalid chunk framing')
+            count = int(line[:-2], 16)
+            if count > LIMIT - size: raise ValueError('request payload exceeds budget')
+            if count == 0:
+                if exact(2) != b'\r\n': raise ValueError('trailers are unsupported')
+                return b''.join(parts)
+            parts.append(exact(count)); size += count
+            if exact(2) != b'\r\n': raise ValueError('invalid chunk terminator')
+    finally:
+        handler.connection.settimeout(previous_timeout)
+
+
 class HTTPProxy(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
     def log_message(self, *_): pass
@@ -137,11 +189,8 @@ class HTTPProxy(BaseHTTPRequestHandler):
     def relay(self):
         upstream = None
         try:
-            if self.headers.get('Transfer-Encoding'): raise ValueError('unbounded body')
-            size = int(self.headers.get('Content-Length', '0'))
-            if not 0 <= size <= LIMIT or not self.path.startswith('/'): raise ValueError('invalid request')
-            body = self.rfile.read(size)
-            if len(body) != size: raise ValueError('incomplete body')
+            if not self.path.startswith('/'): raise ValueError('invalid request')
+            body = read_http_body(self)
             binding = self.server.fault.binding
             path, correlated = self.path, False
             if binding and binding.get('correlated'):
@@ -159,7 +208,9 @@ class HTTPProxy(BaseHTTPRequestHandler):
             if action == 'defer' and not self.server.fault.await_write():
                 self.close_connection = True; return
             upstream = http.client.HTTPConnection(*self.server.upstream, timeout=30)
-            headers = {k: v for k, v in self.headers.items() if k.lower() not in {'connection', 'proxy-connection'}}
+            headers = {k: v for k, v in self.headers.items() if k.lower() not in {
+                'connection', 'proxy-connection', 'transfer-encoding', 'content-length'}}
+            headers['Content-Length'] = str(len(body))
             upstream.request(self.command, self.path, body, headers)
             response = upstream.getresponse()
             if action == 'defer': self.server.fault.received()
