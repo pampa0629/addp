@@ -8,11 +8,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-基本概念及配置说明.md",
       "anchor": "## 一、核心对象",
-      "commit": "bb3dabccb906368b9180260c26c862661c491dc4",
-      "sha256": "89dac68f0fb035ad86f558e84934399a77168e813560e68342137f688c5e534d",
+      "commit": "7feee9333ca369ab99d4354fc827f5aa5393ac6a",
+      "sha256": "762d8458eb59b2c10a4d5bb623840fde9c96e19ff09ee8bc80261895f75c0f85",
       "use": {
-        "zh-cn": "任务／执行、预检权限及三态；replace需实例、插件和Provider删除能力，unsupported优先。表头／动态reader复用同格式Describe并保留Meta类型；已纳管native运行前按同投影核对实时结构，未纳管不加Catalog读取。写后只扫目标表。布局、调度恢复、安全响应及门禁正文归整不扩展停止态native创建，仍无执行、调度或扫描，encoded执行未建模。",
-        "en": "Tri-state precheck and permissions; replace needs instance/plugin delete support and Provider; unsupported wins. Same-format Describe preserves Meta types; managed native execution checks live schema against the same protection projection, unmanaged adds no Catalog reads. Post-write scans target only. Reorganized layout, schedule/recovery, safe DTO and gate references do not expand stopped native creation: no execution, schedule or scan; encoded execution remains unmodeled."
+        "zh-cn": "任务／执行、预检权限与三态；replace需实例、插件和Provider删除能力，unsupported优先。表头／动态reader复用Describe并保留Meta类型，运行保护核对不扩权。复核continuous／CDC正文归属、提交顺序、恢复与审批扫描、Oracle及验收边界；停止态native创建仍无执行、调度或扫描，encoded执行未建模。",
+        "en": "Task/execution, tri-state precheck and permissions; replace needs instance/plugin delete support and Provider; unsupported wins. Describe preserves Meta types and runtime protection adds no grants. Reviewed continuous/CDC organization, commit ordering, recovery/approval scans, Oracle limits and acceptance boundaries retain stopped native creation: no execution, scheduling or scans; encoded execution remains unmodeled."
       }
     },
     {
@@ -60,11 +60,11 @@
       "kind": "contract",
       "path": "common-python/addp_common/tools/manifest.json",
       "anchor": "\"name\": \"transfer.task.create\"",
-      "commit": "5a2c2f8bd114663ae6f5cfaf82d4f61468600264",
-      "sha256": "800590c54a504820849d05ffcfdd3e00bbb62c7f3d1437a25e7d49fa4493f197",
+      "commit": "89f0ddd80d8f54255b0d2a7b4613c59465ea2795",
+      "sha256": "ea7925ef5b09674a15365ad7408cfd0b337fd8f87a1add9faa9047f14ca9b94b",
       "use": {
-        "zh-cn": "创建与预检共用唯一输入定义；创建 v3 保持标准字段类型及快照 replace/append，不接受 keys；预检声明独立只读 Tool、三项权限交集及受限三态报告",
-        "en": "Create and precheck share one input definition; create v3 retains standard field types and snapshot replace/append without keys; precheck declares a separate read-only Tool, three-permission intersection and limited tri-state report"
+        "zh-cn": "创建v3与正式预检的输入、权限及模式边界未变；Owner事实v3和可选草稿v4改用原始分段query_references，拒绝旧平面字段。Source Engine ID契约未变，不新增写入、执行、调度或扫描效果。",
+        "en": "Create v3 and formal precheck retain input, permission and mode boundaries. Owner facts v3 and optional draft v4 use exact query_references parts and reject the old flat field. Source Engine ID is unchanged; no write, execution, schedule or scan effect is added."
       }
     },
     {
@@ -73,11 +73,11 @@
       "kind": "test",
       "path": "common-python/tests/test_platform_transfer_tools.py",
       "anchor": "def test_transfer_create_schema_rejects_schedules_credentials_and_other_modes(",
-      "commit": "7017af0d4be267731a364316c03b3c39e6f1f13c",
-      "sha256": "ca26073079be88c193dfc6f8286611932b1a5fc27ab452c36d2edc5174a12a6c",
+      "commit": "89f0ddd80d8f54255b0d2a7b4613c59465ea2795",
+      "sha256": "a9df4ac28bdcff5be79a9a0e2e6acc48cd6a55d413affade8d5c5cf4422e32c2",
       "use": {
-        "zh-cn": "核验 Tool 引用、创建参数和 owner HTTP 契约；标准类型与 Common 一致，非标准类型、快照 upsert 及 keys 在委托前拒绝",
-        "en": "Verify Tool references, creation arguments and owner HTTP contract; types match Common; nonstandard types, snapshot upsert and keys fail before delegation"
+        "zh-cn": "共享ResourceFact局部$defs展开后逐项比较验证规则，结构化引用的必填、封闭结构和名称约束不被忽略；创建标准类型、快照replace/append与upsert/keys/计划/凭据拒绝断言保持。",
+        "en": "Resolve local ResourceFact $defs before comparing every validation rule, retaining structured-reference requirements, closed objects and name constraints. Existing standard-type, snapshot replace/append and rejection tests for upsert, keys, schedules and credentials remain."
       }
     },
     {
@@ -86,11 +86,11 @@
       "kind": "procedure",
       "path": "skills/transfer-generation/SKILL.md",
       "anchor": "## 核心流程",
-      "commit": "68c687a4926cf034aa0702d7fb0ccb583b05e737",
-      "sha256": "134702ba2d99859f6011d1262b7f0e258e26ba77a7f2205bad694599c7971aea",
+      "commit": "89f0ddd80d8f54255b0d2a7b4613c59465ea2795",
+      "sha256": "517c666f3f0abe4ad4cd40e62b92253f2a34c15b418fc7c7ac2975b28287a232",
       "use": {
-        "zh-cn": "事实获取、澄清与精确复核；用户正式确认后由 Runtime 刷新事实并沿原 Adapter 创建一次，稳定内容变化重新确认，失败不自动重试；模型不再决定恢复步骤或收尾。",
-        "en": "Fact discovery, clarification and exact review; after formal confirmation Runtime refreshes evidence and creates once through the existing adapter, re-reviews changed stable content and never retries failure automatically; no model decision or closing text on resume."
+        "zh-cn": "源MQL集合仅取Owner的query_references.mql.parts唯一原始元素，不拆full_name或locator；原草稿参数沿用、正式复核、创建一次及失败不重试流程未变，事实表示变化不能借机改写原参数。",
+        "en": "Take the source MQL collection only from the unique exact owner query_references.mql.parts element, never by splitting full_name or locator. Original draft parameters, formal review, single creation and no retry remain; a fact-format change does not authorize rewriting arguments."
       }
     },
     {
@@ -99,11 +99,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/platform_conditions.py",
       "anchor": "def validate_create(",
-      "commit": "1c81c635c3e9a98e78d58789e61a8d784fbe76ca",
-      "sha256": "126216054ba9cafaf08d25e92b7952bd3e64c3d18a36870c2522da51b266bf0c",
+      "commit": "89f0ddd80d8f54255b0d2a7b4613c59465ea2795",
+      "sha256": "03dec41178a09bb52030bd8b449a92185bceeba6f01c865ad220b285a25e0bec",
       "use": {
-        "zh-cn": "Runtime 条件适配与能力修订、参数和结构事实的复核绑定；历史草稿复用同一完整参数摘要算法，创建条件和确认裁决不变",
-        "en": "Runtime condition adapters and review binding to revision, arguments and schema facts; historical drafts reuse the exact argument digest algorithm without changing creation conditions or confirmation decisions"
+        "zh-cn": "confirmed_source要求正式结构化事实，MQL aggregate必须与Owner的单分段引用精确匹配，无旧字段兜底；条件列表、预检及复核算法未改，但事实内容进入完整指纹，刷新后的引用或能力修订变化必须重新确认。",
+        "en": "confirmed_source requires formal structured facts; MQL aggregate must exactly match the owner single-part reference, without a legacy fallback. Conditions, precheck and review algorithms are unchanged, but the full fingerprint binds facts, so refreshed references or a new capability revision require renewed confirmation."
       }
     },
     {
@@ -112,11 +112,11 @@
       "kind": "test",
       "path": "agent/backend/tests/test_platform_conditions.py",
       "anchor": "class PlatformConditionTests(",
-      "commit": "c1f993b1fa7c5d5e403e463c371c46b2adf4ae80",
-      "sha256": "43a88b4252fa79c8fddd70efd3cc8fcec31c91c1bedb5e18c74b88d6633eacb7",
+      "commit": "89f0ddd80d8f54255b0d2a7b4613c59465ea2795",
+      "sha256": "014cd454e824172543797c4043cda63027d6e59a6d2a967bd729dd478b917a1c",
       "use": {
-        "zh-cn": "验证条件拒绝、参数或事实变化后重新确认",
-        "en": "Verify condition refusal and re-review after arguments or facts change"
+        "zh-cn": "结构化事实夹具仍核验缺失证据、样本补位、旧确认、参数或事实变化拒绝；快照仅replace/append、upsert和keys拒绝及unknown知情确认边界保持。",
+        "en": "Structured-fact fixtures retain refusals for missing evidence, sample substitution, stale review and changed arguments or facts. Snapshot replace/append only, upsert and keys refusal, and informed unknown precheck confirmation remain."
       }
     },
     {
@@ -125,11 +125,11 @@
       "kind": "normative",
       "path": "transfer/docs/transfer-任务语义与同步模式.md",
       "anchor": "## 三、当前支持矩阵",
-      "commit": "ef280bb8645c59209e84551b3de8b171d22e202c",
-      "sha256": "7c0d0dfc47acebc105c98f95f93c80b188342d097f5622c0a20ed0c09545a3ff",
+      "commit": "43d424f7f6e653957c8cfa31bae4daf8a8f4bcf8",
+      "sha256": "7e637938b4e79a706bf01a7894af04205ca6dec010536979dd1add7835b3500a",
       "use": {
-        "zh-cn": "支持矩阵仍区分快照replace/append与增量upsert，写后只扫描目标表，创建仍禁扫描。新增调度身份、continuous恢复／退避与DLQ诊断正文导航及验收边界，不扩展停止态native创建，不把状态或静态声明当运行通过。",
-        "en": "The matrix still separates snapshot replace/append from incremental upsert; post-write scans target only and creation disables scans. Scheduling identity, continuous recovery/backoff, DLQ diagnostics and acceptance references are reorganized without expanding stopped native creation or treating state and static declarations as runtime proof."
+        "zh-cn": "支持矩阵区分快照replace/append与增量upsert，写后只扫描目标表；创建仍禁扫描。Oracle目标修订对齐已有continuous/incremental CDC契约，源LOB/RAC与空间限制保留；不扩业务Kafka、watermark或停止态native创建，不将能力声明当运行验收。",
+        "en": "The matrix separates snapshot replace/append from incremental upsert; post-write scans target only and creation disables scans. Oracle targets align with existing continuous/incremental CDC, retaining source LOB/RAC and spatial limits. This does not extend business Kafka, watermark or stopped native creation, nor prove runtime acceptance."
       }
     },
     {
@@ -333,11 +333,11 @@
       "kind": "implementation",
       "path": "agent/backend/agents/checkpoint.py",
       "anchor": "def normalize_checkpoint(",
-      "commit": "96fb59007069b21c989b91480c9663faef29ce20",
-      "sha256": "db3d457994c5f06f46fe87c0cfa7e4a7602f5b7d5b7018d60b13fa0bdc92e967",
+      "commit": "89f0ddd80d8f54255b0d2a7b4613c59465ea2795",
+      "sha256": "54aad692b333b25269bcddaedab78f0eb7de23e4d17306120fa8bb9b346ec159",
       "use": {
-        "zh-cn": "检查点只保存原草稿控制引用，不持久化第二份参数；恢复拒绝错误引用类型，仍保留当前 Run 原有事实与复核边界，不导入旧 Run 新增封闭reply_detail表达偏好；不改变observed/confirmed或原稿引用，非法值拒绝。",
-        "en": "Checkpoint stores only the draft control reference, not a duplicate payload; restoration rejects wrong reference types and retains current-run evidence and review boundaries without importing an old run Adds closed reply_detail expression preference without changing observed/confirmed or draft references; invalid values are rejected."
+        "zh-cn": "保留当前Run事实与原草稿控制引用，不持久化第二份参数；正式事实捕获仅投影共享模型验证的query_references原始分段，非法引用不补齐，旧平面字段不转换为新证据。normalize_checkpoint、确认记录及reply_detail边界未变。",
+        "en": "Retain current-run facts and the original draft control reference, without a second argument payload. Formal fact capture projects only model-validated exact query_references parts; invalid references are not filled and legacy flat fields are not upgraded into evidence. normalize_checkpoint, confirmation records and reply_detail boundaries are unchanged."
       }
     },
     {
@@ -411,11 +411,11 @@
       "kind": "normative",
       "path": "docs/spec/addp智能体Tool开放规范.md",
       "anchor": "同批 Tool 按模型返回顺序进入唯一 Runtime 调用路径",
-      "commit": "dd25826ef0f397c4d354f51b44ad10ab34c5d211",
-      "sha256": "d2e51fd0f487d122358a391b4d3b6ebf88ffbe76fe0f8ca983f2c2169ce020ad",
+      "commit": "89f0ddd80d8f54255b0d2a7b4613c59465ea2795",
+      "sha256": "211213b2a32fb502db0b216ef355f620fa1d8a2c254fa3d167f170a21d13a964",
       "use": {
-        "zh-cn": "搜索失败立即终止；同批按模型顺序进入Runtime，前序失败、暂停、终止或取消后不进Adapter，不以锁顺序或目录枚举替代。工作流身份导航及标准门禁覆盖不改上述约束；守卫缺口、离线与真实验收分别认定。",
-        "en": "Search failure terminates; batches enter Runtime in model order and no queued call reaches Adapter after failure, pause, termination or cancellation, without lock-order or directory fallback. Workflow identity references and standard-gate coverage do not change these rules; guard gaps, offline evidence and live acceptance remain distinct."
+        "zh-cn": "明确Owner事实v3/可选草稿v4及结构化查询引用，Source Engine身份不替换为Query Runtime；同批模型顺序、前序失败/暂停/终止/取消阻断条款逐字未变。事实、草稿和查询引用均不授予权限，也不扩大停止态native创建范围。",
+        "en": "Specify owner facts v3, optional drafts v4 and structured query references without replacing Source Engine identity with a Query Runtime. The model-order batch and prior failure/pause/termination/cancellation barrier paragraph is byte-for-byte unchanged. Facts, drafts and query references grant no authority and do not expand stopped native creation."
       }
     }
   ],
