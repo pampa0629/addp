@@ -1,6 +1,6 @@
 # Transfer 模块说明
 
-阅读导航：[当前支持矩阵与任务语义](docs/transfer-任务语义与同步模式.md#三当前支持矩阵)、[后续能力清单](../docs/next/transfer后续能力清单.md)、[开发与验证](#开发与验证)。
+阅读导航：[当前支持矩阵与任务语义](docs/transfer-任务语义与同步模式.md#三当前支持矩阵)、[后续能力清单](../docs/next/transfer后续能力清单.md)、[执行规则](#执行规则)、[开发与验证](#开发与验证)。
 
 ## 模块定位
 
@@ -9,7 +9,6 @@ Transfer 模块是 ADDP 的数据传输中枢，统一负责 `sync` 任务、任
 当前主路径基于 `common/engine`、`common/format`、`common/contentio` 和 `common/engine/contentadapter`：
 
 - Transfer 负责任务 JSON、planner、policy、transform、worker、checkpoint、日志、指标和写后 Meta 扫描触发。
-- 一次性执行入口只允许已认证且具备不可委派 `transfer.execution.create` Permission 的模块 Service Client 调用，execution 的 `source` 必须由 `addp-<module>` Client ID 推导，调用方请求不得自报 `source_module`。同一模块使用不可委派 `transfer.execution.read` 回查自己创建的 execution，Transfer 必须再次按 Client ID 校验 `source`，不能借此读取其他模块或用户任务 execution。入口接受强类型 source / target / fields 契约，并在 Transfer 内转换为唯一 planner 配置；查询调用方必须把已解析的全部关系输入按稳定顺序写入 `source.query.inputs[]`。Transfer 不自行解析 SQL/MQL 反推资源，但必须使用同一 `PreparedQuery` 的 Provider `ReadSet` 验证调用方声明；未声明 `inputs` 的 Console 单源查询必须精确只读取所选 source leaf。通过验证的输入才能写入血缘。调用方不得创建临时 Transfer task，也不得保存 Transfer task ID。bounded worker 必须同时执行有任务定义和无任务定义的 `sync` execution，并只在 `source_task_id` 存在时更新任务摘要。
 - 具体 engine-native 读写由 `common/engine` 提供。
 - 具体格式和数据类型读写由 `common/format` 提供。
 - content 的定位、读取、写入、range 和 scope list 由 `common/contentio` 表达；multi ref 的组织规则和读写语义由 `common/format` / `common/dataitem` / Transfer 编排层表达；engine content provider 到 contentio 的桥接由 `common/engine/contentadapter` 提供。
@@ -17,22 +16,7 @@ Transfer 模块是 ADDP 的数据传输中枢，统一负责 `sync` 任务、任
 
 table 类型 Transfer 主链路已经稳定：native table、encoded single file/object、encoded multi refs 和 encoded whole scope 都统一走 planner + executor + common provider，不按具体引擎组合建立专用通道。后续新增 table 能力应优先补 `common/engine` 或 `common/format`，不要在 Transfer 内恢复私有 reader / writer。
 
-bounded 字段血缘复用同次 Provider 证据与实际 field mapping；多来源查询的完整 `query.inputs` 必须匹配同一 `PreparedQuery` 的 `ReadSet`，Transfer 不解析 SQL/MQL。仅新成功执行产生字段事实，不按当前配置补造历史。多来源路径绑定、原始结构快照、字段值来源与行筛选的区别及 `derived/unavailable` 规则统一见[字段级契约](../docs/spec/addp数据血缘能力规范.md#61-字段级首期契约)。
-
-`export` 是受保护数据离开源 DataItem 的保护动作，任务类型仍为 `sync`。命中纳管来源的 `bounded + snapshot` Native TablePipeline 按精确 Locator 与当前源结构，在字段映射、类型转换、空间处理和 Writer 前执行保护，不按 `engine_type` 分叉；查询保护消费同一 `PreparedQuery` 的完整 ReadSet/OutputLineage。开放形态、查询证明子集与未接入形态的资源级失效关闭边界统一见[Transfer export 契约](../docs/spec/addp数据安全与隐私保护实现规范.md#104-transfer-export-动作)。MongoDB 原始记录须在保留 BSON 标量的对象上先保护、再编码 Canonical Extended JSON，不解析已编码的 EJSON；端点与类型保真格式见[动态记录原始导出](docs/transfer-基本概念及配置说明.md#32-动态记录原始导出)。
-
-专业读取权限与安全 DTO 沿[专业执行契约](../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)，分版本证据见[开发与验证](#开发与验证)；Provider 证明不等同真实写入、血缘采集或完整权限链路验收通过。
-
-只读原生查询结果到 table 的 bounded 搬运属于同一主链路：source 必须消费 `common/engine.QueryReadSessionProvider`，target 继续消费 table write session。MongoDB 嵌套 BSON 的路径投影、数组展开、去重和关系合并由只读 MQL 在源端完成；Transfer 只搬运最终扁平行、执行显式字段映射和严格类型转换，不提供递归 JSON 自动摊平器。
-
-Console 基础构建器只编写同一 `source.query`，不保存第二份 DSL 或建立另一条执行路线；目标字段名和类型归后续 `field_mapping`，复杂数据开发归 Develop。
-
-- MongoDB：基于 Meta 已识别字段，按文档或单数组行粒度编译 `可选单次 $unwind -> $project`；文档标识自动携带。查询输出名由全部源路径按稳定顺序统一编译，不得因选择顺序改变；基础界面不开放查询参数。
-- 关系型 SQL：只为所选单表生成字段投影与一层 `all|any` 行过滤，过滤值全部编译为 `source.query.parameters` 中的类型化参数。语言、标识符引号和参数类型来自实例 `compute.query`；`bigint/decimal` 使用十进制字符串通过 `string` 无损传递，Planner 在调用 Provider 前再次校验参数开关、语言和值类型。
-
-行粒度、字段候选、能力驱动入口及不支持的编辑／计算范围统一见[query source 与轻量 ETL 配置](docs/transfer-基本概念及配置说明.md#23-bounded-query-source-与轻量-etl-构造)。两者仅对严格可逆且符合当前 Meta 事实的子集开放结构化编辑，其余已有合法只读查询只读展示，不提供高级编辑或保存入口。
-
-只读会话与来源证明沿[Provider 契约](../docs/spec/addp引擎插件接口规范.md#queryruntimeprovider)，资源选择、创建与执行的独立权限沿[任务授权](docs/transfer-基本概念及配置说明.md#13-租户阶段的任务授权)。能力声明或表单回显不证明真实读写、保护或完整链路已通过；标准门禁与分版本证据见[开发与验证](#开发与验证)。
+一次性执行的身份与来源隔离见[一次性执行与来源隔离](#一次性执行与来源隔离)；查询执行、构建器及保护约束见[查询源与构建器](#查询源与构建器)和[字段血缘与导出保护](#字段血缘与导出保护)。
 
 ## 技术栈与端口
 
@@ -115,7 +99,13 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 
 ## 执行规则
 
+### 一次性执行与来源隔离
+
+- 一次性执行入口只允许已认证且具备不可委派 `transfer.execution.create` Permission 的模块 Service Client 调用，execution 的 `source` 必须由 `addp-<module>` Client ID 推导，调用方请求不得自报 `source_module`。同一模块使用不可委派 `transfer.execution.read` 回查自己创建的 execution，Transfer 必须再次按 Client ID 校验 `source`，不能借此读取其他模块或用户任务 execution。入口接受强类型 source / target / fields 契约，并在 Transfer 内转换为唯一 planner 配置；查询调用方必须把已解析的全部关系输入按稳定顺序写入 `source.query.inputs[]`。Transfer 不自行解析 SQL/MQL 反推资源，但必须使用同一 `PreparedQuery` 的 Provider `ReadSet` 验证调用方声明；未声明 `inputs` 的 Console 单源查询必须精确只读取所选 source leaf。通过验证的输入才能写入血缘。调用方不得创建临时 Transfer task，也不得保存 Transfer task ID。bounded worker 必须同时执行有任务定义和无任务定义的 `sync` execution，并只在 `source_task_id` 存在时更新任务摘要。
+
 - 服务代发导出必须按已认证 Client ID 推导 Manager／Develop owner，再从 System 活动模块注册信息解析 Backend 地址，使用 Transfer tenant Service Token 核验导出会话、预绑定 execution UUID、完整请求摘要和待执行状态。核验得到的用户只写入 `triggered_by`，不能写入执行授权 actor 字段。请求不接受自报用户或回调地址；无来源的机器执行不声明人类发起用户，不能为旧记录猜测归属。
+
+### 通用执行约束
 
 - 新任务配置必须使用 `runtime.boundary`、`load.mode`、source / target endpoint 和 `target.policy.apply_mode` JSON；旧顶层 `mode`、`write_mode`、`connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段出现即拒绝。
 - Transfer 任务类型固定为 `sync`；不得新增或兼容 `import`、`export`、`transfer` 等旧任务类型。
@@ -151,6 +141,27 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 - `auto_scan_metadata=true` 的普通业务 Kafka continuous task 在目标结构建立后提交完整目标表 locator 的 `targets`，触发一次精确 Meta deep scan。数据库 CDC connector 必须把 Debezium `Initial Snapshot` 通知写入当前 generation-owned 单分区 data topic；合法通知统一作为 target `skip` 推进，只有严格匹配当前 connector 的 `COMPLETED` offset 在目标 ledger 和 Transfer position 提交后才触发首次扫描，空表同样适用，不使用 `source.snapshot=last` 或时间猜测。首次扫描使用 task 私有持久化 claim 防重复，Meta 提交失败不阻断数据面，失败或过期 claim 由后续 runtime session 重试。普通事件/batch 不扫描，schema 正式变化后另行扫描。
 - bounded 写后、continuous 首次扫描和结构变更审批后的扫描只覆盖实际目标表，不枚举所属 schema／database；缺少精确表身份时不得提交全引擎扫描。T1 通过实际 Meta HTTP 请求断言范围，沿现有 Transfer 后端与 CI 自动发现。
 - 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh transfer` 和 `bash scripts/swagger/check-route-coverage.sh transfer`。
+
+### 查询源与构建器
+
+只读原生查询结果到 table 的 bounded 搬运属于同一主链路：source 必须消费 `common/engine.QueryReadSessionProvider`，target 继续消费 table write session。MongoDB 嵌套 BSON 的路径投影、数组展开、去重和关系合并由只读 MQL 在源端完成；Transfer 只搬运最终扁平行、执行显式字段映射和严格类型转换，不提供递归 JSON 自动摊平器。
+
+Console 基础构建器只编写同一 `source.query`，不保存第二份 DSL 或建立另一条执行路线；目标字段名和类型归后续 `field_mapping`，复杂数据开发归 Develop。
+
+- MongoDB：基于 Meta 已识别字段，按文档或单数组行粒度编译 `可选单次 $unwind -> $project`；文档标识自动携带。查询输出名由全部源路径按稳定顺序统一编译，不得因选择顺序改变；基础界面不开放查询参数。
+- 关系型 SQL：只为所选单表生成字段投影与一层 `all|any` 行过滤，过滤值全部编译为 `source.query.parameters` 中的类型化参数。语言、标识符引号和参数类型来自实例 `compute.query`；`bigint/decimal` 使用十进制字符串通过 `string` 无损传递，Planner 在调用 Provider 前再次校验参数开关、语言和值类型。
+
+行粒度、字段候选、能力驱动入口及不支持的编辑／计算范围统一见[query source 与轻量 ETL 配置](docs/transfer-基本概念及配置说明.md#23-bounded-query-source-与轻量-etl-构造)。两者仅对严格可逆且符合当前 Meta 事实的子集开放结构化编辑，其余已有合法只读查询只读展示，不提供高级编辑或保存入口。
+
+只读会话与来源证明沿[Provider 契约](../docs/spec/addp引擎插件接口规范.md#queryruntimeprovider)，资源选择、创建与执行的独立权限沿[任务授权](docs/transfer-基本概念及配置说明.md#13-租户阶段的任务授权)。能力声明或表单回显不证明真实读写、保护或完整链路已通过；标准门禁与分版本证据见[开发与验证](#开发与验证)。
+
+### 字段血缘与导出保护
+
+bounded 字段血缘复用同次 Provider 证据与实际 field mapping；多来源查询的完整 `query.inputs` 必须匹配同一 `PreparedQuery` 的 `ReadSet`，Transfer 不解析 SQL/MQL。仅新成功执行产生字段事实，不按当前配置补造历史。多来源路径绑定、原始结构快照、字段值来源与行筛选的区别及 `derived/unavailable` 规则统一见[字段级契约](../docs/spec/addp数据血缘能力规范.md#61-字段级首期契约)。
+
+`export` 是受保护数据离开源 DataItem 的保护动作，任务类型仍为 `sync`。命中纳管来源的 `bounded + snapshot` Native TablePipeline 按精确 Locator 与当前源结构，在字段映射、类型转换、空间处理和 Writer 前执行保护，不按 `engine_type` 分叉；查询保护消费同一 `PreparedQuery` 的完整 ReadSet/OutputLineage。开放形态、查询证明子集与未接入形态的资源级失效关闭边界统一见[Transfer export 契约](../docs/spec/addp数据安全与隐私保护实现规范.md#104-transfer-export-动作)。MongoDB 原始记录须在保留 BSON 标量的对象上先保护、再编码 Canonical Extended JSON，不解析已编码的 EJSON；端点与类型保真格式见[动态记录原始导出](docs/transfer-基本概念及配置说明.md#32-动态记录原始导出)。
+
+专业读取权限与安全 DTO 沿[专业执行契约](../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)，分版本证据见[开发与验证](#开发与验证)；Provider 证明不等同真实写入、血缘采集或完整权限链路验收通过。
 
 ### bounded 失败诊断
 
