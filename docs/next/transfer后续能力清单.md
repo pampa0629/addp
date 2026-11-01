@@ -39,13 +39,15 @@
 |---|---|---|
 | [CDC replay](../spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle) | 尚未开放历史范围重放；现有 committed position resume 受[生命周期](../../transfer/docs/transfer-任务语义与同步模式.md#64-生命周期)和审批准入约束，不能替代 replay | 历史范围、独立 apply identity、隔离目标、capture generation 与 retention |
 | [CDC DLQ](../spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle) | 尚未开放；schema/protocol/source/target 错误仍失败／阻塞，不能套用业务 Kafka 的 `dead_letter` 跳过 | 哪些错误允许跳过、删除事件完整性、原始 envelope 审计和 position 推进规则 |
-| Truncate | Debezium truncate 事件当前拒绝 | 目标清空权限、事务边界、并发事件顺序和不可逆确认 |
+| [Truncate](../spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle) | 尚未开放；Debezium `op=t` 作为协议错误拒绝，不执行目标清空，不静默跳过或推进 committed offset | 目标清空权限、事务边界、并发事件顺序和不可逆确认 |
 | [自动 DDL](../spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle) | 尚未开放；人工 additive 审批限 PostgreSQL/MySQL 源当前阻塞消息中的新增 nullable、非主键、非 geometry 字段，Oracle 源 drift 须 Stop 后新建任务与目标表；完整准入、状态转换及失败语义见[审批恢复配置](../../transfer/docs/transfer-基本概念及配置说明.md#schema-drift-与审批恢复) | record 绑定的 schema version、目标 Provider DDL 原子性、回滚和审批策略 |
-| 多表 CDC | 当前一个任务只绑定一张源表和一张新目标表 | table identity、路由、每表 schema revision、部分失败和资源生命周期 |
-| 无主键 CDC | 当前要求稳定非空主键 | 事件身份、update/delete 定位、重复应用和目标一致性保证 |
+| [多表 CDC](../spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle) | 尚未开放；每个任务只捕获一张源表并创建一张新目标表，不接管、清空或合并已有目标 | table identity、路由、每表 schema revision、部分失败和资源生命周期 |
+| [无主键 CDC](../spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle) | 尚未开放；源表主键必须稳定、非空且捕获期间不可修改，Debezium record key 须完整包含复合主键，映射后与目标 keys 一一对应 | 事件身份、update/delete 定位、重复应用和目标一致性保证 |
 | [PostgreSQL/MySQL/Oracle 类型矩阵扩展](../spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle) | 当前开放范围见[源类型与空间捕获](../../transfer/docs/transfer-基本概念及配置说明.md#源类型与空间捕获)及[目标应用约束](../../transfer/docs/transfer-基本概念及配置说明.md#cdc-目标应用与位点)；未声明或不兼容类型仍拒绝 | Debezium wire schema、精度/时区、目标映射、键约束和全生命周期 E2E |
 | Oracle CDC 高级能力 | 当前支持单实例 CDB/PDB、普通字段与 Oracle Spatial 单表，并提供源恢复窗口和未提交事务压力观测；捕获与类型边界见下述专题 | RAC、普通业务 LOB、长事务阈值/告警策略、归档日志自动治理 |
 | [ArcGIS SDE 逻辑变化源](ArcGIS%20SDE支持设计.md) | 普通 Oracle/PostgreSQL 表日志不能等同版本化要素变化 | geodatabase 版本模型、A/D delta tables、空间类型、业务事务和许可边界 |
+
+单表、主键与事件约束见[数据库 CDC 语义](../../transfer/docs/transfer-任务语义与同步模式.md#63-数据库-cdc)。单表与主键要求属于捕获准入条件，未满足时不得启动捕获；运行时主键或 schema 漂移按[Schema 变化](../../transfer/docs/transfer-任务语义与同步模式.md#七schema-变化)阻塞，当前消息和 committed position 不推进。已有单表 snapshot/upsert/delete 结果不能补作多表、无主键或 Truncate 通过；固定版本证据、失败及未覆盖项沿[验证范围](../../transfer/docs/transfer-任务语义与同步模式.md#十一验证范围)的原始场景认定。
 
 Oracle 普通表 CDC 与 ArcGIS SDE 逻辑变化源是两个不同能力，不能包装成同一路径。Oracle Spatial 的捕获、冻结空间事实与源／目标限制统一见[CDC 正式契约](../spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)及[Oracle CDC 配置](../../transfer/docs/transfer-基本概念及配置说明.md#oracle-cdc)。ArcGIS 传统版本化编辑仍需独立验证版本、权限、事务和许可边界。基础 `MDSYS.SDO_GEOMETRY` Spatial 读取继续由 Oracle Engine Provider 独立支持。
 
