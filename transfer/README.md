@@ -129,58 +129,50 @@ Orchestrator v1 的 TaskProvider 发现与执行使用独立 `/task-provider/` �
 
 ## 启动与验证
 
-开发启动：
+### 开发启动与就绪检查
+
+以下操作从仓库根目录由用户在自己的终端执行；基础设施准备、实际端口与 `/health/ready` 检查统一见[快速开始](docs/快速开始.md#一启动)，不从首选端口推断实际监听地址。
 
 ```bash
 bash scripts/dev/start.sh -transfer
 ```
 
-后端修改后重启：
+测试和构建不要求重启开发服务。确需加载后端改动时，由用户执行 `./scripts/dev/restart.sh -transfer`；生命周期锁、进程归属和停止失败边界沿[启动脚本指南](../scripts/docs/启动脚本使用指南.md#启动与重启边界)。就绪响应不证明 Worker 执行、源读、目标写或公开入口已验收。
 
-```bash
-./scripts/dev/restart.sh -transfer
-```
+### 常规模块与专项门禁
 
-健康检查：
+下列命令均从仓库根目录执行；测试分层和入口职责以[测试与验收规范](../docs/spec/addp测试与验收规范.md#三标准入口)为准。
 
-```bash
-curl http://localhost:8083/health/ready
-```
+| 目的 | 标准入口 | 覆盖范围与限制 |
+|---|---|---|
+| 模块常规验证 | `make test-module MODULE=transfer` | 平台 T0、Go T1、前端 T1/T3 与已登记 PostgreSQL T2；不代表真实 Oracle/Kafka 数据面或完整 T4。 |
+| Go 开发定位 | `make test-module MODULE=transfer GO_ONLY=1` | 仅 owner Go T1，不含前端、PostgreSQL T2 或真实 Online 验收，不计为完整模块门禁。 |
+| PostgreSQL 持久化专项 | `make test-transfer-postgres` | schema、执行读取隔离、事件与 fencing、自动恢复与退避、输出保护和目标覆盖等回归；无需 PostGIS，不运行 Oracle CDC 矩阵。 |
+| Hosted ETL 场景入口回归 | `make test-transfer-online-runner` | 身份、只读预检、SQL ETL 场景与清理契约回归，另检查浏览器脚本语法；不启动真实 Hosted suite。 |
+| Hosted 连续执行入口回归 | `make test-transfer-continuous-online-runner` | 生命周期、事件、故障与清理契约的确定性检查；不等于真实 Kafka/CDC 或浏览器链路已运行。 |
 
-常用验证：
+PostgreSQL 门禁及模块聚合的 T2 步骤要求已核对的 `ADDP_TEST_POSTGRES_PORT`、`ADDP_TEST_POSTGRES_PASSWORD` 等测试连接。先用 `bash scripts/infra/status.sh` 核对实际映射，凭据通过受控环境注入，不写入命令字面值或日志。本模块本地使用 `addp_test`；库归属、权限与清理边界见[Infra PostgreSQL 清单](../scripts/infra/README.md)和[测试隔离规范](../docs/spec/addp测试与验收规范.md)，不创建旁路测试库。T2 前提缺失会在模块门禁执行前拒绝，不能把只完成 Go 子集算作模块通过。
 
-```bash
-cd transfer/backend
-go test ./internal/planner ./internal/executor -run 'TableTransfer|Native|Encoded|Shapefile|Parquet|FieldSelection|Checkpoint|Retry' -count=1
-```
-
-真实 Access/PGeo 样本识别、PGeo -> Oracle Spatial bounded 导入，以及 Oracle Spatial -> FileGDB round-trip：
+### ArcGIS 开放格式专项
 
 ```bash
 make test-arcgis-open-formats
 ```
 
-该门禁由仓库根目录执行，要求 GeoPython 容器和 Business Oracle 已启动，不会自行重启服务。它断言普通 Access 不误判、PGeo catalog/行读取、PGeo 写入 Oracle 的行数/Point/MultiPolygon geometry/SRID（含无 SRID 源数据），以及 Oracle Spatial 写入 FileGDB 后回读的 123 行 MultiPolygon、非空 geometry 和 SRID 0。测试只使用临时 Oracle 表和临时 `.gdb` 目录，结束自动清理。
+原生 GDAL/Python、可达的 GeoPython Runtime、Business Oracle、样本路径和部分运行模式统一见[脚本专题](../scripts/docs/测试与发布入口.md#arcgis-开放格式集成门禁)；门禁不启动或重启服务。它断言普通 Access 不误判、PGeo catalog/行读取、PGeo 写入 Oracle 的行数/Point/MultiPolygon geometry/SRID（含无 SRID 源数据），以及 Oracle Spatial 写入 FileGDB 后回读的 123 行 MultiPolygon、非空 geometry 和 SRID 0。测试只使用临时 Oracle 表和临时 `.gdb` 目录，结束自动清理；运行账号须有对应临时对象的创建与清理权限，并核对实际清理结果。
 
-Oracle Spatial CDC 数据面矩阵（需要 Business Oracle、Kafka Connect、Infra Kafka 和 `addp_test`）使用显式开关运行：
+### Oracle CDC 专项入口缺口
 
-```bash
-cd transfer/backend
-ADDP_TEST_POSTGRES_DATABASE=addp_test \
-ADDP_ORACLE_SPATIAL_CDC_DATA_E2E=1 \
-go test ./internal/continuous -run TestIntegrationOracleSpatialCDCGeometryMatrixAndRecovery -count=1 -v
-```
+以下显式开关用例尚未在根 Makefile、`scripts/test/` 或 Online/Release suite 中登记专门的调用与隔离清理门禁。现有实现与环境前提保留如下；本页不再提供直接语言命令作为执行入口，待测试 Owner 补齐标准门禁及 CI 接线后再提供正式调用示例。
 
-PostgreSQL/MySQL/Oracle 三类源到 Oracle 目标的生命周期矩阵：
+| 专项实现 | 当前覆盖与环境前提 |
+|---|---|
+| [Oracle Spatial CDC 几何与恢复](backend/internal/continuous/oracle_spatial_cdc_integration_test.go)，`ADDP_ORACLE_SPATIAL_CDC_DATA_E2E=1` | Oracle Spatial XY Polygon/MultiPolygon 到 PostgreSQL/MySQL/Oracle，以及 XYZ Point 到 PostgreSQL；需要 Business Oracle、相应目标数据库、Kafka Connect、Infra Kafka 与 `addp_test`。 |
+| [Oracle 目标生命周期](backend/internal/continuous/oracle_target_cdc_integration_test.go)，`ADDP_DATABASE_CDC_ORACLE_TARGET_E2E=1` | 当前循环只有 PostgreSQL、MySQL 两类源到 Oracle 目标，不作为 Oracle 源场景；需要对应 Business 源/目标、Kafka Connect、Infra Kafka 与 `addp_test`。 |
 
-```bash
-cd transfer/backend
-ADDP_TEST_POSTGRES_DATABASE=addp_test \
-ADDP_DATABASE_CDC_ORACLE_TARGET_E2E=1 \
-go test ./internal/continuous -run TestIntegrationDatabaseCDCToOracleTargetLifecycle -count=1 -v
-```
+未启用上述开关时，用例会跳过；普通模块或 Go 门禁成功不能计为这两类实测通过，也不应向常规 Go 门禁注入专项开关以替代隔离入口。`ADDP_ORACLE_SPATIAL_CDC_CONTAINER_FAULT=1` 会额外暂停并恢复 `business-oracle` 容器，只适用于独占且已授权的故障窗口；普通回归不启用。用例结束预期自动 unpause，仍须核对服务恢复与清理结果。
 
-追加 `ADDP_ORACLE_SPATIAL_CDC_CONTAINER_FAULT=1` 才会暂停并恢复 `business-oracle` 容器验证 Oracle 中断；测试结束会自动 unpause，普通回归不启用该开关。
+这些格式和低层数据面用例不替代真实 User → System → Gateway → Owner／Worker 授权链路或浏览器验收；T4 必须沿[正式 Online 身份与隔离规范](../docs/spec/testing/T4-Online验收规范.md)，使用已登记 suite 的专用身份、最小权限和独占部署，不复用个人开发服务或扩大生产权限。固定版本证据、失败与修复结论及未覆盖项见[模块验证](CLAUDE.md#开发与验证)，未运行、失败、跳过或未覆盖项不计为通过。
 
 ## 相关文档
 
