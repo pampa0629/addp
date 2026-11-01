@@ -4583,6 +4583,38 @@ def validate_raster_focal_weighted_sum(repository: Path, registered: set[str]) -
         raise RegistrationError('focal weighted_sum oracle must remain independent')
 
 
+PROXIMITY_RECTANGULAR_REQUIRED = {'scripts/test/online-hosted-raster-proximity-rectangular-gate.sh': ('start_online_geopython_runtime', '--mount', '--suite raster-workflow', '--wait-protection-owners develop,manager', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'), 'business/scripts/online-raster-proximity-rectangular-fixture.py': ('NFSExport', 'owned_root', 'Decimal.from_float', 'context.prec=200', 'from fractions import Fraction', 'np.minimum', 'full_pixel_and_mask_verification', 'full_source_pixels_verified', 'verify_sources(root)', 'runtime_workspaces_removed', 'archive_files', 'oracle cache hash changed', 'source file changed', 'proximity_rectangular-cogs', 'proximity_rectangular-expectations', 'validate_expected_export', 'allow_pickle=False', 'cleanup_oracle', 'full_check=True', 'nearest_overviews', 'private_control', 'distance_unit', 'actual_metre_nearest_verified', 'square_results_preserved'), 'scripts/test/raster-proximity-rectangular-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'budget != 600', 'BudgetClient', 'remaining()', 'lineage.collect', 'lineage.verify_archive', 'base.validate_scan', 'raster.wait_lineage', 'source_edges', 'readonly.no_publication', 'query language rewrote stored failure', 'previous original COG changed', 'cleanup-oracle', 'oracle cleanup also failed', 'full_checks != 968', 'physical_calls != 69', 'len(cases) != 16', 'len(failures) != 52', 'exact_cause', 'raster.strict_sizes', 'target_metadata_after != target_metadata_before', 'source_metadata_after != before', 'overview_count(name)'), 'engines/geopython-workflow/test_online_proximity_rectangular_fixture.py': ('test_proximity_rectangular_hosted_sixteen_real_cogs_full_pixels_masks_units_and_raw_archive', 'test_proximity_rectangular_hosted_fifty_two_exact_submitted_failures_without_publication', 'test_proximity_rectangular_hosted_real_physical_corruption_is_rejected', 'one-ulp', 'test_proximity_rectangular_hosted_original_cog_archive_never_repairs_or_overwrites', 'test_proximity_rectangular_hosted_frozen_cache_rejects_hash_shape_inventory_or_run_change', 'test_proximity_rectangular_hosted_stdin_worker_has_no_repository_dependency_and_exact_cleanup', 'test_proximity_rectangular_hosted_frozen_expected_archive_rejects_tampering', 'test_proximity_rectangular_hosted_independent_oracle_rejects_wrong_semantics'), 'scripts/test/raster-proximity-rectangular-persistence-online_test.py': ('test_full_matrix_16_success_52_failures_968_checks_and_cleanup', 'test_strict_physical_counts_sizes_original_archives_and_cleanup_cannot_weaken', 'test_actual_unit_and_conditional_overview_proof_cannot_weaken', 'test_source_and_all_old_target_meta_change_is_rejected', 'test_failures_preserve_primary_and_cleanup_error', 'test_exact_failure_stage_language_scan_lineage_and_budget_are_enforced'), 'scripts/utils/online_raster_lineage.py': ("'raster-proximity-rectangular-persistence': 'proximity_rectangular-lineage'", 'BEGIN READ ONLY;', 'statement_timeout', 'closed(public, expected)', 'closed(internal, expected)'), 'scripts/test/online-raster-lineage_test.py': ('test_proximity_rectangular_approved_single_source_current_raster_save_and_hidden_public_operation',), 'Makefile': ('test_online_proximity_rectangular_fixture.py', '@$(MAKE) test-raster-proximity-rectangular-online-runner', 'scripts/test/raster-proximity-rectangular-persistence-online_test.py', 'scripts/test/online-raster-proximity-rectangular-fixture_test.py', 'scripts/test/online-hosted-raster-proximity-rectangular-gate_test.py', 'test_proximity_rectangular_requires_exact_cog_matrix_budget_and_regressions'), 'business/scripts/online-raster-zonal-percentile-fixture.py': ('previous archive was deleted', 'previous archived bytes changed')}
+
+def validate_raster_proximity_rectangular(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-proximity-rectangular-persistence'
+    if suite not in registered: return
+    workflow = (repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-proximity-rectangular-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-proximity-rectangular-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-proximity-rectangular-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body') or 'cancel-in-progress: false' not in job.group('body')
+        or 'if: always()' not in job.group('body') or 'logs/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('focal proximity_rectangular requires an independent manual Hosted NFS job')
+    make = (repository/'Makefile').read_text()
+    if 'test_online_proximity_rectangular_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('focal proximity_rectangular Native omitted from standard recipe')
+    for relative, fragments in PROXIMITY_RECTANGULAR_REQUIRED.items():
+        path = repository/relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('focal proximity_rectangular strict contract incomplete: '+relative)
+    source = (repository/'business/scripts/online-raster-proximity-rectangular-fixture.py').read_text()
+    tree = ast.parse(source)
+    actual = {key: [node.value for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == key for target in node.targets)] for key in ('CASES','FAILURES')}
+    expected_cases = {'wide.cog.tif': ('wide.tif', 2, [1]), 'tall.cog.tif': ('tall.tif', 2, [1]), 'fractional.cog.tif': ('fractional.tif', 2, [1]), 'foot.cog.tif': ('foot.tif', 2, [1]), 'survey.cog.tif': ('survey.tif', 2, [1]), 'second-band.cog.tif': ('second-band.tif', 2, [1]), 'nodata.cog.tif': ('nodata.tif', 2, [1]), 'mask.cog.tif': ('mask.tif', 2, [1]), 'alpha.cog.tif': ('alpha.tif', 2, [1]), 'zero-negative.cog.tif': ('zero-negative.tif', 2, [0, -3]), 'uint32.cog.tif': ('uint32.tif', 2, [0, 4294967295]), 'cross-block.cog.tif': ('cross-block.tif', 2, [1]), 'row.cog.tif': ('row.tif', 2, [1]), 'column.cog.tif': ('column.tif', 2, [1]), 'square-metre.cog.tif': ('square-metre.tif', 2, [1]), 'square-foot.cog.tif': ('square-foot.tif', 2, [1])}
+    expected_failures = ('band_zero', 'band_high', 'band_boolean', 'alpha_band', 'float', 'complex', 'int64', 'uint64', 'targets_empty', 'targets_duplicate', 'targets_boolean', 'targets_fraction', 'targets_object', 'targets_range', 'targets_nonlist', 'no_target', 'invalid_targets', 'geographic', 'compound', 'missing_crs', 'missing_grid', 'unknown_unit', 'rotated_x', 'rotated_y', 'orientation', 'singular')
+    if (any(len(nodes) != 1 for nodes in actual.values()) or repr(ast.literal_eval(actual['CASES'][0])) != repr(expected_cases)
+        or repr(ast.literal_eval(actual['FAILURES'][0])) != repr(expected_failures)): raise RegistrationError('focal proximity_rectangular fixed 16/52 matrix changed')
+    if any(word in source for word in ('operators.raster_compute', 'np.percentile', 'np.quantile', 'gdal.RasterizeLayer', 'gdal.Polygonize')):
+        raise RegistrationError('focal proximity_rectangular oracle must remain independent')
+
+
+
 PROTECTED_SIEVE_REQUIRED = {
     'scripts/test/online-hosted-raster-sieve-protected-gate.sh': (
         'start_online_geopython_runtime', '--mount', '--suite raster-workflow',
@@ -6199,6 +6231,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_focal_weighted_mean(repository, registered)
     validate_raster_focal_weighted_stddev(repository, registered)
     validate_raster_focal_weighted_sum(repository, registered)
+    validate_raster_proximity_rectangular(repository, registered)
     validate_raster_sieve_protected(repository, registered)
     validate_raster_sieve_area(repository, registered)
     validate_raster_nibble_profile(repository, registered)
