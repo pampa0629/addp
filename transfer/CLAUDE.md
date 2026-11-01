@@ -59,9 +59,11 @@ transfer/
 
 ## 核心 API
 
-Agent `transfer.task.create` 沿唯一任务创建 API 委托，要求精确 scope/audience 和当前 Tenant 范围的创建权限；不沿用运行授权。owner 拒绝调度、启用、自动扫描、continuous、incremental 和非 native table 配置；成功只持久化 idle/stopped 任务，不创建 execution、不访问或写入业务数据。所有其他 Transfer 路由默认拒绝该委托令牌。Permission Manifest 7 与 System 向前迁移 181 只开放创建权限的委托标志，不增加角色权限。平台能力定义由 Ontology 提供，源/目标事实经其 owner 获取，不在 Transfer 保存第二份平台定义。
+Agent `transfer.task.create` 使用精确 `audience=transfer`／同名 Scope 与当前 Tenant 创建权限，只保存禁用、无调度和无自动扫描的 bounded snapshot native table 任务，初始状态为 idle/stopped。Owner 再次校验，不继承运行授权、不创建 execution 或读写业务数据；该创建委托不得用于其他路由，也不增加角色权限。创建限制、不确定结果处理、Ontology 平台定义及资源 Owner 分工统一见[Transfer Tool 契约](../docs/spec/addp智能体Tool开放规范.md#47-平台-transfer-语义与创建)，不在 Transfer 保存第二份平台定义。
 
-Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provider.*` 的 Permission owner；定义只存在于 `authorization/permissions.yaml`，通过 `common/authorization` 发布期聚合，不在服务启动时动态注册。模块 Runtime 创建一次性执行使用不可委派的 `transfer.execution.create`，按来源隔离回查结果使用不可委派的 `transfer.execution.read`；用户任务管理只使用 `transfer.task.*`；Orchestrator Runtime 只使用 `transfer.task_provider.read|execute`，并由固定 `addp-orchestrator` Service Client Guard 收窄。`transfer.task.cancel` 是 IAM 目标目录能力，当前真实执行取消仍未实现，首次 SQL seed 前必须通过路由覆盖门禁处理。
+Transfer Permission 的精确目录与状态只由本模块 [Manifest](authorization/permissions.yaml) 声明；owner 归属、构建／发布期聚合及向前迁移统一见[权限与角色发布规范](../docs/spec/addp权限与角色发布规范.md#二唯一事实源)和[发布期聚合](../docs/spec/addp权限与角色发布规范.md#九发布期聚合)，不在服务启动时动态注册。
+
+用户任务管理、模块 Runtime 一次性执行与 Orchestrator TaskProvider 使用独立权限，不能互相替代；后两类专用权限均不可委派，TaskProvider 仍由固定 `addp-orchestrator` Service Client Guard 收窄，具体入口与权限见下方分类导航。`transfer.task.cancel` 当前在 Manifest 中为 `disabled`，不代表真实取消能力；execution 取消与任务 pause/stop 的区别见用户专业执行说明。
 
 路由前缀：`/api/v1/transfer`。
 
