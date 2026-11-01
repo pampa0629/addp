@@ -71,7 +71,7 @@ for (const locale of ['zh-cn', 'en']) test(`engine explanations stay beside thei
   await expect(page.getByRole('tooltip')).toContainText(en ? 'period comparisons keep their original scope' : '时段对比的范围保持不变')
   await expect(trendHelp).not.toHaveAccessibleName(en ? /not business throughput/ : /不等同于业务吞吐/)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-  state.setMode('sql-failed')
+  state.setMode('snapshot-unavailable')
   await page.getByRole('button', { name: en ? 'Refresh' : '刷新', exact: true }).click()
   await expect(page.getByTestId('engine-value-capacity')).toHaveText('—')
   await expect(page.getByTestId('engine-metric-capacity')).toContainText(en ? 'No valid value yet' : '暂无有效值')
@@ -362,14 +362,14 @@ test('admitted deployment list opens monitoring without manual registration', as
   await page.getByRole('button', { name: '返回引擎列表', exact: true }).click()
   await expect(page).toHaveURL(/engine-resources\?refresh=off$/)
 })
-for (const mode of ['unavailable', 'denied', 'notFound', 'foreign', 'sql-failed']) test(`PostgreSQL ${mode} clears old values`, async ({ page }) => {
+for (const mode of ['unavailable', 'denied', 'notFound', 'foreign', 'snapshot-unavailable']) test(`PostgreSQL ${mode} clears old values`, async ({ page }) => {
   const state = await engineBackend(page)
   await page.goto(`/engine-resources?deployment_id=${engineID}&refresh=off`)
   await expect(page.getByTestId('engine-value-capacity')).toHaveText('1.00 GiB')
   state.setMode(mode)
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   await expect(page.getByTestId('engine-value-capacity')).toHaveText('—')
-  if (mode === 'sql-failed') await expect(page.getByText('未取得有效数据库快照', { exact: true })).toBeVisible()
+  if (mode === 'snapshot-unavailable') await expect(page.getByText('未取得有效数据库快照', { exact: true })).toBeVisible()
   else await expect(page.getByTestId('engine-error')).toBeVisible()
 })
 test('engine monitoring rejects tenant, machine, delegated and missing owner permission before reading deployments', async ({ page }) => {

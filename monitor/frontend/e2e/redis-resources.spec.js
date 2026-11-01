@@ -2,6 +2,92 @@ import { expect,test } from '@playwright/test'
 import { engineBackend,engineID,engineOwner } from './engine-resources.fixture'
 import { trackResourceChart,resourceChartState,resourceChartProps,dragResourceChartZoom,hoverResourceChartPoint,resourceChartTooltip } from './resource-chart.fixture'
 
+const sourceStates = [
+  ['not-connected', '未部署采集来源', 'Collection source not deployed'],
+  ['source-unavailable', '采集来源不可用', 'Collection source unavailable'],
+  ['no-sample', '暂无采样', 'No samples yet'],
+  ['scrape-failed', '抓取失败', 'Scrape failed'],
+  ['snapshot-unavailable', '未取得有效数据库快照', 'No valid database snapshot'],
+  ['stale', '样本已过期', 'Stale samples']
+]
+for (const locale of ['zh-cn', 'en']) for (const detail of [false, true]) test(`Redis ${detail ? 'detail' : 'list'} separates source states and restores current values (${locale})`, async ({ page }) => {
+  const en = locale === 'en', state = await engineBackend(page, { locale, owner: { ...engineOwner, engine_type: 'redis', display_name: 'Business Redis' } })
+  await page.goto(`/engine-resources?engine_type=redis&refresh=off${detail ? '&deployment_id=' + engineID : ''}`)
+  const content = detail ? page.getByTestId('engine-value-redisAllocated') : page.getByTestId('engine-list')
+  const refresh = async () => {
+    const before = state.calls.length
+    await page.getByRole('button', { name: en ? 'Refresh' : '刷新', exact: true }).click()
+    await expect.poll(() => state.calls.length).toBeGreaterThan(before)
+    await expect(page.locator('.engine-resources')).toHaveAttribute('aria-busy', 'false')
+  }
+  await expect(content).toContainText('1.00 GiB')
+  for (const [index, [mode, zh, english]] of sourceStates.entries()) {
+    state.setMode(mode); await refresh()
+    await expect(page.getByText(en ? english : zh, { exact: true })).toBeVisible()
+    await expect(page.getByTestId('engine-error')).toHaveCount(0)
+    if (detail) {
+      for (const field of await page.getByTestId('engine-metrics').locator('strong').all()) await expect(field).toHaveText('—')
+      const props = await resourceChartProps(page, page.getByTestId('engine-trend').locator('.chart-renderer'))
+      expect(props.rows.at(-1).value).toBeNull()
+      if (['scrape-failed', 'snapshot-unavailable', 'stale'].includes(mode)) expect(props.rows.some(row => row.value !== null)).toBe(true)
+      else expect(props.rows.every(row => row.value === null)).toBe(true)
+    } else await expect(content).not.toContainText('GiB')
+    state.setMode('valid'); state.setCapacity((index + 2) * 1024 ** 3); await refresh()
+    await expect(content).toContainText(`${index + 2}.00 GiB`)
+    await expect(page.getByText(en ? 'Collecting' : '正在采集', { exact: true })).toBeVisible()
+  }
+  state.owner.enabled = false; state.owner.version++; await refresh()
+  await expect(page.getByText(en ? 'Disabled or invalid host association' : '部署停用或主机关联无效', { exact: true })).toBeVisible()
+  await expect(content).not.toContainText('GiB')
+  state.owner.enabled = true; state.owner.version++; state.setCapacity(8 * 1024 ** 3); await refresh()
+  await expect(content).toContainText('8.00 GiB')
+  expect(state.queries.every(query => query.engine_type === 'redis')).toBe(true)
+  if (!detail) expect(state.calls.some(path => path.endsWith('_trends') || path.endsWith('_observations'))).toBe(false)
+})
+
+for (const locale of ['zh-cn', 'en']) test(`Redis automatic recovery pauses while hidden and stops after permission denial (${locale})`, async ({ page }) => {
+  const en = locale === 'en', state = await engineBackend(page, { locale, owner: { ...engineOwner, engine_type: 'redis', display_name: 'Infra Redis' } })
+  await page.clock.install()
+  await page.goto(`/engine-resources?engine_type=redis&deployment_id=${engineID}`)
+  const field = page.getByTestId('engine-value-redisAllocated')
+  const reads = () => state.calls.filter(path => path.endsWith('_observations')).length
+  const visibility = hidden => page.evaluate(hidden => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: hidden })
+    document.dispatchEvent(new Event('visibilitychange'))
+  }, hidden)
+  await expect(field).toHaveText('1.00 GiB')
+  await expect(page.locator('.engine-resources')).toHaveAttribute('aria-busy', 'false')
+  state.setMode('source-unavailable')
+  await page.clock.fastForward(15001)
+  await expect(page.getByText(en ? 'Collection source unavailable' : '采集来源不可用', { exact: true })).toBeVisible()
+  await expect(field).toHaveText('—')
+  await expect(page.locator('.engine-resources')).toHaveAttribute('aria-busy', 'false')
+  expect(reads()).toBe(2)
+  await visibility(true)
+  await expect(page.getByTestId('engine-refresh-status')).toHaveText(en ? 'Page hidden; auto refresh paused' : '页面隐藏，自动刷新已暂停')
+  state.setMode('valid'); state.setCapacity(2 * 1024 ** 3)
+  const hiddenCalls = state.calls.length
+  await page.clock.fastForward(60001)
+  expect(state.calls).toHaveLength(hiddenCalls)
+  await visibility(false)
+  await expect(field).toHaveText('2.00 GiB')
+  await expect(page.locator('.engine-resources')).toHaveAttribute('aria-busy', 'false')
+  expect(reads()).toBe(3)
+  state.setMode('denied')
+  await page.clock.fastForward(15001)
+  await expect(page.getByTestId('engine-error')).toBeVisible()
+  await expect(field).toHaveText('—')
+  await expect(page.getByTestId('engine-trend').locator('canvas')).toHaveCount(0)
+  await expect(page.getByTestId('engine-refresh-status')).toHaveText(en ? 'Auto refresh stopped; reload to retry' : '自动刷新已停止，请重新加载')
+  const deniedCalls = state.calls.length
+  state.setMode('valid')
+  await page.clock.fastForward(60001); await visibility(true); await visibility(false)
+  expect(state.calls).toHaveLength(deniedCalls)
+  await page.getByRole('button', { name: en ? 'Refresh' : '刷新', exact: true }).click()
+  await expect(field).toHaveText('2.00 GiB')
+  await expect(page.getByTestId('engine-refresh-status')).toHaveText(en ? 'Auto refresh enabled' : '自动刷新已开启')
+})
+
 for(const locale of ['zh-cn','en'])test(`Redis groups, status tips and direct owner-typed navigation (${locale})`,async({page})=>{
  const state=await engineBackend(page,{locale,owner:{...engineOwner,engine_type:'redis',display_name:'Business Redis'}})
  const requests=[];page.on('request',r=>{if(r.url().includes('engine_resource_observations'))requests.push(new URL(r.url()).searchParams.get('metrics').split(','))})

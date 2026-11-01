@@ -517,3 +517,13 @@ Redis正式入口提交后继续开发，发现同上下文保留未覆盖已重
 新增PG／Redis×列表／详情×停用／解绑／版本变化12项浏览器场景；修复前12项均在旧内容断言失败（`/tmp/addp-engine-owner-refresh-red.log`），修复后同一标准 `npm run test:e2e -- e2e/engine-resources.spec.js e2e/redis-resources.spec.js` 共46项T3通过（1.7分钟，`/tmp/addp-engine-owner-refresh-green.log`）。同时复验旧单位／零值、tip、故障撤权、跨身份、两语种导航、主机关联、Redis分组及超过100％、缩放与原位刷新。132项前端T1通过（`/tmp/addp-engine-owner-refresh-unit.log`）；两页最终构建通过（`/tmp/addp-owner-refresh-build-final.log`）。Console标准 `npm run test:e2e -- e2e/engine-resource-navigation.spec.js` 4项集成T3通过（39.7秒，`/tmp/addp-owner-refresh-console.log`），包含Redis iframe及PG双语筛选／提示。上述是受控后端T3及构建，不是个人Safari、来源T2或正式身份T4。
 
 同类主机详情保护与独立页面验证见[节点专题](Monitor节点与主机资源历史证据.md#主机详情当前对象变化的原位刷新保护2026-11-02)。既有标准浏览器入口自动发现两份修改的spec，Platform CI原Monitor前端owner门禁覆盖本批；无需改Makefile／workflow或扩大测试身份。CI／Hosted继续等待专门会话回传，未查询、触发、重跑、设置定时或接管个人服务。
+
+## Redis 来源状态与恢复的受控页面验收（2026-11-02）
+
+沿现有Redis固定目录及前端状态契约补验收覆盖，本批没有新增产品状态、API、权限、采集或部署动作。复用唯一PG／Redis受控夹具，分别模拟未部署来源、来源不可用、暂无采样、抓取失败、快照无效、样本过期；采集状态／时间及空点按既有后端分支构造。夹具旧`sql-failed`模式统一改为`snapshot-unavailable`，删除原名，不为Redis保留另一套SQL或来源错误路线。
+
+中英文列表／详情逐一验证异常状态直接可见、当前数值为“—”、恢复后显示本轮不同读数；部署停用／恢复仍沿System对象事实与版本变化。没有有效来源的趋势为空；当前抓取失败／快照无效／过期可与先前有效历史点共存，只将当前缺样置空，不把缺样补零或抹掉合法历史。另补两语种自动刷新：来源不可用后清值，隐藏时所有部署／指标读取暂停，显示时只恢复一次；HTTP403清空数值／canvas并停止自动请求，时间推进及隐藏切换均不能绕过，只有手动重读后恢复。使用受控HTTP与Playwright时钟，不执行真实来源启停或设置应用定时任务。
+
+最终标准 `npm run test:e2e -- e2e/engine-resources.spec.js e2e/redis-resources.spec.js` 52项T3通过（1.8分钟，`/tmp/addp-redis-source-states-final.log`）；含新增6项组合场景和原PG／Redis全部已有断言。共享夹具其他直接消费者也沿标准浏览器门禁复验：Console的`engine-resource-navigation.spec.js`4项及`engine-monitor-navigation.spec.js`3项通过（`/tmp/addp-redis-source-states-console.log`、`/tmp/addp-redis-source-states-owner-navigation.log`）；Monitor的`automatic-filter-enter.spec.js --grep 'engine Enter submits'`1项通过（`/tmp/addp-redis-source-states-enter-final.log`）。最初额外Enter命令的`^engine Enter`正则未匹配Playwright完整标题，报“No tests found”，不计通过；修正调用筛选后实际运行1项，无产品或断言放宽。
+
+对本批三项测试路径调用现有`changed-gate.py`影响函数，精确命中console／monitor；既有两前端CI门禁会自动发现，不新增Makefile／workflow。产品源码、依赖、构建输入和T1输入未变，复用上一批有效构建／单测，不重复无变化的来源T2或Go门禁。此次共60项受控T3，不证明个人Safari、真实HTTP SD／Prometheus或正式身份T4，也不计为完整Monitor／Console浏览器门禁。CI／Hosted仍等专门会话安排回传，未查询、触发、重跑或设置定时任务。

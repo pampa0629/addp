@@ -37,8 +37,31 @@ export async function engineBackend(page, { locale = 'zh-cn', auth = identity(en
       const start = trend ? new Date(Math.max(Date.parse(url.searchParams.get('start')), Date.parse(stamp) - 120000)).toISOString() : stamp
       const count = trend ? Math.floor((Date.parse(stamp) - Date.parse(start)) / 15000) + 1 : 1
       const inactive = owner.host_binding_state === 'rejected' || !owner.enabled
-      const state = inactive ? 'not_active' : mode === 'sql-failed' ? 'snapshot_unavailable' : trend ? 'no_sample' : 'collecting'
-      body = { queried_at: stamp, start, end: stamp, step_seconds: 15, policy_version: 1, lookback_seconds: 300, data: [{ subject: { kind: 'engine_deployment', deployment_id: engineID, display_name: owner.display_name, engine_type: owner.engine_type }, node_id: owner.node_id, collection: { state, sampled_at: trend || inactive ? null : stamp }, series: metrics.map(metric => ({ metric_key: metric.key, unit: metric.unit, window_seconds: metric.windowSeconds, dimensions: {}, points: Array.from({ length: count }, (_, index) => { const at = new Date(Date.parse(start) + index * 15000).toISOString(), missing = inactive || mode === 'sql-failed' || mode==='no-limit' && metric.name==='redisPercent' || mode==='no-lookups' && metric.name==='redisHitPercent' || trend && index === 2; return { evaluated_at: at, sampled_at: missing ? null : at, value: missing ? null : mode==='over-limit' && metric.name==='redisPercent' ? 180 : mode==='no-limit' && metric.name==='redisLimit' ? 0 : metric.unit === 'bytes' ? capacity : 0, data_state: inactive ? 'not_active' : missing ? 'no_data' : 'valid' } }) })) }] }
+      const absentState = inactive ? 'not_active' : { 'not-connected': 'not_connected', 'source-unavailable': 'source_unavailable' }[mode]
+      const failure = { 'snapshot-unavailable': 'snapshot_unavailable', 'scrape-failed': 'failed', stale: 'stale' }[mode]
+      const state = absentState || (trend || mode === 'no-sample' ? 'no_sample' : failure || 'collecting')
+      const sampledAt = absentState || trend || mode === 'no-sample' ? null : mode === 'stale' ? new Date(Date.parse(stamp) - 61000).toISOString() : stamp
+      body = {
+        queried_at: stamp, start, end: stamp, step_seconds: 15, policy_version: 1, lookback_seconds: 300,
+        data: [{
+          subject: { kind: 'engine_deployment', deployment_id: engineID, display_name: owner.display_name, engine_type: owner.engine_type },
+          node_id: owner.node_id, collection: { state, sampled_at: sampledAt },
+          series: metrics.map(metric => ({
+            metric_key: metric.key, unit: metric.unit, window_seconds: metric.windowSeconds, dimensions: {},
+            points: Array.from({ length: count }, (_, index) => {
+              const at = new Date(Date.parse(start) + index * 15000).toISOString()
+              // A failed current scrape can coexist with valid earlier history.
+              const missing = absentState || mode === 'no-sample' || failure && (!trend || index >= count - 2)
+                || mode === 'no-limit' && metric.name === 'redisPercent' || mode === 'no-lookups' && metric.name === 'redisHitPercent' || trend && index === 2
+              return {
+                evaluated_at: at, sampled_at: missing ? null : at,
+                value: missing ? null : mode === 'over-limit' && metric.name === 'redisPercent' ? 180 : mode === 'no-limit' && metric.name === 'redisLimit' ? 0 : metric.unit === 'bytes' ? capacity : 0,
+                data_state: absentState || (missing ? 'no_data' : 'valid')
+              }
+            })
+          }))
+        }]
+      }
       if (mode === 'foreign') body.data[0].subject.deployment_id = engineOwner.node_id
       if (['unavailable', 'denied', 'notFound'].includes(mode)) { status = { unavailable: 503, denied: 403, notFound: 404 }[mode]; body = { error_code: mode === 'unavailable' ? 'observability_backend_unavailable' : 'permission_denied', error: 'fixture refusal' } }
       if (held) await held

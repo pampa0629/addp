@@ -101,6 +101,8 @@ Linux VM 单新 Monitor 绑定的固定版本、失败和覆盖限制见[清单�
 
 Redis 后续范围已确认：首批 Infra／Business 单机 Redis 7，独立账号只授 HELLO／PING／INFO，无业务键和频道访问。已补固定采集内核、原生ACL持久化、独立mTLS来源与Infra／Business标准启停；正式契约见[Redis 首期边界](../spec/addp平台运行观测规范.md#redis-专业观测首期边界2026-11-01-确认分阶段实施)。本批[账号与来源证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-账号持久化与来源生命周期2026-11-01)与正式页面分层；工作区已补同一部署发现、System确认及私有来源精确投影和HTTP SD，见[本批证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-自动发现与-system-精确来源关联2026-11-01)；前置迁移259／260已由其他会话提交于`7da941ee6`，本批261按连续Catalog发布。工作区已补同一三项API的22项Redis目录、分组详情、四项列表摘要和趋势，复用现有授权重核、预算、提示、缩放及无闪烁刷新；见[查询与页面证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-专业指标查询与页面2026-11-01)。本地Go、原生PromQL边界、两作用域真实来源T2及受控页面T3通过，正式User／Prometheus／Console全链路与Hosted未运行；不将来源通过计为正式专业监控完成。
 
+Redis来源异常、停用／恢复及自动刷新暂停／撤权停止的中英文受控页面覆盖已补齐，见[状态验收证据](../spec/testing/evidence/Monitor采集来源与引擎指标历史证据.md#redis-来源状态与恢复的受控页面验收2026-11-02)。当前值缺失与有效历史趋势分别判断；该T3不代替实际来源启停、个人Safari或正式T4。
+
 ### Redis 正式全链路验收（2026-11-01 已确认，本地验证）
 
 用户已确认在同一 suite 增加独立的 `redis-engine-admission` 人工 profile，复用正式三员 Bootstrap、真实密码／MFA、既有权限、独立 Prometheus 和共享生命周期；不改原 PG profile，也不把旧 PG 验收当作 Redis 通过。
