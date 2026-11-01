@@ -1492,7 +1492,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             'engines/geopython-workflow/test_topology_operators.py',
             'manager/frontend/e2e/geometry-preview-support.js', 'manager/frontend/tests/previewGeometryWire.test.js',
             'manager/frontend/e2e/geometry-preview-coordinate.js',
-            'scripts/test/vector-topology-persistence-online_test.py', '.github/workflows/platform-ci.yml', 'scripts/test/online-hosted-topology-gate_test.py')
+            'scripts/test/vector-topology-persistence-online_test.py', '.github/workflows/platform-ci.yml', 'scripts/test/online-hosted-topology-gate_test.py', 'scripts/test/online-vector-topology-fixture_test.py')
         for relative in paths:
             target = self.repository / relative; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / relative, target)
@@ -1516,6 +1516,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[7], 'if(expected.length>20)'), (paths[7], 'chains:9,chain_edges:15,edge_sources:22'),
             (paths[9], 'test_hosted_normalize_chains_case_three_save_independent_physical_oracle'),
             (paths[15], 'test_extension_case_is_bound_without_old_business_or_capacity'),
+            (paths[0], '          - line-nodes'), (paths[3], 'line-nodes|line-trimming|full'),
+            (paths[5], 'def nodes_features('), (paths[5], 'def verify_nodes('), (paths[5], 'def nodes_worker('),
+            (paths[4], 'def nodes_definition('), (paths[4], 'def validate_nodes_failure('), (paths[4], 'def validate_nodes_browser_raw('),
+            (paths[7], 'topology-nodes-browser-raw.json'), (paths[7], 'function assertNodesLineage('),
+            (paths[9], 'test_hosted_line_nodes_dual_point_nine_failures_and_independent_oracle'),
+            (paths[13], 'class NodesOnlineTest'), (paths[15], 'test_nodes_case_is_bound_without_old_business_or_capacity'), (paths[16], 'class NodesFixtureTest'),
             (paths[0], '          - line-trimming'), (paths[3], 'line-trimming|full|line-network-normalize'),
             (paths[5], 'def trim_features('), (paths[5], 'def trim_worker('), (paths[4], 'def trim_definition('),
             (paths[4], 'def validate_trim_failure('), (paths[4], 'def validate_trim_browser_raw('), (paths[7], 'assertTrimRemovedSegment'),

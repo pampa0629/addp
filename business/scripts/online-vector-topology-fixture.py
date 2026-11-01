@@ -411,7 +411,129 @@ def rings_diagnostic_worker(action,root):
     return {'sources':{name:digest(root/name) for name in RINGS_DIAGNOSTIC_SOURCES},'targets':{},'exact_inventory_verified':True}
 
 
-INDEPENDENT_CASES = (TRIM_CASE, RINGS_DIAGNOSTIC_CASE, RINGS_CASE, ENDPOINT_CASE, EXTENSION_CASE, PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
+NODES_CASE = 'line-nodes'
+NODES_SCHEMA = 'addp.line-nodes'
+NODES_TITLE = '节点提取独立普通User节点与来源明细双Point及九失败保护'
+NODES_FAILURES = (
+    ('reverse','operator_endpoint_network_invalid',''),
+    ('parts-overlap','operator_endpoint_network_invalid',''),
+    ('tee','operator_endpoint_network_invalid',''),
+    ('cross','operator_endpoint_network_invalid',''),
+    ('self','operator_endpoint_network_invalid',''),
+    ('field','operator_field_conflict','node_id'),
+    ('geometry','operator_field_conflict','degree'),
+    ('id','operator_input_invalid',''),
+    ('crs','operator_projected_crs_required',''),
+)
+NODES_KINDS = ('source',*[s[0] for s in NODES_FAILURES])
+NODES_SOURCES = tuple('nodes-'+k+'.gpkg' for k in NODES_KINDS)
+NODES_PORTS = ('result','members')
+NODES_TARGETS = ('nodes.gpkg','node-members.gpkg')
+
+
+def nodes_features(kind):
+    """Handwritten endpoints/incidences; never compute expectation with production topology."""
+    parts=[[[[0,0],[1,0],[0,1],[0,0]],[[0,0],[-1,0]]],
+           [[[10,0],[11,0]]],[[[11,0],[10,1]]],[[[10,1],[10,0]]],
+           [[[20,0],[21,1],[22,0]]],[[[20,0],[21,-1],[22,0]]],
+           [[[30,0],[31,0]],[[33,0],[34,0]]],
+           [[[40,0],[40,0],[40.5,0],[41,0],[41,0]]],[[[41+2**-40,0],[42,0]]]]
+    props=[{'route_key':2**40+2*i+1,'grade':None if i%2 else 2**40+i,'enabled':None if i%3==1 else i%2==0,
+            'geometry':None if i%2 else '节点业务几何-'+str(i)} for i in range(9)]
+    points=[[0,0],[-1,0],[10,0],[11,0],[10,1],[20,0],[22,0],[30,0],[31,0],[33,0],[34,0],[40,0],[41,0],[41+2**-40,0],[42,0]]
+    if kind=='result':
+        return [{'properties':{'node_id':i+1,'degree':d},'geometry':{'type':'Point','coordinates':point}}
+                for i,(point,d) in enumerate(zip(points,[3,1,2,2,2,2,2,1,1,1,1,1,1,1,1]))]
+    if kind=='members':
+        incidence=[(0,1,1,1),(0,2,1,2),(1,1,3,4),(2,1,4,5),(3,1,5,3),(4,1,6,7),(5,1,6,7),(6,1,8,9),(6,2,10,11),(7,1,12,13),(8,1,14,15)]
+        return [{'properties':{**props[row],'node_id':node,'source_id':props[row]['route_key'],'source_part_no':part,'end':end},
+                 'geometry':{'type':'Point','coordinates':points[node-1]}}
+                for row,part,start,finish in incidence for node,end in ((start,'start'),(finish,'end'))]
+    failures={
+        'reverse':[[[[100,0],[104,0]]],[[[104,0],[100,0]]]],
+        'parts-overlap':[[[[100,0],[104,0]],[[103,0],[101,0]]]],
+        'tee':[[[[100,0],[104,0]]],[[[102,0],[102,2]]]],
+        'cross':[[[[100,0],[104,0]]],[[[102,-1],[102,1]]]],
+        'self':[[[[100,0],[102,2],[100,2],[102,0]]]],
+    }
+    if kind in failures:parts=failures[kind]
+    elif kind not in NODES_KINDS:raise FixtureError('unknown nodes fixture kind')
+    result=[]
+    for i,shape in enumerate(parts):
+        p=dict(props[i])
+        if kind=='field':p['node_id']=9
+        if kind=='id':p['route_key']=props[0]['route_key']
+        result.append({'properties':p,'geometry':{'type':'MultiLineString','coordinates':shape}})
+    return result
+
+
+def nodes_geometry_name(kind):
+    return 'degree' if kind=='geometry' else 'source_shape'
+
+
+def nodes_field_types(kind):
+    from osgeo import ogr
+    return {name:(ogr.OFTInteger if name=='enabled' else ogr.OFTString if name in ('geometry','end') else ogr.OFTInteger64,
+                  ogr.OFSTBoolean if name=='enabled' else ogr.OFSTNone) for name in nodes_features(kind)[0]['properties']}
+
+
+def seed_nodes(path,kind):
+    from osgeo import ogr,osr
+    ds=ogr.GetDriverByName('GPKG').CreateDataSource(str(path));crs=osr.SpatialReference();crs.ImportFromEPSG(4326 if kind=='crs' else 3857);crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    layer=ds.CreateLayer(path.stem,crs,ogr.wkbMultiLineString,options=['GEOMETRY_NAME='+nodes_geometry_name(kind)])
+    for name,(native,subtype) in nodes_field_types(kind).items():
+        field=ogr.FieldDefn(name,native);field.SetSubType(subtype);layer.CreateField(field)
+    for row in nodes_features(kind):
+        feature=ogr.Feature(layer.GetLayerDefn())
+        for name,value in row['properties'].items():
+            if value is not None:feature.SetField(name,int(value) if type(value) is bool else value)
+        feature.SetGeometry(ogr.CreateGeometryFromJson(json.dumps(row['geometry'])));layer.CreateFeature(feature);feature=None
+    layer=ds=None
+
+
+def verify_nodes(path,kind):
+    from osgeo import ogr,osr
+    ds=ogr.Open(str(path),0)
+    if not ds or ds.GetLayerCount()!=1:raise FixtureError('nodes requires one physical layer')
+    layer=ds.GetLayer(0);schema=layer.GetLayerDefn();crs=osr.SpatialReference();crs.ImportFromEPSG(4326 if kind=='crs' else 3857);crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    expected=nodes_features(kind);types=nodes_field_types(kind);fields=list(types)
+    if not layer.GetSpatialRef() or not layer.GetSpatialRef().IsSame(crs):raise FixtureError('nodes CRS differs')
+    if [f.name for f in layer.schema]!=fields:raise FixtureError('nodes fields or order differ')
+    for field,(native,subtype) in types.items():
+        observed=schema.GetFieldDefn(schema.GetFieldIndex(field))
+        if observed.GetType()!=native or observed.GetSubType()!=subtype:raise FixtureError('nodes physical field type differs')
+    point=kind in NODES_PORTS;geom=schema.GetGeomFieldDefn(0)
+    if geom.GetType()!=(ogr.wkbPoint if point else ogr.wkbMultiLineString) or not geom.GetName() or geom.GetName() in fields or not point and geom.GetName()!=nodes_geometry_name(kind):raise FixtureError('nodes real geometry identity differs')
+    def coords(g):
+        if g.GetGeometryName()=='POINT':return list(g.GetPoint_2D())
+        if g.GetGeometryName()=='LINESTRING':return [list(p) for p in g.GetPoints()]
+        return [coords(g.GetGeometryRef(i)) for i in range(g.GetGeometryCount())]
+    rows=[]
+    for i,feature in enumerate(layer,1):
+        shape=feature.GetGeometryRef()
+        if feature.GetFID()!=i or shape is None or shape.GetCoordinateDimension()!=2 or shape.IsMeasured() or not shape.IsValid():raise FixtureError('nodes FID geometry validity or dimension differs')
+        props={name:feature.GetField(name) for name in fields}
+        if 'enabled' in props and props['enabled'] is not None:
+            if type(props['enabled']) not in (int,bool) or props['enabled'] not in (0,1):raise FixtureError('nodes boolean value differs')
+            props['enabled']=bool(props['enabled'])
+        rows.append({'properties':props,'geometry':{'type':'Point' if point else 'MultiLineString','coordinates':coords(shape)}})
+    if rows!=expected or any(type(r['properties'][k]) is not type(e['properties'][k]) for r,e in zip(rows,expected) for k in fields):raise FixtureError('nodes exact coordinates degree incidence attributes types or order differ')
+    return {**digest(path),'feature_count':len(rows),'layer_name':layer.GetName(),'geometry_column':geom.GetName(),'fid_column':layer.GetFIDColumn(),'features':rows,'source_crs':'EPSG:4326' if kind=='crs' else 'EPSG:3857'}
+
+
+def nodes_worker(action,root):
+    if action=='seed':
+        if any((root/n).exists() for n in NODES_SOURCES) or list((root/'outputs').iterdir()):raise FixtureError('refusing existing nodes data')
+        for name,kind in zip(NODES_SOURCES,NODES_KINDS):seed_nodes(root/name,kind)
+        return {'sources':{name:digest(root/name) for name in NODES_SOURCES}}
+    if action!='verify':raise FixtureError('unknown nodes action')
+    if sorted(p.name for p in root.iterdir())!=sorted(['.addp-online-owner','outputs',*NODES_SOURCES]) or sorted(p.name for p in (root/'outputs').iterdir())!=sorted(NODES_TARGETS):raise FixtureError('nodes exact source/dual target inventory differs')
+    return {'sources':{name:digest(root/name) for name in NODES_SOURCES},
+            'source_tables':{name:verify_nodes(root/name,kind) for name,kind in zip(NODES_SOURCES,NODES_KINDS)},
+            'targets':{name:verify_nodes(root/'outputs'/name,kind) for name,kind in zip(NODES_TARGETS,NODES_PORTS)},'exact_inventory_verified':True}
+
+
+INDEPENDENT_CASES = (NODES_CASE, TRIM_CASE, RINGS_DIAGNOSTIC_CASE, RINGS_CASE, ENDPOINT_CASE, EXTENSION_CASE, PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
 
 NORMALIZE_CASE = 'line-network-normalize'
 NORMALIZE_SOURCE = 'normalize-input.gpkg'
@@ -425,6 +547,7 @@ COMPOSITION_TARGETS = ('chains.gpkg','chain-edges.gpkg','edge-sources.gpkg')
 
 
 def network_profile(case):
+    if case==NODES_CASE:return {"ports":NODES_PORTS,"targets":NODES_TARGETS,"schema":NODES_SCHEMA,"title":NODES_TITLE}
     if case==TRIM_CASE:return {"ports":EXTENSION_PORTS,"targets":TRIM_TARGETS,"schema":TRIM_SCHEMA,"title":TRIM_TITLE}
     if case==RINGS_DIAGNOSTIC_CASE:
         return {"schema":RINGS_DIAGNOSTIC_SCHEMA,"title":RINGS_DIAGNOSTIC_TITLE,"ports":(),"targets":(),"diagnostic_sources":RINGS_DIAGNOSTIC_SOURCES}
@@ -1771,6 +1894,7 @@ def validate_features(name, features):
 
 def worker(action, root, case=None):
     case=topology_case() if case is None else topology_case({"ADDP_ONLINE_TOPOLOGY_CASE":case})
+    if case==NODES_CASE:return nodes_worker(action,root)
     if case==RINGS_DIAGNOSTIC_CASE:return rings_diagnostic_worker(action,root)
     if case==TRIM_CASE:return trim_worker(action,root)
     if case==RINGS_CASE:return rings_worker(action,root)
@@ -1884,7 +2008,7 @@ def runtime_worker(action, root):
 def archive_physical_evidence(root, directory, result, case=None):
     """Retain only this synthetic fixture's verified bytes for offline audit."""
     case=topology_case() if case is None else topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':case})
-    sources,targets=(TRIM_SOURCES,TRIM_TARGETS) if case==TRIM_CASE else (RINGS_DIAGNOSTIC_SOURCES,()) if case==RINGS_DIAGNOSTIC_CASE else (RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
+    sources,targets=(NODES_SOURCES,NODES_TARGETS) if case==NODES_CASE else (TRIM_SOURCES,TRIM_TARGETS) if case==TRIM_CASE else (RINGS_DIAGNOSTIC_SOURCES,()) if case==RINGS_DIAGNOSTIC_CASE else (RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
     archive = directory / 'topology-physical'
     if archive.is_symlink() or (archive/'outputs').is_symlink():
         raise FixtureError('physical archive must not follow symlinks')

@@ -6196,3 +6196,50 @@ def test_extract_line_nodes_nonframe_missing_id_duplicate_columns_and_empty_sche
     assert out['members'].source_id.dtype==empty.route_key.dtype
     assert str(out['members'].end.dtype)=='string'
     assert out['result'].empty and out['members'].empty and out['result'].crs==empty.crs
+
+
+@pytest.mark.parametrize('problem',[None,'degree','incidence','part','end','coordinate','null','integer_type','boolean_type','extra_output','source_changed'])
+def test_hosted_line_nodes_dual_point_nine_failures_and_independent_oracle(tmp_path,problem):
+    import importlib
+    from osgeo import ogr
+    f=importlib.import_module('business.scripts.online-vector-topology-fixture');a=importlib.import_module('scripts.test.vector-topology-persistence-online')
+    (tmp_path/'outputs').mkdir();(tmp_path/'.addp-online-owner').touch();seed=f.worker('seed',tmp_path,f.NODES_CASE)
+    def definition(failure=None):
+        result=a.nodes_definition(list(f.NODES_SOURCES),'unused',failure)
+        for task in result['tasks']:
+            if task['operator']=='load':task['params']={'connection_info':{'engine_type':'nfs','mount_path':str(tmp_path)},'path':task['params']['locator']}
+            elif task['operator']=='save':
+                name=task['params'].pop('target_name');task['params'].pop('target_parent_locator');task['params'].update(connection_info={'engine_type':'nfs','mount_path':str(tmp_path)},path='outputs/'+name)
+        return result
+    result=execute_workflow(definition());assert result['status']=='success',result
+    native=f.worker('verify',tmp_path,f.NODES_CASE);assert native['sources']==seed['sources']
+    assert [native['targets'][n]['feature_count'] for n in f.NODES_TARGETS]==[15,22]
+    assert sum(r['properties']['degree'] for r in native['targets'][f.NODES_TARGETS[0]]['features'])==22
+    if problem is None:
+        for spec in f.NODES_FAILURES:
+            failed=execute_workflow(definition(spec[0]));assert failed['status']=='failed' and failed['error_code']=='INVALID_PARAMS',failed
+            assert failed['diagnostic']==a.nodes_diagnostic(spec),failed
+            assert f.worker('verify',tmp_path,f.NODES_CASE)==native
+        archive=tmp_path.parent/(tmp_path.name+'-archive');f.archive_physical_evidence(tmp_path,archive,native,f.NODES_CASE)
+        assert len(list((archive/'topology-physical').rglob('*.gpkg')))==12
+        return
+    path=tmp_path/'outputs'/f.NODES_TARGETS[0 if problem=='degree' else 1]
+    if problem=='extra_output':(tmp_path/'outputs/extra.gpkg').touch()
+    else:
+        if problem=='source_changed':path=tmp_path/f.NODES_SOURCES[0]
+        ds=ogr.Open(str(path),1);layer=ds.GetLayer(0)
+        if problem in ('integer_type','boolean_type'):
+            field='grade' if problem=='integer_type' else 'enabled'
+            assert layer.AlterFieldDefn(layer.GetLayerDefn().GetFieldIndex(field),ogr.FieldDefn(field,ogr.OFTReal),ogr.ALTER_TYPE_FLAG)==0
+        else:
+            feature=layer.GetFeature(5 if problem=='null' else 1)
+            if problem=='degree':feature.SetField('degree',2)
+            elif problem=='incidence':feature.SetField('node_id',2)
+            elif problem=='part':feature.SetField('source_part_no',2)
+            elif problem=='end':feature.SetField('end','end')
+            elif problem=='null':feature.SetField('grade',99)
+            elif problem=='source_changed':feature.SetField('geometry','changed')
+            else:feature.SetGeometry(ogr.CreateGeometryFromWkt('POINT (99 0)'))
+            layer.SetFeature(feature);feature=None
+        layer=ds=None
+    with pytest.raises(f.FixtureError):f.worker('verify',tmp_path,f.NODES_CASE)

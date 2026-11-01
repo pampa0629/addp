@@ -2231,6 +2231,20 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
     for relative,fragments in diagnostics_required.items():
         if any(fragment not in (repository/relative).read_text() for fragment in fragments):
             raise RegistrationError('topology operator input diagnostics contract incomplete: '+relative)
+    nodes_required = {
+        '.github/workflows/online-t4-gates.yml': ('          - line-nodes',),
+        'scripts/test/online-hosted-topology-gate.sh': ('line-nodes|line-trimming|full',),
+        'business/scripts/online-vector-topology-fixture.py': ('def nodes_features(', 'def verify_nodes(', 'def nodes_worker(', 'NODES_FAILURES', 'def nodes_field_types('),
+        'scripts/test/vector-topology-persistence-online.py': ('def nodes_definition(', 'def run_nodes_scenario(', 'def validate_nodes_failure(', 'def validate_nodes_browser_raw(', 'def validate_nodes_graph(', 'nodes_diagnostic(spec)'),
+        'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('节点提取独立普通User节点与来源明细双Point及九失败保护', 'topology-nodes-browser-raw.json', 'async function verifyNodesCase(', 'function assertNodesLineage(', 'function nodesPanelExpectation(', "output.port==='members'", 'assertProximityPointMap(renderer,expected)'),
+        'engines/geopython-workflow/test_topology_operators.py': ('test_hosted_line_nodes_dual_point_nine_failures_and_independent_oracle',),
+        'scripts/test/vector-topology-persistence-online_test.py': ('class NodesOnlineTest', 'test_nodes_one_success_nine_failures_two_point_scans_and_exact_source_edges', 'test_nodes_raw_browser_rejects_point_incidence_ewkb_and_owner_locale_forgery'),
+        'scripts/test/online-hosted-topology-gate_test.py': ('test_nodes_case_is_bound_without_old_business_or_capacity',),
+        'scripts/test/online-vector-topology-fixture_test.py': ('class NodesFixtureTest',),
+    }
+    for relative,fragments in nodes_required.items():
+        if any(fragment not in (repository/relative).read_text() for fragment in fragments):
+            raise RegistrationError('topology nodes case contract incomplete: '+relative)
     trim_required = {
         '.github/workflows/online-t4-gates.yml': ('          - line-trimming',),
         'scripts/test/online-hosted-topology-gate.sh': ('line-trimming|full|line-network-normalize',),

@@ -2087,3 +2087,165 @@ assert.equal(await run(),0);await assert.rejects(()=>run(true));await assert.rej
 """
         result=subprocess.run(['node','--input-type=module','-e',script,str(Path(__file__).resolve().parents[2]/'console/frontend/e2e/online/vector-topology-persistence.spec.js')],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
+
+def nodes_physical(*args):
+    return {'exact_inventory_verified':True,'sources':{n:{'size_bytes':98304,'sha256':n} for n in m.fixture.NODES_SOURCES},
+        'targets':{name:{'size_bytes':98304,'sha256':name,'feature_count':len(m.fixture.nodes_features(port)),'layer_name':name[:-5],
+            'geometry_column':'geom','fid_column':'fid','features':m.fixture.nodes_features(port)}
+            for port,name in zip(m.fixture.NODES_PORTS,m.fixture.NODES_TARGETS)}}
+
+
+class NodesClient(InputDiagnosticClient):
+    def __init__(self):
+        super().__init__();self.sources=[];self.outputs=[];self.mutate_failed=None;self.failed_graph=None;self.mutate_graph=None;self.scan_actor=33;self.scan_tenant=2
+        for i,(name,kind) in enumerate(zip(m.fixture.NODES_SOURCES,m.fixture.NODES_KINDS)):
+            rows=m.fixture.nodes_features(kind);item=base.item(name,10+i);item['full_name']=name
+            item['attributes']['type_info']['container']['children'][0].update(row_count=len(rows),column_count=len(rows[0]['properties'])+2);self.sources.append(item)
+        for i,(name,port) in enumerate(zip(m.fixture.NODES_TARGETS,m.fixture.NODES_PORTS)):
+            rows=m.fixture.nodes_features(port);item=base.item(name,30+i)
+            item['attributes']['type_info']['container']['children'][0].update(row_count=len(rows),column_count=len(rows[0]['properties'])+2);self.outputs.append(item)
+        self.scans=['scan-'+n for n in m.fixture.NODES_SOURCES]
+        self.locators=[f'addp://engine/3/path/{n}?type=file&item_id={10+i}' for i,n in enumerate(m.fixture.NODES_SOURCES)]
+        self.parent='addp://engine/3/path/outputs?type=directory'
+        targets={p:f'addp://engine/3/path/outputs/{n}?type=file' for p,n in zip(m.fixture.NODES_PORTS,m.fixture.NODES_TARGETS)}
+        self.success={'execution_id':'nodes-run','status':'success','triggered_by':33,
+            'outputs':{'save_'+p:{'resource':{'locator':t,'type':'file','write_mode':'create'}} for p,t in targets.items()},
+            'execution_config':{'content':{'workflow_definition':m.nodes_definition(self.locators,self.parent)}},
+            'metadata':{'lineage_facts':{'schema_version':'addp.lineage-facts/v1','inputs':[{'port':'input.load_source','locator':self.locators[0]}],
+              'outputs':[{'locator':t,'write_mode':'create'} for t in targets.values()]},'result':{'meta_scan_runs':[{'execution_id':'output-scan-'+p,'target_locator':t,'status':'submitted'} for p,t in targets.items()]}}}
+    def request(self,method,path,expected,body=None):
+        if method=='POST' and path.endswith('/develop/executions'):
+            self.calls.append((method,path,body));definition=body['content']['workflow_definition'];name=definition['tasks'][-1]['params']['target_name']
+            if name.startswith('failed-'):
+                spec=next(v for v in m.fixture.NODES_FAILURES if name.startswith('failed-'+v[0]+'-'))
+                value={'execution_id':'failed-'+spec[0],'status':'failed','triggered_by':33,'outputs':{},'metadata':{},
+                    'execution_config':{'content':{'workflow_definition':definition}},'error_details':{'code':'develop.workflow.invalid_params','message':'controlled','diagnostic':m.nodes_diagnostic(spec)}}
+                if self.mutate_failed:self.mutate_failed(value)
+            else:value=self.success;self.scans.extend(['output-scan-result','output-scan-members'])
+            self.executions[value['execution_id']]=value;data={'execution_id':value['execution_id']}
+        elif path.endswith('/engines/3/items'):data=[*self.sources,*self.outputs]
+        elif path.startswith('/api/v1/meta/items/'):
+            item_id=int(path.rsplit('/',1)[1]);data=next(v for v in [*self.sources,*self.outputs] if v['id']==item_id)
+        elif '/meta/executions/' in path:data={'status':'success','tenant_id':self.scan_tenant,'triggered_by':self.scan_actor}
+        elif path.startswith('/api/v1/meta/lineage/graph?'):
+            if 'direction=downstream' in path:
+                data={'truncated':False,'nodes':[],'edges':[]}
+                if self.failed_graph:self.failed_graph(data)
+            else:
+                target=int(path.split('item_id=')[1].split('&')[0]);data={'truncated':False,'nodes':[],'edges':[{'source':{'item_id':10},'target':{'item_id':target},'relation_kind':'derive','status':'active','evidence':{'execution_id':'nodes-run'}}]}
+                if self.mutate_graph:self.mutate_graph(data)
+        else:return super().request(method,path,expected,body)
+        return SimpleNamespace(payload=copy.deepcopy(data))
+
+
+class NodesOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
+        self.env={**ENV,'ADDP_ONLINE_TOPOLOGY_CASE':m.fixture.NODES_CASE,'ADDP_ONLINE_ARTIFACT_DIR':self.directory.name}
+    def run_case(self,client=None,physical=nodes_physical,browser=lambda *a:a[2]):
+        return m.run_scenario(Path('.'),self.env,client or NodesClient(),physical,browser,diagnostic_runner=lambda *a,**k:self.fail('no private log oracle'))
+    def test_nodes_one_success_nine_failures_two_point_scans_and_exact_source_edges(self):
+        c=NodesClient();report=self.run_case(c)
+        self.assertEqual(report['result'],'passed');self.assertEqual(report['schema_version'],'addp.line-nodes/v1')
+        self.assertEqual([len(report['browser']['expected'][k]) for k in m.fixture.NODES_PORTS],[15,22])
+        self.assertEqual([len(report[k]) for k in ['initial_scan_inventory','final_scan_inventory','meta_after']],[10,12,12])
+        self.assertEqual(sum(len(g['edges']) for g in report['raw_lineage'].values()),2)
+        self.assertEqual([f['key'] for f in report['failures']],[s[0] for s in m.fixture.NODES_FAILURES])
+        self.assertEqual(len({f['execution_id'] for f in report['failures']}),9)
+        self.assertEqual(sum(method=='POST' and path.endswith('/develop/executions') for method,path,_ in c.calls),10)
+    def test_nodes_rejects_output_scan_identity_boolean_size_port_and_stale_extra_graph(self):
+        changes=[lambda c:c.success['metadata']['lineage_facts']['inputs'].append(copy.deepcopy(c.success['metadata']['lineage_facts']['inputs'][0])),
+            lambda c:c.success['metadata']['lineage_facts']['inputs'][0].update(port='input.other'),
+            lambda c:c.success['metadata']['lineage_facts']['outputs'][0].update(write_mode='fail'),
+            lambda c:c.success['metadata']['result']['meta_scan_runs'][0].update(execution_id=''),
+            lambda c:setattr(c,'scan_actor',True),lambda c:setattr(c,'scan_tenant','2'),lambda c:c.outputs[0].update(size_bytes=True),
+            lambda c:setattr(c,'mutate_graph',lambda g:g['edges'].append(copy.deepcopy(g['edges'][0])))]
+        for change in changes:
+            c=NodesClient();change(c)
+            with self.subTest(change=change),self.assertRaises(m.SuiteError):self.run_case(c)
+    def test_nodes_rejects_stale_graph_directly_without_waiting_or_budget_change(self):
+        for mutation in [lambda g:g['edges'][0]['evidence'].update(execution_id='old'),lambda g:g['edges'].clear(),lambda g:g.update(truncated=True)]:
+            graph={'truncated':False,'edges':[{'source':{'item_id':10},'target':{'item_id':30},'relation_kind':'derive','status':'active','evidence':{'execution_id':'current'}}]}
+            mutation(graph)
+            with self.subTest(mutation=mutation),self.assertRaises(m.SuiteError):m.validate_nodes_graph(graph,[{'id':10}],30,'current')
+    def test_nodes_failures_reject_publication_scan_derive_private_or_wrong_tuple(self):
+        for mutation in [lambda v:v.update(outputs={'save':{}}),lambda v:v['metadata'].update(lineage_facts={'outputs':[{}]}),
+            lambda v:v['metadata'].update(result={'meta_scan_runs':[{}]}),lambda v:v['error_details']['diagnostic']['operator'].update(node_index=True),
+            lambda v:v['error_details']['diagnostic']['operator'].update(field='PRIVATE'),lambda v:v['error_details'].update(message='route_key')]:
+            c=NodesClient();c.mutate_failed=mutation
+            with self.subTest(mutation=mutation),self.assertRaises(m.SuiteError):self.run_case(c)
+        c=NodesClient();c.failed_graph=lambda g:g['edges'].append({'relation_kind':'derive','evidence':{'execution_id':'failed-reverse'}})
+        with self.assertRaises(m.SuiteError):self.run_case(c)
+    def test_nodes_browser_failure_preserves_incomplete_and_never_final_pass(self):
+        with self.assertRaisesRegex(m.SuiteError,'browser broke'):self.run_case(browser=lambda *a:(_ for _ in ()).throw(m.SuiteError('browser broke')))
+        checkpoint=json.loads((Path(self.directory.name)/'topology-nodes-checkpoint.json').read_text())
+        self.assertEqual((checkpoint['result'],checkpoint['stage']),('incomplete','before_browser'));self.assertEqual(len(checkpoint['failures']),9)
+    def test_nodes_browser_cannot_change_files_scans_or_meta(self):
+        calls=[]
+        def physical(*args):
+            native=nodes_physical();calls.append(1)
+            if len(calls)>10:native['targets']['nodes.gpkg']['sha256']='changed'
+            return native
+        with self.assertRaisesRegex(m.SuiteError,'physical files'):self.run_case(physical=physical)
+        c=NodesClient()
+        def browser(*args):c.sources[0]['size_bytes']=1;return args[2]
+        with self.assertRaisesRegex(m.SuiteError,'Meta changed'):self.run_case(c,browser=browser)
+    def test_nodes_raw_browser_rejects_point_incidence_ewkb_and_owner_locale_forgery(self):
+        import base64,struct
+        report=self.run_case();e=report['browser'];c=NodesClient()
+        raw={'schema_version':m.fixture.NODES_SCHEMA+'-browser-raw/v1','result':'passed','stage':'complete',**{k:e[k] for k in ('case','run_id','execution_id')},'execution':c.success,'observations':[],'failures':[]}
+        for output in e['outputs']:
+            expected=e['expected'][output['port']];fields=list(expected[0]['properties']);rows=[]
+            for i,row in enumerate(expected,1):
+                wire=base64.b64encode(struct.pack('<BIIdd',1,0x20000001,3857,*row['geometry']['coordinates'])).decode()
+                rows.append({output['fid_column']:i,output['geometry_column']:wire,**row['properties']})
+            graph=report['raw_lineage'][output['port']]
+            raw['observations'].append({'port':output['port'],'output_item_id':output['item_id'],'sources':[{'item_id':s['id'],'item':s['before']} for s in e['sources']],
+                'output':output['before'],'graph':graph,'lineage_rendered':{'edges':graph['edges']},
+                'preview':{'preview_type':'table','data':{'total':len(rows),'source_srid':3857,'source_crs':'EPSG:3857','transform_status':'not_transformed','preview_hint':'frontend_transform_required',
+                    'columns':[output['fid_column'],output['geometry_column'],*fields],'geometry_columns':[output['geometry_column']],'rows':rows}},
+                'rendered':{'projection':'EPSG:3857','painted_pixels':31,'features':[{'type':'Point','coordinates':r['geometry']['coordinates'],'properties':r['properties']} for r in expected]}})
+        for failed in report['failures']:
+            raw['failures'].append({'key':failed['key'],'execution_id':failed['execution_id'],'observations':[{'owner':owner,'locale':locale,'execution':failed['execution'] if owner=='develop' else {'execution':failed['monitor']},'clipboard':'controlled'} for owner in ('develop','monitor') for locale in ('zh-cn','en')]})
+        m.validate_nodes_browser_raw(raw,e)
+        changes=[lambda v:v.update(stage='incomplete'),lambda v:v['observations'][1]['preview']['data']['rows'].pop(),
+            lambda v:v['observations'][0]['preview']['data']['rows'][0].update(degree=True),lambda v:v['observations'][0]['preview']['data']['rows'][0].update(geom='R1A='),
+            lambda v:v['observations'][1]['rendered']['features'].pop(),lambda v:v['observations'][0]['rendered'].update(painted_pixels=0),
+            lambda v:v['failures'][0]['observations'].pop(),lambda v:v['failures'][0]['observations'][0].update(locale='other')]
+        for mutate in changes:
+            v=copy.deepcopy(raw);mutate(v)
+            with self.subTest(mutate=mutate),self.assertRaises(m.SuiteError):m.validate_nodes_browser_raw(v,e)
+
+
+class NodesBrowserContractTest(unittest.TestCase):
+    def test_nodes_bilingual_panel_and_exact_clipboard_use_current_shared_diagnostic(self):
+        import subprocess
+        repository=Path(__file__).resolve().parents[2]
+        script=r"""
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { pathToFileURL } from 'node:url'
+const root=process.argv[1],source=readFileSync(root+'/console/frontend/e2e/online/vector-topology-persistence.spec.js','utf8')
+const start=source.indexOf('function nodesPanelExpectation('),end=source.indexOf('async function verifyNodesCase(',start)
+const expect=v=>({toBe:expected=>assert.equal(v,expected)})
+const expectedFor=new Function('expect',source.slice(start,end)+';return nodesPanelExpectation')(expect)
+const { executionFailurePresentation }=await import(pathToFileURL(root+'/common-frontend/basic/src/utils/executionFailure.mjs'))
+for(const locale of ['zh-cn','en']){
+ const messages=JSON.parse(readFileSync(root+'/common-frontend/basic/src/i18n/'+locale+'.json','utf8'))
+ const t=(key,args={})=>key.split('.').reduce((v,k)=>v[k],messages).replace(/\{(\w+)\}/g,(_,k)=>args[k])
+ for(const [reason,field] of [['operator_endpoint_network_invalid',''],['operator_field_conflict','node_id'],['operator_field_conflict','degree'],['operator_input_invalid',''],['operator_projected_crs_required','']]){
+  const operator={node_index:1,operator_id:'extract_line_nodes',...(reason==='operator_projected_crs_required'?{}:{parameter:'input_gdf'}),...(field?{field}:{})}
+  const failure={execution_id:'same-current-uuid',expected_diagnostic:{schema_version:'addp.execution-failure/v3',stage:'execution',reason,operator}}
+  const actual=executionFailurePresentation({code:'develop.workflow.invalid_params',diagnostic:failure.expected_diagnostic},t)
+  const expected=expectedFor(failure,locale)
+  assert.deepEqual(expected.values,[actual.reason,actual.stage,actual.operator,actual.node,actual.parameter,actual.field,actual.action,actual.code,failure.execution_id].filter(Boolean))
+  assert.equal(expected.clipboard,expected.values.join('\n'))
+ }
+}
+assert.ok(source.includes("if(output.port==='members')expect([data.page,data.page_size,data.rows.length]).toEqual([1,50,22])"))
+assert.ok(source.includes('observation.rendered=await assertProximityPointMap(renderer,expected)'))
+assert.ok(source.includes('topology-nodes-browser-raw.json'))
+"""
+        result=subprocess.run(['node','--input-type=module','-e',script,str(repository)],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)

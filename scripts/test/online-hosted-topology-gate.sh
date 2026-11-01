@@ -8,8 +8,8 @@ ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=vector-topology-persistence
 export ADDP_ONLINE_TOPOLOGY_CASE=${ADDP_ONLINE_TOPOLOGY_CASE-full}
 case "$ADDP_ONLINE_TOPOLOGY_CASE" in
-  line-trimming|full|line-network-normalize|line-network-normalize-chains|multi-distance-buffer|operator-input-diagnostics|line-proximity|line-extension|endpoint-snapping|polygon-rings|polygon-rings-input-diagnostics) ;;
-  *) echo 'ADDP_ONLINE_TOPOLOGY_CASE must be line-trimming, full, line-network-normalize, line-network-normalize-chains, multi-distance-buffer operator-input-diagnostics line-proximity, line-extension, endpoint-snapping or polygon-rings, polygon-rings-input-diagnostics' >&2; exit 1 ;;
+  line-nodes|line-trimming|full|line-network-normalize|line-network-normalize-chains|multi-distance-buffer|operator-input-diagnostics|line-proximity|line-extension|endpoint-snapping|polygon-rings|polygon-rings-input-diagnostics) ;;
+  *) echo 'ADDP_ONLINE_TOPOLOGY_CASE must be line-nodes, line-trimming, full, line-network-normalize, line-network-normalize-chains, multi-distance-buffer operator-input-diagnostics line-proximity, line-extension, endpoint-snapping or polygon-rings, polygon-rings-input-diagnostics' >&2; exit 1 ;;
 esac
 RUNTIME_CONTAINER=addp-topology-runtime
 RUNTIME_TAG=topology

@@ -1064,6 +1064,15 @@ GeoPackage沿普通矢量容器保存契约，不虚构RasterArtifact／COG或�
 
 沿通用矢量save核物理／Meta相等正整数大小，不虚构RasterArtifact；精确自动扫描核父执行／用户／租户／引擎。直接统计／重分类链核两份原注册输入，转面链只核实际栅格源，共31条源到当前成果关系；受控有界内部血缘、公开operations:null投影及Monitor分别核验，不扩大普通User权限。源与先前成果原件／Meta不变，整套结束时源及全部16项成果Meta分别与初始化／首次扫描后完整快照相等，前后原始快照随报告归档；失败零发布／新增扫描／派生；工作区、oracle、NFS、Runtime、registry、部署与Infra退出全部严格清理，保留首个业务失败及清理错误。标准Native／独立Runner／Online及手工CI／observer与固定矩阵登记同次完成。本地标准Native以`-k "vector_zonal_area_weighted or vector_area_weighted"`通过211项／13100筛除／52.88秒，无失败／跳过／警告；独立`make test-vector-zonal-area-weighted-online-runner`通过103项／25.246秒及完整登记，两门禁输入无漂移。使用正式EPSG:2222／2277保留英尺单位和准确预览CRS，原有统计与产品保持；准备通过不计真实Hosted通过。
 
+### 节点提取独立普通用户验收
+
+`vector-topology-persistence` 的 `line-nodes` 独立case仅运行一次成功和九次失败，复用同一非默认Tenant普通User精确11权限、Hosted隔离生命周期及600秒总业务预算，不执行full、旧业务T4或容量。9条源要素／11个原始线部件覆盖闭环接支线、拆分三角形、相同端点不同路径、同源不连通部件和2^-40间隙；手写15个节点与22条端部明细，逐坐标／顺序／ID／部件／start-end／度数核验，严格满足degree总和=members行数=2×部件数。result仅几何、node_id、degree；members保留来源的全部业务字段、可空Int64／Boolean／String以及名为geometry的普通业务列，不用其替换真实几何。
+
+双Point分别保存GPKG，以独立OGR原始坐标、物理schema、CRS、FID和完整属性核验，不调用生产节点算法生成期望。核两份稳定create输出／facts、两次自动扫描公开整数tenant_id／triggered_by、严格正整数physical=Meta大小及同次执行从唯一成功输入到两个成果的两条active derive；行级来源由members表达，不声称已实现算子中间成果持久血缘。浏览器逐导航绑定同一身份，核原始EWKB、两幅真实Point地图的OL完整要素／业务属性及按真实主题点样式绘制的非透明像素；节点明细同点的重复记录不得被去重。
+
+九次失败分别为反向重复边、同源部件部分重合、未打断T形、未打断十字、内部自交、业务node_id冲突、活动几何degree冲突、重复来源ID及地理CRS。严格绑定冻结节点的既有v3诊断，在Develop／Monitor同一UUID核中英文原因、操作建议和复制内容；无保存文件、输出facts、派生边或新增成果扫描，所有源及成功成果不变。最终保存阶段checkpoint、原始API／Meta／血缘／浏览器证据、合成原文件SHA与大小以及领域／部署／Infra清理零残留；incomplete或局部成功不替代最终报告。两个独立save没有跨文件事务承诺，失败保护限于算子准入失败未进入save。本case不新增API、权限、suite、生命周期或容量预算。
+
+
 ### 非方形像元邻近距离独立验收
 
 `raster-proximity-rectangular-persistence`复用同源默认入口Runtime、NFS及普通User原12权限，独立600秒业务预算，不重试、不扩预算。16条成功COG链覆盖横纵比例实际最近反转、小数步长、两种英尺、显式第二波段与原值域、NoData／mask／alpha、零负分类与UInt32、跨块／单行／单列和原方形对照；26类各中英文提交，共52次准确失败。成功逐步复核所有旧成果，失败复核全部16份，共968次像元／mask／网格CRS／米制单位／完整COG与overview实际事实全检。独立枚举目标预期在执行前冻结；归档16原COG、源与预期数组及大小／hash清单，严格核三方相等正整数大小、当前扫描身份／父执行、内部与公开血缘边界／Monitor、源与全部成果Meta前后快照，失败零发布／新增扫描血缘及全部清理。数值极限与私有文件破坏单列Native，不改产品或旧套件。准备与本地验证不计真实Hosted；Linux全量与实际运行由CI会话协调。

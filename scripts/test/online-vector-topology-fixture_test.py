@@ -511,3 +511,19 @@ class TrimFixtureTest(unittest.TestCase):
                 ('details',lambda r:r.pop(1)),('details',lambda r:r[0]['properties'].update(part_no=True))]:
             rows=copy.deepcopy(m.trim_features(kind));change(rows)
             with self.subTest(kind=kind),self.assertRaises(m.FixtureError):m.validate_extension_features(rows,kind,m.TRIM_CASE)
+
+
+class NodesFixtureTest(unittest.TestCase):
+    def test_nodes_selected_worker_never_runs_full_or_old_cases(self):
+        self.assertEqual(m.topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':m.NODES_CASE}),m.NODES_CASE)
+        self.assertEqual(m.network_profile(m.NODES_CASE)['title'],m.NODES_TITLE)
+        with patch.object(m,'nodes_worker',return_value={'only':'nodes'}) as worker,patch.object(m,'seed_snap',side_effect=AssertionError('old scenario')):
+            self.assertEqual(m.worker('seed',Path('/unused'),m.NODES_CASE),{'only':'nodes'});worker.assert_called_once()
+    def test_nodes_handwritten_degrees_and_complete_repeated_incidence(self):
+        nodes=m.nodes_features('result');members=m.nodes_features('members')
+        self.assertEqual([len(m.nodes_features('source')),len(nodes),len(members)],[9,15,22])
+        self.assertEqual(sum(r['properties']['degree'] for r in nodes),22)
+        self.assertEqual([r['properties']['end'] for r in members[:2]],['start','end'])
+        self.assertEqual([r['properties']['node_id'] for r in members[:3]],[1,1,1])
+        self.assertEqual(nodes[12]['geometry']['coordinates'],[41,0]);self.assertEqual(nodes[13]['geometry']['coordinates'],[41+2**-40,0])
+        self.assertEqual(len(m.NODES_FAILURES),9)

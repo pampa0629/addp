@@ -1048,3 +1048,149 @@ test('线端修剪独立普通User线与Point双成果及八失败保护',async(
   await observeLineageCanvas(page)
   await verifyLineEditCase(page,evidence,directory)
 })
+
+
+function assertNodesLineage(graph,evidence) {
+  expect(graph.truncated).toBe(false)
+  const edges=graph.edges.filter(e=>e.relation_kind==='derive'&&e.status==='active'&&e.evidence?.execution_id===evidence.execution_id)
+  expect(edges).toHaveLength(1)
+  expect(edges.map(e=>[e.source.item_id,e.target.item_id])).toEqual([[evidence.sources[0].id,evidence.output.item_id]])
+}
+
+function nodesPanelExpectation(failure,locale) {
+  const en=locale==='en',d=failure.expected_diagnostic,field=d.operator.field
+  const reason={
+    operator_endpoint_network_invalid:en?'Line parts have internal self-intersections, positive-length overlaps or unsplit intersections; the network is not connected only at both endpoints.':'线部件存在内部自交、正长度重合或未打断的交会，未构成仅在双方端点连接的线网。',
+    operator_field_conflict:en?`Source field ${field} conflicts with a fixed operator output field.`:`源图层字段 ${field} 与算子的固定输出字段重名。`,
+    operator_input_invalid:en?'The input layer does not meet the operator type, field, geometry or identifier requirements.':'输入图层不符合算子的类型、字段、几何或标识要求。',
+    operator_projected_crs_required:en?'Both inputs require known projected CRSs with matching finite positive horizontal linear units.':'两个输入均须具有已知投影坐标系及匹配的有限正水平线性单位。',
+  }
+  const action={
+    operator_endpoint_network_invalid:en?'Explicitly split intersections and resolve self-intersections or overlaps before extracting nodes; no automatic splitting, deduplication or repair is performed.':'先显式打断交会并处理自交或重合，再提取节点；不会自动打断、去重或修复。',
+    operator_field_conflict:en?`Manually rename source field ${field} upstream before submitting a new execution; it is not renamed or overwritten automatically.`:`先在上游手动重命名源字段 ${field}，再重新执行；不会自动改名或覆盖。`,
+    operator_input_invalid:en?'Check the source layer type, active geometry, fields and identifiers against the operator requirements, then submit a new execution.':'按算子说明检查源图层的类型、活动几何列、字段及标识；修正后重新执行。',
+    operator_projected_crs_required:en?'Explicitly reproject both inputs to the same suitable projected CRS before submitting a new execution.':'先显式重投影到符合要求的同一投影坐标系，再重新执行。',
+  }
+  expect(Object.hasOwn(reason,d.reason)).toBe(true)
+  const values=[reason[d.reason],en?'Execute operation':'执行操作',en?'Extract line nodes':'节点提取',en?'Node 1 in the workflow definition':'定义中的第 1 个节点',d.operator.parameter?(en?'Source layer (input_gdf)':'源图层（input_gdf）'):'',field,action[d.reason],'develop.workflow.invalid_params',failure.execution_id].filter(Boolean)
+  return {reason:reason[d.reason],action:action[d.reason],values,clipboard:values.join('\n')}
+}
+
+async function verifyNodesCase(page,evidence,directory) {
+  const prefix='line-nodes',schema='addp.line-nodes'
+  expect(evidence.case).toBe(prefix);expect(evidence.sources).toHaveLength(10)
+  expect(evidence.outputs.map(o=>o.port)).toEqual(['result','members'])
+  expect(evidence.expected.result).toHaveLength(15);expect(evidence.expected.members).toHaveLength(22)
+  expect(evidence.expected.result.reduce((n,r)=>n+r.properties.degree,0)).toBe(22)
+  const identity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
+  const raw={schema_version:schema+'-browser-raw/v1',case:evidence.case,run_id:evidence.run_id,execution_id:evidence.execution_id,observations:[]}
+  const persist=(stage,result='incomplete')=>writeFileSync(resolve(directory,'topology-nodes-browser-raw.json'),JSON.stringify({...raw,stage,result},null,2)+'\n')
+  const writes=[]
+  page.on('request',request=>{const path=new URL(request.url()).pathname
+    if(!['GET','HEAD','OPTIONS'].includes(request.method())&&/^\/api\/v1\/(develop|meta|manager)\//.test(path))writes.push({method:request.method(),path})})
+  const read=page.waitForResponse(r=>r.request().method()==='GET'&&new URL(r.url()).pathname===`/api/v1/develop/executions/${evidence.execution_id}`)
+  await login(page,process.env.ADDP_ONLINE_TEST_USER_USERNAME,process.env.ADDP_ONLINE_TEST_USER_PASSWORD,`/develop/executions/${evidence.execution_id}`)
+  const response=await read,executionAPI=await browserAPIFromResponse(response,process.env.GATEWAY_URL,identity)
+  try{raw.execution=await json(response,'extension success');expect(raw.execution.execution_id).toBe(evidence.execution_id);expect(raw.execution.triggered_by).toBe(Number(evidence.principal_id));expect(raw.execution.status).toBe('success');expect(Object.keys(raw.execution.outputs).sort()).toEqual(['save_members','save_result'])}finally{await executionAPI.dispose()}
+  const frame=page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(frame.getByText('成功',{exact:true})).toBeVisible()
+  for(const output of evidence.outputs)await expect(frame.locator('.workflow-result')).toContainText(output.name)
+  await page.screenshot({path:resolve(directory,`${prefix}-execution.png`)});persist('execution_verified')
+  for(const output of evidence.outputs){
+    const expected=evidence.expected[output.port],fields=Object.keys(expected[0].properties),locator=`${output.locator}&item_id=${output.item_id}`
+    const previewRead=page.waitForResponse(r=>{const url=new URL(r.url());return r.request().method()==='GET'&&url.pathname==='/api/v1/manager/preview'&&url.searchParams.get('locator')===locator&&url.searchParams.get('child_name')===output.layer_name})
+    await page.goto(`${process.env.CONSOLE_URL}/manager/data-explorer?locator=${encodeURIComponent(locator)}`)
+    let previewResponse=await previewRead
+    if(output.port==='members'){
+      const fullRead=page.waitForResponse(r=>{const u=new URL(r.url());return r.request().method()==='GET'&&u.pathname==='/api/v1/manager/preview'&&u.searchParams.get('locator')===locator&&u.searchParams.get('child_name')===output.layer_name&&u.searchParams.get('page')==='1'&&u.searchParams.get('page_size')==='50'})
+      await frame.locator('.table-preview .el-pagination__sizes .el-select').click()
+      await frame.getByRole('option',{name:/^50(?:\D|$)/}).click();previewResponse=await fullRead
+    }
+    const api=await browserAPIFromResponse(previewResponse,process.env.GATEWAY_URL,identity)
+    const observation={port:output.port,output_item_id:output.item_id,sources:[]};raw.observations.push(observation)
+    try{
+      observation.preview=await json(previewResponse,'extension actual preview')
+      for(const source of evidence.sources){const item=await json(await api.get(`/api/v1/meta/items/${source.id}`),'unchanged extension source');expect(item).toEqual(source.before);observation.sources.push({item_id:source.id,item})}
+      observation.output=await json(await api.get(`/api/v1/meta/items/${output.item_id}`),'extension output Meta');expect(observation.output).toEqual(output.before)
+    }finally{await api.dispose()}
+    persist(output.port+'_preview_observed')
+    const preview=observation.preview,data=preview.data
+    expect(preview.preview_type).toBe('table');expect([data.total,data.source_srid,data.source_crs,data.transform_status,data.preview_hint]).toEqual([expected.length,3857,'EPSG:3857','not_transformed','frontend_transform_required'])
+    if(output.port==='members')expect([data.page,data.page_size,data.rows.length]).toEqual([1,50,22])
+    expect(data.geometry_columns).toEqual([output.geometry_column]);expect(output.fid_column).toBeTruthy()
+    expect([...data.columns].sort()).toEqual([output.fid_column,output.geometry_column,...fields].sort())
+    expect(data.rows.map(r=>r[output.fid_column])).toEqual(Array.from({length:expected.length},(_,i)=>i+1))
+    expect(data.rows.map(r=>({properties:Object.fromEntries(fields.map(key=>[key,r[key]])),geometry:decodePreviewEWKB(r[output.geometry_column])}))).toEqual(expected)
+    const table=frame.locator('.table-preview');await expect(table).toBeVisible();await expect(table.locator('.map-placeholder')).toHaveCount(0)
+    const renderer=table.locator('.openlayers-map-renderer')
+    observation.rendered=await assertProximityPointMap(renderer,expected)
+    await page.screenshot({path:resolve(directory,`${prefix}-${output.port}-map.png`)});persist(output.port+'_map_verified')
+    await frame.getByRole('tab',{name:'属性',exact:true}).click();await expect(frame.locator('.attributes-tab-pane')).toContainText(output.layer_name)
+    await page.screenshot({path:resolve(directory,`${prefix}-${output.port}-attributes.png`)})
+    const graphRead=page.waitForResponse(r=>{const u=new URL(r.url());return r.request().method()==='GET'&&u.pathname==='/api/v1/meta/lineage/graph'&&u.searchParams.get('item_id')===String(output.item_id)&&u.searchParams.get('direction')==='both'})
+    await frame.getByRole('tab',{name:'血缘',exact:true}).click()
+    const graphResponse=await graphRead,graphAPI=await browserAPIFromResponse(graphResponse,process.env.GATEWAY_URL,identity)
+    try{observation.graph=await json(graphResponse,'extension actual lineage tab')}finally{await graphAPI.dispose()}
+    persist(output.port+'_graph_observed')
+    const binding={...evidence,sources:evidence.sources.slice(0,1),output}
+    assertNodesLineage(observation.graph,binding)
+    expect(observation.graph.edges.filter(e=>e.relation_kind==='derive'&&e.status==='active')).toHaveLength(1)
+    const viewer=frame.locator('.lineage-viewer'),canvas=viewer.locator('.lineage-canvas canvas').first();await expect(canvas).toBeVisible()
+    await expect.poll(async()=>{
+      observation.lineage_rendered=await viewer.evaluate(element=>{const ref=element.__vueParentComponent?.setupState?.graphInstance,graph=ref?.value||ref;return graph?{nodes:graph.getNodes().map(i=>i.getModel()._node),edges:graph.getEdges().map(i=>i.getModel()._edge)}:null})
+      return observation.lineage_rendered?.edges?.length||0
+    }).toBe(1)
+    assertNodesLineage({...observation.graph,edges:observation.lineage_rendered.edges},binding)
+    persist(output.port+'_graph_rendered')
+    await expect.poll(async()=>{observation.lineage_canvas=await lineageCanvasSnapshot(canvas);return [...binding.sources.map(s=>s.name),output.name].every(name=>observation.lineage_canvas.rows.some(r=>r.text.includes(name)))}).toBe(true)
+    expect(observation.lineage_canvas.paths.length).toBeGreaterThanOrEqual(1)
+    await page.screenshot({path:resolve(directory,`${prefix}-${output.port}-lineage.png`)});persist(output.port+'_lineage_verified')
+  }
+  raw.failures=[]
+  const failures=evidence.failures
+  expect(failures.map(f=>f.key)).toEqual(['reverse','parts-overlap','tee','cross','self','field','geometry','id','crs'])
+  expect(new Set(failures.map(f=>f.execution_id)).size).toBe(9)
+  raw.failures=[]
+  await page.context().grantPermissions(['clipboard-read','clipboard-write'],{origin:process.env.CONSOLE_URL})
+  for(const failure of failures){
+    const record={key:failure.key,execution_id:failure.execution_id,observations:[]};raw.failures.push(record)
+    for(const owner of ['develop','monitor']){
+      const path=owner==='develop'?`/develop/executions/${failure.execution_id}`:`/monitor/executions?execution_id=${failure.execution_id}`
+      const matches=r=>r.request().method()==='GET'&&new URL(r.url()).pathname===(owner==='develop'?`/api/v1/develop/executions/${failure.execution_id}`:`/api/v1/monitor/executions/by-execution-id/${failure.execution_id}/tree`)
+      const read=page.waitForResponse(matches);await page.goto(`${process.env.CONSOLE_URL}${path}`)
+      const first=await read,initial=await browserAPIFromResponse(first,process.env.GATEWAY_URL,identity);await initial.dispose()
+      const panel=frame.locator(owner==='develop'?'.execution-detail-page > .execution-failure':'.execution-detail-content > .execution-failure')
+      for(const locale of ['zh-cn','en']){
+        await page.locator('.header-language button').click();await page.getByRole('menuitem',{name:locale==='zh-cn'?'中文':'English',exact:true}).click()
+        const read=page.waitForResponse(matches);await page.reload();const response=await read,api=await browserAPIFromResponse(response,process.env.GATEWAY_URL,identity)
+        let value
+        try{value=await json(response,'nodes real failure page')}finally{await api.dispose()}
+        const execution=owner==='develop'?value:value.execution
+        expect(execution.execution_id).toBe(failure.execution_id);expect(Number.isInteger(execution.triggered_by)).toBe(true)
+        expect(execution.triggered_by).toBe(Number(evidence.principal_id));expect(execution.status).toBe('failed')
+        expect(execution.outputs||{}).toEqual({});expect(execution.metadata?.lineage_facts||null).toBe(null)
+        expect(execution.error_details).toEqual(failure.error_details);expect(execution.error_details.diagnostic).toEqual(failure.expected_diagnostic)
+        const expected=nodesPanelExpectation(failure,locale)
+        await expect(panel).toBeVisible();await expect(panel.locator('h4')).toHaveText(expected.reason)
+        await expect(panel.locator('dd')).toHaveText(expected.values.slice(1));await expect(panel).toContainText(expected.action);await expect(panel).toContainText(locale==='en'?'Extract line nodes':'节点提取')
+        await expect(panel).toContainText(failure.execution_id);await expect(panel).toContainText('develop.workflow.invalid_params')
+        await expect(panel).toContainText(locale==='en'?'Node 1 in the workflow definition':'定义中的第 1 个节点')
+        await expect(panel).not.toContainText(/source_shape|route_key|节点业务几何|Traceback|site-packages|\/tmp\//)
+        await page.evaluate(()=>navigator.clipboard.writeText('NODES_CLIPBOARD_NOT_WRITTEN'))
+        await panel.getByRole('button',{name:locale==='en'?'Copy diagnostics':'复制诊断',exact:true}).click()
+        await expect.poll(()=>page.evaluate(()=>navigator.clipboard.readText())).toBe(expected.clipboard)
+        const clipboard=await page.evaluate(()=>navigator.clipboard.readText())
+        const screenshot=`line-nodes-${failure.key}-${owner}-${locale}.png`;await page.screenshot({path:resolve(directory,screenshot)})
+        record.observations.push({owner,locale,execution:value,clipboard,screenshot})
+      }
+    }
+    persist('failure_'+failure.key+'_verified')
+  }
+  expect(writes).toEqual([]);persist('complete','passed')
+  writeFileSync(resolve(directory,'topology-browser.json'),JSON.stringify({...evidence,schema_version:schema+'-browser/v1',result:'passed'},null,2)+'\n')
+}
+
+test('节点提取独立普通User节点与来源明细双Point及九失败保护',async({page})=>{
+  const evidence=JSON.parse(process.env.ADDP_ONLINE_TOPOLOGY_EVIDENCE||'{}');await observeLineageCanvas(page)
+  await verifyNodesCase(page,evidence,process.env.ADDP_ONLINE_ARTIFACT_DIR)
+})

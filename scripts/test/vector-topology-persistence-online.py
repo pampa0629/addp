@@ -477,6 +477,146 @@ def run_line_edit_scenario(repository,env,client,physical_runner,browser_runner,
         'initial_scan_inventory':initial,'final_scan_inventory':expected_scans,'sources_and_outputs_unchanged':True,'cleanup_boundary':'owned disposable NFS/Runtime/deployment; no business DELETE acceptance'}
 
 
+def nodes_definition(sources,parent,failure=None):
+    index=0 if failure is None else 1+[s[0] for s in fixture.NODES_FAILURES].index(failure)
+    return {'tasks':[
+        {'id':'nodes','operator':'extract_line_nodes','params':{'input_gdf':{'$ref':'load_source'},'id_field':'route_key'},'depends_on':['load_source']},
+        {'id':'load_source','operator':'load','params':{'locator':sources[index]},'depends_on':[]},
+        *[{'id':'save_'+port,'operator':'save','params':{'input_df':{'$ref':'nodes','port':port},'target_parent_locator':parent,
+            'target_name':('failed-'+failure+'-' if failure else '')+name,'mode':'fail'},'depends_on':['nodes']}
+          for port,name in zip(fixture.NODES_PORTS,fixture.NODES_TARGETS)]]}
+
+
+def nodes_diagnostic(spec):
+    return {'schema_version':'addp.execution-failure/v3','stage':'execution','reason':spec[1],
+            'operator':{'node_index':1,'operator_id':'extract_line_nodes',
+                        **({} if spec[0]=='crs' else {'parameter':'input_gdf'}),**({'field':spec[2]} if spec[2] else {})}}
+
+
+def validate_nodes_failure(execution,identifier,principal,spec):
+    validate_extension_failure(execution,identifier,principal)
+    details=obj(execution.get('error_details'),'nodes error details')
+    if (details.get('code')!='develop.workflow.invalid_params' or details.get('diagnostic')!=nodes_diagnostic(spec)
+        or type(details['diagnostic']['operator']['node_index']) is not int or set(details)-{'code','category','message','diagnostic'}):
+        raise SuiteError('nodes exact controlled diagnostic differs')
+    if any(word in json.dumps(details,ensure_ascii=False) for word in (*DIAGNOSTIC_PRIVATE,'source_shape','route_key','nodes-source.gpkg','节点业务几何')):
+        raise SuiteError('nodes diagnostic leaked private input')
+    return details
+
+
+def validate_nodes_graph(graph,sources,target,identifier):
+    if graph.get('truncated') is not False:raise SuiteError('nodes graph incomplete')
+    edges=[e for e in array(graph.get('edges'),'nodes graph edges') if e.get('relation_kind')=='derive' and e.get('status')=='active' and e.get('evidence',{}).get('execution_id')==identifier]
+    if len(edges)!=1 or {(e.get('source',{}).get('item_id'),e.get('target',{}).get('item_id')) for e in edges}!={(sources[0]['id'],target)}:
+        raise SuiteError('nodes requires one precise current-execution source edge per output')
+    return edges
+
+
+def run_nodes_scenario(repository,env,client,physical_runner,browser_runner):
+    case=fixture.NODES_CASE;names=fixture.NODES_SOURCES;kinds=fixture.NODES_KINDS
+    ports=fixture.NODES_PORTS;targets_names=fixture.NODES_TARGETS;schema=fixture.NODES_SCHEMA;prefix="nodes"
+    expected=fixture.nodes_features;definition=nodes_definition
+    tenant=positive(env['ADDP_ONLINE_TEST_TENANT_ID'],'tenant')
+    if tenant<=1:raise SuiteError('nodes forbids default Tenant')
+    identity=raster.validate_identity(client,tenant,required_permissions=PERMISSIONS);principal=int(identity['principal_id'])
+    deadline=time.monotonic()+float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS','600'))
+    def remaining():
+        value=deadline-time.monotonic()
+        if value<=0:raise SuiteError('nodes business budget exhausted')
+        return value
+    engine=positive(env['ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID'],'NFS engine');sources=[]
+    for name in names:
+        scope=f'addp://engine/{engine}/path/{name}?type=file'
+        scan=support.wait_for_meta_scan(client,engine,time.monotonic()+remaining(),scope={'targets':[scope]})
+        item=support.find_fixture_item(client,engine,name,'nodes source')
+        before=client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload
+        sources.append({'id':item['id'],'name':name,'locator':scope+f'&item_id={item["id"]}','scan_execution_id':scan,'before':before})
+    initial=scan_ids(client)
+    if initial!=sorted(s['scan_execution_id'] for s in sources):raise SuiteError('nodes initial scan inventory differs')
+    runtimes=[r for r in array(client.request('GET','/api/v1/develop/workflow-engines',(200,)).payload,'runtimes') if r.get('engine_type')=='geopython_workflow' and r.get('connection_status')=='online']
+    if len(runtimes)!=1:raise SuiteError('nodes requires one product Runtime')
+    runtime=positive(runtimes[0]['id'],'Runtime');parent=f'addp://engine/{engine}/path/outputs?type=directory'
+    targets={port:f'addp://engine/{engine}/path/outputs/{name}?type=file' for port,name in zip(ports,targets_names)}
+    workflow=definition([s['locator'] for s in sources],parent)
+    identifier=raster.submit(client,runtime,workflow);execution=raster.wait_execution(client,'develop',identifier,remaining())
+    if execution.get('execution_id')!=identifier or type(execution.get('triggered_by')) is not int or execution['triggered_by']!=principal:raise SuiteError('nodes execution actor differs')
+    if obj(obj(execution.get('execution_config'),'nodes frozen config').get('content'),'nodes content').get('workflow_definition')!=workflow:raise SuiteError('nodes frozen DAG differs')
+    facts,scans=validate_saved_success(execution,[("input.load_source",sources[0]['locator'])],targets,2)
+    observed=[]
+    for scan in scans:
+        value=raster.wait_execution(client,'meta',scan['execution_id'],remaining())
+        if type(value.get('tenant_id')) is not int or value['tenant_id']!=tenant or type(value.get('triggered_by')) is not int or value['triggered_by']!=principal:raise SuiteError('nodes automatic scan public User/Tenant differs')
+        observed.append(value)
+    monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{identifier}',(200,)).payload,'nodes Monitor')
+    if monitor.get('execution_id')!=identifier or monitor.get('module')!='develop' or monitor.get('status')!='success' or type(monitor.get('triggered_by')) is not int or monitor['triggered_by']!=principal or obj(monitor.get('metadata'),'Monitor metadata').get('lineage_facts')!=facts:raise SuiteError('nodes Monitor facts differ')
+    native=physical_runner(repository,env)
+    if native.get('exact_inventory_verified') is not True or set(native.get('sources',{}))!=set(names) or set(native.get('targets',{}))!=set(targets_names):raise SuiteError('nodes physical inventory differs')
+    for source,kind in zip(sources,kinds):
+        rows=expected(kind);count=len(rows);columns=len(rows[0]['properties'])+2
+        before=source['before'];size=before.get('size_bytes');children=before.get('attributes',{}).get('type_info',{}).get('container',{}).get('children',[])
+        if type(size) is not int or size<=0 or size!=native['sources'][source['name']]['size_bytes'] or len(children)!=1 or type(children[0].get('row_count')) is not int or children[0]['row_count']!=count or type(children[0].get('column_count')) is not int or children[0]['column_count']!=columns:raise SuiteError('nodes source Meta size/rows/columns differ')
+    outputs=[]
+    for port,name in zip(ports,targets_names):
+        rows=expected(port);count=len(rows);columns=len(rows[0]['properties'])+2
+        item=support.find_fixture_item(client,engine,'outputs/'+name,'nodes output');detail=obj(client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload,'nodes output Meta')
+        physical=native['targets'][name];sizes=validate_item(detail,physical,name);child=detail['attributes']['type_info']['container']['children'][0]
+        if type(child.get('row_count')) is not int or child['row_count']!=count or type(child.get('column_count')) is not int or child['column_count']!=columns:raise SuiteError('nodes output Meta rows/columns differ')
+        outputs.append({'name':name,'port':port,'locator':targets[port],'item_id':item['id'],**physical,'before':detail,'size_evidence':sizes})
+    directory=Path(env['ADDP_ONLINE_ARTIFACT_DIR'])
+    checkpoint={'schema_version':schema+'-checkpoint/v1','case':case,'result':'incomplete','stage':'before_lineage','run_id':env['ADDP_ONLINE_TEST_RUN_ID'],
+        'identity':identity,'execution_id':identifier,'definition':workflow,'execution':execution,'sources':sources,'outputs':outputs,'physical':native,'automatic_scans':observed,'monitor':monitor,'stable_outputs':execution['outputs'],'lineage_facts':facts}
+    path=directory/('topology-'+prefix+'-checkpoint.json');path.write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2)+'\n')
+    graphs={}
+    for output in outputs:
+        for source in sources[:1]:raster.wait_lineage(client,source['id'],output['item_id'],identifier,remaining())
+        graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={output["item_id"]}&direction=upstream',(200,)).payload,'nodes original graph')
+        validate_nodes_graph(graph,sources,output['item_id'],identifier);graphs[output['port']]=graph
+    expected_scans=sorted([*initial,*[s['execution_id'] for s in scans]])
+    if scan_ids(client)!=expected_scans:raise SuiteError('nodes scan inventory differs before failure')
+    failures=[]
+    specs=fixture.NODES_FAILURES
+    checkpoint['failures']=failures
+    for spec in specs:
+        key=spec[0]
+        failed_workflow=definition([s['locator'] for s in sources],parent,failure=key)
+        failed_id=raster.submit(client,runtime,failed_workflow);failed=raster.wait_execution(client,'develop',failed_id,remaining(),expected='failed')
+        validate_nodes_failure(failed,failed_id,principal,spec)
+        if obj(obj(failed.get('execution_config'),'nodes failed config').get('content'),'nodes failed content').get('workflow_definition')!=failed_workflow:raise SuiteError('nodes failed frozen DAG differs')
+        diagnostic=nodes_diagnostic(spec)
+        failed_monitor=obj(client.request('GET',f'/api/v1/monitor/executions/by-execution-id/{failed_id}',(200,)).payload,'failed Monitor')
+        if failed_monitor.get('execution_id')!=failed_id or failed_monitor.get('status')!='failed' or failed_monitor.get('module')!='develop' or type(failed_monitor.get('triggered_by')) is not int or failed_monitor['triggered_by']!=principal:raise SuiteError('failure Monitor identity differs')
+        failure={'key':key,'execution_id':failed_id,'definition':failed_workflow,'execution':failed,'monitor':failed_monitor,'diagnostic':diagnostic,'no_publication_or_scan':True}
+        validate_nodes_failure(failed_monitor,failed_id,principal,spec)
+        if failed_monitor.get('error_details')!=failed.get('error_details'):raise SuiteError('nodes Monitor diagnostic differs')
+        failure['expected_diagnostic']=diagnostic
+        failure['source_lineage']=[]
+        source=sources[1+[v[0] for v in specs].index(key)]
+        graph=obj(client.request('GET',f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={source["id"]}&direction=downstream',(200,)).payload,'nodes failed source graph')
+        if graph.get('truncated') is not False or any(e.get('relation_kind')=='derive' and e.get('evidence',{}).get('execution_id')==failed_id for e in array(graph.get('edges'),'nodes failed edges')):raise SuiteError('nodes failure published derive or incomplete graph')
+        failure['source_lineage'].append({'source_item_id':source['id'],'graph':graph})
+        failures.append(failure)
+        checkpoint.update(stage='failure_'+key+'_verified',raw_lineage=graphs)
+        path.write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2)+'\n')
+        if scan_ids(client)!=expected_scans or physical_runner(repository,env)!=native:raise SuiteError('failure changed physical files or scans')
+    if len({f['execution_id'] for f in failures})!=len(specs):raise SuiteError('failure executions must be distinct')
+    checkpoint.update(stage='before_browser',raw_lineage=graphs)
+    path.write_text(json.dumps(checkpoint,ensure_ascii=False,indent=2)+'\n')
+    evidence={'case':case,'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],**identity,'execution_id':identifier,'sources':sources,'outputs':outputs,
+        'expected':{port:expected(port) for port in ports}}
+    evidence['failures']=[{'key':f['key'],'execution_id':f['execution_id'],'expected_diagnostic':f['expected_diagnostic'],'error_details':f['execution']['error_details']} for f in failures]
+    remaining();browser_report=browser_runner(repository,env,evidence);remaining()
+    final=physical_runner(repository,env)
+    if final!=native or scan_ids(client)!=expected_scans:raise SuiteError('nodes browser changed physical files or scan inventory')
+    meta_after={}
+    for entry in [*sources,*outputs]:
+        item_id=entry.get('item_id',entry.get('id'));after=client.request('GET',f'/api/v1/meta/items/{item_id}',(200,)).payload
+        if after!=entry['before']:raise SuiteError('nodes source or output Meta changed')
+        meta_after[entry['name']]=after
+    remaining()
+    return {**checkpoint,'schema_version':schema+'/v1','result':'passed','stage':'complete','browser':browser_report,'meta_after':meta_after,'post_browser_physical':final,
+        'initial_scan_inventory':initial,'final_scan_inventory':expected_scans,'sources_and_outputs_unchanged':True,'cleanup_boundary':'owned disposable NFS/Runtime/deployment; no business DELETE acceptance'}
+
+
 def proximity_definition(sources,parent):
     return {'tasks':[
         {'id':'load_source','operator':'load','params':{'locator':sources[0]},'depends_on':[]},
@@ -884,6 +1024,50 @@ def validate_trim_browser_raw(raw,evidence):
             if value.get('error_details')!=expected['error_details']:raise SuiteError('trim browser public error differs')
 
 
+def validate_nodes_browser_raw(raw,evidence):
+    import base64,struct
+    if (raw.get('schema_version')!=fixture.NODES_SCHEMA+'-browser-raw/v1' or raw.get('stage')!='complete' or raw.get('result')!='passed'
+        or any(raw.get(k)!=evidence.get(k) for k in ('case','run_id','execution_id'))):raise SuiteError('nodes browser raw incomplete or foreign')
+    principal=positive(evidence['principal_id'],'nodes browser principal')
+    validate_saved_success(obj(raw.get('execution'),'nodes browser execution'),[('input.load_source',evidence['sources'][0]['locator'])],{o['port']:o['locator'] for o in evidence['outputs']},2)
+    if raw['execution'].get('execution_id')!=evidence['execution_id'] or type(raw['execution'].get('triggered_by')) is not int or raw['execution']['triggered_by']!=principal:raise SuiteError('nodes browser execution identity differs')
+    observations=array(raw.get('observations'),'nodes browser maps')
+    if [v.get('port') for v in observations]!=list(fixture.NODES_PORTS):raise SuiteError('nodes browser requires exactly both Point maps')
+    for value,output in zip(observations,evidence['outputs']):
+        expected=evidence['expected'][output['port']];fields=list(expected[0]['properties'])
+        if value.get('output_item_id')!=output['item_id'] or value.get('output')!=output['before'] or value.get('sources')!=[{'item_id':s['id'],'item':s['before']} for s in evidence['sources']]:raise SuiteError('nodes browser source/output Meta changed')
+        data=obj(obj(value.get('preview'),'nodes preview').get('data'),'nodes preview data')
+        if (value['preview'].get('preview_type')!='table' or [data.get(k) for k in ('total','source_srid','source_crs','transform_status','preview_hint')]!=[len(expected),3857,'EPSG:3857','not_transformed','frontend_transform_required']
+            or data.get('geometry_columns')!=[output['geometry_column']] or sorted(data.get('columns',[]))!=sorted([output['fid_column'],output['geometry_column'],*fields])):raise SuiteError('nodes actual preview metadata differs')
+        rows=array(data.get('rows'),'nodes preview rows')
+        if len(rows)!=len(expected):raise SuiteError('nodes preview rows missing')
+        for i,(row,wanted) in enumerate(zip(rows,expected),1):
+            if type(row.get(output['fid_column'])) is not int or row[output['fid_column']]!=i or any(type(row.get(k)) is not type(v) or row.get(k)!=v for k,v in wanted['properties'].items()):raise SuiteError('nodes preview properties/types/FID differ')
+            try:
+                encoded=row[output['geometry_column']];wire=base64.b64decode(encoded,validate=True);order='<' if wire[0]==1 else '>' if wire[0]==0 else None
+                if order is None or len(wire)!=25 or struct.unpack(order+'II',wire[1:9])!=(0x20000001,3857) or base64.b64encode(wire).decode()!=encoded:raise ValueError('noncanonical Point EWKB')
+                point=list(struct.unpack(order+'dd',wire[9:]))
+            except (KeyError,ValueError,TypeError,struct.error) as e:raise SuiteError('nodes preview canonical EPSG3857 Point EWKB missing') from e
+            if point!=wanted['geometry']['coordinates']:raise SuiteError('nodes preview exact original coordinate differs')
+        validate_nodes_graph(value['graph'],evidence['sources'],output['item_id'],evidence['execution_id'])
+        validate_nodes_graph({**value['graph'],'edges':value['lineage_rendered']['edges']},evidence['sources'],output['item_id'],evidence['execution_id'])
+        rendered=obj(value.get('rendered'),'nodes actual Point layer');features=array(rendered.get('features'),'nodes OL features')
+        if rendered.get('projection')!='EPSG:3857' or len(features)!=len(expected) or type(rendered.get('painted_pixels')) is not int or rendered['painted_pixels']<=30 or any(v.get('type')!='Point' for v in features):raise SuiteError('nodes Point rendering incomplete')
+        # Browser independently asserts exact Mercator handoff coordinates; owner also preserves all repeated property rows.
+        def key(props):return json.dumps(props,sort_keys=True,ensure_ascii=False)
+        if sorted(key(v.get('properties')) for v in features)!=sorted(key(v['properties']) for v in expected):raise SuiteError('nodes OL original property rows differ')
+    failures=array(raw.get('failures'),'nodes browser failure list')
+    if [f.get('key') for f in failures]!=[s[0] for s in fixture.NODES_FAILURES]:raise SuiteError('nodes browser must prove all nine failures')
+    for record,failed,spec in zip(failures,evidence['failures'],fixture.NODES_FAILURES):
+        if record.get('execution_id')!=failed['execution_id']:raise SuiteError('nodes browser failed UUID differs')
+        reads=array(record.get('observations'),'nodes failure bilingual owner pages')
+        if len(reads)!=4 or {(v.get('owner'),v.get('locale')) for v in reads}!={(o,l) for o in ('develop','monitor') for l in ('zh-cn','en')}:raise SuiteError('nodes failure requires both owners and locales')
+        for read in reads:
+            value=obj(read.get('execution'),'nodes failed page raw');execution=value if read['owner']=='develop' else obj(value.get('execution'),'nodes Monitor raw')
+            validate_nodes_failure(execution,failed['execution_id'],principal,spec)
+            if execution.get('error_details')!=failed['error_details'] or not isinstance(read.get('clipboard'),str) or not read['clipboard'] or any(t in read['clipboard'] for t in (*DIAGNOSTIC_PRIVATE,'route_key','source_shape','节点业务几何')):raise SuiteError('nodes browser error/copy differs or leaks')
+
+
 def browser(repository, env, evidence):
     path = Path(env['ADDP_ONLINE_ARTIFACT_DIR']) / 'topology-browser.json'
     path.unlink(missing_ok=True)
@@ -913,6 +1097,8 @@ def browser(repository, env, evidence):
     else:binding=report
     if binding != {**evidence, 'schema_version': schema, 'result': 'passed'}:
         raise SuiteError('browser report does not bind the exact run, User and outputs')
+    if case==fixture.NODES_CASE:
+        validate_nodes_browser_raw(obj(json.loads((path.parent/'topology-nodes-browser-raw.json').read_text()),'nodes browser raw'),evidence)
     if case==fixture.TRIM_CASE:
         validate_trim_browser_raw(obj(json.loads((path.parent/'topology-trim-browser-raw.json').read_text()),'trim browser raw'),evidence)
     if case==fixture.RINGS_CASE:
@@ -924,6 +1110,8 @@ def browser(repository, env, evidence):
 
 def run_scenario(repository, env, client, physical_runner=physical, browser_runner=browser,
                  diagnostic_runner=collapsed_snap_diagnostic):
+    if fixture.topology_case(env)==fixture.NODES_CASE:
+        return run_nodes_scenario(repository,env,client,physical_runner,browser_runner)
     if fixture.topology_case(env)==fixture.TRIM_CASE:
         return run_trim_scenario(repository,env,client,physical_runner,browser_runner,diagnostic_runner)
     if fixture.topology_case(env)==fixture.RINGS_CASE:
