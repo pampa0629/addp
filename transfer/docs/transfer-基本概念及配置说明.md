@@ -4,7 +4,20 @@
 
 本文档定义 Transfer 稳定任务配置、执行状态、bounded snapshot 主链路、watermark bounded incremental 规则，以及 continuous/Kafka 契约与当前实现边界。旧版顶层 `mode`、`target.policy.write_mode`、`connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段不再兼容。
 
-阅读导航：[table Transfer](#三table-transfer-支持范围)、[raw copy](#四raw-copy-支持范围)、[Continuous/Kafka](#八continuouskafka-v1-契约与当前实现边界)、[数据库 CDC](#九数据库-cdc-v1-已冻结边界)、[恢复分级](#恢复分级)。
+阅读导航：[table Transfer](#三table-transfer-支持范围)、[raw copy](#四raw-copy-支持范围)、[Continuous/Kafka](#八continuouskafka-v1-契约与当前实现边界)、[数据库 CDC](#九数据库-cdc-v1-已冻结边界)、[恢复分级](#恢复分级)、[测试与验收](#测试与验收导航)。
+
+## 测试与验收导航
+
+测试分层与标准入口遵循[测试与验收规范](../../docs/spec/addp测试与验收规范.md#三标准入口)，本文不维护另一套命令清单。
+
+| 阅读目的 | 权威入口 |
+| --- | --- |
+| 模块、Go 定位、PostgreSQL 与 Hosted runner 回归 | [README 标准门禁与环境前提](../README.md#常规模块与专项门禁) |
+| 格式集成与 Oracle CDC 专项 | [ArcGIS 门禁](../README.md#arcgis-开放格式专项)、[Oracle CDC 入口缺口与故障窗口](../README.md#oracle-cdc-专项入口缺口) |
+| 固定版本、有效证据、失败与修复、清理及未覆盖项 | [分版本证据索引](../CLAUDE.md#专项约束与分版本证据) |
+| 操作与结果核对 | [快速开始](快速开始.md#五开发验证) |
+
+本文的配置、能力、快照或接口返回不作为当前 HEAD 的真实运行通过记录；未运行、失败、跳过和未覆盖项不计为通过。各章保留自身的权限与独立验收条件，历史结果不扩大为完整身份矩阵、数据面或公开入口已经验收。
 
 ## 一、核心对象
 
@@ -253,7 +266,7 @@ Parquet writer 使用 `target.options.compression`；默认值、允许 codec、
 }
 ```
 
-布局、格式能力声明和 refs 完整性不授予读取或写入权限；任务权限、目录选择和当前 Tenant 范围见[租户阶段的任务授权](#13-租户阶段的任务授权)，源读、目标写及运行期保护仍独立核验。格式表、静态映射或配置预检不等于真实数据与完整链路验收通过；标准门禁及历史结果见[模块验证](../CLAUDE.md#开发与验证)，操作与结果核对见[快速开始](快速开始.md#五开发验证)。
+布局、格式能力声明和 refs 完整性不授予读取或写入权限；任务权限、目录选择和当前 Tenant 范围见[租户阶段的任务授权](#13-租户阶段的任务授权)，源读、目标写及运行期保护仍独立核验。格式表、静态映射或配置预检不等于真实数据与完整链路验收通过。
 
 ### 3.4 Native table target
 
@@ -297,7 +310,7 @@ HTTP 200 只表示成功取得报告，不代表 `supported`；三态对创建�
 
 Agent Runtime 在最终配置复核及创建前调用正式预检；unsupported 阻止创建，unknown 展示未检查项与运行要求后知情确认，只保存未运行定义。supported 不保证执行成功，报告也不改变创建与执行接口自身的权限和配置校验。
 
-创建复核的原参数、稳定报告绑定、重检及确认失效规则统一见[Transfer 创建条件与复核](../../docs/spec/addp本体定义与发布规范.md#九transfer-创建条件与复核)。上述接入与预检报告不代表真实运行已验收；标准门禁见[模块验证](../CLAUDE.md#开发与验证)，预检的历史结果及未覆盖项见[预检验收记录](../CLAUDE.md#bounded-失败诊断与配置预检)；不将未运行、失败或跳过项计为通过。
+创建复核的原参数、稳定报告绑定、重检及确认失效规则统一见[Transfer 创建条件与复核](../../docs/spec/addp本体定义与发布规范.md#九transfer-创建条件与复核)。上述接入与预检报告不代表真实运行已验收，历史结果及未覆盖项见[预检验收记录](../CLAUDE.md#bounded-失败诊断与配置预检)。
 
 #### 已接入的原生目标写侧
 
@@ -489,7 +502,7 @@ continuous worker 的重启恢复、领取条件与 circuit 状态统一见[自�
 
 ### Continuous 验收边界
 
-本章能力摘要、execution 详情和诊断展示不作为当前版本的运行通过记录。标准门禁、固定版本证据、失败与修复结论及未覆盖项统一见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)；未运行、失败、跳过或未覆盖项不计为通过。
+本章能力摘要、execution 详情和诊断展示不作为当前版本的运行通过记录；事件与扫描的分版本范围分别见[过程事件记录](../CLAUDE.md#continuous-过程事件与浏览器验收)及[精确扫描与审批记录](../CLAUDE.md#continuous-精确扫描与审批归属)。
 
 目标事务与 Infra CAS 的提交顺序须实际核对；DLQ 处理或查询成功不替代 replay、Tenant/task 来源隔离与完整链路验收；位置诊断或取消请求返回不证明实际恢复、停止或回滚通过；策略参数保存或 recovery execution 创建不等于自动恢复成功。各项须按对应场景分别验证。
 
@@ -539,7 +552,7 @@ Transfer 使用源 schema owner 账号创建 generation-owned 镜像表、行级
 
 原有数据面验证摘要记载：真实 E2E 已覆盖 PostgreSQL/MySQL/Oracle 三类源到 Oracle 目标的 snapshot/insert/update/delete 与 offset/ledger 收敛；Oracle 源还覆盖跨 consumer batch 的 128 行事务提交、未提交不可见和回滚隔离。Oracle Spatial 的 XY Polygon/MultiPolygon 已覆盖 PostgreSQL/MySQL/Oracle 目标，XYZ 当前只覆盖 PostgreSQL，MySQL 与 Oracle 目标仍明确只支持二维 geometry。
 
-上述摘要不作为当前 HEAD 的运行通过记录；源码版本、有效证据、失败与修复结论及未覆盖项统一见[模块验证](../CLAUDE.md#开发与验证)。[Oracle 专项入口说明](../README.md#oracle-cdc-专项入口缺口)区分独立用例的覆盖范围：目标生命周期用例当前仅覆盖 PostgreSQL/MySQL 源，不能与此处三类源的既有摘要混同；缺少标准调用与隔离清理门禁、未运行或跳过的项目均不计为通过。
+上述摘要不作为当前 HEAD 的运行通过记录。[Oracle 专项入口说明](../README.md#oracle-cdc-专项入口缺口)区分独立用例的覆盖范围：目标生命周期用例当前仅覆盖 PostgreSQL/MySQL 源，不能与此处三类源的既有摘要混同；缺少标准调用与隔离清理门禁、未运行或跳过的项目均不计为通过。
 
 ### Schema drift 与审批恢复
 
@@ -582,7 +595,7 @@ capture supervisor 通过 Kafka Connect REST 和 Infra Kafka admin API 管理任
 | restartable | 失败 snapshot retry 创建新 execution 并从头执行；append 拒绝。 |
 | resumable | watermark incremental 通过 `transfer.sync_states` 支持 execution 间 resume，目标按幂等 `table_upsert` capability 选择；支持引擎、非空间限制与稳定键条件统一见[增量同步契约](#七watermark-bounded-incremental)。snapshot checkpoint 仍仅可观测。 |
 
-本表只区分 execution 的观测、重跑与增量续读；任务的调度暂停／恢复另见[调度授权与控制](#调度授权与控制)。恢复操作及新旧 execution UUID 的使用见[快速开始](快速开始.md#四checkpoint-和重试)。调度控制、重跑与续读须分别验收；标准入口、固定版本证据、失败与修复结论及未覆盖项见[模块验证](../CLAUDE.md#开发与验证)，未运行、失败、跳过和未覆盖项不计为通过。静态配置、授权或调度更新成功均不等于实际触发、Worker 执行和目标数据验收通过。
+本表只区分 execution 的观测、重跑与增量续读；任务的调度暂停／恢复另见[调度授权与控制](#调度授权与控制)。恢复操作及新旧 execution UUID 的使用见[快速开始](快速开始.md#四checkpoint-和重试)。调度控制、重跑与续读须分别验收。静态配置、授权或调度更新成功均不等于实际触发、Worker 执行和目标数据验收通过。
 
 ## 十一、写后 Meta 扫描
 
