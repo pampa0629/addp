@@ -3024,17 +3024,13 @@ def _projected_north_up_grid(dataset):
     return horizontal_metres
 
 
-def _squared_distance_line(cost, *, valid=None, return_sites=False):
-    """Exact integer-cost envelope; ties belong to the lower source index.
-
-    Raster squared pixel distances are integers.  Intersections are represented
-    by the first integer coordinate where the later site strictly wins, using
-    Python integer arithmetic rather than rounded Float64 intersections.
-    """
+def _nearest_line_sites(cost, *, valid=None, x_weight=1, y_weight=1):
+    """The sole exact anisotropic integer-cost lower envelope; low site wins ties."""
+    if any(type(w) is not int or w <= 0 for w in (x_weight, y_weight)):
+        raise ValueError('Distance axis weights must be positive integers')
     sites = np.flatnonzero(np.isfinite(cost) if valid is None else valid)
     if not len(sites):
-        distances = np.full(cost.shape, np.inf)
-        return (distances, np.full(cost.shape, -1, dtype=np.int64)) if return_sites else distances
+        return np.full(cost.shape, -1, dtype=np.int64)
     if any(not np.isfinite(cost[site]) or int(cost[site]) != cost[site] for site in sites):
         raise ValueError('Squared raster distance costs must be finite integers')
     vertices = np.empty(len(sites), dtype=np.int64)
@@ -3044,9 +3040,9 @@ def _squared_distance_line(cost, *, valid=None, return_sites=False):
     for site in sites[1:]:
         while True:
             previous = vertices[top]
-            numerator = (int(cost[site]) - int(cost[previous])
-                         + (int(site) - int(previous)) * (int(site) + int(previous)))
-            crossing = numerator // (2 * (int(site) - int(previous))) + 1
+            numerator = (x_weight * (int(cost[site]) - int(cost[previous]))
+                         + y_weight * (int(site) - int(previous)) * (int(site) + int(previous)))
+            crossing = numerator // (2 * y_weight * (int(site) - int(previous))) + 1
             if top == 0 or crossing > boundaries[top]:
                 break
             top -= 1
@@ -3058,7 +3054,17 @@ def _squared_distance_line(cost, *, valid=None, return_sites=False):
     thresholds = np.asarray([max(-1, min(len(cost), value))
                              for value in boundaries[1:top + 1]], dtype=np.int64)
     owners = vertices[np.searchsorted(thresholds, coordinates, side='right')]
-    distances = (np.square(coordinates - owners) + cost[owners].astype(np.int64)).astype(np.float64)
+    return owners
+
+
+def _squared_distance_line(cost, *, valid=None, return_sites=False):
+    """Unit-metric projection of the same envelope; preserve square-grid bits."""
+    owners = _nearest_line_sites(cost, valid=valid)
+    if np.all(owners < 0):
+        distances = np.full(cost.shape, np.inf)
+    else:
+        coordinates = np.arange(len(cost), dtype=np.int64)
+        distances = (np.square(coordinates - owners) + cost[owners].astype(np.int64)).astype(np.float64)
     return (distances, owners) if return_sites else distances
 
 
@@ -3103,7 +3109,7 @@ def _read_site_values(stream, count):
 
 
 @contextmanager
-def _nearest_pixel_sites(dataset, band, target_values, *, non_targets=False):
+def _nearest_pixel_sites(dataset, band, target_values, *, non_targets=False, axis_weights=None):
     """One separable EDT for distances and original row/column donor identities."""
     width, height = dataset.RasterXSize, dataset.RasterYSize
     # GDAL raster dimensions are signed Int32.  Coordinate fields remain Int64;
@@ -3152,29 +3158,60 @@ def _nearest_pixel_sites(dataset, band, target_values, *, non_targets=False):
                     costs = np.square(np.int64(column) - source_columns)
                     if np.any(stored[present] != costs[present].astype(np.float64)):
                         raise RuntimeError('Inconsistent private distance intermediate')
-                    distances, source_rows = _squared_distance_line(costs, valid=present, return_sites=True)
-                    columns.seek(column * height * 8)
-                    columns.write(distances.tobytes())
+                    if axis_weights is None:
+                        distances, source_rows = _squared_distance_line(costs, valid=present, return_sites=True)
+                        columns.seek(column * height * 8)
+                        columns.write(distances.tobytes())
+                    else:
+                        source_rows = _nearest_line_sites(costs, valid=present,
+                                                         x_weight=axis_weights[0], y_weight=axis_weights[1])
                     identities = np.empty((height, 2), dtype=np.int64)
                     identities[:, 0] = source_rows
                     identities[:, 1] = source_columns[source_rows]
                     nearest.write(identities.tobytes())
-            yield columns_path, nearest_sites
+            yield columns_path if axis_weights is None else None, nearest_sites
         finally:
             with _DISK_LOCK:
                 for path in (rows_path, columns_path, row_sites, column_sites, nearest_sites):
                     path.unlink(missing_ok=True)
 
 
+
+_PROXIMITY_MESSAGES = {
+    'step': ('邻近距离横纵米制步长必须为有限正数', 'Proximity horizontal and vertical metre steps must be finite and positive'),
+    'numeric': ('邻近距离结果超出有限Float64米制范围', 'Proximity exceeds the finite Float64 metre distance range'),
+}
+
+
+def _proximity_error(code):
+    return ValueError(_PROXIMITY_MESSAGES[code][1 if _DISK_LANGUAGE.get() == 'en' else 0])
+
+
+def _proximity_rectangular_distances(identities, valid, x, y, transform, units):
+    """Project selected original sites to metres, without a rounded squared cost."""
+    dx2 = (Fraction(transform[1]) * Fraction(units)) ** 2
+    dy2 = (Fraction(-transform[5]) * Fraction(units)) ** 2
+    result = np.full(valid.shape, np.nan, dtype=np.float64)
+    for row, column in zip(*np.nonzero(valid)):
+        dr = y + int(row) - int(identities[row, column, 0])
+        dc = x + int(column) - int(identities[row, column, 1])
+        result[row, column] = _sqrt_fraction(dc*dc*dx2 + dr*dr*dy2,
+                                            error=lambda: _proximity_error('numeric'))
+    return result
+
+
 def raster_proximity(input_raster, band, target_values):
     dataset = _open(input_raster)
     horizontal_metres = _projected_north_up_grid(dataset)
     width, height, transform = _grid(dataset)
-    if transform[1] != -transform[5]:
-        raise ValueError('Proximity requires square pixels; resample explicitly')
     step_metres = transform[1] * horizontal_metres
-    if not math.isfinite(step_metres) or step_metres <= 0:
-        raise ValueError('Pixel distance must be a finite positive metre value')
+    vertical_metres = -transform[5] * horizontal_metres
+    if any(not math.isfinite(v) or v <= 0 for v in (step_metres, vertical_metres)):
+        raise _proximity_error('step')
+    axis_weights = None
+    if transform[1] != -transform[5]:
+        ratio = (Fraction(transform[1]) / Fraction(-transform[5])) ** 2
+        axis_weights = (ratio.numerator, ratio.denominator)
     selected = _band(dataset, band)
     ranges = {gdal.GDT_Byte: (0, 255), gdal.GDT_Int8: (-128, 127),
               gdal.GDT_UInt16: (0, 65535), gdal.GDT_Int16: (-32768, 32767),
@@ -3193,22 +3230,33 @@ def raster_proximity(input_raster, band, target_values):
     with _disk_budget(_raster_disk_bytes(dataset, numeric=True), 'distance output'):
         output = destination = None
         try:
-            with _nearest_pixel_sites(dataset, band, target_values) as (columns_path, _):
+            with _nearest_pixel_sites(dataset, band, target_values, axis_weights=axis_weights) as (columns_path, sites_path):
                 output = _numeric_output(dataset, 1)
                 destination = output.GetRasterBand(1)
                 destination.SetUnitType('metre')
-                with columns_path.open('rb') as columns:
+                with (columns_path if columns_path is not None else sites_path).open('rb') as intermediate:
                     for x, y, arrays, masks in _blocks(dataset, [band]):
                         rows, count = arrays[0].shape
-                        distances = np.empty((rows, count), dtype=np.float64)
-                        for column in range(count):
-                            columns.seek(((x + column) * height + y) * 8)
-                            distances[:, column] = _read_distance_values(columns, rows)
-                        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
-                            distances = np.sqrt(distances) * step_metres
-                        if np.any(masks[0] & ~np.isfinite(distances)):
-                            raise ValueError('Proximity exceeds finite Float64 metre distances')
-                        distances[~masks[0]] = np.nan
+                        if axis_weights is None:
+                            distances = np.empty((rows, count), dtype=np.float64)
+                            for column in range(count):
+                                intermediate.seek(((x + column) * height + y) * 8)
+                                distances[:, column] = _read_distance_values(intermediate, rows)
+                            with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+                                distances = np.sqrt(distances) * step_metres
+                            if np.any(masks[0] & ~np.isfinite(distances)):
+                                raise ValueError('Proximity exceeds finite Float64 metre distances')
+                            distances[~masks[0]] = np.nan
+                        else:
+                            identities = np.empty((rows, count, 2), dtype=np.int64)
+                            for column in range(count):
+                                intermediate.seek(((x + column) * height + y) * 16)
+                                identities[:, column] = _read_site_values(intermediate, rows * 2).reshape(-1, 2)
+                            if (np.any(identities[:, :, 0] < 0) or np.any(identities[:, :, 0] >= height)
+                                    or np.any(identities[:, :, 1] < 0) or np.any(identities[:, :, 1] >= width)):
+                                raise RuntimeError('Invalid private nearest-site coordinate')
+                            distances = _proximity_rectangular_distances(identities, masks[0], x, y,
+                                                                      transform, horizontal_metres)
                         destination.WriteArray(distances, x, y)
             path = output.GetDescription()
             destination = None
@@ -5400,7 +5448,7 @@ _SPECS = [
     (raster_select_bands, OperatorCategory.RASTER_BAND, '栅格波段选择', [_INPUT(), _param('bands', 'list[int]', '按顺序选择原始数据波段，序号从 1 开始，可重复'), _param('color_model', 'str', '输出波段颜色解释', 'multispectral', False, enum=['multispectral', 'rgb'])], 'raster', ['read']),
     (raster_band_math, OperatorCategory.RASTER_CALCULATION, '栅格波段计算', [_INPUT(), _param('expression', 'str', '受限表达式，例如 (b2-b1)/(b2+b1)')], 'raster', ['read']),
     (raster_reclassify, OperatorCategory.RASTER_CLASSIFICATION, '栅格重分类', [_INPUT(), _param('rules', 'list[dict]', '互不重叠的精确值或左闭右开区间分类规则，null 端点表示无界'), _param('band', 'int', '从 1 开始的数据波段序号', 1, False), _param('unmatched', 'str', '未命中规则的有效像元处理方式', 'nodata', False, enum=['nodata', 'keep'])], 'raster', ['read']),
-    (raster_proximity, OperatorCategory.RASTER_CALCULATION, '栅格邻近距离', [_INPUT(), _param('band', 'int', '显式选择不超过 32 位的整数数据波段'), _param('target_values', 'list[int]', '有效目标分类值集合，允许合法零，不能重复')], 'raster', ['read']),
+    (raster_proximity, OperatorCategory.RASTER_CALCULATION, '栅格邻近距离', [_INPUT(), _param('band', 'int', '显式选择不超过 32 位的整数数据波段'), _param('target_values', 'list[int]', '有效目标分类集合，允许零、不可重复；北向矩形网格按实际米制距离选点，方形结果保持')], 'raster', ['read']),
     (raster_nibble, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格蚕食', [_INPUT(), _param('band', 'int', '显式选择精确安全整数分类数据波段，不能选择 alpha'), _param('target_values', 'list[int]', '待替换的安全整数分类，非空且不重复；取最近原始有效非目标供体，等距按源行列')], 'raster', ['read']),
     (raster_boundary_clean, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格边界清理', [_INPUT(), _param('band', 'int', '显式分类数据波段；原类别有效总数优先，八邻域单轮扩张和收缩，保留无效覆盖')], 'raster', ['read']),
     (raster_sieve, OperatorCategory.RASTER_CLASSIFICATION, '分类栅格小斑块筛除', [_INPUT(), _param('band', 'int', '显式分类数据波段，精确安全整数；原无效覆盖保留'), _param('min_pixels', 'int', '正整数像元数阈值；与min_area_m2必须且只能提供一个，等于阈值保留', None, False), _param('min_area_m2', 'float', '有限正平方米阈值；与min_pixels互斥，北向无旋转投影网格、按CRS线性单位换算，精确比较且等于阈值保留', None, False), _param('connectivity', 'int', '显式4或8邻接；仅合并到原始达标的直接相邻大斑块，大小／较小分类／最前行列决胜；无供体保留，单轮冻结'), _param('protected_values', 'list[int]', '免于替换的安全整数分类，列表不可重复；空列表保持原结果，保护斑块作为供体仍须原始大小达标', [], False)], 'raster', ['read']),

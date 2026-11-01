@@ -895,3 +895,20 @@ def test_nibble_real_async_cog_metadata_example_and_failure_cleanup(tmp_path, mo
         with raster_workspace():
             assert validate_cog(raster_load(_source_plan(target)))['valid']
     assert client.post('/api/operators/raster_nibble/invoke', json={'params': {}}).status_code == 403
+
+
+@pytest.mark.parametrize('x_weight,y_weight',[(1,1),(4,25),(25,4),(2**2000+1,3),(3,2**2000+1),(2**104+1,2**104)])
+def test_proximity_rectangular_weighted_envelope_exact_ids_near_ties_and_missing_sites(x_weight,y_weight):
+    rng=np.random.default_rng(7107)
+    for length in(1,2,3,17):
+        for offset in(0,2**53,2**62):
+            for _ in range(10):
+                costs=rng.integers(0,20,length,dtype=np.int64)+offset;valid=rng.random(length)>.35
+                actual=compute._nearest_line_sites(costs,valid=valid,x_weight=x_weight,y_weight=y_weight)
+                expected=[min((x_weight*int(costs[s])+y_weight*(x-int(s))**2,int(s))for s in np.flatnonzero(valid))[1]for x in range(length)]if valid.any()else[-1]*length
+                np.testing.assert_array_equal(actual,expected)
+
+
+@pytest.mark.parametrize('weights',[(0,1),(1,0),(-1,1),(True,1),(1,False),(.5,1)])
+def test_proximity_rectangular_private_axis_weights_are_positive_exact_integers(weights):
+    with pytest.raises(ValueError,match='positive integers'):compute._nearest_line_sites(np.array([0]),x_weight=weights[0],y_weight=weights[1])

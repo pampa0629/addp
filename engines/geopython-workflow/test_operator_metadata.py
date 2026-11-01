@@ -1536,3 +1536,14 @@ def test_vector_area_weighted_single_entry_explicit_flag_preserves_original_exam
     assert spec['attributes']['resource_groups']==['raster']and spec['output_ports'][0]['type']=='GeoDataFrame'
     assert 'include_area_weighted'not in spec['detailed_description']['workflow_example']['params']
     assert not any(s['id']in ('raster_vector_area_weighted_statistics','vector_area_weighted_statistics')for s in list_operators())
+
+
+
+def test_proximity_rectangular_single_existing_entry_preserves_contract_and_example():
+    specs=[s for s in list_operators()if s['id']=='raster_proximity'];assert len(specs)==1
+    spec=specs[0];params={p['name']:p for p in spec['parameters']}
+    assert set(params)=={'input_raster','band','target_values'}
+    assert all(word in params['target_values']['description']for word in('矩形','米制','方形结果保持'))
+    assert spec['execution_modes']==['workflow']and spec['effects']==['read']and spec['attributes']['resource_groups']==['raster']
+    assert len(spec['output_ports'])==1 and spec['output_ports'][0]['type']=='raster'
+    assert not any(s['id']in('raster_rectangular_proximity','raster_anisotropic_proximity')for s in list_operators())
