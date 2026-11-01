@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
 
@@ -67,6 +68,18 @@ class ChatResponse(_ContractModel):
     usage: Usage
     deployment_id: str
     profile_version: int
+
+
+class ChatStreamEvent(_ContractModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    schema_version: Literal["addp.inference-stream/v1"]
+    type: Literal["start", "text_delta", "completed", "error"]
+    sequence: int = Field(ge=1)
+    deployment_id: str = ""
+    profile_version: int = 0
+    delta: str = ""
+    usage: Usage | None = None
+    error_code: str = ""
 
 
 class EmbeddingInput(_ContractModel):
@@ -165,6 +178,98 @@ class InferenceClient:
         response = await self._post("/api/v1/inference/internal/chat", tenant_id, payload)
         return ChatResponse.model_validate(response)
 
+    async def chat_stream(
+        self, *, tenant_id: int, model_profile_id: str, messages: list[Message],
+        temperature: float | None = None, max_output_tokens: int = 0,
+    ) -> AsyncIterator[ChatStreamEvent]:
+        tenant_id = self._tenant_id(tenant_id)
+        payload = {"schema_version": SCHEMA_VERSION, "tenant_id": tenant_id,
+                   "model_profile_id": self._profile_id(model_profile_id), "stream": True,
+                   "messages": [message.model_dump(exclude_defaults=True) for message in messages]}
+        if temperature is not None:
+            payload["temperature"] = temperature
+        if max_output_tokens > 0:
+            payload["max_output_tokens"] = max_output_tokens
+        for attempt in range(2):
+            token = await self._token_source.token(tenant_id)
+            try:
+                runtime_url = await self._discover_runtime(token, streaming=True)
+                async with self._client.stream("POST", runtime_url + "/api/v1/inference/internal/chat",
+                    json=payload, headers={"Authorization": f"Bearer {token}"}) as response:
+                    if response.status_code == 401 and attempt == 0:
+                        self._token_source.invalidate(tenant_id, token)
+                        continue
+                    if response.status_code != 200:
+                        code = "inference_timeout" if response.status_code == 504 else "inference_upstream_failed"
+                        if response.status_code == 401:
+                            code = "inference_runtime_unauthorized"
+                        raise InferenceError(code)
+                    if response.headers.get("content-type", "").split(";", 1)[0] != "text/event-stream":
+                        raise InferenceError("inference_invalid_stream")
+                    sequence, total, text_bytes, started, completed = 0, 0, 0, False, False
+                    buffer = b""
+                    async for chunk in response.aiter_bytes():
+                        total += len(chunk)
+                        if total > 32 * 1024 * 1024:
+                            raise InferenceError("inference_invalid_stream")
+                        buffer += chunk
+                        while True:
+                            ends = [(buffer.find(mark), len(mark)) for mark in (b"\n\n", b"\r\n\r\n")]
+                            ends = [(at, size) for at, size in ends if at >= 0]
+                            if not ends:
+                                break
+                            at, size = min(ends)
+                            frame, buffer = buffer[:at], buffer[at+size:]
+                            if len(frame) > 512 * 1024:
+                                raise InferenceError("inference_invalid_stream")
+                            lines = [line[5:].lstrip(b" ") for line in frame.splitlines() if line.startswith(b"data:")]
+                            if not lines:
+                                continue
+                            try:
+                                event = ChatStreamEvent.model_validate_json(b"\n".join(lines))
+                            except ValueError as exc:
+                                raise InferenceError("inference_invalid_stream") from exc
+                            if completed or event.sequence != sequence + 1:
+                                raise InferenceError("inference_invalid_stream")
+                            sequence = event.sequence
+                            if event.type == "error":
+                                if not started or event.delta or event.usage is not None or event.deployment_id or event.profile_version or event.error_code not in {"inference_timeout", "inference_upstream_failed", "inference_upstream_unavailable", "inference_operation_unsupported"}:
+                                    raise InferenceError("inference_invalid_stream")
+                                raise InferenceError(event.error_code)
+                            if event.type == "start":
+                                if started or not event.deployment_id or event.profile_version < 1 or event.delta or event.usage is not None:
+                                    raise InferenceError("inference_invalid_stream")
+                                started = True
+                            elif not started:
+                                raise InferenceError("inference_invalid_stream")
+                            elif event.type == "text_delta":
+                                if not event.delta or event.usage is not None or event.deployment_id or event.profile_version:
+                                    raise InferenceError("inference_invalid_stream")
+                                text_bytes += len(event.delta.encode("utf-8"))
+                                if text_bytes > 2 * 1024 * 1024:
+                                    raise InferenceError("inference_invalid_stream")
+                            elif event.type == "completed":
+                                if not text_bytes or event.usage is None or event.delta or event.deployment_id or event.profile_version or min(event.usage.input_tokens, event.usage.output_tokens, event.usage.total_tokens) < 0:
+                                    raise InferenceError("inference_invalid_stream")
+                                completed = True
+                            if event.error_code:
+                                raise InferenceError("inference_invalid_stream")
+                            yield event
+                        if len(buffer) > 512 * 1024:
+                            raise InferenceError("inference_invalid_stream")
+                    if buffer.strip() or not completed:
+                        raise InferenceError("inference_incomplete_stream")
+                    return
+            except _RuntimeDiscoveryUnauthorized as exc:
+                if attempt == 0:
+                    self._token_source.invalidate(tenant_id, token)
+                    continue
+                raise InferenceError("inference_runtime_unauthorized") from exc
+            except httpx.TimeoutException as exc:
+                raise InferenceError("inference_timeout") from exc
+            except httpx.HTTPError as exc:
+                raise InferenceError("inference_runtime_unavailable") from exc
+
     async def resolve_profile(
         self,
         *,
@@ -256,7 +361,7 @@ class InferenceClient:
             raise InferenceError(str(error_code), str(message))
         return response.json()
 
-    async def _discover_runtime(self, token: str) -> str:
+    async def _discover_runtime(self, token: str, *, streaming: bool = False) -> str:
         response = await self._client.get(
             self._system_url + "/api/v1/system/runtime/engine-descriptors",
             params={"engine_type": "inference_runtime", "page": 1, "page_size": 2},
@@ -298,6 +403,8 @@ class InferenceClient:
         inference_capability = ((capabilities.get("compute") or {}).get("inference") or {})
         if capabilities.get("schema_version") != "engine.capabilities/v1" or inference_capability.get("supported") is not True or inference_capability.get("runtime_api") != SCHEMA_VERSION:
             raise InferenceError("inference_runtime_not_found")
+        if streaming and inference_capability.get('streaming') is not True:
+            raise InferenceError('inference_operation_unsupported')
         endpoint = descriptor.get("runtime_endpoint")
         if not isinstance(endpoint, dict):
             raise InferenceError("inference_runtime_discovery_invalid")

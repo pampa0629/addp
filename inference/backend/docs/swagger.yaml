@@ -219,6 +219,8 @@ definitions:
         $ref: '#/definitions/inference.ResponseSchema'
       schema_version:
         type: string
+      stream:
+        type: boolean
       temperature:
         type: number
       tenant_id:
@@ -449,6 +451,8 @@ paths:
     post:
       consumes:
       - application/json
+      description: stream=true 返回 addp.inference-stream/v1 纯文本 SSE；不接受工具或结构化 Schema
+        | stream=true returns text-only SSE; tools and response_schema are rejected
       parameters:
       - description: Chat request
         in: body
@@ -458,6 +462,7 @@ paths:
           $ref: '#/definitions/inference.ChatRequest'
       produces:
       - application/json
+      - text/event-stream
       responses:
         "200":
           description: OK

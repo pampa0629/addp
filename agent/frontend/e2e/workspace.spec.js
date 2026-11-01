@@ -52,6 +52,80 @@ async function menu(page, name) {
   await page.getByRole('menuitem', { name, exact: true }).click()
 }
 
+// A gated ReadableStream exercises the real AG-UI parser. It cannot finish until the test releases it.
+async function installAnswerStream(page) {
+  await page.addInitScript(({ runId }) => {
+    const original = window.fetch.bind(window)
+    window.fetch = async (input, options) => {
+      if (!String(input).endsWith('/api/v1/agent/chat')) return original(input, options)
+      const body = JSON.parse(options.body)
+      const stream = new ReadableStream({ start(controller) {
+        const emit = value => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(value)}\n\n`))
+        window.answerFixture = {
+          append: delta => emit({ type: 'TEXT_MESSAGE_CONTENT', messageId: 'stream-answer', delta }),
+          end: failed => {
+            if (failed) emit({ type: 'RUN_ERROR', message: '测试中断', code: 'runtime_exception' })
+            else {
+              emit({ type: 'TEXT_MESSAGE_END', messageId: 'stream-answer' })
+              emit({ type: 'RUN_FINISHED', threadId: body.threadId, runId: body.runId, outcome: { type: 'success' } })
+            }
+            controller.close()
+          }
+        }
+        emit({ type: 'RUN_STARTED', threadId: body.threadId, runId: body.runId })
+        emit({ type: 'STATE_SNAPSHOT', snapshot: { agentRunId: runId, sessionId: 61, status: 'running' } })
+        emit({ type: 'TEXT_MESSAGE_START', messageId: 'stream-answer', role: 'assistant' })
+        window.answerFixture.append('第一段🙂')
+      } })
+      return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } })
+    }
+  }, { runId })
+}
+
+test('answer grows while archived, then reloads the exact completed text without duplication', async ({ page }) => {
+  const history = []
+  const backend = await installWorkspace(page, { history })
+  await installAnswerStream(page)
+  await page.goto('/module-ui/agent/sessions/61')
+  await page.locator('textarea').fill('只解释，不调用工具、不创建或运行任务')
+  await page.getByRole('button', { name: '发送', exact: true }).click()
+  await expect(page.locator('.messages-area')).toContainText('第一段🙂')
+  await menu(page, '归档')
+  await expect(page.locator('textarea')).toBeDisabled()
+  await page.evaluate(() => window.answerFixture.append('第二段中文'))
+  await expect(page.locator('.messages-area')).toContainText('第一段🙂第二段中文')
+  history.push({ id: 73, protocol_message_id: 'stream-answer', role: 'assistant', content: '第一段🙂第二段中文', is_complete: true })
+  await page.evaluate(() => window.answerFixture.end(false))
+  await expect(page.locator('[data-message-id="stream-answer"]')).toHaveCount(1)
+  await page.reload()
+  await expect(page.locator('[data-message-id="stream-answer"]')).toContainText('第一段🙂第二段中文')
+  await expect(page.locator('.incomplete-message')).toHaveCount(0)
+  await expect(page.locator('textarea')).toBeDisabled()
+  expect(backend.writes).toEqual([{ version: 1, archived: true }])
+  expect(backend.unexpected).toEqual([])
+})
+
+test('failed partial answer remains visibly incomplete after refresh and in Markdown', async ({ page }) => {
+  const history = []
+  const backend = await installWorkspace(page, { history })
+  await installAnswerStream(page)
+  await page.goto('/module-ui/agent/sessions/61')
+  await page.locator('textarea').fill('只解释')
+  await page.getByRole('button', { name: '发送', exact: true }).click()
+  await expect(page.locator('.messages-area')).toContainText('第一段🙂')
+  history.push({ id: 73, protocol_message_id: 'stream-answer', role: 'assistant', content: '第一段🙂', is_complete: false })
+  await page.evaluate(() => window.answerFixture.end(true))
+  await expect(page.locator('.incomplete-message')).toBeVisible()
+  await page.reload()
+  await expect(page.locator('.incomplete-message')).toBeVisible()
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: '导出 Markdown', exact: true }).click()
+  const exported = await readFile(await (await downloadPromise).path(), 'utf8')
+  expect(exported).toContain('第一段🙂')
+  expect(exported).toContain('未完成')
+  expect(backend.unexpected).toEqual([])
+})
+
 test('capability home fills a draft without submitting, searches titles and keeps the home route', async ({ page }) => {
   const backend = await installWorkspace(page)
   await page.goto('/module-ui/agent/')

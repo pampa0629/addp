@@ -19,6 +19,9 @@ class _Result:
     def scalar_one(self):
         return self.value
 
+    def scalar_one_or_none(self):
+        return self.value
+
 
 class _DB:
     def __init__(self):
@@ -62,6 +65,15 @@ class _MessageDB:
 
     def begin(self):
         return _Transaction()
+
+    async def execute(self, statement):
+        entity = statement.column_descriptions[0].get('entity')
+        from models.run import AgentRun
+        if entity is AgentRun:
+            return _Result(SimpleNamespace(status='running'))
+        parameters = statement.compile().params
+        identity = parameters.get('protocol_message_id_1')
+        return _Result(next((row for row in self.added if getattr(row, 'protocol_message_id', None) == identity), None))
 
     def add(self, value):
         self.added.append(value)
@@ -322,7 +334,7 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
             patch("api.chat.AsyncSessionLocal", return_value=_SessionContext(message_db)),
             patch("api.chat.maybe_update_summary", new=AsyncMock()),
         ):
-            await _save_assistant_message(
+            await _save_assistant_message(agent_run_id=uuid.uuid4(),
                 session_id=12,
                 message_id="message-1",
                 content="预览完成",
@@ -356,7 +368,7 @@ class AgentRunEventTests(unittest.IsolatedAsyncioTestCase):
         message_db = _MessageDB()
         with (patch("api.chat.AsyncSessionLocal", return_value=_SessionContext(message_db)),
               patch("api.chat.maybe_update_summary", new=AsyncMock())):
-            await _save_assistant_message(session_id=12, message_id="check-message", content="草稿检查完成", parts=parts)
+            await _save_assistant_message(agent_run_id=uuid.uuid4(), session_id=12, message_id="check-message", content="草稿检查完成", parts=parts)
         event = await append_run_event(_DB(), agent_run_id=uuid.uuid4(), protocol_invocation_id="check-protocol",
             event_payload={"type": "ACTIVITY_SNAPSHOT", "messageId": "check-activity", "activityType": "a2ui-surface", "content": content})
         self.assertEqual(message_db.added[0].parts[0]["content"], event.payload["content"])

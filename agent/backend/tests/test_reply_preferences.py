@@ -57,9 +57,9 @@ class ReplyPreferenceTests(unittest.IsolatedAsyncioTestCase):
             def with_structured_output(self, schema): return self
             async def ainvoke(self, messages):
                 captured.extend(messages)
-                return RouteDecision(skill=None, direct_reply='收到')
+                return RouteDecision(skill=None)
         state = {'messages': [{'role': 'user', 'content': '只回复收到'}], 'session_summary': None, 'reply_detail': 'detailed'}
         result = await _route_node(state, Model())
         self.assertEqual(captured[-1].content, '只回复收到')
         self.assertIn('用户表达偏好', captured[0].content)
-        self.assertEqual(result['direct_reply'], '收到')
+        self.assertIsNone(result['answer_context'])

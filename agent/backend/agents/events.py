@@ -25,6 +25,8 @@ class AgentEvent:
     # Only internal checkpoint events may request a transaction acknowledgement.
     # Never serialized in AG-UI, checkpoint payloads or replay events.
     checkpoint_committed: asyncio.Future[None] | None = field(default=None, repr=False, compare=False)
+    # SDK callback backpressure only; not an event payload or persistence acknowledgement.
+    text_consumed: asyncio.Future[None] | None = field(default=None, repr=False, compare=False)
 
 
 def text_event(delta: str) -> AgentEvent:

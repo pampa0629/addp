@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, func
+from sqlalchemy import Boolean, Column, Integer, String, Text, DateTime, ForeignKey, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from . import Base
@@ -14,6 +14,7 @@ class Message(Base):
     content = Column(Text, nullable=False)
     protocol_message_id = Column(String(100), nullable=True)
     parts = Column(JSONB, nullable=False, default=list)
+    is_complete = Column(Boolean, nullable=False, default=True, server_default='true')
     created_at = Column(DateTime, server_default=func.now())
 
     session = relationship("Session", back_populates="messages")

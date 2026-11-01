@@ -82,7 +82,7 @@ class TransferPrecheckRuntimeTests(unittest.IsolatedAsyncioTestCase):
                     "resuming": resuming,
                     **({"draft_arguments": draft_arguments} if draft_arguments is not None else {}),
                 }, skill_body=skill_body, allowed_tool_names=allowed or ["platform.capability.context", CHECK_TOOL, CREATE_TOOL],
-                max_iterations=3, llm=_model(client),
+                max_iterations=len(responses)+1, llm=_model(client),
             ):
                 events.append(event)
                 if event.checkpoint_committed is not None:

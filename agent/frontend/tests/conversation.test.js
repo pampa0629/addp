@@ -3,6 +3,11 @@ import { createMessageDraft, readMessageDraft, conversationMarkdown, conversatio
 import { defaultPreferences, normalizePreferences, preferenceStorageKey } from '../src/composables/useWorkspacePreferences'
 
 describe('conversation projections preserve authority boundaries', () => {
+  it('retains partial answer text with its incomplete marker in exports', () => {
+    const markdown = conversationMarkdown('会话', [{ role: 'assistant', content: '未写完🙂', is_complete: false }], key => key)
+    expect(markdown).toContain('agent.workspace.incomplete')
+    expect(markdown).toContain('未写完🙂')
+  })
   it('exports text and source markers without hidden payloads or approvals', () => {
     const messages = [{ id: 1, role: 'user', content: '查询人口' }, { id: 2, role: 'assistant', content: 'unsafe fallback', parts: [
       { type: 'text', text: '解释\n```sql\nSELECT 1;\n```' },

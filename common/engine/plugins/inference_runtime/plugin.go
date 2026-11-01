@@ -28,7 +28,7 @@ func (p *Plugin) ConnectionIdentityFields() []string {
 	return []string{"protocol", "host", "port"}
 }
 func (p *Plugin) Capabilities() plugin.EngineCapabilities {
-	return plugin.NewInferenceCapabilities(p.Type(), []string{"chat", "embedding", "rerank"}, []string{"text", "image"}, false)
+	return plugin.NewInferenceCapabilities(p.Type(), []string{"chat", "embedding", "rerank"}, []string{"text", "image"}, true)
 }
 func (p *Plugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
 	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())

@@ -43,11 +43,13 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "stream=true 返回 addp.inference-stream/v1 纯文本 SSE；不接受工具或结构化 Schema | stream=true returns text-only SSE; tools and response_schema are rejected",
                 "consumes": [
                     "application/json"
                 ],
                 "produces": [
-                    "application/json"
+                    "application/json",
+                    "text/event-stream"
                 ],
                 "tags": [
                     "Inference Runtime"
@@ -1482,6 +1484,9 @@ const docTemplate = `{
                 },
                 "schema_version": {
                     "type": "string"
+                },
+                "stream": {
+                    "type": "boolean"
                 },
                 "temperature": {
                     "type": "number"

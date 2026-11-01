@@ -79,6 +79,7 @@
       }
     },
     "workspace": {
+      "incomplete": "Incomplete response",
       "home": "Capabilities",
       "search": "Search session titles",
       "archived": "Archived",

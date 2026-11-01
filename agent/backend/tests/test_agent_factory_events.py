@@ -398,7 +398,7 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
                 responses=responses, allowed_tool_names=["engine.list", "resource.children.list"],
             ), timeout=5)
         self.assertEqual(calls, ["engine__list", "resource__children__list"])
-        self.assertEqual([e.payload["tool_call_id"] for e in events if e.kind == "tool_start"], ["first", "sibling"])
+        self.assertEqual([e.payload["tool_call_id"] for e in events if e.kind == "tool_start"], ["first", "sibling", "fixture-answer-ready"])
         self.assertFalse(any(e.kind == "run_failed" for e in events))
 
     async def test_cancelled_first_call_never_releases_queued_sibling_into_adapter(self):
@@ -521,7 +521,7 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
         events = await self._run_workflow_events(
             tools=[], responses=responses, allowed_tool_names=[], llm=llm,
         )
-        self.assertEqual(events, [])
+        self.assertFalse(any(event.kind == 'text' for event in events))
         self.assertEqual(len(llm.messages), 1)
 
     def test_routing_prompt_requires_skill_for_spatial_workflow_design(self):
@@ -754,7 +754,7 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
                     task_context=context,
                     skill_body="test",
                     allowed_tool_names=["workflow.draft.generate"],
-                    max_iterations=2,
+                    max_iterations=3,
                 )
             ]
 
@@ -921,7 +921,7 @@ class AgentFactoryEventTests(unittest.IsolatedAsyncioTestCase):
                     task_context=context,
                     skill_body="test",
                     allowed_tool_names=allowed_tool_names,
-                    max_iterations=len(responses) if max_iterations is None else max_iterations,
+                    max_iterations=len(responses)+1 if max_iterations is None else max_iterations,
                 )
             ]
 

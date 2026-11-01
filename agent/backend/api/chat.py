@@ -5,6 +5,7 @@ import copy
 import json
 import logging
 import httpx
+import anyio
 import uuid
 from datetime import datetime
 from typing import Any, Literal
@@ -77,6 +78,7 @@ from services.interactions import (
     resolve_interaction,
 )
 from services.messages import append_text_delta, bounded_message_parts
+from agents.answer_stream import coalesce_events
 from services.run_events import append_run_event
 from services.runs import (
     AgentRunNotFoundError,
@@ -122,6 +124,16 @@ class RetryAgentRunInput(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     run_id: str = Field(alias="runId", min_length=1, max_length=100)
+
+
+class SessionMessageResponse(BaseModel):
+    id: int
+    protocol_message_id: str | None
+    is_complete: bool = Field(description="是否已完整结束；未完成正文仅供回看，不进入后续上下文或摘要 | Complete output; partial text is display-only and excluded from later context and summaries")
+    role: str
+    content: str
+    parts: list[dict[str, Any]]
+    created_at: datetime
 
 
 def _plain_text(content: Any) -> str:
@@ -288,11 +300,11 @@ async def _save_user_input(
 
 async def _load_agent_history(db: AsyncSession, session_id: int) -> tuple[list[dict[str, Any]], int]:
     total_result = await db.execute(
-        select(func.count(Message.id)).where(Message.session_id == session_id)
+        select(func.count(Message.id)).where(Message.session_id == session_id, Message.is_complete.is_(True))
     )
     result = await db.execute(
         select(Message)
-        .where(Message.session_id == session_id)
+        .where(Message.session_id == session_id, Message.is_complete.is_(True))
         .order_by(Message.created_at.desc(), Message.id.desc())
         .limit(HISTORY_MESSAGE_LIMIT)
     )
@@ -336,26 +348,31 @@ async def _persist_checkpoint_event(
         committed.set_result(None)
 
 
-async def _save_assistant_message(
-    *,
-    session_id: int,
-    message_id: str,
-    content: str,
-    parts: list[dict[str, Any]],
-) -> None:
+async def _project_assistant_message(db, *, session_id, message_id, content, parts, complete):
     if not content and not parts:
         return
+    result = await db.execute(select(Message).where(
+        Message.session_id == session_id, Message.protocol_message_id == message_id,
+    ))
+    message = result.scalar_one_or_none()
+    if message is None:
+        message = Message(session_id=session_id, role="assistant", protocol_message_id=message_id)
+        db.add(message)
+    message.content = content
+    message.parts = bounded_message_parts(parts)
+    message.is_complete = complete
+
+
+async def _save_assistant_message(*, session_id, message_id, content, parts, agent_run_id, complete=True, final_status=None, failure=None):
     async with AsyncSessionLocal() as db:
         async with db.begin():
-            db.add(
-                Message(
-                    session_id=session_id,
-                    role="assistant",
-                    content=content,
-                    protocol_message_id=message_id,
-                    parts=bounded_message_parts(parts),
-                )
-            )
+            run = (await db.execute(select(AgentRun).where(AgentRun.id == agent_run_id).with_for_update())).scalar_one()
+            if run.status not in {'running', 'waiting'}:
+                raise asyncio.CancelledError
+            await _project_assistant_message(db, session_id=session_id, message_id=message_id,
+                content=content, parts=parts, complete=complete)
+            if final_status is not None:
+                await set_run_status(db, agent_run_id=agent_run_id, status=final_status, **(failure or {}))
     asyncio.create_task(maybe_update_summary(session_id))
 
 
@@ -484,6 +501,8 @@ async def chat(request: Request, body: AgentRunInput, db: AsyncSession = Depends
         text_started = False
         tool_steps: dict[str, Any] = {}
         cancellation_signal = run_cancellation_registry.activate(agent_run_id)
+        invocation_finished = False
+        events = None
 
         def present(presentation):
             surface_id = f"surface:{uuid.uuid4()}"
@@ -505,6 +524,13 @@ async def chat(request: Request, body: AgentRunInput, db: AsyncSession = Depends
             event_payload = protocol_event.model_dump(mode="json", by_alias=True, exclude_none=True)
             async with AsyncSessionLocal() as event_db:
                 async with event_db.begin():
+                    if event_payload.get("type") in {"TEXT_MESSAGE_CONTENT", "ACTIVITY_SNAPSHOT"}:
+                        locked_run = (await event_db.execute(select(AgentRun).where(
+                            AgentRun.id == agent_run_id).with_for_update())).scalar_one()
+                        if locked_run.status not in {"running", "waiting"}:
+                            raise asyncio.CancelledError
+                        await _project_assistant_message(event_db, session_id=session_id,
+                            message_id=assistant_message_id, content=full_text, parts=parts, complete=False)
                     persisted = await append_run_event(
                         event_db,
                         agent_run_id=agent_run_id,
@@ -527,17 +553,17 @@ async def chat(request: Request, body: AgentRunInput, db: AsyncSession = Depends
             if part not in parts:
                 parts.append(part)
 
-        yield await emit(
-            RunStartedEvent(thread_id=body.thread_id, run_id=body.run_id, parent_run_id=body.parent_run_id)
-        )
-        yield await emit(
-            StateSnapshotEvent(
-                snapshot={"sessionId": session_id, "agentRunId": str(agent_run_id), "status": "running"}
-            )
-        )
-
         try:
-            async for event in stream_agent_response(
+            yield await emit(
+                RunStartedEvent(thread_id=body.thread_id, run_id=body.run_id, parent_run_id=body.parent_run_id)
+            )
+            yield await emit(
+                StateSnapshotEvent(
+                    snapshot={"sessionId": session_id, "agentRunId": str(agent_run_id), "status": "running"}
+                )
+            )
+
+            events = coalesce_events(stream_agent_response(
                 history,
                 user_id,
                 tenant_id,
@@ -548,43 +574,12 @@ async def chat(request: Request, body: AgentRunInput, db: AsyncSession = Depends
                 forced_skill_name=(agent_run.skill_name if resumed_from_interaction else None),
                 accept_language=request.headers.get("accept-language", "zh-cn"),
                 draft_catalog=draft_catalog, draft_reader=draft_reader, plan=current_plan,
-            ):
+            ), cancellation_signal)
+            async for event in events:
                 if await request.is_disconnected():
                     if event.checkpoint_committed is not None and not event.checkpoint_committed.done():
                         event.checkpoint_committed.cancel()
-                    async with AsyncSessionLocal() as run_db:
-                        async with run_db.begin():
-                            await set_run_status(
-                                run_db,
-                                agent_run_id=agent_run_id,
-                                status="failed",
-                                error_source="client",
-                                error_code="client_disconnected",
-                                error_message="客户端流连接已断开",
-                            )
-                            await append_run_event(
-                                run_db,
-                                agent_run_id=agent_run_id,
-                                protocol_invocation_id=body.run_id,
-                                event_payload=StateSnapshotEvent(
-                                    snapshot={
-                                        "sessionId": session_id,
-                                        "agentRunId": str(agent_run_id),
-                                        "status": "failed",
-                                    }
-                                ).model_dump(mode="json", by_alias=True, exclude_none=True),
-                            )
-                            await append_run_event(
-                                run_db,
-                                agent_run_id=agent_run_id,
-                                protocol_invocation_id=body.run_id,
-                                event_payload=RunErrorEvent(
-                                    message="客户端流连接已断开，请重试该 AgentRun",
-                                    code="ClientDisconnected",
-                                ).model_dump(mode="json", by_alias=True, exclude_none=True),
-                            )
-                            await refresh_run_metrics(run_db, agent_run_id=agent_run_id)
-                    return
+                    raise ConnectionAbortedError("client_disconnected")
                 if cancellation_signal.is_set():
                     if event.checkpoint_committed is not None and not event.checkpoint_committed.done():
                         event.checkpoint_committed.cancel()
@@ -618,15 +613,11 @@ async def chat(request: Request, body: AgentRunInput, db: AsyncSession = Depends
                     yield await emit(TextMessageContentEvent(message_id=assistant_message_id, delta=delta))
                     yield await emit(TextMessageEndEvent(message_id=assistant_message_id))
                     await _save_assistant_message(
+                        agent_run_id=agent_run_id, complete=False, final_status="failed",
+                        failure=dict(error_source=event.payload["error_source"], error_code=error_code, error_message=error_message),
                         session_id=session_id, message_id=assistant_message_id, content=full_text, parts=parts,
                     )
-                    async with AsyncSessionLocal() as run_db:
-                        async with run_db.begin():
-                            await set_run_status(
-                                run_db, agent_run_id=agent_run_id, status="failed",
-                                error_source=event.payload["error_source"], error_code=error_code,
-                                error_message=error_message,
-                            )
+                    invocation_finished = True
                     yield await emit(StateSnapshotEvent(snapshot={
                         "sessionId": session_id, "agentRunId": str(agent_run_id), "status": "failed",
                     }))
@@ -857,11 +848,13 @@ async def chat(request: Request, body: AgentRunInput, db: AsyncSession = Depends
                     if text_started:
                         yield await emit(TextMessageEndEvent(message_id=assistant_message_id))
                     await _save_assistant_message(
+                        agent_run_id=agent_run_id, final_status="waiting",
                         session_id=session_id,
                         message_id=assistant_message_id,
                         content=full_text or interaction_prompt,
                         parts=parts,
                     )
+                    invocation_finished = True
                     interrupt = Interrupt(
                         id=interaction_id,
                         reason=(
@@ -894,14 +887,13 @@ async def chat(request: Request, body: AgentRunInput, db: AsyncSession = Depends
             if text_started:
                 yield await emit(TextMessageEndEvent(message_id=assistant_message_id))
             await _save_assistant_message(
+                agent_run_id=agent_run_id, final_status="completed",
                 session_id=session_id,
                 message_id=assistant_message_id,
                 content=full_text,
                 parts=parts,
             )
-            async with AsyncSessionLocal() as run_db:
-                async with run_db.begin():
-                    await set_run_status(run_db, agent_run_id=agent_run_id, status="completed")
+            invocation_finished = True
             yield await emit(
                 StateSnapshotEvent(
                     snapshot={
@@ -928,6 +920,10 @@ async def chat(request: Request, body: AgentRunInput, db: AsyncSession = Depends
             )
             async with AsyncSessionLocal() as run_db:
                 async with run_db.begin():
+                    run = (await run_db.execute(select(AgentRun).where(
+                        AgentRun.id == agent_run_id).with_for_update())).scalar_one()
+                    if run.status not in {"running", "waiting"}:
+                        return
                     await set_run_status(
                         run_db,
                         agent_run_id=agent_run_id,
@@ -936,12 +932,39 @@ async def chat(request: Request, body: AgentRunInput, db: AsyncSession = Depends
                         error_code="client_disconnected" if client_disconnected else "runtime_exception",
                         error_message=str(exc),
                     )
-            yield await emit(RunErrorEvent(
+            failed_state = await emit(StateSnapshotEvent(snapshot={
+                "sessionId": session_id, "agentRunId": str(agent_run_id), "status": "failed",
+            }))
+            failed_event = await emit(RunErrorEvent(
                 message="客户端流连接已断开，请重试该 AgentRun" if client_disconnected else "智能体运行失败",
                 code="ClientDisconnected" if client_disconnected else type(exc).__name__,
             ))
+            invocation_finished = True
+            yield failed_state
+            yield failed_event
         finally:
-            run_cancellation_registry.release(agent_run_id, cancellation_signal)
+            try:
+                with anyio.CancelScope(shield=True):
+                    if events is not None:
+                        await events.aclose()
+                if not invocation_finished:
+                    # Starlette cancels the streaming task on disconnect, including while the model is blocked.
+                    # Shield only the bounded database cleanup; never detach model generation.
+                    with anyio.CancelScope(shield=True):
+                        async with AsyncSessionLocal() as run_db:
+                            async with run_db.begin():
+                                run = (await run_db.execute(select(AgentRun).where(
+                                    AgentRun.id == agent_run_id).with_for_update())).scalar_one()
+                                if run.status in {"running", "waiting"}:
+                                    await set_run_status(run_db, agent_run_id=agent_run_id, status="failed",
+                                        error_source="client", error_code="client_disconnected",
+                                        error_message="客户端流连接已断开")
+                                    await append_run_event(run_db, agent_run_id=agent_run_id,
+                                        protocol_invocation_id=body.run_id,
+                                        event_payload=RunErrorEvent(message="客户端流连接已断开，请重试该 AgentRun",
+                                            code="ClientDisconnected").model_dump(mode="json", by_alias=True, exclude_none=True))
+            finally:
+                run_cancellation_registry.release(agent_run_id, cancellation_signal)
 
     return StreamingResponse(
         generate(),
@@ -999,6 +1022,7 @@ async def retry_chat(
 
 @router.get(
     "/sessions/{session_id}/messages",
+    response_model=list[SessionMessageResponse],
     summary="获取会话消息 | List Session Messages",
     description="只返回当前 Tenant 内当前用户拥有的会话消息；澄清回复只展示服务端确认的选项名称，不输出运行时候选事实。 | Returns messages owned by the current user and Tenant; clarification replies show only the server-confirmed option label, not runtime candidate facts.",
     dependencies=[Depends(require_permissions(AGENT_SESSION_READ))],
@@ -1048,6 +1072,7 @@ async def get_messages(session_id: int, request: Request, db: AsyncSession = Dep
             {
                 "id": message.id,
                 "protocol_message_id": message.protocol_message_id,
+                "is_complete": message.is_complete,
                 "role": message.role,
                 "content": content,
                 "parts": parts,

@@ -5,6 +5,7 @@ import copy
 import json
 import logging
 import uuid
+from contextlib import aclosing
 from typing import Any, AsyncIterator
 from urllib.parse import urlsplit
 
@@ -14,6 +15,7 @@ from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionM
 from deerflow.agents.middlewares.system_message_coalescing_middleware import SystemMessageCoalescingMiddleware
 from langchain.agents.middleware import AgentMiddleware, TodoListMiddleware, hook_config
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.callbacks import AsyncCallbackHandler, AsyncCallbackManager
 from langchain_core.tools import StructuredTool
 from langgraph.config import get_stream_writer
 from langgraph.graph import END
@@ -55,6 +57,35 @@ async def _request_clarification(**_: Any) -> str:
     raise RuntimeError("clarification_middleware_required")
 
 
+class AnswerReady(BaseModel):
+    model_config = {'extra': 'forbid'}
+
+
+async def _answer_ready() -> str:
+    raise RuntimeError('answer_boundary_required')
+
+
+def _answer_tool():
+    return StructuredTool.from_function(coroutine=_answer_ready, name='answer_ready',
+        description='已完成必要查询、缺口解释或结果准备后，单独调用以进入最终回答。此后本轮不再调用工具。不能用普通正文替代；不提交回答文字。', args_schema=AnswerReady)
+
+
+class _AnswerTokens(AsyncCallbackHandler):
+    raise_error = True
+
+    def __init__(self, writer):
+        self.writer = writer
+
+    async def on_llm_new_token(self, token, **kwargs):
+        message = getattr(kwargs.get('chunk'), 'message', None)
+        if message is not None and (message.tool_calls or getattr(message, 'tool_call_chunks', None)):
+            raise RuntimeError('answer_phase_tool_call_forbidden')
+        if token:
+            consumed = asyncio.get_running_loop().create_future()
+            self.writer(AgentEvent(kind='text', payload={'delta': token}, text_consumed=consumed))
+            await consumed
+
+
 def _clarification_tool() -> StructuredTool:
     return StructuredTool.from_function(
         coroutine=_request_clarification, name="request_clarification",
@@ -71,6 +102,8 @@ _PLAN_INSTRUCTIONS = """复杂任务（至少三个实际阶段）可用 write_t
 
 def _runtime_instructions() -> str:
     return """## ADDP Agent Runtime 交互约束
+
+- 查询与决策完成后必须单独调用 `answer_ready`，不要提前生成普通正文。该控制动作之后进入无工具的最终回答阶段，生成真正面向用户的回复；不能再请求工具或用模型决定扩大授权。
 
 - `request_clarification` 是 Runtime 提供的暂停控制能力，不是 ADDP 平台 Tool。
 - 只要 Skill 的“必须澄清”条件成立，就调用 `request_clarification`，不要用普通文本列出问题后结束 run。
@@ -108,6 +141,7 @@ class _PlatformBoundary(AgentMiddleware):
         self.resuming = resuming
         self.model_calls = 0
         self.halted = False
+        self.answering = False
         # Request-local gates preserve model order across concurrent ToolNode tasks.
         self.tool_turns = {}
 
@@ -126,6 +160,15 @@ class _PlatformBoundary(AgentMiddleware):
         message = state["messages"][-1]
         if not isinstance(message, AIMessage):
             return
+        if self.answering:
+            if message.tool_calls:
+                raise RuntimeError('answer_phase_tool_call_forbidden')
+            return
+        ready = [call for call in message.tool_calls if call['name'] == 'answer_ready']
+        if ready and len(message.tool_calls) != 1:
+            raise RuntimeError('invalid_answer_ready_batch')
+        if not message.tool_calls:
+            raise RuntimeError('answer_phase_required')
         checks = [call for call in message.tool_calls if self.names.get(call["name"]) == CHECK_TOOL]
         if checks:
             # Filter before tool scheduling, including writes ordered before the check.
@@ -148,8 +191,17 @@ class _PlatformBoundary(AgentMiddleware):
             previous = completed
         if selected != message.tool_calls:
             return {"messages": [message.model_copy(update={"tool_calls": selected})]}
-        if not message.tool_calls and message.content:
-            get_stream_writer()(text_event(message.text))
+
+    async def awrap_model_call(self, request, handler):
+        if not self.answering:
+            return await handler(request)
+        callbacks = AsyncCallbackManager.configure(
+            inheritable_callbacks=request.model.callbacks,
+            local_callbacks=[_AnswerTokens(get_stream_writer())],
+        )
+        model = request.model.model_copy(update={'callbacks': callbacks})
+        return await handler(request.override(model=model, tools=[], tool_choice=None,
+            model_settings={**request.model_settings, 'stream': True}))
 
     async def awrap_tool_call(self, request, handler):
         previous, completed = self.tool_turns[request.tool_call["id"]]
@@ -173,6 +225,12 @@ class _PlatformBoundary(AgentMiddleware):
             # Bind before Schema validation and audit, using the same adapter.
             call = {**call, "args": copy.deepcopy(self.draft_arguments)}
         _emit("tool_start", tool_call_id=call["id"], tool_name=name, args={} if name == PLAN_TOOL else call["args"])
+        if name == 'answer_ready':
+            AnswerReady.model_validate(call['args'])
+            self.answering = True
+            content = '查询与决策已结束。现在仅生成面向用户的最终回答，不再调用工具。'
+            _emit('tool_result', tool_call_id=call['id'], tool_name=name, content=content, is_error=False)
+            return ToolMessage(content=content, tool_call_id=call['id'])
         if name == PLAN_TOOL:
             try:
                 parsed = PlanInput.model_validate(call['args'])
@@ -530,7 +588,7 @@ class AgentFactory:
         if todos:
             human_input += '\n\n当前计划（仅安排，不是执行证据）：\n' + json.dumps(todos, ensure_ascii=False)
         planning = TodoListMiddleware(system_prompt=_PLAN_INSTRUCTIONS)
-        tools = [tool_map[name] for name in allowed_tool_names] + [_clarification_tool()]
+        tools = [tool_map[name] for name in allowed_tool_names] + [_clarification_tool(), _answer_tool()]
         boundary = _PlatformBoundary(tools + planning.tools, checkpoint, max_iterations, task_context.get("accept_language", "zh-cn"), draft_arguments, task_context.get("resuming", False))
         loop_detection = LoopDetectionMiddleware()
         graph = create_deerflow_agent(
@@ -541,10 +599,15 @@ class AgentFactory:
         )
         # 业务 UUID 不是框架 invocation ID；configurable.run_id 会触发重放语义。
         context = {"run_id": task_context["agent_run_id"], "tenant_id": task_context["tenant_id"]}
-        async for event in graph.astream(
+        async with aclosing(graph.astream(
             {"messages": [HumanMessage(content=human_input)], "todos": todos},
             config={"recursion_limit": max_iterations * 8 + 16}, context=context, stream_mode="custom",
-        ):
-            yield event
+        )) as events:
+            async for event in events:
+                try:
+                    yield event
+                finally:
+                    if event.text_consumed is not None and not event.text_consumed.done():
+                        event.text_consumed.set_result(None)
         if loop_detection.consume_stop_reason(task_context["agent_run_id"]):
             raise RuntimeError("agent_loop_detected")

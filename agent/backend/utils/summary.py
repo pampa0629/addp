@@ -42,7 +42,7 @@ async def maybe_update_summary(session_id: int) -> None:
             watermark = int(session.summary_message_id or 0)
             result = await db.execute(
                 select(Message)
-                .where(Message.session_id == session_id, Message.id > watermark)
+                .where(Message.session_id == session_id, Message.id > watermark, Message.is_complete.is_(True))
                 .order_by(Message.id.asc())
             )
             uncompressed = list(result.scalars().all())

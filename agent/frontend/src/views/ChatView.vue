@@ -126,6 +126,7 @@
               @action="handleA2UIAction"
               @error="handlePresentationError"
             />
+            <p v-if="message.is_complete === false" class="incomplete-message">{{ t('agent.workspace.incomplete') }}</p>
             <div v-if="messageText(message)" class="message-actions">
               <el-button text size="small" @click="copyMessage(message)">{{ t('agent.workspace.copy') }}</el-button>
               <el-button v-if="canBranch" text size="small" :disabled="isLoading" @click="prepareBranch(message)">{{ t('agent.workspace.branch') }}</el-button>
@@ -754,6 +755,7 @@ onBeforeRouteUpdate((to, from) => {
 </script>
 
 <style scoped>
+.incomplete-message { color: var(--addp-text-secondary); font-size: 12px; margin: 8px 0 0; }
 .chat-layout {
   position: relative;
   display: flex;

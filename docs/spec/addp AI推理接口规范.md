@@ -248,7 +248,11 @@ Provider 或 Deployment 存在 Inference 本地的下游引用时，删除必须
 
 ### 输入与输出协议
 
-第一版 chat 使用非流式 JSON 主路径；流式能力只有在 `compute.inference.streaming=true` 且正式定义事件协议后才能开放，不能透传厂商 SSE。
+Chat 的结构化路由与工具决策返回 JSON；同一 `POST /chat` 以 `stream=true` 请求纯文本回答增量。流式请求不接受 tools、tool_choice 或 response_schema，首期仅由 openai_compatible Chat 适配器承担。Runtime 声明 `compute.inference.streaming=true` 表达协议实现能力，不保证任意上游部署都支持；上游拒绝或返回非流式正文时明确失败，不透传厂商 SSE、不拆分完整响应、不回退 JSON 或切换模型。
+
+流式响应使用 `text/event-stream`，每项 `data` 为 `addp.inference-stream/v1` JSON：严格递增 `sequence` 从 1 开始；`type=start` 固定本次 `deployment_id/profile_version`，随后仅允许非空 `text_delta.delta`，最终恰好一个 `completed`（usage，且上游 finish_reason=stop）或 `error`（稳定 error_code）。终止后不再产生事件；缺少终止、无正文、非法事件、输出上限截断及提前 EOF 都失败。忽略上游隐藏思考字段，不将其变成正文或日志；流式工具调用明确拒绝。凭据、推理正文、工具参数与上游原始异常不进入诊断日志。请求接纳前失败返回标准 HTTP 错误；开始 SSE 后失败只以稳定 error 终止，不把 HTTP 200 当作推理完成。
+
+同一次调用固定已解析的 Profile/Deployment，不在流中重新解析。沿用 120 秒调用上限及现有参数映射；取消关闭上游连接。一旦开始输出，不透明重试、自动续写或切换模型。结构化 JSON 与纯文本增量共用请求校验、解析及上游参数构建，不维护正文备用执行路线。
 
 图片输入使用受控二进制或 owner 签发的短期内容访问材料，不接受可由 Inference 任意访问的内网 URL。
 

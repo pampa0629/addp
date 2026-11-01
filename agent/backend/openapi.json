@@ -1244,6 +1244,62 @@
         "title": "SessionCreate",
         "type": "object"
       },
+      "SessionMessageResponse": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_complete": {
+            "description": "是否已完整结束；未完成正文仅供回看，不进入后续上下文或摘要 | Complete output; partial text is display-only and excluded from later context and summaries",
+            "title": "Is Complete",
+            "type": "boolean"
+          },
+          "parts": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Parts",
+            "type": "array"
+          },
+          "protocol_message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol Message Id"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "protocol_message_id",
+          "is_complete",
+          "role",
+          "content",
+          "parts",
+          "created_at"
+        ],
+        "title": "SessionMessageResponse",
+        "type": "object"
+      },
       "SessionPage": {
         "properties": {
           "data": {
@@ -2682,7 +2738,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SessionMessageResponse"
+                  },
+                  "title": "Response Get Messages Api V1 Agent Sessions  Session Id  Messages Get",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"

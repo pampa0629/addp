@@ -164,42 +164,45 @@ func (s *Runtime) ResolveProfile(ctx context.Context, req commoninference.Resolv
 	}, nil
 }
 
-func (s *Runtime) Chat(ctx context.Context, req commoninference.ChatRequest) (*commoninference.ChatResponse, error) {
+func (s *Runtime) prepareChat(ctx context.Context, req commoninference.ChatRequest) (*resolvedModel, map[string]interface{}, error) {
 	if req.SchemaVersion != commoninference.SchemaVersion || req.TenantID == 0 || len(req.Messages) == 0 {
-		return nil, ErrInvalidRequest
+		return nil, nil, ErrInvalidRequest
 	}
 	upstreamMessages, err := normalizeChatMessages(req.Messages)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	upstreamTools, err := normalizeChatTools(req.Tools)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(req.Tools) > 0 && req.ResponseSchema != nil {
-		return nil, fmt.Errorf("%w: tools and response_schema are mutually exclusive", ErrInvalidRequest)
+		return nil, nil, fmt.Errorf("%w: tools and response_schema are mutually exclusive", ErrInvalidRequest)
 	}
 	if len(req.Tools) == 0 && req.ToolChoice != "" {
-		return nil, fmt.Errorf("%w: tool_choice requires tools", ErrInvalidRequest)
+		return nil, nil, fmt.Errorf("%w: tool_choice requires tools", ErrInvalidRequest)
 	}
 	if req.ToolChoice != "" && req.ToolChoice != "auto" && req.ToolChoice != "none" && req.ToolChoice != "required" {
-		return nil, fmt.Errorf("%w: invalid tool_choice", ErrInvalidRequest)
+		return nil, nil, fmt.Errorf("%w: invalid tool_choice", ErrInvalidRequest)
 	}
 	resolved, err := s.resolve(ctx, req.TenantID, req.ModelProfileID, commoninference.OperationChat, commoninference.ModalityText)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if resolved.provider.AdapterType != AdapterOpenAICompatible {
-		return nil, ErrUnsupported
+		return nil, nil, ErrUnsupported
 	}
-	body := map[string]interface{}{"model": resolved.deployment.UpstreamModel, "messages": upstreamMessages, "stream": false}
+	if req.Stream && (len(req.Tools) > 0 || req.ResponseSchema != nil || req.ToolChoice != "") {
+		return nil, nil, ErrInvalidRequest
+	}
+	body := map[string]interface{}{"model": resolved.deployment.UpstreamModel, "messages": upstreamMessages, "stream": req.Stream}
 	switch resolved.deployment.ChatThinkingMode {
 	case ChatThinkingModeUpstreamDefault:
 		// Omission does not assert that upstream thinking is disabled.
 	case ChatThinkingModeDisabled:
 		body["thinking"] = map[string]string{"type": "disabled"}
 	default:
-		return nil, ErrProfileUnavailable
+		return nil, nil, ErrProfileUnavailable
 	}
 	if len(upstreamTools) > 0 {
 		body["tools"] = upstreamTools
@@ -211,7 +214,7 @@ func (s *Runtime) Chat(ctx context.Context, req commoninference.ChatRequest) (*c
 	if req.ResponseSchema != nil {
 		responseFormat, schemaErr := normalizeResponseSchema(*req.ResponseSchema)
 		if schemaErr != nil {
-			return nil, schemaErr
+			return nil, nil, schemaErr
 		}
 		body["response_format"] = responseFormat
 	}
@@ -223,15 +226,29 @@ func (s *Runtime) Chat(ctx context.Context, req commoninference.ChatRequest) (*c
 	case ChatTemperatureModeDefaultOnly:
 		// The upstream owns the only supported temperature value.
 	default:
-		return nil, ErrProfileUnavailable
+		return nil, nil, ErrProfileUnavailable
 	}
 	if req.MaxOutputTokens > 0 {
 		switch resolved.deployment.ChatMaxOutputTokensParameter {
 		case ChatMaxOutputTokensParameterMaxTokens, ChatMaxOutputTokensParameterMaxCompletionTokens:
 			body[resolved.deployment.ChatMaxOutputTokensParameter] = req.MaxOutputTokens
 		default:
-			return nil, ErrProfileUnavailable
+			return nil, nil, ErrProfileUnavailable
 		}
+	}
+	if req.Stream {
+		body["stream_options"] = map[string]bool{"include_usage": true}
+	}
+	return resolved, body, nil
+}
+
+func (s *Runtime) Chat(ctx context.Context, req commoninference.ChatRequest) (*commoninference.ChatResponse, error) {
+	if req.Stream {
+		return nil, ErrInvalidRequest
+	}
+	resolved, body, err := s.prepareChat(ctx, req)
+	if err != nil {
+		return nil, err
 	}
 	var upstream struct {
 		Choices []struct {

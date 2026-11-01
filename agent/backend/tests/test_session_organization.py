@@ -24,7 +24,7 @@ class SessionOrganizationTests(unittest.IsolatedAsyncioTestCase):
         with self.engine.begin() as conn:
             conn.exec_driver_sql("ATTACH DATABASE ':memory:' AS agent")
             Session.__table__.create(conn)
-            conn.exec_driver_sql('CREATE TABLE agent.messages (id INTEGER PRIMARY KEY, session_id INTEGER, role TEXT, content TEXT, protocol_message_id TEXT, parts JSON, created_at DATETIME)')
+            conn.exec_driver_sql('CREATE TABLE agent.messages (id INTEGER PRIMARY KEY, session_id INTEGER, role TEXT, content TEXT, protocol_message_id TEXT, parts JSON, is_complete BOOLEAN DEFAULT 1 NOT NULL, created_at DATETIME)')
         self.database = DatabaseSession(self.engine)
         self.database.add_all([Session(id=1, user_id=7, tenant_id=10, title='100%_literal'),
                                Session(id=2, user_id=7, tenant_id=10, title='100xxliteral', pinned=True),

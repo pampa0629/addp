@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -34,7 +35,7 @@ func NewHandler(control *service.ControlPlane, runtime *service.Runtime) *Handle
 // @x-addp-auth-mode "public"
 // @Router /capabilities [get]
 func (h *Handler) Capabilities(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"schema_version": commoninference.SchemaVersion, "operations": []string{"chat", "embedding", "rerank"}, "modalities": []string{"text", "image"}, "streaming": false})
+	c.JSON(http.StatusOK, gin.H{"schema_version": commoninference.SchemaVersion, "operations": []string{"chat", "embedding", "rerank"}, "modalities": []string{"text", "image"}, "streaming": true})
 }
 
 // ListModelLabels godoc
@@ -419,9 +420,10 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 // @Summary 执行对话推理 | Execute chat inference
 // @Tags Inference Runtime
 // @Accept json
-// @Produce json
+// @Produce json,text/event-stream
 // @Param request body commoninference.ChatRequest true "Chat request"
 // @Success 200 {object} commoninference.ChatResponse
+// @Description stream=true 返回 addp.inference-stream/v1 纯文本 SSE；不接受工具或结构化 Schema | stream=true returns text-only SSE; tools and response_schema are rejected
 // @Failure 400 {object} commoninference.ErrorResponse
 // @Failure 502 {object} commoninference.ErrorResponse
 // @Security BearerAuth
@@ -435,6 +437,35 @@ func (h *Handler) Chat(c *gin.Context) {
 	}
 	enforceTenant(c, &input.TenantID)
 	if c.IsAborted() {
+		return
+	}
+	if input.Stream {
+		stream, err := h.runtime.OpenChatStream(c.Request.Context(), input)
+		if err != nil {
+			respond(c, nil, err)
+			return
+		}
+		defer stream.Close()
+		c.Header("Content-Type", "text/event-stream")
+		c.Header("Cache-Control", "no-cache")
+		c.Header("X-Accel-Buffering", "no")
+		sequence := 0
+		send := func(event commoninference.ChatStreamEvent) error {
+			encoded, err := json.Marshal(event)
+			if err != nil {
+				return err
+			}
+			sequence = event.Sequence
+			if _, err = fmt.Fprintf(c.Writer, "data: %s\n\n", encoded); err != nil {
+				return err
+			}
+			c.Writer.Flush()
+			return nil
+		}
+		if err := stream.Consume(c.Request.Context(), send); err != nil && c.Request.Context().Err() == nil {
+			_, code := mapError(err)
+			_ = send(commoninference.ChatStreamEvent{SchemaVersion: commoninference.ChatStreamSchemaVersion, Type: "error", Sequence: sequence + 1, ErrorCode: code})
+		}
 		return
 	}
 	value, err := h.runtime.Chat(c.Request.Context(), input)

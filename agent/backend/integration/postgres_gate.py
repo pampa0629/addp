@@ -4,8 +4,10 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
+from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
 
-from sqlalchemy import text
+from sqlalchemy import text, select, func
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from services.schema import migrate, MIGRATION_ROOT
@@ -15,6 +17,9 @@ from services.plans import read_run_plan
 from services.runs import create_agent_run, retry_agent_run
 from models.run_event import AgentRunEvent
 from models.session import Session
+from models.message import Message
+from api.chat import _project_assistant_message, _load_agent_history
+from services.run_events import append_run_event
 from starlette.requests import Request
 
 
@@ -23,6 +28,50 @@ def request():
     result.state.principal_id = 7
     result.state.tenant_id = 10
     return result
+
+
+async def check_partial_messages(db, run):
+    run_id = run.id
+    # Message projection and replay delta are one transaction; a failed write exposes neither.
+    for content, delta in [('你🙂', '你🙂'), ('你🙂好', '好')]:
+        await _project_assistant_message(db, session_id=1, message_id='partial', content=content,
+            parts=[{'type': 'text', 'text': content}], complete=False)
+        await append_run_event(db, agent_run_id=run_id, protocol_invocation_id='stream-fixture',
+            event_payload={'type': 'TEXT_MESSAGE_CONTENT', 'messageId': 'partial', 'delta': delta})
+        await db.commit()
+    messages = (await db.execute(select(Message).where(Message.protocol_message_id == 'partial'))).scalars().all()
+    assert len(messages) == 1 and messages[0].content == '你🙂好' and messages[0].is_complete is False
+    assert (await _load_agent_history(db, 1))[0] == []
+    before = (await db.execute(select(func.count()).select_from(AgentRunEvent))).scalar_one()
+    nested = await db.begin_nested()
+    await _project_assistant_message(db, session_id=1, message_id='partial', content='uncommitted',
+        parts=[{'type':'text','text':'uncommitted'}], complete=False)
+    await append_run_event(db, agent_run_id=run_id, protocol_invocation_id='stream-fixture',
+        event_payload={'type':'TEXT_MESSAGE_CONTENT','messageId':'partial','delta':'uncommitted'})
+    await nested.rollback()
+    db.expire_all()
+    stored = (await db.execute(select(Message).where(Message.protocol_message_id == 'partial'))).scalar_one()
+    assert stored.content == '你🙂好'
+    assert (await db.execute(select(func.count()).select_from(AgentRunEvent))).scalar_one() == before
+    # Explicit retry uses another protocol message, preserving the incomplete prior attempt.
+    await _project_assistant_message(db, session_id=1, message_id='retry-answer', content='complete',
+        parts=[{'type':'text','text':'complete'}], complete=True)
+    await db.commit()
+    history, count = await _load_agent_history(db, 1)
+    assert history == [{'role':'assistant','content':'complete'}] and count == 1
+    # Exercise the summary's actual SQL predicate as well as the immediate context predicate.
+    for index in range(25):
+        db.add(Message(session_id=1, role='user', content=f'complete-{index}', is_complete=True))
+    await db.commit()
+    model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(content='safe summary')))
+    from utils.summary import maybe_update_summary
+    with patch('utils.summary.AsyncSessionLocal', side_effect=lambda: AsyncSession(
+            bind=db.bind, expire_on_commit=False, join_transaction_mode='create_savepoint')), \
+         patch('utils.summary.get_llm', return_value=model):
+        await maybe_update_summary(1)
+    model.ainvoke.assert_awaited_once()
+    prompt = model.ainvoke.await_args.args[0][0].content
+    assert '你🙂好' not in prompt and 'complete' in prompt
 
 
 async def main():
@@ -50,7 +99,7 @@ async def main():
                         await migrate(connection)
                         await migrate(connection)
                         versions = (await connection.execute(text('SELECT version FROM agent.schema_migrations ORDER BY version'))).scalars().all()
-                        assert versions == [1,2]
+                        assert versions == [1,2,3]
                         session = AsyncSession(bind=connection, expire_on_commit=False, join_transaction_mode='create_savepoint')
                         async with session:
                             if legacy:
@@ -68,13 +117,15 @@ async def main():
                             page = await list_sessions(request(),session,search='%_',archived=True)
                             assert page['total'] == 1 and page['data'][0]['title'] == '100%_renamed'
                             run = await create_agent_run(session,session_id=1,user_id=7,tenant_id=10,protocol_run_id='plan-fixture',reply_detail='concise')
+                            await check_partial_messages(session, run)
+                            await session.refresh(run)
                             run.status='failed'; await session.commit(); await session.refresh(run)
                             assert run.checkpoint['reply_detail']=='concise'
                             retried=await retry_agent_run(session,agent_run_id=run.id,session_id=1,user_id=7,tenant_id=10)
                             assert retried.id==run.id and retried.checkpoint['reply_detail']=='concise'
                             run.status='cancelled'; await session.commit()
                             todos=[{'content':'Inspect','status':'pending'}]
-                            session.add(AgentRunEvent(agent_run_id=run.id,sequence=1,protocol_invocation_id='plan-fixture',event_type='ACTIVITY_SNAPSHOT',
+                            session.add(AgentRunEvent(agent_run_id=run.id,sequence=3,protocol_invocation_id='plan-fixture',event_type='ACTIVITY_SNAPSHOT',
                                 payload={'type':'ACTIVITY_SNAPSHOT','activityType':'addp-plan','content':{'agent_run_id':str(run.id),'todos':todos}}))
                             await session.commit()
                             assert await read_run_plan(session,run.id,7,10) == todos
@@ -109,7 +160,7 @@ async def main():
                     with tempfile.TemporaryDirectory(prefix='addp-agent-failed-migration-') as tmp:
                         root=Path(tmp)
                         for path in MIGRATION_ROOT.iterdir(): shutil.copy(path,root/path.name)
-                        (root/'000003_failure.sql').write_text('CREATE TABLE agent.failure_probe(id INT); SELECT agent.missing_function();')
+                        (root/f'{len(list(MIGRATION_ROOT.glob("*.sql")))+1:06d}_failure.sql').write_text('CREATE TABLE agent.failure_probe(id INT); SELECT agent.missing_function();')
                         try: await migrate(connection,root)
                         except Exception as error: assert getattr(error, 'sqlstate', None) == '42883', type(error).__name__
                         else: raise AssertionError('broken migration accepted')

@@ -79,6 +79,7 @@
       }
     },
     "workspace": {
+      "incomplete": "未完成的回复",
       "home": "能力首页",
       "search": "搜索会话标题",
       "archived": "已归档",

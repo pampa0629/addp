@@ -96,13 +96,15 @@ def _validate_expectations(expectations: Any, location: str) -> None:
                 "result_refs",
                 "owner_effects",
             },
-            {"allowed_tool_risks", "tool_input_fields"},
+            {"allowed_tool_risks", "tool_input_fields", "required_runtime_actions"},
             f"{location}.expectations.phases.{name}",
         )
         if phase["status"] not in PHASE_STATUSES:
             raise ScenarioContractError(f"{location}.expectations.phases.{name}.status: 未知状态")
         for key in ("required_tools", "forbidden_tools", "required_errors"):
             _require_string_list(phase[key], f"{location}.expectations.phases.{name}.{key}")
+        if "required_runtime_actions" in phase:
+            _require_string_list(phase["required_runtime_actions"], f"{location}.expectations.phases.{name}.required_runtime_actions")
         if "allowed_tool_risks" in phase:
             risks = _require_string_list(
                 phase["allowed_tool_risks"],
@@ -266,7 +268,10 @@ def phase_from_events(
                 presentations.append(component)
         elif kind == "result_ref":
             result_refs.append(payload["result_ref"])
+    runtime_actions = [tool for tool in tools if tool['name'] == 'answer_ready']
+    tools = [tool for tool in tools if tool['name'] != 'answer_ready']
     return {
+        "runtime_actions": runtime_actions,
         "name": name,
         "agent_run_id": agent_run_id,
         "status": status,
@@ -339,6 +344,12 @@ def evaluate_trace(
                         f"{phase_name}.tool_input_fields.{tool_name}: "
                         f"期望 {sorted(expected_fields)}，实际 {tool.get('input_fields')}"
                     )
+        actions = actual.get('runtime_actions', [])
+        if 'required_runtime_actions' in expected and [action.get('name') for action in actions] != expected['required_runtime_actions']:
+            failures.append(f"{phase_name}.runtime_actions: unexpected answer phase controls")
+        for action in actions:
+            if action.get('name') != 'answer_ready' or action.get('status') != 'succeeded' or action.get('input_fields') or action.get('error_code'):
+                failures.append(f"{phase_name}.runtime_actions: invalid or incomplete answer control")
         if "allowed_tool_risks" in expected:
             allowed_risks = set(expected["allowed_tool_risks"])
             for tool_name in tool_names:

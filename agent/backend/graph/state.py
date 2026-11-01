@@ -3,7 +3,7 @@ Agent 状态定义
 
 AgentState:    请求级状态，在路由节点和执行节点之间传递
 TaskContext:   主 Agent → 领域 Agent 的标准化任务包
-RouteDecision: 路由节点的结构化输出 Schema（路由 + 直接回复二合一）
+RouteDecision: 路由节点的结构化决策 Schema
 """
 from typing import TypedDict, Optional, List, Dict, Any, NotRequired, Literal
 from pydantic import BaseModel, ConfigDict, Field
@@ -25,7 +25,7 @@ class AgentState(TypedDict):
 
     # 路由决策（由 _route_node 填充）
     routed_skill: Optional[str]   # 技能名称；None 表示无需技能
-    direct_reply: Optional[str]   # 无需技能时的直接回复内容（来自同一次 LLM 调用）
+    answer_context: Optional[str]   # 语义选择的受限回答依据，不是公开正文
     needs_platform_semantics: NotRequired[bool]
     reply_detail: NotRequired[str]  # 表达偏好，不改变业务目标或权限
     draft_catalog: NotRequired[List[Dict[str, str]]]
@@ -51,7 +51,7 @@ class TaskContext(TypedDict):
 
 
 class RouteDecision(BaseModel):
-    """路由 + 直接回复的结构化输出 Schema（单次 LLM 调用）"""
+    """只返回路由决策；正文由独立回答阶段生成"""
 
     model_config = ConfigDict(extra="forbid")
     draft_action: Optional[Literal["inspect", "create"]] = Field(default=None, description="inspect 只解释已有草稿且不操作业务；create 仅明确沿用全部原参数创建、不修改、不运行，此时必须 needs_platform_semantics=true。请求修改则走普通平台路线。指代不明时保留动作但 draft_ref=null，不能猜选。")
@@ -65,17 +65,10 @@ class RouteDecision(BaseModel):
     )
     needs_platform_semantics: bool = Field(
         default=False,
-        description="用户目标属于平台语义任务领域时为 true，此时 skill 和 direct_reply 都为 null，必须先读取平台能力目录。",
-    )
-    direct_reply: Optional[str] = Field(
-        default=None,
-        description=(
-            "当 skill 为 null 时，对用户问题的完整回复（中文）。"
-            "如果 skill 不为 null，此字段为 null。"
-        ),
+        description="用户目标属于平台语义任务领域时为 true，此时 skill 为 null，必须先读取平台能力目录。",
     )
 
 
 class PlatformRouteDecision(BaseModel):
     capability: Optional[str] = Field(default=None, description="从 owner 返回的目录选择唯一能力身份；不能编造，无匹配或有歧义时为 null。")
-    direct_reply: Optional[str] = Field(default=None, description="不能选择唯一能力时，用中文解释支持边界或询问业务意图；选中能力时为 null。")
+    answer_context: Optional[str] = Field(default=None, description="无匹配或歧义的依据，仅供最终回答阶段使用，不生成用户正文；选中能力时为 null。")

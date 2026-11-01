@@ -28,7 +28,7 @@ export function conversationMarkdown(title, messages, t) {
     const text = messageText(message)
     const results = sessionResults([message])
     if (!text && !results.length) continue
-    sections.push(`## ${t(`agent.workspace.roles.${message.role}`)}`, text)
+    sections.push(`## ${t(`agent.workspace.roles.${message.role}`)}`, message.is_complete === false ? t('agent.workspace.incomplete') : '', text)
     if (results.length) sections.push(results.map(result => `- ${t('agent.workspace.exportSource')}: ${t(`agent.workspace.resultKinds.${result.kind}`)}`).join('\n'))
   }
   return sections.filter(Boolean).join('\n\n') + '\n'

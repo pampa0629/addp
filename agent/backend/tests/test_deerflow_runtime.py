@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 
 from addp_common.client import ChatResponse, Message, ToolCall
-from addp_common.client.inference import Usage
+from addp_common.client.inference import ChatStreamEvent, Usage
 from addp_common.inference_langchain import InferenceChatModel
 from addp_common.tools import ToolExecutionError
 
@@ -22,10 +22,26 @@ class _InferenceFixture:
 
     async def chat(self, **arguments):
         self.calls.append(arguments)
+        message = self.responses[0]
+        if not message.tool_calls:
+            message = Message(role='assistant', tool_calls=[ToolCall(id='fixture-answer-ready', name='answer_ready', arguments={})])
+        else:
+            self.responses.pop(0)
         return ChatResponse(
-            schema_version="addp.inference/v1", message=self.responses.pop(0), usage=Usage(),
+            schema_version="addp.inference/v1", message=message, usage=Usage(),
             deployment_id="fixture", profile_version=1,
         )
+
+    async def chat_stream(self, **arguments):
+        self.calls.append(arguments)
+        message = self.responses.pop(0)
+        assert not message.tool_calls
+        for event in [
+            ChatStreamEvent(schema_version='addp.inference-stream/v1', type='start', sequence=1, deployment_id='fixture', profile_version=1),
+            ChatStreamEvent(schema_version='addp.inference-stream/v1', type='text_delta', sequence=2, delta=message.content),
+            ChatStreamEvent(schema_version='addp.inference-stream/v1', type='completed', sequence=3, usage=Usage()),
+        ]:
+            yield event
 
 
 def _call(name, arguments=None, identity="call-1"):
@@ -157,7 +173,7 @@ class DeerFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(json.loads(client.calls[1]["messages"][-1].content), result)
         self.assertEqual(json.loads(next(e.payload["content"] for e in events if e.kind == "tool_result")), result)
-        self.assertEqual({t.name for t in client.calls[0]["tools"]}, {"data__search", "request_clarification", "write_todos"})
+        self.assertEqual({t.name for t in client.calls[0]["tools"]}, {"data__search", "request_clarification", "write_todos", "answer_ready"})
         self.assertNotIn("private-user-token", str(client.calls))
 
     async def test_unknown_tool_cannot_reach_executor(self):
@@ -183,7 +199,7 @@ class DeerFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
             resumed = await _collect(_InferenceFixture([Message(role="assistant", content="继续处理")]), [], run_id="run-fixture")
         executor.assert_not_awaited()
         self.assertEqual([e.kind for e in events], ["tool_start", "tool_result", "interaction_required"])
-        self.assertEqual([e.kind for e in resumed], ["text"])
+        self.assertEqual([e.kind for e in resumed], ["tool_start", "tool_result", "text"])
 
     async def test_owner_approval_blocks_remaining_batch(self):
         client = _InferenceFixture([Message(role="assistant", tool_calls=[
@@ -221,4 +237,4 @@ class DeerFlowRuntimeTests(unittest.IsolatedAsyncioTestCase):
         clients = [_InferenceFixture([Message(role="assistant", content=f"tenant-{tenant}")]) for tenant in (1, 2)]
         events = await asyncio.gather(*(_collect(client, [], tenant_id=tenant) for tenant, client in enumerate(clients, 1)))
         self.assertEqual([client.calls[0]["tenant_id"] for client in clients], [1, 2])
-        self.assertEqual([group[0].payload["delta"] for group in events], ["tenant-1", "tenant-2"])
+        self.assertEqual([next(event.payload["delta"] for event in group if event.kind == "text") for group in events], ["tenant-1", "tenant-2"])

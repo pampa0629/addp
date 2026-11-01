@@ -71,6 +71,7 @@ type ChatRequest struct {
 	ResponseSchema  *ResponseSchema  `json:"response_schema,omitempty"`
 	Temperature     *float64         `json:"temperature,omitempty"`
 	MaxOutputTokens int              `json:"max_output_tokens,omitempty"`
+	Stream          bool             `json:"stream,omitempty"`
 	CallerToken     string           `json:"-"`
 }
 
@@ -81,6 +82,20 @@ type ChatResponse struct {
 	DeploymentID   string  `json:"deployment_id"`
 	ProfileVersion int64   `json:"profile_version"`
 }
+
+// ChatStreamEvent is the normalized, text-only Runtime SSE contract.
+type ChatStreamEvent struct {
+	SchemaVersion  string `json:"schema_version"`
+	Type           string `json:"type"`
+	Sequence       int    `json:"sequence"`
+	DeploymentID   string `json:"deployment_id,omitempty"`
+	ProfileVersion int64  `json:"profile_version,omitempty"`
+	Delta          string `json:"delta,omitempty"`
+	Usage          *Usage `json:"usage,omitempty"`
+	ErrorCode      string `json:"error_code,omitempty"`
+}
+
+const ChatStreamSchemaVersion = "addp.inference-stream/v1"
 
 type EmbeddingInput struct {
 	Modality string `json:"modality"`

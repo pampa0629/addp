@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from contextlib import aclosing
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
 from langchain_core.callbacks import AsyncCallbackManagerForLLMRun, CallbackManagerForLLMRun
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
-from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, ToolMessage
+from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
@@ -98,6 +99,34 @@ class InferenceChatModel(BaseChatModel):
                 "usage": response.usage.model_dump(),
             },
         )
+
+    async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
+        if stop or kwargs.get("tools") or kwargs.get("response_schema") or kwargs.get("tool_choice"):
+            raise ValueError("Inference streaming only accepts an unbound text answer")
+        profile_id = self.model_profile_id
+        if not profile_id and self.profile_resolver is not None:
+            profile_id = await self.profile_resolver()
+        if not profile_id:
+            raise ValueError("Inference ChatModel requires a resolved Model Profile ID")
+        async with aclosing(self.client.chat_stream(
+            tenant_id=self.tenant_id, model_profile_id=profile_id,
+            messages=[_to_inference_message(message) for message in messages],
+            temperature=kwargs.get("temperature", self.temperature),
+            max_output_tokens=kwargs.get("max_tokens", kwargs.get("max_output_tokens", self.max_output_tokens)),
+        )) as events:
+            async for event in events:
+                if event.type == "start":
+                    message = AIMessageChunk(content="", response_metadata={"deployment_id": event.deployment_id, "profile_version": event.profile_version})
+                elif event.type == "text_delta":
+                    message = AIMessageChunk(content=event.delta)
+                elif event.type == "completed":
+                    message = AIMessageChunk(content="", response_metadata={"finish_reason": "stop"}, usage_metadata={
+                        "input_tokens": event.usage.input_tokens, "output_tokens": event.usage.output_tokens,
+                        "total_tokens": event.usage.total_tokens,
+                    })
+                else:
+                    raise ValueError("invalid Inference stream event")
+                yield ChatGenerationChunk(message=message)
 
     def bind_tools(
         self,

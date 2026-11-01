@@ -39,6 +39,11 @@ class ScriptedRouter:
         self.schemas = []
         self.messages = []
 
+    async def astream(self, messages):
+        from langchain_core.messages import AIMessageChunk
+        self.messages.append(messages)
+        yield AIMessageChunk(content="仅根据已观察范围回答，不执行未支持操作。")
+
     def with_structured_output(self, schema):
         self.schemas.append(schema)
         return self
@@ -143,7 +148,7 @@ class PlatformRoutingTests(unittest.IsolatedAsyncioTestCase):
         with patch("agents.main_agent._get_skill_registry", return_value=registry_fixture()):
             for catalog in [catalog_fixture(), {"schema_version": "addp.platform-capability-catalog/v1", "capabilities": []}]:
                 got = await _select_platform_skill(state, catalog, ScriptedRouter([
-                    PlatformRouteDecision(direct_reply="当前目录只提供创建未启动任务，不能执行该目标。"),
+                    PlatformRouteDecision(answer_context="当前目录只提供创建未启动任务，不能执行该目标。"),
                 ]))
                 self.assertIsNone(got["routed_skill"])
 
@@ -166,7 +171,7 @@ class PlatformRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[-1].payload["error_source"], "owner")
 
     async def test_chat_does_not_assume_ontology_exists(self):
-        model = ScriptedRouter([RouteDecision(direct_reply="你好")])
+        model = ScriptedRouter([RouteDecision()])
         with (
             patch("agents.main_agent._get_skill_registry", return_value=registry_fixture()),
             patch("agents.main_agent.get_llm", return_value=model),

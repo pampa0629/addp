@@ -10,6 +10,9 @@ class AgentOpenAPIContractTests(unittest.TestCase):
 
         specification = app.openapi()
         paths = specification["paths"]
+        message_schema = specification['components']['schemas']['SessionMessageResponse']
+        self.assertEqual(message_schema['properties']['is_complete']['type'], 'boolean')
+        self.assertIn('is_complete', message_schema['required'])
 
         expected = {
             ("get", "/api/v1/agent/sessions"): ("permission", ["agent.session.read"]),

@@ -165,6 +165,19 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
 
         evaluate_trace(scenario, trace)
 
+        self.assertEqual([action['name'] for action in trace['phases'][0]['runtime_actions']], ['answer_ready'])
+        scenario['expectations']['phases']['query']['required_runtime_actions'] = ['answer_ready']
+        evaluate_trace(scenario, trace)
+        for replacement in ({'name': 'data.search'}, {'input_fields': ['private']}, {'status': 'started'}):
+            invalid = copy.deepcopy(trace)
+            invalid['phases'][0]['runtime_actions'][0].update(replacement)
+            with self.assertRaises(EvaluationFailure):
+                evaluate_trace(scenario, invalid)
+        missing = copy.deepcopy(trace)
+        missing['phases'][0]['runtime_actions'] = []
+        with self.assertRaises(EvaluationFailure):
+            evaluate_trace(scenario, missing)
+
     async def test_observed_resource_ambiguity_uses_resource_picker(self):
         first_locator = "addp://engine/8/path/public/railway?type=table&item_id=60"
         second_locator = "addp://engine/8/path/public/railway_backup?type=table&item_id=61"
@@ -721,7 +734,7 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
             responses=[], llm=model,
         )
         starts = [event.payload for event in events if event.kind == "tool_start"]
-        self.assertEqual([event["tool_name"] for event in starts], ["platform.capability.context", "transfer.task.create", "transfer.task.config.check"])
+        self.assertEqual([event["tool_name"] for event in starts], ["platform.capability.context", "transfer.task.create", "transfer.task.config.check", "answer_ready"])
         self.assertEqual(starts[0]["args"], {"capability": "transfer.task.create"})
         self.assertNotEqual(starts[0]["tool_call_id"], starts[1]["tool_call_id"])
         result = next(event for event in events if event.kind == "tool_result" and event.payload["tool_name"] == "transfer.task.create")
@@ -807,7 +820,8 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(restored["confirmed"]["resources"][target]["item_type"], "schema")
         self.assertEqual(restored["observed"]["resources"][source]["fields"][0]["path"], ["metrics", "distance"])
         self.assertEqual(restored["observed"]["resources"][source]["query_references"]["mql"], {"parts": ["routes"]})
-        self.assertFalse(any(event.kind in {"tool_start", "interaction_required"} for event in resumed))
+        self.assertEqual([event.payload["tool_name"] for event in resumed if event.kind == "tool_start"], ["answer_ready"])
+        self.assertFalse(any(event.kind == "interaction_required" for event in resumed))
 
     async def test_failed_context_refresh_cannot_reuse_previous_success(self):
         definition, _, _, arguments, checkpoint = platform_fixture()
@@ -912,7 +926,7 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
                     task_context=context,
                     skill_body="评测 Skill",
                     allowed_tool_names=allowed_tools,
-                    max_iterations=len(llm.responses) if llm is not None else len(responses),
+                    max_iterations=(len(llm.responses) if llm is not None else len(responses))+1,
                 ):
                 events.append(event)
                 if event.checkpoint_committed is not None:

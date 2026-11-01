@@ -301,7 +301,6 @@ class DraftRoutingTests(unittest.IsolatedAsyncioTestCase):
     async def test_mixed_and_unobserved_routes_are_rejected(self):
         for decision in (RouteDecision(draft_action="inspect", skill="transfer-generation"),
                          RouteDecision(draft_action="inspect", needs_platform_semantics=True),
-                         RouteDecision(draft_action="inspect", direct_reply="guessed"),
                          RouteDecision(draft_action="inspect", draft_ref="not-observed"),
                          RouteDecision(draft_action="create", draft_ref="known-ref"),
                          RouteDecision(draft_ref="known-ref")):

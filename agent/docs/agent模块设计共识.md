@@ -43,6 +43,10 @@ Agent Schema 由 `backend/migrations/` 的连续版本 SQL 唯一维护；启动
 
 ### 进程内执行内核
 
+正文增量增强按 2026-11-01 确认边界实施：Inference 统一纯文本流，经 common-python LangChain Adapter 和同一 DeerFlow Harness 的回答阶段进入现有 AG-UI。普通路由只做结构化决定，删除 direct_reply 整段正文路径；Skill 使用私有 answer_ready，回答阶段移除工具并消耗原预算，禁止超额收尾。历史草稿解释也消费真实文本流，固定 Runtime 报告不改写。接受阶段切换的额外模型开销，不承诺总耗时下降。
+
+部分正文与完成标记沿 Agent 自有第三版迁移保存到已有 messages，安全事件与消息批次事务提交后再发送。失败和取消保留已展示内容，但不进入未来上下文或摘要；显式重试另起助手消息，沿用同一 Run。完整协议、批次、回放及断连边界以智能体交互协议规范 4.2 为准。本地验证覆盖 Inference、共享客户端/消费者、Agent 单测/离线评测/浏览器/PostgreSQL及来源审查，真实验收仅查询、草稿和预检。共享 common 改动后的运行验收由用户重启全部服务，不以静态来源修订声称运行时已激活。
+
 Agent 保留产品、路由和持久状态边界，唯一执行内核采用 DeerFlow Harness 的 `create_deerflow_agent` SDK，不部署 DeerFlow Server，也不保留自研模型／工具循环。依赖固定到官方源码提交 `130a9ab9f035a8f319502f8d5e044ed05962b2aa`，Agent 使用 Python 3.12；共享 Inference LangChain Adapter 与 Copilot 统一使用 LangChain Core 1.x。
 
 每次请求构建独立、无框架持久化后端的 Harness。ADDP 中间件负责 Skill 轮数上限、受控 Tool 事件、owner 事实投影和暂停；工具仍唯一通过现有 Manifest Adapter → ToolExecutor 调用 owner。工具串行执行，暂停后同一模型响应中的其他调用不得产生副作用；有效澄清优先于同批业务工具。业务 AgentRun ID 仅进入运行上下文，不写入框架 `configurable.run_id`，恢复时从 ADDP 语义检查点重建，不恢复框架消息快照。
