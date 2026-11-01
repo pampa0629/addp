@@ -928,6 +928,20 @@ CSV沿普通表保存契约，不虚构RasterArtifact：物理／Meta大小须�
 本地入口`make test-raster-zonal-percentile-online-runner`和标准Native内`test_online_zonal_percentile_fixture.py`，同步Online、changed gate、独立workflow、只读observer和矩阵／删断言拒绝检查。准备通过不计Hosted通过。
 
 
+## 矢量面分区加权总体标准差独立 Hosted 验收
+
+`vector-zonal-weighted-stddev-persistence`独立手工套件，复用NFS、同源默认入口产品Runtime、非默认租户普通User原12权限及既有隔离生命周期；不改产品、原套件、权限或安全投影。固定600秒业务预算覆盖源初始化扫描、首次独立期望、执行／查询、全部物理复核、原件归档及执行工作区／期望缓存清理；NFS／Runtime／registry／Infra退出严格核零残留，清理失败整套失败。实际Linux全量与Hosted继续由CI会话协调，不触发、重试或扩预算，不计UI或容量。
+
+固定16条GeoPackage成功链：非均匀中心／全部触及、权重×8、全1四条；默认关闭／显式False的原加权对照及原未加权对照三条；权重重分类接自定义前缀、数值重分类、重分类→转面→统计三条；空前缀、全零、数值全无效、带声明字段空面批四条；Int64／UInt64原生NoData邻接值两条。13份追加新标准差、2份原加权字段、1份原八统计。显式False使用sd_前缀保留已有sd_weighted_stddev属性，不能误拒绝或覆盖。主夹具固定旋转网格并跨二维512块，覆盖第二波段／raw scale-offset／mask／alpha、孔洞、多部件、重叠、重复几何／属性、薄面、部分／完全出界；新增小面核单正权重、常量、零权重高差值仍参与原统计但不计新σ。
+
+固定53类各中英文提交，共106次准确失败：原加权43类准入，再加开关null、0、1、0.5、字符串true／false、列表、对象八类，以及启用无权重、新字段与原属性冲突各一类。必需域坏权重取值为合法零的位置也必须拒绝。逐次核当前execution／analysis节点／真实准确原因、专业错误详情／Monitor及冻结提交语言，反向查询不改旧失败；加载、JSON或其他节点提前失败不能充数。活动几何列冲突、重复内存索引、混合复数alpha、非标准JSON及数值极限仍单列Native，不修改产品格式支持或借提前失败替代目标拒绝。
+
+独立像元中心／格网方格与面关系构造覆盖，不调用产品栅格化／统计；孔洞排除、重叠独立，不按面积折算。2000位Decimal用逐组偏差公式核总体σ、不使用舍入weighted_mean；相同Float64数值／权重按出现次数精确合并后计算独立偏差，仍覆盖全部入选像元。全1精确对照该面原sum／mean／stddev和同源实际原统计，原八项按原精度另核，默认／False与启用表原11字段逐值相等；不同前缀按字段语义对应，原属性／几何／行序保持。权重×8使前两个和×8、均值／σ保持；全零或无覆盖／无值σ为null，单正权重／常量0。
+
+每次成功重读当前1至16份成果，106次失败各重读16份，固定136＋106×16＝1832次GeoPackage全检；加首次源核共123轮物理检查。每轮真实核全部源像元／mask／原生NoData／类型／完整网格／CRS／scale-offset、矢量几何／属性及hash，核全部成果几何／属性／字段名序型／统计／null／行序／CRS，不缓存实际成果，仅冻结独立期望。归档16份GeoPackage及全部源原字节、大小／SHA256清单、原始执行和血缘；篡改、缺失、额外文件、符号链接不重建、不覆盖、不静默修复。
+
+沿普通矢量save，物理／Meta大小严格相等正整数，不虚构RasterArtifact；自动扫描精确核父执行／用户／租户／引擎。直接启用及关闭的加权链核三源，转面链核实际两源，原未加权对照核两源；完整内部save derive、公开operations:null、Meta关系和Monitor分别验证，失败零发布／新增扫描／派生，源旧不变及所有退出严格清理。根Makefile标准Native、独立Runner、Online／changed gate／独立手工workflow／受控observer／固定矩阵删断言检查同次登记。本地标准Native以`-k vector_zonal_weighted_stddev`通过333项（12741筛除、55.84秒，非全量），`make test-vector-zonal-weighted-stddev-online-runner`通过100项（38.378秒）及完整Online登记；两门禁输入无漂移。准备通过不计实际Hosted通过，Linux全量及真实Hosted仍待CI协调回传。
+
 ## 矢量面分区加权统计独立 Hosted 验收
 
 `vector-zonal-weighted-persistence`为独立手工套件，复用NFS、同源默认入口Runtime、非默认租户普通User原12权限；不改产品、原套件、权限或安全投影。固定600秒业务预算覆盖源初始化扫描、首次独立期望、执行／查询、全量物理复核、原件归档及执行工作区／期望缓存清理；部署、静态播种和NFS／Runtime／registry／Infra退出沿既有隔离生命周期严格核验，清理失败整套失败。Linux全量与实际Hosted由CI会话协调，不自行触发、重试或扩预算，不计页面、容量或吞吐。
