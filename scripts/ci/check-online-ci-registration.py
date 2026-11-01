@@ -4013,6 +4013,68 @@ def validate_raster_zonal_percentile(repository: Path, registered: set[str]) -> 
         raise RegistrationError('zonal percentile oracle must remain independent')
 
 
+ZONAL_WEIGHTED_REQUIRED = {
+    'scripts/test/online-hosted-raster-zonal-weighted-gate.sh': ('start_online_geopython_runtime', '--mount', '--suite raster-workflow',
+        '--wait-protection-owners develop,manager', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online_raster_lineage.py prepare',
+        'online-raster-zonal-weighted-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
+    'business/scripts/online-raster-zonal-weighted-fixture.py': ('NFSExport','owned_root','WIDTH, HEIGHT = 513, 513','context.prec = 2000',
+        'Decimal.from_float(v)*dw','np.array_equal','GDAL_TIFF_INTERNAL_MASK','full_csv_checks','full_source_pixels_verified','runtime_workspaces_removed',
+        'archive_files','previous archive was deleted','previous archived bytes changed','oracle cache hash changed','source file changed',
+        'weights changed original nine columns','all-one weights changed ordinary sum or mean','absolute weight scale or mean invariance changed','exact weighted statistic differs','zonal-weighted-csvs'),
+    'scripts/test/raster-zonal-weighted-persistence-online.py': ('raster.validate_identity', 'raster.EDITOR_PERMISSIONS',
+        'budget != 600', 'BudgetClient', 'remaining()', 'validate_preview', 'legacy.validate_success', 'lineage.collect',
+        "inputs.sort(key=lambda value:value['port'])", "[value['locator'] for value in wanted['inputs']]",
+        'lineage.validate(facts, wanted, public=True)', 'lineage.verify_archive', 'base.validate_scan', 'raster.wait_lineage',
+        'source_edges', 'readonly.no_publication', 'query language rewrote stored failure', 'previous complete CSV changed',
+        'fixture_call', 'cleanup-oracle', 'oracle cleanup also failed', 'full_checks != 1416', 'physical_calls != 97',
+        'len(cases) != 16', 'len(failures) != 80', 'exact_cause', 'Monitor current output lineage differs'),
+    'engines/geopython-workflow/test_online_zonal_weighted_fixture.py': (
+        'test_zonal_weighted_sixteen_real_csvs_complete_independent_oracle_and_raw_archive',
+        'test_zonal_weighted_eighty_exact_submitted_failures_and_no_output',
+        'test_zonal_weighted_real_physical_corruption_is_rejected', 'one-ulp',
+        'test_zonal_weighted_csv_archive_never_repairs_or_overwrites',
+        'test_zonal_weighted_worker_stdin_frozen_oracle_poison_and_cleanup','test_zonal_weighted_independent_oracle_rejects_wrong_weight_semantics','normalize-sum','drop-scale','zero-as-null'),
+    'scripts/test/raster-zonal-weighted-persistence-online_test.py': (
+        'test_full_matrix_16_success_80_failures_1416_checks_and_cleanup', 'test_role_bound_lineage_rejects_wrong_roles_operations_and_public_projection',
+        'test_strict_physical_counts_sizes_original_archives_and_cleanup_cannot_weaken', 'test_failures_preserve_primary_and_cleanup_error',
+        'test_exact_failure_stage_language_scan_lineage_and_budget_are_enforced'),
+    'scripts/utils/online_raster_lineage.py': ("'raster-zonal-weighted-persistence': 'zonal-weighted-lineage'",),
+    'scripts/test/online-raster-lineage_test.py': ('test_zonal_weighted_approved_three_role_csv_facts_preserve_internal_and_public_boundaries',),
+    'Makefile': ('test_online_zonal_weighted_fixture.py', '@$(MAKE) test-raster-zonal-weighted-online-runner',
+        'scripts/test/raster-zonal-weighted-persistence-online_test.py', 'scripts/test/online-raster-zonal-weighted-fixture_test.py',
+        'scripts/test/online-hosted-raster-zonal-weighted-gate_test.py', 'test_zonal_weighted_requires_exact_csv_matrix_budget_and_regressions'),
+}
+
+
+def validate_raster_zonal_weighted(repository: Path, registered: set[str]) -> None:
+    suite = 'raster-zonal-weighted-persistence'
+    if suite not in registered: return
+    workflow = (repository/'.github/workflows/online-t4-gates.yml').read_text()
+    job = re.search(r'(?ms)^  raster-zonal-weighted-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)', workflow)
+    if (job is None or 'runs-on: ubuntu-24.04' not in job.group('body')
+        or "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-zonal-weighted-persistence'" not in job.group('body')
+        or "&& inputs.suite != 'raster-zonal-weighted-persistence'" not in workflow
+        or 'nfs-kernel-server nfs-common' not in job.group('body') or 'cancel-in-progress: false' not in job.group('body')
+        or 'if: always()' not in job.group('body') or 'logs/' not in job.group('body') or load_suite_registry(repository)[suite].nightly):
+        raise RegistrationError('zonal weighted requires an independent manual Hosted NFS job')
+    make = (repository/'Makefile').read_text()
+    if 'test_online_zonal_weighted_fixture.py' not in make.split('test-geopython-workflow:',1)[1].split('\n.PHONY:',1)[0]:
+        raise RegistrationError('zonal weighted Native omitted from standard recipe')
+    for relative, fragments in ZONAL_WEIGHTED_REQUIRED.items():
+        path = repository/relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError('zonal weighted strict contract incomplete: '+relative)
+    source = (repository/'business/scripts/online-raster-zonal-weighted-fixture.py').read_text()
+    tree = ast.parse(source)
+    actual = {key: [node.value for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == key for target in node.targets)] for key in ('CASES','FAILURES')}
+    expected_cases = {'weighted.csv': ('values.tif', 'zones.tif', 'weights.tif'), 'scaled.csv': ('values.tif', 'zones.tif', 'scaled-weights.tif'), 'ones.csv': ('even.tif', 'small-zones.tif', 'ones.tif'), 'control-ones.csv': ('even.tif', 'small-zones.tif', None), 'control-main.csv': ('values.tif', 'zones.tif', None), 'weights-reclassified.csv': ('values.tif', 'zones.tif', 'weight-classes.tif'), 'zones-reclassified.csv': ('values.tif', 'zones.tif', 'weights.tif'), 'zero.csv': ('even.tif', 'small-zones.tif', 'zero.tif'), 'mixed-empty.csv': ('mixed.tif', 'small-zones.tif', 'ones.tif'), 'invalid-values.csv': ('invalid.tif', 'small-zones.tif', 'ones.tif'), 'empty-zones.csv': ('even.tif', 'empty-zones.tif', 'ones.tif'), 'coverage.csv': ('coverage.tif', 'coverage-zones.tif', 'ignored-weights.tif'), 'rotated.csv': ('rotated-values.tif', 'rotated-zones.tif', 'rotated-weights.tif'), 'single.csv': ('single.tif', 'small-zones.tif', 'ones.tif'), 'int64.csv': ('int64.tif', 'large-zones.tif', 'int64-weights.tif'), 'uint64.csv': ('uint64.tif', 'large-zones.tif', 'uint64-weights.tif')}
+    expected_failures = ('only_raster', 'only_band', 'raster_null', 'band_null', 'both_null', 'percentile_conflict', 'negative_weight', 'nodata_weight', 'mask_weight', 'alpha_weight', 'nan_weight', 'infinite_weight', 'values_band_zero', 'values_band_high', 'values_band_boolean', 'values_band_string', 'values_alpha', 'values_complex', 'zones_band_zero', 'zones_band_high', 'zones_band_boolean', 'zones_band_string', 'zones_alpha', 'zones_complex', 'weights_band_zero', 'weights_band_high', 'weights_band_boolean', 'weights_band_string', 'weights_alpha', 'weights_complex', 'zones_shifted', 'weights_size', 'weights_crs', 'weights_shifted', 'weights_rotated', 'weights_missing', 'weights_singular', 'fractional_zone', 'unsafe_zone', 'overflow_zone')
+    if (any(len(nodes) != 1 for nodes in actual.values()) or ast.literal_eval(actual['CASES'][0]) != expected_cases
+        or ast.literal_eval(actual['FAILURES'][0]) != expected_failures): raise RegistrationError('zonal weighted fixed 16/80 matrix changed')
+    if any(word in source for word in ('operators.raster_compute', 'np.percentile', 'np.quantile')):
+        raise RegistrationError('zonal weighted oracle must remain independent')
+
+
 VECTOR_ZONAL_PERCENTILE_REQUIRED = {
     'scripts/test/online-hosted-vector-zonal-percentile-gate.sh': (
         'start_online_geopython_runtime', '--mount', '--suite raster-workflow',
@@ -5859,6 +5921,7 @@ def check_registration(repository: Path) -> None:
     validate_raster_band_recommendation_profile(repository, registered)
     validate_raster_statistics_percentile(repository, registered)
     validate_raster_zonal_percentile(repository, registered)
+    validate_raster_zonal_weighted(repository, registered)
     validate_vector_zonal_percentile(repository, registered)
     validate_raster_focal_variety(repository, registered)
     validate_raster_focal_weighted_mean(repository, registered)

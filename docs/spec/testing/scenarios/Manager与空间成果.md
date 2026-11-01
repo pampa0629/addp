@@ -880,6 +880,23 @@ NaN／Infinity参数、整数形式浮点[1.0]保护值、混合类型复数alph
 本地入口为`make test-raster-statistics-percentile-online-runner`及标准`make test-geopython-workflow`中的`test_online_statistics_percentile_fixture.py`；已同步Online registry、changed gate、独立workflow与固定矩阵／删除断言变异检查，仅登记不代表已运行Hosted。
 
 
+## 栅格分区加权统计独立 Hosted 验收
+
+`raster-zonal-weighted-persistence`为独立手工套件，复用NFS、同源默认入口Runtime和非默认租户普通User原12权限；不改产品、原套件、权限或安全投影。固定600秒业务预算覆盖初始化扫描、首次独立期望、执行／查询、全部物理复核、归档及执行工作区／期望缓存清理；部署／播种和NFS／Runtime／registry／Infra退出沿既有隔离生命周期严格清理。实际Linux全量与Hosted由CI会话协调，不自动触发、重试或扩预算，不计页面或容量。
+
+固定16条CSV成功链：非均匀跨二维读取块及权重×8两条；全1加权和两条原九列实际对照三条；权重／分区重分类两条；全零权重、混合空组、数值全无效、分区全无效四条；显式第二波段／raw scale-offset／mask／部分alpha与非必需域坏权重一条；三源同旋转网格一条；单有效值／合法零负值一条；Int64／UInt64原生NoData邻接数值与权重、精确大分区编号两条。14份12列加权表、2份9列对照；79分区完整CSV，公开预览最多50行。
+
+固定40类各中英文提交，共80次准确失败：权重成对参数／显式null五类及与percentile冲突一类；必需位置负权重／NoData／无效mask／透明alpha／NaN／Infinity六类；值／分区／权重三个角色各波段0／越界／布尔／字符串／alpha／复数数据共18类；分区偏移和权重尺寸／CRS／偏移／旋转／缺定位／奇异网格七类；小数分区／不安全浮点整数／超Int64的UInt64分区三类。核当前执行、`analysis`节点、真实准确原因、专业错误详情、Monitor及冻结提交语言，反向查询不得改写。沿用原诊断的英文原因不冒称已新增翻译。加载、JSON、其他节点或错误阶段不能充数；非标准JSON、混合复数alpha和数值极限另列Native。
+
+逐像元独立Decimal（2000位）计算权重总和／加权和／均值，最终Float64精确比较；不导入产品统计实现。原九列沿既有容差／精确分类计数规则，和同源实际不加权对照逐值相等；全1结果等于原sum／mean，整体×8使两个和×8且均值不变。有有效值但全零权重输出0／0／null，没有有效值的分区三个新增字段全null；分区全无效保留带表头空CSV。完整原CSV不舍入，公开JSON预览的15位投影单列校验。
+
+成功后依次全读1至16份，80次失败后各全读16份，共1416次CSV全表检查；加首次源全检共97轮物理检查。每轮真实重读所有源像元／mask／类型／原生NoData／仿射／CRS／scale-offset及hash，不缓存实际成果。仅冻结独立期望；归档源原字节、16份CSV原字节及大小／SHA256清单和当前执行血缘。原件／manifest／期望变化、缺失、额外文件、符号链接一律失败，不重建或静默修复。
+
+沿普通表保存路径：物理／Meta大小须为相等正整数，不虚构RasterArtifact。自动扫描精确核父执行／用户／租户／引擎；加权链值／分区／权重三份实际输入，原统计对照仅两份。受控只读observer保留完整内部`save` derive与公开`operations:null`分别校验，Meta关系／Monitor独立核实；失败无发布／新增扫描或派生血缘，源及先前成果不变，清理失败整套失败。
+
+标准入口`make test-raster-zonal-weighted-online-runner`与标准Native中的`test_online_zonal_weighted_fixture.py`，同次登记Online、changed gate、手工workflow、observer及固定矩阵／删断言拒绝测试；本地标准Native专项217 passed／11987 deselected／12.87秒、0失败／跳过／warnings；标准Runner96项／25.700秒及完整Online登记通过。准备通过不计实际Hosted通过。
+
+
 ## 栅格分区百分位独立 Hosted 验收
 
 `raster-zonal-percentile-persistence`为独立手工套件，复用NFS、同源产品默认入口Runtime与普通User原12权限；固定600秒业务预算覆盖源初始化扫描、首次独立期望、执行／查询、全部物理复核及执行工作区／期望缓存清理。部署、静态夹具播种及NFS／Infra退出沿既有隔离生命周期分别核验，任何清理失败整套失败。原分区／整幅／邻域套件不改，实际Linux全量和Hosted仍由CI会话协调，不计UI或容量。
