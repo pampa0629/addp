@@ -31,6 +31,166 @@ def compile_history():
             for i,stage in enumerate(m.COMPILE_STAGES)}
 
 
+def waiting_group():
+    proof={'pid':700001,'pgid':700001,'sid':700001,'uid':os.geteuid(),'stage':'process_source'}
+    leader={**proof,'ppid':700000,'birth':'17','state':'D'}
+    child={**leader,'pid':700002,'ppid':leader['pid'],'birth':'18','state':'T'}
+    return proof,[leader,child,{**child,'pid':700003,'birth':'19'}]
+
+
+class CompileWaitEvidence(unittest.TestCase):
+    def test_one_observation_after_threshold_only_for_a_waiting_group(self):
+        for duration,state,expected in ((.099,'D',0),(.1,'T',0),(.1,'D',1)):
+            with self.subTest(duration=duration,state=state):
+                proof,rows=waiting_group();rows[0]['state']=state;now=[0.0];facts={};sent=[]
+                def inventory(*args):
+                    if m.signal.SIGCONT in sent:
+                        return [{**r,'state':'S'} for r in rows]
+                    return rows
+                def send(proof,sig,end):sent.append(sig)
+                def delay(value):now[0]+=value
+                with patch.object(m,'checked_group',side_effect=inventory),patch.object(m,'group_signal',side_effect=send),patch.object(m,'compile_wait_observation',return_value={'status':'complete'}) as observe,patch.object(m.time,'monotonic',side_effect=lambda:now[0]),patch.object(m.time,'monotonic_ns',side_effect=lambda:round(now[0]*1e9)),patch.object(m.time,'sleep',side_effect=delay):
+                    if state=='D':
+                        with self.assertRaises(m.BudgetFailure):
+                            with m.paused_compile(proof,duration+.000001,facts):self.fail('D admitted')
+                    else:
+                        with m.paused_compile(proof,4,facts):pass
+                self.assertEqual(observe.call_count,expected)
+                self.assertEqual(sent,[m.signal.SIGSTOP,m.signal.SIGCONT]);self.assertTrue(facts['resumed'])
+
+    def test_replays_465_attempts_and_keeps_first_failure_with_one_probe(self):
+        proof,rows=waiting_group();facts={};now=[0.0];calls=[0];sent=[]
+        failure=m.BudgetFailure('http_compile_coordination_deadline','compile_inventory','deadline')
+        def inventory(*args):
+            if m.signal.SIGCONT in sent:return [{**r,'state':'S'}for r in rows]
+            calls[0]+=1
+            if calls[0]==466:now[0]=4;raise failure
+            now[0]=min(3.999,(calls[0]-1)*4/465)
+            return rows
+        with patch.object(m,'checked_group',side_effect=inventory),patch.object(m,'group_signal',side_effect=lambda p,s,e:sent.append(s)),patch.object(m,'compile_wait_observation',return_value={'status':'complete'}) as observe,patch.object(m.time,'monotonic',side_effect=lambda:now[0]),patch.object(m.time,'monotonic_ns',side_effect=lambda:round(now[0]*1e9)),patch.object(m.time,'sleep'):
+            with self.assertRaises(m.BudgetFailure) as caught:
+                with m.paused_compile(proof,4,facts):self.fail('D admitted')
+        self.assertIs(caught.exception,failure);observe.assert_called_once()
+        c=facts['confirmation'];self.assertEqual((c['attempts'],c['completed'],c['membership_changes']),(465,464,0))
+        self.assertEqual(c['last_completed']['state_counts']['D'],1);self.assertEqual(c['last_completed']['state_counts']['T'],2)
+        self.assertTrue(facts['resumed']);self.assertNotIn('confirmed',facts)
+
+    def test_roles_relations_and_only_d_members_are_read(self):
+        proof,rows=waiting_group()
+        with patch.object(m,'owned_wait_channel',return_value='process_start_wait_candidate') as read:
+            value=m.compile_wait_observation(proof,rows,m.time.monotonic()+4)
+        read.assert_called_once_with(proof,rows[0],read.call_args.args[2])
+        self.assertEqual(value['role_state_counts']['leader']['D'],1)
+        self.assertEqual(value['role_state_counts']['other_member']['T'],2)
+        self.assertEqual(value['d_stopped_child_edges'],2)
+        self.assertEqual(value['wait_counts']['process_start_wait_candidate'],1)
+        self.assertEqual(value['unattempted_d_members'],0)
+        encoded=json.dumps(value)
+        for raw in ('700001','700002','pid','birth','/proc','kernel_clone'):self.assertNotIn(raw,encoded)
+        self.assertLessEqual(value['started_monotonic_ns'],value['finished_monotonic_ns'])
+
+    def test_expired_budget_and_member_limit_never_start_reads(self):
+        proof,rows=waiting_group()
+        for count,end in ((3,0),(65,m.time.monotonic()+4)):
+            with self.subTest(count=count),patch.object(m,'owned_wait_channel') as read:
+                value=m.compile_wait_observation(proof,(rows*22)[:count],end)
+            read.assert_not_called();self.assertIn(value['status'],('deadline','over_budget'))
+
+    def test_exact_member_limit_has_one_read_per_d_without_an_extra_inventory(self):
+        proof,rows=waiting_group()
+        members=[{**rows[0],'pid':700001+i} for i in range(64)]
+        with patch.object(m,'owned_wait_channel',return_value='other') as read,patch.object(m,'checked_group') as inventory:
+            value=m.compile_wait_observation(proof,members,m.time.monotonic()+4)
+        self.assertEqual(read.call_count,64);inventory.assert_not_called()
+        self.assertEqual(value['wait_counts']['other'],64);self.assertEqual(value['status'],'complete')
+
+    def test_unowned_or_non_d_member_is_never_opened(self):
+        proof,rows=waiting_group()
+        for change in ({'uid':os.geteuid()+1},{'sid':9},{'pgid':9},{'state':'T'},{'birth':''}):
+            with self.subTest(change=change),patch.object(m.sys,'platform','linux'),patch.object(m.os,'open') as opened:
+                value=m.owned_wait_channel(proof,{**rows[0],**change},m.time.monotonic()+4)
+            opened.assert_not_called();self.assertIn(value,('identity_changed','state_changed'))
+
+    def test_probe_deadline_retains_guard_failure_and_resume_failure_cannot_replace_it(self):
+        proof,rows=waiting_group();now=[0.0];facts={};sent=[]
+        def inventory(*args):
+            if m.signal.SIGCONT in sent:raise m.BudgetFailure('restore_failure','compile_resume','deadline')
+            m.bounded(4,'compile_inventory');return rows
+        def consume(*args):now[0]=4;return {'status':'deadline'}
+        with patch.object(m.time,'monotonic',side_effect=lambda:now[0]),patch.object(m.time,'monotonic_ns',side_effect=lambda:round(now[0]*1e9)),patch.object(m.time,'sleep',side_effect=lambda _:now.__setitem__(0,now[0]+.1)),patch.object(m,'checked_group',side_effect=inventory),patch.object(m,'group_signal',side_effect=lambda p,s,e:sent.append(s)),patch.object(m,'compile_wait_observation',side_effect=consume) as observe:
+            with self.assertRaises(m.BudgetFailure) as caught:
+                with m.paused_compile(proof,4,facts):self.fail('deadline admitted')
+        self.assertEqual(caught.exception.detail['stage'],'compile_pause')
+        self.assertEqual(facts['resume_error'],'resume_failed');observe.assert_called_once()
+        self.assertEqual(sent,[m.signal.SIGSTOP,m.signal.SIGCONT]);self.assertNotIn('confirmed',facts)
+
+    def test_diagnostic_consuming_deadline_does_not_start_another_read_or_admit_d(self):
+        proof,rows=waiting_group();now=[.2];calls=[]
+        def consume(*args):calls.append(1);now[0]=4;return 'deadline'
+        with patch.object(m.time,'monotonic',side_effect=lambda:now[0]),patch.object(m.time,'monotonic_ns',side_effect=lambda:round(now[0]*1e9)),patch.object(m,'owned_wait_channel',side_effect=consume):
+            value=m.compile_wait_observation(proof,[*rows,{**rows[0],'pid':700004}],4)
+        self.assertEqual(len(calls),1);self.assertEqual(value['status'],'deadline')
+        self.assertEqual(value['unattempted_d_members'],1)
+
+    def read_channel(self,channel,*,change=None,read_error=None,platform='linux',changed_uid=False):
+        proof,rows=waiting_group();row=rows[0];opened=[];closed=[];reads=[];stat_calls=[0]
+        def raw_stat(changes=None):
+            r={**row,**(changes or {})};fields=['0']*20
+            for i,k in ((0,'state'),(1,'ppid'),(2,'pgid'),(3,'sid'),(19,'birth')):fields[i]=str(r[k])
+            return (str(r['pid'])+' (private command) '+' '.join(fields)).encode()
+        def open_file(path,flags,**kw):
+            opened.append((path,flags,kw))
+            if path=='stat':return 20
+            if path=='wchan':
+                if read_error:raise read_error
+                return 30
+            return 10
+        def read(fd,size):
+            reads.append((fd,size))
+            if fd==30:return channel
+            stat_calls[0]+=1;return raw_stat(change if stat_calls[0]>1 else None)
+        uid_calls=[0]
+        def uid(fd):
+            uid_calls[0]+=1
+            return type('Stat',(),{'st_uid':row['uid']+int(changed_uid and uid_calls[0]>1)})()
+        with patch.object(m.sys,'platform',platform),patch.object(m.os,'open',side_effect=open_file),patch.object(m.os,'read',side_effect=read),patch.object(m.os,'close',side_effect=lambda fd:closed.append(fd)),patch.object(m.os,'fstat',side_effect=uid):
+            result=m.owned_wait_channel(proof,row,m.time.monotonic()+4)
+        if platform=='linux':
+            self.assertEqual(sorted(closed),sorted([10]+[20 for _ in range(stat_calls[0])]+([30]if any(fd==30 for fd,_ in reads)else [])))
+        else:self.assertEqual(opened,[])
+        for path,flags,kw in opened:
+            self.assertTrue(flags&m.os.O_NOFOLLOW)
+            if path in ('stat','wchan'):self.assertEqual(kw['dir_fd'],10)
+        self.assertLessEqual(sum(fd==30 for fd,_ in reads),1)
+        self.assertTrue(all(size==128 for fd,size in reads if fd==30))
+        return result
+
+    def test_channel_categories_are_closed_and_raw_values_never_leave_adapter(self):
+        for raw,category in ((b'kernel_clone','process_start_wait_candidate'),(b'wait_for_vfork_done','process_start_wait_candidate'),(b'io_schedule','io_wait_candidate'),(b'wait_for_completion','completion_wait'),(b'private_unknown_symbol','other'),(b'0','zero'),(b'','empty'),(b'a'*128,'over_budget'),(b'bad\x00symbol','invalid')):
+            with self.subTest(category=category):self.assertEqual(self.read_channel(raw),category)
+
+    def test_identity_state_and_permissions_do_not_retry_or_classify_old_symbol(self):
+        for change in ({'birth':'99'},{'sid':700004},{'pgid':700004},{'state':'T'}):
+            with self.subTest(change=change):self.assertIn(self.read_channel(b'kernel_clone',change=change),('identity_changed','state_changed'))
+        self.assertEqual(self.read_channel(b'',read_error=PermissionError()),'permission_denied')
+        self.assertEqual(self.read_channel(b'',read_error=FileNotFoundError()),'vanished')
+        self.assertEqual(self.read_channel(b'',read_error=OSError()),'read_error')
+        self.assertEqual(self.read_channel(b'kernel_clone',platform='darwin'),'not_supported')
+        self.assertEqual(self.read_channel(b'kernel_clone',changed_uid=True),'identity_changed')
+
+    def test_symlink_cannot_replace_wait_channel_in_pinned_directory(self):
+        proof,rows=waiting_group();fields=['0']*20
+        for i,k in ((0,'state'),(1,'ppid'),(2,'pgid'),(3,'sid'),(19,'birth')):fields[i]=str(rows[0][k])
+        real_open=os.open
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);(root/'stat').write_text('700001 (private command) '+' '.join(fields))
+            (root/'secret').write_text('kernel_clone');(root/'wchan').symlink_to(root/'secret')
+            def open_file(path,flags,**kw):
+                return real_open(str(root) if path=='/proc/700001' else path,flags,**kw)
+            with patch.object(m.sys,'platform','linux'),patch.object(m.os,'open',side_effect=open_file):
+                self.assertEqual(m.owned_wait_channel(proof,rows[0],m.time.monotonic()+4),'read_error')
+
+
 def prepare_function(work):
     path=Path(m.__file__).with_name('monitor-metrics-probe.py')
     node=next(n for n in ast.parse(path.read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='prepare_http_test_binaries')

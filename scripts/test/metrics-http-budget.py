@@ -152,12 +152,23 @@ def directory_objects(stderr, ownership):
 
 COMPILE_STAGES=('process_source','http_query','http_alert')
 RESUME_RESERVE=.05
+PROCESS_STATES=('R','S','D','T','t','Z','X','I','other')
+WAIT_CATEGORIES=('process_start_wait_candidate','io_wait_candidate','completion_wait','other','zero','empty',
+                 'over_budget','invalid','identity_changed','state_changed','permission_denied','vanished',
+                 'read_error','deadline','not_supported')
 
 
 def bounded(end, stage):
     remaining=end-time.monotonic()
     if remaining<=0:raise BudgetFailure('http_compile_coordination_deadline',stage,'deadline')
     return remaining
+
+
+def linux_process_row(pid,raw,uid):
+    if len(raw)>4096:raise ValueError()
+    fields=raw.rpartition(b') ')[2].split()
+    return {'pid':pid,'ppid':int(fields[1]),'pgid':int(fields[2]),'sid':int(fields[3]),
+            'birth':fields[19].decode('ascii'),'state':fields[0].decode('ascii'),'uid':uid}
 
 
 def process_rows(end, pid=None):
@@ -176,10 +187,7 @@ def process_rows(end, pid=None):
             bounded(end,'compile_inventory')
             try:
                 with (path/'stat').open('rb') as stream:raw=stream.read(4097)
-                if len(raw)>4096:raise ValueError()
-                fields=raw.rpartition(b') ')[2].split()
-                rows.append({'pid':int(path.name),'ppid':int(fields[1]),'pgid':int(fields[2]),'sid':int(fields[3]),
-                             'birth':fields[19].decode('ascii'),'state':fields[0].decode('ascii'),'uid':path.stat().st_uid})
+                rows.append(linux_process_row(int(path.name),raw,path.stat().st_uid))
             except (FileNotFoundError,ProcessLookupError):continue  # A vanished process cannot keep writing.
             except (OSError,ValueError,IndexError,UnicodeError):
                 raise BudgetFailure('http_compile_inventory_invalid','compile_inventory','invalid') from None
@@ -252,6 +260,77 @@ def group_signal(proof, sig, end):
 def quiescent(rows):return all(r['state'] in ('T','t','Z','X') for r in rows)
 
 
+def owned_wait_channel(proof,row,end):
+    """One bounded read, pinned to the verified process; only a closed category leaves."""
+    if sys.platform!='linux':return 'not_supported'
+    directory=None
+    try:
+        bounded(end,'compile_wait_observation')
+        if (type(row.get('pid')) is not int or row['pid']<=0 or
+                any(row.get(k)!=proof.get(k) for k in ('uid','pgid','sid')) or
+                row.get('uid')!=os.geteuid() or not row.get('birth')):
+            return 'identity_changed'
+        if row.get('state')!='D':return 'state_changed'
+        flags=os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC
+        directory=os.open('/proc/'+str(row['pid']),flags|os.O_DIRECTORY)
+        def read(name,size):
+            bounded(end,'compile_wait_observation')
+            fd=os.open(name,flags,dir_fd=directory)
+            try:value=os.read(fd,size)
+            finally:os.close(fd)
+            bounded(end,'compile_wait_observation')
+            return value
+        def identity():
+            value=linux_process_row(row['pid'],read('stat',4097),os.fstat(directory).st_uid)
+            if any(value[k]!=row[k] for k in ('pid','birth','uid','pgid','sid')):return 'identity_changed'
+            return None if value['state']=='D' else 'state_changed'
+        changed=identity()
+        if changed:return changed
+        raw=read('wchan',128)
+        changed=identity()
+        if changed:return changed
+        if len(raw)>=128:return 'over_budget'
+        symbol=raw.strip()
+        if not symbol:return 'empty'
+        if symbol==b'0':return 'zero'
+        if not re.fullmatch(rb'[A-Za-z0-9_.]+',symbol):return 'invalid'
+        if symbol in (b'kernel_clone',b'wait_for_vfork_done'):return 'process_start_wait_candidate'
+        if symbol in (b'io_schedule',b'io_schedule_timeout',b'folio_wait_bit_common',b'wait_on_page_bit_common'):return 'io_wait_candidate'
+        if symbol in (b'wait_for_completion',b'wait_for_completion_state',b'wait_for_completion_killable'):return 'completion_wait'
+        return 'other'
+    except BudgetFailure:return 'deadline'
+    except PermissionError:return 'permission_denied'
+    except (FileNotFoundError,ProcessLookupError):return 'vanished'
+    except (ValueError,IndexError,UnicodeError):return 'invalid'
+    except OSError:return 'read_error'
+    finally:
+        if directory is not None:os.close(directory)
+
+
+def compile_wait_observation(proof,rows,end):
+    """Reuse one complete group inventory; no identities or raw symbols in the receipt."""
+    value={'status':'complete','started_monotonic_ns':time.monotonic_ns(),
+           'members':len(rows),'role_state_counts':{k:dict.fromkeys(PROCESS_STATES,0) for k in ('leader','other_member')},
+           'd_stopped_child_edges':0,'wait_counts':dict.fromkeys(WAIT_CATEGORIES,0),'unattempted_d_members':0}
+    waiting=[r for r in rows if r['state']=='D']
+    value['unattempted_d_members']=len(waiting)
+    if len(rows)>64:value['status']='over_budget'
+    else:
+        for row in rows:
+            role='leader' if row['pid']==proof.get('pid') else 'other_member'
+            value['role_state_counts'][role][row['state'] if row['state'] in PROCESS_STATES else 'other']+=1
+        parents={r['pid'] for r in waiting}
+        value['d_stopped_child_edges']=sum(r.get('ppid') in parents and r['state'] in ('T','t') for r in rows)
+        for row in waiting:
+            if time.monotonic()>=end:value['status']='deadline';break
+            category=owned_wait_channel(proof,row,end)
+            value['wait_counts'][category]+=1;value['unattempted_d_members']-=1
+            if category=='deadline':value['status']='deadline';break
+            if category in WAIT_CATEGORIES[4:]:value['status']='unavailable'
+    value['finished_monotonic_ns']=time.monotonic_ns()
+    return value
+
+
 def terminate_group(proof,end):
     rows=checked_group(proof,end)
     if all(r['state'] in ('Z','X') for r in rows):return
@@ -295,8 +374,9 @@ def paused_compile(proof,end,facts):
         if not all(r['state'] in ('Z','X') for r in rows):
             stopped=True;group_signal(proof,signal.SIGSTOP,end);facts['stop_sent']=True
             confirmation={'attempts':0,'completed':0,'membership_changes':0,
-                          'last_attempt_started_monotonic_ns':None,'last_completed':None}
+                          'last_attempt_started_monotonic_ns':None,'last_completed':None,'wait_observation':None}
             facts['confirmation']=confirmation
+            confirmation_started=time.monotonic_ns()
             previous=None
             while True:
                 confirmation['attempts']+=1
@@ -304,7 +384,7 @@ def paused_compile(proof,end,facts):
                 confirmation['last_attempt_started_monotonic_ns']=inventory_started
                 rows=checked_group(proof,end)
                 inventory_finished=time.monotonic_ns()
-                counts=dict.fromkeys(('R','S','D','T','t','Z','X','I','other'),0)
+                counts=dict.fromkeys(PROCESS_STATES,0)
                 for row in rows:counts[row['state'] if row['state'] in counts else 'other']+=1
                 confirmation['completed']+=1
                 confirmation['last_completed']={'started_monotonic_ns':inventory_started,
@@ -312,6 +392,9 @@ def paused_compile(proof,end,facts):
                 identities={(r['pid'],r['birth']) for r in rows}
                 if previous is not None and identities!=previous:confirmation['membership_changes']+=1
                 if quiescent(rows) and identities==previous:break
+                if (counts['D'] and inventory_finished-confirmation_started>=100_000_000 and
+                        confirmation['wait_observation'] is None):
+                    confirmation['wait_observation']=compile_wait_observation(proof,rows,end)
                 previous=identities
                 time.sleep(min(.005,bounded(end,'compile_pause')))
         facts['confirmed']=True
