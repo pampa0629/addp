@@ -17,9 +17,11 @@ Transfer 模块是 ADDP 的数据传输中枢，统一负责 `sync` 任务、任
 
 table 类型 Transfer 主链路已经稳定：native table、encoded single file/object、encoded multi refs 和 encoded whole scope 都统一走 planner + executor + common provider，不按具体引擎组合建立专用通道。后续新增 table 能力应优先补 `common/engine` 或 `common/format`，不要在 Transfer 内恢复私有 reader / writer。
 
-bounded 字段血缘复用同一读取计划的 Provider 证据：直接原生表按实际结构组合 field mapping；查询按 PreparedQuery 的完整 OutputLineage 与真实结果字段组合，不自行解析 MQL/SQL。多来源必须声明全部 query.inputs 并匹配同次 ReadSet，按原生路径绑定端口，分别冻结每个来源结构；同一结果列可有多个值来源，只有行筛选作用的来源不生成字段边。来源快照保留原始字段名及结构化 path，不能保存查询别名结构冒充源集合。MongoDB 透明 aggregate 的嵌套字段别名与数组索引沿同一路径记录，数组索引及实际脱敏输出标记 derived；未知或不完整证据仍 unavailable。只有新的成功执行产生字段事实，旧执行不按当前任务配置补造。
+bounded 字段血缘复用同次 Provider 证据与实际 field mapping；多来源查询的完整 `query.inputs` 必须匹配同一 `PreparedQuery` 的 `ReadSet`，Transfer 不解析 SQL/MQL。仅新成功执行产生字段事实，不按当前配置补造历史。多来源路径绑定、原始结构快照、字段值来源与行筛选的区别及 `derived/unavailable` 规则统一见[字段级契约](../docs/spec/addp数据血缘能力规范.md#61-字段级首期契约)。
 
-Security 对 Transfer 的稳定动作名为 `export`，它表示受保护数据离开源 DataItem，不是 Transfer `task_type`。`bounded + snapshot` 的统一 Native TablePipeline 必须在字段映射、类型转换、空间处理和目标 writer 前遮盖/抑制；原生表不按 `engine_type` 建立保护分支，统一按精确 Locator 与当前表结构校验并处理 `BatchData`。查询源必须从同一 PreparedQuery 取得 ReadSet 和 OutputLineage；当前已验证 PostgreSQL 可证明查询，以及只包含 `$match`、`$unwind`、`$project`、`$sort` 透明阶段的 MongoDB aggregate，其他无法证明完整输出血缘的查询继续失效关闭。MongoDB collection 到 `mongodb_extended_jsonl` 的原始记录格式导出按精确 Locator 与 Meta 当前字段结构校验同一 `export` 投影，在 Provider 保留 BSON 标量的文档对象上完成保护后才编码 Canonical Extended JSON。Security 生成引擎无关的动作投影，Transfer 只在已实现并验证字段级保护执行器的执行形态上开放；raw copy、watermark incremental、Kafka replay、encoded source、continuous/CDC 以及其他无法证明完整字段身份和输出血缘的查询，在各自执行器完成前仍资源级失效关闭。
+`export` 是受保护数据离开源 DataItem 的保护动作，任务类型仍为 `sync`。命中纳管来源的 `bounded + snapshot` Native TablePipeline 按精确 Locator 与当前源结构，在字段映射、类型转换、空间处理和 Writer 前执行保护，不按 `engine_type` 分叉；查询保护消费同一 `PreparedQuery` 的完整 ReadSet/OutputLineage。开放形态、查询证明子集与未接入形态的资源级失效关闭边界统一见[Transfer export 契约](../docs/spec/addp数据安全与隐私保护实现规范.md#104-transfer-export-动作)。MongoDB 原始记录须在保留 BSON 标量的对象上先保护、再编码 Canonical Extended JSON，不解析已编码的 EJSON；端点与类型保真格式见[动态记录原始导出](docs/transfer-基本概念及配置说明.md#32-动态记录原始导出)。
+
+专业读取权限与安全 DTO 沿[专业执行契约](../docs/spec/tasks/执行监控.md#transfer-专业执行读取与响应)，分版本证据见[开发与验证](#开发与验证)；Provider 证明不等同真实写入、血缘采集或完整权限链路验收通过。
 
 只读原生查询结果到 table 的 bounded 搬运属于同一主链路：source 必须消费 `common/engine.QueryReadSessionProvider`，target 继续消费 table write session。MongoDB 嵌套 BSON 的路径投影、数组展开、去重和关系合并由只读 MQL 在源端完成；Transfer 只搬运最终扁平行、执行显式字段映射和严格类型转换，不提供递归 JSON 自动摊平器。
 
