@@ -149,8 +149,9 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 
 #### 业务 Kafka DLQ 与 replay
 
-- 业务 Kafka DLQ 的处理顺序与显式记录错误策略统一见[业务 Kafka 语义](docs/transfer-任务语义与同步模式.md#62-业务-kafka)和[DLQ 正式契约](../docs/spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)。唯一 replay API 为 `POST /task-definitions/:id/replay`，只接受显式 partition offset ranges 与不存在的新 PostgreSQL `parent_locator + name`，并通过独立 bounded execution/apply identity 写隔离目标，不能触碰主任务状态、水位或目标。
-- DLQ payload availability 由 continuous worker 内唯一 reconciler 管理，精确引用核验、CAS、瞬时故障与 payload 安全统一见[availability 专题](docs/数据库架构.md#availability-失败与验收边界)及[DLQ 正式契约](../docs/spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)；核验不提交 Kafka offset，也不进入 HTTP 请求链路。
+- DLQ 的确定性记录错误分类和 payload → 控制索引 → 目标 `skip` ledger → Infra CAS 顺序沿[正式契约](../docs/spec/tasks/Transfer-Kafka与DLQ.md#transfer-业务-kafka-dlq-与-bounded-replay-v1-契约)，任一步失败不得推进后续 position。查询的 Tenant/task 权限与 payload 安全沿[公开查询与来源隔离](docs/数据库架构.md#dlq-公开查询与来源隔离)；索引读取权不授予原始 payload 访问权。
+- availability 由 continuous worker 唯一低频 reconciler 管理，精确引用 CAS、瞬时故障保留状态及 payload 不留副本沿[availability 专题](docs/数据库架构.md#availability-失败与验收边界)；不进入 HTTP 链路或提交 Kafka offset。`payload_available=true` 不等于 replay 已验收，具体证据范围见该专题。
+- replay 的唯一 API、显式 offset ranges、retention 复核与新 PostgreSQL 隔离目标沿[配置专题](docs/transfer-基本概念及配置说明.md#dlq-与-bounded-replay)。它从原业务 topic 读取，使用独立 bounded execution／apply identity，不动主状态、lease、水位或目标；失败不改变主任务或触发 continuous 恢复 circuit，见[独立执行契约](docs/transfer-任务语义与同步模式.md#五状态checkpoint-与-replay)及上述正式契约。查询、availability 与 replay 的验收分别认定，固定版本与未覆盖项见[开发与验证](#开发与验证)。
 
 #### CDC 捕获与审批
 
