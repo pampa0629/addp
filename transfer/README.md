@@ -78,11 +78,15 @@ non-table raw copy 已形成第一版最小闭环：`document`、`media`、`cad`
 }
 ```
 
-`target.policy.apply_mode` 支持 snapshot 的 `replace` / `append`、watermark 和业务 Kafka 的幂等 `upsert`，以及数据库 CDC 的 `upsert_delete`。watermark 目标由 `table_upsert` capability 选择，当前支持 PostgreSQL、MySQL、OceanBase、TiDB 与 openGauss，OceanBase/TiDB/openGauss 限非空间表。旧 `write_mode` 不兼容。snapshot replace 失败执行可按 restartable 从头 retry；watermark 和未阻塞的 continuous/CDC 从 `transfer.sync_states` committed position resume；append retry 被拒绝。数据库 CDC schema drift 会把任务置为 `status=blocked` 且不推进当前 offset。PostgreSQL/MySQL 中只有当前消息新增的 nullable 非 geometry 字段可由用户逐字段审批，平台复用目标 Provider 幂等加列并把任务置为 paused；Oracle 第一期的任何 schema drift 和其他不可审批变化均只能 Stop 后创建新任务和新目标表。
+写入策略和支持组合统一见[写入策略](./docs/transfer-基本概念及配置说明.md#六写入策略)及[当前支持矩阵](./docs/transfer-任务语义与同步模式.md#三当前支持矩阵)：snapshot 使用 `replace|append`，watermark 和业务 Kafka 使用幂等 `upsert`，数据库 CDC 使用 `upsert_delete`；目标按 Engine Provider/capability 选择，旧 `write_mode` 不兼容。
 
-continuous 当前有两类实现路径：业务 Kafka keyed JSON record -> PostgreSQL/MySQL upsert，以及 PostgreSQL/MySQL/Oracle 单表 -> Debezium -> Infra Kafka -> PostgreSQL/MySQL/Oracle snapshot/upsert/delete。Oracle Spatial 在 connector 前由 capture Provider 将源行同步到 generation-owned 镜像表：XY 使用 WKB BLOB，XYZ 使用 Oracle `TO_GEOJSON` CLOB，adapter 先校验冻结的空间事实，再输出 EWKB；之后完全复用同一条 CDC 主路径。它们复用同一个 Transfer continuous worker 和 `PartitionedTableChangeApplyProvider`；Provider 在业务目标库将目标变化与目标 apply ledger 的 `next_offset` 原子提交，Infra PostgreSQL 的 `transfer.sync_states` 保存任务 committed position。Oracle 目标 ledger 位于连接用户 schema 的 `_ADDP_TRANSFER_APPLY_POSITIONS`，并通过 ownership comment 从 Engine Catalog 隐藏；只开放 CDC apply，不开放普通 bounded table write。业务 Kafka已支持显式 `block|dead_letter` 和显式 offset ranges 到新 PostgreSQL 隔离表的 bounded replay。交付保证是 at-least-once + 目标 monotonic 幂等应用，不宣称分布式 exactly-once。当前仍不支持无 key append、Schema Registry、Avro、Protobuf、Kafka target、数据库 CDC replay/DLQ、普通 Oracle LOB/RAC、ArcGIS SDE 或自动 schema evolution。Infra Kafka 不进入 System engines 或用户任务配置。
+[Continuous/Kafka 配置](./docs/transfer-基本概念及配置说明.md#八continuouskafka-v1-契约与当前实现边界)维护业务 Kafka keyed JSON upsert、显式 `block|dead_letter` 和写入新 PostgreSQL 隔离表的 bounded replay；[CDC 配置](./docs/transfer-基本概念及配置说明.md#九数据库-cdc-v1-已冻结边界)维护 PostgreSQL/MySQL/Oracle 单表 initial snapshot + upsert/delete。两类路线复用同一个 continuous worker 与 `PartitionedTableChangeApplyProvider`；Oracle 空间捕获、目标 ledger 和类型限制由该配置正文维护，Infra Kafka 不进入 System engines 或用户任务 JSON。
 
-恢复 continuous task 时，Kafka Provider 会先验证 committed `next_offset` 是否仍处于 topic partition 的 earliest/latest 范围。位置已被 retention 清除时 execution 明确失败，不允许静默重置。PostgreSQL/MySQL/Oracle 目标锁等待响应 runtime context 取消，未完成事务会同时回滚业务表和对应目标 apply ledger。
+CDC schema drift 使任务进入 `blocked` 且不推进当前 offset；PostgreSQL/MySQL 仅当前阻塞消息中的新增 nullable、非主键、非 geometry 字段可人工审批，审批后进入 paused，由用户显式 Resume。Oracle 任意 drift 和其他不可审批变化须 Stop 后新建任务与目标表，完整条件见[Schema drift 与审批恢复](./docs/transfer-基本概念及配置说明.md#schema-drift-与审批恢复)。
+
+重跑和续读见[恢复分级](./docs/transfer-基本概念及配置说明.md#恢复分级)：snapshot replace 失败可从头 retry，append retry 被拒绝；watermark 与未阻塞的 continuous/CDC 从 `transfer.sync_states` committed position resume。retention 越界必须明确失败，不静默重置；目标锁等待须响应 context 取消并回滚未完成的业务行与 apply ledger，细则见[位置恢复与取消](./docs/transfer-基本概念及配置说明.md#位置恢复与取消)。
+
+当前仍不支持无 key append、Schema Registry、Avro、Protobuf、Kafka target、数据库 CDC replay/DLQ、普通 Oracle LOB/RAC、ArcGIS SDE 或自动 schema evolution。能力与配置说明不作为当前版本运行通过记录；提交顺序、DLQ/replay、来源隔离、恢复与回滚等须分别验收，标准入口与证据见[Continuous 验收边界](./docs/transfer-基本概念及配置说明.md#continuous-验收边界)及本页[启动与验证](#启动与验证)。
 
 ## API
 
