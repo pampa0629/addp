@@ -232,7 +232,9 @@ Cleanup 使用 Common 持久 Runner，System 预建子执行，Transfer 不消�
 
 ## 前端公开路由
 
-- “传输任务”列表页提供传输任务创建助手，由 Copilot `/api/v1/copilot/transfer/generate` 只识别源资源意图；向导调用 Manager 搜索/资源事实和 Meta 祖先链得到真实候选，确认时重读 owner 事实，目标继续使用共享资源树。唯一候选也必须由用户确认；之后在助手内依次确认目标引擎、目标父位置、目标表、字段映射和任务配置。声明 `limits.table_write.decimal` 的新目标表复用 Transfer 字段定义推荐 API，按目标 capability 校验基于源数据生成并展示确认；不得按 MySQL、OceanBase 等 `engine_type` 建立名单。Copilot 接口只消费上下文，不调用资源 owner、不创建或启动任务；最终仍使用本模块 `task-definitions` API 和 `transfer.task.create` 权限，由 Transfer 独立校验。
+- 创建助手的发现与确认：“传输任务”列表页通过 Copilot `/api/v1/copilot/transfer/generate` 提取源资源意图，再由向导调用 Manager 搜索／资源事实与 Meta 祖先链取得真实候选；确认时重读 Owner 事实，唯一候选也须用户确认。目标沿用共享资源树，之后依次确认目标引擎、目标父位置、目标表、字段映射和任务配置。
+- 生成与保存：配置确认后向同一 Copilot 接口提交资源上下文与完整草稿作受限生成；Copilot 不调用资源 Owner、不创建或启动任务，分工与生成约束统一见[Transfer 草稿契约](../docs/spec/addp智能体Tool开放规范.md#47-平台-transfer-语义与创建)。最终由 Transfer 按当前创建权限与唯一 `task-definitions` API 独立校验保存，不以生成成功证明资源、授权或执行成功。
+- 字段推荐：声明 `limits.table_write.decimal` 的新目标表复用 Transfer 字段定义推荐，按目标 capability 校验并展示供确认，不按 `engine_type` 建立名单。字段与精度规则见[field_mapping 配置](docs/transfer-基本概念及配置说明.md#五field_mapping-transform)；真实源值读取与 `transfer.task.create` 权限边界见[核心 API](#核心-api)，能力展示不代替[实际验收](#开发与验证)。
 
 - Transfer 不提供模块级全局执行列表或监控面板；任务列表通过 `MonitorExecutionsButton(module=transfer, task_type=sync)` 进入统一 Monitor。任务详情保留当前任务的执行历史和 Transfer 领域诊断、结果、重试操作，单次领域详情继续使用 `ExecutionDetail`。
 
