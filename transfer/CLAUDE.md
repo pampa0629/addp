@@ -145,6 +145,24 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 - bounded 写后、continuous 首次扫描和结构变更审批后的扫描只覆盖实际目标表，不枚举所属 schema／database；缺少精确表身份时不得提交全引擎扫描。T1 通过实际 Meta HTTP 请求断言范围，沿现有 Transfer 后端与 CI 自动发现。
 - 修改 API 后同步 Swagger：`bash scripts/swagger/gen-swagger.sh transfer` 和 `bash scripts/swagger/check-route-coverage.sh transfer`。
 
+### bounded 失败诊断
+
+Transfer bounded 执行失败的诊断沿既有 `error_details.code` 输出：不可证明查询输出血缘的类型化 `plugin.ErrQueryOutputLineageUnresolved`（含逐层 `%w` 包装）在唯一完成事务中保存 `query_output_lineage_unresolved`。执行完成内部接口传递 error，不先转字符串再猜测原因；私有 message 仍仅用于内部诊断，专业响应继续通过 Common Observation 隐藏原始文本。Hosted 派生查询拒绝验收只匹配该稳定 code、failed 终态、本次执行身份、零写入与空目标前后事实，不消费已删除的 error_msg，也不把连接错误或同文案字符串当作保护拒绝。T1 覆盖类型化／包装／无关错误、当前租约下完成与专业响应隐藏文本；现有 Transfer PostgreSQL 读取隔离门禁复验诊断字段及权限，已有门禁登记承接，不新增数据库或测试入口。
+
+Transfer bounded 保护失败在实际边界保留类型化准备／结果标记，唯一完成事务据此写入 `addp.execution-failure/v3` 的 `data_protection_required` 原因；血缘不可证明仍保留原稳定 `query_output_lineage_unresolved` 码，其他保护拒绝使用 `data_protection_required`。专业详情复用共享 ExecutionFailure，与 Monitor 消费同一安全诊断，不显示原始错误正文；Provider 类型化查询错误与 SQLSTATE 优先保留原查询失败性质，连接／普通读取错误不能仅凭相同文案误判为保护拒绝。现有 T1、Transfer 前端与 PostgreSQL 门禁、Security Hosted suite 自动发现承接，不新增入口或依赖。
+
+### 生产来源与写后扫描
+
+后台产物扫描归属：人工 start/resume/replay 固化本次 User 的完整主体；编排继承已验证父主体；continuous 自动恢复复制同任务上一轮来源及 retry 关联，不复制授权或 lease。bounded 先按当前 lease 保存实际 outputs 与 writer refs，再提交 `source=transfer` 和父 execution UUID；continuous 初次扫描先在私有 lease fencing 事务内保存 prepared target。Meta 拒绝无来源 Service 扫描，Transfer 保存安全扫描反馈；自有 bounded scheduled 复用 System Task Authorization Subject：带 Cron 定义的创建、更新与恢复从当前 User 同步授权，保存与 apply identity／定义摘要绑定的完整主体；暂停清除本地授权，触发前重核 System 当前资格并在 due claim 事务核对定义及主体，缺失或失效不创建 execution、不推进计划。结构审批在同一应用事务保存审批人的完整来源、实际目标及 revision，再由既有 claim 事务同步 token／期限；Meta 锁定核验 Common 中的已应用事实后创建独立扫描，不读取 Transfer 私表、不借旧执行身份。Manager 导入的创建/启动只在同步请求内转发 User 凭据。已有 Go、PostgreSQL 与 Swagger 门禁覆盖，无新增测试入口或数据库。
+
+结构审批补扫的正式来源为 `schema_change_source`，只引用触发阻塞的 execution、审批 request 和当前 claim。Common 私有 `schema_change_scan_origin` 保存实际应用目标与本次审批 User 的来源，专业诊断不暴露该对象；原阻塞 execution 的主体不变，新扫描无父 execution，并按审批人隔离读取。T1/T2 沿现有 Meta 专业读取与 Transfer 结构阻塞门禁验证；continuous Hosted 套件增加真实 nullable 字段变更、审批补扫、新字段 Meta 事实、幂等审批和 resume 后物理提交与范围不变检查。
+
+Manager 导入的 Infra source 由当前 bounded execution 的完整 User 来源和绑定任务经 Manager Owner 核验后读取，使用 `manager.import_provenance.read`；未知、未绑定、跨租户、非上传者或 Owner 不可用时拒绝。通用 content／format reader 保持唯一实现，业务来源仍走既有 Security Gate，不以 Infra 路径作为许可。
+
+### Cleanup 执行边界
+
+Cleanup 使用 Common 持久 Runner，System 预建子执行，Transfer 不消费旧 Redis Cleanup 请求。外部效果先持久登记准确目标并复核原用户授权，未知效果不重发；原运行体迟到停止证明只更新私有控制事实。专业结果、公共回执及最终任务变更同事务提交。`runtime_sessions`／`cleanup_operations` 不随普通任务私有状态删除而抹除，不自动开放曾发生外部清理的任务。首期 closed Tenant 与无可信 User 来源的清理继续阻断。标准验证为 `make test-module MODULE=transfer GO_ONLY=1`、`make test-transfer-postgres`，后者按包串行执行并包含 Cleanup Owner 原子性与 runtime fencing 场景；不据此声称真实 Kafka/CDC 或 Hosted 清理通过。
+
 ## 前端公开路由
 
 - Transfer 前端遵守 `docs/spec/addp前端路由与可恢复状态规范.md`，模块内公开导航统一通过 `src/utils/moduleNavigation.js`。
@@ -165,6 +183,8 @@ Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角�
 真实 T4 的专用身份、最小权限与独占部署遵循[Online 规范](../docs/spec/testing/T4-Online验收规范.md)，不复用个人开发服务或扩大生产权限。以下分版本证据只适用于所列源码和运行尝试，不代表当前 HEAD 已重跑；标准门禁、runner 回归、实际运行与历史结论分别认定，未运行、失败、跳过和未覆盖项不计为通过。各后续增强的独有验收边界见[清单验收范围与证据](../docs/next/transfer后续能力清单.md#六验收范围与证据)。
 
 ### 专项约束与分版本证据
+
+专题导航：[bounded 失败诊断与配置预检](#bounded-失败诊断与配置预检)、[continuous 精确扫描与审批归属](#continuous-精确扫描与审批归属)、[bounded 定时授权验收](#bounded-定时授权验收)。
 
 连续执行浏览器验收复用同一 Hosted suite 与 Console canonical 路由，在真实事件已提交后核对时间线、自动刷新的新增计数、恢复来源与失败原因。正式撤权仍由 Python 夹具沿既有 IAM 入口执行；浏览器先确认已展示授权详情，再核对旧内容清空和重新登录后的 Monitor-only 拒绝。私有阶段控制文件与浏览器原始输出不归档；只归档闭合报告和安全页面截图。门禁继续使用 `make test-transfer-continuous-online-runner`，新增 ES module 语法校验，真实部署入口准备 Chromium；登记校验同时检查这些接线。
 
@@ -193,6 +213,44 @@ continuous 的 claim、累计提交计数与终态复用 `common.execution_event
 2026-10-16，提交 `dcd74b58c` 的 [Hosted T4 38884014630](https://github.com/pampa0629/addp/actions/runs/38884014630) 已通过并下载报告独立核对：`field_lineage.precise_scan_scope` 验证三次原生表写入后，源表这一兄弟项及 schema／root 两级祖先的扫描事实和状态均不变；实际 Worker 日志的 12 次自动扫描全部提交完整表 locator，无父范围 `catalog_paths`。8 个服务构建提交一致，11 个领域资源全部删除，应用清理 passed、Infra zero_residuals；既有浏览器与血缘场景通过。此 T4 证明 bounded 原生表写后范围，continuous 初始化及结构变更补扫仍以现有 HTTP／Go 回归为依据，未扩大表述为已完成真实 CDC 扫描验收。
 
 `make test-transfer-postgres` 的测试连接与覆盖范围统一见[README 门禁说明](README.md#常规模块与专项门禁)，无需 PostGIS。Planner 的通用 PostgreSQL 连接辅助函数只检查连接；PostGIS 前置检查仅属于 GeoJSON 坐标转换等空间测试。目标覆盖回归在自身连接的 `search_path=pg_catalog` 下执行，确保本地 `addp_test` 已安装的空间扩展不会掩盖非空间测试的错误依赖；不删除扩展、不创建额外 database，仍拒绝门禁中的任何 Skip。
+
+#### bounded 失败诊断与配置预检
+
+执行约束见[bounded 失败诊断](#bounded-失败诊断)。
+
+上述安全诊断链路已在 `c322167b8` 的 [Hosted T4 38219829612](https://github.com/pampa0629/addp/actions/runs/38219829612) 经真实 MongoDB 血缘拒绝验证，既有正常保护和 Security 不可达期间的查询搬运均通过；不可证明派生查询返回稳定 `query_output_lineage_unresolved` code，零写入且目标前后为空。`make test-transfer-backend`、`make test-transfer-postgres`、Swagger 35 路由覆盖及隔离已提交前端的单元／20 项浏览器／构建验证通过，同提交 Platform CI 33 项通过。共享工作区模块聚合曾因另一轮前端迁移的四个翻译键用例失败，未计为通过；不将工作区未完成的迁移纳入本次交付。
+
+2026-10-15 原生快照配置预检按写入策略核验目标能力：replace 除普通写入外，还要求实例已登记删除能力、当前插件声明删除能力及实现 `ResourceDeleteProvider`；缺少 Meta 快照不能覆盖已知不支持，诊断定位 `/config/target/policy/apply_mode`。append 与源读取不额外要求删除。沿既有 `make test-transfer-backend` 验证新增 11 场景及全部后端用例通过；`make test-transfer-postgres` 的 11 项真实集成、`make test-transfer-frontend` 的 130 项测试／20 项浏览器／构建、Swagger 35 路由覆盖和平台来源审查均通过，Ontology Go T1 通过。完整 `make test-module MODULE=transfer` 在共享 GDAL 生命周期的 `test_failed_sync_removes_record_and_recovers/FAIL_CHECK` 和 `test_launch_owns_listener_and_cleans_up_failure` 两项 20 秒超时处失败（本组 70 项），不得计完整模块通过；未修改该共享测试或阈值。未新增测试入口、依赖或 CI 路线，原 Transfer／Platform CI 自动发现覆盖本修复。用户按标准入口重启 Transfer 后，已通过真实 Console 复验：任务 13 原 append 配置返回 supported；仅在未保存草稿改为 replace 后返回 unsupported，诊断为 `registered_native_access_not_supported`，位置 `/config/target/policy/apply_mode`。取消编辑后未更新或重新执行任务，Manager 数据项 44575 的目标预览仍为三行七字段；本轮预检修复的本机运行复验完成，不计为隔离 T4 或完整模块门禁通过。
+
+#### continuous 精确扫描与审批归属
+
+来源约束见[生产来源与写后扫描](#生产来源与写后扫描)。
+
+continuous 精确扫描范围验收沿用 `transfer-continuous-events` Hosted suite：启用 `auto_scan_metadata`，先正式扫描独立兄弟表并冻结 schema／root 扫描事实，再观察 Kafka 建表首次扫描和 CDC snapshot COMPLETED 首次扫描。目标必须从基线中不存在收敛到 deep 字段事实；恢复、普通事件和再次 resume 不得重复首次扫描，每阶段兄弟项与祖先扫描状态保持不变。两套 Transfer suite 复用 `scripts/utils/online-api.py` 的只读边界检查，API 秒精度时间先跨 tick 再触发。标准回归入口为 `make test-transfer-continuous-online-runner`，共享检查同时由 `make test-transfer-online-runner` 验证；真实 Hosted 成功后另记运行收据，不把 runner 通过当作 T4。结构变更审批补扫沿同一套件新增真实结构变更、审批和恢复场景核验。
+
+continuous Hosted 物理源准备以最终 TCP 服务成功查询 `continuous_fixture` 为就绪条件，不使用会命中 PostgreSQL 镜像临时初始化服务的 Unix socket `pg_isready`。有界等待耗尽必须在建源表及启动业务 Kafka 前失败，Hosted 退出路径继续清除当次资源。临时服务误判和耗尽拒绝由 `make test-transfer-continuous-online-runner` 中既有夹具回归覆盖，无新增入口或数据库。
+
+2026-10-16，提交 `1c40fe0351cb262bf4dae5e306e65b89f74cf517` 的 [Hosted T4 38904000444](https://github.com/pampa0629/addp/actions/runs/38904000444) 已通过，并下载归档独立核对。`precise_scan_scope` 证明 Kafka 建表与 PostgreSQL CDC snapshot COMPLETED 后各完成一次 deep 目标扫描，兄弟项及 schema／root 两级祖先扫描事实不变；实际 Worker 日志恰有两次提交，均为完整目标表 `targets`，恢复、暂停恢复和普通事件未重复扫描。5 个服务构建提交一致，10 组检查、4 个执行 UUID 和 live／recovery／revocation 三组自动浏览器检查通过；2 个任务定义清理 passed，Hosted 容器／网络／卷 zero_residuals。此收据只覆盖 continuous 首次扫描，结构审批补扫归属仍按已确认范围另行处理。
+
+首轮 [Hosted 38902870557](https://github.com/pampa0629/addp/actions/runs/38902870557) 在业务源初始化时误判 PostgreSQL 临时 Unix socket 服务就绪，建表报 `database system is shutting down`，尚未执行扫描场景；退出清理 passed、Infra zero_residuals。修复为最终 TCP 服务查询指定数据库后，`make test-transfer-continuous-online-runner` 的 34 项回归及 System 夹具 Go 测试通过，上述重跑完成真实验收；未放宽就绪条件或扫描范围断言。
+
+2026-10-16 结构审批补扫 [Hosted 38921609397](https://github.com/pampa0629/addp/actions/runs/38921609397) 在提交 `9c288cb65de32a8899fe28491c124787e791bb08` 通过，5 个服务构建身份与提交一致，11 项检查、5 个不同 Transfer execution 和 3 个浏览器阶段均通过。三次扫描分别为 Kafka 首次 prepare、CDC 快照完成、CDC additive 审批；原 CDC 目标 DataItem 4 从 `id,label` 更新为 `id,label,scan_extra`，补扫 UUID 为 `0adc7cde-44ba-4b33-8c84-a0809236c2e7`，目标仍为 `addp://engine/1/path/public/continuous_cdc_target?type=table`。同级表及两个上级节点不变；真实目标新增列及提交后的完整行集合由独立 Business fixture 验证。重复审批保留 attempt 1 和同一扫描 UUID，resume 新建执行且不再扫描。2 个定义经正式 API 删除，suite 残留 0，Infra 清理 `zero_residuals`。Worker 日志仅有两次首次扫描提交，均为单表 typed targets；第三次审批扫描由审批路径独立提交，不伪造父 execution。
+
+本轮 `make test-go` 的 22 个模块、Common／Meta／Transfer PostgreSQL、Ontology PostgreSQL／独占 FalkorDB、平台来源审查、Meta／Transfer Swagger 生成及路由覆盖、`make test-transfer-continuous-online-runner` 的 36 项回归与 System fixture Go 检查通过；现有标准入口和 CI 自动发现覆盖，无新增 Job 或数据库。不同审批人与原启动人的读取隔离由 HTTP／真实 PostgreSQL 回归覆盖，本次 Hosted 使用同一消费用户，不扩大表述为真实双用户验收。完整 `make test-platform` 两次未通过：首次在 Falkor 夹具 5 秒等待启动处失败，重跑在 dev lifecycle 的快速 Worker 标记等待处失败；同输入的 dev lifecycle 已在首次聚合通过，Falkor 夹具 9 项及真实 PG/Falkor 标准门禁独立通过，但不能计为完整聚合通过，未修改这些夹具或放宽时限。
+
+continuous 双用户审批验收沿用现有 Hosted suite 和同租户 peer：只为该隔离身份增加 `transfer.task.update` 与 `meta.scan_task.read`，不增加执行、引擎管理或管理员权限。由 peer 审批原消费 User 启动的 CDC 结构变更；Meta 补扫须归 peer、无父执行，原消费 User 不能读取该扫描，peer 不能读取原消费 User 的正式源扫描，历史 CDC 发起人保持不变。原消费 User 重复审批不得接管补扫归属，随后由原消费 User 恢复同步，继续验证单表范围、物理提交及零残留。生产权限及 API 不变，沿用 `make test-transfer-continuous-online-runner` 与同一 Hosted workflow，现有 System fixture Go、runner 与 CI 自动发现覆盖，无新增数据库、入口或 Job；真实运行结果另记收据。
+
+2026-10-17 双用户结构审批 [Hosted 38927137086](https://github.com/pampa0629/addp/actions/runs/38927137086) 在提交 `56edd478c1a1d02a455d8432236ef9034251e5f1` 通过，归档已独立核对。发起人 Principal 33 与审批人 Principal 36 属于同 Tenant、不同 Membership，均为普通 User 且持有 `meta.scan_task.read`；33 可读自己的正式源扫描而 36 返回 404，审批补扫 `55805433-e09e-4f04-abc6-80091e8b73a0` 则由 36 读取成功、33 返回 404。补扫发起人为 36、无父 execution，原 CDC 发起人 33 不变；33 再次提交同参审批仍保留 attempt 1、同一补扫 UUID 和 36 的归属。随后由 33 新建 resume execution，真实新增列与提交后的完整行集合通过独立物理检查，恢复后没有额外扫描。
+
+本轮 5 个服务构建身份与提交一致，12 项检查、5 个 Transfer execution、Kafka／CDC 初扫及审批补扫三次单表范围检查通过；兄弟项及 schema／root 两级祖先不变。Worker 日志恰有两次首次扫描提交，均为单个 typed table target。新增双用户归属场景经真实 API 验证，原 live／recovery／revocation 三组自动浏览器检查继续通过；2 个任务定义删除成功，suite 残留 0，Infra `zero_residuals`。干净源码快照中的 `make test-transfer-continuous-online-runner` 37 项回归、System fixture Go 测试和 Online CI 登记检查通过，5 个改动文件与实际测试提交逐一一致。生产权限及 API 未改，现有入口和 Hosted workflow 直接承接本轮用例。
+
+#### bounded 定时授权验收
+
+2026-10-17 自有 bounded 定时授权闭环已由 `5593d42ae`、`f277fa894` 接入现有 System Task Authorization Subject；来源冻结为 revision 27（`c05431787`）。带 Cron 定义的保存与恢复绑定本次 User 和完整定义摘要，触发前重核当前 IAM，领取事务再核对定义及主体；暂停清除调度授权，恢复只更新未来计划，不改 active execution 的配置、状态或身份。旧定义缺少主体时拒绝触发，不借创建人或旧执行补齐。任务主体的 User／Service 请求拒绝重定向，失效 User 凭据保持 401；没有新增授权实体、API 路线或测试数据库。System 000216 只支持严格 owner/type 二元组，并向 Transfer Runtime 增授既有主体解析 Permission。
+
+[Hosted 38987715068](https://github.com/pampa0629/addp/actions/runs/38987715068) 在运行时代码提交 `c0543178726054fa4245e566cadff13bf46385e0` 真实通过，独立核验了 5 个服务构建身份、13 项检查、6 个不同 Transfer UUID 与 4 次精确目标扫描。定时 execution `d2a77c47-c63e-4660-83a5-a51ea59a928b` 由真实 Cron 触发，发起人为当前授权 User 33；Meta 扫描 `835fbbf7-acfd-4713-8a2f-68d9446b90ba` 继承同一 User 和这个直接父执行。拥有读取权限的 peer 可读父执行，对该一次性子扫描仍返回 404。实际写入两行，扫描只新增 `addp://engine/1/path/public/continuous_scheduled_target?type=table`（DataItem 5，id／label 两字段）；原 Kafka／CDC 目标、兄弟项和 schema／root 两级祖先扫描事实不变。此前双用户审批、初次扫描与 live／recovery／revocation 三组浏览器验证继续通过，3 个定义删除成功，suite 残留 0、Infra `zero_residuals`。37 个归档文件未检出凭据前缀、Service Secret 赋值或业务行哨兵。
+
+最终 `make test-go` 22 个模块、Common Go T1、Transfer／Meta／Orchestrator Go T1、完整 System IAM PostgreSQL 7 个 package、Transfer／Meta PostgreSQL、Ontology PostgreSQL／独占 FalkorDB、来源审查、授权清单和 System／Transfer／Orchestrator Swagger 覆盖均通过。6 个重定向反例及 active execution 期间恢复调度完成红绿验证；IAM 门禁入口 16 项测试通过。后续 `86b4e726f` 仅修正验收失败清理：定时场景先暂停未来触发再等待当前执行结束，41 项 runner 测试与 System fixture Go 通过，55 个运行时／契约文件与该 Hosted 源码一致。现有标准入口和 CI 登记覆盖，无新增 Job。清洁快照 `1c7301253` 的完整 `make test-module MODULE=transfer` 未通过：平台 T0、后端 T1 和前端 130 项单元通过，但 MongoDB query 恢复配置的两项浏览器断言失败（24 项中 22 项通过）；前端构建及聚合后续 T2 未执行，独立后端 T2 已通过，不计完整模块聚合通过，未修改这些前端实现或测试。个人开发服务本轮未重启；更新 Common 后由用户按标准入口重启全部模块，旧定时定义须通过现有保存／恢复入口重新授权。
 
 常用日志：
 
@@ -226,44 +284,3 @@ continuous 的 claim、累计提交计数与终态复用 `common.execution_event
 本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见 `docs/spec/addp开发服务生命周期与构建身份规范.md`。
 
 原生开发的 bounded、continuous Worker 均支持默认单实例、可选双实例，分别配置 `ADDP_DEV_TRANSFER_BOUNDED_WORKER_REPLICAS` 和 `ADDP_DEV_TRANSFER_CONTINUOUS_WORKER_REPLICAS`（仅 1／2）。标准入口按编号单元管理 PID，沿正式登记传递独立进程身份与 `ADDP_HOST_NODE_ID`。持续同步双实例必须省略固定 `TRANSFER_CONTINUOUS_WORKER_INSTANCE_ID`，复用原有每进程租约 Owner 生成。启动、缩容和停止边界见上述生命周期规范；多进程部署不等于已验证业务任务竞争或 HA。
-
-Transfer bounded 执行失败的诊断沿既有 `error_details.code` 输出：不可证明查询输出血缘的类型化 `plugin.ErrQueryOutputLineageUnresolved`（含逐层 `%w` 包装）在唯一完成事务中保存 `query_output_lineage_unresolved`。执行完成内部接口传递 error，不先转字符串再猜测原因；私有 message 仍仅用于内部诊断，专业响应继续通过 Common Observation 隐藏原始文本。Hosted 派生查询拒绝验收只匹配该稳定 code、failed 终态、本次执行身份、零写入与空目标前后事实，不消费已删除的 error_msg，也不把连接错误或同文案字符串当作保护拒绝。T1 覆盖类型化／包装／无关错误、当前租约下完成与专业响应隐藏文本；现有 Transfer PostgreSQL 读取隔离门禁复验诊断字段及权限，已有门禁登记承接，不新增数据库或测试入口。
-
-上述安全诊断链路已在 `c322167b8` 的 [Hosted T4 38219829612](https://github.com/pampa0629/addp/actions/runs/38219829612) 经真实 MongoDB 血缘拒绝验证，既有正常保护和 Security 不可达期间的查询搬运均通过；不可证明派生查询返回稳定 `query_output_lineage_unresolved` code，零写入且目标前后为空。`make test-transfer-backend`、`make test-transfer-postgres`、Swagger 35 路由覆盖及隔离已提交前端的单元／20 项浏览器／构建验证通过，同提交 Platform CI 33 项通过。共享工作区模块聚合曾因另一轮前端迁移的四个翻译键用例失败，未计为通过；不将工作区未完成的迁移纳入本次交付。
-
-2026-10-15 原生快照配置预检按写入策略核验目标能力：replace 除普通写入外，还要求实例已登记删除能力、当前插件声明删除能力及实现 `ResourceDeleteProvider`；缺少 Meta 快照不能覆盖已知不支持，诊断定位 `/config/target/policy/apply_mode`。append 与源读取不额外要求删除。沿既有 `make test-transfer-backend` 验证新增 11 场景及全部后端用例通过；`make test-transfer-postgres` 的 11 项真实集成、`make test-transfer-frontend` 的 130 项测试／20 项浏览器／构建、Swagger 35 路由覆盖和平台来源审查均通过，Ontology Go T1 通过。完整 `make test-module MODULE=transfer` 在共享 GDAL 生命周期的 `test_failed_sync_removes_record_and_recovers/FAIL_CHECK` 和 `test_launch_owns_listener_and_cleans_up_failure` 两项 20 秒超时处失败（本组 70 项），不得计完整模块通过；未修改该共享测试或阈值。未新增测试入口、依赖或 CI 路线，原 Transfer／Platform CI 自动发现覆盖本修复。用户按标准入口重启 Transfer 后，已通过真实 Console 复验：任务 13 原 append 配置返回 supported；仅在未保存草稿改为 replace 后返回 unsupported，诊断为 `registered_native_access_not_supported`，位置 `/config/target/policy/apply_mode`。取消编辑后未更新或重新执行任务，Manager 数据项 44575 的目标预览仍为三行七字段；本轮预检修复的本机运行复验完成，不计为隔离 T4 或完整模块门禁通过。
-
-Transfer bounded 保护失败在实际边界保留类型化准备／结果标记，唯一完成事务据此写入 `addp.execution-failure/v3` 的 `data_protection_required` 原因；血缘不可证明仍保留原稳定 `query_output_lineage_unresolved` 码，其他保护拒绝使用 `data_protection_required`。专业详情复用共享 ExecutionFailure，与 Monitor 消费同一安全诊断，不显示原始错误正文；Provider 类型化查询错误与 SQLSTATE 优先保留原查询失败性质，连接／普通读取错误不能仅凭相同文案误判为保护拒绝。现有 T1、Transfer 前端与 PostgreSQL 门禁、Security Hosted suite 自动发现承接，不新增入口或依赖。
-
-后台产物扫描归属：人工 start/resume/replay 固化本次 User 的完整主体；编排继承已验证父主体；continuous 自动恢复复制同任务上一轮来源及 retry 关联，不复制授权或 lease。bounded 先按当前 lease 保存实际 outputs 与 writer refs，再提交 `source=transfer` 和父 execution UUID；continuous 初次扫描先在私有 lease fencing 事务内保存 prepared target。Meta 拒绝无来源 Service 扫描，Transfer 保存安全扫描反馈；自有 bounded scheduled 复用 System Task Authorization Subject：带 Cron 定义的创建、更新与恢复从当前 User 同步授权，保存与 apply identity／定义摘要绑定的完整主体；暂停清除本地授权，触发前重核 System 当前资格并在 due claim 事务核对定义及主体，缺失或失效不创建 execution、不推进计划。结构审批在同一应用事务保存审批人的完整来源、实际目标及 revision，再由既有 claim 事务同步 token／期限；Meta 锁定核验 Common 中的已应用事实后创建独立扫描，不读取 Transfer 私表、不借旧执行身份。Manager 导入的创建/启动只在同步请求内转发 User 凭据。已有 Go、PostgreSQL 与 Swagger 门禁覆盖，无新增测试入口或数据库。
-
-continuous 精确扫描范围验收沿用 `transfer-continuous-events` Hosted suite：启用 `auto_scan_metadata`，先正式扫描独立兄弟表并冻结 schema／root 扫描事实，再观察 Kafka 建表首次扫描和 CDC snapshot COMPLETED 首次扫描。目标必须从基线中不存在收敛到 deep 字段事实；恢复、普通事件和再次 resume 不得重复首次扫描，每阶段兄弟项与祖先扫描状态保持不变。两套 Transfer suite 复用 `scripts/utils/online-api.py` 的只读边界检查，API 秒精度时间先跨 tick 再触发。标准回归入口为 `make test-transfer-continuous-online-runner`，共享检查同时由 `make test-transfer-online-runner` 验证；真实 Hosted 成功后另记运行收据，不把 runner 通过当作 T4。结构变更审批补扫沿同一套件新增真实结构变更、审批和恢复场景核验。
-
-continuous Hosted 物理源准备以最终 TCP 服务成功查询 `continuous_fixture` 为就绪条件，不使用会命中 PostgreSQL 镜像临时初始化服务的 Unix socket `pg_isready`。有界等待耗尽必须在建源表及启动业务 Kafka 前失败，Hosted 退出路径继续清除当次资源。临时服务误判和耗尽拒绝由 `make test-transfer-continuous-online-runner` 中既有夹具回归覆盖，无新增入口或数据库。
-
-2026-10-16，提交 `1c40fe0351cb262bf4dae5e306e65b89f74cf517` 的 [Hosted T4 38904000444](https://github.com/pampa0629/addp/actions/runs/38904000444) 已通过，并下载归档独立核对。`precise_scan_scope` 证明 Kafka 建表与 PostgreSQL CDC snapshot COMPLETED 后各完成一次 deep 目标扫描，兄弟项及 schema／root 两级祖先扫描事实不变；实际 Worker 日志恰有两次提交，均为完整目标表 `targets`，恢复、暂停恢复和普通事件未重复扫描。5 个服务构建提交一致，10 组检查、4 个执行 UUID 和 live／recovery／revocation 三组自动浏览器检查通过；2 个任务定义清理 passed，Hosted 容器／网络／卷 zero_residuals。此收据只覆盖 continuous 首次扫描，结构审批补扫归属仍按已确认范围另行处理。
-
-首轮 [Hosted 38902870557](https://github.com/pampa0629/addp/actions/runs/38902870557) 在业务源初始化时误判 PostgreSQL 临时 Unix socket 服务就绪，建表报 `database system is shutting down`，尚未执行扫描场景；退出清理 passed、Infra zero_residuals。修复为最终 TCP 服务查询指定数据库后，`make test-transfer-continuous-online-runner` 的 34 项回归及 System 夹具 Go 测试通过，上述重跑完成真实验收；未放宽就绪条件或扫描范围断言。
-
-结构审批补扫的正式来源为 `schema_change_source`，只引用触发阻塞的 execution、审批 request 和当前 claim。Common 私有 `schema_change_scan_origin` 保存实际应用目标与本次审批 User 的来源，专业诊断不暴露该对象；原阻塞 execution 的主体不变，新扫描无父 execution，并按审批人隔离读取。T1/T2 沿现有 Meta 专业读取与 Transfer 结构阻塞门禁验证；continuous Hosted 套件增加真实 nullable 字段变更、审批补扫、新字段 Meta 事实、幂等审批和 resume 后物理提交与范围不变检查。
-
-Manager 导入的 Infra source 由当前 bounded execution 的完整 User 来源和绑定任务经 Manager Owner 核验后读取，使用 `manager.import_provenance.read`；未知、未绑定、跨租户、非上传者或 Owner 不可用时拒绝。通用 content／format reader 保持唯一实现，业务来源仍走既有 Security Gate，不以 Infra 路径作为许可。
-
-2026-10-16 结构审批补扫 [Hosted 38921609397](https://github.com/pampa0629/addp/actions/runs/38921609397) 在提交 `9c288cb65de32a8899fe28491c124787e791bb08` 通过，5 个服务构建身份与提交一致，11 项检查、5 个不同 Transfer execution 和 3 个浏览器阶段均通过。三次扫描分别为 Kafka 首次 prepare、CDC 快照完成、CDC additive 审批；原 CDC 目标 DataItem 4 从 `id,label` 更新为 `id,label,scan_extra`，补扫 UUID 为 `0adc7cde-44ba-4b33-8c84-a0809236c2e7`，目标仍为 `addp://engine/1/path/public/continuous_cdc_target?type=table`。同级表及两个上级节点不变；真实目标新增列及提交后的完整行集合由独立 Business fixture 验证。重复审批保留 attempt 1 和同一扫描 UUID，resume 新建执行且不再扫描。2 个定义经正式 API 删除，suite 残留 0，Infra 清理 `zero_residuals`。Worker 日志仅有两次首次扫描提交，均为单表 typed targets；第三次审批扫描由审批路径独立提交，不伪造父 execution。
-
-本轮 `make test-go` 的 22 个模块、Common／Meta／Transfer PostgreSQL、Ontology PostgreSQL／独占 FalkorDB、平台来源审查、Meta／Transfer Swagger 生成及路由覆盖、`make test-transfer-continuous-online-runner` 的 36 项回归与 System fixture Go 检查通过；现有标准入口和 CI 自动发现覆盖，无新增 Job 或数据库。不同审批人与原启动人的读取隔离由 HTTP／真实 PostgreSQL 回归覆盖，本次 Hosted 使用同一消费用户，不扩大表述为真实双用户验收。完整 `make test-platform` 两次未通过：首次在 Falkor 夹具 5 秒等待启动处失败，重跑在 dev lifecycle 的快速 Worker 标记等待处失败；同输入的 dev lifecycle 已在首次聚合通过，Falkor 夹具 9 项及真实 PG/Falkor 标准门禁独立通过，但不能计为完整聚合通过，未修改这些夹具或放宽时限。
-
-continuous 双用户审批验收沿用现有 Hosted suite 和同租户 peer：只为该隔离身份增加 `transfer.task.update` 与 `meta.scan_task.read`，不增加执行、引擎管理或管理员权限。由 peer 审批原消费 User 启动的 CDC 结构变更；Meta 补扫须归 peer、无父执行，原消费 User 不能读取该扫描，peer 不能读取原消费 User 的正式源扫描，历史 CDC 发起人保持不变。原消费 User 重复审批不得接管补扫归属，随后由原消费 User 恢复同步，继续验证单表范围、物理提交及零残留。生产权限及 API 不变，沿用 `make test-transfer-continuous-online-runner` 与同一 Hosted workflow，现有 System fixture Go、runner 与 CI 自动发现覆盖，无新增数据库、入口或 Job；真实运行结果另记收据。
-
-2026-10-17 双用户结构审批 [Hosted 38927137086](https://github.com/pampa0629/addp/actions/runs/38927137086) 在提交 `56edd478c1a1d02a455d8432236ef9034251e5f1` 通过，归档已独立核对。发起人 Principal 33 与审批人 Principal 36 属于同 Tenant、不同 Membership，均为普通 User 且持有 `meta.scan_task.read`；33 可读自己的正式源扫描而 36 返回 404，审批补扫 `55805433-e09e-4f04-abc6-80091e8b73a0` 则由 36 读取成功、33 返回 404。补扫发起人为 36、无父 execution，原 CDC 发起人 33 不变；33 再次提交同参审批仍保留 attempt 1、同一补扫 UUID 和 36 的归属。随后由 33 新建 resume execution，真实新增列与提交后的完整行集合通过独立物理检查，恢复后没有额外扫描。
-
-本轮 5 个服务构建身份与提交一致，12 项检查、5 个 Transfer execution、Kafka／CDC 初扫及审批补扫三次单表范围检查通过；兄弟项及 schema／root 两级祖先不变。Worker 日志恰有两次首次扫描提交，均为单个 typed table target。新增双用户归属场景经真实 API 验证，原 live／recovery／revocation 三组自动浏览器检查继续通过；2 个任务定义删除成功，suite 残留 0，Infra `zero_residuals`。干净源码快照中的 `make test-transfer-continuous-online-runner` 37 项回归、System fixture Go 测试和 Online CI 登记检查通过，5 个改动文件与实际测试提交逐一一致。生产权限及 API 未改，现有入口和 Hosted workflow 直接承接本轮用例。
-
-
-2026-10-17 自有 bounded 定时授权闭环已由 `5593d42ae`、`f277fa894` 接入现有 System Task Authorization Subject；来源冻结为 revision 27（`c05431787`）。带 Cron 定义的保存与恢复绑定本次 User 和完整定义摘要，触发前重核当前 IAM，领取事务再核对定义及主体；暂停清除调度授权，恢复只更新未来计划，不改 active execution 的配置、状态或身份。旧定义缺少主体时拒绝触发，不借创建人或旧执行补齐。任务主体的 User／Service 请求拒绝重定向，失效 User 凭据保持 401；没有新增授权实体、API 路线或测试数据库。System 000216 只支持严格 owner/type 二元组，并向 Transfer Runtime 增授既有主体解析 Permission。
-
-[Hosted 38987715068](https://github.com/pampa0629/addp/actions/runs/38987715068) 在运行时代码提交 `c0543178726054fa4245e566cadff13bf46385e0` 真实通过，独立核验了 5 个服务构建身份、13 项检查、6 个不同 Transfer UUID 与 4 次精确目标扫描。定时 execution `d2a77c47-c63e-4660-83a5-a51ea59a928b` 由真实 Cron 触发，发起人为当前授权 User 33；Meta 扫描 `835fbbf7-acfd-4713-8a2f-68d9446b90ba` 继承同一 User 和这个直接父执行。拥有读取权限的 peer 可读父执行，对该一次性子扫描仍返回 404。实际写入两行，扫描只新增 `addp://engine/1/path/public/continuous_scheduled_target?type=table`（DataItem 5，id／label 两字段）；原 Kafka／CDC 目标、兄弟项和 schema／root 两级祖先扫描事实不变。此前双用户审批、初次扫描与 live／recovery／revocation 三组浏览器验证继续通过，3 个定义删除成功，suite 残留 0、Infra `zero_residuals`。37 个归档文件未检出凭据前缀、Service Secret 赋值或业务行哨兵。
-
-最终 `make test-go` 22 个模块、Common Go T1、Transfer／Meta／Orchestrator Go T1、完整 System IAM PostgreSQL 7 个 package、Transfer／Meta PostgreSQL、Ontology PostgreSQL／独占 FalkorDB、来源审查、授权清单和 System／Transfer／Orchestrator Swagger 覆盖均通过。6 个重定向反例及 active execution 期间恢复调度完成红绿验证；IAM 门禁入口 16 项测试通过。后续 `86b4e726f` 仅修正验收失败清理：定时场景先暂停未来触发再等待当前执行结束，41 项 runner 测试与 System fixture Go 通过，55 个运行时／契约文件与该 Hosted 源码一致。现有标准入口和 CI 登记覆盖，无新增 Job。清洁快照 `1c7301253` 的完整 `make test-module MODULE=transfer` 未通过：平台 T0、后端 T1 和前端 130 项单元通过，但 MongoDB query 恢复配置的两项浏览器断言失败（24 项中 22 项通过）；前端构建及聚合后续 T2 未执行，独立后端 T2 已通过，不计完整模块聚合通过，未修改这些前端实现或测试。个人开发服务本轮未重启；更新 Common 后由用户按标准入口重启全部模块，旧定时定义须通过现有保存／恢复入口重新授权。
-
-Cleanup 使用 Common 持久 Runner，System 预建子执行，Transfer 不消费旧 Redis Cleanup 请求。外部效果先持久登记准确目标并复核原用户授权，未知效果不重发；原运行体迟到停止证明只更新私有控制事实。专业结果、公共回执及最终任务变更同事务提交。`runtime_sessions`／`cleanup_operations` 不随普通任务私有状态删除而抹除，不自动开放曾发生外部清理的任务。首期 closed Tenant 与无可信 User 来源的清理继续阻断。标准验证为 `make test-module MODULE=transfer GO_ONLY=1`、`make test-transfer-postgres`，后者按包串行执行并包含 Cleanup Owner 原子性与 runtime fencing 场景；不据此声称真实 Kafka/CDC 或 Hosted 清理通过。
