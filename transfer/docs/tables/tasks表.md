@@ -1,8 +1,10 @@
 # transfer.transfer_tasks 表说明
 
-更新时间：2026-10-31
+更新时间：2026-11-02
 
 `transfer.transfer_tasks` 存储 Transfer 任务定义。任务的执行历史不在本表中保存，统一写入 `common.task_executions`。
+
+阅读导航：[首次扫描](#首次扫描的提交与结果核对)、[配置结构](#二config-字段结构)、[任务状态](#四任务状态)、[用户入口](#用户任务定义与控制)、[TaskProvider 入口](#taskprovider-机器发现与执行)、[执行、恢复与验收](#执行恢复与验收边界)。
 
 ## 一、核心字段
 
@@ -39,7 +41,7 @@
 
 上述 `initial_metadata_scan_*` 是私有持久字段，不直接序列化为公开 DTO，也不授予 Meta 读取或执行权限。`success` 或保存的 Meta execution UUID 仅记录提交结果；是否完成、目标 attributes 是否正确，须通过已授权的 Meta 入口核对对应 execution 与目标事实，不能以任务数据面继续运行代替。
 
-字段、状态或静态接线不等于真实扫描验收通过；固定版本证据、失败记录和未覆盖项统一见[模块验证](../../CLAUDE.md#开发与验证)。未运行、失败或未覆盖项分别记录，不计为通过。
+bounded 与 continuous 扫描的固定版本、失败和清理结果分别见[SQL ETL 与 bounded 写后扫描](../../CLAUDE.md#sql-etl-与-bounded-写后扫描)、[continuous 精确扫描与审批](../../CLAUDE.md#continuous-精确扫描与审批归属)；标准入口和通用判定见[本表验收导航](#执行恢复与验收边界)，字段、状态或静态接线不作为扫描通过证据。
 
 ## 二、config 字段结构
 
@@ -165,4 +167,8 @@ bounded 的 `/task-definitions/:id/resume` 是调度控制 API；PostgreSQL/MySQ
 
 恢复分级与 snapshot 重跑条件统一见[恢复契约](../transfer-基本概念及配置说明.md#恢复分级)，continuous 的真实停止与恢复闭环见[生命周期](../transfer-任务语义与同步模式.md#64-生命周期)。bounded pause/resume 不中断 active execution；continuous stop 不等于整个 `sync` task type 已支持标准取消。当前 TaskProvider `supports_cancel=false`，不提供标准 execution cancel 入口，`transfer.task.cancel` 仍为 disabled。
 
-此清单仅对应当前路由与权限声明；标准验证入口、固定版本证据、失败与未覆盖项统一见[开发与验证](../../CLAUDE.md#开发与验证)。静态核对不等于用户页面或 Orchestrator 经实际入口、认证与 Tenant 授权到 Worker 的完整执行通过；任务创建、执行入队、运行成功、断点恢复和真实停止应分别核对，未运行或未覆盖项不计为通过。
+此清单仅对应当前路由与权限声明；静态核对不等于用户页面或 Orchestrator 经实际入口、认证与 Tenant 授权到 Worker 的完整执行通过。任务创建、执行入队、运行成功、断点恢复和真实停止应分别核对。
+
+测试分层遵循[测试与验收规范](../../../docs/spec/addp测试与验收规范.md#三标准入口)，具体命令与环境前提见[README 标准门禁](../../README.md#常规模块与专项门禁)；Oracle CDC 专项缺口、测试隔离和通用持久化要求统一见[数据库验收导航](../数据库架构.md#持久化与恢复验收)，不在本表重复命令清单。
+
+固定版本、有效证据、失败与修复、清理及未覆盖项统一见[分版本证据索引](../../CLAUDE.md#专项约束与分版本证据)；真实 Cron 与子扫描隔离另见[bounded 定时授权证据](../../CLAUDE.md#bounded-定时授权验收)。各轮结果仅适用于所列源码与运行尝试，不代表当前 HEAD 已重跑；未运行、失败、跳过或未覆盖项不计为通过。
