@@ -207,13 +207,14 @@ async function handleSubmit() {
     )
 
     submitting.value = true
-    const success = isEditMode.value
+    const result = isEditMode.value
       ? await wizardState.updateTask(taskId.value)
       : await wizardState.submitTask()
 
-    if (success) {
+    if (result) {
       if (authStore.hasPermission('transfer.task.read')) {
-        await navigateTransferRoute(router, '/tasks', { history: 'replace' })
+        const target = isEditMode.value ? '/tasks' : `/tasks/${result.id}/detail`
+        await navigateTransferRoute(router, target, { history: 'replace' })
       } else {
         wizardState.reset()
       }

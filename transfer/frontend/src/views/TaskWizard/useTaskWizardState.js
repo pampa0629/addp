@@ -977,7 +977,7 @@ export function useTaskWizardState() {
       } else {
         ElMessage.success(t('transfer.taskWizard.taskCreateSuccess'))
       }
-      return true
+      return task
     } catch (error) {
       const message = error.response?.data?.error || error.response?.data?.message || error.message || t('transfer.taskWizard.taskCreateFailed')
       ElMessage.error(message)

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><title>Transfer task navigation fixture</title></head>
+<body><div id="app"></div><script type="module">
+// Mount production pages/router with a synthetic session and intercepted APIs.
+// The parent fixture exercises the real shared bridge, without a live Console.
+import { registerConsoleBridgeHandler } from '@common-ui/utils/consoleBridge'
+if (location.pathname.startsWith('/transfer/')) {
+  let iframe
+  function loadIframe() {
+    const next = document.createElement('iframe')
+    next.style = 'width:100%;height:95vh;border:0'
+    next.src = location.pathname.slice('/transfer'.length)
+    if (iframe) iframe.replaceWith(next)
+    else document.querySelector('#app').append(next)
+    iframe = next
+  }
+  loadIframe()
+  window.fixtureNavigations = []
+  registerConsoleBridgeHandler('console-navigation', (payload, _message, event) => {
+    if (event.source !== iframe.contentWindow || event.origin !== location.origin) throw new Error('Invalid fixture source')
+    if (!payload.synchronized || !payload.route.startsWith('/transfer/')) throw new Error('Invalid fixture route')
+    if (!payload.pageDescriptor) window.fixtureNavigations.push(payload)
+    history[`${payload.history}State`](null, '', payload.route)
+    return { cancelled: false }
+  })
+  // Console recreates its iframe on external history navigation, preserving forward history.
+  addEventListener('popstate', loadIframe)
+} else {
+  const [{ createApp }, { createPinia }, { default: ElementPlus }, { createAddpI18n },
+    { default: App }, { default: router }, { useAuthStore }, { default: zh }, { default: en }] = await Promise.all([
+    import('vue'), import('pinia'), import('element-plus'), import('@common-ui/composables/useAddpI18n'),
+    import('../../src/App.vue'), import('../../src/router/index.js'), import('../../src/store/auth.js'),
+    import('../../src/i18n/zh-cn.json'), import('../../src/i18n/en.json')
+  ])
+  await import('element-plus/dist/index.css')
+  await import('../../../../common-frontend/basic/src/styles/theme.css')
+  const pinia = createPinia()
+  const auth = useAuthStore(pinia)
+  auth.bindAuthSession()
+  auth.token = 'synthetic-transfer-navigation'
+  auth.sessionInitialized = true
+  auth.authContext = {
+    principal: { type: 'user', id: '900001' }, context: { type: 'tenant', tenant_id: '900001' },
+    authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '900001' },
+      permissions: JSON.parse(localStorage.getItem('fixture-transfer-permissions')) }] }
+  }
+  const { i18n, init } = createAddpI18n({ moduleMessages: { 'zh-cn': zh, en }, listenToConsole: false })
+  init()
+  window.fixtureInstance = crypto.randomUUID()
+  createApp(App).use(pinia).use(router).use(i18n).use(ElementPlus).mount('#app')
+}
+</script></body></html>
