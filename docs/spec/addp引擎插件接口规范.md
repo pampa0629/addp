@@ -730,7 +730,7 @@ Spark 采用该协议时，HTTP 查询入口集成在现有内置 Spark Runtime�
 
 Spark 首期关系联邦查询在独立 Driver 中使用固定版本 Catalyst 的未解析语法树校验，再执行同一 SQL；不能先调用 `SparkSession.sql` 再判断是否只读，因为该调用可能立即执行命令。只允许已验证的查询节点、纯内置表达式及本次授权 JDBC Catalog 的三段式表引用；CTE 和子查询递归检查，未知节点、函数、外部路径、临时视图、表值函数及所有命令均拒绝。每个 Driver 使用独立会话，执行前不继承工作流 Catalog、UDF 或扩展。该技术准入不等于查询 HTTP、工作台或运行授权链路已验收，未完成后者时仍不得开放查询能力。
 
-Spark 3.5.0 查询 Driver 在原生 JDBC Catalog 上加载固定构建的标识符转义方言：PostgreSQL 名称内双引号、MySQL 名称内反引号均加倍转义；不改写物理名称、不建立替代 Catalog。查询专用SparkPlugin在Driver和Executor均安装同一方言，确保Worker实际拼接下推谓词时也正确转义；不修改Business Worker部署。方言使用 Spark 原生聚合机制保留内置 JDBC 类型映射，仅覆盖标识符引用。源码随 Runtime 提交，按固定 Spark JAR 输入构建 Java 11 字节码，开发准备、镜像构建及隔离 T2 负责构建；查询只验证输入／产物指纹并加载，缺失或过期直接拒绝，禁止请求内编译或下载代码。
+Spark 3.5.0 查询 Driver 在原生 JDBC Catalog 上加载固定构建的标识符转义方言：PostgreSQL 名称内双引号、MySQL 名称内反引号均加倍转义；不改写物理名称、不建立替代 Catalog。查询专用SparkPlugin在Driver和Executor均安装同一方言，确保Worker实际拼接下推谓词时也正确转义；不修改Business Worker部署。查询 JVM 内以唯一的精确引用适配替换对应内置方言，不叠加 Spark AggregatedDialect；保留内置类型映射、读取前处理、表达式及排序/分页语义，仅修正标识符引用。MySQL 继续使用其原生 SQL Builder 处理空值排序，不向数据库发送通用 NULLS FIRST/LAST 语法。源码随 Runtime 提交，按固定 Spark JAR 输入构建 Java 11 字节码，开发准备、镜像构建及隔离 T2 负责构建；查询只验证输入／产物指纹并加载，缺失或过期直接拒绝，禁止请求内编译或下载代码。
 
 Develop 在联邦查询入队前，将所选目标 ID、实际 Runtime ID、执行受众及独立的 Source Engine ID 集合冻结到 execution 私有快照。执行领取后只复核这些固定身份的当前有效性与能力，不按同名源或当前候选重新选取；缺失或不完整的快照直接拒绝，不兼容旧快照。计算目标可作为执行授权中的独立访问范围，但不得混入发送给 Runtime 的数据源集合。此规则同时适用于目标自身就是 Runtime 的 DuckDB 与委托内置 Runtime 的计算集群，不按引擎名称分支。
 

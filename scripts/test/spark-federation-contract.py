@@ -135,6 +135,27 @@ def main(phase):
                 ON o.` customer"id ` = c.`customer``id` WHERE o.` customer"id ` >= ? ORDER BY o.id''',
             'args': [1], 'limit': 10,
         }
+        # A single MySQL table can push Top-N into JDBC. The exact-identifier
+        # extension must preserve native MySQL null ordering as well as quotes;
+        # a cross-source JOIN does not exercise this path.
+        for sql, expected in [
+            ('SELECT id, label FROM Business_MySQL.addp_test.customers ORDER BY id LIMIT 1',
+             [{'id': 1, 'label': '中文  '}]),
+            ('SELECT `customer``id` AS id, `中文``label` AS label FROM Business_MySQL.addp_test.`custom``ers` '
+             'WHERE `customer``id` >= ? ORDER BY `中文``label` DESC NULLS FIRST LIMIT 1',
+             [{'id': 2, 'label': None}]),
+        ]:
+            mysql_request = dict(request, catalogs=[request['catalogs'][1]], query=sql,
+                                 args=[1] if '?' in sql else [])
+            mysql_prepared = PreparedDriver([sys.executable, '/addp/query_driver.py'], mysql_request, timeout=120)
+            try:
+                assert mysql_prepared.facts['engine_read_scope'] == {'engine_ids': [12]}
+                assert not mysql_prepared.path.exists()
+                mysql_result = mysql_prepared.execute()
+                assert mysql_result.get('rows') == expected, mysql_result
+            finally:
+                mysql_prepared.close()
+        print('SPARK_MYSQL_NATIVE_TOP_N_PASS ordinary_order_limit quoted_predicate nullable_order same_prepared_driver', flush=True)
         prepared = PreparedDriver([sys.executable, '/addp/query_driver.py'], request, timeout=120)
         try:
             assert prepared.facts['engine_read_scope'] == {'engine_ids': [11, 12]}, prepared.facts

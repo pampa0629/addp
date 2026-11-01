@@ -247,11 +247,11 @@ func (s *FederatedQueryService) ExecuteQuery(
 		if !ok {
 			return nil, fmt.Errorf("%w: prepared federation gate unavailable", protection.ErrRequired)
 		}
-		prepared, finish, err := gate.BeginFederatedQuery(ctx, tenantID, func(ctx context.Context) (plugin.PreparedFederatedQuery, error) {
+		prepared, finish, prepareErr := gate.BeginFederatedQuery(ctx, tenantID, func(ctx context.Context) (plugin.PreparedFederatedQuery, error) {
 			return preparer.PrepareFederatedQuery(ctx, plugin.ConnectionInfo(binding.Runtime.AsEngine().ConnectionInfo), req)
 		})
-		if err != nil {
-			return nil, err
+		if prepareErr != nil {
+			return nil, prepareErr
 		}
 		defer finish()
 		result, err = prepared.Execute(ctx)
