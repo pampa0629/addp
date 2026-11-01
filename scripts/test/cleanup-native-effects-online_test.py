@@ -70,7 +70,7 @@ class NativeCleanupRunnerTest(unittest.TestCase):
             context={'engine_id': 9}, requested_by=17, action='scan', expected_modules=list(S.CONTRACT['cleanup_owners_by_cause']['engine.deleting'])),
             module_executions=[dict(module='transfer', execution_id=child, parent_execution_id=parent,
                 task_type='cleanup_executor', status='failed', attempt=0, started_at=None,
-                error_details={'cleanup_authorization_denied': 'private timestamp', 'error': 'secret'},
+                error_details={'code': 'cleanup_authorization_denied', 'error': 'secret'},
                 cleanup_admission={'state': 'closed_rejected', 'observed_at': 'secret'},
                 receipt={'status': 'failed', 'reason': 'authorization_denied', 'statistics': {'secret': 1}},
                 metadata={'token': 'secret'})], error='secret', metadata={'secret': True})
@@ -158,6 +158,50 @@ class NativeCleanupRunnerTest(unittest.TestCase):
                 self.assertEqual(result['children_failure_kind'], reason)
                 self.assertEqual(result['children'], [])
                 self.assertNotIn('secret', json.dumps(result))
+
+    def test_child_authorization_reason_uses_canonical_public_code(self):
+        parent, child = str(uuid.uuid4()), str(uuid.uuid4())
+        for code in ('cleanup_authorization_denied', 'cleanup_authorization_unavailable', 'secret', None):
+            value = dict(task_id=ID, status='timeout', task=dict(task_id=ID, execution_id=parent,
+                context={'engine_id': 9}, requested_by=17, action='scan',
+                expected_modules=S.CONTRACT['cleanup_owners_by_cause']['engine.deleting']),
+                module_executions=[dict(module='manager', execution_id=child, parent_execution_id=parent,
+                    task_type='cleanup_executor', status='failed', attempt=1, started_at='present',
+                    error_details={'code': code})])
+            row = M.engine_assessment_observation(value, ID, 9, '17')['children'][0]
+            self.assertEqual(row['authorization_denied'], code == 'cleanup_authorization_denied')
+            self.assertEqual(row['authorization_unavailable'], code == 'cleanup_authorization_unavailable')
+            self.assertNotIn('secret', json.dumps(row))
+
+    def test_manager_failure_stage_requires_failed_bound_observation_and_closed_step(self):
+        parent, child = str(uuid.uuid4()), str(uuid.uuid4())
+        value = dict(task_id=ID, status='timeout', task=dict(task_id=ID, execution_id=parent,
+            context={'engine_id': 9}, requested_by=17, action='scan',
+            expected_modules=S.CONTRACT['cleanup_owners_by_cause']['engine.deleting']),
+            module_executions=[dict(module='manager', execution_id=child, parent_execution_id=parent,
+                task_type='cleanup_executor', status='failed', attempt=1, started_at='present')])
+        for stage in ('plan', 'inventory', 'confirmation', 'commit', 'artifact', 'index_effect', 'finalize'):
+            candidate = copy.deepcopy(value); row = candidate['module_executions'][0]
+            row.update(current_step='manager_cleanup_'+stage,
+                steps=[dict(id='manager_cleanup_'+stage, status='failed', phase='terminal', error_code='secret')])
+            result = M.engine_assessment_observation(candidate, ID, 9, '17')
+            self.assertEqual(result['children'][0]['failure_step'], 'manager_cleanup_'+stage)
+            self.assertNotIn('secret', json.dumps(result))
+        for bad in ('unknown', 'missing_step', 'duplicate', 'wrong_status', 'wrong_phase', 'not_failed', 'not_started', 'not_attempt', 'transfer'):
+            candidate = copy.deepcopy(value); row = candidate['module_executions'][0]
+            row.update(current_step='manager_cleanup_inventory', steps=[dict(id='manager_cleanup_inventory', status='failed', phase='terminal')])
+            if bad == 'unknown': row['current_step'] = row['steps'][0]['id'] = 'secret'
+            elif bad == 'missing_step': row['steps'] = []
+            elif bad == 'duplicate': row['steps'] *= 2
+            elif bad == 'wrong_status': row['steps'][0]['status'] = 'success'
+            elif bad == 'wrong_phase': row['steps'][0]['phase'] = 'waiting'
+            elif bad == 'not_failed': row['status'] = 'pending'
+            elif bad == 'not_started': row.pop('started_at')
+            elif bad == 'not_attempt': row['attempt'] = True
+            else: row['module'] = 'transfer'
+            with self.subTest(bad=bad):
+                result = M.engine_assessment_observation(candidate, ID, 9, '17')
+                self.assertNotIn('failure_step', result['children'][0]); self.assertNotIn('secret', json.dumps(result))
 
     def test_professional_read_selects_only_its_existing_two_owner_permissions(self):
         parent, calls = str(uuid.uuid4()), []

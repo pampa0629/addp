@@ -8,6 +8,7 @@ import (
 	"errors"
 	"reflect"
 	"sort"
+	"time"
 
 	"github.com/addp/common/cleanup"
 	"github.com/addp/common/events"
@@ -86,7 +87,18 @@ func (snap *managerCleanupSnapshot) digest() (string, error) {
 
 // All authority HTTP and inventory reads finish before a PG effect transaction.
 // The assessment binds the exact Owner domain snapshot to the accepted scan.
-func (s *CleanupService) runCleanupExecution(ctx context.Context, run *cleanup.Run) error {
+func (s *CleanupService) runCleanupExecution(ctx context.Context, run *cleanup.Run) (failure error) {
+	stage := "manager_cleanup_plan"
+	defer func() {
+		if failure == nil {
+			return
+		}
+		// Evidence only: no authority refresh, effect, receipt or lease extension.
+		recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		failure = errors.Join(failure, s.recordCleanupFailureStage(recordCtx, run.Lease, stage))
+	}()
+
 	if run.Input.Context.TenantID != 0 {
 		return errors.New("historical Tenant cleanup unsupported")
 	}
@@ -101,8 +113,10 @@ func (s *CleanupService) runCleanupExecution(ctx context.Context, run *cleanup.R
 	var index *models.CleanupIndexAssessment
 	var inventory *ContentIndexInventory
 	if run.Input.Action == events.CleanupActionScan {
+		stage = "manager_cleanup_inventory"
 		index, inventory, err = s.assessCleanupIndex(ctx, run.Input)
 	} else {
+		stage = "manager_cleanup_confirmation"
 		index, inventory, err = s.prepareCleanupIndex(ctx, run)
 		if err == nil {
 			var saved models.CleanupIndexAssessment
@@ -139,6 +153,7 @@ func (s *CleanupService) runCleanupExecution(ctx context.Context, run *cleanup.R
 		return cleanup.Complete(ctx, tx, run.Lease, receipt, counters)
 	}
 	if run.Input.Action == events.CleanupActionScan {
+		stage = "manager_cleanup_commit"
 		return run.Effect(ctx, func(tx *gorm.DB) error {
 			if err := s.verifyCleanupPlain(ctx, tx, snap); err != nil {
 				return err
@@ -161,6 +176,7 @@ func (s *CleanupService) runCleanupExecution(ctx context.Context, run *cleanup.R
 	// its durable target hold. There is no automatic retry or compensating release.
 	operations := make([]string, 0, len(snap.Artifacts))
 	for _, target := range snap.Artifacts {
+		stage = "manager_cleanup_artifact"
 		var id string
 		callCtx, cancel, e := run.PrepareExternal(ctx, func(tx *gorm.DB) error {
 			var x error
@@ -177,10 +193,12 @@ func (s *CleanupService) runCleanupExecution(ctx context.Context, run *cleanup.R
 		}
 		operations = append(operations, id)
 	}
+	stage = "manager_cleanup_index_effect"
 	indexOperation, err := s.executeCleanupIndex(ctx, run, index, inventory)
 	if err != nil {
 		return err
 	}
+	stage = "manager_cleanup_finalize"
 	return run.Effect(ctx, func(tx *gorm.DB) error {
 		stats, err := s.finalizeCleanupPlain(ctx, tx, run.Lease, snap, run.Input.CleanupMode, run.Input.Context.EngineID != 0)
 		if err != nil {
@@ -200,6 +218,39 @@ func (s *CleanupService) runCleanupExecution(ctx context.Context, run *cleanup.R
 			stats.IndexDocuments = index.CandidateCount
 		}
 		return finish(tx, stats)
+	})
+}
+
+// recordCleanupFailureStage uses the existing safe step projection. The current
+// lease must still own C, including after cancellation; stale/terminal writers
+// cannot add evidence or alter the original outcome.
+func (s *CleanupService) recordCleanupFailureStage(ctx context.Context, lease execution.Lease, stage string) error {
+	switch stage {
+	case "manager_cleanup_plan", "manager_cleanup_inventory", "manager_cleanup_confirmation", "manager_cleanup_commit", "manager_cleanup_artifact", "manager_cleanup_index_effect", "manager_cleanup_finalize":
+	default:
+		return errors.New("invalid Manager cleanup failure stage")
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		item, err := execution.LockActiveLease(ctx, tx, lease)
+		if err != nil {
+			return err
+		}
+		metadata := item.Metadata.Clone()
+		if metadata == nil {
+			metadata = map[string]interface{}{}
+		}
+		steps, _ := metadata["step_results"].(map[string]interface{})
+		if steps == nil {
+			steps = map[string]interface{}{}
+		}
+		steps[stage] = map[string]interface{}{"status": "failed", "phase": "terminal"}
+		metadata["step_results"] = steps
+		// The step must exist before its event can refer to it. Both writes
+		// share this transaction and independently recheck the same C lease.
+		if err := execution.UpdateWithLease(ctx, tx, lease, map[string]interface{}{"current_step": stage, "metadata": metadata}); err != nil {
+			return err
+		}
+		return execution.AppendBoundedEvent(ctx, tx, lease, execution.EventInput{Kind: "progress", StepID: stage})
 	})
 }
 

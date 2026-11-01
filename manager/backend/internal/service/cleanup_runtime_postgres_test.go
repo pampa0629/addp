@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -17,9 +18,12 @@ import (
 	"github.com/addp/common/authorization/authtest"
 	"github.com/addp/common/cleanup"
 	"github.com/addp/common/client"
+	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/events"
 	"github.com/addp/common/execution"
 	commonmodels "github.com/addp/common/models"
+	"github.com/addp/common/schema"
+	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"github.com/google/uuid"
@@ -83,6 +87,7 @@ func TestIntegrationPostgresManagerCleanupRuntimeAtomicity(t *testing.T) {
 			correlation := ""
 			providerTime := "2026-10-29T00:00:00Z"
 			authID := int64(0)
+			var lastLease execution.Lease
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				if r.URL.Path == "/indexes/content/documents/fetch" && r.Method == "POST" {
@@ -175,6 +180,7 @@ func TestIntegrationPostgresManagerCleanupRuntimeAtomicity(t *testing.T) {
 				runCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 				defer cancel()
 				runner := cleanup.Runner{DB: tx, Owner: "manager", System: system, Handle: func(ctx context.Context, run *cleanup.Run) error {
+					lastLease = run.Lease
 					defer cancel()
 					return svc.runCleanupExecution(ctx, run)
 				}}
@@ -206,6 +212,41 @@ func TestIntegrationPostgresManagerCleanupRuntimeAtomicity(t *testing.T) {
 			}
 			executing = true
 			_, child := runOwner(events.CleanupActionExecute, scan.RequestID)
+			if child.Status == execution.ExecutionStatusFailed {
+				observed := execution.Observe(&child)
+				if observed.CurrentStep == nil || len(observed.Steps) != 1 || observed.Steps[0].ID != *observed.CurrentStep || observed.Steps[0].Status != "failed" || observed.Steps[0].Phase != "terminal" {
+					t.Fatalf("missing safe Cleanup failure stage: mode=%s", mode)
+				}
+				wantStage := map[string]string{"effect_denied": "manager_cleanup_finalize", "result_rollback": "manager_cleanup_finalize", "index_result_rollback": "manager_cleanup_finalize", "changed_target": "manager_cleanup_confirmation", "index_unknown": "manager_cleanup_index_effect"}[mode]
+				if wantStage == "" || *observed.CurrentStep != wantStage {
+					t.Fatalf("incorrect failure stage mode=%s stage=%s", mode, *observed.CurrentStep)
+				}
+				var beforeEvents, afterEvents int64
+				if err := tx.Model(&execution.Event{}).Where("execution_id=?", child.ExecutionID).Count(&beforeEvents).Error; err != nil {
+					t.Fatal(err)
+				}
+				before, _ := json.Marshal(observed)
+				if err := svc.recordCleanupFailureStage(t.Context(), lastLease, "manager_cleanup_plan"); err == nil {
+					t.Fatal("terminal lease appended diagnostic")
+				}
+				var after execution.TaskExecution
+				if err := tx.Where("execution_id=?", child.ExecutionID).First(&after).Error; err != nil {
+					t.Fatal(err)
+				}
+				afterJSON, _ := json.Marshal(execution.Observe(&after))
+				if err := tx.Model(&execution.Event{}).Where("execution_id=?", child.ExecutionID).Count(&afterEvents).Error; err != nil {
+					t.Fatal(err)
+				}
+				if string(before) != string(afterJSON) || beforeEvents != afterEvents {
+					t.Fatal("stale diagnostic changed terminal evidence")
+				}
+				encoded, _ := json.Marshal(observed)
+				for _, raw := range []string{"fixture result failure", "SELECT", "Bearer fixture"} {
+					if strings.Contains(string(encoded), raw) {
+						t.Fatal("raw failure leaked through Cleanup stage")
+					}
+				}
+			}
 			var ownedCount, otherCount, results int64
 			if err := tx.Model(&models.PreviewState{}).Where("id=? AND tenant_id=7", owned.ID).Count(&ownedCount).Error; err != nil {
 				t.Fatal(err)
@@ -277,5 +318,174 @@ func TestIntegrationPostgresManagerCleanupRuntimeAtomicity(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Exercise production schema/repository composition and the gate-owned native
+// Meilisearch. The existing runtime fixture intentionally stubs these boundaries.
+func TestIntegrationPostgresManagerCleanupProductionRepositories(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("standard Manager PG gate required")
+	}
+	endpoint, key := os.Getenv("MANAGER_MEILISEARCH_TEST_URL"), os.Getenv("MANAGER_MEILISEARCH_TEST_KEY")
+	if endpoint == "" || key == "" {
+		t.Fatal("gate-owned Meilisearch required")
+	}
+	target, err := url.Parse(os.Getenv("MANAGER_POSTGRES_TEST_DSN"))
+	if err != nil || target.User == nil {
+		t.Fatal("test DSN required")
+	}
+	cfg := &config.Config{DBSchema: "manager", MeilisearchURL: endpoint, MeilisearchMasterKey: key, MeilisearchManagerContentIndex: "cleanup-production-" + uuid.NewString()}
+	cfg.DBHost, cfg.DBPort, cfg.DBName = target.Hostname(), target.Port(), strings.TrimPrefix(target.Path, "/")
+	cfg.DBUser = target.User.Username()
+	cfg.DBPassword, _ = target.User.Password()
+	if cfg.DBName != "addp_test" && !strings.Contains(cfg.DBName, "disposable") {
+		t.Fatal("disposable database required")
+	}
+	// Production startup has already run System's shared schema migration.
+	bootstrap, err := gorm.Open(postgres.Open(os.Getenv("MANAGER_POSTGRES_TEST_DSN")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bootstrapPool, _ := bootstrap.DB()
+	if err := schema.InitializeCommon(bootstrap); err != nil {
+		_ = bootstrapPool.Close()
+		t.Fatal(err)
+	}
+	_ = bootstrapPool.Close()
+	db, err := repository.InitDatabase(cfg)
+	if err != nil {
+		t.Fatalf("production repository initialization: %v", err)
+	}
+	pool, _ := db.DB()
+	defer pool.Close()
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	defer tx.Rollback()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	store, err := projectionstore.Migrate(tx, "manager", "manager", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliveries := repository.NewContentIndexDeliveryRepository(tx, cfg.MeilisearchManagerContentIndex)
+	search, err := NewHybridSearchService(cfg, repository.NewEmbeddingRepository(tx), nil, nil, nil, deliveries, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		cleanupCtx, stop := context.WithTimeout(context.Background(), 10*time.Second)
+		defer stop()
+		task, e := search.client.DeleteIndexWithContext(cleanupCtx, cfg.MeilisearchManagerContentIndex)
+		if e != nil {
+			t.Error("owned index cleanup", e)
+			return
+		}
+		final, e := search.client.WaitForTaskWithContext(cleanupCtx, task.TaskUID, 20*time.Millisecond)
+		if e != nil || final.Status != meilisearch.TaskStatusSucceeded {
+			t.Error("owned index cleanup incomplete", e)
+		}
+	}()
+	if !search.initialized.Load() {
+		t.Fatal("real content index initialization incomplete")
+	}
+	svc := &CleanupService{db: tx, search: search,
+		systemClient:     client.NewSystemServiceClient("http://127.0.0.1:1", cleanupIndexToken{}, nil),
+		previewStateRepo: repository.NewPreviewStateRepository(tx), embeddingRepo: repository.NewEmbeddingRepository(tx),
+		tileCacheSvc:        &TileCacheTaskService{tileCacheRepo: repository.NewTileCacheRepository(tx)},
+		optimizationSvc:     &VectorMaterializedViewTaskService{repo: repository.NewVectorMaterializedViewRepository(tx)},
+		taskDefinitionRepo:  repository.NewCleanupTaskDefinitionRepository(tx, repository.ManagerTaskDefinitionSpecs()),
+		managedArtifactRepo: repository.NewCleanupManagedArtifactRepository(tx, repository.ManagerManagedArtifactSpecs())}
+	tenant := uint(942000007)
+	snapshot, err := svc.freezeCleanupPlan(ctx, tenant, map[string]interface{}{"engine_id": uint(9)})
+	if err != nil {
+		t.Fatalf("production cleanup plan: %v", err)
+	}
+	input := events.CleanupRequest{RequestID: uuid.NewString(), TenantID: tenant, RequestedBy: 7, Action: events.CleanupActionScan, Context: events.CleanupContext{EngineID: 9}}
+	plan, inventory, err := svc.assessCleanupIndex(ctx, input)
+	if err != nil {
+		t.Fatalf("native cleanup inventory: %v", err)
+	}
+	if plan.CandidateCount != 0 {
+		t.Fatal("empty Tenant acquired foreign candidates")
+	}
+	if err := svc.verifyCleanupPlain(ctx, tx, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if err := deliveries.VerifyInventoryGuard(ctx, tx, inventory.Guard); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := snapshot.digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.DomainDigest = digest
+	if err := tx.Create(plan).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Continue through real Common claim, Manager effect/result/receipt commit;
+	// only System's authority response is controlled in this Owner-level gate.
+	authority := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request client.CleanupAccessRequest
+		if r.Method != "POST" || r.URL.Path != "/api/v1/system/execution-authorizations/1/cleanup-accesses" || json.NewDecoder(r.Body).Decode(&request) != nil || request.Scope.Module != "manager" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(client.CleanupAccess{AuthorizationID: "1", ExecutionID: request.ExecutionID,
+			TenantID: strconv.FormatUint(uint64(tenant), 10), Stage: request.Stage, Attempt: request.Attempt,
+			Scope: request.Scope, ExpiresAt: time.Now().Add(time.Minute)})
+	}))
+	defer authority.Close()
+	svc.systemClient = client.NewSystemServiceClient(authority.URL, cleanupIndexToken{}, authority.Client())
+	actorCtx := execution.WithUserOrigin(ctx, authtest.NewTenantUserAuthContext(strconv.FormatUint(uint64(tenant), 10), "7", []string{"system.engine.delete"}))
+	parent := execution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: int(tenant), Module: "system", TaskType: "cleanup", Source: "system", Status: "pending", ExecutionBoundary: "bounded", TriggerType: "manual", MaxAttempts: 1, ExecutionConfig: commonmodels.JSONMap{execution.DisplayLanguageKey: "en"}}
+	if err := execution.ApplyUserOrigin(actorCtx, &parent); err != nil {
+		t.Fatal(err)
+	}
+	now, err := execution.DatabaseNow(tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := events.CleanupRequest{RequestID: uuid.NewString(), ParentExecutionID: parent.ExecutionID, TenantID: tenant, RequestedBy: 7,
+		Action: events.CleanupActionScan, TriggerType: "manual", CauseEvent: events.CleanupCauseEngineDeleting,
+		ExpectedModules: []string{"manager"}, Context: events.CleanupContext{EngineID: 9}, RequestedAt: now, Deadline: now.Add(30 * time.Second)}
+	if err := request.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	children, err := execution.CreateCleanupExecutions(actorCtx, tx, &parent, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := children[0]
+	if err := execution.AttachPendingAuthorization(actorCtx, tx, execution.PendingIdentity{ExecutionID: child.ExecutionID, TenantID: int(tenant), Module: "manager", TaskType: "cleanup_executor", Source: "system"}, execution.PendingAuthorization{ID: 1, ExpiresAt: now.Add(time.Hour), ActorPrincipalID: *child.ActorPrincipalID, ActorTenantMembershipID: *child.ActorTenantMembershipID, IssuedAuthorizationVersion: *child.IssuedAuthorizationVersion}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := execution.ClaimPending(actorCtx, tx, execution.PendingIdentity{ExecutionID: parent.ExecutionID, TenantID: int(tenant), Module: "system", TaskType: "cleanup", Source: "system"}, execution.ClaimOptions{Module: "system", TaskType: "cleanup", Source: "system", WorkerID: "production-parent", LeaseDuration: time.Minute}, nil); err != nil {
+		t.Fatal(err)
+	}
+	runCtx, stop := context.WithTimeout(actorCtx, 10*time.Second)
+	defer stop()
+	var ownerErr error
+	runner := cleanup.Runner{DB: tx, Owner: "manager", System: svc.systemClient, Handle: func(ctx context.Context, run *cleanup.Run) error {
+		defer stop()
+		ownerErr = svc.runCleanupExecution(ctx, run)
+		return ownerErr
+	}}
+	if err := runner.Serve(runCtx); err != nil {
+		t.Fatal(err)
+	}
+	if ownerErr != nil {
+		t.Fatalf("production Manager handler: %v", ownerErr)
+	}
+	if err := tx.Where("execution_id=?", child.ExecutionID).First(&child).Error; err != nil {
+		t.Fatal(err)
+	}
+	if child.Status != "success" || child.Attempt != 1 || child.StartedAt == nil {
+		t.Fatalf("production child outcome: %s", child.Status)
+	}
+	if _, err := execution.ReadCleanupReceipt(child); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -222,8 +222,18 @@ def engine_assessment_observation(value, request_id, engine_id, principal):
                 'active_execution', 'external_effect_uncertain', 'scope_changed', 'unsupported_scope'}) if receipt else 'not_observed',
             admission_state=closed(admission.get('state'), {'rejected_unstarted', 'closed_rejected', 'closed_unclaimed'})
                 if admission else 'not_observed',
-            authorization_denied='cleanup_authorization_denied' in details,
-            authorization_unavailable='cleanup_authorization_unavailable' in details))
+            authorization_denied=details.get('code') == 'cleanup_authorization_denied',
+            authorization_unavailable=details.get('code') == 'cleanup_authorization_unavailable'))
+        step = row.get('current_step')
+        stages = {'manager_cleanup_plan', 'manager_cleanup_inventory', 'manager_cleanup_confirmation',
+                  'manager_cleanup_commit', 'manager_cleanup_artifact', 'manager_cleanup_index_effect', 'manager_cleanup_finalize'}
+        steps = row.get('steps')
+        if (row['module'] == 'manager' and row.get('status') == 'failed' and row.get('started_at') is not None
+                and type(row.get('attempt')) is int and row['attempt'] == 1
+                and type(step) is str and step in stages and type(steps) is list
+                and len(steps) == 1 and type(steps[0]) is dict and steps[0].get('id') == step
+                and steps[0].get('status') == 'failed' and steps[0].get('phase') == 'terminal'):
+            result['children'][-1]['failure_step'] = step
     return result
 
 
