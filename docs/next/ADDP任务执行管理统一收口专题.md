@@ -863,7 +863,7 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 本轮最终本地门禁已通过：`make test-manager-postgres` 退出 0，31 项顶层 PG 用例、零跳过，包含生产 schema／所有 Cleanup 仓库／真实 owned Meili／Common 领取／完整 Manager handler／结果回执，以及五种失败阶段、SQL 回滚和终态原 lease 不能追加证据。首次阶段事件写入被共享事件的“步骤必须先存在”守卫拒绝，已按其唯一协议改为同一 C 事务先保存步骤、后追加事件，前后均校验原 lease；最终 PG 反例通过。`make test-manager-backend` 退出 0；`make test-execution-online-ci-runner` 退出 0，native 100 项／共享 166 项均 OK、登记一致，Python focused 43 项通过。`make check-node-runtime`、自有差异检查通过；与 Hosted 固定源码 AST 对比，HTTP／wait／sleep 调用不变，原六权限与七断言机器契约逐字节不变。私有证据同目录 `manager-production-{prerequisite-missing,plan-native-pass}.log`、`manager-production-repro.log`、`manager-failure-stage-{red,focused,pg-red,final-pg,final-unit,final-runner}.log`、`authorization-code-red.log` 及 `manager-failure-stage-{invariants,local-proof}.json`。这些结果修复了确定的失败阶段丢失／授权原因消费缺陷，但未复现并修复现场 Manager 底层错误，整体仍为部分实现。新的精确源码 Linux CI 将只跟 Execution runner、Manager PG 及 Go workspace 中实际覆盖 Manager 的部分；不调查或修复无关 Job。API／Permission／Swagger 沿既有安全 Observation 契约，不新增字段或管理能力；第七次 Hosted、其他环境及权限变化没有授权。
 
 
-### 8.29 bf015 Linux 终态与 Manager PG 依赖缺口（CI 基线修正已确认）
+### 8.29 bf015 Linux 终态与 Manager PG 依赖缺口（CI 基线与夹具复验已通过）
 
 已独立 fresh 核验 `bf015feb9f33199c0c2063f8dd24e2c0c8b413b4`／push／attempt 1 的三项实际终态：
 
@@ -894,12 +894,16 @@ CI 会话负责 workflow、Online 登记检查及反例，牵头会话负责本�
 
 **继承环境补查。** 基线修正提交为 `9c64c571541bf086556d9b5f03c0778689c46633`。继续提前使用 `CI=true GITHUB_ACTIONS=true` 验证，已复现既有 Manager 本地入口 fixture 的适配遗漏：它继承 CI 标志，使新增正式 CI 专属 guard 先拒绝，未到预期缺 DSN 的本地拒绝。仅在该测试中显式移除 CI／GitHub／owned 标志及 DSN，完整保留正式门禁拒绝规则；两个 Manager 入口／完整测试保留契约在该继承环境下定向复验 OK（0.954s）。额外整组 41 项的同标志本机实验在 Common／Meta mock 子进程出现超时及锁拒绝（16 error、16 failure），未计通过，不延长预算或修改其他 Owner；此前正常本地 41 项成功与本次定向结果分别保留，准确 Linux 结果另核对。
 
-`9c64c5715` 的独立 [Execution runner Job 124881105410](https://github.com/pampa0629/addp/actions/runs/41317682965/job/124881105410) 已实际 success：准确 checkout、selected:true、canonical Make，100 native＋167 shared 均 OK；原始日志 SHA-256 `f04724396fe0256425a6541e7781a8d54818efcee362f45152e7f7ae9fc98390`。Manager PG／Platform 尚在执行，本项成功不能替代它们。
+`9c64c5715` 的独立 [Execution runner Job 124881105410](https://github.com/pampa0629/addp/actions/runs/41317682965/job/124881105410) 已实际 success：准确 checkout、selected:true、canonical Make，100 native＋167 shared 均 OK；原始日志 SHA-256 `f04724396fe0256425a6541e7781a8d54818efcee362f45152e7f7ae9fc98390`。取得该结果时 Manager PG／Platform 尚在执行，本项成功不能替代它们。
 
 **后续实际终态与当前缺口（2026-11-01 23:21）。** `9c64c5715` 的 [Manager PG Job 124881638812](https://github.com/pampa0629/addp/actions/runs/41317682955/job/124881638812) 已实际 success，完整生产初始化等 31 个顶层 PASS、0 skip、0 fail；实际 PostgreSQL **15.19**、PostGIS **3.7.0**、pgvector **0.8.0**，不是旧纯 PostGIS Service 的 3.4 小版本。归档 `13088970164` 的源码准确为 `9c64c571541bf086556d9b5f03c0778689c46633`、镜像 ID `sha256:53a2025e2dcaa6ec2adc228ab56ac36b459b1e4d7513cb060028df6ae43ce695`、pgvector 源码提交准确，`test_exit_code=0`、`cleanup=zero_residuals`，原始日志也有真实扩展与退出零残留输出。日志 SHA-256 `728c1fb930c537ad9a2446b7be06d287f61b7cc6ca1568190cefaf2b78748337`、ZIP `e8e0643e8ade6160ce71a9f5abf227199d6b2304d9af6b62a2706d63ba58e2a3`、JSON `ba5f0563211789afae14529155f90d9237da099f2ed7bb517d7246fe35d037a4`，主责与 CI 会话独立下载一致。Manager CI 缺 vector 的基线问题已实证收口；不将其认作 Hosted 现场原因。
 
 原 [Platform Job 124881105301](https://github.com/pampa0629/addp/actions/runs/41317682965/job/124881105301) 实际 failure；其中本批 75 项登记反例、9 项生命周期及登记检查均实际 OK，随后模块门禁 41 项仅上述 Manager 继承 CI 标志的 fixture 失败。日志 SHA-256 `ca1e2e2b390a9cffd62fd22cef70861bce99719e0afc811fff2987cc382c3f15`；这是本批适配遗漏，不归为无关前置失败，不以 75＋9 局部成功覆盖该终态。
 
-夹具补修 `1d15c0b44a9314783ab3efaeecd59009ade818b7` 已提交推送，仅调整该本地测试的环境隔离及专题记录；其 [Platform Job 124885911941](https://github.com/pampa0629/addp/actions/runs/41319301973/job/124885911941) 截至本记录仍排队、无 runner、未计通过，由 CI 会话持续核对实际 41 项及 Manager 契约。已逐项比较 Manager、Common、System 与 PG 生命周期输入，`9c64c5715` 至 `1d15c0b44` 均无变化，保留前述 PG 实测证据；测试夹具的本地定向通过不能替代新 Linux 结果。
+夹具补修 `1d15c0b44a9314783ab3efaeecd59009ade818b7` 已提交推送，仅调整该本地测试的环境隔离及专题记录；其 [Platform Job 124885911941](https://github.com/pampa0629/addp/actions/runs/41319301973/job/124885911941) 截至 23:21 仍排队、无 runner，当时未计通过，由 CI 会话持续核对实际 41 项及 Manager 契约。已逐项比较 Manager、Common、System 与 PG 生命周期输入，`9c64c5715` 至 `1d15c0b44` 均无变化，保留前述 PG 实测证据；测试夹具的本地定向通过不能替代新 Linux 结果。
 
-独立原件沿第六轮目录 `manager-ci-baseline/`，包括 `manager-independent-final-proof.json`、`execution-runner-independent-proof.json`、`platform-original-independent-proof.json` 及输入一致性证明。CI 与 M327 维护会话已收到增量回报；功能仍为部分实现。剩余为夹具补修的实际 Linux 复验，以及第六轮 Hosted **0/7** 的 Manager 现场底层原因取证；没有追加 Hosted，也没有改变原六项身份权限、操作范围、七项断言或等待预算。
+独立原件沿第六轮目录 `manager-ci-baseline/`，包括 `manager-independent-final-proof.json`、`execution-runner-independent-proof.json`、`platform-original-independent-proof.json` 及输入一致性证明。CI 与 M327 维护会话已收到增量回报；功能仍为部分实现。当时待验的夹具 Linux 复验结果见下；第六轮 Hosted **0/7** 的 Manager 现场底层原因仍待取证，没有追加 Hosted，也没有改变原六项身份权限、操作范围、七项断言或等待预算。
+
+**夹具 Linux 实际终态（2026-11-01 23:55 核验）。** 补修 `1d15c0b44a9314783ab3efaeecd59009ade818b7`／push／attempt 1 的上述 Platform Job 已实际 `completed/success`，北京时间 23:24:07—23:52:08，标准 `make test-platform` 步骤自身成功。原始日志 3138／3140 行为 75 项登记测试及 OK，3143／3145 行为 9 项 Manager 生命周期测试及 OK，3146 行登记检查通过；3210／3212 行为完整 module-gate **41 项及 OK**。准确源码 AST 仍发现 41 个测试，包含两个 Manager 入口／完整测试契约，未删除或跳过用例，原拒绝断言及预算保留。主责 fresh API、独立下载日志与 CI 会话原件逐字节一致，701844 字节，SHA-256 `ada6b2b904c86fd5e7336f17b05198c1327217304f11c7dfe821a976cd936563`；原件沿上述目录 `fixture-final-platform-job.log`、`fixture-final-independent-proof.json`。旧 Platform 的失败保留为历史，新成功只收口这次夹具适配缺口。
+
+本批 Manager 专属 CI 基线、完整生产初始化、登记／资源生命周期与夹具 Linux 复验已通过，不再列为待验。当前剩余是第六轮 Hosted **0/7** 的 Manager 现场底层原因与真实整链验收；下一步应在单独确认新的 transfer-engine Hosted 后读取已补齐的安全阶段诊断，不能用上述 CI 结果替代运行验收。本次仅更新终态证据，不运行新的 Hosted，不更改身份权限、环境或等待预算。
