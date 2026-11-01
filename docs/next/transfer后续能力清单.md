@@ -59,8 +59,8 @@ Oracle 普通表 CDC 与 ArcGIS SDE 逻辑变化源是两个不同能力，不�
 |---|---|---|
 | [标准 execution cancel](../spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约) | 尚未开放；`supports_cancel=false` 约束整个 `sync` 类型，bounded 具备并验证真实取消前不得注册标准 cancel endpoint；continuous Pause/Stop 的任务运行控制见[用户运行控制](../../transfer/docs/transfer-任务语义与同步模式.md#用户运行控制) | cancel 与 Pause/Stop 的唯一语义、API owner 和 execution 终态 |
 | [单任务跨实例 partition](../spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约) | 尚未开放同一 continuous task 的 partition 跨 runtime owner 分布；当前全部 partition 归同一 task 级 owner，由 runtime lease/heartbeat/fencing 保护，见[Continuous 运行时](../../transfer/docs/transfer-任务语义与同步模式.md#六continuous-运行时)。Kafka group assignment 不代替 Transfer committed position 或租约所有权 | partition lease、全局 fencing、rebalance、状态聚合和吞吐证据 |
-| 低频 Meta 统计刷新 | continuous 只在首次建表和正式 schema 变化后自动扫描 | 统计新鲜度目标、扫描成本、去重和 owner scheduler |
-| 手工 Meta scan 关联回执 | 手工扫描完成结果目前不回写 Transfer schema change 请求 | 跨模块 correlation id、结果事件、幂等和 Monitor incident 恢复 |
+| [低频 Meta 统计刷新](../../transfer/docs/transfer-任务语义与同步模式.md#八meta-scan-时机) | 待评估 continuous 目标统计的刷新策略与调度归属；[Meta 已有计划／手动扫描](../../meta/CLAUDE.md#当前主线状态)，不代表 Transfer 已具备该联动。首次扫描、审批补扫、普通 DML 不触发及精确范围见[写后扫描](../../transfer/docs/transfer-基本概念及配置说明.md#十一写后-meta-扫描) | 统计新鲜度目标、扫描成本、去重和 owner scheduler |
+| [手工 Meta scan 关联回执](../spec/tasks/Transfer同步执行.md#transfer-continuous-sync-v1-契约) | 现有审批补扫已保存提交返回的 Meta execution UUID；尚缺手工扫描完成结果与原 schema change request 的关联回写，见[公共观测与验收](../../transfer/docs/数据库架构.md#schema-change-公共观测与验收) | 跨模块 correlation id、结果事件、幂等和 Monitor incident 恢复 |
 | Flink runtime | 当前没有必须引入 Flink 的语义或规模证据 | 事件时间、stream join、CEP、大规模状态或现有 runtime 基准瓶颈；必须复用现有任务与状态契约 |
 
 ## 五、通用目标与执行增强
@@ -87,4 +87,5 @@ Oracle 普通表 CDC 与 ArcGIS SDE 逻辑变化源是两个不同能力，不�
 | CDC 类型矩阵与 Oracle | 源／目标组合、snapshot／insert／update／delete、精度／时区及空间维度分别核对；空间源捕获不代表目标写入同样受支持，其他专项通过不能补作 CDC 类型矩阵通过。 | [Oracle 既有数据面范围](../../transfer/docs/transfer-基本概念及配置说明.md#oracle-既有验证与验收边界)、[专项调用与隔离清理门禁缺口](../../transfer/README.md#oracle-cdc-专项入口缺口) |
 | 取消与任务控制 | 调度暂停、continuous Pause/Stop 或写成 `cancelled` 不证明 bounded／标准 cancel 已实现；真实中断、未提交目标事务回滚、资源／lease 释放及一致终态须分别核验。 | [执行、恢复与验收边界](../../transfer/docs/tables/tasks表.md#执行恢复与验收边界) |
 | 并行与分区归属 | 多 Worker 进程或多任务并发不证明单 execution／task 跨实例分片。bounded 须核验分区覆盖、冻结上界与最终提交；continuous 须核验分区归属、租约接管、旧 owner fencing、rebalance 与状态聚合，吞吐结果不能代替一致性验证。 | [Bounded claim/lease](../spec/tasks/执行记录与租约.md#bounded-execution-领取租约和恢复契约)、[Continuous 运行时](../../transfer/docs/transfer-任务语义与同步模式.md#六continuous-运行时) |
+| Meta 刷新与回执 | 触发与精确目标、提交成功与执行完成、统计更新与回执回写分别验收；Meta 提交失败不回滚已提交数据／schema，首次扫描与审批补扫的重试条件分别按专题核对。手工完成尚不回写，不据提交失败创建 Monitor incident，也不以 Resume、新 execution 或等待判定恢复。 | [写后扫描与失败边界](../../transfer/docs/数据库架构.md#九写后-meta-扫描)、[审批补扫 claim](../../transfer/docs/数据库架构.md#审批补扫-claim-与失败边界)、[来源与精确目标绑定](../spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源) |
 | 容器子表 | Provider 声明和现行主路径不代表所有格式、任意目标或端到端场景已验收。 | [读取布局与入口](../../transfer/docs/transfer-基本概念及配置说明.md#读取布局与入口) |
