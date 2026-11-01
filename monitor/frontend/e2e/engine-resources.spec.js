@@ -7,6 +7,33 @@ import { trackResourceChart, resourceChartProps, resourceChartState, dragResourc
 
 const hostPermissions = [...enginePermissions, 'platform.host_node.read']
 
+for (const kind of ['postgresql', 'redis']) for (const detail of [false, true]) for (const change of ['disabled', 'unbound', 'version']) {
+  test(`${kind} ${detail ? 'detail' : 'list'} clears the previous snapshot when the current owner is ${change}`, async ({ page }) => {
+    const state = await engineBackend(page, { owner: { ...engineOwner, engine_type: kind } })
+    await page.goto(`/engine-resources?refresh=off${kind === 'redis' ? '&engine_type=redis' : ''}${detail ? '&deployment_id=' + engineID : ''}`)
+    const content = detail ? page.getByTestId('engine-value-' + (kind === 'redis' ? 'redisAllocated' : 'capacity')) : page.getByTestId('engine-list')
+    await expect(content).toContainText('1.00 GiB')
+    if (detail) await expect(page.getByTestId('engine-trend').locator('canvas')).toBeVisible()
+    const before = state.calls.length
+    if (change === 'disabled') state.owner.enabled = false
+    else if (change === 'unbound') Object.assign(state.owner, { host_binding_state: 'rejected', node_id: '' })
+    else { state.owner.version++; state.setCapacity(2 * 1024 ** 3) }
+    state.hold()
+    await page.getByRole('button', { name: '刷新', exact: true }).click()
+    await expect.poll(() => state.calls.length).toBeGreaterThan(before + 1)
+    await expect(page.locator('.engine-resources')).toHaveAttribute('aria-busy', 'true')
+    await expect(content).not.toContainText('1.00 GiB')
+    if (detail) await expect(page.getByTestId('engine-trend').locator('canvas')).toHaveCount(0)
+    state.release()
+    await expect(page.locator('.engine-resources')).toHaveAttribute('aria-busy', 'false')
+    if (change === 'version') await expect(content).toContainText('2.00 GiB')
+    else {
+      await expect(content).not.toContainText('1.00 GiB')
+      if (detail) await expect(content).toHaveText('—')
+    }
+  })
+}
+
 for (const locale of ['zh-cn', 'en']) test(`engine explanations stay beside their metrics and do not hide missing states (${locale})`, async ({ page }) => {
   const en = locale === 'en', state = await engineBackend(page, { locale })
   await page.setViewportSize({ width: 620, height: 900 })

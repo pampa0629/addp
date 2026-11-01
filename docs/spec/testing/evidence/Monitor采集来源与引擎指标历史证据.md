@@ -509,3 +509,11 @@ System说明已同步为PG／Redis按当前User事实选择固定目录，未混
 最初聚合runner在实现中曾因旧PG回执缺少metrics、临时CLI操作系统探测和Bash空数组／解析产生缓存而失败；均按根因补齐唯一生产依赖或严格回执后再由上述最终完整入口验证，不放宽值／身份／清理断言。Console首次专项中新Redis集成和既有语言tip通过，另两项原PG筛选精确请求断言遗漏本批新增engine_type；只同步明确的类型契约，不放松请求次数、URL或iframe断言。
 
 本地Redis实源T2／原生PromQL和Monitor／System受控页面证据仍按前节有效范围独立保留。正式RedisSystem确认→HTTP SD→Prometheus→当前User→真实Console以及全部真实退出清理尚未运行，CI／Hosted等待专门会话安排及回传；未查询、触发或重跑CI／Hosted，未应用到个人Redis或重启服务。
+
+## 引擎当前对象变化的原位刷新保护（2026-11-02）
+
+Redis正式入口提交后继续开发，发现同上下文保留未覆盖已重新读取的System对象事实：列表／详情先更新部署，但旧指标与趋势要等后续观测返回才替换。受控T3在指标响应暂缓期间，真实复现“当前无有效主机关联”与旧“正在采集／1.00 GiB”同时显示。先沿原6.3失效规则明确System对象版本边界，再在唯一引擎页核对部署ID、类型、名称、版本、纳管状态、当前node_id及绑定状态；变化立即清空旧即时值／趋势及缩放。相同事实的新对象引用不触发清空，保留原手动／自动刷新视窗和canvas，不增加接口、权限、指标或查询。
+
+新增PG／Redis×列表／详情×停用／解绑／版本变化12项浏览器场景；修复前12项均在旧内容断言失败（`/tmp/addp-engine-owner-refresh-red.log`），修复后同一标准 `npm run test:e2e -- e2e/engine-resources.spec.js e2e/redis-resources.spec.js` 共46项T3通过（1.7分钟，`/tmp/addp-engine-owner-refresh-green.log`）。同时复验旧单位／零值、tip、故障撤权、跨身份、两语种导航、主机关联、Redis分组及超过100％、缩放与原位刷新。132项前端T1通过（`/tmp/addp-engine-owner-refresh-unit.log`）；两页最终构建通过（`/tmp/addp-owner-refresh-build-final.log`）。Console标准 `npm run test:e2e -- e2e/engine-resource-navigation.spec.js` 4项集成T3通过（39.7秒，`/tmp/addp-owner-refresh-console.log`），包含Redis iframe及PG双语筛选／提示。上述是受控后端T3及构建，不是个人Safari、来源T2或正式身份T4。
+
+同类主机详情保护与独立页面验证见[节点专题](Monitor节点与主机资源历史证据.md#主机详情当前对象变化的原位刷新保护2026-11-02)。既有标准浏览器入口自动发现两份修改的spec，Platform CI原Monitor前端owner门禁覆盖本批；无需改Makefile／workflow或扩大测试身份。CI／Hosted继续等待专门会话回传，未查询、触发、重跑、设置定时或接管个人服务。

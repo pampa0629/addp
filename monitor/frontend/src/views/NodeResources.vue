@@ -358,6 +358,10 @@ async function reload({ automatic = false } = {}) {
       const value = await request(config => api.node(id, config))
       if (!requestScope.current(ticket)) return
       if (value.node_id !== id) throw new Error('invalid_resource_response')
+      if (['node_id', 'display_name', 'version', 'enabled'].some(key => value[key] !== node.value?.[key])) {
+        instant.value = null; trend.value = null; comparison.value = null; trendZoom.value = null
+        filesystems.value = null; inodes.value = null; disks.value = null; networks.value = null
+      }
       node.value = value
       const keys = resourceMetrics.map(metric => metric.key)
       const current = await request(config => api.instant({ node_id: id, metrics: keys.join(',') }, config))

@@ -153,6 +153,10 @@ async function reload({ automatic = false } = {}) {
       rows = page.data; count = page.total
     }
     if (!requests.current(ticket)) return
+    if (rows.length !== owners.value.length || rows.some((row, index) =>
+      ['deployment_id', 'engine_type', 'display_name', 'version', 'enabled', 'node_id', 'host_binding_state'].some(key => row[key] !== owners.value[index]?.[key]))) {
+      observed.value = null; history.value = null; trendZoom.value = null
+    }
     owners.value = rows; total.value = count
     hostReferences.value = Object.fromEntries(Object.entries(hostReferences.value).filter(([id]) => rows.some(row => row.node_id === id)))
     if (!rows.length) { observed.value = null; history.value = null }

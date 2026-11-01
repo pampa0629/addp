@@ -546,3 +546,11 @@ Safari真实运行只操作获准的第二个标签页，前端普通组件地�
 原始日志`/tmp/addp-ci-20261031-100003/console-4a-job-124402993366.log`，SHA256为`321de09d045ad951ebda479d9525bac22e13a4ea7f57d94f632de6d0562f5cb7`；回执`/tmp/addp-ci-20261031-100003/console-4a-actual-proof.json`。本次为菜单退出同步修复本身的真实Linux完整Console门禁，不沿用此前f8同输入通过代替；5cb首失败、f8后继通过及本次修复通过分别保留，不倒改历史。此结论仅覆盖该固定提交的Console Job，不声明整个Platform workflow通过；未调查其他owner失败。
 
 本轮仅补证据，`git diff --check`通过，产品和测试未变，不重跑有效本地、CI或Hosted，不轮询／调度、不设置定时任务、不启停个人服务。Infra／Business来源不可用仍是另一项个人环境缺口，未由本次Console门禁恢复；下一步优先只读定位来源状态。
+
+## 主机详情当前对象变化的原位刷新保护（2026-11-02）
+
+沿原位刷新及6.3的对象失效契约，主机详情在重读System后、等待资源时也可能将新纳管状态与旧读数并列。新增UUID／名称／版本／enabled事实核对：变化后先清空标量、挂载容量／inode、磁盘／网卡、趋势、比较与缩放，再消费本轮结果；独立设备观察组件复用现有node.version／enabled守卫。本批不改变主机列表的整份快照更新方式，也不把每次HTTP返回的新引用当作变化；事实相同时沿原刷新保持行为，不扩大指标、采集、权限或API。
+
+新增停用／版本变更×手动／自动刷新4项，使用暂缓资源响应验证当前事实已重读但旧卡片／canvas尚不可保留，随后释放并核对缺样或新读数。修复前4项均失败（`/tmp/addp-host-owner-refresh-red.log`）；修复后标准 `npm run test:e2e -- e2e/node-resources.spec.js` 整份73项T3通过（2.4分钟，`/tmp/addp-host-owner-refresh-green.log`）。包括原位刷新、隐藏暂停／恢复、当前页摘要、热力、设备／挂载、双轴、缩放、比较、故障撤权及CPU空闲率旧场景，未删改原断言。前端132项T1通过，最终两页构建通过，日志分别`/tmp/addp-engine-owner-refresh-unit.log`、`/tmp/addp-owner-refresh-build-final.log`。
+
+同批[PG／Redis引擎页](Monitor采集来源与引擎指标历史证据.md#引擎当前对象变化的原位刷新保护2026-11-02)46项独立通过。标准脚本独占测试端口，没有启停个人服务；这些为受控T3，不外推个人Safari、真实来源或Hosted，不宣称完整Monitor浏览器门禁通过。既有Platform CI Monitor前端自动发现，CI与Hosted仍由专门会话安排／回传，本会话未调度或设置定时任务。

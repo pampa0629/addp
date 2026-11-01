@@ -6,6 +6,29 @@ import { join } from 'node:path'
 import { identity, node, resourceBackend, resourcePermissions, secondNode, setIdentity } from './node-resources.fixture'
 import { id as targetID } from './monitoring-targets.fixture'
 
+for (const automatic of [false, true]) for (const change of ['disabled', 'version']) test(`host detail clears the previous snapshot after ${change} during ${automatic ? 'automatic' : 'manual'} refresh`, async ({ page }) => {
+  const owner = { node_id: node, display_name: '节点甲', addresses: [], enabled: true, version: 1 }
+  const state = await resourceBackend(page, { nodes: [owner], observationResponse(body) { body.node_version = owner.version }, trendResponse(body) { body.node_version = owner.version } })
+  if (automatic) await page.clock.install()
+  await page.goto(`/node-resources/${node}${automatic ? '' : '?refresh=off'}`)
+  await expect(page.getByTestId('resource-memoryTotal')).toContainText('16.00 GiB')
+  await expect(page.getByTestId('resource-chart').locator('canvas')).toBeVisible()
+  const reads = () => state.reads.filter(row => row.path.endsWith('/resource_observations')).length
+  const before = reads()
+  if (change === 'disabled') { owner.enabled = false; state.mode = 'disconnected' }
+  else owner.version++
+  state.hold()
+  if (automatic) await page.clock.fastForward(15001)
+  else await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect.poll(reads).toBe(before + 1)
+  await expect(page.getByTestId('resource-memoryTotal')).toHaveCount(0)
+  await expect(page.getByTestId('resource-chart').locator('canvas')).toHaveCount(0)
+  state.release()
+  await expect(page.getByTestId('resource-memoryTotal')).toBeVisible()
+  if (change === 'disabled') await expect(page.getByTestId('resource-memoryTotal').locator('strong')).toHaveText('—')
+  else await expect(page.getByTestId('resource-memoryTotal')).toContainText('16.00 GiB')
+})
+
 test('resource quantities use binary capacity and elapsed time while load is not a percent', async ({ page }) => {
   const state = await resourceBackend(page)
   await page.goto(`/node-resources/${node}?refresh=off`)
