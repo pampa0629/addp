@@ -96,11 +96,13 @@ T1 覆盖授权隔离、零任务副作用、完整配置／结构摘要及缺�
 
 ### 角色专用导出选择
 
+正式契约：[默认方式与角色可选方式](../docs/spec/addp数据安全与隐私保护实现规范.md#711-默认方式与角色可选方式)、[执行发起人的当前角色核验](../docs/spec/addp授权上下文规范.md#执行发起人的当前角色核验)、[Transfer export 动作](../docs/spec/addp数据安全与隐私保护实现规范.md#104-transfer-export-动作)。
+
 当前第一方登录用户可在任务配置中一次选择并保存 `config.source.protection_choices`，空选择采用导出默认保护。复用共享 FieldMaskingChoices 与 Common 选项解析，候选与检查分别为 `GET /source-protection-options?source_locator=...` 和 `POST /source-protection-checks`，均按当前账号核验、沿用 transfer.task.execute，不接受用户／角色选择器。来源保护只读取 System Runtime Descriptor，不为判断字段保护获取连接凭据。
 
 首期只开放手动 bounded/snapshot/native table 及其 PreparedQuery 来源；保存及名称更新重新校验，切换来源／模式不丢弃旧选择，定时、委托、编排、continuous、增量与 encoded/record 来源不消费特殊方式。启动和手动重试在同步用户请求内签发 audience=transfer 的本次执行授权，要求现有 system.execution_authorization.create、transfer.task.execute 和实际源读／目标写效果资格；不增加角色或权限。缺执行权限返回权限拒绝，角色／选项失效返回保护选择冲突，两者不混淆。
 
-Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角色，以该用户 EA 获取源和目标引擎访问，在字段映射与 Writer 前应用 export 保护。选项、资格或来源失效明确拒绝，不回落默认。Develop 全量导出使用独立 export 选择与共享会话精确摘要核验来源，再绑定签发的真实用户执行授权；默认导出仅保留已有观察来源，不自动提升为执行权限。原值授权、应用凭据和角色变更不在本轮范围。T1、真实 PostgreSQL 和前端门禁见 Security 同日记录；真实账号全链路 T4 需单独验收，不能由上述门禁推定。
+Worker 按实际 EA／execution／attempt／lease 逐批读取 System 当前角色，以该用户 EA 获取源和目标引擎访问，在字段映射与 Writer 前应用 export 保护。选项、资格或来源失效明确拒绝，不回落默认。Develop 全量导出使用独立 export 选择与共享会话精确摘要核验来源，再绑定签发的真实用户执行授权；默认导出仅保留已有观察来源，不自动提升为执行权限。原值授权、应用凭据和角色变更不在本轮范围。T1、真实 PostgreSQL 和前端门禁见[Security 2026-10-23 接入验证](../security/CLAUDE.md#transfer-角色选择与-develop-全量导出接入2026-10-23)；真实账号全链路 T4 需单独验收，不能由上述门禁推定。
 
 分版本验证记录见[角色资格到期与导出拒绝证据](#角色资格到期与导出拒绝证据)。
 
@@ -230,9 +232,9 @@ continuous 的 claim、累计提交计数与终态复用 `common.execution_event
 
 当前能力与权限见[角色专用导出选择](#角色专用导出选择)；以下按 v30／v31 保留各自的错误映射、确定性验证和未覆盖范围。
 
-2026-10-25，既有隔离 suite 领域 v30 增加角色资格自然到期专项：期限内独立任务输出和经 Develop/Transfer 生成的实际 CSV 均全遮盖；同一登录会话自然到期后任务启动、名称更新及直接选择核验409/transfer_protection_roles_unavailable，任务不新增执行且目标保持；旧文件/会话与再次导出经现有 Develop BFF 为409/query_protection_choice_invalid，不把合并提示声称为已细分。显式清除选择后默认任务/新CSV恢复，旧特殊文件仍拒绝。主功能权限、Policy与投影保持，成功不撤销/重登/续期；失败/中断先删任务再清理仍有效资格，精确保留其他用户审计。新增场景及凭据隔离沿[Online规范](../scripts/docs/Online数据保护.md#transfer-资格自然到期与旧文件)；`make test-security-online-runner` 的38/55/30/274项Python、相关Go及登记通过（T0/T1），真实HTTP/Hosted未运行，不新增浏览器通过声明。本轮未变更产品API、授权规则或服务生命周期。
+2026-10-25，既有隔离 suite 领域 v30 增加角色资格自然到期专项：期限内独立任务输出和经 Develop/Transfer 生成的实际 CSV 均全遮盖；同一登录会话自然到期后任务启动、名称更新及直接选择核验409/transfer_protection_roles_unavailable，任务不新增执行且目标保持；旧文件/会话与再次导出经现有 Develop BFF 为409/query_protection_choice_invalid，不把合并提示声称为已细分。显式清除选择后默认任务/新CSV恢复，旧特殊文件仍拒绝。主功能权限、Policy与投影保持，成功不撤销/重登/续期；失败/中断先删任务再清理仍有效资格，精确保留其他用户审计。新增场景及凭据隔离沿[Transfer 资格自然到期与旧文件](../scripts/docs/Online数据保护.md#transfer-资格自然到期与旧文件)；`make test-security-online-runner` 的38/55/30/274项Python、相关Go及登记通过（T0/T1），真实HTTP/Hosted未运行，不新增浏览器通过声明。本轮未变更产品API、授权规则或服务生命周期。
 
-2026-10-25，Common Transfer BFF现已严格保留资格/方式两类已声明409，Develop导出创建、状态及文件分别映射query_protection_roles_unavailable和query_protection_choice_invalid，源Transfer自己的错误码和裁决保持。未知码或异常响应不再伪报方式失效。隔离领域v31已将自然到期的导出断言改为角色精确码，Runner T0/T1通过；新真实Hosted T4未运行。详见Security原因细分记录及Online数据保护规范，v30合并提示仅是历史事实。
+2026-10-25，Common Transfer BFF现已严格保留资格/方式两类已声明409，Develop导出创建、状态及文件分别映射query_protection_roles_unavailable和query_protection_choice_invalid，源Transfer自己的错误码和裁决保持。未知码或异常响应不再伪报方式失效。隔离领域v31已将自然到期的导出断言改为角色精确码，Runner T0/T1通过；新真实Hosted T4未运行。原因映射及 v30／v31 验收差异见[Transfer 资格自然到期与旧文件](../scripts/docs/Online数据保护.md#transfer-资格自然到期与旧文件)；v30合并提示仅是历史事实。
 
 #### continuous 精确扫描与审批归属
 
