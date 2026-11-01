@@ -156,6 +156,9 @@ runtime = authentication.prepare_business(Path(sys.argv[2]).resolve() / 'postgre
 # Prepare before mounting: the directory probe later changes only this ordinary
 # file, independently of HBA parsing, roles, SQL and reload.
 authentication._atomic(runtime / 'publication-probe', 'before\n', 0o644)
+authentication._atomic(runtime / 'publication-no-chown', 'before\n', 0o644)
+(runtime / 'publication-plain').write_text('before\n')
+(runtime / 'publication-plain').chmod(0o644)
 PGAUTH
 postgres_directory_probe(){
   # Recreate only this gate's disposable database and data. Never use shared PG.

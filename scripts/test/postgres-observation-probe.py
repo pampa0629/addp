@@ -15,6 +15,7 @@ import secrets
 import ssl
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -629,6 +630,52 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
                 time.sleep(1)
             record_file.unlink(missing_ok=True)
 
+    def directory_publication_diagnostic(self):
+        """Test-owned ordinary files only; never an authentication fallback."""
+        runtime = self.auth_directory/'runtime'
+        before, after = 'before\n', 'after-version\n'
+        command = self.compose+['exec','-T','postgres']
+        def read(path):
+            result = subprocess.run(command+['head','-c','64',str(path)],capture_output=True,text=True,timeout=5)
+            return result.returncode==0 and result.stdout
+        def inspect(name):
+            path = '/etc/addp-postgres-auth/'+name
+            result = subprocess.run(command+['stat','-c','%a:%s:%i',path],capture_output=True,text=True,timeout=5)
+            return {'head_matches_replacement':read(path)==after,
+                    'stat_ok':result.returncode==0,
+                    'metadata':result.stdout.strip() if re.fullmatch(r'[0-7]{3,4}:[0-9]+:[0-9]+\n?',result.stdout) else 'unavailable'}
+        facts = {'canonical':inspect('publication-probe')}
+        listing = subprocess.run(command+['ls','-1A','/etc/addp-postgres-auth'],capture_output=True,text=True,timeout=5)
+        facts['initial_directory_list_ok'] = listing.returncode==0
+        facts['canonical_after_initial_listing'] = inspect('publication-probe')
+        for label,name in [('without_chown','publication-no-chown'),('plain_initial','publication-plain'),('fresh_name','publication-fresh')]:
+            target = runtime/name
+            if label=='fresh_name':
+                assert not os.path.lexists(target), 'Owned fresh comparison already exists'
+            else:
+                assert self.authentication._read(target,0o644)[0]==before
+                assert read('/etc/addp-postgres-auth/'+name)==before, 'Owned comparison file initially unavailable'
+            fd, temporary = tempfile.mkstemp(prefix='.pg-auth-',dir=runtime)
+            try:
+                with os.fdopen(fd,'wb') as stream:
+                    stream.write(after.encode());stream.flush()
+                    # Identical publication operations except fchown; diagnostic only.
+                    os.fchmod(stream.fileno(),0o644);os.fsync(stream.fileno())
+                os.replace(temporary,target)
+                directory = os.open(runtime,os.O_RDONLY)
+                try:os.fsync(directory)
+                finally:os.close(directory)
+                facts[label] = inspect(name)
+                facts[label]['host_matches_replacement'] = self.authentication._read(target,0o644)[0]==after
+            finally:
+                Path(temporary).unlink(missing_ok=True)
+            facts[label]['canonical_after_step'] = inspect('publication-probe')
+        listing = subprocess.run(command+['ls','-1A','/etc/addp-postgres-auth'],capture_output=True,text=True,timeout=5)
+        facts['directory_list_ok'] = listing.returncode==0
+        facts['fresh_name_listed'] = listing.returncode==0 and 'publication-fresh' in listing.stdout.splitlines()
+        facts['canonical_after_listing'] = inspect('publication-probe')
+        return facts
+
     def check_directory_publication(self):
         target = self.auth_directory/'runtime/publication-probe'
         before, after = 'before\n', 'after-version\n'
@@ -654,16 +701,28 @@ SELECT row_to_json(s) FROM addp_observation.snapshot() s; ROLLBACK;'''))
                 except (AssertionError,subprocess.SubprocessError):
                     facts['hba_container_unchanged']=False
                 print('PostgreSQL directory publication '+json.dumps(facts),flush=True)
+                if not facts['container_matches_replacement']:
+                    try:
+                        diagnostic = self.directory_publication_diagnostic()
+                    except (OSError,AssertionError,subprocess.SubprocessError) as error:
+                        diagnostic = {'unavailable':type(error).__name__}
+                    print('PostgreSQL directory comparison '+json.dumps(diagnostic),flush=True)
                 assert all(value is True for key,value in facts.items() if key!='container_return_code'), \
                     'Owned directory does not present an atomic host replacement; HBA acceptance not reached'
             except BaseException as error:
                 try:
                     target.unlink(missing_ok=True)
+                    target.with_name('publication-no-chown').unlink(missing_ok=True)
+                    target.with_name('publication-plain').unlink(missing_ok=True)
+                    target.with_name('publication-fresh').unlink(missing_ok=True)
                 except BaseException as cleanup:
                     error.add_note('Owned publication cleanup failed: '+type(cleanup).__name__)
                 raise
             else:
                 target.unlink()
+                target.with_name('publication-no-chown').unlink(missing_ok=True)
+                target.with_name('publication-plain').unlink(missing_ok=True)
+                target.with_name('publication-fresh').unlink(missing_ok=True)
 
     def run(self):
         if self.auth_directory is not None:

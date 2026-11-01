@@ -349,3 +349,16 @@ Business真实截图看到提交曲线，五分钟窗口08:11:12—08:16:12、15
 执行 `PATH=/opt/homebrew/opt/openssl@3/bin:$PATH make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-observation`，日志 `/tmp/addp-hba-publication-control.log`：129项配置T1、26项生命周期T1通过；Infra／Business原生认证、固定汇总、拒绝越权、幂等、轮换与归属用例均通过。目录前置对照失败：`host_inode_changed=true`、`host_matches_replacement=true`，但容器读取返回1、`container_matches_replacement=false`；`hba_host_unchanged=true`且`hba_container_unchanged=true`。该结果独立排除HBA解析、账号SQL及重载作为本次普通文件故障的触发条件，仍不足以指定Docker上游缺陷或承诺升级修复。
 
 目录HBA正向验收尚未进入，整体T2失败；不将普通分支成功或安全拒绝记为完整通过。项目 `addp-metrics-t2-b8a5b53b8a2d4255ac93ca69559904e5` 标准退出清理后，按项目标签独立确认容器、网络、卷均为零。`py_compile`、`bash -n`及`git diff --check`通过。本轮不修改个人数据库或服务、不轮询／触发CI和Hosted、不设置定时任务。下一步以专门会话回传的原生Linux目录分支结果作对照，再确定共享层维护窗口；本机正向读回及完整来源恢复验收继续保留缺口。
+
+
+## 已有文件名的替换缓存与目录枚举对照（2026-11-01）
+
+继续沿标准 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=postgres-observation` 取证，命令仅为本次进程在PATH前置既有OpenSSL3；没有调整Docker设置、共享选项、账号／HBA或个人服务，也没有读取／重跑CI、Hosted或设置定时任务。本机macOS只读版本为26.6.2。新增内容仅为既有目录前置检查失败后的封闭诊断；对照结果即使成功，首个读取失败仍保留，门禁仍失败，不以枚举、延迟或重试替代发布后的精确读回。既有来源T2登记和Platform配置测试已覆盖这些文件，无新增入口或依赖。
+
+第一轮 `/tmp/addp-hba-no-chown.log` 中，去掉同属主的 `fchown`、保留权限设置／fsync／原子替换后仍不能读取；两条路径stat成功但都报告旧7字节元数据。第二轮 `/tmp/addp-hba-directory-lookup.log` 将初始创建改成普通文件而非硬链接发布，替换后仍失败；从未使用过的新文件名发布后立即读到14字节新内容。该轮最终枚举目录后，原失败路径也变为新inode及14字节、内容可读，不能据单轮顺序直接排除时间与其他文件变更的影响。
+
+第三轮 `/tmp/addp-hba-directory-enumeration.log` 将目录枚举提前到其他文件变更之前：原路径首次读取仍失败，stat报告旧7字节／inode36122；紧接着枚举目录成功，随后stat报告新14字节／inode36124且内容精确匹配。之后去属主设置对照、普通创建对照分别仍呈现旧7字节元数据和读取不匹配，而新文件名仍立即可读；原路径继续保持新内容。这进一步将故障范围缩小到已有文件名的替换后缓存更新，排除初始硬链接创建及fchown是唯一必要诱因；尚未把枚举后的恢复认定为产品修复或精确上游缺陷，未增加“先ls再读”的发布路线。
+
+三轮各自130项配置T1与26项生命周期T1通过，Infra／Business原生认证、汇总、权限拒绝、幂等、轮换、归属T2均通过；目录前置均失败，HBA宿主与容器原内容均未变，目录认证正向验收未进入，整体T2均失败。三个项目 `addp-metrics-t2-bf1ca637fccc41c79c08f67b8362f9d8`、`addp-metrics-t2-69a07664fddd488ba239cb887d15710a`、`addp-metrics-t2-32552e5a75a1423d85cadb4a760d5ff5` 均沿标准退出清理，容器／网络／卷另按各自项目标签核验全零。最终代码py_compile、bash -n和git diff --check通过，不把局部通过升级为完整来源验收。
+
+上游公开报告仅作假设来源：[Docker for-mac #7882](https://github.com/docker/for-mac/issues/7882) 描述STATX_BTIME查询失败而open仍成功，与本地内容读取失败不同；[#6787](https://github.com/docker/for-mac/issues/6787) 有共享目录ENOENT报告，但版本、工作负载及触发条件不同，不直接认定同一问题或宣称已有确定修复版本。后续正向验收仍待共享层一致性恢复及专门会话回传的原生Linux对照；现阶段保持原子发布和不可见即拒绝。

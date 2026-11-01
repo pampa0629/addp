@@ -150,9 +150,11 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                 original='local all all trust\n'
                 runtime=postgres_auth.prepare_business(directory,original)
                 postgres_auth._atomic(runtime/'publication-probe','before\n',0o644)
+                postgres_auth._atomic(runtime/'publication-no-chown','before\n',0o644)
                 probe=postgres_probe.Probe.__new__(postgres_probe.Probe)
                 probe.auth_directory,probe.authentication=directory,postgres_auth
                 probe.compose=['docker','compose'];probe.read_hba=mock.Mock(return_value=original)
+                probe.directory_publication_diagnostic=mock.Mock(return_value={'without_chown':{'head_matches_replacement':True}})
                 results=[subprocess.CompletedProcess([],0,'before\n',''),subprocess.CompletedProcess([],0 if visible else 1,'after-version\n' if visible else '', 'private-sentinel')]
                 output=io.StringIO()
                 with mock.patch.object(postgres_probe.subprocess,'run',side_effect=results) as run, redirect_stdout(output):
@@ -161,9 +163,41 @@ class MetricsDeploymentConfigTest(unittest.TestCase):
                         with self.assertRaisesRegex(AssertionError,'HBA acceptance not reached'):
                             probe.check_directory_publication()
                 self.assertFalse((runtime/'publication-probe').exists())
+                self.assertFalse((runtime/'publication-no-chown').exists())
+                self.assertEqual(probe.directory_publication_diagnostic.call_count,0 if visible else 1)
                 self.assertEqual((runtime/'pg_hba.conf').read_text(),original)
                 self.assertNotIn('sentinel',output.getvalue())
                 self.assertTrue(all(call.args[0][-1].endswith('/publication-probe') for call in run.call_args_list))
+
+    def test_directory_diagnostic_omits_chown_without_changing_hba(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory=Path(temporary).resolve()/'authentication'
+            original='local all all trust\n'
+            runtime=postgres_auth.prepare_business(directory,original)
+            postgres_auth._atomic(runtime/'publication-probe','after-version\n',0o644)
+            postgres_auth._atomic(runtime/'publication-no-chown','before\n',0o644)
+            (runtime/'publication-plain').write_text('before\n')
+            (runtime/'publication-plain').chmod(0o644)
+            probe=postgres_probe.Probe.__new__(postgres_probe.Probe)
+            probe.auth_directory,probe.authentication=directory,postgres_auth
+            probe.compose=['docker','compose']
+            def transport(command,**kwargs):
+                path=runtime/Path(command[-1]).name
+                if 'ls' in command:output='\n'.join(p.name for p in runtime.iterdir())+'\n'
+                elif command[-4]=='stat':
+                    info=path.stat();output=f'644:{info.st_size}:{info.st_ino}\n'
+                else:output=path.read_text()
+                return subprocess.CompletedProcess(command,0,output,'private-sentinel')
+            with mock.patch.object(postgres_probe.subprocess,'run',side_effect=transport), mock.patch.object(postgres_probe.os,'fchown',side_effect=AssertionError('must omit chown')):
+                facts=probe.directory_publication_diagnostic()
+            self.assertTrue(facts['without_chown']['head_matches_replacement'])
+            self.assertTrue(facts['canonical']['head_matches_replacement'])
+            self.assertTrue(facts['without_chown']['host_matches_replacement'])
+            self.assertTrue(facts['plain_initial']['head_matches_replacement'])
+            self.assertTrue(facts['fresh_name']['head_matches_replacement'])
+            self.assertTrue(facts['fresh_name_listed'])
+            self.assertEqual((runtime/'pg_hba.conf').read_text(),original)
+            self.assertEqual(list(runtime.glob('.pg-auth-*')),[])
 
     def test_hba_readback_failure_restores_the_published_version(self):
         with tempfile.TemporaryDirectory() as temporary:
