@@ -728,3 +728,5 @@
 ### 2026-10-31 HTTP 临时证书私有配置与离线T1（无真实新窗口）
 
 [完整记录、失败与验收边界](MonitorHTTP质量与采样历史证据.md#http-private-openssl-config-20261031)
+
+2026-11-01补充固定a517自然CI最终结果：OpenSSL准备通过，聚合在无关来源漂移前置失败，HTTP runner未执行；Linux完整入口及正式页面闭环仍未验收。

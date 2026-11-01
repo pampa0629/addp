@@ -713,3 +713,10 @@ OpenSSL依赖在原HTTP runner先检查，Platform consistency既有准备步骤
 日志位于`/tmp/addp-p19-http-tls-runner-20261031.log`（首轮夹具失败）、`/tmp/addp-p19-http-tls-runner-corrected-20261031.log`（实际T1及umask负例失败）、`/tmp/addp-p19-http-tls-build-registration-20261031.log`；验证输入摘要保存`/tmp/addp-p19-http-tls-verified-inputs-20261031.json`，不包含秘密材料。离线证书实际执行仅一次，没有自动重试真实证书组或新开本地窗口。本地各必要子项分列有效证据，不能声称一次完整runner已通过；Linux自然CI与正式产品构建／注册／mTLS采集／MFA／API／两阶段页面／注销／零残留仍待各自实际结果。停源历史、完整窗口及原容量／长期保留缺口保持。
 
 实现与规范提交`a517d68becca6d55a29cad1bf9ff48191a0dd23a`已推送main，仅10个本专项路径／片段；共享Makefile仅1行、登记文件仅12行自有增加，其他会话改动未提交。自然push生成[Platform CI run41204767479／Platform consistency Job124547494998](https://github.com/pampa0629/addp/actions/runs/41204767479/job/124547494998)，截至2026-10-31 21:17（Asia/Shanghai）API为queued／conclusion=null／steps=[]，不计Linux或单次完整runner通过。后续须核对该固定提交实际步骤，不能用后续文档提交的选择跳过或其他Job结果补齐；本轮未手动重跑／dispatch，未设置任何定时跟进。
+
+
+2026-11-01 08:03手动核对同一固定提交的自然CI最终结果：原21:17排队快照保留；run41204767479仍为main／push／attempt 1／`a517d68becca6d55a29cad1bf9ff48191a0dd23a`，Job124547494998已于2026-10-31 21:38:08—21:42:08（Asia/Shanghai）执行并completed／failure。实际checkout日志与固定SHA一致；`Install platform check dependencies`步骤成功，OpenSSL为Ubuntu包3.0.13-0ubuntu3.16，`command -v openssl`返回`/usr/bin/openssl`。这只证明Linux依赖准备成功，不是离线证书组或HTTP runner通过。
+
+实际`make test-platform`在靠前的`test-platform-review`失败：`TestTransferReviewSourceDrift/config`与`batch_contract`分别报告`transfer/docs/transfer-基本概念及配置说明.md`及`docs/spec/addp智能体Tool开放规范.md`来源漂移，make退出2。按固定源码的顺序及完整日志，尚未调用`test-monitor-http-local-runner`，本专项37项、实际离线证书组和Go身份子门禁在这次Linux运行均**未执行**；不能把聚合失败误写为HTTP断言失败，也不能用OpenSSL安装或既有Mac分项结果补齐Linux单次完整入口。仅定位到阻断本专项的首个前置，不调查、修复或跟踪上述无关功能。
+
+本次只读取得Job／run元数据与完整原始日志；日志301934字节，SHA256=`7ec710605d99cef3d09a0e664efecce71b4a550d6dfd550c6f12c579d0bbdd4c`，本机`/tmp/addp-p19-http-platform-124547494998.log`及同前缀`-job.json`／`-run.json`／`-audit.json`保存最终证据与独立核对（文件0600）。仅补充原记录及索引，39主题不变，验证唯一锚点／索引、固定SHA／attempt／步骤、日志散列及本专项差异；没有重跑代码门禁或实际证书组，没有手动CI重跑／dispatch、新开本地窗口、Hosted、容量或定时。Linux完整runner与正式产品到页面验收仍未通过；下一步建议只手动核对后续自然CI中本专项实际执行结果，须重新核验固定输入，不能将后续主分支状态直接归给a517。
