@@ -165,6 +165,22 @@ PostgreSQL 专业来源经 [4.5](#45-部署侧自动发现来源) 的同一发�
 
 自动恢复不安装、轮换或启用账号，不写／重载 HBA、不执行管理 SQL、不创建证书或启动数据库。恢复失败只回收当次明确拥有的来源，报告可选能力不可用并继续业务启动；不会把恢复进程加入只读部署发现观测器。根与 Business 配置在独立子进程清空采集变量后分别加载，不能因继承根开关而启用 Business。正常停用仍沿原部署入口；后续完整启动不重新启用已停用的采集账号。宿主／Docker 不执行标准完整启动时不承诺无人值守恢复，不安装系统自启动或定时任务。门禁沿既有 Infra／开发生命周期确定性入口与 PostgreSQL 来源 T2，实际结果按测试规范分别记录。
 
+### Redis 专业观测首期边界（2026-11-01 确认，分阶段实施）
+
+Infra 与平台自管 Business 的 Redis 是两个独立 Platform 运维对象；首期仅支持标准部署中的单机 Redis 7，不包含 Cluster、Sentinel、FalkorDB、外部租户引擎或租户用量归算。沿既有管理员确认、System 当前部署／主机关联、私有来源投影、Monitor HTTP SD、Prometheus、当前 User 授权查询及 Console 引擎页接入；不得另建手填连接、JSON 导入或 Monitor 直连数据库路径。System 当前可登记类型和后台投影仍仅开放 PostgreSQL，Redis 扩展在对应代码及验证落地前不视为已开放。
+
+数据库侧分别使用独立的 `addp_infra_observer`、`addp_business_observer`；不同物理引擎中的同名账号不共享密码或权限。部署 owner 持有私有凭据及管理身份，采集进程只持本方采集凭据，不复用默认用户、Business admin 或可读业务键的 reader。准确命令白名单为 `HELLO`、`PING`、`INFO`：HELLO 用于现有 Go Redis 客户端的 RESP3 认证握手，关闭客户端名称／版本上报、维护通知、自动重试和数据库切换。账号无键模式、频道或其他 selector，不授 `@read/@connection` 类别、GET／SCAN／KEYS、脚本、CONFIG、ACL、CLIENT LIST、SLOWLOG、MONITOR、持久化管理或写命令。账号配方从完整 reset 构建，停用配方同时清空命令／键／频道／密码，不仅设 off；既有会话不能因 off 继续读取。配方生成不代表正式部署已经安装，账号归属、启停、持久化及凭据丢失拒绝必须在部署生命周期接通后另验。
+
+`INFO` 权限允许实例级运维元数据，不保证服务端只返回产品列出的字段；键模式不能限制无键参数命令，不依赖已弃用的首参数 ACL。采集器仅请求固定 server／clients／memory／persistence／stats／errorstats 分区，按固定字段输出数值；原始 INFO、键名／值、客户端／复制地址、路径、命令参数及凭据不得进入 DTO、指标标签、普通错误或日志。依据：[Redis ACL](https://redis.io/docs/latest/operate/oss_and_stack/management/security/acl/)、[INFO](https://redis.io/docs/latest/commands/info/)。当前首批采用部署专用固定采集内核并复用仓库已有 Go Redis 客户端，不引入默认 INFO ALL／键扫描的通用 exporter 或新依赖；Monitor Web 不调用该读取内核。
+
+固定读取包括运行时长、Redis 分配内存、RSS、maxmemory、参与限额判定的内存、当前连接／maxclients、阻塞连接、处理命令、键查找命中／未命中、淘汰、拒绝连接及 OOM 累计值，以及 loading、AOF 开关／最近写入／重写、最近 RDB 保存结果。当前连接包含采集连接，命令累计包含采集命令；不虚构业务连接数或业务 QPS。阻塞连接不直接表示故障。OOM 仅在有效 errorstats 分区内没有 OOM 记录时表示零；缺分区／字段、ERRORSTATS_DISABLED、无效整数／状态、重复字段、非 standalone 模式或启动身份不一致须拒绝相应快照，不能补零。输入解析上限256 KiB，不输出原始内容。
+
+后续查询的内存限额占用率为 `(used_memory-mem_not_counted_for_evict)/maxmemory`，不剪裁100%；扣减大于分配内存时拒绝，不制造负数或有效零。maxmemory=0时不计算比例，不用主机／容器内存作分母。该比例不是RSS／容器硬限额或OOM安全保证。命中率沿完整评估窗口的hits／misses增量，无查找请求时不计算；计数速率是Redis实例整体值。AOF关闭与失败分开解释；RDB返回ok不证明配置已启用或已有可恢复备份。不请求SLOWLOG正文、keyspace扫描、大键／热键或自动阈值告警。
+
+专业趋势限当前容器运行段、最多七天，且以 INFO run_id 分隔同容器内的进程重启；来源重启不伪造数据库重启，采样前后须核对同一run_id。缺样、重置可见或身份变化处不计算速率；离散INFO不能保证识别采样间所有统计重置。run_id仅为私有采样身份，不作为用户标签；来源端点身份和当前容器仍由部署侧及System裁决，不以run_id替代主机关联。采集默认关闭，失败不影响数据库／业务Ready；来源启停、账号漂移拒绝和清理沿部署owner职责，不由Web或只读发现进程实施。
+
+首批交付为账号配方、固定采集内核与确定性／独占Redis协议验证；标准部署安装、mTLS来源、发现／System类型扩展、Monitor目录／页面、真实身份T4仍分别实施和验收。T1沿Monitor Go自动发现；T2沿 `make test-monitor-redis-source` 复用现有Redis独占夹具、固定镜像、随机密码及物理零残留核验，不读取或修改个人Redis。Monitor门禁、根串行集成及Release作业自动发现同一专项，禁止使用局部协议通过代替已部署来源、页面、CI或Hosted通过。
+
 ### 4.8 服务部署预期与分组租约观测
 
 服务失联的预期来源唯一属于标准部署入口。受管目录中的 `service-expectations.json` 使用 `addp.service-expectations/v1`，包含工作区摘要 `deployment_id`、单调递增的 `revision` 和按模块／角色／用途排序且唯一的 `groups`。每组仅含 `module_name`、`role=backend|worker`、`runtime_name`、`expected_replicas`（1—1000）、`desired_state=running|planned_stopped` 与 UTC `changed_at`；Backend 用途为空，Worker 必须与正式登记的用途相同。最多1000组、256 KiB，重复键、未知字段、非法或未来时间拒绝。发布器沿既有私有目录、所有权检查、互斥锁与原子替换；相同声明重发不推进版本或时间，局部启停保留其他组，失败保留旧文件。组实质变更的changed_at使用真实UTC微秒且严格晚于该组原值，拒绝停滞／回退时钟，不合成未来时间；同秒停用、重启或副本变更不得复用旧标记。没有存活进程扫描、手工管理第二路线或个人服务自动启停。

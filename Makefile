@@ -396,6 +396,7 @@ test-integration: ## 严格串行运行所有本地可执行的 disposable 基�
 	@$(MAKE) test-agent-postgres
 	@$(MAKE) test-business-redis
 	@$(MAKE) test-common-redis
+	@$(MAKE) test-monitor-redis-source
 	@$(MAKE) test-common-postgres
 	@$(MAKE) test-monitor-postgres
 	@$(MAKE) test-orchestrator-postgres
@@ -1532,6 +1533,13 @@ test-monitor-metrics: ## 隔离验证 Prometheus mTLS、真实采样、限额、
 .PHONY: test-monitor-metrics-config
 test-monitor-metrics-config: ## 验证指标配置与服务部署意图 T1，不启动服务或实源
 	@python3 -m unittest scripts/test/metrics-deployment-config_test.py
+
+.PHONY: test-monitor-redis-source test-monitor-redis-source-unit
+test-monitor-redis-source-unit: ## Redis 专业采集固定协议与账号白名单 T1
+	@cd monitor/backend && GOWORK=off go test ./internal/redissource -run '^Test(Snapshot|Observer|Source)' -count=1
+
+test-monitor-redis-source: ## 复用独占 Redis 夹具验证专业采集与越权拒绝
+	@bash scripts/test/monitor-redis-source-gate.sh
 
 .PHONY: test-manager-online-runner
 test-manager-online-runner: ## 验证 Manager 私有成果 Online 场景、物理夹具与 Hosted 生命周期

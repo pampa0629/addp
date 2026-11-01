@@ -396,3 +396,19 @@ Business真实截图看到提交曲线，五分钟窗口08:11:12—08:16:12、15
 可交给维护人员的包为 `/private/tmp/addp-directory-minimal-b5kwiyfk.zip`，包含与仓库逐字节一致的独立脚本、运行JSON、有限版本信息和README；脚本SHA256为 `c864911b5034f3f0a62993686acbcd1c2c5161947a6a85120d76a9c5bdfaa4c5`。包内Docker设置注明为本会话前期只读快照，不冒充升级后或重启后的状态；未自动上传或向上游发消息。
 
 修复建议已写入[开发服务与构建故障排查](../../../guide/troubleshooting/开发服务与构建.md#docker-desktop-共享目录原子替换后容器读不到文件)并加入故障总索引：保留不可见即拒绝，先在独立环境或授权维护窗口验证候选受支持Docker版本，保持VMM／VirtioFS不变；仍失败时才单独比较gRPC FUSE，分别跑相同复现及原目录认证／重载／恢复门禁。官方[发行说明](https://docs.docker.com/desktop/release-notes/)记录过缓存／宿主通知修订但未证明本例已修复，不能承诺升级或重启即可解决；官方[设置说明](https://docs.docker.com/desktop/settings-and-maintenance/settings/#general)只作为可选共享实现的事实来源。若长期要求避开跨宿主动态发布，应单独讨论VM内受管卷和部署侧发布职责，不在本批引入。个人环境及产品安全校验未改动。
+
+## Redis 固定采集与最小 ACL 基座（2026-11-01）
+
+用户确认首期实例级INFO元数据、禁止业务键访问的范围后，本批同步维护术语、运行观测规范与 `monitor/backend/internal/redissource`。本批交付为部署侧采集内核与账号配方，不是已安装的专业来源：仅HELLO／PING／固定INFO，使用既有Go Redis客户端，关闭重试、维护通知和客户端信息上报；客户端钩子拒绝额外命令及旧AUTH回退。固定字段保留uint64精度、有效零及AOF未启用差别，缺字段／重复／禁用errorstats／超解析预算／身份变化拒绝；采样前后run_id和uptime保护同容器内重启边界。原始INFO、路径、任意错误标签及上游错误不进入输出。
+
+账号配方完整reset、无键／频道／selector授权；启用只追加三个明确命令，停用同时清空旧会话的命令权限和密码。仍未实施正式部署账号归属、安装／持久化、凭据丢失／漂移处理与mTLS来源，也未修改个人Redis。采集器只读边界与部署admin的安装权分开；INFO账号可读取较宽的实例元数据，这一已确认边界不能表述为服务端字段ACL。
+
+实际验证：
+
+- `make test-monitor-redis-source-unit`：7个确定性测试通过，包括精度／未知与零值、非法／缺失字段、当前运行身份、ACL配方、未声明命令／AUTH回退拒绝、私网端点及错误脱敏／200毫秒请求取消；日志 `/tmp/addp-redis-source-unit-complete.log`。早期新增数值项数量断言错写21、集成代码误用客户端不存在的ACLGetUser方法均在本地失败并修正，未推给CI。
+- 最终 `make test-module MODULE=monitor GO_ONLY=1`：Monitor全Go T1退出0，新增包重新运行，其他未变包复用Go缓存；日志 `/tmp/addp-redis-source-monitor-go-final.log`。未启用真实源opt-in，常规Go套件中的集成跳过不计T2；未跑未变前端或完整模块T0—T3。
+- 最终 `make test-monitor-redis-source`：1个真实协议测试／infra、business两个分支通过，拒绝skip，退出0；日志 `/tmp/addp-redis-source-t2-registered.log`。复用原Business Redis 7.2.13固定镜像和唯一随机项目生命周期，在同一当次Redis分别测试两种账号，交叉验证时对方账号也真实存在且用独立密码可读取。覆盖固定INFO及原reader保持、业务读／扫描／写／脚本／管理／频道拒绝，停用后的旧连接／新连接拒绝；当次一字节逻辑maxmemory与单次小SET触发OOM，恢复零／原限额后读取，不循环加压或填充内存。该账号隔离测试不等于两套实际部署已接通。项目 `addp-redis-t2-38869-38873` 清理退出0，随后按精确项目标签复核容器／网络／卷全零；早期编译失败及其他本轮项目也沿同一退出清理，未操作个人Redis或现有PG。
+- `python3 scripts/ci/check-t2-ci-registration.py --repository /Users/pampa/code/addp`：最终注册事实检查退出0，24个hosted-service、14个owned-Compose、9个hosted-only及2个owner-managed门禁；日志 `/tmp/addp-redis-source-registration-final.log`。Monitor dry-run确实包含 `make test-monitor-redis-source`，根串行集成及新Release同名作业同批登记。最初尝试借Common作业聚合时虽注册检查通过，完整Monitor计划不包含该专项；已改为Monitor薄入口，仍复用原夹具和协议runner，Common消费者不重复运行本专项，旧聚合接法未保留。
+- `make test-workflow-security`：固定zizmor离线审计退出0，日志 `/tmp/addp-redis-source-workflow-security-final.log`；新增入口／共享runner的bash语法及差异格式检查通过。
+
+完整 `make test-t2-ci-registration` 本轮74项聚合退出非零：SystemCleanupPostgresRunnerTest的no-tests子场景15秒超时，随后skip-child因当次模拟锁／目录残留失败，日志 `/tmp/addp-redis-source-registration-full.log`。未修改这些非本批夹具、放宽时限或将注册事实局部通过记为完整聚合通过。正式账号生命周期、mTLS、System登记／私有发现投影、Prometheus、Monitor查询／Console和正式身份T4尚未接通，CI／Hosted未自行查询、触发或重跑，继续等待专门会话回传；未设置定时任务、修改Docker设置、重启个人服务或安装个人账号。

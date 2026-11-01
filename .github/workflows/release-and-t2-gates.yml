@@ -1296,6 +1296,31 @@ jobs:
           gate: Common, System, Meta and Manager key contracts (Redis 7.2.13)
           status: ${{ job.status }}
 
+  monitor-redis-source:
+    name: Monitor Redis fixed observation contracts (Redis 7.2.13)
+    needs: selection
+    if: needs.selection.outputs.monitor == 'true' || needs.selection.outputs.business == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: monitor/backend/go.mod
+          cache: false
+      - name: Run Monitor Redis source gate
+        run: make test-monitor-redis-source
+      - name: Summarize Monitor Redis source gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Monitor Redis fixed observation contracts (Redis 7.2.13)
+          status: ${{ job.status }}
+
   common-spark-federation:
     name: Spark native federation admission
     needs: selection

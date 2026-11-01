@@ -138,6 +138,8 @@ Common / Meta 的历史工作区门禁结果仅适用于其记录范围；其他
 
 ## 平台指标设施独占门禁
 
+Redis 专业采集的确定性入口为 `make test-monitor-redis-source-unit`，真实协议入口为 `make test-monitor-redis-source`；后者由Monitor门禁薄入口沿唯一 `redis-owned-fixture.sh`／`common-redis-contract.sh --monitor-only` 复用固定 Redis 7.2.13 镜像、随机回环端口、随机密码、Business 原生样例和物理零残留核验。Monitor完整模块门禁、根串行集成与Release同名独占作业自动发现，登记采集目录／依赖输入；其他Redis消费者仍运行原范围，无第二套夹具或重复执行Monitor专项。T2仅在当次容器创建／删除两种采集账号，验证真实认证、固定INFO、业务读写／扫描／管理拒绝、off与清权后旧连接拒绝，以及原reader与业务键不变；一次一字节逻辑maxmemory加单次小SET验证OOM计数，不循环加压，随后还原当次限额。该结果不证明标准部署安装、mTLS来源、System纳管、Monitor查询／Console、正式身份T4或Hosted。
+
 确定性配置与服务部署意图沿 `make test-monitor-metrics-config` 单独执行，不启动观测设施或个人服务；既有完整部署／Metrics门禁继续覆盖同一测试文件。停用意图顺序夹具声明空进程拓扑，docker／launchctl／lsof／ps均使用当次替身；ps只允许声明的快照查询，意外查询必须失败，不读取宿主进程表。保留发布先于停止、发布失败不执行任何停止、精确模块范围及原8／10秒期限；真实PID／后代／其他工作区归属沿原开发生命周期专项验证，不由该空拓扑夹具代替。
 
 `make test-monitor-metrics MONITOR_METRICS_TEST_ARGS=--case=directory-publication` 是无数据库的共享目录原子替换复现：其T1仅执行配置／协议所属的 `MetricsDeploymentConfigTest`，其余case仍执行原完整配置套件；只使用既有固定PG镜像的Bash，覆盖入口直接替换为Bash，不启动PG或执行SQL，不读取应用配置、账号、HBA，不开放端口或网络。宿主只发布随机临时目录中的普通文件；同进程正反枚举协议与PG目录失败诊断复用唯一实现。容器只读、无额外能力，限制CPU／内存／进程数；屏蔽镜像的数据库VOLUME以免创建匿名卷。退出须核对明确拥有的容器、网络、卷及临时目录清零。首次读取失败即判共享契约失败，枚举后可读不算通过。复制 `scripts/test/directory-publication-probe.py` 到系统临时目录即可给外部维护人员独立复现，无ADDP包依赖；仓库验证仍以根Make入口为准，不能以复现成功代替完整来源／认证验收。
