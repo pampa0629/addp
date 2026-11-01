@@ -4,6 +4,7 @@
     <el-alert type="info" :closable="false" :title="t('meta.scan.collection.boundary')" />
     <el-alert v-if="error" type="error" :closable="false" :title="error" />
     <el-alert v-if="saved" type="success" :closable="false" :title="t('meta.scan.collection.saved')" />
+    <el-alert v-if="cancellationRequested" type="info" :closable="false" :title="t('meta.scan.collection.cancelAccepted')" />
     <el-form label-position="top" :disabled="busy" class="collection-task-form" @submit.prevent="save">
       <el-form-item :label="t('meta.scan.collection.task')">
         <el-select :model-value="selectedID" @change="selectTask" data-testid="collection-definition-select">
@@ -26,6 +27,7 @@
         <div class="collection-actions">
           <el-button v-if="canOpenApproval" :disabled="dirty || unsupported" @click="openApproval" data-testid="collection-definition-approval">{{ t('meta.scan.collection.approval') }}</el-button>
           <el-button v-if="canExecute" :disabled="dirty || unsupported" @click="emit('execute', task)" data-testid="collection-definition-execute">{{ t('meta.scan.collection.execute') }}</el-button>
+          <el-button v-if="canCancel && activeExecution" :disabled="unsupported || cancellationRequested" @click="cancelExecution" data-testid="collection-definition-cancel">{{ t('meta.scan.collection.cancelExecution') }}</el-button>
           <MonitorExecutionsButton module="meta" task-type="scan" />
         </div>
       </template>
@@ -40,10 +42,11 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ElMessageBox } from 'element-plus'
 import { MonitorExecutionsButton, ScheduleConfig, openConsoleRoute, allowsConsoleRoute } from '@common-ui'
 import metaApi from '../api/meta'
 import { useAuthStore } from '../store/auth'
-import { collectionTaskPayload, isEngineCollectionTask, saveCollectionTask } from '../utils/collectionTask'
+import { collectionTaskPayload, isEngineCollectionTask, saveCollectionTask, cancelCollectionTaskRun } from '../utils/collectionTask'
 
 const props = defineProps({ engine: { type: Object, required: true }, tasks: { type: Array, required: true }, initialTaskId: { type: String, default: '' } })
 const emit = defineEmits(['close', 'saved', 'execute'])
@@ -51,8 +54,11 @@ const { t } = useI18n(), auth = useAuthStore()
 const canCreate = computed(() => auth.hasPermission('meta.scan_task.create'))
 const canUpdate = computed(() => auth.hasPermission('meta.scan_task.update'))
 const canExecute = computed(() => auth.hasPermission('meta.scan_task.execute'))
+const canCancel = computed(() => auth.hasPermission('meta.scan_task.cancel'))
 const engineTasks = computed(() => props.tasks.filter(task => isEngineCollectionTask(task, props.engine.id)))
 const selectedID = ref(''), task = ref(null), busy = ref(false), error = ref(''), saved = ref(false)
+const cancellationRequested = ref(false)
+const activeExecution = computed(() => task.value?.last_execution_id && ['pending', 'running'].includes(task.value.last_execution_status))
 const form = reactive({ name: '', scheduled: false, schedule: '' })
 let baseline = ''
 const dirty = computed(() => !task.value || JSON.stringify(form) !== baseline)
@@ -66,7 +72,7 @@ function selectTask(id) {
   form.name = task.value?.name || `${props.engine.name} · ${t('meta.scan.collection.defaultName')}`
   form.scheduled = !!task.value?.enabled && !!task.value?.schedule
   form.schedule = task.value?.schedule || ''
-  baseline = JSON.stringify(form); saved.value = false; error.value = ''
+  baseline = JSON.stringify(form); saved.value = false; error.value = ''; cancellationRequested.value = false
 }
 selectTask(props.initialTaskId || (engineTasks.value[0] ? String(engineTasks.value[0].id) : ''))
 async function save() {
@@ -79,6 +85,21 @@ async function save() {
     task.value = result; selectedID.value = String(result.id); baseline = JSON.stringify(form)
     saved.value = true; emit('saved')
   } catch (e) { error.value = e?.response?.data?.error || t('meta.scan.collection.failed') }
+  finally { busy.value = false }
+}
+async function cancelExecution() {
+  if (busy.value || !canCancel.value || !activeExecution.value || unsupported.value || cancellationRequested.value) return
+  const selected = { ...task.value }
+  try { await ElMessageBox.confirm(t('meta.scan.collection.cancelConfirm'), t('meta.scan.collection.cancelExecution')) }
+  catch { return }
+  if (selected.last_execution_id !== task.value?.last_execution_id) return
+  busy.value = true; error.value = ''
+  try {
+    const run = await cancelCollectionTaskRun(metaApi, props.engine, selected)
+    task.value = { ...task.value, last_execution_status: run.status }
+    cancellationRequested.value = true
+    emit('saved')
+  } catch (e) { error.value = e?.response?.data?.error || t('meta.scan.collection.cancelFailed') }
   finally { busy.value = false }
 }
 async function openApproval() {

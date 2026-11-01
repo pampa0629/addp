@@ -126,6 +126,15 @@ func (s *ScanExecutionService) completeBoundedExecution(ctx context.Context, exe
 		if err != nil {
 			return err
 		}
+		if cancellation, requested := current.Metadata[scanCancellationKey]; requested {
+			status = commonExecution.ExecutionStatusCancelled
+			metadata, ok := fields["metadata"].(commonModels.JSONMap)
+			if !ok {
+				metadata = commonModels.JSONMap{}
+				fields["metadata"] = metadata
+			}
+			metadata[scanCancellationKey] = cancellation
+		}
 		if progress := models.ObserveScanProgress(current.Metadata); progress != nil {
 			if metadata, ok := fields["metadata"].(commonModels.JSONMap); ok {
 				metadata["scan_progress"] = progress

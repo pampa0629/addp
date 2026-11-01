@@ -3870,6 +3870,74 @@ const docTemplate = `{
                 ]
             }
         },
+        "/engines/{id}/scan_cancellation_scope": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "核对当前取消扫描功能权限及 PG 引擎管理范围，只返回本次观察，不批准任务或授予数据权限 | Checks the current scan cancellation permission and PG engine management scope. Returns only a current observation, not task approval or data access",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "元数据集中采集 | Centralized Metadata Collection"
+                ],
+                "summary": "核验当前用户的扫描取消范围 | Check current User scan cancellation scope",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当前范围观察 | Current scope observation",
+                        "schema": {
+                            "$ref": "#/definitions/authorization.EngineAccessHandlingScope"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.cancel"
+                ]
+            }
+        },
         "/engines/{id}/spatial-workspaces/{ecosystem}/{kind}/enable": {
             "post": {
                 "security": [

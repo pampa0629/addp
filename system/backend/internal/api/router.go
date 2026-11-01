@@ -170,6 +170,10 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	if err := RegisterEngineAccessInitialGrantRoutes(api, runtime, &EngineAccessInitialGrantHandler{service: fulfillmentService}); err != nil {
 		panic(err)
 	}
+	if err := RegisterMetaScanCancellationScopeRoute(api, runtime, &MetaScanCancellationScopeHandler{service: fulfillmentService}); err != nil {
+		panic(err)
+	}
+
 	if err := RegisterEngineAccessHandlingScopeRoutes(api, runtime, &EngineAccessHandlingScopeHandler{
 		service: engineaccess.NewService(engineaccess.NewRepository(db), hasLiveEngineCatalogCapability).WithAuthorizationFactsReader(metaFacts),
 	}); err != nil {

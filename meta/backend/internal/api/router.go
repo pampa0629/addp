@@ -40,6 +40,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 
 	// 创建Handler
 	handler := NewHandler(engineService, scanService, taskService, executionService, metadataQueryService, inspectService, lineageService)
+	handler.scanCancellationScope = systemClient
 	handler.dataItemChangeService = service.NewDataItemChangeService(db)
 
 	lifecycle.RegisterHealthRoutes(router)
@@ -80,6 +81,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		api.POST("/scan/run/manual", permission(metaauthorization.PermissionMetaScanTaskExecute), handler.CreateManualScanRun)
 		api.POST("/inspect", auth.MustNewServiceClientGuard("addp-transfer"), permission(metaauthorization.PermissionMetaInspectExecute), handler.InspectAttributes)
 		api.GET("/scan/runs", permission(metaauthorization.PermissionMetaScanTaskRead), handler.ListScanRuns)
+		api.POST("/executions/:execution_id/cancel", permission(metaauthorization.PermissionMetaScanTaskCancel), handler.CancelScanExecution)
 		api.GET("/executions/:execution_id", permission(metaauthorization.PermissionMetaScanTaskRead), handler.GetExecution)
 		api.GET("/runtime/mosaic-scans/:execution_id/result", auth.MustNewServiceClientGuard("addp-manager"), permission(metaauthorization.PermissionMetaScanTaskExecute), handler.GetMosaicScanResult)
 		api.POST("/runtime/transfer-productions/:execution_id/basic-scan", auth.MustNewServiceClientGuard("addp-transfer"), permission(metaauthorization.PermissionMetaScanTaskExecute), handler.EnsureProductionBasicScan)

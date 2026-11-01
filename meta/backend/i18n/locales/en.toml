@@ -78,3 +78,9 @@ other = "Frozen scan plan facts are unavailable; rebuild the scan plan"
 
 [meta.scan.plan_facts_read_failed]
 other = "Unable to read frozen scan plan facts"
+
+["meta.scan.management_failed"]
+other = "Scan management operation failed"
+
+["meta.scan.execution_changed"]
+other = "Scan execution state changed; refresh and try again"

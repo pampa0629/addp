@@ -20,3 +20,11 @@ export async function saveCollectionTask(api, engine, form, task) {
     ? api.updateScanTask(engine.id, task.id, payload)
     : api.createScanTask(engine.id, payload)
 }
+
+// Cancel only the observed execution; never change the saved schedule or create a run.
+export async function cancelCollectionTaskRun(api, engine, task) {
+  if (engine?.resource_type !== 'postgresql' || !isEngineCollectionTask(task, engine.id) ||
+      task.parameters?.scan_depth !== 'basic' || !task.last_execution_id ||
+      !['pending', 'running'].includes(task.last_execution_status)) throw new Error('unsupportedCollectionExecution')
+  return api.cancelScanExecution(task.last_execution_id)
+}

@@ -17,6 +17,7 @@ import (
 )
 
 type Handler struct {
+	scanCancellationScope scanCancellationScopeClient
 	engineService         *service.EngineService
 	scanService           *service.ScanService
 	taskService           *service.ScanTaskService

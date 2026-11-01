@@ -11,6 +11,8 @@ var localeFS embed.FS
 
 // Meta 模块消息 key 常量
 const (
+	MsgScanManagementFailed          = "meta.scan.management_failed"
+	MsgScanExecutionChanged          = "meta.scan.execution_changed"
 	MsgAuthorizationFactsInvalid     = "meta.authorization_facts.invalid"
 	MsgAuthorizationFactsUnavailable = "meta.authorization_facts.unavailable"
 	MsgScanDelimitedOptionsInvalid   = "meta.scan.delimited_options_invalid"

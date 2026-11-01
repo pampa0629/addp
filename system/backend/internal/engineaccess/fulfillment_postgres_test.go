@@ -190,6 +190,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 
 
 
+	exerciseMetaCollectionManagement(t, db, tenant.ID, user.ID, engine, newOperator, seedDelegation)
 	exerciseMetaCollectionQualifications(t, db, tenant.ID, user.ID, engine, newOperator, seedDelegation)
 	exerciseFulfillmentAcceptance(t, db, newRequest(), confirmation, newOperator, seedDelegation)
 	t.Run("real IAM role assignment does not deadlock qualification", func(t *testing.T) {

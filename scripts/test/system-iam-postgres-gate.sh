@@ -224,7 +224,7 @@ case "$TEST_FILTER" in
         ;;
     meta-collection)
         case "$PACKAGE_FILTER" in
-            engineaccess) test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^meta_collection_qualification$' ;;
+            engineaccess) test_pattern='^TestFulfillmentArbitrationAgainstPostgres$/^(meta_collection_qualification|collection_current_function_and_engine_scope)$' ;;
             migration) test_pattern='^TestMetaCollectionQualification(Runtime|Approval)ForwardMigrationAgainstPostgres$' ;;
             *) echo "meta-collection requires --package engineaccess or migration" >&2; exit 2 ;;
         esac

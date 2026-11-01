@@ -137,6 +137,10 @@
       "inheritEngineScheduleTooltip": "继承引擎调度：{desc}",
       "nextRun": "下次执行：{time}",
       "collection": {
+        "cancelExecution": "取消本次扫描",
+        "cancelConfirm": "仅取消本次执行，定时计划保持不变。已开始的目录枚举允许完成，之后不再发起新的枚举。确认取消？",
+        "cancelAccepted": "取消请求已受理。运行中的枚举结束后，执行状态会更新。",
+        "cancelFailed": "取消扫描失败，请刷新状态后重试。",
         "title": "PG 基础采集任务",
         "configure": "采集任务",
         "boundary": "配置 → 批准 → 执行。保存只记录任务，不批准、不立即扫描。",

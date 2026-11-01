@@ -14,8 +14,8 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 257 {
-		t.Fatalf("LatestVersion = %d, want 257", catalog.LatestVersion)
+	if catalog.LatestVersion != 258 {
+		t.Fatalf("LatestVersion = %d, want 258", catalog.LatestVersion)
 	}
 }
 

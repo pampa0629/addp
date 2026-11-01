@@ -439,6 +439,86 @@ const docTemplate = `{
                 ]
             }
         },
+        "/executions/{execution_id}/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "需要独立取消权限及当前引擎管理范围。已放行枚举允许结束，下次枚举停止；返回当前执行状态，受理不代表运行体已停止，不关闭定时 | Requires independent cancel permission and current engine management scope. An admitted enumeration may finish, but the next is blocked. Acceptance does not mean the runner has stopped and does not disable scheduling",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Scan"
+                ],
+                "summary": "请求取消 PG basic 集中扫描 | Request cancellation of a centralized PG basic scan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行 ID | Execution ID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "取消已受理或执行已结束 | Cancellation accepted or execution already ended",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.ScanExecutionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.scan_task.cancel"
+                ]
+            }
+        },
         "/inspect": {
             "post": {
                 "security": [

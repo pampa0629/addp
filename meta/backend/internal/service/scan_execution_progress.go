@@ -25,16 +25,21 @@ func (s *ScanExecutionService) updateExecutionProgress(executionID string, tenan
 	}
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		if metadata, ok := fields["metadata"].(commonModels.JSONMap); ok {
-			var current commonExecution.TaskExecution
-			if err := tx.Select("source", "parent_execution_id", "metadata").Where("execution_id = ? AND tenant_id = ?", executionID, tenantID).Take(&current).Error; err != nil {
+			current, err := commonExecution.LockActiveLease(context.Background(), tx, lease)
+			if err != nil {
 				return err
+			}
+			if cancellation, requested := current.Metadata[scanCancellationKey]; requested {
+				metadata = metadata.Clone()
+				metadata[scanCancellationKey] = cancellation
+				fields["metadata"] = metadata
 			}
 			if origin, exists := current.Metadata["schema_change_source"]; exists {
 				metadata = metadata.Clone()
 				metadata["schema_change_source"] = origin
 				fields["metadata"] = metadata
 			}
-			if isMosaicProducedScan(&current) {
+			if isMosaicProducedScan(current) {
 				metadata = metadata.Clone()
 				metadata["produced_target"] = current.Metadata["produced_target"]
 				fields["metadata"] = metadata

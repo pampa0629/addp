@@ -78,3 +78,9 @@ other = "冻结的扫描计划事实不可用，请重新建立扫描计划"
 
 [meta.scan.plan_facts_read_failed]
 other = "无法读取冻结的扫描计划事实"
+
+["meta.scan.management_failed"]
+other = "扫描管理操作失败"
+
+["meta.scan.execution_changed"]
+other = "扫描执行状态已变化，请刷新后重试"

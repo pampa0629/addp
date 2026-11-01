@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { collectionTaskPayload, isEngineCollectionTask, saveCollectionTask } from '../src/utils/collectionTask.js'
+import { collectionTaskPayload, isEngineCollectionTask, saveCollectionTask, cancelCollectionTaskRun } from '../src/utils/collectionTask.js'
 
 const engine = { id: 2, resource_type: 'postgresql' }
 const form = { name: ' Basic collection ', scheduled: false, schedule: '0 * * * *' }
@@ -54,4 +54,24 @@ test('PG task editor and task trigger replace the PG schedule shortcut without b
     const words = JSON.parse(fs.readFileSync(new URL(`../src/i18n/${lang}.json`, import.meta.url))).meta.scan.collection
     for (const key of ['title', 'scope', 'save', 'saved', 'approval', 'approvalHint', 'execute', 'invalid', 'unsupported']) assert.ok(words[key])
   }
+})
+
+
+test('cancellation targets only the existing PG basic execution and never changes its schedule', async () => {
+  const calls = []
+  const run = { execution_id: 'a4a910ec-e39f-4ac1-8a53-582bd6da9a96', status: 'running' }
+  const active = { ...task, last_execution_id: run.execution_id, last_execution_status: 'running', enabled: true, schedule: '0 * * * *' }
+  const before = structuredClone(active)
+  const api = new Proxy({ cancelScanExecution: async id => { calls.push(id); return run } }, {
+    get: (object, name) => { assert.ok(name in object, `unexpected API: ${name}`); return object[name] }
+  })
+  assert.equal(await cancelCollectionTaskRun(api, engine, active), run)
+  assert.deepEqual(calls, [run.execution_id])
+  assert.deepEqual(active, before)
+  for (const invalid of [{ ...active, engine_id: 3 }, { ...active, parameters: { scan_depth: 'deep' } },
+    { ...active, last_execution_status: 'success' }, { ...active, last_execution_id: '' }]) {
+    await assert.rejects(cancelCollectionTaskRun(api, engine, invalid))
+  }
+  await assert.rejects(cancelCollectionTaskRun(api, { ...engine, resource_type: 'nfs' }, active))
+  assert.equal(calls.length, 1)
 })

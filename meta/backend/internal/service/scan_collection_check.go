@@ -38,6 +38,9 @@ func (s *ScanExecutionService) bindCollectionRead(ctx context.Context, run *exec
 	}
 	request := execution.MetaCollectionAccessRequest{ExecutionID: run.ExecutionID, Attempt: lease.Attempt, LeaseToken: lease.Token, ExecutionPlanDigest: facts.ExecutionPlanDigest}
 	check := scanresource.CollectionReadCheck(func(callCtx context.Context, resource *commonmodels.Engine) error {
+		if err := s.checkScanCancellation(callCtx, run.TenantID, run.ExecutionID); err != nil {
+			return err
+		}
 		if resource != nil && (resource.ID != facts.EngineID || resource.TenantID == nil || int(*resource.TenantID) != run.TenantID || resource.EngineType != "postgresql" || strconv.FormatInt(resource.Version, 10) != facts.EngineVersion) {
 			return commonapi.ErrForbidden
 		}

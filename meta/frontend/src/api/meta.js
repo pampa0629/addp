@@ -88,6 +88,10 @@ export default {
     })
   },
 
+  cancelScanExecution(executionId) {
+    return client.post(`/meta/executions/${executionId}/cancel`)
+  },
+
   triggerScanTask(taskId) {
     return client.post(`/meta/scan/tasks/${taskId}/trigger`)
   },

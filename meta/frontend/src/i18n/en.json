@@ -137,6 +137,10 @@
       "inheritEngineScheduleTooltip": "Inheriting engine schedule: {desc}",
       "nextRun": "Next run: {time}",
       "collection": {
+        "cancelExecution": "Cancel this scan",
+        "cancelConfirm": "Cancel only this execution; keep its schedule unchanged. An admitted catalog enumeration may finish, but no further enumeration will start. Continue?",
+        "cancelAccepted": "Cancellation accepted. The execution status will update after any admitted enumeration finishes.",
+        "cancelFailed": "Unable to cancel the scan. Refresh its status and try again.",
         "title": "PG basic collection task",
         "configure": "Collection task",
         "boundary": "Configure → approve → execute. Saving only stores the task; it neither approves nor runs a scan.",
