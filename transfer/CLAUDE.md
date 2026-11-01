@@ -14,10 +14,14 @@ Transfer 是 ADDP 的数据传输中枢，统一负责 `sync` 任务的配置、
 
 ## 技术栈与端口
 
-- 后端：Go + Gin + GORM，默认端口 `8083`，环境变量 `TRANSFER_BACKEND_PORT`。
-- 前端：Vue 3 + Element Plus，开发端口 `5176`，启动脚本环境变量 `TRANSFER_FE_PORT`。
+- 后端：Go + Gin + GORM，开发首选端口变量为 `TRANSFER_BACKEND_PORT`。
+- 前端：Vue 3 + Element Plus，开发首选端口变量为 `TRANSFER_FE_PORT`。
 - 数据库：PostgreSQL `transfer` schema。
 - 依赖：System、Meta、PostgreSQL、Redis、MinIO/S3。
+
+开发首选值及分配规则统一见[端口规范](../docs/spec/addp端口分配.md#端口分配)；实际监听端口以标准启动输出和 `.dev-state/ports.env` 为准，不从首选值推断。标准启动与就绪检查见[README](README.md#开发启动与就绪检查)。
+
+容器内部端口、根 Compose 的统一 Nginx 入口与模块单独部署的宿主机映射见[部署端口规则](../docs/spec/addp端口分配.md#前端-docker-端口规则)；公开 origin 与 HTTPS／上级反向代理配置见[公开地址配置](../docs/spec/configuration/环境变量参考.md#根目录-env)，不能从开发端口或监听范围推断公开地址。端口监听及就绪响应不证明公开 HTTPS、认证、Worker 源读／目标写链路通过；实际验收范围见[开发与验证](#开发与验证)。
 
 ## 重要目录
 
