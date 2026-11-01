@@ -199,11 +199,15 @@ Transfer bounded 保护失败在实际边界保留类型化准备／结果标记
 
 ### 生产来源与写后扫描
 
-后台产物扫描归属：人工 start/resume/replay 固化本次 User 的完整主体；编排继承已验证父主体；continuous 自动恢复复制同任务上一轮来源及 retry 关联，不复制授权或 lease。bounded 先按当前 lease 保存实际 outputs 与 writer refs，再提交 `source=transfer` 和父 execution UUID；continuous 初次扫描先在私有 lease fencing 事务内保存 prepared target。Meta 拒绝无来源 Service 扫描，Transfer 保存安全扫描反馈；自有 bounded scheduled 复用 System Task Authorization Subject：带 Cron 定义的创建、更新与恢复从当前 User 同步授权，保存与 apply identity／定义摘要绑定的完整主体；暂停清除本地授权，触发前重核 System 当前资格并在 due claim 事务核对定义及主体，缺失或失效不创建 execution、不推进计划。结构审批在同一应用事务保存审批人的完整来源、实际目标及 revision，再由既有 claim 事务同步 token／期限；Meta 锁定核验 Common 中的已应用事实后创建独立扫描，不读取 Transfer 私表、不借旧执行身份。Manager 导入的创建/启动只在同步请求内转发 User 凭据。已有 Go、PostgreSQL 与 Swagger 门禁覆盖，无新增测试入口或数据库。
+人工、编排与自动恢复的主体来源统一沿[生产来源契约](../docs/spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)，自动恢复不复制授权或 lease。bounded 先按当前 lease 保存实际 outputs 与 writer refs，再提交 `source=transfer` 和父 execution UUID；continuous 初次扫描先在私有 lease fencing 事务内保存 prepared target。Meta 拒绝无来源 Service 扫描，Transfer 保存安全扫描反馈；来源事实不授予数据访问、执行或子扫描读取权限。
 
-结构审批补扫的正式来源为 `schema_change_source`，只引用触发阻塞的 execution、审批 request 和当前 claim。Common 私有 `schema_change_scan_origin` 保存实际应用目标与本次审批 User 的来源，专业诊断不暴露该对象；原阻塞 execution 的主体不变，新扫描无父 execution，并按审批人隔离读取。T1/T2 沿现有 Meta 专业读取与 Transfer 结构阻塞门禁验证；continuous Hosted 套件增加真实 nullable 字段变更、审批补扫、新字段 Meta 事实、幂等审批和 resume 后物理提交与范围不变检查。
+自有 bounded Cron 的主体、定义摘要与触发重核沿[Transfer 定时任务授权](../docs/spec/tasks/任务定义与授权.md#transfer-定时任务授权)。暂停清除调度授权，恢复由当前 User 重授权；资格缺失或失效时不创建 execution、不推进计划。
 
-Manager 导入的 Infra source 由当前 bounded execution 的完整 User 来源和绑定任务经 Manager Owner 核验后读取，使用 `manager.import_provenance.read`；未知、未绑定、跨租户、非上传者或 Owner 不可用时拒绝。通用 content／format reader 保持唯一实现，业务来源仍走既有 Security Gate，不以 Infra 路径作为许可。
+审批补扫按[来源绑定契约](../docs/spec/tasks/生产来源与产物扫描.md#生产执行与后台扫描的来源)提交 `schema_change_source`，关联触发阻塞的 execution、审批 request 和当前 claim；`schema_change_scan_origin` 是私有审批来源快照，不进入专业诊断。原阻塞 execution 的主体不变，新扫描无父 execution，并按本次审批 User 隔离读取；Meta 只核验 Common 中已应用的审批事实，不读 Transfer 私表或借旧执行身份。审批权限、claim 接管及失败边界统一见[数据库审批与恢复](docs/数据库架构.md#审批与显式恢复)、[补扫 claim](docs/数据库架构.md#审批补扫-claim-与失败边界)和[公共观测与验收](docs/数据库架构.md#schema-change-公共观测与验收)。
+
+Manager 导入的创建/启动只在同步请求内转发 User 凭据。Manager 导入的 Infra source 由当前 bounded execution 的完整 User 来源和绑定任务经 Manager Owner 核验后读取，使用 `manager.import_provenance.read`；未知、未绑定、跨租户、非上传者或 Owner 不可用时拒绝。通用 content／format reader 保持唯一实现，业务来源仍走既有 Security Gate，不以 Infra 路径作为许可。
+
+标准门禁及分版本结果见[开发与验证](#开发与验证)，精确范围、双用户审批归属与清理的实际证据见[扫描与审批验收](#continuous-精确扫描与审批归属)；T1/T2、单用户与双用户 Hosted 的覆盖范围分别认定。
 
 ### Cleanup 执行边界
 
