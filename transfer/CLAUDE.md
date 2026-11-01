@@ -1,6 +1,6 @@
 # Transfer 模块说明
 
-阅读导航：[当前支持矩阵与任务语义](docs/transfer-任务语义与同步模式.md#三当前支持矩阵)、[后续能力清单](../docs/next/transfer后续能力清单.md)、[执行规则](#执行规则)、[开发与验证](#开发与验证)。
+阅读导航：[当前支持矩阵与任务语义](docs/transfer-任务语义与同步模式.md#三当前支持矩阵)、[后续能力清单](../docs/next/transfer后续能力清单.md)、[执行规则](#执行规则)、[数据库与 Worker 启动](#数据库启动所有权)、[开发与验证](#开发与验证)。
 
 ## 模块定位
 
@@ -244,6 +244,12 @@ Cleanup 使用 Common 持久 Runner，System 预建子执行，Transfer 不消�
 - 对象身份使用 `/tasks/:id/edit`、`/tasks/:id/detail` 与 `/executions/:execution_id`，不得退化为列表 URL 或 iframe 私有状态；通用要求沿[URL 状态规范](../docs/spec/addp前端路由与可恢复状态规范.md#三必须进入-url-的状态)。深链、刷新、前进后退及 Console／standalone 的验证沿[路由验收规范](../docs/spec/addp前端路由与可恢复状态规范.md#八实现与验收要求)，静态登记不代表实际运行通过。
 - 列表进入创建、编辑、详情和执行页使用 `push`；保存或取消后离开已失效的表单历史项使用 `replace`。
 
+## 数据库启动所有权
+
+Transfer schema 仅由 Backend 迁移；模块级数据库锁、成功提交的版本事实及 Backend 就绪后启动 Worker 的顺序统一见[模块迁移与 Worker 启动顺序](../docs/spec/addp开发服务生命周期与构建身份规范.md#模块迁移与-worker-启动顺序)。Worker 只读校验模块与公共 schema，不自动修复；结构或初始化迁移变化须递增 Transfer `SchemaVersion`，缺失或不匹配时拒绝启动领取。
+
+原生开发的 bounded／continuous Worker 分别由 `ADDP_DEV_TRANSFER_BOUNDED_WORKER_REPLICAS`、`ADDP_DEV_TRANSFER_CONTINUOUS_WORKER_REPLICAS` 选择副本，默认 1，仅接受 1／2。编号单元、PID／工作区归属、独立进程身份及共享 `ADDP_HOST_NODE_ID`、启动补缺、缩容和停止规则统一见[Worker 启动单元](../docs/spec/addp开发服务生命周期与构建身份规范.md#metatransfer-与-quality-worker-启动单元)。持续同步双副本须省略固定 `TRANSFER_CONTINUOUS_WORKER_INSTANCE_ID`，保留每进程独立租约 Owner；多进程部署或生命周期夹具通过不代表真实任务竞争、主机绑定或 HA 已验收，实际范围见[开发与验证](#开发与验证)。
+
 ## 开发与验证
 
 ### 当前启动与测试入口
@@ -366,9 +372,3 @@ continuous 双用户审批验收沿用现有 Hosted suite 和同租户 peer：�
 - [高性能分析（历史归档）](docs/transfer高性能分析.md)
 - [transfer.transfer_tasks 表](docs/tables/tasks表.md)
 - [common.task_executions 中的 Transfer 执行记录](docs/tables/task_executions表.md)
-
-## 数据库启动所有权
-
-本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见 `docs/spec/addp开发服务生命周期与构建身份规范.md`。
-
-原生开发的 bounded、continuous Worker 均支持默认单实例、可选双实例，分别配置 `ADDP_DEV_TRANSFER_BOUNDED_WORKER_REPLICAS` 和 `ADDP_DEV_TRANSFER_CONTINUOUS_WORKER_REPLICAS`（仅 1／2）。标准入口按编号单元管理 PID，沿正式登记传递独立进程身份与 `ADDP_HOST_NODE_ID`。持续同步双实例必须省略固定 `TRANSFER_CONTINUOUS_WORKER_INSTANCE_ID`，复用原有每进程租约 Owner 生成。启动、缩容和停止边界见上述生命周期规范；多进程部署不等于已验证业务任务竞争或 HA。
