@@ -207,6 +207,7 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
             if type(before[name].get('size_bytes')) is not int or before[name]['size_bytes'] != baseline['sources'][name]['size_bytes']: raise SuiteError('physical/Meta source size differs')
         if base.scan_ids(client) != [scan]: raise SuiteError('unexpected source initialization scan')
         physical_calls, full_checks = 1, 0; cases, failures, names, scans, previous = [], [], [], [], {}
+        target_metadata_before = {}
         for index, name in enumerate(fixture.CASES, 1):
             stages.append({'case': name, 'status': 'running'}); progress('running')
             language = 'zh-cn' if index % 2 else 'en'; dag = definition(sources, parent, name); target = parent.replace('/outputs?type=directory', '/outputs/'+name+'?type=file')
@@ -228,6 +229,7 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
             item0 = support.find_fixture_item(client, engine, 'outputs/'+name, 'GeoPackage')
             item = client.request('GET', f'/api/v1/meta/items/{item0["id"]}', (200,)).payload
             size = validate_item(item, native['targets'][name], name, expected[name])
+            target_metadata_before[name] = copy.deepcopy(item)
             cases.append({'name': name, 'execution_id': identifier, 'target_item_id': item['id'], 'target_locator': target,
                           'automatic_scan_execution_id': output_scan, 'scan_identity': scan_identity, 'size_evidence': size, 'lineage_evidence': evidence, 'physical': native['targets'][name]})
             stages[-1]['status'] = 'passed'; progress('running')
@@ -257,15 +259,18 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
                 failures.append({'problem': problem, 'language': language, 'execution_id': identifier, 'diagnostic': diagnostic, 'no_publication_or_scan_or_lineage': True})
                 stages[-1]['status'] = 'passed'; progress('running')
         if len(cases) != 16 or len(failures) != 76 or full_checks != 1352 or physical_calls != 93: raise SuiteError('all 16 successes, 76 failures, 1352 GeoPackage checks and 93 physical calls required')
-        for name, item in items.items():
-            if client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload != before[name]: raise SuiteError('source metadata changed')
+        source_metadata_after = {name: client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload for name,item in items.items()}
+        if source_metadata_after != before: raise SuiteError('source metadata changed')
+        target_metadata_after = {name: client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload for name,item in target_metadata_before.items()}
+        if target_metadata_after != target_metadata_before: raise SuiteError('previous target metadata changed')
         lineage.verify_archive(env, SUITE, cases); remaining()
         immutable(directory/'vector-zonal-area-weighted-expectations.json', encoded(expected))
         report = {'schema_version': 'addp.'+SUITE+'/v1', 'suite': SUITE, 'result': 'passed', 'identity': identity,
                   'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'sources': sources, 'runtime_engine_id': runtime,
                   'source_scan_execution_id': scan, 'source_scan_identity': source_scan_identity,
                   'cases': cases, 'failed_parameters': failures, 'full_target_checks': full_checks, 'physical_verification_calls': physical_calls,
-                  'physical': native, 'archived_gpkgs': native['archived_gpkgs'], 'source_unchanged': True, 'oracle_sha256': anchor}
+                  'physical': native, 'archived_gpkgs': native['archived_gpkgs'], 'source_unchanged': True, 'oracle_sha256': anchor, 'source_metadata_before': before, 'source_metadata_after': source_metadata_after,
+                  'target_metadata_before': target_metadata_before, 'target_metadata_after': target_metadata_after}
     except BaseException as error: primary = error
     finally:
         try:

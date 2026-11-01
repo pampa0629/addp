@@ -201,3 +201,17 @@ class ZonalAreaWeightedWorkflowTest(unittest.TestCase):
             if fault=='missing':bad.pop('crs')
             else:bad['crs']['properties']['name']='urn:ogc:def:crs:EPSG::4326'
             with self.subTest(fault=fault),self.assertRaisesRegex(m.SuiteError,'projection CRS'):m.validate_preview(bad,expectations()[name],name)
+
+    def test_all_source_and_target_meta_snapshots_are_archived_and_changed_old_meta_fails(self):
+        report=self.run_case()
+        self.assertEqual(set(report['source_metadata_before']),set(m.fixture.SOURCES))
+        self.assertEqual(set(report['target_metadata_before']),set(m.fixture.CASES))
+        self.assertEqual(report['source_metadata_before'],report['source_metadata_after'])
+        self.assertEqual(report['target_metadata_before'],report['target_metadata_after'])
+        client=Client()
+        def alter(value):
+            if value['status']=='failed':client.items['outputs/area-center.gpkg']['fingerprint']='changed old Meta'
+        client.mutation=alter
+        with tempfile.TemporaryDirectory()as directory:
+            self.env['ADDP_ONLINE_ARTIFACT_DIR']=directory
+            with self.assertRaisesRegex(m.SuiteError,'previous target metadata changed'):self.run_case(client)
