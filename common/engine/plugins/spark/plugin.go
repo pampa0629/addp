@@ -32,8 +32,11 @@ func (p *Plugin) RequiredFields() []string           { return p.ConnectionSpec()
 func (p *Plugin) SensitiveFields() []string          { return p.ConnectionSpec().SensitiveFields() }
 func (p *Plugin) ConnectionIdentityFields() []string { return p.ConnectionSpec().IdentityFields() }
 func (p *Plugin) Capabilities() plugin.EngineCapabilities {
-	// Query is enabled only after the shared Runtime implements the complete protocol.
-	return plugin.EngineCapabilities{SchemaVersion: plugin.CapabilitiesSchemaVersion, EngineType: p.Type(), EngineFamily: "compute", Compute: &plugin.ComputeCapabilities{}}
+	capabilities := plugin.NewFederatedQueryCapabilities(p.Type(), "addp.query-runtime/v1", []string{"postgresql", "mysql"}, nil)
+	capabilities.EngineFamily = "compute"
+	capabilities.Compute.Query.IdentifierQuotes = map[string]string{"sql": "`"}
+	capabilities.Compute.Query.Federation.RuntimeEngineType = "spark_workflow"
+	return capabilities
 }
 
 func (p *Plugin) ValidateConnectionInfo(info plugin.ConnectionInfo) error {

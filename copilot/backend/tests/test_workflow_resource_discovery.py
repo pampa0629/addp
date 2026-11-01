@@ -17,7 +17,7 @@ def resource_facts(locator, *, data_type="table", source_engine_type="postgresql
         "data_type": data_type,
         "source_engine_type": source_engine_type,
         "full_name": extra.pop("full_name", None),
-        "query_names": extra.pop("query_names", {}),
+        "query_references": extra.pop("query_references", {}),
         "schema_coverage": extra.pop("schema_coverage", "complete"),
         "fields": fields or [],
         **extra,
@@ -96,7 +96,7 @@ def test_discovery_reuses_owner_tools_and_returns_verified_resource_facts():
         "ancestors": [{"label": "public", "type": "schema", "locator": "schema-locator"}],
         "data_type": "table",
         "source_engine_type": "postgresql",
-        "query_names": {},
+        "query_references": {},
         "schema_coverage": "complete",
         "geometry_column": "shape",
         "geometry_type": "LineString",
@@ -210,7 +210,7 @@ class MongoDiscoveryExecutor:
         if name == "resource.ancestors.get":
             return {"target_locator": locator, "ancestors": []}
         if name == "resource.facts.get":
-            return resource_facts(locator, source_engine_type="mongodb", fields=[{"name": "_id", "type": "string"}], query_names={"mql": "Persons"}, schema_coverage="sampled")
+            return resource_facts(locator, source_engine_type="mongodb", fields=[{"name": "_id", "type": "string"}], query_references={'mql': {'parts': ['Persons']}}, schema_coverage="sampled")
         raise AssertionError(f"unexpected tool {name}")
 
 
@@ -248,7 +248,7 @@ class ScopedMongoDiscoveryExecutor:
                 "children": [{"locator": locator, "label": "Outdoors", "type": "collection"}],
             }
         if name == "resource.facts.get":
-            return resource_facts(locator, source_engine_type="mongodb", fields=[{"name": "members.userInfo.nickName", "type": "string"}], query_names={"mql": "Outdoors"}, schema_coverage="sampled")
+            return resource_facts(locator, source_engine_type="mongodb", fields=[{"name": "members.userInfo.nickName", "type": "string"}], query_references={'mql': {'parts': ['Outdoors']}}, schema_coverage="sampled")
         raise AssertionError(f"unexpected tool {name}")
 
 

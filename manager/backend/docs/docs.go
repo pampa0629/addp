@@ -7679,10 +7679,10 @@ const docTemplate = `{
                 "locator": {
                     "type": "string"
                 },
-                "query_names": {
+                "query_references": {
                     "type": "object",
                     "additionalProperties": {
-                        "type": "string"
+                        "$ref": "#/definitions/query.ResourceQueryReference"
                     }
                 },
                 "scanned_depth": {
@@ -10910,6 +10910,17 @@ const docTemplate = `{
                 },
                 "table": {
                     "type": "string"
+                }
+            }
+        },
+        "query.ResourceQueryReference": {
+            "type": "object",
+            "properties": {
+                "parts": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

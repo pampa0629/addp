@@ -305,7 +305,14 @@ func (s *QuerySampleService) generateFederated(
 	if err != nil {
 		return "", "", err
 	}
-	candidates := federatedquery.Candidates(sources, 0)
+	capabilities := provider.Capabilities()
+	if capabilities.Compute == nil || capabilities.Compute.Query == nil {
+		return "", "", ErrQuerySampleUnavailable
+	}
+	candidates, err := federatedquery.Candidates(sources, 0, capabilities.Compute.Query.IdentifierQuotes["sql"])
+	if err != nil {
+		return "", "", err
+	}
 	callerToken, err := s.system.TenantServiceAccessToken(ctx, tenantID)
 	if err != nil {
 		return "", "", fmt.Errorf("获取 Service Runtime 凭据失败: %w", err)

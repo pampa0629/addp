@@ -71,16 +71,12 @@ func TestFederatedQueryServiceResolvesOnlyReferencedSupportedSources(t *testing.
 	if err != nil || frozen.SelectedEngineID != 90 || frozen.RuntimeEngineID != 90 || frozen.Audience != "duckdb" || !reflect.DeepEqual(frozen.SourceEngineIDs, []uint{12, 13}) {
 		t.Fatalf("admission binding=%+v error=%v", frozen, err)
 	}
-}
-
-func TestFederatedQueryCandidatesComeFromCurrentCatalogSources(t *testing.T) {
-	svc := &FederatedQueryService{}
-	candidates := svc.CandidateQueries([]DataSource{{
+	candidates, err := svc.CandidateQueries(context.Background(), 7, 90, []DataSource{{
 		EngineName: "Business MinIO", EngineID: 12, EngineType: "minio",
 		Tables: []TableRef{{Table: "orders", PhysicalPath: "manager/orders"}},
 	}})
-	if len(candidates) != 1 || candidates[0].EngineID != 12 ||
-		candidates[0].Query != "SELECT *\nFROM Business_MinIO.orders\nLIMIT 10" {
+	if err != nil || len(candidates) != 1 || candidates[0].EngineID != 12 ||
+		candidates[0].Query != "SELECT *\nFROM \"Business_MinIO\".\"orders\"\nLIMIT 10" {
 		t.Fatalf("candidates = %#v", candidates)
 	}
 }

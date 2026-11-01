@@ -19,7 +19,7 @@ import (
 
 const readyState = `{"url":"spark://internal-master:7077","status":"ALIVE","aliveworkers":1,"workers":[{"id":"worker-1","state":"ALIVE"}],"activeapps":[]}`
 
-func TestClusterHasNoStorageOrPrematureQueryProvider(t *testing.T) {
+func TestClusterHasFederatedQueryTargetButNoStorageProvider(t *testing.T) {
 	p := &Plugin{}
 	if err := plugin.ValidatePluginCapabilities(p); err != nil {
 		t.Fatal(err)
@@ -34,8 +34,13 @@ func TestClusterHasNoStorageOrPrematureQueryProvider(t *testing.T) {
 	}
 	raw := models.JSONString(encoded)
 	engine := &models.Engine{Capabilities: &raw}
-	if selection.HasStorageCapability(engine) || capabilities.Storage != nil || capabilities.Compute.Query != nil {
-		t.Fatal("compute target must not claim storage or unavailable query support")
+	if selection.HasStorageCapability(engine) || capabilities.Storage != nil {
+		t.Fatal("compute target must not claim storage")
+	}
+	if capabilities.Compute.Query == nil || !capabilities.Compute.Query.Supported ||
+		capabilities.Compute.Query.Federation.RuntimeEngineType != "spark_workflow" ||
+		capabilities.Compute.Query.Federation.ExecutionAudience != "spark" || capabilities.Compute.Query.SupportsCancel {
+		t.Fatal("invalid federated compute target binding")
 	}
 	var provider any = p
 	for name, implements := range map[string]bool{

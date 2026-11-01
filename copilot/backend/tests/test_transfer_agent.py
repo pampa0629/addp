@@ -240,7 +240,7 @@ def test_transfer_draft_tool_sdk_http_contract_preserves_mongodb_configuration(m
     source = ResourceFact(
         role="source", engine_id=11,
         locator="addp://engine/11/path/Outdoor/Activities?type=collection&item_id=42",
-        source_engine_type="mongodb", data_type="table", query_names={"mql": "Activities"},
+        source_engine_type="mongodb", data_type="table", query_references={'mql': {'parts': ['Activities']}},
         fields=[{"name": "_id", "type": "string"}, {"name": "status", "type": "string"}],
     )
     task = _task(source)

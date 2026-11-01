@@ -25,7 +25,7 @@ def platform_fixture():
     source = {
         "locator": "addp://engine/11/path/demo/events?type=collection&item_id=42",
         "engine_id": 11, "source_engine_type": "mongodb", "item_type": "collection",
-        "query_names": {"mql": "events"}, "schema_coverage": "sampled",
+        "query_references": {'mql': {'parts': ['events']}}, "schema_coverage": "sampled",
         "fields": [{"name": "_id", "type": "string"}, {"name": "status", "type": "string"},
                    {"name": "members", "type": "array"}, {"name": "members.id", "type": "string"}],
     }
@@ -190,11 +190,11 @@ class PlatformConditionTests(unittest.TestCase):
         _, source, _, arguments, checkpoint = platform_fixture()
         identity = prepare_review(arguments, checkpoint)
         confirm_selection(checkpoint, {"value": identity["fingerprint"], "candidate": {"operation_review": identity}})
-        refreshed = {key: value for key, value in source.items() if key not in {"fields", "query_names"}}
+        refreshed = {key: value for key, value in source.items() if key not in {"fields", "query_references"}}
         capture_owner_facts("resource.facts.get", refreshed, checkpoint)
         fact = checkpoint["observed"]["resources"][source["locator"]]
         self.assertNotIn("fields", fact)
-        self.assertNotIn("query_names", fact)
+        self.assertNotIn("query_references", fact)
         with self.assertRaisesRegex(ValueError, "confirmed_source"):
             validate_create(arguments, checkpoint)
 
@@ -222,12 +222,12 @@ class PlatformConditionTests(unittest.TestCase):
         _, source, _, arguments, checkpoint = platform_fixture()
         preview = {
             "preview_type": "table", "metadata": {"locator": source["locator"]},
-            "data": {"query_names": {"mql": "invented"}, "column_metadata": [{"column_name": "invented", "type": "string"}]},
+            "data": {"query_references": {'mql': {'parts': ['invented']}}, "column_metadata": [{"column_name": "invented", "type": "string"}]},
         }
         before = copy.deepcopy(checkpoint)
         self.assertEqual(capture_owner_facts("data.preview", preview, checkpoint), {})
         self.assertEqual(checkpoint, before)
-        incomplete = {key: value for key, value in source.items() if key not in {"fields", "query_names"}}
+        incomplete = {key: value for key, value in source.items() if key not in {"fields", "query_references"}}
         capture_owner_facts("resource.facts.get", incomplete, checkpoint)
         self.assertEqual(capture_owner_facts("data.preview", preview, checkpoint), {})
         with self.assertRaisesRegex(ValueError, "confirmed_source"):

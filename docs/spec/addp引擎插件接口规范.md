@@ -730,9 +730,15 @@ Spark 采用该协议时，HTTP 查询入口集成在现有内置 Spark Runtime�
 
 Spark 首期关系联邦查询在独立 Driver 中使用固定版本 Catalyst 的未解析语法树校验，再执行同一 SQL；不能先调用 `SparkSession.sql` 再判断是否只读，因为该调用可能立即执行命令。只允许已验证的查询节点、纯内置表达式及本次授权 JDBC Catalog 的三段式表引用；CTE 和子查询递归检查，未知节点、函数、外部路径、临时视图、表值函数及所有命令均拒绝。每个 Driver 使用独立会话，执行前不继承工作流 Catalog、UDF 或扩展。该技术准入不等于查询 HTTP、工作台或运行授权链路已验收，未完成后者时仍不得开放查询能力。
 
+Spark 3.5.0 查询 Driver 在原生 JDBC Catalog 上加载固定构建的标识符转义方言：PostgreSQL 名称内双引号、MySQL 名称内反引号均加倍转义；不改写物理名称、不建立替代 Catalog。查询专用SparkPlugin在Driver和Executor均安装同一方言，确保Worker实际拼接下推谓词时也正确转义；不修改Business Worker部署。方言使用 Spark 原生聚合机制保留内置 JDBC 类型映射，仅覆盖标识符引用。源码随 Runtime 提交，按固定 Spark JAR 输入构建 Java 11 字节码，开发准备、镜像构建及隔离 T2 负责构建；查询只验证输入／产物指纹并加载，缺失或过期直接拒绝，禁止请求内编译或下载代码。
+
 Develop 在联邦查询入队前，将所选目标 ID、实际 Runtime ID、执行受众及独立的 Source Engine ID 集合冻结到 execution 私有快照。执行领取后只复核这些固定身份的当前有效性与能力，不按同名源或当前候选重新选取；缺失或不完整的快照直接拒绝，不兼容旧快照。计算目标可作为执行授权中的独立访问范围，但不得混入发送给 Runtime 的数据源集合。此规则同时适用于目标自身就是 Runtime 的 DuckDB 与委托内置 Runtime 的计算集群，不按引擎名称分支。
 
 查询请求必须绑定唯一 execution。Runtime 按 Execution Authorization 逐个取得 Source Engine 连接，限制可挂载引擎、对象物理路径、内存、线程、临时目录、超时和最大返回行数。HTTP JSON 解码必须保留整数精度，参数只能通过数据库驱动绑定。HTTP 请求取消必须传递到 DuckDB 查询上下文；若未提供独立取消资源端点，`supports_cancel` 不得声明为 true。
+
+查询结果沿同一 `columns/fields/rows` 契约传递；`fields` 必须来自本次原生输出 schema，与有序列名对应，空结果也不能省略类型，不从源字段或Go/Python值猜类型。Runtime 的 HTTP 边界按声明类型编码 bigint／decimal，消费方使用保留数值精度的JSON解码，并将同一字段事实贯穿保护、缓存和查询结果观察。DuckDB使用固定驱动提供的结果类型声明（含Decimal及嵌套STRUCT/LIST），Spark使用DataFrame schema；不能让联邦查询丢弃类型后回退为普通JSON number。当前未实现的原生输出类型明确拒绝，不伪装成字符串或无类型结果。
+
+联邦样例使用目标声明的 `identifier_quotes.sql` 引用原始物理 schema/table 名称并转义引号；只有已定义的虚拟源别名、对象虚拟表别名执行共享清洗，不能把关系表原名中的空格、中文或标点改成下划线。共享词法引用发现只用于候选源绑定，跳过字符串和注释并拒绝歧义别名；它不能代替Runtime原生计划校验、执行授权或真实读取来源证明。
 
 联邦对象表消费必须显式区分 Source Engine 与 Query Runtime。对象表由 Meta 的 `item.data_type=table`、`item.format`、`item.layout`、`storage.physical_path` 等标准事实确定，不能恢复 `lake_table` item type 或 `lake_mode`。当前 DuckDB 对象表仅开放 Parquet、single/whole；普通 object/file 的目录叶子身份不随表格内容语义改变。
 
@@ -1008,7 +1014,7 @@ Workflow Runtime 的直接存储接入由 `compute.workflow.storage_access.read_
 | TiDB | 非空间通用 tabular 组合 + `AnalyticalCompilerProvider` + `AnalyticalSQLExecutionValidator` + `BoundedWatermarkReadProvider` + `TableUpsertProvider` |
 | Oracle | 通用 tabular 组合 + `SpatialFeatureReadProvider` + `PartitionedTableChangeApplyProvider`；普通 Store 不声明 CDC |
 | Doris / ClickHouse | 非空间通用 tabular 组合；不声明 `BoundedWatermarkReadProvider`、`TableUpsertProvider` 或 CDC |
-| Business Spark | `EnginePlugin` + `ConnectionSpecProvider`；Standalone 计算目标，无 Storage／Catalog／Table Session；查询 HTTP 尚未接通时不声明查询 Provider |
+| Business Spark | `EnginePlugin` + `ConnectionSpecProvider`；Standalone 计算目标，无 Storage／Catalog／Table Session；FederatedQueryRuntimeProvider 委托内置 Runtime；不恢复 Thrift 查询 Provider |
 | Redis | `EnginePlugin` + `ConnectionSpecProvider` + Catalog Model/Catalog/Facts + `KeyValueReadableProvider`；`key_value` 存储族，模型为 `server -> keyspace`，不实现表、记录集合或 Query Provider。认证后的 HELLO 必须报告 standalone 模式，再执行 SELECT 与 DBSIZE。 |
 | MongoDB | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `DynamicSchemaSamplingProvider` + `RecordReadSessionProvider` + `EncodedRecordReadSessionProvider` + `QueryRuntimeProvider` + `QueryReadSessionProvider` |
 | Neo4j | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `GraphSampleProvider` + `QueryRuntimeProvider` + `GraphQueryProvider` |

@@ -11,8 +11,16 @@ from addp_common.client import SyncOAuthServiceTokenSource
 _token_source: SyncOAuthServiceTokenSource | None = None
 
 
+class ExecutionAccessError(ValueError):
+    """Closed HTTP category; no raw System response is exposed to callers."""
+
+    def __init__(self, message, status_code):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 def get_execution_engine_access(authorization_id: str, execution_id: str,
-                                engine_id: int, tenant_id: int) -> Dict[str, Any]:
+                                engine_id: int, tenant_id: int, *, timeout=10) -> Dict[str, Any]:
     """Consume one exact read-only Spark query grant as the existing service identity.
 
     tenant_id must come from the authenticated caller context. No User Token,
@@ -38,13 +46,14 @@ def get_execution_engine_access(authorization_id: str, execution_id: str,
             f'{system_url}/api/v1/system/execution-authorizations/{authorization_id}/engine-accesses',
             headers={'Authorization': f'Bearer {token}'},
             json={'execution_id': execution_id, 'engine_id': str(engine_id), 'required_effects': ['read']},
-            timeout=10,
+            timeout=timeout,
         )
         if response.status_code != 401 or attempt == 1:
             break
         source.invalidate(tenant_id, token)
     if response.status_code != 200:
-        raise ValueError('Spark execution engine access denied or unavailable')
+        raise ExecutionAccessError('Spark execution engine access denied or unavailable',
+                                   403 if response.status_code in {400, 401, 403, 404} else 503)
     try:
         access = response.json()
         engine = access['engine']
@@ -57,9 +66,9 @@ def get_execution_engine_access(authorization_id: str, execution_id: str,
             and expires.tzinfo is not None and expires > datetime.now(timezone.utc)
         )
     except (KeyError, TypeError, ValueError, AttributeError):
-        raise ValueError('System returned an invalid Spark execution engine access') from None
+        raise ExecutionAccessError('System returned an invalid Spark execution engine access', 503) from None
     if not valid:
-        raise ValueError('System returned an invalid Spark execution engine access')
+        raise ExecutionAccessError('System returned an invalid Spark execution engine access', 503)
     return access
 
 

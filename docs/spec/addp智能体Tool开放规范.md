@@ -169,9 +169,11 @@ ToolExecutor 已按 Manifest 输出 Schema 和 `max_bytes` 校验的受限结果
 
 ### 4.5 `resource.facts.get`
 
-`resource.facts.get` 接收具体 data item 的 `locator`，由 Manager 基于当前 Tenant 可访问的 Engine 和 Meta 扫描事实返回受限资源事实投影。结果只包含规范 locator、Source Engine、原生查询名称、schema coverage、字段路径和必要空间事实，不读取或返回原始数据行。
+`resource.facts.get` 接收具体 data item 的 `locator`，由 Manager 基于当前 Tenant 可访问的 Engine 和 Meta 扫描事实返回受限资源事实投影。结果只包含规范 locator、Source Engine、结构化资源查询引用、schema coverage、字段路径和必要空间事实，不读取或返回原始数据行。
 
-当前 Tool 契约为 `2.0.0`。输入必须是 Owner 返回的业务 ResourceLocator，包含正整数 Engine ID、`type` 与唯一正整数 `item_id`，不含 `node_id`；不得把无身份的路径或目录节点当作数据项。Manifest 输入 Schema 在委托签发和 Owner 调用之前拒绝不满足该身份结构的输入，返回 `invalid_arguments`。`type` 只是原生 Catalog 术语，不以类型名称白名单替代 node/item 身份判断，也不从路径猜测数据类型；通过结构校验仍必须由 Owner 验证真实身份、当前 Tenant 权限及扫描事实。目录发现和父节点确认继续使用 `resource.children.list` / `resource.ancestors.get`，不自动改写 locator 或替换 Tool。
+`ResourceFact.query_references` 按 `sql/mql/cypher/federated_sql` 声明 `{parts: string[]}`。Owner 从租户绑定的 Meta item 及有序祖先链核对 item/engine/tenant 和父子链接，再构造 EngineCatalogPath 产生原始名称分段；调用方 locator 路径只能寻址，不能作为已验证的查询名称；SQL关系表保留真实namespace/table，MQL保留单个collection名，联邦SQL在真实分段前添加已定义的虚拟源别名，对象表使用Owner确认的虚拟表别名。每段原样保留中文、空格、点号和引号；`full_name` 仍只作显示与身份事实，不能再拆分或清洗成查询名称。删除旧 `query_names` 字段及其消费路径，不兼容平面名称。工作台与生成器只按目标声明的引号规则渲染，SQL核验比较原生解析得到的分段而不是拼接后的平面字符串；MQL必须核对唯一的collection分段。该事实不授予读取权限，既有Owner接口的权限和无原始行边界保持不变。
+
+当前 Tool 契约为 `3.0.0`。输入必须是 Owner 返回的业务 ResourceLocator，包含正整数 Engine ID、`type` 与唯一正整数 `item_id`，不含 `node_id`；不得把无身份的路径或目录节点当作数据项。Manifest 输入 Schema 在委托签发和 Owner 调用之前拒绝不满足该身份结构的输入，返回 `invalid_arguments`。`type` 只是原生 Catalog 术语，不以类型名称白名单替代 node/item 身份判断，也不从路径猜测数据类型；通过结构校验仍必须由 Owner 验证真实身份、当前 Tenant 权限及扫描事实。目录发现和父节点确认继续使用 `resource.children.list` / `resource.ancestors.get`，不自动改写 locator 或替换 Tool。
 
 该 Tool 是生成类 Tool 确认具体输入资源的唯一入口。`data.preview` 只用于用户或 Agent 明确请求查看样本数据的场景，不得再用于查询、Workflow、Notebook 或 Transfer 生成前的 Schema 校验。动态 schema 的字段事实来自 Meta 深度扫描；缺少可用扫描事实时明确失败并由用户刷新扫描，不得隐式读取原始行兜底。
 
@@ -185,13 +187,13 @@ ToolExecutor 已按 Manifest 输出 Schema 和 `max_bytes` 校验的受限结果
 
 MQL 集合比较必须走强类型语义计划和确定性编译器。计划只能引用 owner 已验证的实体字段、数组元素身份字段与两个实体值，比较口径只允许共同元素数量、Jaccard 相似度或以较少一方为分母的重叠系数；编译器统一按身份字段去重后计算交集和并集。用户只表达“重叠度”等未定义口径时必须返回澄清，禁止模型默认选择算法或自由生成 MQL。
 
-Copilot 默认保留 `current_query` 已声明的主 collection，除非用户明确要求修改。合法 MQL 已声明 collection 时不得以 `resources=[]` 跳过字段事实确认；`current_query` 不能替代 metadata。MongoDB database locator 仍不得写入 `resources[]`、`current_query` 或生成的 MQL，只有解析后的具体 collection locator 可以进入 `resources[]`。Copilot 生成前先形成结构化 Query Plan；Plan 的 collection 必须使用已验证资源事实提供的规范查询名，operation 必须使用平台枚举，五类 Plan 字段统一为字符串数组。Plan 解析或校验失败时最多进行一次受限修复；Plan 通过后再生成候选，并校验只读命令、collection、可查询字段路径、参数引用/定义一致性和计划覆盖。MQL 只能通过已验证的字面字段路径取值，不得通过 `$objectToArray` 等记录键枚举绕过字段事实。候选失败时最多进行一次受限重生成，不保留未校验 Plan 或候选旁路。
+Copilot 默认保留 `current_query` 已声明的主 collection，除非用户明确要求修改。合法 MQL 已声明 collection 时不得以 `resources=[]` 跳过字段事实确认；`current_query` 不能替代 metadata。MongoDB database locator 仍不得写入 `resources[]`、`current_query` 或生成的 MQL，只有解析后的具体 collection locator 可以进入 `resources[]`。Copilot 生成前先形成结构化 Query Plan；通用 Plan 的 `collections[]` 逐项承载已验证的 `{parts:[...]}` 查询引用，其他四类字段仍为字符串数组，operation 使用平台枚举。MongoDB专用语义计划的单个 `collection` 保留一个原始集合名，并与Owner的单分段MQL引用精确匹配。Plan 解析或校验失败时最多进行一次受限修复；Plan 通过后再生成候选，并校验只读命令、collection、可查询字段路径、参数引用/定义一致性和计划覆盖。MQL 只能通过已验证的字面字段路径取值，不得通过 `$objectToArray` 等记录键枚举绕过字段事实。候选失败时最多进行一次受限重生成，不保留未校验 Plan 或候选旁路。
 
 ### 4.7 平台 Transfer 语义与创建
 
 `platform.capability.context` 由 Ontology 提供随代码版本发布的只读概念/关系/操作前置条件，首个 capability 为 `transfer.task.create`。返回 `knowledge_kind=platform_definition`、revision、digest；不返回可变权限、连接信息或模块当前可用性，不将平台定义伪装为 Tenant 原生定义。当前请求的实际可用性、权限和资源事实仍由 System 委托及执行 owner 判定。
 
-`transfer.draft.generate` 的当前契约为 `3.0.0`。`resources[]` 最多一个成员，必须遵守共享 `ResourceFact`：必填 `role + locator`，其他字段只能来自调用方经 owner 确认的资源事实；搜索候选的 `name/item_type`、用户决定的行粒度和投影字段不得混入。`task` 是当前任务草稿，运行边界、装载、source/target endpoint 和 transforms 均放在 `task.config`；源查询只保存在正式 `task.config.source.query`，字段映射只保存在 `task.config.transforms`。Tool 输入 Schema 必须在委托和 HTTP 调用前拒绝缺少角色、未知资源字段和错误的草稿层级。
+`transfer.draft.generate` 的当前契约为 `4.0.0`。`resources[]` 最多一个成员，必须遵守共享 `ResourceFact`：必填 `role + locator`，其他字段只能来自调用方经 owner 确认的资源事实；搜索候选的 `name/item_type`、用户决定的行粒度和投影字段不得混入。`task` 是当前任务草稿，运行边界、装载、source/target endpoint 和 transforms 均放在 `task.config`；源查询只保存在正式 `task.config.source.query`，字段映射只保存在 `task.config.transforms`。Tool 输入 Schema 必须在委托和 HTTP 调用前拒绝缺少角色、未知资源字段和错误的草稿层级。
 
 Transfer 草稿链路固定分工：Agent 通过 Owner Tool、Transfer 向导通过正式 Owner API 发现并校验源资源和目标父节点，确认后提交上下文；Copilot 只做意图提取和受限生成，不调用资源 Owner API、不申请二次委托、不使用 Service Principal 代替用户读资源。没有 `resources` 时，同一生成接口只返回 `status=intents_ready` 和 `intents[role,search_queries]`，不返回资源候选或编造定位符；源引擎搜索范围属于调用方，不再接受 `source_engine_id`。有资源而没有完整当前配置时返回澄清。完整配置生成只需要 `transfer_generation` 模型场景，不依赖 `resource_resolution` 绑定。
 
@@ -287,9 +289,9 @@ owner 业务错误只有在 Manifest `errors` 中显式声明时才能保留稳�
 
 ### 查询资源事实与校验边界
 
-Native SQL/MQL/Cypher 分别消费 `query_names.sql/mql/cypher`；联邦 SQL 消费 Runtime 规范定义的 `query_names.federated_sql`。Copilot 只能逐字使用 Owner 事实，不得从 locator、engine name 或 full name 拼接查询名称。
+Native SQL/MQL/Cypher 分别消费 `query_references.sql/mql/cypher.parts`；联邦 SQL 消费 Runtime 规范定义的 `query_references.federated_sql.parts`。Copilot 只能逐字使用 Owner 事实，不得从 locator、engine name 或 full name 拼接查询名称。
 
-Owner 的 `resource.facts.get` 必须提供 `source_engine_type`、`full_name`、按语言声明的 `query_names` 和 `schema_coverage`（`complete|sampled|unknown`）；Copilot 不得从 locator 推导查询名称。Query Runtime 与 Source Engine 的 `engine_id` 是两个身份：native runtime 要求一致，联邦 runtime 只能接受 capability 声明的 `federation.source_engine_types`。当前只允许 `sql`、`mql`、`cypher` 三种已注册 validator 的语言；其他语言返回 `query_language_unsupported`，不得使用泛化 prompt。SQL 必须通过 AST 单语句、只读、已验证表和字段校验；Cypher 必须拒绝写操作并校验已验证属性；动态 schema 为 `sampled/unknown` 时不能断言字段不存在。
+Owner 的 `resource.facts.get` 必须提供 `source_engine_type`、`full_name`、按语言声明的结构化 `query_references` 和 `schema_coverage`（`complete|sampled|unknown`）；Copilot 不得从 locator 推导查询名称。Query Runtime 与 Source Engine 的 `engine_id` 是两个身份：native runtime 要求一致，联邦 runtime 只能接受 capability 声明的 `federation.source_engine_types`。当前只允许 `sql`、`mql`、`cypher` 三种已注册 validator 的语言；其他语言返回 `query_language_unsupported`，不得使用泛化 prompt。SQL 必须通过 AST 单语句、只读、已验证表和字段校验；Cypher 必须拒绝写操作并校验已验证属性；动态 schema 为 `sampled/unknown` 时不能断言字段不存在。
 
 - `docs/concepts/addp术语表.md`
 - `docs/skills/addp-Skill规范.md`

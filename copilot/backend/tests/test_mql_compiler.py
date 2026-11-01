@@ -11,7 +11,7 @@ from services.query_service import QueryService
 def persons_resource():
     return {
         "role": "人员",
-        "query_names": {"mql": "Persons"},
+        "query_references": {'mql': {'parts': ['Persons']}},
         "schema_coverage": "sampled",
         "fields": [
             {"name": "userInfo.nickName", "path": ["userInfo", "nickName"], "type": "string"},
@@ -49,7 +49,7 @@ def persons_resource():
 def outdoors_resource():
     return {
         "role": "户外活动",
-        "query_names": {"mql": "Outdoors"},
+        "query_references": {'mql': {'parts': ['Outdoors']}},
         "schema_coverage": "sampled",
         "fields": [
             {"name": "_id", "path": ["_id"], "type": "string"},

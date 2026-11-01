@@ -12,6 +12,7 @@ from typing import Any
 from jsonschema import Draft202012Validator
 
 from addp_common.tools import get_tool
+from addp_common.resources import query_reference_parts
 
 
 REVIEW_REASON = "transfer_create_review"
@@ -63,7 +64,7 @@ def config_check_report(arguments: dict, checkpoint: dict) -> dict:
 def _source(arguments: dict, checkpoint: dict) -> dict:
     locator = arguments["config"]["source"]["locator"]
     fact = checkpoint["observed"]["resources"].get(locator, {})
-    if fact.get("fact_tool") != "resource.facts.get" or not fact.get("fields") or not fact.get("source_engine_type") or not fact.get("query_names"):
+    if fact.get("fact_tool") != "resource.facts.get" or not fact.get("fields") or not fact.get("source_engine_type") or not fact.get("query_references"):
         _fail("confirmed_source")
     return fact
 
@@ -102,7 +103,7 @@ def _query_outputs(source: dict, fact: dict) -> set[str]:
         command = json.loads(query["statement"], object_pairs_hook=_unique_object)
     except (ValueError, TypeError, KeyError, RecursionError):
         _fail("confirmed_row_grain_and_fields")
-    if not isinstance(command, dict) or set(command) != {"aggregate", "pipeline"} or command["aggregate"] != fact["query_names"].get("mql"):
+    if not isinstance(command, dict) or set(command) != {"aggregate", "pipeline"} or query_reference_parts(fact, "mql") != (command["aggregate"],):
         _fail("confirmed_row_grain_and_fields")
     pipeline = command["pipeline"]
     if not isinstance(pipeline, list) or len(pipeline) not in {1, 2}:

@@ -8,6 +8,8 @@ import math
 import re
 from typing import Any
 
+from addp_common.resources import ResourceQueryReference, query_reference_parts, reference_parts
+
 import sqlglot
 from sqlglot import exp
 
@@ -56,7 +58,7 @@ class QueryService:
 
     _plan_prompt = (
         "你是 ADDP 查询规划器。把用户需求完整拆成一个可校验的 Query Plan，不生成查询语言。"
-        "每个用户子问题都必须映射到 operations 和 result_keys；collections 只能逐字复制 resources[].query_name，"
+        "每个用户子问题都必须映射到 operations 和 result_keys；collections 只能逐项复制 resources[].query_reference 对象，"
         "field_paths 只能逐字复制 resources[].fields[].name 或 path；只要 operations 包含字段相关操作，"
         "field_paths 就不能为空。"
         "operations 只能使用 filter、list、project、sort、limit、group、aggregate、join、union、"
@@ -108,7 +110,7 @@ class QueryService:
         clarification_answers: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         language = query_language.strip().lower()
-        query_name_key = "federated_sql" if language == "sql" and self._is_federated_query_engine(engine) else language
+        reference_key = "federated_sql" if language == "sql" and self._is_federated_query_engine(engine) else language
         llm = CopilotInferenceService.chat_model(
             db,
             tenant_id=tenant_id,
@@ -124,7 +126,7 @@ class QueryService:
                 "capabilities": engine.get("capabilities"),
             },
             "query_language": language,
-            "resources": self._resources_for_context(resources, query_name_key),
+            "resources": self._resources_for_context(resources, reference_key),
         }
         if current_query and current_query.strip():
             context_payload["current_query"] = current_query.strip()
@@ -147,7 +149,7 @@ class QueryService:
             HumanMessage(content=f"当前查询上下文:\n{context}\n\n用户需求:\n{query}"),
         ], response_schema=self._plan_response_schema())
         plan_output = str(getattr(plan_response, "content", plan_response))
-        plan_resources = self._resources_with_active_query_name(resources, language, query_name_key)
+        plan_resources = self._resources_with_active_query_reference(resources, language, reference_key)
         plan, plan_errors = self._parse_and_validate_plan(plan_output, plan_resources)
         if plan_errors:
             logger.warning(
@@ -197,6 +199,7 @@ class QueryService:
             plan_resources,
             plan,
             allowed_parameter_types=allowed_parameter_types,
+            sql_dialect=self._sql_parser_dialect(engine),
         )
         if errors:
             candidate_output = await self._repair_candidate(
@@ -214,6 +217,7 @@ class QueryService:
                 plan_resources,
                 plan,
                 allowed_parameter_types=allowed_parameter_types,
+                sql_dialect=self._sql_parser_dialect(engine),
             )
             if errors:
                 raise ValueError("generated query validation failed: " + "; ".join(errors))
@@ -267,7 +271,7 @@ class QueryService:
     def _mql_semantic_plan_prompt() -> str:
         return (
             "你是 ADDP MongoDB 查询语义规划器。你只负责把用户需求映射为强类型语义计划，绝不生成 MQL。"
-            "collection 只能逐字复制 resources[].query_name；field 只能逐字复制 resources[].fields[].name。"
+            "collection 只能逐字复制 resources[].query_reference.parts 的唯一元素；field 只能逐字复制 resources[].fields[].name。"
             "必须依据字段 path、type、element_type、comment 和用户句法识别实体、条件与统计对象。"
             "人名或昵称条件应优先映射到明确的人名/昵称字段，不能把人名改成活动关键词。"
             "用户值必须原样保留，禁止翻译、增加英文、同义词、正则备选或其他扩展。"
@@ -437,7 +441,7 @@ class QueryService:
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
-                    "collections": string_array,
+                    "collections": {"type": "array", "items": ResourceQueryReference.model_json_schema()},
                     "field_paths": string_array,
                     "operations": string_array,
                     "result_keys": string_array,
@@ -507,6 +511,9 @@ class QueryService:
             value = parsed.get(key)
             if not isinstance(value, list):
                 raise ValueError(f"query plan {key} must be an array")
+            if key == "collections":
+                plan[key] = [ResourceQueryReference.model_validate(item).model_dump() for item in value]
+                continue
             if any(not isinstance(item, str) for item in value):
                 raise ValueError(f"query plan {key} items must be strings")
             plan[key] = [item.strip() for item in value if item.strip()]
@@ -525,25 +532,24 @@ class QueryService:
         return plan, cls._validate_plan(plan, resources)
 
     @classmethod
-    def _resources_for_context(cls, resources: list[dict[str, Any]], query_name_key: str) -> list[dict[str, Any]]:
+    def _resources_for_context(cls, resources: list[dict[str, Any]], reference_key: str) -> list[dict[str, Any]]:
         contextual: list[dict[str, Any]] = []
         for resource in resources:
             item = dict(resource)
-            query_names = resource.get("query_names")
-            if isinstance(query_names, dict) and isinstance(query_names.get(query_name_key), str):
-                item["query_name"] = query_names[query_name_key]
+            parts = query_reference_parts(resource, reference_key)
+            item.pop("query_references", None)
+            if parts is not None:
+                item["query_reference"] = {"parts": list(parts)}
             contextual.append(item)
         return contextual
 
     @staticmethod
-    def _resources_with_active_query_name(resources: list[dict[str, Any]], language: str, query_name_key: str) -> list[dict[str, Any]]:
+    def _resources_with_active_query_reference(resources: list[dict[str, Any]], language: str, reference_key: str) -> list[dict[str, Any]]:
         active: list[dict[str, Any]] = []
         for resource in resources:
             item = dict(resource)
-            names = dict(resource.get("query_names") or {})
-            if query_name_key in names:
-                names[language] = names[query_name_key]
-            item["query_names"] = names
+            parts = query_reference_parts(resource, reference_key)
+            item["query_references"] = {language: {"parts": list(parts)}} if parts is not None else {}
             active.append(item)
         return active
 
@@ -567,6 +573,7 @@ class QueryService:
         plan: dict[str, Any],
         *,
         allowed_parameter_types: set[str] | None = None,
+        sql_dialect: str | None = None,
     ) -> tuple[dict[str, Any] | None, list[str]]:
         try:
             candidate = cls._parse_output(output, query_language=language)
@@ -578,6 +585,7 @@ class QueryService:
             resources,
             plan,
             allowed_parameter_types=allowed_parameter_types,
+            sql_dialect=sql_dialect,
         )
 
     @classmethod
@@ -717,7 +725,7 @@ class QueryService:
         allowed_collections = QueryService._resource_collection_names(resources)
         allowed_fields = QueryService._resource_field_names(resources)
         for collection in plan["collections"]:
-            if collection not in allowed_collections:
+            if reference_parts(collection) not in allowed_collections:
                 errors.append(f"plan collection is not verified: {collection}")
         for field in plan["field_paths"]:
             if not QueryService._field_is_allowed(field, allowed_fields):
@@ -745,6 +753,7 @@ class QueryService:
         plan: dict[str, Any],
         *,
         allowed_parameter_types: set[str] | None = None,
+        sql_dialect: str | None = None,
     ) -> list[str]:
         errors = cls._validate_query_parameters(
             candidate,
@@ -755,7 +764,7 @@ class QueryService:
             errors.append(f"query language is unsupported: {language}")
             return errors
         if language == "sql":
-            return errors + cls._validate_sql(candidate["query"], resources, plan)
+            return errors + cls._validate_sql(candidate["query"], resources, plan, dialect=sql_dialect)
         if language == "cypher":
             return errors + cls._validate_cypher(candidate["query"], resources, plan)
         if language != "mql":
@@ -774,13 +783,14 @@ class QueryService:
         if cls._contains_non_positive_mql_limit(command):
             errors.append("MQL contains a non-positive limit")
 
-        verified_collections = cls._resource_query_names(resources, "mql")
+        verified_collections = {parts[0] for parts in cls._resource_query_paths(resources, "mql") if len(parts) == 1}
         referenced_collections = cls._mql_collection_references(command)
         for collection in referenced_collections:
             if collection not in verified_collections:
                 errors.append(f"MQL collection is not verified: {collection}")
         for collection in plan["collections"]:
-            if collection not in referenced_collections:
+            parts = reference_parts(collection)
+            if parts is None or len(parts) != 1 or parts[0] not in referenced_collections:
                 errors.append(f"MQL does not cover planned collection: {collection}")
 
         verified_fields = cls._resource_field_names(resources)
@@ -817,10 +827,18 @@ class QueryService:
                 errors.append(f"MQL does not implement planned operation: {operation}")
         return errors
 
+    @staticmethod
+    def _sql_parser_dialect(engine: dict[str, Any]) -> str | None:
+        # Syntax only: engine roles and admission still come from capabilities.
+        # Parse once in the native grammar; never retry another dialect.
+        return {"spark": "spark", "duckdb": "duckdb", "mysql": "mysql",
+                "postgresql": "postgres", "doris": "doris", "starrocks": "starrocks",
+                "oracle": "oracle", "gaussdb": "postgres", "highgo": "postgres"}.get(engine.get("engine_type"))
+
     @classmethod
-    def _validate_sql(cls, query: str, resources: list[dict[str, Any]], plan: dict[str, Any]) -> list[str]:
+    def _validate_sql(cls, query: str, resources: list[dict[str, Any]], plan: dict[str, Any], *, dialect: str | None = None) -> list[str]:
         try:
-            statements = sqlglot.parse(query)
+            statements = sqlglot.parse(query, read=dialect)
         except Exception as error:
             return [f"SQL syntax is invalid: {error}"]
         if len(statements) != 1:
@@ -829,15 +847,15 @@ class QueryService:
         errors: list[str] = []
         if any(statement.find(node) for node in (exp.Insert, exp.Update, exp.Delete, exp.Create, exp.Drop, exp.Alter, exp.Merge, exp.Command)):
             errors.append("SQL must be a read-only query")
-        names = cls._resource_query_names(resources, "sql")
+        names = cls._resource_query_paths(resources, "sql")
         cte_names = {cte.alias_or_name for cte in statement.find_all(exp.CTE) if cte.alias_or_name}
         tables = {
-            cls._sql_table_name(table)
+            cls._sql_table_parts(table)
             for table in statement.find_all(exp.Table)
-            if table.name not in cte_names
+            if table.catalog or table.db or table.name not in cte_names
         }
         if not names:
-            errors.append("SQL resource query_names.sql is not verified")
+            errors.append("SQL resource query_references.sql is not verified")
         errors.extend(f"SQL table is not verified: {table}" for table in tables - names)
         allowed_fields = cls._resource_field_names(resources)
         if not allowed_fields:
@@ -852,7 +870,7 @@ class QueryService:
             if token and token not in query_upper:
                 errors.append(f"SQL does not implement planned operation: {operation}")
         for collection in plan["collections"]:
-            if collection not in tables:
+            if reference_parts(collection) not in tables:
                 errors.append(f"SQL does not cover planned collection: {collection}")
         for field in plan["field_paths"]:
             if not cls._field_is_allowed(field, allowed_fields) or field not in query:
@@ -863,16 +881,16 @@ class QueryService:
         return sorted(set(errors))
 
     @staticmethod
-    def _sql_table_name(table: exp.Table) -> str:
-        return ".".join(part for part in (table.catalog, table.db, table.name) if part)
+    def _sql_table_parts(table: exp.Table) -> tuple[str, ...]:
+        return tuple(part for part in (table.catalog, table.db, table.name) if part)
 
     @classmethod
     def _validate_cypher(cls, query: str, resources: list[dict[str, Any]], plan: dict[str, Any]) -> list[str]:
         errors: list[str] = []
         if re.search(r"\b(CREATE|MERGE|DELETE|DETACH|SET|REMOVE|DROP|FOREACH|LOAD\s+CSV)\b", query, re.I):
             errors.append("Cypher contains a write operation")
-        if not cls._resource_query_names(resources, "cypher"):
-            errors.append("Cypher resource query_names.cypher is not verified")
+        if not cls._resource_query_paths(resources, "cypher"):
+            errors.append("Cypher resource query_references.cypher is not verified")
         allowed_fields = cls._resource_field_names(resources)
         for field in re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_]*\.([a-zA-Z_][a-zA-Z0-9_]*)", query):
             if not cls._field_is_allowed(field, allowed_fields):
@@ -999,23 +1017,24 @@ class QueryService:
         return parsed
 
     @staticmethod
-    def _resource_collection_names(resources: list[dict[str, Any]]) -> set[str]:
-        names: set[str] = set()
+    def _resource_collection_names(resources: list[dict[str, Any]]) -> set[tuple[str, ...]]:
+        names: set[tuple[str, ...]] = set()
         for resource in resources:
-            query_names = resource.get("query_names")
-            if isinstance(query_names, dict):
-                names.update(str(value).strip() for value in query_names.values() if str(value).strip())
+            references = resource.get("query_references")
+            if isinstance(references, dict):
+                for language in references:
+                    parts = query_reference_parts(resource, language)
+                    if parts is not None:
+                        names.add(parts)
         return names
 
     @staticmethod
-    def _resource_query_names(resources: list[dict[str, Any]], language: str) -> set[str]:
-        names: set[str] = set()
+    def _resource_query_paths(resources: list[dict[str, Any]], language: str) -> set[tuple[str, ...]]:
+        names: set[tuple[str, ...]] = set()
         for resource in resources:
-            query_names = resource.get("query_names")
-            if isinstance(query_names, dict):
-                value = query_names.get(language)
-                if isinstance(value, str) and value.strip():
-                    names.add(value.strip())
+            parts = query_reference_parts(resource, language)
+            if parts is not None:
+                names.add(parts)
         return names
 
     @staticmethod

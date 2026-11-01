@@ -22,7 +22,7 @@ def preview_resource_fact(result: Any) -> dict[str, Any] | None:
     data_type = _item_data_type(data)
     if data_type:
         fact["data_type"] = data_type
-    for key in ("engine_name", "engine_type", "resource_type", "full_name", "item_id", "item_fingerprint", "scanned_depth", "schema_coverage", "query_names"):
+    for key in ("engine_name", "engine_type", "resource_type", "full_name", "item_id", "item_fingerprint", "scanned_depth", "schema_coverage", "query_references"):
         value = metadata.get(key)
         if value is not None:
             fact[key] = value
@@ -36,7 +36,7 @@ def preview_resource_fact(result: Any) -> dict[str, Any] | None:
         "schema",
         "table",
         "schema_coverage",
-        "query_names",
+        "query_references",
     ):
         value = data.get(key)
         if value is not None:

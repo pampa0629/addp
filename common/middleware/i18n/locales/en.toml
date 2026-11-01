@@ -54,3 +54,12 @@ other = "Spark Master is not ready or has no online workers."
 
 ["engine.spark.rpc_unavailable"]
 other = "The registered Spark Master RPC endpoint is unreachable."
+
+["engine.query_runtime.output_type_unsupported"]
+other = "The query returned a field type that is not currently supported."
+
+["engine.query_runtime.output_invalid"]
+other = "The query result field types or encoding are invalid."
+
+["engine.spark.query_invalid"]
+other = "A Spark query requires a valid compute cluster and non-empty SQL."

@@ -10,10 +10,14 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/addp/common/datatype"
+	commoni18n "github.com/addp/common/middleware/i18n"
 )
 
 type federatedQueryHTTPResponse struct {
 	Columns []string                 `json:"columns"`
+	Fields  []datatype.FieldInfo     `json:"fields"`
 	Rows    []map[string]interface{} `json:"rows"`
 	Error   string                   `json:"error,omitempty"`
 }
@@ -40,6 +44,7 @@ func HTTPExecuteFederatedQuery(
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+req.CallerAccessToken)
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept-Language", commoni18n.Language(ctx))
 	timeout := req.Options.Timeout
 	if timeout <= 0 {
 		timeout = 30 * time.Second
@@ -55,7 +60,9 @@ func HTTPExecuteFederatedQuery(
 		return nil, err
 	}
 	var payload federatedQueryHTTPResponse
-	if err := json.Unmarshal(respBody, &payload); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(respBody))
+	decoder.UseNumber()
+	if err := decoder.Decode(&payload); err != nil {
 		return nil, fmt.Errorf("decode federated query response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -64,5 +71,15 @@ func HTTPExecuteFederatedQuery(
 		}
 		return nil, fmt.Errorf("federated query runtime returned HTTP %d: %s", resp.StatusCode, payload.Error)
 	}
-	return &QueryResult{Columns: payload.Columns, Rows: payload.Rows}, nil
+	if len(payload.Columns) != len(payload.Fields) {
+		return nil, commoni18n.NewMessageError("engine.query_runtime.output_invalid")
+	}
+	seen := make(map[string]bool, len(payload.Columns))
+	for i, name := range payload.Columns {
+		if seen[name] || payload.Fields[i].Name != name || !datatype.IsKnownFieldType(payload.Fields[i].Type) {
+			return nil, commoni18n.NewMessageError("engine.query_runtime.output_invalid")
+		}
+		seen[name] = true
+	}
+	return &QueryResult{Columns: payload.Columns, Fields: payload.Fields, Rows: payload.Rows}, nil
 }

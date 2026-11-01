@@ -5,11 +5,15 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/addp/common/datatype"
+	commoni18n "github.com/addp/common/middleware/i18n"
 )
 
 // QueryResult 查询结果
 type QueryResult struct {
 	Columns         []string                 `json:"columns"`
+	Fields          []datatype.FieldInfo     `json:"fields"`
 	Rows            []map[string]interface{} `json:"rows"`
 	RowCount        int                      `json:"row_count"`
 	ExecutionTimeMs int64                    `json:"execution_time_ms"`
@@ -29,6 +33,22 @@ func ExecuteQuery(ctx context.Context, conn *sql.Conn, sqlStr string, args ...in
 	if err != nil {
 		return nil, fmt.Errorf("获取列信息失败: %w", err)
 	}
+	types, err := rows.ColumnTypes()
+	if err != nil {
+		return nil, fmt.Errorf("read DuckDB output metadata: %w", err)
+	}
+	fields := make([]datatype.FieldInfo, len(types))
+	seen := make(map[string]bool, len(types))
+	for i, column := range types {
+		if seen[column.Name()] {
+			return nil, commoni18n.NewMessageError("engine.query_runtime.output_invalid")
+		}
+		seen[column.Name()] = true
+		fields[i], err = outputField(column, i+1)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	var resultRows []map[string]interface{}
 	for rows.Next() {
@@ -42,7 +62,7 @@ func ExecuteQuery(ctx context.Context, conn *sql.Conn, sqlStr string, args ...in
 		}
 		row := make(map[string]interface{}, len(cols))
 		for i, col := range cols {
-			row[col] = values[i]
+			row[col] = outputValue(values[i])
 		}
 		resultRows = append(resultRows, row)
 	}
@@ -57,6 +77,7 @@ func ExecuteQuery(ctx context.Context, conn *sql.Conn, sqlStr string, args ...in
 
 	return &QueryResult{
 		Columns:         cols,
+		Fields:          fields,
 		Rows:            resultRows,
 		RowCount:        len(resultRows),
 		ExecutionTimeMs: time.Since(start).Milliseconds(),

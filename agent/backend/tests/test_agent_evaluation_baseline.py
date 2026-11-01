@@ -774,7 +774,7 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
                     "item_id": 66, "item_type": "collection", "data_type": "table",
                     "full_name": "outdoor.routes", "item_fingerprint": "fp",
                     "scanned_depth": "deep", "schema_coverage": "sampled",
-                    "query_names": {"database": "outdoor", "collection": "routes"},
+                    "query_references": {'mql': {'parts': ['routes']}},
                     "fields": [{"name": "distance", "path": ["metrics", "distance"], "type": "float"}],
                 }),
                 _Tool("resource.children.list", {
@@ -806,7 +806,7 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
         restored = json.loads(human_input.split("本 AgentRun 已持久化的受信任状态：\n", 1)[1])
         self.assertEqual(restored["confirmed"]["resources"][target]["item_type"], "schema")
         self.assertEqual(restored["observed"]["resources"][source]["fields"][0]["path"], ["metrics", "distance"])
-        self.assertEqual(restored["observed"]["resources"][source]["query_names"]["collection"], "routes")
+        self.assertEqual(restored["observed"]["resources"][source]["query_references"]["mql"], {"parts": ["routes"]})
         self.assertFalse(any(event.kind in {"tool_start", "interaction_required"} for event in resumed))
 
     async def test_failed_context_refresh_cannot_reuse_previous_success(self):

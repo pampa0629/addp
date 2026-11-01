@@ -238,7 +238,11 @@ func (h *QueryHandler) getFederatedSampleQuery(c *gin.Context, tenantID, runtime
 		h.writeSQLExecutionError(c, err)
 		return
 	}
-	candidates := h.federated.CandidateQueries(sources)
+	candidates, err := h.federated.CandidateQueries(c.Request.Context(), tenantID, runtimeEngineID, sources)
+	if err != nil {
+		h.writeSQLExecutionError(c, err)
+		return
+	}
 	var firstFailure error
 	for _, candidate := range candidates {
 		binding, freezeErr := h.federated.FreezeBinding(c.Request.Context(), tenantID, runtimeEngineID, candidate.Query)

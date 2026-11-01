@@ -290,11 +290,12 @@ func NewFederatedQueryCapabilities(
 		EngineType:    engineType,
 		EngineFamily:  "query_runtime",
 		Compute: &ComputeCapabilities{Query: &QueryCapability{
-			Supported:       true,
-			Languages:       []string{"sql"},
-			DefaultLanguage: "sql",
-			ResultKinds:     []string{"table", "scalar"},
-			ReadOnly:        true,
+			Supported:        true,
+			Languages:        []string{"sql"},
+			DefaultLanguage:  "sql",
+			IdentifierQuotes: map[string]string{"sql": `"`},
+			ResultKinds:      []string{"table", "scalar"},
+			ReadOnly:         true,
 			Federation: &QueryFederationCapability{
 				ExecutionAudience: engineType,
 				Supported:         true,

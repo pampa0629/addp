@@ -1,6 +1,7 @@
 # Spark 工作流引擎：Bookworm 提供系统依赖，官方 Temurin 提供 Java 11。
+FROM localhost:5001/eclipse-temurin:11-jdk-jammy AS java-compiler
 FROM localhost:5001/eclipse-temurin:11-jre-jammy AS java-runtime
-FROM localhost:5001/python:3.11-slim-bookworm
+FROM localhost:5001/python:3.11-slim-bookworm AS runtime-base
 
 COPY --from=java-runtime /opt/java/openjdk /opt/java
 
@@ -50,7 +51,17 @@ RUN pip install --no-cache-dir --no-build-isolation --no-deps /common-python \
 
 # 复制应用代码
 COPY engines/spark-workflow/*.py .
+COPY engines/spark-workflow/query_openapi.json .
 COPY engines/spark-workflow/operators ./operators
+COPY engines/spark-workflow/jvm ./jvm
+
+FROM runtime-base AS query-build
+COPY --from=java-compiler /opt/java/openjdk /opt/java-compiler
+RUN JAVA_HOME=/opt/java-compiler python query_jdbc.py build
+
+FROM runtime-base
+COPY --from=query-build /usr/local/share/addp-spark/addp-spark-query-dialect.jar /usr/local/share/addp-spark/addp-spark-query-dialect.jar
+COPY --from=query-build /usr/local/share/addp-spark/addp-spark-query-dialect.json /usr/local/share/addp-spark/addp-spark-query-dialect.json
 
 # 构建时通过生产连接器实际加载 Sedona/JDBC 依赖并计算，不启动开发服务。
 RUN python -m pip check \

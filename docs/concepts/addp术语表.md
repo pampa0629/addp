@@ -577,6 +577,7 @@ Agent Harness 是 Agent 进程内的执行内核，负责模型与工具调度�
 | Model Profile | 模型档案 | 面向调用方的稳定逻辑能力名称及其当前明确 Model Deployment 绑定。 | 例如 `general-chat`、`reasoning`、`text-embedding`、`multimodal-embedding`、`rerank`；第一版只绑定一个 Deployment，不包含隐藏 fallback。 |
 | Scenario Binding | 场景绑定 | 业务 owner 将本模块的稳定 AI 场景显式绑定到 Model Profile 或特定 Model Deployment 的事实。 | 归 Agent、Copilot、Manager 等调用模块保存；有效值按 Tenant 显式绑定、平台默认绑定、明确未配置错误解析。 |
 | Input Resource Resolution | 输入资源解析与确认 | 将自然语言中的输入数据意图提取为候选资源，经过 owner 校验并形成可供领域生成器消费的 `ResourceFact` 的共享能力。 | 与领域生成正交，不代表生成器取得资源访问授权。Transfer 的意图由 Copilot 提取，发现与校验由 Agent Owner Tool 或 Transfer 向导的正式 Owner API 完成；Copilot 消费的上下文不是授权或资源真实性证明，创建与执行仍由 Transfer 最终判断。 |
+| Resource Query Reference | 资源查询引用 | Source Owner 根据真实 EngineCatalogPath 和已确认的虚拟别名提供的结构化名称分段，由 `ResourceFact.query_references` 按查询语言承载。 | 每项只有保真的 `parts[]`，不携带SQL文本、引号、连接或权限；消费方按目标引擎能力渲染。不是平面 full_name、显示路径或读取集合，不得拆分字符串猜分段。 |
 | inference credential | 推理凭据 | Provider Connection 用于访问上游模型服务的 API Key 或等价认证材料。 | 由 Inference 使用部署级 `ENCRYPTION_KEY` 加密；API 只返回 `configured` 和 `version`，不返回明文、掩码或可复用引用。 |
 
 ## 身份与授权

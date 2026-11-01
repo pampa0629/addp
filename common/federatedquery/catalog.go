@@ -92,7 +92,7 @@ func (c *Catalog) Sources(
 		if descriptor.EngineType == "minio" || descriptor.EngineType == "s3" {
 			source.Tables = objectTables(descriptor.Name, tree)
 		} else {
-			source.Tables = relationalTables(descriptor.Name, tree)
+			source.Tables = relationalTables(descriptor.Name, descriptor.EngineType, tree)
 		}
 		if len(source.Tables) > 0 {
 			sort.Slice(source.Tables, func(i, j int) bool {
@@ -108,15 +108,23 @@ func (c *Catalog) Sources(
 	return sources, nil
 }
 
-func Candidates(sources []Source, limit int) []Candidate {
+func Candidates(sources []Source, limit int, quote string) ([]Candidate, error) {
+	if quote != `"` && quote != "`" {
+		return nil, fmt.Errorf("SQL identifier quote is required")
+	}
+	quoted := func(value string) string { return quote + strings.ReplaceAll(value, quote, quote+quote) + quote }
 	candidates := make([]Candidate, 0)
 	for _, source := range sources {
 		for _, table := range source.Tables {
-			parts := []string{SanitizeIdentifier(source.EngineName)}
+			parts := []string{quoted(SanitizeIdentifier(source.EngineName))}
 			if table.Schema != "" {
-				parts = append(parts, SanitizeIdentifier(table.Schema))
+				parts = append(parts, quoted(table.Schema))
 			}
-			parts = append(parts, SanitizeIdentifier(table.Table))
+			name := table.Table
+			if table.PhysicalPath != "" {
+				name = SanitizeIdentifier(name)
+			}
+			parts = append(parts, quoted(name))
 			query := fmt.Sprintf("SELECT *\nFROM %s", strings.Join(parts, "."))
 			if limit > 0 {
 				query += fmt.Sprintf("\nLIMIT %d", limit)
@@ -127,7 +135,7 @@ func Candidates(sources []Source, limit int) []Candidate {
 			})
 		}
 	}
-	return candidates
+	return candidates, nil
 }
 
 func objectTables(engineName string, tree *models.MetadataTree) []TableRef {
@@ -153,22 +161,43 @@ func objectTables(engineName string, tree *models.MetadataTree) []TableRef {
 	return tables
 }
 
-func relationalTables(engineName string, tree *models.MetadataTree) []TableRef {
+func relationalTables(engineName, engineType string, tree *models.MetadataTree) []TableRef {
 	if tree == nil {
 		return nil
+	}
+	registered, err := plugin.Get(engineType)
+	if err != nil {
+		return nil
+	}
+	model, ok := registered.(plugin.EngineCatalogModelProvider)
+	if !ok {
+		return nil
+	}
+	namespaceTerm := ""
+	for _, level := range plugin.EngineCatalogBusinessLevels(model.EngineCatalogModel()) {
+		if level.Role == plugin.EngineCatalogRoleBranch {
+			if namespaceTerm != "" {
+				return nil
+			}
+			namespaceTerm = level.Term
+		}
+	}
+	nodes := make(map[uint]models.MetaNode)
+	for _, node := range append(append([]models.MetaNode(nil), tree.TopNodes...), tree.ChildNodes...) {
+		nodes[node.ID] = node
 	}
 	tables := make([]TableRef, 0)
 	for _, item := range tree.Items {
 		if item.ItemType != "table" {
 			continue
 		}
-		schema := ""
-		if parts := strings.SplitN(item.FullName, ".", 2); len(parts) == 2 {
-			schema = parts[0]
+		namespace, exists := nodes[item.NodeID]
+		if namespaceTerm == "" || !exists || namespace.NodeType != namespaceTerm || namespace.Name == "" {
+			continue
 		}
 		tables = append(tables, TableRef{
 			EngineName: engineName,
-			Schema:     schema,
+			Schema:     namespace.Name,
 			Table:      item.Name,
 			ItemType:   "table",
 		})

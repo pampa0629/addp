@@ -45,7 +45,7 @@ class PlatformSkillToolTests(unittest.TestCase):
         self.assertIn("尚未运行", skill.load_body(registry))
         body = skill.load_body(registry)
         self.assertIn("JSON command object", body)
-        self.assertIn("query_names.mql", body)
+        self.assertIn("query_references.mql", body)
         self.assertIn("不是 mongosh", body)
         self.assertIn("分别提交 `string`、`bool`", body)
         self.assertIn("不用于 schema、database", body)
@@ -84,7 +84,7 @@ class PlatformSkillToolTests(unittest.TestCase):
         draft = next(tool for tool in tools if stable_tool_name(tool) == "transfer.draft.generate")
         published = convert_to_openai_tool(draft)["function"]["parameters"]
         definition = get_tool("transfer.draft.generate")
-        self.assertEqual(definition.version, "3.0.0")
+        self.assertEqual(definition.version, "4.0.0")
         self.assertNotIn("source_engine_id", published["properties"])
         for key in ("resources", "task"):
             actual = {name: value for name, value in published["properties"][key].items() if name != "title"}

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/develop/backend/internal/models"
@@ -60,7 +61,9 @@ func TestFederatedAuthorizationSeparatesSelectedTargetActorAndSources(t *testing
 				t.Error(err)
 			}
 			dispatched = &request
-			json.NewEncoder(w).Encode(map[string]interface{}{"columns": []string{"id"}, "rows": []map[string]interface{}{{"id": "9007199254740993"}}})
+			json.NewEncoder(w).Encode(map[string]interface{}{"columns": []string{"id"},
+				"fields": []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}},
+				"rows":   []map[string]interface{}{{"id": "9007199254740993"}}})
 		default:
 			t.Errorf("unexpected credential or catalog request: %s", r.URL.Path)
 			http.NotFound(w, r)

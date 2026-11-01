@@ -41,6 +41,7 @@
       "loadingFederatedCatalog": "正在加载可联邦查询的数据引擎",
       "noFederatedSourceEngines": "当前租户没有可用于联邦查询的源引擎",
       "loadFederatedCatalogFailed": "加载联邦查询源引擎失败：",
+      "referenceUnavailable": "该资源没有可用的查询引用。",
       "fieldCompletion": "字段",
       "queryDiagnostics": "语句诊断",
       "diagnosticQueryInvalid": "查询语句无效：{detail}",

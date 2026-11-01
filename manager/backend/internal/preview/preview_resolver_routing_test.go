@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/addp/common/client"
@@ -935,42 +936,59 @@ func TestResolveProviderByMetaRejectsUnmappedMeta(t *testing.T) {
 func TestBuildMetadataDeclaresOwnerVerifiedQueryFacts(t *testing.T) {
 	itemID := uint(7)
 	resolver := NewPreviewResolver(nil, nil, nil)
-	relational := resolver.buildMetadata(&PreviewResolverRequest{
-		Locator: &resourcetree.ResourceLocator{}, Engine: &commonModels.Engine{Name: "pg", EngineType: "postgresql"},
+	relational := resolver.buildMetadata(withOwnerQueryPath(t, &PreviewResolverRequest{
+		Locator: &resourcetree.ResourceLocator{EngineID: 11, Path: []string{"analytics", "users"}, Type: "table"}, Engine: &commonModels.Engine{ID: 11, Name: "pg", EngineType: "postgresql"},
 		Metadata: &commonModels.MetaNode{}, MetaItemID: &itemID, ItemFullName: "analytics.users", ItemScannedDepth: "deep",
-	})
-	if relational.QueryNames["sql"] != "analytics.users" || relational.QueryNames["federated_sql"] != "pg.analytics.users" || relational.SchemaCoverage != "complete" || relational.EngineType != "postgresql" {
+	}))
+	if !reflect.DeepEqual(relational.QueryReferences["sql"].Parts, []string{"analytics", "users"}) || !reflect.DeepEqual(relational.QueryReferences["federated_sql"].Parts, []string{"pg", "analytics", "users"}) || relational.SchemaCoverage != "complete" || relational.EngineType != "postgresql" {
 		t.Fatalf("unexpected relational query facts: %#v", relational)
 	}
-	oceanBase := resolver.buildMetadata(&PreviewResolverRequest{
-		Locator: &resourcetree.ResourceLocator{}, Engine: &commonModels.Engine{Name: "ob", EngineType: "oceanbase"},
+	oceanBase := resolver.buildMetadata(withOwnerQueryPath(t, &PreviewResolverRequest{
+		Locator: &resourcetree.ResourceLocator{EngineID: 11, Path: []string{"business", "orders"}, Type: "table"}, Engine: &commonModels.Engine{ID: 11, Name: "ob", EngineType: "oceanbase"},
 		Metadata: &commonModels.MetaNode{}, MetaItemID: &itemID, ItemFullName: "business.orders", ItemScannedDepth: "deep",
-	})
-	if oceanBase.QueryNames["sql"] != "business.orders" || oceanBase.QueryNames["federated_sql"] != "" || oceanBase.SchemaCoverage != "complete" {
+	}))
+	if !reflect.DeepEqual(oceanBase.QueryReferences["sql"].Parts, []string{"business", "orders"}) || len(oceanBase.QueryReferences["federated_sql"].Parts) != 0 || oceanBase.SchemaCoverage != "complete" {
 		t.Fatalf("unexpected OceanBase query facts: %#v", oceanBase)
 	}
 
-	dynamic := resolver.buildMetadata(&PreviewResolverRequest{
-		Locator: &resourcetree.ResourceLocator{}, Engine: &commonModels.Engine{Name: "mongo", EngineType: "mongodb"},
+	dynamic := resolver.buildMetadata(withOwnerQueryPath(t, &PreviewResolverRequest{
+		Locator: &resourcetree.ResourceLocator{EngineID: 11, Path: []string{"Outdoor", "Persons.v2"}, Type: "collection"}, Engine: &commonModels.Engine{ID: 11, Name: "mongo", EngineType: "mongodb"},
 		Metadata: &commonModels.MetaNode{}, MetaItemID: &itemID, ItemName: "Persons.v2", ItemFullName: "Outdoor.Persons.v2", ItemScannedDepth: "deep",
-	})
-	if dynamic.QueryNames["mql"] != "Persons.v2" || dynamic.SchemaCoverage != "sampled" {
+	}))
+	if !reflect.DeepEqual(dynamic.QueryReferences["mql"].Parts, []string{"Persons.v2"}) || dynamic.SchemaCoverage != "sampled" {
 		t.Fatalf("unexpected dynamic query facts: %#v", dynamic)
 	}
 
-	object := resolver.buildMetadata(&PreviewResolverRequest{
-		Locator: &resourcetree.ResourceLocator{}, Engine: &commonModels.Engine{Name: "lake source", EngineType: "minio"},
+	object := resolver.buildMetadata(withOwnerQueryPath(t, &PreviewResolverRequest{
+		Locator: &resourcetree.ResourceLocator{EngineID: 11, Path: []string{"bucket", "events.parquet"}, Type: "object"}, Engine: &commonModels.Engine{ID: 11, Name: "lake source", EngineType: "minio"},
 		Metadata: &commonModels.MetaNode{}, MetaItemID: &itemID, ItemName: "events parquet", ItemFullName: "bucket/events.parquet", ItemScannedDepth: "deep",
-	})
-	if object.QueryNames["federated_sql"] != "lake_source.events_parquet" {
+	}))
+	if !reflect.DeepEqual(object.QueryReferences["federated_sql"].Parts, []string{"lake_source", "events_parquet"}) {
 		t.Fatalf("unexpected object query facts: %#v", object)
+	}
+}
+
+func TestQueryReferencesPreserveSegmentsWithoutSplittingFlatFullName(t *testing.T) {
+	itemID := uint(7)
+	parts := []string{" 原.schema\" ", " 订单.table` "}
+	request := &PreviewResolverRequest{Locator: &resourcetree.ResourceLocator{EngineID: 11, Path: parts, Type: "table"},
+		Engine:     &commonModels.Engine{ID: 11, Name: "Business PostgreSQL", EngineType: "postgresql"},
+		MetaItemID: &itemID, ItemFullName: "opaque display name"}
+	request = withOwnerQueryPath(t, request)
+	references := queryReferences(request)
+	if !reflect.DeepEqual(references["sql"].Parts, parts) || !reflect.DeepEqual(references["federated_sql"].Parts, append([]string{"Business_PostgreSQL"}, parts...)) {
+		t.Fatalf("physical references changed: %#v", references)
+	}
+	request.QueryCatalogPath = nil
+	if len(queryReferences(request)) != 0 {
+		t.Fatal("flat full_name was used without an owner path")
 	}
 }
 
 func TestBuildResourceFactsUsesMetaSchemaWithoutPreviewRows(t *testing.T) {
 	itemID := uint(51657)
 	resolver := NewPreviewResolver(nil, nil, nil)
-	facts, err := resolver.buildResourceFacts(&PreviewResolverRequest{
+	facts, err := resolver.buildResourceFacts(withOwnerQueryPath(t, &PreviewResolverRequest{
 		Locator: &resourcetree.ResourceLocator{EngineID: 11, Path: []string{"Outdoor", "Persons"}, Type: resourcetree.ResourceType("collection"), ItemID: &itemID},
 		Engine:  &commonModels.Engine{ID: 11, Name: "Business MongoDB", EngineType: "mongodb"},
 		Metadata: &commonModels.MetaNode{Attributes: map[string]interface{}{
@@ -984,11 +1002,11 @@ func TestBuildResourceFactsUsesMetaSchemaWithoutPreviewRows(t *testing.T) {
 		}},
 		MetaItemID: &itemID, ItemName: "Persons", ItemFullName: "Outdoor.Persons",
 		ItemFingerprint: "fingerprint", ItemType: "collection", ItemScannedDepth: "deep",
-	})
+	}))
 	if err != nil {
 		t.Fatalf("buildResourceFacts() error = %v", err)
 	}
-	if facts.QueryNames["mql"] != "Persons" || facts.SchemaCoverage != "sampled" || len(facts.Fields) != 2 {
+	if !reflect.DeepEqual(facts.QueryReferences["mql"].Parts, []string{"Persons"}) || facts.SchemaCoverage != "sampled" || len(facts.Fields) != 2 {
 		t.Fatalf("unexpected resource facts: %#v", facts)
 	}
 	if facts.Fields[1].Name != "userInfo.nickName" || len(facts.Fields[1].Path) != 2 {
@@ -1005,4 +1023,20 @@ func TestPhysicalWhitespacePreviewRefsRemainDistinct(t *testing.T) {
 	if got := physicalPathFromMetaAttributes(attrs); got != " models /model.3ds " {
 		t.Fatalf("physical path changed: %q", got)
 	}
+}
+
+// Positive fixtures explicitly bind an owner catalog path; production obtains
+// this only through tenant-bound Meta ancestor facts.
+func withOwnerQueryPath(t *testing.T, req *PreviewResolverRequest) *PreviewResolverRequest {
+	t.Helper()
+	registered, err := plugin.Get(req.Engine.EngineType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := resourcetree.EngineCatalogPathFromLocator(registered.(plugin.EngineCatalogModelProvider).EngineCatalogModel(), req.Locator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.QueryCatalogPath = &path
+	return req
 }

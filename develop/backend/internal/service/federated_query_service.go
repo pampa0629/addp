@@ -6,6 +6,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/federatedquery"
@@ -25,6 +26,7 @@ type FederatedQueryService struct {
 
 type FederatedQueryResult struct {
 	Columns         []string                 `json:"columns"`
+	Fields          []datatype.FieldInfo     `json:"fields"`
 	Rows            []map[string]interface{} `json:"rows"`
 	RowCount        int                      `json:"row_count"`
 	ExecutionTimeMs int64                    `json:"execution_time_ms"`
@@ -249,12 +251,20 @@ func (s *FederatedQueryService) ExecuteQuery(
 		rows = []map[string]interface{}{}
 	}
 	return &FederatedQueryResult{
-		Columns: result.Columns, Rows: rows, RowCount: len(rows), ExecutionTimeMs: time.Since(start).Milliseconds(),
+		Columns: result.Columns, Fields: result.Fields, Rows: rows, RowCount: len(rows), ExecutionTimeMs: time.Since(start).Milliseconds(),
 	}, nil
 }
 
-func (s *FederatedQueryService) CandidateQueries(sources []DataSource) []federatedquery.Candidate {
-	return federatedquery.Candidates(sources, 10)
+func (s *FederatedQueryService) CandidateQueries(ctx context.Context, tenantID, targetID uint, sources []DataSource) ([]federatedquery.Candidate, error) {
+	binding, _, err := s.runtime(ctx, tenantID, targetID)
+	if err != nil {
+		return nil, err
+	}
+	caps, err := engineselection.ParseCapabilities(binding.Target.Capabilities)
+	if err != nil || caps == nil || caps.Compute == nil || caps.Compute.Query == nil {
+		return nil, federatedBindingError(ctx)
+	}
+	return federatedquery.Candidates(sources, 10, caps.Compute.Query.IdentifierQuotes["sql"])
 }
 
 func (s *FederatedQueryService) GetSources(ctx context.Context, tenantID, runtimeEngineID uint) ([]DataSource, error) {

@@ -8,8 +8,10 @@ import (
 	"strings"
 
 	"github.com/addp/common/buildinfo"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	authmiddleware "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/engines/duckdb/internal/runtime"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -26,6 +28,7 @@ func NewRouter(cfg RouterConfig, executor *runtime.Executor) (*gin.Engine, error
 		return nil, err
 	}
 	router := modulelifecycle.NewRouter()
+	router.Use(commoni18n.I18nMiddleware())
 	router.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, buildinfo.Health("duckdb")) })
 	queries := router.Group("/api/v1/queries", authn)
 	queries.POST("", func(c *gin.Context) {
@@ -55,10 +58,15 @@ func NewRouter(cfg RouterConfig, executor *runtime.Executor) (*gin.Engine, error
 		body.Language = strings.ToLower(strings.TrimSpace(body.Language))
 		result, err := executor.Execute(c.Request.Context(), uint(tenantIDValue), body)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.ErrorMessage(c, err)})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"columns": result.Columns, "rows": result.Rows})
+		rows, err := datatype.RowsForJSON(result.Fields, result.Rows)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, "engine.query_runtime.output_invalid")})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"columns": result.Columns, "fields": result.Fields, "rows": rows})
 	})
 	return router, nil
 }

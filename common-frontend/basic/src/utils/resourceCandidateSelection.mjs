@@ -55,8 +55,8 @@ export function resourceFact(candidate) {
     locator: candidate?.locator || '',
     ...(candidate?.source_engine_type ? { source_engine_type: candidate.source_engine_type } : {}),
     ...(candidate?.full_name ? { full_name: candidate.full_name } : {}),
-    ...(candidate?.query_names && typeof candidate.query_names === 'object'
-      ? { query_names: candidate.query_names } : {}),
+    ...(candidate?.query_references && typeof candidate.query_references === 'object'
+      ? { query_references: candidate.query_references } : {}),
     ...(candidate?.schema_coverage ? { schema_coverage: candidate.schema_coverage } : {}),
     ...(candidate?.data_type ? { data_type: candidate.data_type } : {}),
     ...(candidate?.geometry_column ? { geometry_column: candidate.geometry_column } : {}),

@@ -1,4 +1,4 @@
-"""Disposable admission lifecycle regression; product query capability is not enabled."""
+"""Disposable admission build, process and cleanup lifecycle regression."""
 import json
 import os
 from pathlib import Path
@@ -32,6 +32,8 @@ if args[0] == 'compose':
         if '/opt/spark/bin/spark-submit' in args:
             state['phases'].append(args[-1])
             status = 19 if os.environ.get('FAIL_AT') == 'driver' else 0
+        elif 'sys.prefix' in ' '.join(args):
+            print('/tmp/owned-test-artifacts')
         elif 'uname' in args:
             print('aarch64')
         elif '/tmp/addp-spark-probe.test' in args:
@@ -41,7 +43,9 @@ if args[0] == 'compose':
             if 'SELECT HEX(label) FROM customers WHERE id=1' in args:
                 print('00' if os.environ.get('FAIL_AT') == 'seed' else 'E4B8ADE696872020')
     elif args[0] == 'cp':
-        assert Path(args[1]).is_file()
+        if args[1].startswith('spark-master:'):
+            Path(args[2]).mkdir(parents=True)
+        else: assert Path(args[1]).is_file()
     else: raise AssertionError(args)
 elif args[0] in ('ps', 'volume', 'network'):
     if state['active'] or os.environ.get('FAIL_AT') == 'leak': print('owned-residual')
@@ -51,7 +55,7 @@ sys.exit(status)
 '''
         gate = ROOT / 'scripts/test/common-spark-federation-gate.sh'
         subprocess.run(['bash', '-n', str(gate)], check=True)
-        for failure in ('', 'up', 'compile', 'probe', 'driver', 'leak', 'seed'):
+        for failure in ('', 'up', 'compile', 'dialect-build', 'probe', 'driver', 'leak', 'seed'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
                 path = Path(directory)
                 docker = path / 'docker'
@@ -60,6 +64,9 @@ sys.exit(status)
                 compiler = path / 'go'
                 compiler.write_text('#!' + sys.executable + '\nimport os,sys\nfrom pathlib import Path\nif os.environ.get("FAIL_AT")=="compile":sys.exit(18)\nPath(sys.argv[sys.argv.index("-o")+1]).write_bytes(b"fixture-test-only")\n')
                 compiler.chmod(0o700)
+                builder = path / 'python3'
+                builder.write_text('#!' + sys.executable + '\nimport os,sys\nfrom pathlib import Path\nif os.environ.get("FAIL_AT")=="dialect-build":sys.exit(23)\np=Path(sys.argv[sys.argv.index("--output")+1]);p.write_bytes(b"owned-test-jar");p.with_suffix(".json").write_text("{}")\n')
+                builder.chmod(0o700)
                 sleeper = path / 'sleep'
                 sleeper.write_text('#!/bin/sh\nexit 0\n')
                 sleeper.chmod(0o700)

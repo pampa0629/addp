@@ -14,6 +14,7 @@ const ENGINE = {
         supported: true,
         languages: ['sql'],
         default_language: 'sql',
+        identifier_quotes: { sql: '"' },
         result_kinds: ['table', 'graph'],
         parameters: {
           supported: true,
@@ -60,6 +61,7 @@ const DUCKDB_RUNTIME = {
         supported: true,
         languages: ['sql'],
         default_language: 'sql',
+        identifier_quotes: { sql: '"' },
         result_kinds: ['table'],
         federation: {
           supported: true,
@@ -637,9 +639,34 @@ test('uses tenant source-engine catalogs for the DuckDB federated runtime', asyn
   await resourceTree.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
   await resourceTree.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').click()
   await resourceTree.getByRole('treeitem', { name: 'customers', exact: true }).dblclick()
-  await expect(page.locator('.monaco-editor .view-lines')).toContainText('PostgreSQL_Demo.public.customers')
+  await expect(page.locator('.monaco-editor .view-lines')).toContainText('"PostgreSQL_Demo"."public"."customers"')
   expect(resourceTreeRequests).not.toContain(`/api/v1/meta/resource-tree/${DUCKDB_RUNTIME.id}`)
 })
+
+for (const [engineType, quote] of [['spark', '`'], ['duckdb', '"']]) {
+  test(`inserts exact owner segments for ${engineType} without a display-path fallback`, async ({ page }) => {
+    const runtime = structuredClone(DUCKDB_RUNTIME)
+    Object.assign(runtime, { id: 19, engine_type: engineType, name: `${engineType} query cluster` })
+    runtime.capabilities.compute.query.identifier_quotes.sql = quote
+    await installMockBackend(page, { resultKind: 'table', engines: [runtime], metaEngines: [ENGINE] })
+    const locator = resourceTree().children[0].children[0].locator
+    const parts = ['PostgreSQL_Demo', ' schema.with dot ', ' 中文"table` ']
+    const calls = []
+    await page.route('**/api/v1/manager/resource-facts?*', route => {
+      calls.push(new URL(route.request().url()).searchParams.get('locator'))
+      return fulfillJSON(route, { engine_id: ENGINE.id, item_id: 1101, query_references: { federated_sql: { parts } } })
+    })
+    await page.goto('/sql')
+    await expect(page.locator('.engine-select')).toContainText(runtime.name)
+    const tree = page.locator('.catalog-panel')
+    await tree.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
+    await tree.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').click()
+    await tree.getByRole('treeitem', { name: 'customers', exact: true }).dblclick()
+    const expected = parts.map(part => quote + part.replaceAll(quote, quote + quote) + quote).join('.')
+    await expect.poll(() => page.locator('.monaco-editor-container').evaluate(el => el.__vueParentComponent.setupState.editor.getValue())).toBe(expected)
+    expect(calls).toContain(locator)
+  })
+}
 
 test('generates a natural-language query with current-engine resource confirmation', async ({ page }) => {
   const copilotRequests = []
@@ -816,6 +843,14 @@ async function installMockBackend(page, {
     }
     if (path === '/api/v1/meta/engines') {
       return fulfillJSON(route, metaEngines)
+    }
+    if (path === '/api/v1/manager/resource-facts') {
+      const locator = new URL(request.url()).searchParams.get('locator')
+      if (locator === resourceTree().children[0].children[0].locator) return fulfillJSON(route, {
+        engine_id: ENGINE.id, item_id: 1101, source_engine_type: 'postgresql',
+        query_references: { sql: { parts: ['public', 'customers'] }, federated_sql: { parts: ['PostgreSQL_Demo', 'public', 'customers'] } }
+      })
+      return fulfillJSON(route, { error: 'resource reference unavailable' }, 404)
     }
     if (path === '/api/v1/copilot/query/generate' && request.method() === 'POST') {
       const body = request.postDataJSON()

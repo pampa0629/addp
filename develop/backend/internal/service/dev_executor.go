@@ -888,7 +888,7 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 		}
 		return e.queryResult(
 			devTask.QueryResultLimit,
-			federatedResult.Columns, nil, federatedResult.Rows, int64(federatedResult.RowCount),
+			federatedResult.Columns, federatedResult.Fields, federatedResult.Rows, int64(federatedResult.RowCount),
 			SQLExecutionEffectRead, "table", nil,
 		)
 	}

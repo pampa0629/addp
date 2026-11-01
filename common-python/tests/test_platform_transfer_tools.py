@@ -132,12 +132,16 @@ def test_transfer_draft_schema_matches_resource_fact_contract():
     schema = get_tool("transfer.draft.generate").input_schema
     resource_schema = schema["properties"]["resources"]["items"]
 
-    def validation_rules(value):
+    def validation_rules(value, definitions=None):
+        definitions = definitions if definitions is not None else value.get("$defs", {})
         if isinstance(value, dict):
-            return {key: validation_rules(item) for key, item in value.items()
-                    if key not in {"title", "description", "default"}}
+            if "$ref" in value:
+                assert value["$ref"].startswith("#/$defs/")
+                return validation_rules(definitions[value["$ref"].removeprefix("#/$defs/")], definitions)
+            return {key: validation_rules(item, definitions) for key, item in value.items()
+                    if key not in {"title", "description", "default", "$defs"}}
         if isinstance(value, list):
-            return [validation_rules(item) for item in value]
+            return [validation_rules(item, definitions) for item in value]
         return value
 
     assert validation_rules(resource_schema) == validation_rules(ResourceFact.model_json_schema())

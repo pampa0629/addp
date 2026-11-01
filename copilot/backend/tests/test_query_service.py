@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import pytest
 
@@ -122,12 +123,12 @@ def test_parse_output_rejects_mongo_shell_mql():
         )
 
 
-def test_generate_uses_federated_sql_query_name(monkeypatch):
+def test_generate_uses_federated_sql_query_reference(monkeypatch):
     captured = []
 
     class FakeLLM:
         responses = [
-            '{"collections":["source_pg.analytics.users"],"field_paths":["id"],'
+            '{"collections":[{"parts":["source_pg","analytics","users"]}],"field_paths":["id"],'
             '"operations":["list"],"result_keys":[],"assumptions":[]}',
             '{"query":"SELECT id FROM source_pg.analytics.users","query_parameters":[],"explanation":"","warnings":[]}',
         ]
@@ -146,7 +147,7 @@ def test_generate_uses_federated_sql_query_name(monkeypatch):
         "capabilities": {"compute": {"query": {"federation": {"supported": True}}}},
     }
     resources = [{
-        "query_names": {"sql": "analytics.users", "federated_sql": "source_pg.analytics.users"},
+        "query_references": {'sql': {'parts': ['analytics', 'users']}, 'federated_sql': {'parts': ['source_pg', 'analytics', 'users']}},
         "fields": [{"name": "id"}],
     }]
 
@@ -156,14 +157,14 @@ def test_generate_uses_federated_sql_query_name(monkeypatch):
     ))
 
     assert result["query"] == "SELECT id FROM source_pg.analytics.users"
-    assert '"query_name": "source_pg.analytics.users"' in captured[0][1].content
+    assert '"query_reference": {"parts": ["source_pg", "analytics", "users"]}' in captured[0][1].content
 
 
 def test_generate_requests_generic_clarification_for_unresolved_sql_assumptions(monkeypatch):
     class FakeLLM:
         async def ainvoke(self, _messages, **_kwargs):
             return type("Response", (), {"content": (
-                '{"collections":["analytics.activities"],'
+                '{"collections":[{"parts":["analytics","activities"]}],'
                 '"field_paths":["participant_id"],'
                 '"operations":["aggregate","ratio"],'
                 '"result_keys":["overlap"],'
@@ -175,7 +176,7 @@ def test_generate_requests_generic_clarification_for_unresolved_sql_assumptions(
         lambda *_args, **_kwargs: FakeLLM(),
     )
     resources = [{
-        "query_names": {"sql": "analytics.activities"},
+        "query_references": {'sql': {'parts': ['analytics', 'activities']}},
         "fields": [{"name": "participant_id"}],
     }]
 
@@ -199,7 +200,7 @@ def test_generate_requests_generic_clarification_for_unresolved_sql_assumptions(
 def test_parse_plan_rejects_non_string_array_items():
     with pytest.raises(ValueError, match="operations items must be strings"):
         QueryService._parse_plan(
-            '{"collections":["Outdoors"],"field_paths":[],'
+            '{"collections":[{"parts":["Outdoors"]}],"field_paths":[],'
             '"operations":[{"op":"filter"}],"result_keys":[],"assumptions":[]}'
         )
 
@@ -207,7 +208,7 @@ def test_parse_plan_rejects_non_string_array_items():
 def test_validate_candidate_rejects_unverified_mql_collection():
     candidate = {"query": '{"aggregate":"Other","pipeline":[]}', "warnings": []}
     plan = {
-        "collections": ["Outdoors"],
+        "collections": [{'parts': ['Outdoors']}],
         "field_paths": [],
         "operations": ["aggregate"],
         "result_keys": [],
@@ -215,35 +216,35 @@ def test_validate_candidate_rejects_unverified_mql_collection():
     }
     errors = QueryService._validate_candidate(candidate, "mql", [{
         "locator": "addp://engine/11/path/Outdoor/Outdoors?type=collection&item_id=51659",
-        "query_names": {"mql": "Outdoors"},
+        "query_references": {'mql': {'parts': ['Outdoors']}},
         "fields": [],
     }], plan)
 
     assert "MQL collection is not verified: Other" in errors
-    assert "MQL does not cover planned collection: Outdoors" in errors
+    assert "MQL does not cover planned collection: {'parts': ['Outdoors']}" in errors
 
 
 def test_validate_candidate_rejects_sql_write_and_unverified_table():
     candidate = {"query": "DROP TABLE analytics.users", "query_parameters": []}
     resources = [{
-        "query_names": {"sql": "public.users"},
+        "query_references": {'sql': {'parts': ['public', 'users']}},
         "fields": [{"name": "id"}],
     }]
-    plan = {"collections": ["public.users"], "field_paths": [], "operations": ["list"], "result_keys": [], "assumptions": []}
+    plan = {"collections": [{'parts': ['public', 'users']}], "field_paths": [], "operations": ["list"], "result_keys": [], "assumptions": []}
 
     errors = QueryService._validate_candidate(candidate, "sql", resources, plan)
 
     assert "SQL must be a read-only query" in errors
-    assert "SQL table is not verified: analytics.users" in errors
+    assert "SQL table is not verified: ('analytics', 'users')" in errors
 
 
 def test_validate_candidate_accepts_schema_qualified_sql_fact():
     candidate = {"query": "SELECT id FROM analytics.users", "query_parameters": []}
     resources = [{
-        "query_names": {"sql": "analytics.users"},
+        "query_references": {'sql': {'parts': ['analytics', 'users']}},
         "fields": [{"name": "id"}],
     }]
-    plan = {"collections": ["analytics.users"], "field_paths": ["id"], "operations": ["list"], "result_keys": [], "assumptions": []}
+    plan = {"collections": [{'parts': ['analytics', 'users']}], "field_paths": ["id"], "operations": ["list"], "result_keys": [], "assumptions": []}
 
     assert QueryService._validate_candidate(candidate, "sql", resources, plan) == []
 
@@ -253,16 +254,16 @@ def test_validate_candidate_normalizes_quoted_sql_table_and_cte():
         "query": 'WITH selected AS (SELECT id FROM "analytics"."users") SELECT id FROM selected',
         "query_parameters": [],
     }
-    resources = [{"query_names": {"sql": "analytics.users"}, "fields": [{"name": "id"}]}]
-    plan = {"collections": ["analytics.users"], "field_paths": ["id"], "operations": ["list"], "result_keys": [], "assumptions": []}
+    resources = [{"query_references": {'sql': {'parts': ['analytics', 'users']}}, "fields": [{"name": "id"}]}]
+    plan = {"collections": [{'parts': ['analytics', 'users']}], "field_paths": ["id"], "operations": ["list"], "result_keys": [], "assumptions": []}
 
     assert QueryService._validate_candidate(candidate, "sql", resources, plan) == []
 
 
 def test_validate_candidate_rejects_cypher_write_and_unverified_property():
     candidate = {"query": "MATCH (n:Person) SET n.password = 'x' RETURN n.password", "query_parameters": []}
-    resources = [{"query_names": {"cypher": "Person"}, "fields": [{"name": "nickname"}]}]
-    plan = {"collections": ["Person"], "field_paths": [], "operations": ["list"], "result_keys": [], "assumptions": []}
+    resources = [{"query_references": {'cypher': {'parts': ['Person']}}, "fields": [{"name": "nickname"}]}]
+    plan = {"collections": [{'parts': ['Person']}], "field_paths": [], "operations": ["list"], "result_keys": [], "assumptions": []}
 
     errors = QueryService._validate_candidate(candidate, "cypher", resources, plan)
 
@@ -274,8 +275,8 @@ def test_validate_candidate_rejects_unregistered_query_language():
     errors = QueryService._validate_candidate(
         {"query": "anything", "query_parameters": []},
         "promql",
-        [{"query_names": {"promql": "metric"}, "fields": []}],
-        {"collections": ["metric"], "field_paths": [], "operations": ["list"], "result_keys": [], "assumptions": []},
+        [{"query_references": {'promql': {'parts': ['metric']}}, "fields": []}],
+        {"collections": [{'parts': ['metric']}], "field_paths": [], "operations": ["list"], "result_keys": [], "assumptions": []},
     )
 
     assert errors == ["query language is unsupported: promql"]
@@ -283,7 +284,7 @@ def test_validate_candidate_rejects_unregistered_query_language():
 
 def test_validate_plan_rejects_unsupported_operation():
     plan = {
-        "collections": ["Outdoors"],
+        "collections": [{'parts': ['Outdoors']}],
         "field_paths": ["title.whole"],
         "operations": ["filter", "compare_semantically"],
         "result_keys": ["activities"],
@@ -291,7 +292,7 @@ def test_validate_plan_rejects_unsupported_operation():
     }
     resources = [{
         "locator": "addp://engine/11/path/Outdoor/Outdoors?type=collection&item_id=51659",
-        "query_names": {"mql": "Outdoors"},
+        "query_references": {'mql': {'parts': ['Outdoors']}},
         "fields": [{"name": "title.whole", "path": ["title", "whole"]}],
     }]
 
@@ -302,7 +303,7 @@ def test_validate_plan_rejects_unsupported_operation():
 
 def test_validate_plan_requires_fields_for_field_dependent_operations():
     plan = {
-        "collections": ["Outdoors"],
+        "collections": [{'parts': ['Outdoors']}],
         "field_paths": [],
         "operations": ["filter", "project"],
         "result_keys": ["activities"],
@@ -320,7 +321,7 @@ def test_validate_plan_requires_fields_for_field_dependent_operations():
 
 def test_validate_plan_requires_fields_for_set_ratio_operations():
     plan = {
-        "collections": ["Outdoors"],
+        "collections": [{'parts': ['Outdoors']}],
         "field_paths": [],
         "operations": ["aggregate", "intersection", "ratio"],
         "result_keys": ["activities", "overlap_ratio"],
@@ -328,7 +329,7 @@ def test_validate_plan_requires_fields_for_set_ratio_operations():
     }
     resources = [{
         "locator": "addp://engine/11/path/Outdoor/Outdoors?type=collection&item_id=51659",
-        "query_names": {"mql": "Outdoors"},
+        "query_references": {'mql': {'parts': ['Outdoors']}},
         "fields": [
             {"name": "members.userInfo.nickName"},
             {"name": "title.whole"},
@@ -348,7 +349,7 @@ def test_validate_candidate_rejects_unverified_mql_field():
         "warnings": [],
     }
     plan = {
-        "collections": ["Outdoors"],
+        "collections": [{'parts': ['Outdoors']}],
         "field_paths": ["members.userInfo.nickName", "title.whole"],
         "operations": ["filter", "project", "aggregate"],
         "result_keys": ["activity"],
@@ -356,7 +357,7 @@ def test_validate_candidate_rejects_unverified_mql_field():
     }
     resources = [{
         "locator": "addp://engine/11/path/Outdoor/Outdoors?type=collection&item_id=51659",
-        "query_names": {"mql": "Outdoors"},
+        "query_references": {'mql': {'parts': ['Outdoors']}},
         "fields": [
             {"name": "members.userInfo.nickName", "path": ["members", "userInfo", "nickName"]},
             {"name": "title.whole", "path": ["title", "whole"]},
@@ -376,7 +377,7 @@ def test_validate_candidate_recognizes_nested_mql_field_as_plan_coverage():
         "warnings": [],
     }
     plan = {
-        "collections": ["Outdoors"],
+        "collections": [{'parts': ['Outdoors']}],
         "field_paths": ["members.userInfo.nickName", "title.whole"],
         "operations": ["filter", "project", "aggregate"],
         "result_keys": ["activity"],
@@ -384,7 +385,7 @@ def test_validate_candidate_recognizes_nested_mql_field_as_plan_coverage():
     }
     resources = [{
         "locator": "addp://engine/11/path/Outdoor/Outdoors?type=collection&item_id=51659",
-        "query_names": {"mql": "Outdoors"},
+        "query_references": {'mql': {'parts': ['Outdoors']}},
         "fields": [
             {"name": "members", "path": ["members"]},
             {"name": "members.userInfo.nickName", "path": ["members", "userInfo", "nickName"]},
@@ -408,7 +409,7 @@ def test_validate_candidate_accepts_derived_mql_fields_between_stages():
         "warnings": [],
     }
     plan = {
-        "collections": ["Outdoors"],
+        "collections": [{'parts': ['Outdoors']}],
         "field_paths": ["members.userInfo.nickName", "title.whole"],
         "operations": ["filter", "project", "group", "aggregate", "ratio"],
         "result_keys": ["activities", "summary"],
@@ -416,7 +417,7 @@ def test_validate_candidate_accepts_derived_mql_fields_between_stages():
     }
     resources = [{
         "locator": "addp://engine/11/path/Outdoor/Outdoors?type=collection&item_id=51659",
-        "query_names": {"mql": "Outdoors"},
+        "query_references": {'mql': {'parts': ['Outdoors']}},
         "fields": [
             {"name": "members.userInfo.nickName", "path": ["members", "userInfo", "nickName"]},
             {"name": "title.whole", "path": ["title", "whole"]},
@@ -437,7 +438,7 @@ def test_validate_candidate_rejects_parameterized_mql_field_name():
         "warnings": [],
     }
     plan = {
-        "collections": ["Outdoors"],
+        "collections": [{'parts': ['Outdoors']}],
         "field_paths": ["members.userInfo.nickName"],
         "operations": ["filter", "aggregate"],
         "result_keys": [],
@@ -460,7 +461,7 @@ def test_validate_candidate_rejects_undefined_query_parameter():
         "warnings": [],
     }
     plan = {
-        "collections": ["Persons"],
+        "collections": [{'parts': ['Persons']}],
         "field_paths": ["userInfo.nickName"],
         "operations": ["filter"],
         "result_keys": [],
@@ -483,7 +484,7 @@ def test_validate_candidate_rejects_dynamic_record_key_enumeration():
         "warnings": [],
     }
     plan = {
-        "collections": ["Outdoors"],
+        "collections": [{'parts': ['Outdoors']}],
         "field_paths": ["members.userInfo.nickName"],
         "operations": ["filter"],
         "result_keys": [],
@@ -506,7 +507,7 @@ def test_validate_candidate_rejects_non_positive_mql_limit():
         "warnings": [],
     }
     plan = {
-        "collections": ["Outdoors"],
+        "collections": [{'parts': ['Outdoors']}],
         "field_paths": [],
         "operations": ["aggregate", "limit"],
         "result_keys": ["activities"],
@@ -520,3 +521,39 @@ def test_validate_candidate_rejects_non_positive_mql_limit():
     errors = QueryService._validate_candidate(candidate, "mql", resources, plan)
 
     assert "MQL contains a non-positive limit" in errors
+
+
+def test_sql_references_keep_dotted_segments_distinct():
+    resources = [{"query_references": {"sql": {"parts": ["a.b", "c"]}}, "fields": [{"name": "id"}]}]
+    plan = {"collections": [{"parts": ["a.b", "c"]}], "field_paths": ["id"], "operations": ["list"], "result_keys": [], "assumptions": []}
+    assert QueryService._validate_sql('SELECT id FROM "a.b"."c"', resources, plan) == []
+    errors = QueryService._validate_sql('SELECT id FROM "a"."b.c"', resources, plan)
+    assert any("table is not verified" in error for error in errors)
+    assert any("does not cover planned collection" in error for error in errors)
+
+
+def test_generate_spark_uses_native_backtick_grammar_and_exact_owner_parts(monkeypatch):
+    parts = ["Business_PostgreSQL", "schema.with dot", " 中文`table "]
+    captured = []
+    class FakeLLM:
+        responses = [
+            json.dumps({"collections": [{"parts": parts}], "field_paths": ["id"], "operations": ["list"], "result_keys": [], "assumptions": []}),
+            json.dumps({"query": "SELECT id FROM `Business_PostgreSQL`.`schema.with dot`.` 中文``table `", "query_parameters": []}),
+        ]
+        async def ainvoke(self, messages, **_kwargs):
+            captured.append(messages)
+            return type("Response", (), {"content": self.responses.pop(0)})()
+    monkeypatch.setattr("services.query_service.CopilotInferenceService.chat_model", lambda *_args, **_kwargs: FakeLLM())
+    result = asyncio.run(QueryService().generate(
+        query="查询", engine={"id": 4, "engine_type": "spark", "capabilities": {"compute": {"query": {"federation": {"supported": True}}}}},
+        query_language="sql", resources=[{"query_references": {"federated_sql": {"parts": parts}}, "fields": [{"name": "id"}]}],
+        current_query=None, tenant_id=1, db=None))
+    assert result["query"] == "SELECT id FROM `Business_PostgreSQL`.`schema.with dot`.` 中文``table `"
+    assert len(captured) == 2
+
+
+def test_qualified_table_named_like_cte_is_still_checked():
+    resources = [{"query_references": {"sql": {"parts": ["public", "users"]}}, "fields": [{"name": "id"}]}]
+    plan = {"collections": [{"parts": ["public", "users"]}], "field_paths": ["id"], "operations": ["list"], "result_keys": [], "assumptions": []}
+    errors = QueryService._validate_sql('WITH users AS (SELECT id FROM public.users) SELECT id FROM forbidden.users', resources, plan)
+    assert "SQL table is not verified: ('forbidden', 'users')" in errors

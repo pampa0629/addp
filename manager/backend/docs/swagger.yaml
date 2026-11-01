@@ -1000,9 +1000,9 @@ definitions:
         type: string
       locator:
         type: string
-      query_names:
+      query_references:
         additionalProperties:
-          type: string
+          $ref: '#/definitions/query.ResourceQueryReference'
         type: object
       scanned_depth:
         type: string
@@ -3139,6 +3139,13 @@ definitions:
         type: integer
       table:
         type: string
+    type: object
+  query.ResourceQueryReference:
+    properties:
+      parts:
+        items:
+          type: string
+        type: array
     type: object
   taskprovider.ExecutionContract:
     properties:

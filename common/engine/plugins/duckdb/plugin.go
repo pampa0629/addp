@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -17,8 +15,6 @@ import (
 const RuntimeAPI = "addp.query-runtime/v1"
 
 type Plugin struct{}
-
-var qualifiedSourcePattern = regexp.MustCompile(`\b([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)(?:\.([a-zA-Z_][a-zA-Z0-9_]*))?\b`)
 
 func init() {
 	plugin.Register(&Plugin{})
@@ -59,38 +55,7 @@ func (p *Plugin) AnalyzeFederatedQuery(_ context.Context, req plugin.FederatedQu
 }
 
 func (p *Plugin) ResolveSourceEngineIDs(query string, candidates []plugin.FederatedQuerySource) []uint {
-	referenced := make(map[string]struct{})
-	for _, match := range qualifiedSourcePattern.FindAllStringSubmatch(query, -1) {
-		if len(match) > 1 {
-			referenced[match[1]] = struct{}{}
-		}
-	}
-	supported := make(map[string]struct{})
-	for _, engineType := range p.Capabilities().Compute.Query.Federation.SourceEngineTypes {
-		supported[engineType] = struct{}{}
-	}
-	ids := make([]uint, 0, len(referenced))
-	seen := make(map[uint]struct{})
-	for _, candidate := range candidates {
-		if candidate.ID == 0 || candidate.LifecycleState != "active" {
-			continue
-		}
-		if _, ok := supported[candidate.EngineType]; !ok {
-			continue
-		}
-		_, byName := referenced[candidate.Name]
-		_, byAlias := referenced[federatedquery.SanitizeIdentifier(candidate.Name)]
-		if !byName && !byAlias {
-			continue
-		}
-		if _, duplicate := seen[candidate.ID]; duplicate {
-			continue
-		}
-		seen[candidate.ID] = struct{}{}
-		ids = append(ids, candidate.ID)
-	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	return ids
+	return federatedquery.ReferencedSourceEngineIDs(query, candidates, p.Capabilities().Compute.Query.Federation.SourceEngineTypes)
 }
 
 func (p *Plugin) ResolveObjectTableReferences(
@@ -107,24 +72,21 @@ func (p *Plugin) ResolveObjectTableReferences(
 		sourceNames[candidate.Name] = struct{}{}
 		sourceNames[federatedquery.SanitizeIdentifier(candidate.Name)] = struct{}{}
 	}
-	for _, match := range qualifiedSourcePattern.FindAllStringSubmatch(query, -1) {
-		if len(match) != 4 {
+	for _, match := range federatedquery.QualifiedReferences(query) {
+		if len(match) < 2 || len(match) > 3 {
 			continue
 		}
-		if _, sourceExists := sourceNames[match[1]]; !sourceExists {
+		if _, sourceExists := sourceNames[match[0]]; !sourceExists {
 			continue
 		}
-		tableName := match[2]
-		if match[3] != "" {
-			tableName += "." + match[3]
-		}
-		key := match[1] + "\x00" + tableName
+		tableName := strings.Join(match[1:], ".")
+		key := match[0] + "\x00" + tableName
 		if _, duplicate := seen[key]; duplicate {
 			continue
 		}
 		seen[key] = struct{}{}
 		references = append(references, plugin.FederatedQueryObjectTableReference{
-			SourceName: match[1],
+			SourceName: match[0],
 			TableName:  tableName,
 		})
 	}

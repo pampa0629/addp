@@ -41,6 +41,7 @@
       "loadingFederatedCatalog": "Loading engines available for federated queries",
       "noFederatedSourceEngines": "No source engines are available for federated queries in this tenant",
       "loadFederatedCatalogFailed": "Failed to load federated query source engines: ",
+      "referenceUnavailable": "A query reference is not available for this resource.",
       "fieldCompletion": "Field",
       "queryDiagnostics": "Query diagnostics",
       "diagnosticQueryInvalid": "Invalid query: {detail}",

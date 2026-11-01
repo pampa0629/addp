@@ -105,6 +105,7 @@ except OSError as error:
     sys.exit(1)
 PY_DNS
   addp_sync_python_dependencies "$ROOT_DIR" "$runtime_dir" 'Spark Workflow' "$ROOT_DIR/common-python" || return 1
+  (cd "$runtime_dir" && "$python_bin" query_jdbc.py build) || return 1
   (cd "$runtime_dir" && "$python_bin" -c 'import api_server, runtime_server') || return 1
   if addp_dev_port_busy "${SPARK_WORKFLOW_PORT:-8098}" && ! addp_dev_owned_listener spark-workflow-engine "${SPARK_WORKFLOW_PORT:-8098}"; then
     echo "✗ Spark Workflow 端口 ${SPARK_WORKFLOW_PORT:-8098} 被外部监听者占用" >&2

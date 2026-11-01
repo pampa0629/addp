@@ -50,6 +50,10 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)  # 启用跨域
 
+# One synchronous query route in this same runtime; no independent query service.
+from query_http import register_query_routes
+register_query_routes(app)
+
 # 启动时间（用于计算 uptime）
 start_time = datetime.now()
 
@@ -483,6 +487,21 @@ def register_to_system():
             "engine_type": "spark_workflow",
             "engine_family": "workflow",
             "compute": {
+                "query": {
+                    "supported": True,
+                    "languages": ["sql"],
+                    "default_language": "sql",
+                    "identifier_quotes": {"sql": "`"},
+                    "result_kinds": ["table", "scalar"],
+                    "read_only": True,
+                    "federation": {
+                        "supported": True,
+                        "runtime_api": "addp.query-runtime/v1",
+                        "execution_audience": "spark",
+                        "target_engine_types": ["spark"],
+                        "source_engine_types": ["postgresql", "mysql"]
+                    }
+                },
                 "workflow": {
                     "supported": True,
                     "runtime_api": "addp.workflow/v1",

@@ -1355,6 +1355,8 @@ echo 'openjdk version "11.0.32"' >&2
 python = runtime / 'venv/bin/python'
 python.write_text('#!' + sys.executable + '''
 import os, sys
+if len(sys.argv)>2 and sys.argv[1].endswith('query_jdbc.py'):
+    sys.exit(int(os.environ.get('FAIL_QUERY_BUILD', '0')))
 if len(sys.argv)>2 and sys.argv[1]=='-c':
     if 'sys.version_info' in sys.argv[2]: sys.exit(int(os.environ.get('FAIL_PYTHON', '0')))
     if 'import api_server' in sys.argv[2]: sys.exit(int(os.environ.get('FAIL_IMPORT', '0')))
@@ -1402,7 +1404,7 @@ result = subprocess.run(['bash', '-c', launcher], env=env, capture_output=True, 
 assert result.returncode == 0, (result.stdout,result.stderr)
 assert (work / 'trace').read_text().splitlines()==['sync']
 assert (work / '.dev-pids/spark-workflow-engine.pid').read_text().strip().isdigit()
-for flags in ({'FAIL_SYNC':'1'}, {'FAIL_PYTHON':'1'}, {'FAIL_IMPORT':'1'}, {'SPARK_MODE':'local'},
+for flags in ({'FAIL_SYNC':'1'}, {'FAIL_PYTHON':'1'}, {'FAIL_QUERY_BUILD':'1'}, {'FAIL_IMPORT':'1'}, {'SPARK_MODE':'local'},
               {'SPARK_WORKFLOW_SHARED_HOST':'invalid.addp.example'}, {'FAIL_START':'1'}, {'FAIL_JAVA_PROXY_PROBE':'1'}):
     (work / '.dev-pids/spark-workflow-engine.pid').unlink(missing_ok=True)
     result=subprocess.run(['bash','-c',launcher],env=dict(env,**flags),capture_output=True,text=True,timeout=15)

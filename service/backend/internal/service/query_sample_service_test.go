@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	_ "github.com/addp/common/engine/plugins/postgresql"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -193,8 +194,8 @@ func TestQuerySampleServiceReturnsUnboundedFederatedSampleAndBoundsValidation(t 
 				"total": 1, "page": 1, "page_size": 100,
 			})
 		case "/api/v1/meta/engines/21/tree":
-			_ = json.NewEncoder(w).Encode(models.MetadataTree{Items: []models.MetaItem{{
-				ID: 31, EngineID: 21, ItemType: "table", Name: "orders", FullName: "public.orders",
+			_ = json.NewEncoder(w).Encode(models.MetadataTree{TopNodes: []models.MetaNode{{ID: 9, NodeType: "schema", Name: "public"}}, Items: []models.MetaItem{{
+				ID: 31, NodeID: 9, EngineID: 21, ItemType: "table", Name: "orders", FullName: "public.orders",
 			}}})
 		case "/api/v1/system/auth/execution-authorizations":
 			var request client.IssueExecutionAuthorizationRequest
@@ -218,7 +219,7 @@ func TestQuerySampleServiceReturnsUnboundedFederatedSampleAndBoundsValidation(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	const want = "SELECT *\nFROM Business_PostgreSQL.public.orders"
+	const want = "SELECT *\nFROM \"Business_PostgreSQL\".\"public\".\"orders\""
 	if language != "sql" || query != want {
 		t.Fatalf("sample = (%q, %q), want (%q, sql)", query, language, want)
 	}

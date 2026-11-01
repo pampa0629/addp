@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 
 from query_guard import MAX_QUERY_BYTES, QueryValidationError, validate_query
 from spark_dependencies import JDBC_MAVEN_PACKAGES
+from query_jdbc import verified_artifact
 
 
 def validate_request(request):
@@ -124,7 +125,9 @@ def execute(request):
     validate_request(request)
     # This process owns an independent gateway. Do not inherit the workflow's
     # submit JARs, SQL extensions, UDFs, session catalogs or cached JVM.
-    os.environ['PYSPARK_SUBMIT_ARGS'] = 'pyspark-shell'
+    import shlex
+    dialect = verified_artifact()
+    os.environ['PYSPARK_SUBMIT_ARGS'] = shlex.join(['--jars', str(dialect), 'pyspark-shell'])
     os.environ['TZ'] = 'UTC'
     if hasattr(time, 'tzset'):
         time.tzset()
@@ -135,6 +138,7 @@ def execute(request):
              .config('spark.driver.bindAddress', '0.0.0.0')
              .config('spark.ui.enabled', 'false')
              .config('spark.sql.extensions', '')
+             .config('spark.plugins', 'com.addp.spark.query.ExactIdentifierDialects')
              .config('spark.sql.catalogImplementation', 'in-memory')
              .config('spark.sql.caseSensitive', 'true')
              .config('spark.sql.session.timeZone', 'UTC')

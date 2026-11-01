@@ -19,6 +19,7 @@ import (
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/engineaccess"
@@ -138,6 +139,7 @@ type PreviewResolverRequest struct {
 	NestedChildPath         string                        // 当前 child 是容器时，继续寻址其内部 child 的相对路径
 	GraphSample             plugin.GraphSampleFilter      // 图预览样本过滤条件
 	DataScope               dataprofile.DataScope         // Manager 剖析内部使用的数据范围；公共预览不接受该参数
+	QueryCatalogPath        *plugin.EngineCatalogPath     // Only set from tenant-bound Meta ancestor facts, never caller locator names.
 	KeyValueOptions         plugin.KeyValueReadOptions
 }
 
@@ -158,39 +160,39 @@ type PreviewResult struct {
 
 // PreviewMetadata 预览上下文元数据
 type PreviewMetadata struct {
-	Locator         string            `json:"locator"`                    // ResourceLocator URI
-	EngineName      string            `json:"engine_name"`                // 引擎名称
-	ResourceType    string            `json:"resource_type"`              // 引擎类型（postgresql/minio）
-	MetaScanned     bool              `json:"meta_scanned"`               // 是否已被 Meta 扫描
-	ScannedDepth    string            `json:"scanned_depth,omitempty"`    // Meta 扫描深度
-	ItemID          *uint             `json:"item_id,omitempty"`          // MetaItem ID
-	FullName        string            `json:"full_name,omitempty"`        // MetaItem full_name
-	ItemFingerprint string            `json:"item_fingerprint,omitempty"` // 标准数据项指纹
-	EngineType      string            `json:"engine_type,omitempty"`      // Source Engine 类型
-	SchemaCoverage  string            `json:"schema_coverage,omitempty"`  // complete/sampled/unknown
-	QueryNames      map[string]string `json:"query_names,omitempty"`      // 按查询语言声明的原生资源名称
-	ItemCount       *int64            `json:"item_count"`                 // 项目数（来自 Meta）
-	SizeBytes       *int64            `json:"size_bytes"`                 // 大小（来自 Meta）
+	Locator         string                                        `json:"locator"`                    // ResourceLocator URI
+	EngineName      string                                        `json:"engine_name"`                // 引擎名称
+	ResourceType    string                                        `json:"resource_type"`              // 引擎类型（postgresql/minio）
+	MetaScanned     bool                                          `json:"meta_scanned"`               // 是否已被 Meta 扫描
+	ScannedDepth    string                                        `json:"scanned_depth,omitempty"`    // Meta 扫描深度
+	ItemID          *uint                                         `json:"item_id,omitempty"`          // MetaItem ID
+	FullName        string                                        `json:"full_name,omitempty"`        // MetaItem full_name
+	ItemFingerprint string                                        `json:"item_fingerprint,omitempty"` // 标准数据项指纹
+	EngineType      string                                        `json:"engine_type,omitempty"`      // Source Engine 类型
+	SchemaCoverage  string                                        `json:"schema_coverage,omitempty"`  // complete/sampled/unknown
+	QueryReferences map[string]commonquery.ResourceQueryReference `json:"query_references,omitempty"` // Owner确认的原始名称分段
+	ItemCount       *int64                                        `json:"item_count"`                 // 项目数（来自 Meta）
+	SizeBytes       *int64                                        `json:"size_bytes"`                 // 大小（来自 Meta）
 }
 
 // ResourceFacts 是供生成类 Tool 消费的受限资源事实，不包含原始数据行。
 type ResourceFacts struct {
-	Locator          string               `json:"locator"`
-	EngineID         uint                 `json:"engine_id"`
-	EngineName       string               `json:"engine_name"`
-	SourceEngineType string               `json:"source_engine_type"`
-	ItemID           uint                 `json:"item_id"`
-	ItemType         string               `json:"item_type"`
-	DataType         string               `json:"data_type"`
-	FullName         string               `json:"full_name"`
-	ItemFingerprint  string               `json:"item_fingerprint"`
-	ScannedDepth     string               `json:"scanned_depth"`
-	SchemaCoverage   string               `json:"schema_coverage"`
-	QueryNames       map[string]string    `json:"query_names"`
-	Fields           []datatype.FieldInfo `json:"fields,omitempty"`
-	GeometryColumn   string               `json:"geometry_column,omitempty"`
-	GeometryType     string               `json:"geometry_type,omitempty"`
-	CRS              string               `json:"crs,omitempty"`
+	Locator          string                                        `json:"locator"`
+	EngineID         uint                                          `json:"engine_id"`
+	EngineName       string                                        `json:"engine_name"`
+	SourceEngineType string                                        `json:"source_engine_type"`
+	ItemID           uint                                          `json:"item_id"`
+	ItemType         string                                        `json:"item_type"`
+	DataType         string                                        `json:"data_type"`
+	FullName         string                                        `json:"full_name"`
+	ItemFingerprint  string                                        `json:"item_fingerprint"`
+	ScannedDepth     string                                        `json:"scanned_depth"`
+	SchemaCoverage   string                                        `json:"schema_coverage"`
+	QueryReferences  map[string]commonquery.ResourceQueryReference `json:"query_references"`
+	Fields           []datatype.FieldInfo                          `json:"fields,omitempty"`
+	GeometryColumn   string                                        `json:"geometry_column,omitempty"`
+	GeometryType     string                                        `json:"geometry_type,omitempty"`
+	CRS              string                                        `json:"crs,omitempty"`
 }
 
 // Preview 执行预览。预览必须基于已经由 Meta 扫描入库的节点或 item。
@@ -292,6 +294,18 @@ func (r *PreviewResolver) ResourceFactsFromURI(ctx context.Context, locatorURI s
 	if req.MetaItemID == nil || *req.MetaItemID == 0 {
 		return nil, ErrPreviewRequiresScannedMeta
 	}
+	if r.metaClient == nil {
+		return nil, ErrPreviewRequiresScannedMeta
+	}
+	ancestors, err := r.metaClient.WithTenantID(*tenantID).GetItemAncestors(ctx, *req.MetaItemID)
+	if err != nil {
+		return nil, previewMetadataLookupError(err)
+	}
+	path, err := queryCatalogPathFromMeta(req, ancestors)
+	if err != nil {
+		return nil, err
+	}
+	req.QueryCatalogPath = &path
 	return r.buildResourceFacts(req)
 }
 
@@ -304,9 +318,9 @@ func (r *PreviewResolver) buildResourceFacts(req *PreviewResolverRequest) (*Reso
 		return nil, ErrPreviewRequiresScannedMeta
 	}
 	metadata := r.buildMetadata(req)
-	queryNames := metadata.QueryNames
-	if queryNames == nil {
-		queryNames = map[string]string{}
+	queryReferences := metadata.QueryReferences
+	if queryReferences == nil {
+		queryReferences = map[string]commonquery.ResourceQueryReference{}
 	}
 	facts := &ResourceFacts{
 		Locator:          req.Locator.ToURI(),
@@ -320,7 +334,7 @@ func (r *PreviewResolver) buildResourceFacts(req *PreviewResolverRequest) (*Reso
 		ItemFingerprint:  metadata.ItemFingerprint,
 		ScannedDepth:     metadata.ScannedDepth,
 		SchemaCoverage:   metadata.SchemaCoverage,
-		QueryNames:       queryNames,
+		QueryReferences:  queryReferences,
 	}
 	if tableInfo := tableInfoFromMetaAttributes(req.MetadataAttributes(), req.ItemName); tableInfo != nil {
 		fields := tableInfo.Fields
@@ -1010,7 +1024,7 @@ func (r *PreviewResolver) buildMetadata(req *PreviewResolverRequest) *PreviewMet
 		ItemFingerprint: strings.TrimSpace(req.ItemFingerprint),
 		EngineType:      strings.ToLower(strings.TrimSpace(req.Engine.EngineType)),
 		SchemaCoverage:  schemaCoverage(req),
-		QueryNames:      queryNames(req),
+		QueryReferences: queryReferences(req),
 	}
 
 	if req.Metadata != nil {
@@ -1046,38 +1060,48 @@ func schemaCoverage(req *PreviewResolverRequest) string {
 	return "complete"
 }
 
-func queryNames(req *PreviewResolverRequest) map[string]string {
-	if req == nil || req.MetaItemID == nil || req.ItemFullName == "" {
+func queryReferences(req *PreviewResolverRequest) map[string]commonquery.ResourceQueryReference {
+	if req == nil || req.Engine == nil || req.Locator == nil || req.MetaItemID == nil || req.ItemFullName == "" || req.QueryCatalogPath == nil {
 		return nil
 	}
-	fullName := req.ItemFullName
 	registered, err := plugin.Get(req.Engine.EngineType)
 	if err != nil {
 		return nil
 	}
-	names := make(map[string]string)
+	var parts []string
+	for _, segment := range plugin.EngineCatalogPathWithoutRoot(*req.QueryCatalogPath).Segments {
+		if segment.Name == "" {
+			return nil
+		}
+		parts = append(parts, segment.Name)
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	names := make(map[string]commonquery.ResourceQueryReference)
+	reference := func(segments []string) commonquery.ResourceQueryReference {
+		return commonquery.ResourceQueryReference{Parts: append([]string(nil), segments...)}
+	}
 	if queryProvider, ok := registered.(plugin.QueryRuntimeProvider); ok {
 		for _, language := range queryProvider.QueryLanguages() {
 			switch strings.ToLower(strings.TrimSpace(language)) {
 			case "sql":
-				names["sql"] = fullName
+				names["sql"] = reference(parts)
 			case "mql":
-				if name := strings.TrimSpace(req.ItemName); name != "" {
-					names["mql"] = name
-				}
+				names["mql"] = reference(parts[len(parts)-1:])
 			case "cypher":
-				names["cypher"] = fullName
+				names["cypher"] = reference(parts)
+			default:
+				names[strings.ToLower(strings.TrimSpace(language))] = reference(parts)
 			}
 		}
 	}
 	if supportsFederatedSource(req.Engine.EngineType) {
-		federatedName := fullName
+		federatedParts := append([]string(nil), parts...)
 		if registered.Capabilities().EngineFamily == "object" {
-			federatedName = federatedquery.SanitizeIdentifier(req.ItemName)
+			federatedParts = []string{federatedquery.SanitizeIdentifier(req.ItemName)}
 		}
-		if strings.TrimSpace(federatedName) != "" {
-			names["federated_sql"] = federatedquery.SanitizeIdentifier(req.Engine.Name) + "." + federatedName
-		}
+		names["federated_sql"] = reference(append([]string{federatedquery.SanitizeIdentifier(req.Engine.Name)}, federatedParts...))
 	}
 	if len(names) == 0 {
 		return nil

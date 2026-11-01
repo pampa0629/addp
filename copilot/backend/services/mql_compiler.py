@@ -7,6 +7,8 @@ import re
 from copy import deepcopy
 from typing import Any
 
+from addp_common.resources import query_reference_parts
+
 from services.query_clarification import (
     ClarificationOption,
     QueryClarification,
@@ -104,7 +106,7 @@ class MQLCompiler:
                 control="text",
             ))
 
-        collection = plan["collection"].strip()
+        collection = plan["collection"]
         resource = cls._resource_for_collection(collection, resources)
         fields = cls._field_map(resource)
         set_comparison = cls._validate_set_comparison(plan["set_comparison"], plan, fields)
@@ -184,8 +186,7 @@ class MQLCompiler:
     def _resource_for_collection(collection: str, resources: list[dict[str, Any]]) -> dict[str, Any]:
         matches = [
             resource for resource in resources
-            if isinstance(resource.get("query_names"), dict)
-            and resource["query_names"].get("mql") == collection
+            if query_reference_parts(resource, "mql") == (collection,)
         ]
         if len(matches) != 1:
             raise MQLPlanError(f"MQL collection is not uniquely verified: {collection}")

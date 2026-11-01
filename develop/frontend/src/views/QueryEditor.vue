@@ -755,7 +755,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useUnsavedChangesGuard } from '@common-ui'
@@ -782,6 +782,9 @@ import {
   ExecutionParameterForm,
   StatusAnnouncer,
   getResourceFields,
+  getResourceFacts,
+  renderQueryReference,
+  nativeCatalogSegmentText,
   getResourceTreeNode,
   getResourceTreeAncestors,
   formatLocatorDisplayPath,
@@ -820,8 +823,6 @@ import {
   buildQueryExecutionContract,
   isTerminalExecutionStatus,
   monacoLanguageForQuery,
-  nativeCatalogPathText,
-  nativeCatalogSegmentText,
   queryParameterReference,
   queryParameterTypesForLanguage,
   queryCapabilityForEngine,
@@ -972,8 +973,10 @@ const queryTaskRouteReady = ref(false)
 const bypassUnsavedRouteConfirm = ref(false)
 const sampleRequests = createLatestRequestCoordinator()
 const fieldCompletionCache = new Map()
+const queryReferenceFacts = reactive(new Map())
 let executionRequestSequence = 0
 let fieldRequestSequence = 0
+let catalogFactsSequence = 0
 let queryDiagnosticsRequestSequence = 0
 let queryDiagnosticsDebounce = null
 let catalogRequestSequence = 0
@@ -1854,7 +1857,7 @@ const queryWarningMessage = warning => ({
 }[warning] || warning)
 
 const fieldInsertionText = fieldName => {
-  const text = String(fieldName || '').trim()
+  const text = String(fieldName ?? '')
   if (!text) return ''
   const language = String(currentQueryLanguage.value || '').toLowerCase()
   if (language === 'mql' || language === 'es_dsl') return text
@@ -1886,7 +1889,7 @@ const loadFieldCompletions = async selection => {
     if (requestSequence !== fieldRequestSequence) return
     const items = fields
       .map(field => {
-        const name = String(field?.name || '').trim()
+        const name = String(field?.name ?? '')
         if (!name) return null
         const type = typeof field?.type === 'string' ? field.type : field?.type?.name || field?.native_type || ''
         return {
@@ -1904,46 +1907,42 @@ const loadFieldCompletions = async selection => {
   }
 }
 
-const catalogSourceEngineForId = engineID => catalogSourceEngines.value.find(engine => Number(engine.id) === Number(engineID)) || null
-const federatedIdentifier = value => {
-  let result = ''
-  for (const char of String(value || '')) {
-    if ((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
-      (char >= '0' && char <= '9') || char === '_') {
-      result += char
-    } else {
-      result += '_'
-    }
+const loadQueryReferenceFacts = async selection => {
+  const locator = selection?.identity?.locator
+  if (!locator) return
+  const parsed = parseLocator(locator)
+  if (!parsed.itemId) return
+  const facts = await getResourceFacts('/api/v1/manager', locator)
+  if (Number(facts?.engine_id) !== Number(parsed.engineId) || Number(facts?.item_id) !== Number(parsed.itemId)) {
+    throw new Error(t('develop.query.referenceUnavailable'))
   }
-  if (!result) return 'engine'
-  return /^[0-9]/.test(result) ? `_${result}` : result
+  queryReferenceFacts.set(locator, facts)
 }
 
 const rememberCatalogSelection = async (selection) => {
+  const sequence = ++catalogFactsSequence
   const path = selection?.display?.path
   if (!path) return
   if (selection?.identity?.locator) targetLocator.value = selection.identity.locator
+  try { await loadQueryReferenceFacts(selection) } catch { queryReferenceFacts.delete(selection?.identity?.locator) }
+  if (sequence !== catalogFactsSequence) return
+  const insertText = queryTextForCatalogSelection(selection)
   const next = {
     label: selection.display.label || path,
-    insertText: path,
+    insertText,
     contextInsertText: queryTextForCatalogSegment(selection),
     detail: selection.display.type || ''
   }
-  catalogCompletions.value = [next, ...catalogCompletions.value.filter(item => item.insertText !== path)].slice(0, 100)
+  if (insertText) catalogCompletions.value = [next, ...catalogCompletions.value.filter(item => item.insertText !== insertText)].slice(0, 100)
   await loadFieldCompletions(selection)
 }
 
 const queryTextForCatalogSegment = (selection) => {
   const locator = selection?.identity?.locator
   if (!locator) return ''
-  let parsed
-  try {
-    parsed = parseLocator(locator)
-  } catch {
-    return ''
-  }
   if (federatedQuery.value) return queryTextForCatalogSelection(selection)
-  const segment = parsed.path?.at(-1)
+  const parts = queryReferenceFacts.get(locator)?.query_references?.[currentQueryLanguage.value]?.parts
+  const segment = Array.isArray(parts) ? parts.at(-1) : ''
   if (!segment) return ''
   return nativeCatalogSegmentText(segment, selectedCapability.value, currentQueryLanguage.value)
 }
@@ -1964,30 +1963,24 @@ const rememberCatalogNode = async node => {
     if (requestSequence !== catalogRequestSequence) return
     const engine = catalogSourceEngineForId(parsed.engineId) || selectedTarget.value?.engine
     const engineType = String(engine?.engine_type || '').toLowerCase()
-    const children = (result?.children || [])
-      .map(child => {
-        const childLocator = child?.locator || ''
-        let childParsed
-        try {
-          childParsed = parseLocator(childLocator)
-        } catch {
-          return null
-        }
-        if (!isQueryCatalogSelectionAllowed(child, { engine, locator: childParsed })) return null
-        const childEngine = catalogSourceEngineForId(childParsed.engineId) || engine
-        return {
-          label: child.label || childParsed.path?.at(-1) || childLocator,
-          insertText: formatLocatorDisplayPath(childLocator, { engineType: String(childEngine?.engine_type || engineType).toLowerCase() }),
-          contextInsertText: queryTextForCatalogSegment({
-            identity: { locator: childLocator },
-            display: { engine_type: childEngine?.engine_type, engine_name: childEngine?.name },
-            resource: { type: child.type }
-          }),
-          detail: child.type || '',
-          kind: 'resource'
-        }
-      })
-      .filter(Boolean)
+    const children = (await Promise.all((result?.children || []).map(async child => {
+      const childLocator = child?.locator || ''
+      let childParsed
+      try { childParsed = parseLocator(childLocator) } catch { return null }
+      if (!isQueryCatalogSelectionAllowed(child, { engine, locator: childParsed })) return null
+      const selection = { identity: { locator: childLocator } }
+      try { await loadQueryReferenceFacts(selection) } catch { return null }
+      const insertText = queryTextForCatalogSelection(selection)
+      if (!insertText) return null
+      return {
+        label: child.label || childParsed.path?.at(-1) || childLocator,
+        insertText,
+        contextInsertText: queryTextForCatalogSegment(selection),
+        detail: child.type || '',
+        kind: 'resource'
+      }
+    }))).filter(Boolean)
+    if (requestSequence !== catalogRequestSequence) return
     catalogCompletions.value = [
       ...children,
       ...catalogCompletions.value.filter(existing => !children.some(child => child.insertText === existing.insertText))
@@ -2008,24 +2001,18 @@ const isQueryCatalogSelectionAllowed = (node, { locator } = {}) => {
 const queryTextForCatalogSelection = (selection) => {
   const locator = selection?.identity?.locator
   if (!locator) return ''
-  let parsed
-  try {
-    parsed = parseLocator(locator)
-  } catch {
-    return selection.display?.path || ''
-  }
-  const segments = Array.isArray(parsed.path) ? parsed.path.filter(Boolean) : []
-  if (segments.length === 0) return ''
-  if (federatedQuery.value) {
-    const sourceEngine = catalogSourceEngineForId(parsed.engineId) || selection.raw?.engine
-    const sourceName = sourceEngine?.name || selection.display?.engine_name
-    if (!sourceName) return ''
-    return [federatedIdentifier(sourceName), ...segments.map(federatedIdentifier)].join('.')
-  }
-  return nativeCatalogPathText(segments, selectedCapability.value, currentQueryLanguage.value)
+  const referenceKey = federatedQuery.value ? 'federated_sql' : currentQueryLanguage.value
+  return renderQueryReference(queryReferenceFacts.get(locator)?.query_references?.[referenceKey], selectedCapability.value, currentQueryLanguage.value)
 }
 
-const insertCatalogItemAtCursor = (selection) => {
+const insertCatalogItemAtCursor = async (selection) => {
+  const targetID = selectedEngineId.value
+  try { await loadQueryReferenceFacts(selection) } catch (error) {
+    queryReferenceFacts.delete(selection?.identity?.locator)
+    ElMessage.error(error?.response?.data?.error || t('develop.query.referenceUnavailable'))
+    return
+  }
+  if (targetID !== selectedEngineId.value) return
   const text = queryTextForCatalogSelection(selection)
   if (!text) return
   rememberCatalogSelection(selection)
@@ -2526,6 +2513,8 @@ watch(queryParameterPanelWidth, width => {
 })
 
 onBeforeUnmount(() => {
+  catalogFactsSequence += 1
+  queryReferenceFacts.clear()
   fullExportAbortController?.abort()
   fullExportAbortController = null
   executionRequestSequence += 1

@@ -1047,6 +1047,7 @@ seed_base_images() {
         "python:3.12-slim"
         "python:3.11-slim-bookworm"
         "eclipse-temurin:11-jre-jammy"
+        "eclipse-temurin:11-jdk-jammy"
         "golang:1.24-bookworm=golang:1.24-bookworm"
         "debian:bookworm-slim=debian-slim:bookworm"
         "ubuntu:24.04"

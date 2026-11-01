@@ -52,29 +52,6 @@ function normalizeIdentifierQuotes(value, queryLanguages) {
   }))
 }
 
-export function quoteQueryIdentifier(value, capability, language) {
-  const text = String(value || '').trim()
-  if (!text) return ''
-  const normalizedLanguage = String(language || '').trim().toLowerCase()
-  const quote = String(capability?.identifierQuotes?.[normalizedLanguage] || '')
-  if (Array.from(quote).length !== 1) return text
-  return `${quote}${text.replaceAll(quote, `${quote}${quote}`)}${quote}`
-}
-
-export function nativeCatalogSegmentText(value, capability, language) {
-  const normalizedLanguage = String(language || '').trim().toLowerCase()
-  if (normalizedLanguage === 'mql') return JSON.stringify(String(value || '').trim())
-  return quoteQueryIdentifier(value, capability, normalizedLanguage)
-}
-
-export function nativeCatalogPathText(segments, capability, language) {
-  const path = Array.isArray(segments) ? segments.map(value => String(value || '').trim()).filter(Boolean) : []
-  if (path.length === 0) return ''
-  const normalizedLanguage = String(language || '').trim().toLowerCase()
-  if (normalizedLanguage === 'mql') return JSON.stringify(path.at(-1))
-  return path.map(segment => quoteQueryIdentifier(segment, capability, normalizedLanguage)).join('.')
-}
-
 function normalizeQueryParameterCapability(value, queryLanguages) {
   if (!value?.supported) return null
   const languages = Array.from(new Set((value.languages || []).map(item => String(item).trim().toLowerCase()).filter(Boolean)))

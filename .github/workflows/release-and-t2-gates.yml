@@ -1312,6 +1312,11 @@ jobs:
         with:
           go-version-file: common/go.mod
           cache: false
+      - name: Set up Java 11 query dialect compiler
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '11'
       - name: Run Spark federation native admission
         run: make test-common-spark-federation
       - name: Summarize Spark federation admission

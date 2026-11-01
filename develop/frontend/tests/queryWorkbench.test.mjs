@@ -7,8 +7,6 @@ import {
   formatJSONQuery,
   formatterLanguageForQuery,
   monacoLanguageForQuery,
-  nativeCatalogPathText,
-  nativeCatalogSegmentText,
   queryCapabilityForEngine,
   queryParameterTypesForLanguage,
   queryParameterReference,
@@ -20,6 +18,7 @@ import {
   isQueryInputResource,
   mqlPrimaryCollection
 } from '../src/utils/queryWorkbench.mjs'
+import { nativeCatalogPathText, nativeCatalogSegmentText } from '../../../common-frontend/basic/src/utils/queryReference.mjs'
 
 const capability = queryCapabilityForEngine({
   capabilities: JSON.stringify({
@@ -54,7 +53,7 @@ assert.deepEqual(capability, {
 })
 assert.equal(nativeCatalogSegmentText('Order`Item', capability, 'cypher'), '`Order``Item`')
 assert.equal(nativeCatalogPathText(['business', 'orders'], { identifierQuotes: { sql: '`' } }, 'sql'), '`business`.`orders`')
-assert.equal(nativeCatalogPathText(['business', 'orders'], { identifierQuotes: {} }, 'sql'), 'business.orders')
+assert.equal(nativeCatalogPathText(['business', 'orders'], { identifierQuotes: {} }, 'sql'), '')
 assert.equal(nativeCatalogPathText(['business', 'orders'], capability, 'mql'), '"orders"')
 const federatedCapability = queryCapabilityForEngine({
   capabilities: {

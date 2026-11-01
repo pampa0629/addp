@@ -4,7 +4,7 @@ Spark Workflow 是基于 Apache Spark 和 Apache Sedona 的工作流运行时，
 
 ## 配置与启动
 
-已确认的查询扩展方案复用本服务与现有端口，不另建 `spark-query`。查询工作台选择 Business Spark 集群，由本运行时承接联邦查询；工作流继续逐任务绑定集群。当前查询适配正在准入，尚未开放为正式能力，角色与迁移边界见[关系说明](docs/spark-design.md)。 Business Spark 插件已移除存储、目录与 Thrift Provider，登记使用 `host`、Master `port` 和 `web_ui_url`；连接状态检测不能代替作业验收。查询 HTTP 完整接通前，集群不提前声明查询能力，工作流仍显式绑定计算目标。
+已确认的查询扩展方案复用本服务与现有端口，不另建 `spark-query`。查询工作台选择 Business Spark 集群，由本运行时承接联邦查询；工作流继续逐任务绑定集群。当前已实现查询 HTTP、独立 Driver 及结构化源引用，范围内准入结果见下文；本机和 Hosted 整链验收仍未完成，角色与迁移边界见[关系说明](docs/spark-design.md)。 Business Spark 插件已移除存储、目录与 Thrift Provider，登记使用 `host`、Master `port` 和 `web_ui_url`；连接状态检测不能代替作业验收。查询声明由集群与内置 Runtime 的协议／受众／源连接器匹配共同决定，工作流仍逐任务显式绑定计算目标。
 
 2026-10-30 本机 Linux ARM64 的 `make test-common-spark-federation` 通过：固定 Spark 3.5.0 与独占 PG/MySQL、真实 Worker 完成只读账号的两源 JOIN、位置参数、bigint/Decimal、null、中文与尾随空格核对，第二个独立 Driver 不继承目录和临时视图，测试资源零残留。首轮夹具关闭 TLS 导致 MySQL 认证失败、中文初始化使用了错误客户端字符集，已分别通过原生 JDBC 与物理字节定位，改为要求 TLS 并显式 UTF-8 初始化；未放宽原值断言。115 项 Spark 确定性测试与 T2 登记门禁通过。该结果仅为底层技术准入，不代表正式授权、HTTP 查询接口、超时取消、多集群路由或页面已验收；Linux amd64 CI 尚待实际结果。
 
@@ -136,3 +136,11 @@ make test-common-hdfs
 - [ADDP 工作流计算引擎接口规范](../../docs/spec/addp工作流计算引擎接口规范.md)
 - [Apache Spark 文档](https://spark.apache.org/docs/latest/)
 - [Apache Sedona 文档](https://sedona.apache.org/)
+
+## 同步查询与 JVM 方言构建
+
+现有8098服务的 `POST /api/v1/queries` 只接受租户 `addp-develop` 服务身份及绑定本次 execution 的 Spark 只读执行授权。集群与 PG/MySQL 源分别取得连接，查询后重新核对授权和连接，失效即丢弃结果。调用方不能提交连接信息；每次使用独立 Driver，最长120秒、至多10000行／4MiB结果、最多2个并发查询。工作台暂不声明命名参数支持；取消能力仍不声明，远端Executor即时回收尚未验收。协议见 [query_openapi.json](query_openapi.json)。
+
+原生 Spark3.5.0 JDBC 的标识符引用不转义名称内部引号；本项目使用固定的 `jvm/ExactIdentifierDialects.java` 修正双引号／反引号；查询专用SparkPlugin在Driver与Executor安装相同方言，保留原生Catalog及类型映射，不修改Business Worker部署。开发标准准备脚本在监听前执行 `venv/bin/python query_jdbc.py build`；镜像在独立JDK阶段构建，最终仍只带JRE。构建需要JDK支持 `--release 11`，产物位于虚拟环境 `share/addp-spark`，源码／固定Spark JAR／产物均核对指纹；查询只验证加载，缺失或过期直接失败，不在请求中编译。原生T2从独占Spark镜像取同一份JAR，在构建JDK编译Java11字节码后交还该Driver，CI已显式准备Java11。验证入口为 `make test-spark-workflow`、`make test-common-spark-federation` 和 `make test-dev-lifecycle`。
+
+资源名称使用 Source Owner `query_references` 原始分段。显示名称不参与SQL重建；工作台按所选目标引号转义插入，Copilot按对应SQL语法解析后比较完整分段。该元数据事实不增加读取权限。正式重启后的真实工作台／授权撤权及多集群验收仍须单独记录，不能由离线回归代替。

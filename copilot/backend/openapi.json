@@ -1214,12 +1214,12 @@
             ],
             "title": "Path"
           },
-          "query_names": {
+          "query_references": {
             "additionalProperties": {
-              "type": "string"
+              "$ref": "#/components/schemas/ResourceQueryReference"
             },
-            "description": "按查询语言声明的原生资源名称，例如 sql=public.users、mql=users",
-            "title": "Query Names",
+            "description": "Owner按查询语言确认的结构化查询名称，例如sql.parts=[public,users]；不得拆分full_name猜测",
+            "title": "Query References",
             "type": "object"
           },
           "recommendation_reason": {
@@ -1433,12 +1433,12 @@
             "title": "Locator",
             "type": "string"
           },
-          "query_names": {
+          "query_references": {
             "additionalProperties": {
-              "type": "string"
+              "$ref": "#/components/schemas/ResourceQueryReference"
             },
-            "description": "按查询语言声明的原生资源名称，例如 sql=public.users、mql=users",
-            "title": "Query Names",
+            "description": "Owner按查询语言确认的结构化查询名称，例如sql.parts=[public,users]；不得拆分full_name猜测",
+            "title": "Query References",
             "type": "object"
           },
           "role": {
@@ -1509,6 +1509,29 @@
           "search_queries"
         ],
         "title": "ResourceIntent",
+        "type": "object"
+      },
+      "ResourceQueryReference": {
+        "additionalProperties": false,
+        "description": "Exact owner-verified identifier segments; never a dotted-name parser.",
+        "properties": {
+          "parts": {
+            "description": "原样保留的查询名称分段",
+            "items": {
+              "minLength": 1,
+              "pattern": "^[^\\x00]+$",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Parts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "parts"
+        ],
+        "title": "ResourceQueryReference",
         "type": "object"
       },
       "StandardDocumentCandidate": {
@@ -2341,12 +2364,12 @@
             ],
             "title": "Path"
           },
-          "query_names": {
+          "query_references": {
             "additionalProperties": {
-              "type": "string"
+              "$ref": "#/components/schemas/ResourceQueryReference"
             },
-            "description": "按查询语言声明的原生资源名称，例如 sql=public.users、mql=users",
-            "title": "Query Names",
+            "description": "Owner按查询语言确认的结构化查询名称，例如sql.parts=[public,users]；不得拆分full_name猜测",
+            "title": "Query References",
             "type": "object"
           },
           "recommendation_reason": {

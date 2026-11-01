@@ -190,7 +190,7 @@ def test_resource_facts_preserves_item_identity_and_owner_authority(locator):
 
 def test_resource_facts_contract_requires_data_item_identity():
     definition = get_tool("resource.facts.get")
-    assert definition.version == "2.0.0"
+    assert definition.version == "3.0.0"
     assert "item_id" in definition.input_schema["properties"]["locator"]["description"]
 
 

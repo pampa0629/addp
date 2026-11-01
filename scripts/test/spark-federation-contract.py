@@ -118,14 +118,14 @@ def main(phase):
         request = {
             'master_url': 'spark://spark-master:7077', 'driver_host': 'spark-master',
             'catalogs': [
-                {'alias': 'pg', 'url': 'jdbc:postgresql://postgres:5432/addp_test',
+                {'alias': 'Business_PostgreSQL', 'url': 'jdbc:postgresql://postgres:5432/addp_test',
                  'driver': 'org.postgresql.Driver', 'user': 'reader', 'password': 'admission-reader-only'},
-                {'alias': 'mysql', 'url': 'jdbc:mysql://mysql:3306/addp_test?sslMode=REQUIRED',
+                {'alias': 'Business_MySQL', 'url': 'jdbc:mysql://mysql:3306/addp_test?sslMode=REQUIRED',
                  'driver': 'com.mysql.cj.jdbc.Driver', 'user': 'reader', 'password': 'admission-reader-only'},
             ],
-            'query': '''SELECT o.id, o.amount, c.label
-                FROM pg.public.orders o JOIN mysql.addp_test.customers c
-                ON o.customer_id = c.id WHERE o.customer_id >= ? ORDER BY o.id''',
+            'query': '''SELECT o.id, o.amount, c.`中文``label` AS label
+                FROM `Business_PostgreSQL`.` schema.with dot `.` 中文"table`` ` o JOIN `Business_MySQL`.addp_test.`custom``ers` c
+                ON o.` customer"id ` = c.`customer``id` WHERE o.` customer"id ` >= ? ORDER BY o.id''',
             'args': [1], 'limit': 10,
         }
         result = run_driver([sys.executable, '/addp/query_driver.py'], request, timeout=120)
@@ -139,7 +139,7 @@ def main(phase):
         request.update(query='WITH hidden AS (SELECT * FROM unauthorized.public.orders) SELECT 1', args=[])
         denied = run_driver([sys.executable, '/addp/query_driver.py'], request, timeout=120)
         assert denied == {'error': 'query_source_not_authorized'}, denied
-        print('SPARK_FEDERATION_PRODUCTION_DRIVER_PASS native_guard_jdbc_join typed_bigint_decimal private_process', flush=True)
+        print('SPARK_FEDERATION_PRODUCTION_DRIVER_PASS native_guard_jdbc_join typed_bigint_decimal exact_quoted_names private_process', flush=True)
         return
     if phase == 'supervised':
         from query_process import run_driver

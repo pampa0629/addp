@@ -256,7 +256,7 @@ func TestBuiltinPluginCapabilityMatrix(t *testing.T) {
 		"neo4j":             {origin: "general", family: "graph", storage: true, query: true, graphQuery: true},
 		"postgresql":        {origin: "general", family: "tabular", storage: true, query: true},
 		"oracle":            {origin: "general", family: "tabular", storage: true, query: true},
-		"spark":             {origin: "general", family: "compute"},
+		"spark":             {origin: "general", family: "compute", query: true},
 		"minio":             {origin: "general", family: "object", storage: true},
 		"nfs":               {origin: "general", family: "file", storage: true},
 		"hdfs":              {origin: "general", family: "file", storage: true},
@@ -428,8 +428,9 @@ func TestRegisterableEngineDisplayMetadata(t *testing.T) {
 	spark := byType["spark"]
 	if spark.RegistrationGroup != plugin.EngineRegistrationGroupCompute || spark.Capabilities.EngineFamily != "compute" ||
 		spark.CatalogModel != nil || spark.Capabilities.Storage != nil || spark.Capabilities.Compute == nil ||
-		spark.Capabilities.Compute.Query != nil {
-		t.Fatalf("Spark must expose only a compute target until query Runtime admission: %#v", spark)
+		spark.Capabilities.Compute.Query == nil || !spark.Capabilities.Compute.Query.ReadOnly ||
+		spark.Capabilities.Compute.Query.Federation == nil || spark.Capabilities.Compute.Query.Federation.RuntimeEngineType != "spark_workflow" {
+		t.Fatalf("Spark must expose a federated compute target without a storage catalog: %#v", spark)
 	}
 	if got := byType["oracle"].DisplayName; got != "Oracle" {
 		t.Fatalf("Oracle display name = %q", got)

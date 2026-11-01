@@ -28,6 +28,15 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 compose up -d --wait --wait-timeout 180
+# The fixed Spark runtime image contains a JRE. Compile Java 11 bytecode with
+# the host build JDK against that exact image's JARs, then copy only the artifact.
+mkdir -p "$PROBE_DIR/spark"
+compose cp spark-master:/opt/spark/jars "$PROBE_DIR/spark/jars"
+python3 "$ROOT_DIR/engines/spark-workflow/query_jdbc.py" build --spark-home "$PROBE_DIR/spark" --output "$PROBE_DIR/query-dialect.jar"
+artifact_dir=$(compose exec -T spark-master python3 -c 'import sys; print(sys.prefix + "/share/addp-spark")' | tr -d '\r')
+compose exec -T spark-master mkdir -p "$artifact_dir"
+compose cp "$PROBE_DIR/query-dialect.jar" "spark-master:$artifact_dir/addp-spark-query-dialect.jar"
+compose cp "$PROBE_DIR/query-dialect.json" "spark-master:$artifact_dir/addp-spark-query-dialect.json"
 
 # Compile only the production probe tests for the container's actual Linux CPU.
 # Arrow still needs Apache Thrift transitively; the removed Hive SQL client does not.
@@ -52,16 +61,24 @@ echo 'SPARK_MASTER_NATIVE_PROBE_PASS production_go actual_master worker no_thrif
 compose exec -T postgres psql -U fixture_admin -d addp_test -v ON_ERROR_STOP=1 <<'SQL'
 CREATE TABLE orders (id bigint PRIMARY KEY, customer_id integer, amount numeric(38,18));
 INSERT INTO orders VALUES (9007199254740993,1,100.123456789012345678),(-9007199254740993,2,-200.987654321098765432);
+CREATE SCHEMA " schema.with dot ";
+CREATE TABLE " schema.with dot "." 中文""table` " AS SELECT * FROM orders;
+ALTER TABLE " schema.with dot "." 中文""table` " RENAME COLUMN customer_id TO " customer""id ";
 CREATE USER reader WITH PASSWORD 'admission-reader-only';
 GRANT CONNECT ON DATABASE addp_test TO reader;
 GRANT USAGE ON SCHEMA public TO reader;
 GRANT SELECT ON orders TO reader;
+GRANT USAGE ON SCHEMA " schema.with dot " TO reader;
+GRANT SELECT ON " schema.with dot "." 中文""table` " TO reader;
 SQL
 compose exec -T mysql mysql --default-character-set=utf8mb4 -uroot -powned-test-only addp_test <<'SQL'
 CREATE TABLE customers (id int PRIMARY KEY, label varchar(64));
 INSERT INTO customers VALUES (1,'中文  '),(2,NULL);
+CREATE TABLE `custom``ers` AS SELECT * FROM customers;
+ALTER TABLE `custom``ers` CHANGE COLUMN id `customer``id` int, CHANGE COLUMN label `中文``label` varchar(64);
 CREATE USER 'reader'@'%' IDENTIFIED BY 'admission-reader-only';
 GRANT SELECT ON addp_test.customers TO 'reader'@'%';
+GRANT SELECT ON addp_test.`custom``ers` TO 'reader'@'%';
 SQL
 label_hex=$(compose exec -T mysql mysql -uroot -powned-test-only --batch --skip-column-names addp_test -e 'SELECT HEX(label) FROM customers WHERE id=1')
 [ "$label_hex" = E4B8ADE696872020 ] || { echo "MySQL physical fixture bytes differ: $label_hex" >&2; exit 1; }

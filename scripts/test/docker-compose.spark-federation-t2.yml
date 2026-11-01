@@ -32,6 +32,8 @@ services:
       - ./spark-federation-contract.py:/addp/contract.py:ro
       - ../../engines/spark-workflow/query_process.py:/addp/query_process.py:ro
       - ../../engines/spark-workflow/query_guard.py:/addp/query_guard.py:ro
+      - ../../engines/spark-workflow/query_jdbc.py:/addp/query_jdbc.py:ro
+      - ../../engines/spark-workflow/jvm:/addp/jvm:ro
       - ../../engines/spark-workflow/query_driver.py:/addp/query_driver.py:ro
       - ../../engines/spark-workflow/spark_dependencies.py:/addp/spark_dependencies.py:ro
     mem_limit: 2g

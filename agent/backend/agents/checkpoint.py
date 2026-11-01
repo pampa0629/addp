@@ -4,6 +4,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 from addp_common.tools import get_tool, preview_resource_fact
+from addp_common.resources import query_reference_parts
 
 
 from agents.reply_preferences import REPLY_DETAILS
@@ -118,9 +119,10 @@ def _compact_formal_resource_fact(value: dict[str, Any], locator: str) -> dict[s
     for key in ("engine_id", "item_id"):
         if type(value.get(key)) is int:
             fact[key] = value[key]
-    if isinstance(value.get("query_names"), dict):
-        fact["query_names"] = {
-            key: item for key, item in value["query_names"].items() if isinstance(item, str)
+    if isinstance(value.get("query_references"), dict):
+        fact["query_references"] = {
+            key: {"parts": list(parts)} for key in value["query_references"]
+            if (parts := query_reference_parts(value, key)) is not None
         }
     if isinstance(value.get("fields"), list):
         fact["fields"] = []

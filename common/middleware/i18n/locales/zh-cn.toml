@@ -54,3 +54,12 @@ other = "Spark Master 尚未就绪或没有在线 Worker。"
 
 ["engine.spark.rpc_unavailable"]
 other = "无法连接登记的 Spark Master 计算端点。"
+
+["engine.query_runtime.output_type_unsupported"]
+other = "查询返回了当前不支持的字段类型。"
+
+["engine.query_runtime.output_invalid"]
+other = "查询结果的字段类型或编码无效。"
+
+["engine.spark.query_invalid"]
+other = "Spark 查询需要有效的计算集群和非空 SQL。"

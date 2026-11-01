@@ -166,7 +166,7 @@ class AgentCheckpointTests(unittest.TestCase):
             "source_engine_type": "mongodb", "item_id": 66, "item_type": "collection",
             "data_type": "table", "full_name": "outdoor.routes", "item_fingerprint": "fp",
             "scanned_depth": "deep", "schema_coverage": "sampled",
-            "query_names": {"database": "outdoor", "collection": "routes"},
+            "query_references": {'mql': {'parts': ['routes']}},
             "fields": [{
                 "name": "distance", "path": ["metrics", "distance"], "type": "float",
                 "native_type": "double", "nullable": True, "primary_key": False,
@@ -185,7 +185,7 @@ class AgentCheckpointTests(unittest.TestCase):
         self.assertNotIn("name", fact)  # Formal snapshots replace discovery metadata.
         self.assertEqual(fact["full_name"], "outdoor.routes")
         self.assertEqual(fact["source_engine_type"], "mongodb")
-        self.assertEqual(fact["query_names"], {"database": "outdoor", "collection": "routes"})
+        self.assertEqual(fact["query_references"], {"mql": {"parts": ["routes"]}})
         self.assertEqual(fact["fields"], [{
             "name": "distance", "path": ["metrics", "distance"], "type": "float",
             "native_type": "double", "nullable": True, "primary_key": False,

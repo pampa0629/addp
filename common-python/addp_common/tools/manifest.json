@@ -187,7 +187,7 @@
     },
     {
       "name": "resource.facts.get",
-      "version": "2.0.0",
+      "version": "3.0.0",
       "description": "仅按 Owner 返回、含 item_id 且不含 node_id 的具体数据项 locator 读取受限资源、Schema 与查询事实，不含原始数据行；schema、database 等目录节点使用 resource.children.list / resource.ancestors.get 确认。",
       "owner": "manager",
       "risk": "read",
@@ -213,7 +213,7 @@
       },
       "output_schema": {
         "type": "object",
-        "required": ["locator", "engine_id", "source_engine_type", "item_id", "item_type", "data_type", "full_name", "item_fingerprint", "scanned_depth", "schema_coverage", "query_names"],
+        "required": ["locator", "engine_id", "source_engine_type", "item_id", "item_type", "data_type", "full_name", "item_fingerprint", "scanned_depth", "schema_coverage", "query_references"],
         "properties": {
           "locator": {"type": "string", "minLength": 1},
           "engine_id": {"type": "integer", "minimum": 1},
@@ -226,7 +226,7 @@
           "item_fingerprint": {"type": "string", "minLength": 1},
           "scanned_depth": {"type": "string", "minLength": 1},
           "schema_coverage": {"enum": ["complete", "sampled", "unknown"]},
-          "query_names": {"type": "object", "additionalProperties": {"type": "string"}},
+          "query_references": {"type": "object", "additionalProperties": {"type": "object", "required": ["parts"], "properties": {"parts": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"type": "string", "minLength": 1, "pattern": "^[^\\x00]+$"}}}, "additionalProperties": false}},
           "fields": {"type": "array", "maxItems": 200, "items": {"type": "object"}},
           "geometry_column": {"type": "string"},
           "geometry_type": {"type": "string"},
@@ -424,7 +424,7 @@
     },
     {
       "name": "transfer.draft.generate",
-      "version": "3.0.0",
+      "version": "4.0.0",
       "description": "不访问资源 Owner。无 resources 时仅返回源资源意图；调用方完成 Owner 发现校验并提供 resources/task 后，生成无副作用草稿，创建执行仍由 Transfer 校验。",
       "owner": "copilot",
       "risk": "propose",
@@ -450,7 +450,7 @@
                 "engine_id": {"anyOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]},
                 "source_engine_type": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                 "full_name": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                "query_names": {"type": "object", "additionalProperties": {"type": "string"}},
+                "query_references": {"type": "object", "additionalProperties": {"type": "object", "required": ["parts"], "properties": {"parts": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"type": "string", "minLength": 1, "pattern": "^[^\\x00]+$"}}}, "additionalProperties": false}},
                 "schema_coverage": {"anyOf": [{"type": "string", "enum": ["complete", "sampled", "unknown"]}, {"type": "null"}]},
                 "data_type": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                 "geometry_column": {"anyOf": [{"type": "string"}, {"type": "null"}]},

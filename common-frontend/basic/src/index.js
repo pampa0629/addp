@@ -98,6 +98,8 @@ export * from './types/tree'
 
 // Resource capability APIs
 export { detectTableMetadata, getResourceFields, getResourceItemByCatalogPath } from './api/resourceCapability'
+export { getResourceFacts } from './api/resourceFacts'
+export { queryReferenceParts, quoteQueryIdentifier, nativeCatalogSegmentText, nativeCatalogPathText, renderQueryReference } from './utils/queryReference.mjs'
 
 // Resource Tree API
 export {

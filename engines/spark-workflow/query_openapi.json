@@ -1,0 +1,342 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Spark synchronous query protocol / Spark 同步查询协议",
+    "version": "addp.query-runtime/v1",
+    "description": "Documents the new synchronous query route only. Existing workflow routes are specified in the shared workflow protocol. / 仅描述新增同步查询入口，既有工作流入口见共享工作流协议。"
+  },
+  "paths": {
+    "/api/v1/queries": {
+      "post": {
+        "operationId": "executeSparkFederatedQuery",
+        "summary": "Execute one read-only federated query / 执行一次只读联邦查询",
+        "x-addp-auth-mode": "internal",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "description": "Requires the tenant addp-develop Service Principal and an exact Spark read Execution Authorization. / 需要租户 addp-develop 服务身份和本次 Spark 只读执行授权。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Typed query result / 带真实字段类型的查询结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or unsupported query / 查询无效或不支持",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid service credential / 服务凭据无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller or execution access denied / 调用方或执行授权拒绝",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request too large / 请求体过大",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "JSON content type required / 必须使用 JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Driver or result failure / Driver 或结果异常",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime busy or dependency unavailable / 运行时繁忙或依赖不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Query timeout / 查询超时",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "serviceBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Tenant addp-develop service access token / 租户 addp-develop 服务访问令牌"
+      }
+    },
+    "schemas": {
+      "QueryRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "target_engine_id",
+          "execution_id",
+          "execution_authorization_id",
+          "source_engine_ids",
+          "query",
+          "language",
+          "options"
+        ],
+        "properties": {
+          "target_engine_id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 18446744073709551615
+          },
+          "execution_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "execution_authorization_id": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,19}$"
+          },
+          "source_engine_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 18446744073709551615
+            }
+          },
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "description": "At most 256 KiB UTF-8 / UTF-8 至多 256 KiB"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "sql"
+            ]
+          },
+          "object_tables": {
+            "type": "object",
+            "maxProperties": 0
+          },
+          "options": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "read_only"
+            ],
+            "properties": {
+              "read_only": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000,
+                "default": 1000
+              },
+              "timeout": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Nanoseconds; capped at 120 seconds and grant expiry / 纳秒，受120秒及授权到期上限约束"
+              },
+              "args": {
+                "type": "array",
+                "maxItems": 1024,
+                "items": {
+                  "nullable": true,
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                },
+                "description": "Verified primitive positional binding; named UI parameters are not advertised. / 已验证的基本类型位置绑定，尚未声明工作台命名参数。"
+              }
+            }
+          }
+        }
+      },
+      "Field": {
+        "type": "object",
+        "required": [
+          "name",
+          "type",
+          "nullable"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "string",
+              "bool",
+              "bytes",
+              "int",
+              "bigint",
+              "float",
+              "double",
+              "decimal",
+              "date",
+              "timestamp",
+              "json",
+              "array"
+            ]
+          },
+          "nullable": {
+            "type": "boolean"
+          },
+          "native_type": {
+            "type": "string"
+          },
+          "precision": {
+            "type": "integer"
+          },
+          "scale": {
+            "type": "integer"
+          },
+          "ordinal_position": {
+            "type": "integer"
+          },
+          "element_type": {
+            "type": "string"
+          },
+          "element": {
+            "$ref": "#/components/schemas/Field"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Field"
+            }
+          }
+        }
+      },
+      "QueryResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "columns",
+          "fields",
+          "rows"
+        ],
+        "properties": {
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Field"
+            }
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "description": "bigint and decimal are exact decimal strings by declared type; null stays null. / bigint、decimal 按字段类型使用精确十进制字符串，null 保持原样。"
+          }
+        }
+      },
+      "QueryError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error",
+          "error_code"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Localized safe message / 本地化安全提示"
+          },
+          "error_code": {
+            "type": "string",
+            "pattern": "^query_[a-z_]+$"
+          }
+        }
+      }
+    }
+  }
+}

@@ -441,7 +441,7 @@ type QueryFederationCapability struct {
 | `supported` | 是否可作为查询运行时。 |
 | `languages` | 支持的查询语言，如 `sql`、`mql`、`cypher`、`opensearch_dsl`、`mango`。 |
 | `default_language` | 默认编辑器语言和样例查询语言。 |
-| `identifier_quotes` | 按查询语言声明标识符引号，例如 PostgreSQL SQL 使用双引号、OceanBase MySQL 模式 SQL 使用反引号；前端只消费该语法事实，不得按 `engine_type` 推断。未声明时插入原始标识符，不得使用其他引擎的默认值。 |
+| `identifier_quotes` | 按查询语言声明标识符引号，例如 PostgreSQL SQL 使用双引号、OceanBase MySQL 模式 SQL 使用反引号；前端只消费该语法事实，不得按 `engine_type` 推断。未声明时拒绝自动插入，不得退回原始标识符或其他引擎的默认值。 |
 | `result_kinds` | 查询结果形态，如 `table`、`document`、`graph`、`scalar`。 |
 | `read_only` | 运行时是否只允许只读查询。 |
 | `supports_explain` | 是否支持查询计划 / 性能诊断。 |
@@ -470,7 +470,7 @@ Spark 联邦查询迁移采用“集群作为执行目标、内置 Runtime 作�
 
 DuckDB 自身为目标及 Runtime，受众为 `duckdb`。Business Spark 的目标声明 `runtime_engine_type=spark_workflow`、受众 `spark`；内置 Runtime 声明接受 `target_engine_types=[spark]`，并匹配同一查询协议、受众及源连接器范围。派发必须从受信 Runtime Descriptor 解析唯一有效内置实例；缺失、重复、离线、类型或能力不匹配均拒绝，不按类型硬编码地址、不任取第一个、不回退到集群 Thrift 端口。该路由声明不能提前代替接口准入。
 
-联邦 Runtime 的资源引用名由 Source Owner preview 作为 `ResourceFact.query_names.federated_sql` 提供，并与 Runtime 解析规则使用同一共享标识符规范。DuckDB 当前形式为 `<sanitized_source_engine_name>.<schema>.<table>` 或对象表的 `<sanitized_source_engine_name>.<table>`。Copilot 和前端不得各自实现 engine name 清洗或从 locator/full_name 拼接联邦引用。
+联邦 Runtime 的资源查询引用由 Source Owner 的无原始行事实接口作为 `ResourceFact.query_references.federated_sql.parts` 提供，采用与 Runtime 一致的共享虚拟别名规范。关系表为 `[sanitized_source_engine_name, 原始schema, 原始table]`，对象虚拟表为 `[sanitized_source_engine_name, 已确认的虚拟table别名]`。每段按目标 `identifier_quotes.sql` 引用并转义；Copilot 和前端不得各自清洗 engine name、改写物理名称或从 locator/full_name 拼接联邦引用。旧平面 `query_names` 不再使用。
 
 查询语言差异通过 `languages` / `default_language` / `identifier_quotes` 和 `QueryRequest.Language` 表达，不新增按数据库类别拆分的 query provider。`identifier_quotes` 只是编辑器插入标识符所需的语法事实，查询生成、校验和执行仍归当前 Query Runtime Provider。`result_kinds=document` 只表示原生查询结果可能是 JSON document / record 形态，不表示 data item 的 `data_type=document`。图结构查询如果需要节点 / 关系结构结果，仍使用 `GraphQueryProvider`。
 

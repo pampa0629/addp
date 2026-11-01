@@ -102,7 +102,7 @@ func (e *Executor) Execute(
 	if err != nil {
 		return nil, err
 	}
-	return &plugin.QueryResult{Columns: result.Columns, Rows: result.Rows}, nil
+	return &plugin.QueryResult{Columns: result.Columns, Fields: result.Fields, Rows: result.Rows}, nil
 }
 
 func (e *Executor) sessionOptions(options plugin.QueryOptions) duckdb.FederatedSessionOptions {
