@@ -242,7 +242,8 @@ Cleanup 使用 Common 持久 Runner，System 预建子执行，Transfer 不消�
 - 模块内公开导航统一通过 [moduleNavigation.js](frontend/src/utils/moduleNavigation.js) 复用共享能力；Console URL 与模块渲染的分工沿[公开路由事实源](../docs/spec/addp前端路由与可恢复状态规范.md#二公开路由事实源)，历史栈规则沿[浏览器历史语义](../docs/spec/addp前端路由与可恢复状态规范.md#六浏览器历史语义)，不在模块重复维护导航实现。
 - 权限落点：独立模式有 `transfer.task.read` 时以任务列表为唯一侧栏入口，创建由列表按钮进入；无读取但同时具备 `transfer.task.create` 与 `meta.catalog.read` 时显示创建向导入口，不跳转无权读取的列表。Console iframe 模式由 Console 统一显示侧栏；准入与动作权限见[任务授权](docs/transfer-基本概念及配置说明.md#13-租户阶段的任务授权)。
 - 对象身份使用 `/tasks/:id/edit`、`/tasks/:id/detail` 与 `/executions/:execution_id`，不得退化为列表 URL 或 iframe 私有状态；通用要求沿[URL 状态规范](../docs/spec/addp前端路由与可恢复状态规范.md#三必须进入-url-的状态)。深链、刷新、前进后退及 Console／standalone 的验证沿[路由验收规范](../docs/spec/addp前端路由与可恢复状态规范.md#八实现与验收要求)，静态登记不代表实际运行通过。
-- 列表进入创建、编辑、详情和执行页使用 `push`；保存或取消后离开已失效的表单历史项使用 `replace`。
+- 成功落点沿[Canonical URL 规范](../docs/spec/addp前端路由与可恢复状态规范.md#五canonical-url)：正式向导创建成功且有 `transfer.task.read` 时，用响应的新 ID `replace` 到详情，不要求 update；无读取权时反馈成功、重置并留在创建页，不读取列表／详情。编辑保存和可读账号确认取消仍 `replace` 回列表；创建助手弹层关闭后刷新当前列表。
+- 列表进入创建、编辑、详情和执行页使用 `push`，Console／standalone 的唯一公开历史沿[历史栈规范](../docs/spec/addp前端路由与可恢复状态规范.md#六浏览器历史语义)。保存失败或撤销确认保留 URL 与草稿；创建后的启动失败不撤销已创建对象，仍按创建成功的权限分支落点并单独提示启动失败。本轮受控浏览器覆盖及未验收范围见[创建落点与历史栈证据](#创建落点与历史栈验证)。
 
 ## 数据库启动所有权
 
@@ -283,6 +284,7 @@ Transfer schema 仅由 Backend 迁移；模块级数据库锁、成功提交的�
 | [角色资格到期与导出拒绝](#角色资格到期与导出拒绝证据) | [角色专用导出选择](#角色专用导出选择) | v30／v31 错误映射、确定性回归与未运行的新版 Hosted。 |
 | [continuous 精确扫描与审批归属](#continuous-精确扫描与审批归属) | [生产来源](#生产来源与写后扫描)、[写后扫描](#写后扫描触发与范围) | 首次扫描、单用户审批、双用户归属及各自清理证据。 |
 | [bounded 定时授权](#bounded-定时授权验收) | [定时任务授权规范](../docs/spec/tasks/任务定义与授权.md#transfer-定时任务授权) | 真实 Cron、子扫描隔离与模块聚合失败。 |
+| [创建落点与历史栈](#创建落点与历史栈验证) | [Canonical URL](../docs/spec/addp前端路由与可恢复状态规范.md#五canonical-url)、[历史栈规范](../docs/spec/addp前端路由与可恢复状态规范.md#六浏览器历史语义) | 本地 T1／T2／受控 T3、模块聚合失败及真实产品未验收。 |
 
 #### continuous 过程事件与浏览器验收
 
@@ -363,6 +365,14 @@ continuous 双用户审批验收沿用现有 Hosted suite 和同租户 peer：�
 [Hosted 38987715068](https://github.com/pampa0629/addp/actions/runs/38987715068) 在运行时代码提交 `c0543178726054fa4245e566cadff13bf46385e0` 真实通过，独立核验了 5 个服务构建身份、13 项检查、6 个不同 Transfer UUID 与 4 次精确目标扫描。定时 execution `d2a77c47-c63e-4660-83a5-a51ea59a928b` 由真实 Cron 触发，发起人为当前授权 User 33；Meta 扫描 `835fbbf7-acfd-4713-8a2f-68d9446b90ba` 继承同一 User 和这个直接父执行。拥有读取权限的 peer 可读父执行，对该一次性子扫描仍返回 404。实际写入两行，扫描只新增 `addp://engine/1/path/public/continuous_scheduled_target?type=table`（DataItem 5，id／label 两字段）；原 Kafka／CDC 目标、兄弟项和 schema／root 两级祖先扫描事实不变。此前双用户审批、初次扫描与 live／recovery／revocation 三组浏览器验证继续通过，3 个定义删除成功，suite 残留 0、Infra `zero_residuals`。37 个归档文件未检出凭据前缀、Service Secret 赋值或业务行哨兵。
 
 最终 `make test-go` 22 个模块、Common Go T1、Transfer／Meta／Orchestrator Go T1、完整 System IAM PostgreSQL 7 个 package、Transfer／Meta PostgreSQL、Ontology PostgreSQL／独占 FalkorDB、来源审查、授权清单和 System／Transfer／Orchestrator Swagger 覆盖均通过。6 个重定向反例及 active execution 期间恢复调度完成红绿验证；IAM 门禁入口 16 项测试通过。后续 `86b4e726f` 仅修正验收失败清理：定时场景先暂停未来触发再等待当前执行结束，41 项 runner 测试与 System fixture Go 通过，55 个运行时／契约文件与该 Hosted 源码一致。现有标准入口和 CI 登记覆盖，无新增 Job。清洁快照 `1c7301253` 的完整 `make test-module MODULE=transfer` 未通过：平台 T0、后端 T1 和前端 130 项单元通过，但 MongoDB query 恢复配置的两项浏览器断言失败（24 项中 22 项通过）；前端构建及聚合后续 T2 未执行，独立后端 T2 已通过，不计完整模块聚合通过，未修改这些前端实现或测试。个人开发服务本轮未重启；更新 Common 后由用户按标准入口重启全部模块，旧定时定义须通过现有保存／恢复入口重新授权。
+
+#### 创建落点与历史栈验证
+
+2026-11-01，提交 `9fe8d9cac00f782db53c70e7c352abe75197c2c0` 同步修订正式路由规范与向导，按当前读取权限决定创建成功落点；编辑保存、取消及列表创建助手分别保留自身行为，不修改 Backend API、Permission Manifest 或共享导航桥。旧实现先复现创建后实际为列表、期望新 ID 详情的断言失败，再由[导航回归](frontend/e2e/task-navigation.spec.js)验证修复；正式行为以[前端公开路由](#前端公开路由)及其规范引用为准。
+
+本地共享工作区通过标准浏览器入口 `node ../../scripts/test/frontend-browser-gate.mjs task-navigation.spec.js`（从 `transfer/frontend` 执行，14／14）、`make test-transfer-frontend`（131 项单元、50 项浏览器及构建）、`make test-module MODULE=transfer GO_ONLY=1`、`make test-transfer-postgres`（19 个主测试，零失败／跳过）和 `make test-frontend-ci-registration`（27 项、21 个前端登记）。五个自有文件的 SHA-256 与提交逐一一致；这是共享工作区验证，不是清洁提交隔离验证。原始证据清单与日志保存在临时目录 `/tmp/addp-transfer-route-20261101/`，非长期归档。
+
+T3 使用真实 Transfer 页面、Router 和共享导航桥，但权限会话与 API 响应为合成夹具，iframe 父层为受控 Console 协议夹具。覆盖可读无 update、仅创建、保存失败、取消／撤销确认、启动失败、历史项数量、单 iframe／无同步重载及深链／刷新／前进后退；不计真实账号、完整 Console 产品或 Hosted T4／T5 通过。完整 `make test-module MODULE=transfer` 在平台 T0 的 scoped-restart `restart.sh -asset -asset` 夹具 30 秒超时，尚未进入 owner 步骤，不计完整聚合通过；独立 owner 门禁结果不能抹去该失败。未启动或重启个人开发服务，也未据推送或 CI 排队认定 CI 通过。
 
 ## 相关文档
 
