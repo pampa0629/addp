@@ -620,6 +620,64 @@ test('formats ES DSL without rounding a long and submits the selected index', as
   expect(executionRequests[0].content.query).toContain('9007199254740993')
 })
 
+for (const engineType of ['postgresql', 'spark']) {
+  test(`PG table item count never requests directory children and fields still complete in ${engineType}`, async ({ page }) => {
+    const target = structuredClone(engineType === 'postgresql' ? ENGINE : DUCKDB_RUNTIME)
+    if (engineType === 'spark') {
+      Object.assign(target, { id: 19, engine_type: 'spark', name: 'Spark field regression' })
+      target.capabilities.compute.query.identifier_quotes.sql = '`'
+      target.capabilities.compute.query.federation.source_engine_types = ['postgresql', 'mysql']
+    }
+    await installMockBackend(page, { resultKind: 'table', engines: [target], metaEngines: [ENGINE] })
+    const root = resourceTree()
+    root.locator += '&node_id=103'
+    root.id = root.locator
+    const schema = root.children[0]
+    schema.locator += '&node_id=104'
+    schema.id = schema.locator
+    schema.hasChildren = true
+    const table = schema.children[0]
+    table.hasChildren = false
+    table.metadata = { item_id: 1101, item_count: 1, has_children: false }
+    const invalidDirectoryReads = []
+    const fieldReads = []
+    await page.route(`**/api/v1/meta/resource-tree/${ENGINE.id}**`, route => {
+      const url = new URL(route.request().url())
+      if (url.pathname.endsWith('/node')) {
+        const locator = url.searchParams.get('locator')
+        if (locator === root.locator) return fulfillJSON(route, { children: [{ ...schema, children: [] }] })
+        if (locator === schema.locator) return fulfillJSON(route, schema)
+        invalidDirectoryReads.push(locator)
+        return fulfillJSON(route, { error: 'resource tree node requires locator node_id' }, 400)
+      }
+      return fulfillJSON(route, { ...root, children: [{ ...schema, children: [] }] })
+    })
+    await page.route('**/api/v1/meta/items/1101/fields', route => {
+      fieldReads.push(route.request().method())
+      return fulfillJSON(route, [{ name: 'id', type: { name: 'bigint' } }, { name: '客户 名', type: { name: 'string' } }])
+    })
+    await page.goto('/sql')
+    const catalog = page.locator('.catalog-panel')
+    await catalog.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
+    await catalog.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').click()
+    const leaf = catalog.getByRole('treeitem', { name: 'customers', exact: true })
+    const expansion = leaf.locator('.el-tree-node__expand-icon')
+    // Exercise the erroneous control if it reappears; the real Meta API rejects item locators here.
+    if (await expansion.isVisible()) await expansion.click()
+    await leaf.dblclick()
+    await expect.poll(() => fieldReads.length).toBe(1)
+    const quote = engineType === 'postgresql' ? '"' : '`'
+    const parts = engineType === 'postgresql' ? ['public', 'customers'] : ['PostgreSQL_Demo', 'public', 'customers']
+    await expect(page.locator('.monaco-editor .view-lines')).toHaveText(parts.map(part => quote + part + quote).join('.'))
+    await page.getByRole('button', { name: '显示补全', exact: true }).click()
+    await expect(page.getByRole('option', { name: /客户 名/ })).toBeVisible()
+    expect(invalidDirectoryReads).toEqual([])
+    await expect(expansion).not.toBeVisible()
+    expect(fieldReads).toEqual(['GET'])
+    await expect(page.getByText('Request failed with status code 400', { exact: true })).toHaveCount(0)
+  })
+}
+
 test('uses tenant source-engine catalogs for the DuckDB federated runtime', async ({ page }) => {
   const resourceTreeRequests = []
   await installMockBackend(page, {
