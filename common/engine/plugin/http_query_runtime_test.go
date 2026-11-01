@@ -47,8 +47,10 @@ func TestFederatedHTTPResultPreservesNativeSchemaAndNumericPrecision(t *testing.
 	}
 }
 
-func TestFederatedHTTPResultRejectsMissingOrMismatchedFieldFacts(t *testing.T) {
+func TestFederatedHTTPResultRejectsMalformedOrMismatchedFieldFacts(t *testing.T) {
 	for _, body := range []string{
+		`{"columns":[],"fields":[],"rows":[]} {"rows":[{"injected":1}]}`,
+		`{"columns":[],"fields":[],"rows":[]} trailing`,
 		`{"columns":["id"],"rows":[]}`,
 		`{"columns":["id"],"fields":[{"name":"other","type":"bigint"}],"rows":[]}`,
 		`{"columns":["id"],"fields":[{"name":"id","type":"invented"}],"rows":[]}`,

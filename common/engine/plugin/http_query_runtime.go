@@ -65,6 +65,9 @@ func HTTPExecuteFederatedQuery(
 	if err := decoder.Decode(&payload); err != nil {
 		return nil, fmt.Errorf("decode federated query response: %w", err)
 	}
+	if decoder.Decode(new(interface{})) != io.EOF {
+		return nil, commoni18n.NewMessageError("engine.query_runtime.output_invalid")
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		if payload.Error == "" {
 			payload.Error = string(respBody)

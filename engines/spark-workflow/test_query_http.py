@@ -157,6 +157,18 @@ class QueryHTTPTest(unittest.TestCase):
             self.driver.return_value['rows'] = [malformed]
             self.assertEqual(self.post().status_code, 502)
 
+    def test_nested_output_keeps_numeric_wire_types_and_exact_values(self):
+        self.driver.return_value = {'columns': ['nested'], 'fields': [{'name': 'nested', 'type': 'json', 'nullable': True, 'fields': [
+            {'name': 'ratios', 'type': 'array', 'nullable': True, 'element': {'name': '', 'type': 'double', 'nullable': True}},
+            {'name': 'ids', 'type': 'array', 'nullable': True, 'element': {'name': '', 'type': 'bigint', 'nullable': True}}]}],
+            'rows': [{'nested': {'ratios': [Decimal('0.125'), None], 'ids': ['9007199254740993', None]}}]}
+        response = self.post()
+        self.assertEqual(response.status_code, 200, response.json)
+        nested = response.json['rows'][0]['nested']
+        self.assertEqual(nested, {'ratios': [0.125, None], 'ids': ['9007199254740993', None]})
+        self.assertIs(type(nested['ratios'][0]), float)
+        self.assertIs(type(nested['ids'][0]), str)
+
     def test_query_openapi_describes_the_actual_service_route_and_bounds(self):
         schema = json.loads(Path(__file__).with_name('query_openapi.json').read_text())
         self.assertEqual(set(schema['paths']), {'/api/v1/queries'})
