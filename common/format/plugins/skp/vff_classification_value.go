@@ -21,6 +21,7 @@ type vffSKCValueBinding struct {
 	structures           []vffSKCValueStructure
 	attributeSets        []*vffSKCValueAttributes
 	attributeUse         *vffSKCValueAttribute
+	fixedValues          []vffSKCFixedValueComparison
 }
 
 func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error) {
@@ -354,6 +355,9 @@ func (b *vffSKCBinder) readValueType(n *vffXMLNode) (*vffSKCValueBinding, error)
 		return nil
 	}
 	if err := visit(n, 1); err != nil {
+		return nil, err
+	}
+	if err := b.checkAttributeValues(result); err != nil {
 		return nil, err
 	}
 	b.values[n] = result

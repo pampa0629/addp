@@ -14,6 +14,7 @@ type vffSKCValueAttribute struct {
 	source, declaration vffSKCDeclarationWitness
 	use                 string
 	constraint          vffSKCAttributeConstraint
+	idType              string
 }
 
 // Decoded declaration text and its source, never a typed/canonical value.
@@ -92,9 +93,7 @@ func (b *vffSKCBinder) attributeConstraint(use, declaration *vffXMLNode, result 
 		if local.kind != "fixed" {
 			return vffSKCAttributeConstraint{}, fmt.Errorf("attribute use cannot replace a fixed declaration with default")
 		}
-		// Equal strings can be different QName values in different scopes;
-		// different strings can denote equal numeric/boolean values.
-		result.issues = append(result.issues, "fixed attribute reference typed value equality not proved")
+		result.fixedValues = append(result.fixedValues, vffSKCFixedValueComparison{source: b.witness(use), declaration: b.witness(declaration)})
 	}
 	if local.kind != "" {
 		return local, nil

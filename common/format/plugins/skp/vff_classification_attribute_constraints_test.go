@@ -71,17 +71,38 @@ func TestVFFSKCAttributeConstraintsRejectInvalidDeclarationCombinations(t *testi
 	}
 }
 
-func TestVFFSKCAttributeConstraintsNeverGuessTypedFixedEquality(t *testing.T) {
-	for _, tc := range []struct{ typ, source, target string }{
-		{"x:int", "01", "1"}, {"x:boolean", "true", "1"}, {"x:string", "same", "same"},
-		{"x:QName", "p:Member", "p:Member"}, {"x:QName", "q:Member", "p:Member"},
+func TestVFFSKCAttributeConstraintsCompareTypedFixedValuesAndKeepSources(t *testing.T) {
+	for _, tc := range []struct {
+		typ, source, target string
+		mismatch, unknown   bool
+	}{
+		{"x:int", "01", "1", false, false}, {"x:boolean", "true", "1", false, false}, {"x:string", "same", "same", false, false},
+		{"x:QName", "p:Member", "p:Member", true, false}, {"x:QName", "q:Member", "p:Member", false, false},
+		{"x:string", "same&#xA;text", "same&#xA;text", false, true},
 	} {
 		f := skcSimpleContentFiles(t, `<x:attribute xmlns:p="urn:source" xmlns:q="urn:target" ref="c:A" fixed="`+tc.source+`"/>`, `<x:import namespace="urn:c" schemaLocation="extra.xsd"/>`)
 		f["Schemas/extra.xsd"] = skcGraphSchema("urn:c", `<x:attribute xmlns:p="urn:target" name="A" type="`+tc.typ+`" fixed="`+tc.target+`"/>`)
-		v := skcAttributeValue(t, f)
+		got, err := readVFFClassificationBindings(context.Background(), skcGraphContainer(t, f), skcBindingLimits())
+		if tc.mismatch {
+			if err == nil || got != nil || !strings.Contains(err.Error(), "disagrees") {
+				t.Fatal("different QName namespace accepted as equal")
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		v := got[0].rules[0].fields[0].candidates[0].value
 		uses := skcAttributeSet(t, v, "complexType", "Value").uses
-		if !strings.Contains(strings.Join(v.issues, " "), "typed value equality not proved") || len(uses) != 1 || uses[0].constraint.kind != "fixed" || uses[0].constraint.lexical != tc.source || uses[0].constraint.source != uses[0].source {
-			t.Fatalf("fixed equality guessed or use-site source discarded: %#v", tc)
+		if len(uses) != 1 || uses[0].constraint.source != uses[0].source || len(v.fixedValues) != 1 || v.fixedValues[0].known == tc.unknown {
+			t.Fatalf("typed comparison/source proof lost: %#v", tc)
+		}
+		if tc.unknown {
+			if !strings.Contains(strings.Join(v.issues, " "), "typed value equality not proved") {
+				t.Fatal("unimplemented XML string whitespace guessed")
+			}
+		} else if len(v.issues) != 0 || v.fixedValues[0].useValue != v.fixedValues[0].baseValue {
+			t.Fatal("supported typed values not exactly equal")
 		}
 	}
 }
@@ -96,7 +117,7 @@ func TestVFFSKCAttributeConstraintsApplyToFilteredAttributeUse(t *testing.T) {
 	f["Schemas/root.xsd"] = []byte(strings.Replace(string(f["Schemas/root.xsd"]), `ref="r:A" default="same"`, `ref="r:A" fixed="same" use="required"`, 1))
 	candidate := skcGraphRead(t, f)[0].rules[0].fields[0].candidates[0]
 	v := candidate.value
-	if candidate.source == candidate.declaration || len(v.references) != 2 || v.references[0].role != "attributeRef" || !strings.Contains(strings.Join(v.issues, " "), "typed value equality not proved") || v.attributeUse == nil || v.attributeUse.source != candidate.source || v.attributeUse.declaration != candidate.declaration || v.attributeUse.use != "required" || v.attributeUse.constraint.source != candidate.source {
+	if candidate.source == candidate.declaration || len(v.references) != 2 || v.references[0].role != "attributeRef" || len(v.issues) != 0 || len(v.fixedValues) != 1 || !v.fixedValues[0].known || v.attributeUse == nil || v.attributeUse.source != candidate.source || v.attributeUse.declaration != candidate.declaration || v.attributeUse.use != "required" || v.attributeUse.constraint.source != candidate.source {
 		t.Fatal("filtered attribute entry did not retain its exact use-site identity")
 	}
 	f["Schemas/root.xsd"] = skcGraphSchema("urn:r", `<x:complexType name="Holder"><x:attribute name="A" type="x:string" use=" prohibited "/></x:complexType>`)
