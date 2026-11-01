@@ -182,7 +182,7 @@ make test-arcgis-open-formats
 
 未启用上述开关时，用例会跳过；普通模块或 Go 门禁成功不能计为这两类实测通过，也不应向常规 Go 门禁注入专项开关以替代隔离入口。`ADDP_ORACLE_SPATIAL_CDC_CONTAINER_FAULT=1` 会额外暂停并恢复 `business-oracle` 容器，只适用于独占且已授权的故障窗口；普通回归不启用。用例结束预期自动 unpause，仍须核对服务恢复与清理结果。
 
-这些格式和低层数据面用例不替代真实 User → System → Gateway → Owner／Worker 授权链路或浏览器验收；T4 必须沿[正式 Online 身份与隔离规范](../docs/spec/testing/T4-Online验收规范.md)，使用已登记 suite 的专用身份、最小权限和独占部署，不复用个人开发服务或扩大生产权限。固定版本证据、失败与修复结论及未覆盖项见[模块验证](CLAUDE.md#开发与验证)，未运行、失败、跳过或未覆盖项不计为通过。
+这些格式和低层数据面用例不替代真实 User → System → Gateway → Owner／Worker 授权链路或浏览器验收；T4 必须沿[正式 Online 身份与隔离规范](../docs/spec/testing/T4-Online验收规范.md)，使用已登记 suite 的专用身份、最小权限和独占部署，不复用个人开发服务或扩大生产权限。固定版本证据、失败与修复结论及未覆盖项见[分版本证据索引](CLAUDE.md#专项约束与分版本证据)，未运行、失败、跳过或未覆盖项不计为通过。
 
 ## 相关文档
 
