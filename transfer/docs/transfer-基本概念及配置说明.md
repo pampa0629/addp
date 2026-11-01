@@ -491,6 +491,10 @@ continuous worker 的重启恢复、领取条件与 circuit 状态统一见[自�
 
 ## 九、数据库 CDC v1 已冻结边界
 
+阅读导航：[链路与配置](#cdc-链路与公开配置)、[目标与位点](#cdc-目标应用与位点)、[源类型与空间捕获](#源类型与空间捕获)、[Oracle 既有验证](#oracle-既有验证与验收边界)、[漂移与审批恢复](#schema-drift-与审批恢复)、[生命周期与清理](#cdc-生命周期与清理)、[未支持项与运行事实](#cdc-未支持项与运行事实)。
+
+### CDC 链路与公开配置
+
 当前数据库 CDC 主链路如下，语义与来源／目标范围见[数据库 CDC 专题](transfer-任务语义与同步模式.md#63-数据库-cdc)：
 
 ```text
@@ -503,21 +507,37 @@ PostgreSQL/MySQL/Oracle 单表
 
 公开任务只保存 `runtime.boundary=continuous`、`load.mode=incremental`、`load.change_detection.type=cdc`、`bootstrap=initial_snapshot`、源表 locator、目标表和 field mapping。source provider 只能由 locator 对应的 System Engine 解析结果决定，不进入任务 JSON。connector、provider 专属捕获资源、Infra Kafka topic 和 consumer group 都由服务端生成，不进入 System Engine 或 Meta 资源树。
 
+### CDC 目标应用与位点
+
 第一版只支持有稳定主键的单表。Debezium `op=r` 作为 snapshot upsert，`op=c|u` 作为 upsert，`op=d` 使用 record key 做物理 delete；目标固定为 `apply_mode=upsert_delete`，可选择声明完整原子应用能力的 PostgreSQL、MySQL 或 Oracle。目标必须是不存在的新表，由 bootstrap 创建；不清空或接管已有目标表。Oracle CDC 目标的字段、精度、空间维度与原子应用约束以[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)为准，不保留兼容映射或旁路。捕获位点由 Kafka Connect 管理，Transfer 只在 `transfer.sync_states` 保存目标已应用的 Infra Kafka `next_offset`，两类位点不能互相代替。
+
+### 源类型与空间捕获
+
+源类型导航：[PostgreSQL](#postgresql-cdc)、[MySQL](#mysql-cdc)、[Oracle](#oracle-cdc)。
+
+#### PostgreSQL CDC
 
 PostgreSQL CDC 在创建 capture 前核对完整源表字段和真实类型，开放 `string|bool|int|bigint|float|double|decimal|date|time|timestamp|json|uuid|geometry`。PostGIS geometry 必须固定 OGC type、正 SRID和 XY/XYZ 维度；Transfer 将 Debezium `{wkb,srid}` 解码为 EWKB，按源空间事实创建目标 geometry 列，不做坐标转换，geometry 也不能作为主键。connector 固定 Decimal 字符串和 Connect 毫秒时间编码；`time` 和无时区 `timestamp` 仅允许精度 `0..3`。`bytea`、数组、geography、未约束 geometry、M/ZM geometry、interval、枚举及其他用户定义类型明确拒绝。
 
 Debezium 的 geometry 属性名是 `wkb`，真实 PostGIS connector 可能在该 base64 属性中发送带 SRID 的 EWKB。Transfer 使用统一 WKB/EWKB 解析器，并校验内嵌 SRID、旁路 `srid` 与 generation 冻结事实一致，再输出 ADDP 标准 EWKB 行值。
 
+#### MySQL CDC
+
 MySQL CDC 固定支持 MySQL 8.0、有稳定非空主键的单表、`log_bin=ON`、`binlog_format=ROW`、`binlog_row_image=FULL` 和非零 server id。v1 接受有符号整数、字符/文本、Decimal、浮点、毫秒精度日期时间、JSON 和 binary/BLOB；拒绝 unsigned、`TINYINT(1)`/BOOL、BIT、ENUM/SET、YEAR、空间类型、超过毫秒的时间精度和 zero date。每个 generation 拥有唯一 connector server id、data topic 和 `cleanup.policy=delete + retention.ms=-1` 的 schema-history topic，Stop 时统一清理。
+
+#### Oracle CDC
 
 Oracle CDC 固定支持有稳定非空主键的普通单表，并要求独立 `cdc_database_name`、`cdc_user`、`cdc_password`、ARCHIVELOG、FORCE LOGGING、minimal supplemental logging 以及源表 `SUPPLEMENTAL LOG DATA (ALL) COLUMNS`。源类型与编码以[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)为准，源端拒绝条件见[Oracle 源限制](transfer-任务语义与同步模式.md#oracle-源限制)。Oracle 原生 `BOOLEAN` 虽可被 Debezium 初始快照读取，但 Debezium 3.6 LogMiner 不能稳定交付包含该列的流式 DML，因此和普通 LOB/binary、JSON/XML、超过毫秒精度的 timestamp 一样在创建 capture 前拒绝，不能以快照成功推断增量可用。
 
 Transfer 使用源 schema owner 账号创建 generation-owned 镜像表、行级同步触发器和 DDL guard：XY 转为 WKB BLOB，XYZ 转为保留 Z 值的 GeoJSON CLOB，再由同一 connector/consumer 主路径捕获；运行期间对逻辑源表的 ALTER/DROP/RENAME 会被明确拒绝，Stop 后才允许 DDL。空间事实从 Oracle Catalog Facts 冻结，adapter 严格校验 base64 WKB 或 GeoJSON 的 SRID、拓扑和 XY/XYZ 维度，统一输出标准 EWKB；内部镜像列不等于开放用户 LOB CDC。表级 ALL COLUMN LOGGING 是共享 source readiness，Stop 不删除，Spatial 镜像表、行级触发器和 DDL guard 则在 Stop 核对身份后删除。
 
+### Oracle 既有验证与验收边界
+
 原有数据面验证摘要记载：真实 E2E 已覆盖 PostgreSQL/MySQL/Oracle 三类源到 Oracle 目标的 snapshot/insert/update/delete 与 offset/ledger 收敛；Oracle 源还覆盖跨 consumer batch 的 128 行事务提交、未提交不可见和回滚隔离。Oracle Spatial 的 XY Polygon/MultiPolygon 已覆盖 PostgreSQL/MySQL/Oracle 目标，XYZ 当前只覆盖 PostgreSQL，MySQL 与 Oracle 目标仍明确只支持二维 geometry。
 
 上述摘要不作为当前 HEAD 的运行通过记录；源码版本、有效证据、失败与修复结论及未覆盖项统一见[模块验证](../CLAUDE.md#开发与验证)。[Oracle 专项入口说明](../README.md#oracle-cdc-专项入口缺口)区分独立用例的覆盖范围：目标生命周期用例当前仅覆盖 PostgreSQL/MySQL 源，不能与此处三类源的既有摘要混同；缺少标准调用与隔离清理门禁、未运行或跳过的项目均不计为通过。
+
+### Schema drift 与审批恢复
 
 schema drift 的阻塞流程统一见[Schema 变化](transfer-任务语义与同步模式.md#七schema-变化)：execution 以 `schema_change_blocked` 结束并记录 missing/unexpected/incompatible diff，当前消息和 committed offset 不推进，任务进入 `status=blocked`，禁止直接启动、恢复或重试。connector 仍会继续采集，因此 backlog、Kafka retention 和磁盘风险继续存在。
 
@@ -525,11 +545,15 @@ schema drift 的阻塞流程统一见[Schema 变化](transfer-任务语义与同
 
 审批后的 request 级 Meta 补扫 claim、CAS 接管和旧 token 拒绝统一见[审批补扫 claim 与失败边界](数据库架构.md#审批补扫-claim-与失败边界)及 CDC 正式契约；仅相同重复审批 POST 可接管过期 `running`，GET 始终只读。真实 Meta 调用失败为 `failed`，不由重复审批自动重试，可在 Meta 手动扫描；补扫失败不回滚已提交的 DDL/mapping revision。`TRANSFER_META_SCAN_CLAIM_TTL` 为部署配置，默认 2 分钟且必须大于 Meta client 的 HTTP 超时，不进入任务 JSON。扫描提交成功也不等于扫描完成或恢复成功，实际通过范围见[验证范围](transfer-任务语义与同步模式.md#十一验证范围)。
 
+### CDC 生命周期与清理
+
 CDC pause/resume 的捕获与位置边界统一见[用户运行控制](transfer-任务语义与同步模式.md#用户运行控制)。pause 不暂停 connector，仍须观测 Kafka backlog、磁盘、retention 及源事务日志窗口；只有 connector 健康且 committed position 未被 retention 清除时才允许无损恢复，不保证无限期暂停。
 
 CDC stop 不可逆，ADDP-owned 捕获资源的清理范围与顺序以[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)为准。已停止任务不能再次 start/resume，重新同步须新建任务、目标表并重新 initial snapshot。请求必须由服务端校验 `confirmed=true` 和与任务名称完全一致的 `confirmation_text`；Console 同时使用 danger 二次确认并要求输入任务名称。Stop 保留目标业务表、目标 ledger、任务定义、execution 和审计记录。
 
 `desired_state=stopped` 也用于新任务，不能证明 CDC 已永久停止；终态以当前 generation 的 `transfer.capture_resources.status=stopped` 为准，尚无 generation 的新任务允许首次启动。`cleanup_failed` 只允许重试 Stop 清理，禁止 start/resume。状态保存或清理请求返回不代替[实际停止、资源清理与恢复验收](transfer-任务语义与同步模式.md#十一验证范围)。
+
+### CDC 未支持项与运行事实
 
 完整配置、envelope、schema drift、目标原子应用和资源 owner 约束以[CDC 正式契约](../../docs/spec/tasks/Transfer数据库CDC.md#transfer-数据库-cdc-v1-契约postgresqlmysqloracle)为准，运行语义见[数据库 CDC 专题](transfer-任务语义与同步模式.md#63-数据库-cdc)。普通 Oracle LOB/RAC、ArcGIS SDE、多表、无主键、数据库 CDC replay/DLQ、Schema Registry、Avro、Protobuf、自动 schema evolution 和 truncate 事件均未进入当前实现；业务 Kafka 的 DLQ 与 bounded replay已公开。
 
