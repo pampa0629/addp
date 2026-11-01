@@ -741,3 +741,29 @@ members=2仅为发停止前的初始清单，末次完整计数合计3；members
 恢复成功后原首因保留；exit143为失败后的取消结果，failure_during_cleanup=false，compile_cleanup_error／cleanup_overdue为空，inputs_unchanged／cleanup_verified／private_directory_removed=true。原4 CPU／4 GiB、私有可写小于2 GiB、1200秒和全量统计、失败清理口径保持；清理成功不补算业务通过。已向用户提出只补一次有界等待位置与成员关系取证的建议，涉及超出现行“只复用清单”的读取范围，等待确认后才修规范／代码；本记录不授权或宣称已实施该方案。
 
 `/tmp/addp-p19-http-stop-recurrence-20261101.zip`／同前缀`-report.json`／`-audit.json`保存原始归档和独立核验（0600），原日志复用`/tmp/addp-ci-20261101-020424/job-124583446674.log`，SHA256=`12713459415001ed41cfa22a798b1074446722fcfe824cd67d05b036b68f195c`。仅更新两份证据文档，验证40主题计数、唯一锚点／索引、归档散列／353输入／计数端点／日志摘要与diff，不重跑代码或运行门禁，不修改守卫。没有手动CI重跑／dispatch、新本地窗口、Hosted、容量或定时；正式Agent/Copilot到Console/Monitor页面、停源历史及其余原缺口保持。
+
+
+<a id="http-bounded-wait-evidence-20261101"></a>
+
+## 2026-11-01 停止等待位置与成员关系的有界取证实现（自然 Linux 待验）
+
+用户确认上节提出的最小取证范围后，先修运行观测与T0–T3条款，再修改唯一`metrics-http-budget.py`及既有测试；实现提交`086ae6ada785264813dec96ace94d64bc190ae5d`已推送main。仅4个本专项路径／片段，运行观测规范用暂存补丁隔离，只包含停止确认条款；另一会话未提交的PostgreSQL来源恢复说明及其他共享工作区修改未混入提交。未改产品API、权限、指标、停止顺序、清理期限或任何预算。
+
+确认持续至少100毫秒且完整清单仍有D成员时，每暂停最多一组，沿当前最多64成员的已核验清单，聚合组长／其他成员九类状态与D父成员到T／t子成员的直接关系计数。仅D成员读取一次Linux wchan，每份最多128字节，达到上限整份拒绝分类；proc目录以O_NOFOLLOW／O_DIRECTORY固定，stat前后绑定出生、UID、会话／组和D状态，不因PID退出复用而换读新对象。权限不足、消失、身份／状态变化、无效／空／0、超长、读取失败及平台不支持均固定分类，无提权、重试、额外组清单或信号。Linux stat解析复用一个实现，无另一条身份路线。
+
+报告仅新增confirmation.wait_observation，包含固定角色／状态、候选等待类别及关系计数、剩余未尝试D成员数和组单调起止；没有PID、出生身份、原始符号／命令／路径。进程启动等待候选、I/O候选和completion类别只帮助后续定位，不当作根因。该组是100毫秒后取得的一次观察，不冒充最后清单；原last_completed及最后尝试端点继续保留。逐次读取沿原绝对截止，预算耗尽停止且不再补读；D仍不得通过停止确认，恢复、首因和原4 CPU／4 GiB／私有可写小于2 GiB／1200秒保持。
+
+| 本轮实际验证 | 结果与边界 |
+| --- | --- |
+| 旧暂停实现的受控反证 | 将修改前paused_compile函数装入当前替身测试，触发阈值及465次重放两项均按预期断言失败，0额外错误；不执行proc、信号、Docker或真实负载 |
+| 预算／Metrics配置组合测试 | 首次186项中1项新增夹具在macOS未显式选择模拟Linux，返回not_supported而失败；修正夹具后186项通过。随后把剩余数量字段明确命名为unattempted_d_members，最终输入另由下两项完整覆盖，不把字段改名前的结果直接归为新输入 |
+| `python3 -m unittest scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/metrics-http-budget_test.py scripts/test/trace-deployment-config_test.py scripts/test/trace-capacity_test.py scripts/test/postgres-metrics-lifecycle_test.py` | 最终输入133项通过；为原Make生命周期入口的既有子命令，含64项预算测试、新增11项等待取证测试及原生小型进程组／清理夹具。Linux身份／proc适配为替身及临时文件，Mac原生组协调分列，不当作Linux真实等待位置已取得 |
+| `python3 -m unittest scripts/test/metrics-deployment-config_test.py` | 最终输入122项通过，含原预算声明、来源配置、采样及清理编排；不启动真实Docker或Go编译负载 |
+| `make test-t2-ci-registration` | 74项通过；现有24个hosted-service、13个gate-owned Compose、9个hosted-only、2个owner-managed登记检查通过，仅登记验证，不表示运行Hosted |
+| 语法／CI覆盖／自有差异 | 通过；既有Make生命周期已调用预算测试，T2来源声明包含预算内核，原Release/T2 HTTP矩阵实际调用及预算归档覆盖新字段，无新增依赖、入口或workflow |
+
+模型覆盖100毫秒前及无D不读、一次触发、64／65边界、只读D、每份128字节、目录固定及符号链接拒绝、前后出生／UID／会话／组／状态变化、权限／消失／读错误／0／无效／超长及固定候选分类、角色／关系计数、无原始身份泄漏。真实465次尝试／464次完整、末次D1／T2的模型仍在原四秒失败且恢复，不进入du；取证耗尽截止后不再读其他D成员，恢复失败不覆盖原守卫首因。以上证明取证契约，没有修复或唯一定位真实超时机制。
+
+日志`/tmp/addp-p19-http-wchan-red-20261101.log`、`-budget-20261101.log`（首次夹具失败）、`-budget-final-20261101.log`（改名前组合通过）、`-lifecycle-20261101.log`／`-config-final-20261101.log`／`-registration-20261101.log`保存对应结果；`/tmp/addp-p19-http-wchan-staged-20261101.json`保存4份实际提交输入摘要。未重复运行无关HTTP临时证书组或整条Make聚合，不把分项通过记为整个聚合通过；未重跑实际本地或Linux验收。
+
+截至2026-11-01 09:03（Asia/Shanghai），该固定源码自然push生成[Release/T2 run41259443591](https://github.com/pampa0629/addp/actions/runs/41259443591)和[Platform CI run41259443660](https://github.com/pampa0629/addp/actions/runs/41259443660)，均queued／无结论，HTTP矩阵尚无实际结果，不能计Linux／真实取证通过。后续只手动核对本专项实际步骤和原始归档，未触发rerun／dispatch或设置定时；不新开本地窗口，不运行Hosted或容量。前述11db／fe105失败保留；正式Agent/Copilot产品到Console/Monitor页面、停源历史及原长期保留等缺口保持。
